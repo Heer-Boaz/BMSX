@@ -4,32 +4,38 @@ import type { TrackedTextRange } from '../../../editor/text/text_change';
 import { luaSourceRangeMatchesTextRange } from '../../../language/lua/source_edits';
 import type { SceneAuthoredSubject, SceneAuthoringContext } from './authoring_context';
 import type { SceneSourceDocuments } from './source_documents';
-import type { ScenePrimaryViewState } from './primary_view';
-import { captureScenePrimary, type ScenePrimaryViewSnapshot } from './primary_snapshot';
+import type { SceneViewState } from './scene_view';
+import { captureSceneEditorView, type SceneEditorViewSnapshot } from './view_snapshot';
 
 /** An independently tracked navigation destination, never an authoring consumer or retained old control. */
-export class ScenePrimaryBookmark {
+export class SceneBookmark {
 	public readonly model: EditorTextModel;
 	private readonly subject: TrackedTextRange;
-	private viewValue: ScenePrimaryViewSnapshot;
+	private viewValue: SceneEditorViewSnapshot;
 	private readonly lifetime = new DisposableStore();
 	private readonly retirementListeners = new Set<() => void>();
 
-	public constructor(context: SceneAuthoringContext, view: ScenePrimaryViewState) {
+	public constructor(context: SceneAuthoringContext, view: SceneViewState) {
 		this.model = context.workingCopy;
-		const snapshot = captureScenePrimary(view);
-		this.subject = snapshot.subject.range;
-		this.viewValue = snapshot.view;
-		if (snapshot.subject.availability === 'unavailable') { this.lifetime.dispose(); return; }
-		const ranges: TrackedTextRange[] = [this.subject, ...snapshot.view.collapsed];
-		if (snapshot.view.selected !== undefined) ranges.push(snapshot.view.selected.root, snapshot.view.selected.span);
+		const reference = context.captureSourceReference(), subject = reference.subject!;
+		this.subject = subject.range;
+		this.viewValue = captureSceneEditorView(view, reference);
+		if (subject.availability === 'unavailable') { this.lifetime.dispose(); return; }
+		const ranges: TrackedTextRange[] = [this.subject, ...this.viewValue.collapsed];
+		if (this.viewValue.selected !== undefined) ranges.push(this.viewValue.selected.root, this.viewValue.selected.span);
 		this.lifetime.add({ dispose: this.model.trackRanges(new Map(ranges.map((range, index) => [index, range]))) });
 		this.lifetime.add({ dispose: this.model.onWillDispose(() => this.retire()) });
 		this.lifetime.add({ dispose: this.model.onDidChangeContent(() => this.admitMappedRanges()) });
 	}
 
 	public get isDisposed(): boolean { return this.lifetime.isDisposed; }
-	public get view(): ScenePrimaryViewSnapshot { this.admitMappedRanges(); return this.viewValue; }
+	public get view(): SceneEditorViewSnapshot { this.admitMappedRanges(); return this.viewValue; }
+	public matchesSubject(context: SceneAuthoringContext): boolean {
+		this.admitMappedRanges();
+		const span = context.subjectSpan;
+		return !this.isDisposed && context.workingCopy === this.model && span !== undefined && span.start !== span.end
+			&& span.start === this.subject.start && span.end === this.subject.end;
+	}
 
 	public onDidRetire(listener: () => void): () => void {
 		if (this.isDisposed) listener();
@@ -51,7 +57,7 @@ export class ScenePrimaryBookmark {
 		return { document, sourceVersion, scene };
 	}
 
-	public matches(other: ScenePrimaryBookmark): boolean {
+	public matches(other: SceneBookmark): boolean {
 		this.admitMappedRanges(); other.admitMappedRanges();
 		if (this.isDisposed || other.isDisposed) return this === other;
 		if (this.model !== other.model || this.subject.start !== other.subject.start || this.subject.end !== other.subject.end) return false;

@@ -5,7 +5,7 @@ import { WorkbenchMainWorkspaceLayout, type WorkbenchMainWorkspaceState } from '
 import type { WorkbenchViewSizeConstraints } from '../../ide/workbench/common/layout';
 import { measureSceneHierarchy } from '../../ide/workbench/contrib/scene_editor/hierarchy_layout';
 import { measureSceneDetails } from '../../ide/workbench/contrib/scene_editor/details_layout';
-import { measureSceneViewport } from '../../ide/workbench/contrib/scene_editor/viewport/control';
+import { measureSceneEditor } from '../../ide/workbench/contrib/scene_editor/layout';
 import { WORKBENCH_SPLIT_SIZE } from '../../ide/workbench/ui/split_view';
 
 // These rectangles and equality thresholds are the allocation algorithm's contract,
@@ -16,7 +16,6 @@ const DETAILS = { minimumWidth: 90, preferredWidth: 140, minimumHeight: 0 };
 test('Main allocates three real siblings and gives spare width to its permanent document client', () => {
 	const view = new WorkbenchMainWorkspaceLayout(), bounds = { left: 37, top: 19, right: 837, bottom: 219 };
 	assert.equal(view.layout(bounds, 200, HIERARCHY, DETAILS, 6, 0), true);
-	assert.equal(view.documentsPresented, true); assert.equal(view.viewportPresented, false); assert.equal(view.viewportSashPresented, false);
 	assert.deepEqual(view.hierarchyBounds, { left: 37, top: 19, right: 157, bottom: 219 });
 	assert.deepEqual(view.documentBounds, { left: 165, top: 19, right: 689, bottom: 219 });
 	assert.deepEqual(view.detailsBounds, { left: 697, top: 19, right: 837, bottom: 219 });
@@ -34,162 +33,74 @@ test('Main allocates three real siblings and gives spare width to its permanent 
 	assert.equal(view.documentBounds.right - view.documentBounds.left, 824);
 });
 
-for (const documents of [false, true]) test(`Main reserves a feasible stage preference before automatic sides with documents ${documents ? 'present' : 'absent'}`, () => {
-	const view = new WorkbenchMainWorkspaceLayout(), bounds = { left: 37, top: 19, right: 637, bottom: 419 };
-	const viewport = { minimumWidth: 160, preferredWidth: 400, minimumHeight: 60 };
-	const vertical = { rowMinimumHeight: 0, viewport, documents, documentMinimumHeight: 40, activity: undefined, scrollY: 0 };
-	view.layout(bounds, documents ? 200 : 1000, HIERARCHY, DETAILS, 6, 0, vertical);
-	assert.equal(view.viewportBounds.right - view.viewportBounds.left, 400);
-	assert.equal(view.hierarchyBounds.right - view.hierarchyBounds.left, 87);
-	assert.equal(view.detailsBounds.right - view.detailsBounds.left, 97);
-	assert.equal(view.hierarchySash.position, view.hierarchySashBounds.left + WORKBENCH_SPLIT_SIZE / 2);
-	assert.equal(view.detailsSash.position, view.detailsSashBounds.left + WORKBENCH_SPLIT_SIZE / 2);
-	assert.equal(view.hierarchyWidth, undefined); assert.equal(view.detailsWidth, undefined);
-	assert.equal(view.contentWidth, 600); assert.equal(view.scrollTrack.top, view.scrollTrack.bottom);
-	viewport.preferredWidth = 360;
-	assert.equal(view.layout(bounds, documents ? 200 : 1000, HIERARCHY, DETAILS, 6, 0, vertical), true);
-	assert.equal(view.viewportBounds.right - view.viewportBounds.left, 360);
-	assert.equal(view.hierarchyWidth, undefined); assert.equal(view.detailsWidth, undefined);
-	assert.equal(view.layout(bounds, documents ? 200 : 1000, HIERARCHY, DETAILS, 6, 0, vertical), false);
-});
-
 for (const role of ['hierarchy', 'details'] as const) test(`a constrained automatic ${role} sash becomes explicit without a second contraction and resets through owner reflow`, () => {
 	const view = new WorkbenchMainWorkspaceLayout(), bounds = { left: 0, top: 0, right: 600, bottom: 400 };
-	const vertical = { rowMinimumHeight: 0, viewport: { minimumWidth: 160, preferredWidth: 400, minimumHeight: 60 },
-		documents: false, documentMinimumHeight: 0, activity: undefined, scrollY: 0 };
-	view.layout(bounds, 0, HIERARCHY, DETAILS, 6, 0, vertical);
+	const vertical = { rowMinimumHeight: 0, activity: undefined, scrollY: 0 };
+	view.layout(bounds, 160, HIERARCHY, DETAILS, 6, 0, vertical);
+	const initialWidth = view.documentBounds.right - view.documentBounds.left;
 	const split = role === 'hierarchy' ? view.hierarchySash : view.detailsSash;
 	const position = split.position + (role === 'hierarchy' ? 40 : -40);
 	split.moveTo(position);
-	view.layout(bounds, 0, HIERARCHY, DETAILS, 6, 0, vertical);
+	view.layout(bounds, 160, HIERARCHY, DETAILS, 6, 0, vertical);
 	const region = role === 'hierarchy' ? view.hierarchyBounds : view.detailsBounds;
 	assert.equal(split.position, position);
 	assert.equal(split.requestedSize, region.right - region.left);
 	assert.equal(role === 'hierarchy' ? view.detailsWidth : view.hierarchyWidth, undefined);
-	assert.equal(view.viewportBounds.right - view.viewportBounds.left, 367);
+	assert.equal(view.documentBounds.right - view.documentBounds.left, initialWidth - 40);
 	const request = split.requestedSize;
-	bounds.right = 1000; view.layout(bounds, 0, HIERARCHY, DETAILS, 6, 0, vertical);
+	bounds.right = 1000; view.layout(bounds, 160, HIERARCHY, DETAILS, 6, 0, vertical);
 	assert.equal(region.right - region.left, request); assert.equal(split.requestedSize, request);
-	bounds.right = 600; view.layout(bounds, 0, HIERARCHY, DETAILS, 6, 0, vertical);
+	bounds.right = 600; view.layout(bounds, 160, HIERARCHY, DETAILS, 6, 0, vertical);
 	assert.equal(region.right - region.left, request); assert.equal(split.position, position);
-	split.reset(); view.layout(bounds, 0, HIERARCHY, DETAILS, 6, 0, vertical);
+	split.reset(); view.layout(bounds, 160, HIERARCHY, DETAILS, 6, 0, vertical);
 	assert.equal(view.hierarchyWidth, undefined); assert.equal(view.detailsWidth, undefined);
-	assert.equal(view.viewportBounds.right - view.viewportBounds.left, 400);
-	assert.equal(view.hierarchyBounds.right - view.hierarchyBounds.left, 87);
-	assert.equal(view.detailsBounds.right - view.detailsBounds.left, 97);
+	assert.equal(view.documentBounds.right - view.documentBounds.left, initialWidth);
+	assert.equal(view.hierarchyBounds.right - view.hierarchyBounds.left, HIERARCHY.preferredWidth);
+	assert.equal(view.detailsBounds.right - view.detailsBounds.left, DETAILS.preferredWidth);
 });
 
-for (const variant of ['tiny', 'msx'] as const) test(`${variant} automatic stage layout honors preference priorities, all hard minima and actual sash geometry across widths`, () => {
+for (const variant of ['tiny', 'msx'] as const) test(`${variant} document layout honors hard minima and sash geometry across widths`, () => {
 	const view = new WorkbenchMainWorkspaceLayout(), font = new EditorFont(variant);
 	const hierarchy = { minimumWidth: 0, preferredWidth: 0, minimumHeight: 0 };
 	const details = { ...hierarchy }, viewport = { ...hierarchy };
-	measureSceneHierarchy(font, hierarchy); measureSceneDetails(font, details); measureSceneViewport(font, viewport);
-	const vertical = { rowMinimumHeight: Math.max(hierarchy.minimumHeight, details.minimumHeight), viewport,
-		documents: false, documentMinimumHeight: 0, activity: undefined, scrollY: 0 };
+	measureSceneHierarchy(font, hierarchy); measureSceneDetails(font, details); measureSceneEditor(undefined!, font, false, viewport);
 	const minimum = hierarchy.minimumWidth + details.minimumWidth + viewport.minimumWidth + WORKBENCH_SPLIT_SIZE * 2;
 	for (let width = 140; width <= 1400; width += 13) {
-		view.layout({ left: 0, top: 0, right: width, bottom: 400 }, 0, hierarchy, details, 6, 0, vertical);
-		const central = view.viewportBounds.right - view.viewportBounds.left;
+		view.layout({ left: 0, top: 0, right: width, bottom: 400 }, viewport.minimumWidth, hierarchy, details, 6, 0);
+		const central = view.documentBounds.right - view.documentBounds.left;
 		const left = view.hierarchyBounds.right - view.hierarchyBounds.left, right = view.detailsBounds.right - view.detailsBounds.left;
 		assert.equal(view.contentWidth, Math.max(width, minimum));
 		assert.ok(central >= viewport.minimumWidth);
 		assert.ok(left >= hierarchy.minimumWidth && left <= hierarchy.preferredWidth);
 		assert.ok(right >= details.minimumWidth && right <= details.preferredWidth);
-		if (central < viewport.preferredWidth) {
-			assert.equal(left, hierarchy.minimumWidth); assert.equal(right, details.minimumWidth);
-		}
-		if (central > viewport.preferredWidth) {
-			assert.equal(left, hierarchy.preferredWidth); assert.equal(right, details.preferredWidth);
-		}
 		assert.equal(view.hierarchySash.position, view.hierarchySashBounds.left + WORKBENCH_SPLIT_SIZE / 2);
 		assert.equal(view.detailsSash.position, view.detailsSashBounds.left + WORKBENCH_SPLIT_SIZE / 2);
-		assert.equal(view.hierarchyWidth, undefined); assert.equal(view.detailsWidth, undefined);
 	}
 });
 
-test('absent documents contribute no allocation, minima or sash beside the full central authored viewport', () => {
-	const view = new WorkbenchMainWorkspaceLayout(), bounds = { left: 37, top: 19, right: 837, bottom: 419 };
-	const viewport = { minimumWidth: 160, preferredWidth: 200, minimumHeight: 60 };
-	const vertical = { rowMinimumHeight: 0, viewport, documents: false, documentMinimumHeight: 900, activity: undefined, scrollY: 0 };
-	assert.equal(view.layout(bounds, 1000, HIERARCHY, DETAILS, 6, 0, vertical), true);
-	assert.equal(view.viewportPresented, true); assert.equal(view.documentsPresented, false); assert.equal(view.viewportSashPresented, false);
-	assert.deepEqual(view.viewportBounds, { left: 165, top: 19, right: 689, bottom: 419 });
-	assert.deepEqual(view.viewportClip, view.viewportBounds);
-	assert.deepEqual(view.documentBounds, { left: 0, top: 0, right: 0, bottom: 0 });
-	assert.deepEqual(view.documentClip, view.documentBounds); assert.deepEqual(view.viewportSashBounds, view.documentBounds);
-	assert.equal(view.viewportSplit.resizable, false);
-	assert.equal(view.viewportSplit.minimumFirstSize, 0); assert.equal(view.viewportSplit.minimumSecondSize, 0);
-	assert.equal(view.contentWidth, 800); assert.equal(view.contentHeight, 400);
-	assert.equal(view.scrollTrack.top, view.scrollTrack.bottom); assert.equal(view.verticalScrollTrack.left, view.verticalScrollTrack.right);
-	assert.equal(view.hierarchyBounds.right - view.hierarchyBounds.left, HIERARCHY.preferredWidth);
-	assert.equal(view.detailsBounds.right - view.detailsBounds.left, DETAILS.preferredWidth);
-	for (let frame = 0; frame < 1000; frame++) assert.equal(view.layout(bounds, 1000, HIERARCHY, DETAILS, 6, 0, vertical), false);
-	vertical.documentMinimumHeight = 1000;
-	assert.equal(view.layout(bounds, 2000, HIERARCHY, DETAILS, 6, 0, vertical), false, 'omitted document minima do not invalidate its allocation');
-});
-
-test('document participation invalidates layout independently of minima and retains the requested viewport split', () => {
-	const view = new WorkbenchMainWorkspaceLayout(), bounds = { left: 0, top: 0, right: 800, bottom: 400 };
-	const viewport = { minimumWidth: 0, preferredWidth: 0, minimumHeight: 20 };
-	const vertical = { rowMinimumHeight: 100, viewport, documents: true, documentMinimumHeight: 0, activity: undefined, scrollY: 0 };
-	view.viewportSplit.ratio = 0.72;
-	const revision = view.viewportSplit.revision;
-	assert.equal(view.layout(bounds, 0, undefined, undefined, 6, 0, vertical), true);
-	const viewportBounds = { ...view.viewportBounds }, documentBounds = { ...view.documentBounds }, sashBounds = { ...view.viewportSashBounds };
-	assert.equal(view.documentsPresented, true); assert.equal(view.viewportSashPresented, true);
-	vertical.documents = false;
-	assert.equal(view.layout(bounds, 0, undefined, undefined, 6, 0, vertical), true);
-	assert.deepEqual(view.viewportBounds, bounds);
-	assert.equal(view.viewportPresented, true); assert.equal(view.documentsPresented, false); assert.equal(view.viewportSashPresented, false);
-	assert.equal(view.viewportSplit.ratio, 0.72); assert.equal(view.viewportSplit.revision, revision);
-	assert.equal(view.layout(bounds, 0, undefined, undefined, 6, 0, vertical), false);
-	vertical.documents = true;
-	assert.equal(view.layout(bounds, 0, undefined, undefined, 6, 0, vertical), true);
-	assert.deepEqual(view.viewportBounds, viewportBounds); assert.deepEqual(view.documentBounds, documentBounds);
-	assert.deepEqual(view.viewportSashBounds, sashBounds);
-	assert.equal(view.viewportSplit.ratio, 0.72); assert.equal(view.viewportSplit.revision, revision);
-});
-
-test('absent documents preserve authored, side and activity minima through shared two-axis overflow', () => {
+test('document and companion minima remain available through two-axis overflow with an activity', () => {
 	const view = new WorkbenchMainWorkspaceLayout(), bounds = { left: 37, top: 19, right: 337, bottom: 169 };
 	const hierarchy = { ...HIERARCHY, minimumHeight: 250 }, details = { ...DETAILS, minimumHeight: 180 };
-	const viewport = { minimumWidth: 200, preferredWidth: 300, minimumHeight: 160 };
 	const activity = { minimumWidth: 0, minimumHeight: 60, preferredHeight: 80 };
-	const vertical = { rowMinimumHeight: 250, viewport, documents: false, documentMinimumHeight: 1000, activity, scrollY: 1000 };
+	const vertical = { rowMinimumHeight: 250, activity, scrollY: 1000 };
 	view.activityVisible = true;
-	view.layout(bounds, 1000, hierarchy, details, 6, 1000, vertical);
+	view.layout(bounds, 200, hierarchy, details, 6, 1000, vertical);
 	assert.equal(view.contentWidth, 386); assert.equal(view.contentHeight, 324);
 	assert.equal(view.scrollX, 92); assert.equal(view.scrollY, 174);
 	assert.equal(view.hierarchyBounds.right - view.hierarchyBounds.left, HIERARCHY.minimumWidth);
 	assert.equal(view.detailsBounds.right - view.detailsBounds.left, DETAILS.minimumWidth);
-	assert.equal(view.hierarchyBounds.bottom - view.hierarchyBounds.top, hierarchy.minimumHeight);
-	assert.ok(view.detailsBounds.bottom - view.detailsBounds.top >= details.minimumHeight);
-	assert.equal(view.viewportBounds.right - view.viewportBounds.left, viewport.minimumWidth);
-	assert.ok(view.viewportBounds.bottom - view.viewportBounds.top >= viewport.minimumHeight);
-	assert.deepEqual(view.viewportClip, { left: 37, top: 19, right: 233, bottom: 95 });
+	assert.equal(view.documentBounds.right - view.documentBounds.left, 200);
+	assert.equal(view.documentBounds.bottom - view.documentBounds.top, 250);
+	assert.deepEqual(view.documentClip, { left: 37, top: 19, right: 233, bottom: 95 });
 	assert.deepEqual(view.activityBounds, { left: 37, top: 109, right: 331, bottom: 169 });
-	assert.equal(view.activityPresented, true); assert.equal(view.viewportPresented, true);
-	assert.equal(view.documentsPresented, false); assert.equal(view.viewportSashPresented, false);
-	assert.deepEqual(view.documentBounds, { left: 0, top: 0, right: 0, bottom: 0 });
-	assert.deepEqual(view.documentClip, view.documentBounds); assert.deepEqual(view.viewportSashBounds, view.documentBounds);
-	activity.minimumHeight = activity.preferredHeight = 180;
-	view.layout(bounds, 1000, hierarchy, details, 6, 1000, vertical);
-	assert.equal(view.viewportClip.top, view.viewportClip.bottom, 'scrolling may clip the entire logical authored viewport');
-	assert.equal(view.viewportPresented, true); assert.equal(view.documentsPresented, false); assert.equal(view.viewportSashPresented, false);
+	assert.equal(view.activityPresented, true);
 });
 
-test('explicitly absent central clients leave no document geometry while an omitted vertical contract retains ordinary documents', () => {
-	const view = new WorkbenchMainWorkspaceLayout(), bounds = { left: 37, top: 19, right: 837, bottom: 219 };
-	view.layout(bounds, 200, HIERARCHY, DETAILS, 6, 0,
-		{ rowMinimumHeight: 0, viewport: undefined, documents: false, documentMinimumHeight: 1000, activity: undefined, scrollY: 0 });
-	assert.equal(view.viewportPresented, false); assert.equal(view.documentsPresented, false); assert.equal(view.viewportSashPresented, false);
-	assert.deepEqual(view.viewportBounds, { left: 0, top: 0, right: 0, bottom: 0 });
-	assert.deepEqual(view.viewportClip, view.viewportBounds); assert.deepEqual(view.documentBounds, view.viewportBounds);
-	assert.deepEqual(view.documentClip, view.viewportBounds); assert.deepEqual(view.viewportSashBounds, view.viewportBounds);
-	assert.equal(view.layout(bounds, 200, HIERARCHY, DETAILS, 6, 0), true);
-	assert.equal(view.documentsPresented, true);
-	assert.deepEqual(view.documentBounds, { left: 165, top: 19, right: 689, bottom: 219 });
-	assert.deepEqual(view.documentClip, view.documentBounds);
+test('document height overflow is reachable even without an activity panel', () => {
+	const view = new WorkbenchMainWorkspaceLayout(), bounds = { left: 0, top: 0, right: 400, bottom: 100 };
+	view.layout(bounds, 200, HIERARCHY, DETAILS, 6, 0, { rowMinimumHeight: 220, activity: undefined, scrollY: 120 });
+	assert.ok(view.contentHeight >= 220); assert.ok(view.scrollY > 0);
+	assert.equal(view.documentBounds.bottom - view.documentBounds.top, 220);
 });
 
 test('constrained Main placement shrinks only displayed side widths and later restores the requested pixel widths', () => {
@@ -309,17 +220,17 @@ test('Main placement publishes a complete state before reentrant observers reque
 	let redirected = false;
 	view.onDidChange(() => {
 		observed.push({ hierarchyVisible: view.hierarchyVisible, detailsVisible: view.detailsVisible,
-			activityVisible: view.activityVisible, viewportRatio: view.viewportSplit.ratio, hierarchyWidth: view.hierarchyWidth, detailsWidth: view.detailsWidth });
+			activityVisible: view.activityVisible, hierarchyWidth: view.hierarchyWidth, detailsWidth: view.detailsWidth });
 		if (redirected) return;
 		redirected = true; view.detailsVisible = true; view.detailsWidth = 175;
 	});
-	const state = { hierarchyVisible: false, detailsVisible: false, activityVisible: false, viewportRatio: 0.65, hierarchyWidth: 180, detailsWidth: 190 };
+	const state = { hierarchyVisible: false, detailsVisible: false, activityVisible: false, hierarchyWidth: 180, detailsWidth: 190 };
 	view.setState(state);
 	assert.deepEqual(observed[0], state, 'the first observer sees all four requested fields, not an intermediate restore');
 	assert.equal(view.hierarchyVisible, false); assert.equal(view.hierarchyWidth, 180);
 	assert.equal(view.detailsVisible, true); assert.equal(view.detailsWidth, 175);
 	assert.equal(observed.length, 3);
-	view.setState({ hierarchyVisible: false, detailsVisible: true, activityVisible: false, viewportRatio: 0.65, hierarchyWidth: 180, detailsWidth: 175 });
+	view.setState({ hierarchyVisible: false, detailsVisible: true, activityVisible: false, hierarchyWidth: 180, detailsWidth: 175 });
 	assert.equal(observed.length, 3, 'an unchanged state does not publish another placement');
 });
 
@@ -328,7 +239,7 @@ test('Main owns coordinated width publication while the fixed sash reports only 
 	let changes = 0, resizes = 0;
 	view.onDidChange(() => changes++);
 	view.hierarchySash.onDidResize(() => resizes++); view.detailsSash.onDidResize(() => resizes++);
-	view.setState({ hierarchyVisible: true, detailsVisible: true, activityVisible: false, viewportRatio: 0.65, hierarchyWidth: 160, detailsWidth: 180 });
+	view.setState({ hierarchyVisible: true, detailsVisible: true, activityVisible: false, hierarchyWidth: 160, detailsWidth: 180 });
 	assert.equal(changes, 1); assert.equal(resizes, 0);
 	view.layout(bounds, 200, HIERARCHY, DETAILS, 6, 0);
 	view.hierarchySash.moveTo(view.hierarchySash.position + 20);

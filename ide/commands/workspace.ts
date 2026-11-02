@@ -49,7 +49,8 @@ export function isEditorWorkspaceCommandEnabled(command: EditorWorkspaceCommandI
 		case 'save': {
 			if (group === undefined || !(input instanceof TextEditorInput) || !saves.acceptingSaves) return false;
 			const pane = group.panes.activePane, focused = inputFocus.target;
-			const pending = pane?.input === input && focused?.edit?.pending === true && pane.inputScope.contains(focused.scope);
+			const pending = pane?.input === input && focused?.edit?.pending === true
+				&& (pane.inputScope?.contains(focused.scope) === true || input.attachedEditScope?.contains(focused.scope) === true);
 			return input.canSave(saves, pending);
 		}
 		case 'hot-resume': return hotResumes.acceptingRequests && !execution.launchPending;
@@ -115,12 +116,18 @@ export function captureEditorWorkspaceCommand(
 	const resource = subject?.resource;
 	const pane = group.panes.activePane, attachment = group.panes.openGeneration;
 	const attached = pane !== null && pane.input === subject;
+	const companionScope = command === 'save' && attached && subject instanceof TextEditorInput ? subject.attachedEditScope : undefined;
+	const focused = inputFocus.target;
+	const editScope = command === 'save' ? attached
+		? companionScope !== undefined && focused !== null && companionScope.contains(focused.scope) ? companionScope : pane.inputScope
+		: undefined : target?.commandContext.scope;
+	const editGeneration = editScope?.contextGeneration;
 	const current = () => !part.retired && !group.surface.retired && editor.editorParts.partForGroup(group) === part
 		&& (subject === null || membership!())
-		&& (!attached || group.panes.openGeneration === attachment && group.panes.activePane === pane);
+		&& (!attached || group.panes.openGeneration === attachment && group.panes.activePane === pane)
+		&& (command !== 'save' || !attached || !(subject instanceof TextEditorInput) || subject.attachedEditScope === companionScope)
+		&& (command !== 'save' || editScope === undefined || editScope.contextGeneration === editGeneration);
 	const presentation = command === 'save' ? undefined : captureEditorActionPresentation(target);
-	const editScope = command === 'save' ? attached ? pane.inputScope : undefined
-		: target?.commandContext.scope;
 	return { editScope, isEnabled: () => current()
 		&& isEditorWorkspaceCommandEnabled(command, group, subject, sources, textFileSaves, hotResumes, boots, execution, tasks, target) && current(),
 		run: () => {

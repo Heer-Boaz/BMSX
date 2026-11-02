@@ -205,7 +205,18 @@ export class EditorCloseController {
 					primary: 'Save', secondary: 'Discard', primaryEnabled: !readOnly,
 					defaultChoice: readOnly ? 'cancel' : 'primary' };
 				operation.prompt = request;
-				const choice = await operation.decisionUI.show(request, operation.origin);
+				const choice = await operation.decisionUI.show(request, operation.origin, () => {
+					if (operation.cancelled || operation.release?.isCurrent() === false
+						|| operation.targets.some(target => target.group.model.findById(target.input.id) !== target.input)
+						|| !this.lastWorkingCopies(operation).has(model) || !model.dirty
+						|| model.version !== version || model.readOnly !== readOnly) return undefined;
+					const scopes: InputFocusScope[] = [];
+					for (const target of operation.targets) {
+						if (target.input instanceof TextEditorInput && target.input.attachedEditScope !== undefined
+							&& !scopes.includes(target.input.attachedEditScope)) scopes.push(target.input.attachedEditScope);
+					}
+					return scopes;
+				});
 				operation.prompt = undefined;
 				if (operation.cancelled || operation.release?.isCurrent() === false || choice === 'cancel') return false;
 				if (!this.lastWorkingCopies(operation).has(model) || !model.dirty) continue;
@@ -245,7 +256,7 @@ export class EditorCloseController {
 			operation.lifetime.dispose();
 			operation.release?.retire();
 			for (const { group, input } of operation.targets) {
-				if (group.model.findById(input.id) === input) group.removeEditor(input, this.isClosing);
+				if (group.model.findById(input.id) === input && !group.removeEditor(input, this.isClosing)) return false;
 			}
 			return true;
 		}
@@ -257,7 +268,9 @@ export class EditorCloseController {
 		for (const target of [focused, origin]) {
 			if (target?.edit?.pending !== true) continue;
 			const group = findEditorGroup(target);
-			if (scope?.contains(target.scope) !== true && !targets.some(view => view.group === group && view.input === group.model.activeTab)) continue;
+			if (scope?.contains(target.scope) !== true && !targets.some(view =>
+				view.group === group && view.input === group.model.activeTab
+				|| view.input instanceof TextEditorInput && view.input.attachedEditScope?.contains(target.scope) === true)) continue;
 			return target.edit.commit() ? 'committed' : 'failed';
 		}
 		return 'none';

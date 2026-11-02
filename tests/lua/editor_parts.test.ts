@@ -373,7 +373,7 @@ test('a floating Source opens the Main Scene subject without replacing its docum
 			const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
 			const resource = f.sources.catalog.resolveResource({contextId:f.sources.systemContextId,path:'authoring_scene.lua'})!;
 			const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
-			assert.ok(primary.consumer.workingCopy === model && primary.consumer.subject === document.scenes[0]);
+			assert.ok(primary.authoring.workingCopy === model && primary.authoring.subject === document.scenes[0]);
 			assert.ok(f.editor.editorParts.activePart === f.editor.editorParts.main);
 			assert.equal(model.buffer.getText(), SCENE_VIEWPORT_SOURCE); assert.equal(model.canUndo, false);
 		} else {

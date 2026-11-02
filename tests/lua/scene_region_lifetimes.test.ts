@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
-import { SceneEditorViewState } from '../../ide/workbench/contrib/scene_editor/view_state';
+import { SceneViewState } from '../../ide/workbench/contrib/scene_editor/scene_view';
 import { SceneHierarchyViewState } from '../../ide/workbench/contrib/scene_editor/hierarchy_view';
 import { captureSceneEditorView, restoreSceneEditorView } from '../../ide/workbench/contrib/scene_editor/view_snapshot';
 import { rebuildWorkbenchTreeRows } from '../../ide/workbench/ui/tree_view';
@@ -35,16 +35,17 @@ test('constructing and refreshing a Scene hierarchy never admits a semantic sele
 });
 
 test('Scene snapshot restores exact semantic member independently of a collapsed hierarchy', t => {
-	const { model, documents } = createSceneSourceFixture(t, SOURCE, 'regions.lua', undefined, [['cartlib/world/prefab.lua','return {define=function() end}']]);
-	const context = new SceneAuthoringContext(model, documents), view = new SceneEditorViewState(context);
-	const document = context.document!, scene = document.scenes[0];
+	const { model, documents, sources } = createSceneSourceFixture(t, SOURCE, 'regions.lua', undefined, [['cartlib/world/prefab.lua','return {define=function() end}']]);
+	const document = documents.get(model), scene = document.scenes[0];
+	const subject = { document, sourceVersion: model.version, scene };
+	const context = new SceneAuthoringContext(model, documents, subject), view = new SceneViewState(context, sources.catalog);
 	context.select(document, model.version, { kind: 'member', scene, entry: scene.objects[1], index: 1 });
 	view.refresh();
 	view.hierarchy.outline.roots[0].collapsed = true;
 	rebuildWorkbenchTreeRows(view.hierarchy.outline, null);
-	view.hierarchy.position = 0; view.details.position = 31; view.section = 'details';
+	view.hierarchy.position = 0; view.details.position = 31; view.preferredPart = 'details';
 	const snapshot = captureSceneEditorView(view);
-	const restoredContext = new SceneAuthoringContext(model, documents), restored = new SceneEditorViewState(restoredContext);
+	const restoredContext = new SceneAuthoringContext(model, documents, subject), restored = new SceneViewState(restoredContext, sources.catalog);
 	t.after(() => { restored.dispose(); restoredContext.dispose(); context.dispose(); });
 	restoreSceneEditorView(restored, snapshot);
 	restored.refresh();

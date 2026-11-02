@@ -45,6 +45,8 @@ export type WorkbenchSurfaceOptions =
 		readonly role: 'modal';
 		/** Input ownership remains local even when presentation escapes its clip. */
 		readonly blockedScope: WorkbenchSurface | null;
+		/** Additional live input families owned by the current modal decision. */
+		readonly additionalBlockedScopes?: () => readonly InputFocusScope[];
 		readonly presentationParent: WorkbenchSurface | null;
 	};
 

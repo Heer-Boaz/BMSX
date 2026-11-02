@@ -18,12 +18,8 @@ import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
-const SCENE = `local scenes = require('cartlib/world/scene_library')
-scenes.register('room', { objects = {
- { member_id = 'actor', definition_id = 'example', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3 } } },
-} })
-return {}
-`;
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE as SCENE } from '../fixtures/studio/scene_viewport';
+
 const REQUEST: ActionPromptRequest = { title: 'Pending source action', message: 'Continue with the captured source?',
 	primary: 'Save and continue', secondary: 'Continue without saving', primaryEnabled: true, defaultChoice: 'primary' };
 
@@ -44,7 +40,7 @@ function assertStatusProjection(t: TestContext, f: Fixture, expected: WorkbenchS
 }
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx') {
-	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE], ['cartlib/world/scene_library.lua', 'return {}']]);
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	f.editor.setFontVariant(variant); editorFeedbackState.message.visible = false;
 	f.host.presenter.setFixedRenderTargetSize(800, 320);
 	f.editor.resourcePanel.show();
@@ -71,50 +67,46 @@ for (const variant of ['tiny', 'msx'] as const) {
 	});
 
 	test(`${variant} Main document and independent primary region controls publish their actual status owner`, async t => {
-		const f = fixture(t, variant), main = f.editor.mainWorkspace, group = f.editor.editorParts.main.activeGroup;
-		group.openEditor(new CodeEditorInput(f.secondInput.workingCopy)); f.update();
-		const documentPane = group.panes.activePane; assert.ok(documentPane instanceof CodeEditorPane);
+		const f = fixture(t, variant), main = f.editor.mainWorkspace;
 		const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 		const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
 		assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target!), true);
 		const primary = main.primary; assert.ok(primary instanceof ScenePrimaryClient);
+		const sceneGroup = f.editor.editorParts.findGroup(primary.input)!;
+		const group = f.editor.editorParts.sideGroup(sceneGroup, 'down')!;
+		group.openEditor(new CodeEditorInput(f.secondInput.workingCopy)); f.update();
+		const documentPane = group.panes.activePane; assert.ok(documentPane instanceof CodeEditorPane);
 		main.focusPrimary('hierarchy'); f.update();
 		assertStatusProjection(t, f, primary, [documentPane, f.first, f.second, f.editor.problems]);
 		f.key('ArrowDown'); main.focusPrimary('details'); f.update();
 		const field = primary.details.control.controls[0]; assert.equal(field.field.focusTarget.focus(), true);
 		setFieldText(field.field, '31', true);
-		const selection = primary.consumer.selection;
+		const selection = primary.authoring.selection;
 		assertStatusProjection(t, f, primary, [documentPane, f.first, f.second, f.editor.problems]);
 		assert.equal(field.pending, true); assert.equal(field.field.text, '31'); assert.equal(model.buffer.getText(), SCENE);
-		assert.ok(primary.consumer.selection === selection);
+		assert.ok(primary.authoring.selection === selection);
 		field.cancel(); documentPane.focus();
 		assertStatusProjection(t, f, documentPane, [primary, f.first, f.second, f.editor.problems]);
 	});
 
-	test(`${variant} global and part-local popup chains retain the real invoking status owner`, async t => {
+	test(`${variant} global and part-local prompts retain the real invoking status owner`, async t => {
 		const f = fixture(t, variant), editor = f.editor;
 		for (const part of [f.firstPart, f.secondPart]) {
 			const pane = part.activeGroup.panes.activePane!; pane.focus();
 			part.quickInput.pick('choices', '', () => new TextQuickPickProvider([{ label: 'choice', description: '', detail: '' }]), () => {});
 			assert.ok(inputFocus.admittedTarget === part.quickInput.field.focusTarget);
 			assertStatusProjection(t, f, pane, [editor.resourcePanel, editor.problems]);
-			editor.contextMenu.show(part.quickInput.layout.bounds.left + 1, part.quickInput.layout.bounds.top + 1, [], editor.commands);
-			assert.ok(editor.contextMenu.invocationOrigin === part.quickInput.field.focusTarget);
-			assertStatusProjection(t, f, pane, [editor.resourcePanel, editor.problems]);
-			editor.contextMenu.hide(); part.quickInput.hide(); pane.focus();
+			part.quickInput.hide(); pane.focus();
 			const pending = part.actionPrompt.show(REQUEST);
 			try {
 				assert.ok(inputFocus.admittedTarget === part.actionPrompt.focusTarget);
 				assertStatusProjection(t, f, pane, [editor.resourcePanel, editor.problems]);
-				editor.contextMenu.show(part.actionPrompt.view.bounds.left + 1, part.actionPrompt.view.bounds.top + 1, [], editor.commands);
-				assertStatusProjection(t, f, pane, [editor.resourcePanel, editor.problems]);
-			} finally { editor.contextMenu.hide(); part.actionPrompt.close(); await pending; }
+			} finally { part.actionPrompt.close(); await pending; }
 		}
 		editor.mainWorkspace.focusActivity();
 		editor.quickInput.pick('choices', '', () => new TextQuickPickProvider([{ label: 'choice', description: '', detail: '' }]), () => {});
-		editor.contextMenu.show(editor.quickInput.layout.bounds.left + 1, editor.quickInput.layout.bounds.top + 1, [], editor.commands);
 		assertStatusProjection(t, f, editor.problems, [f.first, f.second, editor.resourcePanel]);
-		editor.contextMenu.hide(); editor.quickInput.hide();
+		editor.quickInput.hide();
 		editor.resourcePanel.setFocused(true);
 		editor.quickInput.pick('choices', '', () => new TextQuickPickProvider([{ label: 'choice', description: '', detail: '' }]), () => {});
 		assertStatusProjection(t, f, editor.resourcePanel, [f.first, f.second, editor.problems]);

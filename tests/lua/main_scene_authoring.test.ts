@@ -17,7 +17,7 @@ import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 import { SCENE_VIEWPORT_SOURCE, SCENE_VIEWPORT_IMPORTS } from '../fixtures/studio/scene_viewport';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { applyWorkspaceAutosavePayload } from '../../ide/workbench/workspace/restore';
-import type { ScenePrimarySnapshot } from '../../ide/workbench/contrib/scene_editor/primary_snapshot';
+import type { SerializedSceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_serializer';
 
 const SOURCE = `${SCENE_VIEWPORT_SOURCE}\nviewport_scenes.register('same', { objects = { { member_id = 'other', definition_id = 'proof.actor', position = { x = 7, y = 8, z = 9 } } } })\n`;
 
@@ -38,20 +38,20 @@ test('Main retains an exact authored Scene beside independent document groups wi
 	assert.equal(main.primary, undefined);
 	assert.equal(await f.open(1), true); f.update();
 	const client = main.primary; assert.ok(client instanceof ScenePrimaryClient);
-	assert.equal(client.consumer.subject, client.consumer.document!.scenes[1]);
+	assert.equal(client.authoring.subject, client.authoring.document!.scenes[1]);
 	assert.equal(client.view.hierarchy.outline.roots.length, 1);
-	assert.ok(f.editor.editorParts.groups.every(group => group.model.tabs.every(input => input.kind !== 'scene_editor')));
+	assert.ok(f.editor.editorParts.groups.some(group => group.model.tabs.includes(client.input)));
 	selectSceneOutlineRow(client.view.hierarchy, 1); client.hierarchy.update(); client.details.update();
-	const selected = client.consumer.selection;
-	f.first.focus(); f.editor.editorParts.main.activeGroup.openEditor(new CodeEditorInput(f.firstInput.workingCopy)); f.update();
+	const selected = client.authoring.selection;
+	f.first.focus(); f.firstGroup.openEditor(new CodeEditorInput(f.firstInput.workingCopy)); f.update();
 	f.second.focus(); f.update();
 	assert.equal(main.primary, client);
-	assert.equal(client.consumer.selection, selected);
-	assert.equal(client.consumer.subject, client.consumer.document!.scenes[1]);
+	assert.equal(client.authoring.selection, selected);
+	assert.equal(client.authoring.subject, client.authoring.document!.scenes[1]);
 	assert.equal(f.editor.surfaces.isAdmitted(f.editor.surfaces.findByScope(client.hierarchy.scope.surfaceScope)!), true);
 	assert.equal(f.editor.surfaces.isAdmitted(f.editor.surfaces.findByScope(client.details.scope.surfaceScope)!), true);
 	f.editor.commands.execute('workspace.focusPrimary', f.second.commandTarget);
-	assert.ok(client.scope.contains(inputFocus.admittedTarget!.scope));
+	assert.equal(inputFocus.admittedTarget, client.viewportTarget);
 	assert.equal(f.editor.editorParts.activePart, f.editor.editorParts.main);
 });
 
@@ -62,13 +62,13 @@ test('closing Source cannot prompt or discard the dirty working copy retained by
 	const field = client.details.control.controls[0];
 	field.field.focusTarget.focus(); setFieldText(field.field, '123', true); assert.equal(field.commit(), true);
 	const source = f.model.buffer.getText(); assert.ok(source !== SOURCE);
-	const group = f.editor.editorParts.main.activeGroup, input = new CodeEditorInput(f.model);
+	const group = f.firstGroup, input = new CodeEditorInput(f.model);
 	group.openEditor(input); f.update();
 	assert.equal(await group.close(input.id), true);
 	assert.equal(f.model.buffer.getText(), source);
 	assert.equal(f.model.dirty, true);
-	assert.equal(client.consumer.isCurrent, true);
-	const copies = client.consumer.getWorkingCopies(); assert.equal(copies.length, 1); assert.ok(copies[0] === f.model);
+	assert.equal(client.authoring.isCurrent, true);
+	const copies = client.input.getWorkingCopies(); assert.equal(copies.length, 1); assert.ok(copies[0] === f.model);
 	assert.ok(group.model.tabs.every(tab => tab !== input));
 });
 
@@ -81,24 +81,22 @@ test('same-file primary replacement retains canonical edits through its actual r
 	const second = f.editor.mainWorkspace.primary; assert.ok(second instanceof ScenePrimaryClient);
 	assert.ok(second !== first);
 	assert.equal(first.hierarchy.control.hasView, false); assert.equal(first.details.control.hasView, false);
-	assert.equal(first.consumer.isCurrent, false);
-	assert.equal(second.consumer.subject, second.consumer.document!.scenes[1]);
+	assert.equal(first.authoring.isCurrent, true);
+	assert.equal(second.authoring.subject, second.authoring.document!.scenes[1]);
 	assert.equal(f.model.buffer.getText(), source);
 	assert.equal(f.model.dirty, true);
 });
 
-test('Cancel of final Main release keeps its actual context and canonical edits, then document retention admits clear', async t => {
+test('Cancel of final Scene close keeps its input and edits; another real document admits close', async t => {
 	const f = fixture(t); assert.equal(await f.open(0), true); f.update();
 	const main = f.editor.mainWorkspace, client = main.primary; assert.ok(client instanceof ScenePrimaryClient);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dirty\n' }]); f.update();
-	const source = f.model.buffer.getText();
-	const cancelled = main.clearPrimary(f.editor.editorParts.closeController, client.commandTarget);
-	f.key('Escape', KeyModifier.none);
-	assert.equal(await cancelled, false);
+	const source = f.model.buffer.getText(), group = f.editor.editorParts.findGroup(client.input)!;
+	const cancelled = group.close(client.input.id); f.key('Escape', KeyModifier.none);
+	assert.equal(await cancelled, false); assert.equal(group.model.activeTab, client.input);
 	assert.equal(main.primary, client); assert.equal(f.model.buffer.getText(), source);
-	const group = f.editor.editorParts.main.activeGroup;
-	group.openEditor(new CodeEditorInput(f.model)); f.update();
-	assert.equal(await main.clearPrimary(f.editor.editorParts.closeController, group.focusTarget), true);
+	const sourceInput = new CodeEditorInput(f.model); f.firstGroup.openEditor(sourceInput); f.update();
+	assert.equal(await group.close(client.input.id), true); f.update();
 	assert.equal(main.primary, undefined);
 	assert.equal(client.hierarchy.control.hasView, false); assert.equal(client.details.control.hasView, false);
 	assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.dirty, true);
@@ -121,28 +119,29 @@ for (const command of ['editor.source', 'editor.sourceToSide'] as const)
 		assert.deepEqual(f.editor.editorParts.groups, groups);
 	});
 
-test('hiding Studio detaches Main control authority while retaining its exact subject for a new attachment', async t => {
+test('hiding Studio retires companion authority while retaining the Scene document', async t => {
 	const f = fixture(t); assert.equal(await f.open(0), true); f.update();
 	const main = f.editor.mainWorkspace, client = main.primary; assert.ok(client instanceof ScenePrimaryClient);
 	selectSceneOutlineRow(client.view.hierarchy, 1); client.hierarchy.update(); client.details.update();
-	const selected = client.consumer.selection;
+	const selected = client.authoring.selection;
 	const invocation = client.commandTarget.getCommand('sceneEditor.removeMember')!.capture!()!;
 	const field = client.details.control.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
 	f.editor.deactivate();
-	assert.equal(client.hierarchy.control.hasView, false); assert.equal(client.details.control.hasView, false); assert.equal(field.pending, false);
-	assert.equal(main.primary, client); assert.equal(client.consumer.selection, selected);
-	assert.equal(invocation.isEnabled(), false); assert.equal(f.model.buffer.getText(), SOURCE);
-	f.editor.activate(); f.update();
-	assert.equal(main.primary, client); assert.equal(client.hierarchy.control.hasView && client.details.control.hasView, true);
-	assert.equal(client.consumer.selection, selected);
-	assert.equal(invocation.isEnabled(), false, 'the old attachment is never revived by showing Studio again');
+	try {
+		assert.equal(client.hierarchy.control.hasView, false); assert.equal(client.details.control.hasView, false);
+		assert.equal(field.pending, false); assert.equal(invocation.isEnabled(), false);
+		assert.equal(client.authoring.selection, selected); assert.equal(f.model.buffer.getText(), SOURCE);
+	} finally { f.editor.activate(); f.update(); }
+	const replacement = main.primary; assert.ok(replacement instanceof ScenePrimaryClient);
+	assert.notEqual(replacement, client); assert.equal(replacement.input, client.input);
+	assert.equal(replacement.authoring.selection, selected); assert.equal(invocation.isEnabled(), false);
 });
 
 test('Main suspension cancels its actual pending field before blur and preserves unrelated Source focus published by cancellation', async t => {
 	const f = fixture(t); assert.equal(await f.open(0), true); f.update();
 	const main = f.editor.mainWorkspace, client = main.primary; assert.ok(client instanceof ScenePrimaryClient);
 	selectSceneOutlineRow(client.view.hierarchy, 1); client.hierarchy.update(); client.details.update();
-	const field = client.details.control.controls[0], selected = client.consumer.selection, version = f.model.version;
+	const field = client.details.control.controls[0], selected = client.authoring.selection, version = f.model.version;
 	field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
 	assert.equal(field.pending, true);
 	const cancel = field.cancel.bind(field);
@@ -151,7 +150,7 @@ test('Main suspension cancels its actual pending field before blur and preserves
 	assert.ok(cancellation.mock.callCount() > 0); assert.equal(field.pending, false);
 	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.version, version); assert.equal(f.model.dirty, false);
 	assert.ok(inputFocus.target === f.second.commandTarget && inputFocus.admittedTarget === f.second.commandTarget);
-	assert.ok(main.primary === client && client.consumer.selection === selected);
+	assert.ok(main.primary === client && client.authoring.selection === selected);
 	assert.equal(client.hierarchy.control.hasView, false); assert.equal(client.details.control.hasView, false);
 	assert.equal(f.secondInput.workingCopy.buffer.getText(), f.otherSource);
 });
@@ -185,17 +184,19 @@ test('frontend workspace replacement retires the old Main and controls before re
 	const f = fixture(t); assert.equal(await f.open(0), true); f.update();
 	const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
 	const payload = {
-		mainWorkspace: { ...f.editor.mainWorkspace.serialize(), primary: null, activeClient: 'documents' as const },
+		mainWorkspace: f.editor.mainWorkspace.serialize(),
+		sceneCompanion: f.editor.editorParts.captureEditorLocation(client.input),
 		editorParts: f.editor.editorParts.serialize(f.editor.editorInputSerializers),
 		filesBrowser: f.editor.resourcePanel.serialize(), fontVariant: f.editor.fontVariant,
 		breakpoints: f.ide.debugger.breakpoints.serialize(), dirtyFiles: [],
 	};
 	await applyWorkspaceAutosavePayload(f.editor, f.sources.catalog, f.ide.debugger, payload);
-	assert.ok(f.editor.mainWorkspace.primary === undefined);
+	const replacement = f.editor.mainWorkspace.primary; assert.ok(replacement instanceof ScenePrimaryClient);
+	assert.notEqual(replacement, client);
 	assert.equal(client.hierarchy.control.hasView, false); assert.equal(client.details.control.hasView, false);
-	assert.equal(client.consumer.isCurrent, false);
+	assert.equal(client.authoring.isCurrent, false);
 	assert.ok(editorTextModelService.get(f.model.resource) !== f.model);
-	assert.deepEqual([...f.editor.mainWorkspace.workingCopyConsumers()], []);
+	assert.equal(replacement.input.workingCopy, editorTextModelService.get(f.model.resource));
 });
 
 test('source model retirement invalidates Main authority without choosing another authored subject', async t => {
@@ -206,10 +207,10 @@ test('source model retirement invalidates Main authority without choosing anothe
 	assert.equal(mutation.isEnabled(), true);
 	editorTextModelService.clear();
 	assert.ok(main.primary === client);
-	assert.equal(client.consumer.isCurrent, false); assert.equal(client.consumer.availability, 'unavailable');
+	assert.equal(client.authoring.isCurrent, false); assert.equal(client.authoring.availability, 'unavailable');
 	assert.equal(mutation.isEnabled(), false);
 	assert.equal(client.commandTarget.getCommand('sceneEditor.removeMember')!.isEnabled(), false);
-	const reference: ScenePrimarySnapshot = JSON.parse(main.serialize().primary!.value);
+	const reference: SerializedSceneEditorInput = JSON.parse(f.editor.editorInputSerializers.scene_editor.serialize(client.input));
 	assert.deepEqual(reference.source.resource, f.model.identity);
 	assert.equal(reference.subject.availability, 'unavailable');
 });
@@ -248,10 +249,10 @@ for (const route of ['application', 'native'] as const) for (const valid of [fal
 				assert.equal(inputFocus.target, field.field.focusTarget);
 				return;
 			}
-			const selected = client.consumer.selection;
+			const selected = client.authoring.selection;
 			if (command === 'sceneEditor.removeMember') {
-				assert.equal(client.consumer.subject!.objects.length, 1);
-				const entry = client.consumer.subject!.objects[0]; assert.ok(entry.kind === 'object');
+				assert.equal(client.authoring.subject!.objects.length, 1);
+				const entry = client.authoring.subject!.objects[0]; assert.ok(entry.kind === 'object');
 				const id = entry.memberId;
 				assert.ok(id.kind === LuaSyntaxKind.StringLiteralExpression); assert.equal(id.value, 'source only');
 			} else {
@@ -280,7 +281,7 @@ for (const route of ['application', 'native'] as const)
 		if (route === 'application') f.editor.commands.execute('sceneEditor.removeMember', client.commandTarget);
 		else inputFocus.executeCommand('sceneEditor.removeMember', client.commandTarget);
 		assert.equal(f.model.buffer.getText(), SOURCE.replace('position = { x = 11,', 'position = { x = 123,'));
-		assert.equal(field.pending, false); assert.equal(client.consumer.subject!.objects.length, 2);
+		assert.equal(field.pending, false); assert.equal(client.authoring.subject!.objects.length, 2);
 		assert.equal(client.view.hierarchy.outline.selectionIndex, 2);
 	});
 
@@ -320,14 +321,14 @@ test(`Main hierarchy offers Details only when its ${placement} sibling is not di
 	selectSceneOutlineRow(client.view.hierarchy, 1); f.update();
 	assert.equal(main.setRegionPlacement('details', placement), true); f.update();
 	assert.equal(main.regions.details.displayed, true);
-	main.focusPrimary('hierarchy'); f.key('ContextMenu');
+	main.focusPrimary('hierarchy'); client.hierarchy.actionBar.focusTarget.focus(); f.key('ContextMenu');
 	assert.equal(f.editor.contextMenu.visible, true);
 	assert.equal(f.editor.contextMenu.model.rows.some(row => row.command === 'sceneEditor.details'), false);
 	f.key('Escape');
 	if (placement === 'floatingWindow') assert.equal(main.minimizeRegion('details'), true);
 	else assert.equal(main.setRegionVisible('details', false), true);
 	f.update(); assert.equal(main.regions.details.displayed, false);
-	main.focusPrimary('hierarchy'); f.key('ContextMenu');
+	main.focusPrimary('hierarchy'); client.hierarchy.actionBar.focusTarget.focus(); f.key('ContextMenu');
 	const rows = f.editor.contextMenu.model.rows, index = rows.findIndex(row => row.command === 'sceneEditor.details');
 	assert.ok(index >= 0 && rows[index].enabled, 'a genuinely hidden sibling retains its reveal action');
 	f.key('Home'); for (let row = 0; row < index; row++) if (rows[row].enabled) f.key('ArrowDown'); f.key('Enter'); f.update();
@@ -341,10 +342,10 @@ test('Main panel section membership retires an armed popup when its hidden sibli
 	const f = fixture(t); assert.equal(await f.open(0), true); f.update();
 	const main = f.editor.mainWorkspace, client = main.primary; assert.ok(client instanceof ScenePrimaryClient);
 	selectSceneOutlineRow(client.view.hierarchy, 1); f.update();
-	assert.equal(main.setRegionVisible('details', false), true); main.focusPrimary('hierarchy'); f.key('ContextMenu');
+	assert.equal(main.setRegionVisible('details', false), true); main.focusPrimary('hierarchy'); client.hierarchy.actionBar.focusTarget.focus(); f.key('ContextMenu');
 	assert.ok(f.editor.contextMenu.model.rows.some(row => row.command === 'sceneEditor.details' && row.enabled));
 	assert.equal(main.setRegionVisible('details', true), true); f.update();
 	assert.equal(f.editor.contextMenu.visible, false);
-	assert.equal(client.consumer.selection?.kind, 'member');
+	assert.equal(client.authoring.selection?.kind, 'member');
 	assert.equal(f.model.canUndo, false);
 });

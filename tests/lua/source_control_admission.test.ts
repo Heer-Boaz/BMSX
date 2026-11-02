@@ -13,6 +13,8 @@ import { inputFocus } from '../../ide/input/focus';
 import { captureInstalledLuaSources, registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
 import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
+import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
+import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { LuaProgramEditorPane } from '../../ide/workbench/contrib/lua_program/editor_pane';
 import { RuntimeIdeState } from '../../ide/workbench/state';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
@@ -60,10 +62,10 @@ function fixture(t: TestContext, source: string, apiModule: string) {
 	const editor = ide.editor;
 	editor.editorParts.main.activeGroup.openEditor(resolveLuaCodeEditorInput(sources.catalog, sources.catalog.resolveResource({ contextId: TEST_SYSTEM_CONTEXT_ID, path: registry.entrySourcePath })!));
 	t.after(async () => {
-		const pane = editor.editorParts.main.activeGroup.panes.activePane;
-		if (pane instanceof SceneEditorPane) {
-			for (const control of pane.control.details.controls) control.cancel();
-			for (const entry of pane.control.details.options.controls) if (entry.kind === 'value') entry.control.cancel();
+		const primary = editor.mainWorkspace.primary;
+		if (primary instanceof ScenePrimaryClient) {
+			for (const control of primary.details.control.controls) control.cancel();
+			for (const entry of primary.details.control.options.controls) if (entry.kind === 'value') entry.control.cancel();
 		}
 		inputFocus.cancelInput();
 		inputFocus.setTarget(null);
@@ -86,17 +88,17 @@ function fixture(t: TestContext, source: string, apiModule: string) {
 		editor.sceneEditor.openResource(editor.editorParts.main.activeGroup, model.resource); editor.update(0);
 		const input = editor.editorParts.main.activeGroup.model.activeTab!, pane = editor.editorParts.main.activeGroup.panes.activePane!;
 		assert.ok(input.kind === 'scene_editor' && pane instanceof SceneEditorPane);
-		press('Home'); press('ArrowDown'); press('Enter');
-		assert.equal(input.view.hierarchy.outline.rows[input.view.hierarchy.outline.selectionIndex].element.kind, 'member');
-		return { input, pane };
+		const primary = editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
+		assert.equal(selectSceneOutlineRow(input.view.hierarchy, 1), true); editor.update(0);
+		return { input, pane, primary };
 	};
 	return { editor, model, press, unchanged, scene };
 }
 
 for (const kind of ['position', 'option'] as const) test(`Scene ${kind} draft loses source authority immediately on readonly metadata publication`, t => {
-	const f = fixture(t, SCENE_SOURCE, 'cartlib/world/scene_library'), { pane } = f.scene();
-	const option = pane.control.details.options.controls[0]; assert.ok(option.kind === 'value');
-	const control = kind === 'position' ? pane.control.details.controls[0] : option.control;
+	const f = fixture(t, SCENE_SOURCE, 'cartlib/world/scene_library'), { primary } = f.scene();
+	const option = primary.details.control.options.controls[0]; assert.ok(option.kind === 'value');
+	const control = kind === 'position' ? primary.details.control.controls[0] : option.control;
 	control.field.focusTarget.focus(); assert.ok(inputFocus.admittedTarget === control.field.focusTarget);
 	assert.equal(f.editor.textTarget!.replaceText(0, control.field.text.length, '9'), true);
 	assert.equal(control.pending, true); f.unchanged();
@@ -108,37 +110,32 @@ for (const kind of ['position', 'option'] as const) test(`Scene ${kind} draft lo
 	assert.equal(control.pending, false, 'writable return cannot revive a revoked draft');
 });
 
-test('withholding the Scene group retires its detail draft without publishing through blur', t => {
-	const f = fixture(t, SCENE_SOURCE, 'cartlib/world/scene_library'), { pane } = f.scene(), control = pane.control.details.controls[0];
-	control.field.focusTarget.focus();
+test('a Scene Details draft remains owned by its visible companion when the document group is maximized away', t => {
+	const f = fixture(t, SCENE_SOURCE, 'cartlib/world/scene_library'), { primary } = f.scene(), control = primary.details.control.controls[0];
+	assert.equal(control.field.focusTarget.focus(), true);
 	assert.equal(f.editor.textTarget!.replaceText(0, control.field.text.length, '9'), true);
 	assert.equal(control.pending, true);
 	const part = f.editor.editorParts.main, group = part.activeGroup, sibling = part.splitGroup(group, 'right');
 	part.arrangement.toggleMaximize(sibling); f.editor.update(0);
 	assert.equal(group.presented, false);
-	assert.ok(inputFocus.admittedTarget !== control.field.focusTarget);
-	assert.equal(control.pending, false); f.unchanged();
-	f.press('Enter'); f.press('Digit8'); f.unchanged();
+	assert.ok(inputFocus.admittedTarget === control.field.focusTarget);
+	assert.equal(control.pending, true); f.unchanged();
+	control.cancel(); f.unchanged();
 	part.arrangement.toggleMaximize(sibling); f.editor.update(0);
-	assert.ok(inputFocus.admittedTarget !== control.field.focusTarget, 'recovery does not reactivate hidden draft input');
 });
 
-for (const target of ['outline', 'actions'] as const) test(`an unpresented Scene ${target} cannot retain destructive keyboard admission`, t => {
-	const f = fixture(t, SCENE_SOURCE, 'cartlib/world/scene_library'), { input } = f.scene();
-	// Only a compact Scene has section actions; a split view has no empty toolbar stop.
-	if (target === 'actions') { f.editor.setFontVariant('msx'); f.editor.updateViewport({ width: 220, height: 288 }); f.editor.update(0); }
-	f.press('Escape');
-	if (target === 'actions') assert.notEqual(input.view.layout.mode, 'split');
-	if (target === 'actions') f.press('Tab', KeyModifier.shift);
-	assert.ok(inputFocus.admittedTarget !== null);
-	assert.equal(input.view.actionBar.hasFocus, target === 'actions');
+test('a maximized sibling does not receive Scene hierarchy commands through its independent companion', t => {
+	const f = fixture(t, SCENE_SOURCE, 'cartlib/world/scene_library');
+	const { primary } = f.scene(); primary.hierarchy.control.focus();
+	assert.equal(f.editor.commands.isEnabled('sceneEditor.removeMember'), true);
 	const part = f.editor.editorParts.main, group = part.activeGroup, sibling = part.splitGroup(group, 'right');
 	part.arrangement.toggleMaximize(sibling); f.editor.update(0);
-	assert.ok(inputFocus.admittedTarget === null, 'no covered Scene control retains keyboard admission');
-	assert.equal(input.view.actionBar.hasFocus, false);
+	assert.equal(group.presented, false);
+	assert.equal(sibling.focus(), true);
 	f.press('Delete'); f.unchanged();
+	assert.equal(primary.hierarchy.control.focus(), true);
+	assert.equal(f.editor.commands.isEnabled('sceneEditor.removeMember'), true);
 	part.arrangement.toggleMaximize(sibling); f.editor.update(0);
-	f.press('Delete'); f.unchanged();
 });
 
 test('Scene readonly subscriptions follow input attachment, not repeated selection', async t => {
@@ -149,20 +146,22 @@ test('Scene readonly subscriptions follow input attachment, not repeated selecti
 		return () => { subscriptions--; unbind(); };
 	});
 	const { input, pane } = f.scene();
+	const sceneGroup = f.editor.editorParts.main.activeGroup;
 	// Independently attached regions own their observers; reselection must not add another.
 	const attached = subscriptions;
 	assert.ok(attached > 0);
 	f.editor.sceneEditor.openResource(f.editor.editorParts.main.activeGroup, f.model.resource); f.editor.update(0);
 	assert.equal(subscriptions, attached);
-	f.editor.commands.execute('editor.source', inputFocus.target!.commandContext); await setImmediate(); f.editor.update(0);
-	assert.equal(f.editor.editorParts.main.activeGroup.model.activeTab?.kind, 'code_editor');
-	assert.ok(f.editor.editorParts.main.activeGroup.model.tabs.includes(input), 'Source retains the Scene input in its actual group');
-	assert.equal(subscriptions, 1, 'only the attached Source control retains a readonly observer');
-	f.editor.sceneEditor.openResource(f.editor.editorParts.main.activeGroup, f.model.resource); f.editor.update(0);
-	assert.ok(f.editor.editorParts.main.activeGroup.panes.activePane === pane);
-	assert.equal(subscriptions, attached, 'returning to Scene retires the Source observer and restores its attached regions');
-	f.editor.editorParts.main.activeGroup.panes.clearEditor();
-	assert.equal(subscriptions, 0, 'detaching the Scene retires every region observer');
+	f.editor.commands.execute('editor.source', pane.commandTarget); await setImmediate(); f.editor.update(0);
+	const sourceGroup = f.editor.editorParts.activeGroup;
+	assert.ok(sourceGroup !== sceneGroup && sourceGroup.model.activeTab?.kind === 'code_editor');
+	assert.ok(sceneGroup.model.tabs.includes(input), 'Source does not replace the Scene document');
+	assert.equal(subscriptions, attached + 1, 'Source and Scene controls have separate readonly observers');
+	sceneGroup.focus(); f.editor.update(0);
+	assert.ok(sceneGroup.panes.activePane === pane);
+	assert.equal(subscriptions, attached + 1, 'focusing a retained Scene does not add observers');
+	sceneGroup.panes.clearEditor();
+	assert.equal(subscriptions, 1, 'detaching the Scene retires its observers without detaching Source');
 	f.unchanged();
 });
 

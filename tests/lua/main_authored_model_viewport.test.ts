@@ -44,8 +44,8 @@ scenes.register('sculpture',{objects={${members}}})`;
 	const document = f.ide.sceneSources.get(model);
 	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, scene: document.scenes[0], sourceVersion: model.version } }), inputFocus.target!), true);
 	f.update(); const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
-	assert.equal(client.consumer.availability, 'available'); assert.ok(client.consumer.subject !== undefined);
-	assert.ok(client.consumer.visualScene!.models.length > 0, 'the fixture admits actual model producers before asset availability is tested');
+	assert.equal(client.authoring.availability, 'available'); assert.ok(client.authoring.subject !== undefined);
+	assert.ok(client.authoring.visualScene!.models.length > 0, 'the fixture admits actual model producers before asset availability is tested');
 	const view = client.view.viewport, camera = view.camera.capture();
 	view.camera.restore({ ...camera, space: { ...camera.space, yaw: 0, pitch: 0 } }); f.update();
 	return { ...f, source, model, client, view, context };
@@ -61,15 +61,15 @@ test(`${font} Main submits actual model primitives and pointer selection chooses
 	for (let index = 0; index < commands.commandCount; index++) if (commands.commandKinds[index] === Host2DKind.MeshScene)
 		submissions.push(commands.commandRefs[index] as HostMeshSceneRenderSubmission);
 	assert.equal(submissions.length, 1); assert.ok(submissions[0].scene === scene);
-	const cycles = f.host.runtime.machine.scheduler.nowCycles, front = f.client.consumer.subject!.objects[1];
+	const cycles = f.host.runtime.machine.scheduler.nowCycles, front = f.client.authoring.subject!.objects[1];
 	const x = (view.bounds.left + view.bounds.right) / 2 + view.camera.projectX(0.2, 0.2, 2);
 	const y = (view.bounds.top + view.bounds.bottom) / 2 + view.camera.projectY(0.2, 0.2, 2);
 	assert.ok(view.pick(x, y) === front);
 	for (const down of [true, false]) f.editor.dispatchPointer({ x, y, buttons: down ? PointerButton.Primary : 0,
 		pressedButtons: down ? PointerButton.Primary : 0, releasedButtons: down ? 0 : PointerButton.Primary,
 		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
-	f.update(); assert.ok(f.client.consumer.selection?.kind === 'member' && f.client.consumer.selection.entry === front);
-	assert.ok(f.client.viewport.scope.contains(inputFocus.admittedTarget!.scope));
+	f.update(); assert.ok(f.client.authoring.selection?.kind === 'member' && f.client.authoring.selection.entry === front);
+	assert.ok(f.client.viewportTarget.scope.contains(inputFocus.admittedTarget!.scope));
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false); assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
 });
 
@@ -84,14 +84,15 @@ test('idle Main and camera navigation retain geometry; provider generation retir
 	let retired = 0; mesh.onDispose(() => retired++);
 	f.context.previewRom!.bytes = f.context.previewRom!.bytes.slice(); f.sources.catalog.rebuildResources(); f.update();
 	assert.equal(retired, 1); assert.ok(scene.instances[0].mesh !== mesh);
-	f.editor.mainWorkspace.reset(); assert.equal(retired, 1);
+	const group = f.editor.editorParts.findGroup(f.client.input)!;
+	assert.equal(await group.close(f.client.input.id), true); assert.equal(retired, 1);
 });
 
 test('Frame All remains available when navigation puts every source origin behind the camera', async t => {
 	const f = await fixture(t), camera = f.view.camera.capture();
 	f.view.camera.restore({ ...camera, space: { ...camera.space, centerZ: -100 } }); f.update();
 	assert.equal(f.view.entries.length, 0);
-	const command = f.client.viewport.commandTarget.getCommand('sceneViewport.frameAll')!;
+	const command = f.client.viewportTarget.getCommand('sceneViewport.frameAll')!;
 	assert.equal(command.isEnabled(), true); command.run(); f.update();
 	assert.ok(f.view.entries.length > 0); assert.equal(f.model.canUndo, false);
 });
@@ -102,7 +103,7 @@ test('incomplete triangle assembly does not claim visible model geometry or hide
 	const f = await fixture(t, 'tiny', `{member_id='origin',definition_id='paint'}`, asset);
 	assert.equal(f.view.models.scene.instances.length, 0); assert.equal(f.view.models.represented.size, 0);
 	assert.equal(f.view.camera.capture().space.distance, 8);
-	assert.ok(f.view.pick(f.view.points[0], f.view.points[1]) === f.client.consumer.subject!.objects[0]);
+	assert.ok(f.view.pick(f.view.points[0], f.view.points[1]) === f.client.authoring.subject!.objects[0]);
 });
 
 for (const [name, transform] of [
@@ -112,7 +113,7 @@ for (const [name, transform] of [
 test(`${name} actual indexed vertices determine fit and a full affine remains pickable`, async t => {
 	const f = await fixture(t, 'tiny', `{member_id='face',definition_id='paint',transform={${transform}}}`);
 	assert.ok(f.view.camera.capture().space.distance < 10, 'unused accessor vertices never inflate fit');
-	const hit = f.view.models.pick(0, 0, f.view.camera); assert.ok(hit?.entry === f.client.consumer.subject!.objects[0]);
+	const hit = f.view.models.pick(0, 0, f.view.camera); assert.ok(hit?.entry === f.client.authoring.subject!.objects[0]);
 });
 
 test('large-origin camera, fit and picking preserve small geometry before translation is narrowed or added', async t => {
@@ -121,7 +122,7 @@ test('large-origin camera, fit and picking preserve small geometry before transl
 	assert.equal(scene.originX, origin); assert.ok(camera.capture().space.distance > 1 && camera.capture().space.distance < 10);
 	writeHostMeshClipMatrix(matrix, scene, scene.instances[0]);
 	assert.equal(matrix[12], 0); assert.equal(matrix[13], 0); assert.equal(matrix[15], camera.capture().space.distance);
-	const hit = f.view.models.pick(0, 0, camera); assert.ok(hit?.entry === f.client.consumer.subject!.objects[0]);
+	const hit = f.view.models.pick(0, 0, camera); assert.ok(hit?.entry === f.client.authoring.subject!.objects[0]);
 	assert.equal(hit.originX, origin); assert.ok(Math.abs(hit.x) < 1e-10 && Math.abs(hit.y) < 1e-10);
 });
 
@@ -132,7 +133,7 @@ test('framing preserves an off-origin mesh pivot beside a large world origin', a
 	const camera = f.view.camera, reading = camera.capture().space;
 	assert.equal(reading.originX, origin); assert.equal(reading.centerX, 100); assert.equal(reading.centerY, 200); assert.equal(reading.centerZ, 300);
 	assert.ok(reading.distance > 1 && reading.distance < 10);
-	const hit = f.view.models.pick(0, 0, camera); assert.ok(hit?.entry === f.client.consumer.subject!.objects[0]);
+	const hit = f.view.models.pick(0, 0, camera); assert.ok(hit?.entry === f.client.authoring.subject!.objects[0]);
 	assert.ok(Math.abs(hit.x - 100) < 1e-10 && Math.abs(hit.y - 200) < 1e-10 && Math.abs(hit.z - 300) < 1e-10);
 	camera.zoom(1, 0, 0, hit); f.update(); assert.ok(f.view.models.pick(0, 0, camera)?.entry === hit.entry);
 });

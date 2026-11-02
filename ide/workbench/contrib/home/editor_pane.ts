@@ -24,7 +24,7 @@ export class HomeEditorPane extends WorkbenchViewEditorPane<HomeInput> {
 	public readonly statusItems: readonly WorkbenchStatusItem[] = [{ text: 'Tab: sections | Enter: open', alignment: 'left', priority: STATUS_PRIORITY_HINT, overflow: 'ellipsis', tone: 'normal' }];
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget);
 	private readonly actions: readonly WorkbenchActionBarControl[];
-	private attachedInput: HomeInput | undefined;
+	private layoutInput: HomeInput | undefined;
 	private actionHeight = 0;
 	private sectionHeadingHeight = 0;
 	private headingHeight = 0;
@@ -78,7 +78,7 @@ export class HomeEditorPane extends WorkbenchViewEditorPane<HomeInput> {
 	}
 	public override clearInput(): void {
 		for (const actions of this.actions) actions.clearInput();
-		this.scroll.clearInput(); this.attachedInput = undefined; this.projectedScroll = undefined;
+		this.scroll.clearInput(); this.layoutInput = undefined; this.projectedScroll = undefined;
 		super.clearInput();
 	}
 	public override dispose(): void {
@@ -94,8 +94,8 @@ export class HomeEditorPane extends WorkbenchViewEditorPane<HomeInput> {
 
 	public override update(): void {
 		const input = this.input;
-		const changed = updateFullWidthWorkbenchLayout(input.layout, this.contentBounds) || this.attachedInput !== input;
-		this.attachedInput = input;
+		const changed = updateFullWidthWorkbenchLayout(input.layout, this.contentBounds) || this.layoutInput !== input;
+		this.layoutInput = input;
 		if (changed) {
 			this.layoutCards();
 			this.focusedSection = -1; this.focusedAction = -1;

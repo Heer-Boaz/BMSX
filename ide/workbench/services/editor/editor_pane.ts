@@ -9,8 +9,9 @@ import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../.
 import type { EditorSourceLocation, EditorSourceLocationRequest } from '../../../editor/navigation/source_location';
 import type { EditorFont } from '../../../editor/ui/view/font';
 import type { WorkbenchStatusItem, WorkbenchStatusSource } from '../../common/status_bar';
+import type { NavigationLocation } from '../../../navigation/navigation_history';
 
-export type EditorPaneClearReason = 'deactivate' | 'move';
+export type EditorPaneClearReason = 'deactivate' | 'move' | 'retire';
 
 export type EditorPaneOpenOptions = {
 	readonly selection?: EditorTextSelection;
@@ -39,17 +40,23 @@ export abstract class EditorPane<TInput extends EditorInput> implements Workbenc
 	public get minimumClientHeight(): number { return 0; }
 
 	/** Optional selection capability; editors without one still have an input identity. */
-	public getSelection?(): EditorPaneSelection;
+	public getSelection?(): EditorPaneSelection | undefined;
+	/** Source-backed occurrences may remain navigable after their document is closed. */
+	public captureNavigationLocation?(): NavigationLocation | undefined;
 	/** The contribution owns source meaning and the canonical generation behind its selection. */
 	public getSourceLocation?(): EditorSourceLocation | undefined | Promise<EditorSourceLocation | undefined>;
 	/** Cheap selection capability; command presentation must not resolve or read source. */
 	public get canOpenSource(): boolean { return this.getSourceLocation !== undefined; }
+	/** A pane may require Source to open beside, rather than replace, its content. */
+	public get sourcePlacement(): 'default' | 'side' { return 'default'; }
 	/** Contributions with semantic sub-selection capture its real lifetime before draft publication. */
 	public captureSourceLocation(): EditorSourceLocationRequest | undefined {
 		return this.canOpenSource ? { readLocation: () => this.getSourceLocation!() } : undefined;
 	}
 	private inputValue: TInput | null = null;
 	protected get hasInput(): boolean { return this.inputValue !== null; }
+	/** The pane can be observed during retirement after its input has been withdrawn. */
+	public get attachedInput(): TInput | null { return this.inputValue; }
 
 	public get input(): TInput {
 		return this.inputValue!;
@@ -73,6 +80,12 @@ export abstract class EditorPane<TInput extends EditorInput> implements Workbenc
 	}
 
 	protected abstract activate(): void;
+
+	/** Admit an interactive activation before a group changes its selected input. */
+	public prepareToActivate(_input: TInput): boolean { return true; }
+
+	/** Admission to detach the current concrete presentation, before focus is retired. */
+	public prepareToClearInput(): boolean { return true; }
 
 	public abstract focus(): void;
 

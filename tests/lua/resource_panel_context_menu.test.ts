@@ -78,8 +78,8 @@ test('Scene context Open selects the exact visual Main subject, preserves docume
 	assert.equal(f.editor.contextMenu.model.rows.some(row => row.command === 'resources.openToSide'), false);
 	accept(f, 'resources.open'); assert.equal(open.mock.callCount(), 1); await open.mock.calls[0].result; f.update();
 	const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
-	assert.ok(entry.kind === 'scene' && client.consumer.subject === entry.definition);
-	assert.equal(client.viewport.attached, true);
+	assert.ok(entry.kind === 'scene' && client.authoring.subject === entry.definition);
+	assert.ok(f.editor.editorParts.findGroup(client.input)?.panes.activePane?.input === client.input);
 	assert.ok(f.firstGroup.model.activeTab === f.firstInput && f.secondGroup.model.activeTab === f.secondInput);
 });
 

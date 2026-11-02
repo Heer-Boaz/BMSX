@@ -30,21 +30,29 @@ test('Scene move retains its exact member and canonical history while Source bel
 	assert.ok(input instanceof SceneEditorInput);
 	const model = input.workingCopy;
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- retained\n' }]);
-	input.view.refresh(); selectSceneOutlineRow(input.view.hierarchy, 1); input.view.section = 'details'; f.update();
+	input.view.refresh(); selectSceneOutlineRow(input.view.hierarchy, 1); input.view.preferredPart = 'details'; f.update();
 	const view = captureSceneEditorView(input.view), version = model.version, history = model.history;
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;
 	const originPane = f.firstGroup.panes.activePane!;
 	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, { kind: 'group', group: f.secondPart.activeGroup }), true); f.update();
 	assert.ok(f.secondGroup.model.activeTab === input && f.secondGroup.panes.activePane !== originPane);
 	assert.equal(f.firstGroup.model.findById(input.id), undefined);
-	assert.deepEqual(captureSceneEditorView(input.view), view);
+	const moved = captureSceneEditorView(input.view);
+	const { preferredPart: beforeFocus, ...beforeReading } = view;
+	const { preferredPart: afterFocus, ...afterReading } = moved;
+	assert.equal(beforeFocus, 'details'); assert.equal(afterFocus, 'viewport');
+	assert.deepEqual(afterReading, beforeReading);
 	assert.ok(input.workingCopy === model && model.history === history && model.canUndo);
 	assert.equal(model.version, version); assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
 	f.editor.commands.execute('editor.source', f.secondGroup.panes.activePane!.commandTarget.commandContext); await setImmediate(); f.update();
-	const source = f.secondGroup.panes.activePane!.input;
+	const sourceGroup = f.editor.editorParts.groups.find(group => group !== f.secondGroup
+		&& group.panes.activePane?.input.kind === 'code_editor' && group.panes.activePane.input.workingCopy === model);
+	assert.ok(sourceGroup !== undefined);
+	const source = sourceGroup.panes.activePane!.input;
 	assert.ok(source?.kind === 'code_editor' && source.workingCopy === model);
-	assert.ok(f.editor.editorParts.activePart === f.secondPart && f.firstGroup.model.activeTab === f.firstInput);
-	f.editor.commands.execute('undo', f.secondGroup.panes.activePane!.commandTarget.commandContext);
+	assert.equal(f.secondGroup.model.activeTab, input, 'opening Source does not replace the moved Scene viewport');
+	assert.ok(f.firstGroup.model.activeTab === f.firstInput);
+	f.editor.commands.execute('undo', sourceGroup.panes.activePane!.commandTarget.commandContext);
 	assert.equal(model.buffer.getText(), SCENE_VIEWPORT_SOURCE);
 });
 

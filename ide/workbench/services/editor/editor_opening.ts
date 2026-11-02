@@ -52,8 +52,8 @@ export class EditorOpeningRequest {
 		const preserveFocus = options.preserveFocus || this.focusRevision !== inputFocus.revision;
 		const result = withNavigationCaptureSuspended(() => receiver.openEditor(input, { ...options, ...paneOptions, preserveFocus, isCurrent: () => this.isCurrent }));
 		if (result === undefined) return undefined;
-		// Matching input IDs identify the same editor kind; admission can retain an existing view and dispose the offer.
-		const retained = receiver.model.findById(input.id)! as TInput;
+		// The group returns the actual retained input, which need not share the offered view's gesture ID.
+		const retained = result.input as TInput;
 		if (result.activated) {
 			const previous = this.departure;
 			this.departure = null;

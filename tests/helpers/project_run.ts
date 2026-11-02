@@ -32,9 +32,9 @@ const IMAGES = linkTestBlua32Pair(
 	compileLuaChunkToProgram(parseLuaChunk(CART_SOURCE, 'entry.lua').chunk, [], { entrySource: CART_SOURCE, programDomain: 'cart', optLevel: 0 }),
 );
 
-function registry(root: string, bootable: boolean) {
+function registry(root: string, bootable: boolean, includeScene: boolean) {
 	const result = createLuaSourceRegistry(root, 'entry.lua');
-	for (const [path, source] of [...SCENE_VIEWPORT_IMPORTS, ['entry.lua', CART_SOURCE], ['file.lua', 'return 2'], ['scene.lua', SCENE_VIEWPORT_SOURCE],
+	for (const [path, source] of [...SCENE_VIEWPORT_IMPORTS, ['entry.lua', CART_SOURCE], ['file.lua', 'return 2'], ...(includeScene ? [['scene.lua', SCENE_VIEWPORT_SOURCE]] : []),
 		['cartlib/world/scene_library.lua', 'return {}']]) registerLuaSourceRecord(result, {
 		resid: path, type: 'lua', src: source, base_src: source, source_path: path, normalized_source_path: `${root}/${path}`,
 		module_path: path.slice(0, -4), update_timestamp: 0, base_update_timestamp: 0, generated: false,
@@ -45,9 +45,9 @@ function registry(root: string, bootable: boolean) {
 }
 
 /** Physical synthetic images and independently admitted namespaces; no project or guest launch is executed. */
-export function createProjectRunFixture(t: TestContext, bootable = true, attachments: readonly [0 | 1 | null, 0 | 1 | null] = [0, 1]) {
-	const admitted = createTestRuntimeSourceState(registry('synthetic-system', false),
-		[registry('synthetic-project-a', bootable), registry('synthetic-project-b', true)], SYSTEM_RESOURCE_DOMAIN);
+export function createProjectRunFixture(t: TestContext, bootable = true, attachments: readonly [0 | 1 | null, 0 | 1 | null] = [0, 1], includeScene = true, systemBootable = false) {
+	const admitted = createTestRuntimeSourceState(registry('synthetic-system', systemBootable, includeScene),
+		[registry('synthetic-project-a', bootable, includeScene), registry('synthetic-project-b', true, includeScene)], SYSTEM_RESOURCE_DOMAIN);
 	const system = createTestRomToolingLayer('system', 'synthetic-system', IMAGES.systemRomBytes);
 	const layers = [createTestRomToolingLayer('cart', 'synthetic-project-a', IMAGES.cartRomBytes),
 		createTestRomToolingLayer('cart', 'synthetic-project-b', IMAGES.cartRomBytes)] as const;

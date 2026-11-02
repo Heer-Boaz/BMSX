@@ -41,7 +41,7 @@ async function fixture(t: TestContext, font: 'tiny' | 'msx') {
 	const document = f.ide.sceneSources.get(model);
 	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, scene: document.scenes[0], sourceVersion: model.version } }), inputFocus.target!), true);
 	f.update(); const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
-	assert.equal(client.consumer.availability, 'available'); assert.ok(client.consumer.subject !== undefined);
+	assert.equal(client.authoring.availability, 'available'); assert.ok(client.authoring.subject !== undefined);
 	return { ...f, client, model, packed };
 }
 
@@ -52,7 +52,7 @@ test(`${font} Main paints authored assets and native picking respects shear, tex
 	assert.ok(backSprite.kind === 'sprite' && frontSprite.kind === 'sprite');
 	assert.ok(backSprite.bitmap === frontSprite.bitmap);
 	assert.deepEqual(backSprite.bitmap.image.pixels, f.packed.pixels, 'the packed provider image is the actual displayed data');
-	const scene = f.client.consumer.subject!, back = scene.objects[0], front = scene.objects[1];
+	const scene = f.client.authoring.subject!, back = scene.objects[0], front = scene.objects[1];
 	assert.ok(sprites[0].source.entry === back && sprites[1].source.entry === front);
 	const commands = f.paint(), bitmaps: HostBitmapRenderSubmission[] = [];
 	for (let index = 0; index < commands.commandCount; index++) if (commands.commandKinds[index] === Host2DKind.Bitmap)
@@ -70,8 +70,8 @@ test(`${font} Main paints authored assets and native picking respects shear, tex
 				pressedButtons: down ? PointerButton.Primary : 0, releasedButtons: down ? 0 : PointerButton.Primary,
 				cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 		}
-		f.update(); assert.ok(f.client.consumer.selection?.kind === 'member' && f.client.consumer.selection.entry === expected);
-		assert.ok(f.client.viewport.scope.contains(inputFocus.admittedTarget!.scope));
+		f.update(); assert.ok(f.client.authoring.selection?.kind === 'member' && f.client.authoring.selection.entry === expected);
+		assert.ok(f.client.viewportTarget.scope.contains(inputFocus.admittedTarget!.scope));
 	}
 	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
@@ -86,7 +86,8 @@ test('steady Main reading and camera motion retain decoded pixels and sprite rec
 	view.camera.pan(13, -7); f.update();
 	assert.ok(items[0] === record && record.bitmap === bitmap && bitmap.image.pixels === pixels); assert.equal(bitmap.revision, 0);
 	let retired = 0; bitmap.onDispose(() => retired++);
-	f.editor.mainWorkspace.reset(); assert.equal(retired, 1);
+	const group = f.editor.editorParts.findGroup(f.client.input)!;
+	assert.equal(await group.close(f.client.input.id), true); assert.equal(retired, 1);
 	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
 });
 

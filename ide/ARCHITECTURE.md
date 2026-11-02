@@ -393,21 +393,20 @@ and shared with project-content discovery. `SceneSpatialProjection` owns authore
 topology, prefab capabilities and structural edit admission for that semantic
 generation; `spatial_edits.ts` preserves the consuming source expressions, while
 shared affine math owns composition and parent-space conversion.
-`SceneAuthoringContext` retains source
-correspondence, semantic selection and member editing independently of outline
-rows and document placement. A primary context scopes one exact declaration;
-independent Scene inputs retain their own contexts over shared source models.
+`SceneAuthoringContext` retains source correspondence, semantic selection and
+member editing independently of outline rows and document placement. An exact
+Scene input owns its context over the shared source model.
 `SceneDetailsProjection` derives selected source facts directly from that context,
 without tree rows or measured geometry. Hierarchy and Details retain their own
 reading/placement state and attach through separate controls and input scopes.
-`SceneEditorViewState` and `SceneEditorControl` compose those actual clients with
-shared chrome and region allocation. Semantic selection restore precedes optional
-tree highlighting; disclosure does not determine whether Details has a subject.
-A document pane adapts the composition to a group; `ScenePrimaryClient` supplies
-the viewport and independent region controls directly to Main without an editor
-input. `scene_editor/viewport/` owns independent retained canvas/orbit camera readings,
+`SceneViewState` belongs to the document input. Its editor pane attaches the
+viewport, while Main attaches Hierarchy and Details to the selected real input;
+the companions are not additional working-copy consumers. Semantic selection
+restore precedes optional tree highlighting; disclosure does not determine
+whether Details has a subject. Navigation retains inert source correspondence,
+not an additional input or control. `scene_editor/viewport/` owns retained canvas/orbit camera readings,
 source-pose projection, asset-quad and triangle painting/picking and its concrete native input/capture
-lifetime. Camera reading state persists with the primary subject, independently
+lifetime. Camera reading state persists with the document subject, independently
 of document topology. It consumes the existing spatial projection's readonly
 world-affine cache and the context's exact source selection, not another Scene
 forest or a running machine frame. A separate snapshot-cached visual projection

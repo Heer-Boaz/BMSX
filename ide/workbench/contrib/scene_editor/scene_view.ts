@@ -5,8 +5,8 @@ import { SceneHierarchyViewState } from './hierarchy_view';
 import { SceneDetailsViewState } from './details_view';
 import { SceneViewportViewState } from './viewport/view_state';
 
-/** Primary reading state has no document tab, compact section or document layout. */
-export class ScenePrimaryViewState {
+/** One Scene document's retained reading and viewport, independent of its presentations. */
+export class SceneViewState {
 	public readonly hierarchy: SceneHierarchyViewState;
 	public readonly details: SceneDetailsViewState;
 	public readonly viewport: SceneViewportViewState;

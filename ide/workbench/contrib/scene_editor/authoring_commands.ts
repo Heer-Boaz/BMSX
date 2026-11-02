@@ -4,7 +4,7 @@ import type { EditorCommandId } from '../../../common/commands';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import type { QuickPickItem } from '../../services/quick_input/provider';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
-import type { InputFocusTarget } from '../../../input/focus';
+import type { FocusCommand, InputFocusTarget } from '../../../input/focus';
 import type { SceneAuthoringContext } from './authoring_context';
 import type { SceneReparentChoice, SceneReparentMode } from './spatial_projection';
 
@@ -23,6 +23,7 @@ type SceneAction = {
 export class SceneAuthoringCommands {
 	private context: SceneAuthoringContext | undefined;
 	private revision = 0;
+	private readonly commands = new Map<EditorCommandId, FocusCommand>();
 	public constructor(private readonly target: InputFocusTarget, private readonly quickInput: QuickInputController,
 		private readonly didMove: (context: SceneAuthoringContext) => void) {
 		const actions: SceneAction[] = [
@@ -41,7 +42,7 @@ export class SceneAuthoringCommands {
 			run: context => this.reparent(context, 'keep_world') },
 		{ command: 'sceneEditor.reparentMemberKeepLocal', isEnabled: context => context.canReparentSelectedMember('keep_local'),
 			run: context => this.reparent(context, 'keep_local') });
-		for (const action of actions) target.registerCommand(action.command, {
+		for (const action of actions) this.commands.set(action.command, {
 			contextual: true,
 			isEnabled: () => this.context !== undefined && action.isEnabled(this.context),
 			run: () => action.run(this.context!),
@@ -57,7 +58,7 @@ export class SceneAuthoringCommands {
 				}, run: () => { if (current()) action.run(context); } };
 			},
 		});
-		for (const direction of ['undo', 'redo'] as const) target.registerCommand(direction, {
+		for (const direction of ['undo', 'redo'] as const) this.commands.set(direction, {
 			contextual: true,
 			isEnabled: () => this.context !== undefined && !this.context.workingCopy.readOnly
 				&& (direction === 'undo' ? this.context.workingCopy.canUndo : this.context.workingCopy.canRedo),
@@ -72,6 +73,13 @@ export class SceneAuthoringCommands {
 					run: () => { if (current()) executeTextHistoryCommand(context.workingCopy, direction); } };
 			},
 		});
+		this.attach(target);
+	}
+	public attach(target: InputFocusTarget): void {
+		for (const [id, command] of this.commands) target.registerCommand(id, command);
+	}
+	public detach(target: InputFocusTarget): void {
+		for (const [id, command] of this.commands) if (target.getCommand(id) === command) target.unregisterCommand(id);
 	}
 	private reparent(context: SceneAuthoringContext, mode: SceneReparentMode): void {
 		const world = mode === 'keep_world' ? context.captureReparent('keep_world') : undefined;
@@ -128,8 +136,6 @@ export class SceneAuthoringCommands {
 	public clear(): void { this.context = undefined; this.revision++; }
 	public dispose(): void {
 		this.clear();
-		for (const command of ['sceneEditor.removeMember', 'sceneEditor.removeSubtree', 'sceneEditor.renameMember', 'sceneEditor.reparentMember',
-			'sceneEditor.reparentMemberKeepLocal', 'sceneEditor.moveMemberUp', 'sceneEditor.moveMemberDown', 'undo', 'redo'] as const)
-			this.target.unregisterCommand(command);
+		this.detach(this.target);
 	}
 }

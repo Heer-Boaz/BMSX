@@ -16,22 +16,18 @@ import { TextQuickPickProvider } from '../../services/quick_input/text_provider'
 import { createWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchCompositeMenu, WorkbenchMenu, type WorkbenchMenuCommandDefinition, type WorkbenchMenuDefinition } from '../../ui/menu/model';
 import { WorkbenchViewPanel } from '../../ui/view_panel/control';
-import { SceneAuthoringContext, type SceneAuthoredSubject } from './authoring_context';
+import type { SceneAuthoringContext } from './authoring_context';
 import { SceneAuthoringCommands } from './authoring_commands';
 import { SceneHierarchyControl } from './hierarchy_control';
 import { SceneDetailsControl } from './details_control';
 import { measureSceneHierarchy } from './hierarchy_layout';
 import { measureSceneDetails } from './details_layout';
-import { ScenePrimaryBookmark } from './primary_bookmark';
-import { ScenePrimaryNavigationLocation, type RestoreScenePrimaryBookmark } from './primary_location';
-import { captureScenePrimary, restoreScenePrimaryView, type ScenePrimaryViewSnapshot } from './primary_snapshot';
-import { ScenePrimaryViewState } from './primary_view';
-import type { SceneSourceDocuments } from './source_documents';
+import type { SceneViewState } from './scene_view';
+import type { SceneEditorInput } from './editor_input';
 import type { SceneHierarchyViewState } from './hierarchy_view';
 import type { SceneDetailsViewState } from './details_view';
 import type { SceneEditorSectionCommands } from './option_editor';
-import { SceneViewportControl, measureSceneViewport, VIEWPORT_CONTEXT_ACTIONS } from './viewport/control';
-import type { SceneViewportViewState } from './viewport/view_state';
+import type { SceneViewportControl } from './viewport/control';
 
 export type ScenePrimaryClientOptions = {
 	readonly commands: EditorCommandRunner;
@@ -45,7 +41,7 @@ export type ScenePrimaryClientOptions = {
 	readonly scope: InputFocusScope;
 	readonly focusReturn: InputFocusTarget;
 	readonly main: MainWorkspace;
-	readonly restoreNavigation: RestoreScenePrimaryBookmark;
+	readonly isCurrent: () => boolean;
 	createProjectRunCommand(model: EditorTextModel, target: InputFocusTarget, isRetained: () => boolean): FocusCommand;
 	save(model: EditorTextModel): void;
 };
@@ -61,25 +57,41 @@ const DETAILS_PANEL_CONTEXT: WorkbenchMenuDefinition<MainWorkspace> = [
 
 /** One exact Scene context, with an authored viewport and independent hierarchy/Details presentations. */
 export class ScenePrimaryClient implements MainWorkspaceClient {
-	public readonly view: ScenePrimaryViewState;
+	public readonly view: SceneViewState;
 	public readonly hierarchy: WorkbenchViewPanel<SceneHierarchyViewState, SceneHierarchyControl>;
 	public readonly details: WorkbenchViewPanel<SceneDetailsViewState, SceneDetailsControl>;
-	public readonly viewport: WorkbenchViewPanel<SceneViewportViewState, SceneViewportControl>;
+	public readonly viewportTarget: InputFocusTarget;
+	public readonly authoring: SceneAuthoringContext;
 	public readonly scope: InputFocusScope;
 	public readonly commandTarget: InputFocusTarget;
 	private readonly authoringCommands: SceneAuthoringCommands;
 	private readonly unbindInteraction: () => void;
+	private readonly addMemberCommand: FocusCommand;
+	private readonly sections: SceneEditorSectionCommands;
 	private disposed = false;
 	private readonly statusItem: WorkbenchStatusItem = { text: '', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' };
 	public readonly statusItems = [this.statusItem];
 
-	public constructor(public readonly consumer: SceneAuthoringContext, private readonly options: ScenePrimaryClientOptions) {
-		this.scope = options.scope; this.view = new ScenePrimaryViewState(consumer, options.sources.catalog);
+	public constructor(public readonly input: SceneEditorInput, private readonly viewport: SceneViewportControl,
+		private readonly options: ScenePrimaryClientOptions) {
+		const consumer = this.authoring = input.view.authoring;
+		this.scope = options.scope; this.view = input.view; this.viewportTarget = viewport.focusTarget;
 		this.commandTarget = inputFocus.createTarget(options.focusReturn, this.scope);
 		this.commandTarget.canFocus = () => false;
-		const sections: SceneEditorSectionCommands = {
-			outline: { contextual: true, isEnabled: () => !this.disposed, run: () => options.main.focusPrimary('hierarchy') },
-			details: { contextual: true, isEnabled: () => !this.disposed && consumer.hasSelection, run: () => options.main.focusPrimary('details') },
+		const sections: SceneEditorSectionCommands = this.sections = {
+			outline: { contextual: true, isEnabled: () => !this.disposed, run: () => options.main.focusPrimary('hierarchy'),
+				capture: () => {
+					const generation = this.scope.contextGeneration;
+					const current = () => !this.disposed && this.scope.contextGeneration === generation && options.main.primary === this;
+					return { editScope: this.scope, isEnabled: current, run: () => { if (current()) options.main.focusPrimary('hierarchy'); } };
+				} },
+			details: { contextual: true, isEnabled: () => !this.disposed && consumer.hasSelection, run: () => options.main.focusPrimary('details'),
+				capture: () => {
+					const generation = this.scope.contextGeneration;
+					const current = () => !this.disposed && this.scope.contextGeneration === generation && options.main.primary === this;
+					return { editScope: this.scope, isEnabled: () => current() && consumer.hasSelection,
+						run: () => { if (current() && consumer.hasSelection) options.main.focusPrimary('details'); } };
+				} },
 		};
 		this.commandTarget.registerCommand('sceneEditor.outline', sections.outline);
 		this.commandTarget.registerCommand('sceneEditor.details', sections.details);
@@ -122,13 +134,7 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 			surface: options.presentations.details, actions: createWorkbenchActionBar(new WorkbenchMenu([], undefined), true, detailsMenu),
 			contextActions: detailsMenu, measureContent: measureSceneDetails,
 			createControl: (scope, target) => new SceneDetailsControl(options.commands, options.contextMenu, scope, target, sections, detailsContext) });
-		const viewportMenu = new WorkbenchMenu(VIEWPORT_CONTEXT_ACTIONS, this.view.viewport);
-		this.viewport = new WorkbenchViewPanel({ ...common, title: 'Scene', view: this.view.viewport, surface: options.presentations.viewport,
-			bodyContextMenu: 'content',
-			actions: createWorkbenchActionBar(new WorkbenchMenu([], undefined)), contextActions: viewportMenu, measureContent: measureSceneViewport,
-			createControl: (scope, target) => new SceneViewportControl(options.commands, options.contextMenu, scope, target, viewportMenu) });
-		this.viewport.setHeaderVisible(false);
-		this.commandTarget.registerCommand('sceneEditor.addMember', {
+		const addMember: FocusCommand = this.addMemberCommand = {
 			contextual: true,
 			isEnabled: () => this.canAddMember,
 			run: () => this.addMember(),
@@ -137,70 +143,68 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 				return { editScope: this.scope, isEnabled: () => this.scope.contextGeneration === generation && this.canAddMember,
 					run: () => { if (this.scope.contextGeneration === generation && this.canAddMember) this.addMember(); } };
 			},
-		});
+		};
+		this.commandTarget.registerCommand('sceneEditor.addMember', addMember);
 		this.unbindInteraction = inputFocus.onDidActivateInteraction(target => {
 			if (this.disposed) return;
 			if (this.hierarchy.attached && this.hierarchy.scope.contains(target.scope)) this.view.preferredPart = 'hierarchy';
 			else if (this.details.attached && this.details.scope.contains(target.scope)) this.view.preferredPart = 'details';
-			else if (this.viewport.attached && this.viewport.scope.contains(target.scope)) this.view.preferredPart = 'viewport';
+			else if (this.viewportTarget.scope.contains(target.scope)) this.view.preferredPart = 'viewport';
 		});
 	}
 	private get canAddMember(): boolean {
-		return !this.disposed && this.viewport.attached && this.consumer.canAddMember(this.view.viewport.camera.mode);
+		return !this.disposed && this.options.isCurrent() && this.viewport.canFocus && this.authoring.canAddMember(this.view.viewport.camera.mode);
+	}
+	public attach(): void {
+		this.viewportTarget.registerCommand('sceneEditor.addMember', this.addMemberCommand);
+		this.viewportTarget.registerCommand('sceneEditor.outline', this.sections.outline);
+		this.viewportTarget.registerCommand('sceneEditor.details', this.sections.details);
+		this.authoringCommands.attach(this.viewportTarget);
 	}
 	private addMember(): void {
 		const camera = this.view.viewport.camera, family = camera.mode;
-		const request = this.consumer.captureAddMember(family); if (request === undefined) return;
+		const request = this.authoring.captureAddMember(family); if (request === undefined) return;
 		const generation = this.scope.contextGeneration;
 		const items = request.choices.map(choice => ({ choice, label: choice.id, description: '', detail: '' }));
 		this.options.quickInput.pick('Add', 'Choose a prefab, then click the scene', () => new TextQuickPickProvider(items), (item, _modifiers, preserveFocus) => {
 			if (preserveFocus || this.disposed || this.scope.contextGeneration !== generation || !request.isCurrent()) return;
-			this.viewport.control.beginAddMember(request, item.choice, () => {
+			this.viewport.beginAddMember(request, item.choice, () => {
 				if (this.hierarchy.attached) { this.hierarchy.control.update(); this.hierarchy.control.revealSelection(); }
 			});
 		}, lifetime => {
-			lifetime.add({ dispose: this.consumer.workingCopy.onDidChangeContent(() => this.options.quickInput.hide()) });
-			lifetime.add({ dispose: this.consumer.onDidChangeSelection(() => this.options.quickInput.hide()) });
-			lifetime.add({ dispose: this.consumer.onDidChangeSpatialGeneration(() => this.options.quickInput.hide()) });
-			lifetime.add({ dispose: this.consumer.workingCopy.onDidChangeReadOnly(() => this.options.quickInput.hide()) });
+			lifetime.add({ dispose: this.authoring.workingCopy.onDidChangeContent(() => this.options.quickInput.hide()) });
+			lifetime.add({ dispose: this.authoring.onDidChangeSelection(() => this.options.quickInput.hide()) });
+			lifetime.add({ dispose: this.authoring.onDidChangeSpatialGeneration(() => this.options.quickInput.hide()) });
+			lifetime.add({ dispose: this.authoring.workingCopy.onDidChangeReadOnly(() => this.options.quickInput.hide()) });
 			lifetime.add({ dispose: camera.onDidChange(() => this.options.quickInput.hide()) });
 		}, { commandTarget: this.commandTarget });
 	}
 	public get preferredPart(): MainWorkspacePrimaryPartId { return this.view.preferredPart; }
-	public serialize() { return { kind: 'scene' as const, value: JSON.stringify(captureScenePrimary(this.view)) }; }
 	public onDidChange(listener: () => void): () => void { return this.view.onDidChange(listener); }
-	public captureNavigationLocation(): ScenePrimaryNavigationLocation | undefined {
-		const bookmark = new ScenePrimaryBookmark(this.consumer, this.view);
-		if (bookmark.isDisposed) { bookmark.dispose(); return undefined; }
-		return new ScenePrimaryNavigationLocation(bookmark, this.options.main, this.options.restoreNavigation);
-	}
 	public get canOpenSource(): boolean { return !this.disposed; }
-	public captureSourceLocation() { return this.disposed ? undefined : this.consumer.captureSourceLocation(); }
-	public isCurrent(): boolean { return !this.disposed && this.consumer.isCurrent && this.consumer.availability === 'available'; }
+	public captureSourceLocation() { return this.disposed ? undefined : this.authoring.captureSourceLocation(); }
+	public isCurrent(): boolean { return !this.disposed && this.options.isCurrent() && this.authoring.isCurrent; }
 	public update(): void {
-		this.consumer.refresh();
+		this.authoring.refresh();
 	}
-	public focus(region: MainWorkspacePrimaryPartId = this.preferredPart): void { this[region].focus(); }
+	public focus(region: MainWorkspacePrimaryPartId = this.preferredPart): void {
+		if (region === 'viewport') this.viewport.focus(); else this[region].focus();
+	}
 	public updateStatus(): void {
-		const status = getTextFileRuntimeSourceStatus(this.options.sources, this.consumer.workingCopy);
+		const status = getTextFileRuntimeSourceStatus(this.options.sources, this.authoring.workingCopy);
 		this.statusItem.text = SOURCE_STATUS[status];
 		this.statusItem.tone = status === 'failed' ? 'error' : 'normal';
 		this.statusItem.priority = status === 'failed' ? STATUS_PRIORITY_ERROR : STATUS_PRIORITY_CONTENT;
 	}
 	public dispose(): void {
 		this.disposed = true; this.authoringCommands.dispose(); this.unbindInteraction();
-		this.hierarchy.dispose(); this.details.dispose(); this.viewport.dispose(); this.view.dispose(); this.consumer.dispose();
+		if (this.viewportTarget.getCommand('sceneEditor.addMember') === this.addMemberCommand)
+			this.viewportTarget.unregisterCommand('sceneEditor.addMember');
+		if (this.viewportTarget.getCommand('sceneEditor.outline') === this.sections.outline) this.viewportTarget.unregisterCommand('sceneEditor.outline');
+		if (this.viewportTarget.getCommand('sceneEditor.details') === this.sections.details) this.viewportTarget.unregisterCommand('sceneEditor.details');
+		this.authoringCommands.detach(this.viewportTarget);
+		this.hierarchy.dispose(); this.details.dispose();
 	}
-}
-
-export function createScenePrimaryClient(model: EditorTextModel, documents: SceneSourceDocuments, subject: SceneAuthoredSubject,
-	options: ScenePrimaryClientOptions, view?: ScenePrimaryViewSnapshot): ScenePrimaryClient | undefined {
-	const context = new SceneAuthoringContext(model, documents, subject);
-	if (!context.isCurrent || context.availability !== 'available') { context.dispose(); return undefined; }
-	context.select(context.document!, model.version, { kind: 'scene', scene: context.subject! });
-	const client = new ScenePrimaryClient(context, options);
-	if (view !== undefined) restoreScenePrimaryView(client.view, view);
-	return client;
 }
 const SOURCE_STATUS = {
 	applied: 'SOURCE APPLIED', pending: 'SOURCE NOT APPLIED', failed: 'SOURCE APPLY FAILED',

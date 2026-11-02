@@ -11,6 +11,8 @@ export type SourceNavigationCaptureOptions = {
 export type SourceNavigationOrigin = {
 	readonly commandTarget: InputFocusTarget;
 	readonly anchor: EditorGroupView;
+	/** A producer may need its own document to remain visible beside Source. */
+	readonly preferredPlacement?: 'side';
 	/** The document attachment whose opening receipt this producer advances during resolution. */
 	readonly openingOwner?: EditorGroupView;
 	readonly readLocation: EditorSourceLocationReader;

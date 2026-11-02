@@ -3,11 +3,12 @@ import test from 'node:test';
 import { setImmediate } from 'node:timers/promises';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { inputFocus } from '../../ide/input/focus';
+import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import { createProjectRunFixture } from '../helpers/project_run';
 import { TEST_CARTRIDGE_CONTEXT_IDS, TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 
 test('retained Main Run Project reacquires invocation authority after actual editor suspend and resume', async t => {
-	const f = createProjectRunFixture(t);
+	const f = createProjectRunFixture(t, true, [0, 1], true, true);
 	f.open(TEST_CARTRIDGE_CONTEXT_IDS[1]);
 	const { model, primary } = await f.openMain(), main = f.editor.mainWorkspace;
 	const command = primary.commandTarget.getCommand('runProject')!;
@@ -15,26 +16,27 @@ test('retained Main Run Project reacquires invocation authority after actual edi
 	const previous = command.capture!(); assert.ok(previous !== undefined);
 	const generation = primary.scope.contextGeneration;
 	f.editor.deactivate();
-	assert.equal(main.primary, primary);
+	assert.equal(main.primary, undefined);
 	assert.ok(primary.scope.contextGeneration > generation);
 	f.editor.activate(); f.update();
-	assert.equal(main.primary, primary);
-	assert.equal(primary.commandTarget.getCommand('runProject'), command);
-	assert.equal(command.isEnabled(), true);
+	assert.equal(f.editor.isActive, true);
+	const resumed = main.primary; assert.ok(resumed instanceof ScenePrimaryClient && resumed.input === primary.input);
+	assert.equal(command.isEnabled(), false);
+	assert.equal(resumed.commandTarget.getCommand('runProject')!.isEnabled(), true);
 	assert.equal(previous.isEnabled(), false);
 	previous.run();
 	assert.equal(f.editor.editorParts.main.quickInput.visible, false);
 	assert.equal(f.requests.length, 0);
-	inputFocus.executeCommand('runProject', primary.commandTarget);
+	inputFocus.executeCommand('runProject', resumed.commandTarget);
 	const picker = f.editor.editorParts.main.quickInput;
 	assert.equal(picker.visible, true);
-	assert.equal(picker.invocationOrigin, primary.commandTarget);
+	assert.equal(picker.invocationOrigin, resumed.commandTarget);
 	assert.equal(picker.model.items.length, 1);
-	assert.equal(primary.consumer.workingCopy, model);
+	assert.equal(resumed.authoring.workingCopy, model);
 });
 
 test('Main project choice survives unrelated document replacement but retires with its actual semantic presentation', async t => {
-	const f = createProjectRunFixture(t), background = f.open(TEST_CARTRIDGE_CONTEXT_IDS[1]);
+	const f = createProjectRunFixture(t, true, [0, 1], true, true), background = f.open(TEST_CARTRIDGE_CONTEXT_IDS[1]);
 	const { primary } = await f.openMain(), main = f.editor.mainWorkspace;
 	assert.equal(background.target.focus(), true);
 	inputFocus.executeCommand('runProject', primary.commandTarget);
@@ -48,25 +50,26 @@ test('Main project choice survives unrelated document replacement but retires wi
 	assert.equal(f.requests.length, 0);
 	f.editor.deactivate();
 	assert.equal(picker.visible, false);
-	assert.equal(main.primary, primary);
+	assert.equal(main.primary, undefined);
 	f.editor.activate(); f.update();
-	assert.equal(main.primary, primary);
-	assert.equal(f.editor.commands.isEnabled('runProject', primary.commandTarget), true);
-	inputFocus.executeCommand('runProject', primary.commandTarget);
+	assert.equal(f.editor.isActive, true);
+	const resumed = main.primary; assert.ok(resumed instanceof ScenePrimaryClient && resumed.input === primary.input);
+	assert.equal(f.editor.commands.isEnabled('runProject', resumed.commandTarget), true);
+	inputFocus.executeCommand('runProject', resumed.commandTarget);
 	assert.equal(picker.visible, true);
-	assert.equal(picker.invocationOrigin, primary.commandTarget);
+	assert.equal(picker.invocationOrigin, resumed.commandTarget);
 	assert.equal(f.requests.length, 0);
 });
 
 test('a disposed Main command cannot reacquire its still-admitted model after another project becomes Main', async t => {
-	const f = createProjectRunFixture(t);
+	const f = createProjectRunFixture(t, true, [0, 1], true, true);
 	f.open(TEST_CARTRIDGE_CONTEXT_IDS[1]);
 	const previous = await f.openMain();
 	const command = previous.primary.commandTarget.getCommand('runProject')!;
 	const invocation = command.capture!(); assert.ok(invocation !== undefined);
 	const current = await f.openMain(TEST_CARTRIDGE_CONTEXT_IDS[1]);
-	assert.notEqual(current.primary, previous.primary);
-	assert.equal(f.editor.mainWorkspace.primary, current.primary);
+	assert.ok(current.primary !== previous.primary);
+	assert.ok(f.editor.mainWorkspace.primary === current.primary);
 	assert.equal(editorTextModelService.get(previous.model.identity), previous.model);
 	assert.equal(command.isEnabled(), false);
 	assert.equal(invocation.isEnabled(), false);

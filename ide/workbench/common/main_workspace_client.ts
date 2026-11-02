@@ -2,17 +2,16 @@ import type { RectBounds } from '../../../machine/ts/common/rect';
 import type { EditorSourceLocationRequest } from '../../editor/navigation/source_location';
 import type { EditorFont } from '../../editor/ui/view/font';
 import type { InputFocusScope, InputFocusTarget } from '../../input/focus';
-import type { PrimaryNavigationLocation } from '../../navigation/navigation_history';
-import type { WorkingCopyConsumer } from '../services/editor/editor_close';
+import type { TextEditorInput } from './editor_input';
+import type { EditorInput } from './editor_inputs';
 import type { WorkbenchSurface } from '../services/windows/model';
 import type { WorkbenchViewSizeConstraints } from './layout';
-import type { SerializedPrimaryClient } from './main_workspace_serialization';
 import type { WorkbenchStatusSource } from './status_bar';
 import type { WorkbenchMenuPresentation } from '../ui/menu/model';
 
 export type MainWorkspaceRegionId = 'hierarchy' | 'details';
 export type MainWorkspacePrimaryPartId = MainWorkspaceRegionId | 'viewport';
-export type MainWorkspaceClientSurfaces = Readonly<Record<MainWorkspacePrimaryPartId, WorkbenchSurface>>;
+export type MainWorkspaceClientSurfaces = Readonly<Record<MainWorkspaceRegionId, WorkbenchSurface>>;
 
 /** A real presentation over a retained contribution view, not another document input. */
 export interface MainWorkspaceContentClient {
@@ -33,20 +32,20 @@ export interface MainWorkspaceRegionClient extends MainWorkspaceContentClient {
 	setHeaderVisible(visible: boolean): void;
 }
 
-/** One semantic subject and working-copy consumer, with independently attached named presentations. */
+/** Companion presentations for one document-owned Scene attachment. */
 export interface MainWorkspaceClient extends WorkbenchStatusSource {
-	readonly consumer: WorkingCopyConsumer;
+	readonly input: EditorInput & TextEditorInput<string, string>;
+	readonly viewportTarget: InputFocusTarget;
 	readonly scope: InputFocusScope;
 	readonly commandTarget: InputFocusTarget;
 	readonly hierarchy: MainWorkspaceRegionClient;
 	readonly details: MainWorkspaceRegionClient;
-	readonly viewport: MainWorkspaceContentClient;
 	readonly preferredPart: MainWorkspacePrimaryPartId;
 	readonly canOpenSource?: boolean;
 	captureSourceLocation?(): EditorSourceLocationRequest | undefined;
-	serialize(): SerializedPrimaryClient;
+	/** Publish bindings to the already admitted document attachment. */
+	attach(): void;
 	onDidChange(listener: () => void): () => void;
-	captureNavigationLocation(): PrimaryNavigationLocation | undefined;
 	isCurrent(): boolean;
 	update(): void;
 	focus(part?: MainWorkspacePrimaryPartId): void;

@@ -35,7 +35,7 @@ for (const region of ['hierarchy', 'details'] as const)
 		const f = await fixture(t), view = f.primary[region], part = f.main.regions[region];
 		f.main.focusPrimary(region);
 		const target = inputFocus.admittedTarget!, generation = view.scope.contextGeneration;
-		const selection = f.primary.consumer.selection, documents = [...f.editor.editorParts.documents];
+		const selection = f.primary.authoring.selection, documents = [...f.editor.editorParts.documents];
 		const attach = t.mock.method(view.control, 'setView'), detach = t.mock.method(view.control, 'clearView');
 		for (let cycle = 0; cycle < 3; cycle++) {
 			assert.equal(f.main.setRegionPlacement(region, 'floatingWindow'), true); f.update();
@@ -50,8 +50,8 @@ for (const region of ['hierarchy', 'details'] as const)
 			assert.ok(inputFocus.admittedTarget === target); assert.equal(view.scope.contextGeneration, generation);
 		}
 		assert.equal(attach.mock.callCount(), 0); assert.equal(detach.mock.callCount(), 0);
-		assert.ok(f.main.primary === f.primary && f.primary.consumer.selection === selection);
-		const consumers = [...f.main.workingCopyConsumers()]; assert.ok(consumers.length === 1 && consumers[0] === f.primary.consumer);
+		assert.ok(f.main.primary === f.primary && f.primary.authoring.selection === selection);
+		assert.ok(f.editor.editorParts.findGroup(f.primary.input)?.model.tabs.includes(f.primary.input));
 		assert.ok(f.editor.editorParts.documents.length === documents.length && documents.every((input, index) => f.editor.editorParts.documents[index] === input));
 		assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
 	});
@@ -60,11 +60,11 @@ for (const draft of ['31', '('])
 	test(`pure Details relocation preserves its ${draft === '31' ? 'valid' : 'invalid'} concrete field draft`, async t => {
 		const f = await fixture(t), panel = f.primary.details, control = panel.control.controls[0];
 		assert.equal(control.field.focusTarget.focus(), true); setFieldText(control.field, draft, true);
-		const field = control.field.focusTarget, selection = f.primary.consumer.selection, generation = panel.scope.contextGeneration;
+		const field = control.field.focusTarget, selection = f.primary.authoring.selection, generation = panel.scope.contextGeneration;
 		for (const placement of ['floatingWindow', 'dockedMain'] as const) {
 			assert.equal(f.main.setRegionPlacement('details', placement), true); f.update();
 			assert.ok(inputFocus.admittedTarget === field); assert.equal(control.pending, true); assert.equal(control.field.text, draft);
-			assert.equal(panel.scope.contextGeneration, generation); assert.ok(f.primary.consumer.selection === selection);
+			assert.equal(panel.scope.contextGeneration, generation); assert.ok(f.primary.authoring.selection === selection);
 			assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
 		}
 		if (draft === '31') {
@@ -104,49 +104,105 @@ for (const region of ['hierarchy', 'details'] as const)
 		f.main.setRegionPlacement(region, 'dockedMain');
 		const restore = f.main.beginRestore();
 		try {
-			assert.equal(await restore.restore(snapshot, (...args) => f.editor.restorePrimaryClient(...args)), true);
+			assert.equal(await restore.restore(snapshot), true);
 			restore.focusClient(); f.update();
 			assert.equal(part.placement, 'floatingWindow'); assert.equal(part.window.model.placement, 'right');
 			assert.equal(part.window.model.minimized, true); assert.equal(part.window.isOpen, true); assert.equal(part.displayed, false);
 			// Requested placement is the persisted data contract, not an incidental rendered rectangle.
 			assert.deepEqual(part.window.model.requestedBounds, requested);
-			const primary = f.main.primary; assert.ok(primary instanceof ScenePrimaryClient && primary !== f.primary);
-			assert.ok(primary.consumer.workingCopy === f.model); assert.equal(f.model.buffer.getText(), SOURCE);
+			const primary = f.main.primary; assert.ok(primary instanceof ScenePrimaryClient && primary === f.primary);
+			assert.ok(primary.authoring.workingCopy === f.model); assert.equal(f.model.buffer.getText(), SOURCE);
 			f.main.focusPrimary(region); f.update(); assert.equal(part.displayed, true);
 			assert.ok(part.client === primary[region]);
 		} finally { restore.dispose(); }
 	});
 
-test('a newer region placement and document focus supersede an awaited primary recovery', async t => {
+test('a newer region placement and document focus supersede an older layout recovery', async t => {
 	const f = await fixture(t), part = f.main.regions.details;
 	f.main.setRegionPlacement('details', 'floatingWindow');
-	const snapshot = f.main.serialize(), ready = Promise.withResolvers<void>(), restore = f.main.beginRestore();
-	const restoring = restore.restore(snapshot, async (...args) => { await ready.promise; return f.editor.restorePrimaryClient(...args); });
+	const snapshot = f.main.serialize(), restore = f.main.beginRestore();
 	assert.equal(f.main.setRegionPlacement('details', 'dockedMain'), true); f.second.focus();
 	const focused = inputFocus.admittedTarget;
-	ready.resolve();
 	try {
-		assert.equal(await restoring, true); restore.focusClient(); f.update();
+		assert.equal(await restore.restore(snapshot), true); restore.focusClient(); f.update();
 		assert.equal(part.placement, 'dockedMain'); assert.equal(part.window.isOpen, false);
 		assert.ok(inputFocus.admittedTarget === focused);
 	} finally { restore.dispose(); }
 });
 
-test('a primary-local close decision blocks both floating region families and cancellation retains their subjects', async t => {
+for (const moved of [false, true]) for (const placement of ['dockedMain', 'floatingWindow'] as const)
+	test(`a Scene close blocks only its ${placement} companion family (moved: ${moved})`, async t => {
 	const f = await fixture(t);
-	for (const region of ['hierarchy', 'details'] as const) f.main.setRegionPlacement(region, 'floatingWindow');
+	const input = f.primary.input, parts = f.editor.editorParts;
+	let group = parts.findGroup(input)!;
+	if (moved) {
+		assert.equal(parts.moveEditor(group, input, { kind: 'group', group: f.firstGroup }), true); f.update();
+		group = parts.findGroup(input)!;
+	}
+	const primary = f.main.primary; assert.ok(primary instanceof ScenePrimaryClient && primary.input === input);
+	for (const region of ['hierarchy', 'details'] as const) f.main.setRegionPlacement(region, placement);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dirty\n' }]); f.update();
 	f.main.focusPrimary('details');
-	const closing = f.main.clearPrimary(f.editor.editorParts.closeController, inputFocus.target);
+	const closing = group.close(input.id, inputFocus.target);
+	const part = parts.partForGroup(group); assert.equal(part.actionPrompt.visible, true);
 	for (const region of ['hierarchy', 'details'] as const) {
-		const window = f.main.regions[region].window;
-		assert.equal(f.editor.surfaces.isFocusAdmitted(window.surface!), false);
-		assert.equal(window.focusTarget.focus(), false);
+		const panel = primary[region], surface = placement === 'floatingWindow' ? f.main.regions[region].window.surface! : panel.surface;
+		assert.equal(f.editor.surfaces.isFocusAdmitted(surface), false);
+		assert.equal(f.editor.surfaces.isAdmitted(surface), false);
+		assert.equal(panel.commandTarget.focus(), false);
 	}
-	f.key('Escape'); assert.equal(await closing, false);
-	assert.ok(f.main.primary === f.primary);
+	assert.equal(f.editor.surfaces.isFocusAdmitted(f.secondPart.window!.surface!), true);
+	part.actionPrompt.close('cancel'); assert.equal(await closing, false);
+	assert.ok(f.main.primary === primary);
 	for (const region of ['hierarchy', 'details'] as const) assert.equal(f.main.regions[region].displayed, true);
 	assert.equal(f.model.buffer.getText(), '-- dirty\n' + SOURCE);
+});
+
+test('closing an unrelated dirty Source does not block the attached Scene companions', async t => {
+	const f = await fixture(t);
+	for (const region of ['hierarchy', 'details'] as const) f.main.setRegionPlacement(region, 'floatingWindow');
+	const input = f.firstInput; input.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dirty Source\n' }]);
+	f.first.focus();
+	const closing = f.firstGroup.close(input.id, inputFocus.target);
+	assert.equal(f.firstPart.actionPrompt.visible, true);
+	for (const region of ['hierarchy', 'details'] as const) {
+		assert.equal(f.editor.surfaces.isFocusAdmitted(f.main.regions[region].window.surface!), true);
+	}
+	f.firstPart.actionPrompt.close('cancel'); assert.equal(await closing, false);
+	assert.equal(f.main.primary, f.primary); assert.equal(f.firstGroup.model.activeTab, input);
+});
+
+test('retiring an attached companion scope cancels its close decision and releases modal admission', async t => {
+	const f = await fixture(t), parts = f.editor.editorParts;
+	for (const region of ['hierarchy', 'details'] as const) f.main.setRegionPlacement(region, 'floatingWindow');
+	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dirty\n' }]); f.update();
+	const input = f.primary.input, group = parts.findGroup(input)!, prompt = parts.partForGroup(group).actionPrompt;
+	const closing = group.close(input.id, inputFocus.target);
+	assert.equal(prompt.visible, true);
+	assert.equal(f.editor.surfaces.isFocusAdmitted(f.main.regions.details.window.surface!), false);
+	f.primary.scope.retireContext();
+	assert.equal(prompt.visible, false); assert.equal(await closing, false);
+	assert.equal(f.editor.surfaces.isFocusAdmitted(f.main.regions.details.window.surface!), true);
+	assert.ok(group.model.tabs.includes(input)); assert.equal(f.model.dirty, true);
+});
+
+test('a replaced prompt cannot publish an older Scene close after its focus callback edits the source', async t => {
+	const f = await fixture(t), parts = f.editor.editorParts, input = f.primary.input;
+	const group = parts.findGroup(input)!, prompt = parts.partForGroup(group).actionPrompt;
+	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dirty\n' }]); f.update();
+	const origin = f.primary.viewportTarget; assert.equal(origin.focus(), true);
+	const previous = prompt.show({ title: 'Pending', message: 'Choose', primary: 'Continue', secondary: 'Cancel',
+		primaryEnabled: true, defaultChoice: 'cancel' }, origin);
+	assert.equal(prompt.visible, true);
+	let published = false;
+	const unbind = origin.onDidFocus(() => {
+		unbind(); published = true;
+		f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- newer edit\n' }]);
+	}); t.after(unbind);
+	const closing = group.close(input.id, origin);
+	assert.equal(await previous, 'cancel'); assert.equal(await closing, false);
+	assert.equal(published, true); assert.equal(prompt.visible, false);
+	assert.ok(group.model.tabs.includes(input)); assert.equal(f.model.buffer.getText(), '-- newer edit\n-- dirty\n' + SOURCE);
 });
 
 test('floating region chrome retains the current primary semantic Source and member commands, independently of document focus', async t => {

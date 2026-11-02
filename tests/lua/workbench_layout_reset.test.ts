@@ -9,12 +9,10 @@ import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
-const SOURCE = `local scenes=require('cartlib/world/scene_library')
-scenes.register('room',{objects={{member_id='unit',definition_id='actor',spatial={local_transform={1,0,0,0,1,0,0,0,1,1,2,3}}}}})
-return {}`;
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE as SOURCE } from '../fixtures/studio/scene_viewport';
 
 async function fixture(t: TestContext) {
-	const f = createActualSourcePanes(t, false, [['scene.lua', SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	f.editor.setFontVariant('tiny'); f.first.focus();
 	const main = f.editor.mainWorkspace;
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
@@ -28,10 +26,11 @@ async function fixture(t: TestContext) {
 
 for (const invocation of ['owner', 'command'] as const) for (const draft of ['34', '(']) test(`${invocation} layout reset keeps the retained Main subject and its ${draft === '34' ? 'valid' : 'invalid'} focused draft`, async t => {
 	const f = await fixture(t), { main, primary, model } = f;
-	main.setRegionPlacement('hierarchy', 'floatingWindow'); main.setRegionPlacement('details', 'floatingWindow');
+	assert.equal(main.setRegionPlacement('hierarchy', 'floatingWindow'), true); assert.equal(main.setRegionPlacement('details', 'floatingWindow'), true); f.update();
 	main.regionLayout.hierarchyWidth = 333; main.regionLayout.detailsWidth = 444;
-	const field = primary.details.control.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, draft, true);
-	const target = inputFocus.admittedTarget, generation = primary.details.scope.contextGeneration, selection = primary.consumer.selection;
+	const field = primary.details.control.controls[0]; assert.equal(field.field.focusTarget.focus(), true); setFieldText(field.field, draft, true);
+	assert.equal(field.pending, true);
+	const target = inputFocus.admittedTarget, generation = primary.details.scope.contextGeneration, selection = primary.authoring.selection;
 	const groups = [...f.editor.editorParts.groups], tabs = groups.map(group => [...group.model.tabs]);
 	const attach = t.mock.method(primary.details.control, 'setView'), detach = t.mock.method(primary.details.control, 'clearView');
 	if (invocation === 'owner') assert.equal(f.editor.resetLayout(), true);
@@ -40,7 +39,7 @@ for (const invocation of ['owner', 'command'] as const) for (const draft of ['34
 		f.editor.commands.execute('workspace.resetLayout', target);
 	}
 	f.update();
-	assert.ok(main.primary === primary && primary.consumer.selection === selection);
+	assert.ok(main.primary === primary && primary.authoring.selection === selection);
 	assert.ok(inputFocus.admittedTarget === target && primary.details.control.controls[0] === field);
 	assert.equal(primary.details.scope.contextGeneration, generation);
 	assert.equal(field.pending, true); assert.equal(field.field.text, draft);
@@ -99,7 +98,7 @@ for (const region of ['hierarchy', 'details'] as const) test(`reset from floatin
 });
 
 test('reset of minimized Main regions reveals their retained controls without selecting another subject', async t => {
-	const f = await fixture(t), { main, primary } = f, selection = primary.consumer.selection;
+	const f = await fixture(t), { main, primary } = f, selection = primary.authoring.selection;
 	for (const region of ['hierarchy', 'details'] as const) {
 		main.setRegionPlacement(region, 'floatingWindow'); main.minimizeRegion(region);
 		assert.equal(primary[region].attached, false);
@@ -108,7 +107,7 @@ test('reset of minimized Main regions reveals their retained controls without se
 	for (const region of ['hierarchy', 'details'] as const) {
 		assert.equal(main.regions[region].placement, 'dockedMain'); assert.equal(primary[region].attached, true);
 	}
-	assert.ok(main.primary === primary && primary.consumer.selection === selection);
+	assert.ok(main.primary === primary && primary.authoring.selection === selection);
 });
 
 test('reset from floating activity chrome focuses the same retained activity after docking', async t => {
@@ -172,8 +171,8 @@ for (const origin of ['body', 'chrome'] as const) test(`reset ${origin === 'body
 	main.setRegionPlacement('details', 'floatingWindow'); main.focusPrimary('details');
 	const target = origin === 'body' ? primary.details.commandTarget : main.regions.details.window.focusTarget;
 	assert.equal(target.focus(), true);
-	const ready = Promise.withResolvers<void>(), capture = primary.consumer.captureSourceLocation.bind(primary.consumer);
-	t.mock.method(primary.consumer, 'captureSourceLocation', () => {
+	const ready = Promise.withResolvers<void>(), capture = primary.authoring.captureSourceLocation.bind(primary.authoring);
+	t.mock.method(primary.authoring, 'captureSourceLocation', () => {
 		const lease = capture();
 		return { ...lease, readLocation: async () => { await ready.promise; return lease.readLocation(); } };
 	});

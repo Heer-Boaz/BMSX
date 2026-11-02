@@ -110,7 +110,7 @@ test('Source and Back retain the exact query occurrence while Files and Main ret
 	const f = await fixture(t), panel = f.editor.resourcePanel;
 	panel.show(); f.update(); panel.queuePendingSelection(f.scene.identity); panel.applyPendingSelection();
 	const file = panel.files.selectedNode; assert.ok(file !== null && file.element.kind === 'file'); panel.toggleFileDisclosure(file); panel.setScroll(3.5);
-	const selectedFile = panel.files.selectedNode, collapsed = file.collapsed, filesScroll = panel.scroll, primarySelection = f.primary.consumer.selection;
+	const selectedFile = panel.files.selectedNode, collapsed = file.collapsed, filesScroll = panel.scroll, primarySelection = f.primary.authoring.selection;
 	f.firstGroup.focus(); const { input, pane } = f.open(); f.submit(pane, 'needle'); await f.drain(input);
 	assert.equal(pane.canOpenSource, false);
 	input.tree.select(0); assert.equal(f.editor.commands.isEnabled('editor.source', pane.commandTarget), false);
@@ -126,7 +126,7 @@ test('Source and Back retain the exact query occurrence while Files and Main ret
 	assert.ok(f.firstGroup.model.activeTab === input && f.firstGroup.panes.activePane === pane);
 	assert.ok(input.tree.rows[input.tree.selectionIndex] === row); assert.equal(input.tree.scroll, scroll);
 	assert.ok(panel.files.selectedNode === selectedFile); assert.equal(file.collapsed, collapsed); assert.equal(panel.scroll, filesScroll);
-	assert.equal(panel.visible, true); assert.ok(f.editor.mainWorkspace.primary === f.primary && f.primary.consumer.selection === primarySelection);
+	assert.equal(panel.visible, true); assert.ok(f.editor.mainWorkspace.primary === f.primary && f.primary.authoring.selection === primarySelection);
 });
 
 test('moving a pending query transfers its retained operation and the workspace command reveals that actual owner', { timeout: 5000 }, async t => {

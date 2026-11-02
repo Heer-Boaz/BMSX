@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { setImmediate } from 'node:timers/promises';
-import { resourceIdentityKey } from '../../ide/common/resource';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { inputFocus } from '../../ide/input/focus';
 import { createBlua32SourceImage } from '../../ide/runtime/sources';
-import { UnavailableScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/unavailable_primary';
+import { UnavailableSceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { createProjectRunFixture } from '../helpers/project_run';
 import { TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
@@ -72,8 +71,9 @@ for (const route of ['application', 'native'] as const)
 for (const retirement of ['scope', 'model'] as const)
 	test(`Main Run Project cannot reacquire a ${retirement} retired while accepting its actual pending field`, async t => {
 		const f = createProjectRunFixture(t); f.open(TEST_CARTRIDGE_CONTEXT_IDS[1]); const { model, primary } = await f.openMain();
-		selectSceneOutlineRow(primary.view.hierarchy, 1); primary.hierarchy.update(); primary.details.update();
-		f.editor.mainWorkspace.focusPrimary('details'); const field = primary.details.control.controls[0];
+		assert.equal(selectSceneOutlineRow(primary.view.hierarchy, 1), true); f.update();
+		f.editor.mainWorkspace.focusPrimary('details'); const option = primary.details.control.options.controls[0];
+		assert.ok(option.kind === 'value'); const field = option.control;
 		assert.equal(field.field.focusTarget.focus(), true); setFieldText(field.field, '123', true);
 		let retired = false;
 		const release = model.onDidChangeContent(() => {
@@ -84,29 +84,36 @@ for (const retirement of ['scope', 'model'] as const)
 		assert.equal(f.editor.commands.isEnabled('runProject', primary.commandTarget), true);
 		f.editor.commands.execute('runProject', primary.commandTarget); await setImmediate();
 		assert.equal(retired, true); assert.equal(field.pending, false);
-		assert.equal(model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('0, 0, 1, 11,', '0, 0, 1, 123,'));
+		assert.equal(model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('color = 0xffabcdef', 'color = 0x0000007b'));
 		assert.equal(f.editor.editorParts.main.quickInput.visible, false); assert.equal(f.part.quickInput.visible, false);
 		assert.equal(f.editor.actionPrompt.visible, false); assert.equal(f.requests.length, 0);
 	});
 
-for (const missing of [false, true]) test(`Unavailable Main Run Project retains only its actual file namespace (missing file: ${missing})`, async t => {
-	const f = createProjectRunFixture(t); f.open(TEST_CARTRIDGE_CONTEXT_IDS[1]); const { model } = await f.openMain();
-	const main = f.editor.mainWorkspace, snapshot = main.serialize();
-	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: '-- Scene occurrence unavailable\nreturn {}\n' }]);
-	if (missing) f.sources.catalog.resourceByIdentity.delete(resourceIdentityKey(model.resource));
-	const restore = main.beginRestore();
-	try { assert.equal(await restore.restore(snapshot, (...args) => f.editor.restorePrimaryClient(...args)), true); }
-	finally { restore.dispose(); }
-	f.update(); const unavailable = main.primary; assert.ok(unavailable instanceof UnavailableScenePrimaryClient);
-	assert.equal(unavailable.getWorkingCopies().length, missing ? 0 : 1);
-	assert.equal(f.editor.commands.isEnabled('runProject', unavailable.commandTarget), !missing);
-	f.editor.commands.execute('runProject', unavailable.commandTarget);
+for (const missing of [false, true]) test(`Unavailable Scene Run Project uses its actual project context (missing file: ${missing})`, async t => {
+	const source = createProjectRunFixture(t); source.open(TEST_CARTRIDGE_CONTEXT_IDS[1]);
+	const { model, primary } = await source.openMain();
+	const snapshot = source.editor.editorInputSerializers.scene_editor.serialize(primary.input);
+	const f = missing ? createProjectRunFixture(t, true, [0, 1], false) : source;
+	let target = primary.commandTarget;
+	if (missing) {
+		f.open(TEST_CARTRIDGE_CONTEXT_IDS[1]);
+		const serializer = f.editor.editorInputSerializers.scene_editor;
+		const unavailable = await serializer.deserialize(snapshot); assert.ok(unavailable instanceof UnavailableSceneEditorInput);
+		const group = f.editor.editorParts.main.activeGroup;
+		assert.ok(group.openEditor(unavailable)); f.update(); assert.equal(group.model.activeTab, unavailable);
+		target = group.panes.activePane!.commandTarget;
+		assert.equal(f.editor.commands.isEnabled('runCurrentFile', target), false);
+	} else {
+		model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: '-- Scene occurrence unavailable\nreturn {}\n' }]);
+		f.update(); assert.equal(primary.authoring.availability, 'unavailable');
+	}
+	assert.equal(f.editor.commands.isEnabled('runProject', target), true);
+	f.editor.commands.execute('runProject', target);
 	const picker = f.editor.editorParts.main.quickInput;
-	assert.equal(picker.visible, !missing); assert.equal(f.part.quickInput.visible, false);
-	if (!missing) {
-		assert.equal(picker.model.items.length, 1); picker.model.list.selectionIndex = 0; await picker.accept();
-		assert.equal(f.editor.actionPrompt.visible, true); f.editor.actionPrompt.close('secondary'); await setImmediate();
-		assert.equal(f.requests.length, 1); const request = f.requests[0]; assert.ok(request.action === 'run');
-		assert.ok(request.expectedImage === f.sources.currentBlua32Media.cartridgeSlots[0]); assert.deepEqual(request.entry, { domain: 0 });
-	} else assert.equal(f.requests.length, 0);
+	assert.equal(picker.visible, true); assert.equal(f.part.quickInput.visible, false);
+	assert.equal(picker.model.items.length, 1); picker.model.list.selectionIndex = 0; await picker.accept();
+	if (!missing) { assert.equal(f.editor.actionPrompt.visible, true); f.editor.actionPrompt.close('secondary'); }
+	await setImmediate();
+	assert.equal(f.requests.length, 1); const request = f.requests[0]; assert.ok(request.action === 'run');
+	assert.ok(request.expectedImage === f.sources.currentBlua32Media.cartridgeSlots[0]); assert.deepEqual(request.entry, { domain: 0 });
 });

@@ -54,23 +54,21 @@ function fixture(t: TestContext) {
 	return { ...f, parts, resource, definitions, activate };
 }
 
-test('authored documents use the chosen Main group while Scene retains its independent primary', t => {
-	const f = fixture(t), main = f.parts.main, group = main.activeGroup;
+test('authored documents open in real Main groups, with Scene as a retained document', t => {
+	const f = fixture(t), main = f.parts.main;
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;
 	assert.deepEqual(new Set(f.definitions.map(node => node.element.content.kind)),
 		new Set(['scene', 'behavior_tree', 'state_machine', 'action_effect', 'progression', 'input', 'animation']));
 	for (const node of f.definitions) {
-		const prior = [...group.model.tabs];
-		assert.ok(f.activate(node) === group, 'normal authored opening stays in its chosen group');
+		const destination = f.activate(node), active = destination.model.activeTab;
 		if (node.element.content.kind === 'scene') {
 			const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
-			assert.equal(client.consumer.workingCopy.resource, node.element.content.ownerResource);
-			assert.deepEqual(group.model.tabs, prior);
-		} else assert.equal(group.model.activeTab!.resource, node.element.content.ownerResource);
+			assert.ok(client.authoring.workingCopy.resource === node.element.content.ownerResource);
+			assert.ok(active === client.input && f.parts.findGroup(client.input) === destination);
+		} else assert.equal(active!.resource, node.element.content.ownerResource);
 		assert.equal(f.parts.documents.length, 0);
 		assert.ok(f.parts.activePart === main);
 	}
-	assert.equal(group.model.tabs.length, f.definitions.filter(node => node.element.content.kind !== 'scene').length);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
 });
 
@@ -81,12 +79,13 @@ test('opening Scene preserves its invoking Source split and later tool navigatio
 	const source = side.model.activeTab!, sourceControl = side.panes.activePane!;
 	f.editor.commands.execute('sceneEditor', sourceControl.commandTarget); f.update();
 	assert.equal(f.editor.quickInput.visible, true); f.key('Enter');
-	assert.ok(f.parts.activeGroup === side);
 	const scene = f.editor.mainWorkspace.primary; assert.ok(scene instanceof ScenePrimaryClient);
+	const sceneGroup = f.parts.findGroup(scene.input)!;
+	assert.ok(sceneGroup !== side && f.parts.activeGroup === sceneGroup);
 	assert.ok(side.model.activeTab === source && side.panes.activePane === sourceControl);
 	assert.equal(first.model.tabs.length, 0); assert.equal(f.parts.documents.length, 0);
 	f.editor.commands.execute('animation', scene.commandTarget);
-	assert.equal(main.quickInput.visible, true); assert.ok(f.parts.activeGroup === side);
+	assert.equal(main.quickInput.visible, true); assert.ok(f.parts.activeGroup === sceneGroup);
 	f.key('Escape');
 	assert.ok(side.model.activeTab === source && side.panes.activePane === sourceControl);
 	assert.equal(f.editor.mainWorkspace.primary, scene);

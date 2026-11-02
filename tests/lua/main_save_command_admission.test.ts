@@ -8,7 +8,6 @@ import { inputFocus } from '../../ide/input/focus';
 import type { CommandQuickPickItem } from '../../ide/workbench/contrib/commands/quick_pick_provider';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
-import { UnavailableScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/unavailable_primary';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace/records';
@@ -151,15 +150,12 @@ test('a Palette Save captured while admitted rechecks its actual Main Save owner
 });
 
 test('Unavailable Main can save its retained canonical model until that actual Save owner shuts down', async t => {
-	const f = await fixture(t), main = f.editor.mainWorkspace, snapshot = main.serialize();
+	const f = await fixture(t), main = f.editor.mainWorkspace;
 	const source = '-- exact authored Scene is unavailable\nreturn {}\n';
 	f.model.pushEditOperations([{ offset: 0, deleteLength: f.model.buffer.length, text: source }]);
-	const restore = main.beginRestore();
-	try { assert.equal(await restore.restore(snapshot, (...args) => f.editor.restorePrimaryClient(...args)), true); }
-	finally { restore.dispose(); }
-	f.update(); const unavailable = main.primary; assert.ok(unavailable instanceof UnavailableScenePrimaryClient);
+	f.update(); const unavailable = main.primary; assert.ok(unavailable instanceof ScenePrimaryClient);
 	main.focusPrimary('hierarchy');
-	assert.ok(unavailable.getWorkingCopies()[0] === f.model && editorTextModelService.get(f.model.identity) === f.model);
+	assert.ok(unavailable.input.workingCopy === f.model && editorTextModelService.get(f.model.identity) === f.model);
 	assert.equal(f.editor.commands.isEnabled('save', unavailable.hierarchy.commandTarget), true);
 	const save = t.mock.method(f.saves, 'save'), execution = f.host.execution.revision;
 	inputFocus.executeCommand('save', unavailable.commandTarget);

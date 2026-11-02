@@ -206,34 +206,42 @@ test('workspace batch makes one final decision per canonical copy represented by
 	assert.equal(f.firstGroup.model.tabs.length, 0); assert.equal(f.secondGroup.model.tabs.length, 0);
 });
 
-test('workspace Close All retains Main primary, activity, file selection and layout while their dirty copy stays authored', async t => {
+test('workspace Close All admits the real dirty Scene document without retiring unrelated workspace state', async t => {
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	const parts = f.editor.editorParts, main = f.editor.mainWorkspace, resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
 	f.first.focus(); assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), f.first.commandTarget), true);
 	const primary = main.primary; assert.ok(primary instanceof ScenePrimaryClient);
-	const central = parts.main.activeGroup; central.openEditor(new CodeEditorInput(model));
-	const split = parts.splitGroup(central, 'right'); split.openEditor(new CodeEditorInput(f.firstInput.workingCopy));
+	const central = parts.findGroup(primary.input)!;
+	const sourceGroup = parts.sideGroup(central, 'right')!; sourceGroup.openEditor(new CodeEditorInput(model));
+	const split = parts.splitGroup(sourceGroup, 'right')!; split.openEditor(new CodeEditorInput(f.firstInput.workingCopy));
 	parts.main.arrangement.splits[0].split.ratio = 0.6;
 	parts.minimize(f.firstPart); f.secondPart.window!.setPlacement('maximized');
 	f.editor.resourcePanel.show(); f.editor.resourcePanel.queuePendingSelection(resource); f.editor.resourcePanel.applyPendingSelection();
 	main.openActivity('problems'); main.setActivityVisible(true); f.update(); main.focusActivity();
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- retained Main authored consumer\n' }]);
-	const source = model.buffer.getText(), selected = primary.consumer.selection, subject = primary.consumer.subject;
+	const source = model.buffer.getText(), selected = primary.authoring.selection, subject = primary.authoring.subject;
 	const groups = [...parts.groups], windows = [...parts.documents], root = parts.main.arrangement.root;
 	const activity = main.activity, activityScope = activity!.scope.contextGeneration, focus = inputFocus.target;
 	const file = f.editor.resourcePanel.files.selectedNode, catalog = f.sources.catalog, contexts = [...catalog.contexts];
-	assert.equal(await parts.closeEditors({ kind: 'workspace' }, focus), true);
+	const cancelled = parts.closeEditors({ kind: 'workspace' }, focus);
+	assert.equal(f.editor.actionPrompt.visible, true); f.editor.actionPrompt.close('cancel');
+	assert.equal(await cancelled, false);
+	assert.ok(main.primary === primary && primary.authoring.selection === selected && primary.authoring.subject === subject);
+	assert.equal(model.buffer.getText(), source); assert.equal(model.dirty, true);
+	const closing = parts.closeEditors({ kind: 'workspace' }, focus);
+	assert.equal(f.editor.actionPrompt.visible, true); f.editor.actionPrompt.close('secondary');
+	assert.equal(await closing, true);
 	assert.ok(groups.every(group => group.model.tabs.length === 0 && !group.surface.retired));
 	assert.deepEqual(parts.groups, groups); assert.deepEqual(parts.documents, windows);
 	assert.ok(parts.main.arrangement.root === root); assert.equal(parts.main.arrangement.splits[0].split.ratio, 0.6);
 	assert.equal(f.firstPart.window!.model.minimized, true); assert.equal(f.secondPart.window!.model.placement, 'maximized');
-	assert.ok(main.primary === primary && primary.consumer.selection === selected && primary.consumer.subject === subject);
+	assert.equal(main.primary, undefined);
 	assert.ok(main.activity === activity && activity!.attached && inputFocus.target === focus);
 	assert.equal(activity!.scope.contextGeneration, activityScope); assert.equal(main.regionLayout.activityVisible, true);
 	assert.ok(f.editor.resourcePanel.files.selectedNode === file && f.sources.catalog === catalog);
 	assert.deepEqual([...catalog.contexts], contexts); assert.ok(catalog.resolveResource(resource) === resource);
-	assert.equal(model.buffer.getText(), source); assert.equal(model.dirty, true); assert.equal(model.canUndo, true);
+	assert.equal(model.buffer.getText(), SCENE_VIEWPORT_SOURCE); assert.equal(model.dirty, false);
 	assert.equal(f.editor.actionPrompt.visible, false);
 });
 
@@ -348,7 +356,7 @@ function deferredSelectionFixture(t: TestContext) {
 	const first = resolveLuaCodeEditorInput(f.sources.catalog, f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'closing.lua' })!);
 	const deferredModel = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog,
 		f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'deferred.lua' })!);
-	const deferred = new SceneEditorInput(deferredModel, f.editor.sceneEditor.documents, f.editor.sceneEditor.createView);
+	const deferred = new SceneEditorInput(deferredModel, f.editor.sceneEditor.documents, f.sources.catalog, f.editor.sceneEditor.createView);
 	group.openEditor(first); group.model.add(deferred);
 	first.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- first pending close\n' }]);
 	deferredModel.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- deferred pending close\n' }]); group.focus();
@@ -432,7 +440,7 @@ for (const scope of ['group', 'document part'] as const)
 		const first = resolveLuaCodeEditorInput(f.sources.catalog, f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'closing.lua' })!);
 		const deferredModel = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog,
 			f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'deferred.lua' })!);
-		const deferred = new SceneEditorInput(deferredModel, f.editor.sceneEditor.documents, f.editor.sceneEditor.createView);
+		const deferred = new SceneEditorInput(deferredModel, f.editor.sceneEditor.documents, f.sources.catalog, f.editor.sceneEditor.createView);
 		group.openEditor(first); group.model.add(deferred);
 		first.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- first pending close\n' }]);
 		deferredModel.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- parent close may cancel\n' }]); group.focus();

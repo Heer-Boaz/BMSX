@@ -185,7 +185,7 @@ for (const font of ['tiny', 'msx'] as const) test(`${font} registered YAML defau
 	assert.ok(input.workingCopy === editorTextModelService.get(resource)); assert.equal(input.isDirty(), false);
 });
 
-for (const font of ['tiny', 'msx'] as const) test(`${font} Scene activation retains its exact occurrence through a held prefix edit and opens visual Main, not a document`, async t => {
+for (const font of ['tiny', 'msx'] as const) test(`${font} Scene activation retains its exact occurrence through a held prefix edit and opens the actual Scene document`, async t => {
 	const f = fixture(t, font, [['cartlib/world/scene_library.lua', 'return {}'], ['definitions.lua', SCENES]]), { node: file } = reveal(f, 'definitions.lua');
 	f.panel.toggleFileDisclosure(file); f.update(); const node = file.children[1];
 	assert.ok(node !== undefined && node.element.kind === 'definition'); const entry = node.element.content;
@@ -197,8 +197,8 @@ for (const font of ['tiny', 'msx'] as const) test(`${font} Scene activation reta
 	const text = model.buffer.getText(), version = model.version;
 	pointer(f, rowPoint(f, node), 'release'); assert.equal(open.mock.callCount(), 1); await open.mock.calls[0].result;
 	f.update(); const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
-	assert.ok(entry.kind === 'scene' && client.consumer.subject === entry.definition && client.consumer.workingCopy === model);
-	assert.equal(client.viewport.attached, true); assert.equal(f.open.mock.callCount(), 0);
+	assert.ok(entry.kind === 'scene' && client.authoring.subject === entry.definition && client.authoring.workingCopy === model);
+	assert.ok(f.editor.editorParts.findGroup(client.input)?.panes.activePane?.input === client.input); assert.equal(f.open.mock.callCount(), 0);
 	assert.ok(f.firstGroup.model.activeTab === f.firstInput && f.secondGroup.model.activeTab === f.secondInput);
 	assert.equal(model.buffer.getText(), text); assert.equal(model.version, version); assert.equal(model.canUndo, true);
 });

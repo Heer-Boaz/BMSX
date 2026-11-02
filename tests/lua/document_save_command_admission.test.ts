@@ -6,6 +6,7 @@ import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { inputFocus } from '../../ide/input/focus';
 import { AnimationEditorPane } from '../../ide/workbench/contrib/animation/editor_pane';
 import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
+import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
@@ -52,10 +53,11 @@ test('a retained Source document cannot offer or submit Save for a replaced cano
 
 test('a Scene document cannot reacquire retired Save authority after its accepted field scope retires', async t => {
 	const f = await documentFixture(t, 'scene'); assert.ok(f.pane instanceof SceneEditorPane);
-	selectSceneOutlineRow(f.pane.control.view.hierarchy, 1);
-	f.pane.control.view.section = 'details'; f.update();
-	const field = f.pane.control.details.controls[0], target = f.pane.commandTarget;
+	selectSceneOutlineRow(f.pane.input.view.hierarchy, 1); f.update();
+	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
+	const field = primary.details.control.controls[0], target = f.pane.commandTarget;
 	assert.equal(field.field.focusTarget.focus(), true); setFieldText(field.field, '123', true);
+	assert.equal(f.editor.commands.isEnabled('save', target), true);
 	const tab = f.firstGroup.model.activeTab, generation = f.firstGroup.panes.openGeneration;
 	const context = f.pane.inputScope.contextGeneration, source = `-- replacement Scene owner\n${SCENE_VIEWPORT_SOURCE}`;
 	let replacement: ReturnType<typeof editorTextModelService.retain> | undefined;
@@ -81,9 +83,9 @@ test('a Scene document cannot reacquire retired Save authority after its accepte
 
 test('a document Save already refused by its owner leaves the actual pending Scene field unaccepted', async t => {
 	const f = await documentFixture(t, 'scene'); assert.ok(f.pane instanceof SceneEditorPane);
-	selectSceneOutlineRow(f.pane.control.view.hierarchy, 1);
-	f.pane.control.view.section = 'details'; f.update();
-	const field = f.pane.control.details.controls[0], target = field.field.focusTarget;
+	selectSceneOutlineRow(f.pane.input.view.hierarchy, 1); f.update();
+	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
+	const field = primary.details.control.controls[0], target = field.field.focusTarget;
 	assert.equal(target.focus(), true); setFieldText(field.field, '123', true);
 	assert.equal(field.pending, true); assert.equal(f.editor.commands.isEnabled('save', target), true);
 	await f.saves.shutdown();

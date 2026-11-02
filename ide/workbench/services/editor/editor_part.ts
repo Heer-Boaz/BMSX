@@ -38,7 +38,6 @@ export type MainEditorPresentation = {
 	readonly scope: InputFocusScope;
 	readonly focusTarget: InputFocusTarget;
 	readonly documentClip: Readonly<RectBounds>;
-	readonly documentsPresented: boolean;
 	readonly modalBounds: Readonly<RectBounds>;
 	focusDocuments(): void;
 	revealDocuments(region: Readonly<RectBounds>): void;
@@ -100,7 +99,7 @@ export class EditorPart {
 	}
 	/** Logical document allocation; the retained family still owns its local modals. */
 	public get contentPresented(): boolean {
-		return this.presented && (this.options.kind === 'document' || this.options.mainPresentation.documentsPresented);
+		return this.presented;
 	}
 	private readonly groupMru: EditorGroupView[] = [];
 	public get mostRecentlyActiveGroups(): readonly EditorGroupView[] { return this.groupMru; }
@@ -188,6 +187,7 @@ export class EditorPart {
 		});
 		this.quickInput.attach(options.surfaces, this.quickInputSurface);
 		this.promptSurface = options.surfaces.attach({ role: 'modal', blockedScope: this.surface,
+			additionalBlockedScopes: () => this.actionPrompt.blockedScopes,
 			presentationParent: modalParent, captureScope: this.actionPrompt.pointerScope, lifetimeOwner: this.surface,
 			isVisible: () => this.actionPrompt.visible, getBounds: () => this.actionPrompt.view.bounds, getClip: () => presentation.bounds,
 			draw: () => this.actionPrompt.draw(), handlePointer: snapshot => this.actionPrompt.handlePointer(snapshot),

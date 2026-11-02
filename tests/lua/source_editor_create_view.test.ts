@@ -52,7 +52,7 @@ test('Scene fresh views preserve the selected source occurrence while retaining 
 	const source = group.model.activeTab;
 	assert.ok(source instanceof SceneEditorInput);
 	source.view.refresh(); selectSceneOutlineRow(source.view.hierarchy, 1);
-	source.view.section = 'details'; source.view.hierarchy.position = 2; source.view.details.position = 7;
+	source.view.preferredPart = 'details'; source.view.hierarchy.position = 2; source.view.details.position = 7;
 	const before = captureSceneEditorView(source.view), input = source.createView!();
 	t.after(() => input.dispose());
 	assert.ok(input !== source && input.workingCopy === source.workingCopy);

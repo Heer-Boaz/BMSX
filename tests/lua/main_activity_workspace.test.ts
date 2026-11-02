@@ -16,16 +16,11 @@ import type { CommandQuickPickItem } from '../../ide/workbench/contrib/commands/
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 
-const SCENE = `local scenes = require('cartlib/world/scene_library')
-scenes.register('retained', { objects = {
- { member_id = 'selected', definition_id = 'example', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3 } } },
-} })
-return {}
-`;
 
 function fixture(t: TestContext) {
-	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE], ['cartlib/world/scene_library.lua', 'return {}'],
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}'],
 		['diagnostics.lua', 'return 1\n'.repeat(20)]]);
 	f.editor.setFontVariant('tiny');
 	const main = f.editor.mainWorkspace, panel = f.editor.problems;
@@ -116,7 +111,7 @@ for (const command of ['editor.source', 'editor.sourceToSide'] as const)
 			'the selected activity diagnostic is the semantic Source subject, not the active document');
 		assert.equal(input.context.view.cursorRow, 7); assert.equal(input.context.view.cursorColumn, 2);
 		assert.ok(group.model.tabs.includes(scene)); assert.ok(scene.view.authoring.selection === selection);
-		assert.equal(f.main.primary, undefined); assert.equal(f.model.dirty, false);
+		assert.equal(f.main.primary?.input === scene, group.panes.activePane?.input === scene); assert.equal(f.model.dirty, false);
 		assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
 	});
 
@@ -190,7 +185,7 @@ test('newer activity placement and foreground survive coherent initial workspace
 	});
 	const restore = f.main.beginRestore();
 	try {
-		assert.equal(await restore.restore(snapshot, () => { throw new Error('An unbound primary has no source factory work.'); }), true);
+		assert.equal(await restore.restore(snapshot), true);
 		restore.focusClient(); f.update();
 		assert.equal(f.main.regionLayout.activityHeight, 160); assert.equal(f.main.regionLayout.activityVisible, false);
 		assert.equal(f.panel.attached, false);
@@ -203,7 +198,8 @@ test('Main owns both overflowing scroll routes while real documents, authoring r
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
 	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target!), true);
-	group.openEditor(new CodeEditorInput(f.model));
+	const sourceGroup = f.editor.editorParts.sideGroup(group, 'right')!;
+	sourceGroup.openEditor(new CodeEditorInput(f.model));
 	f.editor.updateViewport({ width: 280, height: 100 }); f.editor.setFontVariant('msx'); f.update();
 	const primary = f.main.primary!, layout = f.main.regionLayout;
 	f.main.focusActivity(); f.update();
@@ -220,9 +216,9 @@ test('Main owns both overflowing scroll routes while real documents, authoring r
 	assert.ok(horizontalHit !== null && f.editor.surfaces.isInContext(horizontalHit.captureScope, f.main.surface.captureScope));
 	assert.equal(f.editor.surfaces.isInContext(horizontalHit.captureScope, f.editor.editorParts.main.surface.captureScope), false,
 		'the document client clips above the outer arrangement horizontal scrollbar');
-	group.panes.activePane!.focus(); f.update();
-	assert.ok(inputFocus.admittedTarget !== null && group.focusScope.contains(inputFocus.admittedTarget.scope));
-	assert.ok(f.main.primary === primary && group.model.activeTab instanceof CodeEditorInput && f.panel.attached);
+	sourceGroup.panes.activePane!.focus(); f.update();
+	assert.ok(inputFocus.admittedTarget !== null && sourceGroup.focusScope.contains(inputFocus.admittedTarget.scope));
+	assert.ok(f.main.primary === primary && sourceGroup.model.activeTab instanceof CodeEditorInput && f.panel.attached);
 	assert.equal(f.model.dirty, false); assert.equal(model.dirty, false);
 });
 
@@ -233,7 +229,8 @@ test('attached scrolled-out hierarchy focus admits native Problems commands whil
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
 	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target!), true);
 	const primary = f.main.primary;
-	group.openEditor(new CodeEditorInput(f.model));
+	const sourceGroup = f.editor.editorParts.sideGroup(group, 'right')!;
+	sourceGroup.openEditor(new CodeEditorInput(f.model));
 	f.main.regionLayout.activityHeight = 50;
 	f.editor.updateViewport({ width: 180, height: 240 }); f.update(); f.main.focusPrimary('hierarchy');
 	const layout = f.main.regionLayout, horizontal = layout.scrollTrack;
@@ -281,7 +278,7 @@ test('an activity body press retains its hit diagnostic when focus reveals and m
 	f.panel.setDiagnostics(diagnostics, { ready: 1, pending: 0, unsupported: 0, failed: 0 });
 	const restore = f.main.beginRestore();
 	try {
-		assert.equal(await restore.restore({ ...f.main.serialize(), scrollY: 5 }, () => { throw new Error('Unbound Main has no primary source to restore.'); }), true);
+		assert.equal(await restore.restore({ ...f.main.serialize(), scrollY: 5 }), true);
 	} finally { restore.dispose(); }
 	f.update();
 	const x = f.panel.bounds.left + 10, y = f.panel.layoutState.contentTop + f.panel.getItemLayout(0).height - 1;
@@ -311,7 +308,7 @@ for (const publication of ['model activation', 'attachment'] as const)
 	});
 
 for (const font of ['tiny', 'msx'] as const)
-	test(`a dirty final Main consumer presents a reachable ${font} release decision from the scrolled activity`, async t => {
+	test(`a dirty Scene document presents a reachable ${font} release decision from the scrolled activity`, async t => {
 		const f = fixture(t), resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 		const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
 		assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target!), true);
@@ -321,16 +318,14 @@ for (const font of ['tiny', 'msx'] as const)
 		setFieldText(field.field, '31', true); f.key('Enter');
 		assert.equal(field.pending, false); assert.equal(model.dirty, true);
 		const edited = model.buffer.getText();
-		const consumers = [...f.main.workingCopyConsumers()];
-		assert.equal(consumers.length, 1); assert.ok(consumers[0] === primary.consumer);
-		assert.ok(f.editor.editorParts.groups.every(group => group.model.tabs.every(input => input.resource !== model.resource)),
-			'no document presentation consumes the dirty Main working copy');
+		const group = f.editor.editorParts.findGroup(primary.input)!;
+		assert.deepEqual(f.editor.editorParts.groups.flatMap(group => group.model.tabs).filter(input => input.resource === model.resource), [primary.input]);
 		f.editor.updateViewport({ width: 300, height: 100 }); f.editor.setFontVariant(font); f.update(); f.main.focusActivity(); f.update();
 		const shown: ActionPrompt[] = [], show = ActionPrompt.prototype.show;
 		t.mock.method(ActionPrompt.prototype, 'show', function (this: ActionPrompt, ...args: Parameters<typeof show>) {
 			shown.push(this); return show.apply(this, args);
 		});
-		const pending = f.main.clearPrimary(f.editor.editorParts.closeController, f.panel.focusTarget);
+		const pending = group.close(primary.input.id, f.panel.focusTarget);
 		assert.equal(shown.length, 1); const prompt = shown[0]; f.update();
 		try {
 			assert.equal(prompt.visible, true);

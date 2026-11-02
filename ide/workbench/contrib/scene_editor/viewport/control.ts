@@ -3,7 +3,6 @@ import { PointerButton } from '../../../../../hosts/common/input/pointer_event';
 import { KeyModifier, type KeyInputEvent } from '../../../../../hosts/common/input/text';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../../common/models';
 import type { EditorCommandId, EditorCommandRunner } from '../../../../common/commands';
-import type { EditorFont } from '../../../../editor/ui/view/font';
 import { editorViewState } from '../../../../editor/ui/view/state';
 import type { SceneAddMemberRequest, SceneAddMemberChoice, SceneTranslationRequest } from '../authoring_context';
 import { TranslateHandle } from './translate_gizmo';
@@ -11,7 +10,6 @@ import { inputFocus, InputFocusScope, type InputFocusTarget } from '../../../../
 import { consumeIdeKey, isKeyJustPressed } from '../../../../input/keyboard/key_input';
 import { pointerCapture, type PointerCaptureTarget } from '../../../../input/pointer/capture';
 import { pointerHover } from '../../../../input/pointer/hover';
-import type { WorkbenchViewSizeConstraints } from '../../../common/layout';
 import type { WorkbenchMenuDefinition, WorkbenchMenuPresentation } from '../../../ui/menu/model';
 import type { ContextMenuController } from '../../../services/context_menu/controller';
 import { drawSceneViewport } from './render';
@@ -23,10 +21,6 @@ export const VIEWPORT_CONTEXT_ACTIONS: WorkbenchMenuDefinition<SceneViewportView
 	{ type: 'command', command: 'sceneViewport.frameAll' }, { type: 'command', command: 'sceneViewport.frameSelection' },
 	{ type: 'separator' }, { type: 'command', command: 'sceneViewport.view2d' }, { type: 'command', command: 'sceneViewport.view3d' },
 ];
-export function measureSceneViewport(font: EditorFont, target: WorkbenchViewSizeConstraints): void {
-	target.minimumWidth = font.charAdvance * 20; target.preferredWidth = font.charAdvance * 48; target.minimumHeight = font.lineHeight * 8;
-}
-
 type CameraAction = {
 	readonly command: EditorCommandId;
 	isChecked?(view: SceneViewportViewState): boolean;
@@ -365,7 +359,7 @@ export class SceneViewportControl implements PointerCaptureTarget {
 			consumeIdeKey('Escape', event);
 			if (this.placement !== undefined) this.retirePlacement(this.placement);
 			else if (this.gesture !== undefined) this.revokeGesture(this.gesture);
-			else inputFocus.executeCommand('sceneEditor.outline', this.focusTarget.commandContext); return;
+			else inputFocus.executeCommand('sceneEditor.outline', this.focusTarget); return;
 		}
 		if ((event.modifiers & (KeyModifier.ctrl | KeyModifier.meta | KeyModifier.alt)) !== 0) return;
 		if (isKeyJustPressed('KeyF', event)) {

@@ -24,6 +24,8 @@ export class ActionPrompt implements PointerCaptureTarget {
 	private returnFocus: InputFocusTarget | null = null;
 	private unbindOrigin: (() => void) | undefined;
 	private unbindPresentation: (() => void) | undefined;
+	private unbindBlockedScopes: (() => void)[] = [];
+	private blockedScopeValues: readonly InputFocusScope[] = [];
 	private focused = 0;
 	private hovered = -1;
 	private pointerButton = -1;
@@ -58,18 +60,25 @@ export class ActionPrompt implements PointerCaptureTarget {
 
 	public get visible(): boolean { return this.request !== undefined; }
 	public get invocationOrigin(): InputFocusTarget | null { return this.returnFocus; }
+	public get blockedScopes(): readonly InputFocusScope[] { return this.blockedScopeValues; }
 
-	public show(request: ActionPromptRequest, invocationOrigin?: InputFocusTarget | null): Promise<ActionPromptChoice> {
+	public show(request: ActionPromptRequest, invocationOrigin?: InputFocusTarget | null,
+		admitBlockedScopes?: () => readonly InputFocusScope[] | undefined): Promise<ActionPromptChoice> {
+		this.close();
+		const blockedScopes = admitBlockedScopes === undefined ? [] : admitBlockedScopes();
+		if (blockedScopes === undefined) return Promise.resolve('cancel');
 		const focusedScope = this.focus.target?.scope.interactionOrigin ?? this.focus.target?.scope;
 		const takeFocus = this.presentation.kind === 'workspace' || this.presentation.shouldRevealOnShow?.() === true
-			|| focusedScope !== undefined && this.presentation.scope.contains(focusedScope);
-		this.close();
+			|| focusedScope !== undefined && (this.presentation.scope.contains(focusedScope)
+				|| blockedScopes.some(scope => scope.contains(focusedScope)));
 		if (this.presentation.kind === 'workspace') this.capture.cancel();
 		let origin = invocationOrigin === undefined ? this.focus.target : invocationOrigin;
 		if (invocationOrigin === undefined && this.presentation.kind === 'part' && origin !== null && !this.presentation.scope.contains(origin.scope)) origin = null;
 		this.returnFocus = origin;
 		this.focusTarget.scope.interactionOrigin = origin === null ? this.presentation.scope : origin.scope;
 		this.request = request;
+		this.blockedScopeValues = blockedScopes;
+		this.unbindBlockedScopes = blockedScopes.map(scope => scope.onDidRetireContext(() => this.close('cancel', false)));
 		const originScope = origin === null ? this.presentation.scope : origin.commandContext.scope;
 		this.unbindOrigin = originScope.onDidRetireContext(() => this.close('cancel', false));
 		if (!this.presentation.scope.contains(originScope)) this.unbindPresentation = this.presentation.scope.onDidRetireContext(() => this.close('cancel', false));
@@ -94,6 +103,8 @@ export class ActionPrompt implements PointerCaptureTarget {
 		this.focusTarget.scope.interactionOrigin = undefined;
 		this.unbindOrigin?.(); this.unbindOrigin = undefined;
 		this.unbindPresentation?.(); this.unbindPresentation = undefined;
+		for (const unbind of this.unbindBlockedScopes) unbind();
+		this.unbindBlockedScopes = []; this.blockedScopeValues = [];
 		this.cancelPointer();
 		this.onDidChangeVisibility();
 		if (this.request === undefined && (this.focusTarget.hasFocus || this.acceptsFocusTransfer(this.focus.target)))

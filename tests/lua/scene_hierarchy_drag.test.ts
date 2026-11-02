@@ -42,11 +42,12 @@ async function fixture(t: TestContext, main = true, font: 'tiny' | 'msx' = 'tiny
 		const document = f.ide.sceneSources.get(model);
 		assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target!), true);
 		const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
-		hierarchy = primary.hierarchy.control; details = primary.details.control; context = primary.consumer;
+		hierarchy = primary.hierarchy.control; details = primary.details.control; context = primary.authoring;
 	} else {
 		f.editor.sceneEditor.openResource(f.firstGroup, resource); f.update();
 		const pane = f.firstGroup.panes.activePane; assert.ok(pane instanceof SceneEditorPane);
-		hierarchy = pane.control.hierarchy; details = pane.control.details; context = pane.control.view.authoring;
+		const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
+		hierarchy = primary.hierarchy.control; details = primary.details.control; context = primary.authoring;
 	}
 	f.update(); hierarchy.focus(); f.update();
 	const point = (id: string, placement: 'before' | 'inside' | 'after' = 'inside') => {

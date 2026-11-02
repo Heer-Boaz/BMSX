@@ -8,6 +8,7 @@ import { captureCodeEditorView } from '../../ide/workbench/contrib/code_editor/v
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
+import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import type { WorkbenchSurface } from '../../ide/workbench/services/windows/model';
 import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
@@ -23,8 +24,9 @@ function sceneDraft(t: TestContext, text: string) {
 	f.editor.sceneEditor.openResource(f.firstGroup, resource, { pinned: true }); f.update();
 	const scene = f.firstGroup.model.activeTab, pane = f.firstGroup.panes.activePane;
 	assert.ok(scene instanceof SceneEditorInput && pane instanceof SceneEditorPane);
-	selectSceneOutlineRow(scene.view.hierarchy, 1); scene.view.section = 'details'; f.update();
-	const control = pane.control.details.controls[0], field = control.field;
+	selectSceneOutlineRow(scene.view.hierarchy, 1); f.update();
+	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
+	const control = primary.details.control.controls[0], field = control.field;
 	assert.equal(field.readOnly, false); assert.equal(field.focusTarget.focus(), true);
 	assert.equal(field.focusTarget.textInput!.replaceText(0, field.text.length, text), true);
 	assert.equal(control.pending, true);

@@ -6,7 +6,6 @@ import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { inputFocus, type InputFocusTarget } from '../../ide/input/focus';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
-import { UnavailableScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/unavailable_primary';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { buildCommandQuickPickItems } from '../../ide/workbench/contrib/commands/quick_access';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
@@ -27,15 +26,13 @@ async function fixture(t: TestContext, unavailable = false) {
 	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target!), true);
 	f.update();
 	if (unavailable) {
-		const saved = main.serialize(), request = main.beginRestore();
 		model.pushEditOperations([{ offset: 0, deleteLength: SOURCE.length, text: 'return {}' }]);
-		try { assert.equal(await request.restore(saved, (...args) => f.editor.restorePrimaryClient(...args)), true); }
-		finally { request.dispose(); }
 		f.update();
 	}
 	const primary = main.primary!;
-	assert.ok(unavailable ? primary instanceof UnavailableScenePrimaryClient : primary instanceof ScenePrimaryClient);
-	if (primary instanceof ScenePrimaryClient) { assert.equal(selectSceneOutlineRow(primary.view.hierarchy, 1), true); f.update(); }
+	assert.ok(primary instanceof ScenePrimaryClient);
+	assert.equal(primary.authoring.availability, unavailable ? 'unavailable' : 'available');
+	if (!unavailable) { assert.equal(selectSceneOutlineRow(primary.view.hierarchy, 1), true); f.update(); }
 	return { ...f, main, primary, model };
 }
 
@@ -60,15 +57,16 @@ for (const region of ['hierarchy', 'details'] as const) for (const unavailable o
 		assert.equal(commands.isEnabled(floating, target), true); assert.equal(commands.isEnabled(docking, target), false);
 		view.contextActions.refresh();
 		assert.ok(view.contextActions.visibleItems.some(item => item.type === 'command' && item.command === floating));
-		assert.equal(view.contextActions.visibleItems.some(item => item.type === 'command' && item.command === 'editor.source'), unavailable);
+		assert.equal(view.contextActions.visibleItems.some(item => item.type === 'command' && item.command === 'editor.source'), false);
 		commands.execute(floating, target); f.update();
 		assert.equal(part.placement, 'floatingWindow'); assert.equal(part.displayed, true);
-		assert.ok(inputFocus.admittedTarget === target && f.main.primary === f.primary);
+		assert.ok(f.main.primary === f.primary && part.isTarget(inputFocus.admittedTarget));
+		if (target === view.control.focusTarget) assert.equal(inputFocus.admittedTarget, target);
 		assert.equal(commands.isEnabled(floating, target), false); assert.equal(commands.isEnabled(docking, target), true);
 		commands.execute('window.systemMenu', target); f.update();
 		const menu = f.editor.contextMenu;
 		assert.equal(menu.visible, true);
-		assert.equal(menu.model.rows.some(row => row.command === 'editor.source' && row.enabled), unavailable);
+		assert.equal(menu.model.rows.some(row => row.command === 'editor.source' && row.enabled), false);
 		assert.ok(menu.model.rows.some(row => row.command === 'window.hide' && row.enabled));
 		menu.model.selectedIndex = menu.model.rows.findIndex(row => row.command === docking && row.enabled);
 		assert.ok(menu.model.selectedIndex >= 0); f.key('Enter');
@@ -170,14 +168,14 @@ for (const hide of [false, true])
 		f.editor.commands.execute('window.systemMenu', origin);
 		assert.equal(f.editor.contextMenu.model.rows.some(row => row.command === 'editor.source'), false);
 		f.key('Escape'); assert.equal(origin.focus(), true);
-		const capture = primary.consumer.captureSourceLocation.bind(primary.consumer);
+		const capture = primary.authoring.captureSourceLocation.bind(primary.authoring);
 		let focusedAtRead: InputFocusTarget | null = null;
-		t.mock.method(primary.consumer, 'captureSourceLocation', () => {
+		t.mock.method(primary.authoring, 'captureSourceLocation', () => {
 			const lease = capture();
 			return { ...lease, readLocation: async () => { focusedAtRead = inputFocus.admittedTarget; await ready.promise; return lease.readLocation(); } };
 		});
 		const request = t.mock.method(f.editor.navigation, 'openSource'), opening = t.mock.method(f.editor.navigation, 'openResource');
-		const selected = primary.consumer.selection, groups = [...f.editor.editorParts.groups];
+		const selected = primary.authoring.selection, groups = [...f.editor.editorParts.groups];
 		const tabs = groups.map(group => [...group.model.tabs]);
 		f.key('KeyP', KeyModifier.ctrl | KeyModifier.shift);
 		const picker = f.editor.quickInput;
@@ -208,6 +206,6 @@ for (const hide of [false, true])
 			const input = f.editor.editorParts.activeGroup.model.activeTab;
 			assert.ok(input instanceof CodeEditorInput && input.workingCopy === f.model);
 		}
-		assert.ok(f.main.primary === primary && primary.consumer.selection === selected);
+		assert.ok(f.main.primary === primary && primary.authoring.selection === selected);
 		assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.dirty, false); assert.equal(f.model.canUndo, false);
 	});

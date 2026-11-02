@@ -24,14 +24,12 @@ async function fixture(t: TestContext, main = false, text = '123') {
 		assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), f.first.commandTarget), true);
 	} else f.editor.sceneEditor.openResource(f.firstGroup, resource, { pinned: true });
 	f.update();
-	const client = main ? f.editor.mainWorkspace.primary : undefined, pane = f.firstGroup.panes.activePane;
-	assert.ok(client instanceof ScenePrimaryClient || pane instanceof SceneEditorPane);
-	const hierarchy = client instanceof ScenePrimaryClient ? client.view.hierarchy : (pane as SceneEditorPane).control.view.hierarchy;
-	selectSceneOutlineRow(hierarchy, 1);
-	if (client instanceof ScenePrimaryClient) { client.hierarchy.update(); client.details.update(); }
-	else { (pane as SceneEditorPane).control.view.section = 'details'; f.update(); }
-	const control = client instanceof ScenePrimaryClient ? client.details.control.controls[0] : (pane as SceneEditorPane).control.details.controls[0];
-	const target = client instanceof ScenePrimaryClient ? client.commandTarget : pane!.commandTarget;
+	const client = f.editor.mainWorkspace.primary, pane = f.firstGroup.panes.activePane;
+	assert.ok(client instanceof ScenePrimaryClient);
+	assert.equal(selectSceneOutlineRow(client.view.hierarchy, 1), true);
+	client.hierarchy.update(); client.details.update();
+	const control = client.details.control.controls[0];
+	const target = main ? client.commandTarget : (pane as SceneEditorPane).commandTarget;
 	control.field.focusTarget.focus(); setFieldText(control.field, text, true);
 	return { ...f, model, control, target, client };
 }
@@ -129,7 +127,7 @@ for (const command of ['reboot', 'hot-resume'] as const)
 	test(`Main ${command} does not borrow an unrelated document attachment during acceptance`, async t => {
 		const f = await fixture(t, true);
 		t.mock.getter(f.host.execution, 'launchPending', () => false);
-		t.after(f.model.onDidChangeContent(() => f.editor.editorParts.main.activeGroup.openEditor(f.firstInput.createView(), { preserveFocus: true })));
+		t.after(f.model.onDidChangeContent(() => f.firstGroup.openEditor(f.firstInput.createView(), { preserveFocus: true })));
 		f.editor.commands.execute(command, f.target);
 		assert.equal(f.control.pending, false); assert.equal(f.editor.actionPrompt.visible, true);
 		f.editor.actionPrompt.close('cancel');

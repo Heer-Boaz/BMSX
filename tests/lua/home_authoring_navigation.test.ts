@@ -290,7 +290,7 @@ for (const interaction of ['newerEditor', 'foreignFocus'] as const)
 		assert.ok(f.secondGroup.model.activeTab === f.secondInput && f.secondGroup.panes.activePane === f.second);
 	});
 
-test('Home Main Scene filtering observes outgoing blur and binds the canonical subject without creating a document tab', t => {
+test('Home Scene filtering observes outgoing blur and opens the canonical subject as a document', t => {
 	const f = fixture(t), picker = f.editor.quickInput, model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, f.sceneResource);
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: 'return {}\n' }]);
 	const origin = inputFocus.target!;
@@ -301,12 +301,13 @@ test('Home Main Scene filtering observes outgoing blur and binds the canonical s
 	assert.equal(picker.model.list.rows.length, 1);
 	f.key('Enter');
 	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
-	assert.equal(primary.consumer.workingCopy, model); assert.deepEqual(primary.consumer.getWorkingCopies(), [model]);
-	assert.equal(primary.consumer.subject, primary.consumer.document!.scenes[0]);
+	assert.equal(primary.authoring.workingCopy, model); assert.deepEqual(primary.input.getWorkingCopies(), [model]);
+	assert.equal(primary.authoring.subject, primary.authoring.document!.scenes[0]);
+	const group = f.editor.editorParts.findGroup(primary.input); assert.ok(group !== undefined);
+	assert.equal(group.model.activeTab, primary.input); assert.equal(group.panes.activePane?.input, primary.input);
 	assert.equal(f.firstGroup.model.activeTab, f.home); assert.equal(f.secondGroup.model.activeTab, f.secondInput);
 	assert.equal(model.buffer.getText(), SCENE_SOURCE);
-	primary.hierarchy.contextActions.refresh();
-	assert.ok(primary.hierarchy.contextActions.visibleItems.some(item => item.type === 'command' && item.command === 'editor.source'));
+	assert.equal(f.editor.commands.isEnabled('editor.source', primary.hierarchy.control.focusTarget), true);
 });
 
 test('a changed canonical Scene source retires its Home Main chooser without opening a document', t => {

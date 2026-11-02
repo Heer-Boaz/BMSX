@@ -1,13 +1,20 @@
-import type { SceneEditorViewState, SceneEditorSection } from './view_state';
+import type { SceneViewState } from './scene_view';
 import type { SceneAuthoredSourceReference, SceneSelectionRequest } from './authoring_context';
 import { captureSceneReading, restoreSceneReading, type SceneReadingSnapshot } from './reading_snapshot';
+import type { MainWorkspacePrimaryPartId } from '../../common/main_workspace_client';
+import type { SceneViewportCameraState } from './viewport/camera';
 
-export type SceneEditorViewSnapshot = SceneReadingSnapshot & { readonly section: SceneEditorSection };
+export type SceneEditorViewSnapshot = SceneReadingSnapshot & {
+	readonly preferredPart: MainWorkspacePrimaryPartId; readonly camera: SceneViewportCameraState };
 
-export function captureSceneEditorView(input: SceneEditorViewState, reference: SceneAuthoredSourceReference = input.authoring.captureSourceReference()): SceneEditorViewSnapshot {
-	return { ...captureSceneReading(input, reference), section: input.section };
+export function captureSceneEditorView(input: SceneViewState, reference: SceneAuthoredSourceReference = input.authoring.captureSourceReference()): SceneEditorViewSnapshot {
+	return { ...captureSceneReading(input, reference),
+		preferredPart: input.preferredPart, camera: input.viewport.camera.capture() };
 }
-export function restoreSceneEditorView(input: SceneEditorViewState, snapshot: SceneEditorViewSnapshot,
+export function restoreSceneEditorView(input: SceneViewState, snapshot: SceneEditorViewSnapshot,
 	request: SceneSelectionRequest = input.authoring.captureSelectionRequest()): void {
-	if (restoreSceneReading(input, snapshot, request)) input.section = snapshot.section;
+	if (restoreSceneReading(input, snapshot, request)) {
+		input.preferredPart = snapshot.preferredPart;
+		input.viewport.camera.restore(snapshot.camera);
+	}
 }

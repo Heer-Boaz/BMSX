@@ -20,14 +20,16 @@ async function fixture(t: TestContext) {
 	assert.ok(primary instanceof ScenePrimaryClient);
 	assert.equal(selectSceneOutlineRow(primary.view.hierarchy, 1), true);
 	const input = new CodeEditorInput(f.firstInput.workingCopy);
-	parts.main.activeGroup.openEditor(input); f.update();
-	return { ...f, model, main, parts, primary, input };
+	const sceneGroup = parts.findGroup(primary.input)!;
+	const group = parts.sideGroup(sceneGroup, 'down')!;
+	group.openEditor(input); f.update();
+	return { ...f, model, main, parts, primary, input, group, sceneGroup };
 }
 
 for (const client of ['primary', 'activity', 'documents'] as const)
 	for (const entry of ['command', 'minimize', 'close', 'native retirement'] as const)
 		test(`${entry} enters the Main family's retained ${client} client instead of choosing its document child`, async t => {
-			const f = await fixture(t), selected = f.primary.consumer.selection;
+			const f = await fixture(t), selected = f.primary.authoring.selection;
 			if (client === 'primary') f.main.focusPrimary('details');
 			else if (client === 'activity') f.main.focusActivity();
 			else f.parts.main.focus();
@@ -45,7 +47,7 @@ for (const client of ['primary', 'activity', 'documents'] as const)
 			else f.secondPart.window!.detach();
 			assert.ok(inputFocus.admittedTarget === expected);
 			assert.ok(f.parts.activePart === f.parts.main);
-			assert.ok(f.main.primary === f.primary && f.primary.consumer.selection === selected);
+			assert.ok(f.main.primary === f.primary && f.primary.authoring.selection === selected);
 			assert.equal(f.parts.main.activeGroup.model.tabs.length, documents.length);
 			assert.ok(f.parts.main.activeGroup.model.tabs.every((input, index) => input === documents[index]));
 			assert.ok(f.parts.main.activeGroup.model.activeTab === f.input);
@@ -75,14 +77,16 @@ test('returning to another floating document still enters its retained local pic
 	assert.ok(f.firstGroup.model.activeTab === f.firstInput);
 });
 
-test('physical Main entry returns to its primary last-consumer decision without choosing a document', async t => {
+test('Main entry returns to the Scene document close decision without choosing another document', async t => {
 	const f = await fixture(t);
 	f.main.focusPrimary('details');
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- pending primary source\n' }]);
 	const source = f.model.buffer.getText();
-	const closing = f.main.clearPrimary(f.parts.closeController);
+	f.sceneGroup.focus();
+	const closing = f.sceneGroup.close(f.primary.input.id);
 	const expected = inputFocus.admittedTarget;
-	assert.ok(expected !== null && f.main.scope.contains(expected.scope) && !f.primary.scope.contains(expected.scope));
+	assert.equal(f.parts.main.actionPrompt.visible, true);
+	assert.ok(expected === f.parts.main.actionPrompt.focusTarget);
 	f.second.focus(); f.editor.commands.execute('window.focusMain', f.second.commandTarget);
 	assert.ok(inputFocus.admittedTarget === expected && f.main.primary === f.primary);
 	f.key('Escape'); assert.equal(await closing, false);

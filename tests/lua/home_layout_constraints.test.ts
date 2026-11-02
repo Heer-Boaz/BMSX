@@ -62,7 +62,9 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} actual Main all
 	f.first.focus();
 	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), f.first.commandTarget), true);
 	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
-	const home = new HomeInput(f.sources.catalog.getContext(resource.contextId).admission), group = f.editor.editorParts.main.activeGroup;
+	const home = new HomeInput(f.sources.catalog.getContext(resource.contextId).admission);
+	const sceneGroup = f.editor.editorParts.findGroup(primary.input)!;
+	const group = f.editor.editorParts.sideGroup(sceneGroup, 'down')!;
 	group.openEditor(home); f.update();
 	const pane = group.panes.activePane; assert.ok(pane instanceof HomeEditorPane); pane.focus(); f.update();
 	const constraints: EditorPaneConstraints = { minimumWidth: 0, minimumHeight: 0, companionWidth: undefined };
@@ -77,6 +79,6 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} actual Main all
 		for (const item of section.actions.items) if (item.visible) { assert.ok(textWidth >= item.width); count++; }
 	}
 	assert.ok(count > 0); assert.ok(primary.hierarchy.attached && primary.details.attached);
-	assert.ok(f.editor.mainWorkspace.primary === primary && primary.consumer.subject === primary.consumer.document!.scenes[0]);
+	assert.ok(f.editor.mainWorkspace.primary === primary && primary.authoring.subject === primary.authoring.document!.scenes[0]);
 	assert.equal(model.buffer.getText(), SOURCE); assert.equal(model.dirty, false);
 });

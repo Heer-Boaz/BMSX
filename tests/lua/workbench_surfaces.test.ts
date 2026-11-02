@@ -45,6 +45,25 @@ test('an owned utility window uses the host window band without escaping its pri
 	surfaces.dispose();
 });
 
+test('one local modal blocks only its actual additional admission families', () => {
+	const surfaces = new WorkbenchSurfaceService(), painted: string[] = [];
+	const document = surfaces.attach({ ...controller('document', painted), role: 'window' });
+	const first = surfaces.attach({ ...controller('first companion', painted), role: 'window' });
+	const second = surfaces.attach({ ...controller('second companion', painted), role: 'window' });
+	const unrelated = surfaces.attach({ ...controller('unrelated', painted), role: 'window' });
+	const firstScope = new InputFocusScope(first.captureScope), secondScope = new InputFocusScope(second.captureScope);
+	let additional: readonly InputFocusScope[] = [firstScope, secondScope];
+	const modal = surfaces.attach({ ...controller('decision', painted), role: 'modal', blockedScope: document,
+		additionalBlockedScopes: () => additional, lifetimeOwner: document, presentationParent: document });
+	assert.equal(surfaces.isFocusAdmitted(document), false);
+	assert.equal(surfaces.isFocusAdmitted(first), false); assert.equal(surfaces.isFocusAdmitted(second), false);
+	assert.equal(surfaces.isFocusAdmitted(unrelated), true); assert.equal(surfaces.isFocusAdmitted(modal), true);
+	additional = [secondScope]; surfaces.changed();
+	assert.equal(surfaces.isFocusAdmitted(first), true); assert.equal(surfaces.isFocusAdmitted(second), false);
+	modal.dispose(); assert.equal(surfaces.isFocusAdmitted(second), true);
+	surfaces.dispose();
+});
+
 test('native attachment observers survive presentation moves and release on that exact attachment retirement', () => {
 	const surfaces = new WorkbenchSurfaceService(), painted: string[] = [];
 	const main = surfaces.attach({ ...controller('main', painted), role: 'window' });

@@ -2,6 +2,7 @@ import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../inpu
 import type { ResourcePanelController } from './contrib/resources/panel/controller';
 import type { MainWorkspace } from './main_workspace';
 import type { EditorPart } from './services/editor/editor_part';
+import { findEditorGroup, type EditorGroupView } from './services/editor/editor_group';
 import type { WorkbenchSurface } from './services/windows/model';
 import type { WorkbenchSurfaceService } from './services/windows/service';
 import type { WorkbenchStatusBar } from './ui/status_bar/control';
@@ -27,7 +28,11 @@ export class WorkbenchRegionNavigation {
 			case Region.Files: this.files.setFocused(true); break;
 			case Region.Hierarchy: this.main.focusPrimary('hierarchy'); break;
 			case Region.Viewport: this.main.focusPrimary('viewport'); break;
-			case Region.Documents: this.documents.focus(); break;
+			case Region.Documents: {
+				const group = this.documentGroup();
+				if (group === undefined) this.documents.focus(); else group.focus();
+				break;
+			}
 			case Region.Details: this.main.focusPrimary('details'); break;
 			case Region.Activity: this.main.focusActivity(); break;
 			case Region.Status: this.status.focus(); break;
@@ -55,7 +60,7 @@ export class WorkbenchRegionNavigation {
 			else if (window === this.main.surface) {
 				const primary = this.main.primary;
 				if (primary?.hierarchy.scope.contains(origin.scope)) current = Region.Hierarchy;
-				else if (primary?.viewport.scope.contains(origin.scope)) current = Region.Viewport;
+				else if (primary?.viewportTarget.scope.contains(origin.scope)) current = Region.Viewport;
 				else if (primary?.details.scope.contains(origin.scope)) current = Region.Details;
 				else if (this.documents.scope.contains(origin.scope)) current = Region.Documents;
 				else if (this.main.activityPlacement === 'dockedMain' && this.main.activities.scope.contains(origin.scope)) current = Region.Activity;
@@ -75,12 +80,31 @@ export class WorkbenchRegionNavigation {
 		switch (region) {
 			case Region.Files: return this.files.isVisible() ? this.files.focusTarget.scope : undefined;
 			case Region.Hierarchy: return this.main.primary?.hierarchy.attached ? this.main.primary.hierarchy.scope : undefined;
-			case Region.Viewport: return this.main.primary?.viewport.attached ? this.main.primary.viewport.scope : undefined;
-			case Region.Documents: return this.documents.contentPresented && !this.documents.retired && this.documents.operation === 'none' ? this.documents.scope : undefined;
+			case Region.Viewport: {
+				const scope = this.main.primary?.viewportTarget.scope;
+				return scope !== undefined && this.surfaces.isInContext(scope.surfaceScope, this.main.surface.captureScope) ? scope : undefined;
+			}
+			case Region.Documents: {
+				if (!this.documents.contentPresented || this.documents.retired || this.documents.operation !== 'none') return;
+				const viewport = this.main.primary?.viewportTarget;
+				const group = viewport === undefined ? undefined : findEditorGroup(viewport);
+				if (group === undefined || group === null || !this.documents.ownsGroup(group)) return this.documents.scope;
+				return this.documentGroup()?.focusScope;
+			}
 			case Region.Details: return this.main.primary?.details.attached ? this.main.primary.details.scope : undefined;
 			case Region.Activity: return this.main.activityPlacement === 'dockedMain' && this.main.activityDisplayed
 				&& this.main.activities.attached && this.main.activity?.attached ? this.main.activity.scope : undefined;
 			case Region.Status: return this.status.canFocus ? this.status.focusTarget.scope : undefined;
+		}
+	}
+
+	/** A viewport hosted by a document group is already a region; choose another real group for Documents. */
+	private documentGroup(): EditorGroupView | undefined {
+		const viewport = this.main.primary?.viewportTarget;
+		const viewportGroup = viewport === undefined ? undefined : findEditorGroup(viewport);
+		if (viewportGroup === undefined || viewportGroup === null || !this.documents.ownsGroup(viewportGroup)) return;
+		for (const group of this.documents.mostRecentlyActiveGroups) {
+			if (group !== viewportGroup && group.presented && group.panes.activePane !== null && this.surfaces.isFocusAdmitted(group.surface)) return group;
 		}
 	}
 }

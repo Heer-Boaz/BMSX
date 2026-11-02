@@ -2,13 +2,12 @@ import { clamp } from '../../../machine/ts/common/clamp';
 import { clear_rect_bounds, copy_rect_bounds, create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../machine/ts/common/rect';
 import type { WorkbenchViewSizeConstraints } from './layout';
 import type { MainWorkspaceActivitySizeConstraints } from './main_workspace_activity';
-import { WorkbenchFixedEdgeSplitView, WorkbenchSplitView, WORKBENCH_SPLIT_SIZE } from '../ui/split_view';
+import { WorkbenchFixedEdgeSplitView, WORKBENCH_SPLIT_SIZE } from '../ui/split_view';
 
 export type WorkbenchMainWorkspaceState = {
 	readonly hierarchyVisible: boolean;
 	readonly detailsVisible: boolean;
 	readonly activityVisible: boolean;
-	readonly viewportRatio: number;
 	readonly hierarchyWidth?: number;
 	readonly detailsWidth?: number;
 	readonly activityHeight?: number;
@@ -16,9 +15,6 @@ export type WorkbenchMainWorkspaceState = {
 
 export type WorkbenchMainWorkspaceVerticalConstraints = {
 	readonly rowMinimumHeight: number;
-	readonly viewport: WorkbenchViewSizeConstraints | undefined;
-	readonly documents: boolean;
-	readonly documentMinimumHeight: number;
 	readonly activity: MainWorkspaceActivitySizeConstraints | undefined;
 	readonly scrollY: number;
 };
@@ -28,8 +24,6 @@ export class WorkbenchMainWorkspaceLayout {
 	public readonly bounds = create_rect_bounds();
 	public readonly rowBounds = create_rect_bounds();
 	public readonly hierarchyBounds = create_rect_bounds();
-	public readonly viewportBounds = create_rect_bounds();
-	public readonly viewportClip = create_rect_bounds();
 	public readonly documentBounds = create_rect_bounds();
 	public readonly documentClip = create_rect_bounds();
 	public readonly detailsBounds = create_rect_bounds();
@@ -42,17 +36,12 @@ export class WorkbenchMainWorkspaceLayout {
 	public readonly verticalScrollTrack = create_rect_bounds();
 	public readonly activityBounds = create_rect_bounds();
 	public readonly activitySashBounds = create_rect_bounds();
-	public readonly viewportSashBounds = create_rect_bounds();
 	public readonly hierarchySash = new WorkbenchFixedEdgeSplitView('start');
 	public readonly detailsSash = new WorkbenchFixedEdgeSplitView('end');
 	public readonly activitySash = new WorkbenchFixedEdgeSplitView('end', 'vertical');
-	public readonly viewportSplit = new WorkbenchSplitView(0.65, 'vertical');
 	public hierarchyPresented = false;
 	public detailsPresented = false;
 	public activityPresented = false;
-	public viewportPresented = false;
-	public documentsPresented = false;
-	public viewportSashPresented = false;
 	public contentWidth = 0;
 	public contentHeight = 0;
 	public scrollX = 0;
@@ -62,13 +51,11 @@ export class WorkbenchMainWorkspaceLayout {
 	private activityVisibleValue = false;
 	private readonly changeListeners = new Set<() => void>();
 	private stateRevision = 0;
+	private hierarchyStateRevision = 0;
+	private detailsStateRevision = 0;
+	private activityStateRevision = 0;
 	private arrangedRevision = -1;
 	private documentMinimum = -1;
-	private documentMinimumHeight = -1;
-	private viewportMinimumWidth: number | undefined;
-	private viewportPreferredWidth: number | undefined;
-	private viewportMinimumHeight: number | undefined;
-	private viewportSplitRevision = -1;
 	private hierarchyMinimum: number | undefined;
 	private hierarchyPreferred: number | undefined;
 	private detailsMinimum: number | undefined;
@@ -81,53 +68,56 @@ export class WorkbenchMainWorkspaceLayout {
 	private activityPreferred: number | undefined;
 
 	public constructor() {
-		this.hierarchySash.onDidResize(() => this.changed());
-		this.detailsSash.onDidResize(() => this.changed());
-		this.activitySash.onDidResize(() => this.changed());
-		this.viewportSplit.onDidResize(() => this.changed());
+		this.hierarchySash.onDidResize(() => { this.hierarchyStateRevision++; this.changed(); });
+		this.detailsSash.onDidResize(() => { this.detailsStateRevision++; this.changed(); });
+		this.activitySash.onDidResize(() => { this.activityStateRevision++; this.changed(); });
 	}
 	public get hierarchyVisible(): boolean { return this.hierarchyVisibleValue; }
 	public get revision(): number { return this.stateRevision; }
+	public get hierarchyRevision(): number { return this.hierarchyStateRevision; }
+	public get detailsRevision(): number { return this.detailsStateRevision; }
+	public get activityRevision(): number { return this.activityStateRevision; }
 	public set hierarchyVisible(value: boolean) {
 		if (value === this.hierarchyVisibleValue) return;
-		this.hierarchyVisibleValue = value; this.changed();
+		this.hierarchyVisibleValue = value; this.hierarchyStateRevision++; this.changed();
 	}
 	public get detailsVisible(): boolean { return this.detailsVisibleValue; }
 	public set detailsVisible(value: boolean) {
 		if (value === this.detailsVisibleValue) return;
-		this.detailsVisibleValue = value; this.changed();
+		this.detailsVisibleValue = value; this.detailsStateRevision++; this.changed();
 	}
 	public get activityVisible(): boolean { return this.activityVisibleValue; }
 	public set activityVisible(value: boolean) {
 		if (value === this.activityVisibleValue) return;
-		this.activityVisibleValue = value; this.changed();
+		this.activityVisibleValue = value; this.activityStateRevision++; this.changed();
 	}
 	public get hierarchyWidth(): number | undefined { return this.hierarchySash.requestedSize; }
 	public set hierarchyWidth(value: number | undefined) {
 		if (value === this.hierarchySash.requestedSize) return;
-		this.hierarchySash.requestedSize = value; this.changed();
+		this.hierarchySash.requestedSize = value; this.hierarchyStateRevision++; this.changed();
 	}
 	public get detailsWidth(): number | undefined { return this.detailsSash.requestedSize; }
 	public set detailsWidth(value: number | undefined) {
 		if (value === this.detailsSash.requestedSize) return;
-		this.detailsSash.requestedSize = value; this.changed();
+		this.detailsSash.requestedSize = value; this.detailsStateRevision++; this.changed();
 	}
 	public get activityHeight(): number | undefined { return this.activitySash.requestedSize; }
 	public set activityHeight(value: number | undefined) {
 		if (value === this.activitySash.requestedSize) return;
-		this.activitySash.requestedSize = value; this.changed();
+		this.activitySash.requestedSize = value; this.activityStateRevision++; this.changed();
 	}
 	/** Publish one complete placement before an observer can request a newer arrangement. */
 	public setState(state: WorkbenchMainWorkspaceState): void {
 		if (this.hierarchyVisibleValue === state.hierarchyVisible && this.detailsVisibleValue === state.detailsVisible
 			&& this.activityVisibleValue === state.activityVisible && this.hierarchyWidth === state.hierarchyWidth
-			&& this.detailsWidth === state.detailsWidth && this.activityHeight === state.activityHeight
-			&& this.viewportSplit.ratio === state.viewportRatio) return;
+			&& this.detailsWidth === state.detailsWidth && this.activityHeight === state.activityHeight) return;
+		if (this.hierarchyVisibleValue !== state.hierarchyVisible || this.hierarchyWidth !== state.hierarchyWidth) this.hierarchyStateRevision++;
+		if (this.detailsVisibleValue !== state.detailsVisible || this.detailsWidth !== state.detailsWidth) this.detailsStateRevision++;
+		if (this.activityVisibleValue !== state.activityVisible || this.activityHeight !== state.activityHeight) this.activityStateRevision++;
 		this.hierarchyVisibleValue = state.hierarchyVisible; this.detailsVisibleValue = state.detailsVisible;
 		this.activityVisibleValue = state.activityVisible;
 		this.hierarchySash.requestedSize = state.hierarchyWidth; this.detailsSash.requestedSize = state.detailsWidth;
 		this.activitySash.requestedSize = state.activityHeight;
-		this.viewportSplit.ratio = state.viewportRatio;
 		this.changed();
 	}
 	public onDidChange(listener: () => void): () => void {
@@ -146,19 +136,10 @@ export class WorkbenchMainWorkspaceLayout {
 		if (!this.hierarchyVisibleValue) hierarchy = undefined;
 		if (!this.detailsVisibleValue) details = undefined;
 		const activity = this.activityVisibleValue ? vertical?.activity : undefined;
-		const viewport = vertical?.viewport;
-		const documents = vertical === undefined || vertical.documents;
-		if (!documents) documentMinimumWidth = 0;
-		const documentMinimumHeight = viewport === undefined || !documents ? 0 : vertical!.documentMinimumHeight;
-		const verticalPresented = activity !== undefined || viewport !== undefined;
-		const rowMinimumHeight = verticalPresented ? Math.max(vertical!.rowMinimumHeight,
-			viewport === undefined ? 0 : viewport.minimumHeight + (documents ? WORKBENCH_SPLIT_SIZE + documentMinimumHeight : 0)) : 0;
-		const requestedScrollY = verticalPresented ? vertical!.scrollY : 0;
+		const rowMinimumHeight = vertical === undefined ? 0 : vertical.rowMinimumHeight;
+		const requestedScrollY = vertical === undefined ? 0 : vertical.scrollY;
 		if (this.arrangedRevision === this.stateRevision && this.bounds.left === bounds.left && this.bounds.top === bounds.top
 			&& this.bounds.right === bounds.right && this.bounds.bottom === bounds.bottom && this.documentMinimum === documentMinimumWidth
-			&& this.documentsPresented === documents && this.documentMinimumHeight === documentMinimumHeight && this.viewportMinimumWidth === viewport?.minimumWidth
-			&& this.viewportPreferredWidth === viewport?.preferredWidth && this.viewportMinimumHeight === viewport?.minimumHeight
-			&& this.viewportSplitRevision === this.viewportSplit.revision
 			&& this.hierarchyMinimum === hierarchy?.minimumWidth && this.hierarchyPreferred === hierarchy?.preferredWidth
 			&& this.detailsMinimum === details?.minimumWidth && this.detailsPreferred === details?.preferredWidth
 			&& this.scrollbarSize === scrollbarSize && this.requestedScrollX === requestedScrollX
@@ -166,9 +147,6 @@ export class WorkbenchMainWorkspaceLayout {
 			&& this.activityMinimum === activity?.minimumHeight && this.activityPreferred === activity?.preferredHeight) return false;
 		copy_rect_bounds(this.bounds, bounds);
 		this.documentMinimum = documentMinimumWidth;
-		this.documentMinimumHeight = documentMinimumHeight;
-		this.viewportMinimumWidth = viewport?.minimumWidth; this.viewportPreferredWidth = viewport?.preferredWidth;
-		this.viewportMinimumHeight = viewport?.minimumHeight; this.viewportSplitRevision = this.viewportSplit.revision;
 		this.hierarchyMinimum = hierarchy?.minimumWidth; this.hierarchyPreferred = hierarchy?.preferredWidth;
 		this.detailsMinimum = details?.minimumWidth; this.detailsPreferred = details?.preferredWidth;
 		this.scrollbarSize = scrollbarSize; this.requestedScrollX = requestedScrollX;
@@ -177,10 +155,7 @@ export class WorkbenchMainWorkspaceLayout {
 		this.arrangedRevision = this.stateRevision;
 		this.hierarchyPresented = hierarchy !== undefined; this.detailsPresented = details !== undefined;
 		this.activityPresented = activity !== undefined;
-		this.viewportPresented = viewport !== undefined;
-		this.documentsPresented = documents;
-		this.viewportSashPresented = viewport !== undefined && documents;
-		const centralMinimumWidth = Math.max(documentMinimumWidth, viewport?.minimumWidth ?? 0);
+		const centralMinimumWidth = documentMinimumWidth;
 		const hierarchyMinimum = hierarchy?.minimumWidth ?? 0, detailsMinimum = details?.minimumWidth ?? 0;
 		const hierarchyGap = hierarchy === undefined ? 0 : WORKBENCH_SPLIT_SIZE;
 		const detailsGap = details === undefined ? 0 : WORKBENCH_SPLIT_SIZE;
@@ -189,14 +164,13 @@ export class WorkbenchMainWorkspaceLayout {
 		// Each scrollbar can admit the other once; neither can remove an overflow already observed.
 		const firstHorizontalBar = rowMinimumWidth > fullWidth;
 		const activityMinimumHeight = activity === undefined ? 0 : WORKBENCH_SPLIT_SIZE + activity.minimumHeight;
-		const verticalBar = verticalPresented
-			&& rowMinimumHeight + activityMinimumHeight + (firstHorizontalBar ? scrollbarSize : 0) > fullHeight;
+		const verticalBar = rowMinimumHeight + activityMinimumHeight + (firstHorizontalBar ? scrollbarSize : 0) > fullHeight;
 		const viewportRight = Math.max(bounds.left, bounds.right - (verticalBar ? scrollbarSize : 0));
 		const availableWidth = viewportRight - bounds.left;
 		this.contentWidth = Math.max(availableWidth, rowMinimumWidth);
 		const horizontalBar = this.contentWidth > availableWidth;
 		const rowMinimum = rowMinimumHeight + (horizontalBar ? scrollbarSize : 0);
-		this.contentHeight = verticalPresented ? Math.max(fullHeight, rowMinimum + activityMinimumHeight) : fullHeight;
+		this.contentHeight = Math.max(fullHeight, rowMinimum + activityMinimumHeight);
 		this.scrollY = clamp(requestedScrollY, 0, this.contentHeight - fullHeight);
 		write_rect_bounds(this.verticalViewport, bounds.left, bounds.top, viewportRight, bounds.bottom);
 		write_rect_bounds(this.verticalScrollTrack, viewportRight, bounds.top, bounds.right, bounds.bottom);
@@ -235,7 +209,7 @@ export class WorkbenchMainWorkspaceLayout {
 		const hierarchyShare = clamp(Math.trunc(requestedExtra / 2), Math.max(0, requestedExtra - detailsExplicit), hierarchyExplicit);
 		let hierarchyWidth = hierarchyMinimum + hierarchyShare;
 		let detailsWidth = detailsMinimum + requestedExtra - hierarchyShare;
-		const centralPreferredWidth = Math.max(centralMinimumWidth, viewport?.preferredWidth ?? 0);
+		const centralPreferredWidth = centralMinimumWidth;
 		const automaticSpace = Math.max(0, this.contentWidth - hierarchyWidth - detailsWidth - hierarchyGap - detailsGap - centralPreferredWidth);
 		const hierarchyAutomatic = hierarchy === undefined || hierarchyRequest !== undefined ? 0 : Math.max(0, hierarchy.preferredWidth - hierarchyMinimum);
 		const detailsAutomatic = details === undefined || detailsRequest !== undefined ? 0 : Math.max(0, details.preferredWidth - detailsMinimum);
@@ -249,34 +223,9 @@ export class WorkbenchMainWorkspaceLayout {
 		const clipRight = Math.max(clipLeft, Math.min(documentRight, this.viewport.right, this.verticalViewport.right));
 		const clipTop = Math.max(this.viewport.top, this.verticalViewport.top);
 		const clipBottom = Math.min(this.viewport.bottom, this.verticalViewport.bottom);
-		if (viewport !== undefined && documents) {
-			const split = this.viewportSplit;
-			split.minimumFirstSize = viewport.minimumHeight + WORKBENCH_SPLIT_SIZE / 2;
-			split.minimumSecondSize = documentMinimumHeight + WORKBENCH_SPLIT_SIZE / 2;
-			split.layout(documentLeft, top, documentRight, bottom);
-			const position = split.position;
-			write_rect_bounds(this.viewportBounds, documentLeft, top, documentRight, position - WORKBENCH_SPLIT_SIZE / 2);
-			write_rect_bounds(this.viewportSashBounds, documentLeft, this.viewportBounds.bottom, documentRight, position + WORKBENCH_SPLIT_SIZE / 2);
-			write_rect_bounds(this.documentBounds, documentLeft, this.viewportSashBounds.bottom, documentRight, bottom);
-		} else {
-			clear_rect_bounds(this.viewportSashBounds);
-			this.viewportSplit.minimumFirstSize = this.viewportSplit.minimumSecondSize = 0;
-			this.viewportSplit.layout(0, 0, 0, 0);
-			if (viewport !== undefined) write_rect_bounds(this.viewportBounds, documentLeft, top, documentRight, bottom);
-			else clear_rect_bounds(this.viewportBounds);
-			if (documents) write_rect_bounds(this.documentBounds, documentLeft, top, documentRight, bottom);
-			else clear_rect_bounds(this.documentBounds);
-		}
-		if (viewport !== undefined) {
-			const viewportTop = Math.max(this.viewportBounds.top, clipTop);
-			write_rect_bounds(this.viewportClip, clipLeft, viewportTop, clipRight, Math.max(viewportTop, Math.min(this.viewportBounds.bottom, clipBottom)));
-		} else clear_rect_bounds(this.viewportClip);
-		if (documents) {
-			const documentTop = Math.max(this.documentBounds.top, clipTop);
-			write_rect_bounds(this.documentClip, clipLeft, documentTop, clipRight, Math.max(documentTop, Math.min(this.documentBounds.bottom, clipBottom)));
-		} else {
-			clear_rect_bounds(this.documentClip);
-		}
+		write_rect_bounds(this.documentBounds, documentLeft, top, documentRight, bottom);
+		const documentTop = Math.max(this.documentBounds.top, clipTop);
+		write_rect_bounds(this.documentClip, clipLeft, documentTop, clipRight, Math.max(documentTop, Math.min(this.documentBounds.bottom, clipBottom)));
 		if (hierarchy !== undefined) {
 			write_rect_bounds(this.hierarchyBounds, left, top, left + hierarchyWidth, bottom);
 			const split = this.hierarchySash;

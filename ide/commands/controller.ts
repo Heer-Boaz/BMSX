@@ -195,7 +195,14 @@ export class IdeCommandController {
 			case 'window.showAll': showOpenWindows(this.editor.mainWorkspace, this.editor.editorParts, this.editor.surfaces, this.editor.quickInput); return;
 			case 'window.focusMain': this.editor.mainWorkspace.focusTarget.focus(); return;
 			case 'workspace.focusPrimary': this.editor.mainWorkspace.focusPrimary(); return;
-			case 'workspace.clearPrimary': void this.editor.mainWorkspace.clearPrimary(this.editor.editorParts.closeController, target); return;
+			case 'workspace.clearPrimary': {
+				const input = this.editor.mainWorkspace.primary?.input;
+				if (input !== undefined) {
+					const owner = this.editor.editorParts.findGroup(input);
+					if (owner !== undefined) void owner.close(input.id, target);
+				}
+				return;
+			}
 			case 'window.newEditor': this.editor.editorParts.createDocument().focus(); return;
 			case 'group.close': void this.editor.editorParts.closeGroup(group, target); return;
 			case 'group.move':

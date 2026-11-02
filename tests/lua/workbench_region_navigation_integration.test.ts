@@ -48,21 +48,22 @@ async function fixture(t: TestContext) {
 	assert.equal(await editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target!), true);
 	const primary = main.primary; assert.ok(primary instanceof ScenePrimaryClient);
 	assert.equal(selectSceneOutlineRow(primary.view.hierarchy, 1), true);
-	const group = parts.main.activeGroup, input = new CodeEditorInput(model);
+	const sceneGroup = parts.findGroup(primary.input)!;
+	const group = parts.sideGroup(sceneGroup, 'down')!, input = new CodeEditorInput(model);
 	group.openEditor(input);
 	editor.diagnostics.computePending();
 	editor.problems.setDiagnostics([{ model, version: model.version, row: 0, startColumn: 0, endColumn: 1,
 		severity: 'error', message: 'Independent fixture diagnostic' }], { ready: 1, pending: 0, unsupported: 0, failed: 0 });
 	main.openActivity('problems'); editor.resourcePanel.show(); f.update();
-	return { ...f, parts, main, primary, model, group, input };
+	return { ...f, parts, main, primary, model, group, sceneGroup, input };
 }
 
 test('actual F6 and Shift+F6 traverse fixed outer regions without changing retained authoring or local Tab order', async t => {
 	const f = await fixture(t), { editor, primary, group, model } = f;
-	const source = model.buffer.getText(), version = model.version, selection = primary.consumer.selection;
+	const source = model.buffer.getText(), version = model.version, selection = primary.authoring.selection;
 	const filesSelection = editor.resourcePanel.files.selectedNode, diagnostic = editor.problems.selectedDiagnostic;
 	const tabs = [...group.model.tabs], cycles = f.host.runtime.machine.scheduler.nowCycles;
-	const regions = [primary.hierarchy.scope, primary.viewport.scope, group.focusScope, primary.details.scope, editor.problems.scope,
+	const regions = [primary.hierarchy.scope, primary.viewportTarget.scope, group.focusScope, primary.details.scope, editor.problems.scope,
 		editor.statusBar.focusTarget.scope, editor.resourcePanel.focusTarget.scope];
 	for (const scope of regions) {
 		f.key('F6');
@@ -78,7 +79,7 @@ test('actual F6 and Shift+F6 traverse fixed outer regions without changing retai
 	f.key('Tab'); assert.ok(inputFocus.admittedTarget === primary.details.control.controls[1].field.focusTarget);
 	f.key('Tab', KeyModifier.shift); assert.ok(inputFocus.admittedTarget === primary.details.control.controls[0].field.focusTarget);
 	f.key('F6'); assert.ok(inputFocus.admittedTarget === editor.problems.focusTarget);
-	assert.ok(primary.consumer.selection === selection && editor.resourcePanel.files.selectedNode === filesSelection
+	assert.ok(primary.authoring.selection === selection && editor.resourcePanel.files.selectedNode === filesSelection
 		&& editor.problems.selectedDiagnostic === diagnostic && group.model.tabs.every((input, index) => input === tabs[index]));
 	assert.equal(model.buffer.getText(), source); assert.equal(model.version, version); assert.equal(model.dirty, false);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
@@ -91,7 +92,7 @@ test('outer navigation skips hidden clients and floating or minimized activity w
 	const hierarchyGeneration = primary.hierarchy.scope.contextGeneration, detailsGeneration = primary.details.scope.contextGeneration;
 	const activityGeneration = editor.problems.scope.contextGeneration;
 	f.key('F6'); assert.ok(inputFocus.admittedTarget === editor.statusBar.focusTarget);
-	f.key('F6'); assert.ok(primary.viewport.scope.contains(inputFocus.admittedTarget!.scope));
+	f.key('F6'); assert.ok(primary.viewportTarget.scope.contains(inputFocus.admittedTarget!.scope));
 	f.key('F6'); assert.ok(inputFocus.admittedTarget === group.panes.activePane!.commandTarget);
 	assert.equal(primary.hierarchy.attached, false); assert.equal(primary.details.attached, false);
 	assert.equal(editor.problems.attached, false); assert.equal(editor.resourcePanel.isVisible(), false);
@@ -114,7 +115,7 @@ test('a floating document or activity is outside the ring and cannot replace the
 	f.firstPart.focus(); f.update(); assert.ok(parts.activePart === f.firstPart);
 	f.key('F6'); assert.ok(inputFocus.admittedTarget === editor.resourcePanel.focusTarget);
 	f.key('F6'); assert.ok(primary.hierarchy.scope.contains(inputFocus.admittedTarget!.scope));
-	f.key('F6'); assert.ok(primary.viewport.scope.contains(inputFocus.admittedTarget!.scope));
+	f.key('F6'); assert.ok(primary.viewportTarget.scope.contains(inputFocus.admittedTarget!.scope));
 	f.key('F6'); assert.ok(inputFocus.admittedTarget === group.panes.activePane!.commandTarget);
 	assert.ok(parts.activePart === parts.main && group.model.activeTab === f.input);
 	f.firstPart.focus(); f.key('F6', KeyModifier.shift);
@@ -135,7 +136,7 @@ test('scroll-clipped but attached Main regions stay eligible and their concrete 
 	editor.resourcePanel.focusTarget.focus();
 	f.key('F6'); assert.ok(primary.hierarchy.scope.contains(inputFocus.admittedTarget!.scope));
 	assert.ok(main.regionLayout.scrollY < scrollY, 'the owning Main arrangement reveals its retained hierarchy');
-	f.key('F6'); assert.ok(primary.viewport.scope.contains(inputFocus.admittedTarget!.scope));
+	f.key('F6'); assert.ok(primary.viewportTarget.scope.contains(inputFocus.admittedTarget!.scope));
 	f.key('F6'); assert.ok(inputFocus.admittedTarget === group.panes.activePane!.commandTarget);
 	f.key('F6'); assert.ok(primary.details.scope.contains(inputFocus.admittedTarget!.scope));
 	f.key('F6'); assert.ok(inputFocus.admittedTarget === editor.problems.focusTarget);
@@ -166,13 +167,18 @@ test('direct sibling-primary focus applies the actual invalid-field blur policy 
 });
 
 for (const command of ['workspace.hierarchy.focus', 'sceneEditor.outline'] as const)
-	for (const draft of ['123', '-']) test(`${command} delegates ${draft === '123' ? 'valid' : 'invalid'} draft departure to native focus`, async t => {
+	for (const draft of ['123', '-']) test(`${command} handles ${draft === '123' ? 'valid' : 'invalid'} draft departure at its owning boundary`, async t => {
 		const f = await fixture(t), field = f.primary.details.control.controls[0];
 		f.main.focusPrimary('details'); field.field.focusTarget.focus(); setFieldText(field.field, draft, true);
 		const source = f.model.buffer.getText(), version = f.model.version;
 		f.editor.commands.execute(command, field.field.focusTarget); f.update();
-		assert.ok(f.primary.hierarchy.scope.contains(inputFocus.admittedTarget!.scope));
-		assert.equal(field.pending, false);
+		if (command === 'sceneEditor.outline' && draft === '-') {
+			assert.ok(inputFocus.admittedTarget === field.field.focusTarget);
+			assert.equal(field.pending, true);
+		} else {
+			assert.ok(f.primary.hierarchy.scope.contains(inputFocus.admittedTarget!.scope));
+			assert.equal(field.pending, false);
+		}
 		assert.equal(f.model.version, version + (draft === '123' ? 1 : 0));
 		assert.equal(f.model.buffer.getText(), draft === '123' ? source.replace('position = { x = 11,', 'position = { x = 123,') : source);
 	});
@@ -228,8 +234,9 @@ test('root and part-local modal origins cannot escape with either region key whi
 	}
 	assert.equal(f.editor.resourcePanel.focusTarget.focus(), true);
 	f.key('F6'); assert.ok(f.primary.hierarchy.scope.contains(inputFocus.admittedTarget!.scope));
-	f.key('F6'); assert.ok(f.primary.viewport.scope.contains(inputFocus.admittedTarget!.scope), 'the primary viewport is independent of document-local modality');
-	f.key('F6'); assert.ok(f.primary.details.scope.contains(inputFocus.admittedTarget!.scope), 'only the modal document family is skipped');
+	f.key('F6'); assert.ok(f.primary.details.scope.contains(inputFocus.admittedTarget!.scope));
+	const sceneSurface = f.editor.surfaces.findByScope(f.primary.viewportTarget.scope.surfaceScope);
+	assert.ok(sceneSurface !== undefined && !f.editor.surfaces.isFocusAdmitted(sceneSurface));
 	assert.equal(prompt.visible, true); assert.ok(f.group.model.contains(f.input));
 	prompt.close('cancel'); assert.equal(await localDecision, 'cancel');
 });

@@ -19,7 +19,7 @@ import type { BehaviorLensInput } from '../contrib/behavior_lens/editor_input';
 import type { CodeEditorInput } from '../contrib/code_editor/editor_input';
 import type { ResourceViewerInput } from '../contrib/resources/editor_input';
 import type { ScenarioLabInput } from '../contrib/scenario_lab/editor_input';
-import type { SceneEditorInput } from '../contrib/scene_editor/editor_input';
+import type { SceneEditorInput, UnavailableSceneEditorInput } from '../contrib/scene_editor/editor_input';
 import type { ActorLabInput } from '../contrib/actor_lab/editor_input';
 import type { GameViewInput } from '../contrib/game_view/editor_input';
 import type { WorkspaceEditReviewInput } from '../contrib/edit_review/editor_input';
@@ -48,6 +48,7 @@ export type EditorInput = (
 	| AssistantInput
 	| WorkspaceEditReviewInput
 	| SceneEditorInput
+	| UnavailableSceneEditorInput
 	| CartMapInput
 	| LuaProgramInput
 	| AemEditorInput

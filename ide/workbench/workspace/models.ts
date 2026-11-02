@@ -1,7 +1,7 @@
 import type { FontVariant } from '../../../machine/ts/render/shared/bmsx_font';
 import type { SerializedBreakpoints } from '../../runtime/breakpoints';
 import type { WorkspaceRecord } from '../../workspace/records';
-import type { SerializedEditorParts } from '../services/editor/editor_parts_serialization';
+import type { SerializedEditorLocation, SerializedEditorParts } from '../services/editor/editor_parts_serialization';
 import type { SerializedMainWorkspace } from '../common/main_workspace_serialization';
 import type { SerializedResourcePanel } from '../contrib/resources/panel/session';
 
@@ -10,6 +10,7 @@ import type { WorkingCopyRecoveryEntry } from '../services/working_copy/source_r
 export type WorkspaceAutosavePayload = {
 	dirtyFiles: WorkingCopyRecoveryEntry[];
 	editorParts: SerializedEditorParts;
+	sceneCompanion: SerializedEditorLocation | undefined;
 	mainWorkspace: SerializedMainWorkspace;
 	filesBrowser: SerializedResourcePanel;
 	breakpoints: SerializedBreakpoints;

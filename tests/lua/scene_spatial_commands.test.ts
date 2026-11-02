@@ -62,13 +62,14 @@ async function fixture(t: TestContext, placement: 'document' | 'Main' = 'documen
 		assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), f.first.commandTarget), true);
 		f.update();
 		const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
-		context = primary.consumer; hierarchy = primary.hierarchy.control; details = primary.details.control;
+		context = primary.authoring; hierarchy = primary.hierarchy.control; details = primary.details.control;
 		picker = f.editor.quickInput; commandTarget = primary.commandTarget;
 	} else {
 		f.editor.sceneEditor.openResource(f.firstGroup, resource); f.update();
 		const pane = f.firstGroup.panes.activePane; assert.ok(pane instanceof SceneEditorPane);
-		context = pane.control.view.authoring; hierarchy = pane.control.hierarchy; details = pane.control.details;
-		picker = f.firstPart.quickInput; commandTarget = pane.control.focusTarget;
+		const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
+		context = pane.control.view.authoring; hierarchy = primary.hierarchy.control; details = primary.details.control;
+		picker = f.editor.quickInput; commandTarget = pane.control.focusTarget;
 	}
 	return { ...f, model, resource, sourceInput, context, hierarchy, details, picker, commandTarget };
 }
@@ -438,7 +439,8 @@ test('replacing and restoring a document Scene attachment never revives its olde
 	f.firstGroup.openEditor(sceneInput); f.update();
 	assert.equal(f.picker.visible, false); f.key('Enter');
 	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
-	assert.equal(f.editor.commands.isEnabled('sceneEditor.reparentMember', f.commandTarget), true);
+	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
+	assert.equal(f.editor.commands.isEnabled('sceneEditor.reparentMember', primary.hierarchy.control.focusTarget), true);
 });
 
 test('provider-only Scene topology replacement measures its new nodes once at unchanged source and bounds', async t => {

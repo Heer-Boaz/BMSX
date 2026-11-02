@@ -36,7 +36,7 @@ for (const explicit of [false, true]) test(`Scene authoring chooses a Main subje
 	assert.equal(open.mock.callCount(), 0); assert.equal(f.editor.quickInput.visible, true);
 	await f.editor.quickInput.accept(); await new Promise<void>(resolve => setImmediate(resolve)); f.update();
 	const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
-	assert.equal(client.consumer.workingCopy, f.input.workingCopy); assert.equal(client.viewport.attached, true);
+	assert.equal(client.authoring.workingCopy, f.input.workingCopy); assert.ok(f.editor.editorParts.findGroup(client.input)?.panes.activePane?.input === client.input);
 	assert.ok(f.firstGroup.model.activeTab === f.input && f.secondGroup.model.activeTab === f.secondInput);
 });
 
@@ -88,8 +88,8 @@ test('Scene activation retains its source in Main after the originating Source t
 	await f.editor.quickInput.accept(); await new Promise<void>(resolve => setImmediate(resolve)); f.update();
 	const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
 	assert.equal(await f.firstGroup.close(f.input.id), true); f.update();
-	assert.equal(client.consumer.workingCopy, f.input.workingCopy); assert.equal(client.consumer.isCurrent, true);
-	assert.equal(client.viewport.attached, true); assert.ok(f.editor.mainWorkspace.primary === client);
+	assert.equal(client.authoring.workingCopy, f.input.workingCopy); assert.equal(client.authoring.isCurrent, true);
+	assert.ok(f.editor.editorParts.findGroup(client.input)?.panes.activePane?.input === client.input); assert.ok(f.editor.mainWorkspace.primary === client);
 });
 
 test('a seeded Animation opening consumes its same-group sender receipt', t => {
@@ -170,9 +170,12 @@ async function sourceCommandFixture(t: Parameters<typeof createActualSourcePanes
 	const primaryModel = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, primaryResource);
 	const document = f.ide.sceneSources.get(primaryModel);
 	assert.equal(await f.editor.openSceneInMain(() => ({ model: primaryModel, subject: { document, sourceVersion: primaryModel.version, scene: document.scenes[0] } }), f.first.commandTarget), true);
-	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
+	const firstPrimary = f.editor.mainWorkspace.primary; assert.ok(firstPrimary instanceof ScenePrimaryClient);
+	const primaryGroup = f.editor.editorParts.findGroup(firstPrimary.input)!;
 	f.editor.sceneEditor.openResource(f.secondGroup, documentResource, { pinned: true }); f.update();
 	const pane = f.secondGroup.panes.activePane; assert.ok(pane instanceof SceneEditorPane);
+	primaryGroup.panes.activePane!.focus();
+	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient && primary.input === firstPrimary.input);
 	return { ...f, primary, primaryModel, pane, documentModel: pane.input.workingCopy };
 }
 
@@ -184,14 +187,16 @@ for (const direction of ['main-to-document', 'document-to-main'] as const)
 			const target = direction === 'main-to-document' ? f.primary.hierarchy.control.focusTarget : f.pane.commandTarget;
 			const invoking = direction === 'main-to-document' ? f.pane.commandTarget : f.primary.hierarchy.control.focusTarget;
 			const expected = direction === 'main-to-document' ? f.primaryModel : f.documentModel;
-			const reference = direction === 'main-to-document' ? f.secondGroup : f.editor.editorParts.main.activeGroup;
-			const receiver = command === 'editor.sourceToSide' ? f.editor.editorParts.splitGroup(reference, 'right') : reference;
-			assert.ok(receiver !== undefined);
-			assert.equal(invoking.focus(), true);
+			assert.equal(target.focus(), true);
+			const focusedPrimary = main.primary;
+			const producer = direction === 'main-to-document' ? f.primary.input : f.pane.input;
+			const producerGroup = f.editor.editorParts.findGroup(producer)!;
 			const primarySource = f.primaryModel.buffer.getText(), documentSource = f.documentModel.buffer.getText();
 			const results: Array<Promise<number | undefined> | undefined> = [];
 			const open = f.editor.navigation.openSource.bind(f.editor.navigation);
+			let reference: typeof f.secondGroup | undefined;
 			t.mock.method(f.editor.navigation, 'openSource', (owner, options) => {
+				reference = options?.reference;
 				const result = open(owner, options); results.push(result); return result;
 			});
 			assert.equal(f.editor.commands.isEnabled(command, target), true);
@@ -200,8 +205,11 @@ for (const direction of ['main-to-document', 'document-to-main'] as const)
 			const opened = f.editor.editorParts.activeGroup.model.activeTab;
 			assert.ok(opened instanceof CodeEditorInput);
 			assert.ok(opened.workingCopy === expected, 'the native invocation context cannot replace the admitted source producer');
-			assert.ok(f.editor.editorParts.activeGroup === receiver, 'the source producer cannot replace the explicitly addressed receiving group');
-			assert.ok(main.primary === f.primary);
+			const receivingGroup = f.editor.editorParts.activeGroup;
+			assert.ok(reference !== undefined && receivingGroup !== reference);
+			assert.ok(f.editor.editorParts.partForGroup(receivingGroup) === f.editor.editorParts.partForGroup(reference));
+			assert.ok(producerGroup.panes.activePane?.input === producer, 'Source must not replace its Scene producer');
+			assert.ok(main.primary === focusedPrimary);
 			assert.equal(f.primaryModel.buffer.getText(), primarySource); assert.equal(f.documentModel.buffer.getText(), documentSource);
 		});
 
@@ -243,4 +251,26 @@ test('a pending Main Source cannot replace a newer opening in its explicit forei
 	assert.ok(f.secondGroup.model.activeTab === replacement);
 	assert.ok(f.editor.mainWorkspace.primary === f.primary);
 	assert.equal(f.primaryModel.buffer.getText(), SCENE_VIEWPORT_SOURCE);
+});
+
+test('Source from a Scene never replaces its own producer when a foreign reference group is adjacent', async t => {
+	const f = createActualSourcePanes(t, false, [
+		...SCENE_VIEWPORT_IMPORTS, ['left.lua', SCENE_VIEWPORT_SOURCE],
+		['right.lua', `-- Independent source\n${SCENE_VIEWPORT_SOURCE}`], ['cartlib/world/scene_library.lua', 'return {}'],
+	]);
+	const parts = f.editor.editorParts, left = parts.main.activeGroup;
+	const leftResource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'left.lua' })!;
+	const rightResource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'right.lua' })!;
+	f.editor.sceneEditor.openResource(left, leftResource, { pinned: true }); f.update();
+	const leftPane = left.panes.activePane; assert.ok(leftPane instanceof SceneEditorPane);
+	const right = parts.splitGroup(left, 'right'); assert.ok(right !== undefined);
+	f.editor.sceneEditor.openResource(right, rightResource, { pinned: true }); f.update();
+	const producer = right.panes.activePane; assert.ok(producer instanceof SceneEditorPane);
+	producer.focus();
+	const open = t.mock.method(f.editor.navigation, 'openSource');
+	f.editor.commands.execute('editor.source', producer.commandTarget, undefined, leftPane.commandTarget);
+	assert.equal(open.mock.callCount(), 1); assert.ok(await open.mock.calls[0].result !== undefined); f.update();
+	assert.ok(right.panes.activePane === producer && right.model.activeTab === producer.input);
+	const source = parts.activeGroup.model.activeTab;
+	assert.ok(source instanceof CodeEditorInput && source.workingCopy === producer.input.workingCopy);
 });

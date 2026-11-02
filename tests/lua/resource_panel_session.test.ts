@@ -47,8 +47,10 @@ async function fixture(t: TestContext) {
 		const dirty = captureWorkspaceDirtySources(editorTextModelService, f.sources.catalog, f.host.clock, workspaceDirtyRecords);
 		workspaceDirtyRecords.clear();
 		for (const [path, record] of dirty.dirtyRecords) workspaceDirtyRecords.set(path, record);
+		const companion = f.editor.mainWorkspace.companionInput;
 		return JSON.parse(JSON.stringify({ filesBrowser: panel.serialize(), mainWorkspace: f.editor.mainWorkspace.serialize(),
 			dirtyFiles: dirty.dirtyFiles, editorParts: f.editor.editorParts.serialize(f.editor.editorInputSerializers),
+			sceneCompanion: companion === undefined ? undefined : f.editor.editorParts.captureEditorLocation(companion),
 			fontVariant: f.editor.fontVariant, breakpoints: f.ide.debugger.breakpoints.serialize() }));
 	};
 	const restore = (payload: WorkspaceAutosavePayload) => applyWorkspaceAutosavePayload(f.editor, f.sources.catalog, f.ide.debugger, payload);
@@ -66,7 +68,7 @@ test('workspace recovery restores the exact browser declaration and manual readi
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- recovered canonical draft\n' }]);
 	panel.refresh(); f.second.focus();
 	const payload = f.checkpoint(), source = f.model.buffer.getText(), selected = selectedDefinition(panel.files.selectedNode);
-	const range = { ...selected.range }, primarySelection = f.primary.consumer.captureSourceReference().selected;
+	const range = { ...selected.range }, primarySelection = f.primary.authoring.captureSourceReference().selected;
 	assert.equal(payload.dirtyFiles.length, 1);
 	panel.navigateFiles('home'); panel.toggleFilterMode(); panel.setScroll(0); panel.split.ratio = 0.5;
 	await f.restore(payload); f.update();
@@ -75,9 +77,9 @@ test('workspace recovery restores the exact browser declaration and manual readi
 	assert.equal(restored.kind, 'scene'); assert.equal(restored.ownerResource.path, 'scene.lua');
 	assert.equal(panel.scroll, payload.filesBrowser.view.scroll); assert.equal(panel.hscroll, payload.filesBrowser.view.hscroll);
 	assert.equal(panel.getFilterMode(), payload.filesBrowser.filter); assert.equal(panel.split.ratio, payload.filesBrowser.widthRatio);
-	assert.ok(primary instanceof ScenePrimaryClient); assert.ok(primary.consumer.subject === primary.consumer.document!.scenes[0]);
-	assert.deepEqual(primary.consumer.captureSourceReference().selected, primarySelection);
-	assert.equal(primary.consumer.workingCopy.buffer.getText(), source); assert.equal(primary.consumer.workingCopy.dirty, true);
+	assert.ok(primary instanceof ScenePrimaryClient); assert.ok(primary.authoring.subject === primary.authoring.document!.scenes[0]);
+	assert.deepEqual(primary.authoring.captureSourceReference().selected, primarySelection);
+	assert.equal(primary.authoring.workingCopy.buffer.getText(), source); assert.equal(primary.authoring.workingCopy.dirty, true);
 	assert.equal([...editorTextModelService.models].filter(model => model.identity.path === 'scene.lua').length, 1);
 	const parts = f.editor.editorParts.serialize(f.editor.editorInputSerializers);
 	assert.deepEqual(parts.main.layout, payload.editorParts.main.layout);
@@ -148,8 +150,9 @@ test('a saved focused browser restores its native focus without activating its d
 	await f.restore(payload); f.update();
 	assert.ok(inputFocus.admittedTarget === f.panel.focusTarget);
 	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
-	assert.ok(primary.consumer.subject === primary.consumer.document!.scenes[0]);
-	assert.equal(f.editor.editorParts.groups.flatMap(group => group.model.tabs).filter(input => input.kind === 'scene_editor').length, 0);
+	assert.ok(primary.authoring.subject === primary.authoring.document!.scenes[0]);
+	assert.equal(f.editor.editorParts.groups.flatMap(group => group.model.tabs).filter(input => input.kind === 'scene_editor').length, 1);
+	assert.ok(f.editor.editorParts.findGroup(primary.input) !== undefined);
 });
 
 test('a newer document interaction supersedes only saved browser focus, not passive browser reading recovery', async t => {
@@ -171,8 +174,9 @@ for (const recover of [false, true]) test(`inactive Files retains native focus w
 	assert.equal(panel.visible, true); assert.equal(panel.isVisible(), false);
 	assert.ok(inputFocus.target === panel.focusTarget && inputFocus.admittedTarget === panel.focusTarget);
 	assert.equal(panel.serialize().focused, true); assert.deepEqual(panel.serialize().view, payload.filesBrowser.view);
-	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
-	assert.deepEqual(f.editor.mainWorkspace.serialize().primary, payload.mainWorkspace.primary);
+	const companion = f.editor.mainWorkspace.companionInput; assert.ok(companion !== undefined);
+	assert.equal(f.editor.mainWorkspace.primary, undefined);
+	assert.deepEqual(f.editor.editorParts.captureEditorLocation(companion), payload.sceneCompanion);
 	const documents = f.editor.editorParts.serialize(f.editor.editorInputSerializers);
 	assert.deepEqual(documents.main.layout, payload.editorParts.main.layout);
 	assert.deepEqual(documents.documents.map(part => part.layout), payload.editorParts.documents.map(part => part.layout));
@@ -188,7 +192,9 @@ for (const recover of [false, true]) test(`inactive Files retains native focus w
 	f.editor.activate(); f.update();
 	assert.equal(f.editor.isActive, true); assert.equal(f.editor.acceptsInput, true);
 	assert.ok(inputFocus.admittedTarget === panel.focusTarget); assert.deepEqual(panel.serialize().view, payload.filesBrowser.view);
-	assert.ok(f.editor.mainWorkspace.primary === primary); assert.deepEqual(primary.serialize(), payload.mainWorkspace.primary);
+	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
+	assert.equal(primary.input, companion);
+	assert.deepEqual(f.editor.editorParts.captureEditorLocation(primary.input), payload.sceneCompanion);
 	assert.equal(f.editor.guestInputRecipient, null); assert.equal(pointerCapture.guestBinding, undefined);
 	const selected = panel.files.selectedNode; f.key('ArrowDown');
 	assert.ok(panel.files.selectedNode !== selected && inputFocus.admittedTarget === panel.focusTarget);
@@ -202,16 +208,17 @@ test('inactive recovery retains Main primary and preferred Details region until 
 	assert.equal(payload.filesBrowser.focused, false); assert.equal(payload.editorParts.active, 0);
 	assert.equal(payload.mainWorkspace.activeClient, 'primary'); assert.equal(payload.mainWorkspace.activePrimaryPart, 'details');
 	f.editor.deactivate(); f.update(); await f.restore(payload); f.update();
-	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
+	const companion = f.editor.mainWorkspace.companionInput; assert.ok(companion !== undefined);
+	assert.equal(f.editor.mainWorkspace.primary, undefined);
 	assert.equal(f.editor.isActive, false); assert.equal(f.editor.acceptsInput, false);
-	assert.equal(primary.hierarchy.attached, false); assert.equal(primary.details.attached, false);
-	assert.equal(primary.view.preferredPart, 'details'); assert.deepEqual(primary.serialize(), payload.mainWorkspace.primary);
+	assert.deepEqual(f.editor.editorParts.captureEditorLocation(companion), payload.sceneCompanion);
 	const documents = f.editor.editorParts.serialize(f.editor.editorInputSerializers);
 	assert.deepEqual(documents.main.layout, payload.editorParts.main.layout);
 	assert.deepEqual(documents.documents.map(part => part.layout), payload.editorParts.documents.map(part => part.layout));
 	assert.equal(pointerCapture.guestBinding, undefined);
 	f.editor.activate(); f.update();
-	assert.ok(f.editor.mainWorkspace.primary === primary); assert.equal(primary.view.preferredPart, 'details');
+	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
+	assert.equal(primary.input, companion); assert.equal(primary.view.preferredPart, 'details');
 	assert.ok(inputFocus.admittedTarget !== null && primary.details.scope.contains(inputFocus.admittedTarget.scope),
 		`native focus: Files=${inputFocus.admittedTarget === f.panel.focusTarget}, Main=${inputFocus.admittedTarget === f.editor.mainWorkspace.focusTarget}, activeClient=${f.editor.mainWorkspace.serialize().activeClient}, Details attached=${primary.details.attached}`);
 	assert.equal(f.editor.guestInputRecipient, null); assert.equal(pointerCapture.guestBinding, undefined);

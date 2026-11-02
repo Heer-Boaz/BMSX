@@ -40,7 +40,8 @@ async function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
 	assert.equal(await editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target!), true);
 	const primary = main.primary; assert.ok(primary instanceof ScenePrimaryClient);
 	assert.equal(selectSceneOutlineRow(primary.view.hierarchy, 1), true);
-	const group = parts.main.activeGroup, input = new CodeEditorInput(model);
+	const sceneGroup = parts.findGroup(primary.input)!;
+	const group = parts.sideGroup(sceneGroup, 'down')!, input = new CodeEditorInput(model);
 	group.openEditor(input); main.openActivity('problems'); editor.resourcePanel.show(); f.update();
 	return { ...f, parts, main, primary, model, group, input };
 }
@@ -51,7 +52,7 @@ for (const font of ['tiny', 'msx'] as const)
 		main.focusPrimary('details');
 		const field = primary.details.control.controls[0]; assert.equal(field.field.focusTarget.focus(), true);
 		setFieldText(field.field, '-', true);
-		const source = model.buffer.getText(), version = model.version, selected = primary.consumer.selection;
+		const source = model.buffer.getText(), version = model.version, selected = primary.authoring.selection;
 		const generation = primary.scope.contextGeneration, detailsGeneration = primary.details.scope.contextGeneration;
 		const tabs = [...group.model.tabs], hierarchyWidth = main.regionLayout.hierarchyWidth;
 		const activityHeight = main.regionLayout.activityHeight, filesRatio = editor.resourcePanel.split.ratio;
@@ -68,7 +69,7 @@ for (const font of ['tiny', 'msx'] as const)
 		assert.equal(editor.commands.isEnabled('workspace.increaseViewHeight', field.field.focusTarget), false);
 		editor.commands.execute('workspace.increaseViewHeight', field.field.focusTarget); f.update();
 		assert.equal(field.pending, true); assert.equal(field.field.text, '-');
-		assert.ok(inputFocus.admittedTarget === field.field.focusTarget && main.primary === primary && primary.consumer.selection === selected);
+		assert.ok(inputFocus.admittedTarget === field.field.focusTarget && main.primary === primary && primary.authoring.selection === selected);
 		assert.equal(primary.scope.contextGeneration, generation); assert.equal(primary.details.scope.contextGeneration, detailsGeneration);
 		assert.deepEqual(group.model.tabs, tabs); assert.equal(model.buffer.getText(), source); assert.equal(model.version, version);
 		assert.equal(model.dirty, false); assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
@@ -169,6 +170,8 @@ test('group resize addresses the invoking retained group and preserves topology,
 
 test('a sole or maximized document group has no resize boundary and never borrows Main side-region sizes', async t => {
 	const f = await fixture(t), { editor, main, group } = f, part = f.parts.main;
+	const sceneGroup = f.parts.findGroup(f.primary.input)!;
+	assert.equal(await f.parts.closeGroup(sceneGroup), true); f.update();
 	group.panes.activePane!.focus(); const origin = group.panes.activePane!.commandTarget;
 	const hierarchy = main.regionLayout.hierarchyWidth, details = main.regionLayout.detailsWidth, activity = main.regionLayout.activityHeight;
 	for (const command of RESIZE_COMMANDS) {
@@ -293,7 +296,7 @@ test('a guest viewport cannot use focused-view resize authority or change the ph
 
 test('the real command palette resizes its captured native origin and returns to the same authored presentation', async t => {
 	const f = await fixture(t), { editor, main, primary } = f;
-	main.focusPrimary('hierarchy'); const origin = inputFocus.admittedTarget!, selected = primary.consumer.selection;
+	main.focusPrimary('hierarchy'); const origin = inputFocus.admittedTarget!, selected = primary.authoring.selection;
 	const width = main.regionLayout.hierarchyWidth, source = f.model.buffer.getText();
 	f.key('KeyP', KeyModifier.ctrl | KeyModifier.shift);
 	const picker = editor.quickInput; assert.equal(picker.visible, true);
@@ -302,6 +305,6 @@ test('the real command palette resizes its captured native origin and returns to
 	for (let row = 0; row < index; row++) f.key('ArrowDown');
 	f.key('Enter'); assert.equal(picker.visible, false);
 	assert.notEqual(main.regionLayout.hierarchyWidth, width);
-	assert.ok(inputFocus.admittedTarget === origin && main.primary === primary && primary.consumer.selection === selected);
+	assert.ok(inputFocus.admittedTarget === origin && main.primary === primary && primary.authoring.selection === selected);
 	assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.dirty, false);
 });

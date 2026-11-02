@@ -3,6 +3,7 @@ import { DisposableStore, type IDisposable } from '../../common/lifecycle';
 import type { ResourceIdentity } from '../../common/resource';
 import type { TextFileSaveService } from '../services/working_copy/text_file_save';
 import type { WorkbenchWindowModel } from '../ui/window/model';
+import type { InputFocusScope } from '../../input/focus';
 
 const EMPTY_WINDOW_PLACEMENTS: readonly WorkbenchWindowModel[] = [];
 
@@ -99,6 +100,8 @@ export abstract class ReadonlyEditorInput<
 
 /** Persistence capability of a text view, independent of how many sources it presents. */
 export abstract class TextEditorInput<TId extends string, TKind extends string> extends AbstractEditorInput<TId, TKind> {
+	/** An attached companion may own a focused draft outside the document group's scope. */
+	public attachedEditScope: InputFocusScope | undefined;
 	/** Primary source identity for opening other views; not every command's write target. */
 	public abstract get workingCopy(): EditorTextModel;
 	public get resource(): ResourceIdentity { return this.workingCopy.resource; }

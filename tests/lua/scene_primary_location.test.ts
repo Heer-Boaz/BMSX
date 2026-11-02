@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
-import { ScenePrimaryBookmark } from '../../ide/workbench/contrib/scene_editor/primary_bookmark';
-import { captureScenePrimary } from '../../ide/workbench/contrib/scene_editor/primary_snapshot';
-import { ScenePrimaryViewState } from '../../ide/workbench/contrib/scene_editor/primary_view';
+import { SceneBookmark } from '../../ide/workbench/contrib/scene_editor/scene_bookmark';
+import { captureSceneEditorView } from '../../ide/workbench/contrib/scene_editor/view_snapshot';
+import { SceneViewState } from '../../ide/workbench/contrib/scene_editor/scene_view';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { createLuaTableFieldRemovalEdits, luaSourceRangeToTextRange } from '../../ide/language/lua/source_edits';
 import { getTextSnapshotFingerprint } from '../../ide/editor/text/source_text';
@@ -26,10 +26,10 @@ function fixture(t: TestContext, source = SOURCE, imports: readonly (readonly [s
 	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, imports);
 	const document = f.documents.get(f.model);
 	const context = new SceneAuthoringContext(f.model, f.documents, { document, sourceVersion: f.model.version, scene: document.scenes[0] });
-	const view = new ScenePrimaryViewState(context, f.sources.catalog); view.refresh(); selectSceneOutlineRow(view.hierarchy, 1);
+	const view = new SceneViewState(context, f.sources.catalog); view.refresh(); selectSceneOutlineRow(view.hierarchy, 1);
 	t.after(() => { view.dispose(); context.dispose(); });
 	const bookmark = () => {
-		const location = new ScenePrimaryBookmark(context, view); t.after(() => location.dispose()); return location;
+		const location = new SceneBookmark(context, view); t.after(() => location.dispose()); return location;
 	};
 	return { ...f, document, context, view, bookmark };
 }
@@ -37,7 +37,7 @@ function fixture(t: TestContext, source = SOURCE, imports: readonly (readonly [s
 test('primary snapshots keep declaration identity independently from a cleared member selection', t => {
 	const f = fixture(t), reference = f.context.captureSourceReference();
 	f.context.select(f.document, f.model.version, undefined); f.view.refresh();
-	const snapshot = captureScenePrimary(f.view);
+	const snapshot = ({ ...f.context.captureSourceReference(), view: captureSceneEditorView(f.view) });
 	assert.equal(snapshot.view.selected, undefined);
 	assert.equal(snapshot.subject.availability, 'available');
 	assert.deepEqual(snapshot.subject.range, reference.subject!.range);
@@ -57,7 +57,7 @@ test('primary capture observes a newer domain selection published by semantic re
 	const chunk = f.document.analysis.chunk;
 	f.model.pushEditOperations(createLuaTableFieldRemovalEdits(f.model.buffer, chunk.locations, chunk.tokens, f.document.scenes[0].objects[0].field));
 	f.view.refresh();
-	const snapshot = captureScenePrimary(f.view);
+	const snapshot = ({ ...f.context.captureSourceReference(), view: captureSceneEditorView(f.view) });
 	assert.equal(selected, true);
 	assert.equal(f.context.selection?.kind, 'scene');
 	assert.equal(snapshot.view.selected?.kind, 'scene');
@@ -79,7 +79,7 @@ test('explicit domain refresh publishes reentrant selection and source edits bef
 	const chunk = f.document.analysis.chunk;
 	f.model.pushEditOperations(createLuaTableFieldRemovalEdits(f.model.buffer, chunk.locations, chunk.tokens, f.document.scenes[0].objects[0].field));
 	f.context.refresh();
-	const snapshot = captureScenePrimary(f.view), document = f.documents.get(f.model), scene = document.scenes[0];
+	const snapshot = ({ ...f.context.captureSourceReference(), view: captureSceneEditorView(f.view) }), document = f.documents.get(f.model), scene = document.scenes[0];
 	assert.equal(changed, true);
 	assert.equal(snapshot.view.selected?.kind, 'member');
 	assert.deepEqual(snapshot.subject.range, luaSourceRangeToTextRange(f.model.buffer, scene.range));
@@ -89,7 +89,7 @@ test('explicit domain refresh publishes reentrant selection and source edits bef
 });
 
 test('primary serialization observes current mapped source without refreshing stale presentation or publishing selection', t => {
-	const f = fixture(t), before = captureScenePrimary(f.view);
+	const f = fixture(t), before = ({ ...f.context.captureSourceReference(), view: captureSceneEditorView(f.view) });
 	let notifications = 0;
 	const release = f.context.onDidChangeSelection(() => {
 		notifications++;
@@ -101,7 +101,7 @@ test('primary serialization observes current mapped source without refreshing st
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: prefix }]);
 	const version = f.model.version, source = f.model.buffer.getText();
 	const query = t.mock.method(f.documents, 'get', () => assert.fail('serialization must not query semantic projections'));
-	const snapshot = captureScenePrimary(f.view);
+	const snapshot = ({ ...f.context.captureSourceReference(), view: captureSceneEditorView(f.view) });
 	query.mock.restore();
 	assert.equal(notifications, 0);
 	assert.equal(f.model.version, version);
@@ -113,7 +113,7 @@ test('primary serialization observes current mapped source without refreshing st
 });
 
 test('document serialization observes current mapped source without resolving or publishing a retired selection', t => {
-	const f = fixture(t), input = new SceneEditorInput(f.model, f.documents); t.after(() => input.dispose());
+	const f = fixture(t), input = new SceneEditorInput(f.model, f.documents, f.sources.catalog); t.after(() => input.dispose());
 	input.view.refresh(); selectSceneOutlineRow(input.view.hierarchy, 1);
 	const context = input.view.authoring;
 	let notifications = 0;
@@ -144,13 +144,13 @@ test('unavailable primary snapshot preserves the original exact inert reference 
 	const range = moved.subject!.range;
 	f.model.pushEditOperations([{ offset: range.start, deleteLength: range.end - range.start,
 		text: f.model.buffer.getTextRange(range.start, range.end) }]);
-	const snapshot = captureScenePrimary(f.view);
+	const snapshot = ({ ...f.context.captureSourceReference(), view: captureSceneEditorView(f.view) });
 	assert.equal(snapshot.subject.availability, 'unavailable');
 	assert.deepEqual(snapshot.source, initial.source);
 	assert.deepEqual(snapshot.subject.range, initial.subject!.range);
 	assert.equal(snapshot.view.selected, undefined);
 	f.model.undo();
-	assert.equal(captureScenePrimary(f.view).subject.availability, 'unavailable');
+	assert.equal(({ ...f.context.captureSourceReference(), view: captureSceneEditorView(f.view) }).subject.availability, 'unavailable');
 });
 
 test('a live primary bookmark outlives its old controls/context and resolves the exact current declaration', t => {
@@ -173,7 +173,7 @@ test('a live primary bookmark outlives its old controls/context and resolves the
 
 test('primary and member bookmark spans map before an earlier content observer can re-enter navigation', t => {
 	const f = fixture(t);
-	let location: ScenePrimaryBookmark;
+	let location: SceneBookmark;
 	let observed = false;
 	const release = f.model.onDidChangeContent(() => {
 		const subject = location.resolve(f.documents)!;
@@ -245,7 +245,7 @@ test('capturing an already unavailable primary or disposing its model produces n
 	f.models.clear();
 	assert.equal(location.isDisposed, true); assert.equal(retired, 1);
 	location.dispose(); assert.equal(retired, 1);
-	const retiredCapture = new ScenePrimaryBookmark(f.context, f.view);
+	const retiredCapture = new SceneBookmark(f.context, f.view);
 	t.after(() => retiredCapture.dispose());
 	assert.equal(retiredCapture.isDisposed, true);
 	assert.equal(retiredCapture.resolve(f.documents), undefined);

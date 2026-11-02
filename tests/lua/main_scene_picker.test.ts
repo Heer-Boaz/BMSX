@@ -109,7 +109,7 @@ test('Main Scene chooser is available before any document or working copy exists
 	assert.deepEqual([...editorTextModelService.models], []); assert.equal(f.files.records.size, 0);
 });
 
-test('Main chooser selects an exact same-name occurrence without showing Files or creating document tabs', async t => {
+test('Main chooser opens the exact same-name occurrence without changing Files reading', async t => {
 	const f = await fixture(t), panel = f.editor.resourcePanel;
 	panel.show(); f.update();
 	await Promise.all(f.ide.directories!.roots.map(root => f.ide.directories!.resolve(root, ''))); f.update();
@@ -121,11 +121,11 @@ test('Main chooser selects an exact same-name occurrence without showing Files o
 	openPicker(f); assert.deepEqual([...editorTextModelService.models], []);
 	const selected = await choose(f, 'first.lua', 1), client = f.editor.mainWorkspace.primary;
 	assert.ok(client instanceof ScenePrimaryClient);
-	assert.ok(client.consumer.workingCopy === editorTextModelService.get(selected.ownerResource));
-	assert.ok(client.consumer.subject === client.consumer.document!.scenes[1]);
-	assert.deepEqual(client.consumer.subject!.range, selected.definition.range);
+	assert.ok(client.authoring.workingCopy === editorTextModelService.get(selected.ownerResource));
+	assert.ok(client.authoring.subject === client.authoring.document!.scenes[1]);
+	assert.deepEqual(client.authoring.subject!.range, selected.definition.range);
 	assert.deepEqual(f.editor.editorParts.groups, groups); assert.equal(f.editor.editorParts.documents.length, 0);
-	assert.ok(groups.every(group => group.model.tabs.length === 0));
+	assert.ok(groups.some(group => group.model.activeTab === client.input));
 	assert.deepEqual(panel.serialize(), reading); assert.equal(panel.isVisible(), false);
 	assert.equal([...editorTextModelService.models].length, 1); assert.equal(f.files.records.size, 0);
 });
@@ -137,34 +137,27 @@ test('Main chooser consumes current canonical memory rather than the packaged re
 	const source = model.buffer.getText(), version = model.version;
 	openPicker(f); await choose(f, 'first.lua', 2);
 	const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
-	assert.ok(client.consumer.workingCopy === model && client.consumer.subject === client.consumer.document!.scenes[2]);
+	assert.ok(client.authoring.workingCopy === model && client.authoring.subject === client.authoring.document!.scenes[2]);
 	assert.equal(model.buffer.getText(), source); assert.equal(model.version, version); assert.equal(model.dirty, true);
 	assert.equal(f.project.path2lua['first.lua'].src, FIRST); assert.equal(f.files.records.size, 0);
 });
 
-for (const save of [false, true]) test(`choosing another file uses Main's existing dirty release ${save ? 'Save' : 'Cancel'} decision`, async t => {
+test('choosing another Scene retains the dirty previous document without a release decision', async t => {
 	const f = await fixture(t); openPicker(f); await choose(f, 'first.lua');
 	const previous = f.editor.mainWorkspace.primary; assert.ok(previous instanceof ScenePrimaryClient);
-	const model = previous.consumer.workingCopy;
+	const model = previous.authoring.workingCopy;
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- Main edit\n' }]); f.update();
 	const source = model.buffer.getText(), release = t.mock.method(f.editor.editorParts.closeController, 'release');
 	openPicker(f); await choose(f, 'second.lua');
-	assert.ok(f.editor.mainWorkspace.primary === previous);
-	const releasing = release.mock.calls[0].result;
-	f.press(save ? 'Enter' : 'Escape'); await releasing; await setImmediate(); f.update();
-	if (save) {
-		const operation = f.ide.textFileSaves.latestOperation(model); assert.ok(operation !== undefined);
-		assert.equal((await operation.completion).status, 'saved');
-		assert.equal(f.files.records.get('fixture/project/first.lua')!.contents, source); assert.equal(model.dirty, false);
-		const current = f.editor.mainWorkspace.primary; assert.ok(current instanceof ScenePrimaryClient && current !== previous);
-		assert.equal(current.consumer.workingCopy.identity.path, 'second.lua');
-		assert.equal(previous.consumer.isCurrent, false);
-	} else {
-		assert.ok(f.editor.mainWorkspace.primary === previous); assert.equal(previous.consumer.isCurrent, true);
-		assert.equal(model.dirty, true); assert.equal(model.buffer.getText(), source); assert.equal(model.canUndo, true);
-		assert.equal(f.files.records.size, 0);
-	}
-	assert.ok(f.editor.editorParts.groups.every(group => group.model.tabs.length === 0));
+	const current = f.editor.mainWorkspace.primary; assert.ok(current instanceof ScenePrimaryClient && current !== previous);
+	assert.equal(current.authoring.workingCopy.identity.path, 'second.lua');
+	assert.equal(release.mock.callCount(), 0);
+	assert.ok(f.editor.editorParts.findGroup(previous.input)?.model.contains(previous.input));
+	assert.equal(model.dirty, true); assert.equal(model.buffer.getText(), source); assert.equal(model.canUndo, true);
+	assert.equal(f.files.records.size, 0);
+	const group = f.editor.editorParts.findGroup(previous.input)!;
+	assert.equal(group.activate(previous.input.id), true);
+	assert.ok(f.editor.mainWorkspace.primary?.input === previous.input);
 });
 
 test('a background canonical Save preserves the chooser query and exact occurrence selection', async t => {
@@ -181,14 +174,14 @@ test('a background canonical Save preserves the chooser query and exact occurren
 	assert.equal(f.editor.mainWorkspace.primary, undefined);
 	await picker.accept(); await setImmediate(); f.update();
 	const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
-	assert.equal(client.consumer.workingCopy.identity.path, 'second.lua');
+	assert.equal(client.authoring.workingCopy.identity.path, 'second.lua');
 });
 
 test('a chooser invoked from a real pending Main Details field starts its source lease after ordinary blur', async t => {
 	const f = await fixture(t); openPicker(f); await choose(f, 'first.lua');
 	const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
 	selectSceneOutlineRow(client.view.hierarchy, 1); client.hierarchy.update(); client.details.update();
-	const field = client.details.control.controls[0], model = client.consumer.workingCopy, version = model.version;
+	const field = client.details.control.controls[0], model = client.authoring.workingCopy, version = model.version;
 	assert.equal(field.field.focusTarget.focus(), true); setFieldText(field.field, '123', true);
 	assert.equal(field.pending, true);
 	const picker = openPicker(f);
@@ -196,7 +189,7 @@ test('a chooser invoked from a real pending Main Details field starts its source
 	assert.ok(model.buffer.getText().includes('position = { x = 123,'));
 	for (const item of picker.model.items as readonly ScenePick[]) assert.equal(f.editor.projectContent.isCurrent(item.entry), true);
 	f.press('Escape');
-	assert.ok(f.editor.mainWorkspace.primary === client && client.consumer.isCurrent);
+	assert.ok(f.editor.mainWorkspace.primary === client && client.authoring.isCurrent);
 	assert.equal(model.dirty, true); assert.equal(f.files.records.size, 0);
 });
 
@@ -274,19 +267,20 @@ test('canonical model admission cannot steal back foreground published by its ow
 });
 
 for (const boundary of ['canonical model', 'content index'] as const) {
-	test(`a newer Main clear during ${boundary} admission wins without changing the native Source origin`, async t => {
+	test(`closing an earlier Scene during ${boundary} admission does not retire a newly opened Scene or Source`, async t => {
 		const f = await fixture(t);
 		if (boundary === 'content index') registerLuaSourceRecord(f.project,
 			createTestSourceOnlyLuaRecord('unopened.lua', 'return {}\n', 'fixture/project/unopened.lua'));
 		openPicker(f); await choose(f, 'first.lua');
 		const previous = f.editor.mainWorkspace.primary; assert.ok(previous instanceof ScenePrimaryClient);
-		assert.equal(previous.consumer.workingCopy.dirty, false);
-		const notes = new CodeEditorInput(f.model('notes.lua')), group = f.editor.editorParts.main.activeGroup;
+		assert.equal(previous.authoring.workingCopy.dirty, false);
+		const sceneGroup = f.editor.editorParts.findGroup(previous.input)!;
+		const notes = new CodeEditorInput(f.model('notes.lua')), group = f.editor.editorParts.sideGroup(sceneGroup)!;
 		group.openEditor(notes); f.update(); group.focus();
 		const origin = inputFocus.admittedTarget!, picker = openPicker(f);
 		let clearing: Promise<boolean> | undefined, sameFocus = false;
 		const clear = () => {
-			clearing = f.editor.mainWorkspace.clearPrimary(f.editor.editorParts.closeController, origin);
+			clearing = sceneGroup.close(previous.input.id, origin);
 			sameFocus = inputFocus.admittedTarget === origin;
 		};
 		if (boundary === 'canonical model') {
@@ -301,37 +295,39 @@ for (const boundary of ['canonical model', 'content index'] as const) {
 		}
 		await choose(f, 'second.lua');
 		assert.ok(clearing !== undefined); const cleared = await clearing;
-		assert.ok(f.editor.mainWorkspace.primary === undefined, 'the older picker must not publish after a newer Main clear intent');
 		assert.equal(cleared, true);
-		assert.equal(sameFocus, true, 'the new Main intent is independent of native focus authority');
-		assert.ok(inputFocus.admittedTarget === origin);
+		assert.equal(sameFocus, true, 'closing the unrelated Scene preserves native focus until the new opening');
+		const current = f.editor.mainWorkspace.primary; assert.ok(current instanceof ScenePrimaryClient);
+		assert.equal(current.authoring.workingCopy.identity.path, 'second.lua');
+		assert.equal(sceneGroup.model.contains(previous.input), false);
 		assert.deepEqual(group.model.tabs, [notes]); assert.ok(group.model.activeTab === notes);
 	});
 }
 
 for (const replacement of ['model', 'context'] as const) {
-	test(`an accepted Main replacement cannot publish a ${replacement} generation retired during its dirty close prompt`, async t => {
+	test(`a Scene chooser cannot publish a ${replacement} generation retired during source admission`, async t => {
 		const f = await fixture(t); openPicker(f); await choose(f, 'first.lua');
 		const previous = f.editor.mainWorkspace.primary; assert.ok(previous instanceof ScenePrimaryClient);
-		const current = previous.consumer.workingCopy;
+		const current = previous.authoring.workingCopy;
 		current.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- keep the current Main source\n' }]); f.update();
 		const source = current.buffer.getText(), release = t.mock.method(f.editor.editorParts.closeController, 'release');
-		openPicker(f); await choose(f, 'second.lua');
-		assert.ok(f.editor.mainWorkspace.primary === previous);
-		const target = editorTextModelService.get({ contextId: f.contextId, path: 'second.lua' })!;
-		if (replacement === 'model') {
-			const next = new EditorTextModel(target.resource, 'lua', target.buffer.getText(), editorTextModelService.history);
-			const admission = editorTextModelService.replace([...editorTextModelService.models].map(model => model === target ? next : model));
-			admission.publish(); admission.dispose(); assert.equal(admission.isCurrent(), true);
-			assert.ok(editorTextModelService.get(target.identity) === next);
-		} else {
-			const context = f.sources.catalog.getContext(f.contextId), registry = createLuaSourceRegistry(context.projectRootPath, '');
-			for (const record of context.luaSources.records) registerLuaSourceRecord(registry, { ...record });
-			f.sources.catalog.contexts.delete(context.id); f.sources.catalog.admitContext({ ...context, luaSources: registry });
-		}
-		f.press('Enter'); assert.equal(await release.mock.calls[0].result, false); await setImmediate(); f.update();
+		const unbind = editorTextModelService.onDidAddModel(target => {
+			if (target.identity.path !== 'second.lua') return;
+			unbind();
+			if (replacement === 'model') {
+				const next = new EditorTextModel(target.resource, 'lua', target.buffer.getText(), editorTextModelService.history);
+				const admission = editorTextModelService.replace([...editorTextModelService.models].map(model => model === target ? next : model));
+				admission.publish(); admission.dispose(); assert.equal(admission.isCurrent(), true);
+			} else {
+				const context = f.sources.catalog.getContext(f.contextId), registry = createLuaSourceRegistry(context.projectRootPath, '');
+				for (const record of context.luaSources.records) registerLuaSourceRecord(registry, { ...record });
+				f.sources.catalog.contexts.delete(context.id); f.sources.catalog.admitContext({ ...context, luaSources: registry });
+			}
+		}); t.after(unbind);
+		openPicker(f); await choose(f, 'second.lua'); await setImmediate(); f.update();
 		assert.ok(f.editor.mainWorkspace.primary === previous);
 		assert.equal(current.buffer.getText(), source); assert.equal(current.dirty, true);
+		assert.equal(release.mock.callCount(), 0);
 		assert.equal(f.ide.textFileSaves.latestOperation(current), undefined); assert.equal(f.files.records.size, 0);
 	});
 }

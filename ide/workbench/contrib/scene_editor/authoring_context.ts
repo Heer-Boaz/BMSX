@@ -92,6 +92,12 @@ export type SceneAuthoredSourceReference = {
 	readonly selected: SceneAuthoredSelectionReference | undefined;
 };
 
+/** Persisted occurrence identity, independent of its current availability. */
+export type SceneAuthoredSubjectReference = {
+	readonly source: TextFileModelSnapshot;
+	readonly subject: { readonly range: TrackedTextRange; readonly availability: 'available' | 'unavailable' };
+};
+
 /** Retained source editing context. Trees, Details and document containers do not own its selection. */
 export class SceneAuthoringContext {
 	private spatialProjection: SceneSpatialProjection | undefined;
@@ -108,27 +114,31 @@ export class SceneAuthoringContext {
 	private sourceVersion = -1;
 	private readonly lifetime = new DisposableStore();
 	private readonly selectionListeners = new Set<() => void>();
+	private readonly documentListeners = new Set<() => void>();
 	private readonly spatialGenerationListeners = new Set<() => void>();
 	private readonly copies: readonly EditorTextModel[];
 	private readonly subjectRange: TrackedTextRange | undefined;
 	private readonly subjectScenes: SceneSourceDefinition[] | undefined;
 	private readonly subjectOrigin: { readonly source: TextFileModelSnapshot; readonly range: TrackedTextRange } | undefined;
 
-	public constructor(public readonly workingCopy: EditorTextModel, private readonly documents: SceneSourceDocuments, subject?: SceneAuthoredSubject) {
+	public constructor(public readonly workingCopy: EditorTextModel, private readonly documents: SceneSourceDocuments,
+		subject?: SceneAuthoredSubject, reference?: SceneAuthoredSubjectReference) {
 		this.copies = [workingCopy];
+		if (reference !== undefined) this.subjectOrigin = { source: reference.source, range: { ...reference.subject.range } };
+		else if (subject !== undefined) this.subjectOrigin = { source: captureTextFileModel(workingCopy),
+			range: luaSourceRangeToTextRange(workingCopy.buffer, subject.scene.range) };
 		this.lifetime.add({ dispose: workingCopy.trackRanges(new Map([
 			['scene', this.sceneRange], ['selection', this.selectionRange],
 		])) });
 		this.lifetime.add({ dispose: workingCopy.onWillDispose(() => this.dispose()) });
 		this.refresh();
-		if (subject !== undefined) {
+		if (subject !== undefined || reference !== undefined) {
 			this.subjectRange = { start: 0, end: 0 };
 			this.subjectScenes = [];
-			if (subject.document === this.documentValue && subject.sourceVersion === workingCopy.version) {
+			if (subject !== undefined && subject.document === this.documentValue && subject.sourceVersion === workingCopy.version) {
 				const range = luaSourceRangeToTextRange(workingCopy.buffer, subject.scene.range);
 				this.subjectRange.start = range.start; this.subjectRange.end = range.end;
 				this.subjectScenes.push(subject.scene);
-				this.subjectOrigin = { source: captureTextFileModel(workingCopy), range: { ...range } };
 			}
 			this.lifetime.add({ dispose: workingCopy.trackRanges(new Map([['subject', this.subjectRange]])) });
 		}
@@ -140,6 +150,8 @@ export class SceneAuthoringContext {
 	/** The domain supplies the admitted composition; controls do not filter by container kind. */
 	public get scenes(): readonly SceneSourceDefinition[] { return this.subjectScenes ?? this.documentValue?.scenes ?? EMPTY_SCENES; }
 	public get subject(): SceneSourceDefinition | undefined { return this.subjectScenes?.[0]; }
+	/** The mapped occurrence belongs to the context, not its presentation. */
+	public get subjectSpan(): Readonly<TrackedTextRange> | undefined { return this.subjectRange; }
 	public get availability(): 'available' | 'unavailable' {
 		return this.lifetime.isDisposed || this.subjectScenes !== undefined && this.subjectScenes.length === 0 ? 'unavailable' : 'available';
 	}
@@ -237,7 +249,20 @@ export class SceneAuthoringContext {
 		this.visualProjection = this.documents.getVisualProjection(this.workingCopy, document);
 		const changed = this.install(document);
 		if (previous !== this.spatialProjection) for (const listener of this.spatialGenerationListeners) listener();
+		if (changed && this.documentValue === document && this.sourceVersion === this.workingCopy.version) {
+			const version = this.sourceVersion;
+			for (const listener of this.documentListeners) {
+				listener();
+				if (this.documentValue !== document || this.sourceVersion !== version || this.workingCopy.version !== version) break;
+			}
+		}
 		return changed;
+	}
+
+	/** A completed semantic generation can update retained document presentation. */
+	public onDidChangeDocument(listener: () => void): () => void {
+		this.documentListeners.add(listener);
+		return () => this.documentListeners.delete(listener);
 	}
 
 	public onDidChangeSpatialGeneration(listener: () => void): () => void {
@@ -605,6 +630,7 @@ export class SceneAuthoringContext {
 	public dispose(): void {
 		this.lifetime.dispose();
 		this.selectionListeners.clear();
+		this.documentListeners.clear();
 		this.spatialGenerationListeners.clear();
 		this.selectionValue = undefined;
 		this.documentValue = undefined;

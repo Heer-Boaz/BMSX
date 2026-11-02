@@ -1,103 +1,67 @@
 import assert from 'node:assert/strict';
-import test, { type TestContext } from 'node:test';
-import { createSceneSourceFixture } from '../helpers/scene_sources';
-import { SCENE_AUTHORING_IMPORTS, SCENE_AUTHORING_SOURCE } from '../fixtures/studio/scene_authoring';
+import test from 'node:test';
+import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
-import { SceneEditorControl } from '../../ide/workbench/contrib/scene_editor/control';
-import { SceneEditorViewState } from '../../ide/workbench/contrib/scene_editor/view_state';
+import { SceneViewState } from '../../ide/workbench/contrib/scene_editor/scene_view';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
-import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
-import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
-import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
-import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
-import { inputFocus, InputFocusScope } from '../../ide/input/focus';
-import { pointerCapture } from '../../ide/input/pointer/capture';
-import type { EditorCommandRunner } from '../../ide/common/commands';
+import { SCENE_AUTHORING_IMPORTS, SCENE_AUTHORING_SOURCE } from '../fixtures/studio/scene_authoring';
+import { createSceneDocumentFixture } from '../helpers/scene_document_fixture';
 
-/** Actual Scene controls attached to frontend surfaces, without an editor input or group. */
-function fixture(t: TestContext) {
-	configureFontVariant('tiny');
-	const source = createSceneSourceFixture(t, SCENE_AUTHORING_SOURCE, 'scene.lua', undefined, SCENE_AUTHORING_IMPORTS);
-	const document = source.documents.get(source.model);
-	const context = new SceneAuthoringContext(source.model, source.documents,
-		{ document, sourceVersion: source.model.version, scene: document.scenes[0] });
-	const view = new SceneEditorViewState(context), surfaces = new WorkbenchSurfaceService();
-	const scope = new InputFocusScope(Symbol('standalone Scene control'), inputFocus.workbenchScope);
-	const bounds = { left: 0, top: 0, right: 384, bottom: 288 };
-	const owner = surfaces.attach({ role: 'content', captureScope: scope.surfaceScope, isVisible: () => true,
-		getBounds: () => bounds, getClip: () => bounds, draw() {} });
-	const menu = new ContextMenuController(inputFocus, pointerCapture, bounds);
-	const commands: EditorCommandRunner = {
-		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
-		execute: (command, target) => inputFocus.executeCommand(command, target),
-	};
-	const picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds, kind: 'workspace' });
-	const control = new SceneEditorControl(commands, source.sources, menu, surfaces, owner, bounds, scope, picker);
-	control.setView(view, bounds); control.update();
-	t.after(() => {
-		picker.dispose(); control.dispose(); view.dispose(); context.dispose(); menu.dispose(); surfaces.dispose();
-		inputFocus.setTarget(null); pointerCapture.cancel();
-	});
-	return { ...source, context, view, control, bounds };
-}
-
-test('a second Scene presentation projects an existing context selection instead of choosing its own first root', t => {
-	const f = fixture(t);
-	assert.equal(selectSceneOutlineRow(f.view.hierarchy, 2), true); f.control.update();
-	const selected = f.context.selection, next = new SceneEditorViewState(f.context);
-	t.after(() => next.dispose());
-	f.control.setView(next, f.bounds); f.control.update();
+test('reattaching the actual Details companion preserves the document selection', async t => {
+	const f = await createSceneDocumentFixture(t, SCENE_AUTHORING_SOURCE, SCENE_AUTHORING_IMPORTS);
+	assert.equal(selectSceneOutlineRow(f.view.hierarchy, 2), true); f.update();
+	const selected = f.context.selection;
+	f.primary.details.detach(); f.update();
 	assert.equal(f.context.selection, selected);
-	assert.equal(next.hierarchy.outline.rows[next.hierarchy.outline.selectionIndex].element.kind, 'member');
-	assert.equal(f.control.details.controls[0].field.text, '4', 'the newly attached field binds the selected canonical numeric value');
+	assert.equal(f.view.hierarchy.outline.rows[f.view.hierarchy.outline.selectionIndex].element.kind, 'member');
+	assert.equal(f.primary.details.control.controls[0].field.text, '4');
 	assert.equal(f.model.buffer.getText(), SCENE_AUTHORING_SOURCE);
 });
 
-test('independent Scene contexts share source but not semantic selection or control drafts', t => {
-	const f = fixture(t), other = new SceneAuthoringContext(f.model, f.documents), otherView = new SceneEditorViewState(other);
+test('independent Scene contexts share source but not semantic selection or control drafts', async t => {
+	const f = await createSceneDocumentFixture(t, SCENE_AUTHORING_SOURCE, SCENE_AUTHORING_IMPORTS);
+	const other = new SceneAuthoringContext(f.model, f.ide.sceneSources), otherView = new SceneViewState(other, f.sources.catalog);
 	t.after(() => { otherView.dispose(); other.dispose(); });
 	otherView.refresh(); selectSceneOutlineRow(otherView.hierarchy, 3);
-	selectSceneOutlineRow(f.view.hierarchy, 1); f.control.update();
-	const field = f.control.details.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '31', true);
+	selectSceneOutlineRow(f.view.hierarchy, 1); f.update();
+	const field = f.primary.details.control.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '31', true);
 	assert.equal(field.commit(), true);
 	f.context.refresh(); other.refresh();
-	assert.ok(f.context.document === other.document, 'contexts share the newly admitted projection');
+	assert.ok(f.context.document === other.document);
 	assert.equal(other.selection?.kind, 'member');
 	assert.equal(other.selection?.kind === 'member' ? other.selection.entry : undefined, other.document!.scenes[0].objects[2]);
 	assert.equal(other.selection?.kind === 'member' ? other.selection.index : -1, 2);
 	assert.equal(f.model.buffer.getText(), SCENE_AUTHORING_SOURCE.replace('x = 1,', 'x = 31,'));
 });
 
-test('a missing primary declaration revokes pending field edits and cannot retarget the control after Undo', t => {
-	const f = fixture(t);
-	selectSceneOutlineRow(f.view.hierarchy, 1); f.control.update();
-	const field = f.control.details.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '77', true);
+test('a retired declaration revokes a pending companion edit and cannot retarget after Undo', async t => {
+	const f = await createSceneDocumentFixture(t, SCENE_AUTHORING_SOURCE, SCENE_AUTHORING_IMPORTS);
+	selectSceneOutlineRow(f.view.hierarchy, 1); f.update();
+	const field = f.primary.details.control.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '77', true);
 	const source = f.model.buffer.getText();
 	f.model.pushEditOperations([{ offset: 0, deleteLength: source.length, text: source }]);
-	assert.equal(field.commit(), true, 'admission retires the old draft instead of applying it to a replacement');
+	assert.equal(field.commit(), true);
 	assert.equal(f.context.availability, 'unavailable');
+	f.update();
 	assert.equal(f.view.hierarchy.outline.rows.length, 0);
 	assert.equal(field.field.readOnly, true);
 	assert.equal(f.model.buffer.getText(), source);
-	f.model.undo(); f.control.update();
+	f.model.undo(); f.update();
 	assert.equal(f.context.availability, 'unavailable');
 	assert.equal(f.view.hierarchy.outline.rows.length, 0);
 	assert.equal(f.model.buffer.getText(), source);
 });
 
-
-test('canonical model retirement detaches a standalone Scene widget and revokes its field and history targets', t => {
-	const f = fixture(t);
-	selectSceneOutlineRow(f.view.hierarchy, 1); f.control.update();
-	const field = f.control.details.controls[0], origin = f.control.focusTarget;
+test('canonical model retirement revokes the attached Scene companion and its field authority', async t => {
+	const f = await createSceneDocumentFixture(t, SCENE_AUTHORING_SOURCE, SCENE_AUTHORING_IMPORTS);
+	selectSceneOutlineRow(f.view.hierarchy, 1); f.update();
+	const field = f.primary.details.control.controls[0], origin = f.primary.commandTarget;
 	field.field.focusTarget.focus(); setFieldText(field.field, '88', true);
-	f.models.clear();
-	assert.equal(f.control.hasView, false);
+	editorTextModelService.clear();
+	assert.equal(f.primary.details.control.hasView, false);
 	assert.equal(field.pending, false);
 	assert.equal(field.field.focusTarget.hasFocus, false);
-	assert.equal(origin.getCommand('undo')!.isEnabled(), false);
 	assert.equal(origin.getCommand('sceneEditor.removeMember')!.isEnabled(), false);
-	assert.equal(f.control.getSourceLocation(), undefined);
-	f.control.update();
+	assert.equal(f.context.getSourceLocation(), undefined);
 });

@@ -8,6 +8,9 @@ export type SerializedEditorGroupLayout =
 	| { readonly kind: 'split'; readonly orientation: 'horizontal' | 'vertical'; readonly ratio: number;
 		readonly first: SerializedEditorGroupLayout; readonly second: SerializedEditorGroupLayout };
 
+/** A reference into the persisted part, depth-first group and persistent-input sequences. */
+export type SerializedEditorLocation = { readonly part: number; readonly group: number; readonly input: number };
+
 export type SerializedEditorPart = {
 	readonly layout: SerializedEditorGroupLayout;
 	readonly active: number;

@@ -344,6 +344,9 @@ export class WorkbenchSurfaceService implements IDisposable {
 			if (node.options.role === 'modal' && node.visible) {
 				if (node.options.blockedScope === null) this.rootModal = node;
 				else (node.options.blockedScope as Surface).activeModal = node;
+				if (node.options.additionalBlockedScopes !== undefined) {
+					for (const scope of node.options.additionalBlockedScopes()) this.scopes.get(scope.surfaceScope)!.activeModal = node;
+				}
 			}
 			this.indexContextModals(node.children);
 		}

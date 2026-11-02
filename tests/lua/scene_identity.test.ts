@@ -10,9 +10,8 @@ import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/edito
 import { SceneOutlineFeedback } from '../../ide/workbench/contrib/scene_editor/feedback';
 import { layoutSceneDetails } from '../../ide/workbench/contrib/scene_editor/details_layout';
 import { layoutSceneHierarchy } from '../../ide/workbench/contrib/scene_editor/hierarchy_layout';
-import type { SceneEditorViewState } from '../../ide/workbench/contrib/scene_editor/view_state';
+import type { SceneViewState } from '../../ide/workbench/contrib/scene_editor/scene_view';
 import type { RectBounds } from '../../machine/ts/common/rect';
-import { layoutSceneEditor } from '../../ide/workbench/contrib/scene_editor/layout';
 import { installSceneOutline, selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
@@ -32,8 +31,8 @@ scenes.register('other room', { objects = {
 
 function scene(t: TestContext, contextId: string = TEST_CARTRIDGE_CONTEXT_IDS[0], source = SOURCE) {
 	const path = 'scenes/room.lua';
-	const { model, documents } = createSceneSourceFixture(t, source, path, contextId, [['cartlib/world/prefab.lua','return {define=function() end}']]);
-	const input = new SceneEditorInput(model, documents);
+	const { model, documents, sources } = createSceneSourceFixture(t, source, path, contextId, [['cartlib/world/prefab.lua','return {define=function() end}']]);
+	const input = new SceneEditorInput(model, documents, sources.catalog);
 	assert.equal(input.view.authoring.document!.analysis.syntaxError, null);
 	installSceneOutline(input.view.hierarchy);
 	selectSceneOutlineRow(input.view.hierarchy, 1);
@@ -41,13 +40,13 @@ function scene(t: TestContext, contextId: string = TEST_CARTRIDGE_CONTEXT_IDS[0]
 	return input;
 }
 
-function arrangeScene(view: SceneEditorViewState, contentChanged: boolean, selectionChanged: boolean, bounds: RectBounds): void {
+function arrangeScene(view: SceneViewState, contentChanged: boolean, selectionChanged: boolean, bounds: RectBounds): void {
 	const hierarchyRevision = view.hierarchy.outlineRevision;
 	view.hierarchy.refresh();
 	const hierarchyChanged = hierarchyRevision !== view.hierarchy.outlineRevision, detailsChanged = view.details.refresh();
-	layoutSceneEditor(view, contentChanged, selectionChanged, bounds);
-	layoutSceneHierarchy(view.hierarchy, view.layout.hierarchyBounds, contentChanged || hierarchyChanged);
-	layoutSceneDetails(view.details, contentChanged || detailsChanged, view.layout.detailsBounds);
+	const middle = bounds.left + ((bounds.right - bounds.left) >> 1);
+	layoutSceneHierarchy(view.hierarchy, { ...bounds, right: middle }, contentChanged || hierarchyChanged);
+	layoutSceneDetails(view.details, contentChanged || detailsChanged, { ...bounds, left: middle });
 }
 
 test('Scene semantic captions keep source correspondence and duplicate membership', t => {
@@ -133,7 +132,6 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scene ${variant} Details n
 	assert.equal(member.labelClipped, false);
 	arrangeScene(input.view, false, false, { left: 0, top: 24, right: variant === 'tiny' ? 78 : 118, bottom: 276 });
 	const tree = input.view.hierarchy.outline.layout;
-	assert.equal(input.view.layout.mode, 'outline');
 	assert.equal(member.labelClipped, editorViewState.font.measure(member.label) > tree.contentRight - tree.contentLeft - tree.indentWidth - tree.twistieWidth);
 	selectSceneOutlineRow(input.view.hierarchy, 0);
 	arrangeScene(input.view, false, true, { left: 0, top: 24, right: 384, bottom: 276 });
@@ -192,7 +190,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scene ${variant} full iden
 	installSceneOutline(f.input.view.hierarchy); selectSceneOutlineRow(f.input.view.hierarchy, 1);
 	assert.notEqual(f.input.view.hierarchy.outline.rows[1], member);
 	f.update(); f.paint(); assert.deepEqual(f.labels, [], 'equal labels at the same index cannot inherit another projection identity');
-	layoutSceneEditor(f.input.view, true, false, f.area);
+	arrangeScene(f.input.view, true, false, f.area);
 	f.treeFocus.focus(); f.feedback.keyboardSelection(f.input.view.hierarchy); f.update(); f.paint();
 	assert.deepEqual(f.labels, [], 'fitting keyboard labels do not produce an unsolicited explanation layer');
 	f.input.view.hierarchy.outline.hoverIndex = 1; f.point.viewportX++; f.feedback.pointer(f.input.view.hierarchy, 1, f.point); f.update(); f.paint();

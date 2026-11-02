@@ -58,11 +58,11 @@ for (const visible of [false, true]) test(`Call Hierarchy opening and Source nav
 	if (!visible) panel.hide();
 	f.sourcePane.focus();
 	const selection = panel.files.selectedNode, disclosure = selected.collapsed, scroll = panel.scroll, hscroll = panel.hscroll;
-	const primarySelection = f.primary.consumer.selection;
+	const primarySelection = f.primary.authoring.selection;
 	const { input, pane } = f.open();
 	assert.equal(input.actions.items.some(item => item.command === 'editor.source'), false);
 	assert.ok(input.contextActions.visibleItems.some(item => item.type === 'command' && item.command === 'editor.source'));
-	assert.ok(f.editor.mainWorkspace.primary === f.primary && f.primary.consumer.selection === primarySelection);
+	assert.ok(f.editor.mainWorkspace.primary === f.primary && f.primary.authoring.selection === primarySelection);
 	assert.ok(panel.files.selectedNode === selection); assert.equal(selected.collapsed, disclosure);
 	assert.equal(panel.scroll, scroll); assert.equal(panel.hscroll, hscroll); assert.equal(panel.visible, visible);
 	assert.equal(input.serializable, false);
@@ -73,7 +73,7 @@ for (const visible of [false, true]) test(`Call Hierarchy opening and Source nav
 	assert.ok(f.firstGroup.model.activeTab.workingCopy === f.calls);
 	assert.ok(panel.files.selectedNode === selection); assert.equal(selected.collapsed, disclosure);
 	assert.equal(panel.scroll, scroll); assert.equal(panel.hscroll, hscroll); assert.equal(panel.visible, visible);
-	assert.ok(f.editor.mainWorkspace.primary === f.primary && f.primary.consumer.selection === primarySelection);
+	assert.ok(f.editor.mainWorkspace.primary === f.primary && f.primary.authoring.selection === primarySelection);
 });
 
 for (const change of ['reuse pane', 'reselect source', 'new foreground'] as const) test(`Call Hierarchy query admission preserves ${change} published by the semantic producer`, async t => {
@@ -108,7 +108,7 @@ test('Back restores the retained selected query result and its reading state wit
 	f.key('End'); f.key('ArrowRight'); f.key('ArrowRight');
 	const selected = tree.rows[tree.selectionIndex], scroll = tree.scroll;
 	assert.ok(selected !== undefined && selected.parent !== null); assert.ok(scroll > 0);
-	const primarySelection = f.primary.consumer.selection;
+	const primarySelection = f.primary.authoring.selection;
 	const opening = t.mock.method(f.editor.navigation, 'openResource');
 	f.editor.commands.execute('editor.source', pane.commandTarget);
 	assert.equal(opening.mock.callCount(), 1); await opening.mock.calls[0].result;
@@ -119,7 +119,7 @@ test('Back restores the retained selected query result and its reading state wit
 	assert.ok(tree.rows[tree.selectionIndex] === selected); assert.equal(tree.scroll, scroll);
 	assert.equal(selected.parent.collapsed, false);
 	assert.ok(inputFocus.admittedTarget === pane.commandTarget);
-	assert.ok(f.editor.mainWorkspace.primary === f.primary && f.primary.consumer.selection === primarySelection);
+	assert.ok(f.editor.mainWorkspace.primary === f.primary && f.primary.authoring.selection === primarySelection);
 });
 
 test('moving a query transfers the same retained input and reading state while retiring the departing control', async t => {

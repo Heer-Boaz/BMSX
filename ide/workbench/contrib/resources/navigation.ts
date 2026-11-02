@@ -67,8 +67,13 @@ export class EditorNavigationController {
 			if (location === undefined || !current() || inputFocus.revision !== focusRevision && inputFocus.target !== null) return;
 			const { model, modelVersion, selection } = location;
 			if (model.version !== modelVersion || editorTextModelService.get(model.resource) !== model || this.catalog.resolveResource(model.resource) !== model.resource) return;
-			const destination = options.placement === 'side' ? this.parts.sideGroup(reference)
-				: this.parts.editorDestination(reference, { resource: model.resource, editorId: WORKBENCH_TEXT_EDITOR_ID });
+			const identity = { resource: model.resource, editorId: WORKBENCH_TEXT_EDITOR_ID };
+			const existing = this.parts.editorDestination(undefined, identity);
+			const excluded = source.preferredPlacement === 'side' ? source.anchor : undefined;
+			const destination = options.placement === 'side' ? this.parts.sideGroup(reference, 'right', excluded)
+				: source.preferredPlacement === 'side' ? existing !== reference && existing !== excluded && this.parts.partForGroup(existing) === part
+					&& existing.model.findByResourceEditor(identity) !== undefined ? existing : this.parts.sideGroup(reference, 'right', excluded)
+				: this.parts.editorDestination(reference, identity);
 			if (destination === undefined || !current() || inputFocus.revision !== focusRevision && inputFocus.target !== null
 				|| model.version !== modelVersion || editorTextModelService.get(model.resource) !== model || this.catalog.resolveResource(model.resource) !== model.resource) return;
 			// The receiver owns its opening generation; the sender attachment and source generation remain live until admission.
@@ -138,7 +143,7 @@ export class EditorNavigationController {
 	private async openHistoryEntry(pending: NavigationHistorySelection): Promise<void> {
 		const target = pending.target;
 		const destination = target.target;
-		if (destination.kind === 'primary') {
+		if (destination.kind === 'location') {
 			try {
 				if (await destination.location.restore({ isCurrent: () => pending.isCurrent, preserveFocus: false })) pending.accept();
 			} finally { pending.dispose(); }

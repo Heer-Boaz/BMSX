@@ -60,6 +60,11 @@ export function commitWorkspaceSessionLocally(
 	const editorParts = !previousGeneration || rebuildDirtyFiles || (changes & WorkspaceAutosaveChange.EditorSession)
 		? editor.editorParts.serialize(editor.editorInputSerializers, previousGeneration?.payload.editorParts)
 		: previousGeneration.payload.editorParts;
+	const companionInput = editor.mainWorkspace.companionInput;
+	const location = companionInput === undefined ? undefined : editor.editorParts.captureEditorLocation(companionInput);
+	const previousLocation = previousGeneration?.payload.sceneCompanion;
+	const sceneCompanion = location !== undefined && previousLocation !== undefined && location.part === previousLocation.part
+		&& location.group === previousLocation.group && location.input === previousLocation.input ? previousLocation : location;
 	const filesBrowser = !previousGeneration || rebuildDirtyFiles || (changes & WorkspaceAutosaveChange.FilesBrowser)
 		? editor.resourcePanel.serialize(previousGeneration?.payload.filesBrowser)
 		: previousGeneration.payload.filesBrowser;
@@ -73,6 +78,7 @@ export function commitWorkspaceSessionLocally(
 	if (previousGeneration
 		&& dirtyFiles === previousGeneration.payload.dirtyFiles
 		&& editorParts === previousGeneration.payload.editorParts
+		&& sceneCompanion === previousGeneration.payload.sceneCompanion
 		&& mainWorkspace === previousGeneration.payload.mainWorkspace
 		&& filesBrowser === previousGeneration.payload.filesBrowser
 		&& breakpoints === previousGeneration.payload.breakpoints
@@ -82,6 +88,7 @@ export function commitWorkspaceSessionLocally(
 	const payload: WorkspaceAutosavePayload = {
 		dirtyFiles,
 		editorParts,
+		sceneCompanion,
 		mainWorkspace,
 		filesBrowser,
 		breakpoints,

@@ -6,8 +6,9 @@ import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
+import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
 import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
-import { captureScenePrimary } from '../../ide/workbench/contrib/scene_editor/primary_snapshot';
+import { captureSceneEditorView } from '../../ide/workbench/contrib/scene_editor/view_snapshot';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createActualSourcePanes } from '../helpers/source_panes';
@@ -32,117 +33,114 @@ async function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
 		f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!);
 	const document = f.ide.sceneSources.get(model), main = f.editor.mainWorkspace;
 	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target!), true);
-	f.update(); const client = main.primary; assert.ok(client instanceof ScenePrimaryClient);
-	assert.equal(client.consumer.availability, 'available'); assert.equal(client.view.viewport.source!.entries.length, 3);
-	return { ...f, main, client, model };
+	f.update();
+	const client = main.primary; assert.ok(client instanceof ScenePrimaryClient);
+	const group = f.editor.editorParts.findGroup(client.input); assert.ok(group !== undefined);
+	const pane = group.panes.activePane; assert.ok(pane instanceof SceneEditorPane);
+	assert.equal(client.authoring.availability, 'available'); assert.equal(client.view.viewport.source!.entries.length, 3);
+	return { ...f, main, client, model, group, pane, viewport: pane.control };
 }
 
 type Fixture = Awaited<ReturnType<typeof fixture>>;
-/** Physical coordinates only locate the actual viewport; assertions verify routing and retained ownership. */
+/** Coordinates address the actual viewport; assertions check routing and state. */
 function pointer(f: Fixture, x: number, y: number, held: number, pressed = 0, released = 0): void {
 	f.host.clock.advance(10);
 	f.editor.dispatchPointer({ x, y, buttons: held, pressedButtons: pressed, releasedButtons: released,
 		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 }
 
+/** A second editor group is an independently owned visible document, not a fake Scene pin. */
+function sourceGroup(f: Fixture, model = f.model) {
+	const group = f.editor.editorParts.main.splitGroup(f.group, 'down');
+	const input = new CodeEditorInput(model);
+	assert.ok(group.openEditor(input)); f.update();
+	return { group, input };
+}
+
 for (const font of ['tiny', 'msx'] as const)
-test(`${font} authored content is a real independently focused Main client beside unchanged document groups`, async t => {
-	const f = await fixture(t, font), viewport = f.client.viewport, parts = f.editor.editorParts;
-	assert.equal(viewport.attached, true);
-	assert.ok(viewport.control.focusTarget.hasFocus);
+test(`${font} authored Scene is a real document viewport beside independent document groups`, async t => {
+	const f = await fixture(t, font), parts = f.editor.editorParts;
+	assert.ok(f.group.model.contains(f.client.input));
+	assert.ok(f.pane.input === f.client.input && f.viewport.view === f.client.view.viewport);
+	assert.ok(f.viewport.focusTarget.hasFocus);
 	assert.equal(f.client.preferredPart, 'viewport');
-	assert.ok(f.client.view.viewport.authoring === f.client.consumer);
-	assert.ok(parts.main.groups.every(group => group.model.tabs.every(input => input.kind !== 'scene_editor')));
-	const source = new CodeEditorInput(f.model), group = parts.main.activeGroup;
-	group.openEditor(source); f.update(); group.panes.activePane!.focus();
-	assert.ok(f.main.primary === f.client && f.client.viewport === viewport && viewport.attached);
+	assert.ok(f.client.view.viewport.authoring === f.client.authoring);
+	const source = sourceGroup(f); source.group.focus('content');
+	assert.ok(f.main.primary === f.client && f.group.panes.activePane === f.pane);
 	assert.ok(f.firstGroup.model.activeTab === f.firstInput && f.secondGroup.model.activeTab === f.secondInput);
-	f.key('F6', KeyModifier.shift);
-	assert.ok(viewport.scope.contains(inputFocus.admittedTarget!.scope));
-	f.key('F6');
-	assert.ok(parts.main.scope.contains(inputFocus.admittedTarget!.scope));
-	assert.ok(group.model.activeTab === source && f.main.primary === f.client);
+	f.main.focusPrimary('viewport'); assert.ok(f.viewport.focusTarget.hasFocus);
+	f.key('F6'); assert.ok(inputFocus.admittedTarget !== null && parts.main.scope.contains(inputFocus.admittedTarget.scope));
+	assert.ok(source.group.model.activeTab === source.input && f.main.primary === f.client);
 	assert.equal(f.model.canUndo, false);
 });
 
-test('Source from the viewport keeps its exact authored selection and opens through Main documents', async t => {
-	const f = await fixture(t);
-	const part = f.editor.editorParts.main, group = part.activeGroup;
-	assert.equal(part.hasEditors, false); assert.equal(part.contentPresented, false);
-	assert.equal(part.surface.visible, true); assert.equal(part.clientSurface.visible, false);
-	t.after(group.onWillFocus(() => {
-		assert.equal(part.contentPresented, true); assert.equal(group.presented, true);
-		assert.equal(f.editor.surfaces.isFocusAdmitted(group.surface), true); return true;
-	}));
+test('Source from the viewport keeps its exact authored selection and opens beside the Scene document', async t => {
+	const f = await fixture(t), part = f.editor.editorParts.main;
 	selectSceneOutlineRow(f.client.view.hierarchy, 2); f.update(); f.main.focusPrimary('viewport');
-	const selection = f.client.consumer.selection, camera = f.client.view.viewport.camera.capture();
-	const target = f.client.viewport.control.focusTarget;
-	assert.equal(f.main.canOpenSource(target), true);
-	const opening = t.mock.method(f.editor.navigation, 'openSource');
+	const selection = f.client.authoring.selection, camera = f.client.view.viewport.camera.capture();
+	const target = f.viewport.focusTarget, opening = t.mock.method(f.editor.navigation, 'openSource');
 	f.editor.commands.execute('editor.source', target);
-	assert.equal(opening.mock.callCount(), 1); await opening.mock.calls[0].result; f.update();
-	const input = f.editor.editorParts.main.activeGroup.model.activeTab;
-	assert.ok(input instanceof CodeEditorInput && input.workingCopy === f.model);
-	assert.ok(part.activeGroup === group && group.focusScope.contains(inputFocus.admittedTarget!.scope));
-	assert.ok(f.main.primary === f.client && f.client.consumer.selection === selection);
-	assert.deepEqual(f.client.view.viewport.camera.capture(), camera);
-	assert.equal(f.client.viewport.attached, true);
-	assert.equal(f.model.canUndo, false);
-});
-
-test('first preserve-focus document restores allocation without replacing primary focus or its retained group', async t => {
-	const f = await fixture(t), part = f.editor.editorParts.main, group = part.activeGroup, origin = inputFocus.admittedTarget;
-	group.openEditor(new CodeEditorInput(f.model), { preserveFocus: true }); f.update();
-	assert.equal(part.contentPresented, true); assert.ok(part.activeGroup === group);
-	assert.ok(inputFocus.admittedTarget === origin); assert.equal(f.client.viewport.attached, true);
-});
-
-for (const control of ['content', 'tabs'] as const)
-test(`closing the final focused ${control} returns to the retained authored viewport and removes Documents from F6`, async t => {
-	const f = await fixture(t), part = f.editor.editorParts.main, group = part.activeGroup;
-	const source = new CodeEditorInput(f.model); group.openEditor(source); f.update(); group.focus(control);
-	const camera = f.client.view.viewport.camera.capture(), scope = group.focusScope;
-	assert.equal(await group.close(source.id), true); f.update();
-	assert.equal(part.contentPresented, false); assert.ok(part.activeGroup === group && group.focusScope === scope);
-	assert.ok(f.client.viewport.scope.contains(inputFocus.admittedTarget!.scope));
-	f.key('F6'); assert.ok(f.client.details.scope.contains(inputFocus.admittedTarget!.scope));
-	f.key('F6', KeyModifier.shift); assert.ok(f.client.viewport.scope.contains(inputFocus.admittedTarget!.scope));
+	assert.equal(opening.mock.callCount(), 1); assert.ok(await opening.mock.calls[0].result !== undefined); f.update();
+	const sourceGroup = part.activeGroup, input = sourceGroup.model.activeTab;
+	assert.ok(sourceGroup !== f.group && input instanceof CodeEditorInput && input.workingCopy === f.model);
+	assert.ok(sourceGroup.focusScope.contains(inputFocus.admittedTarget!.scope));
+	assert.ok(f.main.primary === f.client && f.client.authoring.selection === selection);
+	assert.ok(f.group.panes.activePane === f.pane && f.pane.input === f.client.input);
 	assert.deepEqual(f.client.view.viewport.camera.capture(), camera); assert.equal(f.model.canUndo, false);
 });
 
-test('bulk close retains both groups and returns only the displaced document focus', async t => {
-	const f = await fixture(t), parts = f.editor.editorParts, part = parts.main, first = part.activeGroup;
-	const firstInput = new CodeEditorInput(f.model); first.openEditor(firstInput);
-	const second = part.splitGroup(first, 'down'), secondInput = new CodeEditorInput(f.model); second.openEditor(secondInput); f.update(); first.focus();
-	assert.equal(await parts.closeController.close([{ group: first, input: firstInput }, { group: second, input: secondInput }], inputFocus.target, part.actionPrompt), true);
-	f.update(); assert.equal(part.contentPresented, false); assert.ok(part.groups.includes(first) && part.groups.includes(second));
-	assert.ok(f.client.viewport.scope.contains(inputFocus.admittedTarget!.scope));
+test('a preserve-focus neighboring document cannot replace Scene focus or its retained input', async t => {
+	const f = await fixture(t), part = f.editor.editorParts.main, group = part.splitGroup(f.group, 'down');
+	f.main.focusPrimary('viewport'); const origin = inputFocus.admittedTarget;
+	group.openEditor(new CodeEditorInput(f.model), { preserveFocus: true }); f.update();
+	assert.ok(inputFocus.admittedTarget === origin && f.main.primary === f.client);
+	assert.ok(f.group.panes.activePane === f.pane && f.pane.input === f.client.input);
+});
+
+for (const control of ['content', 'tabs'] as const)
+test(`closing a focused neighboring ${control} leaves the Scene document and camera intact`, async t => {
+	const f = await fixture(t), source = sourceGroup(f); source.group.focus(control);
+	const camera = f.client.view.viewport.camera.capture();
+	assert.equal(await source.group.close(source.input.id), true); f.update();
+	assert.ok(f.group.model.contains(f.client.input) && f.group.panes.activePane === f.pane);
+	f.main.focusPrimary('viewport'); assert.ok(f.viewport.focusTarget.hasFocus);
+	f.key('F6'); assert.ok(f.client.details.scope.contains(inputFocus.admittedTarget!.scope));
+	f.key('F6', KeyModifier.shift); assert.ok(f.viewport.focusTarget.hasFocus);
+	assert.deepEqual(f.client.view.viewport.camera.capture(), camera); assert.equal(f.model.canUndo, false);
+});
+
+test('bulk closing neighboring documents cannot retire the Scene or its shared working copy', async t => {
+	const f = await fixture(t), parts = f.editor.editorParts, part = parts.main;
+	const first = sourceGroup(f), second = part.splitGroup(first.group, 'down'), secondInput = new CodeEditorInput(f.model);
+	second.openEditor(secondInput); f.update(); first.group.focus();
+	assert.equal(await parts.closeController.close([{ group: first.group, input: first.input }, { group: second, input: secondInput }], inputFocus.target, part.actionPrompt), true);
+	f.update(); assert.ok(part.groups.includes(first.group) && part.groups.includes(second));
+	assert.ok(f.group.model.contains(f.client.input) && f.group.panes.activePane === f.pane && f.main.primary === f.client);
+	assert.equal(f.model.buffer.getText(), SOURCE);
 });
 
 test('group retirement cannot replace a newer focus-and-null request from disposal', async t => {
-	const f = await fixture(t), parts = f.editor.editorParts, part = parts.main, group = part.activeGroup;
-	group.openEditor(new CodeEditorInput(f.model));
-	const sibling = part.splitGroup(group, 'down'); sibling.openEditor(new CodeEditorInput(f.model)); f.update(); group.focus();
-	t.after(group.onWillDispose(() => { f.second.focus(); inputFocus.setTarget(null); }));
-	assert.equal(await parts.closeGroup(group), true); f.update();
-	assert.equal(inputFocus.target, null); assert.ok(part.groups.includes(sibling)); assert.equal(part.contentPresented, true);
+	const f = await fixture(t), parts = f.editor.editorParts, part = parts.main, source = sourceGroup(f);
+	const sibling = part.splitGroup(source.group, 'down'); sibling.openEditor(new CodeEditorInput(f.model)); f.update(); source.group.focus();
+	t.after(source.group.onWillDispose(() => { f.second.focus(); inputFocus.setTarget(null); }));
+	assert.equal(await parts.closeGroup(source.group), true); f.update();
+	assert.equal(inputFocus.target, null); assert.ok(part.groups.includes(sibling));
+	assert.ok(f.group.model.contains(f.client.input));
 });
 
 test('a preserve-focus opening during clear revokes the old close receipt before a later background close', async t => {
-	const f = await fixture(t), part = f.editor.editorParts.main, group = part.activeGroup;
-	const source = new CodeEditorInput(f.model), incoming = new CodeEditorInput(f.firstInput.workingCopy);
-	group.openEditor(source, { pinned: true }); f.update();
+	const f = await fixture(t), source = sourceGroup(f), incoming = new CodeEditorInput(f.firstInput.workingCopy);
 	let unbind: () => void;
-	unbind = group.panes.onDidClearEditor(() => { unbind(); group.openEditor(incoming, { pinned: true, preserveFocus: true }); }); t.after(unbind);
-	assert.equal(await group.close(source.id), true); f.update();
-	assert.ok(group.model.activeTab === incoming); assert.equal(inputFocus.target, null);
-	assert.equal(await group.close(incoming.id), true); f.update();
-	assert.equal(part.contentPresented, false); assert.equal(inputFocus.target, null);
+	unbind = source.group.panes.onDidClearEditor(() => { unbind(); source.group.openEditor(incoming, { pinned: true, preserveFocus: true }); }); t.after(unbind);
+	assert.equal(await source.group.close(source.input.id), true); f.update();
+	assert.ok(source.group.model.activeTab === incoming); assert.equal(inputFocus.target, null);
+	assert.equal(await source.group.close(incoming.id), true); f.update();
+	assert.equal(inputFocus.target, null); assert.ok(f.group.model.contains(f.client.input));
 });
 
-test('withdrawing the document companion cannot replace a newer focus-and-null request from blur', async t => {
-	const f = await fixture(t), part = f.editor.editorParts.main, source = new CodeEditorInput(f.model), game = f.editor.gamePanel;
-	f.editor.updateViewport({ width: 1200, height: 800 }); part.activeGroup.openEditor(source); game.toggle(); f.update();
+test('withdrawing the game companion cannot replace a newer focus-and-null request from blur', async t => {
+	const f = await fixture(t), source = sourceGroup(f), game = f.editor.gamePanel;
+	f.editor.updateViewport({ width: 1200, height: 800 }); game.toggle(); f.update();
 	assert.equal(game.visible, true);
 	const bounds = f.editor.editorParts.mainArea.companionBounds;
 	pointer(f, bounds.left + 4, bounds.top + 4, PointerButton.Primary, PointerButton.Primary);
@@ -151,122 +149,104 @@ test('withdrawing the document companion cannot replace a newer focus-and-null r
 	t.after(target.onDidBlur(() => { f.second.focus(); inputFocus.setTarget(null); }));
 	game.close(); f.update();
 	assert.equal(game.visible, false); assert.equal(inputFocus.target, null);
-	assert.ok(part.activeGroup.model.activeTab === source && f.main.primary === f.client);
+	assert.ok(source.group.model.activeTab === source.input && f.main.primary === f.client);
 });
 
 for (const redirect of ['background', 'new focus', 'new focus then null'] as const)
-test(`closing the final Main document preserves ${redirect}`, async t => {
-	const f = await fixture(t), part = f.editor.editorParts.main, group = part.activeGroup, source = new CodeEditorInput(f.model);
-	group.openEditor(source); f.update();
+test(`closing a neighboring Source document preserves ${redirect}`, async t => {
+	const f = await fixture(t), source = sourceGroup(f);
 	if (redirect === 'background') f.second.focus();
 	else {
 		let unbind: () => void;
-		unbind = group.panes.onDidClearEditor(() => { unbind(); f.second.focus(); if (redirect === 'new focus then null') inputFocus.setTarget(null); });
+		unbind = source.group.panes.onDidClearEditor(() => { unbind(); f.second.focus(); if (redirect === 'new focus then null') inputFocus.setTarget(null); });
 		t.after(unbind);
 	}
-	assert.equal(await group.close(source.id), true); f.update(); assert.equal(part.contentPresented, false);
+	assert.equal(await source.group.close(source.input.id), true); f.update();
 	if (redirect === 'new focus then null') assert.equal(inputFocus.target, null);
 	else assert.ok(inputFocus.admittedTarget === f.second.commandTarget);
+	assert.ok(f.group.model.contains(f.client.input));
 });
 
-test('an empty retained Main document family presents local modals without restoring blank allocation', async t => {
-	const f = await fixture(t), part = f.editor.editorParts.main, origin = f.client.viewport.control.focusTarget;
+test('local modals return to the Scene viewport without replacing its document', async t => {
+	const f = await fixture(t), part = f.editor.editorParts.main, origin = f.viewport.focusTarget;
 	part.quickInput.input('', '', '', async value => value, undefined, undefined, { invocationOrigin: origin }); f.update();
-	assert.equal(part.quickInput.visible, true); assert.equal(part.contentPresented, false);
-	assert.ok(inputFocus.admittedTarget === part.quickInput.field.focusTarget);
+	assert.equal(part.quickInput.visible, true); assert.ok(inputFocus.admittedTarget === part.quickInput.field.focusTarget);
 	f.key('Escape'); assert.equal(part.quickInput.visible, false); assert.ok(inputFocus.admittedTarget === origin);
 	const decision = part.actionPrompt.show({ title: 'Pending action', message: 'Continue?', primary: 'Continue', secondary: 'Cancel', primaryEnabled: true, defaultChoice: 'cancel' }, origin); f.update();
-	assert.equal(part.actionPrompt.visible, true); assert.equal(part.contentPresented, false);
-	assert.ok(inputFocus.admittedTarget === origin); part.actionPrompt.focusTarget.focus();
+	assert.equal(part.actionPrompt.visible, true); part.actionPrompt.focusTarget.focus();
 	assert.ok(part.scope.contains(inputFocus.admittedTarget!.scope));
 	f.key('Escape'); assert.equal(await decision, 'cancel'); assert.ok(inputFocus.admittedTarget === origin);
+	assert.ok(f.group.panes.activePane === f.pane && f.pane.input === f.client.input);
 });
 
 for (const route of ['keyboard', 'pointer'] as const)
-test(`the viewport ${route} context menu retains its native camera commands and returns to that same canvas`, async t => {
-	const f = await fixture(t), viewport = f.client.viewport, origin = viewport.control.focusTarget;
+test(`the viewport ${route} context menu addresses its camera and returns to the same canvas`, async t => {
+	const f = await fixture(t), origin = f.viewport.focusTarget;
 	selectSceneOutlineRow(f.client.view.hierarchy, 2); f.update(); f.main.focusPrimary('viewport');
-	const selected = f.client.consumer.selection;
+	const selected = f.client.authoring.selection;
 	if (route === 'keyboard') f.key('ContextMenu');
 	else {
-		const bounds = viewport.layoutState.client, x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
+		const bounds = f.client.view.viewport.bounds, x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
 		pointer(f, x, y, PointerButton.Secondary, PointerButton.Secondary); pointer(f, x, y, 0, 0, PointerButton.Secondary);
 	}
 	const menu = f.editor.contextMenu;
 	assert.equal(menu.visible, true); assert.ok(menu.returnFocus === origin);
-	assert.ok(menu.model.rows.some(row => row.command === 'sceneViewport.frameAll' && row.enabled),
-		'the popup addresses the actual canvas camera capability, not just its semantic source owner');
-	assert.ok(menu.model.rows.some(row => row.command === 'editor.source' && row.enabled));
+	assert.ok(menu.model.rows.some(row => row.command === 'sceneViewport.frameAll' && row.enabled));
+	assert.equal(menu.model.rows.some(row => row.command === 'editor.source'), false);
 	f.key('Home');
 	for (let step = 0; menu.model.rows[menu.model.selectedIndex]?.command !== 'sceneViewport.frameAll' && step < menu.model.rows.length; step++) f.key('ArrowDown');
 	assert.equal(menu.model.rows[menu.model.selectedIndex].command, 'sceneViewport.frameAll'); f.key('Enter');
 	assert.equal(menu.visible, false); assert.ok(inputFocus.admittedTarget === origin);
-	assert.ok(f.client.consumer.selection === selected);
-	f.key('Escape');
-	assert.ok(f.client.hierarchy.scope.contains(inputFocus.admittedTarget!.scope));
+	assert.ok(f.client.authoring.selection === selected);
+	f.key('Escape'); assert.ok(f.client.hierarchy.scope.contains(inputFocus.admittedTarget!.scope));
 	assert.equal(f.model.canUndo, false);
 });
 
-test('camera movement is retained reading state and an allocation change cancels its physical capture only', async t => {
-	const f = await fixture(t), viewport = f.client.viewport, bounds = viewport.layoutState.client;
-	f.editor.editorParts.main.activeGroup.openEditor(new CodeEditorInput(f.model), { preserveFocus: true }); f.update();
-	const before = f.client.view.viewport.camera.capture(), selection = f.client.consumer.selection;
+test('camera movement remains document reading state and allocation change cancels only its capture', async t => {
+	const f = await fixture(t), bounds = f.client.view.viewport.bounds;
+	const before = f.client.view.viewport.camera.capture(), selection = f.client.authoring.selection;
 	const x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
-	pointer(f, x, y, PointerButton.Auxiliary, PointerButton.Auxiliary);
-	assert.equal(pointerCapture.active, true);
+	pointer(f, x, y, PointerButton.Auxiliary, PointerButton.Auxiliary); assert.equal(pointerCapture.active, true);
 	pointer(f, x + 18, y + 9, PointerButton.Auxiliary);
 	const moved = f.client.view.viewport.camera.capture(); assert.notDeepEqual(moved, before);
-	f.main.regionLayout.viewportSplit.resize(0.8); f.update();
-	assert.equal(pointerCapture.active, false);
-	assert.ok(f.client.viewport === viewport && viewport.attached);
+	f.editor.updateViewport({ width: 1200, height: 800 }); f.update();
+	assert.equal(pointerCapture.active, false); assert.ok(f.group.panes.activePane === f.pane);
 	assert.deepEqual(f.client.view.viewport.camera.capture(), moved);
 	pointer(f, x + 35, y + 24, 0, 0, PointerButton.Auxiliary);
 	assert.deepEqual(f.client.view.viewport.camera.capture(), moved);
-	assert.ok(f.client.consumer.selection === selection);
+	assert.ok(f.client.authoring.selection === selection);
 	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
 });
 
-test('suspension retires viewport authority but preserves camera, source subject and the actual document part', async t => {
-	const f = await fixture(t), viewport = f.client.viewport, generation = viewport.scope.contextGeneration;
-	f.editor.commands.execute('sceneViewport.view3d', viewport.commandTarget); f.update();
-	const camera = f.client.view.viewport.camera.capture(), documents = f.editor.editorParts.main;
-	assert.equal(f.main.canOpenSource(viewport.control.focusTarget), true);
+test('suspending companions preserves the document viewport, camera and source subject', async t => {
+	const f = await fixture(t);
+	f.editor.commands.execute('sceneViewport.view3d', f.pane.commandTarget); f.update();
+	const camera = f.client.view.viewport.camera.capture(), input = f.client.input;
 	f.main.suspend();
-	assert.equal(viewport.attached, false); assert.ok(viewport.scope.contextGeneration > generation);
-	assert.equal(f.main.canOpenSource(viewport.control.focusTarget), false);
-	assert.equal(pointerCapture.active, false);
-	f.main.resume(); f.update(); f.main.focusPrimary('viewport');
-	assert.ok(f.main.primary === f.client && f.client.viewport === viewport && viewport.attached);
-	assert.ok(f.editor.editorParts.main === documents && viewport.scope.contains(inputFocus.admittedTarget!.scope));
-	assert.deepEqual(f.client.view.viewport.camera.capture(), camera);
-	assert.equal(f.model.canUndo, false);
-});
-
-test('primary bookmarks and workspace placement record camera and focus independently of document topology', async t => {
-	const f = await fixture(t), viewport = f.client.viewport;
-	f.editor.commands.execute('sceneViewport.view3d', viewport.commandTarget); f.update();
-	f.main.regionLayout.viewportSplit.resize(0.8); f.update(); f.main.focusPrimary('viewport');
-	const camera = f.client.view.viewport.camera.capture(), source = captureScenePrimary(f.client.view), workspace = f.main.serialize();
-	assert.deepEqual(source.view.camera, camera);
-	assert.equal(source.view.preferredPart, 'viewport');
-	assert.equal(workspace.activePrimaryPart, 'viewport');
-	assert.equal(workspace.viewportRatio, f.main.regionLayout.viewportSplit.ratio);
-	const bookmark = f.client.captureNavigationLocation()!; t.after(() => bookmark.dispose());
-	f.main.resetLayout(); f.update();
-	assert.ok(f.main.primary === f.client && f.client.viewport === viewport);
-	assert.deepEqual(f.client.view.viewport.camera.capture(), camera);
-	assert.equal(f.main.regionLayout.viewportSplit.ratio, f.main.regionLayout.viewportSplit.defaultRatio);
-	assert.equal(f.model.canUndo, false);
-});
-
-test('a client retired during viewport allocation cannot reattach its side regions or take document focus', async t => {
-	const f = await fixture(t), viewport = f.client.viewport;
-	const layout = t.mock.method(viewport, 'layout', () => { layout.mock.restore(); f.main.reset(); f.second.focus(); });
-	assert.doesNotThrow(() => { f.main.regionLayout.viewportSplit.resize(0.8); f.update(); });
-	assert.equal(layout.mock.callCount(), 1);
-	assert.equal(f.main.primary, undefined);
-	assert.equal(viewport.attached, false);
 	assert.equal(f.client.hierarchy.attached, false); assert.equal(f.client.details.attached, false);
-	assert.ok(inputFocus.admittedTarget === f.second.commandTarget);
+	assert.equal(pointerCapture.active, false); assert.ok(f.group.model.contains(input));
+	f.main.resume(); f.update(); f.main.focusPrimary('viewport');
+	assert.ok(f.main.primary === f.client && f.group.panes.activePane === f.pane);
+	assert.ok(f.viewport.focusTarget.hasFocus); assert.deepEqual(f.client.view.viewport.camera.capture(), camera);
+	assert.equal(f.model.canUndo, false);
+});
+
+test('the Scene document snapshot retains camera and focus independently of companion layout', async t => {
+	const f = await fixture(t);
+	f.editor.commands.execute('sceneViewport.view3d', f.pane.commandTarget); f.update(); f.main.focusPrimary('viewport');
+	const camera = f.client.view.viewport.camera.capture(), source = captureSceneEditorView(f.client.view);
+	assert.deepEqual(source.camera, camera); assert.equal(source.preferredPart, 'viewport');
+	f.main.resetLayout(); f.update();
+	assert.ok(f.main.primary === f.client && f.group.panes.activePane === f.pane);
+	assert.deepEqual(f.client.view.viewport.camera.capture(), camera); assert.equal(f.model.canUndo, false);
+});
+
+test('companion retirement during viewport allocation cannot reattach regions or steal newer focus', async t => {
+	const f = await fixture(t);
+	const layout = t.mock.method(f.viewport, 'layout', () => { layout.mock.restore(); f.main.reset(); f.second.focus(); });
+	assert.doesNotThrow(() => { f.editor.updateViewport({ width: 1200, height: 800 }); f.update(); });
+	assert.equal(layout.mock.callCount(), 1); assert.equal(f.main.primary, undefined);
+	assert.equal(f.client.hierarchy.attached, false); assert.equal(f.client.details.attached, false);
+	assert.ok(f.group.panes.activePane === f.pane && inputFocus.admittedTarget === f.second.commandTarget);
 	assert.equal(f.model.canUndo, false);
 });

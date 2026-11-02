@@ -8,7 +8,7 @@ import { inputFocus } from '../../ide/input/focus';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import type { FileElement } from '../../ide/workbench/contrib/resources/panel/files_model';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
-import { ScenePrimaryBookmark } from '../../ide/workbench/contrib/scene_editor/primary_bookmark';
+import { SceneBookmark } from '../../ide/workbench/contrib/scene_editor/scene_bookmark';
 import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import { captureWorkspaceDirtySources, restoreWorkspaceDirtyModels, type WorkingCopyRecoveryEntry } from '../../ide/workbench/services/working_copy/source_recovery';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
@@ -195,7 +195,7 @@ test('retiring recovered source during first publication aborts frontend documen
 	for (const [path, record] of dirty.dirtyRecords) workspaceDirtyRecords.set(path, record);
 	const payload: WorkspaceAutosavePayload = JSON.parse(JSON.stringify({
 		dirtyFiles: dirty.dirtyFiles, editorParts: f.editor.editorParts.serialize(f.editor.editorInputSerializers),
-		mainWorkspace: f.editor.mainWorkspace.serialize(), filesBrowser: f.editor.resourcePanel.serialize(),
+		mainWorkspace: f.editor.mainWorkspace.serialize(), sceneCompanion: undefined, filesBrowser: f.editor.resourcePanel.serialize(),
 		fontVariant: f.editor.fontVariant, breakpoints: [{ ...copy.identity, lines: [1] }],
 	}));
 	assert.equal(payload.editorParts.documents.length, 2);
@@ -228,14 +228,14 @@ for (const equal of [false, true]) test(`Scene and browser occurrences admitted 
 	t.after(() => workspaceDirtyRecords.clear());
 	const payload: WorkspaceAutosavePayload = JSON.parse(JSON.stringify({
 		dirtyFiles: [entry], editorParts: f.editor.editorParts.serialize(f.editor.editorInputSerializers),
-		mainWorkspace: f.editor.mainWorkspace.serialize(), filesBrowser: f.editor.resourcePanel.serialize(),
+		mainWorkspace: f.editor.mainWorkspace.serialize(), sceneCompanion: undefined, filesBrowser: f.editor.resourcePanel.serialize(),
 		fontVariant: f.editor.fontVariant, breakpoints: f.ide.debugger.breakpoints.serialize(),
 	}));
 	const panel = f.editor.resourcePanel;
 	panel.show(); f.update();
 	assert.equal(editorTextModelService.get(resource), undefined, 'passive discovery has not admitted a working copy');
 	let primary: ScenePrimaryClient | undefined, browser: WorkbenchTreeNode<FileElement> | undefined;
-	let bookmark: ScenePrimaryBookmark | undefined, request: EditorSourceLocationRequest | undefined, opening: Promise<boolean> | undefined;
+	let bookmark: SceneBookmark | undefined, request: EditorSourceLocationRequest | undefined, opening: Promise<boolean> | undefined;
 	let additions = 0, replacements = 0;
 	t.after(editorTextModelService.onDidAddModel(model => {
 		if (model.identity.contextId !== resource.contextId || model.identity.path !== resource.path) return;
@@ -254,7 +254,7 @@ for (const equal of [false, true]) test(`Scene and browser occurrences admitted 
 		const admitted = f.editor.mainWorkspace.primary; assert.ok(admitted instanceof ScenePrimaryClient); primary = admitted;
 		assert.equal(selectSceneOutlineRow(primary.view.hierarchy, 1), true);
 		primary.hierarchy.update(); primary.details.update();
-		bookmark = new ScenePrimaryBookmark(primary.consumer, primary.view); t.after(() => bookmark!.dispose());
+		bookmark = new SceneBookmark(primary.authoring, primary.view); t.after(() => bookmark!.dispose());
 		request = primary.captureSourceLocation();
 	}));
 	await applyWorkspaceAutosavePayload(f.editor, f.sources.catalog, f.ide.debugger, payload);
@@ -262,11 +262,11 @@ for (const equal of [false, true]) test(`Scene and browser occurrences admitted 
 	assert.ok(primary !== undefined && browser !== undefined && bookmark !== undefined && request !== undefined);
 	assert.equal(additions, 1); assert.equal(replacements, 0);
 	const model = editorTextModelService.get(resource)!;
-	assert.ok(primary.consumer.workingCopy === model && primary.consumer.isCurrent);
-	assert.equal(primary.consumer.availability, 'available');
-	assert.ok(primary.consumer.subject === primary.consumer.document!.scenes[1]);
+	assert.ok(primary.authoring.workingCopy === model && primary.authoring.isCurrent);
+	assert.equal(primary.authoring.availability, 'available');
+	assert.ok(primary.authoring.subject === primary.authoring.document!.scenes[1]);
 	assert.equal(bookmark.isDisposed, false);
-	assert.ok(bookmark.resolve(f.ide.sceneSources)?.scene === primary.consumer.subject);
+	assert.ok(bookmark.resolve(f.ide.sceneSources)?.scene === primary.authoring.subject);
 	assert.ok(request.isCurrent!());
 	const location = await request.readLocation();
 	assert.ok(location !== undefined && location.model === model && location.modelVersion === model.version);

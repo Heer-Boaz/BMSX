@@ -16,37 +16,37 @@ export interface NavigationHistorySource {
 	captureNavigationEntry(): NavigationHistoryEntry | null;
 }
 
-/** The contribution owns source correspondence and primary-subject admission. */
-export interface PrimaryNavigationLocation {
+/** The contribution owns source correspondence and source-occurrence admission. */
+export interface NavigationLocation {
 	readonly isDisposed: boolean;
-	matches(other: PrimaryNavigationLocation): boolean;
+	matches(other: NavigationLocation): boolean;
 	onDidRetire(listener: () => void): () => void;
 	restore(options: { readonly isCurrent: () => boolean; readonly preserveFocus: boolean }): Promise<boolean>;
 	dispose(): void;
 }
 
-export type PrimaryNavigationHistoryTarget = { readonly kind: 'primary'; readonly location: PrimaryNavigationLocation };
-export type NavigationHistoryTarget = EditorNavigationHistoryTarget | PrimaryNavigationHistoryTarget;
+export type LocationNavigationHistoryTarget = { readonly kind: 'location'; readonly location: NavigationLocation };
+export type NavigationHistoryTarget = EditorNavigationHistoryTarget | LocationNavigationHistoryTarget;
 
 /** Entries own inert locations, never an additional authoring consumer or control attachment. */
 export class NavigationHistoryEntry extends DisposableStore {
 	private ownerValue: EditorGroupView | undefined;
 	private editorTarget: EditorNavigationHistoryTarget | undefined;
-	private readonly primaryTarget: PrimaryNavigationHistoryTarget | undefined;
+	private readonly locationTarget: LocationNavigationHistoryTarget | undefined;
 	private unbindOwner: (() => void) | undefined;
 	private unbindMove: (() => void) | undefined;
 	private unbindInput: (() => void) | undefined;
 	public readonly selection: EditorPaneSelection | undefined;
 	public get owner(): EditorGroupView | undefined { return this.ownerValue; }
-	public get target(): NavigationHistoryTarget { return this.primaryTarget === undefined ? this.editorTarget! : this.primaryTarget; }
+	public get target(): NavigationHistoryTarget { return this.locationTarget === undefined ? this.editorTarget! : this.locationTarget; }
 
-	public constructor(target: PrimaryNavigationHistoryTarget);
+	public constructor(target: LocationNavigationHistoryTarget);
 	public constructor(target: EditorNavigationHistoryTarget, selection: EditorPaneSelection | undefined, owner: EditorGroupView);
 	public constructor(target: NavigationHistoryTarget, selection?: EditorPaneSelection, owner?: EditorGroupView) {
 		super();
 		this.selection = selection;
-		if (target.kind === 'primary') {
-			this.primaryTarget = target;
+		if (target.kind === 'location') {
+			this.locationTarget = target;
 			if (target.location.isDisposed) { super.dispose(); return; }
 			this.add({ dispose: target.location.onDidRetire(this.retire) });
 			this.add(target.location);
@@ -176,8 +176,8 @@ export function areNavigationEntriesEqual(a: NavigationHistoryEntry, b: Navigati
 	if (a.owner !== b.owner) return false;
 	const left = a.target;
 	const right = b.target;
-	if (left.kind === 'primary') return right.kind === 'primary' && left.location.matches(right.location);
-	if (right.kind === 'primary') return false;
+	if (left.kind === 'location') return right.kind === 'location' && left.location.matches(right.location);
+	if (right.kind === 'location') return false;
 	if (left.kind === 'input') {
 		if (right.kind !== 'input' || left.input !== right.input) return false;
 	} else if (right.kind !== 'resource' || left.editorId !== right.editorId

@@ -3,8 +3,6 @@ import { WorkbenchInteraction } from './workbench/services/execution/interaction
 import { MainWorkspace } from './workbench/main_workspace';
 import { WorkbenchRegionNavigation } from './workbench/region_navigation';
 import { drawWorkbenchSplit } from './workbench/render/split_view';
-import type { MainWorkspaceClient, MainWorkspaceClientSurfaces } from './workbench/common/main_workspace_client';
-import type { SerializedPrimaryClient } from './workbench/common/main_workspace_serialization';
 import type { FontVariant } from '../machine/ts/render/shared/bmsx_font';
 import { HomeInput } from './workbench/contrib/home/editor_input';
 import { HomeEditorPane } from './workbench/contrib/home/editor_pane';
@@ -94,7 +92,6 @@ import { CallHierarchyPane } from './workbench/contrib/call_hierarchy/editor_pan
 import { WorkspaceSearchPane, measureWorkspaceSearchInput } from './workbench/contrib/workspace_search/editor_pane';
 import { SceneEditorInputSerializer } from './workbench/contrib/scene_editor/editor_serializer';
 import type { WorkspaceDirectoryModel } from './workspace/directory_model';
-import type { WorkspaceSourceContext } from './workspace/source_catalog';
 import { ScenarioLabInputSerializer } from './workbench/contrib/scenario_lab/editor_serializer';
 import { ResourceViewerInputSerializer } from './workbench/contrib/resources/editor_serializer';
 import { ContextMenuController } from './workbench/services/context_menu/controller';
@@ -102,9 +99,9 @@ import { drawContextMenu, layoutContextMenu } from './workbench/services/context
 import type { GraphLayoutEngineFactory } from './workbench/services/graph_layout/engine';
 import { SceneEditorController } from './workbench/contrib/scene_editor/controller';
 import type { SceneAuthoredSubject } from './workbench/contrib/scene_editor/authoring_context';
-import { createScenePrimaryClient, type ScenePrimaryClientOptions } from './workbench/contrib/scene_editor/primary_client';
-import { restoreScenePrimaryClient } from './workbench/contrib/scene_editor/primary_serialization';
-import type { RestoreScenePrimaryBookmark } from './workbench/contrib/scene_editor/primary_location';
+import type { ScenePrimaryClientOptions } from './workbench/contrib/scene_editor/primary_client';
+import { SceneEditorInput } from './workbench/contrib/scene_editor/editor_input';
+import { luaSourceRangeToTextRange } from './language/lua/source_edits';
 import type { EditorTextModel } from './editor/model/text_model';
 import type { InputFocusTarget } from './input/focus';
 import { saveTextFileFromCommand } from './commands/source_save';
@@ -185,6 +182,7 @@ import type { ChromeRenderContext } from './workbench/render/chrome_context';
 import { createResourceEditorResolver } from './workbench/contrib/resources/editor_contributions';
 import type { ResourceEditorResolver } from './workbench/services/editor/resource_editor_resolver';
 import { EditorParts } from './workbench/services/editor/editor_parts';
+import type { EditorInput } from './workbench/common/editor_inputs';
 import { CodeEditorPane } from './workbench/contrib/code_editor/editor_pane';
 import { ResourceViewerEditorPane } from './workbench/contrib/resources/editor_pane';
 import { BehaviorLensEditorPane } from './workbench/contrib/behavior_lens/editor_pane';
@@ -248,7 +246,7 @@ export type CartEditor = TextInputHost & {
 	readonly cartMaps: CartMapController;
 	readonly sceneEditor: SceneEditorController;
 	openSceneInMain(produce: () => ScenePrimarySource | undefined, origin: InputFocusTarget | null): Promise<boolean>;
-	restorePrimaryClient(record: SerializedPrimaryClient, regions: MainWorkspaceClientSurfaces, scope: InputFocusScope, isCurrent: () => boolean): Promise<MainWorkspaceClient | undefined>;
+	restoreSceneCompanions(input: EditorInput): void;
 	readonly animations: AnimationEditorController;
 	readonly actorLab: ActorLabController;
 	readonly actionPrompt: ActionPrompt;
@@ -314,7 +312,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly statusBar: WorkbenchStatusBar;
 	public readonly problems: ProblemsPanelController;
 	public readonly buildOutput: BuildOutputActivity;
-	private readonly scenePrimaryOptions: Omit<ScenePrimaryClientOptions, 'presentations' | 'scope'>;
+	private readonly scenePrimaryOptions: Omit<ScenePrimaryClientOptions, 'presentations' | 'scope' | 'isCurrent'>;
 	private readonly windowStatus: WorkbenchWindowStatus;
 	public readonly surfaces: WorkbenchSurfaceService;
 	private readonly chromeScope = Symbol('workbench chrome');
@@ -497,11 +495,10 @@ export class RuntimeCartEditor implements CartEditor {
 		this.mainWorkspace = new MainWorkspace(this.surfaces, chromeSurface, inputFocus.workbenchScope, this.commands,
 			() => this.layoutMainEditor(), () => this.editorParts.activate(this.editorParts.main, this.mainWorkspace),
 			focus => { if (focus) this.editorParts.main.focus(); else this.editorParts.activate(this.editorParts.main); },
-			() => this.editorParts.main.activeGroup, this.contextMenu, workArea);
+			input => input === undefined ? this.editorParts.main.activeGroup : this.editorParts.findGroup(input)!, this.contextMenu, workArea);
 		this.editorParts = new EditorParts({
 			surfaces: this.surfaces, owner: chromeSurface, scope: inputFocus.workbenchScope, workArea,
 			mainPresentation: this.mainWorkspace,
-			workingCopyConsumers: () => this.mainWorkspace.workingCopyConsumers(),
 			commands: this.commands, contextMenu: this.contextMenu, renderContext: this.chromeRenderContext,
 			layoutMain: () => this.layoutMainEditor(),
 			focusReturn: this.resourcePanel.focusTarget, contributions: {
@@ -543,7 +540,7 @@ export class RuntimeCartEditor implements CartEditor {
 				group, this.editorParts.partForGroup(group).quickInput, group.focusScope), measure: measureUnconstrainedEditor },
 			game_view: { create: group => new GameViewEditorPane(this.commands, this.contextMenu, runtime, input, presenter, group.focusScope), measure: measureUnconstrainedEditor },
 			cart_map: { create: group => new CartMapPane(this.cartMaps, this.commands, this.sources, this.surfaces, group.paneSurface, group.workArea, group.focusScope, this.contextMenu), measure: measureCartMapEditor },
-			scene_editor: { create: group => new SceneEditorPane(this.commands, this.sources, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope, this.editorParts.partForGroup(group).quickInput), measure: measureSceneEditor },
+			scene_editor: { create: group => new SceneEditorPane(group, this.sceneEditor, this.scenePrimaryOptions), measure: measureSceneEditor },
 			scenario_lab: { create: group => new ScenarioLabEditorPane(
 				this.scenarioLab,
 				this.commands,
@@ -661,7 +658,6 @@ export class RuntimeCartEditor implements CartEditor {
 			commands: this.commands, sources: this.sources, saves: textFileSaves, contextMenu: this.contextMenu, quickInput: this.quickInput, surfaces: this.surfaces,
 			workArea: getWorkbenchWorkArea(), main: this.mainWorkspace,
 			focusReturn: this.editorParts.main.focusTarget,
-			restoreNavigation: this.restoreSceneNavigation,
 			createProjectRunCommand: (model, target, isRetained) => createProjectRunCommand(this, sources, boots, runtimeTasks, workbench.runTargets, model, target, isRetained),
 			save: copy => { void saveTextFileFromCommand(this.workbench.textFileSaves, copy, this, this.sources); },
 		};
@@ -762,32 +758,44 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 	public get fontVariant(): FontVariant { return editorViewState.fontVariant; }
 
-	/** Main owns the intent before source preparation can publish callbacks. */
-	public openSceneInMain(produce: () => ScenePrimarySource | undefined, origin: InputFocusTarget | null): Promise<boolean> {
-		let source: ScenePrimarySource | undefined, context: WorkspaceSourceContext;
-		return this.mainWorkspace.openPrimary((regions, scope) => {
-			source = produce();
-			if (source === undefined) return;
-			const { model, subject } = source;
-			context = this.sources.catalog.getContext(model.identity.contextId);
-			return createScenePrimaryClient(model, this.workbench.sceneSources, subject, { ...this.scenePrimaryOptions, presentations: regions, scope });
-		}, this.editorParts.closeController, origin, { isCurrent: () => source !== undefined
-			&& this.sources.catalog.contexts.get(context.id) === context && this.workbench.models.get(source.model.identity) === source.model });
+	/** The open document owns the Scene; Main only presents its attached companions. */
+	public async openSceneInMain(produce: () => ScenePrimarySource | undefined, origin: InputFocusTarget | null): Promise<boolean> {
+		const source = produce();
+		if (source === undefined) return false;
+		const { model, subject } = source;
+		const context = this.sources.catalog.getContext(model.identity.contextId);
+		const generation = origin?.scope.contextGeneration;
+		const range = luaSourceRangeToTextRange(model.buffer, subject.scene.range);
+		const untrack = model.trackRanges(new Map([['scene', range]]));
+		const current = () => !this.isClosing && origin?.scope.contextGeneration === generation
+			&& this.sources.catalog.contexts.get(context.id) === context && this.workbench.models.get(model.identity) === model;
+		try {
+			const primary = this.mainWorkspace.primary;
+			if (primary !== undefined && !inputFocus.commitEdit(primary.scope)) return false;
+			if (!current()) return false;
+			let group = primary === undefined ? undefined : this.editorParts.findGroup(primary.input);
+			for (const candidate of this.editorParts.groups) {
+				const existing = candidate.model.tabs.find(input => input instanceof SceneEditorInput && input.workingCopy === model
+					&& input.view.authoring.subjectSpan?.start === range.start && input.view.authoring.subjectSpan?.end === range.end);
+				if (existing !== undefined) { group = candidate; break; }
+			}
+			if (group === undefined) {
+				group = this.editorParts.main.activeGroup;
+				if (group.model.tabs.some(input => !input.isPlaceholder)) group = this.editorParts.sideGroup(group, 'down');
+			}
+			if (group === undefined || !current()) return false;
+			const receiver = group;
+			const input = receiver.openPreparedEditor(() => this.sceneEditor.prepareDefinition(receiver, model, range, current), { isCurrent: current });
+			return input !== undefined && this.mainWorkspace.primary?.input === input;
+		} finally { untrack(); }
 	}
 
-	private readonly restoreSceneNavigation: RestoreScenePrimaryBookmark = (bookmark, options) =>
-		this.mainWorkspace.openPrimary((regions, scope) => {
-			const subject = bookmark.resolve(this.workbench.sceneSources);
-			return subject === undefined ? undefined : createScenePrimaryClient(bookmark.model, this.workbench.sceneSources,
-				subject, { ...this.scenePrimaryOptions, presentations: regions, scope }, bookmark.view);
-		}, this.editorParts.closeController, inputFocus.target, { ...options, recordNavigation: false });
-
-	public restorePrimaryClient(record: SerializedPrimaryClient, regions: MainWorkspaceClientSurfaces, scope: InputFocusScope,
-		isCurrent: () => boolean): Promise<MainWorkspaceClient | undefined> {
-		switch (record.kind) {
-			case 'scene': return restoreScenePrimaryClient(record.value, editorTextModelService, this.sources.catalog,
-				this.workbench.sceneSources, { ...this.scenePrimaryOptions, presentations: regions, scope }, isCurrent);
-		}
+	/** Recover the last real Scene attachment from the restored editor topology. */
+	public restoreSceneCompanions(input: EditorInput): void {
+		const group = this.editorParts.findGroup(input)!;
+		const pane = group.panes.activePane;
+		if (pane instanceof SceneEditorPane && pane.input === input && input instanceof SceneEditorInput
+			&& !this.mainWorkspace.restoreSuspendedCompanion(input)) pane.admitInteraction();
 	}
 
 	public activate(): void {
@@ -807,6 +815,8 @@ export class RuntimeCartEditor implements CartEditor {
 			if (activeTab !== null) group.activate(activeTab.id, { preserveFocus: true });
 		}
 		this.mainWorkspace.resume();
+		const companion = this.mainWorkspace.companionInput;
+		if (companion !== undefined) this.restoreSceneCompanions(companion);
 		const focused = inputFocus.admittedTarget;
 		if (focused === null || focused.guestInput !== undefined) {
 			if (this.editorParts.activePart === this.editorParts.main) this.mainWorkspace.focusTarget.focus();
@@ -885,11 +895,10 @@ export class RuntimeCartEditor implements CartEditor {
 		if (this.resourcePanel.refresh()) layoutChanged = refreshWorkbenchLayout() || layoutChanged;
 		const part = this.editorParts.main, bounds = getWorkbenchEditorBounds();
 		part.prepareLayout();
-		const hasDocuments = part.hasDocumentContent;
 		const minimum = part.minimumClientWidth(bounds.bottom - bounds.top);
-		layoutChanged = this.mainWorkspace.layout(bounds, minimum, part.minimumClientHeight, hasDocuments) || layoutChanged;
+		layoutChanged = this.mainWorkspace.layout(bounds, minimum, part.minimumClientHeight) || layoutChanged;
 		const finalMinimum = part.minimumClientWidth(this.mainWorkspace.documentBounds.bottom - this.mainWorkspace.documentBounds.top);
-		if (finalMinimum !== minimum) layoutChanged = this.mainWorkspace.layout(bounds, finalMinimum, part.minimumClientHeight, hasDocuments) || layoutChanged;
+		if (finalMinimum !== minimum) layoutChanged = this.mainWorkspace.layout(bounds, finalMinimum, part.minimumClientHeight) || layoutChanged;
 		this.gamePanel.prepareLayout(this.mainWorkspace.documentBounds);
 		layoutChanged = part.layoutPrepared(this.mainWorkspace.documentBounds) || layoutChanged;
 		this.mainWorkspace.layoutClients();

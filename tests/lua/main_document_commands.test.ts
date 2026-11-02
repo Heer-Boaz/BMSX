@@ -56,7 +56,7 @@ for (const origin of ['hierarchy', 'details', 'problems', 'output'] as const) {
 	for (const command of DOCUMENT_COMMANDS) test(`${origin} ${command} has no implicit ordinary document subject`, async t => {
 		const f = await fixture(t, origin), parts = f.editor.editorParts;
 		const documents = [...parts.documents], memberships = parts.groups.map(group => ({ group, inputs: [...group.model.tabs], active: group.model.activeTab }));
-		const selection = f.primary.consumer.selection, firstSource = f.first.workingCopy.buffer.getText(), secondSource = f.second.workingCopy.buffer.getText();
+		const selection = f.primary.authoring.selection, firstSource = f.first.workingCopy.buffer.getText(), secondSource = f.second.workingCopy.buffer.getText();
 		const enabled = f.editor.commands.isEnabled(command, f.target);
 		f.editor.commands.execute(command, f.target); await setImmediate();
 		assert.ok(parts.documents.length === documents.length && parts.documents.every((part, index) => part === documents[index]),
@@ -65,7 +65,7 @@ for (const origin of ['hierarchy', 'details', 'problems', 'output'] as const) {
 			&& group.model.tabs.every((input, index) => input === inputs[index]) && group.model.activeTab === active),
 			'a primary/activity action cannot close or cycle ordinary document membership');
 		assert.equal([parts.main, ...parts.documents].some(part => part.quickInput.visible), false, 'a subject-less action cannot open a Move Editor chooser');
-		assert.ok(f.main.primary === f.primary && f.primary.consumer.selection === selection);
+		assert.ok(f.main.primary === f.primary && f.primary.authoring.selection === selection);
 		assert.equal(f.first.workingCopy.buffer.getText(), firstSource); assert.equal(f.second.workingCopy.buffer.getText(), secondSource);
 		assert.equal(f.first.workingCopy.dirty, true); assert.equal(f.second.workingCopy.dirty, true);
 		assert.equal(f.first.workingCopy.canUndo, true); assert.equal(f.second.workingCopy.canUndo, true);
@@ -126,16 +126,18 @@ for (const origin of ['hierarchy', 'problems'] as const)
 
 for (const origin of ['shell', 'no target'] as const) test(`${origin} invocation intentionally addresses the captured active document`, async t => {
 	const f = await fixture(t), target = origin === 'shell' ? f.editor.statusBar.focusTarget : null;
+	const scene = f.primary.input, group = f.editor.editorParts.findGroup(scene)!;
 	assert.equal(f.editor.commands.isEnabled('tabs.close', target), true);
 	f.editor.commands.execute('tabs.close', target); await setImmediate();
-	assert.ok(!f.group.model.contains(f.second) && f.group.model.activeTab === f.first && f.group.model.contains(f.first));
-	assert.ok(f.main.primary === f.primary);
+	assert.equal(group.model.contains(scene), false);
+	assert.ok(f.group.model.contains(f.first) && f.group.model.activeTab === f.second && f.group.model.contains(f.second));
+	assert.equal(f.main.primary, undefined);
 });
 
 test('explicit workspace Close All remains workspace-wide from the Main authored context', async t => {
-	const f = await fixture(t, 'hierarchy', false), selection = f.primary.consumer.selection;
+	const f = await fixture(t, 'hierarchy', false);
 	assert.equal(f.editor.commands.isEnabled('editors.closeAll', f.target), true);
 	f.editor.commands.execute('editors.closeAll', f.target); await setImmediate();
 	assert.equal(f.editor.editorParts.groups.every(group => group.model.tabs.length === 0), true);
-	assert.ok(f.main.primary === f.primary && f.primary.consumer.selection === selection && f.primary.consumer.isCurrent);
+	assert.equal(f.main.primary, undefined);
 });

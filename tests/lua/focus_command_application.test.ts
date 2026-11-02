@@ -4,6 +4,8 @@ import { KeyModifier } from '../../hosts/common/input/text';
 import { inputFocus, InputFocusScope } from '../../ide/input/focus';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
+import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE as SCENE_SOURCE } from '../fixtures/studio/scene_viewport';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
@@ -137,73 +139,67 @@ test('application capture retirement prevents publication of the revoked invokin
 	assert.equal(pending, true);
 });
 
-const SCENE_SOURCE = `local scenes = require('cartlib/world/scene_library')
-scenes.register('room', { objects = {
- { member_id = 'first', definition_id = 'actor.first', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3 } } },
- { member_id = 'second', definition_id = 'actor.second', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 5, 6 } } },
-} })
-return {}
-`;
 
 function sceneFixture(t: TestContext) {
-	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	f.editor.setFontVariant('tiny');
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource);
 	f.editor.sceneEditor.openResource(f.firstGroup, resource); f.update();
 	const pane = f.firstGroup.panes.activePane; assert.ok(pane instanceof SceneEditorPane);
-	const context = pane.control.view.authoring, document = context.document!, scene = document.scenes[0];
+	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
+	const context = primary.authoring, document = context.document!, scene = document.scenes[0];
 	assert.equal(context.select(document, model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 }), true);
-	pane.control.update();
-	return { ...f, pane, context, model, control: pane.control };
+	primary.hierarchy.update(); primary.details.update();
+	return { ...f, pane, context, model, control: primary };
 }
 
 test('actual Scene keyboard Undo and Redo use application exports while a disabled field Undo stays local', t => {
-	const f = sceneFixture(t), field = f.control.details.controls[0];
+	const f = sceneFixture(t), field = f.control.details.control.controls[0];
 	field.field.focusTarget.focus(); setFieldText(field.field, '31', true); assert.equal(field.commit(), true);
-	f.control.update();
-	assert.equal(f.model.buffer.getText(), SCENE_SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 31,'));
-	f.control.hierarchy.focus();
-	assert.equal(f.control.hierarchy.focusTarget.getCommand('undo'), undefined);
+	f.control.hierarchy.update(); f.control.details.update();
+	assert.equal(f.model.buffer.getText(), SCENE_SOURCE.replace('position = { x = 11,', 'position = { x = 31,'));
+	f.control.hierarchy.control.focus();
+	assert.equal(f.control.hierarchy.control.focusTarget.getCommand('undo'), undefined);
 	f.key('KeyZ', KeyModifier.ctrl); assert.equal(f.model.buffer.getText(), SCENE_SOURCE);
-	f.key('KeyY', KeyModifier.ctrl); assert.equal(f.model.buffer.getText(), SCENE_SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 31,'));
+	f.key('KeyY', KeyModifier.ctrl); assert.equal(f.model.buffer.getText(), SCENE_SOURCE.replace('position = { x = 11,', 'position = { x = 31,'));
 	field.field.focusTarget.focus(); setFieldText(field.field, '32', true);
 	assert.equal(field.field.focusTarget.getCommand('undo')!.isEnabled(), false);
 	f.key('KeyZ', KeyModifier.ctrl);
-	assert.equal(f.model.buffer.getText(), SCENE_SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 31,'));
+	assert.equal(f.model.buffer.getText(), SCENE_SOURCE.replace('position = { x = 11,', 'position = { x = 31,'));
 	assert.equal(field.pending, true);
 });
 
 test('Scene field draft settlement can detach its invoking Details without moving the retained semantic member', t => {
-	const f = sceneFixture(t), field = f.control.details.controls[0];
+	const f = sceneFixture(t), field = f.control.details.control.controls[0];
 	field.field.focusTarget.focus(); setFieldText(field.field, '31', true);
-	const rootGeneration = f.control.inputScope.contextGeneration;
+	const rootGeneration = f.control.scope.contextGeneration;
 	let armed = true;
 	const unbind = f.model.onDidChangeContent(() => {
 		if (!armed) return;
-		armed = false; f.control.details.clearView();
+		armed = false; f.control.details.control.clearView();
 	});
 	t.after(unbind);
 	f.editor.commands.execute('sceneEditor.moveMemberDown', field.field.focusTarget);
-	assert.equal(f.control.inputScope.contextGeneration, rootGeneration);
-	assert.equal(f.control.details.hasView, false);
-	assert.equal(f.model.buffer.getText(), SCENE_SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 31,'));
+	assert.equal(f.control.scope.contextGeneration, rootGeneration);
+	assert.equal(f.control.details.control.hasView, false);
+	assert.equal(f.model.buffer.getText(), SCENE_SOURCE.replace('position = { x = 11,', 'position = { x = 31,'));
 	assert.equal(f.context.selection?.kind === 'member' ? f.context.selection.index : -1, 0);
 });
 
 test('Scene semantic enablement can retire the invoking Details before the captured mutation runs', t => {
-	const f = sceneFixture(t), field = f.control.details.controls[0];
+	const f = sceneFixture(t), field = f.control.details.control.controls[0];
 	field.field.focusTarget.focus();
 	const read = f.ide.sceneSources.get.bind(f.ide.sceneSources);
 	let armed = true;
 	t.mock.method(f.ide.sceneSources, 'get', model => {
 		const document = read(model);
-		if (armed) { armed = false; f.control.details.clearView(); }
+		if (armed) { armed = false; f.control.details.control.clearView(); }
 		return document;
 	});
 	f.editor.commands.execute('sceneEditor.moveMemberDown', field.field.focusTarget);
 	assert.equal(armed, false);
-	assert.equal(f.control.details.hasView, false);
+	assert.equal(f.control.details.control.hasView, false);
 	assert.equal(f.model.buffer.getText(), SCENE_SOURCE);
 	assert.equal(f.context.selection?.kind === 'member' ? f.context.selection.index : -1, 0);
 });

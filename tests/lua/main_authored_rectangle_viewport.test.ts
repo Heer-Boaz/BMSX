@@ -41,7 +41,7 @@ async function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
 	const document = f.ide.sceneSources.get(model);
 	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, scene: document.scenes[0], sourceVersion: model.version } }), inputFocus.target!), true);
 	f.update(); const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
-	assert.equal(client.consumer.availability, 'available'); assert.ok(client.consumer.subject !== undefined);
+	assert.equal(client.authoring.availability, 'available'); assert.ok(client.authoring.subject !== undefined);
 	assert.equal(client.view.viewport.canvas.items.length, 3);
 	return { ...f, model, client, view: client.view.viewport };
 }
@@ -63,7 +63,7 @@ for (const font of ['tiny', 'msx'] as const) test(`${font} Main interleaves nati
 });
 
 test('native viewport picking falls through a transparent image to the actual rectangle occurrence', async t => {
-	const f = await fixture(t), scene = f.client.consumer.subject!, picture = f.view.canvas.items[1];
+	const f = await fixture(t), scene = f.client.authoring.subject!, picture = f.view.canvas.items[1];
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;
 	for (const [u, v, expected] of [[0.1875, 0.1875, scene.objects[0]], [0.6, 0.6, scene.objects[1]]] as const) {
 		const x = picture.x + picture.xx * u + picture.yx * v, y = picture.y + picture.xy * u + picture.yy * v;
@@ -74,7 +74,7 @@ test('native viewport picking falls through a transparent image to the actual re
 				pressedButtons: down ? PointerButton.Primary : 0, releasedButtons: down ? 0 : PointerButton.Primary,
 				cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 		}
-		f.update(); assert.ok(f.client.consumer.selection?.kind === 'member' && f.client.consumer.selection.entry === expected);
+		f.update(); assert.ok(f.client.authoring.selection?.kind === 'member' && f.client.authoring.selection.entry === expected);
 	}
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles); assert.equal(f.model.canUndo, false);
 });
@@ -83,7 +83,7 @@ test('rectangle framing, projection and picking consume full reflected/sheared v
 	const f = await fixture(t), old = 'position={x=0,y=0}';
 	f.model.pushEditOperations([{ offset: SOURCE.indexOf(old), deleteLength: old.length,
 		text: 'transform={xx=-2,xy=1,yx=0.5,yy=3,ox=7,oy=9}' }]); f.update();
-	const item = f.view.canvas.items[0], entry = f.client.consumer.subject!.objects[0];
+	const item = f.view.canvas.items[0], entry = f.client.authoring.subject!.objects[0];
 	assert.ok(entry.kind === 'object');
 	const bounds = { left: 0, top: 0, right: 0, bottom: 0 };
 	assert.equal(f.view.canvas.frameBounds(new Set([entry]), bounds), true);

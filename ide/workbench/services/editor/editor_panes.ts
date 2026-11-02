@@ -87,6 +87,8 @@ export class EditorPanes {
 		return this.panes.get(kind) as EditorPane<Extract<EditorInput, { kind: TKind }>> | undefined;
 	}
 
+	public prepareEditor(input: EditorInput): boolean { return this.getOrCreatePane(input).prepareToActivate(input); }
+
 	public openEditor(input: EditorInput, options: EditorPaneOpenOptions = {}): EditorInputOpenResult | undefined {
 		const { selection, navigationSelection, preserveFocus } = options;
 		let generation = this.openGenerationValue;
@@ -109,7 +111,9 @@ export class EditorPanes {
 			activePane.setOptions(selection, navigationSelection);
 			pane = activePane;
 		} else {
-			generation = this.clearEditor();
+			const cleared = this.clearEditor();
+			if (cleared === undefined) return;
+			generation = cleared;
 			if (!current()) return;
 			pane = this.getOrCreatePane(input);
 			this.activePaneValue = pane;
@@ -126,21 +130,27 @@ export class EditorPanes {
 		if (!current() || this.activePaneValue !== pane || pane.input !== input) return;
 		const activated = !preserveFocus && (inputFocus.revision === focusRevision || inputFocus.target === null);
 		if (activated) pane.focus();
-		return { generation: this.openGenerationValue, activated };
+		return { input, generation: this.openGenerationValue, activated };
 	}
 
 	/** The receipt names this clear, independently of openings performed by its observers. */
-	public clearEditor(reason: EditorPaneClearReason = 'deactivate'): number {
+	public clearEditor(reason: EditorPaneClearReason = 'deactivate'): number | undefined {
 		const generation = ++this.openGenerationValue;
 		const activePane = this.activePaneValue;
 		if (activePane === null) {
 			return generation;
 		}
+		const current = () => this.openGenerationValue === generation && this.activePaneValue === activePane;
+		if (reason !== 'retire' && (!activePane.prepareToClearInput() || !current())) return;
 		pointerCapture.cancelScope(this.focusScope.surfaceScope);
-		if (this.focusScope.statusSource === activePane) this.focusScope.statusSource = undefined;
+		if (!current()) return;
+		if (reason !== 'retire' && (!inputFocus.commitEdit(this.focusScope) || !current())) return;
 		if (inputFocus.target?.scope.surfaceScope === this.focusScope.surfaceScope
 			|| activePane.inputScope !== undefined && inputFocus.target?.scope === activePane.inputScope) inputFocus.setTarget(null);
+		if (!current() || reason !== 'retire' && (!activePane.prepareToClearInput() || !current())) return;
+		if (this.focusScope.statusSource === activePane) this.focusScope.statusSource = undefined;
 		activePane.clearInput(reason);
+		if (!current()) return;
 		if (inputFocus.target?.scope.surfaceScope === this.focusScope.surfaceScope
 			|| activePane.inputScope !== undefined && inputFocus.target?.scope === activePane.inputScope) inputFocus.setTarget(null);
 		this.activePaneValue = null;
@@ -152,7 +162,7 @@ export class EditorPanes {
 	public dispose(): void {
 		for (const listener of this.disposeListeners) listener();
 		this.disposeListeners.clear();
-		this.clearEditor();
+		this.clearEditor('retire');
 		for (const pane of this.panes.values()) pane.dispose();
 		this.panes.clear();
 		this.clearListeners.clear();

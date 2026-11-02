@@ -28,9 +28,10 @@ async function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
 	assert.equal(await editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target), true);
 	const primary = main.primary; assert.ok(primary instanceof ScenePrimaryClient);
 	assert.equal(selectSceneOutlineRow(primary.view.hierarchy, 1), true);
-	const group = parts.main.activeGroup, input = new CodeEditorInput(model);
+	const sceneGroup = parts.findGroup(primary.input)!;
+	const group = parts.sideGroup(sceneGroup, 'down')!, input = new CodeEditorInput(model);
 	group.openEditor(input); main.openActivity('problems'); editor.resourcePanel.show(); f.update();
-	return { ...f, parts, main, primary, model, group, input };
+	return { ...f, parts, main, primary, model, group, sceneGroup, input };
 }
 
 for (const region of ['Files', 'Hierarchy', 'Details', 'Activity'] as const)
@@ -46,7 +47,7 @@ for (const region of ['Files', 'Hierarchy', 'Details', 'Activity'] as const)
 				: region === 'Details' ? main.regionLayout.detailsSash : main.regionLayout.activitySash;
 			const split = region === 'Files' ? files.split : fixed!;
 			assert.ok(control.input === split);
-			const source = f.model.buffer.getText(), version = f.model.version, selected = f.primary.consumer.selection;
+			const source = f.model.buffer.getText(), version = f.model.version, selected = f.primary.authoring.selection;
 			const tabs = [...f.group.model.tabs], topology = f.parts.main.arrangement.topologyRevision;
 			const enter = axis === 'width' ? 'workspace.resizeViewWidth' : 'workspace.resizeViewHeight';
 			const reset = axis === 'width' ? 'workspace.resetViewWidth' : 'workspace.resetViewHeight';
@@ -64,7 +65,7 @@ for (const region of ['Files', 'Hierarchy', 'Details', 'Activity'] as const)
 			assert.equal(editor.commands.isEnabled(reset, origin), true);
 			editor.commands.execute(reset, origin); f.update();
 			assert.equal(split.canReset, false); assert.ok(inputFocus.admittedTarget === origin);
-			assert.ok(main.primary === f.primary && f.primary.consumer.selection === selected);
+			assert.ok(main.primary === f.primary && f.primary.authoring.selection === selected);
 			assert.deepEqual(f.group.model.tabs, tabs); assert.equal(f.parts.main.arrangement.topologyRevision, topology);
 			assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.version, version);
 		});
@@ -75,13 +76,13 @@ for (const font of ['tiny', 'msx'] as const)
 		main.focusPrimary('details'); const field = primary.details.control.controls[0];
 		assert.equal(field.field.focusTarget.focus(), true); setFieldText(field.field, '-', true);
 		const origin = inputFocus.admittedTarget!, source = model.buffer.getText(), version = model.version;
-		const selection = primary.consumer.selection, generation = primary.details.scope.contextGeneration;
+		const selection = primary.authoring.selection, generation = primary.details.scope.contextGeneration;
 		editor.commands.execute('workspace.increaseViewWidth', origin); f.update();
 		assert.notEqual(main.regionLayout.detailsWidth, undefined);
 		assert.equal(editor.commands.isEnabled('workspace.resetViewWidth', origin), true);
 		editor.commands.execute('workspace.resetViewWidth', origin); f.update();
 		assert.equal(main.regionLayout.detailsWidth, undefined); assert.equal(field.pending, true); assert.equal(field.field.text, '-');
-		assert.ok(inputFocus.admittedTarget === origin && main.primary === primary && primary.consumer.selection === selection);
+		assert.ok(inputFocus.admittedTarget === origin && main.primary === primary && primary.authoring.selection === selection);
 		assert.equal(primary.details.scope.contextGeneration, generation);
 		assert.equal(model.buffer.getText(), source); assert.equal(model.version, version); assert.equal(model.dirty, false);
 	});
@@ -118,10 +119,9 @@ for (const presentation of ['Main', 'floating'] as const)
 		const branches = [...part.arrangement.splits], topology = part.arrangement.topologyRevision;
 		const groups = [...part.groups], tabs = groups.map(candidate => [...candidate.model.tabs]);
 		for (const axis of ['width', 'height'] as const) {
-			const branch = branches.find(candidate => candidate.split.orientation === (axis === 'width' ? 'horizontal' : 'vertical'))!;
-			const other = branches.find(candidate => candidate !== branch)!, otherRatio = other.split.ratio;
 			const control = part.resizeControlForGroup(group, axis)!;
-			assert.ok(control.input === branch.split);
+				const branch = branches.find(candidate => candidate.split === control.input)!;
+				const other = branches.find(candidate => candidate !== branch)!, otherRatio = other.split.ratio;
 			editor.commands.execute(axis === 'width' ? 'workspace.resizeViewWidth' : 'workspace.resizeViewHeight', origin); f.update();
 			assert.ok(inputFocus.admittedTarget === control.focusTarget);
 			f.key(axis === 'width' ? 'ArrowRight' : 'ArrowDown'); assert.equal(branch.split.canReset, true);
@@ -151,7 +151,7 @@ test('a saturated Main boundary can reset its retained request without offering 
 
 test('maximized document groups never lend their retained split or Main side regions to entry/reset commands', async t => {
 	const f = await fixture(t), part = f.parts.main, group = f.group;
-	part.splitGroup(group, 'right'); f.update(); const split = part.arrangement.splits[0].split;
+	part.splitGroup(group, 'right'); f.update(); const split = part.resizeControlForGroup(group, 'width')!.input as WorkbenchSplitView;
 	split.ratio = 0.65; part.arrangement.toggleMaximize(group); part.relayout(); group.panes.activePane!.focus();
 	const origin = inputFocus.admittedTarget!, ratio = split.ratio;
 	const hierarchy = f.main.regionLayout.hierarchyWidth, details = f.main.regionLayout.detailsWidth;
@@ -166,7 +166,7 @@ for (const admission of ['hidden Activity', 'floating Activity', 'modal', 'guest
 	test(`${admission} has no sizing handle authority and never resets a background owner`, async t => {
 		const f = await fixture(t), { editor, main } = f;
 		f.parts.main.splitGroup(f.group, 'right'); f.update();
-		const split = f.parts.main.arrangement.splits[0].split; split.ratio = 0.65;
+		const split = f.parts.main.resizeControlForGroup(f.group, 'width')!.input as WorkbenchSplitView; split.ratio = 0.65;
 		main.focusActivity(); let origin = inputFocus.admittedTarget!;
 		if (admission === 'hidden Activity') main.setActivityVisible(false);
 		else if (admission === 'floating Activity') main.setActivityPlacement('floatingWindow');
@@ -195,7 +195,7 @@ test('removing the exact document boundary retires its focused handle without wi
 	const origin = inputFocus.admittedTarget!, source = f.model.buffer.getText(), input = group.model.activeTab;
 	f.editor.commands.execute('workspace.resizeViewWidth', origin); f.update();
 	const handle = inputFocus.admittedTarget!; assert.ok(handle !== origin);
-	f.key('ArrowRight'); const split = part.arrangement.splits[0].split, resized = split.ratio;
+	f.key('ArrowRight'); const split = part.resizeControlForGroup(group, 'width')!.input as WorkbenchSplitView, resized = split.ratio;
 	assert.equal(part.removeGroup(right), true); f.update();
 	assert.ok(inputFocus.admittedTarget !== handle); f.key('Escape');
 	assert.equal(split.ratio, resized); assert.ok(group.model.activeTab === input && !part.retired);

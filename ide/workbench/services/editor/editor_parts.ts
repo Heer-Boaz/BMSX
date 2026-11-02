@@ -20,7 +20,7 @@ import type { EditorTabGroupModel, EditorGroupTransferPublication } from '../../
 import type { EditorInput } from '../../common/editor_inputs';
 import type { ResourceEditorIdentity } from '../../common/editor_input';
 import type { EditorInputSerializers } from './editor_serialization';
-import type { SerializedDocumentEditorPart, SerializedEditorParts } from './editor_parts_serialization';
+import type { SerializedDocumentEditorPart, SerializedEditorLocation, SerializedEditorParts } from './editor_parts_serialization';
 import { EditorPart, type MainEditorPresentation } from './editor_part';
 import { serializeEditorPart } from './editor_part_serialization';
 import type { EditorGroupDirection } from './group_arrangement';
@@ -150,6 +150,22 @@ export class EditorParts {
 	public findGroup(input: EditorInput): EditorGroupView | undefined {
 		for (const group of this.groupList) if (group.model.contains(input)) return group;
 		return undefined;
+	}
+
+	/** Address an actual persistent input in the same sequences as the workspace memento. */
+	public captureEditorLocation(input: EditorInput): SerializedEditorLocation {
+		const group = this.findGroup(input)!, part = this.partForGroup(group);
+		let index = 0;
+		for (const tab of group.model.tabs) {
+			if (tab === input) break;
+			if (tab.serializable) index++;
+		}
+		return { part: part === this.main ? 0 : this.documentParts.indexOf(part) + 1, group: part.groups.indexOf(group), input: index };
+	}
+
+	public editorAt(location: SerializedEditorLocation): EditorInput {
+		const part = location.part === 0 ? this.main : this.documentParts[location.part - 1];
+		return part.groups[location.group].model.tabs[location.input];
 	}
 
 	/** Reveal the existing owner, or admit a new input at the explicitly requested destination. */
@@ -311,7 +327,7 @@ export class EditorParts {
 	}
 
 	/** Explicit side placement stays in the captured host and never borrows ordinary editor affinity. */
-	public sideGroup(reference: EditorGroupView, direction: EditorGroupDirection = 'right'): EditorGroupView | undefined {
+	public sideGroup(reference: EditorGroupView, direction: EditorGroupDirection = 'right', excluded?: EditorGroupView): EditorGroupView | undefined {
 		const part = this.owners.get(reference);
 		if (part === undefined || part.retired || part.surface.retired || !reference.openingAdmitted || part.operation !== 'none') return;
 		const generation = reference.panes.openGeneration, scope = inputFocus.target?.scope, context = scope?.contextGeneration;
@@ -330,7 +346,7 @@ export class EditorParts {
 			|| part.arrangement.maximized !== undefined
 			|| inputFocus.revision !== focusRevision && inputFocus.target !== null) return;
 		let destination: EditorGroupView | undefined;
-		for (const group of part.mostRecentlyActiveGroups) if (part.arrangement.isNeighbor(reference, group, direction)) {
+		for (const group of part.mostRecentlyActiveGroups) if (group !== excluded && part.arrangement.isNeighbor(reference, group, direction)) {
 			destination = group; break;
 		}
 		let expectedTopology = topology;
@@ -664,6 +680,9 @@ export class EditorParts {
 						if (!sourcePart.ownsGroup(source) || this.owners.get(target) !== targetPart || target.surface.retired
 							|| target.model.activeTab !== publication.active || !plan.entries.every(entry => target.model.contains(entry.receiver))) return false;
 					}
+					source.publishMovedGroup(target);
+					if (this.owners.get(target) !== targetPart || target.surface.retired || target.model.activeTab !== publication.active
+						|| !plan.entries.every(entry => target.model.contains(entry.receiver))) return false;
 					publication.publish();
 					if (!sourcePart.ownsGroup(source) || this.owners.get(target) !== targetPart || target.surface.retired
 						|| target.panes.openGeneration !== targetReceipt || target.model.activeTab !== publication.active || !plan.entries.every(entry => target.model.contains(entry.receiver))) return false;

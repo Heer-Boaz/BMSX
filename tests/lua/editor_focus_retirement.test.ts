@@ -4,6 +4,7 @@ import { KeyModifier } from '../../hosts/common/input/text';
 import { InputFocusScope, InputFocusService, inputFocus } from '../../ide/input/focus';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
+import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { createActualSourcePanes } from '../helpers/source_panes';
@@ -58,7 +59,7 @@ test('retirement preserves a newer foreign focus selected by the departing contr
 	assert.equal(focus.revision, revision, 'a retired control cannot release a newer focus owner');
 });
 
-for (const invocation of ['command', 'compact command'] as const) test(`Scene ${invocation} removal returns a retired numeric field to Outline for canonical keyboard Undo`, t => {
+for (const invocation of ['command', 'narrow window'] as const) test(`Scene ${invocation} removal returns focus from a retired numeric field for canonical keyboard Undo`, t => {
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	f.editor.setFontVariant('tiny');
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
@@ -68,12 +69,13 @@ for (const invocation of ['command', 'compact command'] as const) test(`Scene ${
 	f.update();
 	const pane = f.firstGroup.panes.activePane!;
 	assert.ok(pane instanceof SceneEditorPane);
-	if (invocation === 'compact command') { f.firstBounds.right = 160; f.update(); }
+	if (invocation === 'narrow window') { f.firstBounds.right = 160; f.update(); }
 	selectSceneOutlineRow(input.view.hierarchy, 1);
 	pane.update();
-	f.editor.commands.execute('sceneEditor.details', pane.commandTarget);
-	const commandTarget = pane.commandTarget;
-	const field = pane.control.details.controls[0].field, model = input.workingCopy, original = model.buffer.getText();
+	f.editor.mainWorkspace.focusPrimary('details');
+	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
+	const commandTarget = primary.details.commandTarget;
+	const field = primary.details.control.controls[0].field, model = input.workingCopy, original = model.buffer.getText();
 	assert.equal(field.focusTarget.focus(), true);
 	assert.equal(field.replaceText(0, field.readText().text.length, '789'), true);
 	assert.equal(field.focusTarget.edit!.pending, true);
@@ -81,18 +83,15 @@ for (const invocation of ['command', 'compact command'] as const) test(`Scene ${
 
 	f.editor.commands.execute('sceneEditor.removeMember', field.focusTarget.commandContext);
 	assert.equal(field.focusTarget.edit!.pending, false);
-	assert.equal(input.view.hierarchy.outline.selectionIndex, -1);
+	assert.ok(!model.buffer.getText().includes("member_id = 'subject'"));
 	assert.ok(model.buffer.getText() !== original && model.buffer.getText() !== accepted);
 	f.update();
-	assert.equal(input.view.section, 'outline');
-	assert.ok(inputFocus.admittedTarget === pane.commandTarget);
-	assert.ok(inputFocus.admittedTarget !== commandTarget, 'the retired Details subject cannot remain the keyboard owner');
+	assert.ok(inputFocus.admittedTarget === commandTarget);
+	assert.ok(inputFocus.admittedTarget !== field.focusTarget, 'the retired field cannot remain the keyboard owner');
 	f.key('KeyZ', KeyModifier.ctrl);
 	assert.equal(model.buffer.getText(), accepted, 'first Undo reverses removal, not the separately accepted numeric draft');
-	assert.equal(input.view.hierarchy.outline.selectionIndex, -1);
 	f.key('KeyZ', KeyModifier.ctrl);
 	assert.equal(model.buffer.getText(), original);
 	assert.equal(model.canUndo, false);
 	assert.equal(model.canRedo, true);
-	assert.equal(input.view.section, 'outline');
 });
