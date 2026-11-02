@@ -145,12 +145,12 @@ export class SceneViewportCamera {
 		this.updateSpace(); this.changed();
 	}
 	public frame2D(left: number, top: number, right: number, bottom: number, width: number, height: number,
-		adoptView = false, reading: Reading = 'manual', bounds: 'visual' | 'origin' = 'visual'): void {
+		adoptView = false, reading: Reading = 'manual'): void {
 		const changeMode = this.modeValue !== '2d' || adoptView && this.modeIntent !== 'manual';
 		const c = this.canvas, centerX = (left + right) / 2, centerY = (top + bottom) / 2;
 		const extentX = right - left, extentY = bottom - top, point = extentX === 0 && extentY === 0;
 		const scale = clamp(Math.min(extentX === 0 && !point ? Infinity : Math.max(1, width - 32) / (point ? 64 : extentX),
-			extentY === 0 && !point ? Infinity : Math.max(1, height - 32) / (point ? 64 : extentY)), 1 / 64, reading === 'initial' && bounds === 'origin' ? 1 : 64);
+			extentY === 0 && !point ? Infinity : Math.max(1, height - 32) / (point ? 64 : extentY)), 1 / 64, reading === 'initial' ? 1 : 64);
 		if (!changeMode && c.reading === reading && c.centerX === centerX && c.centerY === centerY && c.scale === scale) return;
 		if (changeMode) { this.modeValue = '2d'; this.modeIntent = 'manual'; }
 		c.reading = reading; c.centerX = centerX; c.centerY = centerY; c.scale = scale;

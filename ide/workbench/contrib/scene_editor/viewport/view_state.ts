@@ -258,7 +258,7 @@ export class SceneViewportViewState {
 			left = Math.min(left, world.ox); top = Math.min(top, world.oy); right = Math.max(right, world.ox); bottom = Math.max(bottom, world.oy); count++;
 		}
 		if (count === 0) return false;
-		this.camera.frame2D(left, top, right, bottom, this.bounds.right - this.bounds.left, this.bounds.bottom - this.bounds.top, selected !== undefined, reading, hasVisualBounds ? 'visual' : 'origin'); return true;
+		this.camera.frame2D(left, top, right, bottom, this.bounds.right - this.bounds.left, this.bounds.bottom - this.bounds.top, selected !== undefined, reading); return true;
 	}
 	public dispose(): void {
 		this.disposed = true; this.unbindCamera(); this.listeners.clear(); this.entries.length = this.points.length = 0;

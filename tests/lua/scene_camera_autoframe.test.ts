@@ -38,9 +38,9 @@ async function fixture(t: TestContext, source = SOURCE) {
 	return { ...f, viewport };
 }
 
-function publishImage(f: Awaited<ReturnType<typeof fixture>>) {
-	const pixels = new Uint8Array(8 * 8 * 4); pixels.fill(255);
-	const image = createPackedImageFixture('late', 8, 8, pixels);
+function publishImage(f: Awaited<ReturnType<typeof fixture>>, width = 8, height = 8) {
+	const pixels = new Uint8Array(width * height * 4); pixels.fill(255);
+	const image = createPackedImageFixture('late', width, height, pixels);
 	const context = f.sources.catalog.getContext(f.sources.systemContextId);
 	context.previewRom!.bytes = image.bytes; context.previewRom!.index.entries.push(...image.entries);
 	context.previewPackage.img.late = image.image; f.sources.catalog.rebuildResources();
@@ -76,13 +76,22 @@ test('automatic fit incorporates a later mounted image once and ignores steady r
 	assert.equal(viewport.canvas.items.length, 2);
 	assert.equal(viewport.camera.capture().canvas.reading, 'initial');
 	const fitted = viewport.camera.capture().canvas;
-	assert.ok(fitted.scale > initial.canvas.scale); assert.notDeepEqual(fitted, initial.canvas);
+	assert.equal(fitted.scale, 1, 'small visuals begin at pixel scale'); assert.notDeepEqual(fitted, initial.canvas);
 	assert.equal(fitted.centerX, 4); assert.equal(fitted.centerY, 8);
 	assert.ok(viewport.camera.revision > before);
 	const camera = viewport.camera.capture(), revision = viewport.camera.revision;
 	for (let i = 0; i < 30; i++) viewport.refresh();
 	assert.deepEqual(viewport.camera.capture(), camera); assert.equal(viewport.camera.revision, revision);
 	assert.equal(viewport.frame(undefined), true); assert.equal(viewport.camera.capture().canvas.reading, 'manual');
+	assert.ok(viewport.camera.scale > 1, 'explicit framing can magnify small visuals');
+});
+
+test('automatic visual framing reduces scale when the image exceeds the viewport', async t => {
+	const f = await fixture(t), { viewport } = f;
+	publishImage(f, 400, 320); viewport.refresh();
+	assert.ok(viewport.camera.scale >= 0.5 && viewport.camera.scale < 1);
+	assert.ok(400 * viewport.camera.scale <= 320);
+	assert.ok(328 * viewport.camera.scale <= 240);
 });
 
 test('automatic origin fitting responds to changed source and viewport size but not a pure panel translation', async t => {
@@ -150,7 +159,7 @@ for (const reading of ['initial', 'manual'] as const) test(`serialized ${reading
 	assert.deepEqual(next.camera.capture(), original);
 	publishImage(f); next.refresh();
 	if (reading === 'initial') {
-		assert.ok(next.camera.scale > original.canvas.scale); assert.notDeepEqual(next.camera.capture().canvas, original.canvas);
+		assert.ok(next.camera.scale <= 1); assert.notDeepEqual(next.camera.capture().canvas, original.canvas);
 	}
 	else assert.deepEqual(next.camera.capture(), original);
 });
