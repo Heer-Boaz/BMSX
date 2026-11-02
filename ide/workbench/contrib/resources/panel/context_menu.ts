@@ -30,7 +30,7 @@ export class ResourcePanelContextMenu {
 		const invoking = editor.editorParts.activeGroup;
 		const invokingPart = editor.editorParts.partForGroup(invoking);
 		const destination = element.kind === 'file' ? editor.editorParts.editorDestination(invoking, { resource: resource!, editorId: editorId! })
-			: element.kind === 'definition' && element.content.kind !== 'scene' ? resolveProjectContentDestination(editor, element.content, invoking) : undefined;
+			: element.kind === 'definition' && element.content.kind !== 'scene' ? resolveProjectContentDestination(editor, content, element.content, invoking) : undefined;
 		const hasSource = resource !== undefined && editorId !== WORKBENCH_TEXT_EDITOR_ID
 			&& editor.resourceEditors.hasEditor(resource, WORKBENCH_TEXT_EDITOR_ID);
 		const sourceDestination = hasSource ? editor.editorParts.editorDestination(invoking, { resource: resource!, editorId: WORKBENCH_TEXT_EDITOR_ID }) : undefined;

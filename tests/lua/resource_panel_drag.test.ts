@@ -12,6 +12,7 @@ import { NodeGraphLayoutEngine } from '../../ide/node/graph_layout';
 import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
 import { CartMapInput } from '../../ide/workbench/contrib/cart_maps/editor_input';
 import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
+import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import type { FileElement } from '../../ide/workbench/contrib/resources/panel/files_model';
 import type { EditorGroupView } from '../../ide/workbench/services/editor/editor_group';
@@ -203,13 +204,83 @@ for (const font of ['tiny', 'msx'] as const) test(`${font} Scene activation reta
 	assert.equal(model.buffer.getText(), text); assert.equal(model.version, version); assert.equal(model.canUndo, true);
 });
 
-test('Scene subjects do not advertise a document drop or turn a dragged hold into activation', t => {
+for (const font of ['tiny', 'msx'] as const) test(`${font} dragging a Scene occurrence places its real document in the receiver without activating it as a click`, async t => {
+	const f = fixture(t, font, [['cartlib/world/scene_library.lua', 'return {}'], ['definitions.lua', SCENES]]), { node: file } = reveal(f, 'definitions.lua');
+	f.panel.toggleFileDisclosure(file); f.update(); const node = file.children[1];
+	assert.ok(node?.element.kind === 'definition' && node.element.content.kind === 'scene');
+	const entry = node.element.content, model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, entry.ownerResource);
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unsaved\n' }]); f.update();
+	const edited = model.buffer.getText(), version = model.version, activate = t.mock.method(f.editor, 'openSceneInMain');
+	const input = await drop(f, node, body(f.secondGroup));
+	assert.ok(input instanceof SceneEditorInput && input.workingCopy === model && input.view.authoring.subject === entry.definition);
+	assert.ok(f.secondGroup.model.activeTab === input && f.secondGroup.model.contains(f.secondInput));
+	assert.ok(f.firstGroup.model.activeTab === f.firstInput && f.secondGroup.panes.activePane?.input === input);
+	assert.equal(activate.mock.callCount(), 0); assert.equal(f.editor.editorParts.documents.length, 2);
+	assert.equal(model.buffer.getText(), edited); assert.equal(model.version, version); assert.equal(model.canUndo, true);
+});
+
+test('cancelling a Scene drag neither opens a document nor turns the hold into Main activation', t => {
 	const f = fixture(t, 'tiny', [['cartlib/world/scene_library.lua', 'return {}'], ['definitions.lua', SCENES]]), { node: file } = reveal(f, 'definitions.lua');
 	f.panel.toggleFileDisclosure(file); f.update(); const node = file.children[0];
-	const open = t.mock.method(f.editor, 'openSceneInMain'), target = body(f.secondGroup);
-	pointer(f, rowPoint(f, node), 'press'); pointer(f, target, 'move'); pointer(f, target, 'release');
-	assert.equal(open.mock.callCount(), 0); assert.equal(f.open.mock.callCount(), 0);
-	assert.equal(f.editor.mainWorkspace.primary, undefined); assert.equal(f.editor.editorParts.documents.length, 2);
+	const activate = t.mock.method(f.editor, 'openSceneInMain'), target = body(f.secondGroup);
+	pointer(f, rowPoint(f, node), 'press'); pointer(f, target, 'move'); f.key('Escape'); pointer(f, target, 'release');
+	assert.equal(activate.mock.callCount(), 0); assert.equal(f.open.mock.callCount(), 0);
+	assert.ok(f.firstGroup.model.activeTab === f.firstInput && f.secondGroup.model.activeTab === f.secondInput);
+	assert.equal(f.editor.editorParts.documents.length, 2);
+});
+
+test('a Scene model and matching receiver admitted during a drag are reused rather than duplicated or reordered', async t => {
+	const f = fixture(t, 'tiny', [['cartlib/world/scene_library.lua', 'return {}'], ['definitions.lua', SCENES]]), { node: file } = reveal(f, 'definitions.lua');
+	f.panel.toggleFileDisclosure(file); f.update(); const node = file.children[1];
+	assert.ok(node?.element.kind === 'definition' && node.element.content.kind === 'scene');
+	const entry = node.element.content;
+	assert.equal(editorTextModelService.get(entry.ownerResource), undefined);
+	const tabs = f.secondGroup.tabStrip.layoutState.viewportBounds, point = { x: tabs.left + 2, y: (tabs.top + tabs.bottom) / 2 };
+	pointer(f, rowPoint(f, node), 'press'); pointer(f, point, 'move');
+	assert.equal(editorTextModelService.get(entry.ownerResource), undefined);
+	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, entry.ownerResource);
+	const prepared = f.editor.sceneEditor.prepareDefinition(f.secondGroup, model, entry.range); assert.ok(prepared !== undefined);
+	const existing = f.secondGroup.openPreparedEditor(() => prepared, { preserveFocus: true });
+	assert.ok(existing instanceof SceneEditorInput && existing.workingCopy === model);
+	f.update(); assert.equal(pointerCapture.active, true);
+	const before = [...f.secondGroup.model.tabs];
+	pointer(f, { x: point.x + 1, y: point.y }, 'move'); pointer(f, { x: point.x + 1, y: point.y }, 'release');
+	assert.equal(f.open.mock.callCount(), 1); assert.ok(await f.open.mock.calls[0].result === existing);
+	assert.deepEqual([...f.secondGroup.model.tabs], before, 'a matching receiver is not moved to the insertion gap');
+	assert.ok(f.secondGroup.model.activeTab === existing && f.firstGroup.model.activeTab === f.firstInput);
+});
+
+test('a Scene opened in a new window and moved back through its tab menu remains one document', async t => {
+	const f = fixture(t, 'tiny', [['cartlib/world/scene_library.lua', 'return {}'], ['definitions.lua', SCENES]]), { node: file } = reveal(f, 'definitions.lua');
+	f.panel.toggleFileDisclosure(file); f.update(); const node = file.children[1];
+	assert.ok(node?.element.kind === 'definition' && node.element.content.kind === 'scene');
+	const entry = node.element.content, input = await drop(f, node, body(f.secondGroup, true), KeyModifier.alt);
+	assert.ok(input instanceof SceneEditorInput); f.update();
+	const parts = f.editor.editorParts, source = parts.findGroup(input), destination = parts.main.activeGroup;
+	assert.ok(source !== undefined && parts.partForGroup(source) !== parts.partForGroup(f.secondGroup));
+	const model = input.workingCopy, text = model.buffer.getText(), version = model.version;
+	f.editor.surfaces.raise(parts.partForGroup(source).surface); f.update();
+	const tab = source.tabStrip.layoutState.items.peek(source.model.indexOf(input)).bounds;
+	const point = { x: (tab.left + tab.right) / 2, y: (tab.top + tab.bottom) / 2 };
+	for (const down of [true, false]) f.editor.dispatchPointer({ ...point,
+		buttons: down ? PointerButton.Secondary : 0, pressedButtons: down ? PointerButton.Secondary : 0,
+		releasedButtons: down ? 0 : PointerButton.Secondary, cancelledButtons: 0, modifiers: KeyModifier.none,
+		spaceDown: false, timestamp: f.host.clock.now() });
+	const menu = f.editor.contextMenu, index = menu.model.rows.findIndex(row => row.command === 'window.moveEditor');
+	assert.ok(menu.visible && index >= 0 && menu.model.rows[index].enabled);
+	f.key('Home'); for (let row = 0; row < index; row++) if (menu.model.rows[row].enabled) f.key('ArrowDown'); f.key('Enter');
+	const picker = f.editor.quickInput;
+	const choose = (stage: 'target' | 'destination') => {
+		const row = picker.model.list.rows.findIndex(({ item }) => {
+			const value = (item as typeof item & { target?: { kind: string; group?: EditorGroupView }; destination?: { kind: string; group?: EditorGroupView } })[stage];
+			return value?.kind === 'group' && value.group === destination;
+		});
+		assert.ok(row >= 0); f.key('Home', KeyModifier.ctrl); for (let i = 0; i < row; i++) f.key('ArrowDown'); f.key('Enter');
+	};
+	assert.equal(picker.visible, true); choose('target'); assert.equal(picker.step?.index, 2); choose('destination');
+	assert.equal(picker.visible, false); assert.ok(destination.model.activeTab === input && !source.model.contains(input));
+	assert.equal(parts.groups.reduce((count, group) => count + group.model.tabs.filter(tab => tab === input).length, 0), 1);
+	assert.ok(input.view.authoring.subject === entry.definition); assert.equal(model.buffer.getText(), text); assert.equal(model.version, version);
 });
 
 test('deleting and equally recreating an authored declaration during a hold cannot redirect it to the replacement', t => {

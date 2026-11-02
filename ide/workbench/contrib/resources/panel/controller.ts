@@ -47,7 +47,8 @@ import { WorkbenchTreeNavigationResult, type WorkbenchTreeNavigation, type Workb
 import type { FileElement } from './files_model';
 import { ResourcePanelContextMenu } from './context_menu';
 import { findEditorGroup } from '../../../services/editor/editor_group';
-import { ResourcePanelDrag, type ResourcePanelPressSource } from './drag';
+import { ResourcePanelDrag } from './drag';
+import type { ProspectiveEditorOpenSource } from '../../../services/editor/editor_opening';
 import { editorRuntimeState } from '../../../../editor/common/runtime_state';
 import { isAltDown } from '../../../../input/keyboard/key_input';
 import { WorkbenchSplitControl } from '../../../ui/split_control';
@@ -178,7 +179,7 @@ export class ResourcePanelController implements PointerHoverTarget {
 		this.focusTarget.registerCommand('resources.openToSide', {
 			isEnabled: () => {
 				const element = this.files.selectedNode?.element;
-				return this.isVisible() && (element?.kind === 'file' || element?.kind === 'definition' && element.content.kind !== 'scene');
+				return this.isVisible() && (element?.kind === 'file' || element?.kind === 'definition');
 			},
 			run: editorContext => { if (this.focusTarget.hasFocus) this.openSelected('side', editorContext); },
 		});
@@ -387,10 +388,10 @@ export class ResourcePanelController implements PointerHoverTarget {
 		const identity = entry === undefined ? { resource, editorId: editorId! } : undefined;
 		const current = () => (entry === undefined || this.content.isCurrent(entry)) && this.isVisible()
 			&& this.focusTarget.scope.contextGeneration === context && this.catalog.resourceByIdentity.get(key) === resource;
-		const source: ResourcePanelPressSource = entry?.kind === 'scene' ? { kind: 'activation', isCurrent: current } : {
+		const source: ProspectiveEditorOpenSource = {
 			kind: 'opening', isCurrent: current,
 			findExisting: group => entry === undefined ? group.model.findByResourceEditor(identity!)
-				: findProjectContentEditor(this.editor, entry, group),
+				: findProjectContentEditor(this.editor, this.content, entry, group),
 			resolve: entry === undefined ? async () => ({ input: await this.editor.resourceEditors.resolveEditorInput(resource, editorId) })
 				: group => prepareProjectContent(this.editor, this.content, entry, group, source.isCurrent),
 		};
@@ -456,8 +457,8 @@ export class ResourcePanelController implements PointerHoverTarget {
 		const entry = element.kind === 'definition' ? element.content : undefined;
 		const origin = inputFocus.admittedTarget;
 		if (origin === null) return;
-		if (entry?.kind === 'scene') {
-			if (placement === 'default') void openProjectScene(this.editor, this.content, entry, origin);
+		if (entry?.kind === 'scene' && placement === 'default') {
+			void openProjectScene(this.editor, this.content, entry, origin);
 			return;
 		}
 		const invoking = findEditorGroup(editorContext === undefined ? origin : editorContext);
@@ -478,7 +479,7 @@ export class ResourcePanelController implements PointerHoverTarget {
 		const editorId = entry === undefined ? this.editor.resourceEditors.getEditorId(resource) : undefined;
 		const destination = placement === 'side' ? parts.sideGroup(reference)
 			: entry === undefined ? parts.editorDestination(reference, { resource, editorId: editorId! })
-				: resolveProjectContentDestination(this.editor, entry, reference);
+				: resolveProjectContentDestination(this.editor, this.content, entry, reference);
 		if (destination === undefined || !current()) return;
 		if (entry === undefined) void this.editor.navigation.openResource(destination, resource, { editorId });
 		else {

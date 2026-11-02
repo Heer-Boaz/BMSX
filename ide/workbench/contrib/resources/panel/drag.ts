@@ -7,11 +7,8 @@ import { pointerCapture, type PointerCaptureTarget } from '../../../../input/poi
 import type { ProspectiveEditorOpenSource } from '../../../services/editor/editor_opening';
 import type { EditorTabDragHandler } from '../../../ui/tab/drag';
 
-/** Activation does not imply that the subject can be placed in a document group. */
-export type ResourcePanelPressSource = ProspectiveEditorOpenSource | { readonly kind: 'activation'; isCurrent(): boolean };
-
 type ResourceDrag = PointerInputSnapshot & {
-	readonly source: ResourcePanelPressSource;
+	readonly source: ProspectiveEditorOpenSource;
 	readonly click: (snapshot: PointerInputSnapshot) => void;
 	readonly startX: number;
 	readonly startY: number;
@@ -23,7 +20,7 @@ export class ResourcePanelDrag implements PointerCaptureTarget {
 	private state: ResourceDrag | undefined;
 	public constructor(private readonly handler: EditorTabDragHandler) {}
 
-	public begin(source: ResourcePanelPressSource, snapshot: PointerInputSnapshot,
+	public begin(source: ProspectiveEditorOpenSource, snapshot: PointerInputSnapshot,
 		now: number, click: (snapshot: PointerInputSnapshot) => void): void {
 		pointerCapture.capture(this);
 		this.state = { ...snapshot, source, click, startX: snapshot.viewportX, startY: snapshot.viewportY, hasDragged: false };
@@ -36,7 +33,7 @@ export class ResourcePanelDrag implements PointerCaptureTarget {
 		const state = this.state;
 		if (state === undefined) return;
 		this.cancelPointer();
-		if (state.hasDragged && state.source.kind === 'opening') this.handler.drop(state.source, snapshot, now);
+		if (state.hasDragged) this.handler.drop(state.source, snapshot, now);
 		else if (!state.hasDragged && snapshot.insideViewport && state.source.isCurrent()) state.click(snapshot);
 	}
 
@@ -51,11 +48,11 @@ export class ResourcePanelDrag implements PointerCaptureTarget {
 			if (Math.max(Math.abs(snapshot.viewportX - state.startX), Math.abs(snapshot.viewportY - state.startY)) < POINTER_DRAG_ACTIVATION_THRESHOLD) return;
 			state.hasDragged = true;
 		} else {
-			if (scroll && state.source.kind === 'opening') this.handler.update(state.source, state, now, true);
+			if (scroll) this.handler.update(state.source, state, now, true);
 			if (this.state !== state) return;
 			copyPointerInputSnapshot(state, snapshot);
 		}
-		if (state.source.kind === 'opening') this.handler.update(state.source, state, now, false);
+		this.handler.update(state.source, state, now, false);
 	}
 
 	public advance(now: number): void {
@@ -64,7 +61,7 @@ export class ResourcePanelDrag implements PointerCaptureTarget {
 		const current = state.source.isCurrent();
 		if (this.state !== state) return;
 		if (!current) { this.cancel(); return; }
-		if (state.hasDragged && state.source.kind === 'opening') this.handler.update(state.source, state, now, true);
+		if (state.hasDragged) this.handler.update(state.source, state, now, true);
 	}
 
 	public onModifiersChange(modifiers: KeyModifier, now: number): void {
@@ -73,10 +70,10 @@ export class ResourcePanelDrag implements PointerCaptureTarget {
 		const current = state.source.isCurrent();
 		if (this.state !== state) return;
 		if (!current) { this.cancel(); return; }
-		if (state.hasDragged && state.source.kind === 'opening') this.handler.update(state.source, state, now, true);
+		if (state.hasDragged) this.handler.update(state.source, state, now, true);
 		if (this.state !== state) return;
 		state.modifiers = modifiers;
-		if (state.hasDragged && state.source.kind === 'opening') this.handler.update(state.source, state, now, false);
+		if (state.hasDragged) this.handler.update(state.source, state, now, false);
 	}
 
 	public cancelPointer(): void {

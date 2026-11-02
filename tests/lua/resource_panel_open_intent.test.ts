@@ -11,6 +11,7 @@ import { inputFocus } from '../../ide/input/focus';
 import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
+import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import type { FileElement } from '../../ide/workbench/contrib/resources/panel/files_model';
 import type { WorkbenchTreeNode } from '../../ide/workbench/ui/tree_view';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
@@ -102,9 +103,111 @@ for (const font of ['tiny', 'msx'] as const) test(`${font} side declaration acti
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, node.element.content.ownerResource), source = model.buffer.getText(), version = model.version;
 	click(f, node, KeyModifier.alt);
 	const target = f.firstPart.groups.find(group => group !== f.firstGroup)!;
-	assert.ok(target !== undefined && target.model.activeTab?.kind === 'scene_editor' && target.model.activeTab.workingCopy === model);
+	assert.ok(target !== undefined && target.model.activeTab instanceof SceneEditorInput && target.model.activeTab.workingCopy === model);
 	assert.ok(f.firstGroup.model.activeTab === f.firstInput && target.panes.activePane?.input === target.model.activeTab);
 	assert.equal(model.buffer.getText(), source); assert.equal(model.version, version); assert.equal(model.dirty, false);
+});
+
+test('Files and Scene documents identify unresolved same-line Scene names by their exact source occurrences', t => {
+	const line = 'scenes.register(ids.a,{objects={}}); scenes.register(ids.b,{objects={}})';
+	const source = `local scenes=require('cartlib/world/scene_library')\nlocal ids={a='one',b='two'}\n${line}\n`;
+	const f = fixture(t, 'tiny', [['cartlib/world/scene_library.lua', 'return {}'], ['definitions.lua', source]]);
+	const { node: file } = reveal(f, 'definitions.lua'); f.panel.toggleFileDisclosure(file); f.update();
+	const first = file.children[0], second = file.children[1];
+	assert.ok(first?.element.kind === 'definition' && first.element.content.kind === 'scene');
+	assert.ok(second?.element.kind === 'definition' && second.element.content.kind === 'scene');
+	const offset = line.indexOf('{objects={}}'), otherOffset = line.indexOf('{objects={}}', offset + 1);
+	const expected = [`definitions.lua:3:${offset + 1}`, `definitions.lua:3:${otherOffset + 1}`];
+	assert.deepEqual([first.element.label, second.element.label], expected);
+	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, first.element.content.ownerResource), inputs: SceneEditorInput[] = [];
+	for (const [index, node] of [first, second].entries()) {
+		assert.ok(node.element.kind === 'definition');
+		assert.equal(f.editor.sceneEditor.openDefinition(f.firstGroup, model.resource, node.element.content.range), true);
+		const input = f.firstGroup.model.activeTab;
+		assert.ok(input instanceof SceneEditorInput); inputs.push(input); assert.equal(input.title, expected[index]);
+		assert.equal(node.element.label, input.title);
+	}
+	assert.notEqual(first.element.label, second.element.label); assert.equal(model.buffer.getText(), source); assert.equal(model.dirty, false);
+	// The full source address is a data-integrity contract, not cosmetic wording.
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- prefix\n' }]); f.update();
+	const shifted = [`definitions.lua:4:${offset + 1}`, `definitions.lua:4:${otherOffset + 1}`];
+	assert.deepEqual([first.element.label, second.element.label], shifted);
+	assert.deepEqual(inputs.map(input => input.title), shifted);
+});
+
+for (const modifier of [KeyModifier.ctrl, KeyModifier.meta] as const) test(`${modifier === KeyModifier.ctrl ? 'Ctrl' : 'Cmd'}+Enter opens the selected Scene occurrence beside the existing editor`, t => {
+	const source = "local scenes=require('cartlib/world/scene_library')\nscenes.register('same',{objects={{member_id='one',definition_id='actor'}}})\nscenes.register('same',{objects={{member_id='two',definition_id='actor'}}})\n";
+	const f = fixture(t, 'tiny', [['cartlib/world/scene_library.lua', 'return {}'], ['definitions.lua', source]]);
+	const { node: file } = reveal(f, 'definitions.lua'); f.panel.toggleFileDisclosure(file); f.update();
+	const node = file.children[1]; assert.ok(node?.element.kind === 'definition' && node.element.content.kind === 'scene');
+	const entry = node.element.content, model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, entry.ownerResource);
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unsaved\n' }]); f.update();
+	const edited = model.buffer.getText(), version = model.version;
+	f.panel.setSelectionIndex(f.panel.files.tree.rows.indexOf(node)); f.panel.setFocused(true); f.key('Enter', modifier);
+	const side = f.firstPart.groups.find(group => group !== f.firstGroup), input = side?.model.activeTab;
+	assert.ok(side !== undefined && input instanceof SceneEditorInput && input.workingCopy === model);
+	assert.ok(input.view.authoring.subject === entry.definition && side.panes.activePane?.input === input);
+	assert.ok(f.firstGroup.model.activeTab === f.firstInput && f.secondGroup.model.activeTab === f.secondInput);
+	assert.equal(model.buffer.getText(), edited); assert.equal(model.version, version); assert.equal(model.dirty, true); assert.equal(model.canUndo, true);
+	f.first.focus(); f.panel.setFocused(true); f.panel.setSelectionIndex(f.panel.files.tree.rows.indexOf(node)); f.key('Enter', modifier);
+	assert.ok(side.model.activeTab === input); assert.equal(side.model.tabs.filter(tab => tab === input).length, 1);
+	assert.equal(model.buffer.getText(), edited); assert.equal(model.version, version); assert.equal(model.canUndo, true);
+});
+
+test('opening a second Scene to the side keeps the first Scene and their shared unsaved history', t => {
+	const source = "local scenes=require('cartlib/world/scene_library')\nscenes.register('same',{objects={{member_id='one',definition_id='actor'}}})\nscenes.register('same',{objects={{member_id='two',definition_id='actor'}}})\n";
+	const f = fixture(t, 'tiny', [['cartlib/world/scene_library.lua', 'return {}'], ['definitions.lua', source]]);
+	const { node: file } = reveal(f, 'definitions.lua'); f.panel.toggleFileDisclosure(file); f.update();
+	const firstNode = file.children[0], secondNode = file.children[1];
+	assert.ok(firstNode?.element.kind === 'definition' && firstNode.element.content.kind === 'scene');
+	assert.ok(secondNode?.element.kind === 'definition' && secondNode.element.content.kind === 'scene');
+	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, firstNode.element.content.ownerResource);
+	f.firstGroup.model.pin(f.firstInput);
+	assert.equal(f.editor.sceneEditor.openDefinition(f.firstGroup, model.resource, firstNode.element.content.range), true);
+	const first = f.firstGroup.model.activeTab; assert.ok(first instanceof SceneEditorInput); f.firstGroup.model.pin(first);
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dirty\n' }]); f.update();
+	const edited = model.buffer.getText(), version = model.version, selection = first.view.authoring.selection;
+	f.firstGroup.focus(); f.panel.setFocused(true); f.panel.setSelectionIndex(f.panel.files.tree.rows.indexOf(secondNode));
+	f.key('Enter', KeyModifier.ctrl);
+	const side = f.firstPart.groups.find(group => group !== f.firstGroup), second = side?.model.activeTab;
+	assert.ok(side !== undefined && second instanceof SceneEditorInput && second !== first && second.workingCopy === model);
+	assert.ok(secondNode.element.kind === 'definition' && secondNode.element.content.kind === 'scene');
+	assert.ok(second.view.authoring.subject === secondNode.element.content.definition);
+	assert.ok(f.firstGroup.model.contains(first) && f.firstGroup.model.contains(f.firstInput));
+	assert.ok(first.view.authoring.selection === selection && first.view.authoring.subject !== second.view.authoring.subject);
+	assert.equal(model.buffer.getText(), edited); assert.equal(model.version, version); assert.equal(model.dirty, true); assert.equal(model.canUndo, true);
+	model.undo(); assert.equal(model.buffer.getText(), source); assert.ok(f.firstGroup.model.contains(first) && side.model.contains(second));
+});
+
+test('an invalid Scene-side outgoing draft does not create a group or discard the draft', t => {
+	const f = fixture(t, 'tiny', [['cartlib/world/scene_library.lua', 'return {}'], ['definitions.lua',
+		"local scenes=require('cartlib/world/scene_library')\nscenes.register('one', {objects={}})\n"]]);
+	const { node: file } = reveal(f, 'definitions.lua'); f.panel.toggleFileDisclosure(file); f.update();
+	const node = file.children[0]; assert.ok(node?.element.kind === 'definition');
+	f.panel.setSelectionIndex(f.panel.files.tree.rows.indexOf(node));
+	const field = new ValueInput(f.first.commandTarget, INTEGER_INPUT_FORMAT, () => {}); t.after(() => field.dispose());
+	field.setValue(1); field.layout(f.firstGroup.panes.contentBounds); field.field.focusTarget.focus(); setFieldText(field.field, '-', true);
+	f.panel.openSelected('side');
+	assert.equal(f.firstPart.groups.length, 1); assert.equal(field.pending, true); assert.equal(field.field.text, '-');
+	assert.ok(inputFocus.target === field.field.focusTarget && f.firstGroup.panes.activePane?.input === f.firstInput);
+});
+
+test('a Scene removed while accepting the outgoing draft cannot open a neighboring occurrence to the side', t => {
+	const source = "local scenes=require('cartlib/world/scene_library')\nscenes.register('one',{objects={}})\nscenes.register('two',{objects={}})\n";
+	const f = fixture(t, 'tiny', [['cartlib/world/scene_library.lua', 'return {}'], ['definitions.lua', source]]);
+	const { node: file } = reveal(f, 'definitions.lua'); f.panel.toggleFileDisclosure(file); f.update();
+	const node = file.children[0]; assert.ok(node?.element.kind === 'definition');
+	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, node.element.content.ownerResource);
+	f.panel.setSelectionIndex(f.panel.files.tree.rows.indexOf(node));
+	const field = new ValueInput(f.first.commandTarget, INTEGER_INPUT_FORMAT, () => {
+		const declaration = "scenes.register('one',{objects={}})\n", offset = model.buffer.getText().indexOf(declaration);
+		model.pushEditOperations([{ offset, deleteLength: declaration.length, text: '' }]);
+	}); t.after(() => field.dispose());
+	field.setValue(1); field.layout(f.firstGroup.panes.contentBounds); field.field.focusTarget.focus(); setFieldText(field.field, '2', true);
+	f.panel.openSelected('side');
+	assert.equal(model.buffer.getText(), source.replace("scenes.register('one',{objects={}})\n", ''));
+	assert.equal(f.firstPart.groups.length, 1); assert.ok(f.firstGroup.model.activeTab === f.firstInput);
+	assert.ok(f.secondGroup.model.activeTab === f.secondInput); assert.equal(model.canUndo, true);
 });
 
 test('the scoped side shortcut is not reserved while a real game viewport owns input', t => {
@@ -208,7 +311,7 @@ test('side declaration opening accepts a transient returning to its own Source p
 	field.setValue(1); field.layout(f.firstGroup.panes.contentBounds); field.field.focusTarget.focus(); setFieldText(field.field, '2', true);
 	f.panel.openSelected('side'); const side = f.firstPart.groups.find(group => group !== f.firstGroup)!;
 	assert.equal(field.pending, false);
-	assert.ok(side !== undefined && side.model.activeTab?.kind === 'scene_editor' && side.model.activeTab.workingCopy === model);
+	assert.ok(side !== undefined && side.model.activeTab instanceof SceneEditorInput && side.model.activeTab.workingCopy === model);
 	assert.ok(side.panes.activePane?.input === side.model.activeTab && f.firstGroup.model.activeTab === f.firstInput);
 });
 

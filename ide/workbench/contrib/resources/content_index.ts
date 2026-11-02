@@ -1,6 +1,5 @@
 import type { FileSemanticData, LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import type { LuaSourceRange, LuaTableConstructorExpression } from '../../../../toolchain/ts/lua/syntax/ast';
-import { stringLiteralValue } from '../../../../toolchain/ts/lua/syntax/literals';
 import { resourceIdentityEquals, resourceIdentityKey, type ResourceIdentity, type RuntimeResource } from '../../../common/resource';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { EditorTextModel } from '../../../editor/model/text_model';
@@ -15,6 +14,7 @@ import type { BehaviorRegistrationIndex } from '../behavior_lens/registration_in
 import { collectLuaPrograms, type LuaProgramKind, type LuaProgramOccurrence } from '../lua_program/source';
 import type { SceneSourceDefinition, SceneSourceDocument } from '../scene_editor/model';
 import type { SceneSourceDocuments } from '../scene_editor/source_documents';
+import { sceneSourceName } from '../scene_editor/source_name';
 import type { TextFileModelSnapshot } from '../../services/working_copy/text_file_model';
 
 type ProjectContentSource = {
@@ -33,9 +33,6 @@ export type ProjectContentEntry = ProjectContentSource & (
 	| { readonly kind: 'animation'; readonly definition: AnimationDefinitionSource }
 	| { readonly kind: 'scene'; readonly document: SceneSourceDocument; readonly definition: SceneSourceDefinition }
 );
-
-/** Contributions whose visual presentations are document editors, rather than Main subjects. */
-export type ProjectDocumentContentEntry = Exclude<ProjectContentEntry, { kind: 'scene' }>;
 
 /** Persisted declaration correspondence, never a name, semantic pointer or command capability. */
 export type ProjectContentReference = {
@@ -162,6 +159,11 @@ export class ProjectContentIndex {
 		if (this.disposed) return false;
 		this.sync();
 		return !this.disposed && this.records.has(entry);
+	}
+
+	/** The canonical model whose edits currently map this exact occurrence. */
+	public trackedModel(entry: ProjectContentEntry): EditorTextModel | undefined {
+		return this.records.get(entry)?.tracking?.model;
 	}
 
 	/** Read the synchronized producer generation without publishing callbacks or admitting working copies. */
@@ -323,8 +325,7 @@ export class ProjectContentIndex {
 			const key = resourceIdentityKey(resource), file = snapshot.getFileData(key)!;
 			const document = this.sceneDocuments.getForSnapshot(resource, snapshot);
 			for (const definition of document.scenes) {
-				const idRange = file.chunk.locations.range(definition.id.span);
-				const label = stringLiteralValue(definition.id) ?? file.source.slice(file.chunk.locations.offsetAt(idRange.start), file.chunk.locations.offsetAt(idRange.end) + 1);
+				const label = sceneSourceName(resource, definition.id, definition.range.start.line, definition.range.start.column);
 				admit({ ...source(resource, definition.range, file, label), kind: 'scene', document, definition }, file);
 			}
 			for (const occurrence of collectLuaPrograms(resource, snapshot)) {

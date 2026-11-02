@@ -70,10 +70,10 @@ function accept(f: Fixture, command: EditorCommandId): void {
 	f.key('Home'); for (let row = 0; row < index; row++) if (menu.model.rows[row].enabled) f.key('ArrowDown'); f.key('Enter');
 }
 
-test('Scene context Open selects the exact visual Main subject, preserves documents and offers no document placement action', async t => {
+test('Scene context Open selects the exact visual Main subject without adding redundant placement actions', async t => {
 	const f = fixture(t, [['cartlib/world/scene_library.lua', 'return {}'], ['definitions.lua', SCENES]]);
 	const { node, entry } = definition(f), open = t.mock.method(f.editor, 'openSceneInMain');
-	assert.equal(f.editor.commands.isEnabled('resources.openToSide', f.panel.focusTarget), false);
+	assert.equal(f.editor.commands.isEnabled('resources.openToSide', f.panel.focusTarget), true);
 	secondary(f, node);
 	assert.equal(f.editor.contextMenu.model.rows.some(row => row.command === 'resources.openToSide'), false);
 	accept(f, 'resources.open'); assert.equal(open.mock.callCount(), 1); await open.mock.calls[0].result; f.update();

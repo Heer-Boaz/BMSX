@@ -1,7 +1,7 @@
 import type { CartEditor } from '../../../../cart_editor';
 import { inputFocus, type InputFocusTarget } from '../../../../input/focus';
 import type { EditorGroupView } from '../../../services/editor/editor_group';
-import type { ProjectContentEntry, ProjectContentIndex, ProjectDocumentContentEntry } from '../content_index';
+import type { ProjectContentEntry, ProjectContentIndex } from '../content_index';
 import { editorTextModelService } from '../../../../editor/model/model_service';
 import type { EditorTextModel } from '../../../../editor/model/text_model';
 import { resolveLuaTextFileModel } from '../../../services/working_copy/text_file_model';
@@ -9,18 +9,23 @@ import type { EditorInput } from '../../../common/editor_inputs';
 import type { PreparedEditorInput } from '../../../services/editor/editor_opening';
 
 /** Contribution identity is shared by ordinary affinity and explicit resource-drop feedback. */
-export function findProjectContentEditor(editor: CartEditor, entry: ProjectDocumentContentEntry, group: EditorGroupView): EditorInput | undefined {
+export function findProjectContentEditor(editor: CartEditor, index: ProjectContentIndex, entry: ProjectContentEntry, group: EditorGroupView): EditorInput | undefined {
+	if (entry.kind === 'scene') {
+		const model = index.trackedModel(entry);
+		return model === undefined ? undefined : editor.sceneEditor.findDefinition(group, model, entry.range);
+	}
 	return entry.kind === 'animation' ? editor.animations.findDefinition(group, entry.projectContextId, entry.ownerResource, entry.range, entry.definition.consumer?.file)
 			: entry.kind === 'progression' || entry.kind === 'input' ? editor.luaPrograms.findOccurrence(group, entry.ownerResource, entry.kind, entry.range)
 				: editor.behaviorLens.findDefinition(group, entry.ownerResource, entry.kind, entry.range);
 }
 
 /** Resolve canonical source before reading the tracked entry's current contribution facts. */
-export function prepareProjectContent(editor: CartEditor, index: ProjectContentIndex, entry: ProjectDocumentContentEntry,
+export function prepareProjectContent(editor: CartEditor, index: ProjectContentIndex, entry: ProjectContentEntry,
 	group: EditorGroupView, isCurrent: () => boolean): PreparedEditorInput | undefined {
 	const model = resolveLuaTextFileModel(editorTextModelService, index.catalog, entry.ownerResource);
 	if (!isCurrent()) return;
 	switch (entry.kind) {
+		case 'scene': return editor.sceneEditor.prepareDefinition(group, model, entry.range, isCurrent);
 		case 'behavior_tree': case 'state_machine': case 'action_effect':
 			return editor.behaviorLens.prepareDefinition(group, model, entry.registration, isCurrent);
 		case 'progression': case 'input': return editor.luaPrograms.prepareOccurrence(group, model, entry.occurrence, isCurrent);
@@ -29,12 +34,12 @@ export function prepareProjectContent(editor: CartEditor, index: ProjectContentI
 }
 
 /** Resolve contribution affinity while the invoking owner is known, not after popup focus returns. */
-export function resolveProjectContentDestination(editor: CartEditor, entry: ProjectDocumentContentEntry, invoking: EditorGroupView): EditorGroupView {
+export function resolveProjectContentDestination(editor: CartEditor, index: ProjectContentIndex, entry: ProjectContentEntry, invoking: EditorGroupView): EditorGroupView {
 	let destination: EditorGroupView | undefined;
 	search: for (const part of editor.editorParts.mostRecentlyActive) {
 		if (part.operation !== 'none') continue;
 		for (const group of part.mostRecentlyActiveGroups) {
-			const existing = findProjectContentEditor(editor, entry, group);
+			const existing = findProjectContentEditor(editor, index, entry, group);
 			if (existing === undefined) continue;
 			if (group === invoking) { destination = group; break search; }
 			destination ??= group;
@@ -61,10 +66,16 @@ function admitProjectContent(index: ProjectContentIndex, entry: ProjectContentEn
 }
 
 /** The captured occurrence and destination survive ordinary menu focus, never a later active group. */
-export function openProjectContent(editor: CartEditor, index: ProjectContentIndex, entry: ProjectDocumentContentEntry,
+export function openProjectContent(editor: CartEditor, index: ProjectContentIndex, entry: ProjectContentEntry,
 	destination: EditorGroupView, origin: InputFocusTarget): void {
-	if (admitProjectContent(index, entry, destination, origin) === undefined) return;
+	const model = admitProjectContent(index, entry, destination, origin);
+	if (model === undefined) return;
 	switch (entry.kind) {
+		case 'scene': {
+			const current = () => index.isCurrent(entry);
+			destination.openPreparedEditor(() => editor.sceneEditor.prepareDefinition(destination, model, entry.range, current), { isCurrent: current });
+			break;
+		}
 		case 'behavior_tree': case 'state_machine': case 'action_effect':
 			editor.behaviorLens.openDefinition(destination, entry.registration); break;
 		case 'progression': case 'input': editor.luaPrograms.openOccurrence(destination, entry.occurrence); break;
