@@ -28,6 +28,7 @@ import type { SceneHierarchyViewState } from './hierarchy_view';
 import type { SceneDetailsViewState } from './details_view';
 import type { SceneEditorSectionCommands } from './option_editor';
 import type { SceneViewportControl } from './viewport/control';
+import { SCENE_SOURCE_STATUS } from './source_status';
 
 export type ScenePrimaryClientOptions = {
 	readonly commands: EditorCommandRunner;
@@ -191,7 +192,7 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 	}
 	public updateStatus(): void {
 		const status = getTextFileRuntimeSourceStatus(this.options.sources, this.authoring.workingCopy);
-		this.statusItem.text = SOURCE_STATUS[status];
+		this.statusItem.text = SCENE_SOURCE_STATUS[status];
 		this.statusItem.tone = status === 'failed' ? 'error' : 'normal';
 		this.statusItem.priority = status === 'failed' ? STATUS_PRIORITY_ERROR : STATUS_PRIORITY_CONTENT;
 	}
@@ -205,7 +206,3 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 		this.hierarchy.dispose(); this.details.dispose();
 	}
 }
-const SOURCE_STATUS = {
-	applied: 'SOURCE APPLIED', pending: 'SOURCE NOT APPLIED', failed: 'SOURCE APPLY FAILED',
-	untracked: 'SOURCE STATUS UNKNOWN', source_only: 'SOURCE ONLY',
-};

@@ -24,8 +24,37 @@ import { SceneEditorNavigationSelection } from '../../ide/workbench/contrib/scen
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
+import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace/records';
+import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
+import { getTextFileRuntimeSourceStatus } from '../../ide/workbench/services/working_copy/runtime_source_status';
 
 beforeEach(() => configureFontVariant('tiny'));
+
+test('Scene status follows installed source independently of Save in both presentations', async t => {
+	const files = new MemoryWorkspaceFiles(); await openWorkspaceRecords(files);
+	const f = await createSceneDocumentFixture(t, SCENE_VIEWPORT_SOURCE, SCENE_VIEWPORT_IMPORTS);
+	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	const pane = f.group.panes.getPane('scene_editor'); assert.ok(pane instanceof SceneEditorPane);
+	const media = f.sources.currentBlua32Media, system = media.system!;
+	f.sources.currentBlua32Media = { ...media, system: { ...system, sources: new Map([...system.sources,
+		['scene', { displayPath: 'scene.lua', content: { kind: 'text' as const, text: SCENE_VIEWPORT_SOURCE } }]]) } };
+	f.primary.updateStatus(); pane.updateStatus();
+	assert.equal(getTextFileRuntimeSourceStatus(f.sources, f.model), 'applied');
+	const installed = f.primary.statusItems[0].text;
+	assert.equal(pane.statusItems[0].text, installed);
+	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- edit\n' }]);
+	f.primary.updateStatus(); pane.updateStatus();
+	assert.equal(getTextFileRuntimeSourceStatus(f.sources, f.model), 'pending');
+	const changed = f.primary.statusItems[0].text;
+	assert.notEqual(changed, installed); assert.equal(pane.statusItems[0].text, changed);
+	assert.equal((await f.ide.textFileSaves.save(f.model).completion).status, 'saved');
+	assert.equal(f.model.dirty, false); f.primary.updateStatus(); pane.updateStatus();
+	assert.equal(f.primary.statusItems[0].text, changed); assert.equal(pane.statusItems[0].text, changed);
+	f.model.undo(); f.primary.updateStatus(); pane.updateStatus();
+	assert.equal(f.model.dirty, true); assert.equal(getTextFileRuntimeSourceStatus(f.sources, f.model), 'applied');
+	assert.equal(f.primary.statusItems[0].text, installed); assert.equal(pane.statusItems[0].text, installed);
+});
 
 test('a shared Scene controller keeps group openings and explicit mutation subjects independent', t => {
 	const sources = createScenarioTestSourceState([

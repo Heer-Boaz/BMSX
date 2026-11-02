@@ -16,6 +16,7 @@ import type { NavigationLocation } from '../../../navigation/navigation_history'
 import { SceneNavigationLocation } from './scene_navigation';
 import type { SceneEditorController } from './controller';
 import { ScenePrimaryClient, type ScenePrimaryClientOptions } from './primary_client';
+import { SCENE_SOURCE_STATUS } from './source_status';
 
 /** The Scene document owns the viewport; its companions attach independently. */
 export class SceneEditorPane extends EditorPane<SceneEditorInput | UnavailableSceneEditorInput> {
@@ -113,14 +114,9 @@ export class SceneEditorPane extends EditorPane<SceneEditorInput | UnavailableSc
 			return;
 		}
 		const status = getTextFileRuntimeSourceStatus(this.options.sources, this.input.workingCopy);
-		this.statusItem.text = SOURCE_STATUS[status];
+		this.statusItem.text = SCENE_SOURCE_STATUS[status];
 		this.statusItem.tone = status === 'failed' ? 'error' : 'normal';
 		this.statusItem.priority = status === 'failed' ? STATUS_PRIORITY_ERROR : STATUS_PRIORITY_CONTENT;
 	}
 	public override dispose(): void { this.clearInput(); }
 }
-
-const SOURCE_STATUS = {
-	applied: 'SOURCE APPLIED', pending: 'SOURCE NOT APPLIED', failed: 'SOURCE APPLY FAILED',
-	untracked: 'SOURCE STATUS UNKNOWN', source_only: 'SOURCE ONLY',
-};
