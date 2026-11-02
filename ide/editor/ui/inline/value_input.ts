@@ -1,9 +1,10 @@
 import * as constants from '../../../common/constants';
 import { showEditorMessage } from '../../../common/feedback_state';
-import type { InlineInputOptions } from '../../../common/models';
+import type { InlineInputOptions, PointerInputSnapshot } from '../../../common/models';
 import type { InputEdit, InputFocusTarget } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed } from '../../../input/keyboard/key_input';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
+import { pointerCapture, type PointerCaptureTarget } from '../../../input/pointer/capture';
 import { resetInlineBlink } from '../../render/caret';
 import { TextField } from './text_field_model';
 import { applyInlineFieldEditing, applyInlineFieldPointer, selectAll, setFieldText } from './text_field';
@@ -20,12 +21,15 @@ export type ValueInputFormat<Value> = {
 };
 
 /** A typed line edit: local draft history, one accepted value change. */
-export class ValueInput<Value> implements InputEdit {
+export class ValueInput<Value> implements InputEdit, PointerCaptureTarget {
 	public readonly field: TextField;
 	public readonly viewport = new SingleLineFieldViewport();
 	public error = '';
 	private valueText = '';
 	private readonly unbindKeyboard: () => void;
+	private readonly unbindCancel: () => void;
+	private revision = 0;
+	private textLeft = 0;
 	private readonly pointer = {
 		metrics: editorViewState.inlineFieldMetricsRef, textLeft: 0, pointerX: 0,
 		justPressed: false, pointerPressed: false, doubleClickInterval: constants.DOUBLE_CLICK_MAX_INTERVAL_MS,
@@ -35,6 +39,7 @@ export class ValueInput<Value> implements InputEdit {
 		private readonly format: ValueInputFormat<Value>, private readonly accept: (value: Value) => void,
 		private readonly beforeCommit?: () => void) {
 		this.field = new TextField(parent, format.options);
+		this.unbindCancel = this.field.focusTarget.onDidCancelInput(() => this.cancelPointer());
 		this.field.focusTarget.edit = this;
 		this.unbindKeyboard = this.field.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 		this.field.focusTarget.onDidFocus(() => { selectAll(this.field); resetInlineBlink(); });
@@ -50,6 +55,8 @@ export class ValueInput<Value> implements InputEdit {
 	public get pending(): boolean { return this.field.text !== this.valueText; }
 
 	public setValue(value: Value): void {
+		this.revision++;
+		this.cancelPointer();
 		this.valueText = this.format.format(value);
 		setFieldText(this.field, this.valueText, true);
 		this.error = '';
@@ -75,22 +82,35 @@ export class ValueInput<Value> implements InputEdit {
 	}
 
 	public cancel(): void {
+		this.cancelPointer();
 		setFieldText(this.field, this.valueText, true);
 		this.error = '';
 	}
 
-	public dispose(): void { this.unbindKeyboard(); }
+	public dispose(): void { this.revision++; this.cancelPointer(); this.unbindCancel(); this.unbindKeyboard(); }
 
 	public layout(bounds: Readonly<RectBounds>, clip: Readonly<RectBounds> = bounds): void {
+		this.textLeft = bounds.left + 3;
 		this.viewport.layout(this.field, bounds, editorViewState.inlineFieldMetricsRef, editorViewState.font, clip);
 	}
 
 	public handlePointer(textLeft: number, x: number, justPressed: boolean, pressed: boolean): void {
 		if (justPressed && !this.field.focusTarget.hasFocus) {
-			this.field.focusTarget.focus();
-			return;
+			const revision = this.revision, generation = this.field.focusTarget.scope.contextGeneration;
+			if (!this.field.focusTarget.focus() || revision !== this.revision
+				|| generation !== this.field.focusTarget.scope.contextGeneration || !this.field.focusTarget.hasFocus) return;
 		}
-		this.pointer.textLeft = textLeft - this.viewport.offset;
+		this.textLeft = textLeft;
+		this.movePointer(x, justPressed, pressed);
+		if (justPressed && this.field.pointerSelecting) pointerCapture.capture(this, undefined, this.field.focusTarget.scope.surfaceScope);
+	}
+
+	public handleCapturedPointer(snapshot: PointerInputSnapshot): void { this.movePointer(snapshot.viewportX, false, true); }
+	public releaseCapturedPointer(snapshot: PointerInputSnapshot): void { this.handleCapturedPointer(snapshot); this.cancelPointer(); }
+	public cancelPointer(): void { pointerCapture.cancelTarget(this); this.field.pointerSelecting = false; }
+
+	private movePointer(x: number, justPressed: boolean, pressed: boolean): void {
+		this.pointer.textLeft = this.textLeft - this.viewport.offset;
 		this.pointer.pointerX = x;
 		this.pointer.justPressed = justPressed;
 		this.pointer.pointerPressed = pressed;

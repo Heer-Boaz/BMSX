@@ -4,6 +4,7 @@ import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { KeyModifier } from '../../hosts/common/input/text';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { inputFocus } from '../../ide/input/focus';
+import { pointerCapture } from '../../ide/input/pointer/capture';
 import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { HomeInput } from '../../ide/workbench/contrib/home/editor_input';
@@ -74,6 +75,39 @@ for (const subject of ['scene', 'dynamic'] as const) test(`Main row Source opens
 	assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
 });
 type Fixture = Awaited<ReturnType<typeof fixture>>;
+
+test('Details value selection owns pointer movement and release outside its panel', async t => {
+	const f = await fixture(t, SOURCE.replace('x=0,y=0', 'x=123456789,y=0'));
+	f.key('Home'); f.key('ArrowDown'); f.update();
+	const value = f.primary.details.control.controls[0], bounds = f.primary.view.details.properties[0].bounds;
+	const canvas = f.primary.viewport.layoutState.client;
+	const x = bounds.right - 8, y = (bounds.top + bounds.bottom) / 2;
+	const outsideX = (canvas.left + canvas.right) / 2, outsideY = (canvas.top + canvas.bottom) / 2;
+	const pointer = (px: number, py: number, buttons: number, pressedButtons: number, releasedButtons: number) =>
+		f.editor.dispatchPointer({ x: px, y: py, buttons, pressedButtons, releasedButtons, cancelledButtons: 0,
+			modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
+	pointer(x, y, PointerButton.Primary, PointerButton.Primary, 0);
+	assert.equal(value.field.focusTarget.hasFocus, true);
+	assert.equal(value.field.pointerSelecting, true); assert.equal(pointerCapture.active, true);
+	const start = value.field.readText();
+	pointer(outsideX, outsideY, PointerButton.Primary, 0, 0);
+	assert.notDeepEqual(value.field.readText(), start);
+	pointer(outsideX, outsideY, 0, 0, PointerButton.Primary);
+	assert.equal(pointerCapture.active, false); assert.equal(value.field.pointerSelecting, false);
+	assert.equal(value.field.focusTarget.hasFocus, true); assert.equal(f.model.canUndo, false);
+});
+
+test('a coalesced Details value click releases its selection in the same dispatch', async t => {
+	const f = await fixture(t);
+	f.key('Home'); f.key('ArrowDown'); f.update();
+	const value = f.primary.details.control.controls[0], bounds = f.primary.view.details.properties[0].bounds;
+	f.editor.dispatchPointer({ x: bounds.right - 8, y: (bounds.top + bounds.bottom) / 2,
+		buttons: 0, pressedButtons: PointerButton.Primary, releasedButtons: PointerButton.Primary, cancelledButtons: 0,
+		modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
+	assert.equal(value.field.focusTarget.hasFocus, true);
+	assert.equal(value.field.pointerSelecting, false); assert.equal(pointerCapture.active, false);
+	assert.equal(value.pending, false); assert.equal(f.model.canUndo, false);
+});
 
 test('empty canvas click clears the shared Scene selection across hierarchy, Details and gizmo', async t => {
 	const f = await fixture(t);
