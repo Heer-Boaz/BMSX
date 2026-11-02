@@ -2136,7 +2136,6 @@ test('runtime source capture retains documents whose buffer differs from install
 	sources.cartridgeSlots[TEST_DOMAIN]!.installedBlua32Sources = new Map([['src.foo', '-- revision 1']]);
 	assert.deepEqual(captureLuaTextModelSources(editorTextModelService, sources.catalog), [{
 		version: model.version,
-		stateId: model.createSnapshot().stateId,
 		contextId: TEST_CONTEXT_ID,
 		path: 'src/foo.lua',
 		source: '-- revision 2',

@@ -1,11 +1,10 @@
 import type { ResourceIdentity } from '../../../common/resource';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
-import type { EditorTextModelSnapshot } from '../../../editor/model/text_model';
 import { getTextSnapshot } from '../../../editor/text/source_text';
 import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import { readWorkspaceLuaSourceText } from '../../../workspace/files';
 
-export type LuaTextModelSourceSnapshot = ResourceIdentity & EditorTextModelSnapshot;
+export type LuaTextModelSourceSnapshot = ResourceIdentity & { readonly source: string; readonly version: number };
 
 export type CurrentLuaSourceSnapshot = {
 	readonly source: string;
@@ -34,7 +33,8 @@ export function captureLuaTextModelSources(models: EditorTextModelService, catal
 		}
 		const record = catalog.resolveLuaSource(model.resource)!.record;
 		if (!includeSourceOnly && record.sourceKind === 'source-only') continue;
-		snapshots.push({ ...model.createSnapshot(), contextId: model.resource.contextId, path: model.resource.path });
+		snapshots.push({ contextId: model.resource.contextId, path: model.resource.path,
+			source: getTextSnapshot(model.buffer), version: model.version });
 	}
 	return snapshots;
 }
