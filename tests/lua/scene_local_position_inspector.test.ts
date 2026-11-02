@@ -9,9 +9,7 @@ import { api } from '../../ide/runtime/overlay_api';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
 import { SceneDetailsControl } from '../../ide/workbench/contrib/scene_editor/details_control';
 import { SceneDetailsViewState } from '../../ide/workbench/contrib/scene_editor/details_view';
-import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
-import { WorkbenchMenu } from '../../ide/workbench/ui/menu/model';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
 
 const PREFABS = `local prefab=require('cartlib/world/prefab')
@@ -31,12 +29,12 @@ scenes.register('other',{objects={{member_id='other',definition_id='node2'}}})`;
 	const document = f.documents.get(f.model), authoring = new SceneAuthoringContext(f.model, f.documents,
 		{ document, scene: document.scenes[0], sourceVersion: f.model.version }), view = new SceneDetailsViewState(authoring);
 	const scope = new InputFocusScope(Symbol('semantic local position'), inputFocus.workbenchScope), parent = inputFocus.createTarget(null, scope);
-	const bounds = { left: 0, top: 0, right: 320, bottom: 240 }, menu = new ContextMenuController(inputFocus, pointerCapture, bounds);
+	const bounds = { left: 0, top: 0, right: 320, bottom: 240 };
 	const command = { isEnabled: () => true, run: () => {} };
 	const control = new SceneDetailsControl({
 		isEnabled: (id, target) => inputFocus.getCommand(id, target)?.isEnabled() ?? false,
 		execute: (id, target) => inputFocus.executeCommand(id, target),
-	}, menu, scope, parent, { outline: command, details: command }, new WorkbenchMenu([], undefined));
+	}, scope, parent, { outline: command, details: command });
 	control.setView(view, bounds);
 	const select = (index: number) => {
 		authoring.refresh(); const document = authoring.document!, scene = authoring.subject!;
@@ -44,7 +42,7 @@ scenes.register('other',{objects={{member_id='other',definition_id='node2'}}})`;
 	};
 	const provider = resolveLuaTextFileModel(f.models, f.sources.catalog,
 		f.sources.catalog.resolveResource({ contextId: f.model.identity.contextId, path: 'prefabs.lua' })!);
-	t.after(() => { control.dispose(); view.dispose(); authoring.dispose(); menu.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
+	t.after(() => { control.dispose(); view.dispose(); authoring.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
 	select(0);
 	return { ...f, source, authoring, view, control, select, provider };
 }

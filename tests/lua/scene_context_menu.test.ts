@@ -2,7 +2,7 @@ import type { LuaTableConstructorExpression } from '../../toolchain/ts/lua/synta
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
-import { KeyModifier } from '../../hosts/common/input/text';
+import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import type { EditorCommandId } from '../../ide/common/commands';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
@@ -238,6 +238,36 @@ test('Scene Details section command keeps the selected occurrence without openin
 	assert.equal(field.readText().text, text); assert.equal(f.model.canUndo, false);
 });
 
+for (const code of ['ContextMenu', 'F10'] as const) test(`Scene Details ${code} leaves a focused field draft untouched`, t => {
+	const f = fixture(t); selectSceneOutlineRow(f.input.view.hierarchy, 1); f.update();
+	const control = f.primary.details.control, field = control.controls[0];
+	assert.equal(field.field.focusTarget.focus(), true); setFieldText(field.field, '77', true);
+	const source = f.model.buffer.getText(), selection = f.input.view.authoring.selection;
+	const show = t.mock.method(f.editor.contextMenu, 'show');
+	const modifiers = code === 'F10' ? KeyModifier.shift : KeyModifier.none, down = new KeyInputEvent(code, modifiers);
+	f.editor.dispatchKey(down); f.editor.dispatchKey(new KeyInputEvent(code, modifiers, false, false)); f.update();
+	assert.equal(down.consumed, false); assert.equal(show.mock.callCount(), 0);
+	assert.ok(inputFocus.admittedTarget === field.field.focusTarget); assert.equal(field.pending, true);
+	assert.equal(field.field.text, '77'); assert.equal(f.model.buffer.getText(), source);
+	assert.ok(f.input.view.authoring.selection === selection); assert.equal(f.model.canUndo, false);
+});
+
+test('secondary click on the Details body accepts a focused field draft without opening a menu', t => {
+	const f = fixture(t); selectSceneOutlineRow(f.input.view.hierarchy, 1); f.update();
+	const control = f.primary.details.control, field = control.controls[0];
+	assert.equal(field.field.focusTarget.focus(), true); setFieldText(field.field, '77', true);
+	const source = f.model.buffer.getText(), bounds = f.input.view.details.viewport.bounds;
+	const show = t.mock.method(f.editor.contextMenu, 'show');
+	for (const down of [true, false]) f.editor.dispatchPointer({ x: bounds.left + 1, y: bounds.top + 1,
+		buttons: down ? PointerButton.Secondary : 0, pressedButtons: down ? PointerButton.Secondary : 0,
+		releasedButtons: down ? 0 : PointerButton.Secondary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
+	f.update();
+	assert.equal(show.mock.callCount(), 0); assert.equal(f.editor.contextMenu.visible, false);
+	assert.ok(inputFocus.admittedTarget === control.focusTarget); assert.equal(field.pending, false);
+	assert.equal(f.model.buffer.getText(), source.replace('x = 11,', 'x = 77,')); assert.equal(f.model.canUndo, true);
+	f.model.undo(); assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+});
+
 test('Scene menu moves and removes authored members through canonical Undo and Save', async t => {
 	const files = new MemoryWorkspaceFiles(); await openWorkspaceRecords(files);
 	const f = fixture(t), before = f.model.buffer.getText();
@@ -349,7 +379,7 @@ for (const rebind of [false, true]) test(`Scene retained member command ${rebind
 	if (rebind) assert.ok(f.firstGroup.model.activeTab instanceof HostErrorInput);
 });
 
-for (const route of ['pointer', 'ContextMenu', 'F10'] as const) test(`document Scene Details ${route} does not construct an empty inspector popup`, t => {
+for (const route of ['pointer', 'ContextMenu', 'F10'] as const) test(`document Scene Details ${route} does not offer a body context menu`, t => {
 	const f = fixture(t); selectSceneOutlineRow(f.input.view.hierarchy, 1); f.update();
 	f.editor.commands.execute('sceneEditor.details', f.primary.hierarchy.control.focusTarget);
 	const origin = inputFocus.admittedTarget, before = f.model.buffer.getText(), bounds = f.input.view.details.viewport.bounds;
@@ -357,8 +387,13 @@ for (const route of ['pointer', 'ContextMenu', 'F10'] as const) test(`document S
 	if (route === 'pointer') for (const down of [true, false]) f.editor.dispatchPointer({ x: bounds.left + 1, y: bounds.top + 1,
 		buttons: down ? PointerButton.Secondary : 0, pressedButtons: down ? PointerButton.Secondary : 0,
 		releasedButtons: down ? 0 : PointerButton.Secondary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
-	else f.key(route, route === 'F10' ? KeyModifier.shift : KeyModifier.none);
-	assert.equal(show.mock.callCount(), 0, 'the inspector rejects its empty menu before calling the popup owner');
+	else {
+		const modifiers = route === 'F10' ? KeyModifier.shift : KeyModifier.none;
+		const down = new KeyInputEvent(route, modifiers);
+		f.editor.dispatchKey(down); f.editor.dispatchKey(new KeyInputEvent(route, modifiers, false, false)); f.update();
+		assert.equal(down.consumed, false, 'an absent menu does not claim its context-menu shortcut');
+	}
+	assert.equal(show.mock.callCount(), 0, 'the inspector does not request a popup');
 	assert.equal(f.editor.contextMenu.visible, false); assert.ok(inputFocus.admittedTarget === origin);
 	assert.equal(f.input.view.hierarchy.outline.selectionIndex, 1); assert.equal(f.model.buffer.getText(), before); assert.equal(f.model.canUndo, false);
 });

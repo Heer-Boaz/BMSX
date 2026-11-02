@@ -127,13 +127,12 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 			contextActions: hierarchyMenu, measureContent: measureSceneHierarchy,
 			createControl: (scope, _target, surface) => new SceneHierarchyControl(options.commands, options.contextMenu, options.surfaces,
 				surface, options.workArea, scope, this.commandTarget, sections) });
-		const detailsContext = new WorkbenchMenu([], undefined);
 		const detailsMenu = new WorkbenchCompositeMenu([new WorkbenchMenu(DETAILS_PANEL_CONTEXT, options.main), options.main.regions.details.actions]);
 		this.details = new WorkbenchViewPanel({ ...common, title: 'Details', view: this.view.details,
 			bodyContextMenu: 'content',
 			surface: options.presentations.details, actions: createWorkbenchActionBar(new WorkbenchMenu([], undefined), true, detailsMenu),
 			contextActions: detailsMenu, measureContent: measureSceneDetails,
-			createControl: (scope, target) => new SceneDetailsControl(options.commands, options.contextMenu, scope, target, sections, detailsContext) });
+			createControl: (scope, target) => new SceneDetailsControl(options.commands, scope, target, sections) });
 		const addMember: FocusCommand = this.addMemberCommand = {
 			contextual: true,
 			isEnabled: () => this.canAddMember,

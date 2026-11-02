@@ -9,8 +9,6 @@ import { pointerCapture } from '../../ide/input/pointer/capture';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
 import { SceneDetailsControl } from '../../ide/workbench/contrib/scene_editor/details_control';
 import { SceneDetailsViewState } from '../../ide/workbench/contrib/scene_editor/details_view';
-import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
-import { WorkbenchMenu } from '../../ide/workbench/ui/menu/model';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
@@ -28,10 +26,9 @@ function fixture(t: TestContext, source = SOURCE, font: 'tiny' | 'msx' = 'tiny')
 	const view = new SceneDetailsViewState(authoring), scope = new InputFocusScope(Symbol('boolean inspector'), inputFocus.workbenchScope);
 	const parent = inputFocus.createTarget(null, scope), bounds = { left: 0, top: 20, right: 384, bottom: 276 };
 	const unbindParent = parent.bindKeyboard(() => {});
-	const menu = new ContextMenuController(inputFocus, pointerCapture, bounds);
 	const navigation = { isEnabled: () => true, run() {} };
-	const details = new SceneDetailsControl({ isEnabled: () => false, execute() {} }, menu, scope, parent,
-		{ outline: navigation, details: navigation }, new WorkbenchMenu([], undefined));
+	const details = new SceneDetailsControl({ isEnabled: () => false, execute() {} }, scope, parent,
+		{ outline: navigation, details: navigation });
 	details.setView(view, bounds);
 	const entry = (key: string) => details.options.controls[view.optionProperties.findIndex(property => property.descriptor.label === key)];
 	const checkbox = (key = 'visible') => { const result = entry(key); assert.ok(result.kind === 'boolean'); return result.control; };
@@ -51,7 +48,7 @@ function fixture(t: TestContext, source = SOURCE, font: 'tiny' | 'msx' = 'tiny')
 		if (!pointerCapture.dispatch(snapshot, false, 0, details.inputScope.surfaceScope)) details.handlePointer(snapshot, down);
 		pointerCapture.endRoute(snapshot); details.update();
 	};
-	t.after(() => { details.dispose(); view.dispose(); authoring.dispose(); menu.dispose(); inputFocus.setTarget(null); unbindParent(); pointerCapture.interrupt(false); });
+	t.after(() => { details.dispose(); view.dispose(); authoring.dispose(); inputFocus.setTarget(null); unbindParent(); pointerCapture.interrupt(false); });
 	return { ...f, authoring, details, view, entry, checkbox, value, key, pointer };
 }
 

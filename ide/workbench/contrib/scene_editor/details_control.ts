@@ -9,8 +9,6 @@ import { consumeIdeKey, isKeyJustPressed } from '../../../input/keyboard/key_inp
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import { parseLuaNumberInput } from '../../../language/lua/source_edits';
-import type { ContextMenuController } from '../../services/context_menu/controller';
-import type { WorkbenchMenuPresentation } from '../../ui/menu/model';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
 import type { WorkbenchTooltipTarget } from '../../ui/tooltip';
 import type { SceneLocalPositionRequest } from './authoring_context';
@@ -51,9 +49,8 @@ export class SceneDetailsControl {
 	private subscriptions: (() => void)[] = [];
 	private readonly parentCommandTarget: InputFocusTarget;
 
-	public constructor(private readonly commands: EditorCommandRunner, private readonly contextMenu: ContextMenuController,
-		scope: InputFocusScope, parent: InputFocusTarget,
-		sectionCommands: SceneEditorSectionCommands, private readonly menu: WorkbenchMenuPresentation) {
+	public constructor(commands: EditorCommandRunner, scope: InputFocusScope, parent: InputFocusTarget,
+		sectionCommands: SceneEditorSectionCommands) {
 		this.parentCommandTarget = parent.commandContext;
 		this.scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, parent, event => {
 			if (!isKeyJustPressed('Escape', event)) return false;
@@ -68,10 +65,6 @@ export class SceneDetailsControl {
 		this.lastFocus = this.scroll.focusTarget;
 		this.focusTarget.registerCommand('sceneEditor.details', sectionCommands.details);
 		this.focusTarget.registerCommand('sceneEditor.outline', sectionCommands.outline);
-		this.focusTarget.registerCommand('contextMenu', {
-			isEnabled: () => this.hasView && this.view.projection.subject !== undefined,
-			run: () => this.openContextMenu(this.view.viewport.bounds.left + 4, this.view.viewport.bounds.top + 4, true),
-		});
 		this.controls = POSITION_AXES.map((_axis, index) => {
 			const control = new ValueInput<ScenePositionInputValue>(this.scroll.focusTarget, {
 				options: { allowSpace: false, singleLine: true }, invalidBlurMessage: 'Invalid local-origin edit cancelled; source unchanged.',
@@ -106,7 +99,6 @@ export class SceneDetailsControl {
 		const bounds = this.view.viewport.bounds;
 		return bounds.left < bounds.right && bounds.top < bounds.bottom;
 	}
-	public get canOpenSource(): boolean { return this.hasView; }
 	/** The presentation paints feedback; this control owns its exact subject and routed hit. */
 	public get tooltipItem(): WorkbenchTooltipTarget | undefined {
 		if (!this.canFocus || !this.fieldsBound) return undefined;
@@ -315,9 +307,7 @@ export class SceneDetailsControl {
 		if (this.options.handlePointer(snapshot, justPressed)) { pointerHover.visit(this); return true; }
 		if (snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds)
 			&& (snapshot.justPressedButtons & PointerButton.Secondary) !== 0) {
-			const revision = this.attachmentRevision, selection = view.authoring.selectionRevision;
-			if (this.focus() && this.attachmentRevision === revision && view.authoring.selectionRevision === selection)
-				this.openContextMenu(snapshot.viewportX, snapshot.viewportY);
+			this.focus();
 			return true;
 		}
 		return this.scroll.handlePointer(snapshot);
@@ -330,23 +320,6 @@ export class SceneDetailsControl {
 	}
 	public onPointerLeave(): void {
 		for (const entry of this.options.controls) if (entry.kind === 'boolean') entry.control.onPointerLeave();
-	}
-
-	private openContextMenu(x: number, y: number, keyboard = false): void {
-		this.menu.refresh();
-		if (this.menu.visibleItems.length === 0) return;
-		const view = this.view, generation = this.inputScope.contextGeneration, selection = view.authoring.selectionRevision;
-		const version = view.authoring.workingCopy.version;
-		this.contextMenu.show(x, y, this.menu, this.commands, {
-			selectFirst: keyboard, invocationOrigin: this.commandTarget, returnFocus: this.commandTarget, commandTarget: this.parentCommandTarget,
-			onWillShow: lifetime => {
-				lifetime.add({ dispose: view.authoring.workingCopy.onDidChangeContent(() => this.contextMenu.hide()) });
-				lifetime.add({ dispose: view.authoring.onDidChangeSelection(() => this.contextMenu.hide()) });
-				lifetime.add({ dispose: this.inputScope.onDidRetireContext(() => this.contextMenu.hide(false)) });
-				if (this.viewValue !== view || this.inputScope.contextGeneration !== generation || view.authoring.selectionRevision !== selection
-					|| view.authoring.workingCopy.version !== version) this.contextMenu.hide(false);
-			},
-		});
 	}
 
 	public clearView(): void { this.attachmentRevision++; this.detach(); }

@@ -1,11 +1,9 @@
-import { WorkbenchMenu } from '../../ide/workbench/ui/menu/model';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
 import { SceneDetailsViewState } from '../../ide/workbench/contrib/scene_editor/details_view';
 import { SceneDetailsControl } from '../../ide/workbench/contrib/scene_editor/details_control';
-import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { inputFocus, InputFocusScope } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
@@ -37,7 +35,6 @@ function fixture(t: TestContext, attach = true, source = SOURCE, imports: readon
 	const scope = new InputFocusScope(Symbol('independent Details'), inputFocus.workbenchScope);
 	const parent = inputFocus.createTarget(null, scope);
 	const bounds = { left: 0, top: 0, right: 260, bottom: 100 };
-	const menu = new ContextMenuController(inputFocus, pointerCapture, bounds);
 	const commands: EditorCommandRunner = {
 		isEnabled: (command, target) => target?.getCommand(command)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target),
@@ -49,15 +46,15 @@ function fixture(t: TestContext, attach = true, source = SOURCE, imports: readon
 	};
 	parent.registerCommand('undo', { isEnabled: () => f.model.canUndo, run: () => f.model.undo() });
 	parent.registerCommand('redo', { isEnabled: () => f.model.canRedo, run: () => f.model.redo() });
-	control = new SceneDetailsControl(commands, menu, scope, parent, sections, new WorkbenchMenu([], undefined));
+	control = new SceneDetailsControl(commands, scope, parent, sections);
 	const select = (index: number) => {
 		context.refresh();
 		const document = context.document!, scene = document.scenes[0];
 		assert.equal(context.select(document, f.model.version, { kind: 'member', scene, entry: scene.objects[index], index }), true);
 	};
 	if (attach) control.setView(view, bounds);
-	t.after(() => { control.dispose(); view.dispose(); context.dispose(); menu.dispose(); inputFocus.setTarget(null); pointerCapture.cancel(); });
-	return { ...f, document, context, view, control, scope, parent, menu, bounds, commands, sections, select };
+	t.after(() => { control.dispose(); view.dispose(); context.dispose(); inputFocus.setTarget(null); pointerCapture.cancel(); });
+	return { ...f, document, context, view, control, scope, parent, bounds, commands, sections, select };
 }
 
 test('Details fields edit and undo canonical source with no hierarchy or document container', t => {
@@ -89,7 +86,7 @@ test('Details fields edit and undo canonical source with no hierarchy or documen
 test('two Details presentations share selection but own independent drafts, scrolling and font reflow', t => {
 	const f = fixture(t, true, SCROLL_SOURCE); f.select(0);
 	const view = new SceneDetailsViewState(f.context);
-	const other = new SceneDetailsControl(f.commands, f.menu, f.scope, f.parent, f.sections, new WorkbenchMenu([], undefined));
+	const other = new SceneDetailsControl(f.commands, f.scope, f.parent, f.sections);
 	other.setView(view, f.bounds);
 	t.after(() => { other.dispose(); view.dispose(); });
 	const field = f.control.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '31', true);

@@ -8,8 +8,6 @@ import { pointerCapture } from '../../ide/input/pointer/capture';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
 import { SceneDetailsControl } from '../../ide/workbench/contrib/scene_editor/details_control';
 import { SceneDetailsViewState } from '../../ide/workbench/contrib/scene_editor/details_view';
-import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
-import { WorkbenchMenu } from '../../ide/workbench/ui/menu/model';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
 
 const MEMBER = 'authored.namespace.with.a.long.shared.prefix.Member01';
@@ -23,14 +21,14 @@ scenes.register('room',{objects={{member_id=${member},definition_id=${definition
 	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, [['cartlib/world/prefab.lua', 'return {define=function() end}']]);
 	const authoring = new SceneAuthoringContext(f.model, f.documents), view = new SceneDetailsViewState(authoring);
 	const scope = new InputFocusScope(Symbol('Details identity'), inputFocus.workbenchScope), parent = inputFocus.createTarget(null, scope);
-	const bounds = { left: 30, top: 20, right: 160, bottom: 100 }, menu = new ContextMenuController(inputFocus, pointerCapture, bounds);
+	const bounds = { left: 30, top: 20, right: 160, bottom: 100 };
 	const navigation = { isEnabled: () => true, run: () => {} };
-	const control = new SceneDetailsControl({ isEnabled: () => false, execute() {} }, menu, scope, parent,
-		{ outline: navigation, details: navigation }, new WorkbenchMenu([], undefined));
+	const control = new SceneDetailsControl({ isEnabled: () => false, execute() {} }, scope, parent,
+		{ outline: navigation, details: navigation });
 	const document = authoring.document!, scene = document.scenes[0];
 	authoring.select(document, f.model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 });
 	control.setView(view, bounds);
-	t.after(() => { control.dispose(); view.dispose(); authoring.dispose(); menu.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
+	t.after(() => { control.dispose(); view.dispose(); authoring.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
 	return { ...f, source, authoring, view, control, bounds };
 }
 

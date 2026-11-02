@@ -51,7 +51,7 @@ function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny', source = SOURCE)
 	const panel = new WorkbenchViewPanel({ title: 'Details', description: f.resource.path, view, actions: createWorkbenchActionBar(actions, true),
 		contextActions: actions, bodyContextMenu: 'content', commands, contextMenu: menu, surfaces, surface, workArea: bounds, scope, commandTarget: semantic, focusReturn,
 		isPresented: () => true, measureContent: measureSceneDetails,
-		createControl: region => new SceneDetailsControl(commands, menu, region, semantic, sections, actions) });
+		createControl: region => new SceneDetailsControl(commands, region, semantic, sections) });
 	panel.attach(bounds);
 	t.after(() => { panel.dispose(); view.dispose(); context.dispose(); menu.dispose(); surfaces.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
 	return { ...f, context, view, panel, bounds, focusReturn, menu, saved, actions };

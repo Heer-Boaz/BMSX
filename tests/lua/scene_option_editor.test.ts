@@ -1,5 +1,4 @@
 import { quoteLuaString } from '../../toolchain/ts/lua/syntax/string_literal';
-import { WorkbenchMenu } from '../../ide/workbench/ui/menu/model';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
@@ -9,8 +8,6 @@ import { inputFocus, InputFocusScope } from '../../ide/input/focus';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
 import { SceneDetailsViewState } from '../../ide/workbench/contrib/scene_editor/details_view';
 import { SceneDetailsControl } from '../../ide/workbench/contrib/scene_editor/details_control';
-import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
-import { pointerCapture } from '../../ide/input/pointer/capture';
 import type { EditorCommandRunner } from '../../ide/common/commands';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 
@@ -38,15 +35,14 @@ function fixture(t: TestContext, source = SOURCE) {
 	assert.equal(authoring.select(authoring.document!, model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 }), true);
 	const scope = new InputFocusScope(Symbol('option editor fixture'), inputFocus.workbenchScope), parent = inputFocus.createTarget(null, scope);
 	const bounds = { left: 0, top: 24, right: 384, bottom: 276 };
-	const menu = new ContextMenuController(inputFocus, pointerCapture, bounds);
 	const commands: EditorCommandRunner = {
 		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target),
 	};
 	const navigation = { isEnabled: () => true, run: () => assert.fail('source editing invoked view navigation') };
-	const details = new SceneDetailsControl(commands, menu, scope, parent, { outline: navigation, details: navigation }, new WorkbenchMenu([], undefined));
+	const details = new SceneDetailsControl(commands, scope, parent, { outline: navigation, details: navigation });
 	details.setView(view, bounds);
-	t.after(() => { details.dispose(); view.dispose(); authoring.dispose(); menu.dispose(); inputFocus.setTarget(null); });
+	t.after(() => { details.dispose(); view.dispose(); authoring.dispose(); inputFocus.setTarget(null); });
 	return { model, view, editor: details.options, refresh: () => details.update(),
 		control: (label: string) => {
 			const entry = details.options.controls[view.optionProperties.findIndex(property => property.descriptor.label === label)];
