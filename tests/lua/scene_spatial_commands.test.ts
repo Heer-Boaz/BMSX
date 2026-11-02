@@ -113,6 +113,21 @@ function contextCommand(f: Fixture, command: EditorCommandId): void {
 	assert.equal(menu.model.rows[menu.model.selectedIndex].command, command); f.key('Enter');
 }
 
+function togglePlacement(f: Fixture, gesture: 'keyboard' | 'pointer'): void {
+	if (gesture === 'keyboard') {
+		f.key('Tab'); assert.equal(inputFocus.admittedTarget, f.picker.toggle!.focusTarget);
+		f.key('Space'); f.key('Tab', KeyModifier.shift);
+	} else {
+		const bounds = f.picker.layout.toggle, x = bounds.left + 2, y = bounds.top + 2;
+		for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
+			buttons: down ? PointerButton.Primary : 0, pressedButtons: down ? PointerButton.Primary : 0,
+			releasedButtons: down ? 0 : PointerButton.Primary, cancelledButtons: 0,
+			modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
+		f.update(); assert.equal(inputFocus.admittedTarget, f.picker.toggle!.focusTarget);
+	}
+	if (gesture === 'keyboard') assert.equal(inputFocus.admittedTarget, f.picker.field.focusTarget);
+}
+
 function coefficients(f: Fixture, entry: SceneSourceObject): readonly number[] {
 	const document = f.context.document!, scene = document.scenes.find(scene => scene.objects.includes(entry))!;
 	const local = f.ide.sceneSources.getSpatialProjection(f.model, document)!.localTransform(document, scene, entry)!;
@@ -152,6 +167,87 @@ for (const [command, placement, expected] of [
 });
 
 for (const placement of ['document', 'Main'] as const) {
+	for (const gesture of ['keyboard', 'pointer'] as const) for (const veto of [false, true])
+		test(`${placement} reparent policy via ${gesture} applies the current choice${veto ? ' after veto' : ''} as one undoable edit`, async t => {
+			const source = veto ? SOURCE.replace('transform = carrier_pose', 'transform = unavailable_pose') : SOURCE;
+			const f = await fixture(t, placement, source); selectMember(f, 'subject');
+			contextCommand(f, 'sceneEditor.reparentMember'); enterText(f, 'dock');
+			const selected = f.picker.model.list.rows[f.picker.model.list.selectionIndex];
+			if (veto) {
+				f.key('Enter'); assert.equal(f.picker.visible, true); assert.ok(f.picker.message.length > 0);
+				assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+			}
+			togglePlacement(f, gesture);
+			assert.equal(f.picker.visible, true); assert.equal(f.picker.field.text, 'dock'); assert.equal(f.picker.message, '');
+			assert.equal(f.picker.model.list.rows[f.picker.model.list.selectionIndex], selected);
+			if (gesture === 'keyboard') f.key('Enter');
+			else {
+				const bounds = f.picker.model.viewport.bounds, x = bounds.left + 2, y = f.picker.model.rowTop(0) + 2;
+				for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
+					buttons: down ? PointerButton.Primary : 0, pressedButtons: down ? PointerButton.Primary : 0,
+					releasedButtons: down ? 0 : PointerButton.Primary, cancelledButtons: 0,
+					modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
+				f.update();
+			}
+			assert.equal(f.picker.visible, false);
+			assert.equal(stringLiteralValue(member(f, 'subject').parent!.value), 'dock');
+			assert.deepEqual(coefficients(f, member(f, 'subject')), [1, 0, -0, 1, 2, 3]);
+			f.editor.commands.execute('undo', f.commandTarget); f.update();
+			assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+		});
+
+	test(`${placement} switching the policy back retains world validation and Alt accepts local explicitly`, async t => {
+		const source = SOURCE.replace('transform = carrier_pose', 'transform = unavailable_pose');
+		const f = await fixture(t, placement, source); selectMember(f, 'subject');
+		contextCommand(f, 'sceneEditor.reparentMember'); enterText(f, 'dock');
+		togglePlacement(f, 'keyboard'); togglePlacement(f, 'keyboard'); f.key('Enter');
+		assert.equal(f.picker.visible, true); assert.ok(f.picker.message.length > 0);
+		assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+		f.key('Enter', KeyModifier.alt); assert.equal(f.picker.visible, false);
+		assert.equal(stringLiteralValue(member(f, 'subject').parent!.value), 'dock');
+		assert.deepEqual(coefficients(f, member(f, 'subject')), [1, 0, -0, 1, 2, 3]);
+		f.editor.commands.execute('undo', f.commandTarget); f.update();
+		assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+	});
+
+	for (const change of ['readonly', 'source', 'dependency', 'selection'] as const)
+		test(`${placement} ${change} invalidates the picker while its placement policy is focused`, async t => {
+			const f = await fixture(t, placement); selectMember(f, 'subject');
+			contextCommand(f, 'sceneEditor.reparentMember'); enterText(f, 'dock'); f.key('Tab'); f.key('Space');
+			assert.equal(inputFocus.admittedTarget, f.picker.toggle!.focusTarget);
+			const resource = f.model.resource;
+			if (change === 'readonly') f.model.refreshResource({ ...resource, source: { ...resource.source, generated: true } });
+			else if (change === 'source') f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- newer source\n' }]);
+			else if (change === 'dependency') {
+				const poses = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog,
+					f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'poses.lua' })!);
+				poses.pushEditOperations([{ offset: 0, deleteLength: POSES.length, text: POSES.replace('ox=10,oy=20', 'ox=50,oy=60') }]);
+			} else {
+				const document = f.context.document!, scene = document.scenes[0], entry = member(f, 'spare');
+				assert.equal(f.context.select(document, f.model.version, { kind: 'member', scene, entry, index: scene.objects.indexOf(entry) }), true);
+			}
+			f.update(); assert.equal(f.picker.visible, false); f.key('Enter');
+			assert.equal(f.model.buffer.getText(), change === 'source' ? '-- newer source\n' + SOURCE : SOURCE);
+			if (change !== 'source') assert.equal(f.model.canUndo, false);
+			if (change === 'readonly') f.model.refreshResource(resource);
+		});
+
+	test(`${placement} local policy cannot retarget a different member during focus return`, async t => {
+		const f = await fixture(t, placement); selectMember(f, 'subject');
+		contextCommand(f, 'sceneEditor.reparentMember'); enterText(f, 'dock'); togglePlacement(f, 'keyboard');
+		let replaced = false;
+		const release = f.hierarchy.focusTarget.onDidFocus(() => {
+			release(); replaced = true;
+			const entry = member(f, 'spare');
+			const index = f.hierarchy.view.outline.rows.findIndex(row => row.element.kind === 'member' && row.element.entry === entry);
+			assert.equal(selectSceneOutlineRow(f.hierarchy.view, index), true);
+		}); t.after(release);
+		f.key('Enter'); f.update();
+		assert.equal(replaced, true); assert.equal(f.picker.visible, false);
+		assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
+		assert.ok(f.context.selection?.kind === 'member' && f.context.selection.entry === member(f, 'spare'));
+	});
+
 	for (const modifiers of [KeyModifier.none, KeyModifier.alt, KeyModifier.alt | KeyModifier.shift, KeyModifier.alt | KeyModifier.ctrl]) test(`${placement} Scene row Reparent applies the accept modifier to its captured placement policy (${modifiers})`, async t => {
 		const f = await fixture(t, placement); selectMember(f, 'subject');
 		contextCommand(f, 'sceneEditor.reparentMember');

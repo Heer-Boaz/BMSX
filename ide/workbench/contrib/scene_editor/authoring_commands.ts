@@ -77,6 +77,7 @@ export class SceneAuthoringCommands {
 		const world = mode === 'keep_world' ? context.captureReparent('keep_world') : undefined;
 		const local = context.captureReparent('keep_local');
 		if (world === undefined && local === undefined) return;
+		let keepLocal = mode === 'keep_local';
 		const revision = this.revision;
 		// A parent may admit local placement without an invertible world transform.
 		// Each picker row retains the separately captured operation for each policy.
@@ -87,23 +88,25 @@ export class SceneAuthoringCommands {
 			const item = items.get(choice.parent);
 			if (item !== undefined) item.keepLocal = choice;
 			else items.set(choice.parent, { label: choice.label, description: choice.description,
-				detail: mode === 'keep_world' ? 'Alt+Enter: keep local; world placement unavailable' : '', keepWorld: undefined, keepLocal: choice });
+				detail: mode === 'keep_world' ? 'World placement unavailable; keep local placement instead' : '', keepWorld: undefined, keepLocal: choice });
 		}
-		this.quickInput.pick('Reparent', mode === 'keep_world' ? 'Choose parent; Enter: keep world; Alt+Enter: keep local' : 'Choose parent; retain local placement',
+		this.quickInput.pick('Reparent', mode === 'keep_world' ? 'Choose parent; Alt+Enter also keeps local placement' : 'Choose parent; retain local placement',
 			() => new TextQuickPickProvider([...items.values()]), (item, modifiers) => {
-				const keepLocal = mode === 'keep_local' || (modifiers & KeyModifier.alt) !== 0;
-				const request = keepLocal ? local! : world!, choice = keepLocal ? item.keepLocal! : item.keepWorld!;
+				const useLocal = keepLocal || (modifiers & KeyModifier.alt) !== 0;
+				const request = useLocal ? local! : world!, choice = useLocal ? item.keepLocal! : item.keepWorld!;
 				if (this.context === context && this.revision === revision && request.apply(choice)) this.didMove(context);
 			}, lifetime => {
 				lifetime.add({ dispose: context.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
 				lifetime.add({ dispose: context.workingCopy.onDidChangeReadOnly(() => this.quickInput.hide()) });
 				lifetime.add({ dispose: context.onDidChangeSelection(() => this.quickInput.hide()) });
 				lifetime.add({ dispose: context.onDidChangeSpatialGeneration(() => this.quickInput.hide()) });
-			}, { commandTarget: this.target, validateSelection: (item, modifiers) => {
-				if (mode === 'keep_local' || (modifiers & KeyModifier.alt) !== 0)
-					return item.keepLocal === undefined ? 'Local placement is unavailable for this parent.' : undefined;
-				return item.keepWorld === undefined ? 'World placement is unavailable for this parent; use Alt+Enter to keep local.' : undefined;
-			} });
+			}, { commandTarget: this.target,
+				toggle: mode === 'keep_world' ? { label: 'Keep local placement', checked: false, onDidChange: checked => { keepLocal = checked; } } : undefined,
+				validateSelection: (item, modifiers) => {
+					if (keepLocal || (modifiers & KeyModifier.alt) !== 0)
+						return item.keepLocal === undefined ? 'Local placement is unavailable for this parent.' : undefined;
+					return item.keepWorld === undefined ? 'World placement is unavailable for this parent; choose keep local placement or use Alt+Enter.' : undefined;
+				} });
 	}
 	private rename(context: SceneAuthoringContext): void {
 		const request = context.captureRename();
