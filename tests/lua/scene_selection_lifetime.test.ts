@@ -58,11 +58,12 @@ for (const target of ['primary root', 'member'] as const) test(`same-occurrence 
 for (const edit of ['delete', 'equal-byte replacement'] as const) test(`Source admission discovers ${edit} of its selected member without substituting the surviving primary root`, t => {
 	const f = fixture(t), { context, model, document } = f, scene = document.scenes[0];
 	assert.equal(context.select(document, model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 }), true);
-	const intent = context.selectionRevision, { start, end } = context.selectionRange;
+	const intent = context.selectionRevision, request = context.captureSourceLocation(), { start, end } = context.selectionRange;
 	let notifications = 0; t.after(context.onDidChangeSelection(() => { notifications++; assert.equal(context.selectionRevision, intent + 1); }));
 	if (edit === 'delete') model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, document.analysis.chunk.locations, document.analysis.chunk.tokens, scene.objects[0].field));
 	else model.pushEditOperations([{ offset: start, deleteLength: end - start, text: model.buffer.getTextRange(start, end) }]);
-	assert.equal(context.getSourceLocation(), undefined);
+	assert.equal(request.readLocation(), undefined);
+	assert.equal(request.isCurrent!(), false);
 	assert.equal(context.selectionRevision, intent + 1); assert.equal(notifications, 1);
 	assert.equal(context.selection, undefined); assert.equal(context.availability, 'available');
 	assert.ok(context.subject === context.document!.scenes[0]);
@@ -87,21 +88,26 @@ test('retiring an unselected exact primary declaration revokes captured root Sou
 	assert.equal(context.availability, 'unavailable'); assert.equal(context.selectionRevision, intent + 1);
 });
 
-test('provider-only semantic revocation retires selected Source authority once without editing its canonical source', t => {
+test('provider-only semantic revocation suspends Source authority without editing its canonical source', t => {
 	const source = SOURCE.replace("require('cartlib/world/scene_library')", "require('bridge')");
 	const f = fixture(t, source, [['bridge.lua', "return require('cartlib/world/scene_library')"]]), { context, model, document } = f;
 	const scene = document.scenes[0];
 	assert.equal(context.select(document, model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 }), true);
-	const intent = context.selectionRevision, version = model.version;
+	const intent = context.selectionRevision, version = model.version, request = context.captureSourceLocation();
 	const resource = f.sources.catalog.resolveResource({ contextId: model.resource.contextId, path: 'bridge.lua' })!;
 	const provider = resolveLuaTextFileModel(f.models, f.sources.catalog, resource);
 	provider.pushEditOperations([{ offset: 0, deleteLength: provider.buffer.length, text: 'return external' }]);
 	assert.equal(context.getSourceLocation(), undefined);
 	assert.equal(context.selectionRevision, intent + 1); assert.equal(context.selection, undefined);
+	assert.equal(request.readLocation(), undefined); assert.equal(request.isCurrent!(), false);
 	assert.equal(model.version, version); assert.equal(model.buffer.getText(), source); assert.equal(model.dirty, false);
-	const explicitFile = context.getSourceLocation(); assert.ok(explicitFile !== undefined); assert.equal(explicitFile.selection, undefined);
+	assert.equal(context.getSourceLocation(), undefined); assert.equal(context.canRemoveSelectedMember(), false);
 	provider.undo(); context.refresh();
-	assert.equal(context.selectionRevision, intent + 1); assert.equal(context.selection, undefined); assert.equal(context.availability, 'unavailable');
+	const selection = context.selection;
+	assert.ok(selection?.kind === 'member' && selection.entry === context.document!.scenes[0].objects[0]);
+	assert.equal(context.availability, 'available'); assert.equal(context.getSourceLocation()!.modelVersion, version);
+	assert.equal(request.readLocation(), undefined, 'recovery does not revive a previously revoked Source request');
+	assert.equal(model.buffer.getText(), source); assert.equal(model.dirty, false);
 });
 
 test('context-owned removal revokes its captured member subject without waiting for a control update', t => {
@@ -136,7 +142,8 @@ test('capturing a Scene source request is passive and its mapped subject remains
 	const queries = t.mock.method(f.documents, 'get'), request = context.captureSourceLocation();
 	assert.equal(request.isCurrent!(), true); assert.equal(queries.mock.callCount(), 0);
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- moved\n' }]);
-	assert.equal(request.isCurrent!(), true); assert.equal(queries.mock.callCount(), 0);
+	const callsAfterEdit = queries.mock.callCount();
+	assert.equal(request.isCurrent!(), true); assert.equal(queries.mock.callCount(), callsAfterEdit);
 	const location = await request.readLocation(); assert.ok(location !== undefined); assert.equal(location.modelVersion, model.version);
 	assert.equal(request.isCurrent!(), true);
 	const { start, end } = context.selectionRange;
@@ -174,9 +181,9 @@ test('restoring a retired Scene member cannot clear a newer selection published 
 	const f = fixture(t), { context, model, document } = f, scene = document.scenes[0];
 	context.select(document, model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 });
 	const reference = context.captureSourceReference().selected!;
+	const request = context.captureSelectionRequest();
 	t.after(model.trackRanges(new Map([['root', reference.root], ['member', reference.span]])));
 	const range = { ...context.selectionRange };
-	model.pushEditOperations([{ offset: range.start, deleteLength: range.end - range.start, text: 'nil' }]);
 	let published = false;
 	const unsubscribe = context.onDidChangeSelection(() => {
 		if (context.selection !== undefined) return;
@@ -185,7 +192,8 @@ test('restoring a retired Scene member cannot clear a newer selection published 
 		published = context.select(current, model.version, { kind: 'member', scene: surviving, entry: surviving.objects[1], index: 1 });
 	});
 	t.after(unsubscribe);
-	assert.equal(context.restoreSelection(reference), false);
+	model.pushEditOperations([{ offset: range.start, deleteLength: range.end - range.start, text: 'nil' }]);
+	assert.equal(request.restore(reference), false);
 	assert.equal(published, true);
 	const selection = context.selection;
 	assert.ok(selection?.kind === 'member');

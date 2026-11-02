@@ -111,6 +111,9 @@ export class SceneAuthoringContext {
 	public readonly selectionRange: TrackedTextRange = { start: 0, end: 0 };
 	private readonly sceneRange: TrackedTextRange = { start: 0, end: 0 };
 	private selectionValue: SceneAuthoredSelection | undefined;
+	/** Exact mapped selection retained while the current source does not recognize it. */
+	private suspendedSelection: SceneAuthoredSelection['kind'] | undefined;
+	private subjectPending = false;
 	private sourceVersion = -1;
 	private readonly lifetime = new DisposableStore();
 	private readonly selectionListeners = new Set<() => void>();
@@ -139,9 +142,13 @@ export class SceneAuthoringContext {
 				const range = luaSourceRangeToTextRange(workingCopy.buffer, subject.scene.range);
 				this.subjectRange.start = range.start; this.subjectRange.end = range.end;
 				this.subjectScenes.push(subject.scene);
+			} else if (reference?.subject.availability === 'available' && reference.subject.range.start !== reference.subject.range.end) {
+				this.subjectRange.start = reference.subject.range.start; this.subjectRange.end = reference.subject.range.end;
+				this.subjectPending = true;
 			}
 			this.lifetime.add({ dispose: workingCopy.trackRanges(new Map([['subject', this.subjectRange]])) });
 		}
+		this.lifetime.add({ dispose: documents.onDidChange(workingCopy, document => { this.acceptDocument(document); }) });
 	}
 
 	public getWorkingCopies(): readonly EditorTextModel[] { return this.copies; }
@@ -155,6 +162,9 @@ export class SceneAuthoringContext {
 	public get availability(): 'available' | 'unavailable' {
 		return this.lifetime.isDisposed || this.subjectScenes !== undefined && this.subjectScenes.length === 0 ? 'unavailable' : 'available';
 	}
+	/** A tracked source occurrence not represented in the current source generation. */
+	public get suspended(): boolean { return this.subjectPending || this.suspendedSelection !== undefined; }
+
 	/** Selection intent and subject retirement; rebinding the same mapped occurrence preserves authority. */
 	public get selectionRevision(): number { return this.selectionRevisionValue; }
 	/** Retained command presentation; invocation separately admits the current source occurrence. */
@@ -165,7 +175,7 @@ export class SceneAuthoringContext {
 		// Projection admission can retire selection and publish callbacks. Their
 		// source/provider writes must finish before this generation grants authority.
 		const document = changed ? this.documents.get(this.workingCopy) : this.documentValue;
-		return !this.lifetime.isDisposed && this.sourceVersion === this.workingCopy.version && document === this.documentValue;
+		return !this.lifetime.isDisposed && !this.subjectPending && this.sourceVersion === this.workingCopy.version && document === this.documentValue;
 	}
 
 	/** A retained occurrence can survive an edit, but its old AST is not current command authority. */
@@ -201,14 +211,14 @@ export class SceneAuthoringContext {
 	public captureSourceReference(): SceneAuthoredSourceReference {
 		const range = this.subjectRange;
 		const unavailable = range !== undefined && (this.lifetime.isDisposed || range.start === range.end);
-		const selected = this.selectionValue;
+		const selected = this.selectionValue?.kind ?? this.suspendedSelection;
 		return {
 			source: unavailable ? this.subjectOrigin!.source : captureTextFileModel(this.workingCopy),
 			subject: range === undefined ? undefined : unavailable
 				? { range: { ...this.subjectOrigin!.range }, availability: 'unavailable' }
 				: { range: { ...range }, availability: 'available' },
 			selected: unavailable || selected === undefined || this.selectionRange.start === this.selectionRange.end || this.sceneRange.start === this.sceneRange.end
-				? undefined : { kind: selected.kind, span: { ...this.selectionRange }, root: { ...this.sceneRange } },
+				? undefined : { kind: selected, span: { ...this.selectionRange }, root: { ...this.sceneRange } },
 		};
 	}
 
@@ -227,7 +237,12 @@ export class SceneAuthoringContext {
 	}
 
 	private restoreSelectionForRequest(request: number, reference: SceneAuthoredSelectionReference | undefined): boolean {
-		if (request !== this.selectionRequestRevision || !this.isCurrent || request !== this.selectionRequestRevision) return false;
+		if (request !== this.selectionRequestRevision) return false;
+		if (!this.isCurrent) {
+			if (!this.subjectPending || request !== this.selectionRequestRevision) return false;
+			return this.suspendSelectionReference(reference) && request === this.selectionRequestRevision;
+		}
+		if (request !== this.selectionRequestRevision) return false;
 		const document = this.document!, version = this.workingCopy.version, buffer = this.workingCopy.buffer;
 		if (reference !== undefined && reference.root.start !== reference.root.end && reference.span.start !== reference.span.end) {
 			const scene = this.scenes.find(candidate => luaSourceRangeMatchesTextRange(buffer, candidate.range, reference.root));
@@ -236,15 +251,39 @@ export class SceneAuthoringContext {
 				const index = scene.objects.findIndex(entry => luaSourceRangeMatchesTextRange(buffer, document.analysis.chunk.locations.range(entry.field.span), reference.span));
 				if (index !== -1) return this.admitSelection(request, document, version, { kind: 'member', scene, entry: scene.objects[index], index });
 			}
+			return this.suspendSelectionReference(reference) && request === this.selectionRequestRevision;
 		}
 		return this.admitSelection(request, document, version, undefined);
+	}
+
+	/** Preserve only an exact mapped selection while the current generation cannot represent it. */
+	private suspendSelectionReference(reference: SceneAuthoredSelectionReference | undefined): boolean {
+		if (reference === undefined) { this.clearSelection(); return true; }
+		const subject = this.subjectRange;
+		if (reference.root.start === reference.root.end || reference.span.start === reference.span.end
+			|| subject !== undefined && (reference.root.start !== subject.start || reference.root.end !== subject.end)) return false;
+		const changed = this.selectionValue !== undefined || this.suspendedSelection !== reference.kind
+			|| this.sceneRange.start !== reference.root.start || this.sceneRange.end !== reference.root.end
+			|| this.selectionRange.start !== reference.span.start || this.selectionRange.end !== reference.span.end;
+		this.selectionValue = undefined; this.suspendedSelection = reference.kind;
+		this.sceneRange.start = reference.root.start; this.sceneRange.end = reference.root.end;
+		this.selectionRange.start = reference.span.start; this.selectionRange.end = reference.span.end;
+		if (changed) this.selectionChanged();
+		return true;
 	}
 
 	/** Authoring admission reads the producer, even when only an API provider changed. */
 	public refresh(): boolean {
 		if (this.lifetime.isDisposed) return false;
+		const version = this.workingCopy.version, document = this.documents.get(this.workingCopy);
+		if (this.lifetime.isDisposed || this.workingCopy.version !== version) return false;
+		return this.acceptDocument(document);
+	}
+
+	/** Install one published source generation before presenting its retained occurrences. */
+	private acceptDocument(document: SceneSourceDocument): boolean {
+		if (this.lifetime.isDisposed) return false;
 		const previous = this.spatialProjection;
-		const document = this.documents.get(this.workingCopy);
 		this.spatialProjection = this.documents.getSpatialProjection(this.workingCopy, document);
 		this.visualProjection = this.documents.getVisualProjection(this.workingCopy, document);
 		const changed = this.install(document);
@@ -278,37 +317,49 @@ export class SceneAuthoringContext {
 	/** Admit a shared projection, resolving only edit-tracked occurrences within their original declaration. */
 	private install(document: SceneSourceDocument): boolean {
 		if (this.lifetime.isDisposed || this.documentValue === document && this.sourceVersion === this.workingCopy.version) return false;
-		const previous = this.selectionValue;
-		this.documentValue = document;
-		this.sourceVersion = this.workingCopy.version;
-		this.revisionValue++;
+		const previous = this.selectionValue, suspended = this.suspendedSelection, wasPending = this.subjectPending;
+		this.documentValue = document; this.sourceVersion = this.workingCopy.version; this.revisionValue++;
 		let subjectRetired = false;
 		if (this.subjectRange !== undefined) {
 			const previousSubject = this.subject;
 			const subject = this.subjectRange.start === this.subjectRange.end ? undefined
 				: document.scenes.find(scene => luaSourceRangeMatchesTextRange(this.workingCopy.buffer, scene.range, this.subjectRange!));
 			this.subjectScenes!.length = 0;
-			if (subject === undefined) this.subjectRange.start = this.subjectRange.end = 0;
-			else this.subjectScenes!.push(subject);
-			subjectRetired = previousSubject !== undefined && subject === undefined;
+			this.subjectPending = subject === undefined && this.subjectRange.start !== this.subjectRange.end;
+			if (subject !== undefined) this.subjectScenes!.push(subject);
+			else if (!this.subjectPending) this.subjectRange.start = this.subjectRange.end = 0;
+			subjectRetired = previousSubject !== undefined && subject === undefined && !this.subjectPending;
 		}
-		if (previous === undefined) {
-			if (subjectRetired) this.selectionChanged();
+		if (this.subjectPending) {
+			if (previous !== undefined) { this.suspendedSelection = previous.kind; this.selectionValue = undefined; this.selectionChanged(); }
+			else if (!wasPending) this.selectionChanged();
+			return true;
+		}
+		const kind = previous?.kind ?? suspended;
+		if (kind === undefined) {
+			if (subjectRetired || wasPending) this.selectionChanged();
 			return true;
 		}
 		const { buffer } = this.workingCopy;
 		const scene = document.scenes.find(scene => luaSourceRangeMatchesTextRange(buffer, scene.range, this.sceneRange));
 		if (scene !== undefined && (this.subjectScenes === undefined || scene === this.subject)) {
-			if (previous.kind === 'scene') {
-				this.selectionValue = { kind: 'scene', scene };
+			let next: SceneAuthoredSelection | undefined;
+			if (kind === 'scene') next = { kind: 'scene', scene };
+			else {
+				const locations = document.analysis.chunk.locations;
+				const index = scene.objects.findIndex(entry => luaSourceRangeMatchesTextRange(buffer, locations.range(entry.field.span), this.selectionRange));
+				if (index !== -1) next = { kind: 'member', scene, entry: scene.objects[index], index };
+			}
+			if (next !== undefined) {
+				this.selectionValue = next; this.suspendedSelection = undefined;
+				if (suspended !== undefined || wasPending) this.selectionChanged();
 				return true;
 			}
-			const locations = document.analysis.chunk.locations;
-			const index = scene.objects.findIndex(entry => luaSourceRangeMatchesTextRange(buffer, locations.range(entry.field.span), this.selectionRange));
-			if (index !== -1) {
-				this.selectionValue = { kind: 'member', scene, entry: scene.objects[index], index };
-				return true;
-			}
+		}
+		if (this.sceneRange.start !== this.sceneRange.end
+			&& this.selectionRange.start !== this.selectionRange.end && !subjectRetired) {
+			if (previous !== undefined) { this.suspendedSelection = previous.kind; this.selectionValue = undefined; this.selectionChanged(); }
+			return true;
 		}
 		this.clearSelection();
 		return true;
@@ -337,7 +388,7 @@ export class SceneAuthoringContext {
 			: luaSourceRangeToTextRange(buffer, document.analysis.chunk.locations.range(selection.entry.field.span));
 		const changed = this.selectionValue?.kind !== selection.kind || this.sceneRange.start !== sceneRange.start || this.sceneRange.end !== sceneRange.end
 			|| this.selectionRange.start !== range.start || this.selectionRange.end !== range.end;
-		this.selectionValue = selection;
+		this.selectionValue = selection; this.suspendedSelection = undefined;
 		this.sceneRange.start = sceneRange.start; this.sceneRange.end = sceneRange.end;
 		this.selectionRange.start = range.start; this.selectionRange.end = range.end;
 		if (changed) this.selectionChanged();
@@ -345,8 +396,8 @@ export class SceneAuthoringContext {
 	}
 
 	private clearSelection(): void {
-		const changed = this.selectionValue !== undefined;
-		this.selectionValue = undefined;
+		const changed = this.selectionValue !== undefined || this.suspendedSelection !== undefined;
+		this.selectionValue = undefined; this.suspendedSelection = undefined;
 		this.sceneRange.start = this.sceneRange.end = 0;
 		this.selectionRange.start = this.selectionRange.end = 0;
 		if (changed) this.selectionChanged();
@@ -362,13 +413,13 @@ export class SceneAuthoringContext {
 		const intent = this.selectionRevisionValue;
 		const selection = this.selection;
 		return intent === this.selectionRevisionValue && selection?.kind === 'member' && selection.entry.kind === 'object'
-			&& !this.workingCopy.readOnly && this.document!.analysis.chunk.syntaxError === null
+			&& !this.workingCopy.readOnly
 			? selection as Extract<SceneAuthoredSelection, { kind: 'member' }> & { readonly entry: SceneSourceObject } : undefined;
 	}
 
 	private editableSubject(): SceneSourceDefinition | undefined {
 		const intent = this.selectionRevisionValue;
-		return this.isCurrent && intent === this.selectionRevisionValue && !this.workingCopy.readOnly && this.document!.analysis.chunk.syntaxError === null
+		return this.isCurrent && intent === this.selectionRevisionValue && !this.workingCopy.readOnly
 			? this.subject : undefined;
 	}
 

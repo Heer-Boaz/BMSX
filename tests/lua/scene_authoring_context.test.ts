@@ -164,8 +164,6 @@ for (const change of ['selection', 'source', 'provider'] as const) test(`admissi
 	const context = new SceneAuthoringContext(f.model, f.documents), original = context.document!, scene = original.scenes[0];
 	t.after(() => context.dispose());
 	context.select(original, f.model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 });
-	const chunk = original.analysis.chunk;
-	f.model.pushEditOperations(createLuaTableFieldRemovalEdits(f.model.buffer, chunk.locations, chunk.tokens, scene.objects[0].field));
 	let admittedSource = '';
 	const release = context.onDidChangeSelection(() => {
 		release();
@@ -180,8 +178,9 @@ for (const change of ['selection', 'source', 'provider'] as const) test(`admissi
 		admittedSource = f.model.buffer.getText();
 	});
 	t.after(release);
-	assert.equal(context.removeSelectedMember(), false, 'the older mutation cannot acquire a new target during admission');
-	assert.equal(f.model.buffer.getText(), admittedSource, 'notification effects are retained without applying stale source coordinates');
+	assert.equal(context.removeSelectedMember(), true);
+	assert.notEqual(admittedSource, '', 'the source publication admits the newer selection');
+	assert.equal(f.model.buffer.getText(), admittedSource, 'notification effects are retained without a second stale mutation');
 });
 
 function primaryFixture(t: TestContext) {

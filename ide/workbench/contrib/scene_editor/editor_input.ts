@@ -5,11 +5,12 @@ import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import { resourceIdentityKey } from '../../../common/resource';
 import { ReadonlyEditorInput, WorkingCopyEditorInput, type AbstractEditorInput } from '../../common/editor_input';
 import type { SceneEditorTabId } from '../../ui/tab/id';
-import { computeResourceTabTitle, sourceTabDescription } from '../../ui/tab/titles';
+import { sourceTabDescription } from '../../ui/tab/titles';
 import { SceneAuthoringContext, type SceneAuthoredSubject, type SceneAuthoredSubjectReference } from './authoring_context';
 import type { SceneSourceDocuments } from './source_documents';
 import { SceneViewState } from './scene_view';
 import type { SerializedSceneEditorInput } from './editor_serializer';
+import { sceneSourceName } from './source_name';
 
 let nextSceneInput = 0;
 
@@ -42,32 +43,30 @@ export class SceneEditorInput extends WorkingCopyEditorInput<SceneEditorTabId, '
 		if (createView !== undefined) this.createView = () => createView(this);
 		this.setLabel(this.title, sourceTabDescription(workingCopy.resource));
 		this.disposables.add({ dispose: authoring.onDidChangeDocument(() => this.updateSubjectLabel()) });
-		this.disposables.add({ dispose: workingCopy.onDidChangeContent(() => this.updateSubjectPosition()) });
+
 		this.updateSubjectLabel();
 	}
 
 	private updateSubjectLabel(): void {
 		const context = this.view.authoring, scene = context.subject;
-		if (scene === undefined) return;
+		if (scene === undefined) {
+			if (context.suspended && context.subjectSpan !== undefined) {
+				const resource = this.workingCopy.resource;
+				this.workingCopy.buffer.positionAt(context.subjectSpan.start, this.subjectPosition);
+				this.subjectExpression = undefined;
+				const location = `${resource.contextLabel} (${resource.contextId}):${this.subjectPosition.row + 1}:${this.subjectPosition.column + 1} / ${resource.path}`;
+				this.setLabel(sceneSourceName(resource, undefined, this.subjectPosition.row + 1, this.subjectPosition.column + 1), location);
+			}
+			return;
+		}
 		const range = context.document!.analysis.chunk.locations.range(scene.id.span), resource = this.workingCopy.resource;
 		const literal = stringLiteralValue(scene.id);
 		this.subjectExpression = literal === undefined ? readLuaSourceRange(this.workingCopy.buffer, range) : undefined;
-		const title = literal === undefined ? computeResourceTabTitle(resource) : literal;
 		const span = context.subjectSpan!;
 		this.workingCopy.buffer.positionAt(span.start, this.subjectPosition);
+		const title = sceneSourceName(resource, scene.id, this.subjectPosition.row + 1, this.subjectPosition.column + 1);
 		const location = `${resource.contextLabel} (${resource.contextId}):${this.subjectPosition.row + 1}:${this.subjectPosition.column + 1} / ${resource.path}`;
 		this.setLabel(title, this.subjectExpression === undefined ? location : `${location}\n${this.subjectExpression}`, location);
-	}
-
-	private updateSubjectPosition(): void {
-		const span = this.view.authoring.subjectSpan;
-		if (span === undefined || span.start === span.end) return;
-		const position = this.subjectPosition, row = position.row, column = position.column;
-		this.workingCopy.buffer.positionAt(span.start, position);
-		if (row === position.row && column === position.column) return;
-		const resource = this.workingCopy.resource;
-		const location = `${resource.contextLabel} (${resource.contextId}):${position.row + 1}:${position.column + 1} / ${resource.path}`;
-		this.setLabel(this.title, this.subjectExpression === undefined ? location : `${location}\n${this.subjectExpression}`, location);
 	}
 }
 

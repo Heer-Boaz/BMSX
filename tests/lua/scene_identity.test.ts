@@ -101,7 +101,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scene ${variant} identifie
 	}
 });
 
-test('equal decoded Scene identifiers retain distinct lexical source occurrences and dynamic expressions stay source previews', t => {
+test('equal decoded members retain distinct occurrences while unresolved Scene expressions remain provenance', t => {
 	const source = `local scenes = require('cartlib/world/scene_library')
 scenes.register(scene_names.main, { objects = {
  { member_id = 'Ship', definition_id = 'Actor' },
@@ -113,13 +113,14 @@ scenes.register(scene_names.main, { objects = {
 	const [first, second, dynamic, composition] = root.children.map(row => row.element);
 	assert.equal(first.label, second.label); assert.equal(first.detail, second.detail);
 	assert.notDeepEqual(first.span, second.span); assert.notEqual(first.identity, second.identity);
-	assert.equal(root.element.label, 'scene_names.main'); assert.equal(root.element.preserveLabelCase, false);
+	assert.ok(root.element.label.startsWith('room.lua:')); assert.equal(root.element.preserveLabelCase, true);
+	assert.ok(root.element.identity.includes('scene_names.main')); assert.equal(root.element.label.includes('scene_names.main'), false);
 	assert.equal(dynamic.label, 'member_ids.ship'); assert.equal(dynamic.detail, 'actors.ship');
 	assert.equal(dynamic.preserveLabelCase, false); assert.equal(dynamic.preserveDetailCase, false);
 	assert.equal(composition.label, "'composition'", 'a string used as unresolved composition is still a Lua expression, not a fabricated identifier');
 	selectSceneOutlineRow(input.view.hierarchy, 3);
 	arrangeScene(input.view, true, false, { left: 0, top: 24, right: 800, bottom: 400 });
-	assert.equal(root.element.displayLabel, '* SCENE_NAMES.MAIN'); assert.equal(dynamic.displayLabel, 'MEMBER_IDS.SHIP');
+	assert.equal(root.element.displayLabel, `* ${root.element.label}`); assert.equal(dynamic.displayLabel, 'MEMBER_IDS.SHIP');
 	assert.equal(input.view.details.detailsText[0].text, 'MEMBER_IDS.SHIP'); assert.equal(input.view.details.detailsText[1].text, 'ACTORS.SHIP');
 	assert.equal(input.workingCopy.buffer.getText(), source);
 });

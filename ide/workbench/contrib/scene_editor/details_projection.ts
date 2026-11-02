@@ -6,6 +6,7 @@ import type { SceneAuthoredSelection, SceneAuthoringContext } from './authoring_
 import type { SceneSourceDocument, SceneSourceDefinition } from './model';
 import { collectSceneOptionProperties, type SceneOptionProperty } from './option_properties';
 import { scenePositionAxisEditable } from './spatial_edits';
+import { sceneSourceName } from './source_name';
 
 export const POSITION_AXES = ['x', 'y', 'z'] as const;
 
@@ -58,9 +59,8 @@ export class SceneDetailsProjection {
 		let properties: readonly ScenePositionProperty[] = NO_PROPERTIES, optionProperties: readonly SceneOptionProperty[] = NO_PROPERTIES;
 		let positionExpression: string | undefined;
 		if (selection.kind === 'scene') {
-			const id = stringLiteralValue(scene.id);
-			label = id === undefined ? readLuaExpressionPreview(buffer, locations, scene.id) : id;
-			preserveLabelCase = id !== undefined;
+			label = sceneSourceName(document.resource, scene.id, scene.range.start.line, scene.range.start.column);
+			preserveLabelCase = true;
 			detail = `${scene.objects.length} MEMBERS${scene.resolution === 'partial' ? ' (PARTIAL)' : ''}`;
 			preserveDetailCase = false;
 		} else {

@@ -308,9 +308,10 @@ test('pan and orbit use native capture, preserve same-panel focus, and cancel ac
 test('an older frame invocation cannot retarget the canvas rebound by source admission', t => {
 	const f = fixture(t), incoming = new SceneViewportViewState(f.context, f.sources.catalog); t.after(() => incoming.dispose());
 	incoming.camera.pan(31, -47); const before = incoming.camera.capture();
+	const invocation = f.panel.getCommand('sceneViewport.frameAll')!.capture!()!;
 	const release = f.context.onDidChangeSpatialGeneration(() => { release(); f.control.setView(incoming, BOUNDS); }); t.after(release);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dependency admission\n' }]);
-	assert.doesNotThrow(() => inputFocus.executeCommand('sceneViewport.frameAll', f.panel));
+	assert.doesNotThrow(() => invocation.run());
 	assert.ok(f.control.view === incoming); assert.deepEqual(incoming.camera.capture(), before);
 });
 

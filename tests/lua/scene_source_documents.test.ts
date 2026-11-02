@@ -3,6 +3,10 @@ import test, { type TestContext } from 'node:test';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { getOrCreateSemanticProject, resetSemanticProject, resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { SceneSourceDocuments } from '../../ide/workbench/contrib/scene_editor/source_documents';
+import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
+import { SceneViewState } from '../../ide/workbench/contrib/scene_editor/scene_view';
+import { SceneBookmark } from '../../ide/workbench/contrib/scene_editor/scene_bookmark';
+import { luaSourceRangeToTextRange } from '../../ide/language/lua/source_edits';
 import { BehaviorRegistrationIndex } from '../../ide/workbench/contrib/behavior_lens/registration_index';
 import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/content_index';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
@@ -30,6 +34,51 @@ function fixture(t: TestContext) {
 	t.after(() => { models.clear(); resetSemanticProjects(models); sources.catalog.dispose(); });
 	return { sources, models, documents, resource, model, project };
 }
+
+for (const count of [0, 1, 2, 8]) test(`${count} retained Scene consumers share one edit-driven semantic generation and release its listener`, t => {
+	const f = fixture(t), model = f.model('scene.lua'), document = f.documents.get(model);
+	const contexts: SceneAuthoringContext[] = [];
+	for (let index = 0; index < count; index++) contexts.push(new SceneAuthoringContext(model, f.documents,
+		{ document, sourceVersion: model.version, scene: document.scenes[index % document.scenes.length] }));
+	const view = count === 0 ? undefined : new SceneViewState(contexts[0], f.sources.catalog);
+	const bookmark = view === undefined ? undefined : new SceneBookmark(contexts[0], view);
+	const get = t.mock.method(f.documents, 'get'), snapshot = t.mock.method(f.project, 'getSnapshot');
+	const projection = t.mock.method(f.documents, 'getForSnapshot');
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- source edit\n' }]);
+	assert.equal(get.mock.callCount(), count === 0 ? 0 : 1);
+	assert.equal(snapshot.mock.callCount(), count === 0 ? 0 : 1);
+	assert.equal(projection.mock.callCount(), count === 0 ? 0 : 1);
+	for (let index = 0; index < contexts.length; index++)
+		assert.ok(contexts[index].subject === contexts[index].document!.scenes[index % document.scenes.length]);
+	bookmark?.dispose(); view?.dispose(); for (const context of contexts) context.dispose();
+	get.mock.resetCalls(); snapshot.mock.resetCalls(); projection.mock.resetCalls();
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- no consumers\n' }]);
+	assert.equal(get.mock.callCount(), 0); assert.equal(snapshot.mock.callCount(), 0); assert.equal(projection.mock.callCount(), 0);
+});
+
+test('a standalone Scene bookmark tracks source edits without semantic work until navigation', t => {
+	const f = fixture(t), model = f.model('scene.lua'), document = f.documents.get(model);
+	const context = new SceneAuthoringContext(model, f.documents, { document, sourceVersion: model.version, scene: document.scenes[0] });
+	const view = new SceneViewState(context, f.sources.catalog), bookmark = new SceneBookmark(context, view);
+	t.after(() => bookmark.dispose()); view.dispose(); context.dispose();
+	const get = t.mock.method(f.documents, 'get'), snapshot = t.mock.method(f.project, 'getSnapshot');
+	const projection = t.mock.method(f.documents, 'getForSnapshot');
+	const offset = model.buffer.getText().indexOf('publish(') + 'publis'.length;
+	model.pushEditOperations([{ offset, deleteLength: 1, text: '' }]);
+	assert.equal(bookmark.isDisposed, false);
+	assert.equal(get.mock.callCount(), 0); assert.equal(snapshot.mock.callCount(), 0); assert.equal(projection.mock.callCount(), 0);
+	assert.equal(bookmark.resolve(f.documents), undefined); assert.equal(bookmark.isDisposed, false);
+	get.mock.resetCalls(); snapshot.mock.resetCalls(); projection.mock.resetCalls();
+	model.undo();
+	assert.equal(get.mock.callCount(), 0); assert.equal(snapshot.mock.callCount(), 0); assert.equal(projection.mock.callCount(), 0);
+	const resolved = bookmark.resolve(f.documents); assert.ok(resolved !== undefined);
+	const range = luaSourceRangeToTextRange(model.buffer, resolved.scene.range);
+	get.mock.resetCalls(); snapshot.mock.resetCalls(); projection.mock.resetCalls();
+	model.pushEditOperations([{ offset: range.start, deleteLength: range.end - range.start, text: '' }]);
+	assert.equal(bookmark.isDisposed, true);
+	assert.equal(get.mock.callCount(), 0); assert.equal(snapshot.mock.callCount(), 0); assert.equal(projection.mock.callCount(), 0);
+	model.undo(); assert.equal(bookmark.resolve(f.documents), undefined);
+});
 
 test('Scene discovery and canonical consumers share one source projection without opening discovery models', t => {
 	const f = fixture(t), snapshot = f.project.getSnapshot();

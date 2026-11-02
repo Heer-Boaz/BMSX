@@ -384,29 +384,25 @@ for (const operation of ['update', 'setOptions'] as const) test(`Scene ${operati
 	assert.equal(f.model.buffer.getText(), edited); assert.equal(f.model.canUndo, true);
 });
 
-test('Scene history capture observes mapped correspondence without admitting a retired semantic selection', t => {
+test('Scene history capture observes a retired semantic selection without further publication', t => {
 	const f = fixture(t); selectSceneOutlineRow(f.input.view.hierarchy, 1); f.update();
 	const context = f.input.view.authoring, document = context.document!;
 	const selected = f.input.view.hierarchy.outline.rows[f.input.view.hierarchy.outline.selectionIndex].element;
 	assert.ok(selected.kind === 'member' && selected.entry.kind === 'object');
-	const replacement = new HostErrorInput('replacement'); let publications = 0;
-	const unbind = context.onDidChangeSelection(() => {
-		unbind(); publications++;
-		f.firstGroup.openEditor(replacement);
-	}); t.after(unbind);
+	let publications = 0;
+	t.after(context.onDidChangeSelection(() => { publications++; }));
 	f.model.pushEditOperations(createLuaTableFieldRemovalEdits(f.model.buffer, document.analysis.chunk.locations, document.analysis.chunk.tokens, selected.entry.field));
 	const edited = f.model.buffer.getText(), focused = inputFocus.admittedTarget;
+	assert.equal(publications, 1); assert.equal(context.hasSelection, false);
 	const snapshot = f.pane.getSelection(); t.after(() => snapshot.dispose());
 	assert.equal(snapshot.snapshot.selected, undefined, 'a collapsed tracked occurrence has no bookmarked selection');
-	assert.equal(publications, 0);
-	assert.equal(context.hasSelection, true, 'observing a bookmark does not settle the semantic projection');
+	assert.equal(publications, 1, 'capturing history does not publish another selection');
 	const retainedInput = f.firstGroup.model.activeTab;
 	assert.ok(retainedInput === f.input && f.firstGroup.panes.activePane === f.pane);
 	assert.ok(inputFocus.admittedTarget === focused);
 	f.pane.update();
 	assert.equal(publications, 1);
-	assert.ok(f.firstGroup.model.activeTab === replacement);
-	assert.ok(inputFocus.admittedTarget === f.firstGroup.panes.activePane?.commandTarget);
+	assert.ok(f.firstGroup.model.activeTab === f.input);
 	assert.equal(f.model.buffer.getText(), edited);
 });
 

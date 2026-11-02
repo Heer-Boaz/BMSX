@@ -31,15 +31,17 @@ export class SceneEditorInputSerializer implements EditorInputSerializer<SceneEd
 		}
 		const { model, sameSource } = await resolveTextFileModelSnapshot(editorTextModelService, this.catalog, state.source);
 		const savedSubject = state.subject;
-		const reference = savedSubject === undefined ? undefined : { source: state.source, subject: savedSubject };
-		let subject: SceneAuthoredSubject | undefined;
+		let subject: SceneAuthoredSubject | undefined, suspended = false;
 		if (sameSource && savedSubject?.availability === 'available') {
 			const sourceVersion = model.version, document = this.controller.documents.get(model);
 			const scene = document.scenes.find(scene => luaSourceRangeMatchesTextRange(model.buffer, scene.range, savedSubject.range));
 			if (scene !== undefined && model.version === sourceVersion) subject = { document, sourceVersion, scene };
+			else if (savedSubject.range.start !== savedSubject.range.end && model.version === sourceVersion) suspended = true;
 		}
+		const reference = savedSubject === undefined ? undefined : { source: state.source,
+			subject: subject !== undefined || suspended ? savedSubject : { ...savedSubject, availability: 'unavailable' as const } };
 		const input = new SceneEditorInput(model, this.controller.documents, this.catalog, this.controller.createView, subject, reference);
-		if (reference !== undefined && subject === undefined) input.setLabel(state.title, state.description, state.shortDescription);
+		if (reference !== undefined && subject === undefined && !suspended) input.setLabel(state.title, state.description, state.shortDescription);
 		if (sameSource) restoreSceneEditorView(input.view, state.view);
 		else input.view.authoring.restoreSelection(undefined);
 		return input;

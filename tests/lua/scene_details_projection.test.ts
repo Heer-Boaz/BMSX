@@ -134,7 +134,7 @@ test('equal-byte replacement retires Details rather than adopting the duplicate 
 	assert.equal(f.projection.subject, undefined); assert.equal(f.model.buffer.getText(), SOURCE);
 });
 
-test('provider-only retirement clears Details without a selected-file edit or hierarchy refresh', t => {
+test('provider-only revocation clears Details until the exact declaration is recognized again', t => {
 	const source = SOURCE.replace("require('cartlib/world/scene_library')", "require('bridge')");
 	const f = fixture(t, source, [['bridge.lua', "return require('cartlib/world/scene_library')"]]), scene = f.document.scenes[0];
 	f.authoring.select(f.document, f.model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 }); f.projection.refresh();
@@ -144,7 +144,11 @@ test('provider-only retirement clears Details without a selected-file edit or hi
 	provider.pushEditOperations([{ offset: 0, deleteLength: provider.buffer.length, text: 'return external' }]);
 	assert.equal(f.projection.refresh(), true); assert.equal(f.projection.subject, undefined);
 	assert.equal(f.authoring.availability, 'unavailable'); assert.equal(f.model.version, version); assert.equal(f.model.dirty, false);
-	provider.undo(); f.projection.refresh(); assert.equal(f.projection.subject, undefined);
+	assert.equal(f.authoring.getSourceLocation(), undefined); assert.equal(f.authoring.canRemoveSelectedMember(), false);
+	provider.undo(); f.projection.refresh();
+	const restored = f.projection.subject;
+	assert.ok(restored?.selection.kind === 'member' && restored.selection.entry === f.authoring.document!.scenes[0].objects[0]);
+	assert.equal(f.authoring.availability, 'available'); assert.equal(f.model.version, version); assert.equal(f.model.dirty, false);
 });
 
 test('Details refreshes prefab-derived coordinates when only the provider generation changes', t => {

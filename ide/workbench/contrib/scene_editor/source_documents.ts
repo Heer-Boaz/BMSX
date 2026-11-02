@@ -21,6 +21,7 @@ export class SceneSourceDocuments {
 	private readonly generations = new WeakMap<LuaSemanticWorkspaceSnapshot, Map<string, SceneSourceDocument>>();
 	private readonly previous = new WeakMap<EditorLuaSemanticProject, WeakMap<FileSemanticData, SceneSourceDocument>>();
 	private readonly modelGenerations = new WeakMap<EditorTextModel, { readonly snapshot: LuaSemanticWorkspaceSnapshot; readonly document: SceneSourceDocument }>();
+	private readonly observers = new WeakMap<EditorTextModel, { readonly listeners: Set<(document: SceneSourceDocument) => void>; readonly unbind: () => void }>();
 	private readonly spatialProjections = new WeakMap<LuaSemanticWorkspaceSnapshot, SceneSpatialProjection>();
 	private readonly previousSpatialTopologies = new WeakMap<SceneSourceDefinition, SceneSpatialTopology>();
 	private readonly prefabSources = new WeakMap<LuaSemanticWorkspaceSnapshot, ScenePrefabSources>();
@@ -36,8 +37,29 @@ export class SceneSourceDocuments {
 		if (generation === undefined || generation.snapshot !== snapshot) {
 			generation = { snapshot, document: this.getForSnapshot(model.resource, snapshot) };
 			this.modelGenerations.set(model, generation);
+			const version = model.version;
+			const observers = this.observers.get(model);
+			if (observers !== undefined) for (const listener of observers.listeners) {
+				listener(generation.document);
+				if (model.version !== version || this.modelGenerations.get(model) !== generation) break;
+			}
 		}
-		return generation.document;
+		return this.modelGenerations.get(model)!.document;
+	}
+
+	/** One source-generation publisher per model, shared by its retained Scene consumers. */
+	public onDidChange(model: EditorTextModel, listener: (document: SceneSourceDocument) => void): () => void {
+		let observers = this.observers.get(model);
+		if (observers === undefined) {
+			observers = { listeners: new Set(), unbind: model.onDidChangeContent(() => { this.get(model); }) };
+			this.observers.set(model, observers);
+		}
+		observers.listeners.add(listener);
+		const owner = observers;
+		return () => {
+			owner.listeners.delete(listener);
+			if (owner.listeners.size === 0) { owner.unbind(); this.observers.delete(model); }
+		};
 	}
 
 	public getSourceLocation(model: EditorTextModel, document: SceneSourceDocument, range?: LuaSourceRange): EditorSourceLocation | undefined {

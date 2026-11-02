@@ -88,17 +88,17 @@ test('explicit domain refresh publishes reentrant selection and source edits bef
 	assert.deepEqual(snapshot.source.fingerprint, getTextSnapshotFingerprint(f.model.buffer));
 });
 
-test('primary serialization observes current mapped source without refreshing stale presentation or publishing selection', t => {
+test('primary serialization observes the published source without querying or publishing selection', t => {
 	const f = fixture(t), before = ({ ...f.context.captureSourceReference(), view: captureSceneEditorView(f.view) });
+	const chunk = f.document.analysis.chunk;
+	f.model.pushEditOperations(createLuaTableFieldRemovalEdits(f.model.buffer, chunk.locations, chunk.tokens, f.document.scenes[0].objects[0].field));
+	const prefix = '-- mapped before serialization\n';
+	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: prefix }]);
 	let notifications = 0;
 	const release = f.context.onDidChangeSelection(() => {
 		notifications++;
 		f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- must not be published by capture\n' }]);
 	}); t.after(release);
-	const chunk = f.document.analysis.chunk;
-	f.model.pushEditOperations(createLuaTableFieldRemovalEdits(f.model.buffer, chunk.locations, chunk.tokens, f.document.scenes[0].objects[0].field));
-	const prefix = '-- mapped before semantic refresh\n';
-	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: prefix }]);
 	const version = f.model.version, source = f.model.buffer.getText();
 	const query = t.mock.method(f.documents, 'get', () => assert.fail('serialization must not query semantic projections'));
 	const snapshot = ({ ...f.context.captureSourceReference(), view: captureSceneEditorView(f.view) });
@@ -116,13 +116,13 @@ test('document serialization observes current mapped source without resolving or
 	const f = fixture(t), input = new SceneEditorInput(f.model, f.documents, f.sources.catalog); t.after(() => input.dispose());
 	input.view.refresh(); selectSceneOutlineRow(input.view.hierarchy, 1);
 	const context = input.view.authoring;
+	const chunk = f.document.analysis.chunk;
+	f.model.pushEditOperations(createLuaTableFieldRemovalEdits(f.model.buffer, chunk.locations, chunk.tokens, f.document.scenes[0].objects[0].field));
 	let notifications = 0;
 	const release = context.onDidChangeSelection(() => {
 		notifications++;
 		f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- must not be published by serialization\n' }]);
 	}); t.after(release);
-	const chunk = f.document.analysis.chunk;
-	f.model.pushEditOperations(createLuaTableFieldRemovalEdits(f.model.buffer, chunk.locations, chunk.tokens, f.document.scenes[0].objects[0].field));
 	const version = f.model.version, source = f.model.buffer.getText();
 	const serializer = new SceneEditorInputSerializer(f.sources.catalog, new SceneEditorController(f.sources.catalog, f.documents));
 	const query = t.mock.method(f.documents, 'get', () => assert.fail('serialization must not query semantic projections'));
@@ -226,17 +226,20 @@ test('bookmark matching identifies source subjects and selection, not reading se
 	assert.equal(first.matches(same), false, 'different tombstones must not coalesce at their collapsed offsets');
 });
 
-test('provider revocation retires the bookmarked semantic declaration despite unchanged local source', t => {
+test('provider revocation suspends the exact bookmark until semantic recognition returns', t => {
 	const source = SOURCE.replace("require('cartlib/world/scene_library')", "require('bridge')");
 	const f = fixture(t, source, [['bridge.lua', "return require('cartlib/world/scene_library')"]]), location = f.bookmark();
 	const resource = f.sources.catalog.resolveResource({ contextId: f.model.identity.contextId, path: 'bridge.lua' })!;
 	const provider = resolveLuaTextFileModel(f.models, f.sources.catalog, resource);
 	provider.pushEditOperations([{ offset: 0, deleteLength: provider.buffer.length, text: 'return external' }]);
 	assert.equal(location.resolve(f.documents), undefined);
-	assert.equal(location.isDisposed, true);
+	assert.equal(location.isDisposed, false);
 	assert.equal(f.model.buffer.getText(), source);
 	provider.undo();
-	assert.equal(location.resolve(f.documents), undefined);
+	const restored = location.resolve(f.documents);
+	assert.ok(restored?.scene === f.documents.get(f.model).scenes[0]);
+	assert.ok(restored.document === f.documents.get(f.model));
+	assert.equal(f.model.buffer.getText(), source);
 });
 
 test('capturing an already unavailable primary or disposing its model produces no revivable navigation authority', t => {

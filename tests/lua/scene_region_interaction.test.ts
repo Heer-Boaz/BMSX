@@ -147,7 +147,7 @@ test('document hierarchy detachment preserves the exact live Details draft throu
 
 test('attached Scene restoration cannot clear a newer member selected by source-retirement publication', async t => {
 	const f = await fixture(t), { control, view, model } = f, context = view.authoring;
-	const navigation = new SceneEditorNavigationSelection(view); t.after(() => navigation.dispose());
+	const navigation = new SceneEditorNavigationSelection(view, undefined, context.captureSelectionRequest()); t.after(() => navigation.dispose());
 	let published = false;
 	const release = context.onDidChangeSelection(() => {
 		if (published || context.selection !== undefined) return;

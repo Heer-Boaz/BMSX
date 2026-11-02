@@ -5,6 +5,7 @@ import { luaSourceRangeToTextRange, readLuaExpressionPreview, readLuaSourceRange
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows, type WorkbenchTreeNode } from '../../ui/tree_view';
 import { sourceTabDescription } from '../../ui/tab/titles';
 import type { SceneSourceDefinition, SceneSourceEntry } from './model';
+import { sceneSourceName } from './source_name';
 import type { SceneHierarchyViewState } from './hierarchy_view';
 
 type SceneOutlineSource = {
@@ -52,8 +53,8 @@ export function installSceneOutline(input: SceneHierarchyViewState): void {
 		const detail = `${scene.objects.length} MEMBERS${scene.resolution === 'partial' ? ' (PARTIAL)' : ''}`;
 		const root = appendWorkbenchTreeNode(outline, null, {
 			kind: 'scene', scene, source: scene.range, span,
-			label: sceneId === undefined ? readLuaExpressionPreview(buffer, locations, scene.id) : sceneId,
-			preserveLabelCase: sceneId !== undefined, detail, preserveDetailCase: false,
+			label: sceneSourceName(document.resource, scene.id, scene.range.start.line, scene.range.start.column),
+			preserveLabelCase: true, detail, preserveDetailCase: false,
 			identity: `${sourceTabDescription(input.authoring.workingCopy.resource)}:${scene.range.start.line}:${scene.range.start.column}\nScene ${sceneIdentity}\n${detail}`,
 			displayLabel: '', labelClipped: false,
 		}, prior !== undefined && prior.element.span.end === span.end && prior.collapsed);

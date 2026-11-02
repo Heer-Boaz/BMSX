@@ -67,7 +67,8 @@ test('unresolved scene expressions use source names and distinguish repeated occ
 		{ document, sourceVersion: model.version, scene: document.scenes[index] });
 	const first = make(0), second = make(1);
 	f.group.openProducedEditor(() => first); f.group.openProducedEditor(() => second);
-	assert.equal(first.title, 'expression.lua'); assert.equal(second.title, 'expression.lua');
+	assert.ok(first.title.startsWith('expression.lua:')); assert.ok(second.title.startsWith('expression.lua:'));
+	assert.notEqual(first.title, second.title);
 	assert.notEqual(f.group.model.getLabel(first), f.group.model.getLabel(second));
 	assert.ok(first.description.includes('intro_scene.id')); assert.ok(second.description.includes('intro_scene.id'));
 	assert.equal(f.group.model.getLabel(first).includes('intro_scene.id'), false);

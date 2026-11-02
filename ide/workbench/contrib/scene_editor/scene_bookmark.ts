@@ -50,11 +50,7 @@ export class SceneBookmark {
 		const sourceVersion = this.model.version, document = documents.get(this.model);
 		if (this.isDisposed || this.model.version !== sourceVersion) return undefined;
 		const scene = document.scenes.find(scene => luaSourceRangeMatchesTextRange(this.model.buffer, scene.range, this.subject));
-		if (scene === undefined) { this.retire(); return undefined; }
-		const selected = this.viewValue.selected;
-		if (selected?.kind === 'member' && !scene.objects.some(entry => luaSourceRangeMatchesTextRange(this.model.buffer,
-			document.analysis.chunk.locations.range(entry.field.span), selected.span))) this.clearSelection();
-		return { document, sourceVersion, scene };
+		return scene === undefined ? undefined : { document, sourceVersion, scene };
 	}
 
 	public matches(other: SceneBookmark): boolean {
