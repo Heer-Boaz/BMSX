@@ -14,5 +14,6 @@
 	"cmake.sourceDirectory": "${workspaceFolder}/machine/cpp"
 	,
 	"js_repl_node_path": "node",
-	"typescript.native-preview.tsdk": "node_modules/@typescript/native-preview"
+	"typescript.native-preview.tsdk": "node_modules/@typescript/native-preview",
+	"chat.useNestedAgentsMd": true
 }

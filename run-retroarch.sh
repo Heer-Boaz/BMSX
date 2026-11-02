@@ -9,9 +9,17 @@ CORE_PATH="$ROOT_DIR/dist/libretro_bmsx.so"
 # Zoek naar retroarch lokaal of op het systeem
 if [[ -f "$ROOT_DIR/third_party/retroarch-gles2/retroarch" ]]; then
 	RETROARCH_BIN="$ROOT_DIR/third_party/retroarch-gles2/retroarch"
-elif command -v retroarch >/dev/null 2>&1; then
-	RETROARCH_BIN="$(command -v retroarch)"
 else
+	# gdb laadt alleen ELF-binaries, dus sla wrapper-scripts op de PATH over
+	RETROARCH_BIN=""
+	while IFS= read -r candidate; do
+		if [[ "$(head -c 4 "$candidate")" == $'\x7fELF' ]]; then
+			RETROARCH_BIN="$candidate"
+			break
+		fi
+	done < <(type -ap retroarch)
+fi
+if [[ -z "$RETROARCH_BIN" ]]; then
 	echo "Error: RetroArch executable not found!" >&2
 	echo "Please install retroarch or provide it in third_party/retroarch-gles2/" >&2
 	exit 1

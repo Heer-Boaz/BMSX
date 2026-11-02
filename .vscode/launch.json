@@ -188,6 +188,7 @@
 			"request": "launch",
 			"name": "LIBRETRO DEBUG: RetroArch",
 			"runtimeExecutable": "npm",
+			"experimentalNetworking": "off",
 			"runtimeArgs": [
 				"run",
 				"run:retroarch",
@@ -202,6 +203,7 @@
 			"request": "launch",
 			"name": "LIBRETRO DEBUG: Custom Host (SDL)",
 			"runtimeExecutable": "npm",
+			"experimentalNetworking": "off",
 			"runtimeArgs": [
 				"run",
 				"run:libretro-host:wsl:sdl",
@@ -216,6 +218,7 @@
 			"request": "launch",
 			"name": "LIBRETRO RELEASE: Custom Host (SDL)",
 			"runtimeExecutable": "npm",
+			"experimentalNetworking": "off",
 			"runtimeArgs": [
 				"run",
 				"run:libretro-host:wsl:sdl",
@@ -230,6 +233,7 @@
 			"request": "launch",
 			"name": "LIBRETRO DEBUG: Custom Host (FB)",
 			"runtimeExecutable": "npm",
+			"experimentalNetworking": "off",
 			"runtimeArgs": [
 				"run",
 				"run:libretro-host:wsl:fb",
@@ -244,6 +248,7 @@
 			"request": "launch",
 			"name": "GAME RUN: headless",
 			"runtimeExecutable": "npm",
+			"experimentalNetworking": "off",
 			"runtimeArgs": [
 				"run",
 				"headless:game",
