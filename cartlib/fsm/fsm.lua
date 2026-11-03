@@ -445,9 +445,7 @@ state.__index = state
 local bst_max_history<const> = 10
 
 local reset_state_data<const> = function(data, defaults)
-	for key in pairs(data) do
-		data[key] = nil
-	end
+	clear_map(data)
 	if defaults then
 		for key, value in pairs(defaults) do
 			data[key] = value
