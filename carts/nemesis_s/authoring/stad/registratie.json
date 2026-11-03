@@ -307,6 +307,54 @@
       "label": "Smal grachtenhuis met deur op hoofdmaat",
       "group": "huizengevels",
       "source": "authoring/stadsleven/huis_smal_gracht_deur.png"
+    },
+    {
+      "name": "tankstation_voorgrond",
+      "label": "Tankstation op de Kartonion-hoofdmaat",
+      "group": "verkeer_voorgrond",
+      "source": "authoring/stadsleven/tankstation_voorgrond.png"
+    },
+    {
+      "name": "vrachtwagen_voorgrond_rood",
+      "label": "Geparkeerde rode vrachtwagen in vooraanzicht",
+      "group": "verkeer_voorgrond",
+      "source": "authoring/stadsleven/vrachtwagen_voorgrond_rood.png"
+    },
+    {
+      "name": "vrachtwagen_voorgrond_cyaan",
+      "label": "Geparkeerde cyaanblauwe vrachtwagen in vooraanzicht",
+      "group": "verkeer_voorgrond",
+      "source": "authoring/stadsleven/vrachtwagen_voorgrond_cyaan.png"
+    },
+    {
+      "name": "fiets_mand_achtergrond",
+      "label": "Kleine blauwe achtergrondfiets met mand",
+      "group": "verkeer_achtergrond",
+      "source": "authoring/stadsleven/fiets_mand_achtergrond.png"
+    },
+    {
+      "name": "fiets_drager_achtergrond",
+      "label": "Kleine blauwe achtergrondfiets met bagagedrager",
+      "group": "verkeer_achtergrond",
+      "source": "authoring/stadsleven/fiets_drager_achtergrond.png"
+    },
+    {
+      "name": "fietsenrek_achtergrond",
+      "label": "Kleine blauwe achtergrondfietsen aan het rek",
+      "group": "verkeer_achtergrond",
+      "source": "authoring/stadsleven/fietsenrek_achtergrond.png"
+    },
+    {
+      "name": "bakfiets_achtergrond",
+      "label": "Kleine blauwe achtergrondbakfiets",
+      "group": "verkeer_achtergrond",
+      "source": "authoring/stadsleven/bakfiets_achtergrond.png"
+    },
+    {
+      "name": "zitbank_voorgrond",
+      "label": "Straatbank met donkerrode houten planken",
+      "group": "straatdetails",
+      "source": "authoring/stadsleven/zitbank_voorgrond.png"
     }
   ]
 }

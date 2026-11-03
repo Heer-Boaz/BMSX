@@ -1,6 +1,6 @@
 schema: nemesis_s.level.v1
 title: De Bevroren Haven
-revision: 29
+revision: 30
 width: 931
 height: 22
 source_commit: d04363ea9a05758eb91b5016f2e082036837813c
@@ -21,8 +21,8 @@ sections:
 - from: 289
   to: 385
   title: De havenweg
-  intention: Een dunne asfaltkant voert langs het kleine tankstation en de drie geparkeerde cabines. Een lage besneeuwde bermrand
-    draagt een rustig plantsoen met winterbomen, haag en bank; de zijcamera blijft vast.
+  intention: Een dunne asfaltkant voert langs het tankstation met ruime luifel, een personenauto en drie geparkeerde vrachtwagens
+    op de Kartonion-hoofdmaat. Een lage besneeuwde bermrand draagt een rustig plantsoen; de zijcamera blijft vast.
 - from: 385
   to: 443
   title: De oude kade
@@ -161,7 +161,7 @@ quays:
   - 19
 - - 625
   - 639
-  - 20
+  - 19
 - - 639
   - 641
   - 19
@@ -213,13 +213,13 @@ scenery:
   floor: 20
 - prefab: werf_looprand
   x: 625
-  floor: 20
+  floor: 19
 - prefab: werf_looprand
   x: 629
-  floor: 20
+  floor: 19
 - prefab: werf_looprand
   x: 633
-  floor: 20
+  floor: 19
 - prefab: werf_kelder
   x: 670
   floor: 20
@@ -331,22 +331,22 @@ scenery:
 - prefab: auto_achtergrond_blauw
   x: 211
   y: 17
-- prefab: fiets_rood
+- prefab: fiets_mand_achtergrond
   x: 227
   y: 16
-- prefab: fietsenrek
+- prefab: fietsenrek_achtergrond
   x: 268
   y: 17
-- prefab: bakfiets
+- prefab: bakfiets_achtergrond
   x: 281
   y: 17
-- prefab: fiets_blauw
+- prefab: fiets_drager_achtergrond
   x: 451
   y: 18
 - prefab: auto_achtergrond_blauw
   x: 632
-  y: 19
-- prefab: fiets_blauw
+  y: 18
+- prefab: fiets_drager_achtergrond
   x: 687
   y: 19
 - prefab: compact_lamp_snow_66
@@ -391,7 +391,7 @@ scenery:
 - prefab: huis_lijstgevel_smal
   x: 296
   floor: 18
-- prefab: fiets_blauw
+- prefab: fiets_drager_achtergrond
   x: 305
   y: 17
 - prefab: compact_lamp_snow_66
@@ -406,18 +406,18 @@ scenery:
 - prefab: compact_lamp_snow_66
   x: 383
   floor: 18
-- prefab: tankstation_achtergrond
-  x: 318
-  y: 16
-- prefab: vrachtwagen_achtergrond_blauw
+- prefab: tankstation_voorgrond
+  x: 316
+  y: 14
+- prefab: vrachtwagen_voorgrond_rood
   x: 325
-  y: 17
-- prefab: vrachtwagen_achtergrond_blauw
-  x: 326
-  y: 17
-- prefab: vrachtwagen_achtergrond_blauw
+  y: 16
+- prefab: vrachtwagen_voorgrond_cyaan
   x: 327
-  y: 17
+  y: 16
+- prefab: vrachtwagen_voorgrond_rood
+  x: 329
+  y: 16
 - prefab: auto_achtergrond_blauw
   x: 169
   y: 17
@@ -454,12 +454,18 @@ planting_beds:
   floor: 18
   purpose: Eén lage, besneeuwde bermrand in zijaanzicht, naast de havenweg
 town_details:
+- prefab: auto_voorgrond_cyaan
+  x: 318
+  floor: 18
+  ground_offset: 0
+  purpose: Personenauto op hoofdmaat onder de tankstationluifel, vrij van pomp en staanders.
 - prefab: auto_voorgrond_rood
   x: 380
   floor: 18
   ground_offset: 0
   snow_join: true
-  purpose: Personenauto op de Kartonion-hoofdmaat naast de lijstgevel; de kleine blauwe auto voorbij de lantaarn leest als achtergrond.
+  purpose: Personenauto op de Kartonion-hoofdmaat naast de lijstgevel; de kleine blauwe auto voorbij de lantaarn leest als
+    achtergrond.
 - prefab: auto_voorgrond_rood
   x: 302
   floor: 18
@@ -519,7 +525,7 @@ town_details:
   floor: 18
   purpose: Linker boom van het plantsoen naast de havenweg
   ground_offset: -1
-- prefab: zitbank
+- prefab: zitbank_voorgrond
   x: 336
   floor: 18
   purpose: Rustplek onder de eerste boom
@@ -577,7 +583,7 @@ town_details:
   x: 688
   floor: 20
   purpose: Kleine boom naast de fiets bij de sluisuitgang
-- prefab: zitbank
+- prefab: zitbank_voorgrond
   x: 692
   floor: 20
   purpose: Zitplek onder de bestaande sluislantaarn
@@ -666,27 +672,27 @@ town_details:
   snow_join: true
 - prefab: werf_leuning
   x: 626
-  floor: 20
+  floor: 19
   ground_offset: 0
   snow_join: true
 - prefab: gevelpot_winter
   x: 630
-  floor: 20
+  floor: 19
   ground_offset: 0
   snow_join: true
 - prefab: terras_tafel
   x: 633
-  floor: 20
+  floor: 19
   ground_offset: 0
   snow_join: true
 - prefab: parasol_ingeklapt
   x: 635
-  floor: 20
+  floor: 19
   ground_offset: 0
   snow_join: true
 - prefab: winkel_uitstalling
   x: 636
-  floor: 20
+  floor: 19
   ground_offset: 0
   snow_join: true
 - prefab: gevelpot_winter
@@ -695,15 +701,15 @@ town_details:
   ground_offset: 0
   snow_join: true
 - prefab: gevelpot_winter
+  x: 313
+  floor: 18
+  ground_offset: 0
+- prefab: plantenbak_winter
   x: 314
   floor: 18
   ground_offset: 0
 - prefab: plantenbak_winter
-  x: 316
-  floor: 18
-  ground_offset: 0
-- prefab: plantenbak_winter
-  x: 329
+  x: 363
   floor: 18
   ground_offset: 0
 - prefab: terras_tafel

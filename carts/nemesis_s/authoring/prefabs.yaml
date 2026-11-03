@@ -1,5 +1,5 @@
 schema: nemesis_s.prefabs.v1
-revision: 29
+revision: 30
 prefabs:
   compact_smal_grachtenhuis:
     description: Smal grachtenhuis met deur op hoofdmaat, rechtstreeks uit de native pixelbron.
@@ -1594,24 +1594,24 @@ prefabs:
       - null
       - null
       - null
-      - 2070
-      - 2071
+      - 2262
+      - 2263
     - - null
       - null
       - null
-      - 2070
-      - 2072
-      - 2073
+      - 2262
+      - 2264
+      - 2265
       - 2074
     - - null
-      - 2070
-      - 2072
-      - 2075
+      - 2262
+      - 2264
+      - 2266
       - 2076
       - 56
       - 57
-    - - 2077
-      - 2073
+    - - 2267
+      - 2265
       - 2078
       - 51
       - 51
@@ -1636,34 +1636,34 @@ prefabs:
   werf_trap_rechts:
     description: Werftrap naar rechts, rechtstreeks uit de native pixelbron.
     tiles:
-    - - 2080
-      - 2081
+    - - 2268
+      - 2269
       - null
       - null
       - null
       - null
       - null
     - - 2082
-      - 2083
-      - 2084
-      - 2081
+      - 2270
+      - 2271
+      - 2269
       - null
       - null
       - null
     - - 44
       - 45
       - 2085
-      - 2086
-      - 2084
-      - 2081
+      - 2272
+      - 2271
+      - 2269
       - null
     - - 48
       - 49
       - 50
       - 51
       - 2087
-      - 2083
-      - 2088
+      - 2270
+      - 2273
     - - 2066
       - 2067
       - 2068
@@ -1692,10 +1692,10 @@ prefabs:
   werf_leuning:
     description: Lage werfleuning, rechtstreeks uit de native pixelbron.
     tiles:
-    - - 2090
-      - 2090
-      - 2090
-      - 2091
+    - - 2274
+      - 2274
+      - 2274
+      - 2275
     label: Lage werfleuning
     groep: werven
   gevelpot_winter:
@@ -1787,3 +1787,89 @@ prefabs:
     - - 2236
     label: Kleine blauwe vrachtwagen in vooraanzicht
     groep: verkeer_achtergrond
+  tankstation_voorgrond:
+    description: Tankstation op de Kartonion-hoofdmaat, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - null
+      - null
+      - null
+      - null
+      - null
+      - null
+      - null
+      - null
+    - - 2276
+      - 2277
+      - 2278
+      - 2279
+      - 2280
+      - 2281
+      - null
+      - null
+    - - 2282
+      - null
+      - null
+      - null
+      - null
+      - 2283
+      - 2284
+      - 2285
+    - - 2286
+      - 2287
+      - null
+      - null
+      - null
+      - 2288
+      - 2289
+      - 2290
+    label: Tankstation op de Kartonion-hoofdmaat
+    groep: verkeer_voorgrond
+  vrachtwagen_voorgrond_rood:
+    description: Geparkeerde rode vrachtwagen in vooraanzicht, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - 2291
+      - 2292
+    - - 2293
+      - 2294
+    label: Geparkeerde rode vrachtwagen in vooraanzicht
+    groep: verkeer_voorgrond
+  vrachtwagen_voorgrond_cyaan:
+    description: Geparkeerde cyaanblauwe vrachtwagen in vooraanzicht, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - 2295
+      - 2296
+    - - 2297
+      - 2298
+    label: Geparkeerde cyaanblauwe vrachtwagen in vooraanzicht
+    groep: verkeer_voorgrond
+  fiets_mand_achtergrond:
+    description: Kleine blauwe achtergrondfiets met mand, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - 2299
+    label: Kleine blauwe achtergrondfiets met mand
+    groep: verkeer_achtergrond
+  fiets_drager_achtergrond:
+    description: Kleine blauwe achtergrondfiets met bagagedrager, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - 2300
+    label: Kleine blauwe achtergrondfiets met bagagedrager
+    groep: verkeer_achtergrond
+  fietsenrek_achtergrond:
+    description: Kleine blauwe achtergrondfietsen aan het rek, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - 2301
+    label: Kleine blauwe achtergrondfietsen aan het rek
+    groep: verkeer_achtergrond
+  bakfiets_achtergrond:
+    description: Kleine blauwe achtergrondbakfiets, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - 2302
+    label: Kleine blauwe achtergrondbakfiets
+    groep: verkeer_achtergrond
+  zitbank_voorgrond:
+    description: Straatbank met donkerrode houten planken, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - 2303
+      - 2304
+    label: Straatbank met donkerrode houten planken
+    groep: straatdetails
