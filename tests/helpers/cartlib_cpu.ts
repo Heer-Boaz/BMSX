@@ -5,6 +5,7 @@ import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import type { TraceStatementSelection } from '../../toolchain/ts/lua/compiler/trace_statement';
 import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
 import { createTestBlua32PairCpu, linkTestBlua32Pair } from './blua32';
+import { COROUTINE_FIRMWARE_MODULES } from './firmware_modules';
 import { parseLuaChunk } from '../lua/cpu_test_harness';
 
 /** Real cartlib/compiler/CPU and BIOS math; no host, ICU or world scheduler. */
@@ -132,6 +133,7 @@ export function createCartlibProgramHarness(
 ) {
 	const systemSources = new Map<string, string>(SYSTEM_MODULE_FILES.map(([path, file]) => [path, readFileSync(file, 'utf8')]));
 	for (const module of SYSTEM_STUB_MODULES) systemSources.set(module.path, module.source);
+	for (const module of COROUTINE_FIRMWARE_MODULES) systemSources.set(module.path, module.source);
 	for (const path of ['math', 'math/trig']) systemSources.set(path, readFileSync(`machine/bios/${path}.lua`, 'utf8'));
 	const systemModules = Array.from(systemSources, ([path, source]) => ({
 		path, source, chunk: parseLuaChunk(source, `${path}.lua`),
@@ -144,6 +146,7 @@ export function createCartlibProgramHarness(
 	}));
 	const systemEntry = `
 require('base')
+coroutine = require('coroutine')
 table = require('table')
 string = require('string/base')
 string.find = require('string/pattern').find

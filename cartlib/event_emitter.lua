@@ -79,9 +79,7 @@ local event_emitter<const> = {
 	_global_listeners = {},
 	_scoped_listeners = {},
 	_subscriptions_by_subscriber = {},
-	_dispatch_depth = 0,
-	_pending_listener_lists = {},
-	_pending_listener_count = 0,
+	_listener_admission = 0,
 }
 
 local event_port<const> = {}
@@ -96,7 +94,7 @@ local retire_listener_list<const> = function(self, list)
 		self._global_listeners[event_name] = nil
 		return
 	end
-	local scopes<const> = list._scopes
+	local scopes<const> = self._scoped_listeners[event_name]
 	scopes[emitter_id] = nil
 	local scope_count<const> = scopes._scope_count - 1
 	scopes._scope_count = scope_count
@@ -105,31 +103,19 @@ local retire_listener_list<const> = function(self, list)
 	end
 end
 
-local compact_listeners<const> = function(self, list)
-	local write_index = 1
-	local count<const> = #list
-	for read_index = 1, count do
-		local entry<const> = list[read_index]
-		if entry then
-			list[write_index] = entry
-			entry.list_index = write_index
-			write_index = write_index + 1
-		end
-	end
-	for index = write_index, count do
-		list[index] = nil
-	end
-	list._removals_pending = nil
-	if write_index == 1 then
-		retire_listener_list(self, list)
-	end
-end
-
 local append_listener<const> = function(self, list, entry)
-	local list_index<const> = #list + 1
-	list[list_index] = entry
+	local admission<const> = self._listener_admission + 1
+	self._listener_admission = admission
+	entry.admission = admission
+	local previous<const> = list.last
+	entry.previous = previous
+	if previous == nil then
+		list.first = entry
+	else
+		previous.next = entry
+	end
+	list.last = entry
 	entry.list = list
-	entry.list_index = list_index
 	local subscriber<const> = entry.subscriber
 	local subscriptions = self._subscriptions_by_subscriber[subscriber]
 	if subscriptions == nil then
@@ -160,36 +146,28 @@ end
 
 local remove_listener<const> = function(self, entry)
 	local list<const> = entry.list
-	local index<const> = entry.list_index
+	local previous<const> = entry.previous
+	local next<const> = entry.next
 	unlink_subscriber(self, entry)
+	if previous == nil then
+		list.first = next
+	else
+		previous.next = next
+	end
+	if next == nil then
+		list.last = previous
+	else
+		next.previous = previous
+	end
 	entry.list = nil
-	entry.list_index = nil
-	if self._dispatch_depth == 0 then
-		table.remove(list, index)
-		for moved_index = index, #list do
-			list[moved_index].list_index = moved_index
-		end
-		if #list == 0 then
-			retire_listener_list(self, list)
-		end
-		return
+	entry.previous = nil
+	entry.subscriber = nil
+	entry.handler = nil
+	-- An active emission may already have borrowed this node. Its forward
+	-- link survives removal; no live index retains the removed node itself.
+	if list.first == nil then
+		retire_listener_list(self, list)
 	end
-	list[index] = false
-	if not list._removals_pending then
-		list._removals_pending = true
-		local pending_index<const> = self._pending_listener_count + 1
-		self._pending_listener_count = pending_index
-		self._pending_listener_lists[pending_index] = list
-	end
-end
-
-local commit_listener_removals<const> = function(self)
-	local pending<const> = self._pending_listener_lists
-	for index = 1, self._pending_listener_count do
-		compact_listeners(self, pending[index])
-		pending[index] = nil
-	end
-	self._pending_listener_count = 0
 end
 
 function event_emitter.events_of(emitter)
@@ -243,7 +221,6 @@ function event_emitter:on(spec, default_subscriber, default_emitter)
 			list = {
 				_event_name = name,
 				_emitter_id = emitter,
-				_scopes = scopes,
 			}
 			scopes[emitter] = list
 			scopes._scope_count = scopes._scope_count + 1
@@ -271,11 +248,13 @@ function event_emitter:off(event_name, subscriber, handler, emitter)
 	if not list then
 		return
 	end
-	for i = #list, 1, -1 do
-		local entry<const> = list[i]
-		if entry and entry.subscriber == subscriber and entry.handler == handler then
+	local entry = list.last
+	while entry ~= nil do
+		local previous<const> = entry.previous
+		if entry.subscriber == subscriber and entry.handler == handler then
 			remove_listener(self, entry)
 		end
+		entry = previous
 	end
 end
 
@@ -293,31 +272,37 @@ function event_emitter:emit(event_type, emitter, payload, emitter_id)
 	if scoped_list == nil and global_list == nil then
 		return
 	end
-	local scoped_count<const> = scoped_list and #scoped_list or 0
-	local global_count<const> = global_list and #global_list or 0
-	self._dispatch_depth = self._dispatch_depth + 1
-	for i = 1, scoped_count do
-		local entry<const> = scoped_list[i]
-		if entry then
+	-- A single admission boundary applies to both phases, including global
+	-- listeners added by a scoped callback. Dispatch owns only stack borrows;
+	-- errors and abandoned coroutines need no deferred cleanup to release them.
+	local admission<const> = self._listener_admission
+	local entry = scoped_list and scoped_list.first
+	while entry ~= nil and entry.admission <= admission do
+		local next<const> = entry.next
+		if entry.list == scoped_list then
 			if entry.once then
+				local handler<const>, subscriber<const> = entry.handler, entry.subscriber
 				remove_listener(self, entry)
+				handler(subscriber, event_type, emitter, payload, emitter_id)
+			else
+				entry.handler(entry.subscriber, event_type, emitter, payload, emitter_id)
 			end
-			entry.handler(entry.subscriber, event_type, emitter, payload, emitter_id)
 		end
+		entry = next
 	end
-	for i = 1, global_count do
-		local entry<const> = global_list[i]
-		if entry then
+	entry = global_list and global_list.first
+	while entry ~= nil and entry.admission <= admission do
+		local next<const> = entry.next
+		if entry.list == global_list then
 			if entry.once then
+				local handler<const>, subscriber<const> = entry.handler, entry.subscriber
 				remove_listener(self, entry)
+				handler(subscriber, event_type, emitter, payload, emitter_id)
+			else
+				entry.handler(entry.subscriber, event_type, emitter, payload, emitter_id)
 			end
-			entry.handler(entry.subscriber, event_type, emitter, payload, emitter_id)
 		end
-	end
-	local dispatch_depth<const> = self._dispatch_depth - 1
-	self._dispatch_depth = dispatch_depth
-	if dispatch_depth == 0 and self._pending_listener_count ~= 0 then
-		commit_listener_removals(self)
+		entry = next
 	end
 end
 
