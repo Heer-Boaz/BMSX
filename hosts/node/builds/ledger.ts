@@ -1,7 +1,10 @@
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
+import { BuildStoreLockedError } from './errors';
 import type { StudioBuildJob } from '../../common/studio_builds';
+
+const SQLITE_BUSY = 5;
 
 /** Durable request receipts and exclusive server ownership. OS-backed database locks die with the process. */
 export class BuildLedger {
@@ -14,7 +17,7 @@ export class BuildLedger {
 	}
 	public static async open(root: string): Promise<BuildLedger> {
 		await mkdir(root, { recursive: true });
-		const database = new DatabaseSync(join(root, 'jobs.sqlite'));
+		const path = join(root, 'jobs.sqlite'), database = new DatabaseSync(path);
 		try {
 			// Exclusive locking mode retains ownership between commits, without a stale PID/directory lock.
 			database.exec(`PRAGMA locking_mode=EXCLUSIVE; PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL;
@@ -32,7 +35,10 @@ export class BuildLedger {
 			const row = database.prepare('UPDATE build_generation SET generation = generation + 1 WHERE id = 1 RETURNING generation').get()!;
 			database.exec('COMMIT');
 			return new BuildLedger(database, row.generation as number);
-		} catch (error) { database.close(); throw error; }
+		} catch (error) {
+			database.close();
+			throw (error as { errcode?: number }).errcode === SQLITE_BUSY ? new BuildStoreLockedError(path, error) : error;
+		}
 	}
 	public read(id: string): StudioBuildJob | undefined {
 		const row = this.readJob.get(id);

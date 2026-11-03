@@ -98,10 +98,15 @@ const { STUDIO_TOOLS } = await import('../ide/workbench/services/assistant/tool_
 const conversationViewers = new CodexObserverHttpApi(process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex'));
 const { StudioBuildJobs } = await import('../hosts/node/builds/jobs.ts');
 const { handleBuildRequest } = await import('../hosts/node/builds/api.ts');
+const { BuildStoreLockedError } = await import('../hosts/node/builds/errors.ts');
 const { WorkspaceProjects } = await import('../hosts/node/workspace/projects.ts');
 const { handleProjectRequest } = await import('../hosts/node/workspace/projects_api.ts');
 const projects = new WorkspaceProjects(projectRoot, path.resolve(getArg('project-state', null, path.join(projectRoot, '.bmsx', 'studio'))));
-const buildJobs = await StudioBuildJobs.open(projectRoot, path.resolve(getArg('build-store', null, path.join(projectRoot, '.bmsx', 'builds'))), projects);
+const buildJobs = await StudioBuildJobs.open(projectRoot, path.resolve(getArg('build-store', null, path.join(projectRoot, '.bmsx', 'builds'))), projects).catch(error => {
+	if (!(error instanceof BuildStoreLockedError)) throw error;
+	console.error(`${error.message}\nIs another BMSX server running? Use it, or stop it first (find it with: fuser ${error.database}).`);
+	process.exit(1);
+});
 const studioSessions = new StudioSessions(buildJobs);
 const studioMcp = new StudioMcpApi(studioSessions, STUDIO_TOOLS, buildJobs, projects);
 const assistant = new CodexHttpApi({ tools: STUDIO_TOOLS,

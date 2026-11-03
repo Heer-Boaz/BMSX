@@ -3,7 +3,7 @@ import { BuildRequestError } from './errors';
 import { fork, type ChildProcess } from 'node:child_process';
 import { finished } from 'node:stream/promises';
 import { createWriteStream } from 'node:fs';
-import { mkdir, rm } from 'node:fs/promises';
+import { mkdir, realpath, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -32,6 +32,7 @@ export class StudioBuildJobs {
 		public readonly projects: WorkspaceProjects) { this.artifacts = new RomArtifactStore(root); }
 
 	public static async open(workspace: string, root: string, projects: WorkspaceProjects): Promise<StudioBuildJobs> {
+		workspace = await realpath(workspace);
 		const ledger = await BuildLedger.open(root), owner = new StudioBuildJobs(workspace, root, ledger, projects);
 		try {
 			await mkdir(join(root, 'jobs'), { recursive: true });
@@ -149,7 +150,7 @@ export class StudioBuildJobs {
 			job = this.transition(job, { state: 'running', phase: 'Capture inputs' });
 			const options: MediaBuildOptions = { domain: 'cart', target: job.project!.target,
 				respath: join(job.project!.cartridge.projectRoot, 'res'), systemRoot: job.project!.system.projectRoot,
-				debug: job.request.debug, optLevel: job.request.optLevel, force: false };
+				debug: job.request.debug, optLevel: job.request.optLevel, force: false, inputAccess: { kind: 'rooted', root: this.workspace } };
 			running.child.send({ options, root: this.root, stage });
 			await exited;
 			log.end(); await logClosed;

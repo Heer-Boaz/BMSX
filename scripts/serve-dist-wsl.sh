@@ -60,7 +60,7 @@ else
 	WIN_IPS=""
 fi
 
-echo "Serving ${DIR} on port ${PORT} (WSL: ${is_wsl})"
+echo "Starting ${DIR} on port ${PORT} (WSL: ${is_wsl})"
 echo "Studio workspace and Codex access are available to clients on this LAN."
 if [[ -n "${WIN_IPS}" ]]; then
 	echo "Windows LAN IP(s): ${WIN_IPS}"
