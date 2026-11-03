@@ -35,6 +35,11 @@ python scripts/nemesis_s/stadsburg/build_level.py
 The greenery registration and `houtbron_r24` rasters retain the source drawings
 used for the exact gray-to-dark-red wood conversion. Source hashes and palette
 checks guard that conversion. Native drawings use at most two inks per 8×1 row.
-The Python dependencies are pinned to the versions used to reproduce the R27
-resource bytes. Preview images, pattern-bank exports and check reports are
+The additional facades, wharf modules and street furniture are editable native
+PNG sources in `authoring/stadsleven`. Their `native` entries in
+`authoring/stad/registratie.json` import those exact pixels through `bake_stad.py`,
+without resampling or quantization. The baker checks the palette and 8×1 ink
+limit and reuses identical tiles from the existing catalog.
+The Python dependencies are pinned for reproducible resource bytes.
+Preview images, pattern-bank exports and check reports are
 generated locally and ignored by Git.

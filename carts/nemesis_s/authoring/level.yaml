@@ -1,6 +1,6 @@
 schema: nemesis_s.level.v1
 title: De Bevroren Haven
-revision: 27
+revision: 28
 width: 931
 height: 22
 source_commit: d04363ea9a05758eb91b5016f2e082036837813c
@@ -16,8 +16,8 @@ sections:
 - from: 196
   to: 289
   title: De winkelstraat
-  intention: Aaneengesloten gevels met bakker, kruidenier en fietsenwinkel; kleine straatbomen en besneeuwde struiken markeren
-    de vrije nissen.
+  intention: Winkels, lijstgevels en steegpoorten demonstreren de stadsset; kleine plantenbakken en terrastafels vullen de
+    vrije plekken.
 - from: 289
   to: 385
   title: De havenweg
@@ -30,15 +30,15 @@ sections:
 - from: 443
   to: 510
   title: De hijswerf
-  intention: Eén laadkade onder de vaste draagbalken; twee bewegende lasten bewaken de route.
+  intention: Onder de hijsinstallatie ligt een werf met kelderdeuren, twee zijtrappen, café en binnenplaats.
 - from: 510
   to: 625
   title: De binnenhaven
-  intention: Na de brug ligt de stoomboot aan de linker kade; een brede open vaargeul voert naar de overkant.
+  intention: De brede vaargeul eindigt bij een hoge winkelkade met kelderfront, trap naar de lage werf en zitplekken.
 - from: 625
   to: 689
   title: De sluispakhuizen
-  intention: De overslagkade verbindt de pakhuisvloer met de sluismuur.
+  intention: De pakhuizen worden afgewisseld met een café, lijstgevel en kelderwerf met een trap langs de muur.
 - from: 689
   to: 801
   title: De buitenhaven
@@ -173,7 +173,7 @@ quays:
   - 20
 - - 669
   - 685
-  - 18
+  - 19
 - - 685
   - 687
   - 19
@@ -196,10 +196,40 @@ quays:
   - 829
   - 21
 scenery:
-- prefab: compact_smal_grachtenhuis
+- prefab: werf_trap_links
+  x: 453
+  floor: 20
+- prefab: werf_kelder
+  x: 460
+  floor: 20
+- prefab: werf_trap_rechts
+  x: 468
+  floor: 20
+- prefab: werf_kelder
+  x: 607
+  floor: 20
+- prefab: werf_trap_rechts
+  x: 615
+  floor: 20
+- prefab: werf_looprand
+  x: 625
+  floor: 20
+- prefab: werf_looprand
+  x: 629
+  floor: 20
+- prefab: werf_looprand
+  x: 633
+  floor: 20
+- prefab: werf_kelder
+  x: 670
+  floor: 20
+- prefab: werf_trap_rechts
+  x: 678
+  floor: 20
+- prefab: huis_lijstgevel_smal
   x: 149
   floor: 18
-- prefab: compact_sneeuwhuis
+- prefab: winkel_cafe
   x: 153
   floor: 18
 - prefab: compact_breed_laag_huis
@@ -214,7 +244,7 @@ scenery:
 - prefab: haven_laser_house
   x: 393
   floor: 18
-- prefab: compact_sneeuwhuis
+- prefab: winkel_cafe
   x: 403
   floor: 18
 - prefab: compact_hoog_sneeuwhuis
@@ -229,10 +259,7 @@ scenery:
 - prefab: compact_lamp_snow_66
   x: 447
   floor: 19
-- prefab: compact_breed_laag_huis
-  x: 464
-  floor: 19
-- prefab: compact_hoog_sneeuwhuis
+- prefab: huis_lijstgevel_breed
   x: 491
   floor: 17
 - prefab: compact_lamp_snow_70
@@ -262,7 +289,7 @@ scenery:
 - prefab: stadsburg_brugwachter_met_dakkanon
   x: 792
   y: 6
-- prefab: compact_smal_grachtenhuis
+- prefab: huis_lijstgevel_smal
   x: 198
   floor: 18
 - prefab: winkel_bakker
@@ -271,13 +298,13 @@ scenery:
 - prefab: compact_breed_laag_huis
   x: 205
   floor: 18
-- prefab: compact_smal_grachtenhuis
+- prefab: huis_lijstgevel_smal
   x: 215
   floor: 18
 - prefab: compact_breed_laag_huis
   x: 218
   floor: 18
-- prefab: compact_smal_grachtenhuis
+- prefab: huis_lijstgevel_smal
   x: 251
   floor: 18
 - prefab: winkel_kruidenier
@@ -286,16 +313,16 @@ scenery:
 - prefab: winkel_fietsen
   x: 258
   floor: 18
-- prefab: compact_breed_laag_huis
+- prefab: huis_lijstgevel_breed
   x: 262
   floor: 18
-- prefab: compact_smal_grachtenhuis
+- prefab: steegpoort
   x: 272
   floor: 18
-- prefab: compact_breed_laag_huis
+- prefab: winkel_cafe
   x: 275
   floor: 18
-- prefab: compact_sneeuwhuis
+- prefab: huis_lijstgevel_breed
   x: 284
   floor: 18
 - prefab: haven_loopbrug
@@ -305,8 +332,8 @@ scenery:
   x: 211
   y: 17
 - prefab: fiets_rood
-  x: 213
-  y: 17
+  x: 227
+  y: 16
 - prefab: fietsenrek
   x: 268
   y: 17
@@ -323,8 +350,8 @@ scenery:
   x: 451
   y: 18
 - prefab: auto_rood
-  x: 622
-  y: 18
+  x: 632
+  y: 19
 - prefab: fiets_blauw
   x: 687
   y: 19
@@ -349,19 +376,13 @@ scenery:
 - prefab: mooring_post
   x: 704
   y: 17
-- prefab: compact_sneeuwhuis
+- prefab: winkel_cafe
   x: 539
   floor: 18
-- prefab: compact_sneeuwhuis
-  x: 610
-  floor: 19
-- prefab: compact_breed_laag_huis
-  x: 614
-  floor: 19
-- prefab: compact_hoog_sneeuwhuis
+- prefab: huis_lijstgevel_breed
   x: 386
   floor: 18
-- prefab: compact_smal_grachtenhuis
+- prefab: huis_lijstgevel_smal
   x: 399
   floor: 18
 - prefab: compact_smal_grachtenhuis
@@ -373,7 +394,7 @@ scenery:
 - prefab: compact_breed_laag_huis
   x: 290
   floor: 18
-- prefab: compact_smal_grachtenhuis
+- prefab: huis_lijstgevel_smal
   x: 296
   floor: 18
 - prefab: auto_rood
@@ -385,10 +406,10 @@ scenery:
 - prefab: compact_lamp_snow_66
   x: 308
   floor: 18
-- prefab: compact_breed_laag_huis
+- prefab: winkel_cafe
   x: 369
   floor: 18
-- prefab: compact_hoog_sneeuwhuis
+- prefab: huis_lijstgevel_breed
   x: 376
   floor: 18
 - prefab: compact_lamp_snow_66
@@ -406,6 +427,27 @@ scenery:
 - prefab: vrachtauto_vooraanzicht
   x: 327
   y: 17
+- prefab: steegpoort
+  x: 212
+  floor: 18
+- prefab: winkel_cafe
+  x: 461
+  floor: 16
+- prefab: steegpoort
+  x: 465
+  floor: 16
+- prefab: winkel_cafe
+  x: 607
+  floor: 16
+- prefab: compact_sneeuwhuis
+  x: 611
+  floor: 16
+- prefab: winkel_cafe
+  x: 670
+  floor: 16
+- prefab: huis_lijstgevel_breed
+  x: 674
+  floor: 16
 planting_beds:
 - from: 332
   to: 363
@@ -491,20 +533,20 @@ town_details:
   x: 410
   floor: 18
   purpose: Schaduwboom op het kleine oude-kadeplein
-- prefab: zitbank
+- prefab: terras_tafel
   x: 414
   floor: 18
-  purpose: Bank in de vrije nis voor het hoge huis
+  purpose: Tafeltje bij het café aan de woonkade
   ground_offset: 0
   snow_join: true
 - prefab: straatboom_winter
-  x: 607
+  x: 622
   floor: 19
-  purpose: De boom bij de overkant van de binnenhaven
+  purpose: Boom op de lage werf naast de nieuwe keldertrap
 - prefab: sneeuwstruik
-  x: 620
+  x: 639
   floor: 19
-  purpose: Laag plantvak tussen woonhuis en auto
+  purpose: Klein plantvak bij de opgang naar de sluiskade
   ground_offset: 0
   snow_join: true
 - prefab: knotboom_winter
@@ -521,6 +563,143 @@ town_details:
   x: 694
   floor: 20
   purpose: Bak naast de zitplek en voor de trapgevel
+  ground_offset: 0
+  snow_join: true
+- prefab: gevelpot_winter
+  x: 152
+  floor: 18
+  ground_offset: 0
+  snow_join: true
+- prefab: gevelpot_winter
+  x: 164
+  floor: 18
+  ground_offset: 0
+  snow_join: true
+- prefab: plantenbak_winter
+  x: 266
+  floor: 18
+  ground_offset: 0
+  snow_join: true
+- prefab: terras_tafel
+  x: 279
+  floor: 18
+  ground_offset: 0
+  snow_join: true
+- prefab: plantenbak_winter
+  x: 365
+  floor: 18
+  ground_offset: 0
+  snow_join: true
+- prefab: terras_stoelen
+  x: 367
+  floor: 18
+  ground_offset: 0
+  snow_join: true
+- prefab: terras_tafel
+  x: 373
+  floor: 18
+  ground_offset: 0
+  snow_join: true
+- prefab: parasol_ingeklapt
+  x: 375
+  floor: 18
+  ground_offset: 0
+  snow_join: true
+- prefab: gevelpot_winter
+  x: 409
+  floor: 18
+  ground_offset: 0
+  snow_join: true
+- prefab: gevelpot_winter
+  x: 448
+  floor: 19
+  ground_offset: 0
+  snow_join: true
+- prefab: parasol_ingeklapt
+  x: 452
+  floor: 19
+  ground_offset: 0
+  snow_join: true
+- prefab: gevelpot_winter
+  x: 460
+  floor: 16
+  ground_offset: 0
+  snow_join: true
+- prefab: terras_tafel
+  x: 495
+  floor: 17
+  ground_offset: 0
+  snow_join: true
+- prefab: parasol_ingeklapt
+  x: 503
+  floor: 17
+  ground_offset: 0
+  snow_join: true
+- prefab: gevelpot_winter
+  x: 504
+  floor: 17
+  ground_offset: 0
+  snow_join: true
+- prefab: werf_leuning
+  x: 626
+  floor: 20
+  ground_offset: 0
+  snow_join: true
+- prefab: gevelpot_winter
+  x: 630
+  floor: 20
+  ground_offset: 0
+  snow_join: true
+- prefab: terras_tafel
+  x: 633
+  floor: 20
+  ground_offset: 0
+  snow_join: true
+- prefab: parasol_ingeklapt
+  x: 635
+  floor: 20
+  ground_offset: 0
+  snow_join: true
+- prefab: winkel_uitstalling
+  x: 636
+  floor: 20
+  ground_offset: 0
+  snow_join: true
+- prefab: gevelpot_winter
+  x: 685
+  floor: 19
+  ground_offset: 0
+  snow_join: true
+- prefab: gevelpot_winter
+  x: 314
+  floor: 18
+  ground_offset: 0
+- prefab: plantenbak_winter
+  x: 316
+  floor: 18
+  ground_offset: 0
+- prefab: plantenbak_winter
+  x: 329
+  floor: 18
+  ground_offset: 0
+- prefab: terras_tafel
+  x: 340
+  floor: 18
+  ground_offset: -2
+  snow_join: true
+- prefab: parasol_ingeklapt
+  x: 342
+  floor: 18
+  ground_offset: -2
+  snow_join: true
+- prefab: gevelpot_winter
+  x: 353
+  floor: 18
+  ground_offset: -2
+  snow_join: true
+- prefab: winkel_kratjes
+  x: 197
+  floor: 18
   ground_offset: 0
   snow_join: true
 trees:
@@ -794,7 +973,7 @@ encounters:
 - kind: red_mitre
   at:
   - 466
-  - 13
+  - 10
   role: Herstelcapsule in de lage doorgang.
 - kind: turret_red_ceiling
   at:
@@ -908,7 +1087,7 @@ encounters:
   role: Verticale laser tussen de lessenaarsdaken van het sluispakhuis.
 - kind: turret_blue_floor
   at:
-  - 671
+  - 652
   - 16
   role: Op de kade voorbij het pakhuis.
 - kind: quay_cannon

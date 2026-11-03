@@ -162,5 +162,103 @@
   "source_sha256": {
     "straatdetails_bron.png": "5d49c94ea4ad9eb499d62bb701cbca62eb6fd4e01c0775855c97a4461560d3fc",
     "winkelpuien_bron.png": "1a0979d97b3ef9d0bf0d4c47f46f199f60f3e631fb1115efc5454fd5f440938e"
-  }
+  },
+  "native": [
+    {
+      "name": "huis_lijstgevel_smal",
+      "label": "Smalle hoge lijstgevel",
+      "group": "huizengevels",
+      "source": "authoring/stadsleven/huis_lijstgevel_smal.png"
+    },
+    {
+      "name": "huis_lijstgevel_breed",
+      "label": "Brede lijstgevel met winterrank",
+      "group": "huizengevels",
+      "source": "authoring/stadsleven/huis_lijstgevel_breed.png"
+    },
+    {
+      "name": "winkel_cafe",
+      "label": "Café met bovenwoning",
+      "group": "winkels",
+      "source": "authoring/stadsleven/winkel_cafe.png"
+    },
+    {
+      "name": "steegpoort",
+      "label": "Poort naar de binnenplaats",
+      "group": "huizengevels",
+      "source": "authoring/stadsleven/steegpoort.png"
+    },
+    {
+      "name": "werf_kelder",
+      "label": "Werfmuur met kelderdeuren",
+      "group": "werven",
+      "source": "authoring/stadsleven/werf_kelder.png"
+    },
+    {
+      "name": "werf_trap_links",
+      "label": "Werftrap naar links",
+      "group": "werven",
+      "source": "authoring/stadsleven/werf_trap_links.png"
+    },
+    {
+      "name": "werf_trap_rechts",
+      "label": "Werftrap naar rechts",
+      "group": "werven",
+      "source": "authoring/stadsleven/werf_trap_rechts.png"
+    },
+    {
+      "name": "werf_looprand",
+      "label": "Lage besneeuwde werfrand",
+      "group": "werven",
+      "source": "authoring/stadsleven/werf_looprand.png"
+    },
+    {
+      "name": "werf_leuning",
+      "label": "Lage werfleuning",
+      "group": "werven",
+      "source": "authoring/stadsleven/werf_leuning.png"
+    },
+    {
+      "name": "gevelpot_winter",
+      "label": "Pot met wintergroen",
+      "group": "straatdetails",
+      "source": "authoring/stadsleven/gevelpot_winter.png"
+    },
+    {
+      "name": "plantenbak_winter",
+      "label": "Besneeuwde plantenbak",
+      "group": "straatdetails",
+      "source": "authoring/stadsleven/plantenbak_winter.png"
+    },
+    {
+      "name": "terras_tafel",
+      "label": "Klein tafeltje met stoelen",
+      "group": "straatdetails",
+      "source": "authoring/stadsleven/terras_tafel.png"
+    },
+    {
+      "name": "terras_stoelen",
+      "label": "Opgestapelde terrasstoelen",
+      "group": "straatdetails",
+      "source": "authoring/stadsleven/terras_stoelen.png"
+    },
+    {
+      "name": "parasol_ingeklapt",
+      "label": "Ingeklapte winterparasol",
+      "group": "straatdetails",
+      "source": "authoring/stadsleven/parasol_ingeklapt.png"
+    },
+    {
+      "name": "winkel_uitstalling",
+      "label": "Kleine winkeluitstalling",
+      "group": "straatdetails",
+      "source": "authoring/stadsleven/winkel_uitstalling.png"
+    },
+    {
+      "name": "winkel_kratjes",
+      "label": "Kratjes bij de kruidenier",
+      "group": "straatdetails",
+      "source": "authoring/stadsleven/winkel_kratjes.png"
+    }
+  ]
 }

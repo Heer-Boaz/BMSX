@@ -1,5 +1,5 @@
 schema: nemesis_s.prefabs.v1
-revision: 25
+revision: 28
 prefabs:
   compact_smal_grachtenhuis:
     description: Kleine smalle trapgevel, 24x64, met twee vensters en centrale deur.
@@ -1433,3 +1433,314 @@ prefabs:
       - 1713
     label: Besneeuwde bermrand
     groep: stadsgroen
+  huis_lijstgevel_smal:
+    description: Smalle hoge lijstgevel, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - 1974
+      - 1975
+      - 1976
+    - - 1977
+      - 1978
+      - 1979
+    - - 1980
+      - 1981
+      - 1982
+    - - 1983
+      - 1984
+      - 1985
+    - - 1986
+      - 1987
+      - 1988
+    - - 1989
+      - 1990
+      - 1977
+    - - 1991
+      - 1992
+      - 1993
+    - - 1994
+      - 1995
+      - 1996
+    label: Smalle hoge lijstgevel
+    groep: huizengevels
+  huis_lijstgevel_breed:
+    description: Brede lijstgevel met winterrank, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - 1997
+      - 1998
+      - 1999
+      - 2000
+    - - 2001
+      - 2002
+      - 2003
+      - 2004
+    - - 2005
+      - 2006
+      - 2007
+      - 2008
+    - - 2009
+      - 2010
+      - 2011
+      - 2012
+    - - 2013
+      - 2014
+      - 2015
+      - 2016
+    - - 2017
+      - 2018
+      - 2019
+      - 2020
+    - - 2021
+      - 2022
+      - 2023
+      - 2024
+    label: Brede lijstgevel met winterrank
+    groep: huizengevels
+  winkel_cafe:
+    description: Café met bovenwoning, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - 2025
+      - 2026
+      - 2027
+      - 2028
+    - - 2029
+      - 2030
+      - 2031
+      - 2032
+    - - 2033
+      - 2034
+      - 2035
+      - 2036
+    - - 2037
+      - 2038
+      - 2039
+      - 2040
+    - - 2041
+      - 2042
+      - 2043
+      - 2044
+    - - 2045
+      - 2046
+      - 2023
+      - 2047
+    label: Café met bovenwoning
+    groep: winkels
+  steegpoort:
+    description: Poort naar de binnenplaats, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - 2048
+      - 2049
+      - 2050
+    - - 2051
+      - 2052
+      - 2053
+    - - 1183
+      - 2054
+      - 2055
+    - - 2056
+      - 2057
+      - 2058
+    label: Poort naar de binnenplaats
+    groep: huizengevels
+  werf_kelder:
+    description: Werfmuur met kelderdeuren, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - 66
+      - 67
+      - 68
+      - 69
+      - 66
+      - 67
+      - 68
+      - 69
+    - - 44
+      - 2059
+      - 46
+      - 47
+      - 47
+      - 2060
+      - 57
+      - 2061
+    - - 48
+      - 2062
+      - 50
+      - 2063
+      - 51
+      - 2064
+      - 60
+      - 2065
+    - - 2066
+      - 2067
+      - 2068
+      - 2069
+      - 2066
+      - 2067
+      - 2068
+      - 2069
+    - - 167
+      - 168
+      - 169
+      - 170
+      - 167
+      - 168
+      - 169
+      - 170
+    label: Werfmuur met kelderdeuren
+    groep: werven
+  werf_trap_links:
+    description: Werftrap naar links, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - null
+      - null
+      - null
+      - null
+      - null
+      - 2070
+      - 2071
+    - - null
+      - null
+      - null
+      - 2070
+      - 2072
+      - 2073
+      - 2074
+    - - null
+      - 2070
+      - 2072
+      - 2075
+      - 2076
+      - 56
+      - 57
+    - - 2077
+      - 2073
+      - 2078
+      - 51
+      - 51
+      - 59
+      - 60
+    - - 2079
+      - 2067
+      - 2068
+      - 2069
+      - 2066
+      - 2067
+      - 2068
+    - - 167
+      - 168
+      - 169
+      - 170
+      - 167
+      - 168
+      - 169
+    label: Werftrap naar links
+    groep: werven
+  werf_trap_rechts:
+    description: Werftrap naar rechts, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - 2080
+      - 2081
+      - null
+      - null
+      - null
+      - null
+      - null
+    - - 2082
+      - 2083
+      - 2084
+      - 2081
+      - null
+      - null
+      - null
+    - - 44
+      - 45
+      - 2085
+      - 2086
+      - 2084
+      - 2081
+      - null
+    - - 48
+      - 49
+      - 50
+      - 51
+      - 2087
+      - 2083
+      - 2088
+    - - 2066
+      - 2067
+      - 2068
+      - 2069
+      - 2066
+      - 2067
+      - 2089
+    - - 167
+      - 168
+      - 169
+      - 170
+      - 167
+      - 168
+      - 169
+    label: Werftrap naar rechts
+    groep: werven
+  werf_looprand:
+    description: Lage besneeuwde werfrand, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - 2066
+      - 2067
+      - 2068
+      - 2069
+    label: Lage besneeuwde werfrand
+    groep: werven
+  werf_leuning:
+    description: Lage werfleuning, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - 2090
+      - 2090
+      - 2090
+      - 2091
+    label: Lage werfleuning
+    groep: werven
+  gevelpot_winter:
+    description: Pot met wintergroen, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - 2092
+    label: Pot met wintergroen
+    groep: straatdetails
+  plantenbak_winter:
+    description: Besneeuwde plantenbak, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - 2093
+      - 2094
+    label: Besneeuwde plantenbak
+    groep: straatdetails
+  terras_tafel:
+    description: Klein tafeltje met stoelen, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - 2095
+      - 2096
+    label: Klein tafeltje met stoelen
+    groep: straatdetails
+  terras_stoelen:
+    description: Opgestapelde terrasstoelen, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - 2097
+    label: Opgestapelde terrasstoelen
+    groep: straatdetails
+  parasol_ingeklapt:
+    description: Ingeklapte winterparasol, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - 2098
+    - - 2099
+    label: Ingeklapte winterparasol
+    groep: straatdetails
+  winkel_uitstalling:
+    description: Kleine winkeluitstalling, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - 2100
+      - 2101
+    label: Kleine winkeluitstalling
+    groep: straatdetails
+  winkel_kratjes:
+    description: Kratjes bij de kruidenier, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - 2101
+    label: Kratjes bij de kruidenier
+    groep: straatdetails
