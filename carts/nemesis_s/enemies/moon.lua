@@ -120,7 +120,7 @@ local rotation_poses<const> = {
 }
 
 function moon:apply_rotation()
-	local pose<const> = rotation_poses[self.rotation]
+	local pose<const> = rotation_poses[self.facing]
 	local sprite<const> = self.sprite_component
 	self.sprite_component:set_imgid(pose.imgid)
 	sprite.flip_h = pose.flip_h
@@ -132,14 +132,14 @@ function moon:apply_rotation()
 end
 
 function moon:rotate_clockwise()
-	local rotation<const> = self.rotation + 1
-	self.rotation = rotation > moon_rotation_up_left and moon_rotation_up or rotation
+	local rotation<const> = self.facing + 1
+	self.facing = rotation > moon_rotation_up_left and moon_rotation_up or rotation
 	self:apply_rotation()
 end
 
 function moon:rotate_counterclockwise()
-	local rotation<const> = self.rotation - 1
-	self.rotation = rotation < moon_rotation_up and moon_rotation_up_left or rotation
+	local rotation<const> = self.facing - 1
+	self.facing = rotation < moon_rotation_up and moon_rotation_up_left or rotation
 	self:apply_rotation()
 end
 
@@ -230,7 +230,7 @@ end
 function moon:tick_rotate_to_small_ray_direction()
 	local target_rotation<const> = self.vertical_direction == moon_vertical_direction_down
 		and moon_rotation_up or moon_rotation_down
-	if self.rotation == target_rotation then
+	if self.facing == target_rotation then
 		return bt_success
 	end
 	self:rotate_counterclockwise()
@@ -238,7 +238,7 @@ function moon:tick_rotate_to_small_ray_direction()
 end
 
 function moon:activate_small_ray_flashes()
-	local offset_y<const> = self.rotation == moon_rotation_up and 50 or 0
+	local offset_y<const> = self.facing == moon_rotation_up and 50 or 0
 	local flash_left<const> = self.flash_left
 	flash_left:set_attachment_origin(2, offset_y)
 	flash_left:activate()
@@ -254,7 +254,7 @@ end
 
 function moon:fire_small_ray_volley()
 	local pose_x<const>, pose_y<const> = self:get_global_position()
-	local points_down<const> = self.rotation == moon_rotation_up
+	local points_down<const> = self.facing == moon_rotation_up
 	local direction<const> = points_down and moon_vertical_direction_down or moon_vertical_direction_up
 	local offset_y<const> = points_down and 56 or 8
 	self.scene:spawn(ids_moon_small_ray_def, {
@@ -270,7 +270,7 @@ function moon:fire_small_ray_volley()
 end
 
 function moon:tick_rotate_to_right()
-	if self.rotation == moon_rotation_right then
+	if self.facing == moon_rotation_right then
 		return bt_success
 	end
 	self:rotate_clockwise()
@@ -496,7 +496,7 @@ local register_definition<const> = function()
 			imgid = assets_moon_down_right,
 			order = moon_draw_z,
 			max_health = moon_health,
-			rotation = moon_rotation_down_right,
+			facing = moon_rotation_down_right,
 			vertical_direction = moon_vertical_direction_down,
 			small_fry = false,
 		},
