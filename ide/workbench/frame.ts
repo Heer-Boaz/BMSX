@@ -58,7 +58,7 @@ export function advanceStudioFrame(
 	if (action === HostFrameAction.Execute) {
 		if (workbench.debugger.plans.controlActive) willExecuteRuntimeDebuggerPlan(workbench.debugger);
 		workbench.guest.invalidate();
-		executeHostUpdate(session, runtime, presenter, audioOutput, screen, hostDeltaMs);
+		executeHostUpdate(session, runtime, presenter, audioOutput, screen, hostDeltaMs, workbench.debugger.plans.devicesOnly);
 		systemOutput.flush(runtime, logOutput, workbench.luaEvaluation.receiveOutput);
 		workbench.frame.outputDrained = true;
 		const supervisorFaultSequence = runtime.machine.memory.readMappedU32LE(
@@ -109,6 +109,7 @@ export function finishStudioFrame(
 	if (!workbench.frame.outputDrained) systemOutput.flush(runtime, workbench.logOutput, workbench.luaEvaluation.receiveOutput);
 	workbench.luaEvaluation.afterHostFrame();
 	workbench.actorExecution.afterHostFrame();
+	workbench.scenePositions.afterHostFrame();
 }
 
 /** A viewless Studio host uses the same physical phases, with its own explicit input/presentation policy. */

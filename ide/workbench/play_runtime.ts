@@ -162,7 +162,7 @@ export class PlayRuntimeSession implements PlaySession {
 			&& !this.debugger.plans.controlSuspended && this.debugger.source.stop === undefined) {
 			if (this.debugger.plans.controlActive) willExecuteRuntimeDebuggerPlan(this.debugger);
 			this.guest.invalidate();
-			executeHostUpdate(this.frameSession, runtime, this.target.presenter, this.audio, presentation, hostDeltaMs);
+			executeHostUpdate(this.frameSession, runtime, this.target.presenter, this.audio, presentation, hostDeltaMs, this.debugger.plans.devicesOnly);
 			executed = true;
 			this.debugger.source.didExecute();
 		} else runtime.frameScheduler.clearQueuedTime();

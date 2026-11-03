@@ -12,7 +12,7 @@ import type { ScenePrefabPreview, SceneVisualProjection, SceneVisualReadModel } 
 import { SceneTranslationProposal, type SceneTransformPreview } from './transform_proposal';
 import { createSceneMemberInsertionEdits, type SceneAddMemberChoice } from './member_insertion';
 import { createSceneMemberMovePlan } from './member_move';
-import { finishSceneSpatialEdits } from './spatial_edits';
+import { finishSceneSpatialEdits, scenePlacementEditable } from './spatial_edits';
 
 export type { SceneAddMemberChoice } from './member_insertion';
 
@@ -43,7 +43,12 @@ export type SceneRenameRequest = {
 	apply(name: string): boolean;
 };
 
-export type SceneLocalPositionRequest = { apply(axis: 'x' | 'y' | 'z', value: number): boolean };
+export type SceneLocalPositionRequest = {
+	isCurrent(): boolean;
+	apply(axis: 'x' | 'y' | 'z', value: number): boolean;
+	/** One planar gesture is one source-history operation, not two axis edits. */
+	applyPosition(x: number, y: number): boolean;
+};
 
 export type SceneAddMemberRequest = {
 	readonly choices: readonly SceneAddMemberChoice[];
@@ -527,17 +532,26 @@ export class SceneAuthoringContext {
 		const version = this.workingCopy.version, selection = this.selectionRevisionValue;
 		let consumed = false;
 		const isCurrent = () => !consumed && !this.lifetime.isDisposed && !this.workingCopy.readOnly && this.workingCopy.version === version
-			&& this.selectionRevisionValue === selection && this.isCurrent && this.documentValue === document && this.selectionValue === selected
-			&& this.documents.getSpatialProjection(this.workingCopy, document) === projection
-			&& !consumed && !this.lifetime.isDisposed && !this.workingCopy.readOnly
-			&& this.workingCopy.version === version && this.selectionRevisionValue === selection;
+			&& this.selectionRevisionValue === selection && this.documentValue === document && this.selectionValue === selected
+			&& this.spatialProjection === projection;
 		if (!isCurrent()) return;
-		return { apply: (axis, value) => {
-			if (!isCurrent()) return false;
+		return { isCurrent, apply: (axis, value) => {
+			if (!isCurrent() || !this.isCurrent || !isCurrent()) return false;
 			const edits = projection.localPositionEdits(this.workingCopy.buffer, document, selected.entry, local, axis, value);
 			if (edits === undefined || !isCurrent()) return false;
 			if (edits.length === 0) return true;
 			consumed = true; this.workingCopy.pushEditOperations(edits); return true;
+		}, applyPosition: (x, y) => {
+			// Motion only reads the retained revision. Commit alone admits current
+			// dependency/source semantics, then rechecks the captured occurrence.
+			if (!isCurrent() || !this.isCurrent || !isCurrent()) return false;
+			const next = { ...local, ox: x, oy: y };
+			if (!scenePlacementEditable(selected.entry, next, local)) return false;
+			const edits = projection.translationEdits(this.workingCopy.buffer, document, selected.entry, next, local);
+			if (!isCurrent()) return false;
+			consumed = true;
+			if (edits.length !== 0) this.workingCopy.pushEditOperations(edits);
+			return true;
 		} };
 	}
 

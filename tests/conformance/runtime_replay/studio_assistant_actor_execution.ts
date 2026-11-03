@@ -72,13 +72,13 @@ export async function runAssistantActorExecution(kind: StudioRendererKind, canva
 		'continuation completes the original bounded loop');
 	await test.clickTab(lab.id); await frame();
 	await runPaletteCommand('Actor Lab: Spawn Registered Prefab'); await press('Enter');
-	await press('ControlLeft', 'KeyA'); await test.clipboard.writeText("{ id = 'manual', health = 123, energy = 456 }, { local_transform = { 1, 0, 0, 1, 64, 96 } }");
+	await press('ControlLeft', 'KeyA'); await test.clipboard.writeText("{ id = 'manual', health = 123, energy = 456, position = { x = 64, y = 96 } }");
 	await press('ControlLeft', 'KeyV'); await press('Enter');
 	await until(() => service.active === undefined && test.tasks.ready && !ide.debugger.plans.mutationActive, 'Actor execution: ordinary spawn finishes');
 	await frame();
 	check(lab.runtime.roots[0].label === 'manual' && guest.readStringMember(lab.runtime.roots[0].value, 'health') === 123
-		&& guest.readStringMember(guest.readStringMember(lab.runtime.roots[0].value, 'spatial'), 'ox') === 64
-		&& guest.readStringMember(guest.readStringMember(lab.runtime.roots[0].value, 'spatial'), 'oy') === 96,
+		&& guest.readStringMember(lab.runtime.roots[0].value, 'ox') === 64
+		&& guest.readStringMember(lab.runtime.roots[0].value, 'oy') === 96,
 		'ordinary spawn uses the selected definition and returns the actual World member');
 	await runPaletteCommand('Actor Lab: Instance Actions'); await press('Enter');
 	await press('ControlLeft', 'KeyA'); await test.clipboard.writeText("'manual-tag'"); await press('ControlLeft', 'KeyV'); await press('Enter');

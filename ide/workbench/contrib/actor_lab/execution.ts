@@ -9,7 +9,8 @@ import type { RuntimeTaskQueue } from '../../../../hosts/common/runtime_task_que
 import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession, SuspendedValueIdentity } from '../../../runtime/suspended_guest';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
-import { resumeRuntimeDebugger, RuntimeDebuggerResumeMode, type SourceExecutionState } from '../../../runtime/debugger_state';
+import { pushRuntimeDebuggerControlPlan, resumeRuntimeDebugger, RuntimeDebuggerResumeMode, type SourceExecutionState } from '../../../runtime/debugger_state';
+import { RuntimeDeviceSettlementPlan } from '../../../runtime/device_settlement';
 import { scheduleRuntimeGuestCall, type RuntimeGuestCall } from '../../../runtime/guest_call';
 import type { PreparedLuaLiteral } from '../../../runtime/lua_literal';
 import { readRuntimeLuaModuleCapture, readRuntimeLuaModuleExport } from '../../../runtime/lua_inspection';
@@ -19,6 +20,8 @@ import { resolveActorTarget, type ActorTarget } from './target';
 import { actorActions } from './operations';
 
 export type ActorInvocation =
+	| { readonly kind: 'position'; readonly target: Pick<ActorTarget, 'domain' | 'worldHashId' | 'actorHashId'>;
+		readonly fromX: number; readonly fromY: number; readonly parentHashId: number; readonly x: number; readonly y: number }
 	| { readonly kind: 'action'; readonly target: ActorTarget; readonly method: string; readonly args: readonly PreparedLuaLiteral[] }
 	| { readonly kind: 'method'; readonly target: ActorTarget; readonly method: string; readonly identity: SuspendedValueIdentity; readonly args: readonly PreparedLuaLiteral[] }
 	| { readonly kind: 'event'; readonly target: ActorTarget; readonly name: string; readonly payload: PreparedLuaLiteral }
@@ -27,7 +30,12 @@ export type ActorInvocation =
 		readonly definition: SuspendedValueIdentity; readonly args: readonly PreparedLuaLiteral[] };
 export type ActorExecutionResult = { readonly status: 'completed' | 'interrupted' | 'rejected' | 'host-error'; readonly values: readonly string[];
 	readonly tags: readonly ValueTag[]; readonly reason?: string; readonly spawnedActorHashId?: number };
-export type ActorExecutionLifetime = { readonly isCurrent?: () => boolean; readonly signal?: AbortSignal };
+export type ActorExecutionLifetime = {
+	readonly isCurrent?: () => boolean;
+	/** Recheck domain correspondence once at the admitted World boundary, not at each instruction. */
+	readonly canInvoke?: () => boolean;
+	readonly signal?: AbortSignal;
+};
 
 export class ActorExecutionOperation {
 	private readonly settled = Promise.withResolvers<ActorExecutionResult>();
@@ -108,6 +116,7 @@ export class ActorExecutionService {
 			},
 			prepare: () => {
 				if (operation.result !== undefined) return;
+				if (lifetime?.canInvoke?.() === false) return;
 				const world = this.world(domain, worldHashId);
 				let call: RuntimeGuestCall | undefined;
 				try { if (world !== undefined) call = this.prepare(request, world); }
@@ -123,6 +132,9 @@ export class ActorExecutionService {
 			if (operation.result !== undefined || operation.outcome !== undefined) return;
 			if (!completed) { this.finish(operation, { status: 'interrupted', values: [], tags: [], reason: operation.invoked
 				? 'Lua call interrupted; performed mutations are retained.' : 'Actor invocation cancelled before entry.' }); return; }
+			if (request.kind === 'position' || request.kind === 'scrub') {
+				this.redraw(operation, domain, worldHashId, generation, lifetime); return;
+			}
 			this.runtime.machine.cpu.readCompletionValues(this.values);
 			const result: ActorExecutionResult = { status: 'completed', values: this.values.map(value => this.guest.previewValue(value, 1, 8)),
 				tags: this.values.map(valueTag), spawnedActorHashId: request.kind === 'spawn' ? (this.values[0] as Table).hashId : undefined };
@@ -130,12 +142,51 @@ export class ActorExecutionService {
 		}, error => { if (operation.result === undefined) this.finish(operation, { status: 'host-error', values: [], tags: [], reason: String(error) }); });
 		return operation;
 	}
+	private redraw(operation: ActorExecutionOperation, domain: ResourceDomain, worldHashId: number,
+		generation: number, lifetime: ActorExecutionLifetime | undefined): void {
+		const isCurrent = () => generation === this.generation && operation.result === undefined && (lifetime?.isCurrent?.() ?? true);
+		const finished = (completed: boolean) => {
+			if (operation.result !== undefined) return;
+			operation.outcome = { status: completed ? 'completed' : 'interrupted', values: [], tags: [],
+				reason: completed ? undefined : 'Redraw interrupted; the source edit and performed mutations are retained.' };
+		};
+		const failed = (error: unknown) => {
+			if (operation.result === undefined) this.finish(operation, { status: 'host-error', values: [], tags: [], reason: String(error) });
+		};
+		// The setter returned at the admitted World boundary. Do not request a
+		// second boundary: that would run another update and advance controllers.
+		void scheduleRuntimeGuestCall(this.runtime, this.guest, this.debuggerState, this.tasks, {
+			admission: 'quiescent', honorUserStops: true, isCurrent,
+			prepare: () => {
+				const world = this.world(domain, worldHashId);
+				if (world === undefined) return;
+				return { domain, closure: this.guest.readStringMember(world, 'render') as Closure, args: () => [world] };
+			},
+		}, () => {}, completed => {
+			if (!completed) { finished(false); return; }
+			void this.tasks.schedule(() => {
+				if (!isCurrent()) { finished(false); return; }
+				pushRuntimeDebuggerControlPlan(this.debuggerState, new RuntimeDeviceSettlementPlan(this.runtime, finished), 'workbench');
+			}, failed);
+		}, failed);
+	}
 	private world(domain: ResourceDomain, hashId: number): Table | undefined {
 		const world = runtimeWorld(this.sources, this.guest, domain);
 		return world?.hashId === hashId ? world : undefined;
 	}
 	private prepare(request: ActorInvocation, world: Table): RuntimeGuestCall | undefined {
 		const cpu = this.runtime.machine.cpu, guest = this.guest;
+		if (request.kind === 'position') {
+			const actor = findRuntimeActor(this.sources, guest, request.target.domain, request.target.actorHashId);
+			if (actor === undefined || guest.readStringMember(actor, 'ox') !== request.fromX || guest.readStringMember(actor, 'oy') !== request.fromY) return;
+			const parent = guest.readStringMember(actor, 'parent') as Table | null;
+			if ((parent === null ? 0 : parent.hashId) !== request.parentHashId) return;
+			const object = readRuntimeLuaModuleExport(this.sources, guest, request.target.domain, 'cartlib/world/object_2d');
+			if (object.kind !== 'value') return;
+			const setter = guest.readStringMember(actor, 'set_position');
+			if (setter !== guest.readStringMember(object.value, 'set_position')) return;
+			return { domain: request.target.domain, closure: setter as Closure, args: () => [actor, request.x, request.y] };
+		}
 		if (request.kind === 'spawn') {
 			const module = readRuntimeLuaModuleExport(this.sources, guest, request.domain, 'cartlib/world/prefab');
 			if (module.kind !== 'value' || module.value === null) return;

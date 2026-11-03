@@ -32,6 +32,8 @@ export class SceneLiveCommands {
 				if (result.status !== 'available') { showEditorMessage(UNAVAILABLE[result.status], 'info', 5); return; }
 				const open = (member: SceneLiveMember) => {
 					if (!current() || !live.isCurrent(member)) return;
+					actors.sceneAuthoring?.positions.bind({ member, model: authoring.workingCopy, version: authoring.workingCopy.version,
+						document: authoring.document!, scene: authoring.subject! });
 					const input = actors.resolveInput();
 					actors.inspectActor(input, member.domain, member.actorHashId);
 					actors.open(destination());

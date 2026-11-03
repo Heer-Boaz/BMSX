@@ -1,5 +1,6 @@
 #include "machine/scheduler/frame.h"
 #include "machine/runtime/runtime.h"
+#include "machine/runtime/cpu_executor.h"
 
 namespace bmsx {
 namespace {
@@ -250,6 +251,35 @@ bool FrameSchedulerState::runCyclesToNextLogicalTick(Runtime& runtime, i64 cycle
 		}
 	}
 	return runScheduledToNextLogicalTick(runtime, 0.0);
+}
+
+bool FrameSchedulerState::runDevicesToNextLogicalTick(Runtime& runtime, i64 cycleGrant) {
+	if (runtime.history.executionPaused()) return false;
+	if (runtime.frameLoop.frameActive) {
+		FrameState& state = runtime.frameLoop.frameState;
+		state.cycleBudgetRemaining += cycleGrant;
+		state.cycleBudgetGranted += cycleGrant;
+	} else {
+		const i64 carry = m_carriedCycleBudget;
+		if (carry == 0 && cycleGrant == 0) return false;
+		beginScheduledFrame(runtime, carry + cycleGrant, carry);
+	}
+	if (!beginScheduledExecution(runtime, 0.0)) return false;
+	const i64 previous = lastTickSequence;
+	FrameState& state = runtime.frameLoop.frameState;
+	auto& scheduler = runtime.machine.scheduler;
+	runDueRuntimeTimers(runtime);
+	while (lastTickSequence == previous && state.cycleBudgetRemaining > 0 && !runtime.machine.gxGpu.backendServiceBlocksMachine()) {
+		const i64 deadline = scheduler.nextDeadline();
+		if (deadline == std::numeric_limits<i64>::max()) break;
+		const i64 cycles = std::min({deadline - scheduler.nowCycles(), state.cycleBudgetRemaining, static_cast<i64>(MAX_CPU_SLICE_CYCLES)});
+		state.cycleBudgetRemaining -= cycles;
+		advanceRuntimeTime(runtime, static_cast<int>(cycles));
+	}
+	const bool completed = lastTickSequence != previous;
+	if (completed) runtime.frameLoop.abandonFrameState(runtime);
+	synchronizeBackendService(runtime);
+	return completed;
 }
 
 bool FrameSchedulerState::runScheduledToNextLogicalTick(Runtime& runtime, f64 hostDeltaMs) {

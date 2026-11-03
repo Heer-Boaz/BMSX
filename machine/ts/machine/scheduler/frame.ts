@@ -1,6 +1,7 @@
 import { Runtime } from '../runtime/runtime';
 import { InstructionStepResult } from '../runtime/frame/state';
 import { HistoryMode } from '../runtime/history/history';
+import { advanceRuntimeTime, runDueRuntimeTimers, MAX_CPU_SLICE_CYCLES } from '../runtime/cpu_executor';
 
 export type TickCompletion = {
 	sequence: number;
@@ -251,6 +252,36 @@ export class FrameSchedulerState {
 			}
 		}
 		return this.runScheduledToNextLogicalTick(0);
+	}
+
+	/** Debugger device settlement: retain the CPU exactly at its current stop,
+	 * including pending IRQ entry, while ordinary device timers reach a video tick.
+	 * Budget and backend fences have the same lifetime as an ordinary tick grant. */
+	public runDevicesToNextLogicalTick(cycleGrant: number): boolean {
+		const runtime = this.runtime;
+		if (runtime.history.executionPaused) return false;
+		if (runtime.frameLoop.frameActive) {
+			const state = runtime.frameLoop.frameState;
+			state.cycleBudgetRemaining += cycleGrant; state.cycleBudgetGranted += cycleGrant;
+		} else {
+			const carry = this.carriedCycleBudget;
+			if (carry === 0 && cycleGrant === 0) return false;
+			this.beginScheduledFrame(carry + cycleGrant, carry);
+		}
+		if (!this.beginScheduledExecution(0)) return false;
+		const previous = this.lastTickSequence, state = runtime.frameLoop.frameState, scheduler = runtime.machine.scheduler;
+		runDueRuntimeTimers(runtime);
+		while (this.lastTickSequence === previous && state.cycleBudgetRemaining > 0 && !runtime.machine.gxGpu.backendServiceBlocksMachine()) {
+			const deadline = scheduler.nextDeadline();
+			if (deadline === Number.MAX_SAFE_INTEGER) break;
+			const cycles = Math.min(deadline - scheduler.nowCycles, state.cycleBudgetRemaining, MAX_CPU_SLICE_CYCLES);
+			state.cycleBudgetRemaining -= cycles;
+			advanceRuntimeTime(runtime, cycles);
+		}
+		const completed = this.lastTickSequence !== previous;
+		if (completed) runtime.frameLoop.abandonFrameState();
+		this.synchronizeBackendService();
+		return completed;
 	}
 
 	public runScheduledToNextLogicalTick(hostDeltaMs: number): boolean {

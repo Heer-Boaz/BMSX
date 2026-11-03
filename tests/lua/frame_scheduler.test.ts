@@ -125,6 +125,41 @@ function createTickRuntime(input = new TickInputSource(), slots: CartridgeSocket
 	return { input, runtime };
 }
 
+test('device settlement reaches real VBlank without executing the stopped CPU or pending IRQ entry', () => {
+	const { runtime, input } = createTickRuntime();
+	const { cpu, memory } = runtime.machine, scheduler = runtime.frameScheduler;
+	memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_VBLANK);
+	memory.writeMappedU32LE(IO_INP_CTRL, INP_CTRL_ARM);
+	const thread = cpu.activeThread, depth = thread.frames.length, pc = thread.frames[depth - 1].pc, stackTop = thread.stackTop;
+	assert.equal(scheduler.runDevicesToNextLogicalTick(19), false);
+	assert.equal(runtime.machine.scheduler.nowCycles, 19);
+	assert.equal(scheduler.runDevicesToNextLogicalTick(runtime.timing.cycleBudgetPerFrame), true);
+	assert.equal(scheduler.lastTickSequence, 1);
+	assert.equal(input.sampleCount, 1);
+	assert.notEqual(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, 0, 'the real device edge raises its IRQ');
+	assert.equal(cpu.activeThread, thread); assert.equal(thread.frames.length, depth); assert.equal(thread.frames[depth - 1].pc, pc);
+	assert.equal(thread.stackTop, stackTop);
+	assert.equal(scheduler.lastTickCpuUsedCycles, 0);
+	assert.equal(scheduler.lastTickBudgetGranted - scheduler.lastTickBudgetRemaining, runtime.machine.scheduler.nowCycles);
+});
+
+test('device settlement retains split grants at a backend fence and resumes without regranting', () => {
+	const { runtime } = createTickRuntime(), scheduler = runtime.frameScheduler, gpu = runtime.machine.gxGpu;
+	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24); gpu.writeGp0(0); gpu.writeGp0(0x00010001);
+	assert.equal(scheduler.runDevicesToNextLogicalTick(55), false);
+	const output = gpu.readDeviceOutput(), readback = output.readbackPort;
+	assert.equal(readback.claimReadback(output.commandBuffer.executedCommandCount), true);
+	const blockedAt = runtime.machine.scheduler.nowCycles;
+	assert.equal(scheduler.runDevicesToNextLogicalTick(149), false);
+	assert.equal(runtime.machine.scheduler.nowCycles, blockedAt);
+	assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted, 204);
+	readback.completeReadback(readback.token);
+	assert.equal(scheduler.runDevicesToNextLogicalTick(0), false);
+	assert.equal(runtime.machine.scheduler.nowCycles, 204);
+	assert.equal(runtime.frameLoop.frameState.cycleBudgetRemaining, 0);
+	assert.equal(runtime.frameLoop.frameState.activeCpuUsedCycles, 0);
+});
+
 test('busy CPU execution publishes consumed cycles before VBlank carries the remaining grant', () => {
 	const code = new Uint8Array(INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.JMP, 0, 63, 63, 255);

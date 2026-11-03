@@ -13,6 +13,8 @@ export const enum RuntimeDebuggerPlanResult {
 export type RuntimeDebuggerExecutionContext = 'game' | 'workbench';
 
 export interface RuntimeDebuggerControlPlan {
+	/** Settle physical devices while retaining the CPU stop, including pending IRQ entry. */
+	readonly devicesOnly?: boolean;
 	/** Internal rendezvous suppress user stops; an interactive evaluation can honor them. */
 	readonly honorUserStops: boolean;
 	readonly executionDomainMask: ExecutionDomainMask;
@@ -67,6 +69,7 @@ export class RuntimeDebuggerPlanManager {
 	private readonly completionBatches: RuntimeDebuggerCompletionBatchRecord[] = [];
 
 	public get activeControlPlan(): RuntimeDebuggerControlPlan | null { return this.controlPlan; }
+	public get devicesOnly(): boolean { return this.controlPlan?.devicesOnly === true; }
 
 	public get controlActive(): boolean {
 		return this.controlPlan !== null;

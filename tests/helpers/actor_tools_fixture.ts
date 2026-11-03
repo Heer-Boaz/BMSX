@@ -4,6 +4,7 @@ local display<const> = require('cartlib/gx/display')
 local vblank<const> = require('cartlib/gx/vblank')
 local world<const> = require('cartlib/world/world')
 local prefab<const> = require('cartlib/world/prefab')
+local object_2d<const> = require('cartlib/world/object_2d')
 local fsm<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local timelines<const> = require('cartlib/timeline/timeline_component')
@@ -26,13 +27,15 @@ fsm.register('walker', { initial = 'nest', states = {
 local count<const> = blackboard.key('count', 10)
 trees.register('rover', { blackboard = { count, blackboard.key('vacant'), blackboard.key('ready', false) },
 	root = { type = 'sequence', children = {} } })
-prefab.define({ def_id = 'tool_actor', class = {
+local actor_class<const> = {
  set_vitals = function(self, health, energy) self.health, self.energy = health, energy end,
-}, spatial = { family = '2d', authority = 'affine', local_transform = { 1, 0, 0, 1, 0, 0 } }, components = {
+}
+setmetatable(actor_class, { __index = object_2d })
+prefab.define({ def_id = 'tool_actor', class = actor_class, components = {
 	timelines.new, effect_component.factory({ 'pulse' }), fsm_component.factory({ 'walker' }), tree_component.factory('rover'),
 } })
-actor_tool_first = world:spawn('tool_actor', { id = 'first', health = 4, energy = 8 }, { local_transform = { 1, 0, 0, 1, 16, 24 } })
-actor_tool_second = world:spawn('tool_actor', { id = 'second', health = 40, energy = 80 }, { local_transform = { 1, 0, 0, 1, 80, 96 } })
+actor_tool_first = world:spawn('tool_actor', { id = 'first', health = 4, energy = 8, position = { x = 16, y = 24 } })
+actor_tool_second = world:spawn('tool_actor', { id = 'second', health = 40, energy = 80, position = { x = 80, y = 96 } })
 actor_tool_first.state_machines:get_machine('walker'):transition_to('/parked')
 actor_tool_first.state_machines:get_machine('walker').states.nest.data.revision = 111
 actor_tool_second.state_machines:get_machine('walker').states.nest.data.revision = 222
@@ -66,7 +69,7 @@ const ACTOR_EXECUTION_RACE = `	if actor_tool_race == 'remove' then
 
 /** Same real World fixture, with explicit guest-owned mutation races and bounded calls. */
 export const ACTOR_EXECUTION_SOURCE = ACTOR_TOOLS_SOURCE
-	.replace('class = {', `class = {
+	.replace('local actor_class<const> = {', `local actor_class<const> = {
 	probe_count = 0,
 	bind = function(self) self.events:on({ event = 'probe_event', handler = self.on_probe }) end,
 	on_probe = function(self, event_type, emitter, payload) self.event_value = payload.value end,

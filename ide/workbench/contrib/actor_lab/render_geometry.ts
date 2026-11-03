@@ -8,12 +8,15 @@ export type ActorVisualKind = 'sprite' | 'region' | 'rectangle' | 'text';
 export type ActorRenderQuad = {
 	domain: ResourceDomain; hashId: number; label: string;
 	ox: number; oy: number; ax: number; ay: number; bx: number; by: number;
+	localX: number; localY: number; parentHashId: number;
+	parentXX: number; parentXY: number; parentYX: number; parentYY: number;
 	idTag: ValueTag; idScalar: number; definitionTag: ValueTag; definitionScalar: number;
 };
 
 /** Scalar draw evidence. Storage is reused; no guest object survives observation. */
 export class ActorRenderGeometry {
 	public readonly quads = new ScratchBuffer<ActorRenderQuad>(() => ({ domain: 0, hashId: 0, label: '',
+		localX: 0, localY: 0, parentHashId: 0, parentXX: 1, parentXY: 0, parentYX: 0, parentYY: 1,
 		ox: 0, oy: 0, ax: 0, ay: 0, bx: 0, by: 0, idTag: ValueTag.Nil, idScalar: 0, definitionTag: ValueTag.Nil, definitionScalar: 0 }));
 	public capture(visual: Table, kind: ActorVisualKind, domain: ResourceDomain, guest: SuspendedGuestSession): void {
 		let left = 0, top = 0, width: number, height: number;
@@ -41,6 +44,15 @@ export class ActorRenderGeometry {
 			quad.idTag = idTag; quad.idScalar = idScalar; quad.definitionTag = definitionTag; quad.definitionScalar = definitionScalar;
 		}
 		quad.domain = domain; quad.hashId = owner.hashId;
+		quad.localX = guest.readStringMember(owner, 'ox') as number; quad.localY = guest.readStringMember(owner, 'oy') as number;
+		const parent = guest.readStringMember(owner, 'parent') as Table | null;
+		quad.parentHashId = parent === null ? 0 : parent.hashId;
+		// draw() has resolved the same hierarchy used by this visual. Capture the
+		// parent basis with the image, not later from an already advanced heap.
+		quad.parentXX = parent === null ? 1 : guest.readStringMember(parent, 'wxx') as number;
+		quad.parentXY = parent === null ? 0 : guest.readStringMember(parent, 'wxy') as number;
+		quad.parentYX = parent === null ? 0 : guest.readStringMember(parent, 'wyx') as number;
+		quad.parentYY = parent === null ? 1 : guest.readStringMember(parent, 'wyy') as number;
 		quad.ox = (guest.readStringMember(visual, 'wox') as number) + xx * left + yx * top;
 		quad.oy = (guest.readStringMember(visual, 'woy') as number) + xy * left + yy * top;
 		quad.ax = xx * width; quad.ay = xy * width; quad.bx = yx * height; quad.by = yy * height;

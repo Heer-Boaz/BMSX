@@ -3,13 +3,14 @@ import type { ActorRenderFrame } from './render_geometry';
 
 export type ActorViewportHit = {
 	domain: ResourceDomain; hashId: number; label: string;
+	quadIndex: number;
 	left: number; top: number; right: number; bottom: number;
 };
 
 /** Geometric picking in the published image, not a current-heap or collider query.
  * This is planar visual selection, not an alpha/occlusion or pixel-ID buffer. */
 export class ActorViewportPicker {
-	public readonly hit: ActorViewportHit = { domain: 0, hashId: 0, label: '', left: 0, top: 0, right: 0, bottom: 0 };
+	public readonly hit: ActorViewportHit = { domain: 0, hashId: 0, label: '', quadIndex: -1, left: 0, top: 0, right: 0, bottom: 0 };
 	private sequence: number | undefined;
 	private domain: ResourceDomain | undefined;
 	private x = 0;
@@ -31,6 +32,7 @@ export class ActorViewportPicker {
 			const v = (quad.ax * dy - quad.ay * dx) / determinant;
 			if (!(u >= 0 && u < 1 && v >= 0 && v < 1)) continue;
 			this.hit.domain = domain; this.hit.hashId = quad.hashId; this.hit.label = quad.label;
+			this.hit.quadIndex = index;
 			this.hit.left = Math.min(x0, x0 + quad.ax, x0 + quad.bx, x0 + quad.ax + quad.bx);
 			this.hit.right = Math.max(x0, x0 + quad.ax, x0 + quad.bx, x0 + quad.ax + quad.bx);
 			this.hit.top = Math.min(y0, y0 + quad.ay, y0 + quad.by, y0 + quad.ay + quad.by);

@@ -32,6 +32,7 @@ import { ActorExecutionService } from './contrib/actor_lab/execution';
 import { BehaviorSourceDocuments } from './contrib/behavior_lens/source_documents';
 import { SceneSourceDocuments } from './contrib/scene_editor/source_documents';
 import { SceneLiveService } from './contrib/scene_editor/live';
+import { SceneLivePositions } from './contrib/scene_editor/live_positions';
 import { RuntimeInstructionObservers } from '../runtime/instruction_observers';
 import { WorkspaceToolService } from './services/assistant/tool_service';
 import { ResourceDiagnosticsService } from './services/diagnostics/resource_diagnostics';
@@ -100,6 +101,7 @@ export class StudioWorkbench {
 	public readonly behaviorSources: BehaviorSourceDocuments;
 	public readonly sceneSources: SceneSourceDocuments;
 	public readonly sceneLive: SceneLiveService;
+	public readonly scenePositions: SceneLivePositions;
 	private readonly instructionObservers: RuntimeInstructionObservers;
 	public readonly projectContent: ProjectContentIndex;
 	public readonly tools: WorkspaceToolService;
@@ -139,7 +141,7 @@ export class StudioWorkbench {
 		this.directories = options.workspaceFiles === undefined ? undefined : new WorkspaceDirectoryModel(options.workspaceFiles, sources.catalog);
 		this.hotResumes = new HotResumeService(models, sources, this.guest, this.fault, this.debugger,
 			input, runtime, runtimeTasks, execution, workspaceDirtyRecords);
-		this.hotResumes.onDidApply(() => { this.events.beginTimeline(); this.sceneLive.beginExecution(); this.actorFrames.beginExecution(); this.gte.didInstall(); this.gpu.didInstall(); });
+		this.hotResumes.onDidApply(() => { this.events.beginTimeline(); this.scenePositions.clear(); this.sceneLive.beginExecution(); this.actorFrames.beginExecution(); this.gte.didInstall(); this.gpu.didInstall(); });
 		this.boots = new BootService(models, sources, this.fault, runtime, runtimeTasks, execution, audioOutput, workspaceDirtyRecords);
 		this.diagnostics = new ResourceDiagnosticsService(models, sources.catalog, clock);
 		this.luaEvaluation = new RuntimeLuaEvaluation(runtime, sources, this.guest, this.debugger, this.fault, runtimeTasks, execution, rewind);
@@ -158,6 +160,7 @@ export class StudioWorkbench {
 		this.behaviorSources = new BehaviorSourceDocuments(models, sources.catalog);
 		this.sceneSources = new SceneSourceDocuments(models, sources.catalog);
 		this.sceneLive = new SceneLiveService(runtime.machine.cpu, sources, this.guest, this.instructionObservers);
+		this.scenePositions = new SceneLivePositions(this.sceneLive, this.sceneSources, sources, this.guest, this.actorExecution);
 		this.projectContent = new ProjectContentIndex(models, sources.catalog, this.behaviorSources.registrations, this.sceneSources);
 		this.tools = new WorkspaceToolService(models, sources, this.diagnostics, this.scenarioRuns, this.inspection,
 			this.frameNavigation, gameCapture, this.luaEvaluation, this.debuggerExecution, this.actorExecution,
@@ -170,7 +173,7 @@ export class StudioWorkbench {
 			this.didReplaceMachine(origin === RuntimeRestoreOrigin.HistorySeek ? 'history-restored' : 'heap-replaced');
 		};
 		runtime.history.onWillResumeRecording = branched => {
-			if (branched) { this.sceneLive.beginExecution(); this.events.beginTimeline(); this.gte.beginTimeline(); this.gpu.beginTimeline(); }
+			if (branched) { this.scenePositions.clear(); this.sceneLive.beginExecution(); this.events.beginTimeline(); this.gte.beginTimeline(); this.gpu.beginTimeline(); }
 		};
 		runtime.history.onWillEndReview = () => this.guest.willEndHistoryReview();
 		runtime.onStateReset = () => {
@@ -195,6 +198,7 @@ export class StudioWorkbench {
 	}
 
 	private didReplaceMachine(reason: GuestInvalidationReason): void {
+		this.scenePositions.clear();
 		if (reason === 'heap-replaced') this.sceneLive.beginExecution();
 		this.debuggerExecution.didReset();
 		this.luaEvaluation.didReplaceMachine();
@@ -244,7 +248,7 @@ export class StudioWorkbench {
 		this.frameNavigation.dispose(); this.debuggerExecution.dispose();
 		const evaluationDrained = this.luaEvaluation.shutdown(), actorsDrained = this.actorExecution.shutdown();
 		this.scenarioRuns.dispose();
-		this.sceneLive.dispose(); this.actorFrames.dispose(); this.instructionObservers.dispose();
+		this.scenePositions.clear(); this.sceneLive.dispose(); this.actorFrames.dispose(); this.instructionObservers.dispose();
 		const playDrained = this.play.dispose();
 		this.diagnostics.dispose();
 		const executionDrained = this.hotResumes.shutdown(), bootsDrained = this.boots.shutdown();

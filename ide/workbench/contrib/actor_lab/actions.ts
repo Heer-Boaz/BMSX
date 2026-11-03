@@ -64,12 +64,13 @@ export class ActorLabEditorActions {
 		const controller = input.controller, authoring = controller.sceneAuthoring!;
 		const domain = input.domain, actor = input.actorHashId, context = this.origin.scope.contextGeneration;
 		controller.viewport.transport.pause(); input.interaction.running = false;
-		const source = authoring.live.source(domain, actor, authoring.editor.documents);
+		const source = authoring.positions.source(domain, actor);
 		if (source === undefined) {
 			showEditorMessage('No matching authored Scene member in the current source. Procedural actors remain runtime-only; run changed source before linking it.', 'info', 5); return;
 		}
 		const current = () => this.origin.scope.contextGeneration === context && input.domain === domain && input.actorHashId === actor
 			&& !controller.rewind.active && authoring.live.isCurrent(source.member);
+		authoring.positions.bind(source);
 		authoring.editor.openMember(this.group, source.model,
 			{ document: source.document, sourceVersion: source.version, scene: source.scene }, source.member.memberIndex - 1, current);
 	}

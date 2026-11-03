@@ -48,6 +48,7 @@ export class SceneLiveService {
 	private readonly observations: (SceneRegistrationProvenance | undefined)[] = [];
 	private readonly subscriptions: (() => void)[] = [];
 	private generation = 0;
+	public get executionGeneration(): number { return this.generation; }
 	public constructor(private readonly cpu: CPU, private readonly sources: RuntimeSourceState,
 		private readonly guest: SuspendedGuestSession, private readonly observers: RuntimeInstructionObservers) {
 		this.beginExecution();

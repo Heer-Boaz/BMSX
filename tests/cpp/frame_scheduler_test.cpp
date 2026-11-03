@@ -112,6 +112,47 @@ void testBusyCpuBudgetAtVblank() {
 		"instruction stepping updates the same budget owner");
 }
 
+void testDeviceSettlementRetainsCpuStop() {
+	TickRuntimeFixture fixture;
+	auto& runtime = fixture.runtime;
+	auto& scheduler = runtime.frameScheduler;
+	auto& cpu = runtime.machine.cpu;
+	runtime.machine.memory.writeMappedU32LE(bmsx::IO_IRQ_MASK, bmsx::IRQ_VBLANK);
+	runtime.machine.memory.writeMappedU32LE(bmsx::IO_INP_CTRL, bmsx::INP_CTRL_ARM);
+	auto* thread = cpu.activeThread();
+	const auto depth = thread->frames.size();
+	const auto pc = thread->frames.back()->pc;
+	const auto stackTop = thread->stackTop;
+	require(!scheduler.runDevicesToNextLogicalTick(runtime, 19), "partial device grant stops before VBlank");
+	require(runtime.machine.scheduler.nowCycles() == 19, "devices consume the exact partial grant");
+	require(scheduler.runDevicesToNextLogicalTick(runtime, runtime.timing.cycleBudgetPerFrame), "device timers reach the real video edge");
+	require(scheduler.lastTickSequence == 1 && fixture.input.sampleCount == 1, "VBlank publishes its ordinary tick and input sample");
+	require((runtime.machine.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_VBLANK) != 0, "VBlank latches its pending IRQ");
+	require(cpu.activeThread() == thread && thread->frames.size() == depth && thread->frames.back()->pc == pc && thread->stackTop == stackTop,
+		"device settlement neither executes the stopped CPU nor enters its pending interrupt");
+	require(scheduler.lastTickCpuUsedCycles == 0, "device cycles are not CPU execution");
+	require(scheduler.lastTickBudgetGranted - scheduler.lastTickBudgetRemaining == runtime.machine.scheduler.nowCycles(), "only unspent device budget carries");
+}
+
+void testDeviceSettlementBackendFence() {
+	TickRuntimeFixture fixture;
+	auto& runtime = fixture.runtime;
+	auto& scheduler = runtime.frameScheduler;
+	auto& gpu = runtime.machine.gxGpu;
+	gpu.writeGp0(bmsx::GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24u); gpu.writeGp0(0); gpu.writeGp0(0x00010001);
+	require(!scheduler.runDevicesToNextLogicalTick(runtime, 55), "device settlement suspends at the backend fence");
+	const auto& output = gpu.readDeviceOutput();
+	auto& readback = output.readbackPort;
+	require(readback.claimReadback(output.commandBuffer.executedCommandCount), "backend claims readback");
+	const auto blockedAt = runtime.machine.scheduler.nowCycles();
+	require(!scheduler.runDevicesToNextLogicalTick(runtime, 149), "admission retains a second split grant during service");
+	require(runtime.machine.scheduler.nowCycles() == blockedAt && runtime.frameLoop.frameState.cycleBudgetGranted == 204, "backend latency consumes no granted cycles");
+	readback.completeReadback(readback.token());
+	require(!scheduler.runDevicesToNextLogicalTick(runtime, 0), "zero resumes retained work without reaching VBlank");
+	require(runtime.machine.scheduler.nowCycles() == 204 && runtime.frameLoop.frameState.cycleBudgetRemaining == 0, "split grants remain exact across backend service");
+	require(runtime.frameLoop.frameState.activeCpuUsedCycles == 0, "backend settlement executes no CPU instructions");
+}
+
 void testBoundedLogicalTickRetainsCycleCarry() {
 	TickRuntimeFixture fixture;
 	bmsx::Runtime& runtime = fixture.runtime;
@@ -1014,6 +1055,8 @@ void testRuntimeResetNotification() {
 }
 
 int main() {
+	testDeviceSettlementRetainsCpuStop();
+	testDeviceSettlementBackendFence();
 	testBusyCpuBudgetAtVblank();
 	testRuntimeResetNotification();
 	testBoundedLogicalTickRetainsCycleCarry();

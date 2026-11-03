@@ -35,7 +35,13 @@ export function executeHostUpdate(
 	audioOutput: HostAudioOutput,
 	screen: RenderPresentationState,
 	hostDeltaMs: number,
+	devicesOnly = false,
 ): void {
+	if (devicesOnly) {
+		session.execution.consumeElapsedTime(0);
+		executeHostLogicalTick(session, runtime, presenter, audioOutput, screen, true);
+		return;
+	}
 	if (session.execution.frameStepPending) {
 		session.execution.consumeElapsedTime(0);
 		if (executeHostLogicalTick(session, runtime, presenter, audioOutput, screen)) {
@@ -66,14 +72,17 @@ export function executeHostLogicalTick(
 	presenter: VideoPresenter,
 	audioOutput: HostAudioOutput,
 	screen: RenderPresentationState,
+	devicesOnly = false,
 ): boolean {
 	const previousTickSequence = runtime.frameScheduler.lastTickSequence;
-	let completed = runtime.frameScheduler.runToNextLogicalTick();
+	let completed = devicesOnly
+		? runtime.frameScheduler.runDevicesToNextLogicalTick(runtime.timing.cycleBudgetPerFrame)
+		: runtime.frameScheduler.runToNextLogicalTick();
 	const gxGpu = runtime.machine.gxGpu;
 	while (gxGpu.backendServicePending()) {
 		serviceNextGxBackendRequest(runtime, presenter);
 		if (!completed) {
-			completed = runtime.frameScheduler.runToNextLogicalTick();
+			completed = devicesOnly ? runtime.frameScheduler.runDevicesToNextLogicalTick(0) : runtime.frameScheduler.runToNextLogicalTick();
 		}
 	}
 	syncAfterRuntimeUpdate(

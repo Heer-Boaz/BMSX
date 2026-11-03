@@ -3,7 +3,10 @@ import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import type { EditorPaneClearReason } from '../../services/editor/editor_pane';
 import { ActorLabEditorActions } from './actions';
-import type { KeyInputEvent } from '../../../../hosts/common/input/text';
+import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
+import { executeTextHistoryCommand } from '../../../editor/editing/history_commands';
+import { showEditorMessage } from '../../../common/feedback_state';
+import { SceneLivePositionDrag } from '../scene_editor/live_drag';
 import { WorkbenchSplitControl } from '../../ui/split_control';
 import type { WorkbenchSplitView } from '../../ui/split_view';
 import { drawWorkbenchSplit } from '../../render/split_view';
@@ -71,6 +74,10 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	private viewportHover = false;
 	private pointerX = 0;
 	private pointerY = 0;
+	private readonly positionDrag = new SceneLivePositionDrag();
+	private get sourcePosition() {
+		return this.hasInput ? this.controller.sceneAuthoring?.positions.find(this.input.domain, this.input.actorHashId) : undefined;
+	}
 	private viewportHit: ActorViewportHit | undefined;
 	private readonly split = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly scrollbar = new ScrollbarPointerControl(pointerCapture);
@@ -97,6 +104,28 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		this.split.focusTarget.commandContext = this.focusTarget;
 		this.timelineSlider.focusTarget.commandContext = this.focusTarget;
 		for (const target of [this.focusTarget, this.graph.focusTarget]) {
+			for (const command of ['undo', 'redo', 'save'] as const) {
+				const enabled = () => {
+					const binding = this.sourcePosition;
+					return binding !== undefined && !binding.authoring.workingCopy.readOnly && (command === 'save'
+						? this.controller.sceneAuthoring!.saves.canSave(binding.authoring.workingCopy)
+						: command === 'undo' ? binding.authoring.workingCopy.canUndo : binding.authoring.workingCopy.canRedo);
+				};
+				target.registerCommand(command, { contextual: true, isEnabled: enabled,
+					run: () => {
+						const model = this.sourcePosition!.authoring.workingCopy;
+						if (command === 'save') this.controller.sceneAuthoring!.save(model); else executeTextHistoryCommand(model, command);
+					}, capture: () => {
+						const binding = this.sourcePosition; if (binding === undefined) return;
+						const context = target.scope.contextGeneration;
+						const current = () => target.scope.contextGeneration === context && this.sourcePosition === binding;
+						return { editScope: target.scope, isEnabled: () => current() && enabled(), run: () => {
+							if (!current()) return;
+							if (command === 'save') this.controller.sceneAuthoring!.save(binding.authoring.workingCopy);
+							else executeTextHistoryCommand(binding.authoring.workingCopy, command);
+						} };
+					} });
+			}
 			this.bindTransportCommands(target);
 			target.registerCommand('contextMenu', {
 				isEnabled: () => this.hasInput && (this.input.presentation === 'graph' || this.controller.selected(this.input) !== undefined),
@@ -313,6 +342,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		this.renderedTopology = -1;
 	}
 	public override clearInput(reason: EditorPaneClearReason = 'deactivate'): void {
+		pointerCapture.cancelTarget(this.positionDrag);
 		if (reason !== 'move') this.input.interaction.setRuntime(null);
 		pointerHover.release(this);
 		this.navigationSelection = undefined;
@@ -332,6 +362,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		pointerHover.release(this); this.actions.dispose(); this.graph.dispose(); this.split.dispose(); this.timelineSlider.dispose(); this.scrollbar.cancelPointer(); super.dispose();
 	}
 	public override update(): void {
+		this.positionDrag.refresh();
 		const input = this.input, scope = this.focusTarget.scope, context = scope.contextGeneration;
 		const readback = input.dirty;
 		const revealed = this.controller.refresh(input);
@@ -411,7 +442,8 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		if (this.detailsWindow.hasFocus) this.statusItems[0].text = input.details!.title;
 		else if (this.split.focusTarget.hasFocus) this.statusItems[0].text = this.boundSplit!.orientation === 'horizontal'
 			? 'RESIZE PANES: LEFT/RIGHT | HOME: RESET' : 'RESIZE PANES: UP/DOWN | HOME: RESET';
-		else if (this.viewportHit !== undefined) this.statusItems[0].text = this.viewportHit.label;
+		else if (this.viewportHit !== undefined) this.statusItems[0].text = this.viewportHit.label
+			+ (this.controller.sceneAuthoring === undefined || this.gameInput.focusTarget.hasFocus ? '' : ' · Alt+drag: authored position');
 		else if (input.presentation === 'outline') this.statusItems[0].text = !input.dirty && input.actorPresent
 			? input.outline.rows[input.outline.selectionIndex]?.element.node.label ?? input.status : input.status;
 		else {
@@ -427,14 +459,15 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	}
 	public draw(): void {
 		drawActorLab(this.input, this.timelineSlider.focusTarget.hasFocus, this.graph.hover, this.graph.focusTarget.hasFocus, this.controller.viewport);
-		const hit = this.viewportHit;
+		const drag = this.positionDrag, hit = drag.active ? drag.outline : this.viewportHit;
 		if (!this.input.layout.previewVisible) return;
 		if (hit !== undefined && this.controller.renderFrames.displayCurrent) {
 			const bounds = this.input.previewBounds, frame = this.controller.viewportPicker.frame;
 			const scaleX = (bounds.right - bounds.left) / frame.width, scaleY = (bounds.bottom - bounds.top) / frame.height;
+			const dx = drag.active ? drag.dx : 0, dy = drag.active ? drag.dy : 0;
 			api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
-			api.blit_rect(bounds.left + hit.left * scaleX, bounds.top + hit.top * scaleY,
-				bounds.left + hit.right * scaleX, bounds.top + hit.bottom * scaleY, 0, COLOR_TAB_BORDER);
+			api.blit_rect(bounds.left + (hit.left + dx) * scaleX, bounds.top + (hit.top + dy) * scaleY,
+				bounds.left + (hit.right + dx) * scaleX, bounds.top + (hit.bottom + dy) * scaleY, 0, COLOR_TAB_BORDER);
 			api.popClipRect();
 		}
 		this.gameInput.draw();
@@ -464,8 +497,35 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			(this.pointerX - bounds.left) * frame.width / (bounds.right - bounds.left),
 			(this.pointerY - bounds.top) * frame.height / (bounds.bottom - bounds.top));
 	}
+	private beginPositionDrag(snapshot: PointerInputSnapshot): void {
+		const controller = this.controller, input = this.input, authoring = controller.sceneAuthoring!;
+		if (!controller.canInteract() || controller.rewind.active) return;
+		this.updateViewportHit();
+		const hit = this.viewportHit; if (hit === undefined) return;
+		const { domain, hashId, quadIndex } = hit, frame = controller.viewportPicker.frame, sequence = frame.sequence;
+		const scope = this.focusTarget.scope, context = scope.contextGeneration;
+		controller.viewport.transport.pause(); input.interaction.running = false;
+		controller.inspectActor(input, domain, hashId); this.update(); this.focusTarget.focus();
+		const current = () => this.hasInput && this.input === input && scope.contextGeneration === context
+			&& this.focusTarget.hasFocus && input.domain === domain && input.actorHashId === hashId && !controller.rewind.active
+			&& frame.sequence === sequence && controller.renderFrames.displayCurrent;
+		if (!current()) return;
+		const source = authoring.positions.source(domain, hashId);
+		const binding = source === undefined ? undefined : authoring.positions.bind(source);
+		if (binding === undefined) {
+			showEditorMessage('This visual has no editable authored member position matching its live pose. Open its source to edit the controller or construction.', 'info', 5); return;
+		}
+		const bounds = input.previewBounds, left = bounds.left, top = bounds.top, right = bounds.right, bottom = bounds.bottom;
+		if (!this.positionDrag.begin(binding, frame.quads.peek(quadIndex), hit, snapshot, bounds, frame.width, frame.height, this.focusTarget,
+			() => current() && bounds.left === left && bounds.top === top && bounds.right === right && bounds.bottom === bottom)) {
+			showEditorMessage('The displayed pose cannot be moved through this authored position: its parent, local pose or source edit is unavailable.', 'info', 5);
+		}
+	}
 
 	public handleKeyboard(input: KeyInputEvent): void {
+		if (this.positionDrag.active && isKeyJustPressed('Escape', input)) {
+			consumeIdeKey('Escape', input); pointerCapture.cancelTarget(this.positionDrag); return;
+		}
 		if (!this.input.actorPresent) return;
 		if (this.input.presentation === 'graph') { this.handleGraphKeyboard(input); return; }
 		for (const [key, command] of NAVIGATION) {
@@ -514,6 +574,10 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		if (this.input.layout.previewVisible && snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.previewBounds)) {
 			if (!this.controller.rewind.seeking) {
 				this.viewportHover = true; this.pointerX = snapshot.viewportX; this.pointerY = snapshot.viewportY; pointerHover.visit(this);
+				if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0 && (snapshot.modifiers & KeyModifier.alt) !== 0
+					&& !this.gameInput.focusTarget.hasFocus && this.controller.sceneAuthoring !== undefined) {
+					this.beginPositionDrag(snapshot); return true;
+				}
 				if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0 && !this.gameInput.focusTarget.hasFocus) {
 					this.updateViewportHit();
 					if (this.viewportHit !== undefined) {
