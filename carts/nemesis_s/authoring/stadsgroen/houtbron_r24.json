@@ -1,0 +1,140 @@
+{
+  "compact_winterlinde": {
+    "image": "authoring/stadsgroen/houtbron_r24/compact_winterlinde.png",
+    "sha256": "a69a9fcef99ed5b2599429d70750158a5035b1c217ab14f0712b3ab35ddc9fc8",
+    "source_tiles": [
+      [
+        null,
+        1111,
+        1112,
+        1113
+      ],
+      [
+        1114,
+        1115,
+        1116,
+        1117
+      ],
+      [
+        1118,
+        1119,
+        1120,
+        1121
+      ],
+      [
+        1122,
+        1123,
+        1124,
+        1125
+      ],
+      [
+        null,
+        null,
+        1126,
+        null
+      ],
+      [
+        null,
+        null,
+        1127,
+        1128
+      ]
+    ]
+  },
+  "compact_tree_socket_gevelkade": {
+    "image": "authoring/stadsgroen/houtbron_r24/compact_tree_socket_gevelkade.png",
+    "sha256": "b25419b67b20e4f891b75a5805f82d2d7c723f964ce010eb902bd5953e412c24",
+    "source_tiles": [
+      [
+        1136,
+        1137
+      ]
+    ]
+  },
+  "straatboom_winter": {
+    "image": "authoring/stadsgroen/houtbron_r24/straatboom_winter.png",
+    "sha256": "ec3670c91426f856780ccb4ae95afb5ae796888f17a750da4eaae7c353af5782",
+    "source_tiles": [
+      [
+        1688,
+        1689,
+        1690
+      ],
+      [
+        1691,
+        1692,
+        1693
+      ],
+      [
+        1694,
+        1695,
+        1696
+      ],
+      [
+        null,
+        1697,
+        null
+      ]
+    ]
+  },
+  "knotboom_winter": {
+    "image": "authoring/stadsgroen/houtbron_r24/knotboom_winter.png",
+    "sha256": "f4ec319e8b93c14897c6f5a179cb4b03c0ec122bc3147a43ffdcedc46172b50c",
+    "source_tiles": [
+      [
+        1698,
+        1699
+      ],
+      [
+        1700,
+        1701
+      ],
+      [
+        1702,
+        1703
+      ]
+    ]
+  },
+  "winterlinde_stil": {
+    "image": "authoring/stadsgroen/houtbron_r24/winterlinde_stil.png",
+    "sha256": "a69a9fcef99ed5b2599429d70750158a5035b1c217ab14f0712b3ab35ddc9fc8",
+    "source_tiles": [
+      [
+        null,
+        1111,
+        1112,
+        1113
+      ],
+      [
+        1114,
+        1115,
+        1116,
+        1117
+      ],
+      [
+        1118,
+        1119,
+        1120,
+        1121
+      ],
+      [
+        1122,
+        1123,
+        1124,
+        1125
+      ],
+      [
+        null,
+        null,
+        1126,
+        null
+      ],
+      [
+        null,
+        null,
+        1127,
+        1128
+      ]
+    ]
+  }
+}

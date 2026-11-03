@@ -1,0 +1,166 @@
+{
+  "props": [
+    {
+      "name": "auto_rood",
+      "label": "Moderne rode auto",
+      "crop": [
+        226,
+        153,
+        562,
+        321
+      ],
+      "size": [
+        8,
+        8
+      ],
+      "drawing_size": [
+        8,
+        4
+      ],
+      "rim_coverage": 64
+    },
+    {
+      "name": "bestelbus_blauw",
+      "label": "Blauwe bestelbus",
+      "crop": [
+        907,
+        133,
+        1223,
+        321
+      ],
+      "size": [
+        16,
+        8
+      ],
+      "drawing_size": [
+        10,
+        5
+      ],
+      "rim_coverage": 64
+    },
+    {
+      "name": "fiets_rood",
+      "label": "Fiets met mand",
+      "crop": [
+        240,
+        471,
+        538,
+        669
+      ],
+      "size": [
+        8,
+        8
+      ],
+      "drawing_size": [
+        4,
+        3
+      ],
+      "silhouette": true,
+      "rim_coverage": 48,
+      "frame_coverage": 96
+    },
+    {
+      "name": "fiets_blauw",
+      "label": "Fiets met bagagedrager",
+      "crop": [
+        907,
+        471,
+        1207,
+        669
+      ],
+      "size": [
+        8,
+        8
+      ],
+      "drawing_size": [
+        4,
+        3
+      ],
+      "silhouette": true,
+      "rim_coverage": 48,
+      "frame_coverage": 96
+    },
+    {
+      "name": "fietsenrek",
+      "label": "Twee fietsen aan het rek",
+      "crop": [
+        156,
+        797,
+        646,
+        981
+      ],
+      "size": [
+        8,
+        8
+      ],
+      "drawing_size": [
+        8,
+        3
+      ],
+      "silhouette": true,
+      "rim_coverage": 48,
+      "frame_coverage": 96
+    },
+    {
+      "name": "bakfiets",
+      "label": "Bakfiets",
+      "crop": [
+        890,
+        797,
+        1244,
+        981
+      ],
+      "size": [
+        8,
+        8
+      ],
+      "drawing_size": [
+        6,
+        3
+      ],
+      "silhouette": true,
+      "rim_coverage": 48,
+      "frame_coverage": 96
+    }
+  ],
+  "shops": [
+    {
+      "name": "winkel_bakker",
+      "label": "Bakkerij",
+      "crop": [
+        350,
+        113,
+        1052,
+        387
+      ],
+      "base": "compact_sneeuwhuis"
+    },
+    {
+      "name": "winkel_fietsen",
+      "label": "Fietsenwinkel",
+      "crop": [
+        350,
+        460,
+        1052,
+        733
+      ],
+      "base": "compact_hoog_sneeuwhuis",
+      "facade_height": 12
+    },
+    {
+      "name": "winkel_kruidenier",
+      "label": "Kruidenier",
+      "crop": [
+        350,
+        807,
+        1052,
+        1079
+      ],
+      "base": "compact_sneeuwhuis"
+    }
+  ],
+  "source_sha256": {
+    "straatdetails_bron.png": "5d49c94ea4ad9eb499d62bb701cbca62eb6fd4e01c0775855c97a4461560d3fc",
+    "winkelpuien_bron.png": "1a0979d97b3ef9d0bf0d4c47f46f199f60f3e631fb1115efc5454fd5f440938e"
+  }
+}

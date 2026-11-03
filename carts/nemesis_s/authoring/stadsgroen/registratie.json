@@ -1,0 +1,183 @@
+{
+  "source": "wintergroen_bron.png",
+  "source_sha256": "765521def6529901b1379a742de727152f097221f3132e7d7b0570b8cc43d64f",
+  "scale": {
+    "ship": "Kartonion",
+    "ship_pixels": [
+      16,
+      10
+    ],
+    "fictional_ship_length_m": 4,
+    "town_pixels_per_m": 4,
+    "buildings_and_player_unchanged": true
+  },
+  "assets": [
+    {
+      "name": "straatboom_winter",
+      "label": "Winterse straatboom",
+      "region": [
+        130,
+        96,
+        435,
+        450
+      ],
+      "size": [
+        24,
+        32
+      ],
+      "drawing_size": [
+        24,
+        32
+      ],
+      "palette_indices": [
+        0,
+        12,
+        14
+      ]
+    },
+    {
+      "name": "knotboom_winter",
+      "label": "Gesnoeide knotboom",
+      "region": [
+        568,
+        160,
+        820,
+        450
+      ],
+      "size": [
+        16,
+        24
+      ],
+      "drawing_size": [
+        16,
+        24
+      ],
+      "palette_indices": [
+        0,
+        12,
+        14
+      ]
+    },
+    {
+      "name": "sneeuwstruik",
+      "label": "Lage struik met sneeuw",
+      "region": [
+        980,
+        320,
+        1185,
+        435
+      ],
+      "size": [
+        16,
+        8
+      ],
+      "drawing_size": [
+        12,
+        5
+      ],
+      "palette_indices": [
+        0,
+        11,
+        14
+      ]
+    },
+    {
+      "name": "sneeuwhaag",
+      "label": "Lage winterhaag",
+      "region": [
+        1340,
+        320,
+        1645,
+        435
+      ],
+      "size": [
+        16,
+        8
+      ],
+      "drawing_size": [
+        16,
+        6
+      ],
+      "palette_indices": [
+        0,
+        11,
+        14
+      ]
+    },
+    {
+      "name": "zitbank",
+      "label": "Kleine straatbank",
+      "region": [
+        195,
+        608,
+        390,
+        735
+      ],
+      "size": [
+        16,
+        8
+      ],
+      "drawing_size": [
+        10,
+        4
+      ],
+      "palette_indices": [
+        0,
+        3,
+        12
+      ]
+    },
+    {
+      "name": "afvalbak",
+      "label": "Kleine afvalbak",
+      "region": [
+        640,
+        610,
+        740,
+        735
+      ],
+      "size": [
+        8,
+        8
+      ],
+      "drawing_size": [
+        3,
+        4
+      ],
+      "palette_indices": [
+        0,
+        12,
+        14
+      ],
+      "source_rows": [
+        636,
+        650,
+        673,
+        703
+      ]
+    },
+    {
+      "name": "straatpaaltje",
+      "label": "Laag straatpaaltje",
+      "region": [
+        1037,
+        610,
+        1120,
+        735
+      ],
+      "size": [
+        8,
+        8
+      ],
+      "drawing_size": [
+        2,
+        4
+      ],
+      "palette_indices": [
+        0,
+        12,
+        14
+      ]
+    }
+  ]
+}

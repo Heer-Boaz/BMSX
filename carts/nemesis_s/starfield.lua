@@ -133,6 +133,7 @@ local draw_particles<const> = function(component, draw, stars, source, hidden)
 end
 
 local draw_stars<const> = function(component, draw)
+	if component.owner.mill_arena then return end
 	component:resolve_pose()
 	local owner<const> = component.owner
 	draw_particles(component, draw, owner.yellow_stars, yellow_source, owner.yellow_blink)

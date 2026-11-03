@@ -8,6 +8,7 @@ local world<const> = require('cartlib/world/world')
 local assets<const> = require('bmsx/assets')
 local enemy<const> = require('enemies/enemy')
 local ground_foe<const> = require('enemies/ground_foe')
+local chimney_wreck<const> = require('effects/chimney_wreck')
 local stage_scroll_follower_component<const> = require('stage_scroll_follower_component')
 require('constants')
 
@@ -58,6 +59,7 @@ function rook_generator:spawn_rook(_state, rise_distance)
 end
 
 function rook_generator:on_destroyed(projectile)
+	chimney_wreck.spawn(self,false)
 	local pose_x<const>, pose_y<const> = self:get_global_position()
 	self:set_global_position(pose_x - 4, pose_y - 4)
 	ground_foe.on_destroyed(self, projectile)
