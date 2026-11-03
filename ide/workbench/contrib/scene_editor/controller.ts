@@ -3,7 +3,7 @@ import { resourceIdentityEquals, type ResourceIdentity } from '../../../common/r
 import { editorTextModelService } from '../../../editor/model/model_service';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import type { TrackedTextRange } from '../../../editor/text/text_change';
-import { luaSourceRangeMatchesTextRange } from '../../../language/lua/source_edits';
+import { luaSourceRangeMatchesTextRange, luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
 import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_model';
 import type { RuntimeResource } from '../../../common/resource';
 import type { EditorGroupView, EditorTabOpenOptions } from '../../services/editor/editor_group';
@@ -11,7 +11,8 @@ import type { PreparedEditorInput } from '../../services/editor/editor_opening';
 import { SceneEditorInput } from './editor_input';
 import type { SceneSourceDocuments } from './source_documents';
 import { captureSceneEditorView, restoreSceneEditorView } from './view_snapshot';
-import type { SceneSelectionRequest } from './authoring_context';
+import type { SceneAuthoredSubject, SceneSelectionRequest } from './authoring_context';
+import { SceneEditorNavigationSelection } from './navigation_selection';
 
 /** Source projection admission; no world reads or runtime scene ownership. */
 export class SceneEditorController {
@@ -78,6 +79,22 @@ export class SceneEditorController {
 		if (scene === undefined) return;
 		const retained = this.findDefinition(group, model, range);
 		return { input: retained ?? new SceneEditorInput(model, this.documents, this.catalog, this.createView, { document, sourceVersion, scene }) };
+	}
+
+	/** Admit one source occurrence through the normal editor opening/history owner.
+	 * Selection is applied to the retained destination, not an unopened view. */
+	public openMember(group: EditorGroupView, model: EditorTextModel, subject: SceneAuthoredSubject, index: number, isCurrent: () => boolean): boolean {
+		const current = () => isCurrent() && model.version === subject.sourceVersion;
+		return group.openPreparedEditor(() => {
+			if (!current()) return;
+			const range = luaSourceRangeToTextRange(model.buffer, subject.scene.range);
+			const prepared = this.prepareDefinition(group, model, range, current);
+			if (prepared === undefined) return;
+			const view = prepared.input.view, snapshot = captureSceneEditorView(view);
+			const selection = new SceneEditorNavigationSelection(view, { ...snapshot, selected: { kind: 'member', root: range,
+				span: luaSourceRangeToTextRange(model.buffer, subject.document.analysis.chunk.locations.range(subject.scene.objects[index].field.span)) } });
+			return { input: prepared.input, options: { navigationSelection: selection }, dispose: () => selection.dispose() };
+		}, { isCurrent: current }) !== undefined;
 	}
 
 }

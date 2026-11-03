@@ -99,7 +99,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		for (const target of [this.focusTarget, this.graph.focusTarget]) {
 			this.bindTransportCommands(target);
 			target.registerCommand('contextMenu', {
-				isEnabled: () => this.hasInput,
+				isEnabled: () => this.hasInput && (this.input.presentation === 'graph' || this.controller.selected(this.input) !== undefined),
 				run: () => {
 					const input = this.input;
 					let x: number, y: number;
@@ -127,15 +127,12 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 				isEnabled: () => this.hasInput && this.controller.selected(this.input) !== undefined,
 				run: () => { this.input.follow.pending = this.controller.activityScope(this.input); this.update(); },
 			});
-			target.registerCommand('actorLab.more', {
-				isEnabled: () => this.hasInput,
-				run: () => {
-					const bar = this.input.presentation === 'outline' ? this.input.actionBar : this.input.stateGraphActions;
-					const bounds = bar.items.find(item => item.command === 'actorLab.more')!.bounds;
-					this.showContextMenu(bounds.left, bounds.bottom, target, true);
-				},
-			});
 			target.registerCommand('actorLab.select', { isEnabled: () => this.hasInput, run: () => this.actorActions.selectActor(this.input) });
+			target.registerCommand('actorLab.editScene', {
+				isEnabled: () => this.hasInput && this.controller.sceneAuthoring !== undefined && !this.controller.rewind.active
+					&& this.controller.selected(this.input)?.kind === 'actor',
+				run: () => this.actorActions.editScene(this.input),
+			});
 			target.registerCommand('actorLab.find', {
 				isEnabled: () => this.hasInput && this.input.actorPresent && !this.input.dirty,
 				run: () => this.actorActions.findMember(this.input, () => { this.update(); this.focus(); }),
@@ -171,7 +168,8 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	private showContextMenu(x: number, y: number, target: InputFocusTarget, keyboard: boolean): void {
 		const input = this.input, graph = input.presentation === 'graph' ? input.stateGraph : undefined;
 		input.interaction.running = false;
-		this.contextMenu.show(x, y, WORKBENCH_MENUS[graph === undefined ? 'actorLab.context' : 'actorLab.stateGraph.context'], this.commands,
+		const menu = graph === undefined ? 'actorLab.context' : graph.viewport.selection === null ? 'actorLab.canvas.context' : 'actorLab.stateGraph.context';
+		this.contextMenu.show(x, y, WORKBENCH_MENUS[menu], this.commands,
 			{ selectFirst: keyboard, invocationOrigin: target, commandTarget: target, onWillShow: lifetime => {
 				const retire = () => this.contextMenu.hide();
 				lifetime.add({ dispose: input.onDidChangeSelection(retire) });
@@ -519,7 +517,14 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 				if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0 && !this.gameInput.focusTarget.hasFocus) {
 					this.updateViewportHit();
 					if (this.viewportHit !== undefined) {
-						this.controller.inspectActor(this.input, this.viewportHit.domain, this.viewportHit.hashId); this.update(); this.focus(); return true;
+						const input = this.input, scope = this.focusTarget.scope, context = scope.contextGeneration;
+						const { domain, hashId } = this.viewportHit;
+						this.controller.inspectActor(input, domain, hashId); this.update(); this.focus();
+						if (scope.contextGeneration === context && inputFocus.admittedTarget === this.focusTarget
+							&& input.actorPresent && input.domain === domain && input.actorHashId === hashId) {
+							this.showContextMenu(snapshot.viewportX, snapshot.viewportY, this.focusTarget, false);
+						}
+						return true;
 					}
 				}
 			}

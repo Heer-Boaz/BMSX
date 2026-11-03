@@ -921,7 +921,7 @@ test('retiring Actor menu subject cannot dismiss a newer popup owned by Files du
 	assert.ok(editor.contextMenu.invocationOrigin === editor.resourcePanel.focusTarget);
 });
 
-for (const presentation of ['outline', 'graph'] as const) test(`Actor ${presentation} keyboard and More expose the same scoped contextual commands`, t => {
+for (const presentation of ['outline', 'graph'] as const) test(`Actor ${presentation} keyboard menu uses the selected subject, not header chrome`, t => {
 	const { editor, input, pane } = actorFixture(t);
 	input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.kind === 'state'); input.rememberSelection();
 	if (presentation === 'graph') { editor.commands.execute('actorLab.stateGraph', pane.commandTarget); editor.update(0); }
@@ -931,14 +931,30 @@ for (const presentation of ['outline', 'graph'] as const) test(`Actor ${presenta
 		editor.dispatchKey(new KeyInputEvent(code, modifiers, false, false));
 		assert.equal(editor.contextMenu.visible, true); assert.ok(editor.contextMenu.invocationOrigin === primary);
 		const commands = editor.contextMenu.model.rows.map(row => row.command);
-		assert.equal(commands.includes('graph.zoomIn'), presentation === 'graph');
-		assert.ok(commands.includes(presentation === 'graph' ? 'actorLab.outline' : 'actorLab.stateGraph'));
+		assert.equal(commands.includes('actorLab.spawn'), false, 'a new World object is not an operation on the clicked member');
+		assert.equal(commands.includes('graph.zoomIn'), false, 'zoom belongs to the canvas rather than a selected state');
+		assert.equal(commands.includes('actorLab.outline'), false, 'panel navigation stays in chrome');
+		assert.ok(commands.includes('actorLab.run'));
 		editor.contextMenu.hide();
-		editor.commands.execute('actorLab.more', primary);
+		editor.commands.execute('contextMenu', primary);
 		assert.equal(editor.contextMenu.visible, true); assert.ok(editor.contextMenu.invocationOrigin === primary);
 		assert.deepEqual(editor.contextMenu.model.rows.map(row => row.command), commands);
 		editor.contextMenu.hide();
 	}
+});
+
+test('Actor graph background menu contains canvas actions without selected-member commands', t => {
+	const { editor, input, pane } = actorFixture(t);
+	input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.kind === 'state'); input.rememberSelection();
+	editor.commands.execute('actorLab.stateGraph', pane.commandTarget); editor.update(0);
+	input.stateGraph!.viewport.selection = null; input.stateGraph!.rememberSelection(); pane.focus();
+	editor.commands.execute('contextMenu', pane.commandTarget);
+	const commands = editor.contextMenu.model.rows.map(row => row.command);
+	assert.equal(editor.contextMenu.visible, true);
+	assert.equal(commands.includes('graph.zoomIn'), true);
+	assert.equal(commands.includes('actorLab.run'), false);
+	assert.equal(commands.includes('actorLab.editScene'), false);
+	assert.equal(commands.includes('actorLab.details'), false);
 });
 
 test('Actor keyboard graph menu anchors within the visible graph client without replacing its pan or zoom', t => {

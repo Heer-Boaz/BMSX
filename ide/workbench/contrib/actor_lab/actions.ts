@@ -60,6 +60,20 @@ export class ActorLabEditorActions {
 			});
 	}
 
+	public editScene(input: ActorLabInput): void {
+		const controller = input.controller, authoring = controller.sceneAuthoring!;
+		const domain = input.domain, actor = input.actorHashId, context = this.origin.scope.contextGeneration;
+		controller.viewport.transport.pause(); input.interaction.running = false;
+		const source = authoring.live.source(domain, actor, authoring.editor.documents);
+		if (source === undefined) {
+			showEditorMessage('No matching authored Scene member in the current source. Procedural actors remain runtime-only; run changed source before linking it.', 'info', 5); return;
+		}
+		const current = () => this.origin.scope.contextGeneration === context && input.domain === domain && input.actorHashId === actor
+			&& !controller.rewind.active && authoring.live.isCurrent(source.member);
+		authoring.editor.openMember(this.group, source.model,
+			{ document: source.document, sourceVersion: source.version, scene: source.scene }, source.member.memberIndex - 1, current);
+	}
+
 	public findMember(input: ActorLabInput, accepted: () => void): void {
 		const controller = input.controller;
 		input.interaction.running = false;

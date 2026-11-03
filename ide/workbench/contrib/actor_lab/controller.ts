@@ -21,6 +21,8 @@ import type { ActorExecutionService } from './execution';
 import { ActorLabNavigationSelection } from './navigation_selection';
 import type { ActorRenderFrames } from './render_frames';
 import { ActorViewportPicker } from './viewport_pick';
+import type { SceneLiveService } from '../scene_editor/live';
+import type { SceneEditorController } from '../scene_editor/controller';
 
 /** Actor Lab interaction and presentation; the shared domain service owns execution. */
 export class ActorLabController {
@@ -44,6 +46,7 @@ export class ActorLabController {
 		public readonly viewport: ActorLabViewport,
 		public readonly renderFrames: ActorRenderFrames,
 		private readonly inputId: ActorLabTabId = 'actor-lab', private readonly title = 'ACTOR LAB',
+		public readonly sceneAuthoring?: { readonly live: SceneLiveService; readonly editor: SceneEditorController },
 	) {
 		this.viewportPicker = new ActorViewportPicker(renderFrames.displayed);
 		this.unbindFrames = renderFrames.attach(viewport.presenter);

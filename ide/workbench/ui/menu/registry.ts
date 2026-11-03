@@ -9,7 +9,7 @@ export type WorkbenchDropdownMenuId =
 	| 'menubar.tools'
 	| 'menubar.window';
 
-export type WorkbenchContextMenuId = 'resources.directory.context' | 'resourceViewer.context' | 'editor.source.actions' | 'resources.open.context' | 'resources.scene.context' | 'resources.resource.context' | 'resources.disclosure.context' | 'editorTabs.context' | 'editorGroup.context' | 'window.context' | 'window.minimizable.context' | 'activity.context' | 'activity.window.context' | 'scenarioLab.context' | 'play.context' | 'gamePanel.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'actorLab.context' | 'actorLab.stateGraph.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context' | 'behaviorLens.graphCanvas.context';
+export type WorkbenchContextMenuId = 'resources.directory.context' | 'resourceViewer.context' | 'editor.source.actions' | 'resources.open.context' | 'resources.scene.context' | 'resources.resource.context' | 'resources.disclosure.context' | 'editorTabs.context' | 'editorGroup.context' | 'window.context' | 'window.minimizable.context' | 'activity.context' | 'activity.window.context' | 'scenarioLab.context' | 'play.context' | 'gamePanel.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'actorLab.context' | 'actorLab.stateGraph.context' | 'actorLab.canvas.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context' | 'behaviorLens.graphCanvas.context';
 
 export type WorkbenchActionMenuId = 'home.work' | 'home.author' | 'home.behavior' | 'home.gameplay' | 'home.run' | 'home.tools' | 'window.status' | 'status.context' | 'window.title' | 'window.minimizable.title' | 'play.title' | 'animation.clients' | 'romInspector.title' | 'romInspector.reader.title' | 'events.title' | 'gte.title' | 'gte.details.title' | 'gpu.title' | 'gpu.inspector.content' | 'gte.inspector.content' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'workspaceEditReview.title' | 'workspaceEditReview.evidence.title' | 'actorLab.title' | 'actorLab.details.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'problems.title' | 'aem.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
@@ -223,6 +223,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'behaviorLens.inspectRegisteredDefinitions' },
 	],
 	'actorLab.context': [
+		{ type: 'command', command: 'actorLab.editScene' },
 		{ type: 'command', command: 'actorLab.run' },
 		{ type: 'command', command: 'actorLab.find' },
 		{ type: 'command', command: 'actorLab.revealActive' },
@@ -231,7 +232,6 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'actorLab.details' },
 		{ type: 'command', command: 'actorLab.actions' },
 		{ type: 'command', command: 'actorLab.call' },
-		{ type: 'command', command: 'actorLab.spawn' },
 		{ type: 'command', command: 'actorLab.emit' },
 	],
 	'actorLab.stateGraph.context': [
@@ -239,25 +239,21 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'actorLab.find' },
 		{ type: 'command', command: 'actorLab.revealActive' },
 		{ type: 'command', command: 'actorLab.follow' },
-		{ type: 'command', command: 'actorLab.outline' },
 		{ type: 'command', command: 'actorLab.details' },
 		{ type: 'command', command: 'actorLab.actions' },
 		{ type: 'command', command: 'actorLab.call' },
-		{ type: 'command', command: 'actorLab.spawn' },
 		{ type: 'command', command: 'actorLab.emit' },
-		{ type: 'separator' }, ...GRAPH_VIEW_ACTIONS,
 	],
+	'actorLab.canvas.context': GRAPH_VIEW_ACTIONS,
 	'actorLab.stateGraph.title': [
 		{ type: 'command', command: 'actorLab.outline', icon: 'back' },
 		{ type: 'command', command: 'actorLab.run', icon: 'play', showLabel: true },
 		{ type: 'command', command: 'actorLab.follow', icon: 'follow' },
-		{ type: 'command', command: 'actorLab.more', icon: 'more' },
 	],
 	'actorLab.title': [
 		{ type: 'command', command: 'actorLab.select', icon: 'actor' },
 		{ type: 'command', command: 'actorLab.run', icon: 'play', showLabel: true },
 		{ type: 'command', command: 'actorLab.follow', icon: 'follow' },
-		{ type: 'command', command: 'actorLab.more', icon: 'more' },
 	],
 	'actorLab.details.title': [
 		{ type: 'command', command: 'actorLab.lockDetails', icon: 'pin', checkedIcon: 'unpin' },

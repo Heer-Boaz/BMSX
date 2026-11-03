@@ -614,7 +614,8 @@ export class RuntimeCartEditor implements CartEditor {
 		this.animations = new AnimationEditorController(this.sources.catalog);
 		this.actorLab = new ActorLabController(sources, guest, runtime.machine.cpu,
 			this.editorParts, this.navigation, actorExecution, rewind, sources,
-			{ kind: 'direct', presenter, recipient: input, transport: this.commands.transport }, workbench.actorFrames);
+			{ kind: 'direct', presenter, recipient: input, transport: this.commands.transport }, workbench.actorFrames,
+			'actor-lab', 'ACTOR LAB', { live: workbench.sceneLive, editor: this.sceneEditor });
 
 		const behaviorRegistrations = behaviorSources.registrations;
 		this.play = new PlayController(this, playSessions, scenarioRuns, sources);

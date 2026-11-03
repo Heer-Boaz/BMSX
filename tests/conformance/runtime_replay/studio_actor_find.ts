@@ -50,9 +50,9 @@ export async function runStudioActorFind(test: StudioFixture) {
 		detailsScroll: inspector.model.viewport.scrollTop, details: lab.details, cycles: cycles(),
 		heap: runtime.machine.cpu.luaHeap.usedBytes(), callbacks: guest.global('actor_tool_callbacks') };
 	await test.capture?.('before-find');
-	await click(lab.actionBar.items.find(item => item.command === 'actorLab.more')!.bounds);
+	pane.focus(); await press('ContextMenu');
 	check(ide.editor.contextMenu.visible && ide.editor.contextMenu.model.rows.some(row => row.command === 'actorLab.find' && row.enabled),
-		'Find in Actor is reachable in the ordinary More menu');
+		'Find in Actor is reachable in the selected actor context menu');
 	await test.capture?.('find-menu');
 	await test.clickContextCommand('actorLab.find');
 	check(picker.visible && picker.model.list.rows.some(row => (row.item as ActorMemberChoice).node === target.element.node), 'menu opens the existing transient QuickPick');
