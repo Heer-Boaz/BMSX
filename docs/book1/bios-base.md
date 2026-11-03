@@ -274,10 +274,11 @@ A successful step returns exactly two results, `(key, value)`. Array keys are Nu
 Use the returned key to continue traversal of the same Table. An array key
 within the current capacity resumes after that slot even if its value has
 become nil. An unrecognized non-array continuation key ends traversal.
-Removal can retain a recognizable continuation position, so a missing mapping
-alone does not decide that outcome. Changes that reorganize Table storage can
-change traversal; keep the Table's entry structure stable when a complete
-single traversal is required.
+Existing fields may be changed or set to nil during traversal. A returned key
+remains a valid continuation after its mapping is removed, and removing an
+entry does not cause unrelated entries to be skipped. Do not add previously
+absent fields during a traversal: insertion may reorganize the Table's storage
+and changes which entries subsequent steps visit.
 
 `next` visits stored entries, not values supplied by inherited ordinary indexing. Its returned key is also the continuation control for a subsequent step. Test that key for nil when detecting exhaustion: false is not an exhaustion marker.
 
@@ -288,7 +289,7 @@ Returns the three values `next, target, nil`, selecting the current global
 `__pairs` is ignored. Replacing `next` therefore changes the iterator returned
 by subsequent `pairs` calls.
 
-A generic `for` obtains three values from its iterator expression: iterator, state, and initial control. Each step calls the iterator with `(state, control)`. The loop ends only when the first result is nil; false does not end it. Otherwise that first result becomes the next control. With the installed `next`, this mechanism traverses the stored entries described above. `pairs` adds no separate ordering or mutation guarantee.
+A generic `for` obtains three values from its iterator expression: iterator, state, and initial control. Each step calls the iterator with `(state, control)`. The loop ends only when the first result is nil; false does not end it. Otherwise that first result becomes the next control. With the installed `next`, this mechanism traverses the stored entries described above, including the permission to change or remove existing fields. `pairs` adds no separate ordering guarantee.
 
 ### `ipairs(target)` {#sec-bios-base-ipairstarget}
 

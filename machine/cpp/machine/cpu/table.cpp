@@ -74,18 +74,25 @@ bool Table::keyEquals(const Value& a, const Value& b) const {
 	return ValueEq{}(a, b);
 }
 
-int Table::findNodeIndex(const Value& key) const {
+int Table::findNodeIndex(const Value& key, bool matchDead) const {
 	if (m_hashSize == 0) {
 		return -1;
 	}
-	size_t mask = m_hashSize - 1;
+	const bool collectableKey = matchDead && (valueIsTable(key) || valueIsClosure(key) || valueIsThread(key));
+	const uint32_t deadKeyHashId = collectableKey ? valueObjectHashId(key) : 0;
+	const size_t mask = m_hashSize - 1;
 	int index = static_cast<int>(hashValue(key) & mask);
 	while (index >= 0) {
-		const Value nodeKey = m_hashKeys[static_cast<size_t>(index)];
-		if (!isNil(nodeKey) && keyEquals(nodeKey, key)) {
+		const size_t slot = static_cast<size_t>(index);
+		const Value nodeKey = m_hashKeys[slot];
+		if ((!isNil(nodeKey) && keyEquals(nodeKey, key))
+			|| (isNil(nodeKey)
+				&& collectableKey
+				&& valueIsNumber(m_hashValues[slot])
+				&& asNumber(m_hashValues[slot]) == static_cast<double>(deadKeyHashId))) {
 			return index;
 		}
-		index = m_hashNext[static_cast<size_t>(index)];
+		index = m_hashNext[slot];
 	}
 	return -1;
 }
@@ -95,31 +102,6 @@ int Table::findNextLiveHashIndex(size_t start) const {
 		if (!isNil(m_hashKeys[index]) && !isNil(m_hashValues[index])) {
 			return static_cast<int>(index);
 		}
-	}
-	return -1;
-}
-
-int Table::findNodeIndexForNext(const Value& key) const {
-	if (m_hashSize == 0) {
-		return -1;
-	}
-	uint32_t deadKeyHashId = 0;
-	if (valueIsTable(key) || valueIsClosure(key) || valueIsThread(key)) {
-		deadKeyHashId = valueObjectHashId(key);
-	}
-	const size_t mask = m_hashSize - 1;
-	int index = static_cast<int>(hashValue(key) & mask);
-	while (index >= 0) {
-		const size_t slot = static_cast<size_t>(index);
-		const Value nodeKey = m_hashKeys[slot];
-		if ((!isNil(nodeKey) && keyEquals(nodeKey, key))
-			|| (isNil(nodeKey)
-				&& deadKeyHashId != 0
-				&& valueIsNumber(m_hashValues[slot])
-				&& asNumber(m_hashValues[slot]) == static_cast<double>(deadKeyHashId))) {
-			return index;
-		}
-		index = m_hashNext[slot];
 	}
 	return -1;
 }
@@ -234,7 +216,6 @@ void Table::resize(
 
 void Table::allocateHash(size_t size) {
 	m_hashSize = size;
-	m_hashDeadCount = 0;
 	if (size == 0) {
 		m_hashStorage.reset();
 		m_hashKeys = nullptr;
@@ -270,10 +251,6 @@ int Table::rawSet(const Value& key, const Value& value) {
 }
 
 int Table::insertHash(const Value& key, const Value& value) {
-	if (m_hashDeadCount > 0) {
-		rehash(key, value);
-		return rawSet(key, value);
-	}
 	if (m_hashSize == 0) {
 		rehash(key, value);
 		return rawSet(key, value);
@@ -282,10 +259,9 @@ int Table::insertHash(const Value& key, const Value& value) {
 	int mainIndex = static_cast<int>(hashValue(key) & mask);
 	const size_t mainSlot = static_cast<size_t>(mainIndex);
 	const Value mainKey = m_hashKeys[mainSlot];
-	if (isNil(mainKey)) {
+	if (isNil(mainKey) || isNil(m_hashValues[mainSlot])) {
 		m_hashKeys[mainSlot] = key;
 		m_hashValues[mainSlot] = value;
-		m_hashNext[mainSlot] = kTableHashNextEnd;
 		return mainIndex;
 	}
 	int freeIndex = getFreeIndex();
@@ -321,65 +297,12 @@ void Table::removeFromHash(const Value& key) {
 	if (existingIndex < 0 || isNil(m_hashValues[static_cast<size_t>(existingIndex)])) {
 		return;
 	}
-	if (m_hashDeadCount > 0) {
-		rehash(valueNil(), valueNil());
-		int arrayIndex = 0;
-		if (getArrayIndex(key, arrayIndex)
-			&& static_cast<size_t>(arrayIndex) < m_array.size()) {
-			m_array[static_cast<size_t>(arrayIndex)] = valueNil();
-			return;
-		}
-	}
-	if (m_hashSize == 0) {
-		return;
-	}
-	size_t mask = m_hashSize - 1;
-	int mainIndex = static_cast<int>(hashValue(key) & mask);
-	int prev = -1;
-	int index = mainIndex;
-	while (index >= 0) {
-		const size_t slot = static_cast<size_t>(index);
-		const Value nodeKey = m_hashKeys[slot];
-		if (!isNil(nodeKey) && keyEquals(nodeKey, key)) {
-			int next = m_hashNext[slot];
-			if (prev >= 0) {
-				m_hashNext[static_cast<size_t>(prev)] = next;
-				m_hashKeys[slot] = valueNil();
-				m_hashValues[slot] = valueNil();
-				m_hashNext[slot] = kTableHashNextEnd;
-				if (index > m_hashFree) {
-					m_hashFree = index;
-				}
-				return;
-			}
-			if (next >= 0) {
-				const size_t nextSlot = static_cast<size_t>(next);
-				m_hashKeys[slot] = m_hashKeys[nextSlot];
-				m_hashValues[slot] = m_hashValues[nextSlot];
-				m_hashNext[slot] = m_hashNext[nextSlot];
-				m_hashKeys[nextSlot] = valueNil();
-				m_hashValues[nextSlot] = valueNil();
-				m_hashNext[nextSlot] = kTableHashNextEnd;
-				if (next > m_hashFree) {
-					m_hashFree = next;
-				}
-				return;
-			}
-			m_hashKeys[slot] = valueNil();
-			m_hashValues[slot] = valueNil();
-			m_hashNext[slot] = kTableHashNextEnd;
-			if (index > m_hashFree) {
-				m_hashFree = index;
-			}
-			return;
-		}
-		prev = index;
-		index = m_hashNext[slot];
-	}
+	markHashNodeDead(static_cast<size_t>(existingIndex));
 }
 
 void Table::markHashNodeDead(size_t index) {
 	if (valueIsTable(m_hashKeys[index])
+		|| valueIsThread(m_hashKeys[index])
 		|| valueIsClosure(m_hashKeys[index])) {
 		const uint32_t hashId = valueObjectHashId(m_hashKeys[index]);
 		m_hashKeys[index] = valueNil();
@@ -387,7 +310,6 @@ void Table::markHashNodeDead(size_t index) {
 	} else {
 		m_hashValues[index] = valueNil();
 	}
-	++m_hashDeadCount;
 }
 
 Value Table::get(const Value& key) const {
@@ -429,16 +351,14 @@ void Table::set(const Value& key, const Value& value) {
 		}
 		return;
 	}
-	int nodeIndex = findNodeIndex(key);
+	int nodeIndex = findNodeIndex(key, true);
 	if (nodeIndex >= 0) {
-		if (isNil(m_hashValues[static_cast<size_t>(nodeIndex)])) {
-			--m_hashDeadCount;
+		const size_t slot = static_cast<size_t>(nodeIndex);
+		if (isNil(m_hashKeys[slot])) {
+			m_hashKeys[slot] = key;
 		}
-		m_hashValues[static_cast<size_t>(nodeIndex)] = value;
+		m_hashValues[slot] = value;
 		return;
-	}
-	if (m_hashSize == 0 || m_hashFree < 0) {
-		rehash(key, value);
 	}
 	rawSet(key, value);
 }
@@ -471,14 +391,8 @@ void Table::setInteger(int indexValue, const Value& value) {
 	}
 	const int nodeIndex = findNodeIndex(key);
 	if (nodeIndex >= 0) {
-		if (isNil(m_hashValues[static_cast<size_t>(nodeIndex)])) {
-			--m_hashDeadCount;
-		}
 		m_hashValues[static_cast<size_t>(nodeIndex)] = value;
 		return;
-	}
-	if (m_hashSize == 0 || m_hashFree < 0) {
-		rehash(key, value);
 	}
 	rawSet(key, value);
 }
@@ -517,14 +431,8 @@ int Table::setStringKey(StringId key, const Value& value) {
 	}
 	const int nodeIndex = findNodeIndex(keyValue);
 	if (nodeIndex >= 0) {
-		if (isNil(m_hashValues[static_cast<size_t>(nodeIndex)])) {
-			--m_hashDeadCount;
-		}
 		m_hashValues[static_cast<size_t>(nodeIndex)] = value;
 		return nodeIndex;
-	}
-	if (m_hashSize == 0 || m_hashFree < 0) {
-		rehash(keyValue, value);
 	}
 	return rawSet(keyValue, value);
 }
@@ -596,7 +504,7 @@ bool Table::nextEntry(const Value& after, Value& key, Value& value) const {
 			}
 			hashIndex = findNextLiveHashIndex(0);
 		} else {
-			const int nodeIndex = findNodeIndexForNext(after);
+			const int nodeIndex = findNodeIndex(after, true);
 			if (nodeIndex < 0) {
 				return false;
 			}
@@ -642,7 +550,6 @@ void Table::restoreSnapshot(const CpuSnapshotReader& reader, u32 offset) {
 	const u32 arrayCapacity = snapshot.word(offset + SNAP_TABLE_ARRAY_CAPACITY);
 	const u32 hashSize = snapshot.word(offset + SNAP_TABLE_HASH_SIZE);
 	if (m_array.size() != arrayCapacity || m_hashSize != hashSize) prepareRestoreStorage(arrayCapacity, hashSize);
-	m_hashDeadCount = 0;
 	m_arrayLength = snapshot.word(offset + SNAP_TABLE_ARRAY_LENGTH);
 	m_hashFree = snapshot.integer(offset + SNAP_TABLE_HASH_FREE);
 	const Value savedMetatable = reader.readValue(offset + SNAP_TABLE_METATABLE);
@@ -656,7 +563,6 @@ void Table::restoreSnapshot(const CpuSnapshotReader& reader, u32 offset) {
 		m_hashKeys[index] = reader.readValue(cursor);
 		m_hashValues[index] = reader.readValue(cursor + CPU_SNAPSHOT_VALUE_WORDS);
 		m_hashNext[index] = snapshot.integer(cursor + 2 * CPU_SNAPSHOT_VALUE_WORDS);
-		if (isNil(m_hashKeys[index]) != isNil(m_hashValues[index])) ++m_hashDeadCount;
 		cursor += 2 * CPU_SNAPSHOT_VALUE_WORDS + 1;
 	}
 }

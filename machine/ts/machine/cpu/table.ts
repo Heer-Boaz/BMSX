@@ -57,7 +57,6 @@ export class Table {
 	private hashSize: number;
 	private hashNext: Int32Array;
 	private hashFree = -1;
-	private hashDeadCount = 0;
 	private tableMetatable: Table | null = null;
 
 	private static readonly numberBuffer = new ArrayBuffer(8);
@@ -455,21 +454,8 @@ export class Table {
 		const nodeIndex = this.findNodeIndex(ValueTag.String, key, null);
 		if (nodeIndex >= 0) {
 			const valueSlot = this.hashValueSlot(nodeIndex);
-			if (this.tags[valueSlot] === ValueTag.Nil) {
-				this.hashDeadCount -= 1;
-			}
 			this.setEncoded(valueSlot, valueTag, valueScalar, valueReference);
 			return nodeIndex;
-		}
-		if (this.hashSize === 0 || this.hashFree < 0) {
-			this.rehash(
-				ValueTag.String,
-				key,
-				null,
-				valueTag,
-				valueScalar,
-				valueReference,
-			);
 		}
 		return this.rawSet(
 			ValueTag.String,
@@ -513,7 +499,6 @@ export class Table {
 		this.references = [];
 		this.hashNext = EMPTY_TABLE_HASH_NEXT;
 		this.hashFree = -1;
-		this.hashDeadCount = 0;
 		this.luaHeap.release(previousBytes - this.getTrackedHeapBytes());
 	}
 
@@ -655,7 +640,6 @@ export class Table {
 		this.hashSize = hashSize;
 		this.arrayLength = snapshot.word(offset + CpuSnapshotTable.ArrayLength);
 		this.hashFree = snapshot.int(offset + CpuSnapshotTable.HashFree);
-		this.hashDeadCount = 0;
 		reader.readValue(offset + CpuSnapshotTable.Metatable);
 		this.tableMetatable = reader.reference as Table | null;
 		let cursor = offset + CpuSnapshotTable.Data;
@@ -678,7 +662,6 @@ export class Table {
 			this.scalars[valueSlot] = reader.scalar;
 			this.references[valueSlot] = reader.reference;
 			this.hashNext[index] = snapshot.int(cursor + 2 * CPU_SNAPSHOT_VALUE_WORDS);
-			if ((this.tags[keySlot] === ValueTag.Nil) !== (this.tags[valueSlot] === ValueTag.Nil)) this.hashDeadCount += 1;
 			cursor += 2 * CPU_SNAPSHOT_VALUE_WORDS + 1;
 		}
 		this.luaHeap.adjustForRestore(previousBytes, this.getTrackedHeapBytes());
@@ -702,7 +685,6 @@ export class Table {
 		this.hashNext = hashCapacity === 0 ? EMPTY_TABLE_HASH_NEXT : new Int32Array(hashCapacity);
 		this.hashNext.fill(TABLE_HASH_NEXT_END);
 		this.hashFree = hashCapacity > 0 ? hashCapacity - 1 : -1;
-		this.hashDeadCount = 0;
 		this.luaHeap.adjustForRestore(previousBytes, this.getTrackedHeapBytes());
 	}
 
@@ -823,24 +805,15 @@ export class Table {
 			this.removeFromHash(keyTag, keyScalar, keyReference);
 			return;
 		}
-		const nodeIndex = this.findNodeIndex(keyTag, keyScalar, keyReference);
+		const nodeIndex = this.findNodeIndex(keyTag, keyScalar, keyReference, true);
 		if (nodeIndex >= 0) {
-			const valueSlot = this.hashValueSlot(nodeIndex);
-			if (this.tags[valueSlot] === ValueTag.Nil) {
-				this.hashDeadCount -= 1;
+			const keySlot = this.hashKeySlot(nodeIndex);
+			if (this.tags[keySlot] === ValueTag.Nil) {
+				this.setEncoded(keySlot, keyTag, keyScalar, keyReference);
 			}
+			const valueSlot = this.hashValueSlot(nodeIndex);
 			this.setEncoded(valueSlot, valueTag, valueScalar, valueReference);
 			return;
-		}
-		if (this.hashSize === 0 || this.hashFree < 0) {
-			this.rehash(
-				keyTag,
-				keyScalar,
-				keyReference,
-				valueTag,
-				valueScalar,
-				valueReference,
-			);
 		}
 		this.rawSet(
 			keyTag,
@@ -931,16 +904,26 @@ export class Table {
 		}
 	}
 
-	private findNodeIndex(tag: ValueTag, scalar: number, reference: ValueReference): number {
+	private findNodeIndex(
+		tag: ValueTag,
+		scalar: number,
+		reference: ValueReference,
+		matchDead = false,
+	): number {
 		if (this.hashSize === 0) {
 			return -1;
 		}
+		const collectableKey = matchDead
+			&& (tag === ValueTag.Table || tag === ValueTag.Closure || tag === ValueTag.Thread);
+		const deadKeyHashId = collectableKey ? (reference as NonNullable<ValueReference>).hashId : 0;
 		const mask = this.hashSize - 1;
 		let index = (this.hashValue(tag, scalar, reference) & mask) >>> 0;
 		while (index >= 0) {
 			const keySlot = this.hashKeySlot(index);
-			if (this.tags[keySlot] !== ValueTag.Nil
-				&& this.keyEquals(keySlot, tag, scalar, reference)) {
+			const valueSlot = this.hashValueSlot(index);
+			if ((this.tags[keySlot] !== ValueTag.Nil && this.keyEquals(keySlot, tag, scalar, reference))
+				|| (this.tags[keySlot] === ValueTag.Nil && collectableKey
+					&& this.tags[valueSlot] === ValueTag.Number && this.scalars[valueSlot] === deadKeyHashId)) {
 				return index;
 			}
 			index = this.hashNext[index];
@@ -954,35 +937,6 @@ export class Table {
 				&& this.tags[this.hashValueSlot(index)] !== ValueTag.Nil) {
 				return index;
 			}
-		}
-		return -1;
-	}
-
-	private findNodeIndexForNext(
-		tag: ValueTag,
-		scalar: number,
-		reference: ValueReference,
-	): number {
-		if (this.hashSize === 0) {
-			return -1;
-		}
-		const deadKeyHashId = tag === ValueTag.Table || tag === ValueTag.Closure || tag === ValueTag.Thread
-			? (reference as NonNullable<ValueReference>).hashId
-			: 0;
-		const mask = this.hashSize - 1;
-		let index = (this.hashValue(tag, scalar, reference) & mask) >>> 0;
-		while (index >= 0) {
-			const keySlot = this.hashKeySlot(index);
-			const valueSlot = this.hashValueSlot(index);
-			if ((this.tags[keySlot] !== ValueTag.Nil
-					&& this.keyEquals(keySlot, tag, scalar, reference))
-				|| (this.tags[keySlot] === ValueTag.Nil
-					&& deadKeyHashId !== 0
-					&& this.tags[valueSlot] === ValueTag.Number
-					&& this.scalars[valueSlot] === deadKeyHashId)) {
-				return index;
-			}
-			index = this.hashNext[index];
 		}
 		return -1;
 	}
@@ -1010,7 +964,7 @@ export class Table {
 				}
 				hashIndex = this.findNextLiveHashIndex(0);
 			} else {
-				const nodeIndex = this.findNodeIndexForNext(afterTag, afterScalar, afterReference);
+				const nodeIndex = this.findNodeIndex(afterTag, afterScalar, afterReference, true);
 				if (nodeIndex < 0) {
 					return TABLE_ENTRY_MISSING;
 				}
@@ -1151,7 +1105,6 @@ export class Table {
 		this.hashNext.fill(TABLE_HASH_NEXT_END);
 		this.arrayLength = 0;
 		this.hashFree = newHashSize > 0 ? newHashSize - 1 : -1;
-		this.hashDeadCount = 0;
 
 		for (let index = 0; index < oldArrayCapacity; index += 1) {
 			if (oldTags[index] !== ValueTag.Nil) {
@@ -1227,7 +1180,7 @@ export class Table {
 		valueScalar: number,
 		valueReference: ValueReference,
 	): number {
-		if (this.hashDeadCount > 0 || this.hashSize === 0) {
+		if (this.hashSize === 0) {
 			this.rehash(
 				keyTag,
 				keyScalar,
@@ -1249,10 +1202,9 @@ export class Table {
 		const mainIndex = (this.hashValue(keyTag, keyScalar, keyReference) & mask) >>> 0;
 		const mainKeySlot = this.hashKeySlot(mainIndex);
 		const mainValueSlot = this.hashValueSlot(mainIndex);
-		if (this.tags[mainKeySlot] === ValueTag.Nil) {
+		if (this.tags[mainKeySlot] === ValueTag.Nil || this.tags[mainValueSlot] === ValueTag.Nil) {
 			this.setEncoded(mainKeySlot, keyTag, keyScalar, keyReference);
 			this.setEncoded(mainValueSlot, valueTag, valueScalar, valueReference);
-			this.hashNext[mainIndex] = TABLE_HASH_NEXT_END;
 			return mainIndex;
 		}
 		const freeIndex = this.getFreeIndex();
@@ -1319,75 +1271,9 @@ export class Table {
 		keyScalar: number,
 		keyReference: ValueReference,
 	): void {
-		const existingIndex = this.findNodeIndex(keyTag, keyScalar, keyReference);
-		if (existingIndex < 0
-			|| this.tags[this.hashValueSlot(existingIndex)] === ValueTag.Nil) {
-			return;
-		}
-		if (this.hashDeadCount > 0) {
-			this.rehash(ValueTag.Nil, NaN, null, ValueTag.Nil, NaN, null);
-			const arrayIndex = this.getArrayIndex(keyTag, keyScalar);
-			if (arrayIndex >= 0 && arrayIndex < this.arrayCapacity) {
-				this.setNil(arrayIndex);
-				return;
-			}
-		}
-		if (this.hashSize === 0) {
-			return;
-		}
-		const mask = this.hashSize - 1;
-		const mainIndex = (this.hashValue(keyTag, keyScalar, keyReference) & mask) >>> 0;
-		let previous = -1;
-		let index = mainIndex;
-		while (index >= 0) {
-			const keySlot = this.hashKeySlot(index);
-			if (this.tags[keySlot] !== ValueTag.Nil
-				&& this.keyEquals(keySlot, keyTag, keyScalar, keyReference)) {
-				const next = this.hashNext[index];
-				if (previous >= 0) {
-					this.hashNext[previous] = next;
-					this.setNil(keySlot);
-					this.setNil(this.hashValueSlot(index));
-					this.hashNext[index] = TABLE_HASH_NEXT_END;
-					if (index > this.hashFree) {
-						this.hashFree = index;
-					}
-					return;
-				}
-				if (next >= 0) {
-					const nextKeySlot = this.hashKeySlot(next);
-					const nextValueSlot = this.hashValueSlot(next);
-					this.setEncoded(
-						keySlot,
-						this.tags[nextKeySlot],
-						this.scalars[nextKeySlot],
-						this.references[nextKeySlot],
-					);
-					this.setEncoded(
-						this.hashValueSlot(index),
-						this.tags[nextValueSlot],
-						this.scalars[nextValueSlot],
-						this.references[nextValueSlot],
-					);
-					this.hashNext[index] = this.hashNext[next];
-					this.setNil(nextKeySlot);
-					this.setNil(nextValueSlot);
-					this.hashNext[next] = TABLE_HASH_NEXT_END;
-					if (next > this.hashFree) {
-						this.hashFree = next;
-					}
-					return;
-				}
-				this.setNil(keySlot);
-				this.setNil(this.hashValueSlot(index));
-				this.hashNext[index] = TABLE_HASH_NEXT_END;
-				if (index > this.hashFree) {
-					this.hashFree = index;
-				}
-				return;
-			}
-			previous = index;
-			index = this.hashNext[index];
+		const index = this.findNodeIndex(keyTag, keyScalar, keyReference);
+		if (index >= 0 && this.tags[this.hashValueSlot(index)] !== ValueTag.Nil) {
+			this.markHashNodeDead(index);
 		}
 	}
 
@@ -1409,7 +1295,6 @@ export class Table {
 			default:
 				this.setNil(valueSlot);
 		}
-		this.hashDeadCount += 1;
 	}
 
 	private getArrayIndex(tag: ValueTag, scalar: number): number {

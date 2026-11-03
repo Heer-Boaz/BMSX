@@ -197,9 +197,8 @@ private:
 	void updateArrayLengthFrom(size_t startIndex);
 	size_t hashValue(const Value& key) const;
 	bool keyEquals(const Value& a, const Value& b) const;
-	int findNodeIndex(const Value& key) const;
+	int findNodeIndex(const Value& key, bool matchDead = false) const;
 	int findNextLiveHashIndex(size_t start) const;
-	int findNodeIndexForNext(const Value& key) const;
 	int getFreeIndex();
 	void rehash(const Value& key, const Value& value);
 	void resize(size_t newArraySize, size_t newHashSize, const Value& key, const Value& value);
@@ -233,7 +232,6 @@ private:
 	int32_t* m_hashNext = nullptr;
 	size_t m_hashSize = 0;
 	int m_hashFree = -1;
-	size_t m_hashDeadCount = 0;
 };
 
 

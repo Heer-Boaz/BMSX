@@ -89,6 +89,21 @@ void refillArrayHashPrefix(bmsx::CPU& cpu) {
 	}
 }
 
+void continueAfterDeletedZeroIdentityKey(bmsx::CPU& cpu) {
+	auto* object = cpu.createTable();
+	object->hashId = 0;
+	const auto objectKey = bmsx::valueTable(object);
+	auto* table = cpu.createTable(0, 64);
+	table->set(objectKey, bmsx::valueNumber(9));
+	table->set(bmsx::valueBool(true), bmsx::valueNumber(13));
+	bmsx::Value key = bmsx::valueNil(), value = bmsx::valueNil();
+	require(table->nextEntry(objectKey, key, value), "the zero-identity key has a live successor");
+	const auto successor = std::pair{key, value};
+	table->set(objectKey, bmsx::valueNil());
+	require(table->nextEntry(objectKey, key, value), "a deleted zero-identity key remains a continuation");
+	require(std::pair{key, value} == successor, "deletion preserves the zero-identity key's successor");
+}
+
 } // namespace
 
 int main() {
@@ -99,6 +114,7 @@ int main() {
 		bmsx::CPU cpu(memory, irq, addresses);
 		inspectStoredSlots(cpu);
 		refillArrayHashPrefix(cpu);
+		continueAfterDeletedZeroIdentityKey(cpu);
 		std::cout << "Table inspection tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {
