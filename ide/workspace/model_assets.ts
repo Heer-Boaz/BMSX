@@ -2,8 +2,7 @@ import type { Affine3 } from '../../machine/ts/common/affine3';
 import { HostMesh } from '../../machine/ts/render/host_overlay/mesh';
 import { HostBitmap } from '../../machine/ts/render/host_overlay/bitmap';
 import { GX_GPU_TEXTURE_MODE_DIRECT16 } from '../../machine/ts/spec/gx/gp0';
-import type { GLTFModel } from '../../toolchain/ts/rompack/gltf';
-import { MODEL_STATIC_FEATURE, prepareModelStaticScenes } from '../../toolchain/ts/rompack/model_static_scene';
+import { MODEL_STATIC_FEATURE, type ModelAsset } from '../../toolchain/ts/rompack/model';
 import { decodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
 import { decodeGxTextureImage } from '../../toolchain/ts/rompack/gx_texture_codec';
 import type { WorkspaceSourceCatalog, WorkspaceSourceContext } from './source_catalog';
@@ -12,9 +11,8 @@ export type WorkspaceModelPart = { readonly affine: Readonly<Affine3>; readonly 
 export type WorkspaceModelScene = { readonly parts: readonly WorkspaceModelPart[] };
 type Binding = {
 	readonly provider: WorkspaceSourceContext;
-	readonly model: GLTFModel;
+	readonly model: ModelAsset;
 	readonly rom: Uint8Array;
-	readonly prepared: ReturnType<typeof prepareModelStaticScenes>;
 	readonly meshes: Map<number, readonly HostMesh[]>;
 	readonly scenes: Map<number, WorkspaceModelScene>;
 	readonly textures: Map<number, HostBitmap>;
@@ -41,7 +39,7 @@ export class WorkspaceModelAssets {
 			}
 			if (previous !== undefined) this.retire(previous);
 			this.bindings.set(id, { provider, model, rom: mounted.bytes, epoch,
-				prepared: prepareModelStaticScenes(model), meshes: new Map(), scenes: new Map(), textures: new Map(), texcoords: new Map() });
+				meshes: new Map(), scenes: new Map(), textures: new Map(), texcoords: new Map() });
 		}
 		for (const [id, binding] of this.bindings) if (binding.epoch !== epoch) {
 			this.retire(binding); this.bindings.delete(id);
@@ -51,22 +49,22 @@ export class WorkspaceModelAssets {
 	public get(id: string, selected?: number): WorkspaceModelScene | undefined {
 		const binding = this.bindings.get(id);
 		if (binding === undefined) return;
-		const index = selected ?? binding.model.scene;
+		const index = selected ?? binding.model.defaultScene;
 		if (index === undefined) return;
-		const source = binding.prepared.scenes[index];
+		const source = binding.model.scenes[index];
 		if (source === undefined || (source.features & ~MODEL_STATIC_FEATURE.texture) !== 0) return;
 		let scene = binding.scenes.get(index);
 		if (scene !== undefined) return scene;
-		const parts: WorkspaceModelPart[] = [], prepared = binding.prepared;
+		const parts: WorkspaceModelPart[] = [], model = binding.model;
 		for (let partIndex = source.firstPart; partIndex < source.firstPart + source.partCount; partIndex++) {
-			const part = prepared.parts[partIndex];
+			const part = model.parts[partIndex];
 			let meshes = binding.meshes.get(part.mesh);
 			if (meshes === undefined) {
 				meshes = binding.model.meshes[part.mesh].primitives.map(primitive => {
-					const material = primitive.materialIndex === undefined ? undefined : prepared.materials[primitive.materialIndex];
+					const material = primitive.materialIndex === undefined ? undefined : model.materials[primitive.materialIndex];
 					let texture;
 					if (material?.textureIndex !== undefined) {
-						const image = binding.model.textureImages[material.textureIndex];
+						const image = model.textures[material.textureIndex];
 						let bitmap = binding.textures.get(material.textureIndex);
 						if (bitmap === undefined) {
 							const decoded = decodeGxTextureImage(decodeImgDecStream(image.stream, 0, image.stream.length).payload,
@@ -87,7 +85,7 @@ export class WorkspaceModelAssets {
 						texture = { bitmap, uvs };
 					}
 					return new HostMesh({ positions: primitive.positions, indices: primitive.indices, indexComponentType: primitive.indexComponentType,
-						color: material === undefined ? 0xffffffff : material.color, doubleSided: material === undefined ? false : material.doubleSided, texture });
+						gxCommand: material === undefined ? 0x20ffffff : material.command, doubleSided: material === undefined ? false : material.doubleSided, texture });
 				});
 				binding.meshes.set(part.mesh, meshes);
 			}

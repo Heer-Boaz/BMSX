@@ -18,7 +18,7 @@ import { WorkspaceImageAssets } from '../../ide/workspace/image_assets';
 import { WorkspaceModelAssets } from '../../ide/workspace/model_assets';
 import type { SceneAddMemberChoice } from '../../ide/workbench/contrib/scene_editor/member_insertion';
 import type { GLTFModel } from '../../toolchain/ts/rompack/gltf';
-import { packModelAsset } from '../../toolchain/ts/rompack/model_asset';
+import { packModelAsset, loadModelFromBuffer } from '../../toolchain/ts/rompack/model_asset';
 import { createPackedImageFixture } from '../helpers/packed_images';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
 
@@ -43,7 +43,7 @@ scenes.register('main',{objects={{member_id='shape',definition_id='shape',transf
 		const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
 		const asset: GLTFModel = { name: 'shape', meshes: [{ primitives: [{ positions, indices: new Uint16Array([0, 1, 2]), indexComponentType: 5123 },
 			{ positions, indices: new Uint8Array([2, 1, 0]), indexComponentType: 5121 }] }], nodes: [{ mesh: 0, translation: [2, 3, 4] }], scenes: [{ nodes: [0] }], scene: 0 };
-		provider.previewRom!.bytes = packModelAsset(asset).buffer; provider.previewPackage.model.shape = asset;
+		provider.previewRom!.bytes = packModelAsset(asset).buffer; provider.previewPackage.model.shape = loadModelFromBuffer('shape', provider.previewRom!.bytes);
 	}
 	f.sources.catalog.rebuildResources();
 	const document = f.documents.get(f.model), context = new SceneAuthoringContext(f.model, f.documents,

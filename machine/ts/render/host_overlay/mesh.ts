@@ -4,16 +4,26 @@ import type { HostBitmap } from './bitmap';
 /** Normalized UVs are affine in screen space, with point sampling and no vertex lighting. */
 export type HostMeshTexture = { readonly bitmap: HostBitmap; readonly uvs: Float32Array };
 
+export const enum HostMeshShader { Color, Texture, GxTexture }
+
 export type HostMeshData = {
 	positions: Float32Array;
 	indices?: Uint8Array | Uint16Array | Uint32Array;
 	indexComponentType?: 5121 | 5123 | 5125;
-	color: number;
 	doubleSided: boolean;
 	texture?: HostMeshTexture;
+} & ({
+	color: number;
+	gxCommand?: never;
 	/** Painter-ordered surfaces blend and accept equal depth, without inventing Z offsets. */
 	layered?: boolean;
-};
+} | {
+	/** Compiled static model material: flat opaque GX color, no dither. Texture
+	 * RGB555 is modulated by the command's bytes, with 128 as neutral gain. */
+	gxCommand: number;
+	color?: never;
+	layered?: never;
+});
 
 /** Immutable host-owned geometry; its provider retains the source generation. */
 export class HostMesh {
@@ -23,6 +33,13 @@ export class HostMesh {
 	public readonly indexComponentType: 5121 | 5123 | 5125 | undefined;
 	public readonly drawCount: number;
 	public readonly color: number;
+	public readonly gxCommand: number | undefined;
+	public readonly shader: HostMeshShader;
+	/** Prepared shader constants: normalized RGB, or RGB8 gains for GxTexture. */
+	public readonly red: number;
+	public readonly green: number;
+	public readonly blue: number;
+	public readonly alpha: number;
 	public readonly doubleSided: boolean;
 	public readonly texture: HostMeshTexture | undefined;
 	public readonly layered: boolean;
@@ -31,8 +48,26 @@ export class HostMesh {
 		this.indexComponentType = data.indexComponentType;
 		const count = data.indices === undefined ? data.positions.length / 3 : data.indices.length;
 		this.drawCount = count - count % 3;
-		this.color = data.color; this.doubleSided = data.doubleSided;
 		this.texture = data.texture; this.layered = data.layered === true;
+		this.doubleSided = data.doubleSided; this.gxCommand = data.gxCommand;
+		this.shader = data.texture === undefined ? HostMeshShader.Color
+			: data.gxCommand === undefined ? HostMeshShader.Texture : HostMeshShader.GxTexture;
+		if (data.gxCommand === undefined) {
+			this.color = data.color;
+		} else {
+			const command = data.gxCommand;
+			let r = command & 255, g = (command >>> 8) & 255, b = (command >>> 16) & 255;
+			if (this.shader === HostMeshShader.Color) {
+				// Flat untextured GX polygons reduce to RGB555 without dithering.
+				r = (r & 248) | (r >>> 5); g = (g & 248) | (g >>> 5); b = (b & 248) | (b >>> 5);
+			}
+			this.color = (0xff000000 | (r << 16) | (g << 8) | b) >>> 0;
+		}
+		const divisor = this.shader === HostMeshShader.GxTexture ? 1 : 255;
+		this.red = ((this.color >>> 16) & 255) / divisor;
+		this.green = ((this.color >>> 8) & 255) / divisor;
+		this.blue = (this.color & 255) / divisor;
+		this.alpha = this.layered ? (this.color >>> 24) / 255 : 1;
 	}
 	public onDispose(listener: () => void): () => void {
 		this.release.add(listener);

@@ -27,7 +27,7 @@ for (const kind of ['webgl2', 'webgpu'] as const) test(`${kind} retained host me
 	await page.goto('http://localhost/mesh-test/');
 	await page.addScriptTag({ content: bundle });
 	const result = await page.evaluate(async kind => (globalThis as any).meshTest.renderHostMeshCase(kind), kind);
-	t.diagnostic(JSON.stringify(result));
+	t.diagnostic(JSON.stringify({ ...result, gxPixels: undefined }));
 	assert.equal(result.kind, kind);
 	assert.deepEqual(result.left, [255, 0, 0, 255]);
 	assert.deepEqual(result.right, [0, 0, 255, 255]);
@@ -51,6 +51,18 @@ for (const kind of ['webgl2', 'webgpu'] as const) test(`${kind} retained host me
 		cutout: [0, 128, 0, 128], cutoutComposite: [16, 144, 32, 255],
 	});
 	assert.deepEqual(result.gpuErrors, []);
+	assert.equal(result.gxAffineMatches, true); assert.equal(result.gxNearMatches, true);
+	const gains = [0, 1, 64, 127, 128, 129, 192, 255];
+	for (let y = 0; y < gains.length; y++) for (let x = 0; x < 32; x++) {
+		const channels = x < 2 ? [0, 0, 0] : [x, 31 - x, (x * 3) & 31], color = [gains[y], 255 - gains[y], 128];
+		const expected = channels.map((value, channel) => {
+			const rgb5 = Math.min((value * color[channel]) >> 7, 31);
+			return (rgb5 << 3) | (rgb5 >> 2);
+		});
+		const offset = (y * 32 + x) * 4;
+		assert.deepEqual(result.gxPixels.slice(offset, offset + 4), [...expected, x === 1 ? 0 : 255], `GX texel ${x}, gain ${gains[y]}`);
+	}
+	assert.deepEqual(result.gxPixels.slice(8 * 32 * 4, 8 * 32 * 4 + 4), [49, 123, 74, 255]);
 	assert.equal(result.validationError, undefined);
 	assert.deepEqual(errors, []);
 });

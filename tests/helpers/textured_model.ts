@@ -9,8 +9,8 @@ export async function createTexturedModelFixture() {
 	const path = resolve('carts/studio_test/res/studio_test_textured.gltf');
 	const document = prepareGLTFDocument(readFileSync(path), path, readFileSync);
 	const imported = loadGLTFModel(document, 'studio_test_textured');
-	await prepareModelTextures(imported);
-	const packed = packModelAsset(imported);
+	const textures = await prepareModelTextures(imported);
+	const packed = packModelAsset(imported, textures);
 	const model = loadModelFromBuffer(imported.name, packed.buffer, packed.model_texture_buffer);
-	return { document, imported, packed, model };
+	return { document, imported, textures, packed, model };
 }

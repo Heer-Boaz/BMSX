@@ -324,13 +324,14 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 			}
 			break;
 		case 'model': {
-			const modelData = loadModelFromBuffer(
+			const modelAsset = loadModelFromBuffer(
 				selected.resid,
 				ctx.rombin.subarray(selected.start, selected.end),
 				selected.model_texture_start !== undefined
 					? ctx.rombin.subarray(selected.model_texture_start, selected.model_texture_end!)
 					: undefined,
 			);
+			const modelData = modelAsset.source;
 			metadataLines.push(`Model size: ${ctx.formatByteSize(selected.end - selected.start)}`);
 			metadataLines.push(`Nodes: ${modelData.nodes ? modelData.nodes.length : 0}`);
 			metadataLines.push(`Scenes: ${modelData.scenes ? modelData.scenes.length : 0}`);

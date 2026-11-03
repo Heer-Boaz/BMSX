@@ -1,17 +1,18 @@
 import { createCanvas, loadImage } from 'canvas';
 import { PNG } from 'pngjs';
 import type { GLTFModel } from '../../toolchain/ts/rompack/gltf';
+import type { ModelTextures } from '../../toolchain/ts/rompack/model';
 import { encodeDirect16GxTexture } from '../../toolchain/ts/rompack/gx_texture_codec';
 import { encodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
 
 /** Model images use the same native texture codec/upload path as atlas images.
  * Opaque materials ignore source alpha; black remains an opaque Direct16 word. */
-export async function prepareModelTextures(model: GLTFModel): Promise<void> {
-	if (model.imageBuffers === undefined) return;
+export async function prepareModelTextures(model: GLTFModel): Promise<ModelTextures> {
+	if (model.imageBuffers === undefined) return [];
 	const usedImages = new Set<number>();
 	if (model.materials !== undefined) for (const material of model.materials) if (material.baseColorTexture !== undefined)
 		usedImages.add(model.textures[material.baseColorTexture].source);
-	model.textureImages = await Promise.all(model.imageBuffers.map(async (bytes, index) => {
+	return Promise.all(model.imageBuffers.map(async (bytes, index) => {
 		if (!usedImages.has(index)) return undefined;
 		const buffer = Buffer.from(bytes);
 		let width: number, height: number, rgba: Uint8ClampedArray;

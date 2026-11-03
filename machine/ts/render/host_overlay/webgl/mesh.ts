@@ -7,6 +7,7 @@ import type { HostBitmapTextures } from '../bitmap';
 import vertex from './shaders/host_mesh.vert.glsl';
 import fragment from './shaders/host_mesh.frag.glsl';
 import texturedFragment from './shaders/host_mesh_textured.frag.glsl';
+import gxTexturedFragment from './shaders/host_mesh_gx_textured.frag.glsl';
 
 type MeshBuffers = { vao: WebGLVertexArrayObject; indices: WebGLBuffer | undefined; uvs: WebGLBuffer | undefined; positions: Float32Array; count: number; indexType: number };
 export type WebGLHostMeshTarget = { color: WebGLTexture; depth: WebGLTexture; pass: RenderPassDesc };
@@ -20,10 +21,10 @@ export class WebGLHostMeshScenes {
 	private readonly matrix = new Float32Array(16);
 	public constructor(private readonly backend: WebGLBackend, private readonly bitmaps: HostBitmapTextures<WebGLTexture>) {
 		const gl = backend.gl;
-		this.programs = [fragment, texturedFragment].map(source => {
+		this.programs = [fragment, texturedFragment, gxTexturedFragment].map((source, index) => {
 			const program = backend.buildProgram(vertex, source, 'host_mesh');
 			backend.useProgram(program);
-			if (source === texturedFragment) gl.uniform1i(gl.getUniformLocation(program, 'bitmap'), 0);
+			if (index !== 0) gl.uniform1i(gl.getUniformLocation(program, 'bitmap'), 0);
 			return { program, matrix: gl.getUniformLocation(program, 'clip_from_model'), color: gl.getUniformLocation(program, 'color') };
 		});
 		this.positionBuffers = new HostMeshPositionBuffers(
@@ -72,12 +73,11 @@ export class WebGLHostMeshScenes {
 		backend.setViewportRect(0, 0, scene.width, scene.height);
 		for (const instance of scene.instances) {
 			const mesh = instance.mesh, geometry = this.meshes.get(mesh);
-			const program = this.programs[mesh.texture === undefined ? 0 : 1]; backend.useProgram(program.program);
+			const program = this.programs[mesh.shader]; backend.useProgram(program.program);
 			backend.setDepthFunc(mesh.layered ? gl.GEQUAL : gl.GREATER); backend.setBlendEnabled(mesh.layered);
 			writeHostMeshClipMatrix(this.matrix, scene, instance);
 			gl.uniformMatrix4fv(program.matrix, false, this.matrix);
-			gl.uniform4f(program.color, ((mesh.color >>> 16) & 255) / 255, ((mesh.color >>> 8) & 255) / 255, (mesh.color & 255) / 255,
-				mesh.layered ? (mesh.color >>> 24) / 255 : 1);
+			gl.uniform4f(program.color, mesh.red, mesh.green, mesh.blue, mesh.alpha);
 			if (mesh.texture !== undefined) {
 				const bitmap = this.bitmaps.get(mesh.texture.bitmap);
 				backend.setActiveTexture(0); backend.bindTexture2D(bitmap);

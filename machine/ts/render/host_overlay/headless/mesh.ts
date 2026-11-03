@@ -1,7 +1,8 @@
 import { clamp } from '../../../common/clamp';
 import type { HeadlessHost2DContext } from '../../headless/host_2d';
 import { blendPixel } from '../../headless/pixel_ops';
-import { hostMeshReflected, writeHostMeshClipMatrix, type HostMesh, type HostMeshScene, type HostMeshSceneRenderSubmission } from '../mesh';
+import { gxGpuSoftwareRgb555ChannelTo8, gxGpuSoftwareTextureModulationChannel5 } from '../../backend/software/gx_gpu_vram';
+import { HostMeshShader, hostMeshReflected, writeHostMeshClipMatrix, type HostMesh, type HostMeshScene, type HostMeshSceneRenderSubmission } from '../mesh';
 
 export type HeadlessHostMeshTarget = {
 	readonly width: number;
@@ -190,6 +191,30 @@ function rasterTriangle(target: HeadlessHostMeshTarget, points: Float64Array, a:
 	const tw = texture === undefined ? 0 : texture.width, th = texture === undefined ? 0 : texture.height;
 	const dudx = (-dy0 * u0 - dy1 * u1 - dy2 * u2) / area * tw, dudy = (dx0 * u0 + dx1 * u1 + dx2 * u2) / area * tw;
 	const dvdx = (-dy0 * v0 - dy1 * v1 - dy2 * v2) / area * th, dvdy = (dx0 * v0 + dx1 * v1 + dx2 * v2) / area * th;
+	if (mesh.shader === HostMeshShader.GxTexture) {
+		const texels = texture.pixels;
+		for (let y = startY; y < endY; y++) {
+			const px = startX + 0.5, py = y + 0.5;
+			let e0 = dx0 * (py - y1) - dy0 * (px - x1), e1 = dx1 * (py - y2) - dy1 * (px - x2);
+			let e2 = dx2 * (py - y0) - dy2 * (px - x0), z = z0 + (px - x0) * dzdx + (py - y0) * dzdy;
+			let u = u0 * tw + (px - x0) * dudx + (py - y0) * dudy, v = v0 * th + (px - x0) * dvdx + (py - y0) * dvdy;
+			let sample = y * width + startX;
+			for (let x = startX; x < endX; x++, sample++, e0 -= dy0, e1 -= dy1, e2 -= dy2, z += dzdx, u += dudx, v += dvdx) {
+				if (e0 < 0 || e0 === 0 && !include0 || e1 < 0 || e1 === 0 && !include1 || e2 < 0 || e2 === 0 && !include2) continue;
+				const fragmentDepth = Math.fround(z);
+				if (fragmentDepth <= depth[sample]) continue;
+				const tx = clamp(Math.trunc(u), 0, tw - 1), ty = clamp(Math.trunc(v), 0, th - 1), source = (ty * tw + tx) * 4;
+				if (texels[source + 3] === 0) continue;
+				depth[sample] = fragmentDepth;
+				const offset = sample * 4;
+				pixels[offset] = gxGpuSoftwareRgb555ChannelTo8(gxGpuSoftwareTextureModulationChannel5(texels[source] >>> 3, red, 0));
+				pixels[offset + 1] = gxGpuSoftwareRgb555ChannelTo8(gxGpuSoftwareTextureModulationChannel5(texels[source + 1] >>> 3, green, 0));
+				pixels[offset + 2] = gxGpuSoftwareRgb555ChannelTo8(gxGpuSoftwareTextureModulationChannel5(texels[source + 2] >>> 3, blue, 0));
+				pixels[offset + 3] = 255;
+			}
+		}
+		return;
+	}
 	const redScale = red / 255, greenScale = green / 255, blueScale = blue / 255, alphaScale = alpha / 255;
 	for (let y = startY; y < endY; y++) {
 		const px = startX + 0.5, py = y + 0.5;

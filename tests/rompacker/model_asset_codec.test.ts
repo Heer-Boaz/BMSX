@@ -86,12 +86,12 @@ for (const inputKind of ['uint8-subview', 'node-buffer', 'node-buffer-subview'] 
 		const bytes = allocation.subarray(start, start + packed.buffer.length);
 		if (inputKind === 'node-buffer-subview') assert.equal(bytes.byteOffset % 4, 1);
 		const before = new Uint8Array(allocation);
-		const decoded = loadModelFromBuffer('packed-asset-id', bytes);
+		const decoded = loadModelFromBuffer('packed-asset-id', bytes).source;
 		assert.equal(decoded.name, 'packed-asset-id');
 		assert.deepEqual(decoded.meshes.map(mesh => mesh.primitives.length), [2, 1]);
 		assert.equal(decoded.meshes[0].name, model.meshes[0].name);
 		assert.deepEqual(decoded.meshes[0].weights, model.meshes[0].weights);
-		assert.deepEqual(decoded.meshes[0].primitives[0], { ...complete, pageTexcoords: undefined });
+		assert.deepEqual(decoded.meshes[0].primitives[0], complete);
 		for (let meshIndex = 0; meshIndex < model.meshes.length; meshIndex++) {
 			for (let primitiveIndex = 0; primitiveIndex < model.meshes[meshIndex].primitives.length; primitiveIndex++) {
 				const original = model.meshes[meshIndex].primitives[primitiveIndex];
@@ -151,7 +151,7 @@ for (const inputKind of ['uint8-subview', 'node-buffer-subview'] as const) {
 		const imageBytes = imageAllocation.subarray(5, 5 + packed.model_texture_buffer.length);
 		const metadataBefore = new Uint8Array(metadataAllocation);
 		const imageBefore = new Uint8Array(imageAllocation);
-		const decoded = loadModelFromBuffer('images', metadataAllocation.subarray(3, 3 + packed.buffer.length), imageBytes);
+		const decoded = loadModelFromBuffer('images', metadataAllocation.subarray(3, 3 + packed.buffer.length), imageBytes).source;
 		assert.equal(Object.hasOwn(decoded, 'imageOffsets'), false, 'transport image ranges are not published model state');
 		assert.deepEqual(decoded.imageURIs, model.imageURIs);
 		assert.deepEqual(decoded.imageBuffers.map(image => Array.from(image)), [[1, 2, 3], [4, 5]]);
@@ -164,7 +164,7 @@ for (const inputKind of ['uint8-subview', 'node-buffer-subview'] as const) {
 		assert.deepEqual(decoded.textures, model.textures);
 		assert.deepEqual(decoded.samplers, model.samplers);
 		const otherGeneration = new Uint8Array([9, 8, 7, 6, 5]);
-		const other = loadModelFromBuffer('images', packed.buffer, otherGeneration);
+		const other = loadModelFromBuffer('images', packed.buffer, otherGeneration).source;
 		assert.equal(other.imageBuffers[0].buffer, otherGeneration.buffer);
 		assert.deepEqual(other.imageBuffers, [new Uint8Array([9, 8, 7]), new Uint8Array([6, 5])]);
 		assert.deepEqual(decoded.imageBuffers.map(image => Array.from(image)), [[1, 2, 3], [4, 5]], 'later decoding retains the earlier generation');
@@ -177,7 +177,7 @@ test('absent optional model data stays absent while an explicit zero-image table
 	const model: GLTFModel = { name: 'minimal', meshes: [{ primitives: [{ positions: new Float32Array([0, 0, 0]) }] }] };
 	const packed = packModelAsset(model);
 	assert.equal(packed.model_texture_buffer, undefined);
-	const decoded = loadModelFromBuffer('minimal', packed.buffer);
+	const decoded = loadModelFromBuffer('minimal', packed.buffer).source;
 	for (const key of ['materials', 'animations', 'textures', 'samplers', 'imageURIs', 'imageBuffers', 'nodes', 'scenes', 'scene', 'skins'] as const) {
 		assert.equal(decoded[key], undefined, `optional model member ${key} is not synthesized`);
 	}
@@ -190,7 +190,7 @@ test('absent optional model data stays absent while an explicit zero-image table
 	}
 	const emptyImages = packModelAsset({ name: 'zero-images', meshes: [], textures: [], samplers: [], imageBuffers: [] });
 	assert.deepEqual(emptyImages.model_texture_buffer, new Uint8Array());
-	const emptyDecoded = loadModelFromBuffer('zero-images', emptyImages.buffer, emptyImages.model_texture_buffer);
+	const emptyDecoded = loadModelFromBuffer('zero-images', emptyImages.buffer, emptyImages.model_texture_buffer).source;
 	assert.deepEqual(emptyDecoded.meshes, []);
 	assert.deepEqual(emptyDecoded.textures, []);
 	assert.deepEqual(emptyDecoded.samplers, []);

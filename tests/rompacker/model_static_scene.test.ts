@@ -4,7 +4,7 @@ import type { GLTFModel } from '../../toolchain/ts/rompack/gltf';
 import { packModelAsset, loadModelFromBuffer } from '../../toolchain/ts/rompack/model_asset';
 import { MODEL_ASSET_HEADER, MODEL_MATERIAL, MODEL_MATERIAL_BYTE_LENGTH,
 	MODEL_PART, MODEL_PART_BYTE_LENGTH, MODEL_SCENE, MODEL_SCENE_BYTE_LENGTH } from '../../toolchain/ts/rompack/model_asset_layout';
-import { MODEL_STATIC_FEATURE } from '../../toolchain/ts/rompack/model_static_scene';
+import { MODEL_STATIC_FEATURE } from '../../toolchain/ts/rompack/model';
 
 test('static scene descriptors retain node identity, shared meshes and complete Number affines', () => {
 	const model: GLTFModel = {
@@ -43,8 +43,13 @@ test('static scene descriptors retain node identity, shared meshes and complete 
 	assert.equal(MODEL_MATERIAL_BYTE_LENGTH, 12);
 	assert.equal(view.getUint32(material + MODEL_MATERIAL.textureIndex, true), 0xffffffff);
 	const loaded = loadModelFromBuffer('static', packed.buffer);
+	assert.deepEqual(loaded.scenes, [{ firstPart: 0, partCount: 2, features: 0 }, { firstPart: 2, partCount: 0, features: 0 }]);
+	assert.deepEqual(loaded.parts.map(part => [part.node, part.mesh]), [[1, 0], [2, 0]]);
+	assert.deepEqual(Object.values(loaded.parts[0].affine), coefficients);
+	assert.deepEqual(Object.values(loaded.parts[1].affine), rotated);
+	assert.deepEqual(loaded.materials, [{ command: 0x20bf8040, doubleSided: true, textureIndex: undefined }]);
 	for (let index = 0; index < model.nodes.length; index++) {
-		for (const [field, value] of Object.entries(model.nodes[index])) assert.deepEqual(loaded.nodes[index][field], value);
+		for (const [field, value] of Object.entries(model.nodes[index])) assert.deepEqual(loaded.source.nodes[index][field], value);
 	}
 });
 
@@ -65,7 +70,7 @@ test('rich assets still pack; capabilities belong to the selected static scene, 
 	assert.equal(view.getUint32(scenes + MODEL_SCENE_BYTE_LENGTH + MODEL_SCENE.features, true),
 		MODEL_STATIC_FEATURE.texture | MODEL_STATIC_FEATURE.alpha | MODEL_STATIC_FEATURE.vertexColor | MODEL_STATIC_FEATURE.morph | MODEL_STATIC_FEATURE.skin | MODEL_STATIC_FEATURE.textureLayout);
 	const loaded = loadModelFromBuffer('capabilities', buffer);
-	assert.equal(loaded.scene, undefined);
-	assert.equal(loaded.materials[0].baseColorTexture, 0);
-	assert.deepEqual(loaded.meshes[1].primitives[0].morphPositions[0], positions);
+	assert.equal(loaded.defaultScene, undefined);
+	assert.equal(loaded.source.materials[0].baseColorTexture, 0);
+	assert.deepEqual(loaded.source.meshes[1].primitives[0].morphPositions[0], positions);
 });

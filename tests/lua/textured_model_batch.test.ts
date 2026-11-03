@@ -15,8 +15,8 @@ import { materializeCpuCompletionValues } from './cpu_test_harness';
 for (const optLevel of [0, 3] as const) test(`textured model binding, affine clipping and mixed depth runs retain storage (O${optLevel})`, async t => {
 	const { imported } = await createTexturedModelFixture();
 	imported.textures.push({ source: 0 }); imported.materials[1].baseColorTexture = 2;
-	await prepareModelTextures(imported);
-	const bytes = packModelAsset(imported).buffer, storage = new Uint8Array((bytes.length + 3) & ~3); storage.set(bytes);
+	const textures = await prepareModelTextures(imported);
+	const bytes = packModelAsset(imported, textures).buffer, storage = new Uint8Array((bytes.length + 3) & ~3); storage.set(bytes);
 	const view = new DataView(storage.buffer), words = Array.from({ length: storage.length / 4 }, (_, index) => view.getUint32(index * 4, true));
 	// Real resource binding, atlas LRU and batch. Substitute only ROM lookup,
 	// residency storage/upload and the DMA packet boundary, not rendering math.

@@ -80,7 +80,9 @@ test('external mesh instances survive the real resource packer, package reader a
 	t.after(() => catalog.dispose());
 	const binding = catalog.resolveAsset('models', 'model', 'fixture')!;
 	assert.equal(binding.contextId, 'models'); assert.ok(binding.value === layer.package.model.fixture);
-	const model = binding.value;
+	const model = binding.value.source;
+	assert.equal(model.meshes[0].primitives[0].positions, binding.value.meshes[0].primitives[0].positions);
+	assert.equal(model.meshes[0].primitives[0].indices, binding.value.meshes[0].primitives[0].indices);
 	assert.equal(model.meshes.length, 2); assert.deepEqual(model.meshes.map(mesh => mesh.primitives.length), [2, 1]);
 	const primitives = [model.meshes[0].primitives[0], model.meshes[0].primitives[1], model.meshes[1].primitives[0]];
 	for (let index = 0; index < primitives.length; index++) {
@@ -161,7 +163,7 @@ test('JSON matrix-authored placements retain the same Number precision as TRS pl
 	assert.equal(imported.nodes[1].matrix[4], 0.1);
 	assert.equal(imported.nodes[1].matrix[12], 0.2);
 	const packed = packModelAsset(imported);
-	const loaded = loadModelFromBuffer('number-matrix', packed.buffer, packed.model_texture_buffer);
+	const loaded = loadModelFromBuffer('number-matrix', packed.buffer, packed.model_texture_buffer).source;
 	assert.equal(loaded.nodes[1].matrix[4], 0.1);
 	assert.equal(loaded.nodes[1].matrix[12], 0.2);
 });

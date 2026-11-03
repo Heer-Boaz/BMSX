@@ -103,11 +103,11 @@ test('model directories expose one aligned geometry generation without deseriali
 	assert.deepEqual(rich.nodes, model.nodes);
 	for (let index = 0; index < model.nodes.length; index++) {
 		for (const key of ['mesh', 'children', 'translation', 'rotation', 'scale', 'matrix', 'skin', 'weights', 'visible'] as const) {
-			assert.deepEqual(loaded.nodes[index][key], model.nodes[index][key]);
+			assert.deepEqual(loaded.source.nodes[index][key], model.nodes[index][key]);
 		}
 	}
-	assert.deepEqual(loaded.scenes, model.scenes);
-	assert.equal(loaded.scene, model.scene);
+	assert.deepEqual(loaded.source.scenes, model.scenes);
+	assert.equal(loaded.defaultScene, model.scene);
 	assert.deepEqual(new Uint32Array(loaded.meshes[1].primitives[0].positions.buffer,
 		loaded.meshes[1].primitives[0].positions.byteOffset, positions.length), positionWords);
 });

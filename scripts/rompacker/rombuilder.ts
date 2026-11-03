@@ -887,8 +887,8 @@ export async function generateRomAssets(
 			}
 			case 'model': {
 				const parsed = loadGLTFModel(res.document, resid);
-				await prepareModelTextures(parsed);
-				const packed = packModelAsset(parsed);
+				const textures = await prepareModelTextures(parsed);
+				const packed = packModelAsset(parsed, textures);
 				romAssets.push({ resid, type, ...packed, source_path: sourcePath });
 			}
 				break;

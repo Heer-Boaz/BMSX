@@ -22,3 +22,13 @@ struct TexturedVertex { @builtin(position) position: vec4<f32>, @location(0) aff
  if(texel.a==0.0) { discard; }
  return vec4<f32>(texel.rgb*texel.a,texel.a);
 }
+@fragment fn fragment_gx_textured(input: TexturedVertex) -> @location(0) vec4<f32> {
+ let size=vec2<i32>(textureDimensions(bitmap));
+ let uv=input.affine_uv.xy/input.affine_uv.z;
+ let point=clamp(vec2<i32>(uv*vec2<f32>(size)),vec2<i32>(0),size-vec2<i32>(1));
+ let texel=textureLoad(bitmap,point,0);
+ if(texel.a==0.0) { discard; }
+ let texture5=vec3<u32>(texel.rgb*255.0+0.5)>>vec3<u32>(3);
+ let rgb5=min((texture5*vec3<u32>(instance.color.rgb))>>vec3<u32>(7),vec3<u32>(31));
+ return vec4<f32>(vec3<f32>((rgb5<<vec3<u32>(3))|(rgb5>>vec3<u32>(2)))/255.0,1.0);
+}

@@ -14,7 +14,7 @@ import { SceneViewportControl } from '../../ide/workbench/contrib/scene_editor/v
 import { SceneViewportViewState } from '../../ide/workbench/contrib/scene_editor/viewport/view_state';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import type { GLTFModel } from '../../toolchain/ts/rompack/gltf';
-import { packModelAsset } from '../../toolchain/ts/rompack/model_asset';
+import { packModelAsset, loadModelFromBuffer } from '../../toolchain/ts/rompack/model_asset';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
 
 const BOUNDS = { left: 10, top: 20, right: 650, bottom: 500 };
@@ -45,7 +45,7 @@ function fixture(t: TestContext) {
 	}] }], materials: [{ baseColorFactor: [0.2, 0.6, 0.9, 1], unlit: true, doubleSided: true }],
 		nodes: [{ mesh: 0 }], scenes: [{ nodes: [0] }], scene: 0 };
 	const assets = f.sources.catalog.getContext(f.model.identity.contextId);
-	assets.previewRom!.bytes = packModelAsset(asset).buffer; assets.previewPackage.model.shape = asset;
+	assets.previewRom!.bytes = packModelAsset(asset).buffer; assets.previewPackage.model.shape = loadModelFromBuffer('shape', assets.previewRom!.bytes);
 	f.sources.catalog.rebuildResources();
 	const document = f.documents.get(f.model), context = new SceneAuthoringContext(f.model, f.documents,
 		{ document, scene: document.scenes[0], sourceVersion: f.model.version });

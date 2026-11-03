@@ -1,6 +1,7 @@
 import { decodeBinary, encodeBinary, typedArrayFromBytes } from '../../../machine/ts/common/serializer/binencoder';
 import { alignRomAssetOffset } from './asset_layout';
 import type { GLTFIndexArray, GLTFMesh, GLTFModel, GLTFPrimitive } from './gltf';
+import type { ModelAsset, ModelMesh, ModelPrimitive, ModelTextures } from './model';
 import {
 	MODEL_ASSET_HEADER, MODEL_ASSET_HEADER_BYTE_LENGTH,
 	MODEL_MESH, MODEL_MESH_BYTE_LENGTH,
@@ -13,9 +14,9 @@ import { prepareModelStaticScenes } from './model_static_scene';
 type Packed<T> = T extends ArrayBufferView
 	? Uint8Array
 	: T extends object ? { [K in keyof T]: Packed<T[K]> } : T;
-type PrimitivePayload = Packed<Omit<GLTFPrimitive, 'positions' | 'indices' | 'pageTexcoords'>>;
+type PrimitivePayload = Packed<Omit<GLTFPrimitive, 'positions' | 'indices'>>;
 type MeshPayload = Packed<Omit<GLTFMesh, 'primitives'>> & { primitives: PrimitivePayload[] };
-type ModelPayload = Packed<Omit<GLTFModel, 'imageBuffers' | 'meshes' | 'textureImages'>> & {
+type ModelPayload = Packed<Omit<GLTFModel, 'imageBuffers' | 'meshes'>> & {
 	meshes: MeshPayload[];
 	imageOffsets?: { start: number; end: number }[];
 };
@@ -26,8 +27,10 @@ const INDEX_ARRAY_CONSTRUCTORS: Readonly<Record<number, Uint8ArrayConstructor | 
 	5125: Uint32Array,
 };
 
-export function packModelAsset(model: GLTFModel): { buffer: Uint8Array; model_texture_buffer?: Uint8Array } {
-	const staticScene = prepareModelStaticScenes(model);
+const NO_TEXTURES: ModelTextures = [];
+
+export function packModelAsset(model: GLTFModel, textures: ModelTextures = NO_TEXTURES): { buffer: Uint8Array; model_texture_buffer?: Uint8Array } {
+	const staticScene = prepareModelStaticScenes(model, textures);
 	let primitiveCount = 0;
 	let geometryByteLength = 0;
 	const streamOffsets = new Map<ArrayBufferView, number>();
@@ -36,7 +39,7 @@ export function packModelAsset(model: GLTFModel): { buffer: Uint8Array; model_te
 	for (const mesh of model.meshes) for (const primitive of mesh.primitives) {
 		const material = primitive.materialIndex === undefined ? undefined : model.materials[primitive.materialIndex];
 		if (material?.baseColorTexture === undefined) continue;
-		const imageIndex = model.textures[material.baseColorTexture].source, image = model.textureImages?.[imageIndex];
+		const imageIndex = model.textures[material.baseColorTexture].source, image = textures[imageIndex];
 		const uvSet = material.baseColorTexCoord ?? 0;
 		const uv = uvSet === 0 ? primitive.texcoords : uvSet === 1 ? primitive.texcoords1 : undefined;
 		if (image === undefined || uv === undefined) continue; // Rich-only capability; the static scene does not admit it.
@@ -56,7 +59,7 @@ export function packModelAsset(model: GLTFModel): { buffer: Uint8Array; model_te
 	}
 	const meshes = model.meshes.map(mesh => ({
 		...mesh,
-		primitives: mesh.primitives.map(({ positions, indices, pageTexcoords: _pageTexcoords, ...primitive }) => {
+		primitives: mesh.primitives.map(({ positions, indices, ...primitive }) => {
 			primitiveCount += 1;
 			if (streamOffsets.get(positions) === undefined) {
 				streamOffsets.set(positions, geometryByteLength);
@@ -81,18 +84,18 @@ export function packModelAsset(model: GLTFModel): { buffer: Uint8Array; model_te
 			imageBytes.set(model.imageBuffers[i], imageOffsets[i].start);
 		}
 	}
-	if (model.textureImages !== undefined) for (const image of model.textureImages) {
+	for (const image of textures) {
 		if (image === undefined) continue;
 		streamOffsets.set(image.stream, geometryByteLength); geometryByteLength += alignRomAssetOffset(image.stream.byteLength);
 	}
-	const rich = encodeBinary({ ...model, meshes, imageBuffers: undefined, textureImages: undefined, imageOffsets });
+	const rich = encodeBinary({ ...model, meshes, imageBuffers: undefined, imageOffsets });
 	const meshDirectoryOffset = MODEL_ASSET_HEADER_BYTE_LENGTH;
 	const primitiveDirectoryOffset = meshDirectoryOffset + model.meshes.length * MODEL_MESH_BYTE_LENGTH;
 	const sceneDirectoryOffset = primitiveDirectoryOffset + primitiveCount * MODEL_PRIMITIVE_BYTE_LENGTH;
 	const partDirectoryOffset = sceneDirectoryOffset + staticScene.scenes.length * MODEL_SCENE_BYTE_LENGTH;
 	const materialDirectoryOffset = partDirectoryOffset + staticScene.parts.length * MODEL_PART_BYTE_LENGTH;
 	const textureDirectoryOffset = materialDirectoryOffset + staticScene.materials.length * MODEL_MATERIAL_BYTE_LENGTH;
-	const geometryOffset = textureDirectoryOffset + (model.textureImages?.length ?? 0) * MODEL_TEXTURE_BYTE_LENGTH;
+	const geometryOffset = textureDirectoryOffset + textures.length * MODEL_TEXTURE_BYTE_LENGTH;
 	const richOffset = geometryOffset + geometryByteLength;
 	const buffer = new Uint8Array(richOffset + rich.byteLength);
 	const view = new DataView(buffer.buffer);
@@ -110,9 +113,9 @@ export function packModelAsset(model: GLTFModel): { buffer: Uint8Array; model_te
 	view.setUint32(MODEL_ASSET_HEADER.materialCount, staticScene.materials.length, true);
 	view.setUint32(MODEL_ASSET_HEADER.defaultScene, model.scene ?? 0xffffffff, true);
 	view.setUint32(MODEL_ASSET_HEADER.textureDirectoryOffset, textureDirectoryOffset, true);
-	view.setUint32(MODEL_ASSET_HEADER.textureCount, model.textureImages?.length ?? 0, true);
-	for (let index = 0; index < (model.textureImages?.length ?? 0); index++) {
-		const image = model.textureImages[index], offset = textureDirectoryOffset + index * MODEL_TEXTURE_BYTE_LENGTH;
+	view.setUint32(MODEL_ASSET_HEADER.textureCount, textures.length, true);
+	for (let index = 0; index < textures.length; index++) {
+		const image = textures[index], offset = textureDirectoryOffset + index * MODEL_TEXTURE_BYTE_LENGTH;
 		if (image === undefined) continue;
 		view.setUint32(offset + MODEL_TEXTURE.streamOffset, geometryOffset + streamOffsets.get(image.stream), true);
 		view.setUint32(offset + MODEL_TEXTURE.streamWordCount, image.stream.byteLength / 4, true);
@@ -168,90 +171,122 @@ export function packModelAsset(model: GLTFModel): { buffer: Uint8Array; model_te
 	};
 }
 
-export function loadModelFromBuffer(assetId: string, buffer: Uint8Array, imageBytes?: Uint8Array): GLTFModel {
+/** Decode compiled directories once per mounted generation, never by recompiling
+ * rich import metadata. Geometry views are shared with the inspection source. */
+export function loadModelFromBuffer(assetId: string, buffer: Uint8Array, imageBytes?: Uint8Array): ModelAsset {
 	const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
 	const richOffset = view.getUint32(MODEL_ASSET_HEADER.richOffset, true);
 	const richLength = view.getUint32(MODEL_ASSET_HEADER.richLength, true);
 	const meshDirectoryOffset = view.getUint32(MODEL_ASSET_HEADER.meshDirectoryOffset, true);
 	const primitiveDirectoryOffset = view.getUint32(MODEL_ASSET_HEADER.primitiveDirectoryOffset, true);
 	const textureDirectoryOffset = view.getUint32(MODEL_ASSET_HEADER.textureDirectoryOffset, true);
-	const textureCount = view.getUint32(MODEL_ASSET_HEADER.textureCount, true);
+	const sceneDirectoryOffset = view.getUint32(MODEL_ASSET_HEADER.sceneDirectoryOffset, true);
+	const partDirectoryOffset = view.getUint32(MODEL_ASSET_HEADER.partDirectoryOffset, true);
+	const materialDirectoryOffset = view.getUint32(MODEL_ASSET_HEADER.materialDirectoryOffset, true);
+	const defaultScene = view.getUint32(MODEL_ASSET_HEADER.defaultScene, true);
 	const packed = decodeBinary(buffer.subarray(richOffset, richOffset + richLength), { zeroCopyBin: true }) as ModelPayload;
 	// Intern complete spans once per generation. Present empty streams may share
 	// an offset with a following stream, and index widths remain distinct.
 	const positionsBySpan = new Map<string, Float32Array>(), indicesBySpan = new Map<string, GLTFIndexArray>(), uvBySpan = new Map<string, Uint16Array>();
+	const primitives = Array.from({ length: view.getUint32(MODEL_ASSET_HEADER.primitiveCount, true) }, (_, index): ModelPrimitive => {
+		const offset = primitiveDirectoryOffset + index * MODEL_PRIMITIVE_BYTE_LENGTH;
+		const positionsOffset = view.getUint32(offset + MODEL_PRIMITIVE.positionsOffset, true);
+		const positionScalarCount = view.getUint32(offset + MODEL_PRIMITIVE.positionScalarCount, true);
+		const indicesOffset = view.getUint32(offset + MODEL_PRIMITIVE.indicesOffset, true);
+		const indexCount = view.getUint32(offset + MODEL_PRIMITIVE.indexCount, true);
+		const uvOffset = view.getUint32(offset + MODEL_PRIMITIVE.texcoordsOffset, true);
+		const indexComponentType = view.getUint32(offset + MODEL_PRIMITIVE.indexComponentType, true) as 0 | 5121 | 5123 | 5125;
+		const materialIndex = view.getUint32(offset + MODEL_PRIMITIVE.materialIndex, true);
+		const IndexArray = INDEX_ARRAY_CONSTRUCTORS[indexComponentType];
+		const positionsKey = `${positionsOffset}:${positionScalarCount}`, indicesKey = `${indicesOffset}:${indexCount}:${indexComponentType}`, uvKey = `${uvOffset}:${positionScalarCount}`;
+		let positions = positionsBySpan.get(positionsKey);
+		if (positions === undefined) {
+			positions = typedArrayFromBytes(buffer.subarray(positionsOffset, positionsOffset + positionScalarCount * 4), Float32Array);
+			positionsBySpan.set(positionsKey, positions);
+		}
+		let indices = indicesBySpan.get(indicesKey);
+		if (indicesOffset !== 0 && indices === undefined) {
+			indices = typedArrayFromBytes<GLTFIndexArray>(buffer.subarray(indicesOffset, indicesOffset + indexCount * IndexArray.BYTES_PER_ELEMENT), IndexArray);
+			indicesBySpan.set(indicesKey, indices);
+		}
+		let pageTexcoords = uvBySpan.get(uvKey);
+		if (uvOffset !== 0 && pageTexcoords === undefined) {
+			pageTexcoords = typedArrayFromBytes(buffer.subarray(uvOffset, uvOffset + positionScalarCount / 3 * 2), Uint16Array);
+			uvBySpan.set(uvKey, pageTexcoords);
+		}
+		return { positions, indices, pageTexcoords, indexComponentType: indexComponentType === 0 ? undefined : indexComponentType,
+			materialIndex: materialIndex === 0xffffffff ? undefined : materialIndex };
+	});
+	const meshes = Array.from({ length: view.getUint32(MODEL_ASSET_HEADER.meshCount, true) }, (_, index): ModelMesh => {
+		const offset = meshDirectoryOffset + index * MODEL_MESH_BYTE_LENGTH;
+		const first = view.getUint32(offset + MODEL_MESH.firstPrimitive, true), count = view.getUint32(offset + MODEL_MESH.primitiveCount, true);
+		return { primitives: primitives.slice(first, first + count) };
+	});
 	return {
-		name: assetId,
-		materials: packed.materials, textures: packed.textures, samplers: packed.samplers,
-		imageURIs: packed.imageURIs, scenes: packed.scenes, scene: packed.scene,
-		textureImages: textureCount === 0 ? undefined : Array.from({ length: textureCount }, (_, index) => {
+		name: assetId, meshes, defaultScene: defaultScene === 0xffffffff ? undefined : defaultScene,
+		scenes: Array.from({ length: view.getUint32(MODEL_ASSET_HEADER.sceneCount, true) }, (_, index) => {
+			const offset = sceneDirectoryOffset + index * MODEL_SCENE_BYTE_LENGTH;
+			return { firstPart: view.getUint32(offset + MODEL_SCENE.firstPart, true), partCount: view.getUint32(offset + MODEL_SCENE.partCount, true),
+				features: view.getUint32(offset + MODEL_SCENE.features, true) };
+		}),
+		parts: Array.from({ length: view.getUint32(MODEL_ASSET_HEADER.partCount, true) }, (_, index) => {
+			const offset = partDirectoryOffset + index * MODEL_PART_BYTE_LENGTH, a = offset + MODEL_PART.affine;
+			return { node: view.getUint32(offset + MODEL_PART.node, true), mesh: view.getUint32(offset + MODEL_PART.mesh, true), affine: {
+				xx: view.getFloat64(a, true), xy: view.getFloat64(a + 8, true), xz: view.getFloat64(a + 16, true),
+				yx: view.getFloat64(a + 24, true), yy: view.getFloat64(a + 32, true), yz: view.getFloat64(a + 40, true),
+				zx: view.getFloat64(a + 48, true), zy: view.getFloat64(a + 56, true), zz: view.getFloat64(a + 64, true),
+				ox: view.getFloat64(a + 72, true), oy: view.getFloat64(a + 80, true), oz: view.getFloat64(a + 88, true),
+			} };
+		}),
+		materials: Array.from({ length: view.getUint32(MODEL_ASSET_HEADER.materialCount, true) }, (_, index) => {
+			const offset = materialDirectoryOffset + index * MODEL_MATERIAL_BYTE_LENGTH;
+			const textureIndex = view.getUint32(offset + MODEL_MATERIAL.textureIndex, true);
+			return { command: view.getUint32(offset + MODEL_MATERIAL.command, true), doubleSided: view.getUint32(offset + MODEL_MATERIAL.doubleSided, true) !== 0,
+				textureIndex: textureIndex === 0xffffffff ? undefined : textureIndex };
+		}),
+		textures: Array.from({ length: view.getUint32(MODEL_ASSET_HEADER.textureCount, true) }, (_, index) => {
 			const offset = textureDirectoryOffset + index * MODEL_TEXTURE_BYTE_LENGTH;
 			const start = view.getUint32(offset + MODEL_TEXTURE.streamOffset, true), count = view.getUint32(offset + MODEL_TEXTURE.streamWordCount, true);
 			if (count === 0) return undefined; // Image slot is not used by a native base-color material.
 			return { width: view.getUint32(offset + MODEL_TEXTURE.width, true), height: view.getUint32(offset + MODEL_TEXTURE.height, true),
 				stream: buffer.subarray(start, start + count * 4) };
 		}),
-		meshes: packed.meshes.map((mesh, meshIndex) => {
-			const firstPrimitive = view.getUint32(meshDirectoryOffset + meshIndex * MODEL_MESH_BYTE_LENGTH + MODEL_MESH.firstPrimitive, true);
-			return {
-				...mesh,
-				primitives: mesh.primitives.map((primitive, primitiveIndex) => {
-					const primitiveOffset = primitiveDirectoryOffset + (firstPrimitive + primitiveIndex) * MODEL_PRIMITIVE_BYTE_LENGTH;
-					const positionsOffset = view.getUint32(primitiveOffset + MODEL_PRIMITIVE.positionsOffset, true);
-					const positionScalarCount = view.getUint32(primitiveOffset + MODEL_PRIMITIVE.positionScalarCount, true);
-					const indicesOffset = view.getUint32(primitiveOffset + MODEL_PRIMITIVE.indicesOffset, true);
-					const indexCount = view.getUint32(primitiveOffset + MODEL_PRIMITIVE.indexCount, true);
-					const uvOffset = view.getUint32(primitiveOffset + MODEL_PRIMITIVE.texcoordsOffset, true);
-					const indexComponentType = view.getUint32(primitiveOffset + MODEL_PRIMITIVE.indexComponentType, true);
-					const IndexArray = INDEX_ARRAY_CONSTRUCTORS[indexComponentType];
-					const positionsKey = `${positionsOffset}:${positionScalarCount}`, indicesKey = `${indicesOffset}:${indexCount}:${indexComponentType}`, uvKey = `${uvOffset}:${positionScalarCount}`;
-					let positions = positionsBySpan.get(positionsKey);
-					if (positions === undefined) {
-						positions = typedArrayFromBytes(buffer.subarray(positionsOffset, positionsOffset + positionScalarCount * 4), Float32Array);
-						positionsBySpan.set(positionsKey, positions);
-					}
-					let indices = indicesBySpan.get(indicesKey);
-					if (indicesOffset !== 0 && indices === undefined) {
-						indices = typedArrayFromBytes<GLTFIndexArray>(buffer.subarray(indicesOffset, indicesOffset + indexCount * IndexArray.BYTES_PER_ELEMENT), IndexArray);
-						indicesBySpan.set(indicesKey, indices);
-					}
-					let pageTexcoords = uvBySpan.get(uvKey);
-					if (uvOffset !== 0 && pageTexcoords === undefined) {
-						pageTexcoords = typedArrayFromBytes(buffer.subarray(uvOffset, uvOffset + positionScalarCount / 3 * 2), Uint16Array);
-						uvBySpan.set(uvKey, pageTexcoords);
-					}
-					return {
-						...primitive,
-						positions, indices, pageTexcoords,
-						texcoords: primitive.texcoords && typedArrayFromBytes(primitive.texcoords, Float32Array),
-						texcoords1: primitive.texcoords1 && typedArrayFromBytes(primitive.texcoords1, Float32Array),
-						normals: primitive.normals && typedArrayFromBytes(primitive.normals, Float32Array),
-						tangents: primitive.tangents && typedArrayFromBytes(primitive.tangents, Float32Array),
-						morphPositions: primitive.morphPositions?.map(values => typedArrayFromBytes(values, Float32Array)),
-						morphNormals: primitive.morphNormals?.map(values => typedArrayFromBytes(values, Float32Array)),
-						morphTangents: primitive.morphTangents?.map(values => typedArrayFromBytes(values, Float32Array)),
-						jointIndices: primitive.jointIndices && typedArrayFromBytes(primitive.jointIndices, Uint16Array),
-						jointWeights: primitive.jointWeights && typedArrayFromBytes(primitive.jointWeights, Float32Array),
-						colors: primitive.colors && typedArrayFromBytes(primitive.colors, Float32Array),
-					};
-				}),
-			};
-		}),
+		source: decodeModelSource(assetId, packed, meshes, imageBytes),
+	};
+}
+
+function decodeModelSource(assetId: string, packed: ModelPayload, meshes: readonly ModelMesh[], imageBytes: Uint8Array | undefined): GLTFModel {
+	return {
+		name: assetId, materials: packed.materials, textures: packed.textures, samplers: packed.samplers,
+		imageURIs: packed.imageURIs, scenes: packed.scenes, scene: packed.scene,
+		meshes: packed.meshes.map((mesh, meshIndex) => ({
+			...mesh,
+			primitives: mesh.primitives.map((primitive, index) => {
+				const native = meshes[meshIndex].primitives[index];
+				return {
+					...primitive, positions: native.positions, indices: native.indices,
+					texcoords: primitive.texcoords && typedArrayFromBytes(primitive.texcoords, Float32Array),
+					texcoords1: primitive.texcoords1 && typedArrayFromBytes(primitive.texcoords1, Float32Array),
+					normals: primitive.normals && typedArrayFromBytes(primitive.normals, Float32Array),
+					tangents: primitive.tangents && typedArrayFromBytes(primitive.tangents, Float32Array),
+					morphPositions: primitive.morphPositions?.map(values => typedArrayFromBytes(values, Float32Array)),
+					morphNormals: primitive.morphNormals?.map(values => typedArrayFromBytes(values, Float32Array)),
+					morphTangents: primitive.morphTangents?.map(values => typedArrayFromBytes(values, Float32Array)),
+					jointIndices: primitive.jointIndices && typedArrayFromBytes(primitive.jointIndices, Uint16Array),
+					jointWeights: primitive.jointWeights && typedArrayFromBytes(primitive.jointWeights, Float32Array),
+					colors: primitive.colors && typedArrayFromBytes(primitive.colors, Float32Array),
+				};
+			}),
+		})),
 		animations: packed.animations?.map(animation => ({
 			...animation,
 			samplers: animation.samplers.map(sampler => ({
-				...sampler,
-				input: typedArrayFromBytes(sampler.input, Float32Array),
-				output: typedArrayFromBytes(sampler.output, Float32Array),
+				...sampler, input: typedArrayFromBytes(sampler.input, Float32Array), output: typedArrayFromBytes(sampler.output, Float32Array),
 			})),
 		})),
-		nodes: packed.nodes?.map(node => ({
-			...node,
-			matrix: node.matrix && typedArrayFromBytes(node.matrix, Float64Array),
-		})),
+		nodes: packed.nodes?.map(node => ({ ...node, matrix: node.matrix && typedArrayFromBytes(node.matrix, Float64Array) })),
 		skins: packed.skins?.map(skin => ({
-			...skin,
-			inverseBindMatrices: skin.inverseBindMatrices?.map(matrix => typedArrayFromBytes(matrix, Float32Array)),
+			...skin, inverseBindMatrices: skin.inverseBindMatrices?.map(matrix => typedArrayFromBytes(matrix, Float32Array)),
 		})),
 		imageBuffers: packed.imageOffsets?.map(range => imageBytes.subarray(range.start, range.end)),
 	};

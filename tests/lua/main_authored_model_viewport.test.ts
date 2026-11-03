@@ -11,6 +11,7 @@ import { WorkspaceSourceCatalog } from '../../ide/workspace/source_catalog';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import { writeHostMeshClipMatrix, type HostMeshSceneRenderSubmission } from '../../machine/ts/render/host_overlay/mesh';
 import type { GLTFModel } from '../../toolchain/ts/rompack/gltf';
+import { prepareModelTextures } from '../../scripts/rompacker/model_textures';
 import { packModelAsset, loadModelFromBuffer } from '../../toolchain/ts/rompack/model_asset';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { createTexturedModelFixture } from '../helpers/textured_model';
@@ -37,7 +38,7 @@ scenes.register('sculpture',{objects={${members}}})`;
 	const f = createActualSourcePanes(t, false, [...CARTLIB_OBJECT_SOURCE_MODULES, ['scene.lua', source], ['cartlib/world/prefab.lua', 'return {define=function() end}'],
 		['cartlib/world/scene_library.lua', 'return {}'],
 		['cartlib/component/static_model_component.lua', 'return {new=function() end,factory=function() end}']]);
-	const context = f.sources.catalog.getContext(f.sources.systemContextId), packed = packModelAsset(asset);
+	const context = f.sources.catalog.getContext(f.sources.systemContextId), packed = packModelAsset(asset, await prepareModelTextures(asset));
 	context.previewRom!.bytes = packed.buffer; context.previewPackage.model.shape = loadModelFromBuffer('shape', packed.buffer, packed.model_texture_buffer); f.sources.catalog.rebuildResources();
 	f.editor.setFontVariant(font);
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog,
@@ -57,7 +58,7 @@ test(`${font} Main submits actual model primitives and pointer selection chooses
 	const f = await fixture(t, font), view = f.view, scene = view.geometry.scene;
 	assert.equal(view.camera.mode, '3d'); assert.equal(scene.instances.length, 4);
 	assert.ok(scene.instances[0].mesh === scene.instances[2].mesh);
-	assert.equal(scene.instances[0].mesh.color, 0xff0080ff);
+	assert.equal(scene.instances[0].mesh.color, 0xff0084ff);
 	const commands = f.paint(), submissions: HostMeshSceneRenderSubmission[] = [];
 	for (let index = 0; index < commands.commandCount; index++) if (commands.commandKinds[index] === Host2DKind.MeshScene)
 		submissions.push(commands.commandRefs[index] as HostMeshSceneRenderSubmission);
@@ -109,7 +110,7 @@ test('Main binds imported native textures once and retires the shared bitmap wit
 	assert.equal(scene.instances[2].mesh.texture, undefined);
 	assert.deepEqual(first.texture.uvs, new Float32Array([0.125, 0.875, 0.875, 0.875, 0.875, 0.125, 0.125, 0.125]));
 	assert.deepEqual(bitmap.image.pixels.slice(0, 16), new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 0, 0, 0, 255]));
-	assert.equal(first.color, 0xffffffff); assert.equal(tinted.color, 0xff80ffff);
+	assert.equal(first.gxCommand, 0x24808080); assert.equal(tinted.gxCommand, 0x24808040);
 	const revision = scene.revision;
 	for (let frame = 0; frame < 100; frame++) f.update();
 	assert.equal(scene.revision, revision); assert.ok(scene.instances[0].mesh.texture.bitmap === bitmap);
@@ -118,6 +119,27 @@ test('Main binds imported native textures once and retires the shared bitmap wit
 	assert.equal(retired, 1); assert.ok(scene.instances[0].mesh.texture.bitmap !== bitmap);
 	const group = f.editor.editorParts.findGroup(f.client.input)!;
 	assert.equal(await group.close(f.client.input.id), true); assert.equal(retired, 1);
+});
+
+test('workspace model binding consumes compiled directories without reading or rebuilding the rich import', async t => {
+	const { imported } = await createTexturedModelFixture(), f = await fixture(t, 'tiny', MEMBERS, imported);
+	const model = f.context.previewPackage.model.shape, rich = model.source;
+	let sourceReads = 0;
+	Object.defineProperty(model, 'source', { get() { sourceReads++; return rich; } });
+	const assets = new WorkspaceModelAssets(f.sources.catalog); t.after(() => assets.dispose());
+	const ids = new Set(['shape']); assets.update(f.context.id, ids);
+	const scene = assets.get('shape')!;
+	for (let index = 0; index < scene.parts.length; index++) {
+		const part = model.parts[model.scenes[model.defaultScene].firstPart + index];
+		assert.equal(scene.parts[index].affine, part.affine, 'placement is the decoded native affine, not a second TRS traversal');
+		for (let i = 0; i < scene.parts[index].meshes.length; i++) {
+			const primitive = model.meshes[part.mesh].primitives[i], mesh = scene.parts[index].meshes[i];
+			assert.equal(mesh.positions, primitive.positions); assert.equal(mesh.indices, primitive.indices);
+			assert.equal(mesh.gxCommand, model.materials[primitive.materialIndex].command);
+		}
+	}
+	for (let frame = 0; frame < 100; frame++) { assets.update(f.context.id, ids); assert.equal(assets.get('shape'), scene); }
+	assert.equal(sourceReads, 0);
 });
 
 test('incomplete triangle assembly does not claim visible model geometry or hide its source-origin helper', async t => {

@@ -1,16 +1,11 @@
 import { affine3FromTRS, appendAffine3, type Affine3 } from '../../../machine/ts/common/affine3';
 import type { GLTFModel, GLTFNode } from './gltf';
+import { MODEL_STATIC_FEATURE, type ModelPart, type ModelScene, type ModelMaterial, type ModelTextures } from './model';
 
 // These are software-renderer capabilities, not restrictions on model assets.
 // Rich models always pack; binding a scene to the static-unlit renderer admits
 // its aggregate capabilities once, before it can enter a render pass.
-export const MODEL_STATIC_FEATURE = {
-	texture: 1, alpha: 2, vertexColor: 4, morph: 8, skin: 16, textureLayout: 32,
-} as const;
-
-export type ModelStaticPart = { node: number; mesh: number; affine: Affine3 };
-export type ModelStaticScene = { firstPart: number; partCount: number; features: number };
-export type ModelStaticMaterial = { command: number; color: number; doubleSided: boolean; features: number; textureIndex: number | undefined };
+type PreparedMaterial = ModelMaterial & { readonly features: number };
 
 function nodeAffine(node: GLTFNode): Affine3 {
 	const matrix = node.matrix;
@@ -24,24 +19,23 @@ function nodeAffine(node: GLTFNode): Affine3 {
 }
 
 /** Compile immutable scene placement, keeping mesh streams shared and unbaked. */
-export function prepareModelStaticScenes(model: GLTFModel) {
-	const materials: ModelStaticMaterial[] = (model.materials ?? []).map(material => {
+export function prepareModelStaticScenes(model: GLTFModel, textures: ModelTextures) {
+	const materials: PreparedMaterial[] = (model.materials ?? []).map(material => {
 		let features = 0;
 		const textured = material.baseColorTexture !== undefined;
 		const textureIndex = textured ? model.textures[material.baseColorTexture].source : undefined;
 		if (textured) {
 			features |= MODEL_STATIC_FEATURE.texture;
-			const image = model.textureImages?.[textureIndex];
+			const image = textures[textureIndex];
 			if (image === undefined || image.width > 256 || image.height > 256) features |= MODEL_STATIC_FEATURE.textureLayout;
 		}
 		if (material.alphaMode !== undefined && material.alphaMode !== 'OPAQUE') features |= MODEL_STATIC_FEATURE.alpha;
 		const color = material.baseColorFactor;
-		const r = Math.round((color?.[0] ?? 1) * 255), g = Math.round((color?.[1] ?? 1) * 255), b = Math.round((color?.[2] ?? 1) * 255);
-		const cr = textured ? Math.trunc((r * 128 + 127) / 255) : r;
-		const cg = textured ? Math.trunc((g * 128 + 127) / 255) : g;
-		const cb = textured ? Math.trunc((b * 128 + 127) / 255) : b;
+		// Quantize directly to the destination representation. An intermediate
+		// RGB8 color would round texture gains twice (notably beside 0 and 1).
+		const scale = textured ? 128 : 255;
+		const cr = Math.round((color?.[0] ?? 1) * scale), cg = Math.round((color?.[1] ?? 1) * scale), cb = Math.round((color?.[2] ?? 1) * scale);
 		return { command: ((textured ? 0x24000000 : 0x20000000) | (cr & 255) | ((cg & 255) << 8) | ((cb & 255) << 16)) >>> 0,
-			color: (0xff000000 | ((r & 255) << 16) | ((g & 255) << 8) | (b & 255)) >>> 0,
 			doubleSided: material.doubleSided === true, features, textureIndex };
 	});
 	const meshFeatures: number[] = [];
@@ -64,7 +58,7 @@ export function prepareModelStaticScenes(model: GLTFModel) {
 		}
 		meshFeatures.push(combined);
 	}
-	const scenes: ModelStaticScene[] = [], parts: ModelStaticPart[] = [];
+	const scenes: ModelScene[] = [], parts: ModelPart[] = [];
 	for (const scene of model.scenes ?? []) {
 		const firstPart = parts.length;
 		let features = 0;

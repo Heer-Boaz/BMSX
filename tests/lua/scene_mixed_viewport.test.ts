@@ -18,6 +18,7 @@ import { WorkspaceImageAssets } from '../../ide/workspace/image_assets';
 import { WorkspaceModelAssets } from '../../ide/workspace/model_assets';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import { createHeadlessHostMeshTarget, renderHeadlessHostMeshScene } from '../../machine/ts/render/host_overlay/headless/mesh';
+import { loadModelFromBuffer, packModelAsset } from '../../toolchain/ts/rompack/model_asset';
 import { createPackedImageFixture } from '../helpers/packed_images';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
@@ -63,10 +64,11 @@ function fixture(t: TestContext, source = SOURCE) {
 	const provider = f.sources.catalog.getContext(f.model.identity.contextId);
 	provider.previewRom!.bytes = packed.bytes; provider.previewRom!.index.entries.push(...packed.entries, glyph);
 	provider.previewPackage.img.tile = packed.image; provider.previewPackage.img.glyph_a = glyph;
-	provider.previewPackage.model.mesh = { name: 'mesh', materials: [{ baseColorFactor: [0, 0, 1, 1], doubleSided: true }],
+	const modelBytes = packModelAsset({ name: 'mesh', materials: [{ baseColorFactor: [0, 0, 1, 1], doubleSided: true }],
 		meshes: [{ primitives: [{ positions: new Float32Array([0, 0, 0, 4, 0, 0, 4, -4, 0, 0, -4, 0]),
 			indices: new Uint8Array([0, 1, 2, 0, 2, 3]), indexComponentType: 5121, materialIndex: 0 }] }],
-		nodes: [{ mesh: 0 }], scenes: [{ nodes: [0] }], scene: 0 };
+		nodes: [{ mesh: 0 }], scenes: [{ nodes: [0] }], scene: 0 }).buffer;
+	provider.previewPackage.model.mesh = loadModelFromBuffer('mesh', modelBytes);
 	f.sources.catalog.rebuildResources();
 	const document = f.documents.get(f.model), context = new SceneAuthoringContext(f.model, f.documents,
 		{ document, scene: document.scenes[0], sourceVersion: f.model.version });

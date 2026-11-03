@@ -33,13 +33,16 @@ export class WebGPUHostMeshScenes {
 			device.createPipelineLayout({ bindGroupLayouts: [this.uniformLayout, this.textureLayout] })];
 		const module = device.createShaderModule({ label: 'host_mesh', code: shader });
 		this.pipelines = [];
-		for (const layered of [false, true]) for (const textured of [false, true]) for (const mode of ['ccw', 'cw', 'none']) {
+		for (const [fragment, layered, textured] of [
+			['fragment_main', false, false], ['fragment_textured', false, true], ['fragment_gx_textured', false, true],
+			['fragment_main', true, false], ['fragment_textured', true, true],
+		] as const) for (const mode of ['ccw', 'cw', 'none']) {
 			const buffers: GPUVertexBufferLayout[] = [{ arrayStride: 12, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }] }];
 			if (textured) buffers.push({ arrayStride: 8, attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x2' }] });
 			this.pipelines.push(device.createRenderPipeline({
-				label: `host_mesh_${mode}_${layered}_${textured}`, layout: layouts[textured ? 1 : 0],
+				label: `host_mesh_${mode}_${layered}_${fragment}`, layout: layouts[textured ? 1 : 0],
 				vertex: { module, entryPoint: textured ? 'vertex_textured' : 'vertex_main', buffers },
-				fragment: { module, entryPoint: textured ? 'fragment_textured' : 'fragment_main', targets: [{ format: 'rgba8unorm',
+				fragment: { module, entryPoint: fragment, targets: [{ format: 'rgba8unorm',
 					blend: layered ? { color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
 						alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' } } : undefined }] },
 				primitive: { topology: 'triangle-list', frontFace: mode === 'cw' ? 'cw' : 'ccw', cullMode: mode === 'none' ? 'none' : 'back' },
@@ -99,11 +102,11 @@ export class WebGPUHostMeshScenes {
 		for (let index = 0; index < count; index++) {
 			const instance = scene.instances[index], base = index * this.uniformStride / 4;
 			writeHostMeshClipMatrix(this.uniformScratch, scene, instance, base);
-			const color = instance.mesh.color;
-			this.uniformScratch[base + 16] = ((color >>> 16) & 255) / 255;
-			this.uniformScratch[base + 17] = ((color >>> 8) & 255) / 255;
-			this.uniformScratch[base + 18] = (color & 255) / 255;
-			this.uniformScratch[base + 19] = instance.mesh.layered ? (color >>> 24) / 255 : 1;
+			const mesh = instance.mesh;
+			this.uniformScratch[base + 16] = mesh.red;
+			this.uniformScratch[base + 17] = mesh.green;
+			this.uniformScratch[base + 18] = mesh.blue;
+			this.uniformScratch[base + 19] = mesh.alpha;
 		}
 		if (count !== 0) {
 			device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformScratch.buffer, 0, count * this.uniformStride);
@@ -113,7 +116,7 @@ export class WebGPUHostMeshScenes {
 		pass.encoder.setViewport(0, 0, scene.width, scene.height, 0, 1);
 		for (let index = 0; index < count; index++) {
 			const instance = scene.instances[index], mesh = instance.mesh, geometry = this.meshes.get(mesh);
-			pass.encoder.setPipeline(this.pipelines[(mesh.layered ? 6 : 0) + (mesh.texture === undefined ? 0 : 3)
+			pass.encoder.setPipeline(this.pipelines[(mesh.layered ? 9 : 0) + mesh.shader * 3
 				+ (mesh.doubleSided ? 2 : hostMeshReflected(instance) ? 1 : 0)]);
 			this.offsets[0] = index * this.uniformStride;
 			pass.encoder.setBindGroup(0, this.uniformBindGroup, this.offsets);

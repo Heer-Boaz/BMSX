@@ -8,7 +8,7 @@ import { RectRenderKind } from '../../machine/ts/render/shared/submissions';
 import { LAYER_2D_IDE } from '../../machine/ts/render/shared/layers';
 import { RenderPassLibrary } from '../../machine/ts/render/backend/pass/library';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
-import { createHostTexturedMeshFixture } from '../helpers/host_textured_mesh';
+import { createHostGxMeshFixture, createHostTexturedMeshFixture } from '../helpers/host_textured_mesh';
 
 const IDENTITY: Affine3 = { xx: 1, xy: 0, xz: 0, yx: 0, yy: 1, yz: 0, zx: 0, zy: 0, zz: 1, ox: 0, oy: 0, oz: 0 };
 const CLIP_IDENTITY = new Float64Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
@@ -41,13 +41,31 @@ function pixel(pixels: Uint8Array, x: number, y: number, width = 8): number[] {
 	return [...pixels.subarray(offset, offset + 4)];
 }
 
+test('software model materials retain GX gain, RGB555 reduction, saturation and opaque black', t => {
+	const material = createHostGxMeshFixture(); t.after(() => material.dispose());
+	const f = fixture(t, material.scene.width, material.scene.height), pixels = f.draw(material.scene);
+	for (let y = 0; y < material.gains.length; y++) for (let x = 0; x < 32; x++) {
+		const channels = x < 2 ? [0, 0, 0] : [x, 31 - x, (x * 3) & 31];
+		const gains = [material.gains[y], 255 - material.gains[y], 128];
+		const expected = channels.map((value, channel) => {
+			const rgb5 = Math.min((value * gains[channel]) >> 7, 31);
+			return (rgb5 << 3) | (rgb5 >> 2);
+		});
+		assert.deepEqual(pixel(pixels, x, y, 32), [...expected, x === 1 ? 0 : 255]);
+	}
+	assert.deepEqual(pixel(pixels, 16, material.gains.length, 32), [49, 123, 74, 255], 'flat colors also store RGB555, not the original eight-bit factor');
+});
+
 test('software textures are point sampled and affine, including homogeneous near clipping', t => {
 	const f = fixture(t, 32, 32), meshes = createHostTexturedMeshFixture(); t.after(() => meshes.dispose());
-	const affine = f.draw(meshes.affine);
+	const affine = f.draw(meshes.affine).slice();
 	assert.deepEqual(pixel(affine, 20, 24, 32), [0, 0, 255, 255], 'perspective-correct sampling would choose green');
 	assert.deepEqual(pixel(affine, 4, 8, 32), [0, 255, 255, 255]);
-	assert.deepEqual(pixel(f.draw(meshes.clipped), 17, 19, 32), [0, 0, 255, 255], 'clipping preserves the screen-space UV plane');
+	const clipped = f.draw(meshes.clipped).slice();
+	assert.deepEqual(pixel(clipped, 17, 19, 32), [0, 0, 255, 255], 'clipping preserves the screen-space UV plane');
 	assert.deepEqual(pixel(f.pixels, 10, 10, 32), [0, 0, 0, 0], 'the portion before the near plane is clipped');
+	assert.deepEqual(f.draw(meshes.gxAffine), affine, 'native material shading retains the same affine UV plane');
+	assert.deepEqual(f.draw(meshes.gxClipped), clipped, 'native material shading retains homogeneous clipping');
 });
 
 test('software planar layers keep transparent holes, coplanar painter order and source-over alpha', t => {

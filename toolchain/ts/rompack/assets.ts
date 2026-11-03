@@ -6,7 +6,7 @@ import type {
 } from '../../../machine/ts/rompack/toc';
 import type { RomImageDomain } from '../../../machine/ts/rompack/image';
 import { hashAssetId } from '../../../machine/ts/rompack/tokens';
-import type { GLTFModel } from './gltf';
+import type { ModelAsset } from './model';
 import type { CartManifest } from '../../../machine/ts/rompack/manifest';
 
 export type AudioType = 'sfx' | 'music' | 'ui';
@@ -146,7 +146,7 @@ export function finalizePackedRomAssets(entries: RomAsset[]): asserts entries is
 export type RomToolingPackage = {
 	img: Record<AssetId, RomAsset>;
 	audio: Record<AssetId, RomAsset>;
-	model: Record<AssetId, GLTFModel>;
+	model: Record<AssetId, ModelAsset>;
 	data: Record<AssetId, unknown>;
 	bin: Record<AssetId, RomAsset>;
 	collision_shape: Record<AssetId, RomAsset>;

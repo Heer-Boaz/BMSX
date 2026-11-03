@@ -9,7 +9,7 @@ import { RenderPassLibrary } from '../../machine/ts/render/backend/pass/library'
 import type { GPUBackend } from '../../machine/ts/render/backend/backend';
 import { HostBitmapTextures } from '../../machine/ts/render/host_overlay/bitmap';
 import { RGBA8_LINEAR_TEXTURE_PARAMS } from '../../machine/ts/render/backend/texture_params';
-import { createHostTexturedMeshFixture } from './host_textured_mesh';
+import { createHostGxMeshFixture, createHostTexturedMeshFixture } from './host_textured_mesh';
 
 /** Independent synthetic geometry exercises actual host backend resources and overlay composition. */
 export async function renderHostMeshCase(kind: 'webgl2' | 'webgpu') {
@@ -84,11 +84,15 @@ export async function renderHostMeshCase(kind: 'webgl2' | 'webgpu') {
 	const textured = createHostTexturedMeshFixture();
 	const affinePixels = Array.from(await backend.readColorTexture(scenes.targets.get(textured.affine).color, 32, 32));
 	const nearPixels = Array.from(await backend.readColorTexture(scenes.targets.get(textured.clipped).color, 32, 32));
+	const gxAffinePixels = Array.from(await backend.readColorTexture(scenes.targets.get(textured.gxAffine).color, 32, 32));
+	const gxNearPixels = Array.from(await backend.readColorTexture(scenes.targets.get(textured.gxClipped).color, 32, 32));
 	const layerPixels = Array.from(await backend.readColorTexture(scenes.targets.get(textured.layers).color, 32, 32));
 	const cutoutPixels = Array.from(await backend.readColorTexture(scenes.targets.get(textured.cutout).color, 32, 32));
 	backend.beginFrame(); const texturedPasses = passes;
 	scenes.targets.get(textured.affine); scenes.targets.get(textured.clipped); scenes.targets.get(textured.layers); scenes.targets.get(textured.cutout);
 	const texturedIdle = { passes: passes - texturedPasses, uploads: backend.getFrameStats().bytesUploaded };
+	const gx = createHostGxMeshFixture();
+	const gxPixels = Array.from(await backend.readColorTexture(scenes.targets.get(gx.scene).color, gx.scene.width, gx.scene.height));
 	const presenter = new VideoPresenter(new BrowserVideoOutput(canvas, null, 'fit'), backend, 32, 32);
 	const library = new RenderPassLibrary(backend, presenter), renderer = new OverlayRenderer(presenter.hostOverlayQueue);
 	const frameTexture = backend.createColorTexture({ width: 32, height: 32, initialClearColor: [0, 0, 0, 1] });
@@ -111,7 +115,7 @@ export async function renderHostMeshCase(kind: 'webgl2' | 'webgpu') {
 	}
 	textured.layerBitmap.update(new Uint8Array(16).fill(255), 2, 2); textured.layers.changed();
 	const changedTexture = Array.from(await backend.readColorTexture(scenes.targets.get(textured.layers).color, 32, 32));
-	library.dispose(); scenes.dispose(); glBitmaps?.dispose(); gpuBitmaps?.dispose(); textured.dispose();
+	library.dispose(); scenes.dispose(); glBitmaps?.dispose(); gpuBitmaps?.dispose(); textured.dispose(); gx.dispose();
 	for (const value of [scene, shared, clipped, red, blue, clipMesh, ...sharedMeshes]) value.dispose();
 	backend.destroyTexture(frameTexture);
 	let validationError: string | undefined;
@@ -126,5 +130,6 @@ export async function renderHostMeshCase(kind: 'webgl2' | 'webgpu') {
 			alpha: pixel(layerPixels, 4, 24), coplanar: pixel(layerPixels, 27, 26), composite: pixel(composite, 1, 6),
 			cutout: pixel(cutoutPixels, 4, 24), cutoutComposite: pixel(composite, 25, 6),
 			changed: pixel(changedTexture, 4, 24), idle: texturedIdle },
-		gpuErrors, validationError };
+		gxPixels, gxAffineMatches: JSON.stringify(gxAffinePixels) === JSON.stringify(affinePixels),
+		gxNearMatches: JSON.stringify(gxNearPixels) === JSON.stringify(nearPixels), gpuErrors, validationError };
 }
