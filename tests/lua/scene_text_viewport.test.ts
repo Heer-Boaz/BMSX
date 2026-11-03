@@ -1,3 +1,4 @@
+import { pickViewportCanvas, measureViewportCanvas } from '../../ide/workbench/contrib/scene_editor/viewport/canvas_geometry';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
@@ -36,10 +37,10 @@ test('text lowers to real glyph packets with transparent-texel picking and one b
 	assert.ok(first.affine === second.affine && first.bitmap === second.bitmap);
 	assert.ok(first.source === f.visual && second.source === f.visual);
 	assert.equal(f.canvas.outlines.length, 1); assert.ok(f.canvas.outlines[0].source === f.visual);
-	assert.equal(f.canvas.pick(first.x + 1.5, first.y + 1.5), f.visual.entry);
-	assert.equal(f.canvas.pick(first.x + 0.5, first.y + 0.5), undefined);
-	assert.equal(f.canvas.pick(second.x + 1.5, second.y + 1.5), f.visual.entry);
-	assert.equal(f.canvas.pick(first.x + first.xx + 0.5, first.y + 1.5), undefined);
+	assert.equal(pickViewportCanvas(f.canvas.items, first.x + 1.5, first.y + 1.5), f.visual.entry);
+	assert.equal(pickViewportCanvas(f.canvas.items, first.x + 0.5, first.y + 0.5), undefined);
+	assert.equal(pickViewportCanvas(f.canvas.items, second.x + 1.5, second.y + 1.5), f.visual.entry);
+	assert.equal(pickViewportCanvas(f.canvas.items, first.x + first.xx + 0.5, first.y + 1.5), undefined);
 	assert.ok(f.canvas.represented.has(f.visual.entry));
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
 });
@@ -49,18 +50,18 @@ test('text backgrounds precede all glyph packets and participate in picking with
 	assert.deepEqual(f.canvas.items.map(item => item.kind), ['rectangle', 'rectangle', 'sprite', 'sprite']);
 	assert.deepEqual(f.canvas.items.map(item => item.color), [0xff123456, 0xff123456, 0xffabcdef, 0xffabcdef]);
 	assert.ok(f.canvas.items.every(item => item.source === f.visual && item.affine === f.canvas.items[0].affine));
-	const first = f.canvas.items[0]; assert.equal(f.canvas.pick(first.x + 0.5, first.y + 0.5), f.visual.entry);
+	const first = f.canvas.items[0]; assert.equal(pickViewportCanvas(f.canvas.items, first.x + 0.5, first.y + 0.5), f.visual.entry);
 });
 
 test('glyph offsets compose after world, attachment and presentation placement for projection and framing', t => {
 	const f = fixture(t, "text='AA',attachment_affine={2,0,0,3,5,7},presentation_affine={1,0,0,1,1,2}");
 	const framed = { left: 0, top: 0, right: 0, bottom: 0 };
 	// This is a focused affine layout algorithm contract, not UI pixel geometry.
-	assert.equal(f.canvas.frameBounds(undefined, framed), true);
+	assert.equal(measureViewportCanvas(f.canvas.items, undefined, framed), true);
 	assert.deepEqual(framed, { left: 7, top: 13, right: 21, bottom: 25 });
 	const second = f.canvas.items[1];
-	assert.equal(f.canvas.pick(second.x + second.xx / 2, second.y + second.yy * 0.375), f.visual.entry);
-	assert.equal(f.canvas.frameBounds(new Set(), framed), false);
+	assert.equal(pickViewportCanvas(f.canvas.items, second.x + second.xx / 2, second.y + second.yy * 0.375), f.visual.entry);
+	assert.equal(measureViewportCanvas(f.canvas.items, new Set(), framed), false);
 });
 
 test('glyph spacing, picking and the selected envelope retain small offsets around a large authored origin', t => {
@@ -71,8 +72,8 @@ test('glyph spacing, picking and the selected envelope retain small offsets arou
 	const [first, second] = f.canvas.items;
 	// Focused camera-relative layout contract: subtract the origin before adding glyph offsets.
 	assert.equal(second.x - first.x, 4); assert.equal(second.y, first.y);
-	assert.equal(f.canvas.pick(second.x + 1.5, second.y + 1.5), f.visual.entry);
-	assert.equal(f.canvas.pick(first.x + 3.5, first.y + 1.5), undefined);
+	assert.equal(pickViewportCanvas(f.canvas.items, second.x + 1.5, second.y + 1.5), f.visual.entry);
+	assert.equal(pickViewportCanvas(f.canvas.items, first.x + 3.5, first.y + 1.5), undefined);
 	const points = f.canvas.outlines[0].points;
 	assert.equal(points[2] - points[0], 7); assert.equal(points[5] - points[1], 4);
 });

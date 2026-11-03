@@ -255,6 +255,8 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'runtime.accept': { category: 'Run', title: 'Use This Point' },
 	'runtime.resume': { category: 'Run', title: 'Continue from Here', shortTitle: 'OK' },
 	'runtime.playback': { category: 'Run', title: 'Play / Pause', shortTitle: 'Play/Pause' },
+	'actorLab.selectVisual': { category: 'Actor Lab', title: 'Select Actor', shortTitle: 'Select' },
+	'actorLab.gameView': { category: 'Actor Lab', title: 'Game Camera and Input', shortTitle: 'Game' },
 	'actorLab.playback': { category: 'Actor Lab', title: 'Play / Pause', shortTitle: 'Play/Pause' },
 	'actorLab.run': { category: 'Actor Lab', title: 'Run Selected Behavior', shortTitle: 'Run' },
 	'actorLab.select': { category: 'Actor Lab', title: 'Select Running Actor', shortTitle: 'Actor' },

@@ -1,3 +1,4 @@
+import { pickViewportCanvas, measureViewportCanvas } from '../../ide/workbench/contrib/scene_editor/viewport/canvas_geometry';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
@@ -67,7 +68,7 @@ test('native viewport picking falls through a transparent image to the actual re
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;
 	for (const [u, v, expected] of [[0.1875, 0.1875, scene.objects[0]], [0.6, 0.6, scene.objects[1]]] as const) {
 		const x = picture.x + picture.xx * u + picture.yx * v, y = picture.y + picture.xy * u + picture.yy * v;
-		assert.ok(f.view.canvas.pick(x, y) === expected);
+		assert.ok(pickViewportCanvas(f.view.canvas.items, x, y) === expected);
 		for (const down of [true, false]) {
 			f.host.clock.advance(10);
 			f.editor.dispatchPointer({ x, y, buttons: down ? PointerButton.Primary : 0,
@@ -86,10 +87,10 @@ test('rectangle framing, projection and picking consume full reflected/sheared v
 	const item = f.view.canvas.items[0], entry = f.client.authoring.subject!.objects[0];
 	assert.ok(entry.kind === 'object');
 	const bounds = { left: 0, top: 0, right: 0, bottom: 0 };
-	assert.equal(f.view.canvas.frameBounds(new Set([entry]), bounds), true);
+	assert.equal(measureViewportCanvas(f.view.canvas.items, new Set([entry]), bounds), true);
 	// True transformed geometry is this focused projection test's subject, not incidental UI dimensions.
 	assert.deepEqual(bounds, { left: -73, top: 9, right: 21, bottom: 133 });
-	assert.ok(f.view.canvas.pick(item.x + item.xx * 0.5 + item.yx * 0.5, item.y + item.xy * 0.5 + item.yy * 0.5) === entry);
+	assert.ok(pickViewportCanvas(f.view.canvas.items, item.x + item.xx * 0.5 + item.yx * 0.5, item.y + item.xy * 0.5 + item.yy * 0.5) === entry);
 	f.model.undo(); f.update(); assert.equal(f.model.buffer.getText(), SOURCE);
 });
 

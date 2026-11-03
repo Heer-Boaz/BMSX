@@ -2,26 +2,34 @@ import { appendAffine3, type Affine3 } from '../../../../../machine/ts/common/af
 import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import { HostMesh, HostMeshScene, hostMeshReflected, type HostMeshInstance } from '../../../../../machine/ts/render/host_overlay/mesh';
 import { clamp } from '../../../../../machine/ts/common/clamp';
-import type { WorkspaceModelAssets, WorkspaceModelPart } from '../../../../workspace/model_assets';
+import type { ModelRenderPart, ModelRenderResources } from '../../../../common/model_resources';
 import type { SceneSourceObject } from '../model';
 import type { SceneTransformPreview } from '../transform_proposal';
-import type { SceneModelSource, SceneVisualReadModel } from '../visual_projection';
-import type { SceneViewportCamera, SceneViewportPoint } from './camera';
-import type { SceneViewportCanvas, SceneViewportQuad } from './canvas';
 
-type Placement<Owner> = { source: SceneModelSource<Owner>; readonly part: WorkspaceModelPart; readonly affine: Affine3;
+import type { SceneViewportCamera, SceneViewportPoint } from './camera';
+import type { ViewportCanvasQuad } from './canvas_geometry';
+
+export type ViewportModel<Owner, Model = string> = {
+	readonly entry: Owner; readonly model: Model; readonly sceneIndex?: number;
+	readonly world: Readonly<Affine3>; readonly attachment: Readonly<Affine3>; readonly presentation: Readonly<Affine3>;
+};
+type ModelFrame<Owner, Model> = { readonly models: readonly ViewportModel<Owner, Model>[] };
+type ModelAssets<Model> = { readonly revision: number; get(id: Model): ModelRenderResources | undefined };
+type CanvasFrame<Owner> = { readonly items: readonly ViewportCanvasQuad<Owner>[]; readonly revision: number; readonly packetRevision: number };
+
+type Placement<Owner, Model> = { source: ViewportModel<Owner, Model>; readonly part: ModelRenderPart; readonly affine: Affine3;
 	readonly streams: Map<Float32Array, Float64Array>; readonly draws: Draw<Owner>[]; initialized: boolean; placedWorld: Readonly<Affine3> | undefined };
 type Draw<Owner> = HostMeshInstance & { entry: Owner; vertices: Float64Array; reflected: boolean;
 	minX: number; minY: number; minZ: number; maxX: number; maxY: number; maxZ: number };
-type CanvasDraw<Owner> = { quad: SceneViewportQuad<Owner>; draw: Draw<Owner>; initialized: boolean };
+type CanvasDraw<Owner> = { quad: ViewportCanvasQuad<Owner>; draw: Draw<Owner>; initialized: boolean };
 export type SceneViewportGeometryBounds = { originX: number; originY: number; originZ: number; minX: number; minY: number; minZ: number; maxX: number; maxY: number; maxZ: number };
 type Hit<Owner> = SceneViewportPoint & { entry: Owner | undefined };
 
 /** Retained asset placements, raster submission and triangle picking share the same occurrences and geometry. */
-export class SceneViewportGeometry<Owner = SceneSourceObject> {
+export class SceneViewportGeometry<Owner = SceneSourceObject, Model = string> {
 	public readonly scene = new HostMeshScene(1, 1);
 	public readonly represented = new Set<Owner>();
-	private readonly placements: Placement<Owner>[] = [];
+	private readonly placements: Placement<Owner, Model>[] = [];
 	private readonly draws: Draw<Owner>[] = [];
 	private readonly canvasDraws: CanvasDraw<Owner>[] = [];
 	private canvasRevision = -1;
@@ -30,15 +38,17 @@ export class SceneViewportGeometry<Owner = SceneSourceObject> {
 	private readonly rayOrigin = new Float64Array(3);
 	private readonly rayDirection = new Float64Array(3);
 	private readonly hit: Hit<Owner> = { entry: undefined, originX: 0, originY: 0, originZ: 0, x: 0, y: 0, z: 0 };
-	private source: SceneVisualReadModel<Owner> | undefined;
+	private source: ModelFrame<Owner, Model> | undefined;
 	private assetsRevision = -1;
+	private frameRevision = -1;
 	private preview: SceneTransformPreview<Owner> | undefined;
 	private previewRevision: number | undefined = -1;
 	private cameraRevision = -1;
 	private projectedRevision = -1;
-	public constructor(private readonly assets: WorkspaceModelAssets, private readonly canvas: SceneViewportCanvas<Owner>) {}
-	public prepare(source: SceneVisualReadModel<Owner> | undefined, preview?: SceneTransformPreview<Owner>): void {
-		const rebound = source !== this.source || this.assetsRevision !== this.assets.revision;
+	public constructor(private readonly assets: ModelAssets<Model>, private readonly canvas: CanvasFrame<Owner>) {}
+	public prepare(source: ModelFrame<Owner, Model> | undefined, preview?: SceneTransformPreview<Owner>, revision = 0): void {
+		const rebound = source !== this.source || this.assetsRevision !== this.assets.revision || revision !== this.frameRevision;
+		this.frameRevision = revision;
 		if (!rebound && preview === this.preview && this.previewRevision === preview?.revision && this.canvasRevision === this.canvas.revision) return;
 		this.preview = preview; this.previewRevision = preview?.revision;
 		const canvasChanged = this.canvasRevision !== this.canvas.revision; this.canvasRevision = this.canvas.revision;
@@ -47,7 +57,7 @@ export class SceneViewportGeometry<Owner = SceneSourceObject> {
 			this.source = source; this.assetsRevision = this.assets.revision;
 			let count = 0;
 			if (source !== undefined) for (const model of source.models) {
-				const asset = this.assets.get(model.model, model.sceneIndex); if (asset === undefined) continue;
+				const asset = this.assets.get(model.model)?.get(model.sceneIndex); if (asset === undefined) continue;
 				for (const part of asset.parts) {
 					let placement = this.placements[count];
 					if (placement === undefined || placement.part !== part) {

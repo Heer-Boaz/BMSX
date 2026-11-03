@@ -17,6 +17,7 @@ export class ActorRenderFrames implements GxGpuPresentationObserver, GameFrameOb
 	public readonly displayed = new ActorRenderFrame();
 	private readonly latch = new ActorRenderFrame();
 	private latchRevision = 0;
+	private publishedRevision = 0;
 	private displayedRevision = -1;
 	private readonly order = { value: 0 };
 	private readonly observations: ActorRenderObservation[] = [];
@@ -34,6 +35,7 @@ export class ActorRenderFrames implements GxGpuPresentationObserver, GameFrameOb
 	}
 	/** Overlay commands are collected before presentation. Do not draw an old
 	 * hover outline into a newly latched image which has not committed yet. */
+	public get revision(): number { return this.publishedRevision; }
 	public get displayCurrent(): boolean { return this.displayedRevision === this.latchRevision; }
 	public attach(presenter: VideoPresenter): () => void {
 		this.displayed.sequence = undefined; this.displayedRevision = -1;
@@ -55,14 +57,14 @@ export class ActorRenderFrames implements GxGpuPresentationObserver, GameFrameOb
 		}
 	}
 	private reset(): void {
-		this.latchRevision++; this.displayedRevision = -1;
-		this.latch.quads.clear(); this.displayed.quads.clear(); this.displayed.sequence = undefined;
+		this.latchRevision++; this.publishedRevision++; this.displayedRevision = -1;
+		this.latch.clear(); this.displayed.clear(); this.displayed.sequence = undefined;
 		for (const observation of this.observations) observation.reset();
 	}
 	public latched(statusWord: number, scanout: Readonly<GxGpuPcrtcScanout>, changed: boolean): void {
 		if (!changed) return;
 		this.latchRevision++;
-		this.latch.quads.clear(); this.latch.width = scanout.outputWidth; this.latch.height = scanout.outputHeight;
+		this.latch.clear(); this.latch.width = scanout.outputWidth; this.latch.height = scanout.outputHeight;
 		// This evidence covers ordinary full-page, linear 2D cartlib output. Mixed
 		// circuits, interlaced fields and a partially executed render have no single
 		// observed planar composition. They remain viewable, not guessed pickable.
@@ -74,13 +76,14 @@ export class ActorRenderFrames implements GxGpuPresentationObserver, GameFrameOb
 		for (const observation of this.observations) for (const page of observation.pages) {
 			if (page.x !== circuit.framebufferX || page.y !== circuit.linearFieldSourceY || page.order <= newest) continue;
 			newest = page.order;
-			this.latch.quads.clear();
+			this.latch.clear();
 			if (page.ready) this.latch.copyFrom(page.geometry);
 		}
 		this.latch.offsetX = circuit.displayX; this.latch.offsetY = circuit.displayY;
 	}
 	public committed(sequence: number): void {
-		this.displayed.copyFrame(this.latch); this.displayed.sequence = sequence; this.displayedRevision = this.latchRevision;
+		if (this.displayedRevision !== this.latchRevision) { this.displayed.copyFrame(this.latch); this.publishedRevision++; }
+		this.displayed.sequence = sequence; this.displayedRevision = this.latchRevision;
 	}
 	public dispose(): void {
 		this.releasePresentation?.(); this.unbindGuest(); this.runtime.machine.gxGpu.setPresentationObserver(null);

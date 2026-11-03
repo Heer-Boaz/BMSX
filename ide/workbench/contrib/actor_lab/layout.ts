@@ -1,3 +1,5 @@
+import { layoutWorkbenchActionBar } from '../../ui/action_bar';
+import { measureText } from '../../../editor/common/text/layout';
 import type { EditorFont } from '../../../editor/ui/view/font';
 import { SCROLLBAR_WIDTH } from '../../../common/constants';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
@@ -50,7 +52,7 @@ export function measureActorLab(font: EditorFont): ActorLabMetrics {
 		graphMinimumWidth: advance * GRAPH_READING_COLUMNS + GRAPH_NODE_PADDING * 2 + SCROLLBAR_WIDTH + PADDING * 2,
 		graphMinimumHeight: graphTopOffset + rowHeight * VISIBLE_ROWS + SCROLLBAR_WIDTH + PADDING,
 		previewMinimumWidth: GAME_FRAME_MINIMUM_WIDTH + PADDING * 2,
-		previewMinimumHeight: GAME_FRAME_MINIMUM_HEIGHT + PADDING * 2,
+		previewMinimumHeight: GAME_FRAME_MINIMUM_HEIGHT + rowHeight + PADDING * 4,
 	};
 	measurements.set(font, measured);
 	return measured;
@@ -87,8 +89,13 @@ export function layoutActorLab(input: ActorLabInput): void {
 	const treeTop = Math.min(contentBottom, top + measured.treeTopOffset);
 	input.outline.updateLayout(left, treeTop, right, contentBottom, measured.rowHeight, measured.indentWidth);
 	if (graph) input.stateGraph!.viewport.layout(left, Math.min(contentBottom, top + measured.graphTopOffset), right, contentBottom);
-	if (active !== undefined) layoutGameFrame(input.previewBounds,
-		active === split ? split.position + WORKBENCH_SPLIT_SIZE / 2 + PADDING : layout.left + PADDING,
-		active === rowSplit ? rowSplit.position + WORKBENCH_SPLIT_SIZE / 2 + PADDING : top + PADDING,
-		layout.right - PADDING, bottom - PADDING);
+	if (active !== undefined) {
+		const left = active === split ? split.position + WORKBENCH_SPLIT_SIZE / 2 + PADDING : layout.left + PADDING;
+		const barTop = active === rowSplit ? rowSplit.position + WORKBENCH_SPLIT_SIZE / 2 + PADDING : top + PADDING;
+		const barBottom = barTop + measured.rowHeight + 4;
+		const right = layout.right - PADDING, previewBottom = bottom - PADDING;
+		layoutWorkbenchActionBar(input.viewportActions, right, barTop, barBottom, measureText, layout.font!.renderFont(), left, 'start');
+		if (input.worldView.mode === 'game') layoutGameFrame(input.previewBounds, left, barBottom + PADDING, right, previewBottom);
+		else { input.previewBounds.left = left; input.previewBounds.top = barBottom + PADDING; input.previewBounds.right = right; input.previewBounds.bottom = previewBottom; }
+	}
 }

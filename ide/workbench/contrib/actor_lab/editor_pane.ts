@@ -1,3 +1,4 @@
+import { ActorWorldControl } from './world_control';
 import { STATUS_PRIORITY_CONTENT, type WorkbenchStatusItem } from '../../common/status_bar';
 import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { QuickInputController } from '../../services/quick_input/controller';
@@ -58,6 +59,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		{ text: '', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' },
 	];
 	public readonly actorActions: ActorLabEditorActions;
+	private readonly worldControl: ActorWorldControl;
 	private gameInput!: GameInputControl;
 	private controller!: ActorLabController;
 	private readonly actions: WorkbenchActionBarControl;
@@ -94,6 +96,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		private readonly contextMenu: ContextMenuController, private readonly surfaces: WorkbenchSurfaceService,
 		private readonly paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, group: EditorGroupView, quickInput: QuickInputController, scope: InputFocusScope) {
 		super(scope);
+		this.worldControl = new ActorWorldControl(this.focusTarget, commands, contextMenu, () => { this.updateContentLayout(); this.update(); });
 		this.actorActions = new ActorLabEditorActions(group, quickInput, this.focusTarget);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
 		this.timelineSlider = new WorkbenchSliderControl(inputFocus, pointerCapture, this.focusTarget,
@@ -329,6 +332,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		this.focusTarget.scope.runtime = { target: this.focusTarget, interaction: this.input.interaction };
 		this.gameInput = new GameInputControl(this.focusTarget, this.controller.viewport.recipient, this.controller.viewport, this.controller.viewport.transport);
 		this.createDetailsWindow();
+		this.worldControl.setInput(this.input);
 		this.renderedTopology = -1;
 		this.actionTooltip.attach(this.surfaces, this.paneSurface, this.workArea);
 		this.actions.setInput(this.input.actionBar, this.focusTarget);
@@ -342,7 +346,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		this.renderedTopology = -1;
 	}
 	public override clearInput(reason: EditorPaneClearReason = 'deactivate'): void {
-		pointerCapture.cancelTarget(this.positionDrag);
+		pointerCapture.cancelTarget(this.positionDrag); this.worldControl.clearInput();
 		if (reason !== 'move') this.input.interaction.setRuntime(null);
 		pointerHover.release(this);
 		this.navigationSelection = undefined;
@@ -359,7 +363,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	}
 	public override dispose(): void {
 		if (this.hasInput) this.clearInput();
-		pointerHover.release(this); this.actions.dispose(); this.graph.dispose(); this.split.dispose(); this.timelineSlider.dispose(); this.scrollbar.cancelPointer(); super.dispose();
+		pointerHover.release(this); this.actions.dispose(); this.graph.dispose(); this.split.dispose(); this.timelineSlider.dispose(); this.scrollbar.cancelPointer(); this.worldControl.dispose(); super.dispose();
 	}
 	public override update(): void {
 		this.positionDrag.refresh();
@@ -405,6 +409,8 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			for (const row of outline.rows) row.element.displayLabel = truncateTextToWidth(row.element.label,
 				outline.layout.contentRight - outline.layout.contentLeft - (row.depth + 2) * outline.layout.indentWidth - 4, 'middle');
 		} else if (!this.updatePreviewInput()) return;
+		if (input.layout.previewVisible) input.worldView.refresh(input.previewBounds, input.domain, input.actorHashId);
+		this.worldControl.update();
 		this.updateViewportHit();
 		this.controller.layoutNavigation(input);
 		this.timelineSlider.update();
@@ -420,6 +426,10 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			previous.next = this.split.focusTarget; this.split.focusTarget.previous = previous;
 			previous = this.split.focusTarget;
 		}
+		if (layout.previewVisible) {
+			previous.next = this.worldControl.actions.focusTarget; this.worldControl.actions.focusTarget.previous = previous; previous = this.worldControl.actions.focusTarget;
+			if (input.worldView.mode !== 'game') { previous.next = this.worldControl.focusTarget; this.worldControl.focusTarget.previous = previous; previous = this.worldControl.focusTarget; }
+		}
 		if (this.gameInput.focusTarget.guestInput !== undefined) {
 			previous.next = this.gameInput.focusTarget; this.gameInput.focusTarget.previous = previous;
 			previous = this.gameInput.focusTarget;
@@ -428,7 +438,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		this.updateDetailsWindow();
 		input.timeline.executePending(this.controller.selected(input), this.controller.canInteract(), this.scrub);
 		this.actions.update();
-		const tooltipItem = this.actions.tooltipItem;
+		const tooltipItem = this.worldControl.actions.tooltipItem ?? this.actions.tooltipItem;
 		if (tooltipItem !== undefined) this.actionTooltip.show(tooltipItem.tooltip, tooltipItem.bounds,
 			editorViewState.font.renderFont(), measureTextRange, measureText, this.workArea);
 		else this.actionTooltip.hide();
@@ -440,6 +450,9 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	public updateStatus(): void {
 		const input = this.input;
 		if (this.detailsWindow.hasFocus) this.statusItems[0].text = input.details!.title;
+		else if (this.worldControl.focusTarget.hasFocus) this.statusItems[0].text = input.worldView.mode === '3d'
+			? 'CLICK: INSPECT | MIDDLE DRAG: PAN | ALT+DRAG: ORBIT | WHEEL: ZOOM | F: FRAME SELECTION'
+			: 'CLICK: INSPECT | MIDDLE DRAG: PAN | WHEEL: ZOOM | F: FRAME SELECTION';
 		else if (this.split.focusTarget.hasFocus) this.statusItems[0].text = this.boundSplit!.orientation === 'horizontal'
 			? 'RESIZE PANES: LEFT/RIGHT | HOME: RESET' : 'RESIZE PANES: UP/DOWN | HOME: RESET';
 		else if (this.viewportHit !== undefined) this.statusItems[0].text = this.viewportHit.label
@@ -461,7 +474,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		drawActorLab(this.input, this.timelineSlider.focusTarget.hasFocus, this.graph.hover, this.graph.focusTarget.hasFocus, this.controller.viewport);
 		const drag = this.positionDrag, hit = drag.active ? drag.outline : this.viewportHit;
 		if (!this.input.layout.previewVisible) return;
-		if (hit !== undefined && this.controller.renderFrames.displayCurrent) {
+		if (this.input.worldView.mode === 'game' && hit !== undefined && this.controller.renderFrames.displayCurrent) {
 			const bounds = this.input.previewBounds, frame = this.controller.viewportPicker.frame;
 			const scaleX = (bounds.right - bounds.left) / frame.width, scaleY = (bounds.bottom - bounds.top) / frame.height;
 			const dx = drag.active ? drag.dx : 0, dy = drag.active ? drag.dy : 0;
@@ -486,6 +499,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		this.viewportHover = false; this.viewportHit = undefined;
 	}
 	private updateViewportHit(): void {
+		if (this.input.worldView.mode !== 'game') { this.viewportHit = undefined; return; }
 		if (!this.input.layout.previewVisible || !this.viewportHover) return;
 		this.viewportHit = undefined;
 		const bounds = this.input.previewBounds, viewport = this.controller.viewport;
@@ -561,7 +575,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		}
 		if (scope.contextGeneration !== context) return false;
 		const viewport = this.controller.viewport;
-		if (input.layout.previewVisible && (viewport.kind === 'direct' || viewport.frames.bitmap !== undefined)) this.gameInput.setInput(input.previewBounds);
+		if (input.worldView.mode === 'game' && input.layout.previewVisible && (viewport.kind === 'direct' || viewport.frames.bitmap !== undefined)) this.gameInput.setInput(input.previewBounds);
 		else if (this.gameInput.focusTarget.guestInput !== undefined) {
 			restoreFocus ||= this.gameInput.focusTarget.hasFocus;
 			this.gameInput.clearInput();
@@ -571,6 +585,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		return scope.contextGeneration === context;
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean, now: number): boolean {
+		if (this.input.layout.previewVisible && this.worldControl.handlePointer(snapshot)) return true;
 		if (this.input.layout.previewVisible && snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.previewBounds)) {
 			if (!this.controller.rewind.seeking) {
 				this.viewportHover = true; this.pointerX = snapshot.viewportX; this.pointerY = snapshot.viewportY; pointerHover.visit(this);
@@ -640,6 +655,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		return true;
 	}
 	public handleWheel(event: WheelInputSnapshot): void {
+		if (this.worldControl.handleWheel(event)) return;
 		if (this.input.presentation === 'graph') {
 			if (!this.graph.handleWheel(event)) return;
 		} else {

@@ -1,3 +1,4 @@
+import { pickViewportCanvas } from '../../ide/workbench/contrib/scene_editor/viewport/canvas_geometry';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
@@ -63,7 +64,7 @@ test(`${font} Main paints authored assets and native picking respects shear, tex
 	// Coordinates come from the displayed quad. The contract is exact occurrence selection, not a fixed screen position.
 	for (const [u, v, expected] of [[0.65, 0.65, front], [0.8, 0.2, back]] as const) {
 		const top = sprites[1], x = top.x + top.xx * u + top.yx * v, y = top.y + top.xy * u + top.yy * v;
-		assert.ok(view.canvas.pick(x, y) === expected);
+		assert.ok(pickViewportCanvas(view.canvas.items, x, y) === expected);
 		for (const down of [true, false]) {
 			f.host.clock.advance(10);
 			f.editor.dispatchPointer({ x, y, buttons: down ? PointerButton.Primary : 0,
@@ -95,10 +96,10 @@ test('sprite hits require actual unit-square coverage and sampled opacity for re
 	const f = await fixture(t, 'tiny'), sprites = f.client.view.viewport.canvas;
 	// Focused geometry contract, not UI positioning: unordered coordinates cover no points.
 	for (const item of sprites.items) item.xx = 0 / 0;
-	assert.equal(sprites.pick(100, 100), undefined);
+	assert.equal(pickViewportCanvas(sprites.items, 100, 100), undefined);
 	for (const item of sprites.items) {
 		assert.ok(item.kind === 'sprite');
 		item.xx = 8; item.xy = item.yx = 0; item.yy = 8; item.x = item.y = 0; item.u0 = item.u1 = 0 / 0;
 	}
-	assert.equal(sprites.pick(4, 4), undefined);
+	assert.equal(pickViewportCanvas(sprites.items, 4, 4), undefined);
 });

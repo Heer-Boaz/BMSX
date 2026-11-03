@@ -4,6 +4,7 @@ import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { GAME_FRAME_MINIMUM_WIDTH, GAME_FRAME_MINIMUM_HEIGHT } from '../../ide/workbench/common/game_frame';
 import { updateFullWidthWorkbenchLayout } from '../../ide/workbench/common/layout';
+import type { ActorLabController } from '../../ide/workbench/contrib/actor_lab/controller';
 import { ActorLabInput } from '../../ide/workbench/contrib/actor_lab/editor_input';
 import { layoutActorLab, measureActorLab } from '../../ide/workbench/contrib/actor_lab/layout';
 import { ActorStateGraph } from '../../ide/workbench/contrib/actor_lab/state_graph';
@@ -12,7 +13,7 @@ import { GRAPH_NODE_PADDING } from '../../ide/workbench/ui/graph/model';
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx', presentation: 'outline' | 'graph' = 'outline') {
 	configureFontVariant(variant);
-	const input = new ActorLabInput(null!, 'actor-lab', 'Actor', false);
+	const input = new ActorLabInput({ authoringSources: null!, renderFrames: null! } as ActorLabController, 'actor-lab', 'Actor', false);
 	input.presentation = presentation;
 	if (presentation === 'graph') input.stateGraph = new ActorStateGraph({ domain: 0, worldHashId: 1, actorHashId: 2, path: [] }, editorViewState.font.renderFont());
 	const bounds = { left: 23, top: 31, right: 923, bottom: 431 };

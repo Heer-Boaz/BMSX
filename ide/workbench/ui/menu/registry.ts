@@ -11,7 +11,7 @@ export type WorkbenchDropdownMenuId =
 
 export type WorkbenchContextMenuId = 'resources.directory.context' | 'resourceViewer.context' | 'editor.source.actions' | 'resources.open.context' | 'resources.scene.context' | 'resources.resource.context' | 'resources.disclosure.context' | 'editorTabs.context' | 'editorGroup.context' | 'window.context' | 'window.minimizable.context' | 'activity.context' | 'activity.window.context' | 'scenarioLab.context' | 'play.context' | 'gamePanel.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'actorLab.context' | 'actorLab.stateGraph.context' | 'actorLab.canvas.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context' | 'behaviorLens.graphCanvas.context';
 
-export type WorkbenchActionMenuId = 'home.work' | 'home.author' | 'home.behavior' | 'home.gameplay' | 'home.run' | 'home.tools' | 'window.status' | 'status.context' | 'window.title' | 'window.minimizable.title' | 'play.title' | 'animation.clients' | 'romInspector.title' | 'romInspector.reader.title' | 'events.title' | 'gte.title' | 'gte.details.title' | 'gpu.title' | 'gpu.inspector.content' | 'gte.inspector.content' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'workspaceEditReview.title' | 'workspaceEditReview.evidence.title' | 'actorLab.title' | 'actorLab.details.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'problems.title' | 'aem.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
+export type WorkbenchActionMenuId = 'home.work' | 'home.author' | 'home.behavior' | 'home.gameplay' | 'home.run' | 'home.tools' | 'window.status' | 'status.context' | 'window.title' | 'window.minimizable.title' | 'play.title' | 'animation.clients' | 'romInspector.title' | 'romInspector.reader.title' | 'events.title' | 'gte.title' | 'gte.details.title' | 'gpu.title' | 'gpu.inspector.content' | 'gte.inspector.content' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'workspaceEditReview.title' | 'workspaceEditReview.evidence.title' | 'actorLab.viewport' | 'actorLab.title' | 'actorLab.details.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'problems.title' | 'aem.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
 export type WorkbenchMenuCommandItem = {
 	readonly type: 'command';
@@ -37,6 +37,7 @@ type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly Workbe
 	readonly 'home.run': readonly WorkbenchMenuCommandItem[];
 	readonly 'home.tools': readonly WorkbenchMenuCommandItem[];
 	readonly 'play.title': readonly WorkbenchMenuCommandItem[];
+	readonly 'actorLab.viewport': readonly WorkbenchMenuCommandItem[];
 	readonly 'actorLab.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'actorLab.details.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'actorLab.stateGraph.title': readonly WorkbenchMenuCommandItem[];
@@ -249,6 +250,18 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'actorLab.outline', icon: 'back' },
 		{ type: 'command', command: 'actorLab.run', icon: 'play', showLabel: true },
 		{ type: 'command', command: 'actorLab.follow', icon: 'follow' },
+	],
+	'actorLab.viewport': [
+		{ type: 'command', command: 'actorLab.gameView', showLabel: true },
+		{ type: 'command', command: 'sceneViewport.view2d', showLabel: true },
+		{ type: 'command', command: 'sceneViewport.view3d', showLabel: true },
+		{ type: 'command', command: 'actorLab.selectVisual', showLabel: true },
+		{ type: 'command', command: 'sceneViewport.pan', showLabel: true },
+		{ type: 'command', command: 'sceneViewport.orbit', showLabel: true },
+		{ type: 'command', command: 'sceneViewport.frameAll', showLabel: true },
+		{ type: 'command', command: 'sceneViewport.frameSelection', showLabel: true },
+		{ type: 'command', command: 'sceneViewport.zoomIn', showLabel: true },
+		{ type: 'command', command: 'sceneViewport.zoomOut', showLabel: true },
 	],
 	'actorLab.title': [
 		{ type: 'command', command: 'actorLab.select', icon: 'actor' },

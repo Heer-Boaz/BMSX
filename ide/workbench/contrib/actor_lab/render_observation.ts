@@ -16,6 +16,9 @@ import { ActorRenderGeometry, type ActorVisualKind } from './render_geometry';
 const CALLS = new Set([OpCode.CALL]);
 const STORES = new Set([OpCode.SETFIELD]);
 const VISUALS = [
+	['cartlib/component/surface_component', 'surface_component.draw_visual', 'surface'],
+	['cartlib/component/surface_component', 'surface_component.draw_image_visual', 'surface'],
+	['cartlib/component/model_renderer_component', 'renderer.draw_models', 'models'],
 	['cartlib/component/sprite_component', 'sprite_component.draw_visual', 'sprite'],
 	['cartlib/component/sprite_component', 'sprite_component.draw_region_visual', 'region'],
 	['cartlib/component/rectangle_component', 'rectangle_component.draw_rectangle', 'rectangle'],
@@ -67,7 +70,7 @@ export class ActorRenderObservation implements InstructionObserverBinding {
 	}
 	public reset(): void {
 		this.page = undefined; this.drawHashId = 0;
-		for (const page of this.pages) { page.ready = false; page.order = 0; page.geometry.quads.clear(); }
+		for (const page of this.pages) { page.ready = false; page.order = 0; page.geometry.world.invalidate(); page.geometry.clear(); }
 		for (let i = 0; i < this.returns.length; i++) this.returns.peek(i).kind = undefined;
 	}
 	private insideBuild(inlined: boolean): boolean {
@@ -100,7 +103,7 @@ export class ActorRenderObservation implements InstructionObserverBinding {
 			let page: RenderPage | undefined;
 			for (let i = 0; i < this.pages.length; i++) if (this.pages[i].x === x && this.pages[i].y === y) { page = this.pages[i]; break; }
 			if (page === undefined) { page = { x, y, order: 0, ready: false, geometry: new ActorRenderGeometry() }; this.pages.push(page); }
-			page.order = ++this.order.value; page.ready = false; page.geometry.quads.clear(); this.page = page; this.drawHashId = draw.hashId;
+			page.order = ++this.order.value; page.ready = false; page.geometry.clear(); this.page = page; this.drawHashId = draw.hashId;
 		} else if (draw.hashId === this.drawHashId && !this.insideBuild(store.inBuild)) {
 			// DMA submission completed; GPU completion is checked at the device latch.
 			this.page!.ready = true;

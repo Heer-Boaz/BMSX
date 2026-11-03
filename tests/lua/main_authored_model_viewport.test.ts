@@ -128,7 +128,7 @@ test('workspace model binding consumes compiled directories without reading or r
 	Object.defineProperty(model, 'source', { get() { sourceReads++; return rich; } });
 	const assets = new WorkspaceModelAssets(f.sources.catalog); t.after(() => assets.dispose());
 	const ids = new Set(['shape']); assets.update(f.context.id, ids);
-	const scene = assets.get('shape')!;
+	const scene = assets.get('shape')!.get()!;
 	for (let index = 0; index < scene.parts.length; index++) {
 		const part = model.parts[model.scenes[model.defaultScene].firstPart + index];
 		assert.equal(scene.parts[index].affine, part.affine, 'placement is the decoded native affine, not a second TRS traversal');
@@ -138,7 +138,7 @@ test('workspace model binding consumes compiled directories without reading or r
 			assert.equal(mesh.gxCommand, model.materials[primitive.materialIndex].command);
 		}
 	}
-	for (let frame = 0; frame < 100; frame++) { assets.update(f.context.id, ids); assert.equal(assets.get('shape'), scene); }
+	for (let frame = 0; frame < 100; frame++) { assets.update(f.context.id, ids); assert.equal(assets.get('shape')?.get(), scene); }
 	assert.equal(sourceReads, 0);
 });
 
@@ -188,13 +188,13 @@ test('model availability follows the selected scene profile, explicit default an
 	model.materials!.push({ alphaMode: 'BLEND' }); model.nodes!.push({ mesh: 1 }); model.scenes!.push({ nodes: [1] }); delete model.scene;
 	const f = await fixture(t, 'tiny', MEMBERS, model), assets = new WorkspaceModelAssets(f.sources.catalog); t.after(() => assets.dispose());
 	assets.update(f.context.id, new Set(['shape']));
-	assert.equal(assets.get('shape'), undefined); assert.equal(assets.get('shape', 1), undefined);
-	const first = assets.get('shape', 0)!; assert.equal(first.parts.length, 1);
-	assert.ok(assets.get('shape', 0) === first); assert.equal(f.view.geometry.scene.instances.length, 0);
+	assert.equal(assets.get('shape')?.get(), undefined); assert.equal(assets.get('shape')?.get(1), undefined);
+	const first = assets.get('shape')?.get(0)!; assert.equal(first.parts.length, 1);
+	assert.ok(assets.get('shape')?.get(0) === first); assert.equal(f.view.geometry.scene.instances.length, 0);
 	let retired = 0; first.parts[0].meshes[0].onDispose(() => retired++);
 	const unmounted = new WorkspaceSourceCatalog(); unmounted.admitContext({ ...f.context, previewRom: null }); t.after(() => unmounted.dispose());
 	const unmountedAssets = new WorkspaceModelAssets(unmounted); t.after(() => unmountedAssets.dispose());
-	unmountedAssets.update(f.context.id, new Set(['shape'])); assert.equal(unmountedAssets.get('shape', 0), undefined);
+	unmountedAssets.update(f.context.id, new Set(['shape'])); assert.equal(unmountedAssets.get('shape'), undefined);
 	delete f.context.previewPackage.model.shape; f.sources.catalog.rebuildResources(); assets.update(f.context.id, new Set(['shape']));
-	assert.equal(retired, 1); assert.equal(assets.get('shape', 0), undefined);
+	assert.equal(retired, 1); assert.equal(assets.get('shape')?.get(0), undefined);
 });

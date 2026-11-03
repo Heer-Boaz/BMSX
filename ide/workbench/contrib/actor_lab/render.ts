@@ -52,8 +52,10 @@ export function drawActorLab(input: ActorLabInput, sliderFocused: boolean, graph
 		outline.scrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
 	}
 	if (layout.previewVisible) {
+		renderWorkbenchActionBar(input.viewportActions, font, color, colors.COLOR_DESCRIPTION_TEXT);
 		const preview = input.previewBounds;
-		if (viewport.kind === 'direct') api.drawFrame(preview.left, preview.top, preview.right, preview.bottom);
+		if (input.worldView.mode !== 'game') input.worldView.draw();
+		else if (viewport.kind === 'direct') api.drawFrame(preview.left, preview.top, preview.right, preview.bottom);
 		else if (viewport.frames.bitmap !== undefined) api.drawBitmap(viewport.frames.bitmap, preview.left, preview.top, preview.right, preview.bottom);
 	}
 	const timeline = input.timeline;

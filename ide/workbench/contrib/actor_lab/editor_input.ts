@@ -1,3 +1,4 @@
+import { ActorWorldView } from './world_view';
 import { InputInteraction } from '../../../input/interaction';
 import { WorkbenchSplitView } from '../../ui/split_view';
 import { ReadonlyEditorInput, type AbstractEditorInput } from '../../common/editor_input';
@@ -48,6 +49,8 @@ export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab
 	public readonly detailsWindow = new WorkbenchWindowModel(undefined, 0, 0);
 	public override readonly windowPlacements: readonly WorkbenchWindowModel[] = [this.detailsWindow];
 	public readonly detailsActions = createWorkbenchActionBar('actorLab.details.title');
+	public readonly worldView: ActorWorldView;
+	public readonly viewportActions = createWorkbenchActionBar('actorLab.viewport', true);
 	public readonly previewBounds = create_rect_bounds();
 	public readonly actionBar = createWorkbenchActionBar('actorLab.title');
 	public readonly stateGraphActions = createWorkbenchActionBar('actorLab.stateGraph.title');
@@ -58,6 +61,8 @@ export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab
 	public constructor(public readonly controller: ActorLabController, id: ActorLabTabId, title: string,
 		public override readonly serializable: boolean) {
 		super(id, 'actor_lab', title, true);
+		this.worldView = new ActorWorldView(controller.authoringSources, controller.renderFrames);
+		this.onWillDispose(() => this.worldView.dispose());
 		this.onWillDispose(() => { this.selectionListeners.clear(); this.interaction.setRuntime(null); this.runtime.dispose(); this.details?.dispose(); });
 	}
 	public onDidChangeSelection(listener: () => void): () => void {
@@ -68,6 +73,7 @@ export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab
 		this.runtime.release();
 		this.details?.invalidate(reason);
 		if (reason !== 'execution') {
+			this.worldView.retire();
 			this.timeline.clear();
 			this.interaction.running = false;
 			this.follow.pending = undefined;

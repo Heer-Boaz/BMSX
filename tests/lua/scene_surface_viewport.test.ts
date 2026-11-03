@@ -1,3 +1,4 @@
+import { pickViewportCanvas } from '../../ide/workbench/contrib/scene_editor/viewport/canvas_geometry';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
@@ -66,7 +67,7 @@ prefab.define({def_id='zero',class=require('cartlib/world/object_2d'),components
 	assert.deepEqual([big.width, big.height, big.affine.xx, big.affine.xy, big.affine.yx, big.affine.yy, big.affine.ox, big.affine.oy], [264,264,0,1,-1,0.5,6,25]);
 	for (const [x, y, color] of [[2,2,[255,0,0,255]], [257,2,[0,255,0,255]], [2,257,[0,0,255,255]], [257,257,[255,255,255,255]]] as const) {
 		const u = (x + 0.5) / big.width, v = (y + 0.5) / big.height;
-		assert.equal(canvas.pick(big.x + big.xx * u + big.yx * v, big.y + big.xy * u + big.yy * v), big.source.entry);
+		assert.equal(pickViewportCanvas(canvas.items, big.x + big.xx * u + big.yx * v, big.y + big.xy * u + big.yy * v), big.source.entry);
 		const offset = ((y + 4) * big.bitmap.image.width + x + 4) * 4;
 		assert.deepEqual(Array.from(big.bitmap.image.pixels.subarray(offset, offset + 4)), color);
 	}

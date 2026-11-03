@@ -1,3 +1,4 @@
+import { pickViewportCanvas, measureViewportCanvas } from './canvas_geometry';
 import { create_rect_bounds, copy_rect_bounds, type RectBounds } from '../../../../../machine/ts/common/rect';
 import type { BFont } from '../../../../../machine/ts/render/shared/bitmap_font';
 import { editorViewState } from '../../../../editor/ui/view/state';
@@ -237,7 +238,7 @@ export class SceneViewportViewState {
 			if (squared <= distance) { distance = squared; picked = entry; }
 		}
 		if (picked !== undefined) return picked;
-		return this.camera.mode === '2d' ? this.canvas.pick(x, y)
+		return this.camera.mode === '2d' ? pickViewportCanvas(this.canvas.items, x, y)
 			: this.geometry.pick(x - (this.bounds.left + this.bounds.right) / 2, y - (this.bounds.top + this.bounds.bottom) / 2, this.camera)?.entry;
 	}
 	public frame(selected: SceneSourceObject | undefined, reading: 'initial' | 'manual' = 'manual'): boolean {
@@ -269,7 +270,7 @@ export class SceneViewportViewState {
 			this.camera.frame3D(target.minX, target.minY, target.minZ, target.maxX, target.maxY, target.maxZ, target.originX, target.originY, target.originZ, selected !== undefined, reading); return true;
 		}
 		let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
-		const hasVisualBounds = this.canvas.frameBounds(selectedEntries, this.visualBounds);
+		const hasVisualBounds = measureViewportCanvas(this.canvas.items, selectedEntries, this.visualBounds);
 		if (hasVisualBounds) {
 			left = this.visualBounds.left; top = this.visualBounds.top; right = this.visualBounds.right; bottom = this.visualBounds.bottom; count++;
 		}

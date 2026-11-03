@@ -91,9 +91,9 @@ export class ActorLabController {
 		return this.current;
 	}
 	public open(destination: EditorGroupView): void {
-		const input = this.resolveInput();
-		if (!this.parts.revealEditor(input, destination)) return;
-		if (input.actorHashId === 0) (this.parts.findGroup(input)!.panes.activePane as ActorLabEditorPane).actorActions.selectActor(input);
+		const first = this.current === undefined, input = this.resolveInput();
+		if (first) input.worldView.setMode('2d');
+		this.parts.revealEditor(input, destination);
 	}
 	public auditionEvent(destination: EditorGroupView, domain: ResourceDomain, name: string): void {
 		const input = this.resolveInput();

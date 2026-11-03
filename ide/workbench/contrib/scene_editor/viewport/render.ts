@@ -4,7 +4,7 @@ import { api } from '../../../../runtime/overlay_api';
 import { ARTWORK_COLORS } from '../../../../theme/artwork_colors';
 import { SCENE_VIEWPORT_POINT_STRIDE, type SceneViewportViewState, type SceneViewportPlacement } from './view_state';
 import { TRANSLATE_AXIS_LABELS, TRANSLATE_PLANE_HANDLES, TranslateHandle } from './translate_gizmo';
-import type { SceneViewportQuad } from './canvas';
+import { drawCanvas } from './canvas_render';
 import { renderWorkbenchActionBar } from '../../../render/action_bar';
 
 /** Helpers depict actual authored origins and affine axes, never inferred visual bounds. */
@@ -65,13 +65,4 @@ export function drawSceneViewport(view: SceneViewportViewState, focused: boolean
 	if (focused || placement !== undefined || view.source === undefined) view.caption.draw(bounds.left + 4, view.navigationActions.bounds.bottom + 4);
 	if (focused) api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_FOCUS_BORDER);
 	api.popClipRect();
-}
-
-function drawCanvas<Owner>(items: readonly SceneViewportQuad<Owner>[], alpha: number): void {
-	for (const item of items) {
-		const color = ((item.color & 0x00ffffff) | alpha) >>> 0;
-		if (item.kind === 'sprite') api.drawBitmapAffine(item.bitmap, item.x, item.y, item.xx, item.xy, item.yx, item.yy,
-			item.u0, item.v0, item.u1, item.v1, color);
-		else api.fillQuadColor(item.x, item.y, item.xx, item.xy, item.yx, item.yy, color);
-	}
 }

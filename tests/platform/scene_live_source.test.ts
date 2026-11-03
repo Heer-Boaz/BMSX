@@ -83,8 +83,9 @@ for (const pages of [1, 2]) test(`a visible initialized visual shares position h
 	const moved = authoring.selectedLocalTransform!;
 	assert.notEqual(moved.ox, 16);
 	await f.until(() => liveX() === moved.ox + 72 && ide.actorExecution.active === undefined);
-	assert.equal(Array.from(frame.quads).find(quad => quad.hashId === actor.hashId)!.oy, 136);
-	assert.equal(source.buffer.getText(), original.replace('x = 16, y = 120', `x = ${moved.ox}, y = 136`), 'a live drag changes only member-position literals');
+	assert.equal(Array.from(frame.quads).find(quad => quad.hashId === actor.hashId)!.oy, moved.oy);
+	assert.notEqual(moved.oy, 120);
+	assert.equal(source.buffer.getText(), original.replace('x = 16, y = 120', `x = ${moved.ox}, y = ${moved.oy}`), 'a live drag changes only member-position literals');
 	editor.commands.execute('save', livePane.commandTarget);
 	const save = ide.textFileSaves.latestOperation(source)!;
 	assert.ok(save !== undefined, 'the live-image command uses the shared source Save owner');
