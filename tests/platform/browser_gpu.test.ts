@@ -14,11 +14,34 @@ before(async () => {
 			export { VideoPresenter } from './machine/ts/render/video_presenter';
 			export { RenderPassLibrary } from './machine/ts/render/backend/pass/library';
 			export { renderPcrtcBlendCases } from './tests/helpers/pcrtc_scanout_fixture';
+			export { renderTexturedModelCase } from './tests/helpers/textured_model_gpu';
 		`, resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', target: 'es2020', format: 'iife', globalName: 'backendTest', write: false,
 		plugins: [glsl()], loader: { '.png': 'dataurl', '.glsl': 'text', '.wgsl': 'text' },
 	});
 	backendBundle = bundle.outputFiles[0].text;
+});
+
+for (const kind of ['webgl2', 'webgpu']) test(`${kind} and CPU render flat/raw textured model packets with affine point sampling`, async t => {
+	const browser = await chromium.launch({ args: [
+		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
+		'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
+	] });
+	t.after(() => browser.close());
+	const page = await browser.newPage(), errors: string[] = [];
+	page.on('pageerror', error => errors.push(error.message));
+	await page.route('http://localhost/renderer-test/**', route => route.fulfill({ contentType: 'text/html',
+		body: '<!doctype html><div id="player-surface"><canvas id="gamescreen" width="256" height="256"></canvas></div>' }));
+	await page.goto('http://localhost/renderer-test/model/'); await page.addScriptTag({ content: backendBundle });
+	const result = await page.evaluate(async kind => (globalThis as any).backendTest.renderTexturedModelCase(document.getElementById('gamescreen'), kind), kind);
+	t.diagnostic(JSON.stringify(result));
+	assert.equal(result.kind, kind); assert.equal(result.difference, -1, 'whole-frame software/GPU parity');
+	assert.equal(result.commands, 3, 'upload and both projected faces completed');
+	assert.deepEqual(result.samples.map(sample => sample.software), [
+		[255, 0, 0, 0], [0, 255, 0, 0], [0, 0, 255, 0], [0, 0, 0, 0],
+		[255, 0, 0, 0], [0, 255, 0, 0], [0, 0, 255, 0], [0, 0, 0, 0],
+	]);
+	assert.equal(result.validationError, undefined); assert.equal(result.glError, 0); assert.deepEqual(result.gpuErrors, []); assert.deepEqual(errors, []);
 });
 
 test('GX WebGPU pipelines specialize only the overrides used by each stage', async t => {

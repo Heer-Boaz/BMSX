@@ -75,7 +75,7 @@ test('3D Add offers only its family and arms the existing packed-model preview w
 	assert.equal(f.control.beginAddMember(three, three.choices[0], () => assert.fail('hover placed')), true);
 	const version = f.model.version;
 	for (let frame = 0; frame < 30; frame++) f.control.handlePointer(pointer(f.x + frame / 10, f.y), false);
-	assert.equal(f.view.placementModels.scene.instances.length, 1); assert.equal(f.view.models.scene.instances.length, 0);
+	assert.equal(f.view.placementGeometry.scene.instances.length, 1); assert.equal(f.view.geometry.scene.instances.length, 0);
 	assert.equal(f.view.placementPreview!.world.family, '3d');
 	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.version, version);
 	assert.equal(f.model.canUndo, false); assert.equal(f.model.dirty, false);
@@ -87,7 +87,7 @@ test('a 3D pointer placement publishes once, retains preview geometry and is rem
 	t.after(f.model.onDidChangeContent(() => changes++));
 	assert.equal(f.control.beginAddMember(request, request.choices[0], () => placed++), true);
 	f.control.handlePointer(pointer(f.x, f.y), false);
-	const expected = f.ground(), ghost = f.view.placementModels.scene.instances[0], mesh = ghost.mesh;
+	const expected = f.ground(), ghost = f.view.placementGeometry.scene.instances[0], mesh = ghost.mesh;
 	assert.ok(ghost); assert.equal(ghost.ox, expected.x); assert.equal(ghost.oy, 0); assert.equal(ghost.oz, expected.z);
 	// Exact world coordinates are the pointer-to-source contract. 3D placement
 	// must not inherit 2D's pixel snapping or assert incidental widget geometry.
@@ -100,16 +100,16 @@ test('a 3D pointer placement publishes once, retains preview geometry and is rem
 	assert.equal(pose.ox, expected.x); assert.equal(pose.oy, 0); assert.equal(pose.oz, expected.z);
 	assert.equal(readLuaSourceRange(f.model.buffer, f.context.document!.analysis.chunk.locations.range(selected.entry.field.span)),
 		`{ member_id = 'mesh', definition_id = 'mesh', position = { x = ${expected.x}, y = 0, z = ${expected.z} } }`);
-	const committed = f.model.buffer.getText(), draw = f.view.models.scene.instances[0];
+	const committed = f.model.buffer.getText(), draw = f.view.geometry.scene.instances[0];
 	assert.equal(draw.mesh, mesh); assert.equal(draw.ox, ghost.ox); assert.equal(draw.oy, ghost.oy); assert.equal(draw.oz, ghost.oz);
-	assert.equal(f.view.placementPreview, undefined); assert.equal(f.view.placementModels.scene.instances.length, 0);
+	assert.equal(f.view.placementPreview, undefined); assert.equal(f.view.placementGeometry.scene.instances.length, 0);
 	f.control.handlePointer(pointer(f.x, f.y, 0, 0, PointerButton.Primary), false);
 	assert.equal(f.model.buffer.getText(), committed); assert.equal(changes, 1); assert.equal(pointerCapture.active, false);
 	f.model.undo(); f.control.update();
 	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false); assert.equal(f.model.dirty, false);
-	assert.equal(f.view.models.scene.instances.length, 0); assert.equal(f.context.subject!.objects.length, 0);
+	assert.equal(f.view.geometry.scene.instances.length, 0); assert.equal(f.context.subject!.objects.length, 0);
 	f.model.redo(); f.control.update();
-	assert.equal(f.model.buffer.getText(), committed); assert.equal(f.view.models.scene.instances.length, 1);
+	assert.equal(f.model.buffer.getText(), committed); assert.equal(f.view.geometry.scene.instances.length, 1);
 	assert.equal(f.provider.buffer.getText(), PREFABS);
 });
 
@@ -117,7 +117,7 @@ test('same-family camera zoom and pan keep Add armed and move its ghost along th
 	const f = fixture(t), request = f.context.captureAddMember('3d')!; let placed = 0;
 	assert.equal(f.control.beginAddMember(request, request.choices[0], () => placed++), true);
 	f.control.handlePointer(pointer(f.x, f.y), false);
-	const ghost = f.view.placementModels.scene.instances[0], mesh = ghost.mesh, before = [ghost.ox, ghost.oy, ghost.oz];
+	const ghost = f.view.placementGeometry.scene.instances[0], mesh = ghost.mesh, before = [ghost.ox, ghost.oy, ghost.oz];
 	const wheelX = f.x + 37.5, wheelY = f.y + 29.25, anchor = f.ground(wheelX, wheelY);
 	assert.equal(f.control.handleWheel({ ...pointer(wheelX, wheelY), deltaX: 0, deltaY: -30 }), true);
 	// The wheel event's current ray owns the dolly anchor, not the previous
@@ -125,7 +125,7 @@ test('same-family camera zoom and pan keep Add armed and move its ghost along th
 	assert.ok(Math.abs(ghost.ox - anchor.x) < 1e-9); assert.ok(Math.abs(ghost.oz - anchor.z) < 1e-9);
 	f.view.camera.pan(23, -9); f.control.update();
 	const point = f.ground(wheelX, wheelY);
-	assert.equal(f.view.placementModels.scene.instances[0], ghost); assert.equal(ghost.mesh, mesh);
+	assert.equal(f.view.placementGeometry.scene.instances[0], ghost); assert.equal(ghost.mesh, mesh);
 	assert.equal(ghost.ox, point.x); assert.equal(ghost.oy, 0); assert.equal(ghost.oz, point.z);
 	assert.notDeepEqual([ghost.ox, ghost.oy, ghost.oz], before);
 	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false); assert.equal(placed, 0);
@@ -145,7 +145,7 @@ for (const miss of ['parallel', 'behind'] as const) test(`${miss} ground ray can
 	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false); assert.equal(placed, 0);
 	assert.ok(f.view.placementPreview !== undefined, 'a missed plane remains armed, without an invented placement');
 	inputFocus.handleKeyboard(new KeyInputEvent('Escape', KeyModifier.none)); f.control.update();
-	assert.equal(f.view.placementPreview, undefined); assert.equal(f.view.placementModels.scene.instances.length, 0);
+	assert.equal(f.view.placementPreview, undefined); assert.equal(f.view.placementGeometry.scene.instances.length, 0);
 	f.click(); assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
 });
 
@@ -159,7 +159,7 @@ const RETIREMENTS: readonly [string, (f: ReturnType<typeof fixture>) => void][] 
 for (const [reason, retire] of RETIREMENTS) test(`${reason} retires armed 3D Add without publishing its preview`, t => {
 	const f = fixture(t), request = f.context.captureAddMember('3d')!; let placed = 0;
 	assert.equal(f.control.beginAddMember(request, request.choices[0], () => placed++), true);
-	f.control.handlePointer(pointer(f.x, f.y), false); assert.equal(f.view.placementModels.scene.instances.length, 1);
+	f.control.handlePointer(pointer(f.x, f.y), false); assert.equal(f.view.placementGeometry.scene.instances.length, 1);
 	retire(f); f.control.update();
 	const source = f.model.buffer.getText(), version = f.model.version, canUndo = f.model.canUndo;
 	f.click();

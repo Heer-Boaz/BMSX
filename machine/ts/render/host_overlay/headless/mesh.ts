@@ -1,7 +1,7 @@
 import { clamp } from '../../../common/clamp';
 import type { HeadlessHost2DContext } from '../../headless/host_2d';
 import { blendPixel } from '../../headless/pixel_ops';
-import { hostMeshReflected, writeHostMeshClipMatrix, type HostMeshScene, type HostMeshSceneRenderSubmission } from '../mesh';
+import { hostMeshReflected, writeHostMeshClipMatrix, type HostMesh, type HostMeshScene, type HostMeshSceneRenderSubmission } from '../mesh';
 
 export type HeadlessHostMeshTarget = {
 	readonly width: number;
@@ -26,7 +26,7 @@ export function createHeadlessHostMeshTarget(scene: HostMeshScene): HeadlessHost
 		pixels: new Uint8Array(scene.width * scene.height * 4), depth: new Float32Array(scene.width * scene.height),
 		matrix: new Float64Array(16), vertices: EMPTY_NUMBERS, projected: EMPTY_NUMBERS, codes: EMPTY_BYTES,
 		// Six half-space clips add at most six vertices to a triangle.
-		clipA: new Float64Array(9 * 4), clipB: new Float64Array(9 * 4),
+		clipA: new Float64Array(9 * 6), clipB: new Float64Array(9 * 6),
 	};
 }
 
@@ -43,14 +43,14 @@ export function renderHeadlessHostMeshScene(target: HeadlessHostMeshTarget, scen
 	for (const instance of scene.instances) {
 		const mesh = instance.mesh, positions = mesh.positions, count = positions.length / 3;
 		if (target.codes.length < count) {
-			target.vertices = new Float64Array(count * 4);
-			target.projected = new Float64Array(count * 3);
+			target.vertices = new Float64Array(count * 6);
+			target.projected = new Float64Array(count * 6);
 			target.codes = new Uint8Array(count);
 		}
 		writeHostMeshClipMatrix(matrix, scene, instance);
 		const vertices = target.vertices, projected = target.projected, codes = target.codes;
 		for (let index = 0; index < count; index++) {
-			const source = index * 3, destination = index * 4;
+			const source = index * 3, destination = index * 6;
 			const x = positions[source], y = positions[source + 1], z = positions[source + 2];
 			const cx = matrix[0] * x + matrix[4] * y + matrix[8] * z + matrix[12];
 			const cy = matrix[1] * x + matrix[5] * y + matrix[9] * z + matrix[13];
@@ -58,48 +58,53 @@ export function renderHeadlessHostMeshScene(target: HeadlessHostMeshTarget, scen
 			const cw = matrix[3] * x + matrix[7] * y + matrix[11] * z + matrix[15];
 			vertices[destination] = cx; vertices[destination + 1] = cy;
 			vertices[destination + 2] = cz; vertices[destination + 3] = cw;
+			const u = mesh.texture === undefined ? 0 : mesh.texture.uvs[index * 2];
+			const v = mesh.texture === undefined ? 0 : mesh.texture.uvs[index * 2 + 1];
+			// Clip UV*w alongside position; the divide then yields screen-affine UV.
+			vertices[destination + 4] = u * cw; vertices[destination + 5] = v * cw;
 			const code = (cx < -cw ? 1 : 0) | (cx > cw ? 2 : 0) | (cy < -cw ? 4 : 0)
 				| (cy > cw ? 8 : 0) | (cz < 0 ? 16 : 0) | (cz > cw ? 32 : 0);
 			codes[index] = code;
 			if (code === 0) {
 				const reciprocal = 1 / cw;
-				projected[source] = halfWidth + cx * reciprocal * halfWidth;
-				projected[source + 1] = halfHeight - cy * reciprocal * halfHeight;
-				projected[source + 2] = cz * reciprocal;
+				projected[destination] = halfWidth + cx * reciprocal * halfWidth;
+				projected[destination + 1] = halfHeight - cy * reciprocal * halfHeight;
+				projected[destination + 2] = cz * reciprocal; projected[destination + 3] = reciprocal;
+				projected[destination + 4] = u; projected[destination + 5] = v;
 			}
 		}
 		const reflected = hostMeshReflected(instance), indices = mesh.indices;
 		if (indices === undefined) {
 			for (let index = 0; index < mesh.drawCount; index += 3)
-				drawTriangle(target, index, index + 1, index + 2, mesh.color, mesh.doubleSided, reflected);
+				drawTriangle(target, index, index + 1, index + 2, mesh, reflected);
 		} else {
 			for (let index = 0; index < mesh.drawCount; index += 3)
-				drawTriangle(target, indices[index], indices[index + 1], indices[index + 2], mesh.color, mesh.doubleSided, reflected);
+				drawTriangle(target, indices[index], indices[index + 1], indices[index + 2], mesh, reflected);
 		}
 	}
 }
 
 function drawTriangle(target: HeadlessHostMeshTarget, a: number, b: number, c: number,
-	color: number, doubleSided: boolean, reflected: boolean): void {
+	mesh: HostMesh, reflected: boolean): void {
 	const codes = target.codes, ca = codes[a], cb = codes[b], cc = codes[c], mask = ca | cb | cc;
-	if (mask === 0) { rasterTriangle(target, target.projected, a * 3, b * 3, c * 3, color, doubleSided, reflected); return; }
+	if (mask === 0) { rasterTriangle(target, target.projected, a * 6, b * 6, c * 6, mesh, reflected); return; }
 	if ((ca & cb & cc) !== 0) return;
 	let source = target.clipA, destination = target.clipB, count = 3;
 	const vertices = target.vertices;
-	for (let component = 0; component < 4; component++) {
-		source[component] = vertices[a * 4 + component];
-		source[4 + component] = vertices[b * 4 + component];
-		source[8 + component] = vertices[c * 4 + component];
+	for (let component = 0; component < 6; component++) {
+		source[component] = vertices[a * 6 + component];
+		source[6 + component] = vertices[b * 6 + component];
+		source[12 + component] = vertices[c * 6 + component];
 	}
 	for (let plane = 0; plane < 6; plane++) {
 		if ((mask & (1 << plane)) === 0) continue;
 		const component = plane >> 1, sign = (plane & 1) === 0 ? 1 : -1;
 		let previous = 0, da = source[component] * sign + (plane === 4 ? 0 : source[3]), output = 0;
 		for (let index = 1; index <= count; index++) {
-			const next = index === count ? 0 : index * 4;
+			const next = index === count ? 0 : index * 6;
 			const db = source[next + component] * sign + (plane === 4 ? 0 : source[next + 3]);
 			if (da >= 0) {
-				for (let field = 0; field < 4; field++) destination[output * 4 + field] = source[previous + field];
+				for (let field = 0; field < 6; field++) destination[output * 6 + field] = source[previous + field];
 				output++;
 			}
 			if ((da < 0 && db > 0) || (da > 0 && db < 0)) {
@@ -107,8 +112,8 @@ function drawTriangle(target: HeadlessHostMeshTarget, a: number, b: number, c: n
 				// a shared edge produces the same intersection coordinates.
 				const outside = da < 0 ? previous : next, inside = da < 0 ? next : previous;
 				const distance = da < 0 ? da : db, other = da < 0 ? db : da, t = distance / (distance - other);
-				const offset = output * 4;
-				for (let field = 0; field < 4; field++) {
+				const offset = output * 6;
+				for (let field = 0; field < 6; field++) {
 					const value = source[outside + field];
 					destination[offset + field] = value + (source[inside + field] - value) * t;
 				}
@@ -123,27 +128,29 @@ function drawTriangle(target: HeadlessHostMeshTarget, a: number, b: number, c: n
 	}
 	const halfWidth = target.width * 0.5, halfHeight = target.height * 0.5;
 	for (let index = 0; index < count; index++) {
-		const offset = index * 4, reciprocal = 1 / source[offset + 3];
+		const offset = index * 6, reciprocal = 1 / source[offset + 3];
 		source[offset] = halfWidth + source[offset] * reciprocal * halfWidth;
 		source[offset + 1] = halfHeight - source[offset + 1] * reciprocal * halfHeight;
 		source[offset + 2] *= reciprocal;
+		source[offset + 3] = reciprocal; source[offset + 4] *= reciprocal; source[offset + 5] *= reciprocal;
 	}
 	for (let index = 1; index < count - 1; index++)
-		rasterTriangle(target, source, 0, index * 4, (index + 1) * 4, color, doubleSided, reflected);
+		rasterTriangle(target, source, 0, index * 6, (index + 1) * 6, mesh, reflected);
 }
 
 /** Pixel-centre top-left coverage and linearly interpolated post-divide depth. */
 function rasterTriangle(target: HeadlessHostMeshTarget, points: Float64Array, a: number, b: number, c: number,
-	color: number, doubleSided: boolean, reflected: boolean): void {
+	mesh: HostMesh, reflected: boolean): void {
 	const x0 = points[a], y0 = points[a + 1], z0 = points[a + 2];
 	let x1 = points[b], y1 = points[b + 1], z1 = points[b + 2];
 	let x2 = points[c], y2 = points[c + 1], z2 = points[c + 2];
 	let area = (x1 - x0) * (y2 - y0) - (y1 - y0) * (x2 - x0);
-	if (area === 0 || !doubleSided && (area < 0) === reflected) return;
+	if (area === 0 || !mesh.doubleSided && (area < 0) === reflected) return;
 	if (area < 0) {
 		let swap = x1; x1 = x2; x2 = swap;
 		swap = y1; y1 = y2; y2 = swap;
 		swap = z1; z1 = z2; z2 = swap;
+		swap = b; b = c; c = swap;
 		area = -area;
 	}
 	const startX = Math.max(0, Math.trunc(Math.min(x0, x1, x2))), startY = Math.max(0, Math.trunc(Math.min(y0, y1, y2)));
@@ -154,21 +161,64 @@ function rasterTriangle(target: HeadlessHostMeshTarget, points: Float64Array, a:
 	const include2 = dy2 < 0 || dy2 === 0 && dx2 > 0;
 	const dzdx = (-dy0 * z0 - dy1 * z1 - dy2 * z2) / area;
 	const dzdy = (dx0 * z0 + dx1 * z1 + dx2 * z2) / area;
-	const red = (color >>> 16) & 255, green = (color >>> 8) & 255, blue = color & 255;
+	const color = mesh.color, red = (color >>> 16) & 255, green = (color >>> 8) & 255, blue = color & 255;
+	const alpha = mesh.layered ? color >>> 24 : 255, texture = mesh.texture?.bitmap.image;
 	const pixels = target.pixels, depth = target.depth, width = target.width;
+	// Material dispatch precedes the pixel loop. Opaque models keep their
+	// original branch-free write kernel instead of paying for canvas features.
+	if (texture === undefined && !mesh.layered) {
+		for (let y = startY; y < endY; y++) {
+			const px = startX + 0.5, py = y + 0.5;
+			let e0 = dx0 * (py - y1) - dy0 * (px - x1), e1 = dx1 * (py - y2) - dy1 * (px - x2);
+			let e2 = dx2 * (py - y0) - dy2 * (px - x0), z = z0 + (px - x0) * dzdx + (py - y0) * dzdy;
+			let sample = y * width + startX;
+			for (let x = startX; x < endX; x++, sample++, e0 -= dy0, e1 -= dy1, e2 -= dy2, z += dzdx) {
+				if (e0 < 0 || e0 === 0 && !include0 || e1 < 0 || e1 === 0 && !include1 || e2 < 0 || e2 === 0 && !include2) continue;
+				const fragmentDepth = Math.fround(z);
+				if (fragmentDepth <= depth[sample]) continue;
+				depth[sample] = fragmentDepth;
+				const offset = sample * 4;
+				pixels[offset] = red; pixels[offset + 1] = green; pixels[offset + 2] = blue; pixels[offset + 3] = 255;
+			}
+		}
+		return;
+	}
+	// Like the hardware rasterizers, prepare attribute planes once and step
+	// them across each scanline. There is no reciprocal-depth or UV division
+	// in the affine texture pixel kernel.
+	const u0 = points[a + 4], u1 = points[b + 4], u2 = points[c + 4], v0 = points[a + 5], v1 = points[b + 5], v2 = points[c + 5];
+	const tw = texture === undefined ? 0 : texture.width, th = texture === undefined ? 0 : texture.height;
+	const dudx = (-dy0 * u0 - dy1 * u1 - dy2 * u2) / area * tw, dudy = (dx0 * u0 + dx1 * u1 + dx2 * u2) / area * tw;
+	const dvdx = (-dy0 * v0 - dy1 * v1 - dy2 * v2) / area * th, dvdy = (dx0 * v0 + dx1 * v1 + dx2 * v2) / area * th;
+	const redScale = red / 255, greenScale = green / 255, blueScale = blue / 255, alphaScale = alpha / 255;
 	for (let y = startY; y < endY; y++) {
 		const px = startX + 0.5, py = y + 0.5;
 		let e0 = dx0 * (py - y1) - dy0 * (px - x1), e1 = dx1 * (py - y2) - dy1 * (px - x2);
 		let e2 = dx2 * (py - y0) - dy2 * (px - x0), z = z0 + (px - x0) * dzdx + (py - y0) * dzdy;
+		let u = u0 * tw + (px - x0) * dudx + (py - y0) * dudy, v = v0 * th + (px - x0) * dvdx + (py - y0) * dvdy;
 		let sample = y * width + startX;
-		for (let x = startX; x < endX; x++, sample++, e0 -= dy0, e1 -= dy1, e2 -= dy2, z += dzdx) {
+		for (let x = startX; x < endX; x++, sample++, e0 -= dy0, e1 -= dy1, e2 -= dy2, z += dzdx, u += dudx, v += dvdx) {
 			if (e0 < 0 || e0 === 0 && !include0 || e1 < 0 || e1 === 0 && !include1 || e2 < 0 || e2 === 0 && !include2) continue;
 			// The comparison and storage consume the same depth32float value.
 			const fragmentDepth = Math.fround(z);
-			if (fragmentDepth > depth[sample]) {
+			if (mesh.layered ? fragmentDepth >= depth[sample] : fragmentDepth > depth[sample]) {
+				let r = red, g = green, b = blue, a = alpha;
+				if (texture !== undefined) {
+					const tx = clamp(Math.trunc(u), 0, tw - 1), ty = clamp(Math.trunc(v), 0, th - 1);
+					const offset = (ty * tw + tx) * 4, texels = texture.pixels;
+					r = texels[offset] * redScale; g = texels[offset + 1] * greenScale; b = texels[offset + 2] * blueScale; a = texels[offset + 3] * alphaScale;
+				}
+				if (a === 0) continue;
 				depth[sample] = fragmentDepth;
 				const offset = sample * 4;
-				pixels[offset] = red; pixels[offset + 1] = green; pixels[offset + 2] = blue; pixels[offset + 3] = 255;
+				if (mesh.layered) blendPixel(pixels, offset, r, g, b, a);
+				else {
+					// Every mesh target stores premultiplied RGBA, also when a
+					// depth-only material replaces rather than blends its pixel.
+					const opacity = a / 255;
+					pixels[offset] = Math.round(r * opacity); pixels[offset + 1] = Math.round(g * opacity);
+					pixels[offset + 2] = Math.round(b * opacity); pixels[offset + 3] = a;
+				}
 			}
 		}
 	}
@@ -195,7 +245,11 @@ export function drawHeadlessHostMeshScene(context: HeadlessHost2DContext, comman
 		let u = firstX, offset = (y * context.width + startX) * 4;
 		for (let x = startX; x < endX; x++, u += stepX, offset += 4) {
 			const from = (row + clamp(Math.trunc(u), 0, source.width - 1)) * 4;
-			blendPixel(context.target, offset, pixels[from], pixels[from + 1], pixels[from + 2], pixels[from + 3]);
+			const alpha = pixels[from + 3];
+			if (alpha === 0) continue;
+			// Mesh targets accumulate premultiplied layers; the UI compositor consumes straight alpha.
+			const reciprocal = 255 / alpha;
+			blendPixel(context.target, offset, pixels[from] * reciprocal, pixels[from + 1] * reciprocal, pixels[from + 2] * reciprocal, alpha);
 		}
 	}
 }

@@ -22,13 +22,13 @@ const orbit = async delta => {
 const capture = async label => { await t.frames(3); t.log(`VISUAL ${label}`); t.capture(label); };
 const arm = async () => {
 	t.command('sceneEditor.addMember'); await t.frames(3); await type('studio_test.mesh'); await press('Enter'); await t.frames(3);
-	t.assert(view.placementPreview !== undefined && view.placementModels.scene.instances.length > 0, 'the prefab choice did not prepare its real model preview');
+	t.assert(view.placementPreview !== undefined && view.placementGeometry.scene.instances.length > 0, 'the prefab choice did not prepare its real model preview');
 };
 
 await t.waitForCart(); await t.frames(90);
 await press('ControlRight', 'ShiftRight'); await t.frames(3);
 t.command('sceneEditor'); await t.frames(3); await type('space.lua'); await press('Enter'); await t.frames(6);
-const primary = t.mainWorkspace().primary, context = primary.consumer, view = primary.view.viewport, model = context.workingCopy;
+const primary = t.mainWorkspace().primary, context = primary.authoring, view = primary.view.viewport, model = context.workingCopy;
 t.assert(model.identity.path === 'scenes/space.lua' && !model.dirty && context.subject.objects.length === 0, 'the dedicated empty 3D scene was not admitted cleanly');
 t.command('sceneViewport.view3d'); await t.frames(3);
 t.assert(view.camera.mode === '3d', 'the native viewport mode command did not select 3D');
@@ -45,7 +45,7 @@ for (let font = 0; font < 2; font++) {
 		await arm();
 		const bounds = view.bounds, point = { x: bounds.left + (bounds.right - bounds.left) * 0.6, y: bounds.top + (bounds.bottom - bounds.top) * 0.65 };
 		await move(point);
-		const preview = view.placementPreview, mesh = view.placementModels.scene.instances[0].mesh;
+		const preview = view.placementPreview, mesh = view.placementGeometry.scene.instances[0].mesh;
 		t.assert(preview.world.family === '3d' && preview.world.oy === 0, 'the visible model preview was not placed on world XZ');
 		t.assert(model.version === version && model.buffer.getText() === source && !model.canUndo, 'pointer preview wrote source or history');
 		retained(); await capture(`${label}-preview`);
@@ -58,12 +58,12 @@ for (let font = 0; font < 2; font++) {
 		t.assert(context.subject.objects.length === 1 && local.family === '3d' && local.ox === expected[0] && local.oy === expected[1] && local.oz === expected[2],
 			'placement did not publish the same proposed world-unit position');
 		t.assert(model.version === version + 1 && model.canUndo && view.placementPreview === undefined, 'placement did not commit exactly one canonical edit');
-		t.assert(view.models.scene.instances.length > 0 && view.models.scene.instances[0].mesh === mesh, 'committed geometry did not retain its actual shared model asset');
+		t.assert(view.geometry.scene.instances.length > 0 && view.geometry.scene.instances[0].mesh === mesh, 'committed geometry did not retain its actual shared model asset');
 		const written = model.buffer.getText(); retained(); await capture(`${label}-committed`);
 		t.command('undo'); await t.frames(4);
 		t.assert(model.buffer.getText() === source && !model.canUndo && !model.dirty, 'one Undo did not restore the complete clean source');
 		t.command('redo'); await t.frames(4);
-		t.assert(model.buffer.getText() === written && view.models.scene.instances.length > 0, 'Redo did not restore the same authored model');
+		t.assert(model.buffer.getText() === written && view.geometry.scene.instances.length > 0, 'Redo did not restore the same authored model');
 		await capture(`${label}-redo`); t.command('undo'); await t.frames(4);
 
 		await arm(); await move(point); await press('Escape'); retained();

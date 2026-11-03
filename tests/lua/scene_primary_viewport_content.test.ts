@@ -68,7 +68,7 @@ test('authored helper projection consumes actual affine families and retains unc
 	f.view.camera.zoom(1, 0, 0); f.control.update();
 	assert.equal(points[index + 2] - points[index], 32, 'diagnostic basis units stay screen-sized while actual images zoom');
 	inputFocus.executeCommand('sceneViewport.view3d', f.panel);
-	assert.equal(f.view.entries.length, 1); assert.ok(f.view.entries[0] === f.context.subject!.objects[2]);
+	assert.deepEqual(f.view.entries, f.context.subject!.objects.slice(0, 3), 'orbit view retains both planar and spatial members');
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
 });
 
@@ -208,7 +208,7 @@ test('frame commands are disabled for absent or unresolved geometry instead of b
 	assert.equal(g.panel.getCommand('sceneViewport.frameAll')!.isEnabled(), false);
 });
 
-test('framing a selection uses its own spatial view without changing the other camera reading', t => {
+test('framing a planar selection retains the orbit view and preserves the independent canvas camera', t => {
 	const f = fixture(t), camera = f.view.camera;
 	camera.pan(12, 8); const canvas = camera.capture().canvas;
 	f.select(2);
@@ -229,7 +229,9 @@ test('framing a selection uses its own spatial view without changing the other c
 	assert.equal(camera.mode, '3d', 'selection alone preserves the manually chosen view');
 	assert.equal(f.panel.getCommand('sceneViewport.frameSelection')!.isEnabled(), true);
 	inputFocus.executeCommand('sceneViewport.frameSelection', f.panel);
-	assert.equal(camera.mode, '2d'); assert.deepEqual(camera.capture().space, space);
+	assert.equal(camera.mode, '3d', 'planar members can be framed in the orbit view');
+	assert.deepEqual(camera.capture().canvas, canvas, 'framing in orbit leaves the independent canvas camera unchanged');
+	assert.notDeepEqual(camera.capture().space, space);
 	const spatial2 = f.context.subject!.objects[0];
 	assert.equal(spatial2.kind, 'object');
 	assert.ok(f.view.entries.includes(spatial2));

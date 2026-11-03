@@ -133,15 +133,15 @@ function createRuntime(backend: WebGPUBackend): HostOverlayRuntime {
 		],
 	});
 	const colorAttachment: ColorAttachmentSpec = { tex: null as TextureHandle };
+	const bitmaps = new HostBitmapTextures(image => {
+		const texture = backend.createTexture(image.pixels, image.width, image.height, RGBA8_LINEAR_TEXTURE_PARAMS) as GPUTexture;
+		return { texture, bindGroup: device.createBindGroup({ layout: pipeline.getBindGroupLayout(1), entries: [{ binding: 0, resource: texture.createView() }] }) };
+	}, (entry, image) => backend.updateTexture(entry.texture, image.pixels, image.width, image.height, RGBA8_LINEAR_TEXTURE_PARAMS),
+	entry => entry.texture.destroy());
 	return {
 		pipeline,
-		meshScenes: new WebGPUHostMeshScenes(backend),
-		meshBindGroups: [],
-		bitmaps: new HostBitmapTextures(image => {
-			const texture = backend.createTexture(image.pixels, image.width, image.height, RGBA8_LINEAR_TEXTURE_PARAMS) as GPUTexture;
-			return { texture, bindGroup: device.createBindGroup({ layout: pipeline.getBindGroupLayout(1), entries: [{ binding: 0, resource: texture.createView() }] }) };
-		}, (entry, image) => backend.updateTexture(entry.texture, image.pixels, image.width, image.height, RGBA8_LINEAR_TEXTURE_PARAMS),
-		entry => entry.texture.destroy()),
+		meshScenes: new WebGPUHostMeshScenes(backend, bitmaps),
+		meshBindGroups: [], bitmaps,
 		bindGroup,
 		frameBindGroups: new WeakMap(),
 		uniformBuffer,

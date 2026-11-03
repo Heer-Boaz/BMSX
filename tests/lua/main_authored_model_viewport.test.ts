@@ -53,7 +53,7 @@ scenes.register('sculpture',{objects={${members}}})`;
 
 for (const font of ['tiny', 'msx'] as const)
 test(`${font} Main submits actual model primitives and pointer selection chooses the nearest displayed occurrence`, async t => {
-	const f = await fixture(t, font), view = f.view, scene = view.models.scene;
+	const f = await fixture(t, font), view = f.view, scene = view.geometry.scene;
 	assert.equal(view.camera.mode, '3d'); assert.equal(scene.instances.length, 4);
 	assert.ok(scene.instances[0].mesh === scene.instances[2].mesh);
 	assert.equal(scene.instances[0].mesh.color, 0xff0080ff);
@@ -74,7 +74,7 @@ test(`${font} Main submits actual model primitives and pointer selection chooses
 });
 
 test('idle Main and camera navigation retain geometry; provider generation retires the actual resource once', async t => {
-	const f = await fixture(t), scene = f.view.models.scene, instance = scene.instances[0], mesh = instance.mesh, revision = scene.revision;
+	const f = await fixture(t), scene = f.view.geometry.scene, instance = scene.instances[0], mesh = instance.mesh, revision = scene.revision;
 	for (let frame = 0; frame < 100; frame++) f.update();
 	assert.equal(scene.revision, revision); assert.ok(scene.instances[0] === instance && instance.mesh === mesh);
 	f.view.camera.pan(13, -7); f.update(); assert.ok(scene.revision > revision); assert.ok(scene.instances[0] === instance);
@@ -101,7 +101,7 @@ test('incomplete triangle assembly does not claim visible model geometry or hide
 	const asset: GLTFModel = { name: 'shape', scene: 0, scenes: [{ nodes: [0] }], nodes: [{ mesh: 0 }],
 		meshes: [{ primitives: [{ positions: new Float32Array([1000, 2000, 3000]) }] }] };
 	const f = await fixture(t, 'tiny', `{member_id='origin',definition_id='paint'}`, asset);
-	assert.equal(f.view.models.scene.instances.length, 0); assert.equal(f.view.models.represented.size, 0);
+	assert.equal(f.view.geometry.scene.instances.length, 0); assert.equal(f.view.geometry.represented.size, 0);
 	assert.equal(f.view.camera.capture().space.distance, 8);
 	assert.ok(f.view.pick(f.view.points[0], f.view.points[1]) === f.client.authoring.subject!.objects[0]);
 });
@@ -113,16 +113,16 @@ for (const [name, transform] of [
 test(`${name} actual indexed vertices determine fit and a full affine remains pickable`, async t => {
 	const f = await fixture(t, 'tiny', `{member_id='face',definition_id='paint',transform={${transform}}}`);
 	assert.ok(f.view.camera.capture().space.distance < 10, 'unused accessor vertices never inflate fit');
-	const hit = f.view.models.pick(0, 0, f.view.camera); assert.ok(hit?.entry === f.client.authoring.subject!.objects[0]);
+	const hit = f.view.geometry.pick(0, 0, f.view.camera); assert.ok(hit?.entry === f.client.authoring.subject!.objects[0]);
 });
 
 test('large-origin camera, fit and picking preserve small geometry before translation is narrowed or added', async t => {
 	const origin = 2 ** 60, f = await fixture(t, 'tiny', `{member_id='face',definition_id='paint',position={x=${origin},y=${origin},z=${origin}}}`);
-	const scene = f.view.models.scene, camera = f.view.camera, matrix = new Float64Array(16);
+	const scene = f.view.geometry.scene, camera = f.view.camera, matrix = new Float64Array(16);
 	assert.equal(scene.originX, origin); assert.ok(camera.capture().space.distance > 1 && camera.capture().space.distance < 10);
 	writeHostMeshClipMatrix(matrix, scene, scene.instances[0]);
 	assert.equal(matrix[12], 0); assert.equal(matrix[13], 0); assert.equal(matrix[15], camera.capture().space.distance);
-	const hit = f.view.models.pick(0, 0, camera); assert.ok(hit?.entry === f.client.authoring.subject!.objects[0]);
+	const hit = f.view.geometry.pick(0, 0, camera); assert.ok(hit?.entry === f.client.authoring.subject!.objects[0]);
 	assert.equal(hit.originX, origin); assert.ok(Math.abs(hit.x) < 1e-10 && Math.abs(hit.y) < 1e-10);
 });
 
@@ -133,9 +133,9 @@ test('framing preserves an off-origin mesh pivot beside a large world origin', a
 	const camera = f.view.camera, reading = camera.capture().space;
 	assert.equal(reading.originX, origin); assert.equal(reading.centerX, 100); assert.equal(reading.centerY, 200); assert.equal(reading.centerZ, 300);
 	assert.ok(reading.distance > 1 && reading.distance < 10);
-	const hit = f.view.models.pick(0, 0, camera); assert.ok(hit?.entry === f.client.authoring.subject!.objects[0]);
+	const hit = f.view.geometry.pick(0, 0, camera); assert.ok(hit?.entry === f.client.authoring.subject!.objects[0]);
 	assert.ok(Math.abs(hit.x - 100) < 1e-10 && Math.abs(hit.y - 200) < 1e-10 && Math.abs(hit.z - 300) < 1e-10);
-	camera.zoom(1, 0, 0, hit); f.update(); assert.ok(f.view.models.pick(0, 0, camera)?.entry === hit.entry);
+	camera.zoom(1, 0, 0, hit); f.update(); assert.ok(f.view.geometry.pick(0, 0, camera)?.entry === hit.entry);
 });
 
 test('model availability follows the selected scene profile, explicit default and mounted provider generation', async t => {
@@ -145,7 +145,7 @@ test('model availability follows the selected scene profile, explicit default an
 	assets.update(f.context.id, new Set(['shape']));
 	assert.equal(assets.get('shape'), undefined); assert.equal(assets.get('shape', 1), undefined);
 	const first = assets.get('shape', 0)!; assert.equal(first.parts.length, 1);
-	assert.ok(assets.get('shape', 0) === first); assert.equal(f.view.models.scene.instances.length, 0);
+	assert.ok(assets.get('shape', 0) === first); assert.equal(f.view.geometry.scene.instances.length, 0);
 	let retired = 0; first.parts[0].meshes[0].onDispose(() => retired++);
 	const unmounted = new WorkspaceSourceCatalog(); unmounted.admitContext({ ...f.context, previewRom: null }); t.after(() => unmounted.dispose());
 	const unmountedAssets = new WorkspaceModelAssets(unmounted); t.after(() => unmountedAssets.dispose());

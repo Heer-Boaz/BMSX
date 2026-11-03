@@ -25,6 +25,7 @@ export type SceneViewportOutline<Owner = SceneSourceObject> = {
 	affine: Affine2;
 	readonly bounds: RectBounds;
 	readonly points: number[];
+	visible: boolean;
 };
 type PreparedVisual<Owner> = {
 	source: SceneCanvasSource<Owner>; readonly affine: Affine2; placedWorld: Readonly<Affine2> | undefined;
@@ -44,7 +45,9 @@ export class SceneViewportCanvas<Owner = SceneSourceObject> {
 	private preview: SceneTransformPreview<Owner> | undefined;
 	private previewRevision: number | undefined = -1;
 	private assetsRevision = -1;
-	private contentRevision = 0;
+	public revision = 0;
+	/** Packet layout/membership changes, independently of component pose changes. */
+	public packetRevision = 0;
 	private projectedContent = -1;
 	private projectedCamera = -1;
 	private projectedAllocation = -1;
@@ -80,7 +83,7 @@ export class SceneViewportCanvas<Owner = SceneSourceObject> {
 			}
 			this.prepared.length = count; this.packets.length = packets;
 		}
-		let count = 0, changed = rebound;
+		let count = 0, changed = rebound, packetsChanged = rebound;
 		for (const item of this.prepared) {
 			const visual = item.source, overridden = preview !== undefined && preview.worlds.has(visual.entry);
 			const world = overridden ? preview!.worlds.get(visual.entry) as Readonly<Affine2> | undefined : visual.world;
@@ -96,13 +99,14 @@ export class SceneViewportCanvas<Owner = SceneSourceObject> {
 			}
 			for (let index = item.first; index < item.first + item.count; index++) {
 				const quad = this.packets[index];
-				if (this.items[count] !== quad) { changed = true; this.selectionDirty = true; }
+				if (this.items[count] !== quad) { changed = packetsChanged = true; this.selectionDirty = true; }
 				this.items[count++] = quad;
 			}
 			if (item.count > 0) this.represented.add(visual.entry);
 		}
-		if (count !== this.items.length) { changed = true; this.selectionDirty = true; }
-		this.items.length = count; if (changed) this.contentRevision++;
+		if (count !== this.items.length) { changed = packetsChanged = true; this.selectionDirty = true; }
+		this.items.length = count; if (changed) this.revision++;
+		if (packetsChanged) this.packetRevision++;
 	}
 	/** One component pose is shared by all of its retained draw packets. */
 	private rectangle(item: PreparedVisual<Owner>, index: number, source: SceneRectangleSource<Owner> | SceneTextSource<Owner>,
@@ -144,7 +148,7 @@ export class SceneViewportCanvas<Owner = SceneSourceObject> {
 			if (item.source.entry !== selected || item.count === 0) continue;
 			let outline = this.outlines[count];
 			if (outline === undefined) {
-				outline = { source: item.source, affine: item.affine, bounds: create_rect_bounds(), points: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] };
+				outline = { source: item.source, affine: item.affine, bounds: create_rect_bounds(), points: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], visible: true };
 				this.outlines[count] = outline;
 			}
 			outline.source = item.source; outline.affine = item.affine;
@@ -163,14 +167,13 @@ export class SceneViewportCanvas<Owner = SceneSourceObject> {
 	}
 
 	public project(camera: SceneViewportCamera, bounds: Readonly<RectBounds>, allocation: number, selected?: Owner): boolean {
-		const geometry = this.projectedContent !== this.contentRevision || this.projectedCamera !== camera.revision || this.projectedAllocation !== allocation;
+		const geometry = this.projectedContent !== this.revision || this.projectedCamera !== camera.revision || this.projectedAllocation !== allocation;
 		const selection = this.selectionDirty || this.projectedSelection !== selected;
 		if (!geometry && !selection) return false;
 		if (selection) this.bindOutlines(selected);
-		this.projectedContent = this.contentRevision; this.projectedCamera = camera.revision; this.projectedAllocation = allocation;
-		if (camera.mode !== '2d') return true;
+		this.projectedContent = this.revision; this.projectedCamera = camera.revision; this.projectedAllocation = allocation;
 		const centerX = (bounds.left + bounds.right) / 2, centerY = (bounds.top + bounds.bottom) / 2, scale = camera.scale;
-		if (geometry) for (const item of this.items) {
+		if (geometry && camera.mode === '2d') for (const item of this.items) {
 			const affine = item.affine;
 			const x = affine.xx * item.offsetX + affine.yx * item.offsetY;
 			const y = affine.xy * item.offsetX + affine.yy * item.offsetY;
@@ -181,12 +184,15 @@ export class SceneViewportCanvas<Owner = SceneSourceObject> {
 		}
 		for (const outline of this.outlines) {
 			const { affine, bounds, points } = outline;
+			const signY = camera.mode === '3d' ? -1 : 1;
+			outline.visible = true;
 			for (let corner = 0; corner < 4; corner++) {
 				const x = corner === 0 || corner === 3 ? bounds.left : bounds.right;
 				const y = corner < 2 ? bounds.top : bounds.bottom;
 				const localX = affine.xx * x + affine.yx * y, localY = affine.xy * x + affine.yy * y;
-				points[corner * 2] = centerX + camera.projectX(localX, localY, 0, affine.ox, affine.oy);
-				points[corner * 2 + 1] = centerY + camera.projectY(localX, localY, 0, affine.ox, affine.oy);
+				if (camera.mode === '3d' && camera.depth(localX, -localY, 0, affine.ox, -affine.oy) < camera.near) { outline.visible = false; break; }
+				points[corner * 2] = centerX + camera.projectX(localX, localY * signY, 0, affine.ox, affine.oy * signY);
+				points[corner * 2 + 1] = centerY + camera.projectY(localX, localY * signY, 0, affine.ox, affine.oy * signY);
 			}
 			points[8] = points[0]; points[9] = points[1];
 		}

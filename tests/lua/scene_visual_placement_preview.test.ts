@@ -8,7 +8,7 @@ import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/
 import type { SceneSourceAffine, SceneSourceObject } from '../../ide/workbench/contrib/scene_editor/model';
 import type { SceneTransformPreview } from '../../ide/workbench/contrib/scene_editor/transform_proposal';
 import { SceneViewportCamera } from '../../ide/workbench/contrib/scene_editor/viewport/camera';
-import { SceneViewportModels } from '../../ide/workbench/contrib/scene_editor/viewport/models';
+import { SceneViewportGeometry } from '../../ide/workbench/contrib/scene_editor/viewport/geometry';
 import { SceneViewportCanvas } from '../../ide/workbench/contrib/scene_editor/viewport/canvas';
 import { SceneViewportViewState, type SceneViewportPlacement } from '../../ide/workbench/contrib/scene_editor/viewport/view_state';
 import { drawSceneViewport } from '../../ide/workbench/contrib/scene_editor/viewport/render';
@@ -53,10 +53,10 @@ scenes.register('main',{objects={{member_id='shape',definition_id='shape',transf
 	images.update(f.model.identity.contextId, new Set(read.canvas.flatMap(visual => visual.kind === 'sprite' ? [visual.image] : [])));
 	const assets = new WorkspaceModelAssets(f.sources.catalog);
 	assets.update(f.model.identity.contextId, new Set(read.models.map(model => model.model)));
-	const canvas = new SceneViewportCanvas(images), models = new SceneViewportModels(assets);
+	const canvas = new SceneViewportCanvas(images), models = new SceneViewportGeometry(assets, canvas);
 	canvas.prepare(read); models.prepare(read);
 	t.after(() => { canvas.dispose(); images.dispose(); models.dispose(); assets.dispose(); context.dispose(); });
-	return { ...f, source, context, read, entry, canvas, models, assets };
+	return { ...f, source, context, read, entry, canvas, models, assets, images };
 }
 
 function preview(entry: SceneSourceObject, world: SceneSourceAffine | undefined): SceneTransformPreview & { revision: number } {
@@ -138,7 +138,8 @@ test('generic model preview borrows main meshes and never owns their cache lifet
 	const f = fixture(t, '3d', 'xx=1,xy=0,xz=0,yx=0,yy=1,yz=0,zx=0,zy=0,zz=1,ox=5,oy=6,oz=7', IDENTITY_3, IDENTITY_3);
 	const choice: SceneAddMemberChoice = { id: 'shape', family: '3d' };
 	const source = { canvas: [], models: f.read.models.map(model => ({ ...model, entry: choice })) };
-	const ghost = new SceneViewportModels<SceneAddMemberChoice>(f.assets); t.after(() => ghost.dispose());
+	const canvas = new SceneViewportCanvas<SceneAddMemberChoice>(f.images);
+	const ghost = new SceneViewportGeometry<SceneAddMemberChoice>(f.assets, canvas); t.after(() => { ghost.dispose(); canvas.dispose(); });
 	ghost.prepare(source); const draw = ghost.scene.instances[0], mesh = draw.mesh;
 	assert.equal(mesh, f.models.scene.instances[0].mesh);
 	const world: SceneSourceAffine = { family: '3d', xx: 1, xy: 0, xz: 0, yx: 0, yy: 1, yz: 0, zx: 0, zy: 0, zz: 1, ox: 8, oy: 9, oz: 10 };
@@ -161,20 +162,20 @@ test('the Scene viewport shares main and Add model assets while the located ghos
 	const f = fixture(t, '3d', 'xx=1,xy=0,xz=0,yx=0,yy=1,yz=0,zx=0,zy=0,zz=1,ox=5,oy=6,oz=7', IDENTITY_3, IDENTITY_3);
 	const view = new SceneViewportViewState(f.context, f.sources.catalog); t.after(() => view.dispose());
 	view.layout({ left: 0, top: 0, right: 400, bottom: 300 }, 8); view.refresh();
-	const main = view.models.scene.instances[0], mesh = main.mesh;
+	const main = view.geometry.scene.instances[0], mesh = main.mesh;
 	const request = f.context.captureAddMember('3d')!, choice = request.choices[0], source = request.getPreview(choice)!;
 	assert.ok(source.world.family === '3d'); const world = { ...source.world };
 	const preview = { world, visuals: source.visuals, worlds: new Map([[choice, world]]), revision: 0 };
-	view.placementPreview = preview; view.refresh(); const ghost = view.placementModels.scene.instances[0];
-	assert.equal(ghost.mesh, mesh); assert.equal(view.models.scene.instances[0], main);
+	view.placementPreview = preview; view.refresh(); const ghost = view.placementGeometry.scene.instances[0];
+	assert.equal(ghost.mesh, mesh); assert.equal(view.geometry.scene.instances[0], main);
 	let retired = 0; mesh.onDispose(() => retired++);
 	const update = t.mock.method(WorkspaceModelAssets.prototype, 'update', () => assert.fail('pointer motion must only update retained placements'));
 	const sourceRead = t.mock.method(f.context, 'refresh', () => assert.fail('pointer motion must not re-enter source projection'));
-	const mainPreparation = t.mock.method(view.models, 'prepare', () => assert.fail('pointer motion must not prepare committed models'));
+	const mainPreparation = t.mock.method(view.geometry, 'prepare', () => assert.fail('pointer motion must not prepare committed models'));
 	for (let step = 0; step < 100; step++) {
 		world.ox = step; world.oz = step * 2; preview.revision++; view.projectPlacement();
-		assert.equal(view.placementModels.scene.instances[0], ghost); assert.equal(ghost.mesh, mesh);
-		assert.equal(view.models.scene.instances[0], main);
+		assert.equal(view.placementGeometry.scene.instances[0], ghost); assert.equal(ghost.mesh, mesh);
+		assert.equal(view.geometry.scene.instances[0], main);
 	}
 	update.mock.restore(); sourceRead.mock.restore(); mainPreparation.mock.restore();
 	assert.equal(main.ox, 7); assert.equal(ghost.ox, 101); assert.equal(retired, 0);
@@ -188,11 +189,11 @@ test('the Scene viewport shares main and Add model assets while the located ghos
 		return scenes;
 	};
 	const located = paint(); assert.equal(located.length, 2);
-	assert.ok(located[0] === view.models.scene && located[1] === view.placementModels.scene);
+	assert.ok(located[0] === view.geometry.scene && located[1] === view.placementGeometry.scene);
 	placement.located = false; const outside = paint();
-	assert.equal(outside.length, 1); assert.ok(outside[0] === view.models.scene);
+	assert.equal(outside.length, 1); assert.ok(outside[0] === view.geometry.scene);
 	view.placementPreview = undefined; view.refresh();
-	assert.equal(view.placementModels.scene.instances.length, 0); assert.equal(main.mesh, mesh); assert.equal(retired, 0);
+	assert.equal(view.placementGeometry.scene.instances.length, 0); assert.equal(main.mesh, mesh); assert.equal(retired, 0);
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
 	view.dispose(); assert.equal(retired, 1);
 });

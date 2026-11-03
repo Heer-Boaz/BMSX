@@ -704,6 +704,9 @@ if(BMSX_BUILD_TESTS)
 		add_executable(bmsx_game_capture_tests ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/game_capture_test.cpp)
 		target_link_libraries(bmsx_game_capture_tests PRIVATE bmsx_host_support PkgConfig::EGL)
 		add_test(NAME bmsx_game_capture_tests COMMAND bmsx_game_capture_tests)
+		add_executable(bmsx_gx_gpu_textured_gles2_tests ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gx_gpu_textured_gles2_test.cpp)
+		target_link_libraries(bmsx_gx_gpu_textured_gles2_tests PRIVATE bmsx_host_support PkgConfig::EGL)
+		add_test(NAME bmsx_gx_gpu_textured_gles2_tests COMMAND bmsx_gx_gpu_textured_gles2_tests)
 	endif()
 
 	add_executable(bmsx_glyph_runs_tests

@@ -114,15 +114,15 @@ function createRuntime(backend: WebGLBackend, program: WebGLProgram, frameUnifor
 	gl.uniform1i(gl.getUniformLocation(program, 'u_texture0'), HOST_OVERLAY_TEXTURE_UNIT);
 	gl.uniform1i(gl.getUniformLocation(program, 'u_frame'), HOST_OVERLAY_TEXTURE_UNIT + 1);
 
-	return {
-		gl,
-		meshScenes: new WebGLHostMeshScenes(backend),
-		meshTextures: [],
-		bitmaps: new HostBitmapTextures(
+	const bitmaps = new HostBitmapTextures(
 			image => backend.createTexture(image.pixels, image.width, image.height, RGBA8_LINEAR_TEXTURE_PARAMS) as WebGLTexture,
 			(texture, image) => backend.updateTexture(texture, image.pixels, image.width, image.height, RGBA8_LINEAR_TEXTURE_PARAMS),
 			texture => backend.destroyTexture(texture),
-		),
+		);
+	return {
+		gl,
+		meshScenes: new WebGLHostMeshScenes(backend, bitmaps),
+		meshTextures: [], bitmaps,
 		program,
 		vao,
 		cornerBuffer,

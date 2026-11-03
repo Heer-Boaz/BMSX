@@ -44,6 +44,12 @@ for (const kind of ['webgl2', 'webgpu'] as const) test(`${kind} retained host me
 	assert.deepEqual(result.background, [32, 32, 64, 255]);
 	assert.deepEqual(result.cropped, [255, 0, 0, 255]);
 	assert.deepEqual(result.laterUi, [0, 255, 0, 255]);
+	assert.deepEqual(result.textured, {
+		affine: [0, 0, 255, 255], upright: [0, 255, 255, 255], near: [0, 0, 255, 255], clipped: [0, 0, 0, 0],
+		hole: [255, 255, 0, 255], opaque: [255, 0, 0, 255], alpha: [0, 128, 0, 128], coplanar: [255, 0, 255, 255],
+		composite: [16, 144, 32, 255], changed: [255, 255, 255, 255], idle: { passes: 0, uploads: 0 },
+		cutout: [0, 128, 0, 128], cutoutComposite: [16, 144, 32, 255],
+	});
 	assert.deepEqual(result.gpuErrors, []);
 	assert.equal(result.validationError, undefined);
 	assert.deepEqual(errors, []);

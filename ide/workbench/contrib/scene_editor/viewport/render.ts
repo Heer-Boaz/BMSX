@@ -11,14 +11,13 @@ export function drawSceneViewport(view: SceneViewportViewState, focused: boolean
 	const bounds = view.bounds, points = view.points, segment = view.segment;
 	api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
 	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, ARTWORK_COLORS.background);
-	if (view.camera.mode === '3d' && view.models.scene.instances.length > 0)
-		api.drawMeshScene(view.models.scene, bounds.left, bounds.top, bounds.right, bounds.bottom);
+	if (view.camera.mode === '3d' && view.geometry.scene.instances.length > 0)
+		api.drawMeshScene(view.geometry.scene, bounds.left, bounds.top, bounds.right, bounds.bottom);
 	if (view.camera.mode === '2d') drawCanvas(view.canvas.items, 0xff000000);
-	if (view.camera.mode === '2d') for (const outline of view.canvas.outlines)
-		api.outlinedPolyline(outline.points, 0, 0, 0);
+	for (const outline of view.canvas.outlines) if (outline.visible) api.outlinedPolyline(outline.points, 0, 0, 0);
 	for (let index = 0; index < view.entries.length; index++) {
 		if (view.entries[index] === view.selected && view.gizmo.world !== undefined) continue;
-		if (view.entries[index] !== view.selected && (view.camera.mode === '2d' ? view.canvas.represented : view.models.represented).has(view.entries[index])) continue;
+		if (view.entries[index] !== view.selected && (view.camera.mode === '2d' ? view.canvas.represented : view.geometry.represented).has(view.entries[index])) continue;
 		const offset = index * SCENE_VIEWPORT_POINT_STRIDE, x = points[offset], y = points[offset + 1];
 		segment[0] = x; segment[1] = y; segment[2] = points[offset + 2]; segment[3] = points[offset + 3];
 		api.outlinedPolyline(segment, 0, 0, 0, 1, ARTWORK_COLORS.axes[0]);
@@ -51,8 +50,8 @@ export function drawSceneViewport(view: SceneViewportViewState, focused: boolean
 	}
 	if (placement?.located) {
 		if (view.camera.mode === '2d') drawCanvas(view.placementCanvas.items, 0xa0000000);
-		else if (view.placementModels.scene.instances.length > 0)
-			api.drawMeshScene(view.placementModels.scene, bounds.left, bounds.top, bounds.right, bounds.bottom);
+		else if (view.placementGeometry.scene.instances.length > 0)
+			api.drawMeshScene(view.placementGeometry.scene, bounds.left, bounds.top, bounds.right, bounds.bottom);
 		const x = (bounds.left + bounds.right) / 2 + view.camera.projectX(placement.x, placement.y, placement.z);
 		const y = (bounds.top + bounds.bottom) / 2 + view.camera.projectY(placement.x, placement.y, placement.z);
 		segment[0] = x - 5; segment[1] = y; segment[2] = x + 5; segment[3] = y;

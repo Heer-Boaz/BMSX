@@ -22,6 +22,12 @@ const inkPoint = packet => {
 	for (let y = packet.height - 1; y >= 0; y--) for (let x = packet.width - 1; x >= 0; x--) {
 		if (image.pixels[((top + y) * image.width + left + x) * 4 + 3] === 0) continue;
 		const u = (x + 0.5) / packet.width, v = (y + 0.5) / packet.height;
+		if (view.camera.mode === '3d') {
+			const a = packet.affine, lx = packet.offsetX + x + 0.5, ly = packet.offsetY + y + 0.5;
+			const wx = a.xx * lx + a.yx * ly, wy = -(a.xy * lx + a.yy * ly);
+			return { x: (view.bounds.left + view.bounds.right) / 2 + view.camera.projectX(wx, wy, 0, a.ox, -a.oy, 0),
+				y: (view.bounds.top + view.bounds.bottom) / 2 + view.camera.projectY(wx, wy, 0, a.ox, -a.oy, 0) };
+		}
 		return { x: packet.x + packet.xx * u + packet.yx * v, y: packet.y + packet.xy * u + packet.yy * v };
 	}
 	throw new Error('the dedicated artwork glyph has no selectable ink');
@@ -29,7 +35,7 @@ const inkPoint = packet => {
 
 await t.waitForCart(); await t.frames(90); await press('ControlRight', 'ShiftRight');
 t.command('sceneEditor'); await t.frames(3); await type('artwork.lua'); await press('Enter'); await t.frames(5);
-const primary = t.mainWorkspace().primary, context = primary.consumer, model = context.workingCopy, view = primary.view.viewport;
+const primary = t.mainWorkspace().primary, context = primary.authoring, model = context.workingCopy, view = primary.view.viewport;
 t.assert(model.identity.path === 'scenes/artwork.lua', 'the dedicated authored artwork Scene did not become the Main subject');
 const source = model.buffer.getText(), cycles = t.runtime().machine.scheduler.nowCycles, media = t.sourceState().currentBlua32Media;
 const clean = () => {
@@ -111,11 +117,24 @@ for (let font = 0; font < 2; font++) {
 		t.assert(view.placementPreview === undefined && view.placementCanvas.items.length === 0, 'cancel retained the uncommitted sprite ghost');
 		clean();
 		t.command('sceneViewport.view3d'); await t.frames(4); t.command('sceneViewport.frameAll'); await t.frames(4);
-		t.assert(view.camera.mode === '3d' && view.models.scene.instances.length > 0 && view.entries.length === 1,
-			'the same authored Scene did not expose its real 3D model in the native camera mode');
+		t.assert(view.camera.mode === '3d' && context.subject.objects.every(entry => view.geometry.represented.has(entry)),
+			'the orbit view did not retain all authored canvas visuals alongside its model');
+		await capture(`${label}-mixed-orbit`);
+		await click(inkPoint(artwork().sprite));
+		t.assert(context.selection.kind === 'member' && context.selection.entry === artwork().sprite.source.entry,
+			'clicking visible sprite ink in orbit did not select its authored member');
+		await press('KeyF');
+		t.assert(view.camera.mode === '3d', 'framing a canvas member replaced the orbit camera');
+		const orbitVersion = model.version, orbitStart = { x: view.gizmo.x, y: view.gizmo.y };
+		const orbitEnd = { x: orbitStart.x + 12, y: orbitStart.y + 8 };
+		await pointer(orbitStart, true); await move(orbitEnd);
+		t.assert(view.transformPreview !== undefined && model.version === orbitVersion, 'orbit drag did not retain its uncommitted source proposal');
+		await capture(`${label}-sprite-orbit-drag`); await pointer(orbitEnd, false);
+		t.assert(model.version === orbitVersion + 1 && context.selectedLocalTransform.family === '2d', 'orbit drag did not commit one 2D member-position edit');
+		t.command('undo'); await t.frames(4); clean();
 		// The existing outline owns member selection; End selects the dedicated final model occurrence.
 		t.command('sceneEditor.outline'); await press('End');
-		t.assert(context.selection.kind === 'member' && view.models.represented.has(context.selection.entry),
+		t.assert(context.selection.kind === 'member' && view.geometry.represented.has(context.selection.entry),
 			'the authored model selection did not belong to the displayed geometry');
 		await click({ x: view.gizmo.x, y: view.gizmo.y });
 		t.command('sceneViewport.frameSelection'); await t.frames(4);
@@ -123,11 +142,11 @@ for (let font = 0; font < 2; font++) {
 		await click({ x: view.bounds.left + 2, y: view.bounds.top + 2 });
 		t.command('sceneViewport.view2d'); await t.frames(4); t.command('sceneViewport.frameAll'); await t.frames(4);
 		const themeVersion = model.version, canRedo = model.canRedo, themeResources = resources();
-		const mesh = view.models.scene.instances[0].mesh, meshRevision = view.models.scene.revision;
+		const mesh = view.geometry.scene.instances[0].mesh, meshRevision = view.geometry.scene.revision;
 		t.command('theme-toggle'); await t.frames(4);
 		clean(); artwork(); retainedResources(themeResources);
-		t.assert(model.version === themeVersion && model.canRedo === canRedo && view.models.scene.instances[0].mesh === mesh
-			&& view.models.scene.revision === meshRevision,
+		t.assert(model.version === themeVersion && model.canRedo === canRedo && view.geometry.scene.instances[0].mesh === mesh
+			&& view.geometry.scene.revision === meshRevision,
 			'theme switching changed canonical source/history, rebound its model asset or rebaked the 3D scene');
 	}
 	const fontResources = resources(), fontVersion = model.version, canRedo = model.canRedo;

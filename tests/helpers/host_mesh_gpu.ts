@@ -7,6 +7,9 @@ import { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import { BrowserVideoOutput } from '../../hosts/browser/video_output';
 import { RenderPassLibrary } from '../../machine/ts/render/backend/pass/library';
 import type { GPUBackend } from '../../machine/ts/render/backend/backend';
+import { HostBitmapTextures } from '../../machine/ts/render/host_overlay/bitmap';
+import { RGBA8_LINEAR_TEXTURE_PARAMS } from '../../machine/ts/render/backend/texture_params';
+import { createHostTexturedMeshFixture } from './host_textured_mesh';
 
 /** Independent synthetic geometry exercises actual host backend resources and overlay composition. */
 export async function renderHostMeshCase(kind: 'webgl2' | 'webgpu') {
@@ -27,7 +30,13 @@ export async function renderHostMeshCase(kind: 'webgl2' | 'webgpu') {
 		device.pushErrorScope('validation');
 		gpu!.context.configure({ device, format: gpu!.canvasFormat, alphaMode: 'opaque', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC });
 	}
-	const scenes = gpu === undefined ? new WebGLHostMeshScenes(webgl!) : new WebGPUHostMeshScenes(gpu);
+	const glBitmaps = webgl === undefined ? undefined : new HostBitmapTextures(
+		image => webgl.createTexture(image.pixels, image.width, image.height, RGBA8_LINEAR_TEXTURE_PARAMS) as WebGLTexture,
+		(texture, image) => webgl.updateTexture(texture, image.pixels, image.width, image.height, RGBA8_LINEAR_TEXTURE_PARAMS), texture => webgl.destroyTexture(texture));
+	const gpuBitmaps = gpu === undefined ? undefined : new HostBitmapTextures(image => ({
+		texture: gpu.createTexture(image.pixels, image.width, image.height, RGBA8_LINEAR_TEXTURE_PARAMS) as GPUTexture }),
+		(entry, image) => gpu.updateTexture(entry.texture, image.pixels, image.width, image.height, RGBA8_LINEAR_TEXTURE_PARAMS), entry => entry.texture.destroy());
+	const scenes = gpu === undefined ? new WebGLHostMeshScenes(webgl!, glBitmaps!) : new WebGPUHostMeshScenes(gpu, gpuBitmaps!);
 	const scene = new HostMeshScene(32, 32);
 	scene.clipFromOrigin.set([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0]);
 	const red = new HostMesh({ positions: new Float32Array([-.9375, -.9375, 1.25, 3, -3, 4, 0, 1.5, 2]), color: 0xffff0000, doubleSided: false });
@@ -72,10 +81,20 @@ export async function renderHostMeshCase(kind: 'webgl2' | 'webgpu') {
 	const clippedVisible = clippedPixels.some((value, index) => index % 4 === 3 && value === 255);
 	const oldTarget = scenes.targets.get(clipped); clipped.resize(24, 16);
 	const resizedTarget = scenes.targets.get(clipped), resized = await backend.readColorTexture(resizedTarget.color, 24, 16);
+	const textured = createHostTexturedMeshFixture();
+	const affinePixels = Array.from(await backend.readColorTexture(scenes.targets.get(textured.affine).color, 32, 32));
+	const nearPixels = Array.from(await backend.readColorTexture(scenes.targets.get(textured.clipped).color, 32, 32));
+	const layerPixels = Array.from(await backend.readColorTexture(scenes.targets.get(textured.layers).color, 32, 32));
+	const cutoutPixels = Array.from(await backend.readColorTexture(scenes.targets.get(textured.cutout).color, 32, 32));
+	backend.beginFrame(); const texturedPasses = passes;
+	scenes.targets.get(textured.affine); scenes.targets.get(textured.clipped); scenes.targets.get(textured.layers); scenes.targets.get(textured.cutout);
+	const texturedIdle = { passes: passes - texturedPasses, uploads: backend.getFrameStats().bytesUploaded };
 	const presenter = new VideoPresenter(new BrowserVideoOutput(canvas, null, 'fit'), backend, 32, 32);
 	const library = new RenderPassLibrary(backend, presenter), renderer = new OverlayRenderer(presenter.hostOverlayQueue);
 	const frameTexture = backend.createColorTexture({ width: 32, height: 32, initialClearColor: [0, 0, 0, 1] });
 	renderer.beginFrame(presenter); renderer.fillRect(0, 0, 32, 32, 0, 0xff202040, 0);
+	renderer.drawMeshScene(textured.layers, 0, 0, 8, 8);
+	renderer.drawMeshScene(textured.cutout, 24, 0, 32, 8);
 	renderer.pushTransform({ scale: .5, offsetX: 4, offsetY: 4 }); renderer.pushClipRect(8, 8, 24, 24);
 	renderer.drawMeshScene(shared, 0, 0, 32, 32); renderer.popClipRect(); renderer.popTransform();
 	renderer.fillRect(10, 10, 12, 12, 0, 0xff00ff00, 0); renderer.endFrame();
@@ -90,7 +109,9 @@ export async function renderHostMeshCase(kind: 'webgl2' | 'webgpu') {
 		const bytes = new Uint8Array(32 * 32 * 4); gl.readPixels(0, 0, 32, 32, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
 		composite = []; for (let row = 31; row >= 0; row--) composite.push(...bytes.subarray(row * 128, (row + 1) * 128));
 	}
-	library.dispose(); scenes.dispose();
+	textured.layerBitmap.update(new Uint8Array(16).fill(255), 2, 2); textured.layers.changed();
+	const changedTexture = Array.from(await backend.readColorTexture(scenes.targets.get(textured.layers).color, 32, 32));
+	library.dispose(); scenes.dispose(); glBitmaps?.dispose(); gpuBitmaps?.dispose(); textured.dispose();
 	for (const value of [scene, shared, clipped, red, blue, clipMesh, ...sharedMeshes]) value.dispose();
 	backend.destroyTexture(frameTexture);
 	let validationError: string | undefined;
@@ -100,5 +121,10 @@ export async function renderHostMeshCase(kind: 'webgl2' | 'webgpu') {
 		sharedVertexBytes, coplanar: pixel(sharedPixels, 16, 16), remaining: pixel(remaining, 16, 16), clippedVisible,
 		resized: oldTarget !== resizedTarget && resized.length === 24 * 16 * 4,
 		background: pixel(composite, 5, 10), cropped: pixel(composite, 15, 14), laterUi: pixel(composite, 10, 10),
+		textured: { affine: pixel(affinePixels, 20, 24), upright: pixel(affinePixels, 4, 8), near: pixel(nearPixels, 17, 19),
+			clipped: pixel(nearPixels, 10, 10), hole: pixel(layerPixels, 3, 10), opaque: pixel(layerPixels, 24, 8),
+			alpha: pixel(layerPixels, 4, 24), coplanar: pixel(layerPixels, 27, 26), composite: pixel(composite, 1, 6),
+			cutout: pixel(cutoutPixels, 4, 24), cutoutComposite: pixel(composite, 25, 6),
+			changed: pixel(changedTexture, 4, 24), idle: texturedIdle },
 		gpuErrors, validationError };
 }

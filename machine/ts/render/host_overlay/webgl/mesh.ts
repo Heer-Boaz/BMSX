@@ -2,11 +2,13 @@ import { HostMeshBuffers, HostMeshPositionBuffers, HostMeshSceneTargets, hostMes
 	type HostMesh, type HostMeshScene } from '../mesh';
 import type { RenderPassDesc } from '../../backend/backend';
 import type { WebGLBackend } from '../../backend/webgl/backend';
+import type { HostBitmapTextures } from '../bitmap';
 
 import vertex from './shaders/host_mesh.vert.glsl';
 import fragment from './shaders/host_mesh.frag.glsl';
+import texturedFragment from './shaders/host_mesh_textured.frag.glsl';
 
-type MeshBuffers = { vao: WebGLVertexArrayObject; indices: WebGLBuffer | undefined; positions: Float32Array; count: number; indexType: number };
+type MeshBuffers = { vao: WebGLVertexArrayObject; indices: WebGLBuffer | undefined; uvs: WebGLBuffer | undefined; positions: Float32Array; count: number; indexType: number };
 export type WebGLHostMeshTarget = { color: WebGLTexture; depth: WebGLTexture; pass: RenderPassDesc };
 
 /** Owned host geometry uploads and a private reversed-depth target for each viewport. */
@@ -14,20 +16,22 @@ export class WebGLHostMeshScenes {
 	public readonly targets: HostMeshSceneTargets<WebGLHostMeshTarget>;
 	private readonly positionBuffers: HostMeshPositionBuffers<WebGLBuffer>;
 	private readonly meshes: HostMeshBuffers<MeshBuffers>;
-	private readonly program: WebGLProgram;
-	private readonly matrixLocation: WebGLUniformLocation;
-	private readonly colorLocation: WebGLUniformLocation;
+	private readonly programs: { program: WebGLProgram; matrix: WebGLUniformLocation; color: WebGLUniformLocation }[];
 	private readonly matrix = new Float32Array(16);
-	public constructor(private readonly backend: WebGLBackend) {
+	public constructor(private readonly backend: WebGLBackend, private readonly bitmaps: HostBitmapTextures<WebGLTexture>) {
 		const gl = backend.gl;
-		this.program = backend.buildProgram(vertex, fragment, 'host_mesh');
-		this.matrixLocation = gl.getUniformLocation(this.program, 'clip_from_model');
-		this.colorLocation = gl.getUniformLocation(this.program, 'color');
+		this.programs = [fragment, texturedFragment].map(source => {
+			const program = backend.buildProgram(vertex, source, 'host_mesh');
+			backend.useProgram(program);
+			if (source === texturedFragment) gl.uniform1i(gl.getUniformLocation(program, 'bitmap'), 0);
+			return { program, matrix: gl.getUniformLocation(program, 'clip_from_model'), color: gl.getUniformLocation(program, 'color') };
+		});
 		this.positionBuffers = new HostMeshPositionBuffers(
 			positions => backend.createVertexBuffer(positions, 'static'), buffer => backend.destroyBuffer(buffer));
 		this.meshes = new HostMeshBuffers(mesh => this.createMesh(mesh), mesh => {
 			backend.deleteVertexArray(mesh.vao);
 			if (mesh.indices !== undefined) backend.destroyBuffer(mesh.indices);
+			if (mesh.uvs !== undefined) backend.destroyBuffer(mesh.uvs);
 			this.positionBuffers.release(mesh.positions);
 		});
 		this.targets = new HostMeshSceneTargets(scene => {
@@ -44,6 +48,11 @@ export class WebGLHostMeshScenes {
 		const vao = backend.createVertexArray() as WebGLVertexArrayObject;
 		backend.bindVertexArray(vao); backend.bindArrayBuffer(positions);
 		gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+		let uvs: WebGLBuffer | undefined;
+		if (mesh.texture !== undefined) {
+			uvs = backend.createVertexBuffer(mesh.texture.uvs, 'static'); backend.bindArrayBuffer(uvs);
+			gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0);
+		}
 		let indices: WebGLBuffer | undefined;
 		if (mesh.indices !== undefined) {
 			indices = gl.createBuffer()!;
@@ -51,21 +60,28 @@ export class WebGLHostMeshScenes {
 			backend.accountUpload('index', mesh.indices.byteLength);
 		}
 		backend.bindVertexArray(null);
-		return { vao, indices, positions: mesh.positions, count: mesh.drawCount,
+		return { vao, indices, uvs, positions: mesh.positions, count: mesh.drawCount,
 			indexType: mesh.indexComponentType === 5121 ? gl.UNSIGNED_BYTE : mesh.indexComponentType === 5123 ? gl.UNSIGNED_SHORT : gl.UNSIGNED_INT };
 	}
 	private render(target: WebGLHostMeshTarget, scene: HostMeshScene): void {
 		const backend = this.backend, gl = backend.gl;
 		gl.disable(gl.SCISSOR_TEST); gl.colorMask(true, true, true, true);
-		backend.setDepthMask(true); backend.setDepthTestEnabled(true); backend.setDepthFunc(gl.GREATER);
-		backend.setBlendEnabled(false);
+		backend.setDepthMask(true); backend.setDepthTestEnabled(true);
+		backend.setBlendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 		const pass = backend.beginRenderPass(target.pass);
-		backend.setViewportRect(0, 0, scene.width, scene.height); backend.useProgram(this.program);
+		backend.setViewportRect(0, 0, scene.width, scene.height);
 		for (const instance of scene.instances) {
 			const mesh = instance.mesh, geometry = this.meshes.get(mesh);
+			const program = this.programs[mesh.texture === undefined ? 0 : 1]; backend.useProgram(program.program);
+			backend.setDepthFunc(mesh.layered ? gl.GEQUAL : gl.GREATER); backend.setBlendEnabled(mesh.layered);
 			writeHostMeshClipMatrix(this.matrix, scene, instance);
-			gl.uniformMatrix4fv(this.matrixLocation, false, this.matrix);
-			gl.uniform3f(this.colorLocation, ((mesh.color >>> 16) & 255) / 255, ((mesh.color >>> 8) & 255) / 255, (mesh.color & 255) / 255);
+			gl.uniformMatrix4fv(program.matrix, false, this.matrix);
+			gl.uniform4f(program.color, ((mesh.color >>> 16) & 255) / 255, ((mesh.color >>> 8) & 255) / 255, (mesh.color & 255) / 255,
+				mesh.layered ? (mesh.color >>> 24) / 255 : 1);
+			if (mesh.texture !== undefined) {
+				const bitmap = this.bitmaps.get(mesh.texture.bitmap);
+				backend.setActiveTexture(0); backend.bindTexture2D(bitmap);
+			}
 			backend.setCullEnabled(!mesh.doubleSided); gl.frontFace(hostMeshReflected(instance) ? gl.CW : gl.CCW);
 			backend.bindVertexArray(geometry.vao);
 			if (geometry.indices === undefined) backend.draw(pass, 0, geometry.count);
@@ -75,6 +91,6 @@ export class WebGLHostMeshScenes {
 		backend.endRenderPass(pass);
 	}
 	public dispose(): void {
-		this.targets.dispose(); this.meshes.dispose(); this.backend.gl.deleteProgram(this.program);
+		this.targets.dispose(); this.meshes.dispose(); for (const { program } of this.programs) this.backend.gl.deleteProgram(program);
 	}
 }

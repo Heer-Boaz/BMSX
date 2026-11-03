@@ -10,7 +10,7 @@ import { WorkspaceImageAssets } from '../../../../workspace/image_assets';
 import { WorkspaceModelAssets } from '../../../../workspace/model_assets';
 import { SceneViewportCamera } from './camera';
 import { SceneViewportCanvas } from './canvas';
-import { SceneViewportModels, type SceneViewportModelBounds } from './models';
+import { SceneViewportGeometry, type SceneViewportGeometryBounds } from './geometry';
 import type { SceneVisualReadModel } from '../visual_projection';
 import type { SceneTransformPreview } from '../transform_proposal';
 import { SceneTranslationGizmo, TRANSLATE_AXIS_LABELS } from './translate_gizmo';
@@ -38,8 +38,8 @@ export class SceneViewportViewState {
 	public placementPreview: SceneMemberPlacementPreview | undefined;
 	public readonly canvas: SceneViewportCanvas;
 	public readonly placementCanvas: SceneViewportCanvas<SceneAddMemberChoice>;
-	public readonly models: SceneViewportModels;
-	public readonly placementModels: SceneViewportModels<SceneAddMemberChoice>;
+	public readonly geometry: SceneViewportGeometry;
+	public readonly placementGeometry: SceneViewportGeometry<SceneAddMemberChoice>;
 	public readonly bounds = create_rect_bounds();
 	public readonly entries: SceneSourceObject[] = [];
 	/** Per occurrence: origin XY, X endpoint XY, Y endpoint XY, Z endpoint XY. */
@@ -58,7 +58,7 @@ export class SceneViewportViewState {
 	private lineHeight = 0;
 	private disposed = false;
 	private readonly visualBounds = create_rect_bounds();
-	private readonly modelBounds: SceneViewportModelBounds = { originX: 0, originY: 0, originZ: 0, minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 };
+	private readonly modelBounds: SceneViewportGeometryBounds = { originX: 0, originY: 0, originZ: 0, minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 };
 	private readonly frameEntries = new Set<SceneSourceObject>();
 	private initialSource: SceneSpatialReadModel | undefined;
 	private initialVisuals: SceneVisualReadModel | undefined;
@@ -82,7 +82,7 @@ export class SceneViewportViewState {
 		this.images = new WorkspaceImageAssets(catalog);
 		this.modelAssets = new WorkspaceModelAssets(catalog);
 		this.canvas = new SceneViewportCanvas(this.images); this.placementCanvas = new SceneViewportCanvas(this.images);
-		this.models = new SceneViewportModels(this.modelAssets); this.placementModels = new SceneViewportModels(this.modelAssets);
+		this.geometry = new SceneViewportGeometry(this.modelAssets, this.canvas); this.placementGeometry = new SceneViewportGeometry(this.modelAssets, this.placementCanvas);
 		this.unbindCamera = this.camera.onDidChange(() => { for (const listener of this.listeners) listener(); });
 	}
 	public onDidChange(listener: () => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
@@ -104,7 +104,7 @@ export class SceneViewportViewState {
 			lines[0] = placement.definitionLabel;
 			lines[1] = this.camera.mode === '3d' ? placement.located ? 'Click: place on XZ' : 'Point at XZ plane' : 'Click: place';
 			lines[2] = 'Esc: cancel';
-			const empty = (this.camera.mode === '2d' ? this.placementCanvas.items.length : this.placementModels.scene.instances.length) === 0;
+			const empty = (this.camera.mode === '2d' ? this.placementCanvas.items.length : this.placementGeometry.scene.instances.length) === 0;
 			if (empty) { lines[3] = 'No preview'; caption.warningLine = 3; }
 			lines.length = empty ? 4 : 3;
 		}
@@ -143,7 +143,7 @@ export class SceneViewportViewState {
 			this.images.update(this.authoring.workingCopy.identity.contextId, this.imageIds);
 			this.modelAssets.update(this.authoring.workingCopy.identity.contextId, this.modelIds);
 		}
-		this.canvas.prepare(visuals, this.transformPreview); this.models.prepare(visuals, this.transformPreview);
+		this.canvas.prepare(visuals, this.transformPreview); this.geometry.prepare(visuals, this.transformPreview);
 		if (this.modeSource !== this.source) {
 			this.modeSource = this.source; this.sourceMode = undefined;
 			if (this.source !== undefined) for (const entry of this.source.entries) {
@@ -162,7 +162,7 @@ export class SceneViewportViewState {
 			this.initialCatalogRevision = this.catalog.revision; this.initialMode = this.camera.mode;
 			this.frame(undefined, 'initial'); this.initialCameraRevision = this.camera.revision; if (this.disposed) return;
 		}
-		if (this.models.project(this.camera, this.bounds)) this.projectionRevision++;
+		if (this.geometry.project(this.camera, this.bounds)) this.projectionRevision++;
 		if (this.canvas.project(this.camera, this.bounds, this.allocationRevision, this.selected)) this.projectionRevision++;
 		this.projectPlacement();
 		const preview = this.transformPreview, previewRevision = preview?.revision ?? -1;
@@ -179,17 +179,18 @@ export class SceneViewportViewState {
 		const camera = this.camera, centerX = (this.bounds.left + this.bounds.right) / 2, centerY = (this.bounds.top + this.bounds.bottom) / 2;
 		if (this.source !== undefined) for (const entry of this.source.entries) {
 			const world = preview?.worlds.has(entry) ? preview.worlds.get(entry) : this.source.worlds.get(entry);
-			if (world === undefined || world.family !== camera.mode) continue;
+			if (world === undefined || camera.mode === '2d' && world.family !== '2d') continue;
 			this.canFrameAll = true;
-			if (world.family === '3d' && camera.depth(world.ox, world.oy, world.oz) < camera.near) continue;
-			const index = count * SCENE_VIEWPORT_POINT_STRIDE, x = world.ox, y = world.oy, z = world.family === '3d' ? world.oz : 0;
+			const signY = camera.mode === '3d' && world.family === '2d' ? -1 : 1;
+			const index = count * SCENE_VIEWPORT_POINT_STRIDE, x = world.ox, y = world.oy * signY, z = world.family === '3d' ? world.oz : 0;
+			if (camera.mode === '3d' && camera.depth(x, y, z) < camera.near) continue;
 			this.entries[count++] = entry;
 			this.points[index] = centerX + camera.projectX(x, y, z); this.points[index + 1] = centerY + camera.projectY(x, y, z);
 			// Diagnostic helpers use screen units; zoom fits the actual geometry, not giant helper arms.
-			this.points[index + 2] = this.points[index] + camera.horizontal(world.xx, world.xy, world.family === '3d' ? world.xz : 0) * AXIS_UNIT_PIXELS;
-			this.points[index + 3] = this.points[index + 1] + camera.vertical(world.xx, world.xy, world.family === '3d' ? world.xz : 0) * AXIS_UNIT_PIXELS;
-			this.points[index + 4] = this.points[index] + camera.horizontal(world.yx, world.yy, world.family === '3d' ? world.yz : 0) * AXIS_UNIT_PIXELS;
-			this.points[index + 5] = this.points[index + 1] + camera.vertical(world.yx, world.yy, world.family === '3d' ? world.yz : 0) * AXIS_UNIT_PIXELS;
+			this.points[index + 2] = this.points[index] + camera.horizontal(world.xx, world.xy * signY, world.family === '3d' ? world.xz : 0) * AXIS_UNIT_PIXELS;
+			this.points[index + 3] = this.points[index + 1] + camera.vertical(world.xx, world.xy * signY, world.family === '3d' ? world.xz : 0) * AXIS_UNIT_PIXELS;
+			this.points[index + 4] = this.points[index] + camera.horizontal(world.yx, world.yy * signY, world.family === '3d' ? world.yz : 0) * AXIS_UNIT_PIXELS;
+			this.points[index + 5] = this.points[index + 1] + camera.vertical(world.yx, world.yy * signY, world.family === '3d' ? world.yz : 0) * AXIS_UNIT_PIXELS;
 			this.points[index + 6] = world.family === '3d' ? this.points[index] + camera.horizontal(world.zx, world.zy, world.zz) * AXIS_UNIT_PIXELS : this.points[index];
 			this.points[index + 7] = world.family === '3d' ? this.points[index + 1] + camera.vertical(world.zx, world.zy, world.zz) * AXIS_UNIT_PIXELS : this.points[index + 1];
 		}
@@ -198,9 +199,9 @@ export class SceneViewportViewState {
 	/** Pointer motion consumes admitted preview resources without re-entering source or asset discovery. */
 	public projectPlacement(): void {
 		const placement = this.placementPreview, visuals = placement?.visuals;
-		this.placementCanvas.prepare(visuals, placement); this.placementModels.prepare(visuals, placement);
+		this.placementCanvas.prepare(visuals, placement); this.placementGeometry.prepare(visuals, placement);
 		this.placementCanvas.project(this.camera, this.bounds, this.allocationRevision);
-		this.placementModels.project(this.camera, this.bounds);
+		this.placementGeometry.project(this.camera, this.bounds);
 	}
 	public get canFrameSelection(): boolean {
 		const world = this.selected === undefined ? undefined : this.source?.worlds.get(this.selected);
@@ -209,7 +210,7 @@ export class SceneViewportViewState {
 	/** UI helpers are painted over geometry and therefore participate before the mesh depth hit. */
 	public pick(x: number, y: number): SceneSourceObject | undefined {
 		let picked: SceneSourceObject | undefined, distance = 36;
-		const represented = this.camera.mode === '2d' ? this.canvas.represented : this.models.represented;
+		const represented = this.camera.mode === '2d' ? this.canvas.represented : this.geometry.represented;
 		for (let index = 0; index < this.entries.length; index++) {
 			const entry = this.entries[index]; if (entry !== this.selected && represented.has(entry)) continue;
 			const offset = index * SCENE_VIEWPORT_POINT_STRIDE, dx = this.points[offset] - x, dy = this.points[offset + 1] - y;
@@ -218,10 +219,10 @@ export class SceneViewportViewState {
 		}
 		if (picked !== undefined) return picked;
 		return this.camera.mode === '2d' ? this.canvas.pick(x, y)
-			: this.models.pick(x - (this.bounds.left + this.bounds.right) / 2, y - (this.bounds.top + this.bounds.bottom) / 2, this.camera)?.entry;
+			: this.geometry.pick(x - (this.bounds.left + this.bounds.right) / 2, y - (this.bounds.top + this.bounds.bottom) / 2, this.camera)?.entry;
 	}
 	public frame(selected: SceneSourceObject | undefined, reading: 'initial' | 'manual' = 'manual'): boolean {
-		const family = selected === undefined ? this.camera.mode : this.source?.worlds.get(selected)?.family;
+		const family = selected === undefined || this.camera.mode === '3d' ? this.camera.mode : this.source?.worlds.get(selected)?.family;
 		if (family === undefined) return false;
 		this.frameEntries.clear();
 		if (selected !== undefined) {
@@ -235,12 +236,13 @@ export class SceneViewportViewState {
 		let count = 0;
 		if (family === '3d') {
 			const target = this.modelBounds;
-			if (this.models.frameBounds(selectedEntries, target)) count++;
+			if (this.geometry.frameBounds(selectedEntries, target)) count++;
 			if (this.source !== undefined) for (const entry of this.source.entries) {
-				if ((selectedEntries !== undefined && !selectedEntries.has(entry)) || this.models.represented.has(entry)) continue;
-				const world = this.source.worlds.get(entry); if (world === undefined || world.family !== '3d') continue;
-				if (count === 0) { target.originX = world.ox; target.originY = world.oy; target.originZ = world.oz; }
-				const x = world.ox - target.originX, y = world.oy - target.originY, z = world.oz - target.originZ;
+				if ((selectedEntries !== undefined && !selectedEntries.has(entry)) || this.geometry.represented.has(entry)) continue;
+				const world = this.source.worlds.get(entry); if (world === undefined) continue;
+				const worldY = world.family === '2d' ? -world.oy : world.oy, worldZ = world.family === '3d' ? world.oz : 0;
+				if (count === 0) { target.originX = world.ox; target.originY = worldY; target.originZ = worldZ; }
+				const x = world.ox - target.originX, y = worldY - target.originY, z = worldZ - target.originZ;
 				target.minX = Math.min(target.minX, x); target.minY = Math.min(target.minY, y); target.minZ = Math.min(target.minZ, z);
 				target.maxX = Math.max(target.maxX, x); target.maxY = Math.max(target.maxY, y); target.maxZ = Math.max(target.maxZ, z); count++;
 			}
@@ -262,7 +264,7 @@ export class SceneViewportViewState {
 	}
 	public dispose(): void {
 		this.disposed = true; this.unbindCamera(); this.listeners.clear(); this.entries.length = this.points.length = 0;
-		this.canvas.dispose(); this.placementCanvas.dispose(); this.images.dispose(); this.models.dispose(); this.placementModels.dispose(); this.modelAssets.dispose(); this.frameEntries.clear();
+		this.canvas.dispose(); this.placementCanvas.dispose(); this.images.dispose(); this.geometry.dispose(); this.placementGeometry.dispose(); this.modelAssets.dispose(); this.frameEntries.clear();
 		this.imageIds.clear(); this.visualSource = undefined; this.placementSource = undefined; this.placementPreview = undefined;
 		this.modelIds.clear();
 		this.source = this.projectedSource = this.modeSource = this.initialSource = undefined;

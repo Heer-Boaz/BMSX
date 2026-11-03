@@ -137,10 +137,10 @@ for (const gesture of ['pan', 'zoom', 'frameAll', 'frameSelection'] as const) te
 
 test('automatic 3D reading incorporates a later mounted model; orbit then retains the chosen camera', async t => {
 	const f = await fixture(t, MODEL_SOURCE), { viewport } = f;
-	assert.equal(viewport.camera.mode, '3d'); assert.equal(viewport.models.scene.instances.length, 0);
+	assert.equal(viewport.camera.mode, '3d'); assert.equal(viewport.geometry.scene.instances.length, 0);
 	const initial = viewport.camera.capture().space;
 	publishModel(f); viewport.refresh();
-	assert.ok(viewport.models.scene.instances.length > 0);
+	assert.ok(viewport.geometry.scene.instances.length > 0);
 	const updated = viewport.camera.capture().space;
 	assert.equal(updated.reading, 'initial'); assert.ok(updated.distance > initial.distance);
 	viewport.camera.orbit(17, 9); const manual = viewport.camera.capture();

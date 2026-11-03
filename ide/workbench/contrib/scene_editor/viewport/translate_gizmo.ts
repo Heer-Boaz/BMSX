@@ -27,6 +27,7 @@ export class SceneTranslationGizmo {
 	private startOriginX = 0; private startOriginY = 0;
 	private centerX = 0; private centerY = 0;
 	private mode: '2d' | '3d' = '2d';
+	private planar = false;
 	private readonly normal = new Float64Array(3);
 	private readonly eye = new Float64Array(3);
 	private readonly direction = new Float64Array(3);
@@ -40,19 +41,20 @@ export class SceneTranslationGizmo {
 		this.world = undefined;
 		this.projectedWorld = world; this.projectedRevision = revision; this.cameraRevision = camera.revision;
 		this.allocation = allocation; this.lineHeight = lineHeight; this.visibleAxes = this.visiblePlanes = 0;
-		if (world === undefined || world.family !== camera.mode || bounds.left >= bounds.right || bounds.top >= bounds.bottom) { this.hover = TranslateHandle.None; return; }
+		if (world === undefined || camera.mode === '2d' && world.family !== '2d' || bounds.left >= bounds.right || bounds.top >= bounds.bottom) { this.hover = TranslateHandle.None; return; }
+		const signY = camera.mode === '3d' && world.family === '2d' ? -1 : 1, originY = world.oy * signY;
 		const z = world.family === '3d' ? world.oz : 0;
-		if (camera.mode === '3d' && camera.depth(world.ox, world.oy, z) < camera.near) return;
+		if (camera.mode === '3d' && camera.depth(world.ox, originY, z) < camera.near) return;
 		this.world = world;
 		const centerX = (bounds.left + bounds.right) / 2, centerY = (bounds.top + bounds.bottom) / 2;
-		this.x = centerX + camera.projectX(world.ox, world.oy, z); this.y = centerY + camera.projectY(world.ox, world.oy, z);
+		this.x = centerX + camera.projectX(world.ox, originY, z); this.y = centerY + camera.projectY(world.ox, originY, z);
 		this.radius = lineHeight * 0.6;
 		const pixels = Math.min(lineHeight * 5, (bounds.right - bounds.left) * 0.28, (bounds.bottom - bounds.top) * 0.28);
-		const length = pixels * camera.unitsPerPixel(world.ox, world.oy, z);
-		for (let axis = 0; axis < (camera.mode === '2d' ? 2 : 3); axis++) {
-			const ex = axis === 0 ? length : 0, ey = axis === 1 ? length : 0, ez = axis === 2 ? length : 0;
-			const x = centerX + camera.projectX(ex, ey, ez, world.ox, world.oy, z);
-			const y = centerY + camera.projectY(ex, ey, ez, world.ox, world.oy, z), dx = x - this.x, dy = y - this.y;
+		const length = pixels * camera.unitsPerPixel(world.ox, originY, z);
+		for (let axis = 0; axis < (world.family === '2d' ? 2 : 3); axis++) {
+			const ex = axis === 0 ? length : 0, ey = axis === 1 ? length * signY : 0, ez = axis === 2 ? length : 0;
+			const x = centerX + camera.projectX(ex, ey, ez, world.ox, originY, z);
+			const y = centerY + camera.projectY(ex, ey, ez, world.ox, originY, z), dx = x - this.x, dy = y - this.y;
 			const span = Math.hypot(dx, dy);
 			// End-on axes have no usable screen lever, rather than an arbitrary replacement drag direction.
 			if (span < this.radius * 3) continue;
@@ -63,14 +65,14 @@ export class SceneTranslationGizmo {
 			points[8] = x - ux * head + uy * head * 0.5; points[9] = y - uy * head - ux * head * 0.5;
 			this.visibleAxes |= 1 << axis;
 		}
-		if (camera.mode === '3d') for (let plane = 0; plane < 3; plane++) {
+		if (camera.mode === '3d') for (let plane = 0; plane < (world.family === '2d' ? 1 : 3); plane++) {
 			const a = plane === 2 ? 1 : 0, b = plane === 0 ? 1 : 2, points = this.planes[plane];
 			for (let corner = 0; corner < 4; corner++) {
 				const u = (corner === 0 || corner === 3 ? 0.22 : 0.42) * length;
 				const v = (corner < 2 ? 0.22 : 0.42) * length;
 				const x = a === 0 ? u : 0, y = (a === 1 ? u : 0) + (b === 1 ? v : 0), zOffset = b === 2 ? v : 0;
-				points[corner * 2] = centerX + camera.projectX(x, y, zOffset, world.ox, world.oy, z);
-				points[corner * 2 + 1] = centerY + camera.projectY(x, y, zOffset, world.ox, world.oy, z);
+				points[corner * 2] = centerX + camera.projectX(x, y * signY, zOffset, world.ox, originY, z);
+				points[corner * 2 + 1] = centerY + camera.projectY(x, y * signY, zOffset, world.ox, originY, z);
 			}
 			points[8] = points[0]; points[9] = points[1];
 			let area = 0;
@@ -104,13 +106,15 @@ export class SceneTranslationGizmo {
 	public begin(handle: TranslateHandle, x: number, y: number, camera: SceneViewportCamera, bounds: Readonly<RectBounds>): boolean {
 		const world = this.world!;
 		this.mode = camera.mode; this.startX = x; this.startY = y;
+		this.planar = world.family === '2d';
 		this.startOriginX = world.ox; this.startOriginY = world.oy;
 		this.centerX = (bounds.left + bounds.right) / 2; this.centerY = (bounds.top + bounds.bottom) / 2;
 		this.delta.fill(0);
 		if (this.mode === '3d') {
-			camera.eyeRelativeTo(world.ox, world.oy, world.family === '3d' ? world.oz : 0, this.eye);
+			camera.eyeRelativeTo(world.ox, this.planar ? -world.oy : world.oy, world.family === '3d' ? world.oz : 0, this.eye);
 			const normal = this.normal;
-			if (handle === TranslateHandle.View) camera.rayDirection3D(0, 0, normal);
+			if (this.planar) { normal.fill(0); normal[2] = 1; }
+			else if (handle === TranslateHandle.View) camera.rayDirection3D(0, 0, normal);
 			else if (handle === TranslateHandle.X || handle === TranslateHandle.Y || handle === TranslateHandle.Z) {
 				normal.set(this.eye); normal[handle === TranslateHandle.X ? 0 : handle === TranslateHandle.Y ? 1 : 2] = 0;
 			} else { normal.fill(0); normal[handle === TranslateHandle.XY ? 2 : handle === TranslateHandle.XZ ? 1 : 0] = 1; }
@@ -138,6 +142,7 @@ export class SceneTranslationGizmo {
 			const distance = -(n[0] * eye[0] + n[1] * eye[1] + n[2] * eye[2]) / denominator;
 			if (distance < 0) return false;
 			dx = eye[0] + d[0] * distance - this.start[0]; dy = eye[1] + d[1] * distance - this.start[1]; dz = eye[2] + d[2] * distance - this.start[2];
+			if (this.planar) { dy = -dy; dz = 0; }
 		}
 		if ((this.active & TranslateHandle.X) === 0) dx = 0;
 		if ((this.active & TranslateHandle.Y) === 0) dy = 0;

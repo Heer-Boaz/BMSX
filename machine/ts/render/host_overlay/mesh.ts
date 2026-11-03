@@ -1,4 +1,8 @@
 import type { Affine3 } from '../../common/affine3';
+import type { HostBitmap } from './bitmap';
+
+/** Normalized UVs are affine in screen space, with point sampling and no vertex lighting. */
+export type HostMeshTexture = { readonly bitmap: HostBitmap; readonly uvs: Float32Array };
 
 export type HostMeshData = {
 	positions: Float32Array;
@@ -6,6 +10,9 @@ export type HostMeshData = {
 	indexComponentType?: 5121 | 5123 | 5125;
 	color: number;
 	doubleSided: boolean;
+	texture?: HostMeshTexture;
+	/** Painter-ordered surfaces blend and accept equal depth, without inventing Z offsets. */
+	layered?: boolean;
 };
 
 /** Immutable host-owned geometry; its provider retains the source generation. */
@@ -17,12 +24,15 @@ export class HostMesh {
 	public readonly drawCount: number;
 	public readonly color: number;
 	public readonly doubleSided: boolean;
+	public readonly texture: HostMeshTexture | undefined;
+	public readonly layered: boolean;
 	public constructor(data: HostMeshData) {
 		this.positions = data.positions; this.indices = data.indices;
 		this.indexComponentType = data.indexComponentType;
 		const count = data.indices === undefined ? data.positions.length / 3 : data.indices.length;
 		this.drawCount = count - count % 3;
 		this.color = data.color; this.doubleSided = data.doubleSided;
+		this.texture = data.texture; this.layered = data.layered === true;
 	}
 	public onDispose(listener: () => void): () => void {
 		this.release.add(listener);

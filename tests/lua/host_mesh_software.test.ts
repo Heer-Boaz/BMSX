@@ -8,6 +8,7 @@ import { RectRenderKind } from '../../machine/ts/render/shared/submissions';
 import { LAYER_2D_IDE } from '../../machine/ts/render/shared/layers';
 import { RenderPassLibrary } from '../../machine/ts/render/backend/pass/library';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { createHostTexturedMeshFixture } from '../helpers/host_textured_mesh';
 
 const IDENTITY: Affine3 = { xx: 1, xy: 0, xz: 0, yx: 0, yy: 1, yz: 0, zx: 0, zy: 0, zz: 1, ox: 0, oy: 0, oz: 0 };
 const CLIP_IDENTITY = new Float64Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
@@ -39,6 +40,27 @@ function pixel(pixels: Uint8Array, x: number, y: number, width = 8): number[] {
 	const offset = (y * width + x) * 4;
 	return [...pixels.subarray(offset, offset + 4)];
 }
+
+test('software textures are point sampled and affine, including homogeneous near clipping', t => {
+	const f = fixture(t, 32, 32), meshes = createHostTexturedMeshFixture(); t.after(() => meshes.dispose());
+	const affine = f.draw(meshes.affine);
+	assert.deepEqual(pixel(affine, 20, 24, 32), [0, 0, 255, 255], 'perspective-correct sampling would choose green');
+	assert.deepEqual(pixel(affine, 4, 8, 32), [0, 255, 255, 255]);
+	assert.deepEqual(pixel(f.draw(meshes.clipped), 17, 19, 32), [0, 0, 255, 255], 'clipping preserves the screen-space UV plane');
+	assert.deepEqual(pixel(f.pixels, 10, 10, 32), [0, 0, 0, 0], 'the portion before the near plane is clipped');
+});
+
+test('software planar layers keep transparent holes, coplanar painter order and source-over alpha', t => {
+	const f = fixture(t, 32, 32), meshes = createHostTexturedMeshFixture(); t.after(() => meshes.dispose());
+	const pixels = f.draw(meshes.layers);
+	assert.deepEqual(pixel(pixels, 3, 10, 32), [255, 255, 0, 255], 'alpha holes expose the model behind');
+	assert.deepEqual(pixel(pixels, 24, 8, 32), [255, 0, 0, 255]);
+	assert.deepEqual(pixel(pixels, 4, 24, 32), [0, 128, 0, 128], 'partial alpha is applied once, not at both render and composition');
+	assert.deepEqual(pixel(pixels, 27, 26, 32), [255, 0, 255, 255], 'later coplanar packets remain on top');
+	assert.deepEqual(pixel(f.draw(meshes.cutout), 4, 24, 32), [0, 128, 0, 128], 'depth-only textured meshes publish the same premultiplied target representation');
+	meshes.layerBitmap.update(new Uint8Array(16).fill(255), 2, 2); meshes.layers.changed();
+	assert.deepEqual(pixel(f.draw(meshes.layers), 4, 24, 32), [255, 255, 255, 255]);
+});
 
 // Exact pixels here are renderer algorithms under test: depth interpolation,
 // canonical clipping, half-open sample coverage and ordered UI compositing.

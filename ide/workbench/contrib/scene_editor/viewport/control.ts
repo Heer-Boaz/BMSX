@@ -300,7 +300,7 @@ export class SceneViewportControl implements PointerCaptureTarget {
 			this.locatePlacement(placement);
 		}
 		let anchor: Readonly<SceneViewportPoint> | undefined;
-		if (view.camera.mode === '3d') anchor = placement?.located ? placement : view.models.pick(x, y, view.camera);
+		if (view.camera.mode === '3d') anchor = placement?.located ? placement : view.geometry.pick(x, y, view.camera);
 		view.camera.zoom(-event.deltaY / 4, x, y, anchor);
 		if (this.viewValue === view && this.attachment === attachment && this.focusTarget.scope.contextGeneration === generation) view.refresh(); return true;
 	}

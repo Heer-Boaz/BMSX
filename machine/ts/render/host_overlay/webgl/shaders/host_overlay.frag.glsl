@@ -15,6 +15,10 @@ void main() {
 	if (v_texture_kind == 1u) texColor = texture(u_texture0, v_texcoord);
 	if (v_texture_kind == 2u) texColor = vec4(texture(u_frame, vec2(v_texcoord.x, 1.0 - v_texcoord.y)).rgb, 1.0);
 	if (v_texture_kind == 3u) texColor = texture(u_frame, v_texcoord);
-	if (v_texture_kind == 4u) texColor = texture(u_frame, vec2(v_texcoord.x, 1.0 - v_texcoord.y));
+	if (v_texture_kind == 4u) {
+		texColor = texture(u_frame, vec2(v_texcoord.x, 1.0 - v_texcoord.y));
+		// Mesh targets accumulate premultiplied layers; this pass blends straight alpha.
+		if (texColor.a > 0.0) texColor.rgb /= texColor.a;
+	}
 	outputColor = texColor * v_color_override;
 }
