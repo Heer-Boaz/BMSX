@@ -5,6 +5,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { BuildStoreLockedError } from '../../hosts/node/builds/errors';
 import { StudioBuildJobs } from '../../hosts/node/builds/jobs';
 import { WorkspaceProjects } from '../../hosts/node/workspace/projects';
 import { compareBuildVersions, isBuildTerminal, type StudioBuildRequest, type StudioBuildJob } from '../../hosts/common/studio_builds';
@@ -18,7 +19,7 @@ test('real worker builds, idempotent admission, cancellation and restart reconci
 	let projects = new WorkspaceProjects(process.cwd(), join(root, 'workspace'));
 	let jobs = await StudioBuildJobs.open(process.cwd(), root, projects);
 	t.after(async () => { await jobs.close(); await projects.close(); await rm(root, { recursive: true, force: true }); });
-	await assert.rejects(StudioBuildJobs.open(process.cwd(), root, projects), /locked/);
+	await assert.rejects(StudioBuildJobs.open(process.cwd(), root, projects), BuildStoreLockedError);
 	const request: StudioBuildRequest = { requestId: randomUUID(), target: 'cpu_soak', debug: true, optLevel: 0 };
 	const reordered = { optLevel: request.optLevel, debug: request.debug, target: request.target, requestId: request.requestId };
 	let running = 0;
@@ -192,6 +193,23 @@ test('existing server exposes the same durable jobs to HTTP and MCP without a br
 	}
 	const malformed = await fetch(`${address}/__bmsx__/builds/jobs/${randomUUID()}`, { method: 'PUT', headers, body: JSON.stringify({ ...request, target: '../outside' }) });
 	assert.equal(malformed.status, 400);
+});
+
+test('a second server reports the locked build store without a stack trace', { timeout: 30000 }, async t => {
+	const { spawn } = await import('node:child_process');
+	const { once } = await import('node:events');
+	const root = await mkdtemp(join(tmpdir(), 'bmsx-build-locked-'));
+	const owner = await BuildLedger.open(root);
+	const child = spawn(process.execPath, ['scripts/serve-dist.mjs', '--host', '127.0.0.1', '--port', '0',
+		'--build-store', root, '--project-state', join(root, 'workspace')], { stdio: ['ignore', 'ignore', 'pipe'] });
+	const closed = once(child, 'close');
+	t.after(async () => { child.kill('SIGKILL'); await closed; owner.close(); await rm(root, { recursive: true, force: true }); });
+	let log = '';
+	child.stderr.on('data', bytes => { log += bytes; });
+	const [code] = await closed;
+	assert.equal(code, 1, log);
+	assert.ok(log.includes(join(root, 'jobs.sqlite')), log); // Names what to look for; the wording is not the contract.
+	assert.doesNotMatch(log, /^\s+at /m);
 });
 
 test('a killed server releases ledger ownership and interrupts, rather than replays, its admitted job', { timeout: 30000 }, async t => {
