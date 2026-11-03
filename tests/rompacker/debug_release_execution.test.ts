@@ -27,7 +27,7 @@ for i = 1, 100 do
   count = count + i
 end
 return count`);
-	const inputs = await prepareRomInputs([root], [entry]);
+	const inputs = await prepareRomInputs([root], [entry], { kind: 'filesystem' });
 	const system = linkTestSystemBlua32(compileLuaSource(`cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`));
 	const builds = [];
 	for (const debug of [false, true]) {

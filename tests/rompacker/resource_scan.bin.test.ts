@@ -38,7 +38,7 @@ test('resource scan treats glTF buffer URIs as model-owned and keeps other .bin 
 		await writeFile(join(ROOT, 'models', 'mesh.bin'), Buffer.from([5, 6, 7, 8]));
 		await writeFile(join(ROOT, 'models', 'mesh.gltf'), JSON.stringify({ asset: { version: '2.0' }, buffers: [{ uri: 'mesh.bin', byteLength: 4 }] }));
 
-		const resources = await getResMetaList(await prepareRomInputs([ROOT], []), {
+		const resources = await getResMetaList(await prepareRomInputs([ROOT], [], { kind: 'filesystem' }), {
 			domain: 'cart',
 			sourceOnlyLuaRootFiles: [],
 			sourceOnlyLuaModuleRoots: [],
@@ -56,7 +56,7 @@ test('Lua assets retain separate module-local and workspace source paths', async
 	try {
 		await mkdir(ROOT, { recursive: true });
 		await writeFile(join(ROOT, 'entry.lua'), 'module<entry>\nreturn true');
-		const metadata = await getResMetaList(await prepareRomInputs([ROOT], []), {
+		const metadata = await getResMetaList(await prepareRomInputs([ROOT], [], { kind: 'filesystem' }), {
 			domain: 'cart',
 			sourceOnlyLuaRootFiles: [],
 			sourceOnlyLuaModuleRoots: [],
@@ -88,7 +88,7 @@ test('source-only scenario roots retain library source without base compilation'
 		await writeFile(scenarioPath, "return require('cartlib/trace')");
 
 		const libraryFiles = collectCartSourceFiles([libraryRoot]);
-		const inputs = await prepareRomInputs([resourcesRoot], [...libraryFiles, scenarioPath]);
+		const inputs = await prepareRomInputs([resourcesRoot], [...libraryFiles, scenarioPath], { kind: 'filesystem' });
 		const metadata = await getResMetaList(inputs, {
 			domain: 'cart',
 			virtualRoot: ROOT,

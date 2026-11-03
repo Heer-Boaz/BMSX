@@ -11,8 +11,10 @@ import { collectScenarioTestSourceFiles } from './scenario_test_sources';
 import { SYSTEM_ROM_NAME } from '../../toolchain/ts/rompack/system';
 import { LuaError } from '../../toolchain/ts/lua/errors';
 import { SCENARIO_TEST_SOURCE_SUFFIX } from '../../toolchain/ts/rompack/scenario_test';
+import type { FileAccess } from '../lib/file_access';
 
-export type MediaBuildOptions = { debug: boolean; optLevel: 0 | 1 | 2 | 3; force: boolean; respath?: string; systemRoot?: string }
+export type MediaBuildOptions = { debug: boolean; optLevel: 0 | 1 | 2 | 3; force: boolean; respath?: string; systemRoot?: string;
+	inputAccess: FileAccess }
 	& ({ domain: 'system' } | { domain: 'cart'; target: string });
 export type PreparedUnit = {
 	inputs: RomBuildInputs; recipe: RomBuildRecipe; sourceFiles: string[];
@@ -23,12 +25,12 @@ export type PreparedUnit = {
 export async function prepareMediaBuild(options: MediaBuildOptions, store: RomArtifactStore, stage: string, progress: BuildReporter): Promise<PreparedRomArtifact> {
 	progress({ type: 'phase', message: 'Capture inputs' });
 	const systemDirectory = join(stage, 'system');
-	const toolchain = romToolchainIdentity();
+	const toolchain = romToolchainIdentity(options.inputAccess);
 	const target = options.domain === 'cart' ? options.target : 'system';
 	const systemRoot = options.systemRoot ?? biosSourcePath;
 	const systemResources = options.domain === 'system' && options.respath !== undefined ? options.respath : join(systemRoot, 'res');
 	const systemSources = collectCartSourceFiles([systemRoot]);
-	const system: PreparedUnit = { inputs: await prepareRomInputs([systemResources], systemSources),
+	const system: PreparedUnit = { inputs: await prepareRomInputs([systemResources], systemSources, options.inputAccess),
 		recipe: { domain: 'system', debug: options.debug, optLevel: options.optLevel, projectRoot: join(systemResources, '..'), toolchain },
 		sourceFiles: systemSources, librarySourceFiles: [], testLibraryFiles: [], allLibraryFiles: [], scenarioSourceFiles: [] };
 	let cart: PreparedUnit | undefined;
@@ -40,7 +42,7 @@ export async function prepareMediaBuild(options: MediaBuildOptions, store: RomAr
 		const testModuleFiles = options.debug ? collectCartSourceFiles([join('tests', projectRoot)]) : [];
 		const scenarioSourceFiles = options.debug ? collectScenarioTestSourceFiles(projectRoot) : [];
 		const allLibraryFiles = [...librarySourceFiles, ...testLibraryFiles, ...testModuleFiles];
-		cart = { inputs: await prepareRomInputs([respath], [...sourceFiles, ...allLibraryFiles, ...scenarioSourceFiles]),
+		cart = { inputs: await prepareRomInputs([respath], [...sourceFiles, ...allLibraryFiles, ...scenarioSourceFiles], options.inputAccess),
 			recipe: { domain: 'cart', debug: options.debug, optLevel: options.optLevel, projectRoot, toolchain },
 			sourceFiles, librarySourceFiles, testLibraryFiles, allLibraryFiles, scenarioSourceFiles };
 	}

@@ -14,7 +14,7 @@ test('discovery, lint and packaged source consume captured bytes after disk chan
 	const path = join(root, 'entry.lua');
 	const source = 'module<entry>\nreturn 42';
 	await writeFile(path, source);
-	const inputs = await prepareRomInputs([root], [path]);
+	const inputs = await prepareRomInputs([root], [path], { kind: 'filesystem' });
 	await writeFile(path, 'module<entry>\nreturn (');
 	const metadata = await getResMetaList(inputs, { domain: 'cart', virtualRoot: root,
 		sourceOnlyLuaRootFiles: [], sourceOnlyLuaModuleRoots: [] });
@@ -23,7 +23,7 @@ test('discovery, lint and packaged source consume captured bytes after disk chan
 	assert.equal(assets[0].buffer!.toString(), source);
 	assert.equal(assets[0].update_timestamp, inputs.files.get(path)!.modifiedMs);
 	assert.equal(assets[0].program_module, true);
-	assert.notEqual((await prepareRomInputs([root], [])).identity, inputs.identity);
+	assert.notEqual((await prepareRomInputs([root], [], { kind: 'filesystem' })).identity, inputs.identity);
 });
 
 test('content and membership changes invalidate even when mtimes do not advance', async t => {
@@ -31,20 +31,20 @@ test('content and membership changes invalidate even when mtimes do not advance'
 	t.after(() => rm(root, { recursive: true, force: true }));
 	const path = join(root, 'data.bin');
 	await writeFile(path, 'first');
-	const initial = await prepareRomInputs([root], []);
+	const initial = await prepareRomInputs([root], [], { kind: 'filesystem' });
 	const metadata = await stat(path);
-	assert.equal((await prepareRomInputs([root], [])).identity, initial.identity);
-	assert.notEqual((await prepareRomInputs([], [path])).identity, initial.identity);
+	assert.equal((await prepareRomInputs([root], [], { kind: 'filesystem' })).identity, initial.identity);
+	assert.notEqual((await prepareRomInputs([], [path], { kind: 'filesystem' })).identity, initial.identity);
 	await writeFile(path, 'other');
 	await utimes(path, metadata.atime, metadata.mtime);
-	const edited = await prepareRomInputs([root], []);
+	const edited = await prepareRomInputs([root], [], { kind: 'filesystem' });
 	assert.notEqual(edited.identity, initial.identity);
 	const moved = join(root, 'moved.bin');
 	await rename(path, moved);
-	const renamed = await prepareRomInputs([root], []);
+	const renamed = await prepareRomInputs([root], [], { kind: 'filesystem' });
 	assert.notEqual(renamed.identity, edited.identity);
 	await rm(moved);
-	assert.notEqual((await prepareRomInputs([root], [])).identity, renamed.identity);
+	assert.notEqual((await prepareRomInputs([root], [], { kind: 'filesystem' })).identity, renamed.identity);
 });
 
 test('GLTF buffers and images outside the resource root are captured before conversion', async t => {
@@ -60,7 +60,7 @@ test('GLTF buffers and images outside the resource root are captured before conv
 	await writeFile(mesh, JSON.stringify({ asset: { version: '2.0' }, buffers: [{ uri: '../geometry.bin', byteLength: vertices.byteLength }],
 		bufferViews: [{ buffer: 0, byteLength: vertices.byteLength }], accessors: [{ bufferView: 0, componentType: 5126, count: 3, type: 'VEC3' }],
 		meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }], images: [{ uri: '../texture.png' }] }));
-	const inputs = await prepareRomInputs([resources], []);
+	const inputs = await prepareRomInputs([resources], [], { kind: 'filesystem' });
 	assert.ok(inputs.modelBufferFiles.has(buffer));
 	assert.equal(inputs.files.size, 3);
 	await writeFile(buffer, Buffer.from([9, 10, 11, 12]));
@@ -68,5 +68,5 @@ test('GLTF buffers and images outside the resource root are captured before conv
 	const model = await loadGLTFModel(inputs.models.get(mesh)!, 'mesh');
 	assert.deepEqual(new Uint8Array(model.imageBuffers[0]), new Uint8Array([5, 6, 7, 8]));
 	assert.deepEqual(model.meshes[0].primitives[0].positions, vertices);
-	assert.notEqual((await prepareRomInputs([resources], [])).identity, inputs.identity);
+	assert.notEqual((await prepareRomInputs([resources], [], { kind: 'filesystem' })).identity, inputs.identity);
 });

@@ -44,7 +44,7 @@ test('directory creation persists an empty namespace entry with implicit parents
 	assert.equal((await createDirectory('cart/http/empty')).status, 204);
 	const reopened = new DiskWorkspaceRecordProvider(root);
 	assert.deepEqual(await reopened.readDirectory('cart/http/empty'), []);
-	assert.deepEqual((await prepareRomInputs([root], [])).resourceFiles, [], 'empty directories do not manufacture source records');
+	assert.deepEqual((await prepareRomInputs([root], [], { kind: 'filesystem' })).resourceFiles, [], 'empty directories do not manufacture source records');
 });
 
 test('native and HTTP directory creation share final-name admission and preserve file collisions', async t => {
@@ -88,13 +88,13 @@ test('build capture during Save sees the previous complete file, then the newly 
 	const saving = save('map.yaml', next, 200000);
 	try {
 		await writing.promise;
-		const captured = await prepareRomInputs([root], []);
+		const captured = await prepareRomInputs([root], [], { kind: 'filesystem' });
 		assert.deepEqual(captured.resourceFiles, [path], 'staging files are not ROM inputs');
 		assert.equal(captured.files.get(path)!.text, previous);
 		assert.equal(captured.files.get(path)!.modifiedMs, 100000);
 	} finally { resume.resolve(); }
 	assert.equal((await saving).status, 204);
-	const published = await prepareRomInputs([root], []);
+	const published = await prepareRomInputs([root], [], { kind: 'filesystem' });
 	assert.deepEqual(published.resourceFiles, [path]);
 	assert.equal(published.files.get(path)!.text, next);
 	assert.equal(published.files.get(path)!.modifiedMs, 200000);
@@ -114,7 +114,7 @@ test('exclusive creation stays outside build inputs until the complete source is
 	const saving = save('new.yaml', 'rooms: [new]\n', 200000, true);
 	try {
 		await writing.promise;
-		assert.deepEqual((await prepareRomInputs([root], [])).resourceFiles, []);
+		assert.deepEqual((await prepareRomInputs([root], [], { kind: 'filesystem' })).resourceFiles, []);
 	} finally { resume.resolve(); }
 	assert.equal((await saving).status, 204);
 	assert.equal((await save('new.yaml', 'rooms: [other]\n', 300000, true)).status, 412);
@@ -135,7 +135,7 @@ test('an incomplete failed Save never changes the previous source or publishes a
 	});
 	assert.equal((await save('map.yaml', 'rooms: [new]\n', 200000)).status, 500);
 	assert.equal((await save('new.yaml', 'rooms: [new]\n', 200000, true)).status, 500);
-	const captured = await prepareRomInputs([root], []);
+	const captured = await prepareRomInputs([root], [], { kind: 'filesystem' });
 	assert.deepEqual(captured.resourceFiles, [path]);
 	assert.equal(captured.files.get(path)!.text, previous);
 	assert.equal(captured.files.get(path)!.modifiedMs, 100000);
@@ -169,7 +169,7 @@ test('direct disk saves publish bytes and timestamps together through the same o
 		const files = collectCartSourceFiles([root]);
 		assert.deepEqual(files, [path], 'filesystem source discovery excludes staging');
 		assert.deepEqual(await discoverWorkspaceSourceFiles(provider, '', false), ['entry.lua'], 'Studio source discovery excludes staging');
-		const captured = await prepareRomInputs([root], files);
+		const captured = await prepareRomInputs([root], files, { kind: 'filesystem' });
 		assert.deepEqual(captured.resourceFiles, [path]);
 		assert.equal(captured.files.get(path)!.text, 'return 1');
 		assert.equal(captured.files.get(path)!.modifiedMs, 100000);

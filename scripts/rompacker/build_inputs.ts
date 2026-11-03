@@ -5,6 +5,7 @@ import { extname, join, relative, resolve } from 'node:path';
 import { load as parseYaml } from 'js-yaml';
 import { parseCartManifest, type CartManifest } from '../../machine/ts/rompack/manifest';
 import { prepareGLTFDocument, type GLTFDocument } from './gltfloader';
+import { resolveReadPath, type FileAccess } from '../lib/file_access';
 
 export const biosResPath = './machine/bios/res';
 export const biosSourcePath = './machine/bios';
@@ -38,25 +39,28 @@ export function getRomManifest(inputs: RomBuildInputs): CartManifest | null {
 	return parseCartManifest(parseYaml(inputs.files.get(files[0])!.text), `ROM manifest "${files[0]}"`);
 }
 
-async function collectResources(directory: string, files: string[]): Promise<void> {
-	const entries = await readdir(directory, { withFileTypes: true });
+async function collectResources(directory: string, files: string[], access: FileAccess): Promise<void> {
+	const actualDirectory = resolveReadPath(access, directory);
+	const entries = await readdir(actualDirectory, { withFileTypes: true });
 	for (const entry of entries) {
 		if (entry.name.includes('_ignore') || entry.name.toLowerCase() === '.bmsx') continue;
 		const path = join(directory, entry.name);
-		const directoryEntry = entry.isSymbolicLink() ? (await stat(path)).isDirectory() : entry.isDirectory();
-		if (directoryEntry) await collectResources(path, files);
+		const directoryEntry = entry.isSymbolicLink()
+			? (await stat(resolveReadPath(access, path))).isDirectory()
+			: entry.isDirectory();
+		if (directoryEntry) await collectResources(path, files, access);
 		else if (!RESOURCE_SCAN_EXCLUDE.has(extname(entry.name).toLowerCase())) files.push(resolve(path));
 	}
 }
 
 /** Preparation owns all disk access, including model dependencies outside resource roots. */
-export async function prepareRomInputs(resourceRoots: readonly string[], sourceFiles: readonly string[]): Promise<RomBuildInputs> {
+export async function prepareRomInputs(resourceRoots: readonly string[], sourceFiles: readonly string[], access: FileAccess): Promise<RomBuildInputs> {
 	const files = new Map<string, RomInputFile>();
 	const capture = (path: string): RomInputFile => {
 		path = resolve(path);
 		let file = files.get(path);
 		if (file === undefined) {
-			const descriptor = openSync(path, 'r');
+			const descriptor = openSync(resolveReadPath(access, path), 'r');
 			try {
 				const metadata = fstatSync(descriptor);
 				file = new RomInputFile(path, readFileSync(descriptor), metadata.mtimeMs);
@@ -66,7 +70,7 @@ export async function prepareRomInputs(resourceRoots: readonly string[], sourceF
 		return file;
 	};
 	const discovered: string[] = [];
-	for (const root of resourceRoots) await collectResources(root, discovered);
+	for (const root of resourceRoots) await collectResources(root, discovered, access);
 	const resourceFiles = [...new Set(discovered)].sort();
 	for (const path of resourceFiles) capture(path);
 	for (const path of sourceFiles) capture(path);

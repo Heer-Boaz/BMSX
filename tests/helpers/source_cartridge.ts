@@ -28,7 +28,7 @@ export async function buildSourceCartridgeFixture(
 	}
 	const programFiles = collectCartSourceFiles([root]);
 	const libraryFiles = collectCartSourceFiles(['cartlib', 'testlib']);
-	const inputs = await prepareRomInputs([], [...programFiles, ...libraryFiles]);
+	const inputs = await prepareRomInputs([], [...programFiles, ...libraryFiles], { kind: 'filesystem' });
 	const metadata = await getResMetaList(inputs, {
 		domain: 'cart', extraLuaFiles: programFiles, virtualRoot: root,
 		libraryLuaFiles: libraryFiles, sourceOnlyLuaRootFiles: [],

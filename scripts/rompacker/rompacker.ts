@@ -39,7 +39,7 @@ async function main(): Promise<void> {
 	ui.printBanner(); ui.bullet('Target', selection.domain === 'cart' ? selection.target : 'system'); ui.bullet('Recipe', `${values.debug ? 'debug' : 'release'} -O${values.opt}`);
 	const progress = ui.createProgress(values.verbose);
 	try {
-		const result = await prepareMediaBuild({ ...selection, debug: values.debug, optLevel: Number(values.opt) as 0 | 1 | 2 | 3, force: values.force,
+		const result = await prepareMediaBuild({ ...selection, debug: values.debug, optLevel: Number(values.opt) as 0 | 1 | 2 | 3, force: values.force, inputAccess: { kind: 'filesystem' },
 			respath: values.respath ?? process.env.RES_PATH }, store, stage, progress.report);
 		if (!result.reused) {
 			progress.report({ type: 'phase', message: 'Publish artifact' });

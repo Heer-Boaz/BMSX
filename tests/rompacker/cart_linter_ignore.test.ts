@@ -19,7 +19,7 @@ test('cart linter ignores non-runtime source files', async () => {
 
 		const files = collectCartSourceFiles([root]);
 		assert.deepEqual(files.map(file => basename(file)), ['entry.lua']);
-		const inputs = await prepareRomInputs([], files);
+		const inputs = await prepareRomInputs([], files, { kind: 'filesystem' });
 		await lintCartSources({ sources: [...inputs.files.values()], profile: 'cart' });
 	} finally {
 		await rm(root, { recursive: true, force: true });
