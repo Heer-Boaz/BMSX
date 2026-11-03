@@ -6,6 +6,8 @@ local prefab<const> = require('cartlib/world/prefab')
 local object_2d<const> = require('cartlib/world/object_2d')
 local sprite_object<const> = require('cartlib/sprite')
 local input_system<const> = require('cartlib/input/input_system')
+local input<const> = require('cartlib/input/input')
+local clock<const> = require('cartlib/clock')
 local fsm_system<const> = require('cartlib/fsm/fsm_system')
 local bt_system<const> = require('cartlib/behaviour_tree/bt_system')
 local timeline_system<const> = require('cartlib/timeline/timeline_system')
@@ -33,6 +35,9 @@ prefab.define({ def_id = 'studio_test.marker', class = sprite_object,
 local root_scene<const> = require('scenes/root')
 root_scene.register()
 require('scenes/space')
+require('scenes/textured')
+input.add_player(1)
+input.push_context(1, 'studio_test', { textured = { 'KeyT' } }, {}, {}, 0, true)
 local boolean_scene<const> = require('scenes/boolean')
 boolean_scene.register()
 local text_scene<const> = require('scenes/text')
@@ -58,6 +63,11 @@ studio_test_ready = true
 studio_test_rendered_frames = 0
 while true do
 	world:update()
+	-- T selects the independent model/render fixture; ordinary test boot stays unchanged.
+	if input.is_action_just_pressed(1, clock.frame, 'textured') then
+		world:clear()
+		scene_library.instantiate('studio_test.textured')
+	end
 	vblank.wait()
 	world:render()
 	studio_test_rendered_frames = studio_test_rendered_frames + 1

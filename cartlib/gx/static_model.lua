@@ -1,10 +1,12 @@
--- Static authored-pose, opaque constant-color unlit rendering. Resource nodes
+-- Static authored-pose, opaque flat-color/textured unlit rendering. Resource nodes
 -- remain immutable mesh attachments; they never become World spatial nodes.
 local model_asset<const> = require('cartlib/gx/model_asset')
 local model_batch<const> = require('cartlib/gx/model_batch')
+local atlas<const> = require('cartlib/gx/atlas')
 
 local static_model<const> = {}
-local feature_names<const> = {'base-color textures','non-opaque alpha','vertex colors','morphing','skinning'}
+local feature_names<const> = {'base-color textures','non-opaque alpha','vertex colors','morphing','skinning',
+	'textures without a packed image of at most 256x256 and UVs within one page'}
 local indexed_kernels<const> = {
 	[5121] = model_batch.indexed8,
 	[5123] = model_batch.indexed16,
@@ -25,10 +27,11 @@ function static_model.resolve(id, scene_index)
 	local cached<const> = scenes[scene_index]
 	if cached ~= nil then return cached end
 	local source<const>: *model_scene = asset.scenes + scene_index * sizeof(model_scene)
-	if source->features ~= 0 then
+	local unsupported<const> = source->features & ~1
+	if unsupported ~= 0 then
 		local names<const> = {}
 		for index = 1, #feature_names do
-			if (source->features & (1 << (index-1))) ~= 0 then
+			if (unsupported & (1 << (index-1))) ~= 0 then
 				names[#names+1] = feature_names[index]
 			end
 		end
@@ -38,6 +41,8 @@ function static_model.resolve(id, scene_index)
 	if mesh_cache == nil then mesh_cache = {}; asset._static_meshes = mesh_cache end
 	local meshes<const>: *model_mesh = asset.meshes
 	local materials<const>: *model_material = asset.materials
+	local texture_cache = asset._static_textures
+	if texture_cache == nil then texture_cache = {}; asset._static_textures = texture_cache end
 	local parts<const> = {}
 	local source_parts<const>: *model_part = asset.parts
 	for index = 0, source->part_count - 1 do
@@ -49,9 +54,21 @@ function static_model.resolve(id, scene_index)
 			for primitive_index = mesh->first_primitive, mesh->first_primitive + mesh->primitive_count - 1 do
 				local record<const>: *model_primitive = asset.primitives + primitive_index * sizeof(model_primitive)
 				local command_word, double_sided = 0x20ffffff, false
+				local texture
 				if record->material_index ~= 0xffffffff then
 					local material<const>: *model_material = materials + record->material_index * sizeof(model_material)
 					command_word, double_sided = material->command, material->double_sided ~= 0
+					if material->texture_index ~= 0xffffffff then
+						texture = texture_cache[material->texture_index]
+						if texture == nil then
+							local image<const>: *model_texture = asset.textures + material->texture_index * sizeof(model_texture)
+							local allocation<const> = atlas.create(asset.addr + image->stream_offset, image->stream_word_count,
+								2, image->width, image->height, (image->width * image->height + 1) >> 1, 0)
+							texture = { _texture = allocation, source_x = 0, source_y = 0, width = image->width, height = image->height }
+							atlas.bind_source(allocation, texture)
+							texture_cache[material->texture_index] = texture
+						end
+					end
 				end
 				local queue = model_batch.triangles
 				local indices = 0
@@ -62,6 +79,7 @@ function static_model.resolve(id, scene_index)
 				primitives[#primitives + 1] = { asset = asset, positions = asset.addr + record->positions_offset,
 					position_scalar_count = record->position_scalar_count, indices = indices,
 					index_count = record->index_count, command_word = command_word, double_sided = double_sided,
+					texture = texture, texcoords = asset.addr + record->texcoords_offset,
 					queue = queue }
 			end
 			mesh_cache[part->mesh] = primitives

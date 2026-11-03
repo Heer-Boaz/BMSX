@@ -5,12 +5,12 @@ import type { GLTFModel, GLTFNode } from './gltf';
 // Rich models always pack; binding a scene to the static-unlit renderer admits
 // its aggregate capabilities once, before it can enter a render pass.
 export const MODEL_STATIC_FEATURE = {
-	texture: 1, alpha: 2, vertexColor: 4, morph: 8, skin: 16,
+	texture: 1, alpha: 2, vertexColor: 4, morph: 8, skin: 16, textureLayout: 32,
 } as const;
 
 export type ModelStaticPart = { node: number; mesh: number; affine: Affine3 };
 export type ModelStaticScene = { firstPart: number; partCount: number; features: number };
-export type ModelStaticMaterial = { command: number; color: number; doubleSided: boolean; features: number };
+export type ModelStaticMaterial = { command: number; color: number; doubleSided: boolean; features: number; textureIndex: number | undefined };
 
 function nodeAffine(node: GLTFNode): Affine3 {
 	const matrix = node.matrix;
@@ -27,19 +27,36 @@ function nodeAffine(node: GLTFNode): Affine3 {
 export function prepareModelStaticScenes(model: GLTFModel) {
 	const materials: ModelStaticMaterial[] = (model.materials ?? []).map(material => {
 		let features = 0;
-		if (material.baseColorTexture !== undefined) features |= MODEL_STATIC_FEATURE.texture;
+		const textured = material.baseColorTexture !== undefined;
+		const textureIndex = textured ? model.textures[material.baseColorTexture].source : undefined;
+		if (textured) {
+			features |= MODEL_STATIC_FEATURE.texture;
+			const image = model.textureImages?.[textureIndex];
+			if (image === undefined || image.width > 256 || image.height > 256) features |= MODEL_STATIC_FEATURE.textureLayout;
+		}
 		if (material.alphaMode !== undefined && material.alphaMode !== 'OPAQUE') features |= MODEL_STATIC_FEATURE.alpha;
 		const color = material.baseColorFactor;
 		const r = Math.round((color?.[0] ?? 1) * 255), g = Math.round((color?.[1] ?? 1) * 255), b = Math.round((color?.[2] ?? 1) * 255);
-		return { command: (0x20000000 | (r & 255) | ((g & 255) << 8) | ((b & 255) << 16)) >>> 0,
+		const cr = textured ? Math.trunc((r * 128 + 127) / 255) : r;
+		const cg = textured ? Math.trunc((g * 128 + 127) / 255) : g;
+		const cb = textured ? Math.trunc((b * 128 + 127) / 255) : b;
+		return { command: ((textured ? 0x24000000 : 0x20000000) | (cr & 255) | ((cg & 255) << 8) | ((cb & 255) << 16)) >>> 0,
 			color: (0xff000000 | ((r & 255) << 16) | ((g & 255) << 8) | (b & 255)) >>> 0,
-			doubleSided: material.doubleSided === true, features };
+			doubleSided: material.doubleSided === true, features, textureIndex };
 	});
 	const meshFeatures: number[] = [];
 	for (const mesh of model.meshes) {
 		let combined = 0;
 		for (const primitive of mesh.primitives) {
 			let features = primitive.materialIndex === undefined ? 0 : materials[primitive.materialIndex].features;
+			if ((features & MODEL_STATIC_FEATURE.texture) !== 0) {
+				const material = model.materials[primitive.materialIndex];
+				const uvSet = material.baseColorTexCoord ?? 0;
+				const uv = uvSet === 0 ? primitive.texcoords : uvSet === 1 ? primitive.texcoords1 : undefined;
+				// The static pass binds one page per primitive. Tiled coordinates
+				// require geometry subdivision, not wrapping each vertex separately.
+				if (uv === undefined || uv.some(value => value < 0 || value > 1)) features |= MODEL_STATIC_FEATURE.textureLayout;
+			}
 			if (primitive.colors !== undefined) features |= MODEL_STATIC_FEATURE.vertexColor;
 			if (primitive.morphPositions?.length || primitive.morphNormals?.length || primitive.morphTangents?.length)
 				features |= MODEL_STATIC_FEATURE.morph;

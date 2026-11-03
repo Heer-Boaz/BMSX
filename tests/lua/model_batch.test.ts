@@ -11,6 +11,8 @@ import { materializeCpuCompletionValues } from './cpu_test_harness';
 const modules = ['cartlib/gx/gp0', 'cartlib/gx/model_batch'].map(path => ({
 	path, source: readFileSync(`${path}.lua`, 'utf8'),
 }));
+modules.push({ path: 'cartlib/gx/atlas', source: "return {admit=function() error('untextured batch admitted a texture') end}" },
+	{ path: 'cartlib/gx/command_list', source: "return {submit=function() error('untextured batch bypassed its packet writer') end}" });
 
 // ROM-resident f32 XYZ and three declared index widths feed the production
 // batch. The only stand-in is the packed-lane submission boundary, observed
@@ -167,7 +169,7 @@ return count,widths_same,w0,w1,w2,reflected_count,back_count,double_count,draw.c
 		assert.deepEqual(values, [3, true, sxy(148, 81), sxy(168, 161), sxy(168, 81), 1, 0, 1, 0]);
 	});
 
-	test(`model batch globally orders depth and retained component identity without warm heap churn (O${optLevel})`, () => {
+	test(`model batch globally orders depth and retained component identity without warm heap churn (O${optLevel})`, t => {
 		const { cpu, values } = run(`
 probe={}
 function probe.steady(iterations)
@@ -219,5 +221,6 @@ return draw.count,draw.commands[1],draw.commands[2],draw.commands[3],draw.comman
 		const clippedProfile = profileWarmGuestKernel(cpu, clipped, 128);
 		assert.equal(clippedProfile.reservations, 0, 'warm clipped polygon generation and sorting allocate no guest heap');
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [256]);
+		t.diagnostic(`guest instructions/frame: sorted=${profile.cycles / 128}, clipped=${clippedProfile.cycles / 128}; allocations=${profile.reservations + clippedProfile.reservations}`);
 	});
 }

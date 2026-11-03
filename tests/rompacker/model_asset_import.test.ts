@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import test from 'node:test';
+import { PNG } from 'pngjs';
 import { createLoadedProjectSourceCatalog } from '../../ide/runtime/sources';
 import { parseCartHeader } from '../../machine/ts/rompack/format';
 import { CART_ROM_HEADER_SIZE } from '../../machine/ts/spec/bmsx/rom_package';
@@ -13,13 +14,16 @@ import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import { encodeRomToc } from '../../toolchain/ts/rompack/toc_encode';
 import { createTestRuntimeRomPayload } from '../helpers/runtime_sources';
 
-/** External glTF inputs, not a gameplay cart or a substituted model decoder.
- * Image bytes are opaque here; their codec is not this import/transport contract. */
+/** External glTF inputs, not a gameplay cart or a substituted model decoder. */
 function fixture() {
 	const positions = new Float32Array([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0]);
 	const uv = new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]), uv1 = new Float32Array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]);
 	const indexValues = [0, 1, 2, 0, 2, 3], indices = [new Uint8Array(indexValues), new Uint16Array(indexValues), new Uint32Array(indexValues)];
-	const morphNormals = new Float32Array(12), image = new Uint8Array([10, 20, 30]);
+	const png = (r: number, g: number, b: number) => {
+		const image = new PNG({ width: 1, height: 1 }); image.data.set([r, g, b, 255]);
+		return new Uint8Array(PNG.sync.write(image));
+	};
+	const morphNormals = new Float32Array(12), image = png(10, 20, 30), unused = png(1, 2, 3), used = png(40, 50, 60);
 	const normals = new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]);
 	const data = [positions, uv, uv1, ...indices, morphNormals, image, normals];
 	const json = {
@@ -56,10 +60,10 @@ function fixture() {
 	};
 	const path = resolve('model-fixture', 'scene.gltf'), files = new Map(data.map((value, index) =>
 		[resolve('model-fixture', `${index}.bin`), new Uint8Array(value.buffer, value.byteOffset, value.byteLength)]));
-	files.set(resolve('model-fixture', 'unused.png'), new Uint8Array([1]));
-	files.set(resolve('model-fixture', 'used.png'), new Uint8Array([40, 50]));
+	files.set(resolve('model-fixture', 'unused.png'), unused);
+	files.set(resolve('model-fixture', 'used.png'), used);
 	const document = prepareGLTFDocument(Buffer.from(JSON.stringify(json)), path, file => files.get(file)!);
-	return { document, positions, uv1, indices, image };
+	return { document, positions, uv1, indices, image, unused, used };
 }
 
 test('external mesh instances survive the real resource packer, package reader and source catalog', async t => {
@@ -93,9 +97,9 @@ test('external mesh instances survive the real resource packer, package reader a
 	assert.deepEqual(model.textures!.slice(0, 2), [{ source: 2, sampler: 1 }, { source: 2, sampler: 0 }]);
 	assert.equal(model.textures![2].source, undefined); assert.equal(model.textures![2].sampler, undefined);
 	assert.deepEqual(model.samplers, f.document.json.samplers);
-	assert.deepEqual(model.imageBuffers, [new Uint8Array([1]), f.image, new Uint8Array([40, 50])]);
+	assert.deepEqual(model.imageBuffers, [f.unused, f.image, f.used]);
 	for (const image of model.imageBuffers!) assert.ok(image.buffer === bytes.buffer, 'images borrow this exact immutable packed generation');
-	assert.equal(model.imageBuffers![1].byteOffset, prefix.entries[0].model_texture_start! + 1);
+	assert.equal(model.imageBuffers![1].byteOffset, prefix.entries[0].model_texture_start! + f.unused.length);
 });
 
 test('accessors cannot read beyond their declared external buffer view into another payload', () => {

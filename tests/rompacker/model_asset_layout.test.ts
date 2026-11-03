@@ -39,9 +39,9 @@ test('model directories expose one aligned geometry generation without deseriali
 	const richLength = view.getUint32(MODEL_ASSET_HEADER.richLength, true);
 	const meshDirectoryOffset = view.getUint32(MODEL_ASSET_HEADER.meshDirectoryOffset, true);
 	const primitiveDirectoryOffset = view.getUint32(MODEL_ASSET_HEADER.primitiveDirectoryOffset, true);
-	assert.equal(MODEL_ASSET_HEADER_BYTE_LENGTH, 52);
+	assert.equal(MODEL_ASSET_HEADER_BYTE_LENGTH, 60);
 	assert.equal(MODEL_MESH_BYTE_LENGTH, 8);
-	assert.equal(MODEL_PRIMITIVE_BYTE_LENGTH, 24);
+	assert.equal(MODEL_PRIMITIVE_BYTE_LENGTH, 28);
 	assert.equal(meshDirectoryOffset, MODEL_ASSET_HEADER_BYTE_LENGTH);
 	assert.equal(view.getUint32(MODEL_ASSET_HEADER.meshCount, true), 3);
 	assert.equal(primitiveDirectoryOffset, meshDirectoryOffset + 3 * MODEL_MESH_BYTE_LENGTH);
@@ -110,4 +110,22 @@ test('model directories expose one aligned geometry generation without deseriali
 	assert.equal(loaded.scene, model.scene);
 	assert.deepEqual(new Uint32Array(loaded.meshes[1].primitives[0].positions.buffer,
 		loaded.meshes[1].primitives[0].positions.byteOffset, positions.length), positionWords);
+});
+
+test('interned native views distinguish present empty streams from following bytes and other index widths', () => {
+	const positions = new Float32Array([1, 2, 3]);
+	const { buffer } = packModelAsset({ name: 'empty-spans', meshes: [{ primitives: [
+		{ positions: new Float32Array(), indices: new Uint8Array(), indexComponentType: 5121 },
+		{ positions, indices: new Uint16Array(), indexComponentType: 5123 },
+		{ positions, indices: new Uint32Array(), indexComponentType: 5125 },
+		{ positions: new Float32Array([4, 5, 6]) },
+	] }] });
+	const primitives = loadModelFromBuffer('empty-spans', buffer).meshes[0].primitives;
+	assert.equal(primitives[0].positions.length, 0);
+	assert.deepEqual(primitives[1].positions, positions);
+	assert.ok(primitives[1].positions === primitives[2].positions);
+	for (let index = 0; index < 3; index++) {
+		assert.equal(primitives[index].indices.length, 0);
+		assert.equal(primitives[index].indices.BYTES_PER_ELEMENT, 1 << index);
+	}
 });

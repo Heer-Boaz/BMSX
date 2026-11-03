@@ -59,6 +59,16 @@ struct gp0_triangle_packet
 	position2: word
 end
 
+struct gp0_textured_triangle_packet
+	command: word
+	position0: word
+	uv0: word
+	position1: word
+	uv1: word
+	position2: word
+	uv2: word
+end
+
 local textured_rectangle_packet_size<const> = sizeof(gp0_textured_rectangle_packet)
 local fixed_textured_rectangle_packet_size<const> = sizeof(gp0_fixed_textured_rectangle_packet)
 local rectangle_packet_size<const> = sizeof(gp0_rectangle_packet)
@@ -253,14 +263,14 @@ end
 -- prefix before streaming from offset zero, where four-word triangles cannot
 -- straddle DMA admission blocks. Every run completes its RAM reads before this
 -- storage is reused; GPU mode and drawing offset remain in the ordered stream.
-function draw_list:triangle_words_batch(commands, xy0, xy1, xy2, order, count)
+function draw_list:triangle_words_batch(commands, xy0, xy1, xy2, order, count, first)
 	if count == 0 then
 		return
 	end
 	command_list.submit(self)
 	local words<const>: *word = self.words
 	local triangles_per_run<const> = self.word_capacity >> 2
-	local first = 1
+	first = first or 1
 	while first <= count do
 		local last = first + triangles_per_run - 1
 		if last > count then last = count end
@@ -278,6 +288,25 @@ function draw_list:triangle_words_batch(commands, xy0, xy1, xy2, order, count)
 		command_list.submit(self)
 		first = last + 1
 	end
+end
+
+-- Page-local UV words and one admitted Direct16 page. Keep seven-word packets
+-- atomic within DMA blocks, streaming retained storage without face objects.
+function draw_list:textured_triangle_words_batch(commands, xy0, xy1, xy2, uv0, uv1, uv2, order, first, last, draw_mode)
+	command_list.submit(self)
+	self:mode(draw_mode)
+	for index = first, last do
+		if self.word_count + 7 > self.word_capacity then command_list.submit(self) end
+		local at<const> = reserve_atomic(self, 7)
+		local packet<const>: *gp0_textured_triangle_packet = self.words + at * sizeof(word)
+		local face<const> = order[index]
+		packet.command = commands[face]
+		packet.position0, packet.uv0 = xy0[face], uv0[face]
+		packet.position1, packet.uv1 = xy1[face], uv1[face] | (draw_mode << 16)
+		packet.position2, packet.uv2 = xy2[face], uv2[face]
+		self.word_count = at + 7
+	end
+	command_list.submit(self)
 end
 
 function draw_list:quad_words(command_word, sxy0_word, sxy1_word, sxy2_word, sxy3_word)

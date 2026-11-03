@@ -53,6 +53,59 @@ end
 return dma` },
 ];
 
+for (const optLevel of [0, 3] as const) for (const capacity of [16, 32])
+test(`GX textured triangles preserve UV/page words and atomic DMA blocks in ${capacity} words (O${optLevel})`, () => {
+	const { cpu } = createCartlibProgramHarness(checks + `
+local commands<const> = require('cartlib/gx/command_list')
+local dma<const> = require('cartlib/dma')
+bss storage: word[${capacity + 2}]
+local guard<const>: *word = storage
+guard[0],guard[${capacity + 1}]=0x13579bdf,0x2468ace0
+local words<const>: *word = storage+sizeof(word)
+local draw<const> = commands.new(words,${capacity})
+commands.begin(draw,0,0)
+for index=0,${capacity - 1} do words[index]=0 end
+draw.word_count=${capacity}
+local colors<const>,xy0<const>,xy1<const>,xy2<const>,uv0<const>,uv1<const>,uv2<const>,order<const> = {},{},{},{},{},{},{},{}
+for index=1,1031 do
+ colors[index]=0x24000000|index
+ xy0[index],xy1[index],xy2[index]=index,index+1,index+2
+ uv0[index],uv1[index],uv2[index]=index,index+2,index+4
+ order[index]=1032-index
+end
+draw:textured_triangle_words_batch(colors,xy0,xy1,xy2,uv0,uv1,uv2,order,3,1029,0x114)
+assert(guard[0]==0x13579bdf and guard[${capacity + 1}]==0x2468ace0,'textured writer exceeded declared storage')
+assert(dma.transfers[1].count==${capacity},'full preceding storage must submit before mode publication')
+local emitted=0
+for transfer_index=2,#dma.transfers do
+ local transfer<const> = dma.transfers[transfer_index]
+ assert(transfer.count<=${capacity})
+ local index=1
+ while index<=transfer.count do
+  local word<const> = transfer.words[index]
+  if word==0 or word==0xe1000114 then index=index+1
+  else
+   local face<const> = order[emitted+3]
+   assert(((index-1)&15)<=9,'a seven-word polygon straddled a DMA admission block')
+   assert(word==colors[face] and transfer.words[index+1]==xy0[face] and transfer.words[index+2]==uv0[face]
+    and transfer.words[index+3]==xy1[face] and transfer.words[index+4]==(uv1[face]|0x01140000)
+    and transfer.words[index+5]==xy2[face] and transfer.words[index+6]==uv2[face], 'textured packet words or order changed')
+   emitted=emitted+1; index=index+7
+  end
+ end
+end
+assert(emitted==1027 and draw.word_count==0 and draw.draw_mode==0x114)
+draw:mode(0x114)
+assert(draw.word_count==0,'polygon texpage publication invalidated the draw-mode cache')
+commands.submit_fenced(draw)
+assert(dma.transfers[#dma.transfers].count==1 and require('cartlib/gx/gpu').acknowledgements==1)
+return failed
+`, { optLevel, modules });
+	assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+	const [failure] = materializeCpuCompletionValues(cpu);
+	assert.equal(failure, null, failure === null ? undefined : cpu.stringPool.toString((failure as StringValue).id));
+});
+
 for (const optLevel of [0, 3] as const) {
 	for (const capacity of [16, 32] as const) {
 		test(`GX bulk triangles stream ordered packets through ${capacity}-word storage (O${optLevel})`, () => {

@@ -1,7 +1,11 @@
 import type { Affine3 } from '../../machine/ts/common/affine3';
 import { HostMesh } from '../../machine/ts/render/host_overlay/mesh';
+import { HostBitmap } from '../../machine/ts/render/host_overlay/bitmap';
+import { GX_GPU_TEXTURE_MODE_DIRECT16 } from '../../machine/ts/spec/gx/gp0';
 import type { GLTFModel } from '../../toolchain/ts/rompack/gltf';
-import { prepareModelStaticScenes } from '../../toolchain/ts/rompack/model_static_scene';
+import { MODEL_STATIC_FEATURE, prepareModelStaticScenes } from '../../toolchain/ts/rompack/model_static_scene';
+import { decodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
+import { decodeGxTextureImage } from '../../toolchain/ts/rompack/gx_texture_codec';
 import type { WorkspaceSourceCatalog, WorkspaceSourceContext } from './source_catalog';
 
 export type WorkspaceModelPart = { readonly affine: Readonly<Affine3>; readonly meshes: readonly HostMesh[] };
@@ -13,6 +17,8 @@ type Binding = {
 	readonly prepared: ReturnType<typeof prepareModelStaticScenes>;
 	readonly meshes: Map<number, readonly HostMesh[]>;
 	readonly scenes: Map<number, WorkspaceModelScene>;
+	readonly textures: Map<number, HostBitmap>;
+	readonly texcoords: Map<Uint16Array, Float32Array>;
 	epoch: number;
 };
 
@@ -35,7 +41,7 @@ export class WorkspaceModelAssets {
 			}
 			if (previous !== undefined) this.retire(previous);
 			this.bindings.set(id, { provider, model, rom: mounted.bytes, epoch,
-				prepared: prepareModelStaticScenes(model), meshes: new Map(), scenes: new Map() });
+				prepared: prepareModelStaticScenes(model), meshes: new Map(), scenes: new Map(), textures: new Map(), texcoords: new Map() });
 		}
 		for (const [id, binding] of this.bindings) if (binding.epoch !== epoch) {
 			this.retire(binding); this.bindings.delete(id);
@@ -48,7 +54,7 @@ export class WorkspaceModelAssets {
 		const index = selected ?? binding.model.scene;
 		if (index === undefined) return;
 		const source = binding.prepared.scenes[index];
-		if (source === undefined || source.features !== 0) return;
+		if (source === undefined || (source.features & ~MODEL_STATIC_FEATURE.texture) !== 0) return;
 		let scene = binding.scenes.get(index);
 		if (scene !== undefined) return scene;
 		const parts: WorkspaceModelPart[] = [], prepared = binding.prepared;
@@ -58,8 +64,30 @@ export class WorkspaceModelAssets {
 			if (meshes === undefined) {
 				meshes = binding.model.meshes[part.mesh].primitives.map(primitive => {
 					const material = primitive.materialIndex === undefined ? undefined : prepared.materials[primitive.materialIndex];
+					let texture;
+					if (material?.textureIndex !== undefined) {
+						const image = binding.model.textureImages[material.textureIndex];
+						let bitmap = binding.textures.get(material.textureIndex);
+						if (bitmap === undefined) {
+							const decoded = decodeGxTextureImage(decodeImgDecStream(image.stream, 0, image.stream.length).payload,
+								{ mode: GX_GPU_TEXTURE_MODE_DIRECT16, wordWidth: image.width, height: image.height });
+							bitmap = new HostBitmap({ width: decoded.width, height: decoded.height, pixels: decoded.rgba });
+							binding.textures.set(material.textureIndex, bitmap);
+						}
+						const words = primitive.pageTexcoords;
+						let uvs = binding.texcoords.get(words);
+						if (uvs === undefined) {
+							uvs = new Float32Array(words.length * 2);
+							for (let index = 0; index < words.length; index++) {
+								uvs[index * 2] = ((words[index] & 255) + 0.5) / image.width;
+								uvs[index * 2 + 1] = ((words[index] >>> 8) + 0.5) / image.height;
+							}
+							binding.texcoords.set(words, uvs);
+						}
+						texture = { bitmap, uvs };
+					}
 					return new HostMesh({ positions: primitive.positions, indices: primitive.indices, indexComponentType: primitive.indexComponentType,
-						color: material === undefined ? 0xffffffff : material.color, doubleSided: material === undefined ? false : material.doubleSided });
+						color: material === undefined ? 0xffffffff : material.color, doubleSided: material === undefined ? false : material.doubleSided, texture });
 				});
 				binding.meshes.set(part.mesh, meshes);
 			}
@@ -67,6 +95,9 @@ export class WorkspaceModelAssets {
 		}
 		scene = { parts }; binding.scenes.set(index, scene); return scene;
 	}
-	private retire(binding: Binding): void { for (const meshes of binding.meshes.values()) for (const mesh of meshes) mesh.dispose(); }
+	private retire(binding: Binding): void {
+		for (const meshes of binding.meshes.values()) for (const mesh of meshes) mesh.dispose();
+		for (const bitmap of binding.textures.values()) bitmap.dispose();
+	}
 	public dispose(): void { for (const binding of this.bindings.values()) this.retire(binding); this.bindings.clear(); }
 }

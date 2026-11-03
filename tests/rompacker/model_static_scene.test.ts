@@ -40,7 +40,8 @@ test('static scene descriptors retain node identity, shared meshes and complete 
 	const material = view.getUint32(MODEL_ASSET_HEADER.materialDirectoryOffset, true);
 	assert.equal(view.getUint32(material + MODEL_MATERIAL.command, true), 0x20bf8040);
 	assert.equal(view.getUint32(material + MODEL_MATERIAL.doubleSided, true), 1);
-	assert.equal(MODEL_MATERIAL_BYTE_LENGTH, 8);
+	assert.equal(MODEL_MATERIAL_BYTE_LENGTH, 12);
+	assert.equal(view.getUint32(material + MODEL_MATERIAL.textureIndex, true), 0xffffffff);
 	const loaded = loadModelFromBuffer('static', packed.buffer);
 	for (let index = 0; index < model.nodes.length; index++) {
 		for (const [field, value] of Object.entries(model.nodes[index])) assert.deepEqual(loaded.nodes[index][field], value);
@@ -62,7 +63,7 @@ test('rich assets still pack; capabilities belong to the selected static scene, 
 	assert.equal(view.getUint32(MODEL_ASSET_HEADER.defaultScene, true), 0xffffffff, 'no default scene is not inferred as mesh/scene zero');
 	assert.equal(view.getUint32(scenes + MODEL_SCENE.features, true), 0);
 	assert.equal(view.getUint32(scenes + MODEL_SCENE_BYTE_LENGTH + MODEL_SCENE.features, true),
-		MODEL_STATIC_FEATURE.texture | MODEL_STATIC_FEATURE.alpha | MODEL_STATIC_FEATURE.vertexColor | MODEL_STATIC_FEATURE.morph | MODEL_STATIC_FEATURE.skin);
+		MODEL_STATIC_FEATURE.texture | MODEL_STATIC_FEATURE.alpha | MODEL_STATIC_FEATURE.vertexColor | MODEL_STATIC_FEATURE.morph | MODEL_STATIC_FEATURE.skin | MODEL_STATIC_FEATURE.textureLayout);
 	const loaded = loadModelFromBuffer('capabilities', buffer);
 	assert.equal(loaded.scene, undefined);
 	assert.equal(loaded.materials[0].baseColorTexture, 0);

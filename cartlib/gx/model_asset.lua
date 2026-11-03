@@ -20,6 +20,8 @@ struct model_asset_header
 	material_directory_offset: word
 	material_count: word
 	default_scene: word
+	texture_directory_offset: word
+	texture_count: word
 end
 
 struct model_mesh
@@ -34,6 +36,7 @@ struct model_primitive
 	index_count: word
 	index_component_type: word
 	material_index: word
+	texcoords_offset: word
 end
 
 struct model_scene
@@ -62,6 +65,14 @@ end
 struct model_material
 	command: word
 	double_sided: word
+	texture_index: word
+end
+
+struct model_texture
+	stream_offset: word
+	stream_word_count: word
+	width: word
+	height: word
 end
 
 struct model_position
@@ -88,6 +99,8 @@ function model_asset.resolve(id)
 		part_count = header->part_count,
 		materials = address + header->material_directory_offset,
 		default_scene = header->default_scene,
+		textures = address + header->texture_directory_offset,
+		texture_count = header->texture_count,
 	}
 	resource._model_asset = prepared
 	return prepared

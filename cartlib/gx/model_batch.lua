@@ -2,6 +2,8 @@
 -- Numeric lanes retain their high-water storage; no vertex or face records are
 -- allocated while collecting a frame. The camera has an infinite far plane.
 local gp0<const> = require('cartlib/gx/gp0')
+local atlas<const> = require('cartlib/gx/atlas')
+local command_list<const> = require('cartlib/gx/command_list')
 
 struct batch_position
 	x: f32
@@ -17,7 +19,9 @@ function model_batch.new()
 		view_x = {}, view_y = {}, view_z = {}, outcodes = {}, projected = {},
 		clip_ax = {}, clip_ay = {}, clip_az = {},
 		clip_bx = {}, clip_by = {}, clip_bz = {}, clip_words = {},
+		clip_au = {}, clip_av = {}, clip_bu = {}, clip_bv = {}, clip_uv = {},
 		commands = {}, xy0 = {}, xy1 = {}, xy2 = {}, depths = {}, component_ids = {},
+		uv0 = {}, uv1 = {}, uv2 = {}, textures = {}, has_textures = false,
 		order = {}, merge = {}, count = 0, sorted = false, projection_valid = false,
 	}, model_batch)
 	-- A triangle clipped by five planes has at most eight polygon vertices.
@@ -25,6 +29,7 @@ function model_batch.new()
 		self.clip_ax[index], self.clip_ay[index], self.clip_az[index] = 0, 0, 0
 		self.clip_bx[index], self.clip_by[index], self.clip_bz[index] = 0, 0, 0
 		self.clip_words[index] = 0
+		self.clip_au[index], self.clip_av[index], self.clip_bu[index], self.clip_bv[index], self.clip_uv[index] = 0, 0, 0, 0, 0
 	end
 	return self
 end
@@ -40,6 +45,7 @@ function model_batch:begin(camera)
 	self.width, self.height, self.near = width, height, near
 	self.right_z, self.bottom_z = width - center_x, height - center_y
 	self.count = 0
+	self.has_textures = false
 	self.sorted = false
 end
 
@@ -99,9 +105,11 @@ local queue_face<const> = function(batch, primitive, component_id, reflected, s0
 	batch.xy0[index], batch.xy1[index], batch.xy2[index] = s0, s1, s2
 	batch.depths[index] = depth
 	batch.component_ids[index] = component_id
+	batch.textures[index] = primitive.texture
 	batch.order[index] = index
 	batch.count = index
 	batch.sorted = false
+	return index
 end
 
 local queue_triangle<const> = function(batch, primitive, component_id, reflected, a, b, c)
@@ -109,19 +117,35 @@ local queue_triangle<const> = function(batch, primitive, component_id, reflected
 	local ca<const>, cb<const>, cc<const> = codes[a], codes[b], codes[c]
 	local mask<const> = ca | cb | cc
 	local vz<const> = batch.view_z
+	local texture<const> = primitive.texture
 	if mask == 0 then
 		local projected<const> = batch.projected
-		queue_face(batch, primitive, component_id, reflected,
+		local face<const> = queue_face(batch, primitive, component_id, reflected,
 			projected[a], projected[b], projected[c], vz[a] + vz[b] + vz[c])
+		if face ~= nil and texture ~= nil then
+			local uv<const>: *u16 = primitive.texcoords
+			batch.uv0[face], batch.uv1[face], batch.uv2[face] = uv[a-1], uv[b-1], uv[c-1]
+			batch.has_textures = true
+		end
 		return
 	end
 	if (ca & cb & cc) ~= 0 then return end
 	local vx<const>, vy<const> = batch.view_x, batch.view_y
 	local sx, sy, sz = batch.clip_ax, batch.clip_ay, batch.clip_az
 	local dx, dy, dz = batch.clip_bx, batch.clip_by, batch.clip_bz
+	local su, sv, du, dv = batch.clip_au, batch.clip_av, batch.clip_bu, batch.clip_bv
 	sx[1], sy[1], sz[1] = vx[a], vy[a], vz[a]
 	sx[2], sy[2], sz[2] = vx[b], vy[b], vz[b]
 	sx[3], sy[3], sz[3] = vx[c], vy[c], vz[c]
+	if texture ~= nil then
+		local uv<const>: *u16 = primitive.texcoords
+		local ta<const>, tb<const>, tc<const> = uv[a-1], uv[b-1], uv[c-1]
+		-- Carry UV*Z through homogeneous clipping, preserving screen-affine
+		-- attributes rather than introducing perspective-correct interpolation.
+		su[1], sv[1] = (ta & 255)*sz[1], (ta >> 8)*sz[1]
+		su[2], sv[2] = (tb & 255)*sz[2], (tb >> 8)*sz[2]
+		su[3], sv[3] = (tc & 255)*sz[3], (tc >> 8)*sz[3]
+	end
 	local count = 3
 	for plane = 0, 4 do
 		if (mask & (1 << plane)) ~= 0 then
@@ -133,6 +157,7 @@ local queue_triangle<const> = function(batch, primitive, component_id, reflected
 			else py, pz = -batch.focal, batch.bottom_z end
 			local output_count = 0
 			local ax, ay, az = sx[1], sy[1], sz[1]
+			local au, av = su[1], sv[1]
 			local da = px*ax + py*ay + pz*az + constant
 			for index = 2, count + 1 do
 				local next_index = index
@@ -143,6 +168,7 @@ local queue_triangle<const> = function(batch, primitive, component_id, reflected
 				if a_inside then
 					output_count = output_count + 1
 					dx[output_count], dy[output_count], dz[output_count] = ax, ay, az
+					if texture ~= nil then du[output_count], dv[output_count] = au, av end
 				end
 				-- An on-plane endpoint is already emitted as an inside vertex;
 				-- only a strict crossing creates a new intersection.
@@ -153,14 +179,21 @@ local queue_triangle<const> = function(batch, primitive, component_id, reflected
 					dy[output_count] = ay + (by-ay)*t
 					if plane == 0 then dz[output_count] = batch.near
 					else dz[output_count] = az + (bz-az)*t end
+					if texture ~= nil then
+						du[output_count] = au + (su[next_index]-au)*t
+						dv[output_count] = av + (sv[next_index]-av)*t
+					end
 				end
 				ax, ay, az, da = bx, by, bz, db
+				if texture ~= nil then au, av = su[next_index], sv[next_index] end
 			end
 			if output_count < 3 then return end
 			count = output_count
 			sx, dx = dx, sx
 			sy, dy = dy, sy
 			sz, dz = dz, sz
+			su, du = du, su
+			sv, dv = dv, sv
 		end
 	end
 	local words<const> = batch.clip_words
@@ -168,10 +201,15 @@ local queue_triangle<const> = function(batch, primitive, component_id, reflected
 	for index = 1, count do
 		local scale<const> = focal / sz[index]
 		words[index] = gp0.pair16(center_x + sx[index]*scale, center_y + sy[index]*scale)
+		if texture ~= nil then batch.clip_uv[index] = gp0.uv(su[index]/sz[index], sv[index]/sz[index]) end
 	end
 	for index = 2, count - 1 do
-		queue_face(batch, primitive, component_id, reflected,
+		local face<const> = queue_face(batch, primitive, component_id, reflected,
 			words[1], words[index], words[index + 1], sz[1] + sz[index] + sz[index + 1])
+		if face ~= nil and texture ~= nil then
+			batch.uv0[face], batch.uv1[face], batch.uv2[face] = batch.clip_uv[1], batch.clip_uv[index], batch.clip_uv[index+1]
+			batch.has_textures = true
+		end
 	end
 end
 
@@ -242,7 +280,27 @@ function model_batch:submit(draw)
 		self.sorted_order = sorted_order
 		self.sorted = true
 	end
-	draw:triangle_words_batch(self.commands, self.xy0, self.xy1, self.xy2, sorted_order, count)
+	if not self.has_textures then
+		draw:triangle_words_batch(self.commands, self.xy0, self.xy1, self.xy2, sorted_order, count)
+		return
+	end
+	-- Preserve the global depth order while admitting only the next material
+	-- run. Submit earlier packets before the ordered residency upload.
+	command_list.submit(draw)
+	local first = 1
+	while first <= count do
+		local texture<const> = self.textures[sorted_order[first]]
+		local last = first
+		while last < count and self.textures[sorted_order[last+1]] == texture do last = last+1 end
+		if texture == nil then
+			draw:triangle_words_batch(self.commands, self.xy0, self.xy1, self.xy2, sorted_order, last, first)
+		else
+			atlas.admit(texture._texture)
+			draw:textured_triangle_words_batch(self.commands, self.xy0, self.xy1, self.xy2,
+				self.uv0, self.uv1, self.uv2, sorted_order, first, last, texture._blit_draw_mode)
+		end
+		first = last+1
+	end
 end
 
 return model_batch

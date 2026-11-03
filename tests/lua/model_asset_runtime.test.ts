@@ -72,7 +72,7 @@ probe = {
    primitives[1].indices_offset, primitives[1].index_count, primitives[1].index_component_type, primitives[1].material_index,
    primitives[2].index_component_type, primitives[3].index_component_type,
    directory.image('shared').type == 'image', directory.model('missing') == nil,
-   sizeof(model_asset_header), sizeof(model_mesh), sizeof(model_primitive), sizeof(model_position)
+   sizeof(model_asset_header), sizeof(model_mesh), sizeof(model_primitive), sizeof(model_position), sizeof(model_material), sizeof(model_texture)
  end,
  steady=function(count)
   local sum = 0
@@ -122,7 +122,7 @@ for (const optLevel of [0, 3] as const) test(`model geometry binds ROM streams o
 	const expected = (same: boolean, address: number, x: number) => [
 		same, true, address, 3, 4, 0, 2, 2, 3, 9, 3, 5121, 0, x, -2.5, 3.75, 9,
 		2, 1, 0x1234, 0xabcd, 0xffff, 0x12345678, 0x80000001, 0xffffffff,
-		0, 0, 0, 0xffffffff, 5123, 5125, true, true, 52, 8, 24, 12,
+		0, 0, 0, 0xffffffff, 5123, 5125, true, true, 60, 8, 28, 12, 12, 16,
 	];
 	assert.deepEqual(observe(), expected(false, initial.address, 1.25));
 	assert.deepEqual(observe(), expected(true, initial.address, 1.25));

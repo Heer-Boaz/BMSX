@@ -13,6 +13,7 @@ import { writeHostMeshClipMatrix, type HostMeshSceneRenderSubmission } from '../
 import type { GLTFModel } from '../../toolchain/ts/rompack/gltf';
 import { packModelAsset, loadModelFromBuffer } from '../../toolchain/ts/rompack/model_asset';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { createTexturedModelFixture } from '../helpers/textured_model';
 import { CARTLIB_OBJECT_SOURCE_MODULES } from '../fixtures/studio/cartlib_objects';
 
 const MEMBERS = `{member_id='back',definition_id='paint'},
@@ -36,8 +37,8 @@ scenes.register('sculpture',{objects={${members}}})`;
 	const f = createActualSourcePanes(t, false, [...CARTLIB_OBJECT_SOURCE_MODULES, ['scene.lua', source], ['cartlib/world/prefab.lua', 'return {define=function() end}'],
 		['cartlib/world/scene_library.lua', 'return {}'],
 		['cartlib/component/static_model_component.lua', 'return {new=function() end,factory=function() end}']]);
-	const context = f.sources.catalog.getContext(f.sources.systemContextId), packed = packModelAsset(asset).buffer;
-	context.previewRom!.bytes = packed; context.previewPackage.model.shape = loadModelFromBuffer('shape', packed); f.sources.catalog.rebuildResources();
+	const context = f.sources.catalog.getContext(f.sources.systemContextId), packed = packModelAsset(asset);
+	context.previewRom!.bytes = packed.buffer; context.previewPackage.model.shape = loadModelFromBuffer('shape', packed.buffer, packed.model_texture_buffer); f.sources.catalog.rebuildResources();
 	f.editor.setFontVariant(font);
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog,
 		f.sources.catalog.resolveResource({ contextId: context.id, path: 'scene.lua' })!);
@@ -95,6 +96,28 @@ test('Frame All remains available when navigation puts every source origin behin
 	const command = f.client.viewportTarget.getCommand('sceneViewport.frameAll')!;
 	assert.equal(command.isEnabled(), true); command.run(); f.update();
 	assert.ok(f.view.entries.length > 0); assert.equal(f.model.canUndo, false);
+});
+
+test('Main binds imported native textures once and retires the shared bitmap with its source generation', async t => {
+	const { imported } = await createTexturedModelFixture();
+	const f = await fixture(t, 'tiny', MEMBERS, imported), scene = f.view.geometry.scene;
+	assert.equal(scene.instances.length, 6);
+	const first = scene.instances[0].mesh, tinted = scene.instances[1].mesh;
+	assert.ok(first.texture !== undefined && tinted.texture !== undefined);
+	const bitmap = first.texture.bitmap;
+	assert.ok(tinted.texture.bitmap === bitmap && scene.instances[3].mesh === first);
+	assert.equal(scene.instances[2].mesh.texture, undefined);
+	assert.deepEqual(first.texture.uvs, new Float32Array([0.125, 0.875, 0.875, 0.875, 0.875, 0.125, 0.125, 0.125]));
+	assert.deepEqual(bitmap.image.pixels.slice(0, 16), new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 0, 0, 0, 255]));
+	assert.equal(first.color, 0xffffffff); assert.equal(tinted.color, 0xff80ffff);
+	const revision = scene.revision;
+	for (let frame = 0; frame < 100; frame++) f.update();
+	assert.equal(scene.revision, revision); assert.ok(scene.instances[0].mesh.texture.bitmap === bitmap);
+	let retired = 0; bitmap.onDispose(() => retired++);
+	f.context.previewRom!.bytes = f.context.previewRom!.bytes.slice(); f.sources.catalog.rebuildResources(); f.update();
+	assert.equal(retired, 1); assert.ok(scene.instances[0].mesh.texture.bitmap !== bitmap);
+	const group = f.editor.editorParts.findGroup(f.client.input)!;
+	assert.equal(await group.close(f.client.input.id), true); assert.equal(retired, 1);
 });
 
 test('incomplete triangle assembly does not claim visible model geometry or hide its source-origin helper', async t => {

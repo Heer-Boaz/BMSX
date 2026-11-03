@@ -91,7 +91,7 @@ for (const inputKind of ['uint8-subview', 'node-buffer', 'node-buffer-subview'] 
 		assert.deepEqual(decoded.meshes.map(mesh => mesh.primitives.length), [2, 1]);
 		assert.equal(decoded.meshes[0].name, model.meshes[0].name);
 		assert.deepEqual(decoded.meshes[0].weights, model.meshes[0].weights);
-		assert.deepEqual(decoded.meshes[0].primitives[0], complete);
+		assert.deepEqual(decoded.meshes[0].primitives[0], { ...complete, pageTexcoords: undefined });
 		for (let meshIndex = 0; meshIndex < model.meshes.length; meshIndex++) {
 			for (let primitiveIndex = 0; primitiveIndex < model.meshes[meshIndex].primitives.length; primitiveIndex++) {
 				const original = model.meshes[meshIndex].primitives[primitiveIndex];

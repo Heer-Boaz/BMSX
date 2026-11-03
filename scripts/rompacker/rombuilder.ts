@@ -68,6 +68,7 @@ import {
 } from '../../toolchain/ts/rompack/system_texture';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { loadGLTFModel } from './gltfloader';
+import { prepareModelTextures } from './model_textures';
 import { reportBuildDiagnostics, type BuildReporter } from '../lib/build_reporter';
 import type { RomBuildInputs } from './build_inputs';
 import type { RomBuildOutput } from '../../toolchain/ts/rompack/build_manifest';
@@ -886,7 +887,7 @@ export async function generateRomAssets(
 			}
 			case 'model': {
 				const parsed = loadGLTFModel(res.document, resid);
-
+				await prepareModelTextures(parsed);
 				const packed = packModelAsset(parsed);
 				romAssets.push({ resid, type, ...packed, source_path: sourcePath });
 			}

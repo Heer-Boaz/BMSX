@@ -62,17 +62,11 @@ end
 -- may therefore observe old, partial or uninitialized VRAM while transfer is
 -- still in flight.
 
-function atlas.resolve(atlas_id)
-	local texture<const> = atlas_by_id[atlas_id]
-	if texture then
-		return texture
-	end
-	local resource<const> = rom_dir.texture(atlas_id)
-	local meta<const> = resource.texturemeta
-	local allocation_width = meta.word_width
-	local allocation_height = meta.height
+function atlas.create(source_addr, stream_word_count, mode, word_width, height, texture_word_count, clut_word_count)
+	local allocation_width = word_width
+	local allocation_height = height
 	local x_alignment = texture_page_span
-	if meta.mode == gp0.texture_mode_palette4 then
+	if mode == gp0.texture_mode_palette4 then
 		if allocation_width < palette4_clut_word_count then
 			allocation_width = palette4_clut_word_count
 		end
@@ -80,13 +74,13 @@ function atlas.resolve(atlas_id)
 		x_alignment = palette4_page_word_span
 	end
 	local resolved<const> = {
-		source_addr = resource.addr,
-		stream_word_count = resource.len >> 2,
-		texture_word_count = meta.texture_word_count,
-		clut_word_count = meta.clut_word_count,
-		mode = meta.mode,
-		word_width = meta.word_width,
-		height = meta.height,
+		source_addr = source_addr,
+		stream_word_count = stream_word_count,
+		texture_word_count = texture_word_count,
+		clut_word_count = clut_word_count,
+		mode = mode,
+		word_width = word_width,
+		height = height,
 		x = 0,
 		y = 0,
 		clut_x = 0,
@@ -99,6 +93,16 @@ function atlas.resolve(atlas_id)
 		_source_count = 0,
 		_draw_mode_span_bindings = {},
 	}
+	return resolved
+end
+
+function atlas.resolve(atlas_id)
+	local texture<const> = atlas_by_id[atlas_id]
+	if texture then return texture end
+	local resource<const> = rom_dir.texture(atlas_id)
+	local meta<const> = resource.texturemeta
+	local resolved<const> = atlas.create(resource.addr, resource.len >> 2, meta.mode, meta.word_width, meta.height,
+		meta.texture_word_count, meta.clut_word_count)
 	atlas_by_id[atlas_id] = resolved
 	return resolved
 end
@@ -258,8 +262,8 @@ local replace_resident_allocation<const> = function(replacement)
 	return nil
 end
 
-function atlas.load(atlas_id)
-	local texture<const> = atlas.resolve(atlas_id)
+-- Embedded model images and named atlas assets share residency and eviction.
+function atlas.admit(texture)
 	local allocation = texture._allocation
 	if allocation ~= nil then
 		retain_recently_used(texture)
@@ -286,6 +290,10 @@ function atlas.load(atlas_id)
 	texture._allocation = allocation
 	retain_recently_used(texture)
 	load_texture(texture, allocation)
+end
+
+function atlas.load(atlas_id)
+	atlas.admit(atlas.resolve(atlas_id))
 end
 
 return atlas

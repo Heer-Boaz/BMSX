@@ -31,6 +31,7 @@ return {model=function(id) return record end}`;
 const modules = [
 	...WORLD_CPU_MODULES,
 	...['cartlib/gx/model_asset', 'cartlib/gx/static_model', 'cartlib/gx/model_batch',
+		'cartlib/gx/atlas', 'cartlib/gx/imgdec',
 		'cartlib/component/static_model_component', 'cartlib/component/model_renderer_component'].map(path => ({
 		path, source: readFileSync(`${path}.lua`, 'utf8'),
 	})),

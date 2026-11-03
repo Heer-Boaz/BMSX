@@ -29,6 +29,8 @@ export interface GLTFPrimitive {
 	positions: Float32Array;
 	texcoords?: Float32Array;
 	texcoords1?: Float32Array;
+	/** Packed static-material U/V bytes, consumed directly by the model pass. */
+	pageTexcoords?: Uint16Array;
 	normals?: Float32Array;
 	tangents?: Float32Array;
 	indices?: GLTFIndexArray;
@@ -109,6 +111,8 @@ export interface GLTFModel {
 	samplers?: GLTFSampler[];
 	imageURIs?: string[];
 	imageBuffers?: Uint8Array[];
+	/** Build-produced opaque Direct16 IMGDEC images, indexed by GLTF image slot. */
+	textureImages?: ({ width: number; height: number; stream: Uint8Array } | undefined)[];
 	nodes?: GLTFNode[];
 	scenes?: GLTFScene[];
 	scene?: number;
