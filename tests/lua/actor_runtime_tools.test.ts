@@ -1,3 +1,4 @@
+import { ActorRenderFrames } from '../../ide/workbench/contrib/actor_lab/render_frames';
 import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
 import assert from 'node:assert/strict';
@@ -118,9 +119,11 @@ function fixture(t: TestContext, entry = ENTRY, run = true, worldSource = WORLD_
 		layoutMain });
 	layoutMain();
 	const group = parts.main.activeGroup;
+	const frames = new ActorRenderFrames(runtime, sources, f.guest, f.observers);
+	t.after(() => { frames.dispose(); f.events.dispose(); f.observers.dispose(); });
 	const controller = new ActorLabController(sources, f.guest, runtime.machine.cpu,
 		parts, undefined!, f.actorExecution, f.rewind, sources,
-		{ kind: 'direct', presenter: f.presenter, recipient: f.input, transport });
+		{ kind: 'direct', presenter: f.presenter, recipient: f.input, transport }, frames);
 	controllerFixtures.push({ controller, parts, surfaces, contextMenu });
 	return { ...f, stop: inspection, actors, controller, group };
 }
@@ -1369,4 +1372,15 @@ for (const historical of [true, false]) test(`navigation restores the original c
 	assert.equal(input.details!.retired, !historical);
 	assert.match(input.details!.title, /actor_a.*UNAVAILABLE$/); assert.ok(!input.details!.title.includes('actor_b'));
 	assert.equal(input.details!.caption, 'actor_a — Unavailable', 'the unavailable caption belongs to the restored identity, never the last inspected actor');
+});
+
+test('selecting an actor from an older displayed frame does not invent a live root after disposal', t => {
+	configureFontVariant('tiny');
+	const f = fixture(t, ENTRY.replace('return world', 'function retire() world._objects[1] = world._objects[2]; world._objects[2] = nil end\nreturn world'));
+	t.after(() => f.stop.dispose());
+	const actor = readActorChoices(f.sources, f.guest, -1)[0], input = f.controller.resolveInput();
+	f.guest.invalidate(); runCompletionClosure(f.runtime.machine.cpu, f.guest.global('retire') as Closure, []);
+	f.controller.inspectActor(input, -1, actor.hashId);
+	assert.equal(input.actorPresent, false);
+	assert.equal(input.runtime.roots.length, 0);
 });

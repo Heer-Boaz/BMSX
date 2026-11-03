@@ -220,6 +220,13 @@ struct GxGpuOperationObserver {
 	void* context = nullptr;
 };
 
+// Device latch, not a host presentation. Borrowed decoded scanout: no mutation,
+// synchronization or guest execution during the callback.
+struct GxGpuPresentationObserver {
+	void (*latched)(void* context, u32 statusWord, const GxGpuPcrtcScanout& scanout, bool changed) = nullptr;
+	void* context = nullptr;
+};
+
 class GxGpu {
 public:
 	GxGpu(
@@ -229,6 +236,7 @@ public:
 		DeviceScheduler& scheduler,
 		DmaController& dmaController,
 		u32 vramByteCount);
+	void setPresentationObserver(GxGpuPresentationObserver observer) { m_presentationObserver = observer; }
 	void setOperationObserver(GxGpuOperationObserver observer);
 	void reset();
 	GxGpuState captureState();
@@ -293,6 +301,7 @@ public:
 
 private:
 	GxGpuOperationObserver m_operationObserver;
+	GxGpuPresentationObserver m_presentationObserver;
 	Memory& m_memory;
 	CPU& m_cpu;
 	IrqController& m_irq;

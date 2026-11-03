@@ -98,6 +98,7 @@ void VideoPresenter::finalizePresentation() {
 	}
 	presentationHistorySourceIndex = presentationHistoryDestinationIndex();
 	m_committedSequence = m_renderFrameIndex;
+	if (m_gameFrameObserver.committed != nullptr) m_gameFrameObserver.committed(m_gameFrameObserver.context, m_renderFrameIndex);
 }
 
 RgbaImage VideoPresenter::captureGameFrame() {

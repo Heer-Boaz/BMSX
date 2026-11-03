@@ -431,9 +431,9 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		drawActorLab(this.input, this.timelineSlider.focusTarget.hasFocus, this.graph.hover, this.graph.focusTarget.hasFocus, this.controller.viewport);
 		const hit = this.viewportHit;
 		if (!this.input.layout.previewVisible) return;
-		if (hit !== undefined) {
-			const bounds = this.input.previewBounds, size = this.controller.viewport.presenter.offscreenCanvasSize;
-			const scaleX = (bounds.right - bounds.left) / size.x, scaleY = (bounds.bottom - bounds.top) / size.y;
+		if (hit !== undefined && this.controller.renderFrames.displayCurrent) {
+			const bounds = this.input.previewBounds, frame = this.controller.viewportPicker.frame;
+			const scaleX = (bounds.right - bounds.left) / frame.width, scaleY = (bounds.bottom - bounds.top) / frame.height;
 			api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
 			api.blit_rect(bounds.left + hit.left * scaleX, bounds.top + hit.top * scaleY,
 				bounds.left + hit.right * scaleX, bounds.top + hit.bottom * scaleY, 0, COLOR_TAB_BORDER);
@@ -456,13 +456,15 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	}
 	private updateViewportHit(): void {
 		if (!this.input.layout.previewVisible || !this.viewportHover) return;
-		const bounds = this.input.previewBounds;
-		if (this.controller.rewind.seeking || this.controller.viewport.presenter.gameFrameSequence === undefined
+		this.viewportHit = undefined;
+		const bounds = this.input.previewBounds, viewport = this.controller.viewport;
+		const sequence = viewport.kind === 'direct' ? viewport.presenter.gameFrameSequence : viewport.frames.published.presentationSequence;
+		if (this.controller.rewind.seeking || sequence === undefined
 			|| !point_in_rect(this.pointerX, this.pointerY, bounds)) { pointerHover.release(this); return; }
-		const size = this.controller.viewport.presenter.offscreenCanvasSize;
-		this.viewportHit = this.controller.viewportPicker.pick(this.input.domain,
-			(this.pointerX - bounds.left) * size.x / (bounds.right - bounds.left),
-			(this.pointerY - bounds.top) * size.y / (bounds.bottom - bounds.top));
+		const frame = this.controller.viewportPicker.frame;
+		this.viewportHit = this.controller.viewportPicker.pick(this.input.domain, sequence,
+			(this.pointerX - bounds.left) * frame.width / (bounds.right - bounds.left),
+			(this.pointerY - bounds.top) * frame.height / (bounds.bottom - bounds.top));
 	}
 
 	public handleKeyboard(input: KeyInputEvent): void {

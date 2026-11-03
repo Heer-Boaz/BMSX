@@ -15,7 +15,11 @@ import { HostOverlayQueue } from './host_overlay/overlay_queue';
 import type { RgbaImage } from './image';
 import type { RectBounds } from '../common/rect';
 
+/** Published completed image only; held/partial repaints do not notify. */
+export type GameFrameObserver = { committed(sequence: number): void };
+
 export class VideoPresenter {
+	private gameFrameObserver: GameFrameObserver | null = null;
 	public accessor default_font: BFont;
 	public viewportSize: vec2;
 	public readonly visibleViewportBounds: Readonly<RectBounds>;
@@ -83,6 +87,8 @@ export class VideoPresenter {
 	public get presentationSequence(): number {
 		return this.frame.frameIndex;
 	}
+
+	public setGameFrameObserver(observer: GameFrameObserver | null): void { this.gameFrameObserver = observer; }
 
 	public get gameFrameSequence(): number | undefined { return this.committedSequence; }
 
@@ -198,5 +204,6 @@ export class VideoPresenter {
 		}
 		this.presentationHistorySourceIndex = this.presentationHistoryDestinationIndex;
 		this.committedSequence = this.frame.frameIndex;
+		this.gameFrameObserver?.committed(this.committedSequence);
 	}
 }

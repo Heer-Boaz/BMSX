@@ -351,7 +351,14 @@ export type GxGpuOperationObserver = {
 	emitted(buffer: GxGpuCommandBufferView, index: number, startCycle: number): void;
 };
 
+/** Device VBlank latch, before any host presentation. Borrowed decoded
+ * scanout; observers must not mutate state, synchronize or execute the guest. */
+export type GxGpuPresentationObserver = {
+	latched(statusWord: number, scanout: Readonly<GxGpuDeviceOutput['pcrtcScanout']>, changed: boolean): void;
+};
+
 export class GxGpu {
+	private presentationObserver: GxGpuPresentationObserver | null = null;
 	private operationObserver: GxGpuOperationObserver | null = null;
 	private gp0Word = 0;
 	private gp1Word = 0;
@@ -501,6 +508,8 @@ export class GxGpu {
 			this.memory.mapIoWrite(address, this, GxGpu.writePcrtcThunk);
 		}
 	}
+
+	public setPresentationObserver(observer: GxGpuPresentationObserver | null): void { this.presentationObserver = observer; }
 
 	public setOperationObserver(observer: GxGpuOperationObserver | null): void {
 		this.operationObserver = observer;
@@ -1590,6 +1599,7 @@ export class GxGpu {
 			|| this.commandBuffer.hasUnretiredPresentCommands()
 			|| scanoutStateChanged;
 		this.pcrtcPresentationPending = false;
+		this.presentationObserver?.latched(this.presentStatusWord, this.pcrtc.scanout, this.m_lastFrameCommitted);
 	}
 
 	public lastFrameCommitted(): boolean {

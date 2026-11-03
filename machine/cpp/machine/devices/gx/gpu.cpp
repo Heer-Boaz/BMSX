@@ -1030,6 +1030,9 @@ void GxGpu::presentReadyFrameOnVblankEdge() {
 		|| m_commandBuffer.hasUnretiredPresentCommands()
 		|| scanoutStateChanged;
 	m_pcrtcPresentationPending = false;
+	if (m_presentationObserver.latched != nullptr) {
+		m_presentationObserver.latched(m_presentationObserver.context, m_presentStatusWord, m_pcrtc.scanout, m_lastFrameCommitted);
+	}
 }
 
 void GxGpu::retirePresentedCommands() {

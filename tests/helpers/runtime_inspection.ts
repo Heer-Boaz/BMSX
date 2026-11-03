@@ -40,7 +40,8 @@ export function createRuntimeInspectionFixture(runtime: Runtime, sources: Runtim
 	const presentation = new RenderPresentationState();
 	const execution = new HostExecutionControl(audio);
 	const tasks = new RuntimeTaskQueue(audio, presenter);
-	const events = new RuntimeEventHistory(runtime, sources, new RuntimeInstructionObservers(runtime.machine.cpu));
+	const observers = new RuntimeInstructionObservers(runtime.machine.cpu);
+	const events = new RuntimeEventHistory(runtime, sources, observers);
 	const gteHistory = new RuntimeGteHistory(runtime, sources);
 	const gpuHistory = new RuntimeGpuHistory(runtime);
 	const debuggerState = createRuntimeDebuggerState(runtime, sources);
@@ -59,5 +60,5 @@ export function createRuntimeInspectionFixture(runtime: Runtime, sources: Runtim
 	hotResumes.onDidApply(() => events.beginTimeline());
 	// This fixture attaches inspection to an already reset runtime, not cold startup.
 	boots.didReplaceMachine();
-	return { events, gteHistory, gpuHistory, hotResumes, boots, models, storage, input, actorExecution, debuggerExecution, luaEvaluation, audio, frameNavigation, gameCapture, presenter, presentation, backend, inspection, runtime, sources, guest, debuggerState, execution, tasks, rewind, fault };
+	return { observers, events, gteHistory, gpuHistory, hotResumes, boots, models, storage, input, actorExecution, debuggerExecution, luaEvaluation, audio, frameNavigation, gameCapture, presenter, presentation, backend, inspection, runtime, sources, guest, debuggerState, execution, tasks, rewind, fault };
 }

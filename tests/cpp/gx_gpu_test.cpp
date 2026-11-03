@@ -146,6 +146,32 @@ struct GpuOperationLog {
 	}
 };
 
+void testPresentationObserverPublishesLatchedPrefixWithoutChangingExecution() {
+	GpuHarness baseline, observed;
+	struct Record { bmsx::u32 status; bmsx::u32 width; bool changed; };
+	std::vector<Record> records;
+	observed.gpu.setPresentationObserver({[](void* context, bmsx::u32 status, const bmsx::GxGpuPcrtcScanout& scanout, bool changed) {
+		static_cast<std::vector<Record>*>(context)->push_back({status, scanout.outputWidth, changed});
+	}, &records});
+	for (auto* target : {&baseline, &observed}) {
+		stopPcrtc(*target);
+		for (const bmsx::u32 word : {0x020000ffu, 0u, 0x00040020u}) target->memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP0, word);
+		target->gpu.presentReadyFrameOnVblankEdge();
+	}
+	require(records.size() == 1 && (records[0].status & bmsx::GX_GPU_STATUS_GPU_IDLE) == 0, "unfinished prefix is not an idle render");
+	for (auto* target : {&baseline, &observed}) { completeGpuCommands(*target); target->gpu.presentReadyFrameOnVblankEdge(); }
+	require(records.size() == 2 && records[1].changed && (records[1].status & bmsx::GX_GPU_STATUS_GPU_IDLE) != 0, "completed device latch reports raw idle status");
+	const auto& output = observed.gpu.readDeviceOutput();
+	require(records[1].status == output.statusWord && records[1].width == output.pcrtcScanout.outputWidth, "callback describes published device output");
+	require(observed.scheduler.currentNowCycles() == baseline.scheduler.currentNowCycles(), "observation does not execute time");
+	require(observed.gpu.readDeviceOutput().commandBuffer.presentCommandCount == baseline.gpu.readDeviceOutput().commandBuffer.presentCommandCount, "observation does not change published prefix");
+	const auto state = observed.gpu.captureSaveState();
+	observed.gpu.restoreSaveState(state); observed.gpu.reset();
+	require(records.size() == 2, "read restore and reset do not publish");
+	observed.gpu.setPresentationObserver({}); observed.gpu.presentReadyFrameOnVblankEdge();
+	require(records.size() == 2, "detached observer receives no latches");
+}
+
 void testOperationObserverBorrowsActualPacketsAndLatchedStateForCpuAndDma() {
 	const std::vector<std::vector<bmsx::u32>> packets{
 		{0xe1001a55u}, {0xe2001234u}, {0xe3000801u}, {0xe4002008u}, {0xe5000fffu}, {0xe6000003u},
@@ -3588,6 +3614,10 @@ void testNativePresentationRetainsHistoryAcrossHostResizing() {
 	auto passes = std::make_unique<bmsx::RenderPassLibrary>(&presenter.backend(), &presenter);
 	auto& registry = *passes;
 	presenter.installRenderPipeline(std::move(passes));
+	std::vector<bmsx::u32> committed;
+	presenter.setGameFrameObserver({[](void* context, bmsx::u32 sequence) {
+		static_cast<std::vector<bmsx::u32>*>(context)->push_back(sequence);
+	}, &committed});
 	presenter.crt_postprocessing_enabled = false;
 	presenter.configurePresentation(bmsx::VideoPresenter::PresentationMode::Completed, true);
 	presenter.present(frame.output, 0, 0);
@@ -3618,6 +3648,9 @@ void testNativePresentationRetainsHistoryAcrossHostResizing() {
 	presenter.configurePresentation(bmsx::VideoPresenter::PresentationMode::Completed, true);
 	presenter.present(frame.output, 0, 0);
 	require(std::all_of(software.framebuffer(), software.framebuffer() + 12, [](auto pixel) { return pixel == 0xff445566; }), "completed output replaces history");
+	require(committed == std::vector<bmsx::u32>{1, 5}, "only completed images notify, not held/partial repaints");
+	presenter.setGameFrameObserver({}); presenter.present(frame.output, 0, 0);
+	require(committed.size() == 2, "detached observer receives no image commits");
 }
 
 void testSoftwareScanoutUsesNativeOutputDimensions() {
@@ -4949,6 +4982,7 @@ void testPcrtcPublishesRawWordsAndMapsRetainedUserCircuitOneUnderSupervisor() {
 } // namespace
 
 int main() {
+	testPresentationObserverPublishesLatchedPrefixWithoutChangingExecution();
 	testOperationObserverBorrowsActualPacketsAndLatchedStateForCpuAndDma();
 	testOperationObserverReportsDelayedPolylineAndPartialUpload();
 	testOperationObserverAttachRestoreResetAreNotEmissions();

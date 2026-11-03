@@ -19,6 +19,7 @@ import { ActorProjection } from './projection';
 import { actorTargetsEqual, captureActorTarget, resolveActorTarget, type ActorTarget } from './target';
 import type { ActorExecutionService } from './execution';
 import { ActorLabNavigationSelection } from './navigation_selection';
+import type { ActorRenderFrames } from './render_frames';
 import { ActorViewportPicker } from './viewport_pick';
 
 /** Actor Lab interaction and presentation; the shared domain service owns execution. */
@@ -26,6 +27,7 @@ export class ActorLabController {
 	private current: ActorLabInput | undefined;
 	public projection: ActorProjection;
 	private navigationGeneration = 0;
+	private readonly unbindFrames: () => void;
 	private readonly unbindGuest: () => void;
 	private readonly unbindReview: () => void;
 	public readonly viewportPicker: ActorViewportPicker;
@@ -40,11 +42,12 @@ export class ActorLabController {
 		public readonly rewind: HostRewind,
 		public readonly authoringSources: RuntimeSourceState,
 		public readonly viewport: ActorLabViewport,
+		public readonly renderFrames: ActorRenderFrames,
 		private readonly inputId: ActorLabTabId = 'actor-lab', private readonly title = 'ACTOR LAB',
 	) {
-		this.viewportPicker = new ActorViewportPicker(sources, guest);
+		this.viewportPicker = new ActorViewportPicker(renderFrames.displayed);
+		this.unbindFrames = renderFrames.attach(viewport.presenter);
 		this.unbindGuest = guest.onDidInvalidate(reason => {
-			this.viewportPicker.invalidate(reason);
 			if (reason === 'heap-replaced') this.navigationGeneration++;
 			const input = this.current;
 			if (input === undefined) return;
@@ -62,7 +65,7 @@ export class ActorLabController {
 		});
 	}
 	public dispose(): void {
-		this.unbindGuest(); this.unbindReview();
+		this.unbindGuest(); this.unbindReview(); this.unbindFrames();
 		if (this.current !== undefined) {
 			const group = this.parts.findGroup(this.current);
 			if (group !== undefined) group.removeEditor(this.current);
@@ -176,7 +179,8 @@ export class ActorLabController {
 		input.interaction.running = false; input.timeline.clear();
 		input.stateGraph = undefined; input.presentation = 'outline'; input.follow.stop(); input.historical = this.rewind.active;
 		input.domain = domain; input.actorHashId = hashId; input.selectionPath = undefined; input.dirty = true;
-		this.refresh(input); this.projection.reveal(input.runtime.roots[0]);
+		this.refresh(input);
+		if (input.actorPresent) this.projection.reveal(input.runtime.roots[0]);
 	}
 	public selected(input: ActorLabInput): ActorNode | undefined {
 		if (input.dirty || !input.actorPresent) return undefined;

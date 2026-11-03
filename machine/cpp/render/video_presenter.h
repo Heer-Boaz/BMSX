@@ -32,6 +32,11 @@ struct GxGpuDeviceOutput;
  * For libretro, viewportSize IS the framebuffer size.
  * ============================================================================ */
 
+struct GameFrameObserver {
+	void (*committed)(void* context, u32 sequence) = nullptr;
+	void* context = nullptr;
+};
+
 class VideoPresenter {
 public:
 	enum class PresentationMode : i32 {
@@ -66,6 +71,7 @@ public:
 	void initializeDefaultTextures();
 	void present(const GxGpuDeviceOutput& output, f64 timeSeconds, f64 deltaSeconds);
 	RgbaImage captureGameFrame();
+	void setGameFrameObserver(GameFrameObserver observer) { m_gameFrameObserver = observer; }
 	std::optional<u32> gameFrameSequence() const { return m_committedSequence; }
 	void configurePresentation(PresentationMode mode, bool commitFrame);
 	u8 presentationHistoryDestinationIndex() const { return presentationHistorySourceIndex == 0 ? 1 : 0; }
@@ -137,6 +143,7 @@ private:
 	// Frame timing
 	u32 m_renderFrameIndex = 0u;
 	std::optional<u32> m_committedSequence;
+	GameFrameObserver m_gameFrameObserver;
 };
 
 } // namespace bmsx

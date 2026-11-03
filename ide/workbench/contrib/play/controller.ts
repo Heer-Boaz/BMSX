@@ -121,7 +121,7 @@ export class PlayController {
 					this.actors = { handle, controller: new ActorLabController(session, session.guest, session.target.runtime.machine.cpu,
 						this.editor.editorParts, this.editor.navigation, session.actorExecution, session.rewind,
 						this.sources, { kind: 'offscreen', presenter: session.target.presenter, recipient: session.input.physical,
-							frames: session.frames, transport: session.transport }, `actor-lab:${handle.id}`, 'PLAY ACTORS') };
+							frames: session.frames, transport: session.transport }, session.actorFrames, `actor-lab:${handle.id}`, 'PLAY ACTORS') };
 				}
 				this.actors.controller.open(this.editor.editorParts.findGroup(input)!); return;
 			}

@@ -1,3 +1,4 @@
+import type { ActorRenderFrames } from '../../contrib/actor_lab/render_frames';
 import type { HostAudioOutput } from '../../../../hosts/common/audio_output';
 import type { HostExecutionControl } from '../../../../hosts/common/execution_control';
 import type { HostRewind } from '../../../../hosts/common/rewind';
@@ -35,6 +36,7 @@ export interface PlaySession extends RuntimeInstalledSourceState {
 	readonly navigation: RuntimeFrameNavigation;
 	readonly transport: RuntimeTransport;
 	readonly debuggerExecution: RuntimeDebuggerExecution<SourceExecutionState>;
+	readonly actorFrames: ActorRenderFrames;
 	readonly actorExecution: ActorExecutionService;
 	readonly audio: HostAudioOutput;
 	readonly execution: HostExecutionControl;

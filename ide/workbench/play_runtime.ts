@@ -24,6 +24,8 @@ import { PlayFixture, type PlayFixtureBudgets } from '../testing/play_fixture';
 import type { PlaySession, PlaySessionFailure, PlaySessionState } from './services/play/session';
 import type { OffscreenMachine } from '../../hosts/common/offscreen_machine';
 import type { PlayInput } from './services/play/input';
+import { RuntimeInstructionObservers } from '../runtime/instruction_observers';
+import { ActorRenderFrames } from './contrib/actor_lab/render_frames';
 import { ActorExecutionService } from './contrib/actor_lab/execution';
 
 /** Physical play lifetime, not a retained passing case or a second implementation of the machine loop. */
@@ -42,6 +44,8 @@ export class PlayRuntimeSession implements PlaySession {
 	public readonly navigation: RuntimeFrameNavigation;
 	public readonly transport: RuntimeTransport;
 	public readonly debuggerExecution: RuntimeDebuggerExecution<SourceExecutionState>;
+	public readonly actorFrames: ActorRenderFrames;
+	private readonly instructionObservers: RuntimeInstructionObservers;
 	public readonly actorExecution: ActorExecutionService;
 	public readonly currentBlua32Media: Blua32InstalledMedia;
 	private readonly fault = createRuntimeFaultState();
@@ -64,6 +68,8 @@ export class PlayRuntimeSession implements PlaySession {
 		this.rewind = new HostRewind(runtime, target.presenter, target.presentation, this.tasks, this.audio, log);
 		this.frameSession = new HostFrameSession(runtime.timing.ufpsScaled, 0, this.rewind, this.execution);
 		this.currentBlua32Media = program.sourceMedia;
+		this.instructionObservers = new RuntimeInstructionObservers(runtime.machine.cpu);
+		this.actorFrames = new ActorRenderFrames(runtime, this, this.guest, this.instructionObservers);
 		this.debugSources = new TestDebuggerSources(generateUuid(), program, () => {
 			if (this.ready) this.debugger.source.install(this.currentBlua32Media, this.debugSources.pcs);
 		});
@@ -204,6 +210,7 @@ export class PlayRuntimeSession implements PlaySession {
 		const actorsDrained = this.actorExecution.shutdown();
 		discardRuntimeDebuggerPlans(this.debugger);
 		this.evidence.dispose();
+		this.actorFrames.dispose(); this.instructionObservers.dispose();
 		this.closeOperation = this.close(actorsDrained);
 		return this.closeOperation;
 	}

@@ -27,6 +27,7 @@ import { SuspendedGuestSession, type GuestInvalidationReason } from '../runtime/
 import { RuntimeTransport } from '../runtime/transport';
 import type { TestTargetFactory } from '../testing/target';
 import type { WorkspaceRecord } from '../workspace/records';
+import { ActorRenderFrames } from './contrib/actor_lab/render_frames';
 import { ActorExecutionService } from './contrib/actor_lab/execution';
 import { BehaviorSourceDocuments } from './contrib/behavior_lens/source_documents';
 import { SceneSourceDocuments } from './contrib/scene_editor/source_documents';
@@ -91,6 +92,7 @@ export class StudioWorkbench {
 	public readonly boots: BootService;
 	public readonly diagnostics: ResourceDiagnosticsService;
 	public readonly luaEvaluation: RuntimeLuaEvaluation;
+	public readonly actorFrames: ActorRenderFrames;
 	public readonly actorExecution: ActorExecutionService;
 	public readonly inspection: RuntimeInspectionService;
 	public readonly frameNavigation: RuntimeFrameNavigation;
@@ -131,12 +133,13 @@ export class StudioWorkbench {
 		this.gpu = new RuntimeGpuHistory(runtime);
 		this.debugger = createRuntimeDebuggerState(runtime, sources);
 		this.guest = new SuspendedGuestSession(runtime);
+		this.actorFrames = new ActorRenderFrames(runtime, sources, this.guest, this.instructionObservers);
 		this.scenarioRuns = new ScenarioRunService(models, sources, workspaceDirtyRecords, runtime.model, createTestTarget);
 		this.textFileSaves = new TextFileSaveService(models, clock, sources.catalog);
 		this.directories = options.workspaceFiles === undefined ? undefined : new WorkspaceDirectoryModel(options.workspaceFiles, sources.catalog);
 		this.hotResumes = new HotResumeService(models, sources, this.guest, this.fault, this.debugger,
 			input, runtime, runtimeTasks, execution, workspaceDirtyRecords);
-		this.hotResumes.onDidApply(() => { this.events.beginTimeline(); this.sceneLive.beginExecution(); this.gte.didInstall(); this.gpu.didInstall(); });
+		this.hotResumes.onDidApply(() => { this.events.beginTimeline(); this.sceneLive.beginExecution(); this.actorFrames.beginExecution(); this.gte.didInstall(); this.gpu.didInstall(); });
 		this.boots = new BootService(models, sources, this.fault, runtime, runtimeTasks, execution, audioOutput, workspaceDirtyRecords);
 		this.diagnostics = new ResourceDiagnosticsService(models, sources.catalog, clock);
 		this.luaEvaluation = new RuntimeLuaEvaluation(runtime, sources, this.guest, this.debugger, this.fault, runtimeTasks, execution, rewind);
@@ -241,7 +244,7 @@ export class StudioWorkbench {
 		this.frameNavigation.dispose(); this.debuggerExecution.dispose();
 		const evaluationDrained = this.luaEvaluation.shutdown(), actorsDrained = this.actorExecution.shutdown();
 		this.scenarioRuns.dispose();
-		this.sceneLive.dispose(); this.instructionObservers.dispose();
+		this.sceneLive.dispose(); this.actorFrames.dispose(); this.instructionObservers.dispose();
 		const playDrained = this.play.dispose();
 		this.diagnostics.dispose();
 		const executionDrained = this.hotResumes.shutdown(), bootsDrained = this.boots.shutdown();

@@ -104,6 +104,11 @@ test('held presentation retains native pixels across host resizing and overlay c
 	const passes = new RenderPassLibrary(backend, presenter);
 	presenter.initialize(passes);
 	presenter.crt_postprocessing_enabled = false;
+	const committed: number[] = [];
+	presenter.setGameFrameObserver({ committed(sequence) {
+		assert.equal(presenter.gameFrameSequence, sequence, 'history commit precedes notification');
+		committed.push(sequence);
+	} });
 	let presentedFrames = 0;
 	let overlayExpected = false;
 	backend.addPresentedFrameListener(frame => {
@@ -149,6 +154,10 @@ test('held presentation retains native pixels across host resizing and overlay c
 	presenter.present(output, 0, 0);
 	assert.ok(backend.framebufferWords.every(pixel => pixel === 0xff665544), 'a completed frame replaces history');
 	assert.equal(presentedFrames, 5, 'one publication per completed host frame');
+	assert.deepEqual(committed, [1, 5], 'only new completed images notify, not partial/held repaints');
+	presenter.setGameFrameObserver(null);
+	presenter.present(output, 0, 0);
+	assert.deepEqual(committed, [1, 5], 'detached observers receive no commits');
 	presenter.dispose();
 });
 

@@ -654,6 +654,34 @@ function runGpuAtNextDeadline(gpu: GxGpu, scheduler: DeviceScheduler): number {
 
 const standaloneCommandBufferDma = createGpu().dma;
 
+test('GX-GPU presentation observer publishes the latched prefix and raw status without changing execution', () => {
+	const baseline = createGpu(), observed = createGpu();
+	const records: { status: number; width: number; changed: boolean }[] = [];
+	observed.gpu.setPresentationObserver({ latched(status, scanout, changed) {
+		records.push({ status, width: scanout.outputWidth, changed });
+	} });
+	for (const target of [baseline, observed]) {
+		stopPcrtc(target.memory, target.gpu, target.scheduler);
+		for (const word of [0x020000ff, 0, 0x00040020]) target.memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
+		target.gpu.presentReadyFrameOnVblankEdge();
+	}
+	assert.equal(records.length, 1);
+	assert.equal(records[0].status & GX_GPU_STATUS_GPU_IDLE, 0, 'an incomplete device prefix is not a finished render');
+	for (const target of [baseline, observed]) { completeGpuCommands(target.gpu); target.gpu.presentReadyFrameOnVblankEdge(); }
+	assert.equal(records.length, 2);
+	assert.ok(records[1].changed);
+	assert.notEqual(records[1].status & GX_GPU_STATUS_GPU_IDLE, 0);
+	const output = observed.gpu.readDeviceOutput();
+	assert.equal(records[1].status, output.statusWord); assert.equal(records[1].width, output.pcrtcScanout.outputWidth);
+	assert.deepEqual(observed.gpu.captureSaveState(), baseline.gpu.captureSaveState());
+	assert.equal(observed.scheduler.currentNowCycles(), baseline.scheduler.currentNowCycles());
+	const state = observed.gpu.captureSaveState();
+	observed.gpu.restoreSaveState(state); observed.gpu.reset();
+	assert.equal(records.length, 2, 'read, restore and reset are not presentations');
+	observed.gpu.setPresentationObserver(null); observed.gpu.presentReadyFrameOnVblankEdge();
+	assert.equal(records.length, 2, 'retirement detaches observation');
+});
+
 test('GX-GPU operation observer borrows actual packet words and latched state identically for CPU and DMA', () => {
 	const packets = [
 		[0xe1001a55], [0xe2001234], [0xe3000801], [0xe4002008], [0xe5000fff], [0xe6000003],
