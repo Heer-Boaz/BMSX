@@ -1,6 +1,6 @@
 schema: nemesis_s.level.v1
 title: De Bevroren Haven
-revision: 28
+revision: 29
 width: 931
 height: 22
 source_commit: d04363ea9a05758eb91b5016f2e082036837813c
@@ -328,7 +328,7 @@ scenery:
 - prefab: haven_loopbrug
   x: 231
   y: 16
-- prefab: auto_rood
+- prefab: auto_achtergrond_blauw
   x: 211
   y: 17
 - prefab: fiets_rood
@@ -340,16 +340,10 @@ scenery:
 - prefab: bakfiets
   x: 281
   y: 17
-- prefab: bestelbus_blauw
-  x: 407
-  y: 17
-- prefab: bestelbus_blauw
-  x: 444
-  y: 18
 - prefab: fiets_blauw
   x: 451
   y: 18
-- prefab: auto_rood
+- prefab: auto_achtergrond_blauw
   x: 632
   y: 19
 - prefab: fiets_blauw
@@ -397,9 +391,6 @@ scenery:
 - prefab: huis_lijstgevel_smal
   x: 296
   floor: 18
-- prefab: auto_rood
-  x: 302
-  y: 17
 - prefab: fiets_blauw
   x: 305
   y: 17
@@ -413,19 +404,28 @@ scenery:
   x: 376
   floor: 18
 - prefab: compact_lamp_snow_66
-  x: 382
+  x: 383
   floor: 18
-- prefab: tankstation
+- prefab: tankstation_achtergrond
   x: 318
   y: 16
-- prefab: vrachtauto_vooraanzicht
+- prefab: vrachtwagen_achtergrond_blauw
   x: 325
   y: 17
-- prefab: vrachtauto_vooraanzicht
+- prefab: vrachtwagen_achtergrond_blauw
   x: 326
   y: 17
-- prefab: vrachtauto_vooraanzicht
+- prefab: vrachtwagen_achtergrond_blauw
   x: 327
+  y: 17
+- prefab: auto_achtergrond_blauw
+  x: 169
+  y: 17
+- prefab: auto_achtergrond_blauw
+  x: 307
+  y: 17
+- prefab: auto_achtergrond_blauw
+  x: 384
   y: 17
 - prefab: steegpoort
   x: 212
@@ -454,6 +454,30 @@ planting_beds:
   floor: 18
   purpose: Eén lage, besneeuwde bermrand in zijaanzicht, naast de havenweg
 town_details:
+- prefab: auto_voorgrond_rood
+  x: 380
+  floor: 18
+  ground_offset: 0
+  snow_join: true
+  purpose: Personenauto op de Kartonion-hoofdmaat naast de lijstgevel; de kleine blauwe auto voorbij de lantaarn leest als achtergrond.
+- prefab: auto_voorgrond_rood
+  x: 302
+  floor: 18
+  ground_offset: 0
+  snow_join: true
+  purpose: Personenauto naast de straatboom, op dezelfde maat als de huizen.
+- prefab: auto_voorgrond_cyaan
+  x: 407
+  floor: 18
+  ground_offset: 0
+  snow_join: true
+  purpose: Grote auto op de woonkade, voor de verre blauwe gevels.
+- prefab: auto_voorgrond_cyaan
+  x: 444
+  floor: 19
+  ground_offset: 0
+  snow_join: true
+  purpose: Grote auto op de vrije kade bij de werf.
 - prefab: sneeuwstruik
   x: 269
   floor: 18
@@ -606,7 +630,7 @@ town_details:
   ground_offset: 0
   snow_join: true
 - prefab: gevelpot_winter
-  x: 409
+  x: 413
   floor: 18
   ground_offset: 0
   snow_join: true

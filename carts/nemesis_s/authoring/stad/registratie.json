@@ -259,6 +259,54 @@
       "label": "Kratjes bij de kruidenier",
       "group": "straatdetails",
       "source": "authoring/stadsleven/winkel_kratjes.png"
+    },
+    {
+      "name": "auto_voorgrond_rood",
+      "label": "Rode personenauto op de hoofdmaat",
+      "group": "verkeer_voorgrond",
+      "source": "authoring/stadsleven/auto_voorgrond_rood.png"
+    },
+    {
+      "name": "auto_voorgrond_cyaan",
+      "label": "Cyaanblauwe personenauto op de hoofdmaat",
+      "group": "verkeer_voorgrond",
+      "source": "authoring/stadsleven/auto_voorgrond_cyaan.png"
+    },
+    {
+      "name": "auto_achtergrond_blauw",
+      "label": "Kleine blauwe achtergrondauto",
+      "group": "verkeer_achtergrond",
+      "source": "authoring/stadsleven/auto_achtergrond_blauw.png"
+    },
+    {
+      "name": "tankstation_achtergrond",
+      "label": "Tankstation met blauwe achtergrondauto",
+      "group": "verkeer_achtergrond",
+      "source": "authoring/stadsleven/tankstation_achtergrond.png"
+    },
+    {
+      "name": "vrachtwagen_achtergrond_blauw",
+      "label": "Kleine blauwe vrachtwagen in vooraanzicht",
+      "group": "verkeer_achtergrond",
+      "source": "authoring/stadsleven/vrachtwagen_achtergrond_blauw.png"
+    },
+    {
+      "name": "compact_sneeuwhuis",
+      "label": "Compact sneeuwhuis met deur op hoofdmaat",
+      "group": "huizengevels",
+      "source": "authoring/stadsleven/huis_sneeuw_deur.png"
+    },
+    {
+      "name": "compact_hoog_sneeuwhuis",
+      "label": "Hoog sneeuwhuis met deur op hoofdmaat",
+      "group": "huizengevels",
+      "source": "authoring/stadsleven/huis_hoog_sneeuw_deur.png"
+    },
+    {
+      "name": "compact_smal_grachtenhuis",
+      "label": "Smal grachtenhuis met deur op hoofdmaat",
+      "group": "huizengevels",
+      "source": "authoring/stadsleven/huis_smal_gracht_deur.png"
     }
   ]
 }

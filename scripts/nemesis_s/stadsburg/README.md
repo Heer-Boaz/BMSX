@@ -40,6 +40,12 @@ PNG sources in `authoring/stadsleven`. Their `native` entries in
 `authoring/stad/registratie.json` import those exact pixels through `bake_stad.py`,
 without resampling or quantization. The baker checks the palette and 8×1 ink
 limit and reuses identical tiles from the existing catalog.
+The town's main scale is four pixels per metre, using the 16-pixel Kartonion as
+a fictional four-metre vehicle. Foreground cars draw at 19×7 pixels; the small
+8×4-pixel cars and front-view trucks use subdued blues to read as background
+traffic. Their authoring groups describe that visual depth within the fixed
+side view. The native house variants correct only the older door openings to
+eight pixels high while retaining the surrounding building pixels.
 The Python dependencies are pinned for reproducible resource bytes.
 Preview images, pattern-bank exports and check reports are
 generated locally and ignored by Git.

@@ -1,8 +1,8 @@
 schema: nemesis_s.prefabs.v1
-revision: 28
+revision: 29
 prefabs:
   compact_smal_grachtenhuis:
-    description: Kleine smalle trapgevel, 24x64, met twee vensters en centrale deur.
+    description: Smal grachtenhuis met deur op hoofdmaat, rechtstreeks uit de native pixelbron.
     tiles:
     - - 1010
       - 1138
@@ -23,12 +23,12 @@ prefabs:
       - 1141
       - 1026
     - - 1021
-      - 1142
+      - 2260
       - 1057
     - - 1030
       - 1143
       - 1032
-    label: Smal grachtenhuis
+    label: Smal grachtenhuis met deur op hoofdmaat
     groep: huizengevels
   compact_breed_laag_huis:
     description: Klein breed huis, 48x48, met drie raamassen en brede sneeuwkap.
@@ -76,7 +76,7 @@ prefabs:
     label: Laag woonhuis
     groep: huizengevels
   compact_sneeuwhuis:
-    description: Klein sneeuwhuis, 32x48, met twee ramen en centrale deur.
+    description: Compact sneeuwhuis met deur op hoofdmaat, rechtstreeks uit de native pixelbron.
     tiles:
     - - null
       - 1160
@@ -95,17 +95,17 @@ prefabs:
       - 1170
       - 1171
     - - 1172
-      - 1173
-      - 1174
+      - 2256
+      - 2257
       - 1081
     - - 1082
       - 1083
       - 1084
       - 1085
-    label: Huis met sneeuwkap
+    label: Compact sneeuwhuis met deur op hoofdmaat
     groep: huizengevels
   compact_hoog_sneeuwhuis:
-    description: Klein hoog sneeuwhuis, 32x64, met twee raamverdiepingen.
+    description: Hoog sneeuwhuis met deur op hoofdmaat, rechtstreeks uit de native pixelbron.
     tiles:
     - - null
       - 1160
@@ -132,14 +132,14 @@ prefabs:
       - 1186
       - 1187
     - - 1188
-      - 1189
-      - 1190
+      - 2258
+      - 2259
       - 1081
     - - 1107
       - 1108
       - 1109
       - 1110
-    label: Hoog grachtenhuis
+    label: Hoog sneeuwhuis met deur op hoofdmaat
     groep: huizengevels
   haven_laser_house:
     description: 'Eén verbouwde schoorsteen: 32px breed, vaste onderbouw en dak uit hetzelfde goedgekeurde ontwerp.'
@@ -1744,3 +1744,46 @@ prefabs:
     - - 2101
     label: Kratjes bij de kruidenier
     groep: straatdetails
+  auto_voorgrond_rood:
+    description: Rode personenauto op de hoofdmaat, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - 2228
+      - 2229
+      - 2230
+    label: Rode personenauto op de hoofdmaat
+    groep: verkeer_voorgrond
+  auto_voorgrond_cyaan:
+    description: Cyaanblauwe personenauto op de hoofdmaat, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - 2231
+      - 2232
+      - 2233
+    label: Cyaanblauwe personenauto op de hoofdmaat
+    groep: verkeer_voorgrond
+  auto_achtergrond_blauw:
+    description: Kleine blauwe achtergrondauto, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - 2234
+    label: Kleine blauwe achtergrondauto
+    groep: verkeer_achtergrond
+  tankstation_achtergrond:
+    description: Tankstation met blauwe achtergrondauto, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - 1646
+      - 1647
+      - 1648
+      - 1649
+      - null
+    - - 1650
+      - 1651
+      - 2235
+      - 1674
+      - 1654
+    label: Tankstation met blauwe achtergrondauto
+    groep: verkeer_achtergrond
+  vrachtwagen_achtergrond_blauw:
+    description: Kleine blauwe vrachtwagen in vooraanzicht, rechtstreeks uit de native pixelbron.
+    tiles:
+    - - 2236
+    label: Kleine blauwe vrachtwagen in vooraanzicht
+    groep: verkeer_achtergrond
