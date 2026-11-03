@@ -1,5 +1,6 @@
 import {
 	buildErrorStackString,
+	formatRuntimeErrorLocation,
 	sanitizeLuaErrorMessage,
 } from './error_format';
 import {
@@ -15,7 +16,7 @@ import type {
 	SuspendedGuestSession,
 	SuspendedGuestValue,
 } from './suspended_guest';
-import type { Blua32SourceImage, RuntimeSourceState } from './sources';
+import type { Blua32SourceImage, RuntimeInstalledSourceState } from './sources';
 import type { ResourceIdentity } from '../common/resource';
 import {
 	CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD,
@@ -57,6 +58,16 @@ export type FaultSnapshot = {
 	column: number;
 	details: RuntimeErrorDetails;
 };
+
+/** A failed guest operation, with installed-source evidence rather than a host
+ * JavaScript throw site. Used by independently scheduled execution owners. */
+export class RuntimeGuestFault extends Error {
+	public constructor(public readonly snapshot: FaultSnapshot, stack: string) {
+		super(snapshot.resource === undefined ? snapshot.message
+			: `${formatRuntimeErrorLocation(snapshot.resource.path, snapshot.line, snapshot.column)}: ${snapshot.message}`);
+		this.stack = stack;
+	}
+}
 
 export type RuntimeCpuFaultFrame = {
 	readonly executionDomainId: ExecutionDomainId;
@@ -117,7 +128,7 @@ export function clearFaultSnapshot(fault: RuntimeFaultState): void {
 }
 
 function captureRuntimeCpuFaultFrames(
-	sources: RuntimeSourceState,
+	sources: RuntimeInstalledSourceState,
 	runtime: Runtime,
 	frameDepth: number,
 	lastExecutionDomainId: ExecutionDomainId,
@@ -183,15 +194,14 @@ export function readSupervisorFaultReport(runtime: Runtime): string | undefined 
 
 export function recordSupervisorFault(
 	fault: RuntimeFaultState,
-	sources: RuntimeSourceState,
+	sources: RuntimeInstalledSourceState,
 	runtime: Runtime,
 	session: SuspendedGuestSession,
 ): string {
 	const cpu = runtime.machine.cpu;
 	const memory = runtime.machine.memory;
 	const causeWord = memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_CAUSE);
-	const causeCode = causeWord & CPU_CAUSE_CODE_MASK;
-	const exceptionFunctionAddress = sources.systemRom.header.blua32ExceptionFunctionAddress;
+	const exceptionFunctionAddress = runtime.machine.executionAddressSpace.resolveSystemDomain().exceptionFunctionAddress;
 	let exceptionFrameIndex = cpu.getFrameDepth() - 1;
 	while (!cpu.isExceptionFrame(exceptionFrameIndex)
 		|| cpu.isNonMaskableExceptionFrame(exceptionFrameIndex)
@@ -200,6 +210,30 @@ export function recordSupervisorFault(
 	}
 	const executionDomainId = (memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_DOMAIN) | 0) as ExecutionDomainId;
 	const pc = memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_EPC);
+	return recordCpuFault(fault, sources, runtime, session, exceptionFrameIndex, causeWord,
+		executionDomainId, pc, memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS));
+}
+
+/** Between execution grants the physical exception frame already owns the fault.
+ * Independent execution must not wait for the BIOS monitor to render/publish it. */
+export function captureActiveRuntimeFault(sources: RuntimeInstalledSourceState, runtime: Runtime,
+	session: SuspendedGuestSession): RuntimeGuestFault | undefined {
+	const cpu = runtime.machine.cpu, cause = cpu.readCauseWord();
+	if ((cause & CPU_CAUSE_CODE_MASK) === 0) return; // IRQ/NMI are not failed calls.
+	const vector = runtime.machine.executionAddressSpace.resolveSystemDomain().exceptionFunctionAddress;
+	for (let index = cpu.getFrameDepth() - 1; index >= 0; index--) {
+		if (!cpu.isExceptionFrame(index) || cpu.isNonMaskableExceptionFrame(index) || cpu.readFrameFunctionAddress(index) !== vector) continue;
+		const fault = createRuntimeFaultState();
+		const stack = recordCpuFault(fault, sources, runtime, session, index, cause,
+			(cpu.readExceptionDomainWord() | 0) as ExecutionDomainId, cpu.readEpcWord(), cpu.readBadAddressWord());
+		return new RuntimeGuestFault(fault.faultSnapshot, stack);
+	}
+}
+
+function recordCpuFault(fault: RuntimeFaultState, sources: RuntimeInstalledSourceState, runtime: Runtime,
+	session: SuspendedGuestSession, exceptionFrameIndex: number, causeWord: number,
+	executionDomainId: ExecutionDomainId, pc: number, badAddress: number): string {
+	const cpu = runtime.machine.cpu, causeCode = causeWord & CPU_CAUSE_CODE_MASK;
 	fault.lastCpuFaultExecutionDomainId = executionDomainId;
 	fault.lastCpuFaultPc = pc;
 	fault.lastCpuFaultSnapshot = captureRuntimeCpuFaultFrames(
@@ -215,10 +249,10 @@ export function recordSupervisorFault(
 	let message: string;
 	switch (causeCode) {
 		case CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD:
-			message = `Address error load at ${formatNumberAsHex(memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS), 8)}.`;
+			message = `Address error load at ${formatNumberAsHex(badAddress, 8)}.`;
 			break;
 		case CPU_CAUSE_CODE_ADDRESS_ERROR_STORE:
-			message = `Address error store at ${formatNumberAsHex(memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS), 8)}.`;
+			message = `Address error store at ${formatNumberAsHex(badAddress, 8)}.`;
 			break;
 		case CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR:
 			message = 'Instruction bus error.';

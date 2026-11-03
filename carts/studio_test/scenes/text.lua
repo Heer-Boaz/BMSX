@@ -6,7 +6,8 @@ local font<const> = require('cartlib/font')
 local text_scene<const> = {}
 
 -- The authored position is independent of construction-time text and a
--- presentation-only timeline. No visual data is encoded in the Scene member.
+-- presentation-only timeline. Content is a caller-supplied runtime binding;
+-- registration alone is not enough to instantiate this composition.
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local initialized_caption<const> = {}
 setmetatable(initialized_caption, { __index = object_2d })
@@ -14,7 +15,7 @@ setmetatable(initialized_caption, { __index = object_2d })
 function initialized_caption.initialize(owner)
 	owner.caption = text_component.new(owner, { color = 0xff26a3bb })
 	owner:add_component(owner.caption)
-	owner.caption:set_text(string.upper('studio'))
+	owner.caption:set_text(string.upper(owner.content))
 	local transport<const> = timeline_component.new(owner, { clock_mode = 'manual' })
 	owner:add_component(transport)
 	transport:define('presentation', {

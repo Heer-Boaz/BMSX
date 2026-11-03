@@ -5,7 +5,8 @@ import { blua32MediaRequiresRebuild, prepareBlua32SourceBuildRequest, buildBlua3
 import { applyAllWorkspaceSourceOverrides, applyLuaTextModelSources } from '../../../workspace/workspace';
 import type { LuaTextModelSourceSnapshot } from '../working_copy/lua_sources';
 import type { WorkspaceRecord } from '../../../workspace/records';
-import type { FixtureMedia } from '../../../testing/fixture_media';
+import { buildFixtureProgram, type BuiltFixtureProgram, type FixtureMedia } from '../../../testing/fixture_media';
+import type { ScenarioTestSource } from '../../../../toolchain/ts/rompack/scenario_test';
 import type { MachineModelSpec } from '../../../../machine/ts/spec/bmsx/model';
 import type { TestCartridgeSourceInput } from '../../../../toolchain/ts/rompack/test_cartridge';
 import { loadBlua32ToolingImage } from '../../../../toolchain/ts/rompack/blua32_media';
@@ -16,11 +17,19 @@ export type ExecutionMedia = RuntimeInstalledSourceState & {
 	readonly systemRom: Uint8Array;
 	readonly cartridgeSlots: readonly [Uint8Array | null, Uint8Array | null];
 	readonly machineModel: MachineModelSpec;
+	readonly fixture?: BuiltFixtureProgram;
 };
 
 /** Build current Lua against the admitted packaged assets, not a private asset build. */
 export async function buildExecutionMedia(authoring: RuntimeSourceState, dirtyRecords: ReadonlyMap<string, WorkspaceRecord>,
-	programSources: readonly LuaTextModelSourceSnapshot[], contextId: string, machineModel: MachineModelSpec): Promise<ExecutionMedia> {
+	programSources: readonly LuaTextModelSourceSnapshot[], contextId: string, machineModel: MachineModelSpec,
+	fixture?: ScenarioTestSource): Promise<ExecutionMedia> {
+	if (fixture !== undefined) {
+		const media = await buildFixtureMedia(authoring, dirtyRecords, programSources, contextId, machineModel, null);
+		const program = await buildFixtureProgram(media, fixture);
+		return { systemRom: media.systemRom, cartridgeSlots: [program.layer.bytes, null],
+			currentBlua32Media: program.sourceMedia, machineModel, fixture: program };
+	}
 	const snapshot = await ExecutionSourceSnapshot.capture(authoring, dirtyRecords, programSources, contextId, null, true);
 	try {
 		const sources = snapshot.sources;

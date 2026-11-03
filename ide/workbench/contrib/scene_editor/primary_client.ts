@@ -100,7 +100,7 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 		};
 		this.commandTarget.registerCommand('sceneEditor.outline', sections.outline);
 		this.commandTarget.registerCommand('sceneEditor.details', sections.details);
-		this.previewCommands = new ScenePreviewCommands(this.commandTarget, this.view.viewport, options.quickInput, () => this.isCurrent());
+		this.previewCommands = new ScenePreviewCommands(this.commandTarget, this.view.viewport, options.previews, options.quickInput, () => this.isCurrent());
 		this.authoringCommands = new SceneAuthoringCommands(this.commandTarget, options.quickInput, context => {
 			if (context !== consumer || !this.hierarchy.attached) return;
 			this.hierarchy.control.update(); this.hierarchy.control.revealSelection();

@@ -2,14 +2,29 @@ import type { FocusCommand, InputFocusTarget } from '../../../input/focus';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import type { SceneViewportViewState } from './viewport/view_state';
+import type { ResourceIdentity } from '../../../common/resource';
+import type { ScenePreviewService } from './preview';
 
 /** Active-document canvas commands, with the same captured-context lifetime as
  * source editing. Panel chrome and hierarchy rows do not own these subjects. */
 export class ScenePreviewCommands {
-	private readonly commands: readonly (readonly ['scenePreview.toggle' | 'scenePreview.timeline', FocusCommand])[];
+	private readonly commands: readonly (readonly ['scenePreview.toggle' | 'scenePreview.timeline' | 'scenePreview.initialization', FocusCommand])[];
 	private attached: InputFocusTarget | undefined;
-	public constructor(target: InputFocusTarget, view: SceneViewportViewState, quickInput: QuickInputController, isCurrent: () => boolean) {
+	public constructor(target: InputFocusTarget, view: SceneViewportViewState, previews: ScenePreviewService,
+		quickInput: QuickInputController, isCurrent: () => boolean) {
 		const actions = [
+			{ id: 'scenePreview.initialization' as const, enabled: () => view.authoring.subject !== undefined,
+				checked: undefined, run: () => {
+					const preview = view.runtime!, subject = view.authoring.subject;
+					const items: { label: string; description: string; detail: string; resource: ResourceIdentity | undefined }[] = [
+						{ label: 'Cart startup', description: 'Use an instance created by ordinary boot', detail: '', resource: undefined },
+						...previews.initializations(view.authoring.workingCopy.identity.contextId).map(module => ({ label: module.label, description: module.resource.path,
+							detail: 'Run setup; use its t.scene instance', resource: module.resource })),
+					];
+					quickInput.pick('Preview initialization', 'Cart startup or integration setup', () => new TextQuickPickProvider(items), item => {
+						if (isCurrent() && view.authoring.subject === subject) preview.chooseInitialization(item.resource);
+					}, undefined, { commandTarget: target });
+				} },
 			{ id: 'scenePreview.toggle' as const, enabled: () => view.authoring.subject !== undefined,
 				checked: () => view.runtime!.enabled, run: () => {
 					if (view.runtime!.enabled) view.runtime!.stop(); else { view.camera.setMode('2d'); void view.runtime!.start(); }

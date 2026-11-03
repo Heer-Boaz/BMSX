@@ -18,7 +18,8 @@ import type { SceneViewportPoint } from './camera';
 import { WorkbenchSliderControl } from '../../../ui/slider_control';
 
 export const VIEWPORT_CONTEXT_ACTIONS: WorkbenchMenuDefinition<SceneViewportViewState> = [
-	{ type: 'command', command: 'scenePreview.toggle' }, { type: 'command', command: 'scenePreview.timeline' }, { type: 'separator' },
+	{ type: 'command', command: 'scenePreview.toggle' }, { type: 'command', command: 'scenePreview.initialization' },
+	{ type: 'command', command: 'scenePreview.timeline' }, { type: 'separator' },
 	{ type: 'command', command: 'sceneEditor.addMember' }, { type: 'separator' },
 	{ type: 'command', command: 'sceneViewport.frameAll' }, { type: 'command', command: 'sceneViewport.frameSelection' },
 	{ type: 'separator' }, { type: 'command', command: 'sceneViewport.view2d' }, { type: 'command', command: 'sceneViewport.view3d' },

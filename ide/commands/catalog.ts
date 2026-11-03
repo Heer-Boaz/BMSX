@@ -299,6 +299,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'sceneViewport.frameSelection': { category: 'Scene Viewport', title: 'Frame Selection', shortTitle: 'Frame Selection' },
 	'sceneViewport.view2d': { category: 'Scene Viewport', title: '2D View', shortTitle: '2D' },
 	'scenePreview.toggle': { category: 'Scene Preview', title: 'Runtime Preview', shortTitle: 'Runtime' },
+	'scenePreview.initialization': { category: 'Scene Preview', title: 'Choose Initialization…', shortTitle: 'Initialization' },
 	'scenePreview.timeline': { category: 'Scene Preview', title: 'Choose Timeline…', shortTitle: 'Timeline' },
 	'sceneViewport.view3d': { category: 'Scene Viewport', title: '3D View', shortTitle: '3D' },
 	'builds.start': { category: 'Studio', title: 'Build Cartridge' },

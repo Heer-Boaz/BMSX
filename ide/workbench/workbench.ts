@@ -151,7 +151,7 @@ export class StudioWorkbench {
 			rewind, this.fault, this.frameNavigation, this.debuggerExecution);
 		this.behaviorSources = new BehaviorSourceDocuments(models, sources.catalog);
 		this.sceneSources = new SceneSourceDocuments(models, sources.catalog);
-		this.scenePreviews = new ScenePreviewService(models, sources, workspaceDirtyRecords, runtime.model);
+		this.scenePreviews = new ScenePreviewService(models, sources, workspaceDirtyRecords, runtime.model, this.scenarioRuns);
 		this.projectContent = new ProjectContentIndex(models, sources.catalog, this.behaviorSources.registrations, this.sceneSources);
 		this.tools = new WorkspaceToolService(models, sources, this.diagnostics, this.scenarioRuns, this.inspection,
 			this.frameNavigation, gameCapture, this.luaEvaluation, this.debuggerExecution, this.actorExecution,
