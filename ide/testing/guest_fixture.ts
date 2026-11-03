@@ -4,6 +4,7 @@ import type { Thread } from '../../machine/ts/machine/cpu/thread';
 import type { Table } from '../../machine/ts/machine/cpu/table';
 import { valueString, type Value } from '../../machine/ts/machine/cpu/value';
 import { CpuSuspendedRunResult } from '../../machine/ts/machine/runtime/cpu_executor';
+import type { FrameState } from '../../machine/ts/machine/runtime/frame/state';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 import { buildModuleExportSlotName } from '../../toolchain/ts/lua/module_path';
 import { TEST_EXECUTION_MODULE_PATH, type BuiltTestCartridge } from '../../toolchain/ts/rompack/test_cartridge';
@@ -23,6 +24,10 @@ export class GuestFixture {
 	private returnThread!: Thread;
 	private returnDepth = 0;
 	private readonly suiteSlot: string;
+	private readonly stoppedGrant: FrameState = {
+		updateExecuted: false, cycleBudgetRemaining: 0, cycleBudgetGranted: 0,
+		cycleCarryGranted: 0, activeCpuUsedCycles: 0,
+	};
 
 	public constructor(public readonly runtime: Runtime, public readonly program: BuiltTestCartridge) {
 		this.suiteSlot = buildModuleExportSlotName(program.suite.modulePath, []);
@@ -36,6 +41,10 @@ export class GuestFixture {
 	}
 
 	public advanceInitialization(cycles: number): void {
+		if (this.runtime.machine.systemController.cpuHeld()) {
+			this.advanceHeldCpu(cycles);
+			return;
+		}
 		const cpu = this.runtime.machine.cpu;
 		this.runtime.cpuExecution.runSuspendedUntilDepth(0, cycles, cpu.rootThread);
 	}
@@ -51,20 +60,33 @@ export class GuestFixture {
 	public advance(args: readonly Value[], cycles: number): boolean {
 		const runtime = this.runtime, cpu = runtime.machine.cpu;
 		this.lastCallCycles = 0;
+		const before = runtime.machine.scheduler.nowCycles;
+		if (runtime.machine.systemController.cpuHeld()) {
+			this.advanceHeldCpu(cycles);
+			this.lastCallCycles = runtime.machine.scheduler.nowCycles - before;
+			return false;
+		}
 		if (!this.callPending) {
 			const exceptionDepth = cpu.readExceptionReturnFrameDepth();
 			if (exceptionDepth !== -1) {
 				runtime.cpuExecution.runSuspendedUntilDepth(exceptionDepth, cycles, cpu.activeThread);
+				this.lastCallCycles = runtime.machine.scheduler.nowCycles - before;
 				return false;
 			}
 			this.beginCall('resume', args);
 		}
-		const before = runtime.machine.scheduler.nowCycles;
 		const status = runtime.cpuExecution.runSuspendedUntilDepth(this.returnDepth, cycles, this.returnThread);
 		this.lastCallCycles = runtime.machine.scheduler.nowCycles - before;
 		if (status !== CpuSuspendedRunResult.Completed) return false;
 		this.callPending = false;
 		return true;
+	}
+
+	/** Quiescing devices need time; a stopped grant never admits a fixture call or runs guest instructions. */
+	private advanceHeldCpu(cycles: number): void {
+		this.stoppedGrant.cycleBudgetRemaining = cycles;
+		this.stoppedGrant.cycleBudgetGranted = cycles;
+		this.runtime.cpuExecution.runStoppedCpu(this.stoppedGrant);
 	}
 
 	public cancelPhase(phase: string): void {
