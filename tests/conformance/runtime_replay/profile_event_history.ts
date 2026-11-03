@@ -1,3 +1,4 @@
+import { RuntimeInstructionObservers } from '../../../ide/runtime/instruction_observers';
 import assert from 'node:assert/strict';
 import Module from 'node:module';
 import { readFileSync } from 'node:fs';
@@ -67,7 +68,7 @@ async function main(): Promise<void> {
 		return captureRuntimeSaveState(runtime);
 	};
 	runtime.boot();
-	let history = new RuntimeEventHistory(runtime, sources);
+	let history = new RuntimeEventHistory(runtime, sources, new RuntimeInstructionObservers(runtime.machine.cpu));
 	for (const checkpoint of [400, 1200, 2400]) {
 		while (runtime.frameScheduler.lastTickSequence < checkpoint) tick();
 		const anchor = capture();
@@ -79,7 +80,7 @@ async function main(): Promise<void> {
 			const observed = (round + offset) % 2;
 			applyRuntimeSaveState(runtime, anchor);
 			history.dispose();
-			if (observed) history = new RuntimeEventHistory(runtime, sources);
+			if (observed) history = new RuntimeEventHistory(runtime, sources, new RuntimeInstructionObservers(runtime.machine.cpu));
 			const start = performance.now();
 			for (let frame = 0; frame < 120; frame++) tick();
 			samples[observed].push(performance.now() - start);
@@ -98,7 +99,7 @@ async function main(): Promise<void> {
 			variants: ['unobserved-debug', 'automatic-history'], medianMs,
 			overheadPercent: (medianMs[1] / medianMs[0] - 1) * 100, samples }));
 		history.dispose();
-		history = new RuntimeEventHistory(runtime, sources);
+		history = new RuntimeEventHistory(runtime, sources, new RuntimeInstructionObservers(runtime.machine.cpu));
 	}
 	history.dispose();
 }

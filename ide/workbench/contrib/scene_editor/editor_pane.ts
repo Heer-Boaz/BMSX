@@ -55,7 +55,6 @@ export class SceneEditorPane extends EditorPane<SceneEditorInput | UnavailableSc
 			return;
 		}
 		const view = input.view.viewport;
-		view.connectPreview(this.options.previews);
 		const control = this.controlValue = new SceneViewportControl(this.options.commands, this.options.contextMenu, scope, target,
 			new WorkbenchMenu(VIEWPORT_CONTEXT_ACTIONS, view));
 		control.setView(view, this.contentBounds);

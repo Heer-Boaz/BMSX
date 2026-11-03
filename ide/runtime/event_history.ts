@@ -6,6 +6,7 @@ import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { HistoryMode } from '../../machine/ts/machine/runtime/history/history';
 import { RuntimeRestoreOrigin } from '../../machine/ts/machine/runtime/save_state';
 import type { RuntimeSourceState } from './sources';
+import type { RuntimeInstructionObservers } from './instruction_observers';
 import { GuestValueSnapshot, type ValueSnapshot } from './value_snapshot';
 
 export type HistoricalEvent = {
@@ -35,11 +36,13 @@ export class RuntimeEventHistory {
 	private timeline = 0;
 	private media: Blua32ToolingMedia | null = null;
 	private readonly bindings: FunctionProbeBinding[] = [];
+	private releaseObservation: (() => void) | undefined;
 	private readonly locations = [new Map<number, readonly number[]>(), new Map<number, readonly number[]>(), new Map<number, readonly number[]>()];
 
 	public constructor(
 		private readonly runtime: Runtime,
 		private readonly sources: RuntimeSourceState,
+		private readonly observers: RuntimeInstructionObservers,
 		public readonly capacity = 2048,
 	) {
 		this.buffer = new Array(capacity);
@@ -85,7 +88,7 @@ export class RuntimeEventHistory {
 		if (origin !== RuntimeRestoreOrigin.HistorySeek) this.beginTimeline();
 	}
 
-	public dispose(): void { this.runtime.machine.cpu.setInstructionObserver(null); }
+	public dispose(): void { this.releaseObservation?.(); }
 
 	/** cartlib inspection ABI: emit(self, event, emitter, payload, emitterId). */
 	private bindSources(): void {
@@ -105,7 +108,8 @@ export class RuntimeEventHistory {
 				locations.set(point.pc, point.registers);
 			}
 		}
-		this.runtime.machine.cpu.setInstructionObserver({ points, observe: (domain, pc, values) => this.observe(domain, pc, values) });
+		this.releaseObservation?.();
+		this.releaseObservation = this.observers.add({ points, observe: (domain, pc, values) => this.observe(domain, pc, values) });
 	}
 
 	private observe(domain: ExecutionDomainId, pc: number, values: ValueSlots): void {

@@ -1,3 +1,4 @@
+import { RuntimeInstructionObservers } from '../../ide/runtime/instruction_observers';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
@@ -23,7 +24,7 @@ const BUDGET = 10_000_000;
 function fixture(t: TestContext, variant: 'tiny' | 'msx', count = 200, capacity = 2048) {
 	configureFontVariant(variant);
 	const { cpu, runtime, sources } = eventHistoryRuntime(images);
-	const history = new RuntimeEventHistory(runtime, sources, capacity);
+	const history = new RuntimeEventHistory(runtime, sources, new RuntimeInstructionObservers(runtime.machine.cpu), capacity);
 	assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
 	const emit = cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!) as Closure;
 	cpu.beginCompletionCall(emit, [count]);

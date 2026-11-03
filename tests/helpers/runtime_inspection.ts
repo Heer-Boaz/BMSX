@@ -1,3 +1,4 @@
+import { RuntimeInstructionObservers } from '../../ide/runtime/instruction_observers';
 import { RuntimeEventHistory } from '../../ide/runtime/event_history';
 import { RuntimeGpuHistory } from '../../ide/runtime/gpu_history';
 import { RuntimeGteHistory } from '../../ide/runtime/gte_history';
@@ -39,7 +40,7 @@ export function createRuntimeInspectionFixture(runtime: Runtime, sources: Runtim
 	const presentation = new RenderPresentationState();
 	const execution = new HostExecutionControl(audio);
 	const tasks = new RuntimeTaskQueue(audio, presenter);
-	const events = new RuntimeEventHistory(runtime, sources);
+	const events = new RuntimeEventHistory(runtime, sources, new RuntimeInstructionObservers(runtime.machine.cpu));
 	const gteHistory = new RuntimeGteHistory(runtime, sources);
 	const gpuHistory = new RuntimeGpuHistory(runtime);
 	const debuggerState = createRuntimeDebuggerState(runtime, sources);

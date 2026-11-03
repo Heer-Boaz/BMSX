@@ -7,9 +7,9 @@ import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 /** Bind physical operations, not statement points pretending to be function entries.
  * Operands belong to the decoded instruction, independently of debug-local liveness. */
 export function bindFunctionInstructions(image: Blua32ToolingImage, modulePath: string, name: string,
-	opcodes: ReadonlySet<OpCode>): ReadonlyMap<number, DecodedInstruction> {
+	opcodes: ReadonlySet<OpCode>): ReadonlyMap<number, DecodedInstruction> | undefined {
 	const symbols = image.symbols;
-	if (symbols === null) throw new Error('Instruction observation requires debug symbols.');
+	if (symbols === null) return;
 	const metadata = symbols.metadata;
 	const definitions = metadata.functionDefinitions;
 	const matches: number[] = [];
@@ -17,6 +17,7 @@ export function bindFunctionInstructions(image: Blua32ToolingImage, modulePath: 
 		const definition = definitions[index];
 		if (definition !== null && toLuaModulePath(definition.path) === modulePath && metadata.functionDisplayNames[index] === name) matches.push(index);
 	}
+	if (matches.length === 0) return;
 	if (matches.length !== 1) throw new Error(`Instruction owner '${modulePath}:${name}' is not uniquely available.`);
 	const functionId = metadata.functionIds[matches[0]], result = new Map<number, DecodedInstruction>();
 	for (let fn = 0; fn < image.layout.functions.length; fn++) {

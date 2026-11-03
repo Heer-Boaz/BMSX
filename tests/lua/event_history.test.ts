@@ -1,3 +1,4 @@
+import { RuntimeInstructionObservers } from '../../ide/runtime/instruction_observers';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -7,6 +8,7 @@ import { HistoryMode } from '../../machine/ts/machine/runtime/history/history';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { compileEventHistoryFixture, eventHistoryRuntime } from '../helpers/event_history';
 import { createRuntimeDebuggerState, resetRuntimeDebuggerExecution, RuntimeDebuggerResumeMode } from '../../ide/runtime/debugger_state';
+import { bindFunctionProbe } from '../../ide/runtime/function_probe';
 import { RuntimeEventHistory } from '../../ide/runtime/event_history';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { EventViewerInput } from '../../ide/workbench/contrib/events/editor_input';
@@ -32,7 +34,7 @@ return data.health`, { optLevel, modules: renamed ? [{
 			.replace(/\b(event_type|emitter|payload|emitter_id)\b/g, name => `renamed_${name}`),
 	}] : [] });
 	const { cpu, runtime, sources } = eventHistoryRuntime(images);
-	const events = new RuntimeEventHistory(runtime, sources);
+	const events = new RuntimeEventHistory(runtime, sources, new RuntimeInstructionObservers(runtime.machine.cpu));
 	assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
 	assert.equal(events.count, 3);
 	assert.deepEqual([0, 1, 2].map(index => events.at(index).event), ['outer', 'inner', 'unhandled'].map(value => ({ kind: 'string', value, omitted: false })));
@@ -47,7 +49,7 @@ return data.health`, { optLevel, modules: renamed ? [{
 
 test('automatic history wraps and survives pane closure and debugger reconfiguration', () => {
 	const { cpu, runtime, sources } = eventHistoryRuntime(compileEventHistoryFixture());
-	const events = new RuntimeEventHistory(runtime, sources);
+	const events = new RuntimeEventHistory(runtime, sources, new RuntimeInstructionObservers(runtime.machine.cpu));
 	cpu.runUntilDepth(0, BUDGET);
 	const fn = cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!) as Closure;
 	const pane = new EventViewerInput(events), projection = pane.projection;
@@ -87,7 +89,7 @@ test('automatic history wraps and survives pane closure and debugger reconfigura
 
 test('a source breakpoint stops before trace execution and continuing emits exactly once', () => {
 	const { cpu, sources, runtime } = eventHistoryRuntime(compileEventHistoryFixture());
-	const events = new RuntimeEventHistory(runtime, sources);
+	const events = new RuntimeEventHistory(runtime, sources, new RuntimeInstructionObservers(runtime.machine.cpu));
 	const state = createRuntimeDebuggerState(runtime, sources);
 	cpu.runUntilDepth(0, BUDGET);
 	const image = sources.currentBlua32Media.cartridgeSlots[0]!;
@@ -109,7 +111,7 @@ local payload<const> = setmetatable({}, { __index = function() error('must not e
 for i=1,100 do payload[i] = string.rep('x', 5000) end
 e:emit('large', nil, payload, 'fixture')`);
 	const { cpu, runtime, sources } = eventHistoryRuntime(images);
-	const history = new RuntimeEventHistory(runtime, sources);
+	const history = new RuntimeEventHistory(runtime, sources, new RuntimeInstructionObservers(runtime.machine.cpu));
 	assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
 	const snapshot = history.at(0).payload;
 	assert.ok(snapshot.kind === 'table');
@@ -124,7 +126,7 @@ e:emit('large', nil, payload, 'fixture')`);
 test('observation preserves guest cycles, heap and complete CPU state', () => {
 	const images = compileEventHistoryFixture();
 	const baseline = eventHistoryRuntime(images), observed = eventHistoryRuntime(images);
-	const events = new RuntimeEventHistory(observed.runtime, observed.sources);
+	const events = new RuntimeEventHistory(observed.runtime, observed.sources, new RuntimeInstructionObservers(observed.runtime.machine.cpu));
 	for (const { cpu } of [baseline, observed]) {
 		assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
 		const fn = cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!) as Closure;
@@ -218,4 +220,26 @@ test('snapshot entry boundary distinguishes an exhausted budget from fully visit
 	assert.ok(truncated.kind === 'table');
 	assert.equal(truncated.entries.length, VALUE_SNAPSHOT_ENTRIES);
 	assert.equal(truncated.omitted, true);
+});
+
+
+test('independent instruction consumers share physical points and dispose without disabling each other', () => {
+	const { cpu, runtime, sources } = eventHistoryRuntime(compileEventHistoryFixture());
+	const observers = new RuntimeInstructionObservers(cpu), events = new RuntimeEventHistory(runtime, sources, observers);
+	const binding = bindFunctionProbe(sources.currentBlua32Media.cartridgeSlots[0]!, 'cartlib/event_emitter', 'event_emitter.emit', [1, 4, 3]);
+	assert.equal(binding.status, 'bound'); if (binding.status !== 'bound') assert.fail('fixture has event symbols');
+	let visits = 0;
+	const release = observers.add({ points: [new Set(), new Set(binding.points.map(point => point.pc)), new Set()], observe() { visits++; } });
+	cpu.runUntilDepth(0, BUDGET);
+	const fn = cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!) as Closure;
+	cpu.beginCompletionCall(fn, [2]); cpu.runUntilDepth(0, BUDGET);
+	assert.equal(events.count, 2); assert.equal(visits, 2);
+	events.dispose();
+	cpu.beginCompletionCall(fn, [3]); cpu.runUntilDepth(0, BUDGET);
+	assert.equal(events.count, 2); assert.equal(visits, 5);
+	const replacement = new RuntimeEventHistory(runtime, sources, observers);
+	release();
+	cpu.beginCompletionCall(fn, [1]); cpu.runUntilDepth(0, BUDGET);
+	assert.equal(replacement.count, 1); assert.equal(visits, 5);
+	replacement.dispose(); observers.dispose();
 });

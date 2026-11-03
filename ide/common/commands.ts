@@ -197,7 +197,7 @@ export type EditorCommandId =
 	| 'sceneEditor.reparentMember' | 'sceneEditor.reparentMemberKeepLocal'
 	| 'sceneEditor'
 	| 'sceneViewport.frameAll' | 'sceneViewport.frameSelection' | 'sceneViewport.view2d' | 'sceneViewport.view3d'
-	| 'scenePreview.toggle' | 'scenePreview.timeline' | 'scenePreview.initialization'
+	| 'sceneEditor.inspectLive'
 	| 'sceneEditor.details' | 'sceneEditor.outline'
 	| 'sceneEditor.moveMemberUp'
 	| 'sceneEditor.moveMemberDown'

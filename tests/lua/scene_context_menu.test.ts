@@ -83,7 +83,7 @@ test('document hierarchy row menu contains only member actions with one reparent
 	const f = fixture(t); secondary(f, 1);
 	assert.equal(f.editor.contextMenu.visible, true);
 	assert.deepEqual(f.editor.contextMenu.model.rows.filter(row => row.command !== undefined).map(row => row.command), [
-		'editor.source', 'sceneEditor.renameMember', 'sceneEditor.reparentMember', 'sceneEditor.removeMember', 'sceneEditor.removeSubtree',
+		'editor.source', 'sceneEditor.inspectLive', 'sceneEditor.renameMember', 'sceneEditor.reparentMember', 'sceneEditor.removeMember', 'sceneEditor.removeSubtree',
 	], 'the row does not own Add, panel chrome, section switches or a second reparent variant');
 	assert.equal(f.input.view.hierarchy.outline.selectionIndex, 1);
 	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE); assert.equal(f.model.canUndo, false);
@@ -95,7 +95,7 @@ for (const route of ['pointer', 'keyboard'] as const) test(`document hierarchy $
 	else { f.key('Home'); f.key('ContextMenu'); }
 	assert.equal(f.editor.contextMenu.visible, true);
 	assert.equal(f.input.view.authoring.selection?.kind, 'scene');
-	assert.deepEqual(f.editor.contextMenu.model.rows.filter(row => row.command !== undefined).map(row => row.command), ['editor.source']);
+	assert.deepEqual(f.editor.contextMenu.model.rows.filter(row => row.command !== undefined).map(row => row.command), ['editor.source', 'sceneEditor.inspectLive']);
 	// A new subject retires the menu instead of reusing an earlier row's authority.
 	assert.equal(selectSceneOutlineRow(f.input.view.hierarchy, 1), true);
 	assert.equal(f.editor.contextMenu.visible, false);

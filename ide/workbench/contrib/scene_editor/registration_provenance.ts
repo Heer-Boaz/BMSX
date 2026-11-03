@@ -20,15 +20,15 @@ const PLAN_STORES = new Set([OpCode.SETT, OpCode.SETFIELD, OpCode.SETI]);
 /** Same-build cartlib registration observation. No guest roots, rewritten Lua,
  * function-entry guesses or registration-name identity survive this boundary. */
 export class SceneRegistrationProvenance implements InstructionObserverBinding {
-	private readonly stores: ReadonlyMap<number, DecodedInstruction>;
+	private readonly stores: ReadonlyMap<number, DecodedInstruction> | undefined;
 	public readonly points = [new Set<number>(), new Set<number>(), new Set<number>()] as const;
 	public readonly plans = new Map<number, ScenePlanRegistration>();
 	public constructor(private readonly cpu: CPU, private readonly image: Blua32ToolingImage, private readonly domain: ExecutionDomainId) {
 		this.stores = bindFunctionInstructions(image, 'cartlib/world/scene_library', 'scene_library.register', PLAN_STORES);
-		for (const pc of this.stores.keys()) this.points[domain + 1].add(pc);
+		if (this.stores !== undefined) for (const pc of this.stores.keys()) this.points[domain + 1].add(pc);
 	}
 	public observe(_domain: ExecutionDomainId, pc: number, registers: ValueSlots): void {
-		const instruction = this.stores.get(pc)!;
+		const instruction = this.stores!.get(pc)!;
 		const plan = registers.getTable(signExtend(instruction.c, instruction.rkBitsC));
 		const calls: SourceRange[] = [];
 		let callPc = pc;

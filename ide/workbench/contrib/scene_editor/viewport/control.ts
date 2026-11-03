@@ -15,11 +15,8 @@ import type { ContextMenuController } from '../../../services/context_menu/contr
 import { drawSceneViewport } from './render';
 import { type SceneViewportViewState, type SceneViewportPlacement } from './view_state';
 import type { SceneViewportPoint } from './camera';
-import { WorkbenchSliderControl } from '../../../ui/slider_control';
 
 export const VIEWPORT_CONTEXT_ACTIONS: WorkbenchMenuDefinition<SceneViewportViewState> = [
-	{ type: 'command', command: 'scenePreview.toggle' }, { type: 'command', command: 'scenePreview.initialization' },
-	{ type: 'command', command: 'scenePreview.timeline' }, { type: 'separator' },
 	{ type: 'command', command: 'sceneEditor.addMember' }, { type: 'separator' },
 	{ type: 'command', command: 'sceneViewport.frameAll' }, { type: 'command', command: 'sceneViewport.frameSelection' },
 	{ type: 'separator' }, { type: 'command', command: 'sceneViewport.view2d' }, { type: 'command', command: 'sceneViewport.view3d' },
@@ -50,15 +47,12 @@ export class SceneViewportControl implements PointerCaptureTarget {
 	private subscriptions: (() => void)[] = [];
 	private readonly unbindKeyboard: () => void;
 	private readonly unbindBlur: () => void;
-	private readonly timeline: WorkbenchSliderControl;
 	public get view(): SceneViewportViewState { return this.viewValue!; }
 	public get canFocus(): boolean { const bounds = this.viewValue?.bounds; return bounds !== undefined && bounds.left < bounds.right && bounds.top < bounds.bottom; }
 	public constructor(private readonly commands: EditorCommandRunner, private readonly contextMenu: ContextMenuController,
 		scope: InputFocusScope, private readonly commandTarget: InputFocusTarget, private readonly contextActions: WorkbenchMenuPresentation) {
 		this.focusTarget = inputFocus.createTarget(commandTarget, new InputFocusScope(scope.surfaceScope, scope));
 		this.focusTarget.commandContext = commandTarget.commandContext; this.focusTarget.canFocus = () => this.canFocus;
-		this.timeline = new WorkbenchSliderControl(inputFocus, pointerCapture, this.focusTarget,
-			time => this.viewValue?.runtime?.seek(time), () => {});
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(event => this.handleKeyboard(event));
 		this.unbindBlur = this.focusTarget.onDidBlur(next => {
 			if (next === null || !scope.contains(next.scope)) {
@@ -77,7 +71,7 @@ export class SceneViewportControl implements PointerCaptureTarget {
 			{ command: 'sceneViewport.frameAll', isEnabled: view => view.canFrameAll, run: view => { view.frame(undefined); } },
 			{ command: 'sceneViewport.frameSelection', isEnabled: view => view.canFrameSelection, run: view => { view.frame(view.selected); } },
 			{ command: 'sceneViewport.view2d', isEnabled: () => true, isChecked: view => view.camera.mode === '2d', run: view => view.camera.setMode('2d') },
-			{ command: 'sceneViewport.view3d', isEnabled: view => !view.runtime?.enabled, isChecked: view => view.camera.mode === '3d', run: view => view.camera.setMode('3d') },
+			{ command: 'sceneViewport.view3d', isEnabled: () => true, isChecked: view => view.camera.mode === '3d', run: view => view.camera.setMode('3d') },
 		];
 		for (const action of actions) {
 			// Capture the concrete canvas before source admission can publish a different attachment or selection.
@@ -106,7 +100,6 @@ export class SceneViewportControl implements PointerCaptureTarget {
 		const revision = ++this.attachment;
 		this.detach(); if (revision !== this.attachment || this.disposed) return;
 		this.viewValue = view;
-		this.timeline.setInput(view.timelineSlider);
 		const retireGesture = () => { if (this.attachment === revision) {
 			const placement = this.placement; this.revokeGesture(this.gesture); this.retirePlacement(placement);
 		} };
@@ -129,7 +122,6 @@ export class SceneViewportControl implements PointerCaptureTarget {
 		const previous = this.viewValue; if (previous === undefined) return;
 		const revision = this.attachment, gesture = this.gesture;
 		this.viewValue = undefined; this.gesture = undefined; this.retirePlacement(this.placement); previous.transformPreview = undefined; previous.gizmo.cancel();
-		this.timeline.clearInput();
 		const subscriptions = this.subscriptions; this.subscriptions = [];
 		for (const release of subscriptions) release();
 		pointerHover.release(this);
@@ -158,9 +150,8 @@ export class SceneViewportControl implements PointerCaptureTarget {
 		if (placement !== undefined && !placement.request.isCurrent()) this.retirePlacement(placement);
 		if (this.viewValue === view) view.refresh();
 		this.viewValue?.prepareCaption(this.placement);
-		this.timeline.update();
 	}
-	public draw(): void { if (this.viewValue !== undefined) drawSceneViewport(this.view, this.focusTarget.hasFocus, this.placement, this.timeline.focusTarget.hasFocus); }
+	public draw(): void { if (this.viewValue !== undefined) drawSceneViewport(this.view, this.focusTarget.hasFocus, this.placement); }
 	public beginAddMember(request: SceneAddMemberRequest, choice: SceneAddMemberChoice, didPlace: () => void): boolean {
 		const view = this.viewValue, attachment = this.attachment, generation = this.focusTarget.scope.contextGeneration, gesture = this.gesture;
 		if (view === undefined || !this.canFocus || view.camera.mode !== choice.family || !request.isCurrent()) return false;
@@ -227,7 +218,6 @@ export class SceneViewportControl implements PointerCaptureTarget {
 	}
 	public handlePointer(snapshot: PointerInputSnapshot, justPressed: boolean): boolean {
 		if (!this.canFocus || !snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, this.view.bounds)) return false;
-		if (this.view.runtime?.selectedTimeline !== undefined && this.timeline.handlePointer(snapshot)) return true;
 		pointerHover.visit(this);
 		const placement = this.placement;
 		if (placement !== undefined) {
@@ -381,7 +371,7 @@ export class SceneViewportControl implements PointerCaptureTarget {
 		}
 	}
 	public dispose(): void {
-		this.disposed = true; this.clearView(); this.unbindKeyboard(); this.unbindBlur(); this.timeline.dispose();
+		this.disposed = true; this.clearView(); this.unbindKeyboard(); this.unbindBlur();
 		this.focusTarget.unregisterCommand('contextMenu');
 		for (const command of ['sceneViewport.frameAll', 'sceneViewport.frameSelection', 'sceneViewport.view2d', 'sceneViewport.view3d'] as const) {
 			this.commandTarget.unregisterCommand(command); this.focusTarget.unregisterCommand(command);

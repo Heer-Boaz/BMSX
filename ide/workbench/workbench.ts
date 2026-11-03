@@ -30,7 +30,8 @@ import type { WorkspaceRecord } from '../workspace/records';
 import { ActorExecutionService } from './contrib/actor_lab/execution';
 import { BehaviorSourceDocuments } from './contrib/behavior_lens/source_documents';
 import { SceneSourceDocuments } from './contrib/scene_editor/source_documents';
-import { ScenePreviewService } from './contrib/scene_editor/preview';
+import { SceneLiveService } from './contrib/scene_editor/live';
+import { RuntimeInstructionObservers } from '../runtime/instruction_observers';
 import { WorkspaceToolService } from './services/assistant/tool_service';
 import { ResourceDiagnosticsService } from './services/diagnostics/resource_diagnostics';
 import { BootService } from './services/execution/boot';
@@ -96,7 +97,8 @@ export class StudioWorkbench {
 	public readonly debuggerExecution: RuntimeDebuggerExecution;
 	public readonly behaviorSources: BehaviorSourceDocuments;
 	public readonly sceneSources: SceneSourceDocuments;
-	public readonly scenePreviews: ScenePreviewService;
+	public readonly sceneLive: SceneLiveService;
+	private readonly instructionObservers: RuntimeInstructionObservers;
 	public readonly projectContent: ProjectContentIndex;
 	public readonly tools: WorkspaceToolService;
 	public readonly fault = createRuntimeFaultState();
@@ -123,7 +125,8 @@ export class StudioWorkbench {
 		this.logOutput = logOutput;
 		this.gameCapture = gameCapture;
 		seedDefaultLuaBuiltins();
-		this.events = new RuntimeEventHistory(runtime, sources);
+		this.instructionObservers = new RuntimeInstructionObservers(runtime.machine.cpu);
+		this.events = new RuntimeEventHistory(runtime, sources, this.instructionObservers);
 		this.gte = new RuntimeGteHistory(runtime, sources);
 		this.gpu = new RuntimeGpuHistory(runtime);
 		this.debugger = createRuntimeDebuggerState(runtime, sources);
@@ -133,7 +136,7 @@ export class StudioWorkbench {
 		this.directories = options.workspaceFiles === undefined ? undefined : new WorkspaceDirectoryModel(options.workspaceFiles, sources.catalog);
 		this.hotResumes = new HotResumeService(models, sources, this.guest, this.fault, this.debugger,
 			input, runtime, runtimeTasks, execution, workspaceDirtyRecords);
-		this.hotResumes.onDidApply(() => { this.events.beginTimeline(); this.gte.didInstall(); this.gpu.didInstall(); });
+		this.hotResumes.onDidApply(() => { this.events.beginTimeline(); this.sceneLive.beginExecution(); this.gte.didInstall(); this.gpu.didInstall(); });
 		this.boots = new BootService(models, sources, this.fault, runtime, runtimeTasks, execution, audioOutput, workspaceDirtyRecords);
 		this.diagnostics = new ResourceDiagnosticsService(models, sources.catalog, clock);
 		this.luaEvaluation = new RuntimeLuaEvaluation(runtime, sources, this.guest, this.debugger, this.fault, runtimeTasks, execution, rewind);
@@ -151,7 +154,7 @@ export class StudioWorkbench {
 			rewind, this.fault, this.frameNavigation, this.debuggerExecution);
 		this.behaviorSources = new BehaviorSourceDocuments(models, sources.catalog);
 		this.sceneSources = new SceneSourceDocuments(models, sources.catalog);
-		this.scenePreviews = new ScenePreviewService(models, sources, workspaceDirtyRecords, runtime.model, this.scenarioRuns);
+		this.sceneLive = new SceneLiveService(runtime.machine.cpu, sources, this.guest, this.instructionObservers);
 		this.projectContent = new ProjectContentIndex(models, sources.catalog, this.behaviorSources.registrations, this.sceneSources);
 		this.tools = new WorkspaceToolService(models, sources, this.diagnostics, this.scenarioRuns, this.inspection,
 			this.frameNavigation, gameCapture, this.luaEvaluation, this.debuggerExecution, this.actorExecution,
@@ -164,7 +167,7 @@ export class StudioWorkbench {
 			this.didReplaceMachine(origin === RuntimeRestoreOrigin.HistorySeek ? 'history-restored' : 'heap-replaced');
 		};
 		runtime.history.onWillResumeRecording = branched => {
-			if (branched) { this.events.beginTimeline(); this.gte.beginTimeline(); this.gpu.beginTimeline(); }
+			if (branched) { this.sceneLive.beginExecution(); this.events.beginTimeline(); this.gte.beginTimeline(); this.gpu.beginTimeline(); }
 		};
 		runtime.history.onWillEndReview = () => this.guest.willEndHistoryReview();
 		runtime.onStateReset = () => {
@@ -189,6 +192,7 @@ export class StudioWorkbench {
 	}
 
 	private didReplaceMachine(reason: GuestInvalidationReason): void {
+		if (reason === 'heap-replaced') this.sceneLive.beginExecution();
 		this.debuggerExecution.didReset();
 		this.luaEvaluation.didReplaceMachine();
 		this.actorExecution.didReplaceMachine();
@@ -237,14 +241,14 @@ export class StudioWorkbench {
 		this.frameNavigation.dispose(); this.debuggerExecution.dispose();
 		const evaluationDrained = this.luaEvaluation.shutdown(), actorsDrained = this.actorExecution.shutdown();
 		this.scenarioRuns.dispose();
-		const previewsDrained = this.scenePreviews.dispose();
+		this.sceneLive.dispose(); this.instructionObservers.dispose();
 		const playDrained = this.play.dispose();
 		this.diagnostics.dispose();
 		const executionDrained = this.hotResumes.shutdown(), bootsDrained = this.boots.shutdown();
 		discardRuntimeDebuggerPlans(this.debugger);
 		await this.textFileSaves.shutdown();
 		await directoriesDrained;
-		await executionDrained; await bootsDrained; await evaluationDrained; await actorsDrained; await playDrained; await previewsDrained;
+		await executionDrained; await bootsDrained; await evaluationDrained; await actorsDrained; await playDrained;
 		this.projectContent.dispose();
 		this.runtime.onStateRestored = undefined;
 		this.runtime.onStateReset = undefined;

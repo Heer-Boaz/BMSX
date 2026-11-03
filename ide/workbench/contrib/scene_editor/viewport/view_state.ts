@@ -15,9 +15,6 @@ import type { SceneVisualReadModel } from '../visual_projection';
 import type { SceneTransformPreview } from '../transform_proposal';
 import { SceneTranslationGizmo, TRANSLATE_AXIS_LABELS } from './translate_gizmo';
 import { collectSceneTextImages } from './text_layout';
-import type { SceneDocumentPreview, ScenePreviewService } from '../preview';
-import { WorkbenchSlider } from '../../../ui/slider';
-import { SceneRuntimeCanvas } from './runtime_canvas';
 
 export type SceneMemberPlacementPreview = SceneTransformPreview<SceneAddMemberChoice> & {
 	readonly visuals: SceneVisualReadModel<SceneAddMemberChoice>;
@@ -32,12 +29,6 @@ const AXIS_UNIT_PIXELS = 16;
 
 /** Retained source reading and numeric screen projection; selection stays with the authored context. */
 export class SceneViewportViewState {
-	public runtime: SceneDocumentPreview | undefined;
-	public readonly timelineSlider = new WorkbenchSlider();
-	public readonly runtimeCanvas = new SceneRuntimeCanvas();
-	private framedRuntime = false;
-	private unbindRuntime: (() => void) | undefined;
-	private readonly runtimePoint = { x: 0, y: 0 };
 	public readonly camera = new SceneViewportCamera();
 	public readonly gizmo = new SceneTranslationGizmo();
 	public readonly caption = new WorkbenchCanvasCaption();
@@ -58,8 +49,7 @@ export class SceneViewportViewState {
 	public selected: SceneSourceObject | undefined;
 	public allocationRevision = 0;
 	public projectionRevision = 0;
-	private sourceCanFrameAll = false;
-	public get canFrameAll(): boolean { return this.runtime?.enabled ? this.runtime.session?.frame.bitmap !== undefined : this.sourceCanFrameAll; }
+	public canFrameAll = false;
 	private projectedSource: SceneSpatialReadModel | undefined;
 	private projectedCamera = -1;
 	private projectedAllocation = -1;
@@ -96,11 +86,6 @@ export class SceneViewportViewState {
 		this.unbindCamera = this.camera.onDidChange(() => { for (const listener of this.listeners) listener(); });
 	}
 	public onDidChange(listener: () => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
-	public connectPreview(service: ScenePreviewService): void {
-		if (this.runtime !== undefined) return;
-		this.runtime = service.create(this.authoring);
-		this.unbindRuntime = this.runtime.onDidChange(() => { for (const listener of this.listeners) listener(); });
-	}
 	public get assetGeneration(): number { return this.catalog.revision; }
 	public layout(bounds: Readonly<RectBounds>, lineHeight: number): void {
 		if (this.bounds.left === bounds.left && this.bounds.top === bounds.top && this.bounds.right === bounds.right && this.bounds.bottom === bounds.bottom && this.lineHeight === lineHeight) return;
@@ -115,13 +100,6 @@ export class SceneViewportViewState {
 		if (placement === undefined) {
 			lines[0] = this.source === undefined ? 'SCENE UNAVAILABLE' : this.camera.mode === '2d' ? '2D' : '3D';
 			lines.length = 1;
-			const runtime = this.runtime;
-			if (runtime?.enabled) {
-				lines[0] = 'RUNTIME · CURRENT LUA / BUILT ASSETS';
-				lines[1] = runtime.statusText;
-				lines.length = 2;
-				if (runtime.error !== undefined) caption.warningLine = 1;
-			}
 		} else {
 			lines[0] = placement.definitionLabel;
 			lines[1] = this.camera.mode === '3d' ? placement.located ? 'Click: place on XZ' : 'Point at XZ plane' : 'Click: place';
@@ -140,27 +118,12 @@ export class SceneViewportViewState {
 	public refresh(): void {
 		if (this.disposed) return;
 		this.authoring.refresh();
-		void this.runtime?.update();
 		if (this.disposed) return;
 		this.source = this.authoring.spatialScene;
 		const selection = this.authoring.selection;
 		if (this.disposed) return;
 		this.selected = selection?.kind === 'member' && selection.entry.kind === 'object' ? selection.entry : undefined;
-		const runtime = this.runtime, bitmap = runtime?.session?.frame.bitmap;
-		const visuals = runtime?.enabled ? undefined : this.authoring.visualScene;
-		if (!runtime?.enabled) this.framedRuntime = false;
-		if (runtime?.state === 'ready' && bitmap !== undefined && !this.framedRuntime) {
-			this.framedRuntime = true;
-			this.camera.frame2D(0, 0, bitmap.image.width, bitmap.image.height,
-				this.bounds.right - this.bounds.left, this.bounds.bottom - this.bounds.top, false, 'manual');
-		}
-		const timeline = runtime?.selectedTimeline;
-		this.timelineSlider.enabled = timeline !== undefined && (runtime?.state === 'ready' || runtime?.state === 'seeking');
-		if (timeline !== undefined) {
-			this.timelineSlider.setRange(0, timeline.duration, 1);
-			this.timelineSlider.value = runtime!.requestedTime;
-			this.timelineSlider.layout(this.bounds.left + 8, this.bounds.bottom - this.lineHeight - 8, this.bounds.right - 8, this.bounds.bottom - 4);
-		}
+		const visuals = this.authoring.visualScene;
 		if (this.disposed) return;
 		const placement = this.placementPreview, placementVisuals = placement?.visuals;
 		if (this.visualSource !== visuals || this.placementSource !== placementVisuals || this.visualCatalogRevision !== this.catalog.revision) {
@@ -201,8 +164,6 @@ export class SceneViewportViewState {
 		}
 		if (this.models.project(this.camera, this.bounds)) this.projectionRevision++;
 		if (this.canvas.project(this.camera, this.bounds, this.allocationRevision, this.selected)) this.projectionRevision++;
-		this.runtimeCanvas.project(runtime?.session, this.camera, this.bounds, this.allocationRevision,
-			selection?.kind === 'member' ? selection.index + 1 : -1);
 		this.projectPlacement();
 		const preview = this.transformPreview, previewRevision = preview?.revision ?? -1;
 		const selectedWorld = this.selected === undefined ? undefined : preview?.worlds.has(this.selected)
@@ -214,12 +175,12 @@ export class SceneViewportViewState {
 			&& this.projectedPreview === preview && this.projectedPreviewRevision === previewRevision) return;
 		this.projectedSource = this.source; this.projectedCamera = this.camera.revision; this.projectedAllocation = this.allocationRevision;
 		this.projectedPreview = preview; this.projectedPreviewRevision = previewRevision;
-		let count = 0; this.sourceCanFrameAll = false;
+		let count = 0; this.canFrameAll = false;
 		const camera = this.camera, centerX = (this.bounds.left + this.bounds.right) / 2, centerY = (this.bounds.top + this.bounds.bottom) / 2;
 		if (this.source !== undefined) for (const entry of this.source.entries) {
 			const world = preview?.worlds.has(entry) ? preview.worlds.get(entry) : this.source.worlds.get(entry);
 			if (world === undefined || world.family !== camera.mode) continue;
-			this.sourceCanFrameAll = true;
+			this.canFrameAll = true;
 			if (world.family === '3d' && camera.depth(world.ox, world.oy, world.oz) < camera.near) continue;
 			const index = count * SCENE_VIEWPORT_POINT_STRIDE, x = world.ox, y = world.oy, z = world.family === '3d' ? world.oz : 0;
 			this.entries[count++] = entry;
@@ -242,22 +203,11 @@ export class SceneViewportViewState {
 		this.placementModels.project(this.camera, this.bounds);
 	}
 	public get canFrameSelection(): boolean {
-		if (this.runtime?.enabled) {
-			const selection = this.authoring.selection;
-			return selection?.kind === 'member' && this.runtime.session?.geometry.represented.has(selection.index + 1) === true;
-		}
 		const world = this.selected === undefined ? undefined : this.source?.worlds.get(this.selected);
 		return world !== undefined;
 	}
 	/** UI helpers are painted over geometry and therefore participate before the mesh depth hit. */
 	public pick(x: number, y: number): SceneSourceObject | undefined {
-		if (this.runtime?.enabled) {
-			if (this.runtime.state !== 'ready') return;
-			this.camera.unproject2d(x - (this.bounds.left + this.bounds.right) / 2, y - (this.bounds.top + this.bounds.bottom) / 2, this.runtimePoint);
-			const index = this.runtime.session!.geometry.pick(this.runtimePoint.x, this.runtimePoint.y);
-			const entry = index === undefined ? undefined : this.authoring.subject!.objects[index - 1];
-			return entry?.kind === 'object' ? entry : undefined;
-		}
 		let picked: SceneSourceObject | undefined, distance = 36;
 		const represented = this.camera.mode === '2d' ? this.canvas.represented : this.models.represented;
 		for (let index = 0; index < this.entries.length; index++) {
@@ -271,15 +221,6 @@ export class SceneViewportViewState {
 			: this.models.pick(x - (this.bounds.left + this.bounds.right) / 2, y - (this.bounds.top + this.bounds.bottom) / 2, this.camera)?.entry;
 	}
 	public frame(selected: SceneSourceObject | undefined, reading: 'initial' | 'manual' = 'manual'): boolean {
-		if (this.runtime?.enabled) {
-			const image = this.runtime.session?.frame.bitmap?.image;
-			if (image === undefined) return false;
-			const bounds = this.visualBounds;
-			if (selected === undefined) { bounds.left = 0; bounds.top = 0; bounds.right = image.width; bounds.bottom = image.height; }
-			else if (!this.runtime.session!.geometry.frameBounds(this.authoring.subject!.objects.indexOf(selected) + 1, bounds)) return false;
-			this.camera.frame2D(bounds.left, bounds.top, bounds.right, bounds.bottom, this.bounds.right - this.bounds.left, this.bounds.bottom - this.bounds.top, false, reading);
-			return true;
-		}
 		const family = selected === undefined ? this.camera.mode : this.source?.worlds.get(selected)?.family;
 		if (family === undefined) return false;
 		this.frameEntries.clear();
@@ -320,8 +261,6 @@ export class SceneViewportViewState {
 		this.camera.frame2D(left, top, right, bottom, this.bounds.right - this.bounds.left, this.bounds.bottom - this.bounds.top, selected !== undefined, reading); return true;
 	}
 	public dispose(): void {
-		this.unbindRuntime?.();
-		this.runtime?.dispose();
 		this.disposed = true; this.unbindCamera(); this.listeners.clear(); this.entries.length = this.points.length = 0;
 		this.canvas.dispose(); this.placementCanvas.dispose(); this.images.dispose(); this.models.dispose(); this.placementModels.dispose(); this.modelAssets.dispose(); this.frameEntries.clear();
 		this.imageIds.clear(); this.visualSource = undefined; this.placementSource = undefined; this.placementPreview = undefined;

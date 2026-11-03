@@ -337,7 +337,7 @@ test('Main hierarchy row menu owns member commands but not Add or panel chrome',
 	f.key('Home'); f.key('ArrowDown'); f.key('ContextMenu');
 	assert.equal(f.editor.contextMenu.visible, true);
 	assert.deepEqual(f.editor.contextMenu.model.rows.filter(row => row.command !== undefined).map(row => row.command), [
-		'editor.source', 'sceneEditor.renameMember', 'sceneEditor.reparentMember', 'sceneEditor.removeMember', 'sceneEditor.removeSubtree',
+		'editor.source', 'sceneEditor.inspectLive', 'sceneEditor.renameMember', 'sceneEditor.reparentMember', 'sceneEditor.removeMember', 'sceneEditor.removeSubtree',
 	], 'the clicked-member menu has one reparent operation and no commands for another subject');
 	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
 });
@@ -357,7 +357,7 @@ for (const route of ['pointer', 'keyboard'] as const) test(`Main hierarchy ${rou
 	showRow(0);
 	assert.equal(f.editor.contextMenu.visible, true);
 	assert.equal(f.primary.authoring.selection?.kind, 'scene');
-	assert.deepEqual(f.editor.contextMenu.model.rows.filter(row => row.command !== undefined).map(row => row.command), ['editor.source']);
+	assert.deepEqual(f.editor.contextMenu.model.rows.filter(row => row.command !== undefined).map(row => row.command), ['editor.source', 'sceneEditor.inspectLive']);
 	f.key('Escape'); showRow(1);
 	assert.equal(f.primary.authoring.selection?.kind, 'member');
 	const rows = f.editor.contextMenu.model.rows;

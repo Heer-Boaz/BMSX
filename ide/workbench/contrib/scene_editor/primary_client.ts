@@ -16,6 +16,10 @@ import { TextQuickPickProvider } from '../../services/quick_input/text_provider'
 import { createWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchCompositeMenu, WorkbenchMenu, type WorkbenchMenuCommandDefinition, type WorkbenchMenuDefinition } from '../../ui/menu/model';
 import { WorkbenchViewPanel } from '../../ui/view_panel/control';
+import type { ActorLabController } from '../actor_lab/controller';
+import type { EditorGroupView } from '../../services/editor/editor_group';
+import type { SceneLiveService } from './live';
+import { SceneLiveCommands } from './live_commands';
 import type { SceneAuthoringContext } from './authoring_context';
 import { SceneAuthoringCommands } from './authoring_commands';
 import { SceneHierarchyControl } from './hierarchy_control';
@@ -29,11 +33,11 @@ import type { SceneDetailsViewState } from './details_view';
 import type { SceneEditorSectionCommands } from './option_editor';
 import type { SceneViewportControl } from './viewport/control';
 import { SCENE_SOURCE_STATUS } from './source_status';
-import type { ScenePreviewService } from './preview';
-import { ScenePreviewCommands } from './preview_commands';
 
 export type ScenePrimaryClientOptions = {
-	readonly previews: ScenePreviewService;
+	readonly live: SceneLiveService;
+	readonly actors: ActorLabController;
+	runtimeDestination(): EditorGroupView;
 	readonly commands: EditorCommandRunner;
 	readonly sources: RuntimeSourceState;
 	readonly saves: TextFileSaveService;
@@ -69,7 +73,7 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 	public readonly scope: InputFocusScope;
 	public readonly commandTarget: InputFocusTarget;
 	private readonly authoringCommands: SceneAuthoringCommands;
-	private readonly previewCommands: ScenePreviewCommands;
+	private readonly liveCommands: SceneLiveCommands;
 	private readonly unbindInteraction: () => void;
 	private readonly addMemberCommand: FocusCommand;
 	private readonly sections: SceneEditorSectionCommands;
@@ -100,7 +104,7 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 		};
 		this.commandTarget.registerCommand('sceneEditor.outline', sections.outline);
 		this.commandTarget.registerCommand('sceneEditor.details', sections.details);
-		this.previewCommands = new ScenePreviewCommands(this.commandTarget, this.view.viewport, options.previews, options.quickInput, () => this.isCurrent());
+		this.liveCommands = new SceneLiveCommands(this.commandTarget, consumer, options.live, options.actors, options.runtimeDestination, options.quickInput, () => this.isCurrent());
 		this.authoringCommands = new SceneAuthoringCommands(this.commandTarget, options.quickInput, context => {
 			if (context !== consumer || !this.hierarchy.attached) return;
 			this.hierarchy.control.update(); this.hierarchy.control.revealSelection();
@@ -161,7 +165,7 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 		return !this.disposed && this.options.isCurrent() && this.viewport.canFocus && this.authoring.canAddMember(this.view.viewport.camera.mode);
 	}
 	public attach(): void {
-		this.previewCommands.attach(this.viewportTarget);
+		this.liveCommands.attach(this.viewportTarget);
 		this.viewportTarget.registerCommand('sceneEditor.addMember', this.addMemberCommand);
 		this.viewportTarget.registerCommand('sceneEditor.outline', this.sections.outline);
 		this.viewportTarget.registerCommand('sceneEditor.details', this.sections.details);
@@ -203,7 +207,7 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 		this.statusItem.priority = status === 'failed' ? STATUS_PRIORITY_ERROR : STATUS_PRIORITY_CONTENT;
 	}
 	public dispose(): void {
-		this.disposed = true; this.authoringCommands.dispose(); this.previewCommands.dispose(); this.unbindInteraction();
+		this.disposed = true; this.authoringCommands.dispose(); this.liveCommands.dispose(); this.unbindInteraction();
 		if (this.viewportTarget.getCommand('sceneEditor.addMember') === this.addMemberCommand)
 			this.viewportTarget.unregisterCommand('sceneEditor.addMember');
 		if (this.viewportTarget.getCommand('sceneEditor.outline') === this.sections.outline) this.viewportTarget.unregisterCommand('sceneEditor.outline');
