@@ -14,6 +14,10 @@ import {
 	IO_APU_SOURCE_LOOP_END_SAMPLE,
 	IO_APU_SOURCE_SAMPLE_RATE_HZ,
 	IO_GX_GPU_GP1,
+	IO_INP_CTRL,
+	IO_INP_STATUS,
+	IO_IRQ_FLAGS,
+	IRQ_VBLANK,
 } from '../../machine/ts/spec/bmsx/io';
 import {
 	APU_CMD_PLAY,
@@ -47,7 +51,11 @@ import {
 	GxGpuPcrtc,
 } from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { runDueRuntimeTimers } from '../../machine/ts/machine/runtime/cpu_executor';
+import { advanceRuntimeTime, runDueRuntimeTimers } from '../../machine/ts/machine/runtime/cpu_executor';
+import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
+import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
+import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { linkRawTestSystemBlua32 } from '../helpers/blua32';
 import type { InputControllerInputSource } from '../../machine/ts/machine/devices/input/contracts';
 import { applyRuntimeMachineState, captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -195,6 +203,89 @@ test('runtime publishes live PCRTC timing immediately and latches presentation w
 	runDueAt(runtime, runtime.machine.scheduler.nextDeadline());
 	pcrtcState = captureRuntimeMachineState(runtime).machine.gxGpu.pcrtc;
 	assert.equal(pcrtcState.presentWords[GX_GPU_PCRTC_SYNCH2_LOW], PCRTC_SYNCH2_SLOW_WORD);
+});
+
+// Characterizes the current ordering boundary, not an endorsed resolution of
+// a simultaneous CPU store: scheduler time and the MMIO write are driven
+// directly here, so no CPU instruction or instruction-boundary is exercised.
+test('direct timing MMIO and due VBlank service depend on their call order', () => {
+	const observed: Array<[number, number]> = [];
+	for (const serviceFirst of [true, false]) {
+		const runtime = createTimingRuntime(33_868_800);
+		cancelAudioServices(runtime);
+		// Service the initial HSync, leaving the old VBlank as the next deadline.
+		runDueAt(runtime, runtime.machine.scheduler.nextDeadline());
+		const vblankDeadline = runtime.machine.scheduler.nextDeadline();
+		runtime.machine.memory.writeMappedU32LE(IO_INP_CTRL, 1);
+		runtime.machine.scheduler.advanceTo(vblankDeadline);
+		if (serviceFirst) runDueRuntimeTimers(runtime);
+		runtime.machine.memory.writeMappedU32LE(
+			gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SYNCH2_LOW),
+			PCRTC_SYNCH2_SLOW_WORD,
+		);
+		runDueRuntimeTimers(runtime);
+		observed.push([
+			runtime.machine.memory.readIoU32(IO_INP_STATUS),
+			runtime.machine.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK,
+		]);
+	}
+	assert.deepEqual(observed, [[1, IRQ_VBLANK], [0, 0]]);
+});
+
+// Characterization of the real CPU boundary, not approval of the current
+// deadline policy. Both scenarios use the same guest program and runtime
+// scheduler; only the start time of the final STORE_MEM_D differs.
+test('CPU timing store crossing a due VBlank differs from a store after service', () => {
+	const text = new Uint8Array(7 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.LOADK, 0, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.K1, 1, 0, 0, 0);
+	writeInstruction(text, 2, OpCode.STORE_MEM_D, 1, 0, MemoryAccessKind.U32LE, 0);
+	writeInstruction(text, 3, OpCode.LOADK, 0, 0, 1, 0);
+	writeInstruction(text, 4, OpCode.LOADK, 1, 0, 2, 0);
+	writeInstruction(text, 5, OpCode.STORE_MEM_D, 1, 0, MemoryAccessKind.U32LE, 0);
+	writeInstruction(text, 6, OpCode.HALT, 0, 0, 0, 0);
+	const timingAddress = gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SYNCH2_LOW);
+	const image = linkRawTestSystemBlua32({
+		text,
+		functions: [{ firstWord: 0, wordCount: 7, maxStack: 2 }],
+		constants: [IO_INP_CTRL, timingAddress, PCRTC_SYNCH2_SLOW_WORD],
+		startupFunctionIndex: 0,
+		irqFunctionIndex: 0,
+		exceptionFunctionIndex: 0,
+	});
+	const observed: Array<[number, number]> = [];
+	for (const crossing of [true, false]) {
+		const runtime = new Runtime({
+			systemRomBytes: image.romBytes,
+			cartridgeSlots: cartridgeSlots(),
+			machineModel: PSX_MACHINE_SPEC,
+		}, new TimingInputSource());
+		runtime.machine.cpu.reset();
+		cancelAudioServices(runtime);
+		const frame = {
+			updateExecuted: false,
+			cycleBudgetRemaining: 100,
+			cycleBudgetGranted: 100,
+			cycleCarryGranted: 0,
+			activeCpuUsedCycles: 0,
+		};
+		// The guest arms INPUT and prepares the timing store itself.
+		for (let i = 0; i < 5; i++) runtime.cpuExecution.runInstruction(frame);
+		const scheduler = runtime.machine.scheduler;
+		advanceRuntimeTime(runtime, scheduler.nextDeadline() - scheduler.nowCycles);
+		const deadline = scheduler.nextDeadline();
+		advanceRuntimeTime(runtime, deadline - (crossing ? 1 : 0) - scheduler.nowCycles);
+		const storePc = runtime.machine.cpu.readFramePc(0);
+		runtime.cpuExecution.runInstruction(frame);
+		assert.equal(runtime.machine.cpu.readFramePc(0), storePc + INSTRUCTION_BYTES);
+		assert.equal(scheduler.nowCycles, deadline + (crossing ? 1 : 2));
+		assert.equal(runtime.machine.memory.readMappedU32LE(timingAddress), PCRTC_SYNCH2_SLOW_WORD);
+		observed.push([
+			runtime.machine.memory.readIoU32(IO_INP_STATUS),
+			runtime.machine.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK,
+		]);
+	}
+	assert.deepEqual(observed, [[0, 0], [1, IRQ_VBLANK]]);
 });
 
 test('legacy GP1 display words cannot drive the PCRTC clock', () => {
