@@ -74,17 +74,20 @@ overlap_2d_system.tick = {
 	method = 'update',
 }
 
--- Pair rows and the event payload are system-owned scratch. The two history
--- maps alternate each frame; released rows return to this system's pool so a
--- stable collider high-water mark does not allocate during physics updates.
-local release_pair_rows<const> = function(overlap, set)
+-- Dense collider lists own history traversal; the maps only provide lookup.
+-- Retiring a row can therefore remove its hash entry without invalidating a
+-- hash iterator. Both histories and the row pool retain their high-water storage.
+local release_pair_rows<const> = function(overlap, set, colliders)
 	local row_pool<const> = overlap.pair_row_pool
 	local row_pool_count = overlap.pair_row_pool_count
-	for key, row in pairs(set) do
+	for index = 1, #colliders do
+		local key<const> = colliders[index]
+		local row<const> = set[key]
 		clear_map(row)
 		row_pool_count = row_pool_count + 1
 		row_pool[row_pool_count] = row
 		set[key] = nil
+		colliders[index] = nil
 	end
 	overlap.pair_row_pool_count = row_pool_count
 end
@@ -116,13 +119,13 @@ local emit_overlap_event<const> = function(payload, event_type, phase, owner, se
 	owner.events:emit(event_type, payload)
 end
 
--- Previous-pair history is consumed exactly once. End-event detection and row
--- recycling share that traversal, leaving the old map empty for the next
--- frame's write side instead of rescanning it at the following update.
 local retire_previous_pairs<const> = function(overlap, payload, prev_pairs, new_pairs)
 	local row_pool<const> = overlap.pair_row_pool
 	local row_pool_count = overlap.pair_row_pool_count
-	for a, row in pairs(prev_pairs) do
+	local colliders<const> = overlap.prev_pair_colliders
+	for index = 1, #colliders do
+		local a<const> = colliders[index]
+		local row<const> = prev_pairs[a]
 		local new_row<const> = new_pairs[a]
 		for b in pairs(row) do
 			if not (new_row ~= nil and new_row[b]) then
@@ -138,6 +141,7 @@ local retire_previous_pairs<const> = function(overlap, payload, prev_pairs, new_
 		row_pool_count = row_pool_count + 1
 		row_pool[row_pool_count] = row
 		prev_pairs[a] = nil
+		colliders[index] = nil
 	end
 	overlap.pair_row_pool_count = row_pool_count
 end
@@ -147,7 +151,8 @@ function overlap_2d_system.new(world)
 	self._component_view = world:active_component_view(collider_2d_component)
 	self.prev_pairs = {}
 	self.next_pairs = {}
-	self.prev_pair_count = 0
+	self.prev_pair_colliders = {}
+	self.next_pair_colliders = {}
 	self.pair_row_pool = {}
 	self.pair_row_pool_count = 0
 	self.overlap_payload = {
@@ -170,16 +175,16 @@ end
 function overlap_2d_system:update()
 	local prev_pairs<const> = self.prev_pairs
 	local new_pairs<const> = self.next_pairs
-	local prev_pair_count<const> = self.prev_pair_count
+	local prev_pair_colliders<const> = self.prev_pair_colliders
+	local new_pair_colliders<const> = self.next_pair_colliders
 	local overlap_pairs<const> = self.overlap_pairs
 	local overlap_payload<const> = self.overlap_payload
 
 	local colliders<const> = self._component_view.components
 	local collider_count<const> = #colliders
 	if collider_count <= 1 then
-		if prev_pair_count > 0 then
+		if #prev_pair_colliders > 0 then
 			retire_previous_pairs(self, overlap_payload, prev_pairs, new_pairs)
-			self.prev_pair_count = 0
 		end
 		return
 	end
@@ -205,6 +210,7 @@ function overlap_2d_system:update()
 		if row == nil then
 			row = acquire_pair_row(self)
 			new_pairs[key_a] = row
+			new_pair_colliders[#new_pair_colliders + 1] = key_a
 		end
 		local activation_revision<const> =
 			key_a._activation_revision + key_b._activation_revision
@@ -230,24 +236,30 @@ function overlap_2d_system:update()
 				emit_overlap_event(overlap_payload, 'overlap.begin', 'begin', owner_b, b, owner_a, a, pair.contact_other)
 			end
 		end
+		-- Contacts are reusable scalar scratch; collider ownership ends with
+		-- this synchronous dispatch. Only the current history retains the pair.
+		pair.a = nil
+		pair.b = nil
 	end
 
-	if prev_pair_count > 0 then
+	if #prev_pair_colliders > 0 then
 		retire_previous_pairs(self, overlap_payload, prev_pairs, new_pairs)
 	end
 
 	self.prev_pairs = new_pairs
 	self.next_pairs = prev_pairs
-	self.prev_pair_count = overlap_pair_count
+	self.prev_pair_colliders = new_pair_colliders
+	self.next_pair_colliders = prev_pair_colliders
 end
 
 function overlap_2d_system:clear()
-	release_pair_rows(self, self.prev_pairs)
-	release_pair_rows(self, self.next_pairs)
-	self.prev_pair_count = 0
+	release_pair_rows(self, self.prev_pairs, self.prev_pair_colliders)
+	release_pair_rows(self, self.next_pairs, self.next_pair_colliders)
 	local overlap_items<const> = self.overlap_pairs.items
 	for index = 1, #overlap_items do
-		clear_map(overlap_items[index])
+		local pair<const> = overlap_items[index]
+		pair.a = nil
+		pair.b = nil
 	end
 end
 
