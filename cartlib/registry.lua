@@ -5,6 +5,7 @@ local registry<const> = {
 	_entries_by_id = {},
 	_entries_by_key = {},
 	_keys_by_entry = {},
+	_empty_buckets = {},
 	_id_counter = 0,
 }
 
@@ -17,7 +18,14 @@ local empty_entries<const> = {}
 local add_index<const> = function(self, entry, key)
 	local bucket = self._entries_by_key[key]
 	if bucket == nil then
-		bucket = dense_set.new()
+		local empty_buckets<const> = self._empty_buckets
+		local last_index<const> = #empty_buckets
+		if last_index == 0 then
+			bucket = dense_set.new()
+		else
+			bucket = empty_buckets[last_index]
+			empty_buckets[last_index] = nil
+		end
 		self._entries_by_key[key] = bucket
 	end
 	dense_set.add(bucket, entry)
@@ -27,6 +35,18 @@ local add_index<const> = function(self, entry, key)
 		self._keys_by_entry[entry] = keys
 	end
 	keys[key] = true
+end
+
+-- A key belongs to the live index only while it has members. Empty storage
+-- has a separate Registry lifetime, with no former key or member attached.
+local remove_index<const> = function(self, entry, key)
+	local bucket<const> = self._entries_by_key[key]
+	dense_set.remove(bucket, entry)
+	if #bucket.items == 0 then
+		self._entries_by_key[key] = nil
+		local empty_buckets<const> = self._empty_buckets
+		empty_buckets[#empty_buckets + 1] = bucket
+	end
 end
 
 function registry:next_id()
@@ -59,7 +79,7 @@ function registry:reconcile_index(entry, key, included)
 			add_index(self, entry, key)
 		end
 	elseif indexed then
-		dense_set.remove(self._entries_by_key[key], entry)
+		remove_index(self, entry, key)
 		keys[key] = nil
 	end
 end
@@ -68,13 +88,15 @@ function registry:deregister(entry)
 	local keys<const> = self._keys_by_entry[entry]
 	if keys ~= nil then
 		for key in pairs(keys) do
-			dense_set.remove(self._entries_by_key[key], entry)
+			remove_index(self, entry, key)
 		end
 		self._keys_by_entry[entry] = nil
 	end
 	self._entries_by_id[entry.id] = nil
 end
 
+-- Call-local membership borrow, invalidated by Registry mutations. Stable
+-- retained system views belong to World/Space rather than this key index.
 function registry:entries(key)
 	local bucket<const> = self._entries_by_key[key]
 	return bucket and bucket.items or empty_entries
