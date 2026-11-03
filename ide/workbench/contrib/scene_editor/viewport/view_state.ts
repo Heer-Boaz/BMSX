@@ -2,6 +2,9 @@ import { create_rect_bounds, copy_rect_bounds, type RectBounds } from '../../../
 import type { BFont } from '../../../../../machine/ts/render/shared/bitmap_font';
 import { editorViewState } from '../../../../editor/ui/view/state';
 import { WorkbenchCanvasCaption } from '../../../ui/canvas_caption';
+import { createWorkbenchActionBar, layoutWorkbenchActionBar } from '../../../ui/action_bar';
+import { WorkbenchMenu } from '../../../ui/menu/model';
+import { measureText } from '../../../../editor/common/text/layout';
 import type { SceneAddMemberChoice, SceneAuthoringContext } from '../authoring_context';
 import type { SceneSourceAffine, SceneSourceObject } from '../model';
 import type { SceneSpatialReadModel } from '../spatial_projection';
@@ -32,6 +35,15 @@ export class SceneViewportViewState {
 	public readonly camera = new SceneViewportCamera();
 	public readonly gizmo = new SceneTranslationGizmo();
 	public readonly caption = new WorkbenchCanvasCaption();
+	public navigationTool: 'select' | 'pan' | 'orbit' = 'select';
+	/** These actions belong to this viewport's camera, not panel chrome or a member menu. */
+	public readonly navigationActions = createWorkbenchActionBar(new WorkbenchMenu<SceneViewportViewState>([
+		{ type: 'command', command: 'sceneViewport.view2d' }, { type: 'command', command: 'sceneViewport.view3d' },
+		{ type: 'command', command: 'sceneViewport.select' }, { type: 'command', command: 'sceneViewport.pan' },
+		{ type: 'command', command: 'sceneViewport.orbit', when: view => view.camera.mode === '3d' },
+		{ type: 'command', command: 'sceneViewport.zoomOut' }, { type: 'command', command: 'sceneViewport.zoomIn' },
+		{ type: 'command', command: 'sceneViewport.frameAll' }, { type: 'command', command: 'sceneViewport.frameSelection' },
+	], this), true);
 	public readonly axisLabelWidths = [0, 0, 0];
 	private labelFont: BFont | undefined;
 	public transformPreview: SceneTransformPreview | undefined;
@@ -83,7 +95,10 @@ export class SceneViewportViewState {
 		this.modelAssets = new WorkspaceModelAssets(catalog);
 		this.canvas = new SceneViewportCanvas(this.images); this.placementCanvas = new SceneViewportCanvas(this.images);
 		this.geometry = new SceneViewportGeometry(this.modelAssets, this.canvas); this.placementGeometry = new SceneViewportGeometry(this.modelAssets, this.placementCanvas);
-		this.unbindCamera = this.camera.onDidChange(() => { for (const listener of this.listeners) listener(); });
+		this.unbindCamera = this.camera.onDidChange(() => {
+			if (this.camera.mode === '2d' && this.navigationTool === 'orbit') this.navigationTool = 'select';
+			for (const listener of this.listeners) listener();
+		});
 	}
 	public onDidChange(listener: () => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 	public get assetGeneration(): number { return this.catalog.revision; }
@@ -94,12 +109,14 @@ export class SceneViewportViewState {
 	}
 	/** Attached controls publish annotation content before paint. Source and
 	 * pointer motion only change the rows they actually represent. */
-	public prepareCaption(placement: Readonly<SceneViewportPlacement> | undefined): void {
+	public prepareControls(placement: Readonly<SceneViewportPlacement> | undefined): void {
 		const caption = this.caption, lines = caption.lines;
 		caption.warningLine = -1;
 		if (placement === undefined) {
-			lines[0] = this.source === undefined ? 'SCENE UNAVAILABLE' : this.camera.mode === '2d' ? '2D' : '3D';
-			lines.length = 1;
+			lines[0] = this.source === undefined ? 'SCENE UNAVAILABLE' : this.navigationTool === 'pan' ? 'Drag: pan'
+				: this.navigationTool === 'orbit' ? 'Drag: orbit' : this.camera.mode === '3d' ? 'Alt+drag: orbit' : 'Click: select';
+			lines[1] = 'Middle drag: pan | Wheel: zoom';
+			lines.length = this.source === undefined ? 1 : 2;
 		} else {
 			lines[0] = placement.definitionLabel;
 			lines[1] = this.camera.mode === '3d' ? placement.located ? 'Click: place on XZ' : 'Point at XZ plane' : 'Click: place';
@@ -110,6 +127,8 @@ export class SceneViewportViewState {
 		}
 		caption.layout(Math.max(0, this.bounds.right - this.bounds.left - 8));
 		const font = editorViewState.font.renderFont();
+		layoutWorkbenchActionBar(this.navigationActions, this.bounds.right - 4, this.bounds.top + 4, this.bounds.top + font.lineHeight + 8,
+			measureText, font, this.bounds.left + 4, 'start');
 		if (this.labelFont !== font) {
 			this.labelFont = font;
 			for (let axis = 0; axis < TRANSLATE_AXIS_LABELS.length; axis++) this.axisLabelWidths[axis] = font.measure(TRANSLATE_AXIS_LABELS[axis]);

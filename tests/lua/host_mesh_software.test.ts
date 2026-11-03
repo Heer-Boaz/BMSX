@@ -9,6 +9,7 @@ import { LAYER_2D_IDE } from '../../machine/ts/render/shared/layers';
 import { RenderPassLibrary } from '../../machine/ts/render/backend/pass/library';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { createHostGxMeshFixture, createHostTexturedMeshFixture } from '../helpers/host_textured_mesh';
+import { compareHostLayeredMesh, createHostLayeredMeshFixture } from '../helpers/host_layered_mesh';
 
 const IDENTITY: Affine3 = { xx: 1, xy: 0, xz: 0, yx: 0, yy: 1, yz: 0, zx: 0, zy: 0, zz: 1, ox: 0, oy: 0, oz: 0 };
 const CLIP_IDENTITY = new Float64Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
@@ -40,6 +41,21 @@ function pixel(pixels: Uint8Array, x: number, y: number, width = 8): number[] {
 	const offset = (y * width + x) * 4;
 	return [...pixels.subarray(offset, offset + 4)];
 }
+
+test('software orbit canvas preserves painter order without writing the model depth buffer', t => {
+	const meshes = createHostLayeredMeshFixture(); t.after(() => meshes.dispose());
+	const f = fixture(t, 96, 96);
+	for (let frame = 0; frame < 12; frame++) {
+		meshes.orbit();
+		const base = f.draw(meshes.base).slice(), foreground = f.draw(meshes.foreground).slice(), combined = f.draw(meshes.combined);
+		const result = compareHostLayeredMesh(base, foreground, combined);
+		assert.ok(result.artwork > 0 && result.occluder > 0, 'the orbit exercises both artwork and a model in front of the canvas');
+		assert.equal(result.missing, 0, `all artwork survives its coplanar background at orbit step ${frame}`);
+		f.draw(meshes.opaque);
+		assert.deepEqual(f.context.meshScenes.get(meshes.combined).depth, f.context.meshScenes.get(meshes.opaque).depth,
+			'ordered canvas surfaces test against models but never occlude later canvas batches');
+	}
+});
 
 test('software model materials retain GX gain, RGB555 reduction, saturation and opaque black', t => {
 	const material = createHostGxMeshFixture(); t.after(() => material.dispose());

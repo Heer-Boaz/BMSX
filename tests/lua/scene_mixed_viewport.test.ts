@@ -53,6 +53,7 @@ function fixture(t: TestContext, source = SOURCE) {
 	const f = createSceneSourceFixture(t, source, 'mixed.lua', undefined, [...SCENE_TEXT_MODULES,
 		['cartlib/component/sprite_component.lua', 'return {new=function() end,factory=function() end}'],
 		['cartlib/component/static_model_component.lua', 'return {new=function() end,factory=function() end}'],
+		['cartlib/component/rectangle_component.lua', 'return {new=function() end}'],
 	]);
 	const pixels = new Uint8Array(8 * 4 * 4);
 	for (let y = 0; y < 4; y++) for (let x = 0; x < 8; x++) {
@@ -127,6 +128,31 @@ test('oblique planar alpha picking follows the affine texels actually rasterized
 		owners.add(expected);
 	}
 	assert.equal(owners.size, 3);
+});
+
+test('authored order survives orbiting over a coplanar background, and selection follows visible artwork', t => {
+	const withBackground = SOURCE.replace("scenes.register('mixed'", `local rectangle=require('cartlib/component/rectangle_component')
+prefab.define({def_id='background',class=require('cartlib/world/object_2d'),
+ components={function(owner) return rectangle.new(owner,{width=20,height=10,color=0xffffffff,order=-5}) end}})
+scenes.register('mixed'`);
+	// Declare the background last: only its authored render order puts it behind.
+	const f = fixture(t, withBackground.slice(0, -3) + "{member_id='background',definition_id='background'},\n}})"), { view } = f;
+	const entries = f.context.subject!.objects;
+	assert.equal(view.geometry.scene.instances[1], view.geometry.scene.instances.find(draw => draw.mesh.color === 0xffffffff && draw.mesh.texture === undefined));
+	assert.equal(view.canvas.items[0].source.entry, entries[3]);
+	const target = createHeadlessHostMeshTarget(view.geometry.scene), owners = new Set();
+	for (let step = 0; step < 12; step++) {
+		view.camera.orbit(3, 2); f.control.update(); renderHeadlessHostMeshScene(target, view.geometry.scene);
+		for (let y = 3; y < target.height; y += 7) for (let x = 3; x < target.width; x += 7) {
+			const offset = (y * target.width + x) * 4, pixels = target.pixels;
+			if (pixels[offset + 3] === 0) continue;
+			const expected = pixels[offset] === 255 && pixels[offset + 1] === 255 && pixels[offset + 2] === 255 ? entries[3]
+				: pixels[offset + 2] === 255 ? entries[2] : pixels[offset + 1] === 255 ? entries[1] : entries[0];
+			assert.equal(view.geometry.pick(x + 0.5 - 200, y + 0.5 - 150, view.camera)?.entry, expected);
+			owners.add(expected);
+		}
+	}
+	assert.ok(owners.has(entries[0]) && owners.has(entries[1]) && owners.has(entries[3]));
 });
 
 test('orbit and selection retain planar meshes and borrowed bitmap generations without asset rediscovery', t => {

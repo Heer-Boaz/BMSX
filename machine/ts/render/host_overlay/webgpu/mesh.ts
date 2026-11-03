@@ -46,7 +46,7 @@ export class WebGPUHostMeshScenes {
 					blend: layered ? { color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
 						alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' } } : undefined }] },
 				primitive: { topology: 'triangle-list', frontFace: mode === 'cw' ? 'cw' : 'ccw', cullMode: mode === 'none' ? 'none' : 'back' },
-				depthStencil: { format: 'depth32float', depthWriteEnabled: true, depthCompare: layered ? 'greater-equal' : 'greater' },
+				depthStencil: { format: 'depth32float', depthWriteEnabled: !layered, depthCompare: layered ? 'greater-equal' : 'greater' },
 			}));
 		}
 		this.positionBuffers = new HostMeshPositionBuffers(positions => {

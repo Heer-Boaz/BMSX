@@ -75,6 +75,7 @@ export class WebGLHostMeshScenes {
 			const mesh = instance.mesh, geometry = this.meshes.get(mesh);
 			const program = this.programs[mesh.shader]; backend.useProgram(program.program);
 			backend.setDepthFunc(mesh.layered ? gl.GEQUAL : gl.GREATER); backend.setBlendEnabled(mesh.layered);
+			backend.setDepthMask(!mesh.layered);
 			writeHostMeshClipMatrix(this.matrix, scene, instance);
 			gl.uniformMatrix4fv(program.matrix, false, this.matrix);
 			gl.uniform4f(program.color, mesh.red, mesh.green, mesh.blue, mesh.alpha);

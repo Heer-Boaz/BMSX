@@ -234,10 +234,10 @@ function rasterTriangle(target: HeadlessHostMeshTarget, points: Float64Array, a:
 					r = texels[offset] * redScale; g = texels[offset + 1] * greenScale; b = texels[offset + 2] * blueScale; a = texels[offset + 3] * alphaScale;
 				}
 				if (a === 0) continue;
-				depth[sample] = fragmentDepth;
 				const offset = sample * 4;
 				if (mesh.layered) blendPixel(pixels, offset, r, g, b, a);
 				else {
+					depth[sample] = fragmentDepth;
 					// Every mesh target stores premultiplied RGBA, also when a
 					// depth-only material replaces rather than blends its pixel.
 					const opacity = a / 255;

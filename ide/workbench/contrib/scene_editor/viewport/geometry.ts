@@ -271,7 +271,9 @@ export class SceneViewportGeometry<Owner = SceneSourceObject> {
 					const y = clamp(Math.trunc((uv[ta + 1] * wa + uv[tb + 1] * wb + uv[tc + 1] * wc) * image.height), 0, image.height - 1);
 					if (image.pixels[(y * image.width + x) * 4 + 3] === 0) continue;
 				}
-				nearestDepth = rasterDepth;
+				// Models establish depth; the following canvas batches resolve by
+				// painter order, just like the render pass, not rounded coplanarity.
+				if (!draw.mesh.layered) nearestDepth = rasterDepth;
 				hit.originX = draw.ox; hit.originY = draw.oy; hit.originZ = draw.oz;
 				hit.entry = draw.entry; hit.x = hx; hit.y = hy; hit.z = hz;
 			}

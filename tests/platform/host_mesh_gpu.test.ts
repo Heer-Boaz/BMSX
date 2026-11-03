@@ -51,6 +51,10 @@ for (const kind of ['webgl2', 'webgpu'] as const) test(`${kind} retained host me
 		cutout: [0, 128, 0, 128], cutoutComposite: [16, 144, 32, 255],
 	});
 	assert.deepEqual(result.gpuErrors, []);
+	for (const [frame, layers] of result.orbitLayers.entries()) {
+		assert.ok(layers.artwork > 0 && layers.occluder > 0, 'both artwork and the model in front of it are visible');
+		assert.equal(layers.missing, 0, `coplanar background must not erase artwork at orbit step ${frame}`);
+	}
 	assert.equal(result.gxAffineMatches, true); assert.equal(result.gxNearMatches, true);
 	const gains = [0, 1, 64, 127, 128, 129, 192, 255];
 	for (let y = 0; y < gains.length; y++) for (let x = 0; x < 32; x++) {

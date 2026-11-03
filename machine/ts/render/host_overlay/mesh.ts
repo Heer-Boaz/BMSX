@@ -15,7 +15,8 @@ export type HostMeshData = {
 } & ({
 	color: number;
 	gxCommand?: never;
-	/** Painter-ordered surfaces blend and accept equal depth, without inventing Z offsets. */
+	/** Painter-ordered surfaces follow opaque meshes. They blend and depth-test
+	 * against those meshes, but never write depth or compete with one another. */
 	layered?: boolean;
 } | {
 	/** Compiled static model material: flat opaque GX color, no dither. Texture
@@ -84,6 +85,7 @@ export type HostMeshInstance = Affine3 & { readonly mesh: HostMesh };
 /** One retained viewport, not another authored scene graph or a pixel resource. */
 export class HostMeshScene {
 	private readonly release = new Set<() => void>();
+	/** Producer order: opaque geometry, then painter-ordered layered surfaces. */
 	public readonly instances: HostMeshInstance[] = [];
 	/** Column-major homogeneous clip coordinates: -w<=x,y<=w, 0<=z<=w; reversed Z. */
 	public readonly clipFromOrigin = new Float64Array(16);

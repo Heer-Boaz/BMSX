@@ -10,6 +10,7 @@ import type { GPUBackend } from '../../machine/ts/render/backend/backend';
 import { HostBitmapTextures } from '../../machine/ts/render/host_overlay/bitmap';
 import { RGBA8_LINEAR_TEXTURE_PARAMS } from '../../machine/ts/render/backend/texture_params';
 import { createHostGxMeshFixture, createHostTexturedMeshFixture } from './host_textured_mesh';
+import { compareHostLayeredMesh, createHostLayeredMeshFixture } from './host_layered_mesh';
 
 /** Independent synthetic geometry exercises actual host backend resources and overlay composition. */
 export async function renderHostMeshCase(kind: 'webgl2' | 'webgpu') {
@@ -93,6 +94,15 @@ export async function renderHostMeshCase(kind: 'webgl2' | 'webgpu') {
 	const texturedIdle = { passes: passes - texturedPasses, uploads: backend.getFrameStats().bytesUploaded };
 	const gx = createHostGxMeshFixture();
 	const gxPixels = Array.from(await backend.readColorTexture(scenes.targets.get(gx.scene).color, gx.scene.width, gx.scene.height));
+	const layered = createHostLayeredMeshFixture(), orbitLayers = [];
+	for (let frame = 0; frame < 12; frame++) {
+		layered.orbit();
+		const base = await backend.readColorTexture(scenes.targets.get(layered.base).color, 96, 96);
+		const foreground = await backend.readColorTexture(scenes.targets.get(layered.foreground).color, 96, 96);
+		const combined = await backend.readColorTexture(scenes.targets.get(layered.combined).color, 96, 96);
+		orbitLayers.push(compareHostLayeredMesh(base, foreground, combined));
+	}
+	layered.dispose();
 	const presenter = new VideoPresenter(new BrowserVideoOutput(canvas, null, 'fit'), backend, 32, 32);
 	const library = new RenderPassLibrary(backend, presenter), renderer = new OverlayRenderer(presenter.hostOverlayQueue);
 	const frameTexture = backend.createColorTexture({ width: 32, height: 32, initialClearColor: [0, 0, 0, 1] });
@@ -130,6 +140,6 @@ export async function renderHostMeshCase(kind: 'webgl2' | 'webgpu') {
 			alpha: pixel(layerPixels, 4, 24), coplanar: pixel(layerPixels, 27, 26), composite: pixel(composite, 1, 6),
 			cutout: pixel(cutoutPixels, 4, 24), cutoutComposite: pixel(composite, 25, 6),
 			changed: pixel(changedTexture, 4, 24), idle: texturedIdle },
-		gxPixels, gxAffineMatches: JSON.stringify(gxAffinePixels) === JSON.stringify(affinePixels),
+		orbitLayers, gxPixels, gxAffineMatches: JSON.stringify(gxAffinePixels) === JSON.stringify(affinePixels),
 		gxNearMatches: JSON.stringify(gxNearPixels) === JSON.stringify(nearPixels), gpuErrors, validationError };
 }

@@ -5,6 +5,7 @@ import { ARTWORK_COLORS } from '../../../../theme/artwork_colors';
 import { SCENE_VIEWPORT_POINT_STRIDE, type SceneViewportViewState, type SceneViewportPlacement } from './view_state';
 import { TRANSLATE_AXIS_LABELS, TRANSLATE_PLANE_HANDLES, TranslateHandle } from './translate_gizmo';
 import type { SceneViewportQuad } from './canvas';
+import { renderWorkbenchActionBar } from '../../../render/action_bar';
 
 /** Helpers depict actual authored origins and affine axes, never inferred visual bounds. */
 export function drawSceneViewport(view: SceneViewportViewState, focused: boolean, placement?: Readonly<SceneViewportPlacement>): void {
@@ -59,7 +60,9 @@ export function drawSceneViewport(view: SceneViewportViewState, focused: boolean
 		segment[0] = x; segment[1] = y - 5; segment[2] = x; segment[3] = y + 5;
 		api.outlinedPolyline(segment, 0, 0, 0);
 	}
-	view.caption.draw(bounds.left + 4, bounds.top + 4);
+	renderWorkbenchActionBar(view.navigationActions, editorViewState.font.renderFont(),
+		ARTWORK_COLORS.annotation.foreground, ARTWORK_COLORS.annotation.warning);
+	if (focused || placement !== undefined || view.source === undefined) view.caption.draw(bounds.left + 4, view.navigationActions.bounds.bottom + 4);
 	if (focused) api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_FOCUS_BORDER);
 	api.popClipRect();
 }

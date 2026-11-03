@@ -13,6 +13,7 @@ import { SceneViewportCamera } from '../../ide/workbench/contrib/scene_editor/vi
 import { SceneViewportControl } from '../../ide/workbench/contrib/scene_editor/viewport/control';
 import { SceneViewportViewState, SCENE_VIEWPORT_POINT_STRIDE } from '../../ide/workbench/contrib/scene_editor/viewport/view_state';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
+import type { EditorCommandId } from '../../ide/common/commands';
 
 const PREFABS = `local prefab=require('cartlib/world/prefab')
 prefab.define({def_id='node2',class=require('cartlib/world/object_2d')})
@@ -38,7 +39,8 @@ function fixture(t: TestContext, objects = OBJECTS, attach = true) {
 	const view = new SceneViewportViewState(context, f.sources.catalog), scope = new InputFocusScope(Symbol('authored viewport'), inputFocus.workbenchScope);
 	const semantic = inputFocus.createTarget(null, scope), panel = inputFocus.createTarget(semantic, new InputFocusScope(scope.surfaceScope, scope));
 	panel.commandContext = semantic;
-	const control = new SceneViewportControl({ isEnabled: () => false, execute() {} }, menu, panel.scope, panel, new WorkbenchMenu([], undefined));
+	const control = new SceneViewportControl({ isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
+		execute: (command, target) => inputFocus.executeCommand(command, target) }, menu, panel.scope, panel, new WorkbenchMenu([], undefined));
 	control.focusTarget.registerCommand('sceneEditor.outline', { contextual: true, isEnabled: () => true, run: () => { semantic.focus(); } });
 	if (attach) control.setView(view, BOUNDS);
 	const select = (index: number) => {
@@ -49,6 +51,75 @@ function fixture(t: TestContext, objects = OBJECTS, attach = true) {
 	t.after(() => { control.dispose(); view.dispose(); context.dispose(); menu.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
 	return { ...f, source, context, view, scope, semantic, panel, control, select };
 }
+
+test('visible camera controls admit primary-button orbit, pan, zoom and return to member selection without editing source', t => {
+	const f = fixture(t); f.select(0);
+	const selection = f.context.selection;
+	const click = (command: EditorCommandId) => {
+		f.control.update();
+		const item = f.view.navigationActions.items.find(item => item.command === command)!;
+		assert.ok(item.visible && !item.overflowed && item.enabled);
+		const x = (item.bounds.left + item.bounds.right) / 2, y = (item.bounds.top + item.bounds.bottom) / 2;
+		const down = pointer(x, y, PointerButton.Primary, PointerButton.Primary);
+		pointerCapture.beginRoute(f.scope.surfaceScope, down);
+		assert.equal(f.control.handlePointer(down, true), true);
+		pointerCapture.dispatch(pointer(x, y, 0, 0, PointerButton.Primary), false, 0, f.scope.surfaceScope);
+		f.control.update();
+	};
+	const drag = () => {
+		const x = (BOUNDS.left + BOUNDS.right) / 2, y = (BOUNDS.top + BOUNDS.bottom) / 2;
+		f.control.handlePointer(pointer(x, y, PointerButton.Primary, PointerButton.Primary), true);
+		assert.ok(pointerCapture.active);
+		pointerCapture.dispatch(pointer(x + 30, y - 20, PointerButton.Primary), false, 0, f.scope.surfaceScope);
+		pointerCapture.dispatch(pointer(x + 30, y - 20, 0, 0, PointerButton.Primary), false, 0, f.scope.surfaceScope);
+	};
+	click('sceneViewport.view3d'); click('sceneViewport.orbit');
+	const beforeOrbit = f.view.camera.capture().space; drag();
+	const afterOrbit = f.view.camera.capture().space;
+	assert.notEqual(afterOrbit.yaw, beforeOrbit.yaw); assert.notEqual(afterOrbit.pitch, beforeOrbit.pitch);
+	click('sceneViewport.pan'); drag();
+	const afterPan = f.view.camera.capture().space;
+	assert.equal(afterPan.yaw, afterOrbit.yaw); assert.equal(afterPan.pitch, afterOrbit.pitch);
+	assert.notEqual(afterPan.centerX, afterOrbit.centerX);
+	click('sceneViewport.zoomIn'); assert.ok(f.view.camera.capture().space.distance < afterPan.distance);
+	const zoomed = f.view.camera.capture().space.distance;
+	click('sceneViewport.zoomOut'); assert.ok(f.view.camera.capture().space.distance > zoomed);
+	click('sceneViewport.frameAll'); assert.notDeepEqual(f.view.camera.capture().space, afterPan);
+	assert.equal(f.context.selection, selection);
+	click('sceneViewport.select'); assert.equal(f.view.navigationTool, 'select');
+	click('sceneViewport.orbit'); click('sceneViewport.view2d');
+	assert.equal(f.view.navigationTool, 'select');
+	assert.equal(f.view.navigationActions.items.find(item => item.command === 'sceneViewport.orbit')!.visible, false);
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});
+
+test('retiring a viewport cancels a held navigation button instead of acting on the next document', t => {
+	const f = fixture(t), item = f.view.navigationActions.items.find(item => item.command === 'sceneViewport.zoomIn')!;
+	const x = (item.bounds.left + item.bounds.right) / 2, y = (item.bounds.top + item.bounds.bottom) / 2;
+	const down = pointer(x, y, PointerButton.Primary, PointerButton.Primary);
+	pointerCapture.beginRoute(f.scope.surfaceScope, down); f.control.handlePointer(down, true);
+	assert.ok(pointerCapture.active);
+	const next = new SceneViewportViewState(f.context, f.sources.catalog); t.after(() => next.dispose());
+	f.control.setView(next, BOUNDS); const reading = next.camera.capture();
+	pointerCapture.dispatch(pointer(x, y, 0, 0, PointerButton.Primary), false, 0, f.scope.surfaceScope);
+	assert.equal(pointerCapture.active, false); assert.deepEqual(next.camera.capture(), reading);
+});
+
+test('a camera-button activation may retire its own viewport synchronously', t => {
+	const f = fixture(t), item = f.view.navigationActions.items.find(item => item.command === 'sceneViewport.view3d')!;
+	const unbind = f.view.camera.onDidChange(() => f.control.clearView()); t.after(unbind);
+	const x = (item.bounds.left + item.bounds.right) / 2, y = (item.bounds.top + item.bounds.bottom) / 2;
+	f.control.handlePointer(pointer(x, y, 0, PointerButton.Primary, PointerButton.Primary), true);
+	assert.equal(f.control.canFocus, false); assert.equal(pointerCapture.active, false);
+});
+
+test('restoring a 2D camera reading retires its unavailable orbit tool', t => {
+	const f = fixture(t), canvas = f.view.camera.capture();
+	inputFocus.executeCommand('sceneViewport.view3d', f.panel); inputFocus.executeCommand('sceneViewport.orbit', f.panel);
+	assert.equal(f.view.navigationTool, 'orbit');
+	f.view.camera.restore(canvas); f.control.update();
+	assert.equal(f.view.navigationTool, 'select');
+});
 
 test('authored helper projection consumes actual affine families and retains unchanged numeric buffers', t => {
 	const f = fixture(t), points = f.view.points, entries = f.view.entries;
