@@ -1,5 +1,3 @@
-import type { Polygon, RectBounds } from '../../../machine/ts/common/rect';
-import type { vec2arr } from '../../../machine/ts/common/vector';
 import type {
 	AssetId,
 	RomTocEntry,
@@ -47,20 +45,6 @@ export interface AudioMeta {
 	loopEnd?: number;
 }
 
-export interface BoundingBoxPrecalc {
-	original: RectBounds;
-	fliph: RectBounds;
-	flipv: RectBounds;
-	fliphv: RectBounds;
-}
-
-export interface HitPolygonsPrecalc {
-	original: Polygon[];
-	fliph: Polygon[];
-	flipv: Polygon[];
-	fliphv: Polygon[];
-}
-
 export interface GxTexturePageTile {
 	u: number;
 	v: number;
@@ -79,9 +63,6 @@ export interface ImgMeta {
 	gx_source_x?: number;
 	gx_source_y?: number;
 	gx_page_tiles?: GxTexturePageTile[];
-	boundingbox?: BoundingBoxPrecalc;
-	centerpoint?: vec2arr;
-	hitpolygons?: HitPolygonsPrecalc;
 }
 
 export interface TextureMeta {

@@ -334,8 +334,8 @@ The packed forms are:
 
 The header, descriptors and geometry blocks start on four-byte boundaries.
 There is no stored normal array, center, transform matrix or vertex-stride
-field. The image's `centerpoint` belongs to metadata, not an
-implicit subtraction from these coordinates.
+field. Geometry lives in this binary span, not a duplicate decoded polygon
+tree in image metadata. These coordinates have no implicit center subtraction.
 
 Image-derived geometry uses pixel sample coordinates: zero through width minus
 one and zero through height minus one. Reflection maps an X coordinate to

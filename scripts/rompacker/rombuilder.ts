@@ -3,11 +3,8 @@ import { assetIdFromSourceName, structuredTextAssetFromPath } from '../../toolch
 import { SCENARIO_TEST_SOURCE_SUFFIX } from '../../toolchain/ts/rompack/scenario_test';
 import { CART_ROM_HEADER_SIZE } from '../../machine/ts/spec/bmsx/rom_package';
 import type { Polygon, RectBounds } from '../../machine/ts/common/rect';
-import type { vec2arr } from '../../machine/ts/common/vector';
 import type {
 	AudioMeta,
-	BoundingBoxPrecalc,
-	HitPolygonsPrecalc,
 	ImgMeta,
 	RomAsset,
 	TextureMeta,
@@ -124,12 +121,6 @@ const { createHash } = require('crypto');
 
 const ROM_ZERO_FILL_CHUNK = Buffer.alloc(64 * 1024);
 const ADPCM_NO_LOOP = 0xffffffff;
-type ImageCollisionBuild = {
-	boundingbox: BoundingBoxPrecalc;
-	centerpoint: vec2arr;
-	hitpolygons: HitPolygonsPrecalc | undefined;
-	collisionbin: Buffer;
-};
 
 export function normalizeWorkspacePath(input: string): string {
 	const replaced = input.replace(/\\/g, '/').trim();
@@ -280,7 +271,7 @@ function flipBoundingBoxVertically(box: RectBounds, height: number): RectBounds 
 	};
 }
 
-function generateFlippedBoundingBox(extractedBoundingBox: RectBounds, imgW: number, imgH: number): BoundingBoxPrecalc {
+function generateFlippedBoundingBox(extractedBoundingBox: RectBounds, imgW: number, imgH: number) {
 	const originalBoundingBox = extractedBoundingBox;
 	const horizontalFlipped = flipBoundingBoxHorizontally(originalBoundingBox, imgW);
 	const verticalFlipped = flipBoundingBoxVertically(originalBoundingBox, imgH);
@@ -293,7 +284,7 @@ function generateFlippedBoundingBox(extractedBoundingBox: RectBounds, imgW: numb
 	};
 }
 
-function buildImageCollisionBuild(res: ImageResource): ImageCollisionBuild {
+function buildImageCollisionData(res: ImageResource): Buffer {
 	const img = res.img;
 	if (!img) {
 		throw new Error(`Image resource "${res.name}" is missing its decoded image data.`);
@@ -311,7 +302,6 @@ function buildImageCollisionBuild(res: ImageResource): ImageCollisionBuild {
 			break;
 	}
 	const boundingbox = generateFlippedBoundingBox(imgBoundingBox, img.width, img.height);
-	const centerpoint = BoundingBoxExtractor.calculateCenterPoint(imgBoundingBox);
 	const hitpolygons = originalPolygons
 		? {
 			original: originalPolygons,
@@ -320,32 +310,27 @@ function buildImageCollisionBuild(res: ImageResource): ImageCollisionBuild {
 			fliphv: flipPolygons(originalPolygons, true, true, img.width, img.height),
 		}
 		: undefined;
-	return {
-		boundingbox,
-		centerpoint,
-		hitpolygons,
-		collisionbin: Buffer.from(encodeCollisionShapeVariants({
-			original: {
-				bounds: boundingbox.original,
-				pieces: hitpolygons?.original.map(convexCollisionPiece),
-			},
-			fliph: {
-				bounds: boundingbox.fliph,
-				pieces: hitpolygons?.fliph.map(convexCollisionPiece),
-			},
-			flipv: {
-				bounds: boundingbox.flipv,
-				pieces: hitpolygons?.flipv.map(convexCollisionPiece),
-			},
-			fliphv: {
-				bounds: boundingbox.fliphv,
-				pieces: hitpolygons?.fliphv.map(convexCollisionPiece),
-			},
-		})),
-	};
+	return Buffer.from(encodeCollisionShapeVariants({
+		original: {
+			bounds: boundingbox.original,
+			pieces: hitpolygons?.original.map(convexCollisionPiece),
+		},
+		fliph: {
+			bounds: boundingbox.fliph,
+			pieces: hitpolygons?.fliph.map(convexCollisionPiece),
+		},
+		flipv: {
+			bounds: boundingbox.flipv,
+			pieces: hitpolygons?.flipv.map(convexCollisionPiece),
+		},
+		fliphv: {
+			bounds: boundingbox.fliphv,
+			pieces: hitpolygons?.fliphv.map(convexCollisionPiece),
+		},
+	}));
 }
 
-function buildImgMetaFromCollisionBuild(res: ImageResource, collision: ImageCollisionBuild): ImgMeta {
+function buildImgMeta(res: ImageResource): ImgMeta {
 	const img = res.img;
 	if (!img) {
 		throw new Error(`Image resource "${res.name}" is missing its decoded image data.`);
@@ -355,9 +340,6 @@ function buildImgMetaFromCollisionBuild(res: ImageResource, collision: ImageColl
 		height: img.height,
 		texture_u: res.textureU!,
 		texture_v: res.textureV!,
-		boundingbox: collision.boundingbox,
-		centerpoint: collision.centerpoint,
-		hitpolygons: collision.hitpolygons,
 	};
 	if (res.targetAtlasName === GX_SYSTEM_TEXTURE_ATLAS_NAME) {
 		imgmeta.gx_source_x = GX_SYSTEM_TEXTURE_X + res.textureU!;
@@ -802,15 +784,14 @@ export async function generateRomAssets(
 				romAssets.push({ resid, type, buffer, source_path: sourcePath });
 				break;
 			case 'image': {
-				const collision = buildImageCollisionBuild(res);
-				const imgmeta = buildImgMetaFromCollisionBuild(res, collision);
+				const imgmeta = buildImgMeta(res);
 				const baseAsset: RomAsset = {
 					resid,
 					type,
 					imgmeta,
 					source_path: sourcePath,
 				};
-				baseAsset.collision_bin_buffer = collision.collisionbin;
+				baseAsset.collision_bin_buffer = buildImageCollisionData(res);
 				romAssets.push(baseAsset);
 			}
 				break;

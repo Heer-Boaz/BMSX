@@ -385,8 +385,8 @@ return imgdec
 		assert.deepEqual(loadedTexture.texturemeta, texture.texturemeta);
 		assert.equal(loadedFirst.imgmeta!.gx_atlas_id, textureId);
 		assert.equal(loadedSecond.imgmeta!.gx_atlas_id, textureId);
-		assert.deepEqual(loadedFirst.imgmeta!.boundingbox, assets[1].imgmeta!.boundingbox);
-		assert.deepEqual(loadedSecond.imgmeta!.boundingbox, assets[2].imgmeta!.boundingbox);
+		assert.deepEqual(loadedFirst.imgmeta, assets[1].imgmeta);
+		assert.deepEqual(loadedSecond.imgmeta, assets[2].imgmeta);
 
 		const decodedTexture = new Map<string, Uint8Array>();
 		const modalContext = {
@@ -406,7 +406,7 @@ return imgdec
 		assert.deepEqual(Array.from(firstView.previewSections[0].rgba.subarray(0, 4)), [255, 0, 0, 255]);
 		assert.deepEqual(Array.from(secondView.previewSections[0].rgba.subarray(0, 4)), [0, 255, 0, 255]);
 		assert.ok(loadedFirst.collision_bin_start !== undefined);
-		assert.equal(loadedFirst.imgmeta.hitpolygons, undefined);
+		assert.equal(Object.hasOwn(loadedFirst.imgmeta, 'hitpolygons'), false);
 		assert.ok(firstView.previewSections[1].rgba.some(channel => channel !== 0));
 		const removedView = await buildAssetModalView({ resid: first.name, type: 'image', op: 'delete' }, modalContext);
 		assert.equal(removedView.previewSections.length, 0);
