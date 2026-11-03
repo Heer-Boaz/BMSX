@@ -9,6 +9,7 @@ import { SceneViewportGeometry, type SceneViewportGeometryBounds } from '../scen
 import { measureViewportCanvas, pickViewportCanvas, projectViewportCanvas, type ViewportCanvasQuad } from '../scene_editor/viewport/canvas_geometry';
 import { ActorWorldAssets } from './world_assets';
 import type { ActorRenderFrames } from './render_frames';
+import { ActorRenderGeometry } from './render_geometry';
 import type { WorldActor, WorldCanvasVisual, WorldModelKey, WorldModelVisual, WorldPacket } from './world_geometry';
 import { drawCanvas } from '../scene_editor/viewport/canvas_render';
 
@@ -22,6 +23,11 @@ export class ActorWorldView {
 	public readonly assets: ActorWorldAssets;
 	public readonly canvas = { items: [] as ViewportCanvasQuad<WorldActor>[], revision: 0, packetRevision: 0 };
 	public readonly geometry: SceneViewportGeometry<WorldActor, WorldModelKey>;
+	// Game-frame commits happen after this view's draw submission. Own the poses
+	// and identities used by its pixels and picking until its next publication.
+	// Immutable appearances remain shared; scalar slots are reused, not allocated
+	// per frame or read back from the guest during navigation.
+	private readonly presentation = new ActorRenderGeometry();
 	private readonly models: WorldModelVisual[] = [];
 	private readonly frame = { models: this.models };
 	private readonly appearances: WorldCanvasVisual['appearance'][] = [];
@@ -49,7 +55,8 @@ export class ActorWorldView {
 		const revision = this.frames.revision, frameChanged = revision !== this.frameRevision;
 		if (frameChanged) {
 			this.frameRevision = revision;
-			const world = this.frames.displayed.world;
+			this.presentation.copyFrom(this.frames.displayed);
+			const world = this.presentation.world;
 			let count = 0, changed = this.appearances.length !== world.canvas.length;
 			for (let index = 0; index < world.canvas.length; index++) {
 				const visual = world.canvas.peek(index), appearance = visual.appearance!;
@@ -116,7 +123,6 @@ export class ActorWorldView {
 		}
 	}
 	public pick(x: number, y: number): WorldActor | undefined {
-		if (this.frames.displayed.sequence === undefined) return;
 		return this.mode === '2d' ? pickViewportCanvas(this.canvas.items, x, y)
 			: this.geometry.pick(x - (this.bounds.left + this.bounds.right) / 2, y - (this.bounds.top + this.bounds.bottom) / 2, this.camera)?.entry;
 	}
@@ -134,7 +140,7 @@ export class ActorWorldView {
 	private projectSelection(): void {
 		this.outlines.clear();
 		const b = this.bounds, sign = this.mode === '3d' ? -1 : 1;
-		for (const quad of this.frames.displayed.quads) {
+		for (const quad of this.presentation.quads) {
 			if (quad.domain !== this.selectedDomain || quad.hashId !== this.selectedHashId) continue;
 			const points = this.outlines.get(this.outlines.length); points.length = 0;
 			for (let corner = 0; corner < 4; corner++) {
@@ -165,6 +171,7 @@ export class ActorWorldView {
 		}
 	}
 	public retire(): void {
+		this.presentation.clear();
 		this.frameRevision = this.geometryRevision = -1; this.models.length = this.canvas.items.length = this.appearances.length = this.packets.length = this.packetInputs.length = 0;
 		this.canvas.revision++; this.canvas.packetRevision++; this.geometry.prepare(undefined); this.assets.dispose(); this.selected.clear(); this.outlines.clear();
 	}

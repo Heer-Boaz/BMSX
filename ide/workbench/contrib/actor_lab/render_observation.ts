@@ -15,6 +15,7 @@ import { ActorRenderGeometry, type ActorVisualKind } from './render_geometry';
 
 const CALLS = new Set([OpCode.CALL]);
 const STORES = new Set([OpCode.SETFIELD]);
+const RETURNS = new Set([OpCode.RET]);
 const VISUALS = [
 	['cartlib/component/surface_component', 'surface_component.draw_visual', 'surface'],
 	['cartlib/component/surface_component', 'surface_component.draw_image_visual', 'surface'],
@@ -26,7 +27,7 @@ const VISUALS = [
 ] as const;
 
 type RenderPage = { x: number; y: number; order: number; ready: boolean; geometry: ActorRenderGeometry };
-type Store = { instruction: DecodedInstruction; kind: 'begin' | 'submit'; inBuild: boolean };
+type Store = { instruction: DecodedInstruction; inBuild: boolean };
 
 /** Real CALL/return and command-list publication boundaries, not function-entry
  * guesses. All instruction/inline ownership is resolved once for this image. */
@@ -35,10 +36,10 @@ export class ActorRenderObservation implements InstructionObserverBinding {
 	public readonly pages: RenderPage[] = [];
 	private readonly calls: ReadonlyMap<number, DecodedInstruction>;
 	private readonly stores = new Map<number, Store>();
+	private readonly completions = new Set<number>();
 	private readonly buildCallSites = new Set<number>();
 	private readonly visualKinds = new Map<number, ActorVisualKind>();
 	private readonly returns = new ScratchBuffer(() => ({ pc: 0, thread: 0, register: 0, kind: undefined as ActorVisualKind | undefined }));
-	private drawHashId = 0;
 	private page: RenderPage | undefined;
 	public constructor(private readonly cpu: CPU, image: Blua32ToolingImage, private readonly domain: ResourceDomain,
 		private readonly guest: SuspendedGuestSession, private readonly order: { value: number }) {
@@ -57,19 +58,23 @@ export class ActorRenderObservation implements InstructionObserverBinding {
 			if (path === 'cartlib/world/world' && name === 'world_class._build_render_commands') buildId = metadata.functionIds[i];
 			for (const [module, draw, kind] of VISUALS) if (path === module && name === draw) this.visualKinds.set(symbols.functionAddresses[i], kind);
 		}
-		for (const kind of ['begin', 'submit'] as const) {
-			const stores = bindFunctionInstructions(image, 'cartlib/gx/command_list', `command_list.${kind}`, STORES);
-			if (stores === undefined) continue;
-			for (const [pc, instruction] of stores) {
-				if (image.layout.constants[instruction.b] !== (kind === 'begin' ? 'drawing_offset' : 'word_count')) continue;
-				const chain = blua32InlineCallSitesAtPc(symbols, image.layout.header.textAddress, instruction.pc);
-				this.stores.set(pc, { instruction, kind, inBuild: chain.some(site => site.calleeFunctionId === buildId) });
-				this.points[domain + 1].add(pc);
-			}
+		const stores = bindFunctionInstructions(image, 'cartlib/gx/command_list', 'command_list.begin', STORES)!;
+		for (const [pc, instruction] of stores) {
+			if (image.layout.constants[instruction.b] !== 'drawing_offset') continue;
+			const chain = blua32InlineCallSitesAtPc(symbols, image.layout.header.textAddress, instruction.pc);
+			this.stores.set(pc, { instruction, inBuild: chain.some(site => site.calleeFunctionId === buildId) });
+			this.points[domain + 1].add(pc);
+		}
+		// These are the concrete, dynamically dispatched World.render methods.
+		// Their physical RET follows every streamed submission, including an empty
+		// final buffer. A word_count store is not a render-completion boundary.
+		for (const name of ['world_class._render_single_page', 'world_class._render_double_page']) {
+			const returns = bindFunctionInstructions(image, 'cartlib/world/world', name, RETURNS)!;
+			for (const pc of returns.keys()) { this.completions.add(pc); this.points[domain + 1].add(pc); }
 		}
 	}
 	public reset(): void {
-		this.page = undefined; this.drawHashId = 0;
+		this.page = undefined;
 		for (const page of this.pages) { page.ready = false; page.order = 0; page.geometry.world.invalidate(); page.geometry.clear(); }
 		for (let i = 0; i < this.returns.length; i++) this.returns.peek(i).kind = undefined;
 	}
@@ -82,6 +87,7 @@ export class ActorRenderObservation implements InstructionObserverBinding {
 		return false;
 	}
 	public observe(_domain: ResourceDomain, pc: number, registers: ValueSlots): void {
+		if (this.completions.has(pc)) { this.page!.ready = true; return; }
 		const pending = this.returns.get(this.cpu.getFrameDepth());
 		if (pending.kind !== undefined && pending.pc === pc && pending.thread === this.cpu.activeThread.hashId) {
 			this.page!.geometry.capture(registers.getTable(pending.register), pending.kind, this.domain, this.guest);
@@ -96,17 +102,12 @@ export class ActorRenderObservation implements InstructionObserverBinding {
 		}
 		const store = this.stores.get(pc);
 		if (store === undefined) return;
+		if (!this.insideBuild(store.inBuild)) return;
 		const draw = registers.getTable(store.instruction.a);
-		if (store.kind === 'begin') {
-			if (!this.insideBuild(store.inBuild)) return;
-			const x = this.guest.readStringMember(draw, 'target_x') as number, y = this.guest.readStringMember(draw, 'target_y') as number;
-			let page: RenderPage | undefined;
-			for (let i = 0; i < this.pages.length; i++) if (this.pages[i].x === x && this.pages[i].y === y) { page = this.pages[i]; break; }
-			if (page === undefined) { page = { x, y, order: 0, ready: false, geometry: new ActorRenderGeometry() }; this.pages.push(page); }
-			page.order = ++this.order.value; page.ready = false; page.geometry.clear(); this.page = page; this.drawHashId = draw.hashId;
-		} else if (draw.hashId === this.drawHashId && !this.insideBuild(store.inBuild)) {
-			// DMA submission completed; GPU completion is checked at the device latch.
-			this.page!.ready = true;
-		}
+		const x = this.guest.readStringMember(draw, 'target_x') as number, y = this.guest.readStringMember(draw, 'target_y') as number;
+		let page: RenderPage | undefined;
+		for (let i = 0; i < this.pages.length; i++) if (this.pages[i].x === x && this.pages[i].y === y) { page = this.pages[i]; break; }
+		if (page === undefined) { page = { x, y, order: 0, ready: false, geometry: new ActorRenderGeometry() }; this.pages.push(page); }
+		page.order = ++this.order.value; page.ready = false; page.geometry.clear(); this.page = page;
 	}
 }
