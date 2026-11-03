@@ -589,6 +589,59 @@ test('const modules reject non-constant exports', () => {
 	);
 });
 
+test('missing const module exports report the field and its source location before runtime lowering', () => {
+	const moduleSource = 'return { known_addr = 17, nested = { known_addr = 23 } }';
+	const cases = [
+		{ source: 'return {\n address = assets.missing_addr,\n}', line: 3, column: 19, path: 'missing_addr' },
+		{ source: 'return assets["missing_addr"]', line: 2, column: 15, path: 'missing_addr' },
+		{ source: 'return assets.nested.missing_addr', line: 2, column: 22, path: 'nested.missing_addr' },
+		{ source: 'local group<const> = assets.nested\nreturn group.missing_addr', line: 3, column: 14, path: 'nested.missing_addr' },
+		{ source: 'return require("bmsx/assets").missing_addr', line: 2, column: 31, path: 'missing_addr' },
+		{ source: 'return assets.missing_addr.child', line: 2, column: 15, path: 'missing_addr' },
+		{ source: 'return assets.missing_addr()', line: 2, column: 15, path: 'missing_addr' },
+		{ source: 'local value<const> = assets.missing_addr\nreturn 1', line: 2, column: 29, path: 'missing_addr' },
+		{ source: 'local function read()\n return assets.missing_addr\nend\nreturn read()', line: 3, column: 16, path: 'missing_addr' },
+	];
+	for (const optLevel of [0, 3] as const) {
+		for (const sample of cases) {
+			const entrySource = `local assets<const> = require("bmsx/assets")\n${sample.source}`;
+			assert.throws(
+				() => compileWithConstModule(entrySource, 'bmsx/assets', moduleSource, undefined, optLevel),
+				{ message: `Compilation failed with 1 error(s):\n[1/1] entry entry.lua: ${sample.line}:${sample.column}: Module 'bmsx/assets' has no export '${sample.path}'.` },
+				`${sample.source}, O${optLevel}`,
+			);
+		}
+	}
+});
+
+test('missing installed module exports report the full path at the missing field', () => {
+	for (const optLevel of [0, 3] as const) {
+		for (const path of ['missing', 'nested.missing']) {
+			const entrySource = `local api<const> = require("bios_api")\nreturn api.${path}()`;
+			const column = path === 'missing' ? 12 : 19;
+			assert.throws(
+				() => compileLuaChunkToProgram(parseSource(entrySource, 'entry.lua'), [], {
+					entrySource,
+					optLevel,
+					biosFunctions: [{ path: 'bios_api', exportPathKey: 'nested.read' }],
+				}),
+				{ message: `Compilation failed with 1 error(s):\n[1/1] entry entry.lua: 2:${column}: Module 'bios_api' has no export '${path}'.` },
+			);
+		}
+	}
+});
+
+test('ordinary runtime modules still read absent fields as nil and allow adding fields', () => {
+	const entrySource = `local api<const> = require("api")
+local absent = api.missing
+api.added = 23
+return absent, api["missing"], api.added`;
+	for (const optLevel of [0, 3] as const) {
+		const { compiled } = compileWithModule(entrySource, 'api', 'return { known = 17 }', [], optLevel);
+		assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), [null, null, 23]);
+	}
+});
+
 test('const modules reject runtime root values', () => {
 	const moduleSource = 'return { value = 7 }';
 	assert.throws(
@@ -599,6 +652,14 @@ test('const modules reject runtime root values', () => {
 		() => compileWithConstModule('local assets = require("assets")\nreturn assets', 'assets', moduleSource),
 		/Module 'assets' root is compile-time only/,
 	);
+	for (const optLevel of [0, 3] as const) {
+		for (const source of ['return { assets }', 'local function use(value) return value end\nreturn use(assets)']) {
+			assert.throws(
+				() => compileWithConstModule(`local assets<const> = require("assets")\n${source}`, 'assets', moduleSource, undefined, optLevel),
+				/Module 'assets' root is compile-time only/,
+			);
+		}
+	}
 });
 
 test('a global require assignment does not replace compiler module syntax', () => {

@@ -87,6 +87,31 @@ test('compiler reports mapped harness diagnostics at the authored source locatio
 	);
 });
 
+test('missing compile-time exports in generated code report their authored file and field location', () => {
+	const entrySource = `module<entry>\nrequire('${GENERATED_PATH}')`;
+	const mapped = buildMappedModule('local assets<const> = require("bmsx/assets")\nreturn { address = assets.missing_addr }');
+	const assetsSource = 'module<const>\nreturn { known_addr = 17 }';
+	for (const optLevel of [0, 3] as const) {
+		assert.throws(
+			() => compileLuaChunkToProgram(
+				parseLuaChunk(entrySource, ENTRY_PATH).chunk!,
+				[{
+					path: GENERATED_PATH,
+					source: mapped.source,
+					chunk: parseLuaChunk(mapped.source, GENERATED_PATH).chunk!,
+					sourceMap: mapped.sourceMap,
+				}, {
+					path: 'bmsx/assets',
+					source: assetsSource,
+					chunk: parseLuaChunk(assetsSource, 'bmsx/assets').chunk!,
+				}],
+				{ entrySource, optLevel },
+			),
+			{ message: `Compilation failed with 1 error(s):\n[1/1] module ${TEST_DISPLAY_PATH}: 2:27: Module 'bmsx/assets' has no export 'missing_addr'.` },
+		);
+	}
+});
+
 test('captured-local provenance maps once to authored declarations and retains binding indices', () => {
 	const entrySource = `module<entry>\nrequire('${GENERATED_PATH}')`;
 	const mapped = buildMappedModule('local value<const> = {}\nreturn function() return function() return value end end');

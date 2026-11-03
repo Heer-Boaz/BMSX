@@ -2525,6 +2525,18 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		if (this.moduleBindingExportsPath(baseBinding, exportPathKey)) {
 			return this.repathModuleBinding(baseBinding, exportPathKey);
 		}
+		if (baseBinding.kind === 'installed' || this.moduleBindingOwnsCompileTimeLocal(baseBinding)) {
+			const member = isMemberExpression
+				? (expression as LuaMemberExpression).member
+				: (expression as LuaIndexExpression).index;
+			const range = this.semantics.locations.range(member.span);
+			throw new LuaSyntaxError(
+				`Module '${baseBinding.modulePath}' has no export '${exportPathKey}'.`,
+				range.path,
+				range.start.line,
+				range.start.column,
+			);
+		}
 	}
 
 	private repathModuleBinding(binding: ModuleBinding, exportPathKey: string): ModuleBinding {
