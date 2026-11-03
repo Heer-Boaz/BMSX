@@ -1,183 +1,151 @@
 {
-  "source": "wintergroen_bron.png",
-  "source_sha256": "765521def6529901b1379a742de727152f097221f3132e7d7b0570b8cc43d64f",
+  "source_provenance": {
+    "source": "authoring/stadsgroen/wintergroen_bron.png",
+    "source_sha256": "765521def6529901b1379a742de727152f097221f3132e7d7b0570b8cc43d64f",
+    "wood_sources": "authoring/stadsgroen/houtbron_r24.json"
+  },
   "scale": {
     "ship": "Kartonion",
     "ship_pixels": [
       16,
       10
     ],
-    "fictional_ship_length_m": 4,
-    "town_pixels_per_m": 4,
-    "buildings_and_player_unchanged": true
+    "fictional_ship_length_m": 6,
+    "town_pixels_per_m": 2.6666666666666665,
+    "foreground_source_scale": [
+      2,
+      3
+    ],
+    "player_unchanged": true
   },
+  "animation": "Native key cels at a fixed canvas and root; trunks and main limbs are locked by explicit masks. Secondary twigs follow overlapping gusts and settle separately.",
   "assets": [
     {
       "name": "straatboom_winter",
       "label": "Winterse straatboom",
-      "region": [
-        130,
-        96,
-        435,
-        450
-      ],
+      "source": "authoring/stad6m/straatboom_winter.png",
       "size": [
         24,
-        32
+        24
       ],
-      "drawing_size": [
-        24,
-        32
+      "visible_bounds": [
+        4,
+        3,
+        20,
+        24
       ],
-      "palette_indices": [
-        0,
-        12,
-        14
-      ]
+      "root_x": 12,
+      "wind_source": "authoring/stad6m/straatboom_winter_wind.png",
+      "wind_poses": 8,
+      "rigid_source": "authoring/stad6m/rigid_straatboom_winter.png",
+      "fixed_lower_rows": 5
     },
     {
       "name": "knotboom_winter",
       "label": "Gesnoeide knotboom",
-      "region": [
-        568,
-        160,
-        820,
-        450
-      ],
+      "source": "authoring/stad6m/knotboom_winter.png",
       "size": [
         16,
-        24
+        16
       ],
-      "drawing_size": [
-        16,
-        24
+      "visible_bounds": [
+        4,
+        1,
+        13,
+        16
       ],
-      "palette_indices": [
-        0,
-        12,
-        14
-      ]
+      "root_x": 8,
+      "wind_source": "authoring/stad6m/knotboom_winter_wind.png",
+      "wind_poses": 8,
+      "rigid_source": "authoring/stad6m/rigid_knotboom_winter.png",
+      "fixed_lower_rows": 5
+    },
+    {
+      "name": "winterlinde_stil",
+      "label": "Volwassen winterlinde",
+      "source": "authoring/stad6m/winterlinde_stil.png",
+      "size": [
+        32,
+        32
+      ],
+      "visible_bounds": [
+        8,
+        1,
+        27,
+        32
+      ],
+      "root_x": 20,
+      "wind_source": "authoring/stad6m/winterlinde_stil_wind.png",
+      "wind_poses": 8,
+      "rigid_source": "authoring/stad6m/rigid_winterlinde_stil.png",
+      "fixed_lower_rows": 8
+    },
+    {
+      "name": "compact_winterlinde",
+      "label": "Volwassen winterlinde",
+      "source": "authoring/stad6m/compact_winterlinde.png",
+      "size": [
+        32,
+        32
+      ],
+      "visible_bounds": [
+        8,
+        1,
+        27,
+        32
+      ],
+      "root_x": 20,
+      "wind_source": "authoring/stad6m/winterlinde_stil_wind.png",
+      "wind_poses": 8,
+      "rigid_source": "authoring/stad6m/rigid_winterlinde_stil.png",
+      "fixed_lower_rows": 8
     },
     {
       "name": "sneeuwstruik",
       "label": "Lage struik met sneeuw",
-      "region": [
-        980,
-        320,
-        1185,
-        435
-      ],
+      "source": "authoring/stad6m/sneeuwstruik.png",
       "size": [
         16,
         8
       ],
-      "drawing_size": [
+      "visible_bounds": [
+        4,
+        5,
         12,
-        5
+        8
       ],
-      "palette_indices": [
-        0,
-        11,
-        14
-      ]
+      "wind_source": "authoring/stad6m/sneeuwstruik_wind.png",
+      "wind_poses": 3,
+      "fixed_lower_rows": 1
     },
     {
       "name": "sneeuwhaag",
       "label": "Lage winterhaag",
-      "region": [
-        1340,
-        320,
-        1645,
-        435
-      ],
+      "source": "authoring/stad6m/sneeuwhaag.png",
       "size": [
         16,
         8
       ],
-      "drawing_size": [
-        16,
-        6
-      ],
-      "palette_indices": [
-        0,
-        11,
-        14
-      ]
-    },
-    {
-      "name": "zitbank",
-      "label": "Kleine straatbank",
-      "region": [
-        195,
-        608,
-        390,
-        735
-      ],
-      "size": [
-        16,
-        8
-      ],
-      "drawing_size": [
-        10,
-        4
-      ],
-      "palette_indices": [
-        0,
-        3,
-        12
-      ]
-    },
-    {
-      "name": "afvalbak",
-      "label": "Kleine afvalbak",
-      "region": [
-        640,
-        610,
-        740,
-        735
-      ],
-      "size": [
-        8,
-        8
-      ],
-      "drawing_size": [
-        3,
-        4
-      ],
-      "palette_indices": [
-        0,
-        12,
-        14
-      ],
-      "source_rows": [
-        636,
-        650,
-        673,
-        703
-      ]
-    },
-    {
-      "name": "straatpaaltje",
-      "label": "Laag straatpaaltje",
-      "region": [
-        1037,
-        610,
-        1120,
-        735
-      ],
-      "size": [
-        8,
-        8
-      ],
-      "drawing_size": [
+      "visible_bounds": [
         2,
-        4
+        4,
+        13,
+        8
       ],
-      "palette_indices": [
-        0,
-        12,
-        14
-      ]
+      "wind_source": "authoring/stad6m/sneeuwhaag_wind.png",
+      "wind_poses": 3,
+      "fixed_lower_rows": 2
+    },
+    {
+      "name": "compact_tree_socket_gevelkade",
+      "label": "Boomvoet in de besneeuwde gevelkade",
+      "source": "authoring/stad6m/compact_tree_socket_gevelkade.png",
+      "size": [
+        16,
+        8
+      ],
+      "root_x": 4,
+      "description": "Only the wood footprint is narrowed; existing quay masonry and terrain extent are retained."
     }
   ]
 }

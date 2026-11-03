@@ -1,7 +1,7 @@
 """Compile Stadsburg's wind and cargo poses on the native 8×8 grid."""
 import json
 from PIL import Image
-from bake_stadsgroen import assembled, greenery_poses, greenery_steps, TREE_BRANCHES
+from bake_stadsgroen import assembled, greenery_poses, greenery_steps, ASSETS, TREE_NAMES
 
 # Coordinates in two adjacent characters, measured from the leeward roof edge.
 # The trailing grains lift first; the last few fall apart at the end of the gust.
@@ -92,13 +92,13 @@ def compile_harbor(root, plan, prefabs, tiles, entries, cells, placements, palet
                 im=frame.crop((8*u,8*v,8*u+8,8*v+8))
                 phase[cx,cy]=baked(im,cells[cy][cx])
             poses.append(phase)
-        add_clip('linde',positions,poses,greenery_steps('compact_winterlinde',ox,plan['harbor']['art_origin']),ox-31,ox+4)
-        samples['linde']=([ox,oy,4,6],poses)
+        add_clip('linde',positions,poses,greenery_steps('compact_winterlinde',ox,plan['harbor']['art_origin']),ox-31,ox+drawings[0].width//8)
+        samples['linde']=([ox,oy,drawings[0].width//8,tree.height//8],poses)
 
     greenery_proof=[]
     for layer in greenery_layers:
         name=layer['prefab'];x=layer['x'];positions=layer['positions'];poses=[]
-        fixed=1 if name=='sneeuwstruik' else 2 if name=='sneeuwhaag' else 12 if name=='winterlinde_stil' else 8
+        fixed=ASSETS[name]['fixed_lower_rows']
         fixed_y=layer['baseline']-fixed
         for raw_pose in layer['poses']:
             phase={}
@@ -119,8 +119,8 @@ def compile_harbor(root, plan, prefabs, tiles, entries, cells, placements, palet
         samples.setdefault('groen_'+name,(layer['bounds'],poses))
         greenery_proof.append({'label':label,'prefab':name,'column':x,'pixel_origin':layer['pixel_origin'],
                                'poses':len(poses),'cycle_updates':sum(ticks for pose,ticks in durations),
-                               'changed_native_cells':len(positions),'max_horizontal_shift':2 if name=='winterlinde_stil' else 1,
-                               'vertical_shift':1 if name in TREE_BRANCHES else 0,
+                               'changed_native_cells':len(positions),'max_horizontal_shift':1,
+                               'vertical_shift':1 if name in TREE_NAMES else 0,
                                'fixed_lower_rows':fixed,'trunk_and_ground_unchanged':True,
                                'rest_matches_stage':True,'max_colors_per_8x1':2,
                                'fixed_background_rows':layer['background_rows']})
@@ -128,10 +128,9 @@ def compile_harbor(root, plan, prefabs, tiles, entries, cells, placements, palet
         'new_clips':greenery_proof,'original_linden_clip':'linde','greenery_clips':len(greenery_proof)+1,
         'runtime_module':'carts/nemesis_s/havenanimatie.lua',
         'runtime_module_unchanged':True,'background_is_not_translated':True,
-        'tree_motion':'secondary branches rotate around fixed forks with overlapping gust response and separate settling; trunk and main limbs stay fixed',
+        'tree_motion':'native secondary-twig cels share a fixed canvas and root, overlapping gust response and separate settling; masked trunk and main limbs stay fixed',
         'tree_cycle_updates':76,
-        'rigid_masks':{name:'authoring/stadsgroen/rigid_'+('winterlinde_stil' if name=='compact_winterlinde' else name)+'.png'
-                       for name in TREE_BRANCHES},
+        'rigid_masks':{name:ASSETS[name]['rigid_source'] for name in TREE_NAMES},
         'motion_reference':'https://developer.nvidia.com/gpugems/gpugems3/part-i-geometry/chapter-6-gpu-generated-procedural-wind-animations-trees',
     },indent=2,ensure_ascii=False)+'\n')
 

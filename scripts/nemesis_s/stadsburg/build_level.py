@@ -146,7 +146,7 @@ def main():
         prefab(n,x,y)
     for tree in plan['trees']:
         x,floor=tree
-        prefab('compact_winterlinde',x,floor-6)
+        prefab('compact_winterlinde',x,floor-len(rows_for('compact_winterlinde')))
         prefab('compact_tree_socket_gevelkade',x+2,floor)
 
     # Town detail and its poses are composed during authoring. They share the
