@@ -256,6 +256,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'runtime.resume': { category: 'Run', title: 'Continue from Here', shortTitle: 'OK' },
 	'runtime.playback': { category: 'Run', title: 'Play / Pause', shortTitle: 'Play/Pause' },
 	'actorLab.playback': { category: 'Actor Lab', title: 'Play / Pause', shortTitle: 'Play/Pause' },
+	'actorLab.run': { category: 'Actor Lab', title: 'Run Selected Behavior', shortTitle: 'Run' },
 	'actorLab.select': { category: 'Actor Lab', title: 'Select Running Actor', shortTitle: 'Actor' },
 	'actorLab.find': { category: 'Actor Lab', title: 'Find in Actor', shortTitle: 'Find in Actor' },
 	'actorLab.spawn': { category: 'Actor Lab', title: 'Spawn Registered Prefab', shortTitle: 'Spawn' },

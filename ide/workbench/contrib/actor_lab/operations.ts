@@ -1,6 +1,8 @@
 import type { ActorNode } from './runtime';
 
-export type ActorAction = { readonly label: string; readonly method: string; readonly description: string; readonly payload?: string; readonly keyed?: boolean };
+export type ActorAction = { readonly label: string; readonly method: string; readonly description: string; readonly payload?: string; readonly keyed?: boolean;
+	/** Starts this behavior without authored arguments; ordinary World updates run it. */
+	readonly playback?: boolean };
 
 export function actorActions(node: ActorNode): readonly ActorAction[] {
 	if (node.kind === 'effect') return node.active ? ACTIVE_EFFECT_OPERATIONS : EFFECT_OPERATIONS;
@@ -21,13 +23,15 @@ const OPERATIONS: Readonly<Record<ActorNode['kind'], readonly ActorAction[]>> = 
 		{ label: 'Remove tag', method: 'remove_tag', payload: "'tag'", description: '' },
 		{ label: 'Despawn', method: 'mark_for_disposal', description: 'World-owned disposal and component teardown' },
 	],
-	state: [{ label: 'Go to state', method: 'transition_to', description: 'Requests a state path; lifecycle guards still apply' }],
+	state: [{ label: 'Go to state', method: 'transition_to', playback: true, description: 'Requests a state path; lifecycle guards still apply' }],
 	tree: [
-		{ label: 'Start', method: 'start', description: '' },
+		{ label: 'Start', method: 'start', playback: true, description: '' },
 		{ label: 'Stop', method: 'stop', description: '' },
 		{ label: 'Request execution', method: 'request_execution', description: 'Schedules the next BT evaluation' },
 	],
 	timeline: [
+		// A controller may supply play-time targets/parameters. Run never invents
+		// those: start the owning behavior and let it program its timelines.
 		{ label: 'Play from start', method: 'play', keyed: true, description: '' },
 		{ label: 'Stop', method: 'stop', keyed: true, description: '' },
 		{ label: 'Scrub time (ms)', method: 'scrub_time', payload: '0', keyed: true, description: 'Samples without event replay' },

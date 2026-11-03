@@ -18,7 +18,7 @@ import { runtimeWorld, type ActorNode } from './runtime';
 import { readActorChoices } from './projection';
 import { actorActions } from './operations';
 import { captureActorTarget } from './target';
-import type { ActorExecutionResult, ActorInvocation } from './execution';
+import type { ActorExecutionOperation, ActorExecutionResult, ActorInvocation } from './execution';
 import { createActorMemberChoices } from './member_choices';
 
 /** Prompt chains and pending invocations belong to one actual editor pane's group. */
@@ -72,7 +72,7 @@ export class ActorLabEditorActions {
 			accepted();
 		});
 	}
-	private run(input: ActorLabInput, request: ActorInvocation, observer?: (result: ActorExecutionResult) => void, current: () => boolean = () => true): void {
+	private run(input: ActorLabInput, request: ActorInvocation, observer?: (result: ActorExecutionResult) => void, current: () => boolean = () => true): ActorExecutionOperation {
 		const controller = input.controller;
 		const domain = input.domain, actor = input.actorHashId;
 		let attached = true;
@@ -87,6 +87,32 @@ export class ActorLabEditorActions {
 			else showEditorMessage(result.status === 'completed' ? result.values.length === 0 ? 'Actor call completed.'
 				: `Result: ${result.values.join(', ')}` : result.reason!, 'info', 4);
 		});
+		return operation;
+	}
+	/** Start a discovered behavior on its real owner, then run the whole game. This
+	 * is not timeline sampling: physics, controllers and other actors keep updating. */
+	public play(input: ActorLabInput): void {
+		const controller = input.controller, transport = controller.viewport.transport;
+		const node = controller.selected(input)!, action = actorActions(node).find(action => action.playback)!;
+		const target = captureActorTarget(input.domain, input.worldHashId!, input.runtime.roots, node, controller.guest);
+		const presentation = input.presentation, path = input.selectionPath, graph = input.stateGraph, graphSelection = graph?.selectedTarget;
+		const revision = transport.execution.revision, context = this.origin.scope.contextGeneration;
+		let operation: ActorExecutionOperation | undefined;
+		const current = () => this.origin.scope.contextGeneration === context && input.presentation === presentation && input.selectionPath === path
+			&& input.stateGraph === graph && graph?.selectedTarget === graphSelection
+			&& transport.execution.revision === (operation === undefined ? revision : operation.executionRevision);
+		const follow = controller.activityScope(input)!;
+		input.interaction.running = false;
+		operation = this.run(input, { kind: 'action', target, method: action.method, args: [] }, result => {
+			if (result.status !== 'completed') { showEditorMessage(result.reason!, 'info', 4); return; }
+			// A pause, debugger intervention, changed selection or retired pane wins
+			// over the earlier Play request. Never resume from a late completion.
+			if (operation!.controlVersion !== 0 || !transport.playbackEnabled) return;
+			input.follow.start(follow);
+			input.interaction.running = true;
+			// Publishing live-follow can itself retire this pane or request Pause.
+			if (current()) transport.resumeHere();
+		}, current);
 	}
 	public scrub(input: ActorLabInput, node: ActorNode, time: number, programHashId: number, current: () => boolean, finished: (completed: boolean) => void): void {
 		const controller = input.controller;

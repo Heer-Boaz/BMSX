@@ -44,6 +44,7 @@ import type { ActorStateGraph } from './state_graph';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import type { ActorLabNavigationSelection } from './navigation_selection';
 import type { ActorViewportHit } from './viewport_pick';
+import { actorActions } from './operations';
 import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import { WorkbenchFloatingWindow } from '../../ui/window/control';
@@ -142,6 +143,12 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			target.registerCommand('actorLab.spawn', { isEnabled: () => this.hasInput && this.controller.canInteract(), run: () => this.actorActions.spawn(this.input) });
 			target.registerCommand('actorLab.emit', { isEnabled: () => this.hasInput && this.controller.canInteract() && this.input.actorPresent && !this.input.dirty, run: () => this.actorActions.emitEvent(this.input) });
 			target.registerCommand('actorLab.actions', { isEnabled: () => this.hasInput && this.controller.canInteract() && this.controller.hasActions(this.input), run: () => this.actorActions.actions(this.input) });
+			target.registerCommand('actorLab.run', { isEnabled: () => {
+				if (!this.hasInput || !this.controller.canInteract(this.input.domain)) return false;
+				const node = this.controller.selected(this.input);
+				if (node !== undefined) for (const action of actorActions(node)) if (action.playback) return true;
+				return false;
+			}, run: () => this.actorActions.play(this.input) });
 			target.registerCommand('actorLab.call', { isEnabled: () => this.hasInput && this.controller.canInteract() && this.controller.selected(this.input) !== undefined, run: () => this.actorActions.callMethod(this.input) });
 			target.registerCommand('actorLab.details', { isEnabled: () => this.hasInput && (this.input.detailsWindow.open || this.input.details!.subject !== undefined
 				|| this.controller.selected(this.input) !== undefined), run: () => {
@@ -173,13 +180,15 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			} });
 	}
 	private bindTransportCommands(target: InputFocusTarget): void {
-		target.registerCommand('actorLab.playback', {
-			isEnabled: () => this.hasInput && this.controller.viewport.transport.playbackEnabled,
-			run: () => { this.input.interaction.running = this.controller.viewport.transport.togglePlayback(); },
-		});
-		target.registerCommand('pause', {
-			isEnabled: () => this.hasInput && this.controller.viewport.transport.playbackEnabled,
-			run: () => { this.input.interaction.running = this.controller.viewport.transport.togglePlayback(); },
+		for (const command of ['actorLab.playback', 'pause'] as const) target.registerCommand(command, {
+			isEnabled: () => this.hasInput && (this.controller.execution.canControl || this.controller.viewport.transport.playbackEnabled),
+			run: () => {
+				const execution = this.controller.execution, operation = execution.active;
+				if (operation !== undefined) {
+					this.input.interaction.running = false;
+					execution.setPaused(operation, !execution.paused);
+				} else this.input.interaction.running = this.controller.viewport.transport.togglePlayback();
+			},
 		});
 		for (const [command, direction] of [['stepFrameBack', -1], ['stepFrame', 1]] as const) target.registerCommand(command, {
 			isEnabled: () => this.hasInput && this.controller.viewport.transport.navigation.canStep(direction),

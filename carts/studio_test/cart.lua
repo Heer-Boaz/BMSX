@@ -6,6 +6,9 @@ local prefab<const> = require('cartlib/world/prefab')
 local object_2d<const> = require('cartlib/world/object_2d')
 local sprite_object<const> = require('cartlib/sprite')
 local input_system<const> = require('cartlib/input/input_system')
+local fsm_system<const> = require('cartlib/fsm/fsm_system')
+local bt_system<const> = require('cartlib/behaviour_tree/bt_system')
+local timeline_system<const> = require('cartlib/timeline/timeline_system')
 local rectangle_component<const> = require('cartlib/component/rectangle_component')
 local scene_library<const> = require('cartlib/world/scene_library')
 
@@ -19,7 +22,7 @@ rodata studio_test_data: studio_test_record = { value = 42 }
 
 display.reset_256x192()
 world:configure({ framebuffer_count = 1, gameplay_interval_vblanks = 1,
-	frame_interval_vblanks = 1, spaces = { 'main' }, systems = { input_system } })
+	frame_interval_vblanks = 1, spaces = { 'main' }, systems = { input_system, fsm_system, bt_system, timeline_system } })
 
 prefab.define({ def_id = 'studio_test.actor', class = object_2d,
 	position = { x = 16, y = 24 },
@@ -40,11 +43,14 @@ local artwork_scene<const> = require('scenes/artwork')
 artwork_scene.register()
 local string_scene<const> = require('scenes/strings')
 string_scene.register()
+local live_scene<const> = require('scenes/live')
+live_scene.register()
 
 function new_game()
 	world:clear()
 	local scene<const> = scene_library.instantiate(root_scene.id)
 	studio_test_actor = scene.members.first
+	scene_library.instantiate(live_scene.id)
 end
 
 new_game()

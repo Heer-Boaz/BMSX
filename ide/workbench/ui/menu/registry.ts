@@ -223,6 +223,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'behaviorLens.inspectRegisteredDefinitions' },
 	],
 	'actorLab.context': [
+		{ type: 'command', command: 'actorLab.run' },
 		{ type: 'command', command: 'actorLab.find' },
 		{ type: 'command', command: 'actorLab.revealActive' },
 		{ type: 'command', command: 'actorLab.follow' },
@@ -234,6 +235,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'actorLab.emit' },
 	],
 	'actorLab.stateGraph.context': [
+		{ type: 'command', command: 'actorLab.run' },
 		{ type: 'command', command: 'actorLab.find' },
 		{ type: 'command', command: 'actorLab.revealActive' },
 		{ type: 'command', command: 'actorLab.follow' },
@@ -247,11 +249,13 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	],
 	'actorLab.stateGraph.title': [
 		{ type: 'command', command: 'actorLab.outline', icon: 'back' },
+		{ type: 'command', command: 'actorLab.run', icon: 'play', showLabel: true },
 		{ type: 'command', command: 'actorLab.follow', icon: 'follow' },
 		{ type: 'command', command: 'actorLab.more', icon: 'more' },
 	],
 	'actorLab.title': [
 		{ type: 'command', command: 'actorLab.select', icon: 'actor' },
+		{ type: 'command', command: 'actorLab.run', icon: 'play', showLabel: true },
 		{ type: 'command', command: 'actorLab.follow', icon: 'follow' },
 		{ type: 'command', command: 'actorLab.more', icon: 'more' },
 	],

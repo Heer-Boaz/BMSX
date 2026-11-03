@@ -295,7 +295,7 @@ test('a live Scene keeps its exact published plan after another declaration over
 
 test('a registered Scene without its caller initialization neither constructs members nor clears the booted World', async t => {
 	const { setup, service, scene, model, view, viewport } = await openPreview(t);
-	view.chooseInitialization(undefined); // Ordinary boot admits only the root.
+	view.chooseInitialization(undefined); // Ordinary boot does not supply the caption's content binding.
 	const preview = new SceneRuntimePreview(await service.build(model.identity.contextId));
 	t.after(() => preview.dispose());
 	await assert.rejects(preview.initialize({ modulePath: 'scenes/text', registration: scene.registrationRange, memberCount: scene.objects.length }));
@@ -311,7 +311,8 @@ test('a registered Scene without its caller initialization neither constructs me
 	for (let index = 1; index <= objects.arrayLength; index++) {
 		const object = objects.getInteger(index);
 		if (object === rootActor) admittedRoot = true;
-		assert.equal(guest.readStringMember(object, 'timelines'), null, 'the uninitialized caption was not constructed');
+		assert.notEqual(guest.formatValue(guest.readStringMember(object, 'definition_id')), 'studio_test.initialized_caption',
+			'the uninitialized caption was not constructed; other booted actors may own timelines');
 	}
 	assert.equal(admittedRoot, true);
 	assert.equal(preview.frame.bitmap, undefined); assert.equal(preview.geometry.visuals.length, 0);
