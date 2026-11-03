@@ -84,7 +84,7 @@ def main():
     light_spans=[]
     for item in plan['scenery']:
         name=item['prefab']
-        if name.startswith(('compact_', 'stadsburg_', 'haven_laser_house', 'haven_smoke_house')):
+        if name.startswith(('compact_', 'stadsburg_', 'huis_', 'winkel_', 'haven_laser_house', 'haven_smoke_house')):
             light_spans.append((item['x'],item['x']+len(rows_for(name)[0])))
     for x in range(harbor['water_start'],harbor['water_end'],4):
         near_light=any(lo-1<=x+2<hi+1 for lo,hi in light_spans)
@@ -356,17 +356,6 @@ def main():
     visible=sorted({k for row in cells for k in row if k!=1})
     packed={k:i for i,k in enumerate(visible,1)}
     packed[1]=0
-    for entry in catalog['tiles']:
-        source=ROOT/entry['image']
-        target=(ROOT/'res/img' if entry['id'] in packed and entry['id']!=1
-                else ROOT/'authoring/terreintegels') / source.name
-        if target!=source:
-            target.parent.mkdir(parents=True,exist_ok=True)
-            source.replace(target)
-            entry['image']=target.relative_to(ROOT).as_posix()
-        if entry['id'] not in packed or entry['id']==1:
-            (ROOT/'res/img'/source.name).unlink(missing_ok=True)
-
     runtime={
         'source':f"Stadsburg — De Bevroren Haven R{plan['revision']}, authoring/level.yaml", 'stage_number':0,
         'tilemap_version':2,'tile_size':8,'tile_columns':32,'tile_rows':22,
@@ -381,6 +370,18 @@ def main():
     runtime['water_animation']=compile_water(ROOT,catalog,tiles,entries,cells,owners)
     runtime['water_animation']['origin_column']=art_origin
     runtime['harbor_animation']=compile_harbor(ROOT,plan,prefabs,tiles,entries,cells,placements,catalog['palette'],greenery_layers)
+    # Validate map composition and animation before relocating source drawings.
+    # A rejected placement must not leave the catalog pointing at moved files.
+    for entry in catalog['tiles']:
+        source=ROOT/entry['image']
+        target=(ROOT/'res/img' if entry['id'] in packed and entry['id']!=1
+                else ROOT/'authoring/terreintegels') / source.name
+        if target!=source:
+            target.parent.mkdir(parents=True,exist_ok=True)
+            source.replace(target)
+            entry['image']=target.relative_to(ROOT).as_posix()
+        if entry['id'] not in packed or entry['id']==1:
+            (ROOT/'res/img'/source.name).unlink(missing_ok=True)
     out=ROOT/'res/data';out.mkdir(parents=True,exist_ok=True)
     (out/'nemesis_s_stage.yaml').write_text(yaml.dump(runtime,Dumper=Dumper,sort_keys=False,width=100000,allow_unicode=True))
     (ROOT/'authoring/tileset.yaml').write_text(yaml.safe_dump(catalog,sort_keys=False,allow_unicode=True,width=120))

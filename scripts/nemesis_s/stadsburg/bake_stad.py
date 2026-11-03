@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sample the generated street art into native MSX tiles and retain the house roofs."""
+"""Import street source art and native pixel drawings into the shared MSX tiles."""
 from argparse import ArgumentParser
 from collections import Counter
 from functools import lru_cache
@@ -149,12 +149,24 @@ def main():
         image.paste(front, (0, front_y))
         results[item['name']] = (recolor(image), item, front_y // 8)
 
+    native_palette = {tuple(bytes.fromhex(color[1:])) for color in catalog['palette']}
+    for item in spec.get('native', []):
+        image = Image.open(ROOT / item['source']).convert('RGB')
+        assert image.width % 8 == 0 and image.height % 8 == 0, item['name']
+        assert set(image.get_flattened_data()) <= native_palette, item['name']
+        results[item['name']] = (image, item, None)
+        report['source'].append(item['source'])
+
     for name, (image, item, changed_row) in results.items():
         image.save(ART / (name + '.png'))
         assert all(len({image.getpixel((x + dx, y)) for dx in range(8)}) <= 2
                    for y in range(image.height) for x in range(0, image.width, 8))
-        report['assets'][name] = {'size': list(image.size), 'drawing_size': item.get('drawing_size',list(image.size)), 'source_crop': item['crop'],
+        report['assets'][name] = {'size': list(image.size), 'drawing_size': item.get('drawing_size',list(image.size)),
                                   'max_colors_per_8x1': 2}
+        if 'source' in item:
+            report['assets'][name]['source'] = item['source']
+        else:
+            report['assets'][name]['source_crop'] = item['crop']
         if item.get('silhouette'):
             report['assets'][name].update(source_silhouette=True, rim_coverage=item['rim_coverage'],
                                           frame_coverage=item['frame_coverage'])
@@ -215,9 +227,11 @@ def main():
                     catalog['tiles'].append(entry)
                     pixels[key] = tile_id
                 rows[y][x] = pixels[key]
-        prefabs[name] = {'description': item['label'] + ', uit de gegenereerde bron naar native pixels vertaald.',
+        description = (item['label'] + ', rechtstreeks uit de native pixelbron.' if 'source' in item
+                       else item['label'] + ', uit de gegenereerde bron naar native pixels vertaald.')
+        prefabs[name] = {'description': description,
                          'tiles': rows, 'label': item['label'],
-                         'groep': 'winkels' if changed_row is not None else 'straatdetails'}
+                         'groep': item.get('group', 'winkels' if changed_row is not None else 'straatdetails')}
     catalog_path.write_text(yaml.safe_dump(catalog, sort_keys=False, allow_unicode=True, width=120))
     prefab_path.write_text(yaml.safe_dump(prefab_data, sort_keys=False, allow_unicode=True, width=120))
     print(json.dumps({'registered': list(results), 'new_tiles': next_id - max(entries) - 1}, indent=2))

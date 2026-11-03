@@ -35,6 +35,25 @@ python scripts/nemesis_s/stadsburg/build_level.py
 The greenery registration and `houtbron_r24` rasters retain the source drawings
 used for the exact gray-to-dark-red wood conversion. Source hashes and palette
 checks guard that conversion. Native drawings use at most two inks per 8×1 row.
-The Python dependencies are pinned to the versions used to reproduce the R27
-resource bytes. Preview images, pattern-bank exports and check reports are
+The additional facades, wharf modules and street furniture are editable native
+PNG sources in `authoring/stadsleven`. Their `native` entries in
+`authoring/stad/registratie.json` import those exact pixels through `bake_stad.py`,
+without resampling or quantization. The baker checks the palette and 8×1 ink
+limit and reuses identical tiles from the existing catalog.
+The town's main scale is four pixels per metre, using the 16-pixel Kartonion as
+a fictional four-metre vehicle. Foreground cars draw at 19×7 pixels and parked
+front-view trucks at 10×16 pixels. The station canopy spans 48 pixels and leaves
+18 pixels clear beneath it; its door opening is eight pixels high. The car under
+the canopy is a separate placement on the same ground line as the trucks.
+Handrails stand four pixels above their walking surface. A one-pixel stair rise
+is the smallest available step at this resolution; the wide treads span two
+pixels. Measure these details against the visible walking surface, since a
+prefab's bottom tile can contain its quay wall or submerged foot.
+Light, warm, cyan or green accents distinguish foreground objects. The smaller
+8×4-pixel cars and miniature bicycles use only subdued blues and black, like the
+distant house contours. The authoring groups describe that visual depth within
+the fixed side view. The native house variants correct only the older door
+openings to eight pixels high while retaining the surrounding building pixels.
+The Python dependencies are pinned for reproducible resource bytes.
+Preview images, pattern-bank exports and check reports are
 generated locally and ignored by Git.
