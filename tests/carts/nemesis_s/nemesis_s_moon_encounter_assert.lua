@@ -61,7 +61,7 @@ return {
 				assert(boss.sprite_component.imgid == assets_moon_right
 				and not boss.sprite_component.flip_h and not boss.sprite_component.flip_v,
 				'Moon rotation did not advance visual and collision pose together')
-				boss.rotation = moon_rotation_down
+				boss.facing = moon_rotation_down
 				boss:apply_rotation()
 				local down_armor<const> = collision_shape.variant_addresses(
 				assets.collision_shape_moon_down_armor_addr
@@ -74,7 +74,7 @@ return {
 				'Moon reused a transformed opposite pose instead of its authored collision map')
 				assert(boss.sprite_component.flip_h and boss.sprite_component.flip_v,
 				'Moon collision pose selection changed its retained sprite orientation')
-				boss.rotation = moon_rotation_down_right
+				boss.facing = moon_rotation_down_right
 				boss:apply_rotation()
 			end
 			local boss<const> = test.boss

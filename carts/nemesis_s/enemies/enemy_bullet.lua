@@ -72,6 +72,13 @@ local new_enemy_bullet_collider<const> = collider_2d_component.factory_for_sprit
 	mask = collision_enemy_projectile_mask,
 })
 
+-- The original aiming routine folds the vertical sign for a ground-mounted
+-- barrel: 0 faces right, 64 is vertical, and 128 faces left (p01:65EE).
+function enemy_bullet.horizontal_aim_angle(delta_x,delta_y)
+    local inclination<const> = angle_by_delta[(math.abs(delta_y)&0xf0)+(math.abs(delta_x)>>4)]
+    return delta_x<0 and 128-inclination or inclination
+end
+
 -- Returns no velocity inside the source game's close-range admission boundary.
 -- Otherwise the returned words can be written directly to the fixed-point
 -- movement component used by every enemy bullet.

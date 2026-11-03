@@ -181,6 +181,24 @@ local palette4_draw_quad<const> = function(
 		blend_mode)
 end
 
+-- Format behavior is shared by admitted images. Placement-dependent packet
+-- words and the selected blit writer remain on each source for batch drawing.
+local direct16_source<const> = {
+	draw = direct16_draw,
+	draw_source_rect = direct16_draw_source_rect,
+	draw_affine = direct16_draw_affine,
+	draw_quad = direct16_draw_quad,
+}
+direct16_source.__index = direct16_source
+
+local palette4_source<const> = {
+	draw = palette4_draw,
+	draw_source_rect = palette4_draw_source_rect,
+	draw_affine = palette4_draw_affine,
+	draw_quad = palette4_draw_quad,
+}
+palette4_source.__index = palette4_source
+
 function image.resolve(id)
 	local cached<const> = image_by_id[id]
 	if cached then
@@ -203,20 +221,11 @@ function image.resolve(id)
 		source_x = meta.texture_u
 		source_y = meta.texture_v
 	end
-	local draw
-	local draw_source_rect
-	local draw_affine
-	local draw_quad
+	local source_type
 	if texture.mode == gp0.texture_mode_palette4 then
-		draw = palette4_draw
-		draw_source_rect = palette4_draw_source_rect
-		draw_affine = palette4_draw_affine
-		draw_quad = palette4_draw_quad
+		source_type = palette4_source
 	else
-		draw = direct16_draw
-		draw_source_rect = direct16_draw_source_rect
-		draw_affine = direct16_draw_affine
-		draw_quad = direct16_draw_quad
+		source_type = direct16_source
 	end
 	local source<const> = {
 		_texture = texture,
@@ -240,7 +249,7 @@ function image.resolve(id)
 				_size_word = tile.w | (tile.h << 16),
 				offset_x = tile.x,
 				offset_y = tile.y,
-				draw = draw,
+				draw = source_type.draw,
 			}
 			command_list.bind_blit(tile_source)
 			bind_source(texture, tile_source)
@@ -249,11 +258,8 @@ function image.resolve(id)
 		source._tiles = tiles
 	else
 		bind_source(texture, source)
-		source.draw = draw
+		setmetatable(source, source_type)
 		command_list.bind_blit(source)
-		source.draw_source_rect = draw_source_rect
-		source.draw_affine = draw_affine
-		source.draw_quad = draw_quad
 	end
 	image_by_id[id] = source
 	return source

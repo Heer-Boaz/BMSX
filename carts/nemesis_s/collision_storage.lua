@@ -30,6 +30,25 @@ local actor_sources<const> = {
 	assets.collision_shape_sneeuwpop_body_addr,
 	assets.collision_shape_sneeuwpop_destroyed_body_addr,
 }
+local mill_sails<const> = {
+	assets.collision_shape_molenslag_s00_wiek_addr,
+	assets.collision_shape_molenslag_s01_wiek_addr,
+	assets.collision_shape_molenslag_s02_wiek_addr,
+	assets.collision_shape_molenslag_s03_wiek_addr,
+	assets.collision_shape_molenslag_s04_wiek_addr,
+	assets.collision_shape_molenslag_s05_wiek_addr,
+	assets.collision_shape_molenslag_s06_wiek_addr,
+	assets.collision_shape_molenslag_s07_wiek_addr,
+	assets.collision_shape_molenslag_s08_wiek_addr,
+	assets.collision_shape_molenslag_s09_wiek_addr,
+	assets.collision_shape_molenslag_s10_wiek_addr,
+	assets.collision_shape_molenslag_s11_wiek_addr,
+	assets.collision_shape_molenslag_s12_wiek_addr,
+	assets.collision_shape_molenslag_s13_wiek_addr,
+	assets.collision_shape_molenslag_s14_wiek_addr,
+	assets.collision_shape_molenslag_s15_wiek_addr,
+}
+for index = 1, #mill_sails do actor_sources[#actor_sources+1] = mill_sails[index] end
 local actor_slot_bytes = 0
 for index = 1, #actor_sources do
 	local bytes<const> = shape.bind(actor_sources[index]).bytes
@@ -44,6 +63,7 @@ local diagonal_slot_bytes<const> = 32 + (sneeuwpop_ray_max_steps - 1) * sneeuwpo
 bss diagonal_geometry: word[4096]
 
 return {
+	mill_sails = mill_sails,
 	sprite = pool.new(sprite_geometry, sprite_slot_bytes, 16384 // sprite_slot_bytes),
 	area = pool.new(area_geometry, 64, 256),
 	actor = pool.new(actor_geometry, actor_slot_bytes, 65536 // actor_slot_bytes),

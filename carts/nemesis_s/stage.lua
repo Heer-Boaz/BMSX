@@ -4,7 +4,7 @@ local rol8<const> = require('cartlib/util/rol8')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
-local tile_layer_component<const> = require('cartlib/component/tile_layer_component')
+local stage_tiles_component<const> = require('stage_tiles_component')
 local world<const> = require('cartlib/world/world')
 local stage_scroll_follower_component<const> = require('stage_scroll_follower_component')
 require('constants')
@@ -12,6 +12,9 @@ local bin<const> = require('cartlib/bin')
 local assets<const> = require('bmsx/assets')
 local string_byte<const> = string.byte
 local string_char<const> = string.char
+local stage_tilemap_v2<const> = require('stage_tilemap_v2')
+local grachtwater<const> = require('grachtwater')
+local havenanimatie<const> = require('havenanimatie')
 
 local stage<const> = {}
 stage.__index = stage
@@ -40,6 +43,8 @@ local stage_char_tree_6<const> = 54 -- 6
 local stage_char_tree_7<const> = 55 -- 7
 local stage_char_ground_alt<const> = 61 -- =
 local stage_char_roof<const> = 64 -- @
+local stage_char_molen<const> = 87 -- W
+local stage_char_kadekanon<const> = 68 -- D
 local stage_char_kerk<const> = 75 -- K
 local stage_char_mijter_red<const> = 77 -- M
 local stage_char_sneeuwpop<const> = 78 -- N
@@ -79,8 +84,13 @@ local chimney_chars<const> = {
 	[stage_char_schoorsteen_foe] = true,
 	[stage_char_rook_generator] = true,
 }
+local turret_by_symbol<const> = {
+    [66]='blue_floor',[67]='red_floor',[98]='blue_ceiling',[99]='red_ceiling',
+}
 local transparent_overlay_chars<const> = {
 	[stage_char_kerk] = true,
+	[stage_char_molen] = true,
+	[stage_char_kadekanon] = true,
 	[stage_char_moon] = true,
 }
 local sint_pop_group_by_symbol<const> = {
@@ -338,7 +348,7 @@ local decode_stage_tile<const> = function(above_row, row, below_row, x, y, width
 		end
 		return nil, 0
 	end
-	if transparent_overlay_chars[ch] then
+	if transparent_overlay_chars[ch] or turret_by_symbol[ch] then
 		return nil, 0
 	end
 	error('nemesis_s unsupported stage symbol "' .. string_char(ch) .. '" at x=' .. tostring(x) .. ', y=' .. tostring(y))
@@ -379,8 +389,15 @@ end
 
 function stage:build_tape()
 	local stage_data<const> = bin.decode(assets.data_nemesis_s_stage_addr, stage_asset_id)
+	local map_rows<const>, numeric_rows<const>, numeric_assets<const> = stage_tilemap_v2.resolve(stage_data)
 	self:apply_stage_config(stage_data)
-	local map_rows<const> = stage_data.map_rows
+    -- Blank spawn markers keep their spawn role while exposing the native stars.
+    local numeric_art=numeric_assets
+    if stage_data.sky_actor_ids then
+        numeric_art={}
+        for id,name in ipairs(numeric_assets) do numeric_art[id]=name end
+        for _,id in ipairs(stage_data.sky_actor_ids) do numeric_art[id]=nil end
+    end
 
 	local width<const> = #map_rows[1]
 	local height<const> = #map_rows
@@ -388,12 +405,14 @@ function stage:build_tape()
 	self.tile_rows = height
 	self.tape_length_tiles = width
 	local stage_tiles<const> = self.stage_tiles
-	stage_tiles:set_tile_size(self.tile_size)
-	stage_tiles:resize(width * height, width)
-	self.solid_tape = new_rows(width, height, 0)
+	stage_tiles:configure(width, height, self.tile_size)
+	-- The native role decoder supplies one collision bit per tile. Keep those
+	-- bits in row words so longer stages do not retain a Lua value per cell.
+	self.solid_tape = new_rows((width + 31) // 32, height, 0)
 
 	for stage_y = 1, height do
 		local map_row<const> = map_rows[stage_y]
+		local solid_row<const> = self.solid_tape[stage_y]
 		local above_row
 		if stage_y > 1 then
 			above_row = map_rows[stage_y - 1]
@@ -404,14 +423,31 @@ function stage:build_tape()
 		end
 		for stage_x = 1, width do
 			local symbol<const> = string_byte(map_row, stage_x)
-			local imgid<const>, solid<const> = decode_stage_tile(
+			local native_imgid<const>, solid<const> = decode_stage_tile(
 				above_row, map_row, below_row, stage_x, stage_y, width, symbol)
-			stage_tiles:set_tile(((stage_y - 1) * width) + stage_x, imgid)
-			self.solid_tape[stage_y][stage_x] = solid
+			local imgid = native_imgid
+			if numeric_rows ~= nil then
+				local id<const> = numeric_rows[stage_y][stage_x]
+				imgid = numeric_art[id]
+			end
+			if imgid then stage_tiles:admit_tile(stage_x, stage_y, imgid) end
+			if solid ~= 0 then
+				local bit<const> = stage_x - 1
+				local word<const> = (bit // 32) + 1
+				solid_row[word] = solid_row[word] | (1 << (bit & 31))
+			end
 		end
 	end
 
-	local actor_spawns<const> = {}
+    if stage_data.harbor_animation then
+        self.harbor=havenanimatie.new(stage_data.harbor_animation,stage_tiles,self.solid_tape)
+    end
+
+	if stage_data.water_animation then
+        self.water=grachtwater.new(stage_data.water_animation,numeric_rows,numeric_assets,stage_tiles)
+    end
+
+    local actor_spawns<const> = {}
 	for stage_x = 1, width do
 		for stage_y = 1, height do
 			local symbol<const> = string_byte(map_rows[stage_y], stage_x)
@@ -444,21 +480,38 @@ function stage:build_tape()
 							mijter_type = mijter_foe_type,
 						},
 					}
+                elseif turret_by_symbol[symbol] then
+                    actor_spawns[#actor_spawns+1]={
+                        column=stage_x-1,definition_id=ids_havengeschut_def,
+                        options={
+                            position={x=playfield_width-self.tile_size,y=(stage_y-1)*self.tile_size},
+                            stage=self,variant=turret_by_symbol[symbol],spawn_column=stage_x-1,
+                        },
+                    }
 				elseif symbol == stage_char_schoorsteen_foe then
 					actor_spawns[#actor_spawns + 1] = {
 						column = stage_x - 2,
 						definition_id = ids_schoorsteen_foe_def,
 						options = {
-							position = { x = playfield_width - 3 - self.tile_size, y = (stage_y - 2) * self.tile_size },
+							position = { x = playfield_width - self.tile_size, y = (stage_y - 4) * self.tile_size },
 							stage = self,
 						},
 					}
+				elseif symbol == stage_char_kadekanon then
+                    actor_spawns[#actor_spawns + 1] = {
+                        column = stage_x - 1,
+                        definition_id = ids_kadekanon_def,
+                        options = {
+                            position = { x = playfield_width - 12, y = (stage_y - 1) * self.tile_size },
+                            stage = self,
+                        },
+                    }
 				elseif symbol == stage_char_rook_generator then
 					actor_spawns[#actor_spawns + 1] = {
 						column = stage_x - 1,
 						definition_id = ids_rook_generator_def,
 						options = {
-							position = { x = playfield_width - (self.tile_size * 2), y = (stage_y - 2) * self.tile_size },
+							position = { x = playfield_width - (self.tile_size * 2), y = (stage_y - 4) * self.tile_size },
 							stage = self,
 						},
 					}
@@ -478,6 +531,15 @@ function stage:build_tape()
 						definition_id = ids_sneeuwpop_def,
 						options = {
 							position = { x = playfield_width - self.tile_size, y = (stage_y - 7) * self.tile_size },
+							stage = self,
+						},
+					}
+				elseif symbol == stage_char_molen then
+					actor_spawns[#actor_spawns + 1] = {
+						column = stage_x - 1,
+						definition_id = 'nemesis_s.enemy.molen',
+						options = {
+							position = { x = playfield_width - self.tile_size, y = (stage_y - 1) * self.tile_size },
 							stage = self,
 						},
 					}
@@ -517,12 +579,15 @@ function stage:build_tape()
 end
 
 function stage:reset_runtime()
+	if self.starfield then self.starfield.mill_arena=false end
 	if self.stage_tiles.tile_count == 0 then
 		self:build_tape()
 	end
 	local start_column<const> = self.start_column
 	self.left_tile = start_column + 1
 	self.stage_tiles:set_visible_columns(self.left_tile, self.tile_columns + 2)
+	if self.water then self.water:reset(self.left_tile,self.tile_columns+2) end
+    if self.harbor then self.harbor:reset(self.left_tile-1) end
 	self.tape_head = self.left_tile + self.tile_columns - 1
 	local current_column<const> = self.tape_head - 1
 	local music_cues<const> = self.music_cues
@@ -591,6 +656,8 @@ function stage:advance_tape()
 
 	self.left_tile = self.left_tile + 1
 	self.stage_tiles:set_visible_columns(self.left_tile, self.tile_columns + 2)
+	if self.water then self.water:show(self.left_tile,self.tile_columns+2) end
+    if self.harbor then self.harbor:show(self.left_tile-1) end
 	self.tape_head = self.left_tile + self.tile_columns - 1
 	local column<const> = self.tape_head - 1
 	self:advance_music_cues(column)
@@ -628,7 +695,13 @@ function stage:advance_tape()
 	end
 end
 
+function stage:update_scenery()
+    if self.water then self.water:tick(self.left_tile,self.tile_columns+2) end
+    if self.harbor then self.harbor:tick() end
+end
+
 function stage:update_runtime()
+    self:update_scenery()
 	if not self.scrolling then
 		return '/running/stopped'
 	end
@@ -646,6 +719,16 @@ function stage:update_runtime()
 	self.starfield:scroll()
 end
 
+-- A destructible target can be cleared before its camera stop enters the screen.
+function stage:release_scroll_stop(column)
+	local index<const> = self.scroll_stop_index
+	if self.scroll_stop_columns[index] == column then
+		self.scroll_stop_index = index+1
+	elseif not self.scrolling and self.scroll_stop_columns[index-1] == column then
+		self:resume_scrolling()
+	end
+end
+
 function stage:resume_scrolling()
 	self.scrolling = true
 	self.events:emit(resume_scrolling_event)
@@ -659,7 +742,8 @@ function stage:is_solid_pixel(screen_x, screen_y)
 	map_x = clamp(map_x, 1, self.tape_length_tiles)
 	map_y = clamp(map_y, 1, self.tile_rows)
 
-	return self.solid_tape[map_y][map_x] ~= 0
+	local bit<const> = map_x - 1
+	return (self.solid_tape[map_y][(bit // 32) + 1] & (1 << (bit & 31))) ~= 0
 end
 
 -- Returns the zero-based offset of the first solid tile in a horizontal run,
@@ -678,7 +762,8 @@ function stage:first_solid_tile_offset(screen_x, screen_y, tile_count)
 	end
 	last_offset = math.min(last_offset, self.tape_length_tiles - map_x)
 	for tile_offset = math.max(0, 1 - map_x), last_offset do
-		if row[map_x + tile_offset] ~= 0 then
+		local bit<const> = map_x + tile_offset - 1
+		if (row[(bit // 32) + 1] & (1 << (bit & 31))) ~= 0 then
 			return tile_offset
 		end
 	end
@@ -709,8 +794,10 @@ function stage:first_solid_vertical_tile_offset(screen_x, screen_y, tile_count, 
 		end
 	end
 	local solid_tape<const> = self.solid_tape
+	local word<const> = ((map_x - 1) // 32) + 1
+	local mask<const> = 1 << ((map_x - 1) & 31)
 	for tile_offset = first_offset, last_offset do
-		if solid_tape[map_y + tile_offset * direction][map_x] ~= 0 then
+		if (solid_tape[map_y + tile_offset * direction][word] & mask) ~= 0 then
 			return tile_offset
 		end
 	end
@@ -719,7 +806,7 @@ end
 
 function stage:ctor()
 	self.solid_tape = {}
-	self.stage_tiles = self:get_component(tile_layer_component)
+	self.stage_tiles = self:get_component(stage_tiles_component)
 end
 
 local define_stage_fsm<const> = function()
@@ -744,7 +831,7 @@ local define_stage_fsm<const> = function()
 					scrolling = {
 						update = stage.update_runtime,
 					},
-					stopped = {},
+					stopped = {update=stage.update_scenery},
 				},
 			},
 		},
@@ -757,7 +844,7 @@ local register_stage_definition<const> = function()
 		def_id = ids_stage_def,
 		class = stage,
 		components = {
-			function(owner) return tile_layer_component.new(owner, owner) end,
+			stage_tiles_component.new,
 			fsm_component.factory({ ids_stage_fsm }),
 		},
 		defaults = {

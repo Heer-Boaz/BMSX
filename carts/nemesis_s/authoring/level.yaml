@@ -1,0 +1,1225 @@
+schema: nemesis_s.level.v1
+title: De Bevroren Haven
+revision: 27
+width: 931
+height: 22
+source_commit: d04363ea9a05758eb91b5016f2e082036837813c
+sections:
+- from: 0
+  to: 128
+  title: Ruimteaanloop
+  intention: De oorspronkelijke formaties en escorte blijven volledig behouden.
+- from: 128
+  to: 196
+  title: De stadspoort
+  intention: De eerste kade en een bewaakte boogbrug leiden naar de stad.
+- from: 196
+  to: 289
+  title: De winkelstraat
+  intention: Aaneengesloten gevels met bakker, kruidenier en fietsenwinkel; kleine straatbomen en besneeuwde struiken markeren
+    de vrije nissen.
+- from: 289
+  to: 385
+  title: De havenweg
+  intention: Een dunne asfaltkant voert langs het kleine tankstation en de drie geparkeerde cabines. Een lage besneeuwde bermrand
+    draagt een rustig plantsoen met winterbomen, haag en bank; de zijcamera blijft vast.
+- from: 385
+  to: 443
+  title: De oude kade
+  intention: De woonkade krijgt een kleine zitplek tussen de bestelbus en de hoge gevel, waarna de daken met geschut volgen.
+- from: 443
+  to: 510
+  title: De hijswerf
+  intention: Eén laadkade onder de vaste draagbalken; twee bewegende lasten bewaken de route.
+- from: 510
+  to: 625
+  title: De binnenhaven
+  intention: Na de brug ligt de stoomboot aan de linker kade; een brede open vaargeul voert naar de overkant.
+- from: 625
+  to: 689
+  title: De sluispakhuizen
+  intention: De overslagkade verbindt de pakhuisvloer met de sluismuur.
+- from: 689
+  to: 801
+  title: De buitenhaven
+  intention: Een tweede afgemeerde stoomboot blijft achter terwijl het schip over ruim havenwater naar de laatste brug vliegt.
+- from: 801
+  to: 848
+  title: De IJsmolen
+  intention: Het molengevecht houdt de buitenpier dicht; daarna verlaat het schip de stad.
+- from: 848
+  to: 912
+  title: Uitvlucht
+  intention: De lange uitvlucht blijft vrij sterrenveld met escorte.
+- from: 912
+  to: 931
+  title: De maan
+  intention: De maan neemt het lege scherm over.
+scroll_stops:
+- 828
+- 930
+music_cues:
+- column: 0
+  event: stage.music.intro
+  restart_event: stage.music.restart.intro
+- column: 138
+  event: stage.music.main
+  restart_event: stage.music.restart.main
+- column: 814
+  event: stage.music.boss
+  restart_event: stage.music.restart.boss
+restart_points:
+- trigger_column: 0
+  start_column: 0
+- trigger_column: 120
+  start_column: 99
+- trigger_column: 237
+  start_column: 205
+- trigger_column: 337
+  start_column: 305
+- trigger_column: 465
+  start_column: 433
+- trigger_column: 577
+  start_column: 545
+- trigger_column: 625
+  start_column: 585
+- trigger_column: 734
+  start_column: 702
+- trigger_column: 801
+  start_column: 771
+- trigger_column: 829
+  start_column: 821
+quays:
+- - 145
+  - 175
+  - 18
+- - 171
+  - 175
+  - 15
+- - 185
+  - 193
+  - 15
+- - 193
+  - 195
+  - 16
+- - 195
+  - 197
+  - 17
+- - 197
+  - 225
+  - 18
+- - 225
+  - 228
+  - 17
+- - 228
+  - 233
+  - 16
+- - 243
+  - 247
+  - 16
+- - 247
+  - 249
+  - 17
+- - 249
+  - 385
+  - 18
+- - 385
+  - 416
+  - 18
+- - 416
+  - 441
+  - 17
+- - 441
+  - 443
+  - 18
+- - 443
+  - 476
+  - 19
+- - 489
+  - 507
+  - 17
+- - 507
+  - 510
+  - 16
+- - 510
+  - 516
+  - 15
+- - 530
+  - 535
+  - 15
+- - 535
+  - 537
+  - 16
+- - 537
+  - 539
+  - 17
+- - 539
+  - 545
+  - 18
+- - 607
+  - 625
+  - 19
+- - 625
+  - 639
+  - 20
+- - 639
+  - 641
+  - 19
+- - 641
+  - 654
+  - 18
+- - 654
+  - 669
+  - 20
+- - 669
+  - 685
+  - 18
+- - 685
+  - 687
+  - 19
+- - 687
+  - 704
+  - 20
+- - 766
+  - 769
+  - 17
+- - 769
+  - 771
+  - 16
+- - 771
+  - 775
+  - 15
+- - 787
+  - 801
+  - 15
+- - 806
+  - 829
+  - 21
+scenery:
+- prefab: compact_smal_grachtenhuis
+  x: 149
+  floor: 18
+- prefab: compact_sneeuwhuis
+  x: 153
+  floor: 18
+- prefab: compact_breed_laag_huis
+  x: 157
+  floor: 18
+- prefab: compact_lamp_snow_70
+  x: 163
+  floor: 18
+- prefab: haven_loopbrug
+  x: 173
+  y: 15
+- prefab: haven_laser_house
+  x: 393
+  floor: 18
+- prefab: compact_sneeuwhuis
+  x: 403
+  floor: 18
+- prefab: compact_hoog_sneeuwhuis
+  x: 416
+  floor: 17
+- prefab: haven_smoke_house
+  x: 422
+  floor: 17
+- prefab: stadsburg_trapgevel_met_dakkanon
+  x: 431
+  y: 7
+- prefab: compact_lamp_snow_66
+  x: 447
+  floor: 19
+- prefab: compact_breed_laag_huis
+  x: 464
+  floor: 19
+- prefab: compact_hoog_sneeuwhuis
+  x: 491
+  floor: 17
+- prefab: compact_lamp_snow_70
+  x: 499
+  floor: 17
+- prefab: haven_loopbrug
+  x: 516
+  y: 15
+- prefab: compact_lamp_snow_66
+  x: 543
+  floor: 18
+- prefab: compact_breed_laag_huis
+  x: 643
+  floor: 18
+- prefab: stadsburg_pakhuis_met_dakkanon
+  x: 655
+  y: 12
+- prefab: compact_lamp_snow_70
+  x: 691
+  floor: 20
+- prefab: stadsburg_trapgevel_met_dakkanon
+  x: 695
+  y: 10
+- prefab: haven_loopbrug
+  x: 773
+  y: 15
+- prefab: stadsburg_brugwachter_met_dakkanon
+  x: 792
+  y: 6
+- prefab: compact_smal_grachtenhuis
+  x: 198
+  floor: 18
+- prefab: winkel_bakker
+  x: 201
+  floor: 18
+- prefab: compact_breed_laag_huis
+  x: 205
+  floor: 18
+- prefab: compact_smal_grachtenhuis
+  x: 215
+  floor: 18
+- prefab: compact_breed_laag_huis
+  x: 218
+  floor: 18
+- prefab: compact_smal_grachtenhuis
+  x: 251
+  floor: 18
+- prefab: winkel_kruidenier
+  x: 254
+  floor: 18
+- prefab: winkel_fietsen
+  x: 258
+  floor: 18
+- prefab: compact_breed_laag_huis
+  x: 262
+  floor: 18
+- prefab: compact_smal_grachtenhuis
+  x: 272
+  floor: 18
+- prefab: compact_breed_laag_huis
+  x: 275
+  floor: 18
+- prefab: compact_sneeuwhuis
+  x: 284
+  floor: 18
+- prefab: haven_loopbrug
+  x: 231
+  y: 16
+- prefab: auto_rood
+  x: 211
+  y: 17
+- prefab: fiets_rood
+  x: 213
+  y: 17
+- prefab: fietsenrek
+  x: 268
+  y: 17
+- prefab: bakfiets
+  x: 281
+  y: 17
+- prefab: bestelbus_blauw
+  x: 407
+  y: 17
+- prefab: bestelbus_blauw
+  x: 444
+  y: 18
+- prefab: fiets_blauw
+  x: 451
+  y: 18
+- prefab: auto_rood
+  x: 622
+  y: 18
+- prefab: fiets_blauw
+  x: 687
+  y: 19
+- prefab: compact_lamp_snow_66
+  x: 224
+  floor: 18
+- prefab: compact_lamp_snow_66
+  x: 271
+  floor: 18
+- prefab: compact_lamp_snow_66
+  x: 283
+  floor: 18
+- prefab: steamship
+  x: 546
+  y: 14
+- prefab: steamship
+  x: 705
+  y: 14
+- prefab: mooring_post
+  x: 545
+  y: 17
+- prefab: mooring_post
+  x: 704
+  y: 17
+- prefab: compact_sneeuwhuis
+  x: 539
+  floor: 18
+- prefab: compact_sneeuwhuis
+  x: 610
+  floor: 19
+- prefab: compact_breed_laag_huis
+  x: 614
+  floor: 19
+- prefab: compact_hoog_sneeuwhuis
+  x: 386
+  floor: 18
+- prefab: compact_smal_grachtenhuis
+  x: 399
+  floor: 18
+- prefab: compact_smal_grachtenhuis
+  x: 428
+  floor: 17
+- prefab: compact_smal_grachtenhuis
+  x: 390
+  floor: 18
+- prefab: compact_breed_laag_huis
+  x: 290
+  floor: 18
+- prefab: compact_smal_grachtenhuis
+  x: 296
+  floor: 18
+- prefab: auto_rood
+  x: 302
+  y: 17
+- prefab: fiets_blauw
+  x: 305
+  y: 17
+- prefab: compact_lamp_snow_66
+  x: 308
+  floor: 18
+- prefab: compact_breed_laag_huis
+  x: 369
+  floor: 18
+- prefab: compact_hoog_sneeuwhuis
+  x: 376
+  floor: 18
+- prefab: compact_lamp_snow_66
+  x: 382
+  floor: 18
+- prefab: tankstation
+  x: 318
+  y: 16
+- prefab: vrachtauto_vooraanzicht
+  x: 325
+  y: 17
+- prefab: vrachtauto_vooraanzicht
+  x: 326
+  y: 17
+- prefab: vrachtauto_vooraanzicht
+  x: 327
+  y: 17
+planting_beds:
+- from: 332
+  to: 363
+  floor: 18
+  purpose: Eén lage, besneeuwde bermrand in zijaanzicht, naast de havenweg
+town_details:
+- prefab: sneeuwstruik
+  x: 269
+  floor: 18
+  purpose: Een klein plantvak bij het fietsenrek
+  ground_offset: 0
+  snow_join: true
+- prefab: afvalbak
+  x: 282
+  floor: 18
+  purpose: Bij de bakfiets en de lantaarn
+  ground_offset: 0
+  snow_join: true
+- prefab: knotboom_winter
+  x: 288
+  floor: 18
+  purpose: De overgang van winkelgevels naar havenweg
+- prefab: straatboom_winter
+  x: 299
+  floor: 18
+  purpose: Een straatboom in de nis naast de auto
+- prefab: straatpaaltje
+  x: 306
+  floor: 18
+  purpose: Laag paaltje bij de fiets aan de straatmond
+  ground_offset: 0
+  snow_join: true
+- prefab: straatboom_winter
+  x: 309
+  floor: 18
+  purpose: De laatste besneeuwde straatnis voor het asfalt
+- prefab: straatpaaltje
+  x: 312
+  floor: 18
+  purpose: Laag paaltje bij de overgang naar het asfalt
+  ground_offset: 0
+  snow_join: true
+- prefab: straatboom_winter
+  x: 332
+  floor: 18
+  purpose: Linker boom van het plantsoen naast de havenweg
+  ground_offset: -1
+- prefab: zitbank
+  x: 336
+  floor: 18
+  purpose: Rustplek onder de eerste boom
+  ground_offset: -2
+  snow_join: true
+- prefab: afvalbak
+  x: 338
+  floor: 18
+  purpose: Kleine bak bij de bank
+  ground_offset: -2
+  snow_join: true
+- prefab: winterlinde_stil
+  x: 343
+  floor: 18
+  purpose: Volwassen linde als middelpunt van het plantsoen
+  ground_offset: -1
+- prefab: sneeuwhaag
+  x: 350
+  floor: 18
+  purpose: Kort laag haagvak met een dun sneeuwdek
+  ground_offset: -2
+  snow_join: true
+- prefab: straatboom_winter
+  x: 357
+  floor: 18
+  purpose: Rechter boom bij de uitgang van het plantsoen
+  ground_offset: -1
+- prefab: sneeuwstruik
+  x: 361
+  floor: 18
+  purpose: Lage begroeiing aan het eind van de berm
+  ground_offset: -2
+  snow_join: true
+- prefab: straatboom_winter
+  x: 410
+  floor: 18
+  purpose: Schaduwboom op het kleine oude-kadeplein
+- prefab: zitbank
+  x: 414
+  floor: 18
+  purpose: Bank in de vrije nis voor het hoge huis
+  ground_offset: 0
+  snow_join: true
+- prefab: straatboom_winter
+  x: 607
+  floor: 19
+  purpose: De boom bij de overkant van de binnenhaven
+- prefab: sneeuwstruik
+  x: 620
+  floor: 19
+  purpose: Laag plantvak tussen woonhuis en auto
+  ground_offset: 0
+  snow_join: true
+- prefab: knotboom_winter
+  x: 688
+  floor: 20
+  purpose: Kleine boom naast de fiets bij de sluisuitgang
+- prefab: zitbank
+  x: 692
+  floor: 20
+  purpose: Zitplek onder de bestaande sluislantaarn
+  ground_offset: 0
+  snow_join: true
+- prefab: afvalbak
+  x: 694
+  floor: 20
+  purpose: Bak naast de zitplek en voor de trapgevel
+  ground_offset: 0
+  snow_join: true
+trees:
+- - 165
+  - 18
+ceilings:
+- - 453
+  - 513
+  - 3
+- - 625
+  - 687
+  - 4
+- - 653
+  - 660
+  - 5
+hanging:
+- prefab: loaded_hoist_right
+  x: 454
+  y: 3
+  travel: 2
+  engage_at: 28
+  hold: 25
+- prefab: loaded_hoist_right
+  x: 475
+  y: 3
+  travel: 4
+  engage_at: 21
+  hold: 57
+- prefab: hoist_right
+  x: 502
+  y: 3
+- prefab: loaded_hoist_right
+  x: 629
+  y: 4
+encounters:
+- kind: formation_down
+  at:
+  - 34
+  - 2
+  role: Aanvlucht uit Stage0Map.
+- kind: formation_up
+  at:
+  - 50
+  - 16
+  role: Aanvlucht uit Stage0Map.
+- kind: red_mitre
+  at:
+  - 56
+  - 6
+  role: Aanvlucht uit Stage0Map.
+- kind: formation_down
+  at:
+  - 66
+  - 2
+  role: Aanvlucht uit Stage0Map.
+- kind: red_mitre
+  at:
+  - 74
+  - 6
+  role: Aanvlucht uit Stage0Map.
+- kind: red_mitre
+  at:
+  - 74
+  - 10
+  role: Aanvlucht uit Stage0Map.
+- kind: formation_up
+  at:
+  - 82
+  - 16
+  role: Aanvlucht uit Stage0Map.
+- kind: blue_mitre
+  at:
+  - 85
+  - 8
+  role: Aanvlucht uit Stage0Map.
+- kind: red_mitre
+  at:
+  - 92
+  - 14
+  role: Aanvlucht uit Stage0Map.
+- kind: blue_mitre
+  at:
+  - 92
+  - 20
+  role: Aanvlucht uit Stage0Map.
+- kind: formation_down
+  at:
+  - 98
+  - 2
+  role: Aanvlucht uit Stage0Map.
+- kind: red_mitre
+  at:
+  - 106
+  - 7
+  role: Aanvlucht uit Stage0Map.
+- kind: red_mitre
+  at:
+  - 106
+  - 13
+  role: Aanvlucht uit Stage0Map.
+- kind: formation_up
+  at:
+  - 114
+  - 16
+  role: Aanvlucht uit Stage0Map.
+- kind: red_mitre
+  at:
+  - 116
+  - 12
+  role: Aanvlucht uit Stage0Map.
+- kind: blue_mitre
+  at:
+  - 123
+  - 8
+  role: Aanvlucht uit Stage0Map.
+- kind: blue_mitre
+  at:
+  - 123
+  - 20
+  role: Aanvlucht uit Stage0Map.
+- kind: formation_down
+  at:
+  - 130
+  - 2
+  role: Aanvlucht uit Stage0Map.
+- kind: red_mitre
+  at:
+  - 138
+  - 4
+  role: Aanvlucht uit Stage0Map.
+- kind: red_mitre
+  at:
+  - 138
+  - 12
+  role: Aanvlucht uit Stage0Map.
+- kind: turret_blue_floor
+  at:
+  - 172
+  - 13
+  role: Eerste turret op het linker landhoofd.
+- kind: formation_down
+  at:
+  - 179
+  - 0
+  role: Eerste capsule; ruime uitwijkstrook onder de formatie.
+- kind: sack
+  at:
+  - 183
+  - 14
+  role: Normale grondvijand op het vlakke brugdek; kan over de brug heen bewegen.
+- kind: turret_red_floor
+  at:
+  - 190
+  - 13
+  role: Een roodje op de andere oever.
+- kind: red_mitre
+  at:
+  - 208
+  - 6
+  role: Capsule boven de bakkerij.
+- kind: blue_mitre
+  at:
+  - 220
+  - 8
+  role: Eén onderschepper boven de winkelstraat.
+- kind: red_mitre
+  at:
+  - 234
+  - 5
+  role: Herstelcapsule bij de winkelbrug.
+- kind: sack
+  at:
+  - 238
+  - 15
+  role: Patrouille op de brug tussen de twee winkelblokken.
+- kind: red_mitre
+  at:
+  - 242
+  - 7
+  role: Herstelcapsule na de winkelbrug.
+- kind: blue_mitre
+  at:
+  - 257
+  - 4
+  role: Hoge onderschepper boven de fietsenwinkel.
+- kind: red_mitre
+  at:
+  - 273
+  - 7
+  role: Capsule voor de dakbatterijen.
+- kind: red_mitre
+  at:
+  - 286
+  - 7
+  role: Leer het volgen van de speler.
+- kind: red_mitre
+  at:
+  - 302
+  - 6
+  role: Capsule boven de toegangsweg.
+- kind: blue_mitre
+  at:
+  - 314
+  - 8
+  role: Eén onderschepper bij de ingang van het tankstation.
+- kind: red_mitre
+  at:
+  - 326
+  - 5
+  role: Capsule boven de lage luifel.
+- kind: red_mitre
+  at:
+  - 340
+  - 7
+  role: Herstelcapsule na het tankstationcheckpoint.
+- kind: blue_mitre
+  at:
+  - 352
+  - 6
+  role: Onderschapper boven de geparkeerde vrachtwagens.
+- kind: red_mitre
+  at:
+  - 365
+  - 8
+  role: Capsule voor de terugkeer naar de oude kade.
+- kind: blue_mitre
+  at:
+  - 378
+  - 5
+  role: Hoge onderschepper bij het einde van de weg.
+- kind: red_mitre
+  at:
+  - 389
+  - 6
+  role: Extra capsule voor het eerste terrein.
+- kind: chimney
+  at:
+  - 395
+  - 13
+  role: Eerste verticale laser zonder tweede dreiging.
+- kind: blue_mitre
+  at:
+  - 408
+  - 5
+  role: Lok omhoog en wissel van hoogte.
+- kind: red_mitre
+  at:
+  - 417
+  - 7
+  role: Capsule voor de rookpassage.
+- kind: smoke
+  at:
+  - 424
+  - 12
+  role: Leer de waaier van vijf stijgende rookwolken.
+- kind: blue_mitre
+  at:
+  - 434
+  - 2
+  role: Eén losse onderschepper na de rook.
+- kind: chimney
+  at:
+  - 435
+  - 10
+  role: De tweede laser is in de rechterzijde van een trapgevel gemetseld.
+- kind: turret_blue_floor
+  at:
+  - 449
+  - 17
+  role: Laag geschut naast de hijswerf.
+- kind: red_mitre
+  at:
+  - 466
+  - 13
+  role: Herstelcapsule in de lage doorgang.
+- kind: turret_red_ceiling
+  at:
+  - 468
+  - 3
+  role: Plafondturret tussen de twee hijskranen.
+- kind: red_mitre
+  at:
+  - 473
+  - 8
+  role: Tweede herstelcapsule voor de klim.
+- kind: blue_mitre
+  at:
+  - 484
+  - 15
+  role: Lokkertje onder de kraan; vlieg vervolgens omhoog.
+- kind: quay_cannon
+  at:
+  - 488
+  - 3
+  role: Lichtkamer onder de draagbalk; de straal groeit omlaag tot het eerste vaste oppervlak.
+- kind: sack
+  at:
+  - 497
+  - 16
+  role: Grondvijand op de hoge kade.
+- kind: blue_mitre
+  at:
+  - 507
+  - 10
+  role: Eén onderschepper bij de uitgang.
+- kind: turret_red_floor
+  at:
+  - 514
+  - 13
+  role: Een voorraadcapsule bij de ingang van de binnenbrug.
+- kind: sack
+  at:
+  - 523
+  - 14
+  role: Normale grondvijand op het vlakke brugdek; kan over de brug heen bewegen.
+- kind: red_mitre
+  at:
+  - 526
+  - 4
+  role: Capsule boven de tweede brug.
+- kind: red_mitre
+  at:
+  - 552
+  - 7
+  role: Capsule bij het verlaten van de havenkade.
+- kind: blue_mitre
+  at:
+  - 567
+  - 9
+  role: Lage onderschepper boven het brede havenwater.
+- kind: red_mitre
+  at:
+  - 580
+  - 6
+  role: Herstelcapsule na het binnenhavencheckpoint.
+- kind: blue_mitre
+  at:
+  - 590
+  - 10
+  role: Onderschapper op de open vaargeul.
+- kind: red_mitre
+  at:
+  - 600
+  - 7
+  role: Capsule voor de overkant van de haven.
+- kind: turret_blue_ceiling
+  at:
+  - 626
+  - 4
+  role: Turret onder de eerste metselboog van de sluis.
+- kind: red_mitre
+  at:
+  - 628
+  - 12
+  role: Eerste herstelcapsule onder het dak na het sluischeckpoint.
+- kind: red_mitre
+  at:
+  - 634
+  - 15
+  role: Tweede herstelcapsule onder de hangende last.
+- kind: red_mitre
+  at:
+  - 638
+  - 15
+  role: Tweede capsule onder het dak.
+- kind: quay_cannon
+  at:
+  - 646
+  - 4
+  role: Lichtkamer onder de draagbalk; de straal groeit omlaag tot het eerste vaste oppervlak.
+- kind: sack
+  at:
+  - 649
+  - 17
+  role: Bewaker na de eerste verhoging.
+- kind: blue_mitre
+  at:
+  - 662
+  - 5
+  role: Onderschapper boven de dakschoorsteen bij de sluisuitgang.
+- kind: chimney
+  at:
+  - 663
+  - 15
+  role: Verticale laser tussen de lessenaarsdaken van het sluispakhuis.
+- kind: turret_blue_floor
+  at:
+  - 671
+  - 16
+  role: Op de kade voorbij het pakhuis.
+- kind: quay_cannon
+  at:
+  - 678
+  - 4
+  role: Lichtkamer onder de draagbalk; de straal groeit omlaag tot het eerste vaste oppervlak.
+- kind: red_mitre
+  at:
+  - 691
+  - 7
+  role: Beloning na de sluis.
+- kind: smoke
+  at:
+  - 699
+  - 13
+  role: Rook uit de trapgevel aan de buitenhaven.
+- kind: blue_mitre
+  at:
+  - 724
+  - 8
+  role: Onderschapper voorbij de tweede stoomboot.
+- kind: red_mitre
+  at:
+  - 739
+  - 6
+  role: Herstelcapsule na het buitenhavencheckpoint.
+- kind: blue_mitre
+  at:
+  - 750
+  - 10
+  role: Onderschapper in de buitenhaven.
+- kind: red_mitre
+  at:
+  - 760
+  - 7
+  role: Capsule voor de laatste havenbrug.
+- kind: red_mitre
+  at:
+  - 771
+  - 5
+  role: Capsule voor de derde brug.
+- kind: turret_red_floor
+  at:
+  - 771
+  - 13
+  role: Laatste kleine post bij het brugwachtershuis.
+- kind: blue_mitre
+  at:
+  - 777
+  - 10
+  role: Dwing de speler weer van het plafond weg.
+- kind: sack
+  at:
+  - 781
+  - 14
+  role: Normale grondvijand op het vlakke brugdek; kan over de brug heen bewegen.
+- kind: chimney
+  at:
+  - 794
+  - 9
+  role: Laatste laser in de zijmuur van het brugwachtershuis.
+- kind: red_mitre
+  at:
+  - 805
+  - 8
+  role: Herstelcapsule voor de buitenpier.
+- kind: mill
+  at:
+  - 814
+  - 3
+  role: IJsmolen op de buitenpier; de camera wacht op kolom 828 tot de naaf breekt.
+- kind: red_mitre
+  at:
+  - 837
+  - 8
+  role: Escorte bij het verlaten van de kade.
+- kind: blue_mitre
+  at:
+  - 841
+  - 13
+  role: Escorte bij het verlaten van de kade.
+- kind: red_mitre
+  at:
+  - 850
+  - 6
+  role: Escorte bij het verlaten van de kade.
+- kind: red_mitre
+  at:
+  - 850
+  - 10
+  role: Escorte bij het verlaten van de kade.
+- kind: blue_mitre
+  at:
+  - 858
+  - 12
+  role: Escorte bij het verlaten van de kade.
+- kind: red_mitre
+  at:
+  - 867
+  - 4
+  role: Laatste escorte uit Stage0Map.
+- kind: red_mitre
+  at:
+  - 867
+  - 5
+  role: Laatste escorte uit Stage0Map.
+- kind: red_mitre
+  at:
+  - 867
+  - 6
+  role: Laatste escorte uit Stage0Map.
+- kind: blue_mitre
+  at:
+  - 870
+  - 13
+  role: Laatste escorte uit Stage0Map.
+- kind: blue_mitre
+  at:
+  - 878
+  - 7
+  role: Laatste escorte uit Stage0Map.
+- kind: blue_mitre
+  at:
+  - 879
+  - 5
+  role: Laatste escorte uit Stage0Map.
+- kind: blue_mitre
+  at:
+  - 879
+  - 6
+  role: Laatste escorte uit Stage0Map.
+- kind: blue_mitre
+  at:
+  - 881
+  - 13
+  role: Laatste escorte uit Stage0Map.
+- kind: blue_mitre
+  at:
+  - 885
+  - 10
+  role: Laatste escorte uit Stage0Map.
+- kind: red_mitre
+  at:
+  - 890
+  - 5
+  role: Laatste escorte uit Stage0Map.
+- kind: red_mitre
+  at:
+  - 890
+  - 7
+  role: Laatste escorte uit Stage0Map.
+- kind: red_mitre
+  at:
+  - 890
+  - 9
+  role: Laatste escorte uit Stage0Map.
+- kind: blue_mitre
+  at:
+  - 895
+  - 10
+  role: Laatste escorte uit Stage0Map.
+- kind: red_mitre
+  at:
+  - 896
+  - 7
+  role: Laatste escorte uit Stage0Map.
+- kind: red_mitre
+  at:
+  - 896
+  - 9
+  role: Laatste escorte uit Stage0Map.
+- kind: red_mitre
+  at:
+  - 896
+  - 11
+  role: Laatste escorte uit Stage0Map.
+- kind: red_mitre
+  at:
+  - 902
+  - 7
+  role: Laatste escorte uit Stage0Map.
+- kind: red_mitre
+  at:
+  - 902
+  - 9
+  role: Laatste escorte uit Stage0Map.
+- kind: red_mitre
+  at:
+  - 902
+  - 11
+  role: Laatste escorte uit Stage0Map.
+- kind: red_mitre
+  at:
+  - 908
+  - 3
+  role: Laatste escorte uit Stage0Map.
+- kind: red_mitre
+  at:
+  - 908
+  - 5
+  role: Laatste escorte uit Stage0Map.
+- kind: red_mitre
+  at:
+  - 908
+  - 7
+  role: Laatste escorte uit Stage0Map.
+- kind: moon
+  at:
+  - 924
+  - 11
+  role: Eindbaas na de vrije uitvlucht; scrollstop 930.
+harbor:
+  water_start: 145
+  water_end: 829
+  background_start: 153
+  background_end: 785
+  water_calm:
+  - 13
+  - 10
+  - 1
+  - 13
+  - 10
+  - 4
+  water_lit:
+  - 3
+  - 7
+  - 11
+  far_shore:
+    verre_puntgevel:
+    - 155
+    - 161
+    - 200
+    - 209
+    - 236
+    - 263
+    - 302
+    - 359
+    - 385
+    - 411
+    - 438
+    - 460
+    - 487
+    - 508
+    - 540
+    - 609
+    - 639
+    - 699
+    - 773
+    verre_pakhuis:
+    - 158
+    - 164
+    - 203
+    - 212
+    - 239
+    - 266
+    - 305
+    - 362
+    - 388
+    - 414
+    - 441
+    - 463
+    - 490
+    - 511
+    - 612
+    - 642
+    - 672
+    - 776
+    verre_trapgevel:
+    - 167
+    - 206
+    - 215
+    - 242
+    - 269
+    - 308
+    - 365
+    - 391
+    - 417
+    - 444
+    - 466
+    - 493
+    - 514
+    - 615
+    - 645
+    - 675
+    - 779
+  art_origin: 81
+  open_water:
+  - - 545
+    - 607
+  - - 704
+    - 766
+kade_mounts:
+- - 486
+  - 2
+- - 644
+  - 3
+- - 676
+  - 3
+animations:
+  snow_edges:
+    stadsburg_pakhuis_met_dakkanon:
+    - 13
+    - 4
+    stadsburg_trapgevel_met_dakkanon:
+    - 7
+    - 4
+    stadsburg_brugwachter_met_dakkanon:
+    - 9
+    - 5
+roads:
+- from: 313
+  to: 365
+  floor: 18

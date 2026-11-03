@@ -17,7 +17,7 @@ return {
 			local _director<const>, stage<const>, player<const> = fixture.start_game(t)
 			for row_index = 1, stage.tile_rows do
 				local row<const> = stage.solid_tape[row_index]
-				for column = 1, 40 do row[column] = 0 end
+				for column = 1, #row do row[column] = 0 end
 			end
 			local pose<const> = player
 			-- A descendant makes origin writes invalidate derived world state;

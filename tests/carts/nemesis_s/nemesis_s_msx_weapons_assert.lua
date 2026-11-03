@@ -18,7 +18,7 @@ return {kind = 'integration', tests = {
 			local stage<const> = player.stage
 			for row_index = 1, stage.tile_rows do
 				local row<const> = stage.solid_tape[row_index]
-				for column = 1, 40 do
+				for column = 1, #row do
 					row[column] = 0
 				end
 			end
@@ -89,10 +89,13 @@ return {kind = 'integration', tests = {
 			'firing allocated a replacement projectile instead of reusing the retained vessel slot')
 			local bullet_collision_column<const> = ((primary.x + player_bullet_movement_speed
 			- player_bullet_collision_backtrack + stage.total_scroll_px) // stage.tile_size) + 1
-			stage.solid_tape[(primary.y // stage.tile_size) + 1][bullet_collision_column] = 1
+			local bullet_collision_row<const> = stage.solid_tape[(primary.y // stage.tile_size) + 1]
+			local bullet_word<const> = (bullet_collision_column - 1) // 32 + 1
+			local bullet_bit<const> = 1 << ((bullet_collision_column - 1) & 31)
+			bullet_collision_row[bullet_word] = bullet_collision_row[bullet_word] | bullet_bit
 			player:update_weapons()
 			assert(primary.type == 0, 'the bullet skipped the MSX swept tile collision sample')
-			stage.solid_tape[(31 // stage.tile_size) + 1][bullet_collision_column] = 0
+			bullet_collision_row[bullet_word] = bullet_collision_row[bullet_word] & ~bullet_bit
 
 			player:fire_weapon_salvo()
 			player:fire_weapon_salvo()
@@ -213,29 +216,33 @@ return {kind = 'integration', tests = {
 
 			local floor_row<const> = stage.solid_tape[((32 + 8) // stage.tile_size) + 1]
 			local missile_column<const> = ((49 + stage.total_scroll_px) // stage.tile_size) + 1
-			floor_row[missile_column + 1] = 1
+			local missile_word<const> = (missile_column - 1) // 32 + 1
+			local missile_bit<const> = 1 << ((missile_column - 1) & 31)
+			local next_missile_word<const> = missile_column // 32 + 1
+			local next_missile_bit<const> = 1 << (missile_column & 31)
+			floor_row[next_missile_word] = floor_row[next_missile_word] | next_missile_bit
 			player:spawn_missile(1, pose_x, pose_y, 1)
 			player:update_weapons()
 			assert(missile.x == 53 and missile.y == 32,
 			'the missile ignored the second tile in its original floor probe')
 			player:despawn_missile(missile, 'test_reset')
-			floor_row[missile_column] = 1
-			floor_row[missile_column + 1] = 0
+			floor_row[missile_word] = floor_row[missile_word] | missile_bit
+			floor_row[next_missile_word] = floor_row[next_missile_word] & ~ next_missile_bit
 			player:spawn_missile(1, pose_x, pose_y, 1)
 			player:update_weapons()
 			assert(missile.x == 53 and missile.y == 36,
 			'the missile did not traverse an original floor-edge sample')
 			player:despawn_missile(missile, 'test_reset')
-			floor_row[missile_column + 1] = 1
+			floor_row[next_missile_word] = floor_row[next_missile_word] | next_missile_bit
 			local missile_row<const> = stage.solid_tape[(32 // stage.tile_size) + 1]
-			missile_row[missile_column + 1] = 1
+			missile_row[next_missile_word] = missile_row[next_missile_word] | next_missile_bit
 			player:spawn_missile(1, pose_x, pose_y, 1)
 			player:update_weapons()
 			assert(missile.type == 0,
 			'the missile skipped the second tile in its original body probe')
-			missile_row[missile_column + 1] = 0
-			floor_row[missile_column] = 0
-			floor_row[missile_column + 1] = 0
+			missile_row[next_missile_word] = missile_row[next_missile_word] & ~ next_missile_bit
+			floor_row[missile_word] = floor_row[missile_word] & ~ missile_bit
+			floor_row[next_missile_word] = floor_row[next_missile_word] & ~ next_missile_bit
 
 			local uplaser_slot<const> = player_state_module.powerup_slot.uplaser
 			player.player_state.current_powerup_slot = uplaser_slot
@@ -289,12 +296,14 @@ return {kind = 'integration', tests = {
 			local extended_laser_row<const> = stage.solid_tape[(primary.y // stage.tile_size) + 1]
 			local extended_laser_column<const> =
 			((primary.x + stage.total_scroll_px) // stage.tile_size) + 1
-			extended_laser_row[extended_laser_column + 2] = 1
+			local laser_word<const> = (extended_laser_column + 1) // 32 + 1
+			local laser_bit<const> = 1 << ((extended_laser_column + 1) & 31)
+			extended_laser_row[laser_word] = extended_laser_row[laser_word] | laser_bit
 			player:update_weapons()
 			assert(primary.type == 8 and primary.y == 24 and primary.length_tiles == 1
 			and primary.collider.local_right == 8,
 			'the tile-aligned Extended Laser did not stop at its authored stage row')
-			extended_laser_row[extended_laser_column + 2] = 0
+			extended_laser_row[laser_word] = extended_laser_row[laser_word] & ~laser_bit
 			player:despawn_slot_projectile(primary, 'test_reset')
 
 

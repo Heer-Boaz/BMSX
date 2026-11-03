@@ -16,6 +16,19 @@ import { ScenarioResultService } from '../../ide/testing/scenario/result_service
 import type { ScenarioTestItem } from '../../ide/testing/scenario/test_collection';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { ThreadStatus } from '../../machine/ts/machine/cpu/thread';
+import {
+	IO_GX_GPU_GP0, IO_GEO_CMD, IO_GEO_COUNT, IO_GEO_SRC0, IO_GEO_SRC1, IO_GEO_SRC2,
+	IO_GEO_DST0, IO_GEO_DST1, IO_GEO_STRIDE0, IO_GEO_STRIDE1, IO_GEO_STRIDE2,
+	IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_FAULT, SYS_CONTROL_SUPERVISOR_FAULT_PUBLISH,
+} from '../../machine/ts/spec/bmsx/io';
+import {
+	IO_CMD_GEO_XFORM2_BATCH, GEO_XFORM2_RECORD_BYTES, GEO_XFORM2_MATRIX_BYTES,
+	GEO_VERTEX2_BYTES, GEO_XFORM2_RECORD_DST1_INDEX_OFFSET, GEO_INDEX_NONE,
+} from '../../machine/ts/machine/devices/geometry/contracts';
+import { GX_GPU_GP0_FILL_RECTANGLE } from '../../machine/ts/spec/gx/gp0';
+import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CPU_CAUSE_CODE_DATA_BUS_ERROR } from '../../machine/ts/spec/blua32/cop0';
+import { readSupervisorFaultReport } from '../../ide/runtime/fault_state';
 
 const source = `
 return {
@@ -32,6 +45,99 @@ return {
 }`;
 
 for (const optLevel of [0, 3] as const) {
+for (const workload of ['GEO', 'GPU'] as const)
+test(`O${optLevel}: a fixture drains a held ${workload} fault boundary with bounded device grants before reporting the physical fault`, async () => {
+	const directory = await mkdtemp(join(tmpdir(), 'bmsx-fixture-fault-drain-'));
+	const resumed = DYNAMIC_RAM_BASE + 0x4000;
+	try {
+		const source = `return { kind = 'integration', tests = {
+ ready = function(t) t:log('ready'); mem[${resumed}] = 1 end,
+} }`;
+		const fixture = await buildScenarioMediaFixture(directory, [{ path: SCENARIO_FIXTURE_TEST_SOURCE_PATH, source }], {
+			systemSource: `module<entry>
+require('base')
+coroutine = require('coroutine')
+function exception()
+ mem[${IO_SYS_CONTROL}] = ${SYS_CONTROL_SUPERVISOR_FAULT}
+ mem[${IO_SYS_CONTROL}] = ${SYS_CONTROL_SUPERVISOR_FAULT_PUBLISH}
+ halt_until_irq
+end
+cop0.exec = mem[0x10000028]`,
+			systemModules: [
+				{ path: 'base', source: `setmetatable = __bmsx_setmetatable` },
+				...COROUTINE_FIRMWARE_MODULES,
+			],
+			cartSource: `module<entry>
+${workload === 'GEO' ? `mem[${IO_GEO_CMD}] = ${IO_CMD_GEO_XFORM2_BATCH}` : `mem[${IO_GX_GPU_GP0}] = ${GX_GPU_GP0_FILL_RECTANGLE << 24}
+mem[${IO_GX_GPU_GP0}] = 0
+mem[${IO_GX_GPU_GP0}] = ${(512 << 16) | 1024}`}
+local fault = mem[0x07000000]
+mem[${resumed}] = 2`,
+		});
+		const program = await buildFixtureProgram({ systemRom: fixture.systemRom, cartridgeSlots: [fixture.cartRom, null],
+			sourceSelection: { kind: 'packaged' }, sourceContexts: [TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS[0], null],
+			machineModel: PSX_MACHINE_SPEC, optLevel }, { sourcePath: SCENARIO_FIXTURE_TEST_SOURCE_PATH, source });
+		const target = new OffscreenMachine(fixture.systemRom, [program.layer.bytes, null], PSX_MACHINE_SPEC, new TestInput());
+		const results = new ScenarioResultService();
+		const item: ScenarioTestItem = { kind: 'test', membership: Symbol(), id: 'scenario:0:fault', caseName: 'ready',
+			parentId: 'scenario-module:0:fixture', label: 'ready', assetId: 'fixture', sourceTimestamp: 0,
+			resource: { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: SCENARIO_FIXTURE_TEST_SOURCE_PATH }, range: program.suite.tests[0].range };
+		const run = results.beginRun(item.id, [{ test: item, source, sourceRevision: 0 }]);
+		const result = results.startItem(run, 0, 0);
+		const execution = new TestExecution(target, program, results, result);
+		try {
+			for (let grant = 0; result.logs.length === 0 && grant < 1000; grant++) execution.advance();
+			assert.equal(result.logs.length, 1, 'fixture is suspended at a completed log yield');
+			const runtime = target.runtime, machine = runtime.machine, cpu = machine.cpu;
+			if (workload === 'GEO') {
+				const jobBase = DYNAMIC_RAM_BASE + 0x5000;
+				for (let record = 0; record < 64; record++) {
+					for (let offset = 0; offset < GEO_XFORM2_RECORD_BYTES; offset += 4)
+						machine.memory.writeMappedU32LE(jobBase + record * GEO_XFORM2_RECORD_BYTES + offset,
+							offset === GEO_XFORM2_RECORD_DST1_INDEX_OFFSET ? GEO_INDEX_NONE : 0);
+				}
+				for (const [address, value] of [[IO_GEO_SRC0, jobBase], [IO_GEO_SRC1, jobBase + 0x1000],
+					[IO_GEO_SRC2, jobBase + 0x2000], [IO_GEO_DST0, jobBase + 0x3000], [IO_GEO_DST1, 0],
+					[IO_GEO_COUNT, 64], [IO_GEO_STRIDE0, GEO_XFORM2_RECORD_BYTES],
+					[IO_GEO_STRIDE1, GEO_VERTEX2_BYTES], [IO_GEO_STRIDE2, GEO_XFORM2_MATRIX_BYTES]])
+					machine.memory.writeMappedU32LE(address, value);
+			}
+			// Admit a physical game fault between fixture calls. Accepted device work
+			// must quiesce before the exception handler can publish the fault.
+			for (let grant = 0; execution.active && !machine.systemController.cpuHeld() && grant < 1000; grant++) {
+				target.serviceBackend();
+				runtime.cpuExecution.runSuspendedUntilDepth(0, DEFAULT_TEST_BUDGETS.quantumCycles, cpu.rootThread);
+			}
+			assert.equal(machine.systemController.cpuHeld(), true);
+			assert.notEqual(cpu.readExceptionReturnFrameDepth(), -1);
+			assert.equal(readSupervisorFaultReport(runtime), undefined);
+			const frameState = runtime.frameLoop.captureState(), pc = cpu.readCurrentInstructionPc();
+			let advanced = 0;
+			for (let grant = 0; execution.active && machine.systemController.cpuHeld() && grant < 1000; grant++) {
+				target.serviceBackend();
+				if (!machine.systemController.cpuHeld()) break;
+				const before = machine.scheduler.nowCycles, phaseBefore = execution.phaseCycles;
+				execution.advance();
+				const consumed = machine.scheduler.nowCycles - before;
+				assert.ok(consumed >= 0 && consumed <= DEFAULT_TEST_BUDGETS.quantumCycles);
+				assert.equal(execution.phaseCycles - phaseBefore, consumed);
+				assert.equal(cpu.readCurrentInstructionPc(), pc, 'device grants never execute or admit a guest call');
+				advanced += consumed;
+			}
+			assert.equal(machine.systemController.cpuHeld(), false, 'bounded device grants finish supervisor quiescence');
+			assert.ok(advanced > 0, 'quiescence advances to a future hardware deadline');
+			assert.deepEqual(runtime.frameLoop.captureState(), frameState, 'fixture grants preserve the game frame owner');
+			for (let grant = 0; execution.active && grant < 1000; grant++) execution.advance();
+			assert.equal(execution.active, false);
+			assert.equal(result.state, 'failed');
+			assert.equal(result.failures.length, 1);
+			assert.equal(result.failures[0].message, readSupervisorFaultReport(runtime));
+			assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_DATA_BUS_ERROR);
+			assert.equal(machine.memory.readMappedU32LE(resumed), 0, 'neither the pending fixture nor the faulted game resumes');
+		} finally { execution.dispose(); }
+	} finally { await rm(directory, { recursive: true, force: true }); }
+});
+
 test(`O${optLevel}: named cases use fresh machines, fixture hooks, retained failures and bounded execution`, async () => {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-test-runner-'));
 	try {

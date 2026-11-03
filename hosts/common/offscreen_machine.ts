@@ -50,9 +50,14 @@ export class OffscreenMachine<TInput extends InputControllerInputSource> {
 
 	public serviceBackend(): void {
 		const gpu = this.runtime.machine.gxGpu;
-		if (!gpu.backendServicePending()) return;
-		if (gpu.backendCommandDrainPending()) this.backend.executeGxGpuCommandDrain(gpu);
-		else this.backend.executeGxGpuReadback(gpu);
+		if (gpu.backendServicePending()) {
+			if (gpu.backendCommandDrainPending()) this.backend.executeGxGpuCommandDrain(gpu);
+			else this.backend.executeGxGpuReadback(gpu);
+		} else if (this.runtime.machine.systemController.cpuHeld()
+			&& gpu.readDeviceOutput().commandBuffer.executedCommandCount !== 0) {
+			// Supervisor quiescence also retires completed draws when no frame is being presented.
+			this.backend.executeGxGpuCommandDrain(gpu);
+		} else return;
 		this.runtime.frameScheduler.synchronizeBackendService();
 	}
 

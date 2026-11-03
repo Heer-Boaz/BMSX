@@ -341,6 +341,79 @@ return assertion_failed
 	});
 }
 
+test('A large image catalog keeps compact source records and both native format draw contracts', () => {
+	const { cpu } = createCartlibProgramHarness(checks + `
+local commands<const> = require('cartlib/gx/command_list')
+local image<const> = require('cartlib/gx/image')
+local blend<const> = require('cartlib/gx/gp0').draw_mode_blend_half
+sources = {}
+for index=1,1024 do sources[index]=image.resolve('catalog_'..index) end
+assert(image.resolve('catalog_1')==sources[1], 'image lookup replaced a retained source')
+local surface<const> = image.resolve('surface')
+assert(surface.draw==nil and surface.draw_source_rect==nil
+ and surface.draw_affine==nil and surface.draw_quad==nil,
+ 'split-surface parent acquired unsupported single-image operations')
+bss words: word[64]
+local draw<const> = commands.new(words,64)
+local output<const>: *word = words
+for format=1,2 do
+ local source<const> = format==1 and sources[1] or image.resolve('palette')
+ local uv<const> = format==1 and 0x2040 or 0x1810
+ commands.begin(draw,source._blit_draw_mode,0)
+ source:blit(draw,10,20)
+ assert(draw.word_count==4 and output[1]==0x75808080
+  and output[2]==0x0014000a and output[3]==uv,
+  'fixed 8x8 source lost its admitted three-word blit')
+ commands.begin(draw,source._blit_draw_mode,0)
+ source:draw(draw,10,20,0xffffffff,0,blend)
+ assert(draw.word_count==5 and output[1]==0x65808080
+  and output[2]==0x0014000a and output[3]==uv and output[4]==0x00080008,
+  'format draw lost its native rectangle or source addressing')
+ commands.begin(draw,source._blit_draw_mode,0)
+ source:draw_source_rect(draw,1,2,3,4,10,20,0xffffffff,0,blend)
+ assert(draw.word_count==5 and output[3]==uv+0x201 and output[4]==0x00040003,
+  'source-region draw lost its admitted texture origin')
+ commands.begin(draw,source._blit_draw_mode,0)
+ source:draw_affine(draw,10,20,8,0,0,8,1,0xffffffff,blend)
+ assert(draw.word_count==10 and output[1]==0x2d808080
+  and output[3]==uv+7 and (output[5]&0xffff)==uv
+  and output[7]==uv+0x707 and output[9]==uv+0x700,
+  'affine draw lost horizontal reflection or native quad addressing')
+ commands.begin(draw,source._blit_draw_mode,0)
+ source:draw_quad(draw,1,1,6,1,1,6,6,6,10,20,18,20,10,28,18,28,0xffffffff,blend)
+ assert(draw.word_count==10 and output[3]==uv+0x101 and output[9]==uv+0x606
+  and output[2]==0x0014000a and output[8]==0x001c0012,
+  'explicit quad draw changed source coordinates or vertex order')
+end
+return assertion_failed
+`, { optLevel: 3, modules: [...modules, {
+		path: 'cartlib/rom_dir',
+		source: `local ordinary<const> = {imgmeta={width=8,height=8,gx_source_x=64,gx_source_y=32}}
+local palette<const> = {imgmeta={width=8,height=8,gx_atlas_id='palette',texture_u=16,texture_v=24}}
+local surface<const> = {imgmeta={width=16,height=8,gx_source_x=64,gx_source_y=32,
+ gx_page_tiles={{u=64,v=32,w=8,h=8,x=0,y=0},{u=72,v=32,w=8,h=8,x=8,y=0}}}}
+local texture<const> = {addr=0,len=0,texturemeta={mode=0,word_width=32,height=64,
+ texture_word_count=2048,clut_word_count=16}}
+return {
+ image=function(id)
+  if id=='palette' then return palette end
+  if id=='surface' then return surface end
+  return ordinary
+ end,
+ texture=function() return texture end,
+}`,
+	}] });
+	assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+	const [failure] = materializeCpuCompletionValues(cpu);
+	assert.equal(failure, null, failure === null ? undefined : cpu.stringPool.toString((failure as StringValue).id));
+	const sources = cpu.getGlobalByKey(cpu.stringPool.find('sources')!) as Table;
+	let sourceBytes = 0;
+	for (let index = 1; index <= 1024; index += 1) sourceBytes += (sources.getInteger(index) as Table).getTrackedHeapBytes();
+	// The thousand-image stage exhausted RAM with 672-byte source descriptors.
+	// This is a retained-memory budget, independent of the sharing mechanism.
+	assert.ok(sourceBytes < 400 * 1024, `image source descriptors retained ${sourceBytes} bytes`);
+});
+
 test('Retained affine image batches allocate nothing warm and preserve the native rectangle lane', t => {
 	const { cpu } = createCartlibProgramHarness(`
 local commands<const> = require('cartlib/gx/command_list')

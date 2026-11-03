@@ -8,33 +8,32 @@ local world<const> = require('cartlib/world/world')
 
 require('constants')
 
+-- Stadsburg retains native actor symbols while replacing the original town's
+-- placement. These are the authored counts and first admission anchors.
 local expected_actor_counts<const> = {
-	[ids_schoorsteen_foe_def] = 16,
-	[ids_rook_generator_def] = 8,
-	[ids_zak_foe_def] = 31,
-	[ids_sneeuwpop_def] = 4,
-	[ids_bel_def] = 1,
-	[ids_kerk_def] = 1,
+	[ids_schoorsteen_foe_def] = 4,
+	[ids_rook_generator_def] = 2,
+	[ids_zak_foe_def] = 6,
+	[ids_sneeuwpop_def] = 0,
+	[ids_bel_def] = 0,
+	[ids_kerk_def] = 0,
+	[ids_havengeschut_def] = 8,
+	[ids_kadekanon_def] = 3,
+	['nemesis_s.enemy.molen'] = 1,
 }
 
 local expected_first_spawns<const> = {
-	[ids_schoorsteen_foe_def] = { column = 241, x = 245, y = 88 },
-	[ids_rook_generator_def] = { column = 202, x = 240, y = 96 },
-	[ids_zak_foe_def] = { column = 147, x = 248, y = 152 },
-	[ids_sneeuwpop_def] = { column = 299, x = 248, y = 112 },
-	[ids_bel_def] = { column = 484, x = 255, y = 96 },
-	[ids_kerk_def] = { column = 484, x = 248, y = 16 },
+	[ids_schoorsteen_foe_def] = { column = 394, x = 248, y = 80 },
+	[ids_rook_generator_def] = { column = 424, x = 240, y = 72 },
+	[ids_zak_foe_def] = { column = 183, x = 248, y = 104 },
+	[ids_havengeschut_def] = { column = 172, x = 248, y = 104 },
+	[ids_kadekanon_def] = { column = 488, x = 244, y = 24 },
+	['nemesis_s.enemy.molen'] = { column = 814, x = 248, y = 24 },
 }
 
 local assert_authored_actor_tape<const> = function(stage)
-	local counts<const> = {
-		[ids_schoorsteen_foe_def] = 0,
-		[ids_rook_generator_def] = 0,
-		[ids_zak_foe_def] = 0,
-		[ids_sneeuwpop_def] = 0,
-		[ids_bel_def] = 0,
-		[ids_kerk_def] = 0,
-	}
+	local counts<const> = {}
+	for definition_id in pairs(expected_actor_counts) do counts[definition_id] = 0 end
 	local first_spawns<const> = {}
 	local spawns<const> = stage.actor_spawns
 	for index = 1, stage.actor_spawn_count do
@@ -51,14 +50,16 @@ local assert_authored_actor_tape<const> = function(stage)
 	for definition_id, expected_count in pairs(expected_actor_counts) do
 		assert(counts[definition_id] == expected_count,
 		'Authored stage placement count changed for ' .. definition_id)
-		local spawn<const> = first_spawns[definition_id]
-		local expected<const> = expected_first_spawns[definition_id]
-		assert(spawn.column == expected.column,
-		'Authored stage placement column changed for ' .. definition_id)
-		assert(spawn.options.stage == stage,
-		'Authored stage actor lost its stage owner')
-		assert(spawn.options.position.x == expected.x and spawn.options.position.y == expected.y,
-		'Authored stage placement position changed for ' .. definition_id)
+		if expected_count ~= 0 then
+			local spawn<const> = first_spawns[definition_id]
+			local expected<const> = expected_first_spawns[definition_id]
+			assert(spawn.column == expected.column,
+			'Authored stage placement column changed for ' .. definition_id)
+			assert(spawn.options.stage == stage,
+			'Authored stage actor lost its stage owner')
+			assert(spawn.options.position.x == expected.x and spawn.options.position.y == expected.y,
+			'Authored stage placement position changed for ' .. definition_id)
+		end
 	end
 end
 
@@ -84,7 +85,7 @@ return {
 				stage.scrolling = false
 				for row_index = 1, stage.tile_rows do
 					local row<const> = stage.solid_tape[row_index]
-					for column = 1, 40 do
+					for column = 1, #row do
 						row[column] = 0
 					end
 				end
