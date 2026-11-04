@@ -5,6 +5,7 @@ local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
 local stage_tiles_component<const> = require('stage_tiles_component')
+local tile_art<const> = require('tile_art')
 local world<const> = require('cartlib/world/world')
 local stage_scroll_follower_component<const> = require('stage_scroll_follower_component')
 require('constants')
@@ -387,10 +388,31 @@ function stage:advance_actor_spawns(column)
 	self.actor_spawn_index = index
 end
 
+function stage:build_background(background, width)
+	local tiles<const> = self.background_tiles
+	local rows<const> = background.rows
+	local art<const> = background.tile_assets
+	tiles:configure(width, #rows, self.tile_size, self.tile_art)
+	for y = 1, #rows do
+		local row<const> = rows[y]
+		for index = 1, #row, 2 do
+			tiles:admit_tile(row[index], y, art[row[index + 1]])
+		end
+		-- The retained row owns the resolved sources now. Release decoded
+		-- admission data before loading the foreground and animation views.
+		rows[y] = nil
+	end
+	background.rows = nil
+	background.tile_assets = nil
+	self.star_spans = background.star_spans
+	self.night_sky_height = background.night_sky_height
+end
+
 function stage:build_tape()
 	local stage_data<const> = bin.decode(assets.data_nemesis_s_stage_addr, stage_asset_id)
 	local map_rows<const>, numeric_rows<const>, numeric_assets<const> = stage_tilemap_v2.resolve(stage_data)
 	self:apply_stage_config(stage_data)
+	self.tile_art = tile_art.new(stage_data.tile_banks)
     -- Blank spawn markers keep their spawn role while exposing the native stars.
     local numeric_art=numeric_assets
     if stage_data.sky_actor_ids then
@@ -404,8 +426,12 @@ function stage:build_tape()
 
 	self.tile_rows = height
 	self.tape_length_tiles = width
+	local background<const> = stage_data.background
+	if background then
+		self:build_background(background, width)
+	end
 	local stage_tiles<const> = self.stage_tiles
-	stage_tiles:configure(width, height, self.tile_size)
+	stage_tiles:configure(width, height, self.tile_size, self.tile_art)
 	-- The native role decoder supplies one collision bit per tile. Keep those
 	-- bits in row words so longer stages do not retain a Lua value per cell.
 	self.solid_tape = new_rows((width + 31) // 32, height, 0)
@@ -586,6 +612,7 @@ function stage:reset_runtime()
 	local start_column<const> = self.start_column
 	self.left_tile = start_column + 1
 	self.stage_tiles:set_visible_columns(self.left_tile, self.tile_columns + 2)
+	self.background_tiles:set_visible_columns(self.left_tile, self.tile_columns + 2)
 	if self.water then self.water:reset(self.left_tile,self.tile_columns+2) end
     if self.harbor then self.harbor:reset(self.left_tile-1) end
 	self.tape_head = self.left_tile + self.tile_columns - 1
@@ -656,6 +683,7 @@ function stage:advance_tape()
 
 	self.left_tile = self.left_tile + 1
 	self.stage_tiles:set_visible_columns(self.left_tile, self.tile_columns + 2)
+	self.background_tiles:set_visible_columns(self.left_tile, self.tile_columns + 2)
 	if self.water then self.water:show(self.left_tile,self.tile_columns+2) end
     if self.harbor then self.harbor:show(self.left_tile-1) end
 	self.tape_head = self.left_tile + self.tile_columns - 1
@@ -844,7 +872,8 @@ end
 
 function stage:ctor()
 	self.solid_tape = {}
-	self.stage_tiles = self:get_component(stage_tiles_component)
+	self.stage_tiles = self:get_component(stage_tiles_component, 'tile_layer')
+	self.background_tiles = self:get_component(stage_tiles_component, 'background')
 end
 
 local define_stage_fsm<const> = function()
@@ -882,6 +911,9 @@ local register_stage_definition<const> = function()
 		def_id = ids_stage_def,
 		class = stage,
 		components = {
+			function(owner)
+				return stage_tiles_component.new(owner, { order = 14 }, 'background')
+			end,
 			stage_tiles_component.new,
 			fsm_component.factory({ ids_stage_fsm }),
 		},

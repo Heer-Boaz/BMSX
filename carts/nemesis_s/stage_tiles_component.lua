@@ -1,4 +1,3 @@
-local image<const> = require('cartlib/gx/image')
 local gp0<const> = require('cartlib/gx/gp0')
 local command_list<const> = require('cartlib/gx/command_list')
 local tile_layer_row<const> = require('cartlib/component/tile_layer_row')
@@ -19,15 +18,16 @@ local find_slot<const> = function(row, column)
     return first
 end
 
-function stage_tiles.new(owner)
-    local self<const> = visual_2d_component.new(owner, owner, 'tile_layer')
+function stage_tiles.new(owner, configuration, id_local)
+    local self<const> = visual_2d_component.new(owner, configuration or owner, id_local or 'tile_layer')
     setmetatable(self, stage_tiles)
     self._rows = {}
     self.tile_count = 0
     return self
 end
 
-function stage_tiles:configure(columns, row_count, tile_size)
+function stage_tiles:configure(columns, row_count, tile_size, art)
+    self.art = art
     self.columns = columns
     self.tile_count = columns * row_count
     self._row_count = row_count
@@ -53,7 +53,7 @@ function stage_tiles:admit_tile(x, y, imgid)
     if count ~= 0 and x <= row.columns[count] then
         slot = find_slot(row, x)
         if row.columns[slot] == x then
-            row.sources[slot] = image.resolve(imgid)
+            row.sources[slot] = self.art:resolve(imgid)
             return
         end
         for index = count, slot, -1 do
@@ -67,7 +67,7 @@ function stage_tiles:admit_tile(x, y, imgid)
     local tile_size<const> = self._tile_size
     row.columns[slot] = x
     row.coordinate_domains[slot] = ((x - 1) // domain_columns) + 1
-    row.sources[slot] = image.resolve(imgid)
+    row.sources[slot] = self.art:resolve(imgid)
     row.position_words[slot] = gp0.pair16(((x - 1) % domain_columns) * tile_size, (y - 1) * tile_size)
     row.source_count = count + 1
 end

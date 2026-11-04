@@ -12,9 +12,14 @@ local paint<const> = function(self, clip, pose, force)
     for i=1,#clip.cells do
         local cell<const> = clip.cells[i]
         local id = cell[pose+3]
-        if destroyed and self.cargo_patterns[id] then id=0 end
+        local source
+        if destroyed and self.cargo_patterns[id] then
+            id=0
+            source=self.patterns[0]
+        elseif cell.visuals then source=cell.visuals[pose]
+        else source=self.patterns[id] end
+        if cell.sources[cell.slot]~=source then cell.sources[cell.slot]=source end
         if cell.pattern ~= id then
-            cell.sources[cell.slot]=self.patterns[id]
             if cell.solid_row then
                 local row<const>,word<const>,mask<const> = cell.solid_row,cell.solid_word,cell.solid_mask
                 if self.solid[id]~=0 then row[word]=row[word]|mask
@@ -43,10 +48,20 @@ function haven.new(spec, tiles, solid_rows)
         clip.pose=1
         clip.health=clip.max_health
         if clip.max_health then clip.blast_hits={} end
-        for _,cell in ipairs(clip.cells) do
+        for cell_index,cell in ipairs(clip.cells) do
             local x<const>,y<const> = cell[1],cell[2]
             cell.sources,cell.slot=tiles:bind_tile(x,y)
             cell.pattern=cell[4]
+            if clip.visuals then
+                local visuals<const> = clip.visuals[cell_index]
+                for pose=1,#visuals do
+                    local asset<const> = visuals[pose]
+                    if asset==0 then visuals[pose]=self.patterns[0]
+                    else visuals[pose]=tiles.art:resolve(asset) end
+                end
+                cell.visuals=visuals
+                cell.sources[cell.slot]=visuals[1]
+            end
             if cell[3]==1 then
                 cell.solid_row=solid_rows[y]
                 cell.solid_word=((x-1)//32)+1

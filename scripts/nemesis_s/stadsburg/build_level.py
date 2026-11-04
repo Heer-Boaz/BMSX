@@ -14,6 +14,7 @@ from PIL import Image
 from bake_water import compile_water
 from bake_havenanimatie import compile_harbor
 from bake_stadsgroen import greenery_poses
+from bake_achtergrond import compile_background
 
 ROOT = Path(__file__).resolve().parents[3] / 'carts/nemesis_s'
 ACTOR_SYMBOLS = {'formation_down': 'p', 'formation_up': 'P', 'red_mitre': 'M',
@@ -370,6 +371,8 @@ def main():
     runtime['water_animation']=compile_water(ROOT,catalog,tiles,entries,cells,owners)
     runtime['water_animation']['origin_column']=art_origin
     runtime['harbor_animation']=compile_harbor(ROOT,plan,prefabs,tiles,entries,cells,placements,catalog['palette'],greenery_layers)
+    compile_background(ROOT,plan,runtime,tiles,cells)
+    runtime['background']['rows']=[FlowRow(row) for row in runtime['background']['rows']]
     # Validate map composition and animation before relocating source drawings.
     # A rejected placement must not leave the catalog pointing at moved files.
     for entry in catalog['tiles']:
@@ -389,7 +392,7 @@ def main():
     for y,row in enumerate(cells):
         for x,k in enumerate(row): image.paste(tiles[k],(x*8,y*8))
     image.save(ROOT/'previews/level_native.png')
-    report={'tile_count':len(tiles),'runtime_tiles':len(visible),'width_tiles':width,
+    report={'tile_count':len(tiles),'runtime_tiles':len(runtime['tile_assets']),'width_tiles':width,
             'height_tiles':height,'encounters':triggers,'placements':placements,'used_prefabs':sorted(used_prefabs),
             'native_actor_count':sum(6 if a['kind'].startswith('formation') else 2 if a['kind']=='bell' else 1 for a in triggers),
             'actors_by_type':dict(Counter(a['kind'] for a in triggers)),

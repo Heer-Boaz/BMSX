@@ -97,7 +97,8 @@ local passage<const> = function(t,left,anchor,row,altitude,moving,rewind)
         assert(cargo.health==cargo.max_health,'checkpoint reset did not restore cargo health')
         for _,cell in ipairs(cargo.cells) do
             if stage.harbor.cargo_patterns[cell[4]] then
-                assert(cell.pattern==cell[4] and cell.sources[cell.slot]==stage.harbor.patterns[cell[4]],
+                local art<const> = cell.visuals and cell.visuals[1] or stage.harbor.patterns[cell[4]]
+                assert(cell.pattern==cell[4] and cell.sources[cell.slot]==art,
                     'checkpoint reset did not restore cargo art')
                 assert((cell.solid_row[cell.solid_word]&cell.solid_mask)~=0,
                     'checkpoint reset did not restore cargo collision')

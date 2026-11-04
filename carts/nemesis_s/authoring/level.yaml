@@ -1,9 +1,24 @@
 schema: nemesis_s.level.v1
 title: De Bevroren Haven
-revision: 32
+revision: 33
 width: 931
 height: 22
 source_commit: d04363ea9a05758eb91b5016f2e082036837813c
+background:
+  night_sky_height: 40
+  blend_columns: 8
+  sources:
+    stad: authoring/achtergrond/winterstad.png
+    werf: authoring/achtergrond/hijswerf.png
+    haven: authoring/achtergrond/haven.png
+  scenes:
+  - {from: 145, to: 443, source: stad, phase: 0}
+  - {from: 443, to: 545, source: werf, phase: 16}
+  - {from: 545, to: 625, source: haven, phase: 0}
+  - {from: 625, to: 689, source: werf, phase: 40}
+  - {from: 689, to: 801, source: haven, phase: 24}
+  - {from: 801, to: 812, source: haven, phase: 8}
+  star_spans: [[0, 144], [829, 930]]
 sections:
 - from: 0
   to: 128

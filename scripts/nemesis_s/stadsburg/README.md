@@ -82,6 +82,32 @@ Light, warm, cyan or green accents distinguish foreground objects. The smaller
 8×4-pixel cars and miniature bicycles use only subdued blues and black, like the
 distant house contours. The authoring groups describe that visual depth within
 the fixed side view.
+
+The three winter backdrops are editable 512×160 native PNGs in
+`authoring/achtergrond`: a distant town, warehouse wharf and opposite harbor
+bank. `level.yaml` owns their spans, repeat offsets, pixel dissolves and the
+world spans that expose the full starfield. They scroll on the same character
+grid as the terrain. `night_sky_height` keeps four existing blue stars in the
+top 40 pixels visible over the town, above the distant clouds and skyline.
+The mill is framed by an intentional black arena; the open approach and
+departure retain the full starfield.
+
+`build_level.py` calls `bake_achtergrond.py` to compile the backdrop and compose
+its exterior pixels around the existing foreground. Enclosed black windows,
+doors and masonry remain opaque. Each resulting 8×1 row keeps at most two
+inks; existing foreground ink takes priority. Animation cels use the same
+composition while their native patterns continue to own collision and cargo
+damage. Destroyed cargo exposes the background; resetting restores its art.
+Water sources, terrain roles, encounter placements and the six-metre scale are
+independent of these visual compositions.
+The generated drawings are checked in as 256×256 pattern banks; the cartridge
+shares their 8×8 views across foreground, backdrop, animation and new games.
+
+Run `python scripts/nemesis_s/stadsburg/draw_achtergrond.py` only when deliberately
+regenerating the three editable source PNGs from their authored pixel geometry.
+Normal level builds consume those PNGs directly, including any subsequent
+hand edits. The composed level and the separate backdrop are available under
+`previews/level_achtergrond_native.png` and `previews/achtergrond_native.png`.
+
 The Python dependencies are pinned for reproducible resource bytes.
-Preview images, pattern-bank exports and check reports are
-generated locally and ignored by Git.
+Preview images and check reports are generated locally and ignored by Git.
