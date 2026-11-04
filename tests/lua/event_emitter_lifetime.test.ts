@@ -14,6 +14,35 @@ local port<const> = events.events_of(source)
 `;
 
 const recoveryVectors = {
+	scoped_identity_namespace: `
+local ids<const> = { '_scope_count', 'count', 'listeners', 'by_emitter', 'first', 'last',
+ '_event_name', '_emitter_id', false, 0, '' }
+local sources<const>, ports<const>, calls<const> = {}, {}, {}
+local receive<const> = function(self, event, emitter, payload, emitter_id)
+ assert(event == 'identity' and emitter == self and emitter_id == self.id and payload == self.slot,
+  'scoped dispatch confused emitter identity with index metadata')
+ calls[self.slot] = calls[self.slot] + 1
+end
+for index = 1, #ids do
+ local source<const> = { id = ids[index], slot = index }
+ local port<const> = events.events_of(source)
+ sources[index], ports[index], calls[index] = source, port, 0
+ port:on({ event = 'identity', handler = receive })
+end
+for index = 1, #ports do ports[index]:emit('identity', index) end
+for index = 1, #calls do assert(calls[index] == 1, 'a scoped identity admitted another emitter') end
+for index = 1, #sources do
+ local source<const> = sources[index]
+ if index % 2 == 0 then events:remove_subscriber(source)
+ else events:off('identity', source, receive, source.id) end
+end
+assert(next(events._scoped_listeners) == nil and next(events._subscriptions_by_subscriber) == nil,
+ 'removing the final emitter did not retire its event scope')
+ports[1]:on({ event = 'identity', handler = receive, once = true })
+ports[1]:emit('identity', 1)
+assert(calls[1] == 2 and next(events._scoped_listeners) == nil,
+ 'a retired event scope could not be recreated and retired independently')
+return true`,
 	inner_caught: `
 local failure<const>, removed<const>, tail<const> = {}, {}, {}
 local outer_calls, inner_calls, global_calls = 0, 0, 0

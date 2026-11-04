@@ -94,10 +94,10 @@ local retire_listener_list<const> = function(self, list)
 		self._global_listeners[event_name] = nil
 		return
 	end
-	local scopes<const> = self._scoped_listeners[event_name]
-	scopes[emitter_id] = nil
-	local scope_count<const> = scopes._scope_count - 1
-	scopes._scope_count = scope_count
+	local scope<const> = self._scoped_listeners[event_name]
+	scope.by_emitter[emitter_id] = nil
+	local scope_count<const> = scope.count - 1
+	scope.count = scope_count
 	if scope_count == 0 then
 		self._scoped_listeners[event_name] = nil
 	end
@@ -211,11 +211,12 @@ function event_emitter:on(spec, default_subscriber, default_emitter)
 		end
 	else
 		local listeners<const> = self._scoped_listeners
-		local scopes = listeners[name]
-		if scopes == nil then
-			scopes = { _scope_count = 0 }
-			listeners[name] = scopes
+		local scope = listeners[name]
+		if scope == nil then
+			scope = { by_emitter = {}, count = 0 }
+			listeners[name] = scope
 		end
+		local scopes<const> = scope.by_emitter
 		list = scopes[emitter]
 		if list == nil then
 			list = {
@@ -223,7 +224,7 @@ function event_emitter:on(spec, default_subscriber, default_emitter)
 				_emitter_id = emitter,
 			}
 			scopes[emitter] = list
-			scopes._scope_count = scopes._scope_count + 1
+			scope.count = scope.count + 1
 		end
 	end
 	append_listener(self, list, {
@@ -240,9 +241,9 @@ function event_emitter:off(event_name, subscriber, handler, emitter)
 	if emitter == nil then
 		list = self._global_listeners[event_name]
 	else
-		local scopes<const> = self._scoped_listeners[event_name]
-		if scopes ~= nil then
-			list = scopes[emitter]
+		local scope<const> = self._scoped_listeners[event_name]
+		if scope ~= nil then
+			list = scope.by_emitter[emitter]
 		end
 	end
 	if not list then
@@ -266,8 +267,8 @@ end
 -- emitter=2, payload=3, emitter identity=4. See docs/cartlib_inspection_contract.md.
 function event_emitter:emit(event_type, emitter, payload, emitter_id)
 	blua32.trace(self, 'event.emit', event_type, emitter_id, payload)
-	local scopes<const> = self._scoped_listeners[event_type]
-	local scoped_list<const> = scopes and scopes[emitter_id]
+	local scope<const> = self._scoped_listeners[event_type]
+	local scoped_list<const> = scope and scope.by_emitter[emitter_id]
 	local global_list<const> = self._global_listeners[event_type]
 	if scoped_list == nil and global_list == nil then
 		return
