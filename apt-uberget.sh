@@ -22,8 +22,6 @@ run_updates_full() {
 	fi
 	if do-release-upgrade --check-dist-upgrade-only; then
 		sudo do-release-upgrade
-	else
-		echo "Geen beschikbare LTS-upgrade gevonden, of de controle is mislukt."
 	fi
 }
 
