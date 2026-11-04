@@ -1,9 +1,5 @@
 local clear_map<const> = function(map)
-	while true do
-		local key<const> = next(map)
-		if key == nil then
-			break
-		end
+	for key in next, map do
 		map[key] = nil
 	end
 end
