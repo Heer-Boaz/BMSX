@@ -1212,6 +1212,15 @@ function world_class:_commit_mutation_barrier()
 			self._pending_mutation_mask = self._pending_mutation_mask - mutation_disposal
 			self:_flush_disposals()
 		end
+		-- Retire a stale render snapshot before unload completion can construct
+		-- its replacement scene. Keep the revision stale for the next draw.
+		if self._render_visual_revision ~= self._visual_revision then
+			local visuals<const> = self._render_visuals
+			for index = 1, self._render_visual_count do
+				visuals[index] = nil
+			end
+			self._render_visual_count = 0
+		end
 		if (self._pending_mutation_mask & mutation_clear) ~= 0 then
 			self._pending_mutation_mask = self._pending_mutation_mask - mutation_clear
 			self:_commit_clear()
@@ -1338,18 +1347,24 @@ function world_class:unload_space(space_id, on_unloaded, context)
 	end
 end
 
+function world_class:_queue_object_disposals(objects)
+	-- Queue the whole group before ondespawn hooks run: an encounter's teardown
+	-- may also dispose siblings and mutate this dense membership list.
+	-- Return from object traversal before unload completion can admit a new
+	-- scene, so its temporary object references do not retain the retired one.
+	for index = #objects, 1, -1 do
+		self:mark_for_disposal(objects[index])
+	end
+end
+
 -- Scene ownership is opt-in and independent of the selected update space.
 -- Its dense list includes inactive objects and pending admissions.
 function world_class:unload_objects(objects, on_unloaded, context)
-	-- Queue the whole group before ondespawn hooks run: an encounter's teardown
-	-- may also dispose siblings and mutate this dense membership list.
 	local own_barrier<const> = not self._mutation_barrier_open
 	if own_barrier then
 		self:_open_mutation_barrier()
 	end
-	for index = #objects, 1, -1 do
-		self:mark_for_disposal(objects[index])
-	end
+	self:_queue_object_disposals(objects)
 	if on_unloaded ~= nil then
 		self:_after_disposals(on_unloaded, context)
 	end

@@ -7,13 +7,16 @@ water.__index = water
 
 function water.new(spec, rows, assets, tiles)
     local self<const> = setmetatable({groups={}, origin=spec.origin_column or 0, hold=spec.ticks_per_pose},water)
+    local width<const>,height<const> = #rows[1],#rows
+    -- Foreground admission is complete. Water is the final numeric-map
+    -- consumer; actor admission uses the separate native symbol rows.
+    for y=1,spec.first_row-1 do rows[y]=nil end
     for _,frames in pairs(spec.frames) do
         for pose=1,#frames do frames[pose]=image.resolve(frames[pose]) end
     end
     local sequences<const> = {}
     for id,name in ipairs(assets) do sequences[id]=spec.frames[name] end
-    local width<const> = #rows[1]
-    for y=spec.first_row,#rows do
+    for y=spec.first_row,height do
         local row<const> = rows[y]
         for x=1,width do
             local frames<const> = sequences[row[x]]
@@ -31,6 +34,7 @@ function water.new(spec, rows, assets, tiles)
                 group[n+3]=frames
             end
         end
+        rows[y]=nil
     end
     return self
 end

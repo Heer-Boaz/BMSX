@@ -26,7 +26,7 @@ function stage_tilemap_v2.resolve(data)
         fail('tile_ids must contain tile_rows numeric arrays')
     end
     if type(catalog) ~= 'table' or #catalog == 0 then
-        fail('tile_assets must be an ordered array of asset names')
+        fail('tile_assets must be an ordered array of native names or bank tile IDs')
     end
     if type(symbols) ~= 'string' or #symbols ~= #catalog then
         fail('tile_symbols must contain one native symbol per tile asset')
@@ -40,8 +40,14 @@ function stage_tilemap_v2.resolve(data)
         fail('tape_length_tiles must equal the row width, at least 32')
     end
     for id = 1, #catalog do
-        if type(catalog[id]) ~= 'string' or #catalog[id] == 0 then
-            fail('tile_assets[' .. tostring(id) .. '] must be a nonempty asset name')
+        local asset<const> = catalog[id]
+        if type(asset) == 'number' then
+            if data.tile_banks == nil or asset % 1 ~= 0 or asset < 1
+            or asset > data.tile_banks.tile_count then
+                fail('invalid bank tile ID for tile_assets[' .. tostring(id) .. ']')
+            end
+        elseif type(asset) ~= 'string' or #asset == 0 then
+            fail('tile_assets[' .. tostring(id) .. '] must name an image or bank tile')
         end
         local symbol<const> = string_sub(symbols, id, id)
         if string_find(supported_symbols, symbol, 1, true) == nil then

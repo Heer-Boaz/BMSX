@@ -5,6 +5,7 @@ local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
 local stage_tiles_component<const> = require('stage_tiles_component')
+local tile_art<const> = require('tile_art')
 local world<const> = require('cartlib/world/world')
 local stage_scroll_follower_component<const> = require('stage_scroll_follower_component')
 require('constants')
@@ -387,10 +388,31 @@ function stage:advance_actor_spawns(column)
 	self.actor_spawn_index = index
 end
 
+function stage:build_background(background, width)
+	local tiles<const> = self.background_tiles
+	local rows<const> = background.rows
+	local art<const> = background.tile_assets
+	tiles:configure(width, #rows, self.tile_size, self.tile_art)
+	for y = 1, #rows do
+		local row<const> = rows[y]
+		for index = 1, #row, 2 do
+			tiles:admit_tile(row[index], y, art[row[index + 1]])
+		end
+		-- The retained row owns the resolved sources now. Release decoded
+		-- admission data before loading the foreground and animation views.
+		rows[y] = nil
+	end
+	background.rows = nil
+	background.tile_assets = nil
+	self.star_spans = background.star_spans
+	self.night_sky_height = background.night_sky_height
+end
+
 function stage:build_tape()
 	local stage_data<const> = bin.decode(assets.data_nemesis_s_stage_addr, stage_asset_id)
 	local map_rows<const>, numeric_rows<const>, numeric_assets<const> = stage_tilemap_v2.resolve(stage_data)
 	self:apply_stage_config(stage_data)
+	self.tile_art = tile_art.new(stage_data.tile_banks)
     -- Blank spawn markers keep their spawn role while exposing the native stars.
     local numeric_art=numeric_assets
     if stage_data.sky_actor_ids then
@@ -404,8 +426,12 @@ function stage:build_tape()
 
 	self.tile_rows = height
 	self.tape_length_tiles = width
+	local background<const> = stage_data.background
+	if background then
+		self:build_background(background, width)
+	end
 	local stage_tiles<const> = self.stage_tiles
-	stage_tiles:configure(width, height, self.tile_size)
+	stage_tiles:configure(width, height, self.tile_size, self.tile_art)
 	-- The native role decoder supplies one collision bit per tile. Keep those
 	-- bits in row words so longer stages do not retain a Lua value per cell.
 	self.solid_tape = new_rows((width + 31) // 32, height, 0)
@@ -586,6 +612,7 @@ function stage:reset_runtime()
 	local start_column<const> = self.start_column
 	self.left_tile = start_column + 1
 	self.stage_tiles:set_visible_columns(self.left_tile, self.tile_columns + 2)
+	self.background_tiles:set_visible_columns(self.left_tile, self.tile_columns + 2)
 	if self.water then self.water:reset(self.left_tile,self.tile_columns+2) end
     if self.harbor then self.harbor:reset(self.left_tile-1) end
 	self.tape_head = self.left_tile + self.tile_columns - 1
@@ -656,6 +683,7 @@ function stage:advance_tape()
 
 	self.left_tile = self.left_tile + 1
 	self.stage_tiles:set_visible_columns(self.left_tile, self.tile_columns + 2)
+	self.background_tiles:set_visible_columns(self.left_tile, self.tile_columns + 2)
 	if self.water then self.water:show(self.left_tile,self.tile_columns+2) end
     if self.harbor then self.harbor:show(self.left_tile-1) end
 	self.tape_head = self.left_tile + self.tile_columns - 1
@@ -770,6 +798,44 @@ function stage:first_solid_tile_offset(screen_x, screen_y, tile_count)
 	return tile_count
 end
 
+-- Projectile probes retain their normal terrain stopping rule. A hit also
+-- reaches the animated load that owns that cell, so its art and solid bits
+-- are removed together instead of leaving an invisible obstruction.
+local cargo_hit_feedback<const> = function(self,cargo,screen_x,screen_y)
+    self.scene:spawn(cargo.health>0 and ids_small_explosion_def or ids_large_explosion_def,{
+        position={x=screen_x-self.tile_size,y=screen_y-self.tile_size},stage=self,
+    })
+    self.events:emit(cargo.health>0 and 'enemy.structure.hit' or 'enemy.structure.destroyed')
+end
+
+function stage:receive_projectile_impact(projectile, screen_x, screen_y, tile_offset)
+    if not self.harbor then return end
+    local pose_x<const>,pose_y<const> = self:get_global_position()
+    local hit_x<const> = screen_x+tile_offset*self.tile_size
+    local map_x<const> = ((hit_x-pose_x+self.total_scroll_px)//self.tile_size)+1
+    local map_y<const> = ((screen_y-pose_y)//self.tile_size)+1
+    local cargo<const> = self.harbor:hit_tile(map_x,map_y,projectile)
+    if not cargo then return end
+    cargo_hit_feedback(self,cargo,hit_x,screen_y)
+    return true
+end
+
+function stage:receive_projectile_blast(projectile,width,height)
+    if not self.harbor then return end
+    local pose_x<const>,pose_y<const> = self:get_global_position()
+    local left<const> = projectile.x-pose_x+self.total_scroll_px
+    local top<const> = projectile.y-pose_y
+    for y=(top//self.tile_size)+1,((top+height-1)//self.tile_size)+1 do
+        for x=(left//self.tile_size)+1,((left+width-1)//self.tile_size)+1 do
+            local cargo<const> = self.harbor:hit_tile(x,y,projectile)
+            if cargo then
+                cargo_hit_feedback(self,cargo,(x-1)*self.tile_size-self.total_scroll_px+pose_x,
+                    (y-1)*self.tile_size+pose_y)
+            end
+        end
+    end
+end
+
 -- Returns the zero-based offset of the first solid tile in a vertical run,
 -- or the number of in-bounds tiles when the run reaches the playfield edge.
 -- Stage-relative beams retain this result once because their map column stays
@@ -806,7 +872,8 @@ end
 
 function stage:ctor()
 	self.solid_tape = {}
-	self.stage_tiles = self:get_component(stage_tiles_component)
+	self.stage_tiles = self:get_component(stage_tiles_component, 'tile_layer')
+	self.background_tiles = self:get_component(stage_tiles_component, 'background')
 end
 
 local define_stage_fsm<const> = function()
@@ -844,6 +911,9 @@ local register_stage_definition<const> = function()
 		def_id = ids_stage_def,
 		class = stage,
 		components = {
+			function(owner)
+				return stage_tiles_component.new(owner, { order = 14 }, 'background')
+			end,
 			stage_tiles_component.new,
 			fsm_component.factory({ ids_stage_fsm }),
 		},

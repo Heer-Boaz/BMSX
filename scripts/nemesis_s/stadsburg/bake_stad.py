@@ -215,7 +215,7 @@ def main():
                 tile = image.crop((x * 8, y * 8, x * 8 + 8, y * 8 + 8))
                 if not tile.getbbox() and changed_row is None:
                     continue
-                symbol = '#'
+                symbol = item['stage_symbols'][y] if 'stage_symbols' in item else item.get('stage_symbol', '#')
                 key = tile.tobytes(), symbol
                 if key not in pixels:
                     tile_id = next_id

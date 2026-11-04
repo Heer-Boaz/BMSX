@@ -1,7 +1,7 @@
 """Compile Stadsburg's wind and cargo poses on the native 8×8 grid."""
 import json
 from PIL import Image
-from bake_stadsgroen import assembled, greenery_poses, greenery_steps, TREE_BRANCHES
+from bake_stadsgroen import assembled, greenery_poses, greenery_steps, ASSETS, TREE_NAMES
 
 # Coordinates in two adjacent characters, measured from the leeward roof edge.
 # The trailing grains lift first; the last few fall apart at the end of the gust.
@@ -22,6 +22,8 @@ def compile_harbor(root, plan, prefabs, tiles, entries, cells, placements, palet
     blank = tiles[1]; patterns = []; ids = {}; variants = {}; clips = []
     sources = {e['asset']:tiles[k] for k,e in entries.items()}
     wind_bank = []
+    cargo_assets = {entries[k]['asset'] for row in prefabs['loaded_hoist_right']['tiles'][5:9]
+                    for k in row if k is not None}
 
     def pattern(name):
         if name is None: return 0
@@ -45,17 +47,19 @@ def compile_harbor(root, plan, prefabs, tiles, entries, cells, placements, palet
             wind_bank.append((name, im))
         return variants[key]
 
-    def add_clip(label, positions, poses, durations, start, end, once=False, moving=()):
+    def add_clip(label, positions, poses, durations, start, end, once=False, moving=(), cargo_health=None):
         # positions are in world tiles. Each pose provides only the departures
         # from the authored map. Zero resolves to the native empty map cell.
         group = []
         for x,y in sorted(positions, key=lambda p:(p[1],p[0])):
             base = original(cells[y][x]); paths = [pattern(p.get((x,y),base)) for p in poses]
-            if len(set(paths))>1:
+            if len(set(paths))>1 or (cargo_health is not None and base in cargo_assets):
                 assert paths[0]==pattern(base)
                 group.append([x+1,y+1,int((x,y) in moving),*paths])
         assert group and all(1<=pose<=len(poses) and ticks>0 for pose,ticks in durations)
-        clips.append(dict(label=label,start=start,end_column=end,once=once,cells=group,steps=durations))
+        clip=dict(label=label,start=start,end_column=end,once=once,cells=group,steps=durations)
+        if cargo_health is not None:clip['max_health']=cargo_health
+        clips.append(clip)
 
     settings=plan['animations']; snow_sites=settings['snow_edges']; samples={}
     for place in placements:
@@ -92,13 +96,13 @@ def compile_harbor(root, plan, prefabs, tiles, entries, cells, placements, palet
                 im=frame.crop((8*u,8*v,8*u+8,8*v+8))
                 phase[cx,cy]=baked(im,cells[cy][cx])
             poses.append(phase)
-        add_clip('linde',positions,poses,greenery_steps('compact_winterlinde',ox,plan['harbor']['art_origin']),ox-31,ox+4)
-        samples['linde']=([ox,oy,4,6],poses)
+        add_clip('linde',positions,poses,greenery_steps('compact_winterlinde',ox,plan['harbor']['art_origin']),ox-31,ox+drawings[0].width//8)
+        samples['linde']=([ox,oy,drawings[0].width//8,tree.height//8],poses)
 
     greenery_proof=[]
     for layer in greenery_layers:
         name=layer['prefab'];x=layer['x'];positions=layer['positions'];poses=[]
-        fixed=1 if name=='sneeuwstruik' else 2 if name=='sneeuwhaag' else 12 if name=='winterlinde_stil' else 8
+        fixed=ASSETS[name]['fixed_lower_rows']
         fixed_y=layer['baseline']-fixed
         for raw_pose in layer['poses']:
             phase={}
@@ -119,8 +123,8 @@ def compile_harbor(root, plan, prefabs, tiles, entries, cells, placements, palet
         samples.setdefault('groen_'+name,(layer['bounds'],poses))
         greenery_proof.append({'label':label,'prefab':name,'column':x,'pixel_origin':layer['pixel_origin'],
                                'poses':len(poses),'cycle_updates':sum(ticks for pose,ticks in durations),
-                               'changed_native_cells':len(positions),'max_horizontal_shift':2 if name=='winterlinde_stil' else 1,
-                               'vertical_shift':1 if name in TREE_BRANCHES else 0,
+                               'changed_native_cells':len(positions),'max_horizontal_shift':1,
+                               'vertical_shift':1 if name in TREE_NAMES else 0,
                                'fixed_lower_rows':fixed,'trunk_and_ground_unchanged':True,
                                'rest_matches_stage':True,'max_colors_per_8x1':2,
                                'fixed_background_rows':layer['background_rows']})
@@ -128,10 +132,9 @@ def compile_harbor(root, plan, prefabs, tiles, entries, cells, placements, palet
         'new_clips':greenery_proof,'original_linden_clip':'linde','greenery_clips':len(greenery_proof)+1,
         'runtime_module':'carts/nemesis_s/havenanimatie.lua',
         'runtime_module_unchanged':True,'background_is_not_translated':True,
-        'tree_motion':'secondary branches rotate around fixed forks with overlapping gust response and separate settling; trunk and main limbs stay fixed',
+        'tree_motion':'native secondary-twig cels share a fixed canvas and root, overlapping gust response and separate settling; masked trunk and main limbs stay fixed',
         'tree_cycle_updates':76,
-        'rigid_masks':{name:'authoring/stadsgroen/rigid_'+('winterlinde_stil' if name=='compact_winterlinde' else name)+'.png'
-                       for name in TREE_BRANCHES},
+        'rigid_masks':{name:ASSETS[name]['rigid_source'] for name in TREE_NAMES},
         'motion_reference':'https://developer.nvidia.com/gpugems/gpugems3/part-i-geometry/chapter-6-gpu-generated-procedural-wind-animations-trees',
     },indent=2,ensure_ascii=False)+'\n')
 
@@ -149,8 +152,8 @@ def compile_harbor(root, plan, prefabs, tiles, entries, cells, placements, palet
         return baked(im,base)
 
     for p in plan['hanging']:
-        if 'travel' not in p:continue
-        ox,y=p['x'],p['y']; x=ox+5; travel=p['travel']; rows=prefabs[p['prefab']]['tiles']
+        if p['prefab']!='loaded_hoist_right':continue
+        ox,y=p['x'],p['y']; x=ox+5; travel=p.get('travel',0); rows=prefabs[p['prefab']]['tiles']
         # Use the actual supporting chain, hook and twelve cargo tiles.
         chain=original(rows[1][5]); hook=original(rows[4][5]); mass=rows[5:9]
         positions={(x,y)}; moving={(cx,cy) for cy in range(y+4,y+9+travel) for cx in range(x-1,x+2)}
@@ -171,10 +174,16 @@ def compile_harbor(root, plan, prefabs, tiles, entries, cells, placements, palet
         # The swept area is free sky in these two spans. Tile roles come from
         # the existing stage cells at rest, including the native chain and hook.
         assert all(cells[cy][cx]==1 for cx,cy in moving if cy>=y+9)
-        rest=pose(0,0);steps=[[rest,1],[pose(0,1),5],[pose(0,2),5],[pose(0,3),9]]
-        for d in range(1,travel+1): steps.append([pose(d,2),6 if d<travel else p['hold']])
-        for d in reversed(range(travel)): steps.append([pose(d,1),7])
-        steps.append([rest,1]);add_clip('lier_'+str(ox),positions,drawings,steps,x-p['engage_at'],x+1,True,moving)
+        rest=pose(0,0);steps=[[rest,1]]
+        if travel:
+            steps.extend([[pose(0,1),5],[pose(0,2),5],[pose(0,3),9]])
+            for d in range(1,travel+1): steps.append([pose(d,2),6 if d<travel else p['hold']])
+            for d in reversed(range(travel)): steps.append([pose(d,1),7])
+            steps.append([rest,1])
+        # Three ordinary shots clear a load within two held-fire intervals.
+        # The stationary hoist has the same damage owner as the two winches.
+        add_clip('lier_'+str(ox),positions,drawings,steps,x-p.get('engage_at',31),x+1,
+                 True,moving,cargo_health=3)
         if travel==4:samples['lier']=([ox,y,8,9+travel],[drawings[i-1] for i in [rest,pose(0,3),pose(2,2),pose(4,2)]])
     clips.sort(key=lambda c:c['start'])
     live={name for name,_ in wind_bank}
@@ -199,4 +208,5 @@ def compile_harbor(root, plan, prefabs, tiles, entries, cells, placements, palet
     # exposes sky. Replacing art then never rebuilds a whole terrain row.
     empty='havenanim_leeg'
     Image.new('RGBA',(8,8)).save(root/'res/img'/(empty+'@atlas=gameplay.png'))
-    return {'empty':empty,'patterns':patterns,'clips':clips}
+    return {'empty':empty,'patterns':patterns,'clips':clips,
+            'cargo_patterns':[pattern(name) for name in sorted(cargo_assets)]}

@@ -100,7 +100,19 @@ function director:enter_title()
 	self.events:emit('title')
 end
 
+function director:release_gameplay_references()
+	self.gameplay = nil
+	self.game_over_curtain = nil
+	self.stage = nil
+	self.players = nil
+	self.player_states = nil
+	self.status_bar = nil
+end
+
 function director:populate_game_start()
+	-- This runs after scene disposal. Drop the retired owner graph before
+	-- instantiating the replacement stage and its retained drawing rows.
+	self:release_gameplay_references()
 	self.frame = 0
 	local player_states<const> = {}
 	local players<const> = {}
@@ -115,6 +127,9 @@ function director:populate_game_start()
 	local members<const> = instance.members
 	local stage<const> = members.stage
 	stage.starfield = members.starfield
+	stage.starfield.stage = stage
+	stage.starfield.star_spans = stage.star_spans
+	stage.starfield.night_sky_height = stage.night_sky_height
 	self.stage = stage
 	self.game_over_curtain = members.game_over_curtain
 	local status_bar<const> = members.status_bar
@@ -196,12 +211,7 @@ function director:grant_full_loadout()
 end
 
 function director:populate_end_demo()
-	self.gameplay = nil
-	self.game_over_curtain = nil
-	self.stage = nil
-	self.players = nil
-	self.player_states = nil
-	self.status_bar = nil
+	self:release_gameplay_references()
 	self.ending = self.scene:spawn(end_demo_module.definition_id, {
 		id = end_demo_module.instance_id,
 		space_id = 'end_demo',

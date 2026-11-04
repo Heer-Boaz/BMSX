@@ -112,8 +112,21 @@ function starfield:scroll()
 	scroll_particles(self.blue_stars, self.scroll_step, self.wrap_width)
 end
 
-local draw_particles<const> = function(component, draw, stars, source, hidden)
+local visible_in_sky<const> = function(owner, star, allow_night_sky)
+	local spans<const> = owner.star_spans
+	if not spans then return true end
+	local stage<const> = owner.stage
+	local column<const> = stage.left_tile - 1 + star.x // stage.tile_size
+	for i = 1, #spans do
+		local span<const> = spans[i]
+		if column >= span[1] and column <= span[2] then return true end
+	end
+	return allow_night_sky and star.y < owner.night_sky_height
+end
+
+local draw_particles<const> = function(component, draw, stars, source, hidden, allow_night_sky)
 	if hidden then return end
+	local owner<const> = component.owner
 	if not component._translation_only then
 		local xx<const>, xy<const>, yx<const>, yy<const> = component.wxx, component.wxy, component.wyx, component.wyy
 		local ox<const>, oy<const> = component.wox, component.woy
@@ -121,14 +134,18 @@ local draw_particles<const> = function(component, draw, stars, source, hidden)
 		local bx<const>, by<const> = yx * source.height, yy * source.height
 		for i = 1, #stars do
 			local star<const> = stars[i]
-			source:draw_affine(draw, ox + xx * star.x + yx * star.y, oy + xy * star.x + yy * star.y,
-				ax, ay, bx, by, 0, 0xffffffff, 0)
+			if visible_in_sky(owner, star, allow_night_sky) then
+				source:draw_affine(draw, ox + xx * star.x + yx * star.y, oy + xy * star.x + yy * star.y,
+					ax, ay, bx, by, 0, 0xffffffff, 0)
+			end
 		end
 		return
 	end
 	for i = 1, #stars do
 		local star<const> = stars[i]
-		source:blit(draw, component.wox + star.x, component.woy + star.y)
+		if visible_in_sky(owner, star, allow_night_sky) then
+			source:blit(draw, component.wox + star.x, component.woy + star.y)
+		end
 	end
 end
 
@@ -136,8 +153,8 @@ local draw_stars<const> = function(component, draw)
 	if component.owner.mill_arena then return end
 	component:resolve_pose()
 	local owner<const> = component.owner
-	draw_particles(component, draw, owner.yellow_stars, yellow_source, owner.yellow_blink)
-	draw_particles(component, draw, owner.blue_stars, blue_source, owner.blue_blink)
+	draw_particles(component, draw, owner.yellow_stars, yellow_source, owner.yellow_blink, false)
+	draw_particles(component, draw, owner.blue_stars, blue_source, owner.blue_blink, true)
 end
 
 local starfield_visual<const> = {}

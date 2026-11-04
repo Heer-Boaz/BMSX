@@ -1,9 +1,24 @@
 schema: nemesis_s.level.v1
 title: De Bevroren Haven
-revision: 30
+revision: 34
 width: 931
 height: 22
 source_commit: d04363ea9a05758eb91b5016f2e082036837813c
+background:
+  night_sky_height: 40
+  blend_columns: 8
+  sources:
+    stad: authoring/achtergrond/winterstad.png
+    werf: authoring/achtergrond/hijswerf.png
+    haven: authoring/achtergrond/haven.png
+  scenes:
+  - {from: 145, to: 443, source: stad, phase: 0}
+  - {from: 443, to: 545, source: werf, phase: 16}
+  - {from: 545, to: 625, source: haven, phase: 0}
+  - {from: 625, to: 689, source: werf, phase: 40}
+  - {from: 689, to: 801, source: haven, phase: 24}
+  - {from: 801, to: 812, source: haven, phase: 8}
+  star_spans: [[0, 144], [829, 930]]
 sections:
 - from: 0
   to: 128
@@ -200,16 +215,16 @@ scenery:
   x: 453
   floor: 20
 - prefab: werf_kelder
-  x: 460
+  x: 458
   floor: 20
 - prefab: werf_trap_rechts
-  x: 468
+  x: 464
   floor: 20
 - prefab: werf_kelder
   x: 607
   floor: 20
 - prefab: werf_trap_rechts
-  x: 615
+  x: 613
   floor: 20
 - prefab: werf_looprand
   x: 625
@@ -224,7 +239,7 @@ scenery:
   x: 670
   floor: 20
 - prefab: werf_trap_rechts
-  x: 678
+  x: 676
   floor: 20
 - prefab: huis_lijstgevel_smal
   x: 149
@@ -255,7 +270,7 @@ scenery:
   floor: 17
 - prefab: stadsburg_trapgevel_met_dakkanon
   x: 431
-  y: 7
+  floor: 17
 - prefab: compact_lamp_snow_66
   x: 447
   floor: 19
@@ -276,19 +291,19 @@ scenery:
   floor: 18
 - prefab: stadsburg_pakhuis_met_dakkanon
   x: 655
-  y: 12
+  floor: 20
 - prefab: compact_lamp_snow_70
   x: 691
   floor: 20
 - prefab: stadsburg_trapgevel_met_dakkanon
   x: 695
-  y: 10
+  floor: 20
 - prefab: haven_loopbrug
   x: 773
   y: 15
 - prefab: stadsburg_brugwachter_met_dakkanon
   x: 792
-  y: 6
+  floor: 15
 - prefab: huis_lijstgevel_smal
   x: 198
   floor: 18
@@ -360,16 +375,16 @@ scenery:
   floor: 18
 - prefab: steamship
   x: 546
-  y: 14
+  y: 16
 - prefab: steamship
   x: 705
-  y: 14
+  y: 16
 - prefab: mooring_post
   x: 545
-  y: 17
+  y: 18
 - prefab: mooring_post
   x: 704
-  y: 17
+  y: 18
 - prefab: winkel_cafe
   x: 539
   floor: 18
@@ -408,7 +423,7 @@ scenery:
   floor: 18
 - prefab: tankstation_voorgrond
   x: 316
-  y: 14
+  y: 15
 - prefab: vrachtwagen_voorgrond_rood
   x: 325
   y: 16
@@ -432,22 +447,22 @@ scenery:
   floor: 18
 - prefab: winkel_cafe
   x: 461
-  floor: 16
+  floor: 17
 - prefab: steegpoort
-  x: 465
-  floor: 16
+  x: 459
+  floor: 17
 - prefab: winkel_cafe
   x: 607
-  floor: 16
+  floor: 17
 - prefab: compact_sneeuwhuis
-  x: 611
-  floor: 16
+  x: 610
+  floor: 17
 - prefab: winkel_cafe
   x: 670
-  floor: 16
+  floor: 17
 - prefab: huis_lijstgevel_breed
-  x: 674
-  floor: 16
+  x: 673
+  floor: 17
 planting_beds:
 - from: 332
   to: 363
@@ -455,7 +470,7 @@ planting_beds:
   purpose: Eén lage, besneeuwde bermrand in zijaanzicht, naast de havenweg
 town_details:
 - prefab: auto_voorgrond_cyaan
-  x: 318
+  x: 317
   floor: 18
   ground_offset: 0
   purpose: Personenauto op hoofdmaat onder de tankstationluifel, vrij van pomp en staanders.
@@ -651,8 +666,8 @@ town_details:
   ground_offset: 0
   snow_join: true
 - prefab: gevelpot_winter
-  x: 460
-  floor: 16
+  x: 458
+  floor: 17
   ground_offset: 0
   snow_join: true
 - prefab: terras_tafel
@@ -968,7 +983,7 @@ encounters:
 - kind: chimney
   at:
   - 395
-  - 13
+  - 15
   role: Eerste verticale laser zonder tweede dreiging.
 - kind: blue_mitre
   at:
@@ -983,7 +998,7 @@ encounters:
 - kind: smoke
   at:
   - 424
-  - 12
+  - 14
   role: Leer de waaier van vijf stijgende rookwolken.
 - kind: blue_mitre
   at:
@@ -992,8 +1007,8 @@ encounters:
   role: Eén losse onderschepper na de rook.
 - kind: chimney
   at:
-  - 435
-  - 10
+  - 434
+  - 13
   role: De tweede laser is in de rechterzijde van een trapgevel gemetseld.
 - kind: turret_blue_floor
   at:
@@ -1112,8 +1127,8 @@ encounters:
   role: Onderschapper boven de dakschoorsteen bij de sluisuitgang.
 - kind: chimney
   at:
-  - 663
-  - 15
+  - 661
+  - 17
   role: Verticale laser tussen de lessenaarsdaken van het sluispakhuis.
 - kind: turret_blue_floor
   at:
@@ -1132,8 +1147,8 @@ encounters:
   role: Beloning na de sluis.
 - kind: smoke
   at:
-  - 699
-  - 13
+  - 698
+  - 16
   role: Rook uit de trapgevel aan de buitenhaven.
 - kind: blue_mitre
   at:
@@ -1178,7 +1193,7 @@ encounters:
 - kind: chimney
   at:
   - 794
-  - 9
+  - 11
   role: Laatste laser in de zijmuur van het brugwachtershuis.
 - kind: red_mitre
   at:
@@ -1365,7 +1380,7 @@ harbor:
     - 540
     - 609
     - 639
-    - 699
+    - 702
     - 773
     verre_pakhuis:
     - 158
@@ -1420,14 +1435,14 @@ kade_mounts:
 animations:
   snow_edges:
     stadsburg_pakhuis_met_dakkanon:
-    - 13
-    - 4
-    stadsburg_trapgevel_met_dakkanon:
-    - 7
-    - 4
-    stadsburg_brugwachter_met_dakkanon:
     - 9
+    - 1
+    stadsburg_trapgevel_met_dakkanon:
     - 5
+    - 3
+    stadsburg_brugwachter_met_dakkanon:
+    - 6
+    - 2
 roads:
 - from: 313
   to: 365
