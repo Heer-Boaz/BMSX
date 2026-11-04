@@ -193,6 +193,24 @@ Run render parity through the TypeScript and C++ headless runtimes:
 npm run test:render-parity
 ```
 
+Run selected Node tests (TypeScript is supported):
+
+```bash
+npm test -- tests/lua/actor_runtime_tools.test.ts
+npm test -- --test-name-pattern='Visual placement composes physical' tests/lua/affine_visuals.test.ts
+```
+
+All test scripts use `scripts/test.sh`: **1 GiB RAM total, no swap** for the
+test process and its ordinary subprocesses. Nested runners share that budget;
+Node suites default to one test file at a time. Build steps preceding the harness
+in npm scripts run separately; ordinary children inherit the harness budget.
+Linux/WSL needs systemd (254 or newer), a running user manager and cgroup v2 memory
+control. A missing or ineffective limit fails the run rather than executing tests
+unbounded. For a custom harness use `npm run test:exec -- <command> [arguments...]`.
+This limits the test cgroup, not the entire agent or user session. Direct commands
+and processes requesting their own systemd units (including browsers and native
+process-scope tests) can run outside it; this is a guardrail, not a sandbox.
+
 Run an explicit scenario test:
 
 ```bash
