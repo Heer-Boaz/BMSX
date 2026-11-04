@@ -90,6 +90,10 @@ world spans that expose the full starfield. They scroll on the same character
 grid as the terrain. `night_sky_height` keeps four existing blue stars in the
 top 40 pixels visible over the town, above the distant skyline. The open night
 sky leaves the flying corridor clear of cloud patterns.
+Their two-ink drawings use lit roof slopes, masonry piers and dark window bays
+to describe the distant buildings. Stone quays use broad horizontal courses;
+ships use hull plates and long strakes. These material-specific marks replace
+the former whole-surface stipple, while black remains the dominant shadow.
 The mill is framed by an intentional black arena; the open approach and
 departure retain the full starfield.
 
