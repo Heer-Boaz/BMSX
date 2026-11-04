@@ -7,8 +7,17 @@ Run these commands from the repository root:
 ```sh
 python -m pip install -r scripts/nemesis_s/stadsburg/requirements.txt
 python scripts/nemesis_s/stadsburg/build_level.py
-npm run build:toolchain:cart -- nemesis_s
+npm run build:toolchain:cart -- nemesis_s --debug
 ```
+
+This produces `dist/nemesis_s.debug.rom` and its matching BIOS. After pulling
+checked-in resource changes, only the cartridge build is needed. In Studio,
+choose **Build cartridge → nemesis_s → Debug**, wait for completion, then use
+that job's **Open published build in new Studio window** action. Building does
+not replace the cartridge already running in another window. Reboot applies
+Lua source edits to that installed cartridge; changed PNG and YAML resources
+require opening the newly built cartridge. A Studio URL with `?build=…` keeps
+selecting that exact build.
 
 `level.yaml` places quays, buildings, street details, water and enemy encounters.
 `prefabs.yaml` assembles the named objects from the stable drawing IDs in
@@ -17,6 +26,12 @@ to `authoring/terreintegels`, which retains drawings not currently used by the m
 The build packs the active drawings into the numeric stage map and compiles the
 water, tree, roof-snow and winch animations. The native terrain roles remain the
 source of collision state.
+
+Loaded hoists have three health points and take damage from the player's
+weapons. Their animation clips own both the visible load and its solid cells;
+destroying a load clears both, while keeping the chain and support. The load
+stays destroyed through later poses and is restored on a stage or checkpoint
+reset. Stationary loaded hoists use the same behavior.
 
 Tree rest drawings, eight native wind cels and fixed trunk/branch masks live in
 `authoring/stad6m`; `authoring/stadsgroen/registratie.json` names those sources.

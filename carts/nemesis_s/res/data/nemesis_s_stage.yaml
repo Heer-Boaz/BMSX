@@ -1,4 +1,4 @@
-source: Stadsburg — De Bevroren Haven R31, authoring/level.yaml
+source: Stadsburg — De Bevroren Haven R32, authoring/level.yaml
 stage_number: 0
 tilemap_version: 2
 tile_size: 8
@@ -2135,6 +2135,7 @@ harbor_animation:
       - 7
     - - 1
       - 1
+    max_health: 3
   - label: lier_475
     start: 459
     end_column: 481
@@ -2531,6 +2532,7 @@ harbor_animation:
       - 7
     - - 1
       - 1
+    max_health: 3
   - label: groen_622
     start: 591
     end_column: 625
@@ -2621,6 +2623,63 @@ harbor_animation:
       - 4
     - - 1
       - 22
+  - label: lier_629
+    start: 603
+    end_column: 635
+    once: true
+    cells:
+    - - 634
+      - 10
+      - 1
+      - 129
+    - - 635
+      - 10
+      - 1
+      - 130
+    - - 636
+      - 10
+      - 1
+      - 131
+    - - 634
+      - 11
+      - 1
+      - 132
+    - - 635
+      - 11
+      - 1
+      - 133
+    - - 636
+      - 11
+      - 1
+      - 134
+    - - 634
+      - 12
+      - 1
+      - 135
+    - - 635
+      - 12
+      - 1
+      - 136
+    - - 636
+      - 12
+      - 1
+      - 137
+    - - 634
+      - 13
+      - 1
+      - 138
+    - - 635
+      - 13
+      - 1
+      - 139
+    - - 636
+      - 13
+      - 1
+      - 140
+    steps:
+    - - 1
+      - 1
+    max_health: 3
   - label: groen_639
     start: 608
     end_column: 641
@@ -2779,3 +2838,16 @@ harbor_animation:
       - 4
     - - 4
       - 5
+  cargo_patterns:
+  - 129
+  - 130
+  - 131
+  - 132
+  - 133
+  - 134
+  - 135
+  - 136
+  - 137
+  - 138
+  - 139
+  - 140

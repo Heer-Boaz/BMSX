@@ -895,11 +895,14 @@ function player:update_bullet(bullet)
 		return
 	end
 	local stage<const> = self.stage
-	if stage:first_solid_tile_offset(
-		bullet.x - player_bullet_collision_backtrack,
-		bullet.y,
-		2
-	) < 2 or stage:first_solid_tile_offset(bullet.x, bullet.y, 2) < 2 then
+	local sample_x = bullet.x - player_bullet_collision_backtrack
+	local collision_offset = stage:first_solid_tile_offset(sample_x, bullet.y, 2)
+	if collision_offset == 2 then
+		sample_x = bullet.x
+		collision_offset = stage:first_solid_tile_offset(sample_x, bullet.y, 2)
+	end
+	if collision_offset < 2 then
+		stage:receive_projectile_impact(bullet, sample_x, bullet.y, collision_offset)
 		self:despawn_slot_projectile(bullet, 'stage_collision')
 	end
 end
@@ -964,6 +967,7 @@ function player:update_laser(laser)
 
 	local collision_offset<const> = self.stage:first_solid_tile_offset(laser.x, laser.y, laser.length_tiles)
 	if collision_offset < laser.length_tiles then
+		self.stage:receive_projectile_impact(laser, laser.x, laser.y, collision_offset)
 		local retained_length<const> = collision_offset - 1
 		if retained_length <= 0 then
 			self:despawn_slot_projectile(laser, 'stage_collision')
@@ -976,7 +980,13 @@ end
 
 function player:update_missile(missile)
 	local stage<const> = self.stage
-	if stage:first_solid_tile_offset(missile.x, missile.y + 8, 2) == 2 then
+	local support_offset<const> = stage:first_solid_tile_offset(missile.x, missile.y + 8, 2)
+	if support_offset < 2
+	and stage:receive_projectile_impact(missile, missile.x, missile.y + 8, support_offset) then
+		self:consume_projectile(missile, 'cargo_collision')
+		return
+	end
+	if support_offset == 2 then
 		missile.sprite = missile.falling_source
 		local x<const> = missile.fraction_x + missile.fall_velocity_x_q8
 		local y<const> = missile.fraction_y + missile.fall_velocity_y_q8
@@ -992,10 +1002,17 @@ function player:update_missile(missile)
 		missile.fraction_y = y & 0xff
 		missile.x = missile.x + (x >> 8)
 		missile.y = missile.y + (y >> 8)
-	elseif stage:first_solid_tile_offset((missile.x + 8) & 0xff, missile.y, 2) < 2 then
-		self:despawn_missile(missile, 'stage_collision')
-		return
 	else
+		local sample_x<const> = (missile.x + 8) & 0xff
+		local collision_offset<const> = stage:first_solid_tile_offset(sample_x, missile.y, 2)
+		if collision_offset < 2 then
+			if stage:receive_projectile_impact(missile, sample_x, missile.y, collision_offset) then
+				self:consume_projectile(missile, 'cargo_collision')
+			else
+				self:despawn_missile(missile, 'stage_collision')
+			end
+			return
+		end
 		missile.sprite = missile.flying_source
 		local x<const> = missile.fraction_x + missile.surface_velocity_x_q8
 		missile.fraction_x = x & 0xff
@@ -1006,8 +1023,13 @@ function player:update_missile(missile)
 		self:despawn_missile(missile, 'screen_edge')
 		return
 	end
-	if stage:first_solid_tile_offset(missile.x, missile.y, 2) < 2 then
-		self:despawn_missile(missile, 'stage_collision')
+	local collision_offset<const> = stage:first_solid_tile_offset(missile.x, missile.y, 2)
+	if collision_offset < 2 then
+		if stage:receive_projectile_impact(missile, missile.x, missile.y, collision_offset) then
+			self:consume_projectile(missile, 'cargo_collision')
+		else
+			self:despawn_missile(missile, 'stage_collision')
+		end
 	end
 end
 
@@ -1077,7 +1099,9 @@ function player:update_uplaser(uplaser)
 		end
 	end
 
-	if self.stage:first_solid_tile_offset(uplaser.x, uplaser.y, uplaser.length_tiles) < uplaser.length_tiles then
+	local collision_offset<const> = self.stage:first_solid_tile_offset(uplaser.x, uplaser.y, uplaser.length_tiles)
+	if collision_offset < uplaser.length_tiles then
+		self.stage:receive_projectile_impact(uplaser, uplaser.x, uplaser.y, collision_offset)
 		self:despawn_slot_projectile(uplaser, 'stage_collision')
 	end
 end
@@ -1133,6 +1157,7 @@ function player:update_weapons()
 			end
 			if missile.type ~= projectile_type_none then
 				if missile.type == projectile_type_napalm_blast then
+					self.stage:receive_projectile_blast(missile, weapons_napalm.blast_width, weapons_napalm.blast_height)
 					set_projectile_collider(
 						pose_x, pose_y,
 						missile,
@@ -1144,6 +1169,14 @@ function player:update_weapons()
 				end
 			end
 		end
+	end
+end
+
+function player:consume_projectile(projectile,reason)
+	if projectile.type == projectile_type_napalm_missile then
+		self:detonate_napalm(projectile)
+	elseif projectile.type ~= projectile_type_napalm_blast then
+		projectile.despawn(self, projectile, reason)
 	end
 end
 
@@ -1162,11 +1195,7 @@ function player:resolve_projectile_overlap(
 		return
 	end
 	if enemy:receive_player_projectile(projectile, enemy_collider_local_id, hit_point) then
-		if projectile.type == projectile_type_napalm_missile then
-			self:detonate_napalm(projectile)
-		elseif projectile.type ~= projectile_type_napalm_blast then
-			projectile.despawn(self, projectile, 'enemy_collision')
-		end
+		self:consume_projectile(projectile, 'enemy_collision')
 	end
 end
 
