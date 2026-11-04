@@ -42,7 +42,12 @@ do_install() {
 	fi
 
 	if [[ "$self" == "$INSTALL_PATH" ]]; then
-	echo "Reeds geïnstalleerd op $INSTALL_PATH"
+	echo "Dit is de geïnstalleerde versie. Start --install vanuit een bronkopie om die te installeren."
+	return 0
+	fi
+
+	if [[ -f "$INSTALL_PATH" ]] && cmp -s "$self" "$INSTALL_PATH"; then
+	echo "Deze versie is al geïnstalleerd op $INSTALL_PATH"
 	return 0
 	fi
 
