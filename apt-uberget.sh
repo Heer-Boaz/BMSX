@@ -76,6 +76,9 @@ main() {
 		usage
 		;;
 	"")
+		if [[ ! "$0" -ef "$INSTALL_PATH" ]]; then
+			printf 'Tip: installeer deze versie globaal met: %q --install\n' "$0"
+		fi
 		run_updates_full
 		;;
 	*)
