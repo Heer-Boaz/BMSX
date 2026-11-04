@@ -22,7 +22,7 @@ SIZE = (512, 160)
 BLACK = (0, 0, 0)
 BLUE = (32, 32, 224)
 WALL_PATTERN = (0b11000000, 0b01000000, 0b00001100, 0b00000100)
-CLOUD_PATTERN = (0b11000000, 0b11000000, 0b00001100, 0b00001100)
+UPPER_WALL_PATTERN = (0b11000000, 0b11000000, 0b00001100, 0b00001100)
 
 
 def line(image, points):
@@ -39,7 +39,7 @@ def wall(image, outline, *, courses=(), windows=(), phase=0):
     # Clustered blue masonry gives the silhouette weight; black stays dominant.
     # The upper roof/wall has more body than its dark lower foundation.
     for y in range(top, bottom):
-        pattern = CLOUD_PATTERN if y < top + 8 else WALL_PATTERN
+        pattern = UPPER_WALL_PATTERN if y < top + 8 else WALL_PATTERN
         for x in range(left, right):
             if ink[x, y] and pattern[(y - top) % 4] & (128 >> ((x + phase) % 8)):
                 pixels[x, y] = BLUE
@@ -58,61 +58,8 @@ def wall(image, outline, *, courses=(), windows=(), phase=0):
         line(image, [(x - 1, y + height), (x + width, y + height)])
 
 
-def cloud(image, x, y, width, profile):
-    """Low stratus masses with native two-pixel clusters and broken undersides."""
-    outline = [(x + px, y + py) for px, py in profile]
-    mask = Image.new('1', SIZE)
-    ImageDraw.Draw(mask).polygon(outline, fill=1)
-    ink = mask.load()
-    pixels = image.load()
-    left, top, right, bottom = mask.getbbox()
-    for yy in range(top, bottom):
-        for xx in range(left, right):
-            if ink[xx, yy] and CLOUD_PATTERN[(yy - y) % 4] & (128 >> ((xx - x) % 8)):
-                pixels[xx, yy] = BLUE
-    # Longer connected bodies anchor the clustered mist, avoiding laser dashes.
-    base = max(py for _, py in profile)
-    for start, length, row in ((width // 5, width // 4, base - 3),
-                              (width * 3 // 5, width // 5, base - 2),
-                              (width // 3, width // 5, base)):
-        for xx in range(x + start, x + start + length):
-            if ink[xx, y + row]:
-                pixels[xx, y + row] = BLUE
-
-
-def winter_clouds(image, variant):
-    if variant == 'city':
-        cloud(image, 17, 52, 128, [(0, 9), (13, 9), (13, 6), (27, 6),
-              (27, 4), (45, 4), (45, 1), (68, 1), (68, 3), (83, 3),
-              (83, 5), (102, 5), (102, 8), (128, 8), (119, 12), (12, 12)])
-        cloud(image, 215, 65, 81, [(0, 5), (16, 5), (16, 2), (35, 2),
-              (35, 0), (48, 0), (48, 3), (63, 3), (63, 5), (81, 5),
-              (74, 9), (6, 9)])
-        cloud(image, 354, 48, 131, [(0, 10), (18, 10), (18, 7), (42, 7),
-              (42, 4), (60, 4), (60, 2), (78, 2), (78, 3), (98, 3),
-              (98, 7), (117, 7), (117, 9), (131, 9), (122, 13), (9, 13)])
-    elif variant == 'wharf':
-        cloud(image, 9, 56, 107, [(0, 7), (17, 7), (17, 4), (31, 4),
-              (31, 1), (56, 1), (56, 3), (78, 3), (78, 5), (107, 5),
-              (96, 10), (7, 10)])
-        cloud(image, 190, 48, 145, [(0, 9), (22, 9), (22, 5), (51, 5),
-              (51, 2), (77, 2), (77, 4), (97, 4), (97, 6), (119, 6),
-              (119, 8), (145, 8), (134, 12), (13, 12)])
-        cloud(image, 399, 65, 95, [(0, 5), (20, 5), (20, 2), (38, 2),
-              (38, 0), (57, 0), (57, 3), (77, 3), (77, 5), (95, 5),
-              (85, 9), (8, 9)])
-    else:
-        cloud(image, 42, 56, 156, [(0, 10), (22, 10), (22, 7), (49, 7),
-              (49, 4), (67, 4), (67, 2), (89, 2), (89, 5), (111, 5),
-              (111, 8), (139, 8), (139, 10), (156, 10), (144, 13), (13, 13)])
-        cloud(image, 310, 63, 135, [(0, 6), (21, 6), (21, 4), (45, 4),
-              (45, 1), (64, 1), (64, 3), (91, 3), (91, 5), (116, 5),
-              (116, 7), (135, 7), (126, 11), (9, 11)])
-
-
 def winterstad():
     image = Image.new('RGB', SIZE, BLACK)
-    winter_clouds(image, 'city')
     # First roof group: a low quay roof, a bell gable, and a broad house.
     wall(image, [(0, 138), (18, 138), (24, 133), (39, 133), (45, 138),
          (57, 138), (57, 143), (0, 143)], phase=3)
@@ -168,7 +115,6 @@ def arch_span(image, x, width, deck):
 
 def hijswerf():
     image = Image.new('RGB', SIZE, BLACK)
-    winter_clouds(image, 'wharf')
     wall(image, [(0, 138), (10, 138), (10, 128), (22, 119), (52, 119),
          (64, 128), (79, 128), (79, 143), (0, 143)],
          courses=[(15, 131, 73)], windows=[(21, 133, 5, 4), (39, 133, 5, 4),
@@ -222,7 +168,6 @@ def hijswerf():
 
 def haven():
     image = Image.new('RGB', SIZE, BLACK)
-    winter_clouds(image, 'harbor')
     # A broken far bank, at a different height from the foreground waterline.
     for points in (
         [(0, 138), (18, 138), (18, 137), (36, 137), (36, 138), (62, 138)],

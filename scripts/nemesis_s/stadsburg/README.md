@@ -88,7 +88,8 @@ The three winter backdrops are editable 512×160 native PNGs in
 bank. `level.yaml` owns their spans, repeat offsets, pixel dissolves and the
 world spans that expose the full starfield. They scroll on the same character
 grid as the terrain. `night_sky_height` keeps four existing blue stars in the
-top 40 pixels visible over the town, above the distant clouds and skyline.
+top 40 pixels visible over the town, above the distant skyline. The open night
+sky leaves the flying corridor clear of cloud patterns.
 The mill is framed by an intentional black arena; the open approach and
 departure retain the full starfield.
 
