@@ -410,3 +410,28 @@ test('a Scene whose occurrence was removed opens only its current canonical sour
 	assert.ok(source instanceof CodeEditorInput && source.workingCopy === f.model);
 	assert.ok(navigationState.activeOwner === sourceGroup);
 });
+
+for (const floating of [false, true]) for (const command of ['editor.source', 'editor.sourceToSide'] as const)
+	test(`Main ${command} retains its Scene-owned neighbor when the existing Source group is active (floating: ${floating})`, async t => {
+		const f = await fixture(t), sceneGroup = f.parts.findGroup(f.primary.input)!;
+		const sourceGroup = f.parts.sideGroup(sceneGroup); assert.ok(sourceGroup !== undefined);
+		await f.editor.navigation.openResource(sourceGroup, f.resource, { editorId: WORKBENCH_TEXT_EDITOR_ID });
+		const source = sourceGroup.model.activeTab; assert.ok(source instanceof CodeEditorInput);
+		if (floating) {
+			assert.equal(f.main.setRegionPlacement('hierarchy', 'floatingWindow'), true); f.update();
+		}
+		const origin = floating ? f.main.regions.hierarchy.window.actionFocusTarget : f.primary.hierarchy.control.focusTarget;
+		assert.equal(origin.focus(), true);
+		assert.ok(f.parts.activeGroup === sourceGroup, 'companion focus does not change the last active document group');
+		const groups = [...f.parts.groups], inputs = groups.map(group => [...group.model.tabs]);
+		const selected = f.primary.authoring.selection;
+		const request = t.mock.method(f.editor.navigation, 'openSource');
+		f.editor.commands.execute(command, origin);
+		assert.equal(request.mock.callCount(), 1); assert.ok(await request.mock.calls[0].result !== undefined);
+		assert.ok(f.parts.activeGroup === sourceGroup && sourceGroup.model.activeTab === source);
+		assert.ok(sceneGroup.panes.activePane?.input === f.primary.input, 'Source keeps the owning Scene viewport visible');
+		assert.equal(f.parts.groups.length, groups.length);
+		assert.ok(groups.every((group, index) => f.parts.groups[index] === group && group.model.tabs.length === inputs[index].length
+			&& group.model.tabs.every((input, position) => input === inputs[index][position])));
+		assert.ok(f.main.primary === f.primary && f.primary.authoring.selection === selected);
+	});

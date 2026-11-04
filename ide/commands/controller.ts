@@ -174,7 +174,7 @@ export class IdeCommandController {
 			const placement = command === 'editor.sourceToSide' ? 'side' : 'default';
 			const main = this.editor.mainWorkspace;
 			if (documentGroup === undefined) {
-				if (target !== null && main.canOpenSource(target)) void this.editor.navigation.openSource(main, { placement, target, reference: group });
+				if (target !== null && main.canOpenSource(target)) void this.editor.navigation.openSource(main, { placement, target, reference: originGroup });
 				return;
 			}
 			const pane = documentGroup.panes.activePane;
