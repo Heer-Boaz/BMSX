@@ -1,16 +1,19 @@
+import { ScenePrimaryClient } from '../../../ide/workbench/contrib/scene_editor/primary_client';
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
 import { openSceneFixture, selectMember } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
 
-/** Source removal, draft settlement and selection retirement do not require a game cart. */
+/** Hybrid workbench-command removal preserves real field admission and canonical source identity. */
 export async function testSceneMemberRemoval(test: StudioFixture): Promise<void> {
-	const { ide, frame, press, click, cycles, movePointer, setPointerButton } = test;
+	const { ide, frame, press, click, cycles } = test;
 	const { model, scene, close } = await openSceneFixture(test, 'removal');
 	const original = model.buffer.getText(), before = cycles(), media = ide.sources.currentBlua32Media;
 	await selectMember(test, scene, 2);
 	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('remove: actual Scene controls required');
-	const x = pane.control.details.controls[0], field = scene.view.hierarchy.outline.roots[0].children[2].element.source;
+	const primary = ide.editor.mainWorkspace.primary;
+	if (!(primary instanceof ScenePrimaryClient)) throw new Error('Scene document must admit its actual companion controls');
+	const x = primary.details.control.controls[0], field = scene.view.hierarchy.outline.roots[0].children[2].element.source;
 	const start = model.buffer.offsetAt(field.start.line - 1, field.start.column - 1);
 	const end = model.buffer.offsetAt(field.end.line - 1, field.end.column);
 	const member = original.slice(start, end), leading = '-- retained documentation\n\t', trailing = ' -- retained exterior comment\n\t';
@@ -18,22 +21,15 @@ export async function testSceneMemberRemoval(test: StudioFixture): Promise<void>
 	model.pushEditOperations([{ offset: start, deleteLength: end - start, text: leading + grouped + trailing }]); await frame();
 	await selectMember(test, scene, 2);
 	const authored = model.buffer.getText(), removed = original.slice(0, start) + leading + trailing + original.slice(end + 1);
-	const remove = scene.view.actionBar.items.find(item => item.command === 'sceneEditor.removeMember')!;
-	await click(scene.view.details.properties[0].bounds); await press('Minus'); await click(remove.bounds);
+	await click(scene.view.details.properties[0].bounds); await press('Minus'); ide.editor.commands.execute('sceneEditor.removeMember'); await frame();
 	check(model.buffer.getText() === authored && x.pending && x.field.focusTarget.hasFocus, 'remove: an invalid field draft vetoes source removal');
 	await press('Escape'); await click(scene.view.details.properties[0].bounds); await press('Digit1'); await press('Digit8');
-	movePointer(remove.bounds); await frame(); setPointerButton('pointer_primary', true); await frame();
-	check(model.buffer.getText() === authored && x.pending, 'remove: arming a toolbar action does not publish its field draft');
-	const layout = scene.view.hierarchy.outline.layout;
-	movePointer({ left: layout.contentLeft, right: layout.contentRight, top: layout.contentTop, bottom: layout.contentBottom });
-	setPointerButton('pointer_primary', false); await frame();
-	check(model.buffer.getText() === authored && x.pending, 'remove: cancelling the press retains its unsubmitted field');
-	await click(remove.bounds, 8);
+	ide.editor.commands.execute('sceneEditor.removeMember'); await frame();
 	check(model.buffer.getText() === removed && scene.view.authoring.selection === undefined && x.field.readOnly && !x.pending,
-		'remove: one held action settles the draft, removes complete syntax, keeps exterior trivia and retires selected field authority');
+		'remove: one captured command settles the draft, removes complete syntax, keeps exterior trivia and retires selected field authority');
 	await press('Tab'); await press('Digit7');
 	check(model.buffer.getText() === removed && !x.field.focusTarget.hasFocus, 'remove: a retired member has no keyboard edit route');
-	await press('Escape'); // Return from the toolbar to document command context.
+	await press('Escape'); // Return to the document command context.
 	await press('ControlLeft', 'KeyZ');
 	check(scene.view.authoring.selection === undefined, 'remove: Undo restores source without reviving selection');
 	await selectMember(test, scene, 2);
@@ -44,14 +40,14 @@ export async function testSceneMemberRemoval(test: StudioFixture): Promise<void>
 	check(model.buffer.getText() === original, 'remove: setup is an ordinary source edit');
 	const duplicate = original.indexOf("member_id = 'second'") + "member_id = ".length;
 	model.pushEditOperations([{ offset: duplicate, deleteLength: "'second'".length, text: "'first'" }]); await frame();
-	await selectMember(test, scene, 0); await click(remove.bounds);
+	await selectMember(test, scene, 0); ide.editor.commands.execute('sceneEditor.removeMember'); await frame();
 	check(scene.view.hierarchy.outline.roots[0].children.length === 3 && scene.view.authoring.selection === undefined,
 		'remove: a surviving namesake cannot inherit the deleted member identity');
 	await press('ControlLeft', 'KeyZ');
 	check(scene.view.authoring.selection === undefined, 'remove: inverse source edits do not resurrect command authority');
 	await press('ControlLeft', 'KeyZ');
 	for (let index = 3; index >= 0; index--) {
-		await selectMember(test, scene, index); await click(remove.bounds);
+		await selectMember(test, scene, index); ide.editor.commands.execute('sceneEditor.removeMember'); await frame();
 		check(scene.view.hierarchy.outline.roots[0].children.length === index && scene.view.authoring.selection === undefined,
 			'remove: each accepted deletion leaves no implicit next target');
 	}

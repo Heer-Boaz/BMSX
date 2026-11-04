@@ -1,3 +1,4 @@
+import { ScenePrimaryClient } from '../../../ide/workbench/contrib/scene_editor/primary_client';
 
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 
@@ -21,7 +22,9 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	await selectMember(test, scene, 2);
 	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('quick pick: actual Scene Editor required');
-	const x = pane.control.details.controls[0];
+	const primary = ide.editor.mainWorkspace.primary;
+	if (!(primary instanceof ScenePrimaryClient)) throw new Error('Scene document must admit its actual companion controls');
+	const x = primary.details.control.controls[0];
 	const picker = ide.editor.quickInput;
 	await click(scene.view.details.properties[0].bounds);
 	const codeTop = editorViewState.editorAreaTop;

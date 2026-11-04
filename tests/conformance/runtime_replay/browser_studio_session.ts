@@ -1,3 +1,4 @@
+import { ScenePrimaryClient } from '../../../ide/workbench/contrib/scene_editor/primary_client';
 import { serializedEditorGroups } from '../../helpers/serialized_editor_parts';
 import { setFieldText } from '../../../ide/editor/ui/inline/text_field';
 import { createWebGLBackend, createWebGPUBackend } from '../../../hosts/browser/backend';
@@ -65,7 +66,7 @@ async function prepare(test: StudioFixture): Promise<SessionExpectation> {
 	if (sourceInput.kind !== 'code_editor') throw new Error('session: original source input required');
 	const sourceSelection = captureCodeEditorView(sourceInput);
 	const sourceGroup = ide.editor.editorParts.activeGroup;
-	const scene = new SceneEditorInput(model, ide.editor.sceneEditor.documents);
+	const scene = new SceneEditorInput(model, ide.editor.sceneEditor.documents, ide.sources.catalog);
 	scene.view.refresh(); selectSceneOutlineRow(scene.view.hierarchy, 1);
 	ide.editor.editorParts.main.activeGroup.openEditor(scene); await test.frame();
 	for (const [index, presentation] of [[0, 'graph'], [1, 'graph'], [2, 'state-graph']] as const) {
@@ -127,9 +128,9 @@ async function restore(test: StudioFixture, expected: SessionExpectation): Promi
 	check(model.lastSavedSource === expected.savedSource, 'session: dirty recovery retains the actual saved Lua baseline, not its draft or packaged ROM source');
 	check(model.persistedBaseline === expected.savedSource, 'session: recovered Save authority retains the acknowledged canonical bytes');
 	const siblings = ide.editor.editorParts.groups.flatMap(group => [...group.model.tabs]).filter(tab =>
-		(tab.kind === 'behavior_lens' || tab.kind === 'scene_editor' || tab.kind === 'code_editor')
+		(tab.kind === 'behavior_lens' || tab instanceof SceneEditorInput || tab.kind === 'code_editor')
 		&& tab.workingCopy.resource.contextId === model.resource.contextId && tab.workingCopy.resource.path === model.resource.path);
-	check(siblings.every(tab => (tab.kind === 'behavior_lens' || tab.kind === 'scene_editor' || tab.kind === 'code_editor')
+	check(siblings.every(tab => (tab.kind === 'behavior_lens' || tab instanceof SceneEditorInput || tab.kind === 'code_editor')
 		&& tab.workingCopy === model), 'session: views share one resource-owned working copy');
 	check([...editorTextModelService.models].filter(candidate => candidate.resource.contextId === model.resource.contextId
 		&& candidate.resource.path === model.resource.path).length === 1, 'session: no shadow editor model');
@@ -150,13 +151,15 @@ async function restore(test: StudioFixture, expected: SessionExpectation): Promi
 			'session: first BT activation restores the selected occurrence and pan/zoom in its owning part');
 	}
 	const scene = ide.editor.editorParts.main.activeGroup.model.tabs.find(input => input.kind === 'scene_editor')!;
-	if (scene.kind !== 'scene_editor') throw new Error('session: scene input required');
+	if (!(scene instanceof SceneEditorInput)) throw new Error('session: scene input required');
 	await test.clickTab(scene.id);
 	check(JSON.stringify(captureSceneEditorView(scene.view)) === JSON.stringify(expected.scene), 'session: cold scene layout preserves selected source member');
 	// Pagehide observes accepted model state, not the current inline draft.
 	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('session: actual SceneEditorPane required');
-	const field = pane.control.details.controls[0].field;
+	const primary = ide.editor.mainWorkspace.primary;
+	if (!(primary instanceof ScenePrimaryClient)) throw new Error('Scene document must admit its actual companion controls');
+	const field = primary.details.control.controls[0].field;
 	field.focusTarget.focus(); setFieldText(field, '-', true); // invalid draft, not an accepted source edit
 	const version = model.version;
 	persistWorkspaceSessionLocally();

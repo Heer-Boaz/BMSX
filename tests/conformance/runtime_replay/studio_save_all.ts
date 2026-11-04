@@ -9,20 +9,27 @@ import { openSceneFixture } from './studio_scene_source';
 /** Ordinary editing and Save All address canonical working copies, independently of document presentation. */
 export async function testStudioSaveAll(test: StudioFixture): Promise<void> {
 	const { ide } = test, editor = ide.editor, parts = editor.editorParts, panel = editor.resourcePanel;
-	const { model, resource, close } = await openSceneFixture(test, 'save-all', [
+	const originalGroups = new Set(parts.groups);
+	const { resource, close } = await openSceneFixture(test, 'save-all', [
 		['save_alpha.lua', 'return { alpha = true }\n'], ['save_beta.lua', 'return { beta = true }\n'],
 	]);
 	await close();
 	panel.show(); panel.queuePendingSelection(resource); panel.applyPendingSelection(); await test.frame();
 	await test.press('ArrowRight'); await test.press('ArrowDown'); await test.press('ContextMenu');
 	await test.clickContextCommand('resources.open');
+	await test.until(() => {
+		const primary = editor.mainWorkspace.primary;
+		return primary instanceof ScenePrimaryClient && primary.input.resource === resource;
+	}, 'Files: the exact Scene document admits its authoring companions');
 	const primary = editor.mainWorkspace.primary;
 	if (!(primary instanceof ScenePrimaryClient)) throw new Error('Save All: the synthetic Scene must own its actual Main presentation');
+	const model = primary.authoring.workingCopy;
+	await test.runPaletteCommand('Workspace: Focus Hierarchy');
 	await test.press('ArrowDown'); await test.press('Enter'); await test.press('Home');
 	const alpha = ide.sources.catalog.resolveResource({ contextId: resource.contextId, path: 'save_alpha.lua' })!;
 	const beta = ide.sources.catalog.resolveResource({ contextId: resource.contextId, path: 'save_beta.lua' })!;
 	const views: CodeEditorInput[] = [];
-	for (const [file, beside] of [[alpha, false], [alpha, true], [beta, false]] as const) {
+	for (const [file, beside] of [[alpha, true], [alpha, true], [beta, false]] as const) {
 		const previousGroup = parts.activeGroup;
 		await test.runPaletteCommand('Go: Go to File');
 		await test.clipboard.writeText(file.path); await test.press('ControlLeft', 'KeyV');
@@ -41,8 +48,8 @@ export async function testStudioSaveAll(test: StudioFixture): Promise<void> {
 	const [alphaView, duplicate, betaView] = views, mainGroup = parts.findGroup(alphaView)!, side = parts.findGroup(betaView)!;
 	check(alphaView !== duplicate && parts.findGroup(duplicate) === side && side !== mainGroup
 		&& alphaView.workingCopy === duplicate.workingCopy && side.model.activeTab === betaView
-		&& parts.groups.every(group => group.model.tabs.every(input => input.resource !== resource)),
-		'Save All: inactive and duplicate Source views share one model, while Main has no document view');
+		&& parts.findGroup(primary.input) !== undefined && primary.input.workingCopy === model,
+		'Save All: inactive and duplicate Source views share one model, while the Scene remains owned by its visible document');
 	await test.runPaletteCommand('View: Focus Files'); await test.press('Home');
 	check(panel.files.selectedNode?.element.kind === 'root',
 		'Save All: ordinary Files navigation establishes independent container-reading intent, not an edited declaration fingerprint');
@@ -71,9 +78,9 @@ export async function testStudioSaveAll(test: StudioFixture): Promise<void> {
 				previous: ide.textFileSaves.latestOperation(workingCopy) }));
 			check(draft.pending && model.version === mainVersion && sources.every(entry => entry.workingCopy.dirty)
 				&& alphaView.workingCopy === duplicate.workingCopy
-				&& side.model.activeTab === betaView && parts.groups.every(group => group.model.tabs.every(input => input.resource !== resource)),
-				'Save All: native editing retains an uncommitted Main draft without a Source tab and two dirty sources with an inactive duplicate');
-			const selection = primary.consumer.selectionRevision, files = JSON.stringify(panel.serialize());
+				&& side.model.activeTab === betaView && parts.findGroup(primary.input) !== undefined && primary.input.workingCopy === model,
+				'Save All: native editing retains an uncommitted Main draft in its Scene document and two dirty text sources with an inactive duplicate');
+			const selection = primary.authoring.selectionRevision, files = JSON.stringify(panel.serialize());
 			const groups = parts.groups.map(group => ({ group, active: group.model.activeTab, inputs: [...group.model.tabs] }));
 			if (step === 0 || step === 3) {
 				await test.press('F10');
@@ -110,7 +117,7 @@ export async function testStudioSaveAll(test: StudioFixture): Promise<void> {
 				&& entry.group.model.activeTab === entry.active && entry.group.model.tabs.length === entry.inputs.length
 				&& entry.group.model.tabs.every((input, index) => input === entry.inputs[index])),
 				'Save All: persistence keeps exact group and document-input topology');
-			check(editor.mainWorkspace.primary === primary && primary.consumer.selectionRevision === selection,
+			check(editor.mainWorkspace.primary === primary && primary.authoring.selectionRevision === selection,
 				'Save All: persistence keeps the actual Main subject and selection intent');
 			check(editor.mainWorkspace.activity === activity && editor.mainWorkspace.activityDisplayed === activityDisplayed,
 				'Save All: persistence keeps the independent activity presentation');
@@ -123,7 +130,14 @@ export async function testStudioSaveAll(test: StudioFixture): Promise<void> {
 		}
 		await test.press('ControlLeft', 'ShiftLeft', 'KeyT');
 	}
-	await test.runPaletteCommand('Editor: Close All Editors'); await test.runPaletteCommand('Workspace: Clear Primary Authoring');
-	await test.runPaletteCommand('Window: Focus Main Workspace'); await test.runPaletteCommand('Editor Groups: Close Group');
+	await test.runPaletteCommand('Editor: Close All Editors');
+	await test.until(() => editor.mainWorkspace.primary === undefined, 'Save All: closing the Scene document retires its companions');
+	for (const group of [side, mainGroup].filter(group => !originalGroups.has(group))) {
+		await test.runPaletteCommand('Window: Focus Main Workspace');
+		for (let step = 0; parts.activeGroup !== group && step < parts.groups.length; step++)
+			await test.runPaletteCommand('Editor Groups: Focus Next Group');
+		check(parts.activeGroup === group, 'Save All: empty fixture group remains a real focus destination');
+		await test.runPaletteCommand('Editor Groups: Close Group');
+	}
 	await close();
 }

@@ -63,11 +63,11 @@ export async function testStudioNavigation(test: StudioFixture): Promise<void> {
 	await chooseSource(test, 'scenes/root.lua');
 	const scene = ide.editor.mainWorkspace.primary;
 	if (!(scene instanceof ScenePrimaryClient)) throw new Error('navigation: selected visual Scene missing');
-	check(scene.consumer.workingCopy.resource.path === 'scenes/root.lua' && scene.viewport.attached,
+	check(scene.authoring.workingCopy.resource.path === 'scenes/root.lua' && scene.input === ide.editor.editorParts.activeGroup.model.activeTab,
 		'navigation: tool title and exact source identity are separate');
 	const selected = scene.view.hierarchy.outline.rows[scene.view.hierarchy.outline.selectionIndex].element.source;
 	await test.runPaletteCommand('Editor: Open Source');
-	check(ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.model === scene.consumer.workingCopy
+	check(ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.model === scene.authoring.workingCopy
 		&& sourcePane(test).code.view.cursorRow === selected.start.line - 1,
 		'navigation: Source reveals the selected scene syntax in root.lua, not cart.lua');
 	await openView(test, 'behaviorLens');
@@ -91,8 +91,8 @@ export async function testStudioNavigation(test: StudioFixture): Promise<void> {
 	await openView(test, 'sceneEditor');
 	await chooseSource(test, 'scenes/root.lua');
 	const reopened = ide.editor.mainWorkspace.primary;
-	check(reopened instanceof ScenePrimaryClient && reopened.consumer.workingCopy === scene.consumer.workingCopy
-		&& reopened.consumer.subject === reopened.consumer.document!.scenes[0], 'navigation: Scene authoring reuses canonical source outside document groups');
+	check(reopened instanceof ScenePrimaryClient && reopened.authoring.workingCopy === scene.authoring.workingCopy
+		&& reopened.authoring.subject === reopened.authoring.document!.scenes[0], 'navigation: Scene authoring reuses canonical source outside document groups');
 	await openView(test, 'scenarioLab');
 	await openView(test, 'behaviorLens');
 	await chooseBehavior(test, 'FSM nemesis_s.title_screen.fsm');

@@ -11,7 +11,7 @@ const MODES = ['romInspector.assets', 'romInspector.structure', 'romInspector.co
 /** Native checked capabilities belong to the invoking pane/reader, never its background document. */
 export async function testStudioRomCommands(test: StudioFixture, client: ScenePrimaryClient, source: CodeEditorInput): Promise<void> {
 	const editor = test.ide.editor, group = editor.editorParts.findGroup(source)!;
-	const media = test.ide.sources.currentBlua32Media, cycles = test.cycles(), selection = client.consumer.selection;
+	const media = test.ide.sources.currentBlua32Media, cycles = test.cycles(), selection = client.authoring.selection;
 	const model = source.workingCopy, text = model.buffer.getText(), version = model.version;
 	const dirty = model.dirty, undo = model.canUndo, redo = model.canRedo;
 	await test.runPaletteCommand('View: ROM Inspector');
@@ -88,7 +88,7 @@ export async function testStudioRomCommands(test: StudioFixture, client: ScenePr
 	check(checkedMenus > 0, 'ROM commands: the real narrow document toolbar exercises checked popup presentation');
 	await test.press('ControlLeft', 'KeyW');
 	await test.clickTab(source.id, 1, group);
-	check(!group.model.contains(rom) && editor.mainWorkspace.primary === client && client.consumer.selection === selection
+	check(!group.model.contains(rom) && editor.mainWorkspace.primary === client && client.authoring.selection === selection
 		&& model.buffer.getText() === text && model.version === version && model.dirty === dirty && model.canUndo === undo && model.canRedo === redo
 		&& test.ide.sources.currentBlua32Media === media && test.cycles() === cycles,
 		'ROM commands: native checked-state routing preserves primary selection, canonical Source history and guest execution');

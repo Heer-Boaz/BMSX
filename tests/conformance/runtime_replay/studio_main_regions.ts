@@ -12,7 +12,7 @@ export async function testStudioMainRegions(test: StudioFixture, client: ScenePr
 	const { ide, press, frame } = test, editor = ide.editor, main = editor.mainWorkspace, parts = editor.editorParts;
 	const groups = [...parts.groups], tabs = groups.map(group => [...group.model.tabs]);
 	const model = source.workingCopy, text = model.buffer.getText(), version = model.version, before = test.cycles();
-	const selection = { ...client.consumer.selectionRange };
+	const selection = { ...client.authoring.selectionRange };
 	console.info(`STUDIO: Main region placement ${editor.fontVariant} theme ${theme}`);
 	for (const region of ['hierarchy', 'details'] as const) {
 		const view = client[region], part = main.regions[region], window = part.window;
@@ -93,7 +93,7 @@ export async function testStudioMainRegions(test: StudioFixture, client: ScenePr
 		'Main regions: returning the same control to Main does not submit or cancel its draft');
 	await press('Escape');
 	check(!field.pending && model.buffer.getText() === text && model.version === version && main.primary === client
-		&& client.consumer.selectionRange.start === selection.start && client.consumer.selectionRange.end === selection.end
+		&& client.authoring.selectionRange.start === selection.start && client.authoring.selectionRange.end === selection.end
 		&& test.cycles() === before,
 		'Main regions: native draft cancellation and placement leave source, authored selection and guest execution unchanged');
 	await test.capture?.(`main-regions-${editor.fontVariant}-theme-${theme}-docked`);

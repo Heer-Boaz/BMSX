@@ -9,9 +9,12 @@ export async function testStudioSashSizing(test: StudioFixture, client: ScenePri
 	const editor = test.ide.editor, main = editor.mainWorkspace, panel = editor.resourcePanel;
 	const group = editor.editorParts.findGroup(source)!, model = source.workingCopy;
 	const text = model.buffer.getText(), version = model.version, dirty = model.dirty, undo = model.canUndo, redo = model.canRedo;
-	const selection = client.consumer.selection, row = source.context.view.cursorRow, column = source.context.view.cursorColumn;
+	const selection = client.authoring.selection, row = source.context.view.cursorRow, column = source.context.view.cursorColumn;
 	const hierarchyVisible = main.regionLayout.hierarchyVisible, detailsVisible = main.regionLayout.detailsVisible;
 	const filesVisible = panel.isVisible(), recipient = editor.guestInputRecipient;
+	// The independently visible Scene and Source have separate reading minima. Size the focused Source alone.
+	await test.clickTab(source.id, 1, group);
+	await test.runPaletteCommand('Editor Groups: Maximize Group');
 	// Hiding sibling regions admits a real feasible interval in the small reading surface.
 	if (hierarchyVisible) await test.runPaletteCommand('Workspace: Hide Hierarchy');
 	if (detailsVisible) await test.runPaletteCommand('Workspace: Hide Details');
@@ -56,7 +59,8 @@ export async function testStudioSashSizing(test: StudioFixture, client: ScenePri
 	if (hierarchyVisible) await test.runPaletteCommand('Workspace: Show Hierarchy');
 	if (filesVisible) await test.press('ControlLeft', 'KeyB');
 	await test.clickTab(source.id, 1, group);
-	check(editor.mainWorkspace.primary === client && client.consumer.selection === selection
+	await test.runPaletteCommand('Editor Groups: Restore Groups');
+	check(editor.mainWorkspace.primary === client && client.authoring.selection === selection
 		&& group.model.activeTab === source && group.panes.activePane?.input === source
 		&& editor.editorParts.findGroup(source) === group && editor.guestInputRecipient === recipient
 		&& model.buffer.getText() === text && model.version === version && model.dirty === dirty && model.canUndo === undo && model.canRedo === redo
@@ -70,6 +74,8 @@ export async function testStudioSashResetBlur(test: StudioFixture, client: Scene
 	const group = editor.editorParts.findGroup(source)!, hierarchyVisible = main.regionLayout.hierarchyVisible;
 	const detailsVisible = main.regionLayout.detailsVisible, filesVisible = panel.isVisible();
 	const text = model.buffer.getText(), version = model.version, dirty = model.dirty, undo = model.canUndo, redo = model.canRedo;
+	await test.clickTab(source.id, 1, group);
+	await test.runPaletteCommand('Editor Groups: Maximize Group');
 	if (filesVisible) await test.press('ControlLeft', 'KeyB');
 	if (hierarchyVisible) await test.runPaletteCommand('Workspace: Hide Hierarchy');
 	await test.runPaletteCommand('Workspace: Focus Details');
@@ -103,6 +109,7 @@ export async function testStudioSashResetBlur(test: StudioFixture, client: Scene
 	if (hierarchyVisible) await test.runPaletteCommand('Workspace: Show Hierarchy');
 	if (filesVisible) await test.press('ControlLeft', 'KeyB');
 	await test.clickTab(source.id, 1, group);
+	await test.runPaletteCommand('Editor Groups: Restore Groups');
 	check(editor.mainWorkspace.primary === client && editor.editorParts.findGroup(source) === group
 		&& group.model.activeTab === source && model.buffer.getText() === text && model.version === version
 		&& model.dirty === dirty && model.canUndo === undo && model.canRedo === redo,

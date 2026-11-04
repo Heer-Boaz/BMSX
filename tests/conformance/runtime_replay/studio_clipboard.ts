@@ -1,3 +1,4 @@
+import { SceneEditorInput } from '../../../ide/workbench/contrib/scene_editor/editor_input';
 import { editorFeedbackState } from '../../../ide/common/feedback_state';
 
 import { TextField } from '../../../ide/editor/ui/inline/text_field_model';
@@ -45,7 +46,7 @@ export async function startClipboardTest(canvas: HTMLCanvasElement, capture: (na
 				selection: target?.copy?.(), source: source.buffer.getText(), version: source.version,
 				query: sourcePane(test).find.state.query, line: sourcePane(test).lineJump.state.value,
 				rename: sourcePane(test).rename.getField().text, feedback: editorFeedbackState.message,
-				propertySource: tab.kind === 'scene_editor' ? tab.workingCopy.buffer.getText() : undefined,
+				propertySource: tab instanceof SceneEditorInput ? tab.workingCopy.buffer.getText() : undefined,
 			};
 		},
 		async readOnly(value: boolean) { (inputFocus.target!.clipboard as TextField).readOnly = value; await test.frame(); },
@@ -56,7 +57,7 @@ export async function startClipboardTest(canvas: HTMLCanvasElement, capture: (na
 		async property() {
 			test.harness.openLuaSource('scenes/root.lua'); await test.frame();
 			test.ide.editor.commands.execute('sceneEditor'); await test.frame();
-			const view = test.ide.editor.editorParts.activeGroup.model.activeTab; if (view.kind !== 'scene_editor') throw new Error('Scene Editor expected');
+			const view = test.ide.editor.editorParts.activeGroup.model.activeTab; if (!(view instanceof SceneEditorInput)) throw new Error('Scene Editor expected');
 			await selectMember(test, view, 2);
 			await test.click(view.view.details.properties[0].bounds);
 		},

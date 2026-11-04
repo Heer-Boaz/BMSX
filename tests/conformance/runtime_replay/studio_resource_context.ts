@@ -1,3 +1,4 @@
+import { SceneEditorInput } from '../../../ide/workbench/contrib/scene_editor/editor_input';
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
 
 import { buildCodeTabId } from '../../../ide/workbench/ui/tab/id';
@@ -20,7 +21,7 @@ export async function runStudioResourceContext(test: StudioFixture) {
 	ide.editor.sceneEditor.openResource(ide.editor.editorParts.activeGroup, resource);
 	await frame();
 	const scene = ide.editor.editorParts.activeGroup.model.activeTab;
-	if (scene.kind !== 'scene_editor') throw new Error('resource context: actual visual editor expected');
+	if (!(scene instanceof SceneEditorInput)) throw new Error('resource context: actual visual editor expected');
 	const model = scene.workingCopy;
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: 'local studio_context_probe = missing_from_scene_context\n' }]);
 	await until(() => ide.diagnostics.get(model)!.status === 'ready', 'resource context: background analysis of visual-only source');

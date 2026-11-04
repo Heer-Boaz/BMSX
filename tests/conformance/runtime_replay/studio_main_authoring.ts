@@ -2,12 +2,14 @@ import { CallHierarchyInput } from '../../../ide/workbench/contrib/call_hierarch
 import { CALL_HIERARCHY_SOURCE } from '../../fixtures/studio/call_hierarchy';
 import { CallHierarchyDirection } from '../../../ide/editor/contrib/call_hierarchy/model';
 import { ScenePrimaryClient } from '../../../ide/workbench/contrib/scene_editor/primary_client';
-import { UnavailableScenePrimaryClient } from '../../../ide/workbench/contrib/scene_editor/unavailable_primary';
+import { SceneEditorInput } from '../../../ide/workbench/contrib/scene_editor/editor_input';
 import { openSceneFixture } from './studio_scene_source';
 import { check, codePositionBounds, sourcePane, type StudioFixture } from './studio_fixture';
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
 import { WorkspaceSearchInput } from '../../../ide/workbench/contrib/workspace_search/editor_input';
 import { WorkspaceSearchPane } from '../../../ide/workbench/contrib/workspace_search/editor_pane';
+import type { EditorGroupView } from '../../../ide/workbench/services/editor/editor_group';
+import type { WorkbenchSurface } from '../../../ide/workbench/services/windows/model';
 import type { CodeEditorInput } from '../../../ide/workbench/contrib/code_editor/editor_input';
 import { inputFocus } from '../../../ide/input/focus';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
@@ -62,11 +64,11 @@ export async function runStudioMainAuthoring(test: StudioFixture) {
 /** Explicit source fixture setup, then ordinary Files/menu/keyboard/pointer authoring in the real Workbench. */
 export async function testMainSceneAuthoring(test: StudioFixture): Promise<void> {
 	const { ide, frame, press, click, cycles } = test, editor = ide.editor;
-	const panelWasVisible = editor.resourcePanel.isVisible();
-	const { model, resource, close } = await openSceneFixture(test, 'main', [
+	const panelWasVisible = editor.resourcePanel.isVisible(), originalGroups = new Set(editor.editorParts.groups);
+	const { model: preparedModel, resource, close } = await openSceneFixture(test, 'main', [
 		['calls.lua', CALL_HIERARCHY_SOURCE], ['reading.lua', SOURCE_READING_FIXTURE],
 	]);
-	const original = model.buffer.getText(), before = cycles(), media = ide.sources.currentBlua32Media;
+	const original = preparedModel.buffer.getText(), before = cycles(), media = ide.sources.currentBlua32Media;
 	await close();
 	check(editor.editorParts.groups.every(group => group.model.tabs.every(input => input.resource?.contextId !== resource.contextId)),
 		'main: fixture document attachments are closed before primary authoring');
@@ -81,22 +83,28 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 		'main: ordinary tree navigation selects the authored Scene occurrence');
 	await press('ContextMenu');
 	await test.clickContextCommand('resources.open');
+	await test.until(() => {
+		const primary = editor.mainWorkspace.primary;
+		return primary instanceof ScenePrimaryClient && primary.input.resource === resource;
+	}, 'Files: the exact Scene document admits its authoring companions');
 	const client = editor.mainWorkspace.primary;
 	check(client instanceof ScenePrimaryClient, 'main: Files admits the real authored Scene client');
 	if (!(client instanceof ScenePrimaryClient)) throw new Error('main: Scene client required');
-	check(occurrence?.kind === 'definition' && occurrence.content.kind === 'scene' && client.consumer.subject === occurrence.content.definition,
+	const model = client.authoring.workingCopy;
+	check(occurrence?.kind === 'definition' && occurrence.content.kind === 'scene' && client.authoring.subject === occurrence.content.definition,
 		'main: primary authoring keeps the exact declaration supplied by Files');
-	check(editor.editorParts.groups.every(group => group.model.tabs.every(input => input.resource?.contextId !== resource.contextId)),
-		'main: primary authoring creates no hidden document input');
+	check(editor.editorParts.groups.some(group => group.model.activeTab === client.input),
+		'main: the visible Scene document owns its authoring companions');
 	await press('ControlLeft', 'KeyB');
 	check(!panel.isVisible(), 'main: the browser can hide without retiring its admitted primary subject');
+	await test.runPaletteCommand('Workspace: Focus Hierarchy');
 	await press('ArrowDown'); await press('Enter'); await press('Home');
-	check(client.consumer.selection?.kind === 'member' && client.consumer.selection.index === 0,
+	check(client.authoring.selection?.kind === 'member' && client.authoring.selection.index === 0,
 		'main: hierarchy navigation selects an actual authored member');
 	check(client.hierarchy.attached && client.details.attached,
 		'main: independent hierarchy and Details presentations share one retained authored context');
 	const field = client.details.control.controls[0];
-	await click(client.view.details.properties[0].bounds); await press('Digit1'); await press('Digit2');
+	await click(client.view.details.properties[0].bounds); await press('ControlLeft', 'KeyA'); await press('Digit1'); await press('Digit2');
 	check(field.pending && field.field.text === '12' && model.buffer.getText() === original,
 		'main: the actual field owns its draft before source publication');
 	await press('ControlLeft', 'KeyZ');
@@ -125,7 +133,7 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 	await press('F6');
 	check(inputFocus.admittedTarget !== null && client.details.scope.contains(inputFocus.admittedTarget.scope),
 		'main: forward outer navigation returns to the same retained Details presentation');
-	const accepted = original.replace('0, 0, 1, 1,', '0, 0, 1, 12,');
+	const accepted = original.replace('x = 1, y = 2, z = 3', 'x = 12, y = 2, z = 3');
 	check(model.buffer.getText() === accepted && !field.pending && model.dirty,
 		'main: acceptance publishes one canonical coordinate edit');
 	await press('ControlLeft', 'ShiftLeft', 'KeyP');
@@ -133,8 +141,8 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 		.every(item => item.command !== 'runProject' && item.command !== 'runCurrentFile'),
 		'main: an independent source-only project cannot borrow the installed cartridge or a background document to Run');
 	await press('Escape');
-	const selected = { ...client.consumer.selectionRange };
-	await press('ContextMenu'); await test.clickContextCommand('editor.source');
+	const selected = { ...client.authoring.selectionRange };
+	await test.runPaletteCommand('Editor: Open Source');
 	await test.until(() => {
 		const group = editor.editorParts.main.activeGroup, input = group.model.activeTab;
 		return input?.kind === 'code_editor' && input.workingCopy === model
@@ -144,19 +152,19 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 	check(input?.kind === 'code_editor' && input.workingCopy === model,
 		'main: Source opens the canonical working copy in the ordinary document arrangement');
 	await press('ControlLeft', 'End');
-	check(editor.mainWorkspace.primary === client && client.consumer.selectionRange.start === selected.start
-		&& client.consumer.selectionRange.end === selected.end,
+	check(editor.mainWorkspace.primary === client && client.authoring.selectionRange.start === selected.start
+		&& client.authoring.selectionRange.end === selected.end,
 		'main: independent document caret navigation cannot replace primary selection');
 	await test.runPaletteCommand('Go: Back');
 	await test.until(() => {
 		const primary = editor.mainWorkspace.primary, target = inputFocus.admittedTarget;
-		return primary instanceof ScenePrimaryClient && primary !== client && target !== null
-			&& (primary.hierarchy.scope.contains(target.scope) || primary.details.scope.contains(target.scope));
-	}, 'main: asynchronous Back admits the exact primary bookmark through a fresh native attachment');
+		return primary instanceof ScenePrimaryClient && primary.input === client.input && target !== null
+			&& (primary.viewportTarget.scope.contains(target.scope) || primary.hierarchy.scope.contains(target.scope) || primary.details.scope.contains(target.scope));
+	}, 'main: asynchronous Back admits the exact primary bookmark through its document-owned attachment');
 	const restored = editor.mainWorkspace.primary;
-	check(restored instanceof ScenePrimaryClient && restored !== client && restored.consumer.workingCopy === model
-		&& restored.consumer.selectionRange.start === selected.start && restored.consumer.selectionRange.end === selected.end,
-		'main: Back restores the exact authored location through a fresh primary attachment');
+	check(restored instanceof ScenePrimaryClient && restored.input === client.input && restored.authoring.workingCopy === model
+		&& restored.authoring.selectionRange.start === selected.start && restored.authoring.selectionRange.end === selected.end,
+		'main: Back restores the exact authored location through the retained Scene document');
 	await test.runPaletteCommand('Go: Forward');
 	await test.until(() => editor.editorParts.main.activeGroup.model.activeTab === input
 		&& inputFocus.admittedTarget === editor.editorParts.main.activeGroup.panes.activePane?.commandTarget,
@@ -192,56 +200,47 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 	await test.runPaletteCommand('Workspace: Focus Hierarchy'); await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original && !model.dirty,
 		'main: the retained authoring control consumes the same canonical source history after document close');
-	await press('ContextMenu'); await test.clickContextCommand('editor.source');
+	await test.runPaletteCommand('Editor: Open Source');
 	await test.until(() => {
 		const group = editor.editorParts.main.activeGroup, input = group.model.activeTab;
 		return input?.kind === 'code_editor' && input.workingCopy === model
 			&& inputFocus.admittedTarget === group.panes.activePane?.commandTarget;
 	}, 'main: Source is actually admitted before subsequent native editing commands');
 	await press('ControlLeft', 'KeyA'); await press('Backspace');
-	check(model.buffer.getText() === '' && restored.consumer.availability === 'unavailable',
+	check(model.buffer.getText() === '' && restored.authoring.availability === 'unavailable',
 		'main: deleting the exact authored declaration leaves its retained reference unavailable');
 
-	// Exercise initial-recovery attachment explicitly; UI input above produced the missing subject.
-	const recovery = editor.mainWorkspace.beginRestore();
-	try {
-		check(await recovery.restore(editor.mainWorkspace.serialize(), (record, regions, scope, isCurrent) =>
-			editor.restorePrimaryClient(record, regions, scope, isCurrent)), 'main: unavailable reference admits its own recovery presentation');
-	} finally { recovery.dispose(); }
-	const unavailable = editor.mainWorkspace.primary;
-	check(unavailable instanceof UnavailableScenePrimaryClient && unavailable.getWorkingCopies()[0] === model,
-		'main: recovery retains the real source model without fabricating a Scene context');
-	await test.runPaletteCommand('Workspace: Focus Primary Authoring');
-	for (let font = 0; font < 2; font++) {
-		for (let theme = 0; theme < 2; theme++) {
-			await test.capture?.(`main-${editor.fontVariant}-theme-${theme}-unavailable`);
-			await press('ControlLeft', 'AltLeft', 'KeyT');
-		}
-		await press('ControlLeft', 'ShiftLeft', 'KeyT');
-	}
-	await press('Tab'); await press('Enter');
-	await test.until(() => {
-		const group = editor.editorParts.main.activeGroup, input = group.model.activeTab;
-		return input?.kind === 'code_editor' && input.workingCopy === model
-			&& inputFocus.admittedTarget === group.panes.activePane?.commandTarget;
-	}, 'main: unavailable Source action completes through ordinary asynchronous native document admission');
-	check(editor.editorParts.main.activeGroup.model.activeTab?.kind === 'code_editor',
-		'main: unavailable presentation exposes Source through its actual keyboard action control');
-	await press('ControlLeft', 'KeyZ');
-	check(model.buffer.getText() === original && !model.dirty && editor.mainWorkspace.primary === unavailable,
-		'main: Source Undo cannot silently rebind the unavailable persisted subject');
-	await test.runPaletteCommand('Workspace: Focus Primary Authoring');
+	// Document serializers, not Main layout, own unavailable authored occurrences.
+	const serialized = editor.editorInputSerializers.scene_editor.serialize(restored.input);
+	const unavailable = await editor.editorInputSerializers.scene_editor.deserialize(serialized);
+	if (!(unavailable instanceof SceneEditorInput)) throw new Error('main: the retained source file still exists');
+	check(unavailable.workingCopy === model && unavailable.view.authoring.availability === 'unavailable',
+		'main: document recovery retains the canonical source without fabricating a Scene occurrence');
 	await press('ControlLeft', 'KeyS');
-	await test.until(() => ide.textFileSaves.latestOperation(model)?.result?.status === 'saved',
-		'main: unavailable authoring saves its retained file through the ordinary native keyboard action');
-	check(ide.textFileSaves.latestOperation(model)!.snapshot.source === original
-		&& model.persistedBaseline === original && !model.dirty && editor.mainWorkspace.primary === unavailable,
-		'main: Save acknowledges the exact retained source without inventing an available Scene or document subject');
+	await test.until(() => {
+		const save = ide.textFileSaves.latestOperation(model);
+		return save?.snapshot.source === '' && save.result?.status === 'saved';
+	}, 'main: the unavailable authored occurrence does not block saving its actual dirty Source');
+	check(model.persistedBaseline === '' && !model.dirty, 'main: Save acknowledges the exact deleted declaration bytes');
+	await press('ControlLeft', 'KeyZ');
+	check(model.buffer.getText() === original && model.dirty && unavailable.view.authoring.availability === 'unavailable',
+		'main: Source Undo restores bytes without rebinding the unavailable persisted occurrence');
+	unavailable.dispose();
+	const previousSave = ide.textFileSaves.latestOperation(model);
+	await press('ControlLeft', 'KeyS');
+	await test.until(() => {
+		const save = ide.textFileSaves.latestOperation(model);
+		return save !== previousSave && save?.snapshot.source === original && save.result?.status === 'saved';
+	}, 'main: ordinary native Save acknowledges the restored dirty Source generation');
+	check(model.persistedBaseline === original && !model.dirty,
+		'main: Save acknowledges the exact retained source without inventing a Scene subject');
 	await test.runPaletteCommand('Workspace: Clear Primary Authoring');
-	await test.until(() => editor.mainWorkspace.primary === undefined, 'main: clear retires the admitted authored context');
-	check(editor.mainWorkspace.primary === undefined && !unavailable.hierarchy.attached && !unavailable.details.attached && !unavailable.isCurrent(),
-		'main: explicit clear releases its actual controls and domain context');
+	await test.until(() => editor.mainWorkspace.primary === undefined, 'main: closing the Scene document retires its companions');
+	check(!restored.hierarchy.attached && !restored.details.attached && !restored.isCurrent(),
+		'main: document close releases its actual companion controls and domain context');
 	await close();
+	for (const group of editor.editorParts.groups.filter(group => !originalGroups.has(group)))
+		check(group.model.tabs.length === 0 && await editor.editorParts.closeGroup(group), 'main: fixture teardown retires only its empty receiving groups');
 	if (panelWasVisible !== panel.isVisible()) await press('ControlLeft', 'KeyB');
 	check(cycles() === before && ide.sources.currentBlua32Media === media,
 		'main: source-only authoring never executes or installs a cartridge');
@@ -250,8 +249,8 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 /** Native wrapping is a retained Source reading choice, independent of Main and canonical text history. */
 async function testMainSourceReadability(test: StudioFixture, client: ScenePrimaryClient, originalSource: CodeEditorInput): Promise<void> {
 	const editor = test.ide.editor, group = editor.editorParts.findGroup(originalSource)!;
-	const originalView = { ...originalSource.context.view }, mainModel = client.consumer.workingCopy;
-	const mainText = mainModel.buffer.getText(), mainVersion = mainModel.version, selection = client.consumer.selection;
+	const originalView = { ...originalSource.context.view }, mainModel = client.authoring.workingCopy;
+	const mainText = mainModel.buffer.getText(), mainVersion = mainModel.version, selection = client.authoring.selection;
 	const mainDirty = mainModel.dirty, mainUndo = mainModel.canUndo, mainRedo = mainModel.canRedo;
 	await test.runPaletteCommand('Go: Go to File');
 	await test.clipboard.writeText('reading.lua'); await test.press('ControlLeft', 'KeyV');
@@ -321,7 +320,7 @@ async function testMainSourceReadability(test: StudioFixture, client: ScenePrima
 				&& model.dirty === dirty && model.canUndo === undo && model.canRedo === redo
 				&& editorTextModelService.get(model.identity) === model,
 				'source reading: presentation input never edits, dirties, replaces or adds Undo history to the working copy');
-			check(editor.mainWorkspace.primary === client && client.consumer.selection === selection
+			check(editor.mainWorkspace.primary === client && client.authoring.selection === selection
 				&& mainModel.buffer.getText() === mainText && mainModel.version === mainVersion
 				&& mainModel.dirty === mainDirty && mainModel.canUndo === mainUndo && mainModel.canRedo === mainRedo,
 				'source reading: font, theme, pointer and wrapping remain independent of Main authoring and history');
@@ -339,7 +338,7 @@ async function testMainSourceReadability(test: StudioFixture, client: ScenePrima
 /** A newly authored source-only Scene still belongs to its actual installed project's existing entry program. */
 async function testMainProjectRun(test: StudioFixture): Promise<void> {
 	const { ide } = test;
-	const editor = ide.editor, catalog = ide.sources.catalog, image = ide.sources.currentBlua32Media.cartridgeSlots[0]!;
+	const editor = ide.editor, originalGroups = new Set(editor.editorParts.groups), catalog = ide.sources.catalog, image = ide.sources.currentBlua32Media.cartridgeSlots[0]!;
 	const context = catalog.getContext(image.sourceContextId), path = 'studio_main_project_run.lua';
 	check(context.programDomain === 'cart' && context.luaSources.can_boot_from_source,
 		'main run: the dedicated test cartridge already owns a source-bootable installed program');
@@ -352,13 +351,18 @@ async function testMainProjectRun(test: StudioFixture): Promise<void> {
 	panel.show(); panel.queuePendingSelection(resource); panel.applyPendingSelection(); await test.frame();
 	await test.press('ArrowRight'); await test.press('ArrowDown'); await test.press('ContextMenu');
 	await test.clickContextCommand('resources.open');
+	await test.until(() => {
+		const primary = editor.mainWorkspace.primary;
+		return primary instanceof ScenePrimaryClient && primary.input.resource === resource;
+	}, 'Files: the exact Scene document admits its authoring companions');
 	const client = editor.mainWorkspace.primary;
-	check(client instanceof ScenePrimaryClient && client.consumer.workingCopy.resource === resource,
+	check(client instanceof ScenePrimaryClient && client.authoring.workingCopy.resource === resource,
 		'main run: Files admits the newly authored Scene in the actual installed project');
 	if (!(client instanceof ScenePrimaryClient)) throw new Error('main run: actual primary Scene required');
 	await test.press('ControlLeft', 'KeyB');
+	await test.runPaletteCommand('Workspace: Focus Hierarchy');
 	await test.press('ArrowDown'); await test.press('Enter'); await test.press('Home');
-	check(client.consumer.selection?.kind === 'member' && client.consumer.selection.index === 0,
+	check(client.authoring.selection?.kind === 'member' && client.authoring.selection.index === 0,
 		'main run: ordinary hierarchy navigation selects the first authored member');
 
 	// Keep a genuinely unrelated document visible: it must never supply the Run project subject.
@@ -371,16 +375,16 @@ async function testMainProjectRun(test: StudioFixture): Promise<void> {
 	});
 	check(independentIndex >= 0, 'main run: the previous independent source fixture is an ordinary file choice');
 	for (let index = 0; index < independentIndex; index++) await test.press('ArrowDown');
-	await test.press('Enter');
+	await test.press('AltLeft', 'Enter');
 	await test.until(() => editor.editorParts.main.activeGroup.model.activeTab?.resource?.contextId === 'fixture-studio-scene-main',
 		'main run: Go to File presents the independent document without changing Main');
 	const group = editor.editorParts.main.activeGroup, independent = group.model.activeTab;
-	const model = client.consumer.workingCopy, original = model.buffer.getText(), accepted = original.replace('0, 0, 1, 1,', '0, 0, 1, 12,');
+	const model = client.authoring.workingCopy, original = model.buffer.getText(), accepted = original.replace('x = 1, y = 2, z = 3', 'x = 12, y = 2, z = 3');
 	const field = client.details.control.controls[0];
 	for (let font = 0; font < 2; font++) {
 		for (let theme = 0; theme < 2; theme++) {
 			await test.runPaletteCommand('Workspace: Focus Details');
-			await test.click(client.view.details.properties[0].bounds); await test.press('Digit1'); await test.press('Digit2');
+			await test.click(client.view.details.properties[0].bounds); await test.press('ControlLeft', 'KeyA'); await test.press('Digit1'); await test.press('Digit2');
 			check(field.pending && field.field.text === '12' && model.buffer.getText() === original,
 				'main run: the actual Main field owns its pending draft before Palette blur');
 			await test.press('ControlLeft', 'ShiftLeft', 'KeyP');
@@ -412,9 +416,12 @@ async function testMainProjectRun(test: StudioFixture): Promise<void> {
 		await test.press('ControlLeft', 'ShiftLeft', 'KeyT');
 	}
 	await test.runPaletteCommand('Workspace: Clear Primary Authoring');
+	await test.until(() => editor.mainWorkspace.primary === undefined, 'main run: the Scene document closure retires its companions');
 	check(editor.mainWorkspace.primary === undefined && group.model.activeTab === independent,
 		'main run: explicit clear releases Main without replacing the independent document');
 	await test.press('ControlLeft', 'KeyW');
+	for (const group of editor.editorParts.groups.filter(group => !originalGroups.has(group)))
+		check(group.model.tabs.length === 0 && await editor.editorParts.closeGroup(group), 'main run: teardown retires only the test-created empty document receivers');
 	if (panelWasVisible !== panel.isVisible()) await test.press('ControlLeft', 'KeyB');
 	check(model.buffer.getText() === original && !model.dirty && ide.boots.latestOperation === boot
 		&& ide.sources.currentBlua32Media === media && ide.runTargets.selected === target && test.cycles() === before,
@@ -424,7 +431,7 @@ async function testMainProjectRun(test: StudioFixture): Promise<void> {
 /** Palette sizing addresses the captured native region and retains its independent authoring and Source reading. */
 async function testPrimaryViewResizing(test: StudioFixture, client: ScenePrimaryClient, source: CodeEditorInput, theme: number): Promise<void> {
 	const editor = test.ide.editor, main = editor.mainWorkspace, group = editor.editorParts.findGroup(source)!;
-	const selected = client.consumer.selection, text = source.workingCopy.buffer.getText(), version = source.workingCopy.version;
+	const selected = client.authoring.selection, text = source.workingCopy.buffer.getText(), version = source.workingCopy.version;
 	const row = source.context.view.cursorRow, column = source.context.view.cursorColumn;
 	const filesVisible = editor.resourcePanel.isVisible(), activityVisible = main.activityDisplayed;
 	if (filesVisible) await test.press('ControlLeft', 'KeyB');
@@ -433,14 +440,15 @@ async function testPrimaryViewResizing(test: StudioFixture, client: ScenePrimary
 	await test.runPaletteCommand('Workspace: Focus Hierarchy');
 	const hierarchy = inputFocus.admittedTarget!, generation = client.hierarchy.scope.contextGeneration;
 	const width = main.regionLayout.hierarchyWidth;
-	await test.runPaletteCommand('Workspace: Increase Focused View Width');
-	const wider = main.regionLayout.hierarchyWidth;
-	check(wider !== width && inputFocus.admittedTarget === hierarchy,
+	// Automatic layout may already use the legal maximum; shrink first so the inverse step has real capacity.
+	await test.runPaletteCommand('Workspace: Decrease Focused View Width');
+	const narrower = main.regionLayout.hierarchyWidth;
+	check(narrower !== width && inputFocus.admittedTarget === hierarchy,
 		'main resize: the actual palette changes the invoking hierarchy sizing intent and returns to its native control');
 	await test.capture?.(`main-${editor.fontVariant}-theme-${theme}-resized-hierarchy`);
-	await test.runPaletteCommand('Workspace: Decrease Focused View Width');
-	check(main.regionLayout.hierarchyWidth! < wider! && client.hierarchy.scope.contextGeneration === generation,
-		'main resize: decreasing uses the same retained hierarchy sizing owner without retiring its attachment');
+	await test.runPaletteCommand('Workspace: Increase Focused View Width');
+	check(main.regionLayout.hierarchyWidth! > narrower! && client.hierarchy.scope.contextGeneration === generation,
+		'main resize: the inverse step uses the same retained hierarchy sizing owner without retiring its attachment');
 	await test.runPaletteCommand('Workspace: Show Details');
 	if (activityVisible) await test.runPaletteCommand('Workspace: Hide Activity Area');
 	await test.runPaletteCommand('View: Problems Panel');
@@ -451,7 +459,7 @@ async function testPrimaryViewResizing(test: StudioFixture, client: ScenePrimary
 		'main resize: the palette addresses the focused docked reader height without replacing or refocusing its client');
 	await test.capture?.(`main-${editor.fontVariant}-theme-${theme}-resized-activity`);
 	await test.runPaletteCommand('Workspace: Decrease Focused View Height');
-	check(main.regionLayout.activityHeight! < taller! && main.primary === client && client.consumer.selection === selected
+	check(main.regionLayout.activityHeight! < taller! && main.primary === client && client.authoring.selection === selected
 		&& group.model.activeTab === source && source.context.view.cursorRow === row && source.context.view.cursorColumn === column
 		&& source.workingCopy.buffer.getText() === text && source.workingCopy.version === version,
 		'main resize: axis commands preserve authored selection, canonical bytes, document membership and independent Source caret');
@@ -462,14 +470,14 @@ async function testPrimaryViewResizing(test: StudioFixture, client: ScenePrimary
 /** Actual outer-region keys preserve domain selection, independent Source reading and native local traversal. */
 async function testPrimaryRegionNavigation(test: StudioFixture, client: ScenePrimaryClient, source: CodeEditorInput, theme: number): Promise<void> {
 	const editor = test.ide.editor, main = editor.mainWorkspace, group = editor.editorParts.findGroup(source)!;
-	const selected = client.consumer.selection, text = source.workingCopy.buffer.getText(), version = source.workingCopy.version;
+	const selected = client.authoring.selection, text = source.workingCopy.buffer.getText(), version = source.workingCopy.version;
 	const row = source.context.view.cursorRow, column = source.context.view.cursorColumn;
 	const filesVisible = editor.resourcePanel.isVisible(), activityVisible = main.activityDisplayed;
 	if (!activityVisible) await test.runPaletteCommand('View: Problems Panel');
 	await test.runPaletteCommand('View: Focus Files');
 	const filesSelection = editor.resourcePanel.files.selectedNode, activity = main.activity!;
 	const generation = client.scope.contextGeneration;
-	const mainScopes = [client.hierarchy.scope, group.focusScope, client.details.scope, activity.scope];
+	const mainScopes = [client.hierarchy.scope, client.viewportTarget.scope, group.focusScope, client.details.scope, activity.scope];
 	for (const scope of mainScopes) {
 		await test.press('F6');
 		check(inputFocus.admittedTarget !== null && scope.contains(inputFocus.admittedTarget.scope),
@@ -490,7 +498,7 @@ async function testPrimaryRegionNavigation(test: StudioFixture, client: ScenePri
 		check(inputFocus.admittedTarget !== null && scope.contains(inputFocus.admittedTarget.scope),
 			'main: Shift+F6 admits the previous actual region rather than cycling documents or floating windows');
 	}
-	await test.press('F6'); await test.press('F6'); await test.press('F6');
+	await test.press('F6'); await test.press('F6'); await test.press('F6'); await test.press('F6');
 	check(inputFocus.admittedTarget === client.details.control.focusTarget,
 		'main: region navigation addresses the retained native Details control');
 	await test.press('Tab');
@@ -505,7 +513,7 @@ async function testPrimaryRegionNavigation(test: StudioFixture, client: ScenePri
 	await test.press('F6');
 	check(inputFocus.admittedTarget !== null && activity.scope.contains(inputFocus.admittedTarget.scope),
 		'main: F6 leaves an inline field for the displayed docked activity without selecting another client');
-	check(main.primary === client && client.scope.contextGeneration === generation && client.consumer.selection === selected
+	check(main.primary === client && client.scope.contextGeneration === generation && client.authoring.selection === selected
 		&& editor.resourcePanel.files.selectedNode === filesSelection && group.model.activeTab === source
 		&& source.context.view.cursorRow === row && source.context.view.cursorColumn === column
 		&& source.workingCopy.buffer.getText() === text && source.workingCopy.version === version,
@@ -517,14 +525,12 @@ async function testPrimaryRegionNavigation(test: StudioFixture, client: ScenePri
 /** Native panel menus and the Window menu change attachments, never the authored or document subjects. */
 async function testPrimaryRegionVisibility(test: StudioFixture, client: ScenePrimaryClient, source: CodeEditorInput, theme: number): Promise<void> {
 	const editor = test.ide.editor, main = editor.mainWorkspace, group = editor.editorParts.findGroup(source)!;
-	const selected = { ...client.consumer.selectionRange }, text = source.workingCopy.buffer.getText();
+	const selected = { ...client.authoring.selectionRange }, text = source.workingCopy.buffer.getText();
 	const row = source.context.view.cursorRow, column = source.context.view.cursorColumn;
 	for (const region of ['details', 'hierarchy'] as const) {
 		const panel = client[region], sibling = client[region === 'details' ? 'hierarchy' : 'details'];
 		const generation = panel.scope.contextGeneration;
-		if (!editor.menubar.expanded) await test.click(editorChromeState.menuButtonBounds);
-		test.movePointer(editorChromeState.menuEntryBounds.window); await test.frame();
-		await test.clickContextCommand(region === 'details' ? 'workspace.details.focus' : 'workspace.hierarchy.focus');
+		await test.runPaletteCommand(region === 'details' ? 'Workspace: Focus Details' : 'Workspace: Focus Hierarchy');
 		check(inputFocus.admittedTarget !== null && panel.scope.contains(inputFocus.admittedTarget.scope),
 			'main: explicit region focus reveals and admits its actual native control');
 		const point = test.movePointer(panel.layoutState.header);
@@ -555,7 +561,7 @@ async function testPrimaryRegionVisibility(test: StudioFixture, client: ScenePri
 		await test.clickContextCommand(region === 'details' ? 'workspace.details.toggle' : 'workspace.hierarchy.toggle');
 		check(panel.attached && sibling.attached && main.primary === client && inputFocus.admittedTarget === focused,
 			'main: showing a region restores its presentation without stealing the document focus');
-		check(client.consumer.selectionRange.start === selected.start && client.consumer.selectionRange.end === selected.end
+		check(client.authoring.selectionRange.start === selected.start && client.authoring.selectionRange.end === selected.end
 			&& source.context.view.cursorRow === row && source.context.view.cursorColumn === column
 			&& source.workingCopy.buffer.getText() === text,
 			'main: panel visibility preserves exact authored selection, independent Source caret and canonical bytes');
@@ -565,23 +571,34 @@ async function testPrimaryRegionVisibility(test: StudioFixture, client: ScenePri
 /** Main is the source producer; document placement uses ordinary affinity and explicit side intent. */
 async function testPrimarySourceDestinations(test: StudioFixture, source: CodeEditorInput): Promise<void> {
 	const editor = test.ide.editor, main = editor.mainWorkspace.primary, files = editor.resourcePanel.files.selectedNode;
-	const originalGroup = editor.editorParts.findGroup(source)!;
+	const departingGroup = editor.editorParts.findGroup(source)!;
 	const originalGroups = editor.editorParts.main.groups.length, partCount = editor.editorParts.mostRecentlyActive.length;
 	await test.runPaletteCommand('Window: Move Editor To…');
 	await test.clipboard.writeText('New Editor Window'); await test.press('ControlLeft', 'KeyV'); await test.press('Enter');
 	const floating = editor.editorParts.findGroup(source)!;
 	const floatingPart = editor.editorParts.partForGroup(floating);
-	check(floating !== originalGroup && floatingPart.kind === 'document',
+	check(floating !== departingGroup && floatingPart.kind === 'document',
 		'main-source: the actual Source view moves to an explicit editor window');
 	await test.runPaletteCommand('Workspace: Focus Primary Authoring');
 	check(editor.mainWorkspace.primary === main, 'main-source: focus does not reselect the authored subject');
-	await test.press('ContextMenu'); await test.clickContextCommand('editor.source');
-	await test.until(() => editor.editorParts.activeGroup === floating, 'main-source: default Source reveals the existing floating text view');
-	check(floating.model.activeTab === source && floating.panes.activePane?.input === source && !originalGroup.model.contains(source)
-		&& editor.editorParts.activePart === floatingPart && floatingPart.surface.visible
-		&& inputFocus.target !== null && floating.focusScope.contains(inputFocus.target.scope)
+	await test.runPaletteCommand('Editor: Open Source');
+	await test.until(() => {
+		const input = editor.editorParts.activeGroup.model.activeTab;
+		return input?.kind === 'code_editor' && input !== source && input.workingCopy === source.workingCopy
+			&& editor.editorParts.activePart === editor.editorParts.main;
+	}, 'main-source: default Source opens beside its owning Scene rather than borrowing a floating document');
+	const originalGroup = editor.editorParts.activeGroup, besideSource = originalGroup.model.activeTab!;
+	check(floating.model.activeTab === source && floating.panes.activePane?.input === source && floatingPart.surface.visible
 		&& editor.editorParts.mostRecentlyActive.length === partCount + 1 && editor.resourcePanel.files.selectedNode === files,
-		'main-source: normal affinity retains the exact moved Source without creating a Main duplicate');
+		'main-source: adjacent Source shares the canonical model while leaving its independent floating reading intact');
+	check(await originalGroup.close(besideSource.id), 'main-source: the temporary adjacent text view can close without closing its Scene');
+	await test.runPaletteCommand('Window: Show Open Windows');
+	const floatingIndex = editor.quickInput.model.list.rows.findIndex(row =>
+		(row.item as QuickPickItem & { readonly surface: WorkbenchSurface }).surface === floatingPart.surface);
+	check(floatingIndex >= 0, 'main-source: window discovery retains the exact independent Source host after Main raises');
+	for (let row = 0; row < floatingIndex; row++) await test.press('ArrowDown');
+	await test.press('Enter');
+	await test.clickTab(source.id, 1, floating);
 	// Async admission may finish after the input frame painted; the visual checkpoint observes its next presentation.
 	await test.frame();
 	for (let font = 0; font < 2; font++) {
@@ -597,23 +614,47 @@ async function testPrimarySourceDestinations(test: StudioFixture, source: CodeEd
 		await test.press('ControlLeft', 'ShiftLeft', 'KeyT');
 	}
 	await test.runPaletteCommand('Window: Move Editor To…');
-	await test.clipboard.writeText('Main Workspace'); await test.press('ControlLeft', 'KeyV'); await test.press('Enter');
+	const returnIndex = editor.quickInput.model.list.rows.findIndex(row => {
+		const target = (row.item as QuickPickItem & { readonly target: { readonly kind: 'group'; readonly group: EditorGroupView } | { readonly kind: 'window' } }).target;
+		return target.kind === 'group' && target.group === originalGroup;
+	});
+	check(returnIndex >= 0, 'main-source: the concrete Scene-adjacent receiver is an ordinary move destination');
+	for (let row = 0; row < returnIndex; row++) await test.press('ArrowDown');
+	await test.press('Enter'); await test.press('Enter');
+	await test.until(() => editor.editorParts.findGroup(source) === originalGroup && originalGroup.model.activeTab === source,
+		'main-source: the actual move restores the original Source view beside its Scene');
 	check(editor.editorParts.findGroup(source) === originalGroup && originalGroup.model.activeTab === source && floating.model.tabs.length === 0,
 		'main-source: moving the same Source back leaves its canonical view in Main');
 	await test.runPaletteCommand('Window: Show Open Windows');
-	await test.clipboard.writeText('Editor'); await test.press('ControlLeft', 'KeyV'); await test.press('Enter');
+	const emptyWindowIndex = editor.quickInput.model.list.rows.findIndex(row =>
+		(row.item as QuickPickItem & { readonly surface: WorkbenchSurface }).surface === floatingPart.surface);
+	check(emptyWindowIndex >= 0, 'main-source: window discovery retains the exact empty floating host');
+	for (let row = 0; row < emptyWindowIndex; row++) await test.press('ArrowDown');
+	await test.press('Enter');
 	check(editor.editorParts.activePart === floatingPart, 'main-source: the window picker can still reveal the empty document host');
 	await test.runPaletteCommand('Window: Close Window');
 	await test.until(() => floatingPart.retired, 'main-source: explicit window close retires the empty floating host');
 	check(editor.editorParts.mostRecentlyActive.length === partCount && originalGroup.model.activeTab === source,
 		'main-source: closing the empty host does not close its moved Source');
 	await test.runPaletteCommand('Workspace: Focus Primary Authoring');
-	await test.press('ContextMenu'); await test.clickContextCommand('editor.sourceToSide');
-	await test.until(() => editor.editorParts.main.groups.length === originalGroups + 1, 'main-source: explicit Source to Side admits a Main neighbor');
+	await test.runPaletteCommand('Editor: Open Source to Side');
+	await test.until(() => editor.editorParts.activeGroup === originalGroup && originalGroup.model.activeTab === source,
+		'main-source: explicit Source to Side reuses its Scene-owned neighbor');
+	check(editor.editorParts.main.groups.length === originalGroups, 'main-source: reopening the owned Source does not duplicate groups');
+	await test.runPaletteCommand('Go: Go to File');
+	await test.clipboard.writeText(source.resource.path); await test.press('ControlLeft', 'KeyV');
+	const sourceIndex = editor.quickInput.model.list.rows.findIndex(row => (row.item as ResourceQuickPickItem).resource === source.resource);
+	check(sourceIndex >= 0, 'main-source: the canonical Source is an exact file choice for an independent comparison');
+	for (let row = 0; row < sourceIndex; row++) await test.press('ArrowDown');
+	await test.press('AltLeft', 'Enter');
+	await test.until(() => {
+		const input = editor.editorParts.activeGroup.model.activeTab;
+		return input?.kind === 'code_editor' && input !== source && input.workingCopy === source.workingCopy;
+	}, 'main-source: explicit file-to-side intent admits an independent comparison');
 	const side = editor.editorParts.activeGroup, sideSource = side.model.activeTab;
-	check(side !== originalGroup && editor.editorParts.partForGroup(side) === editor.editorParts.main
+	check(editor.editorParts.main.groups.length === originalGroups + 1 && side !== originalGroup && editor.editorParts.partForGroup(side) === editor.editorParts.main
 		&& sideSource?.kind === 'code_editor' && sideSource.workingCopy === source.workingCopy && sideSource !== source,
-		'main-source: explicit side intent makes an independent text view in the invoking arrangement');
+		'main-source: explicit file-to-side intent makes an independent text view in the invoking arrangement');
 	await test.runPaletteCommand('Editor Groups: Close Group');
 	check(editor.editorParts.main.groups.length === originalGroups && editor.editorParts.findGroup(source) === originalGroup
 		&& editor.mainWorkspace.primary === main && editor.resourcePanel.files.selectedNode === files,

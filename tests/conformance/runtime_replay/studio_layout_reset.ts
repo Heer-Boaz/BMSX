@@ -1,4 +1,5 @@
 import { inputFocus } from '../../../ide/input/focus';
+import type { ResourceQuickPickItem } from '../../../ide/workbench/contrib/resources/quick_access';
 import type { CodeEditorInput } from '../../../ide/workbench/contrib/code_editor/editor_input';
 import type { RomInspectorSnapshot } from '../../../ide/workbench/contrib/rom_inspector/model';
 import type { ScenePrimaryClient } from '../../../ide/workbench/contrib/scene_editor/primary_client';
@@ -14,27 +15,40 @@ export async function testStudioLayoutReset(test: StudioFixture, client: ScenePr
 	const { ide, press, frame } = test, editor = ide.editor, main = editor.mainWorkspace, parts = editor.editorParts;
 	const sourceGroup = parts.findGroup(source)!, model = source.workingCopy;
 	const text = model.buffer.getText(), version = model.version, dirty = model.dirty, undo = model.canUndo, redo = model.canRedo;
-	const selected = { ...client.consumer.selectionRange }, before = test.cycles(), media = ide.sources.currentBlua32Media;
+	const selected = { ...client.authoring.selectionRange }, before = test.cycles(), media = ide.sources.currentBlua32Media;
 	const activityVisible = main.regionLayout.activityVisible;
 	console.info(`STUDIO: Reset Layout ${editor.fontVariant} theme ${theme}`);
+	// Give the docked width commands a feasible interval without bypassing either document's reading minimum.
+	await test.clickTab(source.id, 1, sourceGroup);
+	await test.runPaletteCommand('Editor Groups: Maximize Group');
 	await test.runPaletteCommand('Workspace: Hide Details');
 	await test.runPaletteCommand('Workspace: Focus Hierarchy');
-	await test.runPaletteCommand('Workspace: Increase Focused View Width');
+	await test.runPaletteCommand('Workspace: Decrease Focused View Width');
 	await test.runPaletteCommand('Workspace: Move Hierarchy to New Window');
 	await test.runPaletteCommand('Workspace: Focus Details');
-	await test.runPaletteCommand('Workspace: Increase Focused View Width');
+	await test.runPaletteCommand('Workspace: Decrease Focused View Width');
 	await test.runPaletteCommand('Workspace: Move Details to New Window');
+	await test.clickTab(source.id, 1, sourceGroup);
+	await test.runPaletteCommand('Editor Groups: Restore Groups');
 	await test.runPaletteCommand('View: Problems Panel');
 	const activity = main.activity;
 	await test.runPaletteCommand('Workspace: Move Activity Area to New Window');
 	await test.runPaletteCommand('Window: Minimize Window');
 	await test.runPaletteCommand('Workspace: Focus Hierarchy');
-	await press('ContextMenu'); await test.clickContextCommand('editor.sourceToSide');
+	await test.runPaletteCommand('Editor: Open Source to Side');
+	await test.until(() => parts.activeGroup === sourceGroup && sourceGroup.model.activeTab === source,
+		'Reset Layout: Source to Side reuses the Scene-owned neighboring text view');
+	await test.runPaletteCommand('Go: Go to File');
+	await test.clipboard.writeText(source.resource.path); await press('ControlLeft', 'KeyV');
+	const sourceIndex = editor.quickInput.model.list.rows.findIndex(row => (row.item as ResourceQuickPickItem).resource === source.resource);
+	check(sourceIndex >= 0, 'Reset Layout: the canonical Source is an exact file choice for an independent comparison');
+	for (let row = 0; row < sourceIndex; row++) await press('ArrowDown');
+	await press('AltLeft', 'Enter');
 	await test.until(() => {
 		const input = parts.activeGroup.model.activeTab;
-		return input.kind === 'code_editor' && input !== source && input.workingCopy === model;
-	}, 'Reset Layout: explicit Source to Side admits an independent view over the existing canonical model');
-	const comparison = parts.activeGroup.model.activeTab;
+		return input?.kind === 'code_editor' && input !== source && input.workingCopy === model;
+	}, 'Reset Layout: explicit file-to-side intent admits an independent view over the existing canonical model');
+	const comparisonGroup = parts.activeGroup, comparison = comparisonGroup.model.activeTab;
 	if (comparison.kind !== 'code_editor') throw new Error('Reset Layout: independent Source comparison required');
 	await test.runPaletteCommand('Window: Move Editor To…');
 	await test.clipboard.writeText('New Editor Window'); await press('ControlLeft', 'KeyV'); await press('Enter');
@@ -65,6 +79,8 @@ export async function testStudioLayoutReset(test: StudioFixture, client: ScenePr
 	await press('Enter');
 	await test.runPaletteCommand('Window: Close Window');
 	await test.until(() => document.retired, 'Reset Layout: explicit cleanup closes only the test-owned comparison view and empty shell');
+	check(!parts.groups.includes(comparisonGroup) && comparisonGroup.surface.retired,
+		'Reset Layout: moving the last comparison tab retires its empty source group');
 	check(parts.findGroup(source) === sourceGroup && sourceGroup.model.contains(source) && !editor.actionPrompt.visible,
 		'Reset Layout: closing the extra view leaves the canonical Source and primary consumer intact');
 	if (!activityVisible) await test.runPaletteCommand('Workspace: Hide Activity Area');
@@ -84,8 +100,8 @@ export async function testStudioLayoutReset(test: StudioFixture, client: ScenePr
 	if (!editor.menubar.expanded) await test.click(editorChromeState.menuButtonBounds);
 	test.movePointer(editorChromeState.menuEntryBounds.window); await frame();
 	await test.clickContextCommand('workspace.resetLayout'); await frame();
-	check(!field.pending && main.primary === client && client.consumer.selectionRange.start === selected.start
-		&& client.consumer.selectionRange.end === selected.end && model.buffer.getText() === text && model.version === version
+	check(!field.pending && main.primary === client && client.authoring.selectionRange.start === selected.start
+		&& client.authoring.selectionRange.end === selected.end && model.buffer.getText() === text && model.version === version
 		&& model.dirty === dirty && model.canUndo === undo && model.canRedo === redo
 		&& test.cycles() === before && ide.sources.currentBlua32Media === media,
 		'Reset Layout: the ordinary Window-menu route changes no authored selection, canonical history or execution attachment');

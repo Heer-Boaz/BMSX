@@ -1,6 +1,7 @@
+import { ScenePrimaryClient } from '../../../ide/workbench/contrib/scene_editor/primary_client';
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
 import type { SceneEditorInput } from '../../../ide/workbench/contrib/scene_editor/editor_input';
-import { openSceneEditor, openSceneFixture, selectMember, selectSceneRow } from './studio_scene_source';
+import { openSceneFixture, selectMember, selectSceneRow } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
 
 async function clickTwistie(test: StudioFixture, input: SceneEditorInput, index: number, heldFrames = 1): Promise<void> {
@@ -20,8 +21,10 @@ export async function testSceneSourceTree(test: StudioFixture): Promise<void> {
 		'tree: a document selects its actual declaration, not an implicit member');
 	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('tree: actual Scene controls required');
-	const x = pane.control.details.controls[0], parsed = scene.view.authoring.document!.analysis.chunk;
-	check(pane.control.details.controls.every(control => control.field.readOnly), 'tree: a definition root has no member field authority');
+	const primary = ide.editor.mainWorkspace.primary;
+	if (!(primary instanceof ScenePrimaryClient)) throw new Error('Scene document must admit its actual companion controls');
+	const x = primary.details.control.controls[0], parsed = scene.view.authoring.document!.analysis.chunk;
+	check(primary.details.control.controls.every(control => control.field.readOnly), 'tree: a definition root has no member field authority');
 	for (let frameIndex = 0; frameIndex < 8; frameIndex++) await frame();
 	check(tree.roots[0] === root && scene.view.authoring.document!.analysis.chunk === parsed, 'tree: unchanged frames retain source and hierarchy identity');
 	await selectSceneRow(test, scene, 0); await clickTwistie(test, scene, 0, 8);
@@ -40,9 +43,10 @@ export async function testSceneSourceTree(test: StudioFixture): Promise<void> {
 		&& model.buffer.getText() !== original, 'tree: collapse settles the departing member draft and retires hidden field focus');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original && tree.roots[0].collapsed, 'tree: document Undo changes source, not expansion');
-	await click(scene.view.actionBar.items.find(item => item.command === 'editor.source')!.bounds);
+	await test.runPaletteCommand('Editor: Open Source');
 	check(test.harness.getActiveEditorDocument().model === model, 'tree: Source follows the exact selected declaration resource');
-	check(await openSceneEditor(test) === scene && scene.view.hierarchy.outline.roots[0].collapsed, 'tree: document navigation retains local expansion');
+	await test.clickTab(scene.id, 1, ide.editor.editorParts.findGroup(scene)!);
+	check(ide.editor.editorParts.activeGroup.model.activeTab === scene && scene.view.hierarchy.outline.roots[0].collapsed, 'tree: document navigation retains local expansion');
 	const additional = "scenes.register('fixture.room', { objects = {} })\nscenes.register('fixture.room', { objects = { {member_id='same',definition_id='same'} } })\n";
 	model.pushEditOperations([{ offset: original.indexOf('return {}'), deleteLength: 0, text: additional }]);
 	await frame();

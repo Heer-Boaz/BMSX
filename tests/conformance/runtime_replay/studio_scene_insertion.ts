@@ -1,3 +1,4 @@
+import { ScenePrimaryClient } from '../../../ide/workbench/contrib/scene_editor/primary_client';
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
 import { createLuaTableFieldsInsertionEdits } from '../../../ide/language/lua/table_field_insertion';
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
@@ -12,8 +13,10 @@ export async function testSceneFieldInsertion(test: StudioFixture): Promise<void
 	await selectMember(test, scene, 2);
 	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('insert: actual Scene controls required');
-	const x = pane.control.details.controls[0], fieldSource = readLuaSourceRange(model.buffer, scene.view.hierarchy.outline.roots[0].children[2].element.source);
-	await click(scene.view.actionBar.items.find(item => item.command === 'sceneEditor.removeMember')!.bounds);
+	const primary = ide.editor.mainWorkspace.primary;
+	if (!(primary instanceof ScenePrimaryClient)) throw new Error('Scene document must admit its actual companion controls');
+	const x = primary.details.control.controls[0], fieldSource = readLuaSourceRange(model.buffer, scene.view.hierarchy.outline.roots[0].children[2].element.source);
+	await test.runPaletteCommand('Scene Editor: Remove Member');
 	const removed = model.buffer.getText();
 	check(scene.view.hierarchy.outline.roots[0].children.length === 3 && scene.view.authoring.selection === undefined, 'insert: accepted source removal contracts the authored list');
 	await selectMember(test, scene, 2);

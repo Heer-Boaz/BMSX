@@ -16,6 +16,7 @@ import { check, type StudioFixture } from './studio_fixture';
 /** Independent source namespace, then ordinary Behavior controls on the actual browser graph engines. */
 export async function testStudioBehaviorIntent(test: StudioFixture): Promise<void> {
 	const { ide, frame, press, cycles } = test, editor = ide.editor;
+	const originalGroups = new Set(editor.editorParts.groups);
 	console.info('STUDIO: independent Behavior source intent / native layout / Source / history');
 	const root = 'tests/fixtures/studio/behavior-source-intent';
 	const registry = createLuaSourceRegistry(root, 'behavior.lua');
@@ -69,6 +70,10 @@ export async function testStudioBehaviorIntent(test: StudioFixture): Promise<voi
 	}
 	for (const group of editor.editorParts.groups) for (const input of [...group.model.tabs]) {
 		if (input.resource?.contextId === context.id) check(await group.close(input.id), 'behavior intent: clean fixture closes through its real editor group');
+	}
+	for (const group of editor.editorParts.groups) if (!originalGroups.has(group)) {
+		check(group.model.tabs.length === 0, 'behavior intent: its comparison receiver contains no unrelated document');
+		check(await editor.editorParts.closeGroup(group), 'behavior intent: closing the comparison receiver retires its independent layout allocation');
 	}
 	await frame();
 	check(receipts.every(receipt => !receipt.isCurrent!()), 'behavior intent: closing actual retained inputs retires their source authority');
@@ -156,11 +161,11 @@ async function presentSourcePair(test: StudioFixture, input: BehaviorLensInput, 
 	const range = selectedBehaviorLensSourceRange(input.view)!;
 	check(range !== undefined && receipt.isCurrent!(), 'behavior intent: selected occurrence still owns source navigation');
 	const model = input.view.source.models.get(range.path)!;
-	await test.press('ContextMenu'); await test.clickContextCommand('editor.sourceToSide');
+	await test.runPaletteCommand('Editor: Open Source to Side');
 	await test.until(() => {
 		const group = test.ide.editor.editorParts.activeGroup, code = group.model.activeTab;
 		return code?.kind === 'code_editor' && code.workingCopy === model && group !== test.ide.editor.editorParts.findGroup(input);
-	}, 'behavior intent: real context-menu Source to Side admits its independent canonical text view');
+	}, 'behavior intent: real Palette Source to Side admits its independent canonical text view');
 	const code = test.ide.editor.editorParts.activeGroup.model.activeTab;
 	if (code.kind !== 'code_editor') throw new Error('behavior intent: exact Source receiver required');
 	check(captureCodeEditorView(code).cursor === model.buffer.offsetAt(range.start.line - 1, range.start.column - 1),
@@ -200,13 +205,13 @@ async function testAcceptedEffectField(test: StudioFixture, input: BehaviorLensI
 	check(pane.propertyEdit.active && field.edit !== undefined && field.textInput !== undefined, 'behavior intent: native Edit opens its actual source-bound field');
 	await test.press('ControlLeft', 'KeyA'); await test.clipboard.writeText('123456789 + 7'); await test.press('ControlLeft', 'KeyV');
 	check(field.edit!.pending && model.buffer.getText() === BEHAVIOR_SOURCE_INTENT, 'behavior intent: actual property control owns its unpublished draft');
-	const version = model.version, source = input.view.presentation.actionBar.items.find(item => item.command === 'editor.source')!;
-	await test.click(source.bounds, 6);
+	const version = model.version;
+	await test.runPaletteCommand('Editor: Open Source');
 	await test.until(() => {
 		const code = test.ide.editor.editorParts.activeGroup.model.activeTab;
 		return code?.kind === 'code_editor' && code.workingCopy === model;
 	},
-		'behavior intent: primary Source accepts its pending property then follows canonical text affinity');
+		'behavior intent: Palette Source accepts its pending property then follows canonical text affinity');
 	const accepted = BEHAVIOR_SOURCE_INTENT.replace('period_ms = 20', 'period_ms = 123456789 + 7');
 	check(model.buffer.getText() === accepted && model.version === version + 1 && !field.edit!.pending && receipt.isCurrent!(),
 		'behavior intent: accepted property replacement publishes source and semantic correspondence together');

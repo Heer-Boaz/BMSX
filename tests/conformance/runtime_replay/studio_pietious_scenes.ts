@@ -50,7 +50,7 @@ export async function runStudioPietiousScenes(test: StudioFixture) {
 	const gameplay = await openScene(test, 'gameplay', 2);
 	await editPosition(test, gameplay, 0, 0, 168);
 	await selectMember(test, gameplay, 1);
-	await test.click(gameplay.view.actionBar.items.find(item => item.command === 'sceneEditor.moveMemberUp')!.bounds);
+	await test.runPaletteCommand('Scene Editor: Move Member Up');
 	check(gameplay.view.hierarchy.outline.roots[0].children[0].element.label === "'hud'", 'Studio moved HUD before the player');
 	await press('ControlLeft', 'KeyS');
 	await until(() => !gameplay.workingCopy.dirty, 'persist the reordered gameplay members');

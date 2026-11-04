@@ -16,16 +16,24 @@ const BROWSER_SOURCE = [
 /** Hybrid acceptance: real browser input prepares reading; the workspace owner simulates recovery. */
 export async function testProjectBrowserSession(test: StudioFixture): Promise<void> {
 	const editor = test.ide.editor, panel = editor.resourcePanel, wasVisible = panel.isVisible();
+	const originalGroups = new Set(editor.editorParts.groups);
 	const { resource, close } = await openSceneFixture(test, 'browser-session', [['browser.lua', BROWSER_SOURCE]]);
 	await close();
 	const cycles = test.cycles(), media = test.ide.sources.currentBlua32Media;
 	panel.show(); panel.queuePendingSelection(resource); panel.applyPendingSelection(); await test.frame();
 	await test.press('ArrowRight'); await test.press('ArrowDown'); await test.press('ContextMenu');
 	await test.clickContextCommand('resources.open');
-	check(editor.mainWorkspace.primary instanceof ScenePrimaryClient, 'browser recovery: Files admits an independent Main subject');
-	await test.press('ContextMenu'); await test.clickContextCommand('editor.source');
+	await test.until(() => {
+		const primary = editor.mainWorkspace.primary;
+		return primary instanceof ScenePrimaryClient && primary.input.resource === resource;
+	}, 'Files: the exact Scene document admits its authoring companions');
+	const scene = editor.mainWorkspace.primary;
+	if (!(scene instanceof ScenePrimaryClient)) throw new Error('browser recovery: the admitted Scene document is required');
+	check(editor.editorParts.findGroup(scene.input) !== undefined, 'browser recovery: a real Scene document owns the attached companions');
+	await test.runPaletteCommand('Editor: Open Source');
 	await test.until(() => editor.editorParts.main.activeGroup.model.activeTab?.kind === 'code_editor',
 		'browser recovery: Source is an ordinary document beside retained primary authoring');
+	const ownsSourceReceiver = !originalGroups.has(editor.editorParts.main.activeGroup);
 	const browserResource = test.ide.sources.catalog.resolveResource({ contextId: resource.contextId, path: 'browser.lua' })!;
 	check(editorTextModelService.get(browserResource) === undefined, 'browser recovery: declaration browsing needs no canonical working-copy admission');
 	for (let font = 0; font < 2; font++) {
@@ -59,9 +67,11 @@ export async function testProjectBrowserSession(test: StudioFixture): Promise<vo
 			check(JSON.stringify(panel.serialize().view) === JSON.stringify(payload.filesBrowser.view)
 				&& panel.visible === payload.filesBrowser.visible && inputFocus.admittedTarget === panel.focusTarget,
 				'browser recovery: actual workspace recovery restores exact disclosure, selection, manual reading and native focus');
-			check(JSON.stringify(editor.mainWorkspace.serialize().primary) === JSON.stringify(payload.mainWorkspace.primary)
+			const restoredScene = editor.mainWorkspace.primary;
+			check(restoredScene instanceof ScenePrimaryClient && payload.sceneCompanion !== undefined
+				&& editor.editorParts.editorAt(payload.sceneCompanion) === restoredScene.input
 				&& JSON.stringify(editor.editorParts.serialize(editor.editorInputSerializers)) === JSON.stringify(payload.editorParts),
-				'browser recovery: independent Main subject and ordinary document topology restore without browser activation');
+				'browser recovery: Main placement and document-owned Scene topology restore without browser activation');
 			check(editorTextModelService.get(browserResource) === undefined,
 				'browser recovery: recovering browser correspondence does not open or retain a Source working copy');
 			await test.capture?.(`browser-recovery-${editor.fontVariant}-theme-${theme}-after`);
@@ -69,26 +79,26 @@ export async function testProjectBrowserSession(test: StudioFixture): Promise<vo
 			await test.press('Home'); await test.press('ArrowRight'); await test.press('ArrowDown');
 			const primary = editor.mainWorkspace.primary;
 			if (!(primary instanceof ScenePrimaryClient)) throw new Error('primary recovery: an actual Scene client is required');
-			check(primary.consumer.selection?.kind === 'member', 'primary recovery: native hierarchy input chooses an authored member');
-			const copy = primary.consumer.workingCopy, source = copy.buffer.getText();
+			check(primary.authoring.selection?.kind === 'member', 'primary recovery: native hierarchy input chooses an authored member');
+			const copy = primary.authoring.workingCopy, source = copy.buffer.getText();
 			persistWorkspaceSessionLocally();
 			const mainPayload: WorkspaceAutosavePayload = JSON.parse(JSON.stringify(workspaceState.localGeneration!.payload));
 			check(mainPayload.mainWorkspace.activeClient === 'primary' && !mainPayload.filesBrowser.focused,
-				'primary recovery: the session captures Main foreground independently of document activation');
+				'primary recovery: the session captures companion foreground independently of the text document focus');
 			await test.capture?.(`primary-recovery-${editor.fontVariant}-theme-${theme}-before`);
 			// Exercise the same hybrid recovery boundary while the departing Main still owns native focus.
 			await applyWorkspaceAutosavePayload(editor, test.ide.sources.catalog, test.ide.debugger, mainPayload);
 			const recovered = editor.mainWorkspace.primary, focused = inputFocus.admittedTarget;
 			if (!(recovered instanceof ScenePrimaryClient)) throw new Error('primary recovery: the restored Scene client is required');
-			check(recovered !== primary && focused !== null && recovered.hierarchy.scope.contains(focused.scope),
-				'primary recovery: retiring Main controls cannot activate a document instead of the restored hierarchy');
+			check(recovered !== primary && focused !== null && recovered.hierarchy.scope.contains(focused.scope)
+				&& mainPayload.sceneCompanion !== undefined && editor.editorParts.editorAt(mainPayload.sceneCompanion) === recovered.input,
+				'primary recovery: the persisted Scene document rebinds its hierarchy before companion focus returns');
 			const code = editor.editorParts.main.activeGroup.model.activeTab;
-			check(code?.kind === 'code_editor' && code.workingCopy === recovered.consumer.workingCopy
+			check(code?.kind === 'code_editor' && code.workingCopy === recovered.authoring.workingCopy
 				&& code.workingCopy !== copy && editorTextModelService.get(resource) === code.workingCopy
 				&& code.workingCopy.buffer.getText() === source,
 				'primary recovery: restored Main and Source share the new canonical model without changing authored bytes');
-			check(JSON.stringify(editor.mainWorkspace.serialize().primary) === JSON.stringify(mainPayload.mainWorkspace.primary)
-				&& JSON.stringify(editor.editorParts.serialize(editor.editorInputSerializers)) === JSON.stringify(mainPayload.editorParts),
+			check(JSON.stringify(editor.editorParts.serialize(editor.editorInputSerializers)) === JSON.stringify(mainPayload.editorParts),
 				'primary recovery: exact subject, member selection, document topology and MRU survive native control retirement');
 			await test.frame();
 			await test.capture?.(`primary-recovery-${editor.fontVariant}-theme-${theme}-after`);
@@ -96,7 +106,13 @@ export async function testProjectBrowserSession(test: StudioFixture): Promise<vo
 		}
 		await test.press('ControlLeft', 'ShiftLeft', 'KeyT');
 	}
+	// Recovery legitimately replaced the group identities; locate the fixture's recovered Source receiver before closing its input.
+	const sourceReceiver = editor.editorParts.groups.find(group => group.model.tabs.some(input =>
+		input.kind === 'code_editor' && input.resource === resource))!;
 	await test.runPaletteCommand('Workspace: Clear Primary Authoring'); await close();
+	if (ownsSourceReceiver)
+		check(sourceReceiver.model.tabs.length === 0 && await editor.editorParts.closeGroup(sourceReceiver),
+			'browser recovery: teardown retires only its recovered empty comparison receiver');
 	if (wasVisible !== panel.isVisible()) await test.press('ControlLeft', 'KeyB');
 	check(test.cycles() === cycles && test.ide.sources.currentBlua32Media === media,
 		'browser recovery: source-only recovery never resumes execution or installs guest media');

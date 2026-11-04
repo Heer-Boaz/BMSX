@@ -2,6 +2,9 @@
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { getCodeAreaBounds } from '../../../ide/editor/ui/view/view';
 import { inputFocus } from '../../../ide/input/focus';
+import { KeyInputEvent } from '../../../hosts/common/input/text';
+import { hidKeyUsageForCode } from '../../../hosts/common/input/hid_keys';
+import { INPUT_CONTROLLER_KEY_WORD_COUNT } from '../../../machine/ts/machine/devices/input/contracts';
 
 
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
@@ -9,14 +12,16 @@ import { GX_REGISTER_SOURCE_PATH } from '../../../toolchain/ts/rompack/generated
 import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 async function historyMenu(test: StudioFixture, command: 'undo' | 'redo'): Promise<void> {
-	await test.click(editorChromeState.menuEntryBounds.edit);
+	if (!test.ide.editor.menubar.expanded) await test.click(editorChromeState.menuButtonBounds);
+	test.movePointer(editorChromeState.menuEntryBounds.edit);
+	await test.frame();
 	check(test.ide.editor.menubar.activeMenu === 'edit', 'focus: real Edit menu opens');
 	const item = test.ide.editor.contextMenu.model.rows.find(row => row.command === command)!;
 	check(item.enabled, `focus: ${command} menu reflects the focused control's history`);
 	await test.clickContextCommand(item.command!);
 }
 
-/** Arrange real source views; every edit, history action, rename opening and tab switch below uses physical input. */
+/** Real source controls and pointer/key dispatch; the held-repeat phase models OS editing events explicitly. */
 export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	const { ide, harness, press, click, frame, until, setKey, input, cycles } = test;
 	console.info('STUDIO: focus-owned commands and control history');
@@ -64,8 +69,18 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	setKey('ControlLeft', true);
 	setKey('KeyZ', true);
 	await frame();
-	check(input.getPlayerInput(1).inputHandlers.keyboard.getKeyState('KeyZ').consumed, 'focus: history key is consumed by its field target');
-	for (let index = 0; index < 100; index += 1) await frame();
+	const keyboard = input.getPlayerInput(1).inputHandlers.keyboard;
+	const keyWords = new Uint32Array(INPUT_CONTROLLER_KEY_WORD_COUNT), usage = hidKeyUsageForCode('KeyZ');
+	keyboard.writeInputControllerKeyWords(keyWords);
+	check(keyboard.getKeyState('KeyZ').pressed && (keyWords[usage >>> 5] & (1 << (usage & 31))) === 0,
+		'focus: editing owns the physical history-key hold rather than routing it to the ICU');
+	// This browser fixture models OS repeat events at the native editing boundary;
+	// advancing emulated time alone does not manufacture browser keydown repeats.
+	for (let index = 0; index < 100; index += 1) {
+		const repeat = new KeyInputEvent('KeyZ', keyboard.liveModifiers, true);
+		check(ide.editor.dispatchKey(repeat) && repeat.consumed, 'focus: repeated Undo remains consumed by its concrete field target');
+		await frame();
+	}
 	check(field.text === '' && !field.canUndo && model.buffer.getText() === edited,
 		'focus: held Undo repeats and stops at empty field history, never falling through to the document');
 	setKey('KeyZ', false);
@@ -86,7 +101,7 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 		{ keys: ['ControlLeft', 'KeyL'], field: sourcePane(test).lineJump.state.field, value: () => sourcePane(test).lineJump.state.value },
 		{ keys: ['ControlLeft', 'ShiftLeft', 'KeyO'], field: sourcePane(test).part.quickInput.field, value: () => sourcePane(test).part.quickInput.field.text },
 		{ keys: ['ControlLeft', 'Comma'], field: ide.editor.quickInput.field, value: () => ide.editor.quickInput.field.text },
-		{ keys: ['ControlLeft', 'KeyN'], field: ide.editor.quickInput.field, value: () => ide.editor.quickInput.field.text },
+		{ keys: ['ControlLeft', 'KeyN'], field: sourcePane(test).part.quickInput.field, value: () => sourcePane(test).part.quickInput.field.text },
 	]) {
 		await press(...prompt.keys);
 		check(prompt.field.focusTarget.hasFocus, `focus: ${prompt.keys.join('+')} binds the concrete prompt target`);
@@ -164,7 +179,9 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	await press('Backspace');
 	await press('Escape');
 
-	await click(editorChromeState.menuEntryBounds.view);
+	if (!ide.editor.menubar.expanded) await click(editorChromeState.menuButtonBounds);
+	test.movePointer(editorChromeState.menuEntryBounds.tools); await frame();
+	check(ide.editor.menubar.activeMenu === 'tools', 'focus: real Tools menu opens');
 	const scenarioLabItem = test.ide.editor.contextMenu.model.rows.find(row => row.command === 'scenarioLab')!;
 	await test.clickContextCommand(scenarioLabItem.command!);
 	check(ide.editor.editorParts.activeGroup.model.activeTab.kind === 'scenario_lab' && !sourcePane(test).code.focusTarget.hasFocus && model.canRedo,
@@ -224,7 +241,9 @@ export async function presentStudioFocus(test: StudioFixture): Promise<void> {
 	await test.press('ControlLeft', 'KeyF');
 	await test.press('ControlLeft', 'KeyA');
 	for (const key of ['KeyP', 'KeyO', 'KeyS']) await test.press(key);
-	await test.click(editorChromeState.menuEntryBounds.edit);
+	if (!test.ide.editor.menubar.expanded) await test.click(editorChromeState.menuButtonBounds);
+	test.movePointer(editorChromeState.menuEntryBounds.edit);
+	await test.frame();
 	check(test.ide.editor.contextMenu.focusTarget.commandContext === sourcePane(test).find.state.field.focusTarget && test.ide.editor.menubar.activeMenu === 'edit', 'focus: final menu preserves the real input target');
 	await test.frame();
 }

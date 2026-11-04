@@ -3,6 +3,7 @@ export const NAVIGATION_SOURCE = `local machines<const> = require('cartlib/fsm/l
 local trees<const> = require('cartlib/behaviour_tree/library')
 local effects<const> = require('cartlib/actioneffects')
 local scenes<const> = require('cartlib/world/scene_library')
+require('cartlib/world/prefab').define({ def_id = 'navigation.actor', class = require('cartlib/world/object_3d') })
 local next_path<const> = '../active'
 local step<const> = function(actor)
 	if actor.first then return next_path end
@@ -16,7 +17,7 @@ trees.register('navigation.tree.one', { root = { type = 'sequence', children = {
 trees.register('navigation.tree.two', { root = { type = 'sequence', children = { leaf } } })
 effects.register_effect('navigation.effect', { cooldown_ms = 10, period_ms = 40, handler = step })
 scenes.register('navigation.scene', { objects = {
-	{ member_id = 'one', definition_id = 'navigation.actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 11, 22, 33 } } },
-	{ member_id = 'two', definition_id = 'navigation.actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 44, 55, 66 } } },
+	{ member_id = 'one', definition_id = 'navigation.actor', position = { x = 11, y = 22, z = 33 } },
+	{ member_id = 'two', definition_id = 'navigation.actor', position = { x = 44, y = 55, z = 66 } },
 } })
 `;

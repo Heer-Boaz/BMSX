@@ -11,7 +11,7 @@ import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 /** Independent definitions through real Save, palette, pointer, source and history owners. */
 export async function testStudioDefinitionInputs(test: StudioFixture): Promise<void> {
-	const { ide, harness, press, click, frame, runPaletteCommand } = test;
+	const { ide, harness, press, frame, runPaletteCommand } = test;
 	console.info('STUDIO A04: definition identity, group preview, Keep Open and shared model lifetime');
 	const initialTabs = new Set(ide.editor.editorParts.groups.flatMap(group => [...group.model.tabs]));
 	const cycles = test.cycles();
@@ -47,7 +47,7 @@ export async function testStudioDefinitionInputs(test: StudioFixture): Promise<v
 	const preview = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (preview.kind !== 'behavior_lens') throw new Error('A04: preview missing');
 	check(ide.editor.editorParts.activeGroup.model.previewTab === preview && ide.editor.editorParts.activeGroup.model.getLabel(preview).startsWith('PREVIEW:'), 'A04: preview is explicit and visible');
-	await click(preview.view.presentation.actionBar.items[0].bounds); await press('AltLeft', 'ArrowLeft');
+	await runPaletteCommand('Editor: Open Source'); await press('AltLeft', 'ArrowLeft');
 	check(ide.editor.editorParts.activeGroup.model.activeTab === preview && ide.editor.editorParts.activeGroup.model.previewTab === preview && !model.dirty, 'A04: Source and Back retain a clean preview without editing');
 	const previewIndex = ide.editor.editorParts.activeGroup.model.indexOf(preview);
 	await runPaletteCommand('Behavior Lens: Preview Definition'); await chooseBehavior(test, 'BT navigation.tree.two');
@@ -105,7 +105,9 @@ export async function testStudioDefinitionInputs(test: StudioFixture): Promise<v
 		test.setPointerButton('pointer_primary', true); await frame();
 		const order = [...ide.editor.editorParts.activeGroup.model.tabs];
 		const from = ide.editor.editorParts.activeGroup.model.indexOf(second);
-		test.movePointer(point(1, y));
+		// The drop belongs to this concrete group's strip, not the window's
+		// left edge (which may belong to Files or another document group).
+		test.movePointer(point(ide.editor.editorParts.activeGroup.tabStrip.layoutState.viewportBounds.left + 1, y));
 		for (let index = 0; index < 30; index += 1) await frame();
 		check(pointerCapture.active && ide.editor.editorParts.activeGroup.tabStrip.drag.state?.hasDragged === true
 			&& order.every((input, index) => input === ide.editor.editorParts.activeGroup.model.tabs[index]), 'A04: captured tab drag previews an insertion without reordering yet');
@@ -132,7 +134,7 @@ export async function testStudioDefinitionInputs(test: StudioFixture): Promise<v
 
 	const duplicate = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (duplicate.kind !== 'behavior_lens') throw new Error('A04: active duplicate missing');
-	await click(duplicate.view.presentation.actionBar.items[0].bounds);
+	await runPaletteCommand('Editor: Open Source');
 	const prefix = '-- 🐉 preceding source\n';
 	await press('ControlLeft', 'Home'); await test.clipboard.writeText(prefix); await press('ControlLeft', 'KeyV');
 	const beforeRename = model.buffer.getText();

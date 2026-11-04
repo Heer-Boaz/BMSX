@@ -96,8 +96,24 @@ export async function testStudioSourceChoices(test: StudioFixture): Promise<void
 	definitions.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- source generation\n' }]);
 	check(!picker.visible && inputFocus.target === sourcePane(test).code.focusTarget, 'A06: an edited imported/source candidate retires stale locations');
 	await press('ControlLeft', 'Comma'); // New file chooser must survive the expired source listener.
+	const files = ide.editor.quickInput;
+	check(files.visible && inputFocus.target === files.field.focusTarget, 'A06: Go to File admits its actual workbench picker');
 	definitions.undo();
-	check(picker.visible, 'A06: the expired source generation cannot close a newer file picker');
+	check(files.visible && inputFocus.target === files.field.focusTarget, 'A06: the expired source generation cannot close a newer file picker');
+	await press('Escape');
+
+	// New File reuses the document-part controller itself; this also proves
+	// retirement unsubscribed the old source generation, not just another host.
+	await press('AltLeft', 'Comma');
+	definitions.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- source generation\n' }]);
+	check(!picker.visible && inputFocus.target === sourcePane(test).code.focusTarget, 'A06: the next source generation retires independently');
+	await press('ControlLeft', 'KeyN');
+	check(picker.visible && inputFocus.target === picker.field.focusTarget, 'A06: New File reuses the actual document-part popup');
+	const promptGeneration = picker.field.focusTarget.scope.contextGeneration, path = picker.field.text;
+	definitions.undo();
+	check(picker.visible && inputFocus.target === picker.field.focusTarget
+		&& picker.field.focusTarget.scope.contextGeneration === promptGeneration && picker.field.text === path,
+		'A06: an expired source subscription cannot retire or retarget a newer popup on the same controller');
 	await press('Escape');
 	check(editorTextModelService.get(usage.resource) === usage && ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor',
 		'A06: choosing sources retains the same working copy and ordinary editor pane');

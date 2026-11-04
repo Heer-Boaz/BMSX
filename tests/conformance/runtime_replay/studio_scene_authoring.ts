@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict';
+import { ScenePrimaryClient } from '../../../ide/workbench/contrib/scene_editor/primary_client';
 import type { SceneEditorInput } from '../../../ide/workbench/contrib/scene_editor/editor_input';
 import { openSceneEditor, selectMember } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
@@ -39,10 +39,12 @@ export async function focusOption(test: StudioFixture, scene: SceneEditorInput, 
 	await selectMember(test, scene, member);
 	const pane = test.ide.editor.editorParts.activeGroup.panes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('the Scene Editor must own the option inputs');
+	const primary = test.ide.editor.mainWorkspace.primary;
+	if (!(primary instanceof ScenePrimaryClient)) throw new Error('Scene document must admit its actual companion controls');
 	const index = scene.view.details.optionProperties.findIndex(property => property.descriptor.label === label);
 	check(index >= 0, `${label}: authored option appears in the inspector`);
-	const entry = pane.control.details.options.controls[index];
-	for (let step = 0; !entry.focusTarget.hasFocus && step < pane.control.details.controls.length + pane.control.details.options.controls.length + 3; step += 1) await test.press('Tab');
+	const entry = primary.details.control.options.controls[index];
+	for (let step = 0; !entry.focusTarget.hasFocus && step < primary.details.control.controls.length + primary.details.control.options.controls.length + 3; step += 1) await test.press('Tab');
 	check(entry.focusTarget.hasFocus, `${label}: Tab reaches the authored option`);
 	const bounds = scene.view.details.optionProperties[index].bounds;
 	check(bounds.top >= scene.view.details.viewport.bounds.top && bounds.bottom <= scene.view.details.viewport.bounds.bottom,
@@ -55,7 +57,8 @@ export async function focusOption(test: StudioFixture, scene: SceneEditorInput, 
 }
 
 export async function editOption(test: StudioFixture, scene: SceneEditorInput, member: number, label: string, text: string) {
-	const entry = await focusOption(test, scene, member, label); assert.ok(entry.kind === 'value');
+	const entry = await focusOption(test, scene, member, label);
+	if (entry.kind !== 'value') throw new Error('the chosen option must admit a value control');
 	const control = entry.control;
 	await typeSourceText(test, text);
 	check(control.pending, `${label}: keyboard produces a local draft`);

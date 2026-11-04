@@ -1,6 +1,8 @@
+import { ScenePrimaryClient } from '../../../ide/workbench/contrib/scene_editor/primary_client';
 import { SCENE_VIEWPORT_SOURCE } from '../../fixtures/studio/scene_viewport';
 import { SCROLLBAR_WIDTH } from '../../../ide/common/constants';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
+import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { inputFocus } from '../../../ide/input/focus';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
@@ -35,9 +37,6 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 	const authored = model.buffer.getText();
 	const scene = await openSceneEditor(test);
 	await selectMember(test, scene, 0);
-	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
-	if (!(pane instanceof SceneEditorPane)) throw new Error('A02: actual Scene pane required');
-	const [x, y, z] = pane.control.details.controls;
 	check(scene.view.details.properties[0].descriptor.value === 11 && scene.view.details.properties[2].descriptor.value === 33, 'A02: independent fixture is selected');
 	// Reuse a real workspace input as transport, not its game implementation.
 	const record = ide.sources.catalog.getContext(model.resource.contextId).luaSources.records.find(record =>
@@ -51,6 +50,9 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 	await ide.editor.navigation.openResource(ide.editor.editorParts.editorDestination(ide.editor.editorParts.activeGroup), model.resource);
 	check(await openSceneEditor(test) === scene, 'scene imports: the actual menu reopens the same scene through a reexport');
 	await selectMember(test, scene, 0);
+	const primary = ide.editor.mainWorkspace.primary;
+	if (!(primary instanceof ScenePrimaryClient)) throw new Error('Scene document must admit its actual companion controls');
+	const [x] = primary.details.control.controls;
 	await test.click(scene.view.details.properties[0].bounds);
 	await press('Digit9');
 	check(x.pending && x.field.focusTarget.hasFocus, 'scene imports: a real property draft is focused');
@@ -63,7 +65,7 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 	check(x.commit() && model.version === sourceVersion,
 		'scene imports: even commit before the next frame cannot publish the valid draft to a revoked source target');
 	await frame();
-	check(scene.view.details.properties[0].descriptor.value === null && x.field.readOnly && !x.pending && !x.field.focusTarget.hasFocus,
+	check(scene.view.details.properties.length === 0 && x.field.readOnly && !x.pending && !x.field.focusTarget.hasFocus,
 		'scene imports: revocation detaches and cancels the old field rather than committing it on blur');
 	check(model.version === sourceVersion, 'scene imports: revocation never writes the consumer');
 	provider.undo(); await frame();
@@ -75,13 +77,13 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 	await selectMember(test, scene, 0);
 	const point = (x: number, y: number) => ({ left: x, right: x, top: y, bottom: y });
 	const resize = async (y: number) => {
-		const sash = ide.editor.mainWorkspace.regionLayout.activitySashBounds;
-		const x = (sash.left + sash.right) / 2;
-		movePointer(point(x, (sash.top + sash.bottom) / 2)); await frame();
+		const bounds = ide.editor.mainWorkspace.regions.details.window.model.bounds;
+		const x = (bounds.left + bounds.right) / 2;
+		movePointer(point(x, bounds.bottom - 1)); await frame();
 		setPointerButton('pointer_primary', true); await frame();
 		movePointer(point(x, y)); await frame();
 		setPointerButton('pointer_primary', false); await frame();
-		check(scene.view.layout.bottom === sourceGroup.panes.contentBounds.bottom,
+		check(scene.view.viewport.bounds.bottom === ide.editor.editorParts.findGroup(scene)!.panes.contentBounds.bottom,
 			'A02: Scene consumes its actual document-group allocation after activity resize');
 	};
 	const wheel = async (steps: number) => {
@@ -95,20 +97,42 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 	};
 	for (const variant of ['msx', 'tiny'] as const) {
 		ide.editor.setFontVariant(variant); await frame();
+		if (ide.editor.mainWorkspace.regions.details.placement === 'floatingWindow')
+			await runPaletteCommand('Workspace: Move Details to Main');
 		check(sourceGroup.tabStrip.scrollbar.isVisible() && sourceGroup.tabStrip.layoutState.totalHeight === editorViewState.tabBarHeight + SCROLLBAR_WIDTH,
 			'A02/A04: the document part retains its independently overflowing strip at either font');
-		const groupBounds = sourceGroup.panes.contentBounds;
-		check(scene.view.layout.top === groupBounds.top && scene.view.layout.bottom === groupBounds.bottom,
+		const groupBounds = ide.editor.editorParts.findGroup(scene)!.panes.contentBounds;
+		check(scene.view.viewport.bounds.top === groupBounds.top && scene.view.viewport.bounds.bottom === groupBounds.bottom,
 			'A02/A04: the actual invoking group passes its font-sized tab strip and body to the Scene child layout');
 		if (!ide.editor.mainWorkspace.regionLayout.activityVisible) await runPaletteCommand('View: Problems Panel');
 		await testStudioPointerHover(test, scene);
+		// Editor hide/show retires interaction attachments, not the Scene document.
+		const primary = ide.editor.mainWorkspace.primary;
+		if (!(primary instanceof ScenePrimaryClient) || primary.input !== scene) throw new Error('A02: the Scene document must regain its companions');
+		const pane = ide.editor.editorParts.findGroup(scene)!.panes.activePane;
+		if (!(pane instanceof SceneEditorPane)) throw new Error('A02: the Scene must retain an actual viewport pane');
+		const [x, y, z] = primary.details.control.controls;
 		if (!ide.editor.mainWorkspace.regionLayout.activityVisible) await runPaletteCommand('View: Problems Panel');
-		const bodyTop = scene.view.layout.top + (editorViewState.lineHeight + 4) * 2;
+		// Details is a companion, not a child of the Scene document's viewport.
+		// Its native window owns the short allocation used to exercise scrolling.
+		await runPaletteCommand('Workspace: Move Details to New Window');
+		// Normal windows deliberately allow partial off-screen placement. Move
+		// this form inside the work area before exercising its right scrollbar.
+		const window = ide.editor.mainWorkspace.regions.details.window.model;
+		const titleX = window.header.left + window.header.bottom - window.header.top;
+		const titleY = (window.header.top + window.header.bottom) / 2;
+		const dx = (editorChromeState.topBarBounds.left + editorChromeState.topBarBounds.right - window.bounds.left - window.bounds.right) / 2;
+		movePointer(point(titleX, titleY)); await frame();
+		setPointerButton('pointer_primary', true); await frame();
+		check(pointerCapture.active, 'A02: native title movement captures the Details window');
+		movePointer(point(titleX + dx, titleY)); await frame();
+		setPointerButton('pointer_primary', false); await frame();
+		const bodyTop = ide.editor.mainWorkspace.regions.details.window.model.header.bottom;
 		await resize(bodyTop + 52);
 		check(scene.view.details.viewport.height > 30 && scene.view.details.viewport.height < scene.view.details.viewport.contentHeight && scene.view.details.viewport.scrollbar.isVisible(),
-			`A02: ${variant} Problems resize creates a real scrollable form`);
-		pane.focus(); await press('Tab');
-		check(inputFocus.target!.commandContext === x.field.focusTarget.parent, 'A02: scroll-area focus routes document commands explicitly');
+			`A02: ${variant} native window resize creates a real scrollable form`);
+		await runPaletteCommand('Workspace: Focus Details');
+		check(inputFocus.target === primary.details.control.commandTarget, 'A02: Details focus admits its scroll-area command target');
 		await press('End');
 		const note = scene.view.details.detailsText.at(-1)!;
 		check(scene.view.details.viewport.offsetTop + note.top + editorViewState.lineHeight <= scene.view.details.viewport.bounds.bottom,
@@ -124,7 +148,7 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 		await test.click(point(hidden.left + 4, hidden.bottom - 1));
 		check(!x.field.focusTarget.hasFocus && model.buffer.getText() === authored,
 			'A02: clicking clipped field geometry cannot activate or edit that field');
-		await press('Tab'); // Header click focused the outline; re-enter the scroll area.
+		await runPaletteCommand('Workspace: Focus Details');
 		await press('Tab'); check(x.field.focusTarget.hasFocus, 'A02: Tab enters X'); visible(0);
 		await press('Tab'); check(y.field.focusTarget.hasFocus, 'A02: Tab enters Y'); visible(1);
 		await press('Tab'); check(z.field.focusTarget.hasFocus, 'A02: Tab reveals Z rather than focusing an invisible value'); visible(2);
@@ -132,7 +156,8 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 		check(z.pending && model.buffer.getText() === authored, 'A02: invalid unsubmitted draft has not touched source');
 		movePointer(scene.view.details.viewport.scrollbar.getThumb()!); await frame();
 		setPointerButton('pointer_primary', true); await frame();
-		check(pointerCapture.active && z.field.focusTarget.hasFocus && z.pending, 'A02: scrollbar capture preserves the field draft');
+		check(pointerCapture.active, 'A02: the Details scrollbar owns pointer capture');
+		check(z.field.focusTarget.hasFocus && z.pending, 'A02: scrollbar capture preserves the field draft');
 		const track = scene.view.details.viewport.scrollbar.getTrack();
 		movePointer(point(track.left + 1, track.bottom - 1)); await frame();
 		await press('Escape');
@@ -144,22 +169,28 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 		await wheel(-1);
 		check(scene.view.details.viewport.scrollTop < scroll && z.pending && model.buffer.getText() === authored, 'A02: wheel moves the form without focus or source changes');
 		await press('Escape');
-		pane.focus();
-		for (let index = 0; index < 4; index += 1) await press('Tab');
+		await runPaletteCommand('Workspace: Focus Details');
+		for (let index = 0; index < 3; index += 1) await press('Tab');
 		check(z.field.focusTarget.hasFocus, 'A02: normal focus traversal returns to Z'); visible(2);
 		await press('Digit9'); await press('Enter');
 		check(model.buffer.getText() === SCENE_VIEWPORT_SOURCE.replace('z = 33', 'z = 09') + original && scene.view.details.properties[2].descriptor.value === 9,
 			'A02: the revealed bottom field edits only its own canonical Lua value');
 		await press('ControlLeft', 'KeyZ');
 		check(model.buffer.getText() === authored, 'A02: one document Undo restores the accepted edit');
-		for (let index = 0; index < 4; index += 1) await press('Tab');
+		await runPaletteCommand('Workspace: Focus Details');
+		for (let index = 0; index < 3; index += 1) await press('Tab');
 		await resize(bodyTop + 38);
-		check(z.field.focusTarget.hasFocus, 'A02: divider resize preserves the field focus'); visible(2);
-		await resize(scene.view.layout.top);
+		check(inputFocus.admittedTarget === ide.editor.mainWorkspace.regions.details.window.focusTarget && !z.pending && model.buffer.getText() === authored,
+			'A02: native edge resizing admits its window chrome without publishing an unrelated source edit');
+		await runPaletteCommand('Workspace: Focus Details');
+		for (let index = 0; index < 3; index += 1) await press('Tab');
+		visible(2);
+		// Passive allocation changes do not perform a native chrome focus handoff.
+		window.setRequestedBounds({ ...window.requestedBounds, bottom: bodyTop }); await frame();
 		check(z.field.focusTarget.hasFocus && ide.editor.textTarget === z.field,
-			'A02: growing activity respects the real document minimum and does not revoke its sibling field');
-		await resize(bodyTop + 38);
-		check(z.field.focusTarget.hasFocus, 'A02: restoring activity size retains the actual focused field'); visible(2);
+			'A02: a passive minimum allocation does not revoke the Details field');
+		window.setRequestedBounds({ ...window.requestedBounds, bottom: bodyTop + 38 }); await frame();
+		check(z.field.focusTarget.hasFocus, 'A02: restoring the allocation retains the actual focused field'); visible(2);
 		const selectedProblem = ide.editor.problems.selectedDiagnostic;
 		const panel = ide.editor.problems.bounds;
 		await test.click(point(panel.left + 4, panel.bottom - 1));
@@ -174,6 +205,6 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 	}
 	// Keep the final renderer screenshot on a short viewport with the last option and notes visible.
 	await press('Escape');
-	pane.focus(); await press('Tab'); await press('End'); await frame();
+	await runPaletteCommand('Workspace: Focus Details'); await press('End'); await frame();
 	check(model.buffer.getText() === authored, 'A02: presentation never rewrites the fixture');
 }

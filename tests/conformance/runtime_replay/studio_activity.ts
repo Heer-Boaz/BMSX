@@ -37,6 +37,10 @@ async function testMainActivity(test: StudioFixture): Promise<void> {
 	files.show(); files.queuePendingSelection(resource); files.applyPendingSelection(); await frame();
 	await press('ArrowRight'); await press('ArrowDown'); await press('ContextMenu');
 	await test.clickContextCommand('resources.open');
+	await test.until(() => {
+		const primary = editor.mainWorkspace.primary;
+		return primary instanceof ScenePrimaryClient && primary.input.resource === resource;
+	}, 'Files: the exact Scene document admits its authoring companions');
 	const primary = editor.mainWorkspace.primary;
 	if (!(primary instanceof ScenePrimaryClient)) throw new Error('activity: Files must admit the real Scene primary');
 	await press('ControlLeft', 'KeyB');
@@ -79,7 +83,7 @@ async function testMainActivity(test: StudioFixture): Promise<void> {
 		'activity: diagnostic activation reveals the canonical Source behind the independent Scene primary');
 	check(code.code.view!.cursorRow === marker.row && code.code.view!.cursorColumn === marker.startColumn,
 		'activity: diagnostic navigation uses the exact canonical source caret');
-	check(main.primary === primary && primary.consumer.workingCopy === sceneModel && sceneModel.buffer.getText() === sceneText,
+	check(main.primary === primary && primary.authoring.workingCopy === sceneModel && sceneModel.buffer.getText() === sceneText,
 		'activity: diagnostic activation cannot replace Main authoring or its source');
 	await press('ControlLeft', 'KeyW');
 	check(editor.editorParts.groups.every(group => group.model.tabs.every(input => input.resource !== model.resource))

@@ -7,8 +7,10 @@ import { check, type StudioFixture } from './studio_fixture';
 import { openSceneFixture } from './studio_scene_source';
 
 /** Resolve one synthetic resource through ordinary Go to File in its receiving native group. */
-async function openFile(test: StudioFixture, group: EditorGroupView, resource: RuntimeResource) {
+async function openFile(test: StudioFixture, group: EditorGroupView, resource: RuntimeResource, beside = false) {
 	await test.runPaletteCommand('Window: Focus Main Workspace');
+	for (let step = 0; test.ide.editor.editorParts.activeGroup !== group && step < test.ide.editor.editorParts.groups.length; step++)
+		await test.runPaletteCommand('Editor Groups: Focus Next Group');
 	check(test.ide.editor.editorParts.activeGroup === group && inputFocus.admittedTarget !== null && group.focusScope.contains(inputFocus.admittedTarget.scope),
 		'batch close: the receiving group owns native input before Go to File');
 	await test.runPaletteCommand('Go: Go to File');
@@ -16,32 +18,39 @@ async function openFile(test: StudioFixture, group: EditorGroupView, resource: R
 	const index = test.ide.editor.quickInput.model.list.rows.findIndex(row => (row.item as ResourceQuickPickItem).resource === resource);
 	check(index >= 0, 'batch close: the admitted synthetic file is an exact native file choice');
 	for (let row = 0; row < index; row++) await test.press('ArrowDown');
-	await test.press('Enter');
-	await test.until(() => group.model.activeTab?.resource === resource && inputFocus.admittedTarget === group.panes.activePane?.commandTarget,
+	if (beside) await test.press('AltLeft', 'Enter'); else await test.press('Enter');
+	await test.until(() => {
+		const receiver = test.ide.editor.editorParts.activeGroup;
+		return (beside ? receiver !== group : receiver === group) && receiver.model.activeTab?.kind === 'code_editor'
+			&& receiver.model.activeTab.resource === resource && inputFocus.admittedTarget === receiver.panes.activePane?.commandTarget;
+	},
 		'batch close: ordinary file navigation completes in the intended concrete group');
-	return group.model.activeTab!;
+	return test.ide.editor.editorParts.activeGroup.model.activeTab!;
 }
 
-/** Batch document closure preserves the actual group containers and independent Main consumers. */
+/** Local closure preserves other documents; global closure retires Scene companions with their owning input. */
 export async function testStudioBatchClose(test: StudioFixture): Promise<void> {
 	const editor = test.ide.editor, parts = editor.editorParts, panel = editor.resourcePanel;
-	const { model, resource, close } = await openSceneFixture(test, 'batch-close', [
+	const originalGroups = new Set(parts.groups);
+	const { resource, close } = await openSceneFixture(test, 'batch-close', [
 		['batch_alpha.lua', 'return { alpha = true }\n'], ['batch_beta.lua', 'return { beta = true }\n'],
 	]);
 	await close();
 	panel.show(); panel.queuePendingSelection(resource); panel.applyPendingSelection(); await test.frame();
 	await test.press('ArrowRight'); await test.press('ArrowDown'); await test.press('ContextMenu');
 	await test.clickContextCommand('resources.open');
+	await test.until(() => {
+		const primary = editor.mainWorkspace.primary;
+		return primary instanceof ScenePrimaryClient && primary.input.resource === resource;
+	}, 'Files: the exact Scene document admits its authoring companions');
 	const primary = editor.mainWorkspace.primary;
 	if (!(primary instanceof ScenePrimaryClient)) throw new Error('batch close: the synthetic Scene must own its real Main presentation');
-	await test.press('ContextMenu'); await test.clickContextCommand('editor.source');
-	await test.until(() => parts.activeGroup.model.activeTab?.resource === resource,
+	const model = primary.authoring.workingCopy;
+	await test.runPaletteCommand('Editor: Open Source');
+	await test.until(() => parts.activeGroup.model.activeTab?.kind === 'code_editor' && parts.activeGroup.model.activeTab.resource === resource,
 		'batch close: Main opens its canonical Source as an ordinary independent document');
 	const mainGroup = parts.activeGroup;
-	await test.runPaletteCommand('Workspace: Focus Primary Authoring');
-	await test.press('ContextMenu'); await test.clickContextCommand('editor.sourceToSide');
-	await test.until(() => parts.activeGroup !== mainGroup && parts.activeGroup.model.activeTab?.resource === resource,
-		'batch close: explicit Source to Side creates an independent same-resource view');
+	await openFile(test, mainGroup, resource, true);
 	const side = parts.activeGroup, groups = [...parts.groups], documents = [...parts.documents];
 	check(mainGroup.model.activeTab !== side.model.activeTab && mainGroup.model.activeTab?.kind === 'code_editor'
 		&& side.model.activeTab?.kind === 'code_editor' && mainGroup.model.activeTab.workingCopy === side.model.activeTab.workingCopy,
@@ -51,7 +60,6 @@ export async function testStudioBatchClose(test: StudioFixture): Promise<void> {
 	const alpha = test.ide.sources.catalog.resolveResource({ contextId: resource.contextId, path: 'batch_alpha.lua' })!;
 	const beta = test.ide.sources.catalog.resolveResource({ contextId: resource.contextId, path: 'batch_beta.lua' })!;
 	const media = test.ide.sources.currentBlua32Media, cycles = test.cycles(), source = model.buffer.getText(), version = model.version;
-	const selection = primary.consumer.selection;
 	for (let font = 0; font < 2; font++) {
 		for (let theme = 0; theme < 2; theme++) {
 			await test.runPaletteCommand('Window: Focus Main Workspace');
@@ -86,28 +94,31 @@ export async function testStudioBatchClose(test: StudioFixture): Promise<void> {
 				&& !mainGroup.surface.retired && editor.mainWorkspace.primary === primary,
 				'batch close: closing all local views keeps the concrete group and independent Main subject alive');
 			await openFile(test, mainGroup, alpha);
-			await test.runPaletteCommand('Editor Groups: Focus Next Group');
-			await openFile(test, side, beta);
-			const beforeGlobalFiles = JSON.stringify(panel.serialize());
-			await test.runPaletteCommand('Workspace: Focus Hierarchy');
-			await test.runPaletteCommand('Editor: Close All Editors');
-			await test.until(() => parts.groups.every(group => group.model.tabs.length === 0),
-				'batch close: the workspace request closes document views across every concrete group');
-			check(parts.groups.length === groups.length && groups.every(group => parts.groups.includes(group) && !group.surface.retired)
-				&& parts.documents.length === documents.length && documents.every(part => parts.documents.includes(part))
-				&& editor.mainWorkspace.primary === primary && primary.consumer.selection === selection
-				&& editor.mainWorkspace.activity === activity && editor.mainWorkspace.activityDisplayed === activityDisplayed
-				&& JSON.stringify(panel.serialize()) === beforeGlobalFiles && model.buffer.getText() === source && model.version === version && !model.dirty
-				&& test.ide.sources.currentBlua32Media === media && test.cycles() === cycles,
-				'batch close: workspace document closure preserves groups, windows, Main selection, Files, activity and canonical guest/source state');
-			await test.capture?.(`batch-close-${editor.fontVariant}-theme-${theme}-empty-groups`);
 			await test.press('ControlLeft', 'AltLeft', 'KeyT');
 		}
 		await test.press('ControlLeft', 'ShiftLeft', 'KeyT');
 	}
-	await test.runPaletteCommand('Window: Focus Main Workspace'); await test.runPaletteCommand('Editor Groups: Close Group');
-	await test.runPaletteCommand('Workspace: Clear Primary Authoring');
+	const beforeGlobalFiles = JSON.stringify(panel.serialize());
+	await test.runPaletteCommand('Workspace: Focus Hierarchy');
+	await test.runPaletteCommand('Editor: Close All Editors');
+	await test.until(() => parts.groups.every(group => group.model.tabs.length === 0),
+		'batch close: the workspace request closes document inputs across every concrete group');
+	check(parts.groups.length === groups.length && groups.every(group => parts.groups.includes(group) && !group.surface.retired)
+		&& parts.documents.length === documents.length && documents.every(part => parts.documents.includes(part))
+		&& editor.mainWorkspace.primary === undefined && !primary.isCurrent() && !primary.hierarchy.attached && !primary.details.attached
+		&& editor.mainWorkspace.activity === activity && editor.mainWorkspace.activityDisplayed === activityDisplayed
+		&& JSON.stringify(panel.serialize()) === beforeGlobalFiles && model.buffer.getText() === source && model.version === version && !model.dirty
+		&& test.ide.sources.currentBlua32Media === media && test.cycles() === cycles,
+		'batch close: closing the Scene retires companions while preserving group containers, unrelated readers and canonical source bytes');
+	for (const group of [side, mainGroup].filter(group => !originalGroups.has(group))) {
+		await test.runPaletteCommand('Window: Focus Main Workspace');
+		for (let step = 0; parts.activeGroup !== group && step < parts.groups.length; step++)
+			await test.runPaletteCommand('Editor Groups: Focus Next Group');
+		check(parts.activeGroup === group, 'batch close: the empty fixture group remains a native focus destination');
+		await test.runPaletteCommand('Editor Groups: Close Group');
+	}
+
 	await close();
 	check(!parts.groups.includes(side) && editor.mainWorkspace.primary === undefined && !model.dirty,
-		'batch close: explicit container/primary cleanup is separate from document closure');
+		'batch close: empty group cleanup is separate from document and companion retirement');
 }

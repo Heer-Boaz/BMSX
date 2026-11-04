@@ -53,7 +53,7 @@ export async function testStudioBuildChooser(test: StudioFixture, client: SceneP
 	check(editor.builds === undefined && editor.mainWorkspace.primary === client,
 		'build chooser: the dedicated fixture starts without a server producer and retains its authored Main context');
 	await test.clickTab(source.id, 1, group);
-	const origin = inputFocus.admittedTarget!, selection = client.consumer.selection, recipient = editor.guestInputRecipient;
+	const origin = inputFocus.admittedTarget!, selection = client.authoring.selection, recipient = editor.guestInputRecipient;
 	const media = test.ide.sources.currentBlua32Media, cycles = test.cycles();
 	const groups = editor.editorParts.groups.map(owner => ({ owner, input: owner.model.activeTab, tabs: [...owner.model.tabs] }));
 	const models = [...editorTextModelService.models].map(model => ({ model, text: model.buffer.getText(), version: model.version,
@@ -147,7 +147,7 @@ export async function testStudioBuildChooser(test: StudioFixture, client: SceneP
 	check(!picker.visible && editor.builds === undefined,
 		'build chooser: late data cannot revive UI after the fixture producer binding is retired');
 	await test.clickTab(source.id, 1, group);
-	check(editor.mainWorkspace.primary === client && client.consumer.selection === selection && editor.guestInputRecipient === recipient
+	check(editor.mainWorkspace.primary === client && client.authoring.selection === selection && editor.guestInputRecipient === recipient
 		&& editor.editorParts.groups.length === groups.length && groups.every(saved => saved.owner.model.activeTab === saved.input
 			&& saved.owner.model.tabs.length === saved.tabs.length && saved.owner.model.tabs.every((input, index) => input === saved.tabs[index]))
 		&& models.every(saved => saved.model.buffer.getText() === saved.text && saved.model.version === saved.version

@@ -8,7 +8,7 @@ import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 /** The actual shared keybinding/palette, panes, source model and FSM worker. */
 export async function testStudioNavigationHistory(test: StudioFixture): Promise<void> {
-	const { ide, harness, press, frame, click, runPaletteCommand } = test;
+	const { ide, harness, press, frame, runPaletteCommand } = test;
 	console.info('STUDIO A03: diagram -> Source -> definition -> Back -> Back -> Forward');
 	const initialTabs = new Set(ide.editor.editorParts.groups.flatMap(group => [...group.model.tabs]));
 	const cycles = test.cycles();
@@ -39,7 +39,7 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	const scrollY = graph.viewport.scrollY;
 	const version = model.version;
 	const dirty = model.dirty;
-	await click(graph.actionBar.items[0].bounds, 5);
+	await runPaletteCommand('Editor: Open Source');
 	check(ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.view.cursorRow === source.start.line - 1 && !hasSelection(sourcePane(test).code),
 		'A03: Source opens the selected proof without changing or selecting text');
 	await frame();
@@ -88,11 +88,10 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	if (treeInput.kind !== 'behavior_lens') throw new Error('A04: BT input missing');
 	const treeView = treeInput.view;
 	if (treeView.presentation.kind !== 'graph') throw new Error('A03: BT presentation missing');
-	const tree = treeView.presentation;
 	await press('Home'); await press('ArrowDown'); await press('ArrowDown'); await press('ArrowRight');
 	const occurrence = treeView.selectionState.selected!.rowKey;
 	const treeSource = selectedBehaviorLensSourceRange(treeView)!;
-	await click(tree.actionBar.items[0].bounds);
+	await runPaletteCommand('Editor: Open Source');
 	await press('AltLeft', 'ArrowLeft');
 	check(ide.editor.editorParts.activeGroup.model.activeTab === treeInput && treeView.selectionState.selected!.rowKey === occurrence && treeView.presentation.kind === 'graph', 'A03: Back restores the second shared BT occurrence');
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
@@ -103,7 +102,7 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	if (effect.behaviorKind !== 'action_effect') throw new Error('A03: effect definition missing');
 	const period = effect.body!.fields.find(field => field.kind === 'value' && field.name === 'period_ms')!.source;
 	await revealLensOccurrence(test, effectInput.view, period.rowKey);
-	await click(effectInput.view.presentation.actionBar.items[0].bounds);
+	await runPaletteCommand('Editor: Open Source');
 	await press('AltLeft', 'ArrowLeft');
 	check(ide.editor.editorParts.activeGroup.model.activeTab === effectInput && effectInput.view.presentation.kind === 'properties' && effectInput.view.selectionState.selected!.rowKey === period.rowKey,
 		'A03: ActionEffect Source returns to its exact authored property');
@@ -117,7 +116,7 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	const removedSource = selectedBehaviorLensSourceRange(treeView)!;
 	const removedOffset = model.buffer.offsetAt(removedSource.start.line - 1, removedSource.start.column - 1);
 	check(model.buffer.getTextRange(removedOffset, removedOffset + 4) === 'leaf', 'A03: choose the second shared leaf occurrence');
-	await click(treeView.presentation.actionBar.items[0].bounds);
+	await runPaletteCommand('Editor: Open Source');
 	model.pushEditOperations([{ offset: removedOffset, deleteLength: 4, text: '' }]);
 	await press('AltLeft', 'ArrowLeft');
 	check(ide.editor.editorParts.activeGroup.model.activeTab === treeInput && treeView.selectionState.selected === null && treeView.presentation.viewport.selection === null,
@@ -128,11 +127,11 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	check(treeView.selectionState.selected === null && model.buffer.getText() === prefix + NAVIGATION_SOURCE,
 		'A03: Undo restores source bytes, not a deleted navigation selection');
 
-	await click(treeView.presentation.actionBar.items[0].bounds);
+	await runPaletteCommand('Editor: Open Source');
 	const scene = await openSceneEditor(test);
 	await selectMember(test, scene, 1);
 	const member = scene.view.authoring.selectionRange.start;
-	await click(scene.view.actionBar.items[0].bounds);
+	await test.runPaletteCommand('Editor: Open Source');
 	await press('AltLeft', 'ArrowLeft');
 	check(ide.editor.editorParts.activeGroup.model.activeTab === scene && scene.view.authoring.selectionRange.start === member && scene.view.details.properties[0].descriptor.value === 44,
 		'A03: Scene Source restores member identity and bound properties');
