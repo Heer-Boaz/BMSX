@@ -108,7 +108,8 @@ export class ActorWorldControl implements PointerCaptureTarget {
 			pointerCapture.capture(this, middle ? PointerButton.Auxiliary : secondary ? PointerButton.Secondary : PointerButton.Primary, this.focusTarget.scope.surfaceScope); return true;
 		}
 		const actor = view.pick(snapshot.viewportX, snapshot.viewportY);
-		if (actor !== undefined && !input.controller.rewind.seeking) input.controller.inspectActor(input, actor.domain, actor.hashId);
+		if (!input.controller.rewind.seeking) input.controller.inspectActor(input, actor === undefined ? input.domain : actor.domain,
+			actor === undefined ? 0 : actor.hashId);
 		this.changed(); return true;
 	}
 	public handleCapturedPointer(snapshot: PointerInputSnapshot, now: number): void {

@@ -28,7 +28,7 @@ component.owner = actor
 function remove_machine() component._machines = {} component._machines_by_id.main = nil end
 function remove_state() machine.state_ids = { 'parallel', 'alias' } end
 function change_activity() machine.current_id = 'alias' end
-return { _objects = { actor } }`;
+return { _objects_revision = 0, _spatial_hierarchy = { _topology_revision = 0 }, _objects = { actor } }`;
 
 function fixture(worldSource = WORLD) {
 	const entry = "return require('cartlib/world/world')";

@@ -9,18 +9,25 @@ import type { WorkbenchGraphItem } from '../../ui/graph/model';
 import type { ActorLabViewport } from './viewport';
 import { drawWorkbenchIcon } from '../../render/icon';
 import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
+import type { ActorOutlinerControl } from './outliner_control';
 
 export function drawActorLab(input: ActorLabInput, sliderFocused: boolean, graphHover: WorkbenchGraphItem | null,
-	graphFocused: boolean, viewport: ActorLabViewport): void {
+	graphFocused: boolean, viewport: ActorLabViewport, outliner: ActorOutlinerControl): void {
 	const { layout, outline } = input;
 	const font = editorViewState.font.renderFont();
 	const color = colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
 	api.pushClipRect(layout.left, layout.top, layout.right, layout.bottom);
 	api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
 	const graph = input.presentation === 'graph' ? input.stateGraph : undefined;
-	renderWorkbenchActionBar(graph === undefined ? input.actionBar : input.stateGraphActions, font, color, colors.COLOR_DESCRIPTION_TEXT);
+	const actions = input.presentation === 'world' ? input.worldActions : graph === undefined ? input.actionBar : input.stateGraphActions;
+	renderWorkbenchActionBar(actions, font, color, colors.COLOR_DESCRIPTION_TEXT);
 	const tree = outline.layout;
-	if (graph !== undefined) {
+	if (input.presentation === 'world') {
+		api.pushClipRect(layout.left + 4, layout.top, actions.bounds.left, tree.contentTop);
+		api.blit_text_inline_with_font('OUTLINER', layout.left + 4, layout.top + 4, 0, color, font);
+		api.popClipRect();
+		outliner.draw();
+	} else if (graph !== undefined) {
 		const left = graph.viewport.canvas.left;
 		api.pushClipRect(graph.viewport.canvas.left, tree.contentTop, graph.viewport.canvas.right, graph.viewport.canvas.bottom);
 		api.fill_rect(left + 1, tree.contentTop + 3, left + 3, tree.contentTop + font.lineHeight, 0, colors.COLOR_GRAPH_ACTIVE_BODY);

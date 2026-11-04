@@ -68,7 +68,7 @@ local actor<const> = { id = 1, definition_id = 'same', active = true, _component
 local second<const> = { id = '1', definition_id = 'same', active = false, _components = {}, _components_by_class = {} }
 component.owner = actor
 actor.self = actor
-return { _objects = { actor, second } }`;
+return { _objects_revision = 0, _spatial_hierarchy = { _topology_revision = 0 }, _objects = { actor, second } }`;
 const ENTRY = `local world<const> = require('cartlib/world/world')
 probe = world._objects[1]
 function rename() probe.id = 'renamed' end
@@ -132,6 +132,9 @@ function fixture(t: TestContext, entry = ENTRY, run = true, worldSource = WORLD_
 	const controller = new ActorLabController(sources, f.guest, runtime.machine.cpu,
 		parts, undefined!, f.actorExecution, f.rewind, sources,
 		{ kind: 'direct', presenter: f.presenter, recipient: f.input, transport }, frames);
+	// This fixture exercises selected-actor components/behaviors. The live World
+	// Outliner has its own ordinary-cart/input regressions.
+	controller.resolveInput().presentation = 'outline';
 	controllerFixtures.push({ controller, parts, surfaces, contextMenu });
 	return { ...f, stop: inspection, actors, controller, group };
 }
@@ -371,8 +374,8 @@ test('the actual floating pane retains locked pins while closed or detached with
 	const menuArea = { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight };
 	const contextMenu = new ContextMenuController(inputFocus, pointerCapture, menuArea), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: menuArea, kind: 'workspace' });
 	resources.add({ dispose: () => { quickInput.dispose(); contextMenu.hide(); } });
-	const f = fixture(t, ENTRY.replace('return world', `function remove_subject() world._objects = { world._objects[2] } end
-function replace_subject() world._objects[2] = { id = 1, definition_id = 'same', active = false, _components = {}, _components_by_class = {} } end
+	const f = fixture(t, ENTRY.replace('return world', `function remove_subject() world._objects = { world._objects[2] }; world._objects_revision = world._objects_revision + 1 end
+function replace_subject() world._objects[2] = { id = 1, definition_id = 'same', active = false, _components = {}, _components_by_class = {} }; world._objects_revision = world._objects_revision + 1 end
 return world`), true, WORLD_SOURCE, []);
 	resources.add(f.stop);
 	const controller = f.controller, input = controller.resolveInput();
@@ -956,7 +959,7 @@ local second<const> = { id = 3, enabled = true, _owner_component_index = 3, _sta
 local actor<const> = { id = 'demo.actor', definition_id = 'demo.actor', active = true,
  _components = { timeline, first, second }, _components_by_class = { [fsm] = { first, second }, [timelines] = { timeline } } }
 first.owner = actor; second.owner = actor; timeline.owner = actor
-return { _objects = { actor } }`;
+return { _objects_revision = 0, _spatial_hierarchy = { _topology_revision = 0 }, _objects = { actor } }`;
 	const f = fixture(t, `local world<const> = require('cartlib/world/world')
 local fsm<const> = require('cartlib/fsm/fsm_component')
 function remove_component() world._objects[1]._components[3] = nil; world._objects[1]._components_by_class[fsm][2] = nil end
@@ -1361,7 +1364,7 @@ test('expanded stored values are inspectable selections but never fabricate logi
 for (const historical of [true, false]) test(`navigation restores the original compact Details name when actor A is ${historical ? 'historically unavailable' : 'retired'} after inspecting B`, t => {
 	const worldSource = WORLD_SOURCE.replace('id = 1, definition_id', "id = 'actor_a', definition_id")
 		.replace("id = '1', definition_id", "id = 'actor_b', definition_id");
-	const entry = ENTRY.replace('return world', 'function remove_a() world._objects = { world._objects[2] } end\nreturn world');
+	const entry = ENTRY.replace('return world', 'function remove_a() world._objects = { world._objects[2] }; world._objects_revision = world._objects_revision + 1 end\nreturn world');
 	const f = fixture(t, entry, true, worldSource); resources.add(f.stop);
 	const controller = f.controller, input = controller.resolveInput(); resources.add(input);
 	const choices = readActorChoices(f.sources, f.guest, -1), font = new Font({ variant: 'tiny' });

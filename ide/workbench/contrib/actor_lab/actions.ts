@@ -49,10 +49,11 @@ export class ActorLabEditorActions {
 
 	public selectActor(input: ActorLabInput, accepted?: () => void, domain = input.controller.cpu.activeCartridgeSlot()): void {
 		const controller = input.controller;
-		input.interaction.running = false;
 		this.quickInput.pick('RUNNING ACTORS', 'Choose the actual instance to experiment with',
 			(_origin, lifetime) => {
-				lifetime.add({ dispose: controller.guest.onDidInvalidate(() => this.quickInput.hide()) });
+				// Choices retain scalar identities, not guest handles. Acceptance
+				// reacquires the actual actor; ordinary simulation need not stop.
+				lifetime.add({ dispose: controller.guest.onDidInvalidate(reason => { if (reason !== 'execution') this.quickInput.hide(); }) });
 				return new TextQuickPickProvider(readActorChoices(controller.sources, controller.guest, domain));
 			}, choice => {
 				controller.inspectActor(input, choice.domain, choice.hashId);

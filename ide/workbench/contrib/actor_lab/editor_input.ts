@@ -1,4 +1,5 @@
 import { ActorWorldView } from './world_view';
+import { ActorWorldOutliner } from './world_outliner';
 import { InputInteraction } from '../../../input/interaction';
 import { WorkbenchSplitView } from '../../ui/split_view';
 import { ReadonlyEditorInput, type AbstractEditorInput } from '../../common/editor_input';
@@ -38,8 +39,9 @@ export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab
 	public dirty = true;
 	public status = 'CHOOSE A RUNNING ACTOR';
 	public readonly runtime = new ActorRuntimeTree();
+	public readonly worldOutliner = new ActorWorldOutliner();
 	public stateGraph: ActorStateGraph | undefined;
-	public presentation: 'outline' | 'graph' = 'outline';
+	public presentation: 'world' | 'outline' | 'graph' = 'world';
 	public readonly follow = new ActorActivityFollow();
 	public readonly outline = new ScrollableWorkbenchTree<ActorRow>();
 	public readonly timeline = new ActorTimelineTransport();
@@ -53,6 +55,7 @@ export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab
 	public readonly viewportActions = createWorkbenchActionBar('actorLab.viewport', true);
 	public readonly previewBounds = create_rect_bounds();
 	public readonly actionBar = createWorkbenchActionBar('actorLab.title');
+	public readonly worldActions = createWorkbenchActionBar('actorLab.world.title');
 	public readonly stateGraphActions = createWorkbenchActionBar('actorLab.stateGraph.title');
 	public readonly layout: ActorLabLayout = {
 		left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null,
@@ -73,6 +76,7 @@ export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab
 		this.runtime.release();
 		this.details?.invalidate(reason);
 		if (reason !== 'execution') {
+			this.worldOutliner.invalidate();
 			this.worldView.retire();
 			this.timeline.clear();
 			this.interaction.running = false;
@@ -82,6 +86,7 @@ export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab
 		if (reason === 'heap-replaced') {
 			this.stateGraph?.retire(reason);
 			this.runtime.dispose();
+			this.worldOutliner.clear();
 			this.follow.stop(); this.actorPresent = false; this.historical = false;
 			this.actorHashId = 0; this.worldHashId = undefined; this.selectionPath = undefined;
 			this.outline.roots.length = 0; this.outline.rows.length = 0; this.outline.selectionIndex = -1;

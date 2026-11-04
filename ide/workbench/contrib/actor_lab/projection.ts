@@ -5,7 +5,7 @@ import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { QuickPickItem } from '../../services/quick_input/provider';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows, type WorkbenchTreeNode } from '../../ui/tree_view';
 import type { ActorLabInput } from './editor_input';
-import { findWorldActor, runtimeWorld, readRuntimeActors, type ActorNode } from './runtime';
+import { runtimeWorld, readRuntimeActors, type ActorNode } from './runtime';
 import { resolveActorPath } from './target';
 import { actorNodeLabel } from './labels';
 
@@ -38,8 +38,9 @@ export class ActorProjection {
 	public update(): boolean {
 		const { input, guest } = this;
 		const world = runtimeWorld(this.sources, guest, input.domain);
+		const worldChanged = input.worldOutliner.update(guest, world, input.actorHashId);
 		input.worldHashId = world?.hashId;
-		const actor = findWorldActor(guest, world, input.actorHashId);
+		const actor = input.worldOutliner.readActor(guest, world, input.actorHashId);
 		const wasPresent = input.actorPresent;
 		input.actorPresent = actor !== undefined;
 		const changed = input.runtime.update(this.sources, guest, input.domain, actor);
@@ -50,7 +51,7 @@ export class ActorProjection {
 			this.statusDomain = undefined;
 			this.scrollAnchor = undefined; this.revealStart = -1;
 			this.activeRows.length = 0;
-			if (input.historical) return changed || wasPresent;
+			if (input.historical) return worldChanged || changed || wasPresent;
 			input.actorHashId = 0; input.selectionPath = undefined;
 		} else {
 			const name = input.runtime.roots[0].label, definition = guest.formatValue(guest.readStringMember(actor, 'definition_id'));
@@ -73,7 +74,7 @@ export class ActorProjection {
 			}
 			if (outline.selectionIndex !== -1 || !input.historical) input.rememberSelection();
 		}
-		return changed || wasPresent !== input.actorPresent;
+		return worldChanged || changed || wasPresent !== input.actorPresent;
 	}
 
 	/** A new live branch cannot inherit identities from its discarded future. */

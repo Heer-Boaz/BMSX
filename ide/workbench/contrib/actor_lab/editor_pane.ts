@@ -1,4 +1,5 @@
 import { ActorWorldControl } from './world_control';
+import { ActorOutlinerControl } from './outliner_control';
 import { editorRuntimeState } from '../../../editor/common/runtime_state';
 import { STATUS_PRIORITY_CONTENT, type WorkbenchStatusItem } from '../../common/status_bar';
 import type { EditorGroupView } from '../../services/editor/editor_group';
@@ -61,7 +62,9 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	];
 	public readonly actorActions: ActorLabEditorActions;
 	private readonly worldControl: ActorWorldControl;
+	private readonly outlinerControl: ActorOutlinerControl;
 	private gameInput!: GameInputControl;
+	private unbindGameFocus!: () => void;
 	private controller!: ActorLabController;
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly actionTooltip = new WorkbenchTooltip();
@@ -74,6 +77,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	private restoreDetailsScroll = false;
 	private navigationSelection: ActorLabNavigationSelection | undefined;
 	private renderedTopology = -1;
+	private renderedPresentation: ActorLabInput['presentation'] | undefined;
 	private viewportHover = false;
 	private pointerX = 0;
 	private pointerY = 0;
@@ -98,6 +102,8 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		private readonly paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, group: EditorGroupView, quickInput: QuickInputController, scope: InputFocusScope) {
 		super(scope);
 		this.worldControl = new ActorWorldControl(this.focusTarget, commands, contextMenu, () => { this.updateContentLayout(); this.update(); });
+		this.outlinerControl = new ActorOutlinerControl(this.focusTarget, commands, () => this.update(),
+			(x, y, keyboard) => this.showContextMenu(x, y, this.outlinerControl.focusTarget, keyboard));
 		this.actorActions = new ActorLabEditorActions(group, quickInput, this.focusTarget);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
 		this.timelineSlider = new WorkbenchSliderControl(inputFocus, pointerCapture, this.focusTarget,
@@ -132,9 +138,11 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			}
 			this.bindTransportCommands(target);
 			target.registerCommand('contextMenu', {
-				isEnabled: () => this.hasInput && (this.input.presentation === 'graph' || this.controller.selected(this.input) !== undefined),
+				isEnabled: () => this.hasInput && (this.input.presentation === 'world' ? this.input.worldOutliner.tree.selectionIndex !== -1
+					: this.input.presentation === 'graph' || this.controller.selected(this.input) !== undefined),
 				run: () => {
 					const input = this.input;
+					if (input.presentation === 'world') { this.outlinerControl.openContextMenu(); return; }
 					let x: number, y: number;
 					if (input.presentation === 'graph') {
 						const view = input.stateGraph!.viewport, selected = view.selection;
@@ -193,21 +201,23 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 					this.graph.focusTarget.focus();
 				},
 			});
-			target.registerCommand('actorLab.outline', { isEnabled: () => this.hasInput && this.input.presentation === 'graph',
+			target.registerCommand('actorLab.world', { isEnabled: () => this.hasInput && this.input.presentation !== 'world',
+				run: () => { this.controller.openWorld(this.input); this.update(); this.outlinerControl.focusTarget.focus(); } });
+			target.registerCommand('actorLab.outline', { isEnabled: () => this.hasInput && (this.input.presentation === 'graph' || this.input.presentation === 'world' && this.input.actorPresent),
 				run: () => { this.controller.openOutline(this.input); this.update(); this.focus(); } });
 		}
 	}
 	/** Every invocation owns one exact selected subject and its physical control lifetime. */
 	private showContextMenu(x: number, y: number, target: InputFocusTarget, keyboard: boolean): void {
 		const input = this.input, graph = input.presentation === 'graph' ? input.stateGraph : undefined;
-		input.interaction.running = false;
-		const menu = graph === undefined ? 'actorLab.context' : graph.viewport.selection === null ? 'actorLab.canvas.context' : 'actorLab.stateGraph.context';
+		const menu = input.presentation === 'world' ? 'actorLab.world.context'
+			: graph === undefined ? 'actorLab.context' : graph.viewport.selection === null ? 'actorLab.canvas.context' : 'actorLab.stateGraph.context';
 		this.contextMenu.show(x, y, WORKBENCH_MENUS[menu], this.commands,
-			{ selectFirst: keyboard, invocationOrigin: target, commandTarget: target, onWillShow: lifetime => {
+			{ selectFirst: keyboard, invocationOrigin: target, commandTarget: this.commandTarget, onWillShow: lifetime => {
 				const retire = () => this.contextMenu.hide();
 				lifetime.add({ dispose: input.onDidChangeSelection(retire) });
 				if (graph !== undefined) lifetime.add({ dispose: graph.onDidChangeSelection(retire) });
-				lifetime.add({ dispose: this.controller.guest.onDidInvalidate(retire) });
+				lifetime.add({ dispose: this.controller.guest.onDidInvalidate(reason => { if (reason !== 'execution') retire(); }) });
 			} });
 	}
 	private bindTransportCommands(target: InputFocusTarget): void {
@@ -330,11 +340,16 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		this.controller = this.input.controller;
 		this.input.interaction.setRuntime(this.controller.viewport.transport, this.input.interaction.running);
 		this.focusTarget.scope.interaction = this.input.interaction;
-		this.focusTarget.scope.runtime = { target: this.focusTarget, interaction: this.input.interaction };
+		this.focusTarget.scope.runtime = { target: this.commandTarget, interaction: this.input.interaction };
 		this.gameInput = new GameInputControl(this.focusTarget, this.controller.viewport.recipient, this.controller.viewport, this.controller.viewport.transport);
+		// Possessing the Game view and ejecting to its editor camera share this
+		// client's live-follow intent; changing input recipients is not Pause.
+		this.unbindGameFocus = this.gameInput.focusTarget.onDidFocus(() => { this.input.interaction.running = true; });
 		this.createDetailsWindow();
 		this.worldControl.setInput(this.input);
+		this.outlinerControl.setInput(this.input);
 		this.renderedTopology = -1;
+		this.renderedPresentation = undefined;
 		this.actionTooltip.attach(this.surfaces, this.paneSurface, this.workArea);
 		this.actions.setInput(this.input.actionBar, this.focusTarget);
 		this.timelineSlider.setInput(this.input.timeline.slider);
@@ -348,11 +363,12 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	}
 	public override clearInput(reason: EditorPaneClearReason = 'deactivate'): void {
 		pointerCapture.cancelTarget(this.positionDrag); this.worldControl.clearInput();
+		this.outlinerControl.clearInput();
 		if (reason !== 'move') this.input.interaction.setRuntime(null);
 		pointerHover.release(this);
 		this.navigationSelection = undefined;
 		this.actionTooltip.detach();
-		this.detailsWindow.dispose(); this.inspector.dispose(); this.gameInput.dispose(); this.actions.clearInput();
+		this.detailsWindow.dispose(); this.inspector.dispose(); this.unbindGameFocus(); this.gameInput.dispose(); this.actions.clearInput();
 		this.graph.clearInput(); this.boundGraph = undefined;
 		this.focusTarget.commandContext = this.focusTarget;
 		this.split.focusTarget.commandContext = this.focusTarget;
@@ -364,7 +380,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	}
 	public override dispose(): void {
 		if (this.hasInput) this.clearInput();
-		pointerHover.release(this); this.actions.dispose(); this.graph.dispose(); this.split.dispose(); this.timelineSlider.dispose(); this.scrollbar.cancelPointer(); this.worldControl.dispose(); super.dispose();
+		pointerHover.release(this); this.actions.dispose(); this.graph.dispose(); this.split.dispose(); this.timelineSlider.dispose(); this.scrollbar.cancelPointer(); this.worldControl.dispose(); this.outlinerControl.dispose(); super.dispose();
 	}
 	public override update(): void {
 		this.positionDrag.refresh();
@@ -376,15 +392,19 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		const contentsChanged = revealed || this.renderedTopology !== input.runtime.topologyRevision;
 		this.renderedTopology = input.runtime.topologyRevision;
 		const visibleGraph = input.presentation === 'graph' ? input.stateGraph : undefined;
+		const bar = input.presentation === 'world' ? input.worldActions : input.presentation === 'outline' ? input.actionBar : input.stateGraphActions;
 		const graphChanged = this.boundGraph !== visibleGraph;
-		if (graphChanged) {
+		const presentationChanged = this.renderedPresentation !== input.presentation;
+		this.renderedPresentation = input.presentation;
+		if (graphChanged || presentationChanged) {
 			this.boundGraph = visibleGraph;
 			if (this.boundGraph === undefined) this.graph.clearInput(); else this.graph.setInput(this.boundGraph.viewport);
 			const context = this.boundGraph === undefined ? this.focusTarget : this.graph.focusTarget;
 			this.focusTarget.commandContext = context;
 			this.split.focusTarget.commandContext = context;
 			this.timelineSlider.focusTarget.commandContext = context;
-			this.actions.setInput(input.presentation === 'outline' ? input.actionBar : input.stateGraphActions, context);
+			this.focusTarget.scope.runtime = { target: this.commandTarget, interaction: input.interaction };
+			this.actions.setInput(bar, context);
 		}
 		this.boundGraph?.layout(editorViewState.font.renderFont());
 		const layoutChanged = updateFullWidthWorkbenchLayout(input.layout, this.contentBounds);
@@ -393,20 +413,18 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		const timelineChanged = this.timelineVisible !== input.timeline.visible;
 		this.timelineVisible = input.timeline.visible;
 		const { layout, outline } = input;
-		const bar = input.presentation === 'outline' ? input.actionBar : input.stateGraphActions;
-		const follow = bar.items.find(item => item.command === 'actorLab.follow')!;
+		const follow = bar.items.find(item => item.command === 'actorLab.follow');
 		const followLabel = input.follow.target === undefined ? 'Follow' : 'Unfollow';
-		const followChanged = follow.label !== followLabel;
-		follow.label = followLabel;
-		follow.checked = input.follow.target !== undefined;
+		const followChanged = follow !== undefined && follow.label !== followLabel;
+		if (follow !== undefined) { follow.label = followLabel; follow.checked = input.follow.target !== undefined; }
 		if (this.timelineVisible) input.timelineLayout.update(input.timeline, layout);
-		const viewportChanged = layoutChanged || timelineChanged || graphChanged || this.splitRevision !== input.layout.split?.revision;
+		const viewportChanged = layoutChanged || timelineChanged || presentationChanged || this.splitRevision !== input.layout.split?.revision;
 		if (viewportChanged && input.follow.target !== undefined) input.follow.pending = input.follow.target;
 		if (followChanged || contentsChanged || viewportChanged) {
 			if (!this.updateContentLayout()) return;
-			layoutWorkbenchActionBar(input.presentation === 'outline' ? input.actionBar : input.stateGraphActions, layout.primaryRight - 4,
+			layoutWorkbenchActionBar(bar, layout.primaryRight - 4,
 				layout.top + 2, layout.top + layout.rowHeight + 8, measureText, editorViewState.font.renderFont(), layout.left + 4);
-			if (input.presentation === 'graph') input.stateGraph!.titleLabel = truncateTextToWidth(input.stateGraph!.title, layout.primaryRight - layout.left - 16);
+			if (visibleGraph !== undefined) visibleGraph.titleLabel = truncateTextToWidth(visibleGraph.title, layout.primaryRight - layout.left - 16);
 			for (const row of outline.rows) row.element.displayLabel = truncateTextToWidth(row.element.label,
 				outline.layout.contentRight - outline.layout.contentLeft - (row.depth + 2) * outline.layout.indentWidth - 4, 'middle');
 		} else if (!this.updatePreviewInput()) return;
@@ -416,8 +434,8 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		this.updateViewportHit();
 		this.controller.layoutNavigation(input);
 		this.timelineSlider.update();
-		if (input.presentation === 'graph') this.graph.update();
-		const primary = input.presentation === 'outline' ? this.focusTarget : this.graph.focusTarget;
+		if (visibleGraph !== undefined) this.graph.update();
+		const primary = this.commandTarget;
 		primary.next = this.actions.focusTarget; this.actions.focusTarget.previous = primary;
 		let previous = this.actions.focusTarget;
 		if (input.timeline.slider.interactive) {
@@ -437,6 +455,10 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			previous = this.gameInput.focusTarget;
 		}
 		previous.next = primary; primary.previous = previous;
+		// Pane commands address the contribution; pointer focus in its Outliner
+		// is the same logical tab stop, not an unconnected keyboard island.
+		this.outlinerControl.focusTarget.next = primary.next;
+		this.outlinerControl.focusTarget.previous = primary.previous;
 		this.updateDetailsWindow();
 		input.timeline.executePending(this.controller.selected(input), this.controller.canInteract(), this.scrub);
 		this.actions.update();
@@ -459,6 +481,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			? 'RESIZE PANES: LEFT/RIGHT | HOME: RESET' : 'RESIZE PANES: UP/DOWN | HOME: RESET';
 		else if (this.viewportHit !== undefined) this.statusItems[0].text = this.viewportHit.label
 			+ (this.controller.sceneAuthoring === undefined || this.gameInput.focusTarget.hasFocus ? '' : ' · Alt+drag: authored position');
+		else if (input.presentation === 'world') this.statusItems[0].text = input.worldOutliner.tree.rows[input.worldOutliner.tree.selectionIndex]?.element.label ?? 'WORLD OUTLINER';
 		else if (input.presentation === 'outline') this.statusItems[0].text = !input.dirty && input.actorPresent
 			? input.outline.rows[input.outline.selectionIndex]?.element.node.label ?? input.status : input.status;
 		else {
@@ -473,7 +496,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		}
 	}
 	public draw(): void {
-		drawActorLab(this.input, this.timelineSlider.focusTarget.hasFocus, this.graph.hover, this.graph.focusTarget.hasFocus, this.controller.viewport);
+		drawActorLab(this.input, this.timelineSlider.focusTarget.hasFocus, this.graph.hover, this.graph.focusTarget.hasFocus, this.controller.viewport, this.outlinerControl);
 		const drag = this.positionDrag, hit = drag.active ? drag.outline : this.viewportHit;
 		if (!this.input.layout.previewVisible) return;
 		if (this.input.worldView.mode === 'game' && hit !== undefined && this.controller.renderFrames.displayCurrent) {
@@ -539,9 +562,11 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	}
 
 	public handleKeyboard(input: KeyInputEvent): void {
+		if (input.consumed) return;
 		if (this.positionDrag.active && isKeyJustPressed('Escape', input)) {
 			consumeIdeKey('Escape', input); pointerCapture.cancelTarget(this.positionDrag); return;
 		}
+		if (this.input.presentation === 'world') { this.outlinerControl.handleKeyboard(input); return; }
 		if (!this.input.actorPresent) return;
 		if (this.input.presentation === 'graph') { this.handleGraphKeyboard(input); return; }
 		for (const [key, command] of NAVIGATION) {
@@ -601,9 +626,9 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 						const input = this.input, scope = this.focusTarget.scope, context = scope.contextGeneration;
 						const { domain, hashId } = this.viewportHit;
 						this.controller.inspectActor(input, domain, hashId); this.update(); this.focus();
-						if (scope.contextGeneration === context && inputFocus.admittedTarget === this.focusTarget
+						if (scope.contextGeneration === context && inputFocus.admittedTarget === this.commandTarget
 							&& input.actorPresent && input.domain === domain && input.actorHashId === hashId) {
-							this.showContextMenu(snapshot.viewportX, snapshot.viewportY, this.focusTarget, false);
+							this.showContextMenu(snapshot.viewportX, snapshot.viewportY, this.commandTarget, false);
 						}
 						return true;
 					}
@@ -613,6 +638,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			return false;
 		}
 		if (this.split.handlePointer(snapshot) || this.actions.handlePointer(snapshot) || this.input.timeline.visible && this.timelineSlider.handlePointer(snapshot)) return true;
+		if (this.input.presentation === 'world') return this.outlinerControl.handlePointer(snapshot, now);
 		if (!this.input.actorPresent) return false;
 		if (this.input.presentation === 'outline' && this.scrollbar.handlePointer(snapshot, this.input.outline.scrollbar)) {
 			if (justPressed) this.input.follow.stop();
@@ -658,6 +684,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	}
 	public handleWheel(event: WheelInputSnapshot): void {
 		if (this.worldControl.handleWheel(event)) return;
+		if (this.input.presentation === 'world') { this.outlinerControl.handleWheel(event); return; }
 		if (this.input.presentation === 'graph') {
 			if (!this.graph.handleWheel(event)) return;
 		} else {

@@ -9,8 +9,8 @@ it does **not** make that member a gameplay mutation API. Change a layout only
 with its producers and inspectors in the same change. This is not a serialized,
 version-negotiated SDK for independently upgraded cartlib packages.
 
-There is no guest reflection service, instrumentation call, copied runtime DTO,
-extra instance field or compatibility fallback. Inspectors borrow actual guest
+There is no guest reflection service, instrumentation call, copied runtime DTO
+or compatibility fallback. Inspectors borrow actual guest
 values at a suspension boundary and use guest tags/identities. Resume, heap
 replacement and image replacement retire their handles. Editable source or
 source registration names are not evidence that an instance exists.
@@ -24,7 +24,7 @@ without their cross-library-version recovery heuristics.
 | Producer | Read surface and meaning |
 |---|---|
 | `cartlib/registry` | `_entries_by_key[class].items` is the dense, one-based membership array for the actual class-table key. An absent bucket has no members. It is not a source-name index. |
-| `cartlib/world/world` | The exported singleton's `_objects` is admitted world membership, not pending spawns or a heap census. It is a dense one-based array of objects. `_render_visuals[1.._render_visual_count]` is the retained, visual-order-sorted render lane, not `_objects` order. |
+| `cartlib/world/world` | The exported singleton's `_objects` is admitted world membership, not pending spawns or a heap census. It is a dense one-based array of objects. `_objects_revision` changes on admission/removal; `_spatial_hierarchy._topology_revision` changes on parent attachment/detachment. The Outliner retains scalar identities and membership indices against those revisions; it borrows visible property values at the current suspension without retaining guest tables. `_render_visuals[1.._render_visual_count]` is the retained, visual-order-sorted render lane, not `_objects` order. |
 | `cartlib/world/world_object` | `_components` preserves owner component ordering; `_components_by_class[class]` contains the components of that class. Each component's `_owner_component_index` indexes `_components`. `id` and `active` are the object's stored identity/activity. Prefab admission captures the concrete object type from class lineage. Runtime inspection consumes that admitted type, not a field-shape probe or a preserved source-class metatable chain. |
 | `cartlib/world/object_2d` | The actual object stores the column-major local affine in `xx,xy,yx,yy,ox,oy`; `parent` is the actual parent object or nil. The retained world coefficients use the `w` prefix. No separately allocated Transform or self-owner alias exists. |
 | `cartlib/world/object_3d` | The object stores `xx,xy,xz,yx,yy,yz,zx,zy,zz,ox,oy,oz` and the corresponding retained `w` coefficients. `parent` has the same intrinsic-object relationship. Dimensional admission belongs to class lineage and World, not Studio shape inference. |

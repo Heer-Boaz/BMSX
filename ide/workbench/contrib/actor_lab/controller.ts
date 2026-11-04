@@ -127,7 +127,7 @@ export class ActorLabController {
 	public layoutNavigation(input: ActorLabInput): void {
 		if (input.dirty || !input.actorPresent) return;
 		if (input.presentation === 'outline') this.projection.layout();
-		else if (input.follow.pending !== undefined) {
+		else if (input.presentation === 'graph' && input.follow.pending !== undefined) {
 			input.stateGraph!.revealActive(input.follow.pending);
 			input.follow.pending = undefined;
 		}
@@ -139,7 +139,6 @@ export class ActorLabController {
 	}
 
 	public restoreSelection(input: ActorLabInput, selection: ActorLabNavigationSelection, font: BFont): void {
-		input.interaction.running = false;
 		input.timeline.clear();
 		input.follow.stop();
 		const previousGraph = input.stateGraph;
@@ -169,6 +168,7 @@ export class ActorLabController {
 			if (selection.follow !== undefined) input.follow.start(selection.follow);
 		}
 		selection.restoreDetails(input, selection.generation === this.navigationGeneration);
+		if (selection.presentation === 'world') this.openWorld(input);
 		if (!input.dirty) input.details!.resolveSubject(input.runtime, input.domain, input.worldHashId, input.historical);
 	}
 
@@ -183,14 +183,18 @@ export class ActorLabController {
 	}
 
 	public inspectActor(input: ActorLabInput, domain: ResourceDomain, hashId: number): void {
-		input.interaction.running = false; input.timeline.clear();
+		const world = input.presentation === 'world';
+		input.timeline.clear();
 		input.stateGraph = undefined; input.presentation = 'outline'; input.follow.stop(); input.historical = this.rewind.active;
 		input.domain = domain; input.actorHashId = hashId; input.selectionPath = undefined; input.dirty = true;
 		this.refresh(input);
 		if (input.actorPresent) this.projection.reveal(input.runtime.roots[0]);
+		input.worldOutliner.reveal(hashId);
+		if (world) input.presentation = 'world';
 	}
 	public selected(input: ActorLabInput): ActorNode | undefined {
 		if (input.dirty || !input.actorPresent) return undefined;
+		if (input.presentation === 'world') return input.runtime.roots[0];
 		if (input.presentation === 'outline') return input.outline.rows[input.outline.selectionIndex]?.element.node;
 		const target = input.stateGraph!.selectedTarget;
 		return target === undefined ? undefined : resolveActorTarget(input.runtime.roots, target, this.guest);
@@ -213,6 +217,9 @@ export class ActorLabController {
 	}
 
 	public openOutline(input: ActorLabInput): void {
+		if (input.presentation === 'world') {
+			this.projection.reveal(input.runtime.roots[0]); return;
+		}
 		const target = input.stateGraph!.selectedTarget;
 		input.presentation = 'outline';
 		if (target !== undefined) {
@@ -225,6 +232,12 @@ export class ActorLabController {
 		input.follow.pending = input.follow.target;
 	}
 
+	public openWorld(input: ActorLabInput): void {
+		input.follow.stop(); input.timeline.clear();
+		if (input.actorPresent) this.projection.reveal(input.runtime.roots[0]);
+		input.presentation = 'world'; input.worldOutliner.reveal(input.actorHashId);
+	}
+
 	public refreshDetails(input: ActorLabInput): readonly ActorDetailsProperty[] | undefined {
 		if (input.dirty || this.rewind.seeking) return;
 		this.followDetailsSelection(input);
@@ -234,7 +247,7 @@ export class ActorLabController {
 	/** Hidden Details retain selection without formatting a property client. */
 	public followDetailsSelection(input: ActorLabInput): void {
 		if (input.dirty || this.rewind.seeking) return;
-		input.details!.followSelection(input.domain, input.worldHashId, input.actorHashId, input.presentation === 'outline'
+		input.details!.followSelection(input.domain, input.worldHashId, input.actorHashId, input.presentation !== 'graph'
 			? input.selectionPath : input.stateGraph!.selectionBookmark?.path, input.runtime);
 	}
 

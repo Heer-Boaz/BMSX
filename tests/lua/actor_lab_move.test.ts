@@ -27,7 +27,8 @@ const WORLD = `local actor<const> = { id = 'actor', definition_id = 'fixture', a
 function actor:mark_for_disposal() self.active = false end
 function actor:rename(name) self.id = name end
 actor.data = actor.rename
-return { _objects = { actor }, request_mutation_boundary = function() return { reached = true } end }`;
+return { _objects = { actor }, _objects_revision = 0, _spatial_hierarchy = { _topology_revision = 0 },
+	request_mutation_boundary = function() return { reached = true } end }`;
 const ENTRY = "return require('cartlib/world/world')";
 const images = createCartlibProgramHarness(ENTRY, { optLevel: 0,
 	modules: [{ path: 'cartlib/world/world', source: WORLD }] }).images;

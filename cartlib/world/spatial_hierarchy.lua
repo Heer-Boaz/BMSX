@@ -17,7 +17,7 @@ local spatial<const> = {
 }
 
 function spatial.new()
-	return { _scratch = {}, _scratch_capacity = 0, _count = 0 }
+	return { _scratch = {}, _scratch_capacity = 0, _count = 0, _topology_revision = 0 }
 end
 
 local admit<const> = function(graph)
@@ -307,6 +307,7 @@ local unlink<const> = function(node)
 	node.parent = nil
 	node._previous_sibling = nil
 	node._next_sibling = nil
+	node._hierarchy._topology_revision = node._hierarchy._topology_revision + 1
 end
 
 -- The construction owner has already proved this relationship and supplies
@@ -323,6 +324,7 @@ function spatial.attach_local(node, parent)
 			parent._first_child = node
 		end
 		parent._last_child = node
+		node._hierarchy._topology_revision = node._hierarchy._topology_revision + 1
 	end
 	node._flags = node._flags | parent_inputs
 	invalidate(node)

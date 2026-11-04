@@ -23,6 +23,7 @@ export class ActorLabNavigationSelection extends EditorPaneSelection {
 	public readonly detailsSubjectName: string;
 	public readonly detailsRetired: boolean;
 	private readonly outlineScroll: number;
+	private readonly worldScroll: number;
 	private readonly splitRatio: number;
 	private readonly rowSplitRatio: number;
 	public constructor(input: ActorLabInput, worldHashId: number | undefined, public readonly generation: number) {
@@ -48,6 +49,7 @@ export class ActorLabNavigationSelection extends EditorPaneSelection {
 		this.detailsSubjectName = details.subjectName;
 		this.detailsRetired = details.retired;
 		this.outlineScroll = input.outline.scroll;
+		this.worldScroll = input.worldOutliner.tree.scroll;
 		this.splitRatio = input.split.ratio;
 		this.rowSplitRatio = input.rowSplit.ratio;
 	}
@@ -76,6 +78,7 @@ export class ActorLabNavigationSelection extends EditorPaneSelection {
 	/** Restore scroll after the pane lays out the reacquired rows and diagram. */
 	public restoreViewport(input: ActorLabInput): void {
 		input.outline.scroll = this.outlineScroll;
+		input.worldOutliner.tree.scroll = this.worldScroll;
 		if (this.graph !== undefined && input.presentation === 'graph') {
 			const viewport = input.stateGraph!.viewport;
 			viewport.restoreViewState(this.graph.camera);

@@ -101,6 +101,7 @@ function world_class:_add_world_object(obj)
 	local index<const> = #objects + 1
 	objects[index] = obj
 	obj._world_object_index = index
+	self._objects_revision = self._objects_revision + 1
 end
 
 function world_class:_remove_world_object(obj)
@@ -114,11 +115,13 @@ function world_class:_remove_world_object(obj)
 	end
 	objects[last_index] = nil
 	obj._world_object_index = nil
+	self._objects_revision = self._objects_revision + 1
 end
 
 function world_class.new()
 	local self<const> = setmetatable({}, world_class)
 	self._objects = {}
+	self._objects_revision = 0
 	self._spaces = {}
 	self._space_order = {}
 	self._pending_disposals = {}

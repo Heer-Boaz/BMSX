@@ -88,6 +88,7 @@ export function layoutActorLab(input: ActorLabInput): void {
 	const contentBottom = Math.max(top, layout.primaryBottom - PADDING);
 	const treeTop = Math.min(contentBottom, top + measured.treeTopOffset);
 	input.outline.updateLayout(left, treeTop, right, contentBottom, measured.rowHeight, measured.indentWidth);
+	input.worldOutliner.tree.updateLayout(left, treeTop, right, contentBottom, measured.rowHeight, measured.indentWidth);
 	if (graph) input.stateGraph!.viewport.layout(left, Math.min(contentBottom, top + measured.graphTopOffset), right, contentBottom);
 	if (active !== undefined) {
 		const left = active === split ? split.position + WORKBENCH_SPLIT_SIZE / 2 + PADDING : layout.left + PADDING;
