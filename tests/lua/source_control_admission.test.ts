@@ -13,6 +13,7 @@ import { inputFocus } from '../../ide/input/focus';
 import { captureInstalledLuaSources, registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
 import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
+import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { LuaProgramEditorPane } from '../../ide/workbench/contrib/lua_program/editor_pane';
@@ -87,7 +88,7 @@ function fixture(t: TestContext, source: string, apiModule: string) {
 	const scene = () => {
 		editor.sceneEditor.openResource(editor.editorParts.main.activeGroup, model.resource); editor.update(0);
 		const input = editor.editorParts.main.activeGroup.model.activeTab!, pane = editor.editorParts.main.activeGroup.panes.activePane!;
-		assert.ok(input.kind === 'scene_editor' && pane instanceof SceneEditorPane);
+		assert.ok(input instanceof SceneEditorInput && pane instanceof SceneEditorPane);
 		const primary = editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
 		assert.equal(selectSceneOutlineRow(input.view.hierarchy, 1), true); editor.update(0);
 		return { input, pane, primary };

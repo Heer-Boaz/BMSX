@@ -412,9 +412,10 @@ function payload(
 ): WorkspaceAutosavePayload {
 	return {
 		dirtyFiles,
+		sceneCompanion: undefined,
 		editorParts: { main: { layout: { kind: 'group', group: editorGroup }, active: 0, mru: [0], scrollX: 0, scrollY: 0 }, documents: [], active: 0, mru: [0] },
-		mainWorkspace: { primary: null, regions: { hierarchy: { placement: 'dockedMain', window: undefined }, details: { placement: 'dockedMain', window: undefined } },
-			activityId: undefined, hierarchyVisible: true, detailsVisible: true, activityVisible: false, viewportRatio: 0.65,
+		mainWorkspace: { regions: { hierarchy: { placement: 'dockedMain', window: undefined }, details: { placement: 'dockedMain', window: undefined } },
+			activityId: undefined, hierarchyVisible: true, detailsVisible: true, activityVisible: false,
 			activityPlacement: 'dockedMain', activityWindow: { requestedBounds: { left: 0, top: 0, right: 640, bottom: 240 },
 				placement: 'normal', minimized: false },
 			scrollX: 0, scrollY: 0, activeClient: 'documents', activePrimaryPart: 'hierarchy' },
@@ -472,13 +473,13 @@ function editorStub(
 		code_editor: new CodeEditorInputSerializer(sources.catalog), resource_view: new ResourceViewerInputSerializer(sources.catalog),
 	};
 	const editor: Pick<CartEditor, 'fontVariant' | 'isActive' | 'editorInputSerializers' | 'editorParts' | 'mainWorkspace'
-		| 'restorePrimaryClient' | 'setFontVariant' | 'updateViewport'> = {
+		| 'restoreSceneCompanions' | 'setFontVariant' | 'updateViewport'> = {
 		fontVariant: DEFAULT_FONT_VARIANT,
 		isActive: true,
 		editorInputSerializers,
 		editorParts,
 		mainWorkspace,
-		async restorePrimaryClient() { return assert.fail('storage fixture has no primary contribution'); },
+		restoreSceneCompanions() { assert.fail('storage fixture has no scene companion request'); },
 		setFontVariant() { /* noop */ },
 		updateViewport() { /* noop */ },
 	};

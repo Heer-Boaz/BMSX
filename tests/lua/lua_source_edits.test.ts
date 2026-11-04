@@ -160,7 +160,7 @@ return large * 2, -large * 2, one / zero, -one / zero, zero / zero, -zero`, 'num
 			const { fields } = parseFields(`local values = { value = ${formatLuaNumberExpression(value)} }`);
 			assert.equal(readLuaNumberExpression(fields.get('value')!.value), value);
 		}
-		assert.deepEqual(runCompiledLua(`return ${values.map(formatLuaNumberExpression).join(', ')}`, 'number-roundtrip.lua', optLevel), values);
+		assert.deepEqual(runCompiledLua(`return ${values.map(value => formatLuaNumberExpression(value)).join(', ')}`, 'number-roundtrip.lua', optLevel), values);
 	});
 
 	test(`Lua numeric field edits preserve non-finite values, zero signs and source trivia (O${optLevel})`, () => {

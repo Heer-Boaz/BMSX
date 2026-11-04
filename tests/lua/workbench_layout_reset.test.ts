@@ -61,7 +61,7 @@ test('a reset before asynchronous Main recovery preserves the newer layout witho
 	const snapshot = main.serialize(), request = main.beginRestore();
 	try {
 		assert.equal(main.resetLayout(), true);
-		assert.equal(await request.restore(snapshot, (...args) => f.editor.restorePrimaryClient(...args)), true);
+		assert.equal(await request.restore(snapshot), true);
 		f.update();
 		assert.ok(main.primary instanceof ScenePrimaryClient);
 		assert.equal(main.regions.details.placement, 'dockedMain');

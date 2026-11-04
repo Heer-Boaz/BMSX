@@ -377,7 +377,6 @@ test('newer placement from restore publication survives without cancelling indep
 
 test('a Main region hide cannot retire Details reacquired by its intended document-focus callback', async t => {
 	const f = await fixture(t), primary = f.main.primary; assert.ok(primary instanceof ScenePrimaryClient);
-	const group = f.parts.findGroup(primary.input)!;
 	primary.details.focus();
 	let published = false;
 	const release = primary.viewportTarget.onDidFocus(() => {

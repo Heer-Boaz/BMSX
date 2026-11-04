@@ -9,6 +9,7 @@ import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
+import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
 
 function fixture(t: Parameters<typeof createActualSourcePanes>[0]) {
@@ -173,7 +174,7 @@ async function sourceCommandFixture(t: Parameters<typeof createActualSourcePanes
 	const firstPrimary = f.editor.mainWorkspace.primary; assert.ok(firstPrimary instanceof ScenePrimaryClient);
 	const primaryGroup = f.editor.editorParts.findGroup(firstPrimary.input)!;
 	f.editor.sceneEditor.openResource(f.secondGroup, documentResource, { pinned: true }); f.update();
-	const pane = f.secondGroup.panes.activePane; assert.ok(pane instanceof SceneEditorPane);
+	const pane = f.secondGroup.panes.activePane; assert.ok(pane instanceof SceneEditorPane && pane.input instanceof SceneEditorInput);
 	primaryGroup.panes.activePane!.focus();
 	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient && primary.input === firstPrimary.input);
 	return { ...f, primary, primaryModel, pane, documentModel: pane.input.workingCopy };
@@ -265,7 +266,7 @@ test('Source from a Scene never replaces its own producer when a foreign referen
 	const leftPane = left.panes.activePane; assert.ok(leftPane instanceof SceneEditorPane);
 	const right = parts.splitGroup(left, 'right'); assert.ok(right !== undefined);
 	f.editor.sceneEditor.openResource(right, rightResource, { pinned: true }); f.update();
-	const producer = right.panes.activePane; assert.ok(producer instanceof SceneEditorPane);
+	const producer = right.panes.activePane; assert.ok(producer instanceof SceneEditorPane && producer.input instanceof SceneEditorInput);
 	producer.focus();
 	const open = t.mock.method(f.editor.navigation, 'openSource');
 	f.editor.commands.execute('editor.source', producer.commandTarget, undefined, leftPane.commandTarget);

@@ -123,11 +123,11 @@ test('the ghost and committed sprite have the same footprint, inherited linear p
 	const selected = f.context.selection!; assert.equal(selected.kind, 'member');
 	if (selected.kind !== 'member') throw new Error('expected inserted member');
 	const sprite = f.view.canvas.items.find(sprite => sprite.source.entry === selected.entry)!;
-	assert.ok(sprite.kind === 'sprite' && sprite.source.kind === 'sprite');
+	assert.ok(sprite.kind === 'sprite');
 	assert.equal(sprite.bitmap, bitmap); assert.deepEqual(sprite.affine, affine);
 	assert.deepEqual([sprite.x, sprite.y, sprite.xx, sprite.xy, sprite.yx, sprite.yy, sprite.u0, sprite.v0, sprite.u1, sprite.v1], footprint);
 	assert.equal(f.context.selectedLocalTransform!.ox, 17); assert.equal(f.context.selectedLocalTransform!.oy, 23);
-	assert.equal(sprite.source.color, 0xff234567); assert.equal(sprite.source.flipH, true);
+	assert.equal(sprite.color, 0xff234567); assert.equal(sprite.u0 > sprite.u1, true, 'horizontal flip reverses the admitted texture coordinates');
 	f.model.undo(); assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
 });
 

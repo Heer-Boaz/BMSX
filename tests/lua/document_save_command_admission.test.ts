@@ -6,6 +6,7 @@ import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { inputFocus } from '../../ide/input/focus';
 import { AnimationEditorPane } from '../../ide/workbench/contrib/animation/editor_pane';
 import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
+import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
@@ -52,7 +53,7 @@ test('a retained Source document cannot offer or submit Save for a replaced cano
 });
 
 test('a Scene document cannot reacquire retired Save authority after its accepted field scope retires', async t => {
-	const f = await documentFixture(t, 'scene'); assert.ok(f.pane instanceof SceneEditorPane);
+	const f = await documentFixture(t, 'scene'); assert.ok(f.pane instanceof SceneEditorPane && f.pane.input instanceof SceneEditorInput);
 	selectSceneOutlineRow(f.pane.input.view.hierarchy, 1); f.update();
 	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
 	const field = primary.details.control.controls[0], target = f.pane.commandTarget;
@@ -82,7 +83,7 @@ test('a Scene document cannot reacquire retired Save authority after its accepte
 });
 
 test('a document Save already refused by its owner leaves the actual pending Scene field unaccepted', async t => {
-	const f = await documentFixture(t, 'scene'); assert.ok(f.pane instanceof SceneEditorPane);
+	const f = await documentFixture(t, 'scene'); assert.ok(f.pane instanceof SceneEditorPane && f.pane.input instanceof SceneEditorInput);
 	selectSceneOutlineRow(f.pane.input.view.hierarchy, 1); f.update();
 	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
 	const field = primary.details.control.controls[0], target = field.field.focusTarget;

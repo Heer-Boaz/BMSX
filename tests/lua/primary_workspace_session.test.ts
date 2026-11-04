@@ -12,7 +12,6 @@ import { HomeInput } from '../../ide/workbench/contrib/home/editor_input';
 import { TextEditorInput } from '../../ide/workbench/common/editor_input';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
-import { SceneEditorInput, UnavailableSceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { captureWorkspaceDirtySources } from '../../ide/workbench/services/working_copy/source_recovery';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import type { WorkspaceAutosavePayload } from '../../ide/workbench/workspace/models';

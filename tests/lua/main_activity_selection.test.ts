@@ -13,10 +13,12 @@ import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import type { WorkspaceBuilds } from '../../ide/workbench/services/builds';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { SCENE_VIEWPORT_IMPORTS } from '../fixtures/studio/scene_viewport';
 
 const SCENE = `local scenes = require('cartlib/world/scene_library')
+require('cartlib/world/prefab').define({def_id='actor',class=require('cartlib/world/object_3d')})
 scenes.register('activity-context', { objects = {
- { member_id = 'selected', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3 } } },
+ { member_id = 'selected', definition_id = 'actor', position = { x = 1, y = 2, z = 3 } },
 } })
 return {}
 `;
@@ -24,7 +26,7 @@ const OUTPUT = 'first needle\nsecond needle\nthird needle\n';
 const ERROR = 'exact build failure\r\n';
 
 async function fixture(t: TestContext, failed = false, initialResult = true) {
-	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE], ['cartlib/world/scene_library.lua', 'return {}']]);
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	f.editor.setFontVariant('tiny');
 	const job: StudioBuildJob = { request: { requestId: 'activity-request', target: 'fixture-product', debug: true, optLevel: 0 },
 		state: failed ? 'failed' : 'completed', phase: 'published', acceptedAt: 0, updatedAt: 1,
@@ -151,11 +153,11 @@ test('Main and an independent document reader share request data but never chann
 test('workspace recovery retains the selected concrete activity ID and requested placement without serializing its reader', async t => {
 	const f = await fixture(t); f.main.regionLayout.activityHeight = 117; f.main.openActivity('builds.output');
 	const body = f.activity.commandTarget, state = JSON.parse(JSON.stringify(f.main.serialize()));
-	assert.equal(state.activityId, 'builds.output'); assert.equal(state.activeClient, 'activity'); assert.equal(state.primary, null);
+	assert.equal(state.activityId, 'builds.output'); assert.equal(state.activeClient, 'activity'); assert.equal(f.main.primary, undefined);
 	f.main.openActivity('problems'); f.main.regionLayout.activityHeight = 81; f.main.setActivityVisible(false);
 	const restore = f.main.beginRestore();
 	try {
-		assert.equal(await restore.restore(state, () => assert.fail('an unbound primary needs no source factory')), true);
+		assert.equal(await restore.restore(state), true);
 		restore.focusClient(); f.update();
 		assert.equal(f.main.activities.selectedId, 'builds.output'); assert.equal(f.main.regionLayout.activityHeight, 117);
 		assert.equal(f.main.regionLayout.activityVisible, true); assert.ok(f.main.activity === f.activity && f.activity.selectedResult === f.result);
@@ -163,21 +165,19 @@ test('workspace recovery retains the selected concrete activity ID and requested
 	} finally { restore.dispose(); }
 });
 
-test('a newer background activity selection during primary restoration is not refocused as the saved activity', async t => {
+test('a newer background activity selection before recovered focus is not replaced by the saved activity', async t => {
 	const f = await fixture(t), resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
 	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target!), true);
 	f.main.openActivity('builds.output'); const state = f.main.serialize(); f.second.focus();
-	const foreground = inputFocus.admittedTarget, ready = Promise.withResolvers<void>(), request = f.main.beginRestore();
+	const foreground = inputFocus.admittedTarget, request = f.main.beginRestore();
 	try {
-		const restoration = request.restore(state, async (record, surfaces, scope, isCurrent) => {
-			await ready.promise; return f.editor.restorePrimaryClient(record, surfaces, scope, isCurrent);
-		});
+		const restoration = request.restore(state);
 		assert.equal(f.main.openActivity('problems', { focus: false }), true);
 		assert.ok(inputFocus.admittedTarget === foreground);
-		ready.resolve(); assert.equal(await restoration, true); request.focusClient(); f.update();
+		assert.equal(await restoration, true); request.focusClient(); f.update();
 		assert.equal(f.main.activities.selectedId, 'problems'); assert.ok(inputFocus.admittedTarget === foreground);
-	} finally { ready.resolve(); request.dispose(); }
+	} finally { request.dispose(); }
 });
 
 test('same request IDs from replacement providers do not rebind Main or document readers to a namesake observation', async t => {

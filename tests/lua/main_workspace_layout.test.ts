@@ -5,6 +5,7 @@ import { WorkbenchMainWorkspaceLayout, type WorkbenchMainWorkspaceState } from '
 import type { WorkbenchViewSizeConstraints } from '../../ide/workbench/common/layout';
 import { measureSceneHierarchy } from '../../ide/workbench/contrib/scene_editor/hierarchy_layout';
 import { measureSceneDetails } from '../../ide/workbench/contrib/scene_editor/details_layout';
+import type { EditorPaneConstraints } from '../../ide/workbench/services/editor/editor_pane';
 import { measureSceneEditor } from '../../ide/workbench/contrib/scene_editor/layout';
 import { WORKBENCH_SPLIT_SIZE } from '../../ide/workbench/ui/split_view';
 
@@ -62,7 +63,7 @@ for (const role of ['hierarchy', 'details'] as const) test(`a constrained automa
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} document layout honors hard minima and sash geometry across widths`, () => {
 	const view = new WorkbenchMainWorkspaceLayout(), font = new EditorFont(variant);
 	const hierarchy = { minimumWidth: 0, preferredWidth: 0, minimumHeight: 0 };
-	const details = { ...hierarchy }, viewport = { ...hierarchy };
+	const details = { ...hierarchy }, viewport: EditorPaneConstraints = { minimumWidth: 0, minimumHeight: 0, companionWidth: undefined };
 	measureSceneHierarchy(font, hierarchy); measureSceneDetails(font, details); measureSceneEditor(undefined!, font, false, viewport);
 	const minimum = hierarchy.minimumWidth + details.minimumWidth + viewport.minimumWidth + WORKBENCH_SPLIT_SIZE * 2;
 	for (let width = 140; width <= 1400; width += 13) {

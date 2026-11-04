@@ -114,7 +114,7 @@ test('recovery preserves a minimized physical shell and later user activity plac
 	main.setActivityPlacement('dockedMain');
 	const request = main.beginRestore();
 	try {
-		assert.equal(await request.restore(snapshot, () => assert.fail('there is no primary source to hydrate')), true);
+		assert.equal(await request.restore(snapshot), true);
 		request.focusClient(); f.update();
 		assert.equal(main.activityPlacement, 'floatingWindow'); assert.equal(main.activityDisplayed, false);
 		assert.equal(main.activityWindow.model.minimized, true); assert.equal(main.activityWindow.model.placement, 'right');
@@ -124,7 +124,7 @@ test('recovery preserves a minimized physical shell and later user activity plac
 	const superseded = main.beginRestore();
 	try {
 		main.setActivityPlacement('dockedMain'); main.setActivityVisible(false); f.second.focus();
-		assert.equal(await superseded.restore(snapshot, () => assert.fail('there is no primary source to hydrate')), true);
+		assert.equal(await superseded.restore(snapshot), true);
 		superseded.focusClient(); f.update();
 		assert.equal(main.activityPlacement, 'dockedMain'); assert.equal(main.regionLayout.activityVisible, false);
 		assert.ok(inputFocus.admittedTarget === f.second.code.focusTarget);
@@ -148,7 +148,7 @@ test('a newer docked sash request before source hydration supersedes saved activ
 	const f = fixture(t), { main } = f, snapshot = main.serialize(), request = main.beginRestore();
 	try {
 		main.regionLayout.activityHeight = 140;
-		assert.equal(await request.restore(snapshot, () => assert.fail('there is no primary source to hydrate')), true);
+		assert.equal(await request.restore(snapshot), true);
 		assert.equal(main.regionLayout.activityHeight, 140);
 	} finally { request.dispose(); }
 });

@@ -142,7 +142,7 @@ test('group round-trip restores ordered clean/dirty views, preview and distinct 
 		editorParts: f.editorParts.serialize(f.serializers), mainWorkspace: f.mainWorkspace.serialize(),
 		filesBrowser: f.resourcePanel.serialize(), fontVariant: 'tiny', breakpoints: [] }));
 	await applyWorkspaceAutosavePayload({ editorParts: f.editorParts, mainWorkspace: f.mainWorkspace, resourcePanel: f.resourcePanel,
-		async restorePrimaryClient() { return assert.fail('document fixture has no primary contribution'); },
+		restoreSceneCompanions() { assert.fail('document fixture has no scene companion request'); },
 		editorInputSerializers: f.serializers, setFontVariant() {} },
 		f.sources.catalog, { breakpoints: new RuntimeBreakpoints(f.sources, () => {}) }, generation);
 	const restoredGroup = f.editorParts.main.activeGroup;

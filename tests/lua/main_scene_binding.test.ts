@@ -31,10 +31,13 @@ function fixture(t: TestContext) {
 		isCurrent: () => boolean = () => group.model.contains(input)) => main.bindPrimary(input, target, (_surfaces, scope) => {
 		constructions++;
 		const commandTarget = inputFocus.createTarget(null, scope);
-		const region = (): MainWorkspaceRegionClient => ({ scope, commandTarget, attached: false,
-			contextActions: new WorkbenchMenu([], undefined), description: input.workingCopy.resource.path,
-			measure: (_font, constraints) => { constraints.minimumWidth = 0; constraints.preferredWidth = 0; constraints.minimumHeight = 0; },
-			attach() { this.attached = true; }, detach() { this.attached = false; }, layout() {}, update() {}, focus() {}, setHeaderVisible() {} });
+		const region = (): MainWorkspaceRegionClient => {
+			let attached = false;
+			return { scope, commandTarget, get attached() { return attached; },
+				contextActions: new WorkbenchMenu([], undefined), description: input.workingCopy.resource.path,
+				measure: (_font, constraints) => { constraints.minimumWidth = 0; constraints.preferredWidth = 0; constraints.minimumHeight = 0; },
+				attach() { attached = true; }, detach() { attached = false; }, layout() {}, update() {}, focus() {}, setHeaderVisible() {} };
+		};
 		const client: MainWorkspaceClient = { input, viewportTarget: target, scope, commandTarget, hierarchy: region(), details: region(),
 			preferredPart: 'viewport', statusItems: [], attach() {}, onDidChange: () => () => {}, isCurrent: () => true,
 			update() {}, focus() {}, updateStatus() {}, dispose() { disposals++; } };
