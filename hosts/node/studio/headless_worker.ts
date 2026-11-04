@@ -1,14 +1,19 @@
 import { readFile } from 'node:fs/promises';
-import { parentPort, workerData } from 'node:worker_threads';
+import { parentPort, workerData, Worker } from 'node:worker_threads';
 import { HostAudioDevice } from '../../common/audio_device';
 import { HostAudioOutput } from '../../common/audio_output';
 import { HostExecutionControl } from '../../common/execution_control';
 import { HostFrameSession } from '../../common/frame_session';
-import { GameCaptureService } from '../../common/game_capture';
+import { HostFrameRunResult } from '../../common/host_frame';
+import { HostOverlayMenu } from '../../common/host_overlay_menu';
+import { HostOnScreenKeyboard } from '../../common/host_on_screen_keyboard';
+import { HostKeyboardInteraction } from '../../common/input/host_keyboard_interaction';
+import { OnScreenKeyboard } from '../../common/input/on_screen_keyboard';
+import { NATIVE_KEYBOARD_PAGES } from '../../common/input/on_screen_keyboard_keys';
+import { RemoteInput } from '../../common/input/remote';
 import { Input } from '../../common/input/manager';
 import { ConsoleLogOutput } from '../../common/log';
 import { initializeMachineRuntime, initializeMachineVideoPresenter } from '../../common/machine_runtime';
-import { OffscreenMachine } from '../../common/offscreen_machine';
 import { OffscreenVideoOutput } from '../../common/offscreen_video_output';
 import { RenderPresentationState } from '../../common/presentation_state';
 import { HostRewind } from '../../common/rewind';
@@ -19,30 +24,37 @@ import { DiscardingAudioSink } from '../common/discarding_audio';
 import { RealtimeHeadlessClock } from '../headless/clock';
 import { HEADLESS_DEFAULT_FRAME_INTERVAL_MS, RealtimeHeadlessFrameLoop } from '../headless/frame_loop';
 import { HeadlessInputHub } from '../headless/input';
-import { encodePngImage } from '../headless/screenshot';
+import { capturePresentedImage, decodeImage, encodePngImage } from '../headless/screenshot';
+import { HeadlessClipboard } from '../headless/clipboard';
 import { HeadlessGPUBackend } from '../../../machine/ts/render/headless/backend';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { loadRomToolingMedia } from '../../../toolchain/ts/rompack/media';
 import { IdeMicrotaskQueue } from '../../../ide/common/microtask_queue';
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
-import { createRuntimeSourceState, createLoadedProjectSourceCatalog } from '../../../ide/runtime/sources';
+import { createLoadedProjectSourceCatalog } from '../../../ide/runtime/sources';
 import type { WorkspaceSourceCatalog } from '../../../ide/workspace/source_catalog';
-import { closeWorkspaceRecords, openWorkspaceRecords, workspaceRecords } from '../../../ide/workspace/records';
-import { WorkspaceSourceRecovery } from '../../../ide/workbench/services/working_copy/source_recovery';
-import { applyAllWorkspaceSourceOverrides, discoverWorkspaceSources } from '../../../ide/workspace/workspace';
-import { PlayRuntimeSession } from '../../../ide/workbench/play_runtime';
-import { StudioWorkbench } from '../../../ide/workbench/workbench';
-import { runStudioHostFrame } from '../../../ide/workbench/frame';
+import { MemoryStorage } from '../../../ide/workspace/memory_storage';
+import { prepareWorkbenchRuntime } from '../../../ide/workbench/machine_runtime';
+import { disposeShortcutHandlers } from '../../../ide/workbench/mode';
+import type { RuntimeIdeState } from '../../../ide/workbench/state';
+import { shutdownWorkspaceStorage } from '../../../ide/workbench/workspace/storage';
+import { runWorkbenchHostFrame } from '../../../ide/workbench/host_frame';
+import { NodeGraphLayoutEngine } from '../../../ide/node/graph_layout';
+import { RESOURCE_PANEL_DEFAULT_RATIO } from '../../../ide/common/constants';
+import { StudioUiService } from '../../../ide/workbench/services/assistant/ui_tools';
 import { StudioToolRequests } from '../../../ide/workbench/services/assistant/tool_requests';
 import type { HeadlessStudioOptions, HeadlessStudioReply, HeadlessStudioRequest } from './headless_protocol';
 import { WorkerWorkspaceRecordProvider } from './workspace';
 
-/** Production Node composition: no browser, frontend input, editor view or substitute machine. */
+/** The ordinary workbench and compositor, hosted without a browser or desktop input. */
 class HeadlessStudioRuntime {
 	private readonly clock = new RealtimeHeadlessClock();
 	private readonly input = new Input(this.clock, new HeadlessInputHub(), -1);
 	private readonly runtime;
 	private readonly presenter;
+	private readonly videoOutput = new OffscreenVideoOutput(256, 212);
+	private readonly backend;
+	private readonly hostMenu;
 	private readonly audioOutput;
 	private readonly tasks;
 	private readonly execution;
@@ -51,9 +63,9 @@ class HeadlessStudioRuntime {
 	private readonly presentation = new RenderPresentationState();
 	private readonly log = new ConsoleLogOutput();
 	private readonly systemOutput = new SystemOutputLog();
-	private workbench: StudioWorkbench | undefined;
+	private workbench: RuntimeIdeState | undefined;
 	private catalog: WorkspaceSourceCatalog | undefined;
-	private recovery: WorkspaceSourceRecovery | undefined;
+	private ui: StudioUiService | undefined;
 	private requests: StudioToolRequests | undefined;
 	private frameLoop: { stop(): void } | undefined;
 	private closing = false;
@@ -61,8 +73,8 @@ class HeadlessStudioRuntime {
 
 	public constructor(systemRom: Uint8Array, cartridgeSlots: readonly [Uint8Array | null, Uint8Array | null]) {
 		this.runtime = initializeMachineRuntime(systemRom, cartridgeSlots, PSX_MACHINE_SPEC, this.input);
-		this.presenter = initializeMachineVideoPresenter(this.runtime, new OffscreenVideoOutput(256, 212),
-			new HeadlessGPUBackend(256, 212, this.runtime.model.gxGpuVramBytes));
+		this.backend = new HeadlessGPUBackend(256, 212, this.runtime.model.gxGpuVramBytes);
+		this.presenter = initializeMachineVideoPresenter(this.runtime, this.videoOutput, this.backend);
 		this.presenter.crt_postprocessing_enabled = false;
 		this.audioOutput = new HostAudioOutput(new HostAudioDevice(new DiscardingAudioSink()),
 			this.runtime.machine.audioController, this.runtime.timing.ufpsScaled);
@@ -70,6 +82,10 @@ class HeadlessStudioRuntime {
 		this.execution = new HostExecutionControl(this.audioOutput);
 		this.rewind = new HostRewind(this.runtime, this.presenter, this.presentation, this.tasks, this.audioOutput, this.log);
 		this.session = new HostFrameSession(this.runtime.timing.ufpsScaled, this.clock.now(), this.rewind, this.execution);
+		const keyboard = new OnScreenKeyboard(this.input, NATIVE_KEYBOARD_PAGES);
+		const keyboardView = new HostOnScreenKeyboard(this.presenter, keyboard);
+		this.hostMenu = new HostOverlayMenu(this.presenter, this.runtime, this.input, this.rewind, this.execution,
+			new HostKeyboardInteraction(this.input, keyboard, this.presenter, keyboardView));
 	}
 
 	public async initialize(options: HeadlessStudioOptions, systemRom: Uint8Array,
@@ -78,34 +94,29 @@ class HeadlessStudioRuntime {
 		const catalog = createLoadedProjectSourceCatalog({ admission: options.project.system, layer: media.system },
 			[{ admission: options.project.cartridge, layer: media.cartridgeSlots[0]! }]);
 		this.catalog = catalog;
-		const sources = createRuntimeSourceState(media.system, media.cartridgeSlots, { catalog,
-			systemContextId: options.project.system.id, cartridgeContextIds: [options.project.cartridge.id, null] });
-		await openWorkspaceRecords(new WorkerWorkspaceRecordProvider(parentPort!));
-		this.recovery = new WorkspaceSourceRecovery({ identity: options.recoveryIdentity, sourceContextId: options.project.cartridge.id,
-			projectRootPath: options.project.cartridge.projectRoot,
-			models: editorTextModelService, catalog, clock: this.clock, logOutput: this.log });
-		const workspaceDirtyRecords = await this.recovery.initialize();
-		const observed = await discoverWorkspaceSources(catalog);
-		await applyAllWorkspaceSourceOverrides(catalog, workspaceDirtyRecords, observed);
-		if (!this.recovery.restoreModels()) throw new Error('Source recovery was cancelled by workspace retirement.');
-		this.workbench = new StudioWorkbench({ runtime: this.runtime, input: this.input, audioOutput: this.audioOutput,
-			runtimeTasks: this.tasks, execution: this.execution, rewind: this.rewind, clock: this.clock,
-			microtasks: new IdeMicrotaskQueue(), logOutput: this.log, sources, models: editorTextModelService,
-			workspaceDirtyRecords, workspaceFiles: workspaceRecords!,
-			gameCapture: new GameCaptureService(this.presenter, this.presentation, this.tasks, encodePngImage),
-			createTestTarget: (system, slots, model, input) => new OffscreenMachine(system, slots, model, input),
-			createPlaySession: (system, slots, model, input, program) => new PlayRuntimeSession(
-				new OffscreenMachine(system, slots, model, input), program, this.audioOutput.device, this.log) });
-		const boot = this.workbench.boots.start('installed').result!;
-		if (boot.status === 'failed' || boot.status === 'rejected') throw boot.error;
+		this.workbench = await prepareWorkbenchRuntime(media, this.runtime, this.presenter, this.presentation,
+			encodePngImage, decodeImage, this.videoOutput, this.input, this.audioOutput, this.tasks, this.execution,
+			this.rewind, this.hostMenu, new MemoryStorage(), options.project.cartridge, { catalog,
+				systemContextId: options.project.system.id, cartridgeContextIds: [options.project.cartridge.id, null] },
+			options.recoveryIdentity, new WorkerWorkspaceRecordProvider(parentPort!), this.clock, new HeadlessClipboard(),
+			new IdeMicrotaskQueue(), this.log, RESOURCE_PANEL_DEFAULT_RATIO,
+			() => new NodeGraphLayoutEngine(new Worker(new URL('../../../ide/node/graph_layout_worker.cjs', import.meta.url))),
+			undefined, undefined, 'installed');
+		const editor = this.workbench.editor;
+		this.ui = new StudioUiService(() => capturePresentedImage(this.backend), this.presenter.canvasSize, this.videoOutput,
+			editorTextModelService, new RemoteInput(this.input, this.clock, this.input.dispatchEditingKey.bind(this.input),
+				event => editor.dispatchPointer(event), event => editor.dispatchWheel(event)));
 		this.systemOutput.flush(this.runtime, this.log);
-		this.requests = new StudioToolRequests(this.workbench.tools, { sourceAccess: options.sourceAccess, reviewApproval: 'agent' });
-		this.recovery.start();
+		this.requests = new StudioToolRequests(this.workbench.tools,
+			{ sourceAccess: options.sourceAccess, reviewApproval: 'agent' }, this.ui);
 		this.runtime.frameScheduler.clearQueuedTime();
 		this.session.currentTimeMs = this.clock.now();
 		this.frameLoop = new RealtimeHeadlessFrameLoop(this.clock, HEADLESS_DEFAULT_FRAME_INTERVAL_MS).start(currentTime => {
-			runStudioHostFrame(this.session, this.runtime, this.presenter, this.input, this.audioOutput,
-				this.systemOutput, this.workbench!, this.presentation, currentTime);
+			this.ui!.beforeFrame();
+			const result = runWorkbenchHostFrame(this.session, this.runtime, this.presenter, this.input, this.audioOutput,
+				this.systemOutput, this.log, this.workbench!, this.presentation, this.hostMenu, currentTime);
+			this.ui!.afterFrame(this.presenter.presentationSequence);
+			if (result === HostFrameRunResult.ExitRequested) void this.dispose(false).then(() => parentPort!.close());
 		});
 	}
 
@@ -150,18 +161,24 @@ class HeadlessStudioRuntime {
 		this.closing = true;
 		this.frameLoop?.stop();
 		this.requests?.close(new Error('Headless Studio closed'));
+		this.ui?.dispose();
+		if (this.workbench !== undefined) disposeShortcutHandlers(this.workbench);
 		this.disposal = (async () => {
 			try { await this.workbench?.shutdown(); }
 			finally {
 				try {
 					await this.tasks.join();
-					if (discardUnsaved) await this.recovery?.discard();
-					else await this.recovery?.shutdown();
+					if (discardUnsaved) for (const model of editorTextModelService.models) if (model.dirty) model.revert();
 				} finally {
-					try { await closeWorkspaceRecords(); }
+					try {
+						if (this.workbench !== undefined) await this.workbench.editor.shutdown();
+						else await shutdownWorkspaceStorage();
+					}
 					finally {
-						editorTextModelService.clear();
-						this.catalog?.dispose();
+						if (this.workbench === undefined) {
+							editorTextModelService.clear();
+							this.catalog?.dispose();
+						}
 						this.input.dispose();
 						this.audioOutput.dispose();
 						this.presenter.dispose();

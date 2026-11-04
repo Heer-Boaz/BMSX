@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { access, cp, readdir, readFile, rm } from 'node:fs/promises';
+import { access, cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -13,6 +13,8 @@ import type { WorkspaceToolService } from '../../ide/workbench/services/assistan
 import { createStudioServer } from '../helpers/studio_server.mjs';
 import { StudioSessions } from '../../hosts/node/studio/sessions';
 import type { StudioBuildJobs } from '../../hosts/node/builds/jobs';
+import { PNG } from 'pngjs';
+import { WORKSPACE_STATE_FILE } from '../../ide/workspace/records';
 
 test('an archived artifact without source admission cannot open an authoring Studio or read media', async t => {
 	let reads = 0;
@@ -95,6 +97,31 @@ test('headless Studio owns runtime, source history, persistence and session life
 	}
 	assert.equal(runtime.fault, undefined);
 	await call('studio_pause_runtime', { toolContext: firstSource.toolContext, target: runtime.target });
+	const pausedUi = await call('studio_runtime_status', { toolContext: firstSource.toolContext });
+	// This captures the ordinary composed surface, then enters the actual editor
+	// through its host input binding. Neither UI operation may execute the paused guest.
+	const beforeUi = await call('studio_capture_ui', { toolContext: firstSource.toolContext });
+	assert.equal(beforeUi.inputAllowed, true);
+	const input = await call('studio_ui_input', { toolContext: firstSource.toolContext, capture: beforeUi.capture, steps: [
+		{ events: [{ type: 'key', code: 'ControlRight', down: true }, { type: 'key', code: 'ShiftRight', down: true }], frames: 1 },
+		{ events: [{ type: 'key', code: 'ShiftRight', down: false }, { type: 'key', code: 'ControlRight', down: false }], frames: 2 },
+	] });
+	assert.equal(input.completedFrames, 3);
+	const uiResult = await current.client.callTool({ name: 'studio_capture_ui', arguments: { toolContext: firstSource.toolContext } }) as CallToolResult;
+	assert.notEqual(uiResult.isError, true, JSON.stringify(uiResult.content.filter(item => item.type !== 'image')));
+	const uiFrame = uiResult.content.find(item => item.type === 'image')!;
+	assert.equal(uiFrame.type, 'image');
+	const uiImage = Buffer.from(uiFrame.data, 'base64'), decodedUi = PNG.sync.read(uiImage);
+	const ui = uiResult.structuredContent!.result as { width: number; height: number };
+	assert.deepEqual([ui.width, ui.height], [decodedUi.width, decodedUi.height], 'receipt coordinates address the actual image pixels');
+	t.diagnostic(`UI capture: ${beforeUi.width}x${beforeUi.height} -> ${ui.width}x${ui.height}`);
+	assert.ok(ui.width > beforeUi.width && ui.height > beforeUi.height,
+		'entering the editor switches from scanout-sized game output to the real workbench render target');
+	const evidence = '/tmp/bmsx-studio-ui'; await mkdir(evidence, { recursive: true });
+	await writeFile(join(evidence, 'headless.png'), uiImage);
+	const afterUi = await call('studio_runtime_status', { toolContext: firstSource.toolContext });
+	assert.equal(afterUi.hostFrameFailure, undefined);
+	assert.equal(afterUi.cycles, pausedUi.cycles); assert.equal(afterUi.videoTick, pausedUi.videoTick);
 	const evaluation = await call('studio_evaluate_lua', { toolContext: firstSource.toolContext, target: runtime.target, context: 'cart', source: 'return 6 * 7' });
 	assert.equal(evaluation.status, 'completed'); assert.deepEqual(evaluation.values, ['42']);
 	const stepped = await call('studio_step_frames', { toolContext: firstSource.toolContext, target: runtime.target, direction: 'forward', count: 3 });
@@ -162,7 +189,7 @@ test('headless Studio owns runtime, source history, persistence and session life
 	await delay(2600); // The ordinary debounced recovery owner, not a test-only flush.
 	for (const [identity, contents] of [[request.requestId, firstText + original], [secondRequest.requestId, secondText + original]]) {
 		const directory = join(f.root, build.project.cartridge.projectRoot, '.bmsx/studio', build.project.cartridge.id, identity);
-		const recovery = JSON.parse(await readFile(join(directory, 'sources.json'), 'utf8'));
+		const recovery = JSON.parse(await readFile(join(directory, WORKSPACE_STATE_FILE), 'utf8'));
 		const entry = recovery.dirtyFiles.find((entry: { contextId: string; path: string }) => entry.contextId === build.project.cartridge.id && entry.path === 'entry.lua');
 		assert.ok(entry);
 		const files = await readdir(directory, { recursive: true });

@@ -19,7 +19,8 @@ export type StudioHeadlessStartResult = { requestId: string } & (
 export type StudioHeadlessCloseResult = { status: 'closed' }
 	| { status: 'dirty'; resources: readonly { contextId: string; path: string }[] };
 export type StudioToolDefinition = { name: string; description: string;
-	inputSchema: { type: string; properties: Record<string, unknown>; required: readonly string[]; additionalProperties: boolean } };
+	inputSchema: { type: string; properties: Record<string, unknown>; required: readonly string[]; additionalProperties: boolean };
+	annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean; idempotentHint?: boolean; openWorldHint?: boolean } };
 
 export type StudioToolOperation =
 	| { type: 'open'; context: string }

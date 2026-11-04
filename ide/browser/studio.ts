@@ -9,7 +9,8 @@ import type { StudioSourceContext } from '../../hosts/common/studio_projects';
 import { createLoadedProjectSourceCatalog } from '../runtime/sources';
 import { showEditorMessage } from '../common/feedback_state';
 import { HttpConversationObserver } from './conversation_observer';
-import { decodeImage, encodePngImage } from '../../hosts/browser/image';
+import { captureCanvasImage, decodeImage, encodePngImage } from '../../hosts/browser/image';
+import { StudioUiService } from '../workbench/services/assistant/ui_tools';
 import { AssistantHttpConnection } from './assistant_connection';
 import { StudioServerConnection } from './server_connection';
 import { WorkspaceEditReviewInput } from '../workbench/contrib/edit_review/editor_input';
@@ -185,7 +186,9 @@ async function startBrowserStudio(): Promise<void> {
 			buildRequest === null ? 'workspace' : 'installed',
 		);
 		clipboard.bindInput(options.browserInput, () => ide.editor.clipboardTarget, reportClipboardFailure);
-		const textInput = new BrowserTextInput(document.getElementById('gamescreen') as HTMLCanvasElement, ide.editor);
+		const canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
+		const ui = new StudioUiService(() => captureCanvasImage(canvas), presenter.canvasSize, options.videoOutput, ide.models);
+		const textInput = new BrowserTextInput(canvas, ide.editor);
 		options.browserInput.setNativeKeyHandler(textInput.handleKey);
 		options.browserInput.setNativePointerHandler(event => ide.editor.dispatchPointer(event));
 		options.browserInput.setNativeWheelHandler(event => ide.editor.dispatchWheel(event));
@@ -211,6 +214,7 @@ async function startBrowserStudio(): Promise<void> {
 				options.browserInput.setNativePointerHandler(undefined);
 				options.browserInput.setNativeWheelHandler(undefined);
 				textInput.dispose();
+				ui.dispose();
 				browserFiles?.close();
 			}
 		});
@@ -234,6 +238,7 @@ async function startBrowserStudio(): Promise<void> {
 				currentTime,
 			);
 			textInput.refresh();
+			ui.afterFrame(presenter.presentationSequence);
 			if (result === HostFrameRunResult.ExitRequested) {
 				window.close();
 				if (window.closed) {
@@ -266,7 +271,7 @@ async function startBrowserStudio(): Promise<void> {
 				}, (state, detail) => {
 					ide.editor.serverConnectionState = state;
 					ide.editor.serverConnectionDetail = detail;
-				}, builds);
+				}, builds, ui);
 			ide.editor.retryServerConnection = () => connection.retry();
 			window.addEventListener('pagehide', event => {
 				if (event.persisted) connection.suspend();

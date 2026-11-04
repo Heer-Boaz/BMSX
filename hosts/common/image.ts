@@ -6,6 +6,9 @@ export type PublishedGameFrame = { presentationSequence: number | undefined; cyc
 /** Host codec: owned display pixels to a PNG data URL. */
 export type PngImageEncoder = (image: RgbaImage) => Promise<string>;
 
+/** Final host canvas, including Studio/host overlays; not retained game scanout. */
+export type CapturedSurfaceImage = { imageUrl: string; width: number; height: number };
+
 export type CapturedGameImage = {
 	imageUrl: string;
 	width: number;

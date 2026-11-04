@@ -87,6 +87,22 @@ test('remote input owns press IDs across requests and releases only held input',
 	assert.deepEqual(events[3], { type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: 120, y: 80, timestamp: 20 });
 });
 
+test('reentrant release cancels the rest of an admitted input batch', t => {
+	const clock = new VirtualHeadlessClock(), input = new Input(clock, new HeadlessInputHub(), -1);
+	t.after(() => input.dispose());
+	const keys: string[] = [];
+	const remote = new RemoteInput(input, clock, code => {
+		keys.push(code);
+		remote.release();
+	});
+	remote.apply([{ type: 'key', code: 'Enter', down: true }, { type: 'key', code: 'KeyA', down: true },
+		{ type: 'button', button: 'primary', down: true }]);
+	assert.deepEqual(keys, ['Enter']);
+	assert.equal(input.pointerButtonsDown, false);
+	remote.apply([{ type: 'key', code: 'KeyB', down: true }]);
+	assert.deepEqual(keys, ['Enter', 'KeyB'], 'a new admitted batch remains usable');
+});
+
 test('remote key producer edits in request order with live modifiers independently of guest sampling', t => {
 	const clock = new VirtualHeadlessClock();
 	const input = new Input(clock, new HeadlessInputHub(), -1);

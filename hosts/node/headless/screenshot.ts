@@ -1,5 +1,12 @@
 import { PNG } from 'pngjs';
-import type { ImageDecoder, PngImageEncoder } from '../../common/image';
+import type { CapturedSurfaceImage, ImageDecoder, PngImageEncoder } from '../../common/image';
+import type { HeadlessGPUBackend } from '../../../machine/ts/render/headless/backend';
+
+/** Read the actual composed CPU presentation, not the machine's game-frame history. */
+export function capturePresentedImage(backend: HeadlessGPUBackend): CapturedSurfaceImage {
+	const { width, height } = backend.latestPresentedFrame!;
+	return { width, height, imageUrl: `data:image/png;base64,${encodeScreenshotPng(width, height, backend.borrowPresentedPixels()).toString('base64')}` };
+}
 
 export const encodePngImage: PngImageEncoder = async ({ width, height, pixels }) => {
 	const png = new PNG({ width, height });

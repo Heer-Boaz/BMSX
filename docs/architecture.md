@@ -249,10 +249,11 @@ recipes and acceptance commands are not reproduced here as dated setup logs.
 ## Studio ownership
 
 `StudioWorkbench` owns authoring documents and the physical target's source,
-execution, inspection and tool services without an editor view. Browser
-composition adds `RuntimeCartEditor`; the Node Studio server composes the same
-workbench in an isolated worker realm. Process-local source/model owners are
-never swapped between live sessions. The shared Studio frame pump owns physical
+execution, inspection and tool services without an editor view. Browser and
+headless Studio composition add `RuntimeCartEditor` and the ordinary workbench
+input/presentation loop; the Node server hosts each in an isolated worker realm.
+Process-local source/model owners are never swapped between live sessions.
+The shared Studio frame pump owns physical
 operation ordering; frontends supply input and presentation policy around it.
 
 `hosts/node/studio` is Studio application/server composition, not the standalone
@@ -261,10 +262,16 @@ another debugger, compiler, source model or machine loop. Standalone Node player
 roots and host execution services remain independent of Studio composition.
 
 Source-edit capabilities and review approval policy belong to a tool connection,
-not its host kind. Recovery generations belong to their explicit Studio session;
-frontend layout/session storage remains separate. Canonical source publication
-is shared by browser and worker clients, with saved-baseline preconditions at
+not its host kind. Recovery generations and frontend layout belong to their
+explicit Studio session. Canonical source publication is shared by browser and
+worker clients, with saved-baseline preconditions at
 the filesystem owner. Working-copy acknowledgement follows that publication.
+
+External UI tools capture the composed host canvas, not retained game scanout.
+Finite input sequences use the host input producer and own their held input until
+completion or cancellation. They require both source-edit and agent-approval
+authority; UI input cannot bypass a user-owned source review. Embedded assistants
+use domain tools instead of controlling their own window.
 
 ### Source and editor state
 

@@ -6,6 +6,7 @@ import type { WorkspaceToolService } from '../workbench/services/assistant/tool_
 import type { WorkspaceEditProposal } from '../workbench/services/working_copy/workspace_edit';
 import { StudioAdmissionError, type StudioHttpSession } from './http_session';
 import { StudioToolRequests } from '../workbench/services/assistant/tool_requests';
+import type { StudioUiService } from '../workbench/services/assistant/ui_tools';
 
 class AdmissionFailure extends Error {
 	public constructor(message: string, public readonly permanent: boolean) { super(message); }
@@ -27,7 +28,8 @@ export class StudioServerConnection {
 
 	public constructor(private readonly session: StudioHttpSession, private readonly descriptor: StudioSessionDescriptor,
 		private readonly tools: WorkspaceToolService, private readonly showReview: (proposal: WorkspaceEditProposal) => void,
-		private readonly changed: (state: StudioServerConnectionState, detail: string) => void, private readonly builds?: HttpWorkspaceBuilds) {}
+		private readonly changed: (state: StudioServerConnectionState, detail: string) => void, private readonly builds?: HttpWorkspaceBuilds,
+		private readonly ui?: StudioUiService) {}
 
 	public resume(): void {
 		if (this.disposed) return;
@@ -105,7 +107,7 @@ export class StudioServerConnection {
 
 	private async receive(parent: AbortSignal, recovered: () => void): Promise<void> {
 		const attempt = new AbortController(), signal = AbortSignal.any([parent, attempt.signal]);
-		const requests = new StudioToolRequests(this.tools, { sourceAccess: 'edit', reviewApproval: 'user', showReview: this.showReview });
+		const requests = new StudioToolRequests(this.tools, { sourceAccess: 'edit', reviewApproval: 'user', showReview: this.showReview }, this.ui);
 		let watchdog = setTimeout(() => attempt.abort(new Error('Studio registration timed out')), STUDIO_CONNECT_MS);
 		let admission: Promise<string>;
 		try {

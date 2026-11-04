@@ -91,13 +91,13 @@ test('CLI MCP uses a real Studio window without its chat: runtime, Lua, frames, 
 	const review = await call('studio_read_review', { toolContext, review: proposal.review });
 	assert.equal(review.state, 'pending');
 	await page.screenshot({ path: join(evidence, 'review.png') });
-	await page.mouse.click(860, 88, { delay: 100 });
-	await page.screenshot({ path: join(evidence, 'apply-click.png') });
+	// The retained review pane's Tab route focuses its actions. Apply reveals
+	// the shared source editor; neither transition depends on canvas/CSS geometry.
+	await page.keyboard.press('Tab');
+	await page.keyboard.press('Enter');
 	assert.equal((await call('studio_read_review', { toolContext, review: proposal.review })).state, 'applied');
 	assert.equal(await readFile(join(f.root, 'carts/studio_test/cart.lua'), 'utf8'), source.source, 'Apply is not Save');
 	await page.screenshot({ path: join(evidence, 'applied.png') });
-	await page.mouse.click(90, 60, { delay: 100 });
-	await page.mouse.click(500, 280, { delay: 100 });
 	const saved = page.waitForResponse(response => response.request().method() === 'PUT' && response.request().postDataJSON().path === 'carts/studio_test/cart.lua');
 	await page.keyboard.press('Control+s', { delay: 100 });
 	assert.equal((await saved).ok(), true);

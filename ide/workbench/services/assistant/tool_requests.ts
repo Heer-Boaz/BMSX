@@ -1,8 +1,9 @@
 import type { StudioReviewApproval, StudioSourceAccess, StudioToolOperation, StudioToolReply, StudioToolResult } from '../../../../hosts/common/studio_tools';
 import type { WorkspaceToolContext, WorkspaceToolService } from './tool_service';
 import type { WorkspaceEditProposal } from '../working_copy/workspace_edit';
+import type { StudioUiContext, StudioUiService } from './ui_tools';
 
-type Context = { lifetime: AbortController; tools: WorkspaceToolContext; reviews: Map<string, WorkspaceEditProposal> };
+type Context = { lifetime: AbortController; tools: WorkspaceToolContext; reviews: Map<string, WorkspaceEditProposal>; ui?: StudioUiContext };
 type ToolAuthority = {
 	sourceAccess: StudioSourceAccess;
 	reviewApproval: StudioReviewApproval;
@@ -14,7 +15,8 @@ export class StudioToolRequests {
 	private readonly lifetime = new AbortController();
 	private readonly contexts = new Map<string, Context>();
 	private readonly requests = new Map<string, AbortController>();
-	public constructor(private readonly tools: WorkspaceToolService, private readonly authority: ToolAuthority) {}
+	public constructor(private readonly tools: WorkspaceToolService, private readonly authority: ToolAuthority,
+		private readonly ui?: StudioUiService) {}
 
 	public cancel(request: string): void { this.requests.get(request)?.abort(); }
 	public release(id: string): void {
@@ -32,7 +34,8 @@ export class StudioToolRequests {
 		try {
 			if (operation.type === 'open') {
 				const lifetime = new AbortController();
-				const context: Context = { lifetime, tools: this.tools.open(lifetime.signal), reviews: new Map() };
+				const context: Context = { lifetime, tools: this.tools.open(lifetime.signal), reviews: new Map(),
+					ui: this.ui?.open(this.authority.sourceAccess === 'edit' && this.authority.reviewApproval === 'agent') };
 				this.contexts.set(operation.context, context);
 				result = { success: true, data: { toolContext: operation.context } };
 			} else {
@@ -56,7 +59,10 @@ export class StudioToolRequests {
 						&& (operation.name === 'studio_save_source' || operation.name === 'studio_edit_history')) {
 						throw new Error('This tool connection has no source-edit authority.');
 					}
-					const value = await context.tools.execute(operation.name, operation.arguments, signal);
+					const uiTool = operation.name === 'studio_capture_ui' || operation.name === 'studio_ui_input';
+					if (uiTool && context.ui === undefined) throw new Error('This Studio session has no UI surface tools.');
+					const value = uiTool ? await context.ui!.execute(operation.name, operation.arguments, signal)
+						: await context.tools.execute(operation.name, operation.arguments, signal);
 					if (signal.aborted) { if (value.kind === 'proposal') value.proposal.dispose(); return; }
 					if (value.kind === 'proposal') {
 						context.reviews.set(value.data.review, value.proposal);

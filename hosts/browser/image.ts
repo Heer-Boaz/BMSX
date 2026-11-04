@@ -1,6 +1,11 @@
 import type { ClipboardImageData } from '../common/clipboard';
 import type { RgbaImage } from '../../machine/ts/render/image';
-import type { ImageDecoder, PngImageEncoder } from '../common/image';
+import type { CapturedSurfaceImage, ImageDecoder, PngImageEncoder } from '../common/image';
+
+/** Call immediately after presentation, before a discardable drawing buffer is cleared. */
+export function captureCanvasImage(canvas: HTMLCanvasElement): CapturedSurfaceImage {
+	return { width: canvas.width, height: canvas.height, imageUrl: canvas.toDataURL('image/png') };
+}
 
 export const encodePngImage: PngImageEncoder = async ({ width, height, pixels }) => {
 	const canvas = new OffscreenCanvas(width, height);

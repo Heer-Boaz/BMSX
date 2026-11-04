@@ -11,6 +11,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult, typ
 import { imageDataUrlContent } from '../../common/image';
 import type { StudioToolDefinition, StudioToolResult } from '../../common/studio_tools';
 import type { StudioSessions } from './sessions';
+import { STUDIO_UI_TOOLS } from '../../../ide/workbench/services/assistant/ui_tool_protocol';
 
 const INSTRUCTIONS = 'BMSX Studio tools operate on explicit browser or server-owned headless Studio sessions, independently of this conversation. '
 	+ 'Successful results expose the domain value as structuredContent.result and matching JSON text. Images are separate image blocks. '
@@ -59,8 +60,9 @@ export class StudioMcpApi {
 	private closing = false;
 	public constructor(private readonly sessions: StudioSessions, definitions: readonly StudioToolDefinition[],
 		private readonly builds?: StudioBuildJobs, private readonly projects?: WorkspaceProjects) {
+		definitions = [...definitions, ...STUDIO_UI_TOOLS];
 		this.names = new Set(definitions.map(tool => tool.name));
-		this.tools = [...MANAGEMENT_TOOLS, ...(builds === undefined ? [] : [...HEADLESS_TOOLS, ...BUILD_TOOLS]), ...(projects === undefined ? [] : PROJECT_TOOLS), ...definitions.map(tool => ({ name: tool.name, description: tool.description,
+		this.tools = [...MANAGEMENT_TOOLS, ...(builds === undefined ? [] : [...HEADLESS_TOOLS, ...BUILD_TOOLS]), ...(projects === undefined ? [] : PROJECT_TOOLS), ...definitions.map(tool => ({ name: tool.name, description: tool.description, annotations: tool.annotations,
 			inputSchema: { ...tool.inputSchema, type: 'object' as const,
 				properties: { toolContext: { type: 'string', description: 'Context returned by studio_open_context.' }, ...tool.inputSchema.properties },
 				required: ['toolContext', ...tool.inputSchema.required] } }))];

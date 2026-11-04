@@ -8,6 +8,7 @@ import { HOST_SUPERVISOR_KEY_CODE } from './shortcuts';
 /** Owns physical press lifetimes; clients never manufacture timestamps or press IDs. */
 export class RemoteInput {
 	private nextPressId = 1;
+	private generation = 0;
 	private readonly pressedKeys = new Map<string, number>();
 	private readonly pressedButtons = new Map<string, number>();
 	private readonly pointer = { x: 0, y: 0, buttons: 0, pressedButtons: 0, releasedButtons: 0, cancelledButtons: 0,
@@ -24,7 +25,10 @@ export class RemoteInput {
 
 	public apply(events: readonly HostControlInputEvent[]): void {
 		const timestamp = this.clock.now();
+		const generation = this.generation;
 		for (const event of events) {
+			// An editing callback can retire its window/context during this batch.
+			if (generation !== this.generation) return;
 			switch (event.type) {
 				case 'key':
 					this.key(event.code, event.down, timestamp);
@@ -95,6 +99,7 @@ export class RemoteInput {
 	}
 
 	public release(): void {
+		this.generation++;
 		const timestamp = this.clock.now();
 		// A disconnected producer cancels ownership; it cannot activate an armed UI key-up.
 		for (const code of this.pressedKeys.keys()) this.button('keyboard:0', code, false, this.pressedKeys, timestamp);
