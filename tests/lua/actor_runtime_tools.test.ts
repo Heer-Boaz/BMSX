@@ -1,8 +1,9 @@
 import { ActorRenderFrames } from '../../ide/workbench/contrib/actor_lab/render_frames';
+import { DisposableStore } from '../../ide/common/lifecycle';
 import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
 import assert from 'node:assert/strict';
-import test, { afterEach, type TestContext } from 'node:test';
+import test, { afterEach, beforeEach, type TestContext } from 'node:test';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { createBuiltinFunction, valueString, type Value } from '../../machine/ts/machine/cpu/value';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
@@ -75,7 +76,14 @@ function remove() probe._components[2] = nil end
 return world`;
 
 const controllerFixtures: { readonly controller: ActorLabController; readonly parts: EditorParts; readonly surfaces: WorkbenchSurfaceService; readonly contextMenu: ContextMenuController }[] = [];
+// Reference/presence contracts below use predicates: formatting a failed strict
+// equality on an owner graph would recursively dump its entire guest heap/RAM.
+// Node retains completed TestHook callbacks until the file finishes. A drained
+// per-test store releases their captured runtimes before the next case starts.
+let resources: DisposableStore;
+beforeEach(() => { resources = new DisposableStore(); configureFontVariant('tiny'); });
 afterEach(() => {
+	resources.dispose();
 	for (const { controller, parts, surfaces, contextMenu } of controllerFixtures) { controller.dispose(); parts.dispose(); contextMenu.dispose(); surfaces.dispose(); }
 	controllerFixtures.length = 0;
 });
@@ -120,7 +128,7 @@ function fixture(t: TestContext, entry = ENTRY, run = true, worldSource = WORLD_
 	layoutMain();
 	const group = parts.main.activeGroup;
 	const frames = new ActorRenderFrames(runtime, sources, f.guest, f.observers);
-	t.after(() => { frames.dispose(); f.events.dispose(); f.observers.dispose(); });
+	resources.add({ dispose: () => { frames.dispose(); f.events.dispose(); f.observers.dispose(); } });
 	const controller = new ActorLabController(sources, f.guest, runtime.machine.cpu,
 		parts, undefined!, f.actorExecution, f.rewind, sources,
 		{ kind: 'direct', presenter: f.presenter, recipient: f.input, transport }, frames);
@@ -139,10 +147,10 @@ for (const action of ['open', 'audition'] as const) test(`Actor Lab ${action} st
 	f.group.openEditor(current);
 	const control = new ValueInput(inputFocus.target!, INTEGER_INPUT_FORMAT, () => assert.fail('invalid draft cannot publish'));
 	control.setValue(1); control.field.focusTarget.focus(); setFieldText(control.field, '-', false);
-	t.after(() => {
+	resources.add({ dispose: () => {
 		control.cancel(); inputFocus.setTarget(null); control.dispose(); quickInput.dispose(); contextMenu.dispose();
 		f.group.clear(); model.dispose(); f.stop.dispose();
-	});
+	} });
 	const offered = f.controller.resolveInput();
 	let retired = 0; offered.onWillDispose(() => { retired++; });
 	if (action === 'open') f.controller.open(f.group); else f.controller.auditionEvent(f.group, -1, 'event');
@@ -156,9 +164,9 @@ for (const action of ['open', 'audition'] as const) test(`Actor Lab ${action} st
 
 
 test('Actor Lab history restores the typed member and Details after choosing another actor without guest execution', t => {
-	const f = fixture(t); t.after(() => f.stop.dispose());
+	const f = fixture(t); resources.add(f.stop);
 	const controller = f.controller;
-	const input = controller.resolveInput(); t.after(() => input.dispose());
+	const input = controller.resolveInput(); resources.add(input);
 	const choices = readActorChoices(f.sources, f.guest, -1), font = new Font({ variant: 'tiny' });
 	input.domain = -1; input.actorHashId = choices[0].hashId; controller.refresh(input);
 	input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.kind === 'state');
@@ -186,8 +194,8 @@ test('Actor Lab history restores the typed member and Details after choosing ano
 
 for (const variant of ['tiny', 'msx'] as const) test(`Actor ${variant} history restores both split intents through stacked and withheld previews`, t => {
 	configureFontVariant(variant);
-	const f = fixture(t); t.after(() => f.stop.dispose());
-	const controller = f.controller, input = controller.resolveInput(); t.after(() => input.dispose());
+	const f = fixture(t); resources.add(f.stop);
+	const controller = f.controller, input = controller.resolveInput(); resources.add(input);
 	input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId;
 	controller.refresh(input);
 	input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.kind === 'state'); input.rememberSelection();
@@ -203,7 +211,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`Actor ${variant} history r
 	const narrow = measured.outlineMinimumWidth + WORKBENCH_SPLIT_SIZE + measured.previewMinimumWidth - 1;
 	arrange(narrow); assert.ok(input.layout.previewVisible && input.layout.split === input.rowSplit);
 	input.rowSplit.resize(0.45); layoutActorLab(input);
-	const saved = controller.captureSelection(input); t.after(() => saved.dispose());
+	const saved = controller.captureSelection(input); resources.add(saved);
 	const cycles = f.runtime.machine.scheduler.nowCycles, heap = f.runtime.machine.cpu.luaHeap.usedBytes();
 	arrange(900); input.split.resize(0.7);
 	arrange(narrow); input.rowSplit.resize(0.6);
@@ -213,7 +221,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`Actor ${variant} history r
 	assert.equal(input.split.ratio, 0.55, 'restoring view intent must not apply current interactive sash limits');
 	assert.equal(input.rowSplit.ratio, 0.45);
 	assert.ok(controller.selected(input) === selected);
-	const roundTrip = controller.captureSelection(input); t.after(() => roundTrip.dispose());
+	const roundTrip = controller.captureSelection(input); resources.add(roundTrip);
 	arrange(900); input.split.resize(0.7); layoutActorLab(input);
 	arrange(narrow); input.rowSplit.resize(0.6); layoutActorLab(input);
 	arrange(narrow, measured.previewMinimumHeight);
@@ -230,9 +238,9 @@ for (const variant of ['tiny', 'msx'] as const) test(`Actor ${variant} history r
 });
 
 test('Actor Lab pin action enablement uses retained membership without guest reads or identity capture churn', t => {
-	const f = fixture(t); t.after(() => f.stop.dispose());
+	const f = fixture(t); resources.add(f.stop);
 	const controller = f.controller;
-	const input = controller.resolveInput(); t.after(() => input.dispose());
+	const input = controller.resolveInput(); resources.add(input);
 	input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId;
 	controller.refresh(input); input.outline.selectionIndex = 0; input.rememberSelection(); controller.refreshDetails(input);
 	const pinned = input.details!.items.find(item => item.label === 'ID')!, unpinned = input.details!.items.find(item => item.label === 'Active')!;
@@ -259,24 +267,24 @@ test('Actor Lab pin action enablement uses retained membership without guest rea
 });
 
 test('Actor Lab capture admission publishes guest invalidation without an attached pane', t => {
-	const f = fixture(t); t.after(() => f.stop.dispose());
+	const f = fixture(t); resources.add(f.stop);
 	const input = f.controller.resolveInput(), transport = f.controller.viewport.transport;
 	input.interaction.setRuntime(transport);
 	const changes: boolean[] = [];
-	t.after(input.interaction.onDidChange(() => changes.push(input.interaction.running)));
+	resources.add({ dispose: input.interaction.onDidChange(() => changes.push(input.interaction.running)) });
 	input.interaction.running = true;
 	f.guest.invalidate('execution');
 	assert.equal(input.interaction.running, true, 'ordinary execution retains explicitly admitted capture');
 	f.guest.invalidate('history-restored');
 	assert.equal(input.interaction.running, false);
 	assert.deepEqual(changes, [true, false], 'history invalidation publishes exactly one capture retirement');
-	assert.strictEqual(input.interaction.transport, transport, 'history does not substitute the physical target');
+	assert.ok(input.interaction.transport === transport, 'history does not substitute the physical target');
 });
 
 test('Actor Lab pin and reveal commands keep watch selection separate and return to the exact cross-actor member', t => {
-	const f = fixture(t); t.after(() => f.stop.dispose());
+	const f = fixture(t); resources.add(f.stop);
 	const controller = f.controller;
-	const input = controller.resolveInput(); t.after(() => input.dispose());
+	const input = controller.resolveInput(); resources.add(input);
 	const choices = readActorChoices(f.sources, f.guest, -1);
 	const before = [f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes()];
 	input.domain = -1; input.actorHashId = choices[0].hashId; controller.refresh(input);
@@ -293,12 +301,12 @@ test('Actor Lab pin and reveal commands keep watch selection separate and return
 	assert.equal(controller.selected(input)!.hashId, choices[1].hashId);
 	assert.equal(pin.available, true); assert.equal(controller.canRevealPinnedProperty(input, pin.item), true);
 	const captureChanges: boolean[] = [];
-	t.after(input.interaction.onDidChange(() => captureChanges.push(input.interaction.running)));
+	resources.add({ dispose: input.interaction.onDidChange(() => captureChanges.push(input.interaction.running)) });
 	input.interaction.running = true;
 	controller.revealPinnedProperty(input, pin.item); controller.refreshDetails(input);
 	assert.deepEqual(captureChanges, [true, false], 'controller navigation publishes capture admission without polling the pane');
 	assert.equal(input.interaction.running, false); assert.equal(input.presentation, 'outline'); assert.equal(input.actorHashId, choices[0].hashId);
-	assert.strictEqual(controller.selected(input), resolveActorTarget(input.runtime.roots, pin.target, f.guest));
+	assert.ok(controller.selected(input) === resolveActorTarget(input.runtime.roots, pin.target, f.guest));
 	assert.deepEqual(input.selectionPath, pin.target.path);
 	assert.deepEqual(input.detailsSelection, { kind: 'property', identity: pin.property });
 	const revealed = input.details!.items.find(item => item.watch === undefined && item.label === 'INSTANCE DATA')!;
@@ -309,8 +317,8 @@ test('Actor Lab pin and reveal commands keep watch selection separate and return
 });
 
 test('locked Details property commands target its subject rather than a newly selected actor', t => {
-	const f = fixture(t); t.after(() => f.stop.dispose());
-	const controller = f.controller, input = controller.resolveInput(); t.after(() => input.dispose());
+	const f = fixture(t); resources.add(f.stop);
+	const controller = f.controller, input = controller.resolveInput(); resources.add(input);
 	const choices = readActorChoices(f.sources, f.guest, -1);
 	input.domain = -1; input.actorHashId = choices[0].hashId; controller.refresh(input);
 	input.outline.selectionIndex = 0; input.rememberSelection(); controller.refreshDetails(input);
@@ -319,13 +327,13 @@ test('locked Details property commands target its subject rather than a newly se
 	input.actorHashId = choices[1].hashId; input.selectionPath = undefined; input.dirty = true;
 	controller.refresh(input); input.outline.selectionIndex = 0; input.rememberSelection(); controller.refreshDetails(input);
 	assert.equal(controller.selected(input)!.hashId, choices[1].hashId);
-	assert.equal(input.details!.subject, subject); assert.equal(input.details!.locked, true);
+	assert.ok(input.details!.subject === subject); assert.equal(input.details!.locked, true);
 	const property = input.details!.items.find(item => item.label === 'Active')!;
 	assert.equal(property.value, 'true', 'Details still projects the first actor, not the tree-selected inactive actor');
 	assert.equal(controller.canPinProperty(input, property), true);
 	controller.pinProperty(input, property); controller.refreshDetails(input);
 	const pin = input.details!.watches.pins[0];
-	assert.equal(pin.target, subject); assert.ok(pin.item.description.includes(path));
+	assert.ok(pin.target === subject); assert.ok(pin.item.description.includes(path));
 	assert.equal(controller.canPinProperty(input, property), false); assert.equal(controller.canUnpinProperty(input, property), true);
 	controller.setDetailsLocked(input, false);
 	assert.equal(input.details!.subject!.actorHashId, choices[1].hashId, 'unlock immediately adopts the current tree selection');
@@ -337,36 +345,36 @@ test('locked Details property commands target its subject rather than a newly se
 });
 
 test('navigation retains the independent Details lock and subject, but never restores them across a retired generation', t => {
-	const f = fixture(t); t.after(() => f.stop.dispose());
-	const controller = f.controller, input = controller.resolveInput(); t.after(() => input.dispose());
+	const f = fixture(t); resources.add(f.stop);
+	const controller = f.controller, input = controller.resolveInput(); resources.add(input);
 	const choices = readActorChoices(f.sources, f.guest, -1), font = new Font({ variant: 'tiny' });
 	input.domain = -1; input.actorHashId = choices[0].hashId; controller.refresh(input);
 	input.outline.selectionIndex = 0; input.rememberSelection(); controller.refreshDetails(input); controller.setDetailsLocked(input, true);
 	const subject = input.details!.subject!;
 	input.actorHashId = choices[1].hashId; input.selectionPath = undefined; input.dirty = true;
 	controller.refresh(input); input.outline.selectionIndex = 0; input.rememberSelection(); controller.refreshDetails(input);
-	const saved = controller.captureSelection(input); t.after(() => saved.dispose());
-	assert.equal(saved.detailsSubject, subject); assert.equal(saved.target!.actorHashId, choices[1].hashId);
+	const saved = controller.captureSelection(input); resources.add(saved);
+	assert.ok(saved.detailsSubject === subject); assert.equal(saved.target!.actorHashId, choices[1].hashId);
 	controller.setDetailsLocked(input, false);
-	const unlocked = controller.captureSelection(input); t.after(() => unlocked.dispose());
+	const unlocked = controller.captureSelection(input); resources.add(unlocked);
 	assert.equal(saved.matches(unlocked), false, 'a lock/subject change is a distinct navigation selection');
 	controller.restoreSelection(input, saved, font); controller.refreshDetails(input);
-	assert.equal(input.details!.locked, true); assert.equal(input.details!.subject, subject);
+	assert.equal(input.details!.locked, true); assert.ok(input.details!.subject === subject);
 	assert.equal(controller.selected(input)!.hashId, choices[1].hashId);
 	f.guest.invalidate('heap-replaced');
 	controller.restoreSelection(input, saved, font); controller.refreshDetails(input);
-	assert.equal(input.details!.subject, undefined); assert.equal(input.details!.locked, false);
+	assert.ok(input.details!.subject === undefined); assert.equal(input.details!.locked, false);
 	assert.equal(input.details!.subjectName, ''); assert.equal(input.details!.caption, 'Details');
 });
 
 test('the actual floating pane retains locked pins while closed or detached without formatting the hidden client', t => {
 	const menuArea = { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight };
 	const contextMenu = new ContextMenuController(inputFocus, pointerCapture, menuArea), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: menuArea, kind: 'workspace' });
-	t.after(() => { quickInput.dispose(); contextMenu.hide(); });
+	resources.add({ dispose: () => { quickInput.dispose(); contextMenu.hide(); } });
 	const f = fixture(t, ENTRY.replace('return world', `function remove_subject() world._objects = { world._objects[2] } end
 function replace_subject() world._objects[2] = { id = 1, definition_id = 'same', active = false, _components = {}, _components_by_class = {} } end
 return world`), true, WORLD_SOURCE, []);
-	t.after(() => f.stop.dispose());
+	resources.add(f.stop);
 	const controller = f.controller, input = controller.resolveInput();
 	const bounds = { left: 0, top: 20, right: 384, bottom: 270 };
 	const surfaces = new WorkbenchSurfaceService();
@@ -381,24 +389,24 @@ return world`), true, WORLD_SOURCE, []);
 	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	const pane = new ActorLabEditorPane(commands, contextMenu, surfaces, owner, bounds, f.group, quickInput, inputFocus.workbenchScope);
-	t.after(() => {
+	resources.add({ dispose: () => {
 		inputFocus.setTarget(null); pane.dispose(); surfaces.dispose(); input.dispose();
 		editorViewState.font = previousFont; editorViewState.lineHeight = previousLineHeight;
 		editorViewState.charAdvance = previousAdvance;
-	});
+	} });
 	const choices = readActorChoices(f.sources, f.guest, -1);
 	input.domain = -1;
 	pane.setInput(input, bounds); pane.update(); pane.focus();
-	assert.strictEqual(pane.inputScope.interaction, input.interaction);
+	assert.ok(pane.inputScope.interaction === input.interaction);
 	assert.ok(pane.inputScope.runtime?.interaction === input.interaction);
 	assert.ok(pane.inputScope.runtime?.target === pane.commandTarget, 'runtime commands retain the logical reading client');
-	assert.strictEqual(input.interaction.transport, controller.viewport.transport);
+	assert.ok(input.interaction.transport === controller.viewport.transport);
 	assert.equal(input.interaction.running, false);
 	const contentFocus = inputFocus.target;
 	const timelineBounds = { ...bounds };
 	const transport = new RuntimeTimelineControl(commands, () => pane.focus(), pane.commandTarget, timelineBounds,
 		() => { timelineBounds.top = bounds.bottom - transport.height; });
-	t.after(() => transport.dispose());
+	resources.add(transport);
 	transport.attach(surfaces, owner, bounds, contextMenu);
 	transport.setContext(pane.commandTarget.scope.runtimeOwner!.runtime); transport.update();
 	assert.equal(transport.available, true); assert.equal(transport.visible, false, 'pause alone does not request transport chrome');
@@ -408,10 +416,10 @@ return world`), true, WORLD_SOURCE, []);
 	inputFocus.moveFocus(false);
 	assert.ok(inputFocus.target === contentFocus, 'Tab returns through the pane focus owner to its actual reading client');
 	transport.focus(); inputFocus.moveFocus(true);
-	assert.equal(inputFocus.target, contentFocus, 'Shift+Tab returns to the actual reading client, not its command context');
+	assert.ok(inputFocus.target === contentFocus, 'Shift+Tab returns to the actual reading client, not its command context');
 	transport.setContext(undefined); assert.equal(transport.visible, false);
-	assert.equal(controller.selected(input), undefined);
-	assert.equal(input.details!.subject, undefined);
+	assert.ok(controller.selected(input) === undefined);
+	assert.ok(input.details!.subject === undefined);
 	assert.equal(commands.isEnabled('actorLab.details'), false, 'a brand-new empty Details inspection is not admitted');
 	input.actorHashId = choices[0].hashId; input.dirty = true;
 	pane.update(); input.outline.selectionIndex = 0; input.rememberSelection();
@@ -422,7 +430,7 @@ return world`), true, WORLD_SOURCE, []);
 	assert.equal(input.outline.layout.contentRight, originalTree.contentRight + 115);
 	assert.equal(input.previewBounds.left, originalPreview.left + 115);
 	assert.equal(input.previewBounds.right, originalPreview.right + 115);
-	assert.strictEqual(input.outline.rows[input.outline.selectionIndex], selectedRow);
+	assert.ok(input.outline.rows[input.outline.selectionIndex] === selectedRow);
 	bounds.left -= 115; bounds.right -= 115; pane.layout(bounds); pane.update();
 	input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.kind === 'state'); input.rememberSelection();
 	controller.openStateGraph(input, editorViewState.font.renderFont()); pane.update();
@@ -437,8 +445,8 @@ return world`), true, WORLD_SOURCE, []);
 			assert.equal(graph.viewport.canvas.left, graphCanvas.left + offset);
 			assert.equal(graph.viewport.canvas.right, graphCanvas.right + offset);
 			if (!retired) {
-				assert.strictEqual(graph.viewport.model, graphModel, 'client translation does not rebuild the physical FSM projection');
-				assert.strictEqual(graph.viewport.selection, graphSelection);
+				assert.ok(graph.viewport.model === graphModel, 'client translation does not rebuild the physical FSM projection');
+				assert.ok(graph.viewport.selection === graphSelection);
 			}
 			overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); pane.draw(); overlay.renderer.endFrame();
 			const frame = overlay.queue.consumeOverlayFrame(), glyphs: { x: number; y: number; text: string }[] = [];
@@ -489,8 +497,8 @@ return world`), true, WORLD_SOURCE, []);
 	for (const target of [pane.detailsWindow.focusTarget, pane.inspector.focusTarget]) {
 		assert.equal(commands.isEnabled('actorLab.select', target), true);
 		assert.equal(commands.isEnabled('actorLab.find', target), true);
-		assert.equal(inputFocus.getCommand('actorLab.actions', target), undefined, 'subject mutation cannot accidentally use tree selection');
-		assert.equal(inputFocus.getCommand('actorLab.call', target), undefined);
+		assert.ok(inputFocus.getCommand('actorLab.actions', target) === undefined, 'subject mutation cannot accidentally use tree selection');
+		assert.ok(inputFocus.getCommand('actorLab.call', target) === undefined);
 	}
 	pane.detailsWindow.focusTarget.focus(); commands.execute('actorLab.select');
 	assert.equal(quickInput.visible, true, 'the real running-actor picker is available from the Details scope');
@@ -504,21 +512,21 @@ return world`), true, WORLD_SOURCE, []);
 	for (let frame = 0; frame < 1000; frame++) pane.update();
 	assert.equal(formatting.mock.callCount(), 0); assert.equal(projectPins.mock.callCount(), 0);
 	assert.equal(valueFormatting.mock.callCount(), 0);
-	assert.equal(details.subject, subject); assert.equal(details.subjectPath, path); assert.equal(pin.target, subject);
+	assert.ok(details.subject === subject); assert.equal(details.subjectPath, path); assert.ok(pin.target === subject);
 	assert.equal(controller.selected(input)!.hashId, choices[1].hashId);
 	const presentHistory = f.runtime.machine.cpu.captureRuntimeState();
 	pane.detailsWindow.show(false); pane.update();
 	f.guest.invalidate('history-restored');
 	runCompletionClosure(f.runtime.machine.cpu, f.guest.global('remove_subject') as Closure, []);
 	pane.update();
-	assert.equal(details.subject, subject); assert.equal(details.locked, true);
+	assert.ok(details.subject === subject); assert.equal(details.locked, true);
 	assert.equal(details.available, false); assert.equal(details.retired, false, 'historical absence does not retire the locked identity');
 	assert.equal(input.detailsWindow.title, details.caption, 'window chrome consumes the compact caption, not the full subject path');
 	assert.match(input.detailsWindow.title, /Unavailable$/, 'the visible window reports actual historical availability');
 	f.guest.invalidate('history-restored');
 	f.runtime.machine.cpu.restoreRuntimeState(presentHistory);
 	pane.update();
-	assert.equal(details.subject, subject); assert.equal(details.locked, true);
+	assert.ok(details.subject === subject); assert.equal(details.locked, true);
 	assert.equal(details.available, true); assert.equal(details.retired, false);
 	assert.doesNotMatch(input.detailsWindow.title, /Unavailable$/, 'the same historical identity becomes available again');
 	pane.detailsWindow.hide();
@@ -536,10 +544,10 @@ return world`), true, WORLD_SOURCE, []);
 	f.guest.invalidate('history-restored');
 	f.runtime.machine.cpu.restoreRuntimeState(presentHistory);
 	pane.detailsWindow.show(false); pane.update();
-	assert.equal(details.subject, subject); assert.equal(details.available, true);
+	assert.ok(details.subject === subject); assert.equal(details.available, true);
 	resolveSubject.mock.restore(); projectDetails.mock.restore(); layoutDetails.mock.restore();
 	assert.equal(pane.inspector.visible, true); assert.equal(pin.item.value, 'true');
-	assert.equal(details.subject, subject); assert.deepEqual(input.previewBounds, preview);
+	assert.ok(details.subject === subject); assert.deepEqual(input.previewBounds, preview);
 	const popupScope = new InputFocusScope(Symbol('Details property popup'));
 	const popup = surfaces.attach({ role: 'transient', outsidePress: 'consume', captureScope: popupScope.surfaceScope,
 		lifetimeOwner: pane.detailsWindow.clientSurface!, isVisible: () => true,
@@ -556,18 +564,18 @@ return world`), true, WORLD_SOURCE, []);
 		'unrelated focus cannot keep the Details status active');
 	popup.dispose();
 	pane.detailsWindow.hide();
-	const saved = pane.getSelection(); t.after(() => saved.dispose());
+	const saved = pane.getSelection(); resources.add(saved);
 	const beforeNavigation = formatting.mock.callCount();
 	pane.setOptions(undefined, saved); pane.update();
 	assert.equal(input.detailsWindow.open, false); assert.equal(details.available, true);
-	assert.equal(details.subject, subject); assert.equal(pin.target, subject);
+	assert.ok(details.subject === subject); assert.ok(pin.target === subject);
 	assert.equal(formatting.mock.callCount(), beforeNavigation, 'navigation with closed Details resolves the subject without projecting properties');
 	input.interaction.running = true;
 	pane.clearInput();
 	assert.equal(input.interaction.running, false);
-	assert.equal(input.interaction.transport, null);
-	assert.equal(pane.inputScope.interaction, undefined);
-	assert.equal(pane.inputScope.runtime, undefined);
+	assert.ok(input.interaction.transport === null);
+	assert.ok(pane.inputScope.interaction === undefined);
+	assert.ok(pane.inputScope.runtime === undefined);
 	assert.equal(input.detailsWindow.open, false);
 	f.guest.invalidate('history-restored');
 	runCompletionClosure(f.runtime.machine.cpu, f.guest.global('remove_subject') as Closure, []);
@@ -576,21 +584,21 @@ return world`), true, WORLD_SOURCE, []);
 	assert.equal(details.retired, true); assert.equal(pin.retired, true);
 	assert.equal(formatting.mock.callCount(), before, 'hidden branch admission resolves identity, not property presentation');
 	pane.setInput(input, bounds); pane.update();
-	assert.strictEqual(input.interaction.transport, controller.viewport.transport);
+	assert.ok(input.interaction.transport === controller.viewport.transport);
 	assert.equal(input.interaction.running, false, 'reattachment cannot restore capture authority');
-	assert.equal(pane.inspector.visible, false); assert.equal(details.subject, subject); assert.equal(details.available, false);
+	assert.equal(pane.inspector.visible, false); assert.ok(details.subject === subject); assert.equal(details.available, false);
 	assert.match(details.title, /UNAVAILABLE$/);
 	f.guest.invalidate(); runCompletionClosure(f.runtime.machine.cpu, f.guest.global('replace_subject') as Closure, []); pane.update();
 	const world = runtimeWorld(f.sources, f.guest, -1)!, replacement = (f.guest.readStringMember(world, '_objects') as Table).getInteger(2) as Table;
 	assert.equal(f.guest.readStringMember(replacement, 'id'), 1);
 	assert.notEqual(replacement.hashId, subject.actorHashId, 'the replacement really is another instance with the original name');
 	pane.focus(); commands.execute('actorLab.details'); pane.update();
-	assert.equal(details.subject, subject); assert.equal(details.available, false); assert.equal(pin.retired, true);
+	assert.ok(details.subject === subject); assert.equal(details.available, false); assert.equal(pin.retired, true);
 	assert.ok(pane.inspector.model.rows.some(row => row.element.label === 'INSTANCE UNAVAILABLE'));
 	pane.detailsWindow.hide();
 	f.guest.invalidate('heap-replaced'); pane.update();
-	assert.equal(details.retired, true); assert.equal(details.subject, subject); assert.equal(pin.retired, true);
-	assert.equal(controller.selected(input), undefined);
+	assert.equal(details.retired, true); assert.ok(details.subject === subject); assert.equal(pin.retired, true);
+	assert.ok(controller.selected(input) === undefined);
 	pane.focus();
 	const treeFocus = inputFocus.target;
 	assert.equal(commands.isEnabled('actorLab.details'), true, 'retained unavailable Details remain keyboard-activatable');
@@ -598,24 +606,24 @@ return world`), true, WORLD_SOURCE, []);
 	commands.execute('actorLab.details');
 	assert.ok(inputFocus.target === pane.inspector.focusTarget);
 	assert.equal(input.detailsWindow.open, true);
-	assert.equal(details.subject, subject); assert.equal(details.locked, true); assert.equal(details.available, false);
+	assert.ok(details.subject === subject); assert.equal(details.locked, true); assert.equal(details.available, false);
 	commands.execute('window.hide');
 	assert.equal(input.detailsWindow.open, false);
-	assert.equal(inputFocus.target, treeFocus);
+	assert.ok(inputFocus.target === treeFocus);
 	assert.equal(commands.isEnabled('actorLab.details'), true, 'a retained locked subject admits reopening without a current tree target');
 	commands.execute('actorLab.details');
 	assert.ok(inputFocus.target === pane.inspector.focusTarget);
 	assert.equal(input.detailsWindow.open, true);
-	assert.equal(details.subject, subject); assert.equal(details.locked, true); assert.equal(details.available, false);
+	assert.ok(details.subject === subject); assert.equal(details.locked, true); assert.equal(details.available, false);
 	assert.equal(formatting.mock.callCount(), beforeActivation, 'an unavailable historical subject cannot format guest properties when reopened');
 });
 
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor timeline layout translates with its client and invalidates an inset-only change`, t => {
-	const f = fixture(t); t.after(() => f.stop.dispose());
-	const input = f.controller.resolveInput(); t.after(() => input.dispose());
+	const f = fixture(t); resources.add(f.stop);
+	const input = f.controller.resolveInput(); resources.add(input);
 	const previousFont = editorViewState.font, previousHeight = editorViewState.lineHeight, previousAdvance = editorViewState.charAdvance;
 	configureFontVariant(variant);
-	t.after(() => { editorViewState.font = previousFont; editorViewState.lineHeight = previousHeight; editorViewState.charAdvance = previousAdvance; });
+	resources.add({ dispose: () => { editorViewState.font = previousFont; editorViewState.lineHeight = previousHeight; editorViewState.charAdvance = previousAdvance; } });
 	const bounds = { left: 0, top: 20, right: 384, bottom: 270 };
 	updateFullWidthWorkbenchLayout(input.layout, bounds);
 	input.timeline.positionLabel = '0 MS'; input.timeline.durationLabel = '1000 MS';
@@ -636,9 +644,9 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor timeline 
 
 test('Actor Lab navigation keeps graph edge identity and retires bookmarks at heap replacement or history resume', t => {
 	for (const retirement of ['heap-replaced', 'history-resume'] as const) {
-		const f = fixture(t); t.after(() => f.stop.dispose());
+		const f = fixture(t); resources.add(f.stop);
 		const controller = f.controller;
-		const input = controller.resolveInput(); t.after(() => input.dispose());
+		const input = controller.resolveInput(); resources.add(input);
 		const font = new Font({ variant: 'tiny' });
 		input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId; controller.refresh(input);
 		input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.kind === 'state'); input.rememberSelection();
@@ -649,13 +657,13 @@ test('Actor Lab navigation keeps graph edge identity and retires bookmarks at he
 		const saved = controller.captureSelection(input), scroll = [graph.viewport.scrollX, graph.viewport.scrollY];
 		controller.openOutline(input);
 		controller.restoreSelection(input, saved, font); saved.restoreViewport(input);
-		assert.equal(input.stateGraph, graph, 'common Source and Back reuses the same graph and its layout');
+		assert.ok(input.stateGraph === graph, 'common Source and Back reuses the same graph and its layout');
 		assert.equal(graph.viewport.selection!.kind, 'edge'); assert.deepEqual(graph.selectedTarget, target);
 		assert.deepEqual([graph.viewport.scrollX, graph.viewport.scrollY], scroll); assert.equal(graph.viewport.zoom, 2);
 		if (retirement === 'heap-replaced') f.guest.invalidate('heap-replaced'); else f.guest.willEndHistoryReview();
 		controller.restoreSelection(input, saved, font);
-		assert.equal(input.actorHashId, 0); assert.equal(controller.selected(input), undefined);
-		assert.equal(input.stateGraph, undefined); assert.equal(input.follow.target, undefined);
+		assert.equal(input.actorHashId, 0); assert.ok(controller.selected(input) === undefined);
+		assert.ok(input.stateGraph === undefined); assert.ok(input.follow.target === undefined);
 		saved.dispose();
 	}
 });
@@ -663,9 +671,9 @@ test('Actor Lab navigation keeps graph edge identity and retires bookmarks at he
 test('Actor Lab navigation retains an absent member without selecting a different receiver', t => {
 	for (const presentation of ['outline', 'graph'] as const) {
 		const f = fixture(t, ENTRY.replace('return world', "function remove_state() probe._components[1]._machines[1].state_ids = { 'concurrent' } end\nreturn world"));
-		t.after(() => f.stop.dispose());
+		resources.add(f.stop);
 		const controller = f.controller;
-		const input = controller.resolveInput(); t.after(() => input.dispose());
+		const input = controller.resolveInput(); resources.add(input);
 		const font = new Font({ variant: 'tiny' }), cpu = f.runtime.machine.cpu;
 		input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId; controller.refresh(input);
 		input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.name === 'idle'); input.rememberSelection();
@@ -673,7 +681,7 @@ test('Actor Lab navigation retains an absent member without selecting a differen
 		const saved = controller.captureSelection(input), alive = cpu.captureRuntimeState();
 		f.guest.invalidate(); runCompletionClosure(cpu, f.guest.global('remove_state') as Closure, []);
 		controller.restoreSelection(input, saved, font);
-		assert.equal(controller.selected(input), undefined);
+		assert.ok(controller.selected(input) === undefined, 'an absent member must not become a different actionable receiver');
 		assert.deepEqual(presentation === 'outline' ? input.selectionPath : input.stateGraph!.selectionBookmark!.path, saved.target!.path);
 		const absent = controller.captureSelection(input);
 		assert.deepEqual(absent.target!.path, saved.target!.path, 'capturing an unavailable view keeps the requested typed membership');
@@ -693,7 +701,7 @@ function rename_machine()
 	machines.same = nil
 end
 return world`));
-	t.after(() => f.stop.dispose());
+	resources.add(f.stop);
 	const input = new ActorLabInput(f.controller, 'actor-lab', 'ACTOR LAB', true), choice = readActorChoices(f.sources, f.guest, -1)[0];
 	input.domain = choice.domain; input.actorHashId = choice.hashId;
 	const projection = new ActorProjection(input, f.sources, f.guest); projection.update();
@@ -711,25 +719,24 @@ return world`));
 	graph.layout(font); assert.equal(measurements, 0);
 	input.invalidate(); f.guest.invalidate();
 	runCompletionClosure(cpu, f.guest.global('move') as Closure, []); projection.update(); graph.layout(font);
-	assert.strictEqual(graph.viewport.model, model); assert.equal(measurements, 0);
-	assert.strictEqual(graph.viewport.selection, nodes[1]);
+	assert.ok(graph.viewport.model === model); assert.equal(measurements, 0);
+	assert.ok(graph.viewport.selection === nodes[1]);
 	assert.equal(nodes.find(node => node.name === 'idle')!.active, false); assert.equal(nodes.find(node => node.name === 'concurrent')!.active, true);
 	const scroll = [graph.viewport.scrollX, graph.viewport.scrollY];
 	input.invalidate(); f.guest.invalidate();
 	runCompletionClosure(cpu, f.guest.global('disable') as Closure, []); projection.update(); graph.layout(font);
 	assert.ok(nodes.every(node => !node.active), 'disabled owner masks retained child selections');
 	input.invalidate('history-restored'); cpu.restoreRuntimeState(alive); projection.update(); graph.layout(font);
-	assert.deepEqual(nodes.map(node => node.active), active); assert.strictEqual(graph.viewport.model, model);
+	assert.deepEqual(nodes.map(node => node.active), active); assert.ok(graph.viewport.model === model);
 	assert.deepEqual([graph.viewport.scrollX, graph.viewport.scrollY], scroll);
 	assert.equal(cpu.luaHeap.usedBytes(), heap, 'graph projection allocates no guest values');
 	graph.viewport.selection = model.edges[0];
 	graph.layout(new Font({ variant: 'msx' }));
 	assert.equal(graph.viewport.selection!.kind, 'edge');
-	assert.equal(resolveActorTarget(input.runtime.roots, graph.selectedTarget!, f.guest)!.hashId, nodes[1].hashId,
-		'font relayout preserves the selected physical relationship');
+	assert.equal(resolveActorTarget(input.runtime.roots, graph.selectedTarget!, f.guest)!.hashId, nodes[1].hashId, 'font relayout preserves the selected physical relationship');
 	input.invalidate(); f.guest.invalidate();
 	runCompletionClosure(cpu, f.guest.global('rename_machine') as Closure, []); projection.update(); graph.layout(font);
-	assert.equal(graph.status, 'missing'); assert.equal(graph.selectedTarget, undefined);
+	assert.equal(graph.status, 'missing'); assert.ok(graph.selectedTarget === undefined);
 	assert.equal(graph.viewport.model.nodes.length, 3, 'missing membership retains only display geometry');
 	assert.ok(graph.viewport.model.nodes.every(node => !node.active), 'missing membership cannot retain live activity');
 	input.invalidate('history-restored'); cpu.restoreRuntimeState(alive); projection.update(); graph.layout(font);
@@ -745,7 +752,7 @@ test('FSM graph selection distinguishes two memberships of the same physical sta
 machine.states.alias = machine.states.idle
 machine.state_ids[3] = 'alias'
 return world`));
-	t.after(() => f.stop.dispose());
+	resources.add(f.stop);
 	const input = new ActorLabInput(f.controller, 'actor-lab', 'ACTOR LAB', true), choice = readActorChoices(f.sources, f.guest, -1)[0];
 	input.domain = choice.domain; input.actorHashId = choice.hashId;
 	const projection = new ActorProjection(input, f.sources, f.guest); projection.update();
@@ -759,9 +766,9 @@ return world`));
 	assert.equal(idle.active, true); assert.equal(alias.active, false);
 	graph.viewport.selection = alias;
 	const selected = graph.selectedTarget!;
-	assert.strictEqual(resolveActorTarget(input.runtime.roots, selected, f.guest), machine.children.find(node => node.name === 'alias'));
+	assert.ok(resolveActorTarget(input.runtime.roots, selected, f.guest) === machine.children.find(node => node.name === 'alias'));
 	graph.layout(new Font({ variant: 'msx' }));
-	assert.strictEqual(graph.selectedTarget, selected);
+	assert.ok(graph.selectedTarget === selected);
 	input.dispose();
 });
 
@@ -772,8 +779,8 @@ machine.state_ids[3] = 'alias'
 function add_alias() machine.states.earlier = machine.states.idle; machine.state_ids[4] = 'earlier' end
 function remove_idle() machine.states.idle = nil; machine.state_ids = { 'concurrent', 'alias' } end
 return world`));
-	t.after(() => f.stop.dispose());
-	const input = new ActorLabInput(f.controller, 'actor-lab', 'ACTOR LAB', true); t.after(() => input.dispose());
+	resources.add(f.stop);
+	const input = new ActorLabInput(f.controller, 'actor-lab', 'ACTOR LAB', true); resources.add(input);
 	input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId;
 	const projection = new ActorProjection(input, f.sources, f.guest); projection.update();
 	const machine = input.runtime.roots[0].children[0].children[0], cpu = f.runtime.machine.cpu;
@@ -785,13 +792,13 @@ return world`));
 	assert.equal(machine.children.filter(node => node.hashId === selected.hashId).length, 2);
 	projection.reveal(selected);
 	const row = input.outline.rows[input.outline.selectionIndex];
-	assert.strictEqual(row.element.node, selected, 'return from graph selects the actual membership, not its first table alias');
+	assert.ok(row.element.node === selected, 'return from graph selects the actual membership, not its first table alias');
 	input.invalidate(); runCompletionClosure(cpu, f.guest.global('add_alias') as Closure, []); projection.update();
-	assert.strictEqual(input.outline.rows[input.outline.selectionIndex], row);
+	assert.ok(input.outline.rows[input.outline.selectionIndex] === row);
 	const alive = cpu.captureRuntimeState();
 	input.invalidate('history-restored'); runCompletionClosure(cpu, f.guest.global('remove_idle') as Closure, []); projection.update();
 	assert.equal(input.outline.selectionIndex, -1, 'a surviving alias is not a replacement selection');
-	assert.notEqual(input.selectionPath, undefined);
+	assert.ok(input.selectionPath !== undefined);
 	input.invalidate('history-restored'); cpu.restoreRuntimeState(alive); projection.update();
 	assert.equal(input.outline.rows[input.outline.selectionIndex].element.node.path, selected.path);
 });
@@ -800,8 +807,8 @@ test('Actor Lab topology anchoring retains fractional progress through small whe
 	const f = fixture(t, ENTRY.replace('return world', `local machine = probe._components[1]._machines[1]
 function add_earlier() machine.states.earlier = machine.states.idle; machine.state_ids[3] = 'earlier' end
 return world`));
-	t.after(() => f.stop.dispose());
-	const input = new ActorLabInput(f.controller, 'actor-lab', 'ACTOR LAB', true); t.after(() => input.dispose());
+	resources.add(f.stop);
+	const input = new ActorLabInput(f.controller, 'actor-lab', 'ACTOR LAB', true); resources.add(input);
 	input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId;
 	const projection = new ActorProjection(input, f.sources, f.guest), outline = input.outline;
 	projection.update(); outline.updateLayout(0, 0, 160, 10, 10, 8); projection.layout();
@@ -823,7 +830,7 @@ return world`));
 });
 
 test('World pages retain typed identities; Actor Lab and tool trees consume real class indices, not names', t => {
-	const f = fixture(t); t.after(() => f.stop.dispose());
+	const f = fixture(t); resources.add(f.stop);
 	const before = [f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes()];
 	const first = f.actors.list(0, 1), second = f.actors.list(1, 1);
 	assert.equal(first.status, 'available'); assert.equal(first.total, 2);
@@ -849,7 +856,7 @@ test('World pages retain typed identities; Actor Lab and tool trees consume real
 });
 
 test('tree paging and repeated detail reads do not repeat semantic traversal or formatting', t => {
-	const f = fixture(t); t.after(() => f.stop.dispose());
+	const f = fixture(t); resources.add(f.stop);
 	const actor = f.actors.list(0, 1).actors![0].reference;
 	let visits = 0;
 	const original = f.guest.visitTableEntries.bind(f.guest);
@@ -858,7 +865,7 @@ test('tree paging and repeated detail reads do not repeat semantic traversal or 
 	assert.equal(visits, visited); assert.equal(first.total, first.nodes.length + rest.nodes.length);
 	assert.equal(first.nodes[2].parent, first.nodes[1].reference);
 	const state = f.actors.read(rest.nodes.find(node => node.label === 'idle')!.reference), detailed = visits;
-	assert.strictEqual(f.actors.read(state.reference).properties, state.properties);
+	assert.ok(f.actors.read(state.reference).properties === state.properties);
 	assert.equal(visits, detailed);
 	const fields = f.stop.read(state.object.reference!, 0, 100).entries;
 	const data = fields.find(entry => entry.key.display === 'data')!.value.reference!;
@@ -866,7 +873,7 @@ test('tree paging and repeated detail reads do not repeat semantic traversal or 
 });
 
 test('operation identities preserve guest tags and typed membership without retaining borrowed nodes', t => {
-	const f = fixture(t); t.after(() => f.stop.dispose());
+	const f = fixture(t); resources.add(f.stop);
 	const cpu = f.runtime.machine.cpu, guest = f.guest;
 	const candidates: Value[] = [null, false, true, 1, valueString(cpu.stringPool.intern('1')),
 		guest.global('probe'), guest.global('rename'), cpu.activeThread, createBuiltinFunction(BuiltinFunctionId.Type)];
@@ -880,24 +887,24 @@ test('operation identities preserve guest tags and typed membership without reta
 	const selected = input.runtime.roots[0].children[0].children[0].children[0];
 	const target = captureActorTarget(-1, 123, input.runtime.roots, selected, guest);
 	const original = JSON.stringify(target);
-	assert.equal(resolveActorTarget(input.runtime.roots, target, guest), selected);
+	assert.ok(resolveActorTarget(input.runtime.roots, target, guest) === selected);
 	input.runtime.roots[0].children.reverse();
-	assert.equal(resolveActorTarget(input.runtime.roots, target, guest), selected, 'membership is independent of sibling order');
+	assert.ok(resolveActorTarget(input.runtime.roots, target, guest) === selected, 'membership is independent of sibling order');
 	selected.key = 1;
-	assert.equal(resolveActorTarget(input.runtime.roots, target, guest), undefined, 'another typed key cannot retarget a retained request');
+	assert.ok(resolveActorTarget(input.runtime.roots, target, guest) === undefined, 'another typed key cannot retarget a retained request');
 	input.invalidate(); guest.invalidate();
 	assert.equal(JSON.stringify(target), original, 'clearing borrowed nodes cannot alter the scalar operation target');
 	projection.update();
 	assert.equal(resolveActorTarget(input.runtime.roots, target, guest)!.hashId, selected.hashId);
 	runCompletionClosure(cpu, guest.global('rename') as Closure, []);
 	projection.update();
-	assert.equal(resolveActorTarget(input.runtime.roots, target, guest), undefined, 'renamed membership must be selected again');
+	assert.ok(resolveActorTarget(input.runtime.roots, target, guest) === undefined, 'renamed membership must be selected again');
 	assert.equal(cpu.luaHeap.usedBytes(), heap, 'identity capture and discovery allocate no guest values');
 	input.dispose();
 });
 
 test('operation discovery is read-only and rejects absent actions, methods and executable arguments', t => {
-	const f = fixture(t); t.after(() => f.stop.dispose());
+	const f = fixture(t); resources.add(f.stop);
 	const actor = f.actors.list(0, 1).actors![0].reference, nodes = f.actors.tree(actor, 0, 100).nodes;
 	const root = nodes[0], state = nodes.find(node => node.kind === 'state')!;
 	const before = [f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes()];
@@ -919,7 +926,7 @@ test('unloaded, uninitialized and actually empty World are distinct observations
 		const f = fixture(t, entry, run), result = f.actors.list(0, 10);
 		assert.equal(result.status, status);
 		if (status === 'available') { assert.equal(result.total, 0); assert.deepEqual(result.actors, []); }
-		else assert.equal(result.total, undefined);
+		else assert.ok(result.total === undefined);
 		f.stop.dispose();
 	}
 });
@@ -970,7 +977,7 @@ return world`, true, source);
 	input.invalidate(); f.guest.invalidate('execution');
 	runCompletionClosure(f.runtime.machine.cpu, f.guest.global('remove_component') as Closure, []);
 	projection.update();
-	assert.equal(root.children[1], first); assert.equal(first.element.label, 'State machines');
+	assert.ok(root.children[1] === first); assert.equal(first.element.label, 'State machines');
 	input.dispose(); f.stop.dispose();
 });
 
@@ -989,23 +996,23 @@ test('ordinary pane retains stable rows, refreshes changed labels, releases deta
 	runCompletionClosure(f.runtime.machine.cpu, f.guest.global('rename') as Closure, []);
 	assert.equal(projection.update(), true);
 	assert.equal(input.outline.roots[0].element.node.label, 'renamed');
-	assert.strictEqual(input.outline.roots[0], rows[0]); assert.equal(input.outline.roots[0].collapsed, true);
+	assert.ok(input.outline.roots[0] === rows[0]); assert.equal(input.outline.roots[0].collapsed, true);
 	const removed = input.runtime.roots[0].children[1];
 	input.invalidate(); f.guest.invalidate('execution');
 	runCompletionClosure(f.runtime.machine.cpu, f.guest.global('remove') as Closure, []);
 	projection.update();
-	assert.equal(removed.value, null); assert.equal(removed.receiver, null);
+	assert.ok(removed.value === null); assert.ok(removed.receiver === null);
 	const root = input.runtime.roots[0];
 	input.invalidate('heap-replaced');
-	assert.equal(root.value, null); assert.equal(input.actorHashId, 0);
+	assert.ok(root.value === null); assert.equal(input.actorHashId, 0);
 	assert.equal(input.runtime.roots.length, 0); assert.equal(input.outline.rows.length, 0);
 	input.dispose(); f.stop.dispose();
 });
 
 test('hidden Actor Lab releases borrows once, without revisiting an already released retained tree', t => {
-	const f = fixture(t); t.after(() => f.stop.dispose());
+	const f = fixture(t); resources.add(f.stop);
 	const choice = readActorChoices(f.sources, f.guest, -1)[0], input = new ActorLabInput(f.controller, 'actor-lab', 'ACTOR LAB', true);
-	t.after(() => input.dispose());
+	resources.add(input);
 	input.domain = choice.domain; input.actorHashId = choice.hashId;
 	const projection = new ActorProjection(input, f.sources, f.guest);
 	projection.update();
@@ -1013,18 +1020,18 @@ test('hidden Actor Lab releases borrows once, without revisiting an already rele
 	let value = root.value, releases = 0;
 	Object.defineProperty(root, 'value', { get: () => value, set: next => { value = next; if (next === null) releases++; } });
 	input.invalidate();
-	assert.equal(value, null);
+	assert.ok(value === null);
 	assert.equal(releases, 1);
 	for (let update = 0; update < 1000; update++) input.invalidate();
 	assert.equal(releases, 1);
 	projection.update();
-	assert.notEqual(value, null);
+	assert.ok(value !== null);
 	input.invalidate();
 	assert.equal(releases, 2, 'reacquisition owns a new borrow lifetime');
 });
 
 test('explicit Actor Lab navigation reveals a retained child through collapsed ancestors', t => {
-	const f = fixture(t); t.after(() => f.stop.dispose());
+	const f = fixture(t); resources.add(f.stop);
 	const choice = readActorChoices(f.sources, f.guest, -1)[0], input = new ActorLabInput(f.controller, 'actor-lab', 'ACTOR LAB', true);
 	input.domain = choice.domain; input.actorHashId = choice.hashId;
 	const projection = new ActorProjection(input, f.sources, f.guest);
@@ -1033,11 +1040,11 @@ test('explicit Actor Lab navigation reveals a retained child through collapsed a
 	root.collapsed = true; root.children[0].collapsed = true;
 	assert.equal(projection.update(), false, 'changing selection is independent of guest topology');
 	assert.equal(projection.reveal(selected.element.node), true);
-	assert.strictEqual(input.outline.rows[input.outline.selectionIndex], selected);
+	assert.ok(input.outline.rows[input.outline.selectionIndex] === selected);
 	assert.equal(root.collapsed, false); assert.equal(root.children[0].collapsed, false);
-	assert.strictEqual(resolveActorPath(input.runtime.roots, input.selectionPath!, f.guest), selected.element.node);
+	assert.ok(resolveActorPath(input.runtime.roots, input.selectionPath!, f.guest) === selected.element.node);
 	input.invalidate(); f.guest.invalidate('execution'); projection.update();
-	assert.strictEqual(input.outline.rows[input.outline.selectionIndex], selected);
+	assert.ok(input.outline.rows[input.outline.selectionIndex] === selected);
 	input.dispose();
 });
 
@@ -1056,11 +1063,11 @@ return world`), false), cpu = f.runtime.machine.cpu;
 	const selected = input.outline.rows[3], original = selected.element.node.value;
 	const alive = cpu.captureRuntimeState();
 	input.invalidate('history-restored');
-	assert.equal(selected.element.node.value, null);
+	assert.ok(selected.element.node.value === null);
 	cpu.restoreRuntimeState(alive);
 	projection.update();
-	assert.strictEqual(input.outline.rows[input.outline.selectionIndex], selected);
-	assert.notStrictEqual(selected.element.node.value, original);
+	assert.ok(input.outline.rows[input.outline.selectionIndex] === selected);
+	assert.ok(selected.element.node.value !== original);
 	assert.equal(selected.element.node.value!.hashId, selected.element.node.hashId);
 	input.invalidate();
 	runCompletionClosure(cpu, f.guest.global('add') as Closure, []);
@@ -1144,17 +1151,18 @@ local component<const> = { id = 'effects', enabled = true, _owner_component_inde
 	effects = { [first_key] = effect, [second_key] = effect, [first_fn] = effect, [second_fn] = effect } }
 actor._components[3] = component
 actor._components_by_class[effects] = { component }`);
-	const f = fixture(t, ENTRY, true, source); t.after(() => f.stop.dispose());
-	const tree = new ActorRuntimeTree(); t.after(() => tree.dispose());
+	const f = fixture(t, ENTRY, true, source); resources.add(f.stop);
+	const tree = new ActorRuntimeTree(); resources.add(tree);
 	tree.update(f.sources, f.guest, -1, f.guest.global('probe') as Table);
 	const aliases = tree.roots[0].children[2].children;
 	assert.equal(aliases.length, 4);
 	assert.equal(new Set(aliases.map(node => node.hashId)).size, 1);
 	const selected = aliases[1], provider = createActorMemberChoices(tree.roots, selected);
 	const initial = provider.getPicks('');
-	assert.equal(provider.items[initial.matches[initial.selectionIndex].itemIndex].node, selected);
+	assert.ok(provider.items[initial.matches[initial.selectionIndex].itemIndex].node === selected);
 	const choices = provider.items.filter(item => item.node.kind === 'effect');
-	assert.deepEqual(choices.map(item => item.node), aliases);
+	assert.equal(choices.length, aliases.length);
+	assert.ok(choices.every((item, index) => item.node === aliases[index]));
 	assert.equal(new Set(choices.map(item => item.description)).size, 4, 'aliases are distinguishable without prescribing presentation text');
 	assert.equal(new Set(choices.map(item => item.detail)).size, 4, 'each membership has its own visible breadcrumb');
 });
@@ -1198,8 +1206,8 @@ function change_key_type()
 	entries[1], entries['1'] = entries['1'], entries[1]
 end
 return world`);
-	const f = fixture(t, entry, true, source); t.after(() => f.stop.dispose());
-	const tree = new ActorRuntimeTree(); t.after(() => tree.dispose());
+	const f = fixture(t, entry, true, source); resources.add(f.stop);
+	const tree = new ActorRuntimeTree(); resources.add(tree);
 	const update = () => tree.update(f.sources, f.guest, -1, f.guest.global('probe') as Table);
 	const call = (name: string) => {
 		tree.release(); f.guest.invalidate();
@@ -1221,20 +1229,20 @@ return world`);
 	Object.defineProperty(machine.children, 'sort', { configurable: true, value: (compare: Parameters<typeof originalSort>[0]) => {
 		sorts++; return originalSort.call(machine.children, compare);
 	} });
-	t.after(() => Reflect.deleteProperty(machine.children, 'sort'));
+	resources.add({ dispose: () => Reflect.deleteProperty(machine.children, 'sort') });
 	assert.equal(update(), false);
 	assert.equal(call('activity'), false);
 	assert.equal(tree.topologyRevision, revisions[0]); assert.equal(tree.activityRevision, revisions[1] + 1);
 	assert.equal(sorts, 0); assert.equal(format.mock.callCount(), 0, 'activity-only refresh does not reformat keys');
 	assert.equal(call('reorder'), true);
-	assert.strictEqual(component.children[1], machine);
+	assert.ok(component.children[1] === machine);
 	assert.ok(stateNodes.every((node, index) => node === machine.children[index]), 'runtime ordering changes retain physical nodes');
 	assert.equal(call('insert'), true);
 	assert.deepEqual(timeline.children.map(node => node.name), ['1', '1', 'alpha', 'earlier', 'zulu']);
 	assert.ok(timelineNodes.every(node => timeline.children.includes(node)), 'inserting a sibling cannot replace retained instances');
 	const removed = timeline.children[3];
 	assert.equal(call('remove_timeline'), true);
-	assert.equal(removed.value, null); assert.equal(removed.key, null);
+	assert.ok(removed.value === null); assert.ok(removed.key === null);
 	assert.ok(timelineNodes.every((node, index) => node === timeline.children[index]));
 	assert.equal(call('change_key_type'), true);
 	assert.ok(!timeline.children.includes(timelineNodes[0]) && !timeline.children.includes(timelineNodes[1]), 'typed membership changes retire nodes even when labels match');
@@ -1245,8 +1253,8 @@ return world`);
 test('active reveal expands all parallel paths without replacing inspection selection or rebuilding unchanged activity', t => {
 	const f = fixture(t, ENTRY.replace('return world', `function move() probe._components[1]._machines[1].current_id = nil end
 return world`));
-	t.after(() => f.stop.dispose());
-	const input = new ActorLabInput(f.controller, 'actor-lab', 'ACTOR LAB', true); t.after(() => input.dispose());
+	resources.add(f.stop);
+	const input = new ActorLabInput(f.controller, 'actor-lab', 'ACTOR LAB', true); resources.add(input);
 	input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId;
 	const projection = new ActorProjection(input, f.sources, f.guest);
 	projection.update();
@@ -1264,21 +1272,21 @@ return world`));
 	assert.equal(projection.revealActive(machine), true);
 	outline.updateLayout(0, 0, 160, 30, 10, 8); projection.layout();
 	assert.equal(machineRow.collapsed, false);
-	assert.strictEqual(outline.rows[outline.selectionIndex], inspected);
+	assert.ok(outline.rows[outline.selectionIndex] === inspected);
 	const active = outline.rows.filter(row => row.element.node.kind === 'state' && row.element.node.active);
 	assert.equal(active.length, 2);
 	assert.ok(active.every(row => outline.rows.indexOf(row) >= outline.scroll && outline.rows.indexOf(row) < outline.scroll + outline.layout.visibleRowCount));
 	const rows = outline.rows.slice(); input.follow.pending = undefined;
 	projection.update();
-	assert.equal(input.follow.pending, undefined);
+	assert.ok(input.follow.pending === undefined);
 	assert.ok(rows.every((row, index) => row === outline.rows[index]));
 	input.invalidate();
 	runCompletionClosure(f.runtime.machine.cpu, f.guest.global('move') as Closure, []);
 	assert.equal(projection.update(), false, 'activity alone does not rebuild topology');
-	assert.strictEqual(input.follow.pending, target);
-	assert.strictEqual(outline.rows[outline.selectionIndex], inspected);
+	assert.ok(input.follow.pending === target);
+	assert.ok(outline.rows[outline.selectionIndex] === inspected);
 	input.follow.stop(); projection.update();
-	assert.equal(input.follow.target, undefined); assert.equal(input.follow.pending, undefined);
+	assert.ok(input.follow.target === undefined); assert.ok(input.follow.pending === undefined);
 });
 
 test('parallel tree follow reveals an active row rather than the inactive gap between them', t => {
@@ -1292,8 +1300,8 @@ for i = 1, 20 do
 	machine.state_ids[i + 2] = key
 end
 return world`));
-	t.after(() => f.stop.dispose());
-	const input = new ActorLabInput(f.controller, 'actor-lab', 'ACTOR LAB', true); t.after(() => input.dispose());
+	resources.add(f.stop);
+	const input = new ActorLabInput(f.controller, 'actor-lab', 'ACTOR LAB', true); resources.add(input);
 	input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId;
 	const projection = new ActorProjection(input, f.sources, f.guest); projection.update();
 	const outline = input.outline;
@@ -1306,14 +1314,14 @@ return world`));
 	assert.ok(outline.rows.slice(outline.scroll, outline.scroll + 3).some(row => row.element.node.active));
 	const scroll = outline.scroll;
 	projection.revealActive(input.runtime.roots[0].children[0].children[0]); projection.layout();
-	assert.equal(outline.scroll, scroll); assert.strictEqual(outline.rows[outline.selectionIndex], selected);
+	assert.equal(outline.scroll, scroll); assert.ok(outline.rows[outline.selectionIndex] === selected);
 });
 
 test('historical actor absence keeps collapse and follow bookmarks but heap replacement retires them', t => {
 	const f = fixture(t, ENTRY, false), cpu = f.runtime.machine.cpu;
-	t.after(() => f.stop.dispose());
+	resources.add(f.stop);
 	const beforeBirth = cpu.captureRuntimeState(); cpu.runUntilDepth(0, 100_000);
-	const input = new ActorLabInput(f.controller, 'actor-lab', 'ACTOR LAB', true); t.after(() => input.dispose());
+	const input = new ActorLabInput(f.controller, 'actor-lab', 'ACTOR LAB', true); resources.add(input);
 	input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId;
 	const projection = new ActorProjection(input, f.sources, f.guest); projection.update();
 	const machine = input.runtime.roots[0].children[0].children[0];
@@ -1324,27 +1332,27 @@ test('historical actor absence keeps collapse and follow bookmarks but heap repl
 	input.follow.start(target);
 	const alive = cpu.captureRuntimeState();
 	input.invalidate('history-restored'); cpu.restoreRuntimeState(beforeBirth); projection.update();
-	assert.equal(input.actorPresent, false); assert.strictEqual(input.follow.target, target);
-	assert.equal(row.element.node.value, null);
+	assert.equal(input.actorPresent, false); assert.ok(input.follow.target === target);
+	assert.ok(row.element.node.value === null);
 	input.invalidate('history-restored'); cpu.restoreRuntimeState(alive); projection.update();
 	assert.equal(input.actorPresent, true); assert.equal(row.collapsed, true);
-	assert.strictEqual(input.outline.rows[input.outline.selectionIndex], row);
-	assert.strictEqual(input.follow.pending, target);
+	assert.ok(input.outline.rows[input.outline.selectionIndex] === row);
+	assert.ok(input.follow.pending === target);
 	input.invalidate('heap-replaced');
-	assert.equal(input.follow.target, undefined); assert.equal(input.actorHashId, 0);
+	assert.ok(input.follow.target === undefined); assert.equal(input.actorHashId, 0);
 });
 
 test('expanded stored values are inspectable selections but never fabricate logical pin commands', t => {
 	const worldSource = WORLD_SOURCE.replace('active = true, _components', 'active = true, data = { answer = 42 }, _components');
-	const f = fixture(t, ENTRY, true, worldSource); t.after(() => f.stop.dispose());
-	const input = f.controller.resolveInput(); t.after(() => input.dispose());
+	const f = fixture(t, ENTRY, true, worldSource); resources.add(f.stop);
+	const input = f.controller.resolveInput(); resources.add(input);
 	input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId;
 	f.controller.refresh(input); input.outline.selectionIndex = 0; input.rememberSelection(); f.controller.refreshDetails(input);
 	const data = input.details!.items.find(item => item.identity?.section === 'instance' && item.identity.field === 'data')!;
 	data.expansion!.setExpanded(true); f.controller.refreshDetails(input);
 	const stored = input.details!.items.find(item => item.label === 'answer')!;
 	assert.equal(stored.value, '42'); assert.ok(stored.identity?.parent);
-	assert.equal(stored.watchIdentity, undefined);
+	assert.ok(stored.watchIdentity === undefined);
 	assert.equal(f.controller.canPinProperty(input, stored), false);
 	assert.equal(f.controller.canUnpinProperty(input, stored), false);
 	assert.equal(f.controller.canRevealPinnedProperty(input, stored), false);
@@ -1354,12 +1362,12 @@ for (const historical of [true, false]) test(`navigation restores the original c
 	const worldSource = WORLD_SOURCE.replace('id = 1, definition_id', "id = 'actor_a', definition_id")
 		.replace("id = '1', definition_id", "id = 'actor_b', definition_id");
 	const entry = ENTRY.replace('return world', 'function remove_a() world._objects = { world._objects[2] } end\nreturn world');
-	const f = fixture(t, entry, true, worldSource); t.after(() => f.stop.dispose());
-	const controller = f.controller, input = controller.resolveInput(); t.after(() => input.dispose());
+	const f = fixture(t, entry, true, worldSource); resources.add(f.stop);
+	const controller = f.controller, input = controller.resolveInput(); resources.add(input);
 	const choices = readActorChoices(f.sources, f.guest, -1), font = new Font({ variant: 'tiny' });
 	controller.inspectActor(input, -1, choices.find(choice => choice.label === 'actor_a')!.hashId);
 	input.outline.selectionIndex = 0; input.rememberSelection(); controller.refreshDetails(input); controller.setDetailsLocked(input, true);
-	const subject = input.details!.subject!, saved = controller.captureSelection(input); t.after(() => saved.dispose());
+	const subject = input.details!.subject!, saved = controller.captureSelection(input); resources.add(saved);
 	assert.equal(input.details!.caption, 'actor_a'); assert.equal(saved.detailsSubjectName, 'actor_a');
 	controller.setDetailsLocked(input, false);
 	controller.inspectActor(input, -1, choices.find(choice => choice.label === 'actor_b')!.hashId);
@@ -1368,7 +1376,7 @@ for (const historical of [true, false]) test(`navigation restores the original c
 	f.guest.invalidate(historical ? 'history-restored' : 'execution');
 	runCompletionClosure(f.runtime.machine.cpu, f.guest.global('remove_a') as Closure, []);
 	controller.restoreSelection(input, saved, font); controller.refreshDetails(input);
-	assert.equal(input.details!.subject, subject); assert.equal(input.details!.locked, true); assert.equal(input.details!.available, false);
+	assert.ok(input.details!.subject === subject); assert.equal(input.details!.locked, true); assert.equal(input.details!.available, false);
 	assert.equal(input.details!.retired, !historical);
 	assert.match(input.details!.title, /actor_a.*UNAVAILABLE$/); assert.ok(!input.details!.title.includes('actor_b'));
 	assert.equal(input.details!.caption, 'actor_a — Unavailable', 'the unavailable caption belongs to the restored identity, never the last inspected actor');
@@ -1377,7 +1385,7 @@ for (const historical of [true, false]) test(`navigation restores the original c
 test('selecting an actor from an older displayed frame does not invent a live root after disposal', t => {
 	configureFontVariant('tiny');
 	const f = fixture(t, ENTRY.replace('return world', 'function retire() world._objects[1] = world._objects[2]; world._objects[2] = nil end\nreturn world'));
-	t.after(() => f.stop.dispose());
+	resources.add(f.stop);
 	const actor = readActorChoices(f.sources, f.guest, -1)[0], input = f.controller.resolveInput();
 	f.guest.invalidate(); runCompletionClosure(f.runtime.machine.cpu, f.guest.global('retire') as Closure, []);
 	f.controller.inspectActor(input, -1, actor.hashId);
