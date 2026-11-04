@@ -63,7 +63,8 @@ type RetainedActorNode = ActorNode & { readonly members: RetainedActorNode[]; ch
 
 function compareActorNames(left: ActorNode, right: ActorNode): number {
 	return left.name < right.name ? -1 : left.name > right.name ? 1
-		: left.keyIdentity.tag - right.keyIdentity.tag || left.keyIdentity.scalar - right.keyIdentity.scalar;
+		: left.keyIdentity.tag - right.keyIdentity.tag
+			|| (left.keyIdentity.scalar < right.keyIdentity.scalar ? -1 : left.keyIdentity.scalar > right.keyIdentity.scalar ? 1 : 0);
 }
 
 /** Reconcile one actor by guest identity. Ordinary state changes retain nodes, labels and rows. */

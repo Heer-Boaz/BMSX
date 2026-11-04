@@ -3,7 +3,7 @@ import { valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { STORED_ENTRIES_PREVIEW_LIMIT, type SuspendedGuestSession, type SuspendedGuestValue } from './suspended_guest';
 
-type ValuePart = { tag: ValueTag; scalar: number; entries: number; text?: string };
+type ValuePart = { tag: ValueTag; scalar: number | string; entries: number };
 export type SuspendedValueFormat = 'entries' | 'preview' | 'summary' | 'watch';
 
 /** Retains display inputs, never guest references. Mutable tables are reread before reusing text. */
@@ -26,7 +26,7 @@ export class SuspendedValuePresentation {
 	public constructor(private readonly guest: SuspendedGuestSession, private readonly format: SuspendedValueFormat = 'entries',
 		private readonly referenceType = 'Table') {}
 
-	/** String ids can be reused by restore; even equal raw inputs must be formatted in the new heap. */
+	/** Heap restoration ends all borrowed observations, even when semantic inputs remain equal. */
 	public invalidate(): void { this.valid = false; }
 
 	public update(value: SuspendedGuestValue): string {
@@ -52,15 +52,12 @@ export class SuspendedValuePresentation {
 		const index = this.cursor++, tag = valueTag(value), scalar = this.guest.identityScalar(value, tag);
 		const part = this.parts[index];
 		if (part === undefined) {
-			this.parts.push({ tag, scalar, entries: 0, text: this.format === 'watch' && tag === ValueTag.String ? this.guest.formatValue(value) : undefined });
+			this.parts.push({ tag, scalar, entries: 0 });
 			this.changed = true; this.observationChanged = true;
 		}
 		else if (part.tag !== tag || !Object.is(part.scalar, scalar)) {
-			part.tag = tag; part.scalar = scalar; part.text = this.format === 'watch' && tag === ValueTag.String ? this.guest.formatValue(value) : undefined;
+			part.tag = tag; part.scalar = scalar;
 			this.changed = true; this.observationChanged = true;
-		} else if (!this.valid && this.format === 'watch' && tag === ValueTag.String) {
-			const text = this.guest.formatValue(value);
-			if (part.text !== text) { part.text = text; this.changed = true; this.observationChanged = true; }
 		}
 		return index;
 	}

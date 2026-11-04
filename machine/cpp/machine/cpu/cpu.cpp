@@ -309,7 +309,7 @@ size_t GcHeap::collect(
 	convergeEphemerons();
 	clearWeakTables();
 	const size_t liveBytes = sweep();
-	m_stringPool.reclaimUnreachableTracked();
+	m_stringPool.reclaimUnreachable();
 	m_weakTables.clear();
 	m_weakTableModes.clear();
 	m_ephemeronTables.clear();
@@ -335,9 +335,10 @@ BuiltinResultsScratchScope::~BuiltinResultsScratchScope() {
 	}
 }
 
-CPU::LocalRootsScope::LocalRootsScope(CPU& cpu) noexcept
+CPU::LocalRootsScope::LocalRootsScope(CPU& cpu)
 	: m_cpu(&cpu)
 	, m_base(cpu.m_localRoots.size()) {
+	cpu.m_stringPool.beginLocalRoots();
 	cpu.m_localRootScopeDepth += 1;
 }
 
@@ -1134,6 +1135,11 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 }
 
 void CPU::beginCompletionCall(Closure& closure, BuiltinArgsView args) {
+	auto roots = acquireLocalRoots();
+	trackLocalRoot(valueClosure(&closure));
+	for (size_t index = 0; index < args.size(); ++index) trackLocalRoot(args[index]);
+	// The input span may borrow the completion latch being cleared below.
+	args = BuiltinArgsView(m_localRoots.data() + m_localRoots.size() - args.size(), args.size());
 	m_completionValues.clear();
 	m_completionThread = m_activeThread;
 	m_yieldRequested = false;
@@ -1152,6 +1158,10 @@ void CPU::beginCompletionClosureInExecutionDomain(
 	Closure& closure,
 	BuiltinArgsView args
 ) {
+	auto roots = acquireLocalRoots();
+	trackLocalRoot(valueClosure(&closure));
+	for (size_t index = 0; index < args.size(); ++index) trackLocalRoot(args[index]);
+	args = BuiltinArgsView(m_localRoots.data() + m_localRoots.size() - args.size(), args.size());
 	m_completionValues.clear();
 	m_completionThread = m_activeThread;
 	m_yieldRequested = false;
@@ -3471,6 +3481,7 @@ CPU::LocalRootsScope CPU::acquireLocalRoots() {
 void CPU::releaseLocalRoots(size_t base) {
 	m_localRoots.resize(base);
 	m_localRootScopeDepth -= 1;
+	m_stringPool.endLocalRoots();
 }
 
 void CPU::trackLocalRoot(Value value) {
@@ -3482,6 +3493,8 @@ void CPU::trackLocalRoot(Value value) {
 void CPU::markRoots(GcHeap& heap) {
 	// Keep the interned "__index" key tracked even while no live metatable uses it.
 	heap.markValue(m_indexKey);
+	heap.markValue(m_errorInErrorHandlingValue);
+	for (const Value value : m_luaFaultErrorValues) heap.markValue(value);
 	heap.markObject(m_stringIndexTable);
 	for (const auto& value : m_completionValues) {
 		heap.markValue(value);

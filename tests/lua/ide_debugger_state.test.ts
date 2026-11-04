@@ -27,7 +27,8 @@ import { IO_IRQ_ACK, IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import type { Table } from '../../machine/ts/machine/cpu/table';
-import type { Value } from '../../machine/ts/machine/cpu/value';
+import { valueString, type StringValue, type Value } from '../../machine/ts/machine/cpu/value';
+import { prepareLuaLiteral } from '../../ide/runtime/lua_literal';
 import { RuntimeGuestCallPlan, scheduleRuntimeGuestCall } from '../../ide/runtime/guest_call';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { RuntimeTaskKind, RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
@@ -748,4 +749,57 @@ for (const level of [0, 3] as const) for (const transition of ['source-install',
 	assert.equal(completed, true);
 	assert.notEqual(state.source.stop, retained);
 	assert.equal(state.source.stop, undefined, 'the replacement ended that source suspension even if the guest call returned normally');
+});
+
+for (const optLevel of [0, 3] as const) for (const admission of ['quiescent', 'at-stop'] as const)
+test(`guest call admission roots prepare and recursive arguments across GC (O${optLevel}, ${admission})`, async t => {
+	const { runtime, state } = createDebuggerHarness('return function(...) return ... end', optLevel);
+	const cpu = runtime.machine.cpu;
+	cpu.reset(); assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.Halted);
+	const values: Value[] = []; cpu.readCompletionValues(values);
+	const closure = values[0] as Closure, guest = new SuspendedGuestSession(runtime);
+	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
+		{ backend: { finishGxGpuReadbacks: async () => {} } } as VideoPresenter);
+	const intern = cpu.stringPool.intern.bind(cpu.stringPool);
+	t.mock.method(cpu.stringPool, 'intern', (text: string, tracked = true) => {
+		const id = intern(text, tracked);
+		cpu.collectTrackedHeapBytes();
+		return id;
+	});
+	let finished = false;
+	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
+		admission, honorUserStops: false, isCurrent: () => true,
+		prepare: () => {
+			const leading = valueString(cpu.stringPool.intern('prepare-owned-string'));
+			return { domain: -1, closure, args: () => [leading,
+				prepareLuaLiteral('{ argument_owned_key = { "nested-owned-string" } }')(cpu),
+				valueString(cpu.stringPool.intern('last-owned-string'))] };
+		},
+	}, () => {}, completed => { finished = completed; }, assert.fail);
+	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.Halted);
+	didExecuteRuntimeDebuggerPlan(state);
+	assert.equal(finished, true);
+	cpu.readCompletionValues(values);
+	assert.equal(cpu.stringPool.toString((values[0] as StringValue).id), 'prepare-owned-string');
+	const table = values[1] as Table;
+	const child = table.getStringKey(cpu.stringPool.find('argument_owned_key')!) as Table;
+	assert.equal(cpu.stringPool.toString((child.getInteger(1) as StringValue).id), 'nested-owned-string');
+	assert.equal(cpu.stringPool.toString((values[2] as StringValue).id), 'last-owned-string');
+});
+
+test('failed guest-call preparation releases its temporary allocation roots', async () => {
+	const { runtime, state } = createDebuggerHarness('return 0', 0), cpu = runtime.machine.cpu;
+	cpu.reset(); assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.Halted);
+	const guest = new SuspendedGuestSession(runtime);
+	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
+		{ backend: { finishGxGpuReadbacks: async () => {} } } as VideoPresenter);
+	const expected = new Error('preparation rejected');
+	let failure: unknown;
+	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
+		admission: 'quiescent', honorUserStops: false, isCurrent: () => true,
+		prepare: () => { cpu.stringPool.intern('rejected-preparation-string'); throw expected; },
+	}, () => assert.fail('failed preparation cannot enter the CPU'), () => assert.fail('failed preparation cannot complete a call'), error => { failure = error; });
+	assert.equal(failure, expected);
+	cpu.collectTrackedHeapBytes();
+	assert.equal(cpu.stringPool.find('rejected-preparation-string'), undefined);
 });

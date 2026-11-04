@@ -48,7 +48,7 @@ export function readProgramInstances(sources: RuntimeSourceState, guest: Suspend
 /** No borrowed table survives this read. Program topology is retained until its real identity changes. */
 export class LuaProgramRuntimeProjection {
 	private readonly stateRows: { readonly slot: number; readonly element: LiveProperty }[] = [];
-	private readonly receipts = new Map<ValueTag, Map<number, ReceiptRow[]>>();
+	private readonly receipts = new Map<ValueTag, Map<number | string, ReceiptRow[]>>();
 	private readonly receiptRows: ReceiptRow[] = [];
 	private inputValues: RuntimeValueTree | undefined;
 	public constructor(private readonly sources: RuntimeSourceState, private readonly guest: SuspendedGuestSession) {}

@@ -17,7 +17,7 @@ import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 
 const numeric: RuntimePropertyIdentity = { section: 'member', field: '', key: { tag: ValueTag.Number, scalar: 1 } };
-const string: RuntimePropertyIdentity = { section: 'member', field: '', key: { tag: ValueTag.String, scalar: 1 } };
+const string: RuntimePropertyIdentity = { section: 'member', field: '', key: { tag: ValueTag.String, scalar: '1' } };
 const field: RuntimePropertyIdentity = { section: 'instance', field: 'id' };
 
 test('runtime property identities distinguish semantic fields and typed keys independently of labels', () => {

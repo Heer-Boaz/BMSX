@@ -101,14 +101,15 @@ test('BLua32 image literals and debug names stay in ROM accounting', () => {
 });
 
 test('runtime string materialization tracks RAM even when the same text exists in ROM', () => {
-	const { cpu } = createTestSystemCpu(EMPTY_TEST_IMAGE);
-	cpu.stringPool.intern('rom literal', false);
+	const cpu = createCpuWithProgram('return "rom literal"');
+	const literal = cpu.stringPool.find('rom literal');
 	const before = cpu.collectTrackedHeapBytes();
 
 	// A materialized runtime string is always held somewhere live (here: a global).
 	// It must count as RAM even though the identical text already exists in ROM as
 	// an untracked literal.
 	const runtimeString = cpu.stringPool.intern('rom literal');
+	assert.equal(runtimeString, literal);
 	cpu.setGlobalByKey(cpu.stringPool.intern('held', false), ValueTag.String, runtimeString, null);
 
 	assert.ok(cpu.collectTrackedHeapBytes() > before);
@@ -117,13 +118,15 @@ test('runtime string materialization tracks RAM even when the same text exists i
 test('unreachable runtime strings are reclaimed by the heap collector', () => {
 	const { cpu } = createTestSystemCpu(EMPTY_TEST_IMAGE);
 	const before = cpu.collectTrackedHeapBytes();
+	const strings = cpu.stringPool.captureState();
 
-	// Intern a tracked runtime string but never root it. The append-only string
-	// pool must not let it count against RAM forever, otherwise churning unique
-	// strings (e.g. repeated hot-resume) leaks the tracked heap until OOM.
+	// No VM value owns this text. Collection must free the intern entry as
+	// well as its RAM debit; stale text must not accumulate in save states.
 	cpu.stringPool.intern('transient garbage string');
 
 	assert.equal(cpu.collectTrackedHeapBytes(), before);
+	assert.equal(cpu.stringPool.find('transient garbage string'), undefined);
+	assert.deepEqual(cpu.stringPool.captureState(), strings);
 });
 
 test('non-capturing const functions materialize as static proto references', () => {

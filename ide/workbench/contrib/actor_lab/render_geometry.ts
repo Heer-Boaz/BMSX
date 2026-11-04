@@ -12,7 +12,7 @@ export type ActorRenderQuad = {
 	ox: number; oy: number; ax: number; ay: number; bx: number; by: number;
 	localX: number; localY: number; parentHashId: number;
 	parentXX: number; parentXY: number; parentYX: number; parentYY: number;
-	idTag: ValueTag; idScalar: number; definitionTag: ValueTag; definitionScalar: number;
+	idTag: ValueTag; idScalar: number | string; definitionTag: ValueTag; definitionScalar: number | string;
 };
 
 /** Scalar draw evidence. Storage is reused; no guest object survives observation. */

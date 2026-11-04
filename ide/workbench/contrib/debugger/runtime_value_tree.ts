@@ -7,9 +7,9 @@ type Property = WorkbenchPropertyElement & { kind: 'group' | 'property'; value: 
 type Node = WorkbenchTreeNode<WorkbenchPropertyElement>;
 type ValueRow = {
 	tag: ValueTag;
-	scalar: number;
+	scalar: number | string;
 	seen: number;
-	entries?: Map<ValueTag, Map<number, Node>>;
+	entries?: Map<ValueTag, Map<number | string, Node>>;
 };
 
 /** A live variables tree retains typed keys and display state, never borrowed guest values. */
@@ -64,7 +64,7 @@ export class RuntimeValueTree {
 		element.kind = tag === ValueTag.Table ? 'group' : 'property';
 		node.expandable = tag === ValueTag.Table && !cycle;
 		if (!node.expandable || node.collapsed) return;
-		const entries = row.entries ??= new Map<ValueTag, Map<number, Node>>();
+		const entries = row.entries ??= new Map<ValueTag, Map<number | string, Node>>();
 		const generation = ++this.generation;
 		let count = 0;
 		this.guest.visitTableEntries(value, (key, entry) => {

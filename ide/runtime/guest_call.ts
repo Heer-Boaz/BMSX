@@ -120,47 +120,52 @@ export function scheduleRuntimeGuestCall(
 		cpu.beginCompletionClosureInExecutionDomain(call.domain, call.closure, args);
 	};
 	const admitCall = (checkBoundary: boolean): boolean => {
-		if (!request.isCurrent()) { finished(false); return false; }
 		const cpu = runtime.machine.cpu;
-		if (request.admission === 'quiescent') {
-			const exceptionDepth = cpu.readExceptionReturnFrameDepth();
-			if (exceptionDepth !== -1) {
-				guest.invalidate();
-				runtime.history.stop();
-				pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestCallPlan(runtime, exceptionDepth, 'exception', false, completed => {
+		const roots = cpu.acquireLocalRoots();
+		try {
+			if (!request.isCurrent()) { finished(false); return false; }
+			if (request.admission === 'quiescent') {
+				const exceptionDepth = cpu.readExceptionReturnFrameDepth();
+				if (exceptionDepth !== -1) {
+					guest.invalidate();
+					runtime.history.stop();
+					pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestCallPlan(runtime, exceptionDepth, 'exception', false, completed => {
+						if (!completed) { finished(false); return; }
+						// The handler may have submitted GPU work or replaced inspected values.
+						void tasks.schedule(() => { admitCall(checkBoundary); }, failed);
+					}), 'workbench');
+					return true;
+				}
+			}
+			const boundary = checkBoundary && request.admission === 'quiescent' ? request.boundary?.() : undefined;
+			if (boundary !== undefined) {
+				beginCall(boundary.request, false, completed => {
 					if (!completed) { finished(false); return; }
-					// The handler may have submitted GPU work or replaced inspected values.
-					void tasks.schedule(() => { admitCall(checkBoundary); }, failed);
-				}), 'workbench');
+					const values: Value[] = [];
+					cpu.readCompletionValues(values);
+					const reached = boundary.condition(values);
+					// Leave the completion plan before installing the rendezvous. The
+					// receipt is owned by this control operation, never a pane borrower.
+					void tasks.schedule(() => {
+						if (!request.isCurrent()) { finished(false); return; }
+						guest.invalidate();
+						pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestBoundaryPlan(request, reached, ready => {
+							if (!ready) { finished(false); return; }
+							// A boundary can submit GPU work and replace the inspected graph.
+							void tasks.schedule(() => { admitCall(false); }, failed);
+						}), 'workbench');
+					}, failed);
+				});
 				return true;
 			}
-		}
-		const boundary = checkBoundary && request.admission === 'quiescent' ? request.boundary?.() : undefined;
-		if (boundary !== undefined) {
-			beginCall(boundary.request, false, completed => {
-				if (!completed) { finished(false); return; }
-				const values: Value[] = [];
-				cpu.readCompletionValues(values);
-				const reached = boundary.condition(values);
-				// Leave the completion plan before installing the rendezvous. The
-				// receipt is owned by this control operation, never a pane borrower.
-				void tasks.schedule(() => {
-					if (!request.isCurrent()) { finished(false); return; }
-					guest.invalidate();
-					pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestBoundaryPlan(request, reached, ready => {
-						if (!ready) { finished(false); return; }
-						// A boundary can submit GPU work and replace the inspected graph.
-						void tasks.schedule(() => { admitCall(false); }, failed);
-					}), 'workbench');
-				}, failed);
-			});
+			const call = request.prepare();
+			if (call === undefined) { finished(false); return false; }
+			beginCall(call, request.honorUserStops, finished);
+			request.didEnter?.();
 			return true;
+		} finally {
+			cpu.releaseLocalRoots(roots);
 		}
-		const call = request.prepare();
-		if (call === undefined) { finished(false); return false; }
-		beginCall(call, request.honorUserStops, finished);
-		request.didEnter?.();
-		return true;
 	};
 	return tasks.schedule(() => {
 		if (admitCall(true)) started();

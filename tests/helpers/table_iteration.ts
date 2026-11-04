@@ -122,6 +122,29 @@ for key, value in pairs(checkpoint_table) do
 end
 assert(count == 24 and next(checkpoint_table) == nil)
 return true`,
+	collected_string_key_reuse: `
+local values<const> = {}
+local function drain(round)
+ for index = 1, 32 do
+  local serial<const> = round * 64 + index
+  values['runtime-key:' .. serial] = 'runtime-value:' .. serial
+ end
+ local count = 0
+ for key, value in pairs(values) do
+  values[key] = nil
+  collectgarbage()
+  assert(rawget(values, key) == nil and #value > 0,
+   'a live deleted-key continuation lost its string or revived a mapping')
+  count = count + 1
+ end
+ assert(next(values) == nil)
+ return count
+end
+for round = 1, 4 do
+ assert(drain(round) == 32, 'recycled string-key slots truncated a later traversal')
+ collectgarbage()
+end
+return true`,
 	delete_reinsert_churn: `
 local values<const>, keys<const>, padding<const> = {}, {}, {}
 -- A stride of 32 object identities puts all keys in the same hash bucket.

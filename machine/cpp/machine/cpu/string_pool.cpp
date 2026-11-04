@@ -32,19 +32,28 @@ StringId StringPool::internText(Text&& value, bool tracked) {
 		InternedString& stringEntry = *m_entries[static_cast<size_t>(id)];
 		if (tracked && stringEntry.trackedByteLength == 0) {
 			const size_t byteLength = utf8ByteLength(stringEntry.value);
-			m_luaHeap.reserve(byteLength);
+			m_luaHeap.reserve(byteLength, valueString(id));
 			trackStringEntry(stringEntry, byteLength);
 		}
+		if (!m_localRootBases.empty()) m_localRoots.push_back(id);
 		return id;
 	}
 	const size_t byteLength = tracked ? utf8ByteLength(value) : 0;
 	if (tracked) {
 		m_luaHeap.reserve(byteLength);
 	}
-	InternedString& stringEntry = insert(m_nextId, std::forward<Text>(value));
+	StringId id;
+	if (m_freeIds.empty()) {
+		id = static_cast<StringId>(m_entries.size());
+	} else {
+		id = m_freeIds.back();
+		m_freeIds.pop_back();
+	}
+	InternedString& stringEntry = insert(id, std::forward<Text>(value));
 	if (tracked) {
 		trackStringEntry(stringEntry, byteLength);
 	}
+	if (!m_localRootBases.empty()) m_localRoots.push_back(stringEntry.id);
 	return stringEntry.id;
 }
 
@@ -87,7 +96,7 @@ void StringPool::restoreState(const StringPoolState& state) {
 	const size_t previousTrackedBytes = m_trackedBytes;
 	m_stringMap.clear();
 	m_entries.clear();
-	m_nextId = 0;
+	m_freeIds.clear();
 	m_trackedBytes = 0;
 	for (const StringPoolStateEntry& stateEntry : state.entries) {
 		InternedString& stringEntry = insert(stateEntry.id, stateEntry.value);
@@ -99,39 +108,51 @@ void StringPool::restoreState(const StringPoolState& state) {
 	m_luaHeap.adjustForRestore(previousTrackedBytes, m_trackedBytes);
 }
 
+void StringPool::beginLocalRoots() {
+	m_localRootBases.push_back(m_localRoots.size());
+}
+
+void StringPool::endLocalRoots() {
+	m_localRoots.resize(m_localRootBases.back());
+	m_localRootBases.pop_back();
+}
+
 void StringPool::beginReachabilityEpoch() {
 	m_reachable.assign(m_entries.size(), false);
+	for (const StringId id : m_localRoots) m_reachable[id] = true;
 }
 
 void StringPool::markReachable(StringId id) {
-	if (static_cast<size_t>(id) < m_reachable.size()) {
-		m_reachable[static_cast<size_t>(id)] = true;
-	}
+	m_reachable[static_cast<size_t>(id)] = true;
 }
 
-void StringPool::reclaimUnreachableTracked() {
+void StringPool::reclaimUnreachable() {
 	size_t reclaimed = 0;
+	m_freeIds.clear();
 	for (size_t id = 0; id < m_entries.size(); ++id) {
 		InternedString* stringEntry = m_entries[id].get();
-		if (!stringEntry || stringEntry->trackedByteLength == 0) {
+		if (!stringEntry) {
+			m_freeIds.push_back(static_cast<StringId>(id));
 			continue;
 		}
-		const bool reachable = id < m_reachable.size() && m_reachable[id];
-		if (reachable) {
+		if (m_reachable[id]) {
 			continue;
 		}
 		reclaimed += stringEntry->trackedByteLength;
-		stringEntry->trackedByteLength = 0;
+		m_stringMap.erase(std::string_view(stringEntry->value));
+		m_entries[id].reset();
+		m_freeIds.push_back(static_cast<StringId>(id));
 	}
-	if (reclaimed == 0) {
-		return;
+	while (!m_entries.empty() && !m_entries.back()) {
+		m_entries.pop_back();
+		m_freeIds.pop_back();
 	}
 	m_trackedBytes -= reclaimed;
 	m_luaHeap.release(reclaimed);
 }
 
 const StringPool::InternedString& StringPool::entry(StringId id) const {
-	const auto* stringEntry = m_entries.at(static_cast<size_t>(id)).get();
+	const auto* stringEntry = m_entries[static_cast<size_t>(id)].get();
 	return *stringEntry;
 }
 
@@ -149,13 +170,11 @@ StringPool::InternedString& StringPool::insert(StringId id, Text&& value) {
 void StringPool::insertEntry(std::unique_ptr<InternedString> entry) {
 	const StringId id = entry->id;
 	if (id >= m_entries.size()) {
+		for (size_t vacant = m_entries.size(); vacant < id; ++vacant) m_freeIds.push_back(static_cast<StringId>(vacant));
 		m_entries.resize(static_cast<size_t>(id) + 1u);
 	}
 	m_entries[id] = std::move(entry);
 	m_stringMap.emplace(std::string_view(m_entries[id]->value), id);
-	if (id >= m_nextId) {
-		m_nextId = id + 1u;
-	}
 }
 
 void StringPool::trackStringEntry(InternedString& entry, size_t byteLength) {

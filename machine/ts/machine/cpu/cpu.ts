@@ -108,10 +108,13 @@ import {
 	materializeValue,
 	storedValueToString,
 	valueFromNumber,
+	valueTag,
+	asStringId,
 	valueTypeNameForLuaTag,
 	BUILTIN_FUNCTIONS,
 	type Value,
 	type ValueReference,
+	type StringValue,
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
 import { Table, TABLE_INDEX_CHAIN_EXHAUSTED } from './table';
@@ -307,6 +310,8 @@ export class CPU implements MappedPageInvalidator {
 		1,
 	);
 	private builtinResultsScratchIndex = 0;
+	private readonly localRoots: Value[] = [];
+	private localRootScopeDepth = 0;
 	private closureUpvalueWords = new Uint32Array(0);
 	private readonly heapObjectStack: Array<Table | Closure | Thread> = [];
 	private readonly heapUpvalueStack: Upvalue[] = [];
@@ -518,7 +523,22 @@ export class CPU implements MappedPageInvalidator {
 		this.luaHeap.reserve(Table.trackedHeapBytesForCapacities(arraySize, hashCapacity));
 		const table = new Table(this.luaHeap, arraySize, hashCapacity);
 		table.hashId = this.allocateObjectHashId();
+		if (this.localRootScopeDepth > 0) this.localRoots.push(table);
 		return table;
+	}
+
+	/** Synchronous host materialization owns roots until VM call admission. */
+	public acquireLocalRoots(): number {
+		const base = this.localRoots.length;
+		this.stringPool.beginLocalRoots();
+		this.localRootScopeDepth += 1;
+		return base;
+	}
+
+	public releaseLocalRoots(base: number): void {
+		this.localRoots.length = base;
+		this.localRootScopeDepth -= 1;
+		this.stringPool.endLocalRoots();
 	}
 
 	private ensureStackCapacity(size: number): void {
@@ -1564,10 +1584,17 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public beginCompletionCall(closure: Closure, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
-		this.clearCompletionValues();
-		this.completionThread = this.activeThread;
-		this.yieldRequested = false;
-		this.pushFrame(closure, args, 0, 0, true);
+		const roots = this.acquireLocalRoots();
+		this.localRoots.push(closure);
+		for (const arg of args) this.localRoots.push(arg);
+		try {
+			this.clearCompletionValues();
+			this.completionThread = this.activeThread;
+			this.yieldRequested = false;
+			this.pushFrame(closure, args, 0, 0, true);
+		} finally {
+			this.releaseLocalRoots(roots);
+		}
 	}
 
 	public beginCompletionCallInExecutionDomain(
@@ -1582,21 +1609,22 @@ export class CPU implements MappedPageInvalidator {
 		closure: Closure,
 		args: ReadonlyArray<Value> = EMPTY_CALL_ARGS,
 	): void {
-		this.clearCompletionValues();
-		this.completionThread = this.activeThread;
-		this.yieldRequested = false;
-		this.readFunctionRecord(
-			this.executionImageForDomain(executionDomainId)!,
-			closure.functionAddress,
-			CPU.executionBusSignalsForDomain(executionDomainId),
-		);
-		this.pushLatchedFrame(
-			closure,
-			args,
-			0,
-			0,
-			true,
-		);
+		const roots = this.acquireLocalRoots();
+		this.localRoots.push(closure);
+		for (const arg of args) this.localRoots.push(arg);
+		try {
+			this.clearCompletionValues();
+			this.completionThread = this.activeThread;
+			this.yieldRequested = false;
+			this.readFunctionRecord(
+				this.executionImageForDomain(executionDomainId)!,
+				closure.functionAddress,
+				CPU.executionBusSignalsForDomain(executionDomainId),
+			);
+			this.pushLatchedFrame(closure, args, 0, 0, true);
+		} finally {
+			this.releaseLocalRoots(roots);
+		}
 	}
 
 	public requestYield(): void {
@@ -3762,6 +3790,7 @@ export class CPU implements MappedPageInvalidator {
 		this.luaHeap.reserve(THREAD_HEAP_BYTES + 8 * THREAD_STACK_SLOT_BYTES, ValueTag.Closure, NaN, entry);
 		const thread = new Thread(entry);
 		thread.hashId = this.allocateObjectHashId();
+		if (this.localRootScopeDepth > 0) this.localRoots.push(thread);
 		return thread;
 	}
 
@@ -5017,6 +5046,10 @@ export class CPU implements MappedPageInvalidator {
 		this.stringPool.beginReachabilityEpoch();
 		this.stringPool.markReachable(this.indexKey);
 		this.stringPool.markReachable(this.modeKey);
+		this.stringPool.markReachable(this.errorInErrorHandlingStringId);
+		for (let reason = 0; reason < this.luaFaultErrorStringIds.length; reason += 1) {
+			if (reason !== LUA_FAULT_REASON_EXPLICIT_ERROR) this.stringPool.markReachable(this.luaFaultErrorStringIds[reason]);
+		}
 
 		for (let slot = 0; slot < this.systemGlobalNames.length; slot += 1) {
 			this.stringPool.markReachable(this.systemGlobalNames[slot]);
@@ -5031,6 +5064,19 @@ export class CPU implements MappedPageInvalidator {
 		}
 		for (let index = 0; index < this.completionValueCount; index += 1) {
 			this.pushHeapRegister(this.completionValueSlots, index);
+		}
+		for (const value of this.localRoots) {
+			const tag = valueTag(value);
+			switch (tag) {
+				case ValueTag.String:
+					this.stringPool.markReachable(asStringId(value as StringValue));
+					break;
+				case ValueTag.Table:
+				case ValueTag.Thread:
+				case ValueTag.Closure:
+					this.pushHeapStoredValue(tag, NaN, value as NonNullable<ValueReference>);
+					break;
+			}
 		}
 		for (let scratchIndex = 0; scratchIndex < this.builtinResultsScratchIndex; scratchIndex += 1) {
 			const scratch = this.builtinResultsScratch.peek(scratchIndex);
@@ -5139,7 +5185,7 @@ export class CPU implements MappedPageInvalidator {
 			);
 			table.forEachStoredEntry(this.markWeakEntryStrings);
 		}
-		this.stringPool.reclaimUnreachableTracked();
+		this.stringPool.reclaimUnreachable();
 		total += this.stringPool.trackedLuaHeapBytes();
 		weakTables.length = 0;
 		weakTableModes.length = 0;

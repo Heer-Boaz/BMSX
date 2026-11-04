@@ -305,7 +305,7 @@ public:
 	private:
 		friend class CPU;
 
-		explicit LocalRootsScope(CPU& cpu) noexcept;
+		explicit LocalRootsScope(CPU& cpu);
 
 		CPU* m_cpu = nullptr;
 		size_t m_base = 0;

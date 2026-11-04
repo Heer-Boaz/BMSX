@@ -22,6 +22,7 @@ struct StringPoolStateEntry {
 };
 
 struct StringPoolState {
+	// Occupied slots in ascending ID order.
 	std::vector<StringPoolStateEntry> entries;
 };
 
@@ -37,18 +38,15 @@ public:
 	size_t trackedLuaHeapBytes() const { return m_trackedBytes; }
 	StringPoolState captureState() const;
 	void restoreState(const StringPoolState& state);
+	void beginLocalRoots();
+	void endLocalRoots();
 
-	// Garbage-collection support. The pool is otherwise append-only, so without
-	// reclamation the heap collector counts every runtime string ever interned
-	// and churning unique strings (e.g. repeated hot-resume) leaks the tracked
-	// Lua heap until OOM. Usage during a GC cycle: beginReachabilityEpoch() before
-	// marking, markReachable(id) for every string reached from a live root, then
-	// reclaimUnreachableTracked() after the sweep. Interned values/ids are kept
-	// intact so ids stay valid and identical text re-interns to the same id; only
-	// the tracked-heap accounting is reclaimed.
+	// The intern index is weak. Live VM/image roots retain their StringIds;
+	// sweep removes unreachable text and reuses vacant IDs. RAM accounting is
+	// independent of reachability: resident image literals remain ROM-backed.
 	void beginReachabilityEpoch();
 	void markReachable(StringId id);
-	void reclaimUnreachableTracked();
+	void reclaimUnreachable();
 
 private:
 	friend class CPU;
@@ -83,7 +81,9 @@ private:
 	void insertEntry(std::unique_ptr<InternedString> entry);
 	void trackStringEntry(InternedString& entry, size_t byteLength);
 	LuaHeap& m_luaHeap;
-	StringId m_nextId = 0;
+	std::vector<StringId> m_freeIds;
+	std::vector<StringId> m_localRoots;
+	std::vector<size_t> m_localRootBases;
 	size_t m_trackedBytes = 0;
 	std::unordered_map<std::string_view, StringId, StringKeyHash, StringKeyEq> m_stringMap;
 	std::vector<std::unique_ptr<InternedString>> m_entries;

@@ -43,7 +43,7 @@ export function runtimeInspectionPropertiesEqual(left: RuntimeInspectionProperty
 		: right.identity !== undefined && runtimePropertyIdentitiesEqual(left.identity, right.identity);
 }
 
-type PropertyIndexField<T> = { value?: T; readonly keys: Map<ValueTag, Map<number, T>> };
+type PropertyIndexField<T> = { value?: T; readonly keys: Map<ValueTag, Map<number | string, T>> };
 
 /** Typed semantic lookup shared by retained rows, pin admission and projector filtering. */
 export class RuntimePropertyIndex<T> {

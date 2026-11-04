@@ -20,15 +20,13 @@ type FixtureWait =
 /** Transport for compiled context yields, independent of case outcomes or play lifetime. */
 export class FixtureOperations {
 	private wait: FixtureWait | null = null;
-	private readonly reachedKey;
 	public constructor(private readonly target: FixtureTarget, private readonly input: TestInput, private readonly output: FixtureOutput,
-		private readonly bindingChanged: () => void) {
-		this.reachedKey = target.runtime.machine.cpu.stringPool.intern('reached');
-	}
+		private readonly bindingChanged: () => void) {}
 	public get waiting(): boolean { return this.wait !== null; }
 	public get observesPublication(): boolean { return this.wait?.kind === 'boundary'; }
 	public shouldStopAtPublication(): boolean {
-		return this.wait?.kind === 'boundary' && this.wait.receipt.getStringKey(this.reachedKey) === true;
+		return this.wait?.kind === 'boundary'
+			&& this.wait.receipt.getStringKey(this.target.runtime.machine.cpu.stringPool.find('reached')!) === true;
 	}
 
 	/** The compiled context owns this protocol. Unknown operations are errors, not no-ops. */
@@ -65,10 +63,12 @@ export class FixtureOperations {
 		switch (wait.kind) {
 			case 'ticks': ready = runtime.frameScheduler.lastTickSequence >= wait.target; break;
 			case 'input': ready = this.input.samples >= wait.target; break;
-			case 'boundary':
-				ready = wait.receipt.getStringKey(this.reachedKey) === true || runtime.frameScheduler.lastTickSequence >= wait.deadline;
-				if (ready) args[1] = wait.receipt.getStringKey(this.reachedKey);
+			case 'boundary': {
+				const reached = wait.receipt.getStringKey(runtime.machine.cpu.stringPool.find('reached')!);
+				ready = reached === true || runtime.frameScheduler.lastTickSequence >= wait.deadline;
+				if (ready) args[1] = reached;
 				break;
+			}
 			case 'capture':
 				ready = runtime.frameScheduler.lastTickSequence > wait.tick && this.target.present();
 				if (ready) {
