@@ -52,7 +52,7 @@ export function measureActorLab(font: EditorFont): ActorLabMetrics {
 		graphMinimumWidth: advance * GRAPH_READING_COLUMNS + GRAPH_NODE_PADDING * 2 + SCROLLBAR_WIDTH + PADDING * 2,
 		graphMinimumHeight: graphTopOffset + rowHeight * VISIBLE_ROWS + SCROLLBAR_WIDTH + PADDING,
 		previewMinimumWidth: GAME_FRAME_MINIMUM_WIDTH + PADDING * 2,
-		previewMinimumHeight: GAME_FRAME_MINIMUM_HEIGHT + rowHeight + PADDING * 4,
+		previewMinimumHeight: GAME_FRAME_MINIMUM_HEIGHT + PADDING * 2,
 	};
 	measurements.set(font, measured);
 	return measured;
@@ -91,11 +91,12 @@ export function layoutActorLab(input: ActorLabInput): void {
 	if (graph) input.stateGraph!.viewport.layout(left, Math.min(contentBottom, top + measured.graphTopOffset), right, contentBottom);
 	if (active !== undefined) {
 		const left = active === split ? split.position + WORKBENCH_SPLIT_SIZE / 2 + PADDING : layout.left + PADDING;
-		const barTop = active === rowSplit ? rowSplit.position + WORKBENCH_SPLIT_SIZE / 2 + PADDING : top + PADDING;
-		const barBottom = barTop + measured.rowHeight + 4;
+		const previewTop = active === rowSplit ? rowSplit.position + WORKBENCH_SPLIT_SIZE / 2 + PADDING : top + PADDING;
 		const right = layout.right - PADDING, previewBottom = bottom - PADDING;
-		layoutWorkbenchActionBar(input.viewportActions, right, barTop, barBottom, measureText, layout.font!.renderFont(), left, 'start');
-		if (input.worldView.mode === 'game') layoutGameFrame(input.previewBounds, left, barBottom + PADDING, right, previewBottom);
-		else { input.previewBounds.left = left; input.previewBounds.top = barBottom + PADDING; input.previewBounds.right = right; input.previewBounds.bottom = previewBottom; }
+		input.viewportActions.items[0].label = input.worldView.mode === 'game' ? 'Game' : input.worldView.mode === '2d' ? '2D' : '3D';
+		layoutWorkbenchActionBar(input.viewportActions, right - PADDING, previewTop + PADDING, previewTop + PADDING + measured.rowHeight,
+			measureText, layout.font!.renderFont(), left + PADDING, 'start');
+		if (input.worldView.mode === 'game') layoutGameFrame(input.previewBounds, left, previewTop, right, previewBottom);
+		else { input.previewBounds.left = left; input.previewBounds.top = previewTop; input.previewBounds.right = right; input.previewBounds.bottom = previewBottom; }
 	}
 }

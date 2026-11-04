@@ -5,4 +5,4 @@ export type WorkbenchIcon = 'pin' | 'unpin' | 'close' | 'minimize' | 'maximize' 
 	| 'play' | 'pause' | 'stepBack' | 'stepForward' | 'present' | 'accept' | 'back'
 	| 'source' | 'more' | 'info' | 'legend' | 'grid' | 'filter' | 'actor' | 'follow' | 'chevronRight' | 'chevronDown'
 	| 'scene' | 'behaviorTree' | 'stateMachine' | 'actionEffect' | 'progression' | 'inputBindings' | 'animation' | 'audio'
-	| 'copy' | 'refresh' | 'menu' | 'add';
+	| 'copy' | 'refresh' | 'menu' | 'add' | 'camera';

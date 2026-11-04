@@ -130,6 +130,7 @@ export type EditorCommandId =
 	| 'runtime.pause' | 'runtime.present' | 'runtime.accept' | 'runtime.resume' | 'runtime.focusTimeline' | 'runtime.hideTimeline' | 'runtime.toggleTimeline'
 	| 'runtime.playback'
 	| 'gameView.togglePanel' | 'gameView.closePanel'
+	| 'actorLab.viewOptions' | 'actorLab.cameraOptions'
 	| 'actorLab.selectVisual' | 'actorLab.gameView' | 'actorLab.playback' | 'actorLab.run' | 'actorLab.select' | 'actorLab.spawn' | 'actorLab.emit' | 'actorLab.actions' | 'actorLab.call' | 'actorLab.details'
 	| 'actorLab.stateGraph' | 'actorLab.outline' | 'actorLab.follow' | 'actorLab.revealActive' | 'actorLab.editScene' | 'actorLab.find'
 	| 'actorLab.pinProperty' | 'actorLab.unpinProperty' | 'actorLab.revealPinnedProperty' | 'actorLab.lockDetails'

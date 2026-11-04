@@ -59,7 +59,7 @@ export class SceneViewportCamera {
 	/** The attached view publishes its realized allocation, not hidden zero sizes. */
 	public setViewport(width: number, height: number): void {
 		if (width === this.width && height === this.height) return;
-		this.width = width; this.height = height; this.updateSpace(); this.changed();
+		this.width = width; this.height = height; this.updateProjection(); this.changed();
 	}
 	public setMode(mode: '2d' | '3d'): void {
 		if (mode === this.mode && !this.automaticMode) return;
@@ -116,7 +116,7 @@ export class SceneViewportCamera {
 		} else {
 			const s = this.space, scale = this.scale; s.reading = 'manual';
 			s.centerX -= (this.rx * x + this.dx * y) / scale;
-			s.centerY -= this.dy * y / scale; s.centerZ -= (this.rz * x + this.dz * y) / scale; this.updateSpace();
+			s.centerY -= this.dy * y / scale; s.centerZ -= (this.rz * x + this.dz * y) / scale; this.updateProjection();
 		}
 		this.changed();
 	}
@@ -136,13 +136,28 @@ export class SceneViewportCamera {
 			const y = anchor === undefined ? this.dy * anchorY / scale : ((anchor.originY - s.originY) + anchor.y) - s.centerY;
 			const z = anchor === undefined ? (this.rz * anchorX + this.dz * anchorY) / scale : ((anchor.originZ - s.originZ) + anchor.z) - s.centerZ;
 			s.centerX += x * ratio; s.centerY += y * ratio; s.centerZ += z * ratio;
-			s.distance = distance; s.reading = 'manual'; this.updateSpace();
+			s.distance = distance; s.reading = 'manual'; this.updateProjection();
 		}
 		this.changed();
 	}
 	public orbit(x: number, y: number): void {
 		const s = this.space; s.reading = 'manual'; s.yaw += x * 0.01; s.pitch = clamp(s.pitch + y * 0.01, -1.5, 1.5);
 		this.updateSpace(); this.changed();
+	}
+	/** Free look rotates around the eye; orbit rotates around the focus point. */
+	public look(x: number, y: number): void {
+		if (x === 0 && y === 0) return;
+		const s = this.space; s.reading = 'manual'; s.yaw -= x * 0.01; s.pitch = clamp(s.pitch + y * 0.01, -1.5, 1.5);
+		this.updateSpace(true); this.changed();
+	}
+	/** Flight translates eye and pivot together. Vertical movement can use world or camera up. */
+	public fly(right: number, up: number, forward: number, localUp = 0): boolean {
+		if (right === 0 && up === 0 && forward === 0 && localUp === 0) return false;
+		const s = this.space; s.reading = 'manual';
+		s.centerX += this.rx * right - this.bx * forward - this.dx * localUp;
+		s.centerY += up - this.by * forward - this.dy * localUp;
+		s.centerZ += this.rz * right - this.bz * forward - this.dz * localUp;
+		this.updateProjection(); this.changed(); return true;
 	}
 	public frame2D(left: number, top: number, right: number, bottom: number, width: number, height: number,
 		adoptView = false, reading: Reading = 'manual'): void {
@@ -168,7 +183,7 @@ export class SceneViewportCamera {
 		if (changeMode) { this.modeValue = '3d'; this.modeIntent = 'manual'; }
 		s.reading = reading; s.originX = originX; s.originY = originY; s.originZ = originZ;
 		s.centerX = centerX; s.centerY = centerY; s.centerZ = centerZ; s.distance = distance;
-		this.updateSpace(); this.changed();
+		this.updateProjection(); this.changed();
 	}
 	/** Subtract the geometry origin before adding the small eye offset, matching combined model→clip arithmetic. */
 	public eyeRelativeTo(x: number, y: number, z: number, target: Float64Array): void {
@@ -185,11 +200,21 @@ export class SceneViewportCamera {
 		const reciprocal = 1 / Math.hypot(dx, dy, dz);
 		direction[0] = dx * reciprocal; direction[1] = dy * reciprocal; direction[2] = dz * reciprocal;
 	}
-	private updateSpace(): void {
+	private updateSpace(keepEye = false): void {
 		const s = this.space, sine = Math.sin(s.yaw), cosine = Math.cos(s.yaw), pitchSine = Math.sin(s.pitch), pitchCosine = Math.cos(s.pitch);
+		if (keepEye) {
+			s.centerX += (this.bx - sine * pitchCosine) * s.distance;
+			s.centerY += (this.by - pitchSine) * s.distance;
+			s.centerZ += (this.bz - cosine * pitchCosine) * s.distance;
+		}
 		this.rx = cosine; this.rz = -sine;
 		this.dx = sine * pitchSine; this.dy = -pitchCosine; this.dz = cosine * pitchSine;
 		this.bx = sine * pitchCosine; this.by = pitchSine; this.bz = cosine * pitchCosine;
+		this.updateProjection();
+	}
+	/** Translation, dolly and resize reuse the camera basis until its orientation changes. */
+	private updateProjection(): void {
+		const s = this.space;
 		const m = this.clipFromOrigin, horizontal = this.height / this.width / TAN_HALF_FOV, vertical = 1 / TAN_HALF_FOV;
 		m[0] = this.rx * horizontal; m[1] = -this.dx * vertical; m[2] = 0; m[3] = -this.bx;
 		m[4] = 0; m[5] = -this.dy * vertical; m[6] = 0; m[7] = -this.by;

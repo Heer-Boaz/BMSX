@@ -256,6 +256,8 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'runtime.resume': { category: 'Run', title: 'Continue from Here', shortTitle: 'OK' },
 	'runtime.playback': { category: 'Run', title: 'Play / Pause', shortTitle: 'Play/Pause' },
 	'actorLab.selectVisual': { category: 'Actor Lab', title: 'Select Actor', shortTitle: 'Select' },
+	'actorLab.viewOptions': { category: 'Actor Lab', title: 'Viewport View', shortTitle: 'View' },
+	'actorLab.cameraOptions': { category: 'Actor Lab', title: 'Viewport Camera Controls', shortTitle: 'Camera' },
 	'actorLab.gameView': { category: 'Actor Lab', title: 'Game Camera and Input', shortTitle: 'Game' },
 	'actorLab.playback': { category: 'Actor Lab', title: 'Play / Pause', shortTitle: 'Play/Pause' },
 	'actorLab.run': { category: 'Actor Lab', title: 'Run Selected Behavior', shortTitle: 'Run' },

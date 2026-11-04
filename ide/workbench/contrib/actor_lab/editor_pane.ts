@@ -1,4 +1,5 @@
 import { ActorWorldControl } from './world_control';
+import { editorRuntimeState } from '../../../editor/common/runtime_state';
 import { STATUS_PRIORITY_CONTENT, type WorkbenchStatusItem } from '../../common/status_bar';
 import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { QuickInputController } from '../../services/quick_input/controller';
@@ -409,8 +410,9 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			for (const row of outline.rows) row.element.displayLabel = truncateTextToWidth(row.element.label,
 				outline.layout.contentRight - outline.layout.contentLeft - (row.depth + 2) * outline.layout.indentWidth - 4, 'middle');
 		} else if (!this.updatePreviewInput()) return;
-		if (input.layout.previewVisible) input.worldView.refresh(input.previewBounds, input.domain, input.actorHashId);
 		this.worldControl.update();
+		this.worldControl.advanceNavigation(editorRuntimeState.currentTimeMs);
+		if (input.layout.previewVisible) input.worldView.refresh(input.previewBounds, input.domain, input.actorHashId);
 		this.updateViewportHit();
 		this.controller.layoutNavigation(input);
 		this.timelineSlider.update();
@@ -451,8 +453,8 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		const input = this.input;
 		if (this.detailsWindow.hasFocus) this.statusItems[0].text = input.details!.title;
 		else if (this.worldControl.focusTarget.hasFocus) this.statusItems[0].text = input.worldView.mode === '3d'
-			? 'CLICK: INSPECT | MIDDLE DRAG: PAN | ALT+DRAG: ORBIT | WHEEL: ZOOM | F: FRAME SELECTION'
-			: 'CLICK: INSPECT | MIDDLE DRAG: PAN | WHEEL: ZOOM | F: FRAME SELECTION';
+			? 'RMB: LOOK | RMB+WASD/QE: FLY | ALT+LMB: ORBIT | MMB: PAN | F: FOCUS'
+			: 'CLICK: INSPECT | RMB/MMB: PAN | WHEEL: ZOOM | F: FOCUS';
 		else if (this.split.focusTarget.hasFocus) this.statusItems[0].text = this.boundSplit!.orientation === 'horizontal'
 			? 'RESIZE PANES: LEFT/RIGHT | HOME: RESET' : 'RESIZE PANES: UP/DOWN | HOME: RESET';
 		else if (this.viewportHit !== undefined) this.statusItems[0].text = this.viewportHit.label
@@ -585,7 +587,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		return scope.contextGeneration === context;
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean, now: number): boolean {
-		if (this.input.layout.previewVisible && this.worldControl.handlePointer(snapshot)) return true;
+		if (this.input.layout.previewVisible && this.worldControl.handlePointer(snapshot, now)) return true;
 		if (this.input.layout.previewVisible && snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.previewBounds)) {
 			if (!this.controller.rewind.seeking) {
 				this.viewportHover = true; this.pointerX = snapshot.viewportX; this.pointerY = snapshot.viewportY; pointerHover.visit(this);

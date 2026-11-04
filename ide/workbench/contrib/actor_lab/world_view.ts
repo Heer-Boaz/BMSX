@@ -18,6 +18,7 @@ import { drawCanvas } from '../scene_editor/viewport/canvas_render';
 export class ActorWorldView {
 	public mode: 'game' | '2d' | '3d' = 'game';
 	public navigation: 'select' | 'pan' | 'orbit' = 'select';
+	public navigationSpeed = 1;
 	public readonly camera = new SceneViewportCamera();
 	public readonly bounds = create_rect_bounds();
 	public readonly assets: ActorWorldAssets;
@@ -47,7 +48,11 @@ export class ActorWorldView {
 	public constructor(sources: RuntimeSourceState, private readonly frames: ActorRenderFrames) {
 		this.assets = new ActorWorldAssets(sources); this.geometry = new SceneViewportGeometry(this.assets, this.canvas);
 	}
-	public setMode(mode: 'game' | '2d' | '3d'): void { this.mode = mode; if (mode !== 'game') this.camera.setMode(mode); }
+	public setMode(mode: 'game' | '2d' | '3d'): void {
+		this.mode = mode;
+		if (mode !== 'game') this.camera.setMode(mode);
+		if (mode === '2d' && this.navigation === 'orbit') this.navigation = 'select';
+	}
 	public refresh(bounds: Readonly<RectBounds>, domain: number, hashId: number): void {
 		if (this.mode === 'game') return;
 		const resized = bounds.left !== this.bounds.left || bounds.top !== this.bounds.top || bounds.right !== this.bounds.right || bounds.bottom !== this.bounds.bottom;
