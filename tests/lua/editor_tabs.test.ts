@@ -16,6 +16,7 @@ import type { EditorTabId } from '../../ide/workbench/ui/tab/id';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { pointerCapture, PointerCaptureService } from '../../ide/input/pointer/capture';
+import { pointerHover } from '../../ide/input/pointer/hover';
 import { inputFocus, InputFocusScope } from '../../ide/input/focus';
 import type { PointerInputSnapshot } from '../../ide/common/models';
 import type { EditorCommandId } from '../../ide/common/commands';
@@ -663,6 +664,35 @@ test('captured tab input retains full pointer occurrences and updates modifiers 
 	assert.deepEqual(events, ['clear', 'drop']);
 });
 
+
+for (const variant of ['tiny', 'msx'] as const) for (const heldFrame of [false, true]) {
+	test(`captured preview double-click survives hover retirement (${variant}, held frame ${heldFrame})`, t => {
+		const f = fixture(t, variant), preview = f.add('preview', true); f.layout();
+		const bounds = f.item(preview.id).bounds, x = bounds.left + 2, y = bounds.top + 1;
+		pointerHover.beginDispatch(f.scope);
+		f.press(pointer(x, y, primary, primary), 0);
+		pointerHover.endDispatch();
+		assert.equal(pointerCapture.active, true);
+		// Capture bypasses the strip on both held and release frames. Hover
+		// retirement is presentation-only even after release clears drag state.
+		if (heldFrame) {
+			pointerHover.beginDispatch(f.scope);
+			f.dispatch(pointer(x, y, primary), false, 10);
+			pointerHover.endDispatch();
+		}
+		pointerHover.beginDispatch(f.scope);
+		f.dispatch(pointer(x, y, 0, 0, primary), false, 20);
+		pointerHover.endDispatch();
+		assert.equal(pointerCapture.active, false);
+		assert.equal(pointerHover.has(f.strip), false);
+		assert.equal(f.strip.hoverId, null);
+		assert.equal(f.strip.lastClickId, preview.id);
+		assert.equal(f.group.previewTab, preview);
+		f.press(pointer(x, y, primary, primary), 30);
+		assert.equal(f.group.previewTab, null);
+		f.dispatch(pointer(x, y, 0, 0, primary), false, 40);
+	});
+}
 
 test('double-click pin publication cannot recapture a retired tab strip', t => {
 	const f = fixture(t), tab = f.add('preview', true); f.layout();

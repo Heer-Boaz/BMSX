@@ -219,7 +219,6 @@ export class EditorTabStrip implements PointerHoverTarget {
 
 	public onPointerLeave(): void {
 		this.hoverId = null;
-		this.lastClickId = null;
 	}
 
 	private updateHover(snapshot: PointerSnapshot): boolean {
