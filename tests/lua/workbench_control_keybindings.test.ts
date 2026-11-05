@@ -283,9 +283,10 @@ test('empty-group Studio retirement and blocked admission cannot carry an Alt ca
 	blocker.dispose(); key('AltLeft', KeyModifier.none, false);
 	assert.equal(editor.contextMenu.visible, false, 'a temporarily blocked owner does not retain an armed gesture');
 	for (const tab of [...editor.editorParts.main.activeGroup.model.tabs]) editor.editorParts.main.activeGroup.close(tab.id);
-	assert.equal(inputFocus.target, null);
+	assert.ok(inputFocus.admittedTarget === editor.editorParts.main.activeGroup.focusTarget,
+		'the empty group owns navigation instead of retaining the closed source editor');
 	key('AltLeft', KeyModifier.alt); editor.deactivate(); editor.activate(); key('AltLeft', KeyModifier.none, false);
-	assert.equal(editor.contextMenu.visible, false, 'empty-group retirement cancels Alt even without a focused control to blur');
+	assert.equal(editor.contextMenu.visible, false, 'empty-group retirement cancels its pending Alt gesture');
 	key('AltLeft', KeyModifier.alt); key('AltLeft', KeyModifier.none, false);
 	assert.equal(editor.contextMenu.visible, true, 'the next clean empty-group gesture is admitted normally');
 });

@@ -4,7 +4,7 @@ import { GX_SYSTEM_TEXTURE_X, GX_SYSTEM_TEXTURE_Y } from '../../../../toolchain/
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { api } from '../../../runtime/overlay_api';
 import { ARTWORK_COLORS } from '../../../theme/artwork_colors';
-import { SceneViewportCamera } from '../scene_editor/viewport/camera';
+import { WorkbenchViewportCamera } from '../../ui/viewport_camera';
 import { SceneViewportGeometry, type SceneViewportGeometryBounds } from '../scene_editor/viewport/geometry';
 import { measureViewportCanvas, pickViewportCanvas, projectViewportCanvas, type ViewportCanvasQuad } from '../scene_editor/viewport/canvas_geometry';
 import { ActorWorldAssets } from './world_assets';
@@ -17,9 +17,9 @@ import { drawCanvas } from '../scene_editor/viewport/canvas_render';
  * executes Lua, installs media, or changes the cartridge's camera. */
 export class ActorWorldView {
 	public mode: 'game' | '2d' | '3d' = 'game';
-	public navigation: 'select' | 'pan' | 'orbit' = 'select';
+	public navigationTool: 'select' | 'pan' | 'orbit' = 'select';
 	public navigationSpeed = 1;
-	public readonly camera = new SceneViewportCamera();
+	public readonly camera = new WorkbenchViewportCamera();
 	public readonly bounds = create_rect_bounds();
 	public readonly assets: ActorWorldAssets;
 	public readonly canvas = { items: [] as ViewportCanvasQuad<WorldActor>[], revision: 0, packetRevision: 0 };
@@ -51,7 +51,7 @@ export class ActorWorldView {
 	public setMode(mode: 'game' | '2d' | '3d'): void {
 		this.mode = mode;
 		if (mode !== 'game') this.camera.setMode(mode);
-		if (mode === '2d' && this.navigation === 'orbit') this.navigation = 'select';
+		if (mode === '2d' && this.navigationTool === 'orbit') this.navigationTool = 'select';
 	}
 	public refresh(bounds: Readonly<RectBounds>, domain: number, hashId: number): void {
 		if (this.mode === 'game') return;

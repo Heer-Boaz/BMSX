@@ -5,7 +5,7 @@ import type { WorkspaceImageAsset, WorkspaceImageAssets } from '../../../../work
 import type { SceneSourceObject } from '../model';
 import type { SceneSpriteSource, SceneRectangleSource, SceneTextSource, SceneCanvasSource, SceneVisualReadModel } from '../visual_projection';
 import type { SceneTransformPreview } from '../transform_proposal';
-import type { SceneViewportCamera } from './camera';
+import type { WorkbenchViewportCamera } from '../../../ui/viewport_camera';
 import { layoutSceneText } from './text_layout';
 
 export type SceneViewportQuad<Owner = SceneSourceObject> = ViewportCanvasQuad<Owner>;
@@ -156,7 +156,7 @@ export class SceneViewportCanvas<Owner = SceneSourceObject> {
 		this.outlines.length = count; this.projectedSelection = selected; this.selectionDirty = false;
 	}
 
-	public project(camera: SceneViewportCamera, bounds: Readonly<RectBounds>, allocation: number, selected?: Owner): boolean {
+	public project(camera: WorkbenchViewportCamera, bounds: Readonly<RectBounds>, allocation: number, selected?: Owner): boolean {
 		const geometry = this.projectedContent !== this.revision || this.projectedCamera !== camera.revision || this.projectedAllocation !== allocation;
 		const selection = this.selectionDirty || this.projectedSelection !== selected;
 		if (!geometry && !selection) return false;

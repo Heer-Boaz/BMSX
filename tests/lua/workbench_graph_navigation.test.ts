@@ -91,13 +91,9 @@ test('middle and Space-primary pan over cards and connection handles, preserving
 	}
 });
 
-test('secondary input cannot pan; middle capture ignores primary release and does not survive focus or geometry replacement', () => {
+test('middle capture ignores primary release and does not survive focus or geometry replacement', () => {
 	for (const interrupt of ['blur', 'model', 'modal', 'lost'] as const) {
 		const f = fixture();
-		f.pointer.pressedButtons = f.pointer.justPressedButtons = PointerButton.Secondary;
-		f.control.handlePointer(f.pointer, 0);
-		assert.equal(f.capture.dispatch(f.pointer, false, 1), false);
-		assert.equal(f.view.selection, f.node);
 		f.pointer.pressedButtons = f.pointer.justPressedButtons = PointerButton.Auxiliary;
 		f.control.handlePointer(f.pointer, 2);
 		f.pointer.viewportX += 10;
@@ -186,4 +182,24 @@ test('graph hover leaves when routing moves to another control, retaining select
 	assert.equal(f.control.hover, f.node, 'same coordinates re-hit after leave, not a stale hit-test cache');
 	f.control.clearInput(); f.hover.clear();
 	assert.equal(f.control.hover, null);
+});
+
+for (const gesture of ['click', 'drag', 'chord', 'retirement'] as const) test(`graph right ${gesture} shares navigation without moving selection prematurely`, t => {
+	const f = fixture(); f.control.dispose();
+	let menus = 0;
+	const control = new WorkbenchGraphControl(f.focus, f.capture, f.hover, undefined, null, () => menus++);
+	control.setInput(f.view); t.after(() => control.dispose()); f.view.selection = f.other;
+	const down = { ...f.pointer, justPressedButtons: PointerButton.Secondary, pressedButtons: PointerButton.Secondary };
+	assert.equal(control.handlePointer(down, 0), WorkbenchGraphPointerResult.Handled);
+	assert.equal(f.view.selection, f.other); assert.equal(menus, 0);
+	const move = { ...down, justPressedButtons: 0, viewportX: down.viewportX + (gesture === 'drag' ? 30 : 2) };
+	if (gesture === 'chord') move.pressedButtons |= PointerButton.Primary;
+	if (gesture === 'retirement') control.focusTarget.scope.retireContext();
+	f.capture.dispatch(move, false, 10);
+	f.capture.dispatch({ ...move, pressedButtons: 0, justReleasedButtons: PointerButton.Secondary }, false, 20);
+	assert.equal(menus, gesture === 'click' ? 1 : 0);
+	assert.equal(f.view.selection, gesture === 'click' ? f.node : f.other);
+	assert.equal(f.capture.active, false);
+	if (gesture === 'drag') assert.notEqual(f.view.scrollX, 0);
+	else if (gesture !== 'chord') assert.equal(f.view.scrollX, 0);
 });

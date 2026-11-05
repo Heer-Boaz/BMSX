@@ -85,8 +85,8 @@ for (const button of [PointerButton.Primary, PointerButton.Secondary]) test(`gra
 	other.setInput(sibling.view); other.focusTarget.focus();
 	t.after(() => { control.dispose(); other.dispose(); });
 	const unbind = other.focusTarget.onDidBlur(() => { unbind(); other.setInput(replacement.view); }); t.after(unbind);
-	assert.equal(control.handlePointer({ ...pointer(22, 22), pressedButtons: button, justPressedButtons: button }, 0),
-		button === PointerButton.Secondary ? Result.ContextMenu : Result.Selection);
+	assert.equal(control.handlePointer({ ...pointer(22, 22), pressedButtons: button === PointerButton.Secondary ? 0 : button, justPressedButtons: button, justReleasedButtons: button === PointerButton.Secondary ? button : 0 }, 0),
+		button === PointerButton.Secondary ? Result.Handled : Result.Selection);
 	assert.ok(focus.admittedTarget === control.focusTarget && current.view.selection === current.a);
 	assert.ok(current.view.model === current.model && replacement.view.selection === null);
 	assert.equal(capture.active, false);
@@ -836,7 +836,7 @@ test('wheel scrolling during a drag refreshes insertion feedback without replaci
 	f.control.dispose();
 });
 
-test('secondary gestures select the exact node, edge or empty canvas without pan, drag or activation', () => {
+test('secondary clicks select the exact node, edge or empty canvas on release without a source drag', () => {
 	const { view, a, edge } = fixture();
 	const focus = new InputFocusService();
 	const capture = new PointerCaptureService();
@@ -847,7 +847,11 @@ test('secondary gestures select the exact node, edge or empty canvas without pan
 		const event = pointer(x, y);
 		event.pressedButtons = PointerButton.Secondary;
 		event.justPressedButtons = PointerButton.Secondary;
-		assert.equal(control.handlePointer(event, 0), Result.ContextMenu);
+		const before = view.selection;
+		assert.equal(control.handlePointer(event, 0), Result.Handled);
+		assert.equal(view.selection, before);
+		assert.equal(capture.active, true);
+		capture.dispatch({ ...event, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: PointerButton.Secondary }, false, 20);
 		assert.equal(view.selection, target);
 		assert.equal(focus.target, control.focusTarget);
 		assert.equal(capture.active, false);

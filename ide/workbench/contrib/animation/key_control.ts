@@ -22,6 +22,7 @@ const KEY_NAVIGATION = ['ArrowLeft', 'ArrowRight', 'Home', 'End'] as const;
 export class AnimationKeyControl implements PointerCaptureTarget {
 	public readonly focusTarget: InputFocusTarget;
 	private input: AnimationEditorInput | undefined;
+	private inputGeneration = 0;
 	private gesture: KeyGesture | TangentGesture | PanGesture | undefined;
 	private unbindSource: (() => void) | undefined;
 	private readonly unbindKeyboard: () => void;
@@ -36,12 +37,15 @@ export class AnimationKeyControl implements PointerCaptureTarget {
 		this.unbindBlur = this.focusTarget.onDidBlur(() => this.cancelPointer());
 	}
 	public setInput(input: AnimationEditorInput): void {
-		this.clearInput(); this.input = input;
-		this.unbindSource = input.onDidInvalidateProjection(() => this.cancelPointer());
+		const generation = this.inputGeneration + 1;
+		this.clearInput(); if (this.inputGeneration !== generation) return;
+		this.input = input;
+		this.unbindSource = input.onDidInvalidateProjection(() => { this.inputGeneration++; this.cancelPointer(); });
 	}
 	public clearInput(): void {
+		this.inputGeneration++;
 		this.cancelPointer(); this.unbindSource?.(); this.unbindSource = undefined;
-		this.focusTarget.release(); this.input = undefined;
+		this.input = undefined; this.focusTarget.release();
 	}
 	public dispose(): void { this.clearInput(); this.unbindKeyboard(); this.unbindBlur(); }
 	public layout(left: number, top: number, right: number, bottom: number): void {
@@ -56,14 +60,17 @@ export class AnimationKeyControl implements PointerCaptureTarget {
 		const inCurve = curve.available && point_in_rect(snapshot.viewportX, snapshot.viewportY, curve.bounds);
 		if (input.keys.unit === undefined || !snapshot.valid || !snapshot.insideViewport
 			|| !inCurve && !point_in_rect(snapshot.viewportX, snapshot.viewportY, input.keys.range.bounds)) return false;
+		const generation = this.inputGeneration, context = this.focusTarget.scope.contextGeneration, revision = input.keys.revision;
+		if ((snapshot.justPressedButtons & (PointerButton.Primary | PointerButton.Auxiliary)) !== 0
+			&& (!this.focusTarget.focus() || this.inputGeneration !== generation || this.focusTarget.scope.contextGeneration !== context
+				|| input.keys.revision !== revision || inputFocus.admittedTarget !== this.focusTarget)) return true;
 		if ((snapshot.justPressedButtons & PointerButton.Auxiliary) !== 0) {
-			this.focusTarget.focus(); pointerCapture.capture(this, PointerButton.Auxiliary);
+			pointerCapture.capture(this, PointerButton.Auxiliary);
 			this.gesture = { kind: 'pan', originX: snapshot.viewportX, minimum: input.keys.range.minimum, maximum: input.keys.range.maximum };
 			return true;
 		}
 		const secondary = (snapshot.justPressedButtons & PointerButton.Secondary) !== 0;
 		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0 || secondary) {
-			if (!secondary) this.focusTarget.focus();
 			if (input.keys.track === undefined) {
 				input.keys.setCursor(input.keys.valueAt(snapshot.viewportX)); return true;
 			}
@@ -72,6 +79,7 @@ export class AnimationKeyControl implements PointerCaptureTarget {
 			const handle = inCurve && hitKey < 0 ? curve.handleAt(snapshot.viewportX, snapshot.viewportY) : undefined;
 			const index = handle === undefined ? hitKey : input.keys.selected;
 			this.controller.selectKey(input, index);
+			if (this.inputGeneration !== generation || this.focusTarget.scope.contextGeneration !== context) return true;
 			if (index < 0) input.keys.setCursor(input.keys.valueAt(snapshot.viewportX));
 			else if (!secondary) {
 				const key = input.keys.track.keys[index];

@@ -18,7 +18,7 @@ import {
 import { refreshScenarioLabProjection } from '../../ide/workbench/contrib/scenario_lab/projection';
 import { drawScenarioLab } from '../../ide/workbench/contrib/scenario_lab/render';
 import { prepareScenarioLabLayout, measureScenarioLabMinimumWidth } from '../../ide/workbench/contrib/scenario_lab/layout';
-import { handleScenarioLabPointerInput, ScenarioLabPointerResult } from '../../ide/workbench/contrib/scenario_lab/pointer';
+import { ScenarioLabPointer, ScenarioLabPointerResult } from '../../ide/workbench/contrib/scenario_lab/pointer';
 import { WORKBENCH_ICON_SIZE } from '../../ide/workbench/ui/icon';
 import { ScenarioLabRowFeedback } from '../../ide/workbench/contrib/scenario_lab/feedback';
 import { scenarioModuleCaptions, scenarioTestIdentity } from '../../ide/workbench/contrib/scenario_lab/labels';
@@ -619,7 +619,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scenario tree paint, inden
 		const painted = rectangles.find(({ area }) => area.left >= iconLeft && area.right <= iconLeft + WORKBENCH_ICON_SIZE
 			&& area.top >= iconTop && area.bottom <= iconTop + WORKBENCH_ICON_SIZE)!;
 		assert.ok(painted, 'the expandable row did not paint its shared icon');
-		assert.equal(handleScenarioLabPointerInput(view, { valid: true, insideViewport: true,
+		assert.equal(new ScenarioLabPointer().handle(view, { valid: true, insideViewport: true,
 			viewportX: painted.area.left, viewportY: painted.area.top,
 			pressedButtons: 1, justPressedButtons: 1, justReleasedButtons: 0 }, true, 1000 + rowIndex), ScenarioLabPointerResult.Handled);
 		assert.equal(pane.rows[rowIndex].expanded, false, 'a press on a painted chevron pixel did not collapse its branch');

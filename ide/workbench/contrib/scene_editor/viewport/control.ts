@@ -1,11 +1,9 @@
 import { point_in_rect, type RectBounds } from '../../../../../machine/ts/common/rect';
-import { clamp } from '../../../../../machine/ts/common/clamp';
 import { PointerButton } from '../../../../../hosts/common/input/pointer_event';
 import { KeyModifier, type KeyInputEvent } from '../../../../../hosts/common/input/text';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../../common/models';
 import type { EditorCommandId, EditorCommandRunner } from '../../../../common/commands';
 import type { DisposableStore } from '../../../../common/lifecycle';
-import { POINTER_DRAG_ACTIVATION_THRESHOLD } from '../../../../common/constants';
 import { editorRuntimeState } from '../../../../editor/common/runtime_state';
 import { editorViewState } from '../../../../editor/ui/view/state';
 import type { SceneAddMemberRequest, SceneAddMemberChoice, SceneTranslationRequest } from '../authoring_context';
@@ -14,14 +12,14 @@ import { inputFocus, InputFocusScope, type InputFocusTarget } from '../../../../
 import { consumeIdeKey, isKeyJustPressed } from '../../../../input/keyboard/key_input';
 import { pointerCapture, type PointerCaptureTarget } from '../../../../input/pointer/capture';
 import { pointerHover } from '../../../../input/pointer/hover';
-import { ViewportFlightInput } from '../../../../input/viewport_flight';
+import { WorkbenchViewportNavigation } from '../../../ui/viewport_navigation';
 import type { WorkbenchMenuDefinition, WorkbenchMenuPresentation } from '../../../ui/menu/model';
 import type { ContextMenuController } from '../../../services/context_menu/controller';
 import type { ContextMenuPlacement } from '../../../services/context_menu/model';
 import type { WorkbenchTooltipTarget } from '../../../ui/tooltip';
 import { drawSceneViewport } from './render';
 import { type SceneViewportViewState, type SceneViewportPlacement } from './view_state';
-import type { SceneViewportPoint } from './camera';
+import type { ViewportCameraPoint } from '../../../ui/viewport_camera';
 import { WorkbenchActionBarControl } from '../../../ui/action_bar_control';
 
 export const VIEWPORT_CONTEXT_ACTIONS: WorkbenchMenuDefinition<SceneViewportViewState> = [
@@ -36,10 +34,7 @@ type CameraAction = {
 	run(view: SceneViewportViewState): void;
 };
 type ViewportGestureBase = { readonly view: SceneViewportViewState; readonly attachment: number; readonly generation: number; readonly allocation: number };
-type CameraGesture = ViewportGestureBase & { readonly kind: 'pan' | 'orbit' | 'look' | 'dolly'; readonly source: object | undefined;
-	readonly version: number; readonly mode: '2d' | '3d'; contextMenu: boolean; x: number; y: number };
-type TranslationGesture = ViewportGestureBase & { readonly kind: 'translate'; phase: 'drag' | 'commit'; readonly request: SceneTranslationRequest; readonly assets: number; readonly camera: number };
-type ViewportGesture = CameraGesture | TranslationGesture;
+type TranslationGesture = ViewportGestureBase & { phase: 'drag' | 'commit'; readonly request: SceneTranslationRequest; readonly assets: number; readonly camera: number };
 type MemberPlacement = SceneViewportPlacement & { readonly view: SceneViewportViewState; readonly attachment: number; readonly generation: number;
 	readonly request: SceneAddMemberRequest; readonly choice: SceneAddMemberChoice; readonly didPlace: () => void;
 	readonly originX: 0; readonly originY: 0; readonly originZ: 0;
@@ -51,8 +46,8 @@ export class SceneViewportControl implements PointerCaptureTarget {
 	private viewValue: SceneViewportViewState | undefined;
 	private attachment = 0;
 	private disposed = false;
-	private gesture: ViewportGesture | undefined;
-	private readonly flight = new ViewportFlightInput();
+	private gesture: TranslationGesture | undefined;
+	private readonly cameraNavigation: WorkbenchViewportNavigation;
 	private placement: MemberPlacement | undefined;
 	private subscriptions: (() => void)[] = [];
 	private readonly unbindKeyboard: () => void;
@@ -63,18 +58,18 @@ export class SceneViewportControl implements PointerCaptureTarget {
 	public get view(): SceneViewportViewState { return this.viewValue!; }
 	public get canFocus(): boolean { const bounds = this.viewValue?.bounds; return bounds !== undefined && bounds.left < bounds.right && bounds.top < bounds.bottom; }
 	public get tooltipItem(): WorkbenchTooltipTarget | undefined {
-		return this.gesture === undefined && this.placement === undefined && this.popup === undefined ? this.navigation.tooltipItem : undefined;
+		return this.gesture === undefined && !this.cameraNavigation.active && this.placement === undefined && this.popup === undefined ? this.navigation.tooltipItem : undefined;
 	}
 	public constructor(private readonly commands: EditorCommandRunner, private readonly contextMenu: ContextMenuController,
 		scope: InputFocusScope, private readonly commandTarget: InputFocusTarget, private readonly contextActions: WorkbenchMenuPresentation) {
 		this.focusTarget = inputFocus.createTarget(commandTarget, new InputFocusScope(scope.surfaceScope, scope));
 		this.focusTarget.commandContext = commandTarget.commandContext; this.focusTarget.canFocus = () => this.canFocus;
-		this.unbindKeyboard = this.focusTarget.bindKeyboard(event => this.handleKeyboard(event), () => {
-			if (this.gesture?.kind === 'look') this.revokeGesture(this.gesture);
-		});
+		this.cameraNavigation = new WorkbenchViewportNavigation(inputFocus, pointerCapture, this.focusTarget,
+			() => this.viewValue?.refresh(), (x, y) => this.openMenu(this.contextActions, x, y));
+		this.unbindKeyboard = this.focusTarget.bindKeyboard(event => this.handleKeyboard(event));
 		this.unbindBlur = this.focusTarget.onDidBlur(next => {
 			if (next === null || !scope.contains(next.scope)) {
-				const placement = this.placement; this.revokeGesture(this.gesture); this.retirePlacement(placement);
+				const placement = this.placement; this.cameraNavigation.cancel(); this.revokeGesture(this.gesture); this.retirePlacement(placement);
 			}
 		});
 		this.focusTarget.registerCommand('contextMenu', {
@@ -114,7 +109,7 @@ export class SceneViewportControl implements PointerCaptureTarget {
 					&& this.focusTarget.scope.contextGeneration === generation && view.authoring.selectionRevision === selection;
 				return { isEnabled: () => current() && this.canFocus && action.isEnabled(view), run: () => {
 					if (!current()) return;
-					this.revokeGesture(this.gesture); view.refresh();
+					this.cameraNavigation.cancel(); this.revokeGesture(this.gesture); view.refresh();
 					if (!current() || !action.isEnabled(view)) return;
 					action.run(view);
 					if (current()) view.refresh();
@@ -138,35 +133,36 @@ export class SceneViewportControl implements PointerCaptureTarget {
 		this.viewValue = view;
 		this.navigation.setInput(view.navigationActions, this.focusTarget);
 		const retireGesture = () => { if (this.attachment === revision) {
-			const placement = this.placement; this.revokeGesture(this.gesture); this.retirePlacement(placement);
+			const placement = this.placement; this.cameraNavigation.cancel(); this.revokeGesture(this.gesture); this.retirePlacement(placement);
 		} };
 		this.subscriptions = [view.authoring.workingCopy.onWillDispose(() => { if (this.attachment === revision) this.clearView(); }),
-			view.authoring.onDidChangeSpatialGeneration(retireGesture), view.authoring.onDidChangeSelection(retireGesture),
+			view.authoring.workingCopy.onDidChangeContent(retireGesture), view.authoring.onDidChangeSpatialGeneration(retireGesture), view.authoring.onDidChangeSelection(retireGesture),
 			view.authoring.workingCopy.onDidChangeReadOnly(retireGesture), this.focusTarget.scope.onDidRetireContext(retireGesture),
 			view.camera.onDidChange(() => {
 				if (this.attachment !== revision) return;
 				const placement = this.placement;
-				if (this.gesture !== undefined && (this.gesture.kind === 'translate' || this.gesture.mode !== view.camera.mode)) this.revokeGesture(this.gesture);
+				if (this.gesture !== undefined) this.revokeGesture(this.gesture);
 				if (placement !== undefined) {
 					if (view.camera.mode !== placement.choice.family) this.retirePlacement(placement);
 					else if (placement.pointed) this.locatePlacement(placement);
 				}
 			})];
 		this.layout(bounds);
+		if (this.viewValue === view && this.attachment === revision) this.cameraNavigation.setInput(view, view.bounds);
 	}
 	public clearView(): void { this.attachment++; this.detach(); }
 	private detach(): void {
 		const previous = this.viewValue; if (previous === undefined) return;
 		const revision = this.attachment, gesture = this.gesture;
 		this.viewValue = undefined; this.gesture = undefined; this.retirePlacement(this.placement); previous.transformPreview = undefined; previous.gizmo.cancel();
-		this.flight.clear();
+		this.cameraNavigation.clearInput();
 		const subscriptions = this.subscriptions; this.subscriptions = [];
 		for (const release of subscriptions) release();
 		if (this.popup !== undefined) this.contextMenu.hide(false);
 		this.navigation.clearInput();
 		pointerHover.release(this);
 		pointerCapture.cancelTarget(this);
-		if (gesture?.kind === 'translate') gesture.request.cancel();
+		gesture?.request.cancel();
 		if (revision !== this.attachment) return;
 		this.focusTarget.scope.retireContext();
 		if (revision === this.attachment) this.focusTarget.release();
@@ -176,18 +172,18 @@ export class SceneViewportControl implements PointerCaptureTarget {
 		const allocation = view.allocationRevision, gesture = this.gesture, placement = this.placement, attachment = this.attachment;
 		view.layout(bounds, editorViewState.font.lineHeight);
 		if (allocation !== view.allocationRevision) {
-			this.revokeGesture(gesture);
+			this.cameraNavigation.cancel(); this.revokeGesture(gesture);
 			this.retirePlacement(placement);
 			if (this.popup !== undefined) this.contextMenu.hide();
 		}
-		if (this.viewValue === view && this.attachment === attachment) view.refresh();
+		if (this.viewValue === view && this.attachment === attachment) { this.cameraNavigation.layout(view.bounds); view.refresh(); }
 		this.prepareControls();
 	}
 	public update(): void {
 		const view = this.viewValue; if (view === undefined) return;
 		const gesture = this.gesture;
-		if (gesture?.kind === 'translate' && gesture.phase === 'drag' && !this.translationCurrent(gesture)) this.revokeGesture(gesture);
-		this.advanceNavigation(editorRuntimeState.currentTimeMs);
+		if (gesture?.phase === 'drag' && !this.translationCurrent(gesture)) this.revokeGesture(gesture);
+		this.cameraNavigation.advance(editorRuntimeState.currentTimeMs);
 		const placement = this.placement;
 		if (placement !== undefined && !placement.request.isCurrent()) this.retirePlacement(placement);
 		if (this.viewValue === view) view.refresh();
@@ -203,7 +199,7 @@ export class SceneViewportControl implements PointerCaptureTarget {
 	public beginAddMember(request: SceneAddMemberRequest, choice: SceneAddMemberChoice, didPlace: () => void): boolean {
 		const view = this.viewValue, attachment = this.attachment, generation = this.focusTarget.scope.contextGeneration, gesture = this.gesture;
 		if (view === undefined || !this.canFocus || view.camera.mode !== choice.family || !request.isCurrent()) return false;
-		this.revokeGesture(gesture);
+		this.cameraNavigation.cancel(); this.revokeGesture(gesture);
 		if (!this.focus() || !request.isCurrent() || this.viewValue !== view || this.attachment !== attachment
 			|| this.focusTarget.scope.contextGeneration !== generation) return false;
 		const content = request.getPreview(choice);
@@ -296,37 +292,17 @@ export class SceneViewportControl implements PointerCaptureTarget {
 		if (this.view.gizmo.active === TranslateHandle.None) this.view.gizmo.hover = this.view.navigationTool === 'select'
 			? this.view.gizmo.hit(snapshot.viewportX, snapshot.viewportY) : TranslateHandle.None;
 		if (snapshot.justPressedButtons === 0 && !justPressed) return true;
+		if (this.cameraNavigation.handlePointer(snapshot, editorRuntimeState.currentTimeMs)) return true;
 		const view = this.view, attachment = this.attachment, generation = this.focusTarget.scope.contextGeneration;
 		const source = view.source, version = view.authoring.workingCopy.version, intent = view.authoring.selectionRevision, projection = view.projectionRevision;
-		const auxiliary = (snapshot.justPressedButtons & PointerButton.Auxiliary) !== 0;
-		const orbit = view.camera.mode === '3d' && primary && ((snapshot.modifiers & KeyModifier.alt) !== 0 || view.navigationTool === 'orbit');
-		const pan = auxiliary || primary && view.navigationTool === 'pan';
-		const handle = !secondary && !orbit && !pan && primary && (snapshot.modifiers & KeyModifier.alt) === 0
-			? view.gizmo.hit(snapshot.viewportX, snapshot.viewportY) : TranslateHandle.None;
-		const entry = !secondary && !orbit && !pan && handle === TranslateHandle.None && primary ? view.pick(snapshot.viewportX, snapshot.viewportY) : undefined;
+		const handle = primary ? view.gizmo.hit(snapshot.viewportX, snapshot.viewportY) : TranslateHandle.None;
+		const entry = handle === TranslateHandle.None && primary ? view.pick(snapshot.viewportX, snapshot.viewportY) : undefined;
 		if (!this.focus() || this.viewValue !== view || this.attachment !== attachment || this.focusTarget.scope.contextGeneration !== generation) return true;
 		view.refresh();
 		if (this.viewValue !== view || this.attachment !== attachment || this.focusTarget.scope.contextGeneration !== generation
 			|| view.source !== source || view.authoring.workingCopy.version !== version || view.authoring.selectionRevision !== intent
 			|| view.projectionRevision !== projection
 			|| inputFocus.admittedTarget !== this.focusTarget) return true;
-		if (secondary || pan || orbit) {
-			const alt = (snapshot.modifiers & KeyModifier.alt) !== 0;
-			const button = auxiliary ? PointerButton.Auxiliary : secondary ? PointerButton.Secondary : PointerButton.Primary;
-			let kind: CameraGesture['kind'];
-			if (auxiliary) kind = 'pan';
-			else if (secondary) kind = alt ? 'dolly' : view.camera.mode === '3d' ? 'look' : 'pan';
-			else kind = orbit ? 'orbit' : 'pan';
-			this.gesture = { kind, view, attachment, generation, allocation: view.allocationRevision, source: view.authoring.spatialGeneration,
-				version, mode: view.camera.mode,
-				contextMenu: secondary && !alt && ((snapshot.pressedButtons | snapshot.justPressedButtons) & (PointerButton.Primary | PointerButton.Auxiliary)) === 0,
-				x: snapshot.viewportX, y: snapshot.viewportY };
-			view.gizmo.hover = TranslateHandle.None;
-			this.flight.begin(editorRuntimeState.currentTimeMs);
-			pointerCapture.capture(this, button, this.focusTarget.scope.surfaceScope);
-			if ((snapshot.justReleasedButtons & button) !== 0) this.releaseCapturedPointer(snapshot, editorRuntimeState.currentTimeMs);
-			return true;
-		}
 		if (handle !== TranslateHandle.None) {
 			const request = view.authoring.captureTranslation();
 			if (request === undefined) return true;
@@ -335,7 +311,7 @@ export class SceneViewportControl implements PointerCaptureTarget {
 				|| this.viewValue !== view || this.attachment !== attachment || inputFocus.admittedTarget !== this.focusTarget) { request.cancel(); return true; }
 			view.camera.retainReading();
 			if (!view.gizmo.begin(handle, snapshot.viewportX, snapshot.viewportY, view.camera, view.bounds)) { request.cancel(); return true; }
-			const gesture: TranslationGesture = { kind: 'translate', phase: 'drag', view, attachment, generation, allocation: view.allocationRevision,
+			const gesture: TranslationGesture = { phase: 'drag', view, attachment, generation, allocation: view.allocationRevision,
 				request, assets: view.assetGeneration, camera: view.camera.revision };
 			this.gesture = gesture; view.transformPreview = request.preview;
 			pointerCapture.capture(this, PointerButton.Primary, this.focusTarget.scope.surfaceScope);
@@ -359,16 +335,8 @@ export class SceneViewportControl implements PointerCaptureTarget {
 	public handleWheel(event: WheelInputSnapshot): boolean {
 		if (!this.canFocus || !event.valid || !point_in_rect(event.viewportX, event.viewportY, this.view.bounds)) return false;
 		const view = this.view, attachment = this.attachment, generation = this.focusTarget.scope.contextGeneration;
-		const gesture = this.gesture;
-		if (gesture?.kind === 'look') {
-			const moved = this.advanceNavigation(editorRuntimeState.currentTimeMs);
-			if (this.gesture !== gesture) return true;
-			gesture.contextMenu = false;
-			view.navigationSpeed = clamp(view.navigationSpeed * 2 ** (-event.deltaY / 4), 1 / 64, 64);
-			if (moved) view.refresh();
-			return true;
-		}
-		this.revokeGesture(this.gesture); view.refresh();
+		if (this.cameraNavigation.flying) return this.cameraNavigation.handleWheel(event, editorRuntimeState.currentTimeMs);
+		this.cameraNavigation.cancel(); this.revokeGesture(this.gesture); view.refresh();
 		if (this.viewValue !== view || this.attachment !== attachment || this.focusTarget.scope.contextGeneration !== generation) return true;
 		const x = event.viewportX - (view.bounds.left + view.bounds.right) / 2, y = event.viewportY - (view.bounds.top + view.bounds.bottom) / 2;
 		const placement = this.placement;
@@ -376,16 +344,13 @@ export class SceneViewportControl implements PointerCaptureTarget {
 			placement.pointerX = event.viewportX; placement.pointerY = event.viewportY; placement.pointed = true;
 			this.locatePlacement(placement);
 		}
-		let anchor: Readonly<SceneViewportPoint> | undefined;
+		let anchor: Readonly<ViewportCameraPoint> | undefined;
 		if (view.camera.mode === '3d') anchor = placement?.located ? placement : view.geometry.pick(x, y, view.camera);
-		view.camera.zoom(-event.deltaY / 4, x, y, anchor);
-		if (this.viewValue === view && this.attachment === attachment && this.focusTarget.scope.contextGeneration === generation) view.refresh(); return true;
+		return this.cameraNavigation.handleWheel(event, editorRuntimeState.currentTimeMs, anchor);
 	}
-	private gestureCurrent(gesture: ViewportGesture): boolean {
+	private gestureCurrent(gesture: TranslationGesture): boolean {
 		return this.gesture === gesture && this.viewValue === gesture.view && this.attachment === gesture.attachment
-			&& this.focusTarget.scope.contextGeneration === gesture.generation && gesture.view.allocationRevision === gesture.allocation
-			&& (gesture.kind === 'translate' || gesture.mode === gesture.view.camera.mode && gesture.version === gesture.view.authoring.workingCopy.version
-				&& gesture.source === gesture.view.authoring.spatialGeneration);
+			&& this.focusTarget.scope.contextGeneration === gesture.generation && gesture.view.allocationRevision === gesture.allocation;
 	}
 	private translationCurrent(gesture: TranslationGesture): boolean {
 		return this.gestureCurrent(gesture) && gesture.view.transformPreview === gesture.request.preview
@@ -393,63 +358,24 @@ export class SceneViewportControl implements PointerCaptureTarget {
 			&& this.gestureCurrent(gesture) && gesture.assets === gesture.view.assetGeneration && gesture.camera === gesture.view.camera.revision;
 	}
 	/** A stale callback can revoke its own gesture, never a newer capture on the same control. */
-	private revokeGesture(gesture: ViewportGesture | undefined): void {
+	private revokeGesture(gesture: TranslationGesture | undefined): void {
 		if (gesture === undefined || this.gesture !== gesture) return;
 		pointerCapture.cancelTarget(this);
 		if (this.gesture === gesture) this.cancelPointer();
 	}
-	/** One host-time integration before the view's ordinary projection; never guest cycles. */
-	private advanceNavigation(now: number): boolean {
-		const gesture = this.gesture;
-		if (gesture?.kind !== 'look') return false;
-		if (!this.gestureCurrent(gesture)) { this.revokeGesture(gesture); return false; }
-		const view = gesture.view, flight = this.flight;
-		if (!flight.advance(now, 240 * view.navigationSpeed / view.camera.scale)) return false;
-		gesture.contextMenu = false;
-		return view.camera.fly(flight.right, flight.up, flight.forward, flight.localUp);
-	}
-	public handleCapturedPointer(snapshot: PointerInputSnapshot, now: number): void {
-		const gesture = this.gesture; if (gesture === undefined || gesture.kind === 'translate' && gesture.phase === 'commit') return;
+	public handleCapturedPointer(snapshot: PointerInputSnapshot, _now: number): void {
+		const gesture = this.gesture; if (gesture === undefined || gesture.phase === 'commit') return;
 		const view = gesture.view;
-		if (gesture.kind === 'translate') {
-			if (!this.translationCurrent(gesture)) { this.revokeGesture(gesture); return; }
-			if (view.gizmo.move(snapshot.viewportX, snapshot.viewportY, view.camera)) {
-				const delta = view.gizmo.delta; gesture.request.translate(delta[0], delta[1], delta[2]);
-			}
-			if (this.translationCurrent(gesture)) view.refresh(); else this.revokeGesture(gesture); return;
+		if (!this.translationCurrent(gesture)) { this.revokeGesture(gesture); return; }
+		if (view.gizmo.move(snapshot.viewportX, snapshot.viewportY, view.camera)) {
+			const delta = view.gizmo.delta; gesture.request.translate(delta[0], delta[1], delta[2]);
 		}
-		view.refresh();
-		if (!this.gestureCurrent(gesture)) { this.revokeGesture(gesture); return; }
-		const flew = this.advanceNavigation(now);
-		if (!this.gestureCurrent(gesture)) return;
-		const x = snapshot.viewportX - gesture.x, y = snapshot.viewportY - gesture.y;
-		const both = (snapshot.pressedButtons & (PointerButton.Primary | PointerButton.Secondary)) === (PointerButton.Primary | PointerButton.Secondary);
-		if (both) gesture.contextMenu = false;
-		if (gesture.contextMenu) {
-			if (Math.max(Math.abs(x), Math.abs(y)) < POINTER_DRAG_ACTIVATION_THRESHOLD) return;
-			gesture.contextMenu = false;
-		}
-		gesture.x = snapshot.viewportX; gesture.y = snapshot.viewportY;
-		if (x === 0 && y === 0 && !flew) return;
-		if (x !== 0 || y !== 0) {
-			if (both) { if (view.camera.mode === '3d') view.camera.pan(x, y); else view.camera.zoom(-y * 0.01, 0, 0); }
-			else if (gesture.kind === 'pan') view.camera.pan(x, y);
-			else if (gesture.kind === 'orbit') view.camera.orbit(x, y);
-			else if (gesture.kind === 'look') view.camera.look(x, y);
-			else view.camera.zoom(-y * 0.01, 0, 0);
-		}
-		if (this.gestureCurrent(gesture)) view.refresh();
+		if (this.translationCurrent(gesture)) view.refresh(); else this.revokeGesture(gesture);
 	}
 	public releaseCapturedPointer(snapshot: PointerInputSnapshot, now: number): void {
 		const gesture = this.gesture; if (gesture === undefined) return;
 		this.handleCapturedPointer(snapshot, now);
 		if (this.gesture !== gesture) return;
-		if (gesture.kind !== 'translate') {
-			this.cancelPointer();
-			if (gesture.contextMenu && point_in_rect(snapshot.viewportX, snapshot.viewportY, gesture.view.bounds))
-				this.openMenu(this.contextActions, snapshot.viewportX, snapshot.viewportY);
-			return;
-		}
 		if (!this.translationCurrent(gesture)) { this.revokeGesture(gesture); return; }
 		// Source admission keeps the same revocable request; physical capture has ended.
 		gesture.phase = 'commit'; gesture.view.transformPreview = undefined; gesture.view.gizmo.cancel(); pointerCapture.release(this);
@@ -459,13 +385,14 @@ export class SceneViewportControl implements PointerCaptureTarget {
 	}
 	public cancelPointer(): void {
 		const gesture = this.gesture, view = this.viewValue, attachment = this.attachment, previewed = view?.transformPreview !== undefined;
-		this.gesture = undefined; this.flight.clear();
+		this.gesture = undefined;
 		if (view !== undefined) { view.transformPreview = undefined; view.gizmo.cancel(); }
 		pointerCapture.release(this);
-		if (gesture?.kind === 'translate') gesture.request.cancel();
+		gesture?.request.cancel();
 		if (previewed && this.viewValue === view && this.attachment === attachment && this.gesture === undefined) view!.refresh();
 	}
 	private handleKeyboard(event: KeyInputEvent): void {
+		this.cameraNavigation.handleKeyboard(event, editorRuntimeState.currentTimeMs);
 		if (event.consumed) return;
 		if (isKeyJustPressed('Escape', event)) {
 			consumeIdeKey('Escape', event);
@@ -473,26 +400,9 @@ export class SceneViewportControl implements PointerCaptureTarget {
 			else if (this.gesture !== undefined) this.revokeGesture(this.gesture);
 			else inputFocus.executeCommand('sceneEditor.outline', this.focusTarget); return;
 		}
-		const gesture = this.gesture;
-		if (gesture?.kind === 'look') {
-			const moved = this.advanceNavigation(editorRuntimeState.currentTimeMs);
-			if (moved && this.gesture === gesture) gesture.view.refresh();
-			if (this.gesture !== gesture) { consumeIdeKey(event.code, event); return; }
-			if (this.flight.key(event.code, event.down)) {
-				gesture.contextMenu = false;
-				consumeIdeKey(event.code, event); return;
-			}
-		}
-		if ((event.modifiers & (KeyModifier.ctrl | KeyModifier.meta | KeyModifier.alt)) !== 0) return;
-		if (isKeyJustPressed('KeyF', event)) {
-			consumeIdeKey('KeyF', event);
-			inputFocus.executeCommand((event.modifiers & KeyModifier.shift) !== 0 ? 'sceneViewport.frameAll' : 'sceneViewport.frameSelection', this.focusTarget);
-		} else if (event.modifiers === KeyModifier.none && (isKeyJustPressed('Digit2', event) || isKeyJustPressed('Digit3', event))) {
-			consumeIdeKey(event.code, event); inputFocus.executeCommand(event.code === 'Digit2' ? 'sceneViewport.view2d' : 'sceneViewport.view3d', this.focusTarget);
-		}
 	}
 	public dispose(): void {
-		this.disposed = true; this.clearView(); this.navigation.dispose(); this.unbindKeyboard(); this.unbindBlur();
+		this.disposed = true; this.clearView(); this.cameraNavigation.dispose(); this.navigation.dispose(); this.unbindKeyboard(); this.unbindBlur();
 		this.focusTarget.unregisterCommand('contextMenu');
 		for (const command of this.cameraCommands) {
 			this.commandTarget.unregisterCommand(command); this.focusTarget.unregisterCommand(command);

@@ -1,6 +1,6 @@
 import type { PointerHoverService, PointerHoverTarget } from '../../input/pointer/hover';
 import { PointerButton } from '../../../hosts/common/input/pointer_event';
-import { DOUBLE_CLICK_MAX_INTERVAL_MS } from '../../common/constants';
+import { PointerClickSequence } from '../../input/pointer/click_sequence';
 import type { PointerSnapshot } from '../../common/models';
 import type { InputFocusService, InputFocusTarget } from '../../input/focus';
 import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../machine/ts/common/rect';
@@ -114,10 +114,9 @@ export class WorkbenchPropertyTreePointer implements PointerHoverTarget {
 		this.hover.release(this); this.cancel(); this.retireFeedback();
 		this.pointerX = -1; this.pointerY = -1;
 	}
-	private lastClickNode: WorkbenchTreeNode<WorkbenchPropertyElement> | null = null;
-	private lastClickTime = 0;
+	private readonly clicks = new PointerClickSequence<WorkbenchTreeNode<WorkbenchPropertyElement>>();
 
-	public cancel(): void { this.lastClickNode = null; }
+	public cancel(): void { this.clicks.clear(); }
 
 	public handle(snapshot: PointerSnapshot, justPressed: boolean, now: number): WorkbenchPropertyPointerResult {
 		const state = this.input;
@@ -161,14 +160,12 @@ export class WorkbenchPropertyTreePointer implements PointerHoverTarget {
 		}
 		const node = state.rows[index];
 		state.selectionIndex = index;
-		const twice = this.lastClickNode === node && now - this.lastClickTime <= DOUBLE_CLICK_MAX_INTERVAL_MS;
+		const twice = this.clicks.click(node, snapshot.viewportX, snapshot.viewportY, now);
 		if (twistie || twice && node.element.kind === 'group') {
 			setWorkbenchTreeCollapsed(state, index, !node.collapsed);
 			this.cancel();
 			return WorkbenchPropertyPointerResult.Collapse;
 		}
-		this.lastClickNode = twice ? null : node;
-		this.lastClickTime = now;
 		return twice ? WorkbenchPropertyPointerResult.Activate : WorkbenchPropertyPointerResult.Selection;
 	}
 }

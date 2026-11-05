@@ -159,6 +159,13 @@ test('overview key picking does not clear the active occurrence before resolving
 	control.handlePointer({ ...pointer, viewportX: input.keys.xAt(25), viewportY: 50 });
 	assert.equal(input.trackIndex, 1); assert.equal(input.keys.selected, 0);
 	assert.equal(model.buffer.getText(), source); assert.equal(model.undo(), null);
+	const departing = inputFocus.createTarget(); departing.bindKeyboard(() => {}); departing.focus();
+	const previousTrack = input.trackIndex;
+	const unbindFocus = departing.onDidBlur(() => { unbindFocus(); control.clearInput(); }); t.after(unbindFocus);
+	control.handlePointer(pointer);
+	assert.equal(input.trackIndex, previousTrack, 'a retired lane cannot change selection after focus admission');
+	assert.equal(pointerCapture.active, false);
+
 });
 
 test('clip trim edits the written parent once, preserves child time and imported ownership at O0/O3', () => {

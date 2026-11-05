@@ -1,11 +1,11 @@
-import { SceneViewportCamera } from '../../ide/workbench/contrib/scene_editor/viewport/camera';
+import { WorkbenchViewportCamera } from '../../ide/workbench/ui/viewport_camera';
 import { HostBitmap } from '../../machine/ts/render/host_overlay/bitmap';
 import { HostMesh, HostMeshScene, type HostMeshInstance } from '../../machine/ts/render/host_overlay/mesh';
 
 /** Independently positioned canvas batches share a plane, not necessarily the
  * same rounded depth equation. Compare their ordered composition while orbiting. */
 export function createHostLayeredMeshFixture() {
-	const camera = new SceneViewportCamera(); camera.setMode('3d'); camera.setViewport(96, 96);
+	const camera = new WorkbenchViewportCamera(); camera.setMode('3d'); camera.setViewport(96, 96);
 	camera.frame3D(0, 0, 0, 320, 240, 0);
 	const bitmap = new HostBitmap({ width: 4, height: 2, pixels: new Uint8Array([
 		255, 0, 0, 255, 0, 0, 0, 0, 0, 255, 255, 255, 255, 0, 0, 255,

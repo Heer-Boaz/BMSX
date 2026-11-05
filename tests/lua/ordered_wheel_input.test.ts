@@ -3,12 +3,13 @@ import test from 'node:test';
 import { Input } from '../../hosts/common/input/manager';
 import { RemoteInput } from '../../hosts/common/input/remote';
 import { KeyModifier } from '../../hosts/common/input/text';
-import type { WheelInputEvent } from '../../hosts/common/input/pointer_event';
+import { PointerButton, type WheelInputEvent } from '../../hosts/common/input/pointer_event';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import { createInputControllerSnapshot, InputControllerSampleContext } from '../../machine/ts/machine/devices/input/contracts';
 import type { WheelInputSnapshot } from '../../ide/common/models';
 import { handleEditorWheelInput } from '../../ide/input/pointer/wheel';
+import { pointerCapture } from '../../ide/input/pointer/capture';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { inputFocus } from '../../ide/input/focus';
 import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
@@ -19,6 +20,30 @@ import { createTestEditorGroup, createTestGroupPresentation } from '../helpers/e
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
 import { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 import { FrameBitmap } from '../../hosts/common/frame_bitmap';
+
+test('modal capture owns wheel until release, while ordinary pointer drags preserve hover routing', t => {
+	const surfaces = new WorkbenchSurfaceService(), calls: string[] = [];
+	const extent = { left: 0, top: 0, right: 400, bottom: 300 };
+	surfaces.attach({ role: 'window', captureScope: Symbol('hovered-wheel'), isVisible: () => true,
+		getBounds: () => extent, getClip: () => extent, draw() {},
+		handleWheel: () => { calls.push('hover'); return true; } });
+	t.after(() => { pointerCapture.cancel(); surfaces.dispose(); });
+	const ordinary = { handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() {} };
+	const modal = { ...ordinary, handleCapturedWheel() { calls.push('capture'); return true; } };
+	const wheel: WheelInputSnapshot = { viewportX: 150, viewportY: 70, valid: true, insideViewport: true,
+		deltaX: 0, deltaY: 1, modifiers: KeyModifier.none };
+	const native = { x: 150, y: 70, deltaX: 0, deltaY: 1, attachmentDeltaY: 1, modifiers: KeyModifier.none, timestamp: 0 };
+	pointerCapture.capture(modal, PointerButton.Secondary);
+	handleEditorWheelInput(surfaces, wheel, native); assert.deepEqual(calls, ['capture']);
+	wheel.insideViewport = false;
+	handleEditorWheelInput(surfaces, wheel, native); assert.deepEqual(calls, ['capture', 'capture']);
+	pointerCapture.dispatch({ ...wheel, spaceDown: false, pressedButtons: 0, justPressedButtons: 0,
+		justReleasedButtons: PointerButton.Secondary }, false, 1);
+	wheel.insideViewport = true;
+	handleEditorWheelInput(surfaces, wheel, native); assert.deepEqual(calls, ['capture', 'capture', 'hover']);
+	pointerCapture.capture(ordinary);
+	handleEditorWheelInput(surfaces, wheel, native); assert.deepEqual(calls, ['capture', 'capture', 'hover', 'hover']);
+});
 
 test('remote wheel preserves ordering, fractions and source-time context before the next guest sample', t => {
 	const clock = new VirtualHeadlessClock();

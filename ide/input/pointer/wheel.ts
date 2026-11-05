@@ -9,12 +9,14 @@ import { inputFocus } from '../focus';
 import type { WheelInputEvent } from '../../../hosts/common/input/pointer_event';
 import { projectGuestPointer } from './guest';
 import { DisplayPointMappingResult } from '../../../machine/ts/render/video_output';
+import { pointerCapture } from './capture';
 
 const guestPoint = { x: 0, y: 0 };
 
 /** Pointer and wheel use the same retained paint/target structure. */
 export function handleEditorWheelInput(surfaces: WorkbenchSurfaceService, event: WheelInputSnapshot, native: WheelInputEvent): boolean {
-	if (!event.valid || !event.insideViewport || event.deltaX === 0 && event.deltaY === 0) return true;
+	if (!event.valid || event.deltaX === 0 && event.deltaY === 0) return true;
+	if (pointerCapture.dispatchWheel(event, native.timestamp) || !event.insideViewport) return true;
 	const surface = surfaces.hitTest(event.viewportX, event.viewportY);
 	// A selected opaque surface owns an unhandled wheel too. Only its actual
 	// controller can explicitly admit this occurrence to a guest viewport.

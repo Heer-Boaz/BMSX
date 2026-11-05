@@ -2,7 +2,7 @@ import type { Affine2 } from '../../../../common/affine2';
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import type { HostBitmap } from '../../../../../machine/ts/render/host_overlay/bitmap';
-import type { SceneViewportCamera } from './camera';
+import type { WorkbenchViewportCamera } from '../../../ui/viewport_camera';
 
 type QuadGeometry = {
 	affine: Affine2;
@@ -16,7 +16,7 @@ export type ViewportCanvasQuad<Owner> = QuadGeometry & (
 );
 
 /** Project prepared visual packets without revisiting source or guest state. */
-export function projectViewportCanvas<Owner>(items: readonly ViewportCanvasQuad<Owner>[], camera: SceneViewportCamera, bounds: Readonly<RectBounds>): void {
+export function projectViewportCanvas<Owner>(items: readonly ViewportCanvasQuad<Owner>[], camera: WorkbenchViewportCamera, bounds: Readonly<RectBounds>): void {
 	const centerX = (bounds.left + bounds.right) / 2, centerY = (bounds.top + bounds.bottom) / 2, scale = camera.scale;
 	for (const item of items) {
 		const affine = item.affine;

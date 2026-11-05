@@ -1,3 +1,4 @@
+import { PointerClickSequence } from '../../../input/pointer/click_sequence';
 import { copy_rect_bounds, create_rect_bounds, point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
@@ -19,7 +20,7 @@ import { layoutWorkbenchActionBar, measureWorkbenchActionBarMinimumWidth, type W
 import { WorkbenchActionBarControl } from '../action_bar_control';
 import { WorkbenchTooltip } from '../tooltip';
 import { WindowResizeEdge, WINDOW_HEADER_VERTICAL_PADDING, type WindowPlacement, type WorkbenchWindowModel } from './model';
-import { DOUBLE_CLICK_MAX_INTERVAL_MS, POINTER_DRAG_ACTIVATION_THRESHOLD } from '../../../common/constants';
+import { POINTER_DRAG_ACTIVATION_THRESHOLD } from '../../../common/constants';
 import { type WorkbenchStatusItem, EMPTY_STATUS_ITEMS, STATUS_PRIORITY_HINT } from '../../common/status_bar';
 
 const WINDOW_SNAP_MARGIN = 8;
@@ -126,9 +127,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	private startY = 0;
 	private titleClick = false;
 	private titlePressTime = 0;
-	private lastTitleClickTime: number | undefined;
-	private lastTitleClickX = 0;
-	private lastTitleClickY = 0;
+	private readonly titleClicks = new PointerClickSequence<object>();
 	private measuredRevision = -1;
 	private measuredFont: BFont | undefined;
 	private ellipsisWidth = 0;
@@ -149,7 +148,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		this.focusTarget.canFocus = () => this.visible;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input), () => this.finishKeyboardGeometry(false));
 		this.unbindTitleBlur = this.focusTarget.onDidBlur(() => {
-			this.titleClick = false; this.lastTitleClickTime = undefined;
+			this.titleClick = false; this.titleClicks.clear();
 		});
 		this.clientFocusTarget = focus.createTarget(this.focusTarget, this.clientScope);
 		this.clientFocusTarget.canFocus = () => this.clientSurface !== undefined && this.clientSurface.visible;
@@ -316,7 +315,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 
 	public setPlacement(placement: WindowPlacement): void {
 		if (!this.model.canPlace(placement, this.options.workArea)) return;
-		this.lastTitleClickTime = undefined;
+		this.titleClicks.clear();
 		this.capture.cancelTarget(this);
 		this.cancelPointer();
 		this.model.setPlacement(placement);
@@ -530,14 +529,14 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 			if (this.capture.routeScope !== this.scope.surfaceScope) return;
 		}
 		if (this.actions.handlePointer(snapshot)) {
-			if (snapshot.justPressedButtons !== 0) this.lastTitleClickTime = undefined;
+			if (snapshot.justPressedButtons !== 0) this.titleClicks.clear();
 			this.hover.release(this); this.headerHovered = false; return;
 		}
 		this.headerHovered = header;
 		if (header) this.hover.visit(this);
 		else this.hover.release(this);
 		if (snapshot.justPressedButtons !== 0 && (snapshot.justPressedButtons !== PointerButton.Primary || edge !== WindowResizeEdge.None || !header)) {
-			this.lastTitleClickTime = undefined;
+			this.titleClicks.clear();
 		}
 	}
 
@@ -553,7 +552,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		this.moving = false; this.geometryPending = false;
 		this.resizing = WindowResizeEdge.None;
 		this.pendingPlacement = undefined;
-		this.titleClick = false; this.lastTitleClickTime = undefined;
+		this.titleClick = false; this.titleClicks.clear();
 		if (pending && this.visible) this.layout(this.measuredFont!, this.measure!, this.measureText!);
 	}
 
@@ -563,11 +562,11 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		const dx = snapshot.viewportX - this.startX, dy = snapshot.viewportY - this.startY;
 		this.pointerX = snapshot.viewportX; this.pointerY = snapshot.viewportY; this.pointerInside = snapshot.insideViewport;
 		if ((snapshot.justPressedButtons & ~PointerButton.Primary) !== 0) {
-			this.titleClick = false; this.lastTitleClickTime = undefined;
+			this.titleClick = false; this.titleClicks.clear();
 		}
 		if (this.resizing === WindowResizeEdge.None && !this.moving) {
 			if (Math.max(Math.abs(dx), Math.abs(dy)) < POINTER_DRAG_ACTIVATION_THRESHOLD) return;
-			this.moving = true; this.titleClick = false; this.lastTitleClickTime = undefined;
+			this.moving = true; this.titleClick = false; this.titleClicks.clear();
 		}
 		if (!this.moving && dx === 0 && dy === 0 && !this.geometryPending) return;
 		this.geometryPending = true;
@@ -612,23 +611,16 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		this.moving = false; this.geometryPending = false; this.pendingPlacement = undefined;
 		this.resizing = WindowResizeEdge.None; this.titleClick = false;
 		if (pending) {
-			this.lastTitleClickTime = undefined;
+			this.titleClicks.clear();
 			if (placement === undefined) this.model.setRequestedBounds(this.nextRequested, 'normal');
 			else this.model.setPlacement(placement);
 			this.updateChromeState();
 			this.layout(this.measuredFont!, this.measure!, this.measureText!);
 			return;
 		}
-		if (!click) { this.lastTitleClickTime = undefined; return; }
-		const previous = this.lastTitleClickTime;
-		if (previous !== undefined && this.titlePressTime - previous <= DOUBLE_CLICK_MAX_INTERVAL_MS
-			&& Math.max(Math.abs(this.startX - this.lastTitleClickX), Math.abs(this.startY - this.lastTitleClickY)) < POINTER_DRAG_ACTIVATION_THRESHOLD) {
-			this.lastTitleClickTime = undefined;
+		if (!click) { this.titleClicks.clear(); return; }
+		if (this.titleClicks.click(this.model, this.startX, this.startY, this.titlePressTime))
 			this.setPlacement(this.model.placement === 'maximized' ? 'normal' : 'maximized');
-		} else {
-			this.lastTitleClickTime = this.titlePressTime;
-			this.lastTitleClickX = this.startX; this.lastTitleClickY = this.startY;
-		}
 	}
 
 	private attachClient(): void {
@@ -639,7 +631,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 			draw: () => options.content.draw(),
 			handlePointer: (snapshot, now) => {
 				if (snapshot.justPressedButtons !== 0) {
-					this.lastTitleClickTime = undefined;
+					this.titleClicks.clear();
 					this.surfaces.raise(this.surface!);
 					if (!this.containsScope(this.surface, this.focus.target?.scope.surfaceScope)) this.focus.setTarget(this.clientScope.lastFocused ?? this.clientFocusTarget);
 				}

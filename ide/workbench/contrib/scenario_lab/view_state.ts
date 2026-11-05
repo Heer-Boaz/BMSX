@@ -62,8 +62,6 @@ class ScenarioLabView implements ScenarioLabViewState {
 	public readonly status = {
 		info: '',
 	};
-	public lastPointerClickTimeMs = 0;
-	public lastPointerClickRowId: string | null = null;
 
 	public constructor(public readonly collection: ScenarioTestCollection, public readonly resultService: ScenarioResultService,
 		public runActive: boolean) {}

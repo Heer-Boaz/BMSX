@@ -90,7 +90,8 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	private readonly scrollbar = new ScrollbarPointerControl(pointerCapture);
 	public inspector!: WorkbenchPropertyInspector<ActorDetailsProperty>;
 	public detailsWindow!: WorkbenchFloatingWindow;
-	private readonly graph = new WorkbenchGraphControl(inputFocus, pointerCapture, pointerHover, player => this.handleGraphKeyboard(player), this.focusTarget);
+	private readonly graph = new WorkbenchGraphControl(inputFocus, pointerCapture, pointerHover, player => this.handleGraphKeyboard(player), this.focusTarget,
+		(x, y) => { if (this.acceptGraphSelection()) this.showContextMenu(x, y, this.graph.focusTarget, false); });
 	private boundGraph: ActorStateGraph | undefined;
 	private statusInput: ActorLabInput | undefined;
 	private statusTopology = -1;
@@ -429,7 +430,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 				outline.layout.contentRight - outline.layout.contentLeft - (row.depth + 2) * outline.layout.indentWidth - 4, 'middle');
 		} else if (!this.updatePreviewInput()) return;
 		this.worldControl.update();
-		this.worldControl.advanceNavigation(editorRuntimeState.currentTimeMs);
+		this.worldControl.navigation.advance(editorRuntimeState.currentTimeMs);
 		if (input.layout.previewVisible) input.worldView.refresh(input.previewBounds, input.domain, input.actorHashId);
 		this.updateViewportHit();
 		this.controller.layoutNavigation(input);
@@ -645,20 +646,11 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			return true;
 		}
 		if (this.input.presentation === 'graph') {
-			const result = this.graph.handlePointer(snapshot, now);
+			const result = this.graph.handlePointer(snapshot, now, snapshot.spaceDown);
 			if (result === WorkbenchGraphPointerResult.Rejected) return true;
 			if (snapshot.justPressedButtons !== 0 && result !== WorkbenchGraphPointerResult.Outside) this.input.follow.stop();
-			if (result === WorkbenchGraphPointerResult.Selection || result === WorkbenchGraphPointerResult.Activate || result === WorkbenchGraphPointerResult.ContextMenu) {
-				const input = this.input, graph = input.stateGraph!, selected = graph.viewport.selection;
-				const scope = this.focusTarget.scope, context = scope.contextGeneration;
-				graph.rememberSelection();
-				if (scope.contextGeneration !== context || input.presentation !== 'graph' || input.stateGraph !== graph
-					|| graph.viewport.selection !== selected || inputFocus.admittedTarget !== this.graph.focusTarget) return true;
-			}
+			if ((result === WorkbenchGraphPointerResult.Selection || result === WorkbenchGraphPointerResult.Activate) && !this.acceptGraphSelection()) return true;
 			if (result === WorkbenchGraphPointerResult.Activate) this.commands.execute('actorLab.details');
-			else if (result === WorkbenchGraphPointerResult.ContextMenu) {
-				this.showContextMenu(snapshot.viewportX, snapshot.viewportY, this.graph.focusTarget, false);
-			}
 			return result !== WorkbenchGraphPointerResult.Outside;
 		}
 		if (!snapshot.valid || !snapshot.insideViewport) return false;
@@ -692,6 +684,14 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			scrollWorkbenchList(this.input.outline, event.deltaY * 3);
 		}
 		this.input.follow.stop();
+	}
+
+	private acceptGraphSelection(): boolean {
+		const input = this.input, graph = input.stateGraph!, selected = graph.viewport.selection;
+		const scope = this.focusTarget.scope, context = scope.contextGeneration;
+		graph.rememberSelection();
+		return this.hasInput && this.input === input && scope.contextGeneration === context && input.presentation === 'graph'
+			&& input.stateGraph === graph && graph.viewport.selection === selected && inputFocus.admittedTarget === this.graph.focusTarget;
 	}
 
 	private handleGraphKeyboard(player: KeyInputEvent): void {

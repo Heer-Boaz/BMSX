@@ -1,3 +1,4 @@
+import { PointerClickSequence } from '../../../input/pointer/click_sequence';
 import { EMPTY_STATUS_ITEMS } from '../../common/status_bar';
 import { create_rect_bounds, point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
@@ -65,8 +66,7 @@ export class WorkspaceSearchPane extends WorkbenchViewEditorPane<WorkspaceSearch
 	private readonly unbindFieldCancel: () => void;
 	private unbindQuery: (() => void) | undefined;
 	private unbindInput: (() => void) | undefined;
-	private lastClick: object | undefined;
-	private lastClickTime = 0;
+	private readonly clicks = new PointerClickSequence<object>();
 	public onPointerLeave(): void { if (this.hasInput) this.input.tree.hoverIndex = -1; this.tooltip.hide(); }
 
 	public constructor(group: EditorGroupView, private readonly commands: EditorCommandRunner,
@@ -134,7 +134,7 @@ export class WorkspaceSearchPane extends WorkbenchViewEditorPane<WorkspaceSearch
 		this.unbindQuery = this.field.onDidChangeText(() => input.setQuery(this.field.text));
 		this.unbindInput = input.onDidChangeIntent(() => {
 			if (this.field.text !== input.query) setFieldText(this.field, input.query, true);
-			this.lastClick = undefined; this.actions.cancelPointer(); this.tooltip.hide();
+			this.clicks.clear(); this.actions.cancelPointer(); this.tooltip.hide();
 		});
 		this.actions.setInput(input.actions, this.focusTarget); this.presentation.reset(); this.update();
 	}
@@ -142,7 +142,7 @@ export class WorkspaceSearchPane extends WorkbenchViewEditorPane<WorkspaceSearch
 		this.input.queryCursor = this.field.cursorColumn; this.input.queryAnchor = this.field.selectionAnchor?.column;
 		this.unbindQuery?.(); this.unbindQuery = undefined; this.unbindInput?.(); this.unbindInput = undefined;
 		this.field.focusTarget.cancelInput(); this.field.focusTarget.release(); this.cancelPointer();
-		this.input.tree.hoverIndex = -1; this.lastClick = undefined;
+		this.input.tree.hoverIndex = -1; this.clicks.clear();
 		pointerHover.release(this); this.tooltip.hide(); this.actions.clearInput(); this.scrollbar.cancelPointer();
 		super.clearInput();
 	}
@@ -209,9 +209,11 @@ export class WorkspaceSearchPane extends WorkbenchViewEditorPane<WorkspaceSearch
 			? workbenchListRowIndexAtPosition(tree, snapshot.viewportX, snapshot.viewportY) : -1;
 		tree.hoverIndex = index; if (index >= 0) pointerHover.visit(this);
 		if (index < 0 || !justPressed || !this.focusInput(input)) return index >= 0;
-		const row = tree.rows[index], doubleClick = this.lastClick === row && now - this.lastClickTime <= DOUBLE_CLICK_MAX_INTERVAL_MS;
-		tree.select(index); this.lastClick = doubleClick ? undefined : row; this.lastClickTime = now;
-		if (workbenchTreeTwistieContainsPosition(tree, index, snapshot.viewportX) || doubleClick && row.expandable) tree.setCollapsed(index, !row.collapsed);
+		const row = tree.rows[index], doubleClick = this.clicks.click(row, snapshot.viewportX, snapshot.viewportY, now);
+		tree.select(index);
+		if (workbenchTreeTwistieContainsPosition(tree, index, snapshot.viewportX) || doubleClick && row.expandable) {
+			this.clicks.clear(); tree.setCollapsed(index, !row.collapsed);
+		}
 		else if (doubleClick) this.commands.execute('editor.source', this.focusTarget);
 		revealWorkbenchListSelection(tree); this.update(); return true;
 	}

@@ -101,6 +101,12 @@ test('key capture preserves grab offset and commits only a physical drop; click,
 	assert.equal(updated.tracks[0].keys[1].coordinate!.value, proposed);
 	model.undo(); assert.equal(model.buffer.getText(), source);
 	assert.equal(model.undo(), null, 'one drop is one history operation');
+	parent.focus();
+	const unbindFocus = parent.onDidBlur(() => { unbindFocus(); control.clearInput(); }); t.after(unbindFocus);
+	control.handlePointer(pointer(origin, primary, primary));
+	assert.equal(pointerCapture.active, false, 'focus retirement cannot admit a stale key drag');
+	assert.equal(model.buffer.getText(), source);
+
 });
 
 test('frame and clip axes navigate without a scalar track or a document edit', t => {

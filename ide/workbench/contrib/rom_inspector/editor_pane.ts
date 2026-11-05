@@ -1,3 +1,4 @@
+import { PointerClickSequence } from '../../../input/pointer/click_sequence';
 import { STATUS_PRIORITY_CONTENT, type WorkbenchStatusItem } from '../../common/status_bar';
 import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
@@ -59,8 +60,7 @@ export class RomInspectorPane extends WorkbenchViewEditorPane<RomInspectorInput>
 	private readonly actionTooltip = new WorkbenchTooltip();
 	private key: RomMapKeyWindow | undefined;
 	private reader: RomEntryInspectorWindow | undefined;
-	private lastClickRow: RomInspectorRow | undefined;
-	private lastClickTime = 0;
+	private readonly clicks = new PointerClickSequence<RomInspectorRow>();
 	private readonly filter = new TextField(this.focusTarget, { allowSpace: true, singleLine: true });
 	private readonly filterViewport = new SingleLineFieldViewport();
 	private readonly filterPointer = {
@@ -107,7 +107,7 @@ export class RomInspectorPane extends WorkbenchViewEditorPane<RomInspectorInput>
 	public override get commandTarget() { return this.list.focusTarget; }
 	protected override activate(): void {
 		this.boundRevision = -1; this.freshLayout = true; this.presentation.reset();
-		this.lastClickRow = undefined; this.lastClickTime = 0;
+		this.clicks.clear();
 		this.key = new RomMapKeyWindow(this.input, this.commands, this.contextMenu, this.surfaces, this.owner, this.list.focusTarget, this.workArea);
 		for (const target of [this.key.window.focusTarget, this.key.scroll.focusTarget]) for (const command of COMMANDS)
 			target.registerCommand(command, this.focusTarget.getCommand(command)!);
@@ -189,7 +189,7 @@ export class RomInspectorPane extends WorkbenchViewEditorPane<RomInspectorInput>
 		for (const key of NAVIGATION) {
 			if (!isKeyDown(key, player)) continue;
 			consumeIdeKey(key, player);
-			this.lastClickRow = undefined;
+			this.clicks.clear();
 			if (model.rows.length === 0) return true;
 			const page = Math.max(1, Math.trunc(input.list.height / (input.layout.rowHeight * 2 + 4)));
 			const next = key === 'Home' ? 0 : key === 'End' ? model.rows.length - 1
@@ -210,7 +210,7 @@ export class RomInspectorPane extends WorkbenchViewEditorPane<RomInspectorInput>
 		const input = this.input;
 		if (justPressed && (!this.list.focusTarget.hasFocus || !point_in_rect(snapshot.viewportX, snapshot.viewportY, input.list.bounds)
 			|| Math.trunc((snapshot.viewportY - input.list.offsetTop) / (input.layout.rowHeight * 2 + 4)) >= input.model.rows.length))
-			this.lastClickRow = undefined;
+			this.clicks.clear();
 		if (this.actions.handlePointer(snapshot)) return true;
 		const map = this.input.mapBounds;
 		if (justPressed && snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, map)) {
@@ -246,9 +246,7 @@ export class RomInspectorPane extends WorkbenchViewEditorPane<RomInspectorInput>
 			if (!target.focus() || scope.contextGeneration !== context || inputFocus.admittedTarget !== target || input.model.rows[index] !== row) return true;
 			if (row !== undefined) {
 				input.model.select(index);
-				const doubleClick = this.lastClickRow === row && now - this.lastClickTime <= DOUBLE_CLICK_MAX_INTERVAL_MS;
-				this.lastClickRow = doubleClick ? undefined : row;
-				this.lastClickTime = now;
+				const doubleClick = this.clicks.click(row, snapshot.viewportX, snapshot.viewportY, now);
 				if (doubleClick) this.execute('romInspector.inspect');
 			}
 			return true;
@@ -265,7 +263,7 @@ export class RomInspectorPane extends WorkbenchViewEditorPane<RomInspectorInput>
 	public override clearInput(): void {
 		this.key!.dispose(); this.key = undefined; this.reader!.dispose(); this.reader = undefined; this.actionTooltip.hide();
 		this.unbindFilterChange();
-		this.lastClickRow = undefined;
+		this.clicks.clear();
 		this.filter.focusTarget.release();
 		this.actions.clearInput(); this.list.clearInput();
 		super.clearInput();

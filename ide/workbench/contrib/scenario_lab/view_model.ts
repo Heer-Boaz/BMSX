@@ -188,6 +188,4 @@ export type ScenarioLabViewState = {
 	readonly layout: ScenarioLabLayout;
 	readonly actionBar: WorkbenchActionBarState;
 	readonly status: ScenarioLabStatus;
-	lastPointerClickTimeMs: number;
-	lastPointerClickRowId: string | null;
 };

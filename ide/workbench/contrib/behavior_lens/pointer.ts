@@ -1,6 +1,6 @@
 import type { PointerHoverService, PointerHoverTarget } from '../../../input/pointer/hover';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
-import * as constants from '../../../common/constants';
+import { PointerClickSequence } from '../../../input/pointer/click_sequence';
 import type { PointerSnapshot } from '../../../common/models';
 import { workbenchListRowIndexAtPosition } from '../../ui/list_view';
 import { selectBehaviorLensRow, toggleBehaviorLensRow } from './navigation';
@@ -26,11 +26,10 @@ export class BehaviorLensPointer implements PointerHoverTarget {
 	}
 
 	public clear(): void { this.hover.release(this); this.cancel(); }
-	private lastClickTimeMs = 0;
-	private lastClickNode: BehaviorSourceNode | null = null;
+	private readonly clicks = new PointerClickSequence<BehaviorSourceNode>();
 
 	public cancel(): void {
-		this.lastClickNode = null;
+		this.clicks.clear();
 	}
 
 	public handle(
@@ -48,6 +47,7 @@ export class BehaviorLensPointer implements PointerHoverTarget {
 			&& snapshot.viewportY >= layout.top
 			&& snapshot.viewportY < layout.bottom;
 		if (!inside) {
+			if (snapshot.justPressedButtons !== 0 || !snapshot.valid) this.cancel();
 			this.hover.release(this);
 			return BehaviorLensPointerResult.Outside;
 		}
@@ -63,6 +63,7 @@ export class BehaviorLensPointer implements PointerHoverTarget {
 			return BehaviorLensPointerResult.ContextMenu;
 		}
 		if (!justPressed || rowIndex < 0) {
+			if (justPressed) this.cancel();
 			return BehaviorLensPointerResult.Handled;
 		}
 
@@ -76,10 +77,7 @@ export class BehaviorLensPointer implements PointerHoverTarget {
 		}
 		selectBehaviorLensRow(state, outline, rowIndex);
 
-		const doubleClick = this.lastClickNode === row.node
-			&& currentTimeMs - this.lastClickTimeMs <= constants.DOUBLE_CLICK_MAX_INTERVAL_MS;
-		this.lastClickNode = doubleClick ? null : row.node;
-		this.lastClickTimeMs = currentTimeMs;
+		const doubleClick = this.clicks.click(row.node, snapshot.viewportX, snapshot.viewportY, currentTimeMs);
 		return doubleClick ? BehaviorLensPointerResult.Activate : BehaviorLensPointerResult.Handled;
 	}
 }

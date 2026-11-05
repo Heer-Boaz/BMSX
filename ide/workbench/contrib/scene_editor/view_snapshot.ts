@@ -2,10 +2,10 @@ import type { SceneViewState } from './scene_view';
 import type { SceneAuthoredSourceReference, SceneSelectionRequest } from './authoring_context';
 import { captureSceneReading, restoreSceneReading, type SceneReadingSnapshot } from './reading_snapshot';
 import type { MainWorkspacePrimaryPartId } from '../../common/main_workspace_client';
-import type { SceneViewportCameraState } from './viewport/camera';
+import type { WorkbenchViewportCameraState } from '../../ui/viewport_camera';
 
 export type SceneEditorViewSnapshot = SceneReadingSnapshot & {
-	readonly preferredPart: MainWorkspacePrimaryPartId; readonly camera: SceneViewportCameraState };
+	readonly preferredPart: MainWorkspacePrimaryPartId; readonly camera: WorkbenchViewportCameraState };
 
 export function captureSceneEditorView(input: SceneViewState, reference: SceneAuthoredSourceReference = input.authoring.captureSourceReference()): SceneEditorViewSnapshot {
 	return { ...captureSceneReading(input, reference),

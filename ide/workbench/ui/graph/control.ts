@@ -1,9 +1,10 @@
+import { PointerClickSequence } from '../../../input/pointer/click_sequence';
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { dragScrollSpeed } from '../drag_scroll';
 import { ScrollbarPointerControl } from '../scrollbar_pointer';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
-import { DOUBLE_CLICK_MAX_INTERVAL_MS, POINTER_DRAG_ACTIVATION_THRESHOLD } from '../../../common/constants';
+import { POINTER_DRAG_ACTIVATION_THRESHOLD } from '../../../common/constants';
 import type { PointerSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { InputFocusService, InputFocusTarget } from '../../../input/focus';
 import type { PointerCaptureService, PointerCaptureTarget } from '../../../input/pointer/capture';
@@ -14,8 +15,8 @@ import { GRAPH_ZOOM_MAX, GRAPH_ZOOM_MIN, type WorkbenchGraphViewport } from './v
 import type { WorkbenchGraphConnectionDragStart, WorkbenchGraphDragFeedback, WorkbenchGraphDragSession, WorkbenchGraphDragSource } from './drag';
 import { hitWorkbenchGraphConnectionHandle, type WorkbenchGraphConnectionEnd, type WorkbenchGraphConnectionHandles } from './connection';
 
-export const enum WorkbenchGraphPointerResult { Outside, Handled, Selection, Activate, ContextMenu, Rejected }
-const enum Gesture { None, Pan, PendingDrag, Drag }
+export const enum WorkbenchGraphPointerResult { Outside, Handled, Selection, Activate, Rejected }
+const enum Gesture { None, Pan, ContextClick, PendingDrag, Drag }
 
 /** Pane-owned control. Input/view state survives detachment; physical gestures do not. */
 export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHoverTarget {
@@ -27,6 +28,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 	private pointerModel: WorkbenchGraphModel | null = null;
 	private pointerZoom = 1;
 	private pointerAllocationRevision = 0;
+	private pointerContextGeneration = 0;
 	private anchorX = 0;
 	private anchorY = 0;
 	private anchorScrollX = 0;
@@ -34,6 +36,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 	private gesture = Gesture.None;
 	private readonly scrollbarPointer: ScrollbarPointerControl;
 	private pressTarget: WorkbenchGraphItem | null = null;
+	private contextTarget: WorkbenchGraphItem | null = null;
 	private pressConnection: WorkbenchGraphConnectionDragStart | undefined;
 	private dragSource: WorkbenchGraphDragSource | undefined;
 	private drag: WorkbenchGraphDragSession | undefined;
@@ -44,8 +47,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 	private dragInside = false;
 	private dragX = 0;
 	private dragY = 0;
-	private lastClick: WorkbenchGraphItem | null = null;
-	private lastClickTime = 0;
+	private readonly clicks = new PointerClickSequence<WorkbenchGraphItem>();
 	private hoverValid = false;
 	private hoverX = 0;
 	private hoverY = 0;
@@ -55,7 +57,8 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 	private readonly beginScrollbarNavigation = (): void => { this.inputValue!.beginManualNavigation(); };
 
 	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService,
-		private readonly pointerHover: PointerHoverService, keyboard: (input: KeyInputEvent) => void = input => this.handleKeyboard(input), parent: InputFocusTarget | null = null) {
+		private readonly pointerHover: PointerHoverService, keyboard: (input: KeyInputEvent) => void = input => this.handleKeyboard(input), parent: InputFocusTarget | null = null,
+		private readonly contextMenu?: (x: number, y: number) => void) {
 		this.scrollbarPointer = new ScrollbarPointerControl(capture);
 		this.focusTarget = focus.createTarget(parent);
 		this.focusTarget.canFocus = () => this.inputValue !== null;
@@ -66,7 +69,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 				return;
 			}
 			keyboard(input);
-		});
+		}, () => this.cancelPointer());
 		this.unbindBlur = this.focusTarget.onDidBlur(() => this.cancelPointer());
 		this.focusTarget.registerCommand('graph.fit', {
 			isEnabled: () => this.hasGeometry,
@@ -128,10 +131,11 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 		this.capture.release(this);
 		this.scrollbarPointer.cancelPointer();
 		this.gesture = Gesture.None;
+		this.contextTarget = null;
 		this.pressTarget = null;
 		this.pressConnection = undefined;
 		this.drag = undefined;
-		this.lastClick = null;
+		this.clicks.clear();
 		this.hover = null;
 		this.hoverEnd = undefined;
 		this.hoverValid = false;
@@ -147,6 +151,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 		if (this.pointerModel !== this.inputValue.model
 			|| this.pointerZoom !== this.inputValue.zoom
 			|| this.pointerAllocationRevision !== this.inputValue.allocationRevision
+			|| (this.gesture !== Gesture.None && this.pointerContextGeneration !== this.focusTarget.scope.contextGeneration)
 			|| (this.gesture !== Gesture.None && this.inputValue.selection !== this.pressTarget)
 			|| (this.drag !== undefined && !this.drag.isCurrent())) {
 			this.cancelPointer();
@@ -197,17 +202,22 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 	public handleCapturedPointer(snapshot: PointerSnapshot, now: number): void {
 		this.update();
 		if (this.gesture === Gesture.None) return;
-		const view = this.inputValue!;
+		const view = this.inputValue!, dx = snapshot.viewportX - this.anchorX, dy = snapshot.viewportY - this.anchorY;
+		if (this.gesture === Gesture.ContextClick) {
+			if ((snapshot.pressedButtons & PointerButton.Primary) === 0
+				&& Math.max(Math.abs(dx), Math.abs(dy)) < POINTER_DRAG_ACTIVATION_THRESHOLD) return;
+			this.gesture = Gesture.Pan;
+		}
 		if (this.gesture === Gesture.Pan) {
-			const scrollX = this.anchorScrollX - Math.round(snapshot.viewportX - this.anchorX);
-			const scrollY = this.anchorScrollY - Math.round(snapshot.viewportY - this.anchorY);
+			const scrollX = this.anchorScrollX - Math.round(dx);
+			const scrollY = this.anchorScrollY - Math.round(dy);
 			if (scrollX === view.scrollX && scrollY === view.scrollY) return;
 			view.scrollX = scrollX;
 			view.scrollY = scrollY;
 			return;
 		}
 		if (this.gesture === Gesture.PendingDrag) {
-			if (Math.max(Math.abs(snapshot.viewportX - this.anchorX), Math.abs(snapshot.viewportY - this.anchorY)) < POINTER_DRAG_ACTIVATION_THRESHOLD) return;
+			if (Math.max(Math.abs(dx), Math.abs(dy)) < POINTER_DRAG_ACTIVATION_THRESHOLD) return;
 			this.drag = this.dragSource!.begin(this.pressConnection === undefined
 				? { kind: 'item', item: this.pressTarget! } : this.pressConnection);
 			if (this.drag === undefined) {
@@ -215,7 +225,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 				return;
 			}
 			this.gesture = Gesture.Drag;
-			this.lastClick = null;
+			this.clicks.clear();
 			this.dragPositionValid = false;
 			this.pointerTime = now;
 		} else this.scrollDrag(now);
@@ -225,9 +235,16 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 
 	public releaseCapturedPointer(snapshot: PointerSnapshot, now: number): void {
 		// A fast press/move/release may be coalesced into one host input interval.
-		if (this.gesture === Gesture.PendingDrag || this.gesture === Gesture.Pan) this.handleCapturedPointer(snapshot, now);
+		if (this.gesture === Gesture.PendingDrag || this.gesture === Gesture.Pan || this.gesture === Gesture.ContextClick) this.handleCapturedPointer(snapshot, now);
 		else this.update();
-		if (this.gesture === Gesture.Drag) {
+		if (this.gesture === Gesture.ContextClick) {
+			const view = this.inputValue!, target = this.contextTarget;
+			this.cancelPointer();
+			if (point_in_rect(snapshot.viewportX, snapshot.viewportY, view.bounds)) {
+				view.selection = target;
+				this.contextMenu?.(snapshot.viewportX, snapshot.viewportY);
+			}
+		} else if (this.gesture === Gesture.Drag) {
 			// Use the release coordinates, not the last accepted hover. No release-time scroll.
 			this.updateDrag(snapshot.viewportX, snapshot.viewportY);
 			const drag = this.drag!;
@@ -289,7 +306,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 		if (!point_in_rect(snapshot.viewportX, snapshot.viewportY, view.bounds)) {
 			this.pointerHover.release(this);
 			if (this.scrollbarPointer.handlePointer(snapshot, view.horizontalScrollbar, this.beginScrollbarNavigation)
-				|| this.scrollbarPointer.handlePointer(snapshot, view.verticalScrollbar, this.beginScrollbarNavigation)) this.lastClick = null;
+				|| this.scrollbarPointer.handlePointer(snapshot, view.verticalScrollbar, this.beginScrollbarNavigation)) this.clicks.clear();
 			return WorkbenchGraphPointerResult.Handled;
 		}
 		this.pointerHover.visit(this);
@@ -311,18 +328,22 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 		if (secondary) this.cancelPointer();
 		if (!this.focusTarget.focus() || this.inputGeneration !== generation || view.model !== model
 			|| scope.contextGeneration !== context || this.focus.admittedTarget !== this.focusTarget) return WorkbenchGraphPointerResult.Rejected;
-		if (secondary) {
-			view.selection = hit;
-			return WorkbenchGraphPointerResult.ContextMenu;
-		}
 		this.anchorX = snapshot.viewportX;
 		this.anchorY = snapshot.viewportY;
+		this.pointerContextGeneration = context;
 		this.anchorScrollX = view.scrollX;
 		this.anchorScrollY = view.scrollY;
+		if (secondary) {
+			this.contextTarget = hit; this.pressTarget = view.selection;
+			this.gesture = Gesture.ContextClick;
+			this.capture.capture(this, PointerButton.Secondary, this.focusTarget.scope.surfaceScope);
+			if ((snapshot.justReleasedButtons & PointerButton.Secondary) !== 0) this.releaseCapturedPointer(snapshot, now);
+			return WorkbenchGraphPointerResult.Handled;
+		}
 		if (!pan) view.selection = hit;
 		this.pressTarget = view.selection;
 		if (pan || hit === null) {
-			this.lastClick = null;
+			this.clicks.clear();
 			this.pointerHover.release(this);
 			this.pressConnection = undefined;
 			this.capture.capture(this, auxiliary ? PointerButton.Auxiliary : PointerButton.Primary);
@@ -332,14 +353,12 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 		this.pressConnection = end === undefined ? undefined : { kind: 'connection', edge: edge!, end };
 		this.updateConnectionHandles();
 		if (this.pressConnection !== undefined) {
-			this.lastClick = null; // Endpoint clicks must never activate Source.
+			this.clicks.clear(); // Endpoint clicks must never activate Source.
 			this.capture.capture(this);
 			this.gesture = Gesture.PendingDrag;
 			return WorkbenchGraphPointerResult.Selection;
 		}
-		const activate = this.lastClick === hit && now - this.lastClickTime <= DOUBLE_CLICK_MAX_INTERVAL_MS;
-		this.lastClick = activate ? null : hit;
-		this.lastClickTime = now;
+		const activate = this.clicks.click(hit, snapshot.viewportX, snapshot.viewportY, now);
 		if (!activate && this.dragSource !== undefined) {
 			this.capture.capture(this);
 			this.gesture = Gesture.PendingDrag;

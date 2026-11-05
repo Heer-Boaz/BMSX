@@ -1,9 +1,10 @@
+import { PointerClickSequence } from '../../../input/pointer/click_sequence';
 import { copy_rect_bounds, create_rect_bounds, point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { PointerInputSnapshot, PointerSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { EditorCommandRunner } from '../../../common/commands';
-import { DOUBLE_CLICK_MAX_INTERVAL_MS, SCROLLBAR_WIDTH } from '../../../common/constants';
+import { SCROLLBAR_WIDTH } from '../../../common/constants';
 import { InputFocusScope, inputFocus, type InputFocusTarget } from '../../../input/focus';
 import { consumeIdeKey, isKeyDown, isKeyJustPressed } from '../../../input/keyboard/key_input';
 import { pointerCapture } from '../../../input/pointer/capture';
@@ -35,8 +36,7 @@ export class EditorTabStrip implements PointerHoverTarget {
 	public readonly drag: EditorTabDrag;
 	public dropTargeted = false;
 	public hoverId: EditorTabId | null = null;
-	public lastClickId: EditorTabId | null = null;
-	public lastClickTime = 0;
+	private readonly clicks = new PointerClickSequence<EditorTabId>();
 	private layoutBounds: Readonly<RectBounds> | undefined;
 	private readonly projectedBounds = create_rect_bounds();
 	private projectedRevision = -1;
@@ -73,7 +73,7 @@ export class EditorTabStrip implements PointerHoverTarget {
 			}));
 		this.scrollControl = new ScrollbarPointerControl(pointerCapture, scope);
 		this.layoutState = new EditorTabStripLayout(model, this.actions, this.scrollbar);
-		this.drag = new EditorTabDrag(pointerCapture, scope, () => { this.lastClickId = null; }, dragHandler);
+		this.drag = new EditorTabDrag(pointerCapture, scope, () => { this.clicks.clear(); }, dragHandler);
 		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, focusParent, focusContent);
 		this.focusTarget.next = () => { if (this.actionBar.focusTarget.canFocus!()) this.actionBar.focusTarget.focus(); else this.focusContent(); };
 		this.focusTarget.previous = this.focusContent;
@@ -199,8 +199,7 @@ export class EditorTabStrip implements PointerHoverTarget {
 		for (const item of this.actions.items) item.visible = false;
 		pointerHover.release(this);
 		this.hoverId = null;
-		this.lastClickId = null;
-		this.lastClickTime = 0;
+		this.clicks.clear();
 		this.scrollbar.setScroll(0);
 		this.layoutState.clear();
 		this.projectedRevision = -1;
@@ -243,24 +242,24 @@ export class EditorTabStrip implements PointerHoverTarget {
 	public handlePointer(snapshot: PointerInputSnapshot, now: number): boolean {
 		const over = this.updateHover(snapshot);
 		if (!over) {
-			if (snapshot.justPressedButtons !== 0) this.lastClickId = null;
+			if (snapshot.justPressedButtons !== 0) this.clicks.clear();
 			pointerHover.release(this.actionBar);
 			return false;
 		}
 		if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) {
-			this.lastClickId = null;
+			this.clicks.clear();
 			this.drag.cancel();
 			const input = this.hoverId === null ? undefined : this.model.findById(this.hoverId);
 			this.openContextMenu(snapshot.viewportX, snapshot.viewportY, input, false);
 			return true;
 		}
 		if (this.actionBar.handlePointer(snapshot)) {
-			if (snapshot.justPressedButtons !== 0) this.lastClickId = null;
+			if (snapshot.justPressedButtons !== 0) this.clicks.clear();
 			return true;
 		}
 		const primary = (snapshot.justPressedButtons & PointerButton.Primary) !== 0;
 		if (this.scrollControl.handlePointer(snapshot, this.scrollbar)) {
-			if (snapshot.justPressedButtons !== 0) this.lastClickId = null;
+			if (snapshot.justPressedButtons !== 0) this.clicks.clear();
 			return true;
 		}
 		const x = snapshot.viewportX, y = snapshot.viewportY;
@@ -272,31 +271,29 @@ export class EditorTabStrip implements PointerHoverTarget {
 			if (!point_in_rect(x, y, item.bounds)) continue;
 			if (middle) {
 				if (tab.closable) {
-					this.lastClickId = null;
+					this.clicks.clear();
 					this.drag.cancel();
 					this.close(tab.id);
 				}
 				return true;
 			}
 			if (point_in_rect(x, y, item.closeBounds)) {
-				this.lastClickId = null;
+				this.clicks.clear();
 				this.drag.cancel();
 				this.hoverId = null;
 				this.close(tab.id);
 				return true;
 			}
 			if (!this.activate(tab.id)) {
-				this.lastClickId = null;
+				this.clicks.clear();
 				return true;
 			}
-			const twice = this.lastClickId === tab.id && now - this.lastClickTime <= DOUBLE_CLICK_MAX_INTERVAL_MS;
-			this.lastClickId = twice ? null : tab.id;
-			this.lastClickTime = now;
+			const twice = this.clicks.click(tab.id, x, y, now);
 			this.drag.begin({ kind: 'editor', model: this.model, input: tab }, snapshot, now);
 			if (twice) this.model.pin(tab);
 			return true;
 		}
-		this.lastClickId = null;
+		this.clicks.clear();
 		if (primary && this.focusContent()) this.drag.begin({ kind: 'group', model: this.model }, snapshot, now);
 		return true;
 	}

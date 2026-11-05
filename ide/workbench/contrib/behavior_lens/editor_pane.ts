@@ -72,7 +72,8 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 	private readonly pointer = new BehaviorLensPointer(pointerHover);
 	private presentedSource: BehaviorSourceIndex | undefined;
 	private readonly properties = new WorkbenchPropertyTreePointer(inputFocus, pointerHover, this.focusTarget);
-	private readonly graph = new WorkbenchGraphControl(inputFocus, pointerCapture, pointerHover, input => this.handleKeyboard(input), this.focusTarget);
+	private readonly graph = new WorkbenchGraphControl(inputFocus, pointerCapture, pointerHover, input => this.handleKeyboard(input), this.focusTarget,
+		(x, y) => { if (this.acceptGraphSelection()) this.openContextMenu(x, y); });
 	private readonly unbindGraphGamepad = this.graph.focusTarget.bindGamepad(input => this.handleGamepad(input));
 	public readonly inspector = new WorkbenchPropertyInspector<RuntimeInspectionProperty>(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly actionBar: WorkbenchActionBarControl;
@@ -394,11 +395,7 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 		}
 		if (view.presentation.kind !== 'outline') {
 			const result = this.graph.handlePointer(snapshot, now, snapshot.spaceDown);
-			if (result === WorkbenchGraphPointerResult.Selection || result === WorkbenchGraphPointerResult.Activate || result === WorkbenchGraphPointerResult.ContextMenu) {
-				if (view.presentation.kind === 'graph') acceptBehaviorGraphSelection(view, view.presentation);
-				else acceptStateGraphSelection(view, view.presentation);
-			}
-			if (result === WorkbenchGraphPointerResult.ContextMenu) this.openContextMenu(snapshot.viewportX, snapshot.viewportY);
+			if ((result === WorkbenchGraphPointerResult.Selection || result === WorkbenchGraphPointerResult.Activate) && !this.acceptGraphSelection()) return true;
 			if (result === WorkbenchGraphPointerResult.Activate) this.commands.execute('editor.source', this.graph.focusTarget);
 			return result !== WorkbenchGraphPointerResult.Outside;
 		}
@@ -407,6 +404,14 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 		if (result === BehaviorLensPointerResult.ContextMenu) this.openContextMenu(snapshot.viewportX, snapshot.viewportY);
 		if (result === BehaviorLensPointerResult.Activate) this.commands.execute('editor.source', this.focusTarget);
 		return result !== BehaviorLensPointerResult.Outside;
+	}
+
+	private acceptGraphSelection(): boolean {
+		const view = this.input.view, presentation = view.presentation, generation = this.graph.focusTarget.scope.contextGeneration;
+		if (presentation.kind === 'graph') acceptBehaviorGraphSelection(view, presentation);
+		else if (presentation.kind === 'state-graph') acceptStateGraphSelection(view, presentation);
+		return this.hasInput && this.input.view === view && view.presentation === presentation
+			&& this.graph.focusTarget.scope.contextGeneration === generation && inputFocus.admittedTarget === this.graph.focusTarget;
 	}
 
 	private openContextMenu(x: number, y: number, keyboard = false): void {

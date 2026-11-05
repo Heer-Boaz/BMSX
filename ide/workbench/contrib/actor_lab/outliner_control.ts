@@ -1,3 +1,4 @@
+import { PointerClickSequence } from '../../../input/pointer/click_sequence';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
 import * as colors from '../../../common/constants';
@@ -21,8 +22,7 @@ export class ActorOutlinerControl {
 	private input: ActorLabInput | undefined;
 	private readonly scrollbar = new ScrollbarPointerControl(pointerCapture);
 	private readonly unbindKeyboard: () => void;
-	private lastClick: number | undefined;
-	private lastClickTime = 0;
+	private readonly clicks = new PointerClickSequence<object>();
 	public constructor(private readonly parent: InputFocusTarget, private readonly commands: EditorCommandRunner,
 		private readonly changed: () => void, private readonly contextMenu: (x: number, y: number, keyboard: boolean) => void) {
 		this.focusTarget = inputFocus.createTarget(parent);
@@ -32,8 +32,8 @@ export class ActorOutlinerControl {
 		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => this.input !== undefined && this.input.worldOutliner.tree.selectionIndex !== -1,
 			run: () => this.openContextMenu() });
 	}
-	public setInput(input: ActorLabInput): void { this.input = input; }
-	public clearInput(): void { this.scrollbar.cancelPointer(); this.input = undefined; this.lastClick = undefined; }
+	public setInput(input: ActorLabInput): void { if (this.input !== input) this.clearInput(); this.input = input; }
+	public clearInput(): void { this.scrollbar.cancelPointer(); this.input = undefined; this.clicks.clear(); }
 	public dispose(): void { this.clearInput(); this.unbindKeyboard(); }
 	public openContextMenu(): void {
 		this.select();
@@ -57,7 +57,7 @@ export class ActorOutlinerControl {
 		const secondary = (snapshot.justPressedButtons & PointerButton.Secondary) !== 0;
 		if (!primary && !secondary) return true;
 		if (index < 0) {
-			this.lastClick = undefined;
+			this.clicks.clear();
 			if (primary) {
 				this.focusTarget.focus();
 				if (this.input === input && this.focusTarget.hasFocus) {
@@ -73,13 +73,12 @@ export class ActorOutlinerControl {
 			setWorkbenchTreeCollapsed(tree, index, !row.collapsed);
 			// Disclosure changes row focus, not the selected live actor. Its Details
 			// and viewport highlight survive a collapsed ancestor, as in UE's Outliner.
-			this.lastClick = undefined; this.changed(); return true;
+			this.clicks.clear(); this.changed(); return true;
 		}
 		tree.selectionIndex = index; this.select();
-		if (secondary) { this.lastClick = undefined; this.contextMenu(snapshot.viewportX, snapshot.viewportY, false); }
+		if (secondary) { this.clicks.clear(); this.contextMenu(snapshot.viewportX, snapshot.viewportY, false); }
 		else {
-			const twice = this.lastClick === row.element.hashId && now - this.lastClickTime <= colors.DOUBLE_CLICK_MAX_INTERVAL_MS;
-			this.lastClick = twice ? undefined : row.element.hashId; this.lastClickTime = now;
+			const twice = this.clicks.click(row, snapshot.viewportX, snapshot.viewportY, now);
 			if (twice) this.commands.execute('sceneViewport.frameSelection', this.parent);
 		}
 		return true;

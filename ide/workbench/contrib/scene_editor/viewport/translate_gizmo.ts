@@ -1,7 +1,7 @@
 import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import { segmentDistanceSquared } from '../../../../../machine/ts/common/vector';
 import type { SceneSourceAffine } from '../model';
-import type { SceneViewportCamera } from './camera';
+import type { WorkbenchViewportCamera } from '../../../ui/viewport_camera';
 
 export enum TranslateHandle { None = 0, X = 1, Y = 2, XY = 3, Z = 4, XZ = 5, YZ = 6, View = 7 }
 export const TRANSLATE_PLANE_HANDLES = [TranslateHandle.XY, TranslateHandle.XZ, TranslateHandle.YZ] as const;
@@ -33,7 +33,7 @@ export class SceneTranslationGizmo {
 	private readonly direction = new Float64Array(3);
 	private readonly start = new Float64Array(3);
 
-	public project(world: Readonly<SceneSourceAffine> | undefined, revision: number, camera: SceneViewportCamera,
+	public project(world: Readonly<SceneSourceAffine> | undefined, revision: number, camera: WorkbenchViewportCamera,
 		bounds: Readonly<RectBounds>, allocation: number, lineHeight: number): void {
 		if (this.projectedWorld === world && this.projectedRevision === revision && this.cameraRevision === camera.revision
 			&& this.allocation === allocation && this.lineHeight === lineHeight) return;
@@ -103,7 +103,7 @@ export class SceneTranslationGizmo {
 		return TranslateHandle.None;
 	}
 
-	public begin(handle: TranslateHandle, x: number, y: number, camera: SceneViewportCamera, bounds: Readonly<RectBounds>): boolean {
+	public begin(handle: TranslateHandle, x: number, y: number, camera: WorkbenchViewportCamera, bounds: Readonly<RectBounds>): boolean {
 		const world = this.world!;
 		this.mode = camera.mode; this.startX = x; this.startY = y;
 		this.planar = world.family === '2d';
@@ -129,7 +129,7 @@ export class SceneTranslationGizmo {
 	}
 
 	/** A parallel/behind-eye ray has no plane intersection and publishes no new proposal. */
-	public move(x: number, y: number, camera: SceneViewportCamera): boolean {
+	public move(x: number, y: number, camera: WorkbenchViewportCamera): boolean {
 		let dx = 0, dy = 0, dz = 0;
 		if (this.mode === '2d') {
 			if (x !== this.startX) dx = Math.round(this.startOriginX + (x - this.startX) / camera.scale) - this.startOriginX;

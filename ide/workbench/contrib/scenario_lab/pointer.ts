@@ -1,4 +1,4 @@
-import * as constants from '../../../common/constants';
+import { PointerClickSequence } from '../../../input/pointer/click_sequence';
 import type { PointerSnapshot } from '../../../common/models';
 import { workbenchListRowIndexAtPosition } from '../../ui/list_view';
 import {
@@ -29,86 +29,76 @@ function pointerHitsTwistie(
 		&& snapshot.viewportX < row.twistieRight;
 }
 
-function recordPointerClick(
-	state: ScenarioLabViewState,
-	rowId: string,
-	currentTimeMs: number,
-): boolean {
-	const doubleClick = state.lastPointerClickRowId === rowId
-		&& currentTimeMs - state.lastPointerClickTimeMs <= constants.DOUBLE_CLICK_MAX_INTERVAL_MS;
-	state.lastPointerClickTimeMs = doubleClick ? 0 : currentTimeMs;
-	state.lastPointerClickRowId = doubleClick ? null : rowId;
-	return doubleClick;
-}
+export class ScenarioLabPointer {
+	private readonly clicks = new PointerClickSequence<ScenarioLabTestRow | ScenarioLabResultRow>();
+	public clear(): void { this.clicks.clear(); }
+	public handle(
+		state: ScenarioLabViewState,
+		snapshot: PointerSnapshot,
+		justPressed: boolean,
+		currentTimeMs: number,
+	): ScenarioLabPointerResult {
+		const layout = state.layout;
+		const inside = snapshot.valid
+			&& snapshot.insideViewport
+			&& snapshot.viewportX >= layout.left
+			&& snapshot.viewportX < layout.right
+			&& snapshot.viewportY >= layout.top
+			&& snapshot.viewportY < layout.bottom;
+		if (!inside) {
+			if (snapshot.justPressedButtons !== 0 || !snapshot.valid) this.clear();
+			state.testPane.hoverIndex = -1;
+			state.resultPane.hoverIndex = -1;
+			return ScenarioLabPointerResult.Outside;
+		}
 
-export function handleScenarioLabPointerInput(
-	state: ScenarioLabViewState,
-	snapshot: PointerSnapshot,
-	justPressed: boolean,
-	currentTimeMs: number,
-): ScenarioLabPointerResult {
-	const layout = state.layout;
-	const inside = snapshot.valid
-		&& snapshot.insideViewport
-		&& snapshot.viewportX >= layout.left
-		&& snapshot.viewportX < layout.right
-		&& snapshot.viewportY >= layout.top
-		&& snapshot.viewportY < layout.bottom;
-	if (!inside) {
-		state.testPane.hoverIndex = -1;
-		state.resultPane.hoverIndex = -1;
-		return ScenarioLabPointerResult.Outside;
-	}
+		const testPane = state.testPane;
+		const resultPane = state.resultPane;
+		testPane.hoverIndex = workbenchListRowIndexAtPosition(
+			testPane,
+			snapshot.viewportX,
+			snapshot.viewportY,
+		);
+		resultPane.hoverIndex = workbenchListRowIndexAtPosition(
+			resultPane,
+			snapshot.viewportX,
+			snapshot.viewportY,
+		);
+		if (!justPressed) {
+			return ScenarioLabPointerResult.Handled;
+		}
 
-	const testPane = state.testPane;
-	const resultPane = state.resultPane;
-	testPane.hoverIndex = workbenchListRowIndexAtPosition(
-		testPane,
-		snapshot.viewportX,
-		snapshot.viewportY,
-	);
-	resultPane.hoverIndex = workbenchListRowIndexAtPosition(
-		resultPane,
-		snapshot.viewportX,
-		snapshot.viewportY,
-	);
-	if (!justPressed) {
+		const testIndex = testPane.hoverIndex;
+		if (testIndex >= 0) {
+			const row = testPane.rows[testIndex];
+			selectScenarioLabTestRow(state, testIndex);
+			if (pointerHitsTwistie(snapshot, row)) {
+				toggleScenarioLabTestRow(state, testIndex);
+				this.clicks.clear();
+				return ScenarioLabPointerResult.Handled;
+			}
+			return this.clicks.click(row, snapshot.viewportX, snapshot.viewportY, currentTimeMs)
+				? ScenarioLabPointerResult.Activate
+				: ScenarioLabPointerResult.Handled;
+		}
+
+		const resultIndex = resultPane.hoverIndex;
+		if (resultIndex >= 0) {
+			const row = resultPane.rows[resultIndex];
+			selectScenarioLabResultRow(state, resultIndex);
+			if (pointerHitsTwistie(snapshot, row)) {
+				toggleScenarioLabResultRow(state, resultIndex);
+				this.clicks.clear();
+				return ScenarioLabPointerResult.Handled;
+			}
+			return this.clicks.click(row, snapshot.viewportX, snapshot.viewportY, currentTimeMs)
+				? ScenarioLabPointerResult.Activate
+				: ScenarioLabPointerResult.Handled;
+		}
+
+		state.focus = snapshot.viewportX < testPane.layout.contentRight ? 'tests' : 'results';
+		updateScenarioLabStatus(state);
+		this.clicks.clear();
 		return ScenarioLabPointerResult.Handled;
 	}
-
-	const testIndex = testPane.hoverIndex;
-	if (testIndex >= 0) {
-		const row = testPane.rows[testIndex];
-		selectScenarioLabTestRow(state, testIndex);
-		if (pointerHitsTwistie(snapshot, row)) {
-			toggleScenarioLabTestRow(state, testIndex);
-			state.lastPointerClickTimeMs = 0;
-			state.lastPointerClickRowId = null;
-			return ScenarioLabPointerResult.Handled;
-		}
-		return recordPointerClick(state, `test:${row.id}`, currentTimeMs)
-			? ScenarioLabPointerResult.Activate
-			: ScenarioLabPointerResult.Handled;
-	}
-
-	const resultIndex = resultPane.hoverIndex;
-	if (resultIndex >= 0) {
-		const row = resultPane.rows[resultIndex];
-		selectScenarioLabResultRow(state, resultIndex);
-		if (pointerHitsTwistie(snapshot, row)) {
-			toggleScenarioLabResultRow(state, resultIndex);
-			state.lastPointerClickTimeMs = 0;
-			state.lastPointerClickRowId = null;
-			return ScenarioLabPointerResult.Handled;
-		}
-		return recordPointerClick(state, `result:${row.id}`, currentTimeMs)
-			? ScenarioLabPointerResult.Activate
-			: ScenarioLabPointerResult.Handled;
-	}
-
-	state.focus = snapshot.viewportX < testPane.layout.contentRight ? 'tests' : 'results';
-	updateScenarioLabStatus(state);
-	state.lastPointerClickTimeMs = 0;
-	state.lastPointerClickRowId = null;
-	return ScenarioLabPointerResult.Handled;
 }

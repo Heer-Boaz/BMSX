@@ -7,7 +7,7 @@ import { appendAffine3, type Affine3 } from '../../machine/ts/common/affine3';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
 import type { SceneSourceAffine, SceneSourceObject } from '../../ide/workbench/contrib/scene_editor/model';
 import type { SceneTransformPreview } from '../../ide/workbench/contrib/scene_editor/transform_proposal';
-import { SceneViewportCamera } from '../../ide/workbench/contrib/scene_editor/viewport/camera';
+import { WorkbenchViewportCamera } from '../../ide/workbench/ui/viewport_camera';
 import { SceneViewportGeometry } from '../../ide/workbench/contrib/scene_editor/viewport/geometry';
 import { SceneViewportCanvas } from '../../ide/workbench/contrib/scene_editor/viewport/canvas';
 import { SceneViewportViewState, type SceneViewportPlacement } from '../../ide/workbench/contrib/scene_editor/viewport/view_state';
@@ -81,7 +81,7 @@ test('sprite preview retains bindings and unavailable candidates; unrelated or i
 	const f = fixture(t, '2d', 'xx=1, xy=0.5, yx=0.25, yy=1, ox=5, oy=6', IDENTITY_2, IDENTITY_2), item = f.canvas.items[0];
 	assert.ok(item.kind === 'sprite'); const bitmap = item.bitmap;
 	const base = f.context.spatialScene!.worlds.get(f.entry)!; assert.equal(base.family, '2d');
-	const world = { ...base }, proposal = preview(f.entry, world), camera = new SceneViewportCamera(), bounds = { left: 0, top: 0, right: 100, bottom: 100 };
+	const world = { ...base }, proposal = preview(f.entry, world), camera = new WorkbenchViewportCamera(), bounds = { left: 0, top: 0, right: 100, bottom: 100 };
 	camera.setViewport(100, 100); f.canvas.project(camera, bounds, 1);
 	for (let step = 0; step < 100; step++) {
 		world.ox = base.ox + step; world.oy = base.oy - step; proposal.revision++; f.canvas.prepare(f.read, proposal);

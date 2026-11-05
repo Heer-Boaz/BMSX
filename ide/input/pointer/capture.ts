@@ -1,5 +1,5 @@
 import { PointerButton } from '../../../hosts/common/input/pointer_event';
-import type { PointerInputSnapshot, PointerSnapshot } from '../../common/models';
+import type { PointerInputSnapshot, PointerSnapshot, WheelInputSnapshot } from '../../common/models';
 import type { GuestInputBinding } from '../focus';
 import type { KeyModifier } from '../../../hosts/common/input/text';
 
@@ -11,6 +11,8 @@ export interface PointerCaptureTarget {
 	releaseCapturedPointer(snapshot: PointerInputSnapshot, now: number): void;
 	cancelPointer(): void;
 	onModifiersChange?(modifiers: KeyModifier, now: number): void;
+	/** Modal gestures may own wheel input too; ordinary drags leave hover routing intact. */
+	handleCapturedWheel?(snapshot: WheelInputSnapshot, now: number): boolean;
 }
 
 /** One control receives the rest of a physical gesture, ahead of ordinary hit testing. */
@@ -92,6 +94,10 @@ export class PointerCaptureService {
 	/** The captured gesture retains pointer position while keyboard modifiers change. */
 	public dispatchModifiers(modifiers: KeyModifier, now: number): void {
 		this.target?.onModifiersChange?.(modifiers, now);
+	}
+
+	public dispatchWheel(snapshot: WheelInputSnapshot, now: number): boolean {
+		return this.target?.handleCapturedWheel?.(snapshot, now) ?? false;
 	}
 
 	/** Blocking ends capture; it never postpones a drag until the popup closes. */

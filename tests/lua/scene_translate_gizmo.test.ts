@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { SceneViewportCamera } from '../../ide/workbench/contrib/scene_editor/viewport/camera';
+import { WorkbenchViewportCamera } from '../../ide/workbench/ui/viewport_camera';
 import { SceneTranslationGizmo, TranslateHandle } from '../../ide/workbench/contrib/scene_editor/viewport/translate_gizmo';
 import type { SceneSourceAffine } from '../../ide/workbench/contrib/scene_editor/model';
 
@@ -9,7 +9,7 @@ const POSE2: SceneSourceAffine = { family: '2d', xx: 1, xy: 0, yx: 0, yy: 1, ox:
 const POSE3: SceneSourceAffine = { family: '3d', xx: 1, xy: 0, xz: 0, yx: 0, yy: 1, yz: 0, zx: 0, zy: 0, zz: 1, ox: 0, oy: 0, oz: 0 };
 
 test('2D move geometry hits painted axes and the center handle constrains the world delta', () => {
-	const camera = new SceneViewportCamera(), gizmo = new SceneTranslationGizmo(); camera.setViewport(400, 240);
+	const camera = new WorkbenchViewportCamera(), gizmo = new SceneTranslationGizmo(); camera.setViewport(400, 240);
 	gizmo.project(POSE2, 0, camera, BOUNDS, 0, 8);
 	for (const handle of [TranslateHandle.X, TranslateHandle.Y]) {
 		const points = gizmo.axes[handle === TranslateHandle.X ? 0 : 1], x = (points[0] + points[2]) / 2, y = (points[1] + points[3]) / 2;
@@ -23,7 +23,7 @@ test('2D move geometry hits painted axes and the center handle constrains the wo
 });
 
 test('perspective axis dragging intersects a frozen camera-facing plane without a TRS or inverse-child approximation', () => {
-	const camera = new SceneViewportCamera(), gizmo = new SceneTranslationGizmo(); camera.setViewport(400, 240); camera.setMode('3d');
+	const camera = new WorkbenchViewportCamera(), gizmo = new SceneTranslationGizmo(); camera.setViewport(400, 240); camera.setMode('3d');
 	gizmo.project(POSE3, 0, camera, BOUNDS, 0, 8);
 	for (let axis = 0; axis < 3; axis++) {
 		const x = axis === 0 ? 0.75 : 0, y = axis === 1 ? 0.75 : 0, z = axis === 2 ? 0.75 : 0;
@@ -36,7 +36,7 @@ test('perspective axis dragging intersects a frozen camera-facing plane without 
 });
 
 test('perspective plane handles constrain only the selected world plane', () => {
-	const camera = new SceneViewportCamera(), gizmo = new SceneTranslationGizmo(); camera.setViewport(400, 240); camera.setMode('3d');
+	const camera = new WorkbenchViewportCamera(), gizmo = new SceneTranslationGizmo(); camera.setViewport(400, 240); camera.setMode('3d');
 	gizmo.project(POSE3, 0, camera, BOUNDS, 0, 10);
 	for (const handle of [TranslateHandle.XY, TranslateHandle.XZ, TranslateHandle.YZ]) {
 		assert.equal(gizmo.begin(handle, 210, 140, camera, BOUNDS), true);
@@ -48,7 +48,7 @@ test('perspective plane handles constrain only the selected world plane', () => 
 });
 
 test('handle geometry borrows font/allocation metrics and retains idle projection lanes', t => {
-	const camera = new SceneViewportCamera(), gizmo = new SceneTranslationGizmo(); camera.setViewport(400, 240);
+	const camera = new WorkbenchViewportCamera(), gizmo = new SceneTranslationGizmo(); camera.setViewport(400, 240);
 	gizmo.project(POSE2, 0, camera, BOUNDS, 0, 8);
 	const points = gizmo.axes[0], span = points[2] - gizmo.x, projected = t.mock.method(camera, 'projectX');
 	for (let frame = 0; frame < 100; frame++) gizmo.project(POSE2, 0, camera, BOUNDS, 0, 8);
@@ -58,7 +58,7 @@ test('handle geometry borrows font/allocation metrics and retains idle projectio
 });
 
 test('end-on and behind-camera handles remain unavailable, including repeated idle projection', () => {
-	const camera = new SceneViewportCamera(), gizmo = new SceneTranslationGizmo(); camera.setViewport(400, 240); camera.setMode('3d');
+	const camera = new WorkbenchViewportCamera(), gizmo = new SceneTranslationGizmo(); camera.setViewport(400, 240); camera.setMode('3d');
 	const state = camera.capture(); camera.restore({ ...state, space: { ...state.space, yaw: 0, pitch: 0 } });
 	gizmo.project(POSE3, 0, camera, BOUNDS, 0, 8); assert.equal(gizmo.visibleAxes & TranslateHandle.Z, 0);
 	assert.equal(gizmo.begin(TranslateHandle.Z, gizmo.x, gizmo.y, camera, BOUNDS), false);
@@ -69,7 +69,7 @@ test('end-on and behind-camera handles remain unavailable, including repeated id
 });
 
 test('origin-relative handle projection preserves a unit lever beside a huge world origin', () => {
-	const origin = 2 ** 60, camera = new SceneViewportCamera(), gizmo = new SceneTranslationGizmo(); camera.setViewport(400, 240); camera.setMode('3d');
+	const origin = 2 ** 60, camera = new WorkbenchViewportCamera(), gizmo = new SceneTranslationGizmo(); camera.setViewport(400, 240); camera.setMode('3d');
 	camera.frame3D(-1, -1, -1, 1, 1, 1, origin, origin, origin);
 	const state = camera.capture(); camera.restore({ ...state, space: { ...state.space, yaw: 0, pitch: 0 } });
 	const pose: SceneSourceAffine = { ...POSE3, ox: origin, oy: origin, oz: origin };
@@ -83,7 +83,7 @@ test('origin-relative handle projection preserves a unit lever beside a huge wor
 
 
 test('2D dragging snaps the moved world axis to pixels without rounding an untouched authored coordinate', () => {
-	const camera = new SceneViewportCamera(), gizmo = new SceneTranslationGizmo(); camera.setViewport(400, 240); camera.zoom(1.4, 0, 0);
+	const camera = new WorkbenchViewportCamera(), gizmo = new SceneTranslationGizmo(); camera.setViewport(400, 240); camera.zoom(1.4, 0, 0);
 	const pose: SceneSourceAffine = { ...POSE2, ox: 0.25, oy: 8.6567164179104 };
 	gizmo.project(pose, 0, camera, BOUNDS, 0, 8);
 	const x = gizmo.x, y = gizmo.y;

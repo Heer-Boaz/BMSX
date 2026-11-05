@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
 import { SceneViewportCanvas } from '../../ide/workbench/contrib/scene_editor/viewport/canvas';
-import { SceneViewportCamera } from '../../ide/workbench/contrib/scene_editor/viewport/camera';
+import { WorkbenchViewportCamera } from '../../ide/workbench/ui/viewport_camera';
 import { SceneViewportViewState } from '../../ide/workbench/contrib/scene_editor/viewport/view_state';
 import { drawSceneViewport } from '../../ide/workbench/contrib/scene_editor/viewport/render';
 import { api } from '../../ide/runtime/overlay_api';
@@ -59,7 +59,7 @@ prefab.define({def_id='zero',class=require('cartlib/world/object_2d'),components
 	assert.deepEqual([read.canvas[1].presentation.ox, read.canvas[1].presentation.oy], [5, 6]);
 	const images = new WorkspaceImageAssets(f.sources.catalog);
 	images.update(f.model.identity.contextId, new Set(['big', 'small', 'missing']));
-	const canvas = new SceneViewportCanvas(images), camera = new SceneViewportCamera();
+	const canvas = new SceneViewportCanvas(images), camera = new WorkbenchViewportCamera();
 	canvas.prepare(read); camera.setViewport(600, 600); canvas.project(camera, {left:0,top:0,right:600,bottom:600}, 1);
 	assert.equal(canvas.items.length, 4);
 	const big = canvas.items[3]; assert.equal(big.kind, 'sprite');

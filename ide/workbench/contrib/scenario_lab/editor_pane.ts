@@ -3,7 +3,7 @@ import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { WorkbenchSplitControl } from '../../ui/split_control';
 import { scrollWorkbenchList, workbenchListContainsPosition } from '../../ui/list_view';
 import { drawWorkbenchSplit } from '../../render/split_view';
-import type { RectBounds } from '../../../../machine/ts/common/rect';
+import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
 import { ScenarioTargetInspection } from './target_inspection';
 import { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
 import { drawWorkbenchPropertyInspector } from '../../render/property_inspector';
@@ -30,7 +30,7 @@ import { drawScenarioLab } from './render';
 import { inputFocus, type FocusCommandInvocation, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
-import { handleScenarioLabPointerInput, ScenarioLabPointerResult } from './pointer';
+import { ScenarioLabPointer, ScenarioLabPointerResult } from './pointer';
 import { executeScenarioLabNavigation, updateScenarioLabStatus, type ScenarioLabNavigationCommand } from './navigation';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
@@ -58,6 +58,7 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 		return new ScenarioLabNavigationSelection(this.input.view);
 	}
 
+	private readonly pointer = new ScenarioLabPointer();
 	private readonly resultsFocus = inputFocus.createTarget(this.focusTarget);
 	private readonly split = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.resultsFocus);
 	private readonly unbindResultsKeyboard = this.resultsFocus.bindKeyboard(input => this.handleKeyboard(input));
@@ -175,6 +176,7 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 	}
 
 	protected override activate(): void {
+		this.pointer.clear();
 		this.actionBar.setInput(this.input.view.actionBar, this.resultsFocus);
 		this.split.setInput(this.input.view.split);
 	}
@@ -190,6 +192,7 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 	public override get commandTarget(): InputFocusTarget { return this.input.view.focus === 'results' ? this.resultsFocus : this.focusTarget; }
 
 	public override clearInput(): void {
+		this.pointer.clear();
 		this.split.clearInput();
 		this.inspector.hide();
 		this.targetInspection.hide();
@@ -300,13 +303,14 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 		if (this.inspector.visible) return this.inspector.handlePointer(snapshot);
 		const view = this.input.view;
 		if (this.split.handlePointer(snapshot) || this.actionBar.handlePointer(snapshot)) {
-			if (justPressed) { view.lastPointerClickTimeMs = 0; view.lastPointerClickRowId = null; }
+			if (justPressed) this.pointer.clear();
 			return true;
 		}
-		const result = handleScenarioLabPointerInput(view, snapshot, justPressed, now);
+		if (justPressed && snapshot.valid && snapshot.insideViewport
+			&& point_in_rect(snapshot.viewportX, snapshot.viewportY, view.layout) && !this.focusInput(this.input)) { this.pointer.clear(); return true; }
+		const result = this.pointer.handle(view, snapshot, justPressed, now);
 		if (result === ScenarioLabPointerResult.Outside) { pointerHover.release(this); return false; }
 		pointerHover.visit(this);
-		if (justPressed) this.focus();
 		this.rowFeedback.pointer(view, snapshot);
 		if (result === ScenarioLabPointerResult.Activate) this.navigate('activate');
 		return true;

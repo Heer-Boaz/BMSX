@@ -6,7 +6,7 @@ import type { ModelRenderPart, ModelRenderResources } from '../../../../common/m
 import type { SceneSourceObject } from '../model';
 import type { SceneTransformPreview } from '../transform_proposal';
 
-import type { SceneViewportCamera, SceneViewportPoint } from './camera';
+import type { WorkbenchViewportCamera, ViewportCameraPoint } from '../../../ui/viewport_camera';
 import type { ViewportCanvasQuad } from './canvas_geometry';
 
 export type ViewportModel<Owner, Model = string> = {
@@ -23,7 +23,7 @@ type Draw<Owner> = HostMeshInstance & { entry: Owner; vertices: Float64Array; re
 	minX: number; minY: number; minZ: number; maxX: number; maxY: number; maxZ: number };
 type CanvasDraw<Owner> = { quad: ViewportCanvasQuad<Owner>; draw: Draw<Owner>; initialized: boolean };
 export type SceneViewportGeometryBounds = { originX: number; originY: number; originZ: number; minX: number; minY: number; minZ: number; maxX: number; maxY: number; maxZ: number };
-type Hit<Owner> = SceneViewportPoint & { entry: Owner | undefined };
+type Hit<Owner> = ViewportCameraPoint & { entry: Owner | undefined };
 
 /** Retained asset placements, raster submission and triangle picking share the same occurrences and geometry. */
 export class SceneViewportGeometry<Owner = SceneSourceObject, Model = string> {
@@ -211,7 +211,7 @@ export class SceneViewportGeometry<Owner = SceneSourceObject, Model = string> {
 		}
 		draw.minX = minX; draw.minY = minY; draw.minZ = minZ; draw.maxX = maxX; draw.maxY = maxY; draw.maxZ = maxZ;
 	}
-	public project(camera: SceneViewportCamera, bounds: Readonly<RectBounds>): boolean {
+	public project(camera: WorkbenchViewportCamera, bounds: Readonly<RectBounds>): boolean {
 		if (camera.mode !== '3d' || bounds.left >= bounds.right || bounds.top >= bounds.bottom) return false;
 		this.scene.resize(bounds.right - bounds.left, bounds.bottom - bounds.top);
 		if (camera.spaceRevision !== this.cameraRevision) {
@@ -235,7 +235,7 @@ export class SceneViewportGeometry<Owner = SceneSourceObject, Model = string> {
 		return count !== 0;
 	}
 	/** World-space triangles keep flattened but drawable affines pickable; no inverse-transform substitute. */
-	public pick(x: number, y: number, camera: SceneViewportCamera): Readonly<Hit<Owner>> | undefined {
+	public pick(x: number, y: number, camera: WorkbenchViewportCamera): Readonly<Hit<Owner>> | undefined {
 		camera.rayDirection3D(x, y, this.rayDirection);
 		const o = this.rayOrigin, d = this.rayDirection, hit = this.hit; hit.entry = undefined; let nearestDepth = 0;
 		for (const draw of this.draws) {

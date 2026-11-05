@@ -1,11 +1,11 @@
-import { clamp } from '../../../../../machine/ts/common/clamp';
+import { clamp } from '../../../machine/ts/common/clamp';
 
-export type SceneViewportPoint = { originX: number; originY: number; originZ: number; x: number; y: number; z: number };
+export type ViewportCameraPoint = { originX: number; originY: number; originZ: number; x: number; y: number; z: number };
 
 type Reading = 'initial' | 'manual';
 type CanvasCamera = { centerX: number; centerY: number; scale: number; reading: Reading };
 type SpaceCamera = { originX: number; originY: number; originZ: number; centerX: number; centerY: number; centerZ: number; distance: number; yaw: number; pitch: number; reading: Reading };
-export type SceneViewportCameraState = {
+export type WorkbenchViewportCameraState = {
 	readonly mode: '2d' | '3d';
 	readonly modeIntent: 'source' | 'manual';
 	readonly canvas: Readonly<CanvasCamera>;
@@ -16,7 +16,7 @@ const TAN_HALF_FOV = Math.tan(Math.PI / 6);
 
 /** Independent canvas and orbit readings, never the cartridge camera.
  * Space uses an infinite reversed-Z projection: clip Z in 0..W, near=1, far=0. */
-export class SceneViewportCamera {
+export class WorkbenchViewportCamera {
 	private modeValue: '2d' | '3d' = '2d';
 	private modeIntent: 'source' | 'manual' = 'source';
 	private readonly canvas: CanvasCamera = { centerX: 0, centerY: 0, scale: 1, reading: 'initial' };
@@ -48,10 +48,10 @@ export class SceneViewportCamera {
 		if (reading.reading === 'manual') return;
 		reading.reading = 'manual'; this.changed();
 	}
-	public capture(): SceneViewportCameraState {
+	public capture(): WorkbenchViewportCameraState {
 		return { mode: this.mode, modeIntent: this.modeIntent, canvas: { ...this.canvas }, space: { ...this.space } };
 	}
-	public restore(state: SceneViewportCameraState): void {
+	public restore(state: WorkbenchViewportCameraState): void {
 		this.modeValue = state.mode; this.modeIntent = state.modeIntent;
 		Object.assign(this.canvas, state.canvas); Object.assign(this.space, state.space);
 		this.updateSpace(); this.changed();
@@ -121,7 +121,7 @@ export class SceneViewportCamera {
 		this.changed();
 	}
 	/** Dolly around the picked world point, or the pointer on the pivot plane. */
-	public zoom(steps: number, anchorX: number, anchorY: number, anchor?: Readonly<SceneViewportPoint>): void {
+	public zoom(steps: number, anchorX: number, anchorY: number, anchor?: Readonly<ViewportCameraPoint>): void {
 		if (steps === 0) return;
 		if (this.mode === '2d') {
 			const c = this.canvas, scale = clamp(c.scale * 2 ** steps, 1 / 64, 64);

@@ -1,3 +1,5 @@
+import { PointerButton } from '../../hosts/common/input/pointer_event';
+import { KeyModifier } from '../../hosts/common/input/text';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { resolve } from 'node:path';
@@ -87,4 +89,26 @@ test('a non-graph property background keeps its native editing menu without grap
 	f.input.view.selectionState.select(null); f.update();
 	f.key('ContextMenu'); assert.equal(f.editor.contextMenu.visible, true);
 	assert.equal(f.editor.contextMenu.model.rows.some(row => row.command === 'graph.fit' || row.command === 'graph.frameSelection'), false);
+});
+
+for (const source of [TREE, MACHINE]) test('native graph right click resolves its subject on release; right drag only navigates', async t => {
+	const f = await fixture(t, source), presentation = f.input.view.presentation;
+	assert.ok(presentation.kind === 'graph' || presentation.kind === 'state-graph');
+	const view = presentation.viewport, node = view.model.nodes[0]; view.frameAll();
+	const x = view.graphToViewportX((node.bounds.left + node.bounds.right) / 2), y = view.graphToViewportY(node.bounds.top + node.headerHeight / 2);
+	const hit = view.hitTest(x, y); assert.ok(hit !== null);
+	let held = 0;
+	const pointer = (px: number, py: number, buttons: number) => {
+		f.host.clock.advance(10);
+		f.editor.dispatchPointer({ x: px, y: py, buttons, pressedButtons: buttons & ~held, releasedButtons: held & ~buttons,
+			cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() }); held = buttons;
+	};
+	const before = view.selection, text = f.input.workingCopy.buffer.getText();
+	pointer(x, y, PointerButton.Secondary); assert.equal(f.editor.contextMenu.visible, false); assert.ok(view.selection === before);
+	pointer(x, y, 0); assert.equal(f.editor.contextMenu.visible, true); assert.ok(view.selection === hit, 'the context subject is the item actually under the pointer');
+	f.editor.contextMenu.hide();
+	const selected = view.selection;
+	pointer(x, y, PointerButton.Secondary); pointer(x + 20, y + 10, PointerButton.Secondary); pointer(x + 20, y + 10, 0);
+	assert.equal(f.editor.contextMenu.visible, false); assert.equal(view.cameraMode, 'manual'); assert.ok(view.selection === selected);
+	assert.equal(f.input.workingCopy.buffer.getText(), text);
 });

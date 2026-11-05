@@ -5,7 +5,7 @@ import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/
 import type { SceneSourceAffine, SceneSourceObject } from '../../ide/workbench/contrib/scene_editor/model';
 import type { SceneTransformPreview } from '../../ide/workbench/contrib/scene_editor/transform_proposal';
 import { SceneViewportCanvas } from '../../ide/workbench/contrib/scene_editor/viewport/canvas';
-import { SceneViewportCamera } from '../../ide/workbench/contrib/scene_editor/viewport/camera';
+import { WorkbenchViewportCamera } from '../../ide/workbench/ui/viewport_camera';
 import { collectSceneTextImages } from '../../ide/workbench/contrib/scene_editor/viewport/text_layout';
 import { WorkspaceImageAssets } from '../../ide/workspace/image_assets';
 import { createPackedImageFixture } from '../helpers/packed_images';
@@ -24,7 +24,7 @@ function fixture(t: TestContext, properties = "text='AA'", declaration = SCENE_T
 	const read = context.visualScene!, visual = read.canvas[0]; assert.ok(visual.kind === 'text');
 	const images = new WorkspaceImageAssets(f.sources.catalog), ids = new Set<string>(); collectSceneTextImages(visual, ids);
 	images.update(f.model.identity.contextId, ids);
-	const canvas = new SceneViewportCanvas(images), camera = new SceneViewportCamera(), bounds = { left: 0, top: 0, right: 200, bottom: 120 };
+	const canvas = new SceneViewportCanvas(images), camera = new WorkbenchViewportCamera(), bounds = { left: 0, top: 0, right: 200, bottom: 120 };
 	canvas.prepare(read); camera.setViewport(200, 120); canvas.project(camera, bounds, 1, visual.entry);
 	t.after(() => { canvas.dispose(); images.dispose(); context.dispose(); });
 	return { ...f, source, context, read, visual, images, ids, canvas, camera, bounds, provider };

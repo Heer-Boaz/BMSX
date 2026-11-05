@@ -686,7 +686,6 @@ for (const variant of ['tiny', 'msx'] as const) for (const heldFrame of [false, 
 		assert.equal(pointerCapture.active, false);
 		assert.equal(pointerHover.has(f.strip), false);
 		assert.equal(f.strip.hoverId, null);
-		assert.equal(f.strip.lastClickId, preview.id);
 		assert.equal(f.group.previewTab, preview);
 		f.press(pointer(x, y, primary, primary), 30);
 		assert.equal(f.group.previewTab, null);

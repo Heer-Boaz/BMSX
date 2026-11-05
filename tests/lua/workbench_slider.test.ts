@@ -65,3 +65,22 @@ test('slider preserves captured input through readback and cancels on geometry, 
 	}
 	assert.deepEqual(values.slice(-4), [0, 1, 2000, 1999]);
 });
+
+for (const transition of ['replacement', 'retirement', 'refused focus'] as const) test(`slider press cannot cross ${transition} during focus admission`, t => {
+	const focus = new InputFocusService(), capture = new PointerCaptureService(), parent = focus.createTarget();
+	const original = new WorkbenchSlider(), replacement = new WorkbenchSlider();
+	for (const slider of [original, replacement]) { slider.enabled = true; slider.layout(0, 20, 106, 36); slider.setRange(0, 100, 1); }
+	const values: number[] = [], control = new WorkbenchSliderControl(focus, capture, parent, value => values.push(value), () => {});
+	control.setInput(original); parent.focus();
+	t.after(() => control.dispose());
+	const unbind = parent.onDidBlur(() => {
+		unbind();
+		if (transition === 'replacement') control.setInput(replacement);
+		else if (transition === 'retirement') control.clearInput();
+		else parent.focus();
+	}); t.after(unbind);
+	control.handlePointer({ valid: true, insideViewport: true, viewportX: 50, viewportY: 25,
+		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 });
+	assert.deepEqual(values, [], 'an inadmissible press must not move either slider');
+	assert.equal(original.value, 0); assert.equal(replacement.value, 0); assert.equal(capture.active, false);
+});

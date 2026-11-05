@@ -13,6 +13,7 @@ type ClipGesture = { readonly clip: AnimationClipSource; readonly mode: 'move' |
 /** Overview selection and native clip transport edits borrow one source generation. */
 export class AnimationLaneControl implements PointerCaptureTarget {
 	private input: AnimationEditorInput | undefined;
+	private inputGeneration = 0;
 	private gesture: ClipGesture | undefined;
 	private unbindSource: (() => void) | undefined;
 	private readonly unbindBlur: () => void;
@@ -21,9 +22,9 @@ export class AnimationLaneControl implements PointerCaptureTarget {
 	}
 	public setInput(input: AnimationEditorInput): void {
 		this.clearInput(); this.input = input;
-		this.unbindSource = input.onDidInvalidateProjection(() => this.cancelPointer());
+		this.unbindSource = input.onDidInvalidateProjection(() => { this.inputGeneration++; this.cancelPointer(); });
 	}
-	public clearInput(): void { this.cancelPointer(); this.unbindSource?.(); this.unbindSource = undefined; this.input = undefined; }
+	public clearInput(): void { this.inputGeneration++; this.cancelPointer(); this.unbindSource?.(); this.unbindSource = undefined; this.input = undefined; }
 	public dispose(): void { this.clearInput(); this.unbindBlur(); }
 	public handlePointer(snapshot: PointerSnapshot): boolean {
 		const input = this.input!;
@@ -32,9 +33,12 @@ export class AnimationLaneControl implements PointerCaptureTarget {
 		if ((snapshot.justPressedButtons & PointerButton.Primary) === 0 && !secondary) return true;
 		const list = input.tracks, index = (list.scroll | 0) + ((snapshot.viewportY - list.layout.contentTop) / list.layout.rowHeight | 0);
 		if (index >= list.rows.length) return !secondary;
-		if (!secondary) this.focus.focus();
+		const generation = this.inputGeneration, context = this.focus.scope.contextGeneration, revision = input.keys.revision;
+		if (!secondary && (!this.focus.focus() || this.inputGeneration !== generation || this.focus.scope.contextGeneration !== context
+			|| input.keys.revision !== revision)) return true;
 		const row = list.rows[index], clip = row.clip;
 		if (index !== list.selectionIndex || secondary && row.track === undefined) this.controller.selectTrack(input, index);
+		if (this.inputGeneration !== generation || this.focus.scope.contextGeneration !== context) return true;
 		if (clip !== undefined) {
 			if (secondary) return true;
 			const start = clip.start === undefined ? 0 : clip.start.value, duration = clip.duration?.value;

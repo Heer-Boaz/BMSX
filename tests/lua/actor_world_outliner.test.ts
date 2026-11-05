@@ -117,6 +117,15 @@ test('live Actor viewport shares held-key flight without taking game input or ch
 	await f.frame(); assert.deepEqual(camera.capture(), released, 'the next hold cannot inherit the missing Up key release');
 	editor.dispatchKey(new KeyInputEvent('ArrowUp', KeyModifier.none, false, false));
 	f.native.apply([{ type: 'button', button: 'secondary', down: false }]);
+	assert.equal(editor.contextMenu.visible, true, 'an unmoved right click opens the live viewport menu on release');
+	editor.contextMenu.hide();
+	f.native.apply([{ type: 'button', button: 'secondary', down: true },
+		{ type: 'pointer', x: (bounds.left + bounds.right) / 2 + 30, y: (bounds.top + bounds.bottom) / 2 + 10 },
+		{ type: 'button', button: 'secondary', down: false }]);
+	assert.equal(editor.contextMenu.visible, false, 'a camera drag never opens the menu');
+	assert.equal(input.actorHashId, actor);
+	editor.dispatchKey(new KeyInputEvent('Digit2', KeyModifier.none));
+	assert.equal(input.worldView.mode, '2d', 'the live viewport uses the same local mode shortcut as Scene');
 });
 
 test('live Outliner selection, disclosure, Details and viewport navigation do not pause the game', async t => {

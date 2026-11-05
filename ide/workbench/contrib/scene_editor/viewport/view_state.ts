@@ -12,7 +12,7 @@ import type { SceneSpatialReadModel } from '../spatial_projection';
 import type { WorkspaceSourceCatalog } from '../../../../workspace/source_catalog';
 import { WorkspaceImageAssets } from '../../../../workspace/image_assets';
 import { WorkspaceModelAssets } from '../../../../workspace/model_assets';
-import { SceneViewportCamera } from './camera';
+import { WorkbenchViewportCamera } from '../../../ui/viewport_camera';
 import { SceneViewportCanvas } from './canvas';
 import { SceneViewportGeometry, type SceneViewportGeometryBounds } from './geometry';
 import type { SceneVisualReadModel } from '../visual_projection';
@@ -34,7 +34,7 @@ const AXIS_UNIT_PIXELS = 16;
 
 /** Retained source reading and numeric screen projection; selection stays with the authored context. */
 export class SceneViewportViewState {
-	public readonly camera = new SceneViewportCamera();
+	public readonly camera = new WorkbenchViewportCamera();
 	public readonly gizmo = new SceneTranslationGizmo();
 	public readonly caption = new WorkbenchCanvasCaption();
 	public navigationTool: 'select' | 'pan' | 'orbit' = 'select';

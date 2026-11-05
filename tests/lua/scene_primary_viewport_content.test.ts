@@ -9,7 +9,7 @@ import { ContextMenuController } from '../../ide/workbench/services/context_menu
 import { WorkbenchMenu } from '../../ide/workbench/ui/menu/model';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
-import { SceneViewportCamera } from '../../ide/workbench/contrib/scene_editor/viewport/camera';
+import { WorkbenchViewportCamera } from '../../ide/workbench/ui/viewport_camera';
 import { SceneViewportControl } from '../../ide/workbench/contrib/scene_editor/viewport/control';
 import { SceneViewportViewState, SCENE_VIEWPORT_POINT_STRIDE } from '../../ide/workbench/contrib/scene_editor/viewport/view_state';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
@@ -216,7 +216,7 @@ test('authored helper projection consumes actual affine families and retains unc
 });
 
 test('2D camera zoom anchors the source point and pan is its screen-plane inverse', () => {
-	const camera = new SceneViewportCamera();
+	const camera = new WorkbenchViewportCamera();
 	const x = camera.projectX(19, 23, 0), y = camera.projectY(19, 23, 0);
 	camera.zoom(1, x, y);
 	assert.ok(Math.abs(camera.projectX(19, 23, 0) - x) < 1e-10);
@@ -227,7 +227,7 @@ test('2D camera zoom anchors the source point and pan is its screen-plane invers
 });
 
 test('perspective dolly anchors the actual picked point and independent camera readings restore', () => {
-	const camera = new SceneViewportCamera(); camera.setViewport(400, 240); camera.pan(17, -23);
+	const camera = new WorkbenchViewportCamera(); camera.setViewport(400, 240); camera.pan(17, -23);
 	const canvas = camera.capture().canvas;
 	camera.setMode('3d'); camera.frame3D(-10, -10, -10, 10, 10, 10);
 	const point = { originX: 0, originY: 0, originZ: 0, x: 1, y: 2, z: 3 }, x = camera.projectX(point.x, point.y, point.z), y = camera.projectY(point.x, point.y, point.z);
@@ -237,7 +237,7 @@ test('perspective dolly anchors the actual picked point and independent camera r
 	const space = camera.capture().space;
 	camera.setMode('2d'); assert.deepEqual(camera.capture().canvas, canvas);
 	camera.pan(8, 9); assert.deepEqual(camera.capture().space, space);
-	camera.setMode('3d'); const snapshot = camera.capture(), restored = new SceneViewportCamera();
+	camera.setMode('3d'); const snapshot = camera.capture(), restored = new WorkbenchViewportCamera();
 	restored.setViewport(400, 240); restored.restore(snapshot);
 	assert.deepEqual(restored.capture(), snapshot); assert.deepEqual(restored.clipFromOrigin, camera.clipFromOrigin);
 	const origin = new Float64Array(3), direction = new Float64Array(3);
@@ -249,7 +249,7 @@ test('perspective dolly anchors the actual picked point and independent camera r
 });
 
 test('camera framing fits actual image or line extents without imposing the origin-helper reading span', () => {
-	const camera = new SceneViewportCamera();
+	const camera = new WorkbenchViewportCamera();
 	// Focused camera-fit contract: an 8-unit quad occupies the 80-unit inset allocation.
 	camera.frame2D(0, 0, 8, 8, 112, 112); assert.equal(camera.scale, 10);
 	assert.equal(camera.projectX(0, 0, 0), -40); assert.equal(camera.projectY(8, 8, 0), 40);
@@ -357,7 +357,7 @@ test('framing a planar selection retains the orbit view and preserves the indepe
 	f.select(2);
 	assert.equal(camera.mode, '2d', 'selection alone does not override the chosen view');
 	assert.equal(f.panel.getCommand('sceneViewport.frameSelection')!.isEnabled(), true);
-	const changes: ReturnType<SceneViewportCamera['capture']>[] = [];
+	const changes: ReturnType<WorkbenchViewportCamera['capture']>[] = [];
 	const unsubscribe = camera.onDidChange(() => { changes.push(camera.capture()); }); t.after(unsubscribe);
 	inputFocus.executeCommand('sceneViewport.frameSelection', f.panel);
 	assert.equal(camera.mode, '3d');
@@ -408,7 +408,7 @@ test('explicitly framing a selection adopts its view, but initial framing remain
 test('a reentrant selection and camera gesture supersede the frame request', t => {
 	const f = fixture(t), camera = f.view.camera;
 	f.select(2);
-	let newer: ReturnType<SceneViewportCamera['capture']> | undefined;
+	let newer: ReturnType<WorkbenchViewportCamera['capture']> | undefined;
 	const unsubscribe = camera.onDidChange(() => {
 		unsubscribe();
 		f.select(0); camera.setMode('2d'); camera.pan(19, -13);
@@ -423,7 +423,7 @@ test('a reentrant selection and camera gesture supersede the frame request', t =
 test('a reentrant frame notification cannot change a newly attached viewport', t => {
 	const f = fixture(t), incoming = new SceneViewportViewState(f.context, f.sources.catalog); t.after(() => incoming.dispose());
 	f.select(2);
-	let newer: ReturnType<SceneViewportCamera['capture']> | undefined;
+	let newer: ReturnType<WorkbenchViewportCamera['capture']> | undefined;
 	const unsubscribe = f.view.camera.onDidChange(() => {
 		unsubscribe();
 		f.control.setView(incoming, BOUNDS); incoming.camera.setMode('2d'); incoming.camera.pan(17, -11);
