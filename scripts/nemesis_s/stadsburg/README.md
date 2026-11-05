@@ -80,6 +80,13 @@ canopies keep their separate inks. Domestic windows use grouped glass panes,
 a stone head, a dark upper reveal and a projecting sill with a short cast
 shadow. Workshop glazing uses connected reflections inside one dark opening;
 the storefronts sit behind their canopies with a separate entrance recess.
+Warm domestic light belongs to an inhabited room or a grouped floor; quiet
+storeys retain dark-blue glass inside the same frames, reveals and sills.
+Shop light is concentrated below the canopy: the cafe has a broad lit frontage,
+the baker and grocer have contiguous lit display groups, and the bicycle shop
+keeps its upper floors quiet. Large cool workshop and bridgewatch glazing,
+timber loading doors and the dark alley gate give the street distinct pauses
+between these warm groups.
 Snow has a white upper surface and a grey lower plane where the roof offers
 enough pixels. Broad wall planes stay quiet; shadows belong to cornices,
 sills, returns and structural joins rather than scattered surface marks.
