@@ -86,6 +86,12 @@ end
 
 function schoorsteen_foe:on_destroyed(projectile)
 	chimney_wreck.spawn(self,self.ray_direction == 1)
+	if self.ray_direction == -1 then
+		local x<const>, y<const> = self:get_global_position()
+		self:set_global_position(
+			x - (large_explosion_size - self.body_width) // 2,
+			y - (large_explosion_size - self.body_height) // 2)
+	end
 	ground_foe.on_destroyed(self, projectile)
 end
 
@@ -93,7 +99,7 @@ function schoorsteen_foe:fire_ray()
 	self.sprite_component:set_imgid(self.firing_image)
 	local pose_x<const>, pose_y<const> = self:get_global_position()
 	self.scene:spawn(ids_schoorsteen_ray_def, {
-		position = { x = pose_x + schoorsteen_ray_offset_x, y = pose_y + self.ray_origin_y },
+		position = { x = pose_x + self.ray_origin_x, y = pose_y + self.ray_origin_y },
 		stage = self.stage,
 		direction = self.ray_direction,
 	})
@@ -216,12 +222,12 @@ local define_fsm<const> = function(fsm_id, opening_frames, closing_frames)
 	})
 end
 
-local register_definition<const> = function(def_id, fsm_id, idle_image, firing_image, ray_direction, ray_origin_y)
+local register_definition<const> = function(def_id, fsm_id, idle_image, firing_image, geometry)
 	prefab.define({
 		def_id = def_id,
 		class = schoorsteen_foe,
 		components = {
-			enemy.collider_factory(assets.collision_shape_schoorsteen_foe_body_addr),
+			enemy.collider_factory(geometry.collision),
 			stage_scroll_follower_component.new,
 			timeline_component.new,
 			fsm_component.factory({ fsm_id }),
@@ -230,10 +236,13 @@ local register_definition<const> = function(def_id, fsm_id, idle_image, firing_i
 			imgid = idle_image,
 			order = schoorsteen_foe_draw_z,
 			max_health = schoorsteen_foe_health,
-            idle_image = idle_image, firing_image = firing_image,
-            ray_direction = ray_direction, ray_origin_y = ray_origin_y,
+			idle_image = idle_image, firing_image = firing_image,
+			body_width = geometry.width, body_height = geometry.height,
+			ray_direction = geometry.direction,
+			ray_origin_x = (geometry.width - schoorsteen_ray_tile_size) // 2,
+			ray_origin_y = geometry.ray_origin_y,
 			small_fry = false,
-			stage_scroll_width = schoorsteen_foe_width,
+			stage_scroll_width = geometry.width,
 		},
 	})
 end
@@ -242,9 +251,17 @@ function schoorsteen_foe.register()
 	players_view = world:active_definition_view(ids_player_def)
 	define_fsm(ids_schoorsteen_foe_fsm, roof_opening, roof_closing)
     define_fsm(ids_kadekanon_fsm, quay_opening, quay_closing)
-    register_definition(ids_schoorsteen_foe_def, ids_schoorsteen_foe_fsm,
-        assets_schoorsteen_foe_1, assets_stadsburg_laser_firing, -1, schoorsteen_ray_offset_y)
-    register_definition(ids_kadekanon_def, ids_kadekanon_fsm, 'kade_idle', 'kade_firing', 1, 16)
+	register_definition(ids_schoorsteen_foe_def, ids_schoorsteen_foe_fsm,
+		assets_schoorsteen_foe_1, assets_stadsburg_laser_firing, {
+			width = schoorsteen_foe_width, height = schoorsteen_foe_height,
+			collision = assets.collision_shape_schoorsteen_foe_body_addr,
+			direction = -1, ray_origin_y = schoorsteen_ray_offset_y,
+		})
+	register_definition(ids_kadekanon_def, ids_kadekanon_fsm, 'kade_idle', 'kade_firing', {
+		width = kadekanon_width, height = kadekanon_height,
+		collision = assets.collision_shape_kadekanon_body_addr,
+		direction = 1, ray_origin_y = kadekanon_ray_offset_y,
+	})
 end
 
 return schoorsteen_foe

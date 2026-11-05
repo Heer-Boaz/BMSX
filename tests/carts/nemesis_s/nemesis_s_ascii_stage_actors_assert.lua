@@ -23,8 +23,8 @@ local expected_actor_counts<const> = {
 }
 
 local expected_first_spawns<const> = {
-	[ids_schoorsteen_foe_def] = { column = 394, x = 248, y = 80 },
-	[ids_rook_generator_def] = { column = 424, x = 240, y = 72 },
+	[ids_schoorsteen_foe_def] = { column = 394, x = 244, y = 104 },
+	[ids_rook_generator_def] = { column = 424, x = 236, y = 96 },
 	[ids_zak_foe_def] = { column = 183, x = 248, y = 104 },
 	[ids_havengeschut_def] = { column = 172, x = 248, y = 104 },
 	[ids_kadekanon_def] = { column = 488, x = 244, y = 24 },
@@ -36,8 +36,12 @@ local assert_authored_actor_tape<const> = function(stage)
 	for definition_id in pairs(expected_actor_counts) do counts[definition_id] = 0 end
 	local first_spawns<const> = {}
 	local spawns<const> = stage.actor_spawns
+	local previous_column = -1
 	for index = 1, stage.actor_spawn_count do
 		local spawn<const> = spawns[index]
+		assert(spawn.column >= previous_column,
+		'A later actor admission blocks an earlier roof weapon')
+		previous_column = spawn.column
 		local definition_id<const> = spawn.definition_id
 		if counts[definition_id] ~= nil then
 			counts[definition_id] = counts[definition_id] + 1

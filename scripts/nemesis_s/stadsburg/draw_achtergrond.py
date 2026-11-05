@@ -97,42 +97,56 @@ def gable(image, outline, eave, bottom, *, windows=(), piers=(), marks=()):
 
 def winterstad():
     image = Image.new('RGB', SIZE, BLACK)
-    # A low roof joins the horizontal repeat without adding a wall of texture.
-    hipped_roof(image, 18, 138, 24, 133, 39, 45)
+    # Homes keep complete storeys and narrow fronts. Low garden walls carry the
+    # repeat seam; shadowed alleys keep the separate buildings readable.
     line(image, [(0, 138), (18, 138)])
     line(image, [(45, 138), (57, 138)])
-    for x in (8, 31, 49):
+    for x in (8, 49):
         block(image, (x, 140, x + 3, 142))
+    brick_face(image, 22, 132, 43, 143,
+               windows=[(27, 134, 3, 5), (36, 134, 3, 5)],
+               marks=[(31, 142, 5)])
+    hipped_roof(image, 22, 131, 28, 123, 37, 43)
     gable(image, [(57, 124), (61, 124), (61, 120), (64, 120),
           (64, 116), (68, 116), (68, 113), (73, 113), (73, 116),
           (77, 116), (77, 120), (80, 120), (80, 124), (84, 124)],
           127, 143, windows=[(64, 130, 3, 4), (74, 130, 3, 4)],
           piers=[(59, 132, 3, 6)], marks=[(63, 139, 5), (73, 141, 6)])
     window(image, 69, 120, 3, 3)
-    brick_face(image, 87, 133, 126, 143,
-               windows=[(96, 135, 4, 3), (109, 135, 4, 3)],
-               piers=[(120, 135, 2, 5)], marks=[(92, 141, 6), (105, 142, 4)])
-    hipped_roof(image, 87, 133, 96, 124, 117, 126, broad_light=True)
-    block(image, (101, 119, 103, 123))
-    block(image, (102, 121, 103, 123), BLACK)
+    brick_face(image, 94, 124, 117, 143,
+               windows=[(99, 126, 3, 5), (109, 126, 3, 5),
+                        (99, 135, 3, 5), (109, 135, 3, 5)],
+               marks=[(104, 133, 4), (113, 142, 3)])
+    hipped_roof(image, 94, 123, 100, 115, 111, 117, broad_light=True)
+    block(image, (105, 110, 107, 114))
+    block(image, (106, 112, 107, 114), BLACK)
 
-    brick_face(image, 165, 131, 213, 143,
-               windows=[(176, 134, 3, 4), (191, 134, 3, 4)],
-               piers=[(204, 133, 3, 7)], marks=[(171, 140, 6), (186, 142, 5)])
-    hipped_roof(image, 172, 130, 181, 122, 199, 207)
-    line(image, [(165, 130), (172, 130)])
-    line(image, [(207, 130), (213, 130)])
+    brick_face(image, 166, 124, 185, 143,
+               windows=[(171, 126, 3, 5), (179, 126, 3, 5),
+                        (171, 135, 3, 5), (179, 135, 3, 5)],
+               marks=[(174, 133, 4)])
+    hipped_roof(image, 166, 123, 171, 114, 180, 185)
+    brick_face(image, 193, 132, 211, 143,
+               windows=[(198, 134, 3, 5), (205, 134, 3, 5)],
+               marks=[(199, 142, 4)])
+    hipped_roof(image, 193, 131, 198, 123, 207, 211)
     gable(image, [(214, 122), (218, 122), (218, 118), (222, 118),
           (222, 114), (226, 114), (226, 110), (230, 110), (230, 114),
           (234, 114), (234, 118), (238, 118), (238, 122), (241, 122)],
           125, 143, windows=[(221, 129, 3, 4), (232, 129, 3, 4)],
           piers=[(216, 131, 3, 8)], marks=[(221, 139, 5), (233, 141, 5)])
     window(image, 227, 117, 2, 3)
-    brick_face(image, 245, 133, 304, 143,
-               windows=[(254, 136, 4, 3), (270, 136, 4, 3), (293, 136, 3, 3)],
-               piers=[(283, 135, 3, 6)], marks=[(250, 141, 7), (266, 142, 5)])
-    hipped_roof(image, 245, 133, 253, 128, 278, 287)
-    line(image, [(287, 133), (304, 133)])
+    brick_face(image, 248, 122, 268, 143,
+               windows=[(253, 125, 3, 5), (262, 125, 3, 5),
+                        (253, 135, 3, 5), (262, 135, 3, 5)],
+               marks=[(256, 132, 5), (264, 142, 3)])
+    hipped_roof(image, 248, 121, 253, 113, 263, 268)
+    gable(image, [(279, 125), (282, 125), (282, 121), (286, 121),
+          (286, 117), (291, 117), (291, 121), (295, 121),
+          (295, 125), (298, 125)],
+          128, 143, windows=[(284, 131, 3, 5), (292, 131, 3, 5)],
+          marks=[(284, 141, 4), (294, 142, 3)])
+    window(image, 287, 122, 3, 3)
 
     # The church has a separate slate spire, bell chamber, cornice and stone
     # shaft. These large connected parts survive the native-size silhouette.
@@ -151,15 +165,18 @@ def winterstad():
                windows=[(379, 135, 3, 5), (393, 135, 3, 5)],
                piers=[(402, 134, 2, 7)], marks=[(373, 141, 4)])
     hipped_roof(image, 368, 133, 376, 125, 399, 408)
-    gable(image, [(416, 128), (422, 128), (422, 123), (428, 123),
-          (428, 120), (434, 120), (434, 123), (440, 123), (440, 128), (445, 128)],
-          130, 143, windows=[(425, 133, 3, 4), (436, 133, 3, 4)],
-          piers=[(419, 134, 3, 6)], marks=[(427, 140, 5)])
-    window(image, 430, 125, 2, 3)
-    brick_face(image, 450, 136, 489, 143,
-               windows=[(460, 138, 3, 3), (474, 138, 3, 3)], marks=[(455, 142, 4)])
-    hipped_roof(image, 450, 135, 457, 130, 477, 484)
-    line(image, [(484, 135), (489, 138), (511, 138)])
+    gable(image, [(420, 123), (424, 123), (424, 119), (428, 119),
+          (428, 115), (434, 115), (434, 119), (438, 119),
+          (438, 123), (443, 123)],
+          126, 143, windows=[(426, 128, 3, 4), (435, 128, 3, 4),
+                             (426, 137, 3, 4), (435, 137, 3, 4)],
+          marks=[(430, 135, 4)])
+    window(image, 430, 120, 2, 3)
+    brick_face(image, 458, 132, 480, 143,
+               windows=[(463, 134, 3, 5), (473, 134, 3, 5)],
+               marks=[(468, 142, 4)])
+    hipped_roof(image, 458, 131, 464, 122, 474, 480)
+    line(image, [(483, 138), (511, 138)])
     for x in (494, 505):
         block(image, (x, 140, x + 3, 142))
     return image
@@ -203,12 +220,16 @@ def quay(image, left, right, top, bottom):
 
 def hijswerf():
     image = Image.new('RGB', SIZE, BLACK)
-    brick_face(image, 10, 129, 79, 143,
-               windows=[(21, 133, 5, 5), (40, 133, 5, 5), (62, 133, 5, 5)],
-               piers=[(31, 131, 3, 10), (54, 131, 3, 10)],
-               marks=[(15, 140, 7), (38, 142, 6), (65, 141, 8)])
-    hipped_roof(image, 10, 128, 22, 119, 52, 64)
-    line(image, [(64, 128), (79, 128)])
+    # The long halls have tall structural bays; their lower annexes are separate
+    # volumes rather than ordinary house fronts stretched across the quay.
+    brick_face(image, 10, 124, 64, 143,
+               windows=[(20, 129, 6, 9), (38, 129, 6, 9), (55, 129, 6, 9)],
+               piers=[(13, 126, 3, 15), (31, 126, 3, 15), (48, 126, 3, 15)],
+               marks=[(19, 141, 7), (39, 141, 6), (56, 141, 6)])
+    hipped_roof(image, 10, 123, 22, 113, 52, 64)
+    brick_face(image, 65, 130, 79, 143,
+               windows=[(70, 133, 5, 7)], marks=[(74, 142, 3)])
+    line(image, [(65, 129), (79, 129)])
     line(image, [(0, 138), (10, 138)])
     arch_span(image, 78, 53, 130)
     gable(image, [(131, 118), (137, 118), (137, 114), (145, 114),
@@ -217,13 +238,15 @@ def hijswerf():
           piers=[(134, 127, 3, 12), (163, 125, 3, 10)],
           marks=[(139, 138, 7), (151, 141, 8)])
     window(image, 147, 115, 4, 4)
-    brick_face(image, 172, 128, 238, 143,
-               windows=[(182, 132, 5, 5), (201, 132, 5, 5), (225, 132, 4, 4)],
-               piers=[(193, 130, 3, 11), (215, 130, 3, 11)],
-               marks=[(176, 141, 7), (224, 141, 6)])
-    hipped_roof(image, 172, 127, 183, 120, 213, 222, broad_light=True)
-    line(image, [(222, 127), (238, 127)])
-    chimney(image, 194, 93, 119, 8)
+    brick_face(image, 172, 123, 222, 143,
+               windows=[(182, 128, 5, 10), (200, 128, 5, 10)],
+               piers=[(174, 125, 3, 17), (192, 125, 3, 17), (210, 125, 3, 17)],
+               marks=[(181, 141, 6), (199, 141, 6), (217, 135, 4)])
+    hipped_roof(image, 172, 122, 183, 112, 212, 222, broad_light=True)
+    brick_face(image, 223, 130, 238, 143,
+               windows=[(229, 132, 4, 8)], marks=[(234, 142, 3)])
+    line(image, [(223, 129), (238, 129)])
+    chimney(image, 194, 93, 111, 8)
     arch_span(image, 237, 69, 129)
 
     # The sawtooth roof has four lit slopes with black vertical returns.
@@ -240,11 +263,15 @@ def hijswerf():
     line(image, [(305, 125), (328, 125)])
     line(image, [(336, 125), (359, 125)])
     line(image, [(367, 125), (384, 125)])
-    brick_face(image, 402, 133, 458, 143,
-               windows=[(414, 135, 4, 4), (434, 135, 4, 4)],
-               piers=[(425, 135, 3, 7), (451, 134, 2, 6)], marks=[(408, 141, 5)])
-    hipped_roof(image, 402, 133, 413, 124, 448, 458)
-    chimney(image, 424, 100, 123, 6)
+    brick_face(image, 402, 121, 438, 143,
+               windows=[(409, 124, 3, 5), (422, 124, 3, 5),
+                        (409, 134, 3, 5), (422, 134, 3, 5)],
+               piers=[(433, 123, 3, 18)], marks=[(414, 132, 6), (426, 142, 5)])
+    hipped_roof(image, 402, 120, 412, 111, 428, 438)
+    chimney(image, 424, 100, 110, 6)
+    brick_face(image, 441, 132, 458, 143,
+               windows=[(447, 135, 6, 7)], marks=[(443, 142, 3)])
+    line(image, [(441, 131), (458, 131)])
     line(image, [(460, 140), (464, 127), (485, 127), (491, 140)])
     line(image, [(460, 140), (491, 140)])
     line(image, [(464, 127), (476, 140), (485, 127)])
@@ -277,14 +304,20 @@ def haven():
         [(448, 140), (465, 140), (465, 138), (511, 138)],
     ):
         line(image, points)
-    brick_face(image, 96, 133, 131, 139,
-               windows=[(105, 134, 2, 3), (121, 134, 2, 3)], marks=[(114, 138, 4)])
-    hipped_roof(image, 96, 132, 104, 126, 122, 131)
-    gable(image, [(133, 130), (137, 130), (137, 127), (141, 127),
-          (141, 123), (145, 123), (145, 127), (149, 127), (149, 130), (153, 130)],
-          132, 139, windows=[(139, 134, 2, 3), (148, 134, 2, 3)])
-    brick_face(image, 158, 135, 186, 139, marks=[(168, 137, 4), (180, 138, 3)])
-    hipped_roof(image, 158, 134, 165, 129, 179, 186)
+    # Across the water, whole house modules are smaller in both dimensions.
+    # Narrow fronts and standing windows preserve their proportions at distance.
+    brick_face(image, 101, 126, 120, 139,
+               windows=[(106, 129, 2, 4), (114, 129, 2, 4)],
+               marks=[(109, 137, 4)])
+    hipped_roof(image, 101, 125, 106, 117, 115, 120)
+    gable(image, [(133, 121), (136, 121), (136, 118), (139, 118),
+          (139, 114), (145, 114), (145, 118), (148, 118),
+          (148, 121), (151, 121)],
+          123, 139, windows=[(138, 125, 2, 4), (146, 125, 2, 4),
+                             (138, 133, 2, 4), (146, 133, 2, 4)])
+    gable(image, [(164, 129), (173, 121), (182, 129)],
+          130, 139, windows=[(168, 132, 2, 4), (176, 132, 2, 4)])
+    mass(image, [(164, 129), (173, 121), (173, 124), (167, 129)])
 
     # Cargo barge: the raised bow has a lit plate; long strakes follow the hull.
     # Dark gaps separate deck, wheelhouse and water instead of a closed contour.
@@ -305,11 +338,14 @@ def haven():
     line(image, [(267, 112), (281, 126)])
     block(image, (265, 112, 267, 113))
 
-    brick_face(image, 339, 132, 387, 139,
-               windows=[(350, 134, 3, 3), (370, 134, 3, 3)],
-               piers=[(360, 133, 2, 6)], marks=[(345, 138, 4)])
-    hipped_roof(image, 339, 131, 347, 125, 369, 378)
-    line(image, [(378, 131), (387, 131)])
+    gable(image, [(342, 121), (346, 121), (346, 117), (350, 117),
+          (350, 114), (354, 114), (354, 117), (358, 117),
+          (358, 121), (361, 121)],
+          123, 139, windows=[(347, 125, 2, 4), (355, 125, 2, 4),
+                             (347, 133, 2, 4), (355, 133, 2, 4)])
+    gable(image, [(370, 128), (378, 120), (386, 128)],
+          130, 139, windows=[(374, 132, 2, 4), (381, 132, 2, 4)])
+    mass(image, [(370, 128), (378, 120), (378, 123), (373, 128)])
     # Smaller moored sailing boat with a dark hull and a lit bow plank.
     mass(image, [(398, 133), (407, 135), (437, 135), (446, 131),
                  (443, 136), (437, 139), (407, 139), (401, 136)], BLACK)

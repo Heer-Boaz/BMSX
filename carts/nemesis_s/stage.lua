@@ -515,14 +515,27 @@ function stage:build_tape()
                         },
                     }
 				elseif symbol == stage_char_schoorsteen_foe then
-					actor_spawns[#actor_spawns + 1] = {
+					-- S/R mark the roof midpoint and supporting roof row. The
+					-- admission columns stay fixed; native body size sets its origin.
+					local spawn<const> = {
 						column = stage_x - 2,
 						definition_id = ids_schoorsteen_foe_def,
 						options = {
-							position = { x = playfield_width - self.tile_size, y = (stage_y - 4) * self.tile_size },
+							position = {
+								x = playfield_width - schoorsteen_foe_width // 2,
+								y = (stage_y - 1) * self.tile_size - schoorsteen_foe_height,
+							},
 							stage = self,
 						},
 					}
+					-- A same-column flyer may already precede S in row order.
+					-- Insert this earlier admission before it, keeping ties stable.
+					local insert_at = #actor_spawns + 1
+					while insert_at > 1 and actor_spawns[insert_at - 1].column > spawn.column do
+						actor_spawns[insert_at] = actor_spawns[insert_at - 1]
+						insert_at = insert_at - 1
+					end
+					actor_spawns[insert_at] = spawn
 				elseif symbol == stage_char_kadekanon then
                     actor_spawns[#actor_spawns + 1] = {
                         column = stage_x - 1,
@@ -537,7 +550,10 @@ function stage:build_tape()
 						column = stage_x - 1,
 						definition_id = ids_rook_generator_def,
 						options = {
-							position = { x = playfield_width - (self.tile_size * 2), y = (stage_y - 4) * self.tile_size },
+							position = {
+								x = playfield_width - self.tile_size - rook_generator_width // 2,
+								y = (stage_y - 1) * self.tile_size - rook_generator_height,
+							},
 							stage = self,
 						},
 					}

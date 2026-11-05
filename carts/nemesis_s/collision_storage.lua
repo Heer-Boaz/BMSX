@@ -9,6 +9,7 @@ require('constants')
 local actor_sources<const> = {
 	assets.collision_shape_bel_middle_body_addr,
 	assets.collision_shape_bel_side_body_addr,
+	assets.collision_shape_kadekanon_body_addr,
 	assets.collision_shape_moon_down_armor_addr,
 	assets.collision_shape_moon_down_core_addr,
 	assets.collision_shape_moon_down_left_armor_addr,

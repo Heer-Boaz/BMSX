@@ -8,14 +8,24 @@ require('constants')
 
 local chimney_wreck<const> = {}
 
-local wreck_width<const> = 24
+local roof_width<const> = 16
+local roof_height<const> = 8
+local quay_width<const> = 24
+local quay_height<const> = 16
 
 function chimney_wreck.spawn(weapon, hanging)
 	local x<const>, y<const> = weapon:get_global_position()
+	local width<const> = hanging and quay_width or roof_width
+	local height<const> = hanging and quay_height or roof_height
 	weapon.scene:spawn(ids_chimney_wreck_def, {
-		position = { x = x + 4, y = y + (hanging and 0 or 8) },
+		position = {
+			x = x + (weapon.body_width - width) // 2,
+			y = y + (hanging and 0 or weapon.body_height - height),
+		},
 		stage = weapon.stage,
 		flip_v = hanging,
+		imgid = hanging and assets_chimney_wreck or assets_roof_chimney_wreck,
+		stage_scroll_width = width,
 	})
 end
 
@@ -32,9 +42,7 @@ function chimney_wreck.register()
 			fsm_component.factory({ ids_chimney_wreck_fsm }),
 		},
 		defaults = {
-			imgid = assets_chimney_wreck,
 			order = large_explosion_draw_z - 1,
-			stage_scroll_width = wreck_width,
 		},
 	})
 end

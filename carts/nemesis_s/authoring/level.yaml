@@ -1,21 +1,20 @@
 schema: nemesis_s.level.v1
 title: De Bevroren Haven
-revision: 35
+revision: 36
 width: 931
 height: 22
 source_commit: d04363ea9a05758eb91b5016f2e082036837813c
 background:
   night_sky_height: 40
-  blend_columns: 8
   sources:
     stad: authoring/achtergrond/winterstad.png
     werf: authoring/achtergrond/hijswerf.png
     haven: authoring/achtergrond/haven.png
   scenes:
   - {from: 145, to: 443, source: stad, phase: 0}
-  - {from: 443, to: 545, source: werf, phase: 16}
-  - {from: 545, to: 625, source: haven, phase: 0}
-  - {from: 625, to: 689, source: werf, phase: 40}
+  - {from: 443, to: 546, source: werf, phase: 16}
+  - {from: 546, to: 625, source: haven, phase: 1}
+  - {from: 625, to: 689, source: werf, phase: 49}
   - {from: 689, to: 801, source: haven, phase: 24}
   - {from: 801, to: 812, source: haven, phase: 8}
   star_spans: [[0, 144], [829, 930]]
@@ -343,9 +342,6 @@ scenery:
 - prefab: haven_loopbrug
   x: 231
   y: 16
-- prefab: auto_achtergrond_blauw
-  x: 211
-  y: 17
 - prefab: fiets_mand_achtergrond
   x: 227
   y: 16
@@ -357,9 +353,6 @@ scenery:
   y: 17
 - prefab: fiets_drager_achtergrond
   x: 451
-  y: 18
-- prefab: auto_achtergrond_blauw
-  x: 632
   y: 18
 - prefab: fiets_drager_achtergrond
   x: 687
@@ -433,15 +426,6 @@ scenery:
 - prefab: vrachtwagen_voorgrond_rood
   x: 329
   y: 16
-- prefab: auto_achtergrond_blauw
-  x: 169
-  y: 17
-- prefab: auto_achtergrond_blauw
-  x: 307
-  y: 17
-- prefab: auto_achtergrond_blauw
-  x: 384
-  y: 17
 - prefab: steegpoort
   x: 212
   floor: 18
@@ -469,6 +453,31 @@ planting_beds:
   floor: 18
   purpose: Eén lage, besneeuwde bermrand in zijaanzicht, naast de havenweg
 town_details:
+- prefab: auto_achtergrond_blauw
+  x: 169
+  floor: 18
+  ground_offset: 0
+  snow_join: true
+- prefab: auto_achtergrond_blauw
+  x: 211
+  floor: 18
+  ground_offset: 0
+  snow_join: true
+- prefab: auto_achtergrond_blauw
+  x: 307
+  floor: 18
+  ground_offset: 0
+  snow_join: true
+- prefab: auto_achtergrond_blauw
+  x: 384
+  floor: 18
+  ground_offset: 0
+  snow_join: true
+- prefab: auto_achtergrond_blauw
+  x: 632
+  floor: 19
+  ground_offset: 0
+  snow_join: true
 - prefab: auto_voorgrond_cyaan
   x: 317
   floor: 18

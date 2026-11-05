@@ -61,7 +61,9 @@ end
 function rook_generator:on_destroyed(projectile)
 	chimney_wreck.spawn(self,false)
 	local pose_x<const>, pose_y<const> = self:get_global_position()
-	self:set_global_position(pose_x - 4, pose_y - 4)
+	self:set_global_position(
+		pose_x - (large_explosion_size - rook_generator_width) // 2,
+		pose_y - (large_explosion_size - rook_generator_height) // 2)
 	ground_foe.on_destroyed(self, projectile)
 end
 
@@ -154,6 +156,8 @@ local register_definition<const> = function()
 			imgid = assets_rook_generator_closed,
 			order = rook_generator_draw_z,
 			max_health = rook_generator_health,
+			body_width = rook_generator_width,
+			body_height = rook_generator_height,
 			small_fry = false,
 			stage_scroll_width = rook_generator_width,
 		},

@@ -1302,21 +1302,21 @@ prefabs:
   auto_voorgrond_rood:
     description: Rode personenauto op de hoofdmaat, rechtstreeks uit de native pixelbron.
     tiles:
-    - - 2418
-      - 2419
+    - - 2860
+      - 2861
     label: Rode personenauto op de hoofdmaat
     groep: verkeer_voorgrond
   auto_voorgrond_cyaan:
     description: Cyaanblauwe personenauto op de hoofdmaat, rechtstreeks uit de native pixelbron.
     tiles:
-    - - 2420
-      - 2421
+    - - 2862
+      - 2863
     label: Cyaanblauwe personenauto op de hoofdmaat
     groep: verkeer_voorgrond
   auto_achtergrond_blauw:
     description: Kleine blauwe achtergrondauto, rechtstreeks uit de native pixelbron.
     tiles:
-    - - 2422
+    - - 2864
     label: Kleine blauwe achtergrondauto
     groep: verkeer_achtergrond
   tankstation_achtergrond:
