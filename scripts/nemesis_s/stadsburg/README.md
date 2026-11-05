@@ -95,25 +95,35 @@ world spans that expose the full starfield. They scroll on the same character
 grid as the terrain. `night_sky_height` keeps four existing blue stars in the
 top 40 pixels visible over the town, above the distant skyline. The open night
 sky leaves the flying corridor clear of cloud patterns.
-Their two-ink drawings use lit roof slopes, masonry piers and dark window bays
-to describe the distant buildings. Stone quays use broad horizontal courses;
-ships use hull plates and long strakes. These material-specific marks replace
-the former whole-surface stipple, while black remains the dominant shadow.
-Ordinary houses have narrow facades, complete storeys and upright window
-openings. Black alleys separate neighbouring houses and provide scene joins
-that preserve complete buildings. Long industrial halls use
-taller loading bays and piers, so their width reads as a hall rather than a
-flattened house. Source geometry defines these proportions directly; no axis
-is independently scaled during import.
+The opposite bank has one consistent architectural scale: ordinary fronts are
+9–13 pixels wide, storeys five pixels high, windows 2×2 pixels and doors three
+pixels high. Foreground storeys remain eight to nine pixels high. Far buildings
+share the ground line at y132, above the usual near-street contact at y146.
+The scale applies to roof pitch, openings, boats and industrial bays together;
+the source drawings are authored at their native size, without resampling.
+Connected blue roof and wall planes, black window cuts and unlit wall returns
+describe the architecture. Groups of attached fronts share far-bank footings;
+alleys and inlets separate the groups. Churches, sheds, vessels and cranes keep
+distinct silhouettes on the same depth plane. Scene joins preserve whole
+buildings. There is no whole-surface stipple or cloud layer.
+These three sources own the far architecture and shoreline. The earlier
+separate distant-house and quay placements are no longer stamped into the
+foreground map. Removing the old quay overlay exposes the original water
+modules beneath it; their source pixels, dimensions and animation timing stay
+unchanged.
 The mill is framed by an intentional black arena; the open approach and
 departure retain the full starfield.
 
 `build_level.py` calls `bake_achtergrond.py` to compile the backdrop and compose
 its exterior pixels around the existing foreground. Enclosed black windows,
-doors and masonry remain opaque. Each resulting 8×1 row keeps at most two
-inks; existing foreground ink takes priority. Animation cels use the same
+doors and masonry remain opaque. A one-pixel black separation around fixed
+foreground ink keeps blue facades on different planes from joining. Moving
+animation cells are excluded from that fixed edge. Each resulting 8×1 row keeps
+at most two inks; existing foreground ink takes priority. Animation cels use the same
 composition while their native patterns continue to own collision and cargo
 damage. Destroyed cargo exposes the background; resetting restores its art.
+Native animation patterns are read from the loaded catalog and retained in
+cartridge resources even when a pattern is not visible in the rest frame.
 Water sources, terrain roles, encounter placements and the six-metre scale are
 independent of these visual compositions.
 The generated drawings are checked in as 256×256 pattern banks; the cartridge

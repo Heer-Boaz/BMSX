@@ -75,7 +75,7 @@ def composite(foreground, background, exterior):
     return result
 
 
-def compile_background(root, plan, runtime, tiles, cells):
+def compile_background(root, plan, runtime, tiles, entries, cells):
     width, height = plan['width'], len(cells)
     original_roles = ''.join(runtime['tile_symbols'][k - 1] if k else ' '
                              for row in runtime['tile_ids'] for k in row)
@@ -88,6 +88,20 @@ def compile_background(root, plan, runtime, tiles, cells):
             stage[y * 8:y * 8 + 8, x * 8:x * 8 + 8] = np.asarray(tiles[tile])
             empty[y, x] = runtime['tile_ids'][y][x] == 0 or runtime['tile_ids'][y][x] in invisible
     exterior = exterior_black(stage, empty)
+    # A single dark pixel separates distant blue planes from fixed foreground
+    # edges. Moving cels cast no baked edge, so cargo and branches leave no
+    # frozen outline behind when their pose changes or a load is destroyed.
+    fixed_ink = np.any(stage != 0, axis=2)
+    for clip in runtime['harbor_animation']['clips']:
+        for cell in clip['cells']:
+            x, y = cell[0] - 1, cell[1] - 1
+            fixed_ink[y * 8:y * 8 + 8, x * 8:x * 8 + 8] = False
+    adjacent = np.zeros_like(exterior)
+    adjacent[1:] |= fixed_ink[:-1]
+    adjacent[:-1] |= fixed_ink[1:]
+    adjacent[:, 1:] |= fixed_ink[:, :-1]
+    adjacent[:, :-1] |= fixed_ink[:, 1:]
+    background[exterior & adjacent] = 0
     names = {}
     new_assets = {}
 
@@ -156,10 +170,14 @@ def compile_background(root, plan, runtime, tiles, cells):
     # Poses retain their native pattern identities, including damage and
     # collision ownership. Visual substitutions are resolved once at admission.
     harbor = runtime['harbor_animation']
+    native_sources = {entry['asset']: key for key, entry in entries.items()}
     originals = {}
     for name in harbor['patterns']:
-        path = root / 'res/img' / f'{name}@atlas=gameplay.png'
-        originals[name] = np.asarray(Image.open(path).convert('RGB'))
+        if name in native_sources:
+            originals[name] = np.asarray(tiles[native_sources[name]])
+        else:
+            path = root / 'res/img' / f'{name}@atlas=gameplay.png'
+            originals[name] = np.asarray(Image.open(path).convert('RGB'))
     animated_composites = 0
     for clip in harbor['clips']:
         positions = [(cell[0] - 1, cell[1] - 1) for cell in clip['cells']]
