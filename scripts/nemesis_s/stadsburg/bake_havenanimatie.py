@@ -3,14 +3,23 @@ import json
 from PIL import Image
 from bake_stadsgroen import assembled, greenery_poses, greenery_steps, ASSETS, TREE_NAMES
 
-# Coordinates in two adjacent characters, measured from the leeward roof edge.
-# The trailing grains lift first; the last few fall apart at the end of the gust.
-SNOW = (
-    (),
-    ((0,6,15),(1,6,15),(2,6,15),(2,5,15),(3,5,15),(4,6,15),(5,4,7)),
-    ((1,6,7),(3,6,7),(4,5,15),(5,5,15),(5,4,7),(7,5,15),(8,3,7),(10,4,7)),
-    ((7,6,7),(9,4,7),(10,4,7),(12,2,7),(14,5,7)),
-)
+# Coordinates in two adjacent characters at the authored roof edge. Lifted
+# powder leaves the low snow banks; falling grains leave the bridgewatch eave
+# on row one and descend while the wind carries them to the right.
+SNOW = {
+    'lift': (
+        (),
+        ((0,6,15),(1,6,15),(2,6,15),(2,5,15),(3,5,15),(4,6,15),(5,4,7)),
+        ((1,6,7),(3,6,7),(4,5,15),(5,5,15),(5,4,7),(7,5,15),(8,3,7),(10,4,7)),
+        ((7,6,7),(9,4,7),(10,4,7),(12,2,7),(14,5,7)),
+    ),
+    'fall': (
+        (),
+        ((0,1,15),(1,1,15),(2,1,15),(2,2,15),(3,2,15),(4,1,15),(5,3,7)),
+        ((2,2,7),(4,2,7),(5,3,15),(6,3,15),(6,4,7),(8,3,15),(9,4,7),(11,4,7)),
+        ((7,4,7),(9,5,7),(10,5,7),(12,6,7),(14,6,7)),
+    ),
+}
 
 
 def compile_harbor(root, plan, prefabs, tiles, entries, cells, placements, palette_hex, greenery_layers=()):
@@ -65,9 +74,9 @@ def compile_harbor(root, plan, prefabs, tiles, entries, cells, placements, palet
     for place in placements:
         name=place['prefab']
         if name not in snow_sites:continue
-        dx,dy=snow_sites[name]; x=place['at'][0]+dx; y=place['at'][1]+dy
+        edge=snow_sites[name]; dx,dy=edge['at']; x=place['at'][0]+dx; y=place['at'][1]+dy
         positions=[(x,y),(x+1,y)]; poses=[]
-        for flakes in SNOW:
+        for flakes in SNOW[edge['motion']]:
             phase={}
             for k,(cx,cy) in enumerate(positions):
                 base=cells[cy][cx]; im=tiles[base].copy()

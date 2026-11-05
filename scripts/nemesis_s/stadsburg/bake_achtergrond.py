@@ -16,7 +16,7 @@ def draw_backdrop(root, spec, width, height):
     sources = {name: np.asarray(Image.open(root / path).convert('RGB'))
                for name, path in spec['sources'].items()}
     for name, pixels in sources.items():
-        assert pixels.shape == (160, 512, 3), (name, pixels.shape)
+        assert pixels.shape[0] == 160 and pixels.shape[1] % 8 == 0, (name, pixels.shape)
         assert set(map(tuple, pixels.reshape(-1, 3))) <= {(0, 0, 0), (32, 32, 224)}, name
     result = np.zeros((height * 8, width * 8, 3), dtype=np.uint8)
     # Authored spans and repeat phases meet in dark gaps between complete

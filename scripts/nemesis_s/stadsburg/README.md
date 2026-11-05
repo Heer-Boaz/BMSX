@@ -88,25 +88,36 @@ Light, warm, cyan or green accents distinguish foreground objects. The smaller
 blue house contours. Miniature bicycles retain their subdued blue silhouettes.
 The authoring groups describe that visual depth within the fixed side view.
 
-The three winter backdrops are editable 512×160 native PNGs in
-`authoring/achtergrond`: a distant town, warehouse wharf and opposite harbor
-bank. `level.yaml` owns their spans, repeat offsets, scene joins and the
+The five winter backdrops are editable native PNGs in `authoring/achtergrond`:
+the town (2384×160), warehouse wharf (824×160), inner harbor (632×160),
+lock wharf (512×160) and outer harbor (984×160). Each covers its own passage
+without repeating the whole scene; the city clock tower occurs once.
+`level.yaml` owns their spans, source offsets, scene joins and the
 world spans that expose the full starfield. They scroll on the same character
 grid as the terrain. `night_sky_height` keeps four existing blue stars in the
 top 40 pixels visible over the town, above the distant skyline. The open night
 sky leaves the flying corridor clear of cloud patterns.
-The opposite bank has one consistent architectural scale: ordinary fronts are
-9–13 pixels wide, storeys five pixels high, windows 2×2 pixels and doors three
-pixels high. Foreground storeys remain eight to nine pixels high. Far buildings
-share the ground line at y132, above the usual near-street contact at y146.
-The scale applies to roof pitch, openings, boats and industrial bays together;
-the source drawings are authored at their native size, without resampling.
-Connected blue roof and wall planes, black window cuts and unlit wall returns
-describe the architecture. Groups of attached fronts share far-bank footings;
-alleys and inlets separate the groups. Churches, sheds, vessels and cranes keep
-distinct silhouettes on the same depth plane. Scene joins preserve whole
-buildings. There is no whole-surface stipple or cloud layer.
-These three sources own the far architecture and shoreline. The earlier
+The opposite bank uses individually painted whole buildings from
+`achtergrond/architectuur.png`. `ontwerp.yaml` names their atlas rectangles and
+places them into waterfront blocks. Roofs, gables, bearing corners and window
+axes belong to each drawing; changing a width or selecting a generic roof
+cannot distort their proportions. Ordinary fronts are 13–17 pixels wide, with
+five-pixel storeys, 2×2 dark windows and three-pixel domestic doors; warehouse
+loading doors are larger. Foreground storeys remain
+eight to nine pixels high. Far buildings share the ground line at y132, above
+the usual near-street contact at y146. There is no image resampling.
+The references recorded in `ontwerp.yaml` include Rapenburg 13 for the stepped
+gable, the Grachtenmuseum's facade types, De Twee Harde Bollen for stacked
+loading openings and the Montelbaanstoren for the harbor clock-tower structure.
+These are original stylized buildings, not miniature replicas of the monuments.
+Stepped, neck, bell and spout gables, corniced fronts and industrial sheds have
+distinct silhouettes. The clock tower has a masonry base and two supported
+open lanterns. Long blocks share quay footings, interrupted by narrow alleys
+and deliberate harbor inlets. Each passage leaves clear silhouettes around
+the near roofs, so a distant roof does not become an apparent extra storey.
+Scene joins preserve whole buildings. There is no whole-surface stipple or
+cloud layer.
+These five sources own the far architecture and shoreline. The earlier
 separate distant-house and quay placements are no longer stamped into the
 foreground map. Removing the old quay overlay exposes the original water
 modules beneath it; their source pixels, dimensions and animation timing stay
@@ -129,9 +140,10 @@ independent of these visual compositions.
 The generated drawings are checked in as 256×256 pattern banks; the cartridge
 shares their 8×8 views across foreground, backdrop, animation and new games.
 
-Run `python scripts/nemesis_s/stadsburg/draw_achtergrond.py` only when deliberately
-regenerating the three editable source PNGs from their authored pixel geometry.
-Normal level builds consume those PNGs directly, including any subsequent
+Run `python scripts/nemesis_s/stadsburg/draw_achtergrond.py` after deliberately
+editing the architecture atlas or its block composition. It stamps the complete
+drawings at their exact native sizes into the five editable source PNGs.
+Normal level builds consume those five PNGs directly, including any subsequent
 hand edits. The composed level and the separate backdrop are available under
 `previews/level_achtergrond_native.png` and `previews/achtergrond_native.png`.
 

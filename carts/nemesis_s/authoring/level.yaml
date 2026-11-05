@@ -1,6 +1,6 @@
 schema: nemesis_s.level.v1
 title: De Bevroren Haven
-revision: 38
+revision: 39
 width: 931
 height: 22
 source_commit: d04363ea9a05758eb91b5016f2e082036837813c
@@ -10,13 +10,14 @@ background:
     stad: authoring/achtergrond/winterstad.png
     werf: authoring/achtergrond/hijswerf.png
     haven: authoring/achtergrond/haven.png
+    sluizen: authoring/achtergrond/sluiswerf.png
+    buitenhaven: authoring/achtergrond/buitenhaven.png
   scenes:
   - {from: 145, to: 443, source: stad, phase: 0}
-  - {from: 443, to: 546, source: werf, phase: 16}
-  - {from: 546, to: 625, source: haven, phase: 1}
-  - {from: 625, to: 689, source: werf, phase: 49}
-  - {from: 689, to: 801, source: haven, phase: 24}
-  - {from: 801, to: 812, source: haven, phase: 8}
+  - {from: 443, to: 546, source: werf, phase: 0}
+  - {from: 546, to: 625, source: haven, phase: 0}
+  - {from: 625, to: 689, source: sluizen, phase: 0}
+  - {from: 689, to: 812, source: buitenhaven, phase: 0}
   star_spans: [[0, 144], [829, 930]]
 sections:
 - from: 0
@@ -1384,14 +1385,14 @@ kade_mounts:
 animations:
   snow_edges:
     stadsburg_pakhuis_met_dakkanon:
-    - 9
-    - 1
+      at: [9, 1]
+      motion: lift
     stadsburg_trapgevel_met_dakkanon:
-    - 5
-    - 3
+      at: [5, 3]
+      motion: lift
     stadsburg_brugwachter_met_dakkanon:
-    - 6
-    - 2
+      at: [6, 2]
+      motion: fall
 roads:
 - from: 313
   to: 365
