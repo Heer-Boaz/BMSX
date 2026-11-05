@@ -81,6 +81,7 @@ test('Actor Lab runtime commands retain their subject across top-menu navigation
 		f.editor.dispatchKey(new KeyInputEvent(code, KeyModifier.none, false, false));
 		f.editor.update(0);
 	};
+	f.group.timeline.hide();
 	f.editor.commands.execute('menubar.focus'); key('ArrowRight'); key('ArrowRight');
 	assert.equal(f.editor.menubar.activeMenu, 'view');
 	const rows = f.editor.contextMenu.model.rows;
@@ -98,6 +99,8 @@ test('Actor Lab runtime commands retain their subject across top-menu navigation
 
 test('Actor Lab exposes the retained runtime timeline from the View command', async t => {
 	const f = await fixture(t);
+	assert.equal(f.group.timeline.visible, true);
+	f.group.timeline.hide();
 	assert.equal(f.editor.commands.isEnabled('runtime.toggleTimeline'), true);
 	f.editor.commands.execute('runtime.toggleTimeline'); f.editor.update(0);
 	assert.equal(f.group.timeline.requested, true);

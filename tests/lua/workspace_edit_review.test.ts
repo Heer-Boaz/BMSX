@@ -13,7 +13,7 @@ import { WorkspaceSourceContext } from '../../ide/workbench/services/working_cop
 import { WorkspaceEditReviewInput } from '../../ide/workbench/contrib/edit_review/editor_input';
 import { layoutEditReviewRows } from '../../ide/workbench/contrib/edit_review/projection';
 import { EditorTabGroupModel } from '../../ide/workbench/ui/tab/group_model';
-import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
+import { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 import type { EditorInputSerializers } from '../../ide/workbench/services/editor/editor_serialization';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
@@ -220,26 +220,26 @@ test('preview wrapping preserves source whitespace, long lines and Unicode witho
 test('session producer excludes transient proposals and remaps selection before serialization', async t => {
 	const f = fixture(t), group = new EditorTabGroupModel();
 	t.after(() => group.clear());
-	const review = new WorkspaceEditReviewInput(f.proposal), game = new GameViewInput();
+	const review = new WorkspaceEditReviewInput(f.proposal), game = new TerminalInput();
 	group.add(review); group.add(game, { pinned: false }); group.activate(review);
 	const unused = { serialize: () => assert.fail('unexpected serialization'), deserialize: () => assert.fail('unexpected reconstruction') };
-	const serializers: EditorInputSerializers = { game_view: { serialize: () => '', deserialize: () => new GameViewInput() },
+	const serializers: EditorInputSerializers = { terminal: { serialize: () => '', deserialize: () => new TerminalInput() },
 		home: unused,
 		animation: unused,
-		event_viewer: unused, aem_editor: unused, cart_map: unused, lua_program: unused, terminal: unused, actor_lab: unused, code_editor: unused, behavior_lens: unused, scene_editor: unused, scenario_lab: unused, resource_view: unused };
+		event_viewer: unused, aem_editor: unused, cart_map: unused, lua_program: unused, actor_lab: unused, code_editor: unused, behavior_lens: unused, scene_editor: unused, scenario_lab: unused, resource_view: unused };
 	const data = group.serialize(serializers);
-	assert.deepEqual(data, { inputs: [{ kind: 'game_view', value: '' }], active: 0, preview: 0 });
+	assert.deepEqual(data, { inputs: [{ kind: 'terminal', value: '' }], active: 0, preview: 0 });
 	assert.equal(group.serialize(serializers, data), data);
 	await group.deserialize(data, serializers);
 	assert.equal(f.proposal.state, 'discarded');
 	assert.equal(group.tabs.length, 1);
-	assert.equal(group.activeTab!.kind, 'game_view');
+	assert.equal(group.activeTab!.kind, 'terminal');
 });
 
 test('session restore reports failed reconstruction rather than selecting a different resource', async t => {
 	const group = new EditorTabGroupModel(); t.after(() => group.clear());
 	const error = new Error('missing resource');
-	const serializers = { game_view: { deserialize() { throw error; } } } as unknown as EditorInputSerializers;
-	await assert.rejects(group.deserialize({ inputs: [{ kind: 'game_view', value: '' }], active: 0, preview: null }, serializers), error);
+	const serializers = { terminal: { deserialize() { throw error; } } } as unknown as EditorInputSerializers;
+	await assert.rejects(group.deserialize({ inputs: [{ kind: 'terminal', value: '' }], active: 0, preview: null }, serializers), error);
 	assert.equal(group.activeTab, null);
 });

@@ -13,7 +13,6 @@ import type { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_
 import type { AssistantInput } from '../../ide/workbench/contrib/assistant/editor_input';
 import type { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import type { ActorLabInput } from '../../ide/workbench/contrib/actor_lab/editor_input';
-import type { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 import type { WorkspaceEditReviewInput } from '../../ide/workbench/contrib/edit_review/editor_input';
 import type { HomeInput } from '../../ide/workbench/contrib/home/editor_input';
 import assert from 'node:assert/strict';
@@ -150,7 +149,6 @@ function createEditorPanes(measureCode: EditorPaneContribution<CodeEditorInput>[
 		gpu_debugger: { create: group => new RecordingEditorPane<Extract<EditorInput, { kind: 'gpu_debugger' }>>(group.focusScope), measure: measureUnconstrainedEditor },
 		terminal: { create: group => new RecordingEditorPane<TerminalInput>(group.focusScope), measure: measureUnconstrainedEditor },
 		actor_lab: { create: group => new RecordingEditorPane<ActorLabInput>(group.focusScope), measure: measureUnconstrainedEditor },
-		game_view: { create: group => new RecordingEditorPane<GameViewInput>(group.focusScope), measure: measureUnconstrainedEditor },
 		conversation_observer: { create: group => new RecordingEditorPane<ConversationObserverInput>(group.focusScope), measure: measureUnconstrainedEditor },
 		aem_editor: { create: group => new RecordingEditorPane<AemEditorInput>(group.focusScope), measure: measureUnconstrainedEditor },
 		lua_program: { create: group => new RecordingEditorPane<LuaProgramInput>(group.focusScope), measure: measureUnconstrainedEditor },

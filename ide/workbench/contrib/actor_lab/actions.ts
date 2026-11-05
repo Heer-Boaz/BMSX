@@ -34,7 +34,7 @@ export class ActorLabEditorActions {
 			const actorHashId = (controller.guest.readStringMember(choice.component, 'owner') as import('../../../../machine/ts/machine/cpu/table').Table).hashId;
 			const effectHashId = choice.effect.hashId, componentHashId = choice.component.hashId, key = controller.guest.identity(choice.key);
 			input.domain = domain;
-			input.follow.stop(); input.stateGraph = undefined; input.presentation = 'outline'; input.historical = false;
+			input.follow.stop(); input.stateGraph = undefined; input.navigation = 'actor'; input.inspection = 'outline'; input.historical = false;
 			input.actorHashId = actorHashId;
 			input.selectionPath = undefined;
 			input.interaction.running = false; input.dirty = true;
@@ -43,7 +43,7 @@ export class ActorLabEditorActions {
 				.find(node => node.hashId === effectHashId && controller.guest.matchesIdentity(node.key, key));
 			if (effect === undefined) { showEditorMessage('Effect owner is not a mounted world actor.', 'info', 4); return; }
 			controller.projection.reveal(effect);
-			this.actions(input);
+			this.actions(input, effect);
 		});
 	}
 
@@ -161,10 +161,9 @@ export class ActorLabEditorActions {
 		} });
 	}
 
-	public actions(input: ActorLabInput): void {
+	public actions(input: ActorLabInput, node: ActorNode): void {
 		const controller = input.controller;
 		input.interaction.running = false;
-		const node = controller.selected(input)!;
 		const target = captureActorTarget(input.domain, runtimeWorld(controller.sources, controller.guest, input.domain)!.hashId, input.runtime.roots, node, controller.guest);
 		const items = actorActions(node).map(action => ({ ...action, detail: '' }));
 		this.quickInput.pick(`ACTIONS / ${node.label}`, 'Changes the running instance, not its Lua source',
@@ -181,10 +180,9 @@ export class ActorLabEditorActions {
 			});
 	}
 
-	public callMethod(input: ActorLabInput): void {
+	public callMethod(input: ActorLabInput, node: ActorNode): void {
 		const controller = input.controller;
 		input.interaction.running = false;
-		const node = controller.selected(input)!;
 		const target = captureActorTarget(input.domain, runtimeWorld(controller.sources, controller.guest, input.domain)!.hashId, input.runtime.roots, node, controller.guest);
 		this.quickInput.pick(`CALL / ${node.label}`, 'Stored Lua functions; selected instance is passed as self',
 			(_origin, lifetime) => {
@@ -238,7 +236,7 @@ export class ActorLabEditorActions {
 						worldHashId: runtimeWorld(controller.sources, controller.guest, input.domain)!.hashId,
 						definitionId: choice.id, definition: choice.definition, args }, result => {
 					if (result.status !== 'completed') return;
-					input.stateGraph = undefined; input.presentation = 'outline'; input.follow.stop(); input.historical = false;
+					input.stateGraph = undefined; input.navigation = 'actor'; input.inspection = 'outline'; input.follow.stop(); input.historical = false;
 					input.actorHashId = result.spawnedActorHashId!;
 					input.selectionPath = undefined;
 					input.dirty = true;

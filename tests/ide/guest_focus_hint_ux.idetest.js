@@ -74,8 +74,8 @@ for (const font of ['tiny', 'msx']) {
 		await press('ShiftLeft', 'F1');
 
 		t.command('gameView'); await t.frames(3); const game = t.activeWorkbenchTab();
-		t.assert(game.kind === 'game_view', 'the actual Game view did not open');
-		await focusFrame(game, game.frameBounds, font, `guest-game-view-${label}`);
+		t.assert(game.kind === 'actor_lab', 'the actual Game view did not open');
+		await focusFrame(game, game.previewBounds, font, `guest-game-view-${label}`);
 		await click(12, 4); await capture(`guest-modal-takeover-${label}`); await press('Escape');
 		await terminalReturn();
 

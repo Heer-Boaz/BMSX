@@ -24,7 +24,7 @@ export async function runAssistantActorExecution(kind: StudioRendererKind, canva
 	await press('ControlRight', 'ShiftRight'); await test.runMenuCommand('pause');
 	source.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- live tools must not install this dirty source\n' }]);
 	const version = source.version, media = ide.sources.currentBlua32Media;
-	await runPaletteCommand('Actor Lab: Open'); await press('ArrowDown'); await press('Enter'); await frame();
+	await runPaletteCommand('Game: Inspect'); await press('ArrowDown'); await press('Enter'); await frame();
 	const lab = ide.editor.editorParts.activeGroup.model.activeTab; if (lab.kind !== 'actor_lab') throw new Error('Actor Lab required');
 	const selection = lab.actorHashId;
 	check(lab.runtime.roots[0].label === 'second', 'manual Actor Lab selects a different instance from the tool request');

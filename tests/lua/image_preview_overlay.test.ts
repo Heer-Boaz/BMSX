@@ -36,7 +36,7 @@ import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { parseLuaChunk } from './cpu_test_harness';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
-import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
+import { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
 
 const pixels = { width: 2, height: 1, pixels: new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255]) };
@@ -110,7 +110,7 @@ function workbenchFixture(t: TestContext) {
 
 test('the isolated lightbox admits only explicit tab commands, closing and returning focus before their actual workbench runner', t => {
 	const { editor, preview } = workbenchFixture(t), sourceTab = editor.editorParts.main.activeGroup.model.activeTab!;
-	editor.editorParts.main.activeGroup.openEditor(new GameViewInput()); editor.editorParts.main.activeGroup.openEditor(new HostErrorInput('Diagnostic'));
+	editor.editorParts.main.activeGroup.openEditor(new TerminalInput()); editor.editorParts.main.activeGroup.openEditor(new HostErrorInput('Diagnostic'));
 	editor.editorParts.main.activeGroup.activate(sourceTab.id); editor.update(0);
 	const order: string[] = [], executed: EditorCommandId[] = [];
 	let origin = inputFocus.target!;

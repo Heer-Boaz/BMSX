@@ -107,10 +107,13 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		this.worldControl = new ActorWorldControl(this.focusTarget, commands, contextMenu, () => { this.updateContentLayout(); this.update(); });
 		this.outlinerControl = new ActorOutlinerControl(this.focusTarget, commands, () => this.update(),
 			(x, y, keyboard) => this.showContextMenu(x, y, this.outlinerControl.focusTarget, keyboard));
+		this.bindTransportCommands(this.worldControl.focusTarget);
+		this.bindTransportCommands(this.outlinerControl.focusTarget);
 		this.actorActions = new ActorLabEditorActions(group, quickInput, this.focusTarget);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
 		this.timelineSlider = new WorkbenchSliderControl(inputFocus, pointerCapture, this.focusTarget,
 			value => this.input.timeline.request(value), () => this.input.timeline.cancelPending());
+		this.bindTransportCommands(this.timelineSlider.focusTarget);
 		this.focusTarget.next = this.actions.focusTarget;
 		this.actions.focusTarget.previous = this.focusTarget;
 		this.timelineSlider.focusTarget.previous = this.actions.focusTarget;
@@ -183,14 +186,14 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			});
 			target.registerCommand('actorLab.spawn', { isEnabled: () => this.hasInput && this.controller.canInteract(), run: () => this.actorActions.spawn(this.input) });
 			target.registerCommand('actorLab.emit', { isEnabled: () => this.hasInput && this.controller.canInteract() && this.input.actorPresent && !this.input.dirty, run: () => this.actorActions.emitEvent(this.input) });
-			target.registerCommand('actorLab.actions', { isEnabled: () => this.hasInput && this.controller.canInteract() && this.controller.hasActions(this.input), run: () => this.actorActions.actions(this.input) });
+			target.registerCommand('actorLab.actions', { isEnabled: () => this.hasInput && this.controller.canInteract() && this.controller.hasActions(this.input), run: () => this.actorActions.actions(this.input, this.controller.selected(this.input)!) });
 			target.registerCommand('actorLab.run', { isEnabled: () => {
 				if (!this.hasInput || !this.controller.canInteract(this.input.domain)) return false;
 				const node = this.controller.selected(this.input);
 				if (node !== undefined) for (const action of actorActions(node)) if (action.playback) return true;
 				return false;
 			}, run: () => this.actorActions.play(this.input) });
-			target.registerCommand('actorLab.call', { isEnabled: () => this.hasInput && this.controller.canInteract() && this.controller.selected(this.input) !== undefined, run: () => this.actorActions.callMethod(this.input) });
+			target.registerCommand('actorLab.call', { isEnabled: () => this.hasInput && this.controller.canInteract() && this.controller.selected(this.input) !== undefined, run: () => this.actorActions.callMethod(this.input, this.controller.selected(this.input)!) });
 			target.registerCommand('actorLab.details', { isEnabled: () => this.hasInput && (this.input.detailsWindow.open || this.input.details!.subject !== undefined
 				|| this.controller.selected(this.input) !== undefined), run: () => {
 				this.showDetails(true);
@@ -209,6 +212,28 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			target.registerCommand('actorLab.outline', { isEnabled: () => this.hasInput && (this.input.presentation === 'graph' || this.input.presentation === 'world' && this.input.actorPresent),
 				run: () => { this.controller.openOutline(this.input); this.update(); this.focus(); } });
 		}
+		// A viewport hit and an Outliner row address the actor, independently of
+		// the member retained in the inspection panel. Opening their menu is not
+		// a request to erase that member selection.
+		for (const target of [this.worldControl.focusTarget, this.outlinerControl.focusTarget]) {
+			const available = () => this.hasInput && !this.input.dirty && this.input.actorPresent;
+			for (const command of ['sceneViewport.frameSelection', 'actorLab.emit'] as const)
+				target.registerCommand(command, this.focusTarget.getCommand(command)!);
+			target.registerCommand('actorLab.actions', { isEnabled: () => available() && this.controller.canInteract()
+				&& actorActions(this.input.runtime.roots[0]).length > 0,
+				run: () => this.actorActions.actions(this.input, this.input.runtime.roots[0]) });
+			target.registerCommand('actorLab.call', { isEnabled: () => available() && this.controller.canInteract(),
+				run: () => this.actorActions.callMethod(this.input, this.input.runtime.roots[0]) });
+			target.registerCommand('actorLab.details', { isEnabled: available, run: () => {
+				this.controller.projection.reveal(this.input.runtime.roots[0]); this.update(); this.showDetails(true);
+			} });
+			target.registerCommand('actorLab.outline', { isEnabled: available, run: () => {
+				if (this.input.navigation === 'world') this.controller.openOutline(this.input);
+				this.update(); this.focus();
+			} });
+			target.registerCommand('actorLab.editScene', { isEnabled: () => available() && this.controller.sceneAuthoring !== undefined && !this.controller.rewind.active,
+				run: () => this.actorActions.editScene(this.input) });
+		}
 	}
 	/** Every invocation owns one exact selected subject and its physical control lifetime. */
 	private showContextMenu(x: number, y: number, target: InputFocusTarget, keyboard: boolean): void {
@@ -216,7 +241,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		const menu = input.presentation === 'world' ? 'actorLab.world.context'
 			: graph === undefined ? 'actorLab.context' : graph.viewport.selection === null ? 'actorLab.canvas.context' : 'actorLab.stateGraph.context';
 		this.contextMenu.show(x, y, WORKBENCH_MENUS[menu], this.commands,
-			{ selectFirst: keyboard, invocationOrigin: target, commandTarget: this.commandTarget, onWillShow: lifetime => {
+			{ selectFirst: keyboard, invocationOrigin: target, commandTarget: input.presentation === 'world' ? target : this.commandTarget, onWillShow: lifetime => {
 				const retire = () => this.contextMenu.hide();
 				lifetime.add({ dispose: input.onDidChangeSelection(retire) });
 				if (graph !== undefined) lifetime.add({ dispose: graph.onDidChangeSelection(retire) });
@@ -347,7 +372,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		this.controller = this.input.controller;
 		this.input.interaction.setRuntime(this.controller.viewport.transport, this.input.interaction.running);
 		this.focusTarget.scope.interaction = this.input.interaction;
-		this.focusTarget.scope.runtime = { target: this.commandTarget, interaction: this.input.interaction };
+		this.focusTarget.scope.runtime = { target: this.focusTarget, interaction: this.input.interaction };
 		this.gameInput = new GameInputControl(this.focusTarget, this.controller.viewport.recipient, this.controller.viewport, this.controller.viewport.transport);
 		// Possessing the Game view and ejecting to its editor camera share this
 		// client's live-follow intent; changing input recipients is not Pause.
@@ -389,6 +414,12 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		if (this.hasInput) this.clearInput();
 		pointerHover.release(this); this.actions.dispose(); this.graph.dispose(); this.split.dispose(); this.timelineSlider.dispose(); this.scrollbar.cancelPointer(); this.worldControl.dispose(); this.outlinerControl.dispose(); super.dispose();
 	}
+	public override layout(bounds: Readonly<RectBounds>): void {
+		super.layout(bounds);
+		const changed = updateFullWidthWorkbenchLayout(this.input.layout, bounds);
+		if (changed && this.input.follow.target !== undefined) this.input.follow.pending = this.input.follow.target;
+		this.updateContentLayout();
+	}
 	public override update(): void {
 		this.positionDrag.refresh();
 		const input = this.input, scope = this.focusTarget.scope, context = scope.contextGeneration;
@@ -412,13 +443,12 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			this.focusTarget.commandContext = context;
 			this.split.focusTarget.commandContext = context;
 			this.timelineSlider.focusTarget.commandContext = context;
-			this.focusTarget.scope.runtime = { target: this.commandTarget, interaction: input.interaction };
 			this.actions.setInput(bar, context);
 		}
 		this.boundGraph?.layout(editorViewState.font.renderFont());
 		const layoutChanged = updateFullWidthWorkbenchLayout(input.layout, this.contentBounds);
 		if (!this.timelineSlider.focusTarget.hasFocus) input.timeline.cancelPending();
-		input.timeline.refresh(this.controller.selected(input), input.interaction.running, this.controller.guest, readback, this.controller.canInteract());
+		input.timeline.refresh(this.controller.inspected(input), input.interaction.running, this.controller.guest, readback, this.controller.canInteract());
 		const timelineChanged = this.timelineVisible !== input.timeline.visible;
 		this.timelineVisible = input.timeline.visible;
 		const { layout } = input;
@@ -431,9 +461,6 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		if (viewportChanged && input.follow.target !== undefined) input.follow.pending = input.follow.target;
 		if (followChanged || contentsChanged || viewportChanged) {
 			if (!this.updateContentLayout()) return;
-			layoutWorkbenchActionBar(bar, layout.primaryRight - 4,
-				layout.top + 2, layout.top + layout.rowHeight + 8, measureText, editorViewState.font.renderFont(), layout.left + 4);
-			if (visibleGraph !== undefined) visibleGraph.titleLabel = truncateTextToWidth(visibleGraph.title, layout.primaryRight - layout.left - 16);
 		} else if (!this.updatePreviewInput()) return;
 		this.worldControl.update();
 		this.worldControl.navigation.advance(editorRuntimeState.currentTimeMs);
@@ -442,32 +469,9 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		this.controller.layoutNavigation(input);
 		this.timelineSlider.update();
 		if (visibleGraph !== undefined) this.graph.update();
-		const primary = this.commandTarget;
-		primary.next = this.actions.focusTarget; this.actions.focusTarget.previous = primary;
-		let previous = this.actions.focusTarget;
-		if (input.timeline.slider.interactive) {
-			previous.next = this.timelineSlider.focusTarget; this.timelineSlider.focusTarget.previous = previous;
-			previous = this.timelineSlider.focusTarget;
-		}
-		if (layout.previewVisible) {
-			previous.next = this.split.focusTarget; this.split.focusTarget.previous = previous;
-			previous = this.split.focusTarget;
-		}
-		if (layout.previewVisible) {
-			previous.next = this.worldControl.actions.focusTarget; this.worldControl.actions.focusTarget.previous = previous; previous = this.worldControl.actions.focusTarget;
-			if (input.worldView.mode !== 'game') { previous.next = this.worldControl.focusTarget; this.worldControl.focusTarget.previous = previous; previous = this.worldControl.focusTarget; }
-		}
-		if (this.gameInput.focusTarget.guestInput !== undefined) {
-			previous.next = this.gameInput.focusTarget; this.gameInput.focusTarget.previous = previous;
-			previous = this.gameInput.focusTarget;
-		}
-		previous.next = primary; primary.previous = previous;
-		// Pane commands address the contribution; pointer focus in its Outliner
-		// is the same logical tab stop, not an unconnected keyboard island.
-		this.outlinerControl.focusTarget.next = primary.next;
-		this.outlinerControl.focusTarget.previous = primary.previous;
+
 		this.updateDetailsWindow();
-		input.timeline.executePending(this.controller.selected(input), this.controller.canInteract(), this.scrub);
+		input.timeline.executePending(this.controller.inspected(input), this.controller.canInteract(), this.scrub);
 		this.actions.update();
 		const tooltipItem = this.worldControl.actions.tooltipItem ?? this.actions.tooltipItem;
 		if (tooltipItem !== undefined) this.actionTooltip.show(tooltipItem.tooltip, tooltipItem.bounds,
@@ -589,8 +593,14 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		if (isKeyJustPressed('Enter', input)) { consumeIdeKey('Enter', input); this.commands.execute('actorLab.details'); }
 	}
 	private updateContentLayout(): boolean {
-		layoutActorLab(this.input);
-		this.splitRevision = this.input.layout.split?.revision;
+		const input = this.input, layout = input.layout;
+		if (input.timeline.visible) input.timelineLayout.update(input.timeline, layout);
+		layoutActorLab(input);
+		this.splitRevision = layout.split?.revision;
+		const bar = input.presentation === 'world' ? input.worldActions : input.presentation === 'outline' ? input.actionBar : input.stateGraphActions;
+		layoutWorkbenchActionBar(bar, layout.primaryRight - 4,
+			layout.top + 2, layout.top + layout.rowHeight + 8, measureText, editorViewState.font.renderFont(), layout.left + 4);
+		if (input.presentation === 'graph') input.stateGraph!.titleLabel = truncateTextToWidth(input.stateGraph!.title, layout.primaryRight - layout.left - 16);
 		return this.updatePreviewInput();
 	}
 	/** Arrangement retires old controls before admitting input for this attachment. */
@@ -615,6 +625,30 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			this.gameInput.clearInput();
 		}
 		if (scope.contextGeneration !== context) return false;
+		const primary = this.commandTarget;
+		primary.next = this.actions.focusTarget; this.actions.focusTarget.previous = primary;
+		let previous = this.actions.focusTarget;
+		if (input.timeline.slider.interactive) {
+			previous.next = this.timelineSlider.focusTarget; this.timelineSlider.focusTarget.previous = previous;
+			previous = this.timelineSlider.focusTarget;
+		}
+		if (input.layout.previewVisible) {
+			previous.next = this.split.focusTarget; this.split.focusTarget.previous = previous;
+			previous = this.split.focusTarget;
+		}
+		if (input.layout.previewVisible) {
+			previous.next = this.worldControl.actions.focusTarget; this.worldControl.actions.focusTarget.previous = previous; previous = this.worldControl.actions.focusTarget;
+			if (input.worldView.mode !== 'game') { previous.next = this.worldControl.focusTarget; this.worldControl.focusTarget.previous = previous; previous = this.worldControl.focusTarget; }
+		}
+		if (this.gameInput.focusTarget.guestInput !== undefined) {
+			previous.next = this.gameInput.focusTarget; this.gameInput.focusTarget.previous = previous;
+			previous = this.gameInput.focusTarget;
+		}
+		previous.next = primary; primary.previous = previous;
+		// Pane commands address the contribution; pointer focus in its Outliner
+		// is the same logical tab stop, not an unconnected keyboard island.
+		this.outlinerControl.focusTarget.next = primary.next;
+		this.outlinerControl.focusTarget.previous = primary.previous;
 		if (restoreFocus && inputFocus.target === this.focusTarget) this.focus();
 		return scope.contextGeneration === context;
 	}
@@ -653,7 +687,8 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			return true;
 		}
 		if (this.input.presentation === 'graph') {
-			const result = this.graph.handlePointer(snapshot, now, snapshot.spaceDown);
+			// Runtime graphs reserve Space for transport; RMB/MMB still pan.
+			const result = this.graph.handlePointer(snapshot, now, false);
 			if (result === WorkbenchGraphPointerResult.Rejected) return true;
 			if (snapshot.justPressedButtons !== 0 && result !== WorkbenchGraphPointerResult.Outside) this.input.follow.stop();
 			if ((result === WorkbenchGraphPointerResult.Selection || result === WorkbenchGraphPointerResult.Activate) && !this.acceptGraphSelection()) return true;

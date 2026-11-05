@@ -6,7 +6,6 @@ import { inputFocus } from '../../ide/input/focus';
 import type { EditorCommandId } from '../../ide/common/commands';
 import type { CommandQuickPickItem } from '../../ide/workbench/contrib/commands/quick_pick_provider';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
-import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
 import type { EditorMoveDestination } from '../../ide/workbench/services/editor/editor_parts';
 import type { QuickPickItem } from '../../ide/workbench/services/quick_input/provider';
@@ -175,13 +174,14 @@ test('a nonportable diagnostic is still a selectable tab and its pane retirement
 });
 
 test('roving to and activating a Game tab never grants guest keys until its actual viewport is explicitly focused', t => {
-	const f = threeSources(t), strip = f.group.tabStrip, game = new GameViewInput();
+	const f = threeSources(t), strip = f.group.tabStrip, game = f.editor.actorLab.resolveInput();
 	f.group.openEditor(game); f.group.activate(f.firstInput.id); f.update();
 	f.editor.commands.execute('group.focusTabs', f.group.tabFocusTarget); f.key('End');
 	assert.equal(strip.focusedInput === game && f.group.model.activeTab === f.firstInput, true); assert.equal(f.editor.guestInputRecipient, null);
 	f.key('Enter'); assert.ok(f.group.model.activeTab === game && inputFocus.target === strip.focusTarget); assert.equal(f.editor.guestInputRecipient, null);
 	f.key('Escape'); assert.ok(inputFocus.target === f.group.panes.activePane!.commandTarget); assert.equal(f.editor.guestInputRecipient, null);
-	f.key('Tab'); const guest = inputFocus.target; assert.ok(guest?.guestInput !== undefined && f.editor.guestInputRecipient === f.host.input);
+	const chrome = inputFocus.target;
+	do { f.key('Tab'); assert.ok(inputFocus.target !== chrome, 'the runtime view exposes a guest tab stop'); } while (inputFocus.target?.guestInput === undefined); const guest = inputFocus.target; assert.ok(guest?.guestInput !== undefined && f.editor.guestInputRecipient === f.host.input);
 	f.key('ArrowLeft'); f.key('Tab'); assert.ok(inputFocus.target === guest && f.group.model.activeTab === game);
 	f.key('F1', KeyModifier.shift); assert.equal(f.editor.guestInputRecipient, null);
 });

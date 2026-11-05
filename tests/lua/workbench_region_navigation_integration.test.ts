@@ -6,7 +6,6 @@ import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { inputFocus, InputFocusScope } from '../../ide/input/focus';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
-import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import type { ActionPromptRequest } from '../../ide/workbench/contrib/modal/action_prompt_view';
@@ -242,9 +241,11 @@ test('root and part-local modal origins cannot escape with either region key whi
 });
 
 test('guest viewport input keeps F6 and Shift+F6 while Shift+F1 alone returns to host region navigation', async t => {
-	const f = await fixture(t), game = new GameViewInput();
+	const f = await fixture(t), game = f.editor.actorLab.resolveInput();
+	f.editor.updateViewport({ width: 1200, height: 800 });
 	f.group.openEditor(game); f.update();
-	const pane = f.group.panes.activePane!; pane.focus(); f.key('Tab');
+	const pane = f.group.panes.activePane!; pane.focus(); const chrome = inputFocus.target;
+	do { f.key('Tab'); assert.ok(inputFocus.target !== chrome, 'the runtime view exposes a guest tab stop'); } while (inputFocus.target?.guestInput === undefined);
 	const guest = inputFocus.admittedTarget!; assert.ok(guest.guestInput !== undefined);
 	const binding = guest.guestInput, cycles = f.host.runtime.machine.scheduler.nowCycles;
 	for (const modifiers of [KeyModifier.none, KeyModifier.shift]) {

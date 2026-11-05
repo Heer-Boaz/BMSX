@@ -5,7 +5,7 @@ import { editorViewState } from '../../ide/editor/ui/view/state';
 import { ActorLabEditorPane } from '../../ide/workbench/contrib/actor_lab/editor_pane';
 import { readActorChoices } from '../../ide/workbench/contrib/actor_lab/projection';
 import { findRuntimeActor } from '../../ide/workbench/contrib/actor_lab/runtime';
-import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
+import { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 
 import { createLiveStudioFixture } from '../helpers/live_studio';
@@ -140,7 +140,7 @@ for (const change of ['pause', 'selection', 'deactivate'] as const) test(`late R
 	const f = await fixture(t); f.select('moving'); const operation = f.run();
 	if (change === 'pause') f.controller.viewport.transport.pause();
 	else if (change === 'selection') f.select('idle');
-	else f.part.activeGroup.openEditor(new GameViewInput());
+	else f.part.activeGroup.openEditor(new TerminalInput());
 	await f.until(() => operation.result !== undefined);
 	assert.equal(f.view.interaction.running, false); assert.equal(f.execution.paused, true);
 });

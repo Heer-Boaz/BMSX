@@ -60,9 +60,6 @@ export class ActorOutlinerControl {
 			this.clicks.clear();
 			if (primary) {
 				this.focusTarget.focus();
-				if (this.input === input && this.focusTarget.hasFocus) {
-					input.controller.inspectActor(input, input.domain, 0); this.changed();
-				}
 			}
 			return true;
 		}
@@ -99,7 +96,7 @@ export class ActorOutlinerControl {
 			this.changed(); return;
 		}
 		if (isKeyJustPressed('KeyF', event)) { consumeIdeKey('KeyF', event); this.commands.execute('sceneViewport.frameSelection', this.parent); }
-		if (isKeyJustPressed('Enter', event)) { consumeIdeKey('Enter', event); this.commands.execute('actorLab.details', this.parent); }
+		if (isKeyJustPressed('Enter', event)) { consumeIdeKey('Enter', event); this.commands.execute('actorLab.details', this.focusTarget); }
 	}
 	public draw(): void {
 		const input = this.input!, tree = input.worldOutliner.tree, layout = tree.layout;

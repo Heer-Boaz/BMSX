@@ -21,7 +21,7 @@ export async function runStudioActorPins(test: StudioFixture) {
 	// Pause can stop inside a guest frame; begin the comparison at a completed video boundary.
 	await runPaletteCommand('Run: Next Frame');
 	await until(() => ide.frameNavigation.active === undefined, 'actor pins: baseline frame boundary settles');
-	await runPaletteCommand('Actor Lab: Open');
+	await runPaletteCommand('Game: Inspect');
 	check(ide.editor.editorParts.activePart.quickInput.visible && ide.editor.editorParts.activePart.quickInput.model.list.rows.map(row => row.item.label).join(',') === 'first,second',
 		'Actor picker reads both guest-owned instances');
 	await press('Enter'); await frame();

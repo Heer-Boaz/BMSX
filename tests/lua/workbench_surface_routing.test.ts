@@ -22,7 +22,7 @@ import { InputInteraction } from '../../ide/input/interaction';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { pointerHover } from '../../ide/input/pointer/hover';
 import { GameInputControl } from '../../ide/workbench/contrib/game_view/game_input';
-import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
+import { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
 import { EventViewerInput } from '../../ide/workbench/contrib/events/editor_input';
 import { RomInspectorInput } from '../../ide/workbench/contrib/rom_inspector/editor_input';
@@ -719,7 +719,18 @@ return { _objects = { actor, other } }` },
 	assert.ok(pane instanceof ActorLabEditorPane);
 	f.editor.commands.execute('actorLab.outline', pane.commandTarget); f.editor.update(0);
 	assert.equal(input.presentation, 'outline', 'component tests enter the actor outline, not the world Outliner');
-	return { ...f, controller, input, pane, sourceModel };
+	// Responsive workbench changes cancel native gestures against the producer's
+	// held-button state, not a manufactured editor-only pointer snapshot.
+	const native = new RemoteInput(f.host.input, f.host.clock, undefined, event => f.editor.dispatchPointer(event));
+	afterTest(t, () => native.release());
+	let held = 0;
+	const pointer = (x: number, y: number, buttons = held) => {
+		native.apply([{ type: 'pointer', x, y }]);
+		for (const [mask, button] of [[PointerButton.Primary, 'primary'], [PointerButton.Secondary, 'secondary'], [PointerButton.Auxiliary, 'aux']] as const)
+			if (((buttons ^ held) & mask) !== 0) native.apply([{ type: 'button', button, down: (buttons & mask) !== 0 }]);
+		held = buttons;
+	};
+	return { ...f, controller, input, pane, sourceModel, pointer };
 }
 
 for (const button of [PointerButton.Primary, PointerButton.Secondary]) test(`Actor row button ${button} admits the exact live subject and contextual action owner`, t => {
@@ -745,11 +756,11 @@ for (const button of [PointerButton.Primary, PointerButton.Secondary]) for (cons
 	editor.commands.execute('resources.focus', primary); editor.update(0);
 	assert.ok(inputFocus.admittedTarget === editor.resourcePanel.focusTarget);
 	assert.ok(inputFocus.admittedTarget !== primary);
-	let admissions = 0, replacement: GameViewInput | undefined;
+	let admissions = 0, replacement: TerminalInput | undefined;
 	afterTest(t, primary.onDidFocus(() => {
 		admissions++;
 		if (destination === 'files') editor.commands.execute('resources.focus', primary);
-		else { replacement = new GameViewInput(); group.openEditor(replacement); }
+		else { replacement = new TerminalInput(); group.openEditor(replacement); }
 	}));
 	pointer(input.outline.layout.contentRight - 4, input.outline.layout.contentTop + (index + 0.5) * input.outline.layout.rowHeight, button);
 	assert.equal(admissions, 1);
@@ -779,11 +790,11 @@ for (const button of [PointerButton.Primary, PointerButton.Secondary]) for (cons
 	const x = graph.viewport.graphToViewportX((offered.bounds.left + offered.bounds.right) / 2);
 	const y = graph.viewport.graphToViewportY((offered.bounds.top + offered.bounds.bottom) / 2);
 	assert.ok(graph.viewport.hitTest(x, y) === offered);
-	let admissions = 0, replacement: GameViewInput | undefined;
+	let admissions = 0, replacement: TerminalInput | undefined;
 	afterTest(t, primary.onDidFocus(() => {
 		admissions++;
 		if (destination === 'files') editor.commands.execute('resources.focus', primary);
-		else { replacement = new GameViewInput(); group.openEditor(replacement); }
+		else { replacement = new TerminalInput(); group.openEditor(replacement); }
 	}));
 	pointer(x, y, button);
 	assert.equal(admissions, 1);
@@ -811,7 +822,7 @@ test('Actor outline selection publication ignores semantic reselection and passi
 
 test('Actor outline keyboard navigation stops its old layout when selection publication replaces the pane', t => {
 	const { editor, input, pane } = actorFixture(t), group = editor.editorParts.main.activeGroup;
-	pane.focus(); const replacement = new GameViewInput(); let publications = 0;
+	pane.focus(); const replacement = new TerminalInput(); let publications = 0;
 	const unbind = input.onDidChangeSelection(() => { unbind(); publications++; group.openEditor(replacement); }); afterTest(t, unbind);
 	editor.dispatchKey(new KeyInputEvent('ArrowDown', KeyModifier.none));
 	editor.dispatchKey(new KeyInputEvent('ArrowDown', KeyModifier.none, false, false));
@@ -826,11 +837,11 @@ for (const button of [PointerButton.Primary, PointerButton.Secondary]) for (cons
 	assert.ok(index >= 0); const offered = input.outline.rows[index], collapsed = offered.collapsed;
 	const newerIndex = input.outline.rows.findIndex(row => row !== offered), newer = input.outline.rows[newerIndex];
 	assert.ok(newer !== undefined);
-	let publications = 0, replacement: GameViewInput | undefined;
+	let publications = 0, replacement: TerminalInput | undefined;
 	const unbind = input.onDidChangeSelection(() => {
 		unbind(); publications++; assert.ok(input.outline.rows[input.outline.selectionIndex] === offered);
 		if (destination === 'files') editor.commands.execute('resources.focus', primary);
-		else if (destination === 'editor') { replacement = new GameViewInput(); group.openEditor(replacement); }
+		else if (destination === 'editor') { replacement = new TerminalInput(); group.openEditor(replacement); }
 		else { input.outline.selectionIndex = newerIndex; input.rememberSelection(); }
 	});
 	afterTest(t, unbind);
@@ -859,11 +870,11 @@ for (const gesture of ['context', 'activate'] as const) for (const destination o
 		pointer(x, y, PointerButton.Primary); pointer(x, y, 0);
 		assert.ok(graph.viewport.selection === offered); assert.ok(graph.selectTarget(selected.target));
 	}
-	let publications = 0, replacement: GameViewInput | undefined;
+	let publications = 0, replacement: TerminalInput | undefined;
 	const unbind = graph.onDidChangeSelection(() => {
 		unbind(); publications++; assert.ok(graph.viewport.selection === offered);
 		if (destination === 'files') editor.commands.execute('resources.focus', primary);
-		else if (destination === 'editor') { replacement = new GameViewInput(); group.openEditor(replacement); }
+		else if (destination === 'editor') { replacement = new TerminalInput(); group.openEditor(replacement); }
 		else assert.ok(graph.selectTarget(selected.target));
 	});
 	afterTest(t, unbind);
@@ -1000,7 +1011,7 @@ test('Actor row press cannot reuse an identical input after focus detached and r
 	let admissions = 0;
 	const unbind = primary.onDidFocus(() => {
 		unbind(); admissions++;
-		group.openEditor(new GameViewInput()); group.openEditor(input);
+		group.openEditor(new TerminalInput()); group.openEditor(input);
 	});
 	afterTest(t, unbind);
 	pointer(input.outline.layout.contentRight - 4, input.outline.layout.contentTop + (index + 0.5) * input.outline.layout.rowHeight, PointerButton.Secondary);
@@ -1029,8 +1040,9 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor preview r
 	editor.updateViewport({ width: stackedWidth, height: 400 }); editor.update(0);
 	assert.equal(input.layout.previewVisible, true, 'the actual tall client retains a stacked preview');
 	assert.ok(input.layout.split === input.rowSplit);
-	assert.ok(preview.guestInput === binding && inputFocus.target === preview && pointerCapture.guestBinding === binding);
-	host.input.sampleInputControllerSnapshot(sample, InputControllerSampleContext.Normal); assert.equal(sample.pointerButtons, 1);
+	assert.ok(preview.guestInput === binding && inputFocus.target === preview);
+	assert.ok(pointerCapture.guestBinding === undefined); assert.equal(pointerCapture.draining, true);
+	host.input.sampleInputControllerSnapshot(sample, InputControllerSampleContext.Normal); assert.equal(sample.pointerButtons, 0);
 	editor.updateViewport({ width: 640, height: 360 }); editor.update(0);
 	assert.ok(input.layout.split === input.split && preview.guestInput === binding && inputFocus.target === preview);
 	editor.updateViewport({ width: 320, height: 160 }); editor.update(0);
@@ -1131,7 +1143,7 @@ test('Actor preview retirement stops the old pane update when guest blur opens a
 	pane.focus();
 	pointer((input.previewBounds.left + input.previewBounds.right) / 2,
 		(input.previewBounds.top + input.previewBounds.bottom) / 2, PointerButton.Primary);
-	const preview = inputFocus.target!, replacement = new GameViewInput(), cycles = host.runtime.machine.scheduler.currentNowCycles();
+	const preview = inputFocus.target!, replacement = new TerminalInput(), cycles = host.runtime.machine.scheduler.currentNowCycles();
 	assert.ok(preview.guestInput !== undefined);
 	let blurs = 0;
 	afterTest(t, preview.onDidBlur(() => { blurs++; group.openEditor(replacement); }));
@@ -1289,7 +1301,7 @@ test('the real Assistant transcript owns only its selected-message actions for t
 	assert.equal(review.kind, 'workspace_edit_review');
 	assert.ok(review.kind === 'workspace_edit_review' && review.proposal === proposal);
 	assert.equal(model.buffer.getText(), source); assert.equal(model.canUndo, false);
-	const group = editor.editorParts.main.activeGroup, companion = new GameViewInput();
+	const group = editor.editorParts.main.activeGroup, companion = new TerminalInput();
 	group.openEditor(input); editor.update(0);
 	assert.equal(inputFocus.moveFocus(false), true); assert.ok(inputFocus.target === turnActions);
 	let retired = 0;
@@ -1304,7 +1316,7 @@ test('the real Assistant transcript owns only its selected-message actions for t
 
 test('Assistant borrows its draft command context only for the concrete input attachment', t => {
 	const { editor } = fixture(t), group = editor.editorParts.main.activeGroup;
-	const input = new AssistantInput(editor.assistant), companion = new GameViewInput();
+	const input = new AssistantInput(editor.assistant), companion = new TerminalInput();
 	afterTest(t, () => input.dispose());
 	group.openEditor(input);
 	const pane = group.panes.activePane!, draft = input.draft.focusTarget;
@@ -1486,7 +1498,7 @@ for (const action of ['run', 'reboot', 'hot-resume'] as const) for (const newer 
 			performHotResume(ide.hotResumes, editor, host.execution, ide.overlayRenderer, ide.logOutput, ide.runTargets, request);
 		else performReboot(ide.boots, editor, host.execution, ide.overlayRenderer, ide.logOutput, ide.runTargets, request);
 		if (newer === 'selection') ide.runTargets.select(undefined);
-		if (newer === 'editor') group.openEditor(new GameViewInput());
+		if (newer === 'editor') group.openEditor(new TerminalInput());
 		const revision = host.execution.revision, pane = group.panes.activePane;
 		if (action === 'hot-resume') {
 			admission.resolve({ status: 'accepted', mode: 'applied' }); await admission.promise;
@@ -1545,7 +1557,7 @@ test('chrome Palette after a preserve-focus switch addresses the new attached cl
 	editor.resourcePanel.show();
 	const chrome = inputFocus.target;
 	assert.equal(chrome, editor.resourcePanel.focusTarget);
-	const next = new GameViewInput();
+	const next = new TerminalInput();
 	group.openEditor(next, { preserveFocus: true });
 	const attached = group.panes.activePane!.commandTarget;
 	assert.ok(attached !== detached);
@@ -2488,9 +2500,9 @@ test('editor input retirement cancels its actual prompt and picker sessions with
 	const remote = new RemoteInput(host.input, host.clock, undefined, event => editor.dispatchPointer(event));
 	afterTest(t, () => remote.release());
 	for (const kind of ['prompt', 'picker']) {
-		const game = new GameViewInput();
+		const game = editor.actorLab.resolveInput();
 		editor.editorParts.main.activeGroup.panes.openEditor(game);
-		const bounds = game.frameBounds;
+		const bounds = game.previewBounds;
 		remote.apply([{ type: 'pointer', x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2 },
 			{ type: 'button', button: 'primary', down: true }, { type: 'button', button: 'primary', down: false }]);
 		const origin = inputFocus.target!;
@@ -2894,7 +2906,7 @@ test('actual menu tab commands retain their invoking group and retired origins n
 	const surface = editor.surfaces.attach({ role: 'content', captureScope: group.captureScope,
 		getBounds: () => extent, getClip: () => extent, isVisible: () => true, draw() {} });
 	const mainInputs = [...editor.editorParts.main.activeGroup.model.tabs], mainActive = editor.editorParts.main.activeGroup.model.activeTab;
-	const first = new HostErrorInput('first'), second = new GameViewInput();
+	const first = new HostErrorInput('first'), second = new TerminalInput();
 	let origin!: InputFocusTarget;
 	try {
 		group.openEditor(first); group.openEditor(second);

@@ -10,7 +10,6 @@ import { projectAemSource } from '../../ide/workbench/contrib/aem/source';
 import { AnimationEditorInput } from '../../ide/workbench/contrib/animation/editor_input';
 import { BehaviorRuntimeInspection } from '../../ide/workbench/contrib/behavior_lens/runtime_inspection';
 import { CartMapInput } from '../../ide/workbench/contrib/cart_maps/editor_input';
-import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
 import { LuaProgramInput } from '../../ide/workbench/contrib/lua_program/editor_input';
 import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/editor_input';
@@ -38,7 +37,7 @@ test('portable inputs own their move capability without lending it to diagnostic
 		new ResourceViewerInput(f.sources.catalog, workingCopy.resource)];
 	for (const input of inputs) f.editor.editorParts.main.activeGroup.model.add(input);
 	for (const input of [f.firstInput, f.input, ...inputs]) assert.equal(input.canMove(), true);
-	const game = new GameViewInput(), diagnostic = new HostErrorInput('fixture diagnostic');
+	const game = f.editor.actorLab.resolveInput(), diagnostic = new HostErrorInput('fixture diagnostic');
 	t.after(() => { game.dispose(); diagnostic.dispose(); });
 	assert.equal(game.canMove(), true); assert.equal(diagnostic.canMove(), false);
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;

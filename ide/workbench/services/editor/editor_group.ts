@@ -237,6 +237,12 @@ export class EditorGroupView {
 		this.timeline = new RuntimeTimelineControl(commands, () => this.focus(), this.focusTarget, this.timelineBounds,
 			() => presentation.layout(this));
 		this.timeline.attach(presentation.surfaces, this.surface, this.workArea, presentation.contextMenu);
+		// A runtime pane owns its transport presentation even when opened without
+		// keyboard focus. Focus may still nominate a nested runtime client below.
+		this.subscriptions.push(this.panes.onWillShowEditor(() => {
+			const runtime = this.panes.activePane!.inputScope?.runtime;
+			if (runtime !== undefined) this.timeline.setContext(runtime);
+		}));
 		presentation.surfaces.attach({ role: 'content', lifetimeOwner: this.surface, presentationParent: this.surface,
 			captureScope: this.timeline.focusScope.surfaceScope, isVisible: () => this.presented && this.timeline.visible,
 			getBounds: () => this.timelineBounds, getClip: () => this.clip, draw: () => this.timeline.draw(),

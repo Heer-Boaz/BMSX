@@ -41,7 +41,10 @@ export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab
 	public readonly runtime = new ActorRuntimeTree();
 	public readonly worldOutliner = new ActorWorldOutliner();
 	public stateGraph: ActorStateGraph | undefined;
-	public presentation: 'world' | 'outline' | 'graph' = 'world';
+	public navigation: 'world' | 'actor' = 'world';
+	public inspection: 'outline' | 'graph' = 'outline';
+	/** Showing world membership does not replace the actor's inspected member. */
+	public get presentation(): 'world' | 'outline' | 'graph' { return this.navigation === 'world' ? 'world' : this.inspection; }
 	public readonly follow = new ActorActivityFollow();
 	public readonly outline = new ScrollableWorkbenchTree<ActorRow>();
 	public readonly timeline = new ActorTimelineTransport();

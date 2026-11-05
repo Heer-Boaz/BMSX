@@ -9,7 +9,6 @@ import { SYSTEM_RESOURCE_DOMAIN } from '../../ide/common/resource';
 import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
 import { inputFocus } from '../../ide/input/focus';
 import { RuntimeIdeState } from '../../ide/workbench/state';
-import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 import { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
@@ -30,15 +29,15 @@ function fixture(t: TestContext) {
 
 // Geometry is the layout-owner contract here: the whole displayed image belongs
 // inside the editor's published client, not the physical canvas or Files pane.
-for (const kind of ['game_view', 'terminal'] as const) test(`${kind} fits its image to the current client origin across Files and font changes`, t => {
-	const f = fixture(t), input = kind === 'game_view' ? new GameViewInput() : new TerminalInput();
+for (const kind of ['actor_lab', 'terminal'] as const) test(`${kind} fits its image to the current client origin across Files and font changes`, t => {
+	const f = fixture(t), input = kind === 'actor_lab' ? f.editor.actorLab.resolveInput() : new TerminalInput();
 	f.editor.editorParts.main.activeGroup.openEditor(input);
 	for (const font of ['tiny', 'msx'] as const) {
 		f.editor.setFontVariant(font);
 		for (const filesVisible of [false, true, false]) {
 			if (filesVisible) f.editor.resourcePanel.show(); else f.editor.resourcePanel.hide();
 			f.editor.updateViewport({ width: 640, height: 480 }); f.editor.update(0);
-			const { layout, frameBounds: frame } = input;
+			const { layout } = input, frame = input.kind === 'actor_lab' ? input.previewBounds : input.frameBounds;
 			assert.equal(layout.left > 0, filesVisible);
 			assert.ok(frame.left >= layout.left + 4 && frame.right <= layout.right - 4);
 			assert.ok(frame.top >= layout.top + 4 && frame.bottom <= layout.bottom - 4);

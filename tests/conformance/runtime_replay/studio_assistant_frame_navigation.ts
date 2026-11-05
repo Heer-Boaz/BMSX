@@ -46,7 +46,7 @@ export async function runAssistantNavigation(kind: StudioRendererKind, canvas: H
 	const uiBefore = runtime.frameScheduler.lastTickSequence;
 	await test.runPaletteCommand('Run: Next Frame');
 	await until(() => ide.frameNavigation.active === undefined, 'navigation tools: ordinary Next Frame completes');
-	check(runtime.frameScheduler.lastTickSequence === uiBefore + 1 && ide.editor.editorParts.activeGroup.model.activeTab.kind === 'game_view', 'ordinary command steps and opens Game View');
+	check(runtime.frameScheduler.lastTickSequence === uiBefore + 1 && ide.editor.editorParts.activeGroup.model.activeTab.kind === 'actor_lab', 'ordinary command steps and opens Game View');
 	const uiPresent = { cycles: cycles(), videoTick: runtime.frameScheduler.lastTickSequence };
 	const retainedLatest = runtime.history.latestCycles;
 	await test.runPaletteCommand('Run: Previous Frame');

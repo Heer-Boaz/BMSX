@@ -244,7 +244,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'cartMap.map': { category: 'Map Editor', title: 'Show Map', shortTitle: 'Map' },
 	'cartMap.outline': { category: 'Map Editor', title: 'Back to Outline', shortTitle: 'Outline' },
 	sceneEditor: { category: 'Scene Editor', title: 'Open', shortTitle: 'Scene Editor' },
-	actorLab: { category: 'Actor Lab', title: 'Open', shortTitle: 'Actor Lab' },
+	actorLab: { category: 'Game', title: 'Inspect', shortTitle: 'Inspect Game' },
 	gameView: { category: 'View', title: 'Game' },
 	'gameView.togglePanel': { category: 'View', title: 'Toggle Game Panel' },
 	'gameView.closePanel': { category: 'View', title: 'Close Game Panel', shortTitle: 'X' },

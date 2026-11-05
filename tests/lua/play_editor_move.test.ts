@@ -23,7 +23,7 @@ import { RuntimeIdeState } from '../../ide/workbench/state';
 import { PlayRuntimeSession } from '../../ide/workbench/play_runtime';
 import type { PlayHandle } from '../../ide/workbench/services/play/service';
 import { PlayEditorInput } from '../../ide/workbench/contrib/play/editor_input';
-import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
+import { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 import { CodeEditorPane } from '../../ide/workbench/contrib/code_editor/editor_pane';
 import { describePlaySession } from '../../ide/workbench/contrib/play/details';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace/records';
@@ -173,7 +173,7 @@ test('Play More belongs to its invoking toolbar while another Part retains keybo
 	f.secondPart.window!.model.setRequestedBounds({ left: 400, top: 32, right: 800, bottom: 290 });
 	play.start(f.module, f.firstPart.activeGroup); const input = play.input!, handle = input.handle; await f.ready(handle);
 	const pane = f.firstPart.activeGroup.panes.activePane!;
-	f.secondPart.activeGroup.openEditor(new GameViewInput()); f.update();
+	f.secondPart.activeGroup.openEditor(new TerminalInput()); f.update();
 	const foreign = inputFocus.target!, menu = f.editor.contextMenu;
 	assert.ok(foreign === f.secondPart.activeGroup.panes.activePane!.commandTarget);
 	const cycles = handle.session!.target.runtime.machine.scheduler.nowCycles;
@@ -208,7 +208,7 @@ test('late Play preparation failure stays on its captured view and never activat
 	const input = play.input!, handle = input.handle;
 	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, { kind: 'window' }), true);
 	const destination = f.editor.editorParts.activePart;
-	f.secondPart.activeGroup.openEditor(new GameViewInput()); const focus = inputFocus.target;
+	f.secondPart.activeGroup.openEditor(new TerminalInput()); const focus = inputFocus.target;
 	await handle.preparation; f.update();
 	assert.equal(handle.state, 'failed'); assert.ok(handle.failure); assert.equal(inputFocus.target, focus);
 	assert.equal(f.editor.editorParts.activePart, f.secondPart); assert.equal(destination.activeGroup.model.activeTab, input);
@@ -275,7 +275,7 @@ test('moved Play Details discloses the original quarantined host error and stack
 	play.start(f.module, f.firstPart.activeGroup); const input = play.input!, handle = input.handle; await f.ready(handle);
 	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, { kind: 'window' }), true); f.update();
 	const destination = f.editor.editorParts.activePart, session = handle.session!, error = new Error('Play backend failure');
-	f.secondPart.activeGroup.openEditor(new GameViewInput()); const focus = inputFocus.target;
+	f.secondPart.activeGroup.openEditor(new TerminalInput()); const focus = inputFocus.target;
 	await session.tasks.schedule(() => { throw error; }, () => {}); await f.advance();
 	assert.equal(handle.state, 'faulted'); assert.equal(session.failure?.kind, 'host');
 	assert.ok(session.failure?.kind === 'host' && session.failure.error === error);
@@ -329,7 +329,7 @@ for (const route of ['native', 'application'] as const) {
 			pending = false;
 			if (revocation === 'binding') input.replaceHandle(handle);
 			else {
-				f.firstPart.activeGroup.openEditor(new GameViewInput());
+				f.firstPart.activeGroup.openEditor(new TerminalInput());
 				f.firstPart.activeGroup.activate(input.id);
 			}
 			return true;
@@ -367,7 +367,7 @@ for (const route of ['native', 'application'] as const) {
 test('an unrelated editor has no implicit Play session command but explicit Reveal retains the real Play owner', async t => {
 	const f = await fixture(t), play = f.editor.play;
 	play.start(f.module, f.firstPart.activeGroup); const input = play.input!, handle = input.handle;
-	f.secondPart.activeGroup.openEditor(new GameViewInput());
+	f.secondPart.activeGroup.openEditor(new TerminalInput());
 	const foreign = f.secondPart.activeGroup.panes.activePane!.commandTarget;
 	for (const command of ['play.stop', 'play.reset', 'play.actors', 'play.breakpoints', 'play.continue'] as const) {
 		assert.equal(f.editor.commands.isEnabled(command, foreign), false);

@@ -21,7 +21,6 @@ import type { ResourceViewerInput } from '../contrib/resources/editor_input';
 import type { ScenarioLabInput } from '../contrib/scenario_lab/editor_input';
 import type { SceneEditorInput, UnavailableSceneEditorInput } from '../contrib/scene_editor/editor_input';
 import type { ActorLabInput } from '../contrib/actor_lab/editor_input';
-import type { GameViewInput } from '../contrib/game_view/editor_input';
 import type { WorkspaceEditReviewInput } from '../contrib/edit_review/editor_input';
 
 /** Retained workbench-domain views, independent of their group, pane or tab control. */
@@ -44,7 +43,6 @@ export type EditorInput = (
 	| BehaviorLensInput
 	| ScenarioLabInput
 	| ActorLabInput
-	| GameViewInput
 	| AssistantInput
 	| WorkspaceEditReviewInput
 	| SceneEditorInput

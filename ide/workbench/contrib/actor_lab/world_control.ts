@@ -91,9 +91,9 @@ export class ActorWorldControl {
 		if (this.input !== input || this.focusTarget.scope.contextGeneration !== generation) return;
 		this.changed();
 		if (this.input !== input || this.focusTarget.scope.contextGeneration !== generation || inputFocus.admittedTarget !== this.focusTarget
-			|| !input.actorPresent || input.domain !== domain || input.actorHashId !== hashId || input.controller.selected(input)?.kind !== 'actor') return;
+			|| !input.actorPresent || input.domain !== domain || input.actorHashId !== hashId) return;
 		this.menus.show(x, y, WORKBENCH_MENUS['actorLab.world.context'], this.runner, {
-			invocationOrigin: this.focusTarget, returnFocus: this.focusTarget, commandTarget: this.parent, selectFirst: keyboard,
+			invocationOrigin: this.focusTarget, returnFocus: this.focusTarget, commandTarget: this.focusTarget, selectFirst: keyboard,
 			onWillShow: lifetime => {
 				this.popup = lifetime;
 				lifetime.add({ dispose: () => { if (this.popup === lifetime) this.popup = undefined; } });
@@ -135,8 +135,7 @@ export class ActorWorldControl {
 		if (!this.focusTarget.focus() || this.input !== input || this.focusTarget.scope.contextGeneration !== generation
 			|| inputFocus.admittedTarget !== this.focusTarget) return true;
 		const actor = view.pick(snapshot.viewportX, snapshot.viewportY);
-		if (!input.controller.rewind.seeking) input.controller.inspectActor(input, actor === undefined ? input.domain : actor.domain,
-			actor === undefined ? 0 : actor.hashId);
+		if (actor !== undefined && !input.controller.rewind.seeking) input.controller.inspectActor(input, actor.domain, actor.hashId);
 		this.changed(); return true;
 	}
 	public handleWheel(event: WheelInputSnapshot): boolean {

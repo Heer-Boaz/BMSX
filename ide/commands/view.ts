@@ -15,7 +15,6 @@ import type { CartEditor } from '../cart_editor';
 import type { EditorCommandId, EditorViewCommandId } from '../common/commands';
 import type { RuntimeSourceState } from '../runtime/sources';
 import { captureSourceViewOpening } from '../workbench/contrib/source_views/quick_access';
-import { openGameView } from '../workbench/contrib/game_view/editor_input';
 import { showOpenEditors } from '../workbench/services/editor/open_editors';
 
 export function isEditorViewCommand(command: EditorCommandId): command is EditorViewCommandId {
@@ -72,7 +71,7 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 			openTerminal(group);
 			return;
 		case 'actorLab': editor.actorLab.open(group); return;
-		case 'gameView': openGameView(group); return;
+		case 'gameView': editor.actorLab.open(group, 'game'); return;
 		case 'conversations': openObservedConversation(group, editor.observedConversation, picker); return;
 		case 'assistant': openAssistant(group, editor.assistant); return;
 		case 'resources':

@@ -26,10 +26,10 @@ export async function runStudioGameInput(test: StudioFixture) {
 	check(cycles() === sourcePosition && ide.editor.guestInputRecipient === null, 'source focus holds gameplay and captures its input');
 	await runPaletteCommand('View: Game');
 	const view = ide.editor.editorParts.activeGroup.model.activeTab;
-	if (view.kind !== 'game_view') throw new Error('Game View required');
-	await click(view.frameBounds);
+	if (view.kind !== 'actor_lab') throw new Error('Game View required');
+	await click(view.previewBounds);
 	const focused = inputFocus.target;
-	check(focused?.guestInput?.bounds === view.frameBounds && ide.editor.guestInputRecipient !== null, 'click gives the actual viewport guest input');
+	check(focused?.guestInput?.bounds === view.previewBounds && ide.editor.guestInputRecipient !== null, 'click gives the actual viewport guest input');
 	await test.capture?.('game-focused');
 	input.connectInputDevice({ id: 'gamepad:0', kind: 'gamepad', gamepadIndex: 0, label: 'Test controller',
 		vibrationInitialization: null, supportsVibration: false, setVibration() {} });
@@ -59,7 +59,9 @@ export async function runStudioGameInput(test: StudioFixture) {
 	await press('ShiftLeft', 'F1');
 	check(inputFocus.target?.guestInput?.bounds === undefined && ide.editor.guestInputRecipient === null,
 		'Shift+F1 returns input to Studio, not a game pause');
-	await press('Tab');
+	const chrome = inputFocus.target;
+	do { await press('Tab'); check(inputFocus.target !== chrome, 'the runtime view has an admitted guest tab stop'); }
+	while (inputFocus.target?.guestInput === undefined);
 	check(inputFocus.target === focused, 'workbench focus navigation can enter the viewport');
 	await click({ left: view.layout.left + 1, right: view.layout.left + 2, top: view.layout.top + 1, bottom: view.layout.top + 2 });
 	check(inputFocus.target?.guestInput?.bounds === undefined && ide.editor.guestInputRecipient === null,
@@ -97,14 +99,14 @@ export async function runStudioGameInput(test: StudioFixture) {
 		'hiding a focused panel revokes guest input at the next host sampling boundary');
 	setKey('KeyZ', false);
 	await runPaletteCommand('View: Game');
-	await runPaletteCommand('Game: Play / Pause');
-	await click(view.frameBounds);
+	await runPaletteCommand('Run: Play / Pause');
+	await click(view.previewBounds);
 	setKey('Space', true);
 	await until(() => nemesisTitleState(test) !== 'idle', 'game input: viewport confirmation starts the real title sequence');
 	await test.releaseGuestKey('Space');
 	await press('ShiftLeft', 'F1');
 	check(model.version === version && ide.editor.editorParts.activeGroup.model.activeTab === view, 'gameplay leaves source and open editors intact');
-	await click(view.frameBounds);
+	await click(view.previewBounds);
 	setKey('KeyZ', true);
 	await frame();
 	harness.openLuaSource('cart.lua');
@@ -114,7 +116,7 @@ export async function runStudioGameInput(test: StudioFixture) {
 		'opening another editor revokes viewport input before the guest samples again');
 	setKey('KeyZ', false);
 
-	await runPaletteCommand('Actor Lab: Open');
+	await runPaletteCommand('Game: Inspect');
 	await press('Enter');
 	const actor = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (actor.kind !== 'actor_lab') throw new Error('Actor Lab required');
@@ -128,7 +130,8 @@ export async function runStudioGameInput(test: StudioFixture) {
 	await press('ShiftLeft', 'F1');
 	const actorHeld = cycles();
 	await frame(); await frame();
-	check(cycles() === actorHeld && ide.editor.guestInputRecipient === null, 'leaving Actor Lab game focus restores its authoring hold');
+	check(cycles() > actorHeld && ide.editor.guestInputRecipient === null, 'ejecting game input retains the runtime workspace live-follow intent');
+	await runPaletteCommand('Run: Pause Runtime');
 	// A real rendered sprite, not a source fixture or a guessed collider rectangle.
 	const sprite = readRuntimeLuaModuleExport(ide.sources, guest, actor.domain, 'cartlib/component/sprite_component');
 	if (sprite.kind !== 'value') throw new Error('sprite datapath unavailable');

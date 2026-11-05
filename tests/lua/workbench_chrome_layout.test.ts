@@ -21,7 +21,7 @@ import { drawContextMenu } from '../../ide/workbench/services/context_menu/rende
 import { MenubarController } from '../../ide/workbench/ui/top_bar/controller';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { createTestEditorGroup } from '../helpers/editor_panes';
-import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
+import { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 
 function fixture(t: TestContext) {
@@ -97,7 +97,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Menu is one acc
 	assert.ok(menu.bottom <= f.group.tabStrip.layoutState.bounds.top, 'shell navigation is outside the editor group');
 	assert.equal(f.group.tabStrip.layoutState.viewportBounds.left, getWorkbenchEditorBounds().left);
 	const body = getWorkbenchEditorBounds(), before = { ...body };
-	const tab = new GameViewInput(); f.group.model.add(tab); f.group.model.activate(tab); f.layout();
+	const tab = new TerminalInput(); f.group.model.add(tab); f.group.model.activate(tab); f.layout();
 	const groupRevision = f.group.model.revision, tabIntent = f.group.model.activeTab;
 	f.menubar.toggleFocus(); f.layout();
 	assert.equal(f.menubar.expanded, true); assert.ok(editorChromeState.menuBarHeight > 0);

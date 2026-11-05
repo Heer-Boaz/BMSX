@@ -131,7 +131,7 @@ function fixture(t: TestContext, entry = ENTRY, run = true, worldSource = WORLD_
 		{ kind: 'direct', presenter: f.presenter, recipient: f.input, transport }, frames);
 	// This fixture exercises selected-actor components/behaviors. The live World
 	// Outliner has its own ordinary-cart/input regressions.
-	controller.resolveInput().presentation = 'outline';
+	controller.resolveInput().navigation = 'actor';
 	controllerFixtures.push({ controller, parts, surfaces, contextMenu });
 	return { ...f, stop: inspection, actors, controller, group };
 }
@@ -409,7 +409,7 @@ return world`), true, WORLD_SOURCE, []);
 	resources.add(transport);
 	transport.attach(surfaces, owner, bounds, contextMenu);
 	transport.setContext(pane.commandTarget.scope.runtimeOwner!.runtime); transport.update();
-	assert.equal(transport.available, true); assert.equal(transport.visible, false, 'pause alone does not request transport chrome');
+	assert.equal(transport.available, true); assert.equal(transport.visible, true, 'runtime transport is presented by default');
 	transport.focus();
 	assert.equal(transport.visible, true);
 	assert.ok(inputFocus.target!.scope === transport.focusScope, 'the Workbench focus command can enter transport without a pointer');

@@ -16,7 +16,7 @@ import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
-import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
+import { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 import { ActorLabEditorPane } from '../../ide/workbench/contrib/actor_lab/editor_pane';
 import { readActorChoices } from '../../ide/workbench/contrib/actor_lab/projection';
 import { registerLuaSourceRecord, captureInstalledLuaSources } from '../../ide/runtime/source_registry';
@@ -146,7 +146,7 @@ test('Actor queued mutation belongs to the invoking attachment, while a move pre
 	assert.equal((await operation.completion).status, 'interrupted');
 	assert.equal(operation.invoked, false); assert.ok(inputFocus.target === target);
 	f.editor.update(0); assert.equal(f.input.runtime.roots[0].active, true);
-	f.destination.activeGroup.openEditor(new GameViewInput());
+	f.destination.activeGroup.openEditor(new TerminalInput());
 	assert.equal(f.input.interaction.running, false, 'ordinary deactivation still stops the logical client');
 });
 
@@ -207,7 +207,7 @@ test('Actor same-input reopening preserves queued admission, and an entered call
 });
 
 test('Actor reveal cannot start a picker after focus callbacks replace its requested input', t => {
-	const f = fixture(t), replacement = new GameViewInput();
+	const f = fixture(t), replacement = new TerminalInput();
 	f.destination.focus();
 	const unbind = f.pane.commandTarget.onDidFocus(() => f.origin.activeGroup.openEditor(replacement));
 	t.after(unbind);

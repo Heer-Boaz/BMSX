@@ -20,7 +20,6 @@ import type { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/
 import type { AemEditorInput } from '../../ide/workbench/contrib/aem/editor_input';
 import type { LuaProgramInput } from '../../ide/workbench/contrib/lua_program/editor_input';
 import type { ActorLabInput } from '../../ide/workbench/contrib/actor_lab/editor_input';
-import type { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 import type { WorkspaceEditReviewInput } from '../../ide/workbench/contrib/edit_review/editor_input';
 import type { PointerInputSnapshot } from '../../ide/common/models';
 import type { EditorTextSelection } from '../../ide/editor/navigation/text_selection';
@@ -224,7 +223,6 @@ export function createTestEditorPaneContributions(
 		gpu_debugger: { create: group => new TestEditorPane<Extract<EditorInput, { kind: 'gpu_debugger' }>>(group.focusScope, activateViewInput), measure: measureTestEditor },
 		terminal: { create: group => new TestEditorPane<TerminalInput>(group.focusScope, activateViewInput), measure: measureTestEditor },
 		actor_lab: { create: group => new TestEditorPane<ActorLabInput>(group.focusScope, activateViewInput), measure: measureTestEditor },
-		game_view: { create: group => new TestEditorPane<GameViewInput>(group.focusScope, activateViewInput), measure: measureTestEditor },
 		conversation_observer: { create: group => new TestEditorPane<ConversationObserverInput>(group.focusScope, activateViewInput), measure: measureTestEditor },
 		assistant: { create: group => new TestEditorPane<AssistantInput>(group.focusScope, activateViewInput), measure: measureTestEditor },
 		workspace_edit_review: { create: group => new TestEditorPane<WorkspaceEditReviewInput>(group.focusScope, activateViewInput), measure: measureTestEditor },

@@ -20,7 +20,7 @@ import { createFrameRuntime } from '../helpers/frame_runtime';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 
-async function fixture(t: TestContext) {
+async function fixture(t: TestContext, initiallyVisible = false) {
 	const runtime = createFrameRuntime();
 	const f = createRuntimeInspectionFixture(runtime, createScenarioTestSourceState([]));
 	const { frameNavigation: navigation, rewind, tasks, execution, presenter, audio, presentation } = f;
@@ -49,6 +49,7 @@ async function fixture(t: TestContext) {
 		() => { layouts++; bounds.top = workArea.bottom - timeline.height; });
 	timeline.attach(surfaces, owner, workArea, menu);
 	timeline.setContext(context);
+	if (!initiallyVisible) timeline.hide();
 	const session = new HostFrameSession(runtime.timing.ufpsScaled, 0, rewind, execution);
 	runtime.onStateRestored = origin => {
 		f.events.didRestore(origin); navigation.didRestore(origin); f.guest.invalidate('heap-replaced');
@@ -79,21 +80,24 @@ async function fixture(t: TestContext) {
 		focusReturns: () => focusReturns, layouts: () => layouts };
 }
 
-test('available paused transport does not request Timeline; explicit reveal, hide and unavailable attachment retain their own intent', async t => {
-	const f = await fixture(t), { timeline, content, context } = f;
+test('runtime timeline is visible by default; explicit hiding and attachment retirement preserve intent', async t => {
+	const f = await fixture(t, true), { timeline, content, context } = f;
 	assert.equal(f.execution.paused, true);
-	assert.equal(timeline.available, true); assert.equal(timeline.requested, false);
+	assert.equal(timeline.available, true); assert.equal(timeline.requested, true);
+	assert.equal(timeline.visible, true); assert.ok(timeline.height > 0);
+	assert.ok(inputFocus.target === content, 'default visibility does not steal focus');
+	timeline.hide();
 	assert.equal(timeline.visible, false); assert.equal(timeline.height, 0); assert.equal(timeline.canHide, false);
 	const measure = t.mock.method(editorViewState.font.renderFont(), 'measure');
 	for (let frameIndex = 0; frameIndex < 1000; frameIndex++) {
 		timeline.setContext(context); timeline.update();
 	}
 	assert.equal(measure.mock.callCount(), 0, 'hidden capability does not measure or arrange a transport row');
-	assert.equal(f.layouts(), 0);
+	assert.equal(f.layouts(), 2);
 	timeline.focus();
 	assert.equal(timeline.requested, true); assert.equal(timeline.visible, true);
 	assert.equal(timeline.canHide, true); assert.ok(timeline.height > 0);
-	assert.equal(f.layouts(), 1, 'reveal publishes its size to the owning layout before focus admission');
+	assert.equal(f.layouts(), 3, 'reveal publishes its size to the owning layout before focus admission');
 	assert.equal(inputFocus.target!.scope, timeline.focusScope);
 	inputFocus.moveFocus(false);
 	assert.ok(inputFocus.target === content, 'reveal immediately publishes the noninteractive range focus route');

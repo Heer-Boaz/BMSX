@@ -29,7 +29,7 @@ export async function runStudioActorFind(test: StudioFixture) {
 	await test.runMenuCommand('pause');
 	await runPaletteCommand('Run: Next Frame');
 	await until(() => ide.frameNavigation.active === undefined, 'actor find: baseline frame boundary settles');
-	await runPaletteCommand('Actor Lab: Open'); await press('Enter'); await frame();
+	await runPaletteCommand('Game: Inspect'); await press('Enter'); await frame();
 	const lab = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (lab.kind !== 'actor_lab') throw new Error('Actor Lab required');
 	const pane = ide.editor.editorParts.activeGroup.panes.activePane as ActorLabEditorPane, inspector = pane.inspector;

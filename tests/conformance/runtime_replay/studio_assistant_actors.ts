@@ -26,7 +26,7 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	await press('ControlRight', 'ShiftRight');
 	await test.runMenuCommand('pause');
 	source.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dirty source is not an installed callback location\n' }]);
-	await runPaletteCommand('Actor Lab: Open');
+	await runPaletteCommand('Game: Inspect');
 	const picker = ide.editor.editorParts.activePart.quickInput;
 	check(picker.visible && picker.model.list.rows.map(row => row.item.label).join(',') === 'first,second', 'ordinary Actor Lab lists actual World membership');
 	await press('Enter'); await frame();
@@ -157,7 +157,7 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	check(historicalList.total === 2, `fresh historical inspection reads restored World membership: ${JSON.stringify({ list: historicalList,
 		state: historical.state, sourceDomain: ide.sources.activeCartridgeSlot, ready: guest.formatValue(guest.global('actor_tool_ready')) })}`);
 	historical.dispose();
-	await runPaletteCommand('Actor Lab: Open');
+	await runPaletteCommand('Game: Inspect');
 	check(!picker.visible, 'opening a selected historical actor needs no replacement selection');
 	await runPaletteCommand('Actor Lab: Select Running Actor');
 	check(picker.visible && picker.model.list.rows.length === 2, 'ordinary Actor picker also selects the physical restored domain');

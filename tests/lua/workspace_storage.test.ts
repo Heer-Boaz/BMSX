@@ -53,6 +53,7 @@ import {
 import { joinWorkspacePaths, resolveWorkspacePath } from '../../ide/workspace/path';
 import { ConsoleLogOutput, LogLevel } from '../../hosts/common/log';
 import { RecordingLogOutput } from '../../ide/testing/recording_log_output';
+import { migrateRuntimeViews } from '../../ide/workbench/workspace/runtime_view_migration';
 
 const testLogOutput = new RecordingLogOutput(new ConsoleLogOutput());
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
@@ -426,6 +427,50 @@ function payload(
 	};
 }
 
+for (const active of [0, 1]) test(`legacy runtime tabs merge into the active workspace in part ${active} without touching authoring state`, () => {
+	const base = payload(), source = { kind: 'code_editor', value: 'retained source view state' } as const;
+	const old: Parameters<typeof migrateRuntimeViews>[0] = { ...base,
+		sceneCompanion: { part: 0, group: 0, input: 1 },
+		editorParts: { ...base.editorParts, active,
+			main: { ...base.editorParts.main, layout: { kind: 'group', group: {
+				inputs: [{ kind: 'game_view', value: '' }, source], active: 0, preview: 1,
+			} } },
+			documents: [{ ...base.editorParts.main,
+				requestedBounds: { left: 20, top: 30, right: 400, bottom: 300 }, placement: 'normal', minimized: false,
+				layout: { kind: 'group', group: { inputs: [{ kind: 'actor_lab', value: '' }], active: 0, preview: null } },
+			}],
+		},
+	};
+	const next = migrateRuntimeViews(old), main = next.editorParts.main.layout, document = next.editorParts.documents[0].layout;
+	assert.ok(main.kind === 'group' && document.kind === 'group');
+	assert.deepEqual(main.group.inputs, active === 0 ? [{ kind: 'actor_lab', value: '' }, source] : [source]);
+	assert.deepEqual(document.group.inputs, active === 1 ? [{ kind: 'actor_lab', value: '' }] : []);
+	assert.equal(main.group.active, 0); assert.equal(main.group.preview, active === 0 ? 1 : 0);
+	assert.equal(document.group.active, active === 1 ? 0 : null);
+	assert.equal(next.sceneCompanion!.input, active === 0 ? 1 : 0);
+	assert.ok(next.dirtyFiles === base.dirtyFiles && next.mainWorkspace === base.mainWorkspace && next.filesBrowser === base.filesBrowser);
+	assert.ok(next.editorParts.documents[0].requestedBounds === old.editorParts.documents[0].requestedBounds);
+	assert.ok(migrateRuntimeViews(next) === next, 'current sessions are not recopied or reinterpreted');
+});
+
+test('legacy runtime migration remaps nested group indices without losing preview membership', () => {
+	const base = payload(), source = { kind: 'code_editor', value: 'source view state' } as const;
+	const old: Parameters<typeof migrateRuntimeViews>[0] = { ...base,
+		sceneCompanion: { part: 0, group: 1, input: 1 },
+		editorParts: { ...base.editorParts, main: { ...base.editorParts.main, active: 1, layout: {
+			kind: 'split', orientation: 'vertical', ratio: 0.35,
+			first: { kind: 'group', group: { inputs: [{ kind: 'game_view', value: '' }], active: 0, preview: null } },
+			second: { kind: 'group', group: { inputs: [{ kind: 'game_view', value: '' }, source], active: 1, preview: 1 } },
+		} } },
+	};
+	const next = migrateRuntimeViews(old), layout = next.editorParts.main.layout;
+	assert.ok(layout.kind === 'split' && layout.first.kind === 'group' && layout.second.kind === 'group');
+	assert.equal(layout.ratio, 0.35); assert.equal(next.editorParts.main.active, 1);
+	assert.deepEqual(layout.first.group.inputs, [{ kind: 'actor_lab', value: '' }]);
+	assert.deepEqual(layout.second.group, { inputs: [source], active: 0, preview: 0 });
+	assert.deepEqual(next.sceneCompanion, { part: 0, group: 1, input: 0 });
+});
+
 function codeInputSnapshot(path: string, text: string, contextId: string, cursor = 0, anchor: number | null = null, scrollLeft = 0): SerializedEditorInput {
 	const model = new EditorTextModel(testResource(path, contextId), 'lua', text);
 	const input = new CodeEditorInput(model), context = input.context;
@@ -469,7 +514,7 @@ function editorStub(
 		deserialize: () => assert.fail('unexpected editor reconstruction in storage fixture') };
 	const editorInputSerializers: EditorInputSerializers = {
 		home: unused, animation: unused, aem_editor: unused, cart_map: unused, lua_program: unused, actor_lab: unused,
-		game_view: unused, event_viewer: unused, terminal: unused, behavior_lens: unused, scene_editor: unused, scenario_lab: unused,
+		event_viewer: unused, terminal: unused, behavior_lens: unused, scene_editor: unused, scenario_lab: unused,
 		code_editor: new CodeEditorInputSerializer(sources.catalog), resource_view: new ResourceViewerInputSerializer(sources.catalog),
 	};
 	const editor: Pick<CartEditor, 'fontVariant' | 'isActive' | 'editorInputSerializers' | 'editorParts' | 'mainWorkspace'

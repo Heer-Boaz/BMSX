@@ -163,7 +163,7 @@ test('accepted group removal aborts pending reconstruction and retires its late 
 	const waiting = new Promise<HomeInput>(done => { resolve = done; });
 	const unused = { serialize: (): never => assert.fail('unexpected serialization'), deserialize: (): never => assert.fail('unexpected reconstruction') };
 	const serializers: EditorInputSerializers = { home: { serialize: () => '', deserialize: () => waiting },
-		animation: unused, aem_editor: unused, cart_map: unused, lua_program: unused, actor_lab: unused, game_view: unused,
+		animation: unused, aem_editor: unused, cart_map: unused, lua_program: unused, actor_lab: unused,
 		event_viewer: unused, terminal: unused, code_editor: unused, behavior_lens: unused, scene_editor: unused, resource_view: unused, scenario_lab: unused };
 	const restoration = part.restore({ layout: { kind: 'group', group: { inputs: [{ kind: 'home', value: '' }], active: 0, preview: null } },
 		active: 0, mru: [0], scrollX: 0, scrollY: 0 }, serializers);

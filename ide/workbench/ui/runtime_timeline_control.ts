@@ -39,7 +39,7 @@ export class RuntimeTimelineControl {
 	private unbindContext: (() => void) | undefined;
 	private unbindTransport: (() => void) | undefined;
 	private contextMenu!: ContextMenuController;
-	private requestedValue = false;
+	private requestedValue = true;
 	private presented = false;
 	private arrangedHeight = 0;
 	private requestedCycles: number | undefined;
@@ -52,6 +52,10 @@ export class RuntimeTimelineControl {
 		this.focusScope = this.actions.focusTarget.scope;
 		this.slider = new WorkbenchSliderControl(inputFocus, pointerCapture, this.actions.focusTarget,
 			value => this.requestSeek(value), () => { this.requestedCycles = undefined; });
+		this.slider.focusTarget.registerCommand('pause', {
+			isEnabled: () => this.presented && commands.isEnabled('pause', this.binding!.target),
+			run: () => commands.execute('pause', this.binding!.target),
+		});
 		this.actions.focusTarget.next = this.slider.focusTarget;
 		this.slider.focusTarget.previous = this.actions.focusTarget;
 		for (const target of [this.actions.focusTarget, this.slider.focusTarget]) target.registerCommand('contextMenu', {

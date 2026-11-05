@@ -87,11 +87,12 @@ export class ActorProjection {
 	}
 
 	/** Explicit navigation selects; following only changes expansion and viewport. */
-	public reveal(node: ActorNode): boolean {
+	public reveal(node: ActorNode, navigate = true): boolean {
 		const outline = this.input.outline;
 		const selected = this.find(outline.roots, node);
 		if (selected === undefined) return false;
-		this.input.presentation = 'outline';
+		if (navigate) this.input.navigation = 'actor';
+		this.input.inspection = 'outline';
 		this.expandParents(selected);
 		rebuildWorkbenchTreeRows(outline, selected);
 		this.input.rememberSelection();

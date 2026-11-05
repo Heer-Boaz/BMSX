@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { HomeInput } from '../../ide/workbench/contrib/home/editor_input';
-import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
+import { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 import type { EditorInputSerializers, SerializedEditorGroup } from '../../ide/workbench/services/editor/editor_serialization';
 import type { SerializedEditorGroupLayout, SerializedEditorParts } from '../../ide/workbench/services/editor/editor_parts_serialization';
 import { EditorTabGroupModel, type EditorTabGroupChange } from '../../ide/workbench/ui/tab/group_model';
@@ -16,7 +16,7 @@ const group: SerializedEditorGroup = { inputs: [{ kind: 'home', value: 'first' }
 function homeSerializers(deserialize: (value: string) => HomeInput | Promise<HomeInput>): EditorInputSerializers {
 	const unused = { serialize: (): never => assert.fail('unexpected input serialization'), deserialize: (): never => assert.fail('unexpected input reconstruction') };
 	return { home: { serialize: () => '', deserialize },
-		animation: unused, aem_editor: unused, cart_map: unused, lua_program: unused, actor_lab: unused, game_view: unused,
+		animation: unused, aem_editor: unused, cart_map: unused, lua_program: unused, actor_lab: unused,
 		event_viewer: unused, terminal: unused, code_editor: unused, behavior_lens: unused, scene_editor: unused,
 		resource_view: unused, scenario_lab: unused };
 }
@@ -80,7 +80,7 @@ test('a newer restore request supersedes an unresolved request without changing 
 });
 
 test('replacement admission does not erase a newer opening from the previous input retirement', async t => {
-	const model = new EditorTabGroupModel(), original = new HomeInput(null), newer = new GameViewInput();
+	const model = new EditorTabGroupModel(), original = new HomeInput(null), newer = new TerminalInput();
 	model.initialize(original); t.after(() => model.clear());
 	original.onWillDispose(() => { model.add(newer); model.activate(newer); });
 	const candidate = new HomeInput(null); let candidateRetired = false; candidate.onWillDispose(() => { candidateRetired = true; });
@@ -142,17 +142,17 @@ test('closing admission revokes a pending part restore before its candidate writ
 test('aborting a two-input reconstruction preserves the coherent published model and retires all staged candidates', async t => {
 	const model = new EditorTabGroupModel(), original = new HomeInput(null); model.initialize(original); t.after(() => model.clear());
 	let originalRetired = false; original.onWillDispose(() => { originalRetired = true; });
-	let resolve!: (input: GameViewInput) => void, started!: () => void;
-	const waiting = new Promise<GameViewInput>(done => { resolve = done; }), entered = new Promise<void>(done => { started = done; });
+	let resolve!: (input: TerminalInput) => void, started!: () => void;
+	const waiting = new Promise<TerminalInput>(done => { resolve = done; }), entered = new Promise<void>(done => { started = done; });
 	const first = new HomeInput(null); let firstRetired = false; first.onWillDispose(() => { firstRetired = true; });
 	const serializers: EditorInputSerializers = { ...homeSerializers(() => first),
-		game_view: { serialize: () => '', deserialize: () => { started(); return waiting; } } };
+		terminal: { serialize: () => '', deserialize: () => { started(); return waiting; } } };
 	const lifetime = new AbortController();
-	const restoration = model.deserialize({ inputs: [{ kind: 'home', value: 'first' }, { kind: 'game_view', value: 'wait' }], active: 1, preview: null }, serializers, lifetime.signal);
+	const restoration = model.deserialize({ inputs: [{ kind: 'home', value: 'first' }, { kind: 'terminal', value: 'wait' }], active: 1, preview: null }, serializers, lifetime.signal);
 	await entered;
 	const during = { originalActive: model.activeTab === original, onlyOriginal: model.tabs.length === 1 && model.tabs[0] === original, originalRetired };
 	lifetime.abort();
-	const late = new GameViewInput(); let lateRetired = false; late.onWillDispose(() => { lateRetired = true; }); resolve(late);
+	const late = new TerminalInput(); let lateRetired = false; late.onWillDispose(() => { lateRetired = true; }); resolve(late);
 	assert.equal(await restoration, false);
 	assert.equal(during.originalActive, true); assert.equal(during.onlyOriginal, true); assert.equal(during.originalRetired, false);
 	assert.ok(model.activeTab === original); assert.equal(model.tabs.length, 1); assert.equal(originalRetired, false);
@@ -192,7 +192,7 @@ test('a newer opening in a published group revokes reconstruction rather than mi
 	const leaf = (value: string): SerializedEditorGroupLayout => ({ kind: 'group', group: { inputs: [{ kind: 'home', value }], active: 0, preview: null } });
 	const restoration = part.restore(snapshot({ kind: 'split', orientation: 'horizontal', ratio: 0.5, first: leaf('first'), second: leaf('wait') }).main, serializers);
 	await entered;
-	const newer = new GameViewInput(); originalGroup.openEditor(newer);
+	const newer = new TerminalInput(); originalGroup.openEditor(newer);
 	const late = new HomeInput(null); let lateRetired = false; late.onWillDispose(() => { lateRetired = true; }); resolve(late);
 	assert.equal(await restoration, false); assert.ok(part.activeGroup === originalGroup);
 	assert.ok(originalGroup.model.activeTab === newer); assert.ok(originalGroup.panes.activePane?.input === newer);
@@ -220,7 +220,7 @@ test('restored topology is fully registered before observers see the replacement
 test('an opening from prior group retirement revokes the restore completion receipt without losing the newer pane', async t => {
 	configureFontVariant('tiny'); const parts = createTestEditorParts(t), part = parts.main, original = new HomeInput(null);
 	part.activeGroup.openEditor(original);
-	const newer = new GameViewInput();
+	const newer = new TerminalInput();
 	original.onWillDispose(() => { part.activeGroup.openEditor(newer); });
 	assert.equal(await part.restore(snapshot().main, homeSerializers(() => new HomeInput(null))), false);
 	assert.ok(part.activeGroup.model.activeTab === newer); assert.ok(part.activeGroup.panes.activePane?.input === newer);

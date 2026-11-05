@@ -42,7 +42,7 @@ import { GameInputControl } from '../../ide/workbench/contrib/game_view/game_inp
 import { InputInteraction } from '../../ide/input/interaction';
 import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
-import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
+import { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 
 /** Native key dispatch and real menu/popup owners in a source-backed workbench. */
 function menuFixture(t: TestContext) {
@@ -299,7 +299,7 @@ test('the real Menu icon remains pointer-accessible with ordinary, overflowing a
 	const sourceTab = editor.editorParts.main.activeGroup.model.tabs[0];
 	for (const group of ['ordinary', 'overflow', 'empty'] as const) {
 		if (group === 'overflow') {
-			editor.editorParts.main.activeGroup.openEditor(new GameViewInput()); editor.editorParts.main.activeGroup.activate(sourceTab.id);
+			editor.editorParts.main.activeGroup.openEditor(new TerminalInput()); editor.editorParts.main.activeGroup.activate(sourceTab.id);
 			editor.updateViewport({ width: 96, height: 288 });
 		} else if (group === 'empty') for (const tab of [...editor.editorParts.main.activeGroup.model.tabs]) editor.editorParts.main.activeGroup.close(tab.id);
 		for (const variant of ['tiny', 'msx'] as const) {
@@ -320,23 +320,13 @@ test('the real Menu icon remains pointer-accessible with ordinary, overflowing a
 	}
 });
 
-for (const variant of ['tiny', 'msx'] as const) test(`${variant} game chrome and Timeline menus retain visibility intent without stealing guest secondary input`, t => {
-	const f = menuFixture(t), game = new GameViewInput();
+for (const variant of ['tiny', 'msx'] as const) test(`${variant} runtime Timeline menus retain visibility intent without stealing guest secondary input`, t => {
+	const f = menuFixture(t), game = f.editor.actorLab.resolveInput();
 	f.editor.editorParts.main.activeGroup.openEditor(game); f.editor.setFontVariant(variant); f.editor.update(0);
 	const content = inputFocus.target!, version = f.model.version, cycles = f.host.runtime.machine.scheduler.nowCycles;
-	const x = game.layout.left + 1, y = game.layout.top + 1;
-	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: PointerButton.Secondary, pressedButtons: PointerButton.Secondary,
-		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 });
-	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Secondary,
-		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 }); f.editor.update(0);
 	const menu = f.editor.contextMenu, timeline = f.editor.editorParts.main.activeGroup.timeline;
-	assert.equal(menu.visible, true); assert.ok(menu.invocationOrigin === content && menu.returnFocus === content);
-	assert.equal(menu.model.rows[0].command, 'runtime.toggleTimeline'); assert.equal(menu.model.rows[0].enabled, true);
-	f.key('Escape'); f.key('Escape', KeyModifier.none, false); assert.ok(inputFocus.target === content);
-	f.key('ContextMenu'); f.key('ContextMenu', KeyModifier.none, false);
-	assert.equal(menu.visible, true); assert.ok(menu.invocationOrigin === content);
-	f.key('Home'); f.key('Home', KeyModifier.none, false); f.key('Enter'); f.key('Enter', KeyModifier.none, false);
 	assert.equal(timeline.requested, true); assert.equal(timeline.visible, true);
+	timeline.focus();
 	const timelineFocus = inputFocus.target!;
 	f.key('ContextMenu'); f.key('ContextMenu', KeyModifier.none, false);
 	assert.equal(menu.visible, true); assert.ok(menu.invocationOrigin === timelineFocus && menu.returnFocus === timelineFocus);
@@ -345,7 +335,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} game chrome and
 	f.key('ContextMenu'); f.key('ContextMenu', KeyModifier.none, false);
 	f.key('Home'); f.key('Home', KeyModifier.none, false); f.key('Enter'); f.key('Enter', KeyModifier.none, false);
 	assert.equal(timeline.requested, false); assert.equal(timeline.visible, false); assert.ok(inputFocus.target === content);
-	const frameX = (game.frameBounds.left + game.frameBounds.right) / 2, frameY = (game.frameBounds.top + game.frameBounds.bottom) / 2;
+	const frameX = (game.previewBounds.left + game.previewBounds.right) / 2, frameY = (game.previewBounds.top + game.previewBounds.bottom) / 2;
 	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: frameX, y: frameY, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 });
 	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: frameX, y: frameY, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary,
@@ -365,6 +355,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} game chrome and
 test('a requested primary GamePanel supplies Timeline beside Source without coupling its transport to admitted preview geometry', t => {
 	const f = menuFixture(t), timeline = f.editor.editorParts.main.activeGroup.timeline, version = f.model.version;
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;
+	timeline.hide();
 	f.editor.updateViewport({ width: 700, height: 288 });
 	f.editor.commands.execute('gameView.togglePanel'); f.editor.update(0);
 	assert.equal(f.editor.gamePanel.visible, true); assert.equal(f.editor.gamePanel.enabled, true);
@@ -401,7 +392,7 @@ test('a requested primary GamePanel supplies Timeline beside Source without coup
 	assert.equal(timeline.requested, false); assert.equal(timeline.visible, false);
 	f.editor.updateViewport({ width: 700, height: 288 }); f.editor.update(0);
 	assert.equal(f.editor.gamePanel.visible, true); assert.equal(timeline.visible, false);
-	const game = new GameViewInput(); f.editor.editorParts.main.activeGroup.openEditor(game); f.editor.update(0);
+	const game = new TerminalInput(); f.editor.editorParts.main.activeGroup.openEditor(game); f.editor.update(0);
 	assert.equal(f.editor.gamePanel.enabled, true); assert.equal(f.editor.gamePanel.visible, false);
 	assert.equal(f.editor.gamePanel.focusScope.runtime, undefined);
 	assert.ok(f.editor.editorParts.main.activeGroup.panes.activePane!.commandTarget.scope.runtimeOwner!.runtime!.interaction.transport === f.editor.commands.transport);

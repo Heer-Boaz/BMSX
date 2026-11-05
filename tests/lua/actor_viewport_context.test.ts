@@ -86,7 +86,7 @@ test('viewport keyboard context addresses the selected actor rather than its ins
 	for (const [code, modifiers] of [['ContextMenu', KeyModifier.none], ['F10', KeyModifier.shift]] as const) {
 		f.key(code, modifiers);
 		assert.equal(editor.contextMenu.visible, true); assert.equal(input.actorHashId, f.first.hashId);
-		assert.equal(editor.actorLab.selected(input)?.kind, 'actor');
+		assert.equal(editor.actorLab.inspected(input)?.kind, 'component', 'opening the actor menu preserves inspected membership');
 		assert.ok(editor.contextMenu.model.rows.some(row => row.command === 'actorLab.call' && row.enabled));
 		assert.equal(editor.contextMenu.model.rows.some(row => row.command === 'actorLab.stateGraph' || row.command === 'actorLab.follow'), false);
 		f.key('Escape');

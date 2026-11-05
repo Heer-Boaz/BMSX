@@ -12,7 +12,6 @@ import { pointerCapture } from '../../ide/input/pointer/capture';
 import { pointerHover } from '../../ide/input/pointer/hover';
 import type { CommandQuickPickItem } from '../../ide/workbench/contrib/commands/quick_pick_provider';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
-import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 import type { ActionPromptRequest } from '../../ide/workbench/contrib/modal/action_prompt_view';
 import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
@@ -281,7 +280,8 @@ test('an owned floating inspector retains semantic document ancestry without bor
 test('a guest viewport cannot use focused-view resize authority or change the physical machine through these UI commands', async t => {
 	const f = await fixture(t), { editor, group } = f;
 	const right = f.parts.main.splitGroup(group, 'right'); right.openEditor(new CodeEditorInput(f.firstInput.workingCopy));
-	group.openEditor(new GameViewInput()); f.update(); group.panes.activePane!.focus(); f.key('Tab');
+	group.openEditor(f.editor.actorLab.resolveInput()); f.update(); group.panes.activePane!.focus(); const chrome = inputFocus.target;
+	do { f.key('Tab'); assert.ok(inputFocus.target !== chrome, 'the runtime view exposes a guest tab stop'); } while (inputFocus.target?.guestInput === undefined);
 	const guest = inputFocus.admittedTarget!; assert.ok(guest.guestInput !== undefined);
 	const binding = guest.guestInput, ratios = f.parts.main.arrangement.splits.map(split => split.split.ratio);
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;

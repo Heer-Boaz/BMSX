@@ -29,7 +29,7 @@ export class ActorLabNavigationSelection extends EditorPaneSelection {
 	public constructor(input: ActorLabInput, worldHashId: number | undefined, public readonly generation: number) {
 		super();
 		this.presentation = input.presentation;
-		const graph = input.presentation === 'graph' ? input.stateGraph : undefined;
+		const graph = input.inspection === 'graph' ? input.stateGraph : undefined;
 		const path = graph === undefined ? input.selectionPath : graph.selectionBookmark?.path;
 		this.target = worldHashId === undefined ? undefined : {
 			domain: input.domain, worldHashId, actorHashId: input.actorHashId, path: path ?? [],
@@ -79,7 +79,7 @@ export class ActorLabNavigationSelection extends EditorPaneSelection {
 	public restoreViewport(input: ActorLabInput): void {
 		input.outline.scroll = this.outlineScroll;
 		input.worldOutliner.tree.scroll = this.worldScroll;
-		if (this.graph !== undefined && input.presentation === 'graph') {
+		if (this.graph !== undefined && input.inspection === 'graph') {
 			const viewport = input.stateGraph!.viewport;
 			viewport.restoreViewState(this.graph.camera);
 		}

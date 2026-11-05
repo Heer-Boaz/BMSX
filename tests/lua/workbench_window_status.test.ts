@@ -8,7 +8,6 @@ import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submi
 import { inputFocus } from '../../ide/input/focus';
 import { api } from '../../ide/runtime/overlay_api';
 import { getWorkbenchConnectionBounds, getWorkbenchStatusLayout } from '../../ide/workbench/common/layout';
-import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 import { minimizedWorkbenchWindowCount } from '../../ide/workbench/ui/window/control';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
@@ -133,9 +132,9 @@ test('closing the last minimized host keeps workspace navigation admitted with n
 });
 
 test('foreground status discovery does not replace the live guest attachment or execute a frame', t => {
-	const f = createStatusFixture(t), parts = f.editor.editorParts, game = new GameViewInput();
+	const f = createStatusFixture(t), parts = f.editor.editorParts, game = f.editor.actorLab.resolveInput();
 	parts.main.activeGroup.openEditor(game); parts.minimize(f.firstPart); parts.minimize(f.secondPart); f.update();
-	const frame = game.frameBounds, preview = { x: (frame.left + frame.right) / 2, y: (frame.top + frame.bottom) / 2 };
+	const frame = game.previewBounds, preview = { x: (frame.left + frame.right) / 2, y: (frame.top + frame.bottom) / 2 };
 	pointer(f, preview, true, 0); pointer(f, preview, false, 1);
 	const guest = inputFocus.target!, binding = guest.guestInput!, scope = guest.scope;
 	assert.ok(binding !== undefined && binding.recipient === f.host.input);

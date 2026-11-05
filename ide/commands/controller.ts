@@ -7,7 +7,6 @@ import { executeClipboardAction } from '../input/clipboard';
 import type { RuntimeTransport } from '../runtime/transport';
 import type { RunTargetSelection } from '../workbench/services/execution/run_target';
 import { navigationState } from '../navigation/navigation_history';
-import { openGameView } from '../workbench/contrib/game_view/editor_input';
 import type { HostExecutionControl } from '../../hosts/common/execution_control';
 import type { BootService } from '../workbench/services/execution/boot';
 import type { HotResumeService } from '../workbench/services/execution/hot_resume';
@@ -336,7 +335,7 @@ export class IdeCommandController {
 			case 'stepFrameBack':
 				if (transport?.available !== true) return;
 				if (local !== undefined) { local.running = false; this.editor.interaction.activateRuntime(target!); }
-				if (local === undefined && transport === this.transport) openGameView(group);
+				if (local === undefined && transport === this.transport) this.editor.actorLab.open(group, 'game');
 				transport.navigation.step(command === 'stepFrameBack' ? -1 : 1);
 				return;
 			case 'scenarioLab.revealRun': case 'scenarioLab.cancel': {

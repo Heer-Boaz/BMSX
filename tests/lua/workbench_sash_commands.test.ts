@@ -6,7 +6,6 @@ import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { inputFocus } from '../../ide/input/focus';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import type { CommandQuickPickItem } from '../../ide/workbench/contrib/commands/quick_pick_provider';
-import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
@@ -176,7 +175,8 @@ for (const admission of ['hidden Activity', 'floating Activity', 'modal', 'guest
 				lifetimeOwner: main.surface, captureScope: Symbol('sizing decision'), isVisible: () => true,
 				getBounds: () => area, getClip: () => area, draw() {} }); t.after(() => modal.dispose());
 		} else {
-			f.group.openEditor(new GameViewInput()); f.update(); f.group.panes.activePane!.focus(); f.key('Tab');
+			f.group.openEditor(f.editor.actorLab.resolveInput()); f.update(); f.group.panes.activePane!.focus(); const chrome = inputFocus.target;
+			do { f.key('Tab'); assert.ok(inputFocus.target !== chrome, 'the runtime view exposes a guest tab stop'); } while (inputFocus.target?.guestInput === undefined);
 			origin = inputFocus.admittedTarget!; assert.ok(origin.guestInput !== undefined);
 		}
 		f.update(); const focused = inputFocus.admittedTarget, ratio = split.ratio, files = editor.resourcePanel.split.ratio;

@@ -14,7 +14,7 @@ import { GRAPH_NODE_PADDING } from '../../ide/workbench/ui/graph/model';
 function fixture(t: TestContext, variant: 'tiny' | 'msx', presentation: 'outline' | 'graph' = 'outline') {
 	configureFontVariant(variant);
 	const input = new ActorLabInput({ authoringSources: null!, renderFrames: null! } as ActorLabController, 'actor-lab', 'Actor', false);
-	input.presentation = presentation;
+	input.navigation = 'actor'; input.inspection = presentation;
 	if (presentation === 'graph') input.stateGraph = new ActorStateGraph({ domain: 0, worldHashId: 1, actorHashId: 2, path: [] }, editorViewState.font.renderFont());
 	const bounds = { left: 23, top: 31, right: 923, bottom: 431 };
 	const arrange = (width: number, height = 400) => {

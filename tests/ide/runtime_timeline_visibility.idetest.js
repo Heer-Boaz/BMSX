@@ -33,6 +33,9 @@ const authoredUnchanged = () => {
 const exercise = async (input, runtime, right, headerPoint, consumer, identity) => {
 	const present = runtime.history.latestCycles, earliest = runtime.history.earliestCycles;
 	t.assert(earliest < present, 'the real physical target has no retained chronology to review');
+	// Transport is visible by default. This workflow explicitly tests the user's
+	// Hide/Show intent, not a hidden initial layout.
+	t.command('runtime.focusTimeline'); t.command('runtime.toggleTimeline'); await t.frames(2);
 	for (const font of ['tiny', 'msx']) {
 		for (const theme of ['light', 'dark']) {
 			const phase = `${consumer}-${font}-${theme}`;

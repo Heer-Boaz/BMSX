@@ -4,7 +4,7 @@ import { SCROLLBAR_WIDTH } from '../../ide/common/constants';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { HomeInput } from '../../ide/workbench/contrib/home/editor_input';
-import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
+import { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 import { createTestEditorParts } from '../helpers/editor_panes';
 
 // The advertised minimum rectangle must contain the real chrome and one complete
@@ -12,7 +12,7 @@ import { createTestEditorParts } from '../helpers/editor_panes';
 for (const font of ['tiny', 'msx'] as const) test(`group minimum contains an overflowing tab strip and client row at ${font}`, t => {
 	configureFontVariant(font);
 	const parts = createTestEditorParts(t), part = parts.main, group = part.activeGroup;
-	const first = new HomeInput(null), second = new GameViewInput();
+	const first = new HomeInput(null), second = new TerminalInput();
 	first.title = 'First editor'; second.title = 'Second editor';
 	group.openEditor(first, { preserveFocus: true });
 	group.openEditor(second, { preserveFocus: true });

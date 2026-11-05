@@ -3,7 +3,6 @@ import test from 'node:test';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { inputFocus } from '../../ide/input/focus';
 import { CodeEditorPane } from '../../ide/workbench/contrib/code_editor/editor_pane';
-import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
 for (const font of ['tiny', 'msx'] as const) {
@@ -158,7 +157,8 @@ test('the existing View menu checked state and explicit Palette acceptance addre
 test('Alt+Z remains ordinary guest input in the actual Game viewport', t => {
 	const f = createActualSourcePanes(t);
 	f.ide.boots.didReplaceMachine(); f.editor.interaction.setActive(true);
-	f.editor.editorParts.main.activeGroup.openEditor(new GameViewInput()); f.update(); f.key('Tab');
+	f.editor.editorParts.main.activeGroup.openEditor(f.editor.actorLab.resolveInput()); f.update(); const chrome = inputFocus.target;
+	do { f.key('Tab'); assert.ok(inputFocus.target !== chrome, 'the runtime view exposes a guest tab stop'); } while (inputFocus.target?.guestInput === undefined);
 	const guest = inputFocus.target!, binding = guest.guestInput;
 	assert.ok(binding !== undefined && binding.recipient === f.host.input);
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;

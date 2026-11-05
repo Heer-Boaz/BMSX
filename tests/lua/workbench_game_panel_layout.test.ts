@@ -16,7 +16,7 @@ import { editorViewState } from '../../ide/editor/ui/view/state';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { inputFocus } from '../../ide/input/focus';
 import { handleEditorWheelInput } from '../../ide/input/pointer/wheel';
-import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
+import { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 import { getWorkbenchEditorBounds } from '../../ide/workbench/common/layout';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { WORKBENCH_SPLIT_SIZE } from '../../ide/workbench/ui/split_view';
@@ -174,7 +174,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 	});
 
 	test(`${variant} an opted-out sibling contributes hard chrome while the active optout withholds the companion`, t => {
-		const f = splitFixture(t, variant), game = new GameViewInput();
+		const f = splitFixture(t, variant), game = new TerminalInput();
 		f.reviewGroup.openEditor(game, { preserveFocus: true }); f.arrange(1100, 720);
 		assert.ok(f.main.activeGroup === f.sourceGroup); assert.equal(f.editor.gamePanel.visible, true);
 		const required = f.reviewGroup.minimumWidth + WORKBENCH_SPLIT_SIZE
@@ -293,7 +293,7 @@ test('normal Main frames query each requested reading budget once and tick each 
 // are real input transfers, not snapshots of incidental editor chrome.
 for (const variant of ['tiny', 'msx'] as const) for (const movingActive of [true, false])
 	test(`${variant} split preview measures the actual ${movingActive ? 'active' : 'inactive'} Source and its surviving optout sibling`, t => {
-		const f = splitFixture(t, variant), game = new GameViewInput();
+		const f = splitFixture(t, variant), game = new TerminalInput();
 		f.sourceGroup.openEditor(game);
 		if (movingActive) {
 			f.sourceGroup.openEditor(f.source);

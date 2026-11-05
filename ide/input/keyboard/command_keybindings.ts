@@ -4,6 +4,7 @@ import type {
 } from '../../common/commands';
 import { KeyModifier } from '../../../hosts/common/input/text';
 import { inputFocus, type InputFocusTarget } from '../focus';
+import { pointerCapture } from '../pointer/capture';
 
 export type EditorModifierConstraint = {
 	readonly any?: KeyModifier;
@@ -65,6 +66,9 @@ const editorContribKeybindings: readonly EditorCommandKeybinding[] = [
 ];
 
 const workbenchContribKeybindings: readonly EditorCommandKeybinding[] = [
+	{ code: 'Space', command: 'pause', modifiers: NO_MODIFIERS,
+		when: target => target?.getCommand('pause') !== undefined && target.textInput === undefined
+			&& target.guestInput === undefined && !pointerCapture.active },
 	{ code: 'KeyK', command: 'saveAll', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, chord: { code: 'KeyS', modifiers: NO_MODIFIERS } },
 	{ code: 'F6', command: 'workspace.focusNextRegion', modifiers: NO_MODIFIERS },
 	{ code: 'F6', command: 'workspace.focusPreviousRegion', modifiers: { required: KeyModifier.shift, forbidden: PRIMARY_ALT_MODIFIERS } },

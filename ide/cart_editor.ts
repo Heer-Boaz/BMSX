@@ -82,8 +82,6 @@ import type { StudioServerConnectionState } from './workbench/common/server_conn
 import type { AssistantConnectionFactory } from '../hosts/common/assistant_protocol';
 import { ActorLabController } from './workbench/contrib/actor_lab/controller';
 import type { ProjectContentIndex } from './workbench/contrib/resources/content_index';
-import { GameViewInput } from './workbench/contrib/game_view/editor_input';
-import { GameViewEditorPane } from './workbench/contrib/game_view/editor_pane';
 import { GamePanel } from './workbench/contrib/game_view/game_panel';
 import { ActorLabEditorPane } from './workbench/contrib/actor_lab/editor_pane';
 import type { EditorInputSerializers } from './workbench/services/editor/editor_serialization';
@@ -543,7 +541,6 @@ export class RuntimeCartEditor implements CartEditor {
 			behavior_lens: { create: group => new BehaviorLensEditorPane(this.behaviorLens, this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope, this.editorParts.partForGroup(group).quickInput), measure: measureBehaviorLensEditor },
 			actor_lab: { create: group => new ActorLabEditorPane(this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea,
 				group, this.editorParts.partForGroup(group).quickInput, group.focusScope), measure: measureUnconstrainedEditor },
-			game_view: { create: group => new GameViewEditorPane(this.commands, this.contextMenu, runtime, input, presenter, group.focusScope), measure: measureUnconstrainedEditor },
 			cart_map: { create: group => new CartMapPane(this.cartMaps, this.commands, this.sources, this.surfaces, group.paneSurface, group.workArea, group.focusScope, this.contextMenu), measure: measureCartMapEditor },
 			scene_editor: { create: group => new SceneEditorPane(group, this.sceneEditor, this.scenePrimaryOptions), measure: measureSceneEditor },
 			scenario_lab: { create: group => new ScenarioLabEditorPane(
@@ -620,7 +617,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.actorLab = new ActorLabController(sources, guest, runtime.machine.cpu,
 			this.editorParts, this.navigation, actorExecution, rewind, sources,
 			{ kind: 'direct', presenter, recipient: input, transport: this.commands.transport }, workbench.actorFrames,
-			'actor-lab', 'ACTOR LAB', { live: workbench.sceneLive, editor: this.sceneEditor, positions: workbench.scenePositions,
+			'actor-lab', 'GAME', { live: workbench.sceneLive, editor: this.sceneEditor, positions: workbench.scenePositions,
 				saves: textFileSaves, save: copy => { void saveTextFileFromCommand(textFileSaves, copy, this, sources); } });
 
 		const behaviorRegistrations = behaviorSources.registrations;
@@ -653,7 +650,6 @@ export class RuntimeCartEditor implements CartEditor {
 			event_viewer: { serialize: () => '', deserialize: () => new EventViewerInput(this.events) },
 			terminal: { serialize: () => '', deserialize: () => new TerminalInput() },
 			actor_lab: { serialize: () => '', deserialize: () => this.actorLab.resolveInput() },
-			game_view: { serialize: () => '', deserialize: () => new GameViewInput() },
 			code_editor: new CodeEditorInputSerializer(sources.catalog),
 			behavior_lens: new BehaviorLensInputSerializer(sources.catalog, this.behaviorLens),
 			cart_map: new CartMapInputSerializer(sources.catalog),

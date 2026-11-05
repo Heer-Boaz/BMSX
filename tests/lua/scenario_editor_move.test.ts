@@ -24,7 +24,7 @@ import { RuntimeIdeState } from '../../ide/workbench/state';
 import { ScenarioLabInput } from '../../ide/workbench/contrib/scenario_lab/editor_input';
 import { ScenarioLabEditorPane } from '../../ide/workbench/contrib/scenario_lab/editor_pane';
 import { RuntimeDebuggerResumeMode as Mode } from '../../ide/runtime/source_debugger';
-import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
+import { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 import { scenarioLabCommandEnabled, selectScenarioLabTestRow, selectScenarioLabResultRow, toggleScenarioLabResultRow } from '../../ide/workbench/contrib/scenario_lab/navigation';
 import { captureScenarioLabTestView } from '../../ide/workbench/contrib/scenario_lab/view_snapshot';
 import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
@@ -194,7 +194,7 @@ for (const foreignFocus of ['before-inspection', 'after-inspection'] as const)
 		f.editor.commands.execute('scenarioLab.debug', origin);
 		await f.until(() => f.runs.debugger?.stopped === true);
 		const debug = f.runs.debugger!, target = f.runs.session!.execution!.target;
-		f.secondPart.activeGroup.openEditor(new GameViewInput());
+		f.secondPart.activeGroup.openEditor(new TerminalInput());
 		const foreign = f.secondPart.activeGroup.panes.activePane!.commandTarget;
 		if (foreignFocus === 'after-inspection') origin.focus();
 		f.editor.commands.execute('scenarioLab.inspectStop', origin); f.update();
@@ -396,8 +396,8 @@ test('an isolated running Scenario target survives pane transfer and former-wind
 });
 
 test('Scenario reveal cannot override an unrelated editor activation published while its pane is opening', async t => {
-	const f = await fixture(t), replacement = new GameViewInput();
-	f.firstPart.activeGroup.openEditor(new GameViewInput());
+	const f = await fixture(t), replacement = new TerminalInput();
+	f.firstPart.activeGroup.openEditor(new TerminalInput());
 	const unbind = f.firstPart.activeGroup.panes.onWillShowEditor(() => {
 		unbind(); f.secondPart.activeGroup.openEditor(replacement);
 	});
@@ -411,7 +411,7 @@ test('Scenario reveal cannot override an unrelated editor activation published w
 
 test('Scenario reveal finishes only the attachment that survived its owning pane opening callbacks', async t => {
 	const f = await fixture(t);
-	f.firstPart.activeGroup.openEditor(new GameViewInput());
+	f.firstPart.activeGroup.openEditor(new TerminalInput());
 	const unbind = f.firstPart.activeGroup.panes.onWillShowEditor(() => {
 		unbind(); assert.equal(f.parts.moveEditor(f.firstPart.activeGroup, f.input, { kind: 'group', group: f.secondPart.activeGroup }), true);
 	});
@@ -423,7 +423,7 @@ test('Scenario reveal finishes only the attachment that survived its owning pane
 });
 
 test('Scenario reveal cannot overwrite a newer model selection before attaching its pane', async t => {
-	const f = await fixture(t), replacement = new GameViewInput();
+	const f = await fixture(t), replacement = new TerminalInput();
 	f.firstPart.activeGroup.openEditor(replacement);
 	const unbind = f.firstPart.activeGroup.model.onDidChange(() => {
 		if (f.firstPart.activeGroup.model.activeTab !== f.input) return;
@@ -482,7 +482,7 @@ for (const application of [false, true]) for (const command of ['scenarioLab.run
 for (const application of [false, true]) test(`Scenario ${application ? 'application' : 'native'} source execution rejects same-input reattachment during acceptance`, async t => {
 	const f = await fixture(t); f.select('passes');
 	const draft = sourceDraft(t, f, `-- accepted\n${f.module.source}`, () => {
-		f.firstPart.activeGroup.openEditor(new GameViewInput()); f.firstPart.activeGroup.activate(f.input.id);
+		f.firstPart.activeGroup.openEditor(new TerminalInput()); f.firstPart.activeGroup.activate(f.input.id);
 	});
 	draft.execute('scenarioLab.run', application);
 	assert.equal(draft.publishes(), 1); assert.equal(f.runs.results.runs.length, 0);
@@ -579,7 +579,7 @@ for (const application of [false, true]) test(`Scenario ${application ? 'applica
 for (const application of [false, true]) test(`Scenario ${application ? 'application' : 'native'} source execution does not accept another attachment's draft`, async t => {
 	const f = await fixture(t); f.select('passes');
 	const target = f.firstPart.activeGroup.panes.activePane!.commandTarget;
-	f.secondPart.activeGroup.openEditor(new GameViewInput());
+	f.secondPart.activeGroup.openEditor(new TerminalInput());
 	let publishes = 0;
 	const foreign = new ValueInput(f.secondPart.activeGroup.panes.activePane!.commandTarget, {
 		options: { allowSpace: true }, format: (value: string) => value,

@@ -48,7 +48,7 @@ export class ActorLabController {
 		public readonly authoringSources: RuntimeSourceState,
 		public readonly viewport: ActorLabViewport,
 		public readonly renderFrames: ActorRenderFrames,
-		private readonly inputId: ActorLabTabId = 'actor-lab', private readonly title = 'ACTOR LAB',
+		private readonly inputId: ActorLabTabId = 'actor-lab', private readonly title = 'GAME',
 		public readonly sceneAuthoring?: { readonly live: SceneLiveService; readonly editor: SceneEditorController; readonly positions: SceneLivePositions;
 			readonly saves: TextFileSaveService; readonly save: (model: EditorTextModel) => void },
 	) {
@@ -90,9 +90,10 @@ export class ActorLabController {
 		}
 		return this.current;
 	}
-	public open(destination: EditorGroupView): void {
+	public open(destination: EditorGroupView, mode?: 'game' | '2d' | '3d'): void {
 		const first = this.current === undefined, input = this.resolveInput();
-		if (first) input.worldView.setMode('2d');
+		if (mode !== undefined) input.worldView.setMode(mode);
+		else if (first) input.worldView.setMode('2d');
 		this.parts.revealEditor(input, destination);
 	}
 	public auditionEvent(destination: EditorGroupView, domain: ResourceDomain, name: string): void {
@@ -143,7 +144,7 @@ export class ActorLabController {
 		input.follow.stop();
 		const previousGraph = input.stateGraph;
 		input.stateGraph = undefined;
-		input.presentation = 'outline';
+		input.navigation = 'actor'; input.inspection = 'outline';
 		input.selectionPath = undefined;
 		input.outline.selectionIndex = -1;
 		const target = selection.target;
@@ -163,7 +164,7 @@ export class ActorLabController {
 				graph.layout(font);
 				graph.restoreSelection(target!.path.length === 0 ? undefined : target, selection.graph.kind);
 				input.stateGraph = graph;
-				input.presentation = 'graph';
+				input.inspection = 'graph';
 			}
 			if (selection.follow !== undefined) input.follow.start(selection.follow);
 		}
@@ -183,19 +184,23 @@ export class ActorLabController {
 	}
 
 	public inspectActor(input: ActorLabInput, domain: ResourceDomain, hashId: number): void {
-		const world = input.presentation === 'world';
+		if (input.domain === domain && input.actorHashId === hashId) return;
 		input.timeline.clear();
-		input.stateGraph = undefined; input.presentation = 'outline'; input.follow.stop(); input.historical = this.rewind.active;
+		input.stateGraph = undefined; input.inspection = 'outline'; input.follow.stop(); input.historical = this.rewind.active;
 		input.domain = domain; input.actorHashId = hashId; input.selectionPath = undefined; input.dirty = true;
 		this.refresh(input);
-		if (input.actorPresent) this.projection.reveal(input.runtime.roots[0]);
+		if (input.actorPresent) this.projection.reveal(input.runtime.roots[0], false);
 		input.worldOutliner.reveal(hashId);
-		if (world) input.presentation = 'world';
 	}
 	public selected(input: ActorLabInput): ActorNode | undefined {
 		if (input.dirty || !input.actorPresent) return undefined;
 		if (input.presentation === 'world') return input.runtime.roots[0];
-		if (input.presentation === 'outline') return input.outline.rows[input.outline.selectionIndex]?.element.node;
+		return this.inspected(input);
+	}
+	/** Inspection survives switching the navigation panel or the viewport camera. */
+	public inspected(input: ActorLabInput): ActorNode | undefined {
+		if (input.dirty || !input.actorPresent) return undefined;
+		if (input.inspection === 'outline') return input.outline.rows[input.outline.selectionIndex]?.element.node;
 		const target = input.stateGraph!.selectedTarget;
 		return target === undefined ? undefined : resolveActorTarget(input.runtime.roots, target, this.guest);
 	}
@@ -211,17 +216,17 @@ export class ActorLabController {
 		input.stateGraph.layout(font);
 		const previous = input.stateGraph.selectedTarget;
 		input.stateGraph.selectTarget(target);
-		input.presentation = 'graph';
+		input.navigation = 'actor'; input.inspection = 'graph';
 		input.follow.pending = input.follow.target;
 		return previous === undefined || !actorTargetsEqual(previous, target);
 	}
 
 	public openOutline(input: ActorLabInput): void {
 		if (input.presentation === 'world') {
-			this.projection.reveal(input.runtime.roots[0]); return;
+			input.navigation = 'actor'; return;
 		}
 		const target = input.stateGraph!.selectedTarget;
-		input.presentation = 'outline';
+		input.inspection = 'outline';
 		if (target !== undefined) {
 			const selected = resolveActorTarget(input.runtime.roots, target, this.guest);
 			if (selected !== undefined) this.projection.reveal(selected);
@@ -233,9 +238,7 @@ export class ActorLabController {
 	}
 
 	public openWorld(input: ActorLabInput): void {
-		input.follow.stop(); input.timeline.clear();
-		if (input.actorPresent) this.projection.reveal(input.runtime.roots[0]);
-		input.presentation = 'world'; input.worldOutliner.reveal(input.actorHashId);
+		input.navigation = 'world'; input.worldOutliner.reveal(input.actorHashId);
 	}
 
 	public refreshDetails(input: ActorLabInput): readonly ActorDetailsProperty[] | undefined {
@@ -247,7 +250,7 @@ export class ActorLabController {
 	/** Hidden Details retain selection without formatting a property client. */
 	public followDetailsSelection(input: ActorLabInput): void {
 		if (input.dirty || this.rewind.seeking) return;
-		input.details!.followSelection(input.domain, input.worldHashId, input.actorHashId, input.presentation !== 'graph'
+		input.details!.followSelection(input.domain, input.worldHashId, input.actorHashId, input.inspection !== 'graph'
 			? input.selectionPath : input.stateGraph!.selectionBookmark?.path, input.runtime);
 	}
 
@@ -286,7 +289,7 @@ export class ActorLabController {
 	public revealPinnedProperty(input: ActorLabInput, item: ActorDetailsProperty): void {
 		const target = item.watch!.target;
 		input.interaction.running = false;
-		input.follow.stop(); input.stateGraph = undefined; input.presentation = 'outline';
+		input.follow.stop(); input.stateGraph = undefined; input.navigation = 'actor'; input.inspection = 'outline';
 		input.domain = target.domain; input.actorHashId = target.actorHashId;
 		input.selectionPath = undefined; input.dirty = true;
 		this.refresh(input);

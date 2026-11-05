@@ -9,7 +9,6 @@ import { measureText, measureTextRange } from '../../ide/editor/common/text/layo
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { pointerHover } from '../../ide/input/pointer/hover';
-import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 import { createWorkbenchActionBar } from '../../ide/workbench/ui/action_bar';
 import { WorkbenchFloatingWindow } from '../../ide/workbench/ui/window/control';
 import { WorkbenchWindowModel } from '../../ide/workbench/ui/window/model';
@@ -53,7 +52,8 @@ function utility(t: TestContext, f: Fixture) {
 test('document title right-click and Escape retain chrome focus instead of reacquiring the active Game viewport', t => {
 	const f = createActualSourcePanes(t), window = f.firstPart.window!;
 	f.ide.boots.didReplaceMachine(); f.editor.interaction.setActive(true);
-	const game = new GameViewInput(); f.firstGroup.openEditor(game); f.update(); f.firstPart.focus(); f.key('Tab');
+	const game = f.editor.actorLab.resolveInput(); f.firstGroup.openEditor(game); f.update(); f.firstPart.focus(); const chrome = inputFocus.target;
+	do { f.key('Tab'); assert.ok(inputFocus.target !== chrome, 'the runtime view exposes a guest tab stop'); } while (inputFocus.target?.guestInput === undefined);
 	assert.ok(inputFocus.target?.guestInput?.recipient === f.host.input);
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;
 	rightClickTitle(f, window);
