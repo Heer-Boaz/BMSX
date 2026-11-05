@@ -10,16 +10,11 @@ import { inputFocus, type InputFocusTarget } from '../../../input/focus';
 import { pointerCapture, type PointerCaptureTarget } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import { consumeIdeKey, isKeyJustPressed } from '../../../input/keyboard/key_input';
+import { ViewportFlightInput } from '../../../input/viewport_flight';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import type { ActorLabInput } from './editor_input';
 import { ACTOR_VIEWPORT_CAMERA, ACTOR_VIEWPORT_VIEWS } from './viewport_menus';
-
-const enum Flight { Forward = 1, Back = 2, Left = 4, Right = 8, Down = 16, Up = 32, LocalUp = 64, LocalDown = 128 }
-const FLY_KEYS: Readonly<Record<string, Flight>> = {
-	KeyW: Flight.Forward, KeyS: Flight.Back, KeyA: Flight.Left, KeyD: Flight.Right,
-	KeyQ: Flight.Down, KeyE: Flight.Up, KeyR: Flight.LocalUp, KeyF: Flight.LocalDown,
-};
 
 /** Input admission belongs to the live viewport, not global IDE shortcuts or the
  * game recipient. Camera gestures capture/release through ordinary UI ownership. */
@@ -29,8 +24,7 @@ export class ActorWorldControl implements PointerCaptureTarget {
 	private input: ActorLabInput | undefined;
 	private gesture: 'pan' | 'orbit' | 'look' | 'dolly' | undefined;
 	private x = 0; private y = 0;
-	private flyKeys = 0;
-	private navigationTime = 0;
+	private readonly flight = new ViewportFlightInput();
 	private popup: DisposableStore | undefined;
 	private readonly commands: EditorCommandId[] = [];
 	private readonly unbindKeyboard: () => void;
@@ -104,7 +98,7 @@ export class ActorWorldControl implements PointerCaptureTarget {
 			else if (secondary) this.gesture = alt ? 'dolly' : view.mode === '3d' ? 'look' : 'pan';
 			else this.gesture = view.mode === '3d' && (alt || view.navigation === 'orbit') ? 'orbit' : 'pan';
 			this.x = snapshot.viewportX; this.y = snapshot.viewportY;
-			this.navigationTime = now;
+			this.flight.begin(now);
 			pointerCapture.capture(this, middle ? PointerButton.Auxiliary : secondary ? PointerButton.Secondary : PointerButton.Primary, this.focusTarget.scope.surfaceScope); return true;
 		}
 		const actor = view.pick(snapshot.viewportX, snapshot.viewportY);
@@ -127,18 +121,13 @@ export class ActorWorldControl implements PointerCaptureTarget {
 		view.refresh(input.previewBounds, input.domain, input.actorHashId);
 	}
 	public releaseCapturedPointer(snapshot: PointerInputSnapshot, now: number): void { this.handleCapturedPointer(snapshot, now); this.cancelPointer(); }
-	public cancelPointer(): void { this.gesture = undefined; this.flyKeys = 0; pointerCapture.release(this); }
+	public cancelPointer(): void { this.gesture = undefined; this.flight.clear(); pointerCapture.release(this); }
 	/** Host-time flight only changes the camera; the caller projects once after all input changes. */
 	public advanceNavigation(now: number): boolean {
 		if (this.gesture !== 'look') return false;
-		const elapsed = (now - this.navigationTime) / 1000; this.navigationTime = now;
-		if (this.flyKeys === 0 || elapsed === 0) return false;
-		const input = this.input!, view = input.worldView, keys = this.flyKeys;
-		const distance = elapsed * 240 * view.navigationSpeed / view.camera.scale;
-		return view.camera.fly(((keys & Flight.Right ? 1 : 0) - (keys & Flight.Left ? 1 : 0)) * distance,
-			((keys & Flight.Up ? 1 : 0) - (keys & Flight.Down ? 1 : 0)) * distance,
-			((keys & Flight.Forward ? 1 : 0) - (keys & Flight.Back ? 1 : 0)) * distance,
-			((keys & Flight.LocalUp ? 1 : 0) - (keys & Flight.LocalDown ? 1 : 0)) * distance);
+		const view = this.input!.worldView, flight = this.flight;
+		return flight.advance(now, 240 * view.navigationSpeed / view.camera.scale)
+			&& view.camera.fly(flight.right, flight.up, flight.forward, flight.localUp);
 	}
 	public handleWheel(event: WheelInputSnapshot): boolean {
 		const input = this.input!, view = input.worldView, b = input.previewBounds;
@@ -158,12 +147,10 @@ export class ActorWorldControl implements PointerCaptureTarget {
 	private handleKeyboard(event: KeyInputEvent): void {
 		if (event.consumed) return;
 		if (isKeyJustPressed('Escape', event)) { consumeIdeKey('Escape', event); pointerCapture.cancelTarget(this); return; }
-		const flyKey = FLY_KEYS[event.code];
-		if (this.gesture === 'look' && flyKey !== undefined) {
+		if (this.gesture === 'look') {
 			const input = this.input!;
 			if (this.advanceNavigation(editorRuntimeState.currentTimeMs)) input.worldView.refresh(input.previewBounds, input.domain, input.actorHashId);
-			this.flyKeys = event.down ? this.flyKeys | flyKey : this.flyKeys & ~flyKey;
-			consumeIdeKey(event.code, event); return;
+			if (this.flight.key(event.code, event.down)) { consumeIdeKey(event.code, event); return; }
 		}
 		if ((event.modifiers & (KeyModifier.ctrl | KeyModifier.meta | KeyModifier.alt)) !== 0) return;
 		if (isKeyJustPressed('KeyF', event)) { consumeIdeKey('KeyF', event); const input = this.input!;

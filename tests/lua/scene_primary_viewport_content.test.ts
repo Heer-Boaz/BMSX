@@ -14,6 +14,7 @@ import { SceneViewportControl } from '../../ide/workbench/contrib/scene_editor/v
 import { SceneViewportViewState, SCENE_VIEWPORT_POINT_STRIDE } from '../../ide/workbench/contrib/scene_editor/viewport/view_state';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
 import type { EditorCommandId } from '../../ide/common/commands';
+import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
 
 const PREFABS = `local prefab=require('cartlib/world/prefab')
 prefab.define({def_id='node2',class=require('cartlib/world/object_2d')})
@@ -451,6 +452,134 @@ test('pan and orbit use native capture, preserve same-panel focus, and cancel ac
 	pointerCapture.dispatch(pointer(240, 140, PointerButton.Primary), false, 0, f.control.focusTarget.scope.surfaceScope);
 	assert.deepEqual(f.view.camera.capture(), retired);
 	assert.equal(f.model.buffer.getText(), '-- newer\n' + f.source);
+});
+
+test('right click opens context only on release; pointer jitter is not a camera drag', t => {
+	const f = fixture(t); f.select(0); const selection = f.context.selection, camera = f.view.camera.capture();
+	f.control.handlePointer(pointer(200, 120, PointerButton.Secondary, PointerButton.Secondary), true);
+	assert.equal(f.menu.visible, false); assert.equal(pointerCapture.active, true);
+	pointerCapture.dispatch(pointer(202, 121, PointerButton.Secondary), false, 0, f.scope.surfaceScope);
+	assert.deepEqual(f.view.camera.capture(), camera);
+	pointerCapture.dispatch(pointer(202, 121, 0, 0, PointerButton.Secondary), false, 0, f.scope.surfaceScope);
+	assert.equal(f.menu.visible, true); assert.equal(pointerCapture.active, false);
+	assert.ok(f.context.selection === selection);
+	f.menu.hide();
+	f.control.handlePointer(pointer(200, 120, 0, PointerButton.Secondary, PointerButton.Secondary), true);
+	assert.equal(f.menu.visible, true, 'a complete native click in one delivery follows the same admission');
+	assert.equal(pointerCapture.active, false);
+});
+
+for (const mode of ['2d', '3d'] as const)
+test(`${mode} right drag navigates without replacing selection, editing source or opening a menu`, t => {
+	const f = fixture(t); f.select(0); f.view.camera.setMode(mode); f.control.update();
+	const selection = f.context.selection, camera = f.view.camera.capture(), eye = new Float64Array(3), after = new Float64Array(3);
+	f.view.camera.eyeRelativeTo(0, 0, 0, eye);
+	f.control.handlePointer(pointer(200, 120, PointerButton.Secondary, PointerButton.Secondary), true);
+	pointerCapture.dispatch(pointer(230, 140, PointerButton.Secondary), false, 0, f.scope.surfaceScope);
+	assert.notDeepEqual(f.view.camera.capture(), camera);
+	if (mode === '3d') {
+		f.view.camera.eyeRelativeTo(0, 0, 0, after);
+		for (let axis = 0; axis < 3; axis++) assert.ok(Math.abs(eye[axis] - after[axis]) < 1e-10, 'look rotates around the eye, not the orbit pivot');
+	} else assert.deepEqual(f.view.camera.capture().space, camera.space);
+	pointerCapture.dispatch(pointer(230, 140, 0, 0, PointerButton.Secondary), false, 0, f.scope.surfaceScope);
+	assert.equal(f.menu.visible, false); assert.equal(pointerCapture.active, false);
+	assert.ok(f.context.selection === selection);
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});
+
+test('held Scene flight advances on host frames and RMB wheel changes speed, not zoom or source', t => {
+	const f = fixture(t); f.select(2); f.view.camera.setMode('3d'); f.control.update();
+	const camera = f.view.camera, initial = camera.capture(), points = f.view.points, selection = f.context.selection;
+	const sources = t.mock.method(f.context, 'captureTranslation');
+	const projection = t.mock.method(camera, 'projectX');
+	editorRuntimeState.currentTimeMs = 0;
+	f.control.handlePointer(pointer(200, 120, PointerButton.Secondary, PointerButton.Secondary), true);
+	editorRuntimeState.currentTimeMs = 1000; f.control.update();
+	assert.deepEqual(camera.capture(), initial); assert.equal(projection.mock.callCount(), 0, 'an idle hold does not reproject');
+	f.control.focusTarget.handleKeyboard(new KeyInputEvent('KeyW', KeyModifier.none));
+	editorRuntimeState.currentTimeMs = 1100; f.control.update();
+	const first = camera.capture();
+	assert.notDeepEqual(first, initial); assert.equal(first.space.distance, initial.space.distance);
+	assert.ok(f.view.points === points);
+	// Speed is an integration contract: the next equally long interval moves twice as far.
+	f.control.handleWheel({ viewportX: 200, viewportY: 120, valid: true, insideViewport: true, deltaX: 0, deltaY: -4, modifiers: KeyModifier.none });
+	assert.equal(f.view.navigationSpeed, 2); assert.deepEqual(camera.capture(), first);
+	assert.equal(pointerCapture.active, true);
+	editorRuntimeState.currentTimeMs = 1200; f.control.update();
+	const second = camera.capture();
+	assert.ok(Math.abs((second.space.centerZ - first.space.centerZ) / (first.space.centerZ - initial.space.centerZ) - 2) < 1e-10);
+	f.control.focusTarget.handleKeyboard(new KeyInputEvent('KeyW', KeyModifier.none, false, false));
+	editorRuntimeState.currentTimeMs = 1300; f.control.update(); assert.deepEqual(camera.capture(), second);
+	pointerCapture.dispatch(pointer(200, 120, 0, 0, PointerButton.Secondary), false, 1300, f.scope.surfaceScope);
+	assert.equal(f.menu.visible, false); assert.equal(sources.mock.callCount(), 0);
+	assert.ok(f.context.selection === selection);
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});
+
+for (const retirement of ['release', 'input', 'blur', 'escape', 'source', 'allocation', 'attachment', 'selection', 'mode', 'scope', 'lost button'] as const)
+test(`Scene flight drops held keys on ${retirement}, without applying them to a later capture`, t => {
+	const f = fixture(t); f.view.camera.setMode('3d'); f.control.update();
+	editorRuntimeState.currentTimeMs = 0;
+	f.control.handlePointer(pointer(200, 120, PointerButton.Secondary, PointerButton.Secondary), true);
+	f.control.focusTarget.handleKeyboard(new KeyInputEvent('KeyW', KeyModifier.none));
+	if (retirement === 'release') pointerCapture.dispatch(pointer(200, 120, 0, 0, PointerButton.Secondary), false, 0, f.scope.surfaceScope);
+	else if (retirement === 'input') f.control.focusTarget.cancelInput();
+	else if (retirement === 'blur') f.panel.focus();
+	else if (retirement === 'escape') f.control.focusTarget.handleKeyboard(new KeyInputEvent('Escape', KeyModifier.none));
+	else if (retirement === 'source') f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- edit\n' }]);
+	else if (retirement === 'allocation') f.control.layout({ ...BOUNDS, right: 430 });
+	else if (retirement === 'attachment') { f.control.clearView(); f.control.setView(f.view, BOUNDS); }
+	else if (retirement === 'selection') f.select(1);
+	else if (retirement === 'mode') f.view.camera.setMode('2d');
+	else if (retirement === 'scope') f.control.focusTarget.scope.retireContext();
+	else pointerCapture.dispatch(pointer(200, 120, 0), false, 0, f.scope.surfaceScope);
+	const retired = f.view.camera.capture();
+	editorRuntimeState.currentTimeMs = 100; f.control.update();
+	assert.equal(pointerCapture.active, false); assert.deepEqual(f.view.camera.capture(), retired);
+	assert.equal(f.menu.visible, false);
+	f.view.camera.setMode('3d'); f.control.update(); const restarted = f.view.camera.capture();
+	f.control.handlePointer(pointer(200, 120, PointerButton.Secondary, PointerButton.Secondary), true);
+	editorRuntimeState.currentTimeMs = 200; f.control.update();
+	assert.deepEqual(f.view.camera.capture(), restarted);
+});
+
+for (const mode of ['2d', '3d'] as const)
+test(`${mode} camera chords use both-button pan/zoom and Alt-right dolly without selection`, t => {
+	const f = fixture(t); f.select(0); f.view.camera.setMode(mode); f.control.update(); const selection = f.context.selection;
+	const before = f.view.camera.capture(), both = PointerButton.Primary | PointerButton.Secondary;
+	f.control.handlePointer(pointer(200, 120, both, PointerButton.Secondary), true);
+	pointerCapture.dispatch(pointer(200, 150, both), false, 0, f.scope.surfaceScope);
+	const after = f.view.camera.capture();
+	if (mode === '2d') assert.notEqual(after.canvas.scale, before.canvas.scale);
+	else {
+		assert.equal(after.space.yaw, before.space.yaw); assert.equal(after.space.pitch, before.space.pitch);
+		assert.equal(after.space.distance, before.space.distance); assert.notEqual(after.space.centerY, before.space.centerY);
+	}
+	pointerCapture.dispatch(pointer(200, 150, 0, 0, both), false, 0, f.scope.surfaceScope);
+	assert.equal(f.menu.visible, false);
+	f.control.handlePointer(pointer(200, 120, PointerButton.Secondary, PointerButton.Secondary, 0, KeyModifier.alt), true);
+	pointerCapture.dispatch(pointer(200, 150, PointerButton.Secondary), false, 0, f.scope.surfaceScope);
+	if (mode === '3d') assert.notEqual(f.view.camera.capture().space.distance, after.space.distance);
+	else assert.notEqual(f.view.camera.capture().canvas.scale, after.canvas.scale);
+	pointerCapture.dispatch(pointer(200, 150, 0, 0, PointerButton.Secondary), false, 0, f.scope.surfaceScope);
+	assert.equal(f.menu.visible, false); assert.ok(f.context.selection === selection);
+	assert.equal(f.model.canUndo, false);
+});
+
+test('a flight callback may replace the viewport without moving or cancelling its successor', t => {
+	const f = fixture(t), incoming = new SceneViewportViewState(f.context, f.sources.catalog); t.after(() => incoming.dispose());
+	f.view.camera.setMode('3d'); f.control.update(); editorRuntimeState.currentTimeMs = 0;
+	f.control.handlePointer(pointer(200, 120, PointerButton.Secondary, PointerButton.Secondary), true);
+	f.control.focusTarget.handleKeyboard(new KeyInputEvent('KeyW', KeyModifier.none));
+	const release = f.view.camera.onDidChange(() => {
+		release(); f.control.setView(incoming, BOUNDS); incoming.camera.setMode('3d'); f.control.update();
+		f.control.handlePointer(pointer(200, 120, PointerButton.Secondary, PointerButton.Secondary), true);
+	}); t.after(release);
+	editorRuntimeState.currentTimeMs = 100;
+	f.control.focusTarget.handleKeyboard(new KeyInputEvent('KeyW', KeyModifier.none, false, false));
+	assert.ok(f.control.view === incoming); assert.equal(pointerCapture.active, true);
+	const camera = incoming.camera.capture();
+	editorRuntimeState.currentTimeMs = 200; f.control.update(); assert.deepEqual(incoming.camera.capture(), camera);
 });
 
 test('an older frame invocation cannot retarget the canvas rebound by source admission', t => {

@@ -38,6 +38,7 @@ export class SceneViewportViewState {
 	public readonly gizmo = new SceneTranslationGizmo();
 	public readonly caption = new WorkbenchCanvasCaption();
 	public navigationTool: 'select' | 'pan' | 'orbit' = 'select';
+	public navigationSpeed = 1;
 	public readonly navigationActions = createWorkbenchActionBar(new WorkbenchMenu(SCENE_VIEWPORT_ACTIONS, this), true);
 	public readonly viewMenu = new WorkbenchMenu(SCENE_VIEWPORT_VIEWS, this);
 	public readonly navigationMenu = new WorkbenchMenu(SCENE_VIEWPORT_NAVIGATION, this);

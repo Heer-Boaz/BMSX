@@ -6,6 +6,7 @@ import type { Table } from '../../machine/ts/machine/cpu/table';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { inputFocus } from '../../ide/input/focus';
+import { pointerCapture } from '../../ide/input/pointer/capture';
 import { ActorWorldOutliner } from '../../ide/workbench/contrib/actor_lab/world_outliner';
 import { ActorLabEditorPane } from '../../ide/workbench/contrib/actor_lab/editor_pane';
 import { readActorChoices } from '../../ide/workbench/contrib/actor_lab/projection';
@@ -89,6 +90,33 @@ return true`, { optLevel: 3, modules: WORLD_CPU_MODULES });
 	assert.equal(tree.rows.length, 0);
 	assert.ok(outliner.readActor(guest, world, child) === undefined);
 	assert.equal(outliner.update(guest, world, child), false);
+});
+
+test('live Actor viewport shares held-key flight without taking game input or changing the inspected actor', async t => {
+	const f = await createLiveStudioFixture(t), { editor } = f;
+	const input = editor.actorLab.resolveInput();
+	const part = editor.editorParts.createDocument({ requestedBounds: { left: 0, top: 24, right: 800, bottom: 340 } });
+	part.activeGroup.openEditor(input); editor.update(0);
+	const pane = part.activeGroup.panes.activePane!; assert.ok(pane instanceof ActorLabEditorPane);
+	editor.commands.execute('sceneViewport.view3d', pane.commandTarget); editor.update(0);
+	const camera = input.worldView.camera, initial = camera.capture(), actor = input.actorHashId;
+	const bounds = input.previewBounds;
+	f.native.apply([{ type: 'pointer', x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2 },
+		{ type: 'button', button: 'secondary', down: true }]);
+	assert.equal(pointerCapture.active, true); assert.ok(inputFocus.admittedTarget!.guestInput === undefined);
+	editor.dispatchKey(new KeyInputEvent('KeyW', KeyModifier.none));
+	editor.dispatchKey(new KeyInputEvent('ArrowUp', KeyModifier.none));
+	await f.frame(); const first = camera.capture(); assert.notDeepEqual(first, initial);
+	editor.dispatchKey(new KeyInputEvent('KeyW', KeyModifier.none, false, false));
+	await f.frame(); const second = camera.capture(); assert.notDeepEqual(second, first, 'releasing W leaves the held Up alias active');
+	f.native.apply([{ type: 'button', button: 'secondary', down: false }]);
+	assert.equal(pointerCapture.active, false); const released = camera.capture();
+	await f.frame(); assert.deepEqual(camera.capture(), released);
+	assert.equal(input.actorHashId, actor); assert.equal(f.execution.paused, true);
+	f.native.apply([{ type: 'button', button: 'secondary', down: true }]);
+	await f.frame(); assert.deepEqual(camera.capture(), released, 'the next hold cannot inherit the missing Up key release');
+	editor.dispatchKey(new KeyInputEvent('ArrowUp', KeyModifier.none, false, false));
+	f.native.apply([{ type: 'button', button: 'secondary', down: false }]);
 });
 
 test('live Outliner selection, disclosure, Details and viewport navigation do not pause the game', async t => {

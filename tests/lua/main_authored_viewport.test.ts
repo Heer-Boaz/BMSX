@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
-import { KeyModifier } from '../../hosts/common/input/text';
+import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
@@ -57,6 +57,35 @@ function sourceGroup(f: Fixture, model = f.model) {
 	assert.ok(group.openEditor(input)); f.update();
 	return { group, input };
 }
+
+test('native Scene flight uses host frames while captured, then returns F and keyboard focus to ordinary editing', async t => {
+	const f = await fixture(t), view = f.client.view.viewport;
+	selectSceneOutlineRow(f.client.view.hierarchy, 2); f.update(); f.main.focusPrimary('viewport');
+	f.editor.commands.execute('sceneViewport.view3d', f.viewport.focusTarget); f.update();
+	const selected = f.client.authoring.selection, initial = view.camera.capture();
+	const x = (view.bounds.left + view.bounds.right) / 2, y = (view.bounds.top + view.bounds.bottom) / 2;
+	pointer(f, x, y, PointerButton.Secondary, PointerButton.Secondary);
+	assert.equal(pointerCapture.active, true); assert.equal(f.editor.contextMenu.visible, false);
+	const frame = t.mock.method(view, 'frame');
+	f.editor.dispatchKey(new KeyInputEvent('KeyF', KeyModifier.none));
+	f.update(100);
+	assert.notDeepEqual(view.camera.capture(), initial); assert.equal(frame.mock.callCount(), 0, 'RMB+F moves, it does not frame selection');
+	pointer(f, x, y, 0, 0, PointerButton.Secondary);
+	const released = view.camera.capture(); f.update(100);
+	assert.deepEqual(view.camera.capture(), released, 'release stops held-key movement even without a key-up');
+	f.editor.dispatchKey(new KeyInputEvent('KeyF', KeyModifier.none, false, false));
+	assert.equal(f.editor.contextMenu.visible, false);
+	f.key('KeyF'); assert.equal(frame.mock.callCount(), 1, 'outside navigation F again frames the selection');
+	pointer(f, x, y, PointerButton.Secondary, PointerButton.Secondary);
+	f.editor.dispatchKey(new KeyInputEvent('ArrowUp', KeyModifier.none)); f.update(100);
+	const flying = view.camera.capture();
+	f.key('Tab'); assert.equal(f.viewport.focusTarget.hasFocus, false); assert.equal(pointerCapture.active, false);
+	f.update(100); assert.deepEqual(view.camera.capture(), flying, 'Tab cannot leave a camera flying in the background');
+	f.editor.dispatchKey(new KeyInputEvent('ArrowUp', KeyModifier.none, false, false));
+	pointer(f, x, y, 0, 0, PointerButton.Secondary);
+	assert.ok(f.client.authoring.selection === selected);
+	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
+});
 
 for (const font of ['tiny', 'msx'] as const)
 test(`${font} authored Scene is a real document viewport beside independent document groups`, async t => {
