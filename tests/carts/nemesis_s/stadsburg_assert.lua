@@ -35,9 +35,9 @@ return {kind='integration',tests={
                 local x<const>,y<const> = weapon:get_global_position()
                 local width<const> = weapon.sprite_component.source_width
                 local height<const> = weapon.sprite_component.source_height
-                -- Both visible feet must touch this real roof without hanging
-                -- over its edge or sinking into the supporting tile row.
-                for foot_x=2,width-3 do
+                -- The full-width collision base must rest on this real roof
+                -- without overhanging or sinking into the supporting tile row.
+                for foot_x=0,width-1 do
                     assert(stage:is_solid_pixel(x+foot_x,y+height)
                         and not stage:is_solid_pixel(x+foot_x,y+height-1),
                         'A roof weapon is floating, embedded or overhanging its support')
@@ -63,7 +63,7 @@ return {kind='integration',tests={
                 weapon:receive_player_projectile({damage=weapon.health})
                 local wreck<const> = wreck_view.objects[#wreck_view.objects]
                 local wx<const>,wy<const> = wreck:get_global_position()
-                assert(wreck.sprite_component.imgid==assets_roof_chimney_wreck
+                assert(wreck.sprite_component.imgid==assets_chimney_wreck
                     and not wreck.sprite_component.flip_v
                     and wx+wreck.sprite_component.source_width//2==x+width//2
                     and wy+wreck.sprite_component.source_height==y+height,
@@ -72,7 +72,7 @@ return {kind='integration',tests={
                 local bx<const>,by<const> = blast:get_global_position()
                 assert(bx+blast.sprite_component.source_width//2==x+width//2
                     and by+blast.sprite_component.source_height//2==y+height//2,
-                    'The roof explosion lost the centre of its smaller weapon')
+                    'The roof explosion lost the centre of its weapon')
                 wreck:mark_for_disposal()
                 blast:mark_for_disposal()
                 checked=checked+1

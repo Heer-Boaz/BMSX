@@ -75,10 +75,10 @@ Wharf stairs descend 16 pixels to their lower walking surface. Measure these
 details against visible ground, since the bottom prefab tile can contain quay
 masonry or a submerged foot. Building, water and tree-root anchors are retained
 when their canvases shrink. The native S/R markers identify the centre and
-foot line of each rooftop weapon. Its 24×16 canvas is centred on that point,
-with a 20-pixel support footprint, a matching body collider and a centred laser
-or smoke outlet. The 16×8 roof wreck keeps the same foot line. Ceiling cannons
-retain their separate 32×24 geometry and 24×16 wreck. The terrain spans,
+foot line of each rooftop weapon. Roof weapons retain their original 32×24
+artwork and body colliders, centred on that point with a centred laser or smoke
+outlet. Their original 24×16 wreck keeps the same foot line. Ceiling cannons
+also retain their 32×24 geometry and 24×16 wreck. The terrain spans,
 industrial bridges/winches and other combat sprites retain their established
 dimensions. The side camera, long approach and departure, and broad open-water
 sections stay fixed.
@@ -88,45 +88,64 @@ Light, warm, cyan or green accents distinguish foreground objects. The smaller
 blue house contours. Miniature bicycles retain their subdued blue silhouettes.
 The authoring groups describe that visual depth within the fixed side view.
 
-The three winter backdrops are editable 512×160 native PNGs in
-`authoring/achtergrond`: a distant town, warehouse wharf and opposite harbor
-bank. `level.yaml` owns their spans, repeat offsets, scene joins and the
+The five winter backdrops are editable native PNGs in `authoring/achtergrond`:
+the town (2384×160), warehouse wharf (824×160), inner harbor (632×160),
+lock wharf (512×160) and outer harbor (984×160). Each covers its own passage
+without repeating the whole scene; the city clock tower occurs once.
+`level.yaml` owns their spans, source offsets, scene joins and the
 world spans that expose the full starfield. They scroll on the same character
 grid as the terrain. `night_sky_height` keeps four existing blue stars in the
 top 40 pixels visible over the town, above the distant skyline. The open night
 sky leaves the flying corridor clear of cloud patterns.
-Their two-ink drawings use lit roof slopes, masonry piers and dark window bays
-to describe the distant buildings. Stone quays use broad horizontal courses;
-ships use hull plates and long strakes. These material-specific marks replace
-the former whole-surface stipple, while black remains the dominant shadow.
-Ordinary houses have narrow facades, complete storeys and upright window
-openings. Black alleys separate neighbouring houses and provide scene joins
-that preserve complete buildings. Long industrial halls use
-taller loading bays and piers, so their width reads as a hall rather than a
-flattened house. Source geometry defines these proportions directly; no axis
-is independently scaled during import.
+The opposite bank uses individually painted whole buildings from
+`achtergrond/architectuur.png`. `ontwerp.yaml` names their atlas rectangles and
+places them into waterfront blocks. Roofs, gables, bearing corners and window
+axes belong to each drawing; changing a width or selecting a generic roof
+cannot distort their proportions. Ordinary fronts are 13–17 pixels wide, with
+five-pixel storeys, 2×2 dark windows and three-pixel domestic doors; warehouse
+loading doors are larger. Foreground storeys remain
+eight to nine pixels high. Far buildings share the ground line at y132, above
+the usual near-street contact at y146. There is no image resampling.
+The references recorded in `ontwerp.yaml` include Rapenburg 13 for the stepped
+gable, the Grachtenmuseum's facade types, De Twee Harde Bollen for stacked
+loading openings and the Montelbaanstoren for the harbor clock-tower structure.
+These are original stylized buildings, not miniature replicas of the monuments.
+Stepped, neck, bell and spout gables, corniced fronts and industrial sheds have
+distinct silhouettes. The clock tower has a masonry base and two supported
+open lanterns. Long blocks share quay footings, interrupted by narrow alleys
+and deliberate harbor inlets. Each passage leaves clear silhouettes around
+the near roofs, so a distant roof does not become an apparent extra storey.
+Scene joins preserve whole buildings. There is no whole-surface stipple or
+cloud layer.
+These five sources own the far architecture and shoreline. The earlier
+separate distant-house and quay placements are no longer stamped into the
+foreground map. Removing the old quay overlay exposes the original water
+modules beneath it; their source pixels, dimensions and animation timing stay
+unchanged.
 The mill is framed by an intentional black arena; the open approach and
 departure retain the full starfield.
 
 `build_level.py` calls `bake_achtergrond.py` to compile the backdrop and compose
 its exterior pixels around the existing foreground. Enclosed black windows,
-doors and masonry remain opaque. Each resulting 8×1 row keeps at most two
-inks; existing foreground ink takes priority. Animation cels use the same
+doors and masonry remain opaque. A one-pixel black separation around fixed
+foreground ink keeps blue facades on different planes from joining. Moving
+animation cells are excluded from that fixed edge. Each resulting 8×1 row keeps
+at most two inks; existing foreground ink takes priority. Animation cels use the same
 composition while their native patterns continue to own collision and cargo
 damage. Destroyed cargo exposes the background; resetting restores its art.
+Native animation patterns are read from the loaded catalog and retained in
+cartridge resources even when a pattern is not visible in the rest frame.
 Water sources, terrain roles, encounter placements and the six-metre scale are
 independent of these visual compositions.
 The generated drawings are checked in as 256×256 pattern banks; the cartridge
 shares their 8×8 views across foreground, backdrop, animation and new games.
 
-Run `python scripts/nemesis_s/stadsburg/draw_achtergrond.py` only when deliberately
-regenerating the three editable source PNGs from their authored pixel geometry.
-Normal level builds consume those PNGs directly, including any subsequent
+Run `python scripts/nemesis_s/stadsburg/draw_achtergrond.py` after deliberately
+editing the architecture atlas or its block composition. It stamps the complete
+drawings at their exact native sizes into the five editable source PNGs.
+Normal level builds consume those five PNGs directly, including any subsequent
 hand edits. The composed level and the separate backdrop are available under
 `previews/level_achtergrond_native.png` and `previews/achtergrond_native.png`.
-`draw_dakgeschut.py` similarly regenerates the native roof-weapon poses and
-small roof wreck from their shared pixel geometry; the cartridge build consumes
-their checked-in PNGs directly.
 
 The Python dependencies are pinned for reproducible resource bytes.
 Preview images and check reports are generated locally and ignored by Git.

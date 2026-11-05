@@ -91,11 +91,6 @@ def main():
         near_light=any(lo-1<=x+2<hi+1 for lo,hi in light_spans)
         sequence=harbor['water_lit' if near_light else 'water_calm']
         prefab(f'reuse_watergroep_{sequence[((x-art_origin)//4)%len(sequence)]:02}',x,19,record=False)
-    for name,sites in harbor['far_shore'].items():
-        for x in sites: prefab(name,x,19-len(rows_for(name)),record=False)
-    for x in range(harbor['background_start'],harbor['background_end'],8):
-        if not any(x<end and x+8>start for start,end in harbor['open_water']):
-            prefab('clean_bg_quay_64',x,19,record=False)
     # Let the waterline enter and recede below the town, over four columns.
     for i in range(4):
         for y in range(19,22):
@@ -371,19 +366,21 @@ def main():
     runtime['water_animation']=compile_water(ROOT,catalog,tiles,entries,cells,owners)
     runtime['water_animation']['origin_column']=art_origin
     runtime['harbor_animation']=compile_harbor(ROOT,plan,prefabs,tiles,entries,cells,placements,catalog['palette'],greenery_layers)
-    compile_background(ROOT,plan,runtime,tiles,cells)
+    compile_background(ROOT,plan,runtime,tiles,entries,cells)
     runtime['background']['rows']=[FlowRow(row) for row in runtime['background']['rows']]
     # Validate map composition and animation before relocating source drawings.
     # A rejected placement must not leave the catalog pointing at moved files.
+    animation_assets=set(runtime['harbor_animation']['patterns'])
     for entry in catalog['tiles']:
         source=ROOT/entry['image']
-        target=(ROOT/'res/img' if entry['id'] in packed and entry['id']!=1
+        active=(entry['id'] in packed and entry['id']!=1) or entry['asset'] in animation_assets
+        target=(ROOT/'res/img' if active
                 else ROOT/'authoring/terreintegels') / source.name
         if target!=source:
             target.parent.mkdir(parents=True,exist_ok=True)
             source.replace(target)
             entry['image']=target.relative_to(ROOT).as_posix()
-        if entry['id'] not in packed or entry['id']==1:
+        if not active:
             (ROOT/'res/img'/source.name).unlink(missing_ok=True)
     out=ROOT/'res/data';out.mkdir(parents=True,exist_ok=True)
     (out/'nemesis_s_stage.yaml').write_text(yaml.dump(runtime,Dumper=Dumper,sort_keys=False,width=100000,allow_unicode=True))

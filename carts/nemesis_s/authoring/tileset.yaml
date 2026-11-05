@@ -237,7 +237,7 @@ tiles:
 - id: 80
   name: water_rich_a_128x24_00_07
   asset: nls_0080
-  image: authoring/terreintegels/nls_0080@atlas=gameplay.png
+  image: res/img/nls_0080@atlas=gameplay.png
   category: water
   stage_symbol: ' '
 - id: 81
@@ -807,13 +807,13 @@ tiles:
 - id: 916
   name: bg_clean_28
   asset: nls_0916
-  image: res/img/nls_0916@atlas=gameplay.png
+  image: authoring/terreintegels/nls_0916@atlas=gameplay.png
   category: background
   stage_symbol: ' '
 - id: 917
   name: bg_clean_29
   asset: nls_0917
-  image: res/img/nls_0917@atlas=gameplay.png
+  image: authoring/terreintegels/nls_0917@atlas=gameplay.png
   category: background
   stage_symbol: ' '
 - id: 1006
@@ -6371,7 +6371,7 @@ tiles:
 - id: 1994
   name: huis_lijstgevel_smal_07_00
   asset: nls_1994
-  image: authoring/terreintegels/nls_1994@atlas=gameplay.png
+  image: res/img/nls_1994@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 1995
@@ -6683,7 +6683,7 @@ tiles:
 - id: 2046
   name: winkel_cafe_05_01
   asset: nls_2046
-  image: authoring/terreintegels/nls_2046@atlas=gameplay.png
+  image: res/img/nls_2046@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2047
@@ -8634,7 +8634,7 @@ tiles:
 - id: 2346
   name: huis_lijstgevel_smal_01_00
   asset: nls_2346
-  image: res/img/nls_2346@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2346@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2347
@@ -8646,7 +8646,7 @@ tiles:
 - id: 2348
   name: huis_lijstgevel_smal_02_00
   asset: nls_2348
-  image: res/img/nls_2348@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2348@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2349
@@ -8658,19 +8658,19 @@ tiles:
 - id: 2350
   name: huis_lijstgevel_smal_03_00
   asset: nls_2350
-  image: res/img/nls_2350@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2350@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2351
   name: huis_lijstgevel_smal_03_01
   asset: nls_2351
-  image: res/img/nls_2351@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2351@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2352
   name: huis_lijstgevel_smal_04_00
   asset: nls_2352
-  image: res/img/nls_2352@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2352@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2353
@@ -9234,61 +9234,61 @@ tiles:
 - id: 2446
   name: compact_smal_grachtenhuis_00_00
   asset: nls_2446
-  image: res/img/nls_2446@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2446@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2447
   name: compact_smal_grachtenhuis_00_01
   asset: nls_2447
-  image: res/img/nls_2447@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2447@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2448
   name: compact_smal_grachtenhuis_01_00
   asset: nls_2448
-  image: res/img/nls_2448@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2448@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2449
   name: compact_smal_grachtenhuis_01_01
   asset: nls_2449
-  image: res/img/nls_2449@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2449@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2450
   name: compact_smal_grachtenhuis_02_00
   asset: nls_2450
-  image: res/img/nls_2450@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2450@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2451
   name: compact_smal_grachtenhuis_02_01
   asset: nls_2451
-  image: res/img/nls_2451@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2451@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2452
   name: compact_smal_grachtenhuis_03_00
   asset: nls_2452
-  image: res/img/nls_2452@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2452@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2453
   name: compact_smal_grachtenhuis_03_01
   asset: nls_2453
-  image: res/img/nls_2453@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2453@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2454
   name: compact_smal_grachtenhuis_04_00
   asset: nls_2454
-  image: res/img/nls_2454@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2454@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2455
   name: compact_smal_grachtenhuis_04_01
   asset: nls_2455
-  image: res/img/nls_2455@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2455@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2456
@@ -9414,97 +9414,97 @@ tiles:
 - id: 2476
   name: verre_puntgevel_00_00
   asset: nls_2476
-  image: res/img/nls_2476@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2476@atlas=gameplay.png
   category: town
   stage_symbol: ' '
 - id: 2477
   name: verre_puntgevel_01_00
   asset: nls_2477
-  image: res/img/nls_2477@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2477@atlas=gameplay.png
   category: town
   stage_symbol: ' '
 - id: 2478
   name: verre_puntgevel_01_01
   asset: nls_2478
-  image: res/img/nls_2478@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2478@atlas=gameplay.png
   category: town
   stage_symbol: ' '
 - id: 2479
   name: verre_puntgevel_02_00
   asset: nls_2479
-  image: res/img/nls_2479@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2479@atlas=gameplay.png
   category: town
   stage_symbol: ' '
 - id: 2480
   name: verre_puntgevel_02_01
   asset: nls_2480
-  image: res/img/nls_2480@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2480@atlas=gameplay.png
   category: town
   stage_symbol: ' '
 - id: 2481
   name: verre_puntgevel_03_00
   asset: nls_2481
-  image: res/img/nls_2481@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2481@atlas=gameplay.png
   category: town
   stage_symbol: ' '
 - id: 2482
   name: verre_puntgevel_03_01
   asset: nls_2482
-  image: res/img/nls_2482@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2482@atlas=gameplay.png
   category: town
   stage_symbol: ' '
 - id: 2483
   name: verre_pakhuis_00_00
   asset: nls_2483
-  image: res/img/nls_2483@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2483@atlas=gameplay.png
   category: town
   stage_symbol: ' '
 - id: 2484
   name: verre_pakhuis_00_01
   asset: nls_2484
-  image: res/img/nls_2484@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2484@atlas=gameplay.png
   category: town
   stage_symbol: ' '
 - id: 2485
   name: verre_pakhuis_01_00
   asset: nls_2485
-  image: res/img/nls_2485@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2485@atlas=gameplay.png
   category: town
   stage_symbol: ' '
 - id: 2486
   name: verre_pakhuis_01_01
   asset: nls_2486
-  image: res/img/nls_2486@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2486@atlas=gameplay.png
   category: town
   stage_symbol: ' '
 - id: 2487
   name: verre_trapgevel_00_00
   asset: nls_2487
-  image: res/img/nls_2487@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2487@atlas=gameplay.png
   category: town
   stage_symbol: ' '
 - id: 2488
   name: verre_trapgevel_00_01
   asset: nls_2488
-  image: res/img/nls_2488@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2488@atlas=gameplay.png
   category: town
   stage_symbol: ' '
 - id: 2489
   name: verre_trapgevel_01_00
   asset: nls_2489
-  image: res/img/nls_2489@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2489@atlas=gameplay.png
   category: town
   stage_symbol: ' '
 - id: 2490
   name: verre_trapgevel_01_01
   asset: nls_2490
-  image: res/img/nls_2490@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2490@atlas=gameplay.png
   category: town
   stage_symbol: ' '
 - id: 2491
   name: verre_trapgevel_02_01
   asset: nls_2491
-  image: res/img/nls_2491@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2491@atlas=gameplay.png
   category: town
   stage_symbol: ' '
 - id: 2492
@@ -9540,49 +9540,49 @@ tiles:
 - id: 2497
   name: compact_breed_laag_huis_02_00
   asset: nls_2497
-  image: res/img/nls_2497@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2497@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2498
   name: compact_breed_laag_huis_02_01
   asset: nls_2498
-  image: res/img/nls_2498@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2498@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2499
   name: compact_breed_laag_huis_02_02
   asset: nls_2499
-  image: res/img/nls_2499@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2499@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2500
   name: compact_breed_laag_huis_02_03
   asset: nls_2500
-  image: res/img/nls_2500@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2500@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2501
   name: compact_breed_laag_huis_03_00
   asset: nls_2501
-  image: res/img/nls_2501@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2501@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2502
   name: compact_breed_laag_huis_03_01
   asset: nls_2502
-  image: res/img/nls_2502@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2502@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2503
   name: compact_breed_laag_huis_03_02
   asset: nls_2503
-  image: res/img/nls_2503@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2503@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2504
   name: compact_breed_laag_huis_03_03
   asset: nls_2504
-  image: res/img/nls_2504@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2504@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2505
@@ -9594,13 +9594,13 @@ tiles:
 - id: 2506
   name: compact_breed_laag_huis_04_01
   asset: nls_2506
-  image: res/img/nls_2506@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2506@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2507
   name: compact_breed_laag_huis_04_02
   asset: nls_2507
-  image: res/img/nls_2507@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2507@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2508
@@ -9702,13 +9702,13 @@ tiles:
 - id: 2524
   name: haven_laser_house_01_00
   asset: nls_2524
-  image: res/img/nls_2524@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2524@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2525
   name: haven_laser_house_01_01
   asset: nls_2525
-  image: res/img/nls_2525@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2525@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2526
@@ -9720,55 +9720,55 @@ tiles:
 - id: 2527
   name: haven_laser_house_01_03
   asset: nls_2527
-  image: res/img/nls_2527@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2527@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2528
   name: haven_laser_house_02_00
   asset: nls_2528
-  image: res/img/nls_2528@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2528@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2529
   name: haven_laser_house_02_01
   asset: nls_2529
-  image: res/img/nls_2529@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2529@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2530
   name: haven_laser_house_02_02
   asset: nls_2530
-  image: res/img/nls_2530@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2530@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2531
   name: haven_laser_house_02_03
   asset: nls_2531
-  image: res/img/nls_2531@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2531@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2532
   name: haven_laser_house_03_00
   asset: nls_2532
-  image: res/img/nls_2532@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2532@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2533
   name: haven_laser_house_03_01
   asset: nls_2533
-  image: res/img/nls_2533@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2533@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2534
   name: haven_laser_house_03_02
   asset: nls_2534
-  image: res/img/nls_2534@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2534@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2535
   name: haven_laser_house_03_03
   asset: nls_2535
-  image: res/img/nls_2535@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2535@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2536
@@ -9840,19 +9840,19 @@ tiles:
 - id: 2547
   name: stadsburg_brugwachter_met_dakkanon_00_04
   asset: nls_2547
-  image: res/img/nls_2547@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2547@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2548
   name: stadsburg_brugwachter_met_dakkanon_01_00
   asset: nls_2548
-  image: res/img/nls_2548@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2548@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2549
   name: stadsburg_brugwachter_met_dakkanon_01_01
   asset: nls_2549
-  image: res/img/nls_2549@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2549@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2550
@@ -9864,145 +9864,145 @@ tiles:
 - id: 2551
   name: stadsburg_brugwachter_met_dakkanon_01_03
   asset: nls_2551
-  image: res/img/nls_2551@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2551@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2552
   name: stadsburg_brugwachter_met_dakkanon_01_04
   asset: nls_2552
-  image: res/img/nls_2552@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2552@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2553
   name: stadsburg_brugwachter_met_dakkanon_01_05
   asset: nls_2553
-  image: res/img/nls_2553@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2553@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2554
   name: stadsburg_brugwachter_met_dakkanon_02_00
   asset: nls_2554
-  image: res/img/nls_2554@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2554@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2555
   name: stadsburg_brugwachter_met_dakkanon_02_01
   asset: nls_2555
-  image: res/img/nls_2555@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2555@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2556
   name: stadsburg_brugwachter_met_dakkanon_02_02
   asset: nls_2556
-  image: res/img/nls_2556@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2556@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2557
   name: stadsburg_brugwachter_met_dakkanon_02_03
   asset: nls_2557
-  image: res/img/nls_2557@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2557@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2558
   name: stadsburg_brugwachter_met_dakkanon_02_04
   asset: nls_2558
-  image: res/img/nls_2558@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2558@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2559
   name: stadsburg_brugwachter_met_dakkanon_02_05
   asset: nls_2559
-  image: res/img/nls_2559@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2559@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2560
   name: stadsburg_brugwachter_met_dakkanon_03_00
   asset: nls_2560
-  image: res/img/nls_2560@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2560@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2561
   name: stadsburg_brugwachter_met_dakkanon_03_01
   asset: nls_2561
-  image: res/img/nls_2561@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2561@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2562
   name: stadsburg_brugwachter_met_dakkanon_03_02
   asset: nls_2562
-  image: res/img/nls_2562@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2562@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2563
   name: stadsburg_brugwachter_met_dakkanon_03_03
   asset: nls_2563
-  image: res/img/nls_2563@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2563@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2564
   name: stadsburg_brugwachter_met_dakkanon_03_04
   asset: nls_2564
-  image: res/img/nls_2564@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2564@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2565
   name: stadsburg_brugwachter_met_dakkanon_03_05
   asset: nls_2565
-  image: res/img/nls_2565@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2565@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2566
   name: stadsburg_brugwachter_met_dakkanon_04_00
   asset: nls_2566
-  image: res/img/nls_2566@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2566@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2567
   name: stadsburg_brugwachter_met_dakkanon_04_01
   asset: nls_2567
-  image: res/img/nls_2567@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2567@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2568
   name: stadsburg_brugwachter_met_dakkanon_04_02
   asset: nls_2568
-  image: res/img/nls_2568@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2568@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2569
   name: stadsburg_brugwachter_met_dakkanon_04_03
   asset: nls_2569
-  image: res/img/nls_2569@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2569@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2570
   name: stadsburg_brugwachter_met_dakkanon_04_04
   asset: nls_2570
-  image: res/img/nls_2570@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2570@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2571
   name: stadsburg_brugwachter_met_dakkanon_04_05
   asset: nls_2571
-  image: res/img/nls_2571@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2571@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2572
   name: stadsburg_brugwachter_met_dakkanon_05_00
   asset: nls_2572
-  image: res/img/nls_2572@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2572@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2573
   name: stadsburg_brugwachter_met_dakkanon_05_01
   asset: nls_2573
-  image: res/img/nls_2573@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2573@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2574
   name: stadsburg_brugwachter_met_dakkanon_05_02
   asset: nls_2574
-  image: res/img/nls_2574@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2574@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2575
@@ -10014,61 +10014,61 @@ tiles:
 - id: 2576
   name: stadsburg_brugwachter_met_dakkanon_05_04
   asset: nls_2576
-  image: res/img/nls_2576@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2576@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2577
   name: stadsburg_brugwachter_met_dakkanon_05_05
   asset: nls_2577
-  image: res/img/nls_2577@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2577@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2578
   name: stadsburg_pakhuis_met_dakkanon_00_01
   asset: nls_2578
-  image: res/img/nls_2578@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2578@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2579
   name: stadsburg_pakhuis_met_dakkanon_00_02
   asset: nls_2579
-  image: res/img/nls_2579@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2579@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2580
   name: stadsburg_pakhuis_met_dakkanon_01_00
   asset: nls_2580
-  image: res/img/nls_2580@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2580@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2581
   name: stadsburg_pakhuis_met_dakkanon_01_01
   asset: nls_2581
-  image: res/img/nls_2581@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2581@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2582
   name: stadsburg_pakhuis_met_dakkanon_01_02
   asset: nls_2582
-  image: res/img/nls_2582@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2582@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2583
   name: stadsburg_pakhuis_met_dakkanon_01_03
   asset: nls_2583
-  image: res/img/nls_2583@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2583@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2584
   name: stadsburg_pakhuis_met_dakkanon_01_04
   asset: nls_2584
-  image: res/img/nls_2584@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2584@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2585
   name: stadsburg_pakhuis_met_dakkanon_01_05
   asset: nls_2585
-  image: res/img/nls_2585@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2585@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2586
@@ -10080,145 +10080,145 @@ tiles:
 - id: 2587
   name: stadsburg_pakhuis_met_dakkanon_01_07
   asset: nls_2587
-  image: res/img/nls_2587@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2587@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2588
   name: stadsburg_pakhuis_met_dakkanon_01_08
   asset: nls_2588
-  image: res/img/nls_2588@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2588@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2589
   name: stadsburg_pakhuis_met_dakkanon_02_00
   asset: nls_2589
-  image: res/img/nls_2589@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2589@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2590
   name: stadsburg_pakhuis_met_dakkanon_02_01
   asset: nls_2590
-  image: res/img/nls_2590@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2590@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2591
   name: stadsburg_pakhuis_met_dakkanon_02_02
   asset: nls_2591
-  image: res/img/nls_2591@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2591@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2592
   name: stadsburg_pakhuis_met_dakkanon_02_03
   asset: nls_2592
-  image: res/img/nls_2592@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2592@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2593
   name: stadsburg_pakhuis_met_dakkanon_02_04
   asset: nls_2593
-  image: res/img/nls_2593@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2593@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2594
   name: stadsburg_pakhuis_met_dakkanon_02_05
   asset: nls_2594
-  image: res/img/nls_2594@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2594@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2595
   name: stadsburg_pakhuis_met_dakkanon_02_06
   asset: nls_2595
-  image: res/img/nls_2595@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2595@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2596
   name: stadsburg_pakhuis_met_dakkanon_02_07
   asset: nls_2596
-  image: res/img/nls_2596@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2596@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2597
   name: stadsburg_pakhuis_met_dakkanon_02_08
   asset: nls_2597
-  image: res/img/nls_2597@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2597@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2598
   name: stadsburg_pakhuis_met_dakkanon_03_00
   asset: nls_2598
-  image: res/img/nls_2598@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2598@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2599
   name: stadsburg_pakhuis_met_dakkanon_03_01
   asset: nls_2599
-  image: res/img/nls_2599@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2599@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2600
   name: stadsburg_pakhuis_met_dakkanon_03_02
   asset: nls_2600
-  image: res/img/nls_2600@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2600@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2601
   name: stadsburg_pakhuis_met_dakkanon_03_03
   asset: nls_2601
-  image: res/img/nls_2601@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2601@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2602
   name: stadsburg_pakhuis_met_dakkanon_03_04
   asset: nls_2602
-  image: res/img/nls_2602@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2602@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2603
   name: stadsburg_pakhuis_met_dakkanon_03_05
   asset: nls_2603
-  image: res/img/nls_2603@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2603@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2604
   name: stadsburg_pakhuis_met_dakkanon_03_06
   asset: nls_2604
-  image: res/img/nls_2604@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2604@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2605
   name: stadsburg_pakhuis_met_dakkanon_03_07
   asset: nls_2605
-  image: res/img/nls_2605@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2605@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2606
   name: stadsburg_pakhuis_met_dakkanon_03_08
   asset: nls_2606
-  image: res/img/nls_2606@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2606@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2607
   name: stadsburg_pakhuis_met_dakkanon_04_00
   asset: nls_2607
-  image: res/img/nls_2607@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2607@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2608
   name: stadsburg_pakhuis_met_dakkanon_04_01
   asset: nls_2608
-  image: res/img/nls_2608@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2608@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2609
   name: stadsburg_pakhuis_met_dakkanon_04_02
   asset: nls_2609
-  image: res/img/nls_2609@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2609@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2610
   name: stadsburg_pakhuis_met_dakkanon_04_03
   asset: nls_2610
-  image: res/img/nls_2610@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2610@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2611
@@ -10230,25 +10230,25 @@ tiles:
 - id: 2612
   name: stadsburg_pakhuis_met_dakkanon_04_05
   asset: nls_2612
-  image: res/img/nls_2612@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2612@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2613
   name: stadsburg_pakhuis_met_dakkanon_04_06
   asset: nls_2613
-  image: res/img/nls_2613@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2613@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2614
   name: stadsburg_pakhuis_met_dakkanon_04_07
   asset: nls_2614
-  image: res/img/nls_2614@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2614@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2615
   name: stadsburg_pakhuis_met_dakkanon_04_08
   asset: nls_2615
-  image: res/img/nls_2615@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2615@atlas=gameplay.png
   category: town
   stage_symbol: '#'
 - id: 2616
@@ -10692,14 +10692,14 @@ tiles:
 - id: 2689
   name: stadsdecor_2479_2689
   asset: nls_2689
-  image: res/img/nls_2689@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2689@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2479
   category: stadsgroen_composite
 - id: 2690
   name: stadsdecor_2480_2690
   asset: nls_2690
-  image: res/img/nls_2690@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2690@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2480
   category: stadsgroen_composite
@@ -10818,14 +10818,14 @@ tiles:
 - id: 2707
   name: stadsdecor_2479_2707
   asset: nls_2707
-  image: res/img/nls_2707@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2707@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2479
   category: stadsgroen_composite
 - id: 2708
   name: stadsdecor_2491_2708
   asset: nls_2708
-  image: res/img/nls_2708@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2708@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2491
   category: stadsgroen_composite
@@ -10965,7 +10965,7 @@ tiles:
 - id: 2728
   name: stadsdecor_2486_2728
   asset: nls_2728
-  image: res/img/nls_2728@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2728@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2486
   category: stadsgroen_composite
@@ -10979,14 +10979,14 @@ tiles:
 - id: 2730
   name: stadsdecor_2488_2730
   asset: nls_2730
-  image: res/img/nls_2730@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2730@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2488
   category: stadsgroen_composite
 - id: 2731
   name: stadsdecor_2490_2731
   asset: nls_2731
-  image: res/img/nls_2731@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2731@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2490
   category: stadsgroen_composite
@@ -11196,7 +11196,7 @@ tiles:
 - id: 2761
   name: stadsdecor_2477_2761
   asset: nls_2761
-  image: res/img/nls_2761@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2761@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2477
   category: stadsgroen_composite
@@ -11231,21 +11231,21 @@ tiles:
 - id: 2766
   name: stadsdecor_2765_2766
   asset: nls_2766
-  image: res/img/nls_2766@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2766@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2765
   category: stadsgroen_composite
 - id: 2767
   name: stadsdecor_2478_2767
   asset: nls_2767
-  image: res/img/nls_2767@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2767@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2478
   category: stadsgroen_composite
 - id: 2768
   name: stadsdecor_2480_2768
   asset: nls_2768
-  image: res/img/nls_2768@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2768@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2480
   category: stadsgroen_composite
@@ -11259,7 +11259,7 @@ tiles:
 - id: 2770
   name: stadsdecor_2485_2770
   asset: nls_2770
-  image: res/img/nls_2770@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2770@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2485
   category: stadsgroen_composite
@@ -11280,42 +11280,42 @@ tiles:
 - id: 2773
   name: stadsdecor_2481_2773
   asset: nls_2773
-  image: res/img/nls_2773@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2773@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2481
   category: stadsgroen_composite
 - id: 2774
   name: stadsdecor_2482_2774
   asset: nls_2774
-  image: res/img/nls_2774@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2774@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2482
   category: stadsgroen_composite
 - id: 2775
   name: stadsdecor_917_2775
   asset: nls_2775
-  image: res/img/nls_2775@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2775@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 917
   category: stadsgroen_composite
 - id: 2776
   name: stadsdecor_916_2776
   asset: nls_2776
-  image: res/img/nls_2776@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2776@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 916
   category: stadsgroen_composite
 - id: 2777
   name: stadsdecor_917_2777
   asset: nls_2777
-  image: res/img/nls_2777@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2777@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 917
   category: stadsgroen_composite
 - id: 2778
   name: stadsdecor_917_2778
   asset: nls_2778
-  image: res/img/nls_2778@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2778@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 917
   category: stadsgroen_composite
@@ -11336,21 +11336,21 @@ tiles:
 - id: 2781
   name: stadsdecor_2485_2781
   asset: nls_2781
-  image: res/img/nls_2781@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2781@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2485
   category: stadsgroen_composite
 - id: 2782
   name: stadsdecor_2485_2782
   asset: nls_2782
-  image: res/img/nls_2782@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2782@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2485
   category: stadsgroen_composite
 - id: 2783
   name: stadsdecor_2486_2783
   asset: nls_2783
-  image: res/img/nls_2783@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2783@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2486
   category: stadsgroen_composite
@@ -11413,14 +11413,14 @@ tiles:
 - id: 2792
   name: stadsdecor_2479_2792
   asset: nls_2792
-  image: res/img/nls_2792@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2792@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2479
   category: stadsgroen_composite
 - id: 2793
   name: stadsdecor_2491_2793
   asset: nls_2793
-  image: res/img/nls_2793@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2793@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2491
   category: stadsgroen_composite
@@ -11672,7 +11672,7 @@ tiles:
 - id: 2829
   name: stadsdecor_2486_2829
   asset: nls_2829
-  image: res/img/nls_2829@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2829@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2486
   category: stadsgroen_composite
@@ -11742,13 +11742,13 @@ tiles:
 - id: 2839
   name: haven_role_53_2526
   asset: nls_2839
-  image: res/img/nls_2839@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2839@atlas=gameplay.png
   stage_symbol: S
   source_tile: 2526
 - id: 2840
   name: haven_role_52_2526
   asset: nls_2840
-  image: res/img/nls_2840@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2840@atlas=gameplay.png
   stage_symbol: R
   source_tile: 2526
 - id: 2841
@@ -11760,7 +11760,7 @@ tiles:
 - id: 2842
   name: haven_role_53_2586
   asset: nls_2842
-  image: res/img/nls_2842@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2842@atlas=gameplay.png
   stage_symbol: S
   source_tile: 2586
 - id: 2843
@@ -11772,7 +11772,7 @@ tiles:
 - id: 2844
   name: haven_role_53_2550
   asset: nls_2844
-  image: res/img/nls_2844@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2844@atlas=gameplay.png
   stage_symbol: S
   source_tile: 2550
 - id: 2845
@@ -11814,13 +11814,13 @@ tiles:
 - id: 2851
   name: sneeuwstruik_00_00
   asset: nls_2851
-  image: authoring/terreintegels/nls_2851@atlas=gameplay.png
+  image: res/img/nls_2851@atlas=gameplay.png
   category: town
   stage_symbol: ' '
 - id: 2852
   name: sneeuwstruik_00_01
   asset: nls_2852
-  image: authoring/terreintegels/nls_2852@atlas=gameplay.png
+  image: res/img/nls_2852@atlas=gameplay.png
   category: town
   stage_symbol: ' '
 - id: 2853
@@ -11940,14 +11940,14 @@ tiles:
 - id: 2871
   name: stadsdecor_2479_2871
   asset: nls_2871
-  image: res/img/nls_2871@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2871@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2479
   category: stadsgroen_composite
 - id: 2872
   name: stadsdecor_2480_2872
   asset: nls_2872
-  image: res/img/nls_2872@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2872@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2480
   category: stadsgroen_composite
@@ -11975,14 +11975,14 @@ tiles:
 - id: 2876
   name: stadsdecor_2481_2876
   asset: nls_2876
-  image: res/img/nls_2876@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2876@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2481
   category: stadsgroen_composite
 - id: 2877
   name: stadsdecor_2482_2877
   asset: nls_2877
-  image: res/img/nls_2877@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2877@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2482
   category: stadsgroen_composite
@@ -12035,3 +12035,578 @@ tiles:
   stage_symbol: '#'
   source_tile: 2883
   category: stadsgroen_composite
+- id: 2885
+  name: stadsdecor_1712_2885
+  asset: nls_2885
+  image: authoring/terreintegels/nls_2885@atlas=gameplay.png
+  stage_symbol: ' '
+  source_tile: 1712
+  category: stadsgroen_composite
+- id: 2886
+  name: stadsdecor_2885_2886
+  asset: nls_2886
+  image: authoring/terreintegels/nls_2886@atlas=gameplay.png
+  stage_symbol: ' '
+  source_tile: 2885
+  category: stadsgroen_composite
+- id: 2887
+  name: stadsdecor_2886_2887
+  asset: nls_2887
+  image: res/img/nls_2887@atlas=gameplay.png
+  stage_symbol: ' '
+  source_tile: 2886
+  category: stadsgroen_composite
+- id: 2888
+  name: stadsdecor_75_2888
+  asset: nls_2888
+  image: res/img/nls_2888@atlas=gameplay.png
+  stage_symbol: ' '
+  source_tile: 75
+  category: stadsgroen_composite
+- id: 2889
+  name: stadsdecor_78_2889
+  asset: nls_2889
+  image: res/img/nls_2889@atlas=gameplay.png
+  stage_symbol: ' '
+  source_tile: 78
+  category: stadsgroen_composite
+- id: 2890
+  name: huis_lijstgevel_smal_01_00
+  asset: nls_2890
+  image: res/img/nls_2890@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2891
+  name: huis_lijstgevel_smal_02_00
+  asset: nls_2891
+  image: res/img/nls_2891@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2892
+  name: huis_lijstgevel_smal_03_01
+  asset: nls_2892
+  image: res/img/nls_2892@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2893
+  name: huis_lijstgevel_smal_04_00
+  asset: nls_2893
+  image: res/img/nls_2893@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2894
+  name: compact_smal_grachtenhuis_00_00
+  asset: nls_2894
+  image: res/img/nls_2894@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2895
+  name: compact_smal_grachtenhuis_00_01
+  asset: nls_2895
+  image: res/img/nls_2895@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2896
+  name: compact_smal_grachtenhuis_01_00
+  asset: nls_2896
+  image: res/img/nls_2896@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2897
+  name: compact_smal_grachtenhuis_01_01
+  asset: nls_2897
+  image: res/img/nls_2897@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2898
+  name: compact_smal_grachtenhuis_02_00
+  asset: nls_2898
+  image: res/img/nls_2898@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2899
+  name: compact_smal_grachtenhuis_02_01
+  asset: nls_2899
+  image: res/img/nls_2899@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2900
+  name: compact_smal_grachtenhuis_03_00
+  asset: nls_2900
+  image: res/img/nls_2900@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2901
+  name: compact_smal_grachtenhuis_03_01
+  asset: nls_2901
+  image: res/img/nls_2901@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2902
+  name: compact_smal_grachtenhuis_04_00
+  asset: nls_2902
+  image: res/img/nls_2902@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2903
+  name: compact_smal_grachtenhuis_04_01
+  asset: nls_2903
+  image: res/img/nls_2903@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2904
+  name: compact_breed_laag_huis_02_00
+  asset: nls_2904
+  image: res/img/nls_2904@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2905
+  name: compact_breed_laag_huis_02_01
+  asset: nls_2905
+  image: res/img/nls_2905@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2906
+  name: compact_breed_laag_huis_02_02
+  asset: nls_2906
+  image: res/img/nls_2906@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2907
+  name: compact_breed_laag_huis_02_03
+  asset: nls_2907
+  image: res/img/nls_2907@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2908
+  name: compact_breed_laag_huis_03_00
+  asset: nls_2908
+  image: res/img/nls_2908@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2909
+  name: compact_breed_laag_huis_03_01
+  asset: nls_2909
+  image: res/img/nls_2909@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2910
+  name: compact_breed_laag_huis_03_02
+  asset: nls_2910
+  image: res/img/nls_2910@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2911
+  name: compact_breed_laag_huis_03_03
+  asset: nls_2911
+  image: res/img/nls_2911@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2912
+  name: compact_breed_laag_huis_04_00
+  asset: nls_2912
+  image: res/img/nls_2912@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2913
+  name: compact_breed_laag_huis_04_01
+  asset: nls_2913
+  image: res/img/nls_2913@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2914
+  name: compact_breed_laag_huis_04_02
+  asset: nls_2914
+  image: res/img/nls_2914@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2915
+  name: compact_breed_laag_huis_04_03
+  asset: nls_2915
+  image: res/img/nls_2915@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2916
+  name: haven_laser_house_01_00
+  asset: nls_2916
+  image: res/img/nls_2916@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2917
+  name: haven_laser_house_01_01
+  asset: nls_2917
+  image: res/img/nls_2917@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2918
+  name: haven_laser_house_01_02
+  asset: nls_2918
+  image: authoring/terreintegels/nls_2918@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2919
+  name: haven_laser_house_01_03
+  asset: nls_2919
+  image: res/img/nls_2919@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2920
+  name: haven_laser_house_02_00
+  asset: nls_2920
+  image: res/img/nls_2920@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2921
+  name: haven_laser_house_02_01
+  asset: nls_2921
+  image: res/img/nls_2921@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2922
+  name: haven_laser_house_02_02
+  asset: nls_2922
+  image: res/img/nls_2922@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2923
+  name: haven_laser_house_02_03
+  asset: nls_2923
+  image: res/img/nls_2923@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2924
+  name: haven_laser_house_03_01
+  asset: nls_2924
+  image: res/img/nls_2924@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2925
+  name: haven_laser_house_03_02
+  asset: nls_2925
+  image: res/img/nls_2925@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2926
+  name: stadsburg_brugwachter_met_dakkanon_00_04
+  asset: nls_2926
+  image: res/img/nls_2926@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2927
+  name: stadsburg_brugwachter_met_dakkanon_01_00
+  asset: nls_2927
+  image: res/img/nls_2927@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2928
+  name: stadsburg_brugwachter_met_dakkanon_01_01
+  asset: nls_2928
+  image: res/img/nls_2928@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2929
+  name: stadsburg_brugwachter_met_dakkanon_01_02
+  asset: nls_2929
+  image: authoring/terreintegels/nls_2929@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2930
+  name: stadsburg_brugwachter_met_dakkanon_01_03
+  asset: nls_2930
+  image: res/img/nls_2930@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2931
+  name: stadsburg_brugwachter_met_dakkanon_01_04
+  asset: nls_2931
+  image: res/img/nls_2931@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2932
+  name: stadsburg_brugwachter_met_dakkanon_01_05
+  asset: nls_2932
+  image: res/img/nls_2932@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2933
+  name: stadsburg_brugwachter_met_dakkanon_02_00
+  asset: nls_2933
+  image: res/img/nls_2933@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2934
+  name: stadsburg_brugwachter_met_dakkanon_02_01
+  asset: nls_2934
+  image: res/img/nls_2934@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2935
+  name: stadsburg_brugwachter_met_dakkanon_02_02
+  asset: nls_2935
+  image: res/img/nls_2935@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2936
+  name: stadsburg_brugwachter_met_dakkanon_02_03
+  asset: nls_2936
+  image: res/img/nls_2936@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2937
+  name: stadsburg_brugwachter_met_dakkanon_02_05
+  asset: nls_2937
+  image: res/img/nls_2937@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2938
+  name: stadsburg_brugwachter_met_dakkanon_03_00
+  asset: nls_2938
+  image: res/img/nls_2938@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2939
+  name: stadsburg_brugwachter_met_dakkanon_03_01
+  asset: nls_2939
+  image: res/img/nls_2939@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2940
+  name: stadsburg_brugwachter_met_dakkanon_04_02
+  asset: nls_2940
+  image: res/img/nls_2940@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2941
+  name: stadsburg_brugwachter_met_dakkanon_04_03
+  asset: nls_2941
+  image: res/img/nls_2941@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2942
+  name: stadsburg_brugwachter_met_dakkanon_05_00
+  asset: nls_2942
+  image: res/img/nls_2942@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2943
+  name: stadsburg_brugwachter_met_dakkanon_05_02
+  asset: nls_2943
+  image: res/img/nls_2943@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2944
+  name: stadsburg_pakhuis_met_dakkanon_00_01
+  asset: nls_2944
+  image: res/img/nls_2944@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2945
+  name: stadsburg_pakhuis_met_dakkanon_00_02
+  asset: nls_2945
+  image: res/img/nls_2945@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2946
+  name: stadsburg_pakhuis_met_dakkanon_00_03
+  asset: nls_2946
+  image: res/img/nls_2946@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2947
+  name: stadsburg_pakhuis_met_dakkanon_01_00
+  asset: nls_2947
+  image: res/img/nls_2947@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2948
+  name: stadsburg_pakhuis_met_dakkanon_01_01
+  asset: nls_2948
+  image: res/img/nls_2948@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2949
+  name: stadsburg_pakhuis_met_dakkanon_01_02
+  asset: nls_2949
+  image: res/img/nls_2949@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2950
+  name: stadsburg_pakhuis_met_dakkanon_01_03
+  asset: nls_2950
+  image: res/img/nls_2950@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2951
+  name: stadsburg_pakhuis_met_dakkanon_01_05
+  asset: nls_2951
+  image: res/img/nls_2951@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2952
+  name: stadsburg_pakhuis_met_dakkanon_01_06
+  asset: nls_2952
+  image: authoring/terreintegels/nls_2952@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2953
+  name: stadsburg_pakhuis_met_dakkanon_01_08
+  asset: nls_2953
+  image: res/img/nls_2953@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2954
+  name: stadsburg_pakhuis_met_dakkanon_02_00
+  asset: nls_2954
+  image: res/img/nls_2954@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2955
+  name: stadsburg_pakhuis_met_dakkanon_02_01
+  asset: nls_2955
+  image: res/img/nls_2955@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2956
+  name: stadsburg_pakhuis_met_dakkanon_02_02
+  asset: nls_2956
+  image: res/img/nls_2956@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2957
+  name: stadsburg_pakhuis_met_dakkanon_02_03
+  asset: nls_2957
+  image: res/img/nls_2957@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2958
+  name: stadsburg_pakhuis_met_dakkanon_02_04
+  asset: nls_2958
+  image: res/img/nls_2958@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2959
+  name: stadsburg_pakhuis_met_dakkanon_02_05
+  asset: nls_2959
+  image: res/img/nls_2959@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2960
+  name: stadsburg_pakhuis_met_dakkanon_02_06
+  asset: nls_2960
+  image: res/img/nls_2960@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2961
+  name: stadsburg_pakhuis_met_dakkanon_02_07
+  asset: nls_2961
+  image: res/img/nls_2961@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2962
+  name: stadsburg_pakhuis_met_dakkanon_02_08
+  asset: nls_2962
+  image: res/img/nls_2962@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2963
+  name: stadsburg_pakhuis_met_dakkanon_03_00
+  asset: nls_2963
+  image: res/img/nls_2963@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2964
+  name: stadsburg_pakhuis_met_dakkanon_03_01
+  asset: nls_2964
+  image: res/img/nls_2964@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2965
+  name: stadsburg_pakhuis_met_dakkanon_03_02
+  asset: nls_2965
+  image: res/img/nls_2965@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2966
+  name: stadsburg_pakhuis_met_dakkanon_03_03
+  asset: nls_2966
+  image: res/img/nls_2966@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2967
+  name: stadsburg_pakhuis_met_dakkanon_03_04
+  asset: nls_2967
+  image: res/img/nls_2967@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2968
+  name: stadsburg_pakhuis_met_dakkanon_03_05
+  asset: nls_2968
+  image: res/img/nls_2968@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2969
+  name: stadsburg_pakhuis_met_dakkanon_03_06
+  asset: nls_2969
+  image: res/img/nls_2969@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2970
+  name: stadsburg_pakhuis_met_dakkanon_03_07
+  asset: nls_2970
+  image: res/img/nls_2970@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2971
+  name: stadsburg_pakhuis_met_dakkanon_03_08
+  asset: nls_2971
+  image: res/img/nls_2971@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2972
+  name: stadsburg_pakhuis_met_dakkanon_04_01
+  asset: nls_2972
+  image: res/img/nls_2972@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2973
+  name: stadsburg_pakhuis_met_dakkanon_04_02
+  asset: nls_2973
+  image: res/img/nls_2973@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2974
+  name: stadsburg_pakhuis_met_dakkanon_04_04
+  asset: nls_2974
+  image: res/img/nls_2974@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2975
+  name: stadsburg_pakhuis_met_dakkanon_04_07
+  asset: nls_2975
+  image: res/img/nls_2975@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2976
+  name: haven_role_53_2918
+  asset: nls_2976
+  image: res/img/nls_2976@atlas=gameplay.png
+  stage_symbol: S
+  source_tile: 2918
+- id: 2977
+  name: haven_role_52_2918
+  asset: nls_2977
+  image: res/img/nls_2977@atlas=gameplay.png
+  stage_symbol: R
+  source_tile: 2918
+- id: 2978
+  name: haven_role_53_2952
+  asset: nls_2978
+  image: res/img/nls_2978@atlas=gameplay.png
+  stage_symbol: S
+  source_tile: 2952
+- id: 2979
+  name: haven_role_53_2929
+  asset: nls_2979
+  image: res/img/nls_2979@atlas=gameplay.png
+  stage_symbol: S
+  source_tile: 2929
