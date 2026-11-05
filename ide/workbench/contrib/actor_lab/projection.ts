@@ -52,7 +52,8 @@ export class ActorProjection {
 			this.scrollAnchor = undefined; this.revealStart = -1;
 			this.activeRows.length = 0;
 			if (input.historical) return worldChanged || changed || wasPresent;
-			input.actorHashId = 0; input.selectionPath = undefined;
+			// rememberSelection publishes the loss after rebuilding the empty outline.
+			input.actorHashId = 0;
 		} else {
 			const name = input.runtime.roots[0].label, definition = guest.formatValue(guest.readStringMember(actor, 'definition_id'));
 			if (this.statusDomain !== input.domain || this.statusName !== name || this.statusDefinition !== definition) {
