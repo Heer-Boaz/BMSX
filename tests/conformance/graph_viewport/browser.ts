@@ -99,14 +99,15 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 		cancelInput() { this.cancelPointerInput(); inputFocus.cancelInput(); },
 		onDidChangeTarget: listener => inputFocus.onDidChangeTarget(listener),
 	};
-	const nativeText = new BrowserTextInput(canvas, editing);
+	const display = new BrowserVideoOutput(canvas, null, 'fit');
+	display.refreshLayout();
+	const nativeText = new BrowserTextInput(canvas, display.geometry, editing);
 	hub.setNativeKeyHandler(nativeText.handleKey);
 	input.setEditingInput(editing);
 	const player = input.getPlayerInput(1);
 	// A reset, non-executing machine supplies real GX output. No ROM packer or cart fixture.
 	const machine = new Machine(new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: [null, null] }, PSX_MACHINE_SPEC.ramBytes), input, PSX_MACHINE_SPEC);
 	machine.resetDevices();
-	const display = new BrowserVideoOutput(canvas, null, 'fit');
 	const presenter = new VideoPresenter(display, backend, WIDTH, HEIGHT);
 	presenter.crt_postprocessing_enabled = false;
 	presenter.default_font = new Font({ variant: 'tiny' });

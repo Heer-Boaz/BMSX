@@ -1,5 +1,6 @@
 import { KeyInputEvent, KeyModifier, type TextInputHost, type TextInputTarget } from '../common/input/text';
 import { BrowserTextInputState } from './text_input_state';
+import type { DisplayGeometry } from '../common/display_geometry';
 
 /** The browser owns text production; the focused canvas control owns edits and history. */
 export class BrowserTextInput {
@@ -16,21 +17,19 @@ export class BrowserTextInput {
 	private caretY = -1;
 	private caretWidth = -1;
 	private caretHeight = -1;
-	private canvasWidth = -1;
-	private canvasHeight = -1;
 	private readonly compositionKeys = new Set<string>();
 	private readonly unsubscribe: () => void;
+	private readonly unbindGeometry: () => void;
 	private readonly ownerDocument: Document;
 	private readonly ownerWindow: Window;
 
-	public constructor(private readonly canvas: HTMLCanvasElement, private readonly host: TextInputHost) {
+	public constructor(canvas: HTMLCanvasElement, private readonly geometry: DisplayGeometry, private readonly host: TextInputHost) {
 		this.ownerDocument = canvas.ownerDocument;
 		this.ownerWindow = this.ownerDocument.defaultView;
 		this.unsubscribe = host.onDidChangeTarget(this.onTargetChanged);
+		this.unbindGeometry = geometry.onDidChange(this.layout);
 		this.ownerWindow.addEventListener('blur', this.onWindowBlur);
 		this.ownerWindow.addEventListener('focus', this.onWindowFocus);
-		this.ownerWindow.addEventListener('resize', this.layout);
-		this.ownerWindow.addEventListener('scroll', this.layout, true);
 		this.refresh();
 	}
 
@@ -73,8 +72,7 @@ export class BrowserTextInput {
 		}
 		if (target !== undefined) {
 			const caret = target.caretRect();
-			if (caret.x !== this.caretX || caret.y !== this.caretY || caret.width !== this.caretWidth || caret.height !== this.caretHeight
-				|| this.canvas.width !== this.canvasWidth || this.canvas.height !== this.canvasHeight) this.position();
+			if (caret.x !== this.caretX || caret.y !== this.caretY || caret.width !== this.caretWidth || caret.height !== this.caretHeight) this.position();
 		}
 	};
 
@@ -84,17 +82,16 @@ export class BrowserTextInput {
 		this.textarea?.focus({ preventScroll: true });
 	}
 
-	/** Canvas/layout owners call this only after actual geometry changes. */
-	public readonly layout = (): void => {
+	/** Transform publication and text revisions reposition the existing native caret. */
+	private readonly layout = (): void => {
 		if (this.textarea !== undefined) this.position();
 	};
 
 	public dispose(): void {
 		this.unsubscribe();
+		this.unbindGeometry();
 		this.ownerWindow.removeEventListener('blur', this.onWindowBlur);
 		this.ownerWindow.removeEventListener('focus', this.onWindowFocus);
-		this.ownerWindow.removeEventListener('resize', this.layout);
-		this.ownerWindow.removeEventListener('scroll', this.layout, true);
 		this.detach();
 	}
 
@@ -152,12 +149,10 @@ export class BrowserTextInput {
 		this.caretY = caret.y;
 		this.caretWidth = caret.width;
 		this.caretHeight = caret.height;
-		this.canvasWidth = this.canvas.width;
-		this.canvasHeight = this.canvas.height;
-		const rect = this.canvas.getBoundingClientRect();
-		const x = rect.left + caret.x * rect.width / this.canvas.width;
-		const y = rect.top + caret.y * rect.height / this.canvas.height;
-		const height = caret.height * rect.height / this.canvas.height;
+		const geometry = this.geometry, rect = geometry.bounds;
+		const x = rect.left + caret.x * rect.width / geometry.targetWidth;
+		const y = rect.top + caret.y * rect.height / geometry.targetHeight;
+		const height = caret.height * rect.height / geometry.targetHeight;
 		const style = this.textarea!.style;
 		if (x !== this.left) { this.left = x; style.left = `${x}px`; }
 		if (y !== this.top) { this.top = y; style.top = `${y}px`; }

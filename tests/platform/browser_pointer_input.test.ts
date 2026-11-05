@@ -7,6 +7,7 @@ test('canvas pointer events own field focus and caret before text input, indepen
 	const fixture = String.raw`import { BrowserInputHub } from './hosts/browser/input';
 import { BrowserHostClock } from './hosts/browser/timing';
 import { BrowserTextInput } from './hosts/browser/text_input';
+import { DisplayGeometry } from './hosts/common/display_geometry';
 import { inputFocus } from './ide/input/focus';
 import { TextField } from './ide/editor/ui/inline/text_field_model';
 import { SingleLineFieldViewport } from './ide/editor/ui/inline/single_line_viewport';
@@ -36,7 +37,9 @@ export function start() {
 	hub.subscribe({ inputButton(device, code, pressed) { if (device === 'pointer:0') deviceButtons.push({ code, pressed }); },
 		inputAxis1() {}, inputAxis2() {}, capturePhysicalKeyHold() {},
 		setSupervisorRequestLine() {}, resetInput() {}, cancelPointerButtons(device, buttons) { deviceCancellations.push(buttons); } });
-	const text = new BrowserTextInput(canvas, host);
+	const geometry = new DisplayGeometry(), bounds = canvas.getBoundingClientRect();
+	geometry.update(bounds.left, bounds.top, bounds.width, bounds.height, canvas.width, canvas.height);
+	const text = new BrowserTextInput(canvas, geometry, host);
 	hub.setNativeKeyHandler(text.handleKey);
 	const events = [];
 	let pointerId = 0;

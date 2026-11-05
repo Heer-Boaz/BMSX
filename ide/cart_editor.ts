@@ -355,6 +355,7 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly presenter: VideoPresenter;
 	private readonly display: WorkbenchDisplay;
 	private readonly unbindPreferences: () => void;
+	private readonly unbindDisplayGeometry: () => void;
 	private readonly input: Input;
 	private readonly clock: HostClock;
 	public readonly clipboard: Clipboard;
@@ -445,6 +446,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.presenter = presenter;
 		this.display = display;
 		this.unbindPreferences = preferences.onDidChange(() => { if (this.isActive) display.workspace.refresh(); });
+		this.unbindDisplayGeometry = display.geometry.onDidChange(() => { if (this.isActive) this.cancelPointerInput(); });
 		this.input = input;
 		this.clock = clock;
 		this.clipboard = clipboard;
@@ -1024,6 +1026,7 @@ export class RuntimeCartEditor implements CartEditor {
 		inputFocus.workbenchScope.retireContext();
 		this.deactivate();
 		this.unbindPreferences();
+		this.unbindDisplayGeometry();
 		this.input.setEditingInput(undefined);
 		this.keybindings.dispose();
 		this.interaction.dispose();
@@ -1224,7 +1227,6 @@ export class RuntimeCartEditor implements CartEditor {
 		const scale = workbenchPixelsPerUnit(availableWidth, this.preferences.uiScale);
 		this.display.workspace.pixelsPerUnit = scale;
 		const width = Math.trunc(availableWidth / scale), height = Math.trunc(availableHeight / scale);
-		this.cancelPointerInput();
 		this.presenter.setFixedRenderTargetSize(width, height);
 		if (width === editorViewState.viewportWidth && height === editorViewState.viewportHeight) return;
 		this.overlayRenderer.setRenderingViewportType(this.presenter, 'viewport');

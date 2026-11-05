@@ -1,10 +1,11 @@
-import type { VideoOutput } from '../../machine/ts/render/video_output';
+import type { VideoOutput, VideoOutputBounds } from '../../machine/ts/render/video_output';
 import { write_rect_bounds, type RectBounds } from '../../machine/ts/common/rect';
 import { GX_GPU_DISPLAY_ASPECT_HEIGHT, GX_GPU_DISPLAY_ASPECT_WIDTH } from 'bmsx/spec/bmsx/model';
 import type { BrowserOnscreenGamepadView } from './onscreen_gamepad_view';
 import { CONTROL_GAP } from './onscreen_gamepad_layout';
 import { WorkspaceDisplay } from '../common/workspace_display';
 import type { PointerCursor } from '../common/input/pointer_event';
+import { DisplayGeometry } from '../common/display_geometry';
 
 export type BrowserScreenFit = 'fit' | 'overscan';
 // An explicit presentation policy, not a claim that carts author safe borders.
@@ -13,9 +14,8 @@ const OVERSCAN_VISIBLE_FRACTION = 0.9;
 /** Visible player bounds, canvas fitting and independent control-overlay layout. */
 export class BrowserVideoOutput implements VideoOutput {
 	public readonly workspace = new WorkspaceDisplay(0, 0, () => this.refreshLayout());
+	public readonly geometry = new DisplayGeometry();
 	private pointerCursor: PointerCursor = 'default';
-	private renderWidth: number;
-	private renderHeight: number;
 	public readonly visibleViewportBounds: RectBounds;
 	private readonly playerSurface: HTMLElement;
 	private readonly controllerViewport: HTMLElement | null;
@@ -24,13 +24,6 @@ export class BrowserVideoOutput implements VideoOutput {
 	private resolutionQuery: MediaQueryList;
 	private layoutAnimationFrameId = 0;
 	private selectedScreenFit: BrowserScreenFit;
-	private readonly layoutListeners = new Set<() => void>();
-	private displayLeft = -1;
-	private displayTop = -1;
-	private displayWidth = -1;
-	private displayHeight = -1;
-	private displayedRenderWidth = -1;
-	private displayedRenderHeight = -1;
 
 	public constructor(
 		private readonly canvas: HTMLCanvasElement,
@@ -38,8 +31,7 @@ export class BrowserVideoOutput implements VideoOutput {
 		screenFit: BrowserScreenFit,
 	) {
 		this.selectedScreenFit = screenFit;
-		this.renderWidth = canvas.width;
-		this.renderHeight = canvas.height;
+		this.geometry.update(0, 0, 0, 0, canvas.width, canvas.height);
 		this.visibleViewportBounds = { left: 0, top: 0, right: canvas.width, bottom: canvas.height };
 		this.playerSurface = canvas.ownerDocument.getElementById('player-surface');
 		this.controllerViewport = controlView ? canvas.ownerDocument.getElementById('controller-viewport') : null;
@@ -52,6 +44,7 @@ export class BrowserVideoOutput implements VideoOutput {
 		this.resizeObserver.observe(this.playerSurface);
 		if (this.controllerViewport) this.resizeObserver.observe(this.controllerViewport);
 		window.addEventListener('resize', this.scheduleLayout);
+		window.addEventListener('scroll', this.scheduleLayout, true);
 		window.addEventListener('orientationchange', this.scheduleLayout);
 		if (this.visualViewport) {
 			this.visualViewport.addEventListener('resize', this.scheduleLayout);
@@ -62,25 +55,19 @@ export class BrowserVideoOutput implements VideoOutput {
 	public setDisplaySize(width: number, height: number): void {
 		// Until the scheduled CSS layout, the existing clip keeps its source
 		// fractions. Publish that region in the new target coordinates now.
-		const widthScale = width / this.renderWidth;
-		const heightScale = height / this.renderHeight;
+		const widthScale = width / this.geometry.targetWidth;
+		const heightScale = height / this.geometry.targetHeight;
 		this.visibleViewportBounds.left *= widthScale;
 		this.visibleViewportBounds.right *= widthScale;
 		this.visibleViewportBounds.top *= heightScale;
 		this.visibleViewportBounds.bottom *= heightScale;
-		this.renderWidth = width;
-		this.renderHeight = height;
+		const bounds = this.geometry.bounds;
+		this.geometry.update(bounds.left, bounds.top, bounds.width, bounds.height, width, height);
 		this.scheduleLayout();
 	}
 
-	public measureDisplay(): DOMRect {
-		return this.canvas.getBoundingClientRect();
-	}
-
-	/** Native overlays consume the completed transform, not the earlier window-resize event. */
-	public onDidLayout(listener: () => void): () => void {
-		this.layoutListeners.add(listener);
-		return () => this.layoutListeners.delete(listener);
+	public measureDisplay(): Readonly<VideoOutputBounds> {
+		return this.geometry.bounds;
 	}
 
 	public setPointerCursor(cursor: PointerCursor): void {
@@ -140,15 +127,16 @@ export class BrowserVideoOutput implements VideoOutput {
 		const height = Math.max(0, (portraitDeckTop === null ? bottom : Math.min(bottom, portraitDeckTop)) - top);
 		this.workspace.layout(width, height);
 		const workspace = this.workspace.active;
-		const presentationHeight = workspace ? this.renderHeight : this.renderWidth * GX_GPU_DISPLAY_ASPECT_HEIGHT / GX_GPU_DISPLAY_ASPECT_WIDTH;
+		const renderWidth = this.geometry.targetWidth, renderHeight = this.geometry.targetHeight;
+		const presentationHeight = workspace ? renderHeight : renderWidth * GX_GPU_DISPLAY_ASPECT_HEIGHT / GX_GPU_DISPLAY_ASPECT_WIDTH;
 		const overscan = !workspace && this.selectedScreenFit === 'overscan';
 		const visibleFraction = overscan ? OVERSCAN_VISIBLE_FRACTION : 1;
 		const dpr = window.devicePixelRatio;
 		// Quantize the presentation in physical display pixels, not UI CSS
 		// units. Source render targets and touch geometry remain unchanged.
-		const scale = workspace ? this.workspace.pixelsPerUnit : Math.trunc(Math.min(width / this.renderWidth, height / presentationHeight)
+		const scale = workspace ? this.workspace.pixelsPerUnit : Math.trunc(Math.min(width / renderWidth, height / presentationHeight)
 			* dpr * 2 / visibleFraction) / (dpr * 2);
-		const displayWidth = this.renderWidth * scale;
+		const displayWidth = renderWidth * scale;
 		const displayHeight = presentationHeight * scale;
 		const displayLeft = left + (width - displayWidth) / 2;
 		const displayTop = portraitDeckTop === null ? top + (height - displayHeight) / 2
@@ -168,18 +156,14 @@ export class BrowserVideoOutput implements VideoOutput {
 			? `inset(${clipTop}px ${clipRight}px ${clipBottom}px ${clipLeft}px)`
 			: 'none';
 		write_rect_bounds(this.visibleViewportBounds,
-			clipLeft / displayWidth * this.renderWidth,
-			clipTop / displayHeight * this.renderHeight,
-			(displayWidth - clipRight) / displayWidth * this.renderWidth,
-			(displayHeight - clipBottom) / displayHeight * this.renderHeight);
-		if (this.displayLeft !== displayLeft || this.displayTop !== displayTop
-			|| this.displayWidth !== displayWidth || this.displayHeight !== displayHeight
-			|| this.displayedRenderWidth !== this.renderWidth || this.displayedRenderHeight !== this.renderHeight) {
-			this.displayLeft = displayLeft; this.displayTop = displayTop;
-			this.displayWidth = displayWidth; this.displayHeight = displayHeight;
-			this.displayedRenderWidth = this.renderWidth; this.displayedRenderHeight = this.renderHeight;
-			for (const listener of this.layoutListeners) listener();
-		}
+			clipLeft / displayWidth * renderWidth,
+			clipTop / displayHeight * renderHeight,
+			(displayWidth - clipRight) / displayWidth * renderWidth,
+			(displayHeight - clipBottom) / displayHeight * renderHeight);
+		// Publish browser-arranged geometry, not the unquantized CSS request. Input
+		// and native text positioning never measure the DOM independently.
+		const bounds = this.canvas.getBoundingClientRect();
+		this.geometry.update(bounds.left, bounds.top, bounds.width, bounds.height, renderWidth, renderHeight);
 	}
 
 	public dispose(): void {
@@ -188,13 +172,14 @@ export class BrowserVideoOutput implements VideoOutput {
 		this.resizeObserver.disconnect();
 		this.resolutionQuery.removeEventListener('change', this.onResolutionChange);
 		window.removeEventListener('resize', this.scheduleLayout);
+		window.removeEventListener('scroll', this.scheduleLayout, true);
 		window.removeEventListener('orientationchange', this.scheduleLayout);
 		if (this.visualViewport) {
 			this.visualViewport.removeEventListener('resize', this.scheduleLayout);
 			this.visualViewport.removeEventListener('scroll', this.scheduleLayout);
 		}
 		this.controlView?.dispose();
-		this.layoutListeners.clear();
+		this.geometry.dispose();
 	}
 
 	private readonly scheduleLayout = (): void => {

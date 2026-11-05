@@ -7,6 +7,7 @@ import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_co
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createLiveStudioFixture } from '../helpers/live_studio';
+import { pointerCapture } from '../../ide/input/pointer/capture';
 
 test('Studio reallocates its own workspace, retaining documents and restoring the unchanged game presentation', async t => {
 	const f = await createLiveStudioFixture(t);
@@ -70,4 +71,34 @@ test('Source caret, selection and context menus keep their document meaning acro
 		assert.ok(group.model.activeTab === input && input.workingCopy === model);
 	}
 	assert.equal(model.buffer.getText(), source); assert.equal(model.dirty, false);
+});
+
+test('a display translation retires the old coordinate-frame gesture without changing source, selection or focus', async t => {
+	const f = await createLiveStudioFixture(t), group = f.editor.editorParts.activeGroup;
+	const resource = f.sources.catalog.luaResources.find(resource => resource.path === 'scenes/text.lua')!;
+	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource);
+	const input = new CodeEditorInput(model); group.openEditor(input); group.focus(); f.editor.update(0);
+	const pane = group.panes.activePane!; assert.ok(pane instanceof CodeEditorPane);
+	const bounds = create_rect_bounds(), geometry = f.display.geometry;
+	const pointer = (column: number) => {
+		resolveTextPositionBounds(pane.code, 0, column, bounds);
+		return { type: 'pointer' as const, x: geometry.bounds.left + bounds.left + (bounds.right - bounds.left) * 0.25,
+			y: geometry.bounds.top + (bounds.top + bounds.bottom) / 2 };
+	};
+	f.native.apply([pointer(6), { type: 'button', button: 'primary', down: true }]);
+	assert.equal(pointerCapture.active, true);
+	const width = geometry.targetWidth, height = geometry.targetHeight;
+	geometry.update(0, 0, width, height, width, height);
+	assert.equal(pointerCapture.active, true, 'unchanged publication cannot interrupt a live gesture');
+	const column = input.context.view.cursorColumn, anchor = { ...input.context.view.selectionAnchor! }, source = model.buffer.getText();
+	geometry.update(40, 25, width, height, width, height);
+	assert.equal(pointerCapture.active, false);
+	f.native.apply([pointer(11), { type: 'button', button: 'primary', down: false }]);
+	assert.equal(pointerCapture.draining, false);
+	assert.equal(input.context.view.cursorColumn, column); assert.deepEqual(input.context.view.selectionAnchor, anchor);
+	assert.equal(pane.commandTarget.hasFocus, true); assert.equal(model.buffer.getText(), source); assert.equal(model.dirty, false);
+	// A different start location begins a drag rather than a double-click on the original word.
+	f.native.apply([pointer(1), { type: 'button', button: 'primary', down: true }, pointer(11), { type: 'button', button: 'primary', down: false }]);
+	assert.equal(input.context.view.cursorColumn, 11);
+	assert.deepEqual(input.context.view.selectionAnchor, { row: 0, column: 1 });
 });

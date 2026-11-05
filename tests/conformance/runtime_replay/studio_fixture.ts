@@ -80,6 +80,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const runtime = initializeMachineRuntime(bios, [cart, null], PSX_MACHINE_SPEC, input);
 	const display = new BrowserVideoOutput(canvas, null, 'fit');
 	const presenter = initializeMachineVideoPresenter(runtime, display, backend);
+	display.refreshLayout();
 	presenter.crt_postprocessing_enabled = false;
 	let puller: AudioOutputPuller | null = null;
 	const observations = { hostFrames: 0, audioFrames: 0, suspended: false, expectedFaultSequence: 0 };
@@ -111,7 +112,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		event => ide.editor.dispatchPointer(event), event => ide.editor.dispatchWheel(event));
 	let textInput: BrowserTextInput | undefined;
 	if (browserInput !== undefined) {
-		textInput = new BrowserTextInput(canvas, ide.editor);
+		textInput = new BrowserTextInput(canvas, display.geometry, ide.editor);
 		browserClipboard!.bindInput(browserInput, () => ide.editor.clipboardTarget, reportClipboardFailure);
 		browserInput.setKeyboardCapture(input.shouldCaptureKey);
 		browserInput.setNativeKeyHandler(textInput.handleKey);
@@ -194,13 +195,13 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		// Like Playwright's stable-position actionability check, resolve pointer
 		// coordinates after browser layout, not just our accelerated machine tick.
 		// BrowserVideoOutput can still have a canvas resize queued on rAF.
-		let previous = display.measureDisplay();
+		let previous = { ...display.measureDisplay() };
 		for (;;) {
 			await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
 			const current = display.measureDisplay();
-			if (current.x === previous.x && current.y === previous.y && current.width === previous.width && current.height === previous.height) break;
-			console.info(`STUDIO: pointer waits for canvas layout ${previous.x},${previous.y} ${previous.width}x${previous.height} -> ${current.x},${current.y} ${current.width}x${current.height}`);
-			previous = current;
+			if (current.left === previous.left && current.top === previous.top && current.width === previous.width && current.height === previous.height) break;
+			console.info(`STUDIO: pointer waits for canvas layout ${previous.left},${previous.top} ${previous.width}x${previous.height} -> ${current.left},${current.top} ${current.width}x${current.height}`);
+			previous = { ...current };
 		}
 		// A stable canvas is not a stable canvas-rendered target. For example,
 		// expiry of the status message moves a pane's action bar by one row.

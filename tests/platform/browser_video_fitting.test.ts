@@ -528,11 +528,10 @@ test('native text composition follows the published canvas transform even when l
 			setSelection() {}, replaceText(from: number, to: number, value: string) {
 				text = text.slice(0, from) + value + text.slice(to); edits.push(value); target.revision++; return true;
 			} };
-		const input = new api.BrowserTextInput(canvas, { textTarget: target, dispatchKey() { return false; },
+		const input = new api.BrowserTextInput(canvas, probe.video.geometry, { textTarget: target, dispatchKey() { return false; },
 			cancelInput() {}, cancelPointerInput() {}, onDidChangeTarget() { return () => {}; } });
-		const unbind = probe.video.onDidLayout(input.layout);
 		(globalThis as any).nativeTransform = { input, caret, edits, textarea: document.querySelector('textarea'),
-			dispose() { unbind(); input.dispose(); probe.dispose(); } };
+			dispose() { input.dispose(); probe.dispose(); } };
 	});
 	try {
 		await settle(page);
@@ -559,5 +558,29 @@ test('native text composition follows the published canvas transform even when l
 		assert.equal(anchor.pending, '日本'); assert.deepEqual(anchor.edits, []);
 		await cdp.send('Input.insertText', { text: '日本' });
 		assert.deepEqual(await page.evaluate(() => (globalThis as any).nativeTransform.edits), ['日本']);
+		const translated = await page.evaluate(() => {
+			const context = (globalThis as any).nativeTransform, probe = (globalThis as any).videoProbe;
+			const canvas = document.getElementById('gamescreen') as HTMLCanvasElement, measureCanvas = canvas.getBoundingClientRect.bind(canvas);
+			const published = probe.video.measureDisplay();
+			let reads = 0;
+			canvas.getBoundingClientRect = () => { reads++; return measureCanvas(); };
+			canvas.style.transform = 'translate(17.25px, 9.5px)';
+			probe.video.refreshLayout();
+			for (let i = 0; i < 10; i++) { context.input.refresh(); probe.video.measureDisplay(); }
+			const actual = measureCanvas(), caret = context.caret, textarea = context.textarea.getBoundingClientRect();
+			const point = { x: 0, y: 0 }, api = (globalThis as any).videoFixture;
+			api.mapDisplayPointToViewport(probe.video.measureDisplay(), canvas.width, canvas.height,
+				actual.left + actual.width / 2, actual.top + actual.height / 2, point);
+			canvas.getBoundingClientRect = measureCanvas;
+			return { reads, retained: published === probe.video.measureDisplay(),
+				anchor: [textarea.left, textarea.top], expected: [actual.left + caret.x * actual.width / canvas.width,
+					actual.top + caret.y * actual.height / canvas.height], point, midpoint: { x: canvas.width / 2, y: canvas.height / 2 },
+				focused: document.activeElement === context.textarea, edits: context.edits };
+		});
+		assert.equal(translated.reads, 1, 'only the output measures canvas geometry; native text and pointer consumers read the retained publication');
+		assert.equal(translated.retained, true);
+		assert.deepEqual(translated.point, translated.midpoint);
+		for (let axis = 0; axis < 2; axis++) assert.ok(Math.abs(translated.anchor[axis] - translated.expected[axis]) < cssTolerance);
+		assert.equal(translated.focused, true); assert.deepEqual(translated.edits, ['日本']);
 	} finally { await page.evaluate(() => (globalThis as any).nativeTransform.dispose()); await page.close(); }
 });

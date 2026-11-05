@@ -68,7 +68,9 @@ test('native text input stays ordered independently of render/input polling', as
 			publishButton(...args);
 		};
 		const snapshot = api.createInputControllerSnapshot();
-		const input = new api.BrowserTextInput(canvas, host);
+		const geometry = new api.DisplayGeometry(), bounds = canvas.getBoundingClientRect();
+		geometry.update(bounds.left, bounds.top, bounds.width, bounds.height, canvas.width, canvas.height);
+		const input = new api.BrowserTextInput(canvas, geometry, host);
 		hub.setNativeKeyHandler(input.handleKey);
 		const clipboard = new api.BrowserClipboard();
 		clipboard.bindInput(hub, () => blocked || target === undefined ? undefined : {
@@ -122,6 +124,7 @@ test('native text input stays ordered independently of render/input polling', as
 }`;
 	const bundle = await build({
 		stdin: { contents: `export { BrowserTextInput } from './hosts/browser/text_input';
+export { DisplayGeometry } from './hosts/common/display_geometry';
 export { BrowserInputHub } from './hosts/browser/input';
 export { BrowserClipboard } from './hosts/browser/clipboard';
 export { BrowserHostClock } from './hosts/browser/timing';
