@@ -75,10 +75,10 @@ Wharf stairs descend 16 pixels to their lower walking surface. Measure these
 details against visible ground, since the bottom prefab tile can contain quay
 masonry or a submerged foot. Building, water and tree-root anchors are retained
 when their canvases shrink. The native S/R markers identify the centre and
-foot line of each rooftop weapon. Its 24×16 canvas is centred on that point,
-with a 20-pixel support footprint, a matching body collider and a centred laser
-or smoke outlet. The 16×8 roof wreck keeps the same foot line. Ceiling cannons
-retain their separate 32×24 geometry and 24×16 wreck. The terrain spans,
+foot line of each rooftop weapon. Roof weapons retain their original 32×24
+artwork and body colliders, centred on that point with a centred laser or smoke
+outlet. Their original 24×16 wreck keeps the same foot line. Ceiling cannons
+also retain their 32×24 geometry and 24×16 wreck. The terrain spans,
 industrial bridges/winches and other combat sprites retain their established
 dimensions. The side camera, long approach and departure, and broad open-water
 sections stay fixed.
@@ -124,9 +124,6 @@ regenerating the three editable source PNGs from their authored pixel geometry.
 Normal level builds consume those PNGs directly, including any subsequent
 hand edits. The composed level and the separate backdrop are available under
 `previews/level_achtergrond_native.png` and `previews/achtergrond_native.png`.
-`draw_dakgeschut.py` similarly regenerates the native roof-weapon poses and
-small roof wreck from their shared pixel geometry; the cartridge build consumes
-their checked-in PNGs directly.
 
 The Python dependencies are pinned for reproducible resource bytes.
 Preview images and check reports are generated locally and ignored by Git.

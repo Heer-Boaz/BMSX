@@ -23,8 +23,8 @@ local expected_actor_counts<const> = {
 }
 
 local expected_first_spawns<const> = {
-	[ids_schoorsteen_foe_def] = { column = 394, x = 244, y = 104 },
-	[ids_rook_generator_def] = { column = 424, x = 236, y = 96 },
+	[ids_schoorsteen_foe_def] = { column = 394, x = 240, y = 96 },
+	[ids_rook_generator_def] = { column = 424, x = 232, y = 88 },
 	[ids_zak_foe_def] = { column = 183, x = 248, y = 104 },
 	[ids_havengeschut_def] = { column = 172, x = 248, y = 104 },
 	[ids_kadekanon_def] = { column = 488, x = 244, y = 24 },
