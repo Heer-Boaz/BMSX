@@ -65,7 +65,7 @@ for (const mode of ['2d', '3d'] as const) test(`live ${mode} viewport right clic
 	assert.equal(input.actorHashId, f.second.hashId); assert.equal(editor.contextMenu.visible, true);
 	assert.equal(editor.actorLab.selected(input)?.kind, 'actor');
 	assert.deepEqual(editor.contextMenu.model.rows.filter(row => row.command !== undefined).map(row => row.command), [
-		'sceneViewport.frameSelection', 'actorLab.details', 'actorLab.outline', 'actorLab.editScene', 'actorLab.actions', 'actorLab.call', 'actorLab.emit',
+		'sceneViewport.frameSelection', 'actorLab.details', 'actorLab.outline', 'actorLab.find', 'actorLab.editScene', 'actorLab.actions', 'actorLab.call', 'actorLab.emit',
 	], 'a rendered actor owns the same operations as its World row, not camera navigation or component actions');
 	assert.deepEqual(input.worldView.camera.capture(), camera);
 	assert.equal(f.execution.paused, true, 'inspection does not alter transport intent');
@@ -146,7 +146,8 @@ for (const origin of ['viewport', 'outliner'] as const) test(`disposing the sele
 	assert.equal(f.editor.contextMenu.visible, false); assert.equal(f.execution.paused, false);
 });
 
-for (const replacement of ['selection', 'pane'] as const) test(`viewport actor menu cannot outlive reentrant ${replacement} replacement`, async t => {
+for (const origin of ['viewport', 'outliner'] as const) for (const replacement of ['selection', 'pane'] as const)
+test(`${origin} actor menu cannot outlive reentrant ${replacement} replacement`, async t => {
 	const f = await fixture(t); let replaced = false;
 	const release = f.input.onDidChangeSelection(() => {
 		release(); replaced = true;
@@ -154,7 +155,13 @@ for (const replacement of ['selection', 'pane'] as const) test(`viewport actor m
 		else f.part.activeGroup.openEditor(new HomeInput(null));
 	});
 	afterTest(t, release);
-	openAtVisual(f);
+	if (origin === 'viewport') openAtVisual(f);
+	else {
+		const tree = f.input.worldOutliner.tree, index = tree.rows.findIndex(row => row.element.hashId === f.second.hashId);
+		const x = tree.layout.contentLeft + (tree.rows[index].depth + 2) * tree.layout.indentWidth;
+		const y = tree.layout.contentTop + (index - tree.scroll + 0.5) * tree.layout.rowHeight;
+		f.native.apply([{ type: 'pointer', x, y }, { type: 'button', button: 'secondary', down: true }, { type: 'button', button: 'secondary', down: false }]);
+	}
 	assert.equal(replaced, true); assert.equal(f.editor.contextMenu.visible, false);
 	if (replacement === 'selection') assert.equal(f.input.actorHashId, f.first.hashId);
 });

@@ -3,6 +3,7 @@ import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
 import * as colors from '../../../common/constants';
 import type { EditorCommandRunner } from '../../../common/commands';
+import type { ResourceDomain } from '../../../common/resource';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { inputFocus, type InputFocusTarget } from '../../../input/focus';
@@ -24,7 +25,8 @@ export class ActorOutlinerControl {
 	private readonly unbindKeyboard: () => void;
 	private readonly clicks = new PointerClickSequence<object>();
 	public constructor(private readonly parent: InputFocusTarget, private readonly commands: EditorCommandRunner,
-		private readonly changed: () => void, private readonly contextMenu: (x: number, y: number, keyboard: boolean) => void) {
+		private readonly changed: () => void,
+		private readonly contextMenu: (x: number, y: number, domain: ResourceDomain, hashId: number, keyboard: boolean) => void) {
 		this.focusTarget = inputFocus.createTarget(parent);
 		this.focusTarget.commandContext = parent;
 		this.focusTarget.canFocus = () => this.input?.presentation === 'world';
@@ -36,9 +38,9 @@ export class ActorOutlinerControl {
 	public clearInput(): void { this.scrollbar.cancelPointer(); this.input = undefined; this.clicks.clear(); }
 	public dispose(): void { this.clearInput(); this.unbindKeyboard(); }
 	public openContextMenu(): void {
-		this.select();
-		const tree = this.input!.worldOutliner.tree;
-		this.contextMenu(tree.layout.contentLeft, tree.layout.contentTop + (tree.selectionIndex - (tree.scroll | 0) + 1) * tree.layout.rowHeight, true);
+		const input = this.input!, tree = input.worldOutliner.tree, row = tree.rows[tree.selectionIndex];
+		this.contextMenu(tree.layout.contentLeft, tree.layout.contentTop + (tree.selectionIndex - (tree.scroll | 0) + 1) * tree.layout.rowHeight,
+			input.domain, row.element.hashId, true);
 	}
 	private select(): void {
 		const input = this.input!, row = input.worldOutliner.tree.rows[input.worldOutliner.tree.selectionIndex];
@@ -72,9 +74,10 @@ export class ActorOutlinerControl {
 			// and viewport highlight survive a collapsed ancestor, as in UE's Outliner.
 			this.clicks.clear(); this.changed(); return true;
 		}
-		tree.selectionIndex = index; this.select();
-		if (secondary) { this.clicks.clear(); this.contextMenu(snapshot.viewportX, snapshot.viewportY, false); }
+		tree.selectionIndex = index;
+		if (secondary) { this.clicks.clear(); this.contextMenu(snapshot.viewportX, snapshot.viewportY, input.domain, row.element.hashId, false); }
 		else {
+			this.select();
 			const twice = this.clicks.click(row, snapshot.viewportX, snapshot.viewportY, now);
 			if (twice) this.commands.execute('sceneViewport.frameSelection', this.parent);
 		}

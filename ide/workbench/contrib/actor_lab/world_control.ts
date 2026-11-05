@@ -1,7 +1,7 @@
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import type { EditorCommandId, EditorCommandRunner } from '../../../common/commands';
-import type { DisposableStore } from '../../../common/lifecycle';
+import type { ResourceDomain } from '../../../common/resource';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import { editorRuntimeState } from '../../../editor/common/runtime_state';
 import { inputFocus, type InputFocusTarget } from '../../../input/focus';
@@ -12,7 +12,6 @@ import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import type { ActorLabInput } from './editor_input';
 import { ACTOR_VIEWPORT_CAMERA, ACTOR_VIEWPORT_VIEWS } from './viewport_menus';
-import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 
 /** Input admission belongs to the live viewport, not global IDE shortcuts or the
  * game recipient. Camera gestures capture/release through ordinary UI ownership. */
@@ -21,13 +20,13 @@ export class ActorWorldControl {
 	public readonly actions: WorkbenchActionBarControl;
 	private input: ActorLabInput | undefined;
 	public readonly navigation: WorkbenchViewportNavigation;
-	private popup: DisposableStore | undefined;
 	private readonly commands: EditorCommandId[] = [];
 	private readonly unbindKeyboard: () => void;
 	public constructor(private readonly parent: InputFocusTarget, private readonly runner: EditorCommandRunner, private readonly menus: ContextMenuController,
-		private readonly changed: () => void) {
+		private readonly changed: () => void,
+		private readonly actorContextMenu: (x: number, y: number, domain: ResourceDomain, hashId: number, keyboard: boolean) => void) {
 		this.focusTarget = inputFocus.createTarget(parent); this.focusTarget.commandContext = parent;
-		this.focusTarget.canFocus = () => this.input !== undefined && this.input.layout.previewVisible && this.input.worldView.mode !== 'game';
+		this.focusTarget.canFocus = () => this.input !== undefined && this.input.layout.previewVisible;
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, runner, this.focusTarget, () => this.focusTarget.focus(), menus);
 		this.navigation = new WorkbenchViewportNavigation(inputFocus, pointerCapture, this.focusTarget, () => {
 			const input = this.input!; input.worldView.refresh(input.previewBounds, input.domain, input.actorHashId);
@@ -60,11 +59,7 @@ export class ActorWorldControl {
 					const actions = this.input!.viewportActions, item = actions.items.find(item => item.command === id)!;
 					const bounds = item.overflowed ? actions.overflow!.button.bounds : item.bounds;
 					menus.show(bounds.left, bounds.bottom, id === 'actorLab.viewOptions' ? ACTOR_VIEWPORT_VIEWS : ACTOR_VIEWPORT_CAMERA,
-						runner, { placement: 'below', selectFirst: true, invocationOrigin: this.actions.focusTarget, commandTarget: parent,
-							onWillShow: lifetime => {
-								this.popup = lifetime;
-								lifetime.add({ dispose: () => { if (this.popup === lifetime) this.popup = undefined; } });
-							} });
+						runner, { placement: 'below', selectFirst: true, invocationOrigin: this.actions.focusTarget, commandTarget: parent });
 				},
 			}); this.commands.push(id);
 		}
@@ -75,7 +70,7 @@ export class ActorWorldControl {
 		});
 	}
 	private openContextMenu(x: number, y: number, keyboard = false): void {
-		const input = this.input!, generation = this.focusTarget.scope.contextGeneration;
+		const input = this.input!;
 		let domain = input.domain, hashId = input.actorHashId;
 		if (keyboard) {
 			if (!input.actorPresent) { this.openCameraMenu(x, y, true); return; }
@@ -84,31 +79,11 @@ export class ActorWorldControl {
 			if (actor === undefined) { this.openCameraMenu(x, y); return; }
 			domain = actor.domain; hashId = actor.hashId;
 		}
-		if (input.controller.rewind.seeking) return;
-		// Retain only the displayed scalar identity. Inspection admits the live
-		// actor root, not a component that happened to be selected in its outline.
-		input.controller.inspectActor(input, domain, hashId);
-		if (this.input !== input || this.focusTarget.scope.contextGeneration !== generation) return;
-		this.changed();
-		if (this.input !== input || this.focusTarget.scope.contextGeneration !== generation || inputFocus.admittedTarget !== this.focusTarget
-			|| !input.actorPresent || input.domain !== domain || input.actorHashId !== hashId) return;
-		this.menus.show(x, y, WORKBENCH_MENUS['actorLab.world.context'], this.runner, {
-			invocationOrigin: this.focusTarget, returnFocus: this.focusTarget, commandTarget: this.focusTarget, selectFirst: keyboard,
-			onWillShow: lifetime => {
-				this.popup = lifetime;
-				lifetime.add({ dispose: () => { if (this.popup === lifetime) this.popup = undefined; } });
-				lifetime.add({ dispose: input.onDidChangeSelection(() => this.menus.hide()) });
-				lifetime.add({ dispose: input.controller.guest.onDidInvalidate(reason => { if (reason !== 'execution') this.menus.hide(); }) });
-			},
-		});
+		this.actorContextMenu(x, y, domain, hashId, keyboard);
 	}
 	private openCameraMenu(x: number, y: number, keyboard = false): void {
 		this.menus.show(x, y, ACTOR_VIEWPORT_CAMERA, this.runner, {
 			invocationOrigin: this.focusTarget, returnFocus: this.focusTarget, commandTarget: this.parent, selectFirst: keyboard,
-			onWillShow: lifetime => {
-				this.popup = lifetime;
-				lifetime.add({ dispose: () => { if (this.popup === lifetime) this.popup = undefined; } });
-			},
 		});
 	}
 	public setInput(input: ActorLabInput): void {
@@ -119,7 +94,8 @@ export class ActorWorldControl {
 		const input = this.input!, view = input.worldView;
 		if (input.layout.previewVisible && view.mode !== 'game') this.navigation.setInput(view, input.previewBounds);
 		else this.navigation.clearInput();
-		if (!input.layout.previewVisible && this.popup !== undefined) this.menus.hide();
+		if (!input.layout.previewVisible && this.menus.visible
+			&& (this.menus.invocationOrigin === this.focusTarget || this.menus.invocationOrigin === this.actions.focusTarget)) this.menus.hide();
 		for (const item of input.viewportActions.items) item.checked = item.command === 'actorLab.cameraOptions' && view.mode !== 'game' && view.navigationTool !== 'select';
 		this.actions.update();
 	}
@@ -149,7 +125,7 @@ export class ActorWorldControl {
 	}
 	public clearInput(): void {
 		this.navigation.clearInput();
-		if (this.popup !== undefined) this.menus.hide();
+		if (this.menus.visible && (this.menus.invocationOrigin === this.focusTarget || this.menus.invocationOrigin === this.actions.focusTarget)) this.menus.hide();
 		this.input = undefined; this.actions.clearInput();
 	}
 	public dispose(): void { this.clearInput(); this.navigation.dispose(); this.actions.dispose(); this.unbindKeyboard(); this.focusTarget.unregisterCommand('contextMenu');

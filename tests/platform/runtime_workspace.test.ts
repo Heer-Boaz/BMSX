@@ -97,18 +97,38 @@ test('Space toggles the inspected runtime without repeating or stealing captured
 	assert.equal(f.execution.paused, false, 'guest Space stays owned by the game');
 });
 
-test('viewport actor menus preserve deep inspection and address the clicked actor rather than its inspected member', async t => {
+for (const mode of ['game', '2d', '3d', 'outliner'] as const) test(`${mode} actor menus preserve deep inspection and address the clicked actor rather than its inspected member`, async t => {
 	const f = await fixture(t), { input, controller, editor, pane } = f;
 	editor.commands.execute('runtime.resume', pane.commandTarget);
-	await f.until(() => controller.renderFrames.displayed.world.canvas.length > 0);
+	await f.until(() => [...controller.renderFrames.displayed.quads].some(quad => quad.hashId === input.actorHashId));
 	editor.commands.execute('runtime.pause', pane.commandTarget); editor.update(0);
 	const actor = input.runtime.roots[0], timeline = actor.children.flatMap(node => node.children).find(node => node.kind === 'timeline')!;
 	controller.projection.reveal(timeline); editor.update(0);
 	const path = input.selectionPath;
-	editor.commands.execute('sceneViewport.view2d', pane.commandTarget); editor.update(0);
-	const visual = input.worldView.canvas.items.find(item => item.source.entry.hashId === input.actorHashId)!;
-	assert.ok(visual);
-	f.native.apply([{ type: 'pointer', x: visual.x + (visual.xx + visual.yx) / 2, y: visual.y + (visual.xy + visual.yy) / 2 },
+	if (mode === 'outliner') controller.openWorld(input);
+	else editor.commands.execute(mode === 'game' ? 'actorLab.gameView' : mode === '2d' ? 'sceneViewport.view2d' : 'sceneViewport.view3d', pane.commandTarget);
+	editor.update(0);
+	let x: number, y: number;
+	if (mode === 'outliner') {
+		const tree = input.worldOutliner.tree, index = tree.rows.findIndex(row => row.element.hashId === actor.hashId);
+		x = tree.layout.contentLeft + (tree.rows[index].depth + 2) * tree.layout.indentWidth;
+		y = tree.layout.contentTop + (index - tree.scroll + 0.5) * tree.layout.rowHeight;
+	} else if (mode === 'game') {
+		const frame = controller.viewportPicker.frame, b = input.previewBounds;
+		const quad = [...frame.quads].find(quad => quad.hashId === input.actorHashId)!;
+		assert.ok(quad);
+		x = b.left + (quad.ox + frame.offsetX + (quad.ax + quad.bx) / 2) * (b.right - b.left) / frame.width;
+		y = b.top + (quad.oy + frame.offsetY + (quad.ay + quad.by) / 2) * (b.bottom - b.top) / frame.height;
+	} else {
+		const visual = input.worldView.canvas.items.find(item => item.source.entry.hashId === input.actorHashId)!;
+		assert.ok(visual);
+		const view = input.worldView, a = visual.affine, lx = visual.offsetX + visual.width / 2, ly = visual.offsetY + visual.height / 2;
+		const wx = a.ox + a.xx * lx + a.yx * ly, wy = (a.oy + a.xy * lx + a.yy * ly) * (mode === '3d' ? -1 : 1);
+		x = (view.bounds.left + view.bounds.right) / 2 + view.camera.projectX(wx, wy, 0);
+		y = (view.bounds.top + view.bounds.bottom) / 2 + view.camera.projectY(wx, wy, 0);
+		assert.equal(view.pick(x, y)?.hashId, input.actorHashId);
+	}
+	f.native.apply([{ type: 'pointer', x, y },
 		{ type: 'button', button: 'secondary', down: true }, { type: 'button', button: 'secondary', down: false }]);
 	assert.equal(editor.contextMenu.visible, true);
 	assert.ok(input.selectionPath === path && controller.inspected(input) === timeline);
@@ -125,7 +145,14 @@ test('viewport actor menus preserve deep inspection and address the clicked acto
 	assert.equal(call.mock.callCount(), 1);
 	assert.ok(call.mock.calls[0].arguments[1] === actor, 'the menu subject is the actor, not the retained timeline');
 	assert.ok(input.selectionPath === path);
-	editor.quickInput.hide(); editor.contextMenu.hide();
+	assert.ok(inputFocus.admittedTarget?.textInput, 'Call Method opens the actual scoped argument picker');
+	f.key('Escape'); f.key('Escape', false);
+	const origin = inputFocus.admittedTarget;
+	f.key('ContextMenu'); f.key('ContextMenu', false);
+	assert.equal(editor.contextMenu.visible, true, 'keyboard context retains the same native actor surface');
+	f.key('Escape'); f.key('Escape', false);
+	assert.ok(inputFocus.admittedTarget === origin);
+	assert.equal(controller.inspected(input)?.hashId, timeline.hashId);
 });
 
 test('Space is not a transport shortcut in a text draft or an active camera gesture', async t => {
@@ -143,4 +170,27 @@ test('Space is not a transport shortcut in a text draft or an active camera gest
 	key('Space'); key('Space', false);
 	assert.equal(f.execution.paused, true);
 	f.native.apply([{ type: 'button', button: 'aux', down: false }]);
+});
+
+for (const kind of ['actor', 'timeline'] as const) test(`${kind} outline menu owns its actual row, not the other inspection level`, async t => {
+	const { input, controller, editor, pane, key, native } = await fixture(t);
+	const actor = input.runtime.roots[0], node = kind === 'actor' ? actor : actor.children.flatMap(node => node.children).find(node => node.kind === kind)!;
+	controller.projection.reveal(node); editor.update(0);
+	const tree = input.outline, index = tree.selectionIndex;
+	const x = tree.layout.contentLeft + (tree.rows[index].depth + 2) * tree.layout.indentWidth;
+	const y = tree.layout.contentTop + (index - tree.scroll + 0.5) * tree.layout.rowHeight;
+	native.apply([{ type: 'pointer', x, y }, { type: 'button', button: 'secondary', down: true }, { type: 'button', button: 'secondary', down: false }]);
+	assert.equal(editor.contextMenu.visible, true);
+	for (const command of ['actorLab.emit', 'actorLab.editScene', 'actorLab.find'] as const)
+		assert.equal(editor.contextMenu.model.rows.some(row => row.command === command), kind === 'actor', 'actor operations belong only to the actor row');
+	const call = t.mock.method(pane.actorActions, 'callMethod'), callIndex = editor.contextMenu.model.rows.findIndex(row => row.command === 'actorLab.call');
+	assert.ok(callIndex >= 0 && editor.contextMenu.model.rows[callIndex].enabled);
+	key('Home'); key('Home', false);
+	for (let step = 0; step < editor.contextMenu.model.rows.length && editor.contextMenu.model.selectedIndex !== callIndex; step++) {
+		key('ArrowDown'); key('ArrowDown', false);
+	}
+	key('Enter'); key('Enter', false);
+	assert.equal(call.mock.callCount(), 1);
+	assert.ok(call.mock.calls[0].arguments[1] === node);
+	key('Escape'); key('Escape', false);
 });

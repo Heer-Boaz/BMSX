@@ -50,6 +50,7 @@ import type { ActorStateGraph } from './state_graph';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import type { ActorLabNavigationSelection } from './navigation_selection';
 import type { ActorViewportHit } from './viewport_pick';
+import type { ResourceDomain } from '../../../common/resource';
 import { actorActions } from './operations';
 import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
@@ -93,7 +94,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	public inspector!: WorkbenchPropertyInspector<ActorDetailsProperty>;
 	public detailsWindow!: WorkbenchFloatingWindow;
 	private readonly graph = new WorkbenchGraphControl(inputFocus, pointerCapture, pointerHover, player => this.handleGraphKeyboard(player), this.focusTarget,
-		(x, y) => { if (this.acceptGraphSelection()) this.showContextMenu(x, y, this.graph.focusTarget, false); });
+		(x, y) => { if (this.acceptGraphSelection()) this.showInspectionContextMenu(x, y, this.graph.focusTarget, false); });
 	private boundGraph: ActorStateGraph | undefined;
 	private statusInput: ActorLabInput | undefined;
 	private statusTopology = -1;
@@ -104,9 +105,10 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		private readonly contextMenu: ContextMenuController, private readonly surfaces: WorkbenchSurfaceService,
 		private readonly paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, group: EditorGroupView, quickInput: QuickInputController, scope: InputFocusScope) {
 		super(scope);
-		this.worldControl = new ActorWorldControl(this.focusTarget, commands, contextMenu, () => { this.updateContentLayout(); this.update(); });
+		this.worldControl = new ActorWorldControl(this.focusTarget, commands, contextMenu, () => { this.updateContentLayout(); this.update(); },
+			(x, y, domain, hashId, keyboard) => this.showActorContextMenu(x, y, domain, hashId, this.worldControl.focusTarget, keyboard));
 		this.outlinerControl = new ActorOutlinerControl(this.focusTarget, commands, () => this.update(),
-			(x, y, keyboard) => this.showContextMenu(x, y, this.outlinerControl.focusTarget, keyboard));
+			(x, y, domain, hashId, keyboard) => this.showActorContextMenu(x, y, domain, hashId, this.outlinerControl.focusTarget, keyboard));
 		this.bindTransportCommands(this.worldControl.focusTarget);
 		this.bindTransportCommands(this.outlinerControl.focusTarget);
 		this.actorActions = new ActorLabEditorActions(group, quickInput, this.focusTarget);
@@ -159,7 +161,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 						x = tree.layout.contentLeft;
 						y = tree.layout.contentTop + Math.max(0, tree.selectionIndex - (tree.scroll | 0) + 1) * tree.layout.rowHeight;
 					}
-					this.showContextMenu(x, y, target, true);
+					this.showInspectionContextMenu(x, y, target, true);
 				},
 			});
 			target.registerCommand('actorLab.follow', {
@@ -217,7 +219,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		// a request to erase that member selection.
 		for (const target of [this.worldControl.focusTarget, this.outlinerControl.focusTarget]) {
 			const available = () => this.hasInput && !this.input.dirty && this.input.actorPresent;
-			for (const command of ['sceneViewport.frameSelection', 'actorLab.emit'] as const)
+			for (const command of ['sceneViewport.frameSelection', 'actorLab.emit', 'actorLab.find'] as const)
 				target.registerCommand(command, this.focusTarget.getCommand(command)!);
 			target.registerCommand('actorLab.actions', { isEnabled: () => available() && this.controller.canInteract()
 				&& actorActions(this.input.runtime.roots[0]).length > 0,
@@ -235,13 +237,35 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 				run: () => this.actorActions.editScene(this.input) });
 		}
 	}
-	/** Every invocation owns one exact selected subject and its physical control lifetime. */
-	private showContextMenu(x: number, y: number, target: InputFocusTarget, keyboard: boolean): void {
+	/** All actor surfaces carry the displayed identity; camera and member-panel
+	 * presentation do not choose the subject of an actor command. */
+	private showActorContextMenu(x: number, y: number, domain: ResourceDomain, hashId: number, target: InputFocusTarget, keyboard: boolean): void {
+		const input = this.input, generation = target.scope.contextGeneration;
+		if (this.controller.rewind.seeking || !target.focus()) return;
+		if (this.input !== input || target.scope.contextGeneration !== generation || inputFocus.admittedTarget !== target) return;
+		this.controller.inspectActor(input, domain, hashId);
+		if (this.input !== input || target.scope.contextGeneration !== generation) return;
+		this.update();
+		if (target.scope.contextGeneration !== generation || inputFocus.admittedTarget !== target
+			|| !input.actorPresent || input.domain !== domain || input.actorHashId !== hashId) return;
+		this.contextMenu.show(x, y, WORKBENCH_MENUS['actorLab.world.context'], this.commands, {
+			invocationOrigin: target, returnFocus: target, commandTarget: target, selectFirst: keyboard,
+			onWillShow: lifetime => {
+				lifetime.add({ dispose: input.onDidChangeSelection(() => this.contextMenu.hide()) });
+				lifetime.add({ dispose: this.controller.guest.onDidInvalidate(reason => { if (reason !== 'execution') this.contextMenu.hide(); }) });
+			},
+		});
+	}
+	/** Inspection menus address the row/node, not its owning actor. The actor row
+	 * itself uses the same actor commands as viewport hits and World rows. */
+	private showInspectionContextMenu(x: number, y: number, target: InputFocusTarget, keyboard: boolean): void {
 		const input = this.input, graph = input.presentation === 'graph' ? input.stateGraph : undefined;
-		const menu = input.presentation === 'world' ? 'actorLab.world.context'
-			: graph === undefined ? 'actorLab.context' : graph.viewport.selection === null ? 'actorLab.canvas.context' : 'actorLab.stateGraph.context';
+		if (this.controller.selected(input)?.kind === 'actor') {
+			this.showActorContextMenu(x, y, input.domain, input.actorHashId, target, keyboard); return;
+		}
+		const menu = graph === undefined ? 'actorLab.context' : graph.viewport.selection === null ? 'actorLab.canvas.context' : 'actorLab.stateGraph.context';
 		this.contextMenu.show(x, y, WORKBENCH_MENUS[menu], this.commands,
-			{ selectFirst: keyboard, invocationOrigin: target, commandTarget: input.presentation === 'world' ? target : this.commandTarget, onWillShow: lifetime => {
+			{ selectFirst: keyboard, invocationOrigin: target, commandTarget: this.commandTarget, onWillShow: lifetime => {
 				const retire = () => this.contextMenu.hide();
 				lifetime.add({ dispose: input.onDidChangeSelection(retire) });
 				if (graph !== undefined) lifetime.add({ dispose: graph.onDidChangeSelection(retire) });
@@ -485,7 +509,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	public updateStatus(): void {
 		const input = this.input;
 		if (this.detailsWindow.hasFocus) this.statusItems[0].text = input.details!.title;
-		else if (this.worldControl.focusTarget.hasFocus) this.statusItems[0].text = input.worldView.mode === '3d'
+		else if (this.worldControl.focusTarget.hasFocus && input.worldView.mode !== 'game') this.statusItems[0].text = input.worldView.mode === '3d'
 			? 'RMB: LOOK | RMB+WASD/QE: FLY | ALT+LMB: ORBIT | MMB: PAN | F: FOCUS'
 			: 'CLICK: INSPECT | RMB/MMB: PAN | WHEEL: ZOOM | F: FOCUS';
 		else if (this.split.focusTarget.hasFocus) this.statusItems[0].text = this.boundSplit!.orientation === 'horizontal'
@@ -664,13 +688,8 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 				if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0 && !this.gameInput.focusTarget.hasFocus) {
 					this.updateViewportHit();
 					if (this.viewportHit !== undefined) {
-						const input = this.input, scope = this.focusTarget.scope, context = scope.contextGeneration;
 						const { domain, hashId } = this.viewportHit;
-						this.controller.inspectActor(input, domain, hashId); this.update(); this.focus();
-						if (scope.contextGeneration === context && inputFocus.admittedTarget === this.commandTarget
-							&& input.actorPresent && input.domain === domain && input.actorHashId === hashId) {
-							this.showContextMenu(snapshot.viewportX, snapshot.viewportY, this.commandTarget, false);
-						}
+						this.showActorContextMenu(snapshot.viewportX, snapshot.viewportY, domain, hashId, this.worldControl.focusTarget, false);
 						return true;
 					}
 				}
@@ -708,7 +727,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			if (scope.contextGeneration !== context || input.presentation !== 'outline' || inputFocus.admittedTarget !== this.focusTarget
 				|| input.outline.rows[input.outline.selectionIndex] !== row) return true;
 			if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) {
-				this.showContextMenu(snapshot.viewportX, snapshot.viewportY, this.focusTarget, false);
+				this.showInspectionContextMenu(snapshot.viewportX, snapshot.viewportY, this.focusTarget, false);
 			} else if (workbenchTreeTwistieContainsPosition(input.outline, index, snapshot.viewportX, input.outline.scrollLeft)) {
 				setWorkbenchTreeCollapsed(input.outline, index, !row.collapsed);
 				this.updateContentLayout();
