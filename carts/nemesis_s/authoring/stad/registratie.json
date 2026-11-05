@@ -166,7 +166,7 @@
   "native": [
     {
       "name": "huis_lijstgevel_smal",
-      "label": "Smalle hoge lijstgevel",
+      "label": "Smalle lijstgevel met winkelpui",
       "group": "huizengevels",
       "source": "authoring/stad6m/huis_lijstgevel_smal.png"
     },
@@ -307,7 +307,7 @@
     },
     {
       "name": "compact_smal_grachtenhuis",
-      "label": "Smal grachtenhuis met deur op hoofdmaat",
+      "label": "Smal grachtenhuis met halsgevel",
       "group": "huizengevels",
       "source": "authoring/stad6m/compact_smal_grachtenhuis.png"
     },
@@ -393,7 +393,7 @@
     },
     {
       "name": "compact_breed_laag_huis",
-      "label": "Laag woonhuis",
+      "label": "Laag woonhuis met besneeuwd schilddak",
       "group": "huizengevels",
       "source": "authoring/stad6m/compact_breed_laag_huis.png"
     },
@@ -434,13 +434,13 @@
     },
     {
       "name": "haven_laser_house",
-      "label": "Kanonhuis",
+      "label": "Havenwerkplaats met dakkanon",
       "group": "huizengevels",
       "source": "authoring/stad6m/haven_laser_house.png"
     },
     {
       "name": "haven_smoke_house",
-      "label": "Huis met rookuitlaat",
+      "label": "Ketelhuis met rookuitlaat",
       "group": "huizengevels",
       "source": "authoring/stad6m/haven_smoke_house.png"
     },
@@ -473,13 +473,13 @@
     },
     {
       "name": "stadsburg_brugwachter_met_dakkanon",
-      "label": "Brugwachtershuis",
+      "label": "Modern brugwachtershuis met observatieramen",
       "group": "huizengevels",
       "source": "authoring/stad6m/stadsburg_brugwachter_met_dakkanon.png"
     },
     {
       "name": "stadsburg_pakhuis_met_dakkanon",
-      "label": "Pakhuis met dakkanon",
+      "label": "Pakhuis met laadluiken en aangebouwde kanonhal",
       "group": "huizengevels",
       "source": "authoring/stad6m/stadsburg_pakhuis_met_dakkanon.png"
     },

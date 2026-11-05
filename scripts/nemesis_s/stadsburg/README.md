@@ -61,6 +61,26 @@ limit and reuses identical tiles from the existing catalog. `stage_symbol` and
 per-tile-row `stage_symbols` preserve native collision roles: distant contours
 and vehicles, tree silhouettes, lamp shafts and water reflections remain open.
 
+Foreground architecture combines historic houses with newer harbor buildings.
+The narrow canal house has a neck gable and stacked domestic bays; the corniced
+front has tall windows and a distinct shop floor. The low house has one storey
+under a snow-covered hip roof. The warehouse separates a gabled loading wing
+from the adjoining gun-support hall, with shuttered loft openings and braced
+timber loading doors. Workshop glazing, a rolling shutter, boiler-room intake
+and paired service doors distinguish the two small harbor buildings. The
+bridgewatch house has a flat projecting cap, an observation bay with corner
+returns and a recessed entrance. Window surrounds, eave shadows, material
+joins and restrained masonry clusters are drawn at native resolution.
+
+Architectural references include [De Steeman on the Bloemgracht](https://www.hendrickdekeyser.nl/de-huizen/de-steeman),
+[Herenstraat 41](https://stadsherstel.nl/monumenten/herenstraat-41/),
+[Pakhuis De Appel](https://stadsherstel.nl/monumenten/pakhuis-de-appel/)
+and [Piet Kramer's Beltbrug bridgewatch house](https://arcam.nl/architectuur-gids/brugwachtershuisje-beltbrug/).
+The drawings adapt their architectural principles to the game palette and
+pixel scale; they are original stylizations, not resized photographs or
+literal replicas. Native occupied cells, ground contacts and rooftop weapon
+support lines retain their established positions.
+
 The town's main scale is 8/3 pixels per metre, using the unchanged 16×10-pixel
 Kartonion as a fictional six-metre vehicle. Human-scale foreground art has been
 redrawn at approximately two thirds of its former size. Foreground cars draw at
