@@ -72,6 +72,16 @@ bridgewatch house has a flat projecting cap, an observation bay with corner
 returns and a recessed entrance. Window surrounds, eave shadows, material
 joins and restrained masonry clusters are drawn at native resolution.
 
+All sixteen active foreground building sources share a night-lighting palette:
+light blue (`#4060e0`) marks the moonlit main wall planes, while dark blue
+(`#2020e0`) remains on roof planes, recessed service bays, wall returns and
+shadowed joints. Stone, snow, glazing, warm windows, timber doors and shop
+canopies keep their separate inks. These colour assignments preserve every
+foreground silhouette pixel, ground-contact row and rooftop support line.
+The distant architecture stays black and dark blue, with small shadows beneath
+cornices and inside entrances; broad far-wall masses and window axes remain
+readable. The existing two-ink-per-8×1 rule applies to both layers.
+
 Architectural references include [De Steeman on the Bloemgracht](https://www.hendrickdekeyser.nl/de-huizen/de-steeman),
 [Herenstraat 41](https://stadsherstel.nl/monumenten/herenstraat-41/),
 [Pakhuis De Appel](https://stadsherstel.nl/monumenten/pakhuis-de-appel/)
@@ -105,7 +115,7 @@ sections stay fixed.
 
 Light, warm, cyan or green accents distinguish foreground objects. The smaller
 7×4-pixel cars use the existing lighter blue to remain distinct from the dark
-blue house contours. Miniature bicycles retain their subdued blue silhouettes.
+blue distant house contours. Miniature bicycles retain their subdued blue silhouettes.
 The authoring groups describe that visual depth within the fixed side view.
 
 The five winter backdrops are editable native PNGs in `authoring/achtergrond`:
