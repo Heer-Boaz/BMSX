@@ -168,7 +168,7 @@ export class MainWorkspace {
 				isVisible: () => region === 'hierarchy' ? this.regionLayout.hierarchyPresented : this.regionLayout.detailsPresented,
 				getBounds: () => region === 'hierarchy' ? this.regionLayout.hierarchySashBounds : this.regionLayout.detailsSashBounds,
 				getClip: () => this.regionLayout.viewport,
-				draw: () => drawWorkbenchSplit(model, sash.hovered || sash.focusTarget.hasFocus),
+				draw: () => drawWorkbenchSplit(model, sash),
 				handlePointer: snapshot => { sash.handlePointer(snapshot); }, handleWheel: () => true,
 				onRetire: () => { this.sashAttached[region] = false; pointerCapture.cancelScope(sash.focusTarget.scope.surfaceScope); sash.clearInput(); },
 			});
@@ -203,7 +203,7 @@ export class MainWorkspace {
 		surfaces.attach({ role: 'content', lifetimeOwner: this.surface, presentationParent: this.surface,
 			captureScope: this.activitySash.focusTarget.scope.surfaceScope, isVisible: () => this.regionLayout.activityPresented,
 			getBounds: () => this.regionLayout.activitySashBounds, getClip: () => this.regionLayout.verticalViewport,
-			draw: () => drawWorkbenchSplit(this.regionLayout.activitySash, this.activitySash.hovered || this.activitySash.focusTarget.hasFocus),
+			draw: () => drawWorkbenchSplit(this.regionLayout.activitySash, this.activitySash),
 			handlePointer: snapshot => { this.activitySash.handlePointer(snapshot); }, handleWheel: () => true,
 			onRetire: () => { this.activitySashAttached = false; pointerCapture.cancelScope(this.activitySash.focusTarget.scope.surfaceScope); this.activitySash.clearInput(); },
 		});

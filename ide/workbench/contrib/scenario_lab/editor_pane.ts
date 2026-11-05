@@ -277,7 +277,7 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 		}
 		const view = this.input.view;
 		drawScenarioLab(view);
-		drawWorkbenchSplit(view.split, this.split.hovered || this.split.focusTarget.hasFocus);
+		drawWorkbenchSplit(view.split, this.split);
 	}
 
 	public handleKeyboard(event: KeyInputEvent): void {

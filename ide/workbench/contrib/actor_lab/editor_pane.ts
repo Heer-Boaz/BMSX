@@ -223,16 +223,20 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	}
 	private bindTransportCommands(target: InputFocusTarget): void {
 		for (const command of ['actorLab.playback', 'pause'] as const) target.registerCommand(command, {
+			contextual: true,
 			isEnabled: () => this.hasInput && (this.controller.execution.canControl || this.controller.viewport.transport.playbackEnabled),
+			isChecked: () => this.hasInput && (this.controller.execution.active === undefined
+				? this.controller.viewport.transport.state === 'PAUSED' : this.controller.execution.paused),
 			run: () => {
 				const execution = this.controller.execution, operation = execution.active;
 				if (operation !== undefined) {
 					this.input.interaction.running = false;
 					execution.setPaused(operation, !execution.paused);
-				} else this.input.interaction.running = this.controller.viewport.transport.togglePlayback();
+				} else this.commands.execute('runtime.playback', target);
 			},
 		});
 		for (const [command, direction] of [['stepFrameBack', -1], ['stepFrame', 1]] as const) target.registerCommand(command, {
+			contextual: true,
 			isEnabled: () => this.hasInput && this.controller.viewport.transport.navigation.canStep(direction),
 			run: () => { this.input.interaction.running = false; this.controller.viewport.transport.navigation.step(direction); },
 		});
@@ -510,7 +514,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			api.popClipRect();
 		}
 		this.gameInput.draw();
-		drawWorkbenchSplit(this.input.layout.split!, this.split.hovered || this.split.focusTarget.hasFocus);
+		drawWorkbenchSplit(this.input.layout.split!, this.split);
 	}
 	private showDetails(focus: boolean): void {
 		updateFullWidthWorkbenchLayout(this.input.layout, this.contentBounds);

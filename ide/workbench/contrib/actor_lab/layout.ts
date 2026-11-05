@@ -10,7 +10,10 @@ import { WORKBENCH_SPLIT_SIZE, type WorkbenchSplitView } from '../../ui/split_vi
 import type { ActorLabInput } from './editor_input';
 
 const PADDING = 4;
-const OUTLINE_READING_COLUMNS = 32;
+// Like the Scene hierarchy, a compact tree retains a usable caption and its
+// disclosure lanes. Its preferred width is the retained split ratio, not a
+// full-name reading budget imposed on every resize.
+const OUTLINE_READING_COLUMNS = 12;
 const GRAPH_READING_COLUMNS = 32;
 const VISIBLE_ROWS = 3;
 

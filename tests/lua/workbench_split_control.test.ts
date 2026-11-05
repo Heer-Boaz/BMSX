@@ -9,6 +9,9 @@ import { WorkbenchSplitControl } from '../../ide/workbench/ui/split_control';
 import { WorkbenchFixedEdgeSplitView, WorkbenchSplitView } from '../../ide/workbench/ui/split_view';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import type { PointerInputSnapshot } from '../../ide/common/models';
+import { COLOR_FOCUS_BORDER, SCROLLBAR_THUMB_COLOR } from '../../ide/common/constants';
+import { api } from '../../ide/runtime/overlay_api';
+import { drawWorkbenchSplit } from '../../ide/workbench/render/split_view';
 
 function fixture(t: TestContext) {
 	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();
@@ -39,8 +42,37 @@ function fixture(t: TestContext) {
 		focus.handleKeyboard(new KeyInputEvent(code, modifiers, false, false)); return event;
 	};
 	t.after(() => { control.dispose(); surfaces.dispose(); unbindAdmission(); focus.setTarget(null); });
-	return { focus, capture, surfaces, area, root, parent, origin, sibling, originSurface, sashSurface, split, control, key };
+	return { focus, capture, hover, surfaces, area, root, parent, origin, sibling, originSurface, sashSurface, split, control, key };
 }
+
+for (const finish of ['release', 'cancel', 'blur', 'replacement'] as const)
+	test(`shared sash highlights its captured drag at the minimum until ${finish}`, t => {
+		const f = fixture(t), fill = t.mock.method(api, 'fill_rect', () => {});
+		const paint = () => {
+			drawWorkbenchSplit(f.split, f.control);
+			return fill.mock.calls.at(-1)!.arguments[5];
+		};
+		const down: PointerInputSnapshot = { modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true,
+			pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0,
+			viewportX: f.split.position, viewportY: f.area.top + 20 };
+		f.capture.beginRoute(f.sashSurface.captureScope, down);
+		f.hover.beginDispatch(f.sashSurface.captureScope); f.control.handlePointer(down); f.hover.endDispatch();
+		assert.equal(paint(), COLOR_FOCUS_BORDER, 'press feedback is visible without taking keyboard focus');
+		const held = { ...down, viewportX: f.area.left, justPressedButtons: 0 };
+		f.hover.beginDispatch(f.sashSurface.captureScope);
+		f.capture.dispatch(held, false, 1, f.sashSurface.captureScope); f.hover.endDispatch();
+		assert.equal(f.control.hovered, false, 'captured input is not a new ordinary hover hit');
+		assert.equal(f.split.canMoveTo(held.viewportX), false);
+		assert.equal(paint(), COLOR_FOCUS_BORDER, 'a clamped drag remains visibly active away from its handle');
+		switch (finish) {
+			case 'release': f.capture.dispatch({ ...held, pressedButtons: 0, justReleasedButtons: PointerButton.Primary }, false, 2, f.sashSurface.captureScope); break;
+			case 'cancel': f.capture.cancel(); break;
+			case 'blur': f.sibling.focus(); break;
+			case 'replacement': f.control.setInput(new WorkbenchSplitView(0.5)); break;
+		}
+		assert.equal(f.capture.active, false);
+		assert.equal(paint(), SCROLLBAR_THUMB_COLOR, 'the ended gesture does not leave a stuck highlight');
+	});
 
 test('shared tool-local Tab-linked sashes retain continuous keyboard admission without an invocation-only session', t => {
 	const f = fixture(t), before = f.split.ratio;

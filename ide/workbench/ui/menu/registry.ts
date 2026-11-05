@@ -448,7 +448,6 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'renamePreview' },
 	],
 	'menubar.run': [
-		{ type: 'command', command: 'play.reveal' },
 		{ type: 'command', command: 'runCurrentFile' },
 		{ type: 'command', command: 'runProject' },
 		{ type: 'separator' },
@@ -486,6 +485,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'separator' },
 		{ type: 'command', command: 'gameView' },
 		{ type: 'command', command: 'gameView.togglePanel' },
+		{ type: 'command', command: 'play.reveal' },
 		{ type: 'separator' },
 		{ type: 'command', command: 'wrap' },
 		{ type: 'command', command: 'filter' },

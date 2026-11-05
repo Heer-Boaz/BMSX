@@ -1,8 +1,10 @@
 import { api } from '../../runtime/overlay_api';
 import { COLOR_FOCUS_BORDER, SCROLLBAR_THUMB_COLOR } from '../../common/constants';
 import type { WorkbenchSashView } from '../ui/split_view';
+import type { WorkbenchSplitControl } from '../ui/split_control';
 
-export function drawWorkbenchSplit(input: WorkbenchSashView, active: boolean): void {
+export function drawWorkbenchSplit(input: WorkbenchSashView, control: WorkbenchSplitControl): void {
+	const active = control.hovered || control.dragging || control.focusTarget.hasFocus;
 	const position = input.position, color = active ? COLOR_FOCUS_BORDER : SCROLLBAR_THUMB_COLOR;
 	if (input.orientation === 'horizontal') api.fill_rect(position - 1, input.bounds.top, position + 2, input.bounds.bottom, 0, color);
 	else api.fill_rect(input.bounds.left, position - 1, input.bounds.right, position + 2, 0, color);

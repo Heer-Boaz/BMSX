@@ -24,7 +24,7 @@ export class WorkbenchSplitControl implements PointerCaptureTarget, PointerHover
 	public hovered = false;
 	private inputValue: WorkbenchSashView | undefined;
 	private keyboardResize: KeyboardResize | undefined;
-	private pointerOffset = 0;
+	private pointerOffset: number | undefined;
 	private readonly unbindKeyboard: () => void;
 	private unbindPressBlur: (() => void) | undefined;
 	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService,
@@ -34,6 +34,7 @@ export class WorkbenchSplitControl implements PointerCaptureTarget, PointerHover
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(player => this.handleKeyboard(player), () => this.finishKeyboardResize(false));
 	}
 	public get input(): WorkbenchSashView | undefined { return this.inputValue; }
+	public get dragging(): boolean { return this.pointerOffset !== undefined; }
 	public get interactionActive(): boolean { return this.keyboardResize !== undefined; }
 	public get statusItems(): readonly WorkbenchStatusItem[] { return this.interactionActive ? RESIZE_STATUS : EMPTY_STATUS_ITEMS; }
 	public updateStatus(): void {}
@@ -94,6 +95,7 @@ export class WorkbenchSplitControl implements PointerCaptureTarget, PointerHover
 	}
 	public onPointerLeave(): void { this.hovered = false; }
 	public readonly cancelPointer = (): void => {
+		this.pointerOffset = undefined;
 		this.capture.release(this);
 		this.unbindPressBlur?.(); this.unbindPressBlur = undefined;
 	};
@@ -117,7 +119,7 @@ export class WorkbenchSplitControl implements PointerCaptureTarget, PointerHover
 	}
 	public handleCapturedPointer(snapshot: PointerSnapshot): void {
 		const input = this.input!;
-		input.moveTo((input.orientation === 'horizontal' ? snapshot.viewportX : snapshot.viewportY) - this.pointerOffset);
+		input.moveTo((input.orientation === 'horizontal' ? snapshot.viewportX : snapshot.viewportY) - this.pointerOffset!);
 	}
 	public releaseCapturedPointer(snapshot: PointerSnapshot): void { this.handleCapturedPointer(snapshot); this.cancelPointer(); }
 	private handleKeyboard(player: KeyInputEvent): void {

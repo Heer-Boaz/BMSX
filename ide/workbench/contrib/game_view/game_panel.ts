@@ -93,7 +93,7 @@ export class GamePanel {
 		surfaces.attach({ role: 'content', lifetimeOwner: this.surface, presentationParent: part.surface,
 			captureScope: this.sash.focusTarget.scope.surfaceScope, isVisible: () => this.visible,
 			getBounds: () => this.area.sashBounds, getClip: () => this.area.availableBounds,
-			draw: () => drawWorkbenchSplit(this.area.split, this.sash.hovered || this.sash.focusTarget.hasFocus),
+			draw: () => drawWorkbenchSplit(this.area.split, this.sash),
 			handlePointer: snapshot => { this.sash.handlePointer(snapshot); }, handleWheel: () => true,
 			onRetire: () => { pointerCapture.cancelScope(this.sash.focusTarget.scope.surfaceScope); this.sash.clearInput(); },
 		});

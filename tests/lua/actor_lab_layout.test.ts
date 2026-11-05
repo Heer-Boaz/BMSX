@@ -28,7 +28,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', presentation: 'outline
 }
 
 // Exact dimensions here are the composition algorithm's contract: a complete
-// primary reading budget, its padding, the complete shared sash target, and a useful padded frame.
+// compact primary reading budget, its padding, the complete shared sash target, and a useful padded frame.
 for (const variant of ['tiny', 'msx'] as const) for (const presentation of ['outline', 'graph'] as const) {
 	test(`Actor ${variant}/${presentation} admits the preview only when both measured clients fit on both axes`, t => {
 		const { input, bounds, arrange } = fixture(t, variant, presentation), measured = measureActorLab(editorViewState.font);
@@ -48,7 +48,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const presentation of ['out
 		assert.ok(input.previewBounds.bottom - input.previewBounds.top >= GAME_FRAME_MINIMUM_HEIGHT);
 		if (presentation === 'outline') {
 			const tree = input.outline.layout;
-			assert.ok(tree.contentRight - tree.contentLeft - tree.indentWidth * 2 - 4 >= editorViewState.charAdvance * 32,
+			assert.ok(tree.contentRight - tree.contentLeft - tree.indentWidth * 2 - 4 >= editorViewState.charAdvance * 12,
 				'the actual root-row name retains its declared reading budget after disclosure, activity and scrollbar lanes');
 		} else {
 			const graph = input.stateGraph!.viewport.bounds;

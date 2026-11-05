@@ -557,7 +557,7 @@ export class RuntimeCartEditor implements CartEditor {
 			role: 'content', lifetimeOwner: chromeSurface, presentationParent: chromeSurface, captureScope: this.resourcePanel.sash.focusTarget.scope.surfaceScope,
 			isVisible: () => this.resourcePanel.isVisible(), getBounds: () => this.resourcePanel.resizeBounds,
 			getClip: () => this.rootSurfaceBounds,
-			draw: () => drawWorkbenchSplit(this.resourcePanel.split, this.resourcePanel.sash.hovered || this.resourcePanel.sash.focusTarget.hasFocus),
+			draw: () => drawWorkbenchSplit(this.resourcePanel.split, this.resourcePanel.sash),
 			handlePointer: snapshot => { this.resourcePanel.sash.handlePointer(snapshot); },
 			onRetire: () => this.resourcePanel.retireResize(),
 		});

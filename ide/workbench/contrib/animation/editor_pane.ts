@@ -340,8 +340,8 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 	public draw(): void {
 		drawAnimationEditor(this.input, this.contentBounds, this.keys.focusTarget.hasFocus);
 		if (this.input.layout.mode === 'expanded') {
-			drawWorkbenchSplit(this.input.columnSplit, this.columnSash.hovered || this.columnSash.focusTarget.hasFocus);
-			drawWorkbenchSplit(this.input.rowSplit, this.rowSash.hovered || this.rowSash.focusTarget.hasFocus);
+			drawWorkbenchSplit(this.input.columnSplit, this.columnSash);
+			drawWorkbenchSplit(this.input.rowSplit, this.rowSash);
 		}
 	}
 	public updateStatus(): void { this.statusItem.text = this.input.status; }

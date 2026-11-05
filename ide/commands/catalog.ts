@@ -352,7 +352,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'scenarioLab.debugWithCompanion': { category: 'Scenario Lab', title: 'Debug with Companion…' },
 	'scenarioLab.play': { category: 'Scenario Lab', title: 'Play Selected Fixture', shortTitle: 'Play' },
 	'scenarioLab.playWithCompanion': { category: 'Scenario Lab', title: 'Play with Companion…' },
-	'play.reveal': { category: 'Play', title: 'Show Session', shortTitle: 'Play' },
+	'play.reveal': { category: 'Play', title: 'Show Session', shortTitle: 'Show Play Session' },
 	'play.actors': { category: 'Play', title: 'Inspect Actors', shortTitle: 'Actors' },
 	'play.stop': { category: 'Play', title: 'Stop Fixture', shortTitle: 'Stop' },
 	'play.reset': { category: 'Play', title: 'Reset from Current Source', shortTitle: 'Reset' },

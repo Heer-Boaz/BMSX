@@ -457,7 +457,7 @@ export class EditorPart {
 			const surface = this.options.surfaces.attach({ role: 'content', lifetimeOwner: this.clientSurface, presentationParent: this.clientSurface,
 				captureScope: control.focusTarget.scope.surfaceScope, isVisible: () => branch.visible && branch.resizable,
 				getBounds: () => branch.sashBounds, getClip: () => branch.clip,
-				draw: () => drawWorkbenchSplit(branch.split, control.hovered || control.focusTarget.hasFocus),
+				draw: () => drawWorkbenchSplit(branch.split, control),
 				handlePointer: snapshot => { control.handlePointer(snapshot); }, handleWheel: () => true,
 				onRetire: () => { pointerCapture.cancelScope(control.focusTarget.scope.surfaceScope); control.clearInput(); },
 			});
