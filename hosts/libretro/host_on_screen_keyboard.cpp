@@ -145,7 +145,9 @@ void HostOnScreenKeyboard::queueRenderCommands(VideoPresenter& presenter) {
 	}
 	m_publishedRows = m_model.rows();
 	presenter.hostOverlayQueue.clearHostMenuFrame();
-	presenter.hostOverlayQueue.publishHostMenuFrame(HostMenuFrame{m_command_kinds.data(), m_command_refs.data(), m_commandCount});
+	presenter.hostOverlayQueue.publishHostMenuFrame(HostOverlayFrame{
+		static_cast<i32>(presenter.canvasSize.x), static_cast<i32>(presenter.canvasSize.y),
+		m_command_kinds.data(), m_command_refs.data(), m_commandCount});
 }
 void HostOnScreenKeyboard::rebuildPageCommands() {
 	m_title_glyphs.items[0] = kTitles[m_model.page()];

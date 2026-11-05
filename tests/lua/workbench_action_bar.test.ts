@@ -546,7 +546,7 @@ test('tiny-font rendering distinguishes hover, keyboard focus, pressed and disab
 	const stream = new HostOverlayQuadStream();
 	layoutWorkbenchActionBar(f.state, 240, 10, 22, text => font.measure(text), font, 0);
 	const draw = () => {
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 		renderWorkbenchActionBar(f.state, font, colors.COLOR_HEADER_BUTTON_TEXT, colors.COLOR_HEADER_BUTTON_TEXT_DISABLED); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(); stream.reset(256, 212);
 		for (let index = 0; index < frame.commandCount; index += 1) stream.appendEntry(frame.commandKinds[index], frame.commandRefs[index]);

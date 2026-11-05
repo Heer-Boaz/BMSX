@@ -35,9 +35,9 @@ void writeHostMenuPassState(
 	state.frameTexture = presentedHistoryTexture(ctx);
 	state.frameWidth = static_cast<i32>(presenter.offscreenCanvasSize.x);
 	state.frameHeight = static_cast<i32>(presenter.offscreenCanvasSize.y);
-	state.overlayWidth = static_cast<i32>(presenter.viewportSize.x);
-	state.overlayHeight = static_cast<i32>(presenter.viewportSize.y);
-	const HostMenuFrame frame = presenter.hostOverlayQueue.consumeHostMenuFrame();
+	const HostOverlayFrame frame = presenter.hostOverlayQueue.consumeHostMenuFrame();
+	state.overlayWidth = frame.logicalWidth;
+	state.overlayHeight = frame.logicalHeight;
 	state.commandKinds = frame.commandKinds;
 	state.commandRefs = frame.commandRefs;
 	state.commandCount = frame.commandCount;

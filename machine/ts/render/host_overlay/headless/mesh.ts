@@ -251,9 +251,9 @@ function rasterTriangle(target: HeadlessHostMeshTarget, points: Float64Array, a:
 
 /** Composite the actual scene command at its ordered UI position; scene depth stays private. */
 export function drawHeadlessHostMeshScene(context: HeadlessHost2DContext, command: HostMeshSceneRenderSubmission): void {
-	const source = context.meshScenes.get(command.scene), { scale, offsetX, offsetY } = context.transform;
-	const originX = command.left * scale + offsetX, originY = command.top * scale + offsetY;
-	const xx = (command.right - command.left) * scale, yy = (command.bottom - command.top) * scale;
+	const source = context.meshScenes.get(command.scene), { scaleX, scaleY, offsetX, offsetY } = context.transform;
+	const originX = command.left * scaleX + offsetX, originY = command.top * scaleY + offsetY;
+	const xx = (command.right - command.left) * scaleX, yy = (command.bottom - command.top) * scaleY;
 	if (xx === 0 || yy === 0) return;
 	const left = Math.min(originX, originX + xx), right = Math.max(originX, originX + xx);
 	const top = Math.min(originY, originY + yy), bottom = Math.max(originY, originY + yy), clip = context.clip;

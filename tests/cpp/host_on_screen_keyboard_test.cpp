@@ -40,14 +40,14 @@ void testVisibleViewport() {
 		view.queueRenderCommands(presenter);
 		return presenter.hostOverlayQueue.consumeHostMenuFrame();
 	};
-	const HostMenuFrame normal = frame();
+	const HostOverlayFrame normal = frame();
 	const auto* panel = normal.commandRefs[0].rect;
 	const auto* q = normal.commandRefs[48].rect;
 	require(panel->area.right - panel->area.left == 231, "full native keyboard retains its existing panel width");
 	require(panel->area.top == video.visibleViewportBounds.top + 4, "actual native keyboard panel docks at the visible picture top");
 	require(q->area.right - q->area.left == 13, "full native keyboard retains its existing key unit");
 	video.visibleViewportBounds = RectBounds{12.8F, 9.6F, 243.2F, 182.4F, 0};
-	const HostMenuFrame cropped = frame();
+	const HostOverlayFrame cropped = frame();
 	require(&presenter.visibleViewportBounds == &video.visibleViewportBounds, "presenter borrows the retained actual output rectangle");
 	require(cropped.commandRefs[0].rect == panel && cropped.commandRefs[48].rect == q, "visible layout retains existing commands");
 	require(panel->area.right - panel->area.left == 215, "keyboard grid reduces its unit to fit the real cropped width");
@@ -146,9 +146,11 @@ void testTransparentPixels() {
 	OnScreenKeyboard keyboard(input, NATIVE_KEYBOARD_PAGES); HostOnScreenKeyboard view(keyboard); keyboard.open();
 	std::vector<u32> pattern(width * height), pixels(width * height), mask(width * height);
 	for (size_t index = 0; index < pattern.size(); ++index) pattern[index] = 0xff000000u | static_cast<u32>((index * 137u + 0x35627bu) & 0xffffffu);
-	const auto render = [&](const HostMenuFrame& commands, const std::vector<u32>& background, std::vector<u32>& result) {
+	const auto render = [&](const HostOverlayFrame& commands, const std::vector<u32>& background, std::vector<u32>& result) {
 		std::copy(background.begin(), background.end(), backend->framebuffer());
 		Host2DPipelineState state;
+		state.width = width; state.height = height;
+		state.overlayWidth = commands.logicalWidth; state.overlayHeight = commands.logicalHeight;
 		beginHostOverlaySoftware(*backend, state);
 		for (size_t command = 0; command < commands.commandCount; ++command) renderHost2DEntrySoftware(*backend, commands.commandKinds[command], commands.commandRefs[command]);
 		endHostOverlaySoftware(*backend);
@@ -240,7 +242,9 @@ void testPictogramGeometryAndFeedback() {
 					require(icon->colorize == (target == keyboard.selectedKey() ? 0xff7eb4d9u : 0xffefefefu) && shadow.colorize == 0xff080c12u,
 						"normal and selected atlas tints preserve existing feedback contrast");
 					std::fill_n(backend->framebuffer(), 256 * 192, 0);
-					Host2DPipelineState pipeline; beginHostOverlaySoftware(*backend, pipeline);
+					Host2DPipelineState pipeline;
+					pipeline.width = pipeline.overlayWidth = 256; pipeline.height = pipeline.overlayHeight = 192;
+					beginHostOverlaySoftware(*backend, pipeline);
 					renderHost2DEntrySoftware(*backend, Host2DKind::Img, {.img = icon}); endHostOverlaySoftware(*backend);
 					size_t ink = 0;
 					for (i32 y = 0; y < 7; ++y) for (i32 x = 0; x < 11; ++x) {
@@ -314,7 +318,7 @@ void testFeedback() {
 		return presenter.hostOverlayQueue.consumeHostMenuFrame();
 	};
 	const auto expectKey = [&](size_t key, u32 edge, u32 foreground) {
-		const HostMenuFrame commands = frame();
+		const HostOverlayFrame commands = frame();
 		require(commands.commandKinds[3u + key * 3u] == Host2DKind::Rect, "key publishes a real rectangle command");
 		require(commands.commandKinds[5u + key * 3u] == Host2DKind::Glyphs || commands.commandKinds[5u + key * 3u] == Host2DKind::Img, "key publishes its real retained foreground artwork");
 		require(commands.commandRefs[3u + key * 3u].rect->color == edge, "published key outline matches forwarded input feedback");
@@ -329,7 +333,7 @@ void testFeedback() {
 		keyboard.selectKey(target, view.publishedPage());
 	};
 	const auto expectHomeEndHelp = [&](u32 color) {
-		const HostMenuFrame commands = frame();
+		const HostOverlayFrame commands = frame();
 		require(commands.commandRefs[3u + (HostOnScreenKeyboard::KeyCount + 1u) * 3u + 3u].glyphs->color == color, "Home/End forwarding highlights their existing binding help line");
 	};
 

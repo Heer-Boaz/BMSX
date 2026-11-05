@@ -192,7 +192,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		}
 		const overlay = createHostOverlayFixture(384, 288);
 		const text = t.mock.method(api, 'blit_text_inline_with_font', api.blit_text_inline_with_font);
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 		drawEventViewer(input, view, true);
 		overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
 		assert.deepEqual(text.mock.calls.map(call => call.arguments[0]), view.rows.map(row => row.label.event));
@@ -203,7 +203,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		for (let frame = 0; frame < 1000; frame++) {
 			assert.equal(layoutEventViewer(input, bounds, false), false);
 			view.update(input, false, false);
-			overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+			overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 			drawEventViewer(input, view, true);
 			overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
 		}
@@ -264,7 +264,7 @@ test('compact empty-event guidance wraps individual lines to the actual subject 
 			assert.ok(editorViewState.font.measure(line) <= input.layout.eventWidth - 4);
 		}
 		const overlay = createHostOverlayFixture(384, 288), text = t.mock.method(api, 'blit_text_inline_with_font', api.blit_text_inline_with_font);
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 		drawEventViewer(input, view, true);
 		overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
 		assert.deepEqual(text.mock.calls.map(call => call.arguments[0]), view.emptyLines);

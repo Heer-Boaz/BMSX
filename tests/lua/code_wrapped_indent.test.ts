@@ -168,7 +168,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		assert.deepEqual(computeSelectionSlices(code, 0, line, segment.startDisplay, segment.endDisplay),
 			[{ startDisplay: segment.startDisplay, endDisplay: segment.endDisplay }]);
 		const overlay = createHostOverlayFixture(384, 256);
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 		drawCodeAreaRows(code, viewport, null, false, code.font.renderFont(), [], -1, [], -1, false, true,
 			EMPTY_DIAGNOSTICS_BY_ROW, layout, code.lineHeight);
 		overlay.renderer.endFrame();

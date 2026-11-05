@@ -80,7 +80,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384, 
 	const layout = () => { strip.layout(bounds); };
 	const paint = () => {
 		drawnLabels = 0;
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 		strip.draw(context); overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
 	};
 	const draw = () => { layout(); paint(); return strip.layoutState.totalHeight; };

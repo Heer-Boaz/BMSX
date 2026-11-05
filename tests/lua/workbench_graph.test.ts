@@ -134,10 +134,10 @@ test('disc symbols retain their actual pixel silhouette instead of routing to pa
 	assert.deepEqual(disc.insets, [...disc.insets].reverse());
 	const view = new WorkbenchGraphViewport(createWorkbenchGraphModel(font, [disc], []));
 	view.layout(0, 0, 100, 100);
-	const { presenter, renderer, queue } = createHostOverlayFixture(100, 100);
+	const { renderer, queue } = createHostOverlayFixture(100, 100);
 	const insets = disc.insets;
 	for (let index = 0; index < 2; index += 1) {
-		renderer.beginFrame(presenter); api.beginFrame(renderer);
+		renderer.beginFrame(); api.beginFrame(renderer);
 		drawWorkbenchGraph(view, null, false); renderer.endFrame();
 		const frame = queue.consumeOverlayFrame();
 		assert.ok(!frame.commandKinds.slice(0, frame.commandCount).includes(Host2DKind.Glyphs));
@@ -156,7 +156,7 @@ for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as 
 		view.setZoom(1); view.scrollX = 0; view.scrollY = 0;
 		const control = new WorkbenchGraphControl(new InputFocusService(), new PointerCaptureService(), new PointerHoverService());
 		control.setInput(view); t.after(() => control.dispose());
-		const { presenter, renderer, queue, backend } = createHostOverlayFixture(100, 100);
+		const { renderer, queue, backend } = createHostOverlayFixture(100, 100);
 		const target = backend.framebufferPixels;
 		let normal: Uint8Array;
 		for (const state of ['normal', 'selected', 'hover'] as const) {
@@ -167,10 +167,10 @@ for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as 
 				justPressedButtons: state === 'selected' ? PointerButton.Primary : 0 }, 0);
 			assert.equal(view.hitTest(x, y), disc, 'decoration retains the pointer hit identity');
 			if (state === 'selected') assert.equal(view.selection, disc);
-			renderer.beginFrame(presenter); api.beginFrame(renderer);
+			renderer.beginFrame(); api.beginFrame(renderer);
 			drawWorkbenchGraph(view, control.hover, false); renderer.endFrame();
 			const frame = queue.consumeOverlayFrame();
-			beginHeadlessHost2D(backend.hostOverlayContext, target, 100, 100);
+			beginHeadlessHost2D(backend.hostOverlayContext, target, 100, 100, 100, 100);
 			for (let index = 0; index < frame.commandCount; index++)
 				renderHeadlessHost2DEntry(backend.hostOverlayContext, frame.commandKinds[index], frame.commandRefs[index]);
 			if (state === 'normal') { normal = target.slice(); continue; }
@@ -195,7 +195,7 @@ test('disc selection decoration remains paintable when only its screen-pixel out
 	const disc = createWorkbenchGraphDisc(10, 20, 20);
 	const view = new WorkbenchGraphViewport(createWorkbenchGraphModel(font, [disc], []));
 	view.layout(0, 0, 100, 100); view.selection = disc;
-	const { presenter, renderer, queue } = createHostOverlayFixture(100, 100);
+	const { renderer, queue } = createHostOverlayFixture(100, 100);
 	for (const zoom of [0.5, 1, 2]) for (const side of ['left', 'top', 'right', 'bottom']) {
 		view.setZoom(zoom); view.scrollX = 0; view.scrollY = 0;
 		switch (side) {
@@ -204,7 +204,7 @@ test('disc selection decoration remains paintable when only its screen-pixel out
 			case 'right': view.scrollX = disc.bounds.left * zoom - view.bounds.right; break;
 			case 'bottom': view.scrollY = disc.bounds.top * zoom - view.bounds.bottom; break;
 		}
-		renderer.beginFrame(presenter); api.beginFrame(renderer);
+		renderer.beginFrame(); api.beginFrame(renderer);
 		drawWorkbenchGraph(view, null, false); renderer.endFrame();
 		const frame = queue.consumeOverlayFrame();
 		assert.ok(frame.commandRefs.slice(0, frame.commandCount).some((command, index) =>
@@ -298,8 +298,8 @@ test('a visible compound body does not emit its offscreen header glyphs', () => 
 	view.layout(0, 0, 100, 100);
 	view.setZoom(1); view.scrollX = 0;
 	view.scrollY = 60;
-	const { presenter, renderer, queue } = createHostOverlayFixture(100, 100);
-	renderer.beginFrame(presenter);
+	const { renderer, queue } = createHostOverlayFixture(100, 100);
+	renderer.beginFrame();
 	api.beginFrame(renderer);
 	drawWorkbenchGraph(view, null, false);
 	renderer.endFrame();
@@ -428,10 +428,10 @@ test('model replacement cancels a pan; empty-space clicks and wheel are bounded 
 
 test('idle graph drawing retains geometry, glyph strings, clip storage and translated route buffers', () => {
 	const { view, edge, model } = fixture();
-	const { presenter, renderer, queue } = createHostOverlayFixture(160, 120);
+	const { renderer, queue } = createHostOverlayFixture(160, 120);
 	const sourcePoints = edge.points.slice();
 	const draw = () => {
-		renderer.beginFrame(presenter);
+		renderer.beginFrame();
 		api.beginFrame(renderer);
 		drawWorkbenchGraph(view, null, false);
 		renderer.endFrame();
@@ -811,9 +811,9 @@ test('drag preview reuses clipped overlay command and glyph storage without chan
 	const f = dragFixture();
 	f.capture.dispatch(pointer(60, 60, true), false, 20);
 	const geometry = JSON.stringify(f.model);
-	const { presenter, renderer, queue } = createHostOverlayFixture(160, 120);
+	const { renderer, queue } = createHostOverlayFixture(160, 120);
 	const draw = () => {
-		renderer.beginFrame(presenter);
+		renderer.beginFrame();
 		api.beginFrame(renderer);
 		drawWorkbenchGraph(f.view, f.control.hover, true, f.control.dragFeedback);
 		renderer.endFrame();

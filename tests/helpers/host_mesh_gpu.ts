@@ -104,9 +104,9 @@ export async function renderHostMeshCase(kind: 'webgl2' | 'webgpu') {
 	}
 	layered.dispose();
 	const presenter = new VideoPresenter(new BrowserVideoOutput(canvas, null, 'fit'), backend, 32, 32);
-	const library = new RenderPassLibrary(backend, presenter), renderer = new OverlayRenderer(presenter.hostOverlayQueue);
+	const library = new RenderPassLibrary(backend, presenter), renderer = new OverlayRenderer(presenter.hostOverlayQueue, { width: 32, height: 32 });
 	const frameTexture = backend.createColorTexture({ width: 32, height: 32, initialClearColor: [0, 0, 0, 1] });
-	renderer.beginFrame(presenter); renderer.fillRect(0, 0, 32, 32, 0, 0xff202040, 0);
+	renderer.beginFrame(); renderer.fillRect(0, 0, 32, 32, 0, 0xff202040, 0);
 	renderer.drawMeshScene(textured.layers, 0, 0, 8, 8);
 	renderer.drawMeshScene(textured.cutout, 24, 0, 32, 8);
 	renderer.pushTransform({ scale: .5, offsetX: 4, offsetY: 4 }); renderer.pushClipRect(8, 8, 24, 24);

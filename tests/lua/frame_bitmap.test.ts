@@ -69,7 +69,7 @@ test('the software overlay reads the accepted bitmap revision, not unaccepted pr
 	const output = new FrameBitmap(), pixels = new Uint8Array([11, 22, 33, 255]);
 	output.publish(pixels, 1, 1, { presentationSequence: 1, cycles: 0, videoTick: 0 });
 	const paint = () => {
-		renderer.beginFrame(presenter); renderer.drawBitmap(output.bitmap!, 0, 0, 4, 3); renderer.endFrame();
+		renderer.beginFrame(); renderer.drawBitmap(output.bitmap!, 0, 0, 4, 3); renderer.endFrame();
 		presenter.configurePresentation('completed', false);
 		presenter.present(target.runtime.machine.gxGpu.readDeviceOutput(), 0, 0);
 	};

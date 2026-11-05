@@ -175,7 +175,8 @@ test('held presentation retains native pixels across host resizing and overlay c
 	presenter.setFixedRenderTargetSize(8, 6);
 	scanout.backgroundColor = 0x00665544;
 	presenter.configurePresentation('partial', false);
-	renderer.beginFrame(presenter);
+	renderer.setViewportSize({ width: 8, height: 6 });
+	renderer.beginFrame();
 	renderer.fillRect(0, 0, 8, 6, 0, 0xffffffff, LAYER_2D_IDE);
 	renderer.endFrame();
 	overlayExpected = true;
@@ -186,7 +187,7 @@ test('held presentation retains native pixels across host resizing and overlay c
 	const nativePixels = new Uint8Array(4 * 3 * 4);
 	backend.readTextureRegion(source, nativePixels, 4, 3, 0, 0, RGBA8_LINEAR_TEXTURE_PARAMS);
 	assert.deepEqual(Array.from(new Uint32Array(nativePixels.buffer)), expected, 'overlay and partial GX output do not contaminate history');
-	renderer.beginFrame(presenter);
+	renderer.beginFrame();
 	renderer.fillRect(0, 0, 8, 6, 0, 0xffffffff, LAYER_2D_IDE);
 	renderer.pushClipRect(3, 2, 6, 4);
 	renderer.drawFrame(2, 1, 6, 4);

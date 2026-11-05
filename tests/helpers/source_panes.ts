@@ -73,7 +73,7 @@ export function createActualSourcePanes(t: TestContext, sameModel = false, addit
 		editor.dispatchKey(new KeyInputEvent(code, modifiers)); editor.dispatchKey(new KeyInputEvent(code, modifiers, false, false)); update();
 	};
 	const paint = () => {
-		arrange(); editor.update(0); ide.overlayRenderer.beginFrame(host.presenter); api.beginFrame(ide.overlayRenderer);
+		arrange(); editor.update(0); ide.overlayRenderer.beginFrame(); api.beginFrame(ide.overlayRenderer);
 		editor.draw(); ide.overlayRenderer.endFrame(); return host.presenter.hostOverlayQueue.consumeOverlayFrame();
 	};
 	afterTest(t, async () => {

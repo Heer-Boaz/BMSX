@@ -5,10 +5,10 @@ import { clamp } from '../../common/clamp';
 
 /** Pixel-centre affine coverage; sampling follows the host GPU's nearest/clamp sampler. */
 export function drawHostBitmap(context: HeadlessHost2DContext, command: HostBitmapRenderSubmission): void {
-	const { scale, offsetX, offsetY } = context.transform;
-	const originX = command.originX * scale + offsetX, originY = command.originY * scale + offsetY;
-	const xx = command.axisXX * scale, xy = command.axisXY * scale;
-	const yx = command.axisYX * scale, yy = command.axisYY * scale;
+	const { scaleX, scaleY, offsetX, offsetY } = context.transform;
+	const originX = command.originX * scaleX + offsetX, originY = command.originY * scaleY + offsetY;
+	const xx = command.axisXX * scaleX, xy = command.axisXY * scaleY;
+	const yx = command.axisYX * scaleX, yy = command.axisYY * scaleY;
 	const determinant = xx * yy - xy * yx;
 	if (determinant === 0) return;
 	const { image } = command.bitmap, { pixels, width, height } = image;

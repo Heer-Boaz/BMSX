@@ -266,7 +266,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`GPU ${variant} diagram kee
 			pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: PointerButton.Primary,
 			modifiers: KeyModifier.none, spaceDown: false }, 0);
 		assert.equal(input.selectedPoint, index);
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); f.surfaces.draw(api); overlay.renderer.endFrame();
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); f.surfaces.draw(api); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(); let transformFound = false, labelFound = false;
 		for (let command = 0; command < frame.commandCount; command++) {
 			if (frame.commandKinds[command] === Host2DKind.Transform) {
@@ -399,7 +399,7 @@ test('GPU Clear keeps the Words page open without rendering or copying its retir
 	const retiredOperand = details.words.focusTarget.clipboard!.copy(); assert.ok(retiredOperand !== null);
 	input.clear(); input.update(); details.update();
 	const overlay = createHostOverlayFixture(384, 288);
-	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); f.surfaces.draw(api); overlay.renderer.endFrame();
+	overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); f.surfaces.draw(api); overlay.renderer.endFrame();
 	const frame = overlay.queue.consumeOverlayFrame(), glyphs: GlyphRenderSubmission[] = [];
 	for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs)
 		glyphs.push(frame.commandRefs[index] as GlyphRenderSubmission);

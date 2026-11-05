@@ -600,7 +600,7 @@ test('the actual Problems sash preserves automatic sizing until motion and commi
 for (const retirement of ['input-cancel', 'deactivate', 'hide', 'zero-width'] as const) test(`Problems sash ${retirement} retires and drains before a fresh Source click`, t => {
 	const f = fixture(t); t.after(() => pointerCapture.interrupt(false));
 	f.editor.mainWorkspace.setActivityVisible(true); f.editor.mainWorkspace.regionLayout.activityHeight = 73; f.editor.update(0);
-	f.ide.overlayRenderer.beginFrame(f.host.presenter); api.beginFrame(f.ide.overlayRenderer);
+	f.ide.overlayRenderer.beginFrame(); api.beginFrame(f.ide.overlayRenderer);
 	f.editor.draw(); f.ide.overlayRenderer.endFrame();
 	const caret = { ...f.editor.textTarget!.caretRect() };
 	f.editor.problems.focus();
@@ -685,7 +685,7 @@ test('an actual Files scrollbar gesture survives sibling editor activation while
 	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y: y + 24, buttons: 0, pressedButtons: 0,
 		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 3 });
 	assert.equal(pointerCapture.active, false);
-	f.ide.overlayRenderer.beginFrame(f.host.presenter); api.beginFrame(f.ide.overlayRenderer);
+	f.ide.overlayRenderer.beginFrame(); api.beginFrame(f.ide.overlayRenderer);
 	f.editor.draw(); f.ide.overlayRenderer.endFrame();
 	const codeThumb = f.pane.code.scrollbars.codeVertical.getThumb()!;
 	assert.ok(codeThumb !== null);

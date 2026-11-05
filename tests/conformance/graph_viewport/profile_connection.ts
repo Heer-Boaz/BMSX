@@ -45,10 +45,10 @@ for (const nodeCount of [4, 1024]) {
 	const movingDragMicroseconds = medianMilliseconds(() => {
 		for (let i = 0; i < 1000; i += 1) capture.dispatch(i % 2 === 0 ? alternate : to, false, 20);
 	});
-	const { presenter, renderer, queue } = createHostOverlayFixture(384, 288);
+	const { renderer, queue } = createHostOverlayFixture(384, 288);
 	const stream = new HostOverlayQuadStream();
 	const draw = () => {
-		renderer.beginFrame(presenter); api.beginFrame(renderer);
+		renderer.beginFrame(); api.beginFrame(renderer);
 		drawWorkbenchGraph(f.view, control.hover, true, control.dragFeedback, control.connectionHandles);
 		renderer.endFrame();
 		const frame = queue.consumeOverlayFrame();

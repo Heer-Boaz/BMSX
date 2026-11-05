@@ -158,7 +158,7 @@ function feedbackFixture(t: TestContext, variant: 'tiny' | 'msx') {
 	const labels: string[] = [];
 	t.mock.method(api, 'blit_text_inline_with_font', label => labels.push(label));
 	const overlay = createHostOverlayFixture(384, 288);
-	const paint = () => { labels.length = 0; overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame(); };
+	const paint = () => { labels.length = 0; overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame(); };
 	const update = () => feedback.update(font, measure, measureText);
 	const point = { valid: true, insideViewport: true, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0,
 		viewportX: 24, viewportY: input.view.hierarchy.outline.layout.contentTop + input.view.hierarchy.outline.layout.rowHeight + 2 };

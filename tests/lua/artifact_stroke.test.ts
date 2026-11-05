@@ -33,7 +33,7 @@ const header: CartRomHeader = { headerSize: 72, manifestOffset: 72, manifestLeng
 	blua32ExceptionFunctionAddress: 0, blua32StaticLayoutTokenLo: 0, blua32StaticLayoutTokenHi: 0, blua32DiagnosticDirectoryOffset: 0 };
 
 function frame(draw: () => void, fixture = createHostOverlayFixture(64, 48)) {
-	fixture.renderer.beginFrame(fixture.presenter); api.beginFrame(fixture.renderer); draw(); fixture.renderer.endFrame();
+	fixture.renderer.beginFrame(); api.beginFrame(fixture.renderer); draw(); fixture.renderer.endFrame();
 	return fixture.queue.consumeOverlayFrame();
 }
 
@@ -119,7 +119,7 @@ test('black and white artifact evidence is rendered over arbitrary bitmap colors
 	const bitmap = new HostBitmap({ width: 64, height: 48, pixels }); t.after(() => bitmap.dispose());
 	const output = frame(() => { api.drawBitmap(bitmap, 0, 0, 64, 48); api.outlinedPolyline([4, 20, 60, 20], 0, 0, 0); }, f);
 	const target = new Uint8Array(pixels.length), context = f.backend.hostOverlayContext;
-	beginHeadlessHost2D(context, target, 64, 48);
+	beginHeadlessHost2D(context, target, 64, 48, 64, 48);
 	for (let index = 0; index < output.commandCount; index++) renderHeadlessHost2DEntry(context, output.commandKinds[index], output.commandRefs[index]);
 	for (const x of [16, 48]) {
 		assert.deepEqual(Array.from(target.subarray((20 * 64 + x) * 4, (20 * 64 + x) * 4 + 4)), [255, 255, 255, 255]);

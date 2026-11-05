@@ -65,10 +65,10 @@ for (const siblings of [24, 1024]) {
 	const movingDragMicroseconds = medianMilliseconds(() => {
 		for (let index = 0; index < 1000; index += 1) capture.dispatch(index % 2 === 0 ? alternate : to, false, 20);
 	});
-	const { presenter, queue, renderer } = createHostOverlayFixture(384, 288);
+	const { queue, renderer } = createHostOverlayFixture(384, 288);
 	const stream = new HostOverlayQuadStream();
 	const draw = () => {
-		renderer.beginFrame(presenter);
+		renderer.beginFrame();
 		api.beginFrame(renderer);
 		drawWorkbenchGraph(viewport, control.hover, true, control.dragFeedback);
 		renderer.endFrame();

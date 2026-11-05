@@ -61,7 +61,7 @@ function fixture(t: TestContext) {
 	const submissions = t.mock.method(api, 'drawBitmap');
 	const draw = (): HostBitmap => {
 		submissions.mock.resetCalls();
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 		pane.draw(); overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
 		assert.equal(submissions.mock.callCount(), 1, 'the resource image must submit its decoded bitmap, not reserve a blank client');
 		return submissions.mock.calls[0].arguments[0];

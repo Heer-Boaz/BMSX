@@ -48,7 +48,7 @@ function fixture(t: TestContext, placement: WindowPlacement = 'normal', areaWidt
 	});
 	const paint = () => {
 		outlines.length = 0;
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame();
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame();
 		overlay.queue.consumeOverlayFrame();
 		return outlines;
 	};

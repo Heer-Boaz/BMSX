@@ -1,23 +1,15 @@
-import type { Host2DKind, Host2DRef } from './commands';
+import type { Host2DCommandList } from './commands';
 
-export type HostOverlayFrame = {
+/** A complete host frame carries the coordinate system used to author its commands. */
+export type HostOverlayFrame = Host2DCommandList & {
 	logicalWidth: number;
 	logicalHeight: number;
-	commandKinds: readonly Host2DKind[];
-	commandRefs: readonly Host2DRef[];
-	commandCount: number;
-};
-
-export type HostMenuFrame = {
-	commandKinds: readonly Host2DKind[];
-	commandRefs: readonly Host2DRef[];
-	commandCount: number;
 };
 
 export class HostOverlayQueue {
 	private pendingFrame: HostOverlayFrame;
 	private hasPendingFrame = false;
-	private pendingMenuFrame: HostMenuFrame;
+	private pendingMenuFrame: HostOverlayFrame;
 	private hasPendingMenuFrame = false;
 
 	public publishOverlayFrame(frame: HostOverlayFrame): void {
@@ -38,7 +30,7 @@ export class HostOverlayQueue {
 		this.hasPendingFrame = false;
 	}
 
-	public publishHostMenuFrame(frame: HostMenuFrame): void {
+	public publishHostMenuFrame(frame: HostOverlayFrame): void {
 		this.pendingMenuFrame = frame;
 		this.hasPendingMenuFrame = true;
 	}
@@ -47,7 +39,7 @@ export class HostOverlayQueue {
 		return this.hasPendingMenuFrame;
 	}
 
-	public consumeHostMenuFrame(): HostMenuFrame {
+	public consumeHostMenuFrame(): HostOverlayFrame {
 		this.hasPendingMenuFrame = false;
 		return this.pendingMenuFrame;
 	}

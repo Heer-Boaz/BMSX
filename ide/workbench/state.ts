@@ -31,7 +31,6 @@ import { presentRuntimeDebuggerStop } from './contrib/debugger/controller';
 import { openHostError } from './contrib/host_error/editor_input';
 
 export const DEFAULT_IDE_FONT_VARIANT: FontVariant = 'tiny';
-export type OverlayResolutionMode = 'offscreen' | 'viewport';
 
 export class RuntimeIdeState extends StudioWorkbench {
 	public readonly editor: CartEditor;
@@ -67,13 +66,12 @@ export class RuntimeIdeState extends StudioWorkbench {
 	) {
 		super({ runtime, input, audioOutput, runtimeTasks, execution, rewind, clock, microtasks, logOutput, sources,
 			models: editorTextModelService, workspaceDirtyRecords, workspaceFiles, gameCapture, createTestTarget, createPlaySession });
-		this.overlayRenderer = new OverlayRenderer(presenter.hostOverlayQueue);
+		this.overlayRenderer = new OverlayRenderer(presenter.hostOverlayQueue, viewport);
 		this.editor = new RuntimeCartEditor(
 			this, presenter, display, preferences, input, clock, clipboard, logOutput, resourcePanelWidthRatio,
 			viewport, DEFAULT_IDE_FONT_VARIANT, this.overlayRenderer, decodeImage, createGraphLayoutEngine,
 			connectAssistant, observeConversation,
 		);
-		this.overlayRenderer.setViewportSize(viewport);
 		this.editor.updateViewport(viewport);
 		this.hotResumes.onDidApply(() => {
 			for (const group of this.editor.editorParts.groups) clearAllRuntimeErrorOverlays(group);
@@ -93,14 +91,4 @@ export class RuntimeIdeState extends StudioWorkbench {
 			this.editor.activate();
 		});
 	}
-}
-
-export function setOverlayResolutionMode(
-	renderer: OverlayRenderer,
-	editor: CartEditor,
-	presenter: VideoPresenter,
-	value: OverlayResolutionMode,
-): void {
-	renderer.setRenderingViewportType(presenter, value);
-	editor.updateViewport(renderer.viewportSize);
 }

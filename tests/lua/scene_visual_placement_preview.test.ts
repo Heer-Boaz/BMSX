@@ -182,7 +182,7 @@ test('the Scene viewport shares main and Add model assets while the located ghos
 	const overlay = createHostOverlayFixture(400, 300);
 	const placement: SceneViewportPlacement = { definitionLabel: choice.id, preview, x: world.ox, y: world.oy, z: world.oz, located: true };
 	const paint = () => {
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); drawSceneViewport(view, false, placement); overlay.renderer.endFrame();
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); drawSceneViewport(view, false, placement); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(), scenes: HostMeshScene[] = [];
 		for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.MeshScene)
 			scenes.push((frame.commandRefs[index] as HostMeshSceneRenderSubmission).scene);

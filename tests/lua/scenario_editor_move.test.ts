@@ -205,7 +205,7 @@ for (const foreignFocus of ['before-inspection', 'after-inspection'] as const)
 
 		// Target the first actually painted stop action, without a label or fixed-coordinate assertion.
 		const borders = t.mock.method(api, 'blit_rect');
-		f.ide.overlayRenderer.beginFrame(f.host.presenter); api.beginFrame(f.ide.overlayRenderer);
+		f.ide.overlayRenderer.beginFrame(); api.beginFrame(f.ide.overlayRenderer);
 		pane.targetInspection.draw(); f.ide.overlayRenderer.endFrame();
 		const [left, top, right, bottom] = borders.mock.calls[0].arguments;
 		borders.mock.restore();

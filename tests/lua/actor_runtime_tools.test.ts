@@ -451,7 +451,7 @@ return world`), true, WORLD_SOURCE, []);
 				assert.ok(graph.viewport.model === graphModel, 'client translation does not rebuild the physical FSM projection');
 				assert.ok(graph.viewport.selection === graphSelection);
 			}
-			overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); pane.draw(); overlay.renderer.endFrame();
+			overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); pane.draw(); overlay.renderer.endFrame();
 			const frame = overlay.queue.consumeOverlayFrame(), glyphs: { x: number; y: number; text: string }[] = [];
 			let transform = IDENTITY_HOST_OVERLAY_TRANSFORM;
 			for (let index = 0; index < frame.commandCount; index++) {
@@ -471,7 +471,7 @@ return world`), true, WORLD_SOURCE, []);
 	controller.openOutline(input); input.outline.selectionIndex = 0; input.rememberSelection();
 	bounds.left = 0; bounds.right = 384; pane.layout(bounds); pane.update();
 	assert.equal(input.split.bounds.top, bounds.top + 2, 'preview geometry no longer reserves duplicate playback and GAME FRAME headers');
-	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); pane.draw(); overlay.renderer.endFrame();
+	overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); pane.draw(); overlay.renderer.endFrame();
 	const frame = overlay.queue.consumeOverlayFrame(), chromeText: string[] = [];
 	for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs) {
 		const run = frame.commandRefs[index] as GlyphRenderSubmission;

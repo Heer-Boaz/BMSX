@@ -98,7 +98,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		assert.ok(measureText(input.heading) <= input.actionBar.items[0].bounds.left - 115 - 8);
 		for (const row of input.rows) assert.ok(measureText(row.text) <= textWidth);
 		const glyphs = t.mock.method(api, 'blit_text_inline_with_font');
-		f.ide.overlayRenderer.beginFrame(f.host.presenter); api.beginFrame(f.ide.overlayRenderer);
+		f.ide.overlayRenderer.beginFrame(); api.beginFrame(f.ide.overlayRenderer);
 		f.pane.draw(); f.ide.overlayRenderer.endFrame(); f.host.presenter.hostOverlayQueue.consumeOverlayFrame();
 		const calls = glyphs.mock.calls;
 		assert.equal(calls.find(call => call.arguments[0] === input.heading)!.arguments[1], 119);

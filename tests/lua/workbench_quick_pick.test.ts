@@ -869,8 +869,8 @@ test('picker uses the actual tiny font and draws only a bounded span of an unbou
 	const presenter = new VideoPresenter(new OffscreenVideoOutput(384, 288),
 		new HeadlessGPUBackend(384, 288, PSX_MACHINE_SPEC.gxGpuVramBytes), 384, 288);
 	const queue = presenter.hostOverlayQueue;
-	const renderer = new OverlayRenderer(queue);
-	renderer.beginFrame(presenter);
+	const renderer = new OverlayRenderer(queue, { width: 384, height: 288 });
+	renderer.beginFrame();
 	api.beginFrame(renderer);
 	picker.draw();
 	renderer.endFrame();
@@ -904,7 +904,7 @@ test('picker uses the actual tiny font and draws only a bounded span of an unbou
 	t.after(() => constants.setIdeThemeVariant('light'));
 	for (const theme of ['light', 'dark'] as const) {
 		constants.setIdeThemeVariant(theme);
-		renderer.beginFrame(presenter);
+		renderer.beginFrame();
 		api.beginFrame(renderer);
 		picker.draw();
 		renderer.endFrame();

@@ -47,6 +47,11 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} retains the old workspace
 	assert.deepEqual(result.drawn.allocated, { x: 24, y: 18 });
 	assert.deepEqual(result.drawn.backing, [24, 18]);
 	assert.deepEqual(result.pixel.slice(0, 3), [0x11, 0x22, 0x33], 'the resized target contains the held image, not the cleared backing buffer');
+	for (const pixels of result.frames) for (let y = 0; y < 12; y++) for (let x = 0; x < 12; x++) {
+		const white = x >= 3 && x < 9 && y >= 4 && y < 8;
+		assert.deepEqual(pixels.slice((y * 12 + x) * 4, (y * 12 + x + 1) * 4), white ? [255, 255, 255, 255] : [0x11, 0x22, 0x33, 255],
+			'both lanes compose the logical frame viewport, nested transform and scissor independently of target dimensions');
+	}
 });
 
 for (const kind of ['webgl2', 'webgpu']) test(`${kind} and CPU render flat/raw textured model packets with affine point sampling`, async t => {

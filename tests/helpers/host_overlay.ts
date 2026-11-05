@@ -10,6 +10,6 @@ export function createHostOverlayFixture(width: number, height: number) {
 	const output = new OffscreenVideoOutput(width, height);
 	const presenter = new VideoPresenter(output, backend, width, height);
 	const queue = presenter.hostOverlayQueue;
-	const renderer = new OverlayRenderer(queue);
+	const renderer = new OverlayRenderer(queue, { width, height });
 	return { backend, output, presenter, queue, renderer };
 }

@@ -11,7 +11,7 @@ import { VirtualHeadlessClock } from '../../../hosts/node/headless/clock';
 import { createInputControllerSnapshot, InputControllerSampleContext } from '../../../machine/ts/machine/devices/input/contracts';
 import { Font } from '../../../machine/ts/render/shared/bmsx_font';
 import { Host2DKind } from '../../../machine/ts/render/host_overlay/commands';
-import type { HostMenuFrame } from '../../../machine/ts/render/host_overlay/overlay_queue';
+import type { HostOverlayFrame } from '../../../machine/ts/render/host_overlay/overlay_queue';
 import type { GlyphRenderSubmission, HostImageRenderSubmission, RectRenderSubmission } from '../../../machine/ts/render/shared/submissions';
 import { createHostOverlayFixture } from '../../helpers/host_overlay';
 
@@ -26,7 +26,7 @@ class Fixture {
 	readonly interaction: HostKeyboardInteraction;
 	readonly ui: HostUiInput;
 	readonly snapshot = createInputControllerSnapshot();
-	frame: HostMenuFrame;
+	frame: HostOverlayFrame;
 	private pressId = 0;
 	private readonly pads = [0, 0];
 	private mouseDown = false;

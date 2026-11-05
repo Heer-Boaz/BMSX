@@ -19,7 +19,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny') {
 	t.after(() => { editorViewState.font = previousFont; editorViewState.lineHeight = previousHeight; });
 	const host = createHostOverlayFixture(640, 240), caption = new WorkbenchCanvasCaption();
 	return { caption, font, draw(left = 0, top = 0) {
-		host.renderer.beginFrame(host.presenter); api.beginFrame(host.renderer);
+		host.renderer.beginFrame(); api.beginFrame(host.renderer);
 		api.pushClipRect(0, 0, 640, 240); caption.draw(left, top); api.popClipRect(); host.renderer.endFrame();
 		const frame = host.queue.consumeOverlayFrame(), glyphs: GlyphRenderSubmission[] = [], fills: RectRenderSubmission[] = [];
 		for (let index = 0; index < frame.commandCount; index++) {

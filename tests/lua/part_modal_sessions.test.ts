@@ -133,7 +133,7 @@ test('translated retained modal geometry owns native caret, backdrop and dialog 
 	t.mock.method(api, 'blit_text_inline_with_font', () => {});
 	backdrop.mock.mockImplementation(() => {}); outline.mock.mockImplementation(() => {});
 	const overlay = createHostOverlayFixture(800, 400);
-	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+	overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 	first.prompt.draw();
 	overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
 	assert.deepEqual(backdrop.mock.calls[0].arguments.slice(0, 4), [first.bounds.left, first.bounds.top, first.bounds.right, first.bounds.bottom]);

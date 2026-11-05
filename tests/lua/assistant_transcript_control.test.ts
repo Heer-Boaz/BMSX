@@ -99,7 +99,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384, 
 	};
 	const press = (code: string) => { key(code); key(code, false); layout(); };
 	const paint = () => {
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame();
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame();
 		return overlay.queue.consumeOverlayFrame();
 	};
 	const tile = (entry: AssistantEntry, imageIndex: number) => {
@@ -119,7 +119,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384, 
 	};
 	const capture = (label: string) => {
 		if (captureDirectory === undefined) return;
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame();
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame();
 		overlay.presenter.configurePresentation('completed', false);
 		overlay.presenter.present(captureRuntime!.machine.gxGpu.readDeviceOutput(), 0, 0);
 		writeFileSync(join(captureDirectory, `${label}.png`), encodeScreenshotPng(384, 288, overlay.backend.borrowPresentedPixels()));

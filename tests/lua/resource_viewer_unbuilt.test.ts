@@ -41,7 +41,7 @@ test('an admitted source-only image opens its information client without cooked 
 	commands.execute('resourceViewer.info', pane.commandTarget);
 	assert.equal(input.view.contentView, 'info');
 	const overlay = createHostOverlayFixture(240, 160), bitmap = t.mock.method(api, 'drawBitmap');
-	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+	overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 	assert.doesNotThrow(() => pane.draw());
 	overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
 	assert.equal(bitmap.mock.callCount(), 0);

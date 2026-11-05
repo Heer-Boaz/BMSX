@@ -14,32 +14,37 @@ void drawFrameSoftware(SoftwareBackend& backend, const HostFrameRenderSubmission
 	const auto& transform = backend.hostOverlayTransform;
 	const auto& clip = backend.hostOverlayClip;
 	blitOpaquePixels(source.data.data(), source.width, source.height, backend.framebuffer(), backend.pitch() / static_cast<i32>(sizeof(u32)),
-		static_cast<i32>(area.left * transform.scale + transform.offsetX), static_cast<i32>(area.top * transform.scale + transform.offsetY),
-		static_cast<i32>(area.right * transform.scale + transform.offsetX), static_cast<i32>(area.bottom * transform.scale + transform.offsetY),
+		static_cast<i32>(area.left * transform.scaleX + transform.offsetX), static_cast<i32>(area.top * transform.scaleY + transform.offsetY),
+		static_cast<i32>(area.right * transform.scaleX + transform.offsetX), static_cast<i32>(area.bottom * transform.scaleY + transform.offsetY),
 		clip.left, clip.top, clip.right, clip.bottom);
 }
 
 
 void drawRectSoftware(SoftwareBackend& backend, const RectRenderSubmission& command) {
 	const auto& transform = backend.hostOverlayTransform;
-	const i32 left = static_cast<i32>(command.area.left * transform.scale + transform.offsetX);
-	const i32 top = static_cast<i32>(command.area.top * transform.scale + transform.offsetY);
-	const i32 right = static_cast<i32>(command.area.right * transform.scale + transform.offsetX);
-	const i32 bottom = static_cast<i32>(command.area.bottom * transform.scale + transform.offsetY);
+	const i32 left = static_cast<i32>(command.area.left * transform.scaleX + transform.offsetX);
+	const i32 top = static_cast<i32>(command.area.top * transform.scaleY + transform.offsetY);
+	const i32 right = static_cast<i32>(command.area.right * transform.scaleX + transform.offsetX);
+	const i32 bottom = static_cast<i32>(command.area.bottom * transform.scaleY + transform.offsetY);
 	const i32 width = right - left;
 	const i32 height = bottom - top;
 	if (command.kind == RectRenderKind::Fill) {
 		backend.fillRect(left, top, width, height, command.color);
 		return;
 	}
-	backend.fillRect(left, top, width, 1, command.color);
-	backend.fillRect(left, top + height - 1, width, 1, command.color);
-	backend.fillRect(left, top, 1, height, command.color);
-	backend.fillRect(left + width - 1, top, 1, height, command.color);
+	const i32 topEnd = static_cast<i32>(command.area.top * transform.scaleY + transform.offsetY + transform.viewportScaleY);
+	const i32 bottomStart = static_cast<i32>(command.area.bottom * transform.scaleY + transform.offsetY - transform.viewportScaleY);
+	const i32 leftEnd = static_cast<i32>(command.area.left * transform.scaleX + transform.offsetX + transform.viewportScaleX);
+	const i32 rightStart = static_cast<i32>(command.area.right * transform.scaleX + transform.offsetX - transform.viewportScaleX);
+	backend.fillRect(left, top, width, topEnd - top, command.color);
+	backend.fillRect(left, bottomStart, width, bottom - bottomStart, command.color);
+	backend.fillRect(left, top, leftEnd - left, height, command.color);
+	backend.fillRect(rightStart, top, right - rightStart, height, command.color);
 }
 
 void drawPolySoftware(SoftwareBackend& backend, const PolyRenderSubmission& command) {
-	const auto& transform = backend.hostOverlayTransform;
+	const auto& transform = backend.hostOverlayTransform.logical;
+	const f32 scaleX = backend.hostOverlayTransform.viewportScaleX, scaleY = backend.hostOverlayTransform.viewportScaleY;
 	const i32 thickness = static_cast<i32>(command.thickness);
 	const i32 half = thickness / 2;
 	for (size_t index = 0; index + 3u < command.points.size(); index += 2u) {
@@ -55,7 +60,11 @@ void drawPolySoftware(SoftwareBackend& backend, const PolyRenderSubmission& comm
 		if (dy < 0) dy = -dy;
 		i32 err = dx - dy;
 		for (;;) {
-			backend.fillRect(x0 - half, y0 - half, thickness, thickness, command.color);
+			const i32 left = static_cast<i32>(static_cast<f32>(x0 - half) * scaleX);
+			const i32 top = static_cast<i32>(static_cast<f32>(y0 - half) * scaleY);
+			const i32 right = static_cast<i32>(static_cast<f32>(x0 - half + thickness) * scaleX);
+			const i32 bottom = static_cast<i32>(static_cast<f32>(y0 - half + thickness) * scaleY);
+			backend.fillRect(left, top, right - left, bottom - top, command.color);
 			if (x0 == x1 && y0 == y1) {
 				break;
 			}
@@ -127,10 +136,10 @@ void drawImageSoftware(SoftwareBackend& backend, const HostImageRenderSubmission
 		source.v,
 		source.w,
 		source.h,
-		static_cast<i32>(command.pos.x * transform.scale + transform.offsetX),
-		static_cast<i32>(command.pos.y * transform.scale + transform.offsetY),
-		static_cast<i32>(static_cast<f32>(source.width) * scale.x * transform.scale),
-		static_cast<i32>(static_cast<f32>(source.height) * scale.y * transform.scale),
+		static_cast<i32>(command.pos.x * transform.scaleX + transform.offsetX),
+		static_cast<i32>(command.pos.y * transform.scaleY + transform.offsetY),
+		static_cast<i32>(static_cast<f32>(source.width) * scale.x * transform.scaleX),
+		static_cast<i32>(static_cast<f32>(source.height) * scale.y * transform.scaleY),
 		command.flip.flip_h,
 		command.flip.flip_v,
 		command.colorize
@@ -148,10 +157,10 @@ void drawGlyphImageSoftware(SoftwareBackend& backend, const HostSystemAtlas& atl
 		rect.v,
 		rect.w,
 		rect.h,
-		static_cast<i32>(imageX * transform.scale + transform.offsetX),
-		static_cast<i32>(imageY * transform.scale + transform.offsetY),
-		static_cast<i32>(static_cast<f32>(item.width) * transform.scale),
-		static_cast<i32>(static_cast<f32>(item.height) * transform.scale),
+		static_cast<i32>(imageX * transform.scaleX + transform.offsetX),
+		static_cast<i32>(imageY * transform.scaleY + transform.offsetY),
+		static_cast<i32>(static_cast<f32>(item.width) * transform.scaleX),
+		static_cast<i32>(static_cast<f32>(item.height) * transform.scaleY),
 		false,
 		false,
 		color
@@ -172,10 +181,10 @@ void drawGlyphBackgroundSoftware(
 ) {
 	const auto& transform = context.backend.hostOverlayTransform;
 	context.backend.fillRect(
-		static_cast<i32>(imageX * transform.scale + transform.offsetX),
-		static_cast<i32>(imageY * transform.scale + transform.offsetY),
-		static_cast<i32>(static_cast<f32>(item.advance) * transform.scale),
-		static_cast<i32>(static_cast<f32>(context.lineHeight) * transform.scale),
+		static_cast<i32>(imageX * transform.scaleX + transform.offsetX),
+		static_cast<i32>(imageY * transform.scaleY + transform.offsetY),
+		static_cast<i32>(static_cast<f32>(item.advance) * transform.scaleX),
+		static_cast<i32>(static_cast<f32>(context.lineHeight) * transform.scaleY),
 		context.color
 	);
 }
@@ -214,13 +223,13 @@ void drawGlyphsSoftware(SoftwareBackend& backend, const GlyphRenderSubmission& c
 
 void beginHostOverlaySoftware(SoftwareBackend& backend, const Host2DPipelineState& state) {
 	backend.hostOverlayFrame = static_cast<const SoftwareTexture*>(state.frameTexture);
-	backend.hostOverlayTransform = IDENTITY_HOST_OVERLAY_TRANSFORM;
-	backend.hostOverlayClip.reset(backend.width(), backend.height(), backend.width(), backend.height());
+	backend.hostOverlayTransform.reset(state.overlayWidth, state.overlayHeight, state.width, state.height);
+	backend.hostOverlayClip.reset(state.overlayWidth, state.overlayHeight, state.width, state.height);
 }
 
 void renderHost2DEntrySoftware(SoftwareBackend& backend, Host2DKind kind, Host2DRef ref) {
 	switch (kind) {
-		case Host2DKind::Transform: backend.hostOverlayTransform = *ref.transform; return;
+		case Host2DKind::Transform: backend.hostOverlayTransform.set(*ref.transform); return;
 		case Host2DKind::Clip: backend.hostOverlayClip.set(*ref.clip); return;
 		case Host2DKind::Img: drawImageSoftware(backend, *ref.img); return;
 		case Host2DKind::Frame: drawFrameSoftware(backend, *ref.frame); return;

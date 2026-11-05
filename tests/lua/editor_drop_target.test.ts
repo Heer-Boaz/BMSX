@@ -238,7 +238,7 @@ test('foreign drop feedback consumes the final receiver font layout before the s
 			if (color === COLOR_FOCUS_BORDER) marker = [left, top, right, bottom];
 			fill(left, top, right, bottom, z, color);
 		});
-		f.ide.overlayRenderer.beginFrame(f.host.presenter); api.beginFrame(f.ide.overlayRenderer);
+		f.ide.overlayRenderer.beginFrame(); api.beginFrame(f.ide.overlayRenderer);
 		f.editor.draw(); f.ide.overlayRenderer.endFrame(); f.host.presenter.hostOverlayQueue.consumeOverlayFrame();
 		spy.mock.restore(); assert.ok(marker); return marker;
 	};

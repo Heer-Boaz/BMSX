@@ -108,7 +108,7 @@ for (const theme of ['light', 'dark'] as const) {
 		const overlay = createHostOverlayFixture(160, 100);
 		for (const state of ['idle', 'hovered', 'selected'] as const) {
 			view.selection = state === 'selected' ? node : null;
-			overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+			overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 			drawWorkbenchGraph(view, state === 'hovered' ? node : null, false); overlay.renderer.endFrame();
 			const frame = overlay.queue.consumeOverlayFrame();
 			let stripe: RectRenderSubmission | undefined;

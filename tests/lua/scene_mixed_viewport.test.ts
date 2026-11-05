@@ -106,7 +106,7 @@ test('orbit viewport renders sprites, glyphs, backgrounds and models together an
 		assert.deepEqual([...target.pixels.subarray(offset, offset + 4)], color);
 	}
 	const overlay = createHostOverlayFixture(400, 300);
-	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); drawSceneViewport(view, false); overlay.renderer.endFrame();
+	overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); drawSceneViewport(view, false); overlay.renderer.endFrame();
 	const frame = overlay.queue.consumeOverlayFrame();
 	assert.equal(frame.commandKinds.slice(0, frame.commandCount).filter(kind => kind === Host2DKind.MeshScene).length, 1,
 		'all source content shares one depth pass, not a separate canvas painted on top');

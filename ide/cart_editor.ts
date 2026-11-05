@@ -970,6 +970,7 @@ export class RuntimeCartEditor implements CartEditor {
 		if (this.isActive && (viewport.width !== editorViewState.viewportWidth || viewport.height !== editorViewState.viewportHeight)) {
 			this.cancelPointerInput();
 		}
+		this.overlayRenderer.setViewportSize(viewport);
 		applyViewportSize(viewport);
 		layoutTopBar(this.chromeRenderContext, this.menubar.expanded);
 		this.menubar.update();
@@ -1234,8 +1235,7 @@ export class RuntimeCartEditor implements CartEditor {
 		const width = Math.trunc(availableWidth / scale), height = Math.trunc(availableHeight / scale);
 		this.presenter.setFixedRenderTargetSize(width, height);
 		if (width === editorViewState.viewportWidth && height === editorViewState.viewportHeight) return;
-		this.overlayRenderer.setRenderingViewportType(this.presenter, 'viewport');
-		this.updateViewport(this.overlayRenderer.viewportSize);
+		this.updateViewport({ width, height });
 	};
 
 	private leaveRenderTargets(): void {
@@ -1243,7 +1243,6 @@ export class RuntimeCartEditor implements CartEditor {
 		this.display.workspace.close();
 		const presenter = this.presenter;
 		presenter.useScanoutRenderTargetSize();
-		this.overlayRenderer.setRenderingViewportType(presenter, 'viewport');
-		this.updateViewport(this.overlayRenderer.viewportSize);
+		this.updateViewport({ width: presenter.viewportSize.x, height: presenter.viewportSize.y });
 	}
 }

@@ -133,7 +133,7 @@ scenes.register('partial', {objects={
 	selectSceneOutlineRow(f.view.hierarchy, 1); f.update();
 	const overlay = createHostOverlayFixture(384, 288), stream = new HostOverlayQuadStream();
 	const draw = () => {
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 		drawSceneHierarchy(f.view.hierarchy, false); f.primary.details.control.draw(); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(); stream.reset(384, 288);
 		for (let index = 0; index < frame.commandCount; index += 1) stream.appendEntry(frame.commandKinds[index], frame.commandRefs[index]);

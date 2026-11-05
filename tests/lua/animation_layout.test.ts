@@ -101,7 +101,7 @@ test('Animation renders decoded semantic track and clip captions without recasin
 		layoutAnimationEditor(input, bounds, keys); input.overview.update(input);
 		assert.ok(input.tracks.layout.visibleRowCount >= input.tracks.rows.length, 'the render contract exercises every actual source and UI row');
 		rendered.length = 0;
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 		drawAnimationEditor(input, bounds, false); overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
 		for (const row of input.tracks.rows) {
 			assert.equal(row.text, row.label, 'the test provides enough layout width to observe the exact semantic bytes');

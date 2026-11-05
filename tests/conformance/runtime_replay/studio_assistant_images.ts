@@ -30,7 +30,7 @@ export async function startAssistantImageTest(kind: StudioRendererKind, canvas: 
 		},
 		async narrow() {
 			test.presenter.setFixedRenderTargetSize(260, 320);
-			test.ide.overlayRenderer.setRenderingViewportType(test.presenter, 'viewport'); test.ide.editor.updateViewport(test.ide.overlayRenderer.viewportSize);
+			test.ide.editor.updateViewport({ width: test.presenter.viewportSize.x, height: test.presenter.viewportSize.y });
 			await test.frame();
 		},
 		async finish() { await renderer.finish(); },

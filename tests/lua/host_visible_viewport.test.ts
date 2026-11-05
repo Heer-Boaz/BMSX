@@ -9,14 +9,14 @@ import { Input } from '../../hosts/common/input/manager';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { write_rect_bounds, type RectBounds } from '../../machine/ts/common/rect';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
-import type { HostMenuFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
+import type { HostOverlayFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
 import { hostSystemAtlasImage } from '../../machine/ts/render/host_overlay/atlas';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
 import { RectRenderKind, type GlyphRenderSubmission, type HostImageRenderSubmission, type RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 
-function assertVisible(frame: HostMenuFrame, bounds: Readonly<RectBounds>): void {
+function assertVisible(frame: HostOverlayFrame, bounds: Readonly<RectBounds>): void {
 	for (let index = 0; index < frame.commandCount; index += 1) {
 		if (frame.commandKinds[index] === Host2DKind.Rect) {
 			const { area } = frame.commandRefs[index] as RectRenderSubmission;
@@ -46,6 +46,14 @@ function keyboardFixture() {
 	const frame = () => { keyboard.queueRenderCommands(); return queue.consumeHostMenuFrame(); };
 	return { output, presenter, input, model, keyboard, frame };
 }
+
+test('keyboard frames describe their arranged coordinates, not a pending presentation allocation', t => {
+	const f = keyboardFixture(); t.after(() => f.input.dispose());
+	f.presenter.setFixedRenderTargetSize(512, 384);
+	const frame = f.frame();
+	assert.deepEqual([frame.logicalWidth, frame.logicalHeight], [256, 192]);
+	assertVisible(frame, f.presenter.visibleViewportBounds);
+});
 
 test('video presenter retains its producer visible rectangle without changing full-image mapping', () => {
 	const { output, presenter } = createHostOverlayFixture(256, 192);

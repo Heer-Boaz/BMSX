@@ -36,10 +36,10 @@ view.setZoom(zoom);
 const control = new WorkbenchGraphControl(new InputFocusService(), new PointerCaptureService(), new PointerHoverService());
 control.setInput(view);
 const snapshot = { valid: true, insideViewport: true, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0, viewportX: 40, viewportY: 50 };
-const { presenter, queue, renderer } = createHostOverlayFixture(384, 288);
+const { queue, renderer } = createHostOverlayFixture(384, 288);
 const stream = new HostOverlayQuadStream();
 const draw = () => {
-	renderer.beginFrame(presenter);
+	renderer.beginFrame();
 	api.beginFrame(renderer);
 	drawWorkbenchGraph(view, control.hover, false);
 	renderer.endFrame();

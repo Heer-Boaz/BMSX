@@ -1,5 +1,6 @@
 #include "render/video_presenter.h"
 #include "render/backend/pass/library.h"
+#include "render/shared/submissions.h"
 #include "spec/bmsx/model.h"
 #include "support/gpu_output_fixture.h"
 #include <iostream>
@@ -84,4 +85,21 @@ int main() {
 	presenter.present(fixture.output, 0, 0);
 	require(software.width() == 320 && software.height() == 240, "normal gameplay continues following scanout");
 	std::cout << "VIDEO-PRESENTER-SIZING:PASS\n";
+	// Complete frame coordinates survive a different destination allocation.
+	const HostOverlayTransform transform{0.5F, 1, 0.5F};
+	const HostOverlayClipRect clip{1, 1, 3, 2};
+	const RectRenderSubmission fill{RectRenderKind::Fill, {0, 0, 4, 3, 0}, 0xffffffff, Layer2D::IDE};
+	const Host2DKind kinds[]{Host2DKind::Transform, Host2DKind::Clip, Host2DKind::Rect};
+	const Host2DRef refs[]{{.transform = &transform}, {.clip = &clip}, {.rect = &fill}};
+	const HostOverlayFrame frame{4, 3, kinds, refs, 3};
+	for (const bool menu : {false, true}) {
+		if (menu) presenter.hostOverlayQueue.publishHostMenuFrame(frame); else presenter.hostOverlayQueue.publishOverlayFrame(frame);
+		presenter.setFixedRenderTargetSize(12, 12);
+		presenter.present(fixture.output, 0, 0);
+		for (i32 y = 0; y < 12; y++) for (i32 x = 0; x < 12; x++) {
+			const bool white = software.framebuffer()[y * 12 + x] == 0xffffffff;
+			require(white == (x >= 3 && x < 9 && y >= 4 && y < 8), "both host lanes map frame-local transforms and clips to the target");
+		}
+	}
+	std::cout << "HOST-FRAME-VIEWPORT:PASS\n";
 }

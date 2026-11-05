@@ -32,7 +32,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 240) 
 	const overlay = createHostOverlayFixture(384, 288);
 	const paint = () => {
 		f.arrange(); controller.update();
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame();
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(), glyphs: GlyphRenderSubmission[] = [];
 		for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs)
 			glyphs.push(frame.commandRefs[index] as GlyphRenderSubmission);

@@ -7,6 +7,7 @@ import { RenderPassLibrary } from '../../machine/ts/render/backend/pass/library'
 import { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { cartridgeSlots } from './cartridge';
+import { OverlayRenderer } from '../../ide/runtime/overlay_renderer';
 
 /** Real browser presentation and workspace sizing, without a cart or UI model. */
 export async function renderPresentationTarget(canvas: HTMLCanvasElement, kind: 'webgl2' | 'webgpu') {
@@ -55,8 +56,28 @@ export async function renderPresentationTarget(canvas: HTMLCanvasElement, kind: 
 		gl!.gl.readPixels(0, 0, 1, 1, gl!.gl.RGBA, gl!.gl.UNSIGNED_BYTE, bytes);
 		pixel = Array.from(bytes);
 	}
+	const overlay = new OverlayRenderer(presenter.hostOverlayQueue, { width: 4, height: 3 });
+	const frames: number[][] = [];
+	for (const menu of [false, true]) {
+		overlay.beginFrame(); overlay.pushClipRect(1, 1, 3, 2);
+		overlay.pushTransform({ scale: 0.5, offsetX: 1, offsetY: 0.5 });
+		overlay.fillRect(0, 0, 4, 3, 0, 0xffffffff, 0);
+		overlay.popTransform(); overlay.popClipRect(); overlay.endFrame();
+		if (menu) presenter.hostOverlayQueue.publishHostMenuFrame(presenter.hostOverlayQueue.consumeOverlayFrame());
+		presenter.setFixedRenderTargetSize(12, 12);
+		presenter.present(output, 0, 0);
+		if (gpu !== undefined) frames.push(Array.from(await gpu.readColorTexture(gpu.context.getCurrentTexture(), 12, 12)));
+		else {
+			const bytes = new Uint8Array(12 * 12 * 4);
+			gl!.gl.readPixels(0, 0, 12, 12, gl!.gl.RGBA, gl!.gl.UNSIGNED_BYTE, bytes);
+			// Normalize GL's framebuffer origin, as native capture does.
+			const topDown = new Uint8Array(bytes.length);
+			for (let y = 0; y < 12; y++) topDown.set(bytes.subarray((11 - y) * 48, (12 - y) * 48), y * 48);
+			frames.push(Array.from(topDown));
+		}
+	}
 	const validationError = gpu === undefined ? undefined : (await gpu.device.popErrorScope())?.message;
 	const glError = gl === undefined ? 0 : gl.gl.getError();
 	presenter.dispose(); video.dispose(); gpu?.device.destroy();
-	return { before, pending, drawn, pixel, validationError, glError, errors };
+	return { before, pending, drawn, pixel, frames, validationError, glError, errors };
 }

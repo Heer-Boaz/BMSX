@@ -13,27 +13,21 @@ struct HostOverlayFrame {
 	size_t commandCount = 0;
 };
 
-struct HostMenuFrame {
-	const Host2DKind* commandKinds = nullptr;
-	const Host2DRef* commandRefs = nullptr;
-	size_t commandCount = 0;
-};
-
 class HostOverlayQueue {
 public:
 	void publishOverlayFrame(const HostOverlayFrame& frame);
 	bool hasPendingOverlayFrame() const;
 	HostOverlayFrame consumeOverlayFrame();
 	void clearOverlayFrame();
-	void publishHostMenuFrame(const HostMenuFrame& frame);
+	void publishHostMenuFrame(const HostOverlayFrame& frame);
 	bool hasPendingHostMenuFrame() const;
-	HostMenuFrame consumeHostMenuFrame();
+	HostOverlayFrame consumeHostMenuFrame();
 	void clearHostMenuFrame();
 
 private:
 	HostOverlayFrame m_pendingFrame;
 	bool m_hasPendingFrame = false;
-	HostMenuFrame m_pendingMenuFrame;
+	HostOverlayFrame m_pendingMenuFrame;
 	bool m_hasPendingMenuFrame = false;
 };
 

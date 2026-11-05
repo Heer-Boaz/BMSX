@@ -8,6 +8,19 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createLiveStudioFixture } from '../helpers/live_studio';
 import { pointerCapture } from '../../ide/input/pointer/capture';
+import { drawIde } from '../../ide/workbench/mode';
+
+test('workbench layout publishes its viewport to the drawing owner without rereading the presenter', async t => {
+	const f = await createLiveStudioFixture(t);
+	const target = { ...f.presenter.viewportSize };
+	const input = f.editor.editorParts.activeGroup.model.activeTab;
+	f.editor.updateViewport({ width: 400, height: 300 });
+	drawIde(f.ide);
+	const frame = f.presenter.hostOverlayQueue.consumeOverlayFrame();
+	assert.deepEqual([frame.logicalWidth, frame.logicalHeight], [400, 300]);
+	assert.deepEqual(f.presenter.viewportSize, target, 'logical workbench layout does not select a different presentation target');
+	assert.ok(f.editor.editorParts.activeGroup.model.activeTab === input);
+});
 
 test('Studio reallocates its own workspace, retaining documents and restoring the unchanged game presentation', async t => {
 	const f = await createLiveStudioFixture(t);

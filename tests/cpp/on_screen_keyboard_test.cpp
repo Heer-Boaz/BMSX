@@ -245,7 +245,7 @@ void testFunctionPagesAndView() {
 	VideoPresenter presenter(output, std::make_unique<SoftwareBackend>(256, 192, PSX_MACHINE_SPEC.gxGpuVramBytes), 256, 192);
 	Font font; presenter.default_font = &font;
 	HostOnScreenKeyboard view(f.keyboard); view.queueRenderCommands(presenter);
-	const HostMenuFrame frame = presenter.hostOverlayQueue.consumeHostMenuFrame();
+	const HostOverlayFrame frame = presenter.hostOverlayQueue.consumeHostMenuFrame();
 	require(frame.commandRefs[2].glyphs->items[0] == "KEYBOARD: FN", "bitmap title publishes the actual active function page");
 	const auto selected = f.keyboard.selectedKey();
 	size_t command = 3;

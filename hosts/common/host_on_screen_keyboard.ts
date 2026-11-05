@@ -7,7 +7,7 @@ import {
 } from '../../machine/ts/render/shared/submissions';
 import { hostSystemAtlasImage } from '../../machine/ts/render/host_overlay/atlas';
 import { Host2DKind, type Host2DRef } from '../../machine/ts/render/host_overlay/commands';
-import type { HostMenuFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
+import type { HostOverlayFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import { point_in_rect } from '../../machine/ts/common/rect';
 import { OnScreenKeyboard } from './input/on_screen_keyboard';
@@ -75,7 +75,8 @@ export class HostOnScreenKeyboard {
 	private readonly keyIconShadows = new Array<HostImageRenderSubmission>(KEY_ICONS.length);
 	private readonly commandKinds = new Array<Host2DKind>(COMMAND_COUNT);
 	private readonly commandRefs = new Array<Host2DRef>(COMMAND_COUNT);
-	private readonly renderFrame: HostMenuFrame = {
+	private readonly renderFrame: HostOverlayFrame = {
+		logicalWidth: 0, logicalHeight: 0,
 		commandKinds: this.commandKinds,
 		commandRefs: this.commandRefs,
 		commandCount: 0,
@@ -199,6 +200,8 @@ export class HostOnScreenKeyboard {
 			this.layoutKeys();
 		}
 		presenter.hostOverlayQueue.clearHostMenuFrame();
+		this.renderFrame.logicalWidth = presenter.canvasSize.x;
+		this.renderFrame.logicalHeight = presenter.canvasSize.y;
 		presenter.hostOverlayQueue.publishHostMenuFrame(this.renderFrame);
 	}
 	private rebuildPageCommands(): void {

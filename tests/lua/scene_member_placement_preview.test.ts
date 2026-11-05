@@ -137,7 +137,7 @@ test('painting a located ghost uses translucent real texture; leaving the canvas
 	f.control.update();
 	const overlay = createHostOverlayFixture(450, 300);
 	const paint = () => {
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); f.control.draw(); overlay.renderer.endFrame();
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); f.control.draw(); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(), bitmaps: HostBitmapRenderSubmission[] = [];
 		for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Bitmap)
 			bitmaps.push(frame.commandRefs[index] as HostBitmapRenderSubmission);

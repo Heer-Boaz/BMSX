@@ -19,7 +19,7 @@ function fixture(t: TestContext, theme: string, variant: 'tiny' | 'msx') {
 		markers: [{ x: -3, y: -2, glyph: 'a' }, { x: 40, y: 30, glyph: 'b' }] };
 	grid.layout(4, 20, variant === 'tiny' ? 78 : 118, 180);
 	const draw = () => {
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 		grid.draw(false); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(), rects: RectRenderSubmission[] = [];
 		for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Rect)

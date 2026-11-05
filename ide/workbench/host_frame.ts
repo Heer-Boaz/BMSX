@@ -64,7 +64,7 @@ function presentWorkbenchFrame(
 		return;
 	}
 	if (action === HostFrameAction.PresentPending) {
-		workbenchMode.tickIDEDraw(ide, presenter);
+		workbenchMode.tickIDEDraw(ide);
 	}
 	presentHostPresentation(
 		session,

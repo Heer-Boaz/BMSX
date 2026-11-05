@@ -32,7 +32,7 @@ for (const font of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark
 		const bounds = { left: 8, top: 8, right: 248, bottom: 168 };
 		const draw = (focused: boolean) => {
 			if (focused) controller.focus(); else controller.focusTarget.release();
-			overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+			overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 			arrange(bounds); controller.draw(); overlay.renderer.endFrame();
 			return overlay.queue.consumeOverlayFrame();
 		};
@@ -87,13 +87,13 @@ for (const empty of [false, true]) test(`Problems owns its panel/content clips (
 	t.after(() => controller.focusTarget.release());
 	const overlay = createHostOverlayFixture(160, 96);
 	const bounds = { left: 8, top: 8, right: 112, bottom: 8 + editorViewState.lineHeight * 3 + 12 };
-	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+	overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 	arrange(bounds); controller.draw(); overlay.renderer.endFrame();
 	const frame = overlay.queue.consumeOverlayFrame();
 	const pixels = overlay.backend.framebufferPixels;
 	pixels.fill(0);
 	const context = overlay.backend.hostOverlayContext;
-	beginHeadlessHost2D(context, pixels, 160, 96);
+	beginHeadlessHost2D(context, pixels, 160, 96, 160, 96);
 	for (let index = 0; index < frame.commandCount; index += 1) renderHeadlessHost2DEntry(context, frame.commandKinds[index], frame.commandRefs[index]);
 	for (let y = 0; y < 96; y += 1) for (let x = 0; x < 160; x += 1) {
 		if (x >= bounds.left && x < bounds.right && y >= bounds.top && y < bounds.bottom) continue;
@@ -116,7 +116,7 @@ test('Problems restores a nested caller clip and retains warm paint/layout stora
 	const caller = { left: 16, top: 10, right: 100, bottom: 80 };
 	const stream = new HostOverlayQuadStream();
 	const draw = () => {
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 		api.pushClipRect(caller.left, caller.top, caller.right, caller.bottom);
 		arrange(bounds); controller.draw();
 		api.fill_rect(0, 60, 160, 70, 0, colors.COLOR_SELECTION_TEXT);
@@ -143,7 +143,7 @@ test('Problems restores a nested caller clip and retains warm paint/layout stora
 	const frame = draw();
 	const pixels = overlay.backend.framebufferPixels;
 	const context = overlay.backend.hostOverlayContext;
-	beginHeadlessHost2D(context, pixels, 160, 96);
+	beginHeadlessHost2D(context, pixels, 160, 96, 160, 96);
 	for (let index = 0; index < frame.commandCount; index += 1) renderHeadlessHost2DEntry(context, frame.commandKinds[index], frame.commandRefs[index]);
 	for (let y = 0; y < 96; y += 1) for (let x = 0; x < 160; x += 1) {
 		if (x >= caller.left && x < caller.right && y >= caller.top && y < caller.bottom) continue;

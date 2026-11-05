@@ -1,7 +1,6 @@
 import { clamp } from '../../machine/ts/common/clamp';
 import { clear_rect_bounds, create_rect_bounds, point_in_rect, write_rect_bounds } from '../../machine/ts/common/rect';
-import { Host2DKind, type Host2DRef } from '../../machine/ts/render/host_overlay/commands';
-import type { HostMenuFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
+import { Host2DKind, type Host2DRef, type Host2DCommandList } from '../../machine/ts/render/host_overlay/commands';
 import type { BFont } from '../../machine/ts/render/shared/bitmap_font';
 import { LAYER_2D_IDE } from '../../machine/ts/render/shared/layers';
 import { RectRenderKind, type GlyphRenderSubmission, type RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
@@ -35,7 +34,7 @@ export class HostRewindTimeline {
 	private readonly rects: RectRenderSubmission[];
 	private readonly labels: GlyphRenderSubmission[];
 	private readonly labelWidths = new Float64Array(7);
-	public readonly frame: HostMenuFrame;
+	public readonly frame: Host2DCommandList;
 	private font: BFont | undefined;
 	private state!: TimelineState;
 	private offsetTenths = -1;

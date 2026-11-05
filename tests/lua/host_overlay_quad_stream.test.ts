@@ -120,7 +120,7 @@ test('software integer magnification reproduces square tiny-glyph texel blocks, 
 	const text = { x: 2, y: 3, z: 0, items: 'A\tB\nC', item_start: 0, item_end: 5, font: new Font({ variant: 'tiny' }),
 		color: 0xffffffff, has_background_color: true, background_color: 0xff223344, layer: LAYER_2D_IDE };
 	target.fill(0);
-	beginHeadlessHost2D(context, target, 64, 48);
+	beginHeadlessHost2D(context, target, 64, 48, 64, 48);
 	renderHeadlessHost2DEntry(context, Host2DKind.Glyphs, text);
 	const original = target.slice();
 	for (const scale of [1, 2, 3, 4]) {

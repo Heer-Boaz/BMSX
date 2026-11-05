@@ -46,7 +46,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} runtime transpo
 	for (let frame = 0; frame < 1000; frame++) layout.update(actions, range, font, 0, 240, 384, 37, 150);
 	assert.equal(measure.mock.callCount(), 0, 'clean frames reuse measured transport text and geometry');
 	const overlay = createHostOverlayFixture(384, 288);
-	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+	overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 	drawRuntimeTimeline(layout, actions, range, false, font); overlay.renderer.endFrame();
 	const frame = overlay.queue.consumeOverlayFrame(), text: string[] = [];
 	for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs) {

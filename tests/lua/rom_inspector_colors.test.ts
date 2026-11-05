@@ -74,7 +74,7 @@ function fixture(t: TestContext) {
 		filterViewport.layout(filter, input.filterBounds, { advanceChar: char => font.advance(char), spaceAdvance: font.advance(' '), tabSpaces: 4 }, font);
 	};
 	const draw = () => {
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 		drawRomInspector(input, presentation, filter, filterViewport, true); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(), rects: RectRenderSubmission[] = [];
 		for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Rect) {

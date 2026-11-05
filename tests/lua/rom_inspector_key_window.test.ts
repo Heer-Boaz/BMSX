@@ -64,7 +64,7 @@ function fixture(t: TestContext, variant: FontVariant = 'tiny', theme = 'light')
 	let key = new RomMapKeyWindow(input, commands, contextMenu, surfaces, owner, origin, area);
 	const overlay = createHostOverlayFixture(384, 288);
 	const draw = () => {
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame();
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(), glyphs: GlyphRenderSubmission[] = [], rects: RectRenderSubmission[] = [];
 		for (let index = 0; index < frame.commandCount; index++) {
 			if (frame.commandKinds[index] === Host2DKind.Glyphs) glyphs.push(frame.commandRefs[index] as GlyphRenderSubmission);

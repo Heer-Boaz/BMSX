@@ -205,24 +205,21 @@ export function tickIDE(state: RuntimeIdeState, deltaSeconds: number): void {
 	state.overlayRenderer.drawFramePending = true;
 }
 
-export function tickIDEDraw(
-	state: RuntimeIdeState,
-	presenter: VideoPresenter,
-): void {
+export function tickIDEDraw(state: RuntimeIdeState): void {
 	if (!state.editor.isActive) {
 		return;
 	}
 	try {
-		drawIde(state, presenter);
+		drawIde(state);
 	} finally {
 		state.overlayRenderer.drawFramePending = false;
 	}
 }
 
-export function drawIde(state: RuntimeIdeState, presenter: VideoPresenter): void {
+export function drawIde(state: RuntimeIdeState): void {
 	const overlayRenderer = state.overlayRenderer;
 	try {
-		overlayRenderer.beginFrame(presenter);
+		overlayRenderer.beginFrame();
 		overlay_api.beginFrame(overlayRenderer);
 		state.editor.draw();
 	} finally {

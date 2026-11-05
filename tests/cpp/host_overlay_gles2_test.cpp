@@ -123,6 +123,25 @@ int main() {
 				require(clipped[static_cast<size_t>(y * 64 + x)] == (inside ? 0xffffffff : 0), "logical clip must map to the physical target");
 			}
 		}
+		// Compose a logical scope and clip before independently mapping the two target axes.
+		state.overlayWidth = 8; state.overlayHeight = 3;
+		const HostOverlayTransform scope{0.5F, 1, 0.5F};
+		const HostOverlayClipRect scopeClip{1, 1, 3, 2};
+		const RectRenderSubmission scopedWhite{RectRenderKind::Fill, {0, 0, 4, 3, 0}, 0xffffffff, Layer2D::IDE};
+		beginHostOverlayGLES2(backend, pipeline, state);
+		glClearColor(0, 0, 0, 0); glClear(GL_COLOR_BUFFER_BIT);
+		renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Transform, {.transform = &scope});
+		renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Clip, {.clip = &scopeClip});
+		renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Rect, {.rect = &scopedWhite});
+		glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, clipped.data());
+		endHostOverlayGLES2(backend, pipeline);
+		require(glGetError() == GL_NO_ERROR, "GLES2 nonuniform frame projection graphics error");
+		for (int y = 0; y < 48; ++y) {
+			for (int x = 0; x < 64; ++x) {
+				const bool inside = x >= 8 && x < 24 && y >= 16 && y < 32;
+				require(clipped[(47 - y) * 64 + x] == (inside ? 0xffffffff : 0), "GLES2 scope and clip must share the frame projection");
+			}
+		}
 		// Framebuffer textures have OpenGL's lower-left origin; UI coordinates do not.
 		const u8 framePixels[]{0, 0, 255, 255, 255, 255, 255, 255, 255, 0, 0, 255, 0, 255, 0, 255};
 		state.frameTexture = backend.createTexture(framePixels, 2, 2, RGBA8_LINEAR_TEXTURE_PARAMS);

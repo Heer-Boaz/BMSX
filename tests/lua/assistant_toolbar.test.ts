@@ -143,7 +143,7 @@ function toolbarFixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme 
 		assert.equal(menu.visible, true);
 	};
 	const draw = () => {
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame();
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(), glyphs: GlyphRenderSubmission[] = [], rects: RectRenderSubmission[] = [];
 		for (let index = 0; index < frame.commandCount; index++) {
 			if (frame.commandKinds[index] === Host2DKind.Glyphs) glyphs.push(frame.commandRefs[index] as GlyphRenderSubmission);
@@ -190,7 +190,7 @@ for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as 
 			}
 			if (captureDirectory !== undefined) {
 				const { renderer, presenter, backend } = f.overlay;
-				renderer.beginFrame(presenter); api.beginFrame(renderer); f.surfaces.draw(api); renderer.endFrame();
+				renderer.beginFrame(); api.beginFrame(renderer); f.surfaces.draw(api); renderer.endFrame();
 				presenter.configurePresentation('completed', false);
 				presenter.present(f.runtime.machine.gxGpu.readDeviceOutput(), 0, 0);
 				const state = phase === 0 ? 'wide' : phase === 1 ? 'minimum' : 'wide-restored';

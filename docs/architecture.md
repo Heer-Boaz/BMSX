@@ -201,8 +201,7 @@ the same product behavior. Concrete resource lifetime stays with the backend.
 Completed scanout then enters host presentation. Host menus and Studio publish
 separate overlay work. The presenter owns destination sizing, render-target
 lifetime, presentation history and capture. Window geometry does not become
-device register state. See
-[host presentation sizing](host_presentation_sizing.md).
+device register state.
 
 Renderer caches and GPU resources have explicit ownership and context lifetime.
 Controlled teardown commits authoritative device data before destroying its

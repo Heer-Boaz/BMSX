@@ -30,7 +30,7 @@ function fixture(t: TestContext, width = 8, height = 8) {
 	t.after(() => f.presenter.dispose());
 	const context = f.backend.hostOverlayContext, pixels = f.backend.framebufferPixels;
 	const draw = (scene: HostMeshScene) => {
-		pixels.fill(0); beginHeadlessHost2D(context, pixels, width, height);
+		pixels.fill(0); beginHeadlessHost2D(context, pixels, width, height, width, height);
 		renderHeadlessHost2DEntry(context, Host2DKind.MeshScene, { scene, left: 0, top: 0, right: width, bottom: height });
 		return pixels;
 	};
@@ -235,7 +235,7 @@ test('software mesh targets retain idle storage and retire on resize, scene disp
 test('software scene commands preserve transformed clip mapping and ordered overlays without sharing depth', t => {
 	const f = fixture(t, 16, 16), viewport = scene({ ...IDENTITY, mesh: mesh([-1, -1, 0.9, 1, -1, 0.9, -1, 1, 0.9], 0xffff0000) });
 	const { context, pixels } = f;
-	beginHeadlessHost2D(context, pixels, 16, 16);
+	beginHeadlessHost2D(context, pixels, 16, 16, 16, 16);
 	const fill = (color: number) => renderHeadlessHost2DEntry(context, Host2DKind.Rect,
 		{ area: { left: 0, top: 0, right: 16, bottom: 16, z: 0 }, kind: RectRenderKind.Fill, color, layer: LAYER_2D_IDE });
 	fill(0xff00ff00);

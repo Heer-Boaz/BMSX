@@ -27,6 +27,8 @@ int main() {
 	SoftwareBackend backend(64, 48, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	backend.resizePresentationTarget(64, 48);
 	Host2DPipelineState state;
+	state.width = state.overlayWidth = 64;
+	state.height = state.overlayHeight = 48;
 	test::HostOverlayFixture fixture;
 	std::vector<u32> reference(64 * 48);
 	for (const HostOverlayTransform transform : {IDENTITY_HOST_OVERLAY_TRANSFORM, HostOverlayTransform{0.5F, 3, 2}, HostOverlayTransform{2, 3, 2}}) {
@@ -60,7 +62,8 @@ int main() {
 	const HostOverlayTransform doubled{2, 0, 0};
 	std::fill_n(backend.framebuffer(), reference.size(), 0);
 	beginHostOverlaySoftware(backend, state);
-	require(backend.hostOverlayTransform.scale == 1 && backend.hostOverlayTransform.offsetX == 0, "new pass resets transform");
+	require(backend.hostOverlayTransform.scaleX == 1 && backend.hostOverlayTransform.scaleY == 1
+		&& backend.hostOverlayTransform.offsetX == 0, "new pass resets transform");
 	renderHost2DEntrySoftware(backend, Host2DKind::Glyphs, {.glyphs = &fixture.glyphs});
 	std::copy_n(backend.framebuffer(), reference.size(), reference.begin());
 	std::fill_n(backend.framebuffer(), reference.size(), 0);
@@ -72,5 +75,30 @@ int main() {
 		}
 	}
 	endHostOverlaySoftware(backend);
+	// Viewport projection is independent of a control's logical transform.
+	const HostOverlayTransform scope{2, 3, 2};
+	for (size_t index = 0; index < fixture.kinds.size(); ++index) {
+		backend.resizePresentationTarget(64, 48);
+		std::fill_n(backend.framebuffer(), 64 * 48, 0);
+		state.width = 64; state.height = 48;
+		beginHostOverlaySoftware(backend, state);
+		renderHost2DEntrySoftware(backend, Host2DKind::Transform, {.transform = &scope});
+		renderHost2DEntrySoftware(backend, Host2DKind::Clip, {.clip = &clip});
+		renderHost2DEntrySoftware(backend, fixture.kinds[index], fixture.refs[index]);
+		std::copy_n(backend.framebuffer(), reference.size(), reference.begin());
+		endHostOverlaySoftware(backend);
+		backend.resizePresentationTarget(128, 144);
+		std::fill_n(backend.framebuffer(), 128 * 144, 0);
+		state.width = 128; state.height = 144;
+		beginHostOverlaySoftware(backend, state);
+		renderHost2DEntrySoftware(backend, Host2DKind::Transform, {.transform = &scope});
+		renderHost2DEntrySoftware(backend, Host2DKind::Clip, {.clip = &clip});
+		renderHost2DEntrySoftware(backend, fixture.kinds[index], fixture.refs[index]);
+		for (i32 y = 0; y < 144; y++) for (i32 x = 0; x < 128; x++) {
+			require(backend.framebuffer()[y * 128 + x] == reference[(y / 3) * 64 + x / 2],
+				"non-uniform frame projection scales logical raster and scissor together");
+		}
+		endHostOverlaySoftware(backend);
+	}
 	std::cout << "HOST-OVERLAY-CLIP:PASS\n";
 }

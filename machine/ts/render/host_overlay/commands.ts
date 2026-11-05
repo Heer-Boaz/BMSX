@@ -46,3 +46,10 @@ export type Host2DRef =
 	| GlyphRenderSubmission
 	| HostOverlayClipRect
 	| HostOverlayTransform;
+
+/** Commands of an embedded control; the containing frame supplies its viewport. */
+export type Host2DCommandList = {
+	commandKinds: readonly Host2DKind[];
+	commandRefs: readonly Host2DRef[];
+	commandCount: number;
+};

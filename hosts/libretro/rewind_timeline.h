@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/rect.h"
-#include "render/host_overlay/overlay_queue.h"
+#include "render/host_overlay/commands.h"
 #include "render/shared/bmsx_font.h"
 #include "render/shared/submissions.h"
 #include <array>
@@ -36,7 +36,7 @@ public:
 	i64 cyclesAt(i32 x) const;
 	void setActionLabel(TimelineAction action, std::string_view text);
 	void update(const TimelineState& state, i32 left, i32 top, i32 right, BFont& font);
-	const HostMenuFrame& frame() const { return renderFrame; }
+	const Host2DCommandList& frame() const { return renderFrame; }
 
 private:
 	TimelineStyle style;
@@ -48,7 +48,7 @@ private:
 	std::array<i32, 7> labelWidths{};
 	std::array<Host2DKind, 11> commandKinds;
 	std::array<Host2DRef, 11> commandRefs;
-	HostMenuFrame renderFrame{commandKinds.data(), commandRefs.data(), commandKinds.size()};
+	Host2DCommandList renderFrame{commandKinds.data(), commandRefs.data(), commandKinds.size()};
 	i64 offsetTenths = -1;
 	bool playing = false;
 	void setLabel(size_t index, std::string_view text);

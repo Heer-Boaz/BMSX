@@ -24,7 +24,7 @@ import type { HostRewind } from './rewind';
 import { HostRewindTimeline, TimelineAction, type TimelineState } from './rewind_timeline';
 import type { DeviceQuantizeMode } from '../../machine/ts/render/post/device_quantize/mode';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
-import type { HostMenuFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
+import type { HostOverlayFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
 import { BASE_RAM_USED_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { HostKeyboardInteraction } from './input/host_keyboard_interaction';
 import {
@@ -255,7 +255,8 @@ export class HostOverlayMenu {
 	private readonly optionGlyphs: GlyphRenderSubmission[];
 	private readonly commandKinds = new Array<Host2DKind>(HOST_MENU_COMMAND_CAPACITY);
 	private readonly commandRefs = new Array<Host2DRef>(HOST_MENU_COMMAND_CAPACITY);
-	private readonly renderFrame: HostMenuFrame = {
+	private readonly renderFrame: HostOverlayFrame = {
+		logicalWidth: 0, logicalHeight: 0,
 		commandKinds: this.commandKinds,
 		commandRefs: this.commandRefs,
 		commandCount: 0,
@@ -573,6 +574,10 @@ export class HostOverlayMenu {
 	}
 
 	private publishRenderCommands(): void {
+		this.renderFrame.logicalWidth = this.presenter.canvasSize.x;
+		this.renderFrame.logicalHeight = this.presenter.canvasSize.y;
+		this.renderFrame.commandKinds = this.commandKinds;
+		this.renderFrame.commandRefs = this.commandRefs;
 		this.renderFrame.commandCount = this.commandCount;
 		this.presenter.hostOverlayQueue.publishHostMenuFrame(this.renderFrame);
 	}
@@ -609,7 +614,11 @@ export class HostOverlayMenu {
 			const bounds = this.presenter.visibleViewportBounds;
 			this.timeline.update(state, bounds.left + 6, bounds.bottom - HostRewindTimeline.height(this.timelineFont) - 6,
 				bounds.right - 6, this.timelineFont);
-			this.presenter.hostOverlayQueue.publishHostMenuFrame(this.timeline.frame);
+			const frame = this.renderFrame, commands = this.timeline.frame;
+			frame.logicalWidth = this.presenter.canvasSize.x;
+			frame.logicalHeight = this.presenter.canvasSize.y;
+			frame.commandKinds = commands.commandKinds; frame.commandRefs = commands.commandRefs; frame.commandCount = commands.commandCount;
+			this.presenter.hostOverlayQueue.publishHostMenuFrame(frame);
 			return;
 		}
 		this.clearRenderCommands();

@@ -137,14 +137,14 @@ test('shared picker consumes provider spans, updates them without text queries a
 	assert.equal(picker.model.list.rows[0].item, item);
 	const presenter = new VideoPresenter(new OffscreenVideoOutput(384, 288),
 		new HeadlessGPUBackend(384, 288, PSX_MACHINE_SPEC.gxGpuVramBytes), 384, 288);
-	const renderer = new OverlayRenderer(presenter.hostOverlayQueue);
+	const renderer = new OverlayRenderer(presenter.hostOverlayQueue, { width: 384, height: 288 });
 	for (const variant of ['msx', 'tiny'] as const) {
 		configureFontVariant(variant); picker.update();
 		for (const theme of ['light', 'dark'] as const) {
 			constants.setIdeThemeVariant(theme);
 			for (const selected of [true, false]) {
 				picker.model.list.selectionIndex = selected ? 0 : -1;
-				renderer.beginFrame(presenter); api.beginFrame(renderer); picker.draw(); renderer.endFrame();
+				renderer.beginFrame(); api.beginFrame(renderer); picker.draw(); renderer.endFrame();
 				const frame = presenter.hostOverlayQueue.consumeOverlayFrame();
 				const color = selected ? constants.COLOR_QUICK_OPEN_SELECTION_TEXT : constants.COLOR_QUICK_OPEN_TEXT;
 				const highlight = selected ? constants.COLOR_QUICK_OPEN_SELECTION_MATCH : constants.COLOR_QUICK_OPEN_MATCH;

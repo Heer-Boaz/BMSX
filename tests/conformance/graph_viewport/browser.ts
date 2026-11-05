@@ -114,7 +114,7 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 	const passes = new RenderPassLibrary(backend, presenter);
 	presenter.initialize(passes);
 	presenter.initializeDefaultTextures();
-	const renderer = new OverlayRenderer(presenter.hostOverlayQueue);
+	const renderer = new OverlayRenderer(presenter.hostOverlayQueue, { width: WIDTH, height: HEIGHT });
 	const font = presenter.default_font;
 	const first = createWorkbenchGraphNode(font, 'PARTIALLY VISIBLE\nLEFT AND TOP', -28, -7);
 	const middle = createWorkbenchGraphNode(font, 'RETAINED NODE\nSHARED GEOMETRY', 130, 75);
@@ -145,7 +145,7 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 	hub.setNativePointerHandler(dispatchPointer);
 	const remote = new RemoteInput(input, clock, input.dispatchEditingKey.bind(input), dispatchPointer);
 	const draw = () => {
-		renderer.beginFrame(presenter);
+		renderer.beginFrame();
 		api.beginFrame(renderer);
 		api.fill_rect_color(0, 0, WIDTH, HEIGHT, 0, 0xff20252d);
 		group.panes.activePane.draw();
@@ -212,7 +212,7 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 			canvas.width = width;
 			canvas.height = height;
 			presenter.setScanoutSize(width, height);
-			renderer.beginFrame(presenter);
+			renderer.beginFrame();
 			renderer.fillRect(0, 0, width, height, 0, 0xff000000, LAYER_2D_IDE);
 			renderer.pushClipRect(width / 4, height / 4, width * 3 / 4, height * 3 / 4);
 			renderer.fillRect(0, 0, width, height, 0, 0xffffffff, LAYER_2D_IDE);
@@ -242,7 +242,7 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 			} else {
 				presenter.setFixedRenderTargetSize(WIDTH, HEIGHT);
 				presenter.configurePresentation('partial', false);
-				renderer.beginFrame(presenter);
+				renderer.beginFrame();
 				renderer.fillRect(0, 0, WIDTH, HEIGHT, 0, 0xff111111, LAYER_2D_IDE);
 				renderer.pushClipRect(80, 64, 170, 132);
 				renderer.drawFrame(64, 48, 192, 144);

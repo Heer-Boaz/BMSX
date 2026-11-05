@@ -22,7 +22,7 @@ import { RectRenderKind } from '../shared/submissions';
 import { blendPixel } from './pixel_ops';
 import type { FontGlyph } from '../shared/bitmap_font';
 import type { HostOverlayClipRect, HostOverlayClipState } from '../host_overlay/clip';
-import { IDENTITY_HOST_OVERLAY_TRANSFORM, type HostOverlayTransform } from '../host_overlay/transform';
+import type { HostOverlayRasterTransform, HostOverlayTransform } from '../host_overlay/transform';
 import { blitOpaquePixels } from '../shared/software_pixels';
 import type { HostMeshSceneTargets, HostMeshSceneRenderSubmission } from '../host_overlay/mesh';
 import { drawHeadlessHostMeshScene, type HeadlessHostMeshTarget } from '../host_overlay/headless/mesh';
@@ -36,7 +36,7 @@ export type HeadlessHost2DContext = {
 	backgroundColor: number;
 	lineHeight: number;
 	clip: HostOverlayClipState;
-	transform: Readonly<HostOverlayTransform>;
+	transform: HostOverlayRasterTransform;
 	framePixels: Uint8Array;
 	frameWidth: number;
 	frameHeight: number;
@@ -44,17 +44,18 @@ export type HeadlessHost2DContext = {
 	affineQuad: HostAffineQuadCoverage;
 };
 
-export function beginHeadlessHost2D(context: HeadlessHost2DContext, target: Uint8Array, width: number, height: number): void {
+export function beginHeadlessHost2D(context: HeadlessHost2DContext, target: Uint8Array, width: number, height: number,
+	logicalWidth: number, logicalHeight: number): void {
 	context.target = target;
 	context.width = width;
-	context.transform = IDENTITY_HOST_OVERLAY_TRANSFORM;
-	context.clip.reset(width, height, width, height);
+	context.transform.reset(logicalWidth, logicalHeight, width, height);
+	context.clip.reset(logicalWidth, logicalHeight, width, height);
 }
 
 export function renderHeadlessHost2DEntry(context: HeadlessHost2DContext, kind: Host2DKind, item: Host2DRef): void {
 	switch (kind) {
 		case Host2DKind.Transform:
-			context.transform = item as HostOverlayTransform;
+			context.transform.set(item as HostOverlayTransform);
 			return;
 		case Host2DKind.Clip:
 			context.clip.set(item as HostOverlayClipRect);
@@ -88,37 +89,37 @@ export function renderHeadlessHost2DEntry(context: HeadlessHost2DContext, kind: 
 
 function drawFrame(context: HeadlessHost2DContext, command: HostFrameRenderSubmission): void {
 	const { area } = command;
-	const { scale, offsetX, offsetY } = context.transform;
+	const { scaleX, scaleY, offsetX, offsetY } = context.transform;
 	const clip = context.clip;
 	blitOpaquePixels(context.framePixels, context.frameWidth, context.frameHeight, context.target, context.width,
-		Math.trunc(area.left * scale + offsetX), Math.trunc(area.top * scale + offsetY),
-		Math.trunc(area.right * scale + offsetX), Math.trunc(area.bottom * scale + offsetY),
+		Math.trunc(area.left * scaleX + offsetX), Math.trunc(area.top * scaleY + offsetY),
+		Math.trunc(area.right * scaleX + offsetX), Math.trunc(area.bottom * scaleY + offsetY),
 		clip.left, clip.top, clip.right, clip.bottom);
 }
 
 function drawRect(context: HeadlessHost2DContext, command: RectRenderSubmission): void {
 	const area = command.area;
-	const { scale, offsetX, offsetY } = context.transform;
-	const left = Math.trunc(area.left * scale + offsetX);
-	const top = Math.trunc(area.top * scale + offsetY);
-	const right = Math.trunc(area.right * scale + offsetX);
-	const bottom = Math.trunc(area.bottom * scale + offsetY);
+	const { scaleX, scaleY, offsetX, offsetY, viewportScaleX, viewportScaleY } = context.transform;
+	const left = area.left * scaleX + offsetX;
+	const top = area.top * scaleY + offsetY;
+	const right = area.right * scaleX + offsetX;
+	const bottom = area.bottom * scaleY + offsetY;
 	const colorValue = command.color;
 	if (command.kind === RectRenderKind.Fill) {
-		fillRect(context, left, top, right, bottom, colorValue);
+		fillRect(context, Math.trunc(left), Math.trunc(top), Math.trunc(right), Math.trunc(bottom), colorValue);
 		return;
 	}
-	fillRect(context, left, top, right, top + 1, colorValue);
-	fillRect(context, left, bottom - 1, right, bottom, colorValue);
-	fillRect(context, left, top, left + 1, bottom, colorValue);
-	fillRect(context, right - 1, top, right, bottom, colorValue);
+	fillRect(context, Math.trunc(left), Math.trunc(top), Math.trunc(right), Math.trunc(top + viewportScaleY), colorValue);
+	fillRect(context, Math.trunc(left), Math.trunc(bottom - viewportScaleY), Math.trunc(right), Math.trunc(bottom), colorValue);
+	fillRect(context, Math.trunc(left), Math.trunc(top), Math.trunc(left + viewportScaleX), Math.trunc(bottom), colorValue);
+	fillRect(context, Math.trunc(right - viewportScaleX), Math.trunc(top), Math.trunc(right), Math.trunc(bottom), colorValue);
 }
 
 function drawSolidQuad(context: HeadlessHost2DContext, command: HostSolidQuadRenderSubmission): void {
-	const { scale, offsetX, offsetY } = context.transform;
-	const originX = command.originX * scale + offsetX, originY = command.originY * scale + offsetY;
-	const xx = command.axisXX * scale, xy = command.axisXY * scale;
-	const yx = command.axisYX * scale, yy = command.axisYY * scale;
+	const { scaleX, scaleY, offsetX, offsetY } = context.transform;
+	const originX = command.originX * scaleX + offsetX, originY = command.originY * scaleY + offsetY;
+	const xx = command.axisXX * scaleX, xy = command.axisXY * scaleY;
+	const yx = command.axisYX * scaleX, yy = command.axisYY * scaleY;
 	const determinant = xx * yy - xy * yx;
 	if (determinant === 0) return;
 	const coverage = context.affineQuad;
@@ -141,7 +142,7 @@ function drawSolidQuad(context: HeadlessHost2DContext, command: HostSolidQuadRen
 
 function drawPoly(context: HeadlessHost2DContext, command: PolyRenderSubmission): void {
 	const points = command.points;
-	const { scale, offsetX, offsetY } = context.transform;
+	const { scale, offsetX, offsetY } = context.transform.logical;
 	for (let index = 0; index + 3 < points.length; index += 2) {
 		drawLine(context, points[index] * scale + offsetX, points[index + 1] * scale + offsetY,
 			points[index + 2] * scale + offsetX, points[index + 3] * scale + offsetY, command.thickness, command.color);
@@ -162,8 +163,10 @@ function drawLine(context: HeadlessHost2DContext, x0: number, y0: number, x1: nu
 	let err = dx - dy;
 	const thicknessPixels = Math.trunc(thickness);
 	const half = thicknessPixels >> 1;
+	const { viewportScaleX, viewportScaleY } = context.transform;
 	for (; ;) {
-		fillRect(context, ix0 - half, iy0 - half, ix0 - half + thicknessPixels, iy0 - half + thicknessPixels, colorValue);
+		fillRect(context, Math.trunc((ix0 - half) * viewportScaleX), Math.trunc((iy0 - half) * viewportScaleY),
+			Math.trunc((ix0 - half + thicknessPixels) * viewportScaleX), Math.trunc((iy0 - half + thicknessPixels) * viewportScaleY), colorValue);
 		if (ix0 === ix1 && iy0 === iy1) {
 			return;
 		}
@@ -190,10 +193,10 @@ function drawImage(context: HeadlessHost2DContext, command: HostImageRenderSubmi
 		source.v,
 		source.w,
 		source.h,
-		command.pos.x * transform.scale + transform.offsetX,
-		command.pos.y * transform.scale + transform.offsetY,
-		source.width * scale.x * transform.scale,
-		source.height * scale.y * transform.scale,
+		command.pos.x * transform.scaleX + transform.offsetX,
+		command.pos.y * transform.scaleY + transform.offsetY,
+		source.width * scale.x * transform.scaleX,
+		source.height * scale.y * transform.scaleY,
 		flip.flip_h,
 		flip.flip_v,
 		command.colorize,
@@ -209,13 +212,13 @@ function drawBatchBlit(context: HeadlessHost2DContext, command: GlyphRenderSubmi
 }
 
 function drawHeadlessGlyph(context: HeadlessHost2DContext, item: FontGlyph, x: number, y: number): void {
-	const { scale, offsetX, offsetY } = context.transform;
-	x = x * scale + offsetX;
-	y = y * scale + offsetY;
+	const { scaleX, scaleY, offsetX, offsetY } = context.transform;
+	x = x * scaleX + offsetX;
+	y = y * scaleY + offsetY;
 	if (context.hasBackgroundColor) {
 		const left = Math.trunc(x);
 		const top = Math.trunc(y);
-		fillRect(context, left, top, left + Math.trunc(item.advance * scale), top + Math.trunc(context.lineHeight * scale), context.backgroundColor);
+		fillRect(context, left, top, left + Math.trunc(item.advance * scaleX), top + Math.trunc(context.lineHeight * scaleY), context.backgroundColor);
 	}
 	const source = hostSystemAtlasImage(item.imgid);
 	drawHostAtlasRect(
@@ -226,8 +229,8 @@ function drawHeadlessGlyph(context: HeadlessHost2DContext, item: FontGlyph, x: n
 		source.h,
 		x,
 		y,
-		item.width * scale,
-		item.height * scale,
+		item.width * scaleX,
+		item.height * scaleY,
 		false,
 		false,
 		context.colorValue,

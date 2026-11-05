@@ -679,8 +679,8 @@ test('two real overlapping windows share paint/hit order but retain independent 
 	assert.equal(f.surfaces.hitTest(140, 120), b.control.clientSurface);
 	f.surfaces.hitTest(50, 48)!.handlePointer!(pointer(50, 48, 2, 2), 0);
 	assert.equal(f.surfaces.hitTest(140, 120), a.control.clientSurface);
-	const { presenter, renderer } = createHostOverlayFixture(500, 400);
-	renderer.beginFrame(presenter); api.beginFrame(renderer); f.surfaces.draw(api); renderer.endFrame();
+	const { renderer } = createHostOverlayFixture(500, 400);
+	renderer.beginFrame(); api.beginFrame(renderer); f.surfaces.draw(api); renderer.endFrame();
 	assert.equal(a.painted(), 1); assert.equal(b.painted(), 1);
 	assert.equal(a.model.title, 'FIRST'); assert.equal(b.model.title, 'SECOND');
 	b.client.focus(); a.control.hide();
@@ -705,8 +705,8 @@ test('raising a frontend preserves its modeless inspector family outside the pan
 		const draw = window.control.clientSurface!.draw.bind(window.control.clientSurface!);
 		t.mock.method(window.control.clientSurface!, 'draw', () => { order.push(name); draw(); });
 	}
-	const { presenter, renderer } = createHostOverlayFixture(500, 400);
-	const paint = () => { order.length = 0; renderer.beginFrame(presenter); api.beginFrame(renderer); f.surfaces.draw(api); renderer.endFrame(); };
+	const { renderer } = createHostOverlayFixture(500, 400);
+	const paint = () => { order.length = 0; renderer.beginFrame(); api.beginFrame(renderer); f.surfaces.draw(api); renderer.endFrame(); };
 	// The shared point is outside the document but inside both inspectors' and sibling's clients.
 	const bounds = inspector.model.client, siblingBounds = sibling.model.client;
 	const x = (Math.max(bounds.left, siblingBounds.left, document.model.bounds.right) + Math.min(bounds.right, siblingBounds.right)) / 2;
@@ -911,10 +911,10 @@ test('window icon tooltips are passive, modal-admitted, retained feedback with n
 	a.control.update();
 	const labels: string[] = [];
 	t.mock.method(api, 'blit_text_inline_with_font', label => { labels.push(label); });
-	const { presenter, renderer } = createHostOverlayFixture(500, 400);
+	const { renderer } = createHostOverlayFixture(500, 400);
 	const paint = () => {
 		labels.length = 0;
-		renderer.beginFrame(presenter); api.beginFrame(renderer); f.surfaces.draw(api); renderer.endFrame();
+		renderer.beginFrame(); api.beginFrame(renderer); f.surfaces.draw(api); renderer.endFrame();
 	};
 	paint();
 	assert.ok(labels.includes('Close Window'), 'the icon exposes the actual command, not a hidden text abbreviation');
@@ -960,10 +960,10 @@ test('a compact window caption exposes its full owner-supplied path without spen
 	a.control.update();
 	const labels: string[] = [];
 	t.mock.method(api, 'blit_text_inline_with_font', label => { labels.push(label); });
-	const { presenter, renderer } = createHostOverlayFixture(500, 400);
+	const { renderer } = createHostOverlayFixture(500, 400);
 	const paint = () => {
 		labels.length = 0;
-		renderer.beginFrame(presenter); api.beginFrame(renderer); f.surfaces.draw(api); renderer.endFrame();
+		renderer.beginFrame(); api.beginFrame(renderer); f.surfaces.draw(api); renderer.endFrame();
 	};
 	paint();
 	assert.ok(labels.includes('logo')); assert.ok(labels.includes(title));
@@ -995,7 +995,7 @@ test('long title tooltips wrap every path glyph instead of moving caption trunca
 	const title = 'World/ActorWithALongName/ComponentWithALongName/FinalSubjectSuffix';
 	const labels: string[] = [];
 	t.mock.method(api, 'blit_text_inline_with_font', label => { labels.push(label); });
-	const { presenter, renderer } = createHostOverlayFixture(500, 400);
+	const { renderer } = createHostOverlayFixture(500, 400);
 	for (const variant of ['tiny', 'msx'] as const) {
 		const font = new Font({ variant });
 		let measurements = 0;
@@ -1004,7 +1004,7 @@ test('long title tooltips wrap every path glyph instead of moving caption trunca
 		const anchor = { left: 95, top: 160, right: 115, bottom: 175 };
 		tooltip.show(title, anchor, font, measure, measureText, area);
 		labels.length = 0;
-		renderer.beginFrame(presenter); api.beginFrame(renderer); f.surfaces.draw(api); renderer.endFrame();
+		renderer.beginFrame(); api.beginFrame(renderer); f.surfaces.draw(api); renderer.endFrame();
 		assert.ok(labels.length > 1);
 		assert.equal(labels.join(''), title);
 		assert.ok(labels.every(label => font.measure(label) <= area.right - area.left - 8));

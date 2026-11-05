@@ -26,7 +26,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', theme: string) {
 	});
 	const draw = (left: number, width: number, height = 288) => {
 		const bounds = { left, top: topMargin(), right: left + width, bottom: height - bottomMargin() };
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); drawEditorGroupWatermark(bounds); overlay.renderer.endFrame();
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); drawEditorGroupWatermark(bounds); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(), glyphs: GlyphRenderSubmission[] = [];
 		for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs)
 			glyphs.push(frame.commandRefs[index] as GlyphRenderSubmission);

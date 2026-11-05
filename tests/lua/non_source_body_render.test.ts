@@ -47,7 +47,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		const unitLabel = input.overview.lanes.find(lane => lane.label !== '');
 		assert.ok(unitLabel, 'the actual mismatched-unit track supplies explanatory overview text');
 		const overlay = createHostOverlayFixture(bounds.right + 4, bounds.bottom + 4);
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 		drawAnimationEditor(input, bounds, false); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(), glyphs: GlyphRenderSubmission[] = [];
 		for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs)

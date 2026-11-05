@@ -12,17 +12,17 @@ const quad: HostSolidQuadRenderSubmission = {
 };
 
 test('solid affine API retains raw source color and reuses double-buffered command storage', () => {
-	const { renderer, queue, presenter } = createHostOverlayFixture(16, 16), api = new OverlayApi();
-	renderer.beginFrame(presenter); api.beginFrame(renderer);
+	const { renderer, queue } = createHostOverlayFixture(16, 16), api = new OverlayApi();
+	renderer.beginFrame(); api.beginFrame(renderer);
 	api.fillQuadColor(quad.originX, quad.originY, quad.axisXX, quad.axisXY, quad.axisYX, quad.axisYY, quad.color);
 	renderer.endFrame();
 	const first = queue.consumeOverlayFrame(), command = first.commandRefs[0];
 	assert.equal(first.commandCount, 1); assert.equal(first.commandKinds[0], Host2DKind.SolidQuad);
 	assert.deepEqual(command, quad);
-	renderer.beginFrame(presenter); api.fillQuadColor(1, 2, 3, 4, 5, 6, 0x80102030); renderer.endFrame();
+	renderer.beginFrame(); api.fillQuadColor(1, 2, 3, 4, 5, 6, 0x80102030); renderer.endFrame();
 	const second = queue.consumeOverlayFrame();
 	assert.notEqual(second.commandRefs[0], command); assert.deepEqual(command, quad);
-	renderer.beginFrame(presenter); api.fillQuadColor(2, 3, 4, 5, 6, 7, 0xff123456); renderer.endFrame();
+	renderer.beginFrame(); api.fillQuadColor(2, 3, 4, 5, 6, 7, 0xff123456); renderer.endFrame();
 	assert.ok(queue.consumeOverlayFrame().commandRefs[0] === command, 'completed command storage is pooled');
 });
 
@@ -44,7 +44,7 @@ test('solid affine stream composes the existing transform, clip and unit-quad fo
 
 test('solid reflected diagonal edges obey exact screen-space top-left coverage and singular quads emit no fragments', () => {
 	const { backend } = createHostOverlayFixture(8, 8), context = backend.hostOverlayContext, pixels = backend.framebufferPixels;
-	beginHeadlessHost2D(context, pixels, 8, 8); renderHeadlessHost2DEntry(context, Host2DKind.SolidQuad, quad);
+	beginHeadlessHost2D(context, pixels, 8, 8, 8, 8); renderHeadlessHost2DEntry(context, Host2DKind.SolidQuad, quad);
 	const expected = ['........', '..####..', '..####..', '.####...', '.####...', '........', '........', '........'];
 	// Pixel centres and winding are the actual raster contract, not UI geometry.
 	for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
@@ -64,7 +64,7 @@ test('solid affine coverage matches bitmap geometry across reflection, shear, fr
 		{ ...quad, originX: 2.25, originY: 3.75, axisXX: 5.5, axisXY: 1.25, axisYX: 2.5, axisYY: 4.5 },
 		{ ...quad, originX: -2, originY: 8, axisXX: 3, axisXY: -6, axisYX: 4, axisYY: 0 },
 		{ ...quad, originX: 8.5, originY: 9.5, axisXX: -7, axisXY: 0, axisYX: 0, axisYY: -6 }]) {
-		pixels.fill(0); beginHeadlessHost2D(context, pixels, 16, 16);
+		pixels.fill(0); beginHeadlessHost2D(context, pixels, 16, 16, 16, 16);
 		renderHeadlessHost2DEntry(context, Host2DKind.Transform, { scale: 1.5, offsetX: 2, offsetY: 1 });
 		renderHeadlessHost2DEntry(context, Host2DKind.Clip, { left: 3, top: 2, right: 12, bottom: 13 });
 		renderHeadlessHost2DEntry(context, Host2DKind.SolidQuad, { ...geometry, color: 0x80402010 });

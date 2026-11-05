@@ -149,7 +149,7 @@ function scenarioFeedbackFixture(t: TestContext, variant: 'tiny' | 'msx') {
 	const labels: string[] = []; t.mock.method(api, 'blit_text_inline_with_font', label => labels.push(label));
 	const overlay = createHostOverlayFixture(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
 	const update = () => feedback.update(font, measure, measureText);
-	const paint = () => { labels.length = 0; overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame(); };
+	const paint = () => { labels.length = 0; overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame(); };
 	t.after(() => { feedback.dispose(); surfaces.dispose(); });
 	const point = { valid: true, insideViewport: true, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0,
 		viewportX: 40, viewportY: view.testPane.layout.contentTop + view.testPane.layout.rowHeight + 2 };
@@ -566,8 +566,8 @@ test('scenario workbench renderer uses the active tiny IDE font', (t) => {
 	const results = new ScenarioResultService();
 	const view = createScenarioLabViewState(collection, results, false);
 	prepareScenarioLabLayout(view, { left: 0, top: CODE_AREA_TOP, right: VIEWPORT_WIDTH, bottom: CODE_AREA_BOTTOM });
-	const { queue, renderer, presenter } = createHostOverlayFixture(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
-	renderer.beginFrame(presenter);
+	const { queue, renderer } = createHostOverlayFixture(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+	renderer.beginFrame();
 	api.beginFrame(renderer);
 	drawScenarioLab(view);
 	renderer.endFrame();
@@ -605,8 +605,8 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scenario tree paint, inden
 			assert.doesNotMatch(row.text, /^[+-]|^\s/, 'indentation/disclosure is geometry, not source-text padding');
 		}
 	}
-	const { queue, renderer, presenter } = createHostOverlayFixture(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
-	renderer.beginFrame(presenter); api.beginFrame(renderer); drawScenarioLab(view); renderer.endFrame();
+	const { queue, renderer } = createHostOverlayFixture(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+	renderer.beginFrame(); api.beginFrame(renderer); drawScenarioLab(view); renderer.endFrame();
 	const frame = queue.consumeOverlayFrame(), glyphs: GlyphRenderSubmission[] = [], rectangles: RectRenderSubmission[] = [];
 	for (let index = 0; index < frame.commandCount; index++) {
 		if (frame.commandKinds[index] === Host2DKind.Glyphs) glyphs.push(frame.commandRefs[index] as GlyphRenderSubmission);
@@ -716,7 +716,7 @@ for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as 
 				: state === 'cancelled' || state === 'skipped' ? colors.COLOR_DESCRIPTION_TEXT : colors.COLOR_CONTENT_PROGRESS_TEXT;
 			for (const focus of ['results', 'tests'] as const) {
 				view.focus = focus; view.testPane.selectionIndex = rowIndex;
-				overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); drawScenarioLab(view); overlay.renderer.endFrame();
+				overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); drawScenarioLab(view); overlay.renderer.endFrame();
 				const frame = overlay.queue.consumeOverlayFrame();
 				const glyphs: GlyphRenderSubmission[] = [], rectangles: RectRenderSubmission[] = [];
 				for (let index = 0; index < frame.commandCount; index++) {

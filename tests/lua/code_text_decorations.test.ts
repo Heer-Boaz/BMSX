@@ -45,7 +45,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		const f = createFixture(t, variant, theme, 'local item = "text" + 42');
 		f.view.cursorColumn = f.line.src.length; setSingleCursorSelectionAnchor(f.view, 0, 0);
 		const originalColors = f.line.hi.colors.slice();
-		f.overlay.renderer.beginFrame(f.overlay.presenter); api.beginFrame(f.overlay.renderer);
+		f.overlay.renderer.beginFrame(); api.beginFrame(f.overlay.renderer);
 		drawCodeAreaRows(f.code, f.viewport, null, false, f.code.font.renderFont(), [], -1, [], -1, false, focused, EMPTY_DIAGNOSTICS_BY_ROW, f.code.layout, f.code.lineHeight);
 		f.overlay.renderer.endFrame();
 		const frame = f.overlay.queue.consumeOverlayFrame(), glyphs: GlyphRenderSubmission[] = [], rects: RectRenderSubmission[] = [];
@@ -72,7 +72,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		mask.prepare(f.code, 0, f.line, 0, 16, references, 0, searches, 0, true, false);
 		for (let run = 0; run < expected.length; run++)
 			assert.deepEqual(mask.roles.slice(boundaries[run], boundaries[run + 1]), Array(boundaries[run + 1] - boundaries[run]).fill(expected[run]));
-		f.overlay.renderer.beginFrame(f.overlay.presenter); api.beginFrame(f.overlay.renderer);
+		f.overlay.renderer.beginFrame(); api.beginFrame(f.overlay.renderer);
 		drawHighlightSlice(f.code, f.code.font.renderFont(), f.line.hi.text, f.line.hi.colors, f.line.advancePrefix, 0, 16, 8, 4, 0, mask);
 		f.overlay.renderer.endFrame();
 		const frame = f.overlay.queue.consumeOverlayFrame(); let run = 0;
@@ -104,7 +104,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 			{ model: f.model, version: f.model.version, row: 0, startColumn: 0, endColumn: 16, severity: 'error', message: 'error' },
 			{ model: f.model, version: f.model.version, row: 0, startColumn: 0, endColumn: 16, severity: 'warning', message: 'warning' },
 		];
-		f.overlay.renderer.beginFrame(f.overlay.presenter); api.beginFrame(f.overlay.renderer);
+		f.overlay.renderer.beginFrame(); api.beginFrame(f.overlay.renderer);
 		drawDiagnosticUnderlinesForRow(diagnostics, f.line, 8, 4, 20, 0, 16, mask, f.code.layout, f.code.lineHeight);
 		drawGotoUnderlineForRow(0, f.line, 8, 4, 20, 0, 16, { row: 0, startColumn: 0, endColumn: 16 }, mask, f.code.layout, f.code.lineHeight);
 		f.overlay.renderer.endFrame();
@@ -128,7 +128,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		t.after(() => { f.code.runtimeError.executionStopRow = previousExecution; });
 		for (const state of ['idle', 'current', 'execution'] as const) {
 			f.view.cursorRow = state === 'current' ? 0 : 1; f.code.runtimeError.executionStopRow = state === 'execution' ? 0 : -1;
-			f.overlay.renderer.beginFrame(f.overlay.presenter); api.beginFrame(f.overlay.renderer);
+			f.overlay.renderer.beginFrame(); api.beginFrame(f.overlay.renderer);
 			drawCodeAreaChrome(f.code, f.viewport, new Set(), f.code.font.renderFont(), 2);
 			f.overlay.renderer.endFrame();
 			const frame = f.overlay.queue.consumeOverlayFrame(), last = frame.commandRefs[frame.commandCount - 1] as GlyphRenderSubmission;
@@ -166,7 +166,7 @@ test('1000 warm unadorned deep-scroll rows neither grow nor fill a mask or repea
 	assert.equal(mask.hasDecorations, false); assert.equal(mask.roles, roles); assert.equal(roles.length, 0);
 	assert.equal(fills, 0); assert.equal(fontReads.mock.callCount(), 0); assert.equal(sourceReads.mock.callCount(), 0);
 	assert.equal(f.line.hi.colors, colors); assert.equal(f.line.advancePrefix, advances);
-	f.overlay.renderer.beginFrame(f.overlay.presenter); api.beginFrame(f.overlay.renderer);
+	f.overlay.renderer.beginFrame(); api.beginFrame(f.overlay.renderer);
 	drawHighlightSlice(f.code, f.code.font.renderFont(), f.line.hi.text, colors, advances, 8_000, 8_040, 6.5, 4, 0, mask);
 	f.overlay.renderer.endFrame();
 	const frame = f.overlay.queue.consumeOverlayFrame();
@@ -200,7 +200,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		const f = createFixture(t, variant, theme, '\tabcdefghijklmnopqr');
 		f.view.cursorColumn = f.line.src.length; setSingleCursorSelectionAnchor(f.view, 0, 0);
 		f.view.scrollLeft = f.line.advancePrefix[4] + 1.5;
-		f.overlay.renderer.beginFrame(f.overlay.presenter); api.beginFrame(f.overlay.renderer);
+		f.overlay.renderer.beginFrame(); api.beginFrame(f.overlay.renderer);
 		drawCodeAreaRows(f.code, f.viewport, null, false, f.code.font.renderFont(), [], -1, [], -1, false, true, EMPTY_DIAGNOSTICS_BY_ROW, f.code.layout, f.code.lineHeight);
 		f.overlay.renderer.endFrame();
 		let frame = f.overlay.queue.consumeOverlayFrame();
@@ -217,7 +217,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		assert.ok(segment.startDisplay > 0);
 		const viewport = { ...f.viewport, wrapEnabled: true, visualCount: layout.getVisualLineCount(), contentWidth: width,
 			contentRight: f.viewport.textLeft + width };
-		f.overlay.renderer.beginFrame(f.overlay.presenter); api.beginFrame(f.overlay.renderer);
+		f.overlay.renderer.beginFrame(); api.beginFrame(f.overlay.renderer);
 		drawCodeAreaRows(f.code, viewport, null, false, f.code.font.renderFont(), [], -1, [], -1, false, true, EMPTY_DIAGNOSTICS_BY_ROW, f.code.layout, f.code.lineHeight);
 		f.overlay.renderer.endFrame(); frame = f.overlay.queue.consumeOverlayFrame();
 		assert.equal(frame.commandCount, 2);

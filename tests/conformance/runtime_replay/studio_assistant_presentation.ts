@@ -137,7 +137,7 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 
 	// Exercise a phone-width logical surface, not CSS scaling of a wide screenshot.
 	presenter.setFixedRenderTargetSize(320, 384);
-	ide.overlayRenderer.setRenderingViewportType(presenter, 'viewport'); ide.editor.updateViewport(ide.overlayRenderer.viewportSize);
+	ide.editor.updateViewport({ width: presenter.viewportSize.x, height: presenter.viewportSize.y });
 	await frame();
 	check(view.footerTop + (view.footer.lines.length - 1) * view.layout.rowHeight + 2 <= view.layout.bottom, 'presentation: footer text is above the global status clip');
 	check(view.footer.lines.length > 1 && view.footer.lines.every(line => measureTextRange(line, 0, line.length) <= view.layout.right - 8), 'presentation: narrow footer keeps all settings in bounded rows');

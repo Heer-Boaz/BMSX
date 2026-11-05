@@ -13,6 +13,27 @@ import { IDENTITY_HOST_OVERLAY_TRANSFORM } from '../../machine/ts/render/host_ov
 const full = { left: 0, top: 0, right: 64, bottom: 48 };
 const clip = { left: 11, top: 9, right: 43, bottom: 34 };
 
+for (const [name, kind, command] of hostOverlayPrimitives) test(`software ${name} composes a non-uniform frame projection with logical scopes and clipping`, () => {
+	const { backend } = createHostOverlayFixture(128, 144), context = backend.hostOverlayContext;
+	const reference = new Uint8Array(64 * 48 * 4), target = backend.framebufferPixels;
+	const transform = { scale: 2, offsetX: 3, offsetY: 2 };
+	beginHeadlessHost2D(context, reference, 64, 48, 64, 48);
+	renderHeadlessHost2DEntry(context, Host2DKind.Transform, transform);
+	renderHeadlessHost2DEntry(context, Host2DKind.Clip, clip);
+	renderHeadlessHost2DEntry(context, kind, command);
+	beginHeadlessHost2D(context, target, 128, 144, 64, 48);
+	renderHeadlessHost2DEntry(context, Host2DKind.Transform, transform);
+	renderHeadlessHost2DEntry(context, Host2DKind.Clip, clip);
+	renderHeadlessHost2DEntry(context, kind, command);
+	let lit = 0;
+	for (let y = 0; y < 144; y++) for (let x = 0; x < 128; x++) for (let channel = 0; channel < 4; channel++) {
+		const value = reference[(Math.trunc(y / 3) * 64 + Math.trunc(x / 2)) * 4 + channel];
+		assert.equal(target[(y * 128 + x) * 4 + channel], value, `${name}: ${x},${y}:${channel}`);
+		lit += value !== 0 ? 1 : 0;
+	}
+	assert.ok(lit > 0, 'the projected primitive has visible coverage');
+});
+
 test('host scissor maps logical coordinates once, bounds the target and preserves empty intersections', () => {
 	const state = new HostOverlayClipState();
 	state.reset(64, 48, 160, 120);
@@ -27,9 +48,9 @@ test('host scissor maps logical coordinates once, bounds the target and preserve
 });
 
 test('nested clip publication does not alias a reused stack depth or the next frame', () => {
-	const { presenter, queue, renderer } = createHostOverlayFixture(64, 48);
+	const { queue, renderer } = createHostOverlayFixture(64, 48);
 	const draw = () => {
-		renderer.beginFrame(presenter);
+		renderer.beginFrame();
 		renderer.pushClipRect(-2, 5, 50, 40);
 		renderer.pushClipRect(10, 0, 60, 30);
 		renderer.popClipRect();
@@ -78,10 +99,10 @@ test('quad batches split only at a changed clip with preceding geometry and reta
 });
 
 test('nested transforms snapshot composed geometry and clips without leaking into chrome or the next frame', () => {
-	const { presenter, queue, renderer } = createHostOverlayFixture(64, 48);
+	const { queue, renderer } = createHostOverlayFixture(64, 48);
 	const child = { scale: 0.5, offsetX: 4, offsetY: 2 };
 	const draw = () => {
-		renderer.beginFrame(presenter);
+		renderer.beginFrame();
 		renderer.pushTransform({ scale: 2, offsetX: 10, offsetY: 6 });
 		renderer.pushClipRect(0, 0, 20, 18);
 		renderer.pushTransform(child);
@@ -119,7 +140,7 @@ for (const transform of [IDENTITY_HOST_OVERLAY_TRANSFORM, { scale: 0.5, offsetX:
 			const target = backend.framebufferPixels;
 			const draw = (bounds: HostOverlayClipRect) => {
 				target.fill(0);
-				beginHeadlessHost2D(context, target, 64, 48);
+				beginHeadlessHost2D(context, target, 64, 48, 64, 48);
 				renderHeadlessHost2DEntry(context, Host2DKind.Transform, transform);
 				renderHeadlessHost2DEntry(context, Host2DKind.Clip, bounds);
 				renderHeadlessHost2DEntry(context, kind, command);
@@ -139,9 +160,9 @@ for (const transform of [IDENTITY_HOST_OVERLAY_TRANSFORM, { scale: 0.5, offsetX:
 				}
 			}
 			assert.ok(lit > 0, 'fixture must contain partially visible pixels');
-			beginHeadlessHost2D(context, target, 64, 48);
+			beginHeadlessHost2D(context, target, 64, 48, 64, 48);
 			assert.equal(context.clip.right, 64, 'a new lane resets its scissor');
-			assert.equal(context.transform, IDENTITY_HOST_OVERLAY_TRANSFORM, 'a new lane resets its transform');
+			assert.ok(context.transform.logical === IDENTITY_HOST_OVERLAY_TRANSFORM, 'a new lane resets its transform');
 		});
 	}
 }

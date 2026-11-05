@@ -63,7 +63,7 @@ function fixture(t: TestContext) {
 			editorViewState.font.renderFont(), context.measureText);
 	};
 	const paint = () => {
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 		renderTopBar(context, menubar); drawContextMenu(popup);
 		overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
 	};

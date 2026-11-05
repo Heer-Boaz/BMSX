@@ -32,7 +32,7 @@ public:
 	using VideoOutput::VideoOutput;
 	void setDisplaySize(i32 w, i32 h) override { visibleViewportBounds = RectBounds{0, 0, static_cast<f32>(w), static_cast<f32>(h), 0}; }
 };
-void assertVisible(const HostMenuFrame& frame, const RectBounds& bounds, Font& font) {
+void assertVisible(const HostOverlayFrame& frame, const RectBounds& bounds, Font& font) {
 	for (size_t index = 0; index < frame.commandCount; ++index) {
 		if (frame.commandKinds[index] == Host2DKind::Rect) {
 			const auto& area = frame.commandRefs[index].rect->area;
@@ -152,12 +152,12 @@ int main() {
 		const auto frame = [&]() { menu.queueRenderCommands(runtime, presenter, rewind); return presenter.hostOverlayQueue.consumeHostMenuFrame(); };
 		press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_START));
 		require(menu.active(), "real native Select+Start opens the menu");
-		const HostMenuFrame first = frame();
+		const HostOverlayFrame first = frame();
 		assertVisible(first, presenter.visibleViewportBounds, font);
 		require(first.commandRefs[1].glyphs->items[0] == "CORE OPTIONS [1-11/15]", "real clipped height budgets title, bezel, padding and eleven unchanged font rows");
 		require(first.commandCount == 14, "only visible rows are published, including one selected highlight");
 		press(1u << RETRO_DEVICE_ID_JOYPAD_UP);
-		const HostMenuFrame last = frame();
+		const HostOverlayFrame last = frame();
 		assertVisible(last, presenter.visibleViewportBounds, font);
 		require(last.commandRefs[1].glyphs->items[0] == "CORE OPTIONS [5-15/15]", "wrap navigation scrolls the last selected row into the visible window");
 		const auto& firstRow = *last.commandRefs[2].glyphs;
@@ -176,13 +176,13 @@ int main() {
 		press(1u << RETRO_DEVICE_ID_JOYPAD_UP);
 		press(1u << RETRO_DEVICE_ID_JOYPAD_UP);
 		press(1u << RETRO_DEVICE_ID_JOYPAD_UP);
-		const HostMenuFrame restored = frame();
+		const HostOverlayFrame restored = frame();
 		require(restored.commandRefs[1].glyphs->items[0] == "CORE OPTIONS [1-11/15]", "first selected row returns to the first visible window");
 		assertVisible(restored, presenter.visibleViewportBounds, font);
 		press(1u << RETRO_DEVICE_ID_JOYPAD_A);
 		require(!menu.active(), "real native cancel closes the first-window menu");
 		press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_START));
-		const HostMenuFrame reopened = frame();
+		const HostOverlayFrame reopened = frame();
 		require(reopened.commandRefs[1].glyphs->items[0] == "CORE OPTIONS [1-11/15]",
 			"reopening at the same font, bounds and first window retains the visible range title");
 		assertVisible(reopened, presenter.visibleViewportBounds, font);

@@ -23,7 +23,7 @@ export async function createHostBitmapTest(kind: StudioRendererKind, canvas: HTM
 	backend.resizePresentationTarget(16, 8);
 	presenter.initialize(new RenderPassLibrary(backend, presenter));
 	presenter.crt_postprocessing_enabled = false;
-	const overlay = new OverlayRenderer(presenter.hostOverlayQueue), frames = new FrameBitmap();
+	const overlay = new OverlayRenderer(presenter.hostOverlayQueue, { width: 16, height: 8 }), frames = new FrameBitmap();
 	const uploads = { creates: 0, updates: 0 };
 	const create = backend.createTexture.bind(backend), update = backend.updateTexture.bind(backend);
 	backend.createTexture = (...args) => { uploads.creates++; return create(...args); };
@@ -37,7 +37,7 @@ export async function createHostBitmapTest(kind: StudioRendererKind, canvas: HTM
 	const alphaBitmap = new HostBitmap({ width: 1, height: 1, pixels: new Uint8Array([255, 128, 64, 128]) });
 	return {
 		async paint() {
-			overlay.beginFrame(presenter); overlay.drawBitmap(frames.bitmap!, 0, 0, 16, 8); overlay.endFrame();
+			overlay.beginFrame(); overlay.drawBitmap(frames.bitmap!, 0, 0, 16, 8); overlay.endFrame();
 			presenter.configurePresentation('completed', false);
 			presenter.present(target.runtime.machine.gxGpu.readDeviceOutput(), 0, 0);
 			await renderer.finish();
@@ -45,7 +45,7 @@ export async function createHostBitmapTest(kind: StudioRendererKind, canvas: HTM
 		},
 		async paintAffine(command: Omit<HostBitmapRenderSubmission, 'bitmap'>, clip?: HostOverlayClipRect,
 			scopes: readonly HostOverlayTransform[] = [], alpha = false, adjacent?: Omit<HostBitmapRenderSubmission, 'bitmap'>) {
-			overlay.beginFrame(presenter);
+			overlay.beginFrame();
 			overlay.fillRect(0, 0, 16, 8, 0, 0xff204060, LAYER_2D_IDE);
 			for (const scope of scopes) overlay.pushTransform(scope);
 			if (clip !== undefined) overlay.pushClipRect(clip.left, clip.top, clip.right, clip.bottom);
@@ -65,7 +65,7 @@ export async function createHostBitmapTest(kind: StudioRendererKind, canvas: HTM
 		},
 		async paintSolid(command: HostSolidQuadRenderSubmission, clip?: HostOverlayClipRect,
 			scopes: readonly HostOverlayTransform[] = [], adjacent?: HostSolidQuadRenderSubmission) {
-			overlay.beginFrame(presenter);
+			overlay.beginFrame();
 			overlay.fillRect(0, 0, 16, 8, 0, 0xff204060, LAYER_2D_IDE);
 			for (const scope of scopes) overlay.pushTransform(scope);
 			if (clip !== undefined) overlay.pushClipRect(clip.left, clip.top, clip.right, clip.bottom);

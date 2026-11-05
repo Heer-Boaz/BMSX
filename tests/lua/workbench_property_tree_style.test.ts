@@ -29,7 +29,7 @@ function fixture(t: TestContext, theme: string, variant: FontVariant) {
 	layoutWorkbenchPropertyTree(tree, font, (text, start, end) => font.measure(text.slice(start, end)), 4, 24, 380, 268);
 	const overlay = createHostOverlayFixture(384, 288);
 	const paint = () => {
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 		api.fill_rect(0, 0, 384, 288, 0, colors.COLOR_CODE_BACKGROUND);
 		drawWorkbenchPropertyTree(tree); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(), glyphs: GlyphRenderSubmission[] = [], fills: RectRenderSubmission[] = [];

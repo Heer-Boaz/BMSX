@@ -18,7 +18,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'msx', width = 240) {
 	const overlay = createHostOverlayFixture(384, 288);
 	const paint = () => {
 		f.arrange(); controller.update();
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame();
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame();
 	};
 	const press = (code: string) => {
 		inputFocus.handleKeyboard(new KeyInputEvent(code, KeyModifier.none, false, true));

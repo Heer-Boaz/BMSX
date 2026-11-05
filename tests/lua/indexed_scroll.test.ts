@@ -77,7 +77,7 @@ test('property and resource rendering preserves the actual retained fractional r
 	t.after(() => { pane.clearInput(); pane.dispose(); input.dispose(); menu.dispose(); });
 	for (let step = 0; step < 6; step++) pane.handleWheel({ viewportX: 5, viewportY: 5,
 		valid: true, insideViewport: true, deltaX: 0, deltaY: 0.25, modifiers: 0 });
-	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+	overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 	drawWorkbenchPropertyTree(tree);
 	pane.draw();
 	overlay.renderer.endFrame();
@@ -107,7 +107,7 @@ test('source scrolling retains fractional pixels while hit tests resolve source 
 		assert.equal(position.column, Math.round(step * 0.25 / code.charAdvance));
 	}
 	const overlay = createHostOverlayFixture(240, 160);
-	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+	overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 	renderCodeArea(code, { session: null, hint: null, popupBounds: null, popupBoundsScratch: create_rect_bounds() }, false, new Set(), [], -1, [], -1, false, EMPTY_DIAGNOSTICS_BY_ROW);
 	overlay.renderer.endFrame();
 	assert.equal(view.scrollRow, 1.5);
@@ -136,7 +136,7 @@ test('Problems wheel integrates sub-row distances without changing selection or 
 		assert.equal(controller.getScrollIndex(), step === 4 ? 1 : 0);
 	}
 	const overlay = createHostOverlayFixture(160, 100);
-	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+	overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 	controller.draw(); overlay.renderer.endFrame();
 	assert.equal(controller.getSelectionIndex(), 0);
 	assert.equal(controller.getScrollIndex(), 1);

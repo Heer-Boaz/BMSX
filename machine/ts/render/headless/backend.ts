@@ -23,7 +23,7 @@ import type { GxGpu } from '../../machine/devices/gx/gpu';
 import type { HeadlessHost2DContext } from './host_2d';
 import { HostAffineQuadCoverage } from './host_affine_quad';
 import { blitOpaquePixels } from '../shared/software_pixels';
-import { IDENTITY_HOST_OVERLAY_TRANSFORM } from '../host_overlay/transform';
+import { HostOverlayRasterTransform } from '../host_overlay/transform';
 import { HostOverlayClipState } from '../host_overlay/clip';
 import { HostMeshSceneTargets } from '../host_overlay/mesh';
 import { createHeadlessHostMeshTarget, disposeHeadlessHostMeshTarget, renderHeadlessHostMeshScene } from '../host_overlay/headless/mesh';
@@ -143,7 +143,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 		framePixels: new Uint8Array(0),
 		frameWidth: 0,
 		frameHeight: 0,
-		transform: IDENTITY_HOST_OVERLAY_TRANSFORM,
+		transform: new HostOverlayRasterTransform(),
 		target: this.framebufferPixels,
 		width: 0,
 		colorValue: 0,

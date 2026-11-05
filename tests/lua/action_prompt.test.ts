@@ -213,7 +213,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} prompt layout w
 	assert.equal(measurement.mock.callCount(), measured, 'unchanged retained content has no repeated layout measurement');
 	for (const width of [96, 384]) {
 		editorViewState.viewportWidth = width; Object.assign(f.prompt.presentation.bounds, { right: width }); f.prompt.update();
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 		text.mock.resetCalls(); f.prompt.draw(); overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
 		assert.ok(f.prompt.view.bounds.left >= 0 && f.prompt.view.bounds.right <= width);
 		assert.ok(f.prompt.view.bounds.top >= 0 && f.prompt.view.bounds.bottom <= editorViewState.viewportHeight);
@@ -249,7 +249,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} constrained dec
 	assert.equal(f.prompt.visible, true);
 	assert.deepEqual(f.prompt.view.buttons.map(button => button.bounds), buttons, 'reading the message does not move decision targets');
 	const overlay = createHostOverlayFixture(384, 288), text = t.mock.method(api, 'blit_text_inline_with_font');
-	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+	overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 	f.prompt.draw(); overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
 	// The supplied final path component is critical request data, not incidental dialog wording:
 	// reaching the body end must expose it without replacing it with a truncation marker.

@@ -34,8 +34,7 @@ export async function exerciseLongAssistantHistory(test: StudioFixture, view: As
 	await capture('history-5000-reading');
 	const resizeAt = performance.now();
 	test.presenter.setFixedRenderTargetSize(640, 480);
-	test.ide.overlayRenderer.setRenderingViewportType(test.presenter, 'viewport');
-	test.ide.editor.updateViewport(test.ide.overlayRenderer.viewportSize); await test.frame();
+	test.ide.editor.updateViewport({ width: test.presenter.viewportSize.x, height: test.presenter.viewportSize.y }); await test.frame();
 	const resizeMs = performance.now() - resizeAt;
 	check(transcript.rowAt(Math.trunc(viewport.scrollTop / view.layout.rowHeight))!.entry === anchor,
 		'stress: resizing preserves the message being read');

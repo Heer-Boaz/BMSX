@@ -144,7 +144,7 @@ test('plain text paints only visible source spans and paired selection/search wi
 	const row = f.model.projection.rows[index]; f.model.select(row.sourceStart, row.sourceEnd);
 	const glyphs = t.mock.method(api, 'blit_text_inline_span_with_font'), fills = t.mock.method(api, 'fill_rect');
 	const read = t.mock.method(f.buffer, 'getText'), advance = t.mock.method(f.font, 'advance');
-	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+	overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 	drawWorkbenchTextView(f.model, f.font, true); overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
 	assert.ok(glyphs.mock.callCount() < 40, 'offscreen measured rows are not submitted');
 	assert.ok(glyphs.mock.calls.every(call => call.arguments[1] <= call.arguments[2]));

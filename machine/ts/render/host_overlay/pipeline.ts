@@ -63,8 +63,8 @@ export function writeHostMenuState(ctx: RenderGraphPassContext, state: HostMenuP
 	state.frameTexture = presentedHistoryTexture(ctx);
 	state.frameWidth = presenter.offscreenCanvasSize.x;
 	state.frameHeight = presenter.offscreenCanvasSize.y;
-	state.overlayWidth = presenter.viewportSize.x;
-	state.overlayHeight = presenter.viewportSize.y;
+	state.overlayWidth = frame.logicalWidth;
+	state.overlayHeight = frame.logicalHeight;
 	state.time = ctx.time;
 	state.delta = ctx.delta;
 	state.commandKinds = frame.commandKinds;

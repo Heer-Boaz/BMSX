@@ -41,7 +41,7 @@ function registerHeadlessGxGpuPass(registry: RenderPassLibrary): void {
 
 export function drawHeadlessHostMenuLayer(backend: HeadlessGPUBackend, frame: HostMenuPipelineState): void {
 	backend.activateDefaultRenderTarget();
-	beginHeadlessHost2D(backend.hostOverlayContext, backend.framebufferPixels, backend.framebufferWidth, backend.framebufferHeight);
+	beginHeadlessHost2D(backend.hostOverlayContext, backend.framebufferPixels, backend.framebufferWidth, backend.framebufferHeight, frame.overlayWidth, frame.overlayHeight);
 	backend.hostOverlayContext.framePixels = backend.getTexturePixels(frame.frameTexture);
 	backend.hostOverlayContext.frameWidth = frame.frameWidth;
 	backend.hostOverlayContext.frameHeight = frame.frameHeight;
@@ -52,7 +52,7 @@ export function drawHeadlessHostMenuLayer(backend: HeadlessGPUBackend, frame: Ho
 
 export function drawHeadlessHostOverlayFrame(backend: HeadlessGPUBackend, frame: HostOverlayPipelineState): void {
 	backend.activateDefaultRenderTarget();
-	beginHeadlessHost2D(backend.hostOverlayContext, backend.framebufferPixels, backend.framebufferWidth, backend.framebufferHeight);
+	beginHeadlessHost2D(backend.hostOverlayContext, backend.framebufferPixels, backend.framebufferWidth, backend.framebufferHeight, frame.overlayWidth, frame.overlayHeight);
 	backend.hostOverlayContext.framePixels = backend.getTexturePixels(frame.frameTexture);
 	backend.hostOverlayContext.frameWidth = frame.frameWidth;
 	backend.hostOverlayContext.frameHeight = frame.frameHeight;

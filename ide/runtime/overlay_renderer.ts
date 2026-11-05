@@ -1,7 +1,7 @@
 import type { HostBitmap, HostBitmapRenderSubmission } from '../../machine/ts/render/host_overlay/bitmap';
 import type { HostMeshScene, HostMeshSceneRenderSubmission } from '../../machine/ts/render/host_overlay/mesh';
 import type { BFont } from '../../machine/ts/render/shared/bitmap_font';
-import { Host2DKind, type Host2DRef, type HostSolidQuadRenderSubmission } from '../../machine/ts/render/host_overlay/commands';
+import { Host2DKind, type Host2DRef, type Host2DCommandList, type HostSolidQuadRenderSubmission } from '../../machine/ts/render/host_overlay/commands';
 import type { HostOverlayClipRect } from '../../machine/ts/render/host_overlay/clip';
 import { IDENTITY_HOST_OVERLAY_TRANSFORM, type HostOverlayTransform } from '../../machine/ts/render/host_overlay/transform';
 import {
@@ -14,8 +14,7 @@ import {
 	type color,
 } from '../../machine/ts/render/shared/submissions';
 import { LAYER_2D_IDE, type Layer2D } from '../../machine/ts/render/shared/layers';
-import type { HostMenuFrame, HostOverlayFrame, HostOverlayQueue } from '../../machine/ts/render/host_overlay/overlay_queue';
-import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
+import type { HostOverlayFrame, HostOverlayQueue } from '../../machine/ts/render/host_overlay/overlay_queue';
 import type { Viewport } from '../common/viewport';
 
 type OverlayCommandBuffer = {
@@ -138,41 +137,28 @@ function createOverlayCommandBuffer(): OverlayCommandBuffer {
 export class OverlayRenderer {
 	public active = false;
 	public drawFramePending = false;
-	public resolutionMode: 'offscreen' | 'viewport' = 'viewport';
 	private activeBuffer = createOverlayCommandBuffer();
 	private standbyBuffer = createOverlayCommandBuffer();
 	private frameLogicalWidth = 0;
 	private frameLogicalHeight = 0;
-	private overrideSize: Viewport = null;
+	private readonly viewport: Viewport;
 
 	private readonly rectanglePoints = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
-	public constructor(private readonly queue: HostOverlayQueue) {
+	public constructor(private readonly queue: HostOverlayQueue, viewport: Readonly<Viewport>) {
+		this.viewport = { width: viewport.width, height: viewport.height };
 	}
 
-	public setViewportSize(viewport: Viewport): void {
-		this.overrideSize = { width: viewport.width, height: viewport.height };
+	public setViewportSize(viewport: Readonly<Viewport>): void {
+		this.viewport.width = viewport.width;
+		this.viewport.height = viewport.height;
 	}
 
-	public setRenderingViewportType(presenter: VideoPresenter, type: 'viewport' | 'offscreen'): void {
-		this.resolutionMode = type;
-		let targetSize: Viewport;
-		switch (type) {
-			case 'viewport':
-				targetSize = { width: presenter.viewportSize.x, height: presenter.viewportSize.y };
-				break;
-			case 'offscreen':
-				targetSize = { width: presenter.offscreenCanvasSize.x, height: presenter.offscreenCanvasSize.y };
-				break;
-		}
-		this.setViewportSize(targetSize);
+	public get viewportSize(): Readonly<Viewport> {
+		return this.viewport;
 	}
 
-	public get viewportSize(): Viewport {
-		return this.overrideSize;
-	}
-
-	public beginFrame(presenter: VideoPresenter): void {
+	public beginFrame(): void {
 		const buffer = this.activeBuffer;
 		buffer.commandCount = 0;
 		buffer.rectCount = 0;
@@ -190,11 +176,10 @@ export class OverlayRenderer {
 		buffer.clipDepth = 1;
 		buffer.transformCount = 0;
 		buffer.transformDepth = 1;
-		const logical = presenter.viewportSize;
-		this.frameLogicalWidth = logical.x;
-		this.frameLogicalHeight = logical.y;
-		buffer.fullClip.right = logical.x;
-		buffer.fullClip.bottom = logical.y;
+		this.frameLogicalWidth = this.viewport.width;
+		this.frameLogicalHeight = this.viewport.height;
+		buffer.fullClip.right = this.frameLogicalWidth;
+		buffer.fullClip.bottom = this.frameLogicalHeight;
 	}
 
 	public pushClipRect(left: number, top: number, right: number, bottom: number): void {
@@ -467,7 +452,7 @@ export class OverlayRenderer {
 	}
 
 	/** Compose a retained sibling view in logical coordinates into this frame's command buffer. */
-	public appendFrame(frame: HostMenuFrame): void {
+	public appendFrame(frame: Host2DCommandList): void {
 		for (let index = 0; index < frame.commandCount; index++) this.queueCommand(frame.commandKinds[index], frame.commandRefs[index]);
 	}
 

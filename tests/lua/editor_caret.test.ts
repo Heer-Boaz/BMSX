@@ -15,8 +15,8 @@ import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { invertThemeToken, resolveThemeTokenColor } from '../../ide/theme/tokens';
 
 function renderActiveCursor(code: CodeEditorControl, baseColor: number): HostOverlayFrame {
-	const { presenter, queue, renderer } = createHostOverlayFixture(64, 32);
-	renderer.beginFrame(presenter);
+	const { queue, renderer } = createHostOverlayFixture(64, 32);
+	renderer.beginFrame();
 	api.beginFrame(renderer);
 	drawCursor(code, {
 		row: 0,

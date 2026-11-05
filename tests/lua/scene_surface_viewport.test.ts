@@ -75,7 +75,7 @@ prefab.define({def_id='zero',class=require('cartlib/world/object_2d'),components
 	configureFontVariant('tiny');
 	const view = new SceneViewportViewState(context, f.sources.catalog), overlay = createHostOverlayFixture(600,600);
 	view.layout({left:0,top:0,right:600,bottom:600}, 10); view.refresh();
-	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); drawSceneViewport(view, false); overlay.renderer.endFrame();
+	overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); drawSceneViewport(view, false); overlay.renderer.endFrame();
 	const frame = overlay.queue.consumeOverlayFrame(), colors: number[] = [];
 	for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Bitmap)
 		colors.push((frame.commandRefs[index] as HostBitmapRenderSubmission).color);

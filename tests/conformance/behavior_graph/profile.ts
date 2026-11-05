@@ -36,10 +36,10 @@ trees.register('profile', { root = { type = 'sequence', children = { ${'shared,'
 	view.scrollX = -192;
 	view.scrollY = -8;
 	const hitMicroseconds = medianMilliseconds(() => { for (let index = 0; index < 1000; index += 1) view.hitTest(100 + index % 128, 60 + index % 128); });
-	const { presenter, queue, renderer } = createHostOverlayFixture(384, 288);
+	const { queue, renderer } = createHostOverlayFixture(384, 288);
 	const stream = new HostOverlayQuadStream();
 	const draw = () => {
-		renderer.beginFrame(presenter);
+		renderer.beginFrame();
 		api.beginFrame(renderer);
 		drawWorkbenchGraph(view, null, true);
 		renderer.endFrame();

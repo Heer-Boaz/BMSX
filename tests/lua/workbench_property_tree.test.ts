@@ -224,10 +224,10 @@ for (const sameIdentity of [true, false]) test(`property press ${sameIdentity ? 
 test('property renderer clips list and footer separately and retains actual overlay/quad storage', () => {
 	const f = fixture();
 	navigateWorkbenchTree(f.state, 'right'); f.layout();
-	const { presenter, renderer, queue } = createHostOverlayFixture(384, 288);
+	const { renderer, queue } = createHostOverlayFixture(384, 288);
 	const stream = new HostOverlayQuadStream();
 	const draw = () => {
-		renderer.beginFrame(presenter); api.beginFrame(renderer);
+		renderer.beginFrame(); api.beginFrame(renderer);
 		drawWorkbenchPropertyTree(f.state); renderer.endFrame();
 		const frame = queue.consumeOverlayFrame(); stream.reset(384, 288);
 		for (let index = 0; index < frame.commandCount; index += 1) stream.appendEntry(frame.commandKinds[index], frame.commandRefs[index]);
@@ -333,7 +333,7 @@ function feedbackFixture(t: TestContext, property: Partial<WorkbenchPropertyElem
 	// Feedback must publish the exact authored strings, not their clipped row previews.
 	const texts: string[] = []; t.mock.method(api, 'blit_text_inline_with_font', text => texts.push(text));
 	const overlay = createHostOverlayFixture(384, 288);
-	const paint = () => { texts.length = 0; overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame(); };
+	const paint = () => { texts.length = 0; overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame(); };
 	const point = { valid: true, insideViewport: true, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0,
 		viewportX: f.state.layout.contentLeft + 20, viewportY: f.state.layout.contentTop + f.state.layout.rowHeight + 3 };
 	const move = (delta = 0) => { point.viewportX += delta; hover.beginDispatch(); pointer.handle(point, false, 0); hover.endDispatch(); };

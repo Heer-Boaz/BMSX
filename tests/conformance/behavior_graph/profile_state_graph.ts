@@ -55,10 +55,10 @@ fsm.register('profile', { initial = 'lane0', states = { ${Array.from({ length: c
 			assert.equal(generation.edges.length, copies * 4 + 1);
 			graph.viewport.layout(0, 0, 384, 288);
 			graph.viewport.reveal(generation.nodes[2]);
-			const { presenter, renderer, queue } = createHostOverlayFixture(384, 288);
+			const { renderer, queue } = createHostOverlayFixture(384, 288);
 			const stream = new HostOverlayQuadStream();
 			const draw = () => {
-				renderer.beginFrame(presenter); api.beginFrame(renderer);
+				renderer.beginFrame(); api.beginFrame(renderer);
 				drawWorkbenchGraph(graph.viewport, null, true); renderer.endFrame();
 				const frame = queue.consumeOverlayFrame(); stream.reset(384, 288);
 				for (let index = 0; index < frame.commandCount; index += 1) stream.appendEntry(frame.commandKinds[index], frame.commandRefs[index]);

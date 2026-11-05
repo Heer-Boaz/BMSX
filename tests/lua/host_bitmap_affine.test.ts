@@ -13,8 +13,8 @@ const affine: HostBitmapRenderSubmission = {
 };
 
 test('affine bitmap commands snapshot all scalar inputs and reuse each completed command buffer', () => {
-	const { renderer, queue, presenter } = createHostOverlayFixture(16, 16);
-	renderer.beginFrame(presenter);
+	const { renderer, queue } = createHostOverlayFixture(16, 16);
+	renderer.beginFrame();
 	renderer.drawBitmapAffine(bitmap, affine.originX, affine.originY, affine.axisXX, affine.axisXY,
 		affine.axisYX, affine.axisYY, affine.u0, affine.v0, affine.u1, affine.v1, affine.color);
 	renderer.drawBitmap(bitmap, 2, 3, 10, 13);
@@ -23,10 +23,10 @@ test('affine bitmap commands snapshot all scalar inputs and reuse each completed
 	assert.deepEqual(firstCommand, affine);
 	assert.deepEqual(first.commandRefs[1], { bitmap, originX: 2, originY: 3, axisXX: 8, axisXY: 0, axisYX: 0, axisYY: 10,
 		u0: 0, v0: 0, u1: 1, v1: 1, color: 0xffffffff });
-	renderer.beginFrame(presenter); renderer.drawBitmap(bitmap, 0, 0, 4, 4); renderer.endFrame();
+	renderer.beginFrame(); renderer.drawBitmap(bitmap, 0, 0, 4, 4); renderer.endFrame();
 	queue.consumeOverlayFrame();
 	assert.deepEqual(firstCommand, affine, 'the next published frame has separate scalar storage');
-	renderer.beginFrame(presenter); renderer.drawBitmap(bitmap, 1, 1, 5, 5); renderer.endFrame();
+	renderer.beginFrame(); renderer.drawBitmap(bitmap, 1, 1, 5, 5); renderer.endFrame();
 	assert.equal(queue.consumeOverlayFrame().commandRefs[0], firstCommand, 'completed double-buffer storage is retained');
 });
 
@@ -48,7 +48,7 @@ test('bitmap stream composes both affine basis columns while retaining UVs, tint
 test('software reflected diagonal edges use screen-space top-left coverage, not local half-open coordinates', () => {
 	const { backend } = createHostOverlayFixture(8, 8), context = backend.hostOverlayContext;
 	const pixels = backend.framebufferPixels;
-	beginHeadlessHost2D(context, pixels, 8, 8);
+	beginHeadlessHost2D(context, pixels, 8, 8, 8, 8);
 	renderHeadlessHost2DEntry(context, Host2DKind.Bitmap, { ...affine, u0: 0, v0: 0, u1: 1, v1: 1, color: 0xffffffff });
 	const expected = ['........', '..####..', '..####..', '.####...', '.####...', '........', '........', '........'];
 	// These exact sample centres lie on the geometry under test, not incidental UI coordinates.

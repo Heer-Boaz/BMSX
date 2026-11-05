@@ -53,7 +53,7 @@ struct Fixture {
 	VideoPresenter presenter;
 	Font font;
 	InputControllerSnapshot snapshot{};
-	HostMenuFrame published{};
+	HostOverlayFrame published{};
 	f64 time = 0;
 	i32 mouseX = 0, mouseY = 0;
 	i16 mouseDeltaX = 0, mouseDeltaY = 0;
@@ -166,7 +166,7 @@ void printSchema() {
 	std::cout << "]}}\n";
 }
 
-void printCommands(const HostMenuFrame& frame, const BFont* font) {
+void printCommands(const HostOverlayFrame& frame, const BFont* font) {
 	std::cout << '[';
 	for (size_t index = 0; index < frame.commandCount; ++index) {
 		if (index != 0) std::cout << ',';

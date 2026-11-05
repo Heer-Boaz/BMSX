@@ -65,7 +65,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 			const decorations = new CodeRowDecorations();
 			decorations.prepare(code, 0, entry, start, end, [], -1, [], -1, false, true);
 			for (const caretOn of [false, true]) {
-				overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+				overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 				drawHighlightSlice(code, font, renderText, entry.hi.colors, entry.advancePrefix, start, end, left, top, 0, decorations);
 				if (caretOn) drawCursor(code, info, left, true);
 				overlay.renderer.endFrame();
@@ -98,7 +98,7 @@ test('a suggestion clipped left of the source slice does not become a phantom ca
 	code.view.wordWrapEnabled = false;
 	code.layout.ensureVisualLines(false, 0, 1);
 	const overlay = createHostOverlayFixture(128, 32);
-	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+	overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 	const info = resolveCursorScreenInfo(code, rowViewport);
 	drawCodeAreaRows(code, rowViewport, null, false, code.font.renderFont(), [], -1, [], -1, false, true, EMPTY_DIAGNOSTICS_BY_ROW, code.layout, code.lineHeight);
 	overlay.renderer.endFrame();
@@ -141,7 +141,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		];
 		for (const paint of painters) {
 			decorations.prepare(code, 0, line, 0, line.hi.text.length, [], -1, [], -1, false, true);
-			overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); paint(); overlay.renderer.endFrame();
+			overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); paint(); overlay.renderer.endFrame();
 			const frame = overlay.queue.consumeOverlayFrame(), rectangles: RectRenderSubmission[] = [];
 			for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Rect)
 				rectangles.push(frame.commandRefs[index] as RectRenderSubmission);
@@ -163,7 +163,7 @@ test('horizontal scrolling past a short row does not pull its end caret back ont
 	const code = createTestCodeControl(t, model, documents, clock, view, editorViewState.font); code.view.wordWrapEnabled = false;
 	code.layout.ensureVisualLines(false, 0, 1);
 	const overlay = createHostOverlayFixture(128, 32);
-	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+	overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 	const viewport = { ...rowViewport, visualCount: 2 };
 	const info = resolveCursorScreenInfo(code, viewport);
 	drawCodeAreaRows(code, viewport, null, false, code.font.renderFont(), [], -1, [], -1, false, true, EMPTY_DIAGNOSTICS_BY_ROW, code.layout, code.lineHeight);
@@ -215,7 +215,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		const line = code.layout.getViewLine(0);
 		view.scrollLeft = line.advancePrefix[4] + 1.5;
 		const offset = view.scrollLeft, overlay = createHostOverlayFixture(128, 96);
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 		const viewport = renderCodeArea(code, { session: null, hint: null, popupBounds: null, popupBoundsScratch: create_rect_bounds() }, true,
 			new Set([1]), [], -1, [], -1, false, EMPTY_DIAGNOSTICS_BY_ROW);
 		overlay.renderer.endFrame();

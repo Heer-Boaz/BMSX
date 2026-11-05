@@ -56,7 +56,7 @@ export async function runStudioBuildOutput(test: StudioFixture) {
 	const builds = new BuildOutputFixture();
 	editor.builds = builds;
 	test.presenter.setFixedRenderTargetSize(640, 360);
-	ide.overlayRenderer.setRenderingViewportType(test.presenter, 'viewport'); editor.updateViewport(ide.overlayRenderer.viewportSize);
+	editor.updateViewport({ width: test.presenter.viewportSize.x, height: test.presenter.viewportSize.y });
 	await frame();
 	await test.runPaletteCommand('Studio: Build Jobs');
 	await chooseQuickPick(test, `${builds.job.request.target} - failed`);
@@ -122,7 +122,7 @@ export async function runStudioBuildOutput(test: StudioFixture) {
 			await titleAction(test, peer, 'buildLog.output');
 			await frame(); await test.capture?.(`build-output-${editor.fontVariant}-theme-${theme}-two-readers`);
 			test.presenter.setFixedRenderTargetSize(260, 180);
-			ide.overlayRenderer.setRenderingViewportType(test.presenter, 'viewport'); editor.updateViewport(ide.overlayRenderer.viewportSize); await frame();
+			editor.updateViewport({ width: test.presenter.viewportSize.x, height: test.presenter.viewportSize.y }); await frame();
 			await titleAction(test, peer, 'buildLog.error');
 			await copyDocument(test, DIAGNOSTIC);
 			await find(test, 'failure 9:'); await press('Escape');
@@ -131,7 +131,7 @@ export async function runStudioBuildOutput(test: StudioFixture) {
 				'build output: constrained font/theme reflow and channel switching retain independent document queries');
 			await frame(); await test.capture?.(`build-output-${editor.fontVariant}-theme-${theme}-constrained-diagnostic`);
 			test.presenter.setFixedRenderTargetSize(80, 180);
-			ide.overlayRenderer.setRenderingViewportType(test.presenter, 'viewport'); editor.updateViewport(ide.overlayRenderer.viewportSize); await frame();
+			editor.updateViewport({ width: test.presenter.viewportSize.x, height: test.presenter.viewportSize.y }); await frame();
 			check(peer.view.actions.items.find(item => item.command === 'buildLog.copyAll')!.overflowed,
 				'build output: responsive title actions retain Copy in the real More menu under constrained width');
 			await test.click(peer.view.actions.overflow!.button.bounds);
@@ -140,7 +140,7 @@ export async function runStudioBuildOutput(test: StudioFixture) {
 			check(await test.clipboard.readText() === DIAGNOSTIC,
 				'build output: the native overflow action copies the exact active failure document');
 			test.presenter.setFixedRenderTargetSize(640, 360);
-			ide.overlayRenderer.setRenderingViewportType(test.presenter, 'viewport'); editor.updateViewport(ide.overlayRenderer.viewportSize); await frame();
+			editor.updateViewport({ width: test.presenter.viewportSize.x, height: test.presenter.viewportSize.y }); await frame();
 			await runMainActivityPhase(test, first, peer, builds.job, theme);
 			await press('ControlLeft', 'AltLeft', 'KeyT');
 		}
@@ -293,8 +293,7 @@ async function runMainActivityPhase(test: StudioFixture, first: BuildLogInput, p
 		check(!main.activityWindow.model.canPlace('left', main.bounds) && main.activityWindow.model.placement === 'normal',
 			'build output: compact work-area snap admission honors the actual measured activity minimum');
 		test.presenter.setFixedRenderTargetSize(1280, 720);
-		test.ide.overlayRenderer.setRenderingViewportType(test.presenter, 'viewport');
-		editor.updateViewport(test.ide.overlayRenderer.viewportSize); await test.frame();
+		editor.updateViewport({ width: test.presenter.viewportSize.x, height: test.presenter.viewportSize.y }); await test.frame();
 	}
 	await test.runPaletteCommand('Window: Snap Window Left');
 	check(main.activityWindow.model.placement === 'left' && inputFocus.admittedTarget === field
@@ -303,8 +302,7 @@ async function runMainActivityPhase(test: StudioFixture, first: BuildLogInput, p
 	await test.runPaletteCommand('Window: Restore Window');
 	if (!compactSnap) {
 		test.presenter.setFixedRenderTargetSize(640, 360);
-		test.ide.overlayRenderer.setRenderingViewportType(test.presenter, 'viewport');
-		editor.updateViewport(test.ide.overlayRenderer.viewportSize); await test.frame();
+		editor.updateViewport({ width: test.presenter.viewportSize.x, height: test.presenter.viewportSize.y }); await test.frame();
 	}
 	const header = main.activityWindow.model.header;
 	// The actual caption remains the pointer target as shared maximize/restore moves its header.

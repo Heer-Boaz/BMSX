@@ -20,7 +20,7 @@ void HostOverlayQueue::clearOverlayFrame() {
 	m_hasPendingFrame = false;
 }
 
-void HostOverlayQueue::publishHostMenuFrame(const HostMenuFrame& frame) {
+void HostOverlayQueue::publishHostMenuFrame(const HostOverlayFrame& frame) {
 	m_pendingMenuFrame = frame;
 	m_hasPendingMenuFrame = true;
 }
@@ -29,7 +29,7 @@ bool HostOverlayQueue::hasPendingHostMenuFrame() const {
 	return m_hasPendingMenuFrame;
 }
 
-HostMenuFrame HostOverlayQueue::consumeHostMenuFrame() {
+HostOverlayFrame HostOverlayQueue::consumeHostMenuFrame() {
 	m_hasPendingMenuFrame = false;
 	return m_pendingMenuFrame;
 }

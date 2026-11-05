@@ -238,7 +238,7 @@ test('only changed lightbox geometry and visibility publish invalidation, and se
 		f.cache.beginFrame();
 		// The pane completes its thumbnail frame before root-owned lightbox paint.
 		f.cache.endFrame();
-		renderer.renderer.beginFrame(renderer.presenter); api.beginFrame(renderer.renderer);
+		renderer.renderer.beginFrame(); api.beginFrame(renderer.renderer);
 		f.surfaces.draw(api); renderer.renderer.endFrame();
 		assert.ok(renderer.queue.consumeOverlayFrame().commandCount > 0);
 	}
@@ -263,7 +263,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		t.mock.method(font, 'advance', char => { measurements++; return advance(char); });
 		f.preview.open('image');
 		const paint = () => {
-			overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); f.surfaces.draw(api); overlay.renderer.endFrame();
+			overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); f.surfaces.draw(api); overlay.renderer.endFrame();
 			return overlay.queue.consumeOverlayFrame();
 		};
 		const frame = paint(), labels: string[] = [];
@@ -291,7 +291,7 @@ async function scrollableError(t: TestContext) {
 	f.layout(compact, 8); f.preview.open('scrollable-error'); await pending.catch(() => {});
 	const overlay = createHostOverlayFixture(384, 288);
 	const paint = () => {
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); f.surfaces.draw(api); overlay.renderer.endFrame();
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); f.surfaces.draw(api); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(), lines: string[] = [], area = f.preview.surface.getBounds();
 		for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs) {
 			const run = frame.commandRefs[index] as GlyphRenderSubmission;
@@ -372,7 +372,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} a zero-height o
 	f.preview.open('bitmap'); await Promise.resolve();
 	for (const height of [0, 24]) {
 		f.layout({ left: 0, top: 24, right: variant === 'tiny' ? 78 : 118, bottom: 24 + height }, editorViewState.font.lineHeight);
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); f.surfaces.draw(api); overlay.renderer.endFrame();
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); f.surfaces.draw(api); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(); let bitmaps = 0, emptyClips = 0;
 		for (let index = 0; index < frame.commandCount; index++) {
 			if (frame.commandKinds[index] === Host2DKind.Bitmap) {
@@ -397,7 +397,7 @@ test('loading and an asynchronous decode error are each measured once, with stat
 	let measurements = 0;
 	t.mock.method(font, 'advance', char => { measurements++; return advance(char); });
 	const paint = () => {
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); f.surfaces.draw(api); overlay.renderer.endFrame();
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); f.surfaces.draw(api); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(), labels: string[] = [];
 		for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs) {
 			const run = frame.commandRefs[index] as GlyphRenderSubmission;
@@ -424,7 +424,7 @@ test('a real Node PNG decode reaches the modal bitmap and remains leased while i
 	f.preview.open(url); assert.equal(resource.retained, 1);
 	for (let frame = 0; frame < 4; frame++) {
 		f.cache.beginFrame(); f.cache.endFrame();
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); f.surfaces.draw(api); overlay.renderer.endFrame();
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); f.surfaces.draw(api); overlay.renderer.endFrame();
 		const commands = overlay.queue.consumeOverlayFrame(); let found = false;
 		for (let index = 0; index < commands.commandCount; index++) if (commands.commandKinds[index] === Host2DKind.Bitmap) {
 			const submission = commands.commandRefs[index] as HostBitmapRenderSubmission;
@@ -448,7 +448,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		const reason = f.cache.use(url).error!;
 		assert.ok(reason.length >= 40, 'the real decoder supplies a reason longer than a narrow line');
 		const overlay = createHostOverlayFixture(384, 288), font = editorViewState.font.renderFont();
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); f.surfaces.draw(api); overlay.renderer.endFrame();
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); f.surfaces.draw(api); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(), lines: string[] = [];
 		for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs) {
 			const run = frame.commandRefs[index] as GlyphRenderSubmission;

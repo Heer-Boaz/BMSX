@@ -128,11 +128,11 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		const measured = f.measurements(), scroll = f.strip.scrollbar.getScroll(), revision = f.strip.layoutState.revision;
 		const width = 384, height = 96, overlay = createHostOverlayFixture(width, height);
 		const paint = () => {
-			overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+			overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 			f.strip.draw(f.context); overlay.renderer.endFrame();
 			const frame = overlay.queue.consumeOverlayFrame(), pixels = overlay.backend.framebufferPixels;
 			pixels.fill(0);
-			beginHeadlessHost2D(overlay.backend.hostOverlayContext, pixels, width, height);
+			beginHeadlessHost2D(overlay.backend.hostOverlayContext, pixels, width, height, width, height);
 			for (let index = 0; index < frame.commandCount; index++)
 				renderHeadlessHost2DEntry(overlay.backend.hostOverlayContext, frame.commandKinds[index], frame.commandRefs[index]);
 			return { frame, pixels: overlay.backend.framebufferWords.slice() };

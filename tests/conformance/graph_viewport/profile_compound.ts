@@ -40,10 +40,10 @@ async function main() {
 		const room = model!.nodes.find(node => node.name === 'ROOM')!;
 		view.scrollX = room.bounds.left - 6;
 		view.scrollY = room.bounds.top - 6;
-		const { presenter, queue, renderer } = createHostOverlayFixture(384, 288);
+		const { queue, renderer } = createHostOverlayFixture(384, 288);
 		const stream = new HostOverlayQuadStream();
 		const draw = () => {
-			renderer.beginFrame(presenter);
+			renderer.beginFrame();
 			api.beginFrame(renderer);
 			drawWorkbenchGraph(view, null, true);
 			renderer.endFrame();

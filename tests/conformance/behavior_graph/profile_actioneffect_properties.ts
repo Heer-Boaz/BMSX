@@ -53,10 +53,10 @@ for (const requirements of [1, 256, 4096]) {
 		const pointer = new WorkbenchPropertyTreePointer(focus, new PointerHoverService(), target);
 		pointer.setInput(properties.tree, view.selectionState.definitionRowKey);
 		const snapshot = { valid: true, insideViewport: true, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0, viewportX: 200, viewportY: 50 };
-		const { presenter, renderer, queue } = createHostOverlayFixture(384, 288);
+		const { renderer, queue } = createHostOverlayFixture(384, 288);
 		const stream = new HostOverlayQuadStream();
 		const draw = () => {
-			renderer.beginFrame(presenter); api.beginFrame(renderer);
+			renderer.beginFrame(); api.beginFrame(renderer);
 			drawWorkbenchPropertyTree(properties.tree); renderer.endFrame();
 			const frame = queue.consumeOverlayFrame(); stream.reset(384, 288);
 			for (let index = 0; index < frame.commandCount; index += 1) stream.appendEntry(frame.commandKinds[index], frame.commandRefs[index]);

@@ -82,10 +82,10 @@ for (const nodeCount of [32, 1024]) {
 	pointer.pressedButtons = 0; pointer.justReleasedButtons = PointerButton.Primary;
 	capture.dispatch(pointer, false, 100);
 	view.scrollX = 0; view.scrollY = 0;
-	const { presenter, renderer, queue } = createHostOverlayFixture(384, 288);
+	const { renderer, queue } = createHostOverlayFixture(384, 288);
 	const stream = new HostOverlayQuadStream();
 	const draw = () => {
-		renderer.beginFrame(presenter); api.beginFrame(renderer);
+		renderer.beginFrame(); api.beginFrame(renderer);
 		drawWorkbenchGraph(view, control.hover, true);
 		renderer.endFrame();
 		const frame = queue.consumeOverlayFrame();

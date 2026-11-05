@@ -77,7 +77,7 @@ test('property descriptions use neutral UI ink in paragraph, inline and expanded
 				}
 				f.inspector.model.selectionIndex = selected ? 0 : -1;
 				glyphs.clear();
-				overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+				overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 				drawWorkbenchPropertyInspector(f.inspector); overlay.renderer.endFrame();
 				const selectionCoversText = selected && mode !== 'paragraph';
 				const context = `${theme}/${variant}/${mode}/${selected ? 'selected' : 'unselected'}/${severity}`;
@@ -254,7 +254,7 @@ test('full inspector paints only visible content using retained property text an
 	const f = fixture(t), overlay = createHostOverlayFixture(384, 288);
 	const rows = f.inspector.model.rows, lines = rows[0].value;
 	const draw = () => {
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 		drawWorkbenchPropertyInspector(f.inspector); overlay.renderer.endFrame();
 		return overlay.queue.consumeOverlayFrame().commandCount;
 	};
@@ -612,7 +612,7 @@ function feedbackFixture(t: TestContext, property: Partial<InspectedProperty> = 
 	const overlay = createHostOverlayFixture(384, 288);
 	const paint = () => {
 		labels.length = 0;
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame();
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame();
 	};
 	const pointer = (offset = 0) => {
 		const view = f.inspector.model.viewport;

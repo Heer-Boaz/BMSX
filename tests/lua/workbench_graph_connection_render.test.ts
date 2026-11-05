@@ -22,10 +22,10 @@ test('moving and stationary connections reuse preview, overlay command, translat
 	const feedback = new WorkbenchGraphConnectionPreview(f.edge, 'target');
 	feedback.target = f.target; feedback.moveTo(248, 146);
 	const handles = { edge: f.edge, ends: 'both' as const };
-	const { presenter, renderer, queue } = createHostOverlayFixture(384, 288);
+	const { renderer, queue } = createHostOverlayFixture(384, 288);
 	const stream = new HostOverlayQuadStream();
 	const draw = () => {
-		renderer.beginFrame(presenter); api.beginFrame(renderer);
+		renderer.beginFrame(); api.beginFrame(renderer);
 		drawWorkbenchGraph(f.view, null, true, feedback, handles);
 		renderer.endFrame();
 		const frame = queue.consumeOverlayFrame();

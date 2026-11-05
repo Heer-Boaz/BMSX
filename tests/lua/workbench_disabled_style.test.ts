@@ -37,7 +37,7 @@ function fixture(t: TestContext, theme: string, variant: FontVariant) {
 	Object.assign(editorViewState, { font, lineHeight: font.lineHeight, viewportWidth: 384, viewportHeight: 288 });
 	t.after(() => { colors.setIdeThemeVariant(previousTheme); Object.assign(editorViewState, previousView); });
 	const draw = (paint: () => void) => {
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+		overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 		paint(); overlay.renderer.endFrame();
 		return overlay.queue.consumeOverlayFrame();
 	};
