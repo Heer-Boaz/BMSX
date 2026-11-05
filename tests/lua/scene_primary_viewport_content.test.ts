@@ -49,21 +49,33 @@ function fixture(t: TestContext, objects = OBJECTS, attach = true) {
 		control.update();
 	};
 	t.after(() => { control.dispose(); view.dispose(); context.dispose(); menu.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
-	return { ...f, source, context, view, scope, semantic, panel, control, select };
+	return { ...f, source, context, view, scope, semantic, panel, control, menu, select };
 }
 
-test('visible camera controls admit primary-button orbit, pan, zoom and return to member selection without editing source', t => {
+test('viewport menus admit primary-button orbit, pan, zoom and return to member selection without editing source', t => {
 	const f = fixture(t); f.select(0);
 	const selection = f.context.selection;
 	const click = (command: EditorCommandId) => {
 		f.control.update();
-		const item = f.view.navigationActions.items.find(item => item.command === command)!;
+		const menuCommand = command === 'sceneViewport.view2d' || command === 'sceneViewport.view3d'
+			? 'sceneViewport.viewOptions' : 'sceneViewport.navigationOptions';
+		const item = f.view.navigationActions.items.find(item => item.command === menuCommand)!;
 		assert.ok(item.visible && !item.overflowed && item.enabled);
 		const x = (item.bounds.left + item.bounds.right) / 2, y = (item.bounds.top + item.bounds.bottom) / 2;
 		const down = pointer(x, y, PointerButton.Primary, PointerButton.Primary);
 		pointerCapture.beginRoute(f.scope.surfaceScope, down);
 		assert.equal(f.control.handlePointer(down, true), true);
 		pointerCapture.dispatch(pointer(x, y, 0, 0, PointerButton.Primary), false, 0, f.scope.surfaceScope);
+		assert.equal(f.menu.visible, true);
+		assert.ok(f.menu.model.rows.some(row => row.command === command && row.enabled));
+		f.menu.handleKeyboard(new KeyInputEvent('Home', KeyModifier.none));
+		for (let step = 0; f.menu.model.rows[f.menu.model.selectedIndex]?.command !== command && step < f.menu.model.rows.length; step++)
+			f.menu.handleKeyboard(new KeyInputEvent('ArrowDown', KeyModifier.none));
+		assert.equal(f.menu.model.rows[f.menu.model.selectedIndex].command, command);
+		f.menu.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none));
+		f.menu.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none, false, false));
+		assert.equal(f.menu.visible, false);
+		assert.ok(inputFocus.admittedTarget === f.control.focusTarget);
 		f.control.update();
 	};
 	const drag = () => {
@@ -89,12 +101,13 @@ test('visible camera controls admit primary-button orbit, pan, zoom and return t
 	click('sceneViewport.select'); assert.equal(f.view.navigationTool, 'select');
 	click('sceneViewport.orbit'); click('sceneViewport.view2d');
 	assert.equal(f.view.navigationTool, 'select');
-	assert.equal(f.view.navigationActions.items.find(item => item.command === 'sceneViewport.orbit')!.visible, false);
+	f.view.navigationMenu.refresh();
+	assert.equal(f.view.navigationMenu.visibleItems.some(item => item.type === 'command' && item.command === 'sceneViewport.orbit'), false);
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
 });
 
 test('retiring a viewport cancels a held navigation button instead of acting on the next document', t => {
-	const f = fixture(t), item = f.view.navigationActions.items.find(item => item.command === 'sceneViewport.zoomIn')!;
+	const f = fixture(t), item = f.view.navigationActions.items.find(item => item.command === 'sceneViewport.viewOptions')!;
 	const x = (item.bounds.left + item.bounds.right) / 2, y = (item.bounds.top + item.bounds.bottom) / 2;
 	const down = pointer(x, y, PointerButton.Primary, PointerButton.Primary);
 	pointerCapture.beginRoute(f.scope.surfaceScope, down); f.control.handlePointer(down, true);
@@ -103,14 +116,72 @@ test('retiring a viewport cancels a held navigation button instead of acting on 
 	f.control.setView(next, BOUNDS); const reading = next.camera.capture();
 	pointerCapture.dispatch(pointer(x, y, 0, 0, PointerButton.Primary), false, 0, f.scope.surfaceScope);
 	assert.equal(pointerCapture.active, false); assert.deepEqual(next.camera.capture(), reading);
+	assert.equal(f.menu.visible, false);
 });
 
 test('a camera-button activation may retire its own viewport synchronously', t => {
-	const f = fixture(t), item = f.view.navigationActions.items.find(item => item.command === 'sceneViewport.view3d')!;
+	const f = fixture(t); f.select(0); f.view.camera.pan(50, 50);
+	const item = f.view.navigationActions.items.find(item => item.command === 'sceneViewport.frameSelection')!;
 	const unbind = f.view.camera.onDidChange(() => f.control.clearView()); t.after(unbind);
 	const x = (item.bounds.left + item.bounds.right) / 2, y = (item.bounds.top + item.bounds.bottom) / 2;
 	f.control.handlePointer(pointer(x, y, 0, PointerButton.Primary, PointerButton.Primary), true);
 	assert.equal(f.control.canFocus, false); assert.equal(pointerCapture.active, false);
+});
+
+test('focus does not paint permanent instructions; help belongs to the action being pointed at', t => {
+	const f = fixture(t); f.control.focus(); f.control.update();
+	assert.equal(f.view.caption.lines.length, 0, 'an available idle viewport has no instructional artwork overlay');
+	assert.equal(f.control.tooltipItem, undefined);
+	const item = f.view.navigationActions.items.find(item => item.command === 'sceneViewport.navigationOptions')!;
+	const x = (item.bounds.left + item.bounds.right) / 2, y = (item.bounds.top + item.bounds.bottom) / 2;
+	f.control.handlePointer(pointer(x, y, 0), false);
+	assert.ok(f.control.tooltipItem === item);
+	f.control.handlePointer(pointer(BOUNDS.right - 2, BOUNDS.bottom - 2, 0), false);
+	assert.equal(f.control.tooltipItem, undefined);
+	inputFocus.executeCommand('sceneViewport.pan', f.panel); f.control.update();
+	assert.equal(f.view.caption.lines.length, 0, 'changing interaction mode must not restore a permanent help box');
+	f.view.source = undefined; f.view.prepareControls(undefined);
+	assert.equal(f.view.caption.lines.length, 1, 'real unavailability remains visible rather than being hidden with the help text');
+});
+
+test('a narrow viewport reaches its view choices through the real action-bar overflow', t => {
+	const f = fixture(t); f.control.focus();
+	f.control.layout({ ...BOUNDS, right: BOUNDS.left + 24 });
+	const overflow = f.view.navigationActions.overflow!.button;
+	assert.equal(overflow.visible, true);
+	const press = pointer((overflow.bounds.left + overflow.bounds.right) / 2, (overflow.bounds.top + overflow.bounds.bottom) / 2,
+		0, PointerButton.Primary, PointerButton.Primary);
+	pointerCapture.beginRoute(f.scope.surfaceScope, press); f.control.handlePointer(press, true);
+	assert.equal(f.menu.visible, true);
+	f.menu.handleKeyboard(new KeyInputEvent('Home', KeyModifier.none));
+	assert.equal(f.menu.model.rows[f.menu.model.selectedIndex].command, 'sceneViewport.viewOptions');
+	f.menu.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none));
+	f.menu.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none, false, false));
+	assert.equal(f.menu.visible, true);
+	assert.ok(f.menu.model.rows.some(row => row.command === 'sceneViewport.view3d' && row.enabled));
+	f.menu.handleKeyboard(new KeyInputEvent('End', KeyModifier.none));
+	f.menu.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none));
+	f.menu.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none, false, false));
+	assert.equal(f.view.camera.mode, '3d');
+	assert.equal(f.menu.visible, false); assert.ok(inputFocus.admittedTarget === f.control.focusTarget);
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});
+
+for (const retirement of ['selection', 'source', 'allocation', 'attachment'] as const)
+test(`an open viewport menu retires with its ${retirement} and cannot run its armed action later`, t => {
+	const f = fixture(t); f.select(0); f.control.focus();
+	inputFocus.executeCommand('sceneViewport.viewOptions', f.panel);
+	assert.equal(f.menu.visible, true);
+	f.menu.handleKeyboard(new KeyInputEvent('End', KeyModifier.none));
+	assert.equal(f.menu.model.rows[f.menu.model.selectedIndex].command, 'sceneViewport.view3d');
+	f.menu.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none));
+	if (retirement === 'selection') f.select(1);
+	else if (retirement === 'source') f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- edit\n' }]);
+	else if (retirement === 'allocation') f.control.layout({ ...BOUNDS, right: BOUNDS.right - 20 });
+	else f.control.clearView();
+	assert.equal(f.menu.visible, false);
+	inputFocus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none, false, false));
+	assert.equal(f.view.camera.mode, '2d');
 });
 
 test('restoring a 2D camera reading retires its unavailable orbit tool', t => {

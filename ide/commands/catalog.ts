@@ -306,6 +306,8 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'sceneViewport.frameSelection': { category: 'Scene Viewport', title: 'Frame Selection', shortTitle: 'Frame Selection' },
 	'sceneViewport.view2d': { category: 'Scene Viewport', title: '2D View', shortTitle: '2D' },
 	'sceneViewport.view3d': { category: 'Scene Viewport', title: '3D View', shortTitle: '3D' },
+	'sceneViewport.viewOptions': { category: 'Scene Viewport', title: 'Viewport View', shortTitle: 'View' },
+	'sceneViewport.navigationOptions': { category: 'Scene Viewport', title: 'Viewport Navigation', shortTitle: 'Navigation' },
 	'sceneViewport.select': { category: 'Scene Viewport', title: 'Select and Move Members', shortTitle: 'Select' },
 	'sceneViewport.pan': { category: 'Scene Viewport', title: 'Pan Camera', shortTitle: 'Pan' },
 	'sceneViewport.orbit': { category: 'Scene Viewport', title: 'Orbit Camera', shortTitle: 'Orbit' },

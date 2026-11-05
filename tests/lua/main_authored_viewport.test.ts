@@ -8,6 +8,7 @@ import { pointerCapture } from '../../ide/input/pointer/capture';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
 import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
+import { WorkbenchTooltip } from '../../ide/workbench/ui/tooltip';
 import { captureSceneEditorView } from '../../ide/workbench/contrib/scene_editor/view_snapshot';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
@@ -200,6 +201,37 @@ test(`the viewport ${route} context menu addresses its camera and returns to the
 	assert.ok(f.client.authoring.selection === selected);
 	f.key('Escape'); assert.ok(f.client.hierarchy.scope.contains(inputFocus.admittedTarget!.scope));
 	assert.equal(f.model.canUndo, false);
+});
+
+test('viewport feedback follows hovered or keyboard-focused actions, not ordinary canvas focus', async t => {
+	const f = await fixture(t), view = f.client.view.viewport;
+	const caption = t.mock.method(view.caption, 'draw');
+	const tooltip = t.mock.method(WorkbenchTooltip.prototype, 'show');
+	const navigation = view.navigationActions.items.find(item => item.command === 'sceneViewport.navigationOptions')!;
+	// Feedback must carry the same retained action target as the actual pointer
+	// route; no particular wording or pixel placement is part of this contract.
+	const navigationHints = () => tooltip.mock.calls.filter(call => call.arguments[1] === navigation.bounds).length;
+	f.main.focusPrimary('viewport'); f.paint();
+	assert.equal(caption.mock.callCount(), 0);
+	assert.equal(navigationHints(), 0);
+	pointer(f, (navigation.bounds.left + navigation.bounds.right) / 2, (navigation.bounds.top + navigation.bounds.bottom) / 2, 0);
+	f.paint();
+	assert.ok(navigationHints() > 0);
+	const count = navigationHints();
+	pointer(f, view.bounds.right - 2, view.bounds.bottom - 2, 0); f.paint();
+	assert.equal(navigationHints(), count, 'moving back into content withdraws the action feedback');
+	f.key('Tab', KeyModifier.shift); f.key('Home'); f.paint();
+	assert.ok(f.viewport.tooltipItem === view.navigationActions.items[0]);
+	f.key('Enter');
+	assert.equal(f.editor.contextMenu.visible, true);
+	assert.equal(f.viewport.tooltipItem, undefined, 'a menu owns interaction instead of leaving its trigger tooltip active');
+	f.key('ArrowDown'); f.key('Enter'); f.paint();
+	assert.equal(view.camera.mode, '3d');
+	assert.ok(inputFocus.admittedTarget === f.viewport.focusTarget);
+	assert.equal(caption.mock.callCount(), 0, 'returning from the view menu must not restore the permanent help box');
+	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
+	f.group.openEditor(f.firstInput); f.paint();
+	assert.equal(navigationHints(), count, 'retired document feedback cannot outlive its viewport');
 });
 
 test('camera movement remains document reading state and allocation change cancels only its capture', async t => {

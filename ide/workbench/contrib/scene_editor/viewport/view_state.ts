@@ -19,6 +19,7 @@ import type { SceneVisualReadModel } from '../visual_projection';
 import type { SceneTransformPreview } from '../transform_proposal';
 import { SceneTranslationGizmo, TRANSLATE_AXIS_LABELS } from './translate_gizmo';
 import { collectSceneTextImages } from './text_layout';
+import { SCENE_VIEWPORT_ACTIONS, SCENE_VIEWPORT_NAVIGATION, SCENE_VIEWPORT_VIEWS } from './menus';
 
 export type SceneMemberPlacementPreview = SceneTransformPreview<SceneAddMemberChoice> & {
 	readonly visuals: SceneVisualReadModel<SceneAddMemberChoice>;
@@ -37,14 +38,9 @@ export class SceneViewportViewState {
 	public readonly gizmo = new SceneTranslationGizmo();
 	public readonly caption = new WorkbenchCanvasCaption();
 	public navigationTool: 'select' | 'pan' | 'orbit' = 'select';
-	/** These actions belong to this viewport's camera, not panel chrome or a member menu. */
-	public readonly navigationActions = createWorkbenchActionBar(new WorkbenchMenu<SceneViewportViewState>([
-		{ type: 'command', command: 'sceneViewport.view2d' }, { type: 'command', command: 'sceneViewport.view3d' },
-		{ type: 'command', command: 'sceneViewport.select' }, { type: 'command', command: 'sceneViewport.pan' },
-		{ type: 'command', command: 'sceneViewport.orbit', when: view => view.camera.mode === '3d' },
-		{ type: 'command', command: 'sceneViewport.zoomOut' }, { type: 'command', command: 'sceneViewport.zoomIn' },
-		{ type: 'command', command: 'sceneViewport.frameAll' }, { type: 'command', command: 'sceneViewport.frameSelection' },
-	], this), true);
+	public readonly navigationActions = createWorkbenchActionBar(new WorkbenchMenu(SCENE_VIEWPORT_ACTIONS, this), true);
+	public readonly viewMenu = new WorkbenchMenu(SCENE_VIEWPORT_VIEWS, this);
+	public readonly navigationMenu = new WorkbenchMenu(SCENE_VIEWPORT_NAVIGATION, this);
 	public readonly axisLabelWidths = [0, 0, 0];
 	private labelFont: BFont | undefined;
 	public transformPreview: SceneTransformPreview | undefined;
@@ -114,10 +110,8 @@ export class SceneViewportViewState {
 		const caption = this.caption, lines = caption.lines;
 		caption.warningLine = -1;
 		if (placement === undefined) {
-			lines[0] = this.source === undefined ? 'SCENE UNAVAILABLE' : this.navigationTool === 'pan' ? 'Drag: pan'
-				: this.navigationTool === 'orbit' ? 'Drag: orbit' : this.camera.mode === '3d' ? 'Alt+drag: orbit' : 'Click: select';
-			lines[1] = 'Middle drag: pan | Wheel: zoom';
-			lines.length = this.source === undefined ? 1 : 2;
+			if (this.source === undefined) { lines[0] = 'SCENE UNAVAILABLE'; lines.length = 1; }
+			else lines.length = 0;
 		} else {
 			lines[0] = placement.definitionLabel;
 			lines[1] = this.camera.mode === '3d' ? placement.located ? 'Click: place on XZ' : 'Point at XZ plane' : 'Click: place';
@@ -128,6 +122,7 @@ export class SceneViewportViewState {
 		}
 		caption.layout(Math.max(0, this.bounds.right - this.bounds.left - 8));
 		const font = editorViewState.font.renderFont();
+		this.navigationActions.items[0].label = this.camera.mode === '2d' ? '2D' : '3D';
 		layoutWorkbenchActionBar(this.navigationActions, this.bounds.right - 4, this.bounds.top + 4, this.bounds.top + font.lineHeight + 8,
 			measureText, font, this.bounds.left + 4, 'start');
 		if (this.labelFont !== font) {

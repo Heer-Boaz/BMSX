@@ -62,7 +62,7 @@ export function drawSceneViewport(view: SceneViewportViewState, focused: boolean
 	}
 	renderWorkbenchActionBar(view.navigationActions, editorViewState.font.renderFont(),
 		ARTWORK_COLORS.annotation.foreground, ARTWORK_COLORS.annotation.warning);
-	if (focused || placement !== undefined || view.source === undefined) view.caption.draw(bounds.left + 4, view.navigationActions.bounds.bottom + 4);
+	if (placement !== undefined || view.source === undefined) view.caption.draw(bounds.left + 4, view.navigationActions.bounds.bottom + 4);
 	if (focused) api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_FOCUS_BORDER);
 	api.popClipRect();
 }

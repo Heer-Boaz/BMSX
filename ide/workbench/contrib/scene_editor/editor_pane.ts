@@ -9,6 +9,9 @@ import { STATUS_PRIORITY_CONTENT, STATUS_PRIORITY_ERROR, type WorkbenchStatusIte
 import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
 import { WorkbenchMenu } from '../../ui/menu/model';
 import { WorkbenchViewMessageControl } from '../../ui/view_panel/message';
+import { WorkbenchTooltip } from '../../ui/tooltip';
+import { editorViewState } from '../../../editor/ui/view/state';
+import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { SceneEditorInput, UnavailableSceneEditorInput } from './editor_input';
 import { SceneEditorNavigationSelection } from './navigation_selection';
 import { SceneViewportControl, VIEWPORT_CONTEXT_ACTIONS } from './viewport/control';
@@ -24,6 +27,7 @@ export class SceneEditorPane extends EditorPane<SceneEditorInput | UnavailableSc
 	private controlValue: SceneViewportControl | undefined;
 	private messageValue: WorkbenchViewMessageControl | undefined;
 	private unbindMessageKeyboard: (() => void) | undefined;
+	private readonly tooltip = new WorkbenchTooltip();
 	private readonly statusItem: WorkbenchStatusItem = { text: '', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' };
 	public readonly statusItems = [this.statusItem];
 	public override get commandTarget() { return this.commandTargetValue!; }
@@ -58,6 +62,7 @@ export class SceneEditorPane extends EditorPane<SceneEditorInput | UnavailableSc
 		const control = this.controlValue = new SceneViewportControl(this.options.commands, this.options.contextMenu, scope, target,
 			new WorkbenchMenu(VIEWPORT_CONTEXT_ACTIONS, view));
 		control.setView(view, this.contentBounds);
+		this.tooltip.attach(this.options.surfaces, this.group.paneSurface, this.options.workArea);
 	}
 	public override prepareToActivate(input: SceneEditorInput | UnavailableSceneEditorInput): boolean {
 		if (input instanceof SceneEditorInput) return this.options.main.preparePrimaryActivation(input);
@@ -74,12 +79,18 @@ export class SceneEditorPane extends EditorPane<SceneEditorInput | UnavailableSc
 		const input = this.hasInput ? this.input : undefined, control = this.controlValue, message = this.messageValue;
 		const unbindMessageKeyboard = this.unbindMessageKeyboard;
 		this.controlValue = undefined; this.messageValue = undefined; this.unbindMessageKeyboard = undefined;
+		this.tooltip.detach();
 		this.commandTargetValue = undefined; super.clearInput();
 		if (input instanceof SceneEditorInput && control !== undefined) this.options.main.retirePrimary(input, control.focusTarget);
 		control?.dispose(); message?.dispose(); unbindMessageKeyboard?.();
 	}
 	public override layout(bounds: Readonly<RectBounds>): void { super.layout(bounds); this.controlValue?.layout(bounds); this.messageValue?.layout(bounds); }
-	public override update(): void { this.controlValue?.update(); }
+	public override update(): void {
+		this.controlValue?.update();
+		const hint = this.controlValue?.tooltipItem;
+		if (hint !== undefined) this.tooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.options.workArea);
+		else this.tooltip.hide();
+	}
 	public admitInteraction(): boolean {
 		const input = this.input, control = this.controlValue;
 		if (input instanceof UnavailableSceneEditorInput) {
