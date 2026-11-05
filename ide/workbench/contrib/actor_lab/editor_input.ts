@@ -6,7 +6,7 @@ import { ReadonlyEditorInput, type AbstractEditorInput } from '../../common/edit
 import type { ActorLabLayout } from './layout';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
 import { ScrollableWorkbenchTree } from '../../ui/scrollable_tree';
-import { ActorRuntimeTree } from './runtime';
+import { ActorRuntimeTree, type ActorNode } from './runtime';
 import type { ActorRow } from './projection';
 import type { ResourceDomain } from '../../../common/resource';
 import { ActorTimelineTransport } from './timeline';
@@ -15,7 +15,7 @@ import { create_rect_bounds } from '../../../../machine/ts/common/rect';
 import type { GuestInvalidationReason } from '../../../runtime/suspended_guest';
 import type { ActorStateGraph } from './state_graph';
 import { ActorActivityFollow } from './activity_follow';
-import { actorPathsEqual, type ActorNodeIdentity } from './target';
+import { actorPathsEqual, resolveActorPath, type ActorNodeIdentity } from './target';
 import type { ActorDetails, ActorDetailsSelection } from './details';
 import type { ActorLabTabId } from '../../ui/tab/id';
 import type { ActorLabController } from './controller';
@@ -33,6 +33,9 @@ export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab
 	public historical = false;
 	public readonly interaction = new InputInteraction();
 	public selectionPath: readonly ActorNodeIdentity[] | undefined;
+	private resolvedSelectionPath: readonly ActorNodeIdentity[] | undefined;
+	private selectionTopology = -1;
+	private selectionNode: ActorNode | undefined;
 	public details: ActorDetails | undefined;
 	public detailsSelection: ActorDetailsSelection | undefined;
 	public detailsScroll = 0;
@@ -46,6 +49,7 @@ export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab
 	/** Showing world membership does not replace the actor's inspected member. */
 	public get presentation(): 'world' | 'outline' | 'graph' { return this.navigation === 'world' ? 'world' : this.inspection; }
 	public readonly follow = new ActorActivityFollow();
+	/** Visible keyboard navigation is independent of the inspected membership. */
 	public readonly outline = new ScrollableWorkbenchTree<ActorRow>();
 	public readonly timeline = new ActorTimelineTransport();
 	public readonly timelineLayout = new ActorTimelineLayout();
@@ -74,6 +78,16 @@ export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab
 	public onDidChangeSelection(listener: () => void): () => void {
 		this.selectionListeners.add(listener);
 		return () => this.selectionListeners.delete(listener);
+	}
+	/** Read after acquiring the tree. Resolve only on selection/topology changes; the runtime owns the borrows. */
+	public get selectedOutlineNode(): ActorNode | undefined {
+		if (this.resolvedSelectionPath !== this.selectionPath || this.selectionTopology !== this.runtime.topologyRevision) {
+			this.resolvedSelectionPath = this.selectionPath;
+			this.selectionTopology = this.runtime.topologyRevision;
+			this.selectionNode = this.selectionPath === undefined ? undefined
+				: resolveActorPath(this.runtime.roots, this.selectionPath, this.controller.guest);
+		}
+		return this.selectionNode;
 	}
 	public invalidate(reason: GuestInvalidationReason = 'execution'): void {
 		this.runtime.release();

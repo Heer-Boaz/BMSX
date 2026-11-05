@@ -2,6 +2,8 @@ import { AssistantHttpConnection } from '../../../ide/browser/assistant_connecti
 import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { ActorRuntimeInspection } from '../../../ide/workbench/contrib/actor_lab/runtime_inspection';
 import type { ActorLabEditorPane } from '../../../ide/workbench/contrib/actor_lab/editor_pane';
+import type { ActorChoice } from '../../../ide/workbench/contrib/actor_lab/projection';
+import type { Table } from '../../../machine/ts/machine/cpu/table';
 
 import { ACTOR_TOOLS_SOURCE } from '../../helpers/actor_tools_fixture';
 import { sourcePane, check, createStudioFixture } from './studio_fixture';
@@ -27,9 +29,13 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	await test.runMenuCommand('pause');
 	source.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dirty source is not an installed callback location\n' }]);
 	await runPaletteCommand('Game: Inspect');
+	await runPaletteCommand('Actor Lab: Select Running Actor');
 	const picker = ide.editor.editorParts.activePart.quickInput;
-	check(picker.visible && picker.model.list.rows.map(row => row.item.label).join(',') === 'first,second', 'ordinary Actor Lab lists actual World membership');
+	const actorIds = [(guest.global('actor_tool_first') as Table).hashId, (guest.global('actor_tool_second') as Table).hashId];
+	check(picker.visible && picker.model.list.rows.length === actorIds.length
+		&& actorIds.every(id => picker.model.list.rows.some(row => (row.item as ActorChoice).hashId === id)), 'ordinary Actor Lab lists actual World membership');
 	await press('Enter'); await frame();
+	await runPaletteCommand('Actor Lab: Inspect Actor Components and Behaviors');
 	const lab = ide.editor.editorParts.activeGroup.model.activeTab; if (lab.kind !== 'actor_lab') throw new Error('Actor Lab required');
 	check(lab.outline.rows.length > 0, 'opening an actor publishes its inspection hierarchy');
 	const topology = lab.outline.rows.map(row => ({ label: row.element.node.label, kind: row.element.node.kind, active: row.element.node.active }));

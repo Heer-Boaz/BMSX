@@ -57,6 +57,47 @@ for (const kind of ['timeline', 'machine', 'tree'] as const) test(`${kind} inspe
 	assert.equal(controller.selected(input)?.hashId, identity);
 });
 
+for (const kind of ['timeline', 'machine', 'tree'] as const) test(`${kind} inspection survives disclosure without becoming its visible ancestor`, async t => {
+	const f = await fixture(t, kind === 'tree' ? 'bystander' : 'runner');
+	const { input, controller, editor, group } = f;
+	const member = input.runtime.roots[0].children.flatMap(node => [node, ...node.children]).find(node => node.kind === kind)!;
+	controller.projection.reveal(member); editor.update(0);
+	const path = input.selectionPath, tree = input.outline, ancestor = tree.rows[tree.selectionIndex].parent!;
+	let selectionChanges = 0;
+	input.onDidChangeSelection(() => { selectionChanges++; });
+	const disclose = () => {
+		const index = tree.rows.indexOf(ancestor);
+		assert.ok(index >= 0);
+		f.click(tree.rowLeft + ancestor.depth * tree.layout.indentWidth + tree.layout.twistieWidth / 2,
+			tree.layout.contentTop + (index - tree.scroll + 0.5) * tree.layout.rowHeight);
+		editor.update(0);
+	};
+	disclose();
+	assert.equal(ancestor.collapsed, true);
+	assert.ok(input.selectionPath === path, 'disclosure changes the visible rows, not the inspected identity');
+	assert.equal(controller.inspected(input)?.hashId, member.hashId);
+	assert.equal(selectionChanges, 0);
+	if (kind === 'timeline') assert.equal(input.timeline.visible, true);
+	controller.refreshDetails(input);
+	assert.deepEqual(input.details!.subject!.path, path);
+	group.openEditor(new TerminalInput()); editor.update(0);
+	editor.commands.execute('gameView'); editor.update(0);
+	assert.equal(ancestor.collapsed, true);
+	assert.equal(controller.inspected(input)?.hashId, member.hashId);
+	disclose();
+	assert.equal(ancestor.collapsed, false);
+	assert.ok(tree.rows.some(row => row.element.node === input.selectedOutlineNode));
+	assert.equal(selectionChanges, 0, 'revealing the retained selection is not another selection command');
+	f.key('ArrowLeft'); f.key('ArrowLeft', false); editor.update(0);
+	assert.equal(ancestor.collapsed, true, 'keyboard navigation retains a visible ancestor as its cursor');
+	f.key('ArrowRight'); f.key('ArrowRight', false); editor.update(0);
+	assert.equal(ancestor.collapsed, false);
+	assert.ok(input.selectionPath === path && controller.inspected(input) === member);
+	assert.equal(selectionChanges, 0, 'keyboard disclosure also preserves inspection');
+	f.key('ArrowDown'); f.key('ArrowDown', false); editor.update(0);
+	assert.ok(controller.inspected(input) === tree.rows[tree.selectionIndex].element.node, 'explicit navigation selects the new cursor');
+});
+
 test('FSM graph selection and camera survive world navigation and navigation-history restoration', async t => {
 	const { input, controller, editor, pane } = await fixture(t);
 	const machine = input.runtime.roots[0].children.flatMap(node => node.children).find(node => node.kind === 'machine')!;

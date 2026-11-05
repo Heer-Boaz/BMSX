@@ -6,7 +6,6 @@ import type { QuickPickItem } from '../../services/quick_input/provider';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows, type WorkbenchTreeNode } from '../../ui/tree_view';
 import type { ActorLabInput } from './editor_input';
 import { runtimeWorld, readRuntimeActors, type ActorNode } from './runtime';
-import { resolveActorPath } from './target';
 import { actorNodeLabel } from './labels';
 
 export type ActorRow = { node: ActorNode; label: string };
@@ -63,17 +62,17 @@ export class ActorProjection {
 		}
 		if (changed || wasPresent !== input.actorPresent || !input.actorPresent && input.outline.roots.length !== 0) {
 			const outline = input.outline;
-			const selected = outline.rows[outline.selectionIndex];
+			const cursor = outline.rows[outline.selectionIndex];
 			const scroll = outline.scroll, firstRow = scroll | 0;
 			this.scrollAnchor = outline.rows[firstRow];
 			this.scrollAnchorOffset = scroll - firstRow;
 			this.children(null, input.runtime.roots, input.runtime.roots[0]);
-			rebuildWorkbenchTreeRows(outline, selected === undefined ? null : selected);
-			if (outline.selectionIndex === -1 && input.selectionPath !== undefined) {
-				const restored = resolveActorPath(input.runtime.roots, input.selectionPath, guest);
-				if (restored !== undefined) outline.selectionIndex = outline.rows.findIndex(row => row.element.node === restored);
-			}
-			if (outline.selectionIndex !== -1 || !input.historical) input.rememberSelection();
+			rebuildWorkbenchTreeRows(outline, cursor === undefined ? null : cursor);
+			const selected = input.selectedOutlineNode;
+			if (selected === undefined) {
+				outline.selectionIndex = -1;
+				if (!input.historical) input.rememberSelection();
+			} else if (outline.selectionIndex === -1) outline.selectionIndex = outline.rows.findIndex(row => row.element.node === selected);
 		}
 		return worldChanged || changed || wasPresent !== input.actorPresent;
 	}
@@ -82,7 +81,10 @@ export class ActorProjection {
 	public resumeHistory(): void {
 		this.input.historical = false;
 		this.update();
-		if (this.input.outline.selectionIndex === -1) this.input.selectionPath = undefined;
+		if (this.input.selectedOutlineNode === undefined) {
+			this.input.outline.selectionIndex = -1;
+			this.input.rememberSelection();
+		}
 		this.input.stateGraph?.resumeHistory();
 	}
 

@@ -33,7 +33,7 @@ import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { workbenchListRowIndexAtPosition } from '../../ui/list_view';
-import { navigateWorkbenchTree, setWorkbenchTreeCollapsed, workbenchTreeTwistieContainsPosition } from '../../ui/tree_view';
+import { navigateWorkbenchTree, setWorkbenchTreeCollapsed, WorkbenchTreeNavigationResult, workbenchTreeTwistieContainsPosition } from '../../ui/tree_view';
 import { ScrollbarPointerControl } from '../../ui/scrollbar_pointer';
 import { WorkbenchSliderControl } from '../../ui/slider_control';
 import { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
@@ -518,7 +518,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			+ (this.controller.sceneAuthoring === undefined || this.gameInput.focusTarget.hasFocus ? '' : ' · Alt+drag: authored position');
 		else if (input.presentation === 'world') this.statusItems[0].text = input.worldOutliner.tree.rows[input.worldOutliner.tree.selectionIndex]?.element.label ?? 'WORLD OUTLINER';
 		else if (input.presentation === 'outline') this.statusItems[0].text = !input.dirty && input.actorPresent
-			? input.outline.rows[input.outline.selectionIndex]?.element.node.label ?? input.status : input.status;
+			? input.selectedOutlineNode?.label ?? input.status : input.status;
 		else {
 			const target = input.stateGraph!.selectedTarget, available = !input.dirty && input.actorPresent;
 			if (this.statusInput !== input || this.statusTopology !== input.runtime.topologyRevision
@@ -609,9 +609,9 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			consumeIdeKey(key, input);
 			const selected = this.input;
 			selected.follow.stop();
-			navigateWorkbenchTree(selected.outline, command);
+			const result = navigateWorkbenchTree(selected.outline, command);
 			if (!this.updateContentLayout()) return;
-			selected.rememberSelection();
+			if (result === WorkbenchTreeNavigationResult.Selection) selected.rememberSelection();
 			return;
 		}
 		if (isKeyJustPressed('Enter', input)) { consumeIdeKey('Enter', input); this.commands.execute('actorLab.details'); }
@@ -722,15 +722,17 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			this.focus();
 			if (scope.contextGeneration !== context || inputFocus.admittedTarget !== this.focusTarget || input.outline.rows[index] !== row) return true;
 			input.follow.stop();
+			if (justPressed && workbenchTreeTwistieContainsPosition(input.outline, index, snapshot.viewportX, input.outline.scrollLeft)) {
+				setWorkbenchTreeCollapsed(input.outline, index, !row.collapsed);
+				this.updateContentLayout();
+				return true;
+			}
 			input.outline.selectionIndex = index;
 			input.rememberSelection();
 			if (scope.contextGeneration !== context || input.presentation !== 'outline' || inputFocus.admittedTarget !== this.focusTarget
 				|| input.outline.rows[input.outline.selectionIndex] !== row) return true;
 			if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) {
 				this.showInspectionContextMenu(snapshot.viewportX, snapshot.viewportY, this.focusTarget, false);
-			} else if (workbenchTreeTwistieContainsPosition(input.outline, index, snapshot.viewportX, input.outline.scrollLeft)) {
-				setWorkbenchTreeCollapsed(input.outline, index, !row.collapsed);
-				this.updateContentLayout();
 			}
 		}
 		return true;

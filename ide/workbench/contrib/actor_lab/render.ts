@@ -42,11 +42,12 @@ export function drawActorLab(input: ActorLabInput, sliderFocused: boolean, graph
 	} else {
 		api.pushClipRect(tree.contentLeft, tree.contentTop, tree.contentRight, tree.contentBottom);
 		const firstRow = outline.scroll | 0;
+		const selected = input.controller.inspected(input);
 		for (let visible = 0; input.actorPresent && visible < tree.visibleRowCount && firstRow + visible < outline.rows.length; visible += 1) {
 			const index = firstRow + visible;
 			const row = outline.rows[index];
 			const top = tree.contentTop + visible * tree.rowHeight;
-			if (index === outline.selectionIndex) api.fill_rect(tree.contentLeft, top, tree.contentRight, top + tree.rowHeight, 0, colors.COLOR_RESOURCE_PANEL_HIGHLIGHT);
+			if (row.element.node === selected) api.fill_rect(tree.contentLeft, top, tree.contentRight, top + tree.rowHeight, 0, colors.COLOR_RESOURCE_PANEL_HIGHLIGHT);
 			const left = outline.rowLeft + row.depth * tree.indentWidth;
 			if (row.children.length !== 0) drawWorkbenchIcon(row.collapsed ? 'chevronRight' : 'chevronDown',
 				left + ((tree.indentWidth - WORKBENCH_ICON_SIZE) >> 1), top + ((tree.rowHeight - WORKBENCH_ICON_SIZE) >> 1), color);

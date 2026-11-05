@@ -56,6 +56,7 @@ import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { ValueInput } from '../../ide/editor/ui/inline/value_input';
 import { INTEGER_INPUT_FORMAT } from '../../ide/editor/ui/inline/integer_input';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
+import { setWorkbenchTreeCollapsed } from '../../ide/workbench/ui/tree_view';
 
 /** Compiled guest representations, not JS table mocks. Actual cartlib construction is tested in the browser workflow. */
 const WORLD_SOURCE = `local fsm<const> = require('cartlib/fsm/fsm_component')
@@ -1046,6 +1047,65 @@ test('explicit Actor Lab navigation reveals a retained child through collapsed a
 	input.invalidate(); f.guest.invalidate('execution'); projection.update();
 	assert.ok(input.outline.rows[input.outline.selectionIndex] === selected);
 	input.dispose();
+});
+
+test('collapsed actor inspection survives topology and history changes with a revision-cached selection', t => {
+	const f = fixture(t, ENTRY.replace('return world', `function add()
+	probe._components[3] = { id = 'late', enabled = true, _owner_component_index = 3 }
+end
+return world`));
+	resources.add(f.stop);
+	const input = new ActorLabInput(f.controller, 'actor-lab', 'ACTOR LAB', true); resources.add(input);
+	input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId;
+	const projection = new ActorProjection(input, f.sources, f.guest), cpu = f.runtime.machine.cpu;
+	projection.update();
+	const selected = input.runtime.roots[0].children[0].children[0];
+	projection.reveal(selected);
+	const path = input.selectionPath, root = input.outline.roots[0], alive = cpu.captureRuntimeState();
+	setWorkbenchTreeCollapsed(input.outline, 0, true);
+	assert.ok(input.selectedOutlineNode === selected);
+	const match = t.mock.method(f.guest, 'matchesIdentity');
+	match.mock.resetCalls();
+	for (let frame = 0; frame < 1000; frame++) assert.ok(input.selectedOutlineNode === selected);
+	assert.equal(match.mock.callCount(), 0, 'unchanged selection reads do not traverse membership or guest values');
+	input.invalidate();
+	assert.ok(selected.value === null, 'the selection cache cannot keep a guest borrow alive');
+	runCompletionClosure(cpu, f.guest.global('add') as Closure, []);
+	projection.update();
+	assert.ok(input.selectionPath === path && input.selectedOutlineNode === selected);
+	assert.equal(root.collapsed, true);
+	assert.ok(selected.value !== null);
+	input.invalidate('history-restored'); cpu.restoreRuntimeState(alive); projection.update();
+	assert.equal(root.collapsed, true);
+	assert.equal(input.selectedOutlineNode?.hashId, selected.hashId);
+	projection.resumeHistory();
+	assert.ok(input.selectionPath === path, 'a hidden member is not an absent historical member');
+	assert.equal(input.selectedOutlineNode?.hashId, selected.hashId);
+});
+
+test('a hidden typed membership is retired on removal, not replaced by a surviving alias or its ancestor', t => {
+	const f = fixture(t, ENTRY.replace('return world', `local machine = probe._components[1]._machines[1]
+machine.states.alias = machine.states.idle; machine.state_ids[3] = 'alias'
+function remove_idle() machine.states.idle = nil; machine.state_ids = { 'concurrent', 'alias' } end
+return world`));
+	resources.add(f.stop);
+	const input = new ActorLabInput(f.controller, 'actor-lab', 'ACTOR LAB', true); resources.add(input);
+	input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId;
+	const projection = new ActorProjection(input, f.sources, f.guest);
+	projection.update();
+	const machine = input.runtime.roots[0].children[0].children[0];
+	const selected = machine.children.find(node => node.name === 'idle')!;
+	projection.reveal(selected);
+	setWorkbenchTreeCollapsed(input.outline, 0, true);
+	assert.ok(input.selectedOutlineNode === selected);
+	let changes = 0;
+	resources.add({ dispose: input.onDidChangeSelection(() => changes++) });
+	input.invalidate(); runCompletionClosure(f.runtime.machine.cpu, f.guest.global('remove_idle') as Closure, []);
+	projection.update();
+	assert.ok(machine.children.some(node => node.hashId === selected.hashId), 'the same table still belongs to another typed key');
+	assert.ok(input.selectionPath === undefined && input.selectedOutlineNode === undefined);
+	assert.equal(changes, 1, 'only the loss of actual membership publishes deselection');
+	assert.equal(input.outline.selectionIndex, -1);
 });
 
 test('history selection borrows restored objects and retires unavailable bookmarks before branching', t => {

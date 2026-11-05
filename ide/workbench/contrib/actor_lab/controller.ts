@@ -200,7 +200,7 @@ export class ActorLabController {
 	/** Inspection survives switching the navigation panel or the viewport camera. */
 	public inspected(input: ActorLabInput): ActorNode | undefined {
 		if (input.dirty || !input.actorPresent) return undefined;
-		if (input.inspection === 'outline') return input.outline.rows[input.outline.selectionIndex]?.element.node;
+		if (input.inspection === 'outline') return input.selectedOutlineNode;
 		const target = input.stateGraph!.selectedTarget;
 		return target === undefined ? undefined : resolveActorTarget(input.runtime.roots, target, this.guest);
 	}
