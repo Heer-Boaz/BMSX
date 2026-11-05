@@ -110,10 +110,7 @@ function fixture(t: TestContext, entry = ENTRY, run = true, worldSource = WORLD_
 	function layoutMain(): void {
 		const part = parts.main, bounds = presentation.workArea;
 		part.prepareLayout();
-		const minimum = part.minimumClientWidth(bounds.bottom - bounds.top);
-		main.layout(bounds, minimum, part.minimumClientHeight, part.hasEditors);
-		const finalMinimum = part.minimumClientWidth(main.regionLayout.viewport.bottom - main.regionLayout.viewport.top);
-		if (finalMinimum !== minimum) main.layout(bounds, finalMinimum, part.minimumClientHeight, part.hasEditors);
+		main.layout(bounds, part.minimumClientWidth, part.minimumClientHeight);
 		part.layoutPrepared(main.documentBounds); main.layoutClients();
 	}
 	const main = new MainWorkspace(surfaces, presentation.owner, presentation.focusScope, commands,

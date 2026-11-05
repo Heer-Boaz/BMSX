@@ -10,6 +10,28 @@ import { createLiveStudioFixture } from '../helpers/live_studio';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { drawIde } from '../../ide/workbench/mode';
 
+test('constrained workspace allocation settles without republishing unchanged surface geometry', async t => {
+	const f = await createLiveStudioFixture(t);
+	const part = f.editor.editorParts.main, input = part.activeGroup.model.activeTab;
+	for (const font of ['tiny', 'msx'] as const) {
+		f.editor.setFontVariant(font);
+		part.prepareLayout();
+		const width = part.minimumClientWidth, height = part.minimumClientHeight;
+		for (const availableHeight of [120, 1080, 120]) {
+			f.display.workspace.layout(1152, availableHeight);
+			f.editor.update(0);
+			const layout = f.editor.mainWorkspace.regionLayout;
+			assert.equal(layout.contentHeight > layout.bounds.bottom - layout.bounds.top, availableHeight === 120,
+				'the parent admits and retires vertical overflow without changing the child minimum');
+			assert.equal(part.minimumClientWidth, width); assert.equal(part.minimumClientHeight, height);
+			const revision = f.editor.surfaces.revision;
+			for (let tick = 0; tick < 5; tick++) f.editor.update(0);
+			assert.equal(f.editor.surfaces.revision, revision, 'idle updates do not invalidate hit testing and hover for an unchanged allocation');
+			assert.ok(part.activeGroup.model.activeTab === input);
+		}
+	}
+});
+
 test('workbench layout publishes its viewport to the drawing owner without rereading the presenter', async t => {
 	const f = await createLiveStudioFixture(t);
 	const target = { ...f.presenter.viewportSize };

@@ -561,11 +561,9 @@ export class EditorPart {
 		}
 	}
 
+	/** Parent allocation consumes intrinsic constraints; it owns overflow outside these minima. */
+	public get minimumClientWidth(): number { return this.arrangement.hardMinimumWidth; }
 	public get minimumClientHeight(): number { return this.arrangement.minimumHeight; }
-
-	public minimumClientWidth(height: number): number {
-		return this.arrangement.minimumClientWidth(height, colors.SCROLLBAR_WIDTH);
-	}
 
 	private arrange(bounds: Readonly<RectBounds>, notify = true): boolean {
 		copy_rect_bounds(this.clientBounds, bounds);
