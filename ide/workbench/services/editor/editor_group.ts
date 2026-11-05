@@ -163,6 +163,7 @@ export class EditorGroupView {
 	private readonly moveListeners = new Set<(event: EditorMoveEvent) => void>();
 	private readonly groupMoveListeners = new Set<(destination: EditorGroupView) => void>();
 	private readonly closeListeners = new Set<(input: EditorInput, focusRevision: number | undefined) => void>();
+	private readonly didCloseListeners = new Set<(focusRevision: number | undefined) => void>();
 	private presentationRevoked = false;
 
 	public constructor(contributions: EditorPaneContributions, private readonly commands: EditorCommandRunner, private readonly closeEditors: CloseEditors,
@@ -344,6 +345,9 @@ export class EditorGroupView {
 	/** Close admission has settled; the host can retain the exact focus retired by this input. */
 	public onWillCloseEditor(listener: (input: EditorInput, focusRevision: number | undefined) => void): () => void {
 		this.closeListeners.add(listener); return () => this.closeListeners.delete(listener);
+	}
+	public onDidCloseEditor(listener: (focusRevision: number | undefined) => void): () => void {
+		this.didCloseListeners.add(listener); return () => this.didCloseListeners.delete(listener);
 	}
 
 	/** Membership is final; history can follow the retained view before any coalesced source retires. */
@@ -546,6 +550,7 @@ export class EditorGroupView {
 		}
 		for (const listener of this.closeListeners) listener(input, focusRevision);
 		this.model.removeAt(index);
+		for (const listener of this.didCloseListeners) listener(focusRevision);
 		return true;
 	}
 
@@ -607,6 +612,7 @@ export class EditorGroupView {
 		this.moveListeners.clear();
 		this.groupMoveListeners.clear();
 		this.closeListeners.clear();
+		this.didCloseListeners.clear();
 		if (navigationState.activeOwner === this) navigationState.activeOwner = null;
 		this.unbindFocus();
 		for (const unbind of this.subscriptions) unbind();

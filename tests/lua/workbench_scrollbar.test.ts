@@ -7,6 +7,23 @@ import { ScrollbarPointerControl } from '../../ide/workbench/ui/scrollbar_pointe
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import type { PointerInputSnapshot } from '../../ide/common/models';
+import { api } from '../../ide/runtime/overlay_api';
+
+for (const orientation of ['vertical', 'horizontal'] as const) test(`${orientation} scrollbar paints neither track nor thumb without an available scroll range`, t => {
+	const draw = t.mock.method(api, 'fill_rect', () => {});
+	const bar = new Scrollbar(orientation), track = { left: 0, top: 0, right: 100, bottom: 100 };
+	bar.layout(track, 50, 100, 0); bar.draw(1, 2);
+	assert.equal(draw.mock.callCount(), 0);
+	bar.layout(track, 200, 100, 0); bar.draw(1, 2);
+	assert.equal(draw.mock.callCount(), 2);
+	bar.layout(track, 100, 100, 70); bar.draw(1, 2);
+	assert.equal(draw.mock.callCount(), 2, 'shrinking content removes the entire affordance');
+	assert.equal(bar.getScroll(), 0);
+	const pointer = new ScrollbarPointerControl(new PointerCaptureService());
+	assert.equal(pointer.handlePointer({ valid: true, insideViewport: true, viewportX: 50, viewportY: 50,
+		pressedButtons: PointerButton.Primary,
+		justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 }, bar), false, 'an invisible reserved gutter cannot consume a click');
+});
 
 test('scroll notifications publish logical movement once, including range refinement, not repeated layout', () => {
 	const bar = new Scrollbar('vertical'), positions: number[] = [];

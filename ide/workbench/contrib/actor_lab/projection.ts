@@ -9,7 +9,7 @@ import { runtimeWorld, readRuntimeActors, type ActorNode } from './runtime';
 import { resolveActorPath } from './target';
 import { actorNodeLabel } from './labels';
 
-export type ActorRow = { node: ActorNode; label: string; displayLabel: string };
+export type ActorRow = { node: ActorNode; label: string };
 export type ActorChoice = QuickPickItem & { readonly domain: ResourceDomain; readonly hashId: number };
 
 export function readActorChoices(sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain): ActorChoice[] {
@@ -181,7 +181,7 @@ export class ActorProjection {
 			}
 			let row: WorkbenchTreeNode<ActorRow>;
 			if (found === siblings.length) {
-				row = appendWorkbenchTreeNode(this.input.outline, parent, { node, label, displayLabel: '' });
+				row = appendWorkbenchTreeNode(this.input.outline, parent, { node, label });
 				siblings.pop(); siblings.splice(i, 0, row);
 			} else {
 				row = siblings[found];

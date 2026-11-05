@@ -33,7 +33,8 @@ export class ActorWorldOutliner {
 	public invalidate(): void { this.objectsRevision = undefined; }
 	public clear(): void {
 		this.members.clear(); this.selection = undefined; this.worldHashId = undefined; this.objectsRevision = undefined; this.topologyRevision = undefined;
-		this.tree.roots.length = 0; this.tree.rows.length = 0; this.tree.selectionIndex = -1; this.tree.scroll = 0;
+		this.tree.roots.length = 0; rebuildWorkbenchTreeRows(this.tree, null);
+		this.tree.scroll = 0; this.tree.horizontalScrollbar.setScroll(0);
 		this.revision++;
 	}
 	public update(guest: SuspendedGuestSession, world: Table | undefined, selectedHashId: number): boolean {

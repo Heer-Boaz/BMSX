@@ -8,6 +8,10 @@ import { GRAPH_NODE_PADDING } from '../../ui/graph/model';
 import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
 import { WORKBENCH_SPLIT_SIZE, type WorkbenchSplitView } from '../../ui/split_view';
 import type { ActorLabInput } from './editor_input';
+import type { WorkbenchTreeNode } from '../../ui/tree_view';
+import { editorViewState } from '../../../editor/ui/view/state';
+import type { ActorRow } from './projection';
+import type { WorldActorRow } from './world_outliner';
 
 const PADDING = 4;
 // Like the Scene hierarchy, a compact tree retains a usable caption and its
@@ -90,6 +94,8 @@ export function layoutActorLab(input: ActorLabInput): void {
 	const left = layout.left + PADDING, right = layout.primaryRight - PADDING;
 	const contentBottom = Math.max(top, layout.primaryBottom - PADDING);
 	const treeTop = Math.min(contentBottom, top + measured.treeTopOffset);
+	input.outline.measureContentWidth(measureOutlineRow, layout.font!);
+	input.worldOutliner.tree.measureContentWidth(measureOutlinerRow, layout.font!);
 	input.outline.updateLayout(left, treeTop, right, contentBottom, measured.rowHeight, measured.indentWidth);
 	input.worldOutliner.tree.updateLayout(left, treeTop, right, contentBottom, measured.rowHeight, measured.indentWidth);
 	if (graph) input.stateGraph!.viewport.layout(left, Math.min(contentBottom, top + measured.graphTopOffset), right, contentBottom);
@@ -103,4 +109,12 @@ export function layoutActorLab(input: ActorLabInput): void {
 		if (input.worldView.mode === 'game') layoutGameFrame(input.previewBounds, left, previewTop, right, previewBottom);
 		else { input.previewBounds.left = left; input.previewBounds.top = previewTop; input.previewBounds.right = right; input.previewBounds.bottom = previewBottom; }
 	}
+}
+
+function measureOutlineRow(row: WorkbenchTreeNode<ActorRow>): number {
+	return (row.depth + 2) * measureActorLab(editorViewState.font).indentWidth + measureText(row.element.label) + PADDING;
+}
+
+function measureOutlinerRow(row: WorkbenchTreeNode<WorldActorRow>): number {
+	return (row.depth + 1) * measureActorLab(editorViewState.font).indentWidth + measureText(row.element.label) + PADDING;
 }

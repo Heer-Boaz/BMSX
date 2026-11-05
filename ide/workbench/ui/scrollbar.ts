@@ -81,8 +81,9 @@ export class Scrollbar {
 	}
 
 	public draw(trackColor: number, thumbColor: number): void {
+		if (!this.visible) return;
 		api.fill_rect(this.track.left, this.track.top, this.track.right, this.track.bottom, 0, trackColor);
-		if (this.visible) api.fill_rect(this.thumb.left, this.thumb.top, this.thumb.right, this.thumb.bottom, 0, thumbColor);
+		api.fill_rect(this.thumb.left, this.thumb.top, this.thumb.right, this.thumb.bottom, 0, thumbColor);
 	}
 
 	public isVisible(): boolean { return this.visible; }

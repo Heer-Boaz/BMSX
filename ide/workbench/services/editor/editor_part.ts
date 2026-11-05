@@ -231,6 +231,13 @@ export class EditorPart {
 		let documentContent = group.model.hasDocumentContent;
 		this.groupSubscriptions.set(group, [group.onWillFocus(() => this.prepareGroupFocus(group)),
 			group.onWillCloseEditor((_input, revision) => { if (revision !== undefined) this.closedFocusRevision = revision; }),
+			group.onDidCloseEditor(revision => {
+				// Only a completed ordinary close retires an empty split. Explicit group
+				// close, transfer and restoration retain their own admission/lifetime.
+				if (this.operationValue !== 'none' || !group.openingAdmitted || !this.removeGroup(group)) return;
+				this.closedFocusRevision = undefined;
+				if (!this.retired && revision !== undefined && inputFocus.revision === revision && inputFocus.target === null) this.activeGroup.focus();
+			}),
 			group.panes.onDidBeginOpen(() => {
 				if (group.openingAdmitted && this.groups.includes(group)) this.restoreLifetime?.abort();
 			}), group.model.onDidChange(change => {

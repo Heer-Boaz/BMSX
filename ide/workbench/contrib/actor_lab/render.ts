@@ -47,16 +47,17 @@ export function drawActorLab(input: ActorLabInput, sliderFocused: boolean, graph
 			const row = outline.rows[index];
 			const top = tree.contentTop + visible * tree.rowHeight;
 			if (index === outline.selectionIndex) api.fill_rect(tree.contentLeft, top, tree.contentRight, top + tree.rowHeight, 0, colors.COLOR_RESOURCE_PANEL_HIGHLIGHT);
-			const left = tree.contentLeft + row.depth * tree.indentWidth;
+			const left = outline.rowLeft + row.depth * tree.indentWidth;
 			if (row.children.length !== 0) drawWorkbenchIcon(row.collapsed ? 'chevronRight' : 'chevronDown',
 				left + ((tree.indentWidth - WORKBENCH_ICON_SIZE) >> 1), top + ((tree.rowHeight - WORKBENCH_ICON_SIZE) >> 1), color);
 			const activeTop = top + ((tree.rowHeight - 3) >> 1);
 			if (row.element.node.active) api.fill_rect(left + tree.indentWidth, activeTop, left + tree.indentWidth + 3, activeTop + 3, 0, colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING);
-			api.blit_text_inline_with_font(row.element.displayLabel, left + tree.indentWidth * 2, top + 2, 0, color, font);
+			api.blit_text_inline_with_font(row.element.label, left + tree.indentWidth * 2, top + 2, 0, color, font);
 		}
 		if (!input.actorPresent || outline.rows.length === 0) api.blit_text_inline_with_font(input.status, tree.contentLeft, tree.contentTop + 3, 0, color, font);
 		api.popClipRect();
 		outline.scrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
+		outline.horizontalScrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
 	}
 	if (layout.previewVisible) {
 		const preview = input.previewBounds;

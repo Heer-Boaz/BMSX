@@ -11,7 +11,7 @@ import { pointerCapture } from '../../../input/pointer/capture';
 import { api } from '../../../runtime/overlay_api';
 import { drawWorkbenchIcon } from '../../render/icon';
 import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
-import { scrollWorkbenchList, workbenchListContainsPosition, workbenchListRowIndexAtPosition } from '../../ui/list_view';
+import { workbenchListContainsPosition, workbenchListRowIndexAtPosition } from '../../ui/list_view';
 import { ScrollbarPointerControl } from '../../ui/scrollbar_pointer';
 import { navigateWorkbenchTree, setWorkbenchTreeCollapsed, workbenchTreeTwistieContainsPosition } from '../../ui/tree_view';
 import type { ActorLabInput } from './editor_input';
@@ -49,7 +49,7 @@ export class ActorOutlinerControl {
 		const input = this.input!;
 		if (input.presentation !== 'world') return false;
 		const tree = input.worldOutliner.tree;
-		if (this.scrollbar.handlePointer(snapshot, tree.scrollbar)) return true;
+		if (this.scrollbar.handlePointer(snapshot, tree.scrollbar) || this.scrollbar.handlePointer(snapshot, tree.horizontalScrollbar)) return true;
 		if (!snapshot.valid || !snapshot.insideViewport) return false;
 		const index = workbenchListRowIndexAtPosition(tree, snapshot.viewportX, snapshot.viewportY);
 		if (!workbenchListContainsPosition(tree, snapshot.viewportX, snapshot.viewportY)) return false;
@@ -69,7 +69,7 @@ export class ActorOutlinerControl {
 		const row = tree.rows[index];
 		this.focusTarget.focus();
 		if (this.input !== input || !this.focusTarget.hasFocus || tree.rows[index] !== row) return true;
-		if (primary && workbenchTreeTwistieContainsPosition(tree, index, snapshot.viewportX)) {
+		if (primary && workbenchTreeTwistieContainsPosition(tree, index, snapshot.viewportX, tree.scrollLeft)) {
 			setWorkbenchTreeCollapsed(tree, index, !row.collapsed);
 			// Disclosure changes row focus, not the selected live actor. Its Details
 			// and viewport highlight survive a collapsed ancestor, as in UE's Outliner.
@@ -85,8 +85,8 @@ export class ActorOutlinerControl {
 	}
 	public handleWheel(event: WheelInputSnapshot): boolean {
 		const tree = this.input!.worldOutliner.tree;
-		if (!workbenchListContainsPosition(tree, event.viewportX, event.viewportY)) return false;
-		scrollWorkbenchList(tree, event.deltaY * 3); return true;
+		if (!tree.handleWheel(event)) return false;
+		this.scrollbar.cancelPointer(); return true;
 	}
 	public handleKeyboard(event: KeyInputEvent): void {
 		if (event.consumed) return;
@@ -111,13 +111,14 @@ export class ActorOutlinerControl {
 			const selected = row.element.hashId === input.actorHashId;
 			if (selected) api.fill_rect(layout.contentLeft, top, layout.contentRight, top + layout.rowHeight, 0, colors.COLOR_RESOURCE_PANEL_HIGHLIGHT);
 			const textColor = selected ? colors.COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT : row.element.containsSelection ? colors.COLOR_BODY_ACCENT : color;
-			const left = layout.contentLeft + row.depth * layout.indentWidth;
+			const left = tree.rowLeft + row.depth * layout.indentWidth;
 			if (row.expandable) drawWorkbenchIcon(row.collapsed ? 'chevronRight' : 'chevronDown',
 				left + ((layout.indentWidth - WORKBENCH_ICON_SIZE) >> 1), top + ((layout.rowHeight - WORKBENCH_ICON_SIZE) >> 1), textColor);
 			api.blit_text_inline_with_font(row.element.label, left + layout.indentWidth, top + 2, 0, textColor, font);
 		}
 		if (tree.rows.length === 0) api.blit_text_inline_with_font('NO LIVE ACTORS', layout.contentLeft, layout.contentTop + 3, 0, color, font);
 		api.popClipRect(); tree.scrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
+		tree.horizontalScrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
 	}
 }
 

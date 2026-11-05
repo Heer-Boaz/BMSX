@@ -32,7 +32,7 @@ import { drawWorkbenchPropertyInspector } from '../../render/property_inspector'
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
-import { scrollWorkbenchList, workbenchListContainsPosition, workbenchListRowIndexAtPosition } from '../../ui/list_view';
+import { workbenchListRowIndexAtPosition } from '../../ui/list_view';
 import { navigateWorkbenchTree, setWorkbenchTreeCollapsed, workbenchTreeTwistieContainsPosition } from '../../ui/tree_view';
 import { ScrollbarPointerControl } from '../../ui/scrollbar_pointer';
 import { WorkbenchSliderControl } from '../../ui/slider_control';
@@ -77,6 +77,8 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	private restoreDetailsScroll = false;
 	private navigationSelection: ActorLabNavigationSelection | undefined;
 	private renderedTopology = -1;
+	private renderedOutline = -1;
+	private renderedOutliner = -1;
 	private renderedPresentation: ActorLabInput['presentation'] | undefined;
 	private viewportHover = false;
 	private pointerX = 0;
@@ -394,8 +396,10 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		const revealed = this.controller.refresh(input);
 		if (scope.contextGeneration !== context) return;
 		// Controller commands can reconcile before paint; the pane consumes the revision independently.
-		const contentsChanged = revealed || this.renderedTopology !== input.runtime.topologyRevision;
+		const contentsChanged = revealed || this.renderedTopology !== input.runtime.topologyRevision
+			|| this.renderedOutline !== input.outline.rowsRevision || this.renderedOutliner !== input.worldOutliner.tree.rowsRevision;
 		this.renderedTopology = input.runtime.topologyRevision;
+		this.renderedOutline = input.outline.rowsRevision; this.renderedOutliner = input.worldOutliner.tree.rowsRevision;
 		const visibleGraph = input.presentation === 'graph' ? input.stateGraph : undefined;
 		const bar = input.presentation === 'world' ? input.worldActions : input.presentation === 'outline' ? input.actionBar : input.stateGraphActions;
 		const graphChanged = this.boundGraph !== visibleGraph;
@@ -417,7 +421,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		input.timeline.refresh(this.controller.selected(input), input.interaction.running, this.controller.guest, readback, this.controller.canInteract());
 		const timelineChanged = this.timelineVisible !== input.timeline.visible;
 		this.timelineVisible = input.timeline.visible;
-		const { layout, outline } = input;
+		const { layout } = input;
 		const follow = bar.items.find(item => item.command === 'actorLab.follow');
 		const followLabel = input.follow.target === undefined ? 'Follow' : 'Unfollow';
 		const followChanged = follow !== undefined && follow.label !== followLabel;
@@ -430,8 +434,6 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			layoutWorkbenchActionBar(bar, layout.primaryRight - 4,
 				layout.top + 2, layout.top + layout.rowHeight + 8, measureText, editorViewState.font.renderFont(), layout.left + 4);
 			if (visibleGraph !== undefined) visibleGraph.titleLabel = truncateTextToWidth(visibleGraph.title, layout.primaryRight - layout.left - 16);
-			for (const row of outline.rows) row.element.displayLabel = truncateTextToWidth(row.element.label,
-				outline.layout.contentRight - outline.layout.contentLeft - (row.depth + 2) * outline.layout.indentWidth - 4, 'middle');
 		} else if (!this.updatePreviewInput()) return;
 		this.worldControl.update();
 		this.worldControl.navigation.advance(editorRuntimeState.currentTimeMs);
@@ -645,7 +647,8 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		if (this.split.handlePointer(snapshot) || this.actions.handlePointer(snapshot) || this.input.timeline.visible && this.timelineSlider.handlePointer(snapshot)) return true;
 		if (this.input.presentation === 'world') return this.outlinerControl.handlePointer(snapshot, now);
 		if (!this.input.actorPresent) return false;
-		if (this.input.presentation === 'outline' && this.scrollbar.handlePointer(snapshot, this.input.outline.scrollbar)) {
+		if (this.input.presentation === 'outline' && (this.scrollbar.handlePointer(snapshot, this.input.outline.scrollbar)
+			|| this.scrollbar.handlePointer(snapshot, this.input.outline.horizontalScrollbar))) {
 			if (justPressed) this.input.follow.stop();
 			return true;
 		}
@@ -671,7 +674,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 				|| input.outline.rows[input.outline.selectionIndex] !== row) return true;
 			if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) {
 				this.showContextMenu(snapshot.viewportX, snapshot.viewportY, this.focusTarget, false);
-			} else if (workbenchTreeTwistieContainsPosition(input.outline, index, snapshot.viewportX)) {
+			} else if (workbenchTreeTwistieContainsPosition(input.outline, index, snapshot.viewportX, input.outline.scrollLeft)) {
 				setWorkbenchTreeCollapsed(input.outline, index, !row.collapsed);
 				this.updateContentLayout();
 			}
@@ -684,8 +687,8 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		if (this.input.presentation === 'graph') {
 			if (!this.graph.handleWheel(event)) return;
 		} else {
-			if (!workbenchListContainsPosition(this.input.outline, event.viewportX, event.viewportY)) return;
-			scrollWorkbenchList(this.input.outline, event.deltaY * 3);
+			if (!this.input.outline.handleWheel(event)) return;
+			this.scrollbar.cancelPointer();
 		}
 		this.input.follow.stop();
 	}

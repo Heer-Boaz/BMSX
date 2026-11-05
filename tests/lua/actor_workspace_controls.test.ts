@@ -23,6 +23,29 @@ async function fixture(t: TestContext) {
 	return { ...f, input, group, pane };
 }
 
+for (const presentation of ['world', 'outline'] as const) test(`Actor ${presentation} exposes overflow through the shared horizontal scrollbar without changing selection`, async t => {
+	const f = await fixture(t);
+	f.editor.setFontVariant('msx'); f.editor.updateViewport({ width: 384, height: 288 });
+	const actor = f.input.worldOutliner.tree.rows.find(row => row.element.label === 'studio_test.first')!;
+	f.input.controller.inspectActor(f.input, f.input.domain, actor.element.hashId);
+	if (presentation === 'outline') f.editor.commands.execute('actorLab.outline', f.pane.commandTarget);
+	f.input.split.ratio = 0; f.editor.update(0);
+	const tree = presentation === 'world' ? f.input.worldOutliner.tree : f.input.outline;
+	const bar = tree.horizontalScrollbar;
+	assert.equal(bar.isVisible(), true, 'long authored identities remain reachable in the compact panel');
+	const selected = f.input.actorHashId, focus = inputFocus.target;
+	const thumb = bar.getThumb()!, track = bar.getTrack();
+	const x = (thumb.left + thumb.right) / 2, y = (track.top + track.bottom) / 2;
+	f.native.apply([{ type: 'pointer', x, y }, { type: 'button', button: 'primary', down: true }]);
+	await f.frame(); assert.equal(pointerCapture.active, true);
+	f.native.apply([{ type: 'pointer', x: track.right, y }]); await f.frame();
+	f.native.apply([{ type: 'button', button: 'primary', down: false }]); await f.frame();
+	assert.ok(tree.scrollLeft > 0); assert.equal(pointerCapture.active, false);
+	assert.equal(f.input.actorHashId, selected); assert.ok(inputFocus.target === focus);
+	f.editor.updateViewport({ width: 800, height: 400 }); f.input.split.ratio = 0.6; f.editor.update(0);
+	assert.equal(bar.isVisible(), false); assert.equal(tree.scrollLeft, 0);
+});
+
 for (const variant of ['tiny', 'msx'] as const) test(`Actor Lab ${variant} panel divider resizes through the ordinary workspace pointer route`, async t => {
 	const f = await fixture(t);
 	f.editor.setFontVariant(variant); f.editor.updateViewport({ width: 384, height: 288 }); f.editor.update(0);
