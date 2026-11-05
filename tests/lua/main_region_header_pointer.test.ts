@@ -12,14 +12,14 @@ import { SCENE_AUTHORING_SOURCE } from '../fixtures/studio/scene_authoring';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
 for (const font of ['tiny', 'msx'] as const) for (const region of ['hierarchy', 'details'] as const)
-	test(`Main ${font} ${region} header Secondary opens its region context over More without a primary Source button`, async t => {
+	test(`Main ${font} ${region} header Secondary opens only its panel context over More`, async t => {
 	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE_AUTHORING_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	f.editor.setFontVariant(font); f.first.focus();
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
 	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target!), true);
 	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
-	f.editor.editorParts.main.activeGroup.openEditor(new CodeEditorInput(model)); f.update();
+	f.update();
 	f.editor.mainWorkspace.focusPrimary(region);
 	const panel = primary[region];
 	assert.equal(panel.actionBar.focusTarget.focus(), true); f.update();
@@ -34,7 +34,10 @@ for (const font of ['tiny', 'msx'] as const) for (const region of ['hierarchy', 
 		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	assert.equal(f.editor.contextMenu.visible, true);
 	assert.ok(f.editor.contextMenu.model.rows.some(row => row.command === `workspace.${region}.toggle` && row.enabled));
-	assert.ok(f.editor.contextMenu.model.rows.some(row => row.command === 'editor.source' && row.enabled));
+	assert.ok(!f.editor.contextMenu.model.rows.some(row => row.command === 'editor.source'), 'header chrome does not borrow a Scene member action');
 	assert.ok(f.editor.mainWorkspace.primary === primary && primary.hierarchy.attached && primary.details.attached);
 	assert.equal(model.buffer.getText(), source);
+	f.editor.contextMenu.hide();
+	f.editor.editorParts.main.activeGroup.openEditor(new CodeEditorInput(model)); f.update();
+	assert.equal(panel.actionBar.focusTarget.focus(), false, 'a detached Scene header cannot receive input behind Source');
 });

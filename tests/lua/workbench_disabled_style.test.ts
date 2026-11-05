@@ -12,6 +12,7 @@ import { renderWorkbenchActionBar } from '../../ide/workbench/render/action_bar'
 import { drawWorkbenchWindow } from '../../ide/workbench/render/window';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { CONTEXT_MENU_PADDING } from '../../ide/workbench/services/context_menu/model';
+import { WORKBENCH_ICON_SIZE } from '../../ide/workbench/ui/icon';
 import { drawContextMenu } from '../../ide/workbench/services/context_menu/render';
 import { createWorkbenchActionBar, layoutWorkbenchActionBar } from '../../ide/workbench/ui/action_bar';
 import { WorkbenchWindowModel } from '../../ide/workbench/ui/window/model';
@@ -177,10 +178,11 @@ for (const theme of ['dark', 'light']) {
 			for (const label of [disabled.label, disabled.keybinding])
 				assert.equal(text.find(command => command.items === label)!.color, resolveThemeTokenColor(THEME_TOKEN_MUTED_GREY));
 			assert.equal(text.find(command => command.items === enabled.label)!.color, resolveThemeTokenColor(colors.COLOR_MENU_SELECTION_TEXT));
-			const size = Math.max(f.font.lineHeight >> 1, 2), left = menu.model.viewport.bounds.left + CONTEXT_MENU_PADDING;
+			const size = WORKBENCH_ICON_SIZE, left = menu.model.viewport.bounds.left + CONTEXT_MENU_PADDING;
 			const top = menu.model.viewport.offsetTop + disabled.top + ((menu.model.rowHeight - size) >> 1);
 			const marks = fillsWithin(frame, { left, top, right: left + size, bottom: top + size });
-			assert.equal(marks.length, 1); assert.equal(marks[0].color, resolveThemeTokenColor(THEME_TOKEN_MUTED_GREY));
+			assert.ok(marks.length > 0, 'the disabled checked item still paints its active marker');
+			for (const mark of marks) assert.equal(mark.color, resolveThemeTokenColor(THEME_TOKEN_MUTED_GREY));
 		});
 	}
 }

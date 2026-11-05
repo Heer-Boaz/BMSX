@@ -1,3 +1,4 @@
+import { afterTest } from './test_cleanup';
 import { measureText, measureTextRange } from '../../ide/editor/common/text/layout';
 import { clearBackgroundTasks, runBackgroundTasks } from '../../ide/common/background_tasks';
 import type { TestContext } from 'node:test';
@@ -72,7 +73,7 @@ export function createActualSourcePanes(t: TestContext, sameModel = false, addit
 		arrange(); editor.update(0); ide.overlayRenderer.beginFrame(host.presenter); api.beginFrame(ide.overlayRenderer);
 		editor.draw(); ide.overlayRenderer.endFrame(); return host.presenter.hostOverlayQueue.consumeOverlayFrame();
 	};
-	t.after(async () => {
+	afterTest(t, async () => {
 		inputFocus.setTarget(null); pointerCapture.interrupt(false);
 		await editor.shutdown(); clearBackgroundTasks(); host.audio.dispose(); host.input.dispose();
 	});

@@ -219,7 +219,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		assert.ok(f.sourceGroup.bounds.right - f.sourceGroup.bounds.left >= f.sourceGroup.companionWidth!);
 	});
 
-	test(`${variant} vertical hard overflow reserves its scrollbar before exact companion admission`, t => {
+	test(`${variant} vertical workspace overflow reserves one parent scrollbar before exact companion admission`, t => {
 		const f = splitFixture(t, variant);
 		let last = f.sourceGroup;
 		for (let index = 0; index < 7; index++) {
@@ -232,11 +232,14 @@ for (const variant of ['tiny', 'msx'] as const) {
 			+ Math.max(f.sourceGroup.minimumWidth, f.sourceGroup.companionWidth!);
 		const required = readingWidth + SCROLLBAR_WIDTH + 4 + 168;
 		f.arrange(required, hardHeight - 1 + chromeHeight);
-		assert.ok(f.main.arrangement.minimumHeight > area.availableBounds.bottom - area.availableBounds.top);
+		const workspace = f.editor.mainWorkspace.regionLayout;
+		assert.ok(workspace.contentHeight > workspace.verticalViewport.bottom - workspace.verticalViewport.top);
+		assert.equal(workspace.verticalScrollTrack.right - workspace.verticalScrollTrack.left, SCROLLBAR_WIDTH);
 		assert.equal(f.editor.gamePanel.visible, true);
-		assert.equal(f.main.clientBounds.right - f.main.clientBounds.left, readingWidth + SCROLLBAR_WIDTH);
+		assert.equal(f.main.clientBounds.right - f.main.clientBounds.left, readingWidth);
 		assert.equal(f.main.arrangement.bounds.right - f.main.arrangement.bounds.left, readingWidth);
-		assert.equal(f.main.arrangement.maxScrollX, 0); assert.ok(f.main.arrangement.maxScrollY > 0);
+		assert.equal(f.main.arrangement.maxScrollX, 0); assert.equal(f.main.arrangement.maxScrollY, 0,
+			'the document group must not reserve a second scrollbar inside the expanded workspace row');
 		for (const group of f.main.groups) assert.ok(group.bounds.right - group.bounds.left
 			>= Math.max(group.minimumWidth, group.companionWidth!));
 		f.arrange(required - 1, hardHeight - 1 + chromeHeight); assert.equal(f.editor.gamePanel.visible, false);
