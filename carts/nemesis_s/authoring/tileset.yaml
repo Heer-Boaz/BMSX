@@ -9090,7 +9090,7 @@ tiles:
 - id: 2422
   name: auto_achtergrond_blauw_00_00
   asset: nls_2422
-  image: res/img/nls_2422@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2422@atlas=gameplay.png
   category: town
   stage_symbol: ' '
 - id: 2423
@@ -10713,28 +10713,28 @@ tiles:
 - id: 2692
   name: stadsdecor_1_2692
   asset: nls_2692
-  image: res/img/nls_2692@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2692@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 1
   category: stadsgroen_composite
 - id: 2693
   name: stadsdecor_1_2693
   asset: nls_2693
-  image: res/img/nls_2693@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2693@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 1
   category: stadsgroen_composite
 - id: 2694
   name: stadsdecor_1_2694
   asset: nls_2694
-  image: res/img/nls_2694@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2694@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 1
   category: stadsgroen_composite
 - id: 2695
   name: stadsdecor_1_2695
   asset: nls_2695
-  image: res/img/nls_2695@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2695@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 1
   category: stadsgroen_composite
@@ -10748,70 +10748,70 @@ tiles:
 - id: 2697
   name: stadsdecor_2696_2697
   asset: nls_2697
-  image: res/img/nls_2697@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2697@atlas=gameplay.png
   stage_symbol: '#'
   source_tile: 2696
   category: stadsgroen_composite
 - id: 2698
   name: stadsdecor_66_2698
   asset: nls_2698
-  image: res/img/nls_2698@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2698@atlas=gameplay.png
   stage_symbol: '#'
   source_tile: 66
   category: stadsgroen_composite
 - id: 2699
   name: stadsdecor_2479_2699
   asset: nls_2699
-  image: res/img/nls_2699@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2699@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2479
   category: stadsgroen_composite
 - id: 2700
   name: stadsdecor_2480_2700
   asset: nls_2700
-  image: res/img/nls_2700@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2700@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2480
   category: stadsgroen_composite
 - id: 2701
   name: stadsdecor_72_2701
   asset: nls_2701
-  image: res/img/nls_2701@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2701@atlas=gameplay.png
   stage_symbol: '#'
   source_tile: 72
   category: stadsgroen_composite
 - id: 2702
   name: stadsdecor_68_2702
   asset: nls_2702
-  image: res/img/nls_2702@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2702@atlas=gameplay.png
   stage_symbol: '#'
   source_tile: 68
   category: stadsgroen_composite
 - id: 2703
   name: stadsdecor_69_2703
   asset: nls_2703
-  image: res/img/nls_2703@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2703@atlas=gameplay.png
   stage_symbol: '#'
   source_tile: 69
   category: stadsgroen_composite
 - id: 2704
   name: stadsdecor_2481_2704
   asset: nls_2704
-  image: res/img/nls_2704@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2704@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2481
   category: stadsgroen_composite
 - id: 2705
   name: stadsdecor_2482_2705
   asset: nls_2705
-  image: res/img/nls_2705@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2705@atlas=gameplay.png
   stage_symbol: ' '
   source_tile: 2482
   category: stadsgroen_composite
 - id: 2706
   name: stadsdecor_68_2706
   asset: nls_2706
-  image: res/img/nls_2706@atlas=gameplay.png
+  image: authoring/terreintegels/nls_2706@atlas=gameplay.png
   stage_symbol: '#'
   source_tile: 68
   category: stadsgroen_composite
@@ -11525,7 +11525,7 @@ tiles:
 - id: 2808
   name: stadsdecor_2251_2808
   asset: nls_2808
-  image: authoring/terreintegels/nls_2808@atlas=gameplay.png
+  image: res/img/nls_2808@atlas=gameplay.png
   stage_symbol: '#'
   source_tile: 2251
   category: stadsgroen_composite
@@ -11865,3 +11865,173 @@ tiles:
   image: authoring/terreintegels/nls_2859@atlas=gameplay.png
   category: town
   stage_symbol: ' '
+- id: 2860
+  name: auto_voorgrond_rood_00_00
+  asset: nls_2860
+  image: authoring/terreintegels/nls_2860@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2861
+  name: auto_voorgrond_rood_00_01
+  asset: nls_2861
+  image: authoring/terreintegels/nls_2861@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2862
+  name: auto_voorgrond_cyaan_00_00
+  asset: nls_2862
+  image: authoring/terreintegels/nls_2862@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2863
+  name: auto_voorgrond_cyaan_00_01
+  asset: nls_2863
+  image: authoring/terreintegels/nls_2863@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 2864
+  name: auto_achtergrond_blauw_00_00
+  asset: nls_2864
+  image: res/img/nls_2864@atlas=gameplay.png
+  category: town
+  stage_symbol: ' '
+- id: 2865
+  name: stadsdecor_1_2865
+  asset: nls_2865
+  image: res/img/nls_2865@atlas=gameplay.png
+  stage_symbol: ' '
+  source_tile: 1
+  category: stadsgroen_composite
+- id: 2866
+  name: stadsdecor_1_2866
+  asset: nls_2866
+  image: res/img/nls_2866@atlas=gameplay.png
+  stage_symbol: ' '
+  source_tile: 1
+  category: stadsgroen_composite
+- id: 2867
+  name: stadsdecor_1_2867
+  asset: nls_2867
+  image: res/img/nls_2867@atlas=gameplay.png
+  stage_symbol: ' '
+  source_tile: 1
+  category: stadsgroen_composite
+- id: 2868
+  name: stadsdecor_1_2868
+  asset: nls_2868
+  image: res/img/nls_2868@atlas=gameplay.png
+  stage_symbol: ' '
+  source_tile: 1
+  category: stadsgroen_composite
+- id: 2869
+  name: stadsdecor_2703_2869
+  asset: nls_2869
+  image: authoring/terreintegels/nls_2869@atlas=gameplay.png
+  stage_symbol: '#'
+  source_tile: 2703
+  category: stadsgroen_composite
+- id: 2870
+  name: stadsdecor_2869_2870
+  asset: nls_2870
+  image: res/img/nls_2870@atlas=gameplay.png
+  stage_symbol: '#'
+  source_tile: 2869
+  category: stadsgroen_composite
+- id: 2871
+  name: stadsdecor_2479_2871
+  asset: nls_2871
+  image: res/img/nls_2871@atlas=gameplay.png
+  stage_symbol: ' '
+  source_tile: 2479
+  category: stadsgroen_composite
+- id: 2872
+  name: stadsdecor_2480_2872
+  asset: nls_2872
+  image: res/img/nls_2872@atlas=gameplay.png
+  stage_symbol: ' '
+  source_tile: 2480
+  category: stadsgroen_composite
+- id: 2873
+  name: stadsdecor_71_2873
+  asset: nls_2873
+  image: res/img/nls_2873@atlas=gameplay.png
+  stage_symbol: '#'
+  source_tile: 71
+  category: stadsgroen_composite
+- id: 2874
+  name: stadsdecor_1850_2874
+  asset: nls_2874
+  image: res/img/nls_2874@atlas=gameplay.png
+  stage_symbol: '#'
+  source_tile: 1850
+  category: stadsgroen_composite
+- id: 2875
+  name: stadsdecor_2706_2875
+  asset: nls_2875
+  image: res/img/nls_2875@atlas=gameplay.png
+  stage_symbol: '#'
+  source_tile: 2706
+  category: stadsgroen_composite
+- id: 2876
+  name: stadsdecor_2481_2876
+  asset: nls_2876
+  image: res/img/nls_2876@atlas=gameplay.png
+  stage_symbol: ' '
+  source_tile: 2481
+  category: stadsgroen_composite
+- id: 2877
+  name: stadsdecor_2482_2877
+  asset: nls_2877
+  image: res/img/nls_2877@atlas=gameplay.png
+  stage_symbol: ' '
+  source_tile: 2482
+  category: stadsgroen_composite
+- id: 2878
+  name: stadsdecor_2798_2878
+  asset: nls_2878
+  image: authoring/terreintegels/nls_2878@atlas=gameplay.png
+  stage_symbol: '#'
+  source_tile: 2798
+  category: stadsgroen_composite
+- id: 2879
+  name: stadsdecor_2878_2879
+  asset: nls_2879
+  image: res/img/nls_2879@atlas=gameplay.png
+  stage_symbol: '#'
+  source_tile: 2878
+  category: stadsgroen_composite
+- id: 2880
+  name: stadsdecor_2200_2880
+  asset: nls_2880
+  image: res/img/nls_2880@atlas=gameplay.png
+  stage_symbol: '#'
+  source_tile: 2200
+  category: stadsgroen_composite
+- id: 2881
+  name: stadsdecor_2254_2881
+  asset: nls_2881
+  image: res/img/nls_2881@atlas=gameplay.png
+  stage_symbol: '#'
+  source_tile: 2254
+  category: stadsgroen_composite
+- id: 2882
+  name: stadsdecor_2249_2882
+  asset: nls_2882
+  image: res/img/nls_2882@atlas=gameplay.png
+  stage_symbol: '#'
+  source_tile: 2249
+  category: stadsgroen_composite
+- id: 2883
+  name: stadsdecor_65_2883
+  asset: nls_2883
+  image: authoring/terreintegels/nls_2883@atlas=gameplay.png
+  stage_symbol: '#'
+  source_tile: 65
+  category: stadsgroen_composite
+- id: 2884
+  name: stadsdecor_2883_2884
+  asset: nls_2884
+  image: res/img/nls_2884@atlas=gameplay.png
+  stage_symbol: '#'
+  source_tile: 2883
+  category: stadsgroen_composite

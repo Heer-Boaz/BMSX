@@ -10,7 +10,76 @@ local bullet_view<const> = world:active_definition_view(ids_enemy_bullet_def)
 
 local turret_view<const> = world:active_definition_view(ids_havengeschut_def)
 local roodje_view<const> = world:active_definition_view(ids_roodje_def)
+local roof_gun_view<const> = world:active_definition_view(ids_schoorsteen_foe_def)
+local smoke_generator_view<const> = world:active_definition_view(ids_rook_generator_def)
+local smoke_view<const> = world:active_definition_view(ids_rook_def)
+local explosion_view<const> = world:active_definition_view(ids_large_explosion_def)
 return {kind='integration',tests={
+    roof_weapon_mounts=function(t)
+        local director<const>,stage<const>,pilot<const> = fixture.start_game(t)
+        pilot.body_collider:set_enabled(false)
+        local checked=0
+        for _,spawn in ipairs(stage.actor_spawns) do
+            local laser<const> = spawn.definition_id==ids_schoorsteen_foe_def
+            if laser or spawn.definition_id==ids_rook_generator_def then
+                stage.start_column=spawn.column-stage.tile_columns
+                stage:reset_runtime()
+                stage:advance_tape()
+                stage.scrolling=false
+                local view<const> = laser and roof_gun_view or smoke_generator_view
+                local weapon<const> = view.objects[#view.objects]
+                -- This includes laser admission 433: the scout at 434 used
+                -- to block it, moving the weapon eight pixels past its roof.
+                assert(weapon and weapon.health>0 and stage.tape_head-1==spawn.column,
+                    'A roof weapon missed its authored admission column')
+                local x<const>,y<const> = weapon:get_global_position()
+                local width<const> = weapon.sprite_component.source_width
+                local height<const> = weapon.sprite_component.source_height
+                -- Both visible feet must touch this real roof without hanging
+                -- over its edge or sinking into the supporting tile row.
+                for foot_x=2,width-3 do
+                    assert(stage:is_solid_pixel(x+foot_x,y+height)
+                        and not stage:is_solid_pixel(x+foot_x,y+height-1),
+                        'A roof weapon is floating, embedded or overhanging its support')
+                end
+                if laser then
+                    weapon:enter_opening()
+                    weapon:fire_ray()
+                    local ray<const> = ray_view.objects[#ray_view.objects]
+                    local rx<const>,ry<const> = ray:get_global_position()
+                    assert(rx+schoorsteen_ray_tile_size//2==x+width//2
+                        and ry==y+schoorsteen_ray_offset_y,
+                        'Roof laser left the centre of its chamber')
+                    ray:mark_for_disposal()
+                else
+                    weapon:enter_generating()
+                    weapon:spawn_rook(nil,rook_rise_distances[1])
+                    local cloud<const> = smoke_view.objects[#smoke_view.objects]
+                    local cx<const> = cloud:get_global_position()
+                    assert(cx+cloud.sprite_component.source_width//2==x+width//2,
+                        'Smoke left the side of its roof chamber')
+                    cloud:mark_for_disposal()
+                end
+                weapon:receive_player_projectile({damage=weapon.health})
+                local wreck<const> = wreck_view.objects[#wreck_view.objects]
+                local wx<const>,wy<const> = wreck:get_global_position()
+                assert(wreck.sprite_component.imgid==assets_roof_chimney_wreck
+                    and not wreck.sprite_component.flip_v
+                    and wx+wreck.sprite_component.source_width//2==x+width//2
+                    and wy+wreck.sprite_component.source_height==y+height,
+                    'The roof wreck moved off its weapon support')
+                local blast<const> = explosion_view.objects[#explosion_view.objects]
+                local bx<const>,by<const> = blast:get_global_position()
+                assert(bx+blast.sprite_component.source_width//2==x+width//2
+                    and by+blast.sprite_component.source_height//2==y+height//2,
+                    'The roof explosion lost the centre of its smaller weapon')
+                wreck:mark_for_disposal()
+                blast:mark_for_disposal()
+                checked=checked+1
+            end
+        end
+        assert(checked==6,'Not all authored roof weapons were checked')
+    end,
     small_turrets=function(t)
         local director<const>,stage<const>,pilot<const> = fixture.start_game(t)
         pilot.body_collider:set_enabled(false)

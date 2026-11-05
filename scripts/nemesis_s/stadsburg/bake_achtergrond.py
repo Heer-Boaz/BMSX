@@ -19,33 +19,17 @@ def draw_backdrop(root, spec, width, height):
         assert pixels.shape == (160, 512, 3), (name, pixels.shape)
         assert set(map(tuple, pixels.reshape(-1, 3))) <= {(0, 0, 0), (32, 32, 224)}, name
     result = np.zeros((height * 8, width * 8, 3), dtype=np.uint8)
-    # A fixed native-pixel dissolve joins the compositions along the scroll.
-    # Every resulting character row still uses only black and dark blue.
-    bayer = np.array(((0, 8, 2, 10), (12, 4, 14, 6),
-                      (3, 11, 1, 9), (15, 7, 13, 5)))
-    length = spec['blend_columns'] * 8
+    # Authored spans and repeat phases meet in dark gaps between complete
+    # buildings. Preserve their native pixels through each scene boundary.
     scenes = spec['scenes']
-
-    def column(scene, x):
-        source = sources[scene['source']]
-        return source[:, (x - scene['from'] * 8 + scene['phase'] * 8) % 512]
-
     for index, scene in enumerate(scenes):
         start, end = scene['from'] * 8, scene['to'] * 8
         assert 0 <= start < end <= width * 8
         if index:
             assert scenes[index - 1]['to'] == scene['from']
-        for x in range(start, end):
-            pixels = column(scene, x).copy()
-            if x - start < length:
-                previous = column(scenes[index - 1], x) if index else np.zeros_like(pixels)
-                threshold = ((x - start) * 16) // length
-                choose = bayer[np.arange(160) % 4, x % 4] < threshold
-                pixels = np.where(choose[:, None], pixels, previous)
-            if index == len(scenes) - 1 and end - x <= length:
-                threshold = ((end - x - 1) * 16) // length
-                pixels[bayer[np.arange(160) % 4, x % 4] >= threshold] = 0
-            result[:160, x] = pixels
+        source = sources[scene['source']]
+        columns = (np.arange(end - start) + scene['phase'] * 8) % source.shape[1]
+        result[:160, start:end] = source[:, columns]
     return result
 
 

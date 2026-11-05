@@ -64,7 +64,8 @@ and vehicles, tree silhouettes, lamp shafts and water reflections remain open.
 The town's main scale is 8/3 pixels per metre, using the unchanged 16×10-pixel
 Kartonion as a fictional six-metre vehicle. Human-scale foreground art has been
 redrawn at approximately two thirds of its former size. Foreground cars draw at
-13×5 pixels and parked front-view trucks at 7×11 pixels. The station canopy
+12×6 pixels, with two-row glazing and separate two-pixel wheel contacts; parked
+front-view trucks draw at 7×11 pixels. The station canopy
 spans 32 pixels and leaves 12 pixels clear beneath it; its door opening is six
 pixels high. The separate car and trucks stand on the same ground line.
 Ordinary house doors are six pixels high, storeys about eight to nine pixels,
@@ -73,19 +74,23 @@ is still the smallest available step, so stairs are a readable approximation.
 Wharf stairs descend 16 pixels to their lower walking surface. Measure these
 details against visible ground, since the bottom prefab tile can contain quay
 masonry or a submerged foot. Building, water and tree-root anchors are retained
-when their canvases shrink; rooftop enemy markers follow the new roof supports.
-The terrain spans, industrial bridges/winches and combat sprites retain their
-established dimensions. The side camera, long approach and departure, and broad
-open-water sections stay fixed.
+when their canvases shrink. The native S/R markers identify the centre and
+foot line of each rooftop weapon. Its 24×16 canvas is centred on that point,
+with a 20-pixel support footprint, a matching body collider and a centred laser
+or smoke outlet. The 16×8 roof wreck keeps the same foot line. Ceiling cannons
+retain their separate 32×24 geometry and 24×16 wreck. The terrain spans,
+industrial bridges/winches and other combat sprites retain their established
+dimensions. The side camera, long approach and departure, and broad open-water
+sections stay fixed.
 
 Light, warm, cyan or green accents distinguish foreground objects. The smaller
-8×4-pixel cars and miniature bicycles use only subdued blues and black, like the
-distant house contours. The authoring groups describe that visual depth within
-the fixed side view.
+7×4-pixel cars use the existing lighter blue to remain distinct from the dark
+blue house contours. Miniature bicycles retain their subdued blue silhouettes.
+The authoring groups describe that visual depth within the fixed side view.
 
 The three winter backdrops are editable 512×160 native PNGs in
 `authoring/achtergrond`: a distant town, warehouse wharf and opposite harbor
-bank. `level.yaml` owns their spans, repeat offsets, pixel dissolves and the
+bank. `level.yaml` owns their spans, repeat offsets, scene joins and the
 world spans that expose the full starfield. They scroll on the same character
 grid as the terrain. `night_sky_height` keeps four existing blue stars in the
 top 40 pixels visible over the town, above the distant skyline. The open night
@@ -94,6 +99,12 @@ Their two-ink drawings use lit roof slopes, masonry piers and dark window bays
 to describe the distant buildings. Stone quays use broad horizontal courses;
 ships use hull plates and long strakes. These material-specific marks replace
 the former whole-surface stipple, while black remains the dominant shadow.
+Ordinary houses have narrow facades, complete storeys and upright window
+openings. Black alleys separate neighbouring houses and provide scene joins
+that preserve complete buildings. Long industrial halls use
+taller loading bays and piers, so their width reads as a hall rather than a
+flattened house. Source geometry defines these proportions directly; no axis
+is independently scaled during import.
 The mill is framed by an intentional black arena; the open approach and
 departure retain the full starfield.
 
@@ -113,6 +124,9 @@ regenerating the three editable source PNGs from their authored pixel geometry.
 Normal level builds consume those PNGs directly, including any subsequent
 hand edits. The composed level and the separate backdrop are available under
 `previews/level_achtergrond_native.png` and `previews/achtergrond_native.png`.
+`draw_dakgeschut.py` similarly regenerates the native roof-weapon poses and
+small roof wreck from their shared pixel geometry; the cartridge build consumes
+their checked-in PNGs directly.
 
 The Python dependencies are pinned for reproducible resource bytes.
 Preview images and check reports are generated locally and ignored by Git.
