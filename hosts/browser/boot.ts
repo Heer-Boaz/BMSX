@@ -10,7 +10,8 @@ import { BrowserInputHub } from './input';
 import { ConsoleLogOutput } from '../common/log';
 import { BrowserOnscreenGamepad } from './onscreen_gamepad';
 import { BrowserOnscreenGamepadView } from './onscreen_gamepad_view';
-import { BrowserFrameLoop, BrowserHostClock } from './timing';
+import { BrowserHostClock } from './timing';
+import { BrowserFrameLoop } from './frame_loop';
 import { BrowserVideoOutput, type BrowserScreenFit } from './video_output';
 import { createAudioContext, resumeAudio, type BootAudioState } from './boot_audio';
 import { createBrowserBackend } from './backend';
@@ -71,7 +72,6 @@ export async function prepareBrowserStartup(debug: boolean, media: BrowserBootMe
 	gamescreen.hidden = false;
 	gamescreen.style.display = 'block';
 	const clock = new BrowserHostClock();
-	const frames = new BrowserFrameLoop();
 	const onscreenGamepad = enableOnscreenGamepad
 		? new BrowserOnscreenGamepad(clock, navigator.vibrate ? new BrowserVibration(clock, navigator) : null)
 		: null;
@@ -89,6 +89,7 @@ export async function prepareBrowserStartup(debug: boolean, media: BrowserBootMe
 	}
 	const videoOutput = new BrowserVideoOutput(gamescreen, controlView, screenFit);
 	videoOutput.refreshLayout();
+	const frames = new BrowserFrameLoop(videoOutput);
 	const inputHub = new BrowserInputHub(
 		gamescreen,
 		document.getElementById('player-surface'),

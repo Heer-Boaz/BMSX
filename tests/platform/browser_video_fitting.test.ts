@@ -37,6 +37,7 @@ export { BrowserVideoOutput } from './hosts/browser/video_output';
 export { BrowserTextInput } from './hosts/browser/text_input';
 export { BrowserInputHub } from './hosts/browser/input';
 export { BrowserHostClock } from './hosts/browser/timing';
+export { BrowserFrameLoop } from './hosts/browser/frame_loop';
 export { Input } from './hosts/common/input/manager';
 export { createInputControllerSnapshot } from './machine/ts/machine/devices/input/contracts';
 export { workbenchPixelsPerUnit } from './ide/workbench/common/display_scale';
@@ -69,6 +70,7 @@ async function openFixture(browser: Browser, dpr: number, viewport: { width: num
 		const canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
 		const video = new api.BrowserVideoOutput(canvas, view, screenFit);
 		video.refreshLayout();
+		const frames = new api.BrowserFrameLoop(video).start(() => {});
 		const retainedVisibleViewport = video.visibleViewportBounds;
 		const hub = new api.BrowserInputHub(canvas, document.getElementById('player-surface'), clock, model, 'F2');
 		const input = new api.Input(clock, hub, controls ? model.gamepadIndex : 0);
@@ -117,7 +119,7 @@ async function openFixture(browser: Browser, dpr: number, viewport: { width: num
 				const mapping = api.mapDisplayPointToViewport(video.measureDisplay(), 320, 240, state.value2d[0], state.value2d[1], mapped);
 				return { buttons: snapshot.pointerButtons, position: [state.value2d[0], state.value2d[1]], mapping, mapped, native: native.slice() };
 			},
-			dispose() { input.dispose(); video.dispose(); },
+			dispose() { frames.stop(); input.dispose(); video.dispose(); },
 		};
 	}, { controls, screenFit, observeResolution });
 	return page;

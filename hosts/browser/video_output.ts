@@ -1,5 +1,5 @@
 import type { VideoOutput, VideoOutputBounds } from '../../machine/ts/render/video_output';
-import { write_rect_bounds, type RectBounds } from '../../machine/ts/common/rect';
+import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../machine/ts/common/rect';
 import { GX_GPU_DISPLAY_ASPECT_HEIGHT, GX_GPU_DISPLAY_ASPECT_WIDTH } from 'bmsx/spec/bmsx/model';
 import type { BrowserOnscreenGamepadView } from './onscreen_gamepad_view';
 import { CONTROL_GAP } from './onscreen_gamepad_layout';
@@ -22,7 +22,10 @@ export class BrowserVideoOutput implements VideoOutput {
 	private readonly visualViewport: VisualViewport | null;
 	private readonly resizeObserver: ResizeObserver;
 	private resolutionQuery: MediaQueryList;
-	private layoutAnimationFrameId = 0;
+	private layoutPending = true;
+	private fittingPending = true;
+	private readonly availableBounds = create_rect_bounds();
+	private portrait = false;
 	private selectedScreenFit: BrowserScreenFit;
 
 	public constructor(
@@ -40,30 +43,30 @@ export class BrowserVideoOutput implements VideoOutput {
 		// owner does; logical player bounds need not change with the monitor.
 		this.resolutionQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
 		this.resolutionQuery.addEventListener('change', this.onResolutionChange);
-		this.resizeObserver = new ResizeObserver(this.scheduleLayout);
+		this.resizeObserver = new ResizeObserver(this.invalidateLayout);
 		this.resizeObserver.observe(this.playerSurface);
 		if (this.controllerViewport) this.resizeObserver.observe(this.controllerViewport);
-		window.addEventListener('resize', this.scheduleLayout);
-		window.addEventListener('scroll', this.scheduleLayout, true);
-		window.addEventListener('orientationchange', this.scheduleLayout);
+		window.addEventListener('resize', this.invalidateLayout);
+		window.addEventListener('scroll', this.invalidateLayout, true);
+		window.addEventListener('orientationchange', this.invalidateLayout);
 		if (this.visualViewport) {
-			this.visualViewport.addEventListener('resize', this.scheduleLayout);
-			this.visualViewport.addEventListener('scroll', this.scheduleLayout);
+			this.visualViewport.addEventListener('resize', this.invalidateLayout);
+			this.visualViewport.addEventListener('scroll', this.invalidateLayout);
 		}
 	}
 
 	public setDisplaySize(width: number, height: number): void {
-		// Until the scheduled CSS layout, the existing clip keeps its source
-		// fractions. Publish that region in the new target coordinates now.
+		// Until the frame's final display fitting, the existing clip keeps its
+		// source fractions. Publish it in the new target coordinates now.
 		const widthScale = width / this.geometry.targetWidth;
 		const heightScale = height / this.geometry.targetHeight;
 		this.visibleViewportBounds.left *= widthScale;
 		this.visibleViewportBounds.right *= widthScale;
 		this.visibleViewportBounds.top *= heightScale;
 		this.visibleViewportBounds.bottom *= heightScale;
+		this.fittingPending = true;
 		const bounds = this.geometry.bounds;
 		this.geometry.update(bounds.left, bounds.top, bounds.width, bounds.height, width, height);
-		this.scheduleLayout();
 	}
 
 	public measureDisplay(): Readonly<VideoOutputBounds> {
@@ -84,10 +87,21 @@ export class BrowserVideoOutput implements VideoOutput {
 		this.refreshLayout();
 	}
 
+	/** Host-area changes may resize the render target, so consume them before drawing. */
+	public prepareFrame(): void {
+		if (this.layoutPending) this.refreshLayout();
+		else if (this.fittingPending) this.fitDisplay();
+	}
+
+	/** A frame may change scanout/target size. Fit that completed image without
+	 * reallocating it after drawing or advancing another frame. */
+	public finishFrame(): void {
+		if (this.fittingPending) this.fitDisplay();
+	}
+
 	/** Initial geometry is published synchronously before the input source activates. */
 	public refreshLayout(): void {
-		if (this.layoutAnimationFrameId) window.cancelAnimationFrame(this.layoutAnimationFrameId);
-		this.layoutAnimationFrameId = 0;
+		this.layoutPending = false;
 		const document = this.canvas.ownerDocument;
 		const viewport = this.visualViewport;
 		const viewportLeft = viewport ? viewport.offsetLeft : 0;
@@ -125,7 +139,16 @@ export class BrowserVideoOutput implements VideoOutput {
 		const portraitDeckTop = this.controlView ? this.controlView.portraitDeckTop : null;
 		const width = Math.max(0, right - left);
 		const height = Math.max(0, (portraitDeckTop === null ? bottom : Math.min(bottom, portraitDeckTop)) - top);
+		write_rect_bounds(this.availableBounds, left, top, left + width, top + height);
+		this.portrait = portraitDeckTop !== null;
 		this.workspace.layout(width, height);
+		this.fitDisplay();
+	}
+
+	private fitDisplay(): void {
+		this.fittingPending = false;
+		const { left, top, right, bottom } = this.availableBounds;
+		const width = right - left, height = bottom - top;
 		const workspace = this.workspace.active;
 		const renderWidth = this.geometry.targetWidth, renderHeight = this.geometry.targetHeight;
 		const presentationHeight = workspace ? renderHeight : renderWidth * GX_GPU_DISPLAY_ASPECT_HEIGHT / GX_GPU_DISPLAY_ASPECT_WIDTH;
@@ -139,7 +162,7 @@ export class BrowserVideoOutput implements VideoOutput {
 		const displayWidth = renderWidth * scale;
 		const displayHeight = presentationHeight * scale;
 		const displayLeft = left + (width - displayWidth) / 2;
-		const displayTop = portraitDeckTop === null ? top + (height - displayHeight) / 2
+		const displayTop = !this.portrait ? top + (height - displayHeight) / 2
 			: top + (overscan ? Math.min(0, (height - displayHeight) / 2) : 0);
 		this.canvas.style.width = `${displayWidth}px`;
 		this.canvas.style.height = `${displayHeight}px`;
@@ -167,34 +190,25 @@ export class BrowserVideoOutput implements VideoOutput {
 	}
 
 	public dispose(): void {
-		if (this.layoutAnimationFrameId) window.cancelAnimationFrame(this.layoutAnimationFrameId);
-		this.layoutAnimationFrameId = 0;
 		this.resizeObserver.disconnect();
 		this.resolutionQuery.removeEventListener('change', this.onResolutionChange);
-		window.removeEventListener('resize', this.scheduleLayout);
-		window.removeEventListener('scroll', this.scheduleLayout, true);
-		window.removeEventListener('orientationchange', this.scheduleLayout);
+		window.removeEventListener('resize', this.invalidateLayout);
+		window.removeEventListener('scroll', this.invalidateLayout, true);
+		window.removeEventListener('orientationchange', this.invalidateLayout);
 		if (this.visualViewport) {
-			this.visualViewport.removeEventListener('resize', this.scheduleLayout);
-			this.visualViewport.removeEventListener('scroll', this.scheduleLayout);
+			this.visualViewport.removeEventListener('resize', this.invalidateLayout);
+			this.visualViewport.removeEventListener('scroll', this.invalidateLayout);
 		}
 		this.controlView?.dispose();
 		this.geometry.dispose();
 	}
 
-	private readonly scheduleLayout = (): void => {
-		if (!this.layoutAnimationFrameId) this.layoutAnimationFrameId = window.requestAnimationFrame(this.runScheduledLayout);
-	};
+	private readonly invalidateLayout = (): void => { this.layoutPending = true; };
 
 	private readonly onResolutionChange = (): void => {
 		this.resolutionQuery.removeEventListener('change', this.onResolutionChange);
 		this.resolutionQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
 		this.resolutionQuery.addEventListener('change', this.onResolutionChange);
-		this.scheduleLayout();
-	};
-
-	private readonly runScheduledLayout = (): void => {
-		this.layoutAnimationFrameId = 0;
-		this.refreshLayout();
+		this.invalidateLayout();
 	};
 }

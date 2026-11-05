@@ -1,4 +1,3 @@
-import type { FrameLoop } from '../common/frame_loop';
 import type { HostClock } from '../common/clock';
 
 export class BrowserHostClock implements HostClock {
@@ -34,31 +33,6 @@ export class BrowserHostClock implements HostClock {
 				window.clearTimeout(id);
 			},
 			isActive: () => active,
-		};
-	}
-}
-
-export class BrowserFrameLoop implements FrameLoop {
-	start(tick: (t: number) => void): { stop(): void } {
-		let req = 0;
-		let alive = true;
-		const loop = (t: number) => {
-			if (!alive) return;
-			tick(t);
-			if (!alive) return;
-			// window.dispatchEvent(new Event('frame'));
-			req = window.requestAnimationFrame(loop);
-		};
-		req = window.requestAnimationFrame(loop);
-		return {
-			stop: () => {
-				if (!alive) return;
-				alive = false;
-				if (req !== 0) {
-					window.cancelAnimationFrame(req);
-					req = 0;
-				}
-			},
 		};
 	}
 }

@@ -153,9 +153,11 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 		renderer.endFrame();
 		presenter.present(machine.gxGpu.readDeviceOutput(), clock.now() / 1000, 0.02);
 		publish();
+		display.finishFrame();
 		healthy();
 	};
 	const step = () => {
+		display.prepareFrame();
 		clock.advance(20);
 		editorRuntimeState.currentTimeMs = clock.now();
 		hub.poll(clock.now());
@@ -218,6 +220,7 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 			renderer.endFrame();
 			presenter.present(machine.gxGpu.readDeviceOutput(), 0, 0.02);
 			publish();
+			display.finishFrame();
 			const state = passes.getState('host_overlay');
 			check(state.width === width && state.height === height, 'the presenter, not an editor viewport override, owns target dimensions');
 			check(state.overlayWidth === width && state.overlayHeight === height, 'commands retain the frame logical space');
@@ -248,6 +251,7 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 			}
 			presenter.present(machine.gxGpu.readDeviceOutput(), 0, 0.02);
 			publish();
+			display.finishFrame();
 			healthy();
 		},
 		clip,
@@ -259,6 +263,7 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 			presenter.hostOverlayQueue.publishOverlayFrame(frame);
 			presenter.present(machine.gxGpu.readDeviceOutput(), 0, 0.02);
 			publish();
+			display.finishFrame();
 			healthy();
 		},
 	};

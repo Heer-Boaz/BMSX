@@ -40,7 +40,9 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 	const backend = await createWebGPUBackend(canvas, adapter, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	const errors: string[] = [];
 	backend.device.addEventListener('uncapturederror', event => errors.push(event.error.message));
-	const presenter = initializeMachineVideoPresenter(runtime, new BrowserVideoOutput(canvas, null, 'fit'), backend);
+	const display = new BrowserVideoOutput(canvas, null, 'fit');
+	const presenter = initializeMachineVideoPresenter(runtime, display, backend);
+	display.refreshLayout();
 	presenter.crt_postprocessing_enabled = false;
 	let puller: AudioOutputPuller | null = null;
 	let audioFrames = 0;
@@ -76,9 +78,11 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 	let previousOldest = 0;
 	let minimumSpanCycles = runtime.timing.cpuHz * 36;
 	const frame = async () => {
+		display.prepareFrame();
 		const publishedSequence = presenter.gameFrameSequence;
 		clock.advance(runtime.timing.frameDurationMs);
 		runHostFrame(session, runtime, presenter, input, audioOutput, output, log, presentation, menu, clock.now());
+		display.finishFrame();
 		hostFrames += 1;
 		await new Promise<void>(resolve => setTimeout(resolve, 0));
 		if (rewind.seeking && !rewind.playing) require(presenter.gameFrameSequence === publishedSequence, 'seek reconstruction must retain the published game image');

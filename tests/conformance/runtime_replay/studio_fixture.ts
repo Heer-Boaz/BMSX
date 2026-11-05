@@ -124,8 +124,10 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const history = runtime.history;
 	const cycles = () => runtime.machine.scheduler.currentNowCycles();
 	const frame = async () => {
+		display.prepareFrame();
 		clock.advance(runtime.timing.frameDurationMs);
 		runWorkbenchHostFrame(session, runtime, presenter, input, audio, output, log, ide, screen, menu, clock.now());
+		display.finishFrame();
 		textInput?.refresh();
 		if (ide.editor.isActive) {
 			const viewport = ide.overlayRenderer.viewportSize;
