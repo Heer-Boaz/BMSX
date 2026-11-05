@@ -16,7 +16,7 @@ import { runtimeWorld, type ActorNode } from './runtime';
 import { ActorStateGraph } from './state_graph';
 import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
 import { ActorProjection } from './projection';
-import { actorTargetsEqual, captureActorTarget, resolveActorTarget, type ActorTarget } from './target';
+import { actorTargetsEqual, captureActorTarget, resolveActorPath, type ActorTarget } from './target';
 import type { ActorExecutionService } from './execution';
 import { ActorLabNavigationSelection } from './navigation_selection';
 import type { ActorRenderFrames } from './render_frames';
@@ -118,7 +118,7 @@ export class ActorLabController {
 			changed = this.projection.update(); input.dirty = false;
 		}
 		if (input.presentation === 'outline' && input.actorPresent && input.follow.pending !== undefined) {
-			const scope = resolveActorTarget(input.runtime.roots, input.follow.pending, this.guest);
+			const scope = resolveActorPath(input.runtime.roots, input.follow.pending.path);
 			if (scope !== undefined) changed = this.projection.revealActive(scope) || changed;
 			input.follow.pending = undefined;
 		}
@@ -155,12 +155,12 @@ export class ActorLabController {
 		input.dirty = true;
 		this.refresh(input);
 		if (available && input.actorPresent) {
-			const node = resolveActorTarget(input.runtime.roots, target!, this.guest);
+			const node = resolveActorPath(input.runtime.roots, target!.path);
 			if (node !== undefined) this.projection.reveal(node);
 			else { input.outline.selectionIndex = -1; input.selectionPath = target!.path.length === 0 ? undefined : target!.path; }
 			if (selection.graph !== undefined) {
 				const graph = previousGraph?.matchesTarget(selection.graph.target) ? previousGraph : new ActorStateGraph(selection.graph.target, font);
-				graph.refresh(input.runtime.roots, this.guest);
+				graph.refresh(input.runtime.roots);
 				graph.layout(font);
 				graph.restoreSelection(target!.path.length === 0 ? undefined : target, selection.graph.kind);
 				input.stateGraph = graph;
@@ -176,7 +176,7 @@ export class ActorLabController {
 	public activityScope(input: ActorLabInput): ActorTarget | undefined {
 		const selected = this.selected(input);
 		if (selected === undefined) return;
-		const target = captureActorTarget(input.domain, runtimeWorld(this.sources, this.guest, input.domain)!.hashId, input.runtime.roots, selected, this.guest);
+		const target = captureActorTarget(input.domain, runtimeWorld(this.sources, this.guest, input.domain)!.hashId, input.runtime.roots, selected);
 		let length = target.path.length;
 		if (selected.kind === 'state') while (target.path[length - 1].kind !== 'machine') length--;
 		else if (selected.kind === 'timeline' || selected.kind === 'effect') length--;
@@ -202,17 +202,17 @@ export class ActorLabController {
 		if (input.dirty || !input.actorPresent) return undefined;
 		if (input.inspection === 'outline') return input.selectedOutlineNode;
 		const target = input.stateGraph!.selectedTarget;
-		return target === undefined ? undefined : resolveActorTarget(input.runtime.roots, target, this.guest);
+		return target === undefined ? undefined : resolveActorPath(input.runtime.roots, target.path);
 	}
 
 	public openStateGraph(input: ActorLabInput, font: BFont): boolean {
 		const selected = this.selected(input)!;
-		const target = captureActorTarget(input.domain, runtimeWorld(this.sources, this.guest, input.domain)!.hashId, input.runtime.roots, selected, this.guest);
+		const target = captureActorTarget(input.domain, runtimeWorld(this.sources, this.guest, input.domain)!.hashId, input.runtime.roots, selected);
 		let length = target.path.length;
 		while (target.path[length - 1].kind !== 'machine') length--;
 		const machineTarget = { ...target, path: target.path.slice(0, length) };
 		if (input.stateGraph === undefined || !input.stateGraph.matchesTarget(machineTarget)) input.stateGraph = new ActorStateGraph(machineTarget, font);
-		input.stateGraph.refresh(input.runtime.roots, this.guest);
+		input.stateGraph.refresh(input.runtime.roots);
 		input.stateGraph.layout(font);
 		const previous = input.stateGraph.selectedTarget;
 		input.stateGraph.selectTarget(target);
@@ -228,7 +228,7 @@ export class ActorLabController {
 		const target = input.stateGraph!.selectedTarget;
 		input.inspection = 'outline';
 		if (target !== undefined) {
-			const selected = resolveActorTarget(input.runtime.roots, target, this.guest);
+			const selected = resolveActorPath(input.runtime.roots, target.path);
 			if (selected !== undefined) this.projection.reveal(selected);
 		} else if (input.stateGraph!.status === 'available') {
 			input.outline.selectionIndex = -1;
@@ -293,7 +293,7 @@ export class ActorLabController {
 		input.domain = target.domain; input.actorHashId = target.actorHashId;
 		input.selectionPath = undefined; input.dirty = true;
 		this.refresh(input);
-		this.projection.reveal(resolveActorTarget(input.runtime.roots, target, this.guest)!);
+		this.projection.reveal(resolveActorPath(input.runtime.roots, target.path)!);
 		input.detailsSelection = { kind: 'property', identity: item.watch!.property };
 	}
 

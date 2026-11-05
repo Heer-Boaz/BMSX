@@ -20,7 +20,7 @@ import { captureActorDetailsSelection } from '../../ide/workbench/contrib/actor_
 import { ActorProjection, readActorChoices } from '../../ide/workbench/contrib/actor_lab/projection';
 import { createActorMemberChoices } from '../../ide/workbench/contrib/actor_lab/member_choices';
 import { ActorRuntimeInspection } from '../../ide/workbench/contrib/actor_lab/runtime_inspection';
-import { captureActorTarget, resolveActorPath, resolveActorTarget } from '../../ide/workbench/contrib/actor_lab/target';
+import { captureActorTarget, resolveActorPath } from '../../ide/workbench/contrib/actor_lab/target';
 import { WorkspaceRuntimeTools } from '../../ide/workbench/services/assistant/runtime_tools';
 import { decodeActorToolRequest } from '../../ide/workbench/services/assistant/actor_tool_protocol';
 import { parseLuaChunk, runCompletionClosure } from './cpu_test_harness';
@@ -307,7 +307,7 @@ test('Actor Lab pin and reveal commands keep watch selection separate and return
 	controller.revealPinnedProperty(input, pin.item); controller.refreshDetails(input);
 	assert.deepEqual(captureChanges, [true, false], 'controller navigation publishes capture admission without polling the pane');
 	assert.equal(input.interaction.running, false); assert.equal(input.presentation, 'outline'); assert.equal(input.actorHashId, choices[0].hashId);
-	assert.ok(controller.selected(input) === resolveActorTarget(input.runtime.roots, pin.target, f.guest));
+	assert.ok(controller.selected(input) === resolveActorPath(input.runtime.roots, pin.target.path));
 	assert.deepEqual(input.selectionPath, pin.target.path);
 	assert.deepEqual(input.detailsSelection, { kind: 'property', identity: pin.property });
 	const revealed = input.details!.items.find(item => item.watch === undefined && item.label === 'INSTANCE DATA')!;
@@ -707,10 +707,10 @@ return world`));
 	input.domain = choice.domain; input.actorHashId = choice.hashId;
 	const projection = new ActorProjection(input, f.sources, f.guest); projection.update();
 	const machine = input.runtime.roots[0].children[0].children[0], font = new Font({ variant: 'tiny' });
-	const target = captureActorTarget(-1, runtimeWorld(f.sources, f.guest, -1)!.hashId, input.runtime.roots, machine, f.guest);
+	const target = captureActorTarget(-1, runtimeWorld(f.sources, f.guest, -1)!.hashId, input.runtime.roots, machine);
 	const graph = input.stateGraph = new ActorStateGraph(target, font);
 	const cpu = f.runtime.machine.cpu, heap = cpu.luaHeap.usedBytes(), alive = cpu.captureRuntimeState();
-	graph.refresh(input.runtime.roots, f.guest); graph.layout(font);
+	graph.refresh(input.runtime.roots); graph.layout(font);
 	const model = graph.viewport.model, nodes = model.nodes, active = nodes.map(node => node.active);
 	assert.equal(nodes.length, 3); assert.equal(model.edges.length, 2);
 	assert.ok(nodes.every(node => node.active), 'main and concurrent child follow their active ancestor');
@@ -734,7 +734,7 @@ return world`));
 	graph.viewport.selection = model.edges[0];
 	graph.layout(new Font({ variant: 'msx' }));
 	assert.equal(graph.viewport.selection!.kind, 'edge');
-	assert.equal(resolveActorTarget(input.runtime.roots, graph.selectedTarget!, f.guest)!.hashId, nodes[1].hashId, 'font relayout preserves the selected physical relationship');
+	assert.equal(resolveActorPath(input.runtime.roots, graph.selectedTarget!.path)!.hashId, nodes[1].hashId, 'font relayout preserves the selected physical relationship');
 	input.invalidate(); f.guest.invalidate();
 	runCompletionClosure(cpu, f.guest.global('rename_machine') as Closure, []); projection.update(); graph.layout(font);
 	assert.equal(graph.status, 'missing'); assert.ok(graph.selectedTarget === undefined);
@@ -758,16 +758,16 @@ return world`));
 	input.domain = choice.domain; input.actorHashId = choice.hashId;
 	const projection = new ActorProjection(input, f.sources, f.guest); projection.update();
 	const machine = input.runtime.roots[0].children[0].children[0], font = new Font({ variant: 'tiny' });
-	const target = captureActorTarget(-1, runtimeWorld(f.sources, f.guest, -1)!.hashId, input.runtime.roots, machine, f.guest);
+	const target = captureActorTarget(-1, runtimeWorld(f.sources, f.guest, -1)!.hashId, input.runtime.roots, machine);
 	const graph = input.stateGraph = new ActorStateGraph(target, font);
-	graph.refresh(input.runtime.roots, f.guest); graph.layout(font);
+	graph.refresh(input.runtime.roots); graph.layout(font);
 	const nodes = graph.viewport.model.nodes;
 	const idle = nodes.find(node => node.name === 'idle')!, alias = nodes.find(node => node.name === 'alias')!;
 	assert.equal(idle.hashId, alias.hashId);
 	assert.equal(idle.active, true); assert.equal(alias.active, false);
 	graph.viewport.selection = alias;
 	const selected = graph.selectedTarget!;
-	assert.ok(resolveActorTarget(input.runtime.roots, selected, f.guest) === machine.children.find(node => node.name === 'alias'));
+	assert.ok(resolveActorPath(input.runtime.roots, selected.path) === machine.children.find(node => node.name === 'alias'));
 	graph.layout(new Font({ variant: 'msx' }));
 	assert.ok(graph.selectedTarget === selected);
 	input.dispose();
@@ -785,11 +785,11 @@ return world`));
 	input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId;
 	const projection = new ActorProjection(input, f.sources, f.guest); projection.update();
 	const machine = input.runtime.roots[0].children[0].children[0], cpu = f.runtime.machine.cpu;
-	const target = captureActorTarget(-1, runtimeWorld(f.sources, f.guest, -1)!.hashId, input.runtime.roots, machine, f.guest);
+	const target = captureActorTarget(-1, runtimeWorld(f.sources, f.guest, -1)!.hashId, input.runtime.roots, machine);
 	const graph = input.stateGraph = new ActorStateGraph(target, new Font({ variant: 'tiny' }));
-	graph.refresh(input.runtime.roots, f.guest); graph.layout(new Font({ variant: 'tiny' }));
+	graph.refresh(input.runtime.roots); graph.layout(new Font({ variant: 'tiny' }));
 	graph.viewport.selection = graph.viewport.model.nodes.find(node => node.name === 'idle')!;
-	const selected = resolveActorTarget(input.runtime.roots, graph.selectedTarget!, f.guest)!;
+	const selected = resolveActorPath(input.runtime.roots, graph.selectedTarget!.path)!;
 	assert.equal(machine.children.filter(node => node.hashId === selected.hashId).length, 2);
 	projection.reveal(selected);
 	const row = input.outline.rows[input.outline.selectionIndex];
@@ -874,7 +874,13 @@ test('tree paging and repeated detail reads do not repeat semantic traversal or 
 });
 
 test('operation identities preserve guest tags and typed membership without retaining borrowed nodes', t => {
-	const f = fixture(t); resources.add(f.stop);
+	const f = fixture(t, ENTRY.replace('return world', `function rekey()
+	local machine = probe._components[1]._machines[1]
+	machine.states[1] = machine.states.concurrent
+	machine.states.concurrent = nil
+	machine.state_ids = { 'idle', 1 }
+end
+return world`)); resources.add(f.stop);
 	const cpu = f.runtime.machine.cpu, guest = f.guest;
 	const candidates: Value[] = [null, false, true, 1, valueString(cpu.stringPool.intern('1')),
 		guest.global('probe'), guest.global('rename'), cpu.activeThread, createBuiltinFunction(BuiltinFunctionId.Type)];
@@ -886,22 +892,82 @@ test('operation identities preserve guest tags and typed membership without reta
 	input.domain = -1; input.actorHashId = choices[0].hashId;
 	const projection = new ActorProjection(input, f.sources, guest); projection.update();
 	const selected = input.runtime.roots[0].children[0].children[0].children[0];
-	const target = captureActorTarget(-1, 123, input.runtime.roots, selected, guest);
+	const target = captureActorTarget(-1, 123, input.runtime.roots, selected);
 	const original = JSON.stringify(target);
-	assert.ok(resolveActorTarget(input.runtime.roots, target, guest) === selected);
+	assert.ok(resolveActorPath(input.runtime.roots, target.path) === selected);
 	input.runtime.roots[0].children.reverse();
-	assert.ok(resolveActorTarget(input.runtime.roots, target, guest) === selected, 'membership is independent of sibling order');
-	selected.key = 1;
-	assert.ok(resolveActorTarget(input.runtime.roots, target, guest) === undefined, 'another typed key cannot retarget a retained request');
-	input.invalidate(); guest.invalidate();
+	assert.ok(resolveActorPath(input.runtime.roots, target.path) === selected, 'membership is independent of sibling order');
+	assert.equal(cpu.luaHeap.usedBytes(), heap, 'identity capture and discovery allocate no guest values');
+	const before = cpu.captureRuntimeState();
+	input.invalidate(); runCompletionClosure(cpu, guest.global('rekey') as Closure, []); projection.update();
+	assert.ok(resolveActorPath(input.runtime.roots, target.path) === undefined, 'another typed key cannot retarget a retained request');
+	input.invalidate('history-restored'); guest.invalidate(); cpu.restoreRuntimeState(before);
 	assert.equal(JSON.stringify(target), original, 'clearing borrowed nodes cannot alter the scalar operation target');
 	projection.update();
-	assert.equal(resolveActorTarget(input.runtime.roots, target, guest)!.hashId, selected.hashId);
-	runCompletionClosure(cpu, guest.global('rename') as Closure, []);
+	assert.equal(resolveActorPath(input.runtime.roots, target.path)!.hashId, selected.hashId);
+	input.invalidate(); runCompletionClosure(cpu, guest.global('rename') as Closure, []);
 	projection.update();
-	assert.ok(resolveActorTarget(input.runtime.roots, target, guest) === undefined, 'renamed membership must be selected again');
-	assert.equal(cpu.luaHeap.usedBytes(), heap, 'identity capture and discovery allocate no guest values');
+	assert.ok(resolveActorPath(input.runtime.roots, target.path) === undefined, 'renamed membership must be selected again');
 	input.dispose();
+});
+
+test('actor target capture consumes retained typed identity after guest borrows expire', t => {
+	const f = fixture(t); resources.add(f.stop);
+	const input = f.controller.resolveInput();
+	const actor = readActorChoices(f.sources, f.guest, -1)[0];
+	f.controller.inspectActor(input, actor.domain, actor.hashId);
+	const selected = input.runtime.roots[0].children[0].children[0];
+	const target = captureActorTarget(-1, input.worldHashId!, input.runtime.roots, selected);
+	input.invalidate();
+	assert.ok(selected.value === null && selected.key === null);
+	const retained = captureActorTarget(-1, input.worldHashId!, input.runtime.roots, selected);
+	assert.deepEqual(retained, target, 'a released value is not a nil membership key');
+	f.controller.projection.reveal(selected);
+	assert.deepEqual(input.details!.subject!.path, target.path, 'Details follows retained membership without formatting live properties');
+	assert.ok(f.controller.inspected(input) === undefined);
+});
+
+test('retained actor selection cannot cache a false absence between runtime acquisitions', t => {
+	const f = fixture(t); resources.add(f.stop);
+	const input = f.controller.resolveInput();
+	const actor = readActorChoices(f.sources, f.guest, -1)[0];
+	f.controller.inspectActor(input, actor.domain, actor.hashId);
+	const selected = input.runtime.roots[0].children[0].children[0];
+	f.controller.projection.reveal(selected);
+	const topology = input.runtime.topologyRevision, path = input.selectionPath;
+	input.invalidate();
+	assert.ok(f.controller.inspected(input) === undefined, 'actions cannot use an expired runtime acquisition');
+	assert.ok(input.selectedOutlineNode === selected, 'retained membership is independent of borrowed values');
+	assert.ok(selected.value === null);
+	f.controller.refresh(input);
+	assert.equal(input.runtime.topologyRevision, topology);
+	assert.ok(input.selectionPath === path && f.controller.inspected(input) === selected);
+	assert.ok(selected.value !== null);
+});
+
+test('FSM graph and follow projections consume retained membership without guest values', t => {
+	const f = fixture(t); resources.add(f.stop);
+	const input = f.controller.resolveInput();
+	const actor = readActorChoices(f.sources, f.guest, -1)[0];
+	f.controller.inspectActor(input, actor.domain, actor.hashId);
+	const machine = input.runtime.roots[0].children[0].children[0];
+	const target = captureActorTarget(-1, input.worldHashId!, input.runtime.roots, machine);
+	const font = new Font({ variant: 'tiny' }), graph = new ActorStateGraph(target, font);
+	input.follow.start(target);
+	input.invalidate();
+	graph.refresh(input.runtime.roots); graph.layout(font);
+	input.follow.refresh(input.runtime, false);
+	assert.equal(graph.status, 'available');
+	assert.equal(graph.viewport.model.nodes.length, machine.children.length + 1);
+	assert.ok(input.follow.pending === target);
+	for (const node of graph.viewport.model.nodes) {
+		const resolved = resolveActorPath(input.runtime.roots, node.target.path);
+		assert.equal(resolved?.hashId, node.hashId);
+		assert.ok(resolved!.value === null, 'projection does not acquire the guest');
+	}
+	const nodes = graph.viewport.model.nodes;
+	f.controller.refresh(input); graph.refresh(input.runtime.roots); graph.layout(font);
+	assert.ok(graph.viewport.model.nodes === nodes, 'reacquisition does not recreate the retained graph');
 });
 
 test('operation discovery is read-only and rejects absent actions, methods and executable arguments', t => {
@@ -1043,7 +1109,7 @@ test('explicit Actor Lab navigation reveals a retained child through collapsed a
 	assert.equal(projection.reveal(selected.element.node), true);
 	assert.ok(input.outline.rows[input.outline.selectionIndex] === selected);
 	assert.equal(root.collapsed, false); assert.equal(root.children[0].collapsed, false);
-	assert.ok(resolveActorPath(input.runtime.roots, input.selectionPath!, f.guest) === selected.element.node);
+	assert.ok(resolveActorPath(input.runtime.roots, input.selectionPath!) === selected.element.node);
 	input.invalidate(); f.guest.invalidate('execution'); projection.update();
 	assert.ok(input.outline.rows[input.outline.selectionIndex] === selected);
 	input.dispose();
@@ -1064,10 +1130,9 @@ return world`));
 	const path = input.selectionPath, root = input.outline.roots[0], alive = cpu.captureRuntimeState();
 	setWorkbenchTreeCollapsed(input.outline, 0, true);
 	assert.ok(input.selectedOutlineNode === selected);
-	const match = t.mock.method(f.guest, 'matchesIdentity');
-	match.mock.resetCalls();
+	const walk = input.runtime.roots[Symbol.iterator] = t.mock.fn(input.runtime.roots[Symbol.iterator]);
 	for (let frame = 0; frame < 1000; frame++) assert.ok(input.selectedOutlineNode === selected);
-	assert.equal(match.mock.callCount(), 0, 'unchanged selection reads do not traverse membership or guest values');
+	assert.equal(walk.mock.callCount(), 0, 'unchanged selection reads do not traverse retained membership');
 	input.invalidate();
 	assert.ok(selected.value === null, 'the selection cache cannot keep a guest borrow alive');
 	runCompletionClosure(cpu, f.guest.global('add') as Closure, []);
@@ -1326,7 +1391,7 @@ return world`));
 	input.rememberSelection();
 	const machineRow = outline.rows.find(row => row.element.node === machine)!;
 	machineRow.collapsed = true;
-	const target = captureActorTarget(-1, runtimeWorld(f.sources, f.guest, -1)!.hashId, input.runtime.roots, machine, f.guest);
+	const target = captureActorTarget(-1, runtimeWorld(f.sources, f.guest, -1)!.hashId, input.runtime.roots, machine);
 	input.follow.start(target);
 	projection.update();
 	assert.equal(projection.revealActive(machine), true);
@@ -1388,7 +1453,7 @@ test('historical actor absence keeps collapse and follow bookmarks but heap repl
 	const row = input.outline.rows.find(row => row.element.node === machine)!;
 	row.collapsed = true;
 	input.outline.selectionIndex = input.outline.rows.indexOf(row); input.rememberSelection();
-	const target = captureActorTarget(-1, runtimeWorld(f.sources, f.guest, -1)!.hashId, input.runtime.roots, machine, f.guest);
+	const target = captureActorTarget(-1, runtimeWorld(f.sources, f.guest, -1)!.hashId, input.runtime.roots, machine);
 	input.follow.start(target);
 	const alive = cpu.captureRuntimeState();
 	input.invalidate('history-restored'); cpu.restoreRuntimeState(beforeBirth); projection.update();

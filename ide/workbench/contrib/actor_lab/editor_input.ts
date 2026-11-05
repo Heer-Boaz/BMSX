@@ -79,13 +79,13 @@ export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab
 		this.selectionListeners.add(listener);
 		return () => this.selectionListeners.delete(listener);
 	}
-	/** Read after acquiring the tree. Resolve only on selection/topology changes; the runtime owns the borrows. */
+	/** Retained identity resolves only on selection/topology changes, independently of the runtime's guest borrows. */
 	public get selectedOutlineNode(): ActorNode | undefined {
 		if (this.resolvedSelectionPath !== this.selectionPath || this.selectionTopology !== this.runtime.topologyRevision) {
 			this.resolvedSelectionPath = this.selectionPath;
 			this.selectionTopology = this.runtime.topologyRevision;
 			this.selectionNode = this.selectionPath === undefined ? undefined
-				: resolveActorPath(this.runtime.roots, this.selectionPath, this.controller.guest);
+				: resolveActorPath(this.runtime.roots, this.selectionPath);
 		}
 		return this.selectionNode;
 	}

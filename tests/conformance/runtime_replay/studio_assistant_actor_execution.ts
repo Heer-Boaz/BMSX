@@ -1,7 +1,7 @@
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { ActorRuntimeInspection } from '../../../ide/workbench/contrib/actor_lab/runtime_inspection';
-import { resolveActorTarget } from '../../../ide/workbench/contrib/actor_lab/target';
+import { resolveActorPath } from '../../../ide/workbench/contrib/actor_lab/target';
 import { ActorRuntimeTree, findRuntimeActor } from '../../../ide/workbench/contrib/actor_lab/runtime';
 import type { Table } from '../../../machine/ts/machine/cpu/table';
 import { ACTOR_EXECUTION_SOURCE } from '../../helpers/actor_tools_fixture';
@@ -24,10 +24,12 @@ export async function runAssistantActorExecution(kind: StudioRendererKind, canva
 	await press('ControlRight', 'ShiftRight'); await test.runMenuCommand('pause');
 	source.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- live tools must not install this dirty source\n' }]);
 	const version = source.version, media = ide.sources.currentBlua32Media;
-	await runPaletteCommand('Game: Inspect'); await press('ArrowDown'); await press('Enter'); await frame();
+	await runPaletteCommand('Game: Inspect');
+	await runPaletteCommand('Actor Lab: Select Running Actor'); await press('ArrowDown'); await press('Enter'); await frame();
+	await runPaletteCommand('Actor Lab: Inspect Actor Components and Behaviors');
 	const lab = ide.editor.editorParts.activeGroup.model.activeTab; if (lab.kind !== 'actor_lab') throw new Error('Actor Lab required');
 	const selection = lab.actorHashId;
-	check(lab.runtime.roots[0].label === 'second', 'manual Actor Lab selects a different instance from the tool request');
+	check(selection === (guest.global('actor_tool_second') as Table).hashId, 'manual Actor Lab selects a different instance from the tool request');
 	await runPaletteCommand('View: Codex Assistant');
 	const view = ide.editor.editorParts.activeGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant required');
 	const conversation = ide.editor.assistant;
@@ -50,7 +52,7 @@ export async function runAssistantActorExecution(kind: StudioRendererKind, canva
 	await runPaletteCommand('View: Codex Assistant');
 	await renderer.capture!('conversation');
 	await test.clickTab(lab.id); await frame();
-	check(lab.actorHashId === selection && lab.runtime.roots[0].label === 'second', 'tool execution never steals the manual actor selection');
+	check(lab.actorHashId === selection && lab.runtime.roots[0].hashId === selection, 'tool execution never steals the manual actor selection');
 	await renderer.capture!('manual-selection');
 	await runPaletteCommand('View: Codex Assistant');
 	await submitAssistantText(test, 'Run the bounded long actor method until I press Stop.');
@@ -143,7 +145,7 @@ export async function runAssistantActorExecution(kind: StudioRendererKind, canva
 	const request = actors.invocation(timeline.reference, 'action', 'scrub_time', '0');
 	if (request.kind !== 'action') throw new Error('Action request required');
 	const tree = new ActorRuntimeTree(); tree.update(ide.sources, guest, 0, findRuntimeActor(ide.sources, guest, 0, request.target.actorHashId));
-	const program = (guest.readStringMember(resolveActorTarget(tree.roots, request.target, guest)!.value, 'program') as Table).hashId;
+	const program = (guest.readStringMember(resolveActorPath(tree.roots, request.target.path)!.value, 'program') as Table).hashId;
 	stop.dispose(); tree.dispose();
 	const scrub = service.start({ kind: 'scrub', target: request.target, programHashId: program, time: 0 });
 	await settle('Actor execution: stale slider program is rejected');

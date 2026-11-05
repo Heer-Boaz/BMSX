@@ -16,7 +16,7 @@ import type { PreparedLuaLiteral } from '../../../runtime/lua_literal';
 import { readRuntimeLuaModuleCapture, readRuntimeLuaModuleExport } from '../../../runtime/lua_inspection';
 import type { ResourceDomain } from '../../../common/resource';
 import { ActorRuntimeTree, findRuntimeActor, runtimeWorld } from './runtime';
-import { resolveActorTarget, type ActorTarget } from './target';
+import { resolveActorPath, type ActorTarget } from './target';
 import { actorActions } from './operations';
 
 export type ActorInvocation =
@@ -206,7 +206,7 @@ export class ActorExecutionService {
 		}
 		const { target } = request, tree = this.tree;
 		tree.update(this.sources, guest, target.domain, findRuntimeActor(this.sources, guest, target.domain, target.actorHashId));
-		const node = resolveActorTarget(tree.roots, target, guest);
+		const node = resolveActorPath(tree.roots, target.path);
 		if (node === undefined) return;
 		let receiver = request.kind === 'method' ? node.value! : node.receiver!;
 		let method: string;

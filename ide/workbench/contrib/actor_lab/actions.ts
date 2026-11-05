@@ -40,7 +40,7 @@ export class ActorLabEditorActions {
 			input.interaction.running = false; input.dirty = true;
 			controller.refresh(input);
 			const effect = input.runtime.roots[0]?.children.find(node => node.hashId === componentHashId)?.children
-				.find(node => node.hashId === effectHashId && controller.guest.matchesIdentity(node.key, key));
+				.find(node => node.hashId === effectHashId && node.keyIdentity.tag === key.tag && node.keyIdentity.scalar === key.scalar);
 			if (effect === undefined) { showEditorMessage('Effect owner is not a mounted world actor.', 'info', 4); return; }
 			controller.projection.reveal(effect);
 			this.actions(input, effect);
@@ -110,7 +110,7 @@ export class ActorLabEditorActions {
 	public play(input: ActorLabInput): void {
 		const controller = input.controller, transport = controller.viewport.transport;
 		const node = controller.selected(input)!, action = actorActions(node).find(action => action.playback)!;
-		const target = captureActorTarget(input.domain, input.worldHashId!, input.runtime.roots, node, controller.guest);
+		const target = captureActorTarget(input.domain, input.worldHashId!, input.runtime.roots, node);
 		const presentation = input.presentation, path = input.selectionPath, graph = input.stateGraph, graphSelection = graph?.selectedTarget;
 		const revision = transport.execution.revision, context = this.origin.scope.contextGeneration;
 		let operation: ActorExecutionOperation | undefined;
@@ -132,7 +132,7 @@ export class ActorLabEditorActions {
 	}
 	public scrub(input: ActorLabInput, node: ActorNode, time: number, programHashId: number, current: () => boolean, finished: (completed: boolean) => void): void {
 		const controller = input.controller;
-		const target = captureActorTarget(input.domain, runtimeWorld(controller.sources, controller.guest, input.domain)!.hashId, input.runtime.roots, node, controller.guest);
+		const target = captureActorTarget(input.domain, runtimeWorld(controller.sources, controller.guest, input.domain)!.hashId, input.runtime.roots, node);
 		this.run(input, { kind: 'scrub', target, time, programHashId }, result => finished(result.status === 'completed'), current);
 	}
 
@@ -164,7 +164,7 @@ export class ActorLabEditorActions {
 	public actions(input: ActorLabInput, node: ActorNode): void {
 		const controller = input.controller;
 		input.interaction.running = false;
-		const target = captureActorTarget(input.domain, runtimeWorld(controller.sources, controller.guest, input.domain)!.hashId, input.runtime.roots, node, controller.guest);
+		const target = captureActorTarget(input.domain, runtimeWorld(controller.sources, controller.guest, input.domain)!.hashId, input.runtime.roots, node);
 		const items = actorActions(node).map(action => ({ ...action, detail: '' }));
 		this.quickInput.pick(`ACTIONS / ${node.label}`, 'Changes the running instance, not its Lua source',
 			(_origin, lifetime) => {
@@ -183,7 +183,7 @@ export class ActorLabEditorActions {
 	public callMethod(input: ActorLabInput, node: ActorNode): void {
 		const controller = input.controller;
 		input.interaction.running = false;
-		const target = captureActorTarget(input.domain, runtimeWorld(controller.sources, controller.guest, input.domain)!.hashId, input.runtime.roots, node, controller.guest);
+		const target = captureActorTarget(input.domain, runtimeWorld(controller.sources, controller.guest, input.domain)!.hashId, input.runtime.roots, node);
 		this.quickInput.pick(`CALL / ${node.label}`, 'Stored Lua functions; selected instance is passed as self',
 			(_origin, lifetime) => {
 				lifetime.add({ dispose: controller.guest.onDidInvalidate(() => this.quickInput.hide()) });
@@ -202,7 +202,7 @@ export class ActorLabEditorActions {
 	public emitEvent(input: ActorLabInput, eventName = ''): void {
 		const controller = input.controller;
 		input.interaction.running = false;
-		const target = captureActorTarget(input.domain, runtimeWorld(controller.sources, controller.guest, input.domain)!.hashId, input.runtime.roots, input.runtime.roots[0], controller.guest);
+		const target = captureActorTarget(input.domain, runtimeWorld(controller.sources, controller.guest, input.domain)!.hashId, input.runtime.roots, input.runtime.roots[0]);
 		this.quickInput.input('EMIT FROM ACTOR', 'Event name', eventName, async text => text, name => {
 			this.quickInput.input(`PAYLOAD / ${name}`, 'Lua literal', '{}', async text => prepareLuaLiteral(text), payload => {
 				this.run(input, { kind: 'event', target, name, payload });

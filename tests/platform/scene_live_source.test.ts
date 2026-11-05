@@ -63,7 +63,7 @@ for (const pages of [1, 2]) test(`a visible initialized visual shares position h
 	// Sample the already initialized, seekable instance; no new Scene or controller.
 	controller.inspectActor(input, 0, actor.hashId); controller.refresh(input);
 	const timeline = input.runtime.roots[0].children.flatMap(node => node.children).find(node => node.kind === 'timeline')!;
-	const scrub = ide.actorExecution.start({ kind: 'scrub', target: captureActorTarget(0, input.worldHashId!, input.runtime.roots, timeline, ide.guest),
+	const scrub = ide.actorExecution.start({ kind: 'scrub', target: captureActorTarget(0, input.worldHashId!, input.runtime.roots, timeline),
 		programHashId: (ide.guest.readStringMember(timeline.value, 'program') as Table).hashId, time: 500 });
 	await f.until(() => scrub.result !== undefined);
 	assert.equal(scrub.result!.status, 'completed');
@@ -175,7 +175,7 @@ test('a controller-owned physical position rejects the live source write without
 	controller.inspectActor(input, 0, actor.hashId);
 	const moving = input.runtime.roots[0].children.flatMap(node => node.children).flatMap(node => node.children).find(node => node.name === 'moving')!;
 	const operation = ide.actorExecution.start({ kind: 'action', method: 'transition_to', args: [],
-		target: captureActorTarget(0, input.worldHashId!, input.runtime.roots, moving, ide.guest) });
+		target: captureActorTarget(0, input.worldHashId!, input.runtime.roots, moving) });
 	await f.until(() => operation.result !== undefined);
 	assert.equal(binding.authoring.captureLocalPosition()!.apply('x', 210), true);
 	await f.until(() => !binding.linked);

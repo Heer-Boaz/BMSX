@@ -13,7 +13,7 @@ import { SuspendedGuestSession, type GuestInvalidationReason } from '../../ide/r
 import { ActorDetails, actorDetailsPropertiesEqual, actorDetailsPropertyMatchesSelection, captureActorDetailsSelection } from '../../ide/workbench/contrib/actor_lab/details';
 import { inspectActorNode } from '../../ide/workbench/contrib/actor_lab/inspection';
 import { ActorRuntimeTree, findRuntimeActor, runtimeWorld, type ActorNode } from '../../ide/workbench/contrib/actor_lab/runtime';
-import { captureActorTarget, resolveActorTarget } from '../../ide/workbench/contrib/actor_lab/target';
+import { captureActorTarget, resolveActorPath } from '../../ide/workbench/contrib/actor_lab/target';
 import { BehaviorRuntimeProperties, runtimePropertyIdentitiesEqual, type RuntimeInspectionProperty } from '../../ide/workbench/contrib/behavior_lens/runtime_properties';
 import { parseLuaChunk, runCompletionClosure } from './cpu_test_harness';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
@@ -108,7 +108,7 @@ function fixture(worldSource = WORLD) {
 	const actorHashId = (objects.getInteger(1) as Table).hashId, otherHashId = (objects.getInteger(2) as Table).hashId;
 	const update = (hashId = actorHashId) => tree.update(sources, guest, -1, findRuntimeActor(sources, guest, -1, hashId));
 	update();
-	const target = captureActorTarget(-1, world.hashId, tree.roots, tree.roots[0], guest);
+	const target = captureActorTarget(-1, world.hashId, tree.roots, tree.roots[0]);
 	const invalidate = (reason: GuestInvalidationReason = 'execution') => { tree.release(); guest.invalidate(reason); details.invalidate(reason); };
 	const execute = (name: string) => { invalidate(); runCompletionClosure(cpu, guest.global(name) as Closure, []); update(); };
 	return { cpu, runtime, sources, guest, tree, details, target, update, invalidate, execute, beforeBirth, actorHashId, otherHashId };
@@ -181,7 +181,7 @@ test('locked Details owns an independent typed subject while tree navigation and
 	assert.equal(f.details.items.find(item => item.identity?.field === 'health')!.value, '0');
 	f.details.setLocked(true);
 	f.update(f.otherHashId);
-	const other = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, f.tree.roots[0], f.guest);
+	const other = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, f.tree.roots[0]);
 	f.details.followSelection(-1, f.target.worldHashId, f.otherHashId, other.path, f.tree);
 	f.details.refreshSubject(f.tree, -1, f.target.worldHashId, false);
 	assert.equal(f.details.subject, subject);
@@ -224,7 +224,7 @@ test('historical subject absence retains the path, but hidden live-branch admiss
 	f.details.refreshSubject(f.tree, -1, f.target.worldHashId, false);
 	assert.equal(f.details.retired, true); assert.equal(f.details.available, false); assert.equal(f.details.title, title);
 	f.details.setLocked(false);
-	const current = captureActorTarget(-1, runtimeWorld(f.sources, f.guest, -1)!.hashId, f.tree.roots, f.tree.roots[0], f.guest);
+	const current = captureActorTarget(-1, runtimeWorld(f.sources, f.guest, -1)!.hashId, f.tree.roots, f.tree.roots[0]);
 	f.details.followSelection(-1, current.worldHashId, f.actorHashId, current.path, f.tree);
 	f.details.refreshSubject(f.tree, -1, current.worldHashId, false);
 	assert.equal(f.details.retired, false); assert.equal(f.details.available, true, 'explicit unlock admits the now-selected new instance');
@@ -260,32 +260,32 @@ test('explicit selection changes refresh details without execution and mutable m
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	const document = f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false)!;
 	const component = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
-	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component, f.guest);
+	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component);
 	assert.strictEqual(f.details.refresh(component, target.path, f.tree, -1, f.target.worldHashId, false), document);
 	assert.deepEqual(capturePropertyDocument(document), capturePropertyDocument(inspectActorNode(f.sources, f.guest, component,
 		new BehaviorRuntimeProperties(f.sources, f.guest, undefined, 'summary'))));
 	const length = document.length;
 	f.execute('grow_component');
-	assert.strictEqual(f.details.refresh(resolveActorTarget(f.tree.roots, target, f.guest), target.path, f.tree, -1, f.target.worldHashId, false), document);
+	assert.strictEqual(f.details.refresh(resolveActorPath(f.tree.roots, target.path), target.path, f.tree, -1, f.target.worldHashId, false), document);
 	assert.equal(document.length, length + 1);
-	assert.deepEqual(capturePropertyDocument(document), capturePropertyDocument(inspectActorNode(f.sources, f.guest, resolveActorTarget(f.tree.roots, target, f.guest)!,
+	assert.deepEqual(capturePropertyDocument(document), capturePropertyDocument(inspectActorNode(f.sources, f.guest, resolveActorPath(f.tree.roots, target.path)!,
 		new BehaviorRuntimeProperties(f.sources, f.guest, undefined, 'summary'))));
 });
 
 test('details clears missing typed membership instead of borrowing an alias and reacquires history values', t => {
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	const state = f.tree.roots[0].children[0].children[0].children.find(node => node.key === 1)!;
-	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, state, f.guest);
+	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, state);
 	const document = f.details.refresh(state, target.path, f.tree, -1, f.target.worldHashId, false)!, before = capturePropertyDocument(document), alive = f.cpu.captureRuntimeState();
 	const originalValue = state.value;
 	f.execute('remove_numeric');
-	assert.equal(resolveActorTarget(f.tree.roots, target, f.guest), undefined);
+	assert.equal(resolveActorPath(f.tree.roots, target.path), undefined);
 	assert.strictEqual(f.details.refresh(undefined, target.path, f.tree, -1, f.target.worldHashId, false), document);
 	assert.ok(document.every(property => property.warning));
 	assert.ok(document.every(property => property.valueChanged === false));
 	assert.equal(f.details.refresh(undefined, target.path, f.tree, -1, f.target.worldHashId, false), undefined);
 	f.invalidate('history-restored'); f.cpu.restoreRuntimeState(alive); f.update();
-	const restored = resolveActorTarget(f.tree.roots, target, f.guest)!;
+	const restored = resolveActorPath(f.tree.roots, target.path)!;
 	assert.notStrictEqual(restored.value, originalValue);
 	assert.strictEqual(f.details.refresh(restored, target.path, f.tree, -1, f.target.worldHashId, false), document);
 	assert.deepEqual(capturePropertyDocument(document), before);
@@ -335,7 +335,7 @@ test('details marks changed displayed values across completed observations and r
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	assert.equal(health.valueChanged, true);
 	f.update(f.otherHashId);
-	const other = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, f.tree.roots[0], f.guest);
+	const other = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, f.tree.roots[0]);
 	f.details.refresh(f.tree.roots[0], other.path, f.tree, -1, f.target.worldHashId, false);
 	assert.equal(health.value, '23'); assert.ok(document.every(item => item.valueChanged === false));
 	f.execute('advance_gameplay_state'); f.update(f.otherHashId);
@@ -372,7 +372,7 @@ test('pins own their change baseline across selection, membership edits and hist
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	assert.equal(pin.item.valueChanged, true, 'pin membership edits are not runtime observations');
 	f.update(f.otherHashId);
-	const other = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, f.tree.roots[0], f.guest);
+	const other = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, f.tree.roots[0]);
 	f.details.refresh(f.tree.roots[0], other.path, f.tree, -1, f.target.worldHashId, false);
 	assert.equal(pin.item.valueChanged, true);
 	f.invalidate('history-restored'); f.cpu.restoreRuntimeState(initial); f.update(f.otherHashId);
@@ -394,7 +394,7 @@ test('pins retain independent row identities and filter a shared projection of a
 	assert.equal(actorDetailsPropertyMatchesSelection(health, captureActorDetailsSelection(healthPin.item)), false);
 	assert.strictEqual(f.details.watches.find(f.target, health.identity!), healthPin);
 	const component = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
-	const componentTarget = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component, f.guest);
+	const componentTarget = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component);
 	const actorData = f.guest.readStringMember(f.tree.roots[0].value, 'data');
 	let unpinnedFormats = 0;
 	const format = f.guest.formatStoredEntries.bind(f.guest);
@@ -407,12 +407,12 @@ test('pins retain independent row identities and filter a shared projection of a
 	assert.deepEqual(f.details.items.slice(0, 2), [healthPin.item, energyPin.item]);
 	const visit = t.mock.method(f.guest, 'visitTableEntries');
 	f.execute('advance_gameplay_state');
-	f.details.refresh(resolveActorTarget(f.tree.roots, componentTarget, f.guest), componentTarget.path, f.tree, -1, f.target.worldHashId, false);
+	f.details.refresh(resolveActorPath(f.tree.roots, componentTarget.path), componentTarget.path, f.tree, -1, f.target.worldHashId, false);
 	assert.equal(healthPin.item.value, '1'); assert.equal(energyPin.item.value, '2');
 	assert.equal(visit.mock.calls.filter(call => call.arguments[0] === f.tree.roots[0].value).length, 1,
 		'two same-node pins share one stored-field projection');
 	f.details.watches.remove(healthPin);
-	f.details.refresh(resolveActorTarget(f.tree.roots, componentTarget, f.guest), componentTarget.path, f.tree, -1, f.target.worldHashId, false);
+	f.details.refresh(resolveActorPath(f.tree.roots, componentTarget.path), componentTarget.path, f.tree, -1, f.target.worldHashId, false);
 	assert.equal(f.details.watches.find(f.target, health.identity!), undefined);
 	assert.strictEqual(f.details.items[0], energyPin.item);
 });
@@ -446,7 +446,7 @@ test('cross-actor pins keep their actor membership and reconcile one tree per wa
 	const healthPin = f.details.watches.add(f.target, 'actor', f.details.items.find(item => item.identity?.field === 'health')!);
 	const energyPin = f.details.watches.add(f.target, 'actor', f.details.items.find(item => item.identity?.field === 'energy')!);
 	f.update(f.otherHashId);
-	const otherTarget = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, f.tree.roots[0], f.guest);
+	const otherTarget = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, f.tree.roots[0]);
 	f.details.refresh(f.tree.roots[0], otherTarget.path, f.tree, -1, f.target.worldHashId, false);
 	assert.equal(healthPin.item.value, '0'); assert.equal(energyPin.item.value, '0');
 	assert.equal(f.details.items.find(item => item.watch === undefined && item.identity?.field === 'health')!.value, '20');
@@ -470,7 +470,7 @@ test('cross-actor pinned tables reread mutable entries and format only after the
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	const pin = f.details.watches.add(f.target, 'actor', f.details.items.find(item => item.label === 'Data')!);
 	f.update(f.otherHashId);
-	const otherTarget = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, f.tree.roots[0], f.guest);
+	const otherTarget = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, f.tree.roots[0]);
 	f.details.refresh(f.tree.roots[0], otherTarget.path, f.tree, -1, f.target.worldHashId, false);
 	const original = pin.item.value;
 	let formats = 0;
@@ -490,7 +490,7 @@ test('cross-actor pinned tables reread mutable entries and format only after the
 test('pinned property identities distinguish numeric and string keys with identical display labels', t => {
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	const component = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
-	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component, f.guest);
+	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component);
 	f.details.refresh(component, target.path, f.tree, -1, f.target.worldHashId, false);
 	const numeric = f.details.items.find(item => item.value === 'numeric')!, string = f.details.items.find(item => item.value === 'string')!;
 	assert.equal(numeric.label, string.label);
@@ -511,7 +511,7 @@ test('pinned property identities distinguish numeric and string keys with identi
 test('typed node pins survive history absence and recover without borrowing a same-table alias', t => {
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	const state = f.tree.roots[0].children[0].children[0].children.find(node => node.key === 1)!;
-	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, state, f.guest);
+	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, state);
 	f.details.refresh(state, target.path, f.tree, -1, f.target.worldHashId, false);
 	const pin = f.details.watches.add(target, 'state', f.details.items.find(item => item.label === 'INSTANCE DATA')!);
 	f.details.refresh(state, target.path, f.tree, -1, f.target.worldHashId, false);
@@ -566,7 +566,7 @@ test('live branch admission also retires absent dynamic property memberships on 
 	const beforeField = f.cpu.captureRuntimeState();
 	f.execute('add_future_field');
 	const component = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
-	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component, f.guest);
+	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component);
 	f.details.refresh(component, target.path, f.tree, -1, f.target.worldHashId, false);
 	const pin = f.details.watches.add(target, 'ordinary', f.details.items.find(item => item.value === '91')!);
 	f.invalidate('history-restored'); f.cpu.restoreRuntimeState(beforeField); f.update();
@@ -575,7 +575,7 @@ test('live branch admission also retires absent dynamic property memberships on 
 	f.details.watches.resumeHistory(f.tree, -1);
 	assert.equal(pin.retired, true);
 	f.execute('add_future_field');
-	const restored = resolveActorTarget(f.tree.roots, target, f.guest)!;
+	const restored = resolveActorPath(f.tree.roots, target.path)!;
 	f.details.refresh(restored, target.path, f.tree, -1, f.target.worldHashId, false);
 	const reused = f.details.items.find(item => item.watch === undefined && item.value === '91')!;
 	assert.equal(runtimePropertyIdentitiesEqual(reused.identity!, pin.property), true, 'the guest reused the discarded-future string id');
@@ -590,7 +590,7 @@ test('live branch admission also retires absent dynamic property memberships on 
 test('heap replacement retires pins, clears loaded source actions, and keeps each watch independently removable', t => {
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	const component = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
-	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component, f.guest);
+	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component);
 	f.details.refresh(component, target.path, f.tree, -1, f.target.worldHashId, false);
 	const pin = f.details.watches.add(target, 'ordinary', f.details.items.find(item => item.label === 'callback')!);
 	assert.ok(pin.item.source !== undefined);
@@ -606,7 +606,7 @@ test('heap replacement retires pins, clears loaded source actions, and keeps eac
 test('pinned callbacks reuse current loaded source mappings and clear them when their value stops being a closure', t => {
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	const component = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
-	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component, f.guest);
+	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component);
 	f.details.refresh(component, target.path, f.tree, -1, f.target.worldHashId, false);
 	const pin = f.details.watches.add(target, 'ordinary', f.details.items.find(item => item.label === 'callback')!);
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
@@ -624,7 +624,7 @@ test('pinned callbacks reuse current loaded source mappings and clear them when 
 test('watch labels update independently of a stable indexed runtime property identity', t => {
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	const state = f.tree.roots[0].children[0].children[0].children.find(node => node.key === 1)!;
-	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, state, f.guest);
+	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, state);
 	f.details.refresh(state, target.path, f.tree, -1, f.target.worldHashId, false);
 	const property = f.details.items.find(item => item.identity?.section === 'input')!;
 	const pin = f.details.watches.add(target, 'state', property), label = pin.item.label, value = pin.item.value;
@@ -639,7 +639,7 @@ test('blackboard pins follow real semantic rebinds, not the previous value slot 
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	f.execute('bind_health_speed');
 	const node = f.tree.roots[0].children.find(node => node.kind === 'tree')!;
-	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, node, f.guest);
+	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, node);
 	f.details.refresh(node, target.path, f.tree, -1, f.target.worldHashId, false);
 	const healthIdentity = { section: 'blackboard', field: '', key: f.guest.identity(valueString(f.cpu.stringPool.intern('health'))) };
 	const unsetIdentity = { section: 'blackboard', field: '', key: f.guest.identity(valueString(f.cpu.stringPool.intern('unset'))) };
@@ -648,7 +648,7 @@ test('blackboard pins follow real semantic rebinds, not the previous value slot 
 	const pin = f.details.watches.add(target, 'tree', health), nilPin = f.details.watches.add(target, 'tree', unset);
 	const initial = f.cpu.captureRuntimeState();
 	f.execute('reorder_blackboard_keys');
-	f.details.refresh(resolveActorTarget(f.tree.roots, target, f.guest), target.path, f.tree, -1, f.target.worldHashId, false);
+	f.details.refresh(resolveActorPath(f.tree.roots, target.path), target.path, f.tree, -1, f.target.worldHashId, false);
 	assert.strictEqual(f.details.items.find(item => item.watchIdentity !== undefined && runtimePropertyIdentitiesEqual(item.watchIdentity, healthIdentity)), health);
 	assert.ok(runtimePropertyIdentitiesEqual(pin.property, healthIdentity)); assert.equal(pin.item.value, '100');
 	assert.equal(pin.item.valueChanged, false); assert.equal(pin.available, true);
@@ -663,7 +663,7 @@ test('blackboard pins follow real semantic rebinds, not the previous value slot 
 	assert.equal(pin.item.value, '300'); assert.equal(pin.available, true);
 	assert.equal(pin.item.valueChanged, false, 'returning availability starts a neutral baseline');
 	f.invalidate('history-restored'); f.cpu.restoreRuntimeState(initial); f.update();
-	f.details.refresh(resolveActorTarget(f.tree.roots, target, f.guest), target.path, f.tree, -1, f.target.worldHashId, true);
+	f.details.refresh(resolveActorPath(f.tree.roots, target.path), target.path, f.tree, -1, f.target.worldHashId, true);
 	assert.equal(pin.item.value, '100'); assert.ok(runtimePropertyIdentitiesEqual(pin.property, healthIdentity));
 	assert.equal(nilPin.item.value, 'nil'); assert.equal(nilPin.available, true);
 });
@@ -672,7 +672,7 @@ test('duplicate blackboard occurrences stay distinct while only the owner-resolv
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	f.execute('duplicate_blackboard_slots');
 	const node = f.tree.roots[0].children.find(node => node.kind === 'tree')!;
-	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, node, f.guest);
+	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, node);
 	f.details.refresh(node, target.path, f.tree, -1, f.target.worldHashId, false);
 	const answerIdentity = { section: 'blackboard', field: '', key: f.guest.identity(valueString(f.cpu.stringPool.intern('answer'))) };
 	const slots = f.details.items.filter(item => item.identity?.section === 'blackboard-slot'
@@ -684,7 +684,7 @@ test('duplicate blackboard occurrences stay distinct while only the owner-resolv
 	assert.equal(slots[0].watchIdentity, undefined); assert.strictEqual(slots[1].watchIdentity, slots[1].identity);
 	const pin = f.details.watches.add(target, 'tree', slots[1]);
 	f.execute('reorder_duplicate_keys');
-	f.details.refresh(resolveActorTarget(f.tree.roots, target, f.guest), target.path, f.tree, -1, f.target.worldHashId, false);
+	f.details.refresh(resolveActorPath(f.tree.roots, target.path), target.path, f.tree, -1, f.target.worldHashId, false);
 	const rebound = f.details.items.filter(item => item.identity?.section === 'blackboard-slot'
 		|| item.watchIdentity !== undefined && runtimePropertyIdentitiesEqual(item.watchIdentity, answerIdentity));
 	assert.equal(rebound.length, 2); assert.deepEqual(rebound.map(item => item.value), ['43', '43']);
@@ -703,13 +703,13 @@ test('duplicate blackboard occurrences stay distinct while only the owner-resolv
 test('surviving callback rows retain loaded source caches when an earlier component field disappears', t => {
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	const component = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
-	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component, f.guest);
+	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component);
 	f.details.refresh(component, target.path, f.tree, -1, f.target.worldHashId, false);
 	const callback = f.details.items.find(item => item.label === 'callback')!, source = callback.source;
 	assert.ok(source !== undefined);
 	const location = t.mock.method(f.guest, 'linkedFunctionLocation');
 	f.execute('remove_numeric_field');
-	f.details.refresh(resolveActorTarget(f.tree.roots, target, f.guest), target.path, f.tree, -1, f.target.worldHashId, false);
+	f.details.refresh(resolveActorPath(f.tree.roots, target.path), target.path, f.tree, -1, f.target.worldHashId, false);
 	assert.strictEqual(f.details.items.find(item => item.label === 'callback'), callback);
 	assert.strictEqual(callback.source, source); assert.equal(callback.valueChanged, false);
 	assert.equal(location.mock.callCount(), 0, 'a shifted surviving callback does not rebuild its loaded source mapping');
@@ -731,7 +731,7 @@ test('paused Details disclosures refresh without execution and hidden storage re
 	assert.equal(visits.mock.calls.filter(call => call.arguments[0] === dataTable).length, 1); assert.deepEqual([f.cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()], before);
 	assert.equal(document.find(item => item.label === 'answer')!.watchIdentity, undefined, 'nested stored entries do not invent a logical pin target');
 	const component = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
-	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component, f.guest);
+	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component);
 	f.details.followSelection(-1, f.target.worldHashId, f.actorHashId, target.path, f.tree);
 	f.details.refreshSubject(f.tree, -1, f.target.worldHashId, false);
 	assert.equal(f.details.caption, 'Component: ordinary');
@@ -787,7 +787,7 @@ test('table pin comparison follows restored string text even when the pool reuse
 test('internal component storage visibility cannot suppress an explicitly retained typed watch', t => {
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	const node = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
-	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, node, f.guest);
+	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, node);
 	const key = valueString(f.cpu.stringPool.find('_owner_component_index')!), identity = f.guest.identity(key);
 	const properties = new BehaviorRuntimeProperties(f.sources, f.guest,
 		(section, _field, entry) => section === 'member' && entry !== undefined && f.guest.matchesIdentity(entry, identity));
@@ -814,7 +814,7 @@ end
 return world`);
 	const f = fixture(source); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	const component = f.tree.roots[0].children.find(node => node.prefix === 'TIMELINES')!;
-	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component, f.guest);
+	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component);
 	f.details.followSelection(-1, f.target.worldHashId, f.actorHashId, target.path, f.tree);
 	f.details.setLocked(true); f.details.refreshSubject(f.tree, -1, f.target.worldHashId, false);
 	assert.equal(f.details.caption, 'Timelines');
@@ -827,7 +827,7 @@ return world`);
 test('pinned callback presentation and change baseline are independent of selected-row reuse', t => {
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	const component = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
-	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component, f.guest);
+	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component);
 	f.details.refresh(component, target.path, f.tree, -1, f.target.worldHashId, false);
 	const property = f.details.items.find(item => item.label === 'callback')!;
 	const pin = f.details.watches.add(target, 'ordinary', property);

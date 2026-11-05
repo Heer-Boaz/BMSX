@@ -47,11 +47,11 @@ function fixture(worldSource = WORLD) {
 	const actorHashId = (actors.getInteger(1) as Table).hashId;
 	tree.update(sources, guest, -1, findRuntimeActor(sources, guest, -1, actorHashId));
 	const machine = tree.roots[0].children[0].children[0];
-	const target = captureActorTarget(-1, world.hashId, tree.roots, machine, guest);
+	const target = captureActorTarget(-1, world.hashId, tree.roots, machine);
 	const graph = new ActorStateGraph(target, font);
 	const refresh = () => {
 		tree.update(sources, guest, -1, findRuntimeActor(sources, guest, -1, actorHashId));
-		graph.refresh(tree.roots, guest); graph.layout(font);
+		graph.refresh(tree.roots); graph.layout(font);
 	};
 	refresh(); graph.viewport.layout(0, 0, 100, 100);
 	const snapshot = cpu.captureRuntimeState();

@@ -43,8 +43,8 @@ export class ActorProjection {
 		const wasPresent = input.actorPresent;
 		input.actorPresent = actor !== undefined;
 		const changed = input.runtime.update(this.sources, guest, input.domain, actor);
-		input.stateGraph?.refresh(input.runtime.roots, guest);
-		input.follow.refresh(input.runtime, guest, input.historical);
+		input.stateGraph?.refresh(input.runtime.roots);
+		input.follow.refresh(input.runtime, input.historical);
 		if (actor === undefined) {
 			input.status = input.actorHashId !== 0 && input.historical ? 'ACTOR NOT PRESENT AT THIS FRAME' : 'CHOOSE A RUNNING ACTOR';
 			this.statusDomain = undefined;

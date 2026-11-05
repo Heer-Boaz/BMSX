@@ -4,7 +4,7 @@ import type { GuestInvalidationReason, SuspendedGuestSession } from '../../../ru
 import { BehaviorRuntimeProperties, runtimePropertyIdentitiesEqual, runtimeInspectionPropertiesEqual, type RuntimePropertyIdentity } from '../behavior_lens/runtime_properties';
 import { inspectActorNode } from './inspection';
 import { ActorRuntimeTree, findWorldActor, runtimeWorld, type ActorNode } from './runtime';
-import { actorPathsEqual, resolveActorTarget, type ActorNodeIdentity, type ActorTarget } from './target';
+import { actorPathsEqual, resolveActorPath, type ActorNodeIdentity, type ActorTarget } from './target';
 import type { ResourceDomain } from '../../../common/resource';
 import { ActorWatches, type ActorDetailsProperty } from './watches';
 export type { ActorDetailsProperty } from './watches';
@@ -93,7 +93,7 @@ export class ActorDetails {
 			if (previous !== undefined && previous.domain === domain && previous.worldHashId === worldHashId
 				&& previous.actorHashId === actorHashId && actorPathsEqual(previous.path, path)) return;
 			this.subjectValue = { domain, worldHashId, actorHashId, path }; this.subjectPathValue = ''; this.subjectNameValue = '';
-			this.availableValue = resolveActorTarget(current.roots, this.subjectValue, this.guest) !== undefined;
+			this.availableValue = resolveActorPath(current.roots, this.subjectValue.path) !== undefined;
 			if (this.availableValue) this.updateSubjectPath(current);
 		}
 		this.retiredValue = false; this.subjectDirty = true; this.subjectTree = undefined;
@@ -157,7 +157,7 @@ export class ActorDetails {
 				this.subjectTree = this.runtime;
 			}
 		}
-		const node = resolveActorTarget(this.subjectTree!.roots, subject, this.guest);
+		const node = resolveActorPath(this.subjectTree!.roots, subject.path);
 		this.availableValue = node !== undefined;
 		if (node !== undefined) this.updateSubjectPath(this.subjectTree!);
 		else if (!historical) this.retiredValue = true;
@@ -171,7 +171,7 @@ export class ActorDetails {
 		let children = tree.roots;
 		for (const identity of subject.path) {
 			const node = children.find(node => node.hashId === identity.hashId && node.kind === identity.kind
-				&& this.guest.matchesIdentity(node.key, identity.key))!;
+				&& node.keyIdentity.tag === identity.key.tag && node.keyIdentity.scalar === identity.key.scalar)!;
 			labels.push(node.label); this.subjectNameValue = actorNodeLabel(node, children, tree.roots[0]); children = node.children;
 		}
 		this.subjectPathValue = `${subject.domain === -1 ? 'SYSTEM' : `CART ${subject.domain}`} / ${labels.join(' / ')}`;

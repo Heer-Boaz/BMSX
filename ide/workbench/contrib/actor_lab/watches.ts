@@ -6,7 +6,7 @@ import { BehaviorRuntimeProperties, type RuntimeInspectionProperty, type Runtime
 	runtimePropertyIdentitiesEqual, RuntimePropertyIndex } from '../behavior_lens/runtime_properties';
 import { inspectActorNode } from './inspection';
 import { ActorRuntimeTree, findWorldActor, runtimeWorld, type ActorNode } from './runtime';
-import { actorTargetsEqual, resolveActorTarget, type ActorTarget } from './target';
+import { actorTargetsEqual, resolveActorPath, type ActorTarget } from './target';
 
 export type ActorDetailsProperty = RuntimeInspectionProperty & { readonly watch?: ActorPropertyWatch };
 
@@ -130,7 +130,7 @@ export class ActorWatches {
 			const tree = this.resolveActor(actor, current, domain, otherTree, otherDomain);
 			for (const group of actor.nodes) {
 				const node = tree === undefined || group.pins.every(pin => pin.retired)
-					? undefined : resolveActorTarget(tree.roots, group.target, this.guest);
+					? undefined : resolveActorPath(tree.roots, group.target.path);
 				for (const pin of group.pins) pin.observed = false;
 				if (node !== undefined) {
 					group.properties.begin();
@@ -159,7 +159,7 @@ export class ActorWatches {
 			const tree = this.resolveActor(actor, current, domain, otherTree, otherDomain);
 			for (const group of actor.nodes) {
 				const node = tree === undefined || group.pins.every(pin => pin.retired)
-					? undefined : resolveActorTarget(tree.roots, group.target, this.guest);
+					? undefined : resolveActorPath(tree.roots, group.target.path);
 				let wanted = 0;
 				for (const pin of group.pins) { pin.observed = false; if (!pin.retired) wanted++; }
 				let properties: readonly RuntimeInspectionProperty[] | undefined;

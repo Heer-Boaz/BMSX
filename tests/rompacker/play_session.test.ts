@@ -119,7 +119,7 @@ for (const optLevel of [0, 3] as const) for (const closeAtStop of [false, true])
 	const actor = (guest.readStringMember(world, '_objects') as Table).getInteger(1) as Table;
 	assert.equal(readActorChoices(session, guest, 0)[0].hashId, actor.hashId);
 	const tree = new ActorRuntimeTree(); tree.update(session, guest, 0, actor);
-	const target = captureActorTarget(0, world.hashId, tree.roots, tree.roots[0], guest);
+	const target = captureActorTarget(0, world.hashId, tree.roots, tree.roots[0]);
 	const identity = guest.identity(guest.readStringMember(actor, 'change')); tree.dispose();
 	const source = session.debugSources.catalog.find(entry => entry.path.endsWith('cartlib/world/world.lua'))!;
 	assert.equal(session.debugSources.setBreakpoints(source.source, [4])[0].status, 'bound');

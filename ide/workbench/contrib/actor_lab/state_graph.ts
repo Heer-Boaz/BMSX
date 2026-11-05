@@ -1,11 +1,10 @@
 import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
 import { create_rect_bounds, write_rect_bounds } from '../../../../machine/ts/common/rect';
-import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import { createWorkbenchGraphModel, createWorkbenchGraphNode, createWorkbenchTreeEdge, type WorkbenchGraphEdge, type WorkbenchGraphModel } from '../../ui/graph/model';
 import { layoutWorkbenchTree } from '../../ui/graph/tree_layout';
 import { WorkbenchGraphViewport } from '../../ui/graph/viewport';
 import type { ActorNode } from './runtime';
-import { actorTargetsEqual, resolveActorTarget, type ActorTarget } from './target';
+import { actorTargetsEqual, resolveActorPath, type ActorTarget } from './target';
 
 class StateNode {
 	public readonly kind = 'node';
@@ -51,10 +50,10 @@ export class ActorStateGraph {
 		return () => this.selectionListeners.delete(listener);
 	}
 
-	/** Called only after Actor Lab reacquires its tree; no borrowed object enters this view. */
-	public refresh(roots: readonly ActorNode[], guest: SuspendedGuestSession): void {
+	/** Project the retained tree snapshot; guest acquisitions do not own graph identity. */
+	public refresh(roots: readonly ActorNode[]): void {
 		if (this.target === undefined) return;
-		const machine = resolveActorTarget(roots, this.target, guest);
+		const machine = resolveActorPath(roots, this.target.path);
 		if (machine === undefined) {
 			if (this.status !== 'missing') for (const node of this.viewport.model.nodes) node.active = false;
 			this.status = 'missing';
@@ -62,7 +61,7 @@ export class ActorStateGraph {
 		}
 		this.status = 'available';
 		if (this.root === undefined || this.root.name !== machine.name) this.title = `LIVE FSM / ${machine.name}`;
-		this.root = this.reconcile(machine, this.root, undefined, guest);
+		this.root = this.reconcile(machine, this.root, undefined);
 	}
 
 	public retire(status: 'missing' | 'heap-replaced'): void {
@@ -78,18 +77,19 @@ export class ActorStateGraph {
 		else if (this.viewport.selection === null) this.selectionTarget = undefined;
 	}
 
-	private reconcile(source: ActorNode, previous: StateNode | undefined, parent: StateNode | undefined, guest: SuspendedGuestSession): StateNode {
+	private reconcile(source: ActorNode, previous: StateNode | undefined, parent: StateNode | undefined): StateNode {
 		let node = previous;
+		const key = node?.target.path[node.target.path.length - 1].key;
 		if (node === undefined || node.hashId !== source.hashId || node.name !== source.name
-			|| !guest.matchesIdentity(source.key, node.target.path[node.target.path.length - 1].key)) {
+			|| key!.tag !== source.keyIdentity.tag || key!.scalar !== source.keyIdentity.scalar) {
 			const target = parent === undefined ? this.target! : { ...parent.target,
-				path: [...parent.target.path, { hashId: source.hashId, kind: source.kind, key: guest.identity(source.key) }] };
+				path: [...parent.target.path, { hashId: source.hashId, kind: source.kind, key: source.keyIdentity }] };
 			node = new StateNode(source.hashId, source.name, target, this.viewport.model.font);
 			this.dirty = true;
 		}
 		node.active = source.active;
 		for (let index = 0; index < source.children.length; index++) {
-			node.children[index] = this.reconcile(source.children[index], node.children[index], node, guest);
+			node.children[index] = this.reconcile(source.children[index], node.children[index], node);
 		}
 		if (node.children.length !== source.children.length) { node.children.length = source.children.length; this.dirty = true; }
 		return node;

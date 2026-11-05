@@ -90,7 +90,7 @@ export class ActorRuntimeInspection {
 		if (row === undefined) throw new Error('Actor node is not part of the current inspected tree.');
 		const args = prepareLuaArguments(source), guest = inspection.guest;
 		const target = captureActorTarget(this.roots!.domain, runtimeWorld(inspection.sources, guest, this.roots!.domain)!.hashId,
-			this.actors.get(row.actor)!.tree!.roots, row.node, guest);
+			this.actors.get(row.actor)!.tree!.roots, row.node);
 		if (kind === 'action') {
 			if (!actorActions(row.node).some(action => action.method === method)) throw new Error('Action is not available on this actor node.');
 			return { kind, target, method, args };

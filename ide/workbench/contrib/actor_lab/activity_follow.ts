@@ -1,6 +1,5 @@
-import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { ActorRuntimeTree } from './runtime';
-import { resolveActorTarget, type ActorTarget } from './target';
+import { resolveActorPath, type ActorTarget } from './target';
 
 /** Viewport tracking is separate from the inspection/action selection. */
 export class ActorActivityFollow {
@@ -19,14 +18,14 @@ export class ActorActivityFollow {
 
 	public stop(): void { this.target = undefined; this.pending = undefined; }
 
-	public refresh(tree: ActorRuntimeTree, guest: SuspendedGuestSession, historical: boolean): void {
+	public refresh(tree: ActorRuntimeTree, historical: boolean): void {
 		const target = this.target;
 		if (target === undefined) return;
 		if (this.topology === tree.topologyRevision && this.activity === tree.activityRevision && this.historical === historical) return;
 		this.topology = tree.topologyRevision;
 		this.activity = tree.activityRevision;
 		this.historical = historical;
-		if (resolveActorTarget(tree.roots, target, guest) === undefined) {
+		if (resolveActorPath(tree.roots, target.path) === undefined) {
 			this.pending = undefined;
 			if (!historical) this.stop();
 			return;
