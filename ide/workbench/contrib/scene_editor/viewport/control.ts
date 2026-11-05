@@ -13,7 +13,7 @@ import { consumeIdeKey, isKeyJustPressed } from '../../../../input/keyboard/key_
 import { pointerCapture, type PointerCaptureTarget } from '../../../../input/pointer/capture';
 import { pointerHover } from '../../../../input/pointer/hover';
 import { WorkbenchViewportNavigation } from '../../../ui/viewport_navigation';
-import type { WorkbenchMenuDefinition, WorkbenchMenuPresentation } from '../../../ui/menu/model';
+import { WorkbenchMenu, type WorkbenchMenuDefinition, type WorkbenchMenuPresentation } from '../../../ui/menu/model';
 import type { ContextMenuController } from '../../../services/context_menu/controller';
 import type { ContextMenuPlacement } from '../../../services/context_menu/model';
 import type { WorkbenchTooltipTarget } from '../../../ui/tooltip';
@@ -21,6 +21,7 @@ import { drawSceneViewport } from './render';
 import { type SceneViewportViewState, type SceneViewportPlacement } from './view_state';
 import type { ViewportCameraPoint } from '../../../ui/viewport_camera';
 import { WorkbenchActionBarControl } from '../../../ui/action_bar_control';
+import { SCENE_AUTHORING_CONTEXT_ACTIONS } from '../menus';
 
 export const VIEWPORT_CONTEXT_ACTIONS: WorkbenchMenuDefinition<SceneViewportViewState> = [
 	{ type: 'command', command: 'sceneEditor.addMember' }, { type: 'separator' },
@@ -65,7 +66,7 @@ export class SceneViewportControl implements PointerCaptureTarget {
 		this.focusTarget = inputFocus.createTarget(commandTarget, new InputFocusScope(scope.surfaceScope, scope));
 		this.focusTarget.commandContext = commandTarget.commandContext; this.focusTarget.canFocus = () => this.canFocus;
 		this.cameraNavigation = new WorkbenchViewportNavigation(inputFocus, pointerCapture, this.focusTarget,
-			() => this.viewValue?.refresh(), (x, y) => this.openMenu(this.contextActions, x, y));
+			() => this.viewValue?.refresh(), (x, y) => this.openContextMenu(x, y));
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(event => this.handleKeyboard(event));
 		this.unbindBlur = this.focusTarget.onDidBlur(next => {
 			if (next === null || !scope.contains(next.scope)) {
@@ -77,7 +78,7 @@ export class SceneViewportControl implements PointerCaptureTarget {
 			run: () => {
 				if (this.placement !== undefined) { this.retirePlacement(this.placement); return; }
 				const bounds = this.view.bounds;
-				this.openMenu(this.contextActions, bounds.left + 4, bounds.top + 4, true);
+				this.openContextMenu(bounds.left + 4, bounds.top + 4, true);
 			},
 		});
 		const actions: CameraAction[] = [
@@ -247,6 +248,22 @@ export class SceneViewportControl implements PointerCaptureTarget {
 		const navigation = this.navigation.focusTarget;
 		navigation.previous = previous; navigation.next = this.focusTarget; this.focusTarget.previous = navigation;
 		this.focusTarget.next = next; previous.next = navigation; next.previous = this.focusTarget;
+	}
+	private openContextMenu(x: number, y: number, keyboard = false): void {
+		const view = this.view, authoring = view.authoring;
+		const attachment = this.attachment, generation = this.focusTarget.scope.contextGeneration, version = authoring.workingCopy.version;
+		const entry = keyboard ? undefined : view.pick(x, y);
+		if (!keyboard && entry === undefined) { this.openMenu(this.contextActions, x, y); return; }
+		if (entry !== undefined) {
+			const scene = authoring.subject!;
+			if (!authoring.select(authoring.document!, version, { kind: 'member', scene, entry, index: scene.objects.indexOf(entry) })) return;
+			view.refresh();
+		}
+		const selection = authoring.selection;
+		// Source admission and selection publication may retire this canvas or replace the clicked occurrence.
+		if (this.viewValue !== view || this.attachment !== attachment || this.focusTarget.scope.contextGeneration !== generation
+			|| authoring.workingCopy.version !== version || entry !== undefined && (selection?.kind !== 'member' || selection.entry !== entry)) return;
+		this.openMenu(selection?.kind === 'member' ? new WorkbenchMenu(SCENE_AUTHORING_CONTEXT_ACTIONS, selection) : this.contextActions, x, y, keyboard);
 	}
 	private openMenu(menu: WorkbenchMenuPresentation, x: number, y: number, keyboard = false, placement: ContextMenuPlacement = 'point'): void {
 		const view = this.view, attachment = this.attachment, generation = this.focusTarget.scope.contextGeneration;

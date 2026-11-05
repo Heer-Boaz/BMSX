@@ -21,13 +21,20 @@ import { createLuaTableFieldRemovalEdits, luaSourceRangeToTextRange } from '../.
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { WORKBENCH_ACTION_BAR_OVERFLOW } from '../../ide/workbench/ui/action_bar';
 
-function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny', source = SCENE_VIEWPORT_SOURCE) {
-	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', source], ['cartlib/world/scene_library.lua', 'return {}']]);
+function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny', source = SCENE_VIEWPORT_SOURCE, composition = false) {
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', source], ['cartlib/world/scene_library.lua', 'return {}'],
+		['cartlib/component/rectangle_component.lua', 'return {new=function() end}']]);
 	f.editor.setFontVariant(font);
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	f.editor.editorParts.minimize(f.firstPart);
 	const firstPart = f.editor.editorParts.main, firstGroup = firstPart.activeGroup;
-	f.editor.sceneEditor.openResource(firstGroup, resource); const input = firstGroup.model.activeTab; assert.ok(input instanceof SceneEditorInput);
+	f.editor.sceneEditor.openResource(firstGroup, resource);
+	if (composition) {
+		const input = firstGroup.model.activeTab; assert.ok(input instanceof SceneEditorInput);
+		const scene = input.view.authoring.scenes[0];
+		assert.equal(f.editor.sceneEditor.openDefinition(firstGroup, resource, luaSourceRangeToTextRange(input.workingCopy.buffer, scene.range)), true);
+	}
+	const input = firstGroup.model.activeTab; assert.ok(input instanceof SceneEditorInput);
 	f.update(); const pane = firstGroup.panes.activePane!; assert.ok(pane instanceof SceneEditorPane); pane.focus();
 	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
 	f.editor.mainWorkspace.focusPrimary('hierarchy'); f.update();
@@ -62,6 +69,136 @@ function accept(f: Fixture, command: EditorCommandId): void {
 	assert.ok(index >= 0 && menu.model.rows[index].enabled);
 	f.key('Home'); for (let row = 0; row < index; row++) if (menu.model.rows[row].enabled) f.key('ArrowDown'); f.key('Enter');
 }
+
+const VIEWPORT_MENU_SOURCE = `local scenes=require('cartlib/world/scene_library')
+local prefab=require('cartlib/world/prefab')
+local rectangle=require('cartlib/component/rectangle_component')
+prefab.define({def_id='tile',class=require('cartlib/world/object_2d'),
+ components={function(owner) return rectangle.new(owner,{width=32,height=24,color=0xff00ff00}) end}})
+scenes.register('context',{objects={
+ {member_id='left',definition_id='tile',position={x=0,y=0}},
+ {member_id='right',definition_id='tile',position={x=80,y=0}},
+}})`;
+
+/** Locate the centre of the actual visual, not its origin helper or a fixed screen pixel. */
+function viewportVisualPoint(f: Fixture) {
+	const view = f.input.view.viewport, quad = view.canvas.items[0], { affine, width, height } = quad;
+	const wx = affine.ox + (affine.xx * width + affine.yx * height) / 2;
+	const wy = (affine.oy + (affine.xy * width + affine.yy * height) / 2) * (view.camera.mode === '3d' ? -1 : 1);
+	const x = (view.bounds.left + view.bounds.right) / 2 + view.camera.projectX(wx, wy, 0);
+	const y = (view.bounds.top + view.bounds.bottom) / 2 + view.camera.projectY(wx, wy, 0);
+	assert.ok(view.pick(x, y) === quad.source.entry);
+	return { x, y, entry: quad.source.entry };
+}
+function viewportPointer(f: Fixture, x: number, y: number, buttons: number, pressedButtons = 0, releasedButtons = 0): void {
+	f.host.clock.advance(10);
+	f.editor.dispatchPointer({ x, y, buttons, pressedButtons, releasedButtons,
+		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
+}
+
+for (const mode of ['2d', '3d'] as const) test(`Scene ${mode} viewport context click selects the visible member only on release`, t => {
+	const f = fixture(t, 'tiny', VIEWPORT_MENU_SOURCE, true), view = f.input.view.viewport;
+	selectSceneOutlineRow(f.input.view.hierarchy, 2); view.camera.setMode(mode); f.update();
+	const previous = f.input.view.authoring.selection, camera = view.camera.capture(), { x, y, entry } = viewportVisualPoint(f);
+	viewportPointer(f, x, y, PointerButton.Secondary, PointerButton.Secondary);
+	assert.equal(f.editor.contextMenu.visible, false); assert.ok(f.input.view.authoring.selection === previous);
+	viewportPointer(f, x, y, 0, 0, PointerButton.Secondary);
+	assert.equal(f.editor.contextMenu.visible, true);
+	const selection = f.input.view.authoring.selection;
+	assert.ok(selection?.kind === 'member' && selection.entry === entry);
+	assert.deepEqual(f.editor.contextMenu.model.rows.filter(row => row.command !== undefined).map(row => row.command), [
+		'editor.source', 'sceneEditor.inspectLive', 'sceneEditor.renameMember', 'sceneEditor.reparentMember', 'sceneEditor.removeMember', 'sceneEditor.removeSubtree',
+	], 'an object hit owns member actions, not canvas creation or camera commands');
+	assert.deepEqual(view.camera.capture(), camera);
+	assert.equal(f.model.buffer.getText(), VIEWPORT_MENU_SOURCE); assert.equal(f.model.canUndo, false);
+	f.key('Escape'); assert.ok(inputFocus.admittedTarget === f.pane.control.focusTarget);
+});
+
+for (const mode of ['2d', '3d'] as const) test(`Scene ${mode} right drag over artwork navigates without selecting or opening an object menu`, t => {
+	const f = fixture(t, 'tiny', VIEWPORT_MENU_SOURCE, true), view = f.input.view.viewport;
+	selectSceneOutlineRow(f.input.view.hierarchy, 2); view.camera.setMode(mode); f.update();
+	const selection = f.input.view.authoring.selection, camera = view.camera.capture(), { x, y } = viewportVisualPoint(f);
+	viewportPointer(f, x, y, PointerButton.Secondary, PointerButton.Secondary);
+	viewportPointer(f, x + 20, y + 10, PointerButton.Secondary);
+	viewportPointer(f, x + 20, y + 10, 0, 0, PointerButton.Secondary);
+	assert.equal(f.editor.contextMenu.visible, false); assert.ok(f.input.view.authoring.selection === selection);
+	assert.notDeepEqual(view.camera.capture(), camera);
+	assert.equal(f.model.buffer.getText(), VIEWPORT_MENU_SOURCE); assert.equal(f.model.canUndo, false);
+});
+
+test('Scene viewport keyboard menu uses the selected member even without a projected pose', t => {
+	const f = fixture(t, 'tiny', SCENE_VIEWPORT_SOURCE, true); selectSceneOutlineRow(f.input.view.hierarchy, 2); f.update(); f.pane.focus();
+	const selection = f.input.view.authoring.selection;
+	f.key('ContextMenu'); assert.equal(f.editor.contextMenu.visible, true);
+	assert.ok(f.input.view.authoring.selection === selection);
+	assert.ok(f.editor.contextMenu.model.rows.some(row => row.command === 'sceneEditor.removeMember' && row.enabled));
+	f.key('Escape'); assert.ok(inputFocus.admittedTarget === f.pane.control.focusTarget);
+	assert.equal(f.model.canUndo, false);
+});
+
+test('Scene viewport empty space keeps canvas actions without borrowing the selected member', t => {
+	const f = fixture(t, 'tiny', VIEWPORT_MENU_SOURCE, true); selectSceneOutlineRow(f.input.view.hierarchy, 1); f.update();
+	const view = f.input.view.viewport, selection = f.input.view.authoring.selection;
+	const x = view.bounds.right - 4, y = view.bounds.bottom - 4;
+	assert.ok(view.pick(x, y) === undefined);
+	viewportPointer(f, x, y, PointerButton.Secondary, PointerButton.Secondary);
+	viewportPointer(f, x, y, 0, 0, PointerButton.Secondary);
+	assert.equal(f.editor.contextMenu.visible, true); assert.ok(f.input.view.authoring.selection === selection);
+	const rows = f.editor.contextMenu.model.rows;
+	assert.ok(rows.some(row => row.command === 'sceneEditor.addMember' && row.enabled));
+	assert.ok(rows.some(row => row.command === 'sceneViewport.frameAll' && row.enabled));
+	assert.equal(rows.some(row => row.command === 'sceneEditor.removeMember' || row.command === 'editor.source'), false);
+	assert.equal(f.model.canUndo, false);
+});
+
+test('Scene viewport member removal and keyboard Undo share the canonical source and visual projection', t => {
+	const f = fixture(t, 'tiny', VIEWPORT_MENU_SOURCE, true); selectSceneOutlineRow(f.input.view.hierarchy, 2); f.update();
+	const view = f.input.view.viewport, { x, y } = viewportVisualPoint(f);
+	viewportPointer(f, x, y, PointerButton.Secondary, PointerButton.Secondary);
+	viewportPointer(f, x, y, 0, 0, PointerButton.Secondary);
+	accept(f, 'sceneEditor.removeMember'); f.update();
+	assert.equal(f.editor.contextMenu.visible, false);
+	assert.equal(f.model.buffer.getText(), VIEWPORT_MENU_SOURCE.replace("{member_id='left',definition_id='tile',position={x=0,y=0}},", ''),
+		'only the clicked member is removed; the other member and surrounding source are preserved');
+	assert.equal(view.canvas.items.length, 1); assert.equal(f.model.canUndo, true);
+	f.pane.focus(); f.key('KeyZ', KeyModifier.ctrl);
+	assert.equal(f.model.buffer.getText(), VIEWPORT_MENU_SOURCE); assert.equal(view.canvas.items.length, 2);
+	assert.equal(f.model.canUndo, false);
+});
+
+for (const invalidation of ['selection', 'source', 'attachment'] as const)
+	test(`Scene viewport member menu retires when its ${invalidation} changes`, t => {
+		const f = fixture(t, 'tiny', VIEWPORT_MENU_SOURCE, true), { x, y } = viewportVisualPoint(f);
+		viewportPointer(f, x, y, PointerButton.Secondary, PointerButton.Secondary);
+		viewportPointer(f, x, y, 0, 0, PointerButton.Secondary);
+		assert.equal(f.editor.contextMenu.visible, true);
+		if (invalidation === 'selection') selectSceneOutlineRow(f.input.view.hierarchy, 2);
+		else if (invalidation === 'source') f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- changed\n' }]);
+		else f.pane.control.setView(f.input.view.viewport, f.input.view.viewport.bounds);
+		assert.equal(f.editor.contextMenu.visible, false);
+	});
+
+for (const invalidation of ['selection', 'source', 'attachment'] as const)
+	test(`Scene viewport context click cannot publish a menu after reentrant ${invalidation} replacement`, t => {
+		const f = fixture(t, 'tiny', VIEWPORT_MENU_SOURCE, true), view = f.input.view.viewport;
+		selectSceneOutlineRow(f.input.view.hierarchy, 2); f.update();
+		const { x, y } = viewportVisualPoint(f);
+		viewportPointer(f, x, y, PointerButton.Secondary, PointerButton.Secondary);
+		let changed = false;
+		const release = f.input.view.authoring.onDidChangeSelection(() => {
+			release(); changed = true;
+			if (invalidation === 'selection') selectSceneOutlineRow(f.input.view.hierarchy, 2);
+			else if (invalidation === 'source') f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- changed\n' }]);
+			else f.pane.control.setView(view, view.bounds);
+		});
+		t.after(release);
+		viewportPointer(f, x, y, 0, 0, PointerButton.Secondary);
+		assert.equal(changed, true); assert.equal(f.editor.contextMenu.visible, false);
+		if (invalidation === 'selection') {
+			const selection = f.input.view.authoring.selection;
+			assert.ok(selection?.kind === 'member' && selection.entry === f.input.view.authoring.subject!.objects[1]);
+		}
+	});
 
 for (const subject of ['scene', 'dynamic'] as const) test(`document row Source opens the ${subject} occurrence`, async t => {
 	const source = SCENE_VIEWPORT_SOURCE.replace('objects = {', 'objects = { make_object(),');

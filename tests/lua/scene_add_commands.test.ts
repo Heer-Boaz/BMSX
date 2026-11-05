@@ -223,19 +223,21 @@ test('secondary click cancels placement before opening the canvas menu, without 
 	assert.equal(f.editor.contextMenu.model.rows.some(row => row.command === 'editor.source'), false);
 });
 
-test('canvas context remains about the canvas when opened over a member', async t => {
+test('viewport origin helpers expose their member actions instead of canvas creation', async t => {
 	const f = await fixture(t), view = f.primary.view.viewport;
 	const bounds = f.primary.view.viewport.bounds, x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
-	assert.equal(view.pick(x, y), f.primary.authoring.subject!.objects[0]);
-	const selection = f.primary.authoring.selection;
+	const entry = f.primary.authoring.subject!.objects[0];
+	assert.ok(view.pick(x, y) === entry);
 	for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
 		buttons: down ? PointerButton.Secondary : 0, pressedButtons: down ? PointerButton.Secondary : 0,
 		releasedButtons: down ? 0 : PointerButton.Secondary, cancelledButtons: 0,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	f.update();
 	assert.equal(f.editor.contextMenu.visible, true);
-	assert.equal(f.editor.contextMenu.model.rows.some(row => row.command === 'editor.source'), false);
-	assert.equal(f.primary.authoring.selection, selection);
+	assert.equal(f.editor.contextMenu.model.rows.some(row => row.command === 'editor.source' && row.enabled), true);
+	assert.equal(f.editor.contextMenu.model.rows.some(row => row.command === 'sceneEditor.addMember'), false);
+	const selection = f.primary.authoring.selection;
+	assert.ok(selection?.kind === 'member' && selection.entry === entry);
 	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
 });
 
@@ -483,9 +485,10 @@ for (const valid of [true, false]) test(`the physical hierarchy Add action ${val
 
 test('viewport mode commands publish mutually exclusive checked state through the shared context menu', async t => {
 	const f = await fixture(t), target = f.primary.viewportTarget;
-	const bounds = f.primary.view.viewport.bounds, x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
+	const bounds = f.primary.view.viewport.bounds, x = bounds.right - 4, y = bounds.bottom - 4;
 	for (const mode of ['2d', '3d'] as const) {
 		f.editor.commands.execute(mode === '2d' ? 'sceneViewport.view2d' : 'sceneViewport.view3d', target); f.update();
+		assert.ok(f.primary.view.viewport.pick(x, y) === undefined);
 		for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
 			buttons: down ? PointerButton.Secondary : 0, pressedButtons: down ? PointerButton.Secondary : 0,
 			releasedButtons: down ? 0 : PointerButton.Secondary, cancelledButtons: 0,
