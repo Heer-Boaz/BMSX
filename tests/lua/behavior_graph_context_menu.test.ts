@@ -100,7 +100,7 @@ for (const source of [TREE, MACHINE]) test('native graph right click resolves it
 	let held = 0;
 	const pointer = (px: number, py: number, buttons: number) => {
 		f.host.clock.advance(10);
-		f.editor.dispatchPointer({ x: px, y: py, buttons, pressedButtons: buttons & ~held, releasedButtons: held & ~buttons,
+		f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: px, y: py, buttons, pressedButtons: buttons & ~held, releasedButtons: held & ~buttons,
 			cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() }); held = buttons;
 	};
 	const before = view.selection, text = f.input.workingCopy.buffer.getText();

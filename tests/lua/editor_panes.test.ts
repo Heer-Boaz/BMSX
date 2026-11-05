@@ -110,8 +110,9 @@ class RecordingEditorPane<TInput extends EditorInput> extends EditorPane<TInput>
 		this.pointerCount += 1;
 	}
 
-	public handleWheel(_event: WheelInputSnapshot): void {
+	public override handleWheel(_event: WheelInputSnapshot): boolean {
 		this.wheelCount += 1;
+		return true;
 	}
 
 	public readonly statusItems = [];

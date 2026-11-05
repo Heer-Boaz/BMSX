@@ -442,9 +442,9 @@ for (const activation of ['keyboard', 'pointer'] as const) test(`${activation} P
 		let top = layout.contentTop;
 		for (let row = problemsPanel.getScrollIndex(); row < index; row++) top += problemsPanel.getItemLayout(row).height;
 		const x = (bounds.left + bounds.right) / 2, y = top + Math.min(problemsPanel.getItemLayout(index).height, layout.contentBottom - top) / 2;
-		f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+		f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 			releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 });
-		f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0,
+		f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: 0, pressedButtons: 0,
 			releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 2 });
 	}
 	const group = f.editor.editorParts.activeGroup, input = group.model.activeTab!;

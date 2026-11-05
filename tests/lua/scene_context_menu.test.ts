@@ -59,7 +59,7 @@ function secondary(f: Fixture, index: number, gutter = false): void {
 	const x = layout.contentLeft + (row.depth + (gutter ? 0.5 : 1.5)) * layout.indentWidth;
 	const y = layout.contentTop + (index - tree.scroll + 0.5) * layout.rowHeight;
 	for (const down of [true, false]) {
-		f.host.clock.advance(10); f.editor.dispatchPointer({ x, y, buttons: down ? PointerButton.Secondary : 0,
+		f.host.clock.advance(10); f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: down ? PointerButton.Secondary : 0,
 			pressedButtons: down ? PointerButton.Secondary : 0, releasedButtons: down ? 0 : PointerButton.Secondary,
 			cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	}
@@ -92,7 +92,7 @@ function viewportVisualPoint(f: Fixture) {
 }
 function viewportPointer(f: Fixture, x: number, y: number, buttons: number, pressedButtons = 0, releasedButtons = 0): void {
 	f.host.clock.advance(10);
-	f.editor.dispatchPointer({ x, y, buttons, pressedButtons, releasedButtons,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons, pressedButtons, releasedButtons,
 		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 }
 
@@ -259,7 +259,7 @@ for (const section of ['outline', 'details'] as const) for (const route of ['ove
 		else {
 			const bounds = bar.tooltipItem.bounds;
 			const x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
-			for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
+			for (const down of [true, false]) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y,
 				buttons: down ? PointerButton.Secondary : 0, pressedButtons: down ? PointerButton.Secondary : 0,
 				releasedButtons: down ? 0 : PointerButton.Secondary, cancelledButtons: 0,
 				modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
@@ -284,7 +284,7 @@ for (const target of ['definition', 'member'] as const) test(`Scene pointer ${ta
 	const y = layout.contentTop + (index - tree.scroll + 0.5) * layout.rowHeight;
 	for (const down of [true, false]) {
 		f.host.clock.advance(10);
-		f.editor.dispatchPointer({ x, y, buttons: down ? PointerButton.Primary : 0,
+		f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: down ? PointerButton.Primary : 0,
 			pressedButtons: down ? PointerButton.Primary : 0, releasedButtons: down ? 0 : PointerButton.Primary,
 			cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	}
@@ -318,7 +318,7 @@ test('an incoming Scene click cannot replace a newer selection made by its depar
 	t.after(release);
 	for (const down of [true, false]) {
 		f.host.clock.advance(10);
-		f.editor.dispatchPointer({ x, y, buttons: down ? PointerButton.Primary : 0,
+		f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: down ? PointerButton.Primary : 0,
 			pressedButtons: down ? PointerButton.Primary : 0, releasedButtons: down ? 0 : PointerButton.Primary,
 			cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	}
@@ -395,7 +395,7 @@ test('secondary click on the Details body accepts a focused field draft without 
 	assert.equal(field.field.focusTarget.focus(), true); setFieldText(field.field, '77', true);
 	const source = f.model.buffer.getText(), bounds = f.input.view.details.viewport.bounds;
 	const show = t.mock.method(f.editor.contextMenu, 'show');
-	for (const down of [true, false]) f.editor.dispatchPointer({ x: bounds.left + 1, y: bounds.top + 1,
+	for (const down of [true, false]) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: bounds.left + 1, y: bounds.top + 1,
 		buttons: down ? PointerButton.Secondary : 0, pressedButtons: down ? PointerButton.Secondary : 0,
 		releasedButtons: down ? 0 : PointerButton.Secondary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	f.update();
@@ -521,7 +521,7 @@ for (const route of ['pointer', 'ContextMenu', 'F10'] as const) test(`document S
 	f.editor.commands.execute('sceneEditor.details', f.primary.hierarchy.control.focusTarget);
 	const origin = inputFocus.admittedTarget, before = f.model.buffer.getText(), bounds = f.input.view.details.viewport.bounds;
 	const show = t.mock.method(f.editor.contextMenu, 'show');
-	if (route === 'pointer') for (const down of [true, false]) f.editor.dispatchPointer({ x: bounds.left + 1, y: bounds.top + 1,
+	if (route === 'pointer') for (const down of [true, false]) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: bounds.left + 1, y: bounds.top + 1,
 		buttons: down ? PointerButton.Secondary : 0, pressedButtons: down ? PointerButton.Secondary : 0,
 		releasedButtons: down ? 0 : PointerButton.Secondary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	else {

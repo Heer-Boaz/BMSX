@@ -33,7 +33,7 @@ async function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
 	assert.equal(input.tree.roots.length, 1); assert.equal(input.tree.roots[0].children.length, 2);
 	const model = input.workingCopy, menu = f.editor.contextMenu;
 	const pointer = (x: number, y: number, button: PointerButton) => {
-		for (const down of [true, false]) f.editor.dispatchPointer({ x, y, buttons: down ? button : 0,
+		for (const down of [true, false]) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: down ? button : 0,
 			pressedButtons: down ? button : 0, releasedButtons: down ? 0 : button, cancelledButtons: 0,
 			modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 		f.update();

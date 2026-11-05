@@ -1,3 +1,4 @@
+import type { WorkbenchPreferences } from './services/preferences/preferences';
 import type { ConversationObserverFactory } from '../../hosts/common/conversation_observer';
 import type { StudioSourceContext } from '../../hosts/common/studio_projects';
 import { GameCaptureService } from '../../hosts/common/game_capture';
@@ -36,6 +37,7 @@ export async function prepareWorkbenchRuntime(
 	encodePngImage: PngImageEncoder,
 	decodeImage: ImageDecoder,
 	display: WorkbenchDisplay,
+	preferences: WorkbenchPreferences,
 	input: Input,
 	audioOutput: HostAudioOutput,
 	runtimeTasks: RuntimeTaskQueue,
@@ -69,6 +71,7 @@ export async function prepareWorkbenchRuntime(
 		new GameCaptureService(presenter, presentation, runtimeTasks, encodePngImage),
 		decodeImage,
 		display,
+		preferences,
 		input,
 		audioOutput,
 		runtimeTasks,

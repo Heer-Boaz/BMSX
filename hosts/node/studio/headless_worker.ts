@@ -1,3 +1,4 @@
+import { WorkbenchPreferences } from '../../../ide/workbench/services/preferences/preferences';
 import { readFile } from 'node:fs/promises';
 import { parentPort, workerData, Worker } from 'node:worker_threads';
 import { HostAudioDevice } from '../../common/audio_device';
@@ -95,7 +96,7 @@ class HeadlessStudioRuntime {
 			[{ admission: options.project.cartridge, layer: media.cartridgeSlots[0]! }]);
 		this.catalog = catalog;
 		this.workbench = await prepareWorkbenchRuntime(media, this.runtime, this.presenter, this.presentation,
-			encodePngImage, decodeImage, this.videoOutput, this.input, this.audioOutput, this.tasks, this.execution,
+			encodePngImage, decodeImage, this.videoOutput, new WorkbenchPreferences(new MemoryStorage()), this.input, this.audioOutput, this.tasks, this.execution,
 			this.rewind, this.hostMenu, new MemoryStorage(), options.project.cartridge, { catalog,
 				systemContextId: options.project.system.id, cartridgeContextIds: [options.project.cartridge.id, null] },
 			options.recoveryIdentity, new WorkerWorkspaceRecordProvider(parentPort!), this.clock, new HeadlessClipboard(),

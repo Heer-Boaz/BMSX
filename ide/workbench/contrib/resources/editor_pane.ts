@@ -1,7 +1,6 @@
 import { STATUS_PRIORITY_CONTENT, type WorkbenchStatusItem } from '../../common/status_bar';
 import * as constants from '../../../common/constants';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
-import { KeyModifier } from '../../../../hosts/common/input/text';
 import { create_rect_bounds, point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { ResourceViewerNavigationSelection } from './navigation_selection';
@@ -17,7 +16,7 @@ import { drawEditorText } from '../../../editor/render/text_renderer';
 import { measureText } from '../../../editor/common/text/layout';
 import type { ResourceImagePreview, ResourceViewerInput } from './editor_input';
 import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
-import { Scrollbar } from '../../ui/scrollbar';
+import { Scrollbar, scrollWheel } from '../../ui/scrollbar';
 import { ScrollbarPointerControl } from '../../ui/scrollbar_pointer';
 import { WorkbenchImageControl } from '../../ui/image_control';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
@@ -213,16 +212,13 @@ export class ResourceViewerEditorPane extends WorkbenchViewEditorPane<ResourceVi
 		}
 	}
 
-	public handleWheel(event: WheelInputSnapshot): void {
-		if (this.attachedImage !== undefined) { this.image.handleWheel(event); return; }
-		if (!event.valid || !event.insideViewport || !point_in_rect(event.viewportX, event.viewportY, this.contentBounds)) return;
+	public override handleWheel(event: WheelInputSnapshot): boolean {
+		if (this.attachedImage !== undefined) return this.image.handleWheel(event);
+		if (!event.valid || !event.insideViewport || !point_in_rect(event.viewportX, event.viewportY, this.contentBounds)) return false;
 		this.scrollbarPointer.cancelPointer();
-		if ((event.modifiers & KeyModifier.shift) !== 0 && event.deltaX === 0) this.horizontal.setScroll(this.horizontal.getScroll() + event.deltaY * 16);
-		else {
-			this.scrollbar.setScroll(this.scrollbar.getScroll() + event.deltaY);
-			this.horizontal.setScroll(this.horizontal.getScroll() + event.deltaX * 16);
-		}
+		const changed = scrollWheel(this.horizontal, this.scrollbar, event, 16, 1);
 		this.input.view.scroll = this.scrollbar.getScroll(); this.input.view.scrollLeft = this.horizontal.getScroll();
+		return changed;
 	}
 
 	public updateStatus(): void {

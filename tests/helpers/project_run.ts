@@ -1,3 +1,5 @@
+import { MemoryStorage } from '../../ide/workspace/memory_storage';
+import { WorkbenchPreferences } from '../../ide/workbench/services/preferences/preferences';
 import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
 import assert from 'node:assert/strict';
 import type { TestContext } from 'node:test';
@@ -64,7 +66,7 @@ export function createProjectRunFixture(t: TestContext, bootable = true, attachm
 	const externalWork = (): never => { throw new Error('Project command admission must not build or launch a guest.'); };
 	const ide = new RuntimeIdeState(runtime, host.presenter, { capture: externalWork }, externalWork,
 		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) }),
-		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
+		new WorkbenchPreferences(new MemoryStorage()), host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 800, height: 320 }, sources, new Map(), externalWork, externalWork, externalWork);
 	const editor = ide.editor, part = editor.editorParts.createDocument(), group = part.activeGroup;
 	t.after(async () => {

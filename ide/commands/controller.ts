@@ -149,8 +149,8 @@ export class IdeCommandController {
 			case 'workspace.uiScale':
 				this.editor.quickInput.pick('UI SCALE', 'Scale Studio controls, not the game', () => new TextQuickPickProvider(
 					WORKSPACE_UI_SCALES.map(scale => ({ scale, label: `${scale * 100}%`,
-						description: scale === this.editor.uiScale ? 'Current' : '', detail: '' }))),
-					choice => this.editor.setUiScale(choice.scale));
+						description: scale === this.editor.preferences.uiScale ? 'Current' : '', detail: '' }))),
+					choice => { this.editor.preferences.uiScale = choice.scale; });
 				return;
 			case 'workspace.resetLayout': this.editor.resetLayout(); return;
 			case 'sceneEditor': showMainScenePicker(this.editor, this.sources.catalog, invocationTarget); return;

@@ -316,17 +316,16 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 		return true;
 	}
 
-	public handleWheel(event: WheelInputSnapshot): void {
-		if (this.targetInspection.model !== undefined) this.targetInspection.handleWheel(event, event.deltaY * 3);
-		else if (this.inspector.visible) this.inspector.handleWheel(event, event.deltaY * editorViewState.font.lineHeight * 3);
+	public override handleWheel(event: WheelInputSnapshot): boolean {
+		if (this.targetInspection.model !== undefined) return this.targetInspection.handleWheel(event, event.deltaY * 3);
+		else if (this.inspector.visible) return this.inspector.handleWheel(event, event.deltaY * editorViewState.font.lineHeight * 3);
 		else {
 			const view = this.input.view;
 			prepareScenarioLabLayout(view, this.contentBounds);
 			const delta = event.deltaY * 3;
-			if (workbenchListContainsPosition(view.testPane, event.viewportX, event.viewportY)) scrollWorkbenchList(view.testPane, delta);
-			else if (workbenchListContainsPosition(view.resultPane, event.viewportX, event.viewportY)) scrollWorkbenchList(view.resultPane, delta);
-			else if (view.focus === 'tests') scrollWorkbenchList(view.testPane, delta);
-			else scrollWorkbenchList(view.resultPane, delta);
+			if (workbenchListContainsPosition(view.testPane, event.viewportX, event.viewportY)) return scrollWorkbenchList(view.testPane, delta);
+			else if (workbenchListContainsPosition(view.resultPane, event.viewportX, event.viewportY)) return scrollWorkbenchList(view.resultPane, delta);
+			return false;
 		}
 	}
 

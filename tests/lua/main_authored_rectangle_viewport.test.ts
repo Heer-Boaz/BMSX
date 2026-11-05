@@ -71,7 +71,7 @@ test('native viewport picking falls through a transparent image to the actual re
 		assert.ok(pickViewportCanvas(f.view.canvas.items, x, y) === expected);
 		for (const down of [true, false]) {
 			f.host.clock.advance(10);
-			f.editor.dispatchPointer({ x, y, buttons: down ? PointerButton.Primary : 0,
+			f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: down ? PointerButton.Primary : 0,
 				pressedButtons: down ? PointerButton.Primary : 0, releasedButtons: down ? 0 : PointerButton.Primary,
 				cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 		}

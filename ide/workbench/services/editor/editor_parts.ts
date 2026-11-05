@@ -526,7 +526,7 @@ export class EditorParts {
 						|| destination.kind !== 'window' && this.owners.get(destination.group) !== targetPart
 						|| movingActive && source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetGeneration
 						|| !source.model.contains(input) || (source.model.activeTab === input) !== movingActive || target.model.findMatching(input) !== existing) return false;
-					const targetReceipt = target.panes.clearEditor();
+					const targetReceipt = target.panes.clearEditor()?.generation;
 					if (this.owners.get(source) !== sourcePart || !targetPart.ownsGroup(target) || source.paneSurface.retired || target.paneSurface.retired
 						|| destination.kind !== 'window' && this.owners.get(destination.group) !== targetPart
 						|| movingActive && source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetReceipt
@@ -647,13 +647,13 @@ export class EditorParts {
 						|| !plan.entries.every((entry, index) => source.model.tabs[index] === entry.input && target.model.findMatching(entry.input) === (entry.receiver === entry.input ? undefined : entry.receiver))) return false;
 					const targetGeneration = target.panes.openGeneration;
 					source.tabStrip.cancelDrag();
-					const sourceReceipt = source.panes.clearEditor('move');
+					const sourceReceipt = source.panes.clearEditor('move')?.generation;
 					if (this.owners.get(source) !== sourcePart || !targetPart.ownsGroup(target) || source.surface.retired || target.surface.retired
 						|| source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetGeneration
 						|| source.model.activeTab !== sourceActive || source.model.tabs.length !== plan.entries.length
 						|| !plan.entries.every((entry, index) => source.model.tabs[index] === entry.input)
 						|| target.model.tabs.length !== targetInputs.length || !targetInputs.every((input, index) => target.model.tabs[index] === input)) return false;
-					const targetReceipt = target.panes.clearEditor('move');
+					const targetReceipt = target.panes.clearEditor('move')?.generation;
 					if (this.owners.get(source) !== sourcePart || !targetPart.ownsGroup(target) || source.surface.retired || target.surface.retired
 						|| source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetReceipt
 						|| source.model.activeTab !== sourceActive || target.model.activeTab !== targetActive || source.model.tabs.length !== plan.entries.length

@@ -13,6 +13,7 @@ export type WorkbenchModalPresentation = {
 export interface WorkbenchSurfaceCallbacks {
 	draw(): void;
 	handlePointer?(snapshot: PointerInputSnapshot, now: number): void;
+	/** True consumes; false/absence bubbles within this window's presentation ancestry. */
 	handleWheel?(event: WheelInputSnapshot): boolean;
 	/** Called after detachment, before descendant teardown, while ownership membership is available. */
 	onRetire?(): void;

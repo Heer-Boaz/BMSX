@@ -1,3 +1,5 @@
+import { MemoryStorage } from '../../ide/workspace/memory_storage';
+import { WorkbenchPreferences } from '../../ide/workbench/services/preferences/preferences';
 import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
 import { afterTest } from '../helpers/test_cleanup';
 import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
@@ -8,7 +10,7 @@ import { findEditorGroup } from '../../ide/workbench/services/editor/editor_grou
 import { createScenarioTestSourceRecord } from '../helpers/scenario_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
-import { PointerButton } from '../../hosts/common/input/pointer_event';
+import { PointerButton, type PointerInputEvent } from '../../hosts/common/input/pointer_event';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
 import { IdeMicrotaskQueue } from '../../ide/common/microtask_queue';
@@ -109,7 +111,7 @@ function fixture(t: TestContext, authored?: { image: TestBlua32Image; registry: 
 	const unused = (): never => { throw new Error('Surface routing does not request domain work.'); };
 	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: unused }, unused,
 		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) }),
-		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
+		new WorkbenchPreferences(new MemoryStorage()), host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
 	editorRuntimeState.active = true;
@@ -117,7 +119,7 @@ function fixture(t: TestContext, authored?: { image: TestBlua32Image; registry: 
 	host.input.setPointerAdmissionMode('routed');
 	let buttons = 0;
 	function pointer(x: number, y: number, nextButtons = buttons) {
-		editor.dispatchPointer({ x, y, buttons: nextButtons, pressedButtons: nextButtons & ~buttons,
+		editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: nextButtons, pressedButtons: nextButtons & ~buttons,
 			releasedButtons: buttons & ~nextButtons, cancelledButtons: 0, modifiers: KeyModifier.none,
 			spaceDown: false, timestamp: host.clock.now() });
 		buttons = nextButtons;
@@ -320,7 +322,7 @@ function romFixture(t: TestContext) {
 	f.second.focus(); assert.ok(inputFocus.admittedTarget === f.second.commandTarget);
 	let buttons = 0;
 	const pointer = (x: number, y: number, next = buttons) => {
-		f.editor.dispatchPointer({ x, y, buttons: next, pressedButtons: next & ~buttons, releasedButtons: buttons & ~next,
+		f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: next, pressedButtons: next & ~buttons, releasedButtons: buttons & ~next,
 			cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 		buttons = next;
 	};
@@ -342,7 +344,7 @@ for (const client of ['map', 'list'] as const) test(`ROM ${client} press cannot 
 	let callbacks = 0;
 	const unbind = f.second.commandTarget.onDidBlur(() => { unbind(); callbacks++; f.firstGroup.openEditor(replacement); });
 	afterTest(t, unbind);
-	assert.doesNotThrow(() => f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+	assert.doesNotThrow(() => f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() }));
 	assert.equal(callbacks, 1); assert.ok(model.selection === selected); assert.equal(model.revision, revision);
 	assert.equal(model.mode, 'structure'); assert.equal(model.filter, ''); assert.equal(f.input.readerWindow.open, false);
@@ -365,7 +367,7 @@ test('ROM filter press cannot continue native field selection after Source blur 
 	const unbind = f.second.commandTarget.onDidBlur(() => { unbind(); callbacks++; f.firstGroup.openEditor(replacement); });
 	afterTest(t, unbind);
 	const bounds = f.input.filterBounds;
-	assert.doesNotThrow(() => f.editor.dispatchPointer({ x: bounds.right - 4, y: (bounds.top + bounds.bottom) / 2,
+	assert.doesNotThrow(() => f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: bounds.right - 4, y: (bounds.top + bounds.bottom) / 2,
 		buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary, releasedButtons: 0, cancelledButtons: 0,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() }));
 	assert.equal(callbacks, 1); assert.deepEqual(text.readText(), state);
@@ -525,7 +527,7 @@ test(`AEM ${gesture} press consumes its surviving semantic key after canonical r
 		}
 	});
 	afterTest(t, unbind);
-	f.editor.dispatchPointer({ x, y, buttons: button, pressedButtons: button,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: button, pressedButtons: button,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	assert.equal(callbacks, 1);
 	if (admission === 'retire') {
@@ -552,7 +554,7 @@ test(`AEM ${gesture} press consumes its surviving semantic key after canonical r
 test('AEM property hover updates feedback without acquiring focus, selecting a key or changing disclosure', t => {
 	const f = aemPointerFixture(t), version = f.model.version;
 	let blurs = 0; afterTest(t, f.second.commandTarget.onDidBlur(() => { blurs++; }));
-	f.editor.dispatchPointer({ x: f.tree.layout.contentRight - 4,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: f.tree.layout.contentRight - 4,
 		y: f.tree.layout.contentTop + (f.offeredIndex - (f.tree.scroll | 0) + 0.5) * f.tree.layout.rowHeight,
 		buttons: 0, pressedButtons: 0, releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none,
 		spaceDown: false, timestamp: f.host.clock.now() });
@@ -2871,7 +2873,7 @@ test('retiring the press owner cannot admit that occurrence to a replacement vie
 				game.focusTarget.focus();
 			},
 		});
-		if (shortClick) editor.dispatchPointer({ x: 100, y: 100, buttons: 0, pressedButtons: PointerButton.Primary,
+		if (shortClick) editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: 100, y: 100, buttons: 0, pressedButtons: PointerButton.Primary,
 			releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 });
 		else pointer(100, 100, PointerButton.Primary);
 		host.input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
@@ -2917,4 +2919,58 @@ test('actual menu tab commands retain their invoking group and retired origins n
 	editor.commands.execute('tabs.next', origin);
 	assert.equal(editor.editorParts.main.activeGroup.model.activeTab, mainActive);
 	assert.deepEqual(editor.editorParts.main.activeGroup.model.tabs, mainInputs);
+});
+
+test('unhandled wheel bubbles inside the hit window, never to a sibling or through a popup', t => {
+	const { editor, extent } = fixture(t), calls: string[] = [];
+	const wheel = () => editor.dispatchWheel({ x: 100, y: 100, deltaX: 0, deltaY: 1, attachmentDeltaY: 1,
+		modifiers: KeyModifier.none, timestamp: 0 });
+	editor.surfaces.attach({ role: 'window', captureScope: Symbol('behind'), isVisible: () => true,
+		getBounds: () => extent, getClip: () => extent, draw() {}, handleWheel: () => { calls.push('behind'); return true; } });
+	const window = editor.surfaces.attach({ role: 'window', captureScope: Symbol('front'), isVisible: () => true,
+		getBounds: () => extent, getClip: () => extent, draw() {}, handleWheel: () => { calls.push('window'); return false; } });
+	let childConsumes = true;
+	const child = editor.surfaces.attach({ role: 'content', presentationParent: window, captureScope: Symbol('child'), isVisible: () => true,
+		getBounds: () => extent, getClip: () => extent, draw() {}, handleWheel: () => { calls.push('child'); return childConsumes; } });
+	wheel(); assert.deepEqual(calls, ['child']);
+	calls.length = 0; childConsumes = false;
+	wheel(); assert.deepEqual(calls, ['child', 'window']);
+	calls.length = 0;
+	editor.surfaces.attach({ role: 'transient', outsidePress: 'consume', lifetimeOwner: child, presentationParent: window,
+		captureScope: Symbol('popup'), isVisible: () => true, getBounds: () => extent, getClip: () => extent,
+		draw() {}, handleWheel: () => { calls.push('popup'); return false; } });
+	wheel(); assert.deepEqual(calls, ['popup']);
+});
+
+test('UI capture belongs to its initiating contact, including cancellation and draining after retirement', t => {
+	const { editor, extent } = fixture(t), calls: string[] = [];
+	const capture = { handleCapturedPointer() { calls.push('move'); }, releaseCapturedPointer() { calls.push('release'); },
+		cancelPointer() { calls.push('cancel'); } };
+	const scope = Symbol('contact fixture');
+	editor.surfaces.attach({ role: 'window', captureScope: scope, isVisible: () => true,
+		getBounds: () => extent, getClip: () => extent, draw() {}, handlePointer: event => {
+			calls.push('hit');
+			if (event.justPressedButtons !== 0) pointerCapture.capture(capture);
+		} });
+	const contact = (pointerId: number, buttons: number, pressedButtons = 0, releasedButtons = 0, cancelledButtons = 0) => {
+		const event: PointerInputEvent = { pointerId, pointerType: 'touch', x: 100, y: 100, buttons, pressedButtons,
+			releasedButtons, cancelledButtons, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 };
+		editor.dispatchPointer(event);
+	};
+	contact(10, 1, 1); assert.deepEqual(calls, ['hit']);
+	contact(11, 1, 1); contact(11, 1); contact(11, 0, 0, 0, 1);
+	assert.deepEqual(calls, ['hit']); assert.equal(pointerCapture.active, true);
+	contact(10, 1); contact(10, 0, 0, 1);
+	assert.deepEqual(calls, ['hit', 'move', 'release']); assert.equal(pointerCapture.active, false);
+	contact(11, 1); contact(11, 0, 0, 1);
+	assert.deepEqual(calls, ['hit', 'move', 'release'], 'an ignored held contact cannot finish or start a UI gesture');
+	calls.length = 0;
+	contact(20, 1, 1); pointerCapture.cancelScope(scope);
+	assert.equal(pointerCapture.draining, true);
+	contact(21, 1, 1); contact(21, 0, 0, 1);
+	assert.equal(pointerCapture.draining, true, 'only the interrupted initiating contact can drain its own hold');
+	contact(20, 0, 0, 1);
+	assert.equal(pointerCapture.draining, false); assert.deepEqual(calls, ['hit', 'cancel']);
+	contact(21, 1, 1); contact(21, 0, 0, 0, 1);
+	assert.deepEqual(calls, ['hit', 'cancel', 'hit', 'cancel'], 'a fresh down is admitted and a native cancel never drops');
 });

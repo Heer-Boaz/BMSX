@@ -59,7 +59,7 @@ test('shutdown withdraws native and physical Source authority synchronously whil
 	f.first.focus();
 	assert.ok(f.editor.textTarget !== undefined && f.editor.clipboardTarget !== undefined);
 	const bounds = getCodeAreaBounds(f.first.code), x = bounds.textLeft, y = bounds.codeTop + f.first.code.lineHeight / 2;
-	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	assert.equal(pointerCapture.active, true);
 	const target = inputFocus.admittedTarget!, generation = target.scope.contextGeneration;
@@ -76,7 +76,7 @@ test('shutdown withdraws native and physical Source authority synchronously whil
 	f.editor.commands.execute('undo', target);
 	f.editor.dispatchKey(new KeyInputEvent('Delete', KeyModifier.none));
 	f.editor.dispatchKey(new KeyInputEvent('Delete', KeyModifier.none, false, false));
-	f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary,
 		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	assert.equal(f.model.version, version); assert.equal(f.model.buffer.getText(), source);
 	assert.ok(f.ide.models.get(f.model.identity) === f.model && f.model.dirty);

@@ -25,7 +25,8 @@ for (const font of ['tiny', 'msx'] as const) for (const direction of ['right', '
 		main.focusActivity();
 		editor.updateViewport(direction === 'right' ? { width: 200, height: 320 } : { width: 300, height: 120 });
 		editor.setFontVariant(font); f.update();
-		const first = part.activeGroup; first.openEditor(new CodeEditorInput(f.firstInput.workingCopy));
+		// Keep the Scene's actual document visible; its companions do not outlive a replaced pane.
+		const first = part.splitGroup(part.activeGroup, direction); first.openEditor(new CodeEditorInput(f.firstInput.workingCopy));
 		const second = part.splitGroup(first, direction); second.openEditor(new CodeEditorInput(f.secondInput.workingCopy));
 		const third = part.splitGroup(second, direction);
 		const thirdResource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'third.lua' })!;
@@ -56,7 +57,7 @@ for (const font of ['tiny', 'msx'] as const) for (const direction of ['right', '
 			assert.equal(editor.surfaces.hitTest((bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2)?.captureScope, prompt.pointerScope);
 		}
 		const cancel = prompt.view.buttons.find(button => button.choice === 'cancel')!.bounds;
-		for (const down of [true, false]) editor.dispatchPointer({ x: (cancel.left + cancel.right) / 2, y: (cancel.top + cancel.bottom) / 2,
+		for (const down of [true, false]) editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: (cancel.left + cancel.right) / 2, y: (cancel.top + cancel.bottom) / 2,
 			buttons: down ? PointerButton.Primary : 0, pressedButtons: down ? PointerButton.Primary : 0,
 			releasedButtons: down ? 0 : PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 		assert.equal(await decision, 'cancel'); assert.equal(prompt.visible, false);

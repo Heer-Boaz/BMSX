@@ -28,7 +28,7 @@ function secondary(f: Fixture, group: EditorGroupView, input?: EditorInput): voi
 	const y = (layout.viewportBounds.top + layout.viewportBounds.bottom) / 2;
 	for (const down of [true, false]) {
 		f.host.clock.advance(10);
-		f.editor.dispatchPointer({ x, y, buttons: down ? PointerButton.Secondary : 0,
+		f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: down ? PointerButton.Secondary : 0,
 			pressedButtons: down ? PointerButton.Secondary : 0, releasedButtons: down ? 0 : PointerButton.Secondary,
 			cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	}

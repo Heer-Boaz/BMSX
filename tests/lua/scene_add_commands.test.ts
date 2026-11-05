@@ -85,7 +85,7 @@ test('Details value selection owns pointer movement and release outside its pane
 	const x = bounds.right - 8, y = (bounds.top + bounds.bottom) / 2;
 	const outsideX = (canvas.left + canvas.right) / 2, outsideY = (canvas.top + canvas.bottom) / 2;
 	const pointer = (px: number, py: number, buttons: number, pressedButtons: number, releasedButtons: number) =>
-		f.editor.dispatchPointer({ x: px, y: py, buttons, pressedButtons, releasedButtons, cancelledButtons: 0,
+		f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: px, y: py, buttons, pressedButtons, releasedButtons, cancelledButtons: 0,
 			modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	pointer(x, y, PointerButton.Primary, PointerButton.Primary, 0);
 	assert.equal(value.field.focusTarget.hasFocus, true);
@@ -102,7 +102,7 @@ test('a coalesced Details value click releases its selection in the same dispatc
 	const f = await fixture(t);
 	f.key('Home'); f.key('ArrowDown'); f.update();
 	const value = f.primary.details.control.controls[0], bounds = f.primary.view.details.properties[0].bounds;
-	f.editor.dispatchPointer({ x: bounds.right - 8, y: (bounds.top + bounds.bottom) / 2,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: bounds.right - 8, y: (bounds.top + bounds.bottom) / 2,
 		buttons: 0, pressedButtons: PointerButton.Primary, releasedButtons: PointerButton.Primary, cancelledButtons: 0,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	assert.equal(value.field.focusTarget.hasFocus, true);
@@ -121,7 +121,7 @@ test('empty canvas click clears the shared Scene selection across hierarchy, Det
 	assert.notEqual(view.viewport.gizmo.world, undefined);
 	const bounds = f.primary.view.viewport.bounds, x = bounds.left + 2, y = bounds.top + 2;
 	assert.equal(view.viewport.pick(x, y), undefined);
-	for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
+	for (const down of [true, false]) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y,
 		buttons: down ? PointerButton.Primary : 0, pressedButtons: down ? PointerButton.Primary : 0,
 		releasedButtons: down ? 0 : PointerButton.Primary, cancelledButtons: 0,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
@@ -166,7 +166,7 @@ function chooseOther(f: Fixture): void {
 function clickViewport(f: Fixture, primary = f.primary): void {
 	const bounds = primary.view.viewport.bounds;
 	const x = (bounds.left + bounds.right) / 2 + 27, y = (bounds.top + bounds.bottom) / 2 - 12;
-	for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
+	for (const down of [true, false]) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y,
 		buttons: down ? PointerButton.Primary : 0, pressedButtons: down ? PointerButton.Primary : 0,
 		releasedButtons: down ? 0 : PointerButton.Primary, cancelledButtons: 0,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
@@ -202,11 +202,11 @@ test('cancelling the actual Add picker returns to its origin and never arms plac
 test('secondary click cancels placement before opening the canvas menu, without publishing source', async t => {
 	const f = await fixture(t); openAdd(f); chooseOther(f);
 	const bounds = f.primary.view.viewport.bounds, x = (bounds.left + bounds.right) / 2 + 27, y = (bounds.top + bounds.bottom) / 2 - 12;
-	f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0, releasedButtons: 0,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: 0, pressedButtons: 0, releasedButtons: 0,
 		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() }); f.update();
 	assert.ok(f.primary.view.viewport.placementPreview !== undefined);
 	const secondary = () => {
-		for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
+		for (const down of [true, false]) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y,
 			buttons: down ? PointerButton.Secondary : 0, pressedButtons: down ? PointerButton.Secondary : 0,
 			releasedButtons: down ? 0 : PointerButton.Secondary, cancelledButtons: 0,
 			modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
@@ -228,7 +228,7 @@ test('viewport origin helpers expose their member actions instead of canvas crea
 	const bounds = f.primary.view.viewport.bounds, x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
 	const entry = f.primary.authoring.subject!.objects[0];
 	assert.ok(view.pick(x, y) === entry);
-	for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
+	for (const down of [true, false]) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y,
 		buttons: down ? PointerButton.Secondary : 0, pressedButtons: down ? PointerButton.Secondary : 0,
 		releasedButtons: down ? 0 : PointerButton.Secondary, cancelledButtons: 0,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
@@ -257,7 +257,7 @@ test('canvas context closes when departing field focus publishes a newer source 
 	const field = f.primary.details.control.controls[0]; assert.equal(field.field.focusTarget.focus(), true);
 	const target = f.editor.textTarget!; assert.equal(target.replaceText(0, target.readText().text.length, '41.5'), true);
 	const bounds = f.primary.view.viewport.bounds, x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
-	for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
+	for (const down of [true, false]) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y,
 		buttons: down ? PointerButton.Secondary : 0, pressedButtons: down ? PointerButton.Secondary : 0,
 		releasedButtons: down ? 0 : PointerButton.Secondary, cancelledButtons: 0,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
@@ -291,7 +291,7 @@ test('a viewport presented in another window keeps placement and popup ownership
 	const bounds = primary.view.viewport.bounds;
 	const x = (bounds.left + bounds.right) / 2 + 27, y = (bounds.top + bounds.bottom) / 2 - 12;
 	const secondary = () => {
-		for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
+		for (const down of [true, false]) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y,
 			buttons: down ? PointerButton.Secondary : 0, pressedButtons: down ? PointerButton.Secondary : 0,
 			releasedButtons: down ? 0 : PointerButton.Secondary, cancelledButtons: 0,
 			modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
@@ -319,7 +319,7 @@ for (const region of ['hierarchy', 'details'] as const) for (const route of ['ov
 		else {
 			const bounds = panel.actionBar.tooltipItem.bounds;
 			const x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
-			for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
+			for (const down of [true, false]) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y,
 				buttons: down ? PointerButton.Secondary : 0, pressedButtons: down ? PointerButton.Secondary : 0,
 				releasedButtons: down ? 0 : PointerButton.Secondary, cancelledButtons: 0,
 				modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
@@ -351,7 +351,7 @@ for (const route of ['pointer', 'keyboard'] as const) test(`Main hierarchy ${rou
 		const tree = f.primary.view.hierarchy.outline, row = tree.rows[index], layout = tree.layout;
 		const x = layout.contentLeft + (row.depth + 1.5) * layout.indentWidth;
 		const y = layout.contentTop + (index - tree.scroll + 0.5) * layout.rowHeight;
-		for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
+		for (const down of [true, false]) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y,
 			buttons: down ? PointerButton.Secondary : 0, pressedButtons: down ? PointerButton.Secondary : 0,
 			releasedButtons: down ? 0 : PointerButton.Secondary, cancelledButtons: 0,
 			modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
@@ -380,7 +380,7 @@ for (const route of ['pointer', 'ContextMenu', 'F10'] as const)
 		const show = t.mock.method(f.editor.contextMenu, 'show');
 		if (route === 'pointer') {
 			const bounds = f.primary.view.details.viewport.bounds, x = bounds.left + 1, y = bounds.top + 1;
-			for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
+			for (const down of [true, false]) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y,
 				buttons: down ? PointerButton.Secondary : 0, pressedButtons: down ? PointerButton.Secondary : 0,
 				releasedButtons: down ? 0 : PointerButton.Secondary, cancelledButtons: 0,
 				modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
@@ -460,11 +460,11 @@ for (const valid of [true, false]) test(`the physical hierarchy Add action ${val
 	}));
 	// These bounds identify a public action input target; their size and position are not asserted.
 	const x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
-	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	assert.equal(inputFocus.admittedTarget, field.field.focusTarget);
 	assert.equal(field.pending, true); assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.picker.visible, false);
-	f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary,
 		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	f.update();
 	if (valid) {
@@ -489,7 +489,7 @@ test('viewport mode commands publish mutually exclusive checked state through th
 	for (const mode of ['2d', '3d'] as const) {
 		f.editor.commands.execute(mode === '2d' ? 'sceneViewport.view2d' : 'sceneViewport.view3d', target); f.update();
 		assert.ok(f.primary.view.viewport.pick(x, y) === undefined);
-		for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
+		for (const down of [true, false]) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y,
 			buttons: down ? PointerButton.Secondary : 0, pressedButtons: down ? PointerButton.Secondary : 0,
 			releasedButtons: down ? 0 : PointerButton.Secondary, cancelledButtons: 0,
 			modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });

@@ -222,8 +222,8 @@ export class HomeEditorPane extends WorkbenchViewEditorPane<HomeInput> {
 		return this.scroll.handlePointer(snapshot);
 	}
 	public handleKeyboard(): void {}
-	public handleWheel(event: WheelInputSnapshot): void {
-		this.scroll.handleWheel(event, event.deltaY * this.actionHeight);
+	public override handleWheel(event: WheelInputSnapshot): boolean {
+		return this.scroll.handleWheel(event, event.deltaY * this.actionHeight);
 	}
 	public updateStatus(): void {}
 }

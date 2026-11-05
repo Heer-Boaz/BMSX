@@ -39,6 +39,7 @@ function fixture(t: TestContext) {
 	const f = createActualSourcePanes(t, false, [...MODULES.map(module => [`${module}.lua`, 'return {}'] as const), ['content.lua', SOURCE]],
 		() => new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs'))));
 	const parts = f.editor.editorParts;
+	const openScene = t.mock.method(f.editor, 'openSceneInMain');
 	parts.clear();
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'content.lua' })!;
 	const panel = f.editor.resourcePanel;
@@ -47,20 +48,22 @@ function fixture(t: TestContext) {
 	assert.ok(file.element.kind === 'file');
 	panel.navigateFiles('right');
 	const definitions = file.children.filter((node): node is DefinitionNode => node.element.kind === 'definition');
-	const activate = (node: DefinitionNode) => {
-		panel.setFocused(true); panel.setSelectionIndex(panel.files.tree.rows.indexOf(node)); panel.openSelected(); f.update();
+	const activate = async (node: DefinitionNode) => {
+		panel.setFocused(true); panel.setSelectionIndex(panel.files.tree.rows.indexOf(node)); panel.openSelected();
+		if (node.element.content.kind === 'scene') assert.equal(await openScene.mock.calls.at(-1)!.result, true);
+		f.update();
 		return parts.activeGroup;
 	};
-	return { ...f, parts, resource, definitions, activate };
+	return { ...f, parts, resource, definitions, activate, openScene };
 }
 
-test('authored documents open in real Main groups, with Scene as a retained document', t => {
+test('authored documents open in real Main groups, with Scene as a retained document', async t => {
 	const f = fixture(t), main = f.parts.main;
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;
 	assert.deepEqual(new Set(f.definitions.map(node => node.element.content.kind)),
 		new Set(['scene', 'behavior_tree', 'state_machine', 'action_effect', 'progression', 'input', 'animation']));
 	for (const node of f.definitions) {
-		const destination = f.activate(node), active = destination.model.activeTab;
+		const destination = await f.activate(node), active = destination.model.activeTab;
 		if (node.element.content.kind === 'scene') {
 			const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
 			assert.ok(client.authoring.workingCopy.resource === node.element.content.ownerResource);
@@ -79,6 +82,7 @@ test('opening Scene preserves its invoking Source split and later tool navigatio
 	const source = side.model.activeTab!, sourceControl = side.panes.activePane!;
 	f.editor.commands.execute('sceneEditor', sourceControl.commandTarget); f.update();
 	assert.equal(f.editor.quickInput.visible, true); f.key('Enter');
+	assert.equal(await f.openScene.mock.calls.at(-1)!.result, true); f.update();
 	const scene = f.editor.mainWorkspace.primary; assert.ok(scene instanceof ScenePrimaryClient);
 	const sceneGroup = f.parts.findGroup(scene.input)!;
 	assert.ok(sceneGroup !== side && f.parts.activeGroup === sceneGroup);
@@ -130,7 +134,7 @@ test('a split tab chooser opens its own retained inputs from the actual pointer 
 	assert.equal(chooser.visible, true); assert.equal(chooser.enabled, true);
 	const bounds = chooser.bounds, cycles = f.host.runtime.machine.scheduler.nowCycles;
 	for (const down of [true, false]) {
-		f.editor.dispatchPointer({ x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2,
+		f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2,
 			buttons: down ? PointerButton.Primary : 0, pressedButtons: down ? PointerButton.Primary : 0, releasedButtons: down ? 0 : PointerButton.Primary,
 			cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: down ? 0 : 1 });
 		f.update();

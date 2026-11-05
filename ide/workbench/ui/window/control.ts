@@ -555,8 +555,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	}
 
 	private handleWheel(event: WheelInputSnapshot): boolean {
-		this.options.content.handleWheel?.(event);
-		return true;
+		return this.options.content.handleWheel?.(event) === true;
 	}
 
 	public cancelPointer(): void {

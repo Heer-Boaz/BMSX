@@ -1,3 +1,4 @@
+import { WorkbenchPreferences } from '../../../ide/workbench/services/preferences/preferences';
 import { mapDisplayPointToViewport } from '../../../machine/ts/render/video_output';
 import { CodeEditorPane } from '../../../ide/workbench/contrib/code_editor/editor_pane';
 import type { EditorGroupView } from '../../../ide/workbench/services/editor/editor_group';
@@ -104,7 +105,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const context = { id: TEST_STUDIO_CARTRIDGE_CONTEXT_ID, projectRoot: media.cartridgeSlots[0]!.index.projectRootPath };
 	const system = { id: TEST_STUDIO_SYSTEM_CONTEXT_ID, projectRoot: media.system.index.projectRootPath };
 	const catalog = createLoadedProjectSourceCatalog({ admission: system, layer: media.system }, [{ admission: context, layer: media.cartridgeSlots[0]! }]);
-	const ide = await prepareWorkbenchRuntime(media, runtime, presenter, screen, encodePngImage, decodeImage, display, input,
+	const ide = await prepareWorkbenchRuntime(media, runtime, presenter, screen, encodePngImage, decodeImage, display, new WorkbenchPreferences(localStorage), input,
 		audio, tasks, execution, rewind, menu, localStorage, context, { catalog, systemContextId: system.id, cartridgeContextIds: [context.id, null] }, 'runtime-replay-session', new HttpWorkspaceRecordProvider(), clock, clipboard, new IdeMicrotaskQueue(), log, 0.3, () => new BrowserGraphLayoutEngine(new Worker('/graph-layout.worker.js')), connectAssistant);
 	const remote = new RemoteInput(input, clock, input.dispatchEditingKey.bind(input),
 		event => ide.editor.dispatchPointer(event), event => ide.editor.dispatchWheel(event));

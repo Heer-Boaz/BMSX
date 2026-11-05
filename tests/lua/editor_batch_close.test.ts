@@ -40,7 +40,7 @@ function secondary(f: Fixture, group: EditorGroupView, input: EditorInput): void
 	const x = item.bounds.left + 2, y = (layout.viewportBounds.top + layout.viewportBounds.bottom) / 2;
 	for (const down of [true, false]) {
 		f.host.clock.advance(10);
-		f.editor.dispatchPointer({ x, y, buttons: down ? PointerButton.Secondary : 0,
+		f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: down ? PointerButton.Secondary : 0,
 			pressedButtons: down ? PointerButton.Secondary : 0, releasedButtons: down ? 0 : PointerButton.Secondary,
 			cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	}
@@ -83,31 +83,49 @@ test('Palette Close All retains its invoking group when a different document bec
 	assert.equal(f.firstPart.retired, false); assert.equal(group.surface.retired, false);
 });
 
-test('physical Close All Editors chord closes every document but retains its real groups and windows', t => {
+test('physical Close All Editors chord reclaims empty splits but retains each window and its final routing group', t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts, main = parts.main.activeGroup;
 	main.openEditor(new CodeEditorInput(f.firstInput.workingCopy));
 	const side = parts.splitGroup(main, 'right'); side.openEditor(new CodeEditorInput(f.secondInput.workingCopy));
-	const groups = [...parts.groups], windows = [...parts.documents], root = parts.main.arrangement.root;
+	const groups = [...parts.groups], windows = [...parts.documents];
 	f.first.focus(); f.key('KeyK', KeyModifier.ctrl); f.key('KeyW', KeyModifier.ctrl);
 	assert.ok(groups.every(group => group.model.tabs.length === 0), 'the physical chord reaches whole-workspace closure');
-	assert.deepEqual(parts.groups, groups); assert.deepEqual(parts.documents, windows);
-	assert.ok(parts.main.arrangement.root === root);
-	assert.ok(groups.every(group => !group.surface.retired) && windows.every(part => !part.retired));
+	assert.ok(parts.documents.length === windows.length && windows.every(part => parts.documents.includes(part) && !part.retired));
+	for (const part of [parts.main, ...windows]) {
+		assert.equal(part.groups.length, 1); assert.equal(part.arrangement.root.kind, 'group');
+		assert.equal(part.activeGroup.surface.retired, false);
+	}
+	assert.ok(groups.filter(group => !parts.groups.includes(group)).every(group => group.surface.retired));
 });
 
 test('physical group Close All chord leaves sibling groups and their dirty shared source admitted', t => {
 	const f = createActualSourcePanes(t, true), parts = f.editor.editorParts, group = f.firstGroup;
 	const sibling = parts.splitGroup(group, 'right'), retained = new CodeEditorInput(f.firstInput.workingCopy);
 	sibling.openEditor(retained); f.first.focus();
-	const root = f.firstPart.arrangement.root, model = f.firstInput.workingCopy;
+	const model = f.firstInput.workingCopy;
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- retained by the other real views\n' }]);
 	const source = model.buffer.getText();
 	f.key('KeyK', KeyModifier.ctrl); f.key('KeyW');
 	assert.equal(group.model.tabs.length, 0);
 	assert.ok(sibling.model.activeTab === retained && f.secondGroup.model.activeTab === f.secondInput);
-	assert.ok(f.firstPart.arrangement.root === root && !group.surface.retired && !f.firstPart.retired);
+	assert.ok(group.surface.retired && !f.firstPart.retired && f.firstPart.activeGroup === sibling);
+	assert.equal(f.firstPart.groups.length, 1);
 	assert.equal(model.buffer.getText(), source); assert.equal(model.dirty, true); assert.equal(model.canUndo, true);
 	assert.equal(f.firstPart.actionPrompt.visible, false); assert.equal(f.editor.actionPrompt.visible, false);
+});
+
+for (const phase of ['blur', 'clear'] as const) for (const split of [false, true])
+test(`${phase} observer's newer null focus survives closing ${split ? 'an empty split' : 'the final routing group'}`, async t => {
+	const f = createActualSourcePanes(t), group = f.firstGroup;
+	if (split) f.editor.editorParts.splitGroup(group, 'right').openEditor(new CodeEditorInput(f.secondInput.workingCopy));
+	f.first.focus();
+	let calls = 0;
+	const redirect = () => { calls++; f.second.focus(); inputFocus.setTarget(null); };
+	t.after(phase === 'blur' ? f.first.commandTarget.onDidBlur(redirect) : group.panes.onDidClearEditor(redirect));
+	assert.equal(await group.close(f.firstInput.id), true);
+	assert.equal(calls, 1); assert.ok(inputFocus.target === null);
+	assert.equal(group.surface.retired, split);
+	assert.ok(f.secondGroup.model.activeTab === f.secondInput);
 });
 
 test('group batch decision is local and does not publish or blur an excluded sibling draft', async t => {
@@ -221,7 +239,7 @@ test('workspace Close All admits the real dirty Scene document without retiring 
 	main.openActivity('problems'); main.setActivityVisible(true); f.update(); main.focusActivity();
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- retained Main authored consumer\n' }]);
 	const source = model.buffer.getText(), selected = primary.authoring.selection, subject = primary.authoring.subject;
-	const groups = [...parts.groups], windows = [...parts.documents], root = parts.main.arrangement.root;
+	const groups = [...parts.groups], windows = [...parts.documents];
 	const activity = main.activity, activityScope = activity!.scope.contextGeneration, focus = inputFocus.target;
 	const file = f.editor.resourcePanel.files.selectedNode, catalog = f.sources.catalog, contexts = [...catalog.contexts];
 	const cancelled = parts.closeEditors({ kind: 'workspace' }, focus);
@@ -232,9 +250,10 @@ test('workspace Close All admits the real dirty Scene document without retiring 
 	const closing = parts.closeEditors({ kind: 'workspace' }, focus);
 	assert.equal(f.editor.actionPrompt.visible, true); f.editor.actionPrompt.close('secondary');
 	assert.equal(await closing, true);
-	assert.ok(groups.every(group => group.model.tabs.length === 0 && !group.surface.retired));
-	assert.deepEqual(parts.groups, groups); assert.deepEqual(parts.documents, windows);
-	assert.ok(parts.main.arrangement.root === root); assert.equal(parts.main.arrangement.splits[0].split.ratio, 0.6);
+	assert.ok(groups.every(group => group.model.tabs.length === 0));
+	assert.ok(windows.length === parts.documents.length && windows.every(part => parts.documents.includes(part) && !part.retired));
+	assert.equal(parts.main.groups.length, 1); assert.equal(parts.main.arrangement.splits.length, 0);
+	assert.ok(groups.filter(group => !parts.groups.includes(group)).every(group => group.surface.retired));
 	assert.equal(f.firstPart.window!.model.minimized, true); assert.equal(f.secondPart.window!.model.placement, 'maximized');
 	assert.equal(main.primary, undefined);
 	assert.ok(main.activity === activity && activity!.attached && inputFocus.target === focus);

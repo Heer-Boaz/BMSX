@@ -60,9 +60,9 @@ test(`${variant} Animation publishes its compact constraints to a real ${directi
 	assert.ok(input.layout.bounds.bottom - input.layout.bounds.top >= measured.compactHeight);
 	const details = input.clientBar.items.find(item => item.command === 'animation.details')!;
 	const x = (details.bounds.left + details.bounds.right) / 2, y = (details.bounds.top + details.bounds.bottom) / 2;
-	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
-	f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: 0, pressedButtons: 0,
 		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	f.update();
 	assert.ok(input.activeClient === 'details' && input.layout.detailsVisible);

@@ -70,7 +70,7 @@ test('browser display-to-Studio projection and remote Studio coordinates admit t
 	frames.publish(new Uint8Array(320 * 240 * 4), 320, 240, { presentationSequence: 1, cycles: 0, videoTick: 0 });
 	const binding: GuestInputBinding = { bounds: { left: 64, top: 48, right: 320, bottom: 240 }, recipient: input,
 		presentation: { kind: 'offscreen', frames } };
-	const event = { x: 484, y: 368, buttons: 0, pressedButtons: 0, releasedButtons: 0, cancelledButtons: 0,
+	const event = { pointerId: 0, pointerType: 'mouse', x: 484, y: 368, buttons: 0, pressedButtons: 0, releasedButtons: 0, cancelledButtons: 0,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 };
 	const browser: PointerInputSnapshot = { viewportX: 0, viewportY: 0, valid: false, insideViewport: false,
 		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0, modifiers: KeyModifier.none, spaceDown: false };

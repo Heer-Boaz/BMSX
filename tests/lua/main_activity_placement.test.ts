@@ -45,7 +45,7 @@ for (const variant of ['tiny', 'msx'] as const)
 			const x = (panel.bounds.left + panel.bounds.right) / 2;
 			const y = (panel.layoutState.contentTop + panel.layoutState.contentBottom) / 2;
 			assert.ok(f.editor.surfaces.hitTest(x, y) === native);
-			f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: PointerButton.Primary, releasedButtons: PointerButton.Primary,
+			f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: 0, pressedButtons: PointerButton.Primary, releasedButtons: PointerButton.Primary,
 				cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 });
 			assert.ok(inputFocus.admittedTarget === target); assert.equal(panel.scope.contextGeneration, generation);
 			if (cycle === 2) {

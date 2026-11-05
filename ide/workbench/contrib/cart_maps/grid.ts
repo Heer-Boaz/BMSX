@@ -1,11 +1,12 @@
-import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
+import type { WheelInputSnapshot } from '../../../common/models';
+import { create_rect_bounds, point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import { SCROLLBAR_WIDTH, SCROLLBAR_TRACK_COLOR, SCROLLBAR_THUMB_COLOR, COLOR_RESOURCE_VIEWER_BACKGROUND,
 	COLOR_RESOURCE_VIEWER_TEXT, COLOR_HEADER_BUTTON_BORDER, COLOR_FOCUS_BORDER,
 	COLOR_CANVAS_GRID_MINOR, COLOR_CANVAS_GRID_MAJOR, COLOR_CANVAS_BOUNDARY,
 	COLOR_RESOURCE_PANEL_HIGHLIGHT, COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT } from '../../../common/constants';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { api } from '../../../runtime/overlay_api';
-import { Scrollbar } from '../../ui/scrollbar';
+import { Scrollbar, scrollWheel } from '../../ui/scrollbar';
 import type { EditorFont } from '../../../editor/ui/view/font';
 
 /** Display coordinates only; source bindings and move semantics belong to the cart projections. */
@@ -128,6 +129,14 @@ export class CartMapGrid {
 		this.horizontal.reveal(marker.x * this.cellSize, (marker.x + 1) * this.cellSize, this.cellSize);
 		this.vertical.reveal(marker.y * this.cellSize, (marker.y + 1) * this.cellSize, this.cellSize);
 		this.capturePosition();
+	}
+
+	public handleWheel(event: WheelInputSnapshot): boolean {
+		if (!this.visible || !point_in_rect(event.viewportX, event.viewportY, this.bounds)) return false;
+		if (!scrollWheel(this.horizontal, this.vertical, event, this.cellSize * 3, this.cellSize * 3)) return false;
+		this.pendingReveal = undefined;
+		this.capturePosition();
+		return true;
 	}
 
 	public scrollBy(dx: number, dy: number): void {

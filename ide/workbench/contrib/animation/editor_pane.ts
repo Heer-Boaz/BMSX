@@ -410,15 +410,16 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 		}
 		return true;
 	}
-	public handleWheel(event: WheelInputSnapshot): void {
+	public override handleWheel(event: WheelInputSnapshot): boolean {
 		const input = this.input, layout = input.layout, list = input.tracks, details = input.details;
-		if (layout.keysVisible && this.imageBitmap !== undefined && this.image.handleWheel(event, 16)) return;
+		if (layout.keysVisible && this.imageBitmap !== undefined && this.image.handleWheel(event, 16)) return true;
 		if (input.keys.unit !== undefined && (layout.mode === 'expanded' && point_in_rect(event.viewportX, event.viewportY, input.overview.bounds)
 			|| layout.keysVisible && (point_in_rect(event.viewportX, event.viewportY, input.keys.range.bounds) || point_in_rect(event.viewportX, event.viewportY, input.keys.curve.bounds)))) {
 			this.keys.cancelPointer(); this.lanes.cancelPointer(); input.keys.zoom(event.viewportX, 1.25 ** event.deltaY);
-			return;
+			return true;
 		}
-		if (layout.tracksVisible && workbenchListRowIndexAtPosition(list, event.viewportX, event.viewportY) !== -1) scrollWorkbenchList(list, event.deltaY * 3);
-		else if (layout.detailsVisible && workbenchListRowIndexAtPosition(details, event.viewportX, event.viewportY) !== -1) scrollWorkbenchList(details, event.deltaY * 3);
+		if (layout.tracksVisible && workbenchListRowIndexAtPosition(list, event.viewportX, event.viewportY) !== -1) return scrollWorkbenchList(list, event.deltaY * 3);
+		else if (layout.detailsVisible && workbenchListRowIndexAtPosition(details, event.viewportX, event.viewportY) !== -1) return scrollWorkbenchList(details, event.deltaY * 3);
+		return false;
 	}
 }

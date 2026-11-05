@@ -13,7 +13,7 @@ import { INTEGER_INPUT_FORMAT, parseIntegerInput } from '../../../editor/ui/inli
 import { ValueInput } from '../../../editor/ui/inline/value_input';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
-import { consumeIdeKey, isKeyJustPressed, isShiftDown, isKeyDown } from '../../../input/keyboard/key_input';
+import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
@@ -21,7 +21,7 @@ import type { RuntimeSourceState } from '../../../runtime/sources';
 import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
-import { revealWorkbenchListSelection, scrollWorkbenchList, workbenchListContainsPosition, workbenchListRowIndexAtPosition } from '../../ui/list_view';
+import { revealWorkbenchListSelection, workbenchListContainsPosition, workbenchListRowIndexAtPosition } from '../../ui/list_view';
 import { ScrollbarPointerControl } from '../../ui/scrollbar_pointer';
 import { navigateWorkbenchTree, setWorkbenchTreeCollapsed, workbenchTreeTwistieContainsPosition, WorkbenchTreeNavigationResult } from '../../ui/tree_view';
 import type { CartMapController } from './controller';
@@ -293,7 +293,8 @@ export class CartMapPane extends WorkbenchViewEditorPane<CartMapInput> {
 			}
 		}
 		const grid = this.input.grid;
-		if (layout.mode !== 'map' && this.scrollbar.handlePointer(snapshot, this.input.tree.scrollbar)) return true;
+		if (layout.mode !== 'map' && (this.scrollbar.handlePointer(snapshot, this.input.tree.scrollbar)
+			|| this.scrollbar.handlePointer(snapshot, this.input.tree.horizontalScrollbar))) return true;
 		if (layout.mode !== 'outline' && (this.scrollbar.handlePointer(snapshot, grid.horizontal) || this.scrollbar.handlePointer(snapshot, grid.vertical))) return true;
 		if (!snapshot.valid || !snapshot.insideViewport) return false;
 		if (layout.mode !== 'outline' && point_in_rect(snapshot.viewportX, snapshot.viewportY, grid.bounds)) {
@@ -321,12 +322,9 @@ export class CartMapPane extends WorkbenchViewEditorPane<CartMapInput> {
 		}
 		return index >= 0;
 	}
-	public handleWheel(event: WheelInputSnapshot): void {
-		if (this.input.layout.mode !== 'map' && workbenchListContainsPosition(this.input.tree, event.viewportX, event.viewportY)) scrollWorkbenchList(this.input.tree, event.deltaY * 3);
-		else if (this.input.layout.mode !== 'outline' && point_in_rect(event.viewportX, event.viewportY, this.input.grid.bounds)) {
-			const horizontal = isShiftDown(event) && event.deltaX === 0;
-			this.input.grid.scrollBy((event.deltaX + (horizontal ? event.deltaY : 0)) * 3, horizontal ? 0 : event.deltaY * 3);
-		}
+	public override handleWheel(event: WheelInputSnapshot): boolean {
+		if (this.input.layout.mode !== 'map' && this.input.tree.handleWheel(event)) return true;
+		return this.input.layout.mode !== 'outline' && this.input.grid.handleWheel(event);
 	}
 	public draw(): void { drawCartMap(this.input, this.controls, this.gridFocus.hasFocus, this.focusTarget.hasFocus); }
 	public updateStatus(): void {

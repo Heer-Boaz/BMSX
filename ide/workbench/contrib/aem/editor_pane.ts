@@ -231,10 +231,10 @@ export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 			onWillShow: lifetime => { lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.contextMenu.hide()) }); },
 		});
 	}
-	public handleWheel(event: WheelInputSnapshot): void {
+	public override handleWheel(event: WheelInputSnapshot): boolean {
 		const tree = this.input.tree, layout = tree.layout;
-		if (event.viewportX < layout.contentLeft || event.viewportX >= layout.contentRight || event.viewportY < layout.contentTop || event.viewportY >= layout.contentBottom) return;
-		scrollWorkbenchList(tree, event.deltaY * 3);
+		if (event.viewportX < layout.contentLeft || event.viewportX >= layout.contentRight || event.viewportY < layout.contentTop || event.viewportY >= layout.contentBottom) return false;
+		return scrollWorkbenchList(tree, event.deltaY * 3);
 	}
 }
 const NAVIGATION = [['ArrowUp', 'up'], ['ArrowDown', 'down'], ['ArrowLeft', 'left'], ['ArrowRight', 'right'], ['PageUp', 'page-up'], ['PageDown', 'page-down'], ['Home', 'home'], ['End', 'end']] as const;

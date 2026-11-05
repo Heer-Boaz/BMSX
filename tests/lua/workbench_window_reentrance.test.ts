@@ -25,7 +25,7 @@ for (const coalesced of [false, true]) for (const phase of ['title focus', 'depa
 		});
 		t.after(() => unbind());
 		const header = window.model.header, x = header.left + 16, y = (header.top + header.bottom) / 2;
-		f.editor.dispatchPointer({ x, y, buttons: coalesced ? 0 : PointerButton.Primary, pressedButtons: PointerButton.Primary,
+		f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: coalesced ? 0 : PointerButton.Primary, pressedButtons: PointerButton.Primary,
 			releasedButtons: coalesced ? PointerButton.Primary : 0, cancelledButtons: 0,
 			modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 });
 		assert.equal(window.model.minimized, true); assert.equal(window.visible, false);
@@ -34,7 +34,7 @@ for (const coalesced of [false, true]) for (const phase of ['title focus', 'depa
 		if (phase !== 'departing Source blur') assert.ok(inputFocus.target === f.second.commandTarget,
 			'a later minimize leaves or returns focus to the visible sibling, not the hidden title fallback');
 		assert.ok(part.activeGroup.model.activeTab === f.firstInput && part.activeGroup.panes.activePane === f.first);
-		if (!coalesced) f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary,
+		if (!coalesced) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary,
 			cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 2 });
 		assert.equal(pointerCapture.draining, false); assert.equal(window.model.minimized, true);
 	});
@@ -62,14 +62,14 @@ for (const coalesced of [false, true]) for (const phase of ['departing Source bl
 		t.after(() => unbind());
 		const action = actionBar.items.find(item => item.command === 'window.maximize')!;
 		const x = (action.bounds.left + action.bounds.right) / 2, y = (action.bounds.top + action.bounds.bottom) / 2;
-		f.editor.dispatchPointer({ x, y, buttons: coalesced ? 0 : PointerButton.Primary, pressedButtons: PointerButton.Primary,
+		f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: coalesced ? 0 : PointerButton.Primary, pressedButtons: PointerButton.Primary,
 			releasedButtons: coalesced ? PointerButton.Primary : 0, cancelledButtons: 0,
 			modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 });
 		assert.equal(model.open, false); assert.equal(window.surface, undefined);
 		assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, !coalesced);
 		assert.equal(model.placement, 'normal', 'the retired action never executes or arms against a cleared input');
 		assert.equal(actionBar.pressedCommand, null);
-		if (!coalesced) f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary,
+		if (!coalesced) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary,
 			cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 2 });
 		assert.equal(pointerCapture.draining, false);
 		assert.ok(f.firstGroup.model.activeTab === f.firstInput && f.firstGroup.panes.activePane === f.first);

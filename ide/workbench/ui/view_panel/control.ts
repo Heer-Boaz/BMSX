@@ -84,7 +84,7 @@ export class WorkbenchViewPanel<View, Content extends WorkbenchViewPanelContent<
 			captureScope: this.scope.surfaceScope, isVisible: () => this.attached && options.isPresented(),
 			getBounds: () => this.layoutState, getClip: options.surface.getClip,
 			draw: () => this.draw(), handlePointer: snapshot => this.handlePointer(snapshot),
-			handleWheel: event => { this.handleWheel(event); return true; },
+			handleWheel: event => this.handleWheel(event),
 			onRetire: () => this.detach(),
 		});
 		this.commandTarget = inputFocus.createTarget(options.focusReturn, this.scope);
@@ -226,7 +226,7 @@ export class WorkbenchViewPanel<View, Content extends WorkbenchViewPanelContent<
 		} else this.control.handlePointer(snapshot, (snapshot.justPressedButtons & PointerButton.Primary) !== 0);
 		if (snapshot.justPressedButtons !== 0 && interaction === inputFocus.interactionRevision) this.commandTarget.activate();
 	}
-	public handleWheel(event: WheelInputSnapshot): void { if (this.attached) this.control.handleWheel(event); }
+	public handleWheel(event: WheelInputSnapshot): boolean { return this.attached && this.control.handleWheel(event); }
 	public onPointerLeave(): void { this.titleHovered = false; this.tooltip.hide(); this.control.onPointerLeave?.(); }
 	private openContextMenu(x: number, y: number, keyboard = false, origin = this.commandTarget): void {
 		const revision = this.revision;

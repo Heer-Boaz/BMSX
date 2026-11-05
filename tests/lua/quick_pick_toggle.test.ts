@@ -132,7 +132,7 @@ for (const owner of ['workspace', 'part'] as const) for (const font of ['tiny', 
 		if (source === 'focus') f.key('Tab');
 		else {
 			const bounds = picker.layout.toggle;
-			f.editor.dispatchPointer({ x: bounds.left + 2, y: bounds.top + 2, buttons: 0, pressedButtons: 0, releasedButtons: 0,
+			f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: bounds.left + 2, y: bounds.top + 2, buttons: 0, pressedButtons: 0, releasedButtons: 0,
 				cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 });
 			f.update();
 		}
@@ -149,7 +149,7 @@ for (const owner of ['workspace', 'part'] as const) test(`${owner}: routed point
 	picker.pick('Pick', '', () => new TextQuickPickProvider([{ label: 'first', description: '', detail: '' }]), () => {}, undefined,
 		{ toggle: { label: 'Z'.repeat(220), checked: false, onDidChange: checked => { policy = checked; } } });
 	const bounds = picker.layout.toggle;
-	const event = (down: number, up: number) => ({ x: bounds.left + 2, y: bounds.top + 2, buttons: down, pressedButtons: down,
+	const event = (down: number, up: number) => ({ pointerId: 0, pointerType: 'mouse', x: bounds.left + 2, y: bounds.top + 2, buttons: down, pressedButtons: down,
 		releasedButtons: up, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 });
 	f.editor.dispatchPointer(event(PointerButton.Primary, 0)); f.editor.dispatchPointer(event(0, PointerButton.Primary)); f.update();
 	assert.equal(policy, true); assert.equal(inputFocus.admittedTarget, picker.toggle!.focusTarget); assert.ok(picker.toggle!.tooltipItem);

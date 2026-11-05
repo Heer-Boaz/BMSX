@@ -39,7 +39,7 @@ function click(f: Fixture, node: WorkbenchTreeNode<FileElement>, modifiers: KeyM
 	const y = layout.contentTop + (index - f.panel.scroll + 0.5) * f.panel.lineHeight;
 	for (const down of [true, false]) {
 		f.host.clock.advance(10);
-		f.editor.dispatchPointer({ x, y, buttons: down ? PointerButton.Primary : 0,
+		f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: down ? PointerButton.Primary : 0,
 			pressedButtons: down ? PointerButton.Primary : 0, releasedButtons: down ? 0 : PointerButton.Primary,
 			cancelledButtons: 0, modifiers, spaceDown: false, timestamp: f.host.clock.now() });
 	}

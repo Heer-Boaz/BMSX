@@ -19,7 +19,8 @@ import { WorkbenchWindowModel, type WindowPlacement } from '../../ui/window/mode
 import { createWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchSplitControl } from '../../ui/split_control';
 import { drawWorkbenchSplit } from '../../render/split_view';
-import { Scrollbar } from '../../ui/scrollbar';
+import { Scrollbar, scrollWheel } from '../../ui/scrollbar';
+import type { WheelInputSnapshot } from '../../../common/models';
 import { ScrollbarController } from '../../ui/scrollbar_controller';
 import { EditorGroupView, findEditorGroup } from './editor_group';
 import type { EditorPaneContributions } from './editor_panes';
@@ -140,7 +141,7 @@ export class EditorPart {
 			this.window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, options.surfaces, options.commands, options.contextMenu, {
 				model, actionBar: createWorkbenchActionBar('window.minimizable.title'), lifetimeOwner: options.owner, presentationParent: null,
 				focusScope: options.scope, focusReturn: options.focusReturn, workArea: options.workArea,
-				content: { draw: () => this.drawClient() }, layoutContent: bounds => this.layout(bounds),
+				content: { draw: () => this.drawClient(), handleWheel: this.handleWheel }, layoutContent: bounds => this.layout(bounds),
 				retireContentInput: () => this.suspend(), restoreContentInput() {}, focusContent: () => this.focus(),
 				requestClose: () => options.requestClose(this), requestMinimize: () => options.requestMinimize(this),
 			});
@@ -162,7 +163,7 @@ export class EditorPart {
 			this.clientSurface = options.surfaces.attach({
 				role: 'content', lifetimeOwner: this.surface, presentationParent: this.surface, captureScope: this.clientScope.surfaceScope,
 				isVisible: () => this.contentPresented, getBounds: () => this.clientBounds, getClip: () => this.clientBounds,
-				draw: () => this.drawClient(), handlePointer: snapshot => { if (snapshot.justPressedButtons !== 0) this.focus(); },
+				draw: () => this.drawClient(), handlePointer: snapshot => { if (snapshot.justPressedButtons !== 0) this.focus(); }, handleWheel: this.handleWheel,
 				onRetire: () => pointerCapture.cancelScope(this.clientScope.surfaceScope),
 			});
 		}
@@ -203,7 +204,7 @@ export class EditorPart {
 			options.surfaces.attach({ role: 'content', lifetimeOwner: this.clientSurface, presentationParent: this.clientSurface,
 				captureScope: Symbol(`editor arrangement ${kind}`), isVisible: () => bar.isVisible(), getBounds: () => bar.getTrack(), getClip: () => this.clientBounds,
 				draw: () => bar.draw(colors.COLOR_FRAME, colors.SCROLLBAR_THUMB_COLOR),
-				handlePointer: snapshot => { this.scrollbarControl.begin(SCROLLBARS, snapshot, 0); }, handleWheel: () => true,
+					handlePointer: snapshot => { this.scrollbarControl.begin(SCROLLBARS, snapshot, 0); },
 				onRetire: () => this.scrollbarControl.cancel(),
 			});
 		}
@@ -465,12 +466,20 @@ export class EditorPart {
 				captureScope: control.focusTarget.scope.surfaceScope, isVisible: () => branch.visible && branch.resizable,
 				getBounds: () => branch.sashBounds, getClip: () => branch.clip,
 				draw: () => drawWorkbenchSplit(branch.split, control),
-				handlePointer: snapshot => { control.handlePointer(snapshot); }, handleWheel: () => true,
+					handlePointer: snapshot => { control.handlePointer(snapshot); },
 				onRetire: () => { pointerCapture.cancelScope(control.focusTarget.scope.surfaceScope); control.clearInput(); },
 			});
 			this.sashes.set(branch, { control, surface, releaseResize: branch.split.onDidResize(this.options.onDidChange) });
 		}
 	}
+	private readonly handleWheel = (event: WheelInputSnapshot): boolean => {
+		const bars = this.scrollbars, step = editorViewState.lineHeight * 3;
+		if (!scrollWheel(bars.horizontal, bars.vertical, event, step, step)) return false;
+		this.arrangement.setScroll(bars.horizontal.getScroll(), bars.vertical.getScroll());
+		this.arrange(this.clientBounds);
+		return true;
+	};
+
 	public layout(bounds: Readonly<RectBounds>): boolean {
 		this.prepareLayout();
 		return this.layoutPrepared(bounds);

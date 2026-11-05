@@ -184,7 +184,7 @@ export class PlayEditorPane extends WorkbenchViewEditorPane<PlayEditorInput> {
 			{ invocationOrigin: this.focusTarget, returnFocus: this.focusTarget, commandTarget: this.focusTarget, selectFirst: keyboard });
 	}
 	public handleKeyboard(): void {}
-	public handleWheel(event: WheelInputSnapshot): void {
-		if (this.details.visible) this.details.handleWheel(event, event.deltaY * editorViewState.font.lineHeight);
+	public override handleWheel(event: WheelInputSnapshot): boolean {
+		return this.details.visible && this.details.handleWheel(event, event.deltaY * editorViewState.font.lineHeight);
 	}
 }

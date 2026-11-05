@@ -7,6 +7,7 @@ import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import { type PointerCaptureScope, type PointerCaptureService, type PointerCaptureTarget } from '../../input/pointer/capture';
 import type { WorkbenchImageViewport } from './image_viewport';
 import { ScrollbarPointerControl } from './scrollbar_pointer';
+import { scrollWheel } from './scrollbar';
 
 /** Pane-owned image gestures; decoded pixels and retained viewport geometry belong to the input. */
 export class WorkbenchImageControl implements PointerCaptureTarget {
@@ -111,13 +112,12 @@ export class WorkbenchImageControl implements PointerCaptureTarget {
 			|| (!point_in_rect(snapshot.viewportX, snapshot.viewportY, view.bounds)
 				&& !point_in_rect(snapshot.viewportX, snapshot.viewportY, view.horizontal.getTrack())
 				&& !point_in_rect(snapshot.viewportX, snapshot.viewportY, view.vertical.getTrack()))) return false;
-		this.cancelPointer();
 		if ((snapshot.modifiers & (KeyModifier.ctrl | KeyModifier.meta)) !== 0) {
+			this.cancelPointer();
 			view.zoomByWheel(-snapshot.deltaY, snapshot.viewportX, snapshot.viewportY);
-		} else if ((snapshot.modifiers & KeyModifier.shift) !== 0 && snapshot.deltaX === 0) {
-			view.pan(snapshot.deltaY * pixelStep, 0);
 		} else {
-			view.pan(snapshot.deltaX * pixelStep, snapshot.deltaY * pixelStep);
+			if (!scrollWheel(view.horizontal, view.vertical, snapshot, pixelStep, pixelStep)) return false;
+			this.cancelPointer();
 		}
 		return true;
 	}

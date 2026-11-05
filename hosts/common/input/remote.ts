@@ -11,7 +11,7 @@ export class RemoteInput {
 	private generation = 0;
 	private readonly pressedKeys = new Map<string, number>();
 	private readonly pressedButtons = new Map<string, number>();
-	private readonly pointer = { x: 0, y: 0, buttons: 0, pressedButtons: 0, releasedButtons: 0, cancelledButtons: 0,
+	private readonly pointer = { pointerId: 0, pointerType: 'mouse', x: 0, y: 0, buttons: 0, pressedButtons: 0, releasedButtons: 0, cancelledButtons: 0,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 };
 	private readonly wheel = { x: 0, y: 0, deltaX: 0, deltaY: 0, attachmentDeltaY: 0, modifiers: KeyModifier.none, timestamp: 0 };
 

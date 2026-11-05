@@ -29,7 +29,7 @@ for (const font of ['tiny', 'msx'] as const) for (const region of ['hierarchy', 
 	// Geometry drives the real hit target. The assertions concern native routing and ownership.
 	const x = (action.bounds.left + action.bounds.right) / 2, y = (action.bounds.top + action.bounds.bottom) / 2;
 	assert.ok(f.editor.surfaces.hitTest(x, y) === f.editor.surfaces.findByScope(panel.scope.surfaceScope));
-	for (const down of [true, false]) f.editor.dispatchPointer({ x, y, buttons: down ? PointerButton.Secondary : 0,
+	for (const down of [true, false]) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: down ? PointerButton.Secondary : 0,
 		pressedButtons: down ? PointerButton.Secondary : 0, releasedButtons: down ? 0 : PointerButton.Secondary,
 		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	assert.equal(f.editor.contextMenu.visible, true);

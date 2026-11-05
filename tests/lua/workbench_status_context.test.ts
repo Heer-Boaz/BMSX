@@ -215,7 +215,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		const bounds = editor.statusBar.itemsLayout.disclosureBounds;
 		assert.ok(bounds.left < bounds.right);
 		const x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
-		editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+		editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 			releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 });
 		assert.equal(pointerCapture.active, true);
 		assert.ok(editor.statusBar.itemsLayout.items.peek(0).item === files.statusItems[0]);
@@ -225,7 +225,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 			'the retired disclosure cannot leave a retained but inadmissible native target');
 		f.key('KeyP', KeyModifier.ctrl | KeyModifier.shift);
 		assert.equal(editor.quickInput.visible, true); assert.ok(inputFocus.admittedTarget === editor.quickInput.field.focusTarget);
-		editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary,
+		editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary,
 			cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 2 });
 		assert.equal(editor.quickInput.visible, true); assert.ok(inputFocus.admittedTarget === editor.quickInput.field.focusTarget);
 	});

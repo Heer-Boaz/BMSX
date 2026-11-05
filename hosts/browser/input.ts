@@ -204,7 +204,7 @@ export class BrowserInputHub implements InputSource {
 	private nativeWheelHandler: ((event: WheelInputEvent) => boolean) | undefined;
 	private readonly nativeWheel = { x: 0, y: 0, deltaX: 0, deltaY: 0, attachmentDeltaY: 0, modifiers: KeyModifier.none, timestamp: 0 };
 	private canvasButtons = 0;
-	private readonly nativePointer = { x: 0, y: 0, buttons: 0, pressedButtons: 0, releasedButtons: 0, cancelledButtons: 0,
+	private readonly nativePointer = { pointerId: 0, pointerType: '', x: 0, y: 0, buttons: 0, pressedButtons: 0, releasedButtons: 0, cancelledButtons: 0,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 };
 	private foregroundPointerCapture: ((x: number, y: number) => boolean) | null = null;
 	private nativeClipboardEnabled: ((action: ClipboardAction) => boolean) | undefined;
@@ -543,10 +543,9 @@ export class BrowserInputHub implements InputSource {
 		this.activePointerButtonMasks[index] = buttons;
 		this.surface.setPointerCapture(event.pointerId);
 		const now = this.clock.now();
-		const previousButtons = this.canvasButtons;
 		this.updateCanvasButtons(0, buttons, now, false);
 		this.publishPointerPosition(event, now);
-		this.publishNativePointer(event, now, previousButtons);
+		this.publishNativePointer(event, now, 0, buttons);
 	};
 
 	private readonly onPointerUp = (event: PointerEvent): void => {
@@ -633,13 +632,13 @@ export class BrowserInputHub implements InputSource {
 		event.preventDefault();
 		event.stopImmediatePropagation();
 		const now = this.clock.now();
-		const previousButtons = this.canvasButtons;
-		this.updateCanvasButtons(this.activePointerButtonMasks[index], 0, now, cancelled);
+		const previousButtons = this.activePointerButtonMasks[index];
+		this.updateCanvasButtons(previousButtons, 0, now, cancelled);
 		const last = --this.activePointerCount;
 		this.activePointerIds[index] = this.activePointerIds[last];
 		this.activePointerButtonMasks[index] = this.activePointerButtonMasks[last];
 		if (!cancelled) this.publishPointerPosition(event, now);
-		this.publishNativePointer(event, now, previousButtons, cancelled ? previousButtons & ~this.canvasButtons : 0);
+		this.publishNativePointer(event, now, previousButtons, 0, cancelled ? previousButtons : 0);
 	}
 
 	private readonly onPointerMove = (event: PointerEvent): void => {
@@ -672,28 +671,30 @@ export class BrowserInputHub implements InputSource {
 			event.stopImmediatePropagation();
 			const now = this.clock.now();
 			const buttons = event.pointerType === 'touch' ? 1 : event.buttons;
-			const previousButtons = this.canvasButtons;
-			this.updateCanvasButtons(this.activePointerButtonMasks[index], buttons, now, false);
+			const previousButtons = this.activePointerButtonMasks[index];
+			this.updateCanvasButtons(previousButtons, buttons, now, false);
 			this.activePointerButtonMasks[index] = buttons;
 			this.publishPointerPosition(event, now);
-			this.publishNativePointer(event, now, previousButtons);
+			this.publishNativePointer(event, now, previousButtons, buttons);
 			return;
 		}
 		if (event.pointerType !== 'touch' && event.buttons === 0 && this.surface.contains(event.target as Node)) {
 			const now = this.clock.now();
 			this.publishPointerPosition(event, now);
-			this.publishNativePointer(event, now, this.canvasButtons);
+			this.publishNativePointer(event, now, 0, 0);
 		}
 	};
 
-	private publishNativePointer(event: PointerEvent, now: number, previousButtons: number, cancelledButtons = 0): void {
+	private publishNativePointer(event: PointerEvent, now: number, previousButtons: number, buttons: number, cancelledButtons = 0): void {
 		if (this.nativePointerHandler === undefined) return;
 		const pointer = this.nativePointer;
-		pointer.x = this.pointerClientX;
-		pointer.y = this.pointerClientY;
-		pointer.buttons = this.canvasButtons;
-		pointer.pressedButtons = this.canvasButtons & ~previousButtons;
-		pointer.releasedButtons = previousButtons & ~this.canvasButtons & ~cancelledButtons;
+		pointer.pointerId = event.pointerId;
+		pointer.pointerType = event.pointerType;
+		pointer.x = event.clientX;
+		pointer.y = event.clientY;
+		pointer.buttons = buttons;
+		pointer.pressedButtons = buttons & ~previousButtons;
+		pointer.releasedButtons = previousButtons & ~buttons & ~cancelledButtons;
 		pointer.cancelledButtons = cancelledButtons;
 		pointer.modifiers = (event.shiftKey ? KeyModifier.shift : 0) | (event.ctrlKey ? KeyModifier.ctrl : 0)
 			| (event.altKey ? KeyModifier.alt : 0) | (event.metaKey ? KeyModifier.meta : 0);
@@ -750,7 +751,7 @@ export class BrowserInputHub implements InputSource {
 		if (event.buttons !== 0 && this.activePointerIndex(event.pointerId) < 0) return;
 		const now = this.clock.now();
 		this.publishPointerPosition(event, now);
-		this.publishNativePointer(event, now, this.canvasButtons);
+		this.publishNativePointer(event, now, event.buttons, event.buttons);
 	};
 
 	private scanInitialGamepads(): void {

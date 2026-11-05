@@ -22,7 +22,7 @@ import type { LuaProgramInput } from '../../ide/workbench/contrib/lua_program/ed
 import type { ActorLabInput } from '../../ide/workbench/contrib/actor_lab/editor_input';
 import type { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 import type { WorkspaceEditReviewInput } from '../../ide/workbench/contrib/edit_review/editor_input';
-import type { PointerInputSnapshot, WheelInputSnapshot } from '../../ide/common/models';
+import type { PointerInputSnapshot } from '../../ide/common/models';
 import type { EditorTextSelection } from '../../ide/editor/navigation/text_selection';
 import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../ide/editor/editing/cursor/state';
 import { restoreCodeEditorLocation } from '../../ide/workbench/contrib/code_editor/view_snapshot';
@@ -113,8 +113,6 @@ class TestEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
 	): void {
 	}
 
-	public handleWheel(_event: WheelInputSnapshot): void {
-	}
 
 	public readonly statusItems = [];
 	public updateStatus(): void {}

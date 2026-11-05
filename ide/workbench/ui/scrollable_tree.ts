@@ -1,9 +1,8 @@
 import { create_rect_bounds, point_in_rect, write_rect_bounds } from '../../../machine/ts/common/rect';
-import { KeyModifier } from '../../../hosts/common/input/text';
 import { SCROLLBAR_WIDTH } from '../../common/constants';
 import type { WheelInputSnapshot } from '../../common/models';
 import { layoutWorkbenchList } from './list_view';
-import { Scrollbar } from './scrollbar';
+import { Scrollbar, scrollWheel } from './scrollbar';
 import type { WorkbenchTreeLayout, WorkbenchTreeNode, WorkbenchTreeState } from './tree_view';
 
 /** Row-addressed tree navigation and scrollbar share one scroll position. */
@@ -61,12 +60,7 @@ export class ScrollableWorkbenchTree<Element> implements WorkbenchTreeState<Elem
 	/** Both tree views use the same wheel axes; vertical units remain rows, horizontal units pixels. */
 	public handleWheel(event: WheelInputSnapshot): boolean {
 		if (!event.valid || !event.insideViewport || !point_in_rect(event.viewportX, event.viewportY, this.bounds)) return false;
-		if ((event.modifiers & KeyModifier.shift) !== 0 && event.deltaX === 0) {
-			this.horizontalScrollbar.setScroll(this.scrollLeft + event.deltaY * this.layout.rowHeight * 3);
-		} else {
-			this.horizontalScrollbar.setScroll(this.scrollLeft + event.deltaX * this.layout.rowHeight * 3);
-			this.scroll += event.deltaY * 3;
-		}
+		if (!scrollWheel(this.horizontalScrollbar, this.scrollbar, event, this.layout.rowHeight * 3, 3)) return false;
 		this.hoverIndex = -1;
 		return true;
 	}

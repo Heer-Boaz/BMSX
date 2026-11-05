@@ -241,9 +241,11 @@ export class WorkspaceSearchPane extends WorkbenchViewEditorPane<WorkspaceSearch
 			onWillShow: lifetime => lifetime.add({ dispose: this.input.onDidChangeIntent(() => this.contextMenu.hide()) }),
 		});
 	}
-	public handleWheel(event: WheelInputSnapshot): void {
+	public override handleWheel(event: WheelInputSnapshot): boolean {
 		const tree = this.input.tree;
-		if (tree.handleWheel(event)) this.tooltip.hide();
+		if (!tree.handleWheel(event)) return false;
+		this.tooltip.hide();
+		return true;
 	}
 	public draw(): void { drawWorkspaceSearch(this.input, this.input.presentation, this.contentBounds, this.field, this.fieldViewport, this.fieldBounds, this.focusTarget.hasFocus); }
 	public updateStatus(): void {}

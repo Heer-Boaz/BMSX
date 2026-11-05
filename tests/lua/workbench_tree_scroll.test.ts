@@ -66,3 +66,23 @@ test('horizontal wheel and scrolled disclosure use the same content origin witho
 	tree.handleWheel({ ...event, modifiers: KeyModifier.none, deltaX: 1, deltaY: 0 });
 	assert.equal(tree.scrollLeft, 60); assert.equal(tree.scroll, 0);
 });
+
+test('tree wheel exhaustion leaves the occurrence available to its containing viewport', () => {
+	const tree = new ScrollableWorkbenchTree<number>();
+	for (let i = 0; i < 10; i++) appendWorkbenchTreeNode(tree, null, 180);
+	rebuildWorkbenchTreeRows(tree, null);
+	tree.measureContentWidth(row => row.element, {});
+	tree.updateLayout(0, 0, 100, 50, 10, 10);
+	const event = { valid: true, insideViewport: true, viewportX: 20, viewportY: 20,
+		deltaX: 0, deltaY: -1, modifiers: KeyModifier.none };
+	assert.equal(tree.handleWheel(event), false);
+	event.deltaY = 1;
+	assert.equal(tree.handleWheel(event), true);
+	tree.scroll = tree.scrollbar.getMaximumScroll();
+	assert.equal(tree.handleWheel(event), false);
+	event.modifiers = KeyModifier.shift;
+	assert.equal(tree.handleWheel(event), true);
+	assert.ok(tree.scrollLeft > 0);
+	tree.horizontalScrollbar.setScroll(tree.horizontalScrollbar.getMaximumScroll());
+	assert.equal(tree.handleWheel(event), false);
+});

@@ -1,3 +1,4 @@
+import type { WorkbenchPreferences } from './services/preferences/preferences';
 import type { ConversationObserverFactory } from '../../hosts/common/conversation_observer';
 import type { GameImageCapture, ImageDecoder } from '../../hosts/common/image';
 import type { AssistantConnectionFactory } from '../../hosts/common/assistant_protocol';
@@ -43,6 +44,7 @@ export class RuntimeIdeState extends StudioWorkbench {
 		gameCapture: GameImageCapture,
 		decodeImage: ImageDecoder,
 		display: WorkbenchDisplay,
+		preferences: WorkbenchPreferences,
 		input: Input,
 		audioOutput: HostAudioOutput,
 		runtimeTasks: RuntimeTaskQueue,
@@ -67,7 +69,7 @@ export class RuntimeIdeState extends StudioWorkbench {
 			models: editorTextModelService, workspaceDirtyRecords, workspaceFiles, gameCapture, createTestTarget, createPlaySession });
 		this.overlayRenderer = new OverlayRenderer(presenter.hostOverlayQueue);
 		this.editor = new RuntimeCartEditor(
-			this, presenter, display, input, clock, clipboard, logOutput, resourcePanelWidthRatio,
+			this, presenter, display, preferences, input, clock, clipboard, logOutput, resourcePanelWidthRatio,
 			viewport, DEFAULT_IDE_FONT_VARIANT, this.overlayRenderer, decodeImage, createGraphLayoutEngine,
 			connectAssistant, observeConversation,
 		);

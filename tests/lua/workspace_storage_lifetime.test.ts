@@ -11,10 +11,11 @@ import { WORKSPACE_METADATA_DIR, WORKSPACE_STATE_FILE, workspaceRecords } from '
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 
-async function fixture(t: TestContext) {
+async function fixture(t: TestContext, scale: 1 | 1.5 = 1) {
 	const admitted = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
 	t.after(() => release.resolve());
 	const f = createActualSourcePanes(t), files = new MemoryWorkspaceFiles('workspace'), storage = new MemoryStorage();
+	f.editor.preferences.uiScale = scale;
 	const context = f.sources.catalog.getContext(f.sources.systemContextId).admission, session = 'storage-lifetime';
 	await files.write('first.lua', { contents: f.source, updatedAt: 1 }, false);
 	await files.write('second.lua', { contents: f.otherSource, updatedAt: 2 }, false);
@@ -28,6 +29,7 @@ async function fixture(t: TestContext) {
 	const payload: WorkspaceAutosavePayload = JSON.parse(JSON.stringify({
 		dirtyFiles: dirty.dirtyFiles, editorParts: f.editor.editorParts.serialize(f.editor.editorInputSerializers),
 		mainWorkspace: f.editor.mainWorkspace.serialize(), filesBrowser: f.editor.resourcePanel.serialize(),
+		uiScale: 2, // Historical recovery data must not override the frontend preference.
 		fontVariant: f.editor.fontVariant, breakpoints: f.ide.debugger.breakpoints.serialize(),
 	}));
 	const serializer = f.editor.editorInputSerializers.code_editor;
@@ -102,13 +104,15 @@ test('a delayed frontend restore retains its records owner rather than a reused 
 	assert.equal(restored, false);
 });
 
-test('UI scale is checkpointed with the device session, without modifying authored source', async t => {
-	const f = await fixture(t);
+test('workspace recovery and checkpoints cannot own or overwrite frontend UI scale', async t => {
+	const f = await fixture(t, 1.5);
 	f.release.resolve(); assert.equal(await f.restoring, true);
-	f.editor.setUiScale(1.5);
+	assert.equal(f.editor.preferences.uiScale, 1.5);
+	f.editor.preferences.uiScale = 1.25;
 	await runWorkspaceAutosaveTick();
 	const recovered: WorkspaceAutosavePayload = JSON.parse(f.files.records.get(f.statePath)!.contents);
-	assert.equal(recovered.uiScale, 1.5);
+	assert.equal('uiScale' in recovered, false, 'UI preferences are not published into project recovery');
+	assert.equal(f.editor.preferences.uiScale, 1.25);
 	assert.equal(f.model.buffer.getText(), f.draft);
 	assert.equal(f.files.records.get('first.lua')!.contents, f.source);
 });

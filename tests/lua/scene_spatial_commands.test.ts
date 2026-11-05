@@ -120,7 +120,7 @@ function togglePlacement(f: Fixture, gesture: 'keyboard' | 'pointer'): void {
 		f.key('Space'); f.key('Tab', KeyModifier.shift);
 	} else {
 		const bounds = f.picker.layout.toggle, x = bounds.left + 2, y = bounds.top + 2;
-		for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
+		for (const down of [true, false]) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y,
 			buttons: down ? PointerButton.Primary : 0, pressedButtons: down ? PointerButton.Primary : 0,
 			releasedButtons: down ? 0 : PointerButton.Primary, cancelledButtons: 0,
 			modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
@@ -184,7 +184,7 @@ for (const placement of ['document', 'Main'] as const) {
 			if (gesture === 'keyboard') f.key('Enter');
 			else {
 				const bounds = f.picker.model.viewport.bounds, x = bounds.left + 2, y = f.picker.model.rowTop(0) + 2;
-				for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
+				for (const down of [true, false]) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y,
 					buttons: down ? PointerButton.Primary : 0, pressedButtons: down ? PointerButton.Primary : 0,
 					releasedButtons: down ? 0 : PointerButton.Primary, cancelledButtons: 0,
 					modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
@@ -314,7 +314,7 @@ for (const placement of ['document', 'Main'] as const) {
 		contextCommand(f, 'sceneEditor.reparentMember'); enterText(f, 'dock');
 		const click = (pressed: KeyModifier, released: KeyModifier) => {
 			const bounds = f.picker.model.viewport.bounds, x = bounds.left + 2, y = f.picker.model.rowTop(0) + 2;
-			for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
+			for (const down of [true, false]) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y,
 				buttons: down ? PointerButton.Primary : 0, pressedButtons: down ? PointerButton.Primary : 0,
 				releasedButtons: down ? 0 : PointerButton.Primary, cancelledButtons: 0,
 				modifiers: down ? pressed : released, spaceDown: false, timestamp: f.host.clock.now() });

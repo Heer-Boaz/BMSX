@@ -276,16 +276,16 @@ test('two visible Scene groups bind companions only on admitted interaction', as
 	assert.ok(f.editor.mainWorkspace.primary === active && inputFocus.target === field.field.focusTarget);
 	assert.equal(field.pending, true); assert.equal(a.buffer.getText(), SCENE_VIEWPORT_SOURCE);
 	const bounds = groupB.panes.contentBounds;
-	f.editor.dispatchPointer({ x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2,
 		buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary, releasedButtons: 0, cancelledButtons: 0,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	assert.ok(f.editor.mainWorkspace.primary === active && inputFocus.target === field.field.focusTarget);
 	assert.equal(field.pending, true); assert.equal(a.buffer.getText(), SCENE_VIEWPORT_SOURCE);
-	f.editor.dispatchPointer({ x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2,
 		buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary, cancelledButtons: 0,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	setFieldText(field.field, '12', true);
-	f.editor.dispatchPointer({ x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2,
 		buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary, releasedButtons: 0, cancelledButtons: 0,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	assert.ok(f.editor.mainWorkspace.primary?.input === second);

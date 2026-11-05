@@ -51,7 +51,7 @@ function selectTarget(f: Fixture, target: EditorGroupView | 'new'): number {
 
 function pointerRow(f: Fixture, row: number, down: boolean): void {
 	const model = f.editor.quickInput.model;
-	f.editor.dispatchPointer({ x: model.viewport.bounds.left + 8, y: model.rowTop(row) + model.rowHeight / 2,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: model.viewport.bounds.left + 8, y: model.rowTop(row) + model.rowHeight / 2,
 		buttons: down ? PointerButton.Primary : 0, pressedButtons: down ? PointerButton.Primary : 0,
 		releasedButtons: down ? 0 : PointerButton.Primary, cancelledButtons: 0,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: down ? 0 : 1 });

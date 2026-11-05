@@ -1,3 +1,5 @@
+import { MemoryStorage } from '../../ide/workspace/memory_storage';
+import { WorkbenchPreferences } from '../../ide/workbench/services/preferences/preferences';
 import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
@@ -27,7 +29,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 	const sources = createScenarioTestSourceState([record]);
 	const unused = (): never => { throw new Error('Review layout does not execute domain work.'); };
 	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: unused }, unused,
-		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: 384, height: 288 }) }), host.input, host.audio, host.tasks,
+		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: 384, height: 288 }) }), new WorkbenchPreferences(new MemoryStorage()), host.input, host.audio, host.tasks,
 		host.execution, host.rewind, host.clock, new HeadlessClipboard(), new IdeMicrotaskQueue(), { log() {} }, 0.3,
 		{ width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	editorRuntimeState.active = true;

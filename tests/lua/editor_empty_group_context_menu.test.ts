@@ -12,7 +12,7 @@ test('secondary press in an empty group body opens that group menu without selec
 	const x = (body.left + body.right) / 2, y = (body.top + body.bottom) / 2;
 	for (const down of [true, false]) {
 		f.host.clock.advance(10);
-		f.editor.dispatchPointer({ x, y, buttons: down ? PointerButton.Secondary : 0,
+		f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: down ? PointerButton.Secondary : 0,
 			pressedButtons: down ? PointerButton.Secondary : 0, releasedButtons: down ? 0 : PointerButton.Secondary,
 			cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	}

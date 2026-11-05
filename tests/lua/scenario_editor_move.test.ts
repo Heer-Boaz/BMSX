@@ -1,3 +1,5 @@
+import { MemoryStorage } from '../../ide/workspace/memory_storage';
+import { WorkbenchPreferences } from '../../ide/workbench/services/preferences/preferences';
 import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
 import assert from 'node:assert/strict';
 import test, { after, before, afterEach, beforeEach, type TestContext } from 'node:test';
@@ -67,7 +69,7 @@ async function fixture(t: TestContext) {
 	const externalWork = (): never => { throw new Error('Scenario movement must not request unrelated host work.'); };
 	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: externalWork }, externalWork,
 		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) }),
-		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
+		new WorkbenchPreferences(new MemoryStorage()), host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 800, height: 320 }, sources, new Map(), externalWork,
 		(bios, cartridges, model, input) => { const target = new OffscreenMachine(bios, cartridges, model, input); targets.push(target); return target; }, externalWork);
 	const editor = ide.editor, parts = editor.editorParts, controller = editor.scenarioLab, runs = controller.runs;
@@ -343,7 +345,7 @@ test('Scenario companion attempts retire with the old attachment and Source and 
 	f.editor.commands.execute('scenarioLab.runWithCompanion', origin);
 	assert.equal(f.firstPart.quickInput.visible, true);
 	const picker = f.firstPart.quickInput.model;
-	const press = { x: picker.viewport.bounds.left + 8, y: picker.rowTop(0) + picker.rowHeight / 2,
+	const press = { pointerId: 0, pointerType: 'mouse', x: picker.viewport.bounds.left + 8, y: picker.rowTop(0) + picker.rowHeight / 2,
 		buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary, releasedButtons: 0, cancelledButtons: 0,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 };
 	f.editor.dispatchPointer(press);

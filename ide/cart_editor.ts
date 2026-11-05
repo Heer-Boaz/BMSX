@@ -1,4 +1,5 @@
-import { workbenchPixelsPerUnit, type WorkspaceUiScale } from './workbench/common/display_scale';
+import type { WorkbenchPreferences } from './workbench/services/preferences/preferences';
+import { workbenchPixelsPerUnit } from './workbench/common/display_scale';
 import { CodeDocumentProjections } from './editor/ui/code/document_projections';
 import { WorkbenchInteraction } from './workbench/services/execution/interaction';
 import { MainWorkspace } from './workbench/main_workspace';
@@ -261,8 +262,7 @@ export type CartEditor = TextInputHost & {
 	isActive: boolean;
 	readonly acceptsInput: boolean;
 	readonly fontVariant: FontVariant;
-	readonly uiScale: WorkspaceUiScale;
-	setUiScale(scale: WorkspaceUiScale): void;
+	readonly preferences: WorkbenchPreferences;
 	activate: () => void;
 	deactivate: () => void;
 	onDidChangeActive(listener: (active: boolean) => void): () => void;
@@ -354,8 +354,7 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly runtime: Runtime;
 	private readonly presenter: VideoPresenter;
 	private readonly display: WorkbenchDisplay;
-	private uiScaleValue: WorkspaceUiScale = 1;
-	public get uiScale(): WorkspaceUiScale { return this.uiScaleValue; }
+	private readonly unbindPreferences: () => void;
 	private readonly input: Input;
 	private readonly clock: HostClock;
 	public readonly clipboard: Clipboard;
@@ -413,6 +412,7 @@ export class RuntimeCartEditor implements CartEditor {
 		private readonly workbench: StudioWorkbench,
 		presenter: VideoPresenter,
 		display: WorkbenchDisplay,
+		public readonly preferences: WorkbenchPreferences,
 		input: Input,
 		clock: HostClock,
 		clipboard: Clipboard,
@@ -444,6 +444,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.runtime = runtime;
 		this.presenter = presenter;
 		this.display = display;
+		this.unbindPreferences = preferences.onDidChange(() => { if (this.isActive) display.workspace.refresh(); });
 		this.input = input;
 		this.clock = clock;
 		this.clipboard = clipboard;
@@ -729,6 +730,7 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 	public dispatchPointer(event: PointerInputEvent): void {
 		if (!this.acceptsInput) return;
+		if (!pointerCapture.admitPointer(event)) return;
 		if (event.pressedButtons !== 0) this.menubar.cancelAlt();
 		editorRuntimeState.currentTimeMs = event.timestamp;
 		projectEditorPointerEvent(this.display, event, this.pointerSnapshot);
@@ -1021,6 +1023,7 @@ export class RuntimeCartEditor implements CartEditor {
 	private async close(): Promise<void> {
 		inputFocus.workbenchScope.retireContext();
 		this.deactivate();
+		this.unbindPreferences();
 		this.input.setEditingInput(undefined);
 		this.keybindings.dispose();
 		this.interaction.dispose();
@@ -1068,13 +1071,6 @@ export class RuntimeCartEditor implements CartEditor {
 			this.sources.catalog.dispose();
 			this.resourcePanel.dispose();
 		}
-	}
-
-	public setUiScale(scale: WorkspaceUiScale): void {
-		if (scale === this.uiScale) return;
-		this.uiScaleValue = scale;
-		if (this.isActive) this.display.workspace.refresh();
-		requestWorkspaceAutosave(WorkspaceAutosaveChange.UiScale);
 	}
 
 	public setFontVariant(variant: FontVariant): void {
@@ -1225,7 +1221,7 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly resizeWorkspace = (availableWidth: number, availableHeight: number): void => {
 		// Minimized/hidden surfaces allocate no render target. Their next host layout resumes it.
 		if (availableWidth <= 0 || availableHeight <= 0) return;
-		const scale = workbenchPixelsPerUnit(availableWidth, this.uiScale);
+		const scale = workbenchPixelsPerUnit(availableWidth, this.preferences.uiScale);
 		this.display.workspace.pixelsPerUnit = scale;
 		const width = Math.trunc(availableWidth / scale), height = Math.trunc(availableHeight / scale);
 		this.cancelPointerInput();

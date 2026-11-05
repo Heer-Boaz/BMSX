@@ -36,7 +36,7 @@ async function fixture(t: TestContext, font: 'tiny' | 'msx') {
 	const context = f.sources.catalog.getContext(f.sources.systemContextId);
 	context.previewRom!.bytes = packed.bytes; context.previewRom!.index.entries.push(...packed.entries);
 	context.previewPackage.img.sheet = packed.image; f.sources.catalog.rebuildResources();
-	f.editor.setFontVariant(font);
+	f.editor.setFontVariant(font); f.editor.editorParts.minimize(f.firstPart); f.editor.editorParts.minimize(f.secondPart);
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog,
 		f.sources.catalog.resolveResource({ contextId: context.id, path: 'scene.lua' })!);
 	const document = f.ide.sceneSources.get(model);
@@ -49,6 +49,9 @@ async function fixture(t: TestContext, font: 'tiny' | 'msx') {
 for (const font of ['tiny', 'msx'] as const)
 test(`${font} Main paints authored assets and native picking respects shear, texture flip, transparency and draw order`, async t => {
 	const f = await fixture(t, font), view = f.client.view.viewport, sprites = view.canvas.items;
+	// Native input addresses integer display pixels. Magnify the single-texel hole
+	// so it is independently hittable, away from the selected object's gizmo.
+	view.camera.zoom(4, 0, 0); f.update();
 	assert.equal(sprites.length, 2); const backSprite = sprites[0], frontSprite = sprites[1];
 	assert.ok(backSprite.kind === 'sprite' && frontSprite.kind === 'sprite');
 	assert.ok(backSprite.bitmap === frontSprite.bitmap);
@@ -64,10 +67,10 @@ test(`${font} Main paints authored assets and native picking respects shear, tex
 	// Coordinates come from the displayed quad. The contract is exact occurrence selection, not a fixed screen position.
 	for (const [u, v, expected] of [[0.65, 0.65, front], [0.8, 0.2, back]] as const) {
 		const top = sprites[1], x = top.x + top.xx * u + top.yx * v, y = top.y + top.xy * u + top.yy * v;
-		assert.ok(pickViewportCanvas(view.canvas.items, x, y) === expected);
+		assert.ok(pickViewportCanvas(view.canvas.items, x | 0, y | 0) === expected);
 		for (const down of [true, false]) {
 			f.host.clock.advance(10);
-			f.editor.dispatchPointer({ x, y, buttons: down ? PointerButton.Primary : 0,
+			f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: down ? PointerButton.Primary : 0,
 				pressedButtons: down ? PointerButton.Primary : 0, releasedButtons: down ? 0 : PointerButton.Primary,
 				cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 		}

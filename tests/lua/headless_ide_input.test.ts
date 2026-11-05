@@ -1,3 +1,5 @@
+import { MemoryStorage } from '../../ide/workspace/memory_storage';
+import { WorkbenchPreferences } from '../../ide/workbench/services/preferences/preferences';
 import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -24,7 +26,7 @@ test('headless IDE scenario keeps physical postInput separate from ordered autho
 	const unused = (): never => { throw new Error('Input producer regression cannot execute unrelated domain work.'); };
 	const log = new RecordingLogOutput({ log() {} });
 	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: unused }, unused,
-		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: 256, height: 212 }) }), host.input,
+		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: 256, height: 212 }) }), new WorkbenchPreferences(new MemoryStorage()), host.input,
 		host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(), new IdeMicrotaskQueue(),
 		log, 0.3, { width: 256, height: 212 }, sources, new Map(), unused, unused, unused);
 	const keys: Array<readonly [string, boolean, KeyModifier]> = [];

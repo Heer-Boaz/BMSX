@@ -55,7 +55,7 @@ function click(f: Fixture, at: { x: number; y: number }, secondary = false): voi
 	const button = secondary ? PointerButton.Secondary : PointerButton.Primary;
 	for (const down of [true, false]) {
 		f.host.clock.advance(10);
-		f.editor.dispatchPointer({ ...at, buttons: down ? button : 0, pressedButtons: down ? button : 0,
+		f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', ...at, buttons: down ? button : 0, pressedButtons: down ? button : 0,
 			releasedButtons: down ? 0 : button, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	}
 }
@@ -118,7 +118,7 @@ for (const rebind of [false, true]) test(`Animation physical Details activation 
 	const f = animationFixture(t); f.first.focus();
 	const tree = f.firstInput.details, row = tree.rows[tree.selectionIndex]; assert.ok(row !== undefined);
 	const at = { x: row.element.displayValueLeft + 2, y: tree.layout.contentTop + (tree.selectionIndex - tree.scroll + 0.5) * tree.layout.rowHeight };
-	const pointer = (down: boolean) => { f.host.clock.advance(10); f.editor.dispatchPointer({ ...at,
+	const pointer = (down: boolean) => { f.host.clock.advance(10); f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', ...at,
 		buttons: down ? PointerButton.Primary : 0, pressedButtons: down ? PointerButton.Primary : 0, releasedButtons: down ? 0 : PointerButton.Primary,
 		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() }); };
 	pointer(true); pointer(false); f.second.focus(); let redirected = false;

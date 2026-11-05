@@ -62,7 +62,7 @@ export class HostErrorPane extends WorkbenchViewEditorPane<HostErrorInput> {
 	public updateStatus(): void {}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot): boolean { return this.scroll.handlePointer(snapshot); }
 	public handleKeyboard(): void {}
-	public handleWheel(event: WheelInputSnapshot): void {
-		this.scroll.handleWheel(event, event.deltaY * this.input.layout.rowHeight);
+	public override handleWheel(event: WheelInputSnapshot): boolean {
+		return this.scroll.handleWheel(event, event.deltaY * this.input.layout.rowHeight);
 	}
 }

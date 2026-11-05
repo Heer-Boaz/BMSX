@@ -11,7 +11,7 @@ import type { WorkbenchSurface } from './services/windows/model';
 import type { WorkbenchSurfaceService } from './services/windows/service';
 import { WorkbenchSplitControl } from './ui/split_control';
 import { drawWorkbenchSplit } from './render/split_view';
-import { Scrollbar } from './ui/scrollbar';
+import { Scrollbar, scrollWheel } from './ui/scrollbar';
 import { ScrollbarController } from './ui/scrollbar_controller';
 import { type NavigationHistoryEntry, navigationState } from '../navigation/navigation_history';
 import type { SerializedMainWorkspace } from './common/main_workspace_serialization';
@@ -145,6 +145,11 @@ export class MainWorkspace {
 			role: 'window', lifetimeOwner: owner, presentationParent: null, captureScope: this.scope.surfaceScope,
 			isVisible: () => this.presented, getBounds: () => this.bounds, getClip: () => this.bounds,
 			draw: () => api.fill_rect(this.bounds.left, this.bounds.top, this.bounds.right, this.bounds.bottom, 0, COLOR_FRAME),
+			handleWheel: event => {
+				if (!scrollWheel(this.scrollbar, this.verticalScrollbar, event, editorViewState.lineHeight * 3, editorViewState.lineHeight * 3)) return false;
+				this.requestLayout(); this.surfaces.changed();
+				return true;
+			},
 			onRetire: () => this.retire(),
 		});
 		// This non-hittable family groups primary modality without masking the center documents.
@@ -169,7 +174,7 @@ export class MainWorkspace {
 				getBounds: () => region === 'hierarchy' ? this.regionLayout.hierarchySashBounds : this.regionLayout.detailsSashBounds,
 				getClip: () => this.regionLayout.viewport,
 				draw: () => drawWorkbenchSplit(model, sash),
-				handlePointer: snapshot => { sash.handlePointer(snapshot); }, handleWheel: () => true,
+				handlePointer: snapshot => { sash.handlePointer(snapshot); },
 				onRetire: () => { this.sashAttached[region] = false; pointerCapture.cancelScope(sash.focusTarget.scope.surfaceScope); sash.clearInput(); },
 			});
 		}
@@ -177,7 +182,7 @@ export class MainWorkspace {
 			captureScope: Symbol('main workspace horizontal scroll'), isVisible: () => this.scrollbar.isVisible(),
 			getBounds: () => this.scrollbar.getTrack(), getClip: () => this.bounds,
 			draw: () => this.scrollbar.draw(COLOR_FRAME, SCROLLBAR_THUMB_COLOR),
-			handlePointer: snapshot => { this.scrollControl.begin(HORIZONTAL_SCROLLBAR, snapshot, 0); }, handleWheel: () => true,
+			handlePointer: snapshot => { this.scrollControl.begin(HORIZONTAL_SCROLLBAR, snapshot, 0); },
 			onRetire: () => this.scrollControl.cancel(),
 		});
 		this.activities = new MainWorkspaceActivityPart(surfaces, this.surface, this.scope, this.focusTarget,
@@ -204,14 +209,14 @@ export class MainWorkspace {
 			captureScope: this.activitySash.focusTarget.scope.surfaceScope, isVisible: () => this.regionLayout.activityPresented,
 			getBounds: () => this.regionLayout.activitySashBounds, getClip: () => this.regionLayout.verticalViewport,
 			draw: () => drawWorkbenchSplit(this.regionLayout.activitySash, this.activitySash),
-			handlePointer: snapshot => { this.activitySash.handlePointer(snapshot); }, handleWheel: () => true,
+				handlePointer: snapshot => { this.activitySash.handlePointer(snapshot); },
 			onRetire: () => { this.activitySashAttached = false; pointerCapture.cancelScope(this.activitySash.focusTarget.scope.surfaceScope); this.activitySash.clearInput(); },
 		});
 		surfaces.attach({ role: 'content', lifetimeOwner: this.surface, presentationParent: this.surface,
 			captureScope: Symbol('main workspace vertical scroll'), isVisible: () => this.verticalScrollbar.isVisible(),
 			getBounds: () => this.verticalScrollbar.getTrack(), getClip: () => this.bounds,
 			draw: () => this.verticalScrollbar.draw(COLOR_FRAME, SCROLLBAR_THUMB_COLOR),
-			handlePointer: snapshot => { this.scrollControl.begin(VERTICAL_SCROLLBAR, snapshot, 0); }, handleWheel: () => true,
+				handlePointer: snapshot => { this.scrollControl.begin(VERTICAL_SCROLLBAR, snapshot, 0); },
 			onRetire: () => this.scrollControl.cancel(),
 		});
 		this.unbindInteraction = inputFocus.onDidActivateInteraction(target => {

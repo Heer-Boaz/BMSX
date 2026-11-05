@@ -151,5 +151,5 @@ export class BuildOutputActivity implements MainWorkspaceActivityClient {
 		if (!this.attached) return;
 		if (!this.chooseActions.handlePointer(snapshot) && this.view !== undefined) this.control.handlePointer(snapshot);
 	}
-	public handleWheel(event: WheelInputSnapshot): void { if (this.view !== undefined) this.control.handleWheel(event); }
+	public handleWheel(event: WheelInputSnapshot): boolean { return this.view !== undefined && this.control.handleWheel(event); }
 }

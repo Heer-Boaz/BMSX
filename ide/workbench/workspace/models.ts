@@ -1,5 +1,4 @@
 import type { FontVariant } from '../../../machine/ts/render/shared/bmsx_font';
-import type { WorkspaceUiScale } from '../common/display_scale';
 import type { SerializedBreakpoints } from '../../runtime/breakpoints';
 import type { WorkspaceRecord } from '../../workspace/records';
 import type { SerializedEditorLocation, SerializedEditorParts } from '../services/editor/editor_parts_serialization';
@@ -16,8 +15,6 @@ export type WorkspaceAutosavePayload = {
 	filesBrowser: SerializedResourcePanel;
 	breakpoints: SerializedBreakpoints;
 	fontVariant: FontVariant;
-	/** Absence denotes 100% in sessions predating adaptive workspace presentation. */
-	uiScale?: WorkspaceUiScale;
 };
 
 export const enum WorkspaceAutosaveChange {
@@ -27,8 +24,7 @@ export const enum WorkspaceAutosaveChange {
 	Breakpoints = 1 << 2,
 	Font = 1 << 3,
 	FilesBrowser = 1 << 4,
-	UiScale = 1 << 5,
-	All = DirtyFiles | EditorSession | Breakpoints | Font | FilesBrowser | UiScale,
+	All = DirtyFiles | EditorSession | Breakpoints | Font | FilesBrowser,
 }
 
 export type WorkspaceSessionGeneration = {

@@ -34,7 +34,7 @@ function fixture(t: TestContext) {
 	return { ...f, main, panel, model, diagnostics };
 }
 
-const pointer = (x: number, y: number, down: number, up = 0) => ({ x, y,
+const pointer = (x: number, y: number, down: number, up = 0) => ({ pointerId: 0, pointerType: 'mouse', x, y,
 	buttons: down, pressedButtons: down, releasedButtons: up, cancelledButtons: 0,
 	modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 });
 

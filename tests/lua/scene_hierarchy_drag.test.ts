@@ -61,7 +61,7 @@ async function fixture(t: TestContext, main = true, font: 'tiny' | 'msx' = 'tiny
 	};
 	const send = (point: { x: number; y: number }, down: boolean, pressed = false, modifiers = KeyModifier.none) => {
 		f.host.clock.advance(10);
-		f.editor.dispatchPointer({ ...point, buttons: down ? PointerButton.Primary : 0,
+		f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', ...point, buttons: down ? PointerButton.Primary : 0,
 			pressedButtons: pressed ? PointerButton.Primary : 0, releasedButtons: down ? 0 : PointerButton.Primary,
 			cancelledButtons: 0, modifiers, spaceDown: false, timestamp: f.host.clock.now() });
 		f.update();

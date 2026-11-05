@@ -1,3 +1,4 @@
+import { WorkbenchPreferences } from '../workbench/services/preferences/preferences';
 import { HttpWorkspaceBuilds } from './builds';
 import { HttpWorkspaceProjects } from './projects';
 import { resolveBrowserSourceContext } from './source_contexts';
@@ -164,6 +165,7 @@ async function startBrowserStudio(): Promise<void> {
 			encodePngImage,
 			decodeImage,
 			options.videoOutput,
+			new WorkbenchPreferences(window.localStorage),
 			options.input,
 			audioOutput,
 			runtimeTasks,

@@ -286,7 +286,7 @@ export class EventViewerPane extends WorkbenchViewEditorPane<EventViewerInput> {
 		return false;
 	}
 	public handleKeyboard(input: KeyInputEvent): void { this.navigate(input); }
-	public handleWheel(event: WheelInputSnapshot): void {
-		(this.inspector.visible ? this.inspector : this.scroll).handleWheel(event, event.deltaY * this.input.layout.rowHeight);
+	public override handleWheel(event: WheelInputSnapshot): boolean {
+		return (this.inspector.visible ? this.inspector : this.scroll).handleWheel(event, event.deltaY * this.input.layout.rowHeight);
 	}
 }

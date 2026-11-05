@@ -473,16 +473,14 @@ function editorStub(
 		code_editor: new CodeEditorInputSerializer(sources.catalog), resource_view: new ResourceViewerInputSerializer(sources.catalog),
 	};
 	const editor: Pick<CartEditor, 'fontVariant' | 'isActive' | 'editorInputSerializers' | 'editorParts' | 'mainWorkspace'
-		| 'restoreSceneCompanions' | 'setFontVariant' | 'setUiScale' | 'uiScale' | 'updateViewport'> = {
+		| 'restoreSceneCompanions' | 'setFontVariant' | 'updateViewport'> = {
 		fontVariant: DEFAULT_FONT_VARIANT,
-		uiScale: 1,
 		isActive: true,
 		editorInputSerializers,
 		editorParts,
 		mainWorkspace,
 		restoreSceneCompanions() { assert.fail('storage fixture has no scene companion request'); },
 		setFontVariant() { /* noop */ },
-		setUiScale() { /* noop */ },
 		updateViewport() { /* noop */ },
 	};
 	const content = new ProjectContentIndex(editorTextModelService, sources.catalog,

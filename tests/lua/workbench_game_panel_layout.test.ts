@@ -1,3 +1,5 @@
+import { MemoryStorage } from '../../ide/workspace/memory_storage';
+import { WorkbenchPreferences } from '../../ide/workbench/services/preferences/preferences';
 import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
@@ -13,6 +15,7 @@ import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { inputFocus } from '../../ide/input/focus';
+import { handleEditorWheelInput } from '../../ide/input/pointer/wheel';
 import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 import { getWorkbenchEditorBounds } from '../../ide/workbench/common/layout';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
@@ -30,7 +33,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 	const sources = createScenarioTestSourceState([record]);
 	const unused = (): never => { throw new Error('Companion layout does not execute domain work.'); };
 	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: unused }, unused,
-		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: 700, height: 288 }) }), host.input, host.audio, host.tasks,
+		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: 700, height: 288 }) }), new WorkbenchPreferences(new MemoryStorage()), host.input, host.audio, host.tasks,
 		host.execution, host.rewind, host.clock, new HeadlessClipboard(), new IdeMicrotaskQueue(), { log() {} }, 0.3,
 		{ width: 700, height: 288 }, sources, new Map(), unused, unused, unused);
 	// These source-only fixtures exercise layout, not an admitted bootable Studio command.
@@ -58,7 +61,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 	});
 	const arrange = (width = 700, height = 288) => { editor.updateViewport({ width, height }); editor.update(0); };
 	const pointer = (x: number, y: number, nextButtons = buttons) => {
-		editor.dispatchPointer({ x, y, buttons: nextButtons, pressedButtons: nextButtons & ~buttons,
+		editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: nextButtons, pressedButtons: nextButtons & ~buttons,
 			releasedButtons: buttons & ~nextButtons, cancelledButtons: 0, modifiers: KeyModifier.none,
 			spaceDown: false, timestamp: host.clock.now() });
 		buttons = nextButtons;
@@ -243,6 +246,13 @@ for (const variant of ['tiny', 'msx'] as const) {
 			'the document group must not reserve a second scrollbar inside the expanded workspace row');
 		for (const group of f.main.groups) assert.ok(group.bounds.right - group.bounds.left
 			>= Math.max(group.minimumWidth, group.companionWidth!));
+		const tabs = f.sourceGroup.tabStrip.layoutState.bounds, previous = workspace.scrollY;
+		const x = (tabs.left + tabs.right) / 2, y = (tabs.top + tabs.bottom) / 2;
+		const event = { valid: true, insideViewport: true, viewportX: x, viewportY: y, deltaX: 0, deltaY: previous === 0 ? 1 : -1, modifiers: KeyModifier.none };
+		handleEditorWheelInput(f.editor.surfaces, event, { x, y, deltaX: 0, deltaY: event.deltaY, attachmentDeltaY: event.deltaY, modifiers: KeyModifier.none, timestamp: 0 });
+		f.editor.update(0);
+		assert.notEqual(workspace.scrollY, previous, 'a fitting child tabstrip passes wheel scrolling to the overflowing workspace');
+		assert.equal(f.main.arrangement.maxScrollY, 0);
 		f.arrange(required - 1, hardHeight - 1 + chromeHeight); assert.equal(f.editor.gamePanel.visible, false);
 		assert.equal(f.editor.gamePanel.enabled, true); assert.equal(f.model.canUndo, false);
 	});

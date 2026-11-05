@@ -46,8 +46,8 @@ class GraphFixturePane extends EditorPane<CodeEditorInput> {
 	public handlePointer(snapshot: PointerInputSnapshot, _justPressed: boolean, _secondary: boolean, now: number): void {
 		this.result = this.graph.handlePointer(snapshot, now, snapshot.spaceDown);
 	}
-	public handleWheel(event: WheelInputSnapshot): void {
-		this.graph.handleWheel(event);
+	public override handleWheel(event: WheelInputSnapshot): boolean {
+		return this.graph.handleWheel(event);
 	}
 	public readonly statusItems = [];
 	public updateStatus(): void {}

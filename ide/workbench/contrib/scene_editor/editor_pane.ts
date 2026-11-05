@@ -118,7 +118,7 @@ export class SceneEditorPane extends EditorPane<SceneEditorInput | UnavailableSc
 		this.controlValue?.handlePointer(snapshot, justPressed); this.messageValue?.handlePointer(snapshot, justPressed);
 	}
 	public onPointerLeave(): void { this.controlValue?.onPointerLeave(); }
-	public override handleWheel(event: WheelInputSnapshot): void { this.controlValue?.handleWheel(event); }
+	public override handleWheel(event: WheelInputSnapshot): boolean { return this.controlValue?.handleWheel(event) === true; }
 	public override updateStatus(): void {
 		if (this.input instanceof UnavailableSceneEditorInput) {
 			this.statusItem.text = 'SCENE UNAVAILABLE'; this.statusItem.tone = 'warning'; this.statusItem.priority = STATUS_PRIORITY_CONTENT;

@@ -681,16 +681,17 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		}
 		return true;
 	}
-	public handleWheel(event: WheelInputSnapshot): void {
-		if (this.worldControl.handleWheel(event)) return;
-		if (this.input.presentation === 'world') { this.outlinerControl.handleWheel(event); return; }
+	public override handleWheel(event: WheelInputSnapshot): boolean {
+		if (this.worldControl.handleWheel(event)) return true;
+		if (this.input.presentation === 'world') return this.outlinerControl.handleWheel(event);
 		if (this.input.presentation === 'graph') {
-			if (!this.graph.handleWheel(event)) return;
+			if (!this.graph.handleWheel(event)) return false;
 		} else {
-			if (!this.input.outline.handleWheel(event)) return;
+			if (!this.input.outline.handleWheel(event)) return false;
 			this.scrollbar.cancelPointer();
 		}
 		this.input.follow.stop();
+		return true;
 	}
 
 	private acceptGraphSelection(): boolean {

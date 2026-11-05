@@ -222,7 +222,7 @@ for (const supersededBy of ['hide', 'activity', 'native focus', 'provider'] as c
 		if (supersededBy === 'hide') {
 			f.first.focus(); const source = inputFocus.admittedTarget;
 			const header = f.main.activities.headerBounds, x = header.right - 4, y = (header.top + header.bottom) / 2;
-			for (const down of [true, false]) f.editor.dispatchPointer({ x, y, buttons: down ? PointerButton.Primary : 0,
+			for (const down of [true, false]) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: down ? PointerButton.Primary : 0,
 				pressedButtons: down ? PointerButton.Primary : 0, releasedButtons: down ? 0 : PointerButton.Primary,
 				cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 });
 			assert.equal(f.main.regionLayout.activityVisible, false);

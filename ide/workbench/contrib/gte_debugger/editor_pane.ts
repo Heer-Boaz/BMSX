@@ -285,7 +285,7 @@ export class GteDebuggerPane extends WorkbenchViewEditorPane<GteDebuggerInput> {
 		return false;
 	}
 	public handleKeyboard(event: KeyInputEvent): void { this.navigate(event); }
-	public handleWheel(event: WheelInputSnapshot): void {
-		this.scroll.handleWheel(event, event.deltaY * this.input.layout.rowHeight);
+	public override handleWheel(event: WheelInputSnapshot): boolean {
+		return this.scroll.handleWheel(event, event.deltaY * this.input.layout.rowHeight);
 	}
 }

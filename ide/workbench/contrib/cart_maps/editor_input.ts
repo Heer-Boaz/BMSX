@@ -32,7 +32,6 @@ export type CartMapSheet = MapGridContent & {
 };
 export type CartMapTreeElement = {
 	readonly label: string;
-	displayLabel: string;
 	readonly range: TrackedTextRange;
 	readonly sheet: CartMapSheet;
 	readonly item?: CartMapItem;
@@ -52,6 +51,7 @@ export type CartMapLayout = FullWidthWorkbenchLayout & {
 	selectionTitle: string;
 	selectionLabel: string;
 	sourceVersion: number;
+	treeRevision: number;
 	sourceBounds: RectBounds;
 	selectionBounds: RectBounds;
 };
@@ -79,7 +79,7 @@ export class CartMapInput extends WorkingCopyEditorInput<`map:${string}`, 'cart_
 		minimumFont: undefined,
 		mode: 'outline', splitMinimumWidth: 0, outlineMinimumWidth: 0, mapMinimumWidth: 0, fieldMinimumWidth: 0, axisLabelWidth: 0,
 		left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null, gridLeft: 0, sourceTitle: '', outlineTitle: '', selectionTitle: '', selectionLabel: '', sourceVersion: -1,
-		sourceBounds: create_rect_bounds(), selectionBounds: create_rect_bounds(),
+		treeRevision: -1, sourceBounds: create_rect_bounds(), selectionBounds: create_rect_bounds(),
 	};
 	public get selected(): CartMapItem | undefined { return this.tree.rows[this.tree.selectionIndex]?.element.item; }
 	public get selectionRevision(): number { return this.selectionRevisionValue; }

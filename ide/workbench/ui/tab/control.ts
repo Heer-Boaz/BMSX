@@ -318,9 +318,9 @@ export class EditorTabStrip implements PointerHoverTarget {
 
 	public handleWheel(event: WheelInputSnapshot): boolean {
 		if (!event.valid || !event.insideViewport || !point_in_rect(event.viewportX, event.viewportY, this.layoutState.bounds)) return false;
-		pointerCapture.cancelTarget(this.scrollControl);
 		const delta = event.deltaX === 0 ? event.deltaY : event.deltaX;
-		this.scrollbar.setScroll(this.scrollbar.getScroll() + delta * this.layoutState.charAdvance * 4);
+		if (!this.scrollbar.setScroll(this.scrollbar.getScroll() + delta * this.layoutState.charAdvance * 4)) return false;
+		pointerCapture.cancelTarget(this.scrollControl);
 		return true;
 	}
 }

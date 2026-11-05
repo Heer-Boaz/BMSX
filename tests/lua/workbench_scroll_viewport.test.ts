@@ -218,13 +218,13 @@ test('absolute keyboard targets are admitted before unchanged pixels, while rela
 	assert.deepEqual(intents, ['start', 'end']); assert.deepEqual(pixels, [0, 0]);
 	f.control.handleWheel(f.pointer(40, 50), 0);
 	assert.equal(intents.length, 2, 'zero wheel delta cannot replace an absolute target');
-	f.control.handleWheel(f.pointer(40, 50), 10);
-	assert.equal(intents[2], undefined); assert.equal(intents.length, 3);
+	assert.equal(f.control.handleWheel(f.pointer(40, 50), 10), false);
+	assert.equal(intents.length, 2, 'an exhausted child leaves wheel intent to its parent');
 	f.view.layout(20, 30, 123, 30, 400);
 	press('End'); press('Home');
-	assert.deepEqual(intents.slice(3), ['end', 'start']); assert.deepEqual(pixels.slice(3), [0, 400]);
+	assert.deepEqual(intents.slice(2), ['end', 'start']); assert.deepEqual(pixels.slice(2), [0, 400]);
 	f.view.layout(20, 30, 123, 130, 400);
 	press('PageDown'); press('ArrowUp');
 	f.pointer(121, 35, PRIMARY, PRIMARY); f.pointer(121, 35, 0, 0, PRIMARY);
-	assert.deepEqual(intents.slice(5), [undefined, undefined, undefined]);
+	assert.deepEqual(intents.slice(4), [undefined, undefined, undefined]);
 });

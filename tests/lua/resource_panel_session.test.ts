@@ -186,7 +186,7 @@ for (const recover of [false, true]) test(`inactive Files retains native focus w
 	assert.equal(f.editor.dispatchKey(arrow), false); assert.equal(arrow.consumed, false);
 	assert.equal(f.editor.dispatchWheel({ x, y, deltaX: 0, deltaY: 1, attachmentDeltaY: 1,
 		modifiers: KeyModifier.none, timestamp: f.host.clock.now() }), false);
-	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	assert.deepEqual(panel.serialize().view, payload.filesBrowser.view); assert.equal(pointerCapture.active, false);
 	f.editor.activate(); f.update();

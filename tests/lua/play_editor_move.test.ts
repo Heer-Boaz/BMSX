@@ -1,3 +1,5 @@
+import { MemoryStorage } from '../../ide/workspace/memory_storage';
+import { WorkbenchPreferences } from '../../ide/workbench/services/preferences/preferences';
 import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
@@ -60,7 +62,7 @@ while true do game.updates=game.updates+1; halt_until_irq end`,
 	const externalWork = (): never => { throw new Error('Play editor movement does not request external work.'); };
 	const ide = new RuntimeIdeState(primary.runtime, host.presenter, { capture: externalWork }, externalWork,
 		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) }),
-		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, clipboard,
+		new WorkbenchPreferences(new MemoryStorage()), host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, clipboard,
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 800, height: 320 }, sources, new Map(), externalWork, externalWork,
 		(system, slots, model, channel, program) => {
 			const session = new PlayRuntimeSession(new OffscreenMachine(system, slots, model, channel), program, host.audio.device, { log() {} });

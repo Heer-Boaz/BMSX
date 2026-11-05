@@ -272,8 +272,9 @@ export class AssistantPane extends WorkbenchViewEditorPane<AssistantInput> {
 		}
 		this.composer.handleKeyboard(input);
 	}
-	public handleWheel(event: WheelInputSnapshot): void {
-		if (this.input.attachments.images.length > 0 && this.attachments.handleWheel(event, event.deltaX !== 0 ? event.deltaX : event.deltaY)) return;
-		if (!this.references.suggestions.handleWheel(event, event.deltaY)) this.transcriptView.scroll.handleWheel(event, event.deltaY * this.input.layout.rowHeight);
+	public override handleWheel(event: WheelInputSnapshot): boolean {
+		if (this.input.attachments.images.length > 0 && this.attachments.handleWheel(event, event.deltaX !== 0 ? event.deltaX : event.deltaY)) return true;
+		return this.references.suggestions.handleWheel(event, event.deltaY)
+			|| this.transcriptView.scroll.handleWheel(event, event.deltaY * this.input.layout.rowHeight);
 	}
 }

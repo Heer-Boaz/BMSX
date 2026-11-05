@@ -20,6 +20,7 @@ import type { EditorPaneConstraints } from '../../ide/workbench/services/editor/
 import { projectCartMap, selectCartMapRow } from '../../ide/workbench/contrib/cart_maps/source_projection';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { workbenchListRowIndexAtPosition } from '../../ide/workbench/ui/list_view';
+import { setWorkbenchTreeCollapsed } from '../../ide/workbench/ui/tree_view';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { pointerHover } from '../../ide/input/pointer/hover';
 
@@ -386,4 +387,28 @@ for (const variant of ['tiny', 'msx'] as const) test(`Cart Map ${variant} intrin
 		measureCartMapEditor(input, editorViewState.font, true, measured); assert.equal(measured.companionWidth, width);
 	}
 	assert.equal(read.mock.callCount(), 0); assert.equal(advance.mock.callCount(), 0);
+});
+
+test('Cart Map retains full row identity and uses shared horizontal overflow for render and picking', t => {
+	const source = SOURCE.replaceAll('type: rock', 'type: deliberately_long_authored_object_identity');
+	const f = fixture(t, 'tiny', 140, source), tree = f.input.tree;
+	assert.equal(tree.horizontalScrollbar.isVisible(), true);
+	const selected = tree.rows[1].element;
+	assert.ok(selected.label.endsWith('deliberately_long_authored_object_identity'));
+	const event = { valid: true, insideViewport: true, viewportX: tree.layout.contentLeft + 2,
+		viewportY: tree.layout.contentTop + tree.layout.rowHeight * 1.5, deltaX: 0, deltaY: 1, modifiers: KeyModifier.shift };
+	assert.equal(f.pane.handleWheel(event), true);
+	assert.ok(tree.rowLeft < tree.layout.contentLeft);
+	f.pointer(event.viewportX, event.viewportY, PointerButton.Primary, PointerButton.Primary);
+	f.pointer(event.viewportX, event.viewportY, 0, 0, PointerButton.Primary);
+	assert.ok(tree.rows[tree.selectionIndex].element === selected);
+	assert.equal(f.model.buffer.getText(), source);
+	setWorkbenchTreeCollapsed(tree, 0, true); f.pane.update();
+	assert.equal(tree.horizontalScrollbar.isVisible(), false, 'collapsed rows no longer determine the visible content width');
+	assert.equal(tree.scrollLeft, 0);
+	setWorkbenchTreeCollapsed(tree, 0, false); f.pane.update();
+	assert.equal(tree.horizontalScrollbar.isVisible(), true);
+	f.layout(1400);
+	assert.equal(tree.horizontalScrollbar.isVisible(), false);
+	assert.equal(tree.scrollLeft, 0);
 });

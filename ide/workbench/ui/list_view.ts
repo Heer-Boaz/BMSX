@@ -77,10 +77,13 @@ export function clampWorkbenchListScroll<Row>(state: WorkbenchListState<Row>): v
 	state.scroll = clamp(state.scroll, 0, maxScroll);
 }
 
-export function scrollWorkbenchList<Row>(state: WorkbenchListState<Row>, delta: number): void {
+export function scrollWorkbenchList<Row>(state: WorkbenchListState<Row>, delta: number): boolean {
+	const previous = state.scroll;
 	state.scroll += delta;
 	clampWorkbenchListScroll(state);
+	if (state.scroll === previous) return false;
 	state.hoverIndex = -1;
+	return true;
 }
 
 export function revealWorkbenchListSelection<Row>(state: WorkbenchListState<Row>): void {

@@ -95,7 +95,9 @@ export class AssistantAttachmentStrip {
 	}
 	public handleWheel(snapshot: PointerPosition, delta: number): boolean {
 		if (!point_in_rect(snapshot.viewportX, snapshot.viewportY, this.bounds)) return false;
-		this.first = Math.max(0, Math.min(this.attachments!.images.length - this.columns, this.first + delta));
+		const first = Math.max(0, Math.min(this.attachments!.images.length - this.columns, this.first + delta));
+		if (this.first === first) return false;
+		this.first = first;
 		return true;
 	}
 	private revealSelection(): void {

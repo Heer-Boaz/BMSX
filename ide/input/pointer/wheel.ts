@@ -1,5 +1,6 @@
 import type { CartEditor } from '../../cart_editor';
 import type { WorkbenchSurfaceService } from '../../workbench/services/windows/service';
+import type { WorkbenchSurface } from '../../workbench/services/windows/model';
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
 import type { WheelInputSnapshot } from '../../common/models';
@@ -18,22 +19,32 @@ export function handleEditorWheelInput(surfaces: WorkbenchSurfaceService, event:
 	if (!event.valid || event.deltaX === 0 && event.deltaY === 0) return true;
 	if (pointerCapture.dispatchWheel(event, native.timestamp) || !event.insideViewport) return true;
 	const surface = surfaces.hitTest(event.viewportX, event.viewportY);
-	// A selected opaque surface owns an unhandled wheel too. Only its actual
-	// controller can explicitly admit this occurrence to a guest viewport.
-	if (surface?.handleWheel?.(event) !== false) return true;
+	if (surface === null) return true;
+	// Guest admission is an explicit focused viewport binding, never the meaning
+	// of an unhandled UI event. Ancestor routing cannot discover another guest.
 	const focused = inputFocus.admittedTarget;
 	const guest = focused?.guestInput;
 	if (guest !== undefined && focused!.scope.surfaceScope === surface.captureScope
 		&& projectGuestPointer(guest, event.viewportX, event.viewportY, guestPoint) === DisplayPointMappingResult.Inside) {
 		guest.recipient.pointerContribution.admitWheel(guestPoint.x, guestPoint.y, native.attachmentDeltaY);
+		return true;
+	}
+	// Bubble only through the hit surface's presentation ancestry. A window or
+	// popup is an input boundary; an unhandled wheel never hits a sibling behind it.
+	for (let current: WorkbenchSurface | null | undefined = surface; current != null;) {
+		const parent = current.presentationParent;
+		if (current.handleWheel?.(event)) break;
+		if (!current.published || current.presentationParent !== parent) break;
+		switch (current.role) {
+			case 'window': case 'modal': case 'transient': return true;
+		}
+		current = parent;
 	}
 	return true;
 }
 
 export function handleWorkbenchChromeWheel(editor: CartEditor, event: WheelInputSnapshot): boolean {
-	if (handleResourcePanelWheel(editor.resourcePanel, event)) return true;
-	const guest = inputFocus.admittedTarget?.guestInput;
-	return guest === undefined || !point_in_rect(event.viewportX, event.viewportY, guest.bounds);
+	return handleResourcePanelWheel(editor.resourcePanel, event);
 }
 
 function handleResourcePanelWheel(resourcePanel: ResourcePanelController, event: WheelInputSnapshot): boolean {
@@ -42,7 +53,8 @@ function handleResourcePanelWheel(resourcePanel: ResourcePanelController, event:
 	const horizontal = isShiftDown(event) && event.deltaX === 0;
 	const deltaX = horizontal ? event.deltaY : event.deltaX;
 	const deltaY = horizontal ? 0 : event.deltaY;
+	const scrollLeft = resourcePanel.hscroll, scrollTop = resourcePanel.scroll;
 	if (deltaX !== 0) resourcePanel.setHScroll(resourcePanel.hscroll + deltaX * editorViewState.charAdvance * 4);
 	if (deltaY !== 0) resourcePanel.setScroll(resourcePanel.scroll + deltaY);
-	return true;
+	return scrollLeft !== resourcePanel.hscroll || scrollTop !== resourcePanel.scroll;
 }

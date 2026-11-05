@@ -15,6 +15,10 @@ export type EditorPaneContributions = {
 	[TKind in EditorInputKind]: EditorPaneContribution<Extract<EditorInput, { kind: TKind }>>;
 };
 
+/** The clear owns its generation and the focus transition it actually completed,
+ * not a newer request issued by a blur/disposal observer. */
+export type EditorPaneClearResult = { readonly generation: number; readonly focusRevision: number | undefined };
+
 /** Owns the active editor pane and its input lifecycle for one editor group. */
 export class EditorPanes {
 	private readonly panes = new Map<EditorInputKind, EditorPane<EditorInput>>();
@@ -113,7 +117,7 @@ export class EditorPanes {
 		} else {
 			const cleared = this.clearEditor();
 			if (cleared === undefined) return;
-			generation = cleared;
+			generation = cleared.generation;
 			if (!current()) return;
 			pane = this.getOrCreatePane(input);
 			this.activePaneValue = pane;
@@ -134,11 +138,12 @@ export class EditorPanes {
 	}
 
 	/** The receipt names this clear, independently of openings performed by its observers. */
-	public clearEditor(reason: EditorPaneClearReason = 'deactivate'): number | undefined {
+	public clearEditor(reason: EditorPaneClearReason = 'deactivate'): EditorPaneClearResult | undefined {
 		const generation = ++this.openGenerationValue;
+		let focusRevision: number | undefined;
 		const activePane = this.activePaneValue;
 		if (activePane === null) {
-			return generation;
+			return { generation, focusRevision };
 		}
 		const current = () => this.openGenerationValue === generation && this.activePaneValue === activePane;
 		if (reason !== 'retire' && (!activePane.prepareToClearInput() || !current())) return;
@@ -146,7 +151,9 @@ export class EditorPanes {
 		if (!current()) return;
 		if (reason !== 'retire' && (!inputFocus.commitEdit(this.focusScope) || !current())) return;
 		if (inputFocus.target?.scope.surfaceScope === this.focusScope.surfaceScope
-			|| activePane.inputScope !== undefined && inputFocus.target?.scope === activePane.inputScope) inputFocus.setTarget(null);
+			|| activePane.inputScope !== undefined && inputFocus.target?.scope === activePane.inputScope) {
+			if (inputFocus.setTarget(null)) focusRevision = inputFocus.revision;
+		}
 		if (!current() || reason !== 'retire' && (!activePane.prepareToClearInput() || !current())) return;
 		if (this.focusScope.statusSource === activePane) this.focusScope.statusSource = undefined;
 		activePane.clearInput(reason);
@@ -156,7 +163,7 @@ export class EditorPanes {
 		this.activePaneValue = null;
 		this.focusScope.retireContext();
 		for (const listener of this.clearListeners) listener();
-		return generation;
+		return { generation, focusRevision };
 	}
 
 	public dispose(): void {

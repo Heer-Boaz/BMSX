@@ -60,8 +60,10 @@ export class WorkbenchScrollControl {
 		if (!snapshot.valid || !snapshot.insideViewport
 			|| (!point_in_rect(snapshot.viewportX, snapshot.viewportY, view.bounds)
 				&& !point_in_rect(snapshot.viewportX, snapshot.viewportY, view.scrollbar.getTrack()))) return false;
+		if (delta === 0 || delta < 0 && view.scrollTop === 0
+			|| delta > 0 && view.scrollTop === view.scrollbar.getMaximumScroll()) return false;
 		this.cancelPointer();
-		if (delta !== 0) this.onWillScroll?.();
+		this.onWillScroll?.();
 		view.scrollbar.setScroll(view.scrollTop + delta);
 		return true;
 	}

@@ -222,7 +222,7 @@ test('the actual guest recipient bypasses window prefixes and arrows before any 
 	const f = createActualSourcePanes(t), game = new GameViewInput(), model = f.firstInput.workingCopy;
 	f.firstGroup.openEditor(game); f.update();
 	const bounds = game.frameBounds, x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
-	for (const down of [true, false]) f.editor.dispatchPointer({ x, y, buttons: down ? PointerButton.Primary : 0,
+	for (const down of [true, false]) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: down ? PointerButton.Primary : 0,
 		pressedButtons: down ? PointerButton.Primary : 0, releasedButtons: down ? 0 : PointerButton.Primary,
 		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: down ? 0 : 1 });
 	const guest = inputFocus.target!, binding = guest.guestInput!;

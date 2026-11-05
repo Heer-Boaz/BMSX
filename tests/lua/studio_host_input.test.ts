@@ -1,3 +1,5 @@
+import { MemoryStorage } from '../../ide/workspace/memory_storage';
+import { WorkbenchPreferences } from '../../ide/workbench/services/preferences/preferences';
 import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -33,7 +35,7 @@ test('host exclusive pages suspend every Studio editing channel and retire nativ
 	const unused = (): never => { throw new Error('Input admission must not start unrelated domain work.'); };
 	const clipboard = new HeadlessClipboard();
 	// The complete production owner composition, without a loaded source document or a guest execution request.
-	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: unused }, unused, display, host.input,
+	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: unused }, unused, display, new WorkbenchPreferences(new MemoryStorage()), host.input,
 		host.audio, host.tasks, host.execution, host.rewind, host.clock, clipboard, new IdeMicrotaskQueue(),
 		{ log() {} }, 0.3, { width: 256, height: 212 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
@@ -48,7 +50,7 @@ test('host exclusive pages suspend every Studio editing channel and retire nativ
 	const unbindTarget = editor.onDidChangeTarget(() => targets.push(editor.textTarget));
 	const remote = new RemoteInput(host.input, host.clock, host.input.dispatchEditingKey.bind(host.input),
 		event => editor.dispatchPointer(event), event => editor.dispatchWheel(event));
-	const pointer = { x: 100, y: 100, buttons: 0, pressedButtons: 0, releasedButtons: 0, cancelledButtons: 0,
+	const pointer = { pointerId: 0, pointerType: 'mouse', x: 100, y: 100, buttons: 0, pressedButtons: 0, releasedButtons: 0, cancelledButtons: 0,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 };
 	const wheel = { x: 100, y: 100, deltaX: 0, deltaY: 1, attachmentDeltaY: 1, modifiers: KeyModifier.none, timestamp: 0 };
 	const tick = () => { host.input.pollInput(); return menu.tickInput(); };

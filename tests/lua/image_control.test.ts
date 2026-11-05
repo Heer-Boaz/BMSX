@@ -123,6 +123,7 @@ test('fractional image wheel pans both axes and zooms continuously around the so
 		assert.ok(Math.abs(f.view.scale - 1) < 1e-10);
 	}
 	f.view.setScale('fit');
+	assert.equal(f.control.handleWheel(wheel), false, 'fitting image leaves ordinary wheel scrolling to its container');
 	f.control.handleWheel({ ...wheel, deltaY: 0, modifiers: KeyModifier.ctrl });
 	assert.equal(f.view.mode, 'fit', 'horizontal-only wheel does not replace Fit with a numeric scale');
 	f.view.setScale(1.25);

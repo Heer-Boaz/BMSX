@@ -18,7 +18,7 @@ test('Studio reallocates its own workspace, retaining documents and restoring th
 	assert.deepEqual([f.presenter.viewportSize.x, f.presenter.viewportSize.y], [640, 360]);
 	const input = f.editor.editorParts.activeGroup.model.activeTab;
 	const media = f.sources.currentBlua32Media, cycles = f.runtime.machine.scheduler.nowCycles;
-	f.editor.setUiScale(1.25);
+	f.editor.preferences.uiScale = 1.25;
 	assert.deepEqual([f.presenter.viewportSize.x, f.presenter.viewportSize.y], [512, 288]);
 	assert.ok(f.editor.editorParts.activeGroup.model.activeTab === input);
 	assert.ok(f.sources.currentBlua32Media === media);
@@ -37,7 +37,7 @@ test('Studio reallocates its own workspace, retaining documents and restoring th
 	assert.equal(f.display.pointerCursor, 'default');
 	assert.deepEqual([f.presenter.viewportSize.x, f.presenter.viewportSize.y], game);
 	f.editor.activate();
-	assert.equal(f.editor.uiScale, 1.25);
+	assert.equal(f.editor.preferences.uiScale, 1.25);
 	assert.deepEqual([f.presenter.viewportSize.x, f.presenter.viewportSize.y], [512, 288]);
 });
 
@@ -50,7 +50,7 @@ test('Source caret, selection and context menus keep their document meaning acro
 	const pane = group.panes.activePane!; assert.ok(pane instanceof CodeEditorPane);
 	const bounds = create_rect_bounds();
 	for (const scale of [0.75, 1.25, 2] as const) {
-		f.editor.setUiScale(scale); await f.frame();
+		f.editor.preferences.uiScale = scale; await f.frame();
 		const point = (column: number) => {
 			resolveTextPositionBounds(pane.code, 0, column, bounds);
 			return { type: 'pointer' as const, x: bounds.left + (bounds.right - bounds.left) * 0.25,

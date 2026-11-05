@@ -38,5 +38,5 @@ export interface MainWorkspaceActivityClient extends WorkbenchStatusSource {
 	draw(): void;
 	focus(): void;
 	handlePointer(snapshot: PointerInputSnapshot): void;
-	handleWheel(event: WheelInputSnapshot): void;
+	handleWheel(event: WheelInputSnapshot): boolean;
 }

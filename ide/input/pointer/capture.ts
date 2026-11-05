@@ -1,4 +1,4 @@
-import { PointerButton, type PointerCursor } from '../../../hosts/common/input/pointer_event';
+import { PointerButton, type PointerCursor, type PointerInputEvent } from '../../../hosts/common/input/pointer_event';
 import type { PointerInputSnapshot, PointerSnapshot, WheelInputSnapshot } from '../../common/models';
 import type { GuestInputBinding } from '../focus';
 import type { KeyModifier } from '../../../hosts/common/input/text';
@@ -26,12 +26,27 @@ export class PointerCaptureService {
 	private routeButtons = 0;
 	private drain = false;
 	private guest: GuestInputBinding | undefined;
+	private contactId: number | undefined;
 
 	public get active(): boolean { return this.target !== null; }
 	public get cursor(): PointerCursor { return this.target?.pointerCursor ?? 'default'; }
 	public get routeScope(): PointerCaptureScope | undefined { return this.route; }
 	public get draining(): boolean { return this.drain; }
 	public get guestBinding(): GuestInputBinding | undefined { return this.guest; }
+
+	/** One-pointer controls retain their initiating contact, not aggregate button
+	 * state. A second finger or mouse cannot move, release or cancel that gesture.
+	 * Existing held contacts do not acquire a new gesture without a fresh down. */
+	public admitPointer(event: PointerInputEvent): boolean {
+		if (this.contactId !== undefined) return event.pointerId === this.contactId;
+		if (event.pressedButtons === 0 && !this.drain
+			&& (event.releasedButtons !== 0 || event.cancelledButtons !== 0)) return false;
+		if (event.buttons !== 0) {
+			if (event.pressedButtons === 0 && !this.drain) return false;
+			this.contactId = event.pointerId;
+		}
+		return true;
+	}
 
 	/** The first physical down owns the surface route, independently of a control's drag. */
 	public beginRoute(scope: PointerCaptureScope, snapshot: PointerSnapshot): void {
@@ -41,7 +56,7 @@ export class PointerCaptureService {
 
 	public endRoute(snapshot: PointerSnapshot): void {
 		this.routeButtons = snapshot.pressedButtons;
-		if (snapshot.pressedButtons === 0) { this.route = undefined; this.guest = undefined; }
+		if (snapshot.pressedButtons === 0) { this.route = undefined; this.guest = undefined; this.contactId = undefined; }
 	}
 
 	public captureGuest(binding: GuestInputBinding): void { this.guest = binding; }
@@ -89,6 +104,7 @@ export class PointerCaptureService {
 	public interrupt(buttonsDown: boolean): void {
 		this.cancel();
 		this.drain = buttonsDown;
+		if (!buttonsDown) this.contactId = undefined;
 	}
 
 	/** Retiring one surface cannot cancel a sibling window's gesture. */

@@ -77,7 +77,7 @@ export class ConversationObserverPane extends WorkbenchViewEditorPane<Conversati
 			|| snapshot.insideViewport && (snapshot.justPressedButtons & PointerButton.Primary) !== 0;
 	}
 	public handleKeyboard(_input: KeyInputEvent): void {} // The transcript focus target owns selection and scroll keys.
-	public handleWheel(event: WheelInputSnapshot): void {
-		this.transcriptView.scroll.handleWheel(event, event.deltaY * this.input.layout.rowHeight);
+	public override handleWheel(event: WheelInputSnapshot): boolean {
+		return this.transcriptView.scroll.handleWheel(event, event.deltaY * this.input.layout.rowHeight);
 	}
 }

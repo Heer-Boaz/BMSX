@@ -50,7 +50,7 @@ test('the nested Game surface owns guest input and shares its actual document-pa
 	const companion = f.editor.editorParts.mainArea.companionBounds;
 	const x = (companion.left + companion.right) / 2, y = (companion.top + companion.bottom) / 2;
 	const surface = f.editor.surfaces.hitTest(x, y)!;
-	for (const down of [true, false]) f.editor.dispatchPointer({ x, y, buttons: down ? PointerButton.Primary : 0,
+	for (const down of [true, false]) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: down ? PointerButton.Primary : 0,
 		pressedButtons: down ? PointerButton.Primary : 0, releasedButtons: down ? 0 : PointerButton.Primary,
 		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	const game = inputFocus.admittedTarget!;

@@ -118,7 +118,7 @@ export abstract class EditorPane<TInput extends EditorInput> implements Workbenc
 		gotoModifierActive: boolean,
 	): void;
 
-	public abstract handleWheel(event: WheelInputSnapshot): void;
+	public handleWheel(_event: WheelInputSnapshot): boolean { return false; }
 
 	public abstract readonly statusItems: readonly WorkbenchStatusItem[];
 	public abstract updateStatus(): void;

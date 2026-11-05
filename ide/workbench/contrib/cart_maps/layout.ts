@@ -5,6 +5,8 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import { measureText, truncateTextToWidth } from '../../../editor/common/text/layout';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
+import type { WorkbenchTreeNode } from '../../ui/tree_view';
+import type { CartMapTreeElement } from './editor_input';
 import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
 import type { CartMapInput, CartMapLayoutMode } from './editor_input';
 import type { EditorFont } from '../../../editor/ui/view/font';
@@ -12,6 +14,12 @@ import type { EditorPaneConstraints } from '../../services/editor/editor_pane';
 import { measureCartMapGrid } from './grid';
 
 const PADDING = 4;
+
+function measureCartMapRow(node: WorkbenchTreeNode<CartMapTreeElement>): number {
+	const font = editorViewState.font;
+	return (node.depth + 1) * Math.max(font.advance(' ') * 2, WORKBENCH_ICON_SIZE + 2)
+		+ font.measureTextRange(node.element.label, 0, node.element.label.length) + PADDING;
+}
 
 type CartMapMetrics = { readonly axisLabelWidth: number; readonly fieldMinimumWidth: number; readonly outlineMinimumWidth: number;
 	readonly mapMinimumWidth: number; readonly splitMinimumWidth: number };
@@ -55,25 +63,21 @@ export function layoutCartMap(input: CartMapInput, bounds: Readonly<RectBounds>,
 	}
 	const width = layout.right - layout.left;
 	const mode = width >= layout.splitMinimumWidth ? 'split' : input.section;
-	const modeChanged = mode !== layout.mode, measured = resized || changed || modeChanged;
+	const modeChanged = mode !== layout.mode, measured = resized || changed || modeChanged || layout.treeRevision !== tree.rowsRevision;
 	if (modeChanged) beforeModeChange?.(mode);
 	layout.mode = mode;
 	if (measured) {
+		layout.treeRevision = tree.rowsRevision;
 		const contentTop = Math.min(layout.bottom, layout.top + row * 2);
 		layout.gridLeft = mode === 'split' ? layout.left + clamp(Math.trunc(width * 0.32),
 			layout.outlineMinimumWidth, width - layout.mapMinimumWidth - 1) + 1 : layout.left;
+		tree.measureContentWidth(measureCartMapRow, font);
 		if (mode === 'map') tree.updateLayout(layout.left + PADDING, contentTop, layout.left + PADDING + SCROLLBAR_WIDTH, contentTop, row, indent);
 		else tree.updateLayout(layout.left + PADDING, contentTop,
 			(mode === 'split' ? layout.gridLeft - 1 : layout.right) - PADDING, layout.bottom, row, indent);
 		layoutWorkbenchActionBar(input.actionBar, layout.right - PADDING, layout.top, layout.top + row,
 			measureText, font.renderFont(), layout.left + PADDING);
 		if (resized || modeChanged || layout.sourceVersion !== input.version) {
-			const textWidth = tree.layout.contentRight - tree.layout.contentLeft - tree.layout.twistieWidth;
-			for (const root of tree.roots) {
-				root.element.displayLabel = truncateTextToWidth(root.element.label, textWidth);
-				for (const child of root.children) child.element.displayLabel = truncateTextToWidth(child.element.label,
-					textWidth - child.depth * tree.layout.indentWidth);
-			}
 			layout.sourceTitle = truncateTextToWidth(input.sourceCaption, input.actionBar.bounds.left - layout.left - PADDING * 2);
 			write_rect_bounds(layout.sourceBounds, layout.left + PADDING, layout.top,
 				Math.max(layout.left + PADDING, input.actionBar.bounds.left - PADDING), Math.min(layout.bottom, layout.top + row));

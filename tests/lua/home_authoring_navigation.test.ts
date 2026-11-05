@@ -60,7 +60,7 @@ function invoke(f: Fixture, command: EditorCommandId, picker = f.picker): void {
 	const action = section.actions.items.find(item => item.command === command)!;
 	assert.equal(action.visible, true);
 	const x = (action.bounds.left + action.bounds.right) / 2, y = (action.bounds.top + action.bounds.bottom) / 2;
-	for (const down of [true, false]) f.editor.dispatchPointer({ x, y, buttons: down ? PointerButton.Primary : 0,
+	for (const down of [true, false]) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: down ? PointerButton.Primary : 0,
 		pressedButtons: down ? PointerButton.Primary : 0, releasedButtons: down ? 0 : PointerButton.Primary,
 		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	assert.equal(picker.visible, true);
@@ -88,7 +88,7 @@ for (const font of ['tiny', 'msx'] as const)
 		assert.equal(action.visible, true, 'supported Home entries are discoverable independently of current execution admission');
 		assert.equal(action.enabled, false);
 		f.home.viewport.scrollbar.setScroll(section.bounds.top); f.update();
-		for (const down of [true, false]) f.editor.dispatchPointer({
+		for (const down of [true, false]) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse',
 			x: (action.bounds.left + action.bounds.right) / 2, y: (action.bounds.top + action.bounds.bottom) / 2,
 			buttons: down ? PointerButton.Primary : 0, pressedButtons: down ? PointerButton.Primary : 0,
 			releasedButtons: down ? 0 : PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none,

@@ -83,11 +83,6 @@ export class GamePanel {
 			captureScope: focusScope.surfaceScope, isVisible: () => this.visible,
 			getBounds: () => this.area.companionBounds, getClip: () => this.area.availableBounds, draw: () => this.draw(),
 			handlePointer: snapshot => { this.handlePointer(snapshot); },
-			handleWheel: event => {
-				const focused = inputFocus.admittedTarget, guest = focused?.guestInput;
-				return guest === undefined || focused!.scope.surfaceScope !== focusScope.surfaceScope
-					|| !point_in_rect(event.viewportX, event.viewportY, guest.bounds);
-			},
 			onRetire: () => { pointerCapture.cancelScope(focusScope.surfaceScope); this.detach(); },
 		});
 		surfaces.attach({ role: 'content', lifetimeOwner: this.surface, presentationParent: part.surface,

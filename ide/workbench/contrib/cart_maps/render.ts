@@ -23,17 +23,18 @@ export function drawCartMap(input: CartMapInput, controls: readonly ValueInput<C
 		const end = Math.min(tree.rows.length, firstRow + tree.layout.visibleRowCount);
 		for (let index = firstRow; index < end; index++) {
 			const node = tree.rows[index], y = tree.layout.contentTop + (index - firstRow) * rowHeight;
-			const x = tree.layout.contentLeft + node.depth * tree.layout.indentWidth;
+			const x = tree.rowLeft + node.depth * tree.layout.indentWidth;
 			const selected = index === tree.selectionIndex;
 			const textColor = selected ? outlineFocused ? colors.COLOR_SELECTION_TEXT : colors.COLOR_INACTIVE_SELECTION_TEXT : node.element.diagnostic === null ? color : colors.COLOR_CONTENT_WARNING_TEXT;
 			if (selected) api.fill_rect(tree.layout.contentLeft, y, tree.layout.contentRight, y + rowHeight, 0, outlineFocused ? colors.SELECTION_OVERLAY : colors.INACTIVE_SELECTION_OVERLAY);
 			if (node.expandable) drawWorkbenchIcon(node.collapsed ? 'chevronRight' : 'chevronDown',
 				x + ((tree.layout.twistieWidth - WORKBENCH_ICON_SIZE) >> 1), y + ((rowHeight - WORKBENCH_ICON_SIZE) >> 1), textColor);
-			api.blit_text_inline_with_font(node.element.displayLabel, x + tree.layout.twistieWidth, y + 2, 0,
+			api.blit_text_inline_with_font(node.element.label, x + tree.layout.twistieWidth, y + 2, 0,
 				textColor, font);
 		}
 		api.popClipRect();
 		tree.scrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
+		tree.horizontalScrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
 	}
 	if (layout.mode === 'split') api.fill_rect(layout.gridLeft - 1, layout.top + rowHeight, layout.gridLeft, layout.bottom, 0, colors.COLOR_HEADER_BUTTON_BORDER);
 	if (layout.mode !== 'outline') {

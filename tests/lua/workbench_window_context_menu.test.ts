@@ -21,9 +21,9 @@ type Fixture = ReturnType<typeof createActualSourcePanes>;
 function rightClickTitle(f: Fixture, window: WorkbenchFloatingWindow): void {
 	const header = window.model.header, x = header.left + 16, y = (header.top + header.bottom) / 2;
 	f.host.clock.advance(1);
-	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Secondary, pressedButtons: PointerButton.Secondary,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: PointerButton.Secondary, pressedButtons: PointerButton.Secondary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
-	f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Secondary,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Secondary,
 		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 }
 

@@ -1,3 +1,5 @@
+import { MemoryStorage } from '../../ide/workspace/memory_storage';
+import { WorkbenchPreferences } from '../../ide/workbench/services/preferences/preferences';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import type { TestContext } from 'node:test';
@@ -52,7 +54,7 @@ export async function createLiveStudioFixture(t: TestContext) {
 	const externalWork = (): never => { throw new Error('Live Studio does not build a fixture or another runtime.'); };
 	const ide = new RuntimeIdeState(runtime, presenter, { capture: externalWork }, externalWork,
 		display,
-		input, audio, tasks, execution, rewind, clock, new HeadlessClipboard(), new IdeMicrotaskQueue(), log,
+		new WorkbenchPreferences(new MemoryStorage()), input, audio, tasks, execution, rewind, clock, new HeadlessClipboard(), new IdeMicrotaskQueue(), log,
 		0.3, { width: 800, height: 360 }, sources, new Map(), externalWork, externalWork, externalWork);
 	const editor = ide.editor;
 	t.after(async () => {

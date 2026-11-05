@@ -1,3 +1,5 @@
+import { MemoryStorage } from '../../ide/workspace/memory_storage';
+import { WorkbenchPreferences } from '../../ide/workbench/services/preferences/preferences';
 import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
@@ -770,7 +772,7 @@ test('Scenario controller refresh, wheel and status rendering retain the actual 
 	const unused = (): never => { throw new Error('Scenario layout does not execute domain work.'); };
 	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: unused }, unused,
 		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT }) }),
-		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
+		new WorkbenchPreferences(new MemoryStorage()), host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT },
 		sources, new Map(), unused, unused, unused);
 	t.after(async () => {

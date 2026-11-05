@@ -88,5 +88,4 @@ export class GameViewEditorPane extends WorkbenchViewEditorPane<GameViewInput> {
 			{ invocationOrigin: this.focusTarget, returnFocus: this.focusTarget, commandTarget: this.focusTarget, selectFirst: keyboard });
 	}
 	public handleKeyboard(): void {}
-	public handleWheel(): void {}
 }

@@ -41,7 +41,7 @@ function statusButton(t: TestContext, f: Fixture) {
 }
 
 function pointer(f: Fixture, point: { x: number; y: number }, down: boolean, timestamp: number) {
-	f.editor.dispatchPointer({ x: point.x, y: point.y, buttons: down ? PointerButton.Primary : 0,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: point.x, y: point.y, buttons: down ? PointerButton.Primary : 0,
 		pressedButtons: down ? PointerButton.Primary : 0, releasedButtons: down ? 0 : PointerButton.Primary,
 		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp });
 	f.update();

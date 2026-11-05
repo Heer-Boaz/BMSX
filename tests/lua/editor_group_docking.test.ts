@@ -38,7 +38,7 @@ function bodyPoint(group: EditorGroupView, edge?: 'left' | 'right' | 'up' | 'dow
 
 function dispatch(f: Fixture, point: Point, phase: 'down' | 'move' | 'up', modifiers = KeyModifier.none): void {
 	f.host.clock.advance(10);
-	f.editor.dispatchPointer({ ...point, buttons: phase === 'up' ? 0 : PointerButton.Primary,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', ...point, buttons: phase === 'up' ? 0 : PointerButton.Primary,
 		pressedButtons: phase === 'down' ? PointerButton.Primary : 0, releasedButtons: phase === 'up' ? PointerButton.Primary : 0,
 		cancelledButtons: 0, modifiers, spaceDown: false, timestamp: f.host.clock.now() });
 }

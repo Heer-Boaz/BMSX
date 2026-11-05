@@ -58,7 +58,7 @@ async function fixture(t: TestContext, bound = true, additionalSources: readonly
 		return resource('query.yaml');
 	};
 	// Arranged bounds drive real Workbench input; their dimensions are not test assertions.
-	const pointer = (bounds: Readonly<RectBounds>, down: boolean) => f.editor.dispatchPointer({
+	const pointer = (bounds: Readonly<RectBounds>, down: boolean) => f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse',
 		x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2,
 		buttons: down ? PointerButton.Primary : 0, pressedButtons: down ? PointerButton.Primary : 0,
 		releasedButtons: down ? 0 : PointerButton.Primary, cancelledButtons: 0,

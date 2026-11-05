@@ -154,7 +154,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const activityId of ['probl
 		const window = main.activityWindow, model = window.model, body = main.activity!.commandTarget;
 		assert.ok(model.minimumWidth >= measureWorkbenchTextViewMinimumWidth(editorViewState.font));
 		const right = model.bounds.right - 1, y = (model.bounds.top + model.bounds.bottom) / 2, left = model.bounds.left;
-		const press = { x: right, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+		const press = { pointerId: 0, pointerType: 'mouse', x: right, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 			releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 };
 		f.editor.dispatchPointer(press); assert.equal(pointerCapture.active, true);
 		f.editor.dispatchPointer({ ...press, x: left, pressedButtons: 0 });

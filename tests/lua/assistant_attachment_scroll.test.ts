@@ -24,6 +24,7 @@ test('attachment wheel keeps a continuous viewport, leaves selection alone and h
 	strip.layout(0, 0, 100, 10);
 	assert.equal(strip.selected, 3);
 	const pointer = { viewportX: 75, viewportY: 10, valid: true, insideViewport: true, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0 };
+	assert.equal(strip.handleWheel(pointer, 1), false, 'an exhausted strip leaves wheel input to its parent');
 	assert.equal(strip.handleWheel(pointer, -2.5), true);
 	strip.layout(0, 0, 100, 10);
 	strip.draw();
@@ -36,4 +37,7 @@ test('attachment wheel keeps a continuous viewport, leaves selection alone and h
 	fill.mock.resetCalls();
 	strip.draw();
 	assert.equal(fill.mock.calls[0].arguments[0], 0, 'keyboard selection reveals the selected image');
+	strip.layout(0, 0, 500, 10);
+	assert.equal(strip.handleWheel(pointer, 1), false, 'fitting thumbnails do not consume wheel input');
+	assert.equal(strip.handleWheel(pointer, -1), false);
 });

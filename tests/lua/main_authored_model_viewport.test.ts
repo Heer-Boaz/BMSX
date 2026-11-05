@@ -67,7 +67,7 @@ test(`${font} Main submits actual model primitives and pointer selection chooses
 	const x = (view.bounds.left + view.bounds.right) / 2 + view.camera.projectX(0.2, 0.2, 2);
 	const y = (view.bounds.top + view.bounds.bottom) / 2 + view.camera.projectY(0.2, 0.2, 2);
 	assert.ok(view.pick(x, y) === front);
-	for (const down of [true, false]) f.editor.dispatchPointer({ x, y, buttons: down ? PointerButton.Primary : 0,
+	for (const down of [true, false]) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: down ? PointerButton.Primary : 0,
 		pressedButtons: down ? PointerButton.Primary : 0, releasedButtons: down ? 0 : PointerButton.Primary,
 		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	f.update(); assert.ok(f.client.authoring.selection?.kind === 'member' && f.client.authoring.selection.entry === front);

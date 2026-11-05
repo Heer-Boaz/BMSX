@@ -151,14 +151,14 @@ test('retained attached utility windows reset through their actual native contro
 	const pane = f.firstGroup.panes.activePane, snapshot = input.snapshot;
 	const reset = t.mock.method(window, 'resetPlacement');
 	const header = input.keyWindow.header, x = header.left + 8, y = (header.top + header.bottom) / 2;
-	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	assert.equal(pointerCapture.active, true);
 	assert.equal(parts.captureLayoutReset().reset(), true); assert.equal(reset.mock.callCount(), 1);
 	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, true);
 	assert.equal(input.keyWindow.placementInitialized, false); assert.equal(input.keyWindow.open, true);
 	assert.ok(input.snapshot === snapshot && f.firstGroup.model.activeTab === input && f.firstGroup.panes.activePane === pane);
-	f.editor.dispatchPointer({ x: x + 100, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: x + 100, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary,
 		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	assert.equal(pointerCapture.draining, false); assert.equal(input.keyWindow.placementInitialized, false);
 });
@@ -172,14 +172,14 @@ test('resetting retained editor sashes drains an active physical resize without 
 	const branch = f.firstPart.arrangement.splits[0], pane = f.firstGroup.panes.activePane, target = inputFocus.admittedTarget;
 	assert.equal(branch.resizable, true); branch.split.ratio = 0.7; f.editor.update(0);
 	const bounds = branch.sashBounds, x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
-	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	assert.equal(pointerCapture.active, true);
 	assert.equal(parts.captureLayoutReset().reset(), true);
 	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, true);
 	assert.equal(branch.split.ratio, branch.split.defaultRatio);
 	assert.ok(inputFocus.admittedTarget === target && f.firstGroup.panes.activePane === pane);
-	f.editor.dispatchPointer({ x: x + 100, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: x + 100, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary,
 		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	assert.equal(pointerCapture.draining, false); assert.equal(branch.split.ratio, branch.split.defaultRatio);
 });

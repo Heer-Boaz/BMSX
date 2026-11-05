@@ -2,6 +2,8 @@ import { clamp } from '../../../machine/ts/common/clamp';
 import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../machine/ts/common/rect';
 import { SCROLLBAR_MIN_THUMB_HEIGHT, SCROLLBAR_THUMB_HOVER_COLOR, SCROLLBAR_THUMB_ACTIVE_COLOR } from '../../common/constants';
 import { api } from '../../runtime/overlay_api';
+import { KeyModifier } from '../../../hosts/common/input/text';
+import type { WheelInputSnapshot } from '../../common/models';
 
 export type ScrollbarDragStart = { readonly pointer: number; readonly scroll: number; readonly scale: number };
 
@@ -67,12 +69,13 @@ export class Scrollbar {
 		} else this.setScroll(scroll);
 	}
 
-	public setScroll(scroll: number): void {
+	public setScroll(scroll: number): boolean {
 		const value = clamp(scroll, this.minScrollValue, this.maxScrollValue);
-		if (this.scrollValue === value) return;
+		if (this.scrollValue === value) return false;
 		this.scrollValue = value;
 		this.updateThumb();
 		for (const listener of this.scrollListeners) listener();
+		return true;
 	}
 
 	private updateThumb(): void {
@@ -126,4 +129,13 @@ export class Scrollbar {
 		this.setScroll(start.scroll + (pointer - start.pointer) * start.scale);
 		return this.scrollValue;
 	}
+}
+
+/** Resolve wheel axes once for every two-axis scroll container. Steps use each
+ * axis's content units (rows, cells or pixels); exhaustion leaves the event unhandled. */
+export function scrollWheel(horizontal: Scrollbar, vertical: Scrollbar, event: WheelInputSnapshot, stepX: number, stepY: number): boolean {
+	const shift = (event.modifiers & KeyModifier.shift) !== 0 && event.deltaX === 0;
+	const movedX = horizontal.setScroll(horizontal.getScroll() + (shift ? event.deltaY : event.deltaX) * stepX);
+	const movedY = vertical.setScroll(vertical.getScroll() + (shift ? 0 : event.deltaY) * stepY);
+	return movedX || movedY;
 }

@@ -46,7 +46,7 @@ type Fixture = Awaited<ReturnType<typeof fixture>>;
 /** Coordinates address the actual viewport; assertions check routing and state. */
 function pointer(f: Fixture, x: number, y: number, held: number, pressed = 0, released = 0): void {
 	f.host.clock.advance(10);
-	f.editor.dispatchPointer({ x, y, buttons: held, pressedButtons: pressed, releasedButtons: released,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: held, pressedButtons: pressed, releasedButtons: released,
 		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 }
 
@@ -144,7 +144,8 @@ test('bulk closing neighboring documents cannot retire the Scene or its shared w
 	const first = sourceGroup(f), second = part.splitGroup(first.group, 'down'), secondInput = new CodeEditorInput(f.model);
 	second.openEditor(secondInput); f.update(); first.group.focus();
 	assert.equal(await parts.closeController.close([{ group: first.group, input: first.input }, { group: second, input: secondInput }], inputFocus.target, part.actionPrompt), true);
-	f.update(); assert.ok(part.groups.includes(first.group) && part.groups.includes(second));
+	f.update(); assert.ok(!part.groups.includes(first.group) && !part.groups.includes(second));
+	assert.ok(first.group.surface.retired && second.surface.retired);
 	assert.ok(f.group.model.contains(f.client.input) && f.group.panes.activePane === f.pane && f.main.primary === f.client);
 	assert.equal(f.model.buffer.getText(), SOURCE);
 });
@@ -154,7 +155,7 @@ test('group retirement cannot replace a newer focus-and-null request from dispos
 	const sibling = part.splitGroup(source.group, 'down'); sibling.openEditor(new CodeEditorInput(f.model)); f.update(); source.group.focus();
 	t.after(source.group.onWillDispose(() => { f.second.focus(); inputFocus.setTarget(null); }));
 	assert.equal(await parts.closeGroup(source.group), true); f.update();
-	assert.equal(inputFocus.target, null); assert.ok(part.groups.includes(sibling));
+	assert.ok(inputFocus.target === null); assert.ok(part.groups.includes(sibling));
 	assert.ok(f.group.model.contains(f.client.input));
 });
 
@@ -163,9 +164,9 @@ test('a preserve-focus opening during clear revokes the old close receipt before
 	let unbind: () => void;
 	unbind = source.group.panes.onDidClearEditor(() => { unbind(); source.group.openEditor(incoming, { pinned: true, preserveFocus: true }); }); t.after(unbind);
 	assert.equal(await source.group.close(source.input.id), true); f.update();
-	assert.ok(source.group.model.activeTab === incoming); assert.equal(inputFocus.target, null);
+	assert.ok(source.group.model.activeTab === incoming); assert.ok(inputFocus.target === null);
 	assert.equal(await source.group.close(incoming.id), true); f.update();
-	assert.equal(inputFocus.target, null); assert.ok(f.group.model.contains(f.client.input));
+	assert.ok(inputFocus.target === null); assert.ok(f.group.model.contains(f.client.input));
 });
 
 test('withdrawing the game companion cannot replace a newer focus-and-null request from blur', async t => {
@@ -178,7 +179,7 @@ test('withdrawing the game companion cannot replace a newer focus-and-null reque
 	const target = inputFocus.admittedTarget!; assert.ok(game.focusScope.contains(target.scope));
 	t.after(target.onDidBlur(() => { f.second.focus(); inputFocus.setTarget(null); }));
 	game.close(); f.update();
-	assert.equal(game.visible, false); assert.equal(inputFocus.target, null);
+	assert.equal(game.visible, false); assert.ok(inputFocus.target === null);
 	assert.ok(source.group.model.activeTab === source.input && f.main.primary === f.client);
 });
 
@@ -192,7 +193,7 @@ test(`closing a neighboring Source document preserves ${redirect}`, async t => {
 		t.after(unbind);
 	}
 	assert.equal(await source.group.close(source.input.id), true); f.update();
-	if (redirect === 'new focus then null') assert.equal(inputFocus.target, null);
+	if (redirect === 'new focus then null') assert.ok(inputFocus.target === null);
 	else assert.ok(inputFocus.admittedTarget === f.second.commandTarget);
 	assert.ok(f.group.model.contains(f.client.input));
 });
@@ -212,7 +213,7 @@ test('local modals return to the Scene viewport without replacing its document',
 for (const route of ['keyboard', 'pointer'] as const)
 test(`the viewport ${route} context menu addresses its camera and returns to the same canvas`, async t => {
 	const f = await fixture(t), origin = f.viewport.focusTarget;
-	selectSceneOutlineRow(f.client.view.hierarchy, 2); f.update(); f.main.focusPrimary('viewport');
+	selectSceneOutlineRow(f.client.view.hierarchy, 0); f.update(); f.main.focusPrimary('viewport');
 	const selected = f.client.authoring.selection;
 	if (route === 'keyboard') f.key('ContextMenu');
 	else {
@@ -253,7 +254,7 @@ test('viewport feedback follows hovered or keyboard-focused actions, not ordinar
 	assert.ok(f.viewport.tooltipItem === view.navigationActions.items[0]);
 	f.key('Enter');
 	assert.equal(f.editor.contextMenu.visible, true);
-	assert.equal(f.viewport.tooltipItem, undefined, 'a menu owns interaction instead of leaving its trigger tooltip active');
+	assert.ok(f.viewport.tooltipItem === undefined, 'a menu owns interaction instead of leaving its trigger tooltip active');
 	f.key('ArrowDown'); f.key('Enter'); f.paint();
 	assert.equal(view.camera.mode, '3d');
 	assert.ok(inputFocus.admittedTarget === f.viewport.focusTarget);
@@ -306,7 +307,7 @@ test('companion retirement during viewport allocation cannot reattach regions or
 	const f = await fixture(t);
 	const layout = t.mock.method(f.viewport, 'layout', () => { layout.mock.restore(); f.main.reset(); f.second.focus(); });
 	assert.doesNotThrow(() => { f.editor.updateViewport({ width: 1200, height: 800 }); f.update(); });
-	assert.equal(layout.mock.callCount(), 1); assert.equal(f.main.primary, undefined);
+	assert.equal(layout.mock.callCount(), 1); assert.ok(f.main.primary === undefined);
 	assert.equal(f.client.hierarchy.attached, false); assert.equal(f.client.details.attached, false);
 	assert.ok(f.group.panes.activePane === f.pane && inputFocus.admittedTarget === f.second.commandTarget);
 	assert.equal(f.model.canUndo, false);

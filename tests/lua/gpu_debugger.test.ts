@@ -64,7 +64,7 @@ function pointerFixture(t: TestContext) {
 	assert.equal(input.projection.rows.length, 3);
 	const pane = f.firstGroup.panes.activePane!;
 	f.second.focus();
-	const press = (index: number, button: PointerButton) => f.editor.dispatchPointer({
+	const press = (index: number, button: PointerButton) => f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse',
 		x: input.list.bounds.left + 4, y: input.list.offsetTop + (index + 0.5) * input.layout.rowHeight,
 		buttons: button, pressedButtons: button, releasedButtons: 0, cancelledButtons: 0,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now(),
@@ -186,7 +186,7 @@ test('GPU scrollbar scrolls without accepting Source focus or pinning evidence',
 	const selected = f.input.selected.sequence, revision = f.input.selectionRevision, track = f.input.list.scrollbar.getTrack();
 	f.input.list.scrollbar.setScroll(0);
 	let blurs = 0; t.after(f.second.commandTarget.onDidBlur(() => { blurs++; }));
-	f.editor.dispatchPointer({ x: (track.left + track.right) / 2, y: track.bottom - 2,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: (track.left + track.right) / 2, y: track.bottom - 2,
 		buttons: 0, pressedButtons: PointerButton.Primary, releasedButtons: PointerButton.Primary, cancelledButtons: 0,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	assert.ok(f.input.list.scrollTop > 0); assert.equal(blurs, 0);

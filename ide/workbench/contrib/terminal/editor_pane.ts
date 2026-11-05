@@ -45,7 +45,6 @@ export class TerminalPane extends WorkbenchViewEditorPane<TerminalInput> {
 		else this.gameInput.clearInput();
 	}
 	public handleKeyboard(): void {}
-	public handleWheel(): void {}
 	public draw(): void {
 		const { layout, frameBounds } = this.input;
 		api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);

@@ -75,9 +75,6 @@ export function commitWorkspaceSessionLocally(
 	const fontVariant = !previousGeneration || (changes & WorkspaceAutosaveChange.Font)
 		? editor.fontVariant
 		: previousGeneration.payload.fontVariant;
-	const uiScale = !previousGeneration || (changes & WorkspaceAutosaveChange.UiScale)
-		? editor.uiScale
-		: previousGeneration.payload.uiScale;
 	if (previousGeneration
 		&& dirtyFiles === previousGeneration.payload.dirtyFiles
 		&& editorParts === previousGeneration.payload.editorParts
@@ -85,8 +82,7 @@ export function commitWorkspaceSessionLocally(
 		&& mainWorkspace === previousGeneration.payload.mainWorkspace
 		&& filesBrowser === previousGeneration.payload.filesBrowser
 		&& breakpoints === previousGeneration.payload.breakpoints
-		&& fontVariant === previousGeneration.payload.fontVariant
-		&& uiScale === previousGeneration.payload.uiScale) {
+		&& fontVariant === previousGeneration.payload.fontVariant) {
 		return previousGeneration;
 	}
 	const payload: WorkspaceAutosavePayload = {
@@ -97,7 +93,6 @@ export function commitWorkspaceSessionLocally(
 		filesBrowser,
 		breakpoints,
 		fontVariant,
-		uiScale,
 	};
 	const statePath = joinWorkspacePaths(
 		context.projectRoot,

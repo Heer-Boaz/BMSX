@@ -60,7 +60,7 @@ test('document minimization retains actual controls, canonical Source and local 
 	parts.minimize(f.secondPart); f.update();
 	assert.equal(minimizedWorkbenchWindowCount(f.editor.surfaces), 2); assert.ok(parts.activePart === parts.main && inputFocus.target === parts.main.activeGroup.focusTarget);
 	assert.equal(cancelled, 1); assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, true);
-	f.editor.dispatchPointer({ x: down.viewportX, y: down.viewportY, buttons: 0, pressedButtons: 0,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: down.viewportX, y: down.viewportY, buttons: 0, pressedButtons: 0,
 		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 });
 	assert.equal(pointerCapture.draining, false);
 	f.firstPart.focus(); f.update();

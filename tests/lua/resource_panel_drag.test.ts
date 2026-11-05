@@ -56,7 +56,7 @@ function body(group: EditorGroupView, edge = false): Point {
 }
 function pointer(f: Fixture, point: Point, phase: 'press' | 'move' | 'release', modifiers = KeyModifier.none): void {
 	f.host.clock.advance(10);
-	f.editor.dispatchPointer({ ...point, buttons: phase === 'release' ? 0 : PointerButton.Primary,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', ...point, buttons: phase === 'release' ? 0 : PointerButton.Primary,
 		pressedButtons: phase === 'press' ? PointerButton.Primary : 0, releasedButtons: phase === 'release' ? PointerButton.Primary : 0,
 		cancelledButtons: 0, modifiers, spaceDown: false, timestamp: f.host.clock.now() });
 }
@@ -262,7 +262,7 @@ test('a Scene opened in a new window and moved back through its tab menu remains
 	f.editor.surfaces.raise(parts.partForGroup(source).surface); f.update();
 	const tab = source.tabStrip.layoutState.items.peek(source.model.indexOf(input)).bounds;
 	const point = { x: (tab.left + tab.right) / 2, y: (tab.top + tab.bottom) / 2 };
-	for (const down of [true, false]) f.editor.dispatchPointer({ ...point,
+	for (const down of [true, false]) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', ...point,
 		buttons: down ? PointerButton.Secondary : 0, pressedButtons: down ? PointerButton.Secondary : 0,
 		releasedButtons: down ? 0 : PointerButton.Secondary, cancelledButtons: 0, modifiers: KeyModifier.none,
 		spaceDown: false, timestamp: f.host.clock.now() });

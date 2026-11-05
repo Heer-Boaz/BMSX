@@ -231,5 +231,5 @@ export class GpuDebuggerPane extends WorkbenchViewEditorPane<GpuDebuggerInput> {
 		return false;
 	}
 	public handleKeyboard(event: KeyInputEvent): void { this.navigate(event); }
-	public handleWheel(event: WheelInputSnapshot): void { this.list.handleWheel(event, event.deltaY * this.input.layout.rowHeight); }
+	public override handleWheel(event: WheelInputSnapshot): boolean { return this.list.handleWheel(event, event.deltaY * this.input.layout.rowHeight); }
 }

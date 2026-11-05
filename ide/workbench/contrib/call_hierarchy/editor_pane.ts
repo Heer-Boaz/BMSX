@@ -150,9 +150,11 @@ export class CallHierarchyPane extends WorkbenchViewEditorPane<CallHierarchyInpu
 			onWillShow: lifetime => lifetime.add({ dispose: this.input.onDidChange(() => this.contextMenu.hide()) }),
 		});
 	}
-	public handleWheel(event: WheelInputSnapshot): void {
+	public override handleWheel(event: WheelInputSnapshot): boolean {
 		const tree = this.input.tree;
-		if (tree.handleWheel(event)) this.tooltip.hide();
+		if (!tree.handleWheel(event)) return false;
+		this.tooltip.hide();
+		return true;
 	}
 	public draw(): void { drawCallHierarchy(this.input, this.contentBounds, this.focusTarget.hasFocus); }
 	public updateStatus(): void {

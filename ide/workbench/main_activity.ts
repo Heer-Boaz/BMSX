@@ -95,7 +95,7 @@ export class MainWorkspaceActivityPart implements EditorCommandRunner {
 			captureScope: scope.surfaceScope, isVisible: () => this.selected !== undefined && this.selected.client === client && client.attached,
 			getBounds: () => this.bounds, getClip: () => this.clip,
 			draw: () => client.draw(), handlePointer: snapshot => client.handlePointer(snapshot),
-			handleWheel: event => { client.handleWheel(event); return true; },
+			handleWheel: event => client.handleWheel(event),
 			onRetire: () => { scope.retireContext(); client.dispose(); pointerCapture.cancelScope(scope.surfaceScope); },
 		});
 		client = create({ surface, scope, focusReturn: this.commandTarget });

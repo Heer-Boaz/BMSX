@@ -26,7 +26,7 @@ test('real group surfaces route pointer and wheel to their own Source and retire
 	f.editor.dispatchWheel({ x, y, deltaX: 0, deltaY: 0.25, attachmentDeltaY: 0.25, modifiers: KeyModifier.none, timestamp: 0 });
 	assert.equal(firstWheel.mock.callCount(), 0); assert.equal(secondWheel.mock.callCount(), 1);
 	assert.ok(inputFocus.target === a.focusTarget, 'a spatial wheel does not transfer keyboard focus');
-	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 });
 	assert.ok(inputFocus.target === b.focusTarget); assert.equal(b.pointer.pointerSelecting, true);
 	assert.ok(pointerCapture.routeScope === f.secondGroup.captureScope);
@@ -35,7 +35,7 @@ test('real group surfaces route pointer and wheel to their own Source and retire
 	assert.equal(f.firstGroup.paneSurface.retired, true); assert.equal(f.firstGroup.tabSurface.retired, true);
 	assert.equal(f.secondGroup.paneSurface.retired, false); assert.equal(f.secondGroup.tabSurface.retired, false);
 	assert.ok(inputFocus.target === b.focusTarget); assert.equal(pointerCapture.active, true);
-	f.editor.dispatchPointer({ x: x + b.font.advance('a'), y, buttons: 0, pressedButtons: 0,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: x + b.font.advance('a'), y, buttons: 0, pressedButtons: 0,
 		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 });
 	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, false);
 	assert.equal(b.pointer.pointerSelecting, false); assert.ok(b.model === f.secondInput.workingCopy);
@@ -183,7 +183,7 @@ test('stationary Source hover consumes modifier changes while a sibling retains 
 	const f = createActualSourcePanes(t), a = f.first.code, b = f.second.code;
 	const target = { left: 0, top: 0, right: 0, bottom: 0 };
 	resolveTextPositionBounds(b, 1, 8, target);
-	f.editor.dispatchPointer({ x: target.left + 1, y: (target.top + target.bottom) / 2,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: target.left + 1, y: (target.top + target.bottom) / 2,
 		buttons: 0, pressedButtons: 0, releasedButtons: 0, cancelledButtons: 0,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	a.focusTarget.focus(); f.update();
@@ -205,7 +205,7 @@ test('moving a raised sibling over stationary Source revokes its old hover witho
 	const target = { left: 0, top: 0, right: 0, bottom: 0 };
 	resolveTextPositionBounds(b, 1, 8, target);
 	const x = target.left + 1, y = (target.top + target.bottom) / 2;
-	f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0, releasedButtons: 0, cancelledButtons: 0,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: 0, pressedButtons: 0, releasedButtons: 0, cancelledButtons: 0,
 		modifiers: KeyModifier.ctrl, spaceDown: false, timestamp: f.host.clock.now() });
 	a.focusTarget.focus(); f.update();
 	assert.notEqual(b.gotoHoverHighlight, null);

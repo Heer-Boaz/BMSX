@@ -209,7 +209,7 @@ export class WorkspaceEditReviewPane extends WorkbenchViewEditorPane<WorkspaceEd
 	}
 	public onPointerLeave(): void { this.headingHovered = false; this.tooltip.hide(); }
 	public handleKeyboard(): void {}
-	public handleWheel(event: WheelInputSnapshot): void {
-		this.scroll.handleWheel(event, event.deltaY * this.input.layout.rowHeight);
+	public override handleWheel(event: WheelInputSnapshot): boolean {
+		return this.scroll.handleWheel(event, event.deltaY * this.input.layout.rowHeight);
 	}
 }

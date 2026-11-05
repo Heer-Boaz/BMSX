@@ -209,8 +209,8 @@ export class ProblemsPanelController implements MainWorkspaceActivityClient, Poi
 	public handlePointer(snapshot: PointerInputSnapshot): void {
 		if (this.attached) handleProblemsPanelPointerInput(this, this.parts, snapshot);
 	}
-	public handleWheel(event: WheelInputSnapshot): void {
-		if (!this.attached || this.diagnostics.length === 0) return;
+	public handleWheel(event: WheelInputSnapshot): boolean {
+		if (!this.attached || this.diagnostics.length === 0) return false;
 		const projectedPosition = clampProblemsPanelScrollIndex(this.scrollPosition, this.diagnostics.length);
 		let index = projectedPosition | 0;
 		let offset = (projectedPosition - index) * this.getItemLayout(index).height + event.deltaY * this.font!.lineHeight;
@@ -219,7 +219,9 @@ export class ProblemsPanelController implements MainWorkspaceActivityClient, Poi
 			offset -= this.getItemLayout(index).height; index++;
 		}
 		const position = clamp(index + offset / this.getItemLayout(index).height, 0, this.diagnostics.length - 1);
-		if (position !== this.scrollPosition) { this.scrollPosition = position; this.hoverIndex = -1; }
+		if (position === this.scrollPosition) return false;
+		this.scrollPosition = position; this.hoverIndex = -1;
+		return true;
 	}
 	public handleKeyboardCommand(command: ProblemsPanelCommand): boolean {
 		return handleProblemsPanelNavigationCommand(this, this.parts, command);

@@ -11,8 +11,11 @@ export type PointerButtons = {
 	justReleasedButtons: number;
 };
 
-/** One normalized logical canvas pointer; delivery is synchronous and producer-owned. */
+/** Contact identity survives UI delivery. Guest attachment aggregation is a
+ * separate device boundary; two fingers must never become one UI drag. */
 export type PointerInputEvent = {
+	readonly pointerId: number;
+	readonly pointerType: string;
 	readonly x: number;
 	readonly y: number;
 	readonly buttons: number;

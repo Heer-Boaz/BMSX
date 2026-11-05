@@ -253,8 +253,8 @@ export class RomInspectorPane extends WorkbenchViewEditorPane<RomInspectorInput>
 		}
 		return this.list.handlePointer(snapshot);
 	}
-	public handleWheel(event: WheelInputSnapshot): void {
-		this.list.handleWheel(event, event.deltaY * this.input.layout.rowHeight * 3);
+	public override handleWheel(event: WheelInputSnapshot): boolean {
+		return this.list.handleWheel(event, event.deltaY * this.input.layout.rowHeight * 3);
 	}
 	public draw(): void {
 		drawRomInspector(this.input, this.presentation, this.filter, this.filterViewport, this.list.focusTarget.hasFocus);

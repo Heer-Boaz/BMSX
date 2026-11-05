@@ -297,19 +297,22 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		handleCodeAreaPointerInput(this, snapshot, justPressed, goto, secondary, now);
 	}
 
-	public handleWheel(event: WheelInputSnapshot): void {
-		if (this.completion.handlePointerWheel(event)) return;
+	public override handleWheel(event: WheelInputSnapshot): boolean {
+		if (this.completion.handlePointerWheel(event)) return true;
 		const tooltip = this.code.hoverTooltip;
 		if (tooltip !== null) {
 			const inside = isPointInHoverTooltip(this.code, event.viewportX, event.viewportY);
-			if ((inside || pointerHitsHoverTarget(this.code, event, tooltip)) && (adjustHoverTooltipScroll(this.code, event.deltaY) || inside)) return;
+			if ((inside || pointerHitsHoverTarget(this.code, event, tooltip)) && (adjustHoverTooltipScroll(this.code, event.deltaY) || inside)) return true;
 		}
 		const bounds = getCodeAreaBounds(this.code);
-		if (!event.valid || !event.insideViewport || event.viewportY < bounds.codeTop || event.viewportY >= bounds.codeBottom || event.viewportX < bounds.codeLeft || event.viewportX >= bounds.codeRight) return;
+		if (!event.valid || !event.insideViewport || event.viewportY < bounds.codeTop || event.viewportY >= bounds.codeBottom || event.viewportX < bounds.codeLeft || event.viewportX >= bounds.codeRight) return false;
+		const previousRow = this.code.view.scrollRow, previousLeft = this.code.view.scrollLeft;
 		const horizontal = isShiftDown(event) && event.deltaX === 0;
 		scrollHorizontally(this.code, (horizontal ? event.deltaY : event.deltaX) * this.code.charAdvance);
 		if (!horizontal) scrollRows(this.code, event.deltaY);
+		if (previousRow === this.code.view.scrollRow && previousLeft === this.code.view.scrollLeft) return false;
 		this.code.caret.cursorRevealSuspended = true;
+		return true;
 	}
 	public updateStatus(): void {
 		const model = this.code.model, view = this.code.view, count = model.buffer.getLineCount();

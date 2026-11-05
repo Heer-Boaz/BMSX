@@ -493,17 +493,17 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 		}
 	}
 
-	public handleWheel(event: WheelInputSnapshot): void {
+	public override handleWheel(event: WheelInputSnapshot): boolean {
 		const view = this.input.view;
 		prepareBehaviorLensLayout(view, this.contentBounds);
 		if (this.inspector.visible) {
-			this.inspector.handleWheel(event, event.deltaY * editorViewState.font.lineHeight * 3);
+			return this.inspector.handleWheel(event, event.deltaY * editorViewState.font.lineHeight * 3);
 		} else if (view.presentation.kind === 'properties') {
 			if (this.propertyEdit.active) this.focus();
 			this.properties.cancel();
-			scrollWorkbenchList(view.presentation.tree, event.deltaY * 3);
-		} else if (view.presentation.kind !== 'outline') this.graph.handleWheel(event);
-		else scrollWorkbenchList(view.presentation, event.deltaY * 3);
+			return scrollWorkbenchList(view.presentation.tree, event.deltaY * 3);
+		} else if (view.presentation.kind !== 'outline') return this.graph.handleWheel(event);
+		else return scrollWorkbenchList(view.presentation, event.deltaY * 3);
 	}
 
 	public updateStatus(): void {

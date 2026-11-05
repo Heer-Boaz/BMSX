@@ -1,3 +1,5 @@
+import { MemoryStorage } from '../../ide/workspace/memory_storage';
+import { WorkbenchPreferences } from '../../ide/workbench/services/preferences/preferences';
 import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
 import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
@@ -59,7 +61,7 @@ function menuFixture(t: TestContext) {
 	const unused = (): never => { throw new Error('Menu navigation does not request domain work.'); };
 	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: unused }, unused,
 		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) }),
-		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
+		new WorkbenchPreferences(new MemoryStorage()), host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
 	ide.boots.didReplaceMachine();
@@ -216,9 +218,9 @@ test('AltRight, modifier chords, repeats and cancelled AltLeft candidates never 
 	key('AltLeft', KeyModifier.none, false); assert.equal(editor.contextMenu.visible, false);
 	key('AltLeft', KeyModifier.alt);
 	const bounds = getWorkbenchEditorBounds(), x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
-	editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+	editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.alt, spaceDown: false, timestamp: 0 });
-	editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary,
+	editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary,
 		cancelledButtons: 0, modifiers: KeyModifier.alt, spaceDown: false, timestamp: 0 });
 	key('AltLeft', KeyModifier.none, false); assert.equal(editor.contextMenu.visible, false, 'a pointer gesture disqualifies the pending Alt release');
 	key('AltLeft', KeyModifier.alt); editor.cancelInput(); key('AltLeft', KeyModifier.none, false);
@@ -306,9 +308,9 @@ test('the real Menu icon remains pointer-accessible with ordinary, overflowing a
 			const bounds = editorChromeState.menuButtonBounds;
 			assert.ok(bounds.right > bounds.left && bounds.bottom > bounds.top, 'Menu retains an actual pointer target without an editor');
 			const x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
-			editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+			editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 				releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 });
-			editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary,
+			editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary,
 				cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 }); editor.update(0);
 			assert.equal(editor.contextMenu.visible, true);
 			key('Escape'); assert.equal(editor.contextMenu.visible, false);
@@ -323,9 +325,9 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} game chrome and
 	f.editor.editorParts.main.activeGroup.openEditor(game); f.editor.setFontVariant(variant); f.editor.update(0);
 	const content = inputFocus.target!, version = f.model.version, cycles = f.host.runtime.machine.scheduler.nowCycles;
 	const x = game.layout.left + 1, y = game.layout.top + 1;
-	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Secondary, pressedButtons: PointerButton.Secondary,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: PointerButton.Secondary, pressedButtons: PointerButton.Secondary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 });
-	f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Secondary,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Secondary,
 		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 }); f.editor.update(0);
 	const menu = f.editor.contextMenu, timeline = f.editor.editorParts.main.activeGroup.timeline;
 	assert.equal(menu.visible, true); assert.ok(menu.invocationOrigin === content && menu.returnFocus === content);
@@ -344,16 +346,16 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} game chrome and
 	f.key('Home'); f.key('Home', KeyModifier.none, false); f.key('Enter'); f.key('Enter', KeyModifier.none, false);
 	assert.equal(timeline.requested, false); assert.equal(timeline.visible, false); assert.ok(inputFocus.target === content);
 	const frameX = (game.frameBounds.left + game.frameBounds.right) / 2, frameY = (game.frameBounds.top + game.frameBounds.bottom) / 2;
-	f.editor.dispatchPointer({ x: frameX, y: frameY, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: frameX, y: frameY, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 });
-	f.editor.dispatchPointer({ x: frameX, y: frameY, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: frameX, y: frameY, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary,
 		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 });
 	const guest = inputFocus.target!, binding = guest.guestInput;
 	assert.ok(binding !== undefined);
-	f.editor.dispatchPointer({ x: frameX, y: frameY, buttons: PointerButton.Secondary, pressedButtons: PointerButton.Secondary,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: frameX, y: frameY, buttons: PointerButton.Secondary, pressedButtons: PointerButton.Secondary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 });
 	assert.equal(menu.visible, false); assert.ok(pointerCapture.guestBinding === binding && inputFocus.target === guest);
-	f.editor.dispatchPointer({ x: frameX, y: frameY, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Secondary,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: frameX, y: frameY, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Secondary,
 		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 });
 	assert.equal(menu.visible, false); assert.ok(inputFocus.target === guest);
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.version, version); assert.equal(f.model.canUndo, false);
@@ -370,9 +372,9 @@ test('a requested primary GamePanel supplies Timeline beside Source without coup
 	assert.ok(f.editor.gamePanel.focusScope.runtime?.interaction.transport!.navigation === f.editor.commands.transport.navigation);
 	assert.equal(timeline.available, false); assert.equal(timeline.requested, false); assert.equal(timeline.visible, false);
 	const bounds = f.editor.editorParts.mainArea.companionBounds, x = bounds.left + 6, y = bounds.top + 1;
-	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Secondary, pressedButtons: PointerButton.Secondary,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: PointerButton.Secondary, pressedButtons: PointerButton.Secondary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 });
-	f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Secondary,
+	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Secondary,
 		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 }); f.editor.update(0);
 	assert.equal(f.editor.contextMenu.visible, true);
 	assert.equal(f.editor.contextMenu.model.rows[0].command, 'runtime.toggleTimeline');

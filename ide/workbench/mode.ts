@@ -1,3 +1,4 @@
+import type { WorkbenchPreferences } from './services/preferences/preferences';
 import { openHome } from './contrib/home/editor_input';
 import type { StudioSourceContext } from '../../hosts/common/studio_projects';
 import type { ConversationObserverFactory } from '../../hosts/common/conversation_observer';
@@ -55,6 +56,7 @@ export async function initializeIdeFeatures(
 	gameCapture: GameImageCapture,
 	decodeImage: ImageDecoder,
 	display: WorkbenchDisplay,
+	preferences: WorkbenchPreferences,
 	input: Input,
 	audioOutput: HostAudioOutput,
 	runtimeTasks: RuntimeTaskQueue,
@@ -106,6 +108,7 @@ export async function initializeIdeFeatures(
 		gameCapture,
 		decodeImage,
 		display,
+		preferences,
 		input,
 		audioOutput,
 		runtimeTasks,

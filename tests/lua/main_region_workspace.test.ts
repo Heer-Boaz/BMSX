@@ -140,7 +140,7 @@ test('Main center remains the actual document input owner between contextual reg
 	const selected = primary.authoring.selection, execution = f.host.execution.revision;
 	const bounds = group.paneSurface.getBounds(), x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
 	assert.ok(f.editor.surfaces.hitTest(x, y) === group.paneSurface);
-	for (const down of [true, false]) f.editor.dispatchPointer({ x, y, buttons: down ? PointerButton.Primary : 0,
+	for (const down of [true, false]) f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: down ? PointerButton.Primary : 0,
 		pressedButtons: down ? PointerButton.Primary : 0, releasedButtons: down ? 0 : PointerButton.Primary,
 		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	assert.ok(inputFocus.admittedTarget !== null && group.focusScope.contains(inputFocus.admittedTarget.scope));

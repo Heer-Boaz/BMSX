@@ -16,7 +16,7 @@ import type { CloseEditors } from './editor_close';
 import type { WorkbenchSurface } from '../windows/model';
 import type { WorkbenchSurfaceService } from '../windows/service';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
-import { copy_rect_bounds, create_rect_bounds, write_rect_bounds, point_in_rect, rects_intersect } from '../../../../machine/ts/common/rect';
+import { copy_rect_bounds, create_rect_bounds, write_rect_bounds, rects_intersect } from '../../../../machine/ts/common/rect';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { isCtrlDown, isMetaDown } from '../../../input/keyboard/key_input';
 import type { EditorTabStripRenderContext } from '../../render/tab_bar';
@@ -231,12 +231,7 @@ export class EditorGroupView {
 				pane.handlePointer(snapshot, (snapshot.justPressedButtons & PointerButton.Primary) !== 0,
 					(snapshot.justPressedButtons & PointerButton.Secondary) !== 0, now, isCtrlDown(snapshot) || isMetaDown(snapshot));
 			},
-			handleWheel: event => {
-				const focused = inputFocus.admittedTarget, guest = focused?.guestInput;
-				if (guest !== undefined && focused!.scope.surfaceScope === this.captureScope
-					&& point_in_rect(event.viewportX, event.viewportY, guest.bounds)) return false;
-				this.panes.activePane?.handleWheel(event); return true;
-			},
+			handleWheel: event => this.panes.activePane?.handleWheel(event) === true,
 			onRetire: () => pointerCapture.cancelScope(this.captureScope),
 		});
 		this.timeline = new RuntimeTimelineControl(commands, () => this.focus(), this.focusTarget, this.timelineBounds,
@@ -399,7 +394,7 @@ export class EditorGroupView {
 			if (this.model.findMatching(input) === undefined) {
 				const cleared = this.panes.clearEditor();
 				if (cleared === undefined) { if (this.model.indexOf(input) < 0) input.dispose(); return undefined; }
-				generation = cleared;
+				generation = cleared.generation;
 				if (options.activationIsCurrent?.() === false || options.navigationSelection?.isDisposed || this.panes.openGeneration !== generation) {
 					if (this.model.indexOf(input) < 0) input.dispose();
 					return undefined;
@@ -482,7 +477,7 @@ export class EditorGroupView {
 	/** Retire the departing attachment, never the input that is about to acquire another owner. */
 	public detachEditorForMove(input: EditorInput): number | undefined {
 		if (this.tabStrip.drag.state?.source.kind === 'editor' && this.tabStrip.drag.state.source.input === input) this.tabStrip.cancelDrag();
-		return this.model.activeTab === input ? this.panes.clearEditor('move') : this.panes.beginOpen();
+		return this.model.activeTab === input ? this.panes.clearEditor('move')?.generation : this.panes.beginOpen();
 	}
 
 	/** The transfer model already selected this exact member; only its new control is attached here. */
@@ -499,7 +494,7 @@ export class EditorGroupView {
 		const capture = !preserveFocus && (changing || selection !== undefined || navigationSelection !== undefined);
 		const previous = capture ? beginNavigationCapture() : null;
 		const focusRevision = inputFocus.revision;
-		const generation = changing ? this.panes.clearEditor() : this.panes.beginOpen();
+		const generation = changing ? this.panes.clearEditor()?.generation : this.panes.beginOpen();
 		if (generation === undefined || options.isCurrent?.() === false || navigationSelection?.isDisposed || this.panes.openGeneration !== generation) { previous?.dispose(); return undefined; }
 		this.model.activate(input);
 		if (options.isCurrent?.() === false || navigationSelection?.isDisposed || this.panes.openGeneration !== generation) { previous?.dispose(); return undefined; }
@@ -541,9 +536,10 @@ export class EditorGroupView {
 				const focused = inputFocus.target;
 				const ownsFocus = focused !== null && (this.containerScope.contains(focused.scope)
 					|| this.panes.activePane?.inputScope?.contains(focused.scope));
-				const generation = this.panes.clearEditor();
-				if (generation === undefined) return false;
-				if (ownsFocus && inputFocus.target === null) focusRevision = inputFocus.revision;
+				const cleared = this.panes.clearEditor();
+				if (cleared === undefined) return false;
+				const generation = cleared.generation;
+				if (ownsFocus) focusRevision = cleared.focusRevision;
 				if (this.panes.openGeneration !== generation) focusRevision = undefined;
 				if (deferred !== undefined) this.closeSelection = { inputs: deferred, generation };
 			}

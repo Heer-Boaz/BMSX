@@ -17,7 +17,7 @@ export function projectCartMap(input: CartMapInput): void {
 	const collapsed = new Set(tree.roots.filter(root => root.collapsed).map(root => root.element.sheet.key));
 	tree.roots.length = 0;
 	const append = (sheet: CartMapSheet, label: string, diagnostic: string | null) => appendWorkbenchTreeNode(tree, null,
-		{ sheet, label, displayLabel: '', range: sheet.range, diagnostic }, collapsed.has(sheet.key) || initial && tree.roots.length > 0);
+		{ sheet, label, range: sheet.range, diagnostic }, collapsed.has(sheet.key) || initial && tree.roots.length > 0);
 	if (input.mapKind === 'pietious') {
 		const document = buildPietiousSource(source, model.version);
 		input.diagnostic = document.diagnostic;
@@ -29,7 +29,7 @@ export function projectCartMap(input: CartMapInput): void {
 			const root = append(sheet, `ROOM ${room.id}`, room.diagnostic);
 			let markerIndex = 0;
 			for (const object of room.objects) {
-				appendWorkbenchTreeNode(tree, root, { sheet, label: `${object.index + 1}. ${object.type}`, displayLabel: '',
+				appendWorkbenchTreeNode(tree, root, { sheet, label: `${object.index + 1}. ${object.type}`,
 					range: object.range, item: object.editable ? markers[markerIndex++] : undefined, diagnostic: object.diagnostic });
 			}
 		}
@@ -44,7 +44,7 @@ export function projectCartMap(input: CartMapInput): void {
 			markers, range: { start: 0, end: source.length } };
 		const root = append(sheet, 'STAGE', document.diagnostic);
 		for (const item of markers) appendWorkbenchTreeNode(tree, root, { sheet, item,
-			label: `${item.glyph} (${item.x}, ${item.y})`, displayLabel: '', range: item.source.range, diagnostic: null });
+			label: `${item.glyph} (${item.x}, ${item.y})`, range: item.source.range, diagnostic: null });
 	}
 	let selected: WorkbenchTreeNode<CartMapTreeElement> | null = null;
 	for (const root of tree.roots) {

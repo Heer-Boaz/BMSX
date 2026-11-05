@@ -30,5 +30,5 @@ export class BuildLogPane extends EditorPane<BuildLogInput> {
 	public updateStatus(): void { this.control.updateStatus(); }
 	public handleKeyboard(): void {}
 	public handlePointer(snapshot: PointerInputSnapshot): void { this.control.handlePointer(snapshot); }
-	public handleWheel(event: WheelInputSnapshot): void { this.control.handleWheel(event); }
+	public override handleWheel(event: WheelInputSnapshot): boolean { return this.control.handleWheel(event); }
 }

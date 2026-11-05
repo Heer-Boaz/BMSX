@@ -32,8 +32,10 @@ export function start() {
 	};
 	const clock = new BrowserHostClock();
 	const hub = new BrowserInputHub(canvas, canvas, clock, undefined, 'ScrollLock');
-	hub.subscribe({ inputButton() {}, inputAxis1() {}, inputAxis2() {}, capturePhysicalKeyHold() {},
-		setSupervisorRequestLine() {}, resetInput() {}, cancelPointerButtons() {} });
+	const deviceButtons = [], deviceCancellations = [];
+	hub.subscribe({ inputButton(device, code, pressed) { if (device === 'pointer:0') deviceButtons.push({ code, pressed }); },
+		inputAxis1() {}, inputAxis2() {}, capturePhysicalKeyHold() {},
+		setSupervisorRequestLine() {}, resetInput() {}, cancelPointerButtons(device, buttons) { deviceCancellations.push(buttons); } });
 	const text = new BrowserTextInput(canvas, host);
 	hub.setNativeKeyHandler(text.handleKey);
 	const events = [];
@@ -55,7 +57,8 @@ export function start() {
 	});
 	fields[0].focusTarget.focus();
 	globalThis.pointerFixture = {
-		state: () => ({ texts: fields.map(field => field.text), events: events.splice(0), focusAtReturn: focusAtReturn.splice(0) }),
+		state: () => ({ texts: fields.map(field => field.text), events: events.splice(0), focusAtReturn: focusAtReturn.splice(0),
+			deviceButtons: deviceButtons.splice(0), deviceCancellations: deviceCancellations.splice(0) }),
 		releaseCapture: () => canvas.releasePointerCapture(pointerId),
 	};
 }`;
@@ -90,10 +93,19 @@ export function start() {
 	const cdp = await page.context().newCDPSession(page);
 	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ id: 1, x: 80, y: 60 }, { id: 2, x: 100, y: 60 }] });
 	const down = await state();
-	assert.equal(down.events.filter((event: { pressedButtons: number }) => event.pressedButtons === 1).length, 1, 'two contacts produce one aggregate down');
+	const contacts = down.events.filter((event: { pressedButtons: number }) => event.pressedButtons === 1);
+	assert.equal(contacts.length, 2, 'the UI receives each contact, not the guest device aggregate');
+	assert.notEqual(contacts[0].pointerId, contacts[1].pointerId);
+	assert.ok(contacts.every((event: { pointerType: string }) => event.pointerType === 'touch'));
+	assert.equal(down.deviceButtons.length, 1, 'the physical guest pointer still aggregates contact buttons');
+	assert.equal(down.deviceButtons[0].pressed, true);
 	await cdp.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
 	const cancelled = await state();
-	assert.equal(cancelled.events.filter((event: { cancelledButtons: number }) => event.cancelledButtons === 1).length, 1);
+	const cancellations = cancelled.events.filter((event: { cancelledButtons: number }) => event.cancelledButtons === 1);
+	assert.deepEqual(cancellations.map((event: { pointerId: number }) => event.pointerId).sort(),
+		contacts.map((event: { pointerId: number }) => event.pointerId).sort());
+	assert.deepEqual(cancelled.deviceCancellations, [1]);
+	assert.deepEqual(cancelled.deviceButtons, [], 'guest cancellation does not manufacture a release');
 	assert.ok(cancelled.events.every((event: { releasedButtons: number }) => event.releasedButtons === 0), 'cancellation is never a drop');
 	// Lose a real DOM capture while the physical mouse remains down. A later
 	// window move/up must not manufacture the successful release we did not get.

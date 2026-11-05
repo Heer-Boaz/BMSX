@@ -15,7 +15,7 @@ import {
 import { encodeSignedFix16 } from '../../machine/ts/machine/common/numeric';
 
 function occurrence(buttons: number, pressedButtons = 0, releasedButtons = 0, cancelledButtons = 0): PointerInputEvent {
-	return { x: 500, y: 400, buttons, pressedButtons, releasedButtons, cancelledButtons,
+	return { pointerId: 0, pointerType: 'mouse', x: 500, y: 400, buttons, pressedButtons, releasedButtons, cancelledButtons,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 };
 }
 
