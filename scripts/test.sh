@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Keep the process, environment, cwd, stdio and signal/exit semantics of the
-# requested command. systemd-run --scope applies cgroup limits before exec.
+# Reuse an installed kernel budget or install one before executing test code.
 in_scope=false
 if [[ ${1-} == --in-scope ]]; then
 	in_scope=true
@@ -13,7 +12,7 @@ if [[ $# == 0 ]]; then
 	exit 2
 fi
 if [[ ! -r /sys/fs/cgroup/cgroup.controllers ]]; then
-	echo 'BMSX tests require Linux/WSL with systemd and cgroup v2 memory control; refusing an unbounded run.' >&2
+	echo 'BMSX tests require Linux cgroup v2 memory control; refusing an unbounded run.' >&2
 	exit 1
 fi
 
@@ -23,11 +22,15 @@ fi
 cgroup=''
 while IFS=: read -r hierarchy controllers path; do
 	if [[ $hierarchy == 0 ]]; then
-		cgroup="/sys/fs/cgroup$path"
+		if [[ $path == /.. || $path == /../* ]]; then
+			echo 'The current process is outside the visible cgroup namespace; cannot verify a test budget.' >&2
+			exit 1
+		fi
+		cgroup="/sys/fs/cgroup${path%/}"
 		break
 	fi
 done < /proc/self/cgroup
-while [[ $cgroup != /sys/fs/cgroup && -n $cgroup ]]; do
+while [[ -n $cgroup ]]; do
 	if [[ -r $cgroup/memory.max && -r $cgroup/memory.swap.max && -r $cgroup/memory.oom.group ]]; then
 		read -r memory_max < "$cgroup/memory.max"
 		read -r swap_max < "$cgroup/memory.swap.max"
@@ -36,13 +39,26 @@ while [[ $cgroup != /sys/fs/cgroup && -n $cgroup ]]; do
 			exec "$@"
 		fi
 	fi
+	# The visible mount root can itself be a bounded container cgroup.
+	[[ $cgroup == /sys/fs/cgroup ]] && break
 	cgroup=${cgroup%/*}
 done
 
-# Verify the installed limit before executing any test code. An unavailable
-# user manager/controller or unsupported systemd option must fail closed.
+# Both installers re-enter here; the kernel, not an environment flag or the
+# installer's requested properties, must confirm the shared budget.
 if $in_scope; then
 	echo 'BMSX test memory limits were not installed; refusing an unbounded run.' >&2
+	exit 1
+fi
+
+if [[ -n ${BMSX_TEST_CGROUP_PARENT-} ]]; then
+	exec python3 "$(dirname "${BASH_SOURCE[0]}")/test_cgroup.py" "$BASH" "${BASH_SOURCE[0]}" "$@"
+fi
+
+# The user manager is one cgroup owner, not a prerequisite of a prebounded
+# container or an explicitly delegated direct cgroup.
+if [[ -z ${XDG_RUNTIME_DIR-} && -z ${DBUS_SESSION_BUS_ADDRESS-} ]]; then
+	echo 'No test cgroup budget or systemd user session is available. Supply BMSX_TEST_CGROUP_PARENT with writable memory-controller delegation, or have the host install 1 GiB / zero swap / group OOM before starting this process. Refusing an unbounded run.' >&2
 	exit 1
 fi
 exec systemd-run --user --scope --collect --quiet --expand-environment=no \

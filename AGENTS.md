@@ -81,15 +81,25 @@
   existing `npm run test:*` commands. For another harness/native executable use
   `npm run test:exec -- <command> [arguments...]`.
 - These entrypoints enforce a shared **1 GiB RAM / zero swap** cgroup budget for
-  each test run and its ordinary subprocesses. Nested invocations share the
-  existing budget. Node test suites run one file at a time by default.
+  each test run and its ordinary subprocesses, with group-wide OOM termination.
+  Nested invocations share the existing budget. Node test suites run one file at
+  a time by default.
 - Do not bypass this runner with direct `node --test`, `tsx --test`, or unbounded
   harness commands; do not raise/remove limits without explicit user approval.
   A memory-limit failure is a failing test run, not permission to retry without
   the limit. Diagnose the failing case or retained state instead.
-- Linux/WSL with a running systemd user manager and cgroup v2 memory control is
-  required. If limits cannot be installed, stop; there is no unbounded fallback.
-  Build steps preceding the harness in npm scripts are separate.
+- Linux/WSL with cgroup v2 memory control is required. The runner reuses a verified
+  bounded cgroup, including a container's cgroup namespace root, or installs the
+  limits through a delegated writable cgroup or a running systemd user manager.
+  Containers need host-installed limits or delegated memory-controller access;
+  systemd inside the container is not required. `BMSX_TEST_CGROUP_PARENT` selects
+  an empty delegated parent for a private test cgroup; it does not override an
+  already verified inherited budget. Only the direct-delegation path requires
+  Python 3 (standard library only); inherited-budget and systemd paths do not.
+  If kernel limits cannot be verified or an explicitly selected parent cannot
+  be used, stop; there is no unbounded fallback.
+  `prlimit`, `ulimit` and V8 heap limits do not substitute for the shared cgroup
+  budget. Build steps preceding the harness in npm scripts are separate.
 - This limits the test cgroup, not the entire agent or user session. Direct
   commands and processes requesting separate systemd units (including browsers
   and native process-scope tests) can run outside it. Do not describe this

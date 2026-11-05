@@ -201,12 +201,39 @@ npm test -- --test-name-pattern='Visual placement composes physical' tests/lua/a
 ```
 
 All test scripts use `scripts/test.sh`: **1 GiB RAM total, no swap** for the
-test process and its ordinary subprocesses. Nested runners share that budget;
-Node suites default to one test file at a time. Build steps preceding the harness
-in npm scripts run separately; ordinary children inherit the harness budget.
-Linux/WSL needs systemd (254 or newer), a running user manager and cgroup v2 memory
-control. A missing or ineffective limit fails the run rather than executing tests
-unbounded. For a custom harness use `npm run test:exec -- <command> [arguments...]`.
+test process and its ordinary subprocesses, with group-wide OOM termination.
+Nested runners share that budget; Node suites default to one test file at a time.
+Build steps preceding the harness in npm scripts run separately; ordinary children
+inherit the harness budget.
+For a custom harness use `npm run test:exec -- <command> [arguments...]`.
+
+Linux/WSL needs cgroup v2 memory control. The runner reuses a verified bounded
+current or ancestor cgroup, including the visible namespace root in a container.
+Otherwise it installs the limits through a delegated writable cgroup or systemd
+(254 or newer) with a running user manager. A container therefore needs either
+host-installed limits or delegated memory-controller access, not systemd as its
+init process. A read-only cgroup mount without existing limits cannot enforce
+the budget. A missing or ineffective kernel limit fails the run rather than
+executing tests unbounded; `prlimit`, `ulimit` and V8 heap limits are not substitutes
+for a shared process-tree memory budget.
+
+For direct delegation, the host must provide an empty, writable parent cgroup
+with the memory controller available to its subtree and `cgroup.kill` support.
+This path also requires Python 3 (standard library only); inherited-budget and
+systemd paths do not.
+Select the delegated parent explicitly:
+
+```bash
+BMSX_TEST_CGROUP_PARENT=/sys/fs/cgroup/bmsx-tests npm test -- tests/platform/test_runner.test.mjs
+```
+
+The same variable works with `npm run test:exec -- <command> [arguments...]`.
+The runner enables the memory controller, creates a private bounded child and
+cleans it up; it does not move other host tasks. An already verified inherited
+budget takes precedence, so nested invocations still share the original budget.
+Failure to use an explicitly selected parent fails the run, not into another
+launch mode. A host-prebounded container needs no writable cgroup mount.
+
 This limits the test cgroup, not the entire agent or user session. Direct commands
 and processes requesting their own systemd units (including browsers and native
 process-scope tests) can run outside it; this is a guardrail, not a sandbox.
