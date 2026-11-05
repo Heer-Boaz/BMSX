@@ -45,6 +45,52 @@ test('PCRTC revision drives render-target changes', () => {
 	presenter.dispose();
 });
 
+test('target requests retain the displayed image and coalesce allocation at presentation', t => {
+	const runtime = createTestRuntime(createTestRuntimeRomPayload());
+	const device = runtime.machine.gxGpu.readDeviceOutput();
+	device.pcrtcScanout.backgroundColor = 0x00332211;
+	const { presenter, backend, output } = createHostOverlayFixture(4, 3);
+	presenter.initialize(new RenderPassLibrary(backend, presenter));
+	presenter.crt_postprocessing_enabled = false;
+	t.after(() => presenter.dispose());
+	presenter.configurePresentation('completed', true);
+	presenter.present(device, 0, 0);
+	const pixels = Array.from(backend.borrowPresentedPixels()), sequence = presenter.gameFrameSequence;
+	const allocated = presenter.canvasSize;
+	const resize = t.mock.method(backend, 'resizePresentationTarget');
+	let publications = 0;
+	output.geometry.onDidChange(() => publications++);
+	presenter.setFixedRenderTargetSize(8, 6);
+	presenter.setFixedRenderTargetSize(12, 9);
+	presenter.setFixedRenderTargetSize(8, 6);
+	assert.equal(resize.mock.callCount(), 0, 'size selection is not permission to clear the currently displayed image');
+	assert.deepEqual(presenter.viewportSize, { x: 8, y: 6 }, 'layout can prepare the next composition');
+	assert.deepEqual(allocated, { x: 4, y: 3 }, 'capture dimensions still describe the actual backing buffer');
+	assert.equal(publications, 0, 'input geometry continues describing the displayed image');
+	const point = { x: 0, y: 0 };
+	assert.equal(presenter.mapDisplayPointToViewport(2, 1, point), true);
+	assert.deepEqual(point, { x: 2, y: 1 }, 'pointer mapping uses allocated rather than requested dimensions');
+	assert.deepEqual(Array.from(backend.borrowPresentedPixels()), pixels);
+	presenter.configurePresentation('completed', false);
+	presenter.present(device, 0, 0);
+	assert.equal(resize.mock.callCount(), 1, 'only the selected size is allocated');
+	assert.deepEqual(allocated, { x: 8, y: 6 });
+	assert.equal(backend.borrowPresentedPixels().length, 8 * 6 * 4);
+	assert.equal(publications, 1);
+	assert.equal(presenter.gameFrameSequence, sequence, 'resizing a held image does not commit a game frame');
+	presenter.setFixedRenderTargetSize(12, 9);
+	presenter.setFixedRenderTargetSize(8, 6);
+	presenter.present(device, 0, 0);
+	assert.equal(resize.mock.callCount(), 1, 'a request superseded by the current size allocates nothing');
+	assert.equal(publications, 1);
+	presenter.useScanoutRenderTargetSize();
+	assert.deepEqual(allocated, { x: 8, y: 6 }, 'leaving a host-sized surface also preserves its last frame until drawing');
+	presenter.present(device, 0, 0);
+	assert.deepEqual(allocated, { x: 4, y: 3 });
+	assert.equal(resize.mock.callCount(), 2);
+	assert.deepEqual(Array.from(backend.borrowPresentedPixels()), pixels);
+});
+
 test('a host-sized presentation survives restore and returns to the latest scanout, not its entry size', () => {
 	const runtime = createTestRuntime(createTestRuntimeRomPayload());
 	const { presenter, backend } = createHostOverlayFixture(256, 192);
@@ -59,12 +105,13 @@ test('a host-sized presentation survives restore and returns to the latest scano
 	presenter.setFixedRenderTargetSize(384, 288);
 	assert.deepEqual(presenter.offscreenCanvasSize, { x: 256, y: 192 });
 	assert.equal(presenter.deviceQuantizeConfigurationRevision, nativeConfiguration, 'host admission retains native graph');
+	presenter.present(runtime.machine.gxGpu.readDeviceOutput(), 0, 0);
 	const pixels = backend.framebufferPixels;
 	const configuration = presenter.deviceQuantizeConfigurationRevision;
 	presentation.requestRestoredPresentation();
 	presentation.presentPending(presenter, runtime, 100, 20);
 	assert.deepEqual(presenter.viewportSize, { x: 384, y: 288 });
-	assert.equal(backend.framebufferPixels, pixels);
+	assert.ok(backend.framebufferPixels === pixels, 'restore retains the allocated host target');
 	assert.equal(presenter.deviceQuantizeConfigurationRevision, configuration, 'restore did not rebuild unchanged host targets');
 
 	scanout.revision += 1;
@@ -73,12 +120,14 @@ test('a host-sized presentation survives restore and returns to the latest scano
 	presentation.requestHeldPresentation();
 	presentation.presentPending(presenter, runtime, 120, 20);
 	assert.deepEqual(presenter.viewportSize, { x: 384, y: 288 });
-	assert.equal(backend.framebufferPixels, pixels);
+	assert.ok(backend.framebufferPixels === pixels, 'native resize retains the allocated host target');
 	assert.deepEqual(presenter.offscreenCanvasSize, { x: 320, y: 240 });
 	assert.equal(presenter.deviceQuantizeConfigurationRevision, configuration + 1, 'only native geometry rebuilds the graph');
 	presenter.useScanoutRenderTargetSize();
 	assert.equal(presenter.deviceQuantizeConfigurationRevision, configuration + 1, 'host release retains native graph');
 	assert.deepEqual(presenter.viewportSize, { x: 320, y: 240 });
+	assert.ok(backend.framebufferPixels === pixels, 'release retains the old image until presentation');
+	presenter.present(runtime.machine.gxGpu.readDeviceOutput(), 0, 0);
 	assert.equal(backend.framebufferWidth, 320);
 	assert.equal(backend.framebufferHeight, 240);
 

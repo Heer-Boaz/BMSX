@@ -965,6 +965,11 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public updateViewport(viewport: Viewport): void {
+		// Logical layout can change before the next backing buffer is drawn.
+		// Retire its gestures now, independently of display-transform publication.
+		if (this.isActive && (viewport.width !== editorViewState.viewportWidth || viewport.height !== editorViewState.viewportHeight)) {
+			this.cancelPointerInput();
+		}
 		applyViewportSize(viewport);
 		layoutTopBar(this.chromeRenderContext, this.menubar.expanded);
 		this.menubar.update();

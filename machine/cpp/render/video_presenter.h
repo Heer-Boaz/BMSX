@@ -29,7 +29,8 @@ struct GxGpuDeviceOutput;
 /* ============================================================================
  * VideoPresenter - Frontend video presentation
  *
- * For libretro, viewportSize IS the framebuffer size.
+ * canvasSize describes the allocated framebuffer; viewportSize may select
+ * different dimensions for the next presentation.
  * ============================================================================ */
 
 struct GameFrameObserver {
@@ -55,9 +56,9 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	// Viewport and canvas sizes
 	// ─────────────────────────────────────────────────────────────────────────
-	Vec2 viewportSize;       // Host presentation size, independent of machine scanout.
+	Vec2 viewportSize;       // Selected logical size for the next composition.
 	const RectBounds& visibleViewportBounds;
-	Vec2 canvasSize;         // The backing buffer size
+	Vec2 canvasSize;         // Allocated backing-buffer size; changes only when presenting.
 	Vec2 offscreenCanvasSize;// Native PCRTC source size, independent of the host surface.
 
 	void setScanoutSize(i32 width, i32 height);
@@ -128,7 +129,6 @@ public:
 	void rebuildGraph();
 
 private:
-	void setRenderTargetSize(i32 width, i32 height);
 	void finalizePresentation();
 	void resetPresentationHistory();
 

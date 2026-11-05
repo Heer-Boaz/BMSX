@@ -79,6 +79,7 @@ export async function createLiveStudioFixture(t: TestContext) {
 	ide.transport.pause();
 	display.workspace.layout(2400, 1080);
 	editor.activate();
+	await frame();
 	const native = new RemoteInput(input, clock, undefined, event => editor.dispatchPointer(event), event => editor.dispatchWheel(event));
 	return { ide, editor, sources, runtime, execution, backend, display, presenter, tasks, native, frame, until };
 }

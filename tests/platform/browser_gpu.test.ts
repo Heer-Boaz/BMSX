@@ -15,11 +15,38 @@ before(async () => {
 			export { RenderPassLibrary } from './machine/ts/render/backend/pass/library';
 			export { renderPcrtcBlendCases } from './tests/helpers/pcrtc_scanout_fixture';
 			export { renderTexturedModelCase } from './tests/helpers/textured_model_gpu';
+			export { renderPresentationTarget } from './tests/helpers/presentation_target';
 		`, resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', target: 'es2020', format: 'iife', globalName: 'backendTest', write: false,
 		plugins: [glsl()], loader: { '.png': 'dataurl', '.glsl': 'text', '.wgsl': 'text' },
 	});
 	backendBundle = bundle.outputFiles[0].text;
+});
+
+for (const kind of ['webgl2', 'webgpu']) test(`${kind} retains the old workspace target until the next presentation`, async t => {
+	const browser = await chromium.launch({ args: [
+		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
+		'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
+	] });
+	t.after(() => browser.close());
+	const page = await browser.newPage(), errors: string[] = [];
+	page.on('pageerror', error => errors.push(error.message));
+	await page.route('http://localhost/renderer-test/**', route => route.fulfill({ contentType: 'text/html',
+		body: '<!doctype html><style>body{margin:0}#player-surface{position:fixed;width:48px;height:36px}canvas{position:fixed}</style><div id="player-surface"><canvas width="16" height="12"></canvas></div>' }));
+	await page.goto('http://localhost/renderer-test/presentation/'); await page.addScriptTag({ content: backendBundle });
+	const result = await page.evaluate(async kind => (globalThis as any).backendTest.renderPresentationTarget(document.querySelector('canvas'), kind), kind);
+	assert.equal(result.validationError, undefined); assert.equal(result.glError, 0);
+	assert.deepEqual(result.errors, []); assert.deepEqual(errors, []);
+	assert.equal(result.pending.allocations, result.before.allocations, 'a burst of layout requests allocates no undrawn targets');
+	assert.deepEqual(result.pending.allocated, result.before.allocated);
+	assert.deepEqual(result.pending.backing, [16, 12]);
+	assert.deepEqual(result.pending.bounds, result.before.bounds, 'the published transform belongs to the image still on screen');
+	assert.equal(result.pending.reads, result.before.reads, 'workspace policy changes do not remeasure the host area');
+	assert.deepEqual(result.pending.selected, { x: 24, y: 18 }, 'layout prepares the selected dimensions');
+	assert.equal(result.drawn.allocations, result.before.allocations + 1);
+	assert.deepEqual(result.drawn.allocated, { x: 24, y: 18 });
+	assert.deepEqual(result.drawn.backing, [24, 18]);
+	assert.deepEqual(result.pixel.slice(0, 3), [0x11, 0x22, 0x33], 'the resized target contains the held image, not the cleared backing buffer');
 });
 
 for (const kind of ['webgl2', 'webgpu']) test(`${kind} and CPU render flat/raw textured model packets with affine point sampling`, async t => {

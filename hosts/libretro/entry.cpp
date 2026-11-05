@@ -1174,8 +1174,8 @@ static void reset_hardware_context() {
 	auto& backend = static_cast<bmsx::OpenGLES2Backend&>(presenter.backend());
 	logging.log(RETRO_LOG_INFO, "[BMSX] onContextReset: begin\n");
 	backend.resizePresentationTarget(
-		static_cast<bmsx::i32>(presenter.viewportSize.x),
-		static_cast<bmsx::i32>(presenter.viewportSize.y));
+		static_cast<bmsx::i32>(presenter.canvasSize.x),
+		static_cast<bmsx::i32>(presenter.canvasSize.y));
 	backend.onContextReset();
 	logging.log(RETRO_LOG_INFO, "[BMSX] onContextReset: rebuild render graph\n");
 	presenter.installRenderPipeline(
@@ -1645,8 +1645,8 @@ void retro_run(void) {
 	const bool hardware_frame = isHardwareBackendActive();
 	const bmsx::f64 deltaTime = g_frame_time_sec;
 	g_input->poll(
-		static_cast<bmsx::i32>(g_video_presenter->viewportSize.x),
-		static_cast<bmsx::i32>(g_video_presenter->viewportSize.y),
+		static_cast<bmsx::i32>(g_video_presenter->canvasSize.x),
+		static_cast<bmsx::i32>(g_video_presenter->canvasSize.y),
 		std::chrono::duration<bmsx::f64, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count());
 	bmsx::Runtime& runtime = g_content->runtime;
 	bmsx::LibretroFrameResult frameResult = bmsx::LibretroFrameResult::NotPresented;

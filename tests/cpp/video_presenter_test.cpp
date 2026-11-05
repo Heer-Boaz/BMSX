@@ -1,6 +1,7 @@
 #include "render/video_presenter.h"
 #include "render/backend/pass/library.h"
 #include "spec/bmsx/model.h"
+#include "support/gpu_output_fixture.h"
 #include <iostream>
 #include <stdexcept>
 
@@ -29,8 +30,27 @@ int main() {
 		&& presenter.visibleViewportBounds.right == 256 && presenter.visibleViewportBounds.bottom == 192,
 		"initial visible bounds represent the actual initial target before any resize");
 	presenter.installRenderPipeline(std::make_unique<RenderPassLibrary>(&presenter.backend(), &presenter));
+	presenter.crt_postprocessing_enabled = false;
+	test::GpuOutputFixture fixture;
+	fixture.scanout.backgroundColor = 0x00332211;
+	presenter.configurePresentation(VideoPresenter::PresentationMode::Completed, true);
+	presenter.present(fixture.output, 0, 0);
+	const auto* initialPixels = software.framebuffer();
+	const u32 initialPixel = initialPixels[0];
+	const auto sequence = presenter.gameFrameSequence();
 	const auto nativeConfiguration = presenter.deviceQuantizeConfigurationRevision();
 	presenter.setFixedRenderTargetSize(384, 288);
+	presenter.setFixedRenderTargetSize(512, 384);
+	presenter.setFixedRenderTargetSize(384, 288);
+	require(software.framebuffer() == initialPixels && initialPixels[0] == initialPixel && video.changes == 0,
+		"size selection retains the displayed pixels and does not publish an undrawn target");
+	require(presenter.viewportSize.x == 384 && presenter.canvasSize.x == 256,
+		"logical selection and actual allocation remain distinct until presentation");
+	presenter.configurePresentation(VideoPresenter::PresentationMode::Completed, false);
+	presenter.present(fixture.output, 0, 0);
+	require(video.changes == 1 && presenter.canvasSize.x == 384 && presenter.canvasSize.y == 288,
+		"presentation coalesces requests into the final target");
+	require(presenter.gameFrameSequence() == sequence, "host resizing does not commit a new game frame");
 	require(presenter.visibleViewportBounds.right == 384 && presenter.visibleViewportBounds.bottom == 288,
 		"native full-output bounds follow the actual target producer resize");
 	require(presenter.offscreenCanvasSize.x == 256 && presenter.offscreenCanvasSize.y == 192, "host admission retains native dimensions");
@@ -46,14 +66,22 @@ int main() {
 	presenter.useScanoutRenderTargetSize();
 	require(presenter.deviceQuantizeConfigurationRevision() == configuration + 1, "host release retains native graph");
 	require(presenter.viewportSize.x == 320 && presenter.viewportSize.y == 240, "release uses latest scanout, not entry size");
+	require(software.framebuffer() == pixels && video.changes == 1, "host release retains the last rendered target");
+	presenter.present(fixture.output, 0, 0);
 	require(software.width() == 320 && software.height() == 240 && video.width == 320 && video.height == 240, "backend and video output share the selected target");
+	presenter.setFixedRenderTargetSize(384, 288);
+	presenter.useScanoutRenderTargetSize();
+	presenter.present(fixture.output, 0, 0);
+	require(video.changes == 2, "returning to the allocated size before drawing avoids reallocation");
 	presenter.setFixedRenderTargetSize(320, 240);
 	presenter.setScanoutSize(256, 192);
 	require(video.changes == 2, "same-size host admission still establishes fixed sizing");
 	presenter.setFixedRenderTargetSize(384, 288);
 	presenter.useScanoutRenderTargetSize();
+	presenter.present(fixture.output, 0, 0);
 	require(software.width() == 256 && software.height() == 192, "fixed-size changes do not overwrite scanout size");
 	presenter.setScanoutSize(320, 240);
+	presenter.present(fixture.output, 0, 0);
 	require(software.width() == 320 && software.height() == 240, "normal gameplay continues following scanout");
 	std::cout << "VIDEO-PRESENTER-SIZING:PASS\n";
 }

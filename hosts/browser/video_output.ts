@@ -13,7 +13,7 @@ const OVERSCAN_VISIBLE_FRACTION = 0.9;
 
 /** Visible player bounds, canvas fitting and independent control-overlay layout. */
 export class BrowserVideoOutput implements VideoOutput {
-	public readonly workspace = new WorkspaceDisplay(0, 0, () => this.refreshLayout());
+	public readonly workspace = new WorkspaceDisplay(0, 0, () => { this.fittingPending = true; });
 	public readonly geometry = new DisplayGeometry();
 	private pointerCursor: PointerCursor = 'default';
 	public readonly visibleViewportBounds: RectBounds;
@@ -84,7 +84,7 @@ export class BrowserVideoOutput implements VideoOutput {
 	public setScreenFit(mode: BrowserScreenFit): void {
 		if (mode === this.selectedScreenFit) return;
 		this.selectedScreenFit = mode;
-		this.refreshLayout();
+		this.fitDisplay();
 	}
 
 	/** Host-area changes may resize the render target, so consume them before drawing. */

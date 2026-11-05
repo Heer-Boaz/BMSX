@@ -19,7 +19,7 @@ async function fixture(t: TestContext) {
 	assert.ok(pane instanceof ActorLabEditorPane);
 	toggleEditor(editor, f.sources, f.ide.overlayRenderer, f.runtime);
 	await f.frame();
-	toggleEditor(editor, f.sources, f.ide.overlayRenderer, f.runtime); editor.update(0);
+	toggleEditor(editor, f.sources, f.ide.overlayRenderer, f.runtime); await f.frame();
 	return { ...f, input, group, pane };
 }
 
@@ -29,7 +29,7 @@ for (const presentation of ['world', 'outline'] as const) test(`Actor ${presenta
 	const actor = f.input.worldOutliner.tree.rows.find(row => row.element.label === 'studio_test.first')!;
 	f.input.controller.inspectActor(f.input, f.input.domain, actor.element.hashId);
 	if (presentation === 'outline') f.editor.commands.execute('actorLab.outline', f.pane.commandTarget);
-	f.input.split.ratio = 0; f.editor.update(0);
+	f.input.split.ratio = 0; await f.frame();
 	const tree = presentation === 'world' ? f.input.worldOutliner.tree : f.input.outline;
 	const bar = tree.horizontalScrollbar;
 	assert.equal(bar.isVisible(), true, 'long authored identities remain reachable in the compact panel');
@@ -48,7 +48,7 @@ for (const presentation of ['world', 'outline'] as const) test(`Actor ${presenta
 
 for (const variant of ['tiny', 'msx'] as const) test(`Actor Lab ${variant} panel divider resizes through the ordinary workspace pointer route`, async t => {
 	const f = await fixture(t);
-	f.editor.setFontVariant(variant); f.display.workspace.layout(1152, 864); f.editor.update(0);
+	f.editor.setFontVariant(variant); f.display.workspace.layout(1152, 864); await f.frame();
 	const split = f.input.layout.split!;
 	assert.ok(split !== undefined && split.resizable);
 	const preview = f.input.previewBounds;

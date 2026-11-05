@@ -33,7 +33,7 @@ VideoPresenter::~VideoPresenter() {
 }
 
 void VideoPresenter::setScanoutSize(i32 width, i32 height) {
-	if (!fixedRenderTargetSize) setRenderTargetSize(width, height);
+	if (!fixedRenderTargetSize) viewportSize = {static_cast<f32>(width), static_cast<f32>(height)};
 	if (offscreenCanvasSize.x == static_cast<f32>(width) && offscreenCanvasSize.y == static_cast<f32>(height)) return;
 	offscreenCanvasSize = {static_cast<f32>(width), static_cast<f32>(height)};
 	rebuildGraph();
@@ -41,23 +41,14 @@ void VideoPresenter::setScanoutSize(i32 width, i32 height) {
 
 void VideoPresenter::setFixedRenderTargetSize(i32 width, i32 height) {
 	fixedRenderTargetSize = true;
-	setRenderTargetSize(width, height);
+	viewportSize = {static_cast<f32>(width), static_cast<f32>(height)};
 }
 
 void VideoPresenter::useScanoutRenderTargetSize() {
 	fixedRenderTargetSize = false;
-	setRenderTargetSize(static_cast<i32>(offscreenCanvasSize.x), static_cast<i32>(offscreenCanvasSize.y));
+	viewportSize = offscreenCanvasSize;
 }
 
-void VideoPresenter::setRenderTargetSize(i32 width, i32 height) {
-	if (viewportSize.x == static_cast<f32>(width) && viewportSize.y == static_cast<f32>(height)) {
-		return;
-	}
-	viewportSize = {static_cast<f32>(width), static_cast<f32>(height)};
-	canvasSize = viewportSize;
-	m_backend->resizePresentationTarget(width, height);
-	m_output.setDisplaySize(width, height);
-}
 void VideoPresenter::clearTextures() {
 	for (const auto& entry : textures) {
 		m_backend->destroyTexture(entry.second);
@@ -113,6 +104,14 @@ RgbaImage VideoPresenter::captureGameFrame() {
  * in the correct order.
  */
 void VideoPresenter::present(const GxGpuDeviceOutput& output, f64 timeSeconds, f64 deltaSeconds) {
+	// Size requests may arrive between frames. Allocate only when the new
+	// target will actually be drawn, retaining the old image in the meantime.
+	if (canvasSize.x != viewportSize.x || canvasSize.y != viewportSize.y) {
+		const i32 width = static_cast<i32>(viewportSize.x), height = static_cast<i32>(viewportSize.y);
+		m_backend->resizePresentationTarget(width, height);
+		canvasSize = viewportSize;
+		m_output.setDisplaySize(width, height);
+	}
 	m_backend->beginFrame();
 
 	FrameData frame;

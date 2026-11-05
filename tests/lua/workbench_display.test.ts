@@ -73,7 +73,7 @@ test('Source caret, selection and context menus keep their document meaning acro
 	assert.equal(model.buffer.getText(), source); assert.equal(model.dirty, false);
 });
 
-test('a display translation retires the old coordinate-frame gesture without changing source, selection or focus', async t => {
+for (const change of ['display translation', 'workspace allocation']) test(`a ${change} retires the old coordinate-frame gesture without changing source, selection or focus`, async t => {
 	const f = await createLiveStudioFixture(t), group = f.editor.editorParts.activeGroup;
 	const resource = f.sources.catalog.luaResources.find(resource => resource.path === 'scenes/text.lua')!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource);
@@ -89,14 +89,17 @@ test('a display translation retires the old coordinate-frame gesture without cha
 	assert.equal(pointerCapture.active, true);
 	const width = geometry.targetWidth, height = geometry.targetHeight;
 	geometry.update(0, 0, width, height, width, height);
+	f.display.workspace.refresh();
 	assert.equal(pointerCapture.active, true, 'unchanged publication cannot interrupt a live gesture');
 	const column = input.context.view.cursorColumn, anchor = { ...input.context.view.selectionAnchor! }, source = model.buffer.getText();
-	geometry.update(40, 25, width, height, width, height);
+	if (change === 'display translation') geometry.update(40, 25, width, height, width, height);
+	else f.display.workspace.layout(1920, 1080);
 	assert.equal(pointerCapture.active, false);
 	f.native.apply([pointer(11), { type: 'button', button: 'primary', down: false }]);
 	assert.equal(pointerCapture.draining, false);
 	assert.equal(input.context.view.cursorColumn, column); assert.deepEqual(input.context.view.selectionAnchor, anchor);
 	assert.equal(pane.commandTarget.hasFocus, true); assert.equal(model.buffer.getText(), source); assert.equal(model.dirty, false);
+	await f.frame();
 	// A different start location begins a drag rather than a double-click on the original word.
 	f.native.apply([pointer(1), { type: 'button', button: 'primary', down: true }, pointer(11), { type: 'button', button: 'primary', down: false }]);
 	assert.equal(input.context.view.cursorColumn, 11);

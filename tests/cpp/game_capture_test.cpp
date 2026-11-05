@@ -1,13 +1,8 @@
 #include "render/video_presenter.h"
 #include "render/backend/gles2/backend.h"
 #include "render/backend/pass/library.h"
-#include "machine/devices/gx/device_output.h"
-#include "machine/cpu/cpu.h"
-#include "machine/memory/memory.h"
-#include "machine/devices/irq/controller.h"
-#include "machine/scheduler/device.h"
 #include "spec/bmsx/model.h"
-#include "support/cartridge_fixture.h"
+#include "support/gpu_output_fixture.h"
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <iostream>
@@ -25,24 +20,6 @@ public:
 	void setDisplaySize(i32 w, i32 h) override { visibleViewportBounds = RectBounds{0, 0, static_cast<f32>(w), static_cast<f32>(h), 0}; }
 };
 
-// Real device-output owners, with disabled display circuits and a fixed background.
-struct OutputFixture {
-	std::array<u8, 1> rom{};
-	Memory memory{MemoryInit{{rom.data(), 0u}, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes};
-	IrqController irq{memory};
-	ExecutionAddressSpace addressSpace{memory};
-	CPU cpu{memory, irq, addressSpace};
-	DeviceScheduler scheduler{cpu};
-	DmaController dma{memory, cpu, irq, scheduler};
-	GxGpuCommandBuffer commands{dma};
-	GxGpuReadbackPort readback{dma};
-	std::array<u32, GX_GPU_PCRTC_CONFIG_WORD_COUNT> words{};
-	GxGpuPcrtcTiming timing{};
-	GxGpuPcrtcScanout scanout{};
-	std::vector<u8> vram = std::vector<u8>(PSX_MACHINE_SPEC.gxGpuVramBytes);
-	GxGpuDeviceOutput output{commands, readback, words, timing, scanout, vram};
-};
-
 static RgbaImage capture(std::unique_ptr<GPUBackend> backend) {
 	TestVideoOutput video(65, 3);
 	backend->resizePresentationTarget(65, 3);
@@ -51,7 +28,7 @@ static RgbaImage capture(std::unique_ptr<GPUBackend> backend) {
 	bool unavailable = false;
 	try { presenter.captureGameFrame(); } catch (const std::runtime_error&) { unavailable = true; }
 	require(unavailable, "unpublished history must not return initial black pixels");
-	OutputFixture fixture;
+	test::GpuOutputFixture fixture;
 	fixture.scanout.backgroundColor = 0x00332211;
 	fixture.scanout.revision += 1;
 	presenter.configurePresentation(VideoPresenter::PresentationMode::Completed, true);
@@ -65,6 +42,8 @@ static RgbaImage capture(std::unique_ptr<GPUBackend> backend) {
 	}
 	// Held presentation changes host size and paints an opaque overlay, but not history.
 	presenter.setFixedRenderTargetSize(130, 6);
+	require(presenter.canvasSize.x == 65 && presenter.canvasSize.y == 3, "size selection does not allocate between presentations");
+	require(video.visibleViewportBounds.right == 65 && video.visibleViewportBounds.bottom == 3, "display geometry still describes the drawn target");
 	RectRenderSubmission fill;
 	fill.kind = RectRenderKind::Fill; fill.area = {.left = 0, .top = 0, .right = 130, .bottom = 6};
 	fill.color = 0xffffffff;
@@ -75,6 +54,7 @@ static RgbaImage capture(std::unique_ptr<GPUBackend> backend) {
 	fixture.scanout.revision += 1;
 	presenter.configurePresentation(VideoPresenter::PresentationMode::Partial, false);
 	presenter.present(fixture.output, 0, 0);
+	require(presenter.canvasSize.x == 130 && presenter.canvasSize.y == 6, "presentation allocates the selected size before drawing");
 	require(presenter.gameFrameSequence() == sequence, "UI repaint must not advance game-frame identity");
 	require(presenter.captureGameFrame().pixels == first.pixels, "overlay/partial frame must not contaminate completed history");
 	presenter.configurePresentation(VideoPresenter::PresentationMode::Completed, true);

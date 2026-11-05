@@ -21,9 +21,11 @@ export type GameFrameObserver = { committed(sequence: number): void };
 export class VideoPresenter {
 	private gameFrameObserver: GameFrameObserver | null = null;
 	public accessor default_font: BFont;
-	public viewportSize: vec2;
+	/** Selected logical size for the next composition. */
+	public readonly viewportSize: vec2;
 	public readonly visibleViewportBounds: Readonly<RectBounds>;
-	public canvasSize: vec2;
+	/** Allocated backing-buffer size; changes only when presenting. */
+	public readonly canvasSize: vec2;
 	public readonly nativeCtx: BackendContext;
 	public readonly backend: GPUBackend;
 	/** Native PCRTC source size, independent of the host presentation surface. */
@@ -112,7 +114,10 @@ export class VideoPresenter {
 
 	/** Machine output can change while a host surface owns the presentation size. */
 	public setScanoutSize(width: number, height: number): void {
-		if (!this.fixedRenderTargetSize) this.setRenderTargetSize(width, height);
+		if (!this.fixedRenderTargetSize) {
+			this.viewportSize.x = width;
+			this.viewportSize.y = height;
+		}
 		if (this.offscreenCanvasSize.x === width && this.offscreenCanvasSize.y === height) return;
 		this.offscreenCanvasSize.x = width;
 		this.offscreenCanvasSize.y = height;
@@ -121,31 +126,21 @@ export class VideoPresenter {
 
 	public setFixedRenderTargetSize(width: number, height: number): void {
 		this.fixedRenderTargetSize = true;
-		this.setRenderTargetSize(width, height);
+		this.viewportSize.x = width;
+		this.viewportSize.y = height;
 	}
 
 	public useScanoutRenderTargetSize(): void {
 		this.fixedRenderTargetSize = false;
-		this.setRenderTargetSize(this.offscreenCanvasSize.x, this.offscreenCanvasSize.y);
-	}
-
-	private setRenderTargetSize(width: number, height: number): void {
-		if (this.viewportSize.x === width && this.viewportSize.y === height) {
-			return;
-		}
-		this.viewportSize.x = width;
-		this.viewportSize.y = height;
-		this.canvasSize.x = width;
-		this.canvasSize.y = height;
-		this.backend.resizePresentationTarget(width, height);
-		this.output.setDisplaySize(width, height);
+		this.viewportSize.x = this.offscreenCanvasSize.x;
+		this.viewportSize.y = this.offscreenCanvasSize.y;
 	}
 
 	public mapDisplayPointToViewport(screenX: number, screenY: number, target: vec2): boolean {
 		return mapDisplayPointToViewport(
 			this.output.measureDisplay(),
-			this.viewportSize.x,
-			this.viewportSize.y,
+			this.canvasSize.x,
+			this.canvasSize.y,
 			screenX,
 			screenY,
 			target,
@@ -153,6 +148,15 @@ export class VideoPresenter {
 	}
 
 	public present(output: GxGpuDeviceOutput, timeSeconds: number, deltaSeconds: number): void {
+		// Size requests may arrive between frames. Allocate only when the new
+		// target will actually be drawn, retaining the old image in the meantime.
+		const width = this.viewportSize.x, height = this.viewportSize.y;
+		if (this.canvasSize.x !== width || this.canvasSize.y !== height) {
+			this.backend.resizePresentationTarget(width, height);
+			this.canvasSize.x = width;
+			this.canvasSize.y = height;
+			this.output.setDisplaySize(width, height);
+		}
 		this.backend.beginFrame();
 		try {
 			this.frame.time = timeSeconds;
