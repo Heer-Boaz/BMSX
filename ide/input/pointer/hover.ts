@@ -1,7 +1,9 @@
 import { KeyModifier } from '../../../hosts/common/input/text';
 import type { PointerCaptureScope } from './capture';
+import type { PointerCursor } from '../../../hosts/common/input/pointer_event';
 
 export interface PointerHoverTarget {
+	readonly pointerCursor?: PointerCursor;
 	onPointerEnter?(): void;
 	onPointerModifiersChanged?(modifiers: KeyModifier): void;
 	onPointerLeave(): void;
@@ -13,6 +15,8 @@ export class PointerHoverService {
 	private dispatchId = 0;
 	private routeScope: PointerCaptureScope | undefined;
 	private modifiers = KeyModifier.none;
+	private cursorTarget: PointerHoverTarget | undefined;
+	public get cursor(): PointerCursor { return this.cursorTarget?.pointerCursor ?? 'default'; }
 	private readonly updateModifiers = (_dispatchId: number, target: PointerHoverTarget): void => {
 		target.onPointerModifiersChanged?.(this.modifiers);
 	};
@@ -35,6 +39,7 @@ export class PointerHoverService {
 
 	/** Called by a control only after the normal input route accepts its hit. */
 	public visit(target: PointerHoverTarget): void {
+		this.cursorTarget = target;
 		const entered = !this.targets.has(target);
 		this.targets.set(target, this.dispatchId);
 		if (entered) target.onPointerEnter?.();
@@ -50,6 +55,7 @@ export class PointerHoverService {
 
 	/** Detach/hide revokes hover immediately, without waiting for another poll. */
 	public release(target: PointerHoverTarget): void {
+		if (this.cursorTarget === target) this.cursorTarget = undefined;
 		if (this.targets.delete(target)) target.onPointerLeave();
 	}
 

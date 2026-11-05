@@ -31,8 +31,7 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	check(picker.visible && picker.model.list.rows.map(row => row.item.label).join(',') === 'first,second', 'ordinary Actor Lab lists actual World membership');
 	await press('Enter'); await frame();
 	const lab = ide.editor.editorParts.activeGroup.model.activeTab; if (lab.kind !== 'actor_lab') throw new Error('Actor Lab required');
-	check(lab.outline.rows.length > 0 && lab.outline.rows.every(row => row.element.displayLabel.length > 0),
-		'opening an actor publishes measured, nonempty outline rows');
+	check(lab.outline.rows.length > 0, 'opening an actor publishes its inspection hierarchy');
 	const topology = lab.outline.rows.map(row => ({ label: row.element.node.label, kind: row.element.node.kind, active: row.element.node.active }));
 	const position = cycles(), heap = runtime.machine.cpu.luaHeap.usedBytes(), media = ide.sources.currentBlua32Media, version = source.version;
 	await renderer.capture!('ordinary-tree');

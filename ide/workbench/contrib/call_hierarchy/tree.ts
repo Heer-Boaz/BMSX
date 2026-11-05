@@ -15,7 +15,6 @@ export type CallHierarchyElement = {
 	readonly label: string;
 	readonly tooltip: string;
 	readonly status: string;
-	displayText: string;
 };
 
 /** One direction's lazy topology and reading state over an immutable query observation. */
@@ -44,7 +43,7 @@ export class CallHierarchyTree extends ScrollableWorkbenchTree<CallHierarchyElem
 		const text = node === undefined ? `${computeSourceLabel(resource.path)}:${range.start.line}`
 			: `${node.name} (${computeSourceLabel(resource.path)}:${range.start.line})`;
 		return { node, range, resource, text, label: node?.name ?? text, tooltip: node === undefined ? location : `${node.name}\n${location}`,
-			status: node === undefined ? location : `${node.name} | ${location}`, displayText: '' };
+			status: node === undefined ? location : `${node.name} | ${location}` };
 	}
 
 	private resolve(branch: WorkbenchTreeNode<CallHierarchyElement>): void {

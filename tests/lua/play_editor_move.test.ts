@@ -1,3 +1,4 @@
+import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -58,7 +59,7 @@ while true do game.updates=game.updates+1; halt_until_irq end`,
 	const clipboard = new HeadlessClipboard();
 	const externalWork = (): never => { throw new Error('Play editor movement does not request external work.'); };
 	const ide = new RuntimeIdeState(primary.runtime, host.presenter, { capture: externalWork }, externalWork,
-		{ measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) },
+		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) }),
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, clipboard,
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 800, height: 320 }, sources, new Map(), externalWork, externalWork,
 		(system, slots, model, channel, program) => {
@@ -230,7 +231,11 @@ test('Play physical Reset and Stop retire their exact moved Actor view without o
 	play.start(f.module, f.firstPart.activeGroup); const input = play.input!, first = input.handle; await f.ready(first);
 	f.editor.commands.execute('play.actors', f.firstPart.activeGroup.panes.activePane!.commandTarget); f.update();
 	const actors = f.firstPart.activeGroup.model.activeTab; assert.ok(actors?.kind === 'actor_lab');
-	assert.equal(actors.controller.viewport.transport, first.session!.transport); assert.equal(f.firstPart.quickInput.visible, true);
+	assert.equal(actors.controller.viewport.transport, first.session!.transport);
+	// Opening the Outliner no longer opens a picker implicitly. Exercise the
+	// departing pane's real picker attachment through its explicit command.
+	f.editor.commands.execute('actorLab.select', f.firstPart.activeGroup.panes.activePane!.commandTarget); f.update();
+	assert.equal(f.firstPart.quickInput.visible, true);
 	let retired = 0; actors.onWillDispose(() => { retired++; });
 	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, actors, { kind: 'group', group: f.secondPart.activeGroup }), true); f.update();
 	assert.equal(f.firstPart.quickInput.visible, false); assert.equal(f.secondPart.activeGroup.model.activeTab, actors);

@@ -16,15 +16,16 @@ export function drawCallHierarchy(input: CallHierarchyInput, bounds: Readonly<Re
 	const first = tree.scroll | 0, end = Math.min(tree.rows.length, first + layout.visibleRowCount);
 	for (let index = first; index < end; index++) {
 		const node = tree.rows[index], selected = index === tree.selectionIndex;
-		const y = layout.contentTop + (index - first) * layout.rowHeight, x = layout.contentLeft + node.depth * layout.indentWidth;
+		const y = layout.contentTop + (index - first) * layout.rowHeight, x = tree.rowLeft + node.depth * layout.indentWidth;
 		const ink = selected ? focused ? colors.COLOR_SELECTION_TEXT : colors.COLOR_INACTIVE_SELECTION_TEXT : colors.COLOR_RESOURCE_VIEWER_TEXT;
 		if (selected) api.fill_rect(layout.contentLeft, y, layout.contentRight, y + layout.rowHeight, 0, focused ? colors.SELECTION_OVERLAY : colors.INACTIVE_SELECTION_OVERLAY);
 		else if (index === tree.hoverIndex) api.fill_rect(layout.contentLeft, y, layout.contentRight, y + layout.rowHeight, 0, colors.HIGHLIGHT_OVERLAY);
 		if (node.expandable) drawWorkbenchIcon(node.collapsed ? 'chevronRight' : 'chevronDown',
 			x + ((layout.twistieWidth - WORKBENCH_ICON_SIZE) >> 1), y + ((layout.rowHeight - WORKBENCH_ICON_SIZE) >> 1), ink);
-		api.blit_text_inline_with_font(node.element.displayText, x + layout.twistieWidth, y + 2, 0, ink, font);
+		api.blit_text_inline_with_font(node.element.text, x + layout.twistieWidth, y + 2, 0, ink, font);
 	}
 	api.popClipRect();
 	tree.scrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
+	tree.horizontalScrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
 	api.popClipRect();
 }

@@ -1,3 +1,4 @@
+import { WORKSPACE_UI_SCALES } from '../workbench/common/display_scale';
 import { findEditorGroup } from '../workbench/services/editor/editor_group';
 import { chooseBuild, chooseBuildOutput, showBuildJobs } from '../workbench/contrib/builds/commands';
 import { createCartridge } from '../workbench/contrib/projects/commands';
@@ -145,6 +146,12 @@ export class IdeCommandController {
 			return;
 		}
 		switch (command) {
+			case 'workspace.uiScale':
+				this.editor.quickInput.pick('UI SCALE', 'Scale Studio controls, not the game', () => new TextQuickPickProvider(
+					WORKSPACE_UI_SCALES.map(scale => ({ scale, label: `${scale * 100}%`,
+						description: scale === this.editor.uiScale ? 'Current' : '', detail: '' }))),
+					choice => this.editor.setUiScale(choice.scale));
+				return;
 			case 'workspace.resetLayout': this.editor.resetLayout(); return;
 			case 'sceneEditor': showMainScenePicker(this.editor, this.sources.catalog, invocationTarget); return;
 			case 'workspace.focusNextRegion': this.editor.regionNavigation.focus(invocationTarget, 1); return;
@@ -433,7 +440,7 @@ export class IdeCommandController {
 		}
 		if (input !== undefined && !group.model.contains(input)) return false;
 		switch (command) {
-			case 'workspace.resetLayout': return this.editor.acceptsInput;
+			case 'workspace.uiScale': case 'workspace.resetLayout': return this.editor.acceptsInput;
 			case 'sceneEditor': return this.editor.isActive && this.editor.projectContent.acceptingQueries;
 			case 'window.showAll': case 'window.focusMain': case 'window.newEditor': return true;
 			case 'workspace.focusNextRegion': return this.editor.isActive && this.editor.regionNavigation.canNavigate(focus, 1);

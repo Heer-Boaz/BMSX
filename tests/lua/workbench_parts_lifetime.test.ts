@@ -1,3 +1,4 @@
+import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
 import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 import type { SourceStackTraceFrame } from '../../ide/runtime/stack_trace';
 import { TEST_CARTRIDGE_CONTEXT_IDS, TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
@@ -64,7 +65,7 @@ function fixture(t: TestContext, source = 'local value = 42\nreturn value') {
 	const unused = (): never => { throw new Error('Part lifetime does not request external domain work.'); };
 	const clipboard = new HeadlessClipboard();
 	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: unused }, unused,
-		{ measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) },
+		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) }),
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, clipboard,
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;

@@ -20,7 +20,7 @@ import type { MicrotaskQueue } from '../common/microtask_queue';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
 import type { WorkspaceRecordProvider } from '../workspace/record_provider';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
-import type { EditorDisplay, Viewport } from '../common/viewport';
+import type { WorkbenchDisplay, Viewport } from '../common/viewport';
 import * as constants from '../common/constants';
 import {
 	HOST_IDE_BUTTON,
@@ -54,7 +54,7 @@ export async function initializeIdeFeatures(
 	presenter: VideoPresenter,
 	gameCapture: GameImageCapture,
 	decodeImage: ImageDecoder,
-	display: EditorDisplay,
+	display: WorkbenchDisplay,
 	input: Input,
 	audioOutput: HostAudioOutput,
 	runtimeTasks: RuntimeTaskQueue,

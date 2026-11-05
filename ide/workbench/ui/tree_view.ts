@@ -17,6 +17,7 @@ export type WorkbenchTreeNode<Element> = {
 export type WorkbenchTreeLayout = WorkbenchListLayout & { indentWidth: number; twistieWidth: number };
 export type WorkbenchTreeState<Element> = WorkbenchListState<WorkbenchTreeNode<Element>, WorkbenchTreeLayout> & {
 	readonly roots: WorkbenchTreeNode<Element>[];
+	readonly scrollLeft?: number;
 	/** Invalidate retained row extents after topology, labels or disclosure change. */
 	onDidChangeRows?(): void;
 };
@@ -112,7 +113,7 @@ export function navigateWorkbenchTree<Element>(state: WorkbenchTreeState<Element
 }
 
 /** The caller supplies the row found by the shared list hit test. */
-export function workbenchTreeTwistieContainsPosition<Element>(state: WorkbenchTreeState<Element>, index: number, viewportX: number, scrollLeft = 0): boolean {
+export function workbenchTreeTwistieContainsPosition<Element>(state: WorkbenchTreeState<Element>, index: number, viewportX: number, scrollLeft = state.scrollLeft ?? 0): boolean {
 	const node = state.rows[index];
 	const left = state.layout.contentLeft - Math.round(scrollLeft) + node.depth * state.layout.indentWidth;
 	return node.expandable && viewportX >= left && viewportX < left + state.layout.twistieWidth;

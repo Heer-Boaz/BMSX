@@ -1,12 +1,14 @@
 import { clamp } from '../../../machine/ts/common/clamp';
 import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../machine/ts/common/rect';
-import { SCROLLBAR_MIN_THUMB_HEIGHT } from '../../common/constants';
+import { SCROLLBAR_MIN_THUMB_HEIGHT, SCROLLBAR_THUMB_HOVER_COLOR, SCROLLBAR_THUMB_ACTIVE_COLOR } from '../../common/constants';
 import { api } from '../../runtime/overlay_api';
 
 export type ScrollbarDragStart = { readonly pointer: number; readonly scroll: number; readonly scale: number };
 
 /** Retained thumb geometry. Content coordinates need not be pixels (vertical code scrolling uses rows). */
 export class Scrollbar {
+	public hovered = false;
+	public dragging = false;
 	public revision = 0;
 	private readonly trackListeners = new Set<() => void>();
 	private readonly scrollListeners = new Set<() => void>();
@@ -82,6 +84,8 @@ export class Scrollbar {
 
 	public draw(trackColor: number, thumbColor: number): void {
 		if (!this.visible) return;
+		if (this.dragging) thumbColor = SCROLLBAR_THUMB_ACTIVE_COLOR;
+		else if (this.hovered) thumbColor = SCROLLBAR_THUMB_HOVER_COLOR;
 		api.fill_rect(this.track.left, this.track.top, this.track.right, this.track.bottom, 0, trackColor);
 		api.fill_rect(this.thumb.left, this.thumb.top, this.thumb.right, this.thumb.bottom, 0, thumbColor);
 	}

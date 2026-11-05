@@ -101,3 +101,14 @@ test('a delayed frontend restore retains its records owner rather than a reused 
 	assert.equal(f.model.dirty, true);
 	assert.equal(restored, false);
 });
+
+test('UI scale is checkpointed with the device session, without modifying authored source', async t => {
+	const f = await fixture(t);
+	f.release.resolve(); assert.equal(await f.restoring, true);
+	f.editor.setUiScale(1.5);
+	await runWorkspaceAutosaveTick();
+	const recovered: WorkspaceAutosavePayload = JSON.parse(f.files.records.get(f.statePath)!.contents);
+	assert.equal(recovered.uiScale, 1.5);
+	assert.equal(f.model.buffer.getText(), f.draft);
+	assert.equal(f.files.records.get('first.lua')!.contents, f.source);
+});

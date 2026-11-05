@@ -8,6 +8,35 @@ import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import type { PointerInputSnapshot } from '../../ide/common/models';
 import { api } from '../../ide/runtime/overlay_api';
+import { PointerHoverService } from '../../ide/input/pointer/hover';
+import * as colors from '../../ide/common/constants';
+
+test('shared scrollbar feedback follows hover, capture, release and track retirement', t => {
+	const capture = new PointerCaptureService(), hover = new PointerHoverService();
+	const control = new ScrollbarPointerControl(capture, undefined, hover), bar = new Scrollbar('vertical');
+	t.after(() => control.cancelPointer());
+	const draw = t.mock.method(api, 'fill_rect', () => {});
+	const ink = () => { bar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR); return draw.mock.calls.at(-1)!.arguments[5]; };
+	bar.layout({ left: 0, right: 5, top: 0, bottom: 100 }, 400, 100, 0);
+	const pointer = { valid: true, insideViewport: true, viewportX: 2, viewportY: 5,
+		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0 };
+	const idle = ink();
+	hover.beginDispatch(); control.handlePointer(pointer, bar); hover.endDispatch();
+	assert.equal(ink(), colors.SCROLLBAR_THUMB_HOVER_COLOR);
+	assert.notEqual(ink(), idle, 'a hover has visible feedback without taking keyboard focus');
+	control.handlePointer({ ...pointer, pressedButtons: 1, justPressedButtons: 1 }, bar);
+	hover.beginDispatch(); hover.endDispatch();
+	assert.equal(bar.hovered, false);
+	assert.equal(ink(), colors.SCROLLBAR_THUMB_ACTIVE_COLOR, 'capture retains feedback outside the track');
+	control.releaseCapturedPointer(pointer);
+	assert.equal(capture.active, false);
+	assert.equal(bar.dragging, false);
+	assert.equal(ink(), colors.SCROLLBAR_THUMB_HOVER_COLOR);
+	bar.layout({ left: 0, right: 5, top: 0, bottom: 100 }, 10, 100, 0);
+	assert.equal(hover.has(control), false);
+	assert.equal(bar.hovered, false);
+	assert.equal(bar.isVisible(), false);
+});
 
 for (const orientation of ['vertical', 'horizontal'] as const) test(`${orientation} scrollbar paints neither track nor thumb without an available scroll range`, t => {
 	const draw = t.mock.method(api, 'fill_rect', () => {});
@@ -77,6 +106,8 @@ for (const orientation of ['horizontal', 'vertical'] as const) {
 		capture.dispatch(release, false, 40);
 		assert.equal(bar.getScroll(), 300); assert.equal(capture.active, false);
 		assert.equal(control.handlePointer(event(60, 0, primary, primary), bar), true, 'a coalesced track click completes immediately');
+		assert.equal(bar.hovered, true, 'coalesced and ordinary releases retain the same track hover');
+		assert.equal(bar.dragging, false);
 		assert.equal(bar.getScroll(), 150); assert.equal(capture.active, false);
 		control.handlePointer(event(60, primary, primary), bar);
 		bar.layout(track, 500, 100, 150);

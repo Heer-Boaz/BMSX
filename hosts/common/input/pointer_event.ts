@@ -1,5 +1,7 @@
 import type { KeyModifier } from './text';
 
+export type PointerCursor = 'default' | 'col-resize' | 'row-resize' | 'ew-resize' | 'ns-resize' | 'nwse-resize' | 'nesw-resize';
+
 /** Host UI pointer bits follow DOM button masks, independently of guest device words. */
 export const enum PointerButton { Primary = 1, Secondary = 2, Auxiliary = 4 }
 

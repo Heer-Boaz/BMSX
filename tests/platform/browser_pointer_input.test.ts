@@ -9,11 +9,19 @@ import { BrowserHostClock } from './hosts/browser/timing';
 import { BrowserTextInput } from './hosts/browser/text_input';
 import { inputFocus } from './ide/input/focus';
 import { TextField } from './ide/editor/ui/inline/text_field_model';
+import { SingleLineFieldViewport } from './ide/editor/ui/inline/single_line_viewport';
+import { EditorFont } from './ide/editor/ui/view/font';
 import { applyInlineFieldEditing, applyInlineFieldPointer, setFieldText } from './ide/editor/ui/inline/text_field';
 export function start() {
 	const canvas = document.querySelector('canvas')!;
 	const fields = [new TextField(), new TextField()];
 	setFieldText(fields[0], 'alpha'); setFieldText(fields[1], 'beta');
+	const metrics = { advanceChar: () => 8, spaceAdvance: 8, tabSpaces: 4 }, font = new EditorFont('msx');
+	const views = fields.map((field, index) => {
+		const view = new SingleLineFieldViewport();
+		view.layout(field, { left: index * 200 - 3, top: 0, right: (index + 1) * 200, bottom: 20 }, metrics, font);
+		return view;
+	});
 	for (const field of fields) field.focusTarget.bindKeyboard(event => applyInlineFieldEditing(event, field));
 	const host = {
 		get textTarget() { return inputFocus.target?.textInput; },
@@ -38,8 +46,8 @@ export function start() {
 		const field = fields[index];
 		if ((event.pressedButtons & 1) !== 0) field.focusTarget.focus();
 		if (field.focusTarget.hasFocus) {
-			applyInlineFieldPointer(field, { metrics: { advanceChar: () => 8, spaceAdvance: 8, tabSpaces: 4 },
-				textLeft: index * 200, pointerX: event.x, justPressed: (event.pressedButtons & 1) !== 0,
+			applyInlineFieldPointer(field, { metrics,
+				textLeft: views[index].textLeft, pointerX: event.x, justPressed: (event.pressedButtons & 1) !== 0,
 				pointerPressed: (event.buttons & 1) !== 0, doubleClickInterval: 250 });
 			inputFocus.notifyTargetChanged();
 		}

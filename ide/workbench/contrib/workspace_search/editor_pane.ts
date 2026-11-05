@@ -32,12 +32,12 @@ import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
-import { revealWorkbenchListSelection, scrollWorkbenchList, workbenchListContainsPosition, workbenchListRowIndexAtPosition } from '../../ui/list_view';
+import { revealWorkbenchListSelection, workbenchListRowIndexAtPosition } from '../../ui/list_view';
 import { ScrollbarPointerControl } from '../../ui/scrollbar_pointer';
 import { workbenchTreeTwistieContainsPosition } from '../../ui/tree_view';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 import type { WorkspaceSearchInput } from './editor_input';
-import { WorkspaceSearchPresentation, drawWorkspaceSearch } from './render';
+import { drawWorkspaceSearch } from './render';
 import { WorkspaceSearchNavigationSelection } from './view_snapshot';
 
 const TREE_KEYS = [['ArrowUp', 'up'], ['ArrowDown', 'down'], ['ArrowLeft', 'left'], ['ArrowRight', 'right'],
@@ -55,7 +55,6 @@ export class WorkspaceSearchPane extends WorkbenchViewEditorPane<WorkspaceSearch
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly scrollbar = new ScrollbarPointerControl(pointerCapture);
 	private readonly tooltip = new WorkbenchTooltip();
-	private readonly presentation = new WorkspaceSearchPresentation();
 	private readonly field = new TextField(this.focusTarget, { allowSpace: true, singleLine: true });
 	private readonly fieldViewport = new SingleLineFieldViewport();
 	private readonly fieldBounds = create_rect_bounds();
@@ -136,7 +135,7 @@ export class WorkspaceSearchPane extends WorkbenchViewEditorPane<WorkspaceSearch
 			if (this.field.text !== input.query) setFieldText(this.field, input.query, true);
 			this.clicks.clear(); this.actions.cancelPointer(); this.tooltip.hide();
 		});
-		this.actions.setInput(input.actions, this.focusTarget); this.presentation.reset(); this.update();
+		this.actions.setInput(input.actions, this.focusTarget); this.input.presentation.reset(); this.update();
 	}
 	public override clearInput(): void {
 		this.input.queryCursor = this.field.cursorColumn; this.input.queryAnchor = this.field.selectionAnchor?.column;
@@ -157,9 +156,10 @@ export class WorkspaceSearchPane extends WorkbenchViewEditorPane<WorkspaceSearch
 		const top = Math.min(bounds.bottom, bounds.top + 2);
 		write_rect_bounds(this.fieldBounds, bounds.left + 4, top, Math.max(bounds.left + 4, input.actions.bounds.left - 4), Math.min(bounds.bottom, top + rowHeight));
 		this.fieldViewport.layout(this.field, this.fieldBounds, editorViewState.inlineFieldMetricsRef, font);
+		this.input.presentation.measure(font);
 		input.tree.updateLayout(bounds.left + 4, Math.min(bounds.bottom, this.fieldBounds.bottom + rowHeight + 6), bounds.right, bounds.bottom,
 			rowHeight, Math.max(font.advance(' ') * 2, WORKBENCH_ICON_SIZE + 4));
-		this.presentation.update(input, font); this.actions.update();
+		this.input.presentation.update(font); this.actions.update();
 		const hint = this.actions.tooltipItem;
 		const hovered = input.tree.rows[input.tree.hoverIndex];
 		if (hint !== undefined) this.tooltip.show(hint.tooltip, hint.bounds, font.renderFont(), measureTextRange, measureText, this.workArea);
@@ -196,7 +196,8 @@ export class WorkspaceSearchPane extends WorkbenchViewEditorPane<WorkspaceSearch
 		if (isKeyJustPressed('Escape', event)) { consumeIdeKey('Escape', event); this.focusQuery(); }
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean, now: number): boolean {
-		if (this.actions.handlePointer(snapshot) || this.scrollbar.handlePointer(snapshot, this.input.tree.scrollbar)) return true;
+		if (this.actions.handlePointer(snapshot) || this.scrollbar.handlePointer(snapshot, this.input.tree.scrollbar)
+			|| this.scrollbar.handlePointer(snapshot, this.input.tree.horizontalScrollbar)) return true;
 		if (snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.fieldBounds)) {
 			const input = this.input, scope = this.field.focusTarget.scope, generation = scope.contextGeneration;
 			if (justPressed && (!this.field.focusTarget.focus() || !this.hasInput || this.input !== input
@@ -242,8 +243,8 @@ export class WorkspaceSearchPane extends WorkbenchViewEditorPane<WorkspaceSearch
 	}
 	public handleWheel(event: WheelInputSnapshot): void {
 		const tree = this.input.tree;
-		if (workbenchListContainsPosition(tree, event.viewportX, event.viewportY)) { scrollWorkbenchList(tree, event.deltaY * 3); this.tooltip.hide(); }
+		if (tree.handleWheel(event)) this.tooltip.hide();
 	}
-	public draw(): void { drawWorkspaceSearch(this.input, this.presentation, this.contentBounds, this.field, this.fieldViewport, this.fieldBounds, this.focusTarget.hasFocus); }
+	public draw(): void { drawWorkspaceSearch(this.input, this.input.presentation, this.contentBounds, this.field, this.fieldViewport, this.fieldBounds, this.focusTarget.hasFocus); }
 	public updateStatus(): void {}
 }

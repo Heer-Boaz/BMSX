@@ -1,3 +1,4 @@
+import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { setImmediate } from 'node:timers/promises';
@@ -52,7 +53,7 @@ async function fixture(t: TestContext) {
 	const files = new MemoryWorkspaceFiles('workspace'); await openWorkspaceRecords(files);
 	const unused = (): never => { throw new Error('Choosing authored Main work does not request external execution.'); };
 	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: unused }, unused,
-		{ measureDisplay: () => ({ left: 0, top: 0, width: 800, height: 320 }) },
+		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: 800, height: 320 }) }),
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 800, height: 320 }, sources, new Map(), unused, unused, unused,
 		undefined, undefined, workspaceRecords!);

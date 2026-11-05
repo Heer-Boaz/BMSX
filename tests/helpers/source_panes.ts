@@ -1,3 +1,4 @@
+import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
 import { afterTest } from './test_cleanup';
 import { measureText, measureTextRange } from '../../ide/editor/common/text/layout';
 import { clearBackgroundTasks, runBackgroundTasks } from '../../ide/common/background_tasks';
@@ -43,7 +44,7 @@ export function createActualSourcePanes(t: TestContext, sameModel = false, addit
 	const externalWork = (): never => { throw new Error('Source pane acceptance does not request external work.'); };
 	const clipboard = new HeadlessClipboard();
 	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: externalWork }, externalWork,
-		{ measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) },
+		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) }),
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, clipboard,
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 800, height: 320 }, sources, new Map(), createGraphLayoutEngine ?? externalWork, externalWork, externalWork,
 		undefined, undefined, workspaceFiles);

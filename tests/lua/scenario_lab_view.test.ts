@@ -1,3 +1,4 @@
+import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
@@ -768,7 +769,7 @@ test('Scenario controller refresh, wheel and status rendering retain the actual 
 		createScenarioTestSourceRecord(`suite_${index}_assert.lua`, index)));
 	const unused = (): never => { throw new Error('Scenario layout does not execute domain work.'); };
 	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: unused }, unused,
-		{ measureDisplay: () => ({ left: 0, top: 0, width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT }) },
+		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT }) }),
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT },
 		sources, new Map(), unused, unused, unused);

@@ -35,6 +35,9 @@ export class WorkbenchSplitControl implements PointerCaptureTarget, PointerHover
 	}
 	public get input(): WorkbenchSashView | undefined { return this.inputValue; }
 	public get dragging(): boolean { return this.pointerOffset !== undefined; }
+	public get pointerCursor(): 'col-resize' | 'row-resize' {
+		return this.inputValue!.orientation === 'horizontal' ? 'col-resize' : 'row-resize';
+	}
 	public get interactionActive(): boolean { return this.keyboardResize !== undefined; }
 	public get statusItems(): readonly WorkbenchStatusItem[] { return this.interactionActive ? RESIZE_STATUS : EMPTY_STATUS_ITEMS; }
 	public updateStatus(): void {}

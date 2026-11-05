@@ -1,3 +1,4 @@
+import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
@@ -17,7 +18,7 @@ function fixture(t: TestContext) {
 		can_boot_from_source: false, revision: 0 }, [null, null], SYSTEM_RESOURCE_DOMAIN);
 	const unused = (): never => { throw new Error('Guest frame arrangement does not request domain execution.'); };
 	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: unused }, unused,
-		{ measureDisplay: () => ({ left: 0, top: 0, width: 640, height: 480 }) }, host.input, host.audio, host.tasks,
+		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: 640, height: 480 }) }), host.input, host.audio, host.tasks,
 		host.execution, host.rewind, host.clock, new HeadlessClipboard(), new IdeMicrotaskQueue(), { log() {} }, 0.3,
 		{ width: 640, height: 480 }, sources, new Map(), unused, unused, unused);
 	editorRuntimeState.active = true;

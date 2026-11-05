@@ -1,3 +1,4 @@
+import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
 import assert from 'node:assert/strict';
 import test, { after, before, afterEach, beforeEach, type TestContext } from 'node:test';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -65,7 +66,7 @@ async function fixture(t: TestContext) {
 	const targets: OffscreenMachine<TestInput>[] = [];
 	const externalWork = (): never => { throw new Error('Scenario movement must not request unrelated host work.'); };
 	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: externalWork }, externalWork,
-		{ measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) },
+		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) }),
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 800, height: 320 }, sources, new Map(), externalWork,
 		(bios, cartridges, model, input) => { const target = new OffscreenMachine(bios, cartridges, model, input); targets.push(target); return target; }, externalWork);

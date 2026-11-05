@@ -61,7 +61,7 @@ test('viewport overlays switch the actual view, report checked modes and do not 
 	action('actorLab.viewOptions'); choose('sceneViewport.view3d');
 	action('actorLab.cameraOptions'); choose('sceneViewport.orbit');
 	action('actorLab.viewOptions'); choose('sceneViewport.view2d');
-	assert.equal(view.navigation, 'select', 'a 3D-only gesture is retired when returning to 2D');
+	assert.equal(view.navigationTool, 'select', 'a 3D-only gesture is retired when returning to 2D');
 	action('actorLab.viewOptions');
 	editor.editorParts.clear();
 	assert.equal(editor.contextMenu.visible, false, 'detaching the viewport retires its open menu');

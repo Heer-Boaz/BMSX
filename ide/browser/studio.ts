@@ -189,6 +189,7 @@ async function startBrowserStudio(): Promise<void> {
 		const canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
 		const ui = new StudioUiService(() => captureCanvasImage(canvas), presenter.canvasSize, options.videoOutput, ide.models);
 		const textInput = new BrowserTextInput(canvas, ide.editor);
+		const unbindTextLayout = options.videoOutput.onDidLayout(textInput.layout);
 		options.browserInput.setNativeKeyHandler(textInput.handleKey);
 		options.browserInput.setNativePointerHandler(event => ide.editor.dispatchPointer(event));
 		options.browserInput.setNativeWheelHandler(event => ide.editor.dispatchWheel(event));
@@ -214,6 +215,7 @@ async function startBrowserStudio(): Promise<void> {
 				options.browserInput.setNativePointerHandler(undefined);
 				options.browserInput.setNativeWheelHandler(undefined);
 				textInput.dispose();
+				unbindTextLayout();
 				ui.dispose();
 				browserFiles?.close();
 			}

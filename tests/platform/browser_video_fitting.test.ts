@@ -34,10 +34,12 @@ const fixture = (async () => {
 		stdin: { contents: `export { BrowserOnscreenGamepad } from './hosts/browser/onscreen_gamepad';
 export { BrowserOnscreenGamepadView } from './hosts/browser/onscreen_gamepad_view';
 export { BrowserVideoOutput } from './hosts/browser/video_output';
+export { BrowserTextInput } from './hosts/browser/text_input';
 export { BrowserInputHub } from './hosts/browser/input';
 export { BrowserHostClock } from './hosts/browser/timing';
 export { Input } from './hosts/common/input/manager';
 export { createInputControllerSnapshot } from './machine/ts/machine/devices/input/contracts';
+export { workbenchPixelsPerUnit } from './ide/workbench/common/display_scale';
 export { mapDisplayPointToViewport } from './machine/ts/render/video_output';`, resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'videoFixture', write: false, tsconfig: 'tsconfig.base.json',
 	});
@@ -449,4 +451,113 @@ test('native clip hit testing excludes hidden pixels but preserves visible point
 	}
 	await page.evaluate(() => (globalThis as any).videoProbe.dispose());
 	assert.deepEqual(errors, []);
+});
+
+for (const viewport of [{ width: 1920, height: 1080, logicalWidth: 640 }, { width: 3840, height: 2160, logicalWidth: 1280 },
+	{ width: 390, height: 844, logicalWidth: 384 }])
+	test(`adaptive workspace uses the host area at ${viewport.width}x${viewport.height}, without changing game fitting`, async t => {
+		const browser = await chromium.launch(); t.after(() => browser.close());
+		for (const dpr of [1, 3]) {
+			const page = await openFixture(browser, dpr, viewport, false, [0, 0, 0, 0], 'overscan');
+			try {
+				const game = await measure(page);
+				await page.evaluate(() => {
+					const { video } = (globalThis as any).videoProbe;
+					const canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
+					const probe = (globalThis as any).videoProbe;
+					probe.uiScale = 1;
+					video.workspace.open((availableWidth: number, availableHeight: number) => {
+						const scale = (globalThis as any).videoFixture.workbenchPixelsPerUnit(availableWidth, probe.uiScale);
+						video.workspace.pixelsPerUnit = scale;
+						canvas.width = Math.trunc(availableWidth / scale); canvas.height = Math.trunc(availableHeight / scale);
+						video.setDisplaySize(canvas.width, canvas.height);
+					});
+					video.setPointerCursor('col-resize');
+				});
+				await settle(page);
+				const workspace = await measure(page);
+				assert.equal(workspace.clip, 'none', 'game overscan must not crop editor chrome');
+				assert.ok(Math.abs(workspace.style.width - viewport.width) < 3);
+				assert.ok(Math.abs(workspace.style.height - viewport.height) < 3);
+				assert.equal(workspace.backing[0], viewport.logicalWidth,
+					'DPR does not change logical UI size; larger desktop areas add working space');
+				const cursor = await page.evaluate(() => getComputedStyle(document.getElementById('gamescreen')!).cursor);
+				assert.equal(cursor, 'col-resize', 'the host publishes the shared input owner cursor');
+				await page.evaluate(() => { const probe = (globalThis as any).videoProbe; probe.uiScale = 1.25; probe.video.workspace.refresh(); });
+				await settle(page);
+				const scaled = await measure(page);
+				assert.ok(scaled.backing[0] < workspace.backing[0]);
+				assert.ok(Math.abs(scaled.style.width - viewport.width) < 4);
+				await page.setViewportSize({ width: viewport.width - 80, height: viewport.height - 60 });
+				await settle(page);
+				const resized = await measure(page);
+				assert.ok(Math.abs(resized.style.width - (viewport.width - 80)) < 4,
+					'the real resize observer updates workspace allocation and display transform');
+				await page.setViewportSize(viewport); await settle(page);
+				await page.evaluate(() => {
+					const { video } = (globalThis as any).videoProbe;
+					video.workspace.close(); video.setPointerCursor('default');
+					const canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
+					canvas.width = 320; canvas.height = 240;
+					video.setDisplaySize(320, 240); video.refreshLayout();
+				});
+				const resumed = await measure(page);
+				assert.deepEqual(resumed.style, game.style, 'game aspect, fit policy and target return unchanged');
+				assert.deepEqual(resumed.visibleViewport, game.visibleViewport);
+			} finally { await page.evaluate(() => (globalThis as any).videoProbe.dispose()); await page.close(); }
+		}
+	});
+
+
+test('native text composition follows the published canvas transform even when logical workspace size does not change', async t => {
+	const browser = await chromium.launch(); t.after(() => browser.close());
+	const page = await openFixture(browser, 2, { width: 800, height: 600 }, false, [0, 0, 0, 0], 'fit');
+	await page.evaluate(() => {
+		const api = (globalThis as any).videoFixture, probe = (globalThis as any).videoProbe;
+		const canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
+		probe.video.workspace.open((width: number, height: number) => {
+			const scale = api.workbenchPixelsPerUnit(width, 1);
+			probe.video.workspace.pixelsPerUnit = scale;
+			canvas.width = Math.trunc(width / scale); canvas.height = Math.trunc(height / scale);
+			probe.video.setDisplaySize(canvas.width, canvas.height);
+		});
+		const caret = { x: 32, y: 24, width: 1, height: 8 }, edits: string[] = [];
+		let text = '';
+		const target = { revision: 0, readOnly: false, caretRect() { return caret; },
+			readText() { return { text, selectionStart: text.length, selectionEnd: text.length, offset: 0 }; },
+			setSelection() {}, replaceText(from: number, to: number, value: string) {
+				text = text.slice(0, from) + value + text.slice(to); edits.push(value); target.revision++; return true;
+			} };
+		const input = new api.BrowserTextInput(canvas, { textTarget: target, dispatchKey() { return false; },
+			cancelInput() {}, cancelPointerInput() {}, onDidChangeTarget() { return () => {}; } });
+		const unbind = probe.video.onDidLayout(input.layout);
+		(globalThis as any).nativeTransform = { input, caret, edits, textarea: document.querySelector('textarea'),
+			dispose() { unbind(); input.dispose(); probe.dispose(); } };
+	});
+	try {
+		await settle(page);
+		const cdp = await page.context().newCDPSession(page);
+		await cdp.send('Input.imeSetComposition', { text: '日本', selectionStart: 2, selectionEnd: 2 });
+		const before = await measure(page);
+		await page.setViewportSize({ width: 400, height: 300 }); await settle(page);
+		const after = await measure(page);
+		assert.deepEqual(after.backing, before.backing, 'this host resize changes only the presentation transform');
+		const anchor = await page.evaluate(() => {
+			const context = (globalThis as any).nativeTransform;
+			context.input.refresh(); // Ordinary Studio frame refresh cannot depend on a document/caret change.
+			const canvas = document.getElementById('gamescreen') as HTMLCanvasElement, rect = canvas.getBoundingClientRect();
+			const textarea = document.querySelector('textarea')!, box = textarea.getBoundingClientRect(), caret = context.caret;
+			return { actual: [box.left, box.top, box.height],
+				expected: [rect.left + caret.x * rect.width / canvas.width, rect.top + caret.y * rect.height / canvas.height,
+					caret.height * rect.height / canvas.height], same: context.textarea === textarea,
+				focused: document.activeElement === textarea, pending: textarea.value, edits: context.edits };
+		});
+		// This geometry is the IME candidate anchor contract, not a UI screenshot oracle.
+		for (let index = 0; index < anchor.actual.length; index++) assert.ok(Math.abs(anchor.actual[index] - anchor.expected[index]) < cssTolerance,
+			'native IME geometry must follow the final canvas transform, not the earlier window resize event');
+		assert.ok(anchor.same && anchor.focused, 'layout must not retire the focused native composition');
+		assert.equal(anchor.pending, '日本'); assert.deepEqual(anchor.edits, []);
+		await cdp.send('Input.insertText', { text: '日本' });
+		assert.deepEqual(await page.evaluate(() => (globalThis as any).nativeTransform.edits), ['日本']);
+	} finally { await page.evaluate(() => (globalThis as any).nativeTransform.dispose()); await page.close(); }
 });

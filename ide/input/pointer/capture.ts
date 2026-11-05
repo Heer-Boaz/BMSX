@@ -1,4 +1,4 @@
-import { PointerButton } from '../../../hosts/common/input/pointer_event';
+import { PointerButton, type PointerCursor } from '../../../hosts/common/input/pointer_event';
 import type { PointerInputSnapshot, PointerSnapshot, WheelInputSnapshot } from '../../common/models';
 import type { GuestInputBinding } from '../focus';
 import type { KeyModifier } from '../../../hosts/common/input/text';
@@ -7,6 +7,7 @@ export type PointerCaptureScope = symbol;
 export const WORKBENCH_POINTER_SCOPE: PointerCaptureScope = Symbol('workbench');
 
 export interface PointerCaptureTarget {
+	readonly pointerCursor?: PointerCursor;
 	handleCapturedPointer(snapshot: PointerInputSnapshot, now: number): void;
 	releaseCapturedPointer(snapshot: PointerInputSnapshot, now: number): void;
 	cancelPointer(): void;
@@ -27,6 +28,7 @@ export class PointerCaptureService {
 	private guest: GuestInputBinding | undefined;
 
 	public get active(): boolean { return this.target !== null; }
+	public get cursor(): PointerCursor { return this.target?.pointerCursor ?? 'default'; }
 	public get routeScope(): PointerCaptureScope | undefined { return this.route; }
 	public get draining(): boolean { return this.drain; }
 	public get guestBinding(): GuestInputBinding | undefined { return this.guest; }

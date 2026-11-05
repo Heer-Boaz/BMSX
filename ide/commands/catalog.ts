@@ -32,6 +32,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'resources.open': { category: 'Files', title: 'Open' },
 	'workspace.focusPrimary': { category: 'Workspace', title: 'Focus Primary Authoring' },
 	'workspace.clearPrimary': { category: 'Workspace', title: 'Clear Primary Authoring' },
+	'workspace.uiScale': { category: 'View', title: 'UI Scale...' },
 	'workspace.resetLayout': { category: 'Workspace', title: 'Reset Layout' },
 	'workspace.hierarchy.focus': { category: 'Workspace', title: 'Focus Hierarchy' },
 	'workspace.details.focus': { category: 'Workspace', title: 'Focus Details' },

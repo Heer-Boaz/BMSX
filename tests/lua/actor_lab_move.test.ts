@@ -1,3 +1,4 @@
+import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { willExecuteRuntimeDebuggerPlan, didExecuteRuntimeDebuggerPlan } from '../../ide/runtime/debugger_state';
@@ -44,7 +45,7 @@ function fixture(t: TestContext) {
 		captureInstalledLuaSources(registry, images.cartSymbols!.metadata.compiledModulePaths), image.sourceContextId), null] };
 	const externalWork = (): never => { throw new Error('Actor movement does not request external work.'); };
 	const ide = new RuntimeIdeState(runtime, host.presenter, { capture: externalWork }, externalWork,
-		{ measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) },
+		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) }),
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 800, height: 360 }, sources, new Map(), externalWork, externalWork, externalWork);
 	const editor = ide.editor, parts = editor.editorParts, controller = editor.actorLab;

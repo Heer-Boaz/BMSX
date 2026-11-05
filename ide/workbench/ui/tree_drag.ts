@@ -195,7 +195,7 @@ export class WorkbenchTreeDrag<Element> implements PointerCaptureTarget {
 			}
 		}
 		if (target === undefined) return;
-		const left = layout.contentLeft + target.depth * layout.indentWidth;
+		const left = layout.contentLeft - Math.round(tree.scrollLeft ?? 0) + target.depth * layout.indentWidth;
 		if (placement === 'inside') write_rect_bounds(this.marker, left, top, layout.contentRight, top + layout.rowHeight);
 		else {
 			const boundary = index + (placement === 'after' ? press.afterRowCount : 0);

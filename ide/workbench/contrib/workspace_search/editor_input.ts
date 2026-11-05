@@ -1,3 +1,4 @@
+import { WorkspaceSearchPresentation } from './render';
 import type { HostClock, TimerHandle } from '../../../../hosts/common/clock';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
@@ -28,6 +29,7 @@ export class WorkspaceSearchInput extends ReadonlyEditorInput<`workspace-search:
 	public override canMove(): boolean { return true; }
 	public readonly search: WorkspaceTextSearch;
 	public readonly tree = new WorkspaceSearchTree();
+	public readonly presentation = new WorkspaceSearchPresentation(this);
 	public readonly optionsMenu = new WorkbenchMenu(OPTIONS, this);
 	public readonly contextMenu = new WorkbenchMenu(CONTEXT, this);
 	public readonly actions = createWorkbenchActionBar(new WorkbenchMenu(ACTIONS, this), true, this.optionsMenu);

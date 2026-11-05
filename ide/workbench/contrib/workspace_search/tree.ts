@@ -9,7 +9,7 @@ export type WorkspaceSearchElement = {
 	readonly match: WorkspaceTextSearchMatch | undefined;
 };
 
-/** File grouping and reading state over captured observations; snippets are formatted only when visible. */
+/** File grouping and reading state over captured observations; presentation measures captured excerpts, never live source. */
 export class WorkspaceSearchTree extends ScrollableWorkbenchTree<WorkspaceSearchElement> {
 	private files: readonly WorkspaceTextSearchFile[] | undefined;
 	private fileCount = 0;
@@ -18,7 +18,7 @@ export class WorkspaceSearchTree extends ScrollableWorkbenchTree<WorkspaceSearch
 	private changed(): void { for (const listener of this.listeners) listener(); }
 	public clear(): void {
 		this.files = undefined; this.fileCount = 0; this.roots.length = 0; this.rows.length = 0;
-		this.selectionIndex = this.hoverIndex = -1; this.scroll = 0;
+		this.selectionIndex = this.hoverIndex = -1; this.scroll = 0; this.horizontalScrollbar.setScroll(0); this.onDidChangeRows();
 	}
 	public sync(files: readonly WorkspaceTextSearchFile[]): void {
 		if (files !== this.files) { this.clear(); this.files = files; }
@@ -26,12 +26,14 @@ export class WorkspaceSearchTree extends ScrollableWorkbenchTree<WorkspaceSearch
 		for (; this.fileCount < files.length; this.fileCount++) {
 			const file = files[this.fileCount];
 			const root = appendWorkbenchTreeNode(this, null, { file, match: undefined });
+			this.onDidChangeRows();
 			this.rows.push(root);
 			this.appendMatches(root);
 		}
 	}
 	private appendMatches(root: WorkbenchTreeNode<WorkspaceSearchElement>): void {
 		const file = root.element.file;
+		if (root.children.length !== file.matches.length) this.onDidChangeRows();
 		for (let index = root.children.length; index < file.matches.length; index++) {
 			const child = appendWorkbenchTreeNode(this, root, { file, match: file.matches[index] });
 			if (!root.collapsed) this.rows.push(child);

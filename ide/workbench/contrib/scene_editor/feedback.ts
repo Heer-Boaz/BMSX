@@ -59,7 +59,9 @@ export class SceneOutlineFeedback {
 		if (this.owner.retired || outline.rows[index] !== row || outline.scroll !== this.scroll || this.keyboard && !this.focus.hasFocus) {
 			this.clear(); return;
 		}
-		if (this.keyboard && !row.element.labelClipped) { this.tooltip.hide(); return; }
+		const textLeft = outline.rowLeft + (row.depth + 1) * outline.layout.indentWidth;
+		if (this.keyboard && !row.element.labelClipped && textLeft >= outline.layout.contentLeft
+			&& textLeft + row.element.displayWidth <= outline.layout.contentRight) { this.tooltip.hide(); return; }
 		const layout = outline.layout, top = layout.contentTop + (index - (outline.scroll | 0)) * layout.rowHeight;
 		if (top < layout.contentTop || top + layout.rowHeight > layout.contentBottom) { this.clear(); return; }
 		write_rect_bounds(this.anchor, layout.contentLeft, top, layout.contentRight, top + layout.rowHeight);

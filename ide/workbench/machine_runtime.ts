@@ -20,7 +20,7 @@ import type { Clipboard } from '../../hosts/common/clipboard';
 import type { MicrotaskQueue } from '../common/microtask_queue';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
 import type { WorkspaceRecordProvider } from '../workspace/record_provider';
-import type { EditorDisplay } from '../common/viewport';
+import type { WorkbenchDisplay } from '../common/viewport';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { Input } from '../../hosts/common/input/manager';
@@ -35,7 +35,7 @@ export async function prepareWorkbenchRuntime(
 	presentation: RenderPresentationState,
 	encodePngImage: PngImageEncoder,
 	decodeImage: ImageDecoder,
-	display: EditorDisplay,
+	display: WorkbenchDisplay,
 	input: Input,
 	audioOutput: HostAudioOutput,
 	runtimeTasks: RuntimeTaskQueue,

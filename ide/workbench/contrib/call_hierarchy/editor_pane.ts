@@ -1,3 +1,4 @@
+import type { CallHierarchyElement } from './tree';
 import { STATUS_PRIORITY_CONTENT, type WorkbenchStatusItem } from '../../common/status_bar';
 import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
@@ -5,7 +6,7 @@ import type { EditorCommandRunner } from '../../../common/commands';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import { showEditorMessage } from '../../../common/feedback_state';
 import { CallHierarchyDirection } from '../../../editor/contrib/call_hierarchy/model';
-import { measureText, measureTextRange, truncateTextToWidth } from '../../../editor/common/text/layout';
+import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
@@ -23,9 +24,9 @@ import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
-import { revealWorkbenchListSelection, scrollWorkbenchList, workbenchListContainsPosition, workbenchListRowIndexAtPosition } from '../../ui/list_view';
+import { revealWorkbenchListSelection, workbenchListRowIndexAtPosition } from '../../ui/list_view';
 import { ScrollbarPointerControl } from '../../ui/scrollbar_pointer';
-import { workbenchTreeTwistieContainsPosition } from '../../ui/tree_view';
+import { type WorkbenchTreeNode, workbenchTreeTwistieContainsPosition } from '../../ui/tree_view';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 import type { CallHierarchyInput } from './editor_input';
 import { drawCallHierarchy } from './render';
@@ -43,10 +44,6 @@ export class CallHierarchyPane extends WorkbenchViewEditorPane<CallHierarchyInpu
 	private readonly scrollbar = new ScrollbarPointerControl(pointerCapture);
 	private readonly tooltip = new WorkbenchTooltip();
 	private readonly hoverBounds = create_rect_bounds();
-	private renderedTree: CallHierarchyInput['tree'] | undefined;
-	private renderedRevision = -1;
-	private renderedWidth = -1;
-	private renderedFont: object | undefined;
 	private unbindInput: (() => void) | undefined;
 	public onPointerLeave(): void { if (this.hasInput) this.input.tree.hoverIndex = -1; this.tooltip.hide(); }
 
@@ -90,14 +87,14 @@ export class CallHierarchyPane extends WorkbenchViewEditorPane<CallHierarchyInpu
 		navigation?.restore(this.input); this.update();
 	}
 	protected override activate(): void {
-		this.renderedTree = undefined; this.actions.setInput(this.input.actions, this.focusTarget);
+		this.actions.setInput(this.input.actions, this.focusTarget);
 		this.unbindInput = this.input.onDidChange(() => { this.actions.cancelPointer(); this.tooltip.hide(); });
 		this.update();
 	}
 	public override clearInput(): void {
 		this.unbindInput?.(); this.unbindInput = undefined;
 		this.input.tree.hoverIndex = -1;
-		pointerHover.release(this); this.tooltip.hide(); this.actions.clearInput(); this.scrollbar.cancelPointer(); this.renderedTree = undefined;
+		pointerHover.release(this); this.tooltip.hide(); this.actions.clearInput(); this.scrollbar.cancelPointer();
 		super.clearInput();
 	}
 	public override dispose(): void { this.tooltip.detach(); this.actions.dispose(); this.scrollbar.cancelPointer(); super.dispose(); }
@@ -108,16 +105,9 @@ export class CallHierarchyPane extends WorkbenchViewEditorPane<CallHierarchyInpu
 		for (const item of input.actions.items) item.checked = item.command === 'callHierarchy.incoming' ? input.direction === CallHierarchyDirection.CallsTo
 			: item.command === 'callHierarchy.outgoing' && input.direction === CallHierarchyDirection.CallsFrom;
 		layoutWorkbenchActionBar(input.actions, bounds.right - 4, bounds.top + 2, bounds.top + rowHeight + 2, measureText, font.renderFont(), bounds.left + 4);
+		tree.measureContentWidth(measureCallRow, font);
 		tree.updateLayout(bounds.left + 4, Math.min(bounds.bottom, bounds.top + rowHeight + 6), bounds.right, bounds.bottom,
 			rowHeight, Math.max(font.advance(' ') * 2, WORKBENCH_ICON_SIZE + 4));
-		const width = tree.layout.contentRight - tree.layout.contentLeft;
-		if (this.renderedTree !== tree || this.renderedRevision !== tree.revision || this.renderedWidth !== width || this.renderedFont !== font) {
-			this.renderedTree = tree; this.renderedRevision = tree.revision; this.renderedWidth = width; this.renderedFont = font;
-			for (const node of tree.rows) {
-				const available = width - (node.depth + 1) * tree.layout.indentWidth, element = node.element;
-				element.displayText = measureText(element.text) <= available ? element.text : truncateTextToWidth(element.label, available);
-			}
-		}
 		this.actions.update();
 		const hint = this.actions.tooltipItem, hovered = tree.rows[tree.hoverIndex];
 		if (hint !== undefined) this.tooltip.show(hint.tooltip, hint.bounds, font.renderFont(), measureTextRange, measureText, this.workArea);
@@ -134,7 +124,8 @@ export class CallHierarchyPane extends WorkbenchViewEditorPane<CallHierarchyInpu
 		if (isKeyJustPressed('Enter', event)) { consumeIdeKey('Enter', event); this.commands.execute('editor.source', this.focusTarget); }
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean): boolean {
-		if (this.actions.handlePointer(snapshot) || this.scrollbar.handlePointer(snapshot, this.input.tree.scrollbar)) { this.input.tree.hoverIndex = -1; return true; }
+		if (this.actions.handlePointer(snapshot) || this.scrollbar.handlePointer(snapshot, this.input.tree.scrollbar)
+			|| this.scrollbar.handlePointer(snapshot, this.input.tree.horizontalScrollbar)) { this.input.tree.hoverIndex = -1; return true; }
 		const input = this.input, tree = input.tree, index = snapshot.valid && snapshot.insideViewport
 			? workbenchListRowIndexAtPosition(tree, snapshot.viewportX, snapshot.viewportY) : -1;
 		tree.hoverIndex = index;
@@ -161,10 +152,15 @@ export class CallHierarchyPane extends WorkbenchViewEditorPane<CallHierarchyInpu
 	}
 	public handleWheel(event: WheelInputSnapshot): void {
 		const tree = this.input.tree;
-		if (workbenchListContainsPosition(tree, event.viewportX, event.viewportY)) { scrollWorkbenchList(tree, event.deltaY * 3); this.tooltip.hide(); }
+		if (tree.handleWheel(event)) this.tooltip.hide();
 	}
 	public draw(): void { drawCallHierarchy(this.input, this.contentBounds, this.focusTarget.hasFocus); }
 	public updateStatus(): void {
 		this.statusItems[0].text = this.input.tree.rows[this.input.tree.selectionIndex]?.element.status ?? '';
 	}
+}
+
+function measureCallRow(node: WorkbenchTreeNode<CallHierarchyElement>): number {
+	const font = editorViewState.font;
+	return (node.depth + 1) * Math.max(font.advance(' ') * 2, WORKBENCH_ICON_SIZE + 4) + measureText(node.element.text) + 4;
 }

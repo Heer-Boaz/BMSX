@@ -4,7 +4,7 @@ import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/
 import { SceneViewState } from '../../ide/workbench/contrib/scene_editor/scene_view';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { captureSceneReading, mapSceneReading, restoreSceneReading } from '../../ide/workbench/contrib/scene_editor/reading_snapshot';
-import { rebuildWorkbenchTreeRows, setWorkbenchTreeCollapsed, workbenchTreeRoot } from '../../ide/workbench/ui/tree_view';
+import { rebuildWorkbenchTreeRows, setWorkbenchTreeCollapsed, workbenchTreeRoot, workbenchTreeTwistieContainsPosition } from '../../ide/workbench/ui/tree_view';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { layoutSceneHierarchy } from '../../ide/workbench/contrib/scene_editor/hierarchy_layout';
@@ -136,8 +136,39 @@ test('flat authored source can project and measure a deep hierarchy without recu
 	view.hierarchy.refresh();
 	assert.equal(view.hierarchy.outline.rows.length, 6001);
 	assert.equal(view.hierarchy.outline.rows[6000].depth, 6000);
-	// Focused caption-layout test: depth clips available text, but must not exhaust the call stack.
+	// Focused extent-layout test: deep indentation remains reachable without recursive host visitors.
 	assert.equal(layoutSceneHierarchy(view.hierarchy, { left: 0, top: 0, right: 320, bottom: 160 }, true), true);
-	assert.equal(view.hierarchy.outline.rows[6000].element.labelClipped, true);
+	assert.equal(view.hierarchy.outline.horizontalScrollbar.isVisible(), true);
+	assert.equal(view.hierarchy.outline.rows[6000].element.displayLabel, 'm5999', 'the full authored identity survives measurement');
 	assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.dirty, false);
+});
+
+
+test('Scene hierarchy exposes full authored identities through shared horizontal scrolling without changing selection or source', t => {
+	configureFontVariant('msx');
+	const name = 'authored_member_with_a_long_identity_that_must_remain_available';
+	const source = SOURCE.replace("member_id = 'parent'", `member_id = '${name}'`).replace("parent = 'parent'", `parent = '${name}'`);
+	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined,
+		[['cartlib/world/prefab.lua', 'return { define=function() end }'], ['prefabs.lua', PREFAB]]);
+	const context = new SceneAuthoringContext(f.model, f.documents), view = new SceneViewState(context, f.sources.catalog);
+	t.after(() => { view.dispose(); context.dispose(); });
+	view.hierarchy.refresh();
+	const bounds = { left: 0, top: 0, right: 140, bottom: 220 }, tree = view.hierarchy.outline;
+	layoutSceneHierarchy(view.hierarchy, bounds, true);
+	const index = tree.rows.findIndex(row => row.element.label === name), node = tree.rows[index];
+	assert.equal(node.element.displayLabel, name, 'authored identity content must not be replaced by an ellipsis');
+	assert.equal(tree.horizontalScrollbar.isVisible(), true);
+	assert.equal(tree.scrollbar.isVisible(), false);
+	assert.equal(selectSceneOutlineRow(view.hierarchy, index), true);
+	const selected = context.selection;
+	tree.horizontalScrollbar.setScroll(tree.layout.indentWidth / 2);
+	assert.ok(tree.scrollLeft > 0);
+	const x = tree.rowLeft + node.depth * tree.layout.indentWidth + tree.layout.twistieWidth / 2;
+	assert.equal(workbenchTreeTwistieContainsPosition(tree, index, x), true, 'disclosure follows the translated row, not the old text position');
+	assert.ok(context.selection === selected);
+	layoutSceneHierarchy(view.hierarchy, { ...bounds, right: 1200 }, false);
+	assert.equal(tree.horizontalScrollbar.isVisible(), false);
+	assert.equal(tree.scrollLeft, 0);
+	assert.equal(f.model.buffer.getText(), source);
+	assert.equal(f.model.dirty, false);
 });

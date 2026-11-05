@@ -3,6 +3,8 @@ import { write_rect_bounds, type RectBounds } from '../../machine/ts/common/rect
 import { GX_GPU_DISPLAY_ASPECT_HEIGHT, GX_GPU_DISPLAY_ASPECT_WIDTH } from 'bmsx/spec/bmsx/model';
 import type { BrowserOnscreenGamepadView } from './onscreen_gamepad_view';
 import { CONTROL_GAP } from './onscreen_gamepad_layout';
+import { WorkspaceDisplay } from '../common/workspace_display';
+import type { PointerCursor } from '../common/input/pointer_event';
 
 export type BrowserScreenFit = 'fit' | 'overscan';
 // An explicit presentation policy, not a claim that carts author safe borders.
@@ -10,6 +12,8 @@ const OVERSCAN_VISIBLE_FRACTION = 0.9;
 
 /** Visible player bounds, canvas fitting and independent control-overlay layout. */
 export class BrowserVideoOutput implements VideoOutput {
+	public readonly workspace = new WorkspaceDisplay(0, 0, () => this.refreshLayout());
+	private pointerCursor: PointerCursor = 'default';
 	private renderWidth: number;
 	private renderHeight: number;
 	public readonly visibleViewportBounds: RectBounds;
@@ -20,6 +24,13 @@ export class BrowserVideoOutput implements VideoOutput {
 	private resolutionQuery: MediaQueryList;
 	private layoutAnimationFrameId = 0;
 	private selectedScreenFit: BrowserScreenFit;
+	private readonly layoutListeners = new Set<() => void>();
+	private displayLeft = -1;
+	private displayTop = -1;
+	private displayWidth = -1;
+	private displayHeight = -1;
+	private displayedRenderWidth = -1;
+	private displayedRenderHeight = -1;
 
 	public constructor(
 		private readonly canvas: HTMLCanvasElement,
@@ -64,6 +75,18 @@ export class BrowserVideoOutput implements VideoOutput {
 
 	public measureDisplay(): DOMRect {
 		return this.canvas.getBoundingClientRect();
+	}
+
+	/** Native overlays consume the completed transform, not the earlier window-resize event. */
+	public onDidLayout(listener: () => void): () => void {
+		this.layoutListeners.add(listener);
+		return () => this.layoutListeners.delete(listener);
+	}
+
+	public setPointerCursor(cursor: PointerCursor): void {
+		if (cursor === this.pointerCursor) return;
+		this.pointerCursor = cursor;
+		this.canvas.style.cursor = cursor;
 	}
 
 	public get screenFit(): BrowserScreenFit { return this.selectedScreenFit; }
@@ -115,13 +138,15 @@ export class BrowserVideoOutput implements VideoOutput {
 		const portraitDeckTop = this.controlView ? this.controlView.portraitDeckTop : null;
 		const width = Math.max(0, right - left);
 		const height = Math.max(0, (portraitDeckTop === null ? bottom : Math.min(bottom, portraitDeckTop)) - top);
-		const presentationHeight = this.renderWidth * GX_GPU_DISPLAY_ASPECT_HEIGHT / GX_GPU_DISPLAY_ASPECT_WIDTH;
-		const overscan = this.selectedScreenFit === 'overscan';
+		this.workspace.layout(width, height);
+		const workspace = this.workspace.active;
+		const presentationHeight = workspace ? this.renderHeight : this.renderWidth * GX_GPU_DISPLAY_ASPECT_HEIGHT / GX_GPU_DISPLAY_ASPECT_WIDTH;
+		const overscan = !workspace && this.selectedScreenFit === 'overscan';
 		const visibleFraction = overscan ? OVERSCAN_VISIBLE_FRACTION : 1;
 		const dpr = window.devicePixelRatio;
 		// Quantize the presentation in physical display pixels, not UI CSS
 		// units. Source render targets and touch geometry remain unchanged.
-		const scale = Math.trunc(Math.min(width / this.renderWidth, height / presentationHeight)
+		const scale = workspace ? this.workspace.pixelsPerUnit : Math.trunc(Math.min(width / this.renderWidth, height / presentationHeight)
 			* dpr * 2 / visibleFraction) / (dpr * 2);
 		const displayWidth = this.renderWidth * scale;
 		const displayHeight = presentationHeight * scale;
@@ -147,6 +172,14 @@ export class BrowserVideoOutput implements VideoOutput {
 			clipTop / displayHeight * this.renderHeight,
 			(displayWidth - clipRight) / displayWidth * this.renderWidth,
 			(displayHeight - clipBottom) / displayHeight * this.renderHeight);
+		if (this.displayLeft !== displayLeft || this.displayTop !== displayTop
+			|| this.displayWidth !== displayWidth || this.displayHeight !== displayHeight
+			|| this.displayedRenderWidth !== this.renderWidth || this.displayedRenderHeight !== this.renderHeight) {
+			this.displayLeft = displayLeft; this.displayTop = displayTop;
+			this.displayWidth = displayWidth; this.displayHeight = displayHeight;
+			this.displayedRenderWidth = this.renderWidth; this.displayedRenderHeight = this.renderHeight;
+			for (const listener of this.layoutListeners) listener();
+		}
 	}
 
 	public dispose(): void {
@@ -161,6 +194,7 @@ export class BrowserVideoOutput implements VideoOutput {
 			this.visualViewport.removeEventListener('scroll', this.scheduleLayout);
 		}
 		this.controlView?.dispose();
+		this.layoutListeners.clear();
 	}
 
 	private readonly scheduleLayout = (): void => {

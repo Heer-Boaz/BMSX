@@ -58,10 +58,13 @@ for (const finish of ['release', 'cancel', 'blur', 'replacement'] as const)
 		f.capture.beginRoute(f.sashSurface.captureScope, down);
 		f.hover.beginDispatch(f.sashSurface.captureScope); f.control.handlePointer(down); f.hover.endDispatch();
 		assert.equal(paint(), COLOR_FOCUS_BORDER, 'press feedback is visible without taking keyboard focus');
+		assert.equal(f.hover.cursor, 'col-resize');
 		const held = { ...down, viewportX: f.area.left, justPressedButtons: 0 };
 		f.hover.beginDispatch(f.sashSurface.captureScope);
 		f.capture.dispatch(held, false, 1, f.sashSurface.captureScope); f.hover.endDispatch();
 		assert.equal(f.control.hovered, false, 'captured input is not a new ordinary hover hit');
+		assert.equal(f.hover.cursor, 'default');
+		assert.equal(f.capture.cursor, 'col-resize', 'the captured owner retains the resize cursor away from its handle');
 		assert.equal(f.split.canMoveTo(held.viewportX), false);
 		assert.equal(paint(), COLOR_FOCUS_BORDER, 'a clamped drag remains visibly active away from its handle');
 		switch (finish) {
@@ -71,6 +74,7 @@ for (const finish of ['release', 'cancel', 'blur', 'replacement'] as const)
 			case 'replacement': f.control.setInput(new WorkbenchSplitView(0.5)); break;
 		}
 		assert.equal(f.capture.active, false);
+		assert.equal(f.capture.cursor, 'default');
 		assert.equal(paint(), SCROLLBAR_THUMB_COLOR, 'the ended gesture does not leave a stuck highlight');
 	});
 

@@ -74,19 +74,20 @@ function fixture() {
 		const route = capture.routeScope;
 		const surface = route === undefined ? surfaces.hitTest(snapshot.viewportX, snapshot.viewportY) : surfaces.findByScope(route);
 		const scope = surface?.captureScope ?? parent.scope.surfaceScope;
+		hover.beginDispatch(scope);
 		try {
 			if (capture.dispatch(snapshot, false, now, scope)) return;
 			if (surface == null) return;
 			capture.beginRoute(scope, snapshot);
 			surface.handlePointer?.(snapshot, now);
 			if (snapshot.justReleasedButtons !== 0) capture.dispatch(snapshot, false, now, scope);
-		} finally { capture.endRoute(snapshot); }
+		} finally { capture.endRoute(snapshot); hover.endDispatch(); }
 	};
 	const click = (x: number, y: number, now: number, button = PointerButton.Primary) => {
 		dispatch(pointer(x, y, button, button), now);
 		dispatch(pointer(x, y, 0, 0, button), now + 1);
 	};
-	return { focus, capture, surfaces, contextMenu, workArea, parent, owner, font, window, dispatch, click, measurements: () => measurements };
+	return { focus, capture, hover, surfaces, contextMenu, workArea, parent, owner, font, window, dispatch, click, measurements: () => measurements };
 }
 
 function titlePoint(model: WorkbenchWindowModel) {
@@ -1071,3 +1072,23 @@ test('placement notifications publish requested placement and modes, not passive
 	unbind(); model.setMinimized(false); model.setPlacement('normal');
 	assert.deepEqual(changes, [[false, 'normal'], [true, 'normal'], [true, 'maximized']]);
 });
+
+
+for (const [horizontal, vertical, cursor] of [[-1, 0, 'ew-resize'], [1, 0, 'ew-resize'], [0, -1, 'ns-resize'], [0, 1, 'ns-resize'],
+	[-1, -1, 'nwse-resize'], [1, 1, 'nwse-resize'], [1, -1, 'nesw-resize'], [-1, 1, 'nesw-resize']] as const)
+	test(`shared window resize cursor ${horizontal}/${vertical} follows hover and its captured owner`, t => {
+		const f = fixture(), a = f.window('CURSOR'); a.show(true);
+		t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+		const bounds = a.model.bounds;
+		const x = horizontal < 0 ? bounds.left + 1 : horizontal > 0 ? bounds.right - 1 : (bounds.left + bounds.right) / 2;
+		const y = vertical < 0 ? bounds.top + 1 : vertical > 0 ? bounds.bottom - 1 : (bounds.top + bounds.bottom) / 2;
+		f.dispatch(pointer(x, y), 0);
+		assert.equal(f.hover.cursor, cursor);
+		f.dispatch(pointer(x, y, PointerButton.Primary, PointerButton.Primary), 1);
+		assert.equal(f.capture.cursor, cursor);
+		f.dispatch(pointer(f.workArea.right + 20, f.workArea.bottom + 20, PointerButton.Primary), 2);
+		assert.equal(f.capture.cursor, cursor, 'leaving the handle does not lose gesture feedback');
+		f.capture.cancel();
+		assert.equal(f.capture.cursor, 'default');
+		assert.equal(f.hover.cursor, 'default');
+	});

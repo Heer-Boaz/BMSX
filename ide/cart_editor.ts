@@ -1,3 +1,4 @@
+import { workbenchPixelsPerUnit, type WorkspaceUiScale } from './workbench/common/display_scale';
 import { CodeDocumentProjections } from './editor/ui/code/document_projections';
 import { WorkbenchInteraction } from './workbench/services/execution/interaction';
 import { MainWorkspace } from './workbench/main_workspace';
@@ -116,7 +117,7 @@ import type { LogOutput } from '../hosts/common/log';
 import type { VideoPresenter } from '../machine/ts/render/video_presenter';
 import { runtimeSourcesSupportIde, type RuntimeSourceState } from './runtime/sources';
 import { blua32ToolingImageForDomain } from '../toolchain/ts/rompack/blua32_media';
-import type { EditorDisplay, Viewport } from './common/viewport';
+import type { WorkbenchDisplay, Viewport } from './common/viewport';
 import { api } from './runtime/overlay_api';
 import * as constants from './common/constants';
 import type { FaultSnapshot, RuntimeErrorDetails, RuntimeFaultState } from './runtime/fault_state';
@@ -195,9 +196,6 @@ type RenderRuntimeFaultOverlayOptions = {
 	force?: boolean;
 };
 
-const EDITOR_TARGET_WIDTH = 384;
-const EDITOR_TARGET_HEIGHT = 288;
-
 /** Exact authored source prepared under Main's opening request. */
 export type ScenePrimarySource = { readonly model: EditorTextModel; readonly subject: SceneAuthoredSubject };
 
@@ -263,6 +261,8 @@ export type CartEditor = TextInputHost & {
 	isActive: boolean;
 	readonly acceptsInput: boolean;
 	readonly fontVariant: FontVariant;
+	readonly uiScale: WorkspaceUiScale;
+	setUiScale(scale: WorkspaceUiScale): void;
 	activate: () => void;
 	deactivate: () => void;
 	onDidChangeActive(listener: (active: boolean) => void): () => void;
@@ -353,7 +353,9 @@ export class RuntimeCartEditor implements CartEditor {
 	private crtPostprocessingEnabledBeforeEditor: boolean | null = null;
 	private readonly runtime: Runtime;
 	private readonly presenter: VideoPresenter;
-	private readonly display: EditorDisplay;
+	private readonly display: WorkbenchDisplay;
+	private uiScaleValue: WorkspaceUiScale = 1;
+	public get uiScale(): WorkspaceUiScale { return this.uiScaleValue; }
 	private readonly input: Input;
 	private readonly clock: HostClock;
 	public readonly clipboard: Clipboard;
@@ -410,7 +412,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public constructor(
 		private readonly workbench: StudioWorkbench,
 		presenter: VideoPresenter,
-		display: EditorDisplay,
+		display: WorkbenchDisplay,
 		input: Input,
 		clock: HostClock,
 		clipboard: Clipboard,
@@ -743,6 +745,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.pointerSnapshot.justPressedButtons = 0;
 		this.pointerSnapshot.justReleasedButtons = 0;
 		pointerHover.clear();
+		this.display.setPointerCursor('default');
 	}
 
 	public cancelInput(): void {
@@ -841,7 +844,7 @@ export class RuntimeCartEditor implements CartEditor {
 		}
 		editorRuntimeState.active = true;
 		this.interaction.setActive(true);
-		if (!wasActive) this.enterRenderTargets();
+		if (!wasActive) this.display.workspace.open(this.resizeWorkspace);
 		this.diagnostics.setEnabled(true);
 		this.overlayRenderer.active = true;
 		setEditorFeedbackActive(true);
@@ -968,6 +971,7 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public draw(): void {
+		this.display.setPointerCursor(pointerCapture.active ? pointerCapture.cursor : pointerHover.cursor);
 		this.surfaces.draw(api);
 	}
 
@@ -1064,6 +1068,13 @@ export class RuntimeCartEditor implements CartEditor {
 			this.sources.catalog.dispose();
 			this.resourcePanel.dispose();
 		}
+	}
+
+	public setUiScale(scale: WorkspaceUiScale): void {
+		if (scale === this.uiScale) return;
+		this.uiScaleValue = scale;
+		if (this.isActive) this.display.workspace.refresh();
+		requestWorkspaceAutosave(WorkspaceAutosaveChange.UiScale);
 	}
 
 	public setFontVariant(variant: FontVariant): void {
@@ -1211,14 +1222,22 @@ export class RuntimeCartEditor implements CartEditor {
 		this.crtPostprocessingEnabledBeforeEditor = null;
 	}
 
-	private enterRenderTargets(): void {
-		const presenter = this.presenter;
-		presenter.setFixedRenderTargetSize(EDITOR_TARGET_WIDTH, EDITOR_TARGET_HEIGHT);
-		this.overlayRenderer.setRenderingViewportType(presenter, 'viewport');
+	private readonly resizeWorkspace = (availableWidth: number, availableHeight: number): void => {
+		// Minimized/hidden surfaces allocate no render target. Their next host layout resumes it.
+		if (availableWidth <= 0 || availableHeight <= 0) return;
+		const scale = workbenchPixelsPerUnit(availableWidth, this.uiScale);
+		this.display.workspace.pixelsPerUnit = scale;
+		const width = Math.trunc(availableWidth / scale), height = Math.trunc(availableHeight / scale);
+		this.cancelPointerInput();
+		this.presenter.setFixedRenderTargetSize(width, height);
+		if (width === editorViewState.viewportWidth && height === editorViewState.viewportHeight) return;
+		this.overlayRenderer.setRenderingViewportType(this.presenter, 'viewport');
 		this.updateViewport(this.overlayRenderer.viewportSize);
-	}
+	};
 
 	private leaveRenderTargets(): void {
+		this.display.setPointerCursor('default');
+		this.display.workspace.close();
 		const presenter = this.presenter;
 		presenter.useScanoutRenderTargetSize();
 		this.overlayRenderer.setRenderingViewportType(presenter, 'viewport');

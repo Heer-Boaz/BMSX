@@ -14,38 +14,27 @@ import type { WorkbenchTreeNode } from '../../ui/tree_view';
 import type { WorkspaceSearchInput } from './editor_input';
 import type { WorkspaceSearchElement } from './tree';
 
-type ResultLabel = { node: WorkbenchTreeNode<WorkspaceSearchElement>; count: number; text: string; matchStart: number; matchEnd: number; matchLeft: number; matchRight: number };
+type ResultLabel = { width: number; font: EditorFont; node: WorkbenchTreeNode<WorkspaceSearchElement>; count: number; text: string; matchStart: number; matchEnd: number; matchLeft: number; matchRight: number };
 
-/** Only the visible rows are formatted; query matching and source reads never run during layout. */
+/** Captured excerpts have stable extents, independent of viewport width. Each row is
+ * formatted/measured once per content/font revision, not on horizontal scroll or resize.
+ * The query input owns this cache; an old tree cannot retain a reused pane or its next query. */
 export class WorkspaceSearchPresentation {
 	public readonly labels: ResultLabel[] = [];
 	public status = '';
 	private width = -1;
 	private font: EditorFont | undefined;
-	private input: WorkspaceSearchInput | undefined;
+	private statusFont: EditorFont | undefined;
 	private revision = -1;
-	public reset(): void { this.labels.length = 0; this.input = undefined; }
-	public update(input: WorkspaceSearchInput, font: EditorFont): void {
-		const tree = input.tree, layout = tree.layout, width = layout.contentRight - layout.contentLeft;
-		const invalidate = this.font !== font || this.width !== width || this.input !== input;
-		this.font = font; this.width = width; this.input = input;
+	private readonly rowLabels = new WeakMap<WorkbenchTreeNode<WorkspaceSearchElement>, ResultLabel>();
+	public constructor(private readonly input: WorkspaceSearchInput) {}
+	public reset(): void { this.labels.length = 0; this.width = -1; }
+	public update(font: EditorFont): void {
+		const input = this.input, tree = input.tree, layout = tree.layout, width = layout.contentRight - layout.contentLeft;
+		const invalidate = this.statusFont !== font || this.width !== width;
+		this.font = font; this.statusFont = font; this.width = width;
 		const first = tree.scroll | 0, end = Math.min(tree.rows.length, first + layout.visibleRowCount);
-		for (let index = first; index < end; index++) {
-			const node = tree.rows[index], slot = index - first, previous = this.labels[slot];
-			if (!invalidate && previous?.node === node && (node.element.match !== undefined || previous.count === node.element.file.matches.length)) continue;
-			const { file, match } = node.element, available = width - (node.depth + 1) * layout.indentWidth;
-			let text: string, matchStart = 0, matchEnd = 0;
-			if (match === undefined) text = truncateTextToWidth(`${file.label} (${file.matches.length})`, available);
-			else {
-				const prefix = `${match.row + 1}:${match.start + 1}  `;
-				const context = Math.min(24, Math.max(1, Math.trunc(available / font.advance('M') / 4)));
-				const snippet = buildTextSearchSnippet(file.snapshot.source, match.offset, match.end - match.start, context);
-				text = truncateTextToWidth(prefix + snippet.text, available);
-				matchStart = Math.min(text.length, prefix.length + snippet.matchStart);
-				matchEnd = Math.min(text.length, prefix.length + snippet.matchEnd);
-			}
-			this.labels[slot] = { node, count: file.matches.length, text, matchStart, matchEnd, matchLeft: font.measureTextRange(text, 0, matchStart), matchRight: font.measureTextRange(text, 0, matchEnd) };
-		}
+		for (let index = first; index < end; index++) this.labels[index - first] = this.labelFor(tree.rows[index]);
 		this.labels.length = end - first;
 		if (invalidate || this.revision !== input.revision) {
 			const files = input.search.files, matches = input.search.matchCount;
@@ -59,6 +48,32 @@ export class WorkspaceSearchPresentation {
 			this.status = truncateTextToWidth(status + (input.includeShared ? ' · shared sources included' : ''), width);
 			this.revision = input.revision;
 		}
+	}
+	public measure(font: EditorFont): void {
+		this.font = font;
+		this.input.tree.measureContentWidth(this.measureRow, font);
+	}
+	private readonly measureRow = (node: WorkbenchTreeNode<WorkspaceSearchElement>): number => {
+		const font = this.font!, label = this.labelFor(node);
+		return (node.depth + 1) * Math.max(font.advance(' ') * 2, WORKBENCH_ICON_SIZE + 4)
+			+ label.width + 4;
+	};
+	private labelFor(node: WorkbenchTreeNode<WorkspaceSearchElement>): ResultLabel {
+		const { file, match } = node.element, font = this.font!, previous = this.rowLabels.get(node);
+		if (previous !== undefined && previous.font === font && (match !== undefined || previous.count === file.matches.length)) return previous;
+		let text: string, matchStart = 0, matchEnd = 0;
+		if (match === undefined) text = `${file.label} (${file.matches.length})`;
+		else {
+			const prefix = `${match.row + 1}:${match.start + 1}  `;
+			const snippet = buildTextSearchSnippet(file.snapshot.source, match.offset, match.end - match.start, 24);
+			text = prefix + snippet.text;
+			matchStart = prefix.length + snippet.matchStart;
+			matchEnd = prefix.length + snippet.matchEnd;
+		}
+		const label = { node, font, width: font.measureTextRange(text, 0, text.length), count: file.matches.length, text, matchStart, matchEnd,
+			matchLeft: font.measureTextRange(text, 0, matchStart), matchRight: font.measureTextRange(text, 0, matchEnd) };
+		this.rowLabels.set(node, label);
+		return label;
 	}
 }
 
@@ -76,7 +91,7 @@ export function drawWorkspaceSearch(input: WorkspaceSearchInput, view: Workspace
 	const first = tree.scroll | 0;
 	for (let slot = 0; slot < view.labels.length; slot++) {
 		const label = view.labels[slot], node = label.node, index = first + slot, selected = index === tree.selectionIndex;
-		const y = layout.contentTop + slot * layout.rowHeight, x = layout.contentLeft + node.depth * layout.indentWidth;
+		const y = layout.contentTop + slot * layout.rowHeight, x = tree.rowLeft + node.depth * layout.indentWidth;
 		const ink = selected ? focused ? colors.COLOR_SELECTION_TEXT : colors.COLOR_INACTIVE_SELECTION_TEXT : colors.COLOR_RESOURCE_VIEWER_TEXT;
 		if (selected) api.fill_rect(layout.contentLeft, y, layout.contentRight, y + layout.rowHeight, 0, focused ? colors.SELECTION_OVERLAY : colors.INACTIVE_SELECTION_OVERLAY);
 		else if (index === tree.hoverIndex) api.fill_rect(layout.contentLeft, y, layout.contentRight, y + layout.rowHeight, 0, colors.HIGHLIGHT_OVERLAY);
@@ -85,5 +100,8 @@ export function drawWorkspaceSearch(input: WorkspaceSearchInput, view: Workspace
 		api.blit_text_inline_with_font(label.text, textLeft, y + 2, 0, ink, font);
 		if (label.matchEnd > label.matchStart) api.fill_rect(textLeft + label.matchLeft, y + layout.rowHeight - 2, textLeft + label.matchRight, y + layout.rowHeight - 1, 0, ink);
 	}
-	api.popClipRect(); tree.scrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR); api.popClipRect();
+	api.popClipRect();
+	tree.scrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
+	tree.horizontalScrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
+	api.popClipRect();
 }

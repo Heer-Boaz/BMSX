@@ -1,3 +1,4 @@
+import { ScrollbarPointerControl } from '../../ui/scrollbar_pointer';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
@@ -15,7 +16,7 @@ import { pointerCapture } from '../../../input/pointer/capture';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
-import { revealWorkbenchListSelection, scrollWorkbenchList, workbenchListContainsPosition, workbenchListRowIndexAtPosition } from '../../ui/list_view';
+import { revealWorkbenchListSelection, workbenchListRowIndexAtPosition } from '../../ui/list_view';
 import { WorkbenchMenu } from '../../ui/menu/model';
 import { navigateWorkbenchTree, rebuildWorkbenchTreeRows, setWorkbenchTreeCollapsed, workbenchTreeRoot, workbenchTreeTwistieContainsPosition, WorkbenchTreeNavigationResult } from '../../ui/tree_view';
 import type { WorkbenchTreeNode } from '../../ui/tree_view';
@@ -41,6 +42,7 @@ export class SceneHierarchyControl {
 	private readonly feedback: SceneOutlineFeedback;
 	private readonly unbindKeyboard: () => void;
 	private readonly unbindBlur: () => void;
+	private readonly scrollbar = new ScrollbarPointerControl(pointerCapture);
 	private readonly drag: WorkbenchTreeDrag<SceneOutlineElement>;
 	private attachmentLifetime!: DisposableStore;
 	public get view(): SceneHierarchyViewState { return this.viewValue!; }
@@ -77,6 +79,8 @@ export class SceneHierarchyControl {
 		if (revision !== this.attachmentRevision) return;
 		this.viewValue = view; this.bounds = bounds; this.measuredGeneration = -1;
 		this.attachmentLifetime = new DisposableStore();
+		this.attachmentLifetime.add({ dispose: view.outline.scrollbar.onDidScroll(() => view.notifyPresentationChanged()) });
+		this.attachmentLifetime.add({ dispose: view.outline.horizontalScrollbar.onDidScroll(() => view.notifyPresentationChanged()) });
 		this.attachmentLifetime.add({ dispose: view.authoring.workingCopy.onWillDispose(() => {
 			if (revision === this.attachmentRevision) this.clearView();
 		}) });
@@ -186,7 +190,10 @@ export class SceneHierarchyControl {
 	}
 	public handlePointer(snapshot: PointerInputSnapshot, justPressed: boolean): boolean {
 		if (!this.hasView || !snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, this.bounds)) return false;
-		const view = this.view, index = workbenchListRowIndexAtPosition(view.outline, snapshot.viewportX, snapshot.viewportY);
+		const view = this.view;
+		if (this.scrollbar.handlePointer(snapshot, view.outline.scrollbar)
+			|| this.scrollbar.handlePointer(snapshot, view.outline.horizontalScrollbar)) { this.onPointerLeave(); return true; }
+		const index = workbenchListRowIndexAtPosition(view.outline, snapshot.viewportX, snapshot.viewportY);
 		view.outline.hoverIndex = index; this.feedback.pointer(view, index, snapshot);
 		if (index >= 0) pointerHover.visit(this); else pointerHover.release(this);
 		if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0 && index >= 0) {
@@ -212,12 +219,9 @@ export class SceneHierarchyControl {
 	}
 	public onPointerLeave(): void { if (this.hasView) this.view.outline.hoverIndex = -1; this.feedback.onPointerLeave(); }
 	public handleWheel(event: WheelInputSnapshot): boolean {
-		if (!this.hasView || !workbenchListContainsPosition(this.view.outline, event.viewportX, event.viewportY)) return false;
-		const view = this.view, scroll = view.outline.scroll;
-		scrollWorkbenchList(view.outline, event.deltaY * 3);
-		if (scroll !== view.outline.scroll) view.notifyPresentationChanged();
-		return true;
+		return this.hasView && this.view.outline.handleWheel(event);
 	}
+
 	private openContextMenu(x: number, y: number, keyboard = false): void {
 		const view = this.view, version = view.authoring.workingCopy.version, intent = view.authoring.selectionRevision;
 		const selection = view.authoring.selection;
@@ -238,7 +242,7 @@ export class SceneHierarchyControl {
 		if (!this.hasView) return;
 		const revision = this.attachmentRevision;
 		this.attachmentLifetime.dispose(); this.viewValue = undefined; this.presented = false;
-		this.drag.cancel();
+		this.drag.cancel(); this.scrollbar.cancelPointer();
 		pointerHover.release(this); this.feedback.clear();
 		this.inputScope.retireContext();
 		if (revision === this.attachmentRevision) this.focusTarget.release();

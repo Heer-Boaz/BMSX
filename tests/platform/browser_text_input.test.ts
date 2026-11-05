@@ -107,6 +107,9 @@ test('native text input stays ordered independently of render/input polling', as
 				const field = new api.TextField(undefined, { allowSpace: true, maxLength,
 					characterFilter: digits ? (character: string) => character >= '0' && character <= '9' : undefined });
 				api.setFieldText(field, text, true); field.setSelection(start, end);
+				const font = new api.EditorFont('msx'), viewport = new api.SingleLineFieldViewport();
+				viewport.layout(field, { left: 0, top: 0, right: 320, bottom: 20 },
+					{ advanceChar: char => font.advance(char), spaceAdvance: font.advance(' '), tabSpaces: 4 }, font);
 				target = field;
 				for (const listener of listeners) listener();
 			},
@@ -126,6 +129,8 @@ export { Input } from './hosts/common/input/manager';
 export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';
 export { createInputControllerSnapshot } from './machine/ts/machine/devices/input/contracts';
 export { TextField } from './ide/editor/ui/inline/text_field_model';
+export { SingleLineFieldViewport } from './ide/editor/ui/inline/single_line_viewport';
+export { EditorFont } from './ide/editor/ui/view/font';
 export { setFieldText } from './ide/editor/ui/inline/text_field';` + fixture, loader: 'ts', resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'nativeInputApi', write: false,
 		tsconfig: 'tsconfig.base.json',

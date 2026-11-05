@@ -1,3 +1,4 @@
+import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { HostMenuInput, HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
@@ -28,7 +29,7 @@ test('host exclusive pages suspend every Studio editing channel and retire nativ
 	const sources = createTestRuntimeSourceState({ records: [], path2lua: {}, module2lua: {}, entrySourcePath: '',
 		projectRootPath: '', can_boot_from_source: false, revision: 0 }, [null, null], SYSTEM_RESOURCE_DOMAIN);
 	let projections = 0;
-	const display = { measureDisplay() { projections++; return { left: 0, top: 0, width: 256, height: 212 }; } };
+	const display = Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay() { projections++; return { left: 0, top: 0, width: 256, height: 212 }; } });
 	const unused = (): never => { throw new Error('Input admission must not start unrelated domain work.'); };
 	const clipboard = new HeadlessClipboard();
 	// The complete production owner composition, without a loaded source document or a guest execution request.

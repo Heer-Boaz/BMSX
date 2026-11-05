@@ -1,3 +1,4 @@
+import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
 import { afterTest } from '../helpers/test_cleanup';
 import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { createTestEditorGroup } from '../helpers/editor_panes';
@@ -88,6 +89,7 @@ import { encodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
 import { finalizePackedRomAssets, type RomAsset } from '../../toolchain/ts/rompack/assets';
 import { readActorChoices } from '../../ide/workbench/contrib/actor_lab/projection';
 import { ActorLabEditorPane } from '../../ide/workbench/contrib/actor_lab/editor_pane';
+import { measureActorLab } from '../../ide/workbench/contrib/actor_lab/layout';
 import { acceptEffectPropertySelection } from '../../ide/workbench/contrib/behavior_lens/action_effect_properties';
 import { acceptBehaviorGraphSelection } from '../../ide/workbench/contrib/behavior_lens/graph_navigation';
 
@@ -106,7 +108,7 @@ function fixture(t: TestContext, authored?: { image: TestBlua32Image; registry: 
 	};
 	const unused = (): never => { throw new Error('Surface routing does not request domain work.'); };
 	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: unused }, unused,
-		{ measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) },
+		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) }),
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
@@ -1009,6 +1011,10 @@ test('Actor row press cannot reuse an identical input after focus detached and r
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor preview reorientation retains its guest binding and retirement drains the held input`, t => {
 	const { editor, host, pointer, input, pane } = actorFixture(t);
 	editor.setFontVariant(variant); editor.update(0); pane.focus();
+	const metrics = measureActorLab(editorViewState.font);
+	// Admit each client on its own, but not side by side, regardless of font or minimum reading budget.
+	const stackedWidth = Math.max(metrics.outlineMinimumWidth, metrics.previewMinimumWidth)
+		+ editorViewState.viewportWidth - (input.layout.right - input.layout.left);
 	const primary = inputFocus.target!, selected = input.outline.rows[input.outline.selectionIndex];
 	const center = () => ({ x: (input.previewBounds.left + input.previewBounds.right) / 2,
 		y: (input.previewBounds.top + input.previewBounds.bottom) / 2 });
@@ -1018,7 +1024,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor preview r
 	assert.ok(preview !== primary && binding.recipient === host.input);
 	host.input.sampleInputControllerSnapshot(sample, InputControllerSampleContext.Normal);
 	assert.equal(sample.pointerButtons, 1); assert.ok(pointerCapture.guestBinding === binding);
-	editor.updateViewport({ width: 320, height: 400 }); editor.update(0);
+	editor.updateViewport({ width: stackedWidth, height: 400 }); editor.update(0);
 	assert.equal(input.layout.previewVisible, true, 'the actual tall client retains a stacked preview');
 	assert.ok(input.layout.split === input.rowSplit);
 	assert.ok(preview.guestInput === binding && inputFocus.target === preview && pointerCapture.guestBinding === binding);
@@ -1036,7 +1042,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor preview r
 		input.outline.layout.contentTop + (otherRow + 0.5) * input.outline.layout.rowHeight,
 		PointerButton.Primary | PointerButton.Secondary);
 	assert.ok(input.outline.rows[input.outline.selectionIndex] === selected, 'the interrupted guest hold cannot select the newly expanded tree');
-	editor.updateViewport({ width: 320, height: 400 }); editor.update(0);
+	editor.updateViewport({ width: stackedWidth, height: 400 }); editor.update(0);
 	assert.equal(input.layout.previewVisible, true); assert.ok(input.layout.split === input.rowSplit);
 	assert.ok(preview.guestInput === binding, 'reappearance reuses the same viewport binding');
 	assert.ok(inputFocus.target === primary, 'reappearance does not steal primary keyboard focus');
@@ -1053,13 +1059,17 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor preview r
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor sash reorientation cancels the old axis capture and admits only the active keyboard axis`, t => {
 	const { editor, host, pointer, input, pane, sourceModel } = actorFixture(t);
 	editor.setFontVariant(variant); editor.update(0); pane.focus();
+	const metrics = measureActorLab(editorViewState.font);
+	// Admit each client on its own, but not side by side, regardless of font or minimum reading budget.
+	const stackedWidth = Math.max(metrics.outlineMinimumWidth, metrics.previewMinimumWidth)
+		+ editorViewState.viewportWidth - (input.layout.right - input.layout.left);
 	const primary = inputFocus.target!, selected = input.outline.rows[input.outline.selectionIndex], path = input.selectionPath;
 	const source = sourceModel.buffer.getText(), version = sourceModel.version, cycles = host.runtime.machine.scheduler.currentNowCycles();
 	const timeline = input.timeline, viewport = input.previewBounds;
 	const x = input.split.position, y = (input.split.bounds.top + input.split.bounds.bottom) / 2;
 	pointer(x, y, PointerButton.Primary); assert.equal(pointerCapture.active, true);
 	const horizontalRatio = input.split.ratio;
-	editor.updateViewport({ width: 320, height: 400 }); editor.update(0);
+	editor.updateViewport({ width: stackedWidth, height: 400 }); editor.update(0);
 	assert.equal(input.layout.previewVisible, true); assert.ok(input.layout.split === input.rowSplit);
 	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, true);
 	assert.ok(inputFocus.target === primary && inputFocus.target.guestInput === undefined);
@@ -1085,7 +1095,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor sash reor
 	const requestedRowRatio = input.rowSplit.ratio;
 	editor.updateViewport({ width: 640, height: 360 }); editor.update(0);
 	assert.ok(input.layout.split === input.split); assert.equal(input.split.ratio, horizontalRatio);
-	editor.updateViewport({ width: 320, height: 400 }); editor.update(0);
+	editor.updateViewport({ width: stackedWidth, height: 400 }); editor.update(0);
 	assert.ok(input.layout.split === input.rowSplit); assert.equal(input.rowSplit.ratio, requestedRowRatio);
 	assert.ok(input.outline.rows[input.outline.selectionIndex] === selected && input.selectionPath === path);
 	assert.ok(input.timeline === timeline && input.previewBounds === viewport);

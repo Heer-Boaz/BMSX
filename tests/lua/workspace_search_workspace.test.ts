@@ -334,3 +334,20 @@ test('workspace Search seeds single-line native Source selection without mutatin
 	assert.equal(sourceInput.context.view.cursorRow, 2); assert.equal(sourceInput.context.view.cursorColumn, 0);
 	assert.deepEqual(sourceInput.context.view.selectionAnchor, { row: 0, column: 0 });
 });
+
+test('Search exposes stable excerpt overflow rather than shortening matches to the panel width', async t => {
+	const f = await fixture(t), { input, pane } = f.open(); f.submit(pane, 'needle'); await f.drain(input);
+	const tree = input.tree;
+	selectMatch(input, 'matches.lua');
+	const selected = tree.rows[tree.selectionIndex], snapshot = selected.element.file.snapshot;
+	// Exercise the contribution's layout contract, not coordinates of a particular window arrangement.
+	pane.layout({ left: 0, top: 0, right: 80, bottom: 240 }); pane.update();
+	assert.equal(tree.horizontalScrollbar.isVisible(), true);
+	const extent = tree.horizontalScrollbar.getMaximumScroll();
+	tree.horizontalScrollbar.setScroll(extent); pane.update();
+	assert.equal(tree.scrollLeft, extent, 'scrolling does not reformat a shorter snippet and collapse the range');
+	assert.ok(tree.rows[tree.selectionIndex] === selected && selected.element.file.snapshot === snapshot);
+	pane.layout({ left: 0, top: 0, right: 2000, bottom: 240 }); pane.update();
+	assert.equal(tree.horizontalScrollbar.isVisible(), false);
+	assert.equal(tree.scrollLeft, 0);
+});

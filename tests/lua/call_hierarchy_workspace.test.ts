@@ -253,3 +253,18 @@ test('a query captures its authored cursor before opening admission can publish 
 	assert.ok(input.model.roots[0].range.start.line === original + 1, 'the result belongs to the invocation cursor, not its later neighbor');
 	assert.ok(input.model.roots[0].range.start.line !== original + 2);
 });
+
+test('Call Hierarchy scrolls long occurrence identities without replacing selection or truncating its query observation', async t => {
+	const f = await fixture(t), { input, pane } = f.open(), tree = input.tree;
+	// Focused layout contract: a narrow viewport exposes overflow, a sufficient one returns its gutter.
+	pane.layout({ left: 0, top: 0, right: 80, bottom: 240 }); pane.update();
+	assert.equal(tree.horizontalScrollbar.isVisible(), true);
+	const selected = tree.rows[tree.selectionIndex], text = tree.rows[0].element.text;
+	tree.horizontalScrollbar.setScroll(tree.horizontalScrollbar.getMaximumScroll()); pane.update();
+	assert.ok(tree.scrollLeft > 0);
+	assert.ok(tree.rows[tree.selectionIndex] === selected);
+	assert.equal(tree.rows[0].element.text, text);
+	pane.layout({ left: 0, top: 0, right: 2000, bottom: 240 }); pane.update();
+	assert.equal(tree.horizontalScrollbar.isVisible(), false);
+	assert.equal(tree.scrollLeft, 0);
+});

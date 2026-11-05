@@ -125,7 +125,7 @@ type ThemeDefinition = {
 	};
 	searchBackground: number;
 	highlightOverlay: number;
-	scrollbarThumb?: number;
+	scrollbar: { thumb: number; hover: number; active: number };
 	caret: {
 		inline: number;
 	};
@@ -182,6 +182,7 @@ type ThemeOverlays = {
 
 const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 	dark: {
+		scrollbar: { thumb: THEME_TOKEN_MID_GREY, hover: THEME_TOKEN_HINT_GREY, active: THEME_TOKEN_FOCUS_BLUE },
 		editor: EDITOR_THEME_COLORS.dark,
 		workbenchText: WORKBENCH_TEXT_COLORS.dark,
 		controls: WORKBENCH_CONTROL_COLORS.dark,
@@ -360,7 +361,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 		},
 		searchBackground: THEME_TOKEN_PANEL_GREY,
 		highlightOverlay: THEME_TOKEN_LINE_HIGHLIGHT_OVERLAY,
-		scrollbarThumb: THEME_TOKEN_SCROLLBAR_BASE,
+		scrollbar: { thumb: THEME_TOKEN_SCROLLBAR_BASE, hover: THEME_TOKEN_STATUS_TEXT_GREY, active: THEME_TOKEN_FOCUS_BLUE },
 		caret: {
 			inline: THEME_TOKEN_DEEP_GREY,
 		},
@@ -607,6 +608,8 @@ export let COLOR_TAB_DIRTY_MARKER: number;
 export let COLOR_GOTO_UNDERLINE: number;
 export let SCROLLBAR_TRACK_COLOR: number;
 export let SCROLLBAR_THUMB_COLOR: number;
+export let SCROLLBAR_THUMB_HOVER_COLOR: number;
+export let SCROLLBAR_THUMB_ACTIVE_COLOR: number;
 export let COLOR_QUICK_OPEN_BACKGROUND: number;
 export let COLOR_QUICK_OPEN_TEXT: number;
 export let COLOR_QUICK_OPEN_OUTLINE: number;
@@ -813,7 +816,9 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_TAB_DIRTY_MARKER = tab.dirtyMarker;
 	COLOR_GOTO_UNDERLINE = CODE_TEXT_DECORATION_STYLES[CodeTextDecoration.None].gotoUnderline;
 	SCROLLBAR_TRACK_COLOR = theme.status.background;
-	SCROLLBAR_THUMB_COLOR = theme.scrollbarThumb ?? theme.status.text;
+	SCROLLBAR_THUMB_COLOR = theme.scrollbar.thumb;
+	SCROLLBAR_THUMB_HOVER_COLOR = theme.scrollbar.hover;
+	SCROLLBAR_THUMB_ACTIVE_COLOR = theme.scrollbar.active;
 	COLOR_QUICK_OPEN_BACKGROUND = quickOpen.background;
 	COLOR_QUICK_OPEN_TEXT = quickOpen.text;
 	COLOR_QUICK_OPEN_OUTLINE = quickOpen.outline;

@@ -18,6 +18,7 @@ type SceneOutlineSource = {
 	readonly preserveDetailCase: boolean;
 	readonly identity: string;
 	displayLabel: string;
+	displayWidth: number;
 	labelClipped: boolean;
 };
 export type SceneMemberElement = SceneOutlineSource & {
@@ -56,7 +57,7 @@ export function installSceneOutline(input: SceneHierarchyViewState): void {
 			label: sceneSourceName(document.resource, scene.id, scene.range.start.line, scene.range.start.column),
 			preserveLabelCase: true, detail, preserveDetailCase: false,
 			identity: `${sourceTabDescription(input.authoring.workingCopy.resource)}:${scene.range.start.line}:${scene.range.start.column}\nScene ${sceneIdentity}\n${detail}`,
-			displayLabel: '', labelClipped: false,
+			displayLabel: '', displayWidth: 0, labelClipped: false,
 		}, prior !== undefined && prior.element.span.end === span.end && prior.collapsed);
 		input.outlineRanges.set(root.element, root.element.span);
 		const parents = input.authoring.getSpatialParents(scene);
@@ -95,7 +96,7 @@ export function installSceneOutline(input: SceneHierarchyViewState): void {
 					? definitionId === undefined ? readLuaExpressionPreview(buffer, locations, entry.definitionId) : definitionId : 'Dynamic Lua composition',
 				preserveDetailCase: definitionId !== undefined,
 				identity: `${sourceTabDescription(input.authoring.workingCopy.resource)}:${range.start.line}:${range.start.column}\nScene ${sceneIdentity}\n${entry.kind === 'object' ? `Member ${identity}\nDefinition ${definition}` : `Composition ${identity}`}${unresolvedParent ? '\nParent unavailable' : ''}`,
-				displayLabel: '', labelClipped: false,
+				displayLabel: '', displayWidth: 0, labelClipped: false,
 			}, previousMember !== undefined && previousMember.element.kind === 'member'
 				&& previousMember.element.span.end === memberSpan.end && previousMember.collapsed);
 			nodes.set(entry, member);

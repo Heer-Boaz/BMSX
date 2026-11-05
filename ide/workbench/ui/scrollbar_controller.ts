@@ -20,11 +20,10 @@ export class ScrollbarController<Kind extends string = ScrollbarKind> {
 	}
 
 	/**
-	 * Try to begin a drag on any visible scrollbar.
-	 * Returns true when a drag session starts. Invokes apply(kind, scroll) when paging via track clicks.
+	 * Admit hover and presses on visible tracks. Invokes apply(kind, scroll) when paging via track clicks.
 	 */
 	public begin(kinds: readonly Kind[], snapshot: PointerSnapshot, bottomMargin: number): boolean {
-		if (!snapshot.valid || !snapshot.insideViewport || (snapshot.justPressedButtons & PointerButton.Primary) === 0) return false;
+		if (!snapshot.valid || !snapshot.insideViewport) return false;
 		const pointerX = snapshot.viewportX, pointerY = snapshot.viewportY;
 		for (let i = 0; i < kinds.length; i += 1) {
 			const kind = kinds[i];
@@ -36,7 +35,9 @@ export class ScrollbarController<Kind extends string = ScrollbarKind> {
 				&& pointerX >= track.left && pointerX < track.right
 				&& pointerY >= track.top && pointerY < track.top + bottomMargin;
 			if (!hitsTrack && !extendedHorizontalHit) continue;
-			this.pointer.beginDrag(snapshot, scrollbar, scroll => this.apply(kind, scroll));
+			this.pointer.hoverTrack(scrollbar);
+			if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0)
+				this.pointer.beginDrag(snapshot, scrollbar, scroll => this.apply(kind, scroll));
 			return true;
 		}
 		return false;

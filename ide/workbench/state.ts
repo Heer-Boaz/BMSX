@@ -4,7 +4,7 @@ import type { AssistantConnectionFactory } from '../../hosts/common/assistant_pr
 import type { GraphLayoutEngineFactory } from './services/graph_layout/engine';
 import type { HostRewind } from '../../hosts/common/rewind';
 import type { HostExecutionControl } from '../../hosts/common/execution_control';
-import type { EditorDisplay, Viewport } from '../common/viewport';
+import type { WorkbenchDisplay, Viewport } from '../common/viewport';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
@@ -42,7 +42,7 @@ export class RuntimeIdeState extends StudioWorkbench {
 		presenter: VideoPresenter,
 		gameCapture: GameImageCapture,
 		decodeImage: ImageDecoder,
-		display: EditorDisplay,
+		display: WorkbenchDisplay,
 		input: Input,
 		audioOutput: HostAudioOutput,
 		runtimeTasks: RuntimeTaskQueue,

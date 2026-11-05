@@ -1,3 +1,4 @@
+import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
@@ -26,7 +27,7 @@ function inspectorWorkbench(t: TestContext, images: ReturnType<typeof compileEve
 	const { runtime, sources, cpu } = eventHistoryRuntime(images), host = createHostFrameFixture(runtime);
 	const externalWork = (): never => { throw new Error('Inspector movement does not request external work.'); };
 	const ide = new RuntimeIdeState(runtime, host.presenter, { capture: externalWork }, externalWork,
-		{ measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) },
+		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) }),
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 800, height: 320 }, sources, new Map(), externalWork, externalWork, externalWork);
 	const editor = ide.editor;

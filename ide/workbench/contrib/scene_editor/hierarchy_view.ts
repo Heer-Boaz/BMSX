@@ -2,7 +2,7 @@ import type { TrackedTextRange } from '../../../editor/text/text_change';
 import type { SceneAuthoringContext } from './authoring_context';
 import type { SceneSourceDefinition, SceneSourceDocument, SceneSourceObject } from './model';
 import { installSceneOutline, projectSceneSelection, type SceneOutlineElement } from './outline';
-import type { WorkbenchTreeState } from '../../ui/tree_view';
+import { ScrollableWorkbenchTree } from '../../ui/scrollable_tree';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
 
 /** A hierarchy's disclosure and reading state over one admitted authored context. */
@@ -16,10 +16,8 @@ export class SceneHierarchyViewState {
 	public readonly outlineRanges = new Map<SceneOutlineElement, TrackedTextRange>();
 	public readonly outlineParents = new Map<SceneSourceDefinition, ReadonlyMap<SceneSourceObject, SceneSourceObject | undefined>>();
 	public readonly layout: FullWidthWorkbenchLayout = { left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null };
-	public readonly outline: WorkbenchTreeState<SceneOutlineElement> = {
-		roots: [], rows: [], selectionIndex: -1, scroll: 0, hoverIndex: -1,
-		layout: { contentLeft: 0, contentTop: 0, contentRight: 0, contentBottom: 0, rowHeight: 0, visibleRowCount: 0, indentWidth: 0, twistieWidth: 0 },
-	};
+	public readonly outline = new ScrollableWorkbenchTree<SceneOutlineElement>();
+	public measuredRowsRevision = -1;
 	private readonly changeListeners = new Set<() => void>();
 	private readonly releaseRanges: () => void;
 

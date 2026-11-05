@@ -19,9 +19,7 @@ import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import { clearBackgroundTasks } from '../../ide/common/background_tasks';
 import { IdeMicrotaskQueue } from '../../ide/common/microtask_queue';
-import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
-import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { runStudioHostFrame } from '../../ide/workbench/frame';
@@ -43,7 +41,8 @@ export async function createLiveStudioFixture(t: TestContext) {
 	const clock = new VirtualHeadlessClock(), input = new Input(clock, new HeadlessInputHub(), -1);
 	const runtime = initializeMachineRuntime(system, [cart, null], PSX_MACHINE_SPEC, input);
 	const backend = new HeadlessGPUBackend(256, 212, runtime.model.gxGpuVramBytes);
-	const presenter = initializeMachineVideoPresenter(runtime, new OffscreenVideoOutput(256, 212), backend);
+	const display = new OffscreenVideoOutput(256, 212);
+	const presenter = initializeMachineVideoPresenter(runtime, display, backend);
 	presenter.crt_postprocessing_enabled = false;
 	const audio = new HostAudioOutput(new HostAudioDevice(new DiscardingAudioSink()), runtime.machine.audioController, runtime.timing.ufpsScaled);
 	const tasks = new RuntimeTaskQueue(audio, presenter), execution = new HostExecutionControl(audio);
@@ -52,7 +51,7 @@ export async function createLiveStudioFixture(t: TestContext) {
 	const session = new HostFrameSession(runtime.timing.ufpsScaled, 0, rewind, execution);
 	const externalWork = (): never => { throw new Error('Live Studio does not build a fixture or another runtime.'); };
 	const ide = new RuntimeIdeState(runtime, presenter, { capture: externalWork }, externalWork,
-		{ measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) },
+		display,
 		input, audio, tasks, execution, rewind, clock, new HeadlessClipboard(), new IdeMicrotaskQueue(), log,
 		0.3, { width: 800, height: 360 }, sources, new Map(), externalWork, externalWork, externalWork);
 	const editor = ide.editor;
@@ -76,8 +75,8 @@ export async function createLiveStudioFixture(t: TestContext) {
 	assert.equal(ide.boots.start('installed').result!.status, 'reset');
 	await until(() => ide.guest.global('studio_test_ready') === true);
 	ide.transport.pause();
-	editor.interaction.setActive(true); editorRuntimeState.active = true;
-	input.setPointerAdmissionMode('routed');
+	display.workspace.layout(2400, 1080);
+	editor.activate();
 	const native = new RemoteInput(input, clock, undefined, event => editor.dispatchPointer(event), event => editor.dispatchWheel(event));
-	return { ide, editor, sources, runtime, execution, backend, tasks, native, frame, until };
+	return { ide, editor, sources, runtime, execution, backend, display, presenter, tasks, native, frame, until };
 }

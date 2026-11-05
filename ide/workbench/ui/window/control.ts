@@ -2,7 +2,7 @@ import { PointerClickSequence } from '../../../input/pointer/click_sequence';
 import { copy_rect_bounds, create_rect_bounds, point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
-import { PointerButton } from '../../../../hosts/common/input/pointer_event';
+import { PointerButton, type PointerCursor } from '../../../../hosts/common/input/pointer_event';
 import type { EditorCommandRunner } from '../../../common/commands';
 import type { PointerInputSnapshot, PointerSnapshot, WheelInputSnapshot } from '../../../common/models';
 import { ELLIPSIS, truncateMeasuredText, type TextRangeMeasure } from '../../../common/text';
@@ -123,6 +123,19 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	private readonly placementBounds = create_rect_bounds();
 	private readonly placementScope = Symbol('window placement preview');
 	private resizing = WindowResizeEdge.None;
+	private hoveredEdge = WindowResizeEdge.None;
+	public get pointerCursor(): PointerCursor {
+		const edge = this.resizing || this.hoveredEdge;
+		switch (edge) {
+			case WindowResizeEdge.Left: case WindowResizeEdge.Right: return 'ew-resize';
+			case WindowResizeEdge.Top: case WindowResizeEdge.Bottom: return 'ns-resize';
+			case WindowResizeEdge.Top | WindowResizeEdge.Left:
+			case WindowResizeEdge.Bottom | WindowResizeEdge.Right: return 'nwse-resize';
+			case WindowResizeEdge.Top | WindowResizeEdge.Right:
+			case WindowResizeEdge.Bottom | WindowResizeEdge.Left: return 'nesw-resize';
+			default: return 'default';
+		}
+	}
 	private startX = 0;
 	private startY = 0;
 	private titleClick = false;
@@ -394,7 +407,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		} else this.tooltip.hide();
 	}
 
-	public onPointerLeave(): void { this.headerHovered = false; }
+	public onPointerLeave(): void { this.headerHovered = false; this.hoveredEdge = WindowResizeEdge.None; }
 
 	private focusContent(): void {
 		this.options.focusContent();
@@ -533,7 +546,8 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 			this.hover.release(this); this.headerHovered = false; return;
 		}
 		this.headerHovered = header;
-		if (header) this.hover.visit(this);
+		this.hoveredEdge = edge;
+		if (header || edge !== WindowResizeEdge.None) this.hover.visit(this);
 		else this.hover.release(this);
 		if (snapshot.justPressedButtons !== 0 && (snapshot.justPressedButtons !== PointerButton.Primary || edge !== WindowResizeEdge.None || !header)) {
 			this.titleClicks.clear();
