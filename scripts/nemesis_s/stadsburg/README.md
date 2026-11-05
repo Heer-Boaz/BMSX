@@ -76,8 +76,15 @@ All sixteen active foreground building sources share a night-lighting palette:
 light blue (`#4060e0`) marks the moonlit main wall planes, while dark blue
 (`#2020e0`) remains on roof planes, recessed service bays, wall returns and
 shadowed joints. Stone, snow, glazing, warm windows, timber doors and shop
-canopies keep their separate inks. These colour assignments preserve every
-foreground silhouette pixel, ground-contact row and rooftop support line.
+canopies keep their separate inks. Domestic windows use grouped glass panes,
+a stone head, a dark upper reveal and a projecting sill with a short cast
+shadow. Workshop glazing uses connected reflections inside one dark opening;
+the storefronts sit behind their canopies with a separate entrance recess.
+Snow has a white upper surface and a grey lower plane where the roof offers
+enough pixels. Broad wall planes stay quiet; shadows belong to cornices,
+sills, returns and structural joins rather than scattered surface marks.
+Native source contours, occupied terrain cells, ground-contact rows and
+rooftop support lines stay fixed when these interior material rows are drawn.
 The distant architecture stays black and dark blue, with small shadows beneath
 cornices and inside entrances; broad far-wall masses and window axes remain
 readable. The existing two-ink-per-8×1 rule applies to both layers.
