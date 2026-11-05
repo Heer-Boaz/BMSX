@@ -110,7 +110,7 @@ export class WorkbenchSplitControl implements PointerCaptureTarget, PointerHover
 			// Like a scrollbar, pointer resizing keeps the active editor and draft.
 			// Keyboard users reach the sash through its explicit focus order.
 			this.pointerOffset = position - input.position;
-			this.capture.capture(this);
+			if (!this.capture.capture(this)) return true;
 			this.unbindPressBlur = this.focus.target?.onDidBlur(this.cancelPointer);
 		}
 		return true;

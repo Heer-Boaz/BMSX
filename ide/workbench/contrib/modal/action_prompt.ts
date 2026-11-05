@@ -126,7 +126,7 @@ export class ActionPrompt implements PointerCaptureTarget {
 		if (!this.focusTarget.focus() || this.request !== request) return;
 		this.cancelPointer();
 		if (index < 0) return;
-		this.capture.capture(this, PointerButton.Primary, this.pointerScope);
+		if (!this.capture.capture(this, PointerButton.Primary, this.pointerScope)) return;
 		this.focused = this.pointerButton = this.hovered = index;
 		if ((snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(snapshot);
 	}

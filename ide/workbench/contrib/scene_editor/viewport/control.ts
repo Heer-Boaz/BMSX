@@ -314,7 +314,7 @@ export class SceneViewportControl implements PointerCaptureTarget {
 			const gesture: TranslationGesture = { phase: 'drag', view, attachment, generation, allocation: view.allocationRevision,
 				request, assets: view.assetGeneration, camera: view.camera.revision };
 			this.gesture = gesture; view.transformPreview = request.preview;
-			pointerCapture.capture(this, PointerButton.Primary, this.focusTarget.scope.surfaceScope);
+			if (!pointerCapture.capture(this, PointerButton.Primary, this.focusTarget.scope.surfaceScope)) return true;
 			if (this.viewValue === view && this.attachment === attachment) view.refresh(); return true;
 		}
 		if (entry !== undefined) {

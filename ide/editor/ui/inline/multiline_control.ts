@@ -63,7 +63,8 @@ export class MultilineFieldControl implements PointerCaptureTarget {
 			field.focusTarget.focus(); clearSelection(field); this.verticalOffset = -1;
 			setCursorFromOffset(field, view.offsetAt(view.firstRow + Math.trunc((snapshot.viewportY - bounds.top - 2) / this.rowHeight), snapshot.viewportX - bounds.left - 3));
 			setSelectionAnchorFromOffset(field, getCursorOffset(field));
-			pointerCapture.capture(this); field.pointerSelecting = true; resetInlineBlink();
+			if (!pointerCapture.capture(this)) return true;
+			field.pointerSelecting = true; resetInlineBlink();
 		}
 		return true;
 	}

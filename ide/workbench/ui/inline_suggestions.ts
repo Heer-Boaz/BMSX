@@ -91,7 +91,7 @@ export class InlineSuggestions<T extends QuickPickItem> implements PointerCaptur
 				this.model.list.selectionIndex = index;
 				this.pressedItem = this.provider.items[this.model.list.rows[index].itemIndex];
 				this.pointerRevision = this.model.viewport.revision;
-				pointerCapture.capture(this, PointerButton.Primary);
+				if (!pointerCapture.capture(this, PointerButton.Primary)) return true;
 				if ((pointer.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(pointer);
 			}
 		}

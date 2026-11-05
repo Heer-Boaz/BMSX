@@ -81,7 +81,8 @@ export class WorkbenchImageControl implements PointerCaptureTarget {
 			if (!this.focusTarget.focus() || this.inputGeneration !== generation || scope.contextGeneration !== context
 				|| this.focus.admittedTarget !== this.focusTarget) return true;
 			const button = (pressed & PointerButton.Auxiliary) !== 0 ? PointerButton.Auxiliary : PointerButton.Primary;
-			this.capture.capture(this, button, this.scope);
+			this.cancelPointer();
+			if (!this.capture.capture(this, button, this.scope)) return true;
 			this.anchorX = snapshot.viewportX;
 			this.anchorY = snapshot.viewportY;
 			this.anchorScrollX = view.horizontal.getScroll();

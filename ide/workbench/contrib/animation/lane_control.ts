@@ -47,7 +47,7 @@ export class AnimationLaneControl implements PointerCaptureTarget {
 			if (x < Math.min(left, right) - 4 || x > Math.max(left, right) + 4) return true;
 			const mode = Math.abs(x - left) < 5 ? 'start' : Math.abs(x - right) < 5 ? 'end' : 'move';
 			if (!this.controller.authoring.canEditClip(input, clip, mode)) return true;
-			pointerCapture.capture(this);
+			if (!pointerCapture.capture(this)) return true;
 			this.gesture = { clip, mode, x, start, duration, previewStart: start, previewDuration: duration };
 			input.clipPreview = { index: input.clipIndex, start, duration };
 		} else if (row.frames) {

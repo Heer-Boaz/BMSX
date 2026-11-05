@@ -336,7 +336,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 		if (secondary) {
 			this.contextTarget = hit; this.pressTarget = view.selection;
 			this.gesture = Gesture.ContextClick;
-			this.capture.capture(this, PointerButton.Secondary, this.focusTarget.scope.surfaceScope);
+			if (!this.capture.capture(this, PointerButton.Secondary, this.focusTarget.scope.surfaceScope)) return WorkbenchGraphPointerResult.Rejected;
 			if ((snapshot.justReleasedButtons & PointerButton.Secondary) !== 0) this.releaseCapturedPointer(snapshot, now);
 			return WorkbenchGraphPointerResult.Handled;
 		}
@@ -346,7 +346,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 			this.clicks.clear();
 			this.pointerHover.release(this);
 			this.pressConnection = undefined;
-			this.capture.capture(this, auxiliary ? PointerButton.Auxiliary : PointerButton.Primary);
+			if (!this.capture.capture(this, auxiliary ? PointerButton.Auxiliary : PointerButton.Primary)) return WorkbenchGraphPointerResult.Rejected;
 			this.gesture = Gesture.Pan;
 			return pan ? WorkbenchGraphPointerResult.Handled : WorkbenchGraphPointerResult.Selection;
 		}
@@ -354,13 +354,13 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 		this.updateConnectionHandles();
 		if (this.pressConnection !== undefined) {
 			this.clicks.clear(); // Endpoint clicks must never activate Source.
-			this.capture.capture(this);
+			if (!this.capture.capture(this)) return WorkbenchGraphPointerResult.Rejected;
 			this.gesture = Gesture.PendingDrag;
 			return WorkbenchGraphPointerResult.Selection;
 		}
 		const activate = this.clicks.click(hit, snapshot.viewportX, snapshot.viewportY, now);
 		if (!activate && this.dragSource !== undefined) {
-			this.capture.capture(this);
+			if (!this.capture.capture(this)) return WorkbenchGraphPointerResult.Rejected;
 			this.gesture = Gesture.PendingDrag;
 		}
 		return activate ? WorkbenchGraphPointerResult.Activate : WorkbenchGraphPointerResult.Selection;

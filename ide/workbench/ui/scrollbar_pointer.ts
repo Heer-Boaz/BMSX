@@ -39,7 +39,8 @@ export class ScrollbarPointerControl implements PointerCaptureTarget {
 
 	/** The owner has admitted a primary press, including an editor's extended track hit area. */
 	public beginDrag(snapshot: PointerSnapshot, scrollbar: Scrollbar, onScroll?: (scroll: number) => void): void {
-		this.capture.capture(this, PointerButton.Primary, this.scope);
+		this.cancelPointer(); // A new track replaces this control's old track subscription.
+		if (!this.capture.capture(this, PointerButton.Primary, this.scope)) return;
 		const pointer = scrollbar.orientation === 'vertical' ? snapshot.viewportY : snapshot.viewportX;
 		const previous = scrollbar.getScroll();
 		const start = scrollbar.beginDrag(pointer);

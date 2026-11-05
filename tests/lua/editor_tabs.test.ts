@@ -664,6 +664,33 @@ test('captured tab input retains full pointer occurrences and updates modifiers 
 	assert.deepEqual(events, ['clear', 'drop']);
 });
 
+test('starting a new tab drag retires old feedback without overwriting a reentrant replacement', t => {
+	const f = fixture(t), first = f.add('first'), attempted = f.add('attempted'), newest = f.add('newest');
+	const capture = new PointerCaptureService(), scope = Symbol('tab admission');
+	const down = pointer(10, 10, primary, primary);
+	let replace = false, clears = 0;
+	const drag = new EditorTabDrag(capture, scope, () => {}, { update() {}, drop() {}, clear() {
+		clears++;
+		if (replace) { replace = false; drag.begin({ kind: 'editor', model: f.group, input: newest }, down, 2); }
+	} });
+	t.after(() => drag.cancel());
+	drag.begin({ kind: 'editor', model: f.group, input: first }, down, 0);
+	replace = true; drag.begin({ kind: 'editor', model: f.group, input: attempted }, down, 1);
+	assert.ok(drag.state?.source.kind === 'editor' && drag.state.source.input === newest);
+	assert.equal(clears, 2); assert.equal(capture.active, true);
+	capture.dispatch(pointer(30, 10, primary), false, 3, scope);
+	assert.ok(drag.state?.source.kind === 'editor' && drag.state.source.input === newest);
+});
+
+test('capture handoff cannot create tab drag state after its owner cancels admission', t => {
+	const f = fixture(t), tab = f.add('retired'), capture = new PointerCaptureService(), scope = Symbol('tab admission');
+	const drag = new EditorTabDrag(capture, scope, () => {}, { update() { assert.fail('retired drag moved'); }, drop() { assert.fail('retired drag dropped'); }, clear() {} });
+	t.after(() => drag.cancel());
+	capture.capture({ handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() { drag.cancel(); } });
+	drag.begin({ kind: 'editor', model: f.group, input: tab }, pointer(10, 10, primary, primary), 0);
+	assert.equal(drag.state, null); assert.equal(capture.active, false);
+});
+
 
 for (const variant of ['tiny', 'msx'] as const) for (const heldFrame of [false, true]) {
 	test(`captured preview double-click survives hover retirement (${variant}, held frame ${heldFrame})`, t => {

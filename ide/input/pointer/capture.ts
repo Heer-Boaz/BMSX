@@ -18,6 +18,7 @@ export interface PointerCaptureTarget {
 /** One control receives the rest of a physical gesture, ahead of ordinary hit testing. */
 export class PointerCaptureService {
 	private target: PointerCaptureTarget | null = null;
+	private generation = 0;
 	private button = PointerButton.Primary;
 	private scope = WORKBENCH_POINTER_SCOPE;
 	private route: PointerCaptureScope | undefined;
@@ -48,13 +49,19 @@ export class PointerCaptureService {
 		if (this.guest === binding) this.cancel();
 	}
 
-	public capture(target: PointerCaptureTarget, button = PointerButton.Primary, scope = this.route ?? WORKBENCH_POINTER_SCOPE): void {
+	/** Publish ownership before notifying the departing control. Its callbacks may
+	 * retire this attachment or admit a newer gesture; callers must stop when that
+	 * happens, without cancelling the newer owner. Recapturing the same control
+	 * does not notify it of a loss it never suffered. */
+	public capture(target: PointerCaptureTarget, button = PointerButton.Primary, scope = this.route ?? WORKBENCH_POINTER_SCOPE): boolean {
+		if (this.drain) { target.cancelPointer(); return false; }
 		const previous = this.target;
-		this.target = null;
-		if (previous !== null) previous.cancelPointer();
+		const generation = ++this.generation;
 		this.target = target;
 		this.button = button;
 		this.scope = scope;
+		if (previous !== null && previous !== target) previous.cancelPointer();
+		return this.target === target && this.generation === generation;
 	}
 
 	public release(target: PointerCaptureTarget): void {

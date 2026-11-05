@@ -535,7 +535,7 @@ export class QuickInputController implements PointerCaptureTarget {
 			pointerHover.visit(this);
 			if (justPressed && (snapshot.justPressedButtons & PointerButton.Primary) !== 0) {
 				const session = this.session!;
-				pointerCapture.capture(this, PointerButton.Primary, this.pointerScope);
+				if (!pointerCapture.capture(this, PointerButton.Primary, this.pointerScope)) return;
 				if (this.session !== session) { pointerCapture.release(this); return; }
 				this.pressedBack = session; this.backRevision = this.layout.revision;
 				if ((snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(snapshot);
@@ -561,7 +561,7 @@ export class QuickInputController implements PointerCaptureTarget {
 			this.clearValidationOnPointerEnd = index !== this.model.list.selectionIndex && this.message.length !== 0
 				? this.validationRevision : undefined;
 			this.model.list.selectionIndex = index;
-			pointerCapture.capture(this, PointerButton.Primary, this.pointerScope);
+			if (!pointerCapture.capture(this, PointerButton.Primary, this.pointerScope)) return;
 			this.pressedRow = this.model.list.rows[index];
 			this.pointerRevision = this.model.viewport.revision;
 			if ((snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(snapshot);

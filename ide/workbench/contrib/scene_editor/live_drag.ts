@@ -38,13 +38,13 @@ export class SceneLivePositionDrag implements PointerCaptureTarget {
 		if (!relativeAffine2(inverse, inverse, { xx: quad.parentXX, xy: quad.parentXY, yx: quad.parentYX, yy: quad.parentYY, ox: 0, oy: 0 })) return false;
 		const current = () => binding.attached && request.isCurrent() && isCurrent();
 		if (!current()) return false;
+		this.cancelPointer();
 		this.gesture = { request, isCurrent: current, unbind: focus.onDidBlur(() => pointerCapture.cancelTarget(this)),
 			pointerX: snapshot.viewportX, pointerY: snapshot.viewportY, scaleX: width / (bounds.right - bounds.left), scaleY: height / (bounds.bottom - bounds.top),
 			initialX: local.ox, initialY: local.oy, x: local.ox, y: local.oy, xx: inverse.xx, xy: inverse.xy, yx: inverse.yx, yy: inverse.yy };
 		this.outline.left = hit.left; this.outline.top = hit.top; this.outline.right = hit.right; this.outline.bottom = hit.bottom;
 		this.dx = 0; this.dy = 0;
-		pointerCapture.capture(this, undefined, focus.scope.surfaceScope);
-		return true;
+		return pointerCapture.capture(this, undefined, focus.scope.surfaceScope);
 	}
 	public refresh(): void {
 		if (this.gesture !== undefined && !this.gesture.isCurrent()) {

@@ -77,7 +77,8 @@ export class WorkbenchTreeDrag<Element> implements PointerCaptureTarget {
 	public get pending(): boolean { return this.press !== undefined; }
 
 	public begin(tree: WorkbenchTreeState<Element>, node: WorkbenchTreeNode<Element>, pointer: PointerInputSnapshot, now: number): void {
-		this.capture.capture(this, PointerButton.Primary, this.scope);
+		this.cancelPointer();
+		if (!this.capture.capture(this, PointerButton.Primary, this.scope)) return;
 		this.press = { tree, node, startX: pointer.viewportX, startY: pointer.viewportY,
 			pointerX: pointer.viewportX, pointerY: pointer.viewportY, pointerInside: pointer.insideViewport,
 			pointerExposed: false, modifiers: pointer.modifiers, admittedModifiers: pointer.modifiers,

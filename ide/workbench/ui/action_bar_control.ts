@@ -172,7 +172,7 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 		const command = item!.command;
 		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0 && this.isEnabled(command)) {
 			this.cancelPointer();
-			this.capture.capture(this);
+			if (!this.capture.capture(this)) return true;
 			this.pointerCommand = command;
 			this.pressedEntry = item!.menuEntry;
 			this.pressedEntryRevision = this.pressedEntry === undefined ? 0 : this.pressedEntry.revision;

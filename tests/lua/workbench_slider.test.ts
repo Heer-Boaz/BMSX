@@ -84,3 +84,16 @@ for (const transition of ['replacement', 'retirement', 'refused focus'] as const
 	assert.deepEqual(values, [], 'an inadmissible press must not move either slider');
 	assert.equal(original.value, 0); assert.equal(replacement.value, 0); assert.equal(capture.active, false);
 });
+
+test('capture handoff cannot write a slider rebound by the departing control', t => {
+	const focus = new InputFocusService(), capture = new PointerCaptureService(), parent = focus.createTarget();
+	const original = new WorkbenchSlider(), replacement = new WorkbenchSlider();
+	for (const slider of [original, replacement]) { slider.enabled = true; slider.layout(0, 20, 106, 36); slider.setRange(0, 100, 1); }
+	const values: number[] = [], control = new WorkbenchSliderControl(focus, capture, parent, value => values.push(value), () => {});
+	control.setInput(original); control.focusTarget.focus(); t.after(() => control.dispose());
+	capture.capture({ handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() { control.setInput(replacement); } });
+	control.handlePointer({ valid: true, insideViewport: true, viewportX: 50, viewportY: 25,
+		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 });
+	assert.deepEqual(values, [], 'the original press cannot become a value edit of the replacement');
+	assert.equal(original.value, 0); assert.equal(replacement.value, 0); assert.equal(capture.active, false);
+});

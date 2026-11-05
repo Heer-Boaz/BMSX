@@ -86,7 +86,7 @@ export class WorkbenchViewportNavigation implements PointerCaptureTarget {
 		this.unbindCamera = input.camera.onDidChange(() => { if (input.camera.mode !== mode) this.cancel(); });
 		this.unbindContext = this.focusTarget.scope.onDidRetireContext(() => this.cancel());
 		const button = middle ? PointerButton.Auxiliary : secondary ? PointerButton.Secondary : PointerButton.Primary;
-		this.capture.capture(this, button, this.focusTarget.scope.surfaceScope);
+		if (!this.capture.capture(this, button, this.focusTarget.scope.surfaceScope)) return true;
 		if ((snapshot.justReleasedButtons & button) !== 0) this.releaseCapturedPointer(snapshot, now);
 		return true;
 	}

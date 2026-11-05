@@ -88,3 +88,11 @@ test('source invalidation while admitting focus revokes the pending camera press
 	f.capture.dispatch({ ...f.pointer, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: PointerButton.Secondary }, false, 20);
 	assert.equal(f.contexts(), 1);
 });
+
+test('capture handoff retires pending camera flight when the departing control closes the viewport', t => {
+	const f = fixture(t, '3d'); f.target.focus();
+	f.capture.capture({ handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() { f.control.clearInput(); } });
+	f.control.handlePointer(f.pointer, 0);
+	assert.equal(f.capture.active, false); assert.equal(f.control.active, false); assert.equal(f.control.flying, false);
+	assert.equal(f.control.advance(10), false); assert.equal(f.contexts(), 0);
+});

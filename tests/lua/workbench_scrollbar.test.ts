@@ -26,6 +26,16 @@ test('scroll notifications publish logical movement once, including range refine
 	assert.deepEqual(positions, [125.5, 20]);
 });
 
+test('capture handoff cannot scroll or subscribe a retired scrollbar gesture', () => {
+	const bar = new Scrollbar('vertical'), capture = new PointerCaptureService(), control = new ScrollbarPointerControl(capture);
+	bar.layout({ left: 100, top: 0, right: 103, bottom: 100 }, 400, 100, 0);
+	let changes = 0;
+	capture.capture({ handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() { control.cancelPointer(); } });
+	control.beginDrag({ valid: true, insideViewport: true, viewportX: 101, viewportY: 85,
+		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 }, bar, () => changes++);
+	assert.equal(capture.active, false); assert.equal(bar.getScroll(), 0); assert.equal(changes, 0);
+});
+
 for (const orientation of ['horizontal', 'vertical'] as const) {
 	test(`${orientation} captured scrollbar releases outside its track and ends when geometry changes`, () => {
 		const bar = new Scrollbar(orientation), capture = new PointerCaptureService();

@@ -22,8 +22,10 @@ export class ResourcePanelDrag implements PointerCaptureTarget {
 
 	public begin(source: ProspectiveEditorOpenSource, snapshot: PointerInputSnapshot,
 		now: number, click: (snapshot: PointerInputSnapshot) => void): void {
-		pointerCapture.capture(this);
-		this.state = { ...snapshot, source, click, startX: snapshot.viewportX, startY: snapshot.viewportY, hasDragged: false };
+		const previous = this.state, state = { ...snapshot, source, click, startX: snapshot.viewportX, startY: snapshot.viewportY, hasDragged: false };
+		this.state = state;
+		if (previous !== undefined) this.handler.clear();
+		if (this.state !== state || !pointerCapture.capture(this)) return;
 		if ((snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(snapshot, now);
 	}
 

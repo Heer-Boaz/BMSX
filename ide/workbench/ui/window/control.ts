@@ -517,7 +517,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 			copy_rect_bounds(this.startRequested, this.model.requestedBounds);
 			this.resizing = edge;
 			this.moving = false; this.geometryPending = false;
-			this.capture.capture(this);
+			if (!this.capture.capture(this)) return;
 			this.surfaces.raise(this.surface!);
 			if (this.capture.routeScope === this.scope.surfaceScope) this.focusTarget.focus();
 			return;

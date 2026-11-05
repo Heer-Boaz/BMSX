@@ -144,6 +144,18 @@ test('shared UI icons are retained pixel geometry, not font glyph substitutions'
 
 const PRIMARY = PointerButton.Primary;
 
+test('capture handoff cannot arm an action bar retired by the departing control', t => {
+	const f = fixture(t), item = f.state.items[0];
+	f.capture.capture({ handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() { f.bar.clearInput(); } });
+	const pointer: PointerInputSnapshot = { modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true,
+		viewportX: (item.bounds.left + item.bounds.right) / 2, viewportY: 16,
+		pressedButtons: PRIMARY, justPressedButtons: PRIMARY, justReleasedButtons: 0 };
+	f.bar.handlePointer(pointer);
+	assert.equal(f.capture.active, false); assert.equal(f.state.pressedCommand, null);
+	f.capture.dispatch({ ...pointer, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: PRIMARY }, false, 1);
+	assert.deepEqual(f.calls, []);
+});
+
 test('icon-and-label actions measure their complete retained cell only when the label or font changes', () => {
 	const state = createWorkbenchActionBar('window.status'), item = state.items[0], bounds = item.bounds;
 	for (const variant of ['tiny', 'msx'] as const) {

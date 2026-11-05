@@ -65,7 +65,7 @@ export class AnimationKeyControl implements PointerCaptureTarget {
 			&& (!this.focusTarget.focus() || this.inputGeneration !== generation || this.focusTarget.scope.contextGeneration !== context
 				|| input.keys.revision !== revision || inputFocus.admittedTarget !== this.focusTarget)) return true;
 		if ((snapshot.justPressedButtons & PointerButton.Auxiliary) !== 0) {
-			pointerCapture.capture(this, PointerButton.Auxiliary);
+			if (!pointerCapture.capture(this, PointerButton.Auxiliary)) return true;
 			this.gesture = { kind: 'pan', originX: snapshot.viewportX, minimum: input.keys.range.minimum, maximum: input.keys.range.maximum };
 			return true;
 		}
@@ -87,7 +87,7 @@ export class AnimationKeyControl implements PointerCaptureTarget {
 				const field = inCurve ? handle ?? 'value' : undefined;
 				const editValue = field !== undefined && this.authoring.canEditCurveField(input, key, field);
 				if (moveTime || editValue) {
-					pointerCapture.capture(this);
+					if (!pointerCapture.capture(this)) return true;
 					const startValue = editValue ? key[field]!.value! : 0;
 					if (handle !== undefined) {
 						const geometry = handle === 'arrive' ? curve.arriveHandle : curve.leaveHandle;

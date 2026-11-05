@@ -199,10 +199,11 @@ export class WorkbenchTextViewControl implements PointerCaptureTarget, PointerHo
 		if (this.closeHovered) pointerHover.visit(this); else pointerHover.release(this);
 		if (this.findVisible && this.findArranged && snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.findBar)) {
 			if (pressed && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.findCloseBounds)) {
-				this.gesture = 'close'; pointerCapture.capture(this);
+				this.gesture = 'close';
+				if (!pointerCapture.capture(this)) return true;
 			} else if (pressed && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.findBounds)) {
 				this.findField.focusTarget.focus(); this.gesture = 'find'; this.moveFind(snapshot, true);
-				if (this.findField.pointerSelecting) pointerCapture.capture(this);
+				if (this.findField.pointerSelecting && !pointerCapture.capture(this)) return true;
 			}
 			if (this.gesture !== undefined && (snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(snapshot);
 			return true;
@@ -212,7 +213,7 @@ export class WorkbenchTextViewControl implements PointerCaptureTarget, PointerHo
 			const offset = this.model!.offsetAt(snapshot.viewportX, snapshot.viewportY);
 			this.anchor = (snapshot.modifiers & KeyModifier.shift) !== 0 ? this.model!.selectionAnchor : offset;
 			this.model!.select(this.anchor, offset); this.gesture = 'document'; this.pointerX = snapshot.viewportX; this.pointerY = snapshot.viewportY;
-			pointerCapture.capture(this);
+			if (!pointerCapture.capture(this)) return true;
 			if ((snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(snapshot);
 			return true;
 		}

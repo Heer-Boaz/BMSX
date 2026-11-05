@@ -66,6 +66,15 @@ test('tree press/click does not create a source drag or publish a drop', t => {
 	assert.equal(f.capture.active, false); assert.equal(f.drag.pending, false); assert.equal(f.drag.feedback, undefined);
 });
 
+test('capture handoff cannot retain a tree press after its real surface retires', t => {
+	const f = fixture(t);
+	f.capture.capture({ handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() { f.owner.dispose(); } }, PointerButton.Primary, f.scope);
+	f.press();
+	assert.equal(f.drag.pending, false); assert.equal(f.capture.active, false); assert.equal(f.drag.feedback, undefined);
+	f.move(70, 50); f.release(70, 50);
+	assert.deepEqual(f.counts(), { starts: 0, queries: 0, readings: 0 }); assert.equal(f.dropped(), undefined);
+});
+
 test('a captured tree drop uses the release sector, not the last accepted hover', t => {
 	const f = fixture(t); f.press(); f.move(60, 78);
 	assert.ok(f.drag.feedback?.target === f.nodes[2]);

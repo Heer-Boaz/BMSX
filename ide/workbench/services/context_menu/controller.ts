@@ -255,7 +255,7 @@ export class ContextMenuController implements PointerCaptureTarget {
 			this.model.selectedIndex = index >= 0 && this.model.rows[index].enabled ? index : -1;
 		}
 		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0 && this.model.selectedIndex >= 0) {
-			this.capture.capture(this, PointerButton.Primary, this.pointerScope);
+			if (!this.capture.capture(this, PointerButton.Primary, this.pointerScope)) return true;
 			this.pressedIndex = this.model.selectedIndex;
 			if ((snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(snapshot);
 		}

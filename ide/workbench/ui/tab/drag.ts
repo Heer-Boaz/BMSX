@@ -38,9 +38,11 @@ export class EditorTabDrag implements PointerCaptureTarget {
 		private readonly scope: PointerCaptureScope, private readonly onBeginDrag: () => void, private readonly handler: EditorTabDragHandler) {}
 
 	public begin(source: EditorTabDragSource, snapshot: PointerInputSnapshot, now: number): void {
-		this.capture.capture(this, PointerButton.Primary, this.scope);
-		this.state = { ...snapshot, source, startX: snapshot.viewportX, startY: snapshot.viewportY,
+		const previous = this.state, state = { ...snapshot, source, startX: snapshot.viewportX, startY: snapshot.viewportY,
 			hasDragged: false, pointerTime: now };
+		this.state = state;
+		if (previous !== null) this.handler.clear();
+		if (this.state !== state || !this.capture.capture(this, PointerButton.Primary, this.scope)) return;
 		if ((snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(snapshot, now);
 	}
 

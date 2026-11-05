@@ -110,6 +110,55 @@ test('capture replacement detaches before notifying the old owner; stale release
 	assert.equal(stops, 2);
 });
 
+test('capture replacement preserves a newer owner admitted by the departing control', () => {
+	const capture = new PointerCaptureService();
+	let staleMoves = 0, newerMoves = 0, attemptedCancels = 0;
+	const newer = { handleCapturedPointer() { newerMoves++; }, releaseCapturedPointer() {}, cancelPointer() {} };
+	const attempted = { handleCapturedPointer() { staleMoves++; }, releaseCapturedPointer() {}, cancelPointer() { attemptedCancels++; } };
+	capture.capture({ handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() { capture.capture(newer); } });
+	capture.capture(attempted);
+	capture.dispatch(held, false, 1);
+	assert.equal(newerMoves, 1, 'the departing callback has already admitted the newer gesture');
+	assert.equal(staleMoves, 0); assert.equal(attemptedCancels, 1);
+	capture.cancel();
+});
+
+test('capture replacement cannot resurrect a control retired by the departing callback', () => {
+	const capture = new PointerCaptureService(), scope = Symbol('incoming surface');
+	let cancels = 0;
+	const incoming = { handleCapturedPointer() { assert.fail('retired capture moved'); },
+		releaseCapturedPointer() { assert.fail('retired capture committed'); }, cancelPointer() { cancels++; } };
+	capture.capture({ handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() { capture.cancelScope(scope); } });
+	capture.capture(incoming, PointerButton.Primary, scope);
+	assert.equal(capture.active, false); assert.equal(cancels, 1);
+	assert.equal(capture.dispatch({ ...held, pressedButtons: 0, justReleasedButtons: PointerButton.Primary }, false, 1, scope), false);
+});
+
+test('recapture keeps the control but a newer acquisition invalidates the earlier admission', () => {
+	const capture = new PointerCaptureService();
+	let moves = 0, cancels = 0, acquired = false;
+	const incoming = { handleCapturedPointer() { moves++; }, releaseCapturedPointer() {}, cancelPointer() { cancels++; } };
+	capture.capture({ handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() { acquired = capture.capture(incoming); } });
+	assert.equal(capture.capture(incoming), false, 'the outer caller must not continue initialization over the newer acquisition');
+	assert.equal(acquired, true); assert.equal(cancels, 0, 'the same owner did not lose capture');
+	capture.dispatch(held, false, 1); assert.equal(moves, 1);
+	capture.cancel(); assert.equal(cancels, 1);
+});
+
+test('a cancelled physical hold cannot acquire another control until all buttons are up', () => {
+	const capture = new PointerCaptureService(), scope = Symbol('draining surface');
+	let cancels = 0, moves = 0;
+	const target = { handleCapturedPointer() { moves++; }, releaseCapturedPointer() {}, cancelPointer() { cancels++; } };
+	capture.beginRoute(scope, { ...held, justPressedButtons: PointerButton.Primary });
+	capture.cancel();
+	assert.equal(capture.capture(target), false); assert.equal(cancels, 1); assert.equal(capture.active, false);
+	capture.dispatch({ ...held, pressedButtons: 0, justReleasedButtons: PointerButton.Primary }, false, 1, scope);
+	capture.beginRoute(scope, { ...held, justPressedButtons: PointerButton.Primary });
+	assert.equal(capture.capture(target), true);
+	capture.dispatch(held, false, 2, scope); assert.equal(moves, 1);
+	capture.cancel();
+});
+
 test('capture latches each initiating button; another release cannot finish it and consumption cancels it', () => {
 	for (const button of [PointerButton.Primary, PointerButton.Secondary, PointerButton.Auxiliary]) {
 		const capture = new PointerCaptureService();

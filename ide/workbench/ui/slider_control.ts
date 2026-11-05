@@ -56,7 +56,8 @@ export class WorkbenchSliderControl implements PointerCaptureTarget {
 			const generation = this.generation, revision = input.revision, context = this.focusTarget.scope.contextGeneration;
 			if (!this.focusTarget.focus() || this.generation !== generation || input.revision !== revision || !input.interactive
 				|| this.focusTarget.scope.contextGeneration !== context || this.focus.admittedTarget !== this.focusTarget) return true;
-			this.capture.capture(this); this.dragging = true;
+			if (!this.capture.capture(this)) return true;
+			this.dragging = true;
 			this.change(input.valueAt(snapshot.viewportX), true);
 			if (this.generation === generation && (snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(snapshot);
 		}

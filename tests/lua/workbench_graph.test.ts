@@ -34,6 +34,21 @@ function pointer(x: number, y: number, pressed = false): PointerInputSnapshot {
 	return { modifiers: KeyModifier.none, spaceDown: false, viewportX: x, viewportY: y, pressedButtons: pressed ? PointerButton.Primary : 0, justPressedButtons: 0, justReleasedButtons: 0, valid: true, insideViewport: true };
 }
 
+for (const button of [PointerButton.Primary, PointerButton.Secondary, PointerButton.Auxiliary])
+	test(`graph button ${button} cannot initialize a gesture over an input replaced during capture handoff`, t => {
+		const old = fixture(), next = fixture(), focus = new InputFocusService(), capture = new PointerCaptureService();
+		const control = new WorkbenchGraphControl(focus, capture, new PointerHoverService());
+		let starts = 0;
+		control.setInput(old.view, { begin: () => { starts++; return undefined; } });
+		control.focusTarget.focus(); next.view.selection = next.b; t.after(() => control.dispose());
+		capture.capture({ handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() { control.setInput(next.view); } });
+		const snapshot = { ...pointer(22, 22), pressedButtons: button, justPressedButtons: button };
+		assert.equal(control.handlePointer(snapshot, 0), Result.Rejected);
+		assert.equal(capture.active, false); assert.ok(next.view.selection === next.b);
+		assert.equal(capture.dispatch({ ...snapshot, viewportX: 45, justPressedButtons: 0 }, false, 10), false);
+		assert.equal(starts, 0); assert.equal(control.dragFeedback, undefined);
+	});
+
 for (const button of [PointerButton.Primary, PointerButton.Secondary]) for (const change of ['model', 'input'] as const) test(`graph button ${button} rejects focus publication replacing its captured ${change}`, t => {
 	const { view, a, b } = fixture(), focus = new InputFocusService(), capture = new PointerCaptureService();
 	const control = new WorkbenchGraphControl(focus, capture, new PointerHoverService());

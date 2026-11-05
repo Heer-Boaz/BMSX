@@ -67,6 +67,15 @@ test('image pan loses capture on blur, image replacement, geometry change and de
 	}
 });
 
+test('image pan cannot retain a viewport cleared during capture handoff', t => {
+	const f = fixture(t); f.control.focusTarget.focus();
+	f.capture.capture({ handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() { f.control.clearInput(); } });
+	f.control.handlePointer({ valid: true, insideViewport: true, viewportX: 80, viewportY: 70,
+		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 });
+	assert.equal(f.capture.active, false);
+	assert.equal(f.view.horizontal.getScroll(), 200); assert.equal(f.view.vertical.getScroll(), 100);
+});
+
 test('image scrollbar capture does not take focus and wheel modifiers route through viewport owners', t => {
 	const f = fixture(t), primary = PointerButton.Primary;
 	f.pointer(221, 60, primary, primary);

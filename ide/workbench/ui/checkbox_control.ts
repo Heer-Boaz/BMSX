@@ -96,8 +96,7 @@ export class WorkbenchCheckboxControl<Input extends WorkbenchCheckboxInput = Wor
 		if (!this.focusTarget.focus() || this.inputValue !== input || this.revision !== revision || this.focusTarget.scope.contextGeneration !== context) return true;
 		const press = { input, revision, context, key: undefined };
 		this.press = press; this.hovered = this.contains(snapshot);
-		this.capture.capture(this, PointerButton.Primary, this.focusTarget.scope.surfaceScope);
-		if (this.press !== press) { if (this.press === undefined) this.capture.cancelTarget(this); return true; }
+		if (!this.capture.capture(this, PointerButton.Primary, this.focusTarget.scope.surfaceScope)) return true;
 		if (!this.current(press)) { this.cancelInput(); return true; }
 		if ((snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(snapshot);
 		return true;
