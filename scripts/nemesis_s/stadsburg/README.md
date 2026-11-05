@@ -83,8 +83,13 @@ the storefronts sit behind their canopies with a separate entrance recess.
 Warm domestic light belongs to an inhabited room or a grouped floor; quiet
 storeys retain dark-blue glass inside the same frames, reveals and sills.
 Shop light is concentrated below the canopy: the cafe has a broad lit frontage,
-the baker and grocer have contiguous lit display groups, and the bicycle shop
-keeps its upper floors quiet. Large cool workshop and bridgewatch glazing,
+while the bakery has two display bays in dark-red painted timber, a grey sill
+and a recessed entrance on the right. Its left pane stays cool and the right
+pane forms one warm display. The grocer has a recessed entrance on the left
+and one broad warm display on the right, held by a connected green fascia,
+uprights and paneled base. These distinct storefront layouts share the same
+native roof and ground contacts; their door openings remain six pixels high.
+The bicycle shop keeps its upper floors quiet. Large cool workshop and bridgewatch glazing,
 timber loading doors and the dark alley gate give the street distinct pauses
 between these warm groups.
 Snow has a white upper surface and a grey lower plane where the roof offers
@@ -98,6 +103,8 @@ readable. The existing two-ink-per-8×1 rule applies to both layers.
 
 Architectural references include [De Steeman on the Bloemgracht](https://www.hendrickdekeyser.nl/de-huizen/de-steeman),
 [Herenstraat 41](https://stadsherstel.nl/monumenten/herenstraat-41/),
+[the bakery storefront at Reguliersgracht 67](https://stadsherstel.nl/monumenten/reguliersgracht-67/),
+[the timber shopfront at Reestraat 15](https://stadsherstel.nl/monumenten/reestraat-15/),
 [Pakhuis De Appel](https://stadsherstel.nl/monumenten/pakhuis-de-appel/)
 and [Piet Kramer's Beltbrug bridgewatch house](https://arcam.nl/architectuur-gids/brugwachtershuisje-beltbrug/).
 The drawings adapt their architectural principles to the game palette and
