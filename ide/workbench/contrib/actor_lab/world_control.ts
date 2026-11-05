@@ -55,6 +55,7 @@ export class ActorWorldControl {
 		for (const id of ['actorLab.viewOptions', 'actorLab.cameraOptions'] as const) {
 			parent.registerCommand(id, {
 				isEnabled: () => this.input !== undefined && this.input.layout.previewVisible && (id === 'actorLab.viewOptions' || canNavigate(this.input)),
+				isChecked: () => id === 'actorLab.cameraOptions' && this.input !== undefined && canNavigate(this.input) && this.input.worldView.navigationTool !== 'select',
 				run: () => {
 					const actions = this.input!.viewportActions, item = actions.items.find(item => item.command === id)!;
 					const bounds = item.overflowed ? actions.overflow!.button.bounds : item.bounds;
@@ -96,7 +97,6 @@ export class ActorWorldControl {
 		else this.navigation.clearInput();
 		if (!input.layout.previewVisible && this.menus.visible
 			&& (this.menus.invocationOrigin === this.focusTarget || this.menus.invocationOrigin === this.actions.focusTarget)) this.menus.hide();
-		for (const item of input.viewportActions.items) item.checked = item.command === 'actorLab.cameraOptions' && view.mode !== 'game' && view.navigationTool !== 'select';
 		this.actions.update();
 	}
 	public handlePointer(snapshot: PointerInputSnapshot, now: number): boolean {

@@ -116,6 +116,8 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 		const state = this.input!;
 		for (const item of state.items) {
 			item.enabled = item.visible && this.commands.isEnabled(item.command, this.focusTarget.commandContext);
+			const command = this.focusTarget.getCommand(item.command);
+			if (command?.isChecked !== undefined) item.checked = command.isChecked();
 			item.tooltip = editorCommandTitle(item.command, item.checked);
 		}
 		const command = this.pointerCommand === null ? state.pressedCommand : this.pointerCommand;

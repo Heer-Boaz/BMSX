@@ -27,6 +27,14 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', presentation: 'outline
 	return { input, bounds, arrange };
 }
 
+for (const variant of ['tiny', 'msx'] as const) test(`Actor ${variant} side panel retains its reading width while desktop growth belongs to the game`, t => {
+	const { input, arrange } = fixture(t, variant);
+	arrange(900); const width = input.layout.primaryRight - input.layout.left;
+	arrange(1800);
+	assert.equal(input.layout.primaryRight - input.layout.left, width);
+	assert.ok(width < 900 / 3);
+});
+
 // Exact dimensions here are the composition algorithm's contract: a complete
 // compact primary reading budget, its padding, the complete shared sash target, and a useful padded frame.
 for (const variant of ['tiny', 'msx'] as const) for (const presentation of ['outline', 'graph'] as const) {
@@ -52,15 +60,15 @@ for (const variant of ['tiny', 'msx'] as const) for (const presentation of ['out
 				'the actual root-row name retains its declared reading budget after disclosure, activity and scrollbar lanes');
 		} else {
 			const graph = input.stateGraph!.viewport.bounds;
-			assert.ok(graph.right - graph.left >= editorViewState.charAdvance * 32 + GRAPH_NODE_PADDING * 2,
+			assert.ok(graph.right - graph.left >= editorViewState.charAdvance * 16 + GRAPH_NODE_PADDING * 2,
 				'the graph content excludes its scrollbar before admitting the card/context reading budget');
 		}
 	});
 
 	test(`Actor ${variant}/${presentation} preserves independent axis intent and owned identities through reorientation and withholding`, t => {
 		const { input, arrange } = fixture(t, variant, presentation), measured = measureActorLab(editorViewState.font);
-		input.split.ratio = 0.6; input.rowSplit.ratio = 0.35;
-		const ratio = input.split.ratio, revision = input.split.revision, rowRatio = input.rowSplit.ratio, rowRevision = input.rowSplit.revision;
+		input.split.requestedSize = 300; input.rowSplit.ratio = 0.35;
+		const size = input.split.requestedSize, rowRatio = input.rowSplit.ratio, rowRevision = input.rowSplit.revision;
 		const selection = input.selectionPath = [], graph = input.stateGraph?.viewport.model;
 		arrange(900);
 		const primaryRight = input.layout.primaryRight;
@@ -74,7 +82,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const presentation of ['out
 		assert.deepEqual(input.previewBounds, preview, 'a hidden frame has no new geometry; admission, not stale rectangles, controls its consumers');
 		arrange(900);
 		assert.equal(input.layout.previewVisible, true); assert.equal(input.layout.primaryRight, primaryRight);
-		assert.equal(input.split.ratio, ratio); assert.equal(input.split.revision, revision);
+		assert.equal(input.split.requestedSize, size);
 		assert.equal(input.rowSplit.ratio, rowRatio); assert.equal(input.rowSplit.revision, rowRevision);
 		assert.equal(input.selectionPath, selection); assert.equal(input.stateGraph?.viewport.model, graph);
 		const readGuest = t.mock.method(input.runtime, 'update'), advance = t.mock.method(editorViewState.font, 'advance');
@@ -89,11 +97,11 @@ test('Actor preview admission follows the current font and reserves the actual v
 	const tiny = measureActorLab(editorViewState.font);
 	const width = tiny.outlineMinimumWidth + WORKBENCH_SPLIT_SIZE + tiny.previewMinimumWidth;
 	arrange(width); assert.equal(input.layout.previewVisible, true);
-	const ratio = input.split.ratio;
+	const size = input.split.requestedSize;
 	configureFontVariant('msx');
-	arrange(width); assert.equal(input.layout.previewVisible, true); assert.ok(input.layout.split === input.rowSplit); assert.equal(input.split.ratio, ratio);
+	arrange(width); assert.equal(input.layout.previewVisible, true); assert.ok(input.layout.split === input.rowSplit); assert.equal(input.split.requestedSize, size);
 	configureFontVariant('tiny');
-	arrange(width); assert.equal(input.layout.previewVisible, true); assert.equal(input.split.ratio, ratio);
+	arrange(width); assert.equal(input.layout.previewVisible, true); assert.equal(input.split.requestedSize, size);
 	input.timeline.entryHashId = 1; input.timeline.positionLabel = '0 MS'; input.timeline.durationLabel = '100 MS';
 	arrange(width);
 	const height = 2 + input.timelineLayout.height + tiny.previewMinimumHeight;

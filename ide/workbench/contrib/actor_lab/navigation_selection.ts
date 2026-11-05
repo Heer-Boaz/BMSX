@@ -24,7 +24,7 @@ export class ActorLabNavigationSelection extends EditorPaneSelection {
 	public readonly detailsRetired: boolean;
 	private readonly outlineScroll: number;
 	private readonly worldScroll: number;
-	private readonly splitRatio: number;
+	private readonly splitSize: number | undefined;
 	private readonly rowSplitRatio: number;
 	public constructor(input: ActorLabInput, worldHashId: number | undefined, public readonly generation: number) {
 		super();
@@ -50,7 +50,7 @@ export class ActorLabNavigationSelection extends EditorPaneSelection {
 		this.detailsRetired = details.retired;
 		this.outlineScroll = input.outline.scroll;
 		this.worldScroll = input.worldOutliner.tree.scroll;
-		this.splitRatio = input.split.ratio;
+		this.splitSize = input.split.requestedSize;
 		this.rowSplitRatio = input.rowSplit.ratio;
 	}
 
@@ -71,7 +71,7 @@ export class ActorLabNavigationSelection extends EditorPaneSelection {
 		input.detailsScroll = this.detailsScroll;
 		input.details!.restoreSubject(admitted ? this.detailsSubject : undefined, admitted && this.detailsLocked,
 			admitted ? this.detailsSubjectPath : '', admitted ? this.detailsSubjectName : '', admitted && this.detailsRetired);
-		input.split.ratio = this.splitRatio;
+		input.split.requestedSize = this.splitSize;
 		input.rowSplit.ratio = this.rowSplitRatio;
 	}
 

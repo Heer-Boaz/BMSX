@@ -29,7 +29,7 @@ test('live world view retains unclipped initialized visuals, moving actors and t
 	ide.transport.pause(); editor.interaction.setActive(true);
 	const part = editor.editorParts.createDocument({ requestedBounds: { left: 0, top: 24, right: 800, bottom: 340 } });
 	editor.actorLab.open(part.activeGroup); const input = editor.actorLab.resolveInput(); editor.update(0);
-	assert.equal(input.worldView.mode, '2d'); assert.equal(input.actorHashId, 0, 'opening the viewer does not require a preselected actor');
+	assert.equal(input.worldView.mode, 'game'); assert.equal(input.actorHashId, 0, 'opening the viewer does not require a preselected actor');
 	const pane = part.activeGroup.panes.activePane!; assert.ok(pane instanceof ActorLabEditorPane); pane.focus();
 	editor.commands.execute('sceneViewport.view2d', pane.commandTarget); editor.update(0);
 	const view = input.worldView, frame = frames.displayed;

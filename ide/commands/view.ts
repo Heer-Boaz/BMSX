@@ -71,7 +71,7 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 			openTerminal(group);
 			return;
 		case 'actorLab': editor.actorLab.open(group); return;
-		case 'gameView': editor.actorLab.open(group, 'game'); return;
+		case 'gameView': editor.actorLab.open(group); return;
 		case 'conversations': openObservedConversation(group, editor.observedConversation, picker); return;
 		case 'assistant': openAssistant(group, editor.assistant); return;
 		case 'resources':

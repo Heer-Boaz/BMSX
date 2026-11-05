@@ -6,7 +6,7 @@ import type { FullWidthWorkbenchLayout } from '../../common/layout';
 import { GAME_FRAME_MINIMUM_WIDTH, GAME_FRAME_MINIMUM_HEIGHT, layoutGameFrame } from '../../common/game_frame';
 import { GRAPH_NODE_PADDING } from '../../ui/graph/model';
 import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
-import { WORKBENCH_SPLIT_SIZE, type WorkbenchSplitView } from '../../ui/split_view';
+import { WORKBENCH_SPLIT_SIZE, type WorkbenchFixedEdgeSplitView, type WorkbenchSplitView } from '../../ui/split_view';
 import type { ActorLabInput } from './editor_input';
 import type { WorkbenchTreeNode } from '../../ui/tree_view';
 import { editorViewState } from '../../../editor/ui/view/state';
@@ -15,17 +15,18 @@ import type { WorldActorRow } from './world_outliner';
 
 const PADDING = 4;
 // Like the Scene hierarchy, a compact tree retains a usable caption and its
-// disclosure lanes. Its preferred width is the retained split ratio, not a
+// disclosure lanes. Its preferred width is a reading budget, not a
 // full-name reading budget imposed on every resize.
 const OUTLINE_READING_COLUMNS = 12;
-const GRAPH_READING_COLUMNS = 32;
+const GRAPH_READING_COLUMNS = 16;
+const PREFERRED_READING_COLUMNS = 28;
 const VISIBLE_ROWS = 3;
 
 export type ActorLabLayout = FullWidthWorkbenchLayout & {
 	primaryRight: number;
 	primaryBottom: number;
 	previewVisible: boolean;
-	split: WorkbenchSplitView | undefined;
+	split: WorkbenchFixedEdgeSplitView | WorkbenchSplitView | undefined;
 };
 
 export type ActorLabMetrics = {
@@ -37,6 +38,7 @@ export type ActorLabMetrics = {
 	readonly outlineMinimumHeight: number;
 	readonly graphMinimumWidth: number;
 	readonly graphMinimumHeight: number;
+	readonly primaryPreferredWidth: number;
 	readonly previewMinimumWidth: number;
 	readonly previewMinimumHeight: number;
 };
@@ -58,6 +60,7 @@ export function measureActorLab(font: EditorFont): ActorLabMetrics {
 		outlineMinimumHeight: treeTopOffset + rowHeight * VISIBLE_ROWS + PADDING,
 		graphMinimumWidth: advance * GRAPH_READING_COLUMNS + GRAPH_NODE_PADDING * 2 + SCROLLBAR_WIDTH + PADDING * 2,
 		graphMinimumHeight: graphTopOffset + rowHeight * VISIBLE_ROWS + SCROLLBAR_WIDTH + PADDING,
+		primaryPreferredWidth: advance * PREFERRED_READING_COLUMNS + indentWidth * 2 + SCROLLBAR_WIDTH + PADDING * 3,
 		previewMinimumWidth: GAME_FRAME_MINIMUM_WIDTH + PADDING * 2,
 		previewMinimumHeight: GAME_FRAME_MINIMUM_HEIGHT + PADDING * 2,
 	};
@@ -65,7 +68,7 @@ export function measureActorLab(font: EditorFont): ActorLabMetrics {
 	return measured;
 }
 
-/** Compose measured clients without changing selection, guest state or the requested sash ratio. */
+/** Compose measured clients without changing selection, guest state or requested sash sizes. */
 export function layoutActorLab(input: ActorLabInput): void {
 	const { layout, split, rowSplit } = input;
 	const measured = measureActorLab(layout.font!);
@@ -77,6 +80,7 @@ export function layoutActorLab(input: ActorLabInput): void {
 	const width = layout.right - layout.left, height = bottom - top;
 	if (width >= primaryMinimumWidth + WORKBENCH_SPLIT_SIZE + measured.previewMinimumWidth
 		&& height >= Math.max(primaryMinimumHeight, measured.previewMinimumHeight)) {
+		split.preferredSize = Math.min(measured.primaryPreferredWidth, width / 3 - WORKBENCH_SPLIT_SIZE / 2);
 		split.minimumFirstSize = primaryMinimumWidth + WORKBENCH_SPLIT_SIZE / 2;
 		split.minimumSecondSize = measured.previewMinimumWidth + WORKBENCH_SPLIT_SIZE / 2;
 		layout.split = split;

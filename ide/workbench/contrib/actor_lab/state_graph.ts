@@ -44,6 +44,7 @@ export class ActorStateGraph {
 	public constructor(target: ActorTarget, font: BFont) {
 		this.target = target;
 		this.viewport = new WorkbenchGraphViewport(createWorkbenchGraphModel<StateNode, StateEdge>(font, [], []));
+		this.viewport.setZoom(1);
 	}
 	public onDidChangeSelection(listener: () => void): () => void {
 		this.selectionListeners.add(listener);

@@ -91,9 +91,8 @@ export class ActorLabController {
 		return this.current;
 	}
 	public open(destination: EditorGroupView, mode?: 'game' | '2d' | '3d'): void {
-		const first = this.current === undefined, input = this.resolveInput();
+		const input = this.resolveInput();
 		if (mode !== undefined) input.worldView.setMode(mode);
-		else if (first) input.worldView.setMode('2d');
 		this.parts.revealEditor(input, destination);
 	}
 	public auditionEvent(destination: EditorGroupView, domain: ResourceDomain, name: string): void {

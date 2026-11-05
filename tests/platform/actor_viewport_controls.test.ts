@@ -42,7 +42,7 @@ test('viewport overlays switch the actual view, report checked modes and do not 
 	const hash = input.actorHashId, reading = view.camera.capture();
 	action('actorLab.viewOptions');
 	assert.equal(input.actorHashId, hash); assert.deepEqual(view.camera.capture(), reading);
-	assert.equal(editor.contextMenu.model.rows.find(row => row.command === 'sceneViewport.view2d')!.active, true);
+	assert.equal(editor.contextMenu.model.rows.find(row => row.command === 'actorLab.gameView')!.active, true);
 	choose('sceneViewport.view3d'); assert.equal(view.mode, '3d');
 	action('actorLab.viewOptions');
 	assert.equal(editor.contextMenu.model.rows.find(row => row.command === 'sceneViewport.view3d')!.active, true);

@@ -6,6 +6,16 @@ import { createWorkbenchGraphEdge, createWorkbenchGraphModel, createWorkbenchGra
 import { GRAPH_FRAME_MARGIN, GRAPH_ZOOM_MIN, WorkbenchGraphViewport } from '../../ide/workbench/ui/graph/viewport';
 
 const font = new Font({ variant: 'tiny' });
+
+test('graph zoom provides intermediate reading scales rather than doubling each wheel notch', () => {
+	const view = new WorkbenchGraphViewport(createWorkbenchGraphModel(font, [], []));
+	view.layout(0, 0, 403, 303); view.setZoom(1);
+	view.zoomByWheel(1, 50, 60);
+	assert.ok(view.zoom > 1 && view.zoom <= 1.25);
+	view.zoomByWheel(-1, 50, 60); assert.ok(Math.abs(view.zoom - 1) < 1e-10);
+	view.zoomBySteps(1); assert.ok(view.zoom > 1 && view.zoom <= 1.25);
+	view.zoomBySteps(-1); assert.equal(view.zoom, 1);
+});
 function graph(bounds: RectBounds) {
 	return createWorkbenchGraphModel(font, [], [createWorkbenchGraphEdge([
 		bounds.left, bounds.top, bounds.right, bounds.bottom,

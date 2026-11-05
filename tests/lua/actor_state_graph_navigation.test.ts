@@ -176,6 +176,7 @@ test('live activity-only refresh keeps admitted geometry and fit/manual camera o
 	for (const mode of ['fit', 'manual'] as const) {
 		const f = fixture(), viewport = f.graph.viewport, model = viewport.model;
 		if (mode === 'manual') { viewport.setZoom(2); viewport.pan(13, 19); }
+		else viewport.frameAll();
 		const camera = viewport.captureViewState();
 		f.execute('change_activity');
 		assert.equal(viewport.model, model, 'activity is not a topology or font layout boundary');

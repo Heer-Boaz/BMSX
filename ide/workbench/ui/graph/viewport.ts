@@ -7,8 +7,8 @@ import type { WorkbenchGraphItem, WorkbenchGraphModel } from './model';
 import type { HostOverlayTransform } from '../../../../machine/ts/render/host_overlay/transform';
 
 export const GRAPH_EDGE_HIT_RADIUS = 3;
-// Aseprite/Godot pixel-art scales: exact integer magnification and reciprocal overviews.
-const GRAPH_ZOOM_LEVELS = [1 / 4, 1 / 3, 1 / 2, 1, 2, 3, 4] as const;
+// Node-editor reading scales, including the explicit 1:1 stop (UE SNodePanel).
+const GRAPH_ZOOM_LEVELS = [0.1, 0.125, 0.15, 0.175, 0.2, 0.225, 0.25, 0.375, 0.5, 0.675, 0.75, 0.875, 1, 1.25, 1.375, 1.5, 1.675, 1.75, 1.875, 2] as const;
 export const GRAPH_ZOOM_MIN = GRAPH_ZOOM_LEVELS[0];
 export const GRAPH_ZOOM_MAX = GRAPH_ZOOM_LEVELS[GRAPH_ZOOM_LEVELS.length - 1];
 const REVEAL_MARGIN = 6;
@@ -145,7 +145,7 @@ export class WorkbenchGraphViewport<Model extends WorkbenchGraphModel = Workbenc
 		this.updateScrollBounds();
 	}
 
-	/** Discrete commands retain exact pixel-scale presets, including after endpoint saturation. */
+	/** Commands traverse reading presets in both directions, including after endpoint saturation. */
 	public zoomBySteps(steps: number, anchorX?: number, anchorY?: number): void {
 		if (steps === 0) return;
 		const last = GRAPH_ZOOM_LEVELS.length - 1;
@@ -165,7 +165,7 @@ export class WorkbenchGraphViewport<Model extends WorkbenchGraphModel = Workbenc
 	/** Smooth wheel distance never indexes the discrete command-preset sequence. */
 	public zoomByWheel(steps: number, anchorX: number, anchorY: number): void {
 		if (steps === 0) return;
-		this.setZoom(this.zoomValue * 2 ** steps, anchorX, anchorY);
+		this.setZoom(this.zoomValue * 1.2 ** steps, anchorX, anchorY);
 	}
 
 	/** The domain owner supplies correspondence; only an explicit selection anchor follows changed geometry. */

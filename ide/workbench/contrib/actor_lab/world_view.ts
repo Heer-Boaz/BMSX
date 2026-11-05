@@ -19,7 +19,8 @@ export class ActorWorldView {
 	public mode: 'game' | '2d' | '3d' = 'game';
 	public navigationTool: 'select' | 'pan' | 'orbit' = 'select';
 	public navigationSpeed = 1;
-	public readonly camera = new WorkbenchViewportCamera();
+	/** Enter the runtime's XY canvas from the front; explicit orbit remains a retained editor reading. */
+	public readonly camera = new WorkbenchViewportCamera(0, 0);
 	public readonly bounds = create_rect_bounds();
 	public readonly assets: ActorWorldAssets;
 	public readonly canvas = { items: [] as ViewportCanvasQuad<WorldActor>[], revision: 0, packetRevision: 0 };

@@ -834,7 +834,7 @@ for (const button of [PointerButton.Primary, PointerButton.Secondary]) for (cons
 	const { editor, pointer, input, pane } = actorFixture(t), group = editor.editorParts.main.activeGroup;
 	const primary = pane.commandTarget, selected = input.outline.rows[input.outline.selectionIndex];
 	const index = input.outline.rows.findIndex(row => row !== selected && (button === PointerButton.Primary ? row.children.length > 0 && !row.collapsed : row.element.node.kind === 'state'));
-	assert.ok(index >= 0); const offered = input.outline.rows[index], collapsed = offered.collapsed;
+	assert.ok(index >= 0); const offered = input.outline.rows[index];
 	const newerIndex = input.outline.rows.findIndex(row => row !== offered), newer = input.outline.rows[newerIndex];
 	assert.ok(newer !== undefined);
 	let publications = 0, replacement: TerminalInput | undefined;
@@ -846,10 +846,9 @@ for (const button of [PointerButton.Primary, PointerButton.Secondary]) for (cons
 	});
 	afterTest(t, unbind);
 	const tree = input.outline.layout;
-	const x = button === PointerButton.Primary ? tree.contentLeft + offered.depth * tree.indentWidth + tree.twistieWidth / 2 : tree.contentRight - 4;
-	pointer(x, tree.contentTop + (index + 0.5) * tree.rowHeight, button);
+	// Selection belongs to the row body; disclosure preserves the inspected subject.
+	pointer(tree.contentRight - 4, tree.contentTop + (index + 0.5) * tree.rowHeight, button);
 	assert.equal(publications, 1); assert.equal(editor.contextMenu.visible, false);
-	assert.equal(offered.collapsed, collapsed, 'a selection subscriber can retire the original disclosure continuation');
 	if (destination === 'files') assert.ok(inputFocus.admittedTarget === editor.resourcePanel.focusTarget);
 	else if (destination === 'editor') assert.ok(group.model.activeTab === replacement && inputFocus.admittedTarget === group.panes.activePane?.commandTarget);
 	else assert.ok(input.outline.rows[input.outline.selectionIndex] === newer && inputFocus.admittedTarget === primary);
@@ -1039,12 +1038,12 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor preview r
 	assert.equal(sample.pointerButtons, 1); assert.ok(pointerCapture.guestBinding === binding);
 	editor.updateViewport({ width: stackedWidth, height: 400 }); editor.update(0);
 	assert.equal(input.layout.previewVisible, true, 'the actual tall client retains a stacked preview');
-	assert.ok(input.layout.split === input.rowSplit);
+	assert.equal(input.layout.split === input.rowSplit, true);
 	assert.ok(preview.guestInput === binding && inputFocus.target === preview);
 	assert.ok(pointerCapture.guestBinding === undefined); assert.equal(pointerCapture.draining, true);
 	host.input.sampleInputControllerSnapshot(sample, InputControllerSampleContext.Normal); assert.equal(sample.pointerButtons, 0);
 	editor.updateViewport({ width: 640, height: 360 }); editor.update(0);
-	assert.ok(input.layout.split === input.split && preview.guestInput === binding && inputFocus.target === preview);
+	assert.equal(input.layout.split === input.split && preview.guestInput === binding && inputFocus.target === preview, true);
 	editor.updateViewport({ width: 320, height: 160 }); editor.update(0);
 	assert.ok(preview.guestInput === undefined, 'withheld preview retires its actual input attachment');
 	assert.ok(inputFocus.target === primary && editor.guestInputRecipient === null);
@@ -1057,7 +1056,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor preview r
 		PointerButton.Primary | PointerButton.Secondary);
 	assert.ok(input.outline.rows[input.outline.selectionIndex] === selected, 'the interrupted guest hold cannot select the newly expanded tree');
 	editor.updateViewport({ width: stackedWidth, height: 400 }); editor.update(0);
-	assert.equal(input.layout.previewVisible, true); assert.ok(input.layout.split === input.rowSplit);
+	assert.equal(input.layout.previewVisible, true); assert.equal(input.layout.split === input.rowSplit, true);
 	assert.ok(preview.guestInput === binding, 'reappearance reuses the same viewport binding');
 	assert.ok(inputFocus.target === primary, 'reappearance does not steal primary keyboard focus');
 	point = center(); pointer(point.x, point.y, PointerButton.Primary | PointerButton.Secondary | PointerButton.Auxiliary);
@@ -1082,15 +1081,15 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor sash reor
 	const timeline = input.timeline, viewport = input.previewBounds;
 	const x = input.split.position, y = (input.split.bounds.top + input.split.bounds.bottom) / 2;
 	pointer(x, y, PointerButton.Primary); assert.equal(pointerCapture.active, true);
-	const horizontalRatio = input.split.ratio;
+	const horizontalSize = input.split.requestedSize;
 	editor.updateViewport({ width: stackedWidth, height: 400 }); editor.update(0);
-	assert.equal(input.layout.previewVisible, true); assert.ok(input.layout.split === input.rowSplit);
+	assert.equal(input.layout.previewVisible, true); assert.equal(input.layout.split === input.rowSplit, true);
 	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, true);
 	assert.ok(inputFocus.target === primary && inputFocus.target.guestInput === undefined);
 	const rowRatio = input.rowSplit.ratio;
 	const rowX = (input.rowSplit.bounds.left + input.rowSplit.bounds.right) / 2, rowY = input.rowSplit.position;
 	pointer(rowX, rowY + 12, PointerButton.Primary | PointerButton.Secondary); editor.update(0);
-	assert.equal(input.rowSplit.ratio, rowRatio); assert.equal(input.split.ratio, horizontalRatio);
+	assert.equal(input.rowSplit.ratio, rowRatio); assert.equal(input.split.requestedSize, horizontalSize);
 	pointer(rowX, rowY + 12, 0); assert.equal(pointerCapture.draining, false);
 	assert.equal(inputFocus.moveFocus(false), true); assert.equal(inputFocus.moveFocus(false), true);
 	const sash = inputFocus.target!;
@@ -1100,23 +1099,23 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor sash reor
 	assert.equal(input.rowSplit.ratio, rowRatio, 'horizontal arrows cannot resize the stacked sash');
 	editor.dispatchKey(new KeyInputEvent('ArrowDown', KeyModifier.none));
 	editor.dispatchKey(new KeyInputEvent('ArrowDown', KeyModifier.none, false, false)); editor.update(0);
-	assert.notEqual(input.rowSplit.ratio, rowRatio); assert.equal(input.split.ratio, horizontalRatio);
+	assert.notEqual(input.rowSplit.ratio, rowRatio); assert.equal(input.split.requestedSize, horizontalSize);
 	const keyboardRowRatio = input.rowSplit.ratio, currentY = input.rowSplit.position;
 	pointer(rowX, currentY, PointerButton.Primary); assert.equal(pointerCapture.active, true);
 	pointer(rowX, currentY + 12); editor.update(0);
 	pointer(rowX, currentY + 12, 0);
-	assert.notEqual(input.rowSplit.ratio, keyboardRowRatio); assert.equal(input.split.ratio, horizontalRatio);
+	assert.notEqual(input.rowSplit.ratio, keyboardRowRatio); assert.equal(input.split.requestedSize, horizontalSize);
 	const requestedRowRatio = input.rowSplit.ratio;
 	editor.updateViewport({ width: 640, height: 360 }); editor.update(0);
-	assert.ok(input.layout.split === input.split); assert.equal(input.split.ratio, horizontalRatio);
+	assert.equal(input.layout.split === input.split, true); assert.equal(input.split.requestedSize, horizontalSize);
 	editor.updateViewport({ width: stackedWidth, height: 400 }); editor.update(0);
-	assert.ok(input.layout.split === input.rowSplit); assert.equal(input.rowSplit.ratio, requestedRowRatio);
+	assert.equal(input.layout.split === input.rowSplit, true); assert.equal(input.rowSplit.ratio, requestedRowRatio);
 	assert.ok(input.outline.rows[input.outline.selectionIndex] === selected && input.selectionPath === path);
 	assert.ok(input.timeline === timeline && input.previewBounds === viewport);
 	const navigation = pane.getSelection(); afterTest(t, () => navigation.dispose());
-	input.split.ratio = 0.7; input.rowSplit.ratio = 0.6;
+	input.split.requestedSize = 300; input.rowSplit.ratio = 0.6;
 	pane.setOptions(undefined, navigation); editor.update(0);
-	assert.equal(input.split.ratio, horizontalRatio); assert.equal(input.rowSplit.ratio, requestedRowRatio);
+	assert.equal(input.split.requestedSize, horizontalSize); assert.equal(input.rowSplit.ratio, requestedRowRatio);
 	assert.equal(sourceModel.buffer.getText(), source); assert.equal(sourceModel.version, version);
 	assert.equal(host.runtime.machine.scheduler.currentNowCycles(), cycles);
 });
@@ -1172,7 +1171,7 @@ test('Actor reflow retires the real sash while retaining primary, graph and lock
 		pointer(x, y, PointerButton.Primary);
 		assert.equal(pointerCapture.active, true); assert.ok(inputFocus.target === primary);
 		pointer(x + 12, y); editor.update(0);
-		const ratio = input.split.ratio;
+		const size = input.split.requestedSize;
 		editor.updateViewport({ width: 320, height: 160 }); editor.update(0);
 		assert.equal(pointerCapture.active, false, 'withholding the split retires its captured control');
 		assert.equal(pointerCapture.draining, true); assert.equal(sash.canFocus!(), false);
@@ -1187,10 +1186,10 @@ test('Actor reflow retires the real sash while retaining primary, graph and lock
 			} while (inputFocus.target !== primary);
 		}
 		pane.focus(); pointer(220, y, PointerButton.Primary | PointerButton.Secondary); pointer(220, y, 0);
-		assert.equal(input.split.ratio, ratio); assert.ok(input.outline.rows[input.outline.selectionIndex] === selected);
+		assert.equal(input.split.requestedSize, size); assert.ok(input.outline.rows[input.outline.selectionIndex] === selected);
 		assert.ok(input.selectionPath === path);
 		editor.updateViewport({ width: 640, height: 360 }); editor.update(0);
-		assert.equal(sash.canFocus!(), true); assert.equal(input.split.ratio, ratio); assert.ok(inputFocus.target === primary);
+		assert.equal(sash.canFocus!(), true); assert.equal(input.split.requestedSize, size); assert.ok(inputFocus.target === primary);
 	}
 	editor.commands.execute('actorLab.stateGraph'); editor.update(0);
 	const graph = input.stateGraph!, graphFocus = inputFocus.target!, selection = graph.viewport.selection;

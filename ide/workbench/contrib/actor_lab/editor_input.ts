@@ -1,7 +1,7 @@
 import { ActorWorldView } from './world_view';
 import { ActorWorldOutliner } from './world_outliner';
 import { InputInteraction } from '../../../input/interaction';
-import { WorkbenchSplitView } from '../../ui/split_view';
+import { WorkbenchFixedEdgeSplitView, WorkbenchSplitView } from '../../ui/split_view';
 import { ReadonlyEditorInput, type AbstractEditorInput } from '../../common/editor_input';
 import type { ActorLabLayout } from './layout';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
@@ -53,7 +53,7 @@ export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab
 	public readonly outline = new ScrollableWorkbenchTree<ActorRow>();
 	public readonly timeline = new ActorTimelineTransport();
 	public readonly timelineLayout = new ActorTimelineLayout();
-	public readonly split = new WorkbenchSplitView(0.4);
+	public readonly split = new WorkbenchFixedEdgeSplitView('start');
 	public readonly rowSplit = new WorkbenchSplitView(0.4, 'vertical');
 	public readonly detailsWindow = new WorkbenchWindowModel(undefined, 0, 0);
 	public override readonly windowPlacements: readonly WorkbenchWindowModel[] = [this.detailsWindow];

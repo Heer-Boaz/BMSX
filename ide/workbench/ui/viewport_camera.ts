@@ -20,7 +20,7 @@ export class WorkbenchViewportCamera {
 	private modeValue: '2d' | '3d' = '2d';
 	private modeIntent: 'source' | 'manual' = 'source';
 	private readonly canvas: CanvasCamera = { centerX: 0, centerY: 0, scale: 1, reading: 'initial' };
-	private readonly space: SpaceCamera = { originX: 0, originY: 0, originZ: 0, centerX: 0, centerY: 0, centerZ: 0, distance: 8, yaw: 0.65, pitch: 0.55, reading: 'initial' };
+	private readonly space: SpaceCamera;
 	private width = 1; private height = 1;
 	private revisionValue = 0; private spaceRevisionValue = 0;
 	private rx = 1; private rz = 0;
@@ -28,7 +28,10 @@ export class WorkbenchViewportCamera {
 	private bx = 0; private by = 0; private bz = 1;
 	public readonly clipFromOrigin = new Float64Array(16);
 	private readonly listeners = new Set<() => void>();
-	public constructor() { this.updateSpace(); }
+	public constructor(yaw = 0.65, pitch = 0.55) {
+		this.space = { originX: 0, originY: 0, originZ: 0, centerX: 0, centerY: 0, centerZ: 0, distance: 8, yaw, pitch, reading: 'initial' };
+		this.updateSpace();
+	}
 	public get mode(): '2d' | '3d' { return this.modeValue; }
 	public get automaticMode(): boolean { return this.modeIntent === 'source'; }
 	public get initial(): boolean { return (this.mode === '2d' ? this.canvas : this.space).reading === 'initial'; }

@@ -69,6 +69,18 @@ function fixture(t: TestContext, orientation: 'horizontal' | 'vertical' = 'horiz
 		execute: (callback: (command: EditorCommandId) => void) => { onExecute = callback; } };
 }
 
+test('action bars project the command-owned checked state instead of requiring a second state writer', t => {
+	const f = fixture(t, 'horizontal', 'actorLab.details.title');
+	let checked = true;
+	f.content.registerCommand('actorLab.lockDetails', { isEnabled: () => true, isChecked: () => checked, run: () => { checked = !checked; } });
+	f.bar.clearInput(); f.bar.setInput(f.state, f.content);
+	const item = f.state.items.find(item => item.command === 'actorLab.lockDetails')!;
+	assert.equal(item.checked, true);
+	checked = false; f.bar.update(); assert.equal(item.checked, false);
+	checked = true; f.enabled.delete(item.command); f.bar.update();
+	assert.equal(item.enabled, false); assert.equal(item.checked, true, 'availability does not erase a selected mode');
+});
+
 test('compact window actions reserve icon cells instead of measuring hidden text at either font', () => {
 	const state = createWorkbenchActionBar('actorLab.details.title');
 	for (const variant of ['tiny', 'msx'] as const) {

@@ -7,9 +7,9 @@ import { ActorLabEditorPane } from '../../ide/workbench/contrib/actor_lab/editor
 import { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 import { createLiveStudioFixture } from '../helpers/live_studio';
 
-async function fixture(t: TestContext, actor = 'runner') {
+async function fixture(t: TestContext, actor = 'runner', command: 'gameView' | 'actorLab' = 'gameView') {
 	const f = await createLiveStudioFixture(t), { editor } = f;
-	editor.commands.execute('gameView'); editor.update(0);
+	editor.commands.execute(command); editor.update(0);
 	const input = editor.actorLab.resolveInput(), controller = input.controller;
 	const group = editor.editorParts.findGroup(input)!, pane = group.panes.activePane!;
 	assert.ok(pane instanceof ActorLabEditorPane);
@@ -24,6 +24,63 @@ async function fixture(t: TestContext, actor = 'runner') {
 	};
 	return { ...f, input, controller, group, pane, click, key };
 }
+
+for (const command of ['gameView', 'actorLab'] as const) test(`${command} defaults to the actual game camera without overriding later camera choices`, async t => {
+	const f = await fixture(t, 'runner', command);
+	assert.equal(f.input.worldView.mode, 'game');
+	f.editor.commands.execute('sceneViewport.view3d', f.pane.commandTarget); f.editor.update(0);
+	f.group.openEditor(new TerminalInput()); f.editor.update(0);
+	f.editor.commands.execute('gameView'); f.editor.update(0);
+	assert.equal(f.input.worldView.mode, '3d');
+});
+
+test('runtime 3D inspection starts front-facing and retains an explicitly orbited reading across view switches', async t => {
+	const f = await fixture(t), view = f.input.worldView, camera = view.camera;
+	view.setMode('3d'); camera.setViewport(600, 400); camera.frame3D(0, -100, 0, 100, 0, 0);
+	assert.equal(camera.projectY(0, 0, 0), camera.projectY(100, 0, 0));
+	assert.equal(camera.projectX(0, 0, 0), camera.projectX(0, -100, 0));
+	assert.equal(camera.depth(0, 0, 0), camera.depth(100, -100, 0));
+	camera.orbit(10, 5); const state = camera.capture().space;
+	view.setMode('game'); view.setMode('2d'); view.setMode('3d');
+	assert.deepEqual(camera.capture().space, state);
+});
+
+test('actor mode and follow menu checks come from the same command state as their toolbar', async t => {
+	const f = await fixture(t), { editor, input, controller, pane } = f;
+	const machine = input.runtime.roots[0].children.flatMap(node => node.children).find(node => node.kind === 'machine')!;
+	controller.openOutline(input); controller.projection.reveal(machine); editor.update(0);
+	editor.commands.execute('actorLab.follow', pane.commandTarget); editor.update(0);
+	assert.equal(editor.commands.isActive('actorLab.follow', pane.commandTarget), true);
+	assert.equal(input.actionBar.items.find(item => item.command === 'actorLab.follow')!.checked, true);
+	editor.commands.execute('contextMenu', pane.commandTarget); editor.update(0);
+	assert.equal(editor.contextMenu.model.rows.find(row => row.command === 'actorLab.follow')!.active, true);
+	editor.contextMenu.hide();
+	const tree = input.outline;
+	f.native.apply([{ type: 'pointer', x: tree.layout.contentRight - 4,
+		y: tree.layout.contentTop + (tree.selectionIndex - tree.scroll + 0.5) * tree.layout.rowHeight },
+		{ type: 'button', button: 'secondary', down: true }, { type: 'button', button: 'secondary', down: false }]);
+	assert.equal(editor.contextMenu.model.rows.find(row => row.command === 'actorLab.follow')!.active, true,
+		'opening the row menu is not a command to stop following');
+	editor.contextMenu.hide();
+	editor.commands.execute('actorLab.stateGraph', pane.commandTarget); editor.update(0);
+	assert.equal(editor.commands.isActive('actorLab.stateGraph', pane.commandTarget), true);
+	const view = input.stateGraph!.viewport, node = view.selection!;
+	assert.equal(view.zoom, 1, 'initial inspection is a readable 1:1 view, not an automatic distant overview');
+	const x = view.graphToViewportX((node.bounds.left + node.bounds.right) / 2);
+	const y = view.graphToViewportY((node.bounds.top + node.bounds.bottom) / 2);
+	f.native.apply([{ type: 'pointer', x, y }, { type: 'button', button: 'secondary', down: true },
+		{ type: 'button', button: 'secondary', down: false }]);
+	assert.equal(editor.contextMenu.model.rows.find(row => row.command === 'actorLab.follow')!.active, true,
+		'a graph context click retains Follow too');
+	editor.contextMenu.hide();
+	f.native.apply([{ type: 'pointer', x, y }, { type: 'button', button: 'secondary', down: true },
+		{ type: 'pointer', x: x + 12, y: y + 8 }, { type: 'button', button: 'secondary', down: false }]);
+	assert.equal(editor.commands.isActive('actorLab.follow', pane.commandTarget), false, 'a real pan takes over camera ownership');
+	assert.equal(editor.contextMenu.visible, false);
+	editor.commands.execute('actorLab.follow', pane.commandTarget);
+	editor.commands.execute('graph.zoomIn');
+	assert.equal(editor.commands.isActive('actorLab.follow', pane.commandTarget), false, 'explicit zoom also takes over the camera');
+});
 
 for (const kind of ['timeline', 'machine', 'tree'] as const) test(`${kind} inspection and runtime history survive presentation, focus and tab changes`, async t => {
 	const f = await fixture(t, kind === 'tree' ? 'bystander' : 'runner');

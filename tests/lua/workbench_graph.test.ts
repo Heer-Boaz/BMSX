@@ -485,7 +485,7 @@ test('zoom preserves the inverse pointer anchor, selection and layout while scal
 });
 
 test('zoomed route hits keep a three-screen-pixel tolerance and four-sided canvas clipping', () => {
-	for (const zoom of [0.25, 0.5, 1.2, 2, 4]) {
+	for (const zoom of [0.25, 0.5, 1.2, 1.5, 2]) {
 		const { view, edge } = fixture();
 		view.setZoom(zoom);
 		view.reveal(edge);
@@ -502,7 +502,7 @@ test('zoom commands belong to graph focus; wheel zoom is pointer anchored and re
 	const f = dragFixture();
 	const x = f.view.viewportToGraphX(60), y = f.view.viewportToGraphY(60);
 	assert.equal(f.control.handleWheel({ viewportX: 60, viewportY: 60, valid: true, insideViewport: true, deltaX: 0, deltaY: -1, modifiers: KeyModifier.ctrl }), true);
-	assert.equal(f.view.zoom, 2);
+	assert.equal(f.view.zoom, 1.2);
 	assert.equal(f.view.viewportToGraphX(60), x);
 	assert.equal(f.view.viewportToGraphY(60), y);
 	assert.equal(f.capture.dispatch(pointer(70, 60, true), false, 20), false, 'zoom revokes the press, even before its drag threshold');
@@ -516,9 +516,9 @@ test('zoom commands belong to graph focus; wheel zoom is pointer anchored and re
 	f.control.dispose();
 });
 
-test('zoom commands traverse identical pixel levels in both directions, including 100% after either limit', () => {
+test('zoom commands traverse identical reading levels in both directions, including 100% after either limit', () => {
 	const f = dragFixture();
-	const levels = [1 / 4, 1 / 3, 1 / 2, 1, 2, 3, 4];
+	const levels = [0.1, 0.125, 0.15, 0.175, 0.2, 0.225, 0.25, 0.375, 0.5, 0.675, 0.75, 0.875, 1, 1.25, 1.375, 1.5, 1.675, 1.75, 1.875, 2];
 	f.view.setZoom(GRAPH_ZOOM_MIN);
 	for (let index = 1; index < levels.length; index += 1) {
 		f.focus.executeCommand('graph.zoomIn');
@@ -544,9 +544,9 @@ test('zoom commands traverse identical pixel levels in both directions, includin
 	f.control.dispose();
 });
 
-test('pixel steps consume arbitrary view scales directionally and multi-notch wheel input keeps its inverse anchor', () => {
+test('reading steps consume arbitrary view scales directionally and multi-notch wheel input keeps its inverse anchor', () => {
 	const f = dragFixture();
-	for (const [start, lower, higher] of [[0.28, 1 / 4, 1 / 3], [0.75, 1 / 2, 1], [1.9, 1, 2], [3.8, 3, 4]]) {
+	for (const [start, lower, higher] of [[0.28, 0.25, 0.375], [0.8, 0.75, 0.875], [1.2, 1, 1.25], [1.9, 1.875, 2]]) {
 		f.view.setZoom(start); f.view.zoomBySteps(0);
 		assert.equal(f.view.zoom, start, 'a zero step does not quantize restored view state');
 		f.view.zoomBySteps(-1); assert.equal(f.view.zoom, lower);
@@ -555,9 +555,9 @@ test('pixel steps consume arbitrary view scales directionally and multi-notch wh
 	f.view.setZoom(1);
 	const x = f.view.viewportToGraphX(60), y = f.view.viewportToGraphY(60);
 	f.control.handleWheel({ viewportX: 60, viewportY: 60, valid: true, insideViewport: true, deltaX: 0, deltaY: -3, modifiers: KeyModifier.ctrl });
-	assert.equal(f.view.zoom, 4);
-	f.control.handleWheel({ viewportX: 60, viewportY: 60, valid: true, insideViewport: true, deltaX: 0, deltaY: 2, modifiers: KeyModifier.ctrl });
-	assert.equal(f.view.zoom, 1);
+	assert.ok(Math.abs(f.view.zoom - 1.2 ** 3) < 1e-10);
+	f.control.handleWheel({ viewportX: 60, viewportY: 60, valid: true, insideViewport: true, deltaX: 0, deltaY: 3, modifiers: KeyModifier.ctrl });
+	assert.ok(Math.abs(f.view.zoom - 1) < 1e-10);
 	assert.equal(f.view.viewportToGraphX(60), x);
 	assert.equal(f.view.viewportToGraphY(60), y);
 	f.control.dispose();
@@ -577,14 +577,14 @@ test('graph wheel keeps fractional two-axis motion and continuous anchored zoom 
 	const x = view.viewportToGraphX(60), y = view.viewportToGraphY(60);
 	for (const modifier of [KeyModifier.ctrl, KeyModifier.meta]) {
 		control.handleWheel({ ...wheel, deltaX: 0, deltaY: -0.5, modifiers: modifier });
-		assert.ok(Math.abs(view.zoom - Math.SQRT2) < 1e-10);
+		assert.ok(Math.abs(view.zoom - Math.sqrt(1.2)) < 1e-10);
 		assert.ok(Math.abs(view.viewportToGraphX(60) - x) < 1e-10);
 		assert.ok(Math.abs(view.viewportToGraphY(60) - y) < 1e-10);
 		control.handleWheel({ ...wheel, deltaX: 0, deltaY: 0.5, modifiers: modifier });
 		assert.ok(Math.abs(view.zoom - 1) < 1e-10);
 	}
 	view.setZoom(1.25); view.zoomBySteps(1);
-	assert.equal(view.zoom, 2);
+	assert.equal(view.zoom, 1.375);
 	control.dispose();
 });
 
