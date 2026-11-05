@@ -200,22 +200,27 @@ npm test -- tests/lua/actor_runtime_tools.test.ts
 npm test -- --test-name-pattern='Visual placement composes physical' tests/lua/affine_visuals.test.ts
 ```
 
-All test scripts use `scripts/test.sh`: **1 GiB RAM total, no swap** for the
-test process and its ordinary subprocesses, with group-wide OOM termination.
-Nested runners share that budget; Node suites default to one test file at a time.
+All test scripts use `scripts/test.sh`: a shared cgroup v2 `memory.max` cap of
+**at most 8 GiB** for the test process and its ordinary subprocesses. Existing
+stricter caps stay untouched. Nested runners share that budget; Node suites
+default to one test file at a time.
 Build steps preceding the harness in npm scripts run separately; ordinary children
 inherit the harness budget.
 For a custom harness use `npm run test:exec -- <command> [arguments...]`.
 
-Linux/WSL needs cgroup v2 memory control. The runner reuses a verified bounded
-current or ancestor cgroup, including the visible namespace root in a container.
-Otherwise it installs the limits through a delegated writable cgroup or systemd
-(254 or newer) with a running user manager. A container therefore needs either
-host-installed limits or delegated memory-controller access, not systemd as its
-init process. A read-only cgroup mount without existing limits cannot enforce
-the budget. A missing or ineffective kernel limit fails the run rather than
-executing tests unbounded; `prlimit`, `ulimit` and V8 heap limits are not substitutes
-for a shared process-tree memory budget.
+Linux/WSL needs cgroup v2 memory control. By default, without an opt-in mode, the
+runner accepts a verified current or ancestor `memory.max` of at most 8 GiB,
+including a read-only container namespace root. Its existing swap and OOM settings
+are inherited, not admission requirements. Only when no accepted cap exists does
+the runner install a new 8 GiB cap through a delegated writable cgroup or systemd
+(254 or newer) with a running user manager. Newly installed test cgroups also
+disable swap and enable group-wide OOM termination.
+
+A container therefore needs either an accepted host-installed cap or delegated
+memory-controller access, not systemd as its init process. A read-only mount with
+an unlimited or greater-than-8-GiB cap does not suffice. If the runner cannot
+verify an accepted cap or install one, it refuses the run; `prlimit`, `ulimit` and
+V8 heap limits are not substitutes for a shared process-tree memory budget.
 
 For direct delegation, the host must provide an empty, writable parent cgroup
 with the memory controller available to its subtree and `cgroup.kill` support.

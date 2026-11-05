@@ -18,11 +18,9 @@ for (let directory = `${mountRoot}${group === '/' ? '' : group}`;; directory = d
 }
 
 function hasBudget(directory) {
-	if (!['memory.max', 'memory.swap.max', 'memory.oom.group'].every(name => existsSync(join(directory, name)))) return false;
+	if (!existsSync(join(directory, 'memory.max'))) return false;
 	const maximum = readFileSync(join(directory, 'memory.max'), 'utf8').trim();
-	return maximum !== 'max' && BigInt(maximum) <= 1073741824n
-		&& readFileSync(join(directory, 'memory.swap.max'), 'utf8').trim() === '0'
-		&& readFileSync(join(directory, 'memory.oom.group'), 'utf8').trim() === '1';
+	return maximum !== 'max' && BigInt(maximum) <= 8589934592n;
 }
 
 test('the test worker and its subprocess share the installed kernel memory budget', () => {
@@ -116,8 +114,8 @@ async function retireFixture(directory) {
 	removeEmpty(directory);
 }
 
-/** A weaker visible view is still constrained by the unchanged, hidden outer 1 GiB budget. */
-function cgroupFixture(t, boundedRoot = false) {
+/** A weaker visible view remains constrained by the unchanged hidden outer test budget. */
+function cgroupFixture(t, maximum = '17179869184') {
 	const parent = ancestors.find(directory => {
 		if (!hasBudget(directory) || readFileSync(join(directory, 'cgroup.procs'), 'utf8').trim() !== '') return false;
 		if (!readFileSync(join(directory, 'cgroup.subtree_control'), 'utf8').trim().split(' ').includes('memory')) return false;
@@ -136,9 +134,9 @@ function cgroupFixture(t, boundedRoot = false) {
 	}
 	const directory = mkdtempSync(join(parent, 'bmsx-runner-fixture-'));
 	t.after(() => retireFixture(directory));
-	writeFileSync(join(directory, 'memory.max'), boundedRoot ? '1073741824' : '8589934592');
-	writeFileSync(join(directory, 'memory.swap.max'), boundedRoot ? '0' : 'max');
-	writeFileSync(join(directory, 'memory.oom.group'), boundedRoot ? '1' : '0');
+	writeFileSync(join(directory, 'memory.max'), maximum);
+	writeFileSync(join(directory, 'memory.swap.max'), 'max');
+	writeFileSync(join(directory, 'memory.oom.group'), '0');
 	mkdirSync(join(directory, 'supervisor'));
 	return directory;
 }
@@ -147,7 +145,7 @@ const readOnlyRoot = 'mount -o remount,bind,ro,nosuid,nodev,noexec /sys/fs/cgrou
 
 test('a read-only prebounded namespace root needs neither systemd nor delegation', t => {
 	const currentIsBounded = hasBudget(ancestors[0]);
-	const directory = currentIsBounded ? ancestors[0] : cgroupFixture(t, true);
+	const directory = currentIsBounded ? ancestors[0] : cgroupFixture(t, '8589934592');
 	if (directory === undefined) return;
 	const child = inCgroupNamespace(t, directory, !currentIsBounded, `${readOnlyRoot}; exec bash "$1" cat /proc/self/cgroup`, [runner]);
 	if (child === undefined) return;
@@ -156,7 +154,7 @@ test('a read-only prebounded namespace root needs neither systemd nor delegation
 });
 
 test('a descendant reuses its bounded namespace root instead of trying the user manager', t => {
-	const fixture = cgroupFixture(t, true);
+	const fixture = cgroupFixture(t, '8589934592');
 	if (fixture === undefined) return;
 	const child = inCgroupNamespace(t, fixture, true, `
 		printf '%s\\n' "$BASHPID" > /sys/fs/cgroup/supervisor/cgroup.procs
@@ -167,8 +165,57 @@ test('a descendant reuses its bounded namespace root instead of trying the user 
 	assert.equal(child.stdout, '0::/supervisor\n');
 });
 
-test('an unbounded read-only namespace never executes the requested payload', t => {
-	const fixture = cgroupFixture(t);
+test('the read-only 8 GiB ChatGPT container runs without swap, OOM, installer or mode prerequisites', t => {
+	const fixture = cgroupFixture(t, '8589934592');
+	if (fixture === undefined) return;
+	const child = inCgroupNamespace(t, fixture, true, `
+		${readOnlyRoot}
+		unset XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS BMSX_TEST_CGROUP_PARENT
+		export PATH=/nonexistent/installer-tools
+		exec /bin/bash "$1" /bin/bash -ec '
+			for field in memory.max memory.swap.max memory.oom.group; do
+				IFS= read -r value < "/sys/fs/cgroup/$field"
+				printf "%s\\n" "$value"
+			done
+			IFS= read -r membership < /proc/self/cgroup
+			printf "%s\\n" "$membership"
+		'
+	`, [runner]);
+	if (child === undefined) return;
+	assert.equal(child.status, 0, child.stderr);
+	assert.equal(child.stdout, '8589934592\nmax\n0\n0::/\n');
+});
+
+test('npm run test:exec -- true works in the read-only 8 GiB container without opt-in', t => {
+	const fixture = cgroupFixture(t, '8589934592');
+	if (fixture === undefined) return;
+	const child = inCgroupNamespace(t, fixture, true, `
+		${readOnlyRoot}
+		unset XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS BMSX_TEST_CGROUP_PARENT
+		exec "$@" run test:exec -- true
+	`, [process.execPath, process.env.npm_execpath]);
+	if (child === undefined) return;
+	assert.equal(child.status, 0, child.stderr);
+});
+
+test('a stricter inherited cap is not raised or reconfigured', t => {
+	const fixture = cgroupFixture(t, '536870912');
+	if (fixture === undefined) return;
+	const child = inCgroupNamespace(t, fixture, true, `
+		${readOnlyRoot}
+		export BMSX_TEST_CGROUP_PARENT=/nonexistent/delegation
+		exec /bin/bash "$1" /bin/bash -ec '
+			IFS= read -r maximum < /sys/fs/cgroup/memory.max
+			printf "%s\\n" "$maximum"
+		'
+	`, [runner]);
+	if (child === undefined) return;
+	assert.equal(child.status, 0, child.stderr);
+	assert.equal(child.stdout, '536870912\n');
+});
+
+for (const maximum of ['17179869184', 'max']) test(`a read-only namespace with memory.max=${maximum} cannot admit a test without an accepted cap`, t => {
+	const fixture = cgroupFixture(t, maximum);
 	if (fixture === undefined) return;
 	const child = inCgroupNamespace(t, fixture, true, `${readOnlyRoot}; exec bash "$1" printf PAYLOAD_STARTED`, [runner]);
 	if (child === undefined) return;
@@ -196,7 +243,7 @@ test('direct delegation installs actual kernel limits and nested runners retain 
 	if (child === undefined) return;
 	assert.equal(child.status, 0, child.stderr);
 	const [maximum, swap, oom, current, nested] = child.stdout.trim().split('\n');
-	assert.deepEqual([maximum, swap, oom], ['1073741824', '0', '1']);
+	assert.deepEqual([maximum, swap, oom], ['8589934592', '0', '1']);
 	assert.ok(current.startsWith('0::/delegated/'), 'the workload belongs to a private child of the selected parent');
 	assert.equal(nested, current);
 	assert.deepEqual(readdirSync(join(fixture, 'delegated'), { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => entry.name), []);

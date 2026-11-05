@@ -36,7 +36,7 @@ def run():
     for signum in FORWARDED_SIGNALS:
         signal.signal(signum, forward)
 
-    bash, runner, *command = sys.argv[1:]
+    memory_limit, bash, runner, *command = sys.argv[1:]
     parent = Path(os.environ['BMSX_TEST_CGROUP_PARENT']).resolve(strict=True)
     filesystem = subprocess.check_output(['stat', '-f', '-c', '%t', '--', parent], text=True).strip()
     if filesystem != '63677270':  # CGROUP2_SUPER_MAGIC, not a substitute filesystem.
@@ -48,7 +48,7 @@ def run():
     directory = Path(tempfile.mkdtemp(prefix='bmsx-test-', dir=parent))
     kill_fd = None
     try:
-        settings = {'memory.max': '1073741824', 'memory.swap.max': '0', 'memory.oom.group': '1'}
+        settings = {'memory.max': memory_limit, 'memory.swap.max': '0', 'memory.oom.group': '1'}
         for name, value in settings.items():
             (directory / name).write_text(value)
         for name, value in settings.items():

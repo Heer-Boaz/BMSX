@@ -80,8 +80,11 @@
 - Run Node tests through `npm test -- [node test options] <test files>`, or the
   existing `npm run test:*` commands. For another harness/native executable use
   `npm run test:exec -- <command> [arguments...]`.
-- These entrypoints enforce a shared **1 GiB RAM / zero swap** cgroup budget for
-  each test run and its ordinary subprocesses, with group-wide OOM termination.
+- These entrypoints require a shared cgroup v2 `memory.max` cap of **at most
+  8 GiB** for each test run and its ordinary subprocesses. An existing current or
+  ancestor cap is accepted without changing its swap or OOM settings, including
+  a read-only container namespace root; stricter existing limits stay untouched.
+  Newly installed test cgroups use 8 GiB, zero swap and group-wide OOM termination.
   Nested invocations share the existing budget. Node test suites run one file at
   a time by default.
 - Do not bypass this runner with direct `node --test`, `tsx --test`, or unbounded
@@ -89,8 +92,10 @@
   A memory-limit failure is a failing test run, not permission to retry without
   the limit. Diagnose the failing case or retained state instead.
 - Linux/WSL with cgroup v2 memory control is required. The runner reuses a verified
-  bounded cgroup, including a container's cgroup namespace root, or installs the
-  limits through a delegated writable cgroup or a running systemd user manager.
+  cap of at most 8 GiB by default, with no opt-in mode. Only when no accepted cap
+  exists does it install the limits through a delegated writable cgroup or a
+  running systemd user manager. An unlimited or greater-than-8-GiB cap must be
+  bounded before tests execute.
   Containers need host-installed limits or delegated memory-controller access;
   systemd inside the container is not required. `BMSX_TEST_CGROUP_PARENT` selects
   an empty delegated parent for a private test cgroup; it does not override an

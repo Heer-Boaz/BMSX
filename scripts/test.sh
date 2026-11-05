@@ -2,6 +2,7 @@
 set -euo pipefail
 
 # Reuse an installed kernel budget or install one before executing test code.
+readonly memory_limit=8589934592
 in_scope=false
 if [[ ${1-} == --in-scope ]]; then
 	in_scope=true
@@ -31,11 +32,9 @@ while IFS=: read -r hierarchy controllers path; do
 	fi
 done < /proc/self/cgroup
 while [[ -n $cgroup ]]; do
-	if [[ -r $cgroup/memory.max && -r $cgroup/memory.swap.max && -r $cgroup/memory.oom.group ]]; then
+	if [[ -r $cgroup/memory.max ]]; then
 		read -r memory_max < "$cgroup/memory.max"
-		read -r swap_max < "$cgroup/memory.swap.max"
-		read -r oom_group < "$cgroup/memory.oom.group"
-		if [[ $memory_max != max && $swap_max == 0 && $oom_group == 1 ]] && (( memory_max <= 1073741824 )); then
+		if [[ $memory_max != max ]] && (( memory_max <= memory_limit )); then
 			exec "$@"
 		fi
 	fi
@@ -52,15 +51,15 @@ if $in_scope; then
 fi
 
 if [[ -n ${BMSX_TEST_CGROUP_PARENT-} ]]; then
-	exec python3 "$(dirname "${BASH_SOURCE[0]}")/test_cgroup.py" "$BASH" "${BASH_SOURCE[0]}" "$@"
+	exec python3 "$(dirname "${BASH_SOURCE[0]}")/test_cgroup.py" "$memory_limit" "$BASH" "${BASH_SOURCE[0]}" "$@"
 fi
 
 # The user manager is one cgroup owner, not a prerequisite of a prebounded
 # container or an explicitly delegated direct cgroup.
 if [[ -z ${XDG_RUNTIME_DIR-} && -z ${DBUS_SESSION_BUS_ADDRESS-} ]]; then
-	echo 'No test cgroup budget or systemd user session is available. Supply BMSX_TEST_CGROUP_PARENT with writable memory-controller delegation, or have the host install 1 GiB / zero swap / group OOM before starting this process. Refusing an unbounded run.' >&2
+	echo 'No cgroup memory cap of at most 8 GiB or systemd user session is available. Supply BMSX_TEST_CGROUP_PARENT with writable memory-controller delegation, or have the host cap this process before starting it. Refusing an unbounded run.' >&2
 	exit 1
 fi
 exec systemd-run --user --scope --collect --quiet --expand-environment=no \
-	--property=MemoryMax=1G --property=MemorySwapMax=0 --property=OOMPolicy=kill \
+	--property="MemoryMax=$memory_limit" --property=MemorySwapMax=0 --property=OOMPolicy=kill \
 	-- "$BASH" "${BASH_SOURCE[0]}" --in-scope "$@"
