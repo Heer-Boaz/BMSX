@@ -103,7 +103,7 @@ function fixture(t: TestContext) {
 	const content = new ProjectContentIndex(editorTextModelService, sources.catalog,
 		new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), scene.documents);
 	const resourcePanel = new ResourcePanelController({ editorParts, isActive: true } as CartEditor, sources.catalog,
-		{ resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.3, content, new VirtualHeadlessClock());
+		{ resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, content, new VirtualHeadlessClock());
 	resourcePanel.setFontMetrics(editorViewState.font);
 	t.after(() => { resourcePanel.dispose(); content.dispose(); scenario.dispose(); runs.dispose(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); workspaceDirtyRecords.clear(); });
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'definitions.lua' })!;

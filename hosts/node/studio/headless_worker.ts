@@ -41,7 +41,6 @@ import type { RuntimeIdeState } from '../../../ide/workbench/state';
 import { shutdownWorkspaceStorage } from '../../../ide/workbench/workspace/storage';
 import { runWorkbenchHostFrame } from '../../../ide/workbench/host_frame';
 import { NodeGraphLayoutEngine } from '../../../ide/node/graph_layout';
-import { RESOURCE_PANEL_DEFAULT_RATIO } from '../../../ide/common/constants';
 import { StudioUiService } from '../../../ide/workbench/services/assistant/ui_tools';
 import { StudioToolRequests } from '../../../ide/workbench/services/assistant/tool_requests';
 import type { HeadlessStudioOptions, HeadlessStudioReply, HeadlessStudioRequest } from './headless_protocol';
@@ -100,7 +99,7 @@ class HeadlessStudioRuntime {
 			this.rewind, this.hostMenu, new MemoryStorage(), options.project.cartridge, { catalog,
 				systemContextId: options.project.system.id, cartridgeContextIds: [options.project.cartridge.id, null] },
 			options.recoveryIdentity, new WorkerWorkspaceRecordProvider(parentPort!), this.clock, new HeadlessClipboard(),
-			new IdeMicrotaskQueue(), this.log, RESOURCE_PANEL_DEFAULT_RATIO,
+			new IdeMicrotaskQueue(), this.log,
 			() => new NodeGraphLayoutEngine(new Worker(new URL('../../../ide/node/graph_layout_worker.cjs', import.meta.url))),
 			undefined, undefined, 'installed');
 		const editor = this.workbench.editor;

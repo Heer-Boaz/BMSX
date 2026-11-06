@@ -120,14 +120,14 @@ function buildTinyCharMap(): GlyphMap {
 }
 
 export class Font extends BFont {
-	constructor(config?: { variant?: FontVariant; style?: FontStyle; sampling?: FontSampling }) {
+	constructor(config?: { variant?: FontVariant; style?: FontStyle; sampling?: FontSampling; scale?: number }) {
 		const variant = config?.variant ?? DEFAULT_FONT_VARIANT;
 		const preset = variant === 'mono' ? SCALABLE_FONT_MAPS[config?.style ?? 'normal'] : FONT_PRESETS[variant];
 		const style = config?.style ?? 'normal';
 		super(variant === 'mono' ? SCALABLE_FONT_SOURCE : HOST_SYSTEM_FONT_SOURCE, variant === 'mono' || style === 'normal' ? preset
 			: Object.fromEntries(Object.entries(preset).map(([char, id]) => [char, `${id}_${style}`])), 0, variant === 'mono'
 			? { raster: 'msdf', lineHeight: SCALABLE_FONT_ATLAS.lineHeight, distanceRange: SCALABLE_FONT_ATLAS.distanceRange }
-			: { raster: 'bitmap', sampling: config?.sampling ?? 'nearest' });
+			: { raster: 'bitmap', sampling: config?.sampling ?? 'nearest' }, config?.scale ?? 1);
 	}
 }
 

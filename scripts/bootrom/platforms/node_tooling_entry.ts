@@ -15,7 +15,6 @@ import {
 	prepareWorkbenchRuntime,
 } from '../../../ide/workbench/machine_runtime';
 import { runWorkbenchHostFrame } from '../../../ide/workbench/host_frame';
-import { RESOURCE_PANEL_DEFAULT_RATIO } from '../../../ide/common/constants';
 import { IdeMicrotaskQueue } from '../../../ide/common/microtask_queue';
 import { createHeadlessIdeHarness } from '../../../ide/testing/headless_harness';
 import { HeadlessGPUBackend } from '../../../machine/ts/render/headless/backend';
@@ -247,7 +246,7 @@ async function main(): Promise<void> {
 					new WorkbenchPreferences(new MemoryStorage()), input, audioOutput,
 					runtimeTasks, execution, rewind, hostOverlayMenu,
 					new MemoryStorage(), context, sourceBindings, randomUUID(), new DiskWorkspaceRecordProvider(workspaceRoot), clock,
-					clipboard, new IdeMicrotaskQueue(), logOutput, RESOURCE_PANEL_DEFAULT_RATIO,
+					clipboard, new IdeMicrotaskQueue(), logOutput,
 					() => new NodeGraphLayoutEngine(new Worker(path.join(__dirname, 'graph-layout.node-worker.cjs'))),
 				);
 			}
@@ -353,7 +352,6 @@ async function main(): Promise<void> {
 						new HeadlessClipboard(),
 						microtasks,
 						logOutput,
-						RESOURCE_PANEL_DEFAULT_RATIO,
 						() => new NodeGraphLayoutEngine(new Worker(path.join(__dirname, 'graph-layout.node-worker.cjs'))),
 					);
 					const controlInput = new RemoteInput(input, clock, input.dispatchEditingKey.bind(input),

@@ -29,8 +29,8 @@ export async function testStudioSashSizing(test: StudioFixture, client: ScenePri
 		'sash sizing: live Files resizing publishes its own retained preference and visible native operation guidance');
 	await test.capture?.(`sash-sizing-${editor.fontVariant}-theme-${theme}-files`);
 	await test.press('Home'); await test.press('Enter');
-	check(!panel.split.canReset && panel.split.ratio === panel.split.defaultRatio && inputFocus.admittedTarget === filesOrigin,
-		'sash sizing: Home restores Files default ratio and Enter returns to the exact invoking client');
+	check(!panel.split.canReset && panel.split.requestedSize === undefined && inputFocus.admittedTarget === filesOrigin,
+		'sash sizing: Home restores Files automatic width and Enter returns to the exact invoking client');
 	await test.runPaletteCommand('Workspace: Increase Focused View Width');
 	await test.runPaletteCommand('Workspace: Reset Focused View Width');
 	check(!panel.split.canReset && inputFocus.admittedTarget === filesOrigin,

@@ -107,7 +107,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const system = { id: TEST_STUDIO_SYSTEM_CONTEXT_ID, projectRoot: media.system.index.projectRootPath };
 	const catalog = createLoadedProjectSourceCatalog({ admission: system, layer: media.system }, [{ admission: context, layer: media.cartridgeSlots[0]! }]);
 	const ide = await prepareWorkbenchRuntime(media, runtime, presenter, screen, encodePngImage, decodeImage, display, new WorkbenchPreferences(localStorage), input,
-		audio, tasks, execution, rewind, menu, localStorage, context, { catalog, systemContextId: system.id, cartridgeContextIds: [context.id, null] }, 'runtime-replay-session', new HttpWorkspaceRecordProvider(), clock, clipboard, new IdeMicrotaskQueue(), log, 0.3, () => new BrowserGraphLayoutEngine(new Worker('/graph-layout.worker.js')), connectAssistant);
+		audio, tasks, execution, rewind, menu, localStorage, context, { catalog, systemContextId: system.id, cartridgeContextIds: [context.id, null] }, 'runtime-replay-session', new HttpWorkspaceRecordProvider(), clock, clipboard, new IdeMicrotaskQueue(), log, () => new BrowserGraphLayoutEngine(new Worker('/graph-layout.worker.js')), connectAssistant);
 	const remote = new RemoteInput(input, clock, input.dispatchEditingKey.bind(input),
 		event => ide.editor.dispatchPointer(event), event => ide.editor.dispatchWheel(event));
 	let textInput: BrowserTextInput | undefined;

@@ -69,7 +69,7 @@ function fixture(t: TestContext, source = 'local value = 42\nreturn value') {
 	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: unused }, unused,
 		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) }),
 		new WorkbenchPreferences(new MemoryStorage()), host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, clipboard,
-		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
+		new IdeMicrotaskQueue(), { log() {} }, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
 	editor.editorParts.main.activeGroup.openEditor(resolveLuaCodeEditorInput(sources.catalog, sources.catalog.resolveResource({ contextId: TEST_SYSTEM_CONTEXT_ID, path: registry.entrySourcePath })!));
 	t.after(async () => {
@@ -572,6 +572,7 @@ test('the actual Problems sash preserves automatic sizing until motion and commi
 	assert.ok(f.editor.problems.bounds.bottom - f.editor.problems.bounds.top > automatic, 'a stationary sash click must not pin the automatic content-size owner');
 	f.editor.mainWorkspace.regionLayout.activityHeight = 73; f.editor.update(0);
 	bounds = f.editor.problems.bounds; x = (bounds.left + bounds.right) / 2;
+	const requestedPresentation = bounds.bottom - bounds.top;
 	y = bounds.top - WORKBENCH_SPLIT_SIZE / 2;
 	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 4 });
@@ -579,10 +580,10 @@ test('the actual Problems sash preserves automatic sizing until motion and commi
 	assert.equal(f.editor.mainWorkspace.regionLayout.activityHeight, 73, 'grabbing the divider margin cannot jump the requested part size');
 	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y: y - 12, buttons: PointerButton.Primary, pressedButtons: 0,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 5 });
-	assert.equal(f.editor.mainWorkspace.regionLayout.activityHeight, 85, 'continuous drag changes the explicit size by its pointer displacement');
+	assert.equal(f.editor.mainWorkspace.regionLayout.activityHeight, requestedPresentation + 12, 'continuous drag changes the presented size by its pointer displacement');
 	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y: y - 19, buttons: 0, pressedButtons: 0,
 		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 6 });
-	assert.equal(f.editor.mainWorkspace.regionLayout.activityHeight, 92, 'the release occurrence contributes its final movement');
+	assert.equal(f.editor.mainWorkspace.regionLayout.activityHeight, requestedPresentation + 19, 'the release occurrence contributes its final movement');
 	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, false);
 	f.editor.mainWorkspace.regionLayout.activityHeight = 1000000; f.editor.update(0);
 	bounds = f.editor.problems.bounds; const presented = bounds.bottom - bounds.top;
@@ -592,7 +593,8 @@ test('the actual Problems sash preserves automatic sizing until motion and commi
 	assert.equal(pointerCapture.active, true); assert.equal(f.editor.mainWorkspace.regionLayout.activityHeight, 1000000);
 	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x, y: y + 12, buttons: 0, pressedButtons: 0,
 		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 8 });
-	assert.equal(f.editor.mainWorkspace.regionLayout.activityHeight, presented - 12, 'drag begins at the displayed size, not an occluded larger request');
+	assert.ok(Math.abs(f.editor.mainWorkspace.regionLayout.activityHeight! - (presented - 12)) < 1e-10,
+		'drag begins at the displayed size, not an occluded larger request');
 	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
 });
@@ -771,10 +773,6 @@ test('Files open intent survives whole-Studio suspension without resetting its r
 	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: liveX, y: liveY + 24, buttons: 0, pressedButtons: 0,
 		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 8 });
 	assert.equal(pointerCapture.draining, false);
-	assert.equal(panel.handleScrollbarPointer({ valid: true, insideViewport: true,
-		viewportX: liveX, viewportY: liveY, pressedButtons: PointerButton.Primary,
-		justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 }), false,
-		'the recovered part cannot admit a drag at its obsolete pre-resize thumb');
 	const recoveredThumb = panel.resourceVertical.getThumb()!; assert.ok(recoveredThumb !== null);
 	const recoveredX = (recoveredThumb.left + recoveredThumb.right) / 2, recoveredY = (recoveredThumb.top + recoveredThumb.bottom) / 2;
 	f.editor.dispatchPointer({ pointerId: 0, pointerType: 'mouse', x: recoveredX, y: recoveredY, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,

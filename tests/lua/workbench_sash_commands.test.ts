@@ -56,10 +56,10 @@ for (const region of ['Files', 'Hierarchy', 'Details', 'Activity'] as const)
 			assert.equal(editor.commands.isEnabled(axis === 'width' ? 'workspace.resizeViewHeight' : 'workspace.resizeViewWidth', origin), false);
 			f.key(axis === 'width' ? 'ArrowRight' : 'ArrowUp');
 			assert.equal(split.canReset, true);
-			const ratio = files.split.ratio, requested = fixed?.requestedSize;
+			const ratio = files.split.requestedSize, requested = fixed?.requestedSize;
 			f.key(finish);
 			assert.ok(inputFocus.admittedTarget === origin);
-			assert.equal(files.split.ratio, ratio);
+			assert.equal(files.split.requestedSize, ratio);
 			if (fixed !== undefined) assert.equal(fixed.requestedSize, requested, 'Escape is not a rollback of live sash sizing');
 			assert.equal(editor.commands.isEnabled(reset, origin), true);
 			editor.commands.execute(reset, origin); f.update();
@@ -179,12 +179,12 @@ for (const admission of ['hidden Activity', 'floating Activity', 'modal', 'guest
 			do { f.key('Tab'); assert.ok(inputFocus.target !== chrome, 'the runtime view exposes a guest tab stop'); } while (inputFocus.target?.guestInput === undefined);
 			origin = inputFocus.admittedTarget!; assert.ok(origin.guestInput !== undefined);
 		}
-		f.update(); const focused = inputFocus.admittedTarget, ratio = split.ratio, files = editor.resourcePanel.split.ratio;
+		f.update(); const focused = inputFocus.admittedTarget, ratio = split.ratio, files = editor.resourcePanel.split.requestedSize;
 		const height = main.regionLayout.activityHeight, width = main.regionLayout.detailsWidth, cycles = f.host.runtime.machine.scheduler.nowCycles;
 		for (const command of COMMANDS) {
 			assert.equal(editor.commands.isEnabled(command, origin), false); editor.commands.execute(command, origin);
 		}
-		assert.equal(split.ratio, ratio); assert.equal(editor.resourcePanel.split.ratio, files);
+		assert.equal(split.ratio, ratio); assert.equal(editor.resourcePanel.split.requestedSize, files);
 		assert.equal(main.regionLayout.activityHeight, height); assert.equal(main.regionLayout.detailsWidth, width);
 		assert.ok(inputFocus.admittedTarget === focused); assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
 	});

@@ -49,7 +49,7 @@ function fixture(t: TestContext) {
 	const ide = new RuntimeIdeState(runtime, host.presenter, { capture: externalWork }, externalWork,
 		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) }),
 		new WorkbenchPreferences(new MemoryStorage()), host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
-		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 800, height: 360 }, sources, new Map(), externalWork, externalWork, externalWork);
+		new IdeMicrotaskQueue(), { log() {} }, { width: 800, height: 360 }, sources, new Map(), externalWork, externalWork, externalWork);
 	const editor = ide.editor, parts = editor.editorParts, controller = editor.actorLab;
 	ide.boots.didReplaceMachine(); editor.interaction.setActive(true);
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);

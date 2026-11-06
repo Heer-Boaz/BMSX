@@ -28,7 +28,7 @@ test('headless IDE scenario keeps physical postInput separate from ordered autho
 	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: unused }, unused,
 		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: 256, height: 212 }) }), new WorkbenchPreferences(new MemoryStorage()), host.input,
 		host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(), new IdeMicrotaskQueue(),
-		log, 0.3, { width: 256, height: 212 }, sources, new Map(), unused, unused, unused);
+		log, { width: 256, height: 212 }, sources, new Map(), unused, unused, unused);
 	const keys: Array<readonly [string, boolean, KeyModifier]> = [];
 	const pointers: Array<readonly [number, number, number, number, number]> = [], wheels: number[] = [];
 	host.input.setEditingInput({ textTarget: undefined, onDidChangeTarget: () => () => {}, cancelInput() {}, cancelPointerInput() {},

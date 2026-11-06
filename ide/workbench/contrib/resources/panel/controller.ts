@@ -11,12 +11,9 @@ import { renderResourcePanel } from '../../../render/resource_panel';
 import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import { STATUS_PRIORITY_CONTENT, STATUS_PRIORITY_HINT, type WorkbenchStatusItem } from '../../../common/status_bar';
-import { measureTextRange } from '../../../../editor/common/text/layout';
 import { editorViewState } from '../../../../editor/ui/view/state';
 import type { EditorFont } from '../../../../editor/ui/view/font';
-import type { FontVariant } from '../../../../../machine/ts/render/shared/bmsx_font';
 import {
-	clampResourcePanelRatio,
 	createResourcePanelLayout,
 	writeResourcePanelBounds,
 	writeResourcePanelLayout,
@@ -52,10 +49,10 @@ import type { ProspectiveEditorOpenSource } from '../../../services/editor/edito
 import { editorRuntimeState } from '../../../../editor/common/runtime_state';
 import { isAltDown } from '../../../../input/keyboard/key_input';
 import { WorkbenchSplitControl } from '../../../ui/split_control';
-import { WorkbenchSplitView } from '../../../ui/split_view';
+import { WorkbenchFixedEdgeSplitView } from '../../../ui/split_view';
 
 export type ResourcePanelItemMetrics = {
-	fontVariant: FontVariant | null;
+	font: EditorFont | undefined;
 	line: string;
 	contentStartColumn: number;
 	contentText: string;
@@ -81,7 +78,7 @@ export type ResourcePanelScrollbars = {
 
 function createResourcePanelItemMetrics(): ResourcePanelItemMetrics {
 	return {
-		fontVariant: null,
+		font: undefined,
 		line: null,
 		contentStartColumn: -1,
 		contentText: '',
@@ -101,19 +98,19 @@ export class ResourcePanelController implements PointerHoverTarget {
 	public onPointerLeave(): void { this.hoverIndex = -1; }
 	public visible = false;
 	public readonly focusTarget = inputFocus.createTarget();
-	public readonly split: WorkbenchSplitView;
+	public readonly split = new WorkbenchFixedEdgeSplitView('start');
 	public readonly sash: WorkbenchSplitControl;
 	private sashAttached = false;
 	private filterMode: ResourcePanelFilterMode = 'lua_only';
 	private fontLineHeight: number;
 	public get lineHeight(): number { return Math.max(this.fontLineHeight, WORKBENCH_ICON_SIZE) + 2; }
-	private fontVariant: FontVariant | null = null;
+	private font: EditorFont | undefined;
 
 	public readonly files: ResourceFilesModel;
 	private readonly unbindDirectories: (() => void) | undefined;
 	private filesMaxWidth = 0;
 	private filesWidthRevision = -1;
-	private filesWidthFont: FontVariant | null = null;
+	private filesWidthFont: EditorFont | undefined;
 	public get itemCount(): number { return this.files.tree.rows.length; }
 	public get scroll(): number { return this.files.tree.scroll; }
 	public set scroll(value: number) { this.files.tree.scroll = value; }
@@ -135,7 +132,6 @@ export class ResourcePanelController implements PointerHoverTarget {
 	public readonly resourceHorizontal: Scrollbar;
 	private readonly unbindKeyboard: () => void;
 	private readonly unbindResize: () => void;
-	private readonly unbindNativeResize: () => void;
 	private readonly unbindFocus: () => void;
 	private readonly unbindBlur: () => void;
 	private readonly changeListeners = new Set<() => void>();
@@ -148,7 +144,6 @@ export class ResourcePanelController implements PointerHoverTarget {
 		private readonly editor: CartEditor,
 		private readonly catalog: WorkspaceSourceCatalog,
 		scrollbars: ResourcePanelScrollbars,
-		initialWidthRatio: number,
 		private readonly content: ProjectContentIndex,
 		private readonly clock: HostClock,
 	) {
@@ -159,13 +154,11 @@ export class ResourcePanelController implements PointerHoverTarget {
 			this.updateFilesMetrics(); this.resolveExpandedDirectories(); this.changed();
 		});
 		this.fontLineHeight = editorViewState.lineHeight;
-		this.split = new WorkbenchSplitView(clampResourcePanelRatio(initialWidthRatio));
 		this.sash = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget,
 			new InputFocusScope(Symbol('Files resize'), this.focusTarget.scope));
 		this.sash.focusTarget.scope.statusSource = this.sash;
 		this.sash.focusTarget.canFocus = () => this.sash.interactionActive && this.sash.input?.resizable === true;
-		this.unbindResize = this.split.onDidChangeRatio(() => this.prepareLayout());
-		this.unbindNativeResize = this.split.onDidResize(() => { this.restoreRevision++; this.changed(); });
+		this.unbindResize = this.split.onDidResize(() => { this.prepareLayout(); this.restoreRevision++; this.changed(); });
 		this.unbindFocus = this.focusTarget.onDidFocus(() => { this.restoreRevision++; this.changed(); });
 		this.unbindBlur = this.focusTarget.onDidBlur(() => this.changed());
 		this.resourceVertical = scrollbars.resourceVertical;
@@ -211,7 +204,7 @@ export class ResourcePanelController implements PointerHoverTarget {
 	public dispose(): void {
 		this.disposed = true; this.restoreRevision++;
 		this.unbindDirectories?.();
-		this.unbindFocus(); this.unbindBlur(); this.unbindNativeResize();
+		this.unbindFocus(); this.unbindBlur();
 		this.hide(); this.sash.dispose(); this.unbindResize(); this.focusTarget.release(); this.unbindKeyboard();
 		this.changeListeners.clear();
 	}
@@ -227,8 +220,8 @@ export class ResourcePanelController implements PointerHoverTarget {
 	public serialize(previous?: SerializedResourcePanel): SerializedResourcePanel {
 		const view = this.files.captureView(this.content, previous?.view), focused = this.isFocused();
 		if (previous !== undefined && previous.visible === this.visible && previous.filter === this.filterMode
-			&& previous.widthRatio === this.split.ratio && previous.focused === focused && previous.view === view) return previous;
-		return { visible: this.visible, filter: this.filterMode, widthRatio: this.split.ratio, focused, view };
+			&& previous.width === this.split.requestedSize && previous.focused === focused && previous.view === view) return previous;
+		return { visible: this.visible, filter: this.filterMode, width: this.split.requestedSize, focused, view };
 	}
 
 	/** Recovery applies inert browser state once; native focus remains a separate admitted operation. */
@@ -252,7 +245,7 @@ export class ResourcePanelController implements PointerHoverTarget {
 				if (!isCurrent() || applied) return false;
 				applied = true; focused = state.focused;
 				this.pendingSelectionIdentity = null;
-				this.visible = state.visible; this.filterMode = state.filter; this.split.ratio = state.widthRatio;
+				this.visible = state.visible; this.filterMode = state.filter; this.split.requestedSize = state.width;
 				this.content.sync();
 				if (!isCurrent()) return false;
 				this.files.sync(this.catalog, this.filterMode, this.content.entriesByResource, this.content.revision);
@@ -278,9 +271,9 @@ export class ResourcePanelController implements PointerHoverTarget {
 	}
 
 	public setFontMetrics(font: EditorFont): void {
-		if (this.fontVariant === font.variant) return;
+		if (this.font === font) return;
 		pointerHover.release(this);
-		this.fontVariant = font.variant;
+		this.font = font;
 		this.fontLineHeight = font.lineHeight;
 		this.files.tree.layout.indentWidth = this.files.tree.layout.twistieWidth = Math.max(font.advance(' ') * 2, WORKBENCH_ICON_SIZE + 2);
 		this.updateFilesMetrics();
@@ -618,8 +611,8 @@ export class ResourcePanelController implements PointerHoverTarget {
 	}
 
 	private updateFilesMetrics(): void {
-		if (this.filesWidthRevision === this.files.revision && this.filesWidthFont === this.fontVariant) return;
-		this.filesWidthRevision = this.files.revision; this.filesWidthFont = this.fontVariant;
+		if (this.filesWidthRevision === this.files.revision && this.filesWidthFont === this.font) return;
+		this.filesWidthRevision = this.files.revision; this.filesWidthFont = this.font;
 		let maximum = 0;
 		for (let index = 0; index < this.files.tree.rows.length; index++) {
 			const metrics = this.getItemMetrics(index);
@@ -685,15 +678,15 @@ export class ResourcePanelController implements PointerHoverTarget {
 			metrics.line === item.line
 			&& metrics.contentStartColumn === item.contentStartColumn
 		) {
-			if (metrics.fontVariant === this.fontVariant) return metrics;
+			if (metrics.font === this.font) return metrics;
 		} else {
 			metrics.line = item.line;
 			metrics.contentStartColumn = item.contentStartColumn;
 			metrics.contentText = item.label;
 		}
-		metrics.fontVariant = this.fontVariant;
+		metrics.font = this.font;
 		metrics.indentWidth = (node.depth + 1) * this.files.tree.layout.indentWidth;
-		metrics.contentWidth = measureTextRange(metrics.contentText, 0, metrics.contentText.length);
+		metrics.contentWidth = this.font!.measureTextRange(metrics.contentText, 0, metrics.contentText.length);
 		metrics.markerStartWidth = metrics.indentWidth - this.files.tree.layout.twistieWidth;
 		metrics.markerEndWidth = metrics.indentWidth;
 		return metrics;

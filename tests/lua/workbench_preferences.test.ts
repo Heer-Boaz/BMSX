@@ -43,3 +43,22 @@ test('scalable typography is the default and an explicit font choice persists in
 	release(); preferences.fontVariant = 'mono';
 	assert.equal(changes, 1);
 });
+
+test('font size is smaller by default for Mono and persists independently per family and from UI scale', () => {
+	const storage = new MemoryStorage(), preferences = new WorkbenchPreferences(storage);
+	assert.equal(preferences.fontScale, 0.75);
+	let changes = 0;
+	const release = preferences.onDidChange(() => changes++);
+	preferences.fontScale = 0.5; preferences.fontScale = 0.5;
+	assert.equal(changes, 1);
+	preferences.fontVariant = 'tiny'; assert.equal(preferences.fontScale, 1);
+	preferences.fontScale = 1.5;
+	preferences.fontVariant = 'msx'; assert.equal(preferences.fontScale, 1);
+	preferences.fontVariant = 'mono'; assert.equal(preferences.fontScale, 0.5);
+	const restored = new WorkbenchPreferences(storage);
+	assert.equal(restored.fontScale, 0.5);
+	restored.fontVariant = 'tiny'; assert.equal(restored.fontScale, 1.5);
+	assert.equal(preferences.uiScale, 1);
+	release(); const before = changes; preferences.fontScale = 1;
+	assert.equal(changes, before);
+});

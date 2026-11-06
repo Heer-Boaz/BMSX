@@ -41,7 +41,6 @@ import { BrowserHostControls } from '../../hosts/browser/host_controls';
 import { BROWSER_KEYBOARD_PAGES } from '../../hosts/browser/onscreen_keyboard_layout';
 import { OnScreenKeyboard } from '../../hosts/common/input/on_screen_keyboard';
 import { HostKeyboardInteraction } from '../../hosts/common/input/host_keyboard_interaction';
-import { defaultResourcePanelRatio } from '../workbench/contrib/resources/panel/layout';
 import { persistWorkspaceSessionLocally } from '../workbench/workspace/storage';
 import {
 	initializeMachineRuntime,
@@ -181,7 +180,6 @@ async function startBrowserStudio(): Promise<void> {
 			clipboard,
 			new IdeMicrotaskQueue(),
 			options.logOutput,
-			defaultResourcePanelRatio(window.innerWidth / window.screen.width),
 			() => new BrowserGraphLayoutEngine(new Worker(new URL('./graph-layout.worker.js', document.baseURI))),
 			configuration.assistant === undefined ? undefined : (signal, onEvent) => AssistantHttpConnection.open(httpSession(configuration.assistant), signal, onEvent),
 			configuration.conversations === undefined ? undefined : (signal, onEvent) => HttpConversationObserver.open(httpSession(configuration.conversations), signal, onEvent),

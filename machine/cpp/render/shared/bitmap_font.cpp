@@ -7,15 +7,16 @@
 #include <utility>
 
 namespace bmsx {
-BFont::BFont(const BitmapFontSource& source, GlyphMap itemmap, f32 advancePadding, FontRendering rendering)
+BFont::BFont(const BitmapFontSource& source, GlyphMap itemmap, f32 advancePadding, FontRendering rendering, f32 scale)
 	: atlas(source.atlas())
 	, sampling(rendering.raster == FontRaster::Msdf ? FontSampling::Linear : rendering.sampling)
 	, raster(rendering.raster)
-	, distanceRange(rendering.distanceRange)
+	, distanceRange(rendering.distanceRange * scale)
 	, m_source(source)
+	, m_scale(scale)
 	, m_letter_to_img(std::move(itemmap))
-	, m_advance_padding(advancePadding) {
-	m_line_height = raster == FontRaster::Msdf ? rendering.lineHeight : char_height('A');
+	, m_advance_padding(advancePadding * scale) {
+	m_line_height = raster == FontRaster::Msdf ? rendering.lineHeight * scale : char_height('A');
 }
 
 f32 BFont::char_width(char c) {
@@ -74,11 +75,11 @@ size_t BFont::resolveGlyph(const std::string& imgid) {
 	FontGlyph item;
 	item.imgid = imgid;
 	item.rect = ImageAtlasRect{ sourceGlyph.u, sourceGlyph.v, sourceGlyph.w, sourceGlyph.h };
-	item.width = sourceGlyph.width;
-	item.height = sourceGlyph.height;
-	item.advance = sourceGlyph.advance + m_advance_padding;
-	item.offsetX = sourceGlyph.offsetX;
-	item.offsetY = sourceGlyph.offsetY;
+	item.width = sourceGlyph.width * m_scale;
+	item.height = sourceGlyph.height * m_scale;
+	item.advance = sourceGlyph.advance * m_scale + m_advance_padding;
+	item.offsetX = sourceGlyph.offsetX * m_scale;
+	item.offsetY = sourceGlyph.offsetY * m_scale;
 
 	const size_t index = m_glyphs.size();
 	m_image_glyphs.emplace(imgid, index);

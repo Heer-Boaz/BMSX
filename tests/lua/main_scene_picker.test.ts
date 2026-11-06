@@ -57,7 +57,7 @@ async function fixture(t: TestContext) {
 	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: unused }, unused,
 		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: 800, height: 320 }) }),
 		new WorkbenchPreferences(new MemoryStorage()), host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
-		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 800, height: 320 }, sources, new Map(), unused, unused, unused,
+		new IdeMicrotaskQueue(), { log() {} }, { width: 800, height: 320 }, sources, new Map(), unused, unused, unused,
 		undefined, undefined, workspaceRecords!);
 	const editor = ide.editor, update = () => editor.update(0);
 	const press = (code: string, modifiers = KeyModifier.none) => {

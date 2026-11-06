@@ -54,7 +54,7 @@ for (const font of ['tiny', 'msx'] as const)
 		const source = model.buffer.getText(), version = model.version, selected = primary.authoring.selection;
 		const generation = primary.scope.contextGeneration, detailsGeneration = primary.details.scope.contextGeneration;
 		const tabs = [...group.model.tabs], hierarchyWidth = main.regionLayout.hierarchyWidth;
-		const activityHeight = main.regionLayout.activityHeight, filesRatio = editor.resourcePanel.split.ratio;
+		const activityHeight = main.regionLayout.activityHeight, filesWidth = editor.resourcePanel.split.requestedSize;
 		const cycles = f.host.runtime.machine.scheduler.nowCycles;
 		assert.equal(editor.commands.isEnabled('workspace.increaseViewWidth', field.field.focusTarget), true);
 		editor.commands.execute('workspace.increaseViewWidth', field.field.focusTarget); f.update();
@@ -64,7 +64,7 @@ for (const font of ['tiny', 'msx'] as const)
 		// Requested size is the persisted user intent changed by this command, not incidental rendered geometry.
 		assert.ok(main.regionLayout.detailsWidth! < wider!);
 		assert.equal(main.regionLayout.hierarchyWidth, hierarchyWidth); assert.equal(main.regionLayout.activityHeight, activityHeight);
-		assert.equal(editor.resourcePanel.split.ratio, filesRatio);
+		assert.equal(editor.resourcePanel.split.requestedSize, filesWidth);
 		assert.equal(editor.commands.isEnabled('workspace.increaseViewHeight', field.field.focusTarget), false);
 		editor.commands.execute('workspace.increaseViewHeight', field.field.focusTarget); f.update();
 		assert.equal(field.pending, true); assert.equal(field.field.text, '-');
@@ -77,10 +77,10 @@ for (const font of ['tiny', 'msx'] as const)
 test('Files and docked Activity expose only their real resizable axis while retaining native selection and focus', async t => {
 	const f = await fixture(t), { editor, main } = f, files = editor.resourcePanel;
 	files.focusTarget.focus();
-	const selected = files.files.selectedNode, ratio = files.split.ratio, filesScope = files.focusTarget.scope.contextGeneration;
+	const selected = files.files.selectedNode, ratio = files.split.position, filesScope = files.focusTarget.scope.contextGeneration;
 	assert.equal(editor.commands.isEnabled('workspace.increaseViewWidth', files.focusTarget), true);
 	editor.commands.execute('workspace.increaseViewWidth', files.focusTarget); f.update();
-	assert.ok(files.split.ratio > ratio);
+	assert.ok(files.split.position > ratio);
 	assert.ok(inputFocus.admittedTarget === files.focusTarget && files.files.selectedNode === selected);
 	assert.equal(files.focusTarget.scope.contextGeneration, filesScope);
 	for (const command of ['workspace.increaseViewHeight', 'workspace.decreaseViewHeight'] as const) {
@@ -133,10 +133,10 @@ test('resize command availability follows the native directional limit instead o
 	assert.ok(main.regionLayout.detailsWidth! < width! && inputFocus.admittedTarget === origin && main.primary === primary);
 	const files = editor.resourcePanel; files.focusTarget.focus();
 	files.split.moveTo(files.split.start + files.split.minimumFirstSize); f.update();
-	const ratio = files.split.ratio;
+	const ratio = files.split.position;
 	assert.equal(editor.commands.isEnabled('workspace.decreaseViewWidth', files.focusTarget), false);
 	editor.commands.execute('workspace.decreaseViewWidth', files.focusTarget); f.update();
-	assert.equal(files.split.ratio, ratio);
+	assert.equal(files.split.position, ratio);
 	assert.equal(editor.commands.isEnabled('workspace.increaseViewWidth', files.focusTarget), true);
 });
 

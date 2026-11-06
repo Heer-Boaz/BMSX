@@ -29,7 +29,8 @@ export type ResourceFilesSnapshot = {
 export type SerializedResourcePanel = {
 	readonly visible: boolean;
 	readonly filter: ResourcePanelFilterMode;
-	readonly widthRatio: number;
+	/** Absent means automatic. Retired proportional widths are not fixed-size user intent. */
+	readonly width?: number;
 	readonly focused: boolean;
 	readonly view: ResourceFilesSnapshot;
 };

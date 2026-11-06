@@ -64,7 +64,7 @@ public:
 
 class BFont {
 public:
-	BFont(const BitmapFontSource& source, GlyphMap itemmap, f32 advancePadding = 0, FontRendering rendering = {});
+	BFont(const BitmapFontSource& source, GlyphMap itemmap, f32 advancePadding = 0, FontRendering rendering = {}, f32 scale = 1);
 	const HostAtlas& atlas;
 	const FontSampling sampling;
 	const FontRaster raster;
@@ -89,6 +89,7 @@ public:
 private:
 	size_t resolveGlyph(const std::string& imgid);
 	const BitmapFontSource& m_source;
+	const f32 m_scale;
 	GlyphMap m_letter_to_img;
 	// Character aliases and missing codepoints share the source image's metrics.
 	// Stable references during lazy admission; copied fonts keep valid slot indices.

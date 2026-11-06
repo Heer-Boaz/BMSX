@@ -416,7 +416,6 @@ export class RuntimeCartEditor implements CartEditor {
 		clock: HostClock,
 		clipboard: Clipboard,
 		logOutput: LogOutput,
-		resourcePanelWidthRatio: number,
 		viewport: Viewport,
 		overlayRenderer: OverlayRenderer,
 		decodeImage: ImageDecoder,
@@ -475,7 +474,7 @@ export class RuntimeCartEditor implements CartEditor {
 		);
 		this.keybindings = new EditorCommandKeybindingController(inputFocus, clock);
 		inputFocus.workbenchScope.commands = this.commands;
-		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport,
+		this.resourcePanel = this.initialize(viewport,
 			workbench.projectContent);
 		refreshWorkbenchLayout();
 		const workArea = getWorkbenchWorkArea();
@@ -1078,9 +1077,9 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	private applyFontPreferences(): void {
-		const { fontVariant, fontSampling } = this.preferences;
-		if (editorViewState.fontVariant === fontVariant && editorViewState.font.sampling === fontSampling) return;
-		configureFontVariant(fontVariant, fontSampling);
+		const { fontVariant, fontSampling, fontScale } = this.preferences;
+		if (editorViewState.fontVariant === fontVariant && editorViewState.font.sampling === fontSampling && editorViewState.font.scale === fontScale) return;
+		configureFontVariant(fontVariant, fontSampling, fontScale);
 		this.resourcePanel.setFontMetrics(editorViewState.font);
 		this.layoutMainEditor();
 	}
@@ -1162,7 +1161,6 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	private initialize(
-		resourcePanelWidthRatio: number,
 		viewport: Viewport,
 		content: ProjectContentIndex,
 	): ResourcePanelController {
@@ -1177,15 +1175,15 @@ export class RuntimeCartEditor implements CartEditor {
 		const resourcePanel = new ResourcePanelController(this, this.sources.catalog, {
 			resourceVertical: new Scrollbar('vertical'),
 			resourceHorizontal: new Scrollbar('horizontal'),
-		}, resourcePanelWidthRatio, content, this.clock);
+		}, content, this.clock);
 		if (!this.isAvailable) {
-			configureFontVariant(editorViewState.fontVariant, this.preferences.fontSampling);
+			configureFontVariant(editorViewState.fontVariant, this.preferences.fontSampling, this.preferences.fontScale);
 			resourcePanel.setFontMetrics(editorViewState.font);
 			editorRuntimeState.initialized = false;
 			return resourcePanel;
 		}
 		editorTextModelService.clear();
-		configureFontVariant(editorViewState.fontVariant, this.preferences.fontSampling);
+		configureFontVariant(editorViewState.fontVariant, this.preferences.fontSampling, this.preferences.fontScale);
 		resourcePanel.setFontMetrics(editorViewState.font);
 		return resourcePanel;
 	}

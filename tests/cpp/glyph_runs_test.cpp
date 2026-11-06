@@ -93,6 +93,25 @@ int main() {
 	using namespace bmsx;
 	testGlyphStorage();
 	for (const auto variant : {FontVariant::Mono, FontVariant::Msx, FontVariant::Tiny}) {
+		for (const auto style : {FontStyle::Normal, FontStyle::Italic}) {
+			Font original(variant, style);
+			for (const f32 scale : {0.5F, 0.75F, 1.5F, 2.0F}) {
+				Font sized(variant, style, FontSampling::Linear, scale);
+				if (&sized.atlas != &original.atlas || sized.lineHeight() != original.lineHeight() * scale
+					|| sized.distanceRange != original.distanceRange * scale)
+					throw std::runtime_error("font size must retain the atlas and scale line and distance metrics");
+				for (const char c : std::string("Ag? \t")) {
+					const auto &before = original.getGlyph(c), &after = sized.getGlyph(c);
+					if (after.width != before.width * scale || after.height != before.height * scale
+						|| after.advance != before.advance * scale || after.offsetX != before.offsetX * scale
+						|| after.offsetY != before.offsetY * scale || after.rect.u != before.rect.u || after.rect.v != before.rect.v
+						|| after.rect.w != before.rect.w || after.rect.h != before.rect.h || &after != &sized.getGlyph(c))
+						throw std::runtime_error("font size belongs to retained logical glyph metrics, never texture coordinates");
+				}
+			}
+		}
+	}
+	for (const auto variant : {FontVariant::Mono, FontVariant::Msx, FontVariant::Tiny}) {
 		Font font(variant);
 		GlyphRenderSubmission submission;
 		submission.x = 0; submission.y = 0;

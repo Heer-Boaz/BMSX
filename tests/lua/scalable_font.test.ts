@@ -8,6 +8,26 @@ import { beginHeadlessHost2D, renderHeadlessHost2DEntry } from '../../machine/ts
 import { LAYER_2D_IDE } from '../../machine/ts/render/shared/layers';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 
+for (const variant of ['mono', 'tiny', 'msx'] as const) for (const style of ['normal', 'italic'] as const) {
+	test(`${variant}/${style} font size scales retained metrics without duplicating atlas pixels`, () => {
+		const original = new Font({ variant, style });
+		for (const scale of [0.5, 0.75, 1.5, 2]) {
+			const font = new Font({ variant, style, scale });
+			assert.ok(font.atlas === original.atlas);
+			assert.equal(font.lineHeight, original.lineHeight * scale);
+			assert.equal(font.distanceRange, original.distanceRange * scale);
+			for (const char of 'AgÁ\t ?') {
+				const before = original.getGlyph(char), after = font.getGlyph(char);
+				assert.deepEqual(after.rect, before.rect);
+				for (const metric of ['width', 'height', 'advance', 'offsetX', 'offsetY'] as const)
+					assert.equal(after[metric], before[metric] * scale);
+				assert.ok(after === font.getGlyph(char), 'warm rendering consumes the retained scaled glyph');
+			}
+			assert.ok(Math.abs(font.measure('A\tg😀') - original.measure('A\tg😀') * scale) < 1e-10);
+		}
+	});
+}
+
 for (const style of ['normal', 'italic'] as const) test(`scalable ${style} glyph layout keeps baseline, advance and ink extent independent`, () => {
 	const font = new Font({ variant: 'mono', style });
 	assert.equal(font.raster, 'msdf'); assert.equal(font.sampling, 'linear');

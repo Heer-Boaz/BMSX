@@ -8,13 +8,13 @@ export class EditorFont {
 	private readonly _variant: FontVariant;
 	private columnAdvance: number | undefined;
 
-	constructor(variant: FontVariant = DEFAULT_FONT_VARIANT, public readonly sampling: FontSampling = 'nearest') {
+	constructor(variant: FontVariant = DEFAULT_FONT_VARIANT, public readonly sampling: FontSampling = 'nearest', public readonly scale = 1) {
 		this._variant = variant;
 	}
 
 	private renderFontOwner(): Font {
 		if (this.font === null) {
-			this.font = new Font({ variant: this._variant, sampling: this.sampling });
+			this.font = new Font({ variant: this._variant, sampling: this.sampling, scale: this.scale });
 		}
 		return this.font;
 	}
@@ -59,7 +59,7 @@ export class EditorFont {
 	public renderFont(style: FontStyle = 'normal'): Font {
 		if (style === 'normal') return this.renderFontOwner();
 		let font = this.styles.get(style);
-		if (!font) { font = new Font({ variant: this._variant, style, sampling: this.sampling }); this.styles.set(style, font); }
+		if (!font) { font = new Font({ variant: this._variant, style, sampling: this.sampling, scale: this.scale }); this.styles.set(style, font); }
 		return font;
 	}
 }

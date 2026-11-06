@@ -773,7 +773,7 @@ test('Scenario controller refresh, wheel and status rendering retain the actual 
 	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: unused }, unused,
 		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT }) }),
 		new WorkbenchPreferences(new MemoryStorage()), host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
-		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT },
+		new IdeMicrotaskQueue(), { log() {} }, { width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT },
 		sources, new Map(), unused, unused, unused);
 	t.after(async () => {
 		inputFocus.setTarget(null); await ide.editor.shutdown(); host.audio.dispose(); host.input.dispose();

@@ -94,6 +94,38 @@ test('font smoothing uses shared command state and retains the document, metrics
 	assert.ok(f.backend.borrowPresentedPixels().buffer === raster);
 });
 
+test('Font Size command publishes one shared font generation without changing UI scale, source or game raster', async t => {
+	const f = await createLiveStudioFixture(t), editor = f.editor;
+	const input = editor.editorParts.activeGroup.model.activeTab;
+	editor.resourcePanel.show(); editor.update(0);
+	const viewport = { ...f.presenter.viewportSize }, raster = f.backend.borrowPresentedPixels().buffer;
+	const media = f.sources.currentBlua32Media, cycles = f.runtime.machine.scheduler.nowCycles;
+	const font = editorViewState.font, files = editor.resourcePanel, rows = files.files.tree.rows, selected = files.files.selectedNode;
+	assert.equal(font.scale, 0.75);
+	const target = editor.editorParts.activeGroup.focusTarget;
+	assert.equal(editor.commands.isEnabled('workspace.fontSize', target), true);
+	editor.commands.execute('workspace.fontSize', target);
+	const picker = editor.quickInput;
+	assert.equal(picker.visible, true);
+	picker.accept();
+	assert.ok(editorViewState.font === font, 'accepting the current size leaves its font generation unchanged');
+	editor.commands.execute('workspace.fontSize', target);
+	picker.model.filter('50%'); picker.accept();
+	assert.equal(picker.visible, false);
+	const next = editorViewState.font;
+	assert.equal(next.scale, 0.5); assert.equal(editor.preferences.uiScale, 1);
+	assert.ok(Math.abs(next.measure('Column\tname') / font.measure('Column\tname') - 2 / 3) < 1e-10);
+	assert.equal(next.renderFont('italic').lineHeight, next.lineHeight);
+	assert.ok(next.renderFont().atlas === font.renderFont().atlas);
+	assert.ok(files.files.tree.rows === rows); assert.ok(files.files.selectedNode === selected);
+	assert.ok(editor.editorParts.activeGroup.model.activeTab === input); assert.ok(f.sources.currentBlua32Media === media);
+	assert.equal(f.runtime.machine.scheduler.nowCycles, cycles);
+	assert.deepEqual(f.presenter.viewportSize, viewport);
+	await f.frame(); assert.ok(f.backend.borrowPresentedPixels().buffer === raster);
+	editor.preferences.fontVariant = 'tiny'; assert.equal(editorViewState.font.scale, 1);
+	editor.preferences.fontVariant = 'mono'; assert.equal(editorViewState.font.scale, 0.5);
+});
+
 test('Studio reallocates its own workspace, retaining documents and restoring the unchanged game presentation', async t => {
 	const f = await createLiveStudioFixture(t);
 	const resize = t.mock.method(f.backend, 'resizePresentationTarget');

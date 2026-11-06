@@ -48,7 +48,7 @@ export function createActualSourcePanes(t: TestContext, sameModel = false, addit
 	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: externalWork }, externalWork,
 		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) }),
 		new WorkbenchPreferences(new MemoryStorage()), host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, clipboard,
-		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 800, height: 320 }, sources, new Map(), createGraphLayoutEngine ?? externalWork, externalWork, externalWork,
+		new IdeMicrotaskQueue(), { log() {} }, { width: 800, height: 320 }, sources, new Map(), createGraphLayoutEngine ?? externalWork, externalWork, externalWork,
 		undefined, undefined, workspaceFiles);
 	const editor = ide.editor;
 	const firstBounds = { left: 0, top: 32, right: 384, bottom: 290 };

@@ -37,7 +37,7 @@ test('host exclusive pages suspend every Studio editing channel and retire nativ
 	// The complete production owner composition, without a loaded source document or a guest execution request.
 	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: unused }, unused, display, new WorkbenchPreferences(new MemoryStorage()), host.input,
 		host.audio, host.tasks, host.execution, host.rewind, host.clock, clipboard, new IdeMicrotaskQueue(),
-		{ log() {} }, 0.3, { width: 256, height: 212 }, sources, new Map(), unused, unused, unused);
+		{ log() {} }, { width: 256, height: 212 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
 	const field = new TextField(null, { allowSpace: true }, editor.editorParts.main.activeGroup.focusScope);
 	let keyboardCancellations = 0, gamepadActions = 0, pointerCancellations = 0;

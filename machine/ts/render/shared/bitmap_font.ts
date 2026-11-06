@@ -141,14 +141,14 @@ export class BFont {
 	protected letter_to_img: GlyphMap;
 
 	constructor(protected readonly source: BitmapFontSource, itemmap?: GlyphMap, advancePadding: number = 0,
-		rendering: FontRendering = { raster: 'bitmap', sampling: 'nearest' }) {
+		rendering: FontRendering = { raster: 'bitmap', sampling: 'nearest' }, private readonly scale = 1) {
 		this.atlas = source.atlas;
 		this.raster = rendering.raster;
 		this.sampling = rendering.raster === 'bitmap' ? rendering.sampling : 'linear';
-		this.distanceRange = rendering.raster === 'msdf' ? rendering.distanceRange : 0;
+		this.distanceRange = rendering.raster === 'msdf' ? rendering.distanceRange * scale : 0;
 		this.letter_to_img = itemmap ?? DEFAULT_GLYPH_MAP;
-		this.advancePadding = advancePadding;
-		this.lineHeightValue = rendering.raster === 'msdf' ? rendering.lineHeight : this.char_height('A');
+		this.advancePadding = advancePadding * scale;
+		this.lineHeightValue = rendering.raster === 'msdf' ? rendering.lineHeight * scale : this.char_height('A');
 	}
 
 	public char_width(letter: string): number {
@@ -208,11 +208,11 @@ export class BFont {
 				w: sourceGlyph.w,
 				h: sourceGlyph.h,
 			},
-			width: sourceGlyph.width,
-			height: sourceGlyph.height,
-			advance: sourceGlyph.advance + this.advancePadding,
-			offsetX: sourceGlyph.offsetX,
-			offsetY: sourceGlyph.offsetY,
+			width: sourceGlyph.width * this.scale,
+			height: sourceGlyph.height * this.scale,
+			advance: sourceGlyph.advance * this.scale + this.advancePadding,
+			offsetX: sourceGlyph.offsetX * this.scale,
+			offsetY: sourceGlyph.offsetY * this.scale,
 		};
 		this.glyphs.set(imgid, computed);
 		return computed;

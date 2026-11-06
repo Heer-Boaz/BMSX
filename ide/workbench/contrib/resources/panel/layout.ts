@@ -1,33 +1,10 @@
 import type { RectBounds } from '../../../../../machine/ts/common/rect';
-import { clamp } from '../../../../../machine/ts/common/clamp';
 import { copy_rect_bounds, create_rect_bounds, write_rect_bounds } from '../../../../../machine/ts/common/rect';
 import * as constants from '../../../../common/constants';
 import { editorViewState } from '../../../../editor/ui/view/state';
 import { getWorkbenchEditorBounds } from '../../../common/layout';
-import type { WorkbenchSplitView } from '../../../ui/split_view';
-
-export function defaultResourcePanelRatio(screenRelativeWidth: number): number {
-	const relative = screenRelativeWidth < 1 ? screenRelativeWidth : 1;
-	const responsiveness = 1 - relative;
-	const minRatio = constants.RESOURCE_PANEL_MIN_RATIO;
-	const maxRatio = resourcePanelMaxRatio();
-	const ratio = constants.RESOURCE_PANEL_DEFAULT_RATIO
-		+ responsiveness * (constants.RESOURCE_PANEL_MAX_RATIO - constants.RESOURCE_PANEL_DEFAULT_RATIO) * 0.6;
-	return clamp(ratio, minRatio, maxRatio);
-}
-
-export function clampResourcePanelRatio(ratio: number): number {
-	const minRatio = constants.RESOURCE_PANEL_MIN_RATIO;
-	const maxRatio = resourcePanelMaxRatio();
-	return clamp(ratio, minRatio, maxRatio);
-}
-
-function resourcePanelMaxRatio(): number {
-	const maxRatio = constants.RESOURCE_PANEL_MAX_RATIO < 1 - constants.RESOURCE_PANEL_MIN_EDITOR_RATIO
-		? constants.RESOURCE_PANEL_MAX_RATIO
-		: 1 - constants.RESOURCE_PANEL_MIN_EDITOR_RATIO;
-	return maxRatio > constants.RESOURCE_PANEL_MIN_RATIO ? maxRatio : constants.RESOURCE_PANEL_MIN_RATIO;
-}
+import { WORKBENCH_SPLIT_SIZE, type WorkbenchFixedEdgeSplitView } from '../../../ui/split_view';
+import { WORKBENCH_ICON_SIZE } from '../../../ui/icon';
 
 export type ResourcePanelLayout = {
 	bounds: RectBounds;
@@ -70,13 +47,18 @@ export function createResourcePanelLayout(bounds: RectBounds): ResourcePanelLayo
 const lineCapacityBoundsScratch = create_rect_bounds();
 const lineCapacityLayoutScratch = createResourcePanelLayout(lineCapacityBoundsScratch);
 
-export function writeResourcePanelBounds(out: RectBounds, split: WorkbenchSplitView): boolean {
+export function writeResourcePanelBounds(out: RectBounds, split: WorkbenchFixedEdgeSplitView): boolean {
 	const root = getWorkbenchEditorBounds();
 	const top = root.top;
 	const bottom = root.bottom;
 	const viewportWidth = editorViewState.viewportWidth;
-	split.minimumFirstSize = Math.trunc(viewportWidth * constants.RESOURCE_PANEL_MIN_RATIO);
-	split.minimumSecondSize = viewportWidth - Math.trunc(viewportWidth * resourcePanelMaxRatio());
+	const font = editorViewState.font;
+	const chrome = constants.RESOURCE_PANEL_PADDING_X * 2 + constants.SCROLLBAR_WIDTH + WORKBENCH_ICON_SIZE + 2;
+	// Files is a side region, not a proportional document split. The editor
+	// receives desktop growth; compact windows can compress both reading budgets.
+	split.preferredSize = Math.min(font.charAdvance * 24 + chrome, viewportWidth / 4) - WORKBENCH_SPLIT_SIZE / 2;
+	split.minimumFirstSize = Math.min(font.charAdvance * 8 + chrome, viewportWidth / 3);
+	split.minimumSecondSize = Math.min(font.charAdvance * 20 + chrome, viewportWidth / 2);
 	split.layout(0, top, viewportWidth, bottom);
 	const width = split.position;
 	if (width <= 0 || bottom <= top) {

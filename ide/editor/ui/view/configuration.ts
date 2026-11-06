@@ -19,8 +19,8 @@ export function onDidChangeEditorFont(listener: (font: EditorFont) => void): () 
 	return () => fontChangeListeners.delete(listener);
 }
 
-export function configureFontVariant(variant: FontVariant, sampling: FontSampling = 'nearest'): void {
-	const font = new EditorFont(variant, sampling);
+export function configureFontVariant(variant: FontVariant, sampling: FontSampling = 'nearest', scale = 1): void {
+	const font = new EditorFont(variant, sampling, scale);
 	editorViewState.fontVariant = variant;
 	editorViewState.font = font;
 	editorViewState.lineHeight = font.lineHeight;

@@ -151,8 +151,8 @@ int main() {
 		const HostOverlayClipRect textArea{0, 0, 64, 40};
 		image.scale = {.x = 2, .y = 2};
 		for (const auto variant : {FontVariant::Msx, FontVariant::Tiny, FontVariant::Mono}) {
-			for (const auto style : {FontStyle::Normal, FontStyle::Italic}) {
-				Font font(variant, style, FontSampling::Linear);
+			for (const auto style : {FontStyle::Normal, FontStyle::Italic}) for (const f32 fontScale : {0.5F, 0.75F, 1.0F}) {
+				Font font(variant, style, FontSampling::Linear, fontScale);
 				GlyphRenderSubmission text;
 				text.font = &font; text.x = 2; text.y = 2;
 				text.items = {"Ag"}; text.item_end = 2; text.color = 0x80ff0000;

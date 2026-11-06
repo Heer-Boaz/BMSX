@@ -50,7 +50,6 @@ export class RuntimeIdeState extends StudioWorkbench {
 		clipboard: Clipboard,
 		microtasks: MicrotaskQueue,
 		logOutput: LogOutput,
-		resourcePanelWidthRatio: number,
 		viewport: Viewport,
 		sources: RuntimeSourceState,
 		workspaceDirtyRecords: ReadonlyMap<string, WorkspaceRecord>,
@@ -65,7 +64,7 @@ export class RuntimeIdeState extends StudioWorkbench {
 			models: editorTextModelService, workspaceDirtyRecords, workspaceFiles, gameCapture, createTestTarget, createPlaySession });
 		this.overlayRenderer = new OverlayRenderer(presenter.hostOverlayQueue, viewport);
 		this.editor = new RuntimeCartEditor(
-			this, presenter, display, preferences, input, clock, clipboard, logOutput, resourcePanelWidthRatio,
+			this, presenter, display, preferences, input, clock, clipboard, logOutput,
 			viewport, this.overlayRenderer, decodeImage, createGraphLayoutEngine,
 			connectAssistant, observeConversation,
 		);

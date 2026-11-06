@@ -55,7 +55,7 @@ export async function createLiveStudioFixture(t: TestContext) {
 	const ide = new RuntimeIdeState(runtime, presenter, { capture: externalWork }, externalWork,
 		display,
 		new WorkbenchPreferences(new MemoryStorage()), input, audio, tasks, execution, rewind, clock, new HeadlessClipboard(), new IdeMicrotaskQueue(), log,
-		0.3, { width: 800, height: 360 }, sources, new Map(), externalWork, externalWork, externalWork);
+		{ width: 800, height: 360 }, sources, new Map(), externalWork, externalWork, externalWork);
 	const editor = ide.editor;
 	t.after(async () => {
 		inputFocus.setTarget(null); pointerCapture.interrupt(false); editor.editorParts.clear();

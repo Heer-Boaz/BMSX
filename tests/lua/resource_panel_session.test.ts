@@ -41,7 +41,7 @@ async function fixture(t: TestContext) {
 	const definitions = panel.files.tree.rows.filter(node => node.element.kind === 'definition' && node.element.content.kind === 'scene');
 	panel.setSelectionIndex(panel.files.tree.rows.indexOf(definitions[32]));
 	// Selection and the reader's manually chosen position are independent persisted intent.
-	panel.setScroll(3.5); panel.setHScroll(4.25); panel.split.ratio = 0.35; f.update();
+	panel.setScroll(3.5); panel.setHScroll(4.25); panel.split.requestedSize = 128; f.update();
 	assert.ok(panel.scroll > 0 && panel.hscroll > 0);
 	const checkpoint = (): WorkspaceAutosavePayload => {
 		const dirty = captureWorkspaceDirtySources(editorTextModelService, f.sources.catalog, f.host.clock, workspaceDirtyRecords);
@@ -63,6 +63,19 @@ function selectedDefinition(node: WorkbenchTreeNode<FileElement> | null) {
 	return node.element.content;
 }
 
+test('legacy proportional Files recovery keeps browser identity but starts with the compact automatic width', async t => {
+	const f = await fixture(t), payload = f.checkpoint();
+	const { width: _width, ...browser } = payload.filesBrowser;
+	const legacyBrowser = { ...browser, widthRatio: 0.3 };
+	f.panel.split.requestedSize = 180;
+	await f.restore({ ...payload, filesBrowser: legacyBrowser });
+	assert.equal(f.panel.split.requestedSize, undefined);
+	assert.equal(f.panel.split.canReset, false);
+	assert.deepEqual(f.panel.serialize().view.selected, browser.view.selected);
+	assert.equal(f.panel.visible, browser.visible); assert.equal(f.panel.getFilterMode(), browser.filter);
+	assert.equal(f.panel.scroll, browser.view.scroll); assert.equal(f.panel.hscroll, browser.view.hscroll);
+});
+
 test('workspace recovery restores the exact browser declaration and manual reading independently of Main and document groups', async t => {
 	const f = await fixture(t), panel = f.panel;
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- recovered canonical draft\n' }]);
@@ -70,13 +83,13 @@ test('workspace recovery restores the exact browser declaration and manual readi
 	const payload = f.checkpoint(), source = f.model.buffer.getText(), selected = selectedDefinition(panel.files.selectedNode);
 	const range = { ...selected.range }, primarySelection = f.primary.authoring.captureSourceReference().selected;
 	assert.equal(payload.dirtyFiles.length, 1);
-	panel.navigateFiles('home'); panel.toggleFilterMode(); panel.setScroll(0); panel.split.ratio = 0.5;
+	panel.navigateFiles('home'); panel.toggleFilterMode(); panel.setScroll(0); panel.split.requestedSize = 180;
 	await f.restore(payload); f.update();
 	const restored = selectedDefinition(panel.files.selectedNode), primary = f.editor.mainWorkspace.primary;
 	assert.ok(restored !== selected); assert.deepEqual(restored.range, range);
 	assert.equal(restored.kind, 'scene'); assert.equal(restored.ownerResource.path, 'scene.lua');
 	assert.equal(panel.scroll, payload.filesBrowser.view.scroll); assert.equal(panel.hscroll, payload.filesBrowser.view.hscroll);
-	assert.equal(panel.getFilterMode(), payload.filesBrowser.filter); assert.equal(panel.split.ratio, payload.filesBrowser.widthRatio);
+	assert.equal(panel.getFilterMode(), payload.filesBrowser.filter); assert.equal(panel.split.requestedSize, payload.filesBrowser.width);
 	assert.ok(primary instanceof ScenePrimaryClient); assert.ok(primary.authoring.subject === primary.authoring.document!.scenes[0]);
 	assert.deepEqual(primary.authoring.captureSourceReference().selected, primarySelection);
 	assert.equal(primary.authoring.workingCopy.buffer.getText(), source); assert.equal(primary.authoring.workingCopy.dirty, true);

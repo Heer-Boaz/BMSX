@@ -137,7 +137,7 @@ GlyphMap buildTinyCharMap() {
 
 } // namespace
 
-Font::Font(FontVariant variant, FontStyle style, FontSampling sampling)
+Font::Font(FontVariant variant, FontStyle style, FontSampling sampling, f32 scale)
 	: BFont(variant == FontVariant::Mono ? scalableFontSource() : HOST_SYSTEM_FONT_SOURCE, [&] {
 		if (variant == FontVariant::Mono) return scalableFontMap(style == FontStyle::Italic);
 		auto map = variant == FontVariant::Tiny ? buildTinyCharMap() : buildMsxCharMap();
@@ -147,7 +147,7 @@ Font::Font(FontVariant variant, FontStyle style, FontSampling sampling)
 		return map;
 	}(), 0, variant == FontVariant::Mono
 		? FontRendering{FontRaster::Msdf, FontSampling::Linear, SCALABLE_FONT_ATLAS.lineHeight, SCALABLE_FONT_ATLAS.distanceRange}
-		: FontRendering{FontRaster::Bitmap, sampling, 0, 0}) {
+		: FontRendering{FontRaster::Bitmap, sampling, 0, 0}, scale) {
 }
 
 } // namespace bmsx

@@ -64,21 +64,20 @@ for (const edge of ['start', 'end'] as const) test(`${edge}-edge reset admission
 	view.reset(); assert.equal(changes, 2);
 });
 
-for (const edge of ['start', 'end'] as const) test(`the ${edge}-edge sash projects and admits native requests using the same nearest raster position`, () => {
+for (const edge of ['start', 'end'] as const) test(`${edge} fixed-edge sizing retains fractional logical geometry through relative input`, () => {
 	const view = new WorkbenchFixedEdgeSplitView(edge);
-	view.preferredSize = 60.4; view.layout(37, 20, 248, 140);
-	const original = view.position;
-	assert.equal(original, Math.round(edge === 'start' ? 37 + 64.4 : 248 - 64.4));
+	view.preferredSize = 73.25; view.layout(10.125, 0, 500.375, 300);
+	const original = edge === 'start' ? 10.125 + 73.25 + WORKBENCH_SPLIT_SIZE / 2 : 500.375 - 73.25 - WORKBENCH_SPLIT_SIZE / 2;
+	assert.equal(view.position, original, 'sash and containing layout share logical coordinates, not quantized raster positions');
 	let changes = 0; view.onDidResize(() => changes++);
-	assert.equal(view.canMoveTo(original + 0.4), false);
-	view.moveTo(original + 0.4);
-	assert.equal(view.requestedSize, undefined); assert.equal(changes, 0);
-	assert.equal(view.canMoveTo(original + 12.4), true);
-	view.moveTo(original + 12.4);
-	assert.equal(view.position, original + 12); assert.equal(changes, 1);
-	assert.equal(view.canMoveTo(original + 12.4), false);
-	view.moveTo(original);
-	assert.equal(view.position, original); assert.equal(changes, 2);
+	assert.equal(view.canMoveTo(original), false);
+	view.moveTo(original); assert.equal(view.requestedSize, undefined); assert.equal(changes, 0);
+	assert.equal(view.canMoveTo(original + 12.5), true);
+	view.moveTo(original + 12.5);
+	assert.equal(view.position, original + 12.5); assert.equal(changes, 1);
+	assert.equal(view.requestedSize, 73.25 + (edge === 'start' ? 12.5 : -12.5));
+	assert.equal(view.canMoveTo(original + 12.5), false);
+	view.moveTo(original); assert.equal(view.position, original); assert.equal(changes, 2);
 });
 
 for (const edge of ['start', 'end'] as const) test(`the shared ${edge}-edge sash uses ordinary capture, keyboard resizing and default reset without moving editor focus on drag`, t => {

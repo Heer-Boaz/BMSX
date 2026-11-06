@@ -26,12 +26,11 @@ function fixture(t: TestContext, variant: FontVariant) {
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(path, 1), createScenarioTestSourceRecord('short.lua', 1)]);
 	const parts = createTestEditorParts(t), editor = { editorParts: parts, isActive: true } as CartEditor;
 	const content = new ProjectContentIndex(editorTextModelService, sources.catalog, new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), new SceneSourceDocuments(editorTextModelService, sources.catalog));
-	const panel = new ResourcePanelController(editor, sources.catalog, { resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.35,
-		content, new VirtualHeadlessClock());
+	const panel = new ResourcePanelController(editor, sources.catalog, { resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, content, new VirtualHeadlessClock());
 	panel.setFontMetrics(editorViewState.font); panel.queuePendingSelection({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path }); panel.show();
 	const index = panel.files.tree.rows.findIndex(node => node.element.kind === 'file' && node.element.resource.path === path); assert.ok(index >= 0);
-	const publish = (next: FontVariant) => {
-		configureFontVariant(next);
+	const publish = (next: FontVariant, scale = 1) => {
+		configureFontVariant(next, 'linear', scale);
 		panel.setFontMetrics(editorViewState.font); refreshWorkbenchLayout();
 	};
 	t.after(() => { panel.dispose(); content.dispose(); inputFocus.setTarget(null); });
@@ -76,17 +75,29 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Files disclosur
 	assert.equal(panel.isDisclosureHit(index, origin + metrics.markerStartWidth - 1), false);
 });
 
-test('same-variant publication and warmed metric reads reuse measurements and slots', t => {
+test('same font generation and warmed metric reads reuse measurements and slots', t => {
 	const f = fixture(t, 'tiny'), slots = f.panel.files.tree.rows.map((_, index) => f.panel.getItemMetrics(index));
 	const maximum = f.panel.maxLineWidth;
-	configureFontVariant('tiny');
-	const font = editorViewState.font, advance = font.advance; let measurements = 0;
-	font.advance = character => { measurements++; return advance.call(font, character); };
-	t.after(() => { font.advance = advance; });
+	const font = editorViewState.font, measurements = t.mock.method(font.renderFont(), 'advance');
 	f.panel.setFontMetrics(font);
 	for (let frame = 0; frame < 1000; frame++) for (let index = 0; index < slots.length; index++)
 		assert.equal(f.panel.getItemMetrics(index), slots[index]);
-	assert.equal(measurements, 0); assert.equal(f.panel.maxLineWidth, maximum);
+	assert.equal(measurements.mock.callCount(), 0); assert.equal(f.panel.maxLineWidth, maximum);
+});
+
+test('a size change within the same family invalidates Files metrics without changing its tree or selection', t => {
+	const f = fixture(t, 'mono'), panel = f.panel, rows = panel.files.tree.rows;
+	panel.setSelectionIndex(f.index);
+	const metric = panel.getItemMetrics(f.index), before = metric.contentWidth, selected = panel.files.selectedNode;
+	f.publish('mono', 0.75);
+	const after = panel.getItemMetrics(f.index);
+	assert.ok(after === metric); assert.ok(panel.files.tree.rows === rows); assert.ok(panel.files.selectedNode === selected);
+	assert.ok(Math.abs(after.contentWidth - before * 0.75) < 1e-9);
+	const font = editorViewState.font, indent = panel.files.tree.layout.indentWidth;
+	assert.equal(panel.maxLineWidth, Math.max(...rows.map(node => (node.depth + 1) * indent + font.measure(node.element.label))));
+	const measured = t.mock.method(font.renderFont(), 'advance');
+	for (let frame = 0; frame < 1000; frame++) { panel.setFontMetrics(font); panel.getItemMetrics(f.index); panel.prepareLayout(); }
+	assert.equal(measured.mock.callCount(), 0);
 });
 
 for (const first of ['tiny', 'msx'] as const) {

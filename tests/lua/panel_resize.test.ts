@@ -5,7 +5,7 @@ import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { KeyModifier } from '../../hosts/common/input/text';
 import { create_rect_bounds, point_in_rect, write_rect_bounds } from '../../machine/ts/common/rect';
 import type { CartEditor } from '../../ide/cart_editor';
-import { RESOURCE_PANEL_DIVIDER_DRAG_MARGIN, RESOURCE_PANEL_MAX_RATIO, RESOURCE_PANEL_MIN_EDITOR_RATIO, RESOURCE_PANEL_MIN_RATIO } from '../../ide/common/constants';
+import { RESOURCE_PANEL_DIVIDER_DRAG_MARGIN } from '../../ide/common/constants';
 import type { PointerInputSnapshot } from '../../ide/common/models';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
@@ -18,7 +18,7 @@ import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/conte
 import { BehaviorRegistrationIndex } from '../../ide/workbench/contrib/behavior_lens/registration_index';
 import { createResourcePanelLayout, writeResourcePanelBounds, writeResourcePanelLayout } from '../../ide/workbench/contrib/resources/panel/layout';
 import { WorkbenchSplitControl } from '../../ide/workbench/ui/split_control';
-import { WorkbenchSplitView } from '../../ide/workbench/ui/split_view';
+import { WorkbenchFixedEdgeSplitView, WorkbenchSplitView } from '../../ide/workbench/ui/split_view';
 import { pointerHover } from '../../ide/input/pointer/hover';
 import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
 import { createTestEditorParts } from '../helpers/editor_panes';
@@ -38,10 +38,9 @@ function fixture(t: TestContext) {
 	const sources = createScenarioTestSourceState([]);
 	const content = new ProjectContentIndex(editorTextModelService, sources.catalog, new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), new SceneSourceDocuments(editorTextModelService, sources.catalog));
 	const panel = new ResourcePanelController(editor, sources.catalog,
-		{ resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.35,
-		content, new VirtualHeadlessClock());
+		{ resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, content, new VirtualHeadlessClock());
 	t.after(() => { panel.dispose(); content.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); pointerHover.clear(); });
-	panel.show();
+	panel.setFontMetrics(editorViewState.font); panel.show();
 	return { panel, parts };
 }
 
@@ -64,22 +63,35 @@ test('Resource layout publishes one retained divider strip, updates it with its 
 	assert.equal(strip.left, strip.right); assert.equal(strip.top, strip.bottom);
 });
 
-// This focused allocation test owns the conversion from retained ratio intent to physical child extents.
-test('Files allocation preserves ratio intent across viewport changes and admits native moves only inside its child limits', () => {
+// Fixed side-region extent is this layout's contract; editor area absorbs desktop growth.
+test('Files default and minimum widths stay compact across desktop growth; manual width survives resizing', () => {
 	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288; refreshWorkbenchLayout();
-	const bounds = create_rect_bounds(), split = new WorkbenchSplitView(0.35);
+	const bounds = create_rect_bounds(), split = new WorkbenchFixedEdgeSplitView('start');
 	writeResourcePanelBounds(bounds, split);
-	assert.equal(bounds.right, Math.round(384 * split.ratio));
+	assert.ok(bounds.right <= 384 / 4);
 	editorViewState.viewportWidth = 768; refreshWorkbenchLayout();
 	writeResourcePanelBounds(bounds, split);
-	assert.equal(split.ratio, 0.35); assert.equal(bounds.right, Math.round(768 * split.ratio));
+	const preferred = bounds.right, minimum = split.minimumFirstSize;
+	editorViewState.viewportWidth = 1536; refreshWorkbenchLayout();
+	writeResourcePanelBounds(bounds, split);
+	assert.equal(bounds.right, preferred); assert.equal(split.minimumFirstSize, minimum);
+	split.moveTo(preferred + 40);
+	const requested = split.requestedSize, revision = split.revision;
+	for (const width of [768, 128, 1536]) {
+		editorViewState.viewportWidth = width; refreshWorkbenchLayout(); writeResourcePanelBounds(bounds, split);
+		assert.equal(split.requestedSize, requested); assert.equal(split.revision, revision);
+		assert.ok(bounds.right >= split.minimumFirstSize && bounds.right <= width - split.minimumSecondSize);
+	}
+	assert.equal(bounds.right, preferred + 40);
 	split.moveTo(-100);
 	writeResourcePanelBounds(bounds, split);
-	assert.equal(bounds.right, Math.trunc(768 * RESOURCE_PANEL_MIN_RATIO));
-	split.moveTo(1000);
+	assert.equal(bounds.right, split.minimumFirstSize);
+	split.moveTo(2000);
 	writeResourcePanelBounds(bounds, split);
-	assert.equal(bounds.right, Math.trunc(768 * Math.min(RESOURCE_PANEL_MAX_RATIO, 1 - RESOURCE_PANEL_MIN_EDITOR_RATIO)));
+	assert.equal(bounds.right, 1536 - split.minimumSecondSize);
+	split.reset(); writeResourcePanelBounds(bounds, split);
+	assert.equal(bounds.right, preferred); assert.equal(split.requestedSize, undefined);
 });
 
 test('Files resize retains its extent while hiding retires only its own captured gesture and strip', t => {
@@ -115,12 +127,12 @@ test('Files pointer resizing preserves the active control and its unsubmitted dr
 	field.edit = draft;
 	t.after(field.onDidBlur(() => { blurs++; }));
 	field.focus();
-	const original = panel.split.ratio, strip = panel.resizeBounds;
+	const original = panel.split.position, strip = panel.resizeBounds;
 	const press = pointer(panel.split.position + 2, strip.top);
 	assert.equal(panel.sash.handlePointer(press), true);
 	assert.ok(inputFocus.target === field); assert.equal(pointerCapture.active, true);
 	pointerCapture.dispatch({ ...press, viewportX: press.viewportX + 24, justPressedButtons: 0 }, false, 1);
-	assert.ok(panel.split.ratio > original); assert.ok(inputFocus.target === field);
+	assert.ok(panel.split.position > original); assert.ok(inputFocus.target === field);
 	pointerCapture.dispatch({ ...press, viewportX: press.viewportX + 32, pressedButtons: 0,
 		justPressedButtons: 0, justReleasedButtons: PointerButton.Primary }, false, 2);
 	assert.equal(pointerCapture.active, false); assert.ok(inputFocus.target === field);
@@ -131,7 +143,7 @@ test('Files resize attachment drains its retired hold and rebinds on the next vi
 	const { panel } = fixture(t), scope = panel.sash.focusTarget.scope.surfaceScope;
 	const press = pointer(panel.split.position, panel.resizeBounds.top);
 	pointerCapture.beginRoute(scope, press); panel.sash.handlePointer(press);
-	const ratio = panel.split.ratio;
+	const width = panel.split.position;
 	panel.retireResize();
 	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, true);
 	assert.equal(panel.sash.focusTarget.canFocus(), false);
@@ -139,7 +151,7 @@ test('Files resize attachment drains its retired hold and rebinds on the next vi
 	// Reattachment restores the pointer model, not a retired keyboard session's focus lease.
 	assert.ok(panel.sash.input === panel.split);
 	pointerCapture.dispatch({ ...press, viewportX: press.viewportX + 32, justPressedButtons: 0 }, false, 1, scope);
-	assert.equal(panel.split.ratio, ratio);
+	assert.equal(panel.split.position, width);
 	pointerCapture.dispatch({ ...press, pressedButtons: 0, justPressedButtons: 0,
 		justReleasedButtons: PointerButton.Primary }, false, 2, scope);
 	assert.equal(pointerCapture.draining, false);
@@ -147,15 +159,15 @@ test('Files resize attachment drains its retired hold and rebinds on the next vi
 	assert.equal(pointerCapture.active, true);
 	pointerCapture.dispatch({ ...press, viewportX: press.viewportX + 32, pressedButtons: 0,
 		justPressedButtons: 0, justReleasedButtons: PointerButton.Primary }, false, 3, scope);
-	assert.ok(panel.split.ratio > ratio); assert.equal(pointerCapture.active, false);
+	assert.ok(panel.split.position > width); assert.equal(pointerCapture.active, false);
 });
 
 test('Files direct resize and reset use the retained split without activating Files', t => {
 	const { panel, parts } = fixture(t);
 	parts.main.focusTarget.focus();
-	const original = panel.split.ratio, target = inputFocus.target;
+	const original = panel.split.position, target = inputFocus.target;
 	panel.split.moveTo(panel.split.position + 24);
-	assert.ok(panel.split.ratio > original); assert.ok(inputFocus.target === target);
+	assert.ok(panel.split.position > original); assert.ok(inputFocus.target === target);
 	panel.split.reset();
-	assert.equal(panel.split.ratio, original); assert.ok(inputFocus.target === target);
+	assert.equal(panel.split.position, original); assert.ok(inputFocus.target === target);
 });

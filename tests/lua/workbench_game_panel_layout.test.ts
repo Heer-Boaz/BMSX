@@ -34,8 +34,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 	const unused = (): never => { throw new Error('Companion layout does not execute domain work.'); };
 	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: unused }, unused,
 		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: 700, height: 288 }) }), new WorkbenchPreferences(new MemoryStorage()), host.input, host.audio, host.tasks,
-		host.execution, host.rewind, host.clock, new HeadlessClipboard(), new IdeMicrotaskQueue(), { log() {} }, 0.3,
-		{ width: 700, height: 288 }, sources, new Map(), unused, unused, unused);
+		host.execution, host.rewind, host.clock, new HeadlessClipboard(), new IdeMicrotaskQueue(), { log() {} }, { width: 700, height: 288 }, sources, new Map(), unused, unused, unused);
 	// These source-only fixtures exercise layout, not an admitted bootable Studio command.
 	// Publish real font metrics after construction rather than calling the unavailable UI action.
 	editorRuntimeState.active = true; configureFontVariant(variant);

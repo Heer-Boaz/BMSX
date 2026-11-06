@@ -20,8 +20,7 @@ function fixture(t: TestContext) {
 	const unused = (): never => { throw new Error('Guest frame arrangement does not request domain execution.'); };
 	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: unused }, unused,
 		Object.assign(new OffscreenVideoOutput(384, 288), { measureDisplay: () => ({ left: 0, top: 0, width: 640, height: 480 }) }), new WorkbenchPreferences(new MemoryStorage()), host.input, host.audio, host.tasks,
-		host.execution, host.rewind, host.clock, new HeadlessClipboard(), new IdeMicrotaskQueue(), { log() {} }, 0.3,
-		{ width: 640, height: 480 }, sources, new Map(), unused, unused, unused);
+		host.execution, host.rewind, host.clock, new HeadlessClipboard(), new IdeMicrotaskQueue(), { log() {} }, { width: 640, height: 480 }, sources, new Map(), unused, unused, unused);
 	editorRuntimeState.active = true;
 	t.after(async () => { inputFocus.setTarget(null); await ide.editor.shutdown(); host.audio.dispose(); host.input.dispose(); });
 	return { ...host, ide, editor: ide.editor };

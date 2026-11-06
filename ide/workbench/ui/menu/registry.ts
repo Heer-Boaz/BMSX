@@ -463,6 +463,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'menubar.view': [
 		{ type: 'command', command: 'workspace.uiScale' },
 		{ type: 'command', command: 'workspace.font' },
+		{ type: 'command', command: 'workspace.fontSize' },
 		{ type: 'command', command: 'workspace.fontSmoothing' },
 		{ type: 'separator' },
 		{ type: 'command', command: 'workspace.focusNextRegion' },

@@ -35,6 +35,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'workspace.uiScale': { category: 'View', title: 'UI Scale...' },
 	'workspace.font': { category: 'View', title: 'UI Font...' },
 	'workspace.fontSmoothing': { category: 'View', title: 'Smooth Pixel Fonts' },
+	'workspace.fontSize': { category: 'View', title: 'Font Size...' },
 	'workspace.resetLayout': { category: 'Workspace', title: 'Reset Layout' },
 	'workspace.hierarchy.focus': { category: 'Workspace', title: 'Focus Hierarchy' },
 	'workspace.details.focus': { category: 'Workspace', title: 'Focus Details' },

@@ -147,10 +147,10 @@ test('a newer Files allocation published while cancelling keyboard sizing surviv
 	assert.equal(files.sash.focusForResize(files.focusTarget), true);
 	const release = inputFocus.onDidChangeTarget(() => {
 		if (inputFocus.admittedTarget !== files.focusTarget) return;
-		release(); files.split.ratio = 0.42;
+		release(); files.split.requestedSize = 140;
 	}); t.after(release);
 	assert.equal(f.editor.resetLayout(), false);
-	assert.equal(files.split.ratio, 0.42);
+	assert.equal(files.split.requestedSize, 140);
 	assert.ok(inputFocus.admittedTarget === files.focusTarget);
 });
 

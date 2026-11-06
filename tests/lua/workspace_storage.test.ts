@@ -420,7 +420,7 @@ function payload(
 			activityPlacement: 'dockedMain', activityWindow: { requestedBounds: { left: 0, top: 0, right: 640, bottom: 240 },
 				placement: 'normal', minimized: false },
 			scrollX: 0, scrollY: 0, activeClient: 'documents', activePrimaryPart: 'hierarchy' },
-		filesBrowser: { visible: false, filter: 'lua_only', widthRatio: 0.3, focused: false,
+		filesBrowser: { visible: false, filter: 'lua_only', width: undefined, focused: false,
 			view: { selected: undefined, disclosure: [], scroll: 0, hscroll: 0 } },
 		breakpoints: [],
 	};
@@ -528,7 +528,7 @@ function editorStub(
 	const content = new ProjectContentIndex(editorTextModelService, sources.catalog,
 		new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), new SceneSourceDocuments(editorTextModelService, sources.catalog));
 	const resourcePanel = new ResourcePanelController(editor as CartEditor, sources.catalog,
-		{ resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.3, content, workspaceEnvironment.clock);
+		{ resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, content, workspaceEnvironment.clock);
 	resourcePanel.setFontMetrics(editorViewState.font);
 	t.after(() => { resourcePanel.dispose(); content.dispose(); });
 	return Object.assign(editor, { resourcePanel });

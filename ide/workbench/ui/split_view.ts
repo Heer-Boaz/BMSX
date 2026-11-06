@@ -83,7 +83,13 @@ export class WorkbenchFixedEdgeSplitView implements WorkbenchSashView {
 	public minimumSecondSize = 0;
 	public preferredSize = 0;
 	/** The containing arrangement may publish several requested sizes together. */
-	public requestedSize: number | undefined;
+	private requestedSizeValue: number | undefined;
+	public revision = 0;
+	public get requestedSize(): number | undefined { return this.requestedSizeValue; }
+	public set requestedSize(value: number | undefined) {
+		if (value === this.requestedSizeValue) return;
+		this.requestedSizeValue = value; this.revision++;
+	}
 	private readonly resizeListeners = new Set<() => void>();
 	public constructor(public readonly edge: 'start' | 'end', public readonly orientation: 'horizontal' | 'vertical' = 'horizontal') {}
 	/** A native resize/reset is distinct from the arrangement's coordinated state publication. */
@@ -98,15 +104,15 @@ export class WorkbenchFixedEdgeSplitView implements WorkbenchSashView {
 	public get position(): number {
 		const size = (this.requestedSize ?? this.preferredSize) + WORKBENCH_SPLIT_SIZE / 2;
 		const requested = this.edge === 'start' ? this.start + size : this.end - size;
-		return clamp(Math.round(requested), this.start + this.minimumFirstSize, this.end - this.minimumSecondSize);
+		return clamp(requested, this.start + this.minimumFirstSize, this.end - this.minimumSecondSize);
 	}
 	public layout(left: number, top: number, right: number, bottom: number): void { write_rect_bounds(this.bounds, left, top, right, bottom); }
 	public canMoveTo(position: number): boolean {
-		return this.resizable && clamp(Math.round(position), this.start + this.minimumFirstSize, this.end - this.minimumSecondSize) !== this.position;
+		return this.resizable && clamp(position, this.start + this.minimumFirstSize, this.end - this.minimumSecondSize) !== this.position;
 	}
 	public moveTo(position: number): void {
 		if (!this.resizable) return;
-		position = clamp(Math.round(position), this.start + this.minimumFirstSize, this.end - this.minimumSecondSize);
+		position = clamp(position, this.start + this.minimumFirstSize, this.end - this.minimumSecondSize);
 		if (position === this.position) return;
 		const size = (this.edge === 'start' ? position - this.start : this.end - position) - WORKBENCH_SPLIT_SIZE / 2;
 		if (size === this.requestedSize) return;
