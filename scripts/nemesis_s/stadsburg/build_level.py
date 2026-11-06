@@ -100,10 +100,13 @@ def main():
 
     # Masonry always ends in the original wet foot, against the water.
     snow=rows_for('reuse_gevelkade_sneeuw_links')[0]
-    courses=rows_for('red_masonry_32x24')
-    warehouse_courses=rows_for('red_masonry_alt_32x24')
-    quay_bays=(courses,warehouse_courses,courses,courses,warehouse_courses,warehouse_courses,courses)
-    lintel_bays=(warehouse_courses,courses,warehouse_courses,warehouse_courses,courses)
+    courses=rows_for('quay_masonry_1088x32')
+    lintel_courses=rows_for('ceiling_masonry_512x32')
+    course_width=len(courses[0])
+    lintel_width=len(lintel_courses[0])
+    # Align the authored wall to its wet foot, so joined street heights keep
+    # the same courses. The bottom eight pixels also form the shallow quay.
+    course_top=20-len(courses)
     foot=rows_for('reuse_gevelkade_voet_links')[0]
     quay_surface=[None]*width
     for x0,x1,top in plan['quays']:
@@ -112,7 +115,7 @@ def main():
         for x in range(x0,x1):
             put(snow[1+(x-x0)%12],x,top,'quay_snow','#')
             for y in range(top+1,20):
-                put(quay_bays[((x-x0)//4)%len(quay_bays)][(y-top-1)%3][(x-art_origin)%4],x,y,'quay_masonry','#')
+                put(courses[y-course_top][(x-art_origin)%course_width],x,y,'quay_masonry','#')
             if top<20: put(foot[1+(x-x0)%12],x,20,'quay_foot','#')
     # Joined street sections share their wall and wet foot. Exposed outer
     # corners belong only at a step or an actual canal opening.
@@ -304,13 +307,13 @@ def main():
     },indent=2,ensure_ascii=False)+'\n')
 
     # Brick lintels extend beyond the top of the view; suspended cargo is attached
-    # to them. Reuse original masonry and the blue underside strip, without
-    # scaling, mirroring or repainting any tile.
+    # to them. The authored field keeps one world phase through overlapping
+    # depths, above the original blue underside strip.
     underside=rows_for('wet_quay_foot_64x8')[0]
     for x0,x1,depth in plan['ceilings']:
         for x in range(x0,x1):
             for y in range(depth-1):
-                put(lintel_bays[((x-x0)//4)%len(lintel_bays)][y%3][(x-art_origin)%4],x,y,'warehouse_ceiling','#')
+                put(lintel_courses[y][(x-art_origin)%lintel_width],x,y,'warehouse_ceiling','#')
             put(underside[(x-x0)%len(underside)],x,depth-1,'ceiling_underside','#')
     for p in plan['hanging']:
         prefab(p['prefab'],p['x'],p['y'])

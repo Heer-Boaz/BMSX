@@ -33,7 +33,7 @@ tiles:
 - id: 45
   name: red_masonry_32x24_00_01
   asset: nls_0045
-  image: res/img/nls_0045@atlas=gameplay.png
+  image: authoring/terreintegels/nls_0045@atlas=gameplay.png
   category: masonry
   stage_symbol: '#'
 - id: 46
@@ -45,67 +45,67 @@ tiles:
 - id: 47
   name: red_masonry_32x24_00_03
   asset: nls_0047
-  image: res/img/nls_0047@atlas=gameplay.png
+  image: authoring/terreintegels/nls_0047@atlas=gameplay.png
   category: masonry
   stage_symbol: '#'
 - id: 48
   name: red_masonry_32x24_01_00
   asset: nls_0048
-  image: res/img/nls_0048@atlas=gameplay.png
+  image: authoring/terreintegels/nls_0048@atlas=gameplay.png
   category: masonry
   stage_symbol: '#'
 - id: 49
   name: red_masonry_32x24_01_01
   asset: nls_0049
-  image: res/img/nls_0049@atlas=gameplay.png
+  image: authoring/terreintegels/nls_0049@atlas=gameplay.png
   category: masonry
   stage_symbol: '#'
 - id: 50
   name: red_masonry_32x24_01_02
   asset: nls_0050
-  image: res/img/nls_0050@atlas=gameplay.png
+  image: authoring/terreintegels/nls_0050@atlas=gameplay.png
   category: masonry
   stage_symbol: '#'
 - id: 51
   name: red_masonry_32x24_01_03
   asset: nls_0051
-  image: res/img/nls_0051@atlas=gameplay.png
+  image: authoring/terreintegels/nls_0051@atlas=gameplay.png
   category: masonry
   stage_symbol: '#'
 - id: 52
   name: red_masonry_32x24_02_00
   asset: nls_0052
-  image: res/img/nls_0052@atlas=gameplay.png
+  image: authoring/terreintegels/nls_0052@atlas=gameplay.png
   category: masonry
   stage_symbol: '#'
 - id: 53
   name: red_masonry_32x24_02_01
   asset: nls_0053
-  image: res/img/nls_0053@atlas=gameplay.png
+  image: authoring/terreintegels/nls_0053@atlas=gameplay.png
   category: masonry
   stage_symbol: '#'
 - id: 54
   name: red_masonry_32x24_02_02
   asset: nls_0054
-  image: res/img/nls_0054@atlas=gameplay.png
+  image: authoring/terreintegels/nls_0054@atlas=gameplay.png
   category: masonry
   stage_symbol: '#'
 - id: 55
   name: red_masonry_32x24_02_03
   asset: nls_0055
-  image: res/img/nls_0055@atlas=gameplay.png
+  image: authoring/terreintegels/nls_0055@atlas=gameplay.png
   category: masonry
   stage_symbol: '#'
 - id: 56
   name: red_masonry_alt_32x24_00_01
   asset: nls_0056
-  image: res/img/nls_0056@atlas=gameplay.png
+  image: authoring/terreintegels/nls_0056@atlas=gameplay.png
   category: masonry
   stage_symbol: '#'
 - id: 57
   name: red_masonry_alt_32x24_00_02
   asset: nls_0057
-  image: res/img/nls_0057@atlas=gameplay.png
+  image: authoring/terreintegels/nls_0057@atlas=gameplay.png
   category: masonry
   stage_symbol: '#'
 - id: 58
@@ -117,7 +117,7 @@ tiles:
 - id: 59
   name: red_masonry_alt_32x24_01_01
   asset: nls_0059
-  image: res/img/nls_0059@atlas=gameplay.png
+  image: authoring/terreintegels/nls_0059@atlas=gameplay.png
   category: masonry
   stage_symbol: '#'
 - id: 60
@@ -135,13 +135,13 @@ tiles:
 - id: 62
   name: red_masonry_alt_32x24_02_01
   asset: nls_0062
-  image: res/img/nls_0062@atlas=gameplay.png
+  image: authoring/terreintegels/nls_0062@atlas=gameplay.png
   category: masonry
   stage_symbol: '#'
 - id: 63
   name: red_masonry_alt_32x24_02_02
   asset: nls_0063
-  image: res/img/nls_0063@atlas=gameplay.png
+  image: authoring/terreintegels/nls_0063@atlas=gameplay.png
   category: masonry
   stage_symbol: '#'
 - id: 64
@@ -16943,3 +16943,399 @@ tiles:
   stage_symbol: '#'
   source_tile: 1009
   category: turret_contact
+- id: 3684
+  name: quay_masonry_1088x32_00_07
+  asset: nls_3684
+  image: res/img/nls_3684@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3685
+  name: quay_masonry_1088x32_00_08
+  asset: nls_3685
+  image: res/img/nls_3685@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3686
+  name: quay_masonry_1088x32_00_09
+  asset: nls_3686
+  image: res/img/nls_3686@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3687
+  name: quay_masonry_1088x32_00_10
+  asset: nls_3687
+  image: res/img/nls_3687@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3688
+  name: quay_masonry_1088x32_00_19
+  asset: nls_3688
+  image: res/img/nls_3688@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3689
+  name: quay_masonry_1088x32_00_20
+  asset: nls_3689
+  image: res/img/nls_3689@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3690
+  name: quay_masonry_1088x32_00_21
+  asset: nls_3690
+  image: res/img/nls_3690@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3691
+  name: quay_masonry_1088x32_00_22
+  asset: nls_3691
+  image: res/img/nls_3691@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3692
+  name: quay_masonry_1088x32_00_23
+  asset: nls_3692
+  image: res/img/nls_3692@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3693
+  name: quay_masonry_1088x32_00_24
+  asset: nls_3693
+  image: res/img/nls_3693@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3694
+  name: quay_masonry_1088x32_00_31
+  asset: nls_3694
+  image: res/img/nls_3694@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3695
+  name: quay_masonry_1088x32_00_32
+  asset: nls_3695
+  image: res/img/nls_3695@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3696
+  name: quay_masonry_1088x32_00_33
+  asset: nls_3696
+  image: res/img/nls_3696@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3697
+  name: quay_masonry_1088x32_00_34
+  asset: nls_3697
+  image: res/img/nls_3697@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3698
+  name: quay_masonry_1088x32_00_45
+  asset: nls_3698
+  image: res/img/nls_3698@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3699
+  name: quay_masonry_1088x32_00_46
+  asset: nls_3699
+  image: res/img/nls_3699@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3700
+  name: quay_masonry_1088x32_00_47
+  asset: nls_3700
+  image: res/img/nls_3700@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3701
+  name: quay_masonry_1088x32_00_48
+  asset: nls_3701
+  image: res/img/nls_3701@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3702
+  name: quay_masonry_1088x32_00_57
+  asset: nls_3702
+  image: res/img/nls_3702@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3703
+  name: quay_masonry_1088x32_00_58
+  asset: nls_3703
+  image: res/img/nls_3703@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3704
+  name: quay_masonry_1088x32_00_59
+  asset: nls_3704
+  image: res/img/nls_3704@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3705
+  name: quay_masonry_1088x32_00_67
+  asset: nls_3705
+  image: res/img/nls_3705@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3706
+  name: quay_masonry_1088x32_00_68
+  asset: nls_3706
+  image: res/img/nls_3706@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3707
+  name: quay_masonry_1088x32_00_69
+  asset: nls_3707
+  image: res/img/nls_3707@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3708
+  name: quay_masonry_1088x32_00_70
+  asset: nls_3708
+  image: res/img/nls_3708@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3709
+  name: quay_masonry_1088x32_01_02
+  asset: nls_3709
+  image: res/img/nls_3709@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3710
+  name: quay_masonry_1088x32_01_03
+  asset: nls_3710
+  image: res/img/nls_3710@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3711
+  name: quay_masonry_1088x32_01_04
+  asset: nls_3711
+  image: res/img/nls_3711@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3712
+  name: quay_masonry_1088x32_01_05
+  asset: nls_3712
+  image: res/img/nls_3712@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3713
+  name: quay_masonry_1088x32_01_08
+  asset: nls_3713
+  image: res/img/nls_3713@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3714
+  name: quay_masonry_1088x32_01_09
+  asset: nls_3714
+  image: res/img/nls_3714@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3715
+  name: quay_masonry_1088x32_01_10
+  asset: nls_3715
+  image: res/img/nls_3715@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3716
+  name: quay_masonry_1088x32_01_19
+  asset: nls_3716
+  image: res/img/nls_3716@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3717
+  name: quay_masonry_1088x32_01_20
+  asset: nls_3717
+  image: res/img/nls_3717@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3718
+  name: quay_masonry_1088x32_01_21
+  asset: nls_3718
+  image: res/img/nls_3718@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3719
+  name: quay_masonry_1088x32_01_22
+  asset: nls_3719
+  image: res/img/nls_3719@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3720
+  name: quay_masonry_1088x32_01_51
+  asset: nls_3720
+  image: res/img/nls_3720@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3721
+  name: quay_masonry_1088x32_01_52
+  asset: nls_3721
+  image: res/img/nls_3721@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3722
+  name: quay_masonry_1088x32_01_53
+  asset: nls_3722
+  image: res/img/nls_3722@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3723
+  name: quay_masonry_1088x32_01_54
+  asset: nls_3723
+  image: res/img/nls_3723@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3724
+  name: quay_masonry_1088x32_01_55
+  asset: nls_3724
+  image: res/img/nls_3724@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3725
+  name: quay_masonry_1088x32_02_02
+  asset: nls_3725
+  image: res/img/nls_3725@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3726
+  name: quay_masonry_1088x32_02_03
+  asset: nls_3726
+  image: res/img/nls_3726@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3727
+  name: quay_masonry_1088x32_02_04
+  asset: nls_3727
+  image: res/img/nls_3727@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3728
+  name: quay_masonry_1088x32_02_53
+  asset: nls_3728
+  image: res/img/nls_3728@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3729
+  name: quay_masonry_1088x32_02_54
+  asset: nls_3729
+  image: res/img/nls_3729@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3730
+  name: quay_masonry_1088x32_02_55
+  asset: nls_3730
+  image: res/img/nls_3730@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3731
+  name: quay_masonry_1088x32_02_56
+  asset: nls_3731
+  image: res/img/nls_3731@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3732
+  name: bridge_masonry_left_24x32_00_00
+  asset: nls_3732
+  image: res/img/nls_3732@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3733
+  name: bridge_masonry_left_24x32_00_01
+  asset: nls_3733
+  image: res/img/nls_3733@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3734
+  name: bridge_masonry_left_24x32_00_02
+  asset: nls_3734
+  image: res/img/nls_3734@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3735
+  name: bridge_masonry_left_24x32_01_00
+  asset: nls_3735
+  image: res/img/nls_3735@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3736
+  name: bridge_masonry_left_24x32_01_01
+  asset: nls_3736
+  image: res/img/nls_3736@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3737
+  name: bridge_masonry_left_24x32_01_02
+  asset: nls_3737
+  image: res/img/nls_3737@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3738
+  name: bridge_masonry_left_24x32_02_00
+  asset: nls_3738
+  image: res/img/nls_3738@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3739
+  name: bridge_masonry_left_24x32_02_01
+  asset: nls_3739
+  image: res/img/nls_3739@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3740
+  name: bridge_masonry_left_24x32_03_00
+  asset: nls_3740
+  image: res/img/nls_3740@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3741
+  name: bridge_masonry_right_24x32_00_00
+  asset: nls_3741
+  image: res/img/nls_3741@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3742
+  name: bridge_masonry_right_24x32_00_01
+  asset: nls_3742
+  image: res/img/nls_3742@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3743
+  name: bridge_masonry_right_24x32_00_02
+  asset: nls_3743
+  image: res/img/nls_3743@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3744
+  name: bridge_masonry_right_24x32_01_01
+  asset: nls_3744
+  image: res/img/nls_3744@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3745
+  name: bridge_masonry_right_24x32_02_00
+  asset: nls_3745
+  image: res/img/nls_3745@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3746
+  name: bridge_masonry_right_24x32_02_01
+  asset: nls_3746
+  image: res/img/nls_3746@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3747
+  name: bridge_masonry_right_24x32_02_02
+  asset: nls_3747
+  image: res/img/nls_3747@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3748
+  name: bridge_masonry_right_24x32_03_01
+  asset: nls_3748
+  image: res/img/nls_3748@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'
+- id: 3749
+  name: bridge_masonry_right_24x32_03_02
+  asset: nls_3749
+  image: res/img/nls_3749@atlas=gameplay.png
+  category: town
+  stage_symbol: '#'

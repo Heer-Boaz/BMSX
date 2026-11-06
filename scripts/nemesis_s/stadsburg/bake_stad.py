@@ -232,6 +232,12 @@ def main():
         prefabs[name] = {'description': description,
                          'tiles': rows, 'label': item['label'],
                          'groep': item.get('group', 'winkels' if changed_row is not None else 'straatdetails')}
+        if 'prefab_patch' in item:
+            patch = item['prefab_patch']
+            target = prefabs[patch['prefab']]['tiles']
+            left, top = patch['at']
+            for y, row in enumerate(rows):
+                target[top + y][left:left + len(row)] = row
     catalog_path.write_text(yaml.safe_dump(catalog, sort_keys=False, allow_unicode=True, width=120))
     prefab_path.write_text(yaml.safe_dump(prefab_data, sort_keys=False, allow_unicode=True, width=120))
     print(json.dumps({'registered': list(results), 'new_tiles': next_id - max(entries) - 1}, indent=2))

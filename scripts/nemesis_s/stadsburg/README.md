@@ -92,14 +92,23 @@ native roof and ground contacts; their door openings remain six pixels high.
 The bicycle shop keeps its upper floors quiet. Large cool workshop and bridgewatch glazing,
 timber loading doors and the dark alley gate give the street distinct pauses
 between these warm groups.
-Quay and wharf walls use a dark-red body with connected, staggered groups of
-short mortar courses and restrained red edge light. At the native world scale,
-these groups suggest masonry rather than drawing an oversized brick in every
-tile. Both 32×24 material variants retain a complete group in their top eight
-rows, which is the only part exposed by a low quay. Broad planes remain quiet;
-an offset lower group describes taller faces without turning the wall into a
-uniform grid. The snow/coping and existing blue wet foot define the upper and
-lower edges. Dedicated bridge tiles form a constructed arch ring with a
+Quay and wharf walls use a dark-red body with connected mortar courses and
+restrained red edge light. At the native world scale, these groups suggest
+masonry rather than drawing an oversized brick in every tile. The native
+`quay_masonry_1088x32` and `ceiling_masonry_512x32` sources compose different
+course shapes and unequal quiet intervals across a whole wall region. Their
+widths cover the longest uninterrupted quay and overhead wall respectively.
+The quay field sits above the wet foot at tile row 20; its bottom eight pixels
+form the shallow quay, and its courses keep the same world height through
+joined street steps. Ceiling courses start at row zero and retain the same
+world phase through overlapping depths. Neither field cycles vertically.
+The snow/coping and existing blue wet foot define the upper and lower edges.
+Two separate 24×32 native bridge panels compose the left and right landheads.
+Their `prefab_patch` registrations import the panels into the named prefab
+at a tile coordinate, retaining its other entries, including null cells and
+the explicit sky-clearing tile. This keeps later source edits connected to
+the assembled bridge through the ordinary town baker.
+Dedicated bridge tiles form a constructed arch ring with a
 recessed crown block and short joints that stop before the aperture. Keep
 mortar cuts inside the solid ring and retain its continuous inner contour.
 Bright red belongs to its upper-left face and selected outer edges; the right

@@ -540,6 +540,48 @@
       "group": "stadsgroen",
       "source": "authoring/stad6m/winterlinde_stil.png",
       "stage_symbol": " "
+    },
+    {
+      "name": "quay_masonry_1088x32",
+      "label": "Doorlopend kademetselwerk",
+      "group": "kade",
+      "source": "authoring/stad6m/quay_masonry_1088x32.png",
+      "stage_symbol": "#"
+    },
+    {
+      "name": "ceiling_masonry_512x32",
+      "label": "Metselwerk van de bovenmuur",
+      "group": "kade",
+      "source": "authoring/stad6m/ceiling_masonry_512x32.png",
+      "stage_symbol": "#"
+    },
+    {
+      "name": "bridge_masonry_left_24x32",
+      "label": "Metselwerk van het linker landhoofd",
+      "group": "kade",
+      "source": "authoring/stad6m/bridge_masonry_left_24x32.png",
+      "stage_symbol": "#",
+      "prefab_patch": {
+        "prefab": "haven_loopbrug",
+        "at": [
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "name": "bridge_masonry_right_24x32",
+      "label": "Metselwerk van het rechter landhoofd",
+      "group": "kade",
+      "source": "authoring/stad6m/bridge_masonry_right_24x32.png",
+      "stage_symbol": "#",
+      "prefab_patch": {
+        "prefab": "haven_loopbrug",
+        "at": [
+          11,
+          1
+        ]
+      }
     }
   ]
 }
