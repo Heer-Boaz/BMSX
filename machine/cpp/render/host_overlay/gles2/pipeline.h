@@ -23,6 +23,8 @@ struct HostOverlayGLES2State {
 	GLint attribUv = -1;
 	GLint uniformResolution = -1;
 	GLint uniformColor = -1;
+	GLint uniformGlyphCoverage = -1;
+	bool glyphCoverage = false;
 	GLuint vbo = 0;
 	TextureHandle whiteTexture = nullptr;
 	TextureHandle hostAtlasTexture = nullptr;

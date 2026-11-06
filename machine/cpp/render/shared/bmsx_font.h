@@ -20,7 +20,7 @@ enum class FontStyle { Normal, Italic };
 
 class Font : public BFont {
 public:
-	explicit Font(FontVariant variant = DEFAULT_FONT_VARIANT, FontStyle style = FontStyle::Normal);
+	explicit Font(FontVariant variant = DEFAULT_FONT_VARIANT, FontStyle style = FontStyle::Normal, FontSampling sampling = FontSampling::Nearest);
 };
 
 } // namespace bmsx

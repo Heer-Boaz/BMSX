@@ -1,8 +1,11 @@
 #include "render/host_overlay/gles2/pipeline.h"
+#include "render/host_overlay/software/renderer.h"
 #include "support/host_overlay_fixture.h"
 #include "spec/bmsx/model.h"
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
+#include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <stdexcept>
 #include <vector>
@@ -100,6 +103,63 @@ int main() {
 					endHostOverlayGLES2(backend, pipeline);
 					require(glGetError() == GL_NO_ERROR, "GLES2 bitmap font graphics error");
 					if (phase != 0) require(clipped == reference, "fractional layout must not remove bitmap glyph rows or move text backgrounds");
+				}
+			}
+		}
+		// Compare coverage, clipping and tint against the software datapath at real
+		// presentation scales. Ordinary atlas images following text stay nearest.
+		SoftwareBackend software(64, 48, PSX_MACHINE_SPEC.gxGpuVramBytes);
+		software.resizePresentationTarget(64, 48);
+		HostImageRenderSubmission image;
+		image.imgid = fixture.font.getGlyph('A').imgid;
+		image.pos = {.x = 2, .y = 42};
+		image.scale = {.x = 2, .y = 2};
+		for (const auto variant : {FontVariant::Msx, FontVariant::Tiny}) {
+			for (const auto style : {FontStyle::Normal, FontStyle::Italic}) {
+				Font font(variant, style, FontSampling::Linear);
+				GlyphRenderSubmission text;
+				text.font = &font; text.x = 2; text.y = 2;
+				text.items = {"Ag"}; text.item_end = 2; text.color = 0x80ff0000;
+				for (const f32 scale : {1.0F, 1.5F, 2.0F, 3.0F, 3.75F}) {
+					const HostOverlayTransform transform{scale, 0.25F, 0.5F};
+					for (const HostOverlayClipRect* bounds : {&full, &clip}) {
+						std::fill_n(software.framebuffer(), 64 * 48, 0xff000000);
+						beginHostOverlaySoftware(software, state);
+						beginHostOverlayGLES2(backend, pipeline, state);
+						glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT);
+						renderHost2DEntrySoftware(software, Host2DKind::Transform, {.transform = &transform});
+						renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Transform, {.transform = &transform});
+						renderHost2DEntrySoftware(software, Host2DKind::Clip, {.clip = bounds});
+						renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Clip, {.clip = bounds});
+						renderHost2DEntrySoftware(software, Host2DKind::Glyphs, {.glyphs = &text});
+						renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Glyphs, {.glyphs = &text});
+						renderHost2DEntrySoftware(software, Host2DKind::Transform, {.transform = &IDENTITY_HOST_OVERLAY_TRANSFORM});
+						renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Transform, {.transform = &IDENTITY_HOST_OVERLAY_TRANSFORM});
+						renderHost2DEntrySoftware(software, Host2DKind::Clip, {.clip = &full});
+						renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Clip, {.clip = &full});
+						renderHost2DEntrySoftware(software, Host2DKind::Img, {.img = &image});
+						renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Img, {.img = &image});
+						glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, alphaPixels.data());
+						endHostOverlaySoftware(software);
+						endHostOverlayGLES2(backend, pipeline);
+						require(glGetError() == GL_NO_ERROR, "GLES2 smooth font graphics error");
+						int partial = 0, maxError = 0;
+						for (int y = 0; y < 48; ++y) for (int x = 0; x < 64; ++x) {
+							const u32 expected = software.framebuffer()[y * 64 + x];
+							const size_t offset = static_cast<size_t>(((47 - y) * 64 + x) * 4);
+							const int shifts[]{16, 8, 0, 24};
+							for (int channel = 0; channel < 4; ++channel) {
+								const int error = std::abs(static_cast<int>((expected >> shifts[channel]) & 255u) - alphaPixels[offset + channel]);
+								maxError = std::max(maxError, error);
+								if (y >= 42) require(error == 0, "atlas image after smooth text must remain nearest sampled");
+							}
+							partial += y < 42 && alphaPixels[offset] > 0 && alphaPixels[offset] < 128;
+						}
+						// Bilinear hardware weights and UNORM output each round by at most one byte.
+						if (maxError > 2) std::cerr << "font coverage error: " << maxError << " scale: " << scale << '\n';
+						require(maxError <= 2, "GLES2 and software glyph coverage agree within hardware rounding");
+						if (bounds == &full) require(partial > 0, "smooth glyphs include fractional coverage");
+					}
 				}
 			}
 		}

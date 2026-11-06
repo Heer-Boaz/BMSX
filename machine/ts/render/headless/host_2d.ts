@@ -1,5 +1,6 @@
 import type { HostBitmapRenderSubmission } from '../host_overlay/bitmap';
 import { drawHostBitmap } from './host_bitmap';
+import { drawLinearHostGlyph } from './host_glyph';
 import {
 	HOST_SYSTEM_ATLAS,
 	hostSystemAtlasImage,
@@ -32,7 +33,6 @@ export type HeadlessHost2DContext = {
 	target: Uint8Array;
 	width: number;
 	colorValue: number;
-	hasBackgroundColor: boolean;
 	backgroundColor: number;
 	lineHeight: number;
 	clip: HostOverlayClipState;
@@ -205,30 +205,29 @@ function drawImage(context: HeadlessHost2DContext, command: HostImageRenderSubmi
 
 function drawBatchBlit(context: HeadlessHost2DContext, command: GlyphRenderSubmission): void {
 	context.colorValue = command.color;
-	context.hasBackgroundColor = command.has_background_color;
 	context.backgroundColor = command.background_color;
 	context.lineHeight = command.font.lineHeight;
-	forEachBatchBlitGlyph(command, context, drawHeadlessGlyph);
+	if (command.has_background_color) forEachBatchBlitGlyph(command, context, drawGlyphBackground);
+	forEachBatchBlitGlyph(command, context, command.font.sampling === 'linear' ? drawLinearHostGlyph : drawHeadlessGlyph);
+}
+
+function drawGlyphBackground(context: HeadlessHost2DContext, item: FontGlyph, x: number, y: number): void {
+	const { scaleX, scaleY, offsetX, offsetY } = context.transform;
+	const left = Math.trunc(x * scaleX + offsetX), top = Math.trunc(y * scaleY + offsetY);
+	fillRect(context, left, top, left + Math.trunc(item.advance * scaleX), top + Math.trunc(context.lineHeight * scaleY), context.backgroundColor);
 }
 
 function drawHeadlessGlyph(context: HeadlessHost2DContext, item: FontGlyph, x: number, y: number): void {
 	const { scaleX, scaleY, offsetX, offsetY } = context.transform;
-	x = x * scaleX + offsetX;
-	y = y * scaleY + offsetY;
-	if (context.hasBackgroundColor) {
-		const left = Math.trunc(x);
-		const top = Math.trunc(y);
-		fillRect(context, left, top, left + Math.trunc(item.advance * scaleX), top + Math.trunc(context.lineHeight * scaleY), context.backgroundColor);
-	}
-	const source = hostSystemAtlasImage(item.imgid);
+	const source = item.rect;
 	drawHostAtlasRect(
 		context,
 		source.u,
 		source.v,
 		source.w,
 		source.h,
-		x,
-		y,
+		x * scaleX + offsetX,
+		y * scaleY + offsetY,
 		item.width * scaleX,
 		item.height * scaleY,
 		false,

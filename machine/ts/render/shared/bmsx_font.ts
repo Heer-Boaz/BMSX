@@ -1,4 +1,4 @@
-import { BFont, GlyphMap } from './bitmap_font';
+import { BFont, type GlyphMap, type FontSampling } from './bitmap_font';
 import { hostSystemAtlasImage } from '../host_overlay/atlas';
 
 export const DEFAULT_FONT_VARIANT = 'msx' as const;
@@ -119,12 +119,12 @@ function buildTinyCharMap(): GlyphMap {
 }
 
 export class Font extends BFont {
-	constructor(config?: { variant?: FontVariant; style?: FontStyle }) {
+	constructor(config?: { variant?: FontVariant; style?: FontStyle; sampling?: FontSampling }) {
 		const variant = config?.variant ?? DEFAULT_FONT_VARIANT;
 		const preset = FONT_PRESETS[variant];
 		const style = config?.style ?? 'normal';
 		super(HOST_SYSTEM_FONT_SOURCE, style === 'normal' ? preset
-			: Object.fromEntries(Object.entries(preset).map(([char, id]) => [char, `${id}_${style}`])));
+			: Object.fromEntries(Object.entries(preset).map(([char, id]) => [char, `${id}_${style}`])), 0, config?.sampling ?? 'nearest');
 	}
 }
 

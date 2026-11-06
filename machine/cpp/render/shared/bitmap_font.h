@@ -38,6 +38,7 @@ struct FontGlyph {
 };
 
 constexpr int TAB_SPACES = 2;
+enum class FontSampling { Nearest, Linear };
 
 class BitmapFontSource {
 public:
@@ -47,7 +48,8 @@ public:
 
 class BFont {
 public:
-	BFont(const BitmapFontSource& source, GlyphMap itemmap, i32 advancePadding = 0);
+	BFont(const BitmapFontSource& source, GlyphMap itemmap, i32 advancePadding = 0, FontSampling sampling = FontSampling::Nearest);
+	const FontSampling sampling;
 
 	i32 char_width(char c);
 	i32 char_height(char c);

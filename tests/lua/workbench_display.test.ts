@@ -9,6 +9,7 @@ import test from 'node:test';
 import { createLiveStudioFixture } from '../helpers/live_studio';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { drawIde } from '../../ide/workbench/mode';
+import { editorViewState } from '../../ide/editor/ui/view/state';
 
 test('constrained workspace allocation settles without republishing unchanged surface geometry', async t => {
 	const f = await createLiveStudioFixture(t);
@@ -42,6 +43,30 @@ test('workbench layout publishes its viewport to the drawing owner without rerea
 	assert.deepEqual([frame.logicalWidth, frame.logicalHeight], [400, 300]);
 	assert.deepEqual(f.presenter.viewportSize, target, 'logical workbench layout does not select a different presentation target');
 	assert.ok(f.editor.editorParts.activeGroup.model.activeTab === input);
+});
+
+test('font smoothing uses shared command state and retains the document, metrics and raster allocation', async t => {
+	const f = await createLiveStudioFixture(t);
+	const input = f.editor.editorParts.activeGroup.model.activeTab;
+	const viewport = { ...f.presenter.viewportSize }, raster = f.backend.borrowPresentedPixels().buffer;
+	const before = editorViewState.font;
+	const target = f.editor.editorParts.activeGroup.focusTarget;
+	assert.equal(f.editor.commands.isActive('workspace.fontSmoothing', target), true);
+	f.editor.commands.execute('workspace.fontSmoothing', target);
+	assert.equal(f.editor.commands.isActive('workspace.fontSmoothing', target), false);
+	const after = editorViewState.font;
+	assert.equal(after.renderFont().sampling, 'nearest');
+	assert.equal(after.renderFont('italic').sampling, 'nearest');
+	assert.equal(after.lineHeight, before.lineHeight);
+	assert.equal(after.measure('True\tfalse'), before.measure('True\tfalse'));
+	assert.ok(f.editor.editorParts.activeGroup.model.activeTab === input);
+	await f.frame();
+	assert.ok(f.backend.borrowPresentedPixels().buffer === raster);
+	assert.deepEqual(f.presenter.viewportSize, viewport);
+	f.editor.setFontVariant('msx');
+	assert.equal(editorViewState.font.renderFont().sampling, 'nearest');
+	f.editor.commands.execute('workspace.fontSmoothing', target);
+	assert.equal(editorViewState.font.renderFont().sampling, 'linear');
 });
 
 test('Studio reallocates its own workspace, retaining documents and restoring the unchanged game presentation', async t => {

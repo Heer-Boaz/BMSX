@@ -72,10 +72,50 @@ export async function renderHostFontCases(canvas: HTMLCanvasElement, kind: 'webg
 		}
 		cases.push({ phaseX, phaseY, differences, firstDifference });
 	}
+	const smoothFonts = [new Font({ variant: 'tiny', sampling: 'linear' }), new Font({ variant: 'msx', sampling: 'linear' }),
+		new Font({ variant: 'tiny', style: 'italic', sampling: 'linear' }), new Font({ variant: 'msx', style: 'italic', sampling: 'linear' })];
+	const sampling: { scale: number; maxError: number; imageDifferences: number; fractional: number }[] = [];
+	for (const scale of [1, 1.5, 2, 3, 3.75]) {
+		const drawCoverage = (renderer: OverlayRenderer) => {
+			renderer.beginFrame(); renderer.fillRect(0, 0, width, height, 0, 0xff000000, 0);
+			for (let i = 0; i < smoothFonts.length; i++) {
+				const left = i * 64, font = smoothFonts[i];
+				renderer.pushClipRect(left + 3, 4, left + 60, height - 4);
+				renderer.pushTransform({ scale, offsetX: left + 2.25, offsetY: 4.5 });
+				renderer.itemRun('Ag\nm', 0, 4, 1, 1, 0, font, 0x80ff0000, 0);
+				renderer.popTransform();
+				// The same atlas entry drawn as an ordinary image must remain nearest.
+				renderer.pushTransform({ scale: 3, offsetX: left + 8, offsetY: 120 });
+				renderer.spriteColorized(font.getGlyph('A').imgid, 0, 0, 0, 0xffffffff, 0);
+				renderer.popTransform();
+				renderer.popClipRect();
+			}
+			renderer.endFrame();
+		};
+		drawCoverage(software.renderer);
+		const frame = software.queue.consumeOverlayFrame();
+		beginHeadlessHost2D(software.backend.hostOverlayContext, reference, width, height, width, height);
+		for (let i = 0; i < frame.commandCount; i++) renderHeadlessHost2DEntry(software.backend.hostOverlayContext, frame.commandKinds[i], frame.commandRefs[i]);
+		drawCoverage(renderer); presenter.present(output, 0, 0);
+		let pixels: Uint8Array;
+		if (gpu !== undefined) pixels = await gpu.readColorTexture(gpu.context.getCurrentTexture(), width, height);
+		else {
+			const raw = new Uint8Array(width * height * 4); pixels = new Uint8Array(raw.length);
+			gl!.gl.readPixels(0, 0, width, height, gl!.gl.RGBA, gl!.gl.UNSIGNED_BYTE, raw);
+			for (let y = 0; y < height; y++) pixels.set(raw.subarray((height - 1 - y) * width * 4, (height - y) * width * 4), y * width * 4);
+		}
+		let maxError = 0, imageDifferences = 0, fractional = 0;
+		for (let i = 0; i < pixels.length; i++) {
+			maxError = Math.max(maxError, Math.abs(pixels[i] - reference[i]));
+			if (i >= 120 * width * 4 && pixels[i] !== reference[i]) imageDifferences++;
+			if (i < 120 * width * 4 && i % 4 === 0 && pixels[i] > 0 && pixels[i] < 128) fractional++;
+		}
+		sampling.push({ scale, maxError, imageDifferences, fractional });
+	}
 	const validationError = gpu === undefined ? undefined : (await gpu.device.popErrorScope())?.message;
 	const glError = gl === undefined ? 0 : gl.gl.getError();
 	let ink = 0;
 	for (let index = 0; index < reference.length; index += 4) if (reference[index] !== 0) ink++;
 	presenter.dispose(); gpu?.device.destroy();
-	return { cases, ink, validationError, glError, errors };
+	return { cases, sampling, ink, validationError, glError, errors };
 }

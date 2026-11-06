@@ -135,14 +135,14 @@ GlyphMap buildTinyCharMap() {
 
 } // namespace
 
-Font::Font(FontVariant variant, FontStyle style)
+Font::Font(FontVariant variant, FontStyle style, FontSampling sampling)
 	: BFont(HOST_SYSTEM_FONT_SOURCE, [&] {
 		auto map = variant == FontVariant::Tiny ? buildTinyCharMap() : buildMsxCharMap();
 		if (style != FontStyle::Normal) {
 			for (auto& [character, id] : map) id += "_italic";
 		}
 		return map;
-	}()) {
+	}(), 0, sampling) {
 }
 
 } // namespace bmsx

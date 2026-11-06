@@ -69,6 +69,7 @@ function createRuntime(backend: WebGPUBackend): HostOverlayRuntime {
 			{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
 			{ binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
 			{ binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+			{ binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
 		],
 	});
 	const pipeline = device.createRenderPipeline({
@@ -130,6 +131,8 @@ function createRuntime(backend: WebGPUBackend): HostOverlayRuntime {
 			{ binding: 0, resource: { buffer: uniformBuffer } },
 			{ binding: 1, resource: hostAtlasTexture.createView() },
 			{ binding: 2, resource: hostSampler },
+			{ binding: 3, resource: device.createSampler({ magFilter: 'linear', minFilter: 'linear',
+				addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' }) },
 		],
 	});
 	const colorAttachment: ColorAttachmentSpec = { tex: null as TextureHandle };

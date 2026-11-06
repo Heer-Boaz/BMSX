@@ -33,6 +33,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'workspace.focusPrimary': { category: 'Workspace', title: 'Focus Primary Authoring' },
 	'workspace.clearPrimary': { category: 'Workspace', title: 'Clear Primary Authoring' },
 	'workspace.uiScale': { category: 'View', title: 'UI Scale...' },
+	'workspace.fontSmoothing': { category: 'View', title: 'Smooth Pixel Fonts' },
 	'workspace.resetLayout': { category: 'Workspace', title: 'Reset Layout' },
 	'workspace.hierarchy.focus': { category: 'Workspace', title: 'Focus Hierarchy' },
 	'workspace.details.focus': { category: 'Workspace', title: 'Focus Details' },

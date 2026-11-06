@@ -21,6 +21,17 @@ int main() {
 			== static_cast<std::size_t>(bmsx::HOST_SYSTEM_ATLAS.width) * static_cast<std::size_t>(bmsx::HOST_SYSTEM_ATLAS.height) * 4u,
 		"host system atlas pixel span should match its dimensions");
 	require(!bmsx::HOST_SYSTEM_ATLAS.images.empty(), "host system atlas should contain image descriptors");
+	for (const auto& image : bmsx::HOST_SYSTEM_ATLAS.images) {
+		require(image.u > 0 && image.v > 0 && image.u + image.w < bmsx::HOST_SYSTEM_ATLAS.width
+			&& image.v + image.h < bmsx::HOST_SYSTEM_ATLAS.height, "atlas images own a one-texel gutter");
+		for (bmsx::u32 y = image.v - 1; y <= image.v + image.h; ++y) {
+			for (bmsx::u32 x = image.u - 1; x <= image.u + image.w; ++x) {
+				if (x >= image.u && x < image.u + image.w && y >= image.v && y < image.v + image.h) continue;
+				require(bmsx::HOST_SYSTEM_ATLAS.pixels[(y * bmsx::HOST_SYSTEM_ATLAS.width + x) * 4u + 3u] == 0,
+					"atlas gutters prevent linear glyph coverage from leaking neighboring images");
+			}
+		}
+	}
 	for (std::size_t index = 1u; index < bmsx::HOST_SYSTEM_ATLAS.images.size(); index += 1u) {
 		require(
 			bmsx::HOST_SYSTEM_ATLAS.images[index - 1u].id < bmsx::HOST_SYSTEM_ATLAS.images[index].id,

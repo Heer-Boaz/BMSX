@@ -1,4 +1,5 @@
 export type GlyphMap = Record<string, string>;
+export type FontSampling = 'nearest' | 'linear';
 
 export type ImageAtlasRect = {
 	u: number;
@@ -122,7 +123,8 @@ export class BFont {
 	protected readonly fallbackCharacter: string = '?';
 	protected letter_to_img: GlyphMap;
 
-	constructor(protected readonly source: BitmapFontSource, itemmap?: GlyphMap, advancePadding: number = 0) {
+	constructor(protected readonly source: BitmapFontSource, itemmap?: GlyphMap, advancePadding: number = 0,
+		public readonly sampling: FontSampling = 'nearest') {
 		this.letter_to_img = itemmap ?? DEFAULT_GLYPH_MAP;
 		this.advancePadding = advancePadding;
 		this.lineHeightValue = this.char_height('A');

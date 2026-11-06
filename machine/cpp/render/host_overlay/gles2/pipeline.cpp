@@ -143,18 +143,20 @@ void drawGlyphImageGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipel
 	const auto& transform = pipeline.transform;
 	const f32 atlasWidth = static_cast<f32>(HOST_SYSTEM_ATLAS.width);
 	const f32 atlasHeight = static_cast<f32>(HOST_SYSTEM_ATLAS.height);
+	const f32 padding = pipeline.glyphCoverage ? 0.5F : 0.0F;
+	const f32 padX = padding * item.width / rect.w, padY = padding * item.height / rect.h;
 	drawQuadGLES2(
 		backend,
 		pipeline,
 		pipeline.hostAtlasTexture,
-		imageX * transform.scale + transform.offsetX,
-		imageY * transform.scale + transform.offsetY,
-		static_cast<f32>(item.width) * transform.scale,
-		static_cast<f32>(item.height) * transform.scale,
-		static_cast<f32>(rect.u) / atlasWidth,
-		static_cast<f32>(rect.v) / atlasHeight,
-		static_cast<f32>(rect.u + rect.w) / atlasWidth,
-		static_cast<f32>(rect.v + rect.h) / atlasHeight,
+		(imageX - padX) * transform.scale + transform.offsetX,
+		(imageY - padY) * transform.scale + transform.offsetY,
+		(item.width + padX * 2) * transform.scale,
+		(item.height + padY * 2) * transform.scale,
+		(rect.u - padding) / atlasWidth,
+		(rect.v - padding) / atlasHeight,
+		(rect.u + rect.w + padding) / atlasWidth,
+		(rect.v + rect.h + padding) / atlasHeight,
 		color
 	);
 }
@@ -222,6 +224,7 @@ void bootstrapHostOverlayGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State&
 	pipeline.attribUv = glGetAttribLocation(pipeline.program, "a_texcoord");
 	pipeline.uniformResolution = glGetUniformLocation(pipeline.program, "u_resolution");
 	pipeline.uniformColor = glGetUniformLocation(pipeline.program, "u_color");
+	pipeline.uniformGlyphCoverage = glGetUniformLocation(pipeline.program, "u_glyph_coverage");
 	glUseProgram(pipeline.program);
 	glUniform1i(glGetUniformLocation(pipeline.program, "u_texture"), GLES2_TEXTURE_UNIT_HOST_2D);
 	glGenBuffers(1, &pipeline.vbo);
@@ -259,6 +262,18 @@ void beginHostOverlayGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pip
 }
 
 void renderHost2DEntryGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline, Host2DKind kind, Host2DRef ref) {
+	// ES2 has no sampler objects. The atlas owner changes its filter only at
+	// run boundaries; frame textures and image rendering retain nearest sampling.
+	if (kind != Host2DKind::Clip && kind != Host2DKind::Transform) {
+		const bool coverage = kind == Host2DKind::Glyphs && ref.glyphs->font->sampling == FontSampling::Linear;
+		if (coverage != pipeline.glyphCoverage) {
+			pipeline.glyphCoverage = coverage;
+			glUniform1i(pipeline.uniformGlyphCoverage, coverage);
+			bindTexture(backend, pipeline.hostAtlasTexture);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, coverage ? GL_LINEAR : GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, coverage ? GL_LINEAR : GL_NEAREST);
+		}
+	}
 	switch (kind) {
 		case Host2DKind::Transform: pipeline.transform = *ref.transform; return;
 		case Host2DKind::Clip: {

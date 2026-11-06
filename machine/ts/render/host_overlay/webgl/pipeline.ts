@@ -35,6 +35,7 @@ type HostOverlayRuntime = {
 	instanceFloatBuffer: WebGLBuffer;
 	instanceTextureKindBuffer: WebGLBuffer;
 	hostAtlasTexture: WebGLTexture;
+	glyphSampler: WebGLSampler;
 	stream: HostOverlayQuadStream;
 	instanceCapacity: number;
 	frameUniforms: FrameUniformState<WebGLBuffer>;
@@ -88,6 +89,11 @@ function createRuntime(backend: WebGLBackend, program: WebGLProgram, frameUnifor
 	const instanceFloatBuffer = backend.createVertexBuffer(stream.floatData, 'dynamic') as WebGLBuffer;
 	const instanceTextureKindBuffer = backend.createVertexBuffer(stream.textureKinds, 'dynamic') as WebGLBuffer;
 	const hostAtlasTexture = backend.createTexture(HOST_SYSTEM_ATLAS.pixels, HOST_SYSTEM_ATLAS.width, HOST_SYSTEM_ATLAS.height, RGBA8_SRGB_TEXTURE_PARAMS) as WebGLTexture;
+	const glyphSampler = gl.createSampler()!;
+	gl.samplerParameteri(glyphSampler, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+	gl.samplerParameteri(glyphSampler, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+	gl.samplerParameteri(glyphSampler, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+	gl.samplerParameteri(glyphSampler, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
 	backend.bindVertexArray(vao);
 	backend.bindArrayBuffer(cornerBuffer);
@@ -113,6 +119,7 @@ function createRuntime(backend: WebGLBackend, program: WebGLProgram, frameUnifor
 	backend.useProgram(program);
 	gl.uniform1i(gl.getUniformLocation(program, 'u_texture0'), HOST_OVERLAY_TEXTURE_UNIT);
 	gl.uniform1i(gl.getUniformLocation(program, 'u_frame'), HOST_OVERLAY_TEXTURE_UNIT + 1);
+	gl.uniform1i(gl.getUniformLocation(program, 'u_glyph_coverage'), HOST_OVERLAY_TEXTURE_UNIT + 2);
 
 	const bitmaps = new HostBitmapTextures(
 			image => backend.createTexture(image.pixels, image.width, image.height, RGBA8_LINEAR_TEXTURE_PARAMS) as WebGLTexture,
@@ -129,6 +136,7 @@ function createRuntime(backend: WebGLBackend, program: WebGLProgram, frameUnifor
 		instanceFloatBuffer,
 		instanceTextureKindBuffer,
 		hostAtlasTexture,
+		glyphSampler,
 		stream,
 		instanceCapacity: stream.capacity,
 		frameUniforms,
@@ -147,6 +155,7 @@ function destroyRuntime(backend: WebGLBackend, runtimeToDestroy: HostOverlayRunt
 	backend.destroyBuffer(runtimeToDestroy.instanceTextureKindBuffer);
 	backend.deleteVertexArray(runtimeToDestroy.vao);
 	backend.destroyTexture(runtimeToDestroy.hostAtlasTexture);
+	runtimeToDestroy.gl.deleteSampler(runtimeToDestroy.glyphSampler);
 }
 
 function bindPassState(backend: WebGLBackend, state: HostOverlayRuntime, passState: Host2DPipelineState): void {
@@ -163,6 +172,9 @@ function bindPassState(backend: WebGLBackend, state: HostOverlayRuntime, passSta
 	backend.setBlendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 	backend.setActiveTexture(HOST_OVERLAY_TEXTURE_UNIT);
 	backend.bindTexture2D(state.hostAtlasTexture);
+	backend.setActiveTexture(HOST_OVERLAY_TEXTURE_UNIT + 2);
+	backend.bindTexture2D(state.hostAtlasTexture);
+	gl.bindSampler(HOST_OVERLAY_TEXTURE_UNIT + 2, state.glyphSampler);
 	backend.setActiveTexture(HOST_OVERLAY_TEXTURE_UNIT + 1);
 	backend.bindTexture2D(passState.frameTexture as WebGLTexture);
 	backend.bindVertexArray(state.vao);
@@ -214,6 +226,7 @@ function renderStream(backend: WebGLBackend, state: HostOverlayRuntime, passStat
 		backend.drawInstanced(HOST_OVERLAY_DRAW_PASS, 6, end - batch.start, 0, 0);
 	}
 	gl.disable(gl.SCISSOR_TEST);
+	gl.bindSampler(HOST_OVERLAY_TEXTURE_UNIT + 2, null);
 	backend.bindVertexArray(null);
 	backend.setBlendEnabled(false);
 	backend.setDepthMask(true);

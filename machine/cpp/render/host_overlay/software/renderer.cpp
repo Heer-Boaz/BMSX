@@ -1,4 +1,5 @@
 #include "render/host_overlay/software/renderer.h"
+#include "render/host_overlay/software/glyph.h"
 
 #include "render/shared/glyph_runs.h"
 #include "render/shared/software_pixels.h"
@@ -216,7 +217,13 @@ void drawGlyphsSoftware(SoftwareBackend& backend, const GlyphRenderSubmission& c
 		forEachBatchBlitGlyph(command, context, drawGlyphBackgroundSoftware);
 	}
 	context.color = command.color;
-	forEachBatchBlitGlyph(command, context, drawGlyphSoftware);
+	if (command.font->sampling == FontSampling::Linear) {
+		forEachBatchBlitGlyph(command, context, [](GlyphSoftwareContext& context, const FontGlyph& item, f32 x, f32 y) {
+			drawLinearHostGlyph(context.backend, item, x, y, context.color);
+		});
+	} else {
+		forEachBatchBlitGlyph(command, context, drawGlyphSoftware);
+	}
 }
 
 } // namespace

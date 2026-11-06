@@ -30,6 +30,7 @@ export const HOST_OVERLAY_TEXTURE_ATLAS = 1;
 export const HOST_OVERLAY_TEXTURE_FRAME = 2;
 export const HOST_OVERLAY_TEXTURE_BITMAP = 3;
 export const HOST_OVERLAY_TEXTURE_MESH_SCENE = 4;
+export const HOST_OVERLAY_TEXTURE_GLYPH_COVERAGE = 5;
 
 const INITIAL_INSTANCE_CAPACITY = 4096;
 const HOST_ATLAS_U_SCALE = 1 / HOST_SYSTEM_ATLAS.width;
@@ -54,6 +55,8 @@ export class HostOverlayQuadStream {
 	private glyphBackgroundLineHeight = 0;
 	private glyphBackgroundColor = 0;
 	private glyphColor = 0;
+	private glyphPadding = 0;
+	private glyphTextureKind = HOST_OVERLAY_TEXTURE_ATLAS;
 	private transform: Readonly<HostOverlayTransform> = IDENTITY_HOST_OVERLAY_TRANSFORM;
 
 	public reset(logicalWidth: number, logicalHeight: number): void {
@@ -305,6 +308,8 @@ export class HostOverlayQuadStream {
 			forEachBatchBlitGlyph(command, this, HostOverlayQuadStream.appendGlyphBackground);
 		}
 		this.glyphColor = command.color;
+		this.glyphPadding = command.font.sampling === 'linear' ? 0.5 : 0;
+		this.glyphTextureKind = command.font.sampling === 'linear' ? HOST_OVERLAY_TEXTURE_GLYPH_COVERAGE : HOST_OVERLAY_TEXTURE_ATLAS;
 		forEachBatchBlitGlyph(command, this, HostOverlayQuadStream.appendGlyph);
 	}
 
@@ -316,19 +321,21 @@ export class HostOverlayQuadStream {
 
 	private static appendGlyph(stream: HostOverlayQuadStream, item: FontGlyph, x: number, y: number): void {
 		const rect = item.rect;
+		const padding = stream.glyphPadding;
+		const padX = padding * item.width / rect.w, padY = padding * item.height / rect.h;
 		const { scale, offsetX, offsetY } = stream.transform;
 		stream.appendQuad(
-			x * scale + offsetX,
-			y * scale + offsetY,
-			item.width * scale,
+			(x - padX) * scale + offsetX,
+			(y - padY) * scale + offsetY,
+			(item.width + padX * 2) * scale,
 			0,
 			0,
-			item.height * scale,
-			rect.u * HOST_ATLAS_U_SCALE,
-			rect.v * HOST_ATLAS_V_SCALE,
-			(rect.u + rect.w) * HOST_ATLAS_U_SCALE,
-			(rect.v + rect.h) * HOST_ATLAS_V_SCALE,
-			HOST_OVERLAY_TEXTURE_ATLAS,
+			(item.height + padY * 2) * scale,
+			(rect.u - padding) * HOST_ATLAS_U_SCALE,
+			(rect.v - padding) * HOST_ATLAS_V_SCALE,
+			(rect.u + rect.w + padding) * HOST_ATLAS_U_SCALE,
+			(rect.v + rect.h + padding) * HOST_ATLAS_V_SCALE,
+			stream.glyphTextureKind,
 			stream.glyphColor,
 		);
 	}

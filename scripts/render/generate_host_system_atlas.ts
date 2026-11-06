@@ -45,13 +45,15 @@ function buildHostAtlasFromResources(resources: readonly Resource[]): HostAtlasB
 	// do not send fonts through the guest ROM texture encoder or its 256x64 limit.
 	const boxes = resources.filter((resource): resource is ImageResource => (
 		resource.type === 'image' && resource.targetAtlasName === GX_SYSTEM_TEXTURE_ATLAS_NAME
-	)).map(resource => ({ resource, w: resource.img!.width, h: resource.img!.height, x: 0, y: 0 }));
+	)).map(resource => ({ resource, w: resource.img!.width + 2, h: resource.img!.height + 2, x: 0, y: 0 }));
 	const { w, h } = potpack(boxes);
 	const atlas = createCanvas(w, h), context = atlas.getContext('2d');
 	const images: HostAtlasImage[] = [];
 	for (const box of boxes) {
-		context.drawImage(box.resource.img!, box.x, box.y);
-		images.push({ id: box.resource.name, width: box.w, height: box.h, u: box.x, v: box.y, w: box.w, h: box.h });
+		// Transparent gutters isolate coverage filtering from neighbouring glyphs.
+		const width = box.w - 2, height = box.h - 2, u = box.x + 1, v = box.y + 1;
+		context.drawImage(box.resource.img!, u, v);
+		images.push({ id: box.resource.name, width, height, u, v, w: width, h: height });
 	}
 	images.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 	if (images.length === 0) {

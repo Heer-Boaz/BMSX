@@ -40,6 +40,12 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} preserves both bitmap fon
 	assert.ok(result.ink > 0, 'reference contains rendered glyphs');
 	for (const sample of result.cases) assert.equal(sample.differences, 0,
 		`phase ${sample.phaseX},${sample.phaseY}: each glyph texel must match the aligned software image (first difference ${sample.firstDifference})`);
+	for (const sample of result.sampling) {
+		// Hardware bilinear weights and UNORM8 blending may each round by one byte.
+		assert.ok(sample.maxError <= 2, `${kind} coverage at scale ${sample.scale} differs by ${sample.maxError}`);
+		assert.equal(sample.imageDifferences, 0, 'glyph filtering cannot change ordinary atlas images');
+		assert.ok(sample.fractional > 0, 'fractional placement produces genuine glyph edge coverage');
+	}
 });
 
 for (const kind of ['webgl2', 'webgpu']) test(`${kind} retains the old workspace target until the next presentation`, async t => {

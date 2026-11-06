@@ -33,6 +33,7 @@ import {
 import { HeadlessClipboard } from '../../../hosts/node/headless/clipboard';
 import { HeadlessInputHub } from '../../../hosts/node/headless/input';
 import { MemoryStorage } from '../../../ide/workspace/memory_storage';
+import { WorkbenchPreferences } from '../../../ide/workbench/services/preferences/preferences';
 import {
 	persistWorkspaceSessionLocally,
 	shutdownWorkspaceStorage,
@@ -242,7 +243,8 @@ async function main(): Promise<void> {
 						cartridgeContexts[1] === null ? null : cartridgeContexts[1].id] };
 				} finally { await projects.close(); }
 				ide = await prepareWorkbenchRuntime(
-					media, runtime, presenter, presentation, encodePngImage, decodeImage, videoOutput, input, audioOutput,
+					media, runtime, presenter, presentation, encodePngImage, decodeImage, videoOutput,
+					new WorkbenchPreferences(new MemoryStorage()), input, audioOutput,
 					runtimeTasks, execution, rewind, hostOverlayMenu,
 					new MemoryStorage(), context, sourceBindings, randomUUID(), new DiskWorkspaceRecordProvider(workspaceRoot), clock,
 					clipboard, new IdeMicrotaskQueue(), logOutput, RESOURCE_PANEL_DEFAULT_RATIO,
@@ -335,6 +337,7 @@ async function main(): Promise<void> {
 						encodePngImage,
 						decodeImage,
 						videoOutput,
+						new WorkbenchPreferences(new MemoryStorage()),
 						input,
 						audioOutput,
 						runtimeTasks,

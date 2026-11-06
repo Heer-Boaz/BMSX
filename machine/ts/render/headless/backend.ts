@@ -147,7 +147,6 @@ export class HeadlessGPUBackend implements GPUBackend {
 		target: this.framebufferPixels,
 		width: 0,
 		colorValue: 0,
-		hasBackgroundColor: false,
 		backgroundColor: 0,
 		lineHeight: 0,
 		clip: new HostOverlayClipState(),

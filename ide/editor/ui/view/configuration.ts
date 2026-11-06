@@ -1,4 +1,5 @@
 import type { FontVariant } from '../../../../machine/ts/render/shared/bmsx_font';
+import type { FontSampling } from '../../../../machine/ts/render/shared/bitmap_font';
 import type { Viewport } from '../../../common/viewport';
 import { TAB_SPACES } from '../../../common/constants';
 import type { InlineFieldMetrics } from '../inline/text_field';
@@ -18,8 +19,8 @@ export function onDidChangeEditorFont(listener: (font: EditorFont) => void): () 
 	return () => fontChangeListeners.delete(listener);
 }
 
-export function configureFontVariant(variant: FontVariant): void {
-	const font = new EditorFont(variant);
+export function configureFontVariant(variant: FontVariant, sampling: FontSampling = 'nearest'): void {
+	const font = new EditorFont(variant, sampling);
 	editorViewState.fontVariant = variant;
 	editorViewState.font = font;
 	editorViewState.lineHeight = font.lineHeight;

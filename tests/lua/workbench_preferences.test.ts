@@ -16,3 +16,16 @@ test('UI scale persists in frontend storage independently of project recovery an
 	assert.equal(changes, 1);
 	assert.equal(new WorkbenchPreferences(storage).uiScale, 0.75);
 });
+
+test('font sampling persists as a user preference without changing UI scale', () => {
+	const storage = new MemoryStorage(), preferences = new WorkbenchPreferences(storage);
+	assert.equal(preferences.fontSampling, 'linear');
+	let changes = 0;
+	const release = preferences.onDidChange(() => changes++);
+	preferences.fontSampling = 'nearest'; preferences.fontSampling = 'nearest';
+	assert.equal(changes, 1);
+	assert.equal(new WorkbenchPreferences(storage).fontSampling, 'nearest');
+	assert.equal(preferences.uiScale, 1);
+	release(); preferences.fontSampling = 'linear';
+	assert.equal(changes, 1);
+});

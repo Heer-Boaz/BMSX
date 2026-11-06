@@ -7,8 +7,9 @@
 #include <utility>
 
 namespace bmsx {
-BFont::BFont(const BitmapFontSource& source, GlyphMap itemmap, i32 advancePadding)
-	: m_source(source)
+BFont::BFont(const BitmapFontSource& source, GlyphMap itemmap, i32 advancePadding, FontSampling sampling)
+	: sampling(sampling)
+	, m_source(source)
 	, m_letter_to_img(std::move(itemmap))
 	, m_advance_padding(advancePadding) {
 	m_line_height = char_height('A');

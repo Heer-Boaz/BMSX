@@ -444,7 +444,11 @@ export class RuntimeCartEditor implements CartEditor {
 		this.runtime = runtime;
 		this.presenter = presenter;
 		this.display = display;
-		this.unbindPreferences = preferences.onDidChange(() => { if (this.isActive) display.workspace.refresh(); });
+		this.unbindPreferences = preferences.onDidChange(() => {
+			if (!this.isActive) return;
+			if (editorViewState.font.sampling !== preferences.fontSampling) this.setFontVariant(this.fontVariant);
+			display.workspace.refresh();
+		});
 		this.unbindDisplayGeometry = display.geometry.onDidChange(() => { if (this.isActive) this.cancelPointerInput(); });
 		this.input = input;
 		this.clock = clock;
@@ -1081,7 +1085,7 @@ export class RuntimeCartEditor implements CartEditor {
 			return;
 		}
 		const previousVariant = editorViewState.fontVariant;
-		configureFontVariant(variant);
+		configureFontVariant(variant, this.preferences.fontSampling);
 		this.resourcePanel.setFontMetrics(editorViewState.font);
 		this.layoutMainEditor();
 		if (editorViewState.fontVariant !== previousVariant) {
@@ -1184,13 +1188,13 @@ export class RuntimeCartEditor implements CartEditor {
 			resourceHorizontal: new Scrollbar('horizontal'),
 		}, resourcePanelWidthRatio, content, this.clock);
 		if (!this.isAvailable) {
-			configureFontVariant(editorViewState.fontVariant);
+			configureFontVariant(editorViewState.fontVariant, this.preferences.fontSampling);
 			resourcePanel.setFontMetrics(editorViewState.font);
 			editorRuntimeState.initialized = false;
 			return resourcePanel;
 		}
 		editorTextModelService.clear();
-		configureFontVariant(editorViewState.fontVariant);
+		configureFontVariant(editorViewState.fontVariant, this.preferences.fontSampling);
 		resourcePanel.setFontMetrics(editorViewState.font);
 		return resourcePanel;
 	}

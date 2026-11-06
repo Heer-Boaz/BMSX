@@ -354,6 +354,7 @@ add_library(bmsx_host_support STATIC
 	render/host_overlay/pipeline.cpp
 	render/host_overlay/overlay_queue.cpp
 	render/host_overlay/software/renderer.cpp
+	render/host_overlay/software/glyph.cpp
 	render/host_overlay/gles2/pipeline.cpp
 	render/post/crt/software/pipeline.cpp
 	render/post/crt/software/crt_processor.cpp

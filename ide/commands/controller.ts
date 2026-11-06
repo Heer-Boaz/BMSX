@@ -151,6 +151,9 @@ export class IdeCommandController {
 						description: scale === this.editor.preferences.uiScale ? 'Current' : '', detail: '' }))),
 					choice => { this.editor.preferences.uiScale = choice.scale; });
 				return;
+			case 'workspace.fontSmoothing':
+				this.editor.preferences.fontSampling = this.editor.preferences.fontSampling === 'linear' ? 'nearest' : 'linear';
+				return;
 			case 'workspace.resetLayout': this.editor.resetLayout(); return;
 			case 'sceneEditor': showMainScenePicker(this.editor, this.sources.catalog, invocationTarget); return;
 			case 'workspace.focusNextRegion': this.editor.regionNavigation.focus(invocationTarget, 1); return;
@@ -439,7 +442,7 @@ export class IdeCommandController {
 		}
 		if (input !== undefined && !group.model.contains(input)) return false;
 		switch (command) {
-			case 'workspace.uiScale': case 'workspace.resetLayout': return this.editor.acceptsInput;
+			case 'workspace.uiScale': case 'workspace.fontSmoothing': case 'workspace.resetLayout': return this.editor.acceptsInput;
 			case 'sceneEditor': return this.editor.isActive && this.editor.projectContent.acceptingQueries;
 			case 'window.showAll': case 'window.focusMain': case 'window.newEditor': return true;
 			case 'workspace.focusNextRegion': return this.editor.isActive && this.editor.regionNavigation.canNavigate(focus, 1);
@@ -593,6 +596,7 @@ export class IdeCommandController {
 				return window?.focusTarget.getCommand(command)?.isChecked?.() === true;
 			}
 			case 'group.maximize': return part.arrangement.maximized === group;
+			case 'workspace.fontSmoothing': return this.editor.preferences.fontSampling === 'linear';
 			case 'workspace.hierarchy.toggle': return this.editor.mainWorkspace.regions.hierarchy.displayed;
 			case 'workspace.details.toggle': return this.editor.mainWorkspace.regions.details.displayed;
 			case 'runtime.toggleTimeline': return group.timeline.requested;
