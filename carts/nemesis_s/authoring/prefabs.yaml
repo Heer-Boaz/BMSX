@@ -14,8 +14,8 @@ prefabs:
       - 3377
     - - 3378
       - 3487
-    - - 3002
-      - 3380
+    - - 3540
+      - 3541
     label: Smal grachtenhuis met halsgevel
     groep: huizengevels
   compact_breed_laag_huis:
@@ -37,10 +37,10 @@ prefabs:
       - 3388
       - 3389
       - 3488
-    - - 3391
-      - 3221
-      - 3222
-      - 3392
+    - - 3542
+      - 3543
+      - 3544
+      - 3545
     label: Laag woonhuis met besneeuwd schilddak
     groep: huizengevels
   compact_sneeuwhuis:
@@ -58,9 +58,9 @@ prefabs:
     - - 3365
       - 3366
       - 3482
-    - - 3127
-      - 3193
-      - 3368
+    - - 3534
+      - 3535
+      - 3536
     label: Compact sneeuwhuis met deur op hoofdmaat
     groep: huizengevels
   compact_hoog_sneeuwhuis:
@@ -81,9 +81,9 @@ prefabs:
     - - 3365
       - 3366
       - 3367
-    - - 3139
-      - 3198
-      - 3371
+    - - 3537
+      - 3538
+      - 3539
     label: Hoog sneeuwhuis met deur op hoofdmaat
     groep: huizengevels
   haven_laser_house:
@@ -105,10 +105,10 @@ prefabs:
       - 3402
       - 3403
       - 3404
-    - - 3405
-      - 3406
-      - 3407
-      - 3408
+    - - 3550
+      - 3551
+      - 3552
+      - 3553
     label: Havenwerkplaats met dakkanon
     groep: huizengevels
   haven_smoke_house:
@@ -130,10 +130,10 @@ prefabs:
       - 3418
       - 3242
       - 3047
-    - - 3419
-      - 3406
-      - 3245
-      - 3051
+    - - 3554
+      - 3551
+      - 3555
+      - 3556
     label: Ketelhuis met rookuitlaat
     groep: huizengevels
   stadsburg_trapgevel_met_dakkanon:
@@ -174,11 +174,11 @@ prefabs:
       - 3366
       - 3458
       - 2636
-    - - 3459
-      - 3302
-      - 3303
-      - 3302
-      - 2639
+    - - 3571
+      - 3572
+      - 3573
+      - 3572
+      - 3574
     label: Trapgevel met dakkanon
     groep: huizengevels
   stadsburg_pakhuis_met_dakkanon:
@@ -220,15 +220,15 @@ prefabs:
       - 3108
       - 3441
       - 3442
-    - - 3443
-      - 3282
-      - 3283
-      - 1059
-      - 3115
-      - 3116
-      - 3117
-      - 3444
-      - 2942
+    - - 3562
+      - 3563
+      - 3564
+      - 3565
+      - 3566
+      - 3567
+      - 3568
+      - 3569
+      - 3570
     label: Pakhuis met laadluiken en aangebouwde kanonhal
     groep: huizengevels
   stadsburg_brugwachter_met_dakkanon:
@@ -265,11 +265,11 @@ prefabs:
       - 3074
       - 3426
     - - 3076
-      - 3427
-      - 3428
-      - 3429
-      - 3080
-      - 3081
+      - 3557
+      - 3558
+      - 3559
+      - 3560
+      - 3561
     label: Modern brugwachtershuis met observatieramen
     groep: huizengevels
   verre_puntgevel:
@@ -530,7 +530,7 @@ prefabs:
     tiles:
     - - 2509
     - - 2510
-    - - 1130
+    - - 3546
     label: Kadelantaarn I
     groep: kade
   compact_lamp_snow_70:
@@ -538,7 +538,7 @@ prefabs:
     tiles:
     - - 2511
     - - 2510
-    - - 1131
+    - - 3547
     label: Kadelantaarn II
     groep: kade
   stadsburg_kadebeugel:
@@ -570,8 +570,8 @@ prefabs:
   compact_tree_socket_gevelkade:
     description: Boomvoet in de sneeuw, rechtstreeks uit de native pixelbron.
     tiles:
-    - - 2512
-      - 2513
+    - - 3548
+      - 3549
     label: Boomvoet in de sneeuw
     groep: kade
   clean_bg_quay_64:
@@ -588,7 +588,7 @@ prefabs:
     label: Kade aan de overkant
     groep: kade
   red_masonry_32x24:
-    description: Rijk rood metselwerk met zwarte voegen en gebroken grote stenen.
+    description: Donkerrood muurvlak met plaatselijke, verspringende voeggroepen en enkele verlichte steenranden.
     tiles:
     - - 44
       - 45
@@ -605,7 +605,7 @@ prefabs:
     label: Rood metselwerk
     groep: materiaal
   red_masonry_alt_32x24:
-    description: Rijk rood metselwerk met zwarte voegen en gebroken grote stenen.
+    description: Tweede donkerrode muurvariant met verschoven voeggroepen; de bovenste acht pixels blijven als lage kade leesbaar.
     tiles:
     - - 47
       - 56
@@ -921,9 +921,9 @@ prefabs:
     - - 3492
       - 3493
       - 3312
-    - - 3494
-      - 3495
-      - 2323
+    - - 3502
+      - 3503
+      - 3504
     label: Bakkerij
     groep: winkels
   winkel_fietsen:
@@ -944,9 +944,9 @@ prefabs:
     - - 3321
       - 3322
       - 3323
-    - - 3324
-      - 3325
-      - 2340
+    - - 3505
+      - 3506
+      - 3507
     label: Fietsenwinkel
     groep: winkels
   winkel_kruidenier:
@@ -964,9 +964,9 @@ prefabs:
     - - 3496
       - 3497
       - 3498
-    - - 3499
-      - 3500
-      - 3501
+    - - 3508
+      - 3509
+      - 3510
     label: Kruidenier
     groep: winkels
   tankstation:
@@ -1096,8 +1096,8 @@ prefabs:
       - 3475
     - - 3476
       - 3477
-    - - 3153
-      - 2991
+    - - 3511
+      - 3512
     label: Smalle lijstgevel met winkelpui
     groep: huizengevels
   huis_lijstgevel_breed:
@@ -1115,9 +1115,9 @@ prefabs:
     - - 3343
       - 3344
       - 3479
-    - - 3346
-      - 3347
-      - 3348
+    - - 3513
+      - 3514
+      - 3515
     label: Brede lijstgevel met winterrank
     groep: huizengevels
   winkel_cafe:
@@ -1135,9 +1135,9 @@ prefabs:
     - - 3355
       - 3356
       - 3357
-    - - 3313
-      - 3314
-      - 2323
+    - - 3516
+      - 3517
+      - 3504
     label: Café met bovenwoning
     groep: winkels
   steegpoort:
@@ -1147,8 +1147,8 @@ prefabs:
       - 3359
     - - 3360
       - 3361
-    - - 3185
-      - 3186
+    - - 3518
+      - 3519
     label: Poort naar de binnenplaats
     groep: huizengevels
   werf_kelder:
@@ -1160,12 +1160,12 @@ prefabs:
       - 69
       - 66
       - 67
-    - - 2390
-      - 2391
+    - - 3520
+      - 3521
       - 46
-      - 2392
+      - 3522
       - 44
-      - 2393
+      - 3523
     - - 2066
       - 2067
       - 2068
@@ -1192,12 +1192,12 @@ prefabs:
       - null
       - 2395
       - 2396
-      - 2397
+      - 3524
     - - 2398
-      - 2399
-      - 2400
-      - 47
-      - 44
+      - 3525
+      - 3526
+      - 3527
+      - 3528
     - - 2079
       - 2067
       - 2068
@@ -1218,15 +1218,15 @@ prefabs:
       - null
       - null
       - null
-    - - 2082
+    - - 3529
       - 2402
       - 2403
       - null
       - null
-    - - 44
-      - 45
-      - 2085
-      - 2404
+    - - 3530
+      - 3531
+      - 3532
+      - 3533
       - 2405
     - - 2066
       - 2067
