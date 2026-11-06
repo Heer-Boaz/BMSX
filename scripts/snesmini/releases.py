@@ -1,13 +1,11 @@
 """Native release publication and reachability-based collection."""
 
 import argparse
-from contextlib import ExitStack
 import fcntl
 import hashlib
 import json
 from pathlib import Path
 import shutil
-import signal
 import uuid
 
 
@@ -23,25 +21,9 @@ def collect_releases(root: Path, apply: bool) -> dict:
         if release.name in retained:
             kept.append(release.name)
         else:
-            # Exclusive kernel leases reject open/mapped/executing artifacts,
-            # including consumers whose /proc mappings we cannot inspect.
-            # Keep every acquired lease until directory retirement finishes.
-            with ExitStack() as files:
-                for artifact in release.iterdir():
-                    file = files.enter_context(artifact.open("rb"))
-                    # SIGURG is ignored by default; no process-global signal
-                    # handler is needed during the short lease acquisition.
-                    fcntl.fcntl(file, fcntl.F_SETSIG, signal.SIGURG)
-                    try:
-                        fcntl.fcntl(file, fcntl.F_SETLEASE, fcntl.F_WRLCK)
-                    except BlockingIOError:
-                        kept.append(release.name)
-                        break
-                    fcntl.fcntl(file, fcntl.F_SETOWN, 0)
-                else:
-                    removed.append(release.name)
-                    if apply:
-                        shutil.rmtree(release)
+            removed.append(release.name)
+            if apply:
+                shutil.rmtree(release)
     return {"retained": kept, "removed": removed, "applied": apply}
 
 

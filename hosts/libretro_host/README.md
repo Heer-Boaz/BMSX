@@ -40,9 +40,10 @@ npm run build:libretro-host-snesmini:debug
 ```
 
 Debug builds publish to `core/debug` and `host/debug`, never the Release
-`current` links. Publication retains only these selected outputs, native releases
-held open or mapped by running processes, and explicit symlinks under each
-product's `pins/` directory. To retain an installed release, add a named symlink
+`current` links. Publication retains only these selected outputs and explicit
+symlinks under each product's `pins/` directory. The loader owns already loaded
+native code; removing an unreferenced pathname does not unmap a running core.
+To retain a release's files for later loading or debugging, add a named symlink
 there to `../releases/<release-id>` before publishing another build.
 There is no recent-build history. Inspect collection with
 `python3 scripts/snesmini/releases.py collect dist/snesmini/core`; add `--apply`

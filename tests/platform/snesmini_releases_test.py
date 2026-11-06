@@ -78,21 +78,29 @@ class NativeReleaseTests(unittest.TestCase):
         collect_releases(self.root, True)
         self.assertFalse((self.root / "releases" / pinned).exists())
 
-    def test_loaded_core_survives_until_the_process_releases_its_mapping(self):
-        active = self.publish("loaded core")
-        path = self.root / "releases" / active / "core.so"
+    def test_loaded_core_keeps_running_after_unreferenced_pathnames_are_collected(self):
+        stage = Path(tempfile.mkdtemp(dir=self.temp.name))
+        (stage / "acceptance.txt").write_text("loaded core")
+        subprocess.run(["cc", "-shared", "-fPIC", "-x", "c", "-", "-o", str(stage / "core.so")],
+            input="int value(void) { return 37; }", text=True, check=True, capture_output=True)
+        with (self.root / ".publish.lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            publish_release(self.root, stage, "Release")
+        path = (self.root / "current").resolve() / "core.so"
         process = subprocess.Popen([sys.executable, "-c",
-            "import mmap,sys; f=open(sys.argv[1],'rb'); m=mmap.mmap(f.fileno(),0,access=mmap.ACCESS_READ); "
-            "f.close(); print('ready',flush=True); sys.stdin.readline()", str(path)],
+            "import ctypes,sys; library=ctypes.CDLL(sys.argv[1]); "
+            "print(library.value(),flush=True); sys.stdin.readline(); print(library.value(),flush=True)", str(path)],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
         try:
-            self.assertEqual(process.stdout.readline(), "ready\n")
+            self.assertEqual(process.stdout.readline(), "37\n")
             self.publish("new core")
-            self.assertTrue(path.is_file())
+            self.assertFalse(path.exists())
+            output, _ = process.communicate("continue\n", timeout=5)
+            self.assertEqual(process.returncode, 0)
+            self.assertEqual(output, "37\n")
         finally:
-            process.communicate("close\n", timeout=5)
-        collect_releases(self.root, True)
-        self.assertFalse(path.exists())
+            if process.poll() is None:
+                process.communicate("close\n", timeout=5)
 
 
 if __name__ == "__main__":
