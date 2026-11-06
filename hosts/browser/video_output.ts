@@ -13,7 +13,7 @@ const OVERSCAN_VISIBLE_FRACTION = 0.9;
 
 /** Visible player bounds, canvas fitting and independent control-overlay layout. */
 export class BrowserVideoOutput implements VideoOutput {
-	public readonly workspace = new WorkspaceDisplay(0, 0, () => { this.fittingPending = true; });
+	public readonly workspace = new WorkspaceDisplay(0, 0, window.devicePixelRatio, () => { this.fittingPending = true; });
 	public readonly geometry = new DisplayGeometry();
 	private pointerCursor: PointerCursor = 'default';
 	public readonly visibleViewportBounds: RectBounds;
@@ -34,7 +34,7 @@ export class BrowserVideoOutput implements VideoOutput {
 		screenFit: BrowserScreenFit,
 	) {
 		this.selectedScreenFit = screenFit;
-		this.geometry.update(0, 0, 0, 0, canvas.width, canvas.height);
+		this.geometry.update(0, 0, 0, 0, canvas.width, canvas.height, canvas.width, canvas.height);
 		this.visibleViewportBounds = { left: 0, top: 0, right: canvas.width, bottom: canvas.height };
 		this.playerSurface = canvas.ownerDocument.getElementById('player-surface');
 		this.controllerViewport = controlView ? canvas.ownerDocument.getElementById('controller-viewport') : null;
@@ -55,18 +55,18 @@ export class BrowserVideoOutput implements VideoOutput {
 		}
 	}
 
-	public setDisplaySize(width: number, height: number): void {
+	public setDisplaySize(width: number, height: number, viewportWidth: number, viewportHeight: number): void {
 		// Until the frame's final display fitting, the existing clip keeps its
 		// source fractions. Publish it in the new target coordinates now.
-		const widthScale = width / this.geometry.targetWidth;
-		const heightScale = height / this.geometry.targetHeight;
+		const widthScale = viewportWidth / this.geometry.viewportWidth;
+		const heightScale = viewportHeight / this.geometry.viewportHeight;
 		this.visibleViewportBounds.left *= widthScale;
 		this.visibleViewportBounds.right *= widthScale;
 		this.visibleViewportBounds.top *= heightScale;
 		this.visibleViewportBounds.bottom *= heightScale;
-		this.fittingPending = true;
+		if (width !== this.geometry.targetWidth || height !== this.geometry.targetHeight) this.fittingPending = true;
 		const bounds = this.geometry.bounds;
-		this.geometry.update(bounds.left, bounds.top, bounds.width, bounds.height, width, height);
+		this.geometry.update(bounds.left, bounds.top, bounds.width, bounds.height, width, height, viewportWidth, viewportHeight);
 	}
 
 	public measureDisplay(): Readonly<VideoOutputBounds> {
@@ -141,7 +141,7 @@ export class BrowserVideoOutput implements VideoOutput {
 		const height = Math.max(0, (portraitDeckTop === null ? bottom : Math.min(bottom, portraitDeckTop)) - top);
 		write_rect_bounds(this.availableBounds, left, top, left + width, top + height);
 		this.portrait = portraitDeckTop !== null;
-		this.workspace.layout(width, height);
+		this.workspace.layout(width, height, window.devicePixelRatio);
 		this.fitDisplay();
 	}
 
@@ -155,9 +155,9 @@ export class BrowserVideoOutput implements VideoOutput {
 		const overscan = !workspace && this.selectedScreenFit === 'overscan';
 		const visibleFraction = overscan ? OVERSCAN_VISIBLE_FRACTION : 1;
 		const dpr = window.devicePixelRatio;
-		// Quantize the presentation in physical display pixels, not UI CSS
-		// units. Source render targets and touch geometry remain unchanged.
-		const scale = workspace ? this.workspace.pixelsPerUnit : Math.trunc(Math.min(width / renderWidth, height / presentationHeight)
+		// Studio rasterizes at device density, independently of its logical UI
+		// scale. Guest presentation retains its point-sampled, quantized fitting.
+		const scale = workspace ? 1 / this.workspace.devicePixelRatio : Math.trunc(Math.min(width / renderWidth, height / presentationHeight)
 			* dpr * 2 / visibleFraction) / (dpr * 2);
 		const displayWidth = renderWidth * scale;
 		const displayHeight = presentationHeight * scale;
@@ -178,15 +178,16 @@ export class BrowserVideoOutput implements VideoOutput {
 		this.canvas.style.clipPath = overscan
 			? `inset(${clipTop}px ${clipRight}px ${clipBottom}px ${clipLeft}px)`
 			: 'none';
+		const viewportWidth = this.geometry.viewportWidth, viewportHeight = this.geometry.viewportHeight;
 		write_rect_bounds(this.visibleViewportBounds,
-			clipLeft / displayWidth * renderWidth,
-			clipTop / displayHeight * renderHeight,
-			(displayWidth - clipRight) / displayWidth * renderWidth,
-			(displayHeight - clipBottom) / displayHeight * renderHeight);
+			clipLeft / displayWidth * viewportWidth,
+			clipTop / displayHeight * viewportHeight,
+			(displayWidth - clipRight) / displayWidth * viewportWidth,
+			(displayHeight - clipBottom) / displayHeight * viewportHeight);
 		// Publish browser-arranged geometry, not the unquantized CSS request. Input
 		// and native text positioning never measure the DOM independently.
 		const bounds = this.canvas.getBoundingClientRect();
-		this.geometry.update(bounds.left, bounds.top, bounds.width, bounds.height, renderWidth, renderHeight);
+		this.geometry.update(bounds.left, bounds.top, bounds.width, bounds.height, renderWidth, renderHeight, viewportWidth, viewportHeight);
 	}
 
 	public dispose(): void {

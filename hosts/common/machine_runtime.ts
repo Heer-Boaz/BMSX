@@ -38,7 +38,7 @@ export function initializeMachineVideoPresenter(
 		gpuOutput.displayModeWord,
 	);
 	backend.resizePresentationTarget(viewportWidth, viewportHeight);
-	output.setDisplaySize(viewportWidth, viewportHeight);
+	output.setDisplaySize(viewportWidth, viewportHeight, viewportWidth, viewportHeight);
 	const presenter = new VideoPresenter(
 		output,
 		backend,

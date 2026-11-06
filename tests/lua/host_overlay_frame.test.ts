@@ -38,7 +38,7 @@ for (const lane of ['overlay', 'menu'] as const) test(`${lane} commands retain t
 		commandKinds: [Host2DKind.Rect], commandRefs: [{ kind: RectRenderKind.Fill,
 			area: { left: 0, top: 0, right: 4, bottom: 3, z: 0 }, color: 0xffffffff, layer: 0 }], commandCount: 1 };
 	if (lane === 'overlay') queue.publishOverlayFrame(frame); else queue.publishHostMenuFrame(frame);
-	presenter.setFixedRenderTargetSize(8, 6);
+	presenter.setFixedRenderTargetSize(8, 6, 8, 6);
 	presenter.present(runtime.machine.gxGpu.readDeviceOutput(), 0, 0);
 	assert.ok(backend.borrowPresentedPixels().every(value => value === 255), 'a full logical rectangle still covers the complete resized target');
 });

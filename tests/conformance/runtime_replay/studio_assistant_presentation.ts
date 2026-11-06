@@ -136,7 +136,7 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	await press('ArrowUp'); await press('End');
 
 	// Exercise a phone-width logical surface, not CSS scaling of a wide screenshot.
-	presenter.setFixedRenderTargetSize(320, 384);
+	presenter.setFixedRenderTargetSize(320, 384, 320, 384);
 	ide.editor.updateViewport({ width: presenter.viewportSize.x, height: presenter.viewportSize.y });
 	await frame();
 	check(view.footerTop + (view.footer.lines.length - 1) * view.layout.rowHeight + 2 <= view.layout.bottom, 'presentation: footer text is above the global status clip');

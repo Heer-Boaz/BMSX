@@ -20,18 +20,17 @@ export { workbenchPixelsPerUnit } from './ide/workbench/common/display_scale';`,
 		let allocations = 0, draws = 0, layoutReads = 0;
 		const measure = canvas.getBoundingClientRect.bind(canvas);
 		canvas.getBoundingClientRect = () => { layoutReads++; return measure(); };
-		video.workspace.open((availableWidth: number, availableHeight: number) => {
+		video.workspace.open(({ width: availableWidth, height: availableHeight, pixelWidth, pixelHeight }) => {
 			const scale = api.workbenchPixelsPerUnit(availableWidth, 1);
-			video.workspace.pixelsPerUnit = scale;
-			canvas.width = Math.trunc(availableWidth / scale); canvas.height = Math.trunc(availableHeight / scale);
-			video.setDisplaySize(canvas.width, canvas.height); allocations++;
+			canvas.width = pixelWidth; canvas.height = pixelHeight;
+			video.setDisplaySize(pixelWidth, pixelHeight, Math.trunc(availableWidth / scale), Math.trunc(availableHeight / scale)); allocations++;
 		});
 		const context = canvas.getContext('2d')!;
 		let nextSize: [number, number] | undefined;
 		const frames = new api.BrowserFrameLoop(video).start(() => {
 			if (nextSize !== undefined) {
 				[canvas.width, canvas.height] = nextSize; nextSize = undefined;
-				video.setDisplaySize(canvas.width, canvas.height);
+				video.setDisplaySize(canvas.width, canvas.height, canvas.width, canvas.height);
 			}
 			context.fillStyle = '#40a0c0'; context.fillRect(0, 0, canvas.width, canvas.height); draws++;
 		});

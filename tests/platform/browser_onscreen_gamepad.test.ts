@@ -493,7 +493,7 @@ test('native browser contacts reach the real common input and ICU without DOM-ta
 		await page.evaluate(() => {
 			window.dispatchEvent(new Event('focus'));
 			document.getElementById('outside-player')!.focus();
-			(globalThis as any).touchTest.video.setDisplaySize(256, 192);
+			(globalThis as any).touchTest.video.setDisplaySize(256, 192, 256, 192);
 			(globalThis as any).touchTest.video.refreshLayout();
 		});
 		await assertWord(1);
@@ -503,7 +503,7 @@ test('native browser contacts reach the real common input and ICU without DOM-ta
 		await assertWord(0);
 		await touch('touchEnd', []);
 		await page.evaluate(() => {
-			(globalThis as any).touchTest.video.setDisplaySize(320, 240);
+			(globalThis as any).touchTest.video.setDisplaySize(320, 240, 320, 240);
 			(globalThis as any).touchTest.video.refreshLayout();
 		});
 		await touch('touchStart', [points.b]);

@@ -240,7 +240,7 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 				presenter.setScanoutSize(16, 12);
 				presenter.configurePresentation('completed', true);
 			} else {
-				presenter.setFixedRenderTargetSize(WIDTH, HEIGHT);
+				presenter.setFixedRenderTargetSize(WIDTH, HEIGHT, WIDTH, HEIGHT);
 				presenter.configurePresentation('partial', false);
 				renderer.beginFrame();
 				renderer.fillRect(0, 0, WIDTH, HEIGHT, 0, 0xff111111, LAYER_2D_IDE);

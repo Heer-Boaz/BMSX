@@ -58,13 +58,22 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} retains the old workspace
 	assert.deepEqual(result.errors, []); assert.deepEqual(errors, []);
 	assert.equal(result.pending.allocations, result.before.allocations, 'a burst of layout requests allocates no undrawn targets');
 	assert.deepEqual(result.pending.allocated, result.before.allocated);
-	assert.deepEqual(result.pending.backing, [16, 12]);
+	assert.deepEqual(result.pending.backing, [48, 36]);
 	assert.deepEqual(result.pending.bounds, result.before.bounds, 'the published transform belongs to the image still on screen');
 	assert.equal(result.pending.reads, result.before.reads, 'workspace policy changes do not remeasure the host area');
 	assert.deepEqual(result.pending.selected, { x: 24, y: 18 }, 'layout prepares the selected dimensions');
-	assert.equal(result.drawn.allocations, result.before.allocations + 1);
-	assert.deepEqual(result.drawn.allocated, { x: 24, y: 18 });
-	assert.deepEqual(result.drawn.backing, [24, 18]);
+	assert.equal(result.drawn.allocations, result.before.allocations, 'UI scaling reuses the physical buffer');
+	assert.deepEqual(result.drawn.allocated, { x: 48, y: 36 });
+	assert.deepEqual(result.drawn.backing, [48, 36]);
+	assert.deepEqual(result.drawn.logical, [24, 18]);
+	assert.equal(result.drawn.reads, result.before.reads, 'logical-only scale needs no DOM remeasurement');
+	assert.equal(result.densityPending.allocations, result.drawn.allocations);
+	assert.deepEqual(result.densityPending.backing, result.drawn.backing);
+	assert.equal(result.density.allocations, result.drawn.allocations + 1);
+	assert.deepEqual(result.density.backing, [96, 72]);
+	assert.deepEqual(result.density.logical, result.drawn.logical);
+	assert.equal(result.density.bounds.width, 48); assert.equal(result.density.bounds.height, 36);
+	assert.deepEqual(result.history, [16, 12], 'host density and UI scale leave native game capture untouched');
 	assert.deepEqual(result.pixel.slice(0, 3), [0x11, 0x22, 0x33], 'the resized target contains the held image, not the cleared backing buffer');
 	for (const pixels of result.frames) for (let y = 0; y < 12; y++) for (let x = 0; x < 12; x++) {
 		const white = x >= 3 && x < 9 && y >= 4 && y < 8;

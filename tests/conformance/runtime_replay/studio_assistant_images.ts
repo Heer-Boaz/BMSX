@@ -29,7 +29,7 @@ export async function startAssistantImageTest(kind: StudioRendererKind, canvas: 
 			await view.conversation.openConversation(thread); await test.frame();
 		},
 		async narrow() {
-			test.presenter.setFixedRenderTargetSize(260, 320);
+			test.presenter.setFixedRenderTargetSize(260, 320, 260, 320);
 			test.ide.editor.updateViewport({ width: test.presenter.viewportSize.x, height: test.presenter.viewportSize.y });
 			await test.frame();
 		},

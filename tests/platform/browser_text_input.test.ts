@@ -69,7 +69,7 @@ test('native text input stays ordered independently of render/input polling', as
 		};
 		const snapshot = api.createInputControllerSnapshot();
 		const geometry = new api.DisplayGeometry(), bounds = canvas.getBoundingClientRect();
-		geometry.update(bounds.left, bounds.top, bounds.width, bounds.height, canvas.width, canvas.height);
+		geometry.update(bounds.left, bounds.top, bounds.width, bounds.height, canvas.width, canvas.height, canvas.width, canvas.height);
 		const input = new api.BrowserTextInput(canvas, geometry, host);
 		hub.setNativeKeyHandler(input.handleKey);
 		const clipboard = new api.BrowserClipboard();

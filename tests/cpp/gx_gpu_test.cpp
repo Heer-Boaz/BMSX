@@ -3599,7 +3599,7 @@ void testNativePresentationRetainsHistoryAcrossHostResizing() {
 	class Output final : public bmsx::VideoOutput {
 	public:
 		using VideoOutput::VideoOutput;
-		void setDisplaySize(bmsx::i32 w, bmsx::i32 h) override { visibleViewportBounds = bmsx::RectBounds{0, 0, static_cast<bmsx::f32>(w), static_cast<bmsx::f32>(h), 0}; }
+		void setDisplaySize(bmsx::i32, bmsx::i32, bmsx::i32 viewportWidth, bmsx::i32 viewportHeight) override { visibleViewportBounds = bmsx::RectBounds{0, 0, static_cast<bmsx::f32>(viewportWidth), static_cast<bmsx::f32>(viewportHeight), 0}; }
 	} video(4, 3);
 	bmsx::GxGpuCommandBuffer commands(commandBufferDmaHarness.dma);
 	commands.reset();
@@ -3624,7 +3624,7 @@ void testNativePresentationRetainsHistoryAcrossHostResizing() {
 	const auto* source = static_cast<bmsx::SoftwareTexture*>(registry.getStateRef<bmsx::PresentPipelineState>("present").colorTex);
 	require(source->width == 4 && source->height == 3, "history uses native dimensions");
 	require(std::all_of(source->data.begin(), source->data.end(), [](auto pixel) { return pixel == 0xff112233; }), "history contains native scanout");
-	presenter.setFixedRenderTargetSize(8, 6);
+	presenter.setFixedRenderTargetSize(8, 6, 8, 6);
 	frame.pcrtcWords[bmsx::GX_GPU_PCRTC_BGCOLOR_LOW] = 0x00665544;
 	frame.pcrtcScanout.update(frame.pcrtcWords, frame.pcrtcTiming);
 	presenter.configurePresentation(bmsx::VideoPresenter::PresentationMode::Partial, false);

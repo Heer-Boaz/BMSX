@@ -5,22 +5,24 @@ import { workbenchPixelsPerUnit } from '../../ide/workbench/common/display_scale
 
 test('host workspace publishes available area, not game dimensions or UI policy, and retires its recipient', () => {
 	let layouts = 0;
-	const display = new WorkspaceDisplay(0, 0, () => layouts++), sizes: number[][] = [];
-	display.layout(1920, 1080);
+	const display = new WorkspaceDisplay(0, 0, 1, () => layouts++), sizes: number[][] = [];
+	display.layout(1920, 1080, 1);
 	assert.equal(display.active, false);
-	display.open((width, height) => sizes.push([width, height]));
-	assert.deepEqual(sizes, [[1920, 1080]], 'the workbench receives actual host allocation');
-	display.layout(1920, 1080);
+	display.open(({ width, height, pixelWidth, pixelHeight }) => sizes.push([width, height, pixelWidth, pixelHeight]));
+	assert.deepEqual(sizes, [[1920, 1080, 1920, 1080]], 'the workbench receives actual host allocation');
+	display.layout(1920, 1080, 1);
 	assert.equal(sizes.length, 1, 'unchanged host area does not publish another resize');
-	display.layout(2560, 1440);
-	assert.deepEqual(sizes.at(-1), [2560, 1440]);
+	display.layout(1920, 1080, 1.25);
+	assert.deepEqual(sizes.at(-1), [1920, 1080, 2400, 1350], 'monitor density alone reallocates pixels, not UI space');
+	display.layout(2560, 1440, 1);
+	assert.deepEqual(sizes.at(-1), [2560, 1440, 2560, 1440]);
 	display.close();
 	const retiredCount = sizes.length;
-	display.layout(390, 844); display.refresh();
+	display.layout(390, 844, 3); display.refresh();
 	assert.equal(sizes.length, retiredCount, 'the closed editor cannot receive host layout');
 	const compact: number[][] = [];
-	display.open((width, height) => compact.push([width, height]));
-	assert.deepEqual(compact, [[390, 844]]);
+	display.open(({ width, height, pixelWidth, pixelHeight }) => compact.push([width, height, pixelWidth, pixelHeight]));
+	assert.deepEqual(compact, [[390, 844, 1170, 2532]]);
 	assert.ok(layouts > 0);
 });
 

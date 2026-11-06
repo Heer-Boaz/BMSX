@@ -200,8 +200,8 @@ export class HostOnScreenKeyboard {
 			this.layoutKeys();
 		}
 		presenter.hostOverlayQueue.clearHostMenuFrame();
-		this.renderFrame.logicalWidth = presenter.canvasSize.x;
-		this.renderFrame.logicalHeight = presenter.canvasSize.y;
+		this.renderFrame.logicalWidth = presenter.displayedViewportSize.x;
+		this.renderFrame.logicalHeight = presenter.displayedViewportSize.y;
 		presenter.hostOverlayQueue.publishHostMenuFrame(this.renderFrame);
 	}
 	private rebuildPageCommands(): void {

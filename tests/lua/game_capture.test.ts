@@ -32,7 +32,7 @@ test('game capture owns pre-overlay native pixels and honest publication metadat
 	f.publish();
 	const before = [f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes()];
 	const sequence = f.presenter.gameFrameSequence;
-	f.presenter.setFixedRenderTargetSize(8, 6);
+	f.presenter.setFixedRenderTargetSize(8, 6, 8, 6);
 	const renderer = new OverlayRenderer(f.presenter.hostOverlayQueue, { width: 8, height: 6 });
 	renderer.beginFrame(); renderer.fillRect(0, 0, 8, 6, 0, 0xffffffff, LAYER_2D_IDE); renderer.endFrame();
 	f.runtime.machine.gxGpu.readDeviceOutput().pcrtcScanout.backgroundColor = 0x00665544;

@@ -54,8 +54,8 @@ struct Fixture {
 class TestVideoOutput final : public VideoOutput {
 public:
 	using VideoOutput::VideoOutput;
-	void setDisplaySize(i32 width, i32 height) override {
-		visibleViewportBounds = RectBounds{0, 0, static_cast<f32>(width), static_cast<f32>(height), 0};
+	void setDisplaySize(i32, i32, i32 viewportWidth, i32 viewportHeight) override {
+		visibleViewportBounds = RectBounds{0, 0, static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight), 0};
 	}
 };
 

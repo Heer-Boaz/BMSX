@@ -39,6 +39,7 @@ export function mapDisplayPointToViewport(
 export interface VideoOutput {
 	/** Retained half-open visible bounds in the full presentation target's logical pixels. */
 	readonly visibleViewportBounds: Readonly<RectBounds>;
-	setDisplaySize(width: number, height: number): void;
+	/** Publish raster dimensions and the logical composition displayed in them together. */
+	setDisplaySize(width: number, height: number, viewportWidth: number, viewportHeight: number): void;
 	measureDisplay(): VideoOutputBounds;
 }

@@ -12,7 +12,7 @@ public:
 	virtual ~VideoOutput() = default;
 	// Half-open visible bounds in the full presentation target's logical pixels.
 	RectBounds visibleViewportBounds;
-	virtual void setDisplaySize(i32 width, i32 height) = 0;
+	virtual void setDisplaySize(i32 width, i32 height, i32 viewportWidth, i32 viewportHeight) = 0;
 };
 
 } // namespace bmsx

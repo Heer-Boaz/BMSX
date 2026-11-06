@@ -60,9 +60,9 @@ test('target requests retain the displayed image and coalesce allocation at pres
 	const resize = t.mock.method(backend, 'resizePresentationTarget');
 	let publications = 0;
 	output.geometry.onDidChange(() => publications++);
-	presenter.setFixedRenderTargetSize(8, 6);
-	presenter.setFixedRenderTargetSize(12, 9);
-	presenter.setFixedRenderTargetSize(8, 6);
+	presenter.setFixedRenderTargetSize(8, 6, 8, 6);
+	presenter.setFixedRenderTargetSize(12, 9, 12, 9);
+	presenter.setFixedRenderTargetSize(8, 6, 8, 6);
 	assert.equal(resize.mock.callCount(), 0, 'size selection is not permission to clear the currently displayed image');
 	assert.deepEqual(presenter.viewportSize, { x: 8, y: 6 }, 'layout can prepare the next composition');
 	assert.deepEqual(allocated, { x: 4, y: 3 }, 'capture dimensions still describe the actual backing buffer');
@@ -78,8 +78,8 @@ test('target requests retain the displayed image and coalesce allocation at pres
 	assert.equal(backend.borrowPresentedPixels().length, 8 * 6 * 4);
 	assert.equal(publications, 1);
 	assert.equal(presenter.gameFrameSequence, sequence, 'resizing a held image does not commit a game frame');
-	presenter.setFixedRenderTargetSize(12, 9);
-	presenter.setFixedRenderTargetSize(8, 6);
+	presenter.setFixedRenderTargetSize(12, 9, 12, 9);
+	presenter.setFixedRenderTargetSize(8, 6, 8, 6);
 	presenter.present(device, 0, 0);
 	assert.equal(resize.mock.callCount(), 1, 'a request superseded by the current size allocates nothing');
 	assert.equal(publications, 1);
@@ -89,6 +89,44 @@ test('target requests retain the displayed image and coalesce allocation at pres
 	assert.deepEqual(allocated, { x: 4, y: 3 });
 	assert.equal(resize.mock.callCount(), 2);
 	assert.deepEqual(Array.from(backend.borrowPresentedPixels()), pixels);
+});
+
+test('logical UI scaling reuses raster storage and publishes an independent input coordinate frame', async t => {
+	const runtime = createTestRuntime(createTestRuntimeRomPayload());
+	const device = runtime.machine.gxGpu.readDeviceOutput();
+	const { presenter, backend, output, renderer } = createHostOverlayFixture(4, 3);
+	presenter.initialize(new RenderPassLibrary(backend, presenter));
+	presenter.crt_postprocessing_enabled = false;
+	t.after(() => presenter.dispose());
+	presenter.configurePresentation('completed', true); presenter.present(device, 0, 0);
+	const native = await presenter.captureGameFrame(), sequence = presenter.gameFrameSequence;
+	const graphRevision = presenter.deviceQuantizeConfigurationRevision;
+	const resize = t.mock.method(backend, 'resizePresentationTarget');
+	presenter.configurePresentation('completed', false);
+	presenter.setFixedRenderTargetSize(12, 9, 4, 3);
+	renderer.beginFrame(); renderer.fillRect(1, 1, 2, 2, 0, 0xffffffff, LAYER_2D_IDE); renderer.endFrame();
+	presenter.present(device, 0, 0);
+	assert.deepEqual(presenter.canvasSize, { x: 12, y: 9 });
+	assert.deepEqual(presenter.displayedViewportSize, { x: 4, y: 3 });
+	assert.deepEqual(presenter.visibleViewportBounds, { left: 0, top: 0, right: 4, bottom: 3 });
+	const pixels = backend.borrowPresentedPixels();
+	for (let y = 0; y < 9; y++) for (let x = 0; x < 12; x++) {
+		assert.equal(pixels[(y * 12 + x) * 4] === 255, x >= 3 && x < 6 && y >= 3 && y < 6,
+			'logical primitives are rasterized at display density, not rendered into a low-resolution intermediate');
+	}
+	presenter.setFixedRenderTargetSize(12, 9, 6, 4);
+	assert.deepEqual(presenter.displayedViewportSize, { x: 4, y: 3 }, 'pending UI scale does not publish undrawn input geometry');
+	presenter.present(device, 0, 0);
+	assert.equal(resize.mock.callCount(), 1, 'logical scaling never reallocates the physical surface');
+	assert.ok(backend.borrowPresentedPixels().buffer === pixels.buffer);
+	assert.deepEqual(presenter.displayedViewportSize, { x: 6, y: 4 });
+	assert.equal(output.geometry.viewportWidth, 6); assert.equal(output.geometry.targetWidth, 12);
+	const point = { x: 0, y: 0 };
+	assert.equal(presenter.mapDisplayPointToViewport(3, 2, point), true);
+	assert.deepEqual(point, { x: 3, y: 2 }, 'headless client coordinates remain logical, not capture pixels');
+	assert.equal(presenter.deviceQuantizeConfigurationRevision, graphRevision);
+	assert.equal(presenter.gameFrameSequence, sequence);
+	assert.deepEqual(await presenter.captureGameFrame(), native);
 });
 
 test('a host-sized presentation survives restore and returns to the latest scanout, not its entry size', () => {
@@ -102,7 +140,7 @@ test('a host-sized presentation survives restore and returns to the latest scano
 	scanout.outputWidth = 256;
 	scanout.outputHeight = 192;
 	const nativeConfiguration = presenter.deviceQuantizeConfigurationRevision;
-	presenter.setFixedRenderTargetSize(384, 288);
+	presenter.setFixedRenderTargetSize(384, 288, 384, 288);
 	assert.deepEqual(presenter.offscreenCanvasSize, { x: 256, y: 192 });
 	assert.equal(presenter.deviceQuantizeConfigurationRevision, nativeConfiguration, 'host admission retains native graph');
 	presenter.present(runtime.machine.gxGpu.readDeviceOutput(), 0, 0);
@@ -132,10 +170,10 @@ test('a host-sized presentation survives restore and returns to the latest scano
 	assert.equal(backend.framebufferHeight, 240);
 
 	// The mode matters even when entering at exactly the current scanout size.
-	presenter.setFixedRenderTargetSize(320, 240);
+	presenter.setFixedRenderTargetSize(320, 240, 320, 240);
 	presenter.setScanoutSize(256, 192);
 	assert.deepEqual(presenter.viewportSize, { x: 320, y: 240 });
-	presenter.setFixedRenderTargetSize(384, 288);
+	presenter.setFixedRenderTargetSize(384, 288, 384, 288);
 	presentation.reset(presenter, runtime);
 	assert.deepEqual(presenter.viewportSize, { x: 384, y: 288 });
 	presenter.useScanoutRenderTargetSize();
@@ -172,7 +210,7 @@ test('held presentation retains native pixels across host resizing and overlay c
 	const expected = Array.from({ length: 12 }, () => 0xff332211);
 	assert.deepEqual(Array.from(backend.framebufferWords), expected);
 
-	presenter.setFixedRenderTargetSize(8, 6);
+	presenter.setFixedRenderTargetSize(8, 6, 8, 6);
 	scanout.backgroundColor = 0x00665544;
 	presenter.configurePresentation('partial', false);
 	renderer.setViewportSize({ width: 8, height: 6 });
@@ -221,7 +259,7 @@ test('software interlace storage follows native scanout, never the host surface'
 	const state = { width: 4, height: 3 };
 	scanoutGxGpuSoftwareVram(software, state, scanout, 1n, new Uint32Array(12));
 	const fields = software.interlacedPixels;
-	presenter.setFixedRenderTargetSize(8, 6);
+	presenter.setFixedRenderTargetSize(8, 6, 8, 6);
 	assert.equal(software.interlacedPixels, fields);
 	assert.equal(software.interlacedValid, true, 'host resize preserves previous field');
 	state.width = 3;

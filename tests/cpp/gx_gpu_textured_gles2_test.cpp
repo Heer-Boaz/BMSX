@@ -58,7 +58,7 @@ struct TexturedModelFixture {
 class TestVideoOutput final : public VideoOutput {
 public:
 	using VideoOutput::VideoOutput;
-	void setDisplaySize(i32 w, i32 h) override { visibleViewportBounds = RectBounds{0, 0, static_cast<f32>(w), static_cast<f32>(h), 0}; }
+	void setDisplaySize(i32, i32, i32 viewportWidth, i32 viewportHeight) override { visibleViewportBounds = RectBounds{0, 0, static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight), 0}; }
 };
 
 static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, const GxGpuDeviceOutput& output) {

@@ -14,6 +14,7 @@ type Presentation = {
 	style: Rect;
 	clip: string;
 	backing: [number, number];
+	logical: [number, number];
 	frame: Rect;
 	controls: Rect[];
 	revision: number;
@@ -104,6 +105,7 @@ async function openFixture(browser: Browser, dpr: number, viewport: { width: num
 					dpr: devicePixelRatio, selected: video.screenFit, canvas: read.rect(canvas),
 					style: { left: parseFloat(canvas.style.left), top: parseFloat(canvas.style.top), width: parseFloat(canvas.style.width), height: parseFloat(canvas.style.height) },
 					clip: canvas.style.clipPath, backing: [canvas.width, canvas.height],
+					logical: [video.geometry.viewportWidth, video.geometry.viewportHeight],
 					frame: { left, top, width: right - left, height: Math.min(bottom, view?.portraitDeckTop ?? bottom) - top },
 					controls: controls ? ['d-pad-svg', 'a_knop', 'b_knop', 'x_knop', 'y_knop', 'select_knop', 'start_knop', 'ls_knop', 'rs_knop', 'lb_knop', 'rb_knop', 'lt_knop', 'rt_knop'].map(id => read.rect(document.getElementById(id)!)) : [],
 					revision: controls ? model.geometryRevision : 0, model: controls ? model.buttons : 0, portrait: controls && view.portraitDeckTop !== null,
@@ -198,7 +200,7 @@ test('browser video fitting uses physical half steps, bounded selected policy an
 					canvas.width = width;
 					canvas.height = 239;
 					const video = (globalThis as any).videoProbe.video;
-					video.setDisplaySize(width, 239);
+					video.setDisplaySize(width, 239, width, 239);
 					video.setScreenFit('fit');
 					video.refreshLayout();
 				}, width);
@@ -246,7 +248,7 @@ test('short portrait players retain a full-frame quantized picture rather than a
 				for (const width of FRAMEBUFFERS) for (const policy of ['fit', 'overscan'] as const) {
 					await page.evaluate(({ width, policy }) => {
 						const video = (globalThis as any).videoProbe.video;
-						video.setDisplaySize(width, 239);
+						video.setDisplaySize(width, 239, width, 239);
 						video.setScreenFit(policy);
 						video.refreshLayout();
 					}, { width, policy });
@@ -297,7 +299,7 @@ test('explicit Overscan construction preserves the selected picture policy indep
 				const visible = probe.video.visibleViewportBounds;
 				canvas.width = 257;
 				canvas.height = 239;
-				probe.video.setDisplaySize(257, 239);
+				probe.video.setDisplaySize(257, 239, 257, 239);
 				return {
 					before,
 					visible: { left: visible.left, top: visible.top, right: visible.right, bottom: visible.bottom },
@@ -338,7 +340,7 @@ test('portrait overscan uses spare vertical space without cropping source top or
 	for (const width of [256, 257, 321, 320]) {
 		await page.evaluate(width => {
 			const video = (globalThis as any).videoProbe.video;
-			video.setDisplaySize(width, 240);
+			video.setDisplaySize(width, 240, width, 240);
 			video.refreshLayout();
 		}, width);
 		const changed = await measure(page);
@@ -468,11 +470,10 @@ for (const viewport of [{ width: 1920, height: 1080, logicalWidth: 640 }, { widt
 					const canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
 					const probe = (globalThis as any).videoProbe;
 					probe.uiScale = 1;
-					video.workspace.open((availableWidth: number, availableHeight: number) => {
+					video.workspace.open(({ width: availableWidth, height: availableHeight, pixelWidth, pixelHeight }) => {
 						const scale = (globalThis as any).videoFixture.workbenchPixelsPerUnit(availableWidth, probe.uiScale);
-						video.workspace.pixelsPerUnit = scale;
-						canvas.width = Math.trunc(availableWidth / scale); canvas.height = Math.trunc(availableHeight / scale);
-						video.setDisplaySize(canvas.width, canvas.height);
+						canvas.width = pixelWidth; canvas.height = pixelHeight;
+						video.setDisplaySize(pixelWidth, pixelHeight, Math.trunc(availableWidth / scale), Math.trunc(availableHeight / scale));
 					});
 					video.setPointerCursor('col-resize');
 				});
@@ -481,14 +482,16 @@ for (const viewport of [{ width: 1920, height: 1080, logicalWidth: 640 }, { widt
 				assert.equal(workspace.clip, 'none', 'game overscan must not crop editor chrome');
 				assert.ok(Math.abs(workspace.style.width - viewport.width) < 3);
 				assert.ok(Math.abs(workspace.style.height - viewport.height) < 3);
-				assert.equal(workspace.backing[0], viewport.logicalWidth,
+				assert.equal(workspace.logical[0], viewport.logicalWidth,
 					'DPR does not change logical UI size; larger desktop areas add working space');
+				assert.deepEqual(workspace.backing, [viewport.width * dpr, viewport.height * dpr], 'the raster fills the physical display');
 				const cursor = await page.evaluate(() => getComputedStyle(document.getElementById('gamescreen')!).cursor);
 				assert.equal(cursor, 'col-resize', 'the host publishes the shared input owner cursor');
 				await page.evaluate(() => { const probe = (globalThis as any).videoProbe; probe.uiScale = 1.25; probe.video.workspace.refresh(); });
 				await settle(page);
 				const scaled = await measure(page);
-				assert.ok(scaled.backing[0] < workspace.backing[0]);
+				assert.ok(scaled.logical[0] < workspace.logical[0]);
+				assert.deepEqual(scaled.backing, workspace.backing, 'UI scale does not resize the physical buffer');
 				assert.ok(Math.abs(scaled.style.width - viewport.width) < 4);
 				await page.setViewportSize({ width: viewport.width - 80, height: viewport.height - 60 });
 				await settle(page);
@@ -501,7 +504,7 @@ for (const viewport of [{ width: 1920, height: 1080, logicalWidth: 640 }, { widt
 					video.workspace.close(); video.setPointerCursor('default');
 					const canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
 					canvas.width = 320; canvas.height = 240;
-					video.setDisplaySize(320, 240); video.refreshLayout();
+					video.setDisplaySize(320, 240, 320, 240); video.refreshLayout();
 				});
 				const resumed = await measure(page);
 				assert.deepEqual(resumed.style, game.style, 'game aspect, fit policy and target return unchanged');
@@ -517,11 +520,11 @@ test('native text composition follows the published canvas transform even when l
 	await page.evaluate(() => {
 		const api = (globalThis as any).videoFixture, probe = (globalThis as any).videoProbe;
 		const canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
-		probe.video.workspace.open((width: number, height: number) => {
-			const scale = api.workbenchPixelsPerUnit(width, 1);
-			probe.video.workspace.pixelsPerUnit = scale;
-			canvas.width = Math.trunc(width / scale); canvas.height = Math.trunc(height / scale);
-			probe.video.setDisplaySize(canvas.width, canvas.height);
+		probe.uiScale = 1;
+		probe.video.workspace.open(({ width, height, pixelWidth, pixelHeight }) => {
+			const scale = api.workbenchPixelsPerUnit(width, probe.uiScale);
+			canvas.width = pixelWidth; canvas.height = pixelHeight;
+			probe.video.setDisplaySize(pixelWidth, pixelHeight, Math.trunc(width / scale), Math.trunc(height / scale));
 		});
 		const caret = { x: 32, y: 24, width: 1, height: 8 }, edits: string[] = [];
 		let text = '';
@@ -542,15 +545,26 @@ test('native text composition follows the published canvas transform even when l
 		const before = await measure(page);
 		await page.setViewportSize({ width: 400, height: 300 }); await settle(page);
 		const after = await measure(page);
-		assert.deepEqual(after.backing, before.backing, 'this host resize changes only the presentation transform');
+		assert.deepEqual(after.logical, before.logical, 'this compact host resize preserves logical workspace size');
+		assert.deepEqual(after.backing, [800, 600]);
+		assert.notDeepEqual(after.backing, before.backing);
+		await page.evaluate(() => {
+			const probe = (globalThis as any).videoProbe;
+			probe.uiScale = 1.25; probe.video.workspace.refresh();
+		});
+		await settle(page);
+		const scaled = await measure(page);
+		assert.deepEqual(scaled.backing, after.backing, 'UI-only scaling keeps the physical raster allocation');
+		assert.notDeepEqual(scaled.logical, after.logical);
 		const anchor = await page.evaluate(() => {
 			const context = (globalThis as any).nativeTransform;
 			context.input.refresh(); // Ordinary Studio frame refresh cannot depend on a document/caret change.
 			const canvas = document.getElementById('gamescreen') as HTMLCanvasElement, rect = canvas.getBoundingClientRect();
 			const textarea = document.querySelector('textarea')!, box = textarea.getBoundingClientRect(), caret = context.caret;
+			const { viewportWidth, viewportHeight } = (globalThis as any).videoProbe.video.geometry;
 			return { actual: [box.left, box.top, box.height],
-				expected: [rect.left + caret.x * rect.width / canvas.width, rect.top + caret.y * rect.height / canvas.height,
-					caret.height * rect.height / canvas.height], same: context.textarea === textarea,
+				expected: [rect.left + caret.x * rect.width / viewportWidth, rect.top + caret.y * rect.height / viewportHeight,
+					caret.height * rect.height / viewportHeight], same: context.textarea === textarea,
 				focused: document.activeElement === textarea, pending: textarea.value, edits: context.edits };
 		});
 		// This geometry is the IME candidate anchor contract, not a UI screenshot oracle.
@@ -571,12 +585,13 @@ test('native text composition follows the published canvas transform even when l
 			for (let i = 0; i < 10; i++) { context.input.refresh(); probe.video.measureDisplay(); }
 			const actual = measureCanvas(), caret = context.caret, textarea = context.textarea.getBoundingClientRect();
 			const point = { x: 0, y: 0 }, api = (globalThis as any).videoFixture;
-			api.mapDisplayPointToViewport(probe.video.measureDisplay(), canvas.width, canvas.height,
+			const { viewportWidth, viewportHeight } = probe.video.geometry;
+			api.mapDisplayPointToViewport(probe.video.measureDisplay(), viewportWidth, viewportHeight,
 				actual.left + actual.width / 2, actual.top + actual.height / 2, point);
 			canvas.getBoundingClientRect = measureCanvas;
 			return { reads, retained: published === probe.video.measureDisplay(),
-				anchor: [textarea.left, textarea.top], expected: [actual.left + caret.x * actual.width / canvas.width,
-					actual.top + caret.y * actual.height / canvas.height], point, midpoint: { x: canvas.width / 2, y: canvas.height / 2 },
+				anchor: [textarea.left, textarea.top], expected: [actual.left + caret.x * actual.width / viewportWidth,
+					actual.top + caret.y * actual.height / viewportHeight], point, midpoint: { x: Math.trunc(viewportWidth / 2), y: Math.trunc(viewportHeight / 2) },
 				focused: document.activeElement === context.textarea, edits: context.edits };
 		});
 		assert.equal(translated.reads, 1, 'only the output measures canvas geometry; native text and pointer consumers read the retained publication');

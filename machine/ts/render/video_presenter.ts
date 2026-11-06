@@ -23,6 +23,8 @@ export class VideoPresenter {
 	public accessor default_font: BFont;
 	/** Selected logical size for the next composition. */
 	public readonly viewportSize: vec2;
+	/** Logical coordinates of the last published presentation and its visible bounds. */
+	public readonly displayedViewportSize: vec2;
 	public readonly visibleViewportBounds: Readonly<RectBounds>;
 	/** Allocated backing-buffer size; changes only when presenting. */
 	public readonly canvasSize: vec2;
@@ -57,12 +59,15 @@ export class VideoPresenter {
 	private _deviceQuantizeMode = DeviceQuantizeMode.None;
 	private _deviceQuantizeConfigurationRevision = 0;
 	private fixedRenderTargetSize = false;
+	private readonly targetSize: vec2;
 	private committedSequence: number | undefined;
 
 	constructor(private readonly output: VideoOutput, backend: GPUBackend, viewportWidth: number, viewportHeight: number) {
 		this.backend = backend;
 		this.nativeCtx = backend.context;
 		this.viewportSize = { x: viewportWidth, y: viewportHeight };
+		this.targetSize = { x: viewportWidth, y: viewportHeight };
+		this.displayedViewportSize = { x: viewportWidth, y: viewportHeight };
 		this.visibleViewportBounds = output.visibleViewportBounds;
 		this.canvasSize = { x: viewportWidth, y: viewportHeight };
 		this.offscreenCanvasSize = { x: viewportWidth, y: viewportHeight };
@@ -117,6 +122,8 @@ export class VideoPresenter {
 		if (!this.fixedRenderTargetSize) {
 			this.viewportSize.x = width;
 			this.viewportSize.y = height;
+			this.targetSize.x = width;
+			this.targetSize.y = height;
 		}
 		if (this.offscreenCanvasSize.x === width && this.offscreenCanvasSize.y === height) return;
 		this.offscreenCanvasSize.x = width;
@@ -124,23 +131,28 @@ export class VideoPresenter {
 		this.rebuildGraph();
 	}
 
-	public setFixedRenderTargetSize(width: number, height: number): void {
+	/** Select raster allocation independently of the logical host composition. */
+	public setFixedRenderTargetSize(width: number, height: number, viewportWidth: number, viewportHeight: number): void {
 		this.fixedRenderTargetSize = true;
-		this.viewportSize.x = width;
-		this.viewportSize.y = height;
+		this.targetSize.x = width;
+		this.targetSize.y = height;
+		this.viewportSize.x = viewportWidth;
+		this.viewportSize.y = viewportHeight;
 	}
 
 	public useScanoutRenderTargetSize(): void {
 		this.fixedRenderTargetSize = false;
 		this.viewportSize.x = this.offscreenCanvasSize.x;
 		this.viewportSize.y = this.offscreenCanvasSize.y;
+		this.targetSize.x = this.offscreenCanvasSize.x;
+		this.targetSize.y = this.offscreenCanvasSize.y;
 	}
 
 	public mapDisplayPointToViewport(screenX: number, screenY: number, target: vec2): boolean {
 		return mapDisplayPointToViewport(
 			this.output.measureDisplay(),
-			this.canvasSize.x,
-			this.canvasSize.y,
+			this.displayedViewportSize.x,
+			this.displayedViewportSize.y,
 			screenX,
 			screenY,
 			target,
@@ -150,12 +162,17 @@ export class VideoPresenter {
 	public present(output: GxGpuDeviceOutput, timeSeconds: number, deltaSeconds: number): void {
 		// Size requests may arrive between frames. Allocate only when the new
 		// target will actually be drawn, retaining the old image in the meantime.
-		const width = this.viewportSize.x, height = this.viewportSize.y;
-		if (this.canvasSize.x !== width || this.canvasSize.y !== height) {
+		const width = this.targetSize.x, height = this.targetSize.y;
+		const resized = this.canvasSize.x !== width || this.canvasSize.y !== height;
+		if (resized) {
 			this.backend.resizePresentationTarget(width, height);
 			this.canvasSize.x = width;
 			this.canvasSize.y = height;
-			this.output.setDisplaySize(width, height);
+		}
+		if (resized || this.displayedViewportSize.x !== this.viewportSize.x || this.displayedViewportSize.y !== this.viewportSize.y) {
+			this.displayedViewportSize.x = this.viewportSize.x;
+			this.displayedViewportSize.y = this.viewportSize.y;
+			this.output.setDisplaySize(width, height, this.displayedViewportSize.x, this.displayedViewportSize.y);
 		}
 		this.backend.beginFrame();
 		try {

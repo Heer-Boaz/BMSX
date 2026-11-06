@@ -267,7 +267,7 @@ void HostOverlayMenu::clearRenderCommands(VideoPresenter& presenter) {
 
 void HostOverlayMenu::publishRenderCommands(VideoPresenter& presenter) {
 	presenter.hostOverlayQueue.publishHostMenuFrame(HostOverlayFrame{
-		static_cast<i32>(presenter.canvasSize.x), static_cast<i32>(presenter.canvasSize.y),
+		static_cast<i32>(presenter.displayedViewportSize.x), static_cast<i32>(presenter.displayedViewportSize.y),
 		m_commandKinds.data(), m_commandRefs.data(), m_commandCount});
 }
 
@@ -386,7 +386,7 @@ void HostOverlayMenu::queueRenderCommands(Runtime& runtime, VideoPresenter& pres
 			static_cast<i32>(bounds.right) - 6, timelineFont);
 		const auto& commands = timeline.frame();
 		presenter.hostOverlayQueue.publishHostMenuFrame(HostOverlayFrame{
-			static_cast<i32>(presenter.canvasSize.x), static_cast<i32>(presenter.canvasSize.y),
+			static_cast<i32>(presenter.displayedViewportSize.x), static_cast<i32>(presenter.displayedViewportSize.y),
 			commands.commandKinds, commands.commandRefs, commands.commandCount});
 		return;
 	}

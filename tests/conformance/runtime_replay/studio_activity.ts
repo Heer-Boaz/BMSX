@@ -29,7 +29,7 @@ export async function runStudioActivity(test: StudioFixture) {
 
 async function testMainActivity(test: StudioFixture): Promise<void> {
 	const { ide, press, frame, click } = test, editor = ide.editor;
-	test.presenter.setFixedRenderTargetSize(640, 360);
+	test.presenter.setFixedRenderTargetSize(640, 360, 640, 360);
 	editor.updateViewport({ width: test.presenter.viewportSize.x, height: test.presenter.viewportSize.y });
 	const { model: sceneModel, resource, close } = await openSceneFixture(test, 'activity');
 	await close();
@@ -129,7 +129,7 @@ async function testMainActivity(test: StudioFixture): Promise<void> {
 
 	for (let font = 0; font < 2; font++) {
 		for (let theme = 0; theme < 2; theme++) {
-			test.presenter.setFixedRenderTargetSize(180, 240);
+			test.presenter.setFixedRenderTargetSize(180, 240, 180, 240);
 			editor.updateViewport({ width: test.presenter.viewportSize.x, height: test.presenter.viewportSize.y }); await frame();
 			await test.runPaletteCommand('Workspace: Focus Hierarchy');
 			check(primary.hierarchy.scope.contains(inputFocus.admittedTarget!.scope), 'activity: narrow Main still admits its true hierarchy control');
@@ -138,7 +138,7 @@ async function testMainActivity(test: StudioFixture): Promise<void> {
 			check(main.regionLayout.scrollX > previousX, 'activity: native Main horizontal scrolling reaches independent document and Details regions');
 			// This constrained input is smaller than the measured row/activity minima,
 			// independently of whether transient feedback currently owns the status row.
-			test.presenter.setFixedRenderTargetSize(180, 80);
+			test.presenter.setFixedRenderTargetSize(180, 80, 180, 80);
 			editor.updateViewport({ width: test.presenter.viewportSize.x, height: test.presenter.viewportSize.y }); await frame();
 			const vertical = main.regionLayout.verticalScrollTrack, previousY = main.regionLayout.scrollY;
 			await click({ left: vertical.left + 1, right: vertical.left + 1, top: vertical.bottom - 1, bottom: vertical.bottom - 1 });
@@ -195,7 +195,7 @@ async function testMainActivity(test: StudioFixture): Promise<void> {
 			await test.until(() => editor.statusBar.itemsLayout.items.peek(0)?.item === problems.statusItems[0],
 				'activity status: copy feedback yields to the retained selected diagnostic without another status row');
 			await frame(); await test.capture?.(`activity-${editor.fontVariant}-theme-${theme}-narrow-problems`);
-			test.presenter.setFixedRenderTargetSize(640, 360);
+			test.presenter.setFixedRenderTargetSize(640, 360, 640, 360);
 			editor.updateViewport({ width: test.presenter.viewportSize.x, height: test.presenter.viewportSize.y }); await frame();
 			await press('ControlLeft', 'AltLeft', 'KeyT');
 		}
@@ -214,7 +214,7 @@ async function testMainActivity(test: StudioFixture): Promise<void> {
 		check(model.dirty && model.buffer.getText() === authored + append,
 			'activity modal: native typing creates a genuine unsaved document decision');
 		await press('ControlLeft', 'ShiftLeft', 'KeyM'); await press('ControlLeft', 'ShiftLeft', 'KeyM');
-		test.presenter.setFixedRenderTargetSize(300, 80);
+		test.presenter.setFixedRenderTargetSize(300, 80, 300, 80);
 		editor.updateViewport({ width: test.presenter.viewportSize.x, height: test.presenter.viewportSize.y }); await frame();
 		const origin = inputFocus.admittedTarget;
 		check(origin === problems.focusTarget, 'activity modal: the decision is invoked from the real sibling Activity input');
@@ -250,7 +250,7 @@ async function testMainActivity(test: StudioFixture): Promise<void> {
 		check(group.model.activeTab === input && group.model.tabs.includes(input) && group.panes.activePane?.input === input
 			&& model.dirty && model.buffer.getText() === authored + append && main.primary === primary,
 			'activity modal: Cancel retains the exact dirty Source, its live document and the independent Main subject');
-		test.presenter.setFixedRenderTargetSize(640, 360);
+		test.presenter.setFixedRenderTargetSize(640, 360, 640, 360);
 		editor.updateViewport({ width: test.presenter.viewportSize.x, height: test.presenter.viewportSize.y }); await frame();
 		await test.clickTab(input.id); await press('ControlLeft', 'KeyZ');
 		check(model.buffer.getText() === authored && !model.dirty, 'activity modal: explicit document Undo removes only the native pending append');

@@ -17,7 +17,7 @@ static void require(bool condition, const char* message) {
 class TestVideoOutput final : public VideoOutput {
 public:
 	using VideoOutput::VideoOutput;
-	void setDisplaySize(i32 w, i32 h) override { visibleViewportBounds = RectBounds{0, 0, static_cast<f32>(w), static_cast<f32>(h), 0}; }
+	void setDisplaySize(i32, i32, i32 viewportWidth, i32 viewportHeight) override { visibleViewportBounds = RectBounds{0, 0, static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight), 0}; }
 };
 
 static RgbaImage capture(std::unique_ptr<GPUBackend> backend) {
@@ -41,7 +41,7 @@ static RgbaImage capture(std::unique_ptr<GPUBackend> backend) {
 			"native capture must not gamma-encode or include CRT effects");
 	}
 	// Held presentation changes host size and paints an opaque overlay, but not history.
-	presenter.setFixedRenderTargetSize(130, 6);
+	presenter.setFixedRenderTargetSize(130, 6, 130, 6);
 	require(presenter.canvasSize.x == 65 && presenter.canvasSize.y == 3, "size selection does not allocate between presentations");
 	require(video.visibleViewportBounds.right == 65 && video.visibleViewportBounds.bottom == 3, "display geometry still describes the drawn target");
 	RectRenderSubmission fill;

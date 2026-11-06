@@ -33,7 +33,7 @@ export async function exerciseLongAssistantHistory(test: StudioFixture, view: As
 	const anchor = transcript.rowAt(Math.trunc(viewport.scrollTop / view.layout.rowHeight))!.entry;
 	await capture('history-5000-reading');
 	const resizeAt = performance.now();
-	test.presenter.setFixedRenderTargetSize(640, 480);
+	test.presenter.setFixedRenderTargetSize(640, 480, 640, 480);
 	test.ide.editor.updateViewport({ width: test.presenter.viewportSize.x, height: test.presenter.viewportSize.y }); await test.frame();
 	const resizeMs = performance.now() - resizeAt;
 	check(transcript.rowAt(Math.trunc(viewport.scrollTop / view.layout.rowHeight))!.entry === anchor,

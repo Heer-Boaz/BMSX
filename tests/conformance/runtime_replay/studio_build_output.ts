@@ -55,7 +55,7 @@ export async function runStudioBuildOutput(test: StudioFixture) {
 	const before = test.cycles(), media = ide.sources.currentBlua32Media;
 	const builds = new BuildOutputFixture();
 	editor.builds = builds;
-	test.presenter.setFixedRenderTargetSize(640, 360);
+	test.presenter.setFixedRenderTargetSize(640, 360, 640, 360);
 	editor.updateViewport({ width: test.presenter.viewportSize.x, height: test.presenter.viewportSize.y });
 	await frame();
 	await test.runPaletteCommand('Studio: Build Jobs');
@@ -121,7 +121,7 @@ export async function runStudioBuildOutput(test: StudioFixture) {
 			await focusReader(test, peer);
 			await titleAction(test, peer, 'buildLog.output');
 			await frame(); await test.capture?.(`build-output-${editor.fontVariant}-theme-${theme}-two-readers`);
-			test.presenter.setFixedRenderTargetSize(260, 180);
+			test.presenter.setFixedRenderTargetSize(260, 180, 260, 180);
 			editor.updateViewport({ width: test.presenter.viewportSize.x, height: test.presenter.viewportSize.y }); await frame();
 			await titleAction(test, peer, 'buildLog.error');
 			await copyDocument(test, DIAGNOSTIC);
@@ -130,7 +130,7 @@ export async function runStudioBuildOutput(test: StudioFixture) {
 				&& peer.view.output.query === 'unit 7:' && first.view.error!.query === 'diagnostic needle',
 				'build output: constrained font/theme reflow and channel switching retain independent document queries');
 			await frame(); await test.capture?.(`build-output-${editor.fontVariant}-theme-${theme}-constrained-diagnostic`);
-			test.presenter.setFixedRenderTargetSize(80, 180);
+			test.presenter.setFixedRenderTargetSize(80, 180, 80, 180);
 			editor.updateViewport({ width: test.presenter.viewportSize.x, height: test.presenter.viewportSize.y }); await frame();
 			check(peer.view.actions.items.find(item => item.command === 'buildLog.copyAll')!.overflowed,
 				'build output: responsive title actions retain Copy in the real More menu under constrained width');
@@ -139,7 +139,7 @@ export async function runStudioBuildOutput(test: StudioFixture) {
 			await test.clickContextCommand('buildLog.copyAll');
 			check(await test.clipboard.readText() === DIAGNOSTIC,
 				'build output: the native overflow action copies the exact active failure document');
-			test.presenter.setFixedRenderTargetSize(640, 360);
+			test.presenter.setFixedRenderTargetSize(640, 360, 640, 360);
 			editor.updateViewport({ width: test.presenter.viewportSize.x, height: test.presenter.viewportSize.y }); await frame();
 			await runMainActivityPhase(test, first, peer, builds.job, theme);
 			await press('ControlLeft', 'AltLeft', 'KeyT');
@@ -292,7 +292,7 @@ async function runMainActivityPhase(test: StudioFixture, first: BuildLogInput, p
 	if (!compactSnap) {
 		check(!main.activityWindow.model.canPlace('left', main.bounds) && main.activityWindow.model.placement === 'normal',
 			'build output: compact work-area snap admission honors the actual measured activity minimum');
-		test.presenter.setFixedRenderTargetSize(1280, 720);
+		test.presenter.setFixedRenderTargetSize(1280, 720, 1280, 720);
 		editor.updateViewport({ width: test.presenter.viewportSize.x, height: test.presenter.viewportSize.y }); await test.frame();
 	}
 	await test.runPaletteCommand('Window: Snap Window Left');
@@ -301,7 +301,7 @@ async function runMainActivityPhase(test: StudioFixture, first: BuildLogInput, p
 		'build output: the focused activity invokes shared window snap without choosing its semantic document host');
 	await test.runPaletteCommand('Window: Restore Window');
 	if (!compactSnap) {
-		test.presenter.setFixedRenderTargetSize(640, 360);
+		test.presenter.setFixedRenderTargetSize(640, 360, 640, 360);
 		editor.updateViewport({ width: test.presenter.viewportSize.x, height: test.presenter.viewportSize.y }); await test.frame();
 	}
 	const header = main.activityWindow.model.header;

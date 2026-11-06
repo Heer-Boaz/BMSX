@@ -150,9 +150,9 @@ export class BrowserTextInput {
 		this.caretWidth = caret.width;
 		this.caretHeight = caret.height;
 		const geometry = this.geometry, rect = geometry.bounds;
-		const x = rect.left + caret.x * rect.width / geometry.targetWidth;
-		const y = rect.top + caret.y * rect.height / geometry.targetHeight;
-		const height = caret.height * rect.height / geometry.targetHeight;
+		const x = rect.left + caret.x * rect.width / geometry.viewportWidth;
+		const y = rect.top + caret.y * rect.height / geometry.viewportHeight;
+		const height = caret.height * rect.height / geometry.viewportHeight;
 		const style = this.textarea!.style;
 		if (x !== this.left) { this.left = x; style.left = `${x}px`; }
 		if (y !== this.top) { this.top = y; style.top = `${y}px`; }

@@ -49,7 +49,7 @@ function keyboardFixture() {
 
 test('keyboard frames describe their arranged coordinates, not a pending presentation allocation', t => {
 	const f = keyboardFixture(); t.after(() => f.input.dispose());
-	f.presenter.setFixedRenderTargetSize(512, 384);
+	f.presenter.setFixedRenderTargetSize(512, 384, 512, 384);
 	const frame = f.frame();
 	assert.deepEqual([frame.logicalWidth, frame.logicalHeight], [256, 192]);
 	assertVisible(frame, f.presenter.visibleViewportBounds);
@@ -64,7 +64,7 @@ test('video presenter retains its producer visible rectangle without changing fu
 	assert.equal(presenter.mapDisplayPointToViewport(128, 96, point), true);
 	assert.deepEqual(point, { x: 128, y: 96 });
 	assert.deepEqual(presenter.viewportSize, { x: 256, y: 192 });
-	output.setDisplaySize(320, 240);
+	output.setDisplaySize(320, 240, 320, 240);
 	assert.equal(presenter.visibleViewportBounds, bounds);
 	assert.deepEqual(bounds, { left: 0, top: 0, right: 320, bottom: 240 });
 });

@@ -83,7 +83,7 @@ test('the composed keyboard owner forwards simultaneous controller commands and 
 	const queue = new HostOverlayQueue();
 	const presenter = {
 		viewportSize: { x: 256, y: 212 },
-		canvasSize: { x: 256, y: 212 },
+		displayedViewportSize: { x: 256, y: 212 }, canvasSize: { x: 256, y: 212 },
 		visibleViewportBounds: { left: 0, top: 0, right: 256, bottom: 212 },
 		default_font: { lineHeight: 8, measure: (text: string) => text.length * 6 },
 		hostOverlayQueue: queue,
@@ -241,7 +241,7 @@ for (const bitmap of [true, false]) {
 				vibrationInitialization: null, supportsVibration: false, setVibration() {} });
 		}
 		const queue = new HostOverlayQueue();
-		const presenter = { viewportSize: { x: 256, y: 212 }, canvasSize: { x: 256, y: 212 }, visibleViewportBounds: { left: 0, top: 0, right: 256, bottom: 212 },
+		const presenter = { viewportSize: { x: 256, y: 212 }, displayedViewportSize: { x: 256, y: 212 }, canvasSize: { x: 256, y: 212 }, visibleViewportBounds: { left: 0, top: 0, right: 256, bottom: 212 },
 			default_font: { lineHeight: 8, measure: (text: string) => text.length * 6 }, hostOverlayQueue: queue,
 			mapDisplayPointToViewport(x: number, y: number, point: { x: number; y: number }) { point.x = x; point.y = y; return true; },
 		} as VideoPresenter;
@@ -335,7 +335,7 @@ for (const bitmap of [true, false]) {
 test('bitmap pointer interaction owns exact keys, real modifier holds and pending dock actions through physical UP', t => {
 	const f = fixture(); f.keyboard.close();
 	const queue = new HostOverlayQueue();
-	const presenter = { viewportSize: { x: 256, y: 212 }, canvasSize: { x: 256, y: 212 }, visibleViewportBounds: { left: 0, top: 0, right: 256, bottom: 212 },
+	const presenter = { viewportSize: { x: 256, y: 212 }, displayedViewportSize: { x: 256, y: 212 }, canvasSize: { x: 256, y: 212 }, visibleViewportBounds: { left: 0, top: 0, right: 256, bottom: 212 },
 		default_font: { lineHeight: 8, measure: (text: string) => text.length * 6 }, hostOverlayQueue: queue,
 		mapDisplayPointToViewport(x: number, y: number, point: { x: number; y: number }) { point.x = x; point.y = y; return true; },
 	} as VideoPresenter;

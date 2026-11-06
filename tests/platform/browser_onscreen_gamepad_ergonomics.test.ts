@@ -350,7 +350,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 				style.width = `${player.width}px`;
 				style.height = `${player.height}px`;
 				style.padding = insets.map(value => `${value}px`).join(' ');
-				(globalThis as any).ergonomicsProbe.video.setDisplaySize(320, 240);
+				(globalThis as any).ergonomicsProbe.video.setDisplaySize(320, 240, 320, 240);
 				(globalThis as any).ergonomicsProbe.video.refreshLayout();
 				(globalThis as any).ergonomicsProbe.background('dark');
 			}, { insets: [...profile.insets], player });
@@ -643,7 +643,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			evidence.push({ profile: profile.name, safe, geometry: resting, minimumControlGap: Math.min(...gaps), secondaryOffsets });
 			for (const framebufferWidth of [256, 321, 257, 320]) {
 				await page.evaluate(width => {
-					(globalThis as any).ergonomicsProbe.video.setDisplaySize(width, 240);
+					(globalThis as any).ergonomicsProbe.video.setDisplaySize(width, 240, width, 240);
 					(globalThis as any).ergonomicsProbe.video.refreshLayout();
 				}, framebufferWidth);
 				const changed = await measure();
@@ -785,7 +785,7 @@ export { createInputControllerSnapshot } from './machine/ts/machine/devices/inpu
 			style.width = '844px';
 			style.height = '390px';
 			style.padding = '0px 47px 21px 47px';
-			(globalThis as any).ergonomicsProbe.video.setDisplaySize(320, 240);
+			(globalThis as any).ergonomicsProbe.video.setDisplaySize(320, 240, 320, 240);
 			(globalThis as any).ergonomicsProbe.video.refreshLayout();
 		});
 		await settle();

@@ -574,8 +574,8 @@ export class HostOverlayMenu {
 	}
 
 	private publishRenderCommands(): void {
-		this.renderFrame.logicalWidth = this.presenter.canvasSize.x;
-		this.renderFrame.logicalHeight = this.presenter.canvasSize.y;
+		this.renderFrame.logicalWidth = this.presenter.displayedViewportSize.x;
+		this.renderFrame.logicalHeight = this.presenter.displayedViewportSize.y;
 		this.renderFrame.commandKinds = this.commandKinds;
 		this.renderFrame.commandRefs = this.commandRefs;
 		this.renderFrame.commandCount = this.commandCount;
@@ -615,8 +615,8 @@ export class HostOverlayMenu {
 			this.timeline.update(state, bounds.left + 6, bounds.bottom - HostRewindTimeline.height(this.timelineFont) - 6,
 				bounds.right - 6, this.timelineFont);
 			const frame = this.renderFrame, commands = this.timeline.frame;
-			frame.logicalWidth = this.presenter.canvasSize.x;
-			frame.logicalHeight = this.presenter.canvasSize.y;
+			frame.logicalWidth = this.presenter.displayedViewportSize.x;
+			frame.logicalHeight = this.presenter.displayedViewportSize.y;
 			frame.commandKinds = commands.commandKinds; frame.commandRefs = commands.commandRefs; frame.commandCount = commands.commandCount;
 			this.presenter.hostOverlayQueue.publishHostMenuFrame(frame);
 			return;

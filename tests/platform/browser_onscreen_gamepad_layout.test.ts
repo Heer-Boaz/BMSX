@@ -51,7 +51,7 @@ export { BrowserHostClock } from './hosts/browser/timing';`, resolveDir: process
 	assert.equal(nemesis[0].left, (852 - 480) / 2, 'landscape presentation remains horizontally centred');
 	assert.equal(nemesis[0].top, (393 - 360) / 2, 'landscape presentation remains vertically centred');
 	await page.evaluate(() => {
-		(globalThis as any).layoutProbe.video.setDisplaySize(256, 192);
+		(globalThis as any).layoutProbe.video.setDisplaySize(256, 192, 256, 192);
 		(globalThis as any).layoutProbe.video.refreshLayout();
 	});
 	const pietsona = await measure();
@@ -62,7 +62,7 @@ export { BrowserHostClock } from './hosts/browser/timing';`, resolveDir: process
 	assert.deepEqual(pietsona.slice(1), nemesis.slice(1), 'control geometry is not derived from ROM framebuffer size');
 	for (const [renderWidth, expectedWidth, expectedHeight] of [[321, 481.5, 361.125], [257, 514, 385.5]]) {
 		await page.evaluate(width => {
-			(globalThis as any).layoutProbe.video.setDisplaySize(width, 240);
+			(globalThis as any).layoutProbe.video.setDisplaySize(width, 240, width, 240);
 			(globalThis as any).layoutProbe.video.refreshLayout();
 		}, renderWidth);
 		const odd = await measure();
@@ -76,7 +76,7 @@ export { BrowserHostClock } from './hosts/browser/timing';`, resolveDir: process
 	]) {
 		await page.setViewportSize({ width, height });
 		await page.evaluate(() => {
-			(globalThis as any).layoutProbe.video.setDisplaySize(320, 240);
+			(globalThis as any).layoutProbe.video.setDisplaySize(320, 240, 320, 240);
 			(globalThis as any).layoutProbe.video.refreshLayout();
 		});
 		const bounds = await measure();
@@ -89,7 +89,7 @@ export { BrowserHostClock } from './hosts/browser/timing';`, resolveDir: process
 	}
 
 	await page.evaluate(() => {
-		(globalThis as any).layoutProbe.video.setDisplaySize(321, 240);
+		(globalThis as any).layoutProbe.video.setDisplaySize(321, 240, 321, 240);
 		(globalThis as any).layoutProbe.video.refreshLayout();
 	});
 	const halfInteger = await measure();
@@ -98,7 +98,7 @@ export { BrowserHostClock } from './hosts/browser/timing';`, resolveDir: process
 	await page.setViewportSize({ width: 852, height: 393 });
 	await page.evaluate(() => {
 		const probe = (globalThis as any).layoutProbe;
-		probe.video.setDisplaySize(320, 240);
+		probe.video.setDisplaySize(320, 240, 320, 240);
 		probe.video.refreshLayout();
 		const a = document.getElementById('a_knop')!.getBoundingClientRect();
 		probe.pad.beginContact(1, a.left + a.width / 2, a.top + a.height / 2, 14, 14, true);
@@ -150,7 +150,7 @@ export { BrowserHostClock } from './hosts/browser/timing';`, resolveDir: process
 		for (const renderWidth of [256, 257, 320, 321]) {
 			await page.evaluate(width => {
 				const probe = (globalThis as any).layoutProbe;
-				probe.video.setDisplaySize(width, 240);
+				probe.video.setDisplaySize(width, 240, width, 240);
 				probe.video.refreshLayout();
 			}, renderWidth);
 			const { canvas, deckTop, controlTops } = await page.evaluate(() => (globalThis as any).layoutProbe.presentation());

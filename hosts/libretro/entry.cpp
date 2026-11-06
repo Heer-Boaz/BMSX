@@ -1310,7 +1310,7 @@ void retro_init(void) {
 			throw std::runtime_error("Unsupported libretro backend.");
 	}
 	backend->resizePresentationTarget(viewportWidth, viewportHeight);
-	g_video_output->setDisplaySize(viewportWidth, viewportHeight);
+	g_video_output->setDisplaySize(viewportWidth, viewportHeight, viewportWidth, viewportHeight);
 	g_video_presenter = std::make_unique<bmsx::VideoPresenter>(
 		*g_video_output,
 		std::move(backend),
@@ -1645,8 +1645,8 @@ void retro_run(void) {
 	const bool hardware_frame = isHardwareBackendActive();
 	const bmsx::f64 deltaTime = g_frame_time_sec;
 	g_input->poll(
-		static_cast<bmsx::i32>(g_video_presenter->canvasSize.x),
-		static_cast<bmsx::i32>(g_video_presenter->canvasSize.y),
+		static_cast<bmsx::i32>(g_video_presenter->displayedViewportSize.x),
+		static_cast<bmsx::i32>(g_video_presenter->displayedViewportSize.y),
 		std::chrono::duration<bmsx::f64, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count());
 	bmsx::Runtime& runtime = g_content->runtime;
 	bmsx::LibretroFrameResult frameResult = bmsx::LibretroFrameResult::NotPresented;

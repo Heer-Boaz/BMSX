@@ -117,6 +117,7 @@ import type { VideoPresenter } from '../machine/ts/render/video_presenter';
 import { runtimeSourcesSupportIde, type RuntimeSourceState } from './runtime/sources';
 import { blua32ToolingImageForDomain } from '../toolchain/ts/rompack/blua32_media';
 import type { WorkbenchDisplay, Viewport } from './common/viewport';
+import type { WorkspaceAllocation } from '../hosts/common/workspace_display';
 import { api } from './runtime/overlay_api';
 import * as constants from './common/constants';
 import type { FaultSnapshot, RuntimeErrorDetails, RuntimeFaultState } from './runtime/fault_state';
@@ -1220,13 +1221,12 @@ export class RuntimeCartEditor implements CartEditor {
 		this.crtPostprocessingEnabledBeforeEditor = null;
 	}
 
-	private readonly resizeWorkspace = (availableWidth: number, availableHeight: number): void => {
+	private readonly resizeWorkspace = ({ width: availableWidth, height: availableHeight, pixelWidth, pixelHeight }: Readonly<WorkspaceAllocation>): void => {
 		// Minimized/hidden surfaces allocate no render target. Their next host layout resumes it.
 		if (availableWidth <= 0 || availableHeight <= 0) return;
 		const scale = workbenchPixelsPerUnit(availableWidth, this.preferences.uiScale);
-		this.display.workspace.pixelsPerUnit = scale;
 		const width = Math.trunc(availableWidth / scale), height = Math.trunc(availableHeight / scale);
-		this.presenter.setFixedRenderTargetSize(width, height);
+		this.presenter.setFixedRenderTargetSize(pixelWidth, pixelHeight, width, height);
 		if (width === editorViewState.viewportWidth && height === editorViewState.viewportHeight) return;
 		this.updateViewport({ width, height });
 	};

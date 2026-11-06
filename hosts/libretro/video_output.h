@@ -8,7 +8,7 @@ namespace bmsx {
 class LibretroVideoOutput final : public VideoOutput {
 public:
 	explicit LibretroVideoOutput(retro_system_av_info& avInfo);
-	void setDisplaySize(i32 width, i32 height) override;
+	void setDisplaySize(i32 width, i32 height, i32 viewportWidth, i32 viewportHeight) override;
 
 private:
 	retro_system_av_info& m_av_info;

@@ -57,12 +57,13 @@ public:
 	// Viewport and canvas sizes
 	// ─────────────────────────────────────────────────────────────────────────
 	Vec2 viewportSize;       // Selected logical size for the next composition.
+	Vec2 displayedViewportSize; // Logical coordinates of the published presentation.
 	const RectBounds& visibleViewportBounds;
 	Vec2 canvasSize;         // Allocated backing-buffer size; changes only when presenting.
 	Vec2 offscreenCanvasSize;// Native PCRTC source size, independent of the host surface.
 
 	void setScanoutSize(i32 width, i32 height);
-	void setFixedRenderTargetSize(i32 width, i32 height);
+	void setFixedRenderTargetSize(i32 width, i32 height, i32 viewportWidth, i32 viewportHeight);
 	void useScanoutRenderTargetSize();
 
 	// ─────────────────────────────────────────────────────────────────────────
@@ -139,6 +140,7 @@ private:
 	DeviceQuantizeMode m_deviceQuantizeMode = DeviceQuantizeMode::None;
 	u64 m_deviceQuantizeConfigurationRevision = 0u;
 	bool fixedRenderTargetSize = false;
+	Vec2 m_targetSize;
 
 	// Frame timing
 	u32 m_renderFrameIndex = 0u;

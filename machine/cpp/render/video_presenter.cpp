@@ -18,11 +18,13 @@ namespace bmsx {
 
 VideoPresenter::VideoPresenter(VideoOutput& output, std::unique_ptr<GPUBackend> backend, i32 viewportWidth, i32 viewportHeight)
 	: viewportSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
+	, displayedViewportSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
 	, visibleViewportBounds(output.visibleViewportBounds)
 	, canvasSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
 	, offscreenCanvasSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
 	, m_output(output)
 	, m_backend(std::move(backend))
+	, m_targetSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
 {
 }
 
@@ -33,20 +35,21 @@ VideoPresenter::~VideoPresenter() {
 }
 
 void VideoPresenter::setScanoutSize(i32 width, i32 height) {
-	if (!fixedRenderTargetSize) viewportSize = {static_cast<f32>(width), static_cast<f32>(height)};
+	if (!fixedRenderTargetSize) m_targetSize = viewportSize = {static_cast<f32>(width), static_cast<f32>(height)};
 	if (offscreenCanvasSize.x == static_cast<f32>(width) && offscreenCanvasSize.y == static_cast<f32>(height)) return;
 	offscreenCanvasSize = {static_cast<f32>(width), static_cast<f32>(height)};
 	rebuildGraph();
 }
 
-void VideoPresenter::setFixedRenderTargetSize(i32 width, i32 height) {
+void VideoPresenter::setFixedRenderTargetSize(i32 width, i32 height, i32 viewportWidth, i32 viewportHeight) {
 	fixedRenderTargetSize = true;
-	viewportSize = {static_cast<f32>(width), static_cast<f32>(height)};
+	m_targetSize = {static_cast<f32>(width), static_cast<f32>(height)};
+	viewportSize = {static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)};
 }
 
 void VideoPresenter::useScanoutRenderTargetSize() {
 	fixedRenderTargetSize = false;
-	viewportSize = offscreenCanvasSize;
+	m_targetSize = viewportSize = offscreenCanvasSize;
 }
 
 void VideoPresenter::clearTextures() {
@@ -106,11 +109,15 @@ RgbaImage VideoPresenter::captureGameFrame() {
 void VideoPresenter::present(const GxGpuDeviceOutput& output, f64 timeSeconds, f64 deltaSeconds) {
 	// Size requests may arrive between frames. Allocate only when the new
 	// target will actually be drawn, retaining the old image in the meantime.
-	if (canvasSize.x != viewportSize.x || canvasSize.y != viewportSize.y) {
-		const i32 width = static_cast<i32>(viewportSize.x), height = static_cast<i32>(viewportSize.y);
+	const i32 width = static_cast<i32>(m_targetSize.x), height = static_cast<i32>(m_targetSize.y);
+	const bool resized = canvasSize.x != m_targetSize.x || canvasSize.y != m_targetSize.y;
+	if (resized) {
 		m_backend->resizePresentationTarget(width, height);
-		canvasSize = viewportSize;
-		m_output.setDisplaySize(width, height);
+		canvasSize = m_targetSize;
+	}
+	if (resized || displayedViewportSize.x != viewportSize.x || displayedViewportSize.y != viewportSize.y) {
+		displayedViewportSize = viewportSize;
+		m_output.setDisplaySize(width, height, static_cast<i32>(viewportSize.x), static_cast<i32>(viewportSize.y));
 	}
 	m_backend->beginFrame();
 

@@ -1,31 +1,40 @@
-/** Host work-area allocation in CSS units, independent of the video target.
- * The active workbench chooses logical dimensions and pixels per unit; the host
- * only publishes available space and fits the resulting image at that scale. */
+export type WorkspaceAllocation = {
+	width: number; height: number;
+	pixelWidth: number; pixelHeight: number;
+};
+
+/** Host work area in CSS units and device pixels. UI scale belongs to the
+ * workbench; changing it never changes the physical allocation. */
 export class WorkspaceDisplay {
-	private resize: ((width: number, height: number) => void) | undefined;
-	public pixelsPerUnit = 1;
+	private resize: ((allocation: Readonly<WorkspaceAllocation>) => void) | undefined;
+	private readonly allocation: WorkspaceAllocation;
 
-	public constructor(private availableWidth: number, private availableHeight: number,
-		private readonly invalidateLayout: () => void) {}
+	public constructor(width: number, height: number, private pixelRatio: number,
+		private readonly invalidateLayout: () => void) {
+		this.allocation = { width, height, pixelWidth: Math.round(width * pixelRatio), pixelHeight: Math.round(height * pixelRatio) };
+	}
 	public get active(): boolean { return this.resize !== undefined; }
+	public get devicePixelRatio(): number { return this.pixelRatio; }
 
-	public open(resize: (width: number, height: number) => void): void {
+	public open(resize: (allocation: Readonly<WorkspaceAllocation>) => void): void {
 		this.resize = resize;
 		this.refresh();
+		this.invalidateLayout();
 	}
 	public close(): void {
 		this.resize = undefined;
 		this.invalidateLayout();
 	}
-	/** A workbench preference change reallocates within the current host work area. */
+	/** Recompute logical layout within the same host allocation. */
 	public refresh(): void {
-		this.resize?.(this.availableWidth, this.availableHeight);
-		this.invalidateLayout();
+		this.resize?.(this.allocation);
 	}
-	public layout(width: number, height: number): void {
-		if (width === this.availableWidth && height === this.availableHeight) return;
-		this.availableWidth = width;
-		this.availableHeight = height;
-		this.resize?.(width, height);
+	public layout(width: number, height: number, pixelRatio: number): void {
+		const allocation = this.allocation;
+		if (width === allocation.width && height === allocation.height && pixelRatio === this.pixelRatio) return;
+		allocation.width = width; allocation.height = height;
+		allocation.pixelWidth = Math.round(width * pixelRatio); allocation.pixelHeight = Math.round(height * pixelRatio);
+		this.pixelRatio = pixelRatio;
+		this.resize?.(allocation);
 	}
 }

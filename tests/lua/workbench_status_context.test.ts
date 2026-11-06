@@ -42,7 +42,7 @@ function assertStatusProjection(t: TestContext, f: Fixture, expected: WorkbenchS
 function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	f.editor.setFontVariant(variant); editorFeedbackState.message.visible = false;
-	f.host.presenter.setFixedRenderTargetSize(800, 320);
+	f.host.presenter.setFixedRenderTargetSize(800, 320, 800, 320);
 	f.editor.resourcePanel.show();
 	f.editor.mainWorkspace.setActivityVisible(true); f.update();
 	f.editor.problems.setDiagnostics([{ model: f.firstInput.workingCopy, version: f.firstInput.workingCopy.version,

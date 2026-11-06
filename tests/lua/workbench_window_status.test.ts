@@ -17,7 +17,7 @@ function createStatusFixture(t: TestContext): Fixture {
 	const f = createActualSourcePanes(t), viewport = f.ide.overlayRenderer.viewportSize;
 	// Source composition borrows a small machine presenter; status painting needs
 	// its real target to include the complete configured workbench viewport.
-	f.host.presenter.setFixedRenderTargetSize(viewport.width, viewport.height);
+	f.host.presenter.setFixedRenderTargetSize(viewport.width, viewport.height, viewport.width, viewport.height);
 	return f;
 }
 
@@ -186,7 +186,7 @@ test('the real status control clips both paint and pointer admission to its trun
 	f.ide.fault.hostFrameFailure = 'fixture host diagnostic';
 	const faultEnd = getWorkbenchStatusLayout(false, true, requestedWidth).hostFault.right;
 	const truncatedWidth = faultEnd + Math.trunc(requestedWidth / 2);
-	f.host.presenter.setFixedRenderTargetSize(truncatedWidth, 320);
+	f.host.presenter.setFixedRenderTargetSize(truncatedWidth, 320, truncatedWidth, 320);
 	f.ide.overlayRenderer.setViewportSize({ width: truncatedWidth, height: 320 });
 	f.editor.updateViewport({ width: truncatedWidth, height: 320 }); f.update();
 	const clip = button.surface.getClip(), bounds = button.surface.getBounds();

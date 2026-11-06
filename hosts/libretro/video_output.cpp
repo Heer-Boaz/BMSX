@@ -9,8 +9,8 @@ LibretroVideoOutput::LibretroVideoOutput(retro_system_av_info& avInfo)
 	, m_av_info(avInfo) {
 }
 
-void LibretroVideoOutput::setDisplaySize(i32 width, i32 height) {
-	visibleViewportBounds = RectBounds{0.0f, 0.0f, static_cast<f32>(width), static_cast<f32>(height), 0.0f};
+void LibretroVideoOutput::setDisplaySize(i32 width, i32 height, i32 viewportWidth, i32 viewportHeight) {
+	visibleViewportBounds = RectBounds{0.0f, 0.0f, static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight), 0.0f};
 	auto& geometry = m_av_info.geometry;
 	geometry.base_width = static_cast<unsigned>(width);
 	geometry.base_height = static_cast<unsigned>(height);

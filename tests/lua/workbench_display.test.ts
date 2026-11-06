@@ -18,7 +18,7 @@ test('constrained workspace allocation settles without republishing unchanged su
 		part.prepareLayout();
 		const width = part.minimumClientWidth, height = part.minimumClientHeight;
 		for (const availableHeight of [120, 1080, 120]) {
-			f.display.workspace.layout(1152, availableHeight);
+			f.display.workspace.layout(1152, availableHeight, 1);
 			f.editor.update(0);
 			const layout = f.editor.mainWorkspace.regionLayout;
 			assert.equal(layout.contentHeight > layout.bounds.bottom - layout.bounds.top, availableHeight === 120,
@@ -49,9 +49,12 @@ test('Studio reallocates its own workspace, retaining documents and restoring th
 	const resize = t.mock.method(f.backend, 'resizePresentationTarget');
 	f.editor.deactivate();
 	const game = [f.presenter.viewportSize.x, f.presenter.viewportSize.y];
-	f.display.workspace.layout(1920, 1080);
+	f.display.workspace.layout(1920, 1080, 1);
 	f.editor.activate();
 	assert.deepEqual([f.presenter.viewportSize.x, f.presenter.viewportSize.y], [640, 360]);
+	await f.frame();
+	assert.deepEqual(f.presenter.canvasSize, { x: 1920, y: 1080 });
+	const raster = f.backend.borrowPresentedPixels().buffer, allocations = resize.mock.callCount();
 	const input = f.editor.editorParts.activeGroup.model.activeTab;
 	const media = f.sources.currentBlua32Media, cycles = f.runtime.machine.scheduler.nowCycles;
 	f.editor.preferences.uiScale = 1.25;
@@ -59,13 +62,20 @@ test('Studio reallocates its own workspace, retaining documents and restoring th
 	assert.ok(f.editor.editorParts.activeGroup.model.activeTab === input);
 	assert.ok(f.sources.currentBlua32Media === media);
 	assert.equal(f.runtime.machine.scheduler.nowCycles, cycles, 'UI scaling neither runs nor reinitializes the guest');
+	await f.frame();
+	assert.equal(resize.mock.callCount(), allocations, 'UI scale changes logical layout, not the backing buffer');
+	assert.ok(f.backend.borrowPresentedPixels().buffer === raster);
+	f.display.workspace.layout(1920, 1080, 1.25);
+	await f.frame();
+	assert.deepEqual(f.presenter.canvasSize, { x: 2400, y: 1350 });
+	assert.deepEqual(f.presenter.viewportSize, { x: 512, y: 288 }, 'DPR changes density, not layout');
 	const beforeHidden = resize.mock.callCount();
-	f.display.workspace.layout(0, 0);
-	f.display.workspace.layout(1920, 1080);
+	f.display.workspace.layout(0, 0, 1);
+	f.display.workspace.layout(1920, 1080, 1.25);
 	assert.equal(resize.mock.callCount(), beforeHidden, 'hidden areas do not allocate, and restoring unchanged dimensions reuses the target');
-	f.display.workspace.layout(1920, 400);
+	f.display.workspace.layout(1920, 400, 1);
 	assert.equal(f.presenter.viewportSize.x, 512, 'shorter windows do not shrink UI scale to retain a fixed row count');
-	f.display.workspace.layout(1920, 1080);
+	f.display.workspace.layout(1920, 1080, 1);
 	await f.frame();
 	f.display.setPointerCursor('col-resize');
 	f.editor.deactivate();
@@ -122,13 +132,14 @@ for (const change of ['display translation', 'workspace allocation']) test(`a ${
 	};
 	f.native.apply([pointer(6), { type: 'button', button: 'primary', down: true }]);
 	assert.equal(pointerCapture.active, true);
-	const width = geometry.targetWidth, height = geometry.targetHeight;
-	geometry.update(0, 0, width, height, width, height);
+	const width = geometry.viewportWidth, height = geometry.viewportHeight;
+	const pixelWidth = geometry.targetWidth, pixelHeight = geometry.targetHeight;
+	geometry.update(0, 0, width, height, pixelWidth, pixelHeight, width, height);
 	f.display.workspace.refresh();
 	assert.equal(pointerCapture.active, true, 'unchanged publication cannot interrupt a live gesture');
 	const column = input.context.view.cursorColumn, anchor = { ...input.context.view.selectionAnchor! }, source = model.buffer.getText();
-	if (change === 'display translation') geometry.update(40, 25, width, height, width, height);
-	else f.display.workspace.layout(1920, 1080);
+	if (change === 'display translation') geometry.update(40, 25, width, height, pixelWidth, pixelHeight, width, height);
+	else f.display.workspace.layout(1920, 1080, 1);
 	assert.equal(pointerCapture.active, false);
 	f.native.apply([pointer(11), { type: 'button', button: 'primary', down: false }]);
 	assert.equal(pointerCapture.draining, false);

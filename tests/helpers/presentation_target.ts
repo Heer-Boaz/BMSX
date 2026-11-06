@@ -35,9 +35,8 @@ export async function renderPresentationTarget(canvas: HTMLCanvasElement, kind: 
 	const resize = backend.resizePresentationTarget.bind(backend), measure = canvas.getBoundingClientRect.bind(canvas);
 	backend.resizePresentationTarget = (width, height) => { allocations++; resize(width, height); };
 	canvas.getBoundingClientRect = () => { reads++; return measure(); };
-	video.workspace.open((width, height) => {
-		video.workspace.pixelsPerUnit = scale;
-		presenter.setFixedRenderTargetSize(Math.trunc(width / scale), Math.trunc(height / scale));
+	video.workspace.open(({ width, height, pixelWidth, pixelHeight }) => {
+		presenter.setFixedRenderTargetSize(pixelWidth, pixelHeight, Math.trunc(width / scale), Math.trunc(height / scale));
 	});
 	video.prepareFrame(); presenter.configurePresentation('completed', true); presenter.present(output, 0, 0); video.finishFrame();
 	const before = { bounds: { ...video.measureDisplay() }, allocated: { ...presenter.canvasSize }, allocations, reads };
@@ -47,7 +46,16 @@ export async function renderPresentationTarget(canvas: HTMLCanvasElement, kind: 
 	const pending = { bounds: { ...video.measureDisplay() }, allocated: { ...presenter.canvasSize },
 		selected: { ...presenter.viewportSize }, backing: [canvas.width, canvas.height], allocations, reads };
 	video.prepareFrame(); presenter.configurePresentation('completed', false); presenter.present(output, 0, 0); video.finishFrame();
-	const drawn = { allocated: { ...presenter.canvasSize }, backing: [canvas.width, canvas.height], allocations };
+	const drawn = { allocated: { ...presenter.canvasSize }, backing: [canvas.width, canvas.height], allocations,
+		logical: [video.geometry.viewportWidth, video.geometry.viewportHeight], reads };
+	const history = await presenter.captureGameFrame();
+	// A monitor change increases only raster density, at the same logical layout.
+	video.workspace.layout(48, 36, 2);
+	const densityPending = { allocations, backing: [canvas.width, canvas.height] };
+	presenter.present(output, 0, 0); video.finishFrame();
+	const density = { allocations, backing: [canvas.width, canvas.height],
+		logical: [video.geometry.viewportWidth, video.geometry.viewportHeight],
+		bounds: { ...video.measureDisplay() } };
 	let pixel: number[];
 	if (gpu !== undefined) {
 		pixel = Array.from((await gpu.readColorTexture(gpu.context.getCurrentTexture(), canvas.width, canvas.height)).subarray(0, 4));
@@ -64,7 +72,7 @@ export async function renderPresentationTarget(canvas: HTMLCanvasElement, kind: 
 		overlay.fillRect(0, 0, 4, 3, 0, 0xffffffff, 0);
 		overlay.popTransform(); overlay.popClipRect(); overlay.endFrame();
 		if (menu) presenter.hostOverlayQueue.publishHostMenuFrame(presenter.hostOverlayQueue.consumeOverlayFrame());
-		presenter.setFixedRenderTargetSize(12, 12);
+		presenter.setFixedRenderTargetSize(12, 12, 12, 12);
 		presenter.present(output, 0, 0);
 		if (gpu !== undefined) frames.push(Array.from(await gpu.readColorTexture(gpu.context.getCurrentTexture(), 12, 12)));
 		else {
@@ -79,5 +87,5 @@ export async function renderPresentationTarget(canvas: HTMLCanvasElement, kind: 
 	const validationError = gpu === undefined ? undefined : (await gpu.device.popErrorScope())?.message;
 	const glError = gl === undefined ? 0 : gl.gl.getError();
 	presenter.dispose(); video.dispose(); gpu?.device.destroy();
-	return { before, pending, drawn, pixel, frames, validationError, glError, errors };
+	return { before, pending, drawn, densityPending, density, history: [history.width, history.height], pixel, frames, validationError, glError, errors };
 }

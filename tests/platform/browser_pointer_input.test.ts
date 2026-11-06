@@ -38,7 +38,7 @@ export function start() {
 		inputAxis1() {}, inputAxis2() {}, capturePhysicalKeyHold() {},
 		setSupervisorRequestLine() {}, resetInput() {}, cancelPointerButtons(device, buttons) { deviceCancellations.push(buttons); } });
 	const geometry = new DisplayGeometry(), bounds = canvas.getBoundingClientRect();
-	geometry.update(bounds.left, bounds.top, bounds.width, bounds.height, canvas.width, canvas.height);
+	geometry.update(bounds.left, bounds.top, bounds.width, bounds.height, canvas.width, canvas.height, canvas.width, canvas.height);
 	const text = new BrowserTextInput(canvas, geometry, host);
 	hub.setNativeKeyHandler(text.handleKey);
 	const events = [];
