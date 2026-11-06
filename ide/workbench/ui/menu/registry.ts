@@ -442,6 +442,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'separator' },
 		{ type: 'command', command: 'rename' },
 		{ type: 'command', command: 'renamePreview' },
+		{ type: 'command', command: 'formatDocument' },
 	],
 	'menubar.run': [
 		{ type: 'command', command: 'runCurrentFile' },

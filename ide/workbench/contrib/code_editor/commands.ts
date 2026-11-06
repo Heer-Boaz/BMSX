@@ -2,6 +2,7 @@ import type { EditorCommandId } from '../../../common/commands';
 import type { FocusCommand } from '../../../input/focus';
 import { undo, redo } from '../../../editor/editing/undo_controller';
 import { toggleWordWrap } from '../../../editor/ui/view/view';
+import { applyDocumentFormatting } from '../../../editor/editing/document_formatting';
 import { executeEditorSymbolNavigationCommand } from '../../../commands/symbol_navigation';
 import { openReferenceSearch } from './references/quick_access';
 import { openSymbolSearch } from './symbols/quick_access';
@@ -15,6 +16,8 @@ export function bindSourceCommands(pane: CodeEditorPane): () => void {
 	const lua = () => code.model !== null && code.model.mode === 'lua';
 	const editableLua = () => code.model !== null && code.model.mode === 'lua' && !code.model.readOnly;
 	const commands: readonly (readonly [EditorCommandId, FocusCommand])[] = [
+		['formatDocument', { isEnabled: () => code.model !== null && !code.model.readOnly && code.model.language.documentFormatting,
+			run: () => applyDocumentFormatting(code) }],
 		['findLocal', { isEnabled: attached, run: () => pane.openFind() }],
 		['lineJump', { isEnabled: attached, run: () => pane.openLineJump() }],
 		['rename', { isEnabled: editableLua, run: () => pane.openRename(false) }],

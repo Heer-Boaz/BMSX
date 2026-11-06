@@ -49,6 +49,8 @@ const NO_MODIFIERS: EditorModifierConstraint = {
 };
 
 const editorContribKeybindings: readonly EditorCommandKeybinding[] = [
+	{ code: 'KeyF', command: 'formatDocument', modifiers: { required: SHIFT_ALT_MODIFIERS, forbidden: PRIMARY_MODIFIER },
+		when: target => target?.getCommand('formatDocument') !== undefined },
 	{ code: 'Tab', command: 'suggest.accept', modifiers: NO_MODIFIERS, when: target => target?.getCommand('suggest.accept')?.isEnabled() === true },
 	{ code: 'KeyZ', command: 'wrap', modifiers: { required: KeyModifier.alt, forbidden: PRIMARY_MODIFIER | KeyModifier.shift }, when: target => target?.getCommand('wrap') !== undefined },
 	{ code: 'KeyZ', command: 'undo', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS },

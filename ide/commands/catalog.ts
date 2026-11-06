@@ -93,6 +93,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	commandPalette: { category: 'View', title: 'Command Palette' },
 	undo: { category: 'Edit', title: 'Undo' },
 	redo: { category: 'Edit', title: 'Redo' },
+	formatDocument: { category: 'Edit', title: 'Format Document' },
 	copy: { category: 'Edit', title: 'Copy', invocationTarget: 'control' },
 	cut: { category: 'Edit', title: 'Cut', invocationTarget: 'control' },
 	paste: { category: 'Edit', title: 'Paste', invocationTarget: 'control' },

@@ -186,6 +186,7 @@ export type EditorCommandId =
 	| 'navigateForward'
 	| 'undo'
 	| 'redo'
+	| 'formatDocument'
 	| 'copy' | 'cut' | 'paste'
 	| 'suggest.accept'
 	| 'behaviorLens.moveChildEarlier'

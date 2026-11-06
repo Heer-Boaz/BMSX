@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { formatLuaDocument } from '../../ide/language/lua/formatter';
+import { createLuaDocumentFormattingEdits, formatLuaDocument } from '../../ide/language/lua/formatter';
 import { LuaSyntaxError } from '../../toolchain/ts/lua/errors';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaTokenType } from '../../toolchain/ts/lua/syntax/token';
@@ -56,8 +56,38 @@ test('malformed strings and comments are diagnosed instead of formatted through 
 	}
 });
 
+test('formatting retains LF, CRLF and mixed line endings, including multiline literal bytes', () => {
+	for (const newline of ['\n', '\r\n']) {
+		const source = `do${newline}local s = [=[first  ${newline}  middle\t${newline}    last]=]  ${newline}use(s)  \nend`;
+		const expected = `do${newline}\tlocal s = [=[first  ${newline}  middle\t${newline}    last]=]${newline}\tuse(s)\nend`;
+		assert.equal(formatLuaDocument(source, source.split('\n')), expected);
+		assert.equal(formatLuaDocument(expected, expected.split('\n')), expected);
+	}
+});
+
+test('formatting edits replace only separate leading and trailing trivia, never the tokens between them', () => {
+	const source = 'do\n  local name = "🦊"   \n  use(name)  \nend';
+	const edits = createLuaDocumentFormattingEdits(source, source.split('\n'));
+	assert.equal(edits.length, 4);
+	let end = 0;
+	for (const edit of edits) {
+		assert.ok(edit.offset >= end);
+		assert.match(source.slice(edit.offset, edit.offset + edit.deleteLength), /^\s*$/u);
+		assert.match(edit.text, /^\s*$/u);
+		end = edit.offset + edit.deleteLength;
+	}
+	assert.deepEqual(createLuaDocumentFormattingEdits('do\n\tuse()\nend', ['do', '\tuse()', 'end']), []);
+});
+
+test('BLua struct declarations indent their fields without reserving ordinary identifiers named struct', () => {
+	const source = 'do\nstruct record\nvalue: word\nposition: vec2\nend\nlocal struct = make_record\nstruct({\nvalue = 42,\n})\nend';
+	const expected = 'do\n\tstruct record\n\t\tvalue: word\n\t\tposition: vec2\n\tend\n\tlocal struct = make_record\n\tstruct({\n\t\tvalue = 42,\n\t})\nend';
+	assert.equal(formatLuaDocument(source, source.split('\n')), expected);
+	assert.equal(formatLuaDocument(expected, expected.split('\n')), expected);
+});
+
 test('formatting real source is idempotent and preserves non-whitespace lexemes and values', () => {
-	for (const path of ['cartlib/world/world.lua', 'machine/bios/gpu/gpu.lua', 'carts/nemesis_s/scenes/root.lua']) {
+	for (const path of ['cartlib/world/world.lua', 'machine/bios/gpu/gpu.lua', 'carts/nemesis_s/scenes/root.lua', 'carts/studio_test/cart.lua']) {
 		const source = readFileSync(path, 'utf8');
 		const formatted = formatLuaDocument(source, source.split('\n'));
 		assert.equal(formatLuaDocument(formatted, formatted.split('\n')), formatted, path);

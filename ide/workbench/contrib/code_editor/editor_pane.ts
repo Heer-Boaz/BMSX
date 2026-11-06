@@ -35,7 +35,7 @@ import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover, type PointerHoverTarget } from '../../../input/pointer/hover';
 import { inputFocus, type InputFocusScope } from '../../../input/focus';
 import { isCtrlDown, isMetaDown, isShiftDown, isKeyJustPressed, consumeIdeKey } from '../../../input/keyboard/key_input';
-import { handleEditorEditingBindings, handleCodeFormattingKeybinding, handleSearchNavigationKeybinding } from '../../../input/keyboard/edit_bindings';
+import { handleEditorEditingBindings, handleSearchNavigationKeybinding } from '../../../input/keyboard/edit_bindings';
 import { handleEditorPromptBindings } from '../../input/keyboard/prompt_bindings';
 import { handleCodeAreaSelectionPointer } from '../../../input/pointer/code/selection';
 import { updateCodeAreaPointerFeedback } from '../../../input/pointer/code/feedback';
@@ -268,7 +268,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	public handleKeyboard(input: KeyInputEvent): void {
 		if (handleEditorPromptBindings(this.code, input, this.editor.commands)
 			|| handleSearchNavigationKeybinding(this.find, input) || handleEditorEditingBindings(this.code, input)
-			|| this.completion.handleKeybindings(input) || handleCodeFormattingKeybinding(this.code, input)) return;
+			|| this.completion.handleKeybindings(input)) return;
 		if (isKeyJustPressed('Escape', input)) {
 			if (this.lineJump.state.visible) {
 				consumeIdeKey('Escape', input); this.lineJump.close(false); return;

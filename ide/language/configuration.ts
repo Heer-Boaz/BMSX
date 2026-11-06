@@ -5,11 +5,12 @@ export type EditorDocumentMode = 'lua' | 'aem' | 'yaml';
 export type TextLanguageConfiguration = {
 	readonly indentationUnit: string;
 	readonly lineComment: string | undefined;
+	readonly documentFormatting: boolean;
 };
 
-const LUA: TextLanguageConfiguration = { indentationUnit: '\t', lineComment: '--' };
-const YAML: TextLanguageConfiguration = { indentationUnit: '  ', lineComment: '#' };
-const JSON: TextLanguageConfiguration = { indentationUnit: '  ', lineComment: undefined };
+const LUA: TextLanguageConfiguration = { indentationUnit: '\t', lineComment: '--', documentFormatting: true };
+const YAML: TextLanguageConfiguration = { indentationUnit: '  ', lineComment: '#', documentFormatting: false };
+const JSON: TextLanguageConfiguration = { indentationUnit: '  ', lineComment: undefined, documentFormatting: true };
 
 /** Editing syntax belongs to the authored language, not the resource's runtime use. */
 export function textLanguageConfiguration(mode: EditorDocumentMode, path: string): TextLanguageConfiguration {

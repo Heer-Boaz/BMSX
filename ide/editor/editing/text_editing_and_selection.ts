@@ -19,13 +19,9 @@ import { revealCursor, updateDesiredColumn } from '../ui/view/caret/caret';
 import { currentLine } from '../common/text/layout';
 import { markTextMutated } from '../common/text/runtime';
 import { resetBlinkState } from '../ui/view/caret/blink';
-import { formatLuaDocument } from '../../language/lua/formatter';
-import { extractErrorMessage } from '../../common/errors';
-import { getLinesSnapshot, getTextSnapshot } from '../text/source_text';
 import { extractIndentation, countLeadingIndent } from '../text/indentation';
 import type { MutableTextPosition } from '../text/text_buffer';
 import { prepareUndo, applyUndoableReplace, recordEditContext } from './undo_controller';
-import { formatAemDocument } from '../../language/aem/editor';
 import {
 	clearSingleCursorSelection,
 	collapseSingleCursorSelection,
@@ -843,50 +839,6 @@ export function pasteText(code: CodeEditorControl, text: string): void {
 	showEditorMessage('Pasted text', 'success', 1.5);
 }
 
-export function applyDocumentFormatting(code: CodeEditorControl): void {
-	const buffer = code.model.buffer;
-	const originalSource = getTextSnapshot(buffer);
-	const originalLines = getLinesSnapshot(buffer);
-	try {
-		let formatted: string;
-		switch (code.model.mode) {
-			case 'yaml':
-				showEditorMessage('YAML formatting is not available', 'info', 2.0);
-				return;
-			case 'lua':
-				formatted = formatLuaDocument(originalSource, originalLines);
-				break;
-			case 'aem':
-				formatted = formatAemDocument(
-					originalSource,
-					code.model.resource.path,
-					originalLines,
-				);
-				break;
-		}
-		if (formatted === originalSource) {
-			showEditorMessage('Document already formatted', 'info', 1.5);
-			return;
-		}
-		const cursorOffset = buffer.offsetAt(code.view.cursorRow, code.view.cursorColumn);
-		prepareUndo(code, 'format-document', false);
-		recordEditContext(code, 'replace', formatted);
-		applyUndoableReplace(code, 0, buffer.length, formatted);
-		const restoredOffset = code.model.clampOffset(cursorOffset);
-		buffer.positionAt(restoredOffset, code.scratch.editPosition);
-		code.view.cursorRow = code.scratch.editPosition.row;
-		code.view.cursorColumn = code.scratch.editPosition.column;
-		code.view.selectionAnchor = null;
-		updateDesiredColumn(code);
-		resetBlinkState(code.caret);
-		revealCursor(code);
-		markTextMutated(code);
-		showEditorMessage('Document formatted', 'success', 1.6);
-	} catch (error) {
-		const message = extractErrorMessage(error);
-		showEditorMessage(`Formatting failed: ${message}`, 'error', 3.2);
-	}
-}
 export function computeEditContextFromSources(previous: string, next: string): EditContext {
 	const change = changedTextRange(previous, next);
 	if (change === undefined) return null;
