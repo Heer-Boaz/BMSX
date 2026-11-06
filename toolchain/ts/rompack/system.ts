@@ -6,7 +6,8 @@ export const SYSTEM_ROM_NAME = 'bmsx-bios';
 export const SYSTEM_BLUA32_IMAGE_OFFSET = 0x00000100;
 /** Build-time program budget, not a file offset at which assets must begin. */
 export const SYSTEM_BLUA32_IMAGE_LIMIT = 0x00400000;
-export const SYSTEM_BLUA32_FUNCTION_RECORD_CAPACITY = 4096;
+/** Bounded growth headroom keeps system RODATA stable during Hot Resume. */
+export const SYSTEM_BLUA32_FUNCTION_TABLE_ALIGNMENT = 0x00004000;
 
 export const BIOS_FUNCTION_EXPORTS: ReadonlyArray<Blua32BiosFunctionExport> =
 	BIOS_FUNCTION_MODULE_PATHS.map(path => ({ path, exportPathKey: '' }));

@@ -103,7 +103,7 @@ import type {
 	Blua32BiosFunctionImport,
 	Blua32BiosImports,
 } from './blua32_bios_imports';
-import { SYSTEM_BLUA32_FUNCTION_RECORD_CAPACITY } from './system';
+import { SYSTEM_BLUA32_FUNCTION_TABLE_ALIGNMENT } from './system';
 import { evaluateProgramLinkValueExpression } from '../lua/compiler/compile_time_number';
 
 export type LinkedBlua32ImageBase = {
@@ -720,14 +720,17 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	}
 	const functionTableOffset = alignImageOffset(offset, input.loadAddress, BLUA32_FUNCTION_ALIGNMENT);
 	if (input.domain === 'system') {
-		if (functionCount > SYSTEM_BLUA32_FUNCTION_RECORD_CAPACITY) {
+		const tableByteCount = functionCount * BLUA32_FUNCTION_RECORD_SIZE;
+		const tableCapacity = input.previous === undefined
+			? alignImageOffset(tableByteCount, 0, SYSTEM_BLUA32_FUNCTION_TABLE_ALIGNMENT)
+			: input.previous.image.header.rodataAddress - input.previous.image.header.functionTableAddress;
+		if (tableByteCount > tableCapacity) {
 			throw new Error(
-				`System BLua32 function count ${functionCount} exceeds `
-				+ `the ${SYSTEM_BLUA32_FUNCTION_RECORD_CAPACITY}-record system table.`,
+				`Hot Resume needs ${functionCount} system function records, beyond the installed `
+				+ `${tableCapacity / BLUA32_FUNCTION_RECORD_SIZE}-record table. Rebuild and boot the system ROM.`,
 			);
 		}
-		offset = functionTableOffset
-			+ SYSTEM_BLUA32_FUNCTION_RECORD_CAPACITY * BLUA32_FUNCTION_RECORD_SIZE;
+		offset = functionTableOffset + tableCapacity;
 		rodataOffset = alignImageOffset(offset, input.loadAddress, 4);
 		offset = rodataOffset + rodata.bytes.byteLength;
 		dataLoadOffset = alignImageOffset(offset, input.loadAddress, 4);

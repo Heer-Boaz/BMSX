@@ -266,7 +266,9 @@ export function buildBlua32Media(
 			imageAddress,
 			ramByteCount,
 			BIOS_FUNCTION_EXPORTS,
-			{ image: installedSystem.layout, symbols: installedSystem.symbols!, captureSources: sourceCorrespondence },
+			mode === 'live'
+				? { image: installedSystem.layout, symbols: installedSystem.symbols!, captureSources: sourceCorrespondence }
+				: undefined,
 		);
 		const finalAssets = layoutBlua32PublicAssets(sources.systemRom, linked.bytes.byteLength, assetChanges);
 		applyLinkedAssetModule(
