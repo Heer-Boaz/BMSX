@@ -62,13 +62,16 @@
   console/emulator work -> MAME.
 - Performance is mandatory. Do not introduce unnecessary allocations, GC
   churn, repeated work, redundant abstractions, duplicate validation, or
-  defensive hot-path overhead.
+  defensive hot-path overhead. Budget for low-end mobile hardware (iPhone
+  10/11/12 class): reuse scratch buffers and pools instead of allocating.
 - Follow professional codebase structure. Split responsibilities across files
   and modules the way mature apps do. Do not dump unrelated logic into one
-  file.
+  file. Work touching `ide/cart_editor.ts` moves that functionality into its
+  own module rather than growing the editor file.
 - Before adding a new helper, first check whether an equivalent helper already
-  exists. If not, decide whether it should be introduced as a general shared
-  helper instead of a one-off local utility.
+  exists — start with `machine/ts/common/` (`clamp.ts`, `scratchbuffer.ts`,
+  `pool.ts`, etc.). If not, decide whether it should be introduced as a
+  general shared helper instead of a one-off local utility.
 - No defensive-check clutter. Do not add redundant guard code, fallback junk,
   or speculative validation layers unless there is a real proven need.
 - No ugly facade/host patterns. Do not add artificial wrapper layers that hide
