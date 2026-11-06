@@ -32,7 +32,7 @@ fi
 
 mkdir -p "$ROOT_DIR/.snesmini" "$ROOT_DIR/dist"
 
-BUILD_TYPE="${SNESMINI_BUILD_TYPE:-Debug}"
+BUILD_TYPE="${SNESMINI_BUILD_TYPE:-Release}"
 SMOKE_FRAMES="${SNESMINI_SMOKE_FRAMES:-16}"
 SDK_RECIPE_ID="$(python3 "$ROOT_DIR/scripts/snesmini/sdk_recipe_id.py" "$ROOT_DIR")"
 BUILDER_IID_FILE="$(mktemp)"
@@ -136,6 +136,7 @@ docker run --rm \
 	--network=none \
 	--env HOME=/tmp \
 	--env SNESMINI_PUBLISH_DIR=/out \
+	--memory=8g --memory-swap=8g \
 	--env SNESMINI_SYSTEM_DIR=/inputs/system \
 	--env SNESMINI_ROM=/inputs/bare_metal_cart.rom \
 	--env SNESMINI_BUILD_TYPE="$BUILD_TYPE" \
@@ -177,22 +178,7 @@ docker run --rm \
 } > "$STAGING_ROOT/.acceptance.tmp"
 mv "$STAGING_ROOT/.acceptance.tmp" "$STAGING_ROOT/acceptance.txt"
 
-RELEASE_ID="$(sha256sum "$STAGING_ROOT/acceptance.txt" | cut -d ' ' -f 1)"
 PUBLISH_ROOT="$PUBLISH_BASE/$PUBLISH_KIND"
-RELEASE_ROOT="$PUBLISH_ROOT/releases"
-RELEASE_DIR="$RELEASE_ROOT/$RELEASE_ID"
-mkdir -p "$RELEASE_ROOT"
-exec 9>"$PUBLISH_ROOT/.publish.lock"
-flock 9
-if [ -e "$RELEASE_DIR" ]; then
-	rm -rf "$STAGING_ROOT"
-else
-	mv -T "$STAGING_ROOT" "$RELEASE_DIR"
-fi
-CURRENT_LINK="$PUBLISH_ROOT/.current.$$"
-ln -s "releases/$RELEASE_ID" "$CURRENT_LINK"
-mv -Tf "$CURRENT_LINK" "$PUBLISH_ROOT/current"
+python3 "$ROOT_DIR/scripts/snesmini/releases.py" publish "$PUBLISH_ROOT" "$STAGING_ROOT" "$BUILD_TYPE"
 rm -rf "$INPUT_ROOT"
 trap - EXIT
-
-echo "SNES Mini $PUBLISH_KIND release accepted: $PUBLISH_ROOT/current"

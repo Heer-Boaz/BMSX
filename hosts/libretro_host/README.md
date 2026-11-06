@@ -39,6 +39,16 @@ npm run build:platform:libretro-snesmini:debug
 npm run build:libretro-host-snesmini:debug
 ```
 
+Debug builds publish to `core/debug` and `host/debug`, never the Release
+`current` links. Publication retains only these selected outputs, native releases
+held open or mapped by running processes, and explicit symlinks under each
+product's `pins/` directory. To retain an installed release, add a named symlink
+there to `../releases/<release-id>` before publishing another build.
+There is no recent-build history. Inspect collection with
+`python3 scripts/snesmini/releases.py collect dist/snesmini/core`; add `--apply`
+to remove the listed unreferenced releases. The same command accepts the host
+product directory.
+
 The core build executes the target loader, core, privately built BIOS and cart,
 and software frames on the PC before publication. The host build separately
 enters the real ARM host CLI through that same imported target loader after its

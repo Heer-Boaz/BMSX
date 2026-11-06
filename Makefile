@@ -5,7 +5,7 @@ SNESMINI_BUILD_ROOT := $(SNESMINI_ROOT)/build
 SNESMINI_BUILD_DIR = $(SNESMINI_BUILD_ROOT)/core
 SNESMINI_BUILD_DIR_HOST = $(SNESMINI_BUILD_ROOT)/host
 SNESMINI_BUILD_DIR_SMOKE = $(SNESMINI_BUILD_ROOT)/smoke
-SNESMINI_BUILD_TYPE ?= Debug
+SNESMINI_BUILD_TYPE ?= Release
 SNESMINI_ENABLE_LTO := $(if $(filter Release,$(SNESMINI_BUILD_TYPE)),ON,OFF)
 SNESMINI_TOOLCHAIN_FILE := $(CURDIR)/machine/cpp/cmake/toolchains/snesmini.cmake
 SNESMINI_LIBRETRO_ENTRY := $(CURDIR)/hosts/libretro/entry.cpp
@@ -26,15 +26,15 @@ SNESMINI_MACHINE_CMAKE_ARGS = \
 	$(SNESMINI_CMAKE_COMMON_ARGS) \
 	-DBMSX_ENABLE_LTO="$(SNESMINI_ENABLE_LTO)"
 
-.PHONY: libretro-snesmini-debug
-libretro-snesmini-debug:
-	SNESMINI_BUILD_TYPE="$(SNESMINI_BUILD_TYPE)" \
+.PHONY: libretro-snesmini libretro-snesmini-debug
+libretro-snesmini libretro-snesmini-debug:
+	SNESMINI_BUILD_TYPE="$(if $(filter %-debug,$@),Debug,$(SNESMINI_BUILD_TYPE))" \
 	BMSX_SNESMINI_WORKFLOW="core" \
 		"$(CURDIR)/scripts/snesmini/build.sh"
 
-.PHONY: libretro-host-snesmini-debug
-libretro-host-snesmini-debug:
-	SNESMINI_BUILD_TYPE="$(SNESMINI_BUILD_TYPE)" \
+.PHONY: libretro-host-snesmini libretro-host-snesmini-debug
+libretro-host-snesmini libretro-host-snesmini-debug:
+	SNESMINI_BUILD_TYPE="$(if $(filter %-debug,$@),Debug,$(SNESMINI_BUILD_TYPE))" \
 	BMSX_SNESMINI_WORKFLOW="host" \
 		"$(CURDIR)/scripts/snesmini/build.sh"
 
