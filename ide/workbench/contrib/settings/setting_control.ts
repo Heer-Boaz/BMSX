@@ -35,27 +35,24 @@ export class SettingControl {
 	private inlineReset = false;
 	public readonly focusOrder: readonly InputFocusTarget[];
 	private observed: string | number | boolean | undefined;
+	private enabled = true;
 	public constructor(public readonly setting: Setting, private readonly preferences: WorkbenchPreferences,
 		parent: InputFocusTarget, commands: EditorCommandRunner, private readonly quickInput: QuickInputController) {
 		this.context = inputFocus.createTarget(parent);
 		this.context.canFocus = () => false;
 		this.actions = createWorkbenchActionBar(setting.kind === 'choice' ? 'settings.choice' : 'settings.value');
-		this.context.registerCommand('settings.reset', { isEnabled: () => this.attached && setting.read(preferences) !== setting.defaultValue,
+		this.context.registerCommand('settings.reset', { isEnabled: () => this.attached && this.enabled && preferences.isConfigured(setting.id),
 			run: () => {
-				switch (setting.kind) {
-					case 'number': this.value!.cancel(); setting.write(preferences, setting.defaultValue); break;
-					case 'choice': setting.write(preferences, setting.defaultValue); break;
-					case 'boolean': setting.write(preferences, setting.defaultValue); break;
-				}
+				this.value?.cancel(); preferences.reset(setting.id);
 			} });
 		if (setting.kind === 'number') {
 			this.value = new ValueInput(this.context, { options: { singleLine: true, allowSpace: false }, format: String,
 				parse: setting.parse, invalidBlurMessage: 'Invalid font size cancelled; preference unchanged.' }, value => setting.write(preferences, value));
-			this.value.field.focusTarget.canFocus = () => this.attached;
+			this.value.field.focusTarget.canFocus = () => this.attached && this.enabled;
 		} else if (setting.kind === 'boolean') {
 			this.checkbox = new WorkbenchCheckboxControl(inputFocus, pointerCapture, this.context, (_input, value) => setting.write(preferences, value));
 		} else {
-			this.context.registerCommand('settings.choose', { isEnabled: () => this.attached, run: () => {
+			this.context.registerCommand('settings.choose', { isEnabled: () => this.attached && this.enabled, run: () => {
 				const current = setting.read(preferences);
 				this.quickInput.pick(setting.label, 'Choose a value', () => new TextQuickPickProvider(
 					setting.choices.map(choice => ({ ...choice, description: choice.value === current ? 'Current' : '', detail: '' })),
@@ -78,11 +75,12 @@ export class SettingControl {
 	}
 	public refresh(): void {
 		const value = this.setting.read(this.preferences);
-		if (value === this.observed) return;
-		this.observed = value;
+		const enabled = this.setting.enabled === undefined || this.setting.enabled(this.preferences);
+		if (value === this.observed && enabled === this.enabled) return;
+		this.observed = value; this.enabled = enabled;
 		switch (this.setting.kind) {
 			case 'number': this.value!.setValue(this.setting.read(this.preferences)); break;
-			case 'boolean': this.checkbox!.setInput({ label: this.setting.label, checked: this.setting.read(this.preferences), enabled: true }); break;
+			case 'boolean': this.checkbox!.setInput({ label: this.setting.label, checked: this.setting.read(this.preferences), enabled }); break;
 			case 'choice': this.actions.items[0].label = this.setting.choices.find(choice => choice.value === value)!.label; break;
 		}
 	}

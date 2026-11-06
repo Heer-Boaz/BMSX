@@ -519,7 +519,7 @@ export class EditorPart {
 		const constraints = this.incomingConstraints, local = this.arrangement.hasGroup(source);
 		const requested = this.options.kind === 'main' && this.options.mainArea.enabled;
 		if (local) source.measureConstraints(requested, constraints);
-		else source.measureInput(source.model.activeTab, requested, constraints);
+		else source.measureInput(source.model.activeTab, requested, constraints, source.model.tabs.length);
 		const projection = this.arrangement.projectMove(local ? source : undefined, reference, direction,
 			constraints.minimumWidth, constraints.minimumHeight, constraints.companionWidth ?? constraints.minimumWidth);
 		if (projection === undefined) return false;
@@ -577,7 +577,7 @@ export class EditorPart {
 		this.scrollbars.vertical.layout(this.verticalTrack, this.arrangement.contentHeight, this.viewport.bottom - this.viewport.top, this.arrangement.scrollY);
 		for (const leaf of this.arrangement.leaves) {
 			const presented = this.contentPresented && (this.arrangement.maximized === undefined || this.arrangement.maximized === leaf.group);
-			if (changed || leaf.group.tabStrip.needsLayout || leaf.group.presented !== presented) leaf.group.layout(leaf.bounds, leaf.clip, presented);
+			if (changed || leaf.group.needsLayout || leaf.group.presented !== presented) leaf.group.layout(leaf.bounds, leaf.clip, presented);
 		}
 		if (changed && notify && this.surface.published) this.options.surfaces.changed();
 		return changed;

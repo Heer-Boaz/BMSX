@@ -180,7 +180,7 @@ test('Alt cannot turn an obstructed or absent physical editor target into a floa
 });
 
 test('strip controls and owned transient surfaces are not editor docking targets', t => {
-	const sources = Array.from({ length: 4 }, (_, index) => [`long_definition_${index}.lua`, `return ${index}`] as const);
+	const sources = Array.from({ length: 12 }, (_, index) => [`long_definition_${index}.lua`, `return ${index}`] as const);
 	const f = createActualSourcePanes(t, false, sources), parts = f.editor.editorParts, receiver = f.secondGroup;
 	for (const [path] of sources) receiver.openEditor(resolveLuaCodeEditorInput(f.sources.catalog,
 		f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path })!));

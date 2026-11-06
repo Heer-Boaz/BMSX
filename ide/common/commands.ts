@@ -104,7 +104,7 @@ export type EditorCommandId =
 	| 'resources.newFolder' | 'resources.refresh'
 	| 'resources.open' | 'resources.openToSide' | 'resources.source' | 'resources.sourceToSide' | 'resources.disclosure'
 	| 'workspace.focusPrimary' | 'workspace.clearPrimary'
-	| 'workspace.resetLayout' | 'settings.open' | 'settings.all' | 'settings.appearance' | 'settings.typography' | 'settings.choose' | 'settings.reset'
+	| 'workspace.resetLayout' | 'settings.open' | 'settings.choose' | 'settings.reset'
 	| 'workspace.hierarchy.focus' | 'workspace.details.focus' | 'workspace.hierarchy.toggle' | 'workspace.details.toggle'
 	| 'workspace.hierarchy.float' | 'workspace.details.float' | 'workspace.hierarchy.dock' | 'workspace.details.dock'
 	| 'projects.createCartridge'

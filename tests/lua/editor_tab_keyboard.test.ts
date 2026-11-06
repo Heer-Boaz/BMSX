@@ -64,7 +64,7 @@ for (const code of ['Enter', 'NumpadEnter', 'Space']) test(`${code} activates ex
 
 test('Tab and Shift+Tab move between the actual strip and its existing action toolbar without activating a roving editor', t => {
 	const f = threeSources(t), strip = f.group.tabStrip, pane = f.group.panes.activePane;
-	f.firstBounds.right = 180; f.update();
+	f.firstBounds.right = f.firstBounds.left + f.firstPart.window!.model.minimumWidth; f.update();
 	assert.ok(strip.actions.items.some(item => item.visible && item.enabled && !item.overflowed));
 	f.editor.commands.execute('group.focusTabs', f.group.tabFocusTarget); f.key('ArrowRight');
 	f.key('Tab'); assert.ok(inputFocus.target === strip.actionBar.focusTarget);

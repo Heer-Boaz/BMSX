@@ -31,6 +31,8 @@ export abstract class AbstractEditorInput<
 	public readonly serializable: boolean = true;
 	/** An unpinned placeholder yields Main's document allocation to authored content. */
 	public readonly isPlaceholder: boolean = false;
+	/** Tools need a strip only to switch pages; document editors keep their identity and dirty/close affordances. */
+	public readonly showSingleTab: boolean = false;
 	/** Retained utility placement belongs to this input even while its native pane is detached. */
 	public readonly windowPlacements: readonly WorkbenchWindowModel[] = EMPTY_WINDOW_PLACEMENTS;
 	public onDidChangeDirty?(listener: () => void): () => void;
@@ -100,6 +102,7 @@ export abstract class ReadonlyEditorInput<
 
 /** Persistence capability of a text view, independent of how many sources it presents. */
 export abstract class TextEditorInput<TId extends string, TKind extends string> extends AbstractEditorInput<TId, TKind> {
+	public override readonly showSingleTab: boolean = true;
 	/** An attached companion may own a focused draft outside the document group's scope. */
 	public attachedEditScope: InputFocusScope | undefined;
 	/** Primary source identity for opening other views; not every command's write target. */

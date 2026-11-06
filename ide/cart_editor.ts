@@ -1,5 +1,5 @@
 import { fontScaleForPixelSize } from './editor/ui/view/font';
-import { SettingsPane } from './workbench/contrib/settings/editor_pane';
+import { SettingsPane, measureSettingsEditor } from './workbench/contrib/settings/editor_pane';
 import type { WorkbenchPreferences } from './workbench/services/preferences/preferences';
 import { WORKBENCH_PIXELS_PER_UNIT, workbenchPixelsPerUnit } from './workbench/common/display_scale';
 import { CodeDocumentProjections } from './editor/ui/code/document_projections';
@@ -546,7 +546,7 @@ export class RuntimeCartEditor implements CartEditor {
 			aem_editor: { create: group => new AemEditorPane(this.aemEditor, this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope, this.editorParts.partForGroup(group).quickInput), measure: measureAemEditor },
 			lua_program: { create: group => new LuaProgramEditorPane(this.luaPrograms, this.commands, this.actionStrings, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope, this.editorParts.partForGroup(group).quickInput), measure: measureLuaProgramEditor },
 			behavior_lens: { create: group => new BehaviorLensEditorPane(this.behaviorLens, this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope, this.editorParts.partForGroup(group).quickInput), measure: measureBehaviorLensEditor },
-			settings: { create: group => new SettingsPane(group.focusScope, this.commands, this.editorParts.partForGroup(group).quickInput, this.contextMenu), measure: measureUnconstrainedEditor },
+			settings: { create: group => new SettingsPane(group.focusScope, this.commands, this.editorParts.partForGroup(group).quickInput), measure: measureSettingsEditor },
 			actor_lab: { create: group => new ActorLabEditorPane(this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea,
 				group, this.editorParts.partForGroup(group).quickInput, group.focusScope), measure: measureUnconstrainedEditor },
 			cart_map: { create: group => new CartMapPane(this.cartMaps, this.commands, this.sources, this.surfaces, group.paneSurface, group.workArea, group.focusScope, this.contextMenu), measure: measureCartMapEditor },

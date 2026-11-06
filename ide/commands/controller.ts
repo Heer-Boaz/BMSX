@@ -463,7 +463,7 @@ export class IdeCommandController {
 			case 'group.move': return this.editor.editorParts.canMoveGroup(group, { kind: 'window' })
 				|| part.groups.some(other => this.editor.editorParts.canMoveGroup(group, { kind: 'split', group: other, direction: 'right' }));
 			case 'group.openEditors': return group.model.tabs.length > 0;
-			case 'group.focusTabs': return group.openingAdmitted && group.model.tabs.length > 0;
+			case 'group.focusTabs': return group.openingAdmitted && group.tabsVisible;
 			case 'group.splitRight': case 'group.splitDown': return part.operation === 'none';
 			case 'group.focusNext': case 'group.focusPrevious': case 'group.maximize': return part.operation === 'none' && part.groups.length > 1;
 			case 'window.systemMenu': case 'window.move': case 'window.resize':

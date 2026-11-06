@@ -11,6 +11,7 @@ import { WorkbenchCheckboxControl } from '../../ide/workbench/ui/checkbox_contro
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { inputFocus } from '../../ide/input/focus';
+import { HomeInput } from '../../ide/workbench/contrib/home/editor_input';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
 test('settings search and category filter share declared preference metadata', () => {
@@ -35,6 +36,7 @@ test('Settings command opens and reuses an ordinary separate editor window witho
 	const part = editor.editorParts.activePart, input = part.activeGroup.model.activeTab;
 	assert.equal(editor.editorParts.documents.length, before + 1);
 	assert.ok(input instanceof SettingsInput);
+	assert.equal(part.activeGroup.tabsVisible, false);
 	assert.equal(input.serializable, false); assert.equal(input.isDirty(), false);
 	assert.ok(f.firstGroup.model.activeTab === source);
 	f.first.focus(); openSettings(editor.editorParts, editor.preferences);
@@ -56,6 +58,7 @@ test('Settings command opens and reuses an ordinary separate editor window witho
 
 test('numeric settings use the common draft, cancel and reset contracts; checkbox reflects the preference owner', t => {
 	const f = createActualSourcePanes(t), preferences = f.editor.preferences;
+	preferences.fontVariant = 'tiny';
 	const number = new SettingControl(SETTINGS.find(setting => setting.id === 'fontSize')!, preferences, f.first.commandTarget,
 		f.editor.commands, f.editor.editorParts.partForGroup(f.firstGroup).quickInput);
 	const boolean = new SettingControl(SETTINGS.find(setting => setting.id === 'fontSampling')!, preferences, f.first.commandTarget,
@@ -72,6 +75,7 @@ test('numeric settings use the common draft, cancel and reset contracts; checkbo
 
 test('Settings pointer focus preserves the click target while keyboard traversal reveals offscreen fields and skips disabled reset', t => {
 	const f = createActualSourcePanes(t);
+	f.editor.preferences.fontVariant = 'tiny';
 	let checkbox!: WorkbenchCheckboxControl;
 	const layout = WorkbenchCheckboxControl.prototype.layout;
 	t.mock.method(WorkbenchCheckboxControl.prototype, 'layout', function (this: WorkbenchCheckboxControl, ...args: Parameters<typeof layout>) {
@@ -101,6 +105,49 @@ test('Settings pointer focus preserves the click target while keyboard traversal
 });
 
 test('appearance preferences belong to Settings rather than the View menu', () => {
-	assert.ok(WORKBENCH_MENUS['menubar.file'].some(item => item.type === 'command' && item.command === 'settings.open'));
+	assert.ok(WORKBENCH_MENUS['menubar.edit'].some(item => item.type === 'command' && item.command === 'settings.open'));
+	assert.ok(!WORKBENCH_MENUS['menubar.file'].some(item => item.type === 'command' && item.command === 'settings.open'));
 	assert.ok(!WORKBENCH_MENUS['menubar.view'].some(item => item.type === 'command' && item.command === 'theme-toggle'));
+});
+
+test('Settings navigation filters on keyboard selection and retains search, category and scroll across pane detachment', t => {
+	const f = createActualSourcePanes(t);
+	openSettings(f.editor.editorParts, f.editor.preferences); f.update();
+	const part = f.editor.editorParts.activePart, group = part.activeGroup, pane = group.panes.activePane as SettingsPane, input = pane.input;
+	const window = part.window!.model;
+	window.setRequestedBounds({ ...window.requestedBounds, bottom: window.requestedBounds.top + window.minimumHeight }); f.update();
+	pane.focus(); f.key('Tab'); assert.ok(inputFocus.admittedTarget === pane.categories.focusTarget);
+	f.key('End'); assert.equal(input.model.category, 'typography');
+	assert.ok(input.model.visible.every(setting => setting.category === 'typography'));
+	pane.search.field.focusTarget.focus(); setFieldText(pane.search.field, 'font', true); f.update();
+	input.viewport.scrollbar.setScroll(input.viewport.scrollbar.getMaximumScroll() / 2);
+	const offset = input.viewport.scrollTop; assert.ok(offset > 0);
+	const home = new HomeInput(null); group.openEditor(home); f.update();
+	group.activate(input.id); f.update();
+	assert.equal(input.model.query, 'font'); assert.equal(input.model.category, 'typography');
+	assert.equal(input.viewport.scrollTop, offset, 'reattachment is not a new filter request');
+	assert.ok(group.panes.activePane === pane);
+	assert.equal(input.navigation.rows[input.navigation.selectionIndex].element.id, input.model.category);
+});
+
+test('scalable-font smoothing is checked and disabled without overwriting the pixel-font preference', t => {
+	const f = createActualSourcePanes(t), preferences = f.editor.preferences;
+	let checkbox!: WorkbenchCheckboxControl;
+	const layout = WorkbenchCheckboxControl.prototype.layout;
+	t.mock.method(WorkbenchCheckboxControl.prototype, 'layout', function (this: WorkbenchCheckboxControl, ...args: Parameters<typeof layout>) {
+		checkbox = this; layout.apply(this, args);
+	});
+	preferences.fontSampling = 'nearest';
+	openSettings(f.editor.editorParts, preferences); f.update();
+	assert.equal(checkbox.input!.checked, true); assert.equal(checkbox.input!.enabled, false);
+	assert.equal(checkbox.focusTarget.focus(), false);
+	assert.equal(preferences.fontSampling, 'nearest');
+	preferences.fontVariant = 'tiny'; f.update();
+	assert.equal(checkbox.input!.checked, false); assert.equal(checkbox.input!.enabled, true);
+	preferences.fontSampling = 'linear'; f.update();
+	assert.equal(checkbox.input!.checked, true);
+	preferences.fontVariant = 'mono'; f.update();
+	assert.equal(checkbox.input!.checked, true); assert.equal(checkbox.input!.enabled, false, 'dependency changes refresh even when the displayed value is unchanged');
+	preferences.fontVariant = 'msx'; f.update();
+	assert.equal(checkbox.input!.checked, true); assert.equal(checkbox.input!.enabled, true);
 });

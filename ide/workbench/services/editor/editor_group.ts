@@ -145,6 +145,12 @@ export class EditorGroupView {
 	public readonly bounds = create_rect_bounds();
 	public readonly clip = create_rect_bounds();
 	public presented = true;
+	private tabsPresented = false;
+	private layoutFont: typeof editorViewState.font | undefined;
+	public get tabsVisible(): boolean { return this.model.tabs.length > 1 || this.model.activeTab?.showSingleTab === true; }
+	public get needsLayout(): boolean {
+		return this.layoutFont !== editorViewState.font || this.tabsPresented !== this.tabsVisible || this.tabsVisible && this.tabStrip.needsLayout;
+	}
 	private readonly tabBounds = create_rect_bounds();
 	private readonly bodyBounds = create_rect_bounds();
 	private readonly focusListeners = new Set<() => boolean>();
@@ -208,7 +214,7 @@ export class EditorGroupView {
 			(id, preserveFocus) => this.activate(id, { preserveFocus }), id => { void this.close(id); }, () => this.commitPendingEdit() && this.focus(), presentation.dropTarget, presentation.contextMenu);
 		this.tabSurface = presentation.surfaces.attach({
 			role: 'content', lifetimeOwner: this.surface, presentationParent: this.surface, captureScope: this.tabScope,
-			isVisible: () => this.presented, getBounds: () => this.tabStrip.layoutState.bounds, getClip: () => this.clip,
+			isVisible: () => this.presented && this.tabsVisible, getBounds: () => this.tabStrip.layoutState.bounds, getClip: () => this.clip,
 			draw: () => this.tabStrip.draw(presentation.renderContext),
 			handlePointer: (snapshot, now) => this.tabStrip.handlePointer(snapshot, now),
 			handleWheel: event => this.tabStrip.handleWheel(event),
@@ -264,7 +270,7 @@ export class EditorGroupView {
 
 	public onWillFocus(listener: () => boolean): () => void { this.focusListeners.add(listener); return () => this.focusListeners.delete(listener); }
 	public focus(control: 'content' | 'tabs' = 'content'): boolean {
-		if (!this.openingAdmitted || control === 'tabs' && this.model.tabs.length === 0) return false;
+		if (!this.openingAdmitted || control === 'tabs' && !this.tabsVisible) return false;
 		const generation = this.panes.openGeneration, focusRevision = inputFocus.revision;
 		for (const listener of this.focusListeners) {
 			if (!listener() || generation !== this.panes.openGeneration || inputFocus.revision !== focusRevision && inputFocus.target !== null) return false;
@@ -281,49 +287,59 @@ export class EditorGroupView {
 	public get companionWidth(): number | undefined { return this.constraints.companionWidth; }
 
 	/** A prospective attachment owns intrinsic content and fresh chrome, never another pane's inline bars or timeline. */
-	public measureInput(input: EditorInput | null, companionRequested: boolean, target: EditorPaneConstraints): void {
+	public measureInput(input: EditorInput | null, companionRequested: boolean, target: EditorPaneConstraints, tabCount = input === null ? 0 : 1): void {
 		if (input === null) {
 			target.minimumWidth = target.minimumHeight = 0; target.companionWidth = undefined;
 		} else this.panes.measure(input, editorViewState.font, companionRequested, target);
-		target.minimumWidth = Math.max(editorGroupChromeMinimumWidth(), target.minimumWidth);
-		target.minimumHeight = this.tabStrip.minimumHeight + Math.max(editorViewState.lineHeight, target.minimumHeight) + 2;
+		const tabsVisible = tabCount > 1 || input?.showSingleTab === true;
+		target.minimumWidth = Math.max(tabsVisible ? editorGroupChromeMinimumWidth() : 0, target.minimumWidth);
+		target.minimumHeight = (tabsVisible ? this.tabStrip.minimumHeight + 2 : 0) + Math.max(editorViewState.lineHeight, target.minimumHeight);
 		if (target.companionWidth !== undefined) target.companionWidth = Math.max(target.minimumWidth, target.companionWidth);
 	}
 
 	/** Current attachment adds only its actual live extensions to the input-owned intrinsic constraints. */
 	public measureConstraints(companionRequested: boolean, target: EditorPaneConstraints = this.constraints): void {
-		this.measureInput(this.model.activeTab, companionRequested, target);
+		this.measureInput(this.model.activeTab, companionRequested, target, this.model.tabs.length);
 		target.minimumHeight = Math.max(target.minimumHeight,
-			this.tabStrip.minimumHeight + (this.panes.activePane?.minimumClientHeight ?? 0) + 2) + this.timeline.height;
+			(this.tabsVisible ? this.tabStrip.minimumHeight + 2 : 0) + (this.panes.activePane?.minimumClientHeight ?? 0)) + this.timeline.height;
 	}
 
 	/** Removing the active input retires its attached controls; another tab keeps the current attachment intact. */
 	public measureAfterRemoval(input: EditorInput, companionRequested: boolean, target: EditorPaneConstraints): void {
-		if (this.model.activeTab !== input) this.measureConstraints(companionRequested, target);
-		else {
-			this.measureInput(this.model.activeAfterRemoval(input), companionRequested, target);
-			target.minimumHeight += this.timeline.heightAfterRetiring(this.panes.activePane?.inputScope);
-		}
+		const active = this.model.activeTab === input;
+		const successor = active ? this.model.activeAfterRemoval(input) : this.model.activeTab;
+		const count = this.model.tabs.length - 1;
+		this.measureInput(successor, companionRequested, target, count);
+		if (!active) target.minimumHeight = Math.max(target.minimumHeight,
+			(count > 1 || successor?.showSingleTab === true ? this.tabStrip.minimumHeight + 2 : 0) + (this.panes.activePane?.minimumClientHeight ?? 0));
+		target.minimumHeight += active ? this.timeline.heightAfterRetiring(this.panes.activePane?.inputScope) : this.timeline.height;
 	}
 	public layout(bounds: Readonly<RectBounds>, clip: Readonly<RectBounds>, presented = true): void {
+		this.layoutFont = editorViewState.font;
 		this.presented = presented; copy_rect_bounds(this.bounds, bounds); copy_rect_bounds(this.clip, clip);
 		const timelineTop = Math.max(bounds.top, bounds.bottom - this.timeline.height);
 		write_rect_bounds(this.tabBounds, bounds.left, bounds.top, bounds.right, bounds.top);
-		this.tabStrip.layout(this.tabBounds);
+		const tabsVisible = this.tabsVisible;
+		const returnFocus = this.tabsPresented && !tabsVisible && this.tabStrip.focusTarget.hasFocus;
+		if (tabsVisible) this.tabStrip.layout(this.tabBounds);
+		else if (this.tabsPresented) this.tabStrip.clear();
+		this.tabsPresented = tabsVisible;
 		write_rect_bounds(this.timelineBounds, bounds.left, timelineTop, bounds.right, bounds.bottom);
-		write_rect_bounds(this.bodyBounds, bounds.left, Math.min(timelineTop, bounds.top + this.tabStrip.layoutState.totalHeight + 2), bounds.right, timelineTop);
+		write_rect_bounds(this.bodyBounds, bounds.left, Math.min(timelineTop, bounds.top + (tabsVisible ? this.tabStrip.layoutState.totalHeight + 2 : 0)), bounds.right, timelineTop);
 		this.panes.layout(this.bodyBounds, this.clip);
 		if (!this.presented || !rects_intersect(this.bodyBounds, this.clip)) pointerCapture.cancelScope(this.captureScope);
 		if (!this.presented || !rects_intersect(this.tabStrip.layoutState.bounds, this.clip)) pointerCapture.cancelScope(this.tabScope);
 		if (!this.presented || !rects_intersect(this.timelineBounds, this.clip)) pointerCapture.cancelScope(this.timeline.focusScope.surfaceScope);
 		this.surfaceService.publish(this.surface);
+		if (returnFocus && inputFocus.target === null) this.focus();
 		const focused = inputFocus.target;
 		// Retire the unavailable control; its declared containing control may still be eligible.
 		if (focused !== null && this.surfaceService.isInContext(focused.scope.surfaceScope, this.surface.captureScope) && inputFocus.admittedTarget === null) focused.release();
 
 	}
 	public update(deltaSeconds: number): void {
-		this.tabStrip.update(editorRuntimeState.currentTimeMs); this.timeline.update(); this.panes.activePane?.update(deltaSeconds);
+		if (this.tabsVisible) this.tabStrip.update(editorRuntimeState.currentTimeMs);
+		this.timeline.update(); this.panes.activePane?.update(deltaSeconds);
 	}
 
 	public onWillDispose(listener: () => void): () => void {

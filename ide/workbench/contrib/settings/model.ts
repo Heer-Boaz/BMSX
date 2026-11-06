@@ -1,16 +1,20 @@
 import type { FontVariant } from '../../../../machine/ts/render/shared/bmsx_font';
-import { DEFAULT_WORKBENCH_FONT_SIZE, type WorkbenchPreferences, type WorkbenchTheme } from '../../services/preferences/preferences';
+import type { WORKBENCH_PREFERENCE_DEFAULTS, WorkbenchPreferences, WorkbenchTheme } from '../../services/preferences/preferences';
 import type { ValueInputResult } from '../../../editor/ui/inline/value_input';
 
-export type SettingsCategory = 'all' | 'appearance' | 'typography';
-type SettingBase = { readonly id: string; readonly category: Exclude<SettingsCategory, 'all'>; readonly label: string; readonly description: string };
-export type NumberSetting = SettingBase & { readonly kind: 'number'; readonly defaultValue: number;
+export const SETTINGS_CATEGORIES = [
+	{ id: 'all', label: 'All' }, { id: 'appearance', label: 'Appearance' }, { id: 'typography', label: 'Typography' },
+] as const;
+export type SettingsCategory = typeof SETTINGS_CATEGORIES[number]['id'];
+type SettingBase = { readonly id: keyof typeof WORKBENCH_PREFERENCE_DEFAULTS; readonly category: Exclude<SettingsCategory, 'all'>;
+	readonly label: string; readonly description: string; enabled?(preferences: WorkbenchPreferences): boolean };
+export type NumberSetting = SettingBase & { readonly kind: 'number';
 	read(preferences: WorkbenchPreferences): number; write(preferences: WorkbenchPreferences, value: number): void;
 	parse(text: string): ValueInputResult<number> };
-export type ChoiceSetting = SettingBase & { readonly kind: 'choice'; readonly defaultValue: string;
+export type ChoiceSetting = SettingBase & { readonly kind: 'choice';
 	readonly choices: readonly { readonly value: string; readonly label: string }[];
 	read(preferences: WorkbenchPreferences): string; write(preferences: WorkbenchPreferences, value: string): void };
-export type BooleanSetting = SettingBase & { readonly kind: 'boolean'; readonly defaultValue: boolean;
+export type BooleanSetting = SettingBase & { readonly kind: 'boolean';
 	read(preferences: WorkbenchPreferences): boolean; write(preferences: WorkbenchPreferences, value: boolean): void };
 export type Setting = NumberSetting | ChoiceSetting | BooleanSetting;
 
@@ -24,19 +28,20 @@ export function parseFontSize(text: string): ValueInputResult<number> {
 /** Declared preferences, not inferred from values or duplicated in menu commands. */
 export const SETTINGS: readonly Setting[] = [
 	{ id: 'theme', category: 'appearance', kind: 'choice', label: 'Color theme',
-		description: 'Colors used by Studio and the IDE. Game colors are unchanged.', defaultValue: 'light',
+		description: 'Colors used by Studio and the IDE. Game colors are unchanged.',
 		choices: [{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }],
 		read: p => p.theme, write: (p, value) => { p.theme = value as WorkbenchTheme; } },
 	{ id: 'fontVariant', category: 'typography', kind: 'choice', label: 'Font family',
-		description: 'JetBrains Mono is scalable. Tiny and MSX retain the pixel-font appearance.', defaultValue: 'mono',
+		description: 'JetBrains Mono is scalable. Tiny and MSX retain the pixel-font appearance.',
 		choices: [{ value: 'mono', label: 'JetBrains Mono' }, { value: 'tiny', label: 'Tiny' }, { value: 'msx', label: 'MSX' }],
 		read: p => p.fontVariant, write: (p, value) => { p.fontVariant = value as FontVariant; } },
 	{ id: 'fontSize', category: 'typography', kind: 'number', label: 'Font size (px)',
 		description: 'Text size in CSS pixels. Rows and controls adapt to the text. Applies to Studio and the IDE, not the game.',
-		defaultValue: DEFAULT_WORKBENCH_FONT_SIZE, read: p => p.fontSize, write: (p, value) => { p.fontSize = value; }, parse: parseFontSize },
+		read: p => p.fontSize, write: (p, value) => { p.fontSize = value; }, parse: parseFontSize },
 	{ id: 'fontSampling', category: 'typography', kind: 'boolean', label: 'Smooth pixel fonts',
-		description: 'Soften Tiny and MSX edges. The scalable font always uses anti-aliasing. Game pixels are unchanged.', defaultValue: true,
-		read: p => p.fontSampling === 'linear', write: (p, value) => { p.fontSampling = value ? 'linear' : 'nearest'; } },
+		description: 'Soften Tiny and MSX edges. JetBrains Mono always uses anti-aliasing. Game pixels are unchanged.',
+		enabled: p => p.fontVariant !== 'mono',
+		read: p => p.fontVariant === 'mono' || p.fontSampling === 'linear', write: (p, value) => { p.fontSampling = value ? 'linear' : 'nearest'; } },
 ];
 
 const SEARCH_TEXT = SETTINGS.map(setting => `${setting.category} ${setting.label} ${setting.description}`.toLowerCase());

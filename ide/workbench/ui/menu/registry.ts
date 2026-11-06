@@ -11,7 +11,7 @@ export type WorkbenchDropdownMenuId =
 
 export type WorkbenchContextMenuId = 'resources.directory.context' | 'resourceViewer.context' | 'editor.source.actions' | 'resources.open.context' | 'resources.scene.context' | 'resources.resource.context' | 'resources.disclosure.context' | 'editorTabs.context' | 'editorGroup.context' | 'window.context' | 'window.minimizable.context' | 'activity.context' | 'activity.window.context' | 'scenarioLab.context' | 'play.context' | 'gamePanel.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'actorLab.world.context' | 'actorLab.context' | 'actorLab.stateGraph.context' | 'actorLab.canvas.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context' | 'behaviorLens.graphCanvas.context';
 
-export type WorkbenchActionMenuId = 'settings.categories' | 'settings.choice' | 'settings.value' | 'home.work' | 'home.author' | 'home.behavior' | 'home.gameplay' | 'home.run' | 'home.tools' | 'window.status' | 'status.context' | 'window.title' | 'window.minimizable.title' | 'play.title' | 'animation.clients' | 'romInspector.title' | 'romInspector.reader.title' | 'events.title' | 'gte.title' | 'gte.details.title' | 'gpu.title' | 'gpu.inspector.content' | 'gte.inspector.content' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'workspaceEditReview.title' | 'workspaceEditReview.evidence.title' | 'actorLab.viewport' | 'actorLab.world.title' | 'actorLab.title' | 'actorLab.details.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'problems.title' | 'aem.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
+export type WorkbenchActionMenuId = 'settings.choice' | 'settings.value' | 'home.work' | 'home.author' | 'home.behavior' | 'home.gameplay' | 'home.run' | 'home.tools' | 'window.status' | 'status.context' | 'window.title' | 'window.minimizable.title' | 'play.title' | 'animation.clients' | 'romInspector.title' | 'romInspector.reader.title' | 'events.title' | 'gte.title' | 'gte.details.title' | 'gpu.title' | 'gpu.inspector.content' | 'gte.inspector.content' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'workspaceEditReview.title' | 'workspaceEditReview.evidence.title' | 'actorLab.viewport' | 'actorLab.world.title' | 'actorLab.title' | 'actorLab.details.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'problems.title' | 'aem.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
 export type WorkbenchMenuCommandItem = {
 	readonly type: 'command';
@@ -30,7 +30,6 @@ export type WorkbenchMenuSeparator = {
 export type WorkbenchMenuItem = WorkbenchMenuCommandItem | WorkbenchMenuSeparator;
 
 type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly WorkbenchMenuItem[]> & {
-	readonly 'settings.categories': readonly WorkbenchMenuCommandItem[];
 	readonly 'settings.choice': readonly WorkbenchMenuCommandItem[];
 	readonly 'settings.value': readonly WorkbenchMenuCommandItem[];
 	readonly 'home.work': readonly WorkbenchMenuCommandItem[];
@@ -419,11 +418,6 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'workspaceEditReview.impacts', icon: 'info' },
 		{ type: 'command', command: 'workspaceEditReview.discard', icon: 'close' },
 	],
-	'settings.categories': [
-		{ type: 'command', command: 'settings.all' },
-		{ type: 'command', command: 'settings.appearance' },
-		{ type: 'command', command: 'settings.typography' },
-	],
 	'settings.choice': [{ type: 'command', command: 'settings.choose', icon: 'chevronDown', showLabel: true }, { type: 'command', command: 'settings.reset' }],
 	'settings.value': [{ type: 'command', command: 'settings.reset' }],
 	'menubar.file': [
@@ -438,8 +432,6 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'keepEditor' },
 		{ type: 'command', command: 'tabs.close' },
 		{ type: 'command', command: 'editors.closeAll' },
-		{ type: 'separator' },
-		{ type: 'command', command: 'settings.open' },
 	],
 	'menubar.edit': [
 		{ type: 'command', command: 'undo' },
@@ -455,6 +447,8 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'rename' },
 		{ type: 'command', command: 'renamePreview' },
 		{ type: 'command', command: 'formatDocument' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'settings.open' },
 	],
 	'menubar.run': [
 		{ type: 'command', command: 'runCurrentFile' },

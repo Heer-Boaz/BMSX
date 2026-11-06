@@ -1,7 +1,7 @@
 import { fontScaleForPixelSize } from '../../ide/editor/ui/view/font';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { WorkbenchPreferences } from '../../ide/workbench/services/preferences/preferences';
+import { WorkbenchPreferences, WORKBENCH_PREFERENCE_DEFAULTS } from '../../ide/workbench/services/preferences/preferences';
 import { MemoryStorage } from '../../ide/workspace/memory_storage';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
@@ -43,6 +43,35 @@ test('obsolete percentage settings cannot rescale the pixel-size preference', ()
 	const storage = new MemoryStorage();
 	storage.setItem('bmsx.studio.uiScale', '0.75'); storage.setItem('bmsx.studio.fontScales', '{"mono":2,"tiny":1,"msx":1}');
 	assert.equal(new WorkbenchPreferences(storage).fontSize, 14);
+});
+
+test('reset removes user overrides before publishing the new effective defaults', () => {
+	const storage = new MemoryStorage(), preferences = new WorkbenchPreferences(storage);
+	preferences.fontSize = 18; preferences.theme = 'dark'; preferences.fontVariant = 'msx'; preferences.fontSampling = 'nearest';
+	for (const key of ['fontSize', 'theme', 'fontVariant', 'fontSampling'] as const) {
+		let changes = 0;
+		const unbind = preferences.onDidChange(() => {
+			changes++;
+			assert.equal(preferences[key], WORKBENCH_PREFERENCE_DEFAULTS[key]);
+			assert.equal(storage.getItem(`bmsx.studio.${key}`), null);
+			assert.equal(preferences.isConfigured(key), false);
+			assert.equal(new WorkbenchPreferences(storage)[key], preferences[key]);
+		});
+		preferences.reset(key); preferences.reset(key);
+		assert.equal(changes, 1); unbind();
+	}
+});
+
+test('an explicit default-value override remains resettable after reopening preferences', () => {
+	const storage = new MemoryStorage(), preferences = new WorkbenchPreferences(storage);
+	preferences.fontSize = 18; preferences.fontSize = WORKBENCH_PREFERENCE_DEFAULTS.fontSize;
+	const reopened = new WorkbenchPreferences(storage);
+	assert.equal(reopened.isConfigured('fontSize'), true);
+	let changes = 0; reopened.onDidChange(() => changes++);
+	reopened.reset('fontSize');
+	assert.equal(reopened.isConfigured('fontSize'), false);
+	assert.equal(storage.getItem('bmsx.studio.fontSize'), null);
+	assert.equal(changes, 1);
 });
 
 test('font em size resolves to CSS pixels at desktop and compact widths', t => {
