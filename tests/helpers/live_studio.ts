@@ -25,6 +25,12 @@ import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { runStudioHostFrame } from '../../ide/workbench/frame';
+import { runWorkbenchHostFrame } from '../../ide/workbench/host_frame';
+import { HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
+import { HostOnScreenKeyboard } from '../../hosts/common/host_on_screen_keyboard';
+import { HostKeyboardInteraction } from '../../hosts/common/input/host_keyboard_interaction';
+import { OnScreenKeyboard } from '../../hosts/common/input/on_screen_keyboard';
+import { NATIVE_KEYBOARD_PAGES } from '../../hosts/common/input/on_screen_keyboard_keys';
 import { RuntimeIdeState } from '../../ide/workbench/state';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace/records';
 import { HeadlessGPUBackend } from '../../machine/ts/render/headless/backend';
@@ -35,7 +41,7 @@ import { MemoryWorkspaceFiles } from './workspace_files';
 
 
 /** Ordinary boot and the physical host phases of Studio, shared by live editor regressions. */
-export async function createLiveStudioFixture(t: TestContext) {
+export async function createLiveStudioFixture(t: TestContext, presentation: 'viewless' | 'workbench' = 'viewless') {
 	await openWorkspaceRecords(new MemoryWorkspaceFiles());
 	const [system, cart] = await Promise.all([readFile('dist/system/bmsx-bios.debug.rom'), readFile('dist/studio_test.debug.rom')]);
 	const media = await loadRomToolingMedia(system, [cart, null]);
@@ -57,6 +63,12 @@ export async function createLiveStudioFixture(t: TestContext) {
 		new WorkbenchPreferences(new MemoryStorage()), input, audio, tasks, execution, rewind, clock, new HeadlessClipboard(), new IdeMicrotaskQueue(), log,
 		{ width: 800, height: 360 }, sources, new Map(), externalWork, externalWork, externalWork);
 	const editor = ide.editor;
+	let hostMenu: HostOverlayMenu | undefined;
+	if (presentation === 'workbench') {
+		const keyboard = new OnScreenKeyboard(input, NATIVE_KEYBOARD_PAGES);
+		hostMenu = new HostOverlayMenu(presenter, runtime, input, rewind, execution,
+			new HostKeyboardInteraction(input, keyboard, presenter, new HostOnScreenKeyboard(presenter, keyboard)));
+	}
 	t.after(async () => {
 		inputFocus.setTarget(null); pointerCapture.interrupt(false); editor.editorParts.clear();
 		await editor.shutdown(); clearBackgroundTasks(); editorTextModelService.clear(); sources.catalog.dispose();
@@ -64,7 +76,8 @@ export async function createLiveStudioFixture(t: TestContext) {
 	});
 	const frame = async () => {
 		clock.advance(1000 / 60);
-		runStudioHostFrame(session, runtime, presenter, input, audio, output, ide, screen, clock.now());
+		if (hostMenu !== undefined) runWorkbenchHostFrame(session, runtime, presenter, input, audio, output, log, ide, screen, hostMenu, clock.now());
+		else runStudioHostFrame(session, runtime, presenter, input, audio, output, ide, screen, clock.now());
 		await tasks.join(); await Promise.resolve();
 		assert.equal(ide.fault.hostFrameFailure, undefined);
 		assert.equal(ide.fault.faultSnapshot, null);

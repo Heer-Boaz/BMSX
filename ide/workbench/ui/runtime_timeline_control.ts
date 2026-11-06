@@ -31,6 +31,7 @@ export class RuntimeTimelineControl {
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly range = new WorkbenchSlider();
 	private readonly slider: WorkbenchSliderControl;
+	private readonly unbindFocus: () => void;
 	private readonly tooltip = new WorkbenchTooltip();
 	private workArea!: Readonly<RectBounds>;
 	private binding: InputRuntimeContext | undefined;
@@ -47,7 +48,11 @@ export class RuntimeTimelineControl {
 	public constructor(private readonly commands: EditorCommandRunner, private readonly focusContent: () => void,
 		parent: InputFocusTarget, private readonly bounds: Readonly<RectBounds>, private readonly onDidChangeHeight: () => void) {
 		const target = inputFocus.createTarget(parent, new InputFocusScope(Symbol('runtime timeline'), parent.scope));
-		target.canFocus = () => false;
+		// During a checkpoint all transport controls can be temporarily disabled.
+		// Their focus-return boundary is the bound runtime client, not the editor
+		// group's unrelated empty/source context (which would pause that runtime).
+		target.canFocus = () => this.presented;
+		this.unbindFocus = target.onDidFocus(() => this.binding!.target.focus());
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, target, focusContent);
 		this.focusScope = this.actions.focusTarget.scope;
 		this.slider = new WorkbenchSliderControl(inputFocus, pointerCapture, this.actions.focusTarget,
@@ -213,5 +218,5 @@ export class RuntimeTimelineControl {
 		if (this.presented) drawRuntimeTimeline(this.layout, this.actionState, this.range,
 			this.slider.focusTarget.hasFocus, editorViewState.font.renderFont());
 	}
-	public dispose(): void { this.setContext(undefined); this.tooltip.detach(); this.slider.dispose(); this.actions.dispose(); }
+	public dispose(): void { this.setContext(undefined); this.unbindFocus(); this.tooltip.detach(); this.slider.dispose(); this.actions.dispose(); }
 }

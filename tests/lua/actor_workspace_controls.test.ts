@@ -6,9 +6,13 @@ import { pointerCapture } from '../../ide/input/pointer/capture';
 import { ActorLabEditorPane } from '../../ide/workbench/contrib/actor_lab/editor_pane';
 import { toggleEditor } from '../../ide/workbench/overlay_modes';
 import { createLiveStudioFixture } from '../helpers/live_studio';
+import { RuntimeTimelineLayout } from '../../ide/workbench/ui/runtime_timeline';
+import { createWorkbenchActionBar } from '../../ide/workbench/ui/action_bar';
+import { WorkbenchSlider } from '../../ide/workbench/ui/slider';
+import { editorViewState } from '../../ide/editor/ui/view/state';
 
-async function fixture(t: TestContext) {
-	const f = await createLiveStudioFixture(t);
+async function fixture(t: TestContext, presentation: 'viewless' | 'workbench' = 'viewless') {
+	const f = await createLiveStudioFixture(t, presentation);
 	const { editor } = f;
 	toggleEditor(editor, f.sources, f.ide.overlayRenderer, f.runtime);
 	f.ide.transport.resumeHere(); await f.frame(); await f.frame();
@@ -22,6 +26,72 @@ async function fixture(t: TestContext) {
 	toggleEditor(editor, f.sources, f.ide.overlayRenderer, f.runtime); await f.frame();
 	return { ...f, input, group, pane };
 }
+
+for (const route of ['command', 'button'] as const) test(`Continue from Here ${route} resumes the displayed Game runtime after timeline review`, async t => {
+	const f = await fixture(t, 'workbench');
+	f.editor.commands.execute('runtime.playback', f.pane.commandTarget);
+	for (let i = 0; i < 20; i++) await f.frame();
+	f.editor.commands.execute('runtime.pause', f.pane.commandTarget);
+	const actor = f.input.worldOutliner.tree.rows.find(row => row.element.label === 'studio_test.first')!;
+	f.input.controller.inspectActor(f.input, f.input.domain, actor.element.hashId);
+	f.input.controller.projection.reveal(f.input.runtime.roots[0].children[0]); f.editor.update(0);
+	const selection = f.input.selectionPath;
+	const actions = createWorkbenchActionBar('runtime.title'), layout = new RuntimeTimelineLayout(), bounds = f.group.timelineBounds;
+	const range = new WorkbenchSlider();
+	layout.update(actions, range, editorViewState.font.renderFont(), bounds.left, bounds.top, bounds.right, 0, 0);
+	f.native.apply([{ type: 'pointer', x: range.bounds.right - (range.bounds.right - range.bounds.left) / 10, y: (range.bounds.top + range.bounds.bottom) / 2 },
+		{ type: 'button', button: 'primary', down: true }]);
+	await f.frame();
+	f.native.apply([{ type: 'button', button: 'primary', down: false }]); await f.frame();
+	await f.until(() => f.ide.frameNavigation.active === undefined);
+	assert.equal(f.ide.rewind.active, true);
+	assert.equal(f.input.actorPresent, true, 'the reviewed frame still contains the selected actor');
+	const cycles = f.runtime.machine.scheduler.currentNowCycles();
+	assert.equal(f.editor.commands.isEnabled('runtime.resume', f.pane.commandTarget), true);
+	if (route === 'command') f.editor.commands.execute('runtime.resume', f.pane.commandTarget);
+	else {
+		const button = actions.items.find(item => item.command === 'runtime.resume')!.bounds;
+		f.native.apply([{ type: 'pointer', x: (button.left + button.right) / 2, y: (button.top + button.bottom) / 2 },
+			{ type: 'button', button: 'primary', down: true }]);
+		await f.frame();
+		f.native.apply([{ type: 'button', button: 'primary', down: false }]);
+	}
+	assert.equal(f.input.interaction.running, true, 'Continue publishes live intent');
+	await f.frame(); await f.frame();
+	assert.equal(f.input.interaction.running, true, 'ending history review retains live intent');
+	assert.equal(f.execution.paused, false, 'Continue releases the displayed runtime hold');
+	await f.until(() => f.runtime.machine.scheduler.currentNowCycles() > cycles);
+	assert.deepEqual(f.input.selectionPath, selection, 'continuing preserves the inspected component');
+});
+
+for (const running of [false, true]) test(`Actor and component pointer selection survives presentation and blur while ${running ? 'running' : 'paused'}`, async t => {
+	const f = await fixture(t, 'workbench');
+	if (running) { f.editor.commands.execute('runtime.playback', f.pane.commandTarget); await f.frame(); }
+	const tree = f.input.worldOutliner.tree;
+	const index = tree.rows.findIndex(row => row.element.label === 'studio_test.first');
+	const actor = tree.rows[index].element.hashId;
+	f.native.apply([{ type: 'pointer', x: tree.rowLeft + tree.layout.indentWidth * 2,
+		y: tree.layout.contentTop + (index - tree.scroll + 0.5) * tree.layout.rowHeight },
+		{ type: 'button', button: 'primary', down: true }]);
+	await f.frame(); f.native.apply([{ type: 'button', button: 'primary', down: false }]); await f.frame();
+	assert.equal(f.input.actorHashId, actor);
+	f.editor.commands.execute('actorLab.outline', inputFocus.target); await f.frame();
+	const outline = f.input.outline, memberIndex = outline.rows.findIndex(row => row.element.node.kind === 'component');
+	const member = outline.rows[memberIndex].element.node.hashId;
+	f.native.apply([{ type: 'pointer', x: outline.rowLeft + outline.layout.indentWidth * 4,
+		y: outline.layout.contentTop + (memberIndex - outline.scroll + 0.5) * outline.layout.rowHeight },
+		{ type: 'button', button: 'primary', down: true }]);
+	await f.frame(); f.native.apply([{ type: 'button', button: 'primary', down: false }]); await f.frame();
+	assert.equal(f.input.selectedOutlineNode?.hashId, member);
+	const selection = f.input.selectionPath;
+	// Empty scanout takes input focus; it is not an instruction to clear inspection.
+	f.native.apply([{ type: 'pointer', x: f.input.previewBounds.right - 2, y: f.input.previewBounds.bottom - 2 },
+		{ type: 'button', button: 'primary', down: true }, { type: 'button', button: 'primary', down: false }]);
+	await f.frame(); await f.frame();
+	assert.equal(f.input.actorHashId, actor); assert.equal(f.input.selectedOutlineNode?.hashId, member);
+	assert.deepEqual(f.input.selectionPath, selection);
+	assert.equal(f.execution.paused, !running, 'input focus does not change playback intent');
+});
 
 for (const presentation of ['world', 'outline'] as const) test(`Actor ${presentation} exposes overflow through the shared horizontal scrollbar without changing selection`, async t => {
 	const f = await fixture(t);
