@@ -6,7 +6,7 @@ import type { SingleLineFieldViewport } from './single_line_viewport';
 import type { TextField } from './text_field_model';
 
 /** Draws only the retained visible span; no substring or per-frame measurement. */
-export function drawSingleLineField(field: TextField, view: SingleLineFieldViewport, color: number): void {
+export function drawSingleLineField(field: TextField, view: SingleLineFieldViewport, color: number, placeholder?: string): void {
 	const left = view.textLeft, top = view.textTop, clip = view.clipBounds;
 	const font = view.renderFont.renderFont();
 	api.pushClipRect(clip.left, clip.top, clip.right, clip.bottom);
@@ -23,6 +23,7 @@ export function drawSingleLineField(field: TextField, view: SingleLineFieldViewp
 	} else {
 		api.blit_text_inline_span_with_font(field.text, view.start, view.end, left, top, 0, color, font);
 	}
+	if (field.text.length === 0 && placeholder !== undefined) api.blit_text_inline_with_font(placeholder, left, top, 0, constants.COLOR_INPUT_PLACEHOLDER, font);
 	if (focused) {
 		const caret = view.caretBounds;
 		drawInlineCaret(api, field, view.renderFont, caret.left, caret.top, caret.right, caret.bottom, caret.left, true);

@@ -1,3 +1,4 @@
+import { fontEmSize } from '../../machine/ts/render/shared/bmsx_font';
 import { create_rect_bounds } from '../../machine/ts/common/rect';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { resolveTextPositionBounds } from '../../ide/editor/ui/view/view';
@@ -19,11 +20,12 @@ test('constrained workspace allocation settles without republishing unchanged su
 		f.editor.preferences.fontVariant = font;
 		part.prepareLayout();
 		const width = part.minimumClientWidth, height = part.minimumClientHeight;
-		for (const availableHeight of [120, 1080, 120]) {
+		const constrained = Math.max(1, Math.trunc(height * 3 / 2));
+		for (const availableHeight of [constrained, 1080, constrained]) {
 			f.display.workspace.layout(1152, availableHeight, 1);
 			f.editor.update(0);
 			const layout = f.editor.mainWorkspace.regionLayout;
-			assert.equal(layout.contentHeight > layout.bounds.bottom - layout.bounds.top, availableHeight === 120,
+			assert.equal(layout.contentHeight > layout.bounds.bottom - layout.bounds.top, availableHeight === constrained,
 				'the parent admits and retires vertical overflow without changing the child minimum');
 			assert.equal(part.minimumClientWidth, width); assert.equal(part.minimumClientHeight, height);
 			const revision = f.editor.surfaces.revision;
@@ -62,19 +64,16 @@ test('workbench layout publishes its viewport to the drawing owner without rerea
 	assert.ok(f.editor.editorParts.activeGroup.model.activeTab === input);
 });
 
-test('font smoothing uses shared command state and retains the document, metrics and raster allocation', async t => {
+test('font smoothing uses the preference owner and retains the document, metrics and raster allocation', async t => {
 	const f = await createLiveStudioFixture(t);
-	const commandTarget = f.editor.editorParts.activeGroup.focusTarget;
 	assert.equal(f.editor.fontVariant, 'mono', 'new workspaces use the scalable font');
-	assert.equal(f.editor.commands.isEnabled('workspace.fontSmoothing', commandTarget), false, 'pixel filtering does not change MSDF rendering');
 	f.editor.preferences.fontVariant = 'tiny';
 	const input = f.editor.editorParts.activeGroup.model.activeTab;
 	const viewport = { ...f.presenter.viewportSize }, raster = f.backend.borrowPresentedPixels().buffer;
 	const before = editorViewState.font;
-	const target = f.editor.editorParts.activeGroup.focusTarget;
-	assert.equal(f.editor.commands.isActive('workspace.fontSmoothing', target), true);
-	f.editor.commands.execute('workspace.fontSmoothing', target);
-	assert.equal(f.editor.commands.isActive('workspace.fontSmoothing', target), false);
+	assert.equal(f.editor.preferences.fontSampling === 'linear', true);
+	f.editor.preferences.fontSampling = f.editor.preferences.fontSampling === 'linear' ? 'nearest' : 'linear';
+	assert.equal(f.editor.preferences.fontSampling === 'linear', false);
 	const after = editorViewState.font;
 	assert.equal(after.renderFont().sampling, 'nearest');
 	assert.equal(after.renderFont('italic').sampling, 'nearest');
@@ -86,7 +85,7 @@ test('font smoothing uses shared command state and retains the document, metrics
 	assert.deepEqual(f.presenter.viewportSize, viewport);
 	f.editor.preferences.fontVariant = 'msx';
 	assert.equal(editorViewState.font.renderFont().sampling, 'nearest');
-	f.editor.commands.execute('workspace.fontSmoothing', target);
+	f.editor.preferences.fontSampling = f.editor.preferences.fontSampling === 'linear' ? 'nearest' : 'linear';
 	assert.equal(editorViewState.font.renderFont().sampling, 'linear');
 	f.editor.preferences.fontVariant = 'mono';
 	assert.equal(editorViewState.font.renderFont().raster, 'msdf');
@@ -94,27 +93,20 @@ test('font smoothing uses shared command state and retains the document, metrics
 	assert.ok(f.backend.borrowPresentedPixels().buffer === raster);
 });
 
-test('Font Size command publishes one shared font generation without changing UI scale, source or game raster', async t => {
+test('Pixel font size publishes one shared font generation without changing source or game raster', async t => {
 	const f = await createLiveStudioFixture(t), editor = f.editor;
 	const input = editor.editorParts.activeGroup.model.activeTab;
 	editor.resourcePanel.show(); editor.update(0);
 	const viewport = { ...f.presenter.viewportSize }, raster = f.backend.borrowPresentedPixels().buffer;
 	const media = f.sources.currentBlua32Media, cycles = f.runtime.machine.scheduler.nowCycles;
 	const font = editorViewState.font, files = editor.resourcePanel, rows = files.files.tree.rows, selected = files.files.selectedNode;
-	assert.equal(font.scale, 0.75);
-	const target = editor.editorParts.activeGroup.focusTarget;
-	assert.equal(editor.commands.isEnabled('workspace.fontSize', target), true);
-	editor.commands.execute('workspace.fontSize', target);
-	const picker = editor.quickInput;
-	assert.equal(picker.visible, true);
-	picker.accept();
-	assert.ok(editorViewState.font === font, 'accepting the current size leaves its font generation unchanged');
-	editor.commands.execute('workspace.fontSize', target);
-	picker.model.filter('50%'); picker.accept();
-	assert.equal(picker.visible, false);
+	assert.equal(editor.preferences.fontSize, 14);
+	editor.preferences.fontSize = 14; f.display.workspace.refresh();
+	assert.ok(editorViewState.font === font, 'unchanged size and allocation retain the font generation');
+	editor.preferences.fontSize = 12;
 	const next = editorViewState.font;
-	assert.equal(next.scale, 0.5); assert.equal(editor.preferences.uiScale, 1);
-	assert.ok(Math.abs(next.measure('Column\tname') / font.measure('Column\tname') - 2 / 3) < 1e-10);
+	assert.equal(next.scale * fontEmSize('mono') * 3, 12);
+	assert.ok(Math.abs(next.measure('Column\tname') / font.measure('Column\tname') - 12 / 14) < 1e-10);
 	assert.equal(next.renderFont('italic').lineHeight, next.lineHeight);
 	assert.ok(next.renderFont().atlas === font.renderFont().atlas);
 	assert.ok(files.files.tree.rows === rows); assert.ok(files.files.selectedNode === selected);
@@ -122,8 +114,8 @@ test('Font Size command publishes one shared font generation without changing UI
 	assert.equal(f.runtime.machine.scheduler.nowCycles, cycles);
 	assert.deepEqual(f.presenter.viewportSize, viewport);
 	await f.frame(); assert.ok(f.backend.borrowPresentedPixels().buffer === raster);
-	editor.preferences.fontVariant = 'tiny'; assert.equal(editorViewState.font.scale, 1);
-	editor.preferences.fontVariant = 'mono'; assert.equal(editorViewState.font.scale, 0.5);
+	editor.preferences.fontVariant = 'tiny'; assert.equal(editorViewState.font.scale * fontEmSize('tiny') * 3, 12);
+	editor.preferences.fontVariant = 'mono'; assert.equal(editorViewState.font.scale * fontEmSize('mono') * 3, 12);
 });
 
 test('Studio reallocates its own workspace, retaining documents and restoring the unchanged game presentation', async t => {
@@ -139,24 +131,24 @@ test('Studio reallocates its own workspace, retaining documents and restoring th
 	const raster = f.backend.borrowPresentedPixels().buffer, allocations = resize.mock.callCount();
 	const input = f.editor.editorParts.activeGroup.model.activeTab;
 	const media = f.sources.currentBlua32Media, cycles = f.runtime.machine.scheduler.nowCycles;
-	f.editor.preferences.uiScale = 1.25;
-	assert.deepEqual([f.presenter.viewportSize.x, f.presenter.viewportSize.y], [512, 288]);
+	f.editor.preferences.fontSize = 16;
+	assert.deepEqual([f.presenter.viewportSize.x, f.presenter.viewportSize.y], [640, 360]);
 	assert.ok(f.editor.editorParts.activeGroup.model.activeTab === input);
 	assert.ok(f.sources.currentBlua32Media === media);
-	assert.equal(f.runtime.machine.scheduler.nowCycles, cycles, 'UI scaling neither runs nor reinitializes the guest');
+	assert.equal(f.runtime.machine.scheduler.nowCycles, cycles, 'Font sizing neither runs nor reinitializes the guest');
 	await f.frame();
-	assert.equal(resize.mock.callCount(), allocations, 'UI scale changes logical layout, not the backing buffer');
+	assert.equal(resize.mock.callCount(), allocations, 'Font sizing changes control layout, not the backing buffer');
 	assert.ok(f.backend.borrowPresentedPixels().buffer === raster);
 	f.display.workspace.layout(1920, 1080, 1.25);
 	await f.frame();
 	assert.deepEqual(f.presenter.canvasSize, { x: 2400, y: 1350 });
-	assert.deepEqual(f.presenter.viewportSize, { x: 512, y: 288 }, 'DPR changes density, not layout');
+	assert.deepEqual(f.presenter.viewportSize, { x: 640, y: 360 }, 'DPR changes density, not layout');
 	const beforeHidden = resize.mock.callCount();
 	f.display.workspace.layout(0, 0, 1);
 	f.display.workspace.layout(1920, 1080, 1.25);
 	assert.equal(resize.mock.callCount(), beforeHidden, 'hidden areas do not allocate, and restoring unchanged dimensions reuses the target');
 	f.display.workspace.layout(1920, 400, 1);
-	assert.equal(f.presenter.viewportSize.x, 512, 'shorter windows do not shrink UI scale to retain a fixed row count');
+	assert.equal(f.presenter.viewportSize.x, 640, 'shorter windows do not shrink UI scale to retain a fixed row count');
 	f.display.workspace.layout(1920, 1080, 1);
 	await f.frame();
 	f.display.setPointerCursor('col-resize');
@@ -165,11 +157,11 @@ test('Studio reallocates its own workspace, retaining documents and restoring th
 	assert.equal(f.display.pointerCursor, 'default');
 	assert.deepEqual([f.presenter.viewportSize.x, f.presenter.viewportSize.y], game);
 	f.editor.activate();
-	assert.equal(f.editor.preferences.uiScale, 1.25);
-	assert.deepEqual([f.presenter.viewportSize.x, f.presenter.viewportSize.y], [512, 288]);
+	assert.equal(f.editor.preferences.fontSize, 16);
+	assert.deepEqual([f.presenter.viewportSize.x, f.presenter.viewportSize.y], [640, 360]);
 });
 
-test('Source caret, selection and context menus keep their document meaning across workbench UI scales', async t => {
+test('Source caret, selection and context menus keep their document meaning across font sizes', async t => {
 	const f = await createLiveStudioFixture(t);
 	const resource = f.sources.catalog.luaResources.find(resource => resource.path === 'scenes/text.lua')!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource);
@@ -177,8 +169,8 @@ test('Source caret, selection and context menus keep their document meaning acro
 	const input = new CodeEditorInput(model); group.openEditor(input); group.focus(); f.editor.update(0);
 	const pane = group.panes.activePane!; assert.ok(pane instanceof CodeEditorPane);
 	const bounds = create_rect_bounds();
-	for (const scale of [0.75, 1.25, 2] as const) {
-		f.editor.preferences.uiScale = scale; await f.frame();
+	for (const size of [12, 16, 24] as const) {
+		f.editor.preferences.fontSize = size; await f.frame();
 		const point = (column: number) => {
 			resolveTextPositionBounds(pane.code, 0, column, bounds);
 			return { type: 'pointer' as const, x: bounds.left + (bounds.right - bounds.left) * 0.25,

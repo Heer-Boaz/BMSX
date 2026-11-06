@@ -21,7 +21,7 @@ export { workbenchPixelsPerUnit } from './ide/workbench/common/display_scale';`,
 		const measure = canvas.getBoundingClientRect.bind(canvas);
 		canvas.getBoundingClientRect = () => { layoutReads++; return measure(); };
 		video.workspace.open(({ width: availableWidth, height: availableHeight, pixelWidth, pixelHeight }) => {
-			const scale = api.workbenchPixelsPerUnit(availableWidth, 1);
+			const scale = api.workbenchPixelsPerUnit(availableWidth);
 			canvas.width = pixelWidth; canvas.height = pixelHeight;
 			video.setDisplaySize(pixelWidth, pixelHeight, Math.trunc(availableWidth / scale), Math.trunc(availableHeight / scale)); allocations++;
 		});

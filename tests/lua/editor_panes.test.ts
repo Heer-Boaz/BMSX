@@ -139,6 +139,7 @@ function createEditorPanes(measureCode: EditorPaneContribution<CodeEditorInput>[
 		workspace_search: { create: group => new RecordingEditorPane<Extract<EditorInput, { kind: 'workspace_search' }>>(group.focusScope), measure: measureUnconstrainedEditor },
 		call_hierarchy: { create: group => new RecordingEditorPane<Extract<EditorInput, { kind: 'call_hierarchy' }>>(group.focusScope), measure: measureUnconstrainedEditor },
 		home: { create: group => new RecordingEditorPane<HomeInput>(group.focusScope), measure: measureUnconstrainedEditor },
+		settings: { create: group => new RecordingEditorPane<Extract<EditorInput, { kind: 'settings' }>>(group.focusScope), measure: measureUnconstrainedEditor },
 		play_session: { create: group => new RecordingEditorPane(group.focusScope), measure: measureUnconstrainedEditor },
 		animation: { create: group => new RecordingEditorPane<Extract<EditorInput, { kind: 'animation' }>>(group.focusScope), measure: measureUnconstrainedEditor },
 		host_error: { create: group => new RecordingEditorPane<Extract<EditorInput, { kind: 'host_error' }>>(group.focusScope), measure: measureUnconstrainedEditor },

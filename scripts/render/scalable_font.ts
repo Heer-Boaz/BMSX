@@ -50,7 +50,7 @@ export async function generateScalableFontAtlas(): Promise<boolean> {
 		"import type { ScalableFontAtlas } from '../../../machine/ts/render/host_overlay/scalable_font';",
 		"import pixels from '#bmsx/scalable-font-pixels';",
 		'export const SCALABLE_FONT_ATLAS: ScalableFontAtlas = {',
-		`\twidth: ${width}, height: ${height}, lineHeight: ${lineHeight}, distanceRange: ${distanceRange},`,
+		`\twidth: ${width}, height: ${height}, emSize: ${EM_SIZE}, lineHeight: ${lineHeight}, distanceRange: ${distanceRange},`,
 		'\tpixels, srgb: false,',
 		'\tglyphs: [', ...glyphs.map(glyph => `\t\t${JSON.stringify(glyph)},`), '\t],', '};', '',
 	].join('\n');
@@ -61,7 +61,7 @@ export async function generateScalableFontAtlas(): Promise<boolean> {
 		...glyphs.map(glyph => `\t{${JSON.stringify(glyph.id)}, ${glyph.codepoint}u, ${glyph.italic}, {`
 			+ [glyph.width, glyph.height, glyph.advance, glyph.offsetX, glyph.offsetY].map(value => `${value.toFixed(8)}F`).join(', ')
 			+ `, ${glyph.u}u, ${glyph.v}u, ${glyph.w}u, ${glyph.h}u}},`),
-		'};', '}', `const ScalableFontAtlas SCALABLE_FONT_ATLAS{{${width}u, ${height}u, SCALABLE_FONT_PIXELS, false}, ${lineHeight.toFixed(8)}F, ${distanceRange.toFixed(8)}F, GLYPHS};`, '}', '',
+		'};', '}', `const ScalableFontAtlas SCALABLE_FONT_ATLAS{{${width}u, ${height}u, SCALABLE_FONT_PIXELS, false}, ${EM_SIZE.toFixed(8)}F, ${lineHeight.toFixed(8)}F, ${distanceRange.toFixed(8)}F, GLYPHS};`, '}', '',
 	].join('\n');
 	const changed = await Promise.all([
 		writeIfChanged('hosts/fonts/jetbrains_mono/scalable_font.generated.ts', ts),

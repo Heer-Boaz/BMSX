@@ -1,5 +1,4 @@
-import { FONT_VARIANTS } from '../../machine/ts/render/shared/bmsx_font';
-import { WORKSPACE_FONT_SCALES, WORKSPACE_UI_SCALES } from '../workbench/common/display_scale';
+import { openSettings } from '../workbench/contrib/settings/editor_input';
 import { findEditorGroup } from '../workbench/services/editor/editor_group';
 import { chooseBuild, chooseBuildOutput, showBuildJobs } from '../workbench/contrib/builds/commands';
 import { createCartridge } from '../workbench/contrib/projects/commands';
@@ -146,29 +145,7 @@ export class IdeCommandController {
 			return;
 		}
 		switch (command) {
-			case 'workspace.uiScale':
-				this.editor.quickInput.pick('UI SCALE', 'Scale Studio controls, not the game', () => new TextQuickPickProvider(
-					WORKSPACE_UI_SCALES.map(scale => ({ scale, label: `${scale * 100}%`,
-						description: scale === this.editor.preferences.uiScale ? 'Current' : '', detail: '' }))),
-					choice => { this.editor.preferences.uiScale = choice.scale; });
-				return;
-			case 'workspace.font':
-				this.editor.quickInput.pick('UI FONT', 'Choose Studio typography, not the game font', () => new TextQuickPickProvider(
-					FONT_VARIANTS.map(variant => ({ variant, label: variant === 'mono' ? 'JetBrains Mono' : variant === 'tiny' ? 'Tiny' : 'MSX',
-						description: variant === this.editor.fontVariant ? 'Current' : '',
-						detail: variant === 'mono' ? 'Scalable' : 'Pixel font' }))),
-					choice => { this.editor.preferences.fontVariant = choice.variant; });
-				return;
-			case 'workspace.fontSmoothing':
-				this.editor.preferences.fontSampling = this.editor.preferences.fontSampling === 'linear' ? 'nearest' : 'linear';
-				return;
-			case 'workspace.fontSize':
-				this.editor.quickInput.pick('FONT SIZE', 'Text size for the current font; UI scale stays unchanged', () => new TextQuickPickProvider(
-					WORKSPACE_FONT_SCALES.map(scale => ({ scale, label: `${scale * 100}%`,
-						description: scale === this.editor.preferences.fontScale ? 'Current' : '', detail: '' })),
-					WORKSPACE_FONT_SCALES.indexOf(this.editor.preferences.fontScale)),
-					choice => { this.editor.preferences.fontScale = choice.scale; });
-				return;
+			case 'settings.open': openSettings(this.editor.editorParts, this.editor.preferences); return;
 			case 'workspace.resetLayout': this.editor.resetLayout(); return;
 			case 'sceneEditor': showMainScenePicker(this.editor, this.sources.catalog, invocationTarget); return;
 			case 'workspace.focusNextRegion': this.editor.regionNavigation.focus(invocationTarget, 1); return;
@@ -457,8 +434,7 @@ export class IdeCommandController {
 		}
 		if (input !== undefined && !group.model.contains(input)) return false;
 		switch (command) {
-			case 'workspace.fontSmoothing': return this.editor.acceptsInput && this.editor.fontVariant !== 'mono';
-			case 'workspace.uiScale': case 'workspace.font': case 'workspace.fontSize': case 'workspace.resetLayout': return this.editor.acceptsInput;
+			case 'settings.open': case 'workspace.resetLayout': return this.editor.acceptsInput;
 			case 'sceneEditor': return this.editor.isActive && this.editor.projectContent.acceptingQueries;
 			case 'window.showAll': case 'window.focusMain': case 'window.newEditor': return true;
 			case 'workspace.focusNextRegion': return this.editor.isActive && this.editor.regionNavigation.canNavigate(focus, 1);
@@ -612,7 +588,6 @@ export class IdeCommandController {
 				return window?.focusTarget.getCommand(command)?.isChecked?.() === true;
 			}
 			case 'group.maximize': return part.arrangement.maximized === group;
-			case 'workspace.fontSmoothing': return this.editor.preferences.fontSampling === 'linear';
 			case 'workspace.hierarchy.toggle': return this.editor.mainWorkspace.regions.hierarchy.displayed;
 			case 'workspace.details.toggle': return this.editor.mainWorkspace.regions.details.displayed;
 			case 'runtime.toggleTimeline': return group.timeline.requested;

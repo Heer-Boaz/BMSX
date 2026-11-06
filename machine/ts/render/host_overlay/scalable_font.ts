@@ -10,6 +10,7 @@ export type ScalableFontGlyph = BitmapFontSourceGlyph & {
 
 /** Linear RGB signed distances, separate from the sRGB host-image atlas. */
 export type ScalableFontAtlas = HostAtlas & Readonly<{
+	emSize: number;
 	lineHeight: number;
 	distanceRange: number;
 	glyphs: readonly ScalableFontGlyph[];

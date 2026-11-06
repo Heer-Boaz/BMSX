@@ -1,5 +1,7 @@
+import { fontScaleForPixelSize } from './editor/ui/view/font';
+import { SettingsPane } from './workbench/contrib/settings/editor_pane';
 import type { WorkbenchPreferences } from './workbench/services/preferences/preferences';
-import { workbenchPixelsPerUnit } from './workbench/common/display_scale';
+import { WORKBENCH_PIXELS_PER_UNIT, workbenchPixelsPerUnit } from './workbench/common/display_scale';
 import { CodeDocumentProjections } from './editor/ui/code/document_projections';
 import { WorkbenchInteraction } from './workbench/services/execution/interaction';
 import { MainWorkspace } from './workbench/main_workspace';
@@ -443,6 +445,10 @@ export class RuntimeCartEditor implements CartEditor {
 		this.display = display;
 		this.unbindPreferences = preferences.onDidChange(() => {
 			this.applyFontPreferences();
+			if (constants.getActiveIdeThemeVariant() !== preferences.theme) {
+				constants.setIdeThemeVariant(preferences.theme);
+				editorRuntimeState.themeVariant = preferences.theme;
+			}
 			if (this.isActive) display.workspace.refresh();
 		});
 		this.unbindDisplayGeometry = display.geometry.onDidChange(() => { if (this.isActive) this.cancelPointerInput(); });
@@ -540,6 +546,7 @@ export class RuntimeCartEditor implements CartEditor {
 			aem_editor: { create: group => new AemEditorPane(this.aemEditor, this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope, this.editorParts.partForGroup(group).quickInput), measure: measureAemEditor },
 			lua_program: { create: group => new LuaProgramEditorPane(this.luaPrograms, this.commands, this.actionStrings, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope, this.editorParts.partForGroup(group).quickInput), measure: measureLuaProgramEditor },
 			behavior_lens: { create: group => new BehaviorLensEditorPane(this.behaviorLens, this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope, this.editorParts.partForGroup(group).quickInput), measure: measureBehaviorLensEditor },
+			settings: { create: group => new SettingsPane(group.focusScope, this.commands, this.editorParts.partForGroup(group).quickInput, this.contextMenu), measure: measureUnconstrainedEditor },
 			actor_lab: { create: group => new ActorLabEditorPane(this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea,
 				group, this.editorParts.partForGroup(group).quickInput, group.focusScope), measure: measureUnconstrainedEditor },
 			cart_map: { create: group => new CartMapPane(this.cartMaps, this.commands, this.sources, this.surfaces, group.paneSurface, group.workArea, group.focusScope, this.contextMenu), measure: measureCartMapEditor },
@@ -1076,8 +1083,11 @@ export class RuntimeCartEditor implements CartEditor {
 		}
 	}
 
+	private workspacePixelsPerUnit = WORKBENCH_PIXELS_PER_UNIT;
+
 	private applyFontPreferences(): void {
-		const { fontVariant, fontSampling, fontScale } = this.preferences;
+		const { fontVariant, fontSampling, fontSize } = this.preferences;
+		const fontScale = fontScaleForPixelSize(fontVariant, fontSize, this.workspacePixelsPerUnit);
 		if (editorViewState.fontVariant === fontVariant && editorViewState.font.sampling === fontSampling && editorViewState.font.scale === fontScale) return;
 		configureFontVariant(fontVariant, fontSampling, fontScale);
 		this.resourcePanel.setFontMetrics(editorViewState.font);
@@ -1165,7 +1175,7 @@ export class RuntimeCartEditor implements CartEditor {
 		content: ProjectContentIndex,
 	): ResourcePanelController {
 		editorViewState.fontVariant = this.preferences.fontVariant;
-		constants.setIdeThemeVariant(constants.DEFAULT_THEME);
+		constants.setIdeThemeVariant(this.preferences.theme);
 		editorRuntimeState.themeVariant = constants.getActiveIdeThemeVariant();
 		editorRuntimeState.caseInsensitive = false;
 		editorRuntimeState.uppercaseDisplay = true;
@@ -1177,13 +1187,13 @@ export class RuntimeCartEditor implements CartEditor {
 			resourceHorizontal: new Scrollbar('horizontal'),
 		}, content, this.clock);
 		if (!this.isAvailable) {
-			configureFontVariant(editorViewState.fontVariant, this.preferences.fontSampling, this.preferences.fontScale);
+			configureFontVariant(editorViewState.fontVariant, this.preferences.fontSampling, fontScaleForPixelSize(editorViewState.fontVariant, this.preferences.fontSize, this.workspacePixelsPerUnit));
 			resourcePanel.setFontMetrics(editorViewState.font);
 			editorRuntimeState.initialized = false;
 			return resourcePanel;
 		}
 		editorTextModelService.clear();
-		configureFontVariant(editorViewState.fontVariant, this.preferences.fontSampling, this.preferences.fontScale);
+		configureFontVariant(editorViewState.fontVariant, this.preferences.fontSampling, fontScaleForPixelSize(editorViewState.fontVariant, this.preferences.fontSize, this.workspacePixelsPerUnit));
 		resourcePanel.setFontMetrics(editorViewState.font);
 		return resourcePanel;
 	}
@@ -1217,7 +1227,9 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly resizeWorkspace = ({ width: availableWidth, height: availableHeight, pixelWidth, pixelHeight }: Readonly<WorkspaceAllocation>): void => {
 		// Minimized/hidden surfaces allocate no render target. Their next host layout resumes it.
 		if (availableWidth <= 0 || availableHeight <= 0) return;
-		const scale = workbenchPixelsPerUnit(availableWidth, this.preferences.uiScale);
+		const scale = workbenchPixelsPerUnit(availableWidth);
+		this.workspacePixelsPerUnit = scale;
+		this.applyFontPreferences();
 		const width = Math.trunc(availableWidth / scale), height = Math.trunc(availableHeight / scale);
 		this.presenter.setFixedRenderTargetSize(pixelWidth, pixelHeight, width, height);
 		if (width === editorViewState.viewportWidth && height === editorViewState.viewportHeight) return;

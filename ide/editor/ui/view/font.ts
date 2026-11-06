@@ -1,4 +1,4 @@
-import { DEFAULT_FONT_VARIANT, Font, type FontVariant, type FontStyle } from '../../../../machine/ts/render/shared/bmsx_font';
+import { DEFAULT_FONT_VARIANT, Font, fontEmSize, type FontVariant, type FontStyle } from '../../../../machine/ts/render/shared/bmsx_font';
 import type { FontSampling } from 'bmsx/render/shared/bitmap_font';
 import { codePointTextAt } from '../../../../machine/ts/common/utf16';
 
@@ -62,4 +62,9 @@ export class EditorFont {
 		if (!font) { font = new Font({ variant: this._variant, style, sampling: this.sampling, scale: this.scale }); this.styles.set(style, font); }
 		return font;
 	}
+}
+
+/** CSS size becomes atlas scale at the typography boundary, once per configuration change. */
+export function fontScaleForPixelSize(variant: FontVariant, size: number, pixelsPerUnit: number): number {
+	return size / (pixelsPerUnit * fontEmSize(variant));
 }

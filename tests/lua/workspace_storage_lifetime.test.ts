@@ -11,11 +11,11 @@ import { WORKSPACE_METADATA_DIR, WORKSPACE_STATE_FILE, workspaceRecords } from '
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 
-async function fixture(t: TestContext, scale: 1 | 1.5 = 1) {
+async function fixture(t: TestContext, size: 14 | 18 = 14) {
 	const admitted = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
 	t.after(() => release.resolve());
 	const f = createActualSourcePanes(t), files = new MemoryWorkspaceFiles('workspace'), storage = new MemoryStorage();
-	f.editor.preferences.uiScale = scale;
+	f.editor.preferences.fontSize = size;
 	const context = f.sources.catalog.getContext(f.sources.systemContextId).admission, session = 'storage-lifetime';
 	await files.write('first.lua', { contents: f.source, updatedAt: 1 }, false);
 	await files.write('second.lua', { contents: f.otherSource, updatedAt: 2 }, false);
@@ -104,15 +104,15 @@ test('a delayed frontend restore retains its records owner rather than a reused 
 	assert.equal(restored, false);
 });
 
-test('workspace recovery and checkpoints cannot own or overwrite frontend UI scale', async t => {
-	const f = await fixture(t, 1.5);
+test('workspace recovery and checkpoints cannot own or overwrite frontend font size', async t => {
+	const f = await fixture(t, 18);
 	f.release.resolve(); assert.equal(await f.restoring, true);
-	assert.equal(f.editor.preferences.uiScale, 1.5);
-	f.editor.preferences.uiScale = 1.25;
+	assert.equal(f.editor.preferences.fontSize, 18);
+	f.editor.preferences.fontSize = 16;
 	await runWorkspaceAutosaveTick();
 	const recovered: WorkspaceAutosavePayload = JSON.parse(f.files.records.get(f.statePath)!.contents);
-	assert.equal('uiScale' in recovered, false, 'UI preferences are not published into project recovery');
-	assert.equal(f.editor.preferences.uiScale, 1.25);
+	assert.equal('fontSize' in recovered, false, 'UI preferences are not published into project recovery');
+	assert.equal(f.editor.preferences.fontSize, 16);
 	assert.equal(f.model.buffer.getText(), f.draft);
 	assert.equal(f.files.records.get('first.lua')!.contents, f.source);
 });

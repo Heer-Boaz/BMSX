@@ -469,9 +469,9 @@ for (const viewport of [{ width: 1920, height: 1080, logicalWidth: 640 }, { widt
 					const { video } = (globalThis as any).videoProbe;
 					const canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
 					const probe = (globalThis as any).videoProbe;
-					probe.uiScale = 1;
+					probe.coordinateScale = 1;
 					video.workspace.open(({ width: availableWidth, height: availableHeight, pixelWidth, pixelHeight }) => {
-						const scale = (globalThis as any).videoFixture.workbenchPixelsPerUnit(availableWidth, probe.uiScale);
+						const scale = (globalThis as any).videoFixture.workbenchPixelsPerUnit(availableWidth) * probe.coordinateScale;
 						canvas.width = pixelWidth; canvas.height = pixelHeight;
 						video.setDisplaySize(pixelWidth, pixelHeight, Math.trunc(availableWidth / scale), Math.trunc(availableHeight / scale));
 					});
@@ -487,11 +487,11 @@ for (const viewport of [{ width: 1920, height: 1080, logicalWidth: 640 }, { widt
 				assert.deepEqual(workspace.backing, [viewport.width * dpr, viewport.height * dpr], 'the raster fills the physical display');
 				const cursor = await page.evaluate(() => getComputedStyle(document.getElementById('gamescreen')!).cursor);
 				assert.equal(cursor, 'col-resize', 'the host publishes the shared input owner cursor');
-				await page.evaluate(() => { const probe = (globalThis as any).videoProbe; probe.uiScale = 1.25; probe.video.workspace.refresh(); });
+				await page.evaluate(() => { const probe = (globalThis as any).videoProbe; probe.coordinateScale = 1.25; probe.video.workspace.refresh(); });
 				await settle(page);
 				const scaled = await measure(page);
 				assert.ok(scaled.logical[0] < workspace.logical[0]);
-				assert.deepEqual(scaled.backing, workspace.backing, 'UI scale does not resize the physical buffer');
+				assert.deepEqual(scaled.backing, workspace.backing, 'Logical client density does not resize the physical buffer');
 				assert.ok(Math.abs(scaled.style.width - viewport.width) < 4);
 				await page.setViewportSize({ width: viewport.width - 80, height: viewport.height - 60 });
 				await settle(page);
@@ -520,9 +520,9 @@ test('native text composition follows the published canvas transform even when l
 	await page.evaluate(() => {
 		const api = (globalThis as any).videoFixture, probe = (globalThis as any).videoProbe;
 		const canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
-		probe.uiScale = 1;
+		probe.coordinateScale = 1;
 		probe.video.workspace.open(({ width, height, pixelWidth, pixelHeight }) => {
-			const scale = api.workbenchPixelsPerUnit(width, probe.uiScale);
+			const scale = api.workbenchPixelsPerUnit(width) * probe.coordinateScale;
 			canvas.width = pixelWidth; canvas.height = pixelHeight;
 			probe.video.setDisplaySize(pixelWidth, pixelHeight, Math.trunc(width / scale), Math.trunc(height / scale));
 		});
@@ -550,11 +550,11 @@ test('native text composition follows the published canvas transform even when l
 		assert.notDeepEqual(after.backing, before.backing);
 		await page.evaluate(() => {
 			const probe = (globalThis as any).videoProbe;
-			probe.uiScale = 1.25; probe.video.workspace.refresh();
+			probe.coordinateScale = 1.25; probe.video.workspace.refresh();
 		});
 		await settle(page);
 		const scaled = await measure(page);
-		assert.deepEqual(scaled.backing, after.backing, 'UI-only scaling keeps the physical raster allocation');
+		assert.deepEqual(scaled.backing, after.backing, 'Logical client density keeps the physical raster allocation');
 		assert.notDeepEqual(scaled.logical, after.logical);
 		const anchor = await page.evaluate(() => {
 			const context = (globalThis as any).nativeTransform;

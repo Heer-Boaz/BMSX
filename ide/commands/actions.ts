@@ -1,12 +1,9 @@
 import type { HostExecutionControl } from '../../hosts/common/execution_control';
-import { editorRuntimeState } from '../editor/common/runtime_state';
 import { LogLevel, type LogOutput } from '../../hosts/common/log';
 import type { BootService, BootOperation } from '../workbench/services/execution/boot';
 import type { HotResumeService, HotResumeOperation } from '../workbench/services/execution/hot_resume';
 import { deactivateEditor } from '../workbench/overlay_modes';
 import type { EditorActionPresentation, EditorActionRequest } from './action_request';
-import * as constants from '../common/constants';
-import { setEditorCaseInsensitivity } from '../editor/render/text_renderer';
 import { persistWorkspaceSessionLocally } from '../workbench/workspace/storage';
 import type { CartEditor } from '../cart_editor';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
@@ -49,7 +46,7 @@ export function performEditorAction(
 			deactivateEditor(editor, overlayRenderer);
 			return true;
 		case 'theme-toggle':
-			toggleThemeMode();
+			editor.preferences.theme = editor.preferences.theme === 'light' ? 'dark' : 'light';
 			return true;
 		default:
 			return false;
@@ -139,22 +136,4 @@ export function performReboot(
 		}
 	});
 	return operation;
-}
-
-function toggleThemeMode(): void {
-	const currentVariant = constants.getActiveIdeThemeVariant();
-	let nextVariant: string;
-	switch (currentVariant) {
-		case 'light':
-			nextVariant = 'dark';
-			break;
-		case 'dark':
-			nextVariant = 'light';
-			break;
-		default:
-			throw new Error(`[IDE] Unknown theme variant: ${currentVariant}`);
-	}
-	constants.setIdeThemeVariant(nextVariant);
-	editorRuntimeState.themeVariant = constants.getActiveIdeThemeVariant();
-	setEditorCaseInsensitivity(editorRuntimeState.uppercaseDisplay);
 }

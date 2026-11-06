@@ -28,13 +28,12 @@ test('host workspace publishes available area, not game dimensions or UI policy,
 
 test('Studio scale preserves compact width and grows desktop space without deriving font density from window height', () => {
 	// Exact sizes are the allocation algorithm contract, not UI snapshot assertions.
-	assert.equal(workbenchPixelsPerUnit(1920, 1), 3);
-	assert.equal(1920 / workbenchPixelsPerUnit(1920, 1), 640);
-	assert.equal(1920 / workbenchPixelsPerUnit(1920, 1.25), 512);
-	assert.equal(390 / workbenchPixelsPerUnit(390, 1), 384);
+	assert.equal(workbenchPixelsPerUnit(1920), 3);
+	assert.equal(1920 / workbenchPixelsPerUnit(1920), 640);
+	assert.equal(390 / workbenchPixelsPerUnit(390), 384);
 	// The height is deliberately not an input: a keyboard/short window removes
 	// rows instead of shrinking every font and hit target.
-	const scale = workbenchPixelsPerUnit(390, 1);
+	const scale = workbenchPixelsPerUnit(390);
 	assert.ok(844 / scale > 288);
 	assert.ok(200 / scale < 288);
 });

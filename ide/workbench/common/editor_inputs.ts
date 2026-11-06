@@ -1,3 +1,4 @@
+import type { SettingsInput } from '../contrib/settings/editor_input';
 import type { CallHierarchyInput } from '../contrib/call_hierarchy/editor_input';
 import type { WorkspaceSearchInput } from '../contrib/workspace_search/editor_input';
 import type { HomeInput } from '../contrib/home/editor_input';
@@ -28,6 +29,7 @@ export type EditorInput = (
 	| CallHierarchyInput
 	| WorkspaceSearchInput
 	| HomeInput
+	| SettingsInput
 	| PlayEditorInput
 	| AnimationEditorInput
 	| HostErrorInput

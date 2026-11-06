@@ -119,6 +119,11 @@ function buildTinyCharMap(): GlyphMap {
 	return map;
 }
 
+/** Scalable em size or native bitmap cell height, before rendering scale. */
+export function fontEmSize(variant: FontVariant): number {
+	return variant === 'mono' ? SCALABLE_FONT_ATLAS.emSize : hostSystemAtlasImage(FONT_PRESETS[variant]['A']).height;
+}
+
 export class Font extends BFont {
 	constructor(config?: { variant?: FontVariant; style?: FontStyle; sampling?: FontSampling; scale?: number }) {
 		const variant = config?.variant ?? DEFAULT_FONT_VARIANT;

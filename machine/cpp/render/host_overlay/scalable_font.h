@@ -16,7 +16,7 @@ struct ScalableFontGlyph {
 
 // Linear RGB signed distances, separate from the host-image atlas.
 struct ScalableFontAtlas : HostAtlas {
-	f32 lineHeight, distanceRange;
+	f32 emSize, lineHeight, distanceRange;
 	std::span<const ScalableFontGlyph> glyphs;
 };
 

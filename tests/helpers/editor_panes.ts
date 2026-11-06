@@ -213,6 +213,7 @@ export function createTestEditorPaneContributions(
 		workspace_search: { create: group => new TestEditorPane<Extract<EditorInput, { kind: 'workspace_search' }>>(group.focusScope, activateViewInput), measure: measureTestEditor },
 		call_hierarchy: { create: group => new TestEditorPane<Extract<EditorInput, { kind: 'call_hierarchy' }>>(group.focusScope, activateViewInput), measure: measureTestEditor },
 		home: { create: group => new TestEditorPane<Extract<EditorInput, { kind: 'home' }>>(group.focusScope, activateViewInput), measure: measureTestEditor },
+		settings: { create: group => new TestEditorPane<Extract<EditorInput, { kind: 'settings' }>>(group.focusScope, activateViewInput), measure: measureTestEditor },
 		play_session: { create: group => new TestEditorPane<Extract<EditorInput, { kind: 'play_session' }>>(group.focusScope, activateViewInput), measure: measureTestEditor },
 		animation: { create: group => new TestEditorPane<Extract<EditorInput, { kind: 'animation' }>>(group.focusScope, activateViewInput), measure: measureTestEditor },
 		host_error: { create: group => new TestEditorPane<Extract<EditorInput, { kind: 'host_error' }>>(group.focusScope, activateViewInput), measure: measureTestEditor },

@@ -59,7 +59,8 @@ function fixture(t: TestContext, source = SOURCE) {
 	const createGroup = () => {
 		const group = new EditorGroupView({
 			workspace_search: { create: unused, measure: measureUnconstrainedEditor }, call_hierarchy: { create: unused, measure: measureUnconstrainedEditor },
-			home: { create: unused, measure: measureUnconstrainedEditor }, play_session: { create: unused, measure: measureUnconstrainedEditor }, animation: { create: unused, measure: measureUnconstrainedEditor }, host_error: { create: unused, measure: measureUnconstrainedEditor }, build_log: { create: unused, measure: measureUnconstrainedEditor },
+			home: { create: unused, measure: measureUnconstrainedEditor },
+		settings: { create: unused, measure: measureUnconstrainedEditor }, play_session: { create: unused, measure: measureUnconstrainedEditor }, animation: { create: unused, measure: measureUnconstrainedEditor }, host_error: { create: unused, measure: measureUnconstrainedEditor }, build_log: { create: unused, measure: measureUnconstrainedEditor },
 			rom_inspector: { create: unused, measure: measureUnconstrainedEditor }, event_viewer: { create: unused, measure: measureUnconstrainedEditor }, gpu_debugger: { create: unused, measure: measureUnconstrainedEditor }, gte_debugger: { create: unused, measure: measureUnconstrainedEditor },
 			terminal: { create: unused, measure: measureUnconstrainedEditor }, conversation_observer: { create: unused, measure: measureUnconstrainedEditor }, assistant: { create: unused, measure: measureUnconstrainedEditor }, workspace_edit_review: { create: unused, measure: measureUnconstrainedEditor },
 			code_editor: { create: unused, measure: measureUnconstrainedEditor }, resource_view: { create: unused, measure: measureUnconstrainedEditor }, aem_editor: { create: unused, measure: measureUnconstrainedEditor }, lua_program: { create: unused, measure: measureUnconstrainedEditor }, actor_lab: { create: unused, measure: measureUnconstrainedEditor },
