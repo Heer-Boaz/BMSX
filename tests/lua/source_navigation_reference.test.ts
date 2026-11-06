@@ -10,6 +10,7 @@ import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_co
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 
+// Identity predicates keep failures from inspecting the Studio's machine buffers.
 async function fixture(t: TestContext) {
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS,
 		['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}'],
@@ -23,7 +24,7 @@ async function fixture(t: TestContext) {
 	assert.ok(primary instanceof ScenePrimaryClient);
 	main.focusPrimary('hierarchy');
 	const origin = primary.hierarchy.control.focusTarget;
-	assert.equal(inputFocus.admittedTarget, origin);
+	assert.ok(inputFocus.admittedTarget === origin, 'the Main hierarchy owns keyboard focus');
 	return { ...f, model, resource, main, primary, origin };
 }
 
@@ -52,10 +53,12 @@ for (const placement of ['default', 'side'] as const)
 		assert.equal(replaced, true);
 		ready.resolve({ model: f.model, modelVersion: f.model.version });
 		assert.equal(await pending, undefined);
-		assert.equal(reference.model.activeTab, newer);
-		assert.deepEqual(f.editor.editorParts.groups, groups);
-		assert.equal(f.main.primary, f.primary);
-		assert.equal(inputFocus.admittedTarget, f.origin);
+		assert.ok(reference.model.activeTab === newer, 'the newer reference opening remains active');
+		const currentGroups = f.editor.editorParts.groups;
+		assert.equal(currentGroups.length, groups.length, 'superseded navigation creates no receiving group');
+		assert.ok(currentGroups.every((group, index) => group === groups[index]), 'existing group identities and order remain unchanged');
+		assert.ok(f.main.primary === f.primary, 'superseded navigation retains the Main source producer');
+		assert.ok(inputFocus.admittedTarget === f.origin, 'superseded navigation retains the invoking hierarchy focus');
 		assert.equal(f.editor.editorParts.groups.some(group => group.model.tabs.some(input =>
 			input instanceof CodeEditorInput && input.workingCopy === f.model)), false);
 	});
@@ -78,9 +81,9 @@ test('reusing a third-group Source cannot activate after its separately requeste
 	});
 	assert.equal(replaced, true);
 	assert.equal(result, undefined);
-	assert.equal(reference.model.activeTab, newer);
-	assert.equal(receiver.model.activeTab, existing);
-	assert.equal(receiver.panes.activePane!.input, existing);
-	assert.equal(f.main.primary, f.primary);
-	assert.equal(inputFocus.admittedTarget, f.origin);
+	assert.ok(reference.model.activeTab === newer, 'the newer reference opening remains active');
+	assert.ok(receiver.model.activeTab === existing, 'the existing Source remains the receiving group subject');
+	assert.ok(receiver.panes.activePane!.input === existing, 'the receiving pane retains its existing Source attachment');
+	assert.ok(f.main.primary === f.primary, 'superseded handoff retains the Main source producer');
+	assert.ok(inputFocus.admittedTarget === f.origin, 'superseded handoff retains the invoking hierarchy focus');
 });
