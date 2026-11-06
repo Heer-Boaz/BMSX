@@ -9,6 +9,7 @@
 namespace bmsx {
 
 std::vector<u8> encodeRuntimeSaveState(const RuntimeSaveState& state);
+// Returns zero without writing when the output cannot hold the complete state.
 size_t encodeRuntimeSaveState(const RuntimeSaveState& state, std::span<u8> output);
 RuntimeSaveState decodeRuntimeSaveState(
 	std::span<const u8> data,

@@ -16,6 +16,16 @@ export function readLE32(data: ArrayLike<number>, offset: number): number {
 	) >>> 0;
 }
 
+// Integer counters are exact JS numbers in the TS runtime. Split their words
+// arithmetically rather than allocating BigInts at the binary I/O boundary.
+export function readLE64(data: ArrayLike<number>, offset: number): number {
+	return readLE32(data, offset + 4) * 0x100000000 + readLE32(data, offset);
+}
+
+export function readI64LE(data: ArrayLike<number>, offset: number): number {
+	return (readLE32(data, offset + 4) | 0) * 0x100000000 + readLE32(data, offset);
+}
+
 export function writeLE16(data: Uint8Array, offset: number, value: number): void {
 	data[offset] = value & 0xff;
 	data[offset + 1] = (value >>> 8) & 0xff;
@@ -26,6 +36,12 @@ export function writeLE32(data: Uint8Array, offset: number, value: number): void
 	data[offset + 1] = (value >>> 8) & 0xff;
 	data[offset + 2] = (value >>> 16) & 0xff;
 	data[offset + 3] = (value >>> 24) & 0xff;
+}
+
+export function writeLE64(data: Uint8Array, offset: number, value: number): void {
+	const low = value >>> 0;
+	writeLE32(data, offset, low);
+	writeLE32(data, offset + 4, (value - low) / 0x100000000);
 }
 
 export function readLE32Array(data: Uint8Array): Uint32Array {

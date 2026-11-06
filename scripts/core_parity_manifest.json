@@ -529,14 +529,6 @@
 			"reason": "runtime_save_state_surface_contract"
 		},
 		{
-			"ts": "machine/ts/machine/runtime/save_state/schema.ts",
-			"cpp": [
-				"machine/cpp/machine/runtime/save_state/schema.h",
-				"machine/cpp/machine/runtime/save_state/schema.cpp"
-			],
-			"reason": "runtime_save_state_schema_symbol_contract"
-		},
-		{
 			"ts": "machine/ts/machine/scheduler/device.ts",
 			"cpp": [
 				"machine/cpp/machine/scheduler/device.h",
@@ -1391,12 +1383,6 @@
 			]
 		},
 		{
-			"ts": "machine/ts/machine/runtime/save_state/schema.ts",
-			"cpp_headers": [
-				"machine/cpp/machine/runtime/save_state/schema.h"
-			]
-		},
-		{
 			"ts": "machine/ts/machine/runtime/save_state/codec.ts",
 			"cpp_headers": [
 				"machine/cpp/machine/runtime/save_state/codec.h"
@@ -1567,14 +1553,6 @@
 			"cpp_headers": [
 				"machine/cpp/render/backend/texture_params.h"
 			]
-		}
-	],
-	"strict_save_state_schema_parity": [
-		{
-			"ts": "machine/ts/machine/runtime/save_state/schema.ts",
-			"cpp": "machine/cpp/machine/runtime/save_state/schema.cpp",
-			"symbol": "RUNTIME_SAVE_STATE_PROP_NAMES",
-			"reason": "save_state_property_table_indices_are_wire_format_and_must_match_exactly"
 		}
 	],
 	"strict_runtime_no_heap_functions": [

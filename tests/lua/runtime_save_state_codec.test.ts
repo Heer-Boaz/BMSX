@@ -32,8 +32,6 @@ import {
 	decodeRuntimeSaveState,
 	encodeRuntimeSaveState,
 } from '../../machine/ts/machine/runtime/save_state/codec';
-import { decodeBinaryWithPropTable, encodeBinaryWithPropTable, requireObject, requireObjectKey } from '../../machine/ts/common/serializer/binencoder';
-import { RUNTIME_SAVE_STATE_PROP_NAMES } from '../../machine/ts/machine/runtime/save_state/schema';
 import { CpuSnapshot, CpuSnapshotWriter, CPU_SNAPSHOT_VALUE_WORDS } from '../../machine/ts/machine/cpu/snapshot';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { ProtectedCallKind } from '../../machine/ts/machine/cpu/call_state';
@@ -560,7 +558,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			yieldRequested: false,
 		},
 		pendingEntryCall: false,
-	} as unknown as RuntimeSaveState;
+	};
 }
 
 test('runtime save-state codec preserves string pool ROM/runtime ownership', () => {
@@ -588,21 +586,18 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 	assert.deepEqual(decoded.cpuState, state.cpuState);
 });
 
-test('runtime save-state codec rejects a nonnumeric scheduler grant remainder', () => {
+test('runtime save-state codec preserves floating scheduler state and wide cycle counts', () => {
 	const state = createRuntimeSaveState();
-	(state.machineState.frameScheduler as unknown as { cycleGrantRemainder: string }).cycleGrantRemainder = '0.5';
-
-	assert.throws(
-		() => decodeRuntimeSaveState(
-			encodeRuntimeSaveState(state),
-			PSX_MACHINE_SPEC.ramBytes,
-			PSX_MACHINE_SPEC.gxGpuVramBytes,
-		),
-		/frameScheduler\.cycleGrantRemainder must be a numeric value/,
-	);
+	state.machineState.frameScheduler.cycleGrantRemainder = 0.5;
+	state.machineState.frameScheduler.accumulatedHostTimeMs = -0;
+	state.machineState.schedulerNowCycles = 2 ** 40 + 17;
+	const decoded = decodeRuntimeSaveState(encodeRuntimeSaveState(state), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	assert.equal(decoded.machineState.frameScheduler.cycleGrantRemainder, 0.5);
+	assert.equal(decoded.machineState.frameScheduler.accumulatedHostTimeMs, -0);
+	assert.equal(decoded.machineState.schedulerNowCycles, state.machineState.schedulerNowCycles);
 });
 
-test('runtime save-state codec stores READY GPUREAD bytes and rejects backend-only phases', () => {
+test('runtime save-state codec preserves GPUREAD bytes and raw phase bits', () => {
 	const ready = createRuntimeSaveState();
 	const readyReadback = ready.machineState.machine.gxGpu.commandBuffer;
 	readyReadback.readbackPhase = GX_GPU_READBACK_READY;
@@ -627,14 +622,8 @@ test('runtime save-state codec stores READY GPUREAD bytes and rejects backend-on
 	submittedReadback.readbackWidth = 1024;
 	submittedReadback.readbackHeight = 512;
 	submittedReadback.readbackPixelBytes = new Uint8Array(0);
-	assert.throws(
-		() => decodeRuntimeSaveState(
-			encodeRuntimeSaveState(submitted),
-			PSX_MACHINE_SPEC.ramBytes,
-			PSX_MACHINE_SPEC.gxGpuVramBytes,
-		),
-		/backend-submitted phase/,
-	);
+	const decodedSubmitted = decodeRuntimeSaveState(encodeRuntimeSaveState(submitted), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	assert.deepEqual(decodedSubmitted.machineState.machine.gxGpu.commandBuffer, submittedReadback);
 });
 
 test('runtime save-state codec preserves exception frame metadata', () => {
@@ -689,38 +678,46 @@ test('runtime save-state codec preserves builtin VM primitive ids', () => {
 	assert.deepEqual(decoded.cpuState.snapshot, state.cpuState.snapshot);
 });
 
-test('runtime save-state payload contains only current state and retains the USER ingress bank', () => {
+test('runtime save-state codec retains the USER ingress bank', () => {
 	const state = createRuntimeSaveState();
-	const encoded = encodeRuntimeSaveState(state);
-	const payload = requireObject(decodeBinaryWithPropTable(encoded, RUNTIME_SAVE_STATE_PROP_NAMES), 'payload');
-	assert.deepEqual(Object.keys(payload).sort(), ['cpuState', 'machineState', 'pendingEntryCall']);
-	const decoded = decodeRuntimeSaveState(encoded, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	const decoded = decodeRuntimeSaveState(encodeRuntimeSaveState(state), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	assert.deepEqual(decoded.machineState.machine.gxGpu.userIngressContext, state.machineState.machine.gxGpu.userIngressContext);
 });
 
-test('runtime save-state bytes start at the current property-table payload', () => {
+test('runtime save-state codec rejects other formats, incomplete fields and trailing bytes', () => {
 	const encoded = encodeRuntimeSaveState(createRuntimeSaveState());
-
-	assert.doesNotThrow(() => decodeBinaryWithPropTable(encoded, RUNTIME_SAVE_STATE_PROP_NAMES));
-	assert.throws(() => decodeBinaryWithPropTable(encoded.subarray(2), RUNTIME_SAVE_STATE_PROP_NAMES));
+	const decode = (bytes: Uint8Array) => decodeRuntimeSaveState(bytes, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	assert.throws(() => decode(Uint8Array.of(0xa1, 0, 0, 0)), /Unrecognized/);
+	assert.throws(() => decode(encoded.subarray(0, -1)), /Truncated/);
+	const extra = new Uint8Array(encoded.length + 1);
+	extra.set(encoded);
+	assert.throws(() => decode(extra), /Trailing/);
 });
 
-test('CPU word payload is little-endian and excludes unused arena capacity', () => {
+test('CPU words retain every bit and exclude unused arena capacity', () => {
 	const state = createRuntimeSaveState();
-	const payload = requireObject(decodeBinaryWithPropTable(encodeRuntimeSaveState(state), RUNTIME_SAVE_STATE_PROP_NAMES), 'payload');
-	const cpu = requireObject(requireObjectKey(payload, 'cpuState', 'payload'), 'cpuState');
-	const snapshot = requireObject(requireObjectKey(cpu, 'snapshot', 'cpuState'), 'snapshot');
-	assert.deepEqual(snapshot.words, new Uint8Array([
-		3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 28, 64,
-		3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 69, 64,
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	]));
-	assert.deepEqual(snapshot.objectWords, new Uint8Array(0));
-	assert.ok(state.cpuState.snapshot.capacityBytes > state.cpuState.snapshot.words.byteLength);
-	snapshot.words = new Uint8Array(3);
-	assert.throws(() => decodeRuntimeSaveState(
-		encodeBinaryWithPropTable(payload, RUNTIME_SAVE_STATE_PROP_NAMES),
-		PSX_MACHINE_SPEC.ramBytes,
-		PSX_MACHINE_SPEC.gxGpuVramBytes,
-	), /whole u32 words/);
+	const words = Uint32Array.of(0x12345678, 0xffffffff, 0, 0x80000000, 0x7ff81234);
+	const arena = new Uint32Array(8192);
+	arena.set(words);
+	const objectWords = Uint32Array.of(2);
+	state.cpuState.snapshot = new CpuSnapshot(arena.subarray(0, words.length), objectWords);
+	const withSpareCapacity = encodeRuntimeSaveState(state);
+	state.cpuState.snapshot = new CpuSnapshot(words, objectWords);
+	assert.deepEqual(encodeRuntimeSaveState(state), withSpareCapacity);
+	const decoded = decodeRuntimeSaveState(withSpareCapacity, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	assert.deepEqual(decoded.cpuState.snapshot.words, words);
+	assert.deepEqual(decoded.cpuState.snapshot.objectWords, objectWords);
+	assert.equal(decoded.cpuState.snapshot.capacityBytes, words.byteLength + objectWords.byteLength);
+});
+
+test('caller-owned output is byte identical and admitted before writing', () => {
+	const state = createRuntimeSaveState();
+	const expected = encodeRuntimeSaveState(state);
+	const output = new Uint8Array(expected.length + 2).fill(0xa5);
+	assert.equal(encodeRuntimeSaveState(state, output.subarray(1, -1)), expected.length);
+	assert.deepEqual(output.subarray(1, -1), expected);
+	assert.equal(output[0], 0xa5); assert.equal(output.at(-1), 0xa5);
+	output.fill(0xa5);
+	assert.equal(encodeRuntimeSaveState(state, output.subarray(1, -2)), 0);
+	assert.ok(output.every(value => value === 0xa5));
 });

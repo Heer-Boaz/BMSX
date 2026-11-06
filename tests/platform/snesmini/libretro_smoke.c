@@ -27,6 +27,11 @@ typedef struct LibretroCore {
 	bool (*load_game)(const struct retro_game_info*);
 	void (*unload_game)(void);
 	void (*run)(void);
+	size_t (*serialize_size)(void);
+	bool (*serialize)(void*, size_t);
+	bool (*unserialize)(const void*, size_t);
+	void* (*get_memory_data)(unsigned);
+	size_t (*get_memory_size)(unsigned);
 } LibretroCore;
 
 static const char* g_system_directory;
@@ -151,6 +156,11 @@ static void load_core(LibretroCore* core, const char* path) {
 	load_symbol(core->handle, "retro_load_game", &core->load_game);
 	load_symbol(core->handle, "retro_unload_game", &core->unload_game);
 	load_symbol(core->handle, "retro_run", &core->run);
+	load_symbol(core->handle, "retro_serialize_size", &core->serialize_size);
+	load_symbol(core->handle, "retro_serialize", &core->serialize);
+	load_symbol(core->handle, "retro_unserialize", &core->unserialize);
+	load_symbol(core->handle, "retro_get_memory_data", &core->get_memory_data);
+	load_symbol(core->handle, "retro_get_memory_size", &core->get_memory_size);
 }
 
 int main(int argc, char** argv) {
@@ -219,9 +229,35 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
+	const size_t state_size = core.serialize_size();
+	const size_t ram_size = core.get_memory_size(RETRO_MEMORY_SYSTEM_RAM);
+	uint8_t* ram = core.get_memory_data(RETRO_MEMORY_SYSTEM_RAM);
+	if (state_size == 0 || ram_size == 0 || ram == NULL) {
+		fprintf(stderr, "core must expose save states and system RAM\n");
+		return 1;
+	}
+	void* state = malloc(state_size);
+	if (state == NULL || !core.serialize(state, state_size)) {
+		fprintf(stderr, "save-state capture failed\n");
+		return 1;
+	}
+	const uint8_t saved_byte = ram[ram_size - 1];
+	ram[ram_size - 1] ^= 0xff;
+	if (!core.unserialize(state, state_size) || ram[ram_size - 1] != saved_byte) {
+		fprintf(stderr, "save-state load did not restore system RAM\n");
+		return 1;
+	}
+	free(state);
+	core.run();
+	if (g_shutdown_requested || g_video_frames != frames + 1) {
+		fprintf(stderr, "core did not resume video after loading a save state\n");
+		return 1;
+	}
+	fprintf(stderr, "[snesmini smoke] save/load restored RAM and resumed execution (%zu-byte frontend buffer)\n", state_size);
+
 	core.unload_game();
 	core.deinit();
 	dlclose(core.handle);
-	fprintf(stderr, "[snesmini smoke] completed %u frames, received %u video frames\n", frames, g_video_frames);
+	fprintf(stderr, "[snesmini smoke] completed %u frames, received %u video frames\n", frames + 1, g_video_frames);
 	return 0;
 }

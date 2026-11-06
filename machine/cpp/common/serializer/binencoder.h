@@ -1,8 +1,7 @@
 /*
  * binencoder.h - Binary encoder/decoder
  *
- * Shared binary format used for ROM metadata and runtime-owned byte payloads
- * such as save states.
+ * Generic object format used for ROM metadata. Typed runtime state uses binary_stream.h.
  */
 
 #ifndef BMSX_BINENCODER_H
@@ -53,11 +52,9 @@ struct BinValue;
 using BinArray = std::vector<BinValue>;
 using BinObject = std::unordered_map<std::string, BinValue>;
 using BinBinary = std::vector<u8>;
-// Encoding-only borrowed bytes; decoding continues to produce owned BinBinary.
-using BinBinaryView = std::span<const u8>;
 using BinObjectStorage = std::shared_ptr<BinObject>;
 
-// Value tree used by the encoder and decoder. Borrowed views are encoding-only.
+// Variant holding all possible decoded types
 struct BinValue {
 	std::variant<
 		std::nullptr_t,     // Null
@@ -68,8 +65,7 @@ struct BinValue {
 		std::string,        // Str
 		BinArray,           // Arr
 		BinObjectStorage,   // Obj
-		BinBinary,          // Bin (owned)
-		BinBinaryView       // Bin (borrowed for encoding)
+		BinBinary           // Bin
 	> data;
 
 	BinValue() : data(nullptr) {}
@@ -85,7 +81,6 @@ struct BinValue {
 	BinValue(BinArray&& v) : data(std::move(v)) {}
 	BinValue(BinObject&& v) : data(std::make_shared<BinObject>(std::move(v))) {}
 	BinValue(BinBinary&& v) : data(std::move(v)) {}
-	BinValue(BinBinaryView v) : data(v) {}
 
 	// Type checks
 	bool isNull() const { return std::holds_alternative<std::nullptr_t>(data); }
@@ -98,7 +93,6 @@ struct BinValue {
 	bool isArray() const { return std::holds_alternative<BinArray>(data); }
 	bool isObject() const { return std::holds_alternative<BinObjectStorage>(data); }
 	bool isBinary() const { return std::holds_alternative<BinBinary>(data); }
-	bool isBinaryView() const { return std::holds_alternative<BinBinaryView>(data); }
 
 	// Value accessors (throw if wrong type)
 	bool asBool() const { return std::get<bool>(data); }
@@ -109,7 +103,6 @@ struct BinValue {
 	const BinArray& asArray() const { return std::get<BinArray>(data); }
 	const BinObject& asObject() const { return *std::get<BinObjectStorage>(data); }
 	const BinBinary& asBinary() const { return std::get<BinBinary>(data); }
-	BinBinaryView asBinaryView() const { return std::get<BinBinaryView>(data); }
 
 	// Number conversion (works for int, f32, f64)
 	f64 toNumber() const;
@@ -169,8 +162,6 @@ struct BinEncodeOptions {
 
 std::vector<std::string> buildBinaryPropTable(const std::vector<BinValue>& values, bool sortProps = true);
 std::vector<u8> encodeBinaryWithPropTable(const BinValue& value, std::span<const std::string> propNames, size_t capacityHint = 0);
-// Writes into caller-owned storage and returns the occupied byte count.
-size_t encodeBinaryWithPropTable(const BinValue& value, std::span<const std::string> propNames, std::span<u8> output);
 std::vector<u8> encodeBinary(const BinValue& value, const BinEncodeOptions& options = {});
 
 /* ============================================================================

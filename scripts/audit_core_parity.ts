@@ -71,7 +71,6 @@ type StrictBlua32IsaParityEntry = {
 type StrictFileLayoutEntry = { present?: string[]; absent?: string[]; reason: string };
 type StrictFilePairParityEntry = { ts: string; cpp: string[]; reason: string };
 type StrictGeneratedTsParityExclusion = { ts: string; generator: string; reason: string };
-type StrictSaveStateSchemaParityEntry = { ts: string; cpp: string; symbol: string; reason: string };
 type StrictRuntimeSymbols = {
 	constants: Map<string, string>;
 	constantValues: Map<string, string>;
@@ -94,7 +93,6 @@ type Manifest = {
 	strict_file_layout: StrictFileLayoutEntry[];
 	strict_file_pair_parity: StrictFilePairParityEntry[];
 	strict_generated_ts_parity_exclusions: StrictGeneratedTsParityExclusion[];
-	strict_save_state_schema_parity: StrictSaveStateSchemaParityEntry[];
 	public_symbol_parity: PublicSymbolParityEntry[];
 };
 
@@ -1378,30 +1376,6 @@ function cppStringArrayLiteralItems(file: string, symbol: string): string[] | nu
 	return [...body.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
 }
 
-function auditStrictSaveStateSchemaParity(manifest: Manifest): string[] {
-	const errors: string[] = [];
-	for (const entry of manifest.strict_save_state_schema_parity) {
-		const tsItems = tsStringArrayLiteralItems(entry.ts, entry.symbol);
-		if (!tsItems) {
-			errors.push(`${entry.ts}: save-state schema ${entry.symbol} missing`);
-			continue;
-		}
-		const cppItems = cppStringArrayLiteralItems(entry.cpp, entry.symbol);
-		if (!cppItems) {
-			errors.push(`${entry.cpp}: save-state schema ${entry.symbol} missing`);
-			continue;
-		}
-		if (tsItems.length !== cppItems.length) {
-			errors.push(`${entry.symbol}: TS schema length ${tsItems.length} differs from C++ ${cppItems.length}`);
-		}
-		const count = tsItems.length < cppItems.length ? tsItems.length : cppItems.length;
-		for (let index = 0; index < count; index += 1) {
-			if (tsItems[index] !== cppItems[index]) errors.push(`${entry.symbol}[${index}]: TS ${tsItems[index]} differs from C++ ${cppItems[index]}`);
-		}
-	}
-	return errors;
-}
-
 function classify(file: string, manifest: Manifest, generatedTsFiles: ReadonlySet<string>): ClassifiedFile | null {
 	const pattern = matchPattern(file, manifest.patterns);
 	if (pattern) return { file, category: pattern.category, reason: pattern.reason };
@@ -1448,7 +1422,6 @@ function main(): void {
 	const strictBlua32IsaParityErrors = auditStrictBlua32IsaParity(manifest);
 	const strictFileLayoutErrors = auditStrictFileLayout(manifest);
 	const strictFilePairParityErrors = auditStrictFilePairParity(manifest);
-	const strictSaveStateSchemaParityErrors = auditStrictSaveStateSchemaParity(manifest);
 	const publicSymbolParityErrors = auditPublicSymbolParity(
 		repoRoot,
 		manifest.public_symbol_parity,
@@ -1561,11 +1534,6 @@ function main(): void {
 		hasErrors = true;
 		console.error(`\nStrict file pair parity errors (${strictFilePairParityErrors.length}):`);
 		for (const item of strictFilePairParityErrors) console.error(`  ${item}`);
-	}
-	if (strictSaveStateSchemaParityErrors.length > 0) {
-		hasErrors = true;
-		console.error(`\nStrict save-state schema parity errors (${strictSaveStateSchemaParityErrors.length}):`);
-		for (const item of strictSaveStateSchemaParityErrors) console.error(`  ${item}`);
 	}
 	if (publicSymbolParityErrors.length > 0) {
 		hasErrors = true;

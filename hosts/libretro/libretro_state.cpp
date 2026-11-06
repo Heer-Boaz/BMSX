@@ -5,7 +5,6 @@
 #include "machine/runtime/save_state/codec.h"
 
 #include <cstring>
-#include <stdexcept>
 
 namespace bmsx {
 namespace {
@@ -30,13 +29,9 @@ bool serializeLibretroState(Runtime& runtime, std::span<u8> envelope) {
 	if (envelope.size() < envelopeBytes) {
 		return false;
 	}
-	size_t payloadBytes;
-	try {
-		payloadBytes = encodeRuntimeSaveState(captureRuntimeSaveState(runtime),
-			envelope.subspan(kSaveStateHeaderBytes, saveStatePayloadCapacityBytes(runtime)));
-	} catch (const std::length_error&) {
-		return false;
-	}
+	const size_t payloadBytes = encodeRuntimeSaveState(captureRuntimeSaveState(runtime),
+		envelope.subspan(kSaveStateHeaderBytes, saveStatePayloadCapacityBytes(runtime)));
+	if (payloadBytes == 0) return false;
 	writeLE32(envelope.data(), kSaveStateMagic);
 	writeLE32(envelope.data() + 4u, static_cast<u32>(payloadBytes));
 	std::memset(

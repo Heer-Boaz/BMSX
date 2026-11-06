@@ -289,7 +289,6 @@ add_library(bmsx_core STATIC
 	machine/runtime/machine_state.cpp
 	machine/runtime/save_machine_state.cpp
 	machine/runtime/save_state.cpp
-	machine/runtime/save_state/schema.cpp
 	machine/runtime/save_state/codec.cpp
 	machine/runtime/cpu_executor.cpp
 	machine/runtime/frame/loop.cpp
@@ -812,11 +811,17 @@ if(BMSX_BUILD_TESTS)
 	)
 	target_link_libraries(bmsx_frame_evaluation_runner PRIVATE bmsx_core)
 
-	add_executable(bmsx_binary_codec_tests
-		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/binary_codec_test.cpp
+	add_executable(bmsx_binary_stream_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/binary_stream_test.cpp
 	)
-	target_link_libraries(bmsx_binary_codec_tests PRIVATE bmsx_binary_codec)
-	add_test(NAME bmsx_binary_codec_tests COMMAND bmsx_binary_codec_tests)
+	target_link_libraries(bmsx_binary_stream_tests PRIVATE bmsx_binary_codec)
+	add_test(NAME bmsx_binary_stream_tests COMMAND bmsx_binary_stream_tests)
+
+	add_executable(bmsx_runtime_save_state_codec_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/runtime_save_state_codec_test.cpp
+	)
+	target_link_libraries(bmsx_runtime_save_state_codec_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_runtime_save_state_codec_tests COMMAND bmsx_runtime_save_state_codec_tests)
 
 	add_executable(bmsx_cpu_save_state_replay_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/cpu_save_state_replay_test.cpp

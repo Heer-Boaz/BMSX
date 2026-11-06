@@ -6,10 +6,8 @@
 #include "presentation_state.h"
 #include "rewind.h"
 #include "video_output.h"
-#include "common/serializer/binencoder.h"
 #include "machine/runtime/cpu_executor.h"
 #include "machine/runtime/save_state/codec.h"
-#include "machine/runtime/save_state/schema.h"
 #include "render/backend/pass/library.h"
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/model.h"
@@ -438,18 +436,15 @@ int main(int argc, char** argv) {
 		const RuntimeSaveState presentState = captureRuntimeSaveState(runtime);
 		const auto compareGuestState = [&](const RuntimeSaveState& expected) {
 			software.captureGxGpuVramSnapshot(runtime.machine.gxGpu);
-			const RuntimeSaveState actual = captureRuntimeSaveState(runtime);
+			RuntimeSaveState actual = captureRuntimeSaveState(runtime);
 			require(actual.machineState.schedulerNowCycles == expected.machineState.schedulerNowCycles
 				&& actual.machineState.frameScheduler.lastTickSequence == expected.machineState.frameScheduler.lastTickSequence,
 				"long-window reconstruction returns to the exact machine cycle and PCRTC sequence");
-			const auto expectedImage = decodeBinaryWithPropTable(encodeRuntimeSaveState(expected), RUNTIME_SAVE_STATE_PROP_NAMES);
-			const auto actualImage = decodeBinaryWithPropTable(encodeRuntimeSaveState(actual), RUNTIME_SAVE_STATE_PROP_NAMES);
-			require(encodeBinary(actualImage.require("cpuState")) == encodeBinary(expectedImage.require("cpuState")),
-				"long-window reconstruction reproduces the complete CPU owner state");
-			require(encodeBinary(actualImage.require("machineState").require("machine"))
-				== encodeBinary(expectedImage.require("machineState").require("machine")),
-				"long-window reconstruction reproduces every device and memory owner state");
-			require(actual.pendingEntryCall == expected.pendingEntryCall, "long-window reconstruction preserves pending entry ownership");
+			// Rewind reconstructs guest state, not elapsed host time or grant bookkeeping.
+			actual.machineState.frameScheduler = expected.machineState.frameScheduler;
+			actual.machineState.frameLoop = expected.machineState.frameLoop;
+			require(encodeRuntimeSaveState(actual) == encodeRuntimeSaveState(expected),
+				"long-window reconstruction reproduces every CPU, device and memory owner state");
 		};
 		require(latest - referenceCycles > runtime.timing.cpuHz * EXPECTED_MINIMUM_SECONDS,
 			"the reference is actually older than the platform minimum duration");
