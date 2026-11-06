@@ -29,10 +29,7 @@ import type { PackedRomSourceLayer, RomSourceLayer } from './source';
 import { CART_ROM_SIZE, SYSTEM_ROM_SIZE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { writeCartRomHeader } from './header_encode';
 import { encodeRomToc } from './toc_encode';
-import {
-	assertSystemBlua32ImageFits,
-	SYSTEM_ROM_ASSET_OFFSET,
-} from './system';
+import { assertSystemBlua32ImageFits } from './system';
 
 export type RomAssetEdit = readonly [
 	type: AssetType,
@@ -58,9 +55,7 @@ export function layoutBlua32PublicAssets(
 	const entries: RomAsset[] = [];
 	const relocatedSources: RomAsset[] = [];
 	const relocatedEntryIndices: number[] = [];
-	let tailOffset = layer.id === 'system'
-		? SYSTEM_ROM_ASSET_OFFSET
-		: alignRomAssetOffset(imageOffset + imageByteCount);
+	const tailOffset = alignRomAssetOffset(imageOffset + imageByteCount);
 	let editedAssetCount = 0;
 	for (let index = 0; index < layer.index.entries.length; index += 1) {
 		const entry = layer.index.entries[index];
@@ -82,24 +77,13 @@ export function layoutBlua32PublicAssets(
 		const isEdited = assetEdit !== undefined;
 		const replacement = changes?.assetReplacements?.get(entry.type)?.get(entry.resid);
 		const movePayloads = isEdited || replacement !== undefined
-			|| (layer.id === 'cart' && (
+			|| (
 				(entry.start != null && entry.start >= imageOffset)
 				|| (entry.model_texture_start != null && entry.model_texture_start >= imageOffset)
 				|| (entry.collision_bin_start != null && entry.collision_bin_start >= imageOffset)
-			));
+			);
 		if (!movePayloads) {
 			entries.push({ ...entry });
-			if (layer.id === 'system') {
-				if (entry.end != null && entry.end > tailOffset) {
-					tailOffset = entry.end;
-				}
-				if (entry.model_texture_end != null && entry.model_texture_end > tailOffset) {
-					tailOffset = entry.model_texture_end;
-				}
-				if (entry.collision_bin_end != null && entry.collision_bin_end > tailOffset) {
-					tailOffset = entry.collision_bin_end;
-				}
-			}
 			continue;
 		}
 		const source: RomAsset = replacement === undefined ? {
@@ -132,9 +116,15 @@ export function layoutBlua32PublicAssets(
 	const layout = layoutRomAssetPayloads(relocatedSources, true, tailOffset);
 	for (let index = 0; index < layout.entries.length; index += 1) {
 		const entryIndex = relocatedEntryIndices[index];
+		const original = entries[entryIndex];
 		const relocated = layout.entries[index];
-		relocated.metabuffer_start = entries[entryIndex].metabuffer_start;
-		relocated.metabuffer_end = entries[entryIndex].metabuffer_end;
+		// The metadata section is retained; so is its decoded tooling view.
+		relocated.metabuffer_start = original.metabuffer_start;
+		relocated.metabuffer_end = original.metabuffer_end;
+		relocated.imgmeta = original.imgmeta;
+		relocated.texturemeta = original.texturemeta;
+		relocated.audiometa = original.audiometa;
+		relocated.sourcemeta = original.sourcemeta;
 		entries[entryIndex] = relocated;
 	}
 	if (assetEdits !== undefined && editedAssetCount !== assetEdits.length) {

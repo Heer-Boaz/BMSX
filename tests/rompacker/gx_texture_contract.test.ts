@@ -14,6 +14,7 @@ import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_addres
 import { readBlua32BiosImports } from '../../toolchain/ts/rompack/blua32_bios_imports';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
+import { writeLE32 } from '../../machine/ts/common/endian';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { layoutRomAssetPayloads } from '../../toolchain/ts/rompack/asset_layout';
@@ -42,7 +43,7 @@ import {
 } from '../../scripts/rompacker/rombuilder';
 import type { ImageResource, Resource, TextureAtlasResource } from '../../scripts/rompacker/rompacker.rompack';
 import { GX_SYSTEM_TEXTURE_ATLAS_NAME } from '../../scripts/rompacker/texture_atlas_contract';
-import { BIOS_FUNCTION_EXPORTS, SYSTEM_ROM_ASSET_OFFSET } from '../../toolchain/ts/rompack/system';
+import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
 
 const PACKED_TEXTURE_ROM_ROOT = join(process.cwd(), 'tmp', 'gx-texture-rom-contract-test');
 
@@ -243,11 +244,12 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 			['string/float/decode', readFileSync('machine/bios/string/float/decode.lua', 'utf8')],
 			['gpu/system_vram_region', readFileSync('machine/bios/gpu/system_vram_region.lua', 'utf8')],
 			['tty/layout', readFileSync('machine/bios/tty/layout.lua', 'utf8')],
-			['bmsx/system_assets', `module<const>
-rodata texture: word[3] = { 0xa0000000, ${gxGpuPair16(704, 720)}, ${gxGpuPair16(320, 304)} }
-return { bin_gx_system_texture_addr = texture }`],
 		] as const;
-		const systemExecutableSources: RomAsset[] = [{
+		const systemTexture = Buffer.alloc(12);
+		writeLE32(systemTexture, 0, 0xa0000000);
+		writeLE32(systemTexture, 4, gxGpuPair16(704, 720));
+		writeLE32(systemTexture, 8, gxGpuPair16(320, 304));
+		const systemExecutableSources: RomAsset[] = [{ type: 'bin', resid: 'gx_system_texture', buffer: systemTexture }, {
 			type: 'lua',
 			resid: 'entry',
 			buffer: Buffer.from(systemEntrySource),
@@ -264,13 +266,12 @@ return { bin_gx_system_texture_addr = texture }`],
 				source_path: `${path}.lua`,
 			});
 		}
-		const systemPrefix = layoutRomPrefix([], false, null);
 		const systemBlua32 = buildRomBlua32Tail(systemExecutableSources, {
 			generatedLuaModules: [],
 			includeDiagnostics: true,
 			includeSymbols: true,
 			optLevel: 3,
-			systemAssetEndOffset: SYSTEM_ROM_ASSET_OFFSET,
+			includeSources: false,
 			domain: 'system',
 			ramByteCount: 0x00400000,
 			biosExports: BIOS_FUNCTION_EXPORTS,
@@ -278,7 +279,6 @@ return { bin_gx_system_texture_addr = texture }`],
 		await finalizeRompack('texture-contract-system', {
 			debug: false,
 			blua32: systemBlua32,
-			layout: systemPrefix,
 			outputDirectory: PACKED_TEXTURE_ROM_ROOT,
 		});
 		const systemRom = await readFile(join(PACKED_TEXTURE_ROM_ROOT, 'texture-contract-system.rom'));

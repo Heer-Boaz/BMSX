@@ -12,8 +12,6 @@ import { parseSystemRomImage } from '../../machine/ts/rompack/image';
 import { CART_ROM_HEADER_BLUA32_DIAGNOSTIC_DIRECTORY_OFFSET } from '../../machine/ts/spec/bmsx/rom_package';
 import { readLE32 } from '../../machine/ts/common/endian';
 import { loadBlua32ToolingImage } from '../../toolchain/ts/rompack/blua32_media';
-import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
-import { SYSTEM_ROM_ASSET_OFFSET } from '../../toolchain/ts/rompack/system';
 import { createTestSystemCpu } from '../helpers/blua32';
 import { materializeCpuCompletionValues } from '../lua/cpu_test_harness';
 
@@ -55,11 +53,10 @@ test('public BIOS diagnostics and embedded host symbols are independently select
 	t.after(() => rm(directory, { recursive: true, force: true }));
 	const executables: Uint8Array[] = [];
 	for (const includeDiagnostics of [false, true]) for (const includeSymbols of [false, true]) {
-		const prefix = layoutRomPrefix(assets, true, null, SYSTEM_ROM_ASSET_OFFSET);
 		const tail = buildRomBlua32Tail(assets, { domain: 'system', generatedLuaModules: [], biosExports: [],
-			ramByteCount: 0x00400000, optLevel: 0, includeDiagnostics, includeSymbols, systemAssetEndOffset: prefix.nextOffset });
+			ramByteCount: 0x00400000, optLevel: 0, includeDiagnostics, includeSymbols, includeSources: true });
 		const name = `diagnostics-${+includeDiagnostics}-symbols-${+includeSymbols}`;
-		const outputs = await finalizeRompack(name, { debug: false, layout: prefix, blua32: tail, outputDirectory: directory });
+		const outputs = await finalizeRompack(name, { debug: false, blua32: tail, outputDirectory: directory });
 		assert.deepEqual(outputs.map(output => output.file), [`${name}.rom`], 'no standalone symbol sidecar is published');
 		const bytes = new Uint8Array(await readFile(join(directory, `${name}.rom`)));
 		const image = loadBlua32ToolingImage(parseSystemRomImage(bytes), 0)!;

@@ -29,7 +29,10 @@ import {
 } from '../../toolchain/ts/rompack/gx_texture_codec';
 import { encodeDirect16GxUpload } from '../../toolchain/ts/rompack/gp0_encode';
 import { encodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
-import type { RomPrefixLayout } from '../../toolchain/ts/rompack/rom_prefix_layout';
+import { layoutRomPrefix, type RomPrefixLayout } from '../../toolchain/ts/rompack/rom_prefix_layout';
+import { buildRelocatableRomAssetSymbolModule } from '../../toolchain/ts/rompack/asset_symbols';
+import { applyBlua32LinkValues } from '../../toolchain/ts/rompack/blua32_linker';
+import { SYSTEM_ASSET_SYMBOL_MODULE_PATH, SYSTEM_ASSET_SYMBOL_SOURCE_PATH } from '../../toolchain/ts/rompack/generated_modules';
 import { encodeRomToc } from '../../toolchain/ts/rompack/toc_encode';
 import {
 	type Blua32BiosFunctionExport,
@@ -909,7 +912,7 @@ type BuildRomBlua32TailOptions = {
 } & (
 	| {
 		domain: 'system';
-		systemAssetEndOffset: number;
+		includeSources: boolean;
 		biosExports: ReadonlyArray<Blua32BiosFunctionExport>;
 	}
 	| {
@@ -937,6 +940,7 @@ type RomBlua32TailCommon = {
 
 type SystemRomBlua32Tail = RomBlua32TailCommon & {
 	domain: 'system';
+	publicAssets: RomPrefixLayout;
 };
 
 export type CartRomBlua32Tail = RomBlua32TailCommon & {
@@ -960,9 +964,11 @@ export function buildRomBlua32Tail(
 	const luaModules = parseBlua32SourceModules(assetList);
 	if (options.domain === 'system') {
 		const imageOffset = SYSTEM_BLUA32_IMAGE_OFFSET;
+		const compileAssets = layoutRomAssetPayloads(assetList, options.includeSources, imageOffset);
+		const assetModule = buildRelocatableRomAssetSymbolModule(compileAssets.entries, 'system', imageOffset);
 		const built = buildBlua32Image({
 			luaModules,
-			generatedLuaModules: options.generatedLuaModules,
+			generatedLuaModules: [{ path: SYSTEM_ASSET_SYMBOL_MODULE_PATH, ...assetModule }, ...options.generatedLuaModules],
 			loadAddress: SYSTEM_ROM_BASE + imageOffset,
 			ramByteCount: options.ramByteCount,
 			optLevel: options.optLevel,
@@ -974,6 +980,12 @@ export function buildRomBlua32Tail(
 		const linked = built.linked;
 		const imageEndOffset = imageOffset + linked.bytes.byteLength;
 		assertSystemBlua32ImageFits(imageEndOffset);
+		const publicAssets = layoutRomPrefix(assetList, options.includeSources, null, alignRomAssetOffset(imageEndOffset));
+		const finalAssetModule = buildRelocatableRomAssetSymbolModule(publicAssets.entries, 'system', imageOffset);
+		applyBlua32LinkValues(linked, built.object.link.constValueRelocs, SYSTEM_ASSET_SYMBOL_MODULE_PATH, finalAssetModule.linkValues);
+		const diagnosticSources = options.includeDiagnostics ? new Map(built.diagnosticSources) : null;
+		if (diagnosticSources !== null)
+			diagnosticSources.set(SYSTEM_ASSET_SYMBOL_MODULE_PATH, { displayPath: SYSTEM_ASSET_SYMBOL_SOURCE_PATH, source: finalAssetModule.source });
 		const imageLayout = layoutRomAssetPayloads([{
 			resid: BLUA32_IMAGE_ID,
 			type: 'code',
@@ -999,10 +1011,11 @@ export function buildRomBlua32Tail(
 		const tailLayout = layoutRomAssetPayloads(
 			tailAssets,
 			true,
-			options.systemAssetEndOffset,
+			publicAssets.nextOffset,
 		);
 		return {
 			domain: 'system',
+			publicAssets,
 			boot: {
 				imageOffset,
 				imageByteCount: linked.bytes.byteLength,
@@ -1015,13 +1028,13 @@ export function buildRomBlua32Tail(
 			layout: {
 				entries: imageLayout.entries.concat(tailLayout.entries),
 				ranges: imageLayout.ranges.concat(tailLayout.ranges),
-				payloadEnd: tailLayout.payloadEnd,
+				payloadEnd: Math.max(imageLayout.payloadEnd, tailLayout.payloadEnd),
 				nextOffset: tailLayout.nextOffset,
 			},
 			diagnostics: options.includeDiagnostics ? {
 				image: linked.layout,
 				symbols: linked.symbols,
-				sources: built.diagnosticSources,
+				sources: diagnosticSources,
 			} : null,
 		};
 	}
@@ -1149,11 +1162,10 @@ export async function finalizeRompack(
 		projectRootPath?: string,
 		status?: BuildReporter,
 		debug: boolean,
-		layout: RomPrefixLayout,
 		outputDirectory: string,
 	} & (
-		| { blua32: SystemRomBlua32Tail }
-		| { blua32: CartRomBlua32Tail | null }
+		| { blua32: SystemRomBlua32Tail; layout?: never }
+		| { blua32: CartRomBlua32Tail | null; layout: RomPrefixLayout }
 	)
 ) {
 	const outfileBasename = `${rom_name}${options.debug ? '.debug' : ''}.rom`;
@@ -1162,16 +1174,17 @@ export async function finalizeRompack(
 	const romDigest = createHash('sha256');
 	const status = options.status;
 	const blua32 = options.blua32;
+	const layout = blua32?.domain === 'system' ? blua32.publicAssets : options.layout;
 	const physicalSpans = blua32 === null
-		? options.layout.ranges.slice()
-		: options.layout.ranges.concat(blua32.layout.ranges);
-	let dataEnd = options.layout.payloadEnd;
+		? layout.ranges.slice()
+		: layout.ranges.concat(blua32.layout.ranges);
+	let dataEnd = layout.payloadEnd;
 	if (blua32 !== null && blua32.layout.payloadEnd > dataEnd) {
 		dataEnd = blua32.layout.payloadEnd;
 	}
 	const entries = blua32 === null
-		? options.layout.entries.slice()
-		: options.layout.entries.concat(blua32.layout.entries);
+		? layout.entries.slice()
+		: layout.entries.concat(blua32.layout.entries);
 	let diagnosticDirectoryOffset = 0;
 	if (blua32 !== null && blua32.diagnostics) {
 		const entryBySourcePath = new Map<string, RomAsset>();
@@ -1228,8 +1241,8 @@ export async function finalizeRompack(
 	const packageByteCount = tocOffset + tocLength;
 	const header = {
 		headerSize: CART_ROM_HEADER_SIZE,
-		manifestOffset: options.layout.manifestOffset,
-		manifestLength: options.layout.manifestLength,
+		manifestOffset: layout.manifestOffset,
+		manifestLength: layout.manifestLength,
 		tocOffset,
 		tocLength,
 		dataOffset,
@@ -1242,10 +1255,10 @@ export async function finalizeRompack(
 		blua32StaticLayoutTokenLo: blua32 === null ? 0 : blua32.boot.staticLayoutTokenLo,
 		blua32StaticLayoutTokenHi: blua32 === null ? 0 : blua32.boot.staticLayoutTokenHi,
 		blua32DiagnosticDirectoryOffset: diagnosticDirectoryOffset,
-		metadataOffset: options.layout.metadataOffset,
-		metadataLength: options.layout.metadataLength,
+		metadataOffset: layout.metadataOffset,
+		metadataLength: layout.metadataLength,
 	};
-	const manifest = options.layout.manifest;
+	const manifest = layout.manifest;
 	if (manifest === null) {
 		if (packageByteCount > SYSTEM_ROM_SIZE) {
 			throw new Error(`ROM payload (${packageByteCount} bytes) exceeds the ${SYSTEM_ROM_SIZE}-byte system ROM window by ${packageByteCount - SYSTEM_ROM_SIZE} bytes.`);

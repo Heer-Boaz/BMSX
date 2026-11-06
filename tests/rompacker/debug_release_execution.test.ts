@@ -60,7 +60,7 @@ return value`;
 	for (const includeDiagnostics of [false, true]) for (const includeSymbols of [false, true]) {
 		const options = { generatedLuaModules: [], ramByteCount: 0x00400000, optLevel, includeDiagnostics, includeSymbols };
 		const image = domain === 'system'
-			? buildRomBlua32Tail(assets, { ...options, domain: 'system', biosExports: [], systemAssetEndOffset: 0x100 })
+			? buildRomBlua32Tail(assets, { ...options, domain: 'system', biosExports: [], includeSources: true })
 			: buildRomBlua32Tail(assets, { ...options, domain: 'cart', biosImports, imageOffset: 0x100 });
 		assert.equal(image.diagnostics !== null, includeDiagnostics);
 		assert.equal(image.layout.entries.some(entry => entry.resid === BLUA32_SYMBOLS_IMAGE_ID), includeSymbols);

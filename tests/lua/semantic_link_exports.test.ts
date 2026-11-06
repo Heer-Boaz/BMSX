@@ -9,13 +9,13 @@ import { buildPossibleRomAssetAddressLinkExports, type RomAssetSymbol } from '..
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import { createTestRuntimeSourceState, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 
-test('the asset producer classifies possible cartridge address relocations, not lengths or system addresses', () => {
+test('the asset producer classifies address relocations in either ROM domain, never payload lengths', () => {
 	const symbol = (name: string, payloadId: 'system' | 'cart'): RomAssetSymbol => ({
 		name, payloadId, assetId: name, assetType: 'data', address: 0, offset: 0, byteLength: 12,
 	});
 	assert.deepEqual([...buildPossibleRomAssetAddressLinkExports([
 		symbol('data_image', 'cart'), symbol('data_firmware', 'system'),
-	])], ['data_image_addr']);
+	])], ['data_image_addr', 'data_firmware_addr']);
 });
 
 test('link-export metadata has immutable semantic snapshot generation ownership', () => {

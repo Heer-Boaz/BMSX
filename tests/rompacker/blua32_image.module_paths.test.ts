@@ -12,7 +12,6 @@ import {
 import { GX_DISPLAY_PRESET_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_display_preset_module';
 import { GX_REGISTER_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_register_module';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
-import { SYSTEM_ROM_ASSET_OFFSET } from '../../toolchain/ts/rompack/system';
 import { buildRomBlua32Tail } from '../../scripts/rompacker/rombuilder';
 import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
 import { composeLuaSource } from '../../toolchain/ts/lua/compiler/source_map';
@@ -130,7 +129,7 @@ test('BLua32 image rejects a cart Lua module that collides with generated asset 
 			includeDiagnostics: true,
 			includeSymbols: true,
 			optLevel: 3,
-			systemAssetEndOffset: SYSTEM_ROM_ASSET_OFFSET,
+			includeSources: true,
 			domain: 'system',
 			ramByteCount: 0x00400000,
 			biosExports: [],
@@ -176,7 +175,7 @@ for (const generated of [
 				includeDiagnostics: true,
 				includeSymbols: true,
 				optLevel: 3,
-				systemAssetEndOffset: SYSTEM_ROM_ASSET_OFFSET,
+				includeSources: true,
 				domain: 'system',
 				ramByteCount: 0x00400000,
 				biosExports: [],

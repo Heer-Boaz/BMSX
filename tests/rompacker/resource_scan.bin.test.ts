@@ -13,8 +13,6 @@ import {
 } from '../../machine/ts/spec/bmsx/rom_package';
 import { type RomAsset } from '../../toolchain/ts/rompack/assets';
 import { loadRomAssetList } from '../../toolchain/ts/rompack/loader';
-import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
-import { SYSTEM_ROM_ASSET_OFFSET } from '../../toolchain/ts/rompack/system';
 import { prepareRomInputs } from '../../scripts/rompacker/build_inputs';
 import { collectCartSourceFiles } from '../../scripts/rompacker/cart_source_files';
 import {
@@ -169,10 +167,8 @@ test('ROM writer materializes word-aligned payload ranges', async () => {
 			{ type: 'image', resid: 'sprite', collision_bin_buffer: Buffer.from([0x44, 0x55, 0x66, 0x77]) },
 			{ type: 'romlabel', resid: 'label', buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]) },
 		];
-		const layout = layoutRomPrefix(assets, true, null, SYSTEM_ROM_ASSET_OFFSET);
-		const ranges = layout.ranges;
 		const entrySource = 'module<entry>\nreturn 0';
-		const blua32 = buildRomBlua32Tail([{
+		const blua32 = buildRomBlua32Tail([...assets, {
 			type: 'lua',
 			resid: 'entry',
 			buffer: Buffer.from(entrySource),
@@ -183,15 +179,15 @@ test('ROM writer materializes word-aligned payload ranges', async () => {
 			includeDiagnostics: false,
 			includeSymbols: false,
 			optLevel: 3,
-			systemAssetEndOffset: layout.nextOffset,
+			includeSources: false,
 			domain: 'system',
 			ramByteCount: 0x00400000,
 			biosExports: [],
 		});
+		const ranges = blua32.publicAssets.ranges;
 		await finalizeRompack('aligned', {
 			debug: false,
 			blua32,
-			layout,
 			outputDirectory,
 		});
 		const rom = await readFile(join(outputDirectory, 'aligned.rom'));

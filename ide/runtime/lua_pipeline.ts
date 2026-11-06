@@ -268,6 +268,17 @@ export function buildBlua32Media(
 			BIOS_FUNCTION_EXPORTS,
 			{ image: installedSystem.layout, symbols: installedSystem.symbols!, captureSources: sourceCorrespondence },
 		);
+		const finalAssets = layoutBlua32PublicAssets(sources.systemRom, linked.bytes.byteLength, assetChanges);
+		applyLinkedAssetModule(
+			systemObject,
+			programSources.modules,
+			programSources.sources,
+			programSources.diagnosticSources,
+			linked,
+			SYSTEM_ASSET_SYMBOL_MODULE_PATH,
+			buildRelocatableRomAssetSymbolModule(finalAssets.entries, 'system', imageOffset),
+		);
+		sourceCorrespondence.invalidate(SYSTEM_ASSET_SYMBOL_MODULE_PATH);
 		biosImports = linked.biosImports;
 		rebuiltSystem = {
 			linked,

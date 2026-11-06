@@ -104,10 +104,10 @@ export function buildRomAssetAddressLinkValuesFromSymbols(
 	return values;
 }
 
-/** Before image layout, any cartridge payload address may belong to the relocatable tail. */
+/** Before image layout, payload addresses in either domain may belong to the relocatable tail. */
 export function buildPossibleRomAssetAddressLinkExports(symbols: ReadonlyArray<RomAssetSymbol>): ReadonlySet<string> {
 	const exports = new Set<string>();
-	for (const symbol of symbols) if (symbol.payloadId === 'cart') exports.add(`${symbol.name}_addr`);
+	for (const symbol of symbols) exports.add(`${symbol.name}_addr`);
 	return exports;
 }
 
@@ -120,8 +120,7 @@ export function buildRelocatableRomAssetSymbolModule(
 	const relocatedSymbols: RomAssetSymbol[] = [];
 	for (let index = 0; index < symbols.length; index += 1) {
 		const symbol = symbols[index];
-		if (payloadId === 'cart'
-			&& symbol.payloadId === payloadId
+		if (symbol.payloadId === payloadId
 			&& symbol.offset >= imageOffset) {
 			relocatedSymbols.push(symbol);
 		}
@@ -141,8 +140,8 @@ export function buildRelocatableRomAssetSymbolModule(
 		declarations and one `return` table that exports them by name.
 	- The compiler therefore treats `bmsx/assets` as a const module: the
 		return table is a compile-time export descriptor, never a runtime table. Stable
-		values and all payload lengths are folded normally; Studio marks only addresses in
-		the cartridge tail whose position depends on the linked image for relocation. The
+		values and all payload lengths are folded normally; addresses in the current
+		image's tail are relocated after executable layout in either ROM domain. The
 		module emits no proto, global slots, `require` call or runtime table construction.
 */
 export function buildRomAssetSymbolModuleSource(assetList: ReadonlyArray<RomAsset>): string {

@@ -4,7 +4,6 @@ import type { PreparedUnit } from './build';
 import type { BuildReporter } from '../lib/build_reporter';
 import {
 	BIOS_FUNCTION_EXPORTS,
-	SYSTEM_ROM_ASSET_OFFSET,
 	SYSTEM_ROM_NAME,
 } from '../../toolchain/ts/rompack/system';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
@@ -16,7 +15,6 @@ import {
 	GX_DISPLAY_PRESET_MODULE_PATH,
 	GX_REGISTER_MODULE_PATH,
 	ROM_ASSET_SYMBOL_MODULE_PATH,
-	SYSTEM_ASSET_SYMBOL_MODULE_PATH,
 } from '../../toolchain/ts/rompack/generated_modules';
 import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
 import { GX_DISPLAY_PRESET_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_display_preset_module';
@@ -55,22 +53,9 @@ export async function compileSystem(prepared: PreparedUnit, outputDirectory: str
 	compileAudioEventResources(BIOSResources);
 	progress({ type: 'phase', message: 'Build system assets' });
 	const BIOSRomAssets = await generateRomAssets(BIOSResources, progress);
-	const BIOSLayout = layoutRomPrefix(
-		BIOSRomAssets,
-		debug,
-		null,
-		SYSTEM_ROM_ASSET_OFFSET,
-	);
-	const BIOSAssetSymbolModuleSource = buildRomAssetSymbolModuleSourceFromSymbols(
-		collectRomAssetSymbols(BIOSLayout.entries, 'system'),
-	);
 	progress({ type: 'phase', message: 'Compile system Lua' });
 	const BIOSBlua32 = buildRomBlua32Tail(BIOSRomAssets, {
 		generatedLuaModules: [
-			{
-				path: SYSTEM_ASSET_SYMBOL_MODULE_PATH,
-				source: BIOSAssetSymbolModuleSource,
-			},
 			{
 				path: BLUA32_FIRMWARE_MODULE_PATH,
 				source: BLUA32_FIRMWARE_MODULE_SOURCE,
@@ -86,14 +71,14 @@ export async function compileSystem(prepared: PreparedUnit, outputDirectory: str
 		],
 		includeDiagnostics: debug,
 		includeSymbols: debug,
+		includeSources: debug,
 		optLevel,
-		systemAssetEndOffset: BIOSLayout.nextOffset,
 		biosExports: BIOS_FUNCTION_EXPORTS,
 		ramByteCount: PSX_MACHINE_SPEC.ramBytes,
 		domain: 'system',
 	});
 	progress({ type: 'phase', message: 'Write system ROM' });
-	return finalizeRompack(SYSTEM_ROM_NAME, { projectRootPath: virtualRoot, status: progress, debug, blua32: BIOSBlua32, layout: BIOSLayout, outputDirectory });
+	return finalizeRompack(SYSTEM_ROM_NAME, { projectRootPath: virtualRoot, status: progress, debug, blua32: BIOSBlua32, outputDirectory });
 }
 
 export async function compileCart(prepared: PreparedUnit, outputDirectory: string, name: string, systemRom: Uint8Array, progress: BuildReporter): Promise<readonly RomBuildOutput[]> {

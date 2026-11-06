@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { CartManifest } from '../../machine/ts/rompack/manifest';
-import { BIOS_FUNCTION_EXPORTS, SYSTEM_ROM_ASSET_OFFSET } from '../../toolchain/ts/rompack/system';
+import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import { readBlua32BiosImports } from '../../toolchain/ts/rompack/blua32_bios_imports';
 import { scenarioTestAssetId } from '../../toolchain/ts/rompack/scenario_test';
@@ -74,12 +74,6 @@ export async function buildScenarioMediaFixture(
 			source_path: `${module.path}.lua`, normalized_source_path: `${SYSTEM_PROJECT_ROOT}/${module.path}.lua` });
 	}
 	if (options?.systemAssets !== undefined) systemAssets.push(...options.systemAssets);
-	const systemLayout = layoutRomPrefix(
-		systemAssets,
-		true,
-		MANIFEST,
-		SYSTEM_ROM_ASSET_OFFSET,
-	);
 	const systemBlua32 = buildRomBlua32Tail(systemAssets, {
 		generatedLuaModules: [],
 		includeDiagnostics: true,
@@ -87,13 +81,12 @@ export async function buildScenarioMediaFixture(
 		optLevel: options?.systemOptLevel ?? 0,
 		ramByteCount: 0x00400000,
 		domain: 'system',
-		systemAssetEndOffset: systemLayout.nextOffset,
+		includeSources: true,
 		biosExports: BIOS_FUNCTION_EXPORTS,
 	});
 	await finalizeRompack('system', {
 		projectRootPath: SYSTEM_PROJECT_ROOT,
 		debug: true,
-		layout: systemLayout,
 		outputDirectory,
 		blua32: systemBlua32,
 	});

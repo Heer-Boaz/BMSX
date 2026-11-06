@@ -58,7 +58,7 @@ test('BIOS-only relinking consumes each installed generation when one context is
 		systemContextId: TEST_SYSTEM_CONTEXT_ID, cartridgeContextIds: [TEST_CARTRIDGE_CONTEXT_IDS[0], TEST_CARTRIDGE_CONTEXT_IDS[0]] });
 	const context = sources.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]);
 	assert.equal(context.luaSources.module2lua.generation_b, undefined, 'the authored namespace remains generation A, not a union of installed images');
-	assert.equal(sources.currentBlua32Media.system!.symbols!.metadata.compiledModulePaths.includes(SYSTEM_ASSET_SYMBOL_MODULE_PATH), false);
+	assert.equal(sources.currentBlua32Media.system!.symbols!.metadata.compiledModulePaths.includes(SYSTEM_ASSET_SYMBOL_MODULE_PATH), true);
 	for (const image of sources.currentBlua32Media.cartridgeSlots) {
 		assert.equal(image!.symbols!.metadata.compiledModulePaths.includes(ROM_ASSET_SYMBOL_MODULE_PATH), false);
 		assert.equal(image!.sources.has(ROM_ASSET_SYMBOL_MODULE_PATH), false, 'source capture does not invent a compiler input absent from the installed manifest');

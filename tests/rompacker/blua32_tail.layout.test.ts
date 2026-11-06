@@ -6,14 +6,15 @@ import { test } from 'node:test';
 import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BLUA32_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_image';
 import { CART_ROM_HEADER_SIZE } from '../../machine/ts/spec/bmsx/rom_package';
+import { alignRomAssetOffset } from '../../toolchain/ts/rompack/asset_layout';
+import { SYSTEM_BLUA32_IMAGE_LIMIT } from '../../toolchain/ts/rompack/system';
 import {
 	parseCartHeader,
 } from '../../machine/ts/rompack/format';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import { decodeRomToc } from '../../machine/ts/rompack/toc';
 import { buildRomAssetAddressLinkValuesFromSymbols } from '../../toolchain/ts/rompack/asset_symbols';
-import type { CartManifest } from '../../machine/ts/rompack/manifest';
-import { parseCartridgeIndex } from '../../toolchain/ts/rompack/loader';
+import { loadRomAssetList } from '../../toolchain/ts/rompack/loader';
 import { BLUA32_SYMBOLS_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_symbols';
 import { BLUA32_DIAGNOSTICS_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_diagnostics';
 import { RomSourceStack } from '../../toolchain/ts/rompack/source';
@@ -21,10 +22,6 @@ import {
 	buildBlua32Tail,
 	layoutBlua32PublicAssets,
 } from '../../toolchain/ts/rompack/blua32_tail';
-import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
-import {
-	SYSTEM_ROM_ASSET_OFFSET,
-} from '../../toolchain/ts/rompack/system';
 import {
 	buildRomBlua32Tail,
 	finalizeRompack,
@@ -37,7 +34,6 @@ import {
 const ROOT = join(process.cwd(), 'tmp', 'blua32-tail-layout-test');
 const ENTRY_PATH = 'entry.lua';
 const LINK_RAM_BYTES = 0x00400000;
-const MANIFEST: CartManifest = { hardware: [{ type: 'rom' }] };
 
 function luaAsset(source: string): RomAsset {
 	const entrySource = `module<entry>\n${source}`;
@@ -63,7 +59,7 @@ test('BLua32 asset relocation keeps final payload lengths concrete', () => {
 	assert.deepEqual(Array.from(values), [['aem_events_addr', 0x00801234]]);
 });
 
-test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes', async () => {
+test('system rebuilds compact assets behind the actual image while preserving payloads, metadata and the program base', async () => {
 	await rm(ROOT, { recursive: true, force: true });
 	try {
 		await mkdir(ROOT, { recursive: true });
@@ -90,26 +86,24 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 				sourcemeta: { text: authoredData },
 			},
 		];
-		const layout = layoutRomPrefix(assets, true, MANIFEST, SYSTEM_ROM_ASSET_OFFSET);
 		const blua32 = buildRomBlua32Tail(assets, {
 			generatedLuaModules: [],
 			includeDiagnostics: true,
 			includeSymbols: true,
 			optLevel: 0,
-			systemAssetEndOffset: layout.nextOffset,
+			includeSources: true,
 			domain: 'system',
 			ramByteCount: LINK_RAM_BYTES,
 			biosExports: [],
 		});
 		await finalizeRompack('tail', {
 			debug: true,
-			layout,
 			outputDirectory: ROOT,
 			blua32,
 		});
 
 		const initialPayload = new Uint8Array(await readFile(join(ROOT, 'tail.debug.rom')));
-		const index = await parseCartridgeIndex(initialPayload);
+		const index = { ...await loadRomAssetList(initialPayload, 'system'), cart_manifest: null };
 		for (const id of [BLUA32_IMAGE_ID, BLUA32_SYMBOLS_IMAGE_ID, BLUA32_DIAGNOSTICS_IMAGE_ID])
 			assert.equal(index.entries.find(entry => entry.resid === id)!.source_path, undefined, 'generated records have identity, not a fabricated source file');
 		const imageEntry = index.entries.find(entry => entry.resid === BLUA32_IMAGE_ID)!;
@@ -123,6 +117,8 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 		const initialSymbolsEnd = symbolsEntry.end!;
 		const sourceStart = sourceEntry.start!;
 		const sourceEnd = sourceEntry.end!;
+		assert.equal(sourceStart, alignRomAssetOffset(initialImageEnd));
+		assert.ok(initialPayload.byteLength < SYSTEM_BLUA32_IMAGE_LIMIT, 'unused program budget is not file padding');
 		const sourceBytes = initialPayload.slice(sourceStart, sourceEnd);
 		const metadataStart = spriteEntry.metabuffer_start!;
 		const metadataEnd = spriteEntry.metabuffer_end!;
@@ -161,14 +157,14 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 		const prelinkedSprite = prelinkedAssetLayout.entries.find(entry => entry.resid === 'sprite')!;
 		const largerImageSprite = largerImageAssetLayout.entries.find(entry => entry.resid === 'sprite')!;
 		const prelinkedFont = prelinkedAssetLayout.entries.find(entry => entry.resid === 'terminal-font')!;
-		assert.equal(prelinkedFont.start, fontStart);
-		assert.equal(prelinkedFont.end, fontEnd);
-		assert.equal(prelinkedSprite.start, largerImageSprite.start);
-		assert.equal(prelinkedSprite.end, largerImageSprite.end);
+		assert.ok(prelinkedFont.start! >= imageStart + changed.linked.bytes.byteLength);
+		assert.equal(prelinkedFont.end! - prelinkedFont.start!, fontEnd - fontStart);
+		assert.equal(prelinkedSprite.start! + 0x10000, largerImageSprite.start);
+		assert.equal(prelinkedSprite.end! + 0x10000, largerImageSprite.end);
 		assert.equal(prelinkedSprite.end! - prelinkedSprite.start!, editedSpriteBytes.byteLength);
-		assert.ok(prelinkedSprite.start! >= fontEnd);
-		assert.equal(prelinkedAssetLayout.payloadEnd, largerImageAssetLayout.payloadEnd);
-		assert.equal(prelinkedAssetLayout.nextOffset, largerImageAssetLayout.nextOffset);
+		assert.ok(prelinkedSprite.end! <= prelinkedFont.start!);
+		assert.equal(prelinkedAssetLayout.payloadEnd + 0x10000, largerImageAssetLayout.payloadEnd);
+		assert.equal(prelinkedAssetLayout.nextOffset + 0x10000, largerImageAssetLayout.nextOffset);
 		const rebuilt = buildBlua32Tail(
 			systemLayer,
 			changed.linked,
@@ -198,20 +194,22 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 		assert.equal(rebuiltImageEntry.start, imageStart);
 		assert.equal(spriteEntry.metabuffer_start, metadataStart);
 		assert.equal(spriteEntry.metabuffer_end, metadataEnd);
-		assert.equal(rebuilt.index.entries.find(entry => entry.resid === 'sprite')!.start, spriteStart);
-		assert.equal(rebuilt.index.entries.find(entry => entry.resid === 'sprite')!.end, spriteEnd);
-		assert.equal(rebuiltHeader.metadataOffset, initialHeader.metadataOffset);
+		const movedSprite = rebuilt.index.entries.find(entry => entry.resid === 'sprite')!;
+		assert.ok(movedSprite.start! >= rebuiltImageEntry.end!);
+		assert.equal(movedSprite.imgmeta, spriteEntry.imgmeta, 'installed tooling retains decoded image metadata without re-decoding');
+		assert.equal(rebuilt.index.entries.find(entry => entry.resid === 'terminal-font')!.sourcemeta, fontEntry.sourcemeta,
+			'asset relocation retains the installed authored-source provenance');
 		assert.equal(rebuiltHeader.metadataLength, initialHeader.metadataLength);
 		assert.equal(rebuiltHeader.manifestOffset, initialHeader.manifestOffset);
 		assert.equal(rebuiltHeader.manifestLength, initialHeader.manifestLength);
 		assert.deepEqual(rebuilt.bytes.subarray(CART_ROM_HEADER_SIZE, imageStart), immutableBody);
-		assert.deepEqual(rebuilt.bytes.subarray(metadataStart, metadataEnd), metadataBytes);
-		assert.deepEqual(rebuilt.bytes.subarray(spriteStart, spriteEnd), spriteBytes);
+		assert.deepEqual(rebuilt.bytes.subarray(movedSprite.metabuffer_start, movedSprite.metabuffer_end), metadataBytes);
+		assert.deepEqual(rebuilt.bytes.subarray(movedSprite.start, movedSprite.end), spriteBytes);
 		assert.ok(rebuiltImageEntry.end! > initialImageEnd);
 		assert.ok(rebuiltSymbolsEntry.end! > initialSymbolsEnd);
 		assert.ok(rebuiltHeader.tocOffset > initialHeader.tocOffset);
 
-		const rebuiltIndex = await parseCartridgeIndex(rebuilt.bytes);
+		const rebuiltIndex = await loadRomAssetList(rebuilt.bytes, 'system');
 		const rebuiltSprite = rebuiltIndex.entries.find(entry => entry.resid === 'sprite')!;
 		assert.deepEqual(rebuiltSprite.imgmeta, spriteEntry.imgmeta);
 		assert.equal(rebuiltIndex.entries.find(entry => entry.resid === 'terminal-font')!.sourcemeta!.text, authoredData);
@@ -224,9 +222,9 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 		);
 		const assetEditedFont = assetEdited.index.entries.find(entry => entry.resid === 'terminal-font')!;
 		const assetEditedSprite = assetEdited.index.entries.find(entry => entry.resid === 'sprite')!;
-		assert.equal(assetEditedFont.start, fontStart);
-		assert.equal(assetEditedFont.end, fontEnd);
-		assert.deepEqual(assetEdited.bytes.subarray(fontStart, fontEnd), fontBytes);
+		assert.equal(assetEditedFont.start, prelinkedFont.start);
+		assert.equal(assetEditedFont.end, prelinkedFont.end);
+		assert.deepEqual(assetEdited.bytes.subarray(assetEditedFont.start, assetEditedFont.end), fontBytes);
 		assert.notEqual(assetEditedSprite.start, spriteStart);
 		assert.deepEqual(
 			assetEdited.bytes.subarray(assetEditedSprite.start!, assetEditedSprite.end!),
@@ -255,8 +253,9 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 			batchEdited.bytes.subarray(batchEditedSprite.start!, batchEditedSprite.end!),
 			editedSpriteBytes,
 		);
-		assert.deepEqual(batchEdited.bytes.subarray(sourceStart, sourceEnd), sourceBytes);
-		const editedIndex = await parseCartridgeIndex(batchEdited.bytes);
+		const batchSource = batchEdited.index.entries.find(entry => entry.resid === 'entry')!;
+		assert.deepEqual(batchEdited.bytes.subarray(batchSource.start, batchSource.end), sourceBytes);
+		const editedIndex = await loadRomAssetList(batchEdited.bytes, 'system');
 		assert.equal(editedIndex.entries.find(entry => entry.resid === 'terminal-font')!.sourcemeta!.text, authoredData);
 	} finally {
 		await rm(ROOT, { recursive: true, force: true });
