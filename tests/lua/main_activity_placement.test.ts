@@ -7,7 +7,7 @@ import { createActualSourcePanes } from '../helpers/source_panes';
 
 function fixture(t: TestContext) {
 	const f = createActualSourcePanes(t), main = f.editor.mainWorkspace;
-	f.editor.setFontVariant('tiny');
+	f.editor.preferences.fontVariant = 'tiny';
 	main.regionLayout.activityHeight = 80;
 	main.openActivity('problems'); f.update();
 	return { ...f, main, panel: f.editor.problems };
@@ -32,7 +32,7 @@ test('host placement retains the exact native focus and semantic context while f
 for (const variant of ['tiny', 'msx'] as const)
 	test(`repeated ${variant} float and dock retains the physical native allocation when shell geometry is unchanged`, t => {
 		const f = fixture(t), { main, panel } = f;
-		f.editor.setFontVariant(variant); f.update();
+		f.editor.preferences.fontVariant = variant; f.update();
 		const target = panel.focusTarget, generation = panel.scope.contextGeneration;
 		const native = f.editor.surfaces.findByScope(panel.scope.surfaceScope)!;
 		const layout = t.mock.method(main.activities, 'layout');

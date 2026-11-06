@@ -25,7 +25,7 @@ export async function createAssistantStudioFixture(t: TestContext, evidenceName:
 	t.after(async () => { await browser?.close(); await closeServer?.();
 		await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }); });
 	await build({ entryPoints: ['tests/conformance/runtime_replay/studio_assistant.ts'], bundle: true, platform: 'browser', format: 'esm', target: 'es2020',
-		outfile: join(root, 'test.js'), tsconfig: 'tsconfig.base.json', loader: { '.glsl': 'text', '.wgsl': 'text', '.png': 'dataurl' } });
+		outfile: join(root, 'test.js'), tsconfig: 'tsconfig.base.json', loader: { '.rgba': 'binary', '.glsl': 'text', '.wgsl': 'text', '.png': 'dataurl' } });
 	await writeFile(join(root, 'index.html'), '<!doctype html><link rel="icon" href="data:,"><style>body{margin:0;background:#000}#player-surface{position:fixed;inset:0}canvas{position:absolute;image-rendering:pixelated}</style><div id="player-surface"><canvas width="256" height="212"></canvas></div>');
 	await copyFile('dist/system/bmsx-bios.debug.rom', join(root, 'bios.rom')); await copyFile('dist/studio_test.debug.rom', join(root, 'cart.rom'));
 	await copyFile('dist/graph-layout.worker.js', join(root, 'graph-layout.worker.js'));

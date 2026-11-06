@@ -272,7 +272,6 @@ export type CartEditor = TextInputHost & {
 	draw: () => void;
 	shutdown: () => Promise<void>;
 	updateViewport: (viewport: Viewport) => void;
-	setFontVariant: (variant: FontVariant) => void;
 	resetLayout: () => boolean;
 	showRuntimeErrorInChunk: (resource: ResourceIdentity, line: number, column: number, message: string, details?: RuntimeErrorDetails) => void;
 	renderFaultOverlay: () => void;
@@ -419,7 +418,6 @@ export class RuntimeCartEditor implements CartEditor {
 		logOutput: LogOutput,
 		resourcePanelWidthRatio: number,
 		viewport: Viewport,
-		fontVariant: FontVariant,
 		overlayRenderer: OverlayRenderer,
 		decodeImage: ImageDecoder,
 		createGraphLayoutEngine: GraphLayoutEngineFactory,
@@ -445,9 +443,8 @@ export class RuntimeCartEditor implements CartEditor {
 		this.presenter = presenter;
 		this.display = display;
 		this.unbindPreferences = preferences.onDidChange(() => {
-			if (!this.isActive) return;
-			if (editorViewState.font.sampling !== preferences.fontSampling) this.setFontVariant(this.fontVariant);
-			display.workspace.refresh();
+			this.applyFontPreferences();
+			if (this.isActive) display.workspace.refresh();
 		});
 		this.unbindDisplayGeometry = display.geometry.onDidChange(() => { if (this.isActive) this.cancelPointerInput(); });
 		this.input = input;
@@ -478,7 +475,7 @@ export class RuntimeCartEditor implements CartEditor {
 		);
 		this.keybindings = new EditorCommandKeybindingController(inputFocus, clock);
 		inputFocus.workbenchScope.commands = this.commands;
-		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport, fontVariant,
+		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport,
 			workbench.projectContent);
 		refreshWorkbenchLayout();
 		const workArea = getWorkbenchWorkArea();
@@ -1080,17 +1077,12 @@ export class RuntimeCartEditor implements CartEditor {
 		}
 	}
 
-	public setFontVariant(variant: FontVariant): void {
-		if (!this.isAvailable) {
-			return;
-		}
-		const previousVariant = editorViewState.fontVariant;
-		configureFontVariant(variant, this.preferences.fontSampling);
+	private applyFontPreferences(): void {
+		const { fontVariant, fontSampling } = this.preferences;
+		if (editorViewState.fontVariant === fontVariant && editorViewState.font.sampling === fontSampling) return;
+		configureFontVariant(fontVariant, fontSampling);
 		this.resourcePanel.setFontMetrics(editorViewState.font);
 		this.layoutMainEditor();
-		if (editorViewState.fontVariant !== previousVariant) {
-			requestWorkspaceAutosave(WorkspaceAutosaveChange.Font);
-		}
 	}
 
 	public showRuntimeErrorInChunk(resource: ResourceIdentity, line: number, column: number, message: string, details?: RuntimeErrorDetails): void {
@@ -1172,10 +1164,9 @@ export class RuntimeCartEditor implements CartEditor {
 	private initialize(
 		resourcePanelWidthRatio: number,
 		viewport: Viewport,
-		fontVariant: FontVariant,
 		content: ProjectContentIndex,
 	): ResourcePanelController {
-		editorViewState.fontVariant = fontVariant;
+		editorViewState.fontVariant = this.preferences.fontVariant;
 		constants.setIdeThemeVariant(constants.DEFAULT_THEME);
 		editorRuntimeState.themeVariant = constants.getActiveIdeThemeVariant();
 		editorRuntimeState.caseInsensitive = false;

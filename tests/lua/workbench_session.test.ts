@@ -140,10 +140,10 @@ test('group round-trip restores ordered clean/dirty views, preview and distinct 
 	const generation = JSON.parse(JSON.stringify({ dirtyFiles: [{ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'definitions.lua', updatedAt: 50,
 		savedSource: f.model.lastSavedSource, persistedBaseline: f.model.persistedBaseline }],
 		editorParts: f.editorParts.serialize(f.serializers), mainWorkspace: f.mainWorkspace.serialize(),
-		filesBrowser: f.resourcePanel.serialize(), fontVariant: 'tiny', breakpoints: [] }));
+		filesBrowser: f.resourcePanel.serialize(), breakpoints: [] }));
 	await applyWorkspaceAutosavePayload({ editorParts: f.editorParts, mainWorkspace: f.mainWorkspace, resourcePanel: f.resourcePanel,
 		restoreSceneCompanions() { assert.fail('document fixture has no scene companion request'); },
-		editorInputSerializers: f.serializers, setFontVariant() {} },
+		editorInputSerializers: f.serializers },
 		f.sources.catalog, { breakpoints: new RuntimeBreakpoints(f.sources, () => {}) }, generation);
 	const restoredGroup = f.editorParts.main.activeGroup;
 	const after = restoredGroup.model.serialize(f.serializers);

@@ -23,7 +23,7 @@ async function fixture(t: TestContext, source: string) {
 		['behavior.lua', source], ['cartlib/behaviour_tree/library.lua', 'return {}'],
 		['cartlib/fsm/library.lua', 'return {}'], ['cartlib/actioneffects.lua', 'return {}'],
 	], () => new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs'))));
-	f.editor.setFontVariant('tiny');
+	f.editor.preferences.fontVariant = 'tiny';
 	const registration = f.editor.behaviorLens.documents.registrations.getRegistrations(f.sources.systemContextId)
 		.find(registration => registration.resource.path === 'behavior.lua')!;
 	const input = f.editor.behaviorLens.openDefinition(f.firstGroup, registration)!;

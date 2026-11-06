@@ -1,3 +1,4 @@
+import { FONT_VARIANTS } from '../../machine/ts/render/shared/bmsx_font';
 import { WORKSPACE_UI_SCALES } from '../workbench/common/display_scale';
 import { findEditorGroup } from '../workbench/services/editor/editor_group';
 import { chooseBuild, chooseBuildOutput, showBuildJobs } from '../workbench/contrib/builds/commands';
@@ -150,6 +151,13 @@ export class IdeCommandController {
 					WORKSPACE_UI_SCALES.map(scale => ({ scale, label: `${scale * 100}%`,
 						description: scale === this.editor.preferences.uiScale ? 'Current' : '', detail: '' }))),
 					choice => { this.editor.preferences.uiScale = choice.scale; });
+				return;
+			case 'workspace.font':
+				this.editor.quickInput.pick('UI FONT', 'Choose Studio typography, not the game font', () => new TextQuickPickProvider(
+					FONT_VARIANTS.map(variant => ({ variant, label: variant === 'mono' ? 'JetBrains Mono' : variant === 'tiny' ? 'Tiny' : 'MSX',
+						description: variant === this.editor.fontVariant ? 'Current' : '',
+						detail: variant === 'mono' ? 'Scalable' : 'Pixel font' }))),
+					choice => { this.editor.preferences.fontVariant = choice.variant; });
 				return;
 			case 'workspace.fontSmoothing':
 				this.editor.preferences.fontSampling = this.editor.preferences.fontSampling === 'linear' ? 'nearest' : 'linear';
@@ -442,7 +450,8 @@ export class IdeCommandController {
 		}
 		if (input !== undefined && !group.model.contains(input)) return false;
 		switch (command) {
-			case 'workspace.uiScale': case 'workspace.fontSmoothing': case 'workspace.resetLayout': return this.editor.acceptsInput;
+			case 'workspace.fontSmoothing': return this.editor.acceptsInput && this.editor.fontVariant !== 'mono';
+			case 'workspace.uiScale': case 'workspace.font': case 'workspace.resetLayout': return this.editor.acceptsInput;
 			case 'sceneEditor': return this.editor.isActive && this.editor.projectContent.acceptingQueries;
 			case 'window.showAll': case 'window.focusMain': case 'window.newEditor': return true;
 			case 'workspace.focusNextRegion': return this.editor.isActive && this.editor.regionNavigation.canNavigate(focus, 1);

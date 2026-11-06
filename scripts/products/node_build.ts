@@ -16,6 +16,8 @@ const NODE_OPTION_VALUES_PATH = 'scripts/bootrom/platforms/node_option_values.ts
 const NODE_TOOLING_ENTRY_PATH = 'scripts/bootrom/platforms/node_tooling_entry.ts';
 const NODE_PLAYER_SOURCE_ROOTS = [
 	'hosts/node',
+	'hosts/fonts',
+	'package.json',
 	'hosts/common',
 	'machine/ts',
 	'runtime',
@@ -26,6 +28,8 @@ const NODE_PLAYER_SOURCE_ROOTS = [
 ] as const;
 const NODE_TOOLING_SOURCE_ROOTS = [
 	'hosts/node',
+	'hosts/fonts',
+	'package.json',
 	'hosts/common',
 	'ide',
 	'package-lock.json',
@@ -53,6 +57,8 @@ async function buildNodeBundle(
 		bundle: true,
 		metafile: true,
 		platform: 'node',
+		conditions: ['bmsx-bundle', 'module'],
+		loader: { '.rgba': 'binary' },
 		target: 'node22',
 		format: 'cjs',
 		minify: !debug,

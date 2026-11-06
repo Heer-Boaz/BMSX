@@ -113,8 +113,9 @@ int main() {
 		HostImageRenderSubmission image;
 		image.imgid = fixture.font.getGlyph('A').imgid;
 		image.pos = {.x = 2, .y = 42};
+		const HostOverlayClipRect textArea{0, 0, 64, 40};
 		image.scale = {.x = 2, .y = 2};
-		for (const auto variant : {FontVariant::Msx, FontVariant::Tiny}) {
+		for (const auto variant : {FontVariant::Msx, FontVariant::Tiny, FontVariant::Mono}) {
 			for (const auto style : {FontStyle::Normal, FontStyle::Italic}) {
 				Font font(variant, style, FontSampling::Linear);
 				GlyphRenderSubmission text;
@@ -122,7 +123,7 @@ int main() {
 				text.items = {"Ag"}; text.item_end = 2; text.color = 0x80ff0000;
 				for (const f32 scale : {1.0F, 1.5F, 2.0F, 3.0F, 3.75F}) {
 					const HostOverlayTransform transform{scale, 0.25F, 0.5F};
-					for (const HostOverlayClipRect* bounds : {&full, &clip}) {
+					for (const HostOverlayClipRect* bounds : {&textArea, &clip}) {
 						std::fill_n(software.framebuffer(), 64 * 48, 0xff000000);
 						beginHostOverlaySoftware(software, state);
 						beginHostOverlayGLES2(backend, pipeline, state);
@@ -155,14 +156,43 @@ int main() {
 							}
 							partial += y < 42 && alphaPixels[offset] > 0 && alphaPixels[offset] < 128;
 						}
-						// Bilinear hardware weights and UNORM output each round by at most one byte.
-						if (maxError > 2) std::cerr << "font coverage error: " << maxError << " scale: " << scale << '\n';
-						require(maxError <= 2, "GLES2 and software glyph coverage agree within hardware rounding");
-						if (bounds == &full) require(partial > 0, "smooth glyphs include fractional coverage");
+						// MSDF amplifies bilinear distance error by screen range, then applies the 0.5 tint alpha.
+						const f32 tolerance = variant == FontVariant::Mono ? 2 + scale : 2;
+						if (maxError > tolerance) std::cerr << "font coverage error: " << maxError << " scale: " << scale << '\n';
+						require(maxError <= tolerance, "GLES2 and software glyph coverage agree within hardware rounding");
+						if (bounds == &textArea) require(partial > 0, "smooth glyphs include fractional coverage");
 					}
 				}
 			}
 		}
+		// MSDF antialiasing follows physical pixel density, independently of layout units.
+		Font scalable(FontVariant::Mono);
+		GlyphRenderSubmission scalableText;
+		scalableText.font = &scalable; scalableText.x = 1.25F; scalableText.y = 2.5F;
+		scalableText.items = {"Ag"}; scalableText.item_end = 2;
+		std::vector<u32> densitySoftware(64 * 48);
+		for (const i32 density : {1, 2}) {
+			state.overlayWidth = 64 / density; state.overlayHeight = 48 / density;
+			const HostOverlayTransform transform{2.0F / density, 0, 0};
+			std::fill_n(software.framebuffer(), 64 * 48, 0);
+			beginHostOverlaySoftware(software, state);
+			beginHostOverlayGLES2(backend, pipeline, state);
+			glClearColor(0, 0, 0, 0); glClear(GL_COLOR_BUFFER_BIT);
+			renderHost2DEntrySoftware(software, Host2DKind::Transform, {.transform = &transform});
+			renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Transform, {.transform = &transform});
+			renderHost2DEntrySoftware(software, Host2DKind::Glyphs, {.glyphs = &scalableText});
+			renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Glyphs, {.glyphs = &scalableText});
+			glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, density == 1 ? reference.data() : clipped.data());
+			endHostOverlaySoftware(software); endHostOverlayGLES2(backend, pipeline);
+			require(glGetError() == GL_NO_ERROR, "GLES2 scalable font density graphics error");
+			if (density == 1) std::copy_n(software.framebuffer(), 64 * 48, densitySoftware.begin());
+			else {
+				require(reference == clipped, "GLES2 glyph coverage must depend on physical size, not logical units");
+				require(std::equal(densitySoftware.begin(), densitySoftware.end(), software.framebuffer()),
+					"software glyph coverage must depend on physical size, not logical units");
+			}
+		}
+		state.overlayWidth = 64; state.overlayHeight = 48;
 		fixture.glyphs.x = 2;
 		fixture.glyphs.y = 3;
 		fixture.glyphs.items = {"A\tB\nC"};

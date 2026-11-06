@@ -31,7 +31,7 @@ async function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	const editor = f.editor, parts = editor.editorParts, main = editor.mainWorkspace;
 	t.after(() => updateEditorMessage(editorFeedbackState.message.timer));
-	editor.updateViewport({ width: 1600, height: 800 }); editor.setFontVariant(font);
+	editor.updateViewport({ width: 1600, height: 800 }); editor.preferences.fontVariant = font;
 	parts.minimize(f.firstPart); parts.minimize(f.secondPart);
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog,
 		f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!);

@@ -37,7 +37,7 @@ test('workspace recovery preserves an incomplete dirty Scene occurrence and sele
 	const payload: WorkspaceAutosavePayload = JSON.parse(JSON.stringify({ mainWorkspace: f.editor.mainWorkspace.serialize(),
 		sceneCompanion: f.editor.editorParts.captureEditorLocation(f.input), dirtyFiles: dirty.dirtyFiles,
 		filesBrowser: f.editor.resourcePanel.serialize(), editorParts: f.editor.editorParts.serialize(f.editor.editorInputSerializers),
-		fontVariant: f.editor.fontVariant, breakpoints: f.ide.debugger.breakpoints.serialize() }));
+		breakpoints: f.ide.debugger.breakpoints.serialize() }));
 	await applyWorkspaceAutosavePayload(f.editor, f.sources.catalog, f.ide.debugger, payload); f.update();
 	const inputs = f.editor.editorParts.groups.flatMap(group => [...group.model.tabs]);
 	const restored = inputs.find(input => input instanceof SceneEditorInput && input.workingCopy.identity.path === 'scene.lua');

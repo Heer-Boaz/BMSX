@@ -26,7 +26,7 @@ export async function testStudioQuickPickHighlights(test: StudioFixture): Promis
 	const before = cycles(), picker = ide.editor.quickInput;
 	const font = editorViewState.font.variant;
 	for (const variant of ['tiny', 'msx'] as const) {
-		ide.editor.setFontVariant(variant);
+		ide.editor.preferences.fontVariant = variant;
 		await press('ControlLeft', 'ShiftLeft', 'KeyP'); await press('KeyH'); await press('KeyR');
 		check(picker.model.list.rows.some(row => row.item.label === 'Run: Hot Resume'), 'Quick Pick: hr admits the actual Hot Resume command');
 		await checkQuickPickHighlightRuns(test, 'Run: Hot Resume', [[5, 6], [9, 10]]);
@@ -35,7 +35,7 @@ export async function testStudioQuickPickHighlights(test: StudioFixture): Promis
 		await press('ControlLeft', 'KeyZ');
 		await press('Escape');
 	}
-	ide.editor.setFontVariant(font);
+	ide.editor.preferences.fontVariant = font;
 	check(cycles() === before, 'Quick Pick: query/Undo/font changes do not resume the paused machine');
 	console.info('STUDIO: Quick Pick physical command match highlighting PASS');
 }

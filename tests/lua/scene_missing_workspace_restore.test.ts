@@ -28,7 +28,7 @@ test('workspace restore retains a missing clean Scene as an unavailable document
 		sceneCompanion: f.editor.editorParts.captureEditorLocation(f.editor.mainWorkspace.primary!.input),
 		dirtyFiles: dirty.dirtyFiles, filesBrowser: f.editor.resourcePanel.serialize(),
 		editorParts: f.editor.editorParts.serialize(f.editor.editorInputSerializers),
-		fontVariant: f.editor.fontVariant, breakpoints: f.ide.debugger.breakpoints.serialize() }));
+		breakpoints: f.ide.debugger.breakpoints.serialize() }));
 	await f.editor.shutdown();
 	const restored = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['cartlib/world/scene_library.lua', 'return {}']]);
 	t.after(() => workspaceDirtyRecords.clear());
@@ -47,7 +47,7 @@ test('workspace restore retains a missing clean Scene as an unavailable document
 	const saved: WorkspaceAutosavePayload = JSON.parse(JSON.stringify({ mainWorkspace: restored.editor.mainWorkspace.serialize(),
 		sceneCompanion: undefined, dirtyFiles: [], filesBrowser: restored.editor.resourcePanel.serialize(),
 		editorParts: restored.editor.editorParts.serialize(restored.editor.editorInputSerializers),
-		fontVariant: restored.editor.fontVariant, breakpoints: restored.ide.debugger.breakpoints.serialize() }));
+		breakpoints: restored.ide.debugger.breakpoints.serialize() }));
 	await restored.editor.shutdown();
 	const returned = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE],
 		['cartlib/world/scene_library.lua', 'return {}']]);
@@ -85,7 +85,7 @@ test('a missing dirty Scene aborts workspace recovery before retiring the live d
 		sceneCompanion: f.editor.editorParts.captureEditorLocation(f.editor.mainWorkspace.primary!.input),
 		dirtyFiles: dirty.dirtyFiles, filesBrowser: f.editor.resourcePanel.serialize(),
 		editorParts: f.editor.editorParts.serialize(f.editor.editorInputSerializers),
-		fontVariant: f.editor.fontVariant, breakpoints: f.ide.debugger.breakpoints.serialize() }));
+		breakpoints: f.ide.debugger.breakpoints.serialize() }));
 	await f.editor.shutdown();
 	const restored = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['cartlib/world/scene_library.lua', 'return {}']]);
 	t.after(() => workspaceDirtyRecords.clear());

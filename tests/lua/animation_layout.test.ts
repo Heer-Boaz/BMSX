@@ -37,7 +37,7 @@ function fixture(t: TestContext, text = source) {
 for (const variant of ['tiny', 'msx'] as const) for (const direction of ['right', 'down'] as const)
 test(`${variant} Animation publishes its compact constraints to a real ${direction} Source split`, t => {
 	const f = createActualSourcePanes(t, false, [['animation.lua', source]]);
-	f.editor.setFontVariant(variant);
+	f.editor.preferences.fontVariant = variant;
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'animation.lua' })!;
 	const model = f.ide.models.retain(resource, 'lua', source), input = new AnimationEditorInput(model, resource.contextId);
 	f.editor.animations.refresh(input); f.editor.animations.selectTrack(input, 1); f.editor.animations.selectKey(input, 0);

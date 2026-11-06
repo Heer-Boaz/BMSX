@@ -334,7 +334,19 @@ endif()
 # Native host support (static)
 # =============================================================================
 
+set(SCALABLE_FONT_PIXELS "${CMAKE_CURRENT_BINARY_DIR}/generated/render/host_overlay/scalable_font_pixels.h")
+add_custom_command(OUTPUT "${SCALABLE_FONT_PIXELS}"
+	COMMAND ${CMAKE_COMMAND}
+		-DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/../../hosts/fonts/jetbrains_mono/scalable_font.rgba
+		-DOUTPUT=${SCALABLE_FONT_PIXELS} -DSYMBOL=SCALABLE_FONT_PIXELS
+		-P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_bytes.cmake
+	DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/../../hosts/fonts/jetbrains_mono/scalable_font.rgba
+		${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_bytes.cmake
+	VERBATIM
+)
+
 add_library(bmsx_host_support STATIC
+	${SCALABLE_FONT_PIXELS}
 	common/vector.cpp
 	common/byte_hex_string.cpp
 	common/mmap_file.cpp
@@ -351,6 +363,8 @@ add_library(bmsx_host_support STATIC
 	render/graph/graph.cpp
 	render/host_overlay/atlas.cpp
 	render/host_overlay/atlas.generated.cpp
+	render/host_overlay/scalable_font.cpp
+	render/host_overlay/scalable_font.generated.cpp
 	render/host_overlay/pipeline.cpp
 	render/host_overlay/overlay_queue.cpp
 	render/host_overlay/software/renderer.cpp

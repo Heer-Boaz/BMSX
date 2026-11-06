@@ -40,7 +40,7 @@ function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
 		['cartlib/behaviour_tree/library.lua', 'return {}'], ['cartlib/fsm/library.lua', 'return {}'],
 		['cartlib/actioneffects.lua', 'return {}'], ['cartlib/world/scene_library.lua', 'return {}']],
 	() => new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs'))));
-	f.editor.setFontVariant(font);
+	f.editor.preferences.fontVariant = font;
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'behaviors.lua' })!;
 	const sceneResource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const home = new HomeInput(f.sources.catalog.getContext(resource.contextId).admission);

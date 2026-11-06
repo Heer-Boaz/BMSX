@@ -6,6 +6,7 @@
 #include "render/shared/glyph_runs.h"
 #include "render/shared/submissions.h"
 #include "render/host_overlay/atlas.h"
+#include "render/host_overlay/scalable_font.h"
 #include <cmath>
 #include <string_view>
 
@@ -140,17 +141,19 @@ void drawHostAtlasImageGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& p
 
 void drawGlyphImageGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline, const FontGlyph& item, f32 imageX, f32 imageY, u32 color) {
 	const ImageAtlasRect& rect = item.rect;
+	if (rect.w == 0 || rect.h == 0) return;
 	const auto& transform = pipeline.transform;
-	const f32 atlasWidth = static_cast<f32>(HOST_SYSTEM_ATLAS.width);
-	const f32 atlasHeight = static_cast<f32>(HOST_SYSTEM_ATLAS.height);
-	const f32 padding = pipeline.glyphCoverage ? 0.5F : 0.0F;
+	const bool msdf = pipeline.glyphMode == 2;
+	const f32 atlasWidth = static_cast<f32>(msdf ? SCALABLE_FONT_ATLAS.width : HOST_SYSTEM_ATLAS.width);
+	const f32 atlasHeight = static_cast<f32>(msdf ? SCALABLE_FONT_ATLAS.height : HOST_SYSTEM_ATLAS.height);
+	const f32 padding = pipeline.glyphMode == 1 ? 0.5F : 0.0F;
 	const f32 padX = padding * item.width / rect.w, padY = padding * item.height / rect.h;
 	drawQuadGLES2(
 		backend,
 		pipeline,
-		pipeline.hostAtlasTexture,
-		(imageX - padX) * transform.scale + transform.offsetX,
-		(imageY - padY) * transform.scale + transform.offsetY,
+		msdf ? pipeline.distanceAtlasTexture : pipeline.hostAtlasTexture,
+		(imageX + item.offsetX - padX) * transform.scale + transform.offsetX,
+		(imageY + item.offsetY - padY) * transform.scale + transform.offsetY,
 		(item.width + padX * 2) * transform.scale,
 		(item.height + padY * 2) * transform.scale,
 		(rect.u - padding) / atlasWidth,
@@ -164,7 +167,7 @@ void drawGlyphImageGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipel
 struct GlyphGLES2Context {
 	OpenGLES2Backend& backend;
 	HostOverlayGLES2State& pipeline;
-	i32 lineHeight;
+	f32 lineHeight;
 	u32 color;
 };
 
@@ -201,6 +204,9 @@ void drawGlyphGLES2(
 }
 
 void drawGlyphsGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline, const GlyphRenderSubmission& command) {
+	if (command.font->raster == FontRaster::Msdf) {
+		glUniform1f(pipeline.uniformScreenRange, std::max(1.0F, command.font->distanceRange * pipeline.transform.scale * pipeline.pixelScale));
+	}
 	GlyphGLES2Context context{
 		.backend = backend,
 		.pipeline = pipeline,
@@ -224,7 +230,8 @@ void bootstrapHostOverlayGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State&
 	pipeline.attribUv = glGetAttribLocation(pipeline.program, "a_texcoord");
 	pipeline.uniformResolution = glGetUniformLocation(pipeline.program, "u_resolution");
 	pipeline.uniformColor = glGetUniformLocation(pipeline.program, "u_color");
-	pipeline.uniformGlyphCoverage = glGetUniformLocation(pipeline.program, "u_glyph_coverage");
+	pipeline.uniformGlyphMode = glGetUniformLocation(pipeline.program, "u_glyph_mode");
+	pipeline.uniformScreenRange = glGetUniformLocation(pipeline.program, "u_screen_range");
 	glUseProgram(pipeline.program);
 	glUniform1i(glGetUniformLocation(pipeline.program, "u_texture"), GLES2_TEXTURE_UNIT_HOST_2D);
 	glGenBuffers(1, &pipeline.vbo);
@@ -232,6 +239,10 @@ void bootstrapHostOverlayGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State&
 	const u8 whitePixel[4] = {255u, 255u, 255u, 255u};
 	pipeline.whiteTexture = backend.createTexture(whitePixel, 1, 1, params);
 	pipeline.hostAtlasTexture = backend.createTexture(HOST_SYSTEM_ATLAS.pixels.data(), static_cast<i32>(HOST_SYSTEM_ATLAS.width), static_cast<i32>(HOST_SYSTEM_ATLAS.height), params);
+	pipeline.distanceAtlasTexture = backend.createTexture(SCALABLE_FONT_ATLAS.pixels.data(), static_cast<i32>(SCALABLE_FONT_ATLAS.width), static_cast<i32>(SCALABLE_FONT_ATLAS.height), params);
+	bindTexture(backend, pipeline.distanceAtlasTexture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 }
 
 void shutdownHostOverlayGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline) {
@@ -241,6 +252,7 @@ void shutdownHostOverlayGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& 
 	}
 	backend.destroyTexture(pipeline.whiteTexture);
 	backend.destroyTexture(pipeline.hostAtlasTexture);
+	backend.destroyTexture(pipeline.distanceAtlasTexture);
 	pipeline = HostOverlayGLES2State{};
 }
 
@@ -250,6 +262,7 @@ void beginHostOverlayGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pip
 	backend.setRenderTarget(backend.backbuffer(), state.width, state.height);
 	glViewport(0, 0, state.width, state.height);
 	pipeline.targetHeight = state.height;
+	pipeline.pixelScale = 0.5F * (static_cast<f32>(state.width) / state.overlayWidth + static_cast<f32>(state.height) / state.overlayHeight);
 	pipeline.clip.reset(state.overlayWidth, state.overlayHeight, state.width, state.height);
 	glEnable(GL_SCISSOR_TEST);
 	glScissor(0, 0, state.width, state.height);
@@ -265,13 +278,17 @@ void renderHost2DEntryGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pi
 	// ES2 has no sampler objects. The atlas owner changes its filter only at
 	// run boundaries; frame textures and image rendering retain nearest sampling.
 	if (kind != Host2DKind::Clip && kind != Host2DKind::Transform) {
-		const bool coverage = kind == Host2DKind::Glyphs && ref.glyphs->font->sampling == FontSampling::Linear;
-		if (coverage != pipeline.glyphCoverage) {
-			pipeline.glyphCoverage = coverage;
-			glUniform1i(pipeline.uniformGlyphCoverage, coverage);
-			bindTexture(backend, pipeline.hostAtlasTexture);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, coverage ? GL_LINEAR : GL_NEAREST);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, coverage ? GL_LINEAR : GL_NEAREST);
+		const i32 mode = kind != Host2DKind::Glyphs ? 0
+			: ref.glyphs->font->raster == FontRaster::Msdf ? 2
+			: ref.glyphs->font->sampling == FontSampling::Linear ? 1 : 0;
+		if (mode != pipeline.glyphMode) {
+			if ((mode == 1) != (pipeline.glyphMode == 1)) {
+				bindTexture(backend, pipeline.hostAtlasTexture);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, mode == 1 ? GL_LINEAR : GL_NEAREST);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, mode == 1 ? GL_LINEAR : GL_NEAREST);
+			}
+			pipeline.glyphMode = mode;
+			glUniform1i(pipeline.uniformGlyphMode, mode);
 		}
 	}
 	switch (kind) {

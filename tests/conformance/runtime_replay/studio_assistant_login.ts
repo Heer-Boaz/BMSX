@@ -17,7 +17,7 @@ export async function runAssistantLogin(kind: StudioRendererKind, canvas: HTMLCa
 	const { ide, until, press, frame } = test;
 	await test.waitForTestFrame();
 	await press('ControlRight', 'ShiftRight'); await test.runPaletteCommand('Run: Pause');
-	ide.editor.setFontVariant('tiny');
+	ide.editor.preferences.fontVariant = 'tiny';
 	await test.runPaletteCommand('View: Codex Assistant');
 	const view = ide.editor.editorParts.activeGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant pane expected');
 	const conversation = ide.editor.assistant;
@@ -47,8 +47,8 @@ export async function runAssistantLogin(kind: StudioRendererKind, canvas: HTMLCa
 	check(view.draft.text === 'Keep this draft; do not submit.' && conversation.entries.every(entry => entry.kind !== 'user'), 'account authorization does not consume or automatically send the draft');
 	await issuer.verifyProfile(true);
 	await frame(); await renderer.capture!('signed-in');
-	ide.editor.setFontVariant('msx'); await frame(); await renderer.capture!('signed-in-msx');
-	ide.editor.setFontVariant('tiny'); await frame();
+	ide.editor.preferences.fontVariant = 'msx'; await frame(); await renderer.capture!('signed-in-msx');
+	ide.editor.preferences.fontVariant = 'tiny'; await frame();
 	await press('ControlLeft', 'KeyW');
 	check(conversation.state === 'disconnected' && conversation.account === undefined, 'closing the pane retires authority without signing out');
 	await test.runPaletteCommand('View: Codex Assistant');

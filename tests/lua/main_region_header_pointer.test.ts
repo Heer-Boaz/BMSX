@@ -14,7 +14,7 @@ import { createActualSourcePanes } from '../helpers/source_panes';
 for (const font of ['tiny', 'msx'] as const) for (const region of ['hierarchy', 'details'] as const)
 	test(`Main ${font} ${region} header Secondary opens only its panel context over More`, async t => {
 	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE_AUTHORING_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
-	f.editor.setFontVariant(font); f.first.focus();
+	f.editor.preferences.fontVariant = font; f.first.focus();
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
 	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target!), true);

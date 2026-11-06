@@ -10,7 +10,7 @@ import { beginWorkspaceDirtyModelRestore } from '../services/working_copy/source
 import type { WorkspaceAutosavePayload } from './models';
 
 export async function applyWorkspaceAutosavePayload(
-	editor: Pick<CartEditor, 'editorParts' | 'editorInputSerializers' | 'mainWorkspace' | 'resourcePanel' | 'setFontVariant' | 'restoreSceneCompanions'>,
+	editor: Pick<CartEditor, 'editorParts' | 'editorInputSerializers' | 'mainWorkspace' | 'resourcePanel' | 'restoreSceneCompanions'>,
 	catalog: WorkspaceSourceCatalog,
 	debuggerState: RuntimeBreakpointState,
 	payload: WorkspaceAutosavePayload,
@@ -24,7 +24,6 @@ export async function applyWorkspaceAutosavePayload(
 		const sources = lifetime.add(beginWorkspaceDirtyModelRestore(editorTextModelService, catalog, payload.dirtyFiles, workspaceDirtyRecords));
 		primary.prepare(); documents.prepare();
 		sources.publish();
-		editor.setFontVariant(payload.fontVariant);
 		primary.retire(); files.prepare(); documents.retire();
 		sources.dispose();
 		if (!sources.isCurrent()) return;

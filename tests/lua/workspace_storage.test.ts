@@ -423,7 +423,6 @@ function payload(
 		filesBrowser: { visible: false, filter: 'lua_only', widthRatio: 0.3, focused: false,
 			view: { selected: undefined, disclosure: [], scroll: 0, hscroll: 0 } },
 		breakpoints: [],
-		fontVariant: DEFAULT_FONT_VARIANT,
 	};
 }
 
@@ -517,15 +516,13 @@ function editorStub(
 		event_viewer: unused, terminal: unused, behavior_lens: unused, scene_editor: unused, scenario_lab: unused,
 		code_editor: new CodeEditorInputSerializer(sources.catalog), resource_view: new ResourceViewerInputSerializer(sources.catalog),
 	};
-	const editor: Pick<CartEditor, 'fontVariant' | 'isActive' | 'editorInputSerializers' | 'editorParts' | 'mainWorkspace'
-		| 'restoreSceneCompanions' | 'setFontVariant' | 'updateViewport'> = {
-		fontVariant: DEFAULT_FONT_VARIANT,
+	const editor: Pick<CartEditor, 'isActive' | 'editorInputSerializers' | 'editorParts' | 'mainWorkspace'
+		| 'restoreSceneCompanions' | 'updateViewport'> = {
 		isActive: true,
 		editorInputSerializers,
 		editorParts,
 		mainWorkspace,
 		restoreSceneCompanions() { assert.fail('storage fixture has no scene companion request'); },
-		setFontVariant() { /* noop */ },
 		updateViewport() { /* noop */ },
 	};
 	const content = new ProjectContentIndex(editorTextModelService, sources.catalog,
@@ -794,7 +791,7 @@ test('workspace state selects the newest exact local or remote record', async (t
 	const { server } = installWorkspaceServer(t, storage);
 	const statePath = workspaceStatePath(TEST_SOURCE_CONTEXT);
 	const localPayload = payload();
-	localPayload.fontVariant = 'msx';
+	localPayload.filesBrowser = { ...localPayload.filesBrowser, visible: !localPayload.filesBrowser.visible };
 	writeRecord(storage, 'offline-cart', statePath, JSON.stringify(localPayload), 30);
 	server.files.set(statePath, { contents: JSON.stringify(payload()), updatedAt: 20 });
 	const sources = createTestRuntimeSourceState(
@@ -809,7 +806,7 @@ test('workspace state selects the newest exact local or remote record', async (t
 
 	writeRecord(storage, 'offline-cart', statePath, JSON.stringify(payload()), 20);
 	const remotePayload = payload();
-	remotePayload.fontVariant = 'msx';
+	remotePayload.filesBrowser = { ...remotePayload.filesBrowser, visible: !remotePayload.filesBrowser.visible };
 	server.files.set(statePath, { contents: JSON.stringify(remotePayload), updatedAt: 40 });
 	assert.deepEqual(await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, TEST_SOURCE_CONTEXT, TEST_RECOVERY_SESSION, sources.catalog, workspaceFiles, testLogOutput), JSON.parse(JSON.stringify(remotePayload)));
 	assert.deepEqual(

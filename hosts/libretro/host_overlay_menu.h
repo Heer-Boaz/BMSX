@@ -94,16 +94,16 @@ private:
 	std::array<Host2DKind, CommandCapacity> m_commandKinds;
 	std::array<Host2DRef, CommandCapacity> m_commandRefs;
 	RectBounds m_optionHitRect;
-	i32 m_optionLineHeight = 0;
+	f32 m_optionLineHeight = 0;
 	i32 m_optionFirstRow = 0;
 	i32 m_optionVisibleRows = 0;
 	BFont* m_layoutFont = nullptr;
-	i32 m_optionTextWidth = 0;
-	i32 m_titleTextWidth = 0;
+	f32 m_optionTextWidth = 0;
+	f32 m_titleTextWidth = 0;
 	size_t m_commandCount = 0;
 	std::string m_fpsText;
 	i32 m_fpsTextTenths = -1;
-	i32 m_fpsTextWidth = 0;
+	f32 m_fpsTextWidth = 0;
 };
 
 } // namespace bmsx

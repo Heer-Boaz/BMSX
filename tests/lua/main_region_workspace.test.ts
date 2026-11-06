@@ -31,7 +31,7 @@ return {}
 
 async function fixture(t: TestContext, bind = true) {
 	const f = createActualSourcePanes(t, false, [...SCENE_AUTHORING_IMPORTS, ['scene.lua', SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
-	f.editor.setFontVariant('tiny'); f.first.focus();
+	f.editor.preferences.fontVariant = 'tiny'; f.first.focus();
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource);
 	const main = f.editor.mainWorkspace, parts = f.editor.editorParts;
@@ -191,7 +191,7 @@ test('a narrow Main reveals either actual contextual region without replacing th
 	const f = await fixture(t), primary = f.main.primary; assert.ok(primary instanceof ScenePrimaryClient);
 	assert.equal(selectSceneOutlineRow(primary.view.hierarchy, 1), true); f.update();
 	const selected = primary.authoring.selection;
-	f.editor.updateViewport({ width: 300, height: 320 }); f.editor.setFontVariant('msx'); f.update();
+	f.editor.updateViewport({ width: 300, height: 320 }); f.editor.preferences.fontVariant = 'msx'; f.update();
 	for (const region of ['details', 'hierarchy'] as const) {
 		f.main.focusPrimary(region); f.update();
 		const focused = inputFocus.admittedTarget;

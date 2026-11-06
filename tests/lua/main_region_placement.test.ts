@@ -18,7 +18,7 @@ return {}`;
 
 async function fixture(t: TestContext) {
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
-	f.editor.setFontVariant('tiny');
+	f.editor.preferences.fontVariant = 'tiny';
 	const main = f.editor.mainWorkspace;
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);

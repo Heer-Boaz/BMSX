@@ -19,12 +19,12 @@ before(async () => {
 			export { renderHostFontCases } from './tests/helpers/host_font_gpu';
 		`, resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', target: 'es2020', format: 'iife', globalName: 'backendTest', write: false,
-		plugins: [glsl()], loader: { '.png': 'dataurl', '.glsl': 'text', '.wgsl': 'text' },
+		plugins: [glsl()], loader: { '.rgba': 'binary', '.png': 'dataurl', '.glsl': 'text', '.wgsl': 'text' },
 	});
 	backendBundle = bundle.outputFiles[0].text;
 });
 
-for (const kind of ['webgl2', 'webgpu']) test(`${kind} preserves both bitmap fonts at fractional layout origins`, async t => {
+for (const kind of ['webgl2', 'webgpu']) test(`${kind} preserves bitmap fonts and scalable glyph coverage across layout and raster scales`, async t => {
 	const browser = await chromium.launch({ args: [
 		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
 		'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
@@ -40,9 +40,14 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} preserves both bitmap fon
 	assert.ok(result.ink > 0, 'reference contains rendered glyphs');
 	for (const sample of result.cases) assert.equal(sample.differences, 0,
 		`phase ${sample.phaseX},${sample.phaseY}: each glyph texel must match the aligned software image (first difference ${sample.firstDifference})`);
+	t.diagnostic(JSON.stringify(result.sampling));
 	for (const sample of result.sampling) {
 		// Hardware bilinear weights and UNORM8 blending may each round by one byte.
 		assert.ok(sample.maxError <= 2, `${kind} coverage at scale ${sample.scale} differs by ${sample.maxError}`);
+		// SwiftShader Vulkan snaps triangle vertices to 1/16 pixel before interpolating UVs.
+		// At 0.5 tint alpha that can move contour coverage by eight bytes; MSDF also
+		// amplifies the filtered-distance rounding by screen range. No image-pixel tolerance.
+		assert.ok(sample.msdfError <= 8 + sample.scale, `${kind} MSDF coverage at scale ${sample.scale} differs by ${sample.msdfError}`);
 		assert.equal(sample.imageDifferences, 0, 'glyph filtering cannot change ordinary atlas images');
 		assert.ok(sample.fractional > 0, 'fractional placement produces genuine glyph edge coverage');
 	}

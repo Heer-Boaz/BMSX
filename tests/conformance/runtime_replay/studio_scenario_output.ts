@@ -75,7 +75,7 @@ export async function testStudioScenarioOutput(test: StudioFixture): Promise<voi
 	await runPaletteCommand('Scenario Lab: Inspect Test Result');
 	check(inspector.visible && inspector.model.rows[0].element.value === MESSAGE, 'A05: shared Details command inspects failures too');
 	for (const variant of ['msx', 'tiny'] as const) {
-		ide.editor.setFontVariant(variant); await frame(); await frame();
+		ide.editor.preferences.fontVariant = variant; await frame(); await frame();
 		for (let n = 0; n < 8; n += 1) await press('PageDown');
 		const viewport = inspector.model.viewport;
 		check(viewport.scrollTop + viewport.height >= viewport.contentHeight,

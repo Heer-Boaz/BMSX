@@ -19,7 +19,7 @@ import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 
 function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny', sources: readonly (readonly [string, string])[] = []) {
 	const f = createActualSourcePanes(t, false, [['folder/third.lua', 'return 3'], ['folder/other.lua', 'return 4'], ...sources]);
-	f.editor.setFontVariant(font); f.update();
+	f.editor.preferences.fontVariant = font; f.update();
 	assert.equal(editorViewState.font.variant, font, 'exercise the actual requested font, not a global overwritten by Studio construction');
 	f.first.focus(); f.editor.resourcePanel.show(); f.update();
 	return { ...f, panel: f.editor.resourcePanel };

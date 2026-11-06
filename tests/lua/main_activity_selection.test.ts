@@ -27,7 +27,7 @@ const ERROR = 'exact build failure\r\n';
 
 async function fixture(t: TestContext, failed = false, initialResult = true) {
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE], ['cartlib/world/scene_library.lua', 'return {}']]);
-	f.editor.setFontVariant('tiny');
+	f.editor.preferences.fontVariant = 'tiny';
 	const job: StudioBuildJob = { request: { requestId: 'activity-request', target: 'fixture-product', debug: true, optLevel: 0 },
 		state: failed ? 'failed' : 'completed', phase: 'published', acceptedAt: 0, updatedAt: 1,
 		version: { generation: 1, sequence: 1 }, error: failed ? ERROR : undefined };
@@ -81,7 +81,7 @@ test('background activity selection preserves foreign native focus but hands a d
 });
 
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} native activity selection and reader Tab boundaries include the permanent selector exactly once`, async t => {
-	const f = await fixture(t); f.editor.setFontVariant(variant); f.update();
+	const f = await fixture(t); f.editor.preferences.fontVariant = variant; f.update();
 	const selector = f.main.activities.commandTarget;
 	f.main.openActivity('problems'); selector.focus();
 	f.key('End'); f.key('Enter');

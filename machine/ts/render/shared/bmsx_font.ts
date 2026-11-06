@@ -1,12 +1,14 @@
 import { BFont, type GlyphMap, type FontSampling } from './bitmap_font';
+import { SCALABLE_FONT_ATLAS, SCALABLE_FONT_SOURCE, SCALABLE_FONT_MAPS } from '../host_overlay/scalable_font';
 import { hostSystemAtlasImage } from '../host_overlay/atlas';
 
 export const DEFAULT_FONT_VARIANT = 'msx' as const;
 
-export type FontVariant = 'msx' | 'tiny';
+export const FONT_VARIANTS = ['mono', 'tiny', 'msx'] as const;
+export type FontVariant = typeof FONT_VARIANTS[number];
 export type FontStyle = 'normal' | 'italic';
 
-const FONT_PRESETS: Record<FontVariant, GlyphMap> = {
+const FONT_PRESETS: Record<Exclude<FontVariant, 'mono'>, GlyphMap> = {
 	msx: buildMsxCharMap(),
 	tiny: buildTinyCharMap(),
 } as const;
@@ -121,13 +123,18 @@ function buildTinyCharMap(): GlyphMap {
 export class Font extends BFont {
 	constructor(config?: { variant?: FontVariant; style?: FontStyle; sampling?: FontSampling }) {
 		const variant = config?.variant ?? DEFAULT_FONT_VARIANT;
-		const preset = FONT_PRESETS[variant];
+		const preset = variant === 'mono' ? SCALABLE_FONT_MAPS[config?.style ?? 'normal'] : FONT_PRESETS[variant];
 		const style = config?.style ?? 'normal';
-		super(HOST_SYSTEM_FONT_SOURCE, style === 'normal' ? preset
-			: Object.fromEntries(Object.entries(preset).map(([char, id]) => [char, `${id}_${style}`])), 0, config?.sampling ?? 'nearest');
+		super(variant === 'mono' ? SCALABLE_FONT_SOURCE : HOST_SYSTEM_FONT_SOURCE, variant === 'mono' || style === 'normal' ? preset
+			: Object.fromEntries(Object.entries(preset).map(([char, id]) => [char, `${id}_${style}`])), 0, variant === 'mono'
+			? { raster: 'msdf', lineHeight: SCALABLE_FONT_ATLAS.lineHeight, distanceRange: SCALABLE_FONT_ATLAS.distanceRange }
+			: { raster: 'bitmap', sampling: config?.sampling ?? 'nearest' });
 	}
 }
 
 const HOST_SYSTEM_FONT_SOURCE = {
-	resolveGlyph: hostSystemAtlasImage,
+	resolveGlyph(imgid: string) {
+		const image = hostSystemAtlasImage(imgid);
+		return { ...image, advance: image.width, offsetX: 0, offsetY: 0 };
+	},
 };

@@ -25,7 +25,7 @@ function fixture(t: TestContext, source = TREE_SOURCE) {
 		['behavior.lua', source], ['cartlib/behaviour_tree/library.lua', 'return {}'], ['cartlib/actioneffects.lua', 'return {}'],
 		['cartlib/fsm/library.lua', 'return {}'],
 	], () => ({ layout: () => new Promise(() => {}), dispose() {} }));
-	f.editor.setFontVariant('tiny');
+	f.editor.preferences.fontVariant = 'tiny';
 	const registration = f.editor.behaviorLens.documents.registrations.getRegistrations(f.sources.systemContextId)
 		.find(registration => registration.resource.path === 'behavior.lua')!;
 	const input = f.editor.behaviorLens.openDefinition(f.firstGroup, registration)!;

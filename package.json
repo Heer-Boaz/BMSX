@@ -3,6 +3,14 @@
 	"private": true,
 	"version": "1.0.0",
 	"description": "",
+	"imports": {
+		"#bmsx/scalable-font-pixels": {
+			"types": "./hosts/fonts/jetbrains_mono/scalable_font_pixels.d.ts",
+			"bmsx-bundle": "./hosts/fonts/jetbrains_mono/scalable_font.rgba",
+			"node": "./hosts/node/scalable_font_pixels.ts",
+			"default": "./hosts/fonts/jetbrains_mono/scalable_font.rgba"
+		}
+	},
 	"devDependencies": {
 		"@lezer/common": "^1.5.3",
 		"@lezer/markdown": "^1.7.2",
@@ -24,6 +32,7 @@
 		"esbuild-plugin-glsl": "*",
 		"js-yaml": "*",
 		"marked": "^16.3.0",
+		"msdfgen-wasm": "1.0.0",
 		"picocolors": "*",
 		"playwright": "^1.63.0",
 		"pngjs": "*",

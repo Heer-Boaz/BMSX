@@ -10,7 +10,7 @@ test('isolated player reads relative and cross-origin ROM URLs without CORS pref
 	const bundle = await build({
 		stdin: { contents: "export { loadBrowserMedia } from './hosts/browser/boot';", resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'bootMedia', write: false,
-		plugins: [glsl()], loader: { '.png': 'dataurl', '.glsl': 'text', '.wgsl': 'text' },
+		plugins: [glsl()], loader: { '.rgba': 'binary', '.png': 'dataurl', '.glsl': 'text', '.wgsl': 'text' },
 	});
 	const requests: string[] = [];
 	const media = createServer((request, response) => {

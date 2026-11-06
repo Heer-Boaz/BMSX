@@ -24,7 +24,7 @@ for (const font of ['tiny', 'msx'] as const) for (const direction of ['right', '
 		assert.equal(await editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target!), true);
 		main.focusActivity();
 		editor.updateViewport(direction === 'right' ? { width: 200, height: 320 } : { width: 300, height: 120 });
-		editor.setFontVariant(font); f.update();
+		editor.preferences.fontVariant = font; f.update();
 		// Keep the Scene's actual document visible; its companions do not outlive a replaced pane.
 		const first = part.splitGroup(part.activeGroup, direction); first.openEditor(new CodeEditorInput(f.firstInput.workingCopy));
 		const second = part.splitGroup(first, direction); second.openEditor(new CodeEditorInput(f.secondInput.workingCopy));

@@ -152,7 +152,7 @@ test('foreground status discovery does not replace the live guest attachment or 
 
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} restore allocation stays between host fault and context within a narrow status row`, t => {
 	const f = createStatusFixture(t), parts = f.editor.editorParts;
-	f.editor.setFontVariant(variant); parts.minimize(f.secondPart); f.update();
+	f.editor.preferences.fontVariant = variant; parts.minimize(f.secondPart); f.update();
 	assert.equal(f.first.code.font.variant, variant);
 	const button = statusButton(t, f), bounds = button.surface.getBounds(), requestedWidth = bounds.right - bounds.left;
 	assert.ok(requestedWidth > 0);
@@ -180,7 +180,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} restore allocat
 
 test('the real status control clips both paint and pointer admission to its truncated restore allocation', t => {
 	const f = createStatusFixture(t), parts = f.editor.editorParts;
-	f.editor.setFontVariant('msx'); f.first.focus(); parts.minimize(f.secondPart); f.update();
+	f.editor.preferences.fontVariant = 'msx'; f.first.focus(); parts.minimize(f.secondPart); f.update();
 	assert.equal(f.first.code.font.variant, 'msx');
 	const button = statusButton(t, f), requestedWidth = button.surface.getBounds().right - button.surface.getBounds().left;
 	f.ide.fault.hostFrameFailure = 'fixture host diagnostic';

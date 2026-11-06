@@ -82,7 +82,7 @@ declare global { var bitmapTest: Awaited<ReturnType<typeof createHostBitmapTest>
 test('actual software/WebGL2/WebGPU bitmap pixels, first upload, revision updates and resized bindings', { timeout: 60000 }, async t => {
 	const bundle = await build({ entryPoints: ['tests/conformance/runtime_replay/host_bitmap.ts'], bundle: true,
 		platform: 'browser', target: 'es2020', format: 'esm', write: false, tsconfig: 'tsconfig.base.json',
-		loader: { '.glsl': 'text', '.wgsl': 'text' } });
+		loader: { '.rgba': 'binary', '.glsl': 'text', '.wgsl': 'text' } });
 	const bios = await readFile('dist/system/bmsx-bios.debug.rom');
 	const server = createServer((request, response) => {
 		const path = new URL(request.url!, 'http://local').pathname;

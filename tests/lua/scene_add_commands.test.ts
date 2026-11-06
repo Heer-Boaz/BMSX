@@ -28,7 +28,7 @@ async function fixture(t: TestContext, source = SOURCE) {
 	const f = createActualSourcePanes(t, false, [...CARTLIB_OBJECT_SOURCE_MODULES,
 		['scene.lua', source], ['prefabs.lua', PREFABS], ['cartlib/world/scene_library.lua', 'return {}'],
 		['cartlib/world/prefab.lua', 'return {define=function() end}']]);
-	f.editor.setFontVariant('tiny'); f.editor.editorParts.clear();
+	f.editor.preferences.fontVariant = 'tiny'; f.editor.editorParts.clear();
 	const main = f.editor.mainWorkspace;
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource);

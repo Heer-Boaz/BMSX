@@ -19,7 +19,7 @@ scenes.register('room',{objects={{member_id='unit',definition_id='actor',positio
 
 async function fixture(t: TestContext, unavailable = false) {
 	const f = createActualSourcePanes(t, false, [...SCENE_AUTHORING_IMPORTS, ['scene.lua', SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
-	f.editor.setFontVariant('tiny'); f.first.focus();
+	f.editor.preferences.fontVariant = 'tiny'; f.first.focus();
 	const main = f.editor.mainWorkspace;
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);

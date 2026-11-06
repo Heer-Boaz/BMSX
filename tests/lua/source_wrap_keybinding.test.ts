@@ -8,7 +8,7 @@ import { createActualSourcePanes } from '../helpers/source_panes';
 for (const font of ['tiny', 'msx'] as const) {
 	test(`${font} Alt+Z toggles only the physically focused Source view, never its shared working copy`, t => {
 		const f = createActualSourcePanes(t, true);
-		f.editor.setFontVariant(font); f.update(); f.first.focus();
+		f.editor.preferences.fontVariant = font; f.update(); f.first.focus();
 		assert.equal(f.first.code.font.variant, font);
 		assert.ok(f.firstInput.workingCopy === f.secondInput.workingCopy);
 		const model = f.firstInput.workingCopy, source = model.buffer.getText(), version = model.version;

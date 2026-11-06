@@ -22,7 +22,7 @@ import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studi
 function fixture(t: TestContext) {
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}'],
 		['diagnostics.lua', 'return 1\n'.repeat(20)]]);
-	f.editor.setFontVariant('tiny');
+	f.editor.preferences.fontVariant = 'tiny';
 	const main = f.editor.mainWorkspace, panel = f.editor.problems;
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'diagnostics.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource);
@@ -200,7 +200,7 @@ test('Main owns both overflowing scroll routes while real documents, authoring r
 	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target!), true);
 	const sourceGroup = f.editor.editorParts.sideGroup(group, 'right')!;
 	sourceGroup.openEditor(new CodeEditorInput(f.model));
-	f.editor.updateViewport({ width: 280, height: 100 }); f.editor.setFontVariant('msx'); f.update();
+	f.editor.updateViewport({ width: 280, height: 100 }); f.editor.preferences.fontVariant = 'msx'; f.update();
 	const primary = f.main.primary!, layout = f.main.regionLayout;
 	f.main.focusActivity(); f.update();
 	const track = layout.verticalScrollTrack;
@@ -320,7 +320,7 @@ for (const font of ['tiny', 'msx'] as const)
 		const edited = model.buffer.getText();
 		const group = f.editor.editorParts.findGroup(primary.input)!;
 		assert.deepEqual(f.editor.editorParts.groups.flatMap(group => group.model.tabs).filter(input => input.resource === model.resource), [primary.input]);
-		f.editor.updateViewport({ width: 300, height: 100 }); f.editor.setFontVariant(font); f.update(); f.main.focusActivity(); f.update();
+		f.editor.updateViewport({ width: 300, height: 100 }); f.editor.preferences.fontVariant = font; f.update(); f.main.focusActivity(); f.update();
 		const shown: ActionPrompt[] = [], show = ActionPrompt.prototype.show;
 		t.mock.method(ActionPrompt.prototype, 'show', function (this: ActionPrompt, ...args: Parameters<typeof show>) {
 			shown.push(this); return show.apply(this, args);
@@ -352,7 +352,7 @@ for (const font of ['tiny', 'msx'] as const)
 		const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), input = new CodeEditorInput(model);
 		group.openEditor(input); model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- retained pending edit\n' }]);
 		const edited = model.buffer.getText(), cycles = f.host.runtime.machine.scheduler.nowCycles;
-		f.editor.setFontVariant(font); main.regionLayout.activityHeight = 70;
+		f.editor.preferences.fontVariant = font; main.regionLayout.activityHeight = 70;
 		f.editor.updateViewport({ width: 300, height: 80 }); f.update(); main.focusActivity(); f.update();
 		assert.equal(main.primary, undefined);
 		const origin = f.editor.problems.focusTarget;
@@ -386,7 +386,7 @@ for (const font of ['tiny', 'msx'] as const)
 		const main = f.editor.mainWorkspace, part = f.editor.editorParts.main, group = part.activeGroup;
 		const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path })!;
 		const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), input = new CodeEditorInput(model);
-		group.openEditor(input); f.editor.setFontVariant(font); f.update();
+		group.openEditor(input); f.editor.preferences.fontVariant = font; f.update();
 		f.key('End', KeyModifier.ctrl);
 		const append = '-- pending native document close\n';
 		await f.editor.clipboard.writeText(append); f.key('KeyV', KeyModifier.ctrl); await Promise.resolve(); f.update();

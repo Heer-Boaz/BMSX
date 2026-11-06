@@ -1,6 +1,6 @@
 import type { HostBitmapRenderSubmission } from '../host_overlay/bitmap';
 import { drawHostBitmap } from './host_bitmap';
-import { drawLinearHostGlyph } from './host_glyph';
+import { drawFilteredHostGlyph } from './host_glyph';
 import {
 	HOST_SYSTEM_ATLAS,
 	hostSystemAtlasImage,
@@ -35,6 +35,8 @@ export type HeadlessHost2DContext = {
 	colorValue: number;
 	backgroundColor: number;
 	lineHeight: number;
+	glyphRaster: 'bitmap' | 'msdf';
+	glyphScreenRange: number;
 	clip: HostOverlayClipState;
 	transform: HostOverlayRasterTransform;
 	framePixels: Uint8Array;
@@ -207,8 +209,10 @@ function drawBatchBlit(context: HeadlessHost2DContext, command: GlyphRenderSubmi
 	context.colorValue = command.color;
 	context.backgroundColor = command.background_color;
 	context.lineHeight = command.font.lineHeight;
+	context.glyphRaster = command.font.raster;
+	context.glyphScreenRange = Math.max(1, command.font.distanceRange * 0.5 * (context.transform.scaleX + context.transform.scaleY));
 	if (command.has_background_color) forEachBatchBlitGlyph(command, context, drawGlyphBackground);
-	forEachBatchBlitGlyph(command, context, command.font.sampling === 'linear' ? drawLinearHostGlyph : drawHeadlessGlyph);
+	forEachBatchBlitGlyph(command, context, command.font.sampling === 'linear' ? drawFilteredHostGlyph : drawHeadlessGlyph);
 }
 
 function drawGlyphBackground(context: HeadlessHost2DContext, item: FontGlyph, x: number, y: number): void {
@@ -226,8 +230,8 @@ function drawHeadlessGlyph(context: HeadlessHost2DContext, item: FontGlyph, x: n
 		source.v,
 		source.w,
 		source.h,
-		x * scaleX + offsetX,
-		y * scaleY + offsetY,
+		(x + item.offsetX) * scaleX + offsetX,
+		(y + item.offsetY) * scaleY + offsetY,
 		item.width * scaleX,
 		item.height * scaleY,
 		false,

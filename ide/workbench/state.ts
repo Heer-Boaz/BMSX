@@ -7,7 +7,6 @@ import type { HostRewind } from '../../hosts/common/rewind';
 import type { HostExecutionControl } from '../../hosts/common/execution_control';
 import type { WorkbenchDisplay, Viewport } from '../common/viewport';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { Input } from '../../hosts/common/input/manager';
@@ -29,8 +28,6 @@ import { StudioWorkbench } from './workbench';
 import { activateEditor } from './overlay_modes';
 import { presentRuntimeDebuggerStop } from './contrib/debugger/controller';
 import { openHostError } from './contrib/host_error/editor_input';
-
-export const DEFAULT_IDE_FONT_VARIANT: FontVariant = 'tiny';
 
 export class RuntimeIdeState extends StudioWorkbench {
 	public readonly editor: CartEditor;
@@ -69,7 +66,7 @@ export class RuntimeIdeState extends StudioWorkbench {
 		this.overlayRenderer = new OverlayRenderer(presenter.hostOverlayQueue, viewport);
 		this.editor = new RuntimeCartEditor(
 			this, presenter, display, preferences, input, clock, clipboard, logOutput, resourcePanelWidthRatio,
-			viewport, DEFAULT_IDE_FONT_VARIANT, this.overlayRenderer, decodeImage, createGraphLayoutEngine,
+			viewport, this.overlayRenderer, decodeImage, createGraphLayoutEngine,
 			connectAssistant, observeConversation,
 		);
 		this.editor.updateViewport(viewport);

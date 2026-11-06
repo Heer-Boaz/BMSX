@@ -81,7 +81,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const operation of ['move',
 	for (const finish of ['Enter', 'Escape'] as const)
 		test(`${variant} native ${operation} guidance remains complete at 768 pixels over real wrap feedback until ${finish}`, t => {
 			const f = createActualSourcePanes(t), editor = f.editor, window = f.firstPart.window!;
-			editor.setFontVariant(variant); editor.updateViewport({ width: 768, height: 480 }); f.first.focus();
+			editor.preferences.fontVariant = variant; editor.updateViewport({ width: 768, height: 480 }); f.first.focus();
 			f.key('KeyZ', KeyModifier.alt);
 			assert.equal(editorFeedbackState.message.visible, true); assert.equal(editorFeedbackState.message.kind, 'info');
 			const feedback = { ...editorFeedbackState.message }, model = f.firstInput.workingCopy, version = model.version;

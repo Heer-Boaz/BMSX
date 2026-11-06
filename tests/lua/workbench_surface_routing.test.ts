@@ -1022,7 +1022,7 @@ test('Actor row press cannot reuse an identical input after focus detached and r
 
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor preview reorientation retains its guest binding and retirement drains the held input`, t => {
 	const { editor, host, pointer, input, pane } = actorFixture(t);
-	editor.setFontVariant(variant); editor.update(0); pane.focus();
+	editor.preferences.fontVariant = variant; editor.update(0); pane.focus();
 	const metrics = measureActorLab(editorViewState.font);
 	// Admit each client on its own, but not side by side, regardless of font or minimum reading budget.
 	const stackedWidth = Math.max(metrics.outlineMinimumWidth, metrics.previewMinimumWidth)
@@ -1071,7 +1071,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor preview r
 
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor sash reorientation cancels the old axis capture and admits only the active keyboard axis`, t => {
 	const { editor, host, pointer, input, pane, sourceModel } = actorFixture(t);
-	editor.setFontVariant(variant); editor.update(0); pane.focus();
+	editor.preferences.fontVariant = variant; editor.update(0); pane.focus();
 	const metrics = measureActorLab(editorViewState.font);
 	// Admit each client on its own, but not side by side, regardless of font or minimum reading budget.
 	const stackedWidth = Math.max(metrics.outlineMinimumWidth, metrics.previewMinimumWidth)
@@ -1160,7 +1160,7 @@ test('Actor reflow retires the real sash while retaining primary, graph and lock
 	input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.kind === 'state'); input.rememberSelection();
 	const selected = input.outline.rows[input.outline.selectionIndex], path = input.selectionPath;
 	for (const variant of ['tiny', 'msx'] as const) {
-		editor.setFontVariant(variant); editor.update(0); pane.focus();
+		editor.preferences.fontVariant = variant; editor.update(0); pane.focus();
 		const primary = inputFocus.target!;
 		assert.equal(inputFocus.moveFocus(false), true); assert.equal(inputFocus.moveFocus(false), true);
 		const sash = inputFocus.target!;
@@ -1202,7 +1202,7 @@ test('Actor reflow retires the real sash while retaining primary, graph and lock
 	assert.equal(details.locked, true); assert.ok(subject);
 	const detailsFocus = inputFocus.target!;
 	for (const variant of ['tiny', 'msx'] as const) {
-		editor.setFontVariant(variant); editor.update(0);
+		editor.preferences.fontVariant = variant; editor.update(0);
 		const model = graph.viewport.model;
 		for (const size of [{ width: 320, height: 400 }, { width: 320, height: 160 }, { width: 640, height: 360 }]) {
 			editor.updateViewport(size); editor.update(0);
@@ -1757,7 +1757,7 @@ test('Conversations wrapping is invariant under translation of the editor client
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} Assistant client translation and real Files reflow preserve the draft owner and selection`, t => {
 	const { editor } = fixture(t), input = new AssistantInput(editor.assistant);
 	afterTest(t, () => input.dispose());
-	editor.setFontVariant(variant);
+	editor.preferences.fontVariant = variant;
 	editor.editorParts.main.activeGroup.openEditor(input); editor.update(0);
 	insertValue(input.draft, 'A retained assistant draft wraps at the actual client width without changing its text or selection. '.repeat(6));
 	input.draft.setSelection(7, 31); editor.editorParts.main.activeGroup.panes.activePane!.update(0);
@@ -1800,7 +1800,7 @@ test(`${variant} Animation ${command} owns presentation without precommitting ${
 	const { editor, sources } = fixture(t), path = 'animation-property-presentation.lua';
 	const source = "return {duration_ms=100,tracks={{kind='value',keys={{time_ms=0,value=1},{time_ms=100,value=2}}}}}";
 	registerLuaSourceRecord(sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources, createScenarioTestSourceRecord(path, 1, source, path));
-	sources.catalog.rebuildResources(); editor.setFontVariant(variant);
+	sources.catalog.rebuildResources(); editor.preferences.fontVariant = variant;
 	const group = editor.editorParts.main.activeGroup;
 	const input = editor.animations.openResource(group, sources.catalog.resolveResource({ contextId: TEST_SYSTEM_CONTEXT_ID, path })!)!;
 	editor.animations.selectTrack(input, 1); editor.animations.selectKey(input, 0); editor.update(0);
@@ -2061,7 +2061,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} real Behavior p
 		base_update_timestamp: 0, generated: false, sourceKind: 'project', program_module: true });
 	registerLuaSourceRecord(registry, createScenarioTestSourceRecord(path, 1, source, path));
 	registerLuaSourceRecord(registry, createScenarioTestSourceRecord('cartlib/actioneffects.lua', 1, '', 'machine/bios/cartlib/actioneffects.lua'));
-	const { editor } = fixture(t, { image, registry }); editor.setFontVariant(variant);
+	const { editor } = fixture(t, { image, registry }); editor.preferences.fontVariant = variant;
 	const group = editor.editorParts.main.activeGroup, picker = editor.quickInput;
 	editor.commands.execute('behaviorLens.actionEffects');
 	assert.equal(editor.editorParts.main.quickInput.visible, true);

@@ -56,7 +56,7 @@ return {}
 `;
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} actual Main allocation preserves Home's usable card width between its independent contextual regions`, async t => {
 	const f = createActualSourcePanes(t, false, [['scene.lua', SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
-	f.editor.setFontVariant(variant); f.editor.updateViewport({ width: 300, height: 320 });
+	f.editor.preferences.fontVariant = variant; f.editor.updateViewport({ width: 300, height: 320 });
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
 	f.first.focus();

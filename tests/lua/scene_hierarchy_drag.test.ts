@@ -32,7 +32,7 @@ scenes.register('other',{objects={{member_id='other',definition_id='actor2'}}})`
 
 async function fixture(t: TestContext, main = true, font: 'tiny' | 'msx' = 'tiny', source = SOURCE) {
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', source], ['cartlib/world/scene_library.lua', 'return {}']]);
-	f.editor.setFontVariant(font); f.firstBounds.right = 700;
+	f.editor.preferences.fontVariant = font; f.firstBounds.right = 700;
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource);
 	f.editor.editorParts.minimize(f.secondPart);
@@ -134,7 +134,7 @@ for (const retirement of ['Escape', 'source', 'font', 'hide', 'readOnly'] as con
 		switch (retirement) {
 			case 'Escape': f.key('Escape'); break;
 			case 'source': f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- external\n' }]); break;
-			case 'font': f.editor.setFontVariant('msx'); break;
+			case 'font': f.editor.preferences.fontVariant = 'msx'; break;
 			case 'hide': f.editor.mainWorkspace.setRegionVisible('hierarchy', false); break;
 			case 'readOnly': f.model.refreshResource({ ...f.model.resource, source: { ...f.model.resource.source, generated: true } }); break;
 		}

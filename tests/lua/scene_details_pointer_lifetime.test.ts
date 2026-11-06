@@ -8,7 +8,7 @@ import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studi
 
 for (const font of ['tiny', 'msx'] as const) test(`${font} hidden Details cannot handle input through a retired field binding`, async t => {
 	const f = await createSceneDocumentFixture(t, SCENE_VIEWPORT_SOURCE, SCENE_VIEWPORT_IMPORTS);
-	f.editor.setFontVariant(font); f.update();
+	f.editor.preferences.fontVariant = font; f.update();
 	selectSceneOutlineRow(f.view.hierarchy, 1); f.update();
 	const details = f.primary.details.control;
 	const initialSelection = f.context.selection;

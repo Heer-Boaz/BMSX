@@ -29,3 +29,17 @@ test('font sampling persists as a user preference without changing UI scale', ()
 	release(); preferences.fontSampling = 'linear';
 	assert.equal(changes, 1);
 });
+
+test('scalable typography is the default and an explicit font choice persists in frontend storage', () => {
+	const storage = new MemoryStorage(), preferences = new WorkbenchPreferences(storage);
+	assert.equal(preferences.fontVariant, 'mono');
+	let changes = 0;
+	const release = preferences.onDidChange(() => changes++);
+	preferences.fontVariant = 'tiny'; preferences.fontVariant = 'tiny';
+	assert.equal(changes, 1);
+	assert.equal(new WorkbenchPreferences(storage).fontVariant, 'tiny');
+	assert.equal(new WorkbenchPreferences(new MemoryStorage()).fontVariant, 'mono');
+	assert.equal(preferences.fontSampling, 'linear'); assert.equal(preferences.uiScale, 1);
+	release(); preferences.fontVariant = 'mono';
+	assert.equal(changes, 1);
+});

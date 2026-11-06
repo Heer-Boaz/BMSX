@@ -149,6 +149,8 @@ export class HeadlessGPUBackend implements GPUBackend {
 		colorValue: 0,
 		backgroundColor: 0,
 		lineHeight: 0,
+		glyphRaster: 'bitmap',
+		glyphScreenRange: 1,
 		clip: new HostOverlayClipState(),
 		meshScenes: new HostMeshSceneTargets(createHeadlessHostMeshTarget, renderHeadlessHostMeshScene, disposeHeadlessHostMeshTarget),
 	};

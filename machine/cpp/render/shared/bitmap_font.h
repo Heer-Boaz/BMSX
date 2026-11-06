@@ -21,8 +21,11 @@ struct ImageAtlasRect {
 };
 
 struct BitmapFontSourceGlyph {
-	i32 width = 0;
-	i32 height = 0;
+	f32 width = 0;
+	f32 height = 0;
+	f32 advance = 0;
+	f32 offsetX = 0;
+	f32 offsetY = 0;
 	u32 u = 0;
 	u32 v = 0;
 	u32 w = 0;
@@ -32,13 +35,22 @@ struct BitmapFontSourceGlyph {
 struct FontGlyph {
 	std::string imgid;
 	ImageAtlasRect rect;
-	i32 width = 0;
-	i32 height = 0;
-	i32 advance = 0;
+	f32 width = 0;
+	f32 height = 0;
+	f32 advance = 0;
+	f32 offsetX = 0;
+	f32 offsetY = 0;
 };
 
 constexpr int TAB_SPACES = 2;
 enum class FontSampling { Nearest, Linear };
+enum class FontRaster { Bitmap, Msdf };
+struct FontRendering {
+	FontRaster raster = FontRaster::Bitmap;
+	FontSampling sampling = FontSampling::Nearest;
+	f32 lineHeight = 0;
+	f32 distanceRange = 0;
+};
 
 class BitmapFontSource {
 public:
@@ -48,31 +60,33 @@ public:
 
 class BFont {
 public:
-	BFont(const BitmapFontSource& source, GlyphMap itemmap, i32 advancePadding = 0, FontSampling sampling = FontSampling::Nearest);
+	BFont(const BitmapFontSource& source, GlyphMap itemmap, f32 advancePadding = 0, FontRendering rendering = {});
 	const FontSampling sampling;
+	const FontRaster raster;
+	const f32 distanceRange;
 
-	i32 char_width(char c);
-	i32 char_height(char c);
-	i32 char_width(u32 codepoint);
-	i32 char_height(u32 codepoint);
+	f32 char_width(char c);
+	f32 char_height(char c);
+	f32 char_width(u32 codepoint);
+	f32 char_height(u32 codepoint);
 
 	const std::string& char_to_img(u32 codepoint) const;
 	const FontGlyph& getGlyph(u32 codepoint);
 
-	i32 advance(char c);
-	i32 advance(u32 codepoint);
+	f32 advance(char c);
+	f32 advance(u32 codepoint);
 
-	i32 lineHeight() const { return m_line_height; }
+	f32 lineHeight() const { return m_line_height; }
 	const GlyphMap& itemMap() const { return m_letter_to_img; }
-	i32 advancePadding() const { return m_advance_padding; }
-	i32 measure(const std::string& text);
+	f32 advancePadding() const { return m_advance_padding; }
+	f32 measure(const std::string& text);
 
 private:
 	const BitmapFontSource& m_source;
 	GlyphMap m_letter_to_img;
 	std::unordered_map<u32, FontGlyph> m_items;
-	i32 m_advance_padding = 0;
-	i32 m_line_height = 0;
+	f32 m_advance_padding = 0;
+	f32 m_line_height = 0;
 };
 
 } // namespace bmsx

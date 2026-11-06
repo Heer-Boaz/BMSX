@@ -226,7 +226,7 @@ for (const foreignFocus of ['before-inspection', 'after-inspection'] as const)
 	});
 
 for (const variant of ['tiny', 'msx'] as const) test(`Scenario ${variant} focus order includes only the actual resizable sash in both directions`, async t => {
-	const f = await fixture(t); f.editor.setFontVariant(variant);
+	const f = await fixture(t); f.editor.preferences.fontVariant = variant;
 	f.firstPart.window!.model.setRequestedBounds({ left: 0, top: 32, right: 760, bottom: 290 });
 	f.select('passes');
 	const pane = f.firstPart.activeGroup.panes.activePane!, view = f.input.view, tests = pane.commandTarget;
@@ -261,7 +261,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scenario ${variant} focus 
 });
 
 for (const variant of ['tiny', 'msx'] as const) test(`Scenario ${variant} withholding a focused captured sash retires its gesture and returns to results`, async t => {
-	const f = await fixture(t); f.editor.setFontVariant(variant);
+	const f = await fixture(t); f.editor.preferences.fontVariant = variant;
 	f.firstPart.window!.model.setRequestedBounds({ left: 0, top: 32, right: 760, bottom: 290 }); f.select('passes');
 	const pane = f.firstPart.activeGroup.panes.activePane!, view = f.input.view, selected = view.testPane.selection.nodeId;
 	assert.equal(view.split.resizable, true);

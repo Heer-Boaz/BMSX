@@ -253,7 +253,7 @@ test('frontend workspace replacement retires the old Main and controls before re
 		mainWorkspace: f.editor.mainWorkspace.serialize(),
 		sceneCompanion: f.editor.editorParts.captureEditorLocation(client.input),
 		editorParts: f.editor.editorParts.serialize(f.editor.editorInputSerializers),
-		filesBrowser: f.editor.resourcePanel.serialize(), fontVariant: f.editor.fontVariant,
+		filesBrowser: f.editor.resourcePanel.serialize(),
 		breakpoints: f.ide.debugger.breakpoints.serialize(), dirtyFiles: [],
 	};
 	await applyWorkspaceAutosavePayload(f.editor, f.sources.catalog, f.ide.debugger, payload);

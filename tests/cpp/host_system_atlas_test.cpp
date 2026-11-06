@@ -76,12 +76,12 @@ int main() {
 			const auto& middleDot = symbols.getGlyph(0x00b7u);
 			const auto& fallback = symbols.getGlyph(static_cast<bmsx::u32>('?'));
 			require(middleDot.imgid != fallback.imgid, "middle dot must not use the fallback glyph");
-			require(middleDot.width == cell.width + (style == bmsx::FontStyle::Italic ? (cell.height - 1) >> 2 : 0), "middle dot uses the period cell and italic extent");
-			require(middleDot.height == cell.height && middleDot.height == symbols.lineHeight(), "middle dot preserves the font baseline");
+			require(middleDot.width == cell.rect.w + (style == bmsx::FontStyle::Italic ? (cell.rect.h - 1) >> 2 : 0), "middle dot uses the period cell and italic extent");
+			require(middleDot.height == cell.rect.h && middleDot.height == symbols.lineHeight(), "middle dot preserves the font baseline");
 			require(middleDot.advance == symbols.advance('.'), "middle dot advances one period cell");
 			// The bitmap contract is independent of atlas packing and UI placement.
-			const int dotY = (cell.height - 2) >> 1;
-			const int dotX = ((cell.width - 1) >> 1) + (style == bmsx::FontStyle::Italic ? (cell.height - 1 - dotY) >> 2 : 0);
+			const int dotY = (cell.rect.h - 2) >> 1;
+			const int dotX = ((cell.rect.w - 1) >> 1) + (style == bmsx::FontStyle::Italic ? (cell.rect.h - 1 - dotY) >> 2 : 0);
 			for (int y = 0; y < middleDot.height; ++y) {
 				for (int x = 0; x < middleDot.width; ++x) {
 					const std::size_t offset = ((middleDot.rect.v + y) * bmsx::HOST_SYSTEM_ATLAS.width + middleDot.rect.u + x) * 4u;
@@ -105,11 +105,11 @@ int main() {
 		for (bmsx::u32 code = 32; code <= 126; ++code) {
 			const auto& base = normal.getGlyph(code);
 			const auto& glyph = font.getGlyph(code);
-			require(glyph.width == base.width + ((base.height - 1) >> 2), "italic font width");
+			require(glyph.width == base.width + ((base.rect.h - 1) >> 2), "italic font width");
 			require(glyph.height == base.height, "italic font height");
 			for (int y = 0; y < glyph.height; ++y) {
 				std::vector<bmsx::u8> row(glyph.width);
-				const int shift = (base.height - 1 - y) >> 2;
+				const int shift = (base.rect.h - 1 - y) >> 2;
 				for (int x = 0; x < base.width; ++x) {
 					row[x + shift] = bmsx::HOST_SYSTEM_ATLAS.pixels[((base.rect.v + y) * bmsx::HOST_SYSTEM_ATLAS.width + base.rect.u + x) * 4u + 3u];
 				}

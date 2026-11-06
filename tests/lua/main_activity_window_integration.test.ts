@@ -20,7 +20,7 @@ const OUTPUT = 'first needle\nsecond needle\nthird needle\n';
 
 async function fixture(t: TestContext) {
 	const f = createActualSourcePanes(t, false, [['diagnostics.lua', 'return 1\n'.repeat(80)]]);
-	f.editor.setFontVariant('tiny');
+	f.editor.preferences.fontVariant = 'tiny';
 	const job: StudioBuildJob = { request: { requestId: 'window-reader', target: 'fixture-product', debug: true, optLevel: 0 },
 		state: 'completed', phase: 'published', acceptedAt: 0, updatedAt: 1, version: { generation: 1, sequence: 1 } };
 	let reads = 0;
@@ -150,7 +150,7 @@ for (const activity of ['problems', 'builds.output'] as const) for (const presen
 for (const variant of ['tiny', 'msx'] as const) for (const activityId of ['problems', 'builds.output'] as const)
 	test(`${variant} ${activityId} floating resize preserves its intrinsic reading width and reachable selector/Close controls`, async t => {
 		const f = await fixture(t), { main } = f;
-		f.editor.setFontVariant(variant); main.openActivity(activityId); main.setActivityPlacement('floatingWindow'); f.update();
+		f.editor.preferences.fontVariant = variant; main.openActivity(activityId); main.setActivityPlacement('floatingWindow'); f.update();
 		const window = main.activityWindow, model = window.model, body = main.activity!.commandTarget;
 		assert.ok(model.minimumWidth >= measureWorkbenchTextViewMinimumWidth(editorViewState.font));
 		const right = model.bounds.right - 1, y = (model.bounds.top + model.bounds.bottom) / 2, left = model.bounds.left;

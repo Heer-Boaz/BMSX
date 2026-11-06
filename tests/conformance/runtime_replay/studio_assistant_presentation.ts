@@ -53,7 +53,7 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	check(view.composerBounds.bottom - view.composerBounds.top === emptyComposerHeight, 'presentation: deleting the draft returns transcript space');
 	const draftMarkdown = '**Bold** *italic* `velocity_x_q8` ~~previous~~\n- [x] Keep markers\n```lua\n\treturn 7\n```\n[Guide](https://example.com)';
 	await test.clipboard.writeText(draftMarkdown); await press('ControlLeft', 'KeyV');
-	ide.editor.setFontVariant('msx'); await frame(); await capture('composer-markdown-msx');
+	ide.editor.preferences.fontVariant = 'msx'; await frame(); await capture('composer-markdown-msx');
 	await test.runPaletteCommand('Preferences: Toggle Theme'); await frame(); await capture('composer-markdown-dark-msx');
 	await test.runPaletteCommand('Preferences: Toggle Theme'); await frame();
 	const cursor = draftMarkdown.indexOf('italic') + 2;
@@ -70,7 +70,7 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	await press('ControlLeft', 'KeyY'); check(view.draft.text === editedDraft, 'presentation: styled draft Redo restores the edit');
 	await press('ControlLeft', 'KeyZ');
 	await press('ControlLeft', 'KeyA'); await press('Backspace');
-	ide.editor.setFontVariant('tiny'); await frame();
+	ide.editor.preferences.fontVariant = 'tiny'; await frame();
 	await test.click(view.composerBounds);
 	await test.clipboard.writeText('Inspect the mijter enemy, then explain the change. @cart'); await press('ControlLeft', 'KeyV');
 	await capture('reference-suggestions');
@@ -96,7 +96,7 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	for (let index = 0; index < 20; index++) await frame();
 	check(rows.every((row, index) => row === view.transcript.rows[index]), 'presentation: idle frames retain layout');
 	await capture('markdown-tiny');
-	ide.editor.setFontVariant('msx'); await frame(); await capture('markdown-msx');
+	ide.editor.preferences.fontVariant = 'msx'; await frame(); await capture('markdown-msx');
 	await test.runPaletteCommand('Preferences: Toggle Theme'); await frame(); await capture('markdown-dark-msx');
 	await test.runPaletteCommand('Preferences: Toggle Theme'); await frame();
 	const reply = conversation.entries.find(entry => entry.kind === 'assistant')!;
@@ -147,13 +147,13 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	await test.runPaletteCommand('Preferences: Toggle Theme'); await frame();
 	await submitAssistantText(test, '/model'); await until(() => picker.visible, 'presentation: narrow model picker');
 	await frame(); await capture('narrow-model-picker'); await press('Escape');
-	ide.editor.setFontVariant('tiny'); await frame(); await capture('narrow-tiny');
+	ide.editor.preferences.fontVariant = 'tiny'; await frame(); await capture('narrow-tiny');
 	await test.click(view.composerBounds); await test.clipboard.writeText(draftMarkdown); await press('ControlLeft', 'KeyV');
 	await capture('composer-markdown-narrow'); await press('ControlLeft', 'Home'); await capture('composer-markdown-narrow-start');
-	ide.editor.setFontVariant('msx'); await frame(); await capture('composer-markdown-narrow-msx-start');
+	ide.editor.preferences.fontVariant = 'msx'; await frame(); await capture('composer-markdown-narrow-msx-start');
 	await press('ControlLeft', 'End'); await capture('composer-markdown-narrow-msx-end');
 	await press('ControlLeft', 'KeyA'); await press('Backspace');
-	ide.editor.setFontVariant('tiny'); await frame();
+	ide.editor.preferences.fontVariant = 'tiny'; await frame();
 	await test.click(view.composerBounds);
 	await test.clipboard.writeText('Keep investigating while I review the result. @cart'); await press('ControlLeft', 'KeyV');
 	await capture('reference-suggestions-narrow'); await press('Tab');

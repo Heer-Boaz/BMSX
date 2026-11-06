@@ -27,7 +27,7 @@ const SCENES = "local scenes=require('cartlib/world/scene_library')\nscenes.regi
 function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny', sources: readonly (readonly [string, string])[] = []) {
 	const f = createActualSourcePanes(t, false, [['folder/third.lua', 'return 3'], ['folder/other.lua', 'return 4'], ...sources],
 		() => new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs'))));
-	f.editor.setFontVariant(font); f.first.focus(); f.editor.resourcePanel.show(); f.update();
+	f.editor.preferences.fontVariant = font; f.first.focus(); f.editor.resourcePanel.show(); f.update();
 	// Files narrows the work area; the receiving floating host must actually be uncovered.
 	f.editor.surfaces.raise(f.secondPart.surface);
 	assert.equal(editorViewState.font.variant, font);

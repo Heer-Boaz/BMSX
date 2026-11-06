@@ -10,6 +10,7 @@ in vec2 i_uv0;
 in vec2 i_uv1;
 in uint i_texture_kind;
 in vec4 i_color;
+in float i_distance_range;
 
 layout(std140) uniform FrameUniforms {
 	vec2 u_offscreenSize;
@@ -24,6 +25,7 @@ layout(std140) uniform FrameUniforms {
 out vec2 v_texcoord;
 out vec4 v_color_override;
 flat out uint v_texture_kind;
+flat out float v_screen_range;
 
 void main() {
 	vec2 cornerPosition = i_origin + i_axis_x * a_corner.x + i_axis_y * a_corner.y;
@@ -32,4 +34,5 @@ void main() {
 	v_texcoord = mix(i_uv0, i_uv1, a_corner);
 	v_color_override = i_color;
 	v_texture_kind = i_texture_kind;
+	v_screen_range = max(1.0, i_distance_range * dot(u_offscreenSize / u_logicalSize, vec2(0.5)));
 }

@@ -11,7 +11,8 @@ namespace bmsx {
 
 enum class FontVariant {
 	Msx,
-	Tiny
+	Tiny,
+	Mono
 };
 
 constexpr FontVariant DEFAULT_FONT_VARIANT = FontVariant::Msx;

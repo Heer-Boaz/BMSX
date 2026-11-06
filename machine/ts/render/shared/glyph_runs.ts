@@ -8,8 +8,8 @@ export function forEachBatchBlitGlyph<T>(command: GlyphRenderSubmission, context
 	const lineCount = arrayLines ? items.length : 1;
 	// Align the pen once to the bitmap font's pixel grid. Explicit drawing
 	// transforms still apply afterwards, to both glyphs and their backgrounds.
-	const startX = Math.trunc(command.x);
-	let originY = Math.trunc(command.y);
+	const startX = font.raster === 'bitmap' ? Math.trunc(command.x) : command.x;
+	let originY = font.raster === 'bitmap' ? Math.trunc(command.y) : command.y;
 	for (let lineIndex = 0; lineIndex < lineCount; lineIndex += 1) {
 		const line = arrayLines ? items[lineIndex] : items;
 		const start = arrayLines ? 0 : command.item_start;

@@ -1,3 +1,4 @@
+import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
@@ -49,7 +50,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', width = 384, source = 
 		createScenarioTestSourceState([]), surfaces, surface, bounds, inputFocus.workbenchScope, menu);
 	const keybindings = new EditorCommandKeybindingController(inputFocus, new VirtualHeadlessClock());
 	pane.setInput(input, bounds); pane.update();
-	const layout = (nextWidth = bounds.right - bounds.left, nextVariant: 'tiny' | 'msx' = editorViewState.font.variant) => {
+	const layout = (nextWidth = bounds.right - bounds.left, nextVariant: FontVariant = editorViewState.font.variant) => {
 		if (nextVariant !== editorViewState.font.variant) configureFontVariant(nextVariant);
 		bounds.right = bounds.left + nextWidth; pane.layout(bounds); pane.update();
 	};

@@ -13,7 +13,7 @@ import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE as SOURCE } from '../fixt
 
 async function fixture(t: TestContext) {
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
-	f.editor.setFontVariant('tiny'); f.first.focus();
+	f.editor.preferences.fontVariant = 'tiny'; f.first.focus();
 	const main = f.editor.mainWorkspace;
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
@@ -143,7 +143,7 @@ test('a document opened by Main publication supersedes the earlier reset target 
 
 test('a newer Files allocation published while cancelling keyboard sizing survives the older reset', t => {
 	const f = createActualSourcePanes(t), files = f.editor.resourcePanel;
-	f.editor.setFontVariant('tiny'); files.show(); f.editor.update(0);
+	f.editor.preferences.fontVariant = 'tiny'; files.show(); f.editor.update(0);
 	assert.equal(files.sash.focusForResize(files.focusTarget), true);
 	const release = inputFocus.onDidChangeTarget(() => {
 		if (inputFocus.admittedTarget !== files.focusTarget) return;

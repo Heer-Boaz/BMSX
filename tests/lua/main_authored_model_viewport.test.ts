@@ -40,7 +40,7 @@ scenes.register('sculpture',{objects={${members}}})`;
 		['cartlib/component/static_model_component.lua', 'return {new=function() end,factory=function() end}']]);
 	const context = f.sources.catalog.getContext(f.sources.systemContextId), packed = packModelAsset(asset, await prepareModelTextures(asset));
 	context.previewRom!.bytes = packed.buffer; context.previewPackage.model.shape = loadModelFromBuffer('shape', packed.buffer, packed.model_texture_buffer); f.sources.catalog.rebuildResources();
-	f.editor.setFontVariant(font);
+	f.editor.preferences.fontVariant = font;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog,
 		f.sources.catalog.resolveResource({ contextId: context.id, path: 'scene.lua' })!);
 	const document = f.ide.sceneSources.get(model);

@@ -20,6 +20,7 @@ import {
 } from '../quad_stream';
 import { createHostMenuState, createHostOverlayState, writeHostMenuState, writeHostOverlayState } from '../pipeline';
 import { HOST_SYSTEM_ATLAS } from '../atlas';
+import { SCALABLE_FONT_ATLAS } from '../scalable_font';
 import { HostOverlayClipState } from '../clip';
 import vertexShaderCode from './shaders/host_overlay.vert.wgsl';
 import fragmentShaderCode from './shaders/host_overlay.frag.wgsl';
@@ -40,6 +41,7 @@ type HostOverlayRuntime = {
 	stream: HostOverlayQuadStream;
 	clip: HostOverlayClipState;
 	hostAtlasTexture: GPUTexture;
+	distanceAtlasTexture: GPUTexture;
 	uniformScratch: Float32Array;
 };
 
@@ -70,6 +72,7 @@ function createRuntime(backend: WebGPUBackend): HostOverlayRuntime {
 			{ binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
 			{ binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
 			{ binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+			{ binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
 		],
 	});
 	const pipeline = device.createRenderPipeline({
@@ -91,6 +94,7 @@ function createRuntime(backend: WebGPUBackend): HostOverlayRuntime {
 						{ shaderLocation: 3, offset: 6 * Float32Array.BYTES_PER_ELEMENT, format: 'float32x2' },
 						{ shaderLocation: 4, offset: 8 * Float32Array.BYTES_PER_ELEMENT, format: 'float32x2' },
 						{ shaderLocation: 6, offset: 10 * Float32Array.BYTES_PER_ELEMENT, format: 'float32x4' },
+						{ shaderLocation: 7, offset: 14 * Float32Array.BYTES_PER_ELEMENT, format: 'float32' },
 					],
 				},
 				{
@@ -118,6 +122,7 @@ function createRuntime(backend: WebGPUBackend): HostOverlayRuntime {
 		size: OVERLAY_UNIFORM_FLOATS * Float32Array.BYTES_PER_ELEMENT,
 		usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
 	});
+	const distanceAtlasTexture = backend.createTexture(SCALABLE_FONT_ATLAS.pixels, SCALABLE_FONT_ATLAS.width, SCALABLE_FONT_ATLAS.height, RGBA8_LINEAR_TEXTURE_PARAMS) as GPUTexture;
 	const hostAtlasTexture = backend.createTexture(HOST_SYSTEM_ATLAS.pixels, HOST_SYSTEM_ATLAS.width, HOST_SYSTEM_ATLAS.height, RGBA8_SRGB_TEXTURE_PARAMS) as GPUTexture;
 	const hostSampler = device.createSampler({
 		magFilter: 'nearest',
@@ -130,6 +135,7 @@ function createRuntime(backend: WebGPUBackend): HostOverlayRuntime {
 		entries: [
 			{ binding: 0, resource: { buffer: uniformBuffer } },
 			{ binding: 1, resource: hostAtlasTexture.createView() },
+			{ binding: 4, resource: distanceAtlasTexture.createView() },
 			{ binding: 2, resource: hostSampler },
 			{ binding: 3, resource: device.createSampler({ magFilter: 'linear', minFilter: 'linear',
 				addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' }) },
@@ -156,6 +162,7 @@ function createRuntime(backend: WebGPUBackend): HostOverlayRuntime {
 		stream,
 		clip: new HostOverlayClipState(),
 		hostAtlasTexture,
+		distanceAtlasTexture,
 		uniformScratch: new Float32Array(OVERLAY_UNIFORM_FLOATS),
 	};
 }
@@ -192,6 +199,8 @@ function renderStream(backend: WebGPUBackend, runtime: HostOverlayRuntime, state
 	const uniformScratch = runtime.uniformScratch;
 	uniformScratch[0] = state.overlayWidth;
 	uniformScratch[1] = state.overlayHeight;
+	uniformScratch[2] = state.width / state.overlayWidth;
+	uniformScratch[3] = state.height / state.overlayHeight;
 	device.queue.writeBuffer(runtime.uniformBuffer, 0, uniformScratch);
 	const floatBytes = count * HOST_OVERLAY_INSTANCE_FLOATS * Float32Array.BYTES_PER_ELEMENT;
 	device.queue.writeBuffer(runtime.instanceFloatBuffer, 0, stream.floatData.buffer, stream.floatData.byteOffset, floatBytes);
@@ -259,6 +268,7 @@ export function registerHostOverlayPassesWebGPU(registry: RenderPassLibrary): vo
 			runtime.instanceFloatBuffer.destroy();
 			runtime.instanceTextureKindBuffer.destroy();
 			backend.destroyTexture(runtime.hostAtlasTexture);
+			backend.destroyTexture(runtime.distanceAtlasTexture);
 		},
 		shouldExecute: presenter => presenter.hostOverlayQueue.hasPendingOverlayFrame(),
 		exec: (backend, _fbo, state: RenderPassStateRegistry['host_overlay']) => {

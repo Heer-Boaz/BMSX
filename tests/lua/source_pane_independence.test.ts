@@ -99,7 +99,7 @@ test('shared font publication and one-pane resize preserve independent Source la
 	b.model.pushEditOperations([{ offset: 0, deleteLength: b.model.buffer.length, text: '\tbeta\nreturn 2' }]);
 	a.focusTarget.textInput!.setSelection(long.length, long.length); b.focusTarget.textInput!.setSelection(1, 1);
 	const oldFont = a.font, variant = oldFont.variant === 'msx' ? 'tiny' : 'msx';
-	f.editor.setFontVariant(variant); f.arrange();
+	f.editor.preferences.fontVariant = variant; f.arrange();
 	assert.ok(a.font !== oldFont, 'actual font publication replaces the typography generation'); assert.ok(a.font === b.font, 'both controls consume the published shared font'); assert.equal(a.font.variant, variant); assert.ok(a.layout !== b.layout, 'each control owns its layout');
 	const bCaret = { ...b.focusTarget.textInput!.caretRect() }, bLayout = b.layout;
 	f.firstBounds.right = 230; f.arrange();

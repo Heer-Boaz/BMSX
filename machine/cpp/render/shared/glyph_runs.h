@@ -18,8 +18,8 @@ void forEachBatchBlitGlyph(
 	const i32 end = submission.item_end;
 	// Align the pen once to the bitmap font's pixel grid. Explicit drawing
 	// transforms still apply afterwards, to both glyphs and their backgrounds.
-	const f32 startX = std::trunc(submission.x);
-	f32 y = std::trunc(submission.y);
+	const f32 startX = font.raster == FontRaster::Bitmap ? std::trunc(submission.x) : submission.x;
+	f32 y = font.raster == FontRaster::Bitmap ? std::trunc(submission.y) : submission.y;
 	for (const std::string& line : submission.items) {
 		f32 x = startX;
 		size_t byteIndex = 0;

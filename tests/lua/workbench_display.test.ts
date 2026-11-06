@@ -10,12 +10,13 @@ import { createLiveStudioFixture } from '../helpers/live_studio';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { drawIde } from '../../ide/workbench/mode';
 import { editorViewState } from '../../ide/editor/ui/view/state';
+import { applyWorkspaceAutosavePayload } from '../../ide/workbench/workspace/restore';
 
 test('constrained workspace allocation settles without republishing unchanged surface geometry', async t => {
 	const f = await createLiveStudioFixture(t);
 	const part = f.editor.editorParts.main, input = part.activeGroup.model.activeTab;
-	for (const font of ['tiny', 'msx'] as const) {
-		f.editor.setFontVariant(font);
+	for (const font of ['tiny', 'msx', 'mono'] as const) {
+		f.editor.preferences.fontVariant = font;
 		part.prepareLayout();
 		const width = part.minimumClientWidth, height = part.minimumClientHeight;
 		for (const availableHeight of [120, 1080, 120]) {
@@ -33,6 +34,22 @@ test('constrained workspace allocation settles without republishing unchanged su
 	}
 });
 
+test('project recovery cannot replace frontend typography with its old saved font', async t => {
+	const f = await createLiveStudioFixture(t);
+	const legacyRecovery = {
+		dirtyFiles: [], mainWorkspace: f.editor.mainWorkspace.serialize(),
+		editorParts: f.editor.editorParts.serialize(f.editor.editorInputSerializers), sceneCompanion: undefined,
+		filesBrowser: f.editor.resourcePanel.serialize(), breakpoints: [], fontVariant: 'tiny',
+	};
+	const defaultFont = editorViewState.font;
+	await applyWorkspaceAutosavePayload(f.editor, f.sources.catalog, f.ide.debugger, legacyRecovery);
+	assert.equal(f.editor.fontVariant, 'mono'); assert.equal(f.editor.preferences.fontVariant, 'mono');
+	assert.ok(editorViewState.font === defaultFont, 'source recovery does not even recreate font metrics');
+	f.editor.preferences.fontVariant = 'msx';
+	await applyWorkspaceAutosavePayload(f.editor, f.sources.catalog, f.ide.debugger, legacyRecovery);
+	assert.equal(f.editor.fontVariant, 'msx', 'explicit frontend preferences also survive project recovery');
+});
+
 test('workbench layout publishes its viewport to the drawing owner without rereading the presenter', async t => {
 	const f = await createLiveStudioFixture(t);
 	const target = { ...f.presenter.viewportSize };
@@ -47,6 +64,10 @@ test('workbench layout publishes its viewport to the drawing owner without rerea
 
 test('font smoothing uses shared command state and retains the document, metrics and raster allocation', async t => {
 	const f = await createLiveStudioFixture(t);
+	const commandTarget = f.editor.editorParts.activeGroup.focusTarget;
+	assert.equal(f.editor.fontVariant, 'mono', 'new workspaces use the scalable font');
+	assert.equal(f.editor.commands.isEnabled('workspace.fontSmoothing', commandTarget), false, 'pixel filtering does not change MSDF rendering');
+	f.editor.preferences.fontVariant = 'tiny';
 	const input = f.editor.editorParts.activeGroup.model.activeTab;
 	const viewport = { ...f.presenter.viewportSize }, raster = f.backend.borrowPresentedPixels().buffer;
 	const before = editorViewState.font;
@@ -63,10 +84,14 @@ test('font smoothing uses shared command state and retains the document, metrics
 	await f.frame();
 	assert.ok(f.backend.borrowPresentedPixels().buffer === raster);
 	assert.deepEqual(f.presenter.viewportSize, viewport);
-	f.editor.setFontVariant('msx');
+	f.editor.preferences.fontVariant = 'msx';
 	assert.equal(editorViewState.font.renderFont().sampling, 'nearest');
 	f.editor.commands.execute('workspace.fontSmoothing', target);
 	assert.equal(editorViewState.font.renderFont().sampling, 'linear');
+	f.editor.preferences.fontVariant = 'mono';
+	assert.equal(editorViewState.font.renderFont().raster, 'msdf');
+	assert.ok(f.editor.editorParts.activeGroup.model.activeTab === input);
+	assert.ok(f.backend.borrowPresentedPixels().buffer === raster);
 });
 
 test('Studio reallocates its own workspace, retaining documents and restoring the unchanged game presentation', async t => {

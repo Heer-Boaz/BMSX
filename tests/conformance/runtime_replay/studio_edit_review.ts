@@ -45,9 +45,9 @@ export async function runStudioEditReview(test: StudioFixture) {
 	await press('End');
 	check(review.viewport.scrollTop > 0, 'edit review: keyboard can reach changes below the first viewport');
 	await frame(); await test.capture?.('last-file');
-	ide.editor.setFontVariant('msx'); await frame();
+	ide.editor.preferences.fontVariant = 'msx'; await frame();
 	await press('Home'); await test.capture?.('msx');
-	ide.editor.setFontVariant('tiny'); await frame(); await frame();
+	ide.editor.preferences.fontVariant = 'tiny'; await frame(); await frame();
 	const rows = review.rows;
 	const identities = rows.slice();
 	const position = cycles();

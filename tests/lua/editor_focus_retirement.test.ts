@@ -61,7 +61,7 @@ test('retirement preserves a newer foreign focus selected by the departing contr
 
 for (const invocation of ['command', 'narrow window'] as const) test(`Scene ${invocation} removal returns focus from a retired numeric field for canonical keyboard Undo`, t => {
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
-	f.editor.setFontVariant('tiny');
+	f.editor.preferences.fontVariant = 'tiny';
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	f.editor.sceneEditor.openResource(f.firstGroup, resource);
 	const input = f.firstGroup.model.activeTab;

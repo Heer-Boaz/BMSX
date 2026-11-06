@@ -93,7 +93,7 @@ export async function runAssistantHistory(kind: StudioRendererKind, canvas: HTML
 	check((await control.metrics()).requests === stopped.requests, 'listing and selecting history add no inference');
 	const prompt = model.entries.find(entry => entry.kind === 'user')!;
 	check(prompt.text.getText() === firstPrompt, 'history: authored Markdown survives persistence unchanged');
-	ide.editor.setFontVariant('msx'); await frame();
+	ide.editor.preferences.fontVariant = 'msx'; await frame();
 	await test.click({ left: view.viewport.bounds.left, right: view.viewport.bounds.left + 3, top: view.viewport.bounds.top, bottom: view.viewport.bounds.top + view.layout.rowHeight });
 	await press('Home');
 	const promptRows = view.transcript.rows.filter(row => row.entry === prompt);

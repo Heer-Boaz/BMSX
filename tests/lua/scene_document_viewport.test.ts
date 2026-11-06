@@ -306,7 +306,7 @@ test('workspace restore rebinds the actual Scene document after companion focus'
 	const payload: WorkspaceAutosavePayload = JSON.parse(JSON.stringify({ mainWorkspace: f.editor.mainWorkspace.serialize(),
 		sceneCompanion: f.editor.editorParts.captureEditorLocation(f.editor.mainWorkspace.primary!.input),
 		dirtyFiles: [], filesBrowser: f.editor.resourcePanel.serialize(), editorParts: f.editor.editorParts.serialize(f.editor.editorInputSerializers),
-		fontVariant: f.editor.fontVariant, breakpoints: f.ide.debugger.breakpoints.serialize() }));
+		breakpoints: f.ide.debugger.breakpoints.serialize() }));
 	await applyWorkspaceAutosavePayload(f.editor, f.sources.catalog, f.ide.debugger, payload); f.update();
 	const restored = f.editor.mainWorkspace.primary; assert.ok(restored instanceof ScenePrimaryClient);
 	const group = f.editor.editorParts.findGroup(restored.input)!;
@@ -335,7 +335,7 @@ test('workspace restore does not bind a background Scene over the last interacte
 	const payload: WorkspaceAutosavePayload = JSON.parse(JSON.stringify({ mainWorkspace: f.editor.mainWorkspace.serialize(),
 		sceneCompanion: f.editor.editorParts.captureEditorLocation(f.editor.mainWorkspace.primary!.input),
 		dirtyFiles: [], filesBrowser: f.editor.resourcePanel.serialize(), editorParts: f.editor.editorParts.serialize(f.editor.editorInputSerializers),
-		fontVariant: f.editor.fontVariant, breakpoints: f.ide.debugger.breakpoints.serialize() }));
+		breakpoints: f.ide.debugger.breakpoints.serialize() }));
 	await applyWorkspaceAutosavePayload(f.editor, f.sources.catalog, f.ide.debugger, payload); f.update();
 	const restored = f.editor.mainWorkspace.primary; assert.ok(restored instanceof ScenePrimaryClient);
 	assert.equal(restored.input.workingCopy.identity.path, a.identity.path);
@@ -361,7 +361,7 @@ test('workspace restore retains the interacted Scene companions while another wi
 	const payload: WorkspaceAutosavePayload = JSON.parse(JSON.stringify({ mainWorkspace: f.editor.mainWorkspace.serialize(),
 		sceneCompanion: f.editor.editorParts.captureEditorLocation(f.editor.mainWorkspace.primary!.input),
 		dirtyFiles: [], filesBrowser: f.editor.resourcePanel.serialize(), editorParts: f.editor.editorParts.serialize(f.editor.editorInputSerializers),
-		fontVariant: f.editor.fontVariant, breakpoints: f.ide.debugger.breakpoints.serialize() }));
+		breakpoints: f.ide.debugger.breakpoints.serialize() }));
 	await applyWorkspaceAutosavePayload(f.editor, f.sources.catalog, f.ide.debugger, payload); f.update();
 	const restored = f.editor.mainWorkspace.primary; assert.ok(restored instanceof ScenePrimaryClient);
 	assert.equal(restored.input.workingCopy.identity.path, a.identity.path);
@@ -405,7 +405,7 @@ test('workspace restore follows the last interacted Scene across windows rather 
 	const payload: WorkspaceAutosavePayload = JSON.parse(JSON.stringify({ mainWorkspace: f.editor.mainWorkspace.serialize(),
 		sceneCompanion: f.editor.editorParts.captureEditorLocation(f.editor.mainWorkspace.primary!.input),
 		dirtyFiles: [], filesBrowser: f.editor.resourcePanel.serialize(), editorParts: f.editor.editorParts.serialize(f.editor.editorInputSerializers),
-		fontVariant: f.editor.fontVariant, breakpoints: f.ide.debugger.breakpoints.serialize() }));
+		breakpoints: f.ide.debugger.breakpoints.serialize() }));
 	await applyWorkspaceAutosavePayload(f.editor, f.sources.catalog, f.ide.debugger, payload); f.update();
 	const restored = f.editor.mainWorkspace.primary; assert.ok(restored instanceof ScenePrimaryClient);
 	assert.equal(restored.input.workingCopy.identity.path, b.identity.path);

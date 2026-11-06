@@ -24,7 +24,7 @@ import { WORKBENCH_ACTION_BAR_OVERFLOW } from '../../ide/workbench/ui/action_bar
 function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny', source = SCENE_VIEWPORT_SOURCE, composition = false) {
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', source], ['cartlib/world/scene_library.lua', 'return {}'],
 		['cartlib/component/rectangle_component.lua', 'return {new=function() end}']]);
-	f.editor.setFontVariant(font);
+	f.editor.preferences.fontVariant = font;
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	f.editor.editorParts.minimize(f.firstPart);
 	const firstPart = f.editor.editorParts.main, firstGroup = firstPart.activeGroup;

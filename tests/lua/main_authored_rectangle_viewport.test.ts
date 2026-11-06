@@ -36,7 +36,7 @@ async function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
 	const packed = createPackedImageFixture('sheet', 8, 8, pixels), provider = f.sources.catalog.getContext(f.sources.systemContextId);
 	provider.previewRom!.bytes = packed.bytes; provider.previewRom!.index.entries.push(...packed.entries);
 	provider.previewPackage.img.sheet = packed.image; f.sources.catalog.rebuildResources();
-	f.editor.setFontVariant(font); f.editor.editorParts.minimize(f.firstPart); f.editor.editorParts.minimize(f.secondPart);
+	f.editor.preferences.fontVariant = font; f.editor.editorParts.minimize(f.firstPart); f.editor.editorParts.minimize(f.secondPart);
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog,
 		f.sources.catalog.resolveResource({ contextId: provider.id, path: 'scene.lua' })!);
 	const document = f.ide.sceneSources.get(model);

@@ -21,7 +21,7 @@ export async function runStudioSceneViewport(test: StudioFixture) {
 /** Actual font/layout, divider, focus, captured pointer and source edits on independent Lua. */
 export async function testStudioSceneViewport(test: StudioFixture): Promise<void> {
 	const { harness, ide, frame, press, movePointer, setPointerButton, runPaletteCommand } = test;
-	ide.editor.setFontVariant('tiny');
+	ide.editor.preferences.fontVariant = 'tiny';
 	// Open actual workspace inputs until the tab-bar owner publishes horizontal overflow.
 	// Their contents and names are irrelevant to this form fixture.
 	for (const resource of ide.sources.catalog.luaResources) {
@@ -96,7 +96,7 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 		check(field.top >= scene.view.details.viewport.bounds.top && field.bottom <= scene.view.details.viewport.bounds.bottom, `A02: focused ${index} is entirely inside the viewport`);
 	};
 	for (const variant of ['msx', 'tiny'] as const) {
-		ide.editor.setFontVariant(variant); await frame();
+		ide.editor.preferences.fontVariant = variant; await frame();
 		if (ide.editor.mainWorkspace.regions.details.placement === 'floatingWindow')
 			await runPaletteCommand('Workspace: Move Details to Main');
 		check(sourceGroup.tabStrip.scrollbar.isVisible() && sourceGroup.tabStrip.layoutState.totalHeight === editorViewState.tabBarHeight + SCROLLBAR_WIDTH,

@@ -9,8 +9,9 @@ import { GX_SYSTEM_TEXTURE_ATLAS_NAME } from '../rompacker/texture_atlas_contrac
 import { createCanvas } from 'canvas';
 import potpack from 'potpack';
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
+import { writeIfChanged } from './atlas_artifact';
+import { generateScalableFontAtlas } from './scalable_font';
 import { addHostFontResources } from './host_fonts';
 
 type HostAtlasImage = {
@@ -132,23 +133,6 @@ function renderCppSource(build: HostAtlasBuild): string {
 	].join('\n');
 }
 
-async function writeIfChanged(path: string, contents: string): Promise<boolean> {
-	let current = '';
-	try {
-		current = await readFile(path, 'utf8');
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-			throw error;
-		}
-	}
-	if (current === contents) {
-		return false;
-	}
-	await mkdir(dirname(path), { recursive: true });
-	await writeFile(path, contents, 'utf8');
-	return true;
-}
-
 async function writeHostSystemAtlasArtifacts(build: HostAtlasBuild): Promise<boolean> {
 	const writes = await Promise.all([
 		writeIfChanged(HOST_SYSTEM_ATLAS_TS_PATH, renderTypeScriptArtifact(build)),
@@ -174,11 +158,11 @@ async function generateHostSystemAtlasArtifacts(): Promise<boolean> {
 }
 
 if (require.main === module) {
-	generateHostSystemAtlasArtifacts()
-		.then(updated => {
+	Promise.all([generateHostSystemAtlasArtifacts(), generateScalableFontAtlas()])
+		.then(changes => {
 			console.log(
-				`Host system atlas -> machine/{ts,cpp}/render/host_overlay/atlas.generated`
-				+ `${updated ? '' : ' (up-to-date)'}`,
+				`Host image and font atlases generated`
+				+ `${changes.some(Boolean) ? '' : ' (up-to-date)'}`,
 			);
 		})
 		.catch(error => {

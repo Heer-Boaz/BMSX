@@ -29,7 +29,7 @@ prefab.define({def_id='node3',class=require('cartlib/world/object_3d')})`;
 async function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
 	const f = createActualSourcePanes(t, false, [...CARTLIB_OBJECT_SOURCE_MODULES, ['scene.lua', SOURCE], ['prefabs.lua', PREFABS],
 		['cartlib/world/scene_library.lua', 'return {}'], ['cartlib/world/prefab.lua', 'return { define=function() end }']]);
-	f.editor.setFontVariant(font); f.first.focus();
+	f.editor.preferences.fontVariant = font; f.first.focus();
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog,
 		f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!);
 	const document = f.ide.sceneSources.get(model), main = f.editor.mainWorkspace;

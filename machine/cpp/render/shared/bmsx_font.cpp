@@ -5,6 +5,7 @@
 #include "render/shared/bmsx_font.h"
 
 #include "render/host_overlay/atlas.h"
+#include "render/host_overlay/scalable_font.h"
 
 #include <utility>
 
@@ -16,8 +17,9 @@ public:
 	BitmapFontSourceGlyph resolveGlyph(const std::string& imgid) const override {
 		const HostSystemAtlasImage& image = hostSystemAtlasImage(imgid);
 		return BitmapFontSourceGlyph{
-			image.width,
-			image.height,
+			static_cast<f32>(image.width),
+			static_cast<f32>(image.height),
+			static_cast<f32>(image.width), 0, 0,
 			image.u,
 			image.v,
 			image.w,
@@ -136,13 +138,16 @@ GlyphMap buildTinyCharMap() {
 } // namespace
 
 Font::Font(FontVariant variant, FontStyle style, FontSampling sampling)
-	: BFont(HOST_SYSTEM_FONT_SOURCE, [&] {
+	: BFont(variant == FontVariant::Mono ? scalableFontSource() : HOST_SYSTEM_FONT_SOURCE, [&] {
+		if (variant == FontVariant::Mono) return scalableFontMap(style == FontStyle::Italic);
 		auto map = variant == FontVariant::Tiny ? buildTinyCharMap() : buildMsxCharMap();
 		if (style != FontStyle::Normal) {
 			for (auto& [character, id] : map) id += "_italic";
 		}
 		return map;
-	}(), 0, sampling) {
+	}(), 0, variant == FontVariant::Mono
+		? FontRendering{FontRaster::Msdf, FontSampling::Linear, SCALABLE_FONT_ATLAS.lineHeight, SCALABLE_FONT_ATLAS.distanceRange}
+		: FontRendering{FontRaster::Bitmap, sampling, 0, 0}) {
 }
 
 } // namespace bmsx

@@ -13,7 +13,7 @@ import { createHostOverlayFixture } from './host_overlay';
 
 /** Pixel integrity, not a UI snapshot: fractional layout cannot drop bitmap-font rows. */
 export async function renderHostFontCases(canvas: HTMLCanvasElement, kind: 'webgl2' | 'webgpu') {
-	const width = 256, height = 160;
+	const width = 384, height = 160;
 	canvas.width = width; canvas.height = height;
 	const gpu = kind === 'webgpu' ? await createWebGPUBackend(canvas, (await navigator.gpu.requestAdapter())!, PSX_MACHINE_SPEC.gxGpuVramBytes) : undefined;
 	const gl = kind === 'webgl2' ? createWebGLBackend(canvas, PSX_MACHINE_SPEC.gxGpuVramBytes) : undefined;
@@ -73,28 +73,33 @@ export async function renderHostFontCases(canvas: HTMLCanvasElement, kind: 'webg
 		cases.push({ phaseX, phaseY, differences, firstDifference });
 	}
 	const smoothFonts = [new Font({ variant: 'tiny', sampling: 'linear' }), new Font({ variant: 'msx', sampling: 'linear' }),
-		new Font({ variant: 'tiny', style: 'italic', sampling: 'linear' }), new Font({ variant: 'msx', style: 'italic', sampling: 'linear' })];
-	const sampling: { scale: number; maxError: number; imageDifferences: number; fractional: number }[] = [];
-	for (const scale of [1, 1.5, 2, 3, 3.75]) {
+		new Font({ variant: 'tiny', style: 'italic', sampling: 'linear' }), new Font({ variant: 'msx', style: 'italic', sampling: 'linear' }),
+		new Font({ variant: 'mono' }), new Font({ variant: 'mono', style: 'italic' })];
+	const sampling: { density: number; scale: number; maxError: number; msdfError: number; msdfWorst: number[]; imageDifferences: number; fractional: number }[] = [];
+	for (const density of [1, 2]) for (const scale of [1, 1.5, 2, 3, 3.75]) {
 		const drawCoverage = (renderer: OverlayRenderer) => {
-			renderer.beginFrame(); renderer.fillRect(0, 0, width, height, 0, 0xff000000, 0);
+			renderer.setViewportSize({ width: width / density, height: height / density });
+			renderer.beginFrame();
+			renderer.pushTransform({ scale: 1 / density, offsetX: 0, offsetY: 0 });
+			renderer.fillRect(0, 0, width, height, 0, 0xff000000, 0);
 			for (let i = 0; i < smoothFonts.length; i++) {
 				const left = i * 64, font = smoothFonts[i];
 				renderer.pushClipRect(left + 3, 4, left + 60, height - 4);
 				renderer.pushTransform({ scale, offsetX: left + 2.25, offsetY: 4.5 });
-				renderer.itemRun('Ag\nm', 0, 4, 1, 1, 0, font, 0x80ff0000, 0);
+				renderer.itemRun(font.raster === 'msdf' ? 'Ág\n€' : 'Ag\nm', 0, 4, 1.25, 1.5, 0, font, 0x80ff0000, 0);
 				renderer.popTransform();
 				// The same atlas entry drawn as an ordinary image must remain nearest.
 				renderer.pushTransform({ scale: 3, offsetX: left + 8, offsetY: 120 });
-				renderer.spriteColorized(font.getGlyph('A').imgid, 0, 0, 0, 0xffffffff, 0);
+				renderer.spriteColorized(fonts[i % fonts.length].getGlyph('A').imgid, 0, 0, 0, 0xffffffff, 0);
 				renderer.popTransform();
 				renderer.popClipRect();
 			}
+			renderer.popTransform();
 			renderer.endFrame();
 		};
 		drawCoverage(software.renderer);
 		const frame = software.queue.consumeOverlayFrame();
-		beginHeadlessHost2D(software.backend.hostOverlayContext, reference, width, height, width, height);
+		beginHeadlessHost2D(software.backend.hostOverlayContext, reference, width, height, frame.logicalWidth, frame.logicalHeight);
 		for (let i = 0; i < frame.commandCount; i++) renderHeadlessHost2DEntry(software.backend.hostOverlayContext, frame.commandKinds[i], frame.commandRefs[i]);
 		drawCoverage(renderer); presenter.present(output, 0, 0);
 		let pixels: Uint8Array;
@@ -104,13 +109,18 @@ export async function renderHostFontCases(canvas: HTMLCanvasElement, kind: 'webg
 			gl!.gl.readPixels(0, 0, width, height, gl!.gl.RGBA, gl!.gl.UNSIGNED_BYTE, raw);
 			for (let y = 0; y < height; y++) pixels.set(raw.subarray((height - 1 - y) * width * 4, (height - y) * width * 4), y * width * 4);
 		}
-		let maxError = 0, imageDifferences = 0, fractional = 0;
+		let msdfWorst: number[] = [];
+		let maxError = 0, msdfError = 0, imageDifferences = 0, fractional = 0;
 		for (let i = 0; i < pixels.length; i++) {
-			maxError = Math.max(maxError, Math.abs(pixels[i] - reference[i]));
+			const error = Math.abs(pixels[i] - reference[i]);
+			if ((i >>> 2) % width >= 256) {
+				if (error > msdfError) { msdfError = error; msdfWorst = [(i >>> 2) % width, Math.trunc((i >>> 2) / width), i % 4, reference[i], pixels[i]]; }
+			}
+			else maxError = Math.max(maxError, error);
 			if (i >= 120 * width * 4 && pixels[i] !== reference[i]) imageDifferences++;
 			if (i < 120 * width * 4 && i % 4 === 0 && pixels[i] > 0 && pixels[i] < 128) fractional++;
 		}
-		sampling.push({ scale, maxError, imageDifferences, fractional });
+		sampling.push({ density, scale, maxError, msdfError, msdfWorst, imageDifferences, fractional });
 	}
 	const validationError = gpu === undefined ? undefined : (await gpu.device.popErrorScope())?.message;
 	const glError = gl === undefined ? 0 : gl.gl.getError();

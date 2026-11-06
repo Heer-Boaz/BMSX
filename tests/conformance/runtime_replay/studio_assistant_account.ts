@@ -18,7 +18,7 @@ export async function runAssistantAccount(kind: StudioRendererKind, canvas: HTML
 	const { ide, until, press, frame } = test;
 	await test.waitForTestFrame();
 	await press('ControlRight', 'ShiftRight'); await test.runPaletteCommand('Run: Pause');
-	ide.editor.setFontVariant('tiny');
+	ide.editor.preferences.fontVariant = 'tiny';
 	await test.runPaletteCommand('View: Codex Assistant');
 	let view = ide.editor.editorParts.activeGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant pane expected');
 	const conversation = ide.editor.assistant;
@@ -34,8 +34,8 @@ export async function runAssistantAccount(kind: StudioRendererKind, canvas: HTML
 	await until(() => conversation.loginCode !== undefined, 'account: actual device-code request reaches the pane');
 	check(conversation.loginCode === 'ABCD-EFGH' && !conversation.canSend, 'only the public code is available while polling');
 	await frame(); await renderer.capture!('code');
-	ide.editor.setFontVariant('msx'); await frame(); await renderer.capture!('code-msx');
-	ide.editor.setFontVariant('tiny'); await frame();
+	ide.editor.preferences.fontVariant = 'msx'; await frame(); await renderer.capture!('code-msx');
+	ide.editor.preferences.fontVariant = 'tiny'; await frame();
 	await submitAssistantText(test, '/copy-code');
 	check((await test.clipboard.readText()) === 'ABCD-EFGH', 'Copy code copies exactly the public device code');
 	// Supply native transient activation; popup blocking remains enabled in Chromium.

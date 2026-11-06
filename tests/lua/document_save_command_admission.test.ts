@@ -23,7 +23,7 @@ async function documentFixture(t: TestContext, kind: 'source' | 'scene') {
 	]);
 	const files = new MemoryWorkspaceFiles(); await openWorkspaceRecords(files);
 	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
-	f.editor.setFontVariant('tiny');
+	f.editor.preferences.fontVariant = 'tiny';
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource);
 	if (kind === 'scene') f.editor.sceneEditor.openResource(f.firstGroup, resource, { pinned: true });
@@ -107,7 +107,7 @@ async function animationFixture(t: TestContext) {
 	const f = createActualSourcePanes(t, false, [['animation.lua', ANIMATION], ['tracks.lua', TRACKS]]);
 	const files = new MemoryWorkspaceFiles(); await openWorkspaceRecords(files);
 	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
-	f.editor.setFontVariant('tiny');
+	f.editor.preferences.fontVariant = 'tiny';
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'animation.lua' })!;
 	const input = f.editor.animations.openResource(f.firstGroup, resource, { pinned: true })!; f.update();
 	const pane = f.firstGroup.panes.activePane; assert.ok(pane instanceof AnimationEditorPane);

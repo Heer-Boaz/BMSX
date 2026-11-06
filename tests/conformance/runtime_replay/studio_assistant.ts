@@ -55,10 +55,10 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	await press('ControlLeft', 'KeyZ'); check(view.draft.text.endsWith('\n'), 'composer Undo uses field history');
 	await press('ControlLeft', 'KeyY');
 	await frame(); await capture('composer');
-	ide.editor.setFontVariant('msx'); await frame();
+	ide.editor.preferences.fontVariant = 'msx'; await frame();
 	check(view.turnActions.items.filter(item => item.visible).every(item => item.bounds.left >= 0), 'MSX font keeps message controls on screen');
 	await capture('composer-msx');
-	ide.editor.setFontVariant('tiny'); await frame();
+	ide.editor.preferences.fontVariant = 'tiny'; await frame();
 	await press('ControlLeft', 'Enter');
 	await until(() => conversation.entries.some(entry => entry.kind === 'proposal') && conversation.state === 'ready', 'assistant: real source tools return a review');
 	check(cycles() === position && test.observations.suspended, 'assistant: model/tool progress continues while the game and audio stay paused');

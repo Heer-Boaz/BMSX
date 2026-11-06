@@ -13,10 +13,14 @@ import { renderStudioPage, STANDALONE_STUDIO_CONFIGURATION, STUDIO_CONFIGURATION
 
 const MACHINE_RUNTIME_SOURCE_ROOTS = [
 	'machine/ts',
+	'hosts/fonts',
+	'package.json',
 	'scripts/products/browser_build.ts',
 ] as const;
 const BROWSER_PLAYER_SOURCE_ROOTS = [
 	'hosts/browser',
+	'hosts/fonts',
+	'package.json',
 	'hosts/common',
 	'machine/ts',
 	'runtime',
@@ -24,6 +28,8 @@ const BROWSER_PLAYER_SOURCE_ROOTS = [
 ] as const;
 const BROWSER_STUDIO_SOURCE_ROOTS = [
 	'hosts/browser',
+	'hosts/fonts',
+	'package.json',
 	'hosts/common',
 	'ide',
 	'machine/ts',
@@ -75,6 +81,7 @@ async function buildBrowserBundle(
 			glsl({ minify: !debug }),
 		],
 		loader: {
+			'.rgba': 'binary',
 			'.png': 'dataurl',
 			'.glsl': 'text',
 			'.wgsl': 'text',

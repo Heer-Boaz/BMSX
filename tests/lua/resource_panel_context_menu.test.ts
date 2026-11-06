@@ -26,7 +26,7 @@ scenes.register('same', { objects={} })
 
 function fixture(t: TestContext, extra: readonly (readonly [string, string])[] = [], font: 'tiny' | 'msx' = 'tiny') {
 	const f = createActualSourcePanes(t, false, [['folder/third.lua', 'return 3'], ['folder/other.lua', 'return 4'], ...extra]);
-	f.editor.setFontVariant(font); f.update();
+	f.editor.preferences.fontVariant = font; f.update();
 	assert.equal(editorViewState.font.variant, font, 'the actual workbench must use the requested test font');
 	f.first.focus(); f.editor.resourcePanel.show(); f.update();
 	return { ...f, panel: f.editor.resourcePanel };

@@ -8,7 +8,7 @@ import { createActualSourcePanes } from '../helpers/source_panes';
 
 test('native editor sash drag, reset and keyboard sizing publish their current serializable preference at the part owner', t => {
 	const f = createActualSourcePanes(t), { editor } = f, parts = editor.editorParts, part = parts.main;
-	editor.setFontVariant('tiny');
+	editor.preferences.fontVariant = 'tiny';
 	const group = part.activeGroup; group.openEditor(new CodeEditorInput(f.firstInput.workingCopy));
 	const added = part.splitGroup(group, 'right'); f.update();
 	const split = part.arrangement.splits[0].split, observations: SerializedEditorParts[] = [];
@@ -34,7 +34,7 @@ test('native editor sash drag, reset and keyboard sizing publish their current s
 
 test('editor sizing observation survives maximize and minimize but ends with disposal of that exact document part', async t => {
 	const f = createActualSourcePanes(t), { editor } = f, parts = editor.editorParts;
-	editor.setFontVariant('tiny');
+	editor.preferences.fontVariant = 'tiny';
 	const part = parts.createDocument({ requestedBounds: { left: 0, top: 30, right: 760, bottom: 290 } });
 	const group = part.activeGroup; group.openEditor(new CodeEditorInput(f.firstInput.workingCopy));
 	part.splitGroup(group, 'right'); f.update();
@@ -63,7 +63,7 @@ test('editor sizing observation survives maximize and minimize but ends with dis
 
 test('a sibling relocation publishes a serialized active-group index consistent with its newly ordered layout', t => {
 	const f = createActualSourcePanes(t), { editor } = f, parts = editor.editorParts, part = parts.main;
-	editor.setFontVariant('tiny');
+	editor.preferences.fontVariant = 'tiny';
 	const first = part.activeGroup; first.openEditor(new CodeEditorInput(f.firstInput.workingCopy));
 	const second = part.splitGroup(first, 'right'); second.openEditor(new CodeEditorInput(f.secondInput.workingCopy)); f.update();
 	const split = part.arrangement.splits[0].split;

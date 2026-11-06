@@ -30,7 +30,7 @@ async function fixture(t: TestContext, scale: 1 | 1.5 = 1) {
 		dirtyFiles: dirty.dirtyFiles, editorParts: f.editor.editorParts.serialize(f.editor.editorInputSerializers),
 		mainWorkspace: f.editor.mainWorkspace.serialize(), filesBrowser: f.editor.resourcePanel.serialize(),
 		uiScale: 2, // Historical recovery data must not override the frontend preference.
-		fontVariant: f.editor.fontVariant, breakpoints: f.ide.debugger.breakpoints.serialize(),
+		breakpoints: f.ide.debugger.breakpoints.serialize(),
 	}));
 	const serializer = f.editor.editorInputSerializers.code_editor;
 	f.editor.editorInputSerializers.code_editor = {

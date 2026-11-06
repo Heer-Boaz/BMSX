@@ -19,7 +19,7 @@ export async function testStudioQuickInputInteraction(test: StudioFixture): Prom
 	check(model.list.rows.length > model.visibleRowCount, 'A06: the actual resource catalog exercises overflow');
 	const rows = model.list.rows, firstRow = rows[0], font = ide.editor.fontVariant;
 	for (const variant of ['msx', 'tiny'] as const) {
-		ide.editor.setFontVariant(variant); await frame(); await frame();
+		ide.editor.preferences.fontVariant = variant; await frame(); await frame();
 		await press('ControlLeft', 'Home');
 		const thumb = view.scrollbar.getThumb()!;
 		movePointer(thumb); await frame(); setPointerButton('pointer_primary', true); await frame();
@@ -53,9 +53,9 @@ export async function testStudioQuickInputInteraction(test: StudioFixture): Prom
 	check(picker.field.text === '', 'A06: query Undo restores the initial catalog without touching source history');
 	const thumb = view.scrollbar.getThumb()!;
 	movePointer(thumb); await frame(); setPointerButton('pointer_primary', true); await frame();
-	ide.editor.setFontVariant('msx'); await frame();
+	ide.editor.preferences.fontVariant = 'msx'; await frame();
 	check(!pointerCapture.active && picker.visible, 'A06: publishing changed popup geometry cancels the old thumb gesture');
 	setPointerButton('pointer_primary', false); await frame();
-	ide.editor.setFontVariant(font); await frame(); await frame();
+	ide.editor.preferences.fontVariant = font; await frame(); await frame();
 	console.info('STUDIO: quick input scope / scrollbar / release / query / font / boundary keys PASS');
 }

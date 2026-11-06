@@ -51,7 +51,7 @@ async function fixture(t: TestContext) {
 		return JSON.parse(JSON.stringify({ filesBrowser: panel.serialize(), mainWorkspace: f.editor.mainWorkspace.serialize(),
 			dirtyFiles: dirty.dirtyFiles, editorParts: f.editor.editorParts.serialize(f.editor.editorInputSerializers),
 			sceneCompanion: companion === undefined ? undefined : f.editor.editorParts.captureEditorLocation(companion),
-			fontVariant: f.editor.fontVariant, breakpoints: f.ide.debugger.breakpoints.serialize() }));
+			breakpoints: f.ide.debugger.breakpoints.serialize() }));
 	};
 	const restore = (payload: WorkspaceAutosavePayload) => applyWorkspaceAutosavePayload(f.editor, f.sources.catalog, f.ide.debugger, payload);
 	t.after(() => { workspaceDirtyRecords.clear(); clearWorkspaceSourceCaches(); });

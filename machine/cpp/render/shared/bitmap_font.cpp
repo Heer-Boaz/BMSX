@@ -7,27 +7,29 @@
 #include <utility>
 
 namespace bmsx {
-BFont::BFont(const BitmapFontSource& source, GlyphMap itemmap, i32 advancePadding, FontSampling sampling)
-	: sampling(sampling)
+BFont::BFont(const BitmapFontSource& source, GlyphMap itemmap, f32 advancePadding, FontRendering rendering)
+	: sampling(rendering.raster == FontRaster::Msdf ? FontSampling::Linear : rendering.sampling)
+	, raster(rendering.raster)
+	, distanceRange(rendering.distanceRange)
 	, m_source(source)
 	, m_letter_to_img(std::move(itemmap))
 	, m_advance_padding(advancePadding) {
-	m_line_height = char_height('A');
+	m_line_height = raster == FontRaster::Msdf ? rendering.lineHeight : char_height('A');
 }
 
-i32 BFont::char_width(char c) {
+f32 BFont::char_width(char c) {
 	return char_width(static_cast<u32>(static_cast<unsigned char>(c)));
 }
 
-i32 BFont::char_height(char c) {
+f32 BFont::char_height(char c) {
 	return char_height(static_cast<u32>(static_cast<unsigned char>(c)));
 }
 
-i32 BFont::char_width(u32 codepoint) {
+f32 BFont::char_width(u32 codepoint) {
 	return getGlyph(codepoint).width;
 }
 
-i32 BFont::char_height(u32 codepoint) {
+f32 BFont::char_height(u32 codepoint) {
 	return getGlyph(codepoint).height;
 }
 
@@ -52,6 +54,8 @@ const FontGlyph& BFont::getGlyph(u32 codepoint) {
 		item.width = space.advance * TAB_SPACES;
 		item.height = space.height;
 		item.advance = item.width;
+		item.offsetX = space.offsetX;
+		item.offsetY = space.offsetY;
 		auto tabResult = m_items.emplace(codepoint, std::move(item));
 		return tabResult.first->second;
 	}
@@ -63,22 +67,24 @@ const FontGlyph& BFont::getGlyph(u32 codepoint) {
 	item.rect = ImageAtlasRect{ sourceGlyph.u, sourceGlyph.v, sourceGlyph.w, sourceGlyph.h };
 	item.width = sourceGlyph.width;
 	item.height = sourceGlyph.height;
-	item.advance = item.width + m_advance_padding;
+	item.advance = sourceGlyph.advance + m_advance_padding;
+	item.offsetX = sourceGlyph.offsetX;
+	item.offsetY = sourceGlyph.offsetY;
 
 	auto result = m_items.emplace(codepoint, std::move(item));
 	return result.first->second;
 }
 
-i32 BFont::advance(char c) {
+f32 BFont::advance(char c) {
 	return advance(static_cast<u32>(static_cast<unsigned char>(c)));
 }
 
-i32 BFont::advance(u32 codepoint) {
+f32 BFont::advance(u32 codepoint) {
 	return getGlyph(codepoint).advance;
 }
 
-i32 BFont::measure(const std::string& text) {
-	i32 width = 0;
+f32 BFont::measure(const std::string& text) {
+	f32 width = 0;
 	size_t index = 0;
 	while (index < text.size()) {
 		u32 codepoint = readUtf8Codepoint(text, index);

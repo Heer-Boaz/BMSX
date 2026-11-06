@@ -33,7 +33,7 @@ for (const kind of ['actor_lab', 'terminal'] as const) test(`${kind} fits its im
 	const f = fixture(t), input = kind === 'actor_lab' ? f.editor.actorLab.resolveInput() : new TerminalInput();
 	f.editor.editorParts.main.activeGroup.openEditor(input);
 	for (const font of ['tiny', 'msx'] as const) {
-		f.editor.setFontVariant(font);
+		f.editor.preferences.fontVariant = font;
 		for (const filesVisible of [false, true, false]) {
 			if (filesVisible) f.editor.resourcePanel.show(); else f.editor.resourcePanel.hide();
 			f.editor.updateViewport({ width: 640, height: 480 }); f.editor.update(0);

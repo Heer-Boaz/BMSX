@@ -196,7 +196,7 @@ test('retiring recovered source during first publication aborts frontend documen
 	const payload: WorkspaceAutosavePayload = JSON.parse(JSON.stringify({
 		dirtyFiles: dirty.dirtyFiles, editorParts: f.editor.editorParts.serialize(f.editor.editorInputSerializers),
 		mainWorkspace: f.editor.mainWorkspace.serialize(), sceneCompanion: undefined, filesBrowser: f.editor.resourcePanel.serialize(),
-		fontVariant: f.editor.fontVariant, breakpoints: [{ ...copy.identity, lines: [1] }],
+		breakpoints: [{ ...copy.identity, lines: [1] }],
 	}));
 	assert.equal(payload.editorParts.documents.length, 2);
 	let retired = false;
@@ -229,7 +229,7 @@ for (const equal of [false, true]) test(`Scene and browser occurrences admitted 
 	const payload: WorkspaceAutosavePayload = JSON.parse(JSON.stringify({
 		dirtyFiles: [entry], editorParts: f.editor.editorParts.serialize(f.editor.editorInputSerializers),
 		mainWorkspace: f.editor.mainWorkspace.serialize(), sceneCompanion: undefined, filesBrowser: f.editor.resourcePanel.serialize(),
-		fontVariant: f.editor.fontVariant, breakpoints: f.ide.debugger.breakpoints.serialize(),
+		breakpoints: f.ide.debugger.breakpoints.serialize(),
 	}));
 	const panel = f.editor.resourcePanel;
 	panel.show(); f.update();

@@ -16,7 +16,7 @@ scenes.register('root', { objects = {
 
 for (const reattach of [false, true]) test(`Scene option retirement stops its old update after ${reattach ? 'same-kind reattachment' : 'a blur callback opens another editor'}`, t => {
 	const f = createActualSourcePanes(t, false, [['scene.lua', SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
-	f.editor.setFontVariant('tiny');
+	f.editor.preferences.fontVariant = 'tiny';
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	f.editor.sceneEditor.openResource(f.firstGroup, resource);
 	const input = f.firstGroup.model.activeTab;

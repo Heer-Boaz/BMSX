@@ -1,3 +1,4 @@
+import { FONT_VARIANTS } from '../../machine/ts/render/shared/bmsx_font';
 import type { WorkbenchPreferences } from './services/preferences/preferences';
 import { openHome } from './contrib/home/editor_input';
 import type { StudioSourceContext } from '../../hosts/common/studio_projects';
@@ -166,8 +167,8 @@ export function registerRuntimeShortcuts(
 	));
 	disposers.push(registry.registerKeyboardShortcut(1, 'KeyT', () => {
 		input.getPlayerInput(1).inputHandlers.keyboard?.consumeKey('KeyT');
-		const next = state.editor.fontVariant === 'tiny' ? 'msx' : 'tiny';
-		state.editor.setFontVariant(next);
+		const next = FONT_VARIANTS[(FONT_VARIANTS.indexOf(state.editor.fontVariant) + 1) % FONT_VARIANTS.length];
+		state.editor.preferences.fontVariant = next;
 	}, KeyModifier.ctrl | KeyModifier.shift));
 	state.shortcutDisposers = disposers;
 }

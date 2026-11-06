@@ -39,7 +39,7 @@ async function fixture(t: TestContext) {
 	const editor = f.editor, parts = editor.editorParts, main = editor.mainWorkspace;
 	// Invalid-field warnings belong to this test's Workbench presentation, not its successor.
 	t.after(() => updateEditorMessage(editorFeedbackState.message.timer));
-	editor.setFontVariant('tiny');
+	editor.preferences.fontVariant = 'tiny';
 	parts.minimize(f.firstPart); parts.minimize(f.secondPart);
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog,
 		f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!);
@@ -128,7 +128,7 @@ test('a floating document or activity is outside the ring and cannot replace the
 
 test('scroll-clipped but attached Main regions stay eligible and their concrete owner reveals keyboard focus', async t => {
 	const f = await fixture(t), { editor, main, primary, group } = f;
-	editor.updateViewport({ width: 180, height: 96 }); editor.setFontVariant('msx');
+	editor.updateViewport({ width: 180, height: 96 }); editor.preferences.fontVariant = 'msx';
 	main.regionLayout.activityHeight = 70; f.update(); main.focusActivity(); f.update();
 	const scrollY = main.regionLayout.scrollY;
 	assert.ok(scrollY > 0 && primary.hierarchy.attached && primary.details.attached);

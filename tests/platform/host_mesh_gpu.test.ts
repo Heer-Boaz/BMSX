@@ -9,7 +9,7 @@ before(async () => {
 	const result = await build({ stdin: { contents: `
 export {renderHostMeshCase} from './tests/helpers/host_mesh_gpu';
 `, resolveDir: process.cwd() }, bundle: true, platform: 'browser', target: 'es2020', format: 'iife', globalName: 'meshTest', write: false,
-		plugins: [glsl()], loader: { '.png': 'dataurl', '.glsl': 'text', '.wgsl': 'text' } });
+		plugins: [glsl()], loader: { '.rgba': 'binary', '.png': 'dataurl', '.glsl': 'text', '.wgsl': 'text' } });
 	bundle = result.outputFiles[0].text;
 });
 

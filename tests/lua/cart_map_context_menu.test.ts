@@ -29,7 +29,7 @@ async function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path })!;
 	const input = await resolveCartMapInput(f.sources.catalog, resource, 'pietious'); f.firstGroup.openEditor(input);
 	const pane = f.firstGroup.panes.activePane; assert.ok(pane instanceof CartMapPane);
-	f.editor.setFontVariant(font); f.update(); pane.focus();
+	f.editor.preferences.fontVariant = font; f.update(); pane.focus();
 	assert.equal(input.tree.roots.length, 1); assert.equal(input.tree.roots[0].children.length, 2);
 	const model = input.workingCopy, menu = f.editor.contextMenu;
 	const pointer = (x: number, y: number, button: PointerButton) => {

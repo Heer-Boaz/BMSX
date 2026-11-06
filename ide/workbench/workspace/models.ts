@@ -1,4 +1,3 @@
-import type { FontVariant } from '../../../machine/ts/render/shared/bmsx_font';
 import type { SerializedBreakpoints } from '../../runtime/breakpoints';
 import type { WorkspaceRecord } from '../../workspace/records';
 import type { SerializedEditorLocation, SerializedEditorParts } from '../services/editor/editor_parts_serialization';
@@ -14,7 +13,6 @@ export type WorkspaceAutosavePayload = {
 	mainWorkspace: SerializedMainWorkspace;
 	filesBrowser: SerializedResourcePanel;
 	breakpoints: SerializedBreakpoints;
-	fontVariant: FontVariant;
 };
 
 export const enum WorkspaceAutosaveChange {
@@ -22,9 +20,8 @@ export const enum WorkspaceAutosaveChange {
 	DirtyFiles = 1 << 0,
 	EditorSession = 1 << 1,
 	Breakpoints = 1 << 2,
-	Font = 1 << 3,
 	FilesBrowser = 1 << 4,
-	All = DirtyFiles | EditorSession | Breakpoints | Font | FilesBrowser,
+	All = DirtyFiles | EditorSession | Breakpoints | FilesBrowser,
 }
 
 export type WorkspaceSessionGeneration = {

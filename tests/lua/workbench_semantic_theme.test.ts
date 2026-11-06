@@ -17,7 +17,7 @@ import { createActualSourcePanes } from '../helpers/source_panes';
 
 for (const variant of ['tiny', 'msx'] as const) for (const kind of ['info', 'success', 'warning', 'error'] as const) {
 	test(`${variant} retained ${kind} feedback resolves its actual status-surface ink after a theme change`, t => {
-		const f = createActualSourcePanes(t); f.editor.setFontVariant(variant);
+		const f = createActualSourcePanes(t); f.editor.preferences.fontVariant = variant;
 		f.host.presenter.setFixedRenderTargetSize(800, 320, 800, 320);
 		const originalTheme = colors.getActiveIdeThemeVariant();
 		t.after(() => { editorFeedbackState.message.visible = false; colors.setIdeThemeVariant(originalTheme); });

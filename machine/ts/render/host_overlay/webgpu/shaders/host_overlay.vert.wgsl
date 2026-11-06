@@ -1,6 +1,6 @@
 struct OverlayUniforms {
 	logical_size: vec2<f32>,
-	padding: vec2<f32>,
+	pixel_scale: vec2<f32>,
 };
 
 @group(0) @binding(0) var<uniform> overlay: OverlayUniforms;
@@ -13,6 +13,7 @@ struct VertexInput {
 	@location(4) uv1: vec2<f32>,
 	@location(5) texture_kind: u32,
 	@location(6) color: vec4<f32>,
+	@location(7) distance_range: f32,
 };
 
 struct VertexOutput {
@@ -20,6 +21,7 @@ struct VertexOutput {
 	@location(0) texcoord: vec2<f32>,
 	@location(1) color: vec4<f32>,
 	@location(2) @interpolate(flat) texture_kind: u32,
+	@location(3) @interpolate(flat) screen_range: f32,
 };
 
 const QUAD_CORNERS = array<vec2<f32>, 6>(
@@ -41,5 +43,6 @@ fn main(input: VertexInput, @builtin(vertex_index) vertex_index: u32) -> VertexO
 	output.texcoord = mix(input.uv0, input.uv1, corner);
 	output.color = input.color;
 	output.texture_kind = input.texture_kind;
+	output.screen_range = max(1.0, input.distance_range * dot(overlay.pixel_scale, vec2<f32>(0.5)));
 	return output;
 }

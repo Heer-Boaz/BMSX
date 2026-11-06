@@ -33,7 +33,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 		host.execution, host.rewind, host.clock, new HeadlessClipboard(), new IdeMicrotaskQueue(), { log() {} }, 0.3,
 		{ width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	editorRuntimeState.active = true;
-	ide.editor.setFontVariant(variant);
+	ide.editor.preferences.fontVariant = variant;
 	const resource = sources.catalog.resourceByIdentity.get(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'review.lua' }))!;
 	const model = editorTextModelService.retain(resource, 'lua', SOURCE);
 	const proposal = new WorkspaceEditProposal('Review canonical source and retain the complete prospective change', new WorkspaceSourceContext(editorTextModelService, sources.catalog), {
@@ -43,7 +43,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 	ide.editor.editorParts.main.activeGroup.openEditor(input);
 	const pane = ide.editor.editorParts.main.activeGroup.panes.activePane!;
 	const arrange = (left: number, right: number, nextVariant = editorViewState.font.variant, bottom = 276) => {
-		if (nextVariant !== editorViewState.font.variant) ide.editor.setFontVariant(nextVariant);
+		if (nextVariant !== editorViewState.font.variant) ide.editor.preferences.fontVariant = nextVariant;
 		pane.layout({ left, top: 31, right, bottom }); pane.update(0);
 	};
 	t.after(async () => {

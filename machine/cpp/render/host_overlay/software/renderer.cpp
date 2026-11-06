@@ -158,8 +158,8 @@ void drawGlyphImageSoftware(SoftwareBackend& backend, const HostSystemAtlas& atl
 		rect.v,
 		rect.w,
 		rect.h,
-		static_cast<i32>(imageX * transform.scaleX + transform.offsetX),
-		static_cast<i32>(imageY * transform.scaleY + transform.offsetY),
+		static_cast<i32>((imageX + item.offsetX) * transform.scaleX + transform.offsetX),
+		static_cast<i32>((imageY + item.offsetY) * transform.scaleY + transform.offsetY),
 		static_cast<i32>(static_cast<f32>(item.width) * transform.scaleX),
 		static_cast<i32>(static_cast<f32>(item.height) * transform.scaleY),
 		false,
@@ -170,7 +170,9 @@ void drawGlyphImageSoftware(SoftwareBackend& backend, const HostSystemAtlas& atl
 
 struct GlyphSoftwareContext {
 	SoftwareBackend& backend;
-	i32 lineHeight;
+	f32 lineHeight;
+	FontRaster raster;
+	f32 screenRange;
 	u32 color;
 };
 
@@ -210,6 +212,8 @@ void drawGlyphsSoftware(SoftwareBackend& backend, const GlyphRenderSubmission& c
 	GlyphSoftwareContext context{
 		.backend = backend,
 		.lineHeight = 0,
+		.raster = command.font->raster,
+		.screenRange = std::max(1.0F, command.font->distanceRange * 0.5F * (backend.hostOverlayTransform.scaleX + backend.hostOverlayTransform.scaleY)),
 		.color = command.background_color,
 	};
 	if (command.has_background_color) {
@@ -219,7 +223,7 @@ void drawGlyphsSoftware(SoftwareBackend& backend, const GlyphRenderSubmission& c
 	context.color = command.color;
 	if (command.font->sampling == FontSampling::Linear) {
 		forEachBatchBlitGlyph(command, context, [](GlyphSoftwareContext& context, const FontGlyph& item, f32 x, f32 y) {
-			drawLinearHostGlyph(context.backend, item, x, y, context.color);
+			drawFilteredHostGlyph(context.backend, item, x, y, context.color, context.raster, context.screenRange);
 		});
 	} else {
 		forEachBatchBlitGlyph(command, context, drawGlyphSoftware);

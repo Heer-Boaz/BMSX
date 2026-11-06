@@ -25,7 +25,7 @@ async function fixture(t: TestContext) {
 
 for (const presentation of ['world', 'outline'] as const) test(`Actor ${presentation} exposes overflow through the shared horizontal scrollbar without changing selection`, async t => {
 	const f = await fixture(t);
-	f.editor.setFontVariant('msx'); f.display.workspace.layout(1152, 864, 1);
+	f.editor.preferences.fontVariant = 'msx'; f.display.workspace.layout(1152, 864, 1);
 	const actor = f.input.worldOutliner.tree.rows.find(row => row.element.label === 'studio_test.first')!;
 	f.input.controller.inspectActor(f.input, f.input.domain, actor.element.hashId);
 	if (presentation === 'outline') f.editor.commands.execute('actorLab.outline', f.pane.commandTarget);
@@ -48,7 +48,7 @@ for (const presentation of ['world', 'outline'] as const) test(`Actor ${presenta
 
 for (const variant of ['tiny', 'msx'] as const) test(`Actor Lab ${variant} panel divider resizes through the ordinary workspace pointer route`, async t => {
 	const f = await fixture(t);
-	f.editor.setFontVariant(variant); f.display.workspace.layout(1152, 864, 1); await f.frame();
+	f.editor.preferences.fontVariant = variant; f.display.workspace.layout(1152, 864, 1); await f.frame();
 	f.editor.commands.execute('sceneViewport.view2d', f.pane.commandTarget); await f.frame();
 	const split = f.input.layout.split!;
 	assert.ok(split !== undefined && split.resizable);

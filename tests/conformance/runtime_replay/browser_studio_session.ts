@@ -50,7 +50,7 @@ async function prepare(test: StudioFixture): Promise<SessionExpectation> {
 	await test.until(() => test.cycles() > test.runtime.timing.cpuHz * 13, 'session: boot actual machine');
 	await test.press('ControlRight', 'ShiftRight');
 	await test.runPaletteCommand('Run: Pause');
-	ide.editor.setFontVariant('tiny');
+	ide.editor.preferences.fontVariant = 'tiny';
 	// This cold-reload workflow runs against the dedicated hot_resume_test cartridge.
 	test.harness.openLuaSource('entry.lua');
 	const model = sourcePane(test).code.model!;

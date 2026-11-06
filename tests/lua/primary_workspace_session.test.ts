@@ -47,7 +47,7 @@ function fixture(t: TestContext) {
 		return JSON.parse(JSON.stringify({ mainWorkspace, sceneCompanion: primary === undefined ? undefined : f.editor.editorParts.captureEditorLocation(primary.input), dirtyFiles: dirty.dirtyFiles,
 			filesBrowser: f.editor.resourcePanel.serialize(),
 			editorParts: f.editor.editorParts.serialize(f.editor.editorInputSerializers),
-			fontVariant: f.editor.fontVariant, breakpoints: f.ide.debugger.breakpoints.serialize() }));
+			breakpoints: f.ide.debugger.breakpoints.serialize() }));
 	};
 	const restore = (payload: WorkspaceAutosavePayload) => applyWorkspaceAutosavePayload(f.editor, f.sources.catalog, f.ide.debugger, payload);
 	t.after(() => { workspaceDirtyRecords.clear(); clearWorkspaceSourceCaches(); });

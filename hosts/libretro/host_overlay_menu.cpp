@@ -406,9 +406,9 @@ void HostOverlayMenu::queueRenderCommands(Runtime& runtime, VideoPresenter& pres
 			m_optionTextWidth = std::max(m_optionTextWidth, font->measure(m_lineText[index]));
 		}
 	}
-	const i32 lineHeight = font->lineHeight() > 10 ? 10 : font->lineHeight();
+	const f32 lineHeight = font->lineHeight();
 	const i32 padding = 4;
-	const i32 titleHeight = lineHeight;
+	const f32 titleHeight = lineHeight;
 	const i32 titleGap = 4;
 	const i32 topBezel = 2;
 	const auto& bounds = presenter.visibleViewportBounds;
@@ -426,9 +426,9 @@ void HostOverlayMenu::queueRenderCommands(Runtime& runtime, VideoPresenter& pres
 	}
 	m_optionFirstRow = firstRow;
 	m_optionVisibleRows = visibleRows;
-	const i32 boxWidth = std::max(m_optionTextWidth, m_titleTextWidth) + padding * 2;
-	const i32 boxHeight = visibleRows * lineHeight + padding * 2;
-	const i32 totalHeight = titleHeight + titleGap + boxHeight;
+	const f32 boxWidth = std::max(m_optionTextWidth, m_titleTextWidth) + padding * 2;
+	const f32 boxHeight = visibleRows * lineHeight + padding * 2;
+	const f32 totalHeight = titleHeight + titleGap + boxHeight;
 	const f32 left = (bounds.left + bounds.right - boxWidth) / 2;
 	const f32 top = (bounds.top + bounds.bottom - totalHeight - topBezel) / 2 + topBezel;
 	const f32 boxTop = top + titleHeight + titleGap;

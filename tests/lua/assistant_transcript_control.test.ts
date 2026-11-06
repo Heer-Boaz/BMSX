@@ -1,3 +1,4 @@
+import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
 import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -85,7 +86,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384, 
 	const unbind = inputFocus.bindScopeAdmission(scope => {
 		const surface = surfaces.findByScope(scope.surfaceScope); return surface !== undefined && surfaces.isAdmitted(surface);
 	});
-	const layout = (nextWidth = input.layout.right, nextVariant: 'tiny' | 'msx' = input.layout.font!.variant, bottom = input.layout.bottom, left = input.layout.left) => {
+	const layout = (nextWidth = input.layout.right, nextVariant: FontVariant = input.layout.font!.variant, bottom = input.layout.bottom, left = input.layout.left) => {
 		if (editorViewState.font.variant !== nextVariant) configureFontVariant(nextVariant);
 		const changed = input.layout.left !== left || input.layout.right !== nextWidth || input.layout.font !== editorViewState.font || input.layout.bottom !== bottom
 			|| input.layout.top !== 24 || input.layout.rowHeight !== editorViewState.lineHeight;

@@ -84,7 +84,7 @@ test('resource input production runs inside the group opening receipt so a synch
 
 for (const font of ['tiny', 'msx'] as const) for (const side of [false, true])
 	test(`${font} ${side ? 'Alt+Enter' : 'Enter'} keeps explicit side separate from ordinary resource affinity`, async t => {
-		const f = fixture(t); f.editor.setFontVariant(font); f.update();
+		const f = fixture(t); f.editor.preferences.fontVariant = font; f.update();
 		assert.equal(editorViewState.font.variant, font);
 		const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, f.resource);
 		model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- retained canonical draft\n' }]);

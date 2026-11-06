@@ -303,7 +303,7 @@ test('the real Menu icon remains pointer-accessible with ordinary, overflowing a
 			editor.updateViewport({ width: 96, height: 288 });
 		} else if (group === 'empty') for (const tab of [...editor.editorParts.main.activeGroup.model.tabs]) editor.editorParts.main.activeGroup.close(tab.id);
 		for (const variant of ['tiny', 'msx'] as const) {
-			editor.setFontVariant(variant); editor.update(0);
+			editor.preferences.fontVariant = variant; editor.update(0);
 			if (group === 'overflow') assert.equal(editor.editorParts.main.activeGroup.tabStrip.scrollbar.isVisible(), true);
 			const bounds = editorChromeState.menuButtonBounds;
 			assert.ok(bounds.right > bounds.left && bounds.bottom > bounds.top, 'Menu retains an actual pointer target without an editor');
@@ -322,7 +322,7 @@ test('the real Menu icon remains pointer-accessible with ordinary, overflowing a
 
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} runtime Timeline menus retain visibility intent without stealing guest secondary input`, t => {
 	const f = menuFixture(t), game = f.editor.actorLab.resolveInput();
-	f.editor.editorParts.main.activeGroup.openEditor(game); f.editor.setFontVariant(variant); f.editor.update(0);
+	f.editor.editorParts.main.activeGroup.openEditor(game); f.editor.preferences.fontVariant = variant; f.editor.update(0);
 	const content = inputFocus.target!, version = f.model.version, cycles = f.host.runtime.machine.scheduler.nowCycles;
 	const menu = f.editor.contextMenu, timeline = f.editor.editorParts.main.activeGroup.timeline;
 	assert.equal(timeline.requested, true); assert.equal(timeline.visible, true);

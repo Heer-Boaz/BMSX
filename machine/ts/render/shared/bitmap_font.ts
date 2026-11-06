@@ -1,5 +1,7 @@
 export type GlyphMap = Record<string, string>;
 export type FontSampling = 'nearest' | 'linear';
+export type FontRendering = { raster: 'bitmap'; sampling: FontSampling }
+	| { raster: 'msdf'; lineHeight: number; distanceRange: number };
 
 export type ImageAtlasRect = {
 	u: number;
@@ -14,11 +16,16 @@ export type FontGlyph = {
 	width: number;
 	height: number;
 	advance: number;
+	offsetX: number;
+	offsetY: number;
 };
 
 export type BitmapFontSourceGlyph = {
 	width: number;
 	height: number;
+	advance: number;
+	offsetX: number;
+	offsetY: number;
 	u: number;
 	v: number;
 	w: number;
@@ -117,6 +124,9 @@ const DEFAULT_GLYPH_MAP: GlyphMap = {
 };
 
 export class BFont {
+	public readonly sampling: FontSampling;
+	public readonly raster: FontRendering['raster'];
+	public readonly distanceRange: number;
 	protected readonly items: Map<string, FontGlyph> = new Map();
 	protected readonly advancePadding: number;
 	protected readonly lineHeightValue: number;
@@ -124,10 +134,13 @@ export class BFont {
 	protected letter_to_img: GlyphMap;
 
 	constructor(protected readonly source: BitmapFontSource, itemmap?: GlyphMap, advancePadding: number = 0,
-		public readonly sampling: FontSampling = 'nearest') {
+		rendering: FontRendering = { raster: 'bitmap', sampling: 'nearest' }) {
+		this.raster = rendering.raster;
+		this.sampling = rendering.raster === 'bitmap' ? rendering.sampling : 'linear';
+		this.distanceRange = rendering.raster === 'msdf' ? rendering.distanceRange : 0;
 		this.letter_to_img = itemmap ?? DEFAULT_GLYPH_MAP;
 		this.advancePadding = advancePadding;
-		this.lineHeightValue = this.char_height('A');
+		this.lineHeightValue = rendering.raster === 'msdf' ? rendering.lineHeight : this.char_height('A');
 	}
 
 	public char_width(letter: string): number {
@@ -145,7 +158,7 @@ export class BFont {
 	public textWidth(text: string): number {
 		let width = 0;
 		for (const char of text) {
-			width += this.char_width(char);
+			width += this.advance(char);
 		}
 		return width;
 	}
@@ -164,6 +177,8 @@ export class BFont {
 				width: tabAdvance,
 				height: space.height,
 				advance: tabAdvance,
+				offsetX: space.offsetX,
+				offsetY: space.offsetY,
 			};
 			this.items.set(char, computed);
 			return computed;
@@ -180,7 +195,9 @@ export class BFont {
 			},
 			width: sourceGlyph.width,
 			height: sourceGlyph.height,
-			advance: sourceGlyph.width + this.advancePadding,
+			advance: sourceGlyph.advance + this.advancePadding,
+			offsetX: sourceGlyph.offsetX,
+			offsetY: sourceGlyph.offsetY,
 		};
 		this.items.set(char, computed);
 		return computed;

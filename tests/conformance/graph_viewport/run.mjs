@@ -16,7 +16,7 @@ let browser;
 let server;
 try {
 	await build({ entryPoints: [resolve(import.meta.dirname, 'browser.ts')], bundle: true, platform: 'browser', format: 'esm',
-		target: 'es2020', tsconfig: 'tsconfig.base.json', outfile: join(directory, 'test.js'), loader: { '.glsl': 'text', '.wgsl': 'text' } });
+		target: 'es2020', tsconfig: 'tsconfig.base.json', outfile: join(directory, 'test.js'), loader: { '.rgba': 'binary', '.glsl': 'text', '.wgsl': 'text' } });
 	const script = await readFile(join(directory, 'test.js'));
 	const worker = await readFile('dist/graph-layout.worker.js');
 	server = createServer((request, response) => {

@@ -1,3 +1,4 @@
+import { SCALABLE_FONT_ATLAS } from './scalable_font';
 import type { HostBitmap, HostBitmapRenderSubmission } from './bitmap';
 import type { HostMeshScene, HostMeshSceneRenderSubmission } from './mesh';
 import {
@@ -23,7 +24,7 @@ import {
 	type color,
 } from '../shared/submissions';
 
-export const HOST_OVERLAY_INSTANCE_FLOATS = 14;
+export const HOST_OVERLAY_INSTANCE_FLOATS = 15;
 export const HOST_OVERLAY_INSTANCE_FLOAT_BYTES = HOST_OVERLAY_INSTANCE_FLOATS * Float32Array.BYTES_PER_ELEMENT;
 export const HOST_OVERLAY_TEXTURE_SOLID = 0;
 export const HOST_OVERLAY_TEXTURE_ATLAS = 1;
@@ -31,6 +32,7 @@ export const HOST_OVERLAY_TEXTURE_FRAME = 2;
 export const HOST_OVERLAY_TEXTURE_BITMAP = 3;
 export const HOST_OVERLAY_TEXTURE_MESH_SCENE = 4;
 export const HOST_OVERLAY_TEXTURE_GLYPH_COVERAGE = 5;
+export const HOST_OVERLAY_TEXTURE_GLYPH_MSDF = 6;
 
 const INITIAL_INSTANCE_CAPACITY = 4096;
 const HOST_ATLAS_U_SCALE = 1 / HOST_SYSTEM_ATLAS.width;
@@ -56,6 +58,9 @@ export class HostOverlayQuadStream {
 	private glyphBackgroundColor = 0;
 	private glyphColor = 0;
 	private glyphPadding = 0;
+	private glyphUScale = HOST_ATLAS_U_SCALE;
+	private glyphVScale = HOST_ATLAS_V_SCALE;
+	private glyphDistanceRange = 0;
 	private glyphTextureKind = HOST_OVERLAY_TEXTURE_ATLAS;
 	private transform: Readonly<HostOverlayTransform> = IDENTITY_HOST_OVERLAY_TRANSFORM;
 
@@ -183,7 +188,7 @@ export class HostOverlayQuadStream {
 		this.capacity = capacity;
 	}
 
-	private appendQuad(originX: number, originY: number, axisXX: number, axisXY: number, axisYX: number, axisYY: number, u0: number, v0: number, u1: number, v1: number, textureKind: number, colorValue: color): void {
+	private appendQuad(originX: number, originY: number, axisXX: number, axisXY: number, axisYX: number, axisYY: number, u0: number, v0: number, u1: number, v1: number, textureKind: number, colorValue: color, distanceRange = 0): void {
 		const index = this.count;
 		this.ensureCapacity(index + 1);
 		const base = index * HOST_OVERLAY_INSTANCE_FLOATS;
@@ -202,6 +207,7 @@ export class HostOverlayQuadStream {
 		data[base + 11] = ((colorValue >>> 8) & 0xff) / 255;
 		data[base + 12] = (colorValue & 0xff) / 255;
 		data[base + 13] = ((colorValue >>> 24) & 0xff) / 255;
+		data[base + 14] = distanceRange;
 		this.textureKinds[index] = textureKind;
 		this.count = index + 1;
 	}
@@ -308,8 +314,13 @@ export class HostOverlayQuadStream {
 			forEachBatchBlitGlyph(command, this, HostOverlayQuadStream.appendGlyphBackground);
 		}
 		this.glyphColor = command.color;
-		this.glyphPadding = command.font.sampling === 'linear' ? 0.5 : 0;
-		this.glyphTextureKind = command.font.sampling === 'linear' ? HOST_OVERLAY_TEXTURE_GLYPH_COVERAGE : HOST_OVERLAY_TEXTURE_ATLAS;
+		const msdf = command.font.raster === 'msdf';
+		this.glyphPadding = !msdf && command.font.sampling === 'linear' ? 0.5 : 0;
+		this.glyphTextureKind = msdf ? HOST_OVERLAY_TEXTURE_GLYPH_MSDF
+			: command.font.sampling === 'linear' ? HOST_OVERLAY_TEXTURE_GLYPH_COVERAGE : HOST_OVERLAY_TEXTURE_ATLAS;
+		this.glyphUScale = msdf ? 1 / SCALABLE_FONT_ATLAS.width : HOST_ATLAS_U_SCALE;
+		this.glyphVScale = msdf ? 1 / SCALABLE_FONT_ATLAS.height : HOST_ATLAS_V_SCALE;
+		this.glyphDistanceRange = command.font.distanceRange * this.transform.scale;
 		forEachBatchBlitGlyph(command, this, HostOverlayQuadStream.appendGlyph);
 	}
 
@@ -321,22 +332,24 @@ export class HostOverlayQuadStream {
 
 	private static appendGlyph(stream: HostOverlayQuadStream, item: FontGlyph, x: number, y: number): void {
 		const rect = item.rect;
+		if (rect.w === 0 || rect.h === 0) return;
 		const padding = stream.glyphPadding;
 		const padX = padding * item.width / rect.w, padY = padding * item.height / rect.h;
 		const { scale, offsetX, offsetY } = stream.transform;
 		stream.appendQuad(
-			(x - padX) * scale + offsetX,
-			(y - padY) * scale + offsetY,
+			(x + item.offsetX - padX) * scale + offsetX,
+			(y + item.offsetY - padY) * scale + offsetY,
 			(item.width + padX * 2) * scale,
 			0,
 			0,
 			(item.height + padY * 2) * scale,
-			(rect.u - padding) * HOST_ATLAS_U_SCALE,
-			(rect.v - padding) * HOST_ATLAS_V_SCALE,
-			(rect.u + rect.w + padding) * HOST_ATLAS_U_SCALE,
-			(rect.v + rect.h + padding) * HOST_ATLAS_V_SCALE,
+			(rect.u - padding) * stream.glyphUScale,
+			(rect.v - padding) * stream.glyphVScale,
+			(rect.u + rect.w + padding) * stream.glyphUScale,
+			(rect.v + rect.h + padding) * stream.glyphVScale,
 			stream.glyphTextureKind,
 			stream.glyphColor,
+			stream.glyphDistanceRange,
 		);
 	}
 }
