@@ -613,7 +613,6 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			if (!isKeyDown(key, input)) continue;
 			consumeIdeKey(key, input);
 			const selected = this.input;
-			selected.follow.stop();
 			const result = navigateWorkbenchTree(selected.outline, command);
 			if (!this.updateContentLayout()) return;
 			if (result === WorkbenchTreeNavigationResult.Selection) selected.rememberSelection();
@@ -714,7 +713,6 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			// Runtime graphs reserve Space for transport; RMB/MMB still pan.
 			const result = this.graph.handlePointer(snapshot, now, false);
 			if (result === WorkbenchGraphPointerResult.Rejected) return true;
-			if (justPressed && result !== WorkbenchGraphPointerResult.Outside) this.input.follow.stop();
 			if ((result === WorkbenchGraphPointerResult.Selection || result === WorkbenchGraphPointerResult.Activate) && !this.acceptGraphSelection()) return true;
 			if (result === WorkbenchGraphPointerResult.Activate) this.commands.execute('actorLab.details');
 			return result !== WorkbenchGraphPointerResult.Outside;
@@ -726,7 +724,6 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			const input = this.input, row = input.outline.rows[index], scope = this.focusTarget.scope, context = scope.contextGeneration;
 			this.focus();
 			if (scope.contextGeneration !== context || inputFocus.admittedTarget !== this.focusTarget || input.outline.rows[index] !== row) return true;
-			if (justPressed) input.follow.stop();
 			if (justPressed && workbenchTreeTwistieContainsPosition(input.outline, index, snapshot.viewportX, input.outline.scrollLeft)) {
 				setWorkbenchTreeCollapsed(input.outline, index, !row.collapsed);
 				this.updateContentLayout();
@@ -769,7 +766,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		if (isKeyJustPressed('Enter', player)) { consumeIdeKey('Enter', player); this.commands.execute('actorLab.details'); return; }
 		for (const [key, direction] of GRAPH_SELECTION_KEYS) {
 			if (!isKeyDown(key, player)) continue;
-			consumeIdeKey(key, player); this.input.follow.stop(); view.selectRelative(direction);
+			consumeIdeKey(key, player); view.selectRelative(direction);
 			if (view.selection !== null) view.reveal(view.selection);
 			this.input.stateGraph!.rememberSelection();
 			return;

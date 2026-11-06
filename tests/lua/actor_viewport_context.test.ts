@@ -93,6 +93,74 @@ test('viewport keyboard context addresses the selected actor rather than its ins
 	}
 });
 
+for (const pointer of [false, true]) test(`actor behavior ${pointer ? 'pointer' : 'keyboard'} menu and toolbar reflect the same follow state across reopening`, async t => {
+	const f = await fixture(t), { editor, input, pane } = f;
+	editor.actorLab.openOutline(input); editor.update(0);
+	input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.kind === 'component');
+	assert.ok(input.outline.selectionIndex >= 0); input.rememberSelection(); pane.focus(); editor.update(0);
+	const toolbar = input.actionBar.items.find(item => item.command === 'actorLab.follow')!;
+	for (const checked of [false, true, false]) {
+		if (checked) {
+			const target = input.follow.target;
+			if (pointer) {
+				const tree = input.outline, index = tree.selectionIndex;
+				f.native.apply([{ type: 'pointer', x: tree.layout.contentLeft + (tree.rows[index].depth + 2) * tree.layout.indentWidth,
+					y: tree.layout.contentTop + (index - tree.scroll + 0.5) * tree.layout.rowHeight },
+					{ type: 'button', button: 'primary', down: true }, { type: 'button', button: 'primary', down: false }]);
+			} else { f.key('ArrowUp'); f.key('ArrowDown'); }
+			assert.ok(input.follow.target === target, 'inspection selection does not disable or retarget following');
+		}
+		assert.equal(editor.commands.isActive('actorLab.follow', pane.commandTarget), checked);
+		assert.equal(toolbar.checked, checked);
+		if (pointer) {
+			const tree = input.outline, index = tree.selectionIndex;
+			const x = tree.layout.contentLeft + (tree.rows[index].depth + 2) * tree.layout.indentWidth;
+			const y = tree.layout.contentTop + (index - tree.scroll + 0.5) * tree.layout.rowHeight;
+			f.native.apply([{ type: 'pointer', x, y }, { type: 'button', button: 'secondary', down: true }, { type: 'button', button: 'secondary', down: false }]);
+		} else f.key('ContextMenu');
+		assert.equal(editor.contextMenu.visible, true);
+		const row = editor.contextMenu.model.rows.find(item => item.command === 'actorLab.follow')!;
+		assert.equal(row.active, checked); assert.equal(row.showCheckmark, true);
+		if (pointer) {
+			const menu = editor.contextMenu.model;
+			f.native.apply([{ type: 'pointer', x: menu.viewport.bounds.left + 8, y: menu.viewport.offsetTop + (row.top + row.bottom) / 2 },
+				{ type: 'button', button: 'primary', down: true }, { type: 'button', button: 'primary', down: false }]);
+		} else accept(f, 'actorLab.follow');
+	}
+});
+
+for (const pointer of [false, true]) test(`live FSM ${pointer ? 'pointer' : 'keyboard'} selection preserves follow until explicit camera navigation`, async t => {
+	const f = await fixture(t), { editor, input, pane } = f;
+	const runner = readActorChoices(f.sources, f.ide.guest, 0).find(actor => actor.label === 'runner')!;
+	editor.actorLab.inspectActor(input, 0, runner.hashId); editor.actorLab.openOutline(input); editor.update(0);
+	input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.kind === 'machine');
+	assert.ok(input.outline.selectionIndex >= 0); input.rememberSelection(); pane.focus(); editor.update(0);
+	editor.commands.execute('actorLab.stateGraph', pane.commandTarget); editor.update(0);
+	const graph = input.stateGraph!, view = graph.viewport;
+	const idle = view.model.nodes.find(node => node.name === 'idle')!;
+	view.reveal(idle); editor.update(0);
+	editor.commands.execute('actorLab.follow', pane.commandTarget); editor.update(0);
+	const target = input.follow.target; assert.ok(target !== undefined);
+	if (pointer) {
+		f.native.apply([{ type: 'pointer', x: view.graphToViewportX((idle.bounds.left + idle.bounds.right) / 2),
+			y: view.graphToViewportY((idle.bounds.top + idle.bounds.bottom) / 2) },
+			{ type: 'button', button: 'primary', down: true }, { type: 'button', button: 'primary', down: false }]);
+		assert.ok(view.selection === idle);
+	} else f.key('ArrowDown');
+	assert.ok(input.follow.target === target, 'selecting a state does not disable or retarget the followed machine');
+	assert.equal(editor.commands.isActive('actorLab.follow', pane.commandTarget), true);
+	assert.equal(input.stateGraphActions.items.find(item => item.command === 'actorLab.follow')!.checked, true);
+	f.key('ContextMenu');
+	assert.equal(editor.contextMenu.visible, true);
+	assert.equal(editor.contextMenu.model.rows.find(row => row.command === 'actorLab.follow')!.active, true);
+	f.key('Escape');
+	editor.commands.execute('graph.zoomIn', pane.commandTarget); editor.update(0);
+	assert.ok(input.follow.target === undefined, 'explicit camera navigation still takes control from follow');
+	assert.equal(input.stateGraphActions.items.find(item => item.command === 'actorLab.follow')!.checked, false);
+	f.key('ContextMenu');
+	assert.equal(editor.contextMenu.model.rows.find(row => row.command === 'actorLab.follow')!.active, false);
+});
+
 for (const mode of ['2d', '3d'] as const) test(`live ${mode} viewport drag and empty-space menu retain camera ownership`, async t => {
 	const f = await fixture(t, mode), { input, editor } = f, { x, y } = visualPoint(f);
 	const camera = input.worldView.camera.capture();
