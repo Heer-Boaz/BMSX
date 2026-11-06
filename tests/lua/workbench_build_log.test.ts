@@ -7,7 +7,7 @@ import { BuildOutputs } from '../../ide/workbench/contrib/builds/output';
 import type { WorkspaceBuilds } from '../../ide/workbench/services/builds';
 import { TEXT_VIEW_PADDING } from '../../ide/workbench/ui/text_view/layout';
 
-const job: StudioBuildJob = {
+const job: StudioBuildJob = { artifactAvailable: false,
 	request: { requestId: 'request-one', target: 'fixture-product', debug: true, optLevel: 0 },
 	state: 'completed', phase: 'Published', acceptedAt: 1, updatedAt: 2,
 	version: { generation: 1, sequence: 2 },

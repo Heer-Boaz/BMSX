@@ -140,6 +140,7 @@ test('ledger upgrades existing receipts and orders lifetimes without persisting 
 	const migrated = original.read(request.requestId)!;
 	assert.deepEqual(migrated.request, request);
 	assert.equal(migrated.state, legacy.state);
+	assert.equal(migrated.artifactAvailable, false);
 	assert.deepEqual(migrated.version, { generation: 0, sequence: 0 });
 	const observedProgress = { generation: original.generation, sequence: 100 };
 	original.close();

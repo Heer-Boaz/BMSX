@@ -260,6 +260,7 @@ async function startBrowserStudio(): Promise<void> {
 					const job = await builds.get(requestId);
 					signal?.throwIfAborted();
 					if (job === undefined || job.state !== 'completed') throw new Error('Only a completed workspace build can be opened.');
+					if (!job.artifactAvailable) throw new Error('This build output has been collected. Build the project again before opening Studio.');
 					if (job.project === undefined) throw new Error('This build has no source project admission. Rebuild the project before opening Studio.');
 					return openPublishedBuild(job.request.requestId);
 				};

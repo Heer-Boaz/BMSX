@@ -79,28 +79,42 @@ test('pre-existing exports retain the matching older artifact rather than assumi
 	const output = join(store.root, 'export'); await store.withSharedAccess(() => store.export(old, output));
 	assert.deepEqual(await store.withSharedAccess(() => store.retainExistingExports(output, false)), [old.id]);
 	await store.withSharedAccess(() => store.retainExistingExports(output, true));
-	assert.deepEqual((await store.collect({ keepRecent: 1, apply: true })).removed, []);
-	await store.withSharedAccess(async () => { await store.export(latest, output); await store.retainExport(latest, output); });
-	assert.deepEqual((await store.collect({ keepRecent: 1, apply: true })).removed, [old.id]);
+	assert.deepEqual((await store.collect({ apply: true })).removed, [latest.id]);
+	const replacement = await publish(store, 2);
+	await store.withSharedAccess(async () => { await store.export(replacement, output); await store.retainExport(replacement, output); });
+	assert.deepEqual((await store.collect({ apply: true })).removed, [old.id]);
 });
 
-test('retention keeps recent builds, latest recipes and live/publication references while retiring cache keys and orphan blobs', async t => {
+test('only explicit current/live/publication references retain ROMs, not recent history or latest file dates', async t => {
 	const store = await fixture(t), artifacts: RomArtifact[] = [];
 	for (let version = 1; version <= 6; version++) artifacts.push(await publish(store, version));
 	const other = await publish(store, 0, 'other');
 	await store.withSharedAccess(async () => {
 		await store.retain('sessions/live', artifacts[0].id); await store.retain('publications/site', artifacts[1].id);
+		await store.retainCurrent(artifacts[4]); await store.retainCurrent(other);
 	});
 	await writeFile(join(store.root, 'actions', artifacts[2].system.key), artifacts[2].id);
-	const planned = await store.collect({ keepRecent: 2, apply: false }); assert.equal(planned.removed.length, 2);
+	const planned = await store.collect({ apply: false }); assert.equal(planned.removed.length, 3);
 	assert.equal((await readdir(join(store.root, 'artifacts'))).length, 7);
-	const result = await store.collect({ keepRecent: 2, apply: true });
-	assert.deepEqual(new Set(result.removed), new Set([artifacts[2].id, artifacts[3].id]));
-	for (const artifact of [artifacts[0], artifacts[1], artifacts[4], artifacts[5], other]) assert.equal((await store.read(artifact.id)).id, artifact.id);
-	assert.equal(await store.find(artifacts[2].cart!.key), undefined); assert.equal(result.removedBlobs, 2);
+	const result = await store.collect({ apply: true });
+	assert.deepEqual(new Set(result.removed), new Set([artifacts[2].id, artifacts[3].id, artifacts[5].id]));
+	for (const artifact of [artifacts[0], artifacts[1], artifacts[4], other]) assert.equal((await store.read(artifact.id)).id, artifact.id);
+	assert.equal(await store.find(artifacts[2].cart!.key), undefined); assert.equal(result.removedBlobs, 3);
 	assert.ok((await store.find(artifacts[2].system.key)) !== undefined, 'a retained identical BIOS remains a cache hit');
 	await store.withSharedAccess(() => store.release('sessions/live'));
-	assert.deepEqual((await store.collect({ keepRecent: 2, apply: true })).removed, [artifacts[0].id]);
+	assert.deepEqual((await store.collect({ apply: true })).removed, [artifacts[0].id]);
+});
+
+test('reselecting an older cached result replaces the current slot and does not retain the newer publication', async t => {
+	const store = await fixture(t), first = await publish(store, 1), second = await publish(store, 2);
+	await store.withSharedAccess(async () => {
+		await store.retainCurrent(second);
+		const reused = await store.find(first.cart!.key);
+		await store.retainCurrent(reused!);
+		await store.retainCurrent(second, false); // Startup admission must not replace a producer's explicit selection.
+	});
+	assert.deepEqual((await store.collect({ apply: true })).removed, [second.id]);
+	assert.equal((await store.find(first.cart!.key))!.id, first.id);
 });
 
 test('parallel readers coexist and exclusive collection waits without blocking the event loop', async t => {
@@ -121,7 +135,7 @@ test('one collection retires abandoned publication stages and their otherwise un
 		await writeFile(join(stage, 'partial.rom'), bytes);
 		await link(join(stage, 'partial.rom'), join(store.root, 'blobs', createHash('sha256').update(bytes).digest('hex')));
 	});
-	const result = await store.collect({ keepRecent: 1, apply: true });
+	const result = await store.collect({ apply: true });
 	assert.equal(result.removedBlobs, 1); assert.equal(result.reclaimedBlobBytes, bytes.length);
 	assert.deepEqual(await readdir(join(store.root, 'blobs')), []);
 });
@@ -137,7 +151,7 @@ test('a killed reader process releases its collection lock without a stale PID f
 	const exited = once(child, 'exit');
 	t.after(async () => { child.kill('SIGKILL'); await exited; });
 	await once(child, 'message');
-	const collection = store.collect({ keepRecent: 1, apply: true });
+	const collection = store.collect({ apply: true });
 	child.kill('SIGKILL'); await exited; await collection;
-	assert.deepEqual((await store.collect({ keepRecent: 1, apply: false })).removed, []);
+	assert.deepEqual((await store.collect({ apply: false })).removed, []);
 });

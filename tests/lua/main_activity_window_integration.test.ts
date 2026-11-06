@@ -21,7 +21,7 @@ const OUTPUT = 'first needle\nsecond needle\nthird needle\n';
 async function fixture(t: TestContext) {
 	const f = createActualSourcePanes(t, false, [['diagnostics.lua', 'return 1\n'.repeat(80)]]);
 	f.editor.preferences.fontVariant = 'tiny';
-	const job: StudioBuildJob = { request: { requestId: 'window-reader', target: 'fixture-product', debug: true, optLevel: 0 },
+	const job: StudioBuildJob = { artifactAvailable: false, request: { requestId: 'window-reader', target: 'fixture-product', debug: true, optLevel: 0 },
 		state: 'completed', phase: 'published', acceptedAt: 0, updatedAt: 1, version: { generation: 1, sequence: 1 } };
 	let reads = 0;
 	const builds: WorkspaceBuilds = { jobs: [job], pending: [], targets: async () => ['fixture-product'],

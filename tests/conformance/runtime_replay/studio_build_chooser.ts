@@ -80,7 +80,7 @@ export async function testStudioBuildChooser(test: StudioFixture, client: SceneP
 			const submission = builds.submissions[builds.submissions.length - 1];
 			check(submission.request.target === TARGETS[1] && !picker.visible && inputFocus.admittedTarget === origin,
 				'build chooser: the filtered choice submits its exact producer target without changing Source focus');
-			const queued: StudioBuildJob = { request: submission.request, state: 'queued', phase: 'queued', acceptedAt: builds.submissions.length,
+			const queued: StudioBuildJob = { artifactAvailable: false, request: submission.request, state: 'queued', phase: 'queued', acceptedAt: builds.submissions.length,
 				updatedAt: 1, version: { generation: 1, sequence: builds.submissions.length * 2 } };
 			submission.response.resolve(queued); await test.frame();
 			check(builds.jobs.includes(queued) && builds.pending.length === 0,

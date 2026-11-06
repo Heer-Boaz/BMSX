@@ -8,7 +8,7 @@ export const BUILD_TOOLS = [
 		inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: { readOnlyHint: true } },
 	{ name: 'studio_build_cart', description: 'Admit an identified build of SAVED workspace files and matching BIOS. Runs on the existing workspace server independently of this MCP request or window. Does not save drafts, install media or resume a game. Inspect with studio_read_build after a lost response; never blindly resubmit with a different ID.',
 		inputSchema: { type: 'object', properties: { requestId: id, target: { type: 'string' }, debug: { type: 'boolean' }, optLevel: { type: 'integer', enum: [0, 1, 2, 3] } }, required: ['requestId', 'target', 'debug', 'optLevel'], additionalProperties: false } },
-	{ name: 'studio_list_builds', description: 'Current and 50 recent workspace builds. For older or uncertain requests, use studio_read_build with the request ID. Do not busy-poll.',
+	{ name: 'studio_list_builds', description: 'Current and 50 recent workspace build receipts, not retained ROM history. artifactAvailable reports whether an exact output can still be opened. For older or uncertain requests, use studio_read_build with the request ID. Do not busy-poll.',
 		inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: { readOnlyHint: true } },
 	{ name: 'studio_read_build', description: 'Reconcile one build by its original request ID. Unknown means no durable admission is present. Optional log is bounded to 256 KiB, not a stream.',
 		inputSchema: { type: 'object', properties: { requestId: id, log: { type: 'boolean' } }, required: ['requestId'], additionalProperties: false }, annotations: { readOnlyHint: true } },

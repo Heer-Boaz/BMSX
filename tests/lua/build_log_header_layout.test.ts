@@ -23,7 +23,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const allocation of ['docum
 			? { left: bounds.left + 90, top: bounds.top, right: bounds.right - 20,
 				bottom: bounds.top + mainWorkspaceActivityHeaderHeight(font) }
 			: undefined;
-		const job: StudioBuildJob = { request: { requestId: 'header-typography', target: 'fixture', debug: true, optLevel: 0 },
+		const job: StudioBuildJob = { artifactAvailable: false, request: { requestId: 'header-typography', target: 'fixture', debug: true, optLevel: 0 },
 			state: 'failed', phase: 'compile', acceptedAt: 0, updatedAt: 1, version: { generation: 1, sequence: 1 }, error: 'diagnostic' };
 		const builds: WorkspaceBuilds = { jobs: [job], pending: [], get: async () => job, log: async () => '', targets: async () => [],
 			submit: async () => assert.fail('layout does not admit builds'), cancel: async () => assert.fail('layout does not cancel builds'),

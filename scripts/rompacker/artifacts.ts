@@ -6,12 +6,15 @@ import type { RomArtifact } from '../../toolchain/ts/rompack/build_manifest';
 import { withArtifactStoreLock } from './artifact_lock';
 
 export type PreparedRomArtifact = { artifact: RomArtifact; reused: boolean };
-export const RECENT_ROM_ARTIFACTS = 50;
 export type ArtifactDeduplication = { artifacts: number; files: number; uniqueFiles: number; storedBytes: number; uniqueBytes: number; linkedFiles: number };
 export type ArtifactCollection = { retained: number; removed: string[]; removedBlobs: number; reclaimedBlobBytes: number };
 type ArtifactEntry = { artifact: RomArtifact; published: number };
 
 export function romBuildKey(value: unknown): string { return createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
+export function romBuildConfigurationKey(artifact: RomArtifact): string {
+	const recipe = (artifact.cart ?? artifact.system).recipe;
+	return romBuildKey([artifact.target, recipe.domain, recipe.projectRoot, recipe.debug, recipe.optLevel]);
+}
 
 /** Immutable bundles commit by directory rename. Mutable exports are never the publication catalog. */
 export class RomArtifactStore {
@@ -26,6 +29,20 @@ export class RomArtifactStore {
 	}
 	public async release(owner: string): Promise<void> { await rm(join(this.root, 'refs', owner), { force: true }); }
 	public async releaseReferences(owner: string): Promise<void> { await rm(join(this.root, 'refs', owner), { recursive: true, force: true }); }
+	/** The selected result owns its slot, including when an older artifact is reused. */
+	public async retainCurrent(artifact: RomArtifact, replace = true): Promise<void> {
+		await this.publishReference(join(this.root, 'refs/current', romBuildConfigurationKey(artifact)), artifact.id, replace);
+	}
+	public async currentArtifacts(): Promise<Map<string, string>> {
+		const current = new Map<string, string>();
+		for (const path of await this.referenceFiles(join(this.root, 'refs/current'))) current.set(basename(path), await readFile(path, 'utf8'));
+		return current;
+	}
+	public async list(): Promise<RomArtifact[]> {
+		const artifacts: RomArtifact[] = [];
+		for (const entry of await this.directoryEntries(join(this.root, 'artifacts'))) artifacts.push(await this.read(entry.name));
+		return artifacts;
+	}
 
 	public async read(id: string): Promise<RomArtifact> {
 		return JSON.parse(await readFile(join(this.directory(id), 'artifact.json'), 'utf8'));
@@ -137,33 +154,25 @@ export class RomArtifactStore {
 		});
 	}
 
-	/** Recent history, latest recipes and explicit live/publication roots own retention. */
-	public collect(options: { keepRecent: number; apply: boolean; roots?: readonly string[]; retiredReferences?: readonly string[] }): Promise<ArtifactCollection> {
+	/** Only explicitly owned outputs survive; job history and publication dates are not roots. */
+	public collect(options: { apply: boolean; roots?: readonly string[]; retiredReferences?: readonly string[] }): Promise<ArtifactCollection> {
 		return withArtifactStoreLock(this.root, 'exclusive', async () => {
-			const entries = await this.entries();
-			entries.sort((a, b) => b.published - a.published || a.artifact.id.localeCompare(b.artifact.id));
-			const retained = new Set(entries.slice(0, options.keepRecent).map(entry => entry.artifact.id)), recipes = new Set<string>();
-			if (options.roots !== undefined) for (const id of options.roots) retained.add(id);
-			for (const { artifact } of entries) {
-				const unit = artifact.cart ?? artifact.system, recipe = unit.recipe;
-				const key = romBuildKey([artifact.target, recipe.domain, recipe.projectRoot, recipe.debug, recipe.optLevel]);
-				if (!recipes.has(key)) { retained.add(artifact.id); recipes.add(key); }
-			}
+			const artifacts = await this.list(), retained = new Set(options.roots);
 			const retired = new Set(options.retiredReferences);
 			for (const entry of await this.directoryEntries(join(this.root, 'refs'))) {
 				const path = join(this.root, 'refs', entry.name);
 				if (retired.has(entry.name)) { if (options.apply) await rm(path, { recursive: true, force: true }); continue; }
 				for (const reference of entry.isDirectory() ? await this.referenceFiles(path) : [path]) retained.add(await readFile(reference, 'utf8'));
 			}
-			const present = new Set(entries.map(entry => entry.artifact.id));
+			const present = new Set(artifacts.map(artifact => artifact.id));
 			for (const id of retained) if (!present.has(id)) throw new Error(`Retained artifact is missing: ${id}`);
 			const removed: string[] = [];
-			for (const { artifact } of entries) if (!retained.has(artifact.id)) {
+			for (const artifact of artifacts) if (!retained.has(artifact.id)) {
 				removed.push(artifact.id);
 			}
 			if (!options.apply) return { retained: retained.size, removed, removedBlobs: 0, reclaimedBlobBytes: 0 };
 			const mappings = new Map<string, string>();
-			for (const { artifact } of entries) if (retained.has(artifact.id))
+			for (const artifact of artifacts) if (retained.has(artifact.id))
 				for (const unit of artifact.cart === undefined ? [artifact.system] : [artifact.system, artifact.cart])
 					if (!mappings.has(unit.key)) mappings.set(unit.key, artifact.id);
 			for (const path of await this.referenceFiles(join(this.root, 'actions'))) {
@@ -198,10 +207,15 @@ export class RomArtifactStore {
 		}
 		return entries;
 	}
-	private async publishReference(path: string, artifact: string): Promise<void> {
+	private async publishReference(path: string, artifact: string, replace = true): Promise<void> {
 		const temporary = this.staging(randomUUID());
 		await mkdir(dirname(path), { recursive: true }); await mkdir(dirname(temporary), { recursive: true });
-		try { await writeFile(temporary, artifact); await rename(temporary, path); }
+		try {
+			await writeFile(temporary, artifact);
+			if (replace) await rename(temporary, path);
+			else try { await link(temporary, path); }
+			catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+		}
 		finally { await rm(temporary, { force: true }); }
 	}
 	private async directoryEntries(path: string) {

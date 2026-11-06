@@ -4,7 +4,7 @@ import type { StudioBuildJob } from '../../hosts/common/studio_builds';
 import { BuildOutputs } from '../../ide/workbench/contrib/builds/output';
 import type { WorkspaceBuilds } from '../../ide/workbench/services/builds';
 
-const job: StudioBuildJob = {
+const job: StudioBuildJob = { artifactAvailable: false,
 	request: { requestId: 'build-one', target: 'fixture', debug: true, optLevel: 0 },
 	state: 'running', phase: 'Compiling', acceptedAt: 1, updatedAt: 2,
 	version: { generation: 1, sequence: 2 },

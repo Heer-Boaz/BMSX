@@ -157,10 +157,12 @@ npm run build:toolchain:cart -- pietious --debug --force
 ```
 
 ROM builds share immutable, content-addressed output bytes in `.bmsx/builds`.
-Exports in `dist` remain independent writable copies. Retention keeps the latest
-50 artifacts, the newest artifact per target/debug/optimizer recipe, recent build
-jobs, and explicit references from open build-backed Studio sessions, current
-exports and published browser packages. The workspace server collects on startup
+Exports in `dist` remain independent writable copies. Retention keeps only explicitly
+owned output: the current selected result per build configuration, open build-backed
+Studio sessions, current exports and published browser packages. Selecting a cached
+result updates its current slot regardless of the file's publication date. Receipt
+and log history does not retain ROM files; collected output is no longer offered
+for opening Studio. The workspace server collects on startup
 and after its build queue drains; CLI builds collect when no server owns the store.
 
 Existing stores can first admit their existing exports/publication receipts and

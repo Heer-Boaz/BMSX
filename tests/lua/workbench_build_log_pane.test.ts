@@ -26,7 +26,7 @@ const ERROR = 'compiler: first\r\n\t' + 'a_real_long_authored_path/'.repeat(15) 
 
 async function fixture(t: TestContext, failed = true, output = '') {
 	configureFontVariant('tiny');
-	const job: StudioBuildJob = { request: { requestId: 'actual-request-identity', target: 'cpu_soak', debug: true, optLevel: 0 },
+	const job: StudioBuildJob = { artifactAvailable: false, request: { requestId: 'actual-request-identity', target: 'cpu_soak', debug: true, optLevel: 0 },
 		state: failed ? 'failed' : 'completed', phase: 'Done', version: { generation: 1, sequence: 1 }, acceptedAt: 0, updatedAt: 1,
 		error: failed ? ERROR : undefined };
 	let receipt = job;
@@ -156,7 +156,7 @@ test('document Find belongs to the document/query leaf and cannot mutate a resou
 
 test('a Build Output reader moves through real editor groups while a sibling reader retains independent state over the same result', async t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
-	const job: StudioBuildJob = { request: { requestId: 'portable-build-reader', target: 'fixture-product', debug: true, optLevel: 0 },
+	const job: StudioBuildJob = { artifactAvailable: false, request: { requestId: 'portable-build-reader', target: 'fixture-product', debug: true, optLevel: 0 },
 		state: 'failed', phase: 'compile', version: { generation: 1, sequence: 1 }, acceptedAt: 0, updatedAt: 1, error: ERROR };
 	let output = 'first output alpha\r\n', reads = 0;
 	const builds: WorkspaceBuilds = { jobs: [job], pending: [], targets: async () => [],
@@ -190,7 +190,7 @@ test('a Build Output reader moves through real editor groups while a sibling rea
 
 test('the actual workspace provider owns build observations even when a replacement reuses the same request ID', async t => {
 	const f = createActualSourcePanes(t), editor = f.editor;
-	const job: StudioBuildJob = { request: { requestId: 'provider-local-request', target: 'fixture-product', debug: true, optLevel: 0 },
+	const job: StudioBuildJob = { artifactAvailable: false, request: { requestId: 'provider-local-request', target: 'fixture-product', debug: true, optLevel: 0 },
 		state: 'completed', phase: 'published', version: { generation: 1, sequence: 1 }, acceptedAt: 0, updatedAt: 1 };
 	let output = Promise.resolve('captured in the first workspace\r\n');
 	const logSignals: AbortSignal[] = [];
@@ -223,7 +223,7 @@ test('the actual workspace provider owns build observations even when a replacem
 
 test('a newer actual provider admitted by output retirement cannot be overwritten by the older replacement', t => {
 	const f = createActualSourcePanes(t), editor = f.editor;
-	const job: StudioBuildJob = { request: { requestId: 'retirement-provider-request', target: 'fixture-product', debug: true, optLevel: 0 },
+	const job: StudioBuildJob = { artifactAvailable: false, request: { requestId: 'retirement-provider-request', target: 'fixture-product', debug: true, optLevel: 0 },
 		state: 'completed', phase: 'published', version: { generation: 1, sequence: 1 }, acceptedAt: 0, updatedAt: 1 };
 	const firstProvider: WorkspaceBuilds = { jobs: [job], pending: [], targets: async () => [], get: async () => job, log: async () => '',
 		submit: async () => assert.fail('retirement cannot submit'), cancel: async () => assert.fail('retirement cannot cancel'), forget: () => assert.fail('retirement cannot discard') };

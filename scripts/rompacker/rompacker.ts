@@ -48,6 +48,7 @@ async function main(): Promise<void> {
 				progress.report({ type: 'phase', message: 'Publish artifact' });
 				await store.publish(stage, result.artifact);
 			}
+			await store.retainCurrent(result.artifact);
 			progress.report({ type: 'phase', message: 'Export artifact' });
 			await store.export(result.artifact, resolve(values['output-dir']));
 			await store.retainExport(result.artifact, values['output-dir']);

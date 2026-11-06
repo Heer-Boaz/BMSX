@@ -14,6 +14,7 @@ export async function loadPublishedBuild(session: StudioHttpSession, requestId: 
 	if (!receipt.ok) throw new Error(`Cannot open published build (${receipt.status}): ${await receipt.text()}`);
 	const job: StudioBuildJob = await receipt.json();
 	if (job.state !== 'completed') throw new Error('The build has no completed published artifact.');
+	if (!job.artifactAvailable) throw new Error('This build output has been collected. Build the project again before opening Studio.');
 	if (job.project === undefined) throw new Error('This build has no source project admission. Rebuild the project before opening Studio.');
 	const path = `/__bmsx__/builds/artifacts/${encodeURIComponent(job.artifact!)}`;
 	const response = await session.request(path, { cache: 'no-store' });

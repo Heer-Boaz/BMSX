@@ -32,7 +32,7 @@ async function fixture(t: TestContext, origin: Origin = 'hierarchy', dirty = tru
 	if (origin === 'hierarchy' || origin === 'details') main.focusPrimary(origin);
 	else {
 		if (origin === 'output') {
-			const job: StudioBuildJob = { request: { requestId: 'command-subject-output', target: 'fixture-product', debug: true, optLevel: 0 },
+			const job: StudioBuildJob = { artifactAvailable: false, request: { requestId: 'command-subject-output', target: 'fixture-product', debug: true, optLevel: 0 },
 				state: 'completed', phase: 'published', acceptedAt: 0, updatedAt: 1, version: { generation: 1, sequence: 1 } };
 			const builds: WorkspaceBuilds = { jobs: [job], pending: [], targets: async () => ['fixture-product'], get: async () => job,
 				log: async () => 'retained build output\n', submit: async () => assert.fail('document commands cannot submit a build'),

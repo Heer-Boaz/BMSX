@@ -8,6 +8,8 @@ export type StudioBuildVersion = { generation: number; sequence: number };
 export type StudioBuildJob = {
 	request: StudioBuildRequest; state: StudioBuildState; phase: string; acceptedAt: number; updatedAt: number;
 	version: StudioBuildVersion;
+	/** Receipt/log history survives collection of its immutable ROM output. */
+	artifactAvailable: boolean;
 	artifact?: string; error?: string;
 	/** Historical artifact-only receipts have no authoring admission. */
 	project?: StudioProjectAdmission;

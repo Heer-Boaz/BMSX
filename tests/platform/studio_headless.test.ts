@@ -20,13 +20,27 @@ test('an archived artifact without source admission cannot open an authoring Stu
 	let reads = 0;
 	const sessions = new StudioSessions({
 		subscribe() { return () => {}; },
-		get() { return { state: 'completed', artifact: 'archived-artifact' }; },
-		artifacts: { async read() { reads++; throw new Error('Media must not be read before source admission'); } },
+		get() { return { state: 'completed', artifactAvailable: true, artifact: 'archived-artifact' }; },
+		artifacts: { withSharedAccess: (operation: () => Promise<unknown>) => operation(),
+			async read() { reads++; throw new Error('Media must not be read before source admission'); } },
 	} as unknown as StudioBuildJobs);
 	t.after(() => sessions.close());
 	await assert.rejects(sessions.startHeadless({ requestId: randomUUID(), buildRequestId: randomUUID(), sourceAccess: 'review' }));
 	assert.equal(reads, 0);
 	assert.equal(sessions.list().length, 0);
+});
+
+test('a collected build receipt cannot start headless Studio or attempt to read its retired ROM', async t => {
+	let reads = 0;
+	const sessions = new StudioSessions({
+		subscribe() { return () => {}; },
+		get() { return { state: 'completed', artifactAvailable: false, artifact: 'collected-artifact', project: {} }; },
+		artifacts: { withSharedAccess: (operation: () => Promise<unknown>) => operation(),
+			async read() { reads++; throw new Error('Collected media must not be read'); } },
+	} as unknown as StudioBuildJobs);
+	t.after(() => sessions.close());
+	await assert.rejects(sessions.startHeadless({ requestId: randomUUID(), buildRequestId: randomUUID(), sourceAccess: 'review' }));
+	assert.equal(reads, 0); assert.equal(sessions.list().length, 0);
 });
 
 test('headless Studio owns runtime, source history, persistence and session lifetime without a browser', { timeout: 180000 }, async t => {

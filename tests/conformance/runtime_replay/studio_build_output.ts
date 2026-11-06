@@ -15,7 +15,7 @@ const DIAGNOSTIC = 'Build failed: fixture compiler diagnostic\r\n'
 
 /** Controlled build-service boundary, not a replacement editor or an ordinary-cart build. */
 class BuildOutputFixture implements WorkspaceBuilds {
-	public job: StudioBuildJob = {
+	public job: StudioBuildJob = { artifactAvailable: false,
 		request: { requestId: 'build-output-ui-request', target: 'build_output_fixture', debug: true, optLevel: 3 },
 		state: 'failed', phase: 'compile', acceptedAt: 1, updatedAt: 2,
 		version: { generation: 1, sequence: 1 }, error: DIAGNOSTIC,

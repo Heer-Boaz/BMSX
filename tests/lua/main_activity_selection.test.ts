@@ -28,7 +28,7 @@ const ERROR = 'exact build failure\r\n';
 async function fixture(t: TestContext, failed = false, initialResult = true) {
 	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	f.editor.preferences.fontVariant = 'tiny';
-	const job: StudioBuildJob = { request: { requestId: 'activity-request', target: 'fixture-product', debug: true, optLevel: 0 },
+	const job: StudioBuildJob = { artifactAvailable: false, request: { requestId: 'activity-request', target: 'fixture-product', debug: true, optLevel: 0 },
 		state: failed ? 'failed' : 'completed', phase: 'published', acceptedAt: 0, updatedAt: 1,
 		version: { generation: 1, sequence: 1 }, error: failed ? ERROR : undefined };
 	let reads = 0;

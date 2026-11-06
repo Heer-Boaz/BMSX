@@ -10,10 +10,12 @@ const SQLITE_BUSY = 5;
 export class BuildLedger {
 	private readonly readJob: StatementSync;
 	private readonly writeJob: StatementSync;
+	private readonly readArtifactJobs: StatementSync;
 	private constructor(private readonly database: DatabaseSync, public readonly generation: number) {
 		this.readJob = database.prepare('SELECT record FROM jobs WHERE id = ?');
 		this.writeJob = database.prepare('INSERT INTO jobs(id, accepted_at, state, record) VALUES (?, ?, ?, ?) '
 			+ 'ON CONFLICT(id) DO UPDATE SET state = excluded.state, record = excluded.record');
+		this.readArtifactJobs = database.prepare("SELECT record FROM jobs WHERE state='completed' AND json_extract(record, '$.artifact')=?");
 	}
 	public static async open(root: string): Promise<BuildLedger> {
 		await mkdir(root, { recursive: true });
@@ -32,6 +34,11 @@ export class BuildLedger {
 				database.exec(`UPDATE jobs SET record = json_set(record, '$.version', json_object('generation', 0, 'sequence', 0));
 					PRAGMA user_version=1;`);
 			}
+			if (database.prepare('PRAGMA user_version').get()!.user_version === 1) {
+				database.exec(`UPDATE jobs SET record = json_set(record, '$.artifactAvailable', json('false'));
+					PRAGMA user_version=2;`);
+			}
+			database.exec("CREATE INDEX IF NOT EXISTS job_artifacts ON jobs(json_extract(record, '$.artifact')) WHERE state='completed'");
 			const row = database.prepare('UPDATE build_generation SET generation = generation + 1 WHERE id = 1 RETURNING generation').get()!;
 			database.exec('COMMIT');
 			return new BuildLedger(database, row.generation as number);
@@ -50,6 +57,12 @@ export class BuildLedger {
 	}
 	public unfinished(): StudioBuildJob[] {
 		return this.database.prepare("SELECT record FROM jobs WHERE state IN ('queued', 'running', 'publishing')").all().map(row => JSON.parse(row.record as string));
+	}
+	public completed(): StudioBuildJob[] {
+		return this.database.prepare("SELECT record FROM jobs WHERE state='completed' ORDER BY accepted_at DESC").all().map(row => JSON.parse(row.record as string));
+	}
+	public artifactJobs(artifact: string): StudioBuildJob[] {
+		return this.readArtifactJobs.all(artifact).map(row => JSON.parse(row.record as string));
 	}
 	public close(): void { this.database.close(); }
 }

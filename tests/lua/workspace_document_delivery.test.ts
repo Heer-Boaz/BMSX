@@ -12,7 +12,7 @@ test('Build Jobs delivers its captured output to the explicit receiver without r
 	const f = createActualSourcePanes(t);
 	f.editor.commands.execute('home');
 	const main = f.editor.editorParts.main, subject = main.activeGroup.model.activeTab, pane = main.activeGroup.panes.activePane;
-	const job: StudioBuildJob = { request: { requestId: 'captured-build', target: 'fixture', debug: true, optLevel: 0 },
+	const job: StudioBuildJob = { artifactAvailable: false, request: { requestId: 'captured-build', target: 'fixture', debug: true, optLevel: 0 },
 		state: 'failed', phase: 'compile', acceptedAt: 1, updatedAt: 2, version: { generation: 1, sequence: 1 }, error: 'Captured diagnostic' };
 	const builds: WorkspaceBuilds = {
 		jobs: [job], pending: [], targets: async () => [], get: async () => job, log: async () => 'Captured output',
@@ -51,7 +51,7 @@ test('Play Source reuses the authored document view without replacing its main P
 
 test('a retained Build Jobs action cannot reinterpret its receipt through a replacement provider', async t => {
 	const f = createActualSourcePanes(t);
-	const job: StudioBuildJob = { request: { requestId: 'retained-build', target: 'fixture', debug: true, optLevel: 0 },
+	const job: StudioBuildJob = { artifactAvailable: false, request: { requestId: 'retained-build', target: 'fixture', debug: true, optLevel: 0 },
 		state: 'failed', phase: 'compile', acceptedAt: 1, updatedAt: 2, version: { generation: 1, sequence: 1 }, error: 'Captured diagnostic' };
 	const builds: WorkspaceBuilds = {
 		jobs: [job], pending: [], targets: async () => [], get: async () => job, log: async () => 'Original provider output',

@@ -55,10 +55,11 @@ export class StudioSessions {
 
 	private async openHeadless(request: StudioHeadlessStartRequest): Promise<StudioHeadlessSessionInfo> {
 		if (this.builds === undefined) throw new Error('This server has no workspace build service');
-		const job = this.builds.get(request.buildRequestId);
-		if (job === undefined || job.state !== 'completed') throw new Error('Headless Studio requires a completed workspace build');
-		if (job.project === undefined) throw new Error('This build artifact is not admitted to a source project. Rebuild the project before starting headless Studio.');
 		return this.builds.artifacts.withSharedAccess(async () => {
+			const job = this.builds!.get(request.buildRequestId);
+			if (job === undefined || job.state !== 'completed') throw new Error('Headless Studio requires a completed workspace build');
+			if (!job.artifactAvailable) throw new Error('This build output has been collected. Rebuild the project before starting headless Studio.');
+			if (job.project === undefined) throw new Error('This build artifact is not admitted to a source project. Rebuild the project before starting headless Studio.');
 			const artifact = await this.builds.artifacts.read(job.artifact!);
 			const directory = this.builds.artifacts.directory(artifact.id);
 			const systemRomPath = join(directory, artifact.system.outputs.find(output => output.file.endsWith('.rom'))!.file);
@@ -117,7 +118,7 @@ export class StudioSessions {
 			const build = new URL(descriptor.url).searchParams.get('build');
 			if (this.builds !== undefined && build !== null) await this.builds.artifacts.withSharedAccess(async () => {
 				const job = this.builds!.get(build);
-				if (job?.state !== 'completed') throw new Error('Studio media requires a completed retained build');
+				if (job?.state !== 'completed' || !job.artifactAvailable) throw new Error('Studio media requires an available completed build');
 				await this.builds!.artifacts.read(job.artifact!);
 				await this.builds!.artifacts.retain(`sessions/${session.info.id}`, job.artifact!);
 				session.artifact = job.artifact!;

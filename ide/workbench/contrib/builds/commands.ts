@@ -48,7 +48,9 @@ export function showBuildJobs(editor: CartEditor, reference: EditorGroupView): v
 	const jobs = [...builds.jobs].sort((a, b) => b.acceptedAt - a.acceptedAt);
 	const choices = [
 		...builds.pending.map(request => ({ label: request.target, description: 'Acknowledgement unknown; inspect this request', detail: request.requestId, id: request.requestId })),
-		...jobs.map(job => ({ label: `${job.request.target} - ${job.state}`, description: job.phase, detail: job.request.requestId, id: job.request.requestId })),
+		...jobs.map(job => ({ label: `${job.request.target} - ${job.state}`,
+			description: job.state === 'completed' && !job.artifactAvailable ? 'ROM output collected; receipt and log retained' : job.phase,
+			detail: job.request.requestId, id: job.request.requestId })),
 	];
 	editor.quickInput.pick('Workspace builds', 'Recent jobs; select a request to obtain its current state', () => new TextQuickPickProvider(choices),
 		(choice, _modifiers, preserveFocus) => {
@@ -102,7 +104,9 @@ function buildRequestActions(editor: CartEditor, context: BuildRequestContext, j
 			run: async () => { builds.forget(id); } },
 	];
 	const choices: BuildAction[] = [
-		{ label: `${job.request.target}: ${job.state}`, description: job.phase, detail: `${job.request.debug ? 'Debug' : 'Release'} -O${job.request.optLevel}`,
+		{ label: `${job.request.target}: ${job.state}`,
+			description: job.state === 'completed' && !job.artifactAvailable ? 'ROM output collected; receipt and log retained' : job.phase,
+			detail: `${job.request.debug ? 'Debug' : 'Release'} -O${job.request.optLevel}`,
 			run: async preserveFocus => { if (!preserveFocus) showBuildRequest(editor, context, signal => builds.get(id, signal)); } },
 		{ label: 'Refresh status', description: 'Read the original request', detail: '',
 			run: async preserveFocus => { if (!preserveFocus) showBuildRequest(editor, context, signal => builds.get(id, signal)); } },
@@ -121,7 +125,7 @@ function buildRequestActions(editor: CartEditor, context: BuildRequestContext, j
 	];
 	if (job.artifact !== undefined && job.state === 'completed') {
 		const artifact = job.artifact, openBuild = editor.openPublishedBuild;
-		if (openBuild !== undefined && job.project !== undefined) choices.unshift({ label: 'Open published build in new Studio window',
+		if (job.artifactAvailable && openBuild !== undefined && job.project !== undefined) choices.unshift({ label: 'Open published build in new Studio window',
 			description: 'Exact cartridge and matching BIOS', detail: 'Current runtime and unsaved files stay in this window. Reboot applies workspace edits.', run: async preserveFocus => {
 				if (preserveFocus) return;
 				const focusRevision = inputFocus.revision, opened = openBuild(id);
@@ -143,7 +147,7 @@ function buildRequestActions(editor: CartEditor, context: BuildRequestContext, j
 				}
 			} });
 		choices.push({ label: 'Copy published artifact ID', description: artifact,
-			detail: 'Published; not installed', run: async () => { await editor.clipboard.writeText(artifact); } });
+			detail: job.artifactAvailable ? 'Available; not installed' : 'ROM output collected; identity only', run: async () => { await editor.clipboard.writeText(artifact); } });
 	}
 	if (!isBuildTerminal(job.state)) choices.push({ label: 'Cancel build', description: 'Wait for the producer to stop',
 		detail: 'Already published results are not rolled back.', run: async preserveFocus => {

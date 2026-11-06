@@ -52,6 +52,7 @@ test('published build admission retains the exact receipt project even when arti
 	const firstId = '00000000-0000-4000-8000-000000000001', secondId = '00000000-0000-4000-8000-000000000002';
 	const archiveId = '00000000-0000-4000-8000-000000000003', pendingId = '00000000-0000-4000-8000-000000000004';
 	const unknownId = '00000000-0000-4000-8000-000000000006';
+	const collectedId = '00000000-0000-4000-8000-000000000005';
 	const firstProject: StudioProjectAdmission = { target: 'cpu_soak',
 		system: { id: '10000000-0000-4000-8000-000000000001', projectRoot: 'bios' },
 		cartridge: { id: '10000000-0000-4000-8000-000000000002', projectRoot: 'carts/cpu_soak' } };
@@ -66,7 +67,7 @@ test('published build admission retains the exact receipt project even when arti
 		cart: { key: 'cart-key', name: 'cpu_soak',
 			recipe: { domain: 'cart', debug: true, optLevel: 0, projectRoot: 'carts/cpu_soak', toolchain: 'test' },
 			inputs: 'cart-inputs', outputs: [{ file: 'cart.rom', digest: 'cart-digest' }] } };
-	const firstJob: StudioBuildJob = { request: { requestId: firstId, target: 'cpu_soak', debug: true, optLevel: 0 },
+	const firstJob: StudioBuildJob = { artifactAvailable: true, request: { requestId: firstId, target: 'cpu_soak', debug: true, optLevel: 0 },
 		state: 'completed', phase: 'Published', acceptedAt: 1, updatedAt: 2,
 		version: { generation: 1, sequence: 1 }, artifact: artifact.id, project: firstProject };
 	const secondJob: StudioBuildJob = { ...firstJob, request: { ...firstJob.request, requestId: secondId }, project: secondProject };
@@ -74,6 +75,7 @@ test('published build admission retains the exact receipt project even when arti
 		[firstId, firstJob], [secondId, secondJob],
 		[archiveId, { ...firstJob, request: { ...firstJob.request, requestId: archiveId }, project: undefined }],
 		[pendingId, { ...firstJob, request: { ...firstJob.request, requestId: pendingId }, state: 'publishing' }],
+		[collectedId, { ...firstJob, request: { ...firstJob.request, requestId: collectedId }, artifactAvailable: false }],
 	]);
 	const requests: string[] = [];
 	const artifactPath = `/__bmsx__/builds/artifacts/${artifact.id}`;
@@ -102,7 +104,7 @@ test('published build admission retains the exact receipt project even when arti
 		assert.deepEqual(requests.slice(0, 2), [`/__bmsx__/builds/jobs/${requestId}`, artifactPath]);
 		assert.deepEqual(requests.slice(2).sort(), [`${artifactPath}/cart.rom`, `${artifactPath}/system.rom`]);
 	}
-	for (const requestId of [unknownId, pendingId, archiveId]) {
+	for (const requestId of [unknownId, pendingId, archiveId, collectedId]) {
 		requests.length = 0;
 		await assert.rejects(loadPublishedBuild(session, requestId));
 		assert.deepEqual(requests, [`/__bmsx__/builds/jobs/${requestId}`], 'rejected admission never reads artifact metadata or media');
@@ -126,7 +128,7 @@ test('build receipts survive multiple windows and HTTP/stream reordering', { tim
 		if (req.method === 'PUT') {
 			let body = ''; for await (const part of req) body += part;
 			const request = JSON.parse(body) as StudioBuildRequest;
-			jobs.set(id, { request, state: 'queued', phase: 'Waiting', acceptedAt: sequence, updatedAt: sequence,
+			jobs.set(id, { artifactAvailable: false, request, state: 'queued', phase: 'Waiting', acceptedAt: sequence, updatedAt: sequence,
 				version: { generation: 1, sequence: ++sequence } });
 			puts++;
 			if (lostAcknowledgement) {

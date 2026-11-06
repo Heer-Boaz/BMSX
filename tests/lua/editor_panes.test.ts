@@ -241,7 +241,7 @@ test('an attached input receives its current layout before its control can acqui
 test('Build Output opens the actual request identity once, retains its document, and never reuses a closed transient input', async t => {
 	const harness = createEditorPanes();
 	t.after(() => { harness.group.dispose(); inputFocus.setTarget(null); });
-	const job: StudioBuildJob = { request: { requestId: 'request-42', target: 'nemesis_s', debug: true, optLevel: 0 },
+	const job: StudioBuildJob = { artifactAvailable: false, request: { requestId: 'request-42', target: 'nemesis_s', debug: true, optLevel: 0 },
 		state: 'failed', phase: 'compile', acceptedAt: 10, updatedAt: 20, version: { generation: 1, sequence: 2 }, error: 'Compiler error' };
 	const next: StudioBuildJob = { ...job, request: { ...job.request, requestId: 'request-43' } };
 	const requested: string[] = [];

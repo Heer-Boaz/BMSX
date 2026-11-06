@@ -12,7 +12,7 @@ import type { QuickPickItem } from '../../ide/workbench/services/quick_input/pro
 import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
-const JOB: StudioBuildJob = {
+const JOB: StudioBuildJob = { artifactAvailable: false,
 	request: { requestId: 'owned-build-request', target: 'synthetic-build-target', debug: true, optLevel: 0 },
 	state: 'running', phase: 'compile', acceptedAt: 1, updatedAt: 2, version: { generation: 1, sequence: 2 },
 };
@@ -275,9 +275,20 @@ test('an explicitly accepted background cancellation keeps producer error feedba
 	assert.equal(f.builds.cancellations.length, 1); assert.equal(f.builds.submissions.length, 0);
 });
 
-const PUBLISHED: StudioBuildJob = { ...JOB, state: 'completed', phase: 'published', artifact: 'synthetic-artifact',
+const PUBLISHED: StudioBuildJob = { ...JOB, state: 'completed', artifactAvailable: true, phase: 'published', artifact: 'synthetic-artifact',
 	project: { target: JOB.request.target, system: { id: 'synthetic-system', projectRoot: 'synthetic-system-root' },
 		cartridge: { id: 'synthetic-project', projectRoot: 'synthetic-project-root' } } };
+
+test('activating a collected receipt refreshes its status instead of opening a Studio or repeating the build', async t => {
+	const f = fixture(t), opened: string[] = [], collected = { ...PUBLISHED, artifactAvailable: false };
+	f.editor.openPublishedBuild = id => { opened.push(id); return { status: 'opened', url: 'https://build.invalid/published' }; };
+	await openDetails(f, collected); f.key('Enter'); await setImmediate();
+	assert.deepEqual(opened, []);
+	assert.equal(f.builds.gets.length, 2);
+	f.builds.gets[1].response.resolve(collected); await setImmediate();
+	assert.equal(f.builds.submissions.length, 0);
+	assert.equal(f.builds.cancellations.length, 0);
+});
 
 for (const replacement of ['focus', 'workspace binding'] as const)
 	test(`published-open recovery cannot overwrite ${replacement} chosen by the actual open callback`, async t => {
