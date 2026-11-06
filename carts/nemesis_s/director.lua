@@ -150,9 +150,10 @@ function director:populate_game_start()
 	self.player_states = player_states
 	self.players = players
 	self.status_bar = status_bar
+	-- Admit the largest scene texture before the persistent HUD and font.
+	atlas.load('gameplay')
 	atlas.load('status')
 	atlas.load('font')
-	atlas.load('gameplay')
 	self.events:emit('game_start')
 end
 
