@@ -3,7 +3,7 @@ import type { ScalableFontAtlas } from '../../../machine/ts/render/host_overlay/
 import pixels from '#bmsx/scalable-font-pixels';
 export const SCALABLE_FONT_ATLAS: ScalableFontAtlas = {
 	width: 586, height: 597, lineHeight: 10.56, distanceRange: 2,
-	pixels,
+	pixels, srgb: false,
 	glyphs: [
 		{"id":"mono_Italic_100","codepoint":100,"italic":true,"width":6,"height":8,"advance":4.8,"offsetX":-0.4365090889181973,"offsetY":1.3199998474121095,"u":332,"v":317,"w":24,"h":32},
 		{"id":"mono_Italic_10003","codepoint":10003,"italic":true,"width":6.25,"height":6,"advance":4.8,"offsetX":-0.7039999961853027,"offsetY":2.18400016784668,"u":509,"v":512,"w":25,"h":24},

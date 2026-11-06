@@ -1,4 +1,4 @@
-precision mediump float;
+precision highp float;
 uniform sampler2D u_texture;
 uniform vec4 u_color;
 uniform int u_glyph_mode;

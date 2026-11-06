@@ -1,4 +1,5 @@
 import type { BitmapFontSourceGlyph, GlyphMap } from '../shared/bitmap_font';
+import type { HostAtlas } from './atlas';
 import { SCALABLE_FONT_ATLAS } from '../../../../hosts/fonts/jetbrains_mono/scalable_font.generated';
 
 export type ScalableFontGlyph = BitmapFontSourceGlyph & {
@@ -8,10 +9,7 @@ export type ScalableFontGlyph = BitmapFontSourceGlyph & {
 };
 
 /** Linear RGB signed distances, separate from the sRGB host-image atlas. */
-export type ScalableFontAtlas = Readonly<{
-	width: number;
-	height: number;
-	pixels: Uint8Array;
+export type ScalableFontAtlas = HostAtlas & Readonly<{
 	lineHeight: number;
 	distanceRange: number;
 	glyphs: readonly ScalableFontGlyph[];
@@ -26,5 +24,6 @@ for (const glyph of SCALABLE_FONT_ATLAS.glyphs) {
 	SCALABLE_FONT_MAPS[glyph.italic ? 'italic' : 'normal'][String.fromCodePoint(glyph.codepoint)] = glyph.id;
 }
 export const SCALABLE_FONT_SOURCE = {
+	atlas: SCALABLE_FONT_ATLAS,
 	resolveGlyph(id: string): BitmapFontSourceGlyph { return glyphsById.get(id)!; },
 };

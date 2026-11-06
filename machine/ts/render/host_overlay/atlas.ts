@@ -10,14 +10,37 @@ export type HostSystemAtlasImage = Readonly<{
 	h: number;
 }>;
 
-export type HostSystemAtlas = Readonly<{
+/** Immutable product asset; CPU storage lives with the asset, GPU storage with each renderer. */
+export type HostAtlas = Readonly<{
 	width: number;
 	height: number;
 	pixels: Uint8Array;
+	srgb: boolean;
+}>;
+
+export type HostSystemAtlas = HostAtlas & Readonly<{
 	images: readonly HostSystemAtlasImage[];
 }>;
 
 export { HOST_SYSTEM_ATLAS };
+
+/** Upload an immutable atlas once per renderer context, on its first use. */
+export class HostAtlasTextures<T> {
+	private readonly textures = new Map<HostAtlas, T>();
+	public constructor(private readonly create: (atlas: HostAtlas) => T, private readonly destroy: (texture: T) => void) {}
+	public get(atlas: HostAtlas): T {
+		let texture = this.textures.get(atlas);
+		if (texture === undefined) {
+			texture = this.create(atlas);
+			this.textures.set(atlas, texture);
+		}
+		return texture;
+	}
+	public dispose(): void {
+		for (const texture of this.textures.values()) this.destroy(texture);
+		this.textures.clear();
+	}
+}
 
 export function hostSystemAtlasImage(id: string): HostSystemAtlasImage {
 	let first = 0;

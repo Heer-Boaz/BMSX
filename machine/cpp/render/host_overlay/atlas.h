@@ -17,10 +17,15 @@ struct HostSystemAtlasImage {
 	u32 h;
 };
 
-struct HostSystemAtlas {
+// Immutable product assets outlive their renderer-context texture caches.
+struct HostAtlas {
 	u32 width;
 	u32 height;
 	std::span<const u8> pixels;
+	bool srgb;
+};
+
+struct HostSystemAtlas : HostAtlas {
 	std::span<const HostSystemAtlasImage> images;
 };
 

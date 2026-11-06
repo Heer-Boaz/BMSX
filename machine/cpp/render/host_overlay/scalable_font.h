@@ -1,6 +1,7 @@
 #pragma once
 
 #include "render/shared/bitmap_font.h"
+#include "render/host_overlay/atlas.h"
 #include <span>
 #include <string_view>
 
@@ -14,9 +15,7 @@ struct ScalableFontGlyph {
 };
 
 // Linear RGB signed distances, separate from the host-image atlas.
-struct ScalableFontAtlas {
-	u32 width, height;
-	std::span<const u8> pixels;
+struct ScalableFontAtlas : HostAtlas {
 	f32 lineHeight, distanceRange;
 	std::span<const ScalableFontGlyph> glyphs;
 };

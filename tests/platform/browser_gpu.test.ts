@@ -38,6 +38,11 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} preserves bitmap fonts an
 	assert.equal(result.validationError, undefined); assert.equal(result.glError, 0);
 	assert.deepEqual(result.errors, []); assert.deepEqual(errors, []);
 	assert.ok(result.ink > 0, 'reference contains rendered glyphs');
+	assert.equal(result.bootAtlasUploads, 0, 'renderer creation does not upload unused font assets');
+	assert.equal(result.unusedScalableUploads, 0, 'bitmap-only output does not allocate the scalable atlas');
+	assert.ok(result.atlasUploads.every(count => count === 1), 'each used atlas uploads once across repeated frames and font switches');
+	assert.deepEqual(result.atlasSamples, Array.from({ length: 3 }, () => [[255, 0, 0, 255], [0, 255, 255, 0], [255, 0, 0, 255]]).flat(),
+		'nearest, filtered and MSDF glyphs use their source atlas instead of a built-in font identity');
 	for (const sample of result.cases) assert.equal(sample.differences, 0,
 		`phase ${sample.phaseX},${sample.phaseY}: each glyph texel must match the aligned software image (first difference ${sample.firstDifference})`);
 	t.diagnostic(JSON.stringify(result.sampling));

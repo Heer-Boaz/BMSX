@@ -1,6 +1,4 @@
 import type { FontGlyph } from '../shared/bitmap_font';
-import { SCALABLE_FONT_ATLAS } from '../host_overlay/scalable_font';
-import { HOST_SYSTEM_ATLAS } from '../host_overlay/atlas';
 import type { HeadlessHost2DContext } from './host_2d';
 import { blendPixel } from './pixel_ops';
 
@@ -21,7 +19,7 @@ export function drawFilteredHostGlyph(context: HeadlessHost2DContext, item: Font
 	if (startY + 0.5 < top) startY++;
 	if (endX - 0.5 >= right) endX--;
 	if (endY - 0.5 >= bottom) endY--;
-	const source = msdf ? SCALABLE_FONT_ATLAS : HOST_SYSTEM_ATLAS;
+	const source = context.glyphAtlas;
 	const atlas = source.pixels, atlasStride = source.width * 4;
 	const screenRange = context.glyphScreenRange;
 	const color = context.colorValue, r = (color >>> 16) & 255, g = (color >>> 8) & 255, b = color & 255, a = (color >>> 24) / 255;

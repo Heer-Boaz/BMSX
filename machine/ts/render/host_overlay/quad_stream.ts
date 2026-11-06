@@ -1,9 +1,9 @@
-import { SCALABLE_FONT_ATLAS } from './scalable_font';
 import type { HostBitmap, HostBitmapRenderSubmission } from './bitmap';
 import type { HostMeshScene, HostMeshSceneRenderSubmission } from './mesh';
 import {
 	HOST_SYSTEM_ATLAS,
 	hostSystemAtlasImage,
+	type HostAtlas,
 } from './atlas';
 import { forEachBatchBlitGlyph } from '../shared/glyph_runs';
 import type { FontGlyph } from '../shared/bitmap_font';
@@ -43,6 +43,7 @@ export type HostOverlayBatch = {
 	clip: HostOverlayClipRect;
 	bitmap: HostBitmap | undefined;
 	scene: HostMeshScene | undefined;
+	atlas: HostAtlas;
 };
 
 export class HostOverlayQuadStream {
@@ -51,7 +52,7 @@ export class HostOverlayQuadStream {
 	public capacity = INITIAL_INSTANCE_CAPACITY;
 	public count = 0;
 	private readonly fullClip: HostOverlayClipRect = { left: 0, top: 0, right: 0, bottom: 0 };
-	public readonly batches: HostOverlayBatch[] = [{ start: 0, clip: this.fullClip, bitmap: undefined, scene: undefined }];
+	public readonly batches: HostOverlayBatch[] = [{ start: 0, clip: this.fullClip, bitmap: undefined, scene: undefined, atlas: HOST_SYSTEM_ATLAS }];
 	public batchCount = 1;
 	private hasBitmaps = false;
 	private glyphBackgroundLineHeight = 0;
@@ -78,6 +79,7 @@ export class HostOverlayQuadStream {
 		this.batchCount = 1;
 		this.batches[0].start = 0;
 		this.batches[0].clip = this.fullClip;
+		this.batches[0].atlas = HOST_SYSTEM_ATLAS;
 	}
 
 	public appendEntry(kind: Host2DKind, command: Host2DRef): void {
@@ -126,23 +128,24 @@ export class HostOverlayQuadStream {
 		}
 		let batch = this.batches[this.batchCount];
 		if (batch === undefined) {
-			batch = { start: 0, clip, bitmap: current.bitmap, scene: current.scene };
+			batch = { start: 0, clip, bitmap: current.bitmap, scene: current.scene, atlas: current.atlas };
 			this.batches.push(batch);
 		}
 		batch.start = this.count;
 		batch.clip = clip;
 		batch.bitmap = current.bitmap;
 		batch.scene = current.scene;
+		batch.atlas = current.atlas;
 		this.batchCount += 1;
 	}
 
-	private setTexture(bitmap: HostBitmap | undefined, scene: HostMeshScene | undefined): void {
+	private setTexture(bitmap: HostBitmap | undefined, scene: HostMeshScene | undefined, atlas: HostAtlas = this.batches[this.batchCount - 1].atlas): void {
 		const current = this.batches[this.batchCount - 1];
-		if (current.bitmap === bitmap && current.scene === scene) return;
-		if (current.start === this.count) { current.bitmap = bitmap; current.scene = scene; return; }
+		if (current.bitmap === bitmap && current.scene === scene && current.atlas === atlas) return;
+		if (current.start === this.count) { current.bitmap = bitmap; current.scene = scene; current.atlas = atlas; return; }
 		let batch = this.batches[this.batchCount];
-		if (batch === undefined) { batch = { start: 0, clip: current.clip, bitmap, scene }; this.batches.push(batch); }
-		batch.start = this.count; batch.clip = current.clip; batch.bitmap = bitmap; batch.scene = scene;
+		if (batch === undefined) { batch = { start: 0, clip: current.clip, bitmap, scene, atlas }; this.batches.push(batch); }
+		batch.start = this.count; batch.clip = current.clip; batch.bitmap = bitmap; batch.scene = scene; batch.atlas = atlas;
 		this.batchCount++;
 	}
 
@@ -260,6 +263,8 @@ export class HostOverlayQuadStream {
 	}
 
 	private appendImage(command: HostImageRenderSubmission): void {
+		const current = this.batches[this.batchCount - 1];
+		this.setTexture(current.bitmap, current.scene, HOST_SYSTEM_ATLAS);
 		const source = hostSystemAtlasImage(command.imgid);
 		const { scale, offsetX, offsetY } = this.transform;
 		let u0 = source.u * HOST_ATLAS_U_SCALE;
@@ -308,6 +313,8 @@ export class HostOverlayQuadStream {
 	}
 
 	private appendGlyphRun(command: GlyphRenderSubmission): void {
+		const current = this.batches[this.batchCount - 1];
+		this.setTexture(current.bitmap, current.scene, command.font.atlas);
 		if (command.has_background_color) {
 			this.glyphBackgroundLineHeight = command.font.lineHeight;
 			this.glyphBackgroundColor = command.background_color;
@@ -318,8 +325,8 @@ export class HostOverlayQuadStream {
 		this.glyphPadding = !msdf && command.font.sampling === 'linear' ? 0.5 : 0;
 		this.glyphTextureKind = msdf ? HOST_OVERLAY_TEXTURE_GLYPH_MSDF
 			: command.font.sampling === 'linear' ? HOST_OVERLAY_TEXTURE_GLYPH_COVERAGE : HOST_OVERLAY_TEXTURE_ATLAS;
-		this.glyphUScale = msdf ? 1 / SCALABLE_FONT_ATLAS.width : HOST_ATLAS_U_SCALE;
-		this.glyphVScale = msdf ? 1 / SCALABLE_FONT_ATLAS.height : HOST_ATLAS_V_SCALE;
+		this.glyphUScale = 1 / command.font.atlas.width;
+		this.glyphVScale = 1 / command.font.atlas.height;
 		this.glyphDistanceRange = command.font.distanceRange * this.transform.scale;
 		forEachBatchBlitGlyph(command, this, HostOverlayQuadStream.appendGlyph);
 	}

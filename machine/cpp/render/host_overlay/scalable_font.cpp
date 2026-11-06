@@ -5,6 +5,7 @@ namespace bmsx {
 namespace {
 class ScalableFontSource final : public BitmapFontSource {
 public:
+	const HostAtlas& atlas() const override { return SCALABLE_FONT_ATLAS; }
 	BitmapFontSourceGlyph resolveGlyph(const std::string& id) const override {
 		const auto glyphs = SCALABLE_FONT_ATLAS.glyphs;
 		return std::lower_bound(glyphs.begin(), glyphs.end(), id,

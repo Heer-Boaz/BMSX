@@ -19,8 +19,7 @@ import {
 	HostOverlayQuadStream,
 } from '../quad_stream';
 import { createHostMenuState, createHostOverlayState, writeHostMenuState, writeHostOverlayState } from '../pipeline';
-import { HOST_SYSTEM_ATLAS } from '../atlas';
-import { SCALABLE_FONT_ATLAS } from '../scalable_font';
+import { HostAtlasTextures, type HostAtlas } from '../atlas';
 import { HostOverlayClipState } from '../clip';
 import vertexShaderCode from './shaders/host_overlay.vert.wgsl';
 import fragmentShaderCode from './shaders/host_overlay.frag.wgsl';
@@ -30,7 +29,7 @@ type HostOverlayRuntime = {
 	bitmaps: HostBitmapTextures<{ texture: GPUTexture; bindGroup: GPUBindGroup }>;
 	meshScenes: WebGPUHostMeshScenes;
 	meshBindGroups: (GPUBindGroup | undefined)[];
-	bindGroup: GPUBindGroup;
+	atlases: HostAtlasTextures<{ texture: GPUTexture; bindGroup: GPUBindGroup }>;
 	frameBindGroups: WeakMap<GPUTexture, GPUBindGroup>;
 	uniformBuffer: GPUBuffer;
 	instanceFloatBuffer: GPUBuffer;
@@ -40,8 +39,6 @@ type HostOverlayRuntime = {
 	passDesc: RenderPassDesc;
 	stream: HostOverlayQuadStream;
 	clip: HostOverlayClipState;
-	hostAtlasTexture: GPUTexture;
-	distanceAtlasTexture: GPUTexture;
 	uniformScratch: Float32Array;
 };
 
@@ -72,7 +69,6 @@ function createRuntime(backend: WebGPUBackend): HostOverlayRuntime {
 			{ binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
 			{ binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
 			{ binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
-			{ binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
 		],
 	});
 	const pipeline = device.createRenderPipeline({
@@ -122,25 +118,28 @@ function createRuntime(backend: WebGPUBackend): HostOverlayRuntime {
 		size: OVERLAY_UNIFORM_FLOATS * Float32Array.BYTES_PER_ELEMENT,
 		usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
 	});
-	const distanceAtlasTexture = backend.createTexture(SCALABLE_FONT_ATLAS.pixels, SCALABLE_FONT_ATLAS.width, SCALABLE_FONT_ATLAS.height, RGBA8_LINEAR_TEXTURE_PARAMS) as GPUTexture;
-	const hostAtlasTexture = backend.createTexture(HOST_SYSTEM_ATLAS.pixels, HOST_SYSTEM_ATLAS.width, HOST_SYSTEM_ATLAS.height, RGBA8_SRGB_TEXTURE_PARAMS) as GPUTexture;
 	const hostSampler = device.createSampler({
 		magFilter: 'nearest',
 		minFilter: 'nearest',
 		addressModeU: 'clamp-to-edge',
 		addressModeV: 'clamp-to-edge',
 	});
-	const bindGroup = device.createBindGroup({
-		layout: bindGroupLayout,
-		entries: [
-			{ binding: 0, resource: { buffer: uniformBuffer } },
-			{ binding: 1, resource: hostAtlasTexture.createView() },
-			{ binding: 4, resource: distanceAtlasTexture.createView() },
-			{ binding: 2, resource: hostSampler },
-			{ binding: 3, resource: device.createSampler({ magFilter: 'linear', minFilter: 'linear',
-				addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' }) },
-		],
-	});
+	const glyphSampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear',
+		addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
+	const atlases = new HostAtlasTextures(atlas => {
+		const texture = backend.createTexture(atlas.pixels, atlas.width, atlas.height,
+			atlas.srgb ? RGBA8_SRGB_TEXTURE_PARAMS : RGBA8_LINEAR_TEXTURE_PARAMS) as GPUTexture;
+		const bindGroup = device.createBindGroup({
+			layout: bindGroupLayout,
+			entries: [
+				{ binding: 0, resource: { buffer: uniformBuffer } },
+				{ binding: 1, resource: texture.createView() },
+				{ binding: 2, resource: hostSampler },
+				{ binding: 3, resource: glyphSampler },
+			],
+		});
+		return { texture, bindGroup };
+	}, entry => entry.texture.destroy());
 	const colorAttachment: ColorAttachmentSpec = { tex: null as TextureHandle };
 	const bitmaps = new HostBitmapTextures(image => {
 		const texture = backend.createTexture(image.pixels, image.width, image.height, RGBA8_LINEAR_TEXTURE_PARAMS) as GPUTexture;
@@ -151,7 +150,7 @@ function createRuntime(backend: WebGPUBackend): HostOverlayRuntime {
 		pipeline,
 		meshScenes: new WebGPUHostMeshScenes(backend, bitmaps),
 		meshBindGroups: [], bitmaps,
-		bindGroup,
+		atlases,
 		frameBindGroups: new WeakMap(),
 		uniformBuffer,
 		instanceFloatBuffer: createInstanceFloatBuffer(device, stream),
@@ -161,8 +160,6 @@ function createRuntime(backend: WebGPUBackend): HostOverlayRuntime {
 		passDesc: { label: 'HostOverlay (WebGPU)', color: colorAttachment },
 		stream,
 		clip: new HostOverlayClipState(),
-		hostAtlasTexture,
-		distanceAtlasTexture,
 		uniformScratch: new Float32Array(OVERLAY_UNIFORM_FLOATS),
 	};
 }
@@ -225,7 +222,6 @@ function renderStream(backend: WebGPUBackend, runtime: HostOverlayRuntime, state
 	runtime.colorAttachment.tex = backend.context.getCurrentTexture() as TextureHandle;
 	const pass = backend.beginRenderPass(runtime.passDesc) as WebGPUPassEncoder;
 	pass.encoder.setPipeline(runtime.pipeline);
-	pass.encoder.setBindGroup(0, runtime.bindGroup);
 	pass.encoder.setBindGroup(1, frameBindGroup);
 	pass.encoder.setVertexBuffer(0, runtime.instanceFloatBuffer);
 	pass.encoder.setVertexBuffer(1, runtime.instanceTextureKindBuffer);
@@ -233,11 +229,16 @@ function renderStream(backend: WebGPUBackend, runtime: HostOverlayRuntime, state
 	clip.reset(state.overlayWidth, state.overlayHeight, state.width, state.height);
 	let bitmap: HostBitmap | undefined;
 	let scene: HostMeshScene | undefined;
+	let atlas: HostAtlas | undefined;
 	for (let index = 0; index < stream.batchCount; index += 1) {
 		const batch = stream.batches[index];
 		const end = index + 1 < stream.batchCount ? stream.batches[index + 1].start : count;
 		clip.set(batch.clip);
 		if (end === batch.start || clip.left === clip.right || clip.top === clip.bottom) continue;
+		if (atlas !== batch.atlas) {
+			atlas = batch.atlas;
+			pass.encoder.setBindGroup(0, runtime.atlases.get(atlas).bindGroup);
+		}
 		if (bitmap !== batch.bitmap || scene !== batch.scene) {
 			bitmap = batch.bitmap;
 			scene = batch.scene;
@@ -261,14 +262,13 @@ export function registerHostOverlayPassesWebGPU(registry: RenderPassLibrary): vo
 		bootstrap: (backend) => {
 			runtime = createRuntime(backend as WebGPUBackend);
 		},
-		teardown: (backend) => {
+		teardown: () => {
 			runtime.bitmaps.dispose();
 			runtime.meshScenes.dispose();
 			runtime.uniformBuffer.destroy();
 			runtime.instanceFloatBuffer.destroy();
 			runtime.instanceTextureKindBuffer.destroy();
-			backend.destroyTexture(runtime.hostAtlasTexture);
-			backend.destroyTexture(runtime.distanceAtlasTexture);
+			runtime.atlases.dispose();
 		},
 		shouldExecute: presenter => presenter.hostOverlayQueue.hasPendingOverlayFrame(),
 		exec: (backend, _fbo, state: RenderPassStateRegistry['host_overlay']) => {

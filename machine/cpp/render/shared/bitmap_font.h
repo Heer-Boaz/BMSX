@@ -11,6 +11,8 @@
 
 namespace bmsx {
 
+struct HostAtlas;
+
 using GlyphMap = std::unordered_map<u32, std::string>;
 
 struct ImageAtlasRect {
@@ -55,12 +57,14 @@ struct FontRendering {
 class BitmapFontSource {
 public:
 	virtual ~BitmapFontSource() = default;
+	virtual const HostAtlas& atlas() const = 0;
 	virtual BitmapFontSourceGlyph resolveGlyph(const std::string& imgid) const = 0;
 };
 
 class BFont {
 public:
 	BFont(const BitmapFontSource& source, GlyphMap itemmap, f32 advancePadding = 0, FontRendering rendering = {});
+	const HostAtlas& atlas;
 	const FontSampling sampling;
 	const FontRaster raster;
 	const f32 distanceRange;

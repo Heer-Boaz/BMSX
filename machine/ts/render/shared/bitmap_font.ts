@@ -1,3 +1,5 @@
+import type { HostAtlas } from '../host_overlay/atlas';
+
 export type GlyphMap = Record<string, string>;
 export type FontSampling = 'nearest' | 'linear';
 export type FontRendering = { raster: 'bitmap'; sampling: FontSampling }
@@ -33,6 +35,7 @@ export type BitmapFontSourceGlyph = {
 };
 
 export interface BitmapFontSource {
+	readonly atlas: HostAtlas;
 	resolveGlyph(imgid: string): BitmapFontSourceGlyph;
 }
 
@@ -124,6 +127,7 @@ const DEFAULT_GLYPH_MAP: GlyphMap = {
 };
 
 export class BFont {
+	public readonly atlas: HostAtlas;
 	public readonly sampling: FontSampling;
 	public readonly raster: FontRendering['raster'];
 	public readonly distanceRange: number;
@@ -135,6 +139,7 @@ export class BFont {
 
 	constructor(protected readonly source: BitmapFontSource, itemmap?: GlyphMap, advancePadding: number = 0,
 		rendering: FontRendering = { raster: 'bitmap', sampling: 'nearest' }) {
+		this.atlas = source.atlas;
 		this.raster = rendering.raster;
 		this.sampling = rendering.raster === 'bitmap' ? rendering.sampling : 'linear';
 		this.distanceRange = rendering.raster === 'msdf' ? rendering.distanceRange : 0;

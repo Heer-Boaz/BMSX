@@ -25,9 +25,6 @@ export async function createHostBitmapTest(kind: StudioRendererKind, canvas: HTM
 	presenter.crt_postprocessing_enabled = false;
 	const overlay = new OverlayRenderer(presenter.hostOverlayQueue, { width: 16, height: 8 }), frames = new FrameBitmap();
 	const uploads = { creates: 0, updates: 0 };
-	const create = backend.createTexture.bind(backend), update = backend.updateTexture.bind(backend);
-	backend.createTexture = (...args) => { uploads.creates++; return create(...args); };
-	backend.updateTexture = (...args) => { uploads.updates++; update(...args); };
 	const pixels = new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255]);
 	frames.publish(pixels, 2, 1, { presentationSequence: 1, cycles: 10, videoTick: 1 });
 	const affineBitmap = new HostBitmap({ width: 4, height: 2, pixels: new Uint8Array([
@@ -35,6 +32,11 @@ export async function createHostBitmapTest(kind: StudioRendererKind, canvas: HTM
 		0, 255, 255, 255, 255, 0, 255, 255, 255, 255, 255, 255, 0, 0, 0, 255,
 	]) });
 	const alphaBitmap = new HostBitmap({ width: 1, height: 1, pixels: new Uint8Array([255, 128, 64, 128]) });
+	// Count this fixture's bitmap resources, not unrelated lazy atlas admission.
+	const ownedPixels = new Set<Uint8Array>([frames.bitmap!.image.pixels, affineBitmap.image.pixels, alphaBitmap.image.pixels]);
+	const create = backend.createTexture.bind(backend), update = backend.updateTexture.bind(backend);
+	backend.createTexture = (...args) => { if (ownedPixels.has(args[0])) uploads.creates++; return create(...args); };
+	backend.updateTexture = (...args) => { if (ownedPixels.has(args[1])) uploads.updates++; update(...args); };
 	return {
 		async paint() {
 			overlay.beginFrame(); overlay.drawBitmap(frames.bitmap!, 0, 0, 16, 8); overlay.endFrame();
@@ -82,7 +84,10 @@ export async function createHostBitmapTest(kind: StudioRendererKind, canvas: HTM
 		},
 		mutateProducer() { pixels.set([0, 0, 255, 255, 255, 255, 0, 255]); },
 		publish() { frames.publish(pixels, 2, 1, { presentationSequence: 2, cycles: 20, videoTick: 2 }); },
-		resize() { frames.publish(new Uint8Array([0, 255, 255, 255, 255, 0, 255, 255]), 1, 2, { presentationSequence: 3, cycles: 30, videoTick: 3 }); },
+		resize() {
+			frames.publish(new Uint8Array([0, 255, 255, 255, 255, 0, 255, 255]), 1, 2, { presentationSequence: 3, cycles: 30, videoTick: 3 });
+			ownedPixels.add(frames.bitmap!.image.pixels);
+		},
 		dispose() { affineBitmap.dispose(); alphaBitmap.dispose(); frames.dispose(); target.dispose(); presenter.dispose(); },
 	};
 }

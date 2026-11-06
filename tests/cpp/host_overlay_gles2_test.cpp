@@ -1,6 +1,7 @@
 #include "render/host_overlay/gles2/pipeline.h"
 #include "render/host_overlay/software/renderer.h"
 #include "support/host_overlay_fixture.h"
+#include "support/host_font_atlas_fixture.h"
 #include "spec/bmsx/model.h"
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -36,6 +37,7 @@ int main() {
 		backend.onContextReset();
 		HostOverlayGLES2State pipeline;
 		bootstrapHostOverlayGLES2(backend, pipeline);
+		require(pipeline.atlases.empty(), "bootstrapping a renderer must not upload unused atlases");
 		Host2DPipelineState state;
 		state.width = state.overlayWidth = 64;
 		state.height = state.overlayHeight = 48;
@@ -110,6 +112,37 @@ int main() {
 		// presentation scales. Ordinary atlas images following text stay nearest.
 		SoftwareBackend software(64, 48, PSX_MACHINE_SPEC.gxGpuVramBytes);
 		software.resizePresentationTarget(64, 48);
+		const test::HostFontAtlasFixture fontSources[]{{false, false}, {false, true}, {false, false}, {false, true}, {true, false}, {true, true}};
+		const FontRendering fontModes[]{{FontRaster::Bitmap, FontSampling::Nearest}, {FontRaster::Bitmap, FontSampling::Linear},
+			{FontRaster::Msdf, FontSampling::Linear, 3, 2}};
+		const auto builtinAtlasCount = pipeline.atlases.size();
+		for (int repeat = 0; repeat < 2; repeat++) {
+			beginHostOverlaySoftware(software, state); beginHostOverlayGLES2(backend, pipeline, state);
+			std::fill_n(software.framebuffer(), 64 * 48, 0);
+			glClearColor(0, 0, 0, 0); glClear(GL_COLOR_BUFFER_BIT);
+			for (int row = 0; row < 3; row++) for (int column = 0; column < 3; column++) {
+				BFont font(fontSources[row * 2 + column % 2], {{'A', "fixture"}, {'?', "fixture"}}, 0, fontModes[row]);
+				GlyphRenderSubmission text;
+				text.font = &font; text.items = {"A"}; text.item_end = 1;
+				text.x = 1 + column * 6; text.y = 1 + row * 6;
+				renderHost2DEntrySoftware(software, Host2DKind::Glyphs, {.glyphs = &text});
+				renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Glyphs, {.glyphs = &text});
+			}
+			glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, alphaPixels.data());
+			endHostOverlaySoftware(software); endHostOverlayGLES2(backend, pipeline);
+			require(glGetError() == GL_NO_ERROR, "GLES2 source-owned atlas graphics error");
+			require(pipeline.atlases.size() == builtinAtlasCount + 6, "atlas cache reuses texture storage across frames and font instances");
+			for (int row = 0; row < 3; row++) for (int column = 0; column < 3; column++) {
+				for (int y = 0; y < 2; y++) for (int x = 0; x < 2; x++) {
+					const int px = 1 + column * 6 + x, py = 1 + row * 6 + y;
+					const bool lit = (x == y) == (column % 2 == 0);
+					require(software.framebuffer()[py * 64 + px] == (lit ? 0xffffffffu : 0), "software glyphs consume their source atlas");
+					const auto actual = alphaPixels[((47 - py) * 64 + px) * 4];
+					if (actual != (lit ? 255 : 0)) std::cerr << "atlas pixel: repeat=" << repeat << " row=" << row << " column=" << column << " x=" << x << " y=" << y << " actual=" << static_cast<int>(actual) << " lit=" << lit << '\n';
+					require(actual == (lit ? 255 : 0), "GLES2 glyphs consume their source atlas");
+				}
+			}
+		}
 		HostImageRenderSubmission image;
 		image.imgid = fixture.font.getGlyph('A').imgid;
 		image.pos = {.x = 2, .y = 42};
@@ -269,6 +302,7 @@ int main() {
 		require(glGetError() == GL_NO_ERROR, "embedded frame graphics error");
 		backend.destroyTexture(state.frameTexture);
 		shutdownHostOverlayGLES2(backend, pipeline);
+		require(pipeline.atlases.empty(), "shutdown releases every atlas texture from the renderer context");
 		backend.onContextDestroy();
 	}
 	eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);

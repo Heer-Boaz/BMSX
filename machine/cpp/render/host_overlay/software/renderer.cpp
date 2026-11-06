@@ -147,7 +147,7 @@ void drawImageSoftware(SoftwareBackend& backend, const HostImageRenderSubmission
 	);
 }
 
-void drawGlyphImageSoftware(SoftwareBackend& backend, const HostSystemAtlas& atlas, const FontGlyph& item, f32 imageX, f32 imageY, u32 color) {
+void drawGlyphImageSoftware(SoftwareBackend& backend, const HostAtlas& atlas, const FontGlyph& item, f32 imageX, f32 imageY, u32 color) {
 	const ImageAtlasRect& rect = item.rect;
 	const auto& transform = backend.hostOverlayTransform;
 	drawAtlasPixelsSoftware(
@@ -170,6 +170,7 @@ void drawGlyphImageSoftware(SoftwareBackend& backend, const HostSystemAtlas& atl
 
 struct GlyphSoftwareContext {
 	SoftwareBackend& backend;
+	const HostAtlas& atlas;
 	f32 lineHeight;
 	FontRaster raster;
 	f32 screenRange;
@@ -200,7 +201,7 @@ void drawGlyphSoftware(
 ) {
 	drawGlyphImageSoftware(
 		context.backend,
-		HOST_SYSTEM_ATLAS,
+		context.atlas,
 		item,
 		imageX,
 		imageY,
@@ -211,6 +212,7 @@ void drawGlyphSoftware(
 void drawGlyphsSoftware(SoftwareBackend& backend, const GlyphRenderSubmission& command) {
 	GlyphSoftwareContext context{
 		.backend = backend,
+		.atlas = command.font->atlas,
 		.lineHeight = 0,
 		.raster = command.font->raster,
 		.screenRange = std::max(1.0F, command.font->distanceRange * 0.5F * (backend.hostOverlayTransform.scaleX + backend.hostOverlayTransform.scaleY)),
@@ -223,7 +225,7 @@ void drawGlyphsSoftware(SoftwareBackend& backend, const GlyphRenderSubmission& c
 	context.color = command.color;
 	if (command.font->sampling == FontSampling::Linear) {
 		forEachBatchBlitGlyph(command, context, [](GlyphSoftwareContext& context, const FontGlyph& item, f32 x, f32 y) {
-			drawFilteredHostGlyph(context.backend, item, x, y, context.color, context.raster, context.screenRange);
+			drawFilteredHostGlyph(context.backend, context.atlas, item, x, y, context.color, context.raster, context.screenRange);
 		});
 	} else {
 		forEachBatchBlitGlyph(command, context, drawGlyphSoftware);

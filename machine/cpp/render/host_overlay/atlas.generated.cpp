@@ -8049,9 +8049,7 @@ constexpr HostSystemAtlasImage HOST_SYSTEM_ATLAS_IMAGES[] = {
 } // namespace
 
 const HostSystemAtlas HOST_SYSTEM_ATLAS{
-	245u,
-	238u,
-	HOST_SYSTEM_ATLAS_PIXELS,
+	{245u, 238u, HOST_SYSTEM_ATLAS_PIXELS, true},
 	HOST_SYSTEM_ATLAS_IMAGES,
 };
 

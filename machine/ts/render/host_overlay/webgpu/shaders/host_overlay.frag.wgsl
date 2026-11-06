@@ -1,7 +1,6 @@
 @group(0) @binding(1) var host_atlas: texture_2d<f32>;
 @group(0) @binding(2) var host_sampler: sampler;
 @group(0) @binding(3) var glyph_sampler: sampler;
-@group(0) @binding(4) var glyph_msdf: texture_2d<f32>;
 @group(1) @binding(0) var frame_texture: texture_2d<f32>;
 
 struct FragmentInput {
@@ -27,7 +26,7 @@ fn main(input: FragmentInput) -> @location(0) vec4<f32> {
 		texel = vec4<f32>(1.0, 1.0, 1.0, textureSampleLevel(host_atlas, glyph_sampler, input.texcoord, 0.0).a);
 	}
 	if (input.texture_kind == 6u) {
-		let distance = textureSampleLevel(glyph_msdf, glyph_sampler, input.texcoord, 0.0).rgb;
+		let distance = textureSampleLevel(host_atlas, glyph_sampler, input.texcoord, 0.0).rgb;
 		let median = max(min(distance.r, distance.g), min(max(distance.r, distance.g), distance.b));
 		texel = vec4<f32>(1.0, 1.0, 1.0, clamp(input.screen_range * (median - 0.5) + 0.5, 0.0, 1.0));
 	}

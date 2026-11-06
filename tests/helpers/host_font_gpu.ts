@@ -10,6 +10,9 @@ import { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { cartridgeSlots } from './cartridge';
 import { createHostOverlayFixture } from './host_overlay';
+import { createFontAtlasPair } from './host_font_atlas';
+import { HOST_SYSTEM_ATLAS } from '../../machine/ts/render/host_overlay/atlas';
+import { SCALABLE_FONT_ATLAS } from '../../machine/ts/render/host_overlay/scalable_font';
 
 /** Pixel integrity, not a UI snapshot: fractional layout cannot drop bitmap-font rows. */
 export async function renderHostFontCases(canvas: HTMLCanvasElement, kind: 'webgl2' | 'webgpu') {
@@ -18,6 +21,15 @@ export async function renderHostFontCases(canvas: HTMLCanvasElement, kind: 'webg
 	const gpu = kind === 'webgpu' ? await createWebGPUBackend(canvas, (await navigator.gpu.requestAdapter())!, PSX_MACHINE_SPEC.gxGpuVramBytes) : undefined;
 	const gl = kind === 'webgl2' ? createWebGLBackend(canvas, PSX_MACHINE_SPEC.gxGpuVramBytes) : undefined;
 	const backend = gpu === undefined ? gl! : gpu;
+	const atlasPairs = [createFontAtlasPair({ raster: 'bitmap', sampling: 'nearest' }),
+		createFontAtlasPair({ raster: 'bitmap', sampling: 'linear' }), createFontAtlasPair({ raster: 'msdf', lineHeight: 3, distanceRange: 2 })];
+	const atlasUploads = new Map([HOST_SYSTEM_ATLAS.pixels, SCALABLE_FONT_ATLAS.pixels,
+		...atlasPairs.flatMap(pair => pair.map(font => font.atlas.pixels))].map(pixels => [pixels, 0]));
+	const createTexture = backend.createTexture.bind(backend);
+	backend.createTexture = (pixels, width, height, params) => {
+		if (atlasUploads.has(pixels)) atlasUploads.set(pixels, atlasUploads.get(pixels)! + 1);
+		return createTexture(pixels, width, height, params);
+	};
 	backend.resizePresentationTarget(width, height);
 	if (gpu !== undefined) gpu.context.configure({ device: gpu.device, format: gpu.canvasFormat, alphaMode: 'opaque',
 		usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC });
@@ -26,6 +38,7 @@ export async function renderHostFontCases(canvas: HTMLCanvasElement, kind: 'webg
 	gpu?.device.pushErrorScope('validation');
 	const presenter = new VideoPresenter(new OffscreenVideoOutput(width, height), backend, width, height);
 	presenter.initialize(new RenderPassLibrary(backend, presenter));
+	const bootAtlasUploads = [...atlasUploads.values()].reduce((sum, count) => sum + count, 0);
 	presenter.crt_postprocessing_enabled = false;
 	const machine = new Machine(new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes), {
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh() { return false; }, applyInputControllerVibrationEffect() {},
@@ -75,6 +88,7 @@ export async function renderHostFontCases(canvas: HTMLCanvasElement, kind: 'webg
 	const smoothFonts = [new Font({ variant: 'tiny', sampling: 'linear' }), new Font({ variant: 'msx', sampling: 'linear' }),
 		new Font({ variant: 'tiny', style: 'italic', sampling: 'linear' }), new Font({ variant: 'msx', style: 'italic', sampling: 'linear' }),
 		new Font({ variant: 'mono' }), new Font({ variant: 'mono', style: 'italic' })];
+	const unusedScalableUploads = atlasUploads.get(SCALABLE_FONT_ATLAS.pixels);
 	const sampling: { density: number; scale: number; maxError: number; msdfError: number; msdfWorst: number[]; imageDifferences: number; fractional: number }[] = [];
 	for (const density of [1, 2]) for (const scale of [1, 1.5, 2, 3, 3.75]) {
 		const drawCoverage = (renderer: OverlayRenderer) => {
@@ -122,10 +136,33 @@ export async function renderHostFontCases(canvas: HTMLCanvasElement, kind: 'webg
 		}
 		sampling.push({ density, scale, maxError, msdfError, msdfWorst, imageDifferences, fractional });
 	}
+	// Same ids, raster modes and glyph metrics are not texture identity. Alternate
+	// two independently authored atlases, then repeat without another upload.
+	renderer.setViewportSize({ width, height });
+	for (let repeat = 0; repeat < 2; repeat++) {
+		renderer.beginFrame(); renderer.fillRect(0, 0, width, height, 0, 0xff000000, 0);
+		for (let row = 0; row < atlasPairs.length; row++) for (let column = 0; column < 3; column++) {
+			const font = atlasPairs[row][column % 2];
+			renderer.itemRun('A', 0, 1, 1 + column * 6, 1 + row * 6, 0, font, 0xffffffff, 0);
+		}
+		renderer.endFrame(); presenter.present(output, 0, 0);
+	}
+	const atlasPixels = gpu !== undefined ? await gpu.readColorTexture(gpu.context.getCurrentTexture(), width, height) : new Uint8Array(width * height * 4);
+	if (gl !== undefined) gl.gl.readPixels(0, 0, width, height, gl.gl.RGBA, gl.gl.UNSIGNED_BYTE, atlasPixels);
+	const atlasSamples: number[][] = [];
+	for (let row = 0; row < atlasPairs.length; row++) for (let column = 0; column < 3; column++) {
+		const ink: number[] = [];
+		for (let y = 0; y < 2; y++) for (let x = 0; x < 2; x++) {
+			const py = 1 + row * 6 + y;
+			ink.push(atlasPixels[((gl === undefined ? py : height - 1 - py) * width + 1 + column * 6 + x) * 4]);
+		}
+		atlasSamples.push(ink);
+	}
 	const validationError = gpu === undefined ? undefined : (await gpu.device.popErrorScope())?.message;
 	const glError = gl === undefined ? 0 : gl.gl.getError();
 	let ink = 0;
 	for (let index = 0; index < reference.length; index += 4) if (reference[index] !== 0) ink++;
 	presenter.dispose(); gpu?.device.destroy();
-	return { cases, sampling, ink, validationError, glError, errors };
+	return { cases, sampling, ink, validationError, glError, errors, atlasSamples, bootAtlasUploads, unusedScalableUploads,
+		atlasUploads: [...atlasUploads.values()] };
 }

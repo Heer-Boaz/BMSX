@@ -1,6 +1,6 @@
 import { BFont, type GlyphMap, type FontSampling } from './bitmap_font';
 import { SCALABLE_FONT_ATLAS, SCALABLE_FONT_SOURCE, SCALABLE_FONT_MAPS } from '../host_overlay/scalable_font';
-import { hostSystemAtlasImage } from '../host_overlay/atlas';
+import { HOST_SYSTEM_ATLAS, hostSystemAtlasImage } from '../host_overlay/atlas';
 
 export const DEFAULT_FONT_VARIANT = 'msx' as const;
 
@@ -133,6 +133,7 @@ export class Font extends BFont {
 }
 
 const HOST_SYSTEM_FONT_SOURCE = {
+	atlas: HOST_SYSTEM_ATLAS,
 	resolveGlyph(imgid: string) {
 		const image = hostSystemAtlasImage(imgid);
 		return { ...image, advance: image.width, offsetX: 0, offsetY: 0 };

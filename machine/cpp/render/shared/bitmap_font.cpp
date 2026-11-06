@@ -8,7 +8,8 @@
 
 namespace bmsx {
 BFont::BFont(const BitmapFontSource& source, GlyphMap itemmap, f32 advancePadding, FontRendering rendering)
-	: sampling(rendering.raster == FontRaster::Msdf ? FontSampling::Linear : rendering.sampling)
+	: atlas(source.atlas())
+	, sampling(rendering.raster == FontRaster::Msdf ? FontSampling::Linear : rendering.sampling)
 	, raster(rendering.raster)
 	, distanceRange(rendering.distanceRange)
 	, m_source(source)

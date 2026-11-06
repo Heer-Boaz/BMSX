@@ -5,6 +5,7 @@ import type { HostSystemAtlas } from './atlas';
 export const HOST_SYSTEM_ATLAS: HostSystemAtlas = {
 	width: 245,
 	height: 238,
+	srgb: true,
 	pixels: new Uint8Array([
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,

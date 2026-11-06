@@ -22,6 +22,7 @@ import { GxGpuSoftwareState } from '../backend/software/gx_gpu_state';
 import type { GxGpu } from '../../machine/devices/gx/gpu';
 import type { HeadlessHost2DContext } from './host_2d';
 import { HostAffineQuadCoverage } from './host_affine_quad';
+import { HOST_SYSTEM_ATLAS } from '../host_overlay/atlas';
 import { blitOpaquePixels } from '../shared/software_pixels';
 import { HostOverlayRasterTransform } from '../host_overlay/transform';
 import { HostOverlayClipState } from '../host_overlay/clip';
@@ -150,6 +151,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 		backgroundColor: 0,
 		lineHeight: 0,
 		glyphRaster: 'bitmap',
+		glyphAtlas: HOST_SYSTEM_ATLAS,
 		glyphScreenRange: 1,
 		clip: new HostOverlayClipState(),
 		meshScenes: new HostMeshSceneTargets(createHeadlessHostMeshTarget, renderHeadlessHostMeshScene, disposeHeadlessHostMeshTarget),

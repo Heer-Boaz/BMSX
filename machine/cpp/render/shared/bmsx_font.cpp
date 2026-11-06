@@ -14,6 +14,7 @@ namespace {
 
 class HostSystemBitmapFontSource final : public BitmapFontSource {
 public:
+	const HostAtlas& atlas() const override { return HOST_SYSTEM_ATLAS; }
 	BitmapFontSourceGlyph resolveGlyph(const std::string& imgid) const override {
 		const HostSystemAtlasImage& image = hostSystemAtlasImage(imgid);
 		return BitmapFontSourceGlyph{

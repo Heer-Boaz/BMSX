@@ -1,7 +1,6 @@
 #include "render/host_overlay/software/glyph.h"
 #include "render/backend/backend.h"
 #include "render/host_overlay/atlas.h"
-#include "render/host_overlay/scalable_font.h"
 #include "render/shared/bitmap_font.h"
 #include "render/shared/software_pixels.h"
 #include <algorithm>
@@ -16,7 +15,7 @@ f32 sampleChannel(std::span<const u8> atlas, i32 from, i32 stride, f32 fx, f32 f
 }
 
 template<bool Msdf>
-void drawFilteredGlyph(SoftwareBackend& backend, const FontGlyph& item, f32 x, f32 y, u32 color, f32 screenRange) {
+void drawFilteredGlyph(SoftwareBackend& backend, const HostAtlas& source, const FontGlyph& item, f32 x, f32 y, u32 color, f32 screenRange) {
 	const auto& transform = backend.hostOverlayTransform;
 	const auto& rect = item.rect;
 	if (rect.w == 0 || rect.h == 0) return;
@@ -33,8 +32,8 @@ void drawFilteredGlyph(SoftwareBackend& backend, const FontGlyph& item, f32 x, f
 	if (startY + 0.5F < top) startY++;
 	if (endX - 0.5F >= right) endX--;
 	if (endY - 0.5F >= bottom) endY--;
-	const auto atlas = Msdf ? SCALABLE_FONT_ATLAS.pixels : HOST_SYSTEM_ATLAS.pixels;
-	const i32 atlasStride = static_cast<i32>(Msdf ? SCALABLE_FONT_ATLAS.width : HOST_SYSTEM_ATLAS.width) * 4;
+	const auto atlas = source.pixels;
+	const i32 atlasStride = static_cast<i32>(source.width) * 4;
 	const u8 r = static_cast<u8>(color >> 16u), g = static_cast<u8>(color >> 8u), b = static_cast<u8>(color);
 	const f32 a = static_cast<f32>(color >> 24u) / 255.0F;
 	const f32 firstU = rect.u - 0.5F + (startX + 0.5F - originX) * stepU;
@@ -66,9 +65,9 @@ void drawFilteredGlyph(SoftwareBackend& backend, const FontGlyph& item, f32 x, f
 
 } // namespace
 
-void drawFilteredHostGlyph(SoftwareBackend& backend, const FontGlyph& item, f32 x, f32 y, u32 color, FontRaster raster, f32 screenRange) {
-	if (raster == FontRaster::Msdf) drawFilteredGlyph<true>(backend, item, x, y, color, screenRange);
-	else drawFilteredGlyph<false>(backend, item, x, y, color, screenRange);
+void drawFilteredHostGlyph(SoftwareBackend& backend, const HostAtlas& atlas, const FontGlyph& item, f32 x, f32 y, u32 color, FontRaster raster, f32 screenRange) {
+	if (raster == FontRaster::Msdf) drawFilteredGlyph<true>(backend, atlas, item, x, y, color, screenRange);
+	else drawFilteredGlyph<false>(backend, atlas, item, x, y, color, screenRange);
 }
 
 } // namespace bmsx

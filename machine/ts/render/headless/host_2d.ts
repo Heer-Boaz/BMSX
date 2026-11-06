@@ -4,6 +4,7 @@ import { drawFilteredHostGlyph } from './host_glyph';
 import {
 	HOST_SYSTEM_ATLAS,
 	hostSystemAtlasImage,
+	type HostAtlas,
 } from '../host_overlay/atlas';
 import { forEachBatchBlitGlyph } from '../shared/glyph_runs';
 import {
@@ -36,6 +37,7 @@ export type HeadlessHost2DContext = {
 	backgroundColor: number;
 	lineHeight: number;
 	glyphRaster: 'bitmap' | 'msdf';
+	glyphAtlas: HostAtlas;
 	glyphScreenRange: number;
 	clip: HostOverlayClipState;
 	transform: HostOverlayRasterTransform;
@@ -191,6 +193,7 @@ function drawImage(context: HeadlessHost2DContext, command: HostImageRenderSubmi
 	const transform = context.transform;
 	drawHostAtlasRect(
 		context,
+		HOST_SYSTEM_ATLAS,
 		source.u,
 		source.v,
 		source.w,
@@ -210,6 +213,7 @@ function drawBatchBlit(context: HeadlessHost2DContext, command: GlyphRenderSubmi
 	context.backgroundColor = command.background_color;
 	context.lineHeight = command.font.lineHeight;
 	context.glyphRaster = command.font.raster;
+	context.glyphAtlas = command.font.atlas;
 	context.glyphScreenRange = Math.max(1, command.font.distanceRange * 0.5 * (context.transform.scaleX + context.transform.scaleY));
 	if (command.has_background_color) forEachBatchBlitGlyph(command, context, drawGlyphBackground);
 	forEachBatchBlitGlyph(command, context, command.font.sampling === 'linear' ? drawFilteredHostGlyph : drawHeadlessGlyph);
@@ -226,6 +230,7 @@ function drawHeadlessGlyph(context: HeadlessHost2DContext, item: FontGlyph, x: n
 	const source = item.rect;
 	drawHostAtlasRect(
 		context,
+		context.glyphAtlas,
 		source.u,
 		source.v,
 		source.w,
@@ -259,6 +264,7 @@ function fillRect(context: HeadlessHost2DContext, left: number, top: number, rig
 }
 
 function drawHostAtlasRect(context: HeadlessHost2DContext,
+	source: HostAtlas,
 	sourceX: number,
 	sourceY: number,
 	sourceW: number,
@@ -273,7 +279,7 @@ function drawHostAtlasRect(context: HeadlessHost2DContext,
 	const target = context.target;
 	const width = context.width;
 	const clip = context.clip;
-	const atlas = HOST_SYSTEM_ATLAS.pixels;
+	const atlas = source.pixels;
 	const colorR = (colorValue >>> 16) & 0xff, colorG = (colorValue >>> 8) & 0xff, colorB = colorValue & 0xff, colorA = (colorValue >>> 24) & 0xff;
 	const dstXi = Math.trunc(dstX);
 	const dstYi = Math.trunc(dstY);
@@ -295,7 +301,7 @@ function drawHostAtlasRect(context: HeadlessHost2DContext,
 			const relX = x - dstXi;
 			const sampleX = flipH ? (dstWi - 1 - relX) : relX;
 			const srcX = sourceX + ((sampleX * sourceW / dstWi) | 0);
-			const srcOffset = (srcY * HOST_SYSTEM_ATLAS.width + srcX) * 4;
+			const srcOffset = (srcY * source.width + srcX) * 4;
 			const sourceAlpha = (atlas[srcOffset + 3] * colorA + 127) / 255;
 			blendPixel(
 				target,
