@@ -10,6 +10,7 @@ import { RuntimeTimelineLayout } from '../../ide/workbench/ui/runtime_timeline';
 import { createWorkbenchActionBar } from '../../ide/workbench/ui/action_bar';
 import { WorkbenchSlider } from '../../ide/workbench/ui/slider';
 import { editorViewState } from '../../ide/editor/ui/view/state';
+import { createInputControllerSnapshot, InputControllerSampleContext } from '../../machine/ts/machine/devices/input/contracts';
 
 async function fixture(t: TestContext, presentation: 'viewless' | 'workbench' = 'viewless') {
 	const f = await createLiveStudioFixture(t, presentation);
@@ -64,6 +65,38 @@ for (const route of ['command', 'button'] as const) test(`Continue from Here ${r
 	assert.deepEqual(f.input.selectionPath, selection, 'continuing preserves the inspected component');
 });
 
+for (const running of [false, true]) test(`Game-camera inspection selects the displayed actor without admitting game input while ${running ? 'running' : 'paused'}`, async t => {
+	const f = await fixture(t, 'workbench');
+	f.editor.commands.execute('runtime.playback', f.pane.commandTarget);
+	await f.until(() => f.input.controller.viewportPicker.frame.quads.length > 0);
+	if (!running) { f.editor.commands.execute('runtime.pause', f.pane.commandTarget); await f.frame(); }
+	const actor = f.input.worldOutliner.tree.rows.find(row => row.element.label === 'studio_test.first')!.element.hashId;
+	const clickActor = async () => {
+		const frame = f.input.controller.viewportPicker.frame, quad = [...frame.quads].find(quad => quad.hashId === actor)!;
+		const bounds = f.input.previewBounds;
+		f.native.apply([{ type: 'pointer',
+			x: bounds.left + (quad.ox + (quad.ax + quad.bx) / 2 + frame.offsetX) * (bounds.right - bounds.left) / frame.width,
+			y: bounds.top + (quad.oy + (quad.ay + quad.by) / 2 + frame.offsetY) * (bounds.bottom - bounds.top) / frame.height },
+			{ type: 'button', button: 'primary', down: true }]);
+		await f.frame(); f.native.apply([{ type: 'button', button: 'primary', down: false }]); await f.frame();
+	};
+	await clickActor();
+	assert.equal(f.input.actorHashId, actor, 'a click selects the actor in the published image, not just its hover label');
+	assert.ok(inputFocus.target?.guestInput === undefined, 'inspection must not acquire game input');
+	assert.equal(f.execution.paused, !running);
+	f.editor.commands.execute('actorLab.outline', f.pane.commandTarget); await f.frame();
+	const component = f.input.runtime.roots[0].children.find(node => node.kind === 'component')!;
+	f.input.controller.projection.reveal(component); await f.frame();
+	const selection = f.input.selectionPath;
+	await clickActor();
+	assert.deepEqual(f.input.selectionPath, selection, 'reselecting the same actor preserves its inspected component');
+	f.native.apply([{ type: 'pointer', x: f.input.previewBounds.right - 2, y: f.input.previewBounds.bottom - 2 },
+		{ type: 'button', button: 'primary', down: true }, { type: 'button', button: 'primary', down: false }]);
+	f.pane.focus(); await f.frame();
+	assert.equal(f.input.actorHashId, actor);
+	assert.deepEqual(f.input.selectionPath, selection, 'a miss and focus change do not clear inspection');
+});
+
 for (const running of [false, true]) test(`Actor and component pointer selection survives presentation and blur while ${running ? 'running' : 'paused'}`, async t => {
 	const f = await fixture(t, 'workbench');
 	if (running) { f.editor.commands.execute('runtime.playback', f.pane.commandTarget); await f.frame(); }
@@ -84,7 +117,7 @@ for (const running of [false, true]) test(`Actor and component pointer selection
 	await f.frame(); f.native.apply([{ type: 'button', button: 'primary', down: false }]); await f.frame();
 	assert.equal(f.input.selectedOutlineNode?.hashId, member);
 	const selection = f.input.selectionPath;
-	// Empty scanout takes input focus; it is not an instruction to clear inspection.
+	// Empty scanout takes viewport focus; it is not an instruction to clear inspection.
 	f.native.apply([{ type: 'pointer', x: f.input.previewBounds.right - 2, y: f.input.previewBounds.bottom - 2 },
 		{ type: 'button', button: 'primary', down: true }, { type: 'button', button: 'primary', down: false }]);
 	await f.frame(); await f.frame();
@@ -217,7 +250,7 @@ for (const pause of ['editor hold', 'explicit pause'] as const) test(`Game viewp
 		{ type: 'button', button: 'primary', down: true }, { type: 'button', button: 'primary', down: false }]);
 	click(); await f.frame(); await f.frame(); click(); await f.frame();
 	const target = inputFocus.target!;
-	assert.ok(target.guestInput !== undefined, 'the click still admits the ordinary game input recipient');
+	assert.ok(target.guestInput === undefined, 'the inspection click does not grant guest input');
 	assert.equal(f.input.interaction.running, false);
 	assert.equal(f.execution.paused, true);
 	assert.equal(f.execution.userPaused, pause === 'explicit pause');
@@ -232,13 +265,15 @@ for (const pause of ['editor hold', 'explicit pause'] as const) test(`Game viewp
 	assert.equal(f.input.interaction.running, false); assert.equal(f.execution.userPaused, true);
 });
 
-test('keyboard focus in Game does not resume; releasing game input leaves Space available to the editor transport', async t => {
+test('keyboard traversal inspects; explicit Control Game grants input without resuming and Shift+F1 returns to inspection', async t => {
 	const f = await fixture(t), cycles = f.runtime.machine.scheduler.nowCycles;
 	f.pane.focus();
-	for (let step = 0; step < 20 && inputFocus.target?.guestInput === undefined; step++) {
+	for (let step = 0; step < 20; step++) {
 		f.editor.dispatchKey(new KeyInputEvent('Tab', KeyModifier.none));
 		f.editor.dispatchKey(new KeyInputEvent('Tab', KeyModifier.none, false, false)); f.editor.update(0);
+		assert.ok(inputFocus.target?.guestInput === undefined, 'tab traversal never implicitly possesses the game');
 	}
+	f.editor.commands.execute('actorLab.controlGame', f.pane.commandTarget);
 	assert.ok(inputFocus.target?.guestInput !== undefined);
 	await f.frame(); assert.equal(f.execution.paused, true); assert.equal(f.input.interaction.running, false);
 	assert.equal(f.runtime.machine.scheduler.nowCycles, cycles);
@@ -251,6 +286,41 @@ test('keyboard focus in Game does not resume; releasing game input leaves Space 
 		await f.frame(); await f.frame();
 		assert.equal(f.input.interaction.running, running); assert.equal(f.execution.paused, !running);
 	}
+});
+
+test('Control Game toolbar admits guest input; Shift+F1 returns to retained inspection without changing playback', async t => {
+	const f = await fixture(t, 'workbench');
+	const actor = f.input.worldOutliner.tree.rows.find(row => row.element.label === 'studio_test.first')!.element.hashId;
+	f.input.controller.inspectActor(f.input, f.input.domain, actor); await f.frame();
+	const cycles = f.runtime.machine.scheduler.currentNowCycles();
+	const control = f.input.viewportActions.items.find(item => item.command === 'actorLab.controlGame')!;
+	const clickControl = async () => {
+		const b = control.bounds;
+		f.native.apply([{ type: 'pointer', x: (b.left + b.right) / 2, y: (b.top + b.bottom) / 2 },
+			{ type: 'button', button: 'primary', down: true }]);
+		await f.frame(); f.native.apply([{ type: 'button', button: 'primary', down: false }]); await f.frame();
+	};
+	await clickControl();
+	assert.ok(inputFocus.target?.guestInput !== undefined);
+	const recipient = f.editor.guestInputRecipient!;
+	assert.ok(recipient !== null);
+	const b = f.input.previewBounds;
+	f.native.apply([{ type: 'pointer', x: (b.left + b.right) / 2, y: (b.top + b.bottom) / 2 },
+		{ type: 'button', button: 'primary', down: true }]);
+	const sample = createInputControllerSnapshot(); recipient.sampleInputControllerSnapshot(sample, InputControllerSampleContext.Normal);
+	assert.equal(sample.pointerButtons, 1, 'possessed viewport clicks reach the ordinary game recipient');
+	assert.equal(f.input.actorHashId, actor, 'guest clicks do not change inspection');
+	f.native.apply([{ type: 'button', button: 'primary', down: false }]);
+	f.editor.dispatchKey(new KeyInputEvent('F1', KeyModifier.shift));
+	f.editor.dispatchKey(new KeyInputEvent('F1', KeyModifier.shift, false, false)); await f.frame();
+	assert.ok(inputFocus.target?.guestInput === undefined);
+	assert.equal(f.input.actorHashId, actor); assert.equal(f.execution.paused, true);
+	assert.equal(f.runtime.machine.scheduler.currentNowCycles(), cycles, 'neither input transition resumes the game');
+	f.native.apply([{ type: 'pointer', x: (b.left + b.right) / 2, y: (b.top + b.bottom) / 2 },
+		{ type: 'button', button: 'primary', down: true }]);
+	recipient.sampleInputControllerSnapshot(sample, InputControllerSampleContext.Normal);
+	assert.equal(sample.pointerButtons, 0, 'inspection clicks do not leak into the game');
+	f.native.apply([{ type: 'button', button: 'primary', down: false }]);
 });
 
 test('leaving a running Actor Lab through the IDE shortcut continues the game', async t => {

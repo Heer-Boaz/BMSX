@@ -262,6 +262,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	],
 	'actorLab.viewport': [
 		{ type: 'command', command: 'actorLab.viewOptions', icon: 'chevronDown', showLabel: true },
+		{ type: 'command', command: 'actorLab.controlGame', icon: 'inputBindings', showLabel: true },
 		{ type: 'command', command: 'actorLab.cameraOptions', icon: 'camera' },
 		{ type: 'command', command: 'sceneViewport.frameSelection', icon: 'follow' },
 	],

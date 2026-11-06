@@ -153,6 +153,7 @@ test('Actor queued mutation belongs to the invoking attachment, while a move pre
 test('Actor transfer drains a physical guest hold and requires fresh destination input admission', t => {
 	const f = fixture(t), bounds = f.input.previewBounds;
 	assert.equal(f.input.layout.previewVisible, true);
+	f.editor.commands.execute('actorLab.controlGame', f.pane.commandTarget);
 	f.native.apply([{ type: 'pointer', x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2 },
 		{ type: 'button', button: 'primary', down: true }]);
 	const guest = inputFocus.target!, binding = guest.guestInput!, interaction = guest.scope.interaction!;
@@ -165,6 +166,7 @@ test('Actor transfer drains a physical guest hold and requires fresh destination
 	f.native.apply([{ type: 'button', button: 'primary', down: false }]);
 	assert.equal(pointerCapture.draining, false);
 	const nextBounds = f.input.previewBounds;
+	f.editor.commands.execute('actorLab.controlGame', moved.commandTarget);
 	f.native.apply([{ type: 'pointer', x: (nextBounds.left + nextBounds.right) / 2, y: (nextBounds.top + nextBounds.bottom) / 2 },
 		{ type: 'button', button: 'primary', down: true }]);
 	const fresh = inputFocus.target!.guestInput!;

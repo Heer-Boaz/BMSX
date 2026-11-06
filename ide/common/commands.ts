@@ -131,7 +131,7 @@ export type EditorCommandId =
 	| 'runtime.playback'
 	| 'gameView.togglePanel' | 'gameView.closePanel'
 	| 'actorLab.viewOptions' | 'actorLab.cameraOptions'
-	| 'actorLab.selectVisual' | 'actorLab.gameView' | 'actorLab.playback' | 'actorLab.run' | 'actorLab.select' | 'actorLab.spawn' | 'actorLab.emit' | 'actorLab.actions' | 'actorLab.call' | 'actorLab.details'
+	| 'actorLab.selectVisual' | 'actorLab.gameView' | 'actorLab.controlGame' | 'actorLab.playback' | 'actorLab.run' | 'actorLab.select' | 'actorLab.spawn' | 'actorLab.emit' | 'actorLab.actions' | 'actorLab.call' | 'actorLab.details'
 	| 'actorLab.stateGraph' | 'actorLab.world' | 'actorLab.outline' | 'actorLab.follow' | 'actorLab.revealActive' | 'actorLab.editScene' | 'actorLab.find'
 	| 'actorLab.pinProperty' | 'actorLab.unpinProperty' | 'actorLab.revealPinnedProperty' | 'actorLab.lockDetails'
 	| 'scenarioLab.details'

@@ -1031,6 +1031,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor preview r
 	const center = () => ({ x: (input.previewBounds.left + input.previewBounds.right) / 2,
 		y: (input.previewBounds.top + input.previewBounds.bottom) / 2 });
 	const sample = createInputControllerSnapshot();
+	editor.commands.execute('actorLab.controlGame', pane.commandTarget);
 	let point = center(); pointer(point.x, point.y, PointerButton.Primary);
 	const preview = inputFocus.target!, binding = preview.guestInput!;
 	assert.ok(preview !== primary && binding.recipient === host.input);
@@ -1063,6 +1064,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor preview r
 	assert.ok(inputFocus.target === primary && pointerCapture.guestBinding === undefined);
 	assert.ok(input.outline.rows[input.outline.selectionIndex] === selected);
 	pointer(point.x, point.y, 0); assert.equal(pointerCapture.draining, false);
+	editor.commands.execute('actorLab.controlGame', pane.commandTarget);
 	pointer(point.x, point.y, PointerButton.Primary);
 	assert.ok(inputFocus.target === preview && pointerCapture.guestBinding === binding);
 	host.input.sampleInputControllerSnapshot(sample, InputControllerSampleContext.Normal); assert.equal(sample.pointerButtons, 1);
@@ -1123,6 +1125,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor sash reor
 test('Actor preview retirement keeps newer outside focus admitted by the departing guest control', t => {
 	const { editor, host, pointer, input, pane } = actorFixture(t);
 	pane.focus();
+	editor.commands.execute('actorLab.controlGame', pane.commandTarget);
 	pointer((input.previewBounds.left + input.previewBounds.right) / 2,
 		(input.previewBounds.top + input.previewBounds.bottom) / 2, PointerButton.Primary);
 	const preview = inputFocus.target!, outside = editor.resourcePanel.focusTarget;
@@ -1140,6 +1143,7 @@ test('Actor preview retirement keeps newer outside focus admitted by the departi
 test('Actor preview retirement stops the old pane update when guest blur opens another real editor', t => {
 	const { editor, host, pointer, input, pane } = actorFixture(t), group = editor.editorParts.main.activeGroup;
 	pane.focus();
+	editor.commands.execute('actorLab.controlGame', pane.commandTarget);
 	pointer((input.previewBounds.left + input.previewBounds.right) / 2,
 		(input.previewBounds.top + input.previewBounds.bottom) / 2, PointerButton.Primary);
 	const preview = inputFocus.target!, replacement = new TerminalInput(), cycles = host.runtime.machine.scheduler.currentNowCycles();
@@ -2501,6 +2505,7 @@ test('editor input retirement cancels its actual prompt and picker sessions with
 	for (const kind of ['prompt', 'picker']) {
 		const game = editor.actorLab.resolveInput();
 		editor.editorParts.main.activeGroup.panes.openEditor(game);
+		editor.commands.execute('actorLab.controlGame', editor.editorParts.main.activeGroup.panes.activePane!.commandTarget);
 		const bounds = game.previewBounds;
 		remote.apply([{ type: 'pointer', x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2 },
 			{ type: 'button', button: 'primary', down: true }, { type: 'button', button: 'primary', down: false }]);

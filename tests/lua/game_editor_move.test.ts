@@ -20,8 +20,7 @@ function fixture(t: TestContext) {
 	const native = new RemoteInput(f.host.input, f.host.clock, undefined,
 		event => f.editor.dispatchPointer(event), event => f.editor.dispatchWheel(event));
 	const focusGame = () => {
-		pane.focus();
-		for (let step = 0; step < 20 && inputFocus.target?.guestInput === undefined; step++) f.key('Tab');
+		f.editor.commands.execute('actorLab.controlGame', pane.commandTarget);
 		assert.ok(inputFocus.target?.guestInput, 'the retained runtime view exposes explicit guest focus');
 	};
 	return { ...f, parts, input, pane, native, focusGame };
@@ -82,6 +81,7 @@ test('Move Game opens the same input in a new Part with fresh chrome focus, not 
 test('Game transfer drains the old physical pointer hold and admits input only through a fresh destination viewport interaction', t => {
 	const f = fixture(t), sample = createInputControllerSnapshot(), bounds = f.input.previewBounds;
 	f.editor.commands.execute('runtime.resume', f.pane.commandTarget);
+	f.focusGame();
 	f.native.apply([{ type: 'pointer', x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2 },
 		{ type: 'button', button: 'primary', down: true }]);
 	const guest = inputFocus.target!, binding = guest.guestInput!;
@@ -101,10 +101,11 @@ test('Game transfer drains the old physical pointer hold and admits input only t
 	assert.equal(f.editor.guestInputRecipient, null, 'extra buttons cannot migrate the retired hold into the destination');
 	f.native.apply([{ type: 'button', button: 'primary', down: false }, { type: 'button', button: 'secondary', down: false }]);
 	assert.equal(pointerCapture.draining, false);
+	f.editor.commands.execute('actorLab.controlGame', moved.commandTarget);
 	f.native.apply([{ type: 'button', button: 'primary', down: true }]);
 	const nextGuest = inputFocus.target!, nextBinding = nextGuest.guestInput!;
 	assert.notEqual(nextGuest, guest); assert.notEqual(nextBinding, binding);
-	assert.ok(nextBinding !== undefined, 'a fresh hit admits the moved viewport without waiting for another frame');
+	assert.ok(nextBinding !== undefined, 'explicit Control Game admits the moved viewport without waiting for another frame');
 	assert.ok(nextBinding.bounds === f.input.previewBounds && nextBinding.recipient === f.host.input);
 	assert.ok(nextBinding.presentation === binding.presentation);
 	assert.ok(f.editor.guestInputRecipient === f.host.input && pointerCapture.guestBinding === nextBinding);
