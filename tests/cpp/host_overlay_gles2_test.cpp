@@ -13,6 +13,8 @@
 
 using namespace bmsx;
 
+void testHostOverlayGLES2Batches(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline, const Host2DPipelineState& state);
+
 static void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
 }
@@ -53,8 +55,8 @@ int main() {
 		glClearColor(0, 0, 0, 1);
 		glClear(GL_COLOR_BUFFER_BIT);
 		renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Rect, {.rect = &translucentRed});
-		glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, alphaPixels.data());
 		endHostOverlayGLES2(backend, pipeline);
+		glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, alphaPixels.data());
 		require(glGetError() == GL_NO_ERROR, "GLES2 source-over alpha graphics error");
 		for (size_t offset = 0; offset < alphaPixels.size(); offset += 4) {
 			require(alphaPixels[offset] == 128 && alphaPixels[offset + 1] == 0 && alphaPixels[offset + 2] == 0,
@@ -70,8 +72,8 @@ int main() {
 					glClear(GL_COLOR_BUFFER_BIT);
 					renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Clip, {.clip = bounds});
 					renderHost2DEntryGLES2(backend, pipeline, fixture.kinds[index], fixture.refs[index]);
-					glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, bounds == &full ? reference.data() : clipped.data());
 					endHostOverlayGLES2(backend, pipeline);
+					glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, bounds == &full ? reference.data() : clipped.data());
 					require(glGetError() == GL_NO_ERROR, "GLES2 host overlay graphics error");
 					require(glIsEnabled(GL_SCISSOR_TEST) == GL_FALSE, "host overlay must release scissor state at pass end");
 					if (bounds == &full) continue;
@@ -101,8 +103,8 @@ int main() {
 					glClearColor(0, 0, 0, 0); glClear(GL_COLOR_BUFFER_BIT);
 					renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Clip, {.clip = &clip});
 					renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Glyphs, {.glyphs = &text});
-					glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, phase == 0 ? reference.data() : clipped.data());
 					endHostOverlayGLES2(backend, pipeline);
+					glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, phase == 0 ? reference.data() : clipped.data());
 					require(glGetError() == GL_NO_ERROR, "GLES2 bitmap font graphics error");
 					if (phase != 0) require(clipped == reference, "fractional layout must not remove bitmap glyph rows or move text backgrounds");
 				}
@@ -128,8 +130,8 @@ int main() {
 				renderHost2DEntrySoftware(software, Host2DKind::Glyphs, {.glyphs = &text});
 				renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Glyphs, {.glyphs = &text});
 			}
-			glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, alphaPixels.data());
 			endHostOverlaySoftware(software); endHostOverlayGLES2(backend, pipeline);
+			glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, alphaPixels.data());
 			require(glGetError() == GL_NO_ERROR, "GLES2 source-owned atlas graphics error");
 			require(pipeline.atlases.size() == builtinAtlasCount + 6, "atlas cache reuses texture storage across frames and font instances");
 			for (int row = 0; row < 3; row++) for (int column = 0; column < 3; column++) {
@@ -173,9 +175,9 @@ int main() {
 						renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Clip, {.clip = &full});
 						renderHost2DEntrySoftware(software, Host2DKind::Img, {.img = &image});
 						renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Img, {.img = &image});
-						glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, alphaPixels.data());
 						endHostOverlaySoftware(software);
 						endHostOverlayGLES2(backend, pipeline);
+						glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, alphaPixels.data());
 						require(glGetError() == GL_NO_ERROR, "GLES2 smooth font graphics error");
 						int partial = 0, maxError = 0;
 						for (int y = 0; y < 48; ++y) for (int x = 0; x < 64; ++x) {
@@ -215,8 +217,8 @@ int main() {
 			renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Transform, {.transform = &transform});
 			renderHost2DEntrySoftware(software, Host2DKind::Glyphs, {.glyphs = &scalableText});
 			renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Glyphs, {.glyphs = &scalableText});
-			glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, density == 1 ? reference.data() : clipped.data());
 			endHostOverlaySoftware(software); endHostOverlayGLES2(backend, pipeline);
+			glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, density == 1 ? reference.data() : clipped.data());
 			require(glGetError() == GL_NO_ERROR, "GLES2 scalable font density graphics error");
 			if (density == 1) std::copy_n(software.framebuffer(), 64 * 48, densitySoftware.begin());
 			else {
@@ -238,8 +240,8 @@ int main() {
 			glClear(GL_COLOR_BUFFER_BIT);
 			renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Transform, {.transform = transform});
 			renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Glyphs, {.glyphs = &fixture.glyphs});
-			glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, transform == &doubled ? clipped.data() : reference.data());
 			endHostOverlayGLES2(backend, pipeline);
+			glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, transform == &doubled ? clipped.data() : reference.data());
 			require(glGetError() == GL_NO_ERROR, "GLES2 transformed glyph graphics error");
 		}
 		for (int y = 0; y < 48; ++y) {
@@ -257,8 +259,8 @@ int main() {
 		glClear(GL_COLOR_BUFFER_BIT);
 		renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Clip, {.clip = &logicalClip});
 		renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Rect, {.rect = &white});
-		glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, clipped.data());
 		endHostOverlayGLES2(backend, pipeline);
+		glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, clipped.data());
 		require(glGetError() == GL_NO_ERROR, "GLES2 scaled target graphics error");
 		for (int y = 0; y < 48; ++y) {
 			for (int x = 0; x < 64; ++x) {
@@ -276,8 +278,8 @@ int main() {
 		renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Transform, {.transform = &scope});
 		renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Clip, {.clip = &scopeClip});
 		renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Rect, {.rect = &scopedWhite});
-		glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, clipped.data());
 		endHostOverlayGLES2(backend, pipeline);
+		glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, clipped.data());
 		require(glGetError() == GL_NO_ERROR, "GLES2 nonuniform frame projection graphics error");
 		for (int y = 0; y < 48; ++y) {
 			for (int x = 0; x < 64; ++x) {
@@ -293,16 +295,19 @@ int main() {
 		beginHostOverlayGLES2(backend, pipeline, state);
 		glClearColor(0, 0, 0, 0); glClear(GL_COLOR_BUFFER_BIT);
 		renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Frame, {.frame = &frame});
-		glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, reference.data());
 		endHostOverlayGLES2(backend, pipeline);
+		glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, reference.data());
 		require(reference[(47 - 8) * 64 + 12] == 0xff0000ff && reference[(47 - 8) * 64 + 28] == 0xff00ff00,
 			"embedded frame top row is not vertically flipped");
 		require(reference[(47 - 24) * 64 + 12] == 0xffff0000 && reference[(47 - 24) * 64 + 28] == 0xffffffff,
 			"embedded frame bottom row and nearest scaling");
 		require(glGetError() == GL_NO_ERROR, "embedded frame graphics error");
+		testHostOverlayGLES2Batches(backend, pipeline, state);
 		backend.destroyTexture(state.frameTexture);
 		shutdownHostOverlayGLES2(backend, pipeline);
 		require(pipeline.atlases.empty(), "shutdown releases every atlas texture from the renderer context");
+		require(pipeline.drawList.vertices.capacity() == 0 && pipeline.drawList.batches.capacity() == 0,
+			"shutdown releases retained draw-list storage");
 		backend.onContextDestroy();
 	}
 	eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);

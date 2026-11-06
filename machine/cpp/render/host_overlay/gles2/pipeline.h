@@ -6,6 +6,7 @@
 #include "render/host_overlay/clip.h"
 #include "render/host_overlay/transform.h"
 #include "render/host_overlay/atlas.h"
+#include "render/host_overlay/gles2/draw_list.h"
 #include "render/shared/bitmap_font.h"
 #include <unordered_map>
 
@@ -16,24 +17,19 @@
 namespace bmsx {
 
 #if BMSX_ENABLE_GLES2
-struct HostAtlasGLES2Texture {
-	TextureHandle texture;
-	FontSampling sampling = FontSampling::Nearest;
-};
-
 struct HostOverlayGLES2State {
 	HostOverlayClipState clip;
 	HostOverlayTransform transform;
+	HostOverlayGLES2DrawList drawList;
 	i32 targetHeight = 0;
 	u32 generation = 0u;
 	GLuint program = 0;
 	GLint attribPos = -1;
 	GLint attribUv = -1;
+	GLint attribColor = -1;
 	GLint uniformResolution = -1;
-	GLint uniformColor = -1;
 	GLint uniformGlyphMode = -1;
 	GLint uniformScreenRange = -1;
-	i32 glyphMode = 0;
 	f32 pixelScale = 1;
 	GLuint vbo = 0;
 	TextureHandle whiteTexture = nullptr;

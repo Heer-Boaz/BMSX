@@ -713,8 +713,11 @@ if(BMSX_BUILD_TESTS)
 		pkg_check_modules(EGL REQUIRED IMPORTED_TARGET egl>=1.5)
 		add_executable(bmsx_host_overlay_gles2_tests
 			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/host_overlay_gles2_test.cpp
+			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/host_overlay_gles2_batch_test.cpp
 		)
 		target_link_libraries(bmsx_host_overlay_gles2_tests PRIVATE bmsx_host_support PkgConfig::EGL)
+		target_link_options(bmsx_host_overlay_gles2_tests PRIVATE
+			LINKER:--wrap=glBufferData LINKER:--wrap=glDrawArrays LINKER:--wrap=glTexParameteri)
 		add_test(NAME bmsx_host_overlay_gles2_tests COMMAND bmsx_host_overlay_gles2_tests)
 		add_executable(bmsx_game_capture_tests ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/game_capture_test.cpp)
 		target_link_libraries(bmsx_game_capture_tests PRIVATE bmsx_host_support PkgConfig::EGL)
