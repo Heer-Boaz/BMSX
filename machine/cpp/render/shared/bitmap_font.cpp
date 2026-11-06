@@ -43,11 +43,10 @@ const std::string& BFont::char_to_img(u32 codepoint) const {
 }
 
 const FontGlyph& BFont::getGlyph(u32 codepoint) {
-	auto it = m_items.find(codepoint);
-	if (it != m_items.end()) {
-		return it->second;
-	}
-	if (codepoint == static_cast<u32>('\t') && m_letter_to_img.find(codepoint) == m_letter_to_img.end()) {
+	const auto bound = m_characters.find(codepoint);
+	if (bound != m_characters.end()) return m_glyphs[bound->second];
+	const auto binding = m_letter_to_img.find(codepoint);
+	if (binding == m_letter_to_img.end() && codepoint == static_cast<u32>('\t')) {
 		const FontGlyph& space = getGlyph(static_cast<u32>(' '));
 		FontGlyph item;
 		item.imgid = space.imgid;
@@ -57,11 +56,20 @@ const FontGlyph& BFont::getGlyph(u32 codepoint) {
 		item.advance = item.width;
 		item.offsetX = space.offsetX;
 		item.offsetY = space.offsetY;
-		auto tabResult = m_items.emplace(codepoint, std::move(item));
-		return tabResult.first->second;
+		m_characters.emplace(codepoint, m_glyphs.size());
+		m_glyphs.push_back(std::move(item));
+		return m_glyphs.back();
 	}
 
-	const std::string& imgid = char_to_img(codepoint);
+	if (binding == m_letter_to_img.end()) return m_glyphs[resolveGlyph(m_letter_to_img.at(static_cast<u32>('?')))];
+	const size_t index = resolveGlyph(binding->second);
+	m_characters.emplace(codepoint, index);
+	return m_glyphs[index];
+}
+
+size_t BFont::resolveGlyph(const std::string& imgid) {
+	const auto found = m_image_glyphs.find(imgid);
+	if (found != m_image_glyphs.end()) return found->second;
 	const BitmapFontSourceGlyph sourceGlyph = m_source.resolveGlyph(imgid);
 	FontGlyph item;
 	item.imgid = imgid;
@@ -72,8 +80,10 @@ const FontGlyph& BFont::getGlyph(u32 codepoint) {
 	item.offsetX = sourceGlyph.offsetX;
 	item.offsetY = sourceGlyph.offsetY;
 
-	auto result = m_items.emplace(codepoint, std::move(item));
-	return result.first->second;
+	const size_t index = m_glyphs.size();
+	m_image_glyphs.emplace(imgid, index);
+	m_glyphs.push_back(std::move(item));
+	return index;
 }
 
 f32 BFont::advance(char c) {

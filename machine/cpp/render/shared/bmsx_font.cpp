@@ -123,7 +123,6 @@ GlyphMap buildTinyCharMap() {
 	map[0x2026] = withPrefix("ellipsis");
 	map[0x2588] = withPrefix("code_0x5f");
 	map[0x00A1] = withPrefix("inverted_exclamation");
-	map[0x00A4] = withPrefix("flower");
 	map[0x00A6] = withPrefix("brokenbar");
 	map[0x00A7] = withPrefix("section");
 	map[0x00A3] = withPrefix("pound");

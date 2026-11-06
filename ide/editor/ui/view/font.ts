@@ -1,11 +1,10 @@
 import { DEFAULT_FONT_VARIANT, Font, type FontVariant, type FontStyle } from '../../../../machine/ts/render/shared/bmsx_font';
-import type { FontGlyph, FontSampling } from 'bmsx/render/shared/bitmap_font';
+import type { FontSampling } from 'bmsx/render/shared/bitmap_font';
 import { TAB_SPACES } from '../../../common/constants';
 
 export class EditorFont {
 	private font: Font | null = null;
 	private readonly styles = new Map<FontStyle, Font>();
-	private readonly itemCache: Map<string, FontGlyph> = new Map();
 	private readonly _variant: FontVariant;
 	private columnAdvance: number | undefined;
 
@@ -20,18 +19,8 @@ export class EditorFont {
 		return this.font;
 	}
 
-	public getGlyph(char: string): FontGlyph {
-		let item = this.itemCache.get(char);
-		if (item) {
-			return item;
-		}
-		item = this.renderFontOwner().getGlyph(char);
-		this.itemCache.set(char, item);
-		return item;
-	}
-
 	public advance(char: string): number {
-		return this.getGlyph(char).advance;
+		return this.renderFontOwner().advance(char);
 	}
 
 	public get lineHeight(): number {

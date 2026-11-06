@@ -102,7 +102,6 @@ function buildTinyCharMap(): GlyphMap {
 		'…': withPrefix('ellipsis'),
 		'█': withPrefix('code_0x5f'),
 		'¡': withPrefix('inverted_exclamation'),
-		'¤': withPrefix('flower'),
 		'¦': withPrefix('brokenbar'),
 		'§': withPrefix('section'),
 		'£': withPrefix('pound'),

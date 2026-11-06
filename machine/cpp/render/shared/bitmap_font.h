@@ -6,6 +6,7 @@
 #define BMSX_FONT_H
 
 #include "common/primitives.h"
+#include <deque>
 #include <string>
 #include <unordered_map>
 
@@ -86,9 +87,14 @@ public:
 	f32 measure(const std::string& text);
 
 private:
+	size_t resolveGlyph(const std::string& imgid);
 	const BitmapFontSource& m_source;
 	GlyphMap m_letter_to_img;
-	std::unordered_map<u32, FontGlyph> m_items;
+	// Character aliases and missing codepoints share the source image's metrics.
+	// Stable references during lazy admission; copied fonts keep valid slot indices.
+	std::deque<FontGlyph> m_glyphs;
+	std::unordered_map<std::string, size_t> m_image_glyphs;
+	std::unordered_map<u32, size_t> m_characters;
 	f32 m_advance_padding = 0;
 	f32 m_line_height = 0;
 };

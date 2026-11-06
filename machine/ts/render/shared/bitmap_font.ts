@@ -12,15 +12,15 @@ export type ImageAtlasRect = {
 	h: number;
 };
 
-export type FontGlyph = {
+export type FontGlyph = Readonly<{
 	imgid: string;
-	rect: ImageAtlasRect;
+	rect: Readonly<ImageAtlasRect>;
 	width: number;
 	height: number;
 	advance: number;
 	offsetX: number;
 	offsetY: number;
-};
+}>;
 
 export type BitmapFontSourceGlyph = {
 	width: number;
@@ -131,7 +131,9 @@ export class BFont {
 	public readonly sampling: FontSampling;
 	public readonly raster: FontRendering['raster'];
 	public readonly distanceRange: number;
-	protected readonly items: Map<string, FontGlyph> = new Map();
+	// Character aliases and missing codepoints share the source image's metrics.
+	private readonly glyphs: Map<string, FontGlyph> = new Map();
+	private readonly characters: Map<string, FontGlyph> = new Map();
 	protected readonly advancePadding: number;
 	protected readonly lineHeightValue: number;
 	protected readonly fallbackCharacter: string = '?';
@@ -169,11 +171,10 @@ export class BFont {
 	}
 
 	public getGlyph(char: string): FontGlyph {
-		const item = this.items.get(char);
-		if (item) {
-			return item;
-		}
-		if (char === '\t' && !this.letter_to_img[char]) {
+		const bound = this.characters.get(char);
+		if (bound) return bound;
+		const imgid = this.letter_to_img[char];
+		if (imgid === undefined && char === '\t') {
 			const space = this.getGlyph(' ');
 			const tabAdvance = space.advance * TAB_SPACES;
 			const computed: FontGlyph = {
@@ -185,10 +186,18 @@ export class BFont {
 				offsetX: space.offsetX,
 				offsetY: space.offsetY,
 			};
-			this.items.set(char, computed);
+			this.characters.set(char, computed);
 			return computed;
 		}
-		const imgid = this.char_to_img(char);
+		if (imgid === undefined) return this.resolveGlyph(this.letter_to_img[this.fallbackCharacter]);
+		const item = this.resolveGlyph(imgid);
+		this.characters.set(char, item);
+		return item;
+	}
+
+	private resolveGlyph(imgid: string): FontGlyph {
+		const item = this.glyphs.get(imgid);
+		if (item) return item;
 		const sourceGlyph = this.source.resolveGlyph(imgid);
 		const computed: FontGlyph = {
 			imgid,
@@ -204,7 +213,7 @@ export class BFont {
 			offsetX: sourceGlyph.offsetX,
 			offsetY: sourceGlyph.offsetY,
 		};
-		this.items.set(char, computed);
+		this.glyphs.set(imgid, computed);
 		return computed;
 	}
 
