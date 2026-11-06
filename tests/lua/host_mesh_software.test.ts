@@ -42,6 +42,27 @@ function pixel(pixels: Uint8Array, x: number, y: number, width = 8): number[] {
 	return [...pixels.subarray(offset, offset + 4)];
 }
 
+for (const allocation of ['constructor', 'resize'] as const) test(`fractional viewport ${allocation} produces complete pixel rows, not fractional raster strides`, t => {
+	const f = fixture(t);
+	const viewport = new HostMeshScene(allocation === 'constructor' ? 8.2 : 8, 8.3);
+	t.after(() => viewport.dispose());
+	viewport.clipFromOrigin.set(CLIP_IDENTITY);
+	viewport.instances.push({ ...IDENTITY, mesh: mesh([-1, -1, 0.5, 1, -1, 0.5, -1, 1, 0.5, -1, 1, 0.5, 1, -1, 0.5, 1, 1, 0.5], 0xff123456) });
+	if (allocation === 'resize') viewport.resize(8.2, 8.3);
+	const pixels = f.draw(viewport);
+	for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) assert.deepEqual(pixel(pixels, x, y), [18, 52, 86, 255]);
+	const target = f.context.meshScenes.get(viewport), revision = viewport.revision;
+	assert.equal(target.pixels.length, 8 * 8 * 4); assert.equal(target.depth.length, 8 * 8);
+	const clears = t.mock.method(target.pixels, 'fill');
+	viewport.resize(7.75, 8.375); f.draw(viewport);
+	assert.ok(f.context.meshScenes.get(viewport) === target);
+	assert.equal(viewport.revision, revision); assert.equal(clears.mock.callCount(), 0, 'subpixel layout changes do not reallocate or rerasterize an unchanged target');
+	viewport.resize(8.75, 7.75); f.draw(viewport);
+	const resized = f.context.meshScenes.get(viewport);
+	assert.ok(resized !== target); assert.equal(target.pixels.length, 0);
+	assert.equal(resized.width, 9); assert.equal(resized.height, 8);
+});
+
 test('software orbit canvas preserves painter order without writing the model depth buffer', t => {
 	const meshes = createHostLayeredMeshFixture(); t.after(() => meshes.dispose());
 	const f = fixture(t, 96, 96);

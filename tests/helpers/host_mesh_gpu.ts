@@ -50,6 +50,19 @@ export async function renderHostMeshCase(kind: 'webgl2' | 'webgpu') {
 	const target = scenes.targets.get(scene);
 	const pixels = Array.from(await backend.readColorTexture(target.color, 32, 32)) as number[];
 	const pixel = (data: number[], x: number, y: number, width = 32) => data.slice((y * width + x) * 4, (y * width + x + 1) * 4);
+	const fractional = new HostMeshScene(32.2, 31.8);
+	fractional.clipFromOrigin.set(scene.clipFromOrigin); fractional.instances.push(...scene.instances);
+	const fractionalTarget = scenes.targets.get(fractional);
+	const fractionalPixels = await backend.readColorTexture(fractionalTarget.color, 32, 32);
+	backend.beginFrame(); const fractionalPasses = passes, fractionalRevision = fractional.revision;
+	fractional.resize(31.75, 32.375);
+	const fractionalSizing = {
+		pixelsMatch: fractionalPixels.every((value, index) => value === pixels[index]),
+		sameTarget: scenes.targets.get(fractional) === fractionalTarget,
+		sameRevision: fractional.revision === fractionalRevision,
+		idle: { passes: passes - fractionalPasses, uploads: backend.getFrameStats().bytesUploaded },
+	};
+	fractional.dispose();
 	scene.instances.reverse(); scene.changed();
 	const reordered = Array.from(await backend.readColorTexture(scenes.targets.get(scene).color, 32, 32)) as number[];
 	backend.beginFrame();
@@ -80,8 +93,8 @@ export async function renderHostMeshCase(kind: 'webgl2' | 'webgpu') {
 	const clipped = new HostMeshScene(32, 32); clipped.clipFromOrigin.set(scene.clipFromOrigin); clipped.instances.push(instance(clipMesh)); clipped.changed();
 	const clippedPixels = Array.from(await backend.readColorTexture(scenes.targets.get(clipped).color, 32, 32)) as number[];
 	const clippedVisible = clippedPixels.some((value, index) => index % 4 === 3 && value === 255);
-	const oldTarget = scenes.targets.get(clipped); clipped.resize(24, 16);
-	const resizedTarget = scenes.targets.get(clipped), resized = await backend.readColorTexture(resizedTarget.color, 24, 16);
+	const oldTarget = scenes.targets.get(clipped); clipped.resize(24.75, 16.2);
+	const resizedTarget = scenes.targets.get(clipped), resized = await backend.readColorTexture(resizedTarget.color, 25, 16);
 	const textured = createHostTexturedMeshFixture();
 	const affinePixels = Array.from(await backend.readColorTexture(scenes.targets.get(textured.affine).color, 32, 32));
 	const nearPixels = Array.from(await backend.readColorTexture(scenes.targets.get(textured.clipped).color, 32, 32));
@@ -131,9 +144,9 @@ export async function renderHostMeshCase(kind: 'webgl2' | 'webgpu') {
 	let validationError: string | undefined;
 	if (device !== undefined) { await device.queue.onSubmittedWorkDone(); validationError = (await device.popErrorScope())?.message; device.destroy(); }
 	return { kind: backend.type, left: pixel(pixels, 10, 21), right: pixel(pixels, 21, 21), orderIndependent: JSON.stringify(pixels) === JSON.stringify(reordered),
-		originPreserved: JSON.stringify(origin) === JSON.stringify(reordered), sameTarget, idle, reflectedVisible,
+		originPreserved: JSON.stringify(origin) === JSON.stringify(reordered), sameTarget, idle, reflectedVisible, fractionalSizing,
 		sharedVertexBytes, coplanar: pixel(sharedPixels, 16, 16), remaining: pixel(remaining, 16, 16), clippedVisible,
-		resized: oldTarget !== resizedTarget && resized.length === 24 * 16 * 4,
+		resized: oldTarget !== resizedTarget && resized.length === 25 * 16 * 4, resizedExtent: [clipped.width, clipped.height],
 		background: pixel(composite, 5, 10), cropped: pixel(composite, 15, 14), laterUi: pixel(composite, 10, 10),
 		textured: { affine: pixel(affinePixels, 20, 24), upright: pixel(affinePixels, 4, 8), near: pixel(nearPixels, 17, 19),
 			clipped: pixel(nearPixels, 10, 10), hole: pixel(layerPixels, 3, 10), opaque: pixel(layerPixels, 24, 8),

@@ -93,10 +93,17 @@ export class HostMeshScene {
 	public originY = 0;
 	public originZ = 0;
 	public revision = 0;
-	public constructor(public width: number, public height: number) {}
+	private widthValue = 0;
+	private heightValue = 0;
+	public get width(): number { return this.widthValue; }
+	public get height(): number { return this.heightValue; }
+	public constructor(width: number, height: number) { this.resize(width, height); }
+	/** Convert requested extent to whole raster pixels once, before allocation,
+	 * viewport setup or stride calculation. The UI submission stays fractional. */
 	public resize(width: number, height: number): void {
-		if (this.width === width && this.height === height) return;
-		this.width = width; this.height = height;
+		width = Math.round(width); height = Math.round(height);
+		if (this.widthValue === width && this.heightValue === height) return;
+		this.widthValue = width; this.heightValue = height;
 		this.changed();
 	}
 	/** Publish coherent camera, instance or membership edits. Idle drawing does not publish. */
