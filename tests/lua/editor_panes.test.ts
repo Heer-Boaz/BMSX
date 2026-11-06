@@ -344,6 +344,20 @@ test('editor panes retain one lazy pane per input kind and apply the input lifec
 	assert.deepEqual(codeClearInputCounts, [1, 2, 3, 3]);
 });
 
+test('pane retirement withdraws layout ownership before child teardown publishes layout changes', t => {
+	const harness = createEditorPanes(), first = codeInput('code:0\0a.lua');
+	t.after(() => harness.group.dispose());
+	harness.group.panes.openEditor(first);
+	const pane = harness.codePane(), layout = t.mock.method(pane, 'layout'), clear = pane.clearInput.bind(pane);
+	t.mock.method(pane, 'clearInput', () => {
+		assert.ok(harness.group.panes.activePane === null);
+		harness.group.panes.layout({ left: 0, top: 0, right: 800, bottom: 600 });
+		assert.equal(layout.mock.callCount(), 0, 'a child layout publication must not arrange the retiring parent');
+		clear();
+	});
+	harness.group.panes.clearEditor();
+});
+
 test('input blur completes against the old attached resource before the next pane attaches', () => {
 	const harness = createEditorPanes();
 	const first = codeInput('code:0\0a.lua');

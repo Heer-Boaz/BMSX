@@ -9,15 +9,15 @@ import { HomeInput } from '../../ide/workbench/contrib/home/editor_input';
 import { createLiveStudioFixture } from '../helpers/live_studio';
 import { afterTest } from '../helpers/test_cleanup';
 
-async function fixture(t: TestContext, mode: '2d' | '3d' = '2d') {
+async function fixture(t: TestContext, mode: 'game' | '2d' | '3d' = '2d') {
 	const f = await createLiveStudioFixture(t), { editor } = f;
 	const input = editor.actorLab.resolveInput();
 	const part = editor.editorParts.createDocument({ requestedBounds: { left: 0, top: 24, right: 800, bottom: 340 } });
 	part.activeGroup.openEditor(input); editor.update(0);
 	const pane = part.activeGroup.panes.activePane!; assert.ok(pane instanceof ActorLabEditorPane);
-	editor.commands.execute(mode === '2d' ? 'sceneViewport.view2d' : 'sceneViewport.view3d', pane.commandTarget);
+	editor.commands.execute(mode === 'game' ? 'actorLab.gameView' : mode === '2d' ? 'sceneViewport.view2d' : 'sceneViewport.view3d', pane.commandTarget);
 	editor.commands.execute('actorLab.playback', pane.commandTarget);
-	await f.until(() => input.worldView.canvas.items.length > 0);
+	await f.until(() => mode === 'game' ? input.controller.viewportPicker.frame.quads.length > 0 : input.worldView.canvas.items.length > 0);
 	editor.commands.execute('actorLab.playback', pane.commandTarget); await f.frame();
 	const choices = readActorChoices(f.sources, f.ide.guest, 0);
 	const first = choices.find(actor => actor.label === 'studio_test.first')!;
@@ -34,6 +34,12 @@ type Fixture = Awaited<ReturnType<typeof fixture>>;
 
 /** Input coordinates come from the displayed visual, never from a guest pose or a screen-coordinate oracle. */
 function visualPoint(f: Fixture, hashId = f.second.hashId) {
+	if (f.input.worldView.mode === 'game') {
+		const frame = f.input.controller.viewportPicker.frame, quad = [...frame.quads].find(quad => quad.hashId === hashId)!;
+		const b = f.input.previewBounds;
+		return { x: b.left + (quad.ox + (quad.ax + quad.bx) / 2 + frame.offsetX) * (b.right - b.left) / frame.width,
+			y: b.top + (quad.oy + (quad.ay + quad.by) / 2 + frame.offsetY) * (b.bottom - b.top) / frame.height };
+	}
 	const view = f.input.worldView, quad = view.canvas.items.find(item => item.source.entry.hashId === hashId)!;
 	assert.ok(quad);
 	const { affine } = quad, localX = quad.offsetX + quad.width / 2, localY = quad.offsetY + quad.height / 2;
@@ -55,7 +61,7 @@ function accept(f: Fixture, command: EditorCommandId): void {
 	f.key('Home'); for (let row = 0; row < index; row++) if (menu.model.rows[row].enabled) f.key('ArrowDown'); f.key('Enter');
 }
 
-for (const mode of ['2d', '3d'] as const) test(`live ${mode} viewport right click selects its rendered actor and opens actor actions on release`, async t => {
+for (const mode of ['game', '2d', '3d'] as const) test(`live ${mode} viewport right click selects its rendered actor and opens actor actions on release`, async t => {
 	const f = await fixture(t, mode), { editor, input } = f, { x, y } = visualPoint(f);
 	const camera = input.worldView.camera.capture();
 	f.native.apply([{ type: 'pointer', x, y }, { type: 'button', button: 'secondary', down: true }]);
@@ -73,6 +79,36 @@ for (const mode of ['2d', '3d'] as const) test(`live ${mode} viewport right clic
 	assert.equal(f.pane.inspector.visible, true); assert.equal(input.details!.subject!.actorHashId, f.second.hashId);
 	editor.commands.execute('window.hide', f.pane.inspector.focusTarget); editor.update(0);
 	openAtVisual(f); f.key('Escape'); assert.ok(inputFocus.admittedTarget === origin);
+});
+
+for (const mode of ['game', '2d', '3d'] as const) test(`live ${mode} viewport selects on completed click, not on a press or cancelled drag`, async t => {
+	const f = await fixture(t, mode), { x, y } = visualPoint(f);
+	f.native.apply([{ type: 'pointer', x, y }, { type: 'button', button: 'primary', down: true }]);
+	assert.equal(f.input.actorHashId, f.first.hashId, 'focus acquisition is not selection');
+	f.native.apply([{ type: 'pointer', x: x + 20, y }, { type: 'pointer', x, y }, { type: 'button', button: 'primary', down: false }]);
+	assert.equal(f.input.actorHashId, f.first.hashId, 'returning to the origin does not turn a drag into a click');
+	f.native.apply([{ type: 'button', button: 'primary', down: true }, { type: 'button', button: 'primary', down: false }]);
+	assert.equal(f.input.actorHashId, f.second.hashId);
+	assert.equal(f.execution.paused, true);
+});
+
+for (const mode of ['game', '2d', '3d'] as const) test(`changing ${mode} camera mode retires the pending selection click`, async t => {
+	const f = await fixture(t, mode), { x, y } = visualPoint(f);
+	f.native.apply([{ type: 'pointer', x, y }, { type: 'button', button: 'primary', down: true }]);
+	f.editor.commands.execute(mode === '2d' ? 'sceneViewport.view3d' : 'sceneViewport.view2d', f.pane.commandTarget);
+	f.native.apply([{ type: 'button', button: 'primary', down: false }]);
+	assert.equal(f.input.actorHashId, f.first.hashId);
+	const next = visualPoint(f);
+	f.native.apply([{ type: 'pointer', ...next }, { type: 'button', button: 'primary', down: true }, { type: 'button', button: 'primary', down: false }]);
+	assert.equal(f.input.actorHashId, f.second.hashId);
+});
+
+for (const mode of ['2d', '3d'] as const) test(`${mode} wheel navigation cancels a pending selection click`, async t => {
+	const f = await fixture(t, mode), { x, y } = visualPoint(f);
+	f.native.apply([{ type: 'pointer', x, y }, { type: 'button', button: 'primary', down: true }, { type: 'wheel', deltaY: -4 },
+		{ type: 'button', button: 'primary', down: false }]);
+	assert.equal(f.input.actorHashId, f.first.hashId);
+	assert.equal(f.execution.paused, true);
 });
 
 test('viewport keyboard context addresses the selected actor rather than its inspected component', async t => {

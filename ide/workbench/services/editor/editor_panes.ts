@@ -156,11 +156,13 @@ export class EditorPanes {
 		}
 		if (!current() || reason !== 'retire' && (!activePane.prepareToClearInput() || !current())) return;
 		if (this.focusScope.statusSource === activePane) this.focusScope.statusSource = undefined;
+		// Retire the presentation before teardown publishes window/transport changes.
+		// Their synchronous layout must not re-enter partially detached controls.
+		this.activePaneValue = null;
 		activePane.clearInput(reason);
-		if (!current()) return;
+		if (this.openGenerationValue !== generation) return;
 		if (inputFocus.target?.scope.surfaceScope === this.focusScope.surfaceScope
 			|| activePane.inputScope !== undefined && inputFocus.target?.scope === activePane.inputScope) inputFocus.setTarget(null);
-		this.activePaneValue = null;
 		this.focusScope.retireContext();
 		for (const listener of this.clearListeners) listener();
 		return { generation, focusRevision };

@@ -1,22 +1,17 @@
 import { ActorWorldControl } from './world_control';
 import { ActorOutlinerControl } from './outliner_control';
-import { editorRuntimeState } from '../../../editor/common/runtime_state';
 import { STATUS_PRIORITY_CONTENT, type WorkbenchStatusItem } from '../../common/status_bar';
 import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import type { EditorPaneClearReason } from '../../services/editor/editor_pane';
 import { ActorLabEditorActions } from './actions';
-import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
+import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { executeTextHistoryCommand } from '../../../editor/editing/history_commands';
-import { showEditorMessage } from '../../../common/feedback_state';
-import { SceneLivePositionDrag } from '../scene_editor/live_drag';
 import { WorkbenchSplitControl } from '../../ui/split_control';
 import type { WorkbenchSashView } from '../../ui/split_view';
 import { drawWorkbenchSplit } from '../../render/split_view';
-import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
+import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { clamp } from '../../../../machine/ts/common/clamp';
-import { COLOR_TAB_BORDER } from '../../../common/constants';
-import { api } from '../../../runtime/overlay_api';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { EditorCommandRunner } from '../../../common/commands';
@@ -44,13 +39,10 @@ import type { ActorLabInput } from './editor_input';
 import type { ActorNode } from './runtime';
 import { drawActorLab } from './render';
 import { layoutActorLab } from './layout';
-import { GameInputControl } from '../game_view/game_input';
 import { WorkbenchGraphControl, WorkbenchGraphPointerResult } from '../../ui/graph/control';
 import type { ActorStateGraph } from './state_graph';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import type { ActorLabNavigationSelection } from './navigation_selection';
-import type { ActorViewportHit } from './viewport_pick';
-import { ActorViewportSelection } from './viewport_selection';
 import type { ResourceDomain } from '../../../common/resource';
 import { actorActions } from './operations';
 import type { WorkbenchSurface } from '../../services/windows/model';
@@ -65,7 +57,6 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	public readonly actorActions: ActorLabEditorActions;
 	private readonly worldControl: ActorWorldControl;
 	private readonly outlinerControl: ActorOutlinerControl;
-	private gameInput!: GameInputControl;
 	private controller!: ActorLabController;
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly actionTooltip = new WorkbenchTooltip();
@@ -81,15 +72,9 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	private renderedOutline = -1;
 	private renderedOutliner = -1;
 	private renderedPresentation: ActorLabInput['presentation'] | undefined;
-	private viewportHover = false;
-	private pointerX = 0;
-	private pointerY = 0;
-	private readonly positionDrag = new SceneLivePositionDrag();
 	private get sourcePosition() {
 		return this.hasInput ? this.controller.sceneAuthoring?.positions.find(this.input.domain, this.input.actorHashId) : undefined;
 	}
-	private viewportHit: ActorViewportHit | undefined;
-	private readonly viewportSelection = new ActorViewportSelection();
 	private readonly split = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly scrollbar = new ScrollbarPointerControl(pointerCapture);
 	public inspector!: WorkbenchPropertyInspector<ActorDetailsProperty>;
@@ -113,10 +98,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			(x, y, domain, hashId, keyboard) => this.showActorContextMenu(x, y, domain, hashId, this.outlinerControl.focusTarget, keyboard));
 		this.bindTransportCommands(this.worldControl.focusTarget);
 		this.bindTransportCommands(this.outlinerControl.focusTarget);
-		this.focusTarget.registerCommand('actorLab.controlGame', {
-			isEnabled: () => this.hasInput && this.gameInput.focusTarget.guestInput !== undefined,
-			run: () => { this.gameInput.focusTarget.focus(); },
-		});
+
 		this.actorActions = new ActorLabEditorActions(group, quickInput, this.focusTarget);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
 		this.timelineSlider = new WorkbenchSliderControl(inputFocus, pointerCapture, this.focusTarget,
@@ -406,8 +388,6 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		this.input.interaction.setRuntime(this.controller.viewport.transport, this.input.interaction.running);
 		this.focusTarget.scope.interaction = this.input.interaction;
 		this.focusTarget.scope.runtime = { target: this.focusTarget, interaction: this.input.interaction };
-		this.gameInput = new GameInputControl(this.focusTarget, this.controller.viewport.recipient, this.controller.viewport, this.input.interaction);
-		this.bindTransportCommands(this.gameInput.focusTarget);
 		this.createDetailsWindow();
 		this.worldControl.setInput(this.input);
 		this.outlinerControl.setInput(this.input);
@@ -425,15 +405,13 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		this.renderedTopology = -1;
 	}
 	public override clearInput(reason: EditorPaneClearReason = 'deactivate'): void {
-		pointerCapture.cancelTarget(this.positionDrag); this.worldControl.clearInput();
+		this.worldControl.clearInput();
 		this.outlinerControl.clearInput();
 		if (reason !== 'move') this.input.interaction.setRuntime(null);
-		pointerHover.release(this);
 		this.navigationSelection = undefined;
 		this.actionTooltip.detach();
-		this.detailsWindow.dispose(); this.inspector.dispose(); this.gameInput.dispose(); this.actions.clearInput();
+		this.detailsWindow.dispose(); this.inspector.dispose(); this.actions.clearInput();
 		this.graph.clearInput(); this.boundGraph = undefined;
-		this.viewportSelection.clear();
 		this.focusTarget.commandContext = this.focusTarget;
 		this.split.focusTarget.commandContext = this.focusTarget;
 		this.timelineSlider.focusTarget.commandContext = this.focusTarget;
@@ -444,7 +422,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	}
 	public override dispose(): void {
 		if (this.hasInput) this.clearInput();
-		pointerHover.release(this); this.actions.dispose(); this.graph.dispose(); this.split.dispose(); this.timelineSlider.dispose(); this.scrollbar.cancelPointer(); this.worldControl.dispose(); this.outlinerControl.dispose(); super.dispose();
+		this.actions.dispose(); this.graph.dispose(); this.split.dispose(); this.timelineSlider.dispose(); this.scrollbar.cancelPointer(); this.worldControl.dispose(); this.outlinerControl.dispose(); super.dispose();
 	}
 	public override layout(bounds: Readonly<RectBounds>): void {
 		super.layout(bounds);
@@ -453,7 +431,6 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		this.updateContentLayout();
 	}
 	public override update(): void {
-		this.positionDrag.refresh();
 		const input = this.input, scope = this.focusTarget.scope, context = scope.contextGeneration;
 		const readback = input.dirty;
 		const revealed = this.controller.refresh(input);
@@ -495,9 +472,6 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			if (!this.updateContentLayout()) return;
 		} else if (!this.updatePreviewInput()) return;
 		this.worldControl.update();
-		this.worldControl.navigation.advance(editorRuntimeState.currentTimeMs);
-		if (input.layout.previewVisible) input.worldView.refresh(input.previewBounds, input.domain, input.actorHashId);
-		this.updateViewportHit();
 		this.controller.layoutNavigation(input);
 		this.timelineSlider.update();
 		if (visibleGraph !== undefined) this.graph.update();
@@ -522,8 +496,8 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			: 'CLICK: INSPECT | RMB/MMB: PAN | WHEEL: ZOOM | F: FOCUS';
 		else if (this.split.focusTarget.hasFocus) this.statusItems[0].text = this.boundSplit!.orientation === 'horizontal'
 			? 'RESIZE PANES: LEFT/RIGHT | HOME: RESET' : 'RESIZE PANES: UP/DOWN | HOME: RESET';
-		else if (this.viewportHit !== undefined) this.statusItems[0].text = this.viewportHit.label
-			+ (this.controller.sceneAuthoring === undefined || this.gameInput.focusTarget.hasFocus ? '' : ' · Alt+drag: authored position');
+		else if (this.worldControl.hit !== undefined) this.statusItems[0].text = this.worldControl.hit.label
+			+ (this.controller.sceneAuthoring === undefined ? '' : ' · Alt+drag: authored position');
 		else if (input.presentation === 'world') this.statusItems[0].text = input.worldOutliner.tree.rows[input.worldOutliner.tree.selectionIndex]?.element.label ?? 'WORLD OUTLINER';
 		else if (input.presentation === 'outline') this.statusItems[0].text = !input.dirty && input.actorPresent
 			? input.selectedOutlineNode?.label ?? input.status : input.status;
@@ -540,24 +514,8 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	}
 	public draw(): void {
 		drawActorLab(this.input, this.timelineSlider.focusTarget.hasFocus, this.graph.hover, this.graph.focusTarget.hasFocus, this.controller.viewport, this.outlinerControl);
-		const drag = this.positionDrag, hit = drag.active ? drag.outline : this.viewportHit;
-		if (!this.input.layout.previewVisible) return;
-		if (this.input.worldView.mode === 'game' && this.controller.renderFrames.displayCurrent) {
-			this.viewportSelection.update(this.controller.viewportPicker.frame, this.controller.renderFrames.revision,
-				this.input.domain, this.input.actorHashId, this.input.previewBounds);
-			this.viewportSelection.draw(this.input.previewBounds);
-		}
-		if (this.input.worldView.mode === 'game' && hit !== undefined && this.controller.renderFrames.displayCurrent) {
-			const bounds = this.input.previewBounds, frame = this.controller.viewportPicker.frame;
-			const scaleX = (bounds.right - bounds.left) / frame.width, scaleY = (bounds.bottom - bounds.top) / frame.height;
-			const dx = drag.active ? drag.dx : 0, dy = drag.active ? drag.dy : 0;
-			api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
-			api.blit_rect(bounds.left + (hit.left + dx) * scaleX, bounds.top + (hit.top + dy) * scaleY,
-				bounds.left + (hit.right + dx) * scaleX, bounds.top + (hit.bottom + dy) * scaleY, 0, COLOR_TAB_BORDER);
-			api.popClipRect();
-		}
-		this.gameInput.draw();
-		drawWorkbenchSplit(this.input.layout.split!, this.split);
+		this.worldControl.draw();
+		if (this.input.layout.previewVisible) drawWorkbenchSplit(this.input.layout.split!, this.split);
 	}
 	private showDetails(focus: boolean): void {
 		updateFullWidthWorkbenchLayout(this.input.layout, this.contentBounds);
@@ -568,52 +526,8 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		if (attached) this.surfaces.raise(this.detailsWindow.surface!);
 		if (focus) this.inspector.focusTarget.focus();
 	}
-	public onPointerLeave(): void {
-		this.viewportHover = false; this.viewportHit = undefined;
-	}
-	private updateViewportHit(): void {
-		if (this.input.worldView.mode !== 'game') { this.viewportHit = undefined; return; }
-		if (!this.input.layout.previewVisible || !this.viewportHover) return;
-		this.viewportHit = undefined;
-		const bounds = this.input.previewBounds, viewport = this.controller.viewport;
-		const sequence = viewport.kind === 'direct' ? viewport.presenter.gameFrameSequence : viewport.frames.published.presentationSequence;
-		if (this.controller.rewind.seeking || sequence === undefined
-			|| !point_in_rect(this.pointerX, this.pointerY, bounds)) { pointerHover.release(this); return; }
-		const frame = this.controller.viewportPicker.frame;
-		this.viewportHit = this.controller.viewportPicker.pick(this.input.domain, sequence,
-			(this.pointerX - bounds.left) * frame.width / (bounds.right - bounds.left),
-			(this.pointerY - bounds.top) * frame.height / (bounds.bottom - bounds.top));
-	}
-	private beginPositionDrag(snapshot: PointerInputSnapshot): void {
-		const controller = this.controller, input = this.input, authoring = controller.sceneAuthoring!;
-		if (!controller.canInteract() || controller.rewind.active) return;
-		this.updateViewportHit();
-		const hit = this.viewportHit; if (hit === undefined) return;
-		const { domain, hashId, quadIndex } = hit, frame = controller.viewportPicker.frame, sequence = frame.sequence;
-		const scope = this.focusTarget.scope, context = scope.contextGeneration;
-		controller.viewport.transport.pause(); input.interaction.running = false;
-		controller.inspectActor(input, domain, hashId); this.update(); this.focusTarget.focus();
-		const current = () => this.hasInput && this.input === input && scope.contextGeneration === context
-			&& this.focusTarget.hasFocus && input.domain === domain && input.actorHashId === hashId && !controller.rewind.active
-			&& frame.sequence === sequence && controller.renderFrames.displayCurrent;
-		if (!current()) return;
-		const source = authoring.positions.source(domain, hashId);
-		const binding = source === undefined ? undefined : authoring.positions.bind(source);
-		if (binding === undefined) {
-			showEditorMessage('This visual has no editable authored member position matching its live pose. Open its source to edit the controller or construction.', 'info', 5); return;
-		}
-		const bounds = input.previewBounds, left = bounds.left, top = bounds.top, right = bounds.right, bottom = bounds.bottom;
-		if (!this.positionDrag.begin(binding, frame.quads.peek(quadIndex), hit, snapshot, bounds, frame.width, frame.height, this.focusTarget,
-			() => current() && bounds.left === left && bounds.top === top && bounds.right === right && bounds.bottom === bottom)) {
-			showEditorMessage('The displayed pose cannot be moved through this authored position: its parent, local pose or source edit is unavailable.', 'info', 5);
-		}
-	}
-
 	public handleKeyboard(input: KeyInputEvent): void {
 		if (input.consumed) return;
-		if (this.positionDrag.active && isKeyJustPressed('Escape', input)) {
-			consumeIdeKey('Escape', input); pointerCapture.cancelTarget(this.positionDrag); return;
-		}
 		if (this.input.presentation === 'world') { this.outlinerControl.handleKeyboard(input); return; }
 		if (!this.input.actorPresent) return;
 		if (this.input.presentation === 'graph') { this.handleGraphKeyboard(input); return; }
@@ -650,17 +564,10 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 				restoreFocus = this.split.focusTarget.hasFocus;
 				pointerCapture.cancelTarget(this.split);
 				this.split.clearInput();
-				pointerHover.release(this);
 			}
 		}
 		if (scope.contextGeneration !== context) return false;
-		const viewport = this.controller.viewport;
-		if (input.worldView.mode === 'game' && input.layout.previewVisible && (viewport.kind === 'direct' || viewport.frames.bitmap !== undefined)) this.gameInput.setInput(input.previewBounds);
-		else if (this.gameInput.focusTarget.guestInput !== undefined) {
-			restoreFocus ||= this.gameInput.focusTarget.hasFocus;
-			this.gameInput.clearInput();
-		}
-		if (scope.contextGeneration !== context) return false;
+		if (!this.worldControl.layout()) return false;
 		const primary = this.commandTarget;
 		primary.next = this.actions.focusTarget; this.actions.focusTarget.previous = primary;
 		let previous = this.actions.focusTarget;
@@ -686,35 +593,6 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean, now: number): boolean {
 		if (this.input.layout.previewVisible && this.worldControl.handlePointer(snapshot, now)) return true;
-		if (this.input.layout.previewVisible && snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.previewBounds)) {
-			// Camera choice does not grant guest input. Only Control Game admits
-			// the recipient; ordinary clicks inspect the displayed draw evidence.
-			if (this.gameInput.focusTarget.hasFocus) return false;
-			if (!this.controller.rewind.seeking) {
-				this.viewportHover = true; this.pointerX = snapshot.viewportX; this.pointerY = snapshot.viewportY; pointerHover.visit(this);
-				if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0 && (snapshot.modifiers & KeyModifier.alt) !== 0
-					&& this.controller.sceneAuthoring !== undefined) {
-					this.beginPositionDrag(snapshot); return true;
-				}
-				if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) {
-					this.updateViewportHit();
-					if (this.viewportHit !== undefined) {
-						const { domain, hashId } = this.viewportHit;
-						this.showActorContextMenu(snapshot.viewportX, snapshot.viewportY, domain, hashId, this.worldControl.focusTarget, false);
-						return true;
-					}
-				}
-			}
-			if (justPressed) {
-				const input = this.input, scope = this.focusTarget.scope, context = scope.contextGeneration;
-				if (!this.worldControl.focusTarget.focus() || !this.hasInput || this.input !== input
-					|| scope.contextGeneration !== context || inputFocus.admittedTarget !== this.worldControl.focusTarget) return true;
-				this.updateViewportHit();
-				if (this.viewportHit !== undefined) this.controller.inspectActor(input, this.viewportHit.domain, this.viewportHit.hashId);
-				this.update();
-			}
-			return true;
-		}
 		if (this.split.handlePointer(snapshot) || this.actions.handlePointer(snapshot) || this.input.timeline.visible && this.timelineSlider.handlePointer(snapshot)) return true;
 		if (this.input.presentation === 'world') return this.outlinerControl.handlePointer(snapshot, now);
 		if (!this.input.actorPresent) return false;
