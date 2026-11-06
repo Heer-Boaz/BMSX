@@ -22,7 +22,7 @@ export class TerminalPane extends WorkbenchViewEditorPane<TerminalInput> {
 	private readonly gameInput: GameInputControl;
 	private readonly runtimeContext = new InputInteraction();
 	public constructor(private readonly terminal: BiosTerminal, recipient: InputRecipient, presenter: VideoPresenter, scope: InputFocusScope, private readonly transport: RuntimeTransport) {
-		super(scope); this.gameInput = new GameInputControl(this.focusTarget, recipient, { kind: 'direct', presenter }, transport);
+		super(scope); this.gameInput = new GameInputControl(this.focusTarget, recipient, { kind: 'direct', presenter }, this.runtimeContext);
 	}
 	public override get commandTarget() { return this.terminal.active ? this.gameInput.focusTarget : this.focusTarget; }
 	protected override activate(): void {

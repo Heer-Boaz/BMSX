@@ -65,7 +65,6 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	private readonly worldControl: ActorWorldControl;
 	private readonly outlinerControl: ActorOutlinerControl;
 	private gameInput!: GameInputControl;
-	private unbindGameFocus!: () => void;
 	private controller!: ActorLabController;
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly actionTooltip = new WorkbenchTooltip();
@@ -401,11 +400,8 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		this.input.interaction.setRuntime(this.controller.viewport.transport, this.input.interaction.running);
 		this.focusTarget.scope.interaction = this.input.interaction;
 		this.focusTarget.scope.runtime = { target: this.focusTarget, interaction: this.input.interaction };
-		this.gameInput = new GameInputControl(this.focusTarget, this.controller.viewport.recipient, this.controller.viewport, this.controller.viewport.transport);
+		this.gameInput = new GameInputControl(this.focusTarget, this.controller.viewport.recipient, this.controller.viewport, this.input.interaction);
 		this.bindTransportCommands(this.gameInput.focusTarget);
-		// Possessing the Game view and ejecting to its editor camera share this
-		// client's live-follow intent; changing input recipients is not Pause.
-		this.unbindGameFocus = this.gameInput.focusTarget.onDidFocus(() => { this.input.interaction.running = true; });
 		this.createDetailsWindow();
 		this.worldControl.setInput(this.input);
 		this.outlinerControl.setInput(this.input);
@@ -429,7 +425,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		pointerHover.release(this);
 		this.navigationSelection = undefined;
 		this.actionTooltip.detach();
-		this.detailsWindow.dispose(); this.inspector.dispose(); this.unbindGameFocus(); this.gameInput.dispose(); this.actions.clearInput();
+		this.detailsWindow.dispose(); this.inspector.dispose(); this.gameInput.dispose(); this.actions.clearInput();
 		this.graph.clearInput(); this.boundGraph = undefined;
 		this.focusTarget.commandContext = this.focusTarget;
 		this.split.focusTarget.commandContext = this.focusTarget;

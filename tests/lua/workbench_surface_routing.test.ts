@@ -1691,7 +1691,7 @@ for (const originKind of ['source', 'files', 'filesGoToFile'] as const) test(`th
 	if (originKind !== 'source') f.editor.commands.execute('resources.focus', editorTarget);
 	const origin = originKind === 'source' ? editorTarget : f.editor.resourcePanel.focusTarget;
 	assert.ok(inputFocus.admittedTarget === origin);
-	f.key(originKind === 'filesGoToFile' ? 'Comma' : 'KeyP', KeyModifier.ctrl | (originKind === 'filesGoToFile' ? KeyModifier.none : KeyModifier.shift));
+	f.key('KeyP', KeyModifier.ctrl | (originKind === 'filesGoToFile' ? KeyModifier.none : KeyModifier.shift));
 	const picker = f.editor.quickInput;
 	assert.equal(picker.visible, true); assert.ok(picker.invocationOrigin === origin);
 	assert.equal(f.firstPart.activateGroup(sibling), true);
@@ -2614,7 +2614,7 @@ test('routed guest gesture survives UI overlap, focus changes, extra buttons and
 	const { editor, host, pointer, extent } = fixture(t);
 	const scope = new InputFocusScope(Symbol('preview'));
 	const owner = inputFocus.createTarget(null, scope); owner.bindKeyboard(() => {});
-	const game = new GameInputControl(owner, host.input, { kind: 'direct', presenter: host.presenter }, editor.commands.transport);
+	const game = new GameInputControl(owner, host.input, { kind: 'direct', presenter: host.presenter }, new InputInteraction(editor.commands.transport));
 	const bounds = { left: 100, top: 60, right: 300, bottom: 240 };
 	game.setInput(bounds);
 	let paneOccurrences = 0, windowOccurrences = 0;
@@ -2655,7 +2655,7 @@ test('UI gesture cannot migrate into a guest and explicit viewport retirement dr
 	const { editor, host, pointer, extent } = fixture(t);
 	const scope = new InputFocusScope(Symbol('preview'));
 	const owner = inputFocus.createTarget(null, scope); owner.bindKeyboard(() => {});
-	const game = new GameInputControl(owner, host.input, { kind: 'direct', presenter: host.presenter }, editor.commands.transport);
+	const game = new GameInputControl(owner, host.input, { kind: 'direct', presenter: host.presenter }, new InputInteraction(editor.commands.transport));
 	const bounds = { left: 100, top: 60, right: 300, bottom: 240 };
 	game.setInput(bounds); game.focusTarget.focus();
 	let uiOccurrences = 0;
@@ -2691,8 +2691,8 @@ test('wheel routes the current exposed preview independently of a captured point
 	afterTest(t, () => { first.dispose(); second.dispose(); });
 	const scope = new InputFocusScope(Symbol('previews'));
 	const owner = inputFocus.createTarget(null, scope); owner.bindKeyboard(() => {});
-	const firstGame = new GameInputControl(owner, first, { kind: 'direct', presenter: host.presenter }, editor.commands.transport);
-	const secondGame = new GameInputControl(owner, second, { kind: 'direct', presenter: host.presenter }, editor.commands.transport);
+	const firstGame = new GameInputControl(owner, first, { kind: 'direct', presenter: host.presenter }, new InputInteraction(editor.commands.transport));
+	const secondGame = new GameInputControl(owner, second, { kind: 'direct', presenter: host.presenter }, new InputInteraction(editor.commands.transport));
 	firstGame.setInput({ left: 20, top: 60, right: 170, bottom: 240 });
 	secondGame.setInput({ left: 200, top: 60, right: 350, bottom: 240 });
 	editor.surfaces.attach({ role: 'content', lifetimeOwner: editor.editorParts.main.surface, presentationParent: editor.editorParts.main.surface, captureScope: scope.surfaceScope, isVisible: () => true,
@@ -2791,7 +2791,7 @@ test('native producer cancellation ends a routed guest hold without a successful
 	const { editor, host, extent } = fixture(t);
 	const scope = new InputFocusScope(Symbol('guest'));
 	const owner = inputFocus.createTarget(null, scope); owner.bindKeyboard(() => {});
-	const game = new GameInputControl(owner, host.input, { kind: 'direct', presenter: host.presenter }, editor.commands.transport);
+	const game = new GameInputControl(owner, host.input, { kind: 'direct', presenter: host.presenter }, new InputInteraction(editor.commands.transport));
 	game.setInput({ left: 20, top: 60, right: 350, bottom: 240 });
 	editor.surfaces.attach({ role: 'content', lifetimeOwner: editor.editorParts.main.surface, presentationParent: editor.editorParts.main.surface, captureScope: scope.surfaceScope, isVisible: () => true,
 		getBounds: () => extent, getClip: () => extent, draw() {}, handlePointer: snapshot => { game.handlePointer(snapshot); } });
@@ -2840,7 +2840,7 @@ test('real window hide and root-modal admission cancel true producer guest holds
 		layoutContent: bounds => game.setInput(bounds), retireContentInput: () => game.clearInput(),
 		restoreContentInput: () => game.setInput(model.client), focusContent: () => game.focusTarget.focus(),
 	});
-	const game = new GameInputControl(window.clientFocusTarget, host.input, { kind: 'direct', presenter: host.presenter }, editor.commands.transport);
+	const game = new GameInputControl(window.clientFocusTarget, host.input, { kind: 'direct', presenter: host.presenter }, new InputInteraction(editor.commands.transport));
 	const show = () => { window.show(false); window.layout(editorViewState.font.renderFont(), measureTextRange, measureText); game.focusTarget.focus(); };
 	afterTest(t, () => { game.dispose(); window.dispose(); });
 	show();
@@ -2867,7 +2867,7 @@ test('retiring the press owner cannot admit that occurrence to a replacement vie
 	const { editor, host, pointer, extent } = fixture(t);
 	const scope = new InputFocusScope(Symbol('replaced preview'));
 	const owner = inputFocus.createTarget(null, scope); owner.bindKeyboard(() => {});
-	const game = new GameInputControl(owner, host.input, { kind: 'direct', presenter: host.presenter }, editor.commands.transport);
+	const game = new GameInputControl(owner, host.input, { kind: 'direct', presenter: host.presenter }, new InputInteraction(editor.commands.transport));
 	game.setInput(extent);
 	const snapshot = createInputControllerSnapshot();
 	for (const shortClick of [false, true]) {

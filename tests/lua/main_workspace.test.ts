@@ -45,6 +45,7 @@ test('Main document activation raises its complete presentation family, includin
 
 test('the nested Game surface owns guest input and shares its actual document-part modal admission', t => {
 	const f = createActualSourcePanes(t), main = f.editor.editorParts.main;
+	f.ide.boots.didReplaceMachine(); f.editor.interaction.setActive(true);
 	main.activeGroup.openEditor(new CodeEditorInput(f.firstInput.workingCopy));
 	f.editor.gamePanel.toggle(); main.focus(); f.update();
 	const companion = f.editor.editorParts.mainArea.companionBounds;
@@ -57,12 +58,18 @@ test('the nested Game surface owns guest input and shares its actual document-pa
 	assert.equal(game.guestInput!.recipient, f.host.input);
 	assert.equal(game.scope.surfaceScope, surface.captureScope);
 	assert.equal(f.editor.surfaces.findByScope(game.scope.surfaceScope), surface);
+	const context = game.scope.runtimeOwner!.runtime!;
+	assert.ok(game.scope.interaction === context.interaction, 'companion input and transport share the panel-owned playback intent');
+	assert.equal(context.interaction.running, false); assert.equal(f.host.execution.paused, true);
+	f.editor.commands.execute('runtime.playback', game);
+	assert.equal(context.interaction.running, true); assert.equal(f.host.execution.paused, false);
 	main.quickInput.input('', '', '', async value => value, () => {}); f.update();
 	assert.equal(f.editor.surfaces.isAdmitted(surface), false);
 	assert.equal(f.editor.surfaces.hitTest(x, y)!.captureScope, main.quickInput.pointerScope);
 	main.quickInput.hide(); f.update();
 	assert.equal(f.editor.surfaces.isAdmitted(surface), true);
 	assert.equal(f.editor.surfaces.hitTest(x, y), surface);
+	assert.equal(context.interaction.running, true); assert.equal(f.host.execution.paused, false, 'popup focus return preserves explicit Play');
 });
 
 test('retiring the document arrangement does not retire its owning Main family or sibling presentations', t => {

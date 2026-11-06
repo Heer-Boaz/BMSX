@@ -50,6 +50,7 @@ function chooseDestination(f: ReturnType<typeof fixture>, destination: EditorGro
 
 test('Move Game opens the same input in a new Part with fresh chrome focus, not guest authority', t => {
 	const f = fixture(t), transport = f.editor.commands.transport;
+	f.editor.commands.execute('runtime.resume', f.pane.commandTarget);
 	f.focusGame();
 	const guest = inputFocus.target!, binding = guest.guestInput!, interaction = guest.scope.interaction!;
 	assert.ok(binding.recipient === f.host.input);
@@ -66,7 +67,8 @@ test('Move Game opens the same input in a new Part with fresh chrome focus, not 
 	assert.ok(destination.activeGroup.model.activeTab === f.input && moved.input === f.input);
 	assert.ok(f.parts.main.activeGroup.model.findById(f.input.id) === undefined);
 	assert.equal(disposed, 0);
-	assert.ok(guest.guestInput === undefined); assert.equal(interaction.running, false);
+	assert.ok(guest.guestInput === undefined && guest.scope.interaction === undefined);
+	assert.ok(interaction === f.input.interaction); assert.equal(interaction.running, true, 'the logical playback intent survives input retirement');
 	assert.ok(inputFocus.target === moved.commandTarget);
 	assert.ok(f.editor.guestInputRecipient === null); assert.equal(f.host.execution.paused, false, 'moving preserves the runtime workspace live-follow intent');
 	assert.ok(moved.commandTarget.scope.runtime!.interaction.transport === transport);
@@ -79,6 +81,7 @@ test('Move Game opens the same input in a new Part with fresh chrome focus, not 
 
 test('Game transfer drains the old physical pointer hold and admits input only through a fresh destination viewport interaction', t => {
 	const f = fixture(t), sample = createInputControllerSnapshot(), bounds = f.input.previewBounds;
+	f.editor.commands.execute('runtime.resume', f.pane.commandTarget);
 	f.native.apply([{ type: 'pointer', x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2 },
 		{ type: 'button', button: 'primary', down: true }]);
 	const guest = inputFocus.target!, binding = guest.guestInput!;
@@ -136,9 +139,12 @@ test('Game and inspection entry points reveal one retained workspace, not compet
 	assert.ok(f.editor.actorLab.resolveInput() === input);
 	input.worldView.setMode('3d'); f.update();
 	f.editor.commands.execute('gameView'); f.update();
-	assert.equal(input.worldView.mode, 'game');
+	assert.equal(input.worldView.mode, '3d', 'revealing the retained workspace preserves its inspection camera');
 	assert.ok(f.parts.findGroup(input) === f.parts.main.activeGroup);
 	assert.equal(f.parts.groups.flatMap(group => group.model.tabs).filter(tab => tab.kind === 'actor_lab').length, 1);
+	assert.equal(input.interaction.running, false);
+	f.editor.commands.execute('runtime.resume', f.pane.commandTarget);
+	f.editor.commands.execute('actorLab.gameView', f.pane.commandTarget); f.update();
 	f.focusGame();
 	assert.equal(input.interaction.running, true);
 	f.pane.focus();

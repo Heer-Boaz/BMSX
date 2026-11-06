@@ -63,7 +63,7 @@ export class GamePanel {
 		this.focusTarget = inputFocus.createTarget(null, focusScope);
 		this.sash = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget,
 			new InputFocusScope(Symbol('game companion sash'), focusScope));
-		this.gameInput = new GameInputControl(this.focusTarget, recipient, { kind: 'direct', presenter }, commands.transport);
+		this.gameInput = new GameInputControl(this.focusTarget, recipient, { kind: 'direct', presenter }, this.runtimeContext);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focusTarget.focus());
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(player => {
 			if (isKeyJustPressed('Escape', player)) { consumeIdeKey('Escape', player); this.close(); }

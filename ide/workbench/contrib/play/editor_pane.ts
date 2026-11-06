@@ -123,7 +123,7 @@ export class PlayEditorPane extends WorkbenchViewEditorPane<PlayEditorInput> {
 			this.gameInput?.dispose(); this.gameInput = undefined; this.session = session;
 			this.focusTarget.next = this.actions.focusTarget; this.actions.focusTarget.previous = this.focusTarget;
 			if (session !== undefined) {
-				this.gameInput = new GameInputControl(this.focusTarget, session.input.physical, { kind: 'offscreen', frames: session.frames }, session.transport);
+				this.gameInput = new GameInputControl(this.focusTarget, session.input.physical, { kind: 'offscreen', frames: session.frames }, this.input.interaction);
 				this.focusTarget.next = this.gameInput.focusTarget;
 				this.gameInput.focusTarget.previous = this.focusTarget; this.gameInput.focusTarget.next = this.actions.focusTarget;
 				this.actions.focusTarget.previous = this.gameInput.focusTarget;

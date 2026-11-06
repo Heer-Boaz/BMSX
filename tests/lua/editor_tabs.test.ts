@@ -872,6 +872,7 @@ test('a mixed Source, Scene and active Game group docks without transferring gue
 	const game = f.editor.actorLab.resolveInput(); f.ide.boots.didReplaceMachine(); f.editor.interaction.setActive(true);
 	source.openEditor(game); f.update();
 	const oldPane = source.panes.activePane; assert.ok(oldPane instanceof ActorLabEditorPane);
+	f.editor.commands.execute('runtime.resume', oldPane.commandTarget);
 	f.firstPart.focus(); const chrome = inputFocus.target;
 	do { f.key('Tab'); assert.ok(inputFocus.target !== chrome, 'the runtime view exposes a guest tab stop'); } while (inputFocus.target?.guestInput === undefined);
 	const guest = inputFocus.target!, guestInteraction = guest.scope.interaction!;
@@ -893,7 +894,8 @@ test('a mixed Source, Scene and active Game group docks without transferring gue
 	assert.ok(moved instanceof ActorLabEditorPane && moved !== oldPane && moved.input === game);
 	assert.ok(receiver.model.activeTab === game); assert.equal(disposed, 0);
 	for (const input of [f.firstInput, scene, game]) assert.ok(parts.findGroup(input) === receiver);
-	assert.equal(guest.guestInput, undefined); assert.equal(guestInteraction.running, false);
+	assert.ok(guest.guestInput === undefined && guest.scope.interaction === undefined);
+	assert.ok(guestInteraction === game.interaction); assert.equal(guestInteraction.running, true);
 	assert.equal(oldPane.commandTarget.scope.runtime, undefined);
 	assert.ok(inputFocus.target === moved.commandTarget && moved.commandTarget.scope.runtime?.interaction === game.interaction);
 	assert.equal(f.editor.guestInputRecipient, null); assert.equal(pointerCapture.guestBinding, undefined); assert.equal(f.host.execution.paused, false, 'docking retains live-follow intent without guest input authority');

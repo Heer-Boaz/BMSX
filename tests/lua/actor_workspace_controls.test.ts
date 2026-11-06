@@ -119,10 +119,7 @@ for (const control of ['outliner', 'viewport', 'game'] as const) test(`Run menu 
 	const y = control === 'outliner' ? f.input.worldOutliner.tree.layout.contentBottom - 4 : f.input.previewBounds.bottom - 4;
 	f.native.apply([{ type: 'pointer', x, y }, { type: 'button', button: 'primary', down: true },
 		{ type: 'button', button: 'primary', down: false }]);
-	if (control === 'game') {
-		assert.equal(f.execution.paused, false, 'entering Game input resumes play');
-		f.editor.commands.execute('runtime.pause', f.pane.commandTarget);
-	}
+	assert.equal(f.execution.paused, true, 'focus does not issue a playback request');
 	const interaction = inputFocus.target!.scope.interaction!;
 	const key = (code: string) => {
 		f.editor.dispatchKey(new KeyInputEvent(code, KeyModifier.none));
@@ -139,6 +136,51 @@ for (const control of ['outliner', 'viewport', 'game'] as const) test(`Run menu 
 	assert.equal(interaction.running, true);
 	assert.equal(f.execution.paused, false);
 	assert.equal(f.execution.userPaused, false);
+});
+
+for (const pause of ['editor hold', 'explicit pause'] as const) test(`Game viewport clicks preserve ${pause} until an explicit transport command`, async t => {
+	const f = await fixture(t);
+	if (pause === 'explicit pause') f.editor.commands.execute('runtime.pause', f.pane.commandTarget);
+	const cycles = f.runtime.machine.scheduler.nowCycles, revision = f.execution.revision;
+	const { left, top, right, bottom } = f.input.previewBounds;
+	const click = () => f.native.apply([{ type: 'pointer', x: (left + right) / 2, y: (top + bottom) / 2 },
+		{ type: 'button', button: 'primary', down: true }, { type: 'button', button: 'primary', down: false }]);
+	click(); await f.frame(); await f.frame(); click(); await f.frame();
+	const target = inputFocus.target!;
+	assert.ok(target.guestInput !== undefined, 'the click still admits the ordinary game input recipient');
+	assert.equal(f.input.interaction.running, false);
+	assert.equal(f.execution.paused, true);
+	assert.equal(f.execution.userPaused, pause === 'explicit pause');
+	assert.equal(f.runtime.machine.scheduler.nowCycles, cycles);
+	assert.equal(f.execution.revision, revision);
+	assert.ok(target.scope.interaction === f.input.interaction, 'game input and transport use the same owning client');
+	f.editor.commands.execute('runtime.playback', target); await f.frame(); await f.frame();
+	assert.equal(f.input.interaction.running, true); assert.equal(f.execution.paused, false);
+	assert.ok(f.runtime.machine.scheduler.nowCycles > cycles);
+	click(); await f.frame(); assert.equal(f.execution.paused, false, 'focus does not pause an explicitly running client either');
+	f.editor.commands.execute('runtime.pause', target); click(); await f.frame();
+	assert.equal(f.input.interaction.running, false); assert.equal(f.execution.userPaused, true);
+});
+
+test('keyboard focus in Game does not resume; releasing game input leaves Space available to the editor transport', async t => {
+	const f = await fixture(t), cycles = f.runtime.machine.scheduler.nowCycles;
+	f.pane.focus();
+	for (let step = 0; step < 20 && inputFocus.target?.guestInput === undefined; step++) {
+		f.editor.dispatchKey(new KeyInputEvent('Tab', KeyModifier.none));
+		f.editor.dispatchKey(new KeyInputEvent('Tab', KeyModifier.none, false, false)); f.editor.update(0);
+	}
+	assert.ok(inputFocus.target?.guestInput !== undefined);
+	await f.frame(); assert.equal(f.execution.paused, true); assert.equal(f.input.interaction.running, false);
+	assert.equal(f.runtime.machine.scheduler.nowCycles, cycles);
+	f.editor.dispatchKey(new KeyInputEvent('F1', KeyModifier.shift));
+	f.editor.dispatchKey(new KeyInputEvent('F1', KeyModifier.shift, false, false));
+	assert.ok(inputFocus.target?.guestInput === undefined);
+	for (const running of [true, false]) {
+		f.editor.dispatchKey(new KeyInputEvent('Space', KeyModifier.none));
+		f.editor.dispatchKey(new KeyInputEvent('Space', KeyModifier.none, false, false));
+		await f.frame(); await f.frame();
+		assert.equal(f.input.interaction.running, running); assert.equal(f.execution.paused, !running);
+	}
 });
 
 test('leaving a running Actor Lab through the IDE shortcut continues the game', async t => {

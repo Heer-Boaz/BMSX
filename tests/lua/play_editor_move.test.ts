@@ -124,8 +124,12 @@ test('Play chrome intent moves independently of guest input and Reset replaces o
 	play.start(f.module, f.firstPart.activeGroup); const input = play.input!, first = input.handle;
 	await f.ready(first); f.update();
 	const original = f.firstPart.activeGroup.panes.activePane!;
+	const stoppedCycles = first.session!.target.runtime.machine.scheduler.nowCycles;
 	f.key('Tab'); const guest = inputFocus.target!;
 	assert.equal(guest.guestInput!.recipient, first.session!.input.physical);
+	assert.ok(guest.scope.interaction === input.interaction, 'the input recipient shares the Play client, not a second playback intent');
+	assert.equal(input.interaction.running, false); assert.equal(first.session!.execution.paused, true);
+	await f.advance(); assert.equal(first.session!.target.runtime.machine.scheduler.nowCycles, stoppedCycles);
 	original.commandTarget.focus(); f.editor.commands.execute('runtime.resume', original.commandTarget);
 	const cycles = first.session!.target.runtime.machine.scheduler.nowCycles, revision = first.session!.execution.revision;
 	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, { kind: 'group', group: f.secondPart.activeGroup }), true); f.update();

@@ -235,7 +235,7 @@ test('AltRight, modifier chords, repeats and cancelled AltLeft candidates never 
 
 test('physical menu gestures remain guest input while a real scanout client has focus', t => {
 	const { editor, host, origin, key, model, source } = menuFixture(t), version = model.version;
-	const game = new GameInputControl(origin, host.input, { kind: 'direct', presenter: host.presenter }, editor.commands.transport);
+	const game = new GameInputControl(origin, host.input, { kind: 'direct', presenter: host.presenter }, new InputInteraction(editor.commands.transport));
 	game.setInput({ left: 80, top: 32, right: 320, bottom: 240 }); game.focusTarget.focus();
 	t.after(() => game.dispose());
 	const binding = game.focusTarget.guestInput!;
