@@ -1,5 +1,5 @@
 import type { BuildReporter } from '../lib/build_reporter';
-import { copyFile, mkdir, readFile } from 'node:fs/promises';
+import { link, mkdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { RomArtifactStore, romBuildKey, type PreparedRomArtifact } from './artifacts';
 import { romToolchainIdentity } from './build_state';
@@ -68,7 +68,7 @@ export async function prepareMediaBuild(options: MediaBuildOptions, store: RomAr
 	}
 	if (cachedSystem !== undefined) {
 		await mkdir(systemDirectory, { recursive: true });
-		for (const output of systemUnit.outputs) await copyFile(join(store.directory(cachedSystem.id), output.file), join(stage, output.file));
+		for (const output of systemUnit.outputs) await link(join(store.directory(cachedSystem.id), output.file), join(stage, output.file));
 	}
 	let cartUnit: RomBuildUnit | undefined;
 	if (cart !== undefined) {

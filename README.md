@@ -156,6 +156,26 @@ Build a cart debug ROM:
 npm run build:toolchain:cart -- pietious --debug --force
 ```
 
+ROM builds share immutable, content-addressed output bytes in `.bmsx/builds`.
+Exports in `dist` remain independent writable copies. Retention keeps the latest
+50 artifacts, the newest artifact per target/debug/optimizer recipe, recent build
+jobs, and explicit references from open build-backed Studio sessions, current
+exports and published browser packages. The workspace server collects on startup
+and after its build queue drains; CLI builds collect when no server owns the store.
+
+Existing stores can first admit their existing exports/publication receipts and
+inspect deduplication or collection without changing artifact contents:
+
+```bash
+npm run build:store -- deduplicate --publication-root .bmsx/hosting --export-root dist
+npm run build:store -- collect --publication-root .bmsx/hosting --export-root dist
+```
+
+Add `--apply` to perform the selected operation. Offline collection requires the
+workspace server to be stopped: its exclusive ownership protects active sessions,
+including sessions in older server versions. Maintenance never removes the
+publication/export directories, authored files or source recovery records.
+
 Build the browser player:
 
 ```bash

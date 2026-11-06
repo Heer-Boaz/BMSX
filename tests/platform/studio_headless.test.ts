@@ -82,6 +82,8 @@ test('headless Studio owns runtime, source history, persistence and session life
 	const [started, duplicate] = await Promise.all([call('studio_start_headless', request), call('studio_start_headless', request)]);
 	assert.equal(started.status, 'ready'); assert.equal(duplicate.session.id, started.session.id);
 	const first = started.session.id;
+	const mediaReference = (session: string) => join(f.root, '.bmsx/builds/refs/sessions', session);
+	assert.equal(await readFile(mediaReference(first), 'utf8'), build.artifact, 'the active Studio retains its exact immutable media');
 	assert.equal(started.session.kind, 'headless'); assert.equal(started.session.sourceAccess, 'edit');
 	assert.equal(started.session.reviewApproval, 'agent');
 	assert.equal((await call('studio_list_sessions')).sessions.length, 1);
@@ -236,8 +238,10 @@ test('headless Studio owns runtime, source history, persistence and session life
 	assert.equal((await readEntry(first)).source, firstText + original);
 	assert.equal((await readEntry(second)).source, secondText + original);
 	assert.equal((await call('studio_close_headless', { session: second, discardUnsaved: true })).status, 'closed');
+	await assert.rejects(access(mediaReference(second)), { code: 'ENOENT' });
 	assert.equal((await call('studio_start_headless', secondRequest)).status, 'closed');
 	assert.equal((await call('studio_close_headless', { session: first, discardUnsaved: false })).status, 'closed');
+	await assert.rejects(access(mediaReference(first)), { code: 'ENOENT' });
 	assert.equal((await call('studio_start_headless', request)).status, 'closed');
 	assert.deepEqual((await call('studio_list_sessions')).sessions, []);
 

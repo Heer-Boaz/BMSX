@@ -105,6 +105,7 @@
 		"build:toolchain:bios": "npx tsx scripts/rompacker/rompacker.ts --mode bios --skiptypecheck -respath ./machine/bios/res",
 		"validate:toolchain:cart": "npx tsx scripts/rompacker/rompacker.ts --mode rompack --force -romname",
 		"build:toolchain:cart": "npx tsx scripts/rompacker/rompacker.ts --mode rompack --skiptypecheck -romname",
+		"build:store": "tsx scripts/rompacker/store.ts",
 		"build:toolchain:host-system-atlas": "npx tsx scripts/render/generate_host_system_atlas.ts",
 		"build:product": "npm run build:toolchain:host-system-atlas && npx tsx scripts/products/product_builder.ts",
 		"build:product:machine-runtime": "npm run build:product -- --target machine-runtime",

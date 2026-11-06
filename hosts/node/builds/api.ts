@@ -1,6 +1,7 @@
 import { createReadStream } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { finished } from 'node:stream/promises';
 import { join } from 'node:path';
 import type { StudioBuildRequest } from '../../common/studio_builds';
 import type { StudioBuildJobs } from './jobs';
@@ -55,21 +56,27 @@ export async function handleBuildRequest(jobs: StudioBuildJobs, request: Incomin
 				result = jobs.get(id); if (result === undefined) throw new BuildRequestError(404, 'Build request not admitted');
 			} else throw new BuildRequestError(405, 'Unsupported build operation');
 		} else if (request.method === 'GET' && route[0] === 'artifacts') {
-			const id = buildArtifactId(route[1]), artifact = await jobs.artifacts.read(id);
-			if (route.length === 2) result = artifact;
-			else {
-				const outputs = [...artifact.system.outputs, ...(artifact.cart?.outputs ?? [])];
-				const path = route.slice(2).join('/');
-				const output = outputs.find(output => output.file === path);
-				if (output === undefined) throw new BuildRequestError(404, 'Artifact file not found');
-				const file = join(jobs.artifacts.directory(id), output.file), metadata = await stat(file);
-				response.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': metadata.size,
-					'Cache-Control': 'private, max-age=31536000, immutable', ETag: `"${output.digest}"` });
-				createReadStream(file).on('error', error => response.destroy(error)).pipe(response); return;
-			}
+			await jobs.artifacts.withSharedAccess(async () => {
+				const id = buildArtifactId(route[1]), artifact = await jobs.artifacts.read(id);
+				if (route.length === 2) response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }).end(JSON.stringify(artifact));
+				else {
+					const outputs = [...artifact.system.outputs, ...(artifact.cart?.outputs ?? [])];
+					const path = route.slice(2).join('/');
+					const output = outputs.find(output => output.file === path);
+					if (output === undefined) throw new BuildRequestError(404, 'Artifact file not found');
+					const file = join(jobs.artifacts.directory(id), output.file), metadata = await stat(file);
+					response.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': metadata.size,
+						'Cache-Control': 'private, max-age=31536000, immutable', ETag: `"${output.digest}"` });
+					const completion = finished(response);
+					createReadStream(file).on('error', error => response.destroy(error)).pipe(response);
+					await completion;
+				}
+			});
+			return;
 		} else throw new BuildRequestError(404, 'Build route not found');
 		response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }).end(JSON.stringify(result));
 	} catch (error) {
+		if (response.headersSent) { response.destroy(error as Error); return; }
 		const status = error instanceof BuildRequestError ? error.status : error instanceof SyntaxError ? 400 : (error as NodeJS.ErrnoException).code === 'ENOENT' ? 404 : 500;
 		response.writeHead(status, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' }).end(error instanceof Error ? error.message : String(error));
 	}

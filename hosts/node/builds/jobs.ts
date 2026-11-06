@@ -8,11 +8,11 @@ import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { isBuildTerminal, type StudioBuildRequest, type StudioBuildJob, type StudioBuildSnapshot, type StudioBuildChange } from '../../common/studio_builds';
-import { RomArtifactStore, type PreparedRomArtifact } from '../../../scripts/rompacker/artifacts';
+import { RECENT_ROM_ARTIFACTS, RomArtifactStore, type PreparedRomArtifact } from '../../../scripts/rompacker/artifacts';
 import type { MediaBuildOptions } from '../../../scripts/rompacker/build';
 import type { WorkspaceProjects } from '../workspace/projects';
 
-const RECENT_JOBS = 50, QUEUE_LIMIT = 8, LOG_BYTES = 256 * 1024;
+const RECENT_JOBS = RECENT_ROM_ARTIFACTS, QUEUE_LIMIT = 8, LOG_BYTES = 256 * 1024;
 type WorkerMessage = { type: 'progress'; phase: string } | { type: 'prepared'; result: PreparedRomArtifact } | { type: 'failed'; error: string };
 type Running = { id: string; child: ChildProcess; stop?: 'cancelled' | 'interrupted'; publishing: boolean; done: Promise<void> };
 
@@ -26,6 +26,7 @@ export class StudioBuildJobs {
 	private draining: Promise<void> | undefined;
 	private closing = false;
 	private revision = 0;
+	private readonly retiredReferences: string[] = [];
 	public readonly artifacts: RomArtifactStore;
 
 	private constructor(public readonly workspace: string, public readonly root: string, private readonly ledger: BuildLedger,
@@ -48,6 +49,14 @@ export class StudioBuildJobs {
 			}
 			owner.jobs.clear();
 			for (const job of ledger.recent(RECENT_JOBS)) owner.jobs.set(job.request.requestId, job);
+			await owner.artifacts.withSharedAccess(async () => {
+				// The ledger lock proves no session from an earlier server can still own media.
+				await owner.artifacts.releaseReferences('sessions');
+				await owner.artifacts.releaseReferences('jobs');
+				for (const job of owner.jobs.values()) if (job.state === 'completed')
+					await owner.artifacts.retain(`jobs/${job.request.requestId}`, job.artifact!);
+			});
+			await owner.artifacts.collect({ keepRecent: RECENT_ROM_ARTIFACTS, apply: true });
 			return owner;
 		} catch (error) { ledger.close(); throw error; }
 	}
@@ -111,18 +120,22 @@ export class StudioBuildJobs {
 	}
 
 	private async drain(): Promise<void> {
-		while (this.queue.length !== 0 && !this.closing) {
-			const id = this.queue.shift()!;
-			const job = this.jobs.get(id)!;
-			const child = fork(fileURLToPath(new URL('../../../scripts/rompacker/worker.ts', import.meta.url)), [], {
-				cwd: this.workspace, execArgv: ['--import', createRequire(import.meta.url).resolve('tsx')], stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
-			});
-			const running: Running = { id, child, publishing: false, done: undefined };
-			this.running = running;
-			running.done = this.execute(job, running);
-			await running.done;
-			this.running = undefined;
-		}
+		await this.artifacts.withSharedAccess(async () => {
+			while (this.queue.length !== 0 && !this.closing) {
+				const id = this.queue.shift()!;
+				const job = this.jobs.get(id)!;
+				const child = fork(fileURLToPath(new URL('../../../scripts/rompacker/worker.ts', import.meta.url)), [], {
+					cwd: this.workspace, execArgv: ['--import', createRequire(import.meta.url).resolve('tsx')], stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+				});
+				const running: Running = { id, child, publishing: false, done: undefined };
+				this.running = running;
+				running.done = this.execute(job, running);
+				await running.done;
+				this.running = undefined;
+			}
+			for (const reference of this.retiredReferences.splice(0)) await this.artifacts.release(reference);
+		});
+		await this.artifacts.collect({ keepRecent: RECENT_ROM_ARTIFACTS, apply: true });
 	}
 
 	private async execute(job: StudioBuildJob, running: Running): Promise<void> {
@@ -161,6 +174,7 @@ export class StudioBuildJobs {
 			job = this.transition(job, { state: 'publishing', phase: 'Publish complete artifact', artifact: result.artifact.id });
 			// No await between cancellation arbitration and entering publication; publication wins from here.
 			if (!result.reused) await this.artifacts.publish(stage, result.artifact);
+			await this.artifacts.retain(`jobs/${job.request.requestId}`, result.artifact.id);
 			this.transition(job, { state: 'completed', phase: result.reused ? 'Unchanged artifact available' : 'New artifact available' });
 		} catch (error) {
 			running.child.kill('SIGKILL'); await exited;
@@ -175,6 +189,7 @@ export class StudioBuildJobs {
 			if (!log.writableEnded) log.end();
 			await logClosed;
 			await rm(stage, { recursive: true, force: true });
+			for (const reference of this.retiredReferences.splice(0)) await this.artifacts.release(reference);
 		}
 	}
 
@@ -184,7 +199,10 @@ export class StudioBuildJobs {
 		this.jobs.set(job.request.requestId, job);
 		if (this.jobs.size > RECENT_JOBS) {
 			const oldest = [...this.jobs.values()].filter(job => isBuildTerminal(job.state)).sort((a, b) => a.acceptedAt - b.acceptedAt)[0];
-			if (oldest !== undefined) this.jobs.delete(oldest.request.requestId);
+			if (oldest !== undefined) {
+				this.jobs.delete(oldest.request.requestId);
+				this.retiredReferences.push(`jobs/${oldest.request.requestId}`);
+			}
 		}
 		const change = { revision: ++this.revision, job };
 		for (const listener of this.listeners) listener(change);

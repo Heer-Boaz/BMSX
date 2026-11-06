@@ -27,7 +27,7 @@ export async function callBuildTool(jobs: StudioBuildJobs, name: string, input: 
 			return { admitted: job !== undefined, job, log: input.log === true && job !== undefined ? await readBuildLog(jobs, requestId) : undefined };
 		}
 		case 'studio_cancel_build': return jobs.cancel(buildRequestId(input.requestId));
-		case 'studio_read_artifact': return jobs.artifacts.read(buildArtifactId(input.artifact));
+		case 'studio_read_artifact': return jobs.artifacts.withSharedAccess(() => jobs.artifacts.read(buildArtifactId(input.artifact)));
 		default: throw new Error(`Unknown build tool: ${name}`);
 	}
 }

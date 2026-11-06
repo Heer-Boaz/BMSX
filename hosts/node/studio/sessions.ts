@@ -10,7 +10,7 @@ import type { HeadlessStudio } from './headless';
 
 type Pending = { resolve: (result: StudioToolResult) => void; reject: (error: unknown) => void };
 type BrowserSession = { info: StudioBrowserSessionInfo; response: ServerResponse; lifetime: AbortController; requests: Map<string, Pending>;
-	timer: ReturnType<typeof setInterval>; sequence: number; awaiting: boolean; sentAt: number; buildsBlocked: boolean };
+	timer: ReturnType<typeof setInterval>; sequence: number; awaiting: boolean; sentAt: number; buildsBlocked: boolean; artifact?: string };
 type HostedSession = { info: StudioHeadlessSessionInfo; host: HeadlessStudio; unlisten: () => void;
 	closing?: { discardUnsaved: boolean; completion: Promise<StudioHeadlessCloseResult> } };
 type Session = BrowserSession | HostedSession;
@@ -20,6 +20,7 @@ type HeadlessStart = { request: StudioHeadlessStartRequest; ready: Promise<Studi
 export class StudioSessions {
 	private readonly sessions = new Map<string, Session>();
 	private readonly starts = new Map<string, HeadlessStart>();
+	private readonly mediaReleases = new Map<string, Promise<void>>();
 	private closing = false;
 	private shutdown: Promise<void> | undefined;
 	public readonly incarnation = randomUUID();
@@ -57,22 +58,27 @@ export class StudioSessions {
 		const job = this.builds.get(request.buildRequestId);
 		if (job === undefined || job.state !== 'completed') throw new Error('Headless Studio requires a completed workspace build');
 		if (job.project === undefined) throw new Error('This build artifact is not admitted to a source project. Rebuild the project before starting headless Studio.');
-		const artifact = await this.builds.artifacts.read(job.artifact!);
-		const directory = this.builds.artifacts.directory(artifact.id);
-		const systemRomPath = join(directory, artifact.system.outputs.find(output => output.file.endsWith('.rom'))!.file);
-		const cartridgeRomPath = join(directory, artifact.cart!.outputs.find(output => output.file.endsWith('.rom'))!.file);
-		if (this.closing) throw new Error('Studio sessions are shutting down');
-		const { HeadlessStudio } = await import('./headless');
-		const info: StudioHeadlessSessionInfo = { id: randomUUID(), kind: 'headless', title: artifact.target, tools: true, builds: false,
-			requestId: request.requestId, buildRequestId: request.buildRequestId, sourceAccess: request.sourceAccess, reviewApproval: 'agent' };
-		const host = await HeadlessStudio.open({ workspaceRoot: this.builds.workspace, project: job.project, systemRomPath,
-			cartridgeSlots: [cartridgeRomPath, null], sourceAccess: request.sourceAccess, recoveryIdentity: request.requestId });
-		if (this.closing) { await host.shutdown(); throw new Error('Studio sessions are shutting down'); }
-		if (host.closed) throw new Error('Headless Studio exited during startup');
-		const session: HostedSession = { info, host, unlisten: undefined };
-		session.unlisten = host.onDidClose(() => this.retireHosted(session));
-		this.sessions.set(info.id, session);
-		return info;
+		return this.builds.artifacts.withSharedAccess(async () => {
+			const artifact = await this.builds.artifacts.read(job.artifact!);
+			const directory = this.builds.artifacts.directory(artifact.id);
+			const systemRomPath = join(directory, artifact.system.outputs.find(output => output.file.endsWith('.rom'))!.file);
+			const cartridgeRomPath = join(directory, artifact.cart!.outputs.find(output => output.file.endsWith('.rom'))!.file);
+			if (this.closing) throw new Error('Studio sessions are shutting down');
+			const { HeadlessStudio } = await import('./headless');
+			const info: StudioHeadlessSessionInfo = { id: randomUUID(), kind: 'headless', title: artifact.target, tools: true, builds: false,
+				requestId: request.requestId, buildRequestId: request.buildRequestId, sourceAccess: request.sourceAccess, reviewApproval: 'agent' };
+			await this.builds.artifacts.retain(`sessions/${info.id}`, artifact.id);
+			try {
+				const host = await HeadlessStudio.open({ workspaceRoot: this.builds.workspace, project: job.project, systemRomPath,
+					cartridgeSlots: [cartridgeRomPath, null], sourceAccess: request.sourceAccess, recoveryIdentity: request.requestId });
+				if (this.closing) { await host.shutdown(); throw new Error('Studio sessions are shutting down'); }
+				if (host.closed) throw new Error('Headless Studio exited during startup');
+				const session: HostedSession = { info, host, unlisten: undefined };
+				session.unlisten = host.onDidClose(() => this.retireHosted(session));
+				this.sessions.set(info.id, session);
+				return info;
+			} catch (error) { await this.builds.artifacts.release(`sessions/${info.id}`); throw error; }
+		});
 	}
 
 	/** Closing a hosted target cannot close a human's browser window or silently discard its drafts. */
@@ -87,7 +93,7 @@ export class StudioSessions {
 		const completion = session.host.close({ discardUnsaved }).finally(() => { session.closing = undefined; });
 		session.closing = { discardUnsaved, completion };
 		const result = await completion;
-		if (result.status === 'closed') this.retireHosted(session);
+		if (result.status === 'closed') await this.retireHosted(session);
 		return result;
 	}
 
@@ -108,6 +114,18 @@ export class StudioSessions {
 				lifetime: new AbortController(), requests: new Map(), timer: undefined, sequence: 0, awaiting: false, sentAt: 0, buildsBlocked: false };
 			const disconnect = () => this.retire(session);
 			response.once('close', disconnect); response.once('error', disconnect);
+			const build = new URL(descriptor.url).searchParams.get('build');
+			if (this.builds !== undefined && build !== null) await this.builds.artifacts.withSharedAccess(async () => {
+				const job = this.builds!.get(build);
+				if (job?.state !== 'completed') throw new Error('Studio media requires a completed retained build');
+				await this.builds!.artifacts.read(job.artifact!);
+				await this.builds!.artifacts.retain(`sessions/${session.info.id}`, job.artifact!);
+				session.artifact = job.artifact!;
+			});
+			if (this.closing || response.destroyed) {
+				if (session.artifact !== undefined) await this.releaseMedia(session.info.id);
+				response.end(); return;
+			}
 			this.sessions.set(session.info.id, session);
 			response.writeHead(200, { 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-store' });
 			this.publish(session, { type: 'connected', session: session.info.id, server: this.incarnation, builds: session.info.builds ? this.builds!.snapshot() : undefined });
@@ -183,16 +201,27 @@ export class StudioSessions {
 
 	private retire(session: BrowserSession): void {
 		clearInterval(session.timer);
-		this.sessions.delete(session.info.id);
+		if (!this.sessions.delete(session.info.id)) return;
+		if (session.artifact !== undefined) this.releaseMedia(session.info.id);
 		const error = new Error('Studio window disconnected. An unanswered operation may have executed; do not replay it.');
 		session.lifetime.abort(error);
 		for (const request of session.requests.values()) request.reject(error);
 		session.requests.clear();
 	}
 
-	private retireHosted(session: HostedSession): void {
-		this.sessions.delete(session.info.id);
+	private retireHosted(session: HostedSession): Promise<void> | undefined {
+		if (!this.sessions.delete(session.info.id)) return this.mediaReleases.get(session.info.id);
 		session.unlisten();
+		return this.releaseMedia(session.info.id);
+	}
+	private releaseMedia(id: string): Promise<void> | undefined {
+		if (this.builds === undefined) return;
+		const previous = this.mediaReleases.get(id);
+		if (previous !== undefined) return previous;
+		const operation = this.builds.artifacts.withSharedAccess(() => this.builds!.artifacts.release(`sessions/${id}`));
+		this.mediaReleases.set(id, operation);
+		void operation.then(() => this.mediaReleases.delete(id), error => console.error('Studio media release failed:', error));
+		return operation;
 	}
 
 	public close(): Promise<void> {
@@ -209,7 +238,8 @@ export class StudioSessions {
 	private async closeHosted(): Promise<void> {
 		await Promise.allSettled(Array.from(this.starts.values(), start => start.ready));
 		await Promise.all(Array.from(this.sessions.values(), async session => {
-			if ('host' in session) { await session.host.shutdown(); this.retireHosted(session); }
+			if ('host' in session) { await session.host.shutdown(); await this.retireHosted(session); }
 		}));
+		await Promise.all(this.mediaReleases.values());
 	}
 }
