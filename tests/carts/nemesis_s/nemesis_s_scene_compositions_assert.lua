@@ -1,5 +1,24 @@
 local shallow_copy<const> = require('cartlib/util/shallow_copy')
 local registry<const> = require('cartlib/registry')
+local atlas<const> = require('cartlib/gx/atlas')
+local image<const> = require('cartlib/gx/image')
+local gp0<const> = require('cartlib/gx/gp0')
+local assert_gameplay_textures<const> = function(hud_sources)
+	for _, id in ipairs({ 'gameplay', 'status', 'font' }) do
+		assert(atlas.resolve(id)._allocation ~= nil,
+			'gameplay admission evicted required texture ' .. id)
+	end
+	-- Retained HUD packet words must follow atlas relocation across scene reloads.
+	for _, source in ipairs(hud_sources) do
+		local texture<const> = source._texture
+		local source_y<const> = texture.y + source.source_y
+		assert(source._blit_draw_mode == gp0.palette4_draw_mode(
+			texture.x, source.source_x, source_y, gp0.draw_mode_blend_half)
+		and source._blit_uv_word == gp0.uv_clut(
+			source.source_x, source_y, texture.clut_x, texture.clut_y),
+			'retained HUD source did not follow its current texture allocation')
+	end
+end
 local assert_disposed<const> = function(members)
 	for name, member in pairs(members) do
 		-- Named runtime slots may already hold the replacement composition.
@@ -12,6 +31,17 @@ local fixture<const> = require('tests/carts/nemesis_s/fixture')
 return {
 	kind = 'integration',
 	tests = {
+		gameplay_texture_residency = function(t)
+			local hud_sources<const> = { image.resolve('status_powerup_empty'), image.resolve('font_9') }
+			local director<const> = fixture.start_game(t)
+			assert_gameplay_textures(hud_sources)
+			local previous<const> = director.gameplay
+			director.state_machines:transition_to('/game_start')
+			t:wait_until('replacement gameplay textures', function()
+				return director.gameplay ~= nil and director.gameplay ~= previous
+			end, 30)
+			assert_gameplay_textures(hud_sources)
+		end,
 		scene_compositions = function(t)
 			t:wait_until('director admission', function() return registry:get('nemesis_s.director') ~= nil end, 120)
 			local test<const> = {}

@@ -582,6 +582,21 @@
           1
         ]
       }
+    },
+    {
+      "name": "bridge_arch_masonry_64x40",
+      "label": "Gemetselde brugboog met binnenvlak",
+      "group": "kade",
+      "source": "authoring/stad6m/bridge_arch_masonry_64x40.png",
+      "stage_symbol": "#",
+      "prefab_patch": {
+        "prefab": "haven_loopbrug",
+        "at": [
+          3,
+          1
+        ],
+        "preserve_empty": true
+      }
     }
   ]
 }
