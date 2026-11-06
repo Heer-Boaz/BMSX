@@ -1,9 +1,11 @@
 #include "hid_keys.h"
 #include "input.h"
+#include "common/endian.h"
 #include "libretro_state.h"
 #include "machine/devices/gx/gpu.h"
 #include "machine/devices/input/contracts.h"
 #include "machine/runtime/runtime.h"
+#include "machine/runtime/save_state/codec.h"
 #include "rompack/image.h"
 #include "spec/bmsx/cartridge.h"
 #include "spec/bmsx/memory_map.h"
@@ -11,6 +13,7 @@
 #include "support/boot_rom_fixture.h"
 
 #include <array>
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <stdexcept>
@@ -104,10 +107,17 @@ void testLibretroStateEnvelopeRoundTrip() {
 	const size_t stateSize = bmsx::libretroStateSize(runtime);
 	memory.writeMappedU32LE(bmsx::GEO_SCRATCH_BASE, 0x11223344u);
 	memory.writeMappedU32LE(bmsx::CART_RAM_BASE, 0x89abcdefu);
-	std::vector<bmsx::u8> envelope(stateSize + 16u);
+	const auto expected = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime));
+	std::vector<bmsx::u8> envelope(stateSize + 16u, 0xa5);
 	require(
 		bmsx::serializeLibretroState(runtime, envelope),
 		"libretro envelope should serialize into a caller buffer larger than its fixed size");
+	require(bmsx::readLE32(envelope.data() + 4u) == expected.size(), "direct encoding retains the exact payload extent");
+	require(std::equal(expected.begin(), expected.end(), envelope.begin() + 8u), "direct encoding preserves the shared state format");
+	require(std::all_of(envelope.begin() + 8u + expected.size(), envelope.begin() + stateSize,
+		[](auto byte) { return byte == 0; }), "frontend capacity contains deterministic zero padding");
+	require(std::all_of(envelope.begin() + stateSize, envelope.end(), [](auto byte) { return byte == 0xa5; }),
+		"serialization does not touch bytes outside its announced capacity");
 	memory.writeMappedU32LE(bmsx::GEO_SCRATCH_BASE, 0xaabbccddu);
 	memory.writeMappedU32LE(bmsx::CART_RAM_BASE, 0u);
 	require(

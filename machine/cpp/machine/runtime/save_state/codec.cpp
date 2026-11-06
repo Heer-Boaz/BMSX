@@ -359,7 +359,7 @@ CartridgeMailboxState decodeCartridgeMailboxState(const BinValue& value, const c
 BinValue encodeCartridgeCardState(const CartridgeCardState& state) {
 	BinObject object;
 	object["ram"] = state.ram
-		? BinValue(BinBinary(state.ram->begin(), state.ram->end()))
+		? BinValue(BinBinaryView(*state.ram))
 		: BinValue(nullptr);
 	object["mailbox"] = state.mailbox
 		? encodeCartridgeMailboxState(*state.mailbox)
@@ -416,7 +416,7 @@ CartridgeControllerState decodeCartridgeControllerState(const BinValue& value, c
 
 BinValue encodeMemorySaveState(const MemorySaveState& state) {
 	BinObject object;
-	object["ram"] = BinValue(BinBinary(state.ram.begin(), state.ram.end()));
+	object["ram"] = BinValue(BinBinaryView(state.ram));
 	object["busFaultCode"] = static_cast<f64>(state.busFaultCode);
 	object["busFaultAddr"] = static_cast<f64>(state.busFaultAddr);
 	object["busFaultAccess"] = static_cast<f64>(state.busFaultAccess);
@@ -658,7 +658,7 @@ BinValue encodeGxGpuCommandBufferState(const GxGpuCommandBufferState& state) {
 	object["readbackWidth"] = static_cast<i64>(state.readbackWidth);
 	object["readbackHeight"] = static_cast<i64>(state.readbackHeight);
 	object["readbackPixelCursor"] = static_cast<i64>(state.readbackPixelCursor);
-	object["readbackPixelBytes"] = BinBinary(state.readbackPixelBytes);
+	object["readbackPixelBytes"] = BinBinaryView(state.readbackPixelBytes);
 	return BinValue(std::move(object));
 }
 
@@ -783,7 +783,7 @@ BinValue encodeGxGpuIngressContextState(const GxGpuIngressContextState& state) {
 	object["readbackWidth"] = static_cast<i64>(state.readbackWidth);
 	object["readbackHeight"] = static_cast<i64>(state.readbackHeight);
 	object["readbackPixelCursor"] = static_cast<i64>(state.readbackPixelCursor);
-	object["readbackPixelBytes"] = BinBinary(state.readbackPixelBytes);
+	object["readbackPixelBytes"] = BinBinaryView(state.readbackPixelBytes);
 	object["gp0FifoWords"] = encodeVector(state.gp0FifoWords, encodeScalar<i64, u32>);
 	object["gp0DmaIngressWords"] = encodeVector(state.gp0DmaIngressWords, encodeScalar<i64, u32>);
 	return BinValue(std::move(object));
@@ -966,7 +966,7 @@ GxGpuState decodeGxGpuState(const BinValue& value, const char* label) {
 
 BinValue encodeGxGpuSaveState(const GxGpuSaveState& state) {
 	BinObject object = encodeGxGpuState(state).asObject();
-	object["vramBytes"] = BinBinary(state.vramBytes);
+	object["vramBytes"] = BinBinaryView(state.vramBytes);
 	return BinValue(std::move(object));
 }
 
@@ -1190,7 +1190,7 @@ BinValue encodeAudioControllerState(const AudioControllerState& state) {
 	object["eventSourceAddr"] = encodeScalar<f64>(state.eventSourceAddr);
 	object["slotPhases"] = encodeFixedArray(state.slotPhases, encodeScalar<f64, u32>);
 	object["slotRegisterWords"] = encodeFixedArray(state.slotRegisterWords, encodeScalar<f64, u32>);
-	object["sampleRam"] = BinValue(BinBinary(state.sampleRam.begin(), state.sampleRam.end()));
+	object["sampleRam"] = BinValue(BinBinaryView(state.sampleRam));
 	object["sampleTransfer"] = encodeApuSampleTransferState(state.sampleTransfer);
 	BinObject output;
 	output["voices"] = encodeVector<ApuOutputVoiceState>(state.output.voices, encodeApuOutputVoiceState);
@@ -1725,14 +1725,22 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 	return state;
 }
 
-} // namespace
-
-std::vector<u8> encodeRuntimeSaveState(const RuntimeSaveState& state) {
+BinValue encodeRuntimeStateValue(const RuntimeSaveState& state) {
 	BinObject object;
 	object["machineState"] = encodeRuntimeSaveMachineState(state.machineState);
 	object["cpuState"] = encodeCpuRuntimeState(state.cpuState);
 	object["pendingEntryCall"] = state.pendingEntryCall;
-	return encodeBinaryWithPropTable(BinValue(std::move(object)), RUNTIME_SAVE_STATE_PROP_NAMES);
+	return BinValue(std::move(object));
+}
+
+} // namespace
+
+std::vector<u8> encodeRuntimeSaveState(const RuntimeSaveState& state) {
+	return encodeBinaryWithPropTable(encodeRuntimeStateValue(state), RUNTIME_SAVE_STATE_PROP_NAMES);
+}
+
+size_t encodeRuntimeSaveState(const RuntimeSaveState& state, std::span<u8> output) {
+	return encodeBinaryWithPropTable(encodeRuntimeStateValue(state), RUNTIME_SAVE_STATE_PROP_NAMES, output);
 }
 
 RuntimeSaveState decodeRuntimeSaveState(

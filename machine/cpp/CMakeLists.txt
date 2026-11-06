@@ -812,6 +812,12 @@ if(BMSX_BUILD_TESTS)
 	)
 	target_link_libraries(bmsx_frame_evaluation_runner PRIVATE bmsx_core)
 
+	add_executable(bmsx_binary_codec_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/binary_codec_test.cpp
+	)
+	target_link_libraries(bmsx_binary_codec_tests PRIVATE bmsx_binary_codec)
+	add_test(NAME bmsx_binary_codec_tests COMMAND bmsx_binary_codec_tests)
+
 	add_executable(bmsx_cpu_save_state_replay_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/cpu_save_state_replay_test.cpp
 		${BMSX_TEST_ROM_SOURCE}

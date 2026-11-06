@@ -9,6 +9,7 @@
 namespace bmsx {
 
 std::vector<u8> encodeRuntimeSaveState(const RuntimeSaveState& state);
+size_t encodeRuntimeSaveState(const RuntimeSaveState& state, std::span<u8> output);
 RuntimeSaveState decodeRuntimeSaveState(
 	std::span<const u8> data,
 	size_t ramByteCount,

@@ -26,6 +26,8 @@ public:
 	explicit BinWriter(size_t capacityHint) {
 		m_buf.reserve(capacityHint > 0 ? capacityHint : 64 * 1024);
 	}
+	explicit BinWriter(std::span<u8> output) : m_output(output), m_external(true) {}
+	size_t size() const { return m_size; }
 
 	std::vector<u8> finish() {
 		return std::move(m_buf);
@@ -68,11 +70,12 @@ public:
 			}
 			return;
 		}
-		if (value.isBinary()) {
-			const BinBinary& binary = value.asBinary();
+		if (value.isBinary() || value.isBinaryView()) {
+			const std::span<const u8> binary = value.isBinaryView()
+				? value.asBinaryView() : std::span<const u8>(value.asBinary());
 			writeTag(BinTag::Bin);
 			writeVarUint(static_cast<uint32_t>(binary.size()));
-			m_buf.insert(m_buf.end(), binary.begin(), binary.end());
+			writeBytes(binary.data(), binary.size());
 			return;
 		}
 		if (value.isObject()) {
@@ -109,7 +112,7 @@ public:
 	}
 
 	void writeVersioned(const BinValue& value, const std::vector<std::string>& propNames) {
-		m_buf.push_back(BINENC_VERSION);
+		writeByte(BINENC_VERSION);
 		writeVarUint(static_cast<uint32_t>(propNames.size()));
 		for (const std::string& propName : propNames) {
 			writeString(propName);
@@ -124,22 +127,40 @@ public:
 
 private:
 	std::vector<u8> m_buf;
+	std::span<u8> m_output;
+	size_t m_size = 0;
+	bool m_external = false;
+
+	u8* append(size_t count) {
+		const size_t offset = m_size;
+		if (m_external) {
+			if (count > m_output.size() - offset) {
+				throw std::length_error("BinEncoder: output buffer is too small.");
+			}
+			m_size += count;
+			return m_output.data() + offset;
+		}
+		m_size += count;
+		m_buf.resize(m_size);
+		return m_buf.data() + offset;
+	}
+
+	void writeByte(u8 value) { *append(1) = value; }
+	void writeBytes(const void* data, size_t size) {
+		if (size != 0) std::memcpy(append(size), data, size);
+	}
 
 	void writeTag(BinTag tag) {
 		const u8 tagValue = static_cast<u8>(tag);
-		m_buf.push_back(tagValue);
+		writeByte(tagValue);
 	}
 
 	void writeRawLE32(u32 value) {
-		const size_t offset = m_buf.size();
-		m_buf.resize(offset + sizeof(value));
-		writeLE32(m_buf.data() + offset, value);
+		writeLE32(append(sizeof(value)), value);
 	}
 
 	void writeRawLE64(u64 value) {
-		const size_t offset = m_buf.size();
-		m_buf.resize(offset + sizeof(value));
-		writeLE64(m_buf.data() + offset, value);
+		writeLE64(append(sizeof(value)), value);
 	}
 
 	void writeF32(f32 value) {
@@ -156,24 +177,24 @@ private:
 
 	void writeVarUint(uint32_t value) {
 		while (value >= 0x80u) {
-			m_buf.push_back(static_cast<u8>((value & 0x7Fu) | 0x80u));
+			writeByte(static_cast<u8>((value & 0x7Fu) | 0x80u));
 			value >>= 7;
 		}
-		m_buf.push_back(static_cast<u8>(value));
+		writeByte(static_cast<u8>(value));
 	}
 
 	void writeVarInt(i64 value) {
 		uint64_t zigzag = (static_cast<uint64_t>(value) << 1) ^ static_cast<uint64_t>(value >> 63);
 		while (zigzag >= 0x80u) {
-			m_buf.push_back(static_cast<u8>((zigzag & 0x7Fu) | 0x80u));
+			writeByte(static_cast<u8>((zigzag & 0x7Fu) | 0x80u));
 			zigzag >>= 7;
 		}
-		m_buf.push_back(static_cast<u8>(zigzag));
+		writeByte(static_cast<u8>(zigzag));
 	}
 
 	void writeString(const std::string& value) {
 		writeVarUint(static_cast<uint32_t>(value.size()));
-		m_buf.insert(m_buf.end(), value.begin(), value.end());
+		writeBytes(value.data(), value.size());
 	}
 
 	void writeInteger(i64 value) {
@@ -540,6 +561,17 @@ std::vector<u8> encodeBinaryWithPropTable(const BinValue& value, std::span<const
 	BinWriter writer(capacityHint);
 	writer.writeWithPropTable(value, propNameToId);
 	return writer.finish();
+}
+
+size_t encodeBinaryWithPropTable(const BinValue& value, std::span<const std::string> propNames, std::span<u8> output) {
+	std::unordered_map<std::string, uint32_t> propNameToId;
+	propNameToId.reserve(propNames.size());
+	for (size_t index = 0; index < propNames.size(); ++index) {
+		propNameToId.emplace(propNames[index], static_cast<uint32_t>(index));
+	}
+	BinWriter writer(output);
+	writer.writeWithPropTable(value, propNameToId);
+	return writer.size();
 }
 
 std::vector<u8> encodeBinary(const BinValue& value, const BinEncodeOptions& options) {

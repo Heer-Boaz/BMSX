@@ -5,7 +5,7 @@
 #include "machine/runtime/save_state/codec.h"
 
 #include <cstring>
-#include <vector>
+#include <stdexcept>
 
 namespace bmsx {
 namespace {
@@ -30,18 +30,19 @@ bool serializeLibretroState(Runtime& runtime, std::span<u8> envelope) {
 	if (envelope.size() < envelopeBytes) {
 		return false;
 	}
-	const std::vector<u8> state =
-		encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
-	if (state.size() > saveStatePayloadCapacityBytes(runtime)) {
+	size_t payloadBytes;
+	try {
+		payloadBytes = encodeRuntimeSaveState(captureRuntimeSaveState(runtime),
+			envelope.subspan(kSaveStateHeaderBytes, saveStatePayloadCapacityBytes(runtime)));
+	} catch (const std::length_error&) {
 		return false;
 	}
 	writeLE32(envelope.data(), kSaveStateMagic);
-	writeLE32(envelope.data() + 4u, static_cast<u32>(state.size()));
-	std::memcpy(envelope.data() + kSaveStateHeaderBytes, state.data(), state.size());
+	writeLE32(envelope.data() + 4u, static_cast<u32>(payloadBytes));
 	std::memset(
-		envelope.data() + kSaveStateHeaderBytes + state.size(),
+		envelope.data() + kSaveStateHeaderBytes + payloadBytes,
 		0,
-		envelopeBytes - kSaveStateHeaderBytes - state.size());
+		envelopeBytes - kSaveStateHeaderBytes - payloadBytes);
 	return true;
 }
 
