@@ -72,8 +72,63 @@ bridgewatch house has a flat projecting cap, an observation bay with corner
 returns and a recessed entrance. Window surrounds, eave shadows, material
 joins and restrained masonry clusters are drawn at native resolution.
 
+All sixteen active foreground building sources share a night-lighting palette:
+light blue (`#4060e0`) marks the moonlit main wall planes, while dark blue
+(`#2020e0`) remains on roof planes, recessed service bays, wall returns and
+shadowed joints. Stone, snow, glazing, warm windows, timber doors and shop
+canopies keep their separate inks. Domestic windows use grouped glass panes,
+a stone head, a dark upper reveal and a projecting sill with a short cast
+shadow. Workshop glazing uses connected reflections inside one dark opening;
+the storefronts sit behind their canopies with a separate entrance recess.
+Warm domestic light belongs to an inhabited room or a grouped floor; quiet
+storeys retain dark-blue glass inside the same frames, reveals and sills.
+Shop light is concentrated below the canopy: the cafe has a broad lit frontage,
+while the bakery has two display bays in dark-red painted timber, a grey sill
+and a recessed entrance on the right. Its left pane stays cool and the right
+pane forms one warm display. The grocer has a recessed entrance on the left
+and one broad warm display on the right, held by a connected green fascia,
+uprights and paneled base. These distinct storefront layouts share the same
+native roof and ground contacts; their door openings remain six pixels high.
+The bicycle shop keeps its upper floors quiet. Large cool workshop and bridgewatch glazing,
+timber loading doors and the dark alley gate give the street distinct pauses
+between these warm groups.
+Quay and wharf walls use a dark-red body with connected mortar courses and
+restrained red edge light. At the native world scale, these groups suggest
+masonry rather than drawing an oversized brick in every tile. The native
+`quay_masonry_1088x32` and `ceiling_masonry_512x32` sources compose different
+course shapes and unequal quiet intervals across a whole wall region. Their
+widths cover the longest uninterrupted quay and overhead wall respectively.
+The quay field sits above the wet foot at tile row 20; its bottom eight pixels
+form the shallow quay, and its courses keep the same world height through
+joined street steps. Ceiling courses start at row zero and retain the same
+world phase through overlapping depths. Neither field cycles vertically.
+The snow/coping and existing blue wet foot define the upper and lower edges.
+Two separate 24×32 native bridge panels compose the left and right landheads.
+Their `prefab_patch` registrations import the panels into the named prefab
+at a tile coordinate, retaining its other entries, including null cells and
+the explicit sky-clearing tile. This keeps later source edits connected to
+the assembled bridge through the ordinary town baker.
+Dedicated bridge tiles form a constructed arch ring with a
+recessed crown block and short joints that stop before the aperture. Keep
+mortar cuts inside the solid ring and retain its continuous inner contour.
+Bright red belongs to its upper-left face and selected outer edges; the right
+return and lower springers stay dark.
+The same dark-red contact runs through the native building plinths, lamps,
+static tree socket and wharf modules. Cellar portals and stair railings keep
+their own contours and inks instead of inheriting the wall texture.
+Snow has a white upper surface and a grey lower plane where the roof offers
+enough pixels. Broad wall planes stay quiet; shadows belong to cornices,
+sills, returns and structural joins rather than scattered surface marks.
+Native source contours, occupied terrain cells, ground-contact positions and
+rooftop support lines stay fixed when these interior material rows are drawn.
+The distant architecture stays black and dark blue, with small shadows beneath
+cornices and inside entrances; broad far-wall masses and window axes remain
+readable. The existing two-ink-per-8×1 rule applies to both layers.
+
 Architectural references include [De Steeman on the Bloemgracht](https://www.hendrickdekeyser.nl/de-huizen/de-steeman),
 [Herenstraat 41](https://stadsherstel.nl/monumenten/herenstraat-41/),
+[the bakery storefront at Reguliersgracht 67](https://stadsherstel.nl/monumenten/reguliersgracht-67/),
+[the timber shopfront at Reestraat 15](https://stadsherstel.nl/monumenten/reestraat-15/),
 [Pakhuis De Appel](https://stadsherstel.nl/monumenten/pakhuis-de-appel/)
 and [Piet Kramer's Beltbrug bridgewatch house](https://arcam.nl/architectuur-gids/brugwachtershuisje-beltbrug/).
 The drawings adapt their architectural principles to the game palette and
@@ -105,7 +160,7 @@ sections stay fixed.
 
 Light, warm, cyan or green accents distinguish foreground objects. The smaller
 7×4-pixel cars use the existing lighter blue to remain distinct from the dark
-blue house contours. Miniature bicycles retain their subdued blue silhouettes.
+blue distant house contours. Miniature bicycles retain their subdued blue silhouettes.
 The authoring groups describe that visual depth within the fixed side view.
 
 The five winter backdrops are editable native PNGs in `authoring/achtergrond`:
