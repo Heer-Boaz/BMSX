@@ -1,5 +1,5 @@
 import { HostMeshBuffers, HostMeshPositionBuffers, HostMeshSceneTargets, hostMeshReflected, writeHostMeshClipMatrix,
-	type HostMesh, type HostMeshScene } from '../mesh';
+	type HostMesh, type HostMeshScene, type HostMeshTarget } from '../mesh';
 import type { RenderPassDesc } from '../../backend/backend';
 import type { WebGLBackend } from '../../backend/webgl/backend';
 import type { HostBitmapTextures } from '../bitmap';
@@ -10,7 +10,7 @@ import texturedFragment from './shaders/host_mesh_textured.frag.glsl';
 import gxTexturedFragment from './shaders/host_mesh_gx_textured.frag.glsl';
 
 type MeshBuffers = { vao: WebGLVertexArrayObject; indices: WebGLBuffer | undefined; uvs: WebGLBuffer | undefined; positions: Float32Array; count: number; indexType: number };
-export type WebGLHostMeshTarget = { color: WebGLTexture; depth: WebGLTexture; pass: RenderPassDesc };
+export type WebGLHostMeshTarget = HostMeshTarget & { color: WebGLTexture; depth: WebGLTexture; pass: RenderPassDesc };
 
 /** Owned host geometry uploads and a private reversed-depth target for each viewport. */
 export class WebGLHostMeshScenes {
@@ -35,10 +35,10 @@ export class WebGLHostMeshScenes {
 			if (mesh.uvs !== undefined) backend.destroyBuffer(mesh.uvs);
 			this.positionBuffers.release(mesh.positions);
 		});
-		this.targets = new HostMeshSceneTargets(scene => {
-			const color = backend.createColorTexture({ width: scene.width, height: scene.height, format: gl.RGBA8 }) as WebGLTexture;
-			const depth = backend.createDepthTexture({ width: scene.width, height: scene.height, format: 'depth32float' });
-			return { color, depth, pass: { label: 'host_mesh', color: { tex: color, clear: [0, 0, 0, 0] }, depth: { tex: depth, clearDepth: 0 } } };
+		this.targets = new HostMeshSceneTargets((width, height) => {
+			const color = backend.createColorTexture({ width, height, format: gl.RGBA8 }) as WebGLTexture;
+			const depth = backend.createDepthTexture({ width, height, format: 'depth32float' });
+			return { width, height, color, depth, pass: { label: 'host_mesh', color: { tex: color, clear: [0, 0, 0, 0] }, depth: { tex: depth, clearDepth: 0 } } };
 		}, (target, scene) => this.render(target, scene), target => {
 			backend.destroyTexture(target.color); backend.destroyTexture(target.depth);
 		});
@@ -70,7 +70,7 @@ export class WebGLHostMeshScenes {
 		backend.setDepthMask(true); backend.setDepthTestEnabled(true);
 		backend.setBlendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 		const pass = backend.beginRenderPass(target.pass);
-		backend.setViewportRect(0, 0, scene.width, scene.height);
+		backend.setViewportRect(0, 0, target.width, target.height);
 		for (const instance of scene.instances) {
 			const mesh = instance.mesh, geometry = this.meshes.get(mesh);
 			const program = this.programs[mesh.shader]; backend.useProgram(program.program);

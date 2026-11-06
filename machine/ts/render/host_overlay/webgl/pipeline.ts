@@ -186,9 +186,11 @@ function renderStream(backend: WebGLBackend, state: HostOverlayRuntime, passStat
 	}
 	// Render each changed 3D viewport before rebinding the 2D overlay pass.
 	state.meshTextures.length = stream.batchCount;
+	const densityX = passState.width / passState.overlayWidth, densityY = passState.height / passState.overlayHeight;
 	for (let index = 0; index < stream.batchCount; index++) {
-		const scene = stream.batches[index].scene;
-		state.meshTextures[index] = scene === undefined ? undefined : state.meshScenes.targets.get(scene).color;
+		const batch = stream.batches[index], scene = batch.scene;
+		state.meshTextures[index] = scene === undefined ? undefined
+			: state.meshScenes.targets.get(scene, densityX * batch.meshScale, densityY * batch.meshScale).color;
 	}
 	bindPassState(backend, state, passState);
 	if (state.instanceCapacity !== stream.capacity) {

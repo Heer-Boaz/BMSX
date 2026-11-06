@@ -4,7 +4,6 @@ import type { Table } from '../../machine/ts/machine/cpu/table';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { ActorLabEditorPane } from '../../ide/workbench/contrib/actor_lab/editor_pane';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
-import { createHeadlessHostMeshTarget, renderHeadlessHostMeshScene } from '../../machine/ts/render/host_overlay/headless/mesh';
 import { createLiveStudioFixture } from '../helpers/live_studio';
 
 // Normal construction and ordinary render passes, not a fabricated world snapshot.
@@ -64,8 +63,7 @@ test('live world view retains unclipped initialized visuals, moving actors and t
 	const model = frame.world.models.peek(0); editor.actorLab.inspectActor(input, model.entry.domain, model.entry.hashId); editor.update(0);
 	editor.commands.execute('sceneViewport.frameSelection', pane.commandTarget); editor.update(0);
 	assert.equal(view.geometry.scene.instances.some(instance => instance.mesh.texture !== undefined), true);
-	const scene = view.geometry.scene, target = createHeadlessHostMeshTarget(scene);
-	renderHeadlessHostMeshScene(target, scene);
+	const scene = view.geometry.scene, target = f.backend.hostOverlayContext.meshScenes.get(scene);
 	assert.ok(target.pixels.some((value, index) => index % 4 === 3 && value !== 0), 'CPU renderer draws the captured textured model');
 	let picked = false;
 	for (let y = 0; y < scene.height && !picked; y += 4) for (let x = 0; x < scene.width; x += 4) {

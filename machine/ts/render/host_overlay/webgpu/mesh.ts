@@ -1,5 +1,5 @@
 import { HostMeshBuffers, HostMeshPositionBuffers, HostMeshSceneTargets, hostMeshReflected, writeHostMeshClipMatrix,
-	type HostMesh, type HostMeshScene } from '../mesh';
+	type HostMesh, type HostMeshScene, type HostMeshTarget } from '../mesh';
 import type { RenderPassDesc } from '../../backend/backend';
 import type { WebGPUBackend, WebGPUPassEncoder } from '../../backend/webgpu/backend';
 import type { HostBitmapTextures } from '../bitmap';
@@ -7,7 +7,7 @@ import type { HostBitmapTextures } from '../bitmap';
 import shader from './shaders/host_mesh.wgsl';
 
 type MeshBuffers = { positions: GPUBuffer; source: Float32Array; uvs: GPUBuffer | undefined; indices: GPUBuffer | undefined; count: number; indexFormat: GPUIndexFormat };
-export type WebGPUHostMeshTarget = { color: GPUTexture; depth: GPUTexture; pass: RenderPassDesc };
+export type WebGPUHostMeshTarget = HostMeshTarget & { color: GPUTexture; depth: GPUTexture; pass: RenderPassDesc };
 
 export class WebGPUHostMeshScenes {
 	public readonly targets: HostMeshSceneTargets<WebGPUHostMeshTarget>;
@@ -58,10 +58,10 @@ export class WebGPUHostMeshScenes {
 		this.meshes = new HostMeshBuffers(mesh => this.createMesh(mesh), mesh => {
 			mesh.indices?.destroy(); mesh.uvs?.destroy(); this.positionBuffers.release(mesh.source);
 		});
-		this.targets = new HostMeshSceneTargets(scene => {
-			const color = backend.createColorTexture({ width: scene.width, height: scene.height, format: 'rgba8unorm' }) as GPUTexture;
-			const depth = backend.createDepthTexture({ width: scene.width, height: scene.height, format: 'depth32float' }) as GPUTexture;
-			return { color, depth, pass: { label: 'host_mesh', color: { tex: color, clear: [0, 0, 0, 0] }, depth: { tex: depth, clearDepth: 0 } } };
+		this.targets = new HostMeshSceneTargets((width, height) => {
+			const color = backend.createColorTexture({ width, height, format: 'rgba8unorm' }) as GPUTexture;
+			const depth = backend.createDepthTexture({ width, height, format: 'depth32float' }) as GPUTexture;
+			return { width, height, color, depth, pass: { label: 'host_mesh', color: { tex: color, clear: [0, 0, 0, 0] }, depth: { tex: depth, clearDepth: 0 } } };
 		}, (target, scene) => this.render(target, scene), target => { target.color.destroy(); target.depth.destroy(); });
 	}
 	private createMesh(mesh: HostMesh): MeshBuffers {
@@ -113,7 +113,7 @@ export class WebGPUHostMeshScenes {
 			this.backend.accountUpload('uniform', count * this.uniformStride);
 		}
 		const pass = this.backend.beginRenderPass(target.pass) as WebGPUPassEncoder;
-		pass.encoder.setViewport(0, 0, scene.width, scene.height, 0, 1);
+		pass.encoder.setViewport(0, 0, target.width, target.height, 0, 1);
 		for (let index = 0; index < count; index++) {
 			const instance = scene.instances[index], mesh = instance.mesh, geometry = this.meshes.get(mesh);
 			pass.encoder.setPipeline(this.pipelines[(mesh.layered ? 9 : 0) + mesh.shader * 3

@@ -98,13 +98,10 @@ export class HostMeshScene {
 	public get width(): number { return this.widthValue; }
 	public get height(): number { return this.heightValue; }
 	public constructor(width: number, height: number) { this.resize(width, height); }
-	/** Convert requested extent to whole raster pixels once, before allocation,
-	 * viewport setup or stride calculation. The UI submission stays fractional. */
+	/** Logical viewport extent. Raster density belongs to the output target,
+	 * so rounding here would lose subpixels before the display transform. */
 	public resize(width: number, height: number): void {
-		width = Math.round(width); height = Math.round(height);
-		if (this.widthValue === width && this.heightValue === height) return;
 		this.widthValue = width; this.heightValue = height;
-		this.changed();
 	}
 	/** Publish coherent camera, instance or membership edits. Idle drawing does not publish. */
 	public changed(): void { this.revision++; }
@@ -180,23 +177,29 @@ export class HostMeshPositionBuffers<T> {
 	}
 }
 
-/** A scene target owns its depth storage; only published scene changes rerender. */
-export class HostMeshSceneTargets<T> {
-	private readonly entries = new Map<HostMeshScene, { value: T; revision: number; width: number; height: number; unbind: () => void }>();
-	public constructor(private readonly create: (scene: HostMeshScene) => T,
+/** Allocated raster dimensions, shared by color, depth and viewport setup. */
+export type HostMeshTarget = { readonly width: number; readonly height: number };
+
+/** Each backend owns its viewport targets. A changed scene or physical pixel
+ * extent rerenders; fractional layout and output density are not scene edits. */
+export class HostMeshSceneTargets<T extends HostMeshTarget> {
+	private readonly entries = new Map<HostMeshScene, { value: T; revision: number; unbind: () => void }>();
+	public constructor(private readonly create: (width: number, height: number) => T,
 		private readonly render: (value: T, scene: HostMeshScene) => void, private readonly destroy: (value: T) => void) {}
-	public get(scene: HostMeshScene): T {
+	public get(scene: HostMeshScene, scaleX = 1, scaleY = 1): T {
+		const width = Math.round(scene.width * scaleX), height = Math.round(scene.height * scaleY);
 		let entry = this.entries.get(scene);
 		if (entry === undefined) {
-			const value = this.create(scene);
+			const value = this.create(width, height);
 			this.render(value, scene);
-			entry = { value, revision: scene.revision, width: scene.width, height: scene.height,
+			entry = { value, revision: scene.revision,
 				unbind: scene.onDispose(() => { this.destroy(entry.value); this.entries.delete(scene); }) };
 			this.entries.set(scene, entry);
-		} else if (entry.revision !== scene.revision) {
-			if (entry.width !== scene.width || entry.height !== scene.height) {
-				this.destroy(entry.value); entry.value = this.create(scene);
-				entry.width = scene.width; entry.height = scene.height;
+		} else {
+			const resized = entry.value.width !== width || entry.value.height !== height;
+			if (!resized && entry.revision === scene.revision) return entry.value;
+			if (resized) {
+				this.destroy(entry.value); entry.value = this.create(width, height);
 			}
 			this.render(entry.value, scene);
 			entry.revision = scene.revision;

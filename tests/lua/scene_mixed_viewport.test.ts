@@ -92,7 +92,7 @@ test('orbit viewport renders sprites, glyphs, backgrounds and models together an
 	const f = fixture(t), { view } = f, entries = f.context.subject!.objects;
 	assert.equal(view.camera.mode, '3d'); assert.equal(view.geometry.scene.instances.length, 4);
 	assert.deepEqual([...view.geometry.represented], [entries[2], entries[0], entries[1]]);
-	const target = createHeadlessHostMeshTarget(view.geometry.scene); renderHeadlessHostMeshScene(target, view.geometry.scene);
+	const target = createHeadlessHostMeshTarget(BOUNDS.right, BOUNDS.bottom); renderHeadlessHostMeshScene(target, view.geometry.scene);
 	// Pixel assertions exercise the actual renderer/projection, not incidental UI placement.
 	for (const [x, y, z, entry, color] of [
 		[3.5, -3.5, 0, entries[0], [255, 0, 0, 255]],
@@ -118,7 +118,7 @@ test('orbit viewport renders sprites, glyphs, backgrounds and models together an
 test('oblique planar alpha picking follows the affine texels actually rasterized, not perspective-correct UVs', t => {
 	const f = fixture(t), { view } = f, entries = f.context.subject!.objects, reading = view.camera.capture();
 	view.camera.restore({ ...reading, space: { ...reading.space, yaw: 0.8, pitch: 0.4 } }); f.control.update();
-	const target = createHeadlessHostMeshTarget(view.geometry.scene); renderHeadlessHostMeshScene(target, view.geometry.scene);
+	const target = createHeadlessHostMeshTarget(BOUNDS.right, BOUNDS.bottom); renderHeadlessHostMeshScene(target, view.geometry.scene);
 	const owners = new Set();
 	for (let y = 3; y < target.height; y += 7) for (let x = 3; x < target.width; x += 7) {
 		const offset = (y * target.width + x) * 4, pixels = target.pixels;
@@ -140,7 +140,7 @@ scenes.register('mixed'`);
 	const entries = f.context.subject!.objects;
 	assert.equal(view.geometry.scene.instances[1], view.geometry.scene.instances.find(draw => draw.mesh.color === 0xffffffff && draw.mesh.texture === undefined));
 	assert.equal(view.canvas.items[0].source.entry, entries[3]);
-	const target = createHeadlessHostMeshTarget(view.geometry.scene), owners = new Set();
+	const target = createHeadlessHostMeshTarget(BOUNDS.right, BOUNDS.bottom), owners = new Set();
 	for (let step = 0; step < 12; step++) {
 		view.camera.orbit(3, 2); f.control.update(); renderHeadlessHostMeshScene(target, view.geometry.scene);
 		for (let y = 3; y < target.height; y += 7) for (let x = 3; x < target.width; x += 7) {
@@ -189,7 +189,7 @@ test('a long caption batches its atlas glyphs without merging authored owners or
 for (const [yaw, pitch] of [[0, 0], [0.6, 0.3]]) test(`planar drag in orbit ${yaw}/${pitch} edits only the member position and Undo restores rendered content`, t => {
 	const f = fixture(t), { view } = f, reading = view.camera.capture();
 	view.camera.restore({ ...reading, space: { ...reading.space, yaw, pitch } }); f.select(0);
-	const before = createHeadlessHostMeshTarget(view.geometry.scene); renderHeadlessHostMeshScene(before, view.geometry.scene);
+	const before = createHeadlessHostMeshTarget(BOUNDS.right, BOUNDS.bottom); renderHeadlessHostMeshScene(before, view.geometry.scene);
 	const original = before.pixels.slice(), x = view.gizmo.x, y = view.gizmo.y;
 	assert.equal(view.gizmo.visibleAxes & TranslateHandle.Z, 0);
 	assert.equal(f.control.handlePointer(pointer(x, y, PointerButton.Primary, PointerButton.Primary), true), true);

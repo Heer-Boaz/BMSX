@@ -19,6 +19,13 @@ export async function renderHostMeshCase(kind: 'webgl2' | 'webgpu') {
 	const gpu = kind === 'webgpu' ? await createWebGPUBackend(canvas, adapter!, 2 * 1024 * 1024) : undefined;
 	const webgl = kind === 'webgl2' ? createWebGLBackend(canvas, 2 * 1024 * 1024) : undefined;
 	const backend: GPUBackend = gpu === undefined ? webgl! : gpu;
+	const readPresentation = async (): Promise<number[]> => {
+		if (gpu !== undefined) return Array.from(await backend.readColorTexture(gpu.context.getCurrentTexture(), 32, 32));
+		const gl = webgl!.gl, bytes = new Uint8Array(32 * 32 * 4), result: number[] = [];
+		gl.readPixels(0, 0, 32, 32, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
+		for (let row = 31; row >= 0; row--) result.push(...bytes.subarray(row * 128, (row + 1) * 128));
+		return result;
+	};
 	let vertexUploads = 0;
 	const accountUpload = backend.accountUpload.bind(backend);
 	backend.accountUpload = (uploadKind, bytes) => {
@@ -129,13 +136,25 @@ export async function renderHostMeshCase(kind: 'webgl2' | 'webgpu') {
 	library.setState('host_overlay', { width: 32, height: 32, overlayWidth: 32, overlayHeight: 32,
 		time: 0, delta: 0, frameTexture, frameWidth: 32, frameHeight: 32, ...frame });
 	library.execute('host_overlay', null, null);
-	let composite: number[];
-	if (gpu !== undefined) composite = Array.from(await backend.readColorTexture(gpu.context.getCurrentTexture(), 32, 32));
-	else {
-		const gl = webgl!.gl;
-		const bytes = new Uint8Array(32 * 32 * 4); gl.readPixels(0, 0, 32, 32, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
-		composite = []; for (let row = 31; row >= 0; row--) composite.push(...bytes.subarray(row * 128, (row + 1) * 128));
+	const composite = await readPresentation();
+	// The output remains 32 physical pixels. Both device density and nested UI
+	// transforms must reach the mesh target, not just enlarge its finished image.
+	const densityScene = new HostMeshScene(16, 16), densityMatches: boolean[] = [];
+	densityScene.clipFromOrigin.set(scene.clipFromOrigin); densityScene.instances.push(instance(red), instance(blue));
+	for (const [logicalSize, scale] of [[16, 1], [64 / 3, 1], [16, 2]] as const) {
+		densityScene.resize(logicalSize / scale, logicalSize / scale);
+		renderer.setViewportSize({ width: logicalSize, height: logicalSize });
+		renderer.beginFrame(); renderer.fillRect(0, 0, logicalSize, logicalSize, 0, 0xff000000, 0);
+		renderer.pushTransform({ scale, offsetX: 0, offsetY: 0 });
+		renderer.drawMeshScene(densityScene, 0, 0, logicalSize / scale, logicalSize / scale); renderer.popTransform(); renderer.endFrame();
+		const densityFrame = presenter.hostOverlayQueue.consumeOverlayFrame();
+		library.setState('host_overlay', { width: 32, height: 32, overlayWidth: logicalSize, overlayHeight: logicalSize,
+			time: 0, delta: 0, frameTexture, frameWidth: 32, frameHeight: 32, ...densityFrame });
+		library.execute('host_overlay', null, null);
+		const presented = await readPresentation();
+		densityMatches.push(presented.every((value, index) => index % 4 === 3 || value === pixels[index]));
 	}
+	densityScene.dispose();
 	textured.layerBitmap.update(new Uint8Array(16).fill(255), 2, 2); textured.layers.changed();
 	const changedTexture = Array.from(await backend.readColorTexture(scenes.targets.get(textured.layers).color, 32, 32));
 	library.dispose(); scenes.dispose(); glBitmaps?.dispose(); gpuBitmaps?.dispose(); textured.dispose(); gx.dispose();
@@ -144,9 +163,9 @@ export async function renderHostMeshCase(kind: 'webgl2' | 'webgpu') {
 	let validationError: string | undefined;
 	if (device !== undefined) { await device.queue.onSubmittedWorkDone(); validationError = (await device.popErrorScope())?.message; device.destroy(); }
 	return { kind: backend.type, left: pixel(pixels, 10, 21), right: pixel(pixels, 21, 21), orderIndependent: JSON.stringify(pixels) === JSON.stringify(reordered),
-		originPreserved: JSON.stringify(origin) === JSON.stringify(reordered), sameTarget, idle, reflectedVisible, fractionalSizing,
+		originPreserved: JSON.stringify(origin) === JSON.stringify(reordered), sameTarget, idle, reflectedVisible, fractionalSizing, densityMatches,
 		sharedVertexBytes, coplanar: pixel(sharedPixels, 16, 16), remaining: pixel(remaining, 16, 16), clippedVisible,
-		resized: oldTarget !== resizedTarget && resized.length === 25 * 16 * 4, resizedExtent: [clipped.width, clipped.height],
+		resized: oldTarget !== resizedTarget && resized.length === 25 * 16 * 4, resizedExtent: [resizedTarget.width, resizedTarget.height],
 		background: pixel(composite, 5, 10), cropped: pixel(composite, 15, 14), laterUi: pixel(composite, 10, 10),
 		textured: { affine: pixel(affinePixels, 20, 24), upright: pixel(affinePixels, 4, 8), near: pixel(nearPixels, 17, 19),
 			clipped: pixel(nearPixels, 10, 10), hole: pixel(layerPixels, 3, 10), opaque: pixel(layerPixels, 24, 8),

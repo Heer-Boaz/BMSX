@@ -14,7 +14,27 @@ import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import { RectRenderKind } from '../../machine/ts/render/shared/submissions';
 import { IDENTITY_HOST_OVERLAY_TRANSFORM } from '../../machine/ts/render/host_overlay/transform';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { HostMeshScene } from '../../machine/ts/render/host_overlay/mesh';
 import { beginHeadlessHost2D, renderHeadlessHost2DEntry } from '../../machine/ts/render/headless/host_2d';
+
+test('mesh raster scale survives clip and glyph-atlas batches but not a new frame', t => {
+	const stream = new HostOverlayQuadStream(), scene = new HostMeshScene(8, 8);
+	t.after(() => scene.dispose());
+	stream.reset(32, 32);
+	stream.appendEntry(Host2DKind.Transform, { scale: -1.5, offsetX: 24, offsetY: 24 });
+	const command = { scene, left: 0, top: 0, right: 8, bottom: 8 };
+	stream.appendEntry(Host2DKind.MeshScene, command);
+	stream.appendEntry(Host2DKind.Clip, { left: 1, top: 1, right: 30, bottom: 30 });
+	stream.appendEntry(Host2DKind.Transform, IDENTITY_HOST_OVERLAY_TRANSFORM);
+	stream.appendEntry(Host2DKind.Glyphs, { x: 0, y: 0, z: 0, items: 'A', item_start: 0, item_end: 1,
+		font: new Font({ variant: 'mono' }), color: 0xffffffff, has_background_color: false, background_color: 0, layer: LAYER_2D_IDE });
+	for (let index = 0; index < stream.batchCount; index++) {
+		assert.ok(stream.batches[index].scene === scene);
+		assert.equal(stream.batches[index].meshScale, 1.5, 'unrelated UI batches preserve the rendered viewport density');
+	}
+	stream.reset(32, 32); stream.appendEntry(Host2DKind.MeshScene, command);
+	assert.equal(stream.batches[0].meshScale, 1, 'the next frame resolves its own transform');
+});
 
 test('host overlay quad stream emits glyph backgrounds before atlas glyphs with atlas UVs', () => {
 	const stream = new HostOverlayQuadStream();

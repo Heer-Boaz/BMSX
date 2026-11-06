@@ -37,7 +37,7 @@ for (const mode of ['2d', '3d'] as const) test(`${mode} world view owns the iden
 	const x = bounds.right / 2 + camera.projectX(worldX, worldY * sign, 0, pose.ox, pose.oy * sign);
 	const y = bounds.bottom / 2 + camera.projectY(worldX, worldY * sign, 0, pose.ox, pose.oy * sign);
 	assert.deepEqual(view.pick(x, y), identity);
-	const image = mode === '3d' ? createHeadlessHostMeshTarget(view.geometry.scene) : undefined;
+	const image = mode === '3d' ? createHeadlessHostMeshTarget(bounds.right, bounds.bottom) : undefined;
 	if (image !== undefined) renderHeadlessHostMeshScene(image, view.geometry.scene);
 	const pixels = image?.pixels.slice();
 	const packet = first, affine = first.affine, actor = first.source.entry;
@@ -96,7 +96,7 @@ for (const pageCount of [1, 2]) test(`${pageCount}-page streamed models publish 
 	view.setMode('3d');
 	const bounds = { left: 0, top: 0, right: 320, bottom: 240 };
 	view.refresh(bounds, identity.domain, identity.hashId); view.frameAll(true); view.refresh(bounds, identity.domain, identity.hashId);
-	const scene = view.geometry.scene, image = createHeadlessHostMeshTarget(scene);
+	const scene = view.geometry.scene, image = createHeadlessHostMeshTarget(bounds.right, bounds.bottom);
 	renderHeadlessHostMeshScene(image, scene);
 	const pixels = image.pixels.slice(), instances = scene.instances.slice();
 	let hit: { x: number; y: number } | undefined;

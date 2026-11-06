@@ -208,10 +208,11 @@ function renderStream(backend: WebGPUBackend, runtime: HostOverlayRuntime, state
 	// Nested render passes cannot share the backend's encoder. Finish dirty
 	// mesh targets first; their cached textures then compose at command order.
 	runtime.meshBindGroups.length = stream.batchCount;
+	const densityX = state.width / state.overlayWidth, densityY = state.height / state.overlayHeight;
 	for (let index = 0; index < stream.batchCount; index++) {
-		const scene = stream.batches[index].scene;
+		const batch = stream.batches[index], scene = batch.scene;
 		if (scene === undefined) { runtime.meshBindGroups[index] = undefined; continue; }
-		const texture = runtime.meshScenes.targets.get(scene).color;
+		const texture = runtime.meshScenes.targets.get(scene, densityX * batch.meshScale, densityY * batch.meshScale).color;
 		let group = runtime.frameBindGroups.get(texture);
 		if (group === undefined) {
 			group = device.createBindGroup({ layout: runtime.pipeline.getBindGroupLayout(1), entries: [{ binding: 0, resource: texture.createView() }] });

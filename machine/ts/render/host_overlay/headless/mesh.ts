@@ -2,11 +2,9 @@ import { clamp } from '../../../common/clamp';
 import type { HeadlessHost2DContext } from '../../headless/host_2d';
 import { blendPixel } from '../../headless/pixel_ops';
 import { gxGpuSoftwareRgb555ChannelTo8, gxGpuSoftwareTextureModulationChannel5 } from '../../backend/software/gx_gpu_vram';
-import { HostMeshShader, hostMeshReflected, writeHostMeshClipMatrix, type HostMesh, type HostMeshScene, type HostMeshSceneRenderSubmission } from '../mesh';
+import { HostMeshShader, hostMeshReflected, writeHostMeshClipMatrix, type HostMesh, type HostMeshScene, type HostMeshSceneRenderSubmission, type HostMeshTarget } from '../mesh';
 
-export type HeadlessHostMeshTarget = {
-	readonly width: number;
-	readonly height: number;
+export type HeadlessHostMeshTarget = HostMeshTarget & {
 	pixels: Uint8Array;
 	depth: Float32Array;
 	matrix: Float64Array;
@@ -21,10 +19,10 @@ const EMPTY_BYTES = new Uint8Array(0);
 const EMPTY_FLOATS = new Float32Array(0);
 const EMPTY_NUMBERS = new Float64Array(0);
 
-export function createHeadlessHostMeshTarget(scene: HostMeshScene): HeadlessHostMeshTarget {
+export function createHeadlessHostMeshTarget(width: number, height: number): HeadlessHostMeshTarget {
 	return {
-		width: scene.width, height: scene.height,
-		pixels: new Uint8Array(scene.width * scene.height * 4), depth: new Float32Array(scene.width * scene.height),
+		width, height,
+		pixels: new Uint8Array(width * height * 4), depth: new Float32Array(width * height),
 		matrix: new Float64Array(16), vertices: EMPTY_NUMBERS, projected: EMPTY_NUMBERS, codes: EMPTY_BYTES,
 		// Six half-space clips add at most six vertices to a triangle.
 		clipA: new Float64Array(9 * 6), clipB: new Float64Array(9 * 6),
@@ -251,7 +249,8 @@ function rasterTriangle(target: HeadlessHostMeshTarget, points: Float64Array, a:
 
 /** Composite the actual scene command at its ordered UI position; scene depth stays private. */
 export function drawHeadlessHostMeshScene(context: HeadlessHost2DContext, command: HostMeshSceneRenderSubmission): void {
-	const source = context.meshScenes.get(command.scene), { scaleX, scaleY, offsetX, offsetY } = context.transform;
+	const { scaleX, scaleY, offsetX, offsetY } = context.transform;
+	const source = context.meshScenes.get(command.scene, Math.abs(scaleX), Math.abs(scaleY));
 	const originX = command.left * scaleX + offsetX, originY = command.top * scaleY + offsetY;
 	const xx = (command.right - command.left) * scaleX, yy = (command.bottom - command.top) * scaleY;
 	if (xx === 0 || yy === 0) return;

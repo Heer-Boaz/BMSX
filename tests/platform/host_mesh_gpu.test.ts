@@ -37,6 +37,7 @@ for (const kind of ['webgl2', 'webgpu'] as const) test(`${kind} retained host me
 	assert.deepEqual(result.idle, { passes: 0, uploads: 0 });
 	assert.deepEqual(result.fractionalSizing, { pixelsMatch: true, sameTarget: true, sameRevision: true, idle: { passes: 0, uploads: 0 } },
 		'fractional layout extents publish whole raster pixels without invalidating an unchanged pixel size');
+	assert.deepEqual(result.densityMatches, [true, true, true], 'device density and UI transforms rasterize at output resolution instead of upscaling');
 	assert.equal(result.reflectedVisible, true);
 	assert.equal(result.sharedVertexBytes, 0, 'the already uploaded accessor stays shared across three index/material resources');
 	assert.deepEqual(result.coplanar, [0, 255, 0, 255], 'strict greater retains the first coplanar primitive');

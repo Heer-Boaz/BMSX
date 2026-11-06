@@ -63,6 +63,37 @@ for (const allocation of ['constructor', 'resize'] as const) test(`fractional vi
 	assert.equal(resized.width, 9); assert.equal(resized.height, 8);
 });
 
+for (const [pixelSize, scale] of [[16, 1], [12, 1], [16, 2]] as const) test(`mesh view rasterizes at output density (${pixelSize} pixels, UI transform ${scale})`, t => {
+	const f = fixture(t, pixelSize, pixelSize);
+	const viewport = scene({ ...IDENTITY, mesh: mesh([-.85, -.75, .5, .7, -.5, .5, .2, .9, .5], 0xff123456) });
+	t.after(() => viewport.dispose());
+	viewport.resize(8 / scale, 8 / scale);
+	beginHeadlessHost2D(f.context, f.pixels, pixelSize, pixelSize, 8, 8);
+	renderHeadlessHost2DEntry(f.context, Host2DKind.Transform, { scale, offsetX: 0, offsetY: 0 });
+	renderHeadlessHost2DEntry(f.context, Host2DKind.MeshScene, { scene: viewport, left: 0, top: 0, right: 8 / scale, bottom: 8 / scale });
+	const actual = f.pixels.slice();
+	viewport.resize(pixelSize, pixelSize);
+	const reference = f.draw(viewport);
+	assert.ok(actual.every((value, index) => value === reference[index]),
+		'the same projected triangle covers device pixels directly, not enlarged logical-pixel blocks');
+});
+
+test('mesh targets resize for display density without a scene edit and round after scaling', t => {
+	const f = fixture(t), viewport = new HostMeshScene(8.4, 8.25);
+	t.after(() => viewport.dispose());
+	const revision = viewport.revision, logical = f.context.meshScenes.get(viewport);
+	const physical = f.context.meshScenes.get(viewport, 1.5, 1.5);
+	assert.equal(physical.width, 13); assert.equal(physical.height, 12);
+	assert.ok(physical !== logical); assert.equal(logical.pixels.length, 0);
+	const clears = t.mock.method(physical.pixels, 'fill');
+	viewport.resize(8.45, 8.2);
+	assert.ok(f.context.meshScenes.get(viewport, 1.5, 1.5) === physical);
+	assert.equal(clears.mock.callCount(), 0);
+	assert.equal(viewport.revision, revision, 'layout and density do not pretend to change geometry or camera data');
+	viewport.changed(); f.context.meshScenes.get(viewport, 1.5, 1.5);
+	assert.equal(clears.mock.callCount(), 1, 'an actual scene publication rerenders the retained target');
+});
+
 test('software orbit canvas preserves painter order without writing the model depth buffer', t => {
 	const meshes = createHostLayeredMeshFixture(); t.after(() => meshes.dispose());
 	const f = fixture(t, 96, 96);
