@@ -83,6 +83,26 @@ int main() {
 				}
 			}
 		}
+		for (const auto variant : {FontVariant::Msx, FontVariant::Tiny}) {
+			for (const auto style : {FontStyle::Normal, FontStyle::Italic}) {
+				Font font(variant, style);
+				GlyphRenderSubmission text;
+				text.font = &font;
+				text.items = {"true\tgy\nfalse\ntrue"}; text.item_end = 18;
+				text.has_background_color = true; text.background_color = 0xff223344;
+				for (const f32 phase : {0.0F, 0.25F, 0.5F, 0.75F}) {
+					text.x = 8 + phase; text.y = 7 + phase;
+					beginHostOverlayGLES2(backend, pipeline, state);
+					glClearColor(0, 0, 0, 0); glClear(GL_COLOR_BUFFER_BIT);
+					renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Clip, {.clip = &clip});
+					renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Glyphs, {.glyphs = &text});
+					glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, phase == 0 ? reference.data() : clipped.data());
+					endHostOverlayGLES2(backend, pipeline);
+					require(glGetError() == GL_NO_ERROR, "GLES2 bitmap font graphics error");
+					if (phase != 0) require(clipped == reference, "fractional layout must not remove bitmap glyph rows or move text backgrounds");
+				}
+			}
+		}
 		fixture.glyphs.x = 2;
 		fixture.glyphs.y = 3;
 		fixture.glyphs.items = {"A\tB\nC"};

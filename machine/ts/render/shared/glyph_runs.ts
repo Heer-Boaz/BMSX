@@ -6,18 +6,21 @@ export function forEachBatchBlitGlyph<T>(command: GlyphRenderSubmission, context
 	const items = command.items;
 	const arrayLines = Array.isArray(items);
 	const lineCount = arrayLines ? items.length : 1;
-	let originY = command.y;
+	// Align the pen once to the bitmap font's pixel grid. Explicit drawing
+	// transforms still apply afterwards, to both glyphs and their backgrounds.
+	const startX = Math.trunc(command.x);
+	let originY = Math.trunc(command.y);
 	for (let lineIndex = 0; lineIndex < lineCount; lineIndex += 1) {
 		const line = arrayLines ? items[lineIndex] : items;
 		const start = arrayLines ? 0 : command.item_start;
 		const end = arrayLines ? line.length : command.item_end;
-		let originX = command.x;
+		let originX = startX;
 		for (let itemIndex = start; itemIndex < end;) {
 			const next = itemIndex + (line.codePointAt(itemIndex)! > 0xffff ? 2 : 1);
 			const char = line.slice(itemIndex, next);
 			itemIndex = next;
 			if (char === '\n') {
-				originX = command.x;
+				originX = startX;
 				originY += font.lineHeight;
 				continue;
 			}

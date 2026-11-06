@@ -16,11 +16,30 @@ before(async () => {
 			export { renderPcrtcBlendCases } from './tests/helpers/pcrtc_scanout_fixture';
 			export { renderTexturedModelCase } from './tests/helpers/textured_model_gpu';
 			export { renderPresentationTarget } from './tests/helpers/presentation_target';
+			export { renderHostFontCases } from './tests/helpers/host_font_gpu';
 		`, resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', target: 'es2020', format: 'iife', globalName: 'backendTest', write: false,
 		plugins: [glsl()], loader: { '.png': 'dataurl', '.glsl': 'text', '.wgsl': 'text' },
 	});
 	backendBundle = bundle.outputFiles[0].text;
+});
+
+for (const kind of ['webgl2', 'webgpu']) test(`${kind} preserves both bitmap fonts at fractional layout origins`, async t => {
+	const browser = await chromium.launch({ args: [
+		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
+		'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
+	] });
+	t.after(() => browser.close());
+	const page = await browser.newPage(), errors: string[] = [];
+	page.on('pageerror', error => errors.push(error.message));
+	await page.route('http://localhost/renderer-test/**', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><canvas></canvas>' }));
+	await page.goto('http://localhost/renderer-test/fonts/'); await page.addScriptTag({ content: backendBundle });
+	const result = await page.evaluate(async kind => (globalThis as any).backendTest.renderHostFontCases(document.querySelector('canvas'), kind), kind);
+	assert.equal(result.validationError, undefined); assert.equal(result.glError, 0);
+	assert.deepEqual(result.errors, []); assert.deepEqual(errors, []);
+	assert.ok(result.ink > 0, 'reference contains rendered glyphs');
+	for (const sample of result.cases) assert.equal(sample.differences, 0,
+		`phase ${sample.phaseX},${sample.phaseY}: each glyph texel must match the aligned software image (first difference ${sample.firstDifference})`);
 });
 
 for (const kind of ['webgl2', 'webgpu']) test(`${kind} retains the old workspace target until the next presentation`, async t => {

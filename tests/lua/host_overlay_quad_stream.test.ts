@@ -58,6 +58,24 @@ test('host overlay quad stream emits glyph backgrounds before atlas glyphs with 
 });
 
 for (const variant of ['msx', 'tiny'] satisfies FontVariant[]) {
+	for (const phase of [0.25, 0.5, 0.75]) test(`bitmap text aligns its run origin before tabs, newlines and transforms (${variant}, ${phase})`, () => {
+		const font = new Font({ variant });
+		const stream = new HostOverlayQuadStream();
+		const text = { x: -1, y: 3, z: 0, items: 'A\tB\nC', item_start: 0, item_end: 5, font,
+			color: 0xffffffff, has_background_color: true, background_color: 0xff223344, layer: LAYER_2D_IDE };
+		const draw = () => {
+			stream.reset(64, 48);
+			stream.appendEntry(Host2DKind.Transform, { scale: 2, offsetX: 4, offsetY: 2 });
+			stream.appendEntry(Host2DKind.Glyphs, text);
+			return stream.floatData.subarray(0, stream.count * HOST_OVERLAY_INSTANCE_FLOATS);
+		};
+		const aligned = draw().slice();
+		text.x -= phase; text.y += phase;
+		assert.deepEqual(draw(), aligned, 'fractional layout must not alter bitmap glyphs or their background, including negative origins');
+		assert.equal(text.x, -1 - phase, 'drawing does not mutate retained layout');
+		assert.equal(text.y, 3 + phase);
+	});
+
 	test(`host glyph range uses top-left coordinates and explicit tab/newline advances (${variant})`, () => {
 		const font = new Font({ variant });
 		const stream = new HostOverlayQuadStream();
@@ -113,17 +131,19 @@ test('host transforms scale glyph geometry and advances, not atlas coordinates o
 	assert.equal(stream.batchCount, 1, 'transform changes bake geometry without breaking batches');
 });
 
-test('software integer magnification reproduces square tiny-glyph texel blocks, including tabs, newlines and backgrounds', () => {
+for (const variant of ['msx', 'tiny'] satisfies FontVariant[]) for (const style of ['normal', 'italic'] as const)
+test(`software magnification preserves ${variant} ${style} glyph texels and backgrounds at fractional layout origins`, () => {
 	const { backend } = createHostOverlayFixture(64, 48);
 	const context = backend.hostOverlayContext;
 	const target = backend.framebufferPixels;
-	const text = { x: 2, y: 3, z: 0, items: 'A\tB\nC', item_start: 0, item_end: 5, font: new Font({ variant: 'tiny' }),
+	const text = { x: 2, y: 3, z: 0, items: 'A\tB\nC', item_start: 0, item_end: 5, font: new Font({ variant, style }),
 		color: 0xffffffff, has_background_color: true, background_color: 0xff223344, layer: LAYER_2D_IDE };
 	target.fill(0);
 	beginHeadlessHost2D(context, target, 64, 48, 64, 48);
 	renderHeadlessHost2DEntry(context, Host2DKind.Glyphs, text);
 	const original = target.slice();
-	for (const scale of [1, 2, 3, 4]) {
+	for (const scale of [1, 2, 3, 4]) for (const phase of [0, 0.25, 0.5, 0.75]) {
+		text.x = 2 + phase; text.y = 3 + phase;
 		target.fill(0);
 		renderHeadlessHost2DEntry(context, Host2DKind.Transform, { scale, offsetX: 0, offsetY: 0 });
 		renderHeadlessHost2DEntry(context, Host2DKind.Glyphs, text);

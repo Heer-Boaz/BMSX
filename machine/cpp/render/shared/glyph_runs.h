@@ -3,6 +3,7 @@
 #include "render/shared/bitmap_font.h"
 #include "render/shared/submissions.h"
 #include "common/utf8.h"
+#include <cmath>
 
 namespace bmsx {
 
@@ -15,9 +16,12 @@ void forEachBatchBlitGlyph(
 	BFont& font = *submission.font;
 	const i32 start = submission.item_start;
 	const i32 end = submission.item_end;
-	f32 y = submission.y;
+	// Align the pen once to the bitmap font's pixel grid. Explicit drawing
+	// transforms still apply afterwards, to both glyphs and their backgrounds.
+	const f32 startX = std::trunc(submission.x);
+	f32 y = std::trunc(submission.y);
 	for (const std::string& line : submission.items) {
-		f32 x = submission.x;
+		f32 x = startX;
 		size_t byteIndex = 0;
 		i32 itemIndex = 0;
 		while (byteIndex < line.size()) {
@@ -30,7 +34,7 @@ void forEachBatchBlitGlyph(
 				continue;
 			}
 			if (codepoint == '\n') {
-				x = submission.x;
+				x = startX;
 				y += static_cast<f32>(font.lineHeight());
 				itemIndex += 1;
 				continue;

@@ -55,6 +55,28 @@ int main() {
 			require(backend.hostOverlayClip.left == 0 && backend.hostOverlayClip.right == 64, "pass end releases the scissor");
 		}
 	}
+	for (const auto variant : {FontVariant::Msx, FontVariant::Tiny}) {
+		for (const auto style : {FontStyle::Normal, FontStyle::Italic}) {
+			Font font(variant, style);
+			GlyphRenderSubmission text;
+			text.font = &font;
+			text.items = {"true\tgy\nfalse\ntrue"}; text.item_end = 18;
+			text.has_background_color = true; text.background_color = 0xff223344;
+			const HostOverlayTransform scale{2, 0, 0};
+			for (const f32 phase : {0.0F, 0.25F, 0.5F, 0.75F}) {
+				text.x = 2 + phase; text.y = 3 + phase;
+				std::fill_n(backend.framebuffer(), reference.size(), 0);
+				beginHostOverlaySoftware(backend, state);
+				renderHost2DEntrySoftware(backend, Host2DKind::Transform, {.transform = &scale});
+				renderHost2DEntrySoftware(backend, Host2DKind::Clip, {.clip = &clip});
+				renderHost2DEntrySoftware(backend, Host2DKind::Glyphs, {.glyphs = &text});
+				if (phase == 0) std::copy_n(backend.framebuffer(), reference.size(), reference.begin());
+				else require(std::equal(reference.begin(), reference.end(), backend.framebuffer()),
+					"bitmap run origin must align before magnification, including text backgrounds");
+				endHostOverlaySoftware(backend);
+			}
+		}
+	}
 	fixture.glyphs.x = 2;
 	fixture.glyphs.y = 3;
 	fixture.glyphs.items = {"A\tB\nC"};
