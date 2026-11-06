@@ -4,6 +4,7 @@ import * as constants from '../../../../common/constants';
 import { editorRuntimeState } from '../../../common/runtime_state';
 import { resolveCodeAreaViewport, type CodeAreaViewport } from '../../code/area_viewport';
 import { resolveCursorVisualIndex } from './visual_index';
+import { codePointTextAt } from '../../../../../machine/ts/common/utf16';
 
 /** Borrowed glyph geometry from the same source/inline projection and viewport used by painting. */
 export function resolveCursorScreenInfo(code: CodeEditorControl, viewport: CodeAreaViewport): CursorScreenInfo | null {
@@ -25,7 +26,7 @@ export function resolveCursorScreenInfo(code: CodeEditorControl, viewport: CodeA
 	code.scratch.cursorScreenInfo.row = view.cursorRow; code.scratch.cursorScreenInfo.column = view.cursorColumn;
 	code.scratch.cursorScreenInfo.x = x; code.scratch.cursorScreenInfo.y = y;
 	code.scratch.cursorScreenInfo.width = width; code.scratch.cursorScreenInfo.height = code.lineHeight;
-	code.scratch.cursorScreenInfo.baseChar = display < text.length ? text.charAt(display) : ' ';
+	code.scratch.cursorScreenInfo.baseChar = display < text.length ? codePointTextAt(text, display) : ' ';
 	code.scratch.cursorScreenInfo.baseColor = display < text.length ? entry.hi.colors[display] : constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
 	return code.scratch.cursorScreenInfo;
 }

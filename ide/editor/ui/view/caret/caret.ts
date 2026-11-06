@@ -9,6 +9,7 @@ import type { VisualLineSegment } from '../../../../common/models';
 import { revealCursor, resolveViewportCapacity, setCursorFromVisualIndex, updateDesiredColumn } from './view';
 import { resolveCursorVisualIndex } from './visual_index';
 import type { ModifierState } from '../../../../../hosts/common/input/text';
+import { nextCodePointOffset, previousCodePointOffset, splitsSurrogatePair } from '../../../../../machine/ts/common/utf16';
 
 export function resolveIndentAwareHome(code: CodeEditorControl, line: string, segment: VisualLineSegment, currentColumn: number): number {
 	const lineLength = line.length;
@@ -29,7 +30,7 @@ export function resolveSegmentEnd(code: CodeEditorControl, line: string, segment
 	if (segmentEnd <= segmentStart) {
 		return segmentStart;
 	}
-	return segmentEnd - 1;
+	return previousCodePointOffset(line, segmentEnd);
 }
 
 export function findFirstNonWhitespace(line: string, startColumn: number, endColumn: number): number {
@@ -48,7 +49,8 @@ export function findFirstNonWhitespace(line: string, startColumn: number, endCol
 export function setCursorPosition(code: CodeEditorControl, row: number, column: number): void {
 	code.clearVisualCursor();
 	const targetRow = code.model.clampRow(row);
-	const targetColumn = code.model.clampColumn(targetRow, column);
+	let targetColumn = code.model.clampColumn(targetRow, column);
+	if (splitsSurrogatePair(code.model.buffer.getLineContent(targetRow), targetColumn)) targetColumn--;
 	code.view.cursorRow = targetRow;
 	code.view.cursorColumn = targetColumn;
 	code.emitCursorMoved();
@@ -99,7 +101,7 @@ export function moveCursorHorizontal(code: CodeEditorControl, delta: number): vo
 	if (delta < 0) {
 		// Move left
 		if (code.view.cursorColumn > segment.startColumn) {
-			code.view.cursorColumn -= 1;
+			code.view.cursorColumn = previousCodePointOffset(line, code.view.cursorColumn);
 		} else {
 			let moved = false;
 				if (code.view.wordWrapEnabled && visualIndex > 0) {
@@ -110,7 +112,7 @@ export function moveCursorHorizontal(code: CodeEditorControl, delta: number): vo
 						const prevEnd = Math.max(prevSegment.endColumn, prevSegment.startColumn);
 						const hasMoreBefore = prevEnd > prevSegment.startColumn;
 						const targetColumn = hasMoreBefore && prevEnd < prevLine.length
-						? Math.max(prevSegment.startColumn, prevEnd - 1)
+						? previousCodePointOffset(prevLine, prevEnd)
 						: Math.min(prevEnd, prevLine.length);
 					code.view.cursorColumn = code.layout.clampLineLength(prevLine.length, targetColumn);
 					moved = true;
@@ -124,7 +126,7 @@ export function moveCursorHorizontal(code: CodeEditorControl, delta: number): vo
 	} else {
 		// Move right
 		if (code.view.cursorColumn < segment.endColumn && code.view.cursorColumn < line.length) {
-			code.view.cursorColumn += 1;
+			code.view.cursorColumn = nextCodePointOffset(line, code.view.cursorColumn);
 		} else {
 			let moved = false;
 			if (code.view.wordWrapEnabled && visualIndex < visualCount - 1) {

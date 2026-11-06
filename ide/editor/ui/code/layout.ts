@@ -1,6 +1,7 @@
 import { FenwickPrefix } from '../../../common/fenwick';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import { ScratchBuffer } from '../../../../machine/ts/common/scratchbuffer';
+import { nextCodePointOffset, splitsSurrogatePair } from '../../../../machine/ts/common/utf16';
 import type { CodeLineView, DisplayRange, HighlightLine, VisualLineSegment } from '../../../common/models';
 import type { EditorFont } from '../view/font';
 import type { InlineEditState } from '../code_editor_state';
@@ -156,8 +157,9 @@ export class CodeLayout {
 		if (inline !== null && display >= inline.startDisplay && display < inline.endDisplay) return inline.startColumn;
 		const column = line.displayToColumn[display];
 		const begin = inline !== null && column === inline.endColumn ? inline.endDisplay : this.columnToDisplay(line.hi, column);
-		const end = this.columnToDisplay(line.hi, column + 1);
-		return target >= (advances[begin] + advances[end]) * 0.5 ? column + 1 : column;
+		const nextColumn = nextCodePointOffset(line.src, column);
+		const end = this.columnToDisplay(line.hi, nextColumn);
+		return target >= (advances[begin] + advances[end]) * 0.5 ? nextColumn : column;
 	}
 
 	/** Expanded glyph containing a measured pixel; exact boundaries choose the following glyph. */
@@ -167,7 +169,8 @@ export class CodeLayout {
 			const mid = (low + high) >>> 1;
 			if (line.advancePrefix[mid] <= pixel) low = mid + 1; else high = mid;
 		}
-		return Math.max(startDisplay, low - 1);
+		const display = Math.max(startDisplay, low - 1);
+		return splitsSurrogatePair(line.hi.text, display) ? display - 1 : display;
 	}
 
 	/** Borrowed until the next call; partial edge glyphs retain the same unaligned pixel origin. */
@@ -179,7 +182,7 @@ export class CodeLayout {
 		if (wrapEnabled) result.endDisplay = segment.endDisplay;
 		else {
 			const right = scrollLeft + width, end = this.displayAtPixel(line, right, result.startDisplay);
-			result.endDisplay = end < line.hi.text.length && line.advancePrefix[end] < right ? end + 1 : end;
+			result.endDisplay = end < line.hi.text.length && line.advancePrefix[end] < right ? nextCodePointOffset(line.hi.text, end) : end;
 		}
 		return result;
 	}
@@ -193,7 +196,7 @@ export class CodeLayout {
 		if (display === line.hi.text.length) return this.endCaretWidth;
 		const inline = line.inline, column = line.displayToColumn[display];
 		const ghost = inline !== null && display >= inline.startDisplay && display < inline.endDisplay;
-		const end = !ghost && line.src.charAt(column) === '\t' ? line.hi.columnToDisplay[column + 1] : display + 1;
+		const end = !ghost && line.src.charAt(column) === '\t' ? line.hi.columnToDisplay[column + 1] : nextCodePointOffset(line.hi.text, display);
 		return line.advancePrefix[end] - line.advancePrefix[display];
 	}
 
@@ -476,19 +479,20 @@ export class CodeLayout {
 		if (wrapWidth === Number.POSITIVE_INFINITY) {
 			return line.length;
 		}
-		let column = startColumn + 1;
+		let column = startColumn;
 		let lastBreakEnd = startColumn;
-		while (column <= line.length) {
-			const width = this.measureColumns(entry, startColumn, column);
+		while (column < line.length) {
+			const next = nextCodePointOffset(line, column);
+			const width = this.measureColumns(entry, startColumn, next);
 			if (width > wrapWidth) {
-				if (lastBreakEnd > startColumn && this.measureColumns(entry, lastBreakEnd, column) <= continuationWidth) {
+				if (lastBreakEnd > startColumn && this.measureColumns(entry, lastBreakEnd, next) <= continuationWidth) {
 					return lastBreakEnd;
 				}
-				return column - 1;
+				return column === startColumn ? next : column;
 			}
-			const ch = line.charAt(column - 1);
-			if (ch === ' ' || ch === '\t' || ch === '-') lastBreakEnd = column;
-			column += 1;
+			const ch = line.charAt(column);
+			if (ch === ' ' || ch === '\t' || ch === '-') lastBreakEnd = next;
+			column = next;
 		}
 		return line.length;
 	}
@@ -536,10 +540,9 @@ export class CodeLayout {
 		let column = 0;
 		while (column < length) {
 			const segmentIndent = column === 0 ? 0 : indentPixels;
-			const nextBreak = wordWrapEnabled
+			const endColumn = wordWrapEnabled
 				? this.findWrapBreak(line, entry, column, effectiveWrapWidth - segmentIndent, continuationWidth)
 				: length;
-			const endColumn = Math.max(column + 1, Math.min(length, nextBreak));
 			this.appendSegment(target, writeIndex, row, entry, column, endColumn, segmentIndent);
 			writeIndex += 1;
 			column = endColumn;

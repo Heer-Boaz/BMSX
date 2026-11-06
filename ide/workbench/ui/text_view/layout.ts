@@ -89,12 +89,7 @@ export class WorkbenchTextViewLayout {
 		for (const line of this.lines) {
 			if (measure) {
 				const advances = line.advances; advances.length = line.display.length + 1; advances[0] = 0;
-				for (let index = 0; index < line.display.length;) {
-					const step = line.display.codePointAt(index)! > 0xffff ? 2 : 1;
-					if (step === 2) advances[index + 1] = advances[index];
-					advances[index + step] = advances[index] + font.advance(line.display.slice(index, index + step));
-					index += step;
-				}
+				font.writeAdvancePrefix(line.display, advances);
 			}
 			line.firstRow = this.rows.length; this.wrappingLine = line;
 			forEachWrappedMeasuredRange(line.display, width, this.measure, this.emit, true);

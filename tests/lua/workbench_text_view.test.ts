@@ -126,7 +126,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		const text = 'build output: retained words and columns\t0123456789\n'.repeat(6000).slice(0, 256 * 1024);
 		const f = fixture(variant, text), rows = f.model.projection.rows, first = rows[0], last = rows.at(-1);
 		const read = t.mock.method(f.buffer, 'getText'), lines = t.mock.method(f.buffer, 'getLineContent');
-		const advance = t.mock.method(f.font, 'advance'), push = t.mock.fn(rows.push);
+		const advance = t.mock.method(f.font.renderFont(), 'advance'), push = t.mock.fn(rows.push);
 		const originalPush = rows.push; rows.push = push; t.after(() => { rows.push = originalPush; });
 		for (let frame = 0; frame < 1000; frame++) f.layout();
 		assert.equal(read.mock.callCount(), 0); assert.equal(lines.mock.callCount(), 0);
@@ -143,7 +143,7 @@ test('plain text paints only visible source spans and paired selection/search wi
 	const index = Math.trunc((f.model.viewport.scrollTop - TEXT_VIEW_PADDING) / f.font.lineHeight);
 	const row = f.model.projection.rows[index]; f.model.select(row.sourceStart, row.sourceEnd);
 	const glyphs = t.mock.method(api, 'blit_text_inline_span_with_font'), fills = t.mock.method(api, 'fill_rect');
-	const read = t.mock.method(f.buffer, 'getText'), advance = t.mock.method(f.font, 'advance');
+	const read = t.mock.method(f.buffer, 'getText'), advance = t.mock.method(f.font.renderFont(), 'advance');
 	overlay.renderer.beginFrame(); api.beginFrame(overlay.renderer);
 	drawWorkbenchTextView(f.model, f.font, true); overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
 	assert.ok(glyphs.mock.callCount() < 40, 'offscreen measured rows are not submitted');

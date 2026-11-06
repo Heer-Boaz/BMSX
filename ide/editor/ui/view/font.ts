@@ -1,6 +1,6 @@
 import { DEFAULT_FONT_VARIANT, Font, type FontVariant, type FontStyle } from '../../../../machine/ts/render/shared/bmsx_font';
 import type { FontSampling } from 'bmsx/render/shared/bitmap_font';
-import { TAB_SPACES } from '../../../common/constants';
+import { codePointTextAt } from '../../../../machine/ts/common/utf16';
 
 export class EditorFont {
 	private font: Font | null = null;
@@ -32,14 +32,21 @@ export class EditorFont {
 
 	/** Text-editor width uses fixed tab expansion and no advance for line separators. */
 	public readonly measureTextRange = (text: string, start: number, end: number): number => {
-		let width = 0;
-		for (let index = start; index < end; index++) {
-			const char = text.charAt(index);
-			if (char === '\t') width += this.advance(' ') * TAB_SPACES;
-			else if (char !== '\n') width += this.advance(char);
-		}
-		return width;
+		return this.renderFontOwner().measure(text, start, end);
 	};
+
+	/** Write a single display line's retained geometry in UTF-16 slots, starting at advances[start]. */
+	public writeAdvancePrefix(text: string, advances: number[], start = 0, end = text.length): void {
+		const font = this.renderFontOwner();
+		let width = advances[start];
+		for (let index = start; index < end;) {
+			const char = codePointTextAt(text, index), next = index + char.length;
+			if (char.length === 2) advances[index + 1] = width;
+			width += font.advance(char);
+			advances[next] = width;
+			index = next;
+		}
+	}
 
 	public measure(text: string): number {
 		return this.renderFontOwner().measure(text);

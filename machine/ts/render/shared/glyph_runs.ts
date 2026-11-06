@@ -1,5 +1,6 @@
 import { TAB_SPACES, type FontGlyph } from './bitmap_font';
 import type { GlyphRenderSubmission } from './submissions';
+import { codePointTextAt } from '../../common/utf16';
 
 export function forEachBatchBlitGlyph<T>(command: GlyphRenderSubmission, context: T, fn: (context: T, item: FontGlyph, x: number, y: number) => void): void {
 	const font = command.font;
@@ -16,9 +17,8 @@ export function forEachBatchBlitGlyph<T>(command: GlyphRenderSubmission, context
 		const end = arrayLines ? line.length : command.item_end;
 		let originX = startX;
 		for (let itemIndex = start; itemIndex < end;) {
-			const next = itemIndex + (line.codePointAt(itemIndex)! > 0xffff ? 2 : 1);
-			const char = line.slice(itemIndex, next);
-			itemIndex = next;
+			const char = codePointTextAt(line, itemIndex);
+			itemIndex += char.length;
 			if (char === '\n') {
 				originX = startX;
 				originY += font.lineHeight;

@@ -56,10 +56,12 @@ for (const variant of ['tiny', 'msx'] as const) {
 		}
 		assert.equal(layout.hitTestColumn(line, 0, line.hi.text.length, line.advancePrefix[inline.endDisplay]), end,
 			'the exact ghost end is the surviving source boundary, not its left insertion stop');
-		for (const column of [0, 1, start - 1, start, end + 1, end + 2, end + 3, end + 4, source.length]) {
+		for (const column of [0, 1, start - 1, start, end + 1, end + 2, end + 4, source.length]) {
 			const display = line.hi.columnToDisplay[column];
 			assert.equal(layout.hitTestColumn(line, 0, line.hi.text.length, line.advancePrefix[display]), column);
 		}
+		assert.equal(layout.hitTestColumn(line, 0, line.hi.text.length, line.advancePrefix[line.hi.columnToDisplay[end + 3]]), end + 2,
+			'the interior UTF-16 slot has no independent visual caret stop');
 		for (let column = start + 1; column < end; column++) {
 			assert.equal(line.hi.columnToDisplay[column], inline.startDisplay, 'removed source has no invented view columns');
 		}
@@ -160,7 +162,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		layout.ensureVisualLines(false, 0, 20);
 		assert.equal(layout.maxViewWidth(), Math.max(widths[1], widths[2]) + caret);
 		const read = t.mock.method(model.buffer, 'getLineContent', model.buffer.getLineContent.bind(model.buffer));
-		const advance = t.mock.method(font, 'advance', font.advance.bind(font));
+		const advance = t.mock.method(font.renderFont(), 'advance');
 		for (let frame = 0; frame < 1000; frame++) assert.equal(layout.maxViewWidth(), Math.max(widths[1], widths[2]) + caret);
 		assert.equal(read.mock.callCount(), 0); assert.equal(advance.mock.callCount(), 0);
 	});
@@ -179,7 +181,7 @@ test('one inline update in 50000 source lines reads at most its own cold row; 10
 	const advances = line.advancePrefix, colors = line.hi.colors, middle = segments[row], last = segments.at(-1);
 	const extent = layout.maxViewWidth(), version = widget.inlineEdit.version;
 	read.mock.resetCalls();
-	const advance = t.mock.method(font, 'advance', font.advance.bind(font));
+	const advance = t.mock.method(font.renderFont(), 'advance');
 	for (let frame = 0; frame < 1000; frame++) {
 		layout.ensureVisualLines(true, row, 20);
 		assert.equal(layout.maxViewWidth(), extent);

@@ -22,9 +22,10 @@ test('two layouts share source glyphs but retain their own wrapping and injected
 	const second = new CodeLayout(font, { inlineEdit: secondInline, computeWrapWidth: () => secondWidth });
 	first.attach(document); second.attach(document);
 	t.after(() => { first.dispose(); second.dispose(); });
-	const read = t.mock.method(model.buffer, 'getLineContent'), measure = t.mock.method(font, 'advance');
+	const read = t.mock.method(model.buffer, 'getLineContent'), measure = t.mock.method(font.renderFont(), 'advance');
 	first.ensureVisualLines(true, 0, 20);
 	const canonical = first.measurements.getLine(0), reads = read.mock.callCount(), measurements = measure.mock.callCount();
+	assert.ok(measurements > 0, 'the cold generation resolves actual glyph metrics');
 	second.ensureVisualLines(true, 0, 20);
 	assert.ok(first.measurements === second.measurements);
 	assert.ok(second.measurements.getLine(0) === canonical);
@@ -88,7 +89,7 @@ test('theme-only tokens preserve canonical and active injected glyph geometry an
 	const colors = projected.hi.colors.slice(), segments = layout.getVisualLines().slice();
 	const oldTheme = getActiveIdeThemeVariant();
 	t.after(() => { layout.dispose(); setIdeThemeVariant(oldTheme); });
-	const measure = t.mock.method(font, 'advance'), scheduled = t.mock.method(clock, 'scheduleOnce');
+	const measure = t.mock.method(font.renderFont(), 'advance'), scheduled = t.mock.method(clock, 'scheduleOnce');
 	setIdeThemeVariant(oldTheme === 'light' ? 'dark' : 'light');
 	layout.ensureVisualLines(true, 0, 20);
 	const recolored = layout.getViewLine(0), source = layout.measurements.getLine(0);

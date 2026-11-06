@@ -60,6 +60,16 @@ test('unknown character lookup does not grow either resource or character indexe
 	assert.equal(writes.mock.callCount(), 0);
 });
 
+test('font range measurement resolves an authored supplementary-plane binding once, not two missing glyphs', () => {
+	const { source, resolutions } = sourceFixture();
+	const font = new BFont(source, { A: 'letter', '𝄞': 'clef', '?': 'question', ' ': 'space' });
+	const expected = font.advance('A') + font.advance('𝄞');
+	assert.equal(font.measure('A𝄞'), expected);
+	assert.equal(font.measure('_A𝄞_', 1, 4), expected);
+	assert.equal(resolutions.get('clef'), 1);
+	assert.equal(resolutions.has('question'), false, 'measurement must consume the source glyph of the complete codepoint');
+});
+
 for (const variant of ['mono', 'tiny', 'msx'] as const) for (const style of ['normal', 'italic'] as const) {
 	test(`${variant}/${style}: known aliases and missing characters reuse font-owned glyphs`, () => {
 		const font = new Font({ variant, style }), seen = new Map<string, ReturnType<Font['getGlyph']>>();

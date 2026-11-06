@@ -57,6 +57,21 @@ test('middle truncation does not split surrogate pairs at either retained bounda
 	}
 });
 
+test('prefix and suffix searches only ask the font to measure complete codepoint ranges', () => {
+	const measureWhole = (text: string, start: number, end: number) => {
+		assert.ok(text.slice(0, start).isWellFormed());
+		assert.ok(text.slice(start, end).isWellFormed());
+		return measure(text, start, end);
+	};
+	for (const value of ['😀A🐉AB🚀', '😀'.repeat(12), 'prefix😀suffix', 'AB😀C']) {
+		for (let width = 0; width <= 16; width += 0.25) for (const placement of ['end', 'middle'] as const) {
+			const result = truncateMeasuredText(value, width, measureWhole, ELLIPSIS, placement);
+			assert.ok(result.isWellFormed());
+			assert.ok(measure(result, 0, result.length) <= width);
+		}
+	}
+});
+
 test('wrapped text reports clipping from actual consumed ranges, not the last glyph', () => {
 	const lines: string[] = [];
 	assert.equal(writeWrappedMeasuredText(lines, 'authored…', 20, 20, 1, measure), false);

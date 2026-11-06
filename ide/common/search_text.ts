@@ -1,3 +1,5 @@
+import { splitsSurrogatePair } from '../../machine/ts/common/utf16';
+
 /** Search representation and its mapping back to original UTF-16 text offsets. */
 export class CaseFoldedText {
 	public readonly lower: string;
@@ -21,11 +23,6 @@ export class CaseFoldedText {
 
 const LITERAL_SEARCH_WINDOW = 8192;
 const LITERAL_SEARCH_MATCHES_PER_STEP = 256;
-
-function splitsSurrogatePair(source: string, offset: number): boolean {
-	const previous = source.charCodeAt(offset - 1), next = source.charCodeAt(offset);
-	return previous >= 0xd800 && previous <= 0xdbff && next >= 0xdc00 && next <= 0xdfff;
-}
 
 /** Literal matching keeps original UTF-16 coordinates; insensitive matching uses Unicode simple folding. */
 export class LiteralTextMatcher {

@@ -159,7 +159,7 @@ test('visible masks exclude injected replacement glyphs, clip tab fragments and 
 test('1000 warm unadorned deep-scroll rows neither grow nor fill a mask or repeat source/font work', t => {
 	const f = createFixture(t, 'tiny', 'dark', 'x'.repeat(10_000));
 	const mask = new CodeRowDecorations(), roles = mask.roles, colors = f.line.hi.colors, advances = f.line.advancePrefix;
-	const fontReads = t.mock.method(f.code.font, 'advance'), sourceReads = t.mock.method(f.model.buffer, 'getLineContent');
+	const fontReads = t.mock.method(f.code.font.renderFont(), 'advance'), sourceReads = t.mock.method(f.model.buffer, 'getLineContent');
 	const originalFill = roles.fill; let fills = 0;
 	roles.fill = (value, start, end) => { fills++; return originalFill.call(roles, value, start, end); };
 	for (let frame = 0; frame < 1000; frame++) mask.prepare(f.code, 0, f.line, 8_000, 8_040, [], -1, [], -1, false, true);
@@ -181,7 +181,7 @@ test('decorated warm rows reuse local storage and a later empty row never consum
 	const matches = [{ row: 0, start: 7_990, end: 8_030 }];
 	mask.prepare(f.code, 0, f.line, 8_000, 8_040, matches, 0, [], -1, false, true);
 	const roles = mask.roles, originalColors = f.line.hi.colors.slice();
-	const fontReads = t.mock.method(f.code.font, 'advance'), sourceReads = t.mock.method(f.model.buffer, 'getLineContent');
+	const fontReads = t.mock.method(f.code.font.renderFont(), 'advance'), sourceReads = t.mock.method(f.model.buffer, 'getLineContent');
 	for (let frame = 0; frame < 1000; frame++) mask.prepare(f.code, 0, f.line, 8_000, 8_040, matches, 0, [], -1, false, true);
 	assert.equal(mask.roles, roles); assert.equal(mask.roles.length, 40);
 	assert.deepEqual(mask.roles.slice(0, 30), Array(30).fill(CodeTextDecoration.ActiveReference));

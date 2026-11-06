@@ -92,6 +92,20 @@ void testGlyphStorage() {
 int main() {
 	using namespace bmsx;
 	testGlyphStorage();
+	for (const auto variant : {FontVariant::Mono, FontVariant::Msx, FontVariant::Tiny}) {
+		Font font(variant);
+		GlyphRenderSubmission submission;
+		submission.x = 0; submission.y = 0;
+		submission.items = {"_A😀\t🐉B_"};
+		// Native submission ranges index decoded codepoints, not UTF-8 bytes.
+		submission.item_start = 1; submission.item_end = 6; submission.font = &font;
+		size_t count = 0; f32 end = 0;
+		forEachBatchBlitGlyph(submission, count, [&](size_t& count, const FontGlyph& glyph, f32 x, f32) {
+			end = x + glyph.advance; ++count;
+		});
+		if (count != 4 || std::abs(end - font.measure("A😀\t🐉B")) > 0.0001F)
+			throw std::runtime_error("native measured and rendered widths must consume whole Unicode codepoints");
+	}
 	for (const auto variant : {FontVariant::Msx, FontVariant::Tiny}) {
 		Font font(variant);
 		for (const f32 phase : {0.0F, 0.25F, 0.5F, 0.75F}) {

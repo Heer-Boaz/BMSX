@@ -36,6 +36,7 @@ import {
 	setSingleCursorSelectionAnchor,
 } from './cursor/state';
 import { findWordBoundsInLine, findWordLeftOffset, findWordRightOffset } from './cursor/words';
+import { nextCodePointOffset, previousCodePointOffset } from '../../../machine/ts/common/utf16';
 
 
 function editorAllowsMutation(code: CodeEditorControl): boolean {
@@ -380,9 +381,11 @@ export function backspace(code: CodeEditorControl): void {
 		return;
 	}
 
-	const deleteOffset = cursorOffset - 1;
+	const column = code.view.cursorColumn;
+	const deleteLength = column === 0 ? 1 : column - previousCodePointOffset(currentLine(code), column);
+	const deleteOffset = cursorOffset - deleteLength;
 	const removed = buffer.getTextRange(deleteOffset, cursorOffset);
-	applyUndoableReplace(code, deleteOffset, 1, '');
+	applyUndoableReplace(code, deleteOffset, deleteLength, '');
 	buffer.positionAt(deleteOffset, code.scratch.editPosition);
 	moveSingleCursor(code.view, code.scratch.editPosition.row, code.scratch.editPosition.column, false);
 	recordEditContext(code, 'delete', removed);
@@ -410,8 +413,10 @@ export function deleteForward(code: CodeEditorControl): void {
 		return;
 	}
 
-	const removed = buffer.getTextRange(cursorOffset, cursorOffset + 1);
-	applyUndoableReplace(code, cursorOffset, 1, '');
+	const line = currentLine(code), column = code.view.cursorColumn;
+	const deleteLength = column === line.length ? 1 : nextCodePointOffset(line, column) - column;
+	const removed = buffer.getTextRange(cursorOffset, cursorOffset + deleteLength);
+	applyUndoableReplace(code, cursorOffset, deleteLength, '');
 	buffer.positionAt(cursorOffset, code.scratch.editPosition);
 	moveSingleCursor(code.view, code.scratch.editPosition.row, code.scratch.editPosition.column, false);
 	recordEditContext(code, 'delete', removed);

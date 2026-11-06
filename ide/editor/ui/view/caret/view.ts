@@ -2,6 +2,7 @@ import type { CodeEditorControl } from '../../code_editor_control';
 import { ensureVisualLines } from '../../../common/text/layout';
 import { resolveCodeAreaViewport, type CodeAreaViewport } from '../../code/area_viewport';
 import { resolveCursorVisualIndex } from './visual_index';
+import { previousCodePointOffset, splitsSurrogatePair } from '../../../../../machine/ts/common/utf16';
 
 export function revealCursor(code: CodeEditorControl): void {
 	code.caret.cursorRevealSuspended = false;
@@ -108,8 +109,9 @@ export function setCursorFromVisualIndex(code: CodeEditorControl, visualIndex: n
 		targetColumn = code.layout.clampSegmentEnd(line.length, segmentStart, targetColumn);
 		const hasNextSegmentSameRow = (clampedIndex + 1 < visualLines.length)
 			&& visualLines[clampedIndex + 1].row === segment.row;
-		if (hasNextSegmentSameRow && targetColumn >= segmentEnd) targetColumn = Math.max(segmentStart, segmentEnd - 1);
+		if (hasNextSegmentSameRow && targetColumn >= segmentEnd) targetColumn = Math.max(segmentStart, previousCodePointOffset(line, segmentEnd));
 	}
+	if (splitsSurrogatePair(line, targetColumn)) targetColumn--;
 	code.view.cursorRow = segment.row;
 	code.view.cursorColumn = targetColumn;
 	code.emitCursorMoved();

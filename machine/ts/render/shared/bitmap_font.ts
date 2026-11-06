@@ -1,4 +1,5 @@
 import type { HostAtlas } from '../host_overlay/atlas';
+import { codePointTextAt } from '../../common/utf16';
 
 export type GlyphMap = Record<string, string>;
 export type FontSampling = 'nearest' | 'linear';
@@ -233,10 +234,12 @@ export class BFont {
 		return this.advancePadding;
 	}
 
-	public measure(text: string): number {
+	/** UTF-16 range endpoints are character boundaries, as in glyph submissions. */
+	public measure(text: string, start = 0, end = text.length): number {
 		let width = 0;
-		for (let i = 0; i < text.length; i++) {
-			const ch = text.charAt(i);
+		for (let i = start; i < end;) {
+			const ch = codePointTextAt(text, i);
+			i += ch.length;
 			if (ch === '\n') {
 				continue;
 			}

@@ -26,9 +26,7 @@ export class HighlightedLabel {
 			this.marker = markerWidth <= maxWidth ? ELLIPSIS : '';
 		}
 		this.advances[0] = 0;
-		for (let index = 0; index < this.visibleEnd; index += 1) {
-			this.advances[index + 1] = this.advances[index] + measureTextRange(text, index, index + 1);
-		}
+		editorViewState.font.writeAdvancePrefix(text, this.advances, 0, this.visibleEnd);
 		this.markerX = this.advances[this.visibleEnd];
 	}
 

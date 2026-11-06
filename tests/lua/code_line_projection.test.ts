@@ -108,8 +108,8 @@ test('the producer owns ghost casing while canonical source casing and its origi
 test('warm frames retain every array and string while only newly inserted glyphs are measured on a genuine edit revision', t => {
 	const f = fixture(t, 'long_prefix.old_tail + surviving_tail');
 	const state: InlineEditState = { version: 1, active: true, row: 0, startColumn: 12, endColumn: 20, text: 'fresh\tname', preserveCase: false };
-	const advance = f.font.advance.bind(f.font); let measured = 0;
-	t.mock.method(f.font, 'advance', char => { measured++; return advance(char); });
+	const font = f.font.renderFont(), advance = font.advance.bind(font); let measured = 0;
+	t.mock.method(font, 'advance', char => { measured++; return advance(char); });
 	const line = f.projection.update(f.source, state);
 	assert.equal(measured, expandTabs(state.text).length, 'prefix and survivor geometry is consumed from the source cache');
 	const refs = [line.hi, line.hi.colors, line.hi.columnToDisplay, line.viewColumnToDisplay, line.displayToColumn, line.advancePrefix, line.inline];

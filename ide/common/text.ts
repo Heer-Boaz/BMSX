@@ -1,4 +1,5 @@
 import * as constants from './constants';
+import { nextCodePointOffset, splitsSurrogatePair } from '../../machine/ts/common/utf16';
 
 type LuaCommentTextBuffer = {
 	readonly version: number;
@@ -103,7 +104,7 @@ export function changedTextRange(previous: string, next: string): { start: numbe
 export function writeWrappedSourceLine(lines: string[], text: string, maxWidth: number, measure: TextRangeMeasure): void {
 	let start = 0, width = 0;
 	for (let index = 0; index < text.length;) {
-		const end = index + (text.codePointAt(index)! > 0xffff ? 2 : 1);
+		const end = nextCodePointOffset(text, index);
 		const advance = measure(text, index, end);
 		if (index > start && width + advance > maxWidth) {
 			lines.push(text.slice(start, index));
@@ -138,13 +139,13 @@ function trimTrailingHorizontalWhitespace(text: string, start: number, end: numb
 
 function findMeasuredWrapEnd(text: string, start: number, end: number, maxWidth: number, measureRange: TextRangeMeasure): number {
 	if (maxWidth <= 0) {
-		return start + (text.codePointAt(start)! > 0xffff ? 2 : 1);
+		return nextCodePointOffset(text, start);
 	}
 	let cursor = start;
 	let width = 0;
 	let breakIndex = start;
 	while (cursor < end) {
-		const next = cursor + (text.codePointAt(cursor)! > 0xffff ? 2 : 1);
+		const next = nextCodePointOffset(text, cursor);
 		const advance = measureRange(text, cursor, next);
 		if (width + advance > maxWidth) {
 			if (cursor === start) {
@@ -170,8 +171,9 @@ export function findMeasuredPrefixEnd(text: string, maxWidth: number, measureRan
 	let best = 0;
 	while (low <= high) {
 		const mid = (low + high) >>> 1;
-		if (measureRange(text, 0, mid) <= maxWidth) {
-			best = mid;
+		const boundary = splitsSurrogatePair(text, mid) ? mid - 1 : mid;
+		if (measureRange(text, 0, boundary) <= maxWidth) {
+			best = boundary;
 			low = mid + 1;
 		} else {
 			high = mid - 1;
@@ -195,16 +197,16 @@ export function truncateMeasuredText(text: string, maxWidth: number, measureRang
 	const bodyWidth = maxWidth - markerWidth;
 	if (placement === 'end') return text.slice(0, findMeasuredPrefixEnd(text, bodyWidth, measureRange)) + marker;
 	// Identifiers need their distinguishing suffix as well as their namespace.
-	let prefix = findMeasuredPrefixEnd(text, bodyWidth / 2, measureRange);
-	if (prefix > 0 && text.codePointAt(prefix - 1)! > 0xffff) prefix--;
+	const prefix = findMeasuredPrefixEnd(text, bodyWidth / 2, measureRange);
 	const suffixWidth = bodyWidth - measureRange(text, 0, prefix);
 	let low = prefix, high = text.length;
 	while (low < high) {
 		const mid = (low + high) >>> 1;
-		if (measureRange(text, mid, text.length) <= suffixWidth) high = mid;
+		const boundary = splitsSurrogatePair(text, mid) ? mid + 1 : mid;
+		if (measureRange(text, boundary, text.length) <= suffixWidth) high = mid;
 		else low = mid + 1;
 	}
-	if (low > 0 && text.codePointAt(low - 1)! > 0xffff) low++;
+	if (splitsSurrogatePair(text, low)) low++;
 	return text.slice(0, prefix) + marker + text.slice(low);
 }
 

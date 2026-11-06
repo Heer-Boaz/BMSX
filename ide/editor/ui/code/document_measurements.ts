@@ -56,7 +56,7 @@ export class CodeDocumentMeasurements {
 		inverse[highlight.text.length] = source.src.length;
 		const advances = new Array<number>(highlight.text.length + 1);
 		advances[0] = 0;
-		for (let display = 0; display < highlight.text.length; display++) advances[display + 1] = advances[display] + this.font.advance(highlight.text.charAt(display));
+		this.font.writeAdvancePrefix(highlight.text, advances);
 		const line: MeasuredLine = {
 			src: source.src, viewText: source.src, hi: highlight, viewColumnToDisplay: highlight.columnToDisplay,
 			displayToColumn: inverse, advancePrefix: advances, inline: null, tokenGeneration: document.tokenGeneration,

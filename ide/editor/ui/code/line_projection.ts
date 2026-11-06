@@ -67,10 +67,8 @@ export class CodeLineProjection {
 		const advances = line.advancePrefix;
 		advances.length = line.hi.text.length + 1;
 		for (let index = 0; index <= prefixEnd; index++) advances[index] = source.advancePrefix[index];
-		let width = source.advancePrefix[prefixEnd];
-		for (let index = 0; index < ghost.length; index++) {
-			width += this.font.advance(ghost.charAt(index)); advances[prefixEnd + index + 1] = width;
-		}
+		this.font.writeAdvancePrefix(line.hi.text, advances, prefixEnd, ghostEnd);
+		const width = advances[ghostEnd];
 		for (let index = tailStart; index <= highlight.text.length; index++) {
 			advances[ghostEnd + index - tailStart] = width + source.advancePrefix[index] - source.advancePrefix[tailStart];
 		}
