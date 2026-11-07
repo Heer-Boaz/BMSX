@@ -228,6 +228,7 @@ export type WebGLGxGpuState = {
 	lineBatchRect: GxGpuVramCopyRect;
 	lineCommandRect: GxGpuVramCopyRect;
 	sampleDirtyRect: GxGpuVramCopyRect;
+	snapshotDirtyRect: GxGpuVramCopyRect;
 	rectangleScratch: GxGpuRectangle;
 	lineBatchState: GxGpuLineBatchState;
 	backend: WebGLBackend;
@@ -583,6 +584,7 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 		lineBatchRect,
 		lineCommandRect,
 		sampleDirtyRect,
+		snapshotDirtyRect: { left: 0, top: 0, right: 0, bottom: 0 },
 		rectangleScratch,
 		lineBatchState,
 		backend,
@@ -1402,6 +1404,11 @@ function uploadGxGpuVramSnapshot(gx: WebGLGxGpuState, snapshotBytes: Uint8Array)
 	gx.sampleDirtyRect.top = 0;
 	gx.sampleDirtyRect.right = GX_GPU_VRAM_X_ADDRESS_PERIOD;
 	gx.sampleDirtyRect.bottom = gx.vramTextureRows;
+	gx.vramSnapshotScratch.set(snapshotBytes);
+	gx.snapshotDirtyRect.left = 0;
+	gx.snapshotDirtyRect.top = 0;
+	gx.snapshotDirtyRect.right = 0;
+	gx.snapshotDirtyRect.bottom = 0;
 }
 
 function uploadCpuToVramPayload(gx: WebGLGxGpuState, commandBuffer: GxGpuCommandBufferView, payloadWordStart: number, pixelCount: number): void {
@@ -1716,6 +1723,18 @@ function gxGpuVramCopyRectsOverlap(gx: WebGLGxGpuState, a: GxGpuVramCopyRect, b:
 function markGxGpuSampleTextureDirtyArea(gx: WebGLGxGpuState, left: number, top: number, right: number, bottom: number): void {
 	if (right <= left || bottom <= top) {
 		return;
+	}
+	const snapshot = gx.snapshotDirtyRect;
+	if (snapshot.right <= snapshot.left || snapshot.bottom <= snapshot.top) {
+		snapshot.left = left;
+		snapshot.top = top;
+		snapshot.right = right;
+		snapshot.bottom = bottom;
+	} else {
+		if (left < snapshot.left) snapshot.left = left;
+		if (top < snapshot.top) snapshot.top = top;
+		if (right > snapshot.right) snapshot.right = right;
+		if (bottom > snapshot.bottom) snapshot.bottom = bottom;
 	}
 	if (left < gx.sampleDirtyRect.left) {
 		gx.sampleDirtyRect.left = left;
@@ -3237,19 +3256,24 @@ function completeGxGpuReadback(gx: WebGLGxGpuState, commandLimit: number, readba
 
 export function captureRenderedVramSnapshot(gx: WebGLGxGpuState, gxGpu: GxGpu, output: GxGpuVramSource): void {
 	executeGxGpuVramCommands(gx, output, output.commandBuffer.executedCommandCount);
-	const gl = gx.gl;
-	gl.bindFramebuffer(gl.FRAMEBUFFER, gx.vramFramebuffer);
-	gl.pixelStorei(gl.PACK_ALIGNMENT, 1);
-	gl.readPixels(0, 0, GX_GPU_VRAM_X_ADDRESS_PERIOD, gx.vramTextureRows, gl.RGBA, gl.UNSIGNED_BYTE, gx.rawVramReadback);
-	let snapshotByteOffset = 0;
-	for (let logicalY = 0; logicalY < gx.vramTextureRows; logicalY += 1) {
-		let readbackByteOffset = logicalY * GX_GPU_VRAM_X_ADDRESS_PERIOD * GX_GPU_RAW_VRAM_BYTES_PER_PIXEL;
-		for (let column = 0; column < GX_GPU_VRAM_X_ADDRESS_PERIOD; column += 1) {
-			gx.vramSnapshotScratch[snapshotByteOffset] = gx.rawVramReadback[readbackByteOffset];
-			gx.vramSnapshotScratch[snapshotByteOffset + 1] = gx.rawVramReadback[readbackByteOffset + 1];
-			snapshotByteOffset += 2;
-			readbackByteOffset += GX_GPU_RAW_VRAM_BYTES_PER_PIXEL;
+	const dirty = gx.snapshotDirtyRect;
+	if (dirty.right > dirty.left && dirty.bottom > dirty.top) {
+		const gl = gx.gl;
+		gl.bindFramebuffer(gl.FRAMEBUFFER, gx.vramFramebuffer);
+		gl.pixelStorei(gl.PACK_ALIGNMENT, 1);
+		gl.readPixels(dirty.left, dirty.top, dirty.right - dirty.left, dirty.bottom - dirty.top,
+			gl.RGBA, gl.UNSIGNED_BYTE, gx.rawVramReadback);
+		let readbackByteOffset = 0;
+		for (let row = dirty.top; row < dirty.bottom; row += 1) {
+			let snapshotByteOffset = (row * GX_GPU_VRAM_X_ADDRESS_PERIOD + dirty.left) * 2;
+			for (let column = dirty.left; column < dirty.right; column += 1) {
+				gx.vramSnapshotScratch[snapshotByteOffset] = gx.rawVramReadback[readbackByteOffset];
+				gx.vramSnapshotScratch[snapshotByteOffset + 1] = gx.rawVramReadback[readbackByteOffset + 1];
+				snapshotByteOffset += 2;
+				readbackByteOffset += GX_GPU_RAW_VRAM_BYTES_PER_PIXEL;
+			}
 		}
+		dirty.left = dirty.top = dirty.right = dirty.bottom = 0;
 	}
 	gx.vramSnapshotSerial = gxGpu.commitRenderedVramSnapshotBytes(gx.vramSnapshotScratch, gx.processedCommandCount);
 }

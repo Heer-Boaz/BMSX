@@ -229,6 +229,7 @@ export type WebGpuGxGpuState = {
 	lineBatchRect: GxGpuVramCopyRect;
 	lineCommandRect: GxGpuVramCopyRect;
 	sampleDirtyRect: GxGpuVramCopyRect;
+	snapshotDirtyRect: GxGpuVramCopyRect;
 	rectangleScratch: GxGpuRectangle;
 	solidBatchState: GxGpuSolidBatchState;
 	lineBatchState: GxGpuLineBatchState;
@@ -254,6 +255,7 @@ export type WebGpuGxGpuState = {
 	vramUploadExtent: GPUExtent3DDict;
 	vramReadbackBuffer: GPUBuffer;
 	vramReadbackSource: GPUTexelCopyTextureInfo;
+	vramReadbackOrigin: GPUOrigin3DDict;
 	vramReadbackDestination: GPUTexelCopyBufferInfo;
 	vramReadbackExtent: GPUExtent3DDict;
 	gpureadBuffer: GPUBuffer;
@@ -667,6 +669,7 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 	const vramDrawColorAttachment: GPURenderPassColorAttachment = { view: vramView, loadOp: 'load', storeOp: 'store' };
 	const scanoutColorAttachment: GPURenderPassColorAttachment = { view: vramView, clearValue: scanoutClearColor, loadOp: 'load', storeOp: 'store' };
 	const gpureadColorAttachment: GPURenderPassColorAttachment = { view: gpureadView, loadOp: 'load', storeOp: 'store' };
+	const vramReadbackOrigin: GPUOrigin3DDict = { x: 0, y: 0, z: 0 };
 	const vramCopySourceOrigin: GPUOrigin3DDict = { x: 0, y: 0, z: 0 };
 	const vramCopyDestinationOrigin: GPUOrigin3DDict = { x: 0, y: 0, z: 0 };
 	const vramUploadDestinationOrigin: GPUOrigin3DDict = { x: 0, y: 0, z: 0 };
@@ -701,6 +704,7 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 		lineBatchRect: { left: 0, top: 0, right: 0, bottom: 0 },
 		lineCommandRect: { left: 0, top: 0, right: 0, bottom: 0 },
 		sampleDirtyRect: { left: 0, top: 0, right: 0, bottom: 0 },
+		snapshotDirtyRect: { left: 0, top: 0, right: 0, bottom: 0 },
 		rectangleScratch: { x0: 0, y0: 0, x1: 0, y1: 0, width: 0, height: 0 },
 		solidBatchState: {
 			topLeftWord: 0,
@@ -745,7 +749,8 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 		vramUploadLayout: { offset: 0, bytesPerRow: GX_GPU_RAW_VRAM_UPLOAD_ROW_BYTES },
 		vramUploadExtent: { width: 0, height: 0, depthOrArrayLayers: 1 },
 		vramReadbackBuffer,
-		vramReadbackSource: { texture: vramTexture },
+		vramReadbackSource: { texture: vramTexture, origin: vramReadbackOrigin },
+		vramReadbackOrigin,
 		vramReadbackDestination: { buffer: vramReadbackBuffer, bytesPerRow: GX_GPU_RAW_VRAM_UPLOAD_ROW_BYTES, rowsPerImage: vramTextureRows },
 		vramReadbackExtent: { width: GX_GPU_VRAM_X_ADDRESS_PERIOD, height: vramTextureRows, depthOrArrayLayers: 1 },
 		gpureadBuffer,
@@ -1275,6 +1280,11 @@ function uploadGxGpuVramSnapshot(gx: WebGpuGxGpuState, snapshotBytes: Uint8Array
 	gx.sampleDirtyRect.top = 0;
 	gx.sampleDirtyRect.right = GX_GPU_VRAM_X_ADDRESS_PERIOD;
 	gx.sampleDirtyRect.bottom = gx.vramTextureRows;
+	gx.vramSnapshotScratch.set(snapshotBytes);
+	gx.snapshotDirtyRect.left = 0;
+	gx.snapshotDirtyRect.top = 0;
+	gx.snapshotDirtyRect.right = 0;
+	gx.snapshotDirtyRect.bottom = 0;
 }
 
 function uploadCpuToVramPayload(gx: WebGpuGxGpuState, commandBuffer: GxGpuCommandBufferView, payloadWordStart: number, pixelCount: number): void {
@@ -1307,6 +1317,18 @@ function uploadCpuToVramPayload(gx: WebGpuGxGpuState, commandBuffer: GxGpuComman
 
 function markGxGpuSampleTextureDirtyArea(gx: WebGpuGxGpuState, left: number, top: number, right: number, bottom: number): void {
 	if (right <= left || bottom <= top) return;
+	const snapshot = gx.snapshotDirtyRect;
+	if (snapshot.right <= snapshot.left || snapshot.bottom <= snapshot.top) {
+		snapshot.left = left;
+		snapshot.top = top;
+		snapshot.right = right;
+		snapshot.bottom = bottom;
+	} else {
+		if (left < snapshot.left) snapshot.left = left;
+		if (top < snapshot.top) snapshot.top = top;
+		if (right > snapshot.right) snapshot.right = right;
+		if (bottom > snapshot.bottom) snapshot.bottom = bottom;
+	}
 	if (left < gx.sampleDirtyRect.left) gx.sampleDirtyRect.left = left;
 	if (top < gx.sampleDirtyRect.top) gx.sampleDirtyRect.top = top;
 	if (right > gx.sampleDirtyRect.right) gx.sampleDirtyRect.right = right;
@@ -2941,22 +2963,38 @@ export function registerGxGpuPass(registry: RenderPassLibrary): void {
 export async function captureRenderedVramSnapshot(gx: WebGpuGxGpuState, gxGpu: GxGpu, output: GxGpuVramSource): Promise<void> {
 	executeGxGpuVramCommands(gx, output, output.commandBuffer.executedCommandCount, false);
 	await gx.backend.finishGxGpuReadbacks();
-	const device = gx.backend.device;
-	const encoder = device.createCommandEncoder();
-	encoder.copyTextureToBuffer(gx.vramReadbackSource, gx.vramReadbackDestination, gx.vramReadbackExtent);
-	gx.submitCommandBuffers[0] = encoder.finish();
-	device.queue.submit(gx.submitCommandBuffers);
-	await gx.vramReadbackBuffer.mapAsync(GPUMapMode.READ);
-	const readback = new Uint8Array(gx.vramReadbackBuffer.getMappedRange());
+	const dirty = gx.snapshotDirtyRect;
 	const snapshot = gx.vramSnapshotScratch;
-	let snapshotByteOffset = 0;
-	let readbackByteOffset = 0;
-	for (let pixel = 0; pixel < GX_GPU_VRAM_X_ADDRESS_PERIOD * gx.vramTextureRows; pixel += 1) {
-		snapshot[snapshotByteOffset] = readback[readbackByteOffset];
-		snapshot[snapshotByteOffset + 1] = readback[readbackByteOffset + 1];
-		snapshotByteOffset += 2;
-		readbackByteOffset += GX_GPU_RAW_VRAM_BYTES_PER_PIXEL;
+	if (dirty.right > dirty.left && dirty.bottom > dirty.top) {
+		const width = dirty.right - dirty.left;
+		const height = dirty.bottom - dirty.top;
+		const bytesPerRow = (width * GX_GPU_RAW_VRAM_BYTES_PER_PIXEL + 255) & ~255;
+		const byteCount = bytesPerRow * height;
+		gx.vramReadbackOrigin.x = dirty.left;
+		gx.vramReadbackOrigin.y = dirty.top;
+		gx.vramReadbackDestination.bytesPerRow = bytesPerRow;
+		gx.vramReadbackDestination.rowsPerImage = height;
+		gx.vramReadbackExtent.width = width;
+		gx.vramReadbackExtent.height = height;
+		const device = gx.backend.device;
+		const encoder = device.createCommandEncoder();
+		encoder.copyTextureToBuffer(gx.vramReadbackSource, gx.vramReadbackDestination, gx.vramReadbackExtent);
+		gx.submitCommandBuffers[0] = encoder.finish();
+		device.queue.submit(gx.submitCommandBuffers);
+		await gx.vramReadbackBuffer.mapAsync(GPUMapMode.READ, 0, byteCount);
+		const readback = new Uint8Array(gx.vramReadbackBuffer.getMappedRange(0, byteCount));
+		for (let row = 0; row < height; row += 1) {
+			let snapshotByteOffset = ((dirty.top + row) * GX_GPU_VRAM_X_ADDRESS_PERIOD + dirty.left) * 2;
+			let readbackByteOffset = row * bytesPerRow;
+			for (let column = 0; column < width; column += 1) {
+				snapshot[snapshotByteOffset] = readback[readbackByteOffset];
+				snapshot[snapshotByteOffset + 1] = readback[readbackByteOffset + 1];
+				snapshotByteOffset += 2;
+				readbackByteOffset += GX_GPU_RAW_VRAM_BYTES_PER_PIXEL;
+			}
+		}
+		gx.vramReadbackBuffer.unmap();
+		dirty.left = dirty.top = dirty.right = dirty.bottom = 0;
 	}
-	gx.vramReadbackBuffer.unmap();
 	gx.vramSnapshotSerial = gxGpu.commitRenderedVramSnapshotBytes(snapshot, gx.processedCommandCount);
 }

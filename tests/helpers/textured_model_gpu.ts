@@ -52,9 +52,57 @@ export async function renderTexturedModelCase(canvas: HTMLCanvasElement, kind: '
 		const at = (71 * width + x + dx) * 4;
 		return { software: Array.from(expected.subarray(at, at + 4)), gpu: Array.from(actual.subarray(at, at + 4)) };
 	}));
+	const commands = output.commandBuffer.presentCommandCount;
+	// Observe transfers at the real API boundary, not through production test
+	// counters. Snapshot bytes remain a complete little-endian VRAM image even
+	// when a checkpoint reads only a small, padded, nonzero-origin rectangle.
+	const transfers: number[][] = [];
+	if (gl !== undefined) {
+		const readPixels = gl.gl.readPixels.bind(gl.gl);
+		gl.gl.readPixels = (...args: any[]) => {
+			transfers.push(args.slice(0, 4));
+			(readPixels as (...args: any[]) => void)(...args);
+		};
+	} else {
+		const prototype = Object.getPrototypeOf(gpu!.device.createCommandEncoder());
+		const copy = prototype.copyTextureToBuffer;
+		prototype.copyTextureToBuffer = function (source: GPUTexelCopyTextureInfo, destination: GPUTexelCopyBufferInfo, extent: GPUExtent3DDict) {
+			const origin = source.origin as GPUOrigin3DDict;
+			transfers.push([origin.x!, origin.y!, extent.width, extent.height!]);
+			copy.call(this, source, destination, extent);
+		};
+	}
+	const snapshotDifferences: number[] = [];
+	const snapshotWords: number[] = [];
+	for (let phase = 0; phase < 2; ++phase) {
+		if (phase !== 0) {
+			machine.gxGpu.writeGp1(0x09000001);
+			for (const word of [0xe40fffff, 0x6000ff00, (901 << 16) | 197, (2 << 16) | 3]) {
+				machine.gxGpu.writeGp0(word);
+				machine.scheduler.advanceTo(machine.scheduler.currentNowCycles() + 10_000);
+				machine.gxGpu.onService(machine.scheduler.currentNowCycles());
+			}
+			machine.gxGpu.presentReadyFrameOnVblankEdge();
+			const next = machine.gxGpu.readDeviceOutput();
+			renderGxGpuSoftwareFrame(software, state, next, pixels);
+			library.execute('gx_gpu', framebuffer, next);
+		}
+		await backend.captureGxGpuVramSnapshot(machine.gxGpu);
+		const bytes = machine.gxGpu.readDeviceOutput().vramSnapshotBytes;
+		const changedWordAt = (901 * 1024 + 197) * 2;
+		snapshotWords.push(bytes[changedWordAt] | (bytes[changedWordAt + 1] << 8));
+		snapshotDifferences.push(bytes.findIndex((value, index) =>
+			value !== ((software.vram[index >>> 1] >>> ((index & 1) * 8)) & 255)));
+		await backend.captureGxGpuVramSnapshot(machine.gxGpu);
+	}
+	const replacement = new Uint8Array(vramBytes);
+	for (let index = 0; index < replacement.length; ++index) replacement[index] = index * 37 + (index >>> 10);
+	machine.gxGpu.replaceVramSnapshotBytes(replacement);
+	await backend.captureGxGpuVramSnapshot(machine.gxGpu);
+	snapshotDifferences.push(machine.gxGpu.readDeviceOutput().vramSnapshotBytes.findIndex((value, index) => value !== replacement[index]));
 	const validationError = gpu === undefined ? undefined : (await gpu.device.popErrorScope())?.message;
 	const glError = gl === undefined ? 0 : gl.gl.getError();
 	if (framebuffer !== null) gl!.destroyRenderTarget(framebuffer);
 	backend.destroyTexture(target); library.dispose(); gpu?.device.destroy();
-	return { kind, difference, samples, validationError, glError, gpuErrors, commands: output.commandBuffer.presentCommandCount };
+	return { kind, difference, samples, validationError, glError, gpuErrors, commands, transfers, snapshotDifferences, snapshotWords };
 }
