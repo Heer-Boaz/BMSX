@@ -56,21 +56,65 @@ enters the real ARM host CLI through that same imported target loader after its
 full runtime closure has passed the ABI audit. Framebuffer, evdev, GLES, audio,
 and timing still require the real SNES Mini.
 
+## Deploy games into Hakchi and Clover
+
+Close Hakchi on the PC and return the mini to its Clover menu. From Linux/WSL:
+
+```bash
+npm run deploy:snesmini -- \
+  --hakchi-dir /path/to/hakchi2 \
+  --ssh root@169.254.13.37 --build
+```
+
+`--build` first invokes the existing Release core, host and cartridge build
+entrypoints. Omit it to install the selected completed products without building.
+The default profile, `deploy/snesmini.json`, installs **pietsona** (`2025`),
+**Nemesis S** and **Pietious** in the existing **More games...** folder. Their
+stable Clover IDs, display names and source artwork live in this deployment
+profile; no cartridge manifest icon convention is introduced here. `--profile`
+selects another profile. A game's optional `artifact` pins an exact ROM artifact;
+otherwise its current Release build is selected from the build store.
+
+The script updates the PC's `games` collection (`games_snes` when separate local
+storage is enabled) and its selected-games list.
+It preserves original-game selections, other consoles and folder settings, so
+a later Hakchi sync retains these titles. `--collection-only` updates just this
+PC collection and does not connect to the mini. It still requires completed
+native host/core and ROM products.
+
+The mini uses Hakchi's linked-sync layout: payloads in `.storage/<code>` and
+desktop entries in the configured menu folder. Each title has a small Clover
+entrypoint which `exec`s the shared custom host/core in `/root`, with GLES2 and
+its own save directory. Clover appends Nintendo-emulator state, transition and
+rollback arguments; the entrypoint supplies only the custom host's argument
+vector, without passing those incompatible arguments through or weakening its CLI.
+Automatic rewind remains disabled by the Mini core's default policy. The old
+`/root/run.sh` is no longer needed by these menu entries and is left untouched.
+
+Only content whose SHA-256 differs is transferred or replaced. Transfers use
+SSH and tar, not SCP/SFTP; payload checksums are checked before installation.
+Files publish by rename while Clover is stopped, and Clover restarts afterward.
+An already identical install does not restart the menu or rewrite files. The
+installer refuses a running BMSX game and retains 30 MiB of NAND headroom for
+saves, including the peak space needed to replace an existing file. No games,
+save data or legacy `/root/*.rom` files are deleted.
+
 ## Clover launch (SNES Mini)
 
 The libretro core remains independently installable. Install the accepted host
-artifact as an executable and let the game's Clover desktop entry invoke it
-directly:
+artifact as an executable and let the game's Clover desktop entry invoke its
+platform entrypoint:
 
 ```ini
 [Desktop Entry]
 Type=Application
-Exec=/root/bmsx_libretro_host --core /etc/libretro/core/libretro_bmsx.so --system-dir /etc/libretro/system --save-dir /var/saves/CLV-S-BMSX /var/games/CLV-S-BMSX/game.rom
+Exec=/bin/sh /var/games/CLV-S-BMSX/launch.sh
 Path=/var/saves/CLV-S-BMSX
 ```
 
-Use the actual installed core, game, and save paths for the Clover title. Do not
-route this command through RetroArch or a `/bin/sh` wrapper.
+The generated `launch.sh` supplies the actual installed core, game and save
+paths and replaces its shell with the custom host. It does not forward Clover's
+Nintendo-emulator arguments. Do not route the title through RetroArch.
 
 Options:
 

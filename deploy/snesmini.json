@@ -1,0 +1,25 @@
+{
+	"console": "snes-eur",
+	"collection": "SNES_EUR",
+	"folder": "001",
+	"games": [
+		{
+			"target": "2025",
+			"code": "CLV-S-DETBA",
+			"title": "pietsona",
+			"icon": "carts/2025/res/titel@atlas=monday.png"
+		},
+		{
+			"target": "nemesis_s",
+			"code": "CLV-S-NEMES",
+			"title": "Nemesis S",
+			"icon": "carts/nemesis_s/res/img/title_screen_1@atlas=title.png"
+		},
+		{
+			"target": "pietious",
+			"code": "CLV-S-PIETS",
+			"title": "Pietious",
+			"icon": "carts/pietious/res/img/ui/title_screen@atlas=gameplay.png"
+		}
+	]
+}

@@ -1,6 +1,11 @@
 import { existsSync, statSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 
+/** Preserve one argument through a POSIX shell, including embedded apostrophes. */
+export function quotePosixArgument(argument: string): string {
+	return "'" + argument.replaceAll("'", `'"'"'`) + "'";
+}
+
 export function ensureRelativePath(candidate: string): string {
 	if (!candidate) return candidate;
 	if (isAbsolute(candidate)) return candidate;
