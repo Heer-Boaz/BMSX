@@ -120,6 +120,10 @@ configure_file(
 	"${CMAKE_CURRENT_BINARY_DIR}/generated/render/host_overlay/gles2/host_overlay_shaders.h"
 	@ONLY
 )
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_words.glsl")
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_words.glsl"
+	BMSX_GX_GPU_WORD_FUNCTIONS)
 file(READ
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_fill.vert.glsl"
 	BMSX_GX_GPU_FILL_VERTEX_SHADER
@@ -164,6 +168,15 @@ file(READ
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_readback.frag.glsl"
 	BMSX_GX_GPU_READBACK_FRAGMENT_SHADER
 )
+foreach(shader IN ITEMS
+	BMSX_GX_GPU_FILL_VERTEX_SHADER BMSX_GX_GPU_FILL_FRAGMENT_SHADER
+	BMSX_GX_GPU_LINE_VERTEX_SHADER BMSX_GX_GPU_LINE_FRAGMENT_SHADER
+	BMSX_GX_GPU_TEXTURED_VERTEX_SHADER BMSX_GX_GPU_TEXTURED_FRAGMENT_SHADER
+	BMSX_GX_GPU_TRANSFER_FRAGMENT_SHADER BMSX_GX_GPU_SCANOUT_FRAGMENT_SHADER
+)
+	string(REPLACE "#include \"gx_gpu_words.glsl\"" "${BMSX_GX_GPU_WORD_FUNCTIONS}"
+		${shader} "${${shader}}")
+endforeach()
 configure_file(
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_shaders.h.in"
 	"${CMAKE_CURRENT_BINARY_DIR}/generated/render/backend/gles2/shaders/gx_gpu_shaders.h"
@@ -399,6 +412,7 @@ if(BMSX_ENABLE_GLES2)
 		render/backend/gles2/backend.cpp
 		render/backend/gles2/fullscreen_quad.cpp
 		render/backend/gles2/gx_gpu.cpp
+		render/backend/gles2/texture_copy.cpp
 		render/post/crt/gles2/pipeline.cpp
 		render/post/device_quantize/gles2/pipeline.cpp
 	)
@@ -704,6 +718,35 @@ if(BMSX_BUILD_TESTS)
 	target_link_libraries(bmsx_video_presenter_tests PRIVATE bmsx_host_support)
 	add_test(NAME bmsx_video_presenter_tests COMMAND bmsx_video_presenter_tests)
 
+	if(UNIX AND NOT APPLE AND BMSX_ENABLE_GLES2)
+		find_library(BMSX_TEST_EGL_LIBRARY EGL REQUIRED)
+		configure_file("${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/gx_gpu_words_shader.h.in"
+			"${CMAKE_CURRENT_BINARY_DIR}/generated/tests/gx_gpu_words_shader.h" @ONLY)
+		add_executable(bmsx_gles2_gx_words_tests
+			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gles2_gx_words_test.cpp
+			${BMSX_LIBRETRO_HOST_DIR}/video_context.c
+			${BMSX_LIBRETRO_HOST_DIR}/host_fatal.c)
+		target_include_directories(bmsx_gles2_gx_words_tests PRIVATE
+			${CMAKE_CURRENT_BINARY_DIR}/generated/tests ${BMSX_LIBRETRO_HOST_DIR})
+		target_link_libraries(bmsx_gles2_gx_words_tests PRIVATE bmsx_host_support ${BMSX_TEST_EGL_LIBRARY} dl)
+		if(BMSX_SNESMINI_TARGET)
+			target_link_options(bmsx_gles2_gx_words_tests PRIVATE -static-libstdc++ -static-libgcc)
+		endif()
+		add_test(NAME bmsx_gles2_gx_words_tests COMMAND bmsx_gles2_gx_words_tests)
+		add_executable(bmsx_gx_gpu_textured_gles2_tests
+			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gx_gpu_textured_gles2_test.cpp
+			${BMSX_LIBRETRO_HOST_DIR}/video_context.c
+			${BMSX_LIBRETRO_HOST_DIR}/host_fatal.c)
+		target_include_directories(bmsx_gx_gpu_textured_gles2_tests PRIVATE ${BMSX_LIBRETRO_HOST_DIR})
+		target_link_libraries(bmsx_gx_gpu_textured_gles2_tests PRIVATE bmsx_host_support ${BMSX_TEST_EGL_LIBRARY} dl)
+		target_link_options(bmsx_gx_gpu_textured_gles2_tests PRIVATE
+			LINKER:--wrap=glBindBuffer LINKER:--wrap=glBufferData LINKER:--wrap=glBufferSubData LINKER:--wrap=glReadPixels)
+		if(BMSX_SNESMINI_TARGET)
+			target_link_options(bmsx_gx_gpu_textured_gles2_tests PRIVATE -static-libstdc++ -static-libgcc)
+		endif()
+		add_test(NAME bmsx_gx_gpu_textured_gles2_tests COMMAND bmsx_gx_gpu_textured_gles2_tests)
+	endif()
+
 	if(BMSX_BUILD_EGL_TESTS)
 		if(NOT BMSX_ENABLE_GLES2)
 			message(FATAL_ERROR "BMSX_BUILD_EGL_TESTS requires BMSX_ENABLE_GLES2")
@@ -721,9 +764,6 @@ if(BMSX_BUILD_TESTS)
 		add_executable(bmsx_game_capture_tests ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/game_capture_test.cpp)
 		target_link_libraries(bmsx_game_capture_tests PRIVATE bmsx_host_support PkgConfig::EGL)
 		add_test(NAME bmsx_game_capture_tests COMMAND bmsx_game_capture_tests)
-		add_executable(bmsx_gx_gpu_textured_gles2_tests ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gx_gpu_textured_gles2_test.cpp)
-		target_link_libraries(bmsx_gx_gpu_textured_gles2_tests PRIVATE bmsx_host_support PkgConfig::EGL)
-		add_test(NAME bmsx_gx_gpu_textured_gles2_tests COMMAND bmsx_gx_gpu_textured_gles2_tests)
 	endif()
 
 	add_executable(bmsx_glyph_runs_tests

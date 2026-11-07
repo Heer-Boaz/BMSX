@@ -7,6 +7,7 @@
 #include "render/backend/gx_gpu_render_rules.h"
 #include "render/backend/gles2/backend.h"
 #include "render/backend/gles2/texture_units.h"
+#include "render/backend/gles2/texture_copy.h"
 #include "render/backend/texture_params.h"
 #include "render/backend/gles2/shaders/gx_gpu_shaders.h"
 #include "render/backend/pass/library.h"
@@ -83,14 +84,7 @@ constexpr std::array<GLES2AttributeBinding, 2u> kGxGpuTransferAttributeBindings{
 	{ kGxGpuTransferPositionAttrib, "a_position" },
 	{ kGxGpuTransferSourceOffsetAttrib, "a_sourceOffset" },
 }};
-constexpr GLsizeiptr kGxGpuSolidBufferBytes = static_cast<GLsizeiptr>(kGxGpuSolidFloatCapacity * sizeof(f32));
-constexpr GLsizeiptr kGxGpuLineBufferBytes = static_cast<GLsizeiptr>(kGxGpuLineFloatCapacity * sizeof(f32));
-constexpr GLsizeiptr kGxGpuTexturedBufferBytes = static_cast<GLsizeiptr>(kGxGpuTexturedFloatCapacity * sizeof(f32));
-constexpr GLsizeiptr kGxGpuTransferBufferBytes = static_cast<GLsizeiptr>(kGxGpuTransferFloatCapacity * sizeof(f32));
-// Solid and line arenas may coexist; direct textured and transfer draws drain them first.
-constexpr GLsizeiptr kGxGpuVertexStreamBufferBytes = kGxGpuSolidBufferBytes + kGxGpuLineBufferBytes;
-static_assert(kGxGpuTexturedBufferBytes <= kGxGpuVertexStreamBufferBytes);
-static_assert(kGxGpuTransferBufferBytes <= kGxGpuVertexStreamBufferBytes);
+
 constexpr GLsizei kGxGpuSolidVertexStride = static_cast<GLsizei>(kGxGpuSolidVertexFloats * sizeof(f32));
 constexpr GLsizei kGxGpuFixedSolidVertexStride = static_cast<GLsizei>(kGxGpuFixedSolidVertexFloats * sizeof(f32));
 constexpr GLsizei kGxGpuLineVertexStride = static_cast<GLsizei>(kGxGpuLineVertexFloats * sizeof(f32));
@@ -114,23 +108,19 @@ struct GxGpuVramCopyRect {
 
 struct GxGpuVertexStream {
 	GLuint buffer = 0;
-	GLsizeiptr capacity = 0;
 	GLintptr cursor = 0;
 
-	void initialize(GLsizeiptr byteCapacity) {
-		capacity = byteCapacity;
-		cursor = 0;
+	void initialize() {
 		glGenBuffers(1, &buffer);
-		glBindBuffer(GL_ARRAY_BUFFER, buffer);
-		glBufferData(GL_ARRAY_BUFFER, capacity, nullptr, GL_STREAM_DRAW);
 	}
 
 	void reserve(GLsizeiptr byteCount) {
 		glBindBuffer(GL_ARRAY_BUFFER, buffer);
-		if (cursor + byteCount > capacity) {
-			glBufferData(GL_ARRAY_BUFFER, capacity, nullptr, GL_STREAM_DRAW);
-			cursor = 0;
-		}
+		// Orphan the preceding submission, not a maximum-size multi-frame arena.
+		// GLES2 drivers may otherwise synchronize/copy the entire live buffer on
+		// every subdata update, even when the appended ranges do not overlap.
+		glBufferData(GL_ARRAY_BUFFER, byteCount, nullptr, GL_STREAM_DRAW);
+		cursor = 0;
 	}
 
 	GLintptr append(const void* data, GLsizeiptr byteCount) {
@@ -216,7 +206,6 @@ struct GxGpuTransferProgram {
 	GLint sourceUniform = -1;
 	GLint checkMaskBitUniform = -1;
 	GLint setMaskBitUniform = -1;
-	GLint uploadUniform = -1;
 	GLint logicalYBaseUniform = -1;
 	i32 sourceTextureUnit = -1;
 };
@@ -252,6 +241,7 @@ struct OpenGLES2GxGpuState {
 	GxGpuVramCopyRect texturedCommandRect{};
 	GxGpuVramCopyRect texturedDependencyBatchRect{};
 	GxGpuVramCopyRect sampleDirtyRect{};
+	GxGpuVramCopyRect snapshotDirtyRect{};
 	GxGpuRectangle rectangleScratch{};
 	GxGpuPreparedRasterPrimitive linePreparedScratch{};
 	GxGpuLineBatchState lineBatchState{};
@@ -278,6 +268,7 @@ struct OpenGLES2GxGpuState {
 	GLuint readbackProgram = 0;
 	GLES2Texture vramTexture{};
 	GLES2Texture vramSampleTexture{};
+	GLES2TextureCopy sampleCopy;
 	GLES2Texture cpuUploadTexture{};
 	GLES2Texture readbackTexture{};
 	GLES2Texture scanoutFieldsTexture{};
@@ -387,14 +378,14 @@ void OpenGLES2GxGpuStateDeleter::operator()(OpenGLES2GxGpuState* state) const no
 
 namespace {
 
-void initializeGxGpuTexture(OpenGLES2GxGpuState& gx, GLES2Texture& texture, i32 textureUnit, i32 width, i32 height, GLenum format) {
+void initializeGxGpuTexture(OpenGLES2GxGpuState& gx, GLES2Texture& texture, i32 textureUnit, i32 width, i32 height, GLenum format, GLenum type) {
 	glGenTextures(1, &texture.id);
 	texture.generation = gx.generation;
 	texture.width = width;
 	texture.height = height;
 	gx.backend->setActiveTextureUnit(textureUnit);
 	gx.backend->bindTexture2D(&texture);
-	glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, nullptr);
+	glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, type, nullptr);
 	applyGLES2TextureParams(RGBA8_LINEAR_TEXTURE_PARAMS);
 }
 
@@ -527,10 +518,13 @@ void initGxGpu(OpenGLES2Backend& backend) {
 		throw;
 	}
 
-	initializeGxGpuTexture(gx, gx.vramTexture, GLES2_TEXTURE_UNIT_GX_SCANOUT, kGxGpuVramXAddressPeriod, gx.vramTextureRows, GL_RGBA);
-	initializeGxGpuTexture(gx, gx.vramSampleTexture, GLES2_TEXTURE_UNIT_GX_SAMPLE, kGxGpuVramXAddressPeriod, gx.vramTextureRows, GL_RGBA);
-	initializeGxGpuTexture(gx, gx.cpuUploadTexture, GLES2_TEXTURE_UNIT_GX_TRANSFER, kGxGpuVramXAddressPeriod, static_cast<i32>(GX_GPU_TRANSFER_MAX_HEIGHT), GL_LUMINANCE_ALPHA);
-	initializeGxGpuTexture(gx, gx.readbackTexture, GLES2_TEXTURE_UNIT_GX_SCANOUT, kGxGpuReadbackPackWidth, static_cast<i32>(GX_GPU_TRANSFER_MAX_HEIGHT), GL_RGBA);
+	// Each texel carries exactly one raw word as four nibbles. Use sixteen-bit
+	// render targets rather than paying for RGBA8 resolves and tile reloads.
+	initializeGxGpuTexture(gx, gx.vramTexture, GLES2_TEXTURE_UNIT_GX_SCANOUT, kGxGpuVramXAddressPeriod, gx.vramTextureRows, GL_RGBA, GL_UNSIGNED_SHORT_4_4_4_4);
+	initializeGxGpuTexture(gx, gx.vramSampleTexture, GLES2_TEXTURE_UNIT_GX_SAMPLE, kGxGpuVramXAddressPeriod, gx.vramTextureRows, GL_RGBA, GL_UNSIGNED_SHORT_4_4_4_4);
+	gx.sampleCopy.initialize(backend, gx.vramSampleTexture);
+	initializeGxGpuTexture(gx, gx.cpuUploadTexture, GLES2_TEXTURE_UNIT_GX_TRANSFER, kGxGpuVramXAddressPeriod, static_cast<i32>(GX_GPU_TRANSFER_MAX_HEIGHT), GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE);
+	initializeGxGpuTexture(gx, gx.readbackTexture, GLES2_TEXTURE_UNIT_GX_SCANOUT, kGxGpuReadbackPackWidth, static_cast<i32>(GX_GPU_TRANSFER_MAX_HEIGHT), GL_RGBA, GL_UNSIGNED_BYTE);
 
 	glGenFramebuffers(1, &gx.vramFramebuffer);
 	glBindFramebuffer(GL_FRAMEBUFFER, gx.vramFramebuffer);
@@ -553,7 +547,7 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	glBindFramebuffer(GL_FRAMEBUFFER, gx.scanoutFieldsFramebuffer);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gx.scanoutFieldsTexture.id, 0);
 
-	gx.vertexStream.initialize(kGxGpuVertexStreamBufferBytes);
+	gx.vertexStream.initialize();
 
 	glGenBuffers(1, &gx.scanoutVertexBuffer);
 	glBindBuffer(GL_ARRAY_BUFFER, gx.scanoutVertexBuffer);
@@ -663,7 +657,6 @@ void initGxGpu(OpenGLES2Backend& backend) {
 		glUseProgram(program->id);
 		glUniform1i(glGetUniformLocation(program->id, "u_vram"), GLES2_TEXTURE_UNIT_GX_SAMPLE);
 	}
-	gx.cpuUploadProgram.uploadUniform = glGetUniformLocation(gx.cpuUploadProgram.id, "u_upload");
 	for (size_t path = 0u; path < kGxGpuScanoutProgramCount; path += 1u) {
 		GxGpuScanoutProgram& scanoutProgram = gx.scanoutPrograms[path];
 		GxGpuScanoutProgram& scanoutFieldProgram = gx.scanoutFieldPrograms[path];
@@ -714,6 +707,7 @@ void shutdownGxGpu(OpenGLES2Backend& backend) {
 		};
 		glDeleteBuffers(static_cast<GLsizei>(buffers.size()), buffers.data());
 
+		gx.sampleCopy.dispose();
 		const std::array<GLuint, 9> programs{
 			gx.solidProgram,
 			gx.fixedSolidProgram,
@@ -1447,13 +1441,16 @@ void uploadGxGpuVramSnapshot(OpenGLES2GxGpuState& gx, std::span<const u8> snapsh
 	gx.backend->bindTexture2D(&gx.vramTexture);
 	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, kGxGpuVramXAddressPeriod, gx.vramTextureRows, GL_RGBA, GL_UNSIGNED_SHORT_4_4_4_4, snapshotBytes.data());
 	gx.sampleDirtyRect = {0, 0, kGxGpuVramXAddressPeriod, gx.vramTextureRows};
+	std::copy(snapshotBytes.begin(), snapshotBytes.end(), gx.vramSnapshotScratch.begin());
+	gx.snapshotDirtyRect = {};
 }
 
-void writeGxGpuVramSnapshotFromReadback(OpenGLES2GxGpuState& gx) {
-	size_t snapshotByteOffset = 0u;
-	for (i32 textureRow = 0; textureRow < gx.vramTextureRows; textureRow += 1) {
-		size_t readbackByteOffset = static_cast<size_t>(textureRow) * static_cast<size_t>(kGxGpuVramXAddressPeriod) * kGxGpuRawVramBytesPerPixel;
-		for (i32 column = 0; column < kGxGpuVramXAddressPeriod; column += 1) {
+void writeGxGpuVramSnapshotFromReadback(OpenGLES2GxGpuState& gx, const GxGpuVramCopyRect& rect) {
+	size_t readbackByteOffset = 0u;
+	for (i32 textureRow = rect.top; textureRow < rect.bottom; textureRow += 1) {
+		size_t snapshotByteOffset = (static_cast<size_t>(textureRow) * kGxGpuVramXAddressPeriod
+			+ static_cast<size_t>(rect.left)) * 2u;
+		for (i32 column = rect.left; column < rect.right; column += 1) {
 			const u8 highNibble = gx.rawVramReadback[readbackByteOffset] / 17u;
 			const u8 midHighNibble = gx.rawVramReadback[readbackByteOffset + 1u] / 17u;
 			const u8 midLowNibble = gx.rawVramReadback[readbackByteOffset + 2u] / 17u;
@@ -1552,34 +1549,26 @@ void uploadCpuToVramPayload(OpenGLES2GxGpuState& gx,
 }
 
 size_t appendCpuToVramRows(OpenGLES2GxGpuState& gx,
-	u32 x,
-	u32 y,
-	u32 sourceRowStart,
-	u32 rowWidth,
-	u32 rowCount,
-	size_t transferVertexFloatCount,
-	u32 vramYAddressExtensionWord) {
-	u32 targetY = gxGpuVramYAddress(y + sourceRowStart, vramYAddressExtensionWord);
-	u32 remainingRows = rowCount;
-	while (remainingRows != 0u) {
-		const u32 runHeight = gxGpuVramWrappedHeight(targetY, remainingRows, vramYAddressExtensionWord, gx.vramTextureRowMask);
-		u32 targetRunX = x;
-		u32 remainingWidth = rowWidth;
-		while (remainingWidth != 0u) {
-			const u32 runWidth = gxGpuVramWrappedWidth(targetRunX, remainingWidth);
-			transferVertexFloatCount = appendTransferQuad(gx,
-				transferVertexFloatCount,
-				targetRunX,
-				targetY,
-				runWidth,
-				runHeight,
-				targetRunX,
-				targetY);
-			remainingWidth -= runWidth;
-			targetRunX = (targetRunX + runWidth) & (static_cast<u32>(kGxGpuVramXAddressPeriod) - 1u);
+	u32 x, u32 y, u32 sourceRowStart, u32 payloadWidth, u32 rowWidth, u32 rowCount,
+	size_t transferVertexFloatCount, u32 vramYAddressExtensionWord) {
+	// Split at both destination wraps and packed-payload texture rows. The
+	// fragment stage consumes actual source X/Y, never a large linear index.
+	for (u32 row = 0u; row < rowCount; ++row) {
+		const u32 targetY = gxGpuVramYAddress(y + sourceRowStart + row, vramYAddressExtensionWord);
+		u32 targetX = x;
+		u32 pixelIndex = (sourceRowStart + row) * payloadWidth;
+		u32 remaining = rowWidth;
+		while (remaining != 0u) {
+			const u32 sourceX = pixelIndex & (GX_GPU_VRAM_X_ADDRESS_PERIOD - 1u);
+			const u32 sourceY = pixelIndex >> 10u;
+			const u32 targetRun = gxGpuVramWrappedWidth(targetX, remaining);
+			const u32 run = gxGpuVramWrappedWidth(sourceX, targetRun);
+			transferVertexFloatCount = appendTransferQuad(gx, transferVertexFloatCount,
+				targetX, targetY, run, 1u, sourceX, sourceY);
+			remaining -= run;
+			pixelIndex += run;
+			targetX = (targetX + run) & (GX_GPU_VRAM_X_ADDRESS_PERIOD - 1u);
 		}
-		remainingRows -= runHeight;
-		targetY = gxGpuVramYAddress(targetY + runHeight, vramYAddressExtensionWord);
 	}
 	return transferVertexFloatCount;
 }
@@ -1620,6 +1609,7 @@ u32 executeCpuToVramUpload(OpenGLES2GxGpuState& gx,
 		&& uploadedPixels == width * height
 		&& x + width <= static_cast<u32>(kGxGpuVramXAddressPeriod)
 		&& y + height <= (gxGpuVramYAddressMask(vramYAddressExtensionWord) & gx.vramTextureRowMask) + 1u) {
+		gx.backend->setRenderTarget(0, kGxGpuVramXAddressPeriod, gx.vramTextureRows);
 		gx.backend->setActiveTextureUnit(GLES2_TEXTURE_UNIT_GX_SCANOUT);
 		gx.backend->bindTexture2D(&gx.vramTexture);
 		if (height > 1u && (width & 3u) != 0u) {
@@ -1649,6 +1639,7 @@ u32 executeCpuToVramUpload(OpenGLES2GxGpuState& gx,
 			y,
 			0u,
 			width,
+			width,
 			fullRows,
 			transferVertexFloatCount,
 			vramYAddressExtensionWord);
@@ -1658,6 +1649,7 @@ u32 executeCpuToVramUpload(OpenGLES2GxGpuState& gx,
 			x,
 			y,
 			fullRows,
+			width,
 			lastRowWidth,
 			1u,
 			transferVertexFloatCount,
@@ -1667,13 +1659,6 @@ u32 executeCpuToVramUpload(OpenGLES2GxGpuState& gx,
 		syncGxGpuSampleTextureLogicalArea(gx, x, y, width, uploadHeight, vramYAddressExtensionWord);
 	}
 	if (transferVertexFloatCount != 0u) {
-		glUseProgram(gx.cpuUploadProgram.id);
-		glUniform4i(
-			gx.cpuUploadProgram.uploadUniform,
-			static_cast<GLint>(x),
-			static_cast<GLint>(y),
-			static_cast<GLint>(width),
-			static_cast<GLint>(gxGpuVramYAddressMask(vramYAddressExtensionWord) + 1u));
 		renderTransferCommands(gx,
 			transferVertexFloatCount,
 			gx.cpuUploadTexture,
@@ -1993,8 +1978,8 @@ void prepareGxGpuSolidRectangle(
 	rectangle.color0 = commandBuffer.words[commandBuffer.commandWordStart[commandIndex]];
 	rectangle.clippedBounds.left = rectangle.x0;
 	rectangle.clippedBounds.top = rectangle.y0;
-	rectangle.clippedBounds.right = rectangle.x1 + 1;
-	rectangle.clippedBounds.bottom = rectangle.y1 + 1;
+	rectangle.clippedBounds.right = rectangle.x1;
+	rectangle.clippedBounds.bottom = rectangle.y1;
 	clipGxGpuVramCopyRectToDrawingArea(rectangle.clippedBounds, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 	rectangle.emitsVertices = rectangle.clippedBounds.right > rectangle.clippedBounds.left
 		&& rectangle.clippedBounds.bottom > rectangle.clippedBounds.top;
@@ -2004,6 +1989,7 @@ void markGxGpuSampleTextureDirtyArea(OpenGLES2GxGpuState& gx, i32 left, i32 top,
 	if (right <= left || bottom <= top) {
 		return;
 	}
+	includeGxGpuVramCopyRect(gx.snapshotDirtyRect, {left, top, right, bottom});
 	if (left < gx.sampleDirtyRect.left) {
 		gx.sampleDirtyRect.left = left;
 	}
@@ -2049,18 +2035,7 @@ void copyGxGpuVramAreaToSampleTexture(OpenGLES2GxGpuState& gx, i32 left, i32 top
 	if (right <= left || bottom <= top) {
 		return;
 	}
-	gx.backend->setRenderTarget(gx.vramFramebuffer, kGxGpuVramXAddressPeriod, gx.vramTextureRows);
-	gx.backend->setActiveTextureUnit(GLES2_TEXTURE_UNIT_GX_SAMPLE);
-	gx.backend->bindTexture2D(&gx.vramSampleTexture);
-	glCopyTexSubImage2D(
-		GL_TEXTURE_2D,
-		0,
-		static_cast<GLint>(left),
-		static_cast<GLint>(top),
-		static_cast<GLint>(left),
-		static_cast<GLint>(top),
-		static_cast<GLsizei>(right - left),
-		static_cast<GLsizei>(bottom - top));
+	gx.sampleCopy.copy(*gx.backend, gx.vramTexture, left, top, right, bottom);
 }
 
 bool syncGxGpuSampleTextureArea(OpenGLES2GxGpuState& gx, i32 left, i32 top, i32 right, i32 bottom) {
@@ -2104,6 +2079,7 @@ void syncGxGpuSampleTextureLogicalArea(OpenGLES2GxGpuState& gx, u32 x, u32 y, u3
 	}
 }
 
+template <typename BindDrawState>
 void drawGxGpuLogicalVramArea(OpenGLES2GxGpuState& gx,
 	const GxGpuVramCopyRect& rect,
 	GLint firstVertex,
@@ -2111,13 +2087,15 @@ void drawGxGpuLogicalVramArea(OpenGLES2GxGpuState& gx,
 	bool textureBarrier,
 	bool syncSampleBetweenAliasBands,
 	u32 vramYAddressExtensionWord,
-	GLint logicalYBaseUniform) {
+	GLint logicalYBaseUniform,
+	const BindDrawState& bindDrawState) {
 	if (rect.right <= rect.left || rect.bottom <= rect.top) {
 		return;
 	}
-	glEnable(GL_SCISSOR_TEST);
 	const i32 width = rect.right - rect.left;
 	if (gx.vramTextureRows == kGxGpuVramYAddressPeriod) {
+		bindDrawState();
+		glEnable(GL_SCISSOR_TEST);
 		glScissor(
 			static_cast<GLint>(rect.left),
 			static_cast<GLint>(rect.top),
@@ -2150,6 +2128,8 @@ void drawGxGpuLogicalVramArea(OpenGLES2GxGpuState& gx,
 				rect.right,
 				logicalBottom - bandBase);
 		}
+		bindDrawState();
+		glEnable(GL_SCISSOR_TEST);
 		glViewport(0, -bandBase, kGxGpuVramXAddressPeriod, kGxGpuVramYAddressPeriod);
 		glScissor(
 			static_cast<GLint>(rect.left),
@@ -2170,6 +2150,7 @@ void drawGxGpuLogicalVramArea(OpenGLES2GxGpuState& gx,
 }
 
 void setGxGpuVertexBoundsRect(
+	GxGpuRasterKind rasterKind,
 	GxGpuVramCopyRect& rect,
 	const f32* vertices,
 	size_t vertexFloatStart,
@@ -2181,6 +2162,10 @@ void setGxGpuVertexBoundsRect(
 	resetGxGpuVramCopyRect(rect);
 	for (size_t offset = vertexFloatStart; offset < vertexFloatEnd; offset += vertexFloatStride) {
 		includeGxGpuVramCopyVertex(rect, static_cast<i32>(vertices[offset]), static_cast<i32>(vertices[offset + 1u]));
+	}
+	if (rasterKind == GxGpuRasterKind::Rectangle) {
+		rect.right -= 1;
+		rect.bottom -= 1;
 	}
 	clipGxGpuVramCopyRectToDrawingArea(rect, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 }
@@ -2396,35 +2381,37 @@ void renderNewLineCommands(OpenGLES2GxGpuState& gx,
 	const bool textureBarrier = gx.textureBarrier
 		&& (blendEnabled || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord));
 	const uintptr_t vertexBufferAddress = static_cast<uintptr_t>(vertexBufferOffset);
-	beginGxGpuVramRenderTarget(gx);
-	glUseProgram(gx.lineProgram);
-	writePrimitiveUniforms(
-		gx.lineBlendEnableUniform,
-		gx.lineBlendModeUniform,
-		gx.lineCheckMaskBitUniform,
-		gx.lineSetMaskBitUniform,
-		gx.lineDitherEnableUniform,
-		gx.lineSkippedLineParityUniform,
-		blendEnabled,
-		blendMode,
-		maskBitModeWord,
-		ditherEnabled,
-		skippedLineParity);
-	if (!gx.framebufferFetch) {
-		gx.backend->setActiveTextureUnit(GLES2_TEXTURE_UNIT_GX_SAMPLE);
-		gx.backend->bindTexture2D(textureBarrier ? &gx.vramTexture : &gx.vramSampleTexture);
-	}
-	glBindBuffer(GL_ARRAY_BUFFER, gx.vertexStream.buffer);
-	glEnableVertexAttribArray(static_cast<GLuint>(gx.linePositionAttrib));
-	glVertexAttribPointer(static_cast<GLuint>(gx.linePositionAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuLineVertexStride, reinterpret_cast<const void*>(vertexBufferAddress));
-	glEnableVertexAttribArray(static_cast<GLuint>(gx.lineStartAttrib));
-	glVertexAttribPointer(static_cast<GLuint>(gx.lineStartAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuLineVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 2u * sizeof(f32)));
-	glEnableVertexAttribArray(static_cast<GLuint>(gx.lineEndAttrib));
-	glVertexAttribPointer(static_cast<GLuint>(gx.lineEndAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuLineVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 4u * sizeof(f32)));
-	glEnableVertexAttribArray(static_cast<GLuint>(gx.lineColor0Attrib));
-	glVertexAttribPointer(static_cast<GLuint>(gx.lineColor0Attrib), 3, GL_FLOAT, GL_FALSE, kGxGpuLineVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 6u * sizeof(f32)));
-	glEnableVertexAttribArray(static_cast<GLuint>(gx.lineColor1Attrib));
-	glVertexAttribPointer(static_cast<GLuint>(gx.lineColor1Attrib), 3, GL_FLOAT, GL_FALSE, kGxGpuLineVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 9u * sizeof(f32)));
+	const auto bindDrawState = [&] {
+		beginGxGpuVramRenderTarget(gx);
+		glUseProgram(gx.lineProgram);
+		writePrimitiveUniforms(
+			gx.lineBlendEnableUniform,
+			gx.lineBlendModeUniform,
+			gx.lineCheckMaskBitUniform,
+			gx.lineSetMaskBitUniform,
+			gx.lineDitherEnableUniform,
+			gx.lineSkippedLineParityUniform,
+			blendEnabled,
+			blendMode,
+			maskBitModeWord,
+			ditherEnabled,
+			skippedLineParity);
+		if (!gx.framebufferFetch) {
+			gx.backend->setActiveTextureUnit(GLES2_TEXTURE_UNIT_GX_SAMPLE);
+			gx.backend->bindTexture2D(textureBarrier ? &gx.vramTexture : &gx.vramSampleTexture);
+		}
+		glBindBuffer(GL_ARRAY_BUFFER, gx.vertexStream.buffer);
+		glEnableVertexAttribArray(static_cast<GLuint>(gx.linePositionAttrib));
+		glVertexAttribPointer(static_cast<GLuint>(gx.linePositionAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuLineVertexStride, reinterpret_cast<const void*>(vertexBufferAddress));
+		glEnableVertexAttribArray(static_cast<GLuint>(gx.lineStartAttrib));
+		glVertexAttribPointer(static_cast<GLuint>(gx.lineStartAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuLineVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 2u * sizeof(f32)));
+		glEnableVertexAttribArray(static_cast<GLuint>(gx.lineEndAttrib));
+		glVertexAttribPointer(static_cast<GLuint>(gx.lineEndAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuLineVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 4u * sizeof(f32)));
+		glEnableVertexAttribArray(static_cast<GLuint>(gx.lineColor0Attrib));
+		glVertexAttribPointer(static_cast<GLuint>(gx.lineColor0Attrib), 3, GL_FLOAT, GL_FALSE, kGxGpuLineVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 6u * sizeof(f32)));
+		glEnableVertexAttribArray(static_cast<GLuint>(gx.lineColor1Attrib));
+		glVertexAttribPointer(static_cast<GLuint>(gx.lineColor1Attrib), 3, GL_FLOAT, GL_FALSE, kGxGpuLineVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 9u * sizeof(f32)));
+	};
 	const GLsizei vertexCount = static_cast<GLsizei>(vertexFloatCount / kGxGpuLineVertexFloats);
 	if (gx.vramTextureRows == kGxGpuVramYAddressPeriod) {
 		drawGxGpuLogicalVramArea(gx,
@@ -2434,7 +2421,7 @@ void renderNewLineCommands(OpenGLES2GxGpuState& gx,
 			textureBarrier,
 			false,
 			vramYAddressExtensionWord,
-			gx.lineLogicalYBaseUniform);
+			gx.lineLogicalYBaseUniform, bindDrawState);
 	} else {
 		const bool syncSampleBetweenAliasBands = !gx.framebufferFetch
 			&& !textureBarrier
@@ -2447,7 +2434,7 @@ void renderNewLineCommands(OpenGLES2GxGpuState& gx,
 				textureBarrier,
 				syncSampleBetweenAliasBands,
 				vramYAddressExtensionWord,
-				gx.lineLogicalYBaseUniform);
+				gx.lineLogicalYBaseUniform, bindDrawState);
 		}
 	}
 	glDisable(GL_SCISSOR_TEST);
@@ -2864,14 +2851,14 @@ void executeNewGxGpuCommands(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& 
 				texturedVertexFloatCount = appendTexturedCommandVertices(gx, commandBuffer, commandIndex, texturedVertexFloatCount);
 				if (texturedVertexFloatCount != texturedCommandVertexStart) {
 					const size_t texturedVertexFloatStride = fixedTexturedColor ? kGxGpuFixedTexturedVertexFloats : kGxGpuTexturedVertexFloats;
-					setGxGpuVertexBoundsRect(gx.texturedCommandRect, gx.texturedVertices.data(), texturedCommandVertexStart, texturedVertexFloatCount, texturedVertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
+					setGxGpuVertexBoundsRect(rasterKind, gx.texturedCommandRect, gx.texturedVertices.data(), texturedCommandVertexStart, texturedVertexFloatCount, texturedVertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 					u32 sourceOverlaps = syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, texturedCommandVertexStart, texturedVertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, fixedTexturedColor);
 					if ((sourceOverlaps & GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP) != 0u) {
 						texturedVertexFloatCount = flushTexturedCommands(gx, commandBuffer, texturedCommandVertexStart, texturedBatchCommandIndex);
 						texturedBatchCommandIndex = commandIndex;
 						texturedCommandVertexStart = 0u;
 						texturedVertexFloatCount = appendTexturedCommandVertices(gx, commandBuffer, commandIndex, 0u);
-						setGxGpuVertexBoundsRect(gx.texturedCommandRect, gx.texturedVertices.data(), 0u, texturedVertexFloatCount, texturedVertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
+						setGxGpuVertexBoundsRect(rasterKind, gx.texturedCommandRect, gx.texturedVertices.data(), 0u, texturedVertexFloatCount, texturedVertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 						sourceOverlaps = syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, 0u, texturedVertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, fixedTexturedColor);
 					}
 					if ((sourceOverlaps & GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP) != 0u) {
@@ -2890,7 +2877,7 @@ void executeNewGxGpuCommands(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& 
 				gx.primitiveSubmission.solidFloatCount = appendSolidCommandVertices(gx, commandBuffer, commandIndex, gx.primitiveSubmission.solidFloatCount);
 				const size_t vertexFloatStride = fixedSolidColor ? kGxGpuFixedSolidVertexFloats : kGxGpuSolidVertexFloats;
 				if (gx.primitiveSubmission.solidFloatCount != commandVertexStart) {
-					setGxGpuVertexBoundsRect(gx.solidCommandRect, gx.solidVertices.data(), commandVertexStart, gx.primitiveSubmission.solidFloatCount, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
+					setGxGpuVertexBoundsRect(rasterKind, gx.solidCommandRect, gx.solidVertices.data(), commandVertexStart, gx.primitiveSubmission.solidFloatCount, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 					if (splitReadVramQuad && gx.primitiveSubmission.solidFloatCount - commandVertexStart == (fixedSolidColor ? kGxGpuFixedSolidTriangleFloats : kGxGpuSolidTriangleFloats) * 2u) {
 						gx.primitiveSubmission.solidFloatCount = commandVertexStart;
 						submitGxGpuPrimitiveBatches(gx);
@@ -2933,6 +2920,7 @@ void executeNewGxGpuCommands(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& 
 			gx.primitiveSubmission.solidFloatCount = appendFillRectangle(gx, commandBuffer, commandIndex, commandVertexStart);
 			if (gx.primitiveSubmission.solidFloatCount != commandVertexStart) {
 				setGxGpuVertexBoundsRect(
+					GxGpuRasterKind::Rectangle,
 					gx.solidCommandRect,
 					gx.solidVertices.data(),
 					commandVertexStart,
@@ -3087,41 +3075,43 @@ void renderNewSolidCommands(OpenGLES2GxGpuState& gx, bool fixedColor, size_t ver
 		&& (blendEnabled || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord));
 	const size_t vertexFloatStride = fixedColor ? kGxGpuFixedSolidVertexFloats : kGxGpuSolidVertexFloats;
 	const uintptr_t vertexBufferAddress = static_cast<uintptr_t>(vertexBufferOffset);
-	beginGxGpuVramRenderTarget(gx);
-	glUseProgram(fixedColor ? gx.fixedSolidProgram : gx.solidProgram);
-	glUniform1f(fixedColor ? gx.fixedSolidRasterPhaseUniform : gx.solidRasterPhaseUniform, rasterKind == GxGpuRasterKind::Polygon ? 0.5f : 0.0f);
-	writePrimitiveUniforms(
-		fixedColor ? gx.fixedSolidBlendEnableUniform : gx.solidBlendEnableUniform,
-		fixedColor ? gx.fixedSolidBlendModeUniform : gx.solidBlendModeUniform,
-		fixedColor ? gx.fixedSolidCheckMaskBitUniform : gx.solidCheckMaskBitUniform,
-		fixedColor ? gx.fixedSolidSetMaskBitUniform : gx.solidSetMaskBitUniform,
-		fixedColor ? gx.fixedSolidDitherEnableUniform : gx.solidDitherEnableUniform,
-		fixedColor ? gx.fixedSolidSkippedLineParityUniform : gx.solidSkippedLineParityUniform,
-		blendEnabled,
-		blendMode,
-		maskBitModeWord,
-		ditherEnabled,
-		skippedLineParity);
-	if (!gx.framebufferFetch) {
-		gx.backend->setActiveTextureUnit(GLES2_TEXTURE_UNIT_GX_SAMPLE);
-		gx.backend->bindTexture2D(textureBarrier ? &gx.vramTexture : &gx.vramSampleTexture);
-	}
-	glBindBuffer(GL_ARRAY_BUFFER, gx.vertexStream.buffer);
-	if (fixedColor) {
-		glEnableVertexAttribArray(static_cast<GLuint>(gx.fixedSolidPositionAttrib));
-		glVertexAttribPointer(static_cast<GLuint>(gx.fixedSolidPositionAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuFixedSolidVertexStride, reinterpret_cast<const void*>(vertexBufferAddress));
-		glEnableVertexAttribArray(static_cast<GLuint>(gx.fixedSolidColorPlaneBaseAttrib));
-		glVertexAttribPointer(static_cast<GLuint>(gx.fixedSolidColorPlaneBaseAttrib), 3, GL_FLOAT, GL_FALSE, kGxGpuFixedSolidVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 2u * sizeof(f32)));
-		glEnableVertexAttribArray(static_cast<GLuint>(gx.fixedSolidColorPlaneStepXAttrib));
-		glVertexAttribPointer(static_cast<GLuint>(gx.fixedSolidColorPlaneStepXAttrib), 3, GL_FLOAT, GL_FALSE, kGxGpuFixedSolidVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 5u * sizeof(f32)));
-		glEnableVertexAttribArray(static_cast<GLuint>(gx.fixedSolidColorPlaneStepYAttrib));
-		glVertexAttribPointer(static_cast<GLuint>(gx.fixedSolidColorPlaneStepYAttrib), 3, GL_FLOAT, GL_FALSE, kGxGpuFixedSolidVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 8u * sizeof(f32)));
-	} else {
-		glEnableVertexAttribArray(static_cast<GLuint>(gx.solidPositionAttrib));
-		glVertexAttribPointer(static_cast<GLuint>(gx.solidPositionAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuSolidVertexStride, reinterpret_cast<const void*>(vertexBufferAddress));
-		glEnableVertexAttribArray(static_cast<GLuint>(gx.solidColorAttrib));
-		glVertexAttribPointer(static_cast<GLuint>(gx.solidColorAttrib), 4, GL_FLOAT, GL_FALSE, kGxGpuSolidVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 2u * sizeof(f32)));
-	}
+	const auto bindDrawState = [&] {
+		beginGxGpuVramRenderTarget(gx);
+		glUseProgram(fixedColor ? gx.fixedSolidProgram : gx.solidProgram);
+		glUniform1f(fixedColor ? gx.fixedSolidRasterPhaseUniform : gx.solidRasterPhaseUniform, rasterKind == GxGpuRasterKind::Polygon ? 0.5f : 0.0f);
+		writePrimitiveUniforms(
+			fixedColor ? gx.fixedSolidBlendEnableUniform : gx.solidBlendEnableUniform,
+			fixedColor ? gx.fixedSolidBlendModeUniform : gx.solidBlendModeUniform,
+			fixedColor ? gx.fixedSolidCheckMaskBitUniform : gx.solidCheckMaskBitUniform,
+			fixedColor ? gx.fixedSolidSetMaskBitUniform : gx.solidSetMaskBitUniform,
+			fixedColor ? gx.fixedSolidDitherEnableUniform : gx.solidDitherEnableUniform,
+			fixedColor ? gx.fixedSolidSkippedLineParityUniform : gx.solidSkippedLineParityUniform,
+			blendEnabled,
+			blendMode,
+			maskBitModeWord,
+			ditherEnabled,
+			skippedLineParity);
+		if (!gx.framebufferFetch) {
+			gx.backend->setActiveTextureUnit(GLES2_TEXTURE_UNIT_GX_SAMPLE);
+			gx.backend->bindTexture2D(textureBarrier ? &gx.vramTexture : &gx.vramSampleTexture);
+		}
+		glBindBuffer(GL_ARRAY_BUFFER, gx.vertexStream.buffer);
+		if (fixedColor) {
+			glEnableVertexAttribArray(static_cast<GLuint>(gx.fixedSolidPositionAttrib));
+			glVertexAttribPointer(static_cast<GLuint>(gx.fixedSolidPositionAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuFixedSolidVertexStride, reinterpret_cast<const void*>(vertexBufferAddress));
+			glEnableVertexAttribArray(static_cast<GLuint>(gx.fixedSolidColorPlaneBaseAttrib));
+			glVertexAttribPointer(static_cast<GLuint>(gx.fixedSolidColorPlaneBaseAttrib), 3, GL_FLOAT, GL_FALSE, kGxGpuFixedSolidVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 2u * sizeof(f32)));
+			glEnableVertexAttribArray(static_cast<GLuint>(gx.fixedSolidColorPlaneStepXAttrib));
+			glVertexAttribPointer(static_cast<GLuint>(gx.fixedSolidColorPlaneStepXAttrib), 3, GL_FLOAT, GL_FALSE, kGxGpuFixedSolidVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 5u * sizeof(f32)));
+			glEnableVertexAttribArray(static_cast<GLuint>(gx.fixedSolidColorPlaneStepYAttrib));
+			glVertexAttribPointer(static_cast<GLuint>(gx.fixedSolidColorPlaneStepYAttrib), 3, GL_FLOAT, GL_FALSE, kGxGpuFixedSolidVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 8u * sizeof(f32)));
+		} else {
+			glEnableVertexAttribArray(static_cast<GLuint>(gx.solidPositionAttrib));
+			glVertexAttribPointer(static_cast<GLuint>(gx.solidPositionAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuSolidVertexStride, reinterpret_cast<const void*>(vertexBufferAddress));
+			glEnableVertexAttribArray(static_cast<GLuint>(gx.solidColorAttrib));
+			glVertexAttribPointer(static_cast<GLuint>(gx.solidColorAttrib), 4, GL_FLOAT, GL_FALSE, kGxGpuSolidVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 2u * sizeof(f32)));
+		}
+	};
 	const GLsizei vertexCount = static_cast<GLsizei>(vertexFloatCount / vertexFloatStride);
 	const GLint logicalYBaseUniform = fixedColor
 		? gx.fixedSolidLogicalYBaseUniform
@@ -3134,7 +3124,7 @@ void renderNewSolidCommands(OpenGLES2GxGpuState& gx, bool fixedColor, size_t ver
 			textureBarrier,
 			false,
 			vramYAddressExtensionWord,
-			logicalYBaseUniform);
+			logicalYBaseUniform, bindDrawState);
 	} else {
 		const GLsizei primitiveVertexCount = rasterKind == GxGpuRasterKind::Polygon ? 3 : 6;
 		const bool syncSampleBetweenAliasBands = !gx.framebufferFetch
@@ -3148,7 +3138,7 @@ void renderNewSolidCommands(OpenGLES2GxGpuState& gx, bool fixedColor, size_t ver
 				textureBarrier,
 				syncSampleBetweenAliasBands,
 				vramYAddressExtensionWord,
-				logicalYBaseUniform);
+				logicalYBaseUniform, bindDrawState);
 		}
 	}
 	glDisable(GL_SCISSOR_TEST);
@@ -3160,7 +3150,7 @@ void renderReadVramSolidQuad(OpenGLES2GxGpuState& gx, bool fixedColor, u32 topLe
 	const GLsizeiptr vertexByteCount = static_cast<GLsizeiptr>(triangleFloatCount * 2u * sizeof(f32));
 	gx.vertexStream.reserve(vertexByteCount);
 	const GLintptr vertexBufferOffset = gx.vertexStream.append(gx.solidVertices.data(), vertexByteCount);
-	setGxGpuVertexBoundsRect(gx.solidCommandRect, gx.solidVertices.data(), 0u, triangleFloatCount, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
+	setGxGpuVertexBoundsRect(GxGpuRasterKind::Polygon, gx.solidCommandRect, gx.solidVertices.data(), 0u, triangleFloatCount, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 	if (!gx.framebufferFetch && !gx.textureBarrier) {
 		syncGxGpuSampleTextureLogicalArea(gx,
 			static_cast<u32>(gx.solidCommandRect.left),
@@ -3170,7 +3160,7 @@ void renderReadVramSolidQuad(OpenGLES2GxGpuState& gx, bool fixedColor, u32 topLe
 			vramYAddressExtensionWord);
 	}
 	renderNewSolidCommands(gx, fixedColor, triangleFloatCount, vertexBufferOffset, gx.solidCommandRect, vramYAddressExtensionWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, skippedLineParity, GxGpuRasterKind::Polygon);
-	setGxGpuVertexBoundsRect(gx.solidCommandRect, gx.solidVertices.data(), triangleFloatCount, triangleFloatCount * 2u, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
+	setGxGpuVertexBoundsRect(GxGpuRasterKind::Polygon, gx.solidCommandRect, gx.solidVertices.data(), triangleFloatCount, triangleFloatCount * 2u, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 	if (!gx.framebufferFetch && !gx.textureBarrier) {
 		syncGxGpuSampleTextureLogicalArea(gx,
 			static_cast<u32>(gx.solidCommandRect.left),
@@ -3193,19 +3183,23 @@ void renderTransferCommands(OpenGLES2GxGpuState& gx,
 	gx.vertexStream.reserve(vertexByteCount);
 	const GLintptr vertexBufferOffset = gx.vertexStream.append(gx.transferVertices.data(), vertexByteCount);
 	const uintptr_t vertexBufferAddress = static_cast<uintptr_t>(vertexBufferOffset);
-	beginGxGpuVramRenderTarget(gx);
-	glDisable(GL_SCISSOR_TEST);
-	writeTransferUniforms(program, sourceTextureUnit, maskBitModeWord);
-	gx.backend->setActiveTextureUnit(sourceTextureUnit);
-	gx.backend->bindTexture2D(&sourceTexture);
-	gx.backend->setActiveTextureUnit(GLES2_TEXTURE_UNIT_GX_SAMPLE);
-	gx.backend->bindTexture2D(&gx.vramSampleTexture);
-	glBindBuffer(GL_ARRAY_BUFFER, gx.vertexStream.buffer);
-	glEnableVertexAttribArray(kGxGpuTransferPositionAttrib);
-	glVertexAttribPointer(kGxGpuTransferPositionAttrib, 2, GL_FLOAT, GL_FALSE, kGxGpuTransferVertexStride, reinterpret_cast<const void*>(vertexBufferAddress));
-	glEnableVertexAttribArray(kGxGpuTransferSourceOffsetAttrib);
-	glVertexAttribPointer(kGxGpuTransferSourceOffsetAttrib, 2, GL_FLOAT, GL_FALSE, kGxGpuTransferVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 2u * sizeof(f32)));
+	const auto bindDrawState = [&] {
+		glUseProgram(program.id);
+		beginGxGpuVramRenderTarget(gx);
+		glDisable(GL_SCISSOR_TEST);
+		writeTransferUniforms(program, sourceTextureUnit, maskBitModeWord);
+		gx.backend->setActiveTextureUnit(sourceTextureUnit);
+		gx.backend->bindTexture2D(&sourceTexture);
+		gx.backend->setActiveTextureUnit(GLES2_TEXTURE_UNIT_GX_SAMPLE);
+		gx.backend->bindTexture2D(&gx.vramSampleTexture);
+		glBindBuffer(GL_ARRAY_BUFFER, gx.vertexStream.buffer);
+		glEnableVertexAttribArray(kGxGpuTransferPositionAttrib);
+		glVertexAttribPointer(kGxGpuTransferPositionAttrib, 2, GL_FLOAT, GL_FALSE, kGxGpuTransferVertexStride, reinterpret_cast<const void*>(vertexBufferAddress));
+		glEnableVertexAttribArray(kGxGpuTransferSourceOffsetAttrib);
+		glVertexAttribPointer(kGxGpuTransferSourceOffsetAttrib, 2, GL_FLOAT, GL_FALSE, kGxGpuTransferVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 2u * sizeof(f32)));
+	};
 	if (gx.vramTextureRows == kGxGpuVramYAddressPeriod) {
+		bindDrawState();
 		glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertexFloatCount / kGxGpuTransferVertexFloats));
 		return;
 	}
@@ -3230,6 +3224,8 @@ void renderTransferCommands(OpenGLES2GxGpuState& gx,
 					right,
 					logicalBottom - bandBase);
 			}
+			bindDrawState();
+			glEnable(GL_SCISSOR_TEST);
 			glViewport(0, -bandBase, kGxGpuVramXAddressPeriod, kGxGpuVramYAddressPeriod);
 			glScissor(left, logicalTop - bandBase, right - left, logicalBottom - logicalTop);
 			glUniform1i(program.logicalYBaseUniform, bandBase);
@@ -3284,47 +3280,49 @@ void renderTexturedVertices(OpenGLES2GxGpuState& gx,
 	gx.vertexStream.reserve(vertexByteCount);
 	const GLintptr vertexBufferOffset = gx.vertexStream.append(gx.texturedVertices.data(), vertexByteCount);
 	const uintptr_t vertexBufferAddress = static_cast<uintptr_t>(vertexBufferOffset);
-	beginGxGpuVramRenderTarget(gx);
-	glUseProgram(fixedColor ? gx.fixedTexturedProgram : gx.texturedProgram);
-	writeTexturedUniforms(gx, commandBuffer, commandIndex, fixedColor);
-	gx.backend->setActiveTextureUnit(GLES2_TEXTURE_UNIT_GX_SAMPLE);
-	gx.backend->bindTexture2D(&gx.vramSampleTexture);
-	if (textureBarrier) {
-		gx.backend->setActiveTextureUnit(GLES2_TEXTURE_UNIT_GX_DESTINATION);
-		gx.backend->bindTexture2D(&gx.vramTexture);
-	}
-	glBindBuffer(GL_ARRAY_BUFFER, gx.vertexStream.buffer);
-	if (fixedColor) {
-		glEnableVertexAttribArray(static_cast<GLuint>(gx.fixedTexturedPositionAttrib));
-		glVertexAttribPointer(static_cast<GLuint>(gx.fixedTexturedPositionAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuFixedTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress));
-		glEnableVertexAttribArray(static_cast<GLuint>(gx.fixedTexturedUvPlaneBaseAttrib));
-		glVertexAttribPointer(static_cast<GLuint>(gx.fixedTexturedUvPlaneBaseAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuFixedTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 2u * sizeof(f32)));
-		glEnableVertexAttribArray(static_cast<GLuint>(gx.fixedTexturedUvPlaneStepXAttrib));
-		glVertexAttribPointer(static_cast<GLuint>(gx.fixedTexturedUvPlaneStepXAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuFixedTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 4u * sizeof(f32)));
-		glEnableVertexAttribArray(static_cast<GLuint>(gx.fixedTexturedUvPlaneStepYAttrib));
-		glVertexAttribPointer(static_cast<GLuint>(gx.fixedTexturedUvPlaneStepYAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuFixedTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 6u * sizeof(f32)));
-		glEnableVertexAttribArray(static_cast<GLuint>(gx.fixedTexturedColorPlaneBaseAttrib));
-		glVertexAttribPointer(static_cast<GLuint>(gx.fixedTexturedColorPlaneBaseAttrib), 3, GL_FLOAT, GL_FALSE, kGxGpuFixedTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 8u * sizeof(f32)));
-		glEnableVertexAttribArray(static_cast<GLuint>(gx.fixedTexturedColorPlaneStepXAttrib));
-		glVertexAttribPointer(static_cast<GLuint>(gx.fixedTexturedColorPlaneStepXAttrib), 3, GL_FLOAT, GL_FALSE, kGxGpuFixedTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 11u * sizeof(f32)));
-		glEnableVertexAttribArray(static_cast<GLuint>(gx.fixedTexturedColorPlaneStepYAttrib));
-		glVertexAttribPointer(static_cast<GLuint>(gx.fixedTexturedColorPlaneStepYAttrib), 3, GL_FLOAT, GL_FALSE, kGxGpuFixedTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 14u * sizeof(f32)));
-		glEnableVertexAttribArray(static_cast<GLuint>(gx.fixedTexturedTextureSourceAttrib));
-		glVertexAttribPointer(static_cast<GLuint>(gx.fixedTexturedTextureSourceAttrib), 4, GL_UNSIGNED_SHORT, GL_FALSE, kGxGpuFixedTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + kGxGpuFixedTexturedTextureSourceFloatOffset * sizeof(f32)));
-	} else {
-		glEnableVertexAttribArray(static_cast<GLuint>(gx.texturedPositionAttrib));
-		glVertexAttribPointer(static_cast<GLuint>(gx.texturedPositionAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress));
-		glEnableVertexAttribArray(static_cast<GLuint>(gx.texturedColorAttrib));
-		glVertexAttribPointer(static_cast<GLuint>(gx.texturedColorAttrib), 3, GL_FLOAT, GL_FALSE, kGxGpuTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 2u * sizeof(f32)));
-		glEnableVertexAttribArray(static_cast<GLuint>(gx.texturedUvPlaneBaseAttrib));
-		glVertexAttribPointer(static_cast<GLuint>(gx.texturedUvPlaneBaseAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 5u * sizeof(f32)));
-		glEnableVertexAttribArray(static_cast<GLuint>(gx.texturedUvPlaneStepXAttrib));
-		glVertexAttribPointer(static_cast<GLuint>(gx.texturedUvPlaneStepXAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 7u * sizeof(f32)));
-		glEnableVertexAttribArray(static_cast<GLuint>(gx.texturedUvPlaneStepYAttrib));
-		glVertexAttribPointer(static_cast<GLuint>(gx.texturedUvPlaneStepYAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 9u * sizeof(f32)));
-		glEnableVertexAttribArray(static_cast<GLuint>(gx.texturedTextureSourceAttrib));
-		glVertexAttribPointer(static_cast<GLuint>(gx.texturedTextureSourceAttrib), 4, GL_UNSIGNED_SHORT, GL_FALSE, kGxGpuTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + kGxGpuTexturedTextureSourceFloatOffset * sizeof(f32)));
-	}
+	const auto bindDrawState = [&] {
+		beginGxGpuVramRenderTarget(gx);
+		glUseProgram(fixedColor ? gx.fixedTexturedProgram : gx.texturedProgram);
+		writeTexturedUniforms(gx, commandBuffer, commandIndex, fixedColor);
+		gx.backend->setActiveTextureUnit(GLES2_TEXTURE_UNIT_GX_SAMPLE);
+		gx.backend->bindTexture2D(&gx.vramSampleTexture);
+		if (textureBarrier) {
+			gx.backend->setActiveTextureUnit(GLES2_TEXTURE_UNIT_GX_DESTINATION);
+			gx.backend->bindTexture2D(&gx.vramTexture);
+		}
+		glBindBuffer(GL_ARRAY_BUFFER, gx.vertexStream.buffer);
+		if (fixedColor) {
+			glEnableVertexAttribArray(static_cast<GLuint>(gx.fixedTexturedPositionAttrib));
+			glVertexAttribPointer(static_cast<GLuint>(gx.fixedTexturedPositionAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuFixedTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress));
+			glEnableVertexAttribArray(static_cast<GLuint>(gx.fixedTexturedUvPlaneBaseAttrib));
+			glVertexAttribPointer(static_cast<GLuint>(gx.fixedTexturedUvPlaneBaseAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuFixedTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 2u * sizeof(f32)));
+			glEnableVertexAttribArray(static_cast<GLuint>(gx.fixedTexturedUvPlaneStepXAttrib));
+			glVertexAttribPointer(static_cast<GLuint>(gx.fixedTexturedUvPlaneStepXAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuFixedTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 4u * sizeof(f32)));
+			glEnableVertexAttribArray(static_cast<GLuint>(gx.fixedTexturedUvPlaneStepYAttrib));
+			glVertexAttribPointer(static_cast<GLuint>(gx.fixedTexturedUvPlaneStepYAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuFixedTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 6u * sizeof(f32)));
+			glEnableVertexAttribArray(static_cast<GLuint>(gx.fixedTexturedColorPlaneBaseAttrib));
+			glVertexAttribPointer(static_cast<GLuint>(gx.fixedTexturedColorPlaneBaseAttrib), 3, GL_FLOAT, GL_FALSE, kGxGpuFixedTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 8u * sizeof(f32)));
+			glEnableVertexAttribArray(static_cast<GLuint>(gx.fixedTexturedColorPlaneStepXAttrib));
+			glVertexAttribPointer(static_cast<GLuint>(gx.fixedTexturedColorPlaneStepXAttrib), 3, GL_FLOAT, GL_FALSE, kGxGpuFixedTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 11u * sizeof(f32)));
+			glEnableVertexAttribArray(static_cast<GLuint>(gx.fixedTexturedColorPlaneStepYAttrib));
+			glVertexAttribPointer(static_cast<GLuint>(gx.fixedTexturedColorPlaneStepYAttrib), 3, GL_FLOAT, GL_FALSE, kGxGpuFixedTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 14u * sizeof(f32)));
+			glEnableVertexAttribArray(static_cast<GLuint>(gx.fixedTexturedTextureSourceAttrib));
+			glVertexAttribPointer(static_cast<GLuint>(gx.fixedTexturedTextureSourceAttrib), 4, GL_UNSIGNED_SHORT, GL_FALSE, kGxGpuFixedTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + kGxGpuFixedTexturedTextureSourceFloatOffset * sizeof(f32)));
+		} else {
+			glEnableVertexAttribArray(static_cast<GLuint>(gx.texturedPositionAttrib));
+			glVertexAttribPointer(static_cast<GLuint>(gx.texturedPositionAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress));
+			glEnableVertexAttribArray(static_cast<GLuint>(gx.texturedColorAttrib));
+			glVertexAttribPointer(static_cast<GLuint>(gx.texturedColorAttrib), 3, GL_FLOAT, GL_FALSE, kGxGpuTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 2u * sizeof(f32)));
+			glEnableVertexAttribArray(static_cast<GLuint>(gx.texturedUvPlaneBaseAttrib));
+			glVertexAttribPointer(static_cast<GLuint>(gx.texturedUvPlaneBaseAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 5u * sizeof(f32)));
+			glEnableVertexAttribArray(static_cast<GLuint>(gx.texturedUvPlaneStepXAttrib));
+			glVertexAttribPointer(static_cast<GLuint>(gx.texturedUvPlaneStepXAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 7u * sizeof(f32)));
+			glEnableVertexAttribArray(static_cast<GLuint>(gx.texturedUvPlaneStepYAttrib));
+			glVertexAttribPointer(static_cast<GLuint>(gx.texturedUvPlaneStepYAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 9u * sizeof(f32)));
+			glEnableVertexAttribArray(static_cast<GLuint>(gx.texturedTextureSourceAttrib));
+			glVertexAttribPointer(static_cast<GLuint>(gx.texturedTextureSourceAttrib), 4, GL_UNSIGNED_SHORT, GL_FALSE, kGxGpuTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + kGxGpuTexturedTextureSourceFloatOffset * sizeof(f32)));
+		}
+	};
 	if (!splitTriangles) {
 		drawGxGpuLogicalVramArea(gx,
 			gx.texturedCommandRect,
@@ -3333,7 +3331,7 @@ void renderTexturedVertices(OpenGLES2GxGpuState& gx,
 			textureBarrier,
 			syncSampleBetweenAliasBands,
 			vramYAddressExtensionWord,
-			logicalYBaseUniform);
+			logicalYBaseUniform, bindDrawState);
 	} else {
 		const u32 maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
 		const bool readsVram = gxGpuCommandSemiTransparencyEnabled(opcode) || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
@@ -3348,14 +3346,14 @@ void renderTexturedVertices(OpenGLES2GxGpuState& gx,
 				false,
 				false,
 				vramYAddressExtensionWord,
-				logicalYBaseUniform);
+				logicalYBaseUniform, bindDrawState);
 		} else {
 			const bool samplesDestination = !gx.framebufferFetch && !textureBarrier && readsVram;
 			size_t dependencyBatchFloatStart = 0u;
 			resetGxGpuVramCopyRect(gx.texturedDependencyBatchRect);
 			for (size_t vertexFloatStart = 0u; vertexFloatStart < vertexFloatCount; vertexFloatStart += triangleFloatCount) {
 				const size_t vertexFloatEnd = vertexFloatStart + triangleFloatCount;
-				setGxGpuVertexBoundsRect(gx.vramCopyRectScratch, gx.texturedVertices.data(), vertexFloatStart, vertexFloatEnd, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
+				setGxGpuVertexBoundsRect(commandBuffer.commandKind[commandIndex] == GX_GPU_COMMAND_DRAW_POLYGON ? GxGpuRasterKind::Polygon : GxGpuRasterKind::Rectangle, gx.vramCopyRectScratch, gx.texturedVertices.data(), vertexFloatStart, vertexFloatEnd, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 				if (vertexFloatStart != dependencyBatchFloatStart
 					&& (gx.vramTextureRows != kGxGpuVramYAddressPeriod
 						|| syncSourceBetweenTriangles
@@ -3380,7 +3378,7 @@ void renderTexturedVertices(OpenGLES2GxGpuState& gx,
 						textureBarrier,
 						syncSampleBetweenAliasBands,
 						vramYAddressExtensionWord,
-						logicalYBaseUniform);
+						logicalYBaseUniform, bindDrawState);
 					dependencyBatchFloatStart = vertexFloatStart;
 					resetGxGpuVramCopyRect(gx.texturedDependencyBatchRect);
 				}
@@ -3406,7 +3404,7 @@ void renderTexturedVertices(OpenGLES2GxGpuState& gx,
 				textureBarrier,
 				syncSampleBetweenAliasBands,
 				vramYAddressExtensionWord,
-				logicalYBaseUniform);
+				logicalYBaseUniform, bindDrawState);
 		}
 	}
 	glDisable(GL_SCISSOR_TEST);
@@ -3427,6 +3425,7 @@ void renderTexturedCommand(OpenGLES2GxGpuState& gx,
 		&& gxGpuCommandGouraud(opcode)
 		&& !gxGpuCommandRawTextureEnabled(opcode);
 	setGxGpuVertexBoundsRect(
+		commandBuffer.commandKind[commandIndex] == GX_GPU_COMMAND_DRAW_POLYGON ? GxGpuRasterKind::Polygon : GxGpuRasterKind::Rectangle,
 		gx.texturedCommandRect,
 		gx.texturedVertices.data(),
 		0u,
@@ -3471,6 +3470,7 @@ size_t flushTexturedCommands(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& 
 			&& gxGpuCommandGouraud(opcode)
 			&& !gxGpuCommandRawTextureEnabled(opcode);
 		setGxGpuVertexBoundsRect(
+			commandBuffer.commandKind[batchCommandIndex] == GX_GPU_COMMAND_DRAW_POLYGON ? GxGpuRasterKind::Polygon : GxGpuRasterKind::Rectangle,
 			gx.texturedCommandRect,
 			gx.texturedVertices.data(),
 			0u,
@@ -3529,6 +3529,11 @@ void writeGxGpuScanoutCircuitUniforms(
 	words[14u] = static_cast<GLint>(circuit.fieldDisplayY);
 	words[15u] = static_cast<GLint>(circuit.linearFieldSourceY);
 	words[16u] = static_cast<GLint>(circuit.linearFieldSourceRowStep);
+	const u32 linearBase = circuit.framebufferBaseWord
+		+ circuit.linearFieldSourceY * circuit.framebufferWidth + circuit.framebufferX;
+	words[17u] = static_cast<GLint>(linearBase & (GX_GPU_VRAM_X_ADDRESS_PERIOD - 1u));
+	words[18u] = static_cast<GLint>((linearBase >> 10u) & ((GX_GPU_VRAM_ADDRESS_WORD_COUNT - 1u) >> 10u));
+	words[19u] = static_cast<GLint>(circuit.framebufferWidth >> 6u);
 }
 
 void prepareGxGpuScanoutState(OpenGLES2GxGpuState& gx, const GxGpuPcrtcScanout& scanout) {
@@ -3840,9 +3845,14 @@ void OpenGLES2Backend::captureGxGpuVramSnapshot(GxGpu& gxGpu) {
 	OpenGLES2GxGpuState& gx = *m_gx_gpu;
 	const GxGpuDeviceOutput& output = gxGpu.readDeviceOutput();
 	executeGxGpuVramCommands(gx, output.commandBuffer, output.readbackPort, output.vramSnapshotBytes, output.vramSnapshotSerial, output.commandBuffer.executedCommandCount);
-	setRenderTarget(gx.vramFramebuffer, kGxGpuVramXAddressPeriod, gx.vramTextureRows);
-	glReadPixels(0, 0, kGxGpuVramXAddressPeriod, gx.vramTextureRows, GL_RGBA, GL_UNSIGNED_BYTE, gx.rawVramReadback.data());
-	writeGxGpuVramSnapshotFromReadback(gx);
+	const GxGpuVramCopyRect& dirty = gx.snapshotDirtyRect;
+	if (dirty.right > dirty.left && dirty.bottom > dirty.top) {
+		setRenderTarget(gx.vramFramebuffer, kGxGpuVramXAddressPeriod, gx.vramTextureRows);
+		glReadPixels(dirty.left, dirty.top, dirty.right - dirty.left, dirty.bottom - dirty.top,
+			GL_RGBA, GL_UNSIGNED_BYTE, gx.rawVramReadback.data());
+		writeGxGpuVramSnapshotFromReadback(gx, dirty);
+		gx.snapshotDirtyRect = {};
+	}
 	gx.vramSnapshotSerial = gxGpu.commitRenderedVramSnapshotBytes(
 		gx.vramSnapshotScratch,
 		gx.processedCommandCount);

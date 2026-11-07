@@ -1816,6 +1816,7 @@ function syncGxGpuSampleTextureLogicalArea(gx: WebGLGxGpuState, x: number, y: nu
 }
 
 function setGxGpuVertexBoundsRect(
+	rasterKind: GxGpuRasterKind,
 	rect: GxGpuVramCopyRect,
 	vertices: Float32Array,
 	vertexFloatStart: number,
@@ -1828,6 +1829,10 @@ function setGxGpuVertexBoundsRect(
 	resetGxGpuVramCopyRect(rect);
 	for (let offset = vertexFloatStart; offset < vertexFloatEnd; offset += vertexFloatStride) {
 		includeGxGpuVramCopyVertex(rect, vertices[offset], vertices[offset + 1]);
+	}
+	if (rasterKind === GxGpuRasterKind.Rectangle) {
+		rect.right -= 1;
+		rect.bottom -= 1;
 	}
 	const drawingLeft = gxGpuDrawingAreaLeft(topLeftWord, bottomRightWord);
 	const drawingTop = gxGpuDrawingAreaTop(topLeftWord, bottomRightWord, vramYAddressExtensionWord);
@@ -2172,6 +2177,7 @@ function appendBatchedLineSegment(
 	offset = appendLineSegment(gx, offset, x0, y0, color0, x1, y1, color1);
 	if (offset !== commandVertexStart) {
 		setGxGpuVertexBoundsRect(
+			GxGpuRasterKind.Line,
 			gx.lineCommandRect,
 			gx.lineVertices,
 			commandVertexStart,
@@ -2185,6 +2191,7 @@ function appendBatchedLineSegment(
 			offset = flushLineCommands(gx, commandVertexStart);
 			offset = appendLineSegment(gx, offset, x0, y0, color0, x1, y1, color1);
 			setGxGpuVertexBoundsRect(
+				GxGpuRasterKind.Line,
 				gx.lineCommandRect,
 				gx.lineVertices,
 				0,
@@ -2402,14 +2409,14 @@ function executeNewGxGpuCommands(gx: WebGLGxGpuState, commandBuffer: GxGpuComman
 					let texturedCommandVertexStart = texturedVertexFloatCount;
 					texturedVertexFloatCount = appendTexturedCommandVertices(gx, commandBuffer, commandIndex, texturedVertexFloatCount);
 					if (texturedVertexFloatCount !== texturedCommandVertexStart) {
-						setGxGpuVertexBoundsRect(gx.texturedCommandRect, texturedVertices, texturedCommandVertexStart, texturedVertexFloatCount, texturedVertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
+						setGxGpuVertexBoundsRect(rasterKind, gx.texturedCommandRect, texturedVertices, texturedCommandVertexStart, texturedVertexFloatCount, texturedVertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 						let sourceOverlaps = syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, texturedCommandVertexStart, texturedVertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, texturedFixedColor);
 						if ((sourceOverlaps & GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP) !== 0) {
 							texturedVertexFloatCount = flushTexturedCommands(gx, commandBuffer, texturedCommandVertexStart, texturedBatchCommandIndex);
 							texturedBatchCommandIndex = commandIndex;
 							texturedCommandVertexStart = 0;
 							texturedVertexFloatCount = appendTexturedCommandVertices(gx, commandBuffer, commandIndex, 0);
-							setGxGpuVertexBoundsRect(gx.texturedCommandRect, texturedVertices, 0, texturedVertexFloatCount, texturedVertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
+							setGxGpuVertexBoundsRect(rasterKind, gx.texturedCommandRect, texturedVertices, 0, texturedVertexFloatCount, texturedVertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 							sourceOverlaps = syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, 0, texturedVertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, texturedFixedColor);
 						}
 						if ((sourceOverlaps & GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP) !== 0) {
@@ -2428,7 +2435,7 @@ function executeNewGxGpuCommands(gx: WebGLGxGpuState, commandBuffer: GxGpuComman
 					const commandVertexStart = vertexFloatCount;
 					vertexFloatCount = appendSolidCommandVertices(gx, commandBuffer, commandIndex, vertexFloatCount);
 					if (vertexFloatCount !== commandVertexStart) {
-						setGxGpuVertexBoundsRect(gx.solidCommandRect, solidVertices, commandVertexStart, vertexFloatCount, solidVertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
+						setGxGpuVertexBoundsRect(rasterKind, gx.solidCommandRect, solidVertices, commandVertexStart, vertexFloatCount, solidVertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 						if (splitReadVramQuad && vertexFloatCount === solidTriangleFloatCount * 2) {
 							renderReadVramSolidQuad(gx, fixedColor, topLeftWord, bottomRightWord, vramYAddressExtensionWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, skippedLineParity);
 							vertexFloatCount = 0;
@@ -2436,7 +2443,7 @@ function executeNewGxGpuCommands(gx: WebGLGxGpuState, commandBuffer: GxGpuComman
 							if (readsVram && commandVertexStart !== 0 && gxGpuVramCopyRectsOverlap(gx, gx.solidBatchRect, gx.solidCommandRect, vramYAddressExtensionWord)) {
 								vertexFloatCount = finishSolidBatch(gx, commandVertexStart, solidBatchFixedColor, solidBatchVramYAddressExtensionWord, solidBatchBlendEnabled, solidBatchBlendMode, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchSkippedLineParity, solidBatchReadsVram, solidBatchRasterKind);
 								vertexFloatCount = appendSolidCommandVertices(gx, commandBuffer, commandIndex, vertexFloatCount);
-								setGxGpuVertexBoundsRect(gx.solidCommandRect, solidVertices, 0, vertexFloatCount, solidVertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
+								setGxGpuVertexBoundsRect(rasterKind, gx.solidCommandRect, solidVertices, 0, vertexFloatCount, solidVertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 							}
 							includeGxGpuVramCopyRect(gx.solidBatchRect, gx.solidCommandRect);
 						}
@@ -2467,7 +2474,7 @@ function executeNewGxGpuCommands(gx: WebGLGxGpuState, commandBuffer: GxGpuComman
 				const commandVertexStart = vertexFloatCount;
 				vertexFloatCount = appendFillRectangle(gx, commandBuffer, commandIndex, vertexFloatCount);
 				if (vertexFloatCount !== commandVertexStart) {
-					setGxGpuVertexBoundsRect(gx.solidCommandRect, gx.solidVertices, commandVertexStart, vertexFloatCount, GX_GPU_SOLID_VERTEX_FLOATS, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
+					setGxGpuVertexBoundsRect(GxGpuRasterKind.Rectangle, gx.solidCommandRect, gx.solidVertices, commandVertexStart, vertexFloatCount, GX_GPU_SOLID_VERTEX_FLOATS, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 					includeGxGpuVramCopyRect(gx.solidBatchRect, gx.solidCommandRect);
 				}
 				break;
@@ -2624,10 +2631,10 @@ function renderReadVramSolidQuad(gx: WebGLGxGpuState, fixedColor: boolean, topLe
 	const triangleFloatCount = fixedColor ? GX_GPU_FIXED_SOLID_TRIANGLE_FLOATS : GX_GPU_SOLID_TRIANGLE_FLOATS;
 	backend.bindArrayBuffer(gx.solidVertexBuffer);
 	gl.bufferSubData(gl.ARRAY_BUFFER, 0, vertices, 0, triangleFloatCount * 2);
-	setGxGpuVertexBoundsRect(gx.solidCommandRect, vertices, 0, triangleFloatCount, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
+	setGxGpuVertexBoundsRect(GxGpuRasterKind.Polygon, gx.solidCommandRect, vertices, 0, triangleFloatCount, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 	syncGxGpuSampleTextureLogicalArea(gx, gx.solidCommandRect.left, gx.solidCommandRect.top, gx.solidCommandRect.right - gx.solidCommandRect.left, gx.solidCommandRect.bottom - gx.solidCommandRect.top, vramYAddressExtensionWord);
 	renderNewSolidCommands(gx, fixedColor, 0, 3, gx.solidCommandRect, vramYAddressExtensionWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, skippedLineParity, GxGpuRasterKind.Polygon);
-	setGxGpuVertexBoundsRect(gx.solidCommandRect, vertices, triangleFloatCount, triangleFloatCount * 2, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
+	setGxGpuVertexBoundsRect(GxGpuRasterKind.Polygon, gx.solidCommandRect, vertices, triangleFloatCount, triangleFloatCount * 2, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 	syncGxGpuSampleTextureLogicalArea(gx, gx.solidCommandRect.left, gx.solidCommandRect.top, gx.solidCommandRect.right - gx.solidCommandRect.left, gx.solidCommandRect.bottom - gx.solidCommandRect.top, vramYAddressExtensionWord);
 	renderNewSolidCommands(gx, fixedColor, 3, 3, gx.solidCommandRect, vramYAddressExtensionWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, skippedLineParity, GxGpuRasterKind.Polygon);
 }
@@ -2817,7 +2824,7 @@ function renderTexturedVertices(
 			resetGxGpuVramCopyRect(gx.texturedDependencyBatchRect);
 			for (let vertexFloatStart = 0; vertexFloatStart < vertexFloatCount; vertexFloatStart += triangleFloatCount) {
 				const vertexFloatEnd = vertexFloatStart + triangleFloatCount;
-				setGxGpuVertexBoundsRect(gx.vramCopyRectScratch, vertices, vertexFloatStart, vertexFloatEnd, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
+				setGxGpuVertexBoundsRect(commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_POLYGON ? GxGpuRasterKind.Polygon : GxGpuRasterKind.Rectangle, gx.vramCopyRectScratch, vertices, vertexFloatStart, vertexFloatEnd, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 				if (vertexFloatStart !== dependencyBatchFloatStart
 					&& (gx.vramTextureRows !== GX_GPU_VRAM_Y_ADDRESS_PERIOD
 						|| syncSourceBetweenTriangles
@@ -2882,7 +2889,7 @@ function renderTexturedCommand(gx: WebGLGxGpuState, commandBuffer: GxGpuCommandB
 		&& !gxGpuCommandRawTextureEnabled(opcode);
 	const vertices = gx.texturedVertices;
 	const vertexFloatStride = fixedColor ? GX_GPU_FIXED_TEXTURED_VERTEX_FLOATS : GX_GPU_TEXTURED_VERTEX_FLOATS;
-	setGxGpuVertexBoundsRect(gx.texturedCommandRect, vertices, 0, vertexFloatCount, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
+	setGxGpuVertexBoundsRect(commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_POLYGON ? GxGpuRasterKind.Polygon : GxGpuRasterKind.Rectangle, gx.texturedCommandRect, vertices, 0, vertexFloatCount, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 	const sourceOverlaps = syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, 0, vertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, fixedColor);
 	const sourceOverlapsDestination = (sourceOverlaps & GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP) !== 0;
 	const maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
@@ -2913,7 +2920,7 @@ function flushTexturedCommands(gx: WebGLGxGpuState, commandBuffer: GxGpuCommandB
 			&& !gxGpuCommandRawTextureEnabled(opcode);
 		const vertices = gx.texturedVertices;
 		const vertexFloatStride = fixedColor ? GX_GPU_FIXED_TEXTURED_VERTEX_FLOATS : GX_GPU_TEXTURED_VERTEX_FLOATS;
-		setGxGpuVertexBoundsRect(gx.texturedCommandRect, vertices, 0, vertexFloatCount, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
+		setGxGpuVertexBoundsRect(commandBuffer.commandKind[batchCommandIndex] === GX_GPU_COMMAND_DRAW_POLYGON ? GxGpuRasterKind.Polygon : GxGpuRasterKind.Rectangle, gx.texturedCommandRect, vertices, 0, vertexFloatCount, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 		const maskBitModeWord = commandBuffer.commandMaskBitModeWord[batchCommandIndex];
 		const readsVram = gxGpuCommandSemiTransparencyEnabled(opcode) || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
 		if (readsVram) syncGxGpuSampleTextureLogicalArea(gx, gx.texturedCommandRect.left, gx.texturedCommandRect.top, gx.texturedCommandRect.right - gx.texturedCommandRect.left, gx.texturedCommandRect.bottom - gx.texturedCommandRect.top, vramYAddressExtensionWord);

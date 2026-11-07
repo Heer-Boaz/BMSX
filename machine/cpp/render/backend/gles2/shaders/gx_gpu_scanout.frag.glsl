@@ -1,5 +1,12 @@
+#ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
 precision highp int;
+#else
+precision mediump float;
+precision mediump int;
+#endif
+
+#include "gx_gpu_words.glsl"
 
 uniform sampler2D u_vram;
 uniform ivec4 u_circuit[5];
@@ -10,7 +17,7 @@ int wrapPowerOfTwo(int value, int period) {
 	return wrapped < 0 ? wrapped + period : wrapped;
 }
 
-int rawWordAtAddress(int address) {
+ivec2 rawWordAtAddress(int address) {
 	int wrappedAddress = wrapPowerOfTwo(address, GX_GPU_VRAM_INSTALLED_WORDS);
 	int logicalX = wrappedAddress
 		- (wrappedAddress / GX_GPU_VRAM_X_ADDRESS_PERIOD) * GX_GPU_VRAM_X_ADDRESS_PERIOD;
@@ -19,11 +26,10 @@ int rawWordAtAddress(int address) {
 		(float(logicalX) + 0.5) / float(GX_GPU_VRAM_X_ADDRESS_PERIOD),
 		(float(logicalY) + 0.5) / float(GX_GPU_VRAM_TEXTURE_ROWS));
 	vec4 rawPixel = texture2D(u_vram, texcoord);
-	ivec4 nibbles = ivec4(rawPixel * 15.0 + 0.5);
-	return nibbles.r * 4096 + nibbles.g * 256 + nibbles.b * 16 + nibbles.a;
+	return gxWordBytes(rawPixel);
 }
 
-int rawGx16WordAtAddress(int address) {
+ivec2 rawGx16WordAtAddress(int address) {
 	int wrappedAddress = address - (address / GX_GPU_VRAM_INSTALLED_WORDS) * GX_GPU_VRAM_INSTALLED_WORDS;
 	int logicalY = wrappedAddress / GX_GPU_VRAM_X_ADDRESS_PERIOD;
 	int logicalX = wrappedAddress - logicalY * GX_GPU_VRAM_X_ADDRESS_PERIOD;
@@ -31,22 +37,12 @@ int rawGx16WordAtAddress(int address) {
 		(float(logicalX) + 0.5) / float(GX_GPU_VRAM_X_ADDRESS_PERIOD),
 		(float(logicalY) + 0.5) / float(GX_GPU_VRAM_TEXTURE_ROWS));
 	vec4 rawPixel = texture2D(u_vram, texcoord);
-	ivec4 nibbles = ivec4(rawPixel * 15.0 + 0.5);
-	return nibbles.r * 4096 + nibbles.g * 256 + nibbles.b * 16 + nibbles.a;
+	return gxWordBytes(rawPixel);
 }
 
-ivec4 rgb555Pixel(int word) {
-	ivec3 color5 = ivec3(
-		word - (word / 32) * 32,
-		(word / 32) - (word / 1024) * 32,
-		(word / 1024) - (word / 32768) * 32
-	);
-	ivec3 rgb8 = ivec3(
-		color5.x * 8 + color5.x / 4,
-		color5.y * 8 + color5.y / 4,
-		color5.z * 8 + color5.z / 4
-	);
-	return ivec4(rgb8, word / 32768 != 0 ? 128 : 0);
+ivec4 rgb555Pixel(ivec2 word) {
+	ivec3 color5 = decodeRgb555To5(word);
+	return ivec4(color5 * 8 + color5 / 4, word.y / 128 != 0 ? 128 : 0);
 }
 
 int localMemoryAddress32(int baseWord, int pagesPerRow, int x, int y) {
@@ -109,13 +105,32 @@ int localMemoryAddressGpu24(int baseWord, int pagesPerRow, int pixelX, int y, in
 
 ivec4 circuitPixel(int outputX, int outputY) {
 #if defined(GX_GPU_SCANOUT_LINEAR_GX16)
-	int sourceX = u_circuit[0].w + outputX - u_circuit[1].y;
+	int x = outputX - u_circuit[1].y;
 #if defined(GX_GPU_INTERLACED_FIELD)
-	int sourceY = u_circuit[3].w + ((outputY - u_circuit[3].z) / 2) * u_circuit[4].x;
+	int line = ((outputY - u_circuit[3].z) / 2) * u_circuit[4].x;
 #else
-	int sourceY = u_circuit[3].w + outputY - u_circuit[3].z;
+	int line = outputY - u_circuit[3].z;
 #endif
-	return rgb555Pixel(rawGx16WordAtAddress(u_circuit[0].x + sourceY * u_circuit[0].y + sourceX));
+	int baseX = u_circuit[4].y;
+	int baseY = u_circuit[4].z;
+	int width64 = u_circuit[4].w;
+	int column;
+	int row;
+	if (width64 == 16) {
+		column = baseX + x;
+		row = baseY + line + column / 1024;
+		column -= (column / 1024) * 1024;
+	} else {
+		ivec4 widthDigits = ivec4(0, (width64 - (width64 / 16) * 16) * 2, width64 / 16, 0);
+		ivec4 offset = gxMultiplyPlane(widthDigits, line);
+		column = baseX + x + offset.x + offset.y * 32;
+		row = baseY + offset.z + offset.w * 32 + column / 1024;
+		column -= (column / 1024) * 1024;
+	}
+	row -= (row / GX_GPU_VRAM_TEXTURE_ROWS) * GX_GPU_VRAM_TEXTURE_ROWS;
+	return rgb555Pixel(gxWordBytes(texture2D(u_vram,
+		(vec2(column, row) + vec2(0.5)) / vec2(float(GX_GPU_VRAM_X_ADDRESS_PERIOD), float(GX_GPU_VRAM_TEXTURE_ROWS)))));
+
 #else
 	int sourceXNumerator = u_circuit[2].x + (outputX - u_circuit[1].y) * u_circuit[2].z;
 	int sourceX = u_circuit[0].w + (sourceXNumerator * u_circuit[3].x) / 262144;
@@ -124,14 +139,14 @@ ivec4 circuitPixel(int outputX, int outputY) {
 		+ u_circuit[2].y;
 #if GX_GPU_SCANOUT_STORAGE_PATH == 0
 	int address = localMemoryAddress32(u_circuit[0].x, u_circuit[0].z, sourceX, sourceY);
-	int low = rawWordAtAddress(address);
-	int high = rawWordAtAddress(address + 1);
-	return ivec4(low - (low / 256) * 256, low / 256, high - (high / 256) * 256, high / 256);
+	ivec2 low = rawWordAtAddress(address);
+	ivec2 high = rawWordAtAddress(address + 1);
+	return ivec4(low.x, low.y, high.x, high.y);
 #elif GX_GPU_SCANOUT_STORAGE_PATH == 1
 	int address = localMemoryAddress32(u_circuit[0].x, u_circuit[0].z, sourceX, sourceY);
-	int low = rawWordAtAddress(address);
-	int high = rawWordAtAddress(address + 1);
-	return ivec4(low - (low / 256) * 256, low / 256, high - (high / 256) * 256, 128);
+	ivec2 low = rawWordAtAddress(address);
+	ivec2 high = rawWordAtAddress(address + 1);
+	return ivec4(low.x, low.y, high.x, 128);
 #elif GX_GPU_SCANOUT_STORAGE_PATH == 2
 	return rgb555Pixel(rawWordAtAddress(localMemoryAddress16(
 		u_circuit[0].x, u_circuit[0].z, sourceX, sourceY, false)));
@@ -139,12 +154,12 @@ ivec4 circuitPixel(int outputX, int outputY) {
 	return rgb555Pixel(rawWordAtAddress(localMemoryAddress16(
 		u_circuit[0].x, u_circuit[0].z, sourceX, sourceY, true)));
 #elif GX_GPU_SCANOUT_STORAGE_PATH == 4
-	int first = rawWordAtAddress(localMemoryAddressGpu24(u_circuit[0].x, u_circuit[0].z, sourceX, sourceY, 0));
-	int second = rawWordAtAddress(localMemoryAddressGpu24(u_circuit[0].x, u_circuit[0].z, sourceX, sourceY, 1));
+	ivec2 first = rawWordAtAddress(localMemoryAddressGpu24(u_circuit[0].x, u_circuit[0].z, sourceX, sourceY, 0));
+	ivec2 second = rawWordAtAddress(localMemoryAddressGpu24(u_circuit[0].x, u_circuit[0].z, sourceX, sourceY, 1));
 	if (sourceX - (sourceX / 2) * 2 == 0) {
-		return ivec4(first - (first / 256) * 256, first / 256, second - (second / 256) * 256, 128);
+		return ivec4(first.x, first.y, second.x, 128);
 	}
-	return ivec4(first / 256, second - (second / 256) * 256, second / 256, 128);
+	return ivec4(first.y, second.x, second.y, 128);
 #elif GX_GPU_SCANOUT_STORAGE_PATH == 5
 	return rgb555Pixel(rawWordAtAddress(u_circuit[0].x + sourceY * u_circuit[0].y + sourceX));
 #elif GX_GPU_SCANOUT_STORAGE_PATH == 6

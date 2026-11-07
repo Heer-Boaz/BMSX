@@ -2,8 +2,15 @@
 #extension GL_ARM_shader_framebuffer_fetch : require
 #endif
 
+#ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
 precision highp int;
+#else
+precision mediump float;
+precision mediump int;
+#endif
+
+#include "gx_gpu_words.glsl"
 
 #ifndef GX_GPU_FIXED_COLOR_PLANE
 #define GX_GPU_FIXED_COLOR_PLANE 0
@@ -20,9 +27,7 @@ uniform int u_skippedLineParity;
 uniform int u_logicalYBase;
 #endif
 #if GX_GPU_FIXED_COLOR_PLANE
-varying vec3 v_colorPlaneBase;
-varying vec3 v_colorPlaneStepX;
-varying vec3 v_colorPlaneStepY;
+varying vec4 v_colorPlane[5];
 #else
 varying vec4 v_color;
 #endif
@@ -35,7 +40,7 @@ int clampColor5(int value) {
 	return value < 0 ? 0 : (value > 31 ? 31 : value);
 }
 
-int rawStorageVramWord(ivec2 storageCoord) {
+ivec2 rawStorageVramWord(ivec2 storageCoord) {
 #ifdef GX_GPU_FRAMEBUFFER_FETCH_ARM
 	vec4 rawPixel = gl_LastFragColorARM;
 #else
@@ -43,17 +48,10 @@ int rawStorageVramWord(ivec2 storageCoord) {
 		/ vec2(float(GX_GPU_VRAM_X_ADDRESS_PERIOD), float(GX_GPU_VRAM_TEXTURE_ROWS));
 	vec4 rawPixel = texture2D(u_vram, texcoord);
 #endif
-	ivec4 nibbles = ivec4(rawPixel * 15.0 + 0.5);
-	return nibbles.r * 4096 + nibbles.g * 256 + nibbles.b * 16 + nibbles.a;
+	return gxWordBytes(rawPixel);
 }
 
-ivec3 decodeRgb555To5(int word) {
-	return ivec3(
-		word - (word / 32) * 32,
-		(word / 32) - (word / 1024) * 32,
-		(word / 1024) - (word / 32768) * 32
-	);
-}
+
 
 ivec3 blendRgb5(ivec3 src5, ivec3 dst5) {
 	if (u_blendMode == 0) {
@@ -97,9 +95,8 @@ int ditherOffset(ivec2 coord) {
 
 #if GX_GPU_FIXED_COLOR_PLANE
 ivec3 fixedColor8(ivec2 logicalCoord) {
-	ivec3 accumulator = ivec3(v_colorPlaneBase) + ivec3(v_colorPlaneStepX) * logicalCoord.x + ivec3(v_colorPlaneStepY) * logicalCoord.y;
-	ivec3 fixedValue = accumulator / 4096;
-	return fixedValue - (fixedValue / 256) * 256;
+	return gxColorPlaneBytes(v_colorPlane[0], v_colorPlane[1], v_colorPlane[2],
+		v_colorPlane[3], v_colorPlane[4], logicalCoord);
 }
 #endif
 
@@ -111,14 +108,7 @@ ivec3 rgb8ToRgb5(ivec3 rgb8, ivec2 logicalCoord) {
 	return ivec3(rgb8.x / 8, rgb8.y / 8, rgb8.z / 8);
 }
 
-vec4 encodeRgb555(ivec3 color5, int outputMaskBit) {
-	int word = color5.x + color5.y * 32 + color5.z * 1024 + outputMaskBit * 32768;
-	int highNibble = word / 4096;
-	int midHighNibble = (word / 256) - highNibble * 16;
-	int midLowNibble = (word / 16) - (word / 256) * 16;
-	int lowNibble = word - (word / 16) * 16;
-	return vec4(highNibble, midHighNibble, midLowNibble, lowNibble) / 15.0;
-}
+
 
 void main() {
 	ivec2 storageCoord = ivec2(gl_FragCoord.xy);
@@ -135,8 +125,8 @@ void main() {
 	ivec3 src5 = rgb8ToRgb5(ivec3(v_color.rgb * 255.0), logicalCoord);
 #endif
 	if (u_checkMaskBit != 0 || u_blendEnable != 0) {
-		int dstWord = rawStorageVramWord(storageCoord);
-		if (u_checkMaskBit != 0 && dstWord / 32768 != 0) {
+		ivec2 dstWord = rawStorageVramWord(storageCoord);
+		if (u_checkMaskBit != 0 && dstWord.y / 128 != 0) {
 			discard;
 		}
 		if (u_blendEnable != 0) {

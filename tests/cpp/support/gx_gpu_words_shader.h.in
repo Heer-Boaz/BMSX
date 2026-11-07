@@ -1,0 +1,2 @@
+#pragma once
+inline constexpr const char* kGxGpuWordFunctions = R"(@BMSX_GX_GPU_WORD_FUNCTIONS@)";

@@ -57,18 +57,21 @@ export async function renderTexturedModelCase(canvas: HTMLCanvasElement, kind: '
 	// counters. Snapshot bytes remain a complete little-endian VRAM image even
 	// when a checkpoint reads only a small, padded, nonzero-origin rectangle.
 	const transfers: number[][] = [];
+	let observingSnapshots = true;
 	if (gl !== undefined) {
 		const readPixels = gl.gl.readPixels.bind(gl.gl);
 		gl.gl.readPixels = (...args: any[]) => {
-			transfers.push(args.slice(0, 4));
+			if (observingSnapshots) transfers.push(args.slice(0, 4));
 			(readPixels as (...args: any[]) => void)(...args);
 		};
 	} else {
 		const prototype = Object.getPrototypeOf(gpu!.device.createCommandEncoder());
 		const copy = prototype.copyTextureToBuffer;
 		prototype.copyTextureToBuffer = function (source: GPUTexelCopyTextureInfo, destination: GPUTexelCopyBufferInfo, extent: GPUExtent3DDict) {
-			const origin = source.origin as GPUOrigin3DDict;
-			transfers.push([origin.x!, origin.y!, extent.width, extent.height!]);
+			if (observingSnapshots) {
+				const origin = source.origin as GPUOrigin3DDict;
+				transfers.push([origin.x!, origin.y!, extent.width, extent.height!]);
+			}
 			copy.call(this, source, destination, extent);
 		};
 	}
@@ -100,9 +103,41 @@ export async function renderTexturedModelCase(canvas: HTMLCanvasElement, kind: '
 	machine.gxGpu.replaceVramSnapshotBytes(replacement);
 	await backend.captureGxGpuVramSnapshot(machine.gxGpu);
 	snapshotDifferences.push(machine.gxGpu.readDeviceOutput().vramSnapshotBytes.findIndex((value, index) => value !== replacement[index]));
+	observingSnapshots = false;
+	let sampleCopies = 0;
+	if (gl !== undefined) {
+		const copy = gl.gl.copyTexSubImage2D.bind(gl.gl);
+		gl.gl.copyTexSubImage2D = (...args: Parameters<typeof copy>) => { ++sampleCopies; copy(...args); };
+	} else {
+		const prototype = Object.getPrototypeOf(gpu!.device.createCommandEncoder());
+		const copy = prototype.copyTextureToTexture;
+		prototype.copyTextureToTexture = function (...args: any[]) { ++sampleCopies; copy.apply(this, args); };
+	}
+	const adjacentCopies: number[] = [], adjacentDifferences: number[] = [];
+	for (let phase = 0; phase < 3; ++phase) {
+		const before = sampleCopies;
+		// The framebuffer ends immediately before its font page. Touching the
+		// geometric right edge does not write a texel in that page. A deliberate
+		// write into the page in the final phase must still synchronize it.
+		const words = [0xe1000005, 0x600000ff, 0, (240 << 16) | 320];
+		if (phase === 2) words.push(0x6000ff00, 320, 0x00010001);
+		words.push(0x65808080, (120 << 16) | 16, (20 | (24 << 6)) << 16, 0x00080008);
+		for (const word of words) {
+			machine.gxGpu.writeGp0(word);
+			machine.scheduler.advanceTo(machine.scheduler.currentNowCycles() + 10_000);
+			machine.gxGpu.onService(machine.scheduler.currentNowCycles());
+		}
+		machine.gxGpu.presentReadyFrameOnVblankEdge();
+		const next = machine.gxGpu.readDeviceOutput();
+		renderGxGpuSoftwareFrame(software, state, next, pixels);
+		library.execute('gx_gpu', framebuffer, next);
+		const rendered = await backend.readColorTexture(target, width, height);
+		adjacentDifferences.push(rendered.findIndex((value, index) => value !== expected[index]));
+		adjacentCopies.push(sampleCopies - before);
+	}
 	const validationError = gpu === undefined ? undefined : (await gpu.device.popErrorScope())?.message;
 	const glError = gl === undefined ? 0 : gl.gl.getError();
 	if (framebuffer !== null) gl!.destroyRenderTarget(framebuffer);
 	backend.destroyTexture(target); library.dispose(); gpu?.device.destroy();
-	return { kind, difference, samples, validationError, glError, gpuErrors, commands, transfers, snapshotDifferences, snapshotWords };
+	return { kind, difference, samples, validationError, glError, gpuErrors, commands, transfers, snapshotDifferences, snapshotWords, adjacentCopies, adjacentDifferences };
 }

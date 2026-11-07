@@ -2,8 +2,15 @@
 #extension GL_ARM_shader_framebuffer_fetch : require
 #endif
 
+#ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
 precision highp int;
+#else
+precision mediump float;
+precision mediump int;
+#endif
+
+#include "gx_gpu_words.glsl"
 
 #ifndef GX_GPU_FIXED_COLOR_PLANE
 #define GX_GPU_FIXED_COLOR_PLANE 0
@@ -26,14 +33,16 @@ uniform int u_skippedLineParity;
 #ifdef GX_GPU_VRAM_ALIAS
 uniform int u_logicalYBase;
 #endif
-varying vec2 v_uvPlaneBase;
-varying vec2 v_uvPlaneStepX;
-varying vec2 v_uvPlaneStepY;
-varying vec4 v_textureSource;
+varying vec4 v_uvPlaneBase;
+varying vec4 v_uvPlaneStepX;
+varying vec4 v_uvPlaneStepY;
+#if !GX_GPU_FIXED_COLOR_PLANE
+varying vec2 v_textureSource;
+varying vec2 v_rectangleUv;
+uniform highp float u_rasterPhase;
+#endif
 #if GX_GPU_FIXED_COLOR_PLANE
-varying vec3 v_colorPlaneBase;
-varying vec3 v_colorPlaneStepX;
-varying vec3 v_colorPlaneStepY;
+varying vec4 v_colorPlane[5];
 #else
 varying vec3 v_color;
 #endif
@@ -71,7 +80,7 @@ int applyTextureWindowAxis(int coord, int andMask, int orMask) {
 	return low + (bitAnd5(wrapped / 8, andMask / 8) + orMask / 8) * 8;
 }
 
-int rawVramWord(ivec2 logicalCoord) {
+ivec2 rawVramWord(ivec2 logicalCoord) {
 	ivec2 wrapped = ivec2(
 		wrapPeriod(logicalCoord.x, GX_GPU_VRAM_X_ADDRESS_PERIOD),
 		wrapPeriod(logicalCoord.y, GX_GPU_VRAM_TEXTURE_ROWS));
@@ -79,11 +88,10 @@ int rawVramWord(ivec2 logicalCoord) {
 		u_vram,
 		(vec2(wrapped) + vec2(0.5))
 			/ vec2(float(GX_GPU_VRAM_X_ADDRESS_PERIOD), float(GX_GPU_VRAM_TEXTURE_ROWS)));
-	ivec4 nibbles = ivec4(rawPixel * 15.0 + 0.5);
-	return nibbles.r * 4096 + nibbles.g * 256 + nibbles.b * 16 + nibbles.a;
+	return gxWordBytes(rawPixel);
 }
 
-int rawStorageVramWord(ivec2 storageCoord) {
+ivec2 rawStorageVramWord(ivec2 storageCoord) {
 #ifdef GX_GPU_FRAMEBUFFER_FETCH_ARM
 	vec4 rawPixel = gl_LastFragColorARM;
 #else
@@ -92,45 +100,53 @@ int rawStorageVramWord(ivec2 storageCoord) {
 		(vec2(storageCoord) + vec2(0.5))
 			/ vec2(float(GX_GPU_VRAM_X_ADDRESS_PERIOD), float(GX_GPU_VRAM_TEXTURE_ROWS)));
 #endif
-	ivec4 nibbles = ivec4(rawPixel * 15.0 + 0.5);
-	return nibbles.r * 4096 + nibbles.g * 256 + nibbles.b * 16 + nibbles.a;
+	return gxWordBytes(rawPixel);
 }
 
-ivec3 decodeRgb555To5(int word) {
-	return ivec3(
-		word - (word / 32) * 32,
-		(word / 32) - (word / 1024) * 32,
-		(word / 1024) - (word / 32768) * 32
-	);
-}
+
 
 ivec2 fixedUv(ivec2 logicalCoord) {
-	ivec2 accumulator = ivec2(v_uvPlaneBase) + ivec2(v_uvPlaneStepX) * logicalCoord.x + ivec2(v_uvPlaneStepY) * logicalCoord.y;
-	ivec2 fixedValue = accumulator / 4096;
-	return fixedValue - (fixedValue / 256) * 256;
+#if !GX_GPU_FIXED_COLOR_PLANE
+	if (u_rasterPhase == 0.0) {
+		ivec2 uv = ivec2(floor(v_rectangleUv));
+		return ivec2(wrapPeriod(uv.x, 256), wrapPeriod(uv.y, 256));
+	}
+#endif
+	return ivec2(gxAttributeByte(v_uvPlaneBase.xz, v_uvPlaneStepX.xz, v_uvPlaneStepY.xz, logicalCoord),
+		gxAttributeByte(v_uvPlaneBase.yw, v_uvPlaneStepX.yw, v_uvPlaneStepY.yw, logicalCoord));
 }
 
-ivec4 textureColor(int word) {
-	return ivec4(decodeRgb555To5(word), word == 0 ? -1 : word / 32768);
+ivec4 textureColor(ivec2 word) {
+	return ivec4(decodeRgb555To5(word), (word.x == 0 && word.y == 0) ? -1 : word.y / 128);
 }
 
 ivec4 samplePsxTexture(ivec2 sampleCoord) {
-	ivec2 texPageBase = ivec2(v_textureSource.xy);
-	ivec2 clutBase = ivec2(v_textureSource.zw);
+	#if GX_GPU_FIXED_COLOR_PLANE
+	ivec2 sourceWords = ivec2(v_colorPlane[4].zw);
+#else
+	ivec2 sourceWords = ivec2(v_textureSource);
+#endif
+	ivec2 high = ivec2(sourceWords.x < 0 ? 0 : 1, sourceWords.y < 0 ? 0 : 1);
+	ivec2 low = ivec2(sourceWords.x < 0 ? sourceWords.x + 2048 : sourceWords.x,
+		sourceWords.y < 0 ? sourceWords.y + 2048 : sourceWords.y);
+	ivec2 texPageBase = ivec2((low.x - (low.x / 16) * 16) * 64,
+		((low.x / 16) - (low.x / 128) * 8) * 256);
+	ivec2 clutBase = ivec2((low.x / 128 + high.x * 16 + high.y * 32) * 16, low.y);
 	ivec2 windowed = ivec2(
 		applyTextureWindowAxis(sampleCoord.x, u_textureWindowAnd.x, u_textureWindowOr.x),
 		applyTextureWindowAxis(sampleCoord.y, u_textureWindowAnd.y, u_textureWindowOr.y)
 	);
 	if (u_textureMode == 0) {
-		int textureWord = rawVramWord(ivec2(texPageBase.x + windowed.x / 4, texPageBase.y + windowed.y));
+		ivec2 textureWord = rawVramWord(ivec2(texPageBase.x + windowed.x / 4, texPageBase.y + windowed.y));
 		int subpixel = windowed.x - (windowed.x / 4) * 4;
-		int shifted = subpixel == 0 ? textureWord : (subpixel == 1 ? textureWord / 16 : (subpixel == 2 ? textureWord / 256 : textureWord / 4096));
+		int selectedByte = subpixel < 2 ? textureWord.x : textureWord.y;
+		int shifted = subpixel == 1 || subpixel == 3 ? selectedByte / 16 : selectedByte;
 		int paletteIndex = shifted - (shifted / 16) * 16;
 		return textureColor(rawVramWord(ivec2(clutBase.x + paletteIndex, clutBase.y)));
 	}
 	if (u_textureMode == 1) {
-		int textureWord = rawVramWord(ivec2(texPageBase.x + windowed.x / 2, texPageBase.y + windowed.y));
-		int paletteIndex = windowed.x - (windowed.x / 2) * 2 == 0 ? textureWord - (textureWord / 256) * 256 : textureWord / 256;
+		ivec2 textureWord = rawVramWord(ivec2(texPageBase.x + windowed.x / 2, texPageBase.y + windowed.y));
+		int paletteIndex = windowed.x - (windowed.x / 2) * 2 == 0 ? textureWord.x : textureWord.y;
 		return textureColor(rawVramWord(ivec2(clutBase.x + paletteIndex, clutBase.y)));
 	}
 	return textureColor(rawVramWord(texPageBase + windowed));
@@ -178,14 +194,13 @@ int ditherOffset(ivec2 coord) {
 
 #if GX_GPU_FIXED_COLOR_PLANE
 ivec3 fixedColor8(ivec2 logicalCoord) {
-	ivec3 accumulator = ivec3(v_colorPlaneBase) + ivec3(v_colorPlaneStepX) * logicalCoord.x + ivec3(v_colorPlaneStepY) * logicalCoord.y;
-	ivec3 fixedValue = accumulator / 4096;
-	return fixedValue - (fixedValue / 256) * 256;
+	return gxColorPlaneBytes(v_colorPlane[0], v_colorPlane[1], v_colorPlane[2],
+		v_colorPlane[3], v_colorPlane[4], logicalCoord);
 }
 #endif
 
 ivec3 modulatedTextureRgb5(ivec3 texture5, ivec3 vertex8, ivec2 logicalCoord) {
-	ivec3 preDither = ivec3(texture5.x * vertex8.x / 16, texture5.y * vertex8.y / 16, texture5.z * vertex8.z / 16);
+	ivec3 preDither = ivec3(texture5.x * (vertex8.x / 16) + texture5.x * (vertex8.x - (vertex8.x / 16) * 16) / 16, texture5.y * (vertex8.y / 16) + texture5.y * (vertex8.y - (vertex8.y / 16) * 16) / 16, texture5.z * (vertex8.z / 16) + texture5.z * (vertex8.z - (vertex8.z / 16) * 16) / 16);
 	if (u_ditherEnable != 0) {
 		preDither += ivec3(ditherOffset(logicalCoord));
 	}
@@ -196,14 +211,7 @@ ivec3 modulatedTextureRgb5(ivec3 texture5, ivec3 vertex8, ivec2 logicalCoord) {
 	);
 }
 
-vec4 encodeRgb555(ivec3 color5, int outputMaskBit) {
-	int word = color5.x + color5.y * 32 + color5.z * 1024 + outputMaskBit * 32768;
-	int highNibble = word / 4096;
-	int midHighNibble = (word / 256) - highNibble * 16;
-	int midLowNibble = (word / 16) - (word / 256) * 16;
-	int lowNibble = word - (word / 16) * 16;
-	return vec4(highNibble, midHighNibble, midLowNibble, lowNibble) / 15.0;
-}
+
 
 void main() {
 	ivec2 storageCoord = ivec2(gl_FragCoord.xy);
@@ -227,8 +235,8 @@ void main() {
 #endif
 	}
 	if (u_checkMaskBit != 0 || u_blendEnable != 0) {
-		int dstWord = rawStorageVramWord(storageCoord);
-		if (u_checkMaskBit != 0 && dstWord / 32768 != 0) {
+		ivec2 dstWord = rawStorageVramWord(storageCoord);
+		if (u_checkMaskBit != 0 && dstWord.y / 128 != 0) {
 			discard;
 		}
 		if (u_blendEnable != 0 && sampled.w != 0) {

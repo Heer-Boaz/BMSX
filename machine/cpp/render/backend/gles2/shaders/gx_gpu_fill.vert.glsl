@@ -1,4 +1,7 @@
 precision highp float;
+precision highp int;
+
+#include "gx_gpu_words.glsl"
 
 #ifndef GX_GPU_FIXED_COLOR_PLANE
 #define GX_GPU_FIXED_COLOR_PLANE 0
@@ -10,9 +13,7 @@ uniform float u_rasterPhase;
 attribute vec3 a_colorPlaneBase;
 attribute vec3 a_colorPlaneStepX;
 attribute vec3 a_colorPlaneStepY;
-varying vec3 v_colorPlaneBase;
-varying vec3 v_colorPlaneStepX;
-varying vec3 v_colorPlaneStepY;
+varying vec4 v_colorPlane[5];
 #else
 attribute vec4 a_color;
 varying vec4 v_color;
@@ -26,9 +27,8 @@ void main() {
 	);
 	gl_Position = vec4(clip, 0.0, 1.0);
 #if GX_GPU_FIXED_COLOR_PLANE
-	v_colorPlaneBase = a_colorPlaneBase;
-	v_colorPlaneStepX = a_colorPlaneStepX;
-	v_colorPlaneStepY = a_colorPlaneStepY;
+	gxColorPlanePayload(a_colorPlaneBase, a_colorPlaneStepX, a_colorPlaneStepY,
+		v_colorPlane[0], v_colorPlane[1], v_colorPlane[2], v_colorPlane[3], v_colorPlane[4]);
 #else
 	v_color = a_color;
 #endif

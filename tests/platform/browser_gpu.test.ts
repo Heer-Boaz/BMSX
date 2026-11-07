@@ -116,7 +116,9 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} and CPU render flat/raw t
 	assert.deepEqual(result.snapshotDifferences, [-1, -1, -1], 'complete VRAM bytes survive disjoint dirty captures and external replacement');
 	assert.equal(result.transfers.length, 2, 'unchanged checkpoints and imported VRAM perform no readback');
 	assert.deepEqual(result.snapshotWords, [0, 0x03e0], 'the high-row write actually changes the captured machine word');
-	assert.deepEqual(result.transfers[1], [197, 901, 4, 3], 'the small high-row write reads its conservative draw bounds, including WebGPU row padding');
+	assert.deepEqual(result.transfers[1], [197, 901, 3, 2], 'the small high-row write reads its exclusive rectangle bounds, including WebGPU row padding');
+	assert.deepEqual(result.adjacentDifferences, [-1, -1, -1], 'adjacent texture draws retain whole-frame software parity');
+	assert.deepEqual(result.adjacentCopies, [1, 0, 1], 'an adjacent framebuffer does not dirty its texture page, but an actual write does');
 	assert.deepEqual(result.samples.map(sample => sample.software), [
 		[255, 0, 0, 0], [0, 255, 0, 0], [0, 0, 255, 0], [0, 0, 0, 0],
 		[255, 0, 0, 0], [0, 255, 0, 0], [0, 0, 255, 0], [0, 0, 0, 0],
