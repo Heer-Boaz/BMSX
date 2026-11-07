@@ -86,6 +86,9 @@ Options:
 - `--max-frames <count>`: owns run lifetime explicitly, including when the timeline has ended
 - `--timing-report`: prints fixed-size `retro_run`, core-without-presentation, final-blit and swap histograms at shutdown; the GLES2 backend additionally reports GX CPU-to-VRAM command/call/byte/time totals
 - `--timing-warmup <count>`: excludes the first frames from the timing report
+- `--rewind on|off`: sets the `bmsx_rewind_recording` core option. Automatic
+  recording defaults to off on SNES Mini and on elsewhere. Disabling it removes
+  periodic rewind checkpoints and their history storage, not manual save states.
 - `--crt-postprocessing on|off`: sets the `bmsx_crt_postprocessing` core option
 - `--crt-noise on|off`: sets the `bmsx_crt_noise` core option
 - `--dither off|rgb565|msx10`: sets the `bmsx_dither` core option
@@ -99,7 +102,7 @@ Native host builds require SDL2 and provide the SDL video, audio, and input path
 ## Host controls
 
 - Select+Start released before 500 ms opens or closes the core-options menu;
-  holding it for 500 ms opens rewind without first opening the menu. Release
+  holding it for 500 ms opens rewind, when recording is enabled, without first opening the menu. Release
   leaves rewind open; a fresh Start accepts, and the east action button cancels.
   Right Ctrl+Right Alt has the same short/hold behavior on a physical keyboard.
 - Select+L opens or closes the BIOS supervisor terminal. A partial chord

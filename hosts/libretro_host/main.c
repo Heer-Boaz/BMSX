@@ -77,8 +77,8 @@ static uint64_t monotonic_ns(void) {
 static void usage(const char* argv0) {
 	fprintf(stderr,
 			"Usage:\n"
-			"  %s --core ./libretro_bmsx.so --no-game [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--control PORT | --input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--timing-report] [--timing-warmup N] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n"
-			"  %s --core ./libretro_bmsx.so GAME.rom [--slot1 AUX.rom] [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--control PORT | --input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--timing-report] [--timing-warmup N] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n",
+			"  %s --core ./libretro_bmsx.so --no-game [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--control PORT | --input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--timing-report] [--timing-warmup N] [--rewind on|off] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n"
+			"  %s --core ./libretro_bmsx.so GAME.rom [--slot1 AUX.rom] [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--control PORT | --input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--timing-report] [--timing-warmup N] [--rewind on|off] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n",
 			argv0, argv0);
 	exit(2);
 }
@@ -113,6 +113,7 @@ int main(int argc, char** argv) {
 	const char* save_dir = NULL;
 	const char* rom_folder = NULL;
 	const char* input_timeline = NULL;
+	const char* rewind_recording = NULL;
 	const char* crt_postprocessing = NULL;
 	const char* crt_noise = NULL;
 	const char* dither = NULL;
@@ -184,6 +185,14 @@ int main(int argc, char** argv) {
 			frame_timing.warmup_frames = parse_positive_u64_arg(
 					required_arg(argc, argv, &i),
 					"--timing-warmup");
+			continue;
+		}
+		if (strcmp(argv[i], "--rewind") == 0) {
+			const char* value = required_arg(argc, argv, &i);
+			if (strcmp(value, "on") != 0 && strcmp(value, "off") != 0) {
+				host_fatal("Invalid --rewind %s (expected on|off)", value);
+			}
+			rewind_recording = value;
 			continue;
 		}
 		if (strcmp(argv[i], "--crt-postprocessing") == 0) {
@@ -286,6 +295,9 @@ int main(int argc, char** argv) {
 			&session.options,
 			"bmsx_render_backend",
 			backend);
+	if (rewind_recording) {
+		bmsx_core_options_override(&session.options, "bmsx_rewind_recording", rewind_recording);
+	}
 	if (crt_postprocessing) {
 		bmsx_core_options_override(
 				&session.options,

@@ -232,10 +232,57 @@ void testDefaultRetentionVideoStandards() {
 			<< ",\"evictions\":" << evictions << ",\"inputRecords\":" << history.inputJournal.endSequence << "}\n";
 	}
 }
+
+void testRecordingPolicy() {
+	const auto system = test::makeMinimalBootRom(RomImageDomain::System);
+	LibretroInput input(supervisorRequest);
+	Runtime runtime({system, {}, PSX_MACHINE_SPEC}, input);
+	runtime.boot();
+	retro_system_av_info avInfo{};
+	avInfo.geometry.base_width = 4;
+	avInfo.geometry.base_height = 3;
+	LibretroVideoOutput video(avInfo);
+	auto backend = std::make_unique<CountingSoftwareBackend>(4, 3, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	auto& software = *backend;
+	VideoPresenter presenter(video, std::move(backend), 4, 3);
+	RenderPresentationState presentation;
+	HostRewind rewind(runtime, presenter, presentation);
+	rewind.setRecordingEnabled(false);
+	for (int frame = 0; frame < 10; ++frame) rewind.service(true);
+	require(runtime.history.mode == HistoryMode::Disabled && software.vramCaptures == 0,
+		"disabled recording performs no automatic capture");
+	require(runtime.history.inputJournal.capacity() == 0 && !rewind.available(),
+		"disabled recording allocates no journal and offers no stale timeline");
+
+	// Manual state capture is independent of the automatic rewind policy.
+	runtime.machine.gxGpu.replaceVramSnapshotBytes(std::vector<u8>(PSX_MACHINE_SPEC.gxGpuVramBytes, 0xa5));
+	presenter.backend().captureGxGpuVramSnapshot(runtime.machine.gxGpu);
+	const auto state = captureRuntimeSaveState(runtime);
+	runtime.machine.gxGpu.replaceVramSnapshotBytes(std::vector<u8>(PSX_MACHINE_SPEC.gxGpuVramBytes, 0x5a));
+	applyRuntimeSaveState(runtime, state);
+	require(runtime.machine.gxGpu.readDeviceOutput().vramSnapshotBytes[0] == 0xa5
+		&& runtime.history.mode == HistoryMode::Disabled,
+		"manual state restoration preserves VRAM without enabling history");
+
+	rewind.setRecordingEnabled(true);
+	rewind.service(true);
+	require(rewind.available() && software.vramCaptures == 2,
+		"enabling recording starts a fresh checkpoint at the service boundary");
+	rewind.setRecordingEnabled(false);
+	rewind.service(true);
+	require(!rewind.available() && runtime.history.checkpointCount() == 0
+		&& runtime.history.inputJournal.capacity() == 0 && software.vramCaptures == 2,
+		"disabling recording releases retained history without another readback");
+}
 } // namespace
 
 int main(int argc, char** argv) {
 	try {
+		testRecordingPolicy();
+		if (argc == 1) {
+			std::cout << "HOST-REWIND-POLICY:PASS\n";
+			return 0;
+		}
 		require(argc == 3 || argc == 4, "Usage: bmsx_host_rewind_conformance_runner SYSTEM_DIRECTORY CART_ROM [OUTPUT_DIRECTORY]");
 		testPresentationIntentLifetime();
 		testDefaultRetentionVideoStandards();

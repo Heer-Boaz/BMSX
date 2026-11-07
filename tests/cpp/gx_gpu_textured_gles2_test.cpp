@@ -81,7 +81,14 @@ struct TexturedModelFixture {
 		gpu.reset();
 		gpu.writeGp1(0x09000001u);
 		std::vector<u8> snapshot(PSX_MACHINE_SPEC.gxGpuVramBytes);
-		// A four-bit atlas and a high-column CLUT exercise the compact texture
+		// The first dirty checkpoint spans this untouched grid, so packing the
+		// GPU staging image must preserve every possible raw word, including mask.
+		for (u32 word = 0; word < 65536u; ++word) {
+			const u32 at = (512u * 1024u + word) * 2u;
+			snapshot[at] = static_cast<u8>(word);
+			snapshot[at + 1u] = static_cast<u8>(word >> 8u);
+		}
+		// A four-bit atlas and CLUT exercise the compact signed texture
 		// source varyings and rectangle UV wrapping/flips, as used by glyphs.
 		for (u32 y = 0; y < 256; ++y) for (u32 x = 0; x < 64; ++x) {
 			const u32 at = (y * 1024u + 320u + x) * 2u;
@@ -171,7 +178,7 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 	require(readbacks == beforeUnchangedCheckpoint, "an unchanged VRAM checkpoint performs no GPU readback");
 	// A later, disjoint high-row write must retain all earlier texture/drawing
 	// bytes outside the new dirty region, including its row stride and origin.
-	for (const u32 word : {0x6000ff00u, 0x03840384u, 0x00010004u}) {
+	for (const u32 word : {0x6000ff00u, (901u << 16u) | 197u, 0x00020003u}) {
 		fixture.gpu.writeGp0(word);
 		fixture.scheduler.advanceTo(fixture.scheduler.currentNowCycles() + 10'000);
 		fixture.gpu.onService(fixture.scheduler.currentNowCycles());
@@ -214,7 +221,7 @@ int main(int argc, char** argv) {
 		const auto actual = render(std::move(gles), fixture);
 		const auto expectedVram = referenceFixture.gpu.readDeviceOutput().vramSnapshotBytes;
 		const auto actualVram = fixture.gpu.readDeviceOutput().vramSnapshotBytes;
-		require(expectedVram[(900u * 1024u + 900u) * 2u + 1u] == 3u,
+		require(expectedVram[(901u * 1024u + 197u) * 2u + 1u] == 3u,
 			"the disjoint high-row rectangle actually changes VRAM");
 		require(std::equal(expectedVram.begin(), expectedVram.end(), actualVram.begin()),
 			"dirty-region VRAM checkpoints preserve every byte across disjoint writes");

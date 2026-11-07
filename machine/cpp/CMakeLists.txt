@@ -1086,6 +1086,8 @@ if(BMSX_BUILD_TESTS)
 		endif()
 	endforeach()
 	target_sources(bmsx_libretro_rewind_conformance_runner PRIVATE ${BMSX_LIBRETRO_DIR}/entry.cpp)
+	add_test(NAME bmsx_host_rewind_recording_policy COMMAND bmsx_host_rewind_conformance_runner)
+	add_test(NAME bmsx_snesmini_host_rewind_recording_policy COMMAND bmsx_snesmini_host_rewind_conformance_runner)
 
 	if(BMSX_ENABLE_GLES2)
 		add_executable(bmsx_libretro_hw_context_tests

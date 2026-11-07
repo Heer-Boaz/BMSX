@@ -110,6 +110,11 @@ void HostRewind::capture() {
 	runtime.history.captureCheckpoint();
 }
 
+void HostRewind::setRecordingEnabled(bool enabled) {
+	recordingEnabled = enabled;
+	if (!enabled) service(false);
+}
+
 void HostRewind::restore() {
 	presenter.backend().finishGxGpuReadbacks();
 	if (request == RewindRequest::Seek) {
@@ -123,7 +128,7 @@ void HostRewind::service(bool collect) {
 	auto& history = runtime.history;
 	auto& gpu = runtime.machine.gxGpu;
 	auto& backend = presenter.backend();
-	if (!collect) {
+	if (!collect || !recordingEnabled) {
 		history.stop();
 		active = false;
 		request = RewindRequest::None;

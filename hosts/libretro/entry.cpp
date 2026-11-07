@@ -228,6 +228,7 @@ static void RETRO_CALLCONV keyboard_event(bool down, unsigned keycode, uint32_t 
 	g_input->postKeyboardEvent(keycode, down);
 }
 
+static constexpr const char* kOptionRewindRecording = "bmsx_rewind_recording";
 static constexpr const char* kOptionRenderBackend = "bmsx_render_backend";
 static constexpr const char* kRenderBackendSoftware = "software";
 static constexpr const char* kRenderBackendGLES2 = "gles2";
@@ -245,6 +246,12 @@ static constexpr const char* kOptionDither = "bmsx_dither";
 static constexpr const char* kOptionHostShowUsageGizmo = "bmsx_host_show_usage_gizmo";
 static constexpr const char* kToggleOff = "off";
 static constexpr const char* kToggleOn = "on";
+#if defined(BMSX_PLATFORM_SNESMINI)
+static constexpr bool kDefaultRewindRecording = false;
+#else
+static constexpr bool kDefaultRewindRecording = true;
+#endif
+static constexpr const char* kDefaultRewindRecordingName = kDefaultRewindRecording ? kToggleOn : kToggleOff;
 static constexpr const char* kDitherOff = "off";
 static constexpr const char* kDitherRGB565 = "rgb565";
 static constexpr const char* kDitherMSX10 = "msx10";
@@ -269,6 +276,7 @@ static bool g_resource_usage_gizmo_enabled = false;
 
 static retro_core_option_v2_category g_option_categories_us[] = {
 	{"video", "Video", "Video settings."},
+	{"host", "Host", "Host features."},
 	{nullptr, nullptr, nullptr},
 };
 
@@ -428,6 +436,16 @@ static retro_core_option_v2_definition g_option_defs_us[] = {
 		},
 		kToggleOff
 	},
+	{
+		kOptionRewindRecording,
+		"Rewind Recording",
+		"Rewind Recording",
+		"Record periodic checkpoints for rewind. Disabling recording does not disable save states.",
+		"Record periodic checkpoints for rewind. Disabling recording does not disable save states.",
+		"host",
+		{{kToggleOff, "Off"}, {kToggleOn, "On"}, {nullptr, nullptr}},
+		kDefaultRewindRecordingName
+	},
 	{nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, {{nullptr, nullptr}}, nullptr}
 };
 
@@ -559,9 +577,17 @@ static retro_core_option_definition g_option_defs_v1_us[] = {
 		},
 		kToggleOff
 	},
+	{
+		kOptionRewindRecording,
+		"Rewind Recording",
+		"Record periodic checkpoints for rewind. Disabling recording does not disable save states.",
+		{{kToggleOff, "Off"}, {kToggleOn, "On"}, {nullptr, nullptr}},
+		kDefaultRewindRecordingName
+	},
 	{nullptr, nullptr, nullptr, {{nullptr, nullptr}}, nullptr}
 };
 
+static char g_option_rewind_recording_var[128] = {};
 static char g_option_render_backend_var[128] = {};
 static char g_option_crt_postprocessing_var[128] = {};
 static char g_option_crt_noise_var[128] = {};
@@ -585,6 +611,7 @@ static retro_variable g_option_vars[] = {
 	{kOptionCrtAperture, nullptr},
 	{kOptionDither, nullptr},
 	{kOptionHostShowUsageGizmo, nullptr},
+	{kOptionRewindRecording, nullptr},
 	{nullptr, nullptr}
 };
 
@@ -839,6 +866,10 @@ static void set_core_options(bool default_gles2) {
 	std::snprintf(g_option_host_show_usage_gizmo_var, sizeof(g_option_host_show_usage_gizmo_var),
 					"Show Usage Gizmo; %s|%s", kToggleOff, kToggleOn);
 	g_option_vars[10].value = g_option_host_show_usage_gizmo_var;
+	std::snprintf(g_option_rewind_recording_var, sizeof(g_option_rewind_recording_var),
+		"Rewind Recording; %s|%s", kDefaultRewindRecordingName,
+		kDefaultRewindRecording ? kToggleOff : kToggleOn);
+	g_option_vars[11].value = g_option_rewind_recording_var;
 
 	unsigned version = 0;
 	if (environ_cb(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &version) && version >= 2) {
@@ -1119,6 +1150,9 @@ static void sync_runtime_timing(bmsx::Runtime& runtime) {
 
 static void activate_runtime(bmsx::Runtime& runtime) {
 	g_rewind.emplace(runtime, *g_video_presenter, *g_presentation);
+	const bool recordRewind = read_toggle_option(kOptionRewindRecording, "Rewind Recording", kDefaultRewindRecording);
+	g_rewind->setRecordingEnabled(recordRewind);
+	logging.log(RETRO_LOG_INFO, "[BMSX] Rewind recording %s\n", recordRewind ? "enabled" : "disabled");
 	g_audio_output->resetPlayback();
 	g_presentation->reset(*g_video_presenter, runtime);
 	sync_runtime_timing(runtime);
@@ -1581,6 +1615,10 @@ void retro_run(void) {
 			logging.log(RETRO_LOG_WARN,
 						"[BMSX] Render backend change detected; restart required\n");
 		}
+		const bool recordRewind = read_toggle_option(kOptionRewindRecording, "Rewind Recording", kDefaultRewindRecording);
+		if (!recordRewind && g_overlay_menu->executionMode() == bmsx::HostMenuExecution::Rewind)
+			g_overlay_menu->resetInputState(*g_input, *g_rewind);
+		g_rewind->setRecordingEnabled(recordRewind);
 		const bool new_crt = read_crt_postprocessing_enabled();
 		if (new_crt != g_crt_postprocessing_enabled) {
 			g_crt_postprocessing_enabled = new_crt;

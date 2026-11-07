@@ -20,6 +20,7 @@ public:
 	bool seeking() const;
 	bool playing() const;
 	bool audioMuted() const;
+	void setRecordingEnabled(bool enabled);
 	i64 positionCycles() const;
 	i64 frameStepCycles(i32 direction, i32 count = 1) const;
 	void stepFrame(i32 direction);
@@ -40,6 +41,7 @@ private:
 	VideoPresenter& presenter;
 	RenderPresentationState& presentation;
 	HistoryOptions options;
+	bool recordingEnabled = true;
 	RewindRequest request = RewindRequest::None;
 	i64 requestedCycles = 0;
 	RewindRequest afterSeek = RewindRequest::None;
