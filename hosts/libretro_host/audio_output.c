@@ -5,6 +5,7 @@
 #include <limits.h>
 #include <pthread.h>
 #include <sched.h>
+#include <stdatomic.h>
 #include <sound/asound.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,7 +38,7 @@ typedef struct AudioOutput {
 	unsigned period_count;
 	unsigned buffer_frames;
 	bool prepared;
-	unsigned underruns;
+	atomic_uint underruns;
 	size_t sdl_underrun_frames;
 	BmsxAudioQueue queue;
 	pthread_t thread;
@@ -87,7 +88,7 @@ static void write_alsa_frames(const int16_t* data, size_t frames) {
 			}
 			if (errno == EPIPE || errno == ESTRPIPE) {
 				g_audio.prepared = false;
-				g_audio.underruns += 1u;
+				atomic_fetch_add_explicit(&g_audio.underruns, 1u, memory_order_relaxed);
 				continue;
 			}
 			host_fatal("SNDRV_PCM_IOCTL_WRITEI_FRAMES failed: %s", strerror(errno));
@@ -313,7 +314,7 @@ static void open_alsa_audio(int sample_rate) {
 		host_fatal("SNDRV_PCM_IOCTL_PREPARE failed: %s", strerror(errno));
 	}
 	g_audio.prepared = true;
-	g_audio.underruns = 0;
+	atomic_store_explicit(&g_audio.underruns, 0u, memory_order_relaxed);
 	g_audio.thread_buffer_frames = g_audio.period_frames;
 	g_audio.thread_buffer = malloc(g_audio.thread_buffer_frames * kAudioChannels * sizeof(int16_t));
 	if (!g_audio.thread_buffer) {
@@ -343,11 +344,16 @@ static void close_alsa_audio(void) {
 	}
 	bmsx_audio_queue_destroy(&g_audio.queue);
 	pthread_mutex_destroy(&g_audio.device_mutex);
-	if (g_audio.track_high_water || g_audio.underruns > 0u) {
-		fprintf(stderr, "[libretro-host] audio stats: underruns=%u\n", g_audio.underruns);
+	const unsigned underruns = audio_output_alsa_underruns();
+	if (g_audio.track_high_water || underruns > 0u) {
+		fprintf(stderr, "[libretro-host] audio stats: underruns=%u\n", underruns);
 	}
 	free(g_audio.thread_buffer);
 	close(g_audio.fd);
+}
+
+unsigned audio_output_alsa_underruns(void) {
+	return atomic_load_explicit(&g_audio.underruns, memory_order_relaxed);
 }
 
 void audio_output_open(int sample_rate, bool use_sdl, bool track_high_water) {

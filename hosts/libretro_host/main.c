@@ -126,6 +126,7 @@ int main(int argc, char** argv) {
 	bool hidden_window = false;
 	uint64_t maximum_run_frames = 0;
 	uint64_t run_frame_count = 0;
+	unsigned alsa_underruns_at_timing_start = 0u;
 	BmsxFrameTimingState frame_timing = {
 		.warmup_frames = 500u,
 	};
@@ -402,6 +403,9 @@ int main(int argc, char** argv) {
 		frame_timing.record_frame =
 				frame_timing.enabled &&
 				run_frame_count >= frame_timing.warmup_frames;
+		if (frame_timing.record_frame && run_frame_count == frame_timing.warmup_frames) {
+			alsa_underruns_at_timing_start = audio_output_alsa_underruns();
+		}
 		if (session.frame_time.callback) {
 			const retro_usec_t frame_time_usec = !unpaced_timeline && pacing.has_elapsed
 				? (retro_usec_t)(pacing.elapsed_ns / 1000u)
@@ -459,10 +463,16 @@ int main(int argc, char** argv) {
 				session.frame_period_ns);
 	}
 	if (frame_timing.enabled) {
+		const unsigned alsa_underruns_at_timing_end = audio_output_alsa_underruns();
 		bmsx_frame_timing_print(
 				&frame_timing.report,
 				frame_timing.warmup_frames,
 				profile_gx_upload);
+		if (frame_timing.report.retro_run.count != 0u) {
+			fprintf(stderr, "[libretro-host][timing] audio_alsa_underruns=%u before_timing=%u\n",
+				alsa_underruns_at_timing_end - alsa_underruns_at_timing_start,
+				alsa_underruns_at_timing_start);
+		}
 	}
 
 	input_timeline_shutdown();

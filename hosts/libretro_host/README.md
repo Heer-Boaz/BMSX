@@ -85,6 +85,9 @@ Options:
 - `--paced-timeline`: keeps an active timeline on the normal host deadline instead of running it as fast as possible
 - `--max-frames <count>`: owns run lifetime explicitly, including when the timeline has ended
 - `--timing-report`: prints fixed-size `retro_run`, core-without-presentation, final-blit and swap histograms at shutdown; the GLES2 backend additionally reports GX CPU-to-VRAM command/call/byte/time totals
+  The ALSA underrun line covers the same measured window; `before_timing` counts
+  earlier underruns. The final `audio stats` line covers the entire session,
+  including teardown.
 - `--timing-warmup <count>`: excludes the first frames from the timing report
 - `--rewind on|off`: sets the `bmsx_rewind_recording` core option. Automatic
   recording defaults to off on SNES Mini and on elsewhere. Disabling it removes
@@ -102,7 +105,8 @@ Native host builds require SDL2 and provide the SDL video, audio, and input path
 ## Host controls
 
 - Select+Start released before 500 ms opens or closes the core-options menu;
-  holding it for 500 ms opens rewind, when recording is enabled, without first opening the menu. Release
+  holding it for 500 ms opens rewind, when recording is enabled, without first
+  opening the menu. Release
   leaves rewind open; a fresh Start accepts, and the east action button cancels.
   Right Ctrl+Right Alt has the same short/hold behavior on a physical keyboard.
 - Select+L opens or closes the BIOS supervisor terminal. A partial chord
