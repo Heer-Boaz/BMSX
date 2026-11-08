@@ -11,15 +11,15 @@ import { readLE32, writeLE32 } from '../../machine/ts/common/endian';
 import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, CPU_CAUSE_CODE_RESERVED_INSTRUCTION, CPU_CAUSE_CODE_TRAP, CPU_CAUSE_IRQ, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET } from '../../machine/ts/spec/blua32/image_format';
+import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { BUS_FAULT_ACCESS_READ, BUS_FAULT_ACCESS_U32, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ACCESS, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE, IO_GX_GPU_GP0, IO_IRQ_MASK, IRQ_GPU } from '../../machine/ts/spec/bmsx/io';
-import { DYNAMIC_RAM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CART_ROM_BASE, DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { createTestSystemCpu, createTestBlua32PairCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { blua32TestFunctionAddress, createTestSystemCpu, createTestBlua32PairCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
 
 function returnImage(op = OpCode.RET, a = 0, b = 1, c = 0) {
@@ -213,6 +213,87 @@ test('rewriting a cached instruction replaces its cycle charge in normal, observ
 		}
 		assert.equal(memory.readMappedU32LE(destination), 1);
 		assert.equal(observations, observed ? 3 : 0);
+	}
+});
+
+test('closure call and return preserve grants, depth, register bases and call-side device/observer edges', () => {
+	for (const instrumented of [false, true]) for (const edgeKind of [0, 1, 2, 3, 4, 5]) {
+		const mappedRecord = IO_GX_GPU_GP0 & ~(BLUA32_FUNCTION_ALIGNMENT - 1);
+		const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+		writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
+		writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);
+		writeInstruction(text, 2, OpCode.CALL, 0, 1, 1);
+		writeInstruction(text, 3, OpCode.K1, 2, 0, 0);
+		writeInstruction(text, 4, OpCode.RET, 0, 1, 0);
+		writeInstruction(text, 5, OpCode.K1, 0, 0, 0);
+		writeInstruction(text, 6, OpCode.RET, 0, 1, 0);
+		writeInstruction(text, 7, OpCode.K1, 0, 0, 0);
+		writeInstruction(text, 8, OpCode.HALT, 0, 0, 0);
+		const image = linkRawTestSystemBlua32({ text,
+			functions: [{ firstWord: 0, wordCount: 5, maxStack: 3 },
+				{ firstWord: 5, wordCount: 2 }, { firstWord: 7, wordCount: 2 }],
+			closureRelocations: [{ wordIndex: 1, functionAddress: edgeKind === 1 ? mappedRecord : blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }], irqFunctionIndex: 2, exceptionFunctionIndex: 2 });
+		const memory = new Memory({ systemRom: image.romBytes, cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+		const irq = new IrqController(memory), cpu = new CPU(memory, irq, new ExecutionAddressSpace(memory));
+		cpu.reset();
+		const record = image.symbols.functionAddresses[1];
+		const calleePc = image.image.functions[1].codeAddress;
+		let edges = 0, armed = false;
+		if (edgeKind === 1) {
+			for (let offset = 0; offset <= BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET; offset += 4) {
+				memory.mapIoRead(mappedRecord + offset, irq, (controller, address) => {
+					const offset = address - mappedRecord;
+					if (armed && offset === BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET) { edges += 1; controller.raise(IRQ_GPU); }
+					return readLE32(image.romBytes, record + offset);
+				});
+			}
+		}
+		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+		cpu.rootThread.frames[0].registers.setNumber(2, 99);
+		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+		const callPc = cpu.readFramePc(0);
+		const closure = cpu.rootThread.frames[0].registers.getClosure(0);
+		if (edgeKind === 3) {
+			closure.functionAddress = CART_ROM_BASE;
+			assert.equal(cpu.runUntilDepth(0, 3), RunResult.Halted);
+			assert.equal(cpu.activeThread.frames.length, 1);
+			assert.equal(cpu.readFrameRegister(0, 2), 99);
+			continue;
+		}
+		if (edgeKind === 4 || edgeKind === 5) {
+			if (edgeKind === 5) assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
+			const state = cpu.captureRuntimeState();
+			state.haltedUntilIrqFrameDepth = edgeKind === 4 ? 2 : 1;
+			state.haltedUntilIrqThreadRef = state.activeThreadRef;
+			cpu.restoreRuntimeState(state);
+			assert.equal(cpu.runUntilDepth(0, 3), RunResult.Halted);
+			assert.equal(cpu.instructionBudgetRemaining, 1);
+			assert.equal(cpu.readFrameRegister(0, 2), 99);
+			if (edgeKind === 4) assert.equal(cpu.activeThread.frames[1].registers.getTag(0), ValueTag.Nil);
+			continue;
+		}
+		if (edgeKind === 2) cpu.setInstructionObserver({ points: [new Set([callPc]), new Set(), new Set()],
+			observe: () => { edges += 1; irq.raise(IRQ_GPU); } });
+		armed = true;
+		memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_GPU);
+		assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
+		if (edgeKind !== 0) {
+			assert.equal(edges, 1);
+			assert.equal(cpu.activeThread.frames.length, 3);
+			assert.equal(cpu.readCauseWord(), CPU_CAUSE_IRQ);
+			assert.equal(cpu.readEpcWord(), calleePc);
+			assert.equal(cpu.activeThread.frames[1].registers.getTag(0), ValueTag.Nil);
+			assert.equal(cpu.activeThread.frames[2].registers.getNumber(0), 1);
+			continue;
+		}
+		assert.equal(cpu.activeThread.frames.length, 2);
+		assert.equal(cpu.readFramePc(1), calleePc + INSTRUCTION_BYTES);
+		assert.equal(cpu.runUntilDepth(1, 20), RunResult.Halted);
+		assert.equal(cpu.instructionBudgetRemaining, 18);
+		assert.equal(cpu.readFrameRegister(0, 0), 1);
+		assert.equal(cpu.readFrameRegister(0, 2), 99);
+		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+		assert.equal(cpu.readFrameRegister(0, 2), 1);
 	}
 });
 

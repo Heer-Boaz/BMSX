@@ -19,7 +19,7 @@
 namespace {
 using namespace bmsx;
 
-enum class Workload { Registers, Tables, Builtin, Ram, Calls };
+enum class Workload { Registers, Tables, Builtin, Ram, Calls, CallsBacked };
 
 test::Blua32TestImage program(Workload workload) {
 	test::Blua32TestImage image;
@@ -62,6 +62,7 @@ test::Blua32TestImage program(Workload workload) {
 		writeInstruction(text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
 		break;
 	case Workload::Calls:
+	case Workload::CallsBacked:
 		writeInstruction(text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 		writeInstruction(text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
 		writeInstruction(text, 2, static_cast<u8>(OpCode::MOV), 4, 0, 0);
@@ -79,7 +80,11 @@ test::Blua32TestImage program(Workload workload) {
 }
 
 void measure(Workload workload, const char* name, int grant, int round) {
-	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, program(workload));
+	auto rom = test::encodeBlua32TestRom(RomImageDomain::System, program(workload));
+	if (workload == Workload::CallsBacked) {
+		// The same program with a fully backed final page complements the ROM-tail case.
+		rom.bytes.resize((rom.bytes.size() + MAPPED_PAGE_BYTE_MASK) & ~static_cast<size_t>(MAPPED_PAGE_BYTE_MASK));
+	}
 	Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
 	IrqController irq(memory);
 	ExecutionAddressSpace addresses(memory);
@@ -122,6 +127,7 @@ void measure(Workload workload, const char* name, int grant, int round) {
 	const double mhz = static_cast<double>(cycles) * 1000.0 / static_cast<double>(nanoseconds);
 	std::cout << "[cpu-throughput] workload=" << name << " grant=" << grant << " round=" << round
 		<< " active_cycles=" << cycles << " idle_cycles=0 wall_ms=" << static_cast<double>(nanoseconds) / 1000000.0
+		<< " rom_bytes=" << rom.bytes.size()
 		<< " guest_mhz=" << mhz << " target_mhz=" << static_cast<double>(PSX_MACHINE_SPEC.cpuFreqHz) / 1000000.0
 		<< " realtime=" << mhz * 1000000.0 / static_cast<double>(PSX_MACHINE_SPEC.cpuFreqHz)
 		<< " last_pc=" << cpu.lastPc << std::endl;
@@ -136,5 +142,6 @@ int main() {
 		measure(Workload::Builtin, "builtin-byte", grant, round);
 		measure(Workload::Ram, "ram-words", grant, round);
 		measure(Workload::Calls, "calls", grant, round);
+		measure(Workload::CallsBacked, "calls-backed", grant, round);
 	}
 }

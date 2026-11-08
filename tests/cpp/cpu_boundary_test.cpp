@@ -231,6 +231,90 @@ void rewrittenInstructionRetainsItsOwnCycleCharge() {
 	}
 }
 
+void closureCallAndReturnRespectFrameBoundaries() {
+	for (const bool instrumented : {false, true}) for (int edgeKind = 0; edgeKind < 6; ++edgeKind) {
+		constexpr u32 mappedRecord = IO_GX_GPU_GP0 & ~(BLUA32_FUNCTION_ALIGNMENT - 1u);
+		test::Blua32TestImage image;
+		image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::CALL), 0, encodeFixedCallArgCount(0), 1);
+		writeInstruction(image.text, 3, static_cast<u8>(OpCode::K1), 2, 0, 0);
+		writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 1, 0);
+		writeInstruction(image.text, 5, static_cast<u8>(OpCode::K1), 0, 0, 0);
+		writeInstruction(image.text, 6, static_cast<u8>(OpCode::RET), 0, 1, 0);
+		writeInstruction(image.text, 7, static_cast<u8>(OpCode::K1), 0, 0, 0);
+		writeInstruction(image.text, 8, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 3},
+			{.firstWord = 5, .wordCount = 2}, {.firstWord = 7, .wordCount = 2}};
+		image.irqFunctionIndex = image.exceptionFunctionIndex = 2;
+		image.closureRelocations = {{1, edgeKind == 1 ? mappedRecord : test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+		CpuMachine machine(image);
+		auto& cpu = machine.cpu;
+		const u32 calleePc = machine.rom.textAddress + 5 * INSTRUCTION_BYTES;
+		struct Edge { IrqController& irq; const u8* record; bool armed = false; int count = 0; }
+			edge{machine.irq, machine.rom.bytes.data() + machine.rom.functionAddresses[1]};
+		if (edgeKind == 1) {
+			for (u32 offset = 0; offset <= BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET; offset += 4) {
+				machine.memory.mapIoRead(mappedRecord + offset, &edge, [](void* context, u32 address, MappedBusSignals) {
+					auto& event = *static_cast<Edge*>(context);
+					const u32 offset = address - mappedRecord;
+					if (event.armed && offset == BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET) {
+						++event.count;
+						event.irq.raise(IRQ_GPU);
+					}
+					return readLE32(event.record + offset);
+				});
+			}
+		}
+		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+		cpu.activeThread()->frames[0]->registers[2] = valueNumber(99);
+		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "closure setup consumes its own physical instruction");
+		const u32 callPc = cpu.readFramePc(0);
+		if (edgeKind == 3) {
+			asClosure(cpu.activeThread()->frames[0]->registers[0])->functionAddress = CART_ROM_BASE;
+			require(cpu.runUntilDepth(0, 3) == RunResult::Halted, "a failed call cannot reuse provenance from the previous function read");
+			require(cpu.activeThread()->frames.size() == 1 && cpu.readFrameRegister(0, 2) == valueNumber(99), "failed call does not execute its continuation");
+			continue;
+		}
+		if (edgeKind == 4 || edgeKind == 5) {
+			if (edgeKind == 5) require(cpu.runUntilDepth(0, 3) == RunResult::Yielded, "prepare RET at callee depth");
+			auto state = cpu.captureRuntimeState();
+			state.haltedUntilIrqFrameDepth = edgeKind == 4 ? 2 : 1;
+			state.haltedUntilIrqThreadRef = state.activeThreadRef;
+			cpu.restoreRuntimeState(state);
+			require(cpu.runUntilDepth(0, 3) == RunResult::Halted && cpu.instructionBudgetRemaining == 1, "frame transition activates the retained depth-sensitive HALT latch before another instruction");
+			require(cpu.readFrameRegister(0, 2) == valueNumber(99), "HALT retains the caller continuation");
+			if (edgeKind == 4) require(isNil(cpu.activeThread()->frames[1]->registers[0]), "HALT at new callee depth precedes callee execution");
+			continue;
+		}
+		if (edgeKind == 2) {
+			InstructionObserverBinding observer;
+			observer.points[0].insert(callPc);
+			observer.context = &edge;
+			observer.observe = [](void* context, ExecutionDomainId, u32, const Value*) {
+				auto& event = *static_cast<Edge*>(context);
+				++event.count;
+				event.irq.raise(IRQ_GPU);
+			};
+			cpu.setInstructionObserver(std::move(observer));
+		}
+		edge.armed = true;
+		machine.memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_GPU);
+		require(cpu.runUntilDepth(0, 3) == RunResult::Yielded, "CALL and the next physical instruction exhaust their grant");
+		if (edgeKind != 0) {
+			require(edge.count == 1 && cpu.activeThread()->frames.size() == 3, "call-side device/observer edge enters IRQ before callee execution");
+			require(cpu.readCauseWord() == CPU_CAUSE_IRQ && cpu.readEpcWord() == calleePc, "CALL completes before IRQ saves the callee entry PC");
+			require(isNil(cpu.activeThread()->frames[1]->registers[0]) && cpu.activeThread()->frames[2]->registers[0] == valueNumber(1), "IRQ, callee and caller retain separate register bases");
+			continue;
+		}
+		require(cpu.activeThread()->frames.size() == 2 && cpu.readFramePc(1) == calleePc + INSTRUCTION_BYTES, "direct call rebinds the callee and stops before RET");
+		require(cpu.runUntilDepth(1, 20) == RunResult::Halted && cpu.instructionBudgetRemaining == 18, "return stops at the requested depth with unused cycles retained");
+		require(cpu.readFrameRegister(0, 0) == valueNumber(1) && cpu.readFrameRegister(0, 2) == valueNumber(99), "return publishes results without executing the caller continuation");
+		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded && cpu.readFrameRegister(0, 2) == valueNumber(1), "resuming after return binds the caller registers");
+	}
+}
+
 void successorFetchOrdering() {
 	auto image = returnImage(OpCode::K1, 0, 0, 0);
 	image.text.resize(2 * INSTRUCTION_BYTES);
@@ -461,6 +545,7 @@ int main() {
 		instructionBoundaryResynchronizesAfterFetchOrObservation();
 		cachedFetchCrossesWidePagesAndObservesCodeWrites();
 		rewrittenInstructionRetainsItsOwnCycleCharge();
+		closureCallAndReturnRespectFrameBoundaries();
 		haltYieldPrecedence(); cachedPcWrapping(); imageTextImport(); bootAddressWrap();
 		std::cout << "CPU boundary tests passed\n";
 		return 0;

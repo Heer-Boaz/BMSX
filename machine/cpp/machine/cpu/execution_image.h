@@ -69,6 +69,7 @@ struct Blua32ExecutionImage;
 struct Blua32FunctionRecordLatch {
 	Blua32ExecutionImage* image = nullptr;
 	MappedBusSignals busSignals = MAPPED_BUS_MASTER_CPU;
+	bool cacheableRead = false; // Host-only: all record reads stay on one cacheable page.
 	u32 address = 0;
 	u32 codeAddress = 0;
 	u32 numParams = 0;

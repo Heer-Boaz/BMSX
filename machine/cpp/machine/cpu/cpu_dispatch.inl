@@ -624,7 +624,10 @@ DISPATCH_LABEL(CALL) {
 	const Value& callee = REG(a);
 	if (valueIsClosure(callee)) {
 		Closure* closure = asClosure(callee);
-		pushFrame(FRAME, closure, a + 1, argCount, a, retCount, false, FRAME.pc - INSTRUCTION_BYTES);
+		CallFrame* pushed = pushFrame(FRAME, closure, a + 1, argCount, a, retCount, false, FRAME.pc - INSTRUCTION_BYTES);
+		if (pushed && m_functionRecordLatch.cacheableRead) {
+			DISPATCH_REBIND_FRAME();
+		}
 		DISPATCH_CONTINUE();
 	}
 	if (valueIsBuiltinFunction(callee)) {
@@ -681,7 +684,7 @@ DISPATCH_LABEL(RET) {
 	m_activeThread->frames.pop_back();
 	m_activeThread->stackTop = finished->varargBase;
 	releaseFrame(std::move(finished));
-	DISPATCH_CONTINUE();
+	DISPATCH_REBIND_FRAME();
 }
 
 DISPATCH_LABEL(LOAD_MEM_D) {

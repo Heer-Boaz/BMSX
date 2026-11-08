@@ -1044,10 +1044,12 @@ bool CPU::readFunctionRecord(
 	m_functionRecordLatch.image = &image;
 	m_functionRecordLatch.busSignals = busSignals;
 	m_functionRecordLatch.address = address;
+	m_functionRecordLatch.cacheableRead = false;
 	const u32 pageOffset = address & MAPPED_PAGE_BYTE_MASK;
 	if (pageOffset <= MAPPED_PAGE_BYTE_SIZE - BLUA32_FUNCTION_RECORD_SIZE) {
 		MappedPageBinding binding;
 		m_memory.bindMappedPage(address & ~MAPPED_PAGE_BYTE_MASK, busSignals, binding);
+		m_functionRecordLatch.cacheableRead = binding.cacheable;
 		if (binding.readBytes) {
 			const u8* record = binding.readBytes + pageOffset;
 			m_functionRecordLatch.codeAddress = readLE32(
@@ -2528,6 +2530,25 @@ dispatch_decode:
 	goto dispatch_continue; \
 } while (0)
 #define DISPATCH_BLOCKED() do { return RunResult::Halted; } while (0)
+#define DISPATCH_REBIND_FRAME() do { \
+	if constexpr (!Instrumented) { \
+		if (canReuseFrame && instructionBudgetRemaining > 0) { \
+			if constexpr (RootBoundary) { \
+				if (frames.empty()) return RunResult::Halted; \
+			} else { \
+				if (static_cast<int>(frames.size()) <= targetDepth) return RunResult::Halted; \
+			} \
+			/* A pure frame transition can activate the depth-sensitive HALT latch. */ \
+			if (m_haltedUntilIrqThread == m_activeThread \
+				&& m_haltedUntilIrqFrameDepth == static_cast<int>(frames.size())) return RunResult::Halted; \
+			frame = frames.back().get(); \
+			image = frame->executionImage; \
+			registers = frame->registers; \
+			goto dispatch_fetch; \
+		} \
+	} \
+	goto dispatch_continue; \
+} while (0)
 
 dispatch_instruction:
 			if constexpr (Instrumented) {
@@ -2662,6 +2683,7 @@ dispatch_observe:
 
 dispatch_continue:
 #undef DISPATCH_BLOCKED
+#undef DISPATCH_REBIND_FRAME
 #undef DISPATCH_NEXT
 #undef DISPATCH_CONTINUE
 #undef DISPATCH_LABEL
