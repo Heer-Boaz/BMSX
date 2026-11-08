@@ -5,6 +5,7 @@
 #include "machine/memory/memory.h"
 #include "spec/blua32/builtin.h"
 #include "spec/blua32/memory_access_kind.h"
+#include "spec/blua32/opcode.h"
 #include "spec/bmsx/model.h"
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/memory_map.h"
@@ -140,10 +141,14 @@ void measure(Workload workload, const char* name, int grant, int round) {
 		registers[2] = valueNumber(0.5);
 		registers[3] = valueNumber(0.25);
 	}
-	constexpr i64 measuredCycles = 2000000;
+	// Keep the amount of baseline-weighted work constant when evaluating a uniform
+	// instruction timing calibration. These work units are not retired instructions.
+	const int cyclesPerWorkUnit = BASE_CYCLES[static_cast<size_t>(OpCode::MOV)];
+	const int cycleGrant = grant * cyclesPerWorkUnit;
+	const i64 measuredCycles = 2000000 * static_cast<i64>(cyclesPerWorkUnit);
 	u32 codeOutcomes = 0;
 	for (int warmup = 0; warmup < 64; ++warmup) {
-		const auto result = cpu.runUntilDepth(0, grant);
+		const auto result = cpu.runUntilDepth(0, cycleGrant);
 		if (result != RunResult::Yielded || cpu.readCauseWord() != 0u) {
 			std::cerr << "Invalid benchmark workload " << name << " cause=" << cpu.readCauseWord()
 				<< " epc=" << cpu.readEpcWord() << " bus_address=" << memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) << '\n';
@@ -161,14 +166,18 @@ void measure(Workload workload, const char* name, int grant, int round) {
 	i64 cycles = 0;
 	const auto start = std::chrono::steady_clock::now();
 	while (cycles < measuredCycles) {
-		const int budget = static_cast<int>(std::min<i64>(grant, measuredCycles - cycles));
+		const int budget = static_cast<int>(std::min<i64>(cycleGrant, measuredCycles - cycles));
 		if (cpu.runUntilDepth(0, budget) != RunResult::Yielded) throw std::runtime_error("Runnable CPU benchmark stopped.");
 		cycles += budget - cpu.instructionBudgetRemaining;
 	}
 	const auto nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count();
 	const double mhz = static_cast<double>(cycles) * 1000.0 / static_cast<double>(nanoseconds);
-	std::cout << "[cpu-throughput] workload=" << name << " grant=" << grant << " round=" << round
+	std::cout << "[cpu-throughput] workload=" << name << " grant=" << cycleGrant
+		<< " grant_work_units=" << grant << " round=" << round
 		<< " active_cycles=" << cycles << " idle_cycles=0 wall_ms=" << static_cast<double>(nanoseconds) / 1000000.0
+		<< " cycles_per_work_unit=" << cyclesPerWorkUnit
+		<< " normalized_work_units=" << static_cast<double>(cycles) / cyclesPerWorkUnit
+		<< " normalized_work_mhz=" << mhz / cyclesPerWorkUnit
 		<< " rom_bytes=" << rom.bytes.size()
 		<< " guest_mhz=" << mhz << " target_mhz=" << static_cast<double>(PSX_MACHINE_SPEC.cpuFreqHz) / 1000000.0
 		<< " realtime=" << mhz * 1000000.0 / static_cast<double>(PSX_MACHINE_SPEC.cpuFreqHz)
