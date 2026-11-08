@@ -2395,6 +2395,7 @@ RunResult CPU::runLoop(
 	int rkC = 0;
 	int disp = 0;
 	Value* registers = nullptr;
+	bool canReuseFrame = false;
 	for (;;) {
 		try {
 			if constexpr (RootBoundary) {
@@ -2450,6 +2451,9 @@ RunResult CPU::runLoop(
 			frame = frames.back().get();
 			image = frame->executionImage;
 			registers = frame->registers;
+			goto dispatch_fetch;
+
+dispatch_fetch:
 			pc = frame->pc;
 			if constexpr (Instrumented) {
 				if ((hookBinding.domainMask & executionDomainBit(image->executionDomainId)) != 0u
@@ -2492,6 +2496,8 @@ RunResult CPU::runLoop(
 				instructionBudgetRemaining -= static_cast<int>(DECODED_DISPATCH_BASE_CYCLES[dispatchOp]);
 			} else {
 				dispatchOp = decoded->dispatchOp;
+				// Cacheable instruction reads cannot raise a device edge during fetch.
+				canReuseFrame = (decodedPage->refreshState[pageOffset] & DECODED_REFRESH_DECODE) == 0u;
 				instructionBudgetRemaining -= static_cast<int>(
 					DECODED_DISPATCH_BASE_CYCLES[dispatchOp]
 				);
@@ -2522,6 +2528,12 @@ RunResult CPU::runLoop(
 #define TABLE_CACHE_SLOT() (decoded->tableCacheSlot)
 #define DISPATCH_LABEL(name) case static_cast<uint8_t>(OpCode::name):
 #define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
+#define DISPATCH_NEXT() do { \
+	if constexpr (!Instrumented) { \
+		if (canReuseFrame && instructionBudgetRemaining > 0) goto dispatch_fetch; \
+	} \
+	goto dispatch_continue; \
+} while (0)
 #define DISPATCH_BLOCKED() do { return RunResult::Halted; } while (0)
 
 dispatch_instruction:
@@ -2646,6 +2658,7 @@ dispatch_instruction:
 			goto dispatch_continue;
 
 dispatch_observe:
+			canReuseFrame = false;
 			m_instructionObserver.observe(m_instructionObserver.context, image->executionDomainId, pc, registers);
 			// Observe has zero base cost; execute and charge the original instruction once.
 			dispatchOp = decoded->op;
@@ -2654,6 +2667,7 @@ dispatch_observe:
 
 dispatch_continue:
 #undef DISPATCH_BLOCKED
+#undef DISPATCH_NEXT
 #undef DISPATCH_CONTINUE
 #undef DISPATCH_LABEL
 #undef SKIP_NEXT_INSTRUCTION

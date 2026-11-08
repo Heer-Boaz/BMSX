@@ -8,13 +8,13 @@ import { createDecodedInstructionPage, DecodedDispatchOp } from '../../machine/t
 import { type Value, valueIsString, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { readLE32, writeLE32 } from '../../machine/ts/common/endian';
-import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, CPU_CAUSE_CODE_RESERVED_INSTRUCTION, CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
+import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, CPU_CAUSE_CODE_RESERVED_INSTRUCTION, CPU_CAUSE_CODE_TRAP, CPU_CAUSE_IRQ, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
-import { BUS_FAULT_ACCESS_READ, BUS_FAULT_ACCESS_U32, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ACCESS, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
+import { BUS_FAULT_ACCESS_READ, BUS_FAULT_ACCESS_U32, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ACCESS, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE, IO_GX_GPU_GP0, IO_IRQ_MASK, IRQ_GPU } from '../../machine/ts/spec/bmsx/io';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { createTestSystemCpu, createTestBlua32PairCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
@@ -79,6 +79,43 @@ test('zero-count LOADNIL neither writes a slot nor extends the frame top', () =>
 	const { cpu } = createTestSystemCpu(image);
 	cpu.runUntilDepth(0, 1);
 	assert.equal(cpu.getFrameRegisterCount(0), 0);
+});
+
+test('a device edge during instruction fetch or observation is accepted at the next instruction boundary', () => {
+	for (const instrumented of [false, true]) for (const mappedFetch of [false, true]) {
+		const text = new Uint8Array(4 * INSTRUCTION_BYTES);
+		writeInstruction(text, 0, OpCode.MOV, 6, 7, 0);
+		writeInstruction(text, 1, OpCode.K0, 6, 0, 0);
+		writeInstruction(text, 2, OpCode.K1, 0, 0, 0);
+		writeInstruction(text, 3, OpCode.HALT, 0, 0, 0);
+		const image = linkRawTestSystemBlua32({ text,
+			functions: [{ firstWord: 0, wordCount: 2, maxStack: 8 }, { firstWord: 2, wordCount: 2 }],
+			irqFunctionIndex: 1, exceptionFunctionIndex: 1,
+		});
+		const memory = new Memory({ systemRom: image.romBytes, cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+		const irq = new IrqController(memory), cpu = new CPU(memory, irq, new ExecutionAddressSpace(memory));
+		cpu.reset();
+		cpu.rootThread.frames[0].registers.setNumber(6, 0);
+		cpu.rootThread.frames[0].registers.setNumber(7, 99);
+		let pc = cpu.readFramePc(0), edges = 0;
+		if (mappedFetch) {
+			pc = IO_GX_GPU_GP0;
+			memory.mapIoRead(pc, irq, controller => { edges += 1; controller.raise(IRQ_GPU); return readLE32(text, 0); });
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
+		} else {
+			cpu.setInstructionObserver({ points: [new Set([pc]), new Set(), new Set()],
+				observe: () => { edges += 1; irq.raise(IRQ_GPU); } });
+		}
+		memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_GPU);
+		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+		assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded);
+		assert.equal(edges, 1);
+		assert.equal(cpu.activeThread.frames.length, 2);
+		assert.equal(cpu.readCauseWord(), CPU_CAUSE_IRQ);
+		assert.equal(cpu.readEpcWord(), pc + INSTRUCTION_BYTES);
+		assert.equal(cpu.activeThread.frames[0].registers.getNumber(6), 99);
+		assert.equal(cpu.activeThread.frames[1].registers.getNumber(0), 1);
+	}
 });
 
 test('numeric lookahead cannot take a successor fetch fault before current effects and budget', () => {

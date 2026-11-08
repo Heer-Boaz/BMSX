@@ -8,6 +8,7 @@
 #include "spec/blua32/builtin.h"
 #include "spec/blua32/opcode.h"
 #include "spec/bmsx/model.h"
+#include "spec/bmsx/io.h"
 #include "spec/bmsx/rom_header.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
@@ -111,6 +112,53 @@ void zeroLoadNil() {
 	CpuMachine machine(returnImage(OpCode::LOADNIL, 6, 0, 0));
 	machine.cpu.runUntilDepth(0, 1);
 	require(machine.cpu.getFrameRegisterCount(0) == 0, "zero LOADNIL does not extend top");
+}
+
+void instructionBoundaryResynchronizesAfterFetchOrObservation() {
+	for (const bool instrumented : {false, true}) for (const bool mappedFetch : {false, true}) {
+		auto image = returnImage(OpCode::MOV, 6, 7, 0);
+		image.text.resize(4 * INSTRUCTION_BYTES);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::K0), 6, 0, 0);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::K1), 0, 0, 0);
+		writeInstruction(image.text, 3, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 8}, {.firstWord = 2, .wordCount = 2}};
+		image.irqFunctionIndex = 1;
+		image.exceptionFunctionIndex = 1;
+		CpuMachine machine(image);
+		auto& cpu = machine.cpu;
+		Value* interruptedRegisters = cpu.activeThread()->frames[0]->registers;
+		interruptedRegisters[6] = valueNumber(0);
+		interruptedRegisters[7] = valueNumber(99);
+		struct Edge { IrqController& irq; u32 instruction; int count = 0; } edge{machine.irq, readLE32(image.text.data())};
+		u32 pc = cpu.readFramePc(0);
+		if (mappedFetch) {
+			pc = IO_GX_GPU_GP0;
+			machine.memory.mapIoRead(pc, &edge, [](void* context, u32, MappedBusSignals) {
+				auto& event = *static_cast<Edge*>(context);
+				++event.count;
+				event.irq.raise(IRQ_GPU);
+				return event.instruction;
+			});
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], pc);
+		} else {
+			InstructionObserverBinding observer;
+			observer.points[0].insert(pc);
+			observer.context = &edge;
+			observer.observe = [](void* context, ExecutionDomainId, u32, const Value*) {
+				auto& event = *static_cast<Edge*>(context);
+				++event.count;
+				event.irq.raise(IRQ_GPU);
+			};
+			cpu.setInstructionObserver(std::move(observer));
+		}
+		machine.memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_GPU);
+		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+		require(cpu.runUntilDepth(0, 2) == RunResult::Yielded, "fetch/observer edge preserves instruction grant");
+		require(edge.count == 1 && cpu.activeThread()->frames.size() == 2, "device edge enters the IRQ frame before the next instruction");
+		require(cpu.readCauseWord() == CPU_CAUSE_IRQ && cpu.readEpcWord() == pc + INSTRUCTION_BYTES, "interrupt saves the next physical PC");
+		require(cpu.activeThread()->frames[0]->registers[6] == valueNumber(99), "the fetched or observed instruction completes before accepting the edge");
+		require(cpu.activeThread()->frames.back()->registers[0] == valueNumber(1), "IRQ execution uses its own frame register base");
+	}
 }
 
 void successorFetchOrdering() {
@@ -336,6 +384,7 @@ void bootAddressWrap() {
 int main() {
 	try {
 		stringBytePositions(); loadKrIndices(); zeroLoadNil(); successorFetchOrdering(); reservedMemoryKinds(); zeroStackReuse();
+		instructionBoundaryResynchronizesAfterFetchOrObservation();
 		haltYieldPrecedence(); cachedPcWrapping(); imageTextImport(); bootAddressWrap();
 		std::cout << "CPU boundary tests passed\n";
 		return 0;

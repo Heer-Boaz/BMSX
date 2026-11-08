@@ -5,12 +5,12 @@ DISPATCH_LABEL(WIDE) {
 
 DISPATCH_LABEL(MOV) {
 	SET_REGISTER_FAST(a, REG(b));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(LOADK) {
 	SET_REGISTER_FAST(a, IMAGE.constPool[static_cast<size_t>(bx)]);
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(LOADNIL) {
@@ -21,62 +21,62 @@ DISPATCH_LABEL(LOADNIL) {
 			FRAME.top = nextTop;
 		}
 	}
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(KNIL) {
 	SET_REGISTER_FAST(a, valueNil());
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(KFALSE) {
 	SET_REGISTER_FAST(a, valueBool(false));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(KTRUE) {
 	SET_REGISTER_FAST(a, valueBool(true));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(K0) {
 	SET_REGISTER_FAST(a, valueNumber(0.0));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(K1) {
 	SET_REGISTER_FAST(a, valueNumber(1.0));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(KM1) {
 	SET_REGISTER_FAST(a, valueNumber(-1.0));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(KSMI) {
 	SET_REGISTER_FAST(a, valueNumber(static_cast<double>(sbx)));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(GETSYS) {
 	SET_REGISTER_FAST(a, m_systemGlobalValues[static_cast<size_t>(bx)]);
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(SETSYS) {
 	m_systemGlobalValues[static_cast<size_t>(bx)] = REG(a);
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(GETGL) {
 	SET_REGISTER_FAST(a, m_globalValues[static_cast<size_t>(bx)]);
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(SETGL) {
 	m_globalValues[static_cast<size_t>(bx)] = REG(a);
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(GETI) {
@@ -86,11 +86,11 @@ DISPATCH_LABEL(GETI) {
 		Value value;
 		if (!table->metatable && table->getIntegerArrayKey(c, value)) {
 			SET_REGISTER_FAST(a, value);
-			DISPATCH_CONTINUE();
+			DISPATCH_NEXT();
 		}
 	}
 	SET_REGISTER_FAST(a, loadTableIntegerIndex(tableValue, c));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(SETI) {
@@ -98,10 +98,10 @@ DISPATCH_LABEL(SETI) {
 	const Value& value = readRK(IMAGE, registers, rkC);
 	if (valueIsTable(tableValue)
 		&& asTable(tableValue)->setIntegerArrayKey(b, value)) {
-		DISPATCH_CONTINUE();
+		DISPATCH_NEXT();
 	}
 	storeTableIntegerIndex(tableValue, b, value);
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(GETFIELD) {
@@ -110,7 +110,7 @@ DISPATCH_LABEL(GETFIELD) {
 		REG(b),
 		asStringId(IMAGE.constPool[static_cast<size_t>(c)])
 	));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(SETFIELD) {
@@ -120,7 +120,7 @@ DISPATCH_LABEL(SETFIELD) {
 		asStringId(IMAGE.constPool[static_cast<size_t>(b)]),
 		readRK(IMAGE, registers, rkC)
 	);
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(SELF) {
@@ -128,7 +128,7 @@ DISPATCH_LABEL(SELF) {
 	const StringId key = asStringId(IMAGE.constPool[static_cast<size_t>(c)]);
 	SET_REGISTER_FAST(a + 1, base);
 	SET_REGISTER_FAST(a, loadTableFieldIndexCached(TABLE_CACHE_SLOT(), base, key));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(HALT) {
@@ -144,11 +144,11 @@ DISPATCH_LABEL(GETT) {
 		Value value;
 		if (!table->metatable && table->getNumberArrayKey(asNumber(key), value)) {
 			SET_REGISTER_FAST(a, value);
-			DISPATCH_CONTINUE();
+			DISPATCH_NEXT();
 		}
 	}
 	SET_REGISTER_FAST(a, loadTableIndex(tableValue, key));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(SETT) {
@@ -158,44 +158,44 @@ DISPATCH_LABEL(SETT) {
 	if (valueIsTable(tableValue)
 		&& valueIsNumber(key)
 		&& asTable(tableValue)->setNumberArrayKey(asNumber(key), value)) {
-		DISPATCH_CONTINUE();
+		DISPATCH_NEXT();
 	}
 	storeTableIndex(tableValue, key, value);
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(NEWT) {
 	auto* table = createTable(b, c);
 	SET_REGISTER_FAST(a, valueTable(table));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(ADD) {
 	const Value& left = readRK(IMAGE, registers, rkB);
 	const Value& right = readRK(IMAGE, registers, rkC);
 	SET_REGISTER_FAST(a, valueNumber(asNumber(left) + asNumber(right)));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(SUB) {
 	const Value& left = readRK(IMAGE, registers, rkB);
 	const Value& right = readRK(IMAGE, registers, rkC);
 	SET_REGISTER_FAST(a, valueNumber(asNumber(left) - asNumber(right)));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(MUL) {
 	const Value& left = readRK(IMAGE, registers, rkB);
 	const Value& right = readRK(IMAGE, registers, rkC);
 	SET_REGISTER_FAST(a, valueNumber(asNumber(left) * asNumber(right)));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(DIV) {
 	const Value& left = readRK(IMAGE, registers, rkB);
 	const Value& right = readRK(IMAGE, registers, rkC);
 	SET_REGISTER_FAST(a, valueNumber(asNumber(left) / asNumber(right)));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(MOD) {
@@ -204,21 +204,21 @@ DISPATCH_LABEL(MOD) {
 	const double left = asNumber(leftValue);
 	const double right = asNumber(rightValue);
 	SET_REGISTER_FAST(a, valueNumber(luaModulo(left, right)));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(FLOORDIV) {
 	const Value& left = readRK(IMAGE, registers, rkB);
 	const Value& right = readRK(IMAGE, registers, rkC);
 	SET_REGISTER_FAST(a, valueNumber(luaFloorDivide(asNumber(left), asNumber(right))));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(POW) {
 	const Value& left = readRK(IMAGE, registers, rkB);
 	const Value& right = readRK(IMAGE, registers, rkC);
 	SET_REGISTER_FAST(a, valueNumber(luaPow(asNumber(left), asNumber(right))));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(BAND) {
@@ -228,7 +228,7 @@ DISPATCH_LABEL(BAND) {
 	const uint32_t right = toU32(rightValue);
 	const int32_t result = static_cast<int32_t>(left & right);
 	SET_REGISTER_FAST(a, valueNumber(static_cast<double>(result)));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(BOR) {
@@ -238,7 +238,7 @@ DISPATCH_LABEL(BOR) {
 	const uint32_t right = toU32(rightValue);
 	const int32_t result = static_cast<int32_t>(left | right);
 	SET_REGISTER_FAST(a, valueNumber(static_cast<double>(result)));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(BXOR) {
@@ -248,7 +248,7 @@ DISPATCH_LABEL(BXOR) {
 	const uint32_t right = toU32(rightValue);
 	const int32_t result = static_cast<int32_t>(left ^ right);
 	SET_REGISTER_FAST(a, valueNumber(static_cast<double>(result)));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(SHL) {
@@ -258,7 +258,7 @@ DISPATCH_LABEL(SHL) {
 	const uint32_t right = toU32(rightValue) & 31u;
 	const uint32_t result = left << right;
 	SET_REGISTER_FAST(a, valueNumber(static_cast<double>(static_cast<int32_t>(result))));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(SHR) {
@@ -267,7 +267,7 @@ DISPATCH_LABEL(SHR) {
 	const int32_t left = toI32(leftValue);
 	const uint32_t right = toU32(rightValue) & 31u;
 	SET_REGISTER_FAST(a, valueNumber(static_cast<double>(left >> right)));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(CONCAT) {
@@ -286,7 +286,7 @@ DISPATCH_LABEL(CONCAT) {
 	appendValueString(text, right, m_stringPool);
 	const StringId textId = m_stringPool.internOwned(std::move(text));
 	SET_REGISTER_FAST(a, valueString(textId));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(CONCATN) {
@@ -304,18 +304,18 @@ DISPATCH_LABEL(CONCATN) {
 	}
 	const StringId textId = m_stringPool.internOwned(std::move(text));
 	SET_REGISTER_FAST(a, valueString(textId));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(UNM) {
 	const Value value = REG(b);
 	SET_REGISTER_FAST(a, valueNumber(-asNumber(value)));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(NOT) {
 	SET_REGISTER_FAST(a, valueBool(!isTruthy(REG(b))));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(LEN) {
@@ -323,11 +323,11 @@ DISPATCH_LABEL(LEN) {
 	if (valueIsString(val)) {
 		int cp = static_cast<int>(m_stringPool.codepointCount(asStringId(val)));
 		SET_REGISTER_FAST(a, valueNumber(static_cast<double>(cp)));
-		DISPATCH_CONTINUE();
+		DISPATCH_NEXT();
 	}
 	if (valueIsTable(val)) {
 		SET_REGISTER_FAST(a, valueNumber(static_cast<double>(asTable(val)->length())));
-		DISPATCH_CONTINUE();
+		DISPATCH_NEXT();
 	}
 	throw LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
 }
@@ -337,7 +337,7 @@ DISPATCH_LABEL(BNOT) {
 	const uint32_t val = toU32(value);
 	const int32_t result = static_cast<int32_t>(~val);
 	SET_REGISTER_FAST(a, valueNumber(static_cast<double>(result)));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(EQ) {
@@ -351,8 +351,9 @@ DISPATCH_LABEL(EQ) {
 	}
 	if (eq != (a != 0)) {
 		SKIP_NEXT_INSTRUCTION();
+		DISPATCH_CONTINUE();
 	}
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(LT) {
@@ -366,8 +367,9 @@ DISPATCH_LABEL(LT) {
 	}
 	if (ok != (a != 0)) {
 		SKIP_NEXT_INSTRUCTION();
+		DISPATCH_CONTINUE();
 	}
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(LE) {
@@ -381,8 +383,9 @@ DISPATCH_LABEL(LE) {
 	}
 	if (ok != (a != 0)) {
 		SKIP_NEXT_INSTRUCTION();
+		DISPATCH_CONTINUE();
 	}
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(MFC0) {
@@ -425,21 +428,21 @@ DISPATCH_LABEL(MTC0) {
 
 DISPATCH_LABEL(JMP) {
 	FRAME.pc = bx;
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(JMPIF) {
 	if (isTruthy(REG(a))) {
 		FRAME.pc = bx;
 	}
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(JMPIFNOT) {
 	if (!isTruthy(REG(a))) {
 		FRAME.pc = bx;
 	}
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(CLOSURE) {
@@ -465,13 +468,13 @@ DISPATCH_LABEL(CLOSURE) {
 DISPATCH_LABEL(GETUP) {
 	Upvalue* upvalue = FRAME.closure->upvalues[static_cast<size_t>(b)];
 	SET_REGISTER_FAST(a, readUpvalue(upvalue));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(SETUP) {
 	Upvalue* upvalue = FRAME.closure->upvalues[static_cast<size_t>(b)];
 	writeUpvalue(upvalue, REG(a));
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(VARARG) {
@@ -486,7 +489,7 @@ DISPATCH_LABEL(VARARG) {
 	} else if (nextTop > FRAME.top) {
 		FRAME.top = nextTop;
 	}
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(CALL) {
@@ -724,5 +727,5 @@ DISPATCH_LABEL(LOADKR) {
 		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	}
 	SET_REGISTER_FAST(a, IMAGE.constPool[constantIndex]);
-	DISPATCH_CONTINUE();
+	DISPATCH_NEXT();
 }

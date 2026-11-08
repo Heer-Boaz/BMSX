@@ -1,0 +1,140 @@
+#include "machine/cpu/cpu.h"
+#include "machine/devices/irq/controller.h"
+#include "machine/execution_address_space.h"
+#include "machine/memory/memory.h"
+#include "spec/blua32/builtin.h"
+#include "spec/blua32/memory_access_kind.h"
+#include "spec/bmsx/model.h"
+#include "spec/bmsx/io.h"
+#include "spec/bmsx/memory_map.h"
+#include "support/blua32_test_rom.h"
+#include "support/cartridge_fixture.h"
+
+#include <algorithm>
+#include <chrono>
+#include <iomanip>
+#include <iostream>
+#include <stdexcept>
+
+namespace {
+using namespace bmsx;
+
+enum class Workload { Registers, Tables, Builtin, Ram, Calls };
+
+test::Blua32TestImage program(Workload workload) {
+	test::Blua32TestImage image;
+	image.text.resize(9u * INSTRUCTION_BYTES);
+	image.functions = {{.firstWord = 0, .wordCount = 9, .maxStack = 8}};
+	auto& text = image.text;
+	switch (workload) {
+	case Workload::Registers:
+		writeInstruction(text, 0, static_cast<u8>(OpCode::MOV), 4, 0, 0);
+		writeInstruction(text, 1, static_cast<u8>(OpCode::ADD), 0, 0, 1);
+		writeInstruction(text, 2, static_cast<u8>(OpCode::BXOR), 5, 4, 2);
+		writeInstruction(text, 3, static_cast<u8>(OpCode::BAND), 0, 0, 3);
+		writeInstruction(text, 4, static_cast<u8>(OpCode::SUB), 6, 5, 1);
+		writeInstruction(text, 5, static_cast<u8>(OpCode::NOT), 7, 6, 0);
+		writeInstruction(text, 6, static_cast<u8>(OpCode::JMPIFNOT), 7, 63, 57, 255);
+		break;
+	case Workload::Tables:
+		image.constants = {std::string("field")};
+		writeInstruction(text, 0, static_cast<u8>(OpCode::GETFIELD), 5, 0, 0);
+		writeInstruction(text, 1, static_cast<u8>(OpCode::ADD), 5, 5, 1);
+		writeInstruction(text, 2, static_cast<u8>(OpCode::SETFIELD), 0, 0, 5);
+		writeInstruction(text, 3, static_cast<u8>(OpCode::GETT), 6, 0, 2);
+		writeInstruction(text, 4, static_cast<u8>(OpCode::SETI), 0, 1, 5);
+		writeInstruction(text, 5, static_cast<u8>(OpCode::LEN), 7, 0, 0);
+		writeInstruction(text, 6, static_cast<u8>(OpCode::JMP), 0, 63, 57, 255);
+		break;
+	case Workload::Builtin:
+		writeInstruction(text, 0, static_cast<u8>(OpCode::MOV), 0, 4, 0);
+		writeInstruction(text, 1, static_cast<u8>(OpCode::MOV), 1, 5, 0);
+		writeInstruction(text, 2, static_cast<u8>(OpCode::MOV), 2, 6, 0);
+		writeInstruction(text, 3, static_cast<u8>(OpCode::CALL), 0, encodeFixedCallArgCount(2), 1);
+		writeInstruction(text, 4, static_cast<u8>(OpCode::MOV), 7, 0, 0);
+		writeInstruction(text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 58, 255);
+		break;
+	case Workload::Ram:
+		writeInstruction(text, 0, static_cast<u8>(OpCode::LOAD_MEM_D), 0, 1, static_cast<u8>(MemoryAccessKind::U32LE));
+		writeInstruction(text, 1, static_cast<u8>(OpCode::ADD), 0, 0, 2);
+		writeInstruction(text, 2, static_cast<u8>(OpCode::STORE_MEM_D), 0, 1, static_cast<u8>(MemoryAccessKind::U32LE));
+		writeInstruction(text, 3, static_cast<u8>(OpCode::BAND), 0, 0, 3);
+		writeInstruction(text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
+		break;
+	case Workload::Calls:
+		writeInstruction(text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+		writeInstruction(text, 2, static_cast<u8>(OpCode::MOV), 4, 0, 0);
+		writeInstruction(text, 3, static_cast<u8>(OpCode::MOV), 0, 4, 0);
+		writeInstruction(text, 4, static_cast<u8>(OpCode::CALL), 0, encodeFixedCallArgCount(0), 1);
+		writeInstruction(text, 5, static_cast<u8>(OpCode::MOV), 6, 0, 0);
+		writeInstruction(text, 6, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
+		writeInstruction(text, 7, static_cast<u8>(OpCode::K1), 0, 0, 0);
+		writeInstruction(text, 8, static_cast<u8>(OpCode::RET), 0, 1, 0);
+		image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 8}, {.firstWord = 7, .wordCount = 2}};
+		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+		break;
+	}
+	return image;
+}
+
+void measure(Workload workload, const char* name, int grant, int round) {
+	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, program(workload));
+	Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
+	IrqController irq(memory);
+	ExecutionAddressSpace addresses(memory);
+	CPU cpu(memory, irq, addresses);
+	cpu.reset();
+	Value* registers = cpu.activeThread()->frames[0]->registers;
+	registers[0] = valueNumber(1); registers[1] = valueNumber(3);
+	registers[2] = valueNumber(7); registers[3] = valueNumber(65535);
+	if (workload == Workload::Tables) {
+		Table* table = cpu.createTable(8, 1);
+		registers[0] = valueTable(table);
+		for (int index = 1; index <= 8; ++index) table->setInteger(index, valueNumber(index));
+		table->setStringKey(cpu.stringPool().intern("field"), valueNumber(1));
+	} else if (workload == Workload::Builtin) {
+		registers[4] = cpu.createBuiltinFunction(BuiltinFunctionId::StringByte);
+		registers[5] = valueString(cpu.stringPool().intern(std::string(1024, 'x')));
+		registers[6] = valueNumber(1024);
+	} else if (workload == Workload::Ram) {
+		registers[1] = valueNumber(DYNAMIC_RAM_BASE + 0x100);
+		registers[2] = valueNumber(1);
+		memory.writeMappedU32LE(DYNAMIC_RAM_BASE + 0x100, 1);
+	}
+	constexpr i64 measuredCycles = 2000000;
+	for (int warmup = 0; warmup < 64; ++warmup) {
+		const auto result = cpu.runUntilDepth(0, grant);
+		if (result != RunResult::Yielded || cpu.readCauseWord() != 0u) {
+			std::cerr << "Invalid benchmark workload " << name << " cause=" << cpu.readCauseWord()
+				<< " epc=" << cpu.readEpcWord() << " bus_address=" << memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) << '\n';
+			throw std::runtime_error("Benchmark must execute its workload, not an exception handler.");
+		}
+	}
+	i64 cycles = 0;
+	const auto start = std::chrono::steady_clock::now();
+	while (cycles < measuredCycles) {
+		const int budget = static_cast<int>(std::min<i64>(grant, measuredCycles - cycles));
+		if (cpu.runUntilDepth(0, budget) != RunResult::Yielded) throw std::runtime_error("Runnable CPU benchmark stopped.");
+		cycles += budget - cpu.instructionBudgetRemaining;
+	}
+	const auto nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count();
+	const double mhz = static_cast<double>(cycles) * 1000.0 / static_cast<double>(nanoseconds);
+	std::cout << "[cpu-throughput] workload=" << name << " grant=" << grant << " round=" << round
+		<< " active_cycles=" << cycles << " idle_cycles=0 wall_ms=" << static_cast<double>(nanoseconds) / 1000000.0
+		<< " guest_mhz=" << mhz << " target_mhz=" << static_cast<double>(PSX_MACHINE_SPEC.cpuFreqHz) / 1000000.0
+		<< " realtime=" << mhz * 1000000.0 / static_cast<double>(PSX_MACHINE_SPEC.cpuFreqHz)
+		<< " last_pc=" << cpu.lastPc << std::endl;
+}
+}
+
+int main() {
+	std::cout << std::fixed << std::setprecision(3);
+	for (const int grant : {256, 4096}) for (int round = 0; round < 3; ++round) {
+		measure(Workload::Registers, "registers", grant, round);
+		measure(Workload::Tables, "tables", grant, round);
+		measure(Workload::Builtin, "builtin-byte", grant, round);
+		measure(Workload::Ram, "ram-words", grant, round);
+		measure(Workload::Calls, "calls", grant, round);
+	}
+}
