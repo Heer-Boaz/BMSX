@@ -273,12 +273,12 @@ export class Table {
 	}
 
 	public getStringKey(key: StringId): Value {
-		const nodeIndex = this.findNodeIndex(ValueTag.String, key, null);
+		const nodeIndex = this.findStringNodeIndex(key);
 		return nodeIndex >= 0 ? this.valueAt(this.hashValueSlot(nodeIndex)) : null;
 	}
 
 	public loadStringKey(key: StringId, target: ValueWriteTarget, targetIndex: number): void {
-		const nodeIndex = this.findNodeIndex(ValueTag.String, key, null);
+		const nodeIndex = this.findStringNodeIndex(key);
 		if (nodeIndex >= 0) {
 			const valueSlot = this.hashValueSlot(nodeIndex);
 			target.setEncoded(
@@ -313,7 +313,7 @@ export class Table {
 				return predictedSlot;
 			}
 		}
-		const nodeIndex = this.findNodeIndex(ValueTag.String, key, null);
+		const nodeIndex = this.findStringNodeIndex(key);
 		if (nodeIndex >= 0) {
 			const valueSlot = this.hashValueSlot(nodeIndex);
 			if (this.tags[valueSlot] !== ValueTag.Nil) {
@@ -335,7 +335,7 @@ export class Table {
 		if (!metatable) {
 			return null;
 		}
-		const nodeIndex = metatable.findNodeIndex(ValueTag.String, indexKey, null);
+		const nodeIndex = metatable.findStringNodeIndex(indexKey);
 		if (nodeIndex < 0) {
 			return null;
 		}
@@ -451,7 +451,7 @@ export class Table {
 			this.removeFromHash(ValueTag.String, key, null);
 			return -1;
 		}
-		const nodeIndex = this.findNodeIndex(ValueTag.String, key, null);
+		const nodeIndex = this.findStringNodeIndex(key);
 		if (nodeIndex >= 0) {
 			const valueSlot = this.hashValueSlot(nodeIndex);
 			this.setEncoded(valueSlot, valueTag, valueScalar, valueReference);
@@ -924,6 +924,21 @@ export class Table {
 			if ((this.tags[keySlot] !== ValueTag.Nil && this.keyEquals(keySlot, tag, scalar, reference))
 				|| (this.tags[keySlot] === ValueTag.Nil && collectableKey
 					&& this.tags[valueSlot] === ValueTag.Number && this.scalars[valueSlot] === deadKeyHashId)) {
+				return index;
+			}
+			index = this.hashNext[index];
+		}
+		return -1;
+	}
+
+	private findStringNodeIndex(key: StringId): number {
+		if (this.hashSize === 0) {
+			return -1;
+		}
+		let index = (this.hashValue(ValueTag.String, key, null) & (this.hashSize - 1)) >>> 0;
+		while (index >= 0) {
+			const keySlot = this.hashKeySlot(index);
+			if (this.tags[keySlot] === ValueTag.String && this.scalars[keySlot] === key) {
 				return index;
 			}
 			index = this.hashNext[index];

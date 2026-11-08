@@ -198,6 +198,7 @@ private:
 	size_t hashValue(const Value& key) const;
 	bool keyEquals(const Value& a, const Value& b) const;
 	int findNodeIndex(const Value& key, bool matchDead = false) const;
+	int findStringNodeIndex(StringId key) const;
 	int findNextLiveHashIndex(size_t start) const;
 	int getFreeIndex();
 	void rehash(const Value& key, const Value& value);

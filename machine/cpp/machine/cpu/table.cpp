@@ -106,6 +106,22 @@ int Table::findNextLiveHashIndex(size_t start) const {
 	return -1;
 }
 
+int Table::findStringNodeIndex(StringId key) const {
+	if (m_hashSize == 0) {
+		return -1;
+	}
+	const Value keyValue = valueString(key);
+	int index = static_cast<int>(hashValue(keyValue) & (m_hashSize - 1u));
+	while (index >= 0) {
+		const size_t slot = static_cast<size_t>(index);
+		if (m_hashKeys[slot] == keyValue) {
+			return index;
+		}
+		index = m_hashNext[slot];
+	}
+	return -1;
+}
+
 int Table::getFreeIndex() {
 	int start = m_hashFree >= 0 ? m_hashFree : static_cast<int>(m_hashSize) - 1;
 	for (int i = start; i >= 0; --i) {
@@ -398,7 +414,7 @@ void Table::setInteger(int indexValue, const Value& value) {
 }
 
 Value Table::getStringKey(StringId key) const {
-	const int nodeIndex = findNodeIndex(valueString(key));
+	const int nodeIndex = findStringNodeIndex(key);
 	if (nodeIndex >= 0) {
 		return m_hashValues[static_cast<size_t>(nodeIndex)];
 	}
@@ -414,7 +430,7 @@ Value Table::getStringKeyCached(StringId key, int& predictedSlot) const {
 			return m_hashValues[slot];
 		}
 	}
-	const int nodeIndex = findNodeIndex(valueString(key));
+	const int nodeIndex = findStringNodeIndex(key);
 	if (nodeIndex >= 0 && !isNil(m_hashValues[static_cast<size_t>(nodeIndex)])) {
 		predictedSlot = nodeIndex;
 		return m_hashValues[static_cast<size_t>(nodeIndex)];
@@ -429,7 +445,7 @@ int Table::setStringKey(StringId key, const Value& value) {
 		removeFromHash(keyValue);
 		return -1;
 	}
-	const int nodeIndex = findNodeIndex(keyValue);
+	const int nodeIndex = findStringNodeIndex(key);
 	if (nodeIndex >= 0) {
 		m_hashValues[static_cast<size_t>(nodeIndex)] = value;
 		return nodeIndex;
