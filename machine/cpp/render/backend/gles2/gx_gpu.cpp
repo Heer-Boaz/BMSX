@@ -230,7 +230,8 @@ struct OpenGLES2GxGpuState {
 	std::array<u32, kGxGpuColorComponents * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES> colorPlane{};
 	std::array<u16, kGxGpuTextureSourceComponents> texturedTextureSource{};
 	std::array<f32, kGxGpuTransferFloatCapacity> transferVertices{};
-	std::vector<u8> rawVramReadback;
+	// CPU upload preparation and synchronous VRAM readback never overlap.
+	std::vector<u8> pixelTransferScratch;
 	std::vector<u8> vramSnapshotScratch;
 	GxGpuVramCopyRect vramCopyRectScratch{};
 	GxGpuVramCopyRect solidBatchRect{};
@@ -334,10 +335,11 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	gx.generation = backend.contextGeneration();
 	gx.vramTextureRows = static_cast<i32>(backend.gxGpuVramTextureRows());
 	gx.vramTextureRowMask = static_cast<u32>(gx.vramTextureRows) - 1u;
-	gx.rawVramReadback.resize(
+	gx.pixelTransferScratch.resize(std::max(
 		static_cast<size_t>(kGxGpuVramXAddressPeriod)
 		* static_cast<size_t>(gx.vramTextureRows)
-		* kGxGpuRawVramBytesPerPixel);
+		* kGxGpuRawVramBytesPerPixel,
+		GX_GPU_TRANSFER_MAX_PIXEL_COUNT * kGxGpuCpuUploadBytesPerPixel));
 	gx.vramSnapshotScratch.resize(
 		static_cast<size_t>(kGxGpuVramXAddressPeriod)
 		* static_cast<size_t>(gx.vramTextureRows)
@@ -1357,10 +1359,10 @@ void writeGxGpuVramSnapshotFromReadback(OpenGLES2GxGpuState& gx, const GxGpuVram
 		size_t snapshotByteOffset = (static_cast<size_t>(textureRow) * kGxGpuVramXAddressPeriod
 			+ static_cast<size_t>(rect.left)) * 2u;
 		for (i32 column = rect.left; column < rect.right; column += 1) {
-			const u8 highNibble = gx.rawVramReadback[readbackByteOffset] / 17u;
-			const u8 midHighNibble = gx.rawVramReadback[readbackByteOffset + 1u] / 17u;
-			const u8 midLowNibble = gx.rawVramReadback[readbackByteOffset + 2u] / 17u;
-			const u8 lowNibble = gx.rawVramReadback[readbackByteOffset + 3u] / 17u;
+			const u8 highNibble = gx.pixelTransferScratch[readbackByteOffset] / 17u;
+			const u8 midHighNibble = gx.pixelTransferScratch[readbackByteOffset + 1u] / 17u;
+			const u8 midLowNibble = gx.pixelTransferScratch[readbackByteOffset + 2u] / 17u;
+			const u8 lowNibble = gx.pixelTransferScratch[readbackByteOffset + 3u] / 17u;
 			gx.vramSnapshotScratch[snapshotByteOffset] = static_cast<u8>((midLowNibble << 4u) | lowNibble);
 			gx.vramSnapshotScratch[snapshotByteOffset + 1u] = static_cast<u8>((highNibble << 4u) | midHighNibble);
 			snapshotByteOffset += 2u;
@@ -1408,14 +1410,12 @@ struct GxCpuToVramUploadProfile {
 
 template <bool Profile>
 void uploadCpuToVramPayload(OpenGLES2GxGpuState& gx,
-		const GxGpuCommandBuffer& commandBuffer,
-		u32 payloadWordStart,
+		const u8* sourceBytes,
 		u32 pixelCount,
 		GLES2Texture& texture,
 		GxCpuToVramUploadProfile* profile) {
 	const u32 fullRows = pixelCount >> 10u;
 	const u32 lastRowWidth = pixelCount & (static_cast<u32>(kGxGpuVramXAddressPeriod) - 1u);
-	const u8* sourceBytes = reinterpret_cast<const u8*>(commandBuffer.words.data() + payloadWordStart);
 	gx.backend->setActiveTextureUnit(GLES2_TEXTURE_UNIT_GX_TRANSFER);
 	gx.backend->bindTexture2D(&texture);
 	if (fullRows != 0u) {
@@ -1459,13 +1459,13 @@ void uploadCpuToVramPayload(OpenGLES2GxGpuState& gx,
 
 size_t appendCpuToVramRows(OpenGLES2GxGpuState& gx,
 	u32 x, u32 y, u32 sourceRowStart, u32 payloadWidth, u32 rowWidth, u32 rowCount,
-	size_t transferVertexFloatCount, u32 vramYAddressExtensionWord) {
+	size_t transferVertexFloatCount, u32 vramYAddressExtensionWord, u32 sourcePixelOffset) {
 	// Split at both destination wraps and packed-payload texture rows. The
 	// fragment stage consumes actual source X/Y, never a large linear index.
 	for (u32 row = 0u; row < rowCount; ++row) {
 		const u32 targetY = gxGpuVramYAddress(y + sourceRowStart + row, vramYAddressExtensionWord);
 		u32 targetX = x;
-		u32 pixelIndex = (sourceRowStart + row) * payloadWidth;
+		u32 pixelIndex = sourcePixelOffset + (sourceRowStart + row) * payloadWidth;
 		u32 remaining = rowWidth;
 		while (remaining != 0u) {
 			const u32 sourceX = pixelIndex & (GX_GPU_VRAM_X_ADDRESS_PERIOD - 1u);
@@ -1497,7 +1497,9 @@ template <bool Profile>
 u32 executeCpuToVramUpload(OpenGLES2GxGpuState& gx,
 	const GxGpuCommandBuffer& commandBuffer,
 	u32 commandIndex,
-	GxCpuToVramUploadProfile* profile) {
+	GxCpuToVramUploadProfile* profile,
+	GLES2Texture* preparedTexture = nullptr,
+	u32 sourcePixelOffset = 0u) {
 	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
 	const u32 xyWord = commandBuffer.words[wordStart + 1u];
 	const u32 sizeWord = commandBuffer.words[wordStart + 2u];
@@ -1543,12 +1545,13 @@ u32 executeCpuToVramUpload(OpenGLES2GxGpuState& gx,
 		markGxGpuSampleTextureDirtyLogicalArea(gx, x, y, width, height, vramYAddressExtensionWord);
 		return uploadedPixels;
 	}
-	// Keep adjacent transfers (notably image + CLUT) on separate upload storage
-	// instead of immediately rewriting a texture still sampled by a queued draw.
-	GLES2Texture& uploadTexture = gx.cpuUploadTextures[gx.nextCpuUploadTexture];
-	gx.nextCpuUploadTexture += 1u;
-	if (gx.nextCpuUploadTexture == gx.cpuUploadTextureCount) gx.nextCpuUploadTexture = 0u;
-	uploadCpuToVramPayload<Profile>(gx, commandBuffer, payloadWordStart, uploadedPixels, uploadTexture, profile);
+	if (preparedTexture == nullptr) {
+		preparedTexture = &gx.cpuUploadTextures[gx.nextCpuUploadTexture];
+		gx.nextCpuUploadTexture += 1u;
+		if (gx.nextCpuUploadTexture == gx.cpuUploadTextureCount) gx.nextCpuUploadTexture = 0u;
+		uploadCpuToVramPayload<Profile>(gx, reinterpret_cast<const u8*>(commandBuffer.words.data() + payloadWordStart),
+			uploadedPixels, *preparedTexture, profile);
+	}
 	if (fullRows != 0u) {
 		transferVertexFloatCount = appendCpuToVramRows(gx,
 			x,
@@ -1558,7 +1561,7 @@ u32 executeCpuToVramUpload(OpenGLES2GxGpuState& gx,
 			width,
 			fullRows,
 			transferVertexFloatCount,
-			vramYAddressExtensionWord);
+			vramYAddressExtensionWord, sourcePixelOffset);
 	}
 	if (lastRowWidth != 0u) {
 		transferVertexFloatCount = appendCpuToVramRows(gx,
@@ -1569,7 +1572,7 @@ u32 executeCpuToVramUpload(OpenGLES2GxGpuState& gx,
 			lastRowWidth,
 			1u,
 			transferVertexFloatCount,
-			vramYAddressExtensionWord);
+			vramYAddressExtensionWord, sourcePixelOffset);
 	}
 	if (gxGpuMaskBitCheckBeforeDraw(maskBitModeWord)) {
 		syncGxGpuSampleTextureLogicalArea(gx, x, y, width, uploadHeight, vramYAddressExtensionWord);
@@ -1577,7 +1580,7 @@ u32 executeCpuToVramUpload(OpenGLES2GxGpuState& gx,
 	if (transferVertexFloatCount != 0u) {
 		renderTransferCommands(gx,
 			transferVertexFloatCount,
-			uploadTexture,
+			*preparedTexture,
 			GLES2_TEXTURE_UNIT_GX_TRANSFER,
 			maskBitModeWord,
 			gxGpuMaskBitCheckBeforeDraw(maskBitModeWord),
@@ -1609,6 +1612,54 @@ void uploadCpuToVram(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commandB
 		profile.hostCalls,
 		profile.hostBytes,
 		cpuNanoseconds);
+}
+
+template <bool Profile>
+u32 uploadCpuToVramBatch(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commands, u32 first, size_t commandLimit) {
+	u32 end = first, totalPixels = 0u;
+	while (end < commandLimit && commands.commandKind[end] == GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM) {
+		const u32 sizeWord = commands.words[commands.commandWordStart[end] + 2u];
+		const u32 pixels = gxGpuTransferEmittedPixelCount(gxGpuTransferWidth(sizeWord), gxGpuTransferHeight(sizeWord),
+			commands.commandWordCount[end]);
+		if (pixels > GX_GPU_TRANSFER_MAX_PIXEL_COUNT - totalPixels) break;
+		totalPixels += pixels;
+		++end;
+	}
+	if (end == first + 1u) {
+		uploadCpuToVram(gx, commands, first);
+		return first;
+	}
+	// Prepare the entire adjacent source range before issuing any sampling draw.
+	// Updating even a disjoint part of a live texture can serialize a GLES2 driver.
+	std::chrono::steady_clock::time_point start;
+	if constexpr (Profile) start = std::chrono::steady_clock::now();
+	u32 pixelOffset = 0u;
+	for (u32 index = first; index < end; ++index) {
+		const u32 wordStart = commands.commandWordStart[index], sizeWord = commands.words[wordStart + 2u];
+		const u32 pixels = gxGpuTransferEmittedPixelCount(gxGpuTransferWidth(sizeWord), gxGpuTransferHeight(sizeWord),
+			commands.commandWordCount[index]);
+		std::memcpy(gx.pixelTransferScratch.data() + static_cast<size_t>(pixelOffset) * sizeof(u16),
+			commands.words.data() + wordStart + 3u, static_cast<size_t>(pixels) * sizeof(u16));
+		pixelOffset += pixels;
+	}
+	GLES2Texture& texture = gx.cpuUploadTextures[gx.nextCpuUploadTexture];
+	gx.nextCpuUploadTexture += 1u;
+	if (gx.nextCpuUploadTexture == gx.cpuUploadTextureCount) gx.nextCpuUploadTexture = 0u;
+	GxCpuToVramUploadProfile profile{};
+	uploadCpuToVramPayload<Profile>(gx, gx.pixelTransferScratch.data(), totalPixels, texture, &profile);
+	pixelOffset = 0u;
+	for (u32 index = first; index < end; ++index) {
+		const u32 pixels = executeCpuToVramUpload<Profile>(gx, commands, index, &profile, &texture, pixelOffset);
+		pixelOffset += pixels;
+		if constexpr (Profile) {
+			const auto now = std::chrono::steady_clock::now();
+			gx.backend->recordGxCpuToVramUpload(static_cast<u64>(pixels) * sizeof(u16), profile.hostCalls, profile.hostBytes,
+				static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now - start).count()));
+			profile = {};
+			start = now;
+		}
+	}
+	return end - 1u;
 }
 
 void copyVramToVramArea(OpenGLES2GxGpuState& gx,
@@ -2854,7 +2905,11 @@ void executeNewGxGpuCommands(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& 
 		case GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM:
 			finishSolidBatch(gx, gx.primitiveSubmission.solidFloatCount, solidBatchFixedColor, solidBatchBlendEnabled, solidBatchBlendMode, solidBatchMaskBitModeWord, solidBatchVramYAddressExtensionWord, solidBatchDitherEnabled, solidBatchSkippedLineParity, solidBatchReadsVram, solidBatchRasterKind);
 			submitGxGpuPrimitiveBatches(gx);
-			uploadCpuToVram(gx, commandBuffer, commandIndex);
+			if (gx.drawTargets.enabled()) {
+				commandIndex = gx.backend->profilesGxUploads()
+					? uploadCpuToVramBatch<true>(gx, commandBuffer, commandIndex, commandLimit)
+					: uploadCpuToVramBatch<false>(gx, commandBuffer, commandIndex, commandLimit);
+			} else uploadCpuToVram(gx, commandBuffer, commandIndex);
 			break;
 		}
 		if (gx.vramTextureRows != kGxGpuVramYAddressPeriod) {
@@ -3817,7 +3872,7 @@ void OpenGLES2Backend::captureGxGpuVramSnapshot(GxGpu& gxGpu) {
 	if (dirty.right > dirty.left && dirty.bottom > dirty.top) {
 		setRenderTarget(gx.vramFramebuffer, kGxGpuVramXAddressPeriod, gx.vramTextureRows);
 		glReadPixels(dirty.left, dirty.top, dirty.right - dirty.left, dirty.bottom - dirty.top,
-			GL_RGBA, GL_UNSIGNED_BYTE, gx.rawVramReadback.data());
+			GL_RGBA, GL_UNSIGNED_BYTE, gx.pixelTransferScratch.data());
 		writeGxGpuVramSnapshotFromReadback(gx, dirty);
 		gx.snapshotDirtyRect = {};
 	}

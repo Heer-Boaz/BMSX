@@ -172,6 +172,15 @@ struct TexturedModelFixture {
 		for (u32 pair = 0u; pair < 32768u; ++pair) gpu.writeGp0((pair * 2u) | ((pair * 2u + 1u) << 16u));
 		scheduler.advanceTo(scheduler.currentNowCycles() + 1'000'000);
 		gpu.onService(scheduler.currentNowCycles());
+		// Three legal adjacent images exceed the 1024x512 staging arena without
+		// exceeding the admitted command buffer. The final image starts a new batch.
+		for (u32 image = 0u; image < 3u; ++image) {
+			const u32 width = image == 0u ? 256u : 512u;
+			for (const u32 word : {0xa0000000u, 512u << 16u, (512u << 16u) | width}) gpu.writeGp0(word);
+			for (u32 pair = 0u; pair < width * 256u; ++pair) gpu.writeGp0(0x13572468u ^ (image << 28u) ^ pair);
+			scheduler.advanceTo(scheduler.currentNowCycles() + 1'000'000);
+			gpu.onService(scheduler.currentNowCycles());
+		}
 		gpu.presentReadyFrameOnVblankEdge();
 	}
 };
@@ -191,6 +200,18 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 	presenter.present(fixture.gpu.readDeviceOutput(), 0, 0);
 	const auto pixels = presenter.captureGameFrame().pixels;
 	presenter.backend().captureGxGpuVramSnapshot(fixture.gpu);
+	const auto uploadedGrid = fixture.gpu.readDeviceOutput().vramSnapshotBytes;
+	for (u32 word = 0u; word < 65536u; ++word) {
+		const size_t at = ((768u + (word >> 8u)) * 1024u + 768u + (word & 255u)) * 2u;
+		require(uploadedGrid[at] == static_cast<u8>(word) && uploadedGrid[at + 1u] == static_cast<u8>(word >> 8u),
+			"every raw CPU-upload word is exact before later rendering can overwrite it");
+	}
+	for (u32 pair = 0u; pair < 512u * 256u; ++pair) {
+		const u32 expected = 0x33572468u ^ pair;
+		const size_t at = ((512u + (pair >> 8u)) * 1024u + (pair & 255u) * 2u) * 2u;
+		for (u32 byte = 0u; byte < 4u; ++byte) require(uploadedGrid[at + byte] == static_cast<u8>(expected >> (byte * 8u)),
+			"splitting an over-capacity adjacent upload batch preserves the complete last image");
+	}
 	const unsigned beforeUnchangedCheckpoint = readbacks;
 	presenter.backend().captureGxGpuVramSnapshot(fixture.gpu);
 	require(readbacks == beforeUnchangedCheckpoint, "an unchanged VRAM checkpoint performs no GPU readback");
@@ -500,6 +521,44 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 	presenter.backend().captureGxGpuVramSnapshot(fixture.gpu);
 	const auto restored = fixture.gpu.readDeviceOutput().vramSnapshotBytes;
 	require(std::equal(saved.vramBytes.begin(), saved.vramBytes.end(), restored.begin()), "a restored snapshot invalidates newer cached drawing words");
+	// Adjacent odd-pixel payloads share one staging update, while each draw
+	// retains its own mask state and observes earlier writes to the same area.
+	if (profiling) static_cast<OpenGLES2Backend&>(presenter.backend()).beginGxCpuToVramProfileFrame();
+	std::vector<u32> adjacent{0xe6000000u, 0xa0000000u, (900u << 16u) | 700u, (3u << 16u) | 13u};
+	for (u32 pair = 0u; pair < 20u; ++pair) adjacent.push_back(0x03e0801fu);
+	for (const u32 word : {0xe6000002u, 0xa0000000u, (900u << 16u) | 700u, (3u << 16u) | 13u}) adjacent.push_back(word);
+	for (u32 pair = 0u; pair < 20u; ++pair) adjacent.push_back(0x7c007c00u);
+	for (const u32 word : {0xe6000001u, 0xa0000000u, (901u << 16u) | 702u, (2u << 16u) | 3u,
+		0x03e003e0u, 0x03e003e0u, 0x03e003e0u, 0xe6000000u}) adjacent.push_back(word);
+	for (const u32 word : adjacent) {
+		fixture.gpu.writeGp0(word);
+		fixture.scheduler.advanceTo(fixture.scheduler.currentNowCycles() + 10'000);
+		fixture.gpu.onService(fixture.scheduler.currentNowCycles());
+	}
+	if (profiling) presenter.backend().executeGxGpuCommandDrain(fixture.gpu);
+	fixture.gpu.presentReadyFrameOnVblankEdge();
+	presenter.present(fixture.gpu.readDeviceOutput(), 132, 0);
+	if (profiling) {
+		auto& backend = static_cast<OpenGLES2Backend&>(presenter.backend());
+		GxCpuToVramProfileFrame profile;
+		require(backend.readGxCpuToVramProfileFrame(0u, profile) && profile.commands == 3u && profile.logicalBytes == 168u,
+			"a staged batch retains all logical upload commands and excludes odd-pixel padding");
+		if (backend.gxGpuDrawTargetMode() != GxGpuDrawTargetMode::FullVram)
+			require(profile.hostCalls == 1u && profile.hostBytes == 168u, "adjacent payloads are uploaded before any sampling draw");
+	}
+	presenter.backend().captureGxGpuVramSnapshot(fixture.gpu);
+	const auto adjacentBytes = fixture.gpu.readDeviceOutput().vramSnapshotBytes;
+	require(adjacentBytes[(900u * 1024u + 700u) * 2u] == 0x1fu && adjacentBytes[(900u * 1024u + 700u) * 2u + 1u] == 0x80u,
+		"mask-check retains the earlier masked red pixel in an adjacent upload");
+	require(adjacentBytes[(900u * 1024u + 701u) * 2u] == 0u && adjacentBytes[(900u * 1024u + 701u) * 2u + 1u] == 0x7cu,
+		"an odd staging offset preserves the next unmasked pixel and later blue overwrite");
+	if (profiling) {
+		// Match the libretro context owner: release passes/textures while current,
+		// then destroy the backend context resources before its C++ owner dies.
+		presenter.releaseRenderPipeline();
+		presenter.clearTextures();
+		static_cast<OpenGLES2Backend&>(presenter.backend()).onContextDestroy();
+	}
 	return pixels;
 }
 
