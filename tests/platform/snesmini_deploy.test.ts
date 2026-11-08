@@ -3,14 +3,15 @@ import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { crc32 } from 'node:zlib';
 import { promisify } from 'node:util';
 import { PNG } from 'pngjs';
 import type { RomArtifact } from '../../toolchain/ts/rompack/build_manifest';
 import { RomArtifactStore } from '../../scripts/rompacker/artifacts';
-import { prepareHakchiPackage, type HakchiProfile, type MiniFile } from '../../scripts/snesmini/hakchi';
+import { prepareMiniPackage, type MiniProfile, type MiniFile } from '../../scripts/snesmini/package';
+import { updateHakchiCollection } from '../../scripts/snesmini/hakchi';
 import { planMiniDeployment } from '../../scripts/snesmini/device';
 import { quotePosixArgument } from '../../scripts/lib/cli_arguments';
 
@@ -37,7 +38,7 @@ async function fixture(t: TestContext) {
 	const image = new PNG({ width: 64, height: 32 });
 	for (let at = 0; at < image.data.length; at += 4) { image.data[at] = 255; image.data[at + 3] = 255; }
 	await writeFile(join(root, 'cover.png'), PNG.sync.write(image));
-	const profile: HakchiProfile = { console: 'snes-eur', collection: 'SNES_EUR', folder: '001', games: [
+	const profile: MiniProfile = { console: 'snes-eur', collection: 'SNES_EUR', folder: '001', games: [
 		{ target: 'one', code: 'CLV-S-TESTA', title: 'First cart', icon: 'cover.png' },
 		{ target: 'two', code: 'CLV-S-TESTB', title: 'Second cart', icon: 'cover.png' },
 	] };
@@ -69,7 +70,8 @@ async function fixture(t: TestContext) {
 
 test('Hakchi package keeps exact published media, linked launch paths and existing collection ownership', async t => {
 	const { options, config, artifacts } = await fixture(t);
-	const bundle = await prepareHakchiPackage(options);
+	const bundle = await prepareMiniPackage(options);
+	await updateHakchiCollection({ ...options, bundle });
 	const updated = JSON.parse(await readFile(join(options.hakchiDirectory, 'config/config.json'), 'utf8'));
 	assert.deepEqual(updated, { ...config, gamesCollectionSettings: { ...config.gamesCollectionSettings,
 		SNES_EUR: { ...config.gamesCollectionSettings.SNES_EUR, SelectedGames: ['OTHER', 'CLV-S-TESTA', 'CLV-S-TESTB'] } } });
@@ -108,7 +110,7 @@ test('separate local SNES collections use Hakchi games_snes without moving unrel
 	const { options, config } = await fixture(t);
 	config.SeparateGameLocalStorage = true;
 	await writeFile(join(options.hakchiDirectory, 'config/config.json'), JSON.stringify(config));
-	await prepareHakchiPackage(options);
+	await updateHakchiCollection({ ...options, bundle: await prepareMiniPackage(options) });
 	for (const game of options.profile.games) {
 		assert.ok((await stat(join(options.hakchiDirectory, 'games_snes', game.code, 'launch.sh'))).isFile());
 	}
@@ -117,7 +119,7 @@ test('separate local SNES collections use Hakchi games_snes without moving unrel
 
 test('Clover state/transition arguments never reach the strict custom host or enable its rewind', async t => {
 	const { root, options } = await fixture(t);
-	await prepareHakchiPackage(options);
+	await updateHakchiCollection({ ...options, bundle: await prepareMiniPackage(options) });
 	const game = options.profile.games[0], pc = join(options.hakchiDirectory, 'games', game.code);
 	const fakeHost = join(root, 'observed host.sh'), argumentsPath = join(root, 'host-arguments');
 	await writeFile(fakeHost, `#!/bin/sh\nprintf '%s\\n' "$@" > ${quotePosixArgument(argumentsPath)}\n`, { mode: 0o755 });
@@ -136,7 +138,7 @@ test('Clover state/transition arguments never reach the strict custom host or en
 
 test('identical redeployment leaves the PC selection and game files untouched', async t => {
 	const { options } = await fixture(t);
-	await prepareHakchiPackage(options);
+	await updateHakchiCollection({ ...options, bundle: await prepareMiniPackage(options) });
 	const paths = [join(options.hakchiDirectory, 'config/config.json')];
 	for (const game of options.profile.games) {
 		const directory = join(options.hakchiDirectory, 'games', game.code);
@@ -144,21 +146,43 @@ test('identical redeployment leaves the PC selection and game files untouched', 
 	}
 	const timestamp = new Date('2001-02-03T04:05:06Z');
 	for (const path of paths) await utimes(path, timestamp, timestamp);
-	await prepareHakchiPackage(options);
+	await updateHakchiCollection({ ...options, bundle: await prepareMiniPackage(options) });
 	for (const path of paths) assert.equal((await stat(path)).mtimeMs, timestamp.getTime());
 });
 
 test('missing completed media and incompatible paired BIOS fail before changing the PC collection', async t => {
 	const { options } = await fixture(t);
 	const configPath = join(options.hakchiDirectory, 'config/config.json'), before = await readFile(configPath);
-	await assert.rejects(prepareHakchiPackage({ ...options, profile: { ...options.profile, games: [
+	await assert.rejects(prepareMiniPackage({ ...options, profile: { ...options.profile, games: [
 		{ ...options.profile.games[0], target: 'unbuilt' },
 	] } }), /Build the Release cartridge unbuilt/);
 	assert.deepEqual(await readFile(configPath), before);
 	await writeFile(join(options.coreDirectory, 'acceptance.txt'), 'input_sha256=another-system system/bmsx-bios.rom\n');
-	await assert.rejects(prepareHakchiPackage(options), /different BIOS builds/);
+	await assert.rejects(prepareMiniPackage(options), /different BIOS builds/);
 	assert.deepEqual(await readFile(configPath), before);
 	await assert.rejects(stat(join(options.hakchiDirectory, 'games')), { code: 'ENOENT' });
+});
+
+test('SSH deployment runs without a Hakchi directory or Windows process discovery', async t => {
+	const { root, options } = await fixture(t);
+	await rm(options.hakchiDirectory, { recursive: true });
+	const { hakchiDirectory, ...packageOptions } = options;
+	const bundle = await prepareMiniPackage(packageOptions);
+	const bin = join(root, 'bin'), sshObserved = join(root, 'ssh-observed');
+	await mkdir(bin);
+	const probe = [`FREE 1000000 4096`, ...bundle.files.map(file => `FILE ${file.digest} ${file.size} ${file.path}`)].join('\n');
+	await writeFile(join(bin, 'ssh'), `#!/bin/sh\nprintf '%s' reached > ${quotePosixArgument(sshObserved)}\nprintf '%s\\n' ${quotePosixArgument(probe)}\n`, { mode: 0o755 });
+	await writeFile(join(bin, 'powershell.exe'), '#!/bin/sh\nexit 79\n', { mode: 0o755 });
+	const profile = join(root, 'profile.json');
+	await writeFile(profile, JSON.stringify({ ...options.profile, games: options.profile.games.map(game =>
+		({ ...game, icon: relative(process.cwd(), join(root, game.icon)) })) }));
+	await promisify(execFile)(process.execPath, ['--import', 'tsx', 'scripts/snesmini/deploy.ts',
+		'--ssh', 'root@mini-test', '--profile', profile, '--store-dir', join(root, 'store'),
+		'--core-dir', options.coreDirectory, '--host-dir', options.hostDirectory], {
+		env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, WSL_DISTRO_NAME: 'BMSX-deploy-test' },
+	});
+	assert.equal(await readFile(sshObserved, 'utf8'), 'reached');
+	await assert.rejects(stat(hakchiDirectory), { code: 'ENOENT' });
 });
 
 test('deployment transfers only changed files and budgets peak NAND replacement space, not a second entire install', () => {

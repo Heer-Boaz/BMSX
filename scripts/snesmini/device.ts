@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
 import { quotePosixArgument as quote } from '../lib/cli_arguments';
-import type { HakchiPackage, MiniFile } from './hakchi';
+import type { MiniPackage, MiniFile } from './package';
 
 const execute = promisify(execFile);
 const sshOptions = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '--'];
@@ -25,7 +25,7 @@ export function planMiniDeployment(files: readonly MiniFile[], current: Readonly
 	return { changed, requiredBytes: peak + saveReserve };
 }
 
-export async function deployMiniPackage(target: string, bundle: HakchiPackage, installer: string): Promise<string> {
+export async function deployMiniPackage(target: string, bundle: MiniPackage, installer: string): Promise<string> {
 	const probe = `set -e
 if pidof bmsx_libretro_host >/dev/null; then echo 'Exit the BMSX game before deploying.' >&2; exit 1; fi
 printf 'FREE %s %s\\n' "$(df -Pk /var/lib | awk 'NR==2 {print $4}')" "$(stat -f -c %S /var/lib)"
