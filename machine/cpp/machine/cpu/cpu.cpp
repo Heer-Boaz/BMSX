@@ -2386,14 +2386,6 @@ RunResult CPU::runLoop(
 	Blua32ExecutionImage* image = nullptr;
 	DecodedInstruction* decoded;
 	u32 pc = 0;
-	int a = 0;
-	int b = 0;
-	int c = 0;
-	uint32_t bx = 0;
-	int sbx = 0;
-	int rkB = 0;
-	int rkC = 0;
-	int disp = 0;
 	Value* registers = nullptr;
 	bool canReuseFrame = false;
 	for (;;) {
@@ -2502,14 +2494,6 @@ dispatch_fetch:
 					DECODED_DISPATCH_BASE_CYCLES[dispatchOp]
 				);
 			}
-			a = decoded->a;
-			b = decoded->b;
-			c = decoded->c;
-			bx = decoded->bx;
-			sbx = decoded->sbx;
-			rkB = decoded->rkB;
-			rkC = decoded->rkC;
-			disp = decoded->disp;
 
 #define FRAME (*frame)
 #define IMAGE (*image)
@@ -2555,6 +2539,9 @@ dispatch_instruction:
 					goto dispatch_observe;
 				case static_cast<uint8_t>(DecodedDispatchOp::FusedShlBxor):
 				case static_cast<uint8_t>(DecodedDispatchOp::FusedShrBxor): {
+					const int a = decoded->a;
+					const int rkB = decoded->rkB;
+					const int rkC = decoded->rkC;
 					const Value& shiftLeftValue = readRK(IMAGE, registers, rkB);
 					const Value& shiftRightValue = readRK(IMAGE, registers, rkC);
 					const int32_t shifted = dispatchOp
@@ -2607,6 +2594,9 @@ dispatch_instruction:
 					DISPATCH_CONTINUE();
 				}
 				case static_cast<uint8_t>(DecodedDispatchOp::FusedAddShl): {
+					const int a = decoded->a;
+					const int rkB = decoded->rkB;
+					const int rkC = decoded->rkC;
 					const Value& addLeftValue = readRK(IMAGE, registers, rkB);
 					const Value& addRightValue = readRK(IMAGE, registers, rkC);
 					SET_REGISTER_FAST(
