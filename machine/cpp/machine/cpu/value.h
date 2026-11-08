@@ -122,7 +122,7 @@ inline ValueTag valueTag(Value v) {
 	return static_cast<ValueTag>(valueEncodedTag(v) - 1u);
 }
 
-inline Value valueFromTag(ValueTag tag, uint64_t payload = 0) {
+inline constexpr Value valueFromTag(ValueTag tag, uint64_t payload = 0) {
 	const uint64_t tagBits = static_cast<uint64_t>(tag) + 1;
 	const uint64_t hi = (tagBits & 0x7ULL) << 48;
 	const uint64_t sign = (tagBits & 0x8ULL) ? VALUE_SIGN_BIT : 0ULL;
@@ -179,7 +179,7 @@ inline Thread* asThread(Value value) {
 	return reinterpret_cast<Thread*>(valuePayload(value));
 }
 inline bool valueIsThread(Value value) {
-	return valueEncodedTag(value) == static_cast<uint8_t>(ValueTag::Thread) + 1u;
+	return static_cast<uint16_t>(value >> 48u) == static_cast<uint16_t>(valueFromTag(ValueTag::Thread) >> 48u);
 }
 
 inline Value valueBuiltinFunction(BuiltinFunction* fn) {
@@ -187,13 +187,12 @@ inline Value valueBuiltinFunction(BuiltinFunction* fn) {
 }
 
 inline bool isNil(Value v) {
-	return valueEncodedTag(v) == static_cast<uint8_t>(ValueTag::Nil) + 1u;
+	return static_cast<uint16_t>(v >> 48u) == static_cast<uint16_t>(valueFromTag(ValueTag::Nil) >> 48u);
 }
 
 inline bool isTruthy(Value v) {
-	const uint8_t tag = valueEncodedTag(v);
-	return tag != static_cast<uint8_t>(ValueTag::Nil) + 1u
-		&& tag != static_cast<uint8_t>(ValueTag::False) + 1u;
+	const uint16_t header = static_cast<uint16_t>(v >> 48u);
+	return header != static_cast<uint16_t>(valueFromTag(ValueTag::Nil) >> 48u) && header != static_cast<uint16_t>(valueFromTag(ValueTag::False) >> 48u);
 }
 
 inline uint32_t toU32(double value) {
@@ -250,29 +249,28 @@ inline BuiltinFunction* asBuiltinFunction(Value v) {
 }
 
 inline bool valueIsString(Value v) {
-	return valueEncodedTag(v) == static_cast<uint8_t>(ValueTag::String) + 1u;
+	return static_cast<uint16_t>(v >> 48u) == static_cast<uint16_t>(valueFromTag(ValueTag::String) >> 48u);
 }
 
 inline bool valueIsBool(Value v) {
-	const uint8_t tag = valueEncodedTag(v);
-	return tag == static_cast<uint8_t>(ValueTag::False) + 1u
-		|| tag == static_cast<uint8_t>(ValueTag::True) + 1u;
+	const uint16_t header = static_cast<uint16_t>(v >> 48u);
+	return header == static_cast<uint16_t>(valueFromTag(ValueTag::False) >> 48u) || header == static_cast<uint16_t>(valueFromTag(ValueTag::True) >> 48u);
 }
 
 inline bool valueToBool(Value v) {
-	return valueTag(v) == ValueTag::True;
+	return static_cast<uint16_t>(v >> 48u) == static_cast<uint16_t>(valueFromTag(ValueTag::True) >> 48u);
 }
 
 inline bool valueIsTable(Value v) {
-	return valueEncodedTag(v) == static_cast<uint8_t>(ValueTag::Table) + 1u;
+	return static_cast<uint16_t>(v >> 48u) == static_cast<uint16_t>(valueFromTag(ValueTag::Table) >> 48u);
 }
 
 inline bool valueIsClosure(Value v) {
-	return valueEncodedTag(v) == static_cast<uint8_t>(ValueTag::Closure) + 1u;
+	return static_cast<uint16_t>(v >> 48u) == static_cast<uint16_t>(valueFromTag(ValueTag::Closure) >> 48u);
 }
 
 inline bool valueIsBuiltinFunction(Value v) {
-	return valueEncodedTag(v) == static_cast<uint8_t>(ValueTag::BuiltinFunction) + 1u;
+	return static_cast<uint16_t>(v >> 48u) == static_cast<uint16_t>(valueFromTag(ValueTag::BuiltinFunction) >> 48u);
 }
 
 inline uint32_t valueObjectHashId(Value value) {

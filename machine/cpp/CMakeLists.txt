@@ -934,6 +934,11 @@ if(BMSX_BUILD_TESTS)
 	)
 	target_link_libraries(bmsx_value_conversion_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_value_conversion_tests COMMAND bmsx_value_conversion_tests)
+	add_executable(bmsx_value_classification_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/value_classification_test.cpp
+	)
+	target_link_libraries(bmsx_value_classification_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_value_classification_tests COMMAND bmsx_value_classification_tests)
 
 	add_executable(bmsx_table_inspection_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/table_inspection_test.cpp
