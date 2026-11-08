@@ -69,6 +69,7 @@ import { readLE16, readLE32, writeLE16, writeLE32 } from '../../common/endian';
 import {
 	MAPPED_BUS_MASTER_CPU,
 	MAPPED_BUS_MASTER_DMA,
+	MAPPED_BUS_DMA_BLOCK_END,
 	type MappedBusSignals,
 } from './bus_signals';
 import {
@@ -408,11 +409,22 @@ export class Memory {
 		return handler !== null ? handler(this.ioReadContexts[slot], addr, busSignals) : this.ioSlots[slot];
 	}
 
-	private writeIoSlot(slot: number, addr: number, value: number, busSignals: MappedBusSignals): void {
-		this.ioSlots[slot] = value;
+	private writeIoSlot(slot: number, addr: number, value: number, faultAccess: number, busSignals: MappedBusSignals): void {
+		if (READ_ONLY_IO_SLOTS[slot] !== 0) {
+			this.raiseBusFault(BUS_FAULT_READ_ONLY, addr, faultAccess);
+			return;
+		}
+		const word = value >>> 0;
+		const writeReady = this.ioWriteReadyHandlers[slot];
+		if ((busSignals & MAPPED_BUS_MASTER_DMA) !== 0
+			&& writeReady !== null
+			&& !writeReady(this.ioWriteContexts[slot], addr, busSignals)) {
+			return;
+		}
+		this.ioSlots[slot] = word;
 		const handler = this.ioWriteHandlers[slot];
 		if (handler !== null) {
-			handler(this.ioWriteContexts[slot], addr, value, busSignals);
+			handler(this.ioWriteContexts[slot], addr, word, busSignals);
 		}
 	}
 
@@ -664,21 +676,50 @@ export class Memory {
 		this.writeMappedBusU32LE(addr, value, BUS_ACCESS_WRITE_U32, busSignals);
 	}
 
+	// Fixed I/O slots are resolved once; live handlers and per-word bus effects remain ordered.
+	public transferDmaBlock(readAddress: number, writeAddress: number, wordCount: number,
+		readStep: number, writeStep: number, readBusSignals: MappedBusSignals, writeBusSignals: MappedBusSignals): void {
+		const readSlot = readStep === 0 ? this.ioAlignedSlot(readAddress) : -1;
+		const writeSlot = writeStep === 0 ? this.ioAlignedSlot(writeAddress) : -1;
+		if (readSlot >= 0 && writeSlot >= 0) {
+			for (let i = 0; i < wordCount; ++i) {
+				const end = i + 1 === wordCount ? MAPPED_BUS_DMA_BLOCK_END : 0;
+				const word = this.readIoSlot(readSlot, readAddress, readBusSignals | end);
+				this.writeIoSlot(writeSlot, writeAddress, word, BUS_ACCESS_WRITE_U32, writeBusSignals | end);
+			}
+			return;
+		}
+		if (writeSlot >= 0) {
+			for (let i = 0; i < wordCount; ++i) {
+				const end = i + 1 === wordCount ? MAPPED_BUS_DMA_BLOCK_END : 0;
+				const word = this.readMappedDmaU32LE(readAddress, readBusSignals | end);
+				this.writeIoSlot(writeSlot, writeAddress, word, BUS_ACCESS_WRITE_U32, writeBusSignals | end);
+				readAddress = (readAddress + readStep) >>> 0;
+			}
+			return;
+		}
+		if (readSlot >= 0) {
+			for (let i = 0; i < wordCount; ++i) {
+				const end = i + 1 === wordCount ? MAPPED_BUS_DMA_BLOCK_END : 0;
+				const word = this.readIoSlot(readSlot, readAddress, readBusSignals | end);
+				this.writeMappedDmaU32LE(writeAddress, word, writeBusSignals | end);
+				writeAddress = (writeAddress + writeStep) >>> 0;
+			}
+			return;
+		}
+		for (let i = 0; i < wordCount; ++i) {
+			const end = i + 1 === wordCount ? MAPPED_BUS_DMA_BLOCK_END : 0;
+			const word = this.readMappedDmaU32LE(readAddress, readBusSignals | end);
+			this.writeMappedDmaU32LE(writeAddress, word, writeBusSignals | end);
+			readAddress = (readAddress + readStep) >>> 0;
+			writeAddress = (writeAddress + writeStep) >>> 0;
+		}
+	}
+
 	private writeMappedBusU32LE(addr: number, value: number, faultAccess: number, busSignals: MappedBusSignals): void {
 		const slot = this.ioAlignedSlot(addr);
 		if (slot >= 0) {
-			if (READ_ONLY_IO_SLOTS[slot] !== 0) {
-				this.raiseBusFault(BUS_FAULT_READ_ONLY, addr, faultAccess);
-				return;
-			}
-			const word = value >>> 0;
-			const writeReady = this.ioWriteReadyHandlers[slot];
-			if ((busSignals & MAPPED_BUS_MASTER_DMA) !== 0
-				&& writeReady !== null
-				&& !writeReady(this.ioWriteContexts[slot], addr, busSignals)) {
-				return;
-			}
-			this.writeIoSlot(slot, addr, word, busSignals);
+			this.writeIoSlot(slot, addr, value, faultAccess, busSignals);
 			return;
 		}
 		if (this.isIoRegionRange(addr, 4)) {

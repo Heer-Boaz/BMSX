@@ -29,7 +29,6 @@ import {
 import type { CPU } from '../../cpu/cpu';
 import { IO_WORD_SIZE } from '../../../spec/bmsx/memory_map';
 import {
-	MAPPED_BUS_DMA_BLOCK_END,
 	MAPPED_BUS_MASTER_DMA,
 	mappedBusSignalsForCartridgeSlot,
 	type MappedBusSignals,
@@ -226,14 +225,10 @@ export class DmaController {
 		const previousBlockDeadline = this.serviceDeadline;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 		this.serviceActive = true;
-		for (let slot = 0; slot < blockWords; slot += 1) {
-			const blockEnd = slot + 1 === blockWords ? MAPPED_BUS_DMA_BLOCK_END : 0;
-			const word = this.memory.readMappedDmaU32LE(readAddress, readBusSignals | blockEnd);
-			this.memory.writeMappedDmaU32LE(writeAddress, word, writeBusSignals | blockEnd);
-			readAddress = (readAddress + readStep) >>> 0;
-			writeAddress = (writeAddress + writeStep) >>> 0;
-			transferCount = (transferCount - 1) >>> 0;
-		}
+		this.memory.transferDmaBlock(readAddress, writeAddress, blockWords, readStep, writeStep, readBusSignals, writeBusSignals);
+		readAddress = (readAddress + blockWords * readStep) >>> 0;
+		writeAddress = (writeAddress + blockWords * writeStep) >>> 0;
+		transferCount = (transferCount - blockWords) >>> 0;
 		const registers = this.registers.channels[channel]!;
 		registers.readAddressWord = readAddress;
 		registers.writeAddressWord = writeAddress;
