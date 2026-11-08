@@ -15,12 +15,9 @@ from bake_water import compile_water
 from bake_havenanimatie import compile_harbor
 from bake_stadsgroen import greenery_poses
 from bake_achtergrond import compile_background
+from stage_map import ACTOR_SYMBOLS, compile_actor_cells
 
 ROOT = Path(__file__).resolve().parents[3] / 'carts/nemesis_s'
-ACTOR_SYMBOLS = {'formation_down': 'p', 'formation_up': 'P', 'red_mitre': 'M',
-                 'blue_mitre': 'm', 'chimney': 'S', 'smoke': 'R', 'quay_cannon': 'D',
-                 'turret_blue_floor':'B','turret_red_floor':'C','turret_blue_ceiling':'b','turret_red_ceiling':'c',
-                 'sack': 'Z', 'snowman': 'N', 'bell': 'K', 'mill': 'W', 'moon': "'"}
 
 class FlowRow(list):
     pass
@@ -357,11 +354,11 @@ def main():
     packed[1]=0
     runtime={
         'source':f"Stadsburg — De Bevroren Haven R{plan['revision']}, authoring/level.yaml", 'stage_number':0,
-        'tilemap_version':2,'tile_size':8,'tile_columns':32,'tile_rows':22,
+        'tile_size':8,'tile_columns':32,'tile_rows':22,
         'tape_length_tiles':width,'scroll_stop_columns':plan['scroll_stops'],
         'music_cues':plan['music_cues'],'restart_points':plan['restart_points'],
         'tile_assets':[entries[k]['asset'] for k in visible],
-        'tile_symbols':''.join(entries[k]['stage_symbol'] for k in visible),
+        'tile_roles':[ord(entries[k]['stage_symbol']) for k in visible],
         # Zero is a genuinely absent tile: the native animated starfield shows.
         'tile_ids':[FlowRow([packed[k] for k in row]) for row in cells],
     }
@@ -370,6 +367,8 @@ def main():
     runtime['water_animation']['origin_column']=art_origin
     runtime['harbor_animation']=compile_harbor(ROOT,plan,prefabs,tiles,entries,cells,placements,catalog['palette'],greenery_layers)
     compile_background(ROOT,plan,runtime,tiles,entries,cells)
+    runtime['tile_roles']=FlowRow(runtime['tile_roles'])
+    runtime['actor_cells']=[FlowRow(cell) for cell in compile_actor_cells(runtime['tile_ids'],runtime['tile_roles'])]
     runtime['background']['rows']=[FlowRow(row) for row in runtime['background']['rows']]
     # Validate map composition and animation before relocating source drawings.
     # A rejected placement must not leave the catalog pointing at moved files.

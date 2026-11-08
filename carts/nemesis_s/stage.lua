@@ -11,9 +11,7 @@ local stage_scroll_follower_component<const> = require('stage_scroll_follower_co
 require('constants')
 local bin<const> = require('cartlib/bin')
 local assets<const> = require('bmsx/assets')
-local string_byte<const> = string.byte
-local string_char<const> = string.char
-local stage_tilemap_v2<const> = require('stage_tilemap_v2')
+local stage_collision<const> = require('stage_collision')
 local grachtwater<const> = require('grachtwater')
 local havenanimatie<const> = require('havenanimatie')
 
@@ -23,28 +21,8 @@ setmetatable(stage, { __index = object_2d })
 
 local resume_scrolling_event<const> = 'stage.resume_scrolling'
 
--- The YAML map stays author-facing ASCII; decoding emits the retained tile
--- layer and collision representations directly.
-local stage_char_space<const> = 32 -- space
-local stage_char_collision<const> = 33 -- !
-local stage_char_house<const> = 35 -- #
-local stage_char_ground_variant<const> = 37 -- %
+-- The numeric tile IDs own both artwork and terrain/actor roles.
 local stage_char_moon<const> = 39 -- '
-local stage_char_house_left<const> = 40 -- (
-local stage_char_house_right<const> = 41 -- )
-local stage_char_house_center<const> = 43 -- +
-local stage_char_ground<const> = 45 -- -
-local stage_char_house_left_slope<const> = 47 -- /
-local stage_char_tree_1<const> = 49 -- 1
-local stage_char_tree_2<const> = 50 -- 2
-local stage_char_tree_3<const> = 51 -- 3
-local stage_char_tree_4<const> = 52 -- 4
-local stage_char_tree_5<const> = 53 -- 5
-local stage_char_tree_6<const> = 54 -- 6
-local stage_char_tree_7<const> = 55 -- 7
-local stage_char_ground_alt<const> = 61 -- =
-local stage_char_roof<const> = 64 -- @
-local stage_char_molen<const> = 87 -- W
 local stage_char_kadekanon<const> = 68 -- D
 local stage_char_kerk<const> = 75 -- K
 local stage_char_mijter_red<const> = 77 -- M
@@ -52,47 +30,12 @@ local stage_char_sneeuwpop<const> = 78 -- N
 local stage_char_sint_pop_down<const> = 80 -- P
 local stage_char_rook_generator<const> = 82 -- R
 local stage_char_schoorsteen_foe<const> = 83 -- S
+local stage_char_molen<const> = 87 -- W
 local stage_char_zak_foe<const> = 90 -- Z
-local stage_char_house_right_slope<const> = 92 -- \
-local stage_char_house_peak<const> = 94 -- ^
-local stage_char_ground_vertical<const> = 95 -- _
-local stage_char_door<const> = 100 -- d
 local stage_char_mijter_blue<const> = 109 -- m
-local stage_char_lantaarn<const> = 111 -- o
 local stage_char_sint_pop_up<const> = 112 -- p
-local stage_char_chimney<const> = 115 -- s
-local stage_char_tree<const> = 116 -- t
-local stage_char_window<const> = 119 -- w
-local stage_char_lantaarn_post<const> = 124 -- |
-local house_roof_base_chars<const> = {
-	[stage_char_roof] = true,
-	[stage_char_house_left_slope] = true,
-	[stage_char_house_right_slope] = true,
-	[stage_char_house_peak] = true,
-}
-local snow_surface_chars<const> = {
-	[stage_char_ground_alt] = true,
-	[stage_char_ground] = true,
-}
-local empty_stage_chars<const> = {
-	[stage_char_sint_pop_up] = true,
-	[stage_char_sint_pop_down] = true,
-	[stage_char_mijter_blue] = true,
-	[stage_char_mijter_red] = true,
-}
-local chimney_chars<const> = {
-	[stage_char_chimney] = true,
-	[stage_char_schoorsteen_foe] = true,
-	[stage_char_rook_generator] = true,
-}
 local turret_by_symbol<const> = {
     [66]='blue_floor',[67]='red_floor',[98]='blue_ceiling',[99]='red_ceiling',
-}
-local transparent_overlay_chars<const> = {
-	[stage_char_kerk] = true,
-	[stage_char_molen] = true,
-	[stage_char_kadekanon] = true,
-	[stage_char_moon] = true,
 }
 local sint_pop_group_by_symbol<const> = {
 	[stage_char_sint_pop_up] = sint_pop_group_up,
@@ -114,245 +57,6 @@ local new_rows<const> = function(width, height, default_value)
 		out[y] = row
 	end
 	return out
-end
-
-local decode_stage_tile<const> = function(above_row, row, below_row, x, y, width, ch)
-	local above = stage_char_space
-	if above_row ~= nil then
-		above = string_byte(above_row, x)
-	end
-	local below = stage_char_space
-	if below_row ~= nil then
-		below = string_byte(below_row, x)
-	end
-	local left = stage_char_space
-	local left_down = stage_char_space
-	if x > 1 then
-		left = string_byte(row, x - 1)
-		if below_row ~= nil then
-			left_down = string_byte(below_row, x - 1)
-		end
-	end
-	local right = stage_char_space
-	local right_down = stage_char_space
-	if x < width then
-		right = string_byte(row, x + 1)
-		if below_row ~= nil then
-			right_down = string_byte(below_row, x + 1)
-		end
-	end
-
-	if ch == stage_char_collision then
-		return assets_house_tile_1, 1
-	end
-	if ch == stage_char_house then
-		if house_roof_base_chars[above] then
-			return assets_house_tile_13, 1
-		end
-		return assets_house_tile_8, 1
-	end
-	if ch == stage_char_roof then
-		return assets_house_tile_12, 1
-	end
-	if ch == stage_char_door then
-		return assets_house_tile_door, 1
-	end
-	if ch == stage_char_window then
-		if right == stage_char_roof then
-			return assets_house_tile_window2, 1
-		end
-		return assets_house_tile_window, 1
-	end
-	if ch == stage_char_house_left_slope then
-		if below == stage_char_house_left_slope then
-			return assets_house_tile_1, 0
-		end
-		return assets_house_tile_5, 0
-	end
-	if ch == stage_char_house_right_slope then
-		if below == stage_char_house_right_slope then
-			return assets_house_tile_4, 0
-		end
-		return assets_house_tile_6, 0
-	end
-	if ch == stage_char_house_peak then
-		return assets_house_tile_2, 1
-	end
-	if ch == stage_char_house_center then
-		return assets_house_tile_3, 1
-	end
-	if ch == stage_char_house_left then
-		if house_roof_base_chars[above] then
-			return assets_house_tile_7, 1
-		end
-		return assets_house_tile_10, 1
-	end
-	if ch == stage_char_house_right then
-		if house_roof_base_chars[above] then
-			return assets_house_tile_9, 1
-		end
-		return assets_house_tile_11, 1
-	end
-	if ch == stage_char_lantaarn_post then
-		if snow_surface_chars[below] then
-			return assets_lantaarn_tile_3, 0
-		end
-		return assets_lantaarn_tile_2, 0
-	end
-	if ch == stage_char_lantaarn then
-		return assets_lantaarn_tile_1, 0
-	end
-	if empty_stage_chars[ch] then
-		return nil, 0
-	end
-	if ch == stage_char_ground then
-		if left ~= stage_char_space and right ~= stage_char_space then
-			return assets_ground, 1
-		end
-		if left == stage_char_space then
-			return assets_ground_start, 1
-		end
-		return assets_ground_end, 1
-	end
-	if ch == stage_char_ground_alt then
-		if left ~= stage_char_space and right ~= stage_char_space then
-			return assets_ground2, 1
-		end
-		if left == stage_char_space then
-			return assets_ground_start, 1
-		end
-		return assets_ground_end, 1
-	end
-	if ch == stage_char_ground_vertical then
-		local parity_even<const> = ((x - 1) % 2) == 0
-		if left == stage_char_space then
-			return assets_ground_start_v, 1
-		end
-		if right == stage_char_space then
-			return assets_ground_end_v, 1
-		end
-		if parity_even then
-			return assets_ground_v, 1
-		end
-		return assets_ground2_v, 1
-	end
-	if ch == stage_char_ground_variant then
-		local parity_even<const> = ((x - 1) % 2) == 0
-		if parity_even then
-			return assets_ground3, 1
-		end
-		return assets_ground4, 1
-	end
-	if chimney_chars[ch] then
-		if above == stage_char_space then
-			return assets_schoorsteen1, 1
-		end
-		if left == stage_char_space or right == stage_char_space then
-			return assets_schoorsteen3, 1
-		end
-		return assets_schoorsteen2, 1
-	end
-	if ch == stage_char_space
-	or ch == stage_char_zak_foe
-	or ch == stage_char_sneeuwpop then
-		if snow_surface_chars[below]
-		and left_down ~= stage_char_space
-		and right_down ~= stage_char_space then
-			return assets_snow, 0
-		end
-		return nil, 0
-	end
-	if ch == stage_char_tree then
-		if right == stage_char_tree_1 then
-			return assets_snowtree1, 0
-		end
-		if right == stage_char_tree_2 then
-			return assets_snowtree4, 1
-		end
-		if right == stage_char_tree_3 then
-			return assets_snowtree7, 1
-		end
-		if right == stage_char_tree_4 then
-			return assets_snowtree10, 1
-		end
-		if right == stage_char_tree_5 then
-			return assets_snowtree13, 1
-		end
-		if right == stage_char_tree_6 then
-			return assets_snowtree16, 1
-		end
-		if right == stage_char_tree_7 then
-			return assets_snowtree19, 1
-		end
-		if left == stage_char_tree_1 then
-			return assets_snowtree3, 0
-		end
-		if left == stage_char_tree_2 then
-			return assets_snowtree6, 1
-		end
-		if left == stage_char_tree_3 then
-			return assets_snowtree9, 1
-		end
-		if left == stage_char_tree_4 then
-			return assets_snowtree12, 1
-		end
-		if left == stage_char_tree_5 then
-			return assets_snowtree15, 1
-		end
-		if left == stage_char_tree_6 then
-			return assets_snowtree18, 1
-		end
-		if left == stage_char_tree_7 then
-			return assets_snowtree21, 1
-		end
-		return nil, 0
-	end
-	if ch == stage_char_tree_1 then
-		if left == stage_char_tree then
-			return assets_snowtree2, 1
-		end
-		return nil, 0
-	end
-	if ch == stage_char_tree_2 then
-		if left == stage_char_tree then
-			return assets_snowtree5, 1
-		end
-		return nil, 0
-	end
-	if ch == stage_char_tree_3 then
-		if left == stage_char_tree then
-			return assets_snowtree8, 1
-		end
-		return nil, 0
-	end
-	if ch == stage_char_tree_4 then
-		if left == stage_char_tree then
-			return assets_snowtree11, 1
-		end
-		return nil, 0
-	end
-	if ch == stage_char_tree_5 then
-		if left == stage_char_tree then
-			return assets_snowtree14, 1
-		end
-		return nil, 0
-	end
-	if ch == stage_char_tree_6 then
-		if left == stage_char_tree then
-			return assets_snowtree17, 1
-		end
-		return nil, 0
-	end
-	if ch == stage_char_tree_7 then
-		if left == stage_char_tree then
-			return assets_snowtree20, 0
-		end
-		return nil, 0
-	end
-	if transparent_overlay_chars[ch] or turret_by_symbol[ch] then
-		return nil, 0
-	end
-	error('nemesis_s unsupported stage symbol "' .. string_char(ch) .. '" at x=' .. tostring(x) .. ', y=' .. tostring(y))
 end
 
 function stage:apply_stage_config(stage_data)
@@ -410,7 +114,9 @@ end
 
 function stage:build_tape()
 	local stage_data<const> = bin.decode(assets.data_nemesis_s_stage_addr, stage_asset_id)
-	local map_rows<const>, numeric_rows<const>, numeric_assets<const> = stage_tilemap_v2.resolve(stage_data)
+	local numeric_rows<const> = stage_data.tile_ids
+	local numeric_assets<const> = stage_data.tile_assets
+	local roles<const> = stage_data.tile_roles
 	self:apply_stage_config(stage_data)
 	self.tile_art = tile_art.new(stage_data.tile_banks)
     -- Blank spawn markers keep their spawn role while exposing the native stars.
@@ -421,8 +127,8 @@ function stage:build_tape()
         for _,id in ipairs(stage_data.sky_actor_ids) do numeric_art[id]=nil end
     end
 
-	local width<const> = #map_rows[1]
-	local height<const> = #map_rows
+	local width<const> = #numeric_rows[1]
+	local height<const> = #numeric_rows
 
 	self.tile_rows = height
 	self.tape_length_tiles = width
@@ -432,35 +138,22 @@ function stage:build_tape()
 	end
 	local stage_tiles<const> = self.stage_tiles
 	stage_tiles:configure(width, height, self.tile_size, self.tile_art)
-	-- The native role decoder supplies one collision bit per tile. Keep those
-	-- bits in row words so longer stages do not retain a Lua value per cell.
+	-- Keep the role-derived collision bits in row words, not a Lua value per cell.
 	self.solid_tape = new_rows((width + 31) // 32, height, 0)
 
 	for stage_y = 1, height do
-		local map_row<const> = map_rows[stage_y]
+		local row<const> = numeric_rows[stage_y]
 		local solid_row<const> = self.solid_tape[stage_y]
-		local above_row
-		if stage_y > 1 then
-			above_row = map_rows[stage_y - 1]
-		end
-		local below_row
-		if stage_y < height then
-			below_row = map_rows[stage_y + 1]
-		end
 		for stage_x = 1, width do
-			local symbol<const> = string_byte(map_row, stage_x)
-			local native_imgid<const>, solid<const> = decode_stage_tile(
-				above_row, map_row, below_row, stage_x, stage_y, width, symbol)
-			local imgid = native_imgid
-			if numeric_rows ~= nil then
-				local id<const> = numeric_rows[stage_y][stage_x]
-				imgid = numeric_art[id]
-			end
-			if imgid then stage_tiles:admit_tile(stage_x, stage_y, imgid) end
-			if solid ~= 0 then
-				local bit<const> = stage_x - 1
-				local word<const> = (bit // 32) + 1
-				solid_row[word] = solid_row[word] | (1 << (bit & 31))
+			local id<const> = row[stage_x]
+			if id ~= 0 then
+				local imgid<const> = numeric_art[id]
+				if imgid then stage_tiles:admit_tile(stage_x, stage_y, imgid) end
+				if stage_collision.is_solid(roles[id], row, roles, stage_x, width) then
+					local bit<const> = stage_x - 1
+					local word<const> = (bit // 32) + 1
+					solid_row[word] = solid_row[word] | (1 << (bit & 31))
+				end
 			end
 		end
 	end
@@ -474,145 +167,143 @@ function stage:build_tape()
     end
 
     local actor_spawns<const> = {}
-	for stage_x = 1, width do
-		for stage_y = 1, height do
-			local symbol<const> = string_byte(map_rows[stage_y], stage_x)
-			local sint_pop_group<const> = sint_pop_group_by_symbol[symbol]
-			if sint_pop_group ~= nil then
-				local column<const> = stage_x - 1
-				local spawn_y<const> = (stage_y - 1) * self.tile_size
-				local formation<const> = { remaining = sint_pop_group_size }
-				for group_index = 0, sint_pop_group_size - 1 do
-					actor_spawns[#actor_spawns + 1] = {
-						column = column,
-						definition_id = ids_sint_pop_def,
-						options = {
-							position = { x = playfield_width + (group_index * sint_pop_width), y = spawn_y },
-							stage = self,
-							formation = formation,
-							group_type = sint_pop_group,
+	for _, cell in ipairs(stage_data.actor_cells) do
+		local stage_x<const>, stage_y<const>, symbol<const> = cell[1], cell[2], cell[3]
+		local sint_pop_group<const> = sint_pop_group_by_symbol[symbol]
+		if sint_pop_group ~= nil then
+			local column<const> = stage_x - 1
+			local spawn_y<const> = (stage_y - 1) * self.tile_size
+			local formation<const> = { remaining = sint_pop_group_size }
+			for group_index = 0, sint_pop_group_size - 1 do
+				actor_spawns[#actor_spawns + 1] = {
+					column = column,
+					definition_id = ids_sint_pop_def,
+					options = {
+						position = { x = playfield_width + (group_index * sint_pop_width), y = spawn_y },
+						stage = self,
+						formation = formation,
+						group_type = sint_pop_group,
+					},
+				}
+			end
+		else
+			local mijter_foe_type<const> = mijter_foe_type_by_symbol[symbol]
+			if mijter_foe_type ~= nil then
+				actor_spawns[#actor_spawns + 1] = {
+					column = stage_x - 1,
+					definition_id = ids_mijter_foe_def,
+					options = {
+						position = { x = playfield_width, y = (stage_y - 2) * self.tile_size },
+						stage = self,
+						mijter_type = mijter_foe_type,
+					},
+				}
+               elseif turret_by_symbol[symbol] then
+                   actor_spawns[#actor_spawns+1]={
+                       column=stage_x-1,definition_id=ids_havengeschut_def,
+                       options={
+                           position={x=playfield_width-self.tile_size,y=(stage_y-1)*self.tile_size},
+                           stage=self,variant=turret_by_symbol[symbol],spawn_column=stage_x-1,
+                       },
+                   }
+			elseif symbol == stage_char_schoorsteen_foe then
+				-- S/R mark the roof midpoint and supporting roof row. The
+				-- admission columns stay fixed; native body size sets its origin.
+				local spawn<const> = {
+					column = stage_x - 2,
+					definition_id = ids_schoorsteen_foe_def,
+					options = {
+						position = {
+							x = playfield_width - schoorsteen_foe_width // 2,
+							y = (stage_y - 1) * self.tile_size - schoorsteen_foe_height,
 						},
-					}
+						stage = self,
+					},
+				}
+				-- A same-column flyer may already precede S in row order.
+				-- Insert this earlier admission before it, keeping ties stable.
+				local insert_at = #actor_spawns + 1
+				while insert_at > 1 and actor_spawns[insert_at - 1].column > spawn.column do
+					actor_spawns[insert_at] = actor_spawns[insert_at - 1]
+					insert_at = insert_at - 1
 				end
-			else
-				local mijter_foe_type<const> = mijter_foe_type_by_symbol[symbol]
-				if mijter_foe_type ~= nil then
-					actor_spawns[#actor_spawns + 1] = {
-						column = stage_x - 1,
-						definition_id = ids_mijter_foe_def,
-						options = {
-							position = { x = playfield_width, y = (stage_y - 2) * self.tile_size },
-							stage = self,
-							mijter_type = mijter_foe_type,
+				actor_spawns[insert_at] = spawn
+			elseif symbol == stage_char_kadekanon then
+                   actor_spawns[#actor_spawns + 1] = {
+                       column = stage_x - 1,
+                       definition_id = ids_kadekanon_def,
+                       options = {
+                           position = { x = playfield_width - 12, y = (stage_y - 1) * self.tile_size },
+                           stage = self,
+                       },
+                   }
+			elseif symbol == stage_char_rook_generator then
+				actor_spawns[#actor_spawns + 1] = {
+					column = stage_x - 1,
+					definition_id = ids_rook_generator_def,
+					options = {
+						position = {
+							x = playfield_width - self.tile_size - rook_generator_width // 2,
+							y = (stage_y - 1) * self.tile_size - rook_generator_height,
 						},
-					}
-                elseif turret_by_symbol[symbol] then
-                    actor_spawns[#actor_spawns+1]={
-                        column=stage_x-1,definition_id=ids_havengeschut_def,
-                        options={
-                            position={x=playfield_width-self.tile_size,y=(stage_y-1)*self.tile_size},
-                            stage=self,variant=turret_by_symbol[symbol],spawn_column=stage_x-1,
-                        },
-                    }
-				elseif symbol == stage_char_schoorsteen_foe then
-					-- S/R mark the roof midpoint and supporting roof row. The
-					-- admission columns stay fixed; native body size sets its origin.
-					local spawn<const> = {
-						column = stage_x - 2,
-						definition_id = ids_schoorsteen_foe_def,
-						options = {
-							position = {
-								x = playfield_width - schoorsteen_foe_width // 2,
-								y = (stage_y - 1) * self.tile_size - schoorsteen_foe_height,
-							},
-							stage = self,
-						},
-					}
-					-- A same-column flyer may already precede S in row order.
-					-- Insert this earlier admission before it, keeping ties stable.
-					local insert_at = #actor_spawns + 1
-					while insert_at > 1 and actor_spawns[insert_at - 1].column > spawn.column do
-						actor_spawns[insert_at] = actor_spawns[insert_at - 1]
-						insert_at = insert_at - 1
-					end
-					actor_spawns[insert_at] = spawn
-				elseif symbol == stage_char_kadekanon then
-                    actor_spawns[#actor_spawns + 1] = {
-                        column = stage_x - 1,
-                        definition_id = ids_kadekanon_def,
-                        options = {
-                            position = { x = playfield_width - 12, y = (stage_y - 1) * self.tile_size },
-                            stage = self,
-                        },
-                    }
-				elseif symbol == stage_char_rook_generator then
-					actor_spawns[#actor_spawns + 1] = {
-						column = stage_x - 1,
-						definition_id = ids_rook_generator_def,
-						options = {
-							position = {
-								x = playfield_width - self.tile_size - rook_generator_width // 2,
-								y = (stage_y - 1) * self.tile_size - rook_generator_height,
-							},
-							stage = self,
-						},
-					}
-				elseif symbol == stage_char_zak_foe then
-					actor_spawns[#actor_spawns + 1] = {
-						column = stage_x - 1,
-						definition_id = ids_zak_foe_def,
-						options = {
-							position = { x = playfield_width - self.tile_size, y = (stage_y - 2) * self.tile_size },
-							stage = self,
-							direction = zak_foe_direction_left,
-						},
-					}
-				elseif symbol == stage_char_sneeuwpop then
-					actor_spawns[#actor_spawns + 1] = {
-						column = stage_x - 1,
-						definition_id = ids_sneeuwpop_def,
-						options = {
-							position = { x = playfield_width - self.tile_size, y = (stage_y - 7) * self.tile_size },
-							stage = self,
-						},
-					}
-				elseif symbol == stage_char_molen then
-					actor_spawns[#actor_spawns + 1] = {
-						column = stage_x - 1,
-						definition_id = 'nemesis_s.enemy.molen',
-						options = {
-							position = { x = playfield_width - self.tile_size, y = (stage_y - 1) * self.tile_size },
-							stage = self,
-						},
-					}
-				elseif symbol == stage_char_kerk then
-					local kerk_y<const> = stage_y * self.tile_size - kerk_height
-					actor_spawns[#actor_spawns + 1] = {
-						column = stage_x - 1,
-						definition_id = ids_bel_def,
-						options = {
-							position = { x = playfield_width + 7 - self.tile_size, y = kerk_y + 80 },
-							stage = self,
-						},
-					}
-					actor_spawns[#actor_spawns + 1] = {
-						column = stage_x - 1,
-						definition_id = ids_kerk_def,
-						options = {
-							position = { x = playfield_width - self.tile_size, y = kerk_y },
-							stage = self,
-						},
-					}
-				elseif symbol == stage_char_moon then
-					actor_spawns[#actor_spawns + 1] = {
-						column = stage_x - 1,
-						definition_id = ids_moon_def,
-						options = {
-							position = { x = moon_spawn_x, y = moon_spawn_y },
-							stage = self,
-						},
-					}
-				end
+						stage = self,
+					},
+				}
+			elseif symbol == stage_char_zak_foe then
+				actor_spawns[#actor_spawns + 1] = {
+					column = stage_x - 1,
+					definition_id = ids_zak_foe_def,
+					options = {
+						position = { x = playfield_width - self.tile_size, y = (stage_y - 2) * self.tile_size },
+						stage = self,
+						direction = zak_foe_direction_left,
+					},
+				}
+			elseif symbol == stage_char_sneeuwpop then
+				actor_spawns[#actor_spawns + 1] = {
+					column = stage_x - 1,
+					definition_id = ids_sneeuwpop_def,
+					options = {
+						position = { x = playfield_width - self.tile_size, y = (stage_y - 7) * self.tile_size },
+						stage = self,
+					},
+				}
+			elseif symbol == stage_char_molen then
+				actor_spawns[#actor_spawns + 1] = {
+					column = stage_x - 1,
+					definition_id = 'nemesis_s.enemy.molen',
+					options = {
+						position = { x = playfield_width - self.tile_size, y = (stage_y - 1) * self.tile_size },
+						stage = self,
+					},
+				}
+			elseif symbol == stage_char_kerk then
+				local kerk_y<const> = stage_y * self.tile_size - kerk_height
+				actor_spawns[#actor_spawns + 1] = {
+					column = stage_x - 1,
+					definition_id = ids_bel_def,
+					options = {
+						position = { x = playfield_width + 7 - self.tile_size, y = kerk_y + 80 },
+						stage = self,
+					},
+				}
+				actor_spawns[#actor_spawns + 1] = {
+					column = stage_x - 1,
+					definition_id = ids_kerk_def,
+					options = {
+						position = { x = playfield_width - self.tile_size, y = kerk_y },
+						stage = self,
+					},
+				}
+			elseif symbol == stage_char_moon then
+				actor_spawns[#actor_spawns + 1] = {
+					column = stage_x - 1,
+					definition_id = ids_moon_def,
+					options = {
+						position = { x = moon_spawn_x, y = moon_spawn_y },
+						stage = self,
+					},
+				}
 			end
 		end
 	end

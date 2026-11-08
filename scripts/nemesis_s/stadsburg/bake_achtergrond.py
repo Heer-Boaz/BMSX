@@ -77,8 +77,8 @@ def composite(foreground, background, exterior):
 
 def compile_background(root, plan, runtime, tiles, entries, cells):
     width, height = plan['width'], len(cells)
-    original_roles = ''.join(runtime['tile_symbols'][k - 1] if k else ' '
-                             for row in runtime['tile_ids'] for k in row)
+    original_roles = tuple(runtime['tile_roles'][k - 1] if k else 32
+                           for row in runtime['tile_ids'] for k in row)
     background = draw_backdrop(root, plan['background'], width, height)
     stage = np.zeros_like(background)
     empty = np.zeros((height, width), dtype=bool)
@@ -140,7 +140,7 @@ def compile_background(root, plan, runtime, tiles, entries, cells):
 
     # Keep the original semantic IDs intact. Only the visible source for a
     # particular occurrence gains a composition; its native symbol is copied.
-    symbols = list(runtime['tile_symbols'])
+    roles = list(runtime['tile_roles'])
     variants = {}
     changed = 0
     combined = background.copy()
@@ -155,17 +155,17 @@ def compile_background(root, plan, runtime, tiles, entries, cells):
             if np.array_equal(front, pixels):
                 continue
             name = asset(pixels)
-            symbol = symbols[original_id - 1]
-            key = name, symbol
+            role = roles[original_id - 1]
+            key = name, role
             if key not in variants:
                 runtime['tile_assets'].append(name)
-                symbols.append(symbol)
-                variants[key] = len(symbols)
+                roles.append(role)
+                variants[key] = len(roles)
             runtime['tile_ids'][y][x] = variants[key]
             changed += 1
-    runtime['tile_symbols'] = ''.join(symbols)
-    assert original_roles == ''.join(runtime['tile_symbols'][k - 1] if k else ' '
-                                     for row in runtime['tile_ids'] for k in row)
+    runtime['tile_roles'] = roles
+    assert original_roles == tuple(runtime['tile_roles'][k - 1] if k else 32
+                                   for row in runtime['tile_ids'] for k in row)
 
     # Poses retain their native pattern identities, including damage and
     # collision ownership. Visual substitutions are resolved once at admission.

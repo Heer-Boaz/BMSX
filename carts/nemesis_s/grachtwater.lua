@@ -8,8 +8,8 @@ water.__index = water
 function water.new(spec, rows, assets, tiles)
     local self<const> = setmetatable({groups={}, origin=spec.origin_column or 0, hold=spec.ticks_per_pose},water)
     local width<const>,height<const> = #rows[1],#rows
-    -- Foreground admission is complete. Water is the final numeric-map
-    -- consumer; actor admission uses the separate native symbol rows.
+    -- Terrain and collision have consumed the shared numeric map; actors use
+    -- its compiled sparse index. Water releases each row after admission.
     for y=1,spec.first_row-1 do rows[y]=nil end
     for _,frames in pairs(spec.frames) do
         for pose=1,#frames do frames[pose]=image.resolve(frames[pose]) end
