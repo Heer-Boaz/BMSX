@@ -35,6 +35,7 @@ int main(int argc, char** argv) {
 	for (const u8 value : CRTPipeline::noiseTextureBytes()) fingerprint = fmix32(fingerprint ^ value);
 	require(fingerprint == 0xa0a78f1au, "shared TS/C++ grain corpus fingerprint");
 	bool framebuffer = false, measure = false;
+	i32 width = 320, height = 240;
 	const char* output = nullptr;
 	const char* reference = nullptr;
 	for (int index = 1; index < argc; ++index) {
@@ -42,9 +43,12 @@ int main(int argc, char** argv) {
 		else if (std::strcmp(argv[index], "--measure") == 0) measure = true;
 		else if (std::strcmp(argv[index], "--output") == 0) output = argv[++index];
 		else if (std::strcmp(argv[index], "--reference") == 0) reference = argv[++index];
+		else if (std::strcmp(argv[index], "--size") == 0) {
+			width = std::stoi(argv[++index]);
+			height = std::stoi(argv[++index]);
+		}
 		else throw std::runtime_error("unknown CRT test argument");
 	}
-	constexpr i32 width = 320, height = 240;
 	EGLDisplay display = EGL_NO_DISPLAY;
 	EGLSurface surface = EGL_NO_SURFACE;
 	EGLContext context = EGL_NO_CONTEXT;

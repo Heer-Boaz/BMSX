@@ -139,7 +139,9 @@ vec3 applyFringing(vec3 color, vec2 uv, float centerGreen, float contrast, float
 
 vec3 applyNoise(vec3 color, vec2 sourcePixel){
 	ivec2 coord = ivec2(sourcePixel) + ivec2(u_noiseOffset);
+#if !BMSX_CRT_NOISE_REPEAT
 	coord -= (coord / ivec2(512, 256)) * ivec2(512, 256);
+#endif
 	vec2 grain = texture2D(u_noise, (vec2(coord) + vec2(0.5)) / vec2(512.0, 256.0)).rg - vec2(0.5);
 	float lum      = dot(color, LUMA);
 	float n        = mix(grain.r, grain.g, 0.35);

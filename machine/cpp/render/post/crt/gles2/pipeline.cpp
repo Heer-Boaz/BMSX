@@ -90,11 +90,12 @@ static void initializeCrtProgram(OpenGLES2Backend& backend, CRTGLES2Program& pip
 	std::snprintf(defines, sizeof(defines),
 		"#define u_enableNoise %s\n#define u_enableColorBleed %s\n"
 		"#define u_enableScanlines %s\n#define u_enableBlur %s\n"
-		"#define u_enableGlow %s\n#define u_enableFringing %s\n#define u_enableAperture %s\n",
+		"#define u_enableGlow %s\n#define u_enableFringing %s\n#define u_enableAperture %s\n"
+		"#define BMSX_CRT_NOISE_REPEAT %u\n",
 		(effects & 1u) ? "true" : "false", (effects & 2u) ? "true" : "false",
 		(effects & 4u) ? "true" : "false", (effects & 8u) ? "true" : "false",
 		(effects & 16u) ? "true" : "false", (effects & 32u) ? "true" : "false",
-		(effects & 64u) ? "true" : "false");
+		(effects & 64u) ? "true" : "false", (effects >> 7u) & 1u);
 	pipeline.program = backend.buildProgram(kPostGLES2FullscreenVertexShader, kCRTFragmentShader, "crt", defines);
 
 	pipeline.attrib_pos = glGetAttribLocation(pipeline.program, "a_position");
@@ -186,8 +187,14 @@ void renderCRTGLES2State(OpenGLES2Backend& backend, CRTGLES2State& pipeline, con
 		| (static_cast<u32>(options.applyGlow) << 4u)
 		| (static_cast<u32>(options.applyFringing) << 5u)
 		| (static_cast<u32>(options.applyAperture) << 6u);
-	auto& program = pipeline.programs[effects];
-	if (program.program == 0) initializeCrtProgram(backend, program, effects);
+	// In this domain the unwrapped integer texel plus its half-texel center
+	// remains exact in mediump. Larger sources keep the integer address reduction.
+	const bool repeatNoise = options.applyNoise
+		&& state.srcWidth <= static_cast<i32>(NOISE_WIDTH)
+		&& state.srcHeight <= static_cast<i32>(NOISE_HEIGHT);
+	const u32 programKey = effects | (static_cast<u32>(repeatNoise) << 7u);
+	auto& program = pipeline.programs[programKey];
+	if (program.program == 0) initializeCrtProgram(backend, program, programKey);
 	if (kCRTVerboseLog) {
 		auto* srcTex = OpenGLES2Backend::asTexture(state.colorTex);
 		std::fprintf(stderr,
@@ -216,7 +223,8 @@ void renderCRTGLES2State(OpenGLES2Backend& backend, CRTGLES2State& pipeline, con
 	if (state.options.applyNoise) {
 		if (pipeline.noiseTexture == nullptr) {
 			pipeline.noiseTexture.reset(OpenGLES2Backend::asTexture(
-				backend.createTexture(noiseTextureBytes().data(), NOISE_WIDTH, NOISE_HEIGHT, RGBA8_LINEAR_TEXTURE_PARAMS)));
+				backend.createTexture(noiseTextureBytes().data(), NOISE_WIDTH, NOISE_HEIGHT,
+					TextureParams{.wrapS = GL_REPEAT, .wrapT = GL_REPEAT, .srgb = false})));
 		}
 		glUniform2f(program.uniform_noise_offset, static_cast<f32>(state.noisePhase & (NOISE_WIDTH - 1u)),
 			static_cast<f32>(state.noisePhase / NOISE_WIDTH));

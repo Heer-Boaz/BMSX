@@ -38,7 +38,7 @@ struct CRTGLES2Program {
 };
 
 struct CRTGLES2State {
-	std::array<CRTGLES2Program, 128> programs{};
+	std::array<CRTGLES2Program, 256> programs{};
 	std::unique_ptr<GLES2Texture> noiseTexture;
 	FullscreenQuad quad;
 };
