@@ -34,12 +34,19 @@ frames 100–103 and 200–203. Verify the actual displayed uploads:
 ```sh
 npm run test:exec -- tsx --tsconfig tsconfig.base.json \
   tests/conformance/imgdec_streaming/verify_captures.ts /tmp/streaming CAPTURES \
-  SOFTWARE_REFERENCE_CAPTURES
+  --reference CORE_REFERENCE_CAPTURES
 ```
 
-Omit the last argument for noise-on captures, where only the explicit black/white
+Omit the reference option for noise-on captures, where only the explicit black/white
 marker protocol is exact. With CRT disabled the optional comparison checks every
 pixel. The asset's three-bit phase must match the independent sixteen-bit drawn
 frame counter, and both must advance at every captured frame. The cartridge
 reports `STREAM` counters every 1000 completed frames; that small reporting cost
 remains part of the workload. It never stops streaming to improve a measurement.
+
+The framebuffer software frontend captures the physical, integer-scaled output
+surface rather than the core target. Use `--software-surface` to check its marker
+protocol through that documented blit mapping. Do not compare its surface bytes
+directly with core-target PNGs; full software/GPU VRAM parity belongs to the native
+renderer parity harness. Hardware captures of identical timelines can be compared
+exactly through `--reference`.
