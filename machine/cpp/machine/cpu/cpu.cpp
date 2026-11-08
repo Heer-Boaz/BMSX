@@ -942,9 +942,22 @@ bool CPU::decodeInstruction(
 		decoded.a = static_cast<uint16_t>(
 			(wideA << aShift) | (extA << MAX_OPERAND_BITS) | aLow
 		);
-		decoded.b = static_cast<uint16_t>(rawB);
-		decoded.c = static_cast<uint16_t>(rawC);
+		const u8 rkOperands = OPCODE_RK_OPERANDS[op];
+		decoded.b = static_cast<int16_t>((rkOperands & RK_OPERAND_B) != 0u
+			? signExtend(rawB, MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS))
+			: static_cast<int32_t>(rawB));
+		decoded.c = static_cast<int16_t>((rkOperands & RK_OPERAND_C) != 0u
+			? signExtend(rawC, MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS))
+			: static_cast<int32_t>(rawC));
 		switch (static_cast<OpCode>(op)) {
+			case OpCode::KSMI:
+				decoded.sbx = decodedSbx;
+				break;
+			case OpCode::GETFIELD:
+			case OpCode::SETFIELD:
+			case OpCode::SELF:
+				decoded.tableCacheSlot = -1;
+				break;
 			case OpCode::GETGL:
 			case OpCode::SETGL:
 				decoded.bx = frame.executionImage->globalSlots[decodedBx];
@@ -964,15 +977,6 @@ bool CPU::decodeInstruction(
 				decoded.bx = decodedBx;
 				break;
 		}
-		decoded.sbx = decodedSbx;
-		decoded.rkB = signExtend(
-			rawB,
-			MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS)
-		);
-		decoded.rkC = signExtend(
-			rawC,
-			MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS)
-		);
 		decoded.disp = ext;
 		if (rawC > static_cast<u32>(MemoryAccessKind::F64LE)
 			&& (static_cast<OpCode>(op) == OpCode::LOAD_MEM
@@ -980,11 +984,6 @@ bool CPU::decodeInstruction(
 				|| static_cast<OpCode>(op) == OpCode::LOAD_MEM_D
 				|| static_cast<OpCode>(op) == OpCode::STORE_MEM_D)) {
 			decoded.op = static_cast<u8>(DecodedDispatchOp::ReservedMemory);
-		}
-		if (static_cast<OpCode>(op) == OpCode::GETFIELD
-			|| static_cast<OpCode>(op) == OpCode::SETFIELD
-			|| static_cast<OpCode>(op) == OpCode::SELF) {
-			decoded.tableCacheSlot = -1;
 		}
 	}
 	decoded.dispatchOp = decoded.op;
@@ -2590,8 +2589,8 @@ dispatch_instruction:
 				case static_cast<uint8_t>(DecodedDispatchOp::FusedShlBxor):
 				case static_cast<uint8_t>(DecodedDispatchOp::FusedShrBxor): {
 					const int a = decoded->a;
-					const int rkB = decoded->rkB;
-					const int rkC = decoded->rkC;
+					const int rkB = decoded->b;
+					const int rkC = decoded->c;
 					const Value& shiftLeftValue = readRK(IMAGE, registers, rkB);
 					const Value& shiftRightValue = readRK(IMAGE, registers, rkC);
 					const int32_t shifted = dispatchOp
@@ -2630,8 +2629,8 @@ dispatch_instruction:
 					lastPc = successorPc
 						+ ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
 					instructionBudgetRemaining -= decoded->baseCycles;
-					const Value& xorLeftValue = readRK(IMAGE, registers, decoded->rkB);
-					const Value& xorRightValue = readRK(IMAGE, registers, decoded->rkC);
+					const Value& xorLeftValue = readRK(IMAGE, registers, decoded->b);
+					const Value& xorRightValue = readRK(IMAGE, registers, decoded->c);
 					const int32_t xorResult = static_cast<int32_t>(
 						toU32(xorLeftValue) ^ toU32(xorRightValue)
 					);
@@ -2643,8 +2642,8 @@ dispatch_instruction:
 				}
 				case static_cast<uint8_t>(DecodedDispatchOp::FusedAddShl): {
 					const int a = decoded->a;
-					const int rkB = decoded->rkB;
-					const int rkC = decoded->rkC;
+					const int rkB = decoded->b;
+					const int rkC = decoded->c;
 					const Value& addLeftValue = readRK(IMAGE, registers, rkB);
 					const Value& addRightValue = readRK(IMAGE, registers, rkC);
 					SET_REGISTER_FAST(
@@ -2677,8 +2676,8 @@ dispatch_instruction:
 					lastPc = successorPc
 						+ ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
 					instructionBudgetRemaining -= decoded->baseCycles;
-					const Value& shiftLeftValue = readRK(IMAGE, registers, decoded->rkB);
-					const Value& shiftRightValue = readRK(IMAGE, registers, decoded->rkC);
+					const Value& shiftLeftValue = readRK(IMAGE, registers, decoded->b);
+					const Value& shiftRightValue = readRK(IMAGE, registers, decoded->c);
 					const uint32_t shifted = toU32(shiftLeftValue)
 						<< (toU32(shiftRightValue) & 31u);
 					SET_REGISTER_FAST(

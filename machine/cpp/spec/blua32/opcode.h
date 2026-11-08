@@ -17,6 +17,9 @@ inline constexpr size_t OPCODE_COUNT = 64U;
 extern const std::array<uint8_t, OPCODE_COUNT> BASE_CYCLES;
 extern const std::array<uint8_t, OPCODE_COUNT> OPCODE_USES_BX;
 extern const std::array<uint8_t, OPCODE_COUNT> OPCODE_USES_DISP;
+inline constexpr uint8_t RK_OPERAND_B = 1u;
+inline constexpr uint8_t RK_OPERAND_C = 2u;
+extern const std::array<uint8_t, OPCODE_COUNT> OPCODE_RK_OPERANDS;
 
 inline constexpr int encodeFixedCallArgCount(int argCount) { return argCount + 1; }
 

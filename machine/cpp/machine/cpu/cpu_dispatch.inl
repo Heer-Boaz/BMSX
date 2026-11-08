@@ -121,7 +121,7 @@ DISPATCH_LABEL(GETI) {
 DISPATCH_LABEL(SETI) {
 	const int a = decoded->a;
 	const int b = decoded->b;
-	const int rkC = decoded->rkC;
+	const int rkC = decoded->c;
 	const Value& tableValue = REG(a);
 	const Value& value = readRK(IMAGE, registers, rkC);
 	if (valueIsTable(tableValue)
@@ -147,7 +147,7 @@ DISPATCH_LABEL(GETFIELD) {
 DISPATCH_LABEL(SETFIELD) {
 	const int a = decoded->a;
 	const int b = decoded->b;
-	const int rkC = decoded->rkC;
+	const int rkC = decoded->c;
 	storeTableFieldIndexCached(
 		TABLE_CACHE_SLOT(),
 		REG(a),
@@ -176,7 +176,7 @@ DISPATCH_LABEL(HALT) {
 DISPATCH_LABEL(GETT) {
 	const int a = decoded->a;
 	const int b = decoded->b;
-	const int rkC = decoded->rkC;
+	const int rkC = decoded->c;
 	const Value& tableValue = REG(b);
 	const Value& key = readRK(IMAGE, registers, rkC);
 	if (valueIsTable(tableValue) && valueIsNumber(key)) {
@@ -193,8 +193,8 @@ DISPATCH_LABEL(GETT) {
 
 DISPATCH_LABEL(SETT) {
 	const int a = decoded->a;
-	const int rkB = decoded->rkB;
-	const int rkC = decoded->rkC;
+	const int rkB = decoded->b;
+	const int rkC = decoded->c;
 	const Value& tableValue = REG(a);
 	const Value& key = readRK(IMAGE, registers, rkB);
 	const Value& value = readRK(IMAGE, registers, rkC);
@@ -218,8 +218,8 @@ DISPATCH_LABEL(NEWT) {
 
 DISPATCH_LABEL(ADD) {
 	const int a = decoded->a;
-	const int rkB = decoded->rkB;
-	const int rkC = decoded->rkC;
+	const int rkB = decoded->b;
+	const int rkC = decoded->c;
 	const Value& left = readRK(IMAGE, registers, rkB);
 	const Value& right = readRK(IMAGE, registers, rkC);
 	SET_REGISTER_FAST(a, valueNumber(asNumber(left) + asNumber(right)));
@@ -228,8 +228,8 @@ DISPATCH_LABEL(ADD) {
 
 DISPATCH_LABEL(SUB) {
 	const int a = decoded->a;
-	const int rkB = decoded->rkB;
-	const int rkC = decoded->rkC;
+	const int rkB = decoded->b;
+	const int rkC = decoded->c;
 	const Value& left = readRK(IMAGE, registers, rkB);
 	const Value& right = readRK(IMAGE, registers, rkC);
 	SET_REGISTER_FAST(a, valueNumber(asNumber(left) - asNumber(right)));
@@ -238,8 +238,8 @@ DISPATCH_LABEL(SUB) {
 
 DISPATCH_LABEL(MUL) {
 	const int a = decoded->a;
-	const int rkB = decoded->rkB;
-	const int rkC = decoded->rkC;
+	const int rkB = decoded->b;
+	const int rkC = decoded->c;
 	const Value& left = readRK(IMAGE, registers, rkB);
 	const Value& right = readRK(IMAGE, registers, rkC);
 	SET_REGISTER_FAST(a, valueNumber(asNumber(left) * asNumber(right)));
@@ -248,8 +248,8 @@ DISPATCH_LABEL(MUL) {
 
 DISPATCH_LABEL(DIV) {
 	const int a = decoded->a;
-	const int rkB = decoded->rkB;
-	const int rkC = decoded->rkC;
+	const int rkB = decoded->b;
+	const int rkC = decoded->c;
 	const Value& left = readRK(IMAGE, registers, rkB);
 	const Value& right = readRK(IMAGE, registers, rkC);
 	SET_REGISTER_FAST(a, valueNumber(asNumber(left) / asNumber(right)));
@@ -258,8 +258,8 @@ DISPATCH_LABEL(DIV) {
 
 DISPATCH_LABEL(MOD) {
 	const int a = decoded->a;
-	const int rkB = decoded->rkB;
-	const int rkC = decoded->rkC;
+	const int rkB = decoded->b;
+	const int rkC = decoded->c;
 	const Value& leftValue = readRK(IMAGE, registers, rkB);
 	const Value& rightValue = readRK(IMAGE, registers, rkC);
 	const double left = asNumber(leftValue);
@@ -270,8 +270,8 @@ DISPATCH_LABEL(MOD) {
 
 DISPATCH_LABEL(FLOORDIV) {
 	const int a = decoded->a;
-	const int rkB = decoded->rkB;
-	const int rkC = decoded->rkC;
+	const int rkB = decoded->b;
+	const int rkC = decoded->c;
 	const Value& left = readRK(IMAGE, registers, rkB);
 	const Value& right = readRK(IMAGE, registers, rkC);
 	SET_REGISTER_FAST(a, valueNumber(luaFloorDivide(asNumber(left), asNumber(right))));
@@ -280,8 +280,8 @@ DISPATCH_LABEL(FLOORDIV) {
 
 DISPATCH_LABEL(POW) {
 	const int a = decoded->a;
-	const int rkB = decoded->rkB;
-	const int rkC = decoded->rkC;
+	const int rkB = decoded->b;
+	const int rkC = decoded->c;
 	const Value& left = readRK(IMAGE, registers, rkB);
 	const Value& right = readRK(IMAGE, registers, rkC);
 	SET_REGISTER_FAST(a, valueNumber(luaPow(asNumber(left), asNumber(right))));
@@ -290,8 +290,8 @@ DISPATCH_LABEL(POW) {
 
 DISPATCH_LABEL(BAND) {
 	const int a = decoded->a;
-	const int rkB = decoded->rkB;
-	const int rkC = decoded->rkC;
+	const int rkB = decoded->b;
+	const int rkC = decoded->c;
 	const Value& leftValue = readRK(IMAGE, registers, rkB);
 	const Value& rightValue = readRK(IMAGE, registers, rkC);
 	const uint32_t left = toU32(leftValue);
@@ -303,8 +303,8 @@ DISPATCH_LABEL(BAND) {
 
 DISPATCH_LABEL(BOR) {
 	const int a = decoded->a;
-	const int rkB = decoded->rkB;
-	const int rkC = decoded->rkC;
+	const int rkB = decoded->b;
+	const int rkC = decoded->c;
 	const Value& leftValue = readRK(IMAGE, registers, rkB);
 	const Value& rightValue = readRK(IMAGE, registers, rkC);
 	const uint32_t left = toU32(leftValue);
@@ -316,8 +316,8 @@ DISPATCH_LABEL(BOR) {
 
 DISPATCH_LABEL(BXOR) {
 	const int a = decoded->a;
-	const int rkB = decoded->rkB;
-	const int rkC = decoded->rkC;
+	const int rkB = decoded->b;
+	const int rkC = decoded->c;
 	const Value& leftValue = readRK(IMAGE, registers, rkB);
 	const Value& rightValue = readRK(IMAGE, registers, rkC);
 	const uint32_t left = toU32(leftValue);
@@ -329,8 +329,8 @@ DISPATCH_LABEL(BXOR) {
 
 DISPATCH_LABEL(SHL) {
 	const int a = decoded->a;
-	const int rkB = decoded->rkB;
-	const int rkC = decoded->rkC;
+	const int rkB = decoded->b;
+	const int rkC = decoded->c;
 	const Value& leftValue = readRK(IMAGE, registers, rkB);
 	const Value& rightValue = readRK(IMAGE, registers, rkC);
 	const uint32_t left = toU32(leftValue);
@@ -342,8 +342,8 @@ DISPATCH_LABEL(SHL) {
 
 DISPATCH_LABEL(SHR) {
 	const int a = decoded->a;
-	const int rkB = decoded->rkB;
-	const int rkC = decoded->rkC;
+	const int rkB = decoded->b;
+	const int rkC = decoded->c;
 	const Value& leftValue = readRK(IMAGE, registers, rkB);
 	const Value& rightValue = readRK(IMAGE, registers, rkC);
 	const int32_t left = toI32(leftValue);
@@ -354,8 +354,8 @@ DISPATCH_LABEL(SHR) {
 
 DISPATCH_LABEL(CONCAT) {
 	const int a = decoded->a;
-	const int rkB = decoded->rkB;
-	const int rkC = decoded->rkC;
+	const int rkB = decoded->b;
+	const int rkC = decoded->c;
 	const Value left = readRK(IMAGE, registers, rkB);
 	const Value right = readRK(IMAGE, registers, rkC);
 	size_t stringByteCount = 0;
@@ -438,8 +438,8 @@ DISPATCH_LABEL(BNOT) {
 
 DISPATCH_LABEL(EQ) {
 	const int a = decoded->a;
-	const int rkB = decoded->rkB;
-	const int rkC = decoded->rkC;
+	const int rkB = decoded->b;
+	const int rkC = decoded->c;
 	const Value& left = readRK(IMAGE, registers, rkB);
 	const Value& right = readRK(IMAGE, registers, rkC);
 	bool eq = false;
@@ -457,8 +457,8 @@ DISPATCH_LABEL(EQ) {
 
 DISPATCH_LABEL(LT) {
 	const int a = decoded->a;
-	const int rkB = decoded->rkB;
-	const int rkC = decoded->rkC;
+	const int rkB = decoded->b;
+	const int rkC = decoded->c;
 	const Value& leftValue = readRK(IMAGE, registers, rkB);
 	const Value& rightValue = readRK(IMAGE, registers, rkC);
 	bool ok = false;
@@ -476,8 +476,8 @@ DISPATCH_LABEL(LT) {
 
 DISPATCH_LABEL(LE) {
 	const int a = decoded->a;
-	const int rkB = decoded->rkB;
-	const int rkC = decoded->rkC;
+	const int rkB = decoded->b;
+	const int rkC = decoded->c;
 	const Value& leftValue = readRK(IMAGE, registers, rkB);
 	const Value& rightValue = readRK(IMAGE, registers, rkC);
 	bool ok = false;
@@ -767,7 +767,7 @@ DISPATCH_LABEL(STORE_MEM_WORDS_D) {
 DISPATCH_LABEL(LOAD_MEM) {
 	const int a = decoded->a;
 	const int c = decoded->c;
-	const int rkB = decoded->rkB;
+	const int rkB = decoded->b;
 	const uint32_t addr = toU32(readRK(IMAGE, registers, rkB));
 	if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(c)]) != 0u) {
 		enterSynchronousAddressException(FRAME, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, addr);
@@ -795,7 +795,7 @@ DISPATCH_LABEL(LOAD_MEM) {
 DISPATCH_LABEL(STORE_MEM) {
 	const int a = decoded->a;
 	const int c = decoded->c;
-	const int rkB = decoded->rkB;
+	const int rkB = decoded->b;
 	const uint32_t addr = toU32(readRK(IMAGE, registers, rkB));
 	if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(c)]) != 0u) {
 		enterSynchronousAddressException(FRAME, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);
@@ -824,7 +824,7 @@ DISPATCH_LABEL(STORE_MEM) {
 DISPATCH_LABEL(STORE_MEM_WORDS) {
 	const int a = decoded->a;
 	const int c = decoded->c;
-	const int rkB = decoded->rkB;
+	const int rkB = decoded->b;
 	const uint32_t addr = toU32(readRK(IMAGE, registers, rkB));
 	if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(MemoryAccessKind::Word)]) != 0u) {
 		enterSynchronousAddressException(FRAME, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);

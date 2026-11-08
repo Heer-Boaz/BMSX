@@ -11,6 +11,7 @@
 #include "machine/memory/bus_signals.h"
 #include "machine/memory/mapped_page.h"
 #include "spec/blua32/execution_domain.h"
+#include "spec/blua32/instruction_format.h"
 #include "spec/blua32/opcode.h"
 
 namespace bmsx {
@@ -52,14 +53,17 @@ inline constexpr uint8_t decodedDispatchOp(uint8_t first, uint8_t second) {
 }
 
 struct DecodedInstruction {
-	uint32_t bx = 0;
-	int32_t sbx = 0;
-	int32_t rkB = 0;
-	int32_t rkC = 0;
-	int32_t tableCacheSlot = -1;
+	// Each opcode consumes exactly one of these payloads. Decode initializes
+	// that member; field instructions may then update their cache prediction.
+	union {
+		uint32_t bx = 0;
+		int32_t sbx;
+		int32_t tableCacheSlot;
+	};
 	uint16_t a = 0;
-	uint16_t b = 0;
-	uint16_t c = 0;
+	// Raw fields are nonnegative; RK consumers receive sign-extended selectors.
+	int16_t b = 0;
+	int16_t c = 0;
 	uint8_t op = 0;
 	uint8_t dispatchOp = 0;
 	uint8_t width = 0;
@@ -68,7 +72,8 @@ struct DecodedInstruction {
 	uint8_t dispatchCycles = 0;
 };
 
-static_assert(sizeof(DecodedInstruction) == 32u);
+static_assert(MAX_EXT_REGISTER_BC <= INT16_MAX);
+static_assert(sizeof(DecodedInstruction) == 16u);
 
 struct Blua32ExecutionImage;
 

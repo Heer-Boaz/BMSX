@@ -14,7 +14,7 @@ import {
 } from '../memory/bus_signals';
 import { readLE32 } from '../../common/endian';
 import type { IrqController } from '../devices/irq/controller';
-import { BASE_CYCLES, OPCODE_USES_BX, OPCODE_USES_DISP, OpCode } from '../../spec/blua32/opcode';
+import { BASE_CYCLES, OPCODE_USES_BX, OPCODE_USES_DISP, OPCODE_RK_OPERANDS, RK_OPERAND_B, RK_OPERAND_C, OpCode } from '../../spec/blua32/opcode';
 import {
 	COP0_BAD_ADDRESS,
 	COP0_CAUSE,
@@ -1362,9 +1362,22 @@ export class CPU implements MappedPageInvalidator {
 			page.bodyWords[pageOffset] = bodyWord;
 			page.ops[pageOffset] = op;
 			page.a[pageOffset] = (wideA << aShift) | (extA << MAX_OPERAND_BITS) | aLow;
-			page.b[pageOffset] = rawB;
-			page.c[pageOffset] = rawC;
+			const rkOperands = OPCODE_RK_OPERANDS[op];
+			page.b[pageOffset] = (rkOperands & RK_OPERAND_B) !== 0
+				? signExtend(rawB, MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS))
+				: rawB;
+			page.c[pageOffset] = (rkOperands & RK_OPERAND_C) !== 0
+				? signExtend(rawC, MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS))
+				: rawC;
 			switch (op) {
+				case OpCode.KSMI:
+					page.sbx[pageOffset] = decodedSbx;
+					break;
+				case OpCode.GETFIELD:
+				case OpCode.SETFIELD:
+				case OpCode.SELF:
+					page.tableCacheSlots[pageOffset] = -1;
+					break;
 				case OpCode.GETGL:
 				case OpCode.SETGL:
 					page.bx[pageOffset] = frame.executionImage.globalSlots[decodedBx];
@@ -1384,23 +1397,11 @@ export class CPU implements MappedPageInvalidator {
 					page.bx[pageOffset] = decodedBx;
 					break;
 			}
-			page.sbx[pageOffset] = decodedSbx;
-			page.rkB[pageOffset] = signExtend(
-				rawB,
-				MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS),
-			);
-			page.rkC[pageOffset] = signExtend(
-				rawC,
-				MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS),
-			);
 			page.disp[pageOffset] = ext;
 			if (rawC > MemoryAccessKind.F64LE
 				&& (op === OpCode.LOAD_MEM || op === OpCode.STORE_MEM
 					|| op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM_D)) {
 				page.ops[pageOffset] = DecodedDispatchOp.ReservedMemory;
-			}
-			if (op === OpCode.GETFIELD || op === OpCode.SETFIELD || op === OpCode.SELF) {
-				page.tableCacheSlots[pageOffset] = -1;
 			}
 		}
 		page.dispatchOps[pageOffset] = page.ops[pageOffset];
@@ -2267,8 +2268,8 @@ export class CPU implements MappedPageInvalidator {
 		const registers = frame.registers;
 		const image = frame.executionImage;
 		const a = page.a[pageOffset];
-		const rkB = page.rkB[pageOffset];
-		const rkC = page.rkC[pageOffset];
+		const rkB = page.b[pageOffset];
+		const rkC = page.c[pageOffset];
 		const leftConstantIndex = -1 - rkB;
 		const left = rkB < 0
 			? image.constTags[leftConstantIndex] === ValueTag.Number
@@ -2314,8 +2315,8 @@ export class CPU implements MappedPageInvalidator {
 		this.instructionBudgetRemaining -= BASE_CYCLES[
 			isAddShl ? OpCode.SHL : OpCode.BXOR
 		];
-		const secondRkB = secondPage.rkB[secondPageOffset];
-		const secondRkC = secondPage.rkC[secondPageOffset];
+		const secondRkB = secondPage.b[secondPageOffset];
+		const secondRkC = secondPage.c[secondPageOffset];
 		const secondLeftConstantIndex = -1 - secondRkB;
 		const secondLeft = secondRkB < 0
 			? image.constTags[secondLeftConstantIndex] === ValueTag.Number
@@ -2437,7 +2438,7 @@ export class CPU implements MappedPageInvalidator {
 					const b = page.b[pageOffset];
 					const baseTag = registers.getTag(a);
 					const table = registers.getTable(a);
-					const rkC = page.rkC[pageOffset];
+					const rkC = page.c[pageOffset];
 					let valueTag: ValueTag;
 					let valueScalar: number;
 					let valueReference: ValueReference;
@@ -2481,7 +2482,7 @@ export class CPU implements MappedPageInvalidator {
 				}
 				case OpCode.SETFIELD: {
 					const b = page.b[pageOffset];
-					const rkC = page.rkC[pageOffset];
+					const rkC = page.c[pageOffset];
 					let valueTag: ValueTag;
 					let valueScalar: number;
 					let valueReference: ValueReference;
@@ -2531,7 +2532,7 @@ export class CPU implements MappedPageInvalidator {
 			return;
 				case OpCode.GETT: {
 					const b = page.b[pageOffset];
-					const rkC = page.rkC[pageOffset];
+					const rkC = page.c[pageOffset];
 					let keyTag: ValueTag;
 					let keyScalar: number;
 					let keyReference: ValueReference;
@@ -2558,8 +2559,8 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				}
 				case OpCode.SETT: {
-					const rkB = page.rkB[pageOffset];
-					const rkC = page.rkC[pageOffset];
+					const rkB = page.b[pageOffset];
+					const rkC = page.c[pageOffset];
 					let keyTag: ValueTag;
 					let keyScalar: number;
 					let keyReference: ValueReference;
@@ -2619,8 +2620,8 @@ export class CPU implements MappedPageInvalidator {
 				case OpCode.SHL:
 				case OpCode.SHR:
 				{
-					const rkB = page.rkB[pageOffset];
-					const rkC = page.rkC[pageOffset];
+					const rkB = page.b[pageOffset];
+					const rkC = page.c[pageOffset];
 					const left = this.readRKNumber(frame, rkB);
 					const right = this.readRKNumber(frame, rkC);
 					switch (op) {
@@ -2663,8 +2664,8 @@ export class CPU implements MappedPageInvalidator {
 					}
 				}
 				case OpCode.CONCAT: {
-					const rkB = page.rkB[pageOffset];
-					const rkC = page.rkC[pageOffset];
+					const rkB = page.b[pageOffset];
+					const rkC = page.c[pageOffset];
 					let leftTag: ValueTag;
 					let leftScalar: number;
 					if (rkB < 0) {
@@ -2748,8 +2749,8 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				}
 				case OpCode.EQ: {
-					const rkB = page.rkB[pageOffset];
-					const rkC = page.rkC[pageOffset];
+					const rkB = page.b[pageOffset];
+					const rkC = page.c[pageOffset];
 					const eq = this.readRKEquals(frame, rkB, rkC);
 					if (eq !== (a !== 0)) {
 						this.skipNextInstruction(frame);
@@ -2757,8 +2758,8 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				}
 				case OpCode.LT: {
-					const rkB = page.rkB[pageOffset];
-					const rkC = page.rkC[pageOffset];
+					const rkB = page.b[pageOffset];
+					const rkC = page.c[pageOffset];
 					let leftTag: ValueTag;
 					let leftScalar: number;
 					if (rkB < 0) {
@@ -2873,8 +2874,8 @@ export class CPU implements MappedPageInvalidator {
 				}
 
 				case OpCode.LE: {
-					const rkB = page.rkB[pageOffset];
-					const rkC = page.rkC[pageOffset];
+					const rkB = page.b[pageOffset];
+					const rkC = page.c[pageOffset];
 					let leftTag: ValueTag;
 					let leftScalar: number;
 					if (rkB < 0) {
@@ -3137,7 +3138,7 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				}
 				case OpCode.LOAD_MEM: {
-					const rkB = page.rkB[pageOffset];
+					const rkB = page.b[pageOffset];
 					const c = page.c[pageOffset];
 					const addr = this.readRKNumber(frame, rkB) >>> 0;
 					if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[c as MemoryAccessKind]) !== 0) {
@@ -3174,7 +3175,7 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				}
 				case OpCode.STORE_MEM: {
-					const rkB = page.rkB[pageOffset];
+					const rkB = page.b[pageOffset];
 					const c = page.c[pageOffset];
 					const addr = this.readRKNumber(frame, rkB) >>> 0;
 					if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[c as MemoryAccessKind]) !== 0) {
@@ -3212,7 +3213,7 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				}
 				case OpCode.STORE_MEM_WORDS: {
-					const rkB = page.rkB[pageOffset];
+					const rkB = page.b[pageOffset];
 					const c = page.c[pageOffset];
 					const addr = this.readRKNumber(frame, rkB) >>> 0;
 					if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[MemoryAccessKind.Word]) !== 0) {

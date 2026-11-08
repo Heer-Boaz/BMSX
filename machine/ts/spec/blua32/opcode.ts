@@ -104,3 +104,16 @@ export const OPCODE_USES_DISP = new Uint8Array([
 	0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0,
 ]);
+
+export const RK_OPERAND_B = 1;
+export const RK_OPERAND_C = 2;
+export const OPCODE_RK_OPERANDS = new Uint8Array([
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 2, 3,
+	0, 3, 3, 3, 3, 3, 3, 3,
+	3, 3, 3, 3, 3, 3, 0, 0,
+	0, 0, 0, 3, 3, 3, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 1, 1, 1, 0, 0, 0, 0,
+	0, 0, 0, 2, 0, 2, 0, 0,
+]);

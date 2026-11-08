@@ -45,12 +45,11 @@ export type DecodedInstructionPage = {
 	ops: Uint8Array;
 	dispatchOps: Uint8Array;
 	a: Uint16Array;
-	b: Uint16Array;
-	c: Uint16Array;
+	// The opcode chooses unsigned raw fields or signed RK selectors at decode.
+	b: Int16Array;
+	c: Int16Array;
 	bx: Uint32Array;
 	sbx: Int32Array;
-	rkB: Int32Array;
-	rkC: Int32Array;
 	disp: Uint8Array;
 	sourceWords: Uint32Array;
 	bodyWords: Uint32Array;
@@ -88,21 +87,23 @@ export function createDecodedInstructionPage(
 	writeWatches: MappedPageWriteWatches | null,
 	writeWatchIndex: number,
 ): DecodedInstructionPage {
+	// Bx, KSMI's signed immediate and a field instruction's mutable cache slot
+	// are alternative payloads; no opcode consumes more than one.
+	const bx = new Uint32Array(DECODED_PAGE_WORDS);
+	const signedPayload = new Int32Array(bx.buffer);
 	const page: DecodedInstructionPage = {
 		widths: new Uint8Array(DECODED_PAGE_WORDS),
 		ops: new Uint8Array(DECODED_PAGE_WORDS),
 		dispatchOps: new Uint8Array(DECODED_PAGE_WORDS),
 		a: new Uint16Array(DECODED_PAGE_WORDS),
-		b: new Uint16Array(DECODED_PAGE_WORDS),
-		c: new Uint16Array(DECODED_PAGE_WORDS),
-		bx: new Uint32Array(DECODED_PAGE_WORDS),
-		sbx: new Int32Array(DECODED_PAGE_WORDS),
-		rkB: new Int32Array(DECODED_PAGE_WORDS),
-		rkC: new Int32Array(DECODED_PAGE_WORDS),
+		b: new Int16Array(DECODED_PAGE_WORDS),
+		c: new Int16Array(DECODED_PAGE_WORDS),
+		bx,
+		sbx: signedPayload,
 		disp: new Uint8Array(DECODED_PAGE_WORDS),
 		sourceWords: new Uint32Array(DECODED_PAGE_WORDS),
 		bodyWords: new Uint32Array(DECODED_PAGE_WORDS),
-		tableCacheSlots: new Int32Array(DECODED_PAGE_WORDS),
+		tableCacheSlots: signedPayload,
 		refreshState: new Uint8Array(DECODED_PAGE_WORDS),
 		cacheable,
 		writeWatches,
@@ -111,6 +112,5 @@ export function createDecodedInstructionPage(
 	page.refreshState.fill(DECODED_REFRESH_DECODE);
 	page.ops.fill(OpCode.WIDE);
 	page.dispatchOps.fill(OpCode.WIDE);
-	page.tableCacheSlots.fill(-1);
 	return page;
 }
