@@ -20,7 +20,7 @@
 namespace {
 using namespace bmsx;
 
-enum class Workload { Registers, Tables, Builtin, Ram, Calls, CallsBacked, CodeWrites };
+enum class Workload { Registers, Tables, Builtin, Ram, Calls, CallsBacked, CodeWrites, Fractions };
 
 test::Blua32TestImage program(Workload workload) {
 	test::Blua32TestImage image;
@@ -84,6 +84,14 @@ test::Blua32TestImage program(Workload workload) {
 		writeInstruction(text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
 		writeInstruction(text, 8, static_cast<u8>(OpCode::K0), 6, 0, 0);
 		break;
+	case Workload::Fractions:
+		writeInstruction(text, 0, static_cast<u8>(OpCode::MOV), 4, 0, 0);
+		writeInstruction(text, 1, static_cast<u8>(OpCode::ADD), 0, 0, 1);
+		writeInstruction(text, 2, static_cast<u8>(OpCode::MUL), 0, 0, 2);
+		writeInstruction(text, 3, static_cast<u8>(OpCode::SUB), 5, 4, 3);
+		writeInstruction(text, 4, static_cast<u8>(OpCode::DIV), 6, 5, 2);
+		writeInstruction(text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 58, 255);
+		break;
 	}
 	return image;
 }
@@ -126,6 +134,11 @@ void measure(Workload workload, const char* name, int grant, int round) {
 		registers[4] = valueNumber(readLE32(image.text.data() + INSTRUCTION_BYTES)
 			^ readLE32(image.text.data() + 8 * INSTRUCTION_BYTES));
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], codeAddress);
+	} else if (workload == Workload::Fractions) {
+		registers[0] = valueNumber(0.125);
+		registers[1] = valueNumber(0.125);
+		registers[2] = valueNumber(0.5);
+		registers[3] = valueNumber(0.25);
 	}
 	constexpr i64 measuredCycles = 2000000;
 	u32 codeOutcomes = 0;
@@ -173,5 +186,6 @@ int main() {
 		measure(Workload::Calls, "calls", grant, round);
 		measure(Workload::CallsBacked, "calls-backed", grant, round);
 		measure(Workload::CodeWrites, "code-writes", grant, round);
+		measure(Workload::Fractions, "fractions", grant, round);
 	}
 }
