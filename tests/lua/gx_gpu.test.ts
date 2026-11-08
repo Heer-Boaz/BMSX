@@ -736,6 +736,49 @@ test('GX-GPU operation observer borrows actual packet words and latched state id
 	assert.deepEqual(histories[0], histories[1]);
 });
 
+test('image payload blocks retain packet boundaries, queued commands and consumed prefixes across restore', () => {
+	const packet = [0xa0000000, 0x00120034, 0x00010045,
+		...Array.from({ length: 35 }, (_, index) => (0xe1000000 | index) >>> 0), 0xe1000235];
+	for (const dma of [false, true]) for (const restored of [false, true]) for (const clear of [false, true]) {
+		const { gpu, memory, scheduler } = createGpu();
+		stopPcrtc(memory, gpu, scheduler);
+		const events: { kind: number; words: number[] }[] = [];
+		gpu.setOperationObserver({ emitted(buffer, index) {
+			const start = buffer.commandWordStart[index];
+			events.push({ kind: buffer.commandKind[index],
+				words: Array.from(buffer.words.subarray(start, start + buffer.commandWordCount[index])) });
+		} });
+		for (let start = 0; start < packet.length; start += 16) {
+			scheduler.advanceTo((start / 16 + 1) * 1000);
+			const end = Math.min(start + 16, packet.length);
+			for (let index = start; index < end; index += 1) {
+				if (dma) memory.writeMappedDmaU32LE(IO_GX_GPU_GP0, packet[index], MAPPED_BUS_MASTER_DMA
+					| (index + 1 === end ? MAPPED_BUS_DMA_BLOCK_END : 0));
+				else gpu.writeGp0(packet[index]);
+			}
+			if (end === 32) {
+				const partial = gpu.captureState();
+				assert.equal(partial.gp0ImageLoadWordsRemaining, 6);
+				assert.equal(partial.gp0IngressWordsRemaining, 6);
+				assert.deepEqual(partial.commandBuffer.words, packet.slice(0, 32));
+				assert.deepEqual(partial.gp0FifoWords, []);
+				assert.deepEqual(partial.gp0DmaIngressWords, []);
+				assert.equal(events.length, 0, 'partial upload is not an emitted operation');
+				if (restored) gpu.restoreState(partial);
+				if (clear) { gpu.writeGp1(GX_GPU_GP1_CLEAR_FIFO << 24); break; }
+			}
+		}
+		assert.deepEqual(events, [{ kind: GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, words: packet.slice(0, clear ? 32 : 38) }]);
+		if (!clear) {
+			assert.equal(gpu.readDrawModeWord(), 0, 'following command waits behind upload execution');
+			assert.deepEqual(gpu.captureState().gp0FifoWords, [packet[38]]);
+		}
+		completeGpuCommands(gpu);
+		assert.equal(gpu.readDrawModeWord(), clear ? 0 : 0x235, 'payload words never execute as GP0 opcodes');
+		assert.deepEqual(gpu.captureState().gp0FifoWords, []);
+	}
+});
+
 test('GX-GPU observer reports delayed logical starts, normalized polyline segments and consumed upload prefix', () => {
 	const { gpu, memory, scheduler } = createGpu();
 	stopPcrtc(memory, gpu, scheduler);

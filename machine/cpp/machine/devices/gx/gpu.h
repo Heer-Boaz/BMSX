@@ -396,7 +396,7 @@ private:
 	void clearImageLoadState();
 	void finishImageLoadToVram(i64 commandStartCycle);
 	void flushImageLoadToVram(i64 commandStartCycle);
-	void consumeImageLoadWord(u32 word, i64 commandStartCycle);
+	void consumeImageLoadWords(i64 commandStartCycle);
 	void consumeGp0PolylinePayloadWord(u32 word, i64 commandStartCycle);
 	void beginPolylinePayload(u32 opcode, u32 commandWordCount, i64 commandStartCycle);
 	bool acceptGp0Word(u32 word);

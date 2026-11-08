@@ -972,6 +972,48 @@ void testRetirePreservesCommandsAppendedAfterSealedVblankSnapshot() {
 	require(software.vram[bmsx::gxGpuSoftwareVramIndex(software, 32, 0)] == 0x03e0u, "GX-GPU software VRAM receives preserved next-frame fill");
 }
 
+void testImagePayloadBlocksPreservePacketBoundariesAndRestore() {
+	std::vector<bmsx::u32> packet{0xa0000000u, 0x00120034u, 0x00010045u};
+	for (bmsx::u32 index = 0; index < 35; ++index) packet.push_back(0xe1000000u | index);
+	packet.push_back(0xe1000235u);
+	for (const bool dma : {false, true}) for (const bool restored : {false, true}) for (const bool clear : {false, true}) {
+		GpuHarness harness;
+		stopPcrtc(harness);
+		GpuOperationLog log{harness, {}};
+		harness.gpu.setOperationObserver({&GpuOperationLog::emitted, &log});
+		for (size_t start = 0; start < packet.size(); start += 16u) {
+			harness.scheduler.advanceTo((start / 16u + 1u) * 1000u);
+			const size_t end = std::min(start + 16u, packet.size());
+			for (size_t index = start; index < end; ++index) {
+				if (dma) harness.memory.writeMappedDmaU32LE(bmsx::IO_GX_GPU_GP0, packet[index], bmsx::MAPPED_BUS_MASTER_DMA
+					| (index + 1u == end ? bmsx::MAPPED_BUS_DMA_BLOCK_END : 0u));
+				else harness.gpu.writeGp0(packet[index]);
+			}
+			if (end == 32u) {
+				const auto partial = harness.gpu.captureState();
+				require(partial.gp0ImageLoadWordsRemaining == 6u && partial.gp0IngressWordsRemaining == 6u,
+					"partial image keeps both ingress and execution payload boundaries");
+				require(partial.commandBuffer.words == std::vector<bmsx::u32>(packet.begin(), packet.begin() + 32)
+					&& partial.gp0FifoWords.empty() && partial.gp0DmaIngressWords.empty(), "admitted blocks consume only their available payload");
+				require(log.events.empty(), "partial upload is not an emitted operation");
+				if (restored) harness.gpu.restoreState(partial);
+				if (clear) { harness.gpu.writeGp1(bmsx::GX_GPU_GP1_CLEAR_FIFO << 24u); break; }
+			}
+		}
+		const size_t expectedWords = clear ? 32u : 38u;
+		require(log.events.size() == 1u && log.events[0].kind == bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM
+			&& log.events[0].words == std::vector<bmsx::u32>(packet.begin(), packet.begin() + expectedWords),
+			"upload operation retains complete raw words, odd-pixel tail and consumed clear prefix");
+		if (!clear) {
+			require(harness.gpu.readDrawModeWord() == 0u, "following command waits behind upload execution");
+			require(harness.gpu.captureState().gp0FifoWords == std::vector<bmsx::u32>{packet.back()}, "next command remains outside the image payload");
+		}
+		completeGpuCommands(harness);
+		require(harness.gpu.readDrawModeWord() == (clear ? 0u : 0x235u), "payload words never execute as GP0 opcodes");
+		require(harness.gpu.captureState().gp0FifoWords.empty(), "queued command completes after the image");
+	}
+}
+
 void testDisplayDisableAndDmaDirectionStatusBits() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
@@ -4982,6 +5024,7 @@ void testPcrtcPublishesRawWordsAndMapsRetainedUserCircuitOneUnderSupervisor() {
 } // namespace
 
 int main() {
+	testImagePayloadBlocksPreservePacketBoundariesAndRestore();
 	testPresentationObserverPublishesLatchedPrefixWithoutChangingExecution();
 	testOperationObserverBorrowsActualPacketsAndLatchedStateForCpuAndDma();
 	testOperationObserverReportsDelayedPolylineAndPartialUpload();

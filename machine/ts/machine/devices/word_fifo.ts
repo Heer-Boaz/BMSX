@@ -46,6 +46,29 @@ export class WordFifo {
 		return word;
 	}
 
+	/** count words are available; target has room for the complete range. */
+	public readWords(target: Uint32Array, offset: number, count: number): void {
+		const words = this.words, readIndex = this.readIndex, mask = this.indexMask;
+		for (let index = 0; index < count; index += 1) {
+			target[offset + index] = words[(readIndex + index) & mask];
+		}
+		this.readIndex = (readIndex + count) & mask;
+		this.wordCount -= count;
+	}
+
+	/** Distinct FIFOs; count fits the available source words and target space. */
+	public transferWords(target: WordFifo, count: number): void {
+		const words = this.words, readIndex = this.readIndex, mask = this.indexMask;
+		const targetWords = target.words, targetMask = target.indexMask;
+		const writeIndex = target.readIndex + target.wordCount;
+		for (let index = 0; index < count; index += 1) {
+			targetWords[(writeIndex + index) & targetMask] = words[(readIndex + index) & mask];
+		}
+		this.readIndex = (readIndex + count) & mask;
+		this.wordCount -= count;
+		target.wordCount += count;
+	}
+
 	public captureWords(): number[] {
 		const words = new Array<number>(this.wordCount);
 		for (let index = 0; index < this.wordCount; index += 1) {

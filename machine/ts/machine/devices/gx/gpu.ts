@@ -1223,8 +1223,17 @@ export class GxGpu {
 		while (true) {
 			this.processGp0Fifo(nowCycles);
 			let ingressAdvanced = false;
-			while (!this.gp0DmaIngress.empty() && this.acceptGp0Word(this.gp0DmaIngress.peek())) {
-				this.gp0DmaIngress.pop();
+			while (!this.gp0DmaIngress.empty()) {
+				if (this.gp0IngressPhase === GX_GPU_GP0_INGRESS_IMAGE_PAYLOAD) {
+					const words = Math.min(this.gp0DmaIngress.count(), this.gp0Fifo.free(), this.gp0IngressWordsRemaining);
+					if (words === 0) break;
+					this.gp0DmaIngress.transferWords(this.gp0Fifo, words);
+					this.gp0IngressWordsRemaining -= words;
+					if (this.gp0IngressWordsRemaining === 0) this.gp0IngressPhase = GX_GPU_GP0_INGRESS_COMMAND;
+				} else {
+					if (!this.acceptGp0Word(this.gp0DmaIngress.peek())) break;
+					this.gp0DmaIngress.pop();
+				}
 				ingressAdvanced = true;
 			}
 			if (!ingressAdvanced) return;
@@ -1242,7 +1251,7 @@ export class GxGpu {
 			&& this.commandBuffer.readback.phase === GX_GPU_READBACK_IDLE
 			&& !this.gp0Fifo.empty()) {
 			if (this.gp0ImageLoadWordsRemaining !== 0) {
-				this.consumeImageLoadWord(this.gp0Fifo.pop(), nowCycles);
+				this.consumeImageLoadWords(nowCycles);
 				continue;
 			}
 			if (this.gp0PolylineOpcode !== 0) {
@@ -1758,10 +1767,12 @@ export class GxGpu {
 		}
 	}
 
-	private consumeImageLoadWord(word: number, nowCycles: number): void {
-		this.commandBuffer.appendWord(word);
-		this.gp0ImageLoadCommandWordCount += 1;
-		this.gp0ImageLoadWordsRemaining -= 1;
+	private consumeImageLoadWords(nowCycles: number): void {
+		const words = Math.min(this.gp0Fifo.count(), this.gp0ImageLoadWordsRemaining);
+		this.gp0Fifo.readWords(this.commandBuffer.words, this.commandBuffer.wordCount, words);
+		this.commandBuffer.wordCount += words;
+		this.gp0ImageLoadCommandWordCount += words;
+		this.gp0ImageLoadWordsRemaining -= words;
 		if (this.gp0ImageLoadWordsRemaining === 0) {
 			this.finishImageLoadToVram(nowCycles);
 		}

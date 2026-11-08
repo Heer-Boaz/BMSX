@@ -690,8 +690,18 @@ void GxGpu::processGp0Pipeline(i64 commandStartCycle) {
 	while (true) {
 		consumeGp0Fifo(commandStartCycle);
 		bool ingressAdvanced = false;
-		while (!m_gp0DmaIngress.empty() && acceptGp0Word(m_gp0DmaIngress.peek())) {
-			m_gp0DmaIngress.pop();
+		while (!m_gp0DmaIngress.empty()) {
+			if (m_gp0IngressPhase == GX_GPU_GP0_INGRESS_IMAGE_PAYLOAD) {
+				const size_t words = std::min({m_gp0DmaIngress.count(), m_gp0Fifo.free(),
+					static_cast<size_t>(m_gp0IngressWordsRemaining)});
+				if (words == 0u) break;
+				m_gp0DmaIngress.transferWords(m_gp0Fifo, words);
+				m_gp0IngressWordsRemaining -= static_cast<u32>(words);
+				if (m_gp0IngressWordsRemaining == 0u) m_gp0IngressPhase = GX_GPU_GP0_INGRESS_COMMAND;
+			} else {
+				if (!acceptGp0Word(m_gp0DmaIngress.peek())) break;
+				m_gp0DmaIngress.pop();
+			}
 			ingressAdvanced = true;
 		}
 		if (!ingressAdvanced) return;
@@ -759,7 +769,7 @@ void GxGpu::consumeGp0Fifo(i64 commandStartCycle) {
 		&& m_commandBuffer.readback.phase() == GX_GPU_READBACK_IDLE
 		&& !m_gp0Fifo.empty()) {
 		if (m_gp0ImageLoadWordsRemaining != 0u) {
-			consumeImageLoadWord(m_gp0Fifo.pop(), commandStartCycle);
+			consumeImageLoadWords(commandStartCycle);
 			continue;
 		}
 		if (m_gp0PolylineOpcode != 0u) {
@@ -1185,10 +1195,12 @@ void GxGpu::flushImageLoadToVram(i64 commandStartCycle) {
 	}
 }
 
-void GxGpu::consumeImageLoadWord(u32 word, i64 commandStartCycle) {
-	m_commandBuffer.appendWord(word);
-	m_gp0ImageLoadCommandWordCount += 1u;
-	m_gp0ImageLoadWordsRemaining -= 1u;
+void GxGpu::consumeImageLoadWords(i64 commandStartCycle) {
+	const size_t words = std::min(m_gp0Fifo.count(), static_cast<size_t>(m_gp0ImageLoadWordsRemaining));
+	m_gp0Fifo.readWords(m_commandBuffer.words.data() + m_commandBuffer.wordCount, words);
+	m_commandBuffer.wordCount += words;
+	m_gp0ImageLoadCommandWordCount += static_cast<u32>(words);
+	m_gp0ImageLoadWordsRemaining -= static_cast<u32>(words);
 	if (m_gp0ImageLoadWordsRemaining == 0u) {
 		finishImageLoadToVram(commandStartCycle);
 	}

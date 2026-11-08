@@ -930,6 +930,12 @@ if(BMSX_BUILD_TESTS)
 	target_link_libraries(bmsx_string_pool_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_string_pool_tests COMMAND bmsx_string_pool_tests)
 
+	add_executable(bmsx_word_fifo_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/word_fifo_test.cpp
+	)
+	target_include_directories(bmsx_word_fifo_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+	add_test(NAME bmsx_word_fifo_tests COMMAND bmsx_word_fifo_tests)
+
 	add_executable(bmsx_input_controller_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/input_controller_test.cpp
 	)
