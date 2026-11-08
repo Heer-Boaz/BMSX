@@ -10,7 +10,7 @@ import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { readLE32, writeLE32 } from '../../machine/ts/common/endian';
 import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, CPU_CAUSE_CODE_RESERVED_INSTRUCTION, CPU_CAUSE_CODE_TRAP, CPU_CAUSE_IRQ, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
-import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
+import { BASE_BX_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_BX, MAX_LOW_OPERAND, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
@@ -108,6 +108,27 @@ test('zero-count LOADNIL neither writes a slot nor extends the frame top', () =>
 	const { cpu } = createTestSystemCpu(image);
 	cpu.runUntilDepth(0, 1);
 	assert.equal(cpu.getFrameRegisterCount(0), 0);
+});
+
+test('WIDE signed immediates retain their complete range independently of instruction length', () => {
+	for (const instrumented of [false, true]) for (const immediate of [MIN_SIGNED_BX, MIN_SIGNED_BX + 1, -524288, -1, 0, 524287, 524288, MAX_SIGNED_BX]) {
+		const text = new Uint8Array(3 * INSTRUCTION_BYTES);
+		const raw = immediate & MAX_EXT_BX;
+		writeInstruction(text, 0, OpCode.WIDE, 0, raw >>> BASE_BX_BITS, 0);
+		writeInstruction(text, 1, OpCode.KSMI, 0, (raw >>> MAX_OPERAND_BITS) & MAX_LOW_OPERAND, raw & MAX_LOW_OPERAND, (raw >>> MAX_BX_BITS) & 0xff);
+		writeInstruction(text, 2, OpCode.RET, 0, 1, 0);
+		const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3 }] }));
+		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+		const pc = cpu.readFramePc(0);
+		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+		assert.equal(cpu.readFrameRegister(0, 0), immediate);
+		assert.equal(cpu.readFramePc(0), pc + 2 * INSTRUCTION_BYTES);
+		assert.equal(cpu.lastPc, pc + INSTRUCTION_BYTES);
+		assert.equal(cpu.runUntilDepth(0, 2), RunResult.Halted);
+		const values: Value[] = [];
+		cpu.readCompletionValues(values);
+		assert.deepEqual(values, [immediate]);
+	}
 });
 
 test('return ranges preserve shifted source slots when growing the caller stack', () => {

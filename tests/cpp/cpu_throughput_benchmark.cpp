@@ -1,3 +1,4 @@
+#include "common/endian.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/execution_address_space.h"
@@ -19,7 +20,7 @@
 namespace {
 using namespace bmsx;
 
-enum class Workload { Registers, Tables, Builtin, Ram, Calls, CallsBacked };
+enum class Workload { Registers, Tables, Builtin, Ram, Calls, CallsBacked, CodeWrites };
 
 test::Blua32TestImage program(Workload workload) {
 	test::Blua32TestImage image;
@@ -75,12 +76,21 @@ test::Blua32TestImage program(Workload workload) {
 		image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 8}, {.firstWord = 7, .wordCount = 2}};
 		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 		break;
+	case Workload::CodeWrites:
+		writeInstruction(text, 0, static_cast<u8>(OpCode::STORE_MEM_D), 0, 1, static_cast<u8>(MemoryAccessKind::U32LE));
+		writeInstruction(text, 1, static_cast<u8>(OpCode::K1), 6, 0, 0);
+		writeInstruction(text, 2, static_cast<u8>(OpCode::BXOR), 0, 0, 4);
+		writeInstruction(text, 3, static_cast<u8>(OpCode::ADD), 7, 6, 2);
+		writeInstruction(text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
+		writeInstruction(text, 8, static_cast<u8>(OpCode::K0), 6, 0, 0);
+		break;
 	}
 	return image;
 }
 
 void measure(Workload workload, const char* name, int grant, int round) {
-	auto rom = test::encodeBlua32TestRom(RomImageDomain::System, program(workload));
+	const auto image = program(workload);
+	auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
 	if (workload == Workload::CallsBacked) {
 		// The same program with a fully backed final page complements the ROM-tail case.
 		rom.bytes.resize((rom.bytes.size() + MAPPED_PAGE_BYTE_MASK) & ~static_cast<size_t>(MAPPED_PAGE_BYTE_MASK));
@@ -106,8 +116,19 @@ void measure(Workload workload, const char* name, int grant, int round) {
 		registers[1] = valueNumber(DYNAMIC_RAM_BASE + 0x100);
 		registers[2] = valueNumber(1);
 		memory.writeMappedU32LE(DYNAMIC_RAM_BASE + 0x100, 1);
+	} else if (workload == Workload::CodeWrites) {
+		const u32 codeAddress = DYNAMIC_RAM_BASE + 0x1000;
+		for (u32 offset = 0; offset < image.text.size(); offset += INSTRUCTION_BYTES) {
+			memory.writeMappedU32LE(codeAddress + offset, readLE32(image.text.data() + offset));
+		}
+		registers[0] = valueNumber(readLE32(image.text.data() + INSTRUCTION_BYTES));
+		registers[1] = valueNumber(codeAddress + INSTRUCTION_BYTES);
+		registers[4] = valueNumber(readLE32(image.text.data() + INSTRUCTION_BYTES)
+			^ readLE32(image.text.data() + 8 * INSTRUCTION_BYTES));
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], codeAddress);
 	}
 	constexpr i64 measuredCycles = 2000000;
+	u32 codeOutcomes = 0;
 	for (int warmup = 0; warmup < 64; ++warmup) {
 		const auto result = cpu.runUntilDepth(0, grant);
 		if (result != RunResult::Yielded || cpu.readCauseWord() != 0u) {
@@ -115,6 +136,14 @@ void measure(Workload workload, const char* name, int grant, int round) {
 				<< " epc=" << cpu.readEpcWord() << " bus_address=" << memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) << '\n';
 			throw std::runtime_error("Benchmark must execute its workload, not an exception handler.");
 		}
+		if (workload == Workload::CodeWrites) {
+			const double value = asNumber(cpu.readFrameRegister(0, 6));
+			codeOutcomes |= value == 0 ? 1u : 0u;
+			codeOutcomes |= value == 1 ? 2u : 0u;
+		}
+	}
+	if (workload == Workload::CodeWrites && codeOutcomes != 3u) {
+		throw std::runtime_error("Executable RAM writes must change both the instruction and its observed result.");
 	}
 	i64 cycles = 0;
 	const auto start = std::chrono::steady_clock::now();
@@ -143,5 +172,6 @@ int main() {
 		measure(Workload::Ram, "ram-words", grant, round);
 		measure(Workload::Calls, "calls", grant, round);
 		measure(Workload::CallsBacked, "calls-backed", grant, round);
+		measure(Workload::CodeWrites, "code-writes", grant, round);
 	}
 }

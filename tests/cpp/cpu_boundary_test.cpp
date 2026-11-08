@@ -116,6 +116,27 @@ void zeroLoadNil() {
 	require(machine.cpu.getFrameRegisterCount(0) == 0, "zero LOADNIL does not extend top");
 }
 
+void wideSignedImmediatesKeepTheirRange() {
+	for (const bool instrumented : {false, true}) for (const int immediate : {MIN_SIGNED_BX, MIN_SIGNED_BX + 1, -524288, -1, 0, 524287, 524288, MAX_SIGNED_BX}) {
+		auto image = returnImage();
+		image.text.resize(3 * INSTRUCTION_BYTES);
+		const u32 raw = static_cast<u32>(immediate) & MAX_EXT_BX;
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, static_cast<u8>(raw >> BASE_BX_BITS), 0);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::KSMI), 0,
+			static_cast<u8>((raw >> MAX_OPERAND_BITS) & MAX_LOW_OPERAND), static_cast<u8>(raw & MAX_LOW_OPERAND), static_cast<u8>(raw >> MAX_BX_BITS));
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::RET), 0, 1, 0);
+		image.functions[0].wordCount = 3;
+		CpuMachine machine(image);
+		auto& cpu = machine.cpu;
+		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+		const u32 pc = cpu.readFramePc(0);
+		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "WIDE KSMI consumes one physical instruction charge");
+		require(cpu.readFrameRegister(0, 0) == valueNumber(immediate), "all signed immediate bits survive decoded storage");
+		require(cpu.readFramePc(0) == pc + 2 * INSTRUCTION_BYTES && cpu.lastPc == pc + INSTRUCTION_BYTES, "instruction length remains independent of the immediate bits");
+		require(cpu.runUntilDepth(0, 2) == RunResult::Halted && cpu.readCompletionValues()[0] == valueNumber(immediate), "the immediate survives ordinary completion");
+	}
+}
+
 void returnRangesSurviveCallerStackGrowth() {
 	for (const bool instrumented : {false, true}) for (const bool openReturn : {false, true}) {
 		for (const u8 produced : {0, 1, 3, 61}) for (const u8 requested : {0, 1, 4, 48}) {
@@ -610,6 +631,7 @@ int main() {
 	try {
 		stringBytePositions(); loadKrIndices(); zeroLoadNil(); successorFetchOrdering(); reservedMemoryKinds(); zeroStackReuse();
 		returnRangesSurviveCallerStackGrowth(); builtinReturnRangesSurviveDestinationGrowth();
+		wideSignedImmediatesKeepTheirRange();
 		instructionBoundaryResynchronizesAfterFetchOrObservation();
 		cachedFetchCrossesWidePagesAndObservesCodeWrites();
 		rewrittenInstructionRetainsItsOwnCycleCharge();
