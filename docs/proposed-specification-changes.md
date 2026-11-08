@@ -49,16 +49,64 @@ reden om een onrealistische afspraak te behouden. De goedgekeurde richtingen
 in het overzicht blijven uitgangspunt; nog niet gekozen numerieke grenzen
 worden hiermee niet stilzwijgend vastgesteld.
 
+## Ontwerpbesluit: eenvoud vóór behoud van het bestaande model
+
+De PSX en N64 zijn referenties voor de benodigde mechanismen, niet alleen
+voor een gewenst prestatieniveau. Een ingewikkelder BMSX-contract vereist een
+concrete functie die de meerkosten rechtvaardigt. Zonder zo'n reden wordt het
+contract vereenvoudigd, ook wanneer bestaande software, registerinterfaces,
+tests of constructiekandidaten daardoor moeten veranderen. De onderstaande
+uitwerkingsstudies leggen dus geen behoudsplicht op voor de huidige details.
+
+Voor IMGDEC en DMA betekent dit **blokverwerking als uitgangspunt**, niet een
+groter decode-quantum boven op dezelfde fijnmazige planning. De kern is een
+begrensd invoer-/uitvoerblok, bulktransport en afzonderlijke zichtbare
+voltooiing. Per-woordbuscycli in de fysieke datapath vereisen niet automatisch
+een openbaar voortgangspunt of een emulator-event per woord. De gekozen
+blokgrenzen moeten wel bepalen wanneer data, BUSY, resultaat en IRQ zichtbaar
+zijn en wanneer een gedeelde bus niet voor ander werk beschikbaar is.
+
+Dit sluit aan bij de afzonderlijke decode- en copy-outfase in
+[DuckStations MDEC](https://github.com/stenzek/duckstation/blob/master/src/core/mdec.cpp),
+de bulkoverdracht in
+[MAMEs PSX-MDEC](https://github.com/mamedev/mame/blob/master/src/devices/cpu/psx/mdec.cpp)
+en het gescheiden datatransport en voltooiingsinterrupt in
+[Mupen64Plus' PI-controller](https://github.com/mupen64plus/mupen64plus-core/blob/master/src/device/rcp/pi/pi_controller.c).
+Hun concrete timing en emulatiebenaderingen zijn geen automatisch bewijs van
+fysiek BMSX-busgedrag. Wel vervalt de aanname dat BMSX iedere bestaande kleine
+FIFO-publicatie, willekeurige I/O-naar-I/O-route of registerinterleaving moet
+blijven ondersteunen. Vaste apparaat-eindpunten en RAM als overdrachtsbuffer
+zijn volwaardige eenvoudiger alternatieven. GPU-pakketopbouw hoeft evenmin
+een taak van de beelddecompressor te blijven.
+
+Dezelfde toets geldt voor GEO/GTE, beeldcircuits, audio, input, cartridges en
+supervisorcontexten. Er wordt niet steeds extra opslag, arbitrage of een
+bijzondere geheugentoegang ontworpen om een bestaande mogelijkheid koste wat
+kost te redden. Een functie beperken of verwijderen is een geldig resultaat;
+alleen een ander opslagformaat kiezen of hetzelfde gedrag verplaatsen naar een
+nieuwe laag is nog geen vereenvoudiging van het hardwarecontract.
+
+VRAM-uitlezing moet daarbij afzonderlijk van host-snapshots worden beoordeeld.
+De PSX heeft zelf een VRAM-leespad; dat laat ook
+[DuckStations GPU-implementatie](https://github.com/stenzek/duckstation/blob/master/src/core/gpu.cpp)
+zien. Eén geordende leesoverdracht met wachttijd is iets anders dan twee
+gelijktijdig behouden volledige readback-resultaten voor cartridge en
+supervisor. Behoud van die dubbele snapshots is geen eis meer. Evenmin
+rechtvaardigen rewind of emulator-savestates een extra fysieke geheugenbank.
+Omgekeerd bewijst een dure GPU-naar-CPU-readback op één host niet dat iedere
+VRAM-leesfunctie uit de console moet verdwijnen.
+
 ## Overzicht en besluitstatus
 
 | Onderwerp | Richting | Wat nog niet vaststaat |
 |---|---|---|
-| DMA | Meer-cyclusoverdracht goedgekeurd | Zichtbare voortgang, voltooiing en timinggrenzen |
+| DMA | Eenvoudig blok-/burstcontract met meer-cyclusoverdracht | Eindpunten, busbezit, zichtbare blokvoltooiing en timing |
+| IMGDEC | Blokdecoder met bulktransport en afzonderlijke voltooiing | Blokinterface, buffers, timing en grens met GPU-pakketopbouw |
 | GEO | Werk- en geheugenafhankelijke timing goedgekeurd | Timing en voortgang per opdracht |
 | GTE | Gedeeld fysiek rekenpad onderzoeken | Voltooiingstijd van gewone commando's en zichtbare wachttijd; niet goedgekeurd |
 | Video | Fysiek begrensde uitvoer goedgekeurd | Exacte bemonstering, sync en gekwalificeerde grenzen |
 | GPU-uitvoeringstijd | Geheugenplanning en zichtbare commandovoltooiing verenigen | Fysieke architectuur of mogelijke timingwijziging; niet goedgekeurd |
-| GPU-readback | Snapshot van beide supervisorcontexten behouden | Of fysieke leeswachttijd de CPU-/DMA-timing of zichtbare volgorde verandert |
+| GPU-readback | Eenvoudig geordend leespad beoordelen; dubbele context-snapshots niet verplicht | Functieomvang, wachttijd en afhandeling bij contextovername |
 | CPU-timing | Werk- en geheugenafhankelijke fysieke timing goedgekeurd, met C++-/assemblyachtige prestatie-intentie voor normaal BLua-gebruik | Concrete instructieduur, implementatie en gevolgen voor devicevolgorde en compatibiliteit |
 | CPU-taalopslag | Eén fysiek runtimebudget inclusief globals, frames en beheer; 4 MiB publiek RAM blijft | Exacte grootte, allocatie- en OOM-regels en compatibiliteit |
 | APU-bron en stereoplaatsing | Mono als standaard; onafhankelijke niveaus links en rechts | Programmeringsinterface, representatie en compatibiliteit |
@@ -87,11 +135,13 @@ I/O-poorten heeft zelfs bij zestien lees-/schrijfparen een blokcharge van één
 systeemcyclus, ongeveer 29,5 ns.
 
 **Goedgekeurde richting.** Een fysieke overdracht gebruikt meerdere cycli.
-Het ontwerp leest een woord, wacht op de bron, schrijft dat woord naar de
-bestemming en wacht op voltooiing voordat het volgende paar wordt verwerkt.
-Wachttijden, arbitrage en geheugenverversing beïnvloeden de duur. De volgorde,
-blokgrootte, registerwoorden, verzoeken, voltooiingsstatus en interrupts blijven
-functioneel behouden. Zie [fysieke DMA-volgorde](book4/hardware.md#physical-dma-sequencing).
+Bronlezingen en bestemmingswrites kosten echte bus- en apparaatcycli;
+wachttijden, arbitrage en geheugenverversing beïnvloeden de duur. Uitgangspunt
+is nu het eenvoudige blok-/burstcontract hierboven. De bestaande blokgrootte,
+registerindeling, willekeurige eindpuntcombinaties en tussentijdse
+registerwerking hoeven niet behouden te blijven. De eerder uitgewerkte
+[fysieke DMA-volgorde](book4/hardware.md#physical-dma-sequencing) is een
+constructiekandidaat, geen verplichting om haar interleavings over te nemen.
 
 **Nog uit te werken.** De openbare timingtekst moet bepalen wanneer BUSY,
 resterende count, DONE en IRQ zichtbaar worden, inclusief wachttijden en
@@ -102,8 +152,9 @@ de [cartridgetransfertiming](book3/cartridge.md#sec-cartridge-dma-transfer-timin
 en eventuele APU-upload- en andere bandbreedtevoorbeelden moeten met de
 uiteindelijke keuze in overeenstemming worden gebracht.
 
-**Voorstel voor waarneembare voortgang.** De volgende volgorde maakt de
-goedgekeurde meer-cyclusrichting concreet zonder de registerindeling te wijzigen:
+**Eerdere kandidaat met behoud van de registerindeling.** De volgende
+uitwerking beschrijft wat die behoudskeuze zou vereisen. Zij is niet het
+uitgangspunt voor de vereenvoudiging en mag daarvoor worden vervangen:
 
 1. START met een niet-nulcount zet de gekozen channel op BUSY. START terwijl
    BUSY is, wordt genegeerd. Bij een nulcount volgt DONE en de channel-IRQ
