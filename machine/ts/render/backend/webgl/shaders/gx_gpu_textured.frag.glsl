@@ -135,7 +135,7 @@ void main() {
 		uvec3 colorAccumulator = v_colorPlaneBase + v_colorPlaneStepX * uint(logicalCoord.x) + v_colorPlaneStepY * uint(logicalCoord.y);
 		src5 = modulatedTextureRgb5(src5, (colorAccumulator >> uvec3(12u)) & uvec3(0xffu), logicalCoord);
 #else
-		src5 = modulatedTextureRgb5(src5, uvec3(v_color * 255.0), logicalCoord);
+		src5 = modulatedTextureRgb5(src5, uvec3(v_color), logicalCoord);
 #endif
 	}
 	if (u_checkMaskBit != 0u || u_blendEnable != 0u) {

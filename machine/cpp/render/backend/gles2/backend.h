@@ -15,6 +15,8 @@
 
 namespace bmsx {
 
+enum class GxGpuDrawTargetMode { FullVram, SmallNibbles, SmallRgb5, SmallRgb5Mali };
+
 void applyGLES2TextureParams(const TextureParams& params);
 
 struct GLES2Texture {
@@ -55,7 +57,9 @@ public:
 	using ProcAddress = void (*)();
 	using ProcAddressGetter = ProcAddress (*)(const char*);
 
-	OpenGLES2Backend(i32 width, i32 height, bool profileGxUploads, u32 gxGpuVramByteCount);
+	OpenGLES2Backend(i32 width, i32 height, bool profileGxUploads, u32 gxGpuVramByteCount,
+		GxGpuDrawTargetMode drawTargetMode = GxGpuDrawTargetMode::FullVram);
+	GxGpuDrawTargetMode gxGpuDrawTargetMode() const { return m_gx_draw_target_mode; }
 	~OpenGLES2Backend() override;
 
 	BackendType type() const override { return BackendType::OpenGLES2; }
@@ -141,6 +145,7 @@ public:
 	u32 contextGeneration() const { return m_context_generation; }
 	bool profilesGxUploads() const { return m_profile_gx_uploads; }
 	u32 gxGpuVramTextureRows() const { return m_gx_gpu_vram_texture_rows; }
+	void beginGxCpuToVramProfileFrame();
 	bool readGxCpuToVramProfileFrame(u64 afterRenderFrameSerial, GxCpuToVramProfileFrame& frame) const;
 	void recordGxCpuToVramUpload(u64 logicalBytes, u64 hostCalls, u64 hostBytes, u64 cpuNanoseconds);
 
@@ -169,6 +174,7 @@ private:
 	i32 m_target_height = 0;
 	FrameStats m_stats{};
 	bool m_profile_gx_uploads = false;
+	GxGpuDrawTargetMode m_gx_draw_target_mode;
 	u32 m_gx_gpu_vram_texture_rows = 0u;
 	GxCpuToVramProfileFrame m_gx_cpu_to_vram_profile_frame{};
 	i32 m_active_texture_unit = -1;

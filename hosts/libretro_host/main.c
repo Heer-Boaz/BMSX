@@ -80,6 +80,7 @@ static void usage(const char* argv0) {
 			"  %s --core ./libretro_bmsx.so --no-game [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--control PORT | --input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--timing-report] [--timing-warmup N] [--rewind on|off] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n"
 			"  %s --core ./libretro_bmsx.so GAME.rom [--slot1 AUX.rom] [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--control PORT | --input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--timing-report] [--timing-warmup N] [--rewind on|off] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n",
 			argv0, argv0);
+	fprintf(stderr, "  --core-option KEY VALUE: set a core option (repeatable; dedicated host flags take precedence)\n");
 	exit(2);
 }
 
@@ -130,12 +131,19 @@ int main(int argc, char** argv) {
 	BmsxFrameTimingState frame_timing = {
 		.warmup_frames = 500u,
 	};
+	BmsxCoreOptions option_overrides = {0};
 	BmsxVideoContextKind video_context_kind = BMSX_VIDEO_CONTEXT_FBDEV;
 	BmsxInputDriverKind input_driver = BMSX_INPUT_DRIVER_EVDEV;
 	const char* backend = "software";
 	const char* video_backend = "fb";
 
 	for (int i = 1; i < argc; ++i) {
+		if (strcmp(argv[i], "--core-option") == 0) {
+			const char* key = required_arg(argc, argv, &i);
+			const char* value = required_arg(argc, argv, &i);
+			bmsx_core_options_override(&option_overrides, key, value);
+			continue;
+		}
 		if (strcmp(argv[i], "--core") == 0) {
 			core_path = required_arg(argc, argv, &i);
 			continue;
@@ -291,6 +299,7 @@ int main(int argc, char** argv) {
 
 	BmsxCoreSession session;
 	core_session_open(&session, core_path, system_dir, save_dir);
+	session.options = option_overrides;
 	session.accept_gx_upload_profile_interface = profile_gx_upload;
 	bmsx_core_options_override(
 			&session.options,
@@ -421,8 +430,9 @@ int main(int argc, char** argv) {
 		if (use_control) host_control_after_frame(presented_frame);
 		const uint64_t run_end_ns = frame_timing.record_frame ? monotonic_ns() : 0u;
 		if (frame_timing.record_frame) {
+			BmsxGxUploadProfileFrameV1 gx_upload_frame;
+			const BmsxGxUploadProfileFrameV1* current_gx_upload = NULL;
 			if (profile_gx_upload) {
-				BmsxGxUploadProfileFrameV1 gx_upload_frame;
 				if (session.gx_upload_profile.read_frame(
 						frame_timing.gx_render_frame_serial,
 						&gx_upload_frame)) {
@@ -431,17 +441,20 @@ int main(int argc, char** argv) {
 					bmsx_frame_timing_record_gx_upload(
 							&frame_timing.report,
 							&gx_upload_frame);
+					current_gx_upload = &gx_upload_frame;
 				}
 			}
 			const uint64_t run_ns = run_end_ns - run_start_ns;
 			bmsx_frame_timing_record(&frame_timing.report,
+					run_frame_count,
 					run_ns,
 					frame_timing.current_blit_ns,
 					frame_timing.current_blit_ran,
 					frame_timing.current_swap_ns,
 					frame_timing.current_swap_ran,
 					drop_video && frame_timing.current_video_frame_received,
-					!drop_video && presented_frame);
+					!drop_video && presented_frame,
+					current_gx_upload);
 		}
 		++run_frame_count;
 		if (maximum_run_frames == 0 &&

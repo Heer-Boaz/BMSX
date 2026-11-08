@@ -238,12 +238,14 @@ OpenGLES2Backend::OpenGLES2Backend(
 	i32 width,
 	i32 height,
 	bool profileGxUploads,
-	u32 gxGpuVramByteCount)
+	u32 gxGpuVramByteCount,
+	GxGpuDrawTargetMode drawTargetMode)
 	: m_default_width(width)
 	, m_default_height(height)
 	, m_target_width(width)
 	, m_target_height(height)
 	, m_profile_gx_uploads(profileGxUploads)
+	, m_gx_draw_target_mode(drawTargetMode)
 	, m_gx_gpu_vram_texture_rows(gxGpuVramByteCount / GX_GPU_VRAM_ADDRESS_ROW_BYTE_COUNT)
 	, m_pipelines(std::make_unique<OpenGLES2Pipelines>()) {}
 
@@ -531,12 +533,6 @@ void OpenGLES2Backend::drawIndexed(PassEncoder& pass, i32 indexCount,
 void OpenGLES2Backend::beginFrame() {
 	m_stats = FrameStats{};
 	m_blend_color_valid = false;
-	if (m_profile_gx_uploads) {
-		const u64 renderFrameSerial =
-			m_gx_cpu_to_vram_profile_frame.renderFrameSerial + 1u;
-		m_gx_cpu_to_vram_profile_frame = GxCpuToVramProfileFrame{};
-		m_gx_cpu_to_vram_profile_frame.renderFrameSerial = renderFrameSerial;
-	}
 	// RetroArch can mutate GL state between frames; reset caches so bindings are
 	// refreshed.
 	invalidateTextureBindingCache();
@@ -555,6 +551,12 @@ void OpenGLES2Backend::beginFrame() {
 	glDisable(GL_SCISSOR_TEST);
 	glDisable(GL_STENCIL_TEST);
 	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+}
+
+void OpenGLES2Backend::beginGxCpuToVramProfileFrame() {
+	const u64 renderFrameSerial = m_gx_cpu_to_vram_profile_frame.renderFrameSerial + 1u;
+	m_gx_cpu_to_vram_profile_frame = GxCpuToVramProfileFrame{};
+	m_gx_cpu_to_vram_profile_frame.renderFrameSerial = renderFrameSerial;
 }
 
 bool OpenGLES2Backend::readGxCpuToVramProfileFrame(

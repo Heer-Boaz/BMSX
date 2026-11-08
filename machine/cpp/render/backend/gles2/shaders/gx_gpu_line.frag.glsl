@@ -46,9 +46,9 @@ ivec2 rawStorageVramWord(ivec2 storageCoord) {
 	vec4 rawPixel = texture2D(
 		u_vram,
 		(vec2(storageCoord) + vec2(0.5))
-			/ vec2(float(GX_GPU_VRAM_X_ADDRESS_PERIOD), float(GX_GPU_VRAM_TEXTURE_ROWS)));
+			/ u_targetSize);
 #endif
-	return gxWordBytes(rawPixel);
+	return gxTargetWordBytes(rawPixel);
 }
 
 
@@ -105,7 +105,7 @@ ivec3 rgb8ToRgb5(ivec3 rgb8, ivec2 logicalCoord) {
 
 void main() {
 	ivec2 storageCoord = ivec2(gl_FragCoord.xy);
-	ivec2 pixelCoord = storageCoord;
+	ivec2 pixelCoord = storageCoord + u_targetOrigin;
 #ifdef GX_GPU_VRAM_ALIAS
 	pixelCoord.y += u_logicalYBase;
 #endif
@@ -149,6 +149,7 @@ void main() {
 		(colorBase.z + stepIndex * colorStep.z) / 4096
 	);
 	ivec3 src5 = rgb8ToRgb5(rgb8, pixelCoord);
+#ifndef GX_GPU_HARDWARE_BLEND
 	if (u_checkMaskBit != 0 || u_blendEnable != 0) {
 		ivec2 dstWord = rawStorageVramWord(storageCoord);
 		if (u_checkMaskBit != 0 && dstWord.y / 128 != 0) {
@@ -158,5 +159,8 @@ void main() {
 			src5 = blendRgb5(src5, decodeRgb555To5(dstWord));
 		}
 	}
-	gl_FragColor = encodeRgb555(src5, u_setMaskBit);
+#else
+	if (u_blendMode == 3) src5 /= 4;
+#endif
+	gl_FragColor = gxEncodeTargetRgb555(src5, u_setMaskBit);
 }

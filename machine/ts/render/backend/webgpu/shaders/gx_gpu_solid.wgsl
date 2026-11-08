@@ -139,7 +139,7 @@ fn shadeSolid(color8: vec3<u32>, fragCoord: vec2<u32>) -> vec4<f32> {
 
 @fragment
 fn fs_main(input: VSOut) -> @location(0) vec4<f32> {
-	return shadeSolid(vec3<u32>(input.color.rgb * vec3<f32>(255.0)), vec2<u32>(input.position.xy) + vec2<u32>(0u, u.destinationYBase));
+	return shadeSolid(vec3<u32>(input.color.rgb), vec2<u32>(input.position.xy) + vec2<u32>(0u, u.destinationYBase));
 }
 
 @fragment

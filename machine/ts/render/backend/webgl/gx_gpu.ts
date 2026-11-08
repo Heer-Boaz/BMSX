@@ -62,8 +62,6 @@ import {
 	gxGpuDrawModeTextureMode,
 	gxGpuDrawModeTexturePageBaseX,
 	gxGpuDrawModeTexturePageBaseY,
-	gxGpuDrawModeTextureRectangleXFlip,
-	gxGpuDrawModeTextureRectangleYFlip,
 	gxGpuDrawModeTransparencyMode,
 	gxGpuTexturedBatchDrawModeWord,
 	gxGpuFillHeight,
@@ -71,6 +69,7 @@ import {
 	gxGpuFillX,
 	gxGpuMaskBitCheckBeforeDraw,
 	gxGpuMaskBitSetWhileDrawing,
+	gxGpuRectangleUvPlane,
 	gxGpuSegmentExceedsPrimitiveSize,
 	gxGpuTextureClutBaseX,
 	gxGpuTextureClutBaseY,
@@ -86,6 +85,7 @@ import {
 	gxGpuTriangleExceedsPrimitiveSize,
 	gxGpuTriangleRasterShift,
 	gxGpuTriangleAttributePlane,
+	gxGpuTriangleAttributeSignedStep,
 	gxGpuVramLogicalAreaOverlapsBounds,
 	gxGpuVertexY,
 	gxGpuVramCopyChunkHeight,
@@ -741,9 +741,9 @@ function writeSolidColorVertex(gx: WebGLGxGpuState, offset: number, x: number, y
 		offset,
 		x,
 		y,
-		(colorWord & 0xff) / 255,
-		((colorWord >>> 8) & 0xff) / 255,
-		((colorWord >>> 16) & 0xff) / 255,
+		colorWord & 0xff,
+		(colorWord >>> 8) & 0xff,
+		(colorWord >>> 16) & 0xff,
 	);
 }
 
@@ -983,12 +983,12 @@ function writeLineVertex(
 	gx.lineVertices[offset + 3] = y0;
 	gx.lineVertices[offset + 4] = x1;
 	gx.lineVertices[offset + 5] = y1;
-	gx.lineVertices[offset + 6] = (color0 & 0xff) / 255;
-	gx.lineVertices[offset + 7] = ((color0 >>> 8) & 0xff) / 255;
-	gx.lineVertices[offset + 8] = ((color0 >>> 16) & 0xff) / 255;
-	gx.lineVertices[offset + 9] = (color1 & 0xff) / 255;
-	gx.lineVertices[offset + 10] = ((color1 >>> 8) & 0xff) / 255;
-	gx.lineVertices[offset + 11] = ((color1 >>> 16) & 0xff) / 255;
+	gx.lineVertices[offset + 6] = color0 & 0xff;
+	gx.lineVertices[offset + 7] = (color0 >>> 8) & 0xff;
+	gx.lineVertices[offset + 8] = (color0 >>> 16) & 0xff;
+	gx.lineVertices[offset + 9] = color1 & 0xff;
+	gx.lineVertices[offset + 10] = (color1 >>> 8) & 0xff;
+	gx.lineVertices[offset + 11] = (color1 >>> 16) & 0xff;
 	return offset + GX_GPU_LINE_VERTEX_FLOATS;
 }
 
@@ -1054,9 +1054,9 @@ function writeTexturedTextureSource(gx: WebGLGxGpuState, floatOffset: number): v
 function writeTexturedVertex(gx: WebGLGxGpuState, offset: number, x: number, y: number, colorWord: number): number {
 	gx.texturedVertices[offset] = x;
 	gx.texturedVertices[offset + 1] = y;
-	gx.texturedVertices[offset + 2] = (colorWord & 0xff) / 255;
-	gx.texturedVertices[offset + 3] = ((colorWord >>> 8) & 0xff) / 255;
-	gx.texturedVertices[offset + 4] = ((colorWord >>> 16) & 0xff) / 255;
+	gx.texturedVertices[offset + 2] = colorWord & 0xff;
+	gx.texturedVertices[offset + 3] = (colorWord >>> 8) & 0xff;
+	gx.texturedVertices[offset + 4] = (colorWord >>> 16) & 0xff;
 	writeTexturedTextureSource(gx, offset + GX_GPU_TEXTURED_TEXTURE_SOURCE_FLOAT_OFFSET);
 	return offset + GX_GPU_TEXTURED_VERTEX_FLOATS;
 }
@@ -1324,16 +1324,18 @@ function appendTexturedRectangle(gx: WebGLGxGpuState, commandBuffer: GxGpuComman
 		return vertexFloatCount;
 	}
 	const drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
-	const xFlip = gxGpuDrawModeTextureRectangleXFlip(drawModeWord);
-	const yFlip = gxGpuDrawModeTextureRectangleYFlip(drawModeWord);
-	const u0 = gxGpuTextureU(textureWord);
-	const v0 = gxGpuTextureV(textureWord);
-	const u1 = u0 + (xFlip ? -rect.width : rect.width);
-	const v1 = v0 + (yFlip ? -rect.height : rect.height);
-	const determinant = rect.width * rect.height;
+	gxGpuRectangleUvPlane(gx.texturedUvPlane, rect.x0, rect.y0,
+		gxGpuTextureU(textureWord), gxGpuTextureV(textureWord), drawModeWord);
 	let offset = vertexFloatCount;
-	offset = appendTexturedTriangle(gx, offset, determinant, rect.x0, rect.y0, colorWord, u0, v0, rect.x1, rect.y0, colorWord, u1, v0, rect.x0, rect.y1, colorWord, u0, v1);
-	offset = appendTexturedTriangle(gx, offset, determinant, rect.x0, rect.y1, colorWord, u0, v1, rect.x1, rect.y0, colorWord, u1, v0, rect.x1, rect.y1, colorWord, u1, v1);
+	offset = writeTexturedVertex(gx, offset, rect.x0, rect.y0, colorWord);
+	offset = writeTexturedVertex(gx, offset, rect.x1, rect.y0, colorWord);
+	offset = writeTexturedVertex(gx, offset, rect.x0, rect.y1, colorWord);
+	offset = writeTexturedVertex(gx, offset, rect.x0, rect.y1, colorWord);
+	offset = writeTexturedVertex(gx, offset, rect.x1, rect.y0, colorWord);
+	offset = writeTexturedVertex(gx, offset, rect.x1, rect.y1, colorWord);
+	for (let vertex = vertexFloatCount; vertex < offset; vertex += GX_GPU_TEXTURED_VERTEX_FLOATS)
+		for (let component = 0; component < gx.texturedUvPlane.length; ++component)
+			gx.texturedVertexWords[vertex + 5 + component] = gx.texturedUvPlane[component];
 	return offset;
 }
 
@@ -1858,6 +1860,7 @@ function syncGxGpuTexturedSourceTexture(
 	batchRect: GxGpuVramCopyRect,
 	fixedColor: boolean,
 ): number {
+	if (commandRect.right <= commandRect.left || commandRect.bottom <= commandRect.top) return 0;
 	const wordStart = commandBuffer.commandWordStart[commandIndex];
 	const textureWord = commandBuffer.words[wordStart + 2];
 	const drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
@@ -1868,13 +1871,27 @@ function syncGxGpuTexturedSourceTexture(
 	const rect = gx.vramCopyRectScratch;
 	const vertexFloatStride = fixedColor ? GX_GPU_FIXED_TEXTURED_VERTEX_FLOATS : GX_GPU_TEXTURED_VERTEX_FLOATS;
 	resetGxGpuVramCopyRect(rect);
-	for (let offset = vertexFloatStart; offset < vertexFloatEnd; offset += vertexFloatStride) {
-		const x = gx.texturedVertices[offset];
-		const y = gx.texturedVertices[offset + 1];
-		const planeOffset = fixedColor ? 2 : 5;
-		const u = ((gx.texturedVertexWords[offset + planeOffset] + gx.texturedVertexWords[offset + planeOffset + 2] * x + gx.texturedVertexWords[offset + planeOffset + 4] * y) & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK) >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS;
-		const v = ((gx.texturedVertexWords[offset + planeOffset + 1] + gx.texturedVertexWords[offset + planeOffset + 3] * x + gx.texturedVertexWords[offset + planeOffset + 5] * y) & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK) >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS;
-		includeGxGpuVramCopyVertex(rect, u, v);
+	const planeOffset = fixedColor ? 2 : 5;
+	const rectangle = commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_RECTANGLE;
+	// Keep each triangle's UV interval unwrapped until its extent is known.
+	// Wrapped endpoints alone omit texels on either side of a 255->0 crossing.
+	for (let triangle = vertexFloatStart; triangle < vertexFloatEnd; triangle += vertexFloatStride * 3) {
+		const originX = rectangle ? Math.max(commandRect.left, Math.min(gx.texturedVertices[triangle], commandRect.right - 1)) : gx.texturedVertices[triangle];
+		const originY = rectangle ? Math.max(commandRect.top, Math.min(gx.texturedVertices[triangle + 1], commandRect.bottom - 1)) : gx.texturedVertices[triangle + 1];
+		const ux = gxGpuTriangleAttributeSignedStep(gx.texturedVertexWords[triangle + planeOffset + 2]);
+		const vx = gxGpuTriangleAttributeSignedStep(gx.texturedVertexWords[triangle + planeOffset + 3]);
+		const uy = gxGpuTriangleAttributeSignedStep(gx.texturedVertexWords[triangle + planeOffset + 4]);
+		const vy = gxGpuTriangleAttributeSignedStep(gx.texturedVertexWords[triangle + planeOffset + 5]);
+		const u0 = (gx.texturedVertexWords[triangle + planeOffset] + ux * originX + uy * originY) & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
+		const v0 = (gx.texturedVertexWords[triangle + planeOffset + 1] + vx * originX + vy * originY) & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
+		for (let vertex = 0; vertex < 3; ++vertex) {
+			const offset = triangle + vertex * vertexFloatStride;
+			const x = rectangle ? Math.max(commandRect.left, Math.min(gx.texturedVertices[offset], commandRect.right - 1)) : gx.texturedVertices[offset];
+			const y = rectangle ? Math.max(commandRect.top, Math.min(gx.texturedVertices[offset + 1], commandRect.bottom - 1)) : gx.texturedVertices[offset + 1];
+			const u = (u0 + ux * (x - originX) + uy * (y - originY)) >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS;
+			const v = (v0 + vx * (x - originX) + vy * (y - originY)) >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS;
+			includeGxGpuVramCopyVertex(rect, u, v);
+		}
 	}
 	const completeTexturePage = commandBuffer.commandTextureWindowWord[commandIndex] !== 0
 		|| rect.left < 0

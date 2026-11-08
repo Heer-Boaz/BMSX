@@ -1320,17 +1320,32 @@ void retro_init(void) {
 		bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD);
 	std::unique_ptr<bmsx::GPUBackend> backend;
 	switch (g_active_backend) {
-		case bmsx::BackendType::OpenGLES2:
+		case bmsx::BackendType::OpenGLES2: {
 #if BMSX_ENABLE_GLES2
+#if defined(BMSX_PLATFORM_SNESMINI)
+			auto targetMode = bmsx::GxGpuDrawTargetMode::SmallNibbles;
+#else
+			auto targetMode = bmsx::GxGpuDrawTargetMode::FullVram;
+#endif
+			if (const char* target = std::getenv("BMSX_GLES2_TARGETS")) {
+				if (std::strcmp(target, "nibbles") == 0) targetMode = bmsx::GxGpuDrawTargetMode::SmallNibbles;
+				else if (std::strcmp(target, "rgb5") == 0) targetMode = bmsx::GxGpuDrawTargetMode::SmallRgb5;
+#if defined(BMSX_PLATFORM_SNESMINI)
+				else if (std::strcmp(target, "rgb5-mali") == 0) targetMode = bmsx::GxGpuDrawTargetMode::SmallRgb5Mali;
+#endif
+				else if (std::strcmp(target, "full") != 0) throw std::runtime_error("Unknown BMSX_GLES2_TARGETS mode");
+			}
 			backend = std::make_unique<bmsx::OpenGLES2Backend>(
 				viewportWidth,
 				viewportHeight,
 				profile_gx_uploads,
-				bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+				bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes,
+				targetMode);
 			break;
 #else
 			throw std::runtime_error("OpenGLES2 backend disabled at compile time.");
 #endif
+		}
 		case bmsx::BackendType::Software: {
 			auto softwareBackend = std::make_unique<bmsx::SoftwareBackend>(
 				viewportWidth,
@@ -1681,6 +1696,12 @@ void retro_run(void) {
 		}
 	}
 	const bool hardware_frame = isHardwareBackendActive();
+#if BMSX_ENABLE_GLES2
+	if (hardware_frame) {
+		auto& backend = static_cast<bmsx::OpenGLES2Backend&>(g_video_presenter->backend());
+		if (backend.profilesGxUploads()) backend.beginGxCpuToVramProfileFrame();
+	}
+#endif
 	const bmsx::f64 deltaTime = g_frame_time_sec;
 	g_input->poll(
 		static_cast<bmsx::i32>(g_video_presenter->displayedViewportSize.x),

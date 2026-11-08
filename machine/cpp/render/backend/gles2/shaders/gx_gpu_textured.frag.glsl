@@ -26,6 +26,9 @@ uniform int u_textureMode;
 uniform int u_rawTexture;
 uniform int u_blendEnable;
 uniform int u_blendMode;
+#ifdef GX_GPU_HARDWARE_BLEND
+uniform int u_blendClass;
+#endif
 uniform int u_checkMaskBit;
 uniform int u_setMaskBit;
 uniform int u_ditherEnable;
@@ -33,13 +36,16 @@ uniform int u_skippedLineParity;
 #ifdef GX_GPU_VRAM_ALIAS
 uniform int u_logicalYBase;
 #endif
+#ifndef GX_GPU_INTEGER_UV
 varying vec4 v_uvPlaneBase;
 varying vec4 v_uvPlaneStepX;
 varying vec4 v_uvPlaneStepY;
+#endif
 #if !GX_GPU_FIXED_COLOR_PLANE
-varying vec2 v_textureSource;
+varying vec4 v_textureSource;
+#ifdef GX_GPU_INTEGER_UV
 varying vec2 v_rectangleUv;
-uniform highp float u_rasterPhase;
+#endif
 #endif
 #if GX_GPU_FIXED_COLOR_PLANE
 varying vec4 v_colorPlane[5];
@@ -80,15 +86,18 @@ int applyTextureWindowAxis(int coord, int andMask, int orMask) {
 	return low + (bitAnd5(wrapped / 8, andMask / 8) + orMask / 8) * 8;
 }
 
-ivec2 rawVramWord(ivec2 logicalCoord) {
+vec4 rawVramPixel(ivec2 logicalCoord) {
 	ivec2 wrapped = ivec2(
 		wrapPeriod(logicalCoord.x, GX_GPU_VRAM_X_ADDRESS_PERIOD),
 		wrapPeriod(logicalCoord.y, GX_GPU_VRAM_TEXTURE_ROWS));
-	vec4 rawPixel = texture2D(
+	return texture2D(
 		u_vram,
 		(vec2(wrapped) + vec2(0.5))
 			/ vec2(float(GX_GPU_VRAM_X_ADDRESS_PERIOD), float(GX_GPU_VRAM_TEXTURE_ROWS)));
-	return gxWordBytes(rawPixel);
+}
+
+ivec2 rawVramWord(ivec2 logicalCoord) {
+	return gxWordBytes(rawVramPixel(logicalCoord));
 }
 
 ivec2 rawStorageVramWord(ivec2 storageCoord) {
@@ -98,22 +107,21 @@ ivec2 rawStorageVramWord(ivec2 storageCoord) {
 	vec4 rawPixel = texture2D(
 		u_destination,
 		(vec2(storageCoord) + vec2(0.5))
-			/ vec2(float(GX_GPU_VRAM_X_ADDRESS_PERIOD), float(GX_GPU_VRAM_TEXTURE_ROWS)));
+			/ u_targetSize);
 #endif
-	return gxWordBytes(rawPixel);
+	return gxTargetWordBytes(rawPixel);
 }
 
 
 
 ivec2 fixedUv(ivec2 logicalCoord) {
-#if !GX_GPU_FIXED_COLOR_PLANE
-	if (u_rasterPhase == 0.0) {
-		ivec2 uv = ivec2(floor(v_rectangleUv));
-		return ivec2(wrapPeriod(uv.x, 256), wrapPeriod(uv.y, 256));
-	}
-#endif
+#ifdef GX_GPU_INTEGER_UV
+	ivec2 uv = ivec2(floor(v_rectangleUv));
+	return ivec2(wrapPeriod(uv.x, 256), wrapPeriod(uv.y, 256));
+#else
 	return ivec2(gxAttributeByte(v_uvPlaneBase.xz, v_uvPlaneStepX.xz, v_uvPlaneStepY.xz, logicalCoord),
 		gxAttributeByte(v_uvPlaneBase.yw, v_uvPlaneStepX.yw, v_uvPlaneStepY.yw, logicalCoord));
+#endif
 }
 
 ivec4 textureColor(ivec2 word) {
@@ -123,15 +131,16 @@ ivec4 textureColor(ivec2 word) {
 ivec4 samplePsxTexture(ivec2 sampleCoord) {
 	#if GX_GPU_FIXED_COLOR_PLANE
 	ivec2 sourceWords = ivec2(v_colorPlane[4].zw);
-#else
-	ivec2 sourceWords = ivec2(v_textureSource);
-#endif
 	ivec2 high = ivec2(sourceWords.x < 0 ? 0 : 1, sourceWords.y < 0 ? 0 : 1);
 	ivec2 low = ivec2(sourceWords.x < 0 ? sourceWords.x + 2048 : sourceWords.x,
 		sourceWords.y < 0 ? sourceWords.y + 2048 : sourceWords.y);
 	ivec2 texPageBase = ivec2((low.x - (low.x / 16) * 16) * 64,
 		((low.x / 16) - (low.x / 128) * 8) * 256);
 	ivec2 clutBase = ivec2((low.x / 128 + high.x * 16 + high.y * 32) * 16, low.y);
+	#else
+	ivec2 texPageBase = ivec2(v_textureSource.xy);
+	ivec2 clutBase = ivec2(v_textureSource.zw);
+	#endif
 	ivec2 windowed = ivec2(
 		applyTextureWindowAxis(sampleCoord.x, u_textureWindowAnd.x, u_textureWindowOr.x),
 		applyTextureWindowAxis(sampleCoord.y, u_textureWindowAnd.y, u_textureWindowOr.y)
@@ -215,25 +224,58 @@ ivec3 modulatedTextureRgb5(ivec3 texture5, ivec3 vertex8, ivec2 logicalCoord) {
 
 void main() {
 	ivec2 storageCoord = ivec2(gl_FragCoord.xy);
-	ivec2 logicalCoord = storageCoord;
+	ivec2 logicalCoord = storageCoord + u_targetOrigin;
 #ifdef GX_GPU_VRAM_ALIAS
 	logicalCoord.y += u_logicalYBase;
 #endif
 	if (logicalCoord.y - (logicalCoord.y / 2) * 2 == u_skippedLineParity) {
 		discard;
 	}
+#if defined(GX_GPU_RAW_OPAQUE_TEXTURE) || defined(GX_GPU_ZERO_GAIN_OPAQUE_TEXTURE)
+	// Raw opaque drawing is a VRAM-word datapath, not color arithmetic.
+	// Keep all sixteen bits, including black-with-mask and palette mask bits.
+	ivec2 uv = fixedUv(logicalCoord);
+	ivec2 page = ivec2(v_textureSource.xy);
+	vec4 raw;
+#if GX_GPU_TEXTURE_MODE == 0
+	vec4 indices = rawVramPixel(page + ivec2(uv.x / 4, uv.y));
+	int subpixel = uv.x - (uv.x / 4) * 4;
+	float nibble = subpixel == 0 ? indices.a : (subpixel == 1 ? indices.b : (subpixel == 2 ? indices.g : indices.r));
+	int paletteIndex = int(nibble * 15.0 + 0.5);
+	raw = rawVramPixel(ivec2(v_textureSource.zw) + ivec2(paletteIndex, 0));
+#elif GX_GPU_TEXTURE_MODE == 1
+	ivec2 indices = rawVramWord(page + ivec2(uv.x / 2, uv.y));
+	int paletteIndex = uv.x - (uv.x / 2) * 2 == 0 ? indices.x : indices.y;
+	raw = rawVramPixel(ivec2(v_textureSource.zw) + ivec2(paletteIndex, 0));
+#else
+	raw = rawVramPixel(page + uv);
+#endif
+	if (all(equal(raw, vec4(0.0)))) discard;
+#ifdef GX_GPU_ZERO_GAIN_OPAQUE_TEXTURE
+	// Zero gain still writes opaque black for nonzero source words. Source
+	// transparency and bit 15 survive; eligible dither also saturates to zero.
+	gl_FragColor = gxEncodeTargetRgb555(ivec3(0), u_setMaskBit != 0 || raw.r >= 0.5 ? 1 : 0);
+#else
+	if (u_setMaskBit != 0 && raw.r < 0.5) raw.r += (8.0 / 15.0);
+	gl_FragColor = gxTargetRawWord(raw);
+#endif
+#else
 	ivec4 sampled = samplePsxTexture(fixedUv(logicalCoord));
 	if (sampled.w < 0) {
 		discard;
 	}
+#ifdef GX_GPU_HARDWARE_BLEND
+	if (sampled.w != u_blendClass) discard;
+#endif
 	ivec3 src5 = sampled.xyz;
 	if (u_rawTexture == 0) {
 #if GX_GPU_FIXED_COLOR_PLANE
 		src5 = modulatedTextureRgb5(src5, fixedColor8(logicalCoord), logicalCoord);
 #else
-		src5 = modulatedTextureRgb5(src5, ivec3(v_color * 255.0), logicalCoord);
+		src5 = modulatedTextureRgb5(src5, ivec3(v_color), logicalCoord);
 #endif
 	}
+#ifndef GX_GPU_HARDWARE_BLEND
 	if (u_checkMaskBit != 0 || u_blendEnable != 0) {
 		ivec2 dstWord = rawStorageVramWord(storageCoord);
 		if (u_checkMaskBit != 0 && dstWord.y / 128 != 0) {
@@ -243,6 +285,10 @@ void main() {
 			src5 = blendRgb5(src5, decodeRgb555To5(dstWord));
 		}
 	}
+#else
+	if (sampled.w != 0 && u_blendMode == 3) src5 /= 4;
+#endif
 	int outputMaskBit = u_setMaskBit != 0 ? 1 : sampled.w;
-	gl_FragColor = encodeRgb555(src5, outputMaskBit);
+	gl_FragColor = gxEncodeTargetRgb555(src5, outputMaskBit);
+#endif
 }

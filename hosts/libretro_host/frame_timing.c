@@ -60,13 +60,15 @@ static void print_histogram(const char* label, const BmsxFrameTimingHistogram* h
 }
 
 void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
+		uint64_t host_frame,
 		uint64_t retro_run_ns,
 		uint64_t final_blit_ns,
 		bool final_blit_ran,
 		uint64_t swap_ns,
 		bool swap_ran,
 		bool dropped,
-		bool presented) {
+		bool presented,
+		const BmsxGxUploadProfileFrameV1* gx_upload) {
 	record_histogram(&report->retro_run, retro_run_ns);
 	record_histogram(&report->core_without_present, retro_run_ns - final_blit_ns - swap_ns);
 	if (final_blit_ran) {
@@ -81,6 +83,27 @@ void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
 	if (presented) {
 		report->presented_frames += 1u;
 	}
+	unsigned index = report->slow_frame_count;
+	if (index == BMSX_FRAME_TIMING_SLOW_FRAME_COUNT) {
+		if (retro_run_ns <= report->slow_frames[index - 1u].retro_run_ns) return;
+		--index;
+	} else {
+		++report->slow_frame_count;
+	}
+	while (index != 0u && retro_run_ns > report->slow_frames[index - 1u].retro_run_ns) {
+		report->slow_frames[index] = report->slow_frames[index - 1u];
+		--index;
+	}
+	report->slow_frames[index] = (BmsxSlowFrameSample){
+		.host_frame = host_frame,
+		.retro_run_ns = retro_run_ns,
+		.final_blit_ns = final_blit_ns,
+		.swap_ns = swap_ns,
+		.dropped = dropped,
+		.presented = presented,
+		.has_gx_upload = gx_upload != NULL,
+	};
+	if (gx_upload != NULL) report->slow_frames[index].gx_upload = *gx_upload;
 }
 
 void bmsx_frame_timing_record_gx_upload(
@@ -113,6 +136,18 @@ void bmsx_frame_timing_print(
 			(unsigned long long)report->presented_frames,
 			(unsigned long long)report->dropped_presentations,
 			(unsigned long long)warmup_frames);
+	for (unsigned index = 0u; index < report->slow_frame_count; ++index) {
+		const BmsxSlowFrameSample* sample = &report->slow_frames[index];
+		fprintf(stderr,
+			"[libretro-host][slow-frame] host_frame=%llu run_ms=%.3f blit_ms=%.3f swap_ms=%.3f presented=%u dropped=%u gx_profile=%u render_frame=%llu upload_commands=%llu upload_bytes=%llu upload_ms=%.3f\n",
+			(unsigned long long)sample->host_frame, (double)sample->retro_run_ns / 1000000.0,
+			(double)sample->final_blit_ns / 1000000.0, (double)sample->swap_ns / 1000000.0,
+			(unsigned)sample->presented, (unsigned)sample->dropped, (unsigned)sample->has_gx_upload,
+			(unsigned long long)sample->gx_upload.render_frame_serial,
+			(unsigned long long)sample->gx_upload.cpu_to_vram_commands,
+			(unsigned long long)sample->gx_upload.logical_bytes,
+			(double)sample->gx_upload.cpu_nanoseconds / 1000000.0);
+	}
 	if (!include_gx_upload) {
 		return;
 	}

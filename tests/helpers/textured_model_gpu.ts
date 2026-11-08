@@ -135,9 +135,74 @@ export async function renderTexturedModelCase(canvas: HTMLCanvasElement, kind: '
 		adjacentDifferences.push(rendered.findIndex((value, index) => value !== expected[index]));
 		adjacentCopies.push(sampleCopies - before);
 	}
+	const wrappedDifferences: number[] = [];
+	for (let flip = 0; flip < 2; ++flip) {
+		const textureU = flip === 0 ? 254 : 1;
+		const uploadX = flip === 0 ? 512 : 767;
+		for (const word of [
+			0xe1000118, 0x65808080, 180 << 16, 0, 0x00010100,
+			0xa0000000, (256 << 16) | uploadX, 0x00010001, 0x00007fff,
+			0xe1000118 | (flip << 12),
+			0x65808080, (180 << 16) | 100, textureU, 0x00010004,
+		]) {
+			machine.gxGpu.writeGp0(word);
+			machine.scheduler.advanceTo(machine.scheduler.currentNowCycles() + 10_000);
+			machine.gxGpu.onService(machine.scheduler.currentNowCycles());
+		}
+		machine.gxGpu.presentReadyFrameOnVblankEdge();
+		const next = machine.gxGpu.readDeviceOutput();
+		renderGxGpuSoftwareFrame(software, state, next, pixels);
+		library.execute('gx_gpu', framebuffer, next);
+		const rendered = await backend.readColorTexture(target, width, height);
+		wrappedDifferences.push(rendered.findIndex((value, index) => value !== expected[index]));
+	}
+	const rectangleDifferences: number[] = [];
+	const rectangleWords = [0xa0000000, 0x01000200, (33 << 16) | 80];
+	for (let pixel = 0; pixel < 80 * 33; pixel += 2)
+		rectangleWords.push(((pixel * 337) & 0xffff) | (((pixel + 1) * 337) << 16));
+	for (let flip = 0; flip < 4; ++flip) {
+		// An 80x33 sprite has exclusive -1 edges when mirrored. Power-of-two
+		// dimensions hide an unsigned-vertex overflow during triangle division.
+		const words = flip === 0 ? rectangleWords.slice() : [];
+		words.push(0xe1000118 | (flip << 12), 0x65808080, (160 << 16) | 100,
+			((flip & 1) !== 0 ? 79 : 0) | ((flip & 2) !== 0 ? 32 << 8 : 0), (33 << 16) | 80);
+		for (const word of words) {
+			machine.gxGpu.writeGp0(word);
+			machine.scheduler.advanceTo(machine.scheduler.currentNowCycles() + 10_000);
+			machine.gxGpu.onService(machine.scheduler.currentNowCycles());
+		}
+		machine.gxGpu.presentReadyFrameOnVblankEdge();
+		const next = machine.gxGpu.readDeviceOutput();
+		renderGxGpuSoftwareFrame(software, state, next, pixels);
+		library.execute('gx_gpu', framebuffer, next);
+		const rendered = await backend.readColorTexture(target, width, height);
+		rectangleDifferences.push(rendered.findIndex((value, index) => value !== expected[index]));
+	}
+	// Byte-valued flat colors and gains must arrive at the raster datapath
+	// without a normalized-float round trip (including 72, an fp16 boundary).
+	const flatColorDifferences: number[] = [];
+	for (const textured of [false, true]) {
+		const words: number[] = [0xe6000000, 0xe1000118, 0xa0000000, 0x01000200, 0x00010001, 0x7fff];
+		for (let color = 0; color < 256; ++color) {
+			words.push((textured ? 0x64000000 : 0x60000000) | color * 0x010101, color << 16);
+			if (textured) words.push(0);
+			words.push(0x00010100);
+		}
+		for (const word of words) {
+			machine.gxGpu.writeGp0(word);
+			machine.scheduler.advanceTo(machine.scheduler.currentNowCycles() + 10_000);
+			machine.gxGpu.onService(machine.scheduler.currentNowCycles());
+		}
+		machine.gxGpu.presentReadyFrameOnVblankEdge();
+		const next = machine.gxGpu.readDeviceOutput();
+		renderGxGpuSoftwareFrame(software, state, next, pixels);
+		library.execute('gx_gpu', framebuffer, next);
+		const rendered = await backend.readColorTexture(target, width, height);
+		flatColorDifferences.push(rendered.findIndex((value, index) => value !== expected[index]));
+	}
 	const validationError = gpu === undefined ? undefined : (await gpu.device.popErrorScope())?.message;
 	const glError = gl === undefined ? 0 : gl.gl.getError();
 	if (framebuffer !== null) gl!.destroyRenderTarget(framebuffer);
 	backend.destroyTexture(target); library.dispose(); gpu?.device.destroy();
-	return { kind, difference, samples, validationError, glError, gpuErrors, commands, transfers, snapshotDifferences, snapshotWords, adjacentCopies, adjacentDifferences };
+	return { kind, difference, samples, validationError, glError, gpuErrors, commands, transfers, snapshotDifferences, snapshotWords, adjacentCopies, adjacentDifferences, wrappedDifferences, rectangleDifferences, flatColorDifferences };
 }

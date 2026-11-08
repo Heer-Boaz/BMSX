@@ -23,6 +23,10 @@ export const GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK = 0xfffff;
 export const GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP = 1;
 export const GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP = 2;
 
+export function gxGpuTriangleAttributeSignedStep(word: number): number {
+	return (word & 0x80000) !== 0 ? word - 0x100000 : word;
+}
+
 export const enum GxGpuRasterKind {
 	Polygon,
 	Rectangle,
@@ -59,8 +63,8 @@ export function gxGpuTriangleAttributePlane(
 		const stepYQuotient = (stepYScaled - (stepYScaled % determinant)) / determinant;
 		const stepXRaw = stepXQuotient & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
 		const stepYRaw = stepYQuotient & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
-		const stepX = (stepXRaw & 0x80000) !== 0 ? stepXRaw - 0x100000 : stepXRaw;
-		const stepY = (stepYRaw & 0x80000) !== 0 ? stepYRaw - 0x100000 : stepYRaw;
+		const stepX = gxGpuTriangleAttributeSignedStep(stepXRaw);
+		const stepY = gxGpuTriangleAttributeSignedStep(stepYRaw);
 		const anchorValue = anchor === 0 ? value0 : (anchor === 1 ? value1 : value2);
 		out[outOffset + component] = ((anchorValue * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE) + (GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE >> 1) - (anchorX * stepX) - (anchorY * stepY)) & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
 		out[outOffset + componentCount + component] = stepXRaw;
@@ -263,6 +267,23 @@ export function gxGpuDrawModeTextureRectangleXFlip(drawModeWord: number): boolea
 
 export function gxGpuDrawModeTextureRectangleYFlip(drawModeWord: number): boolean {
 	return (drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP) !== 0;
+}
+
+export function gxGpuRectangleUvPlane(out: Uint32Array, x: number, y: number, u: number, v: number, drawModeWord: number): void {
+	// Rectangles have unit texel steps. Their exclusive flipped edges may be
+	// negative, unlike the unsigned vertex attributes of a triangle packet.
+	const stepX = gxGpuDrawModeTextureRectangleXFlip(drawModeWord)
+		? -GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE : GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE;
+	const stepY = gxGpuDrawModeTextureRectangleYFlip(drawModeWord)
+		? -GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE : GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE;
+	out[0] = (u * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE
+		+ (GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE >> 1) - x * stepX) & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
+	out[1] = (v * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE
+		+ (GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE >> 1) - y * stepY) & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
+	out[2] = stepX & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
+	out[3] = 0;
+	out[4] = 0;
+	out[5] = stepY & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
 }
 
 export function gxGpuSegmentExceedsPrimitiveSize(x0: number, y0: number, x1: number, y1: number): boolean {

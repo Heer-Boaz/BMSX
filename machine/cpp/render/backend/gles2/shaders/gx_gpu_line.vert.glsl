@@ -27,8 +27,8 @@ void main() {
 	gl_Position = vec4(clip, 0.0, 1.0);
 	ivec2 lineStart = ivec2(a_lineStart);
 	ivec2 lineEnd = ivec2(a_lineEnd);
-	ivec3 color0 = ivec3(a_color0 * 255.0 + 0.5);
-	ivec3 colorDelta = ivec3(a_color1 * 255.0 + 0.5) - color0;
+	ivec3 color0 = ivec3(a_color0);
+	ivec3 colorDelta = ivec3(a_color1) - color0;
 	ivec2 delta = lineEnd - lineStart;
 	int absX = absolute(delta.x);
 	int absY = absolute(delta.y);

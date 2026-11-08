@@ -42,8 +42,8 @@ fn vs_main(input: VSIn) -> VSOut {
 	out.position = vec4<f32>(clip, 0.0, 1.0);
 	out.lineStart = vec2<i32>(input.lineStart);
 	out.lineEnd = vec2<i32>(input.lineEnd);
-	let color0 = vec3<i32>(input.color0 * vec3<f32>(255.0) + vec3<f32>(0.5));
-	let colorDelta = vec3<i32>(input.color1 * vec3<f32>(255.0) + vec3<f32>(0.5)) - color0;
+	let color0 = vec3<i32>(input.color0);
+	let colorDelta = vec3<i32>(input.color1) - color0;
 	let delta = out.lineEnd - out.lineStart;
 	let steps = max(abs(delta.x), abs(delta.y));
 	out.colorBase = color0 * 4096 + vec3<i32>(2048);

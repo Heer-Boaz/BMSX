@@ -168,11 +168,19 @@ file(READ
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_readback.frag.glsl"
 	BMSX_GX_GPU_READBACK_FRAGMENT_SHADER
 )
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_cache_copy.vert.glsl"
+	BMSX_GX_GPU_CACHE_COPY_VERTEX_SHADER)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_cache_copy.frag.glsl"
+	BMSX_GX_GPU_CACHE_COPY_FRAGMENT_SHADER)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_cache_copy.vert.glsl"
+	"${CMAKE_CURRENT_SOURCE_DIR}/render/backend/gles2/shaders/gx_gpu_cache_copy.frag.glsl")
 foreach(shader IN ITEMS
 	BMSX_GX_GPU_FILL_VERTEX_SHADER BMSX_GX_GPU_FILL_FRAGMENT_SHADER
 	BMSX_GX_GPU_LINE_VERTEX_SHADER BMSX_GX_GPU_LINE_FRAGMENT_SHADER
 	BMSX_GX_GPU_TEXTURED_VERTEX_SHADER BMSX_GX_GPU_TEXTURED_FRAGMENT_SHADER
 	BMSX_GX_GPU_TRANSFER_FRAGMENT_SHADER BMSX_GX_GPU_SCANOUT_FRAGMENT_SHADER
+	BMSX_GX_GPU_CACHE_COPY_FRAGMENT_SHADER
 )
 	string(REPLACE "#include \"gx_gpu_words.glsl\"" "${BMSX_GX_GPU_WORD_FUNCTIONS}"
 		${shader} "${${shader}}")
@@ -413,6 +421,9 @@ if(BMSX_ENABLE_GLES2)
 		render/backend/gles2/backend.cpp
 		render/backend/gles2/fullscreen_quad.cpp
 		render/backend/gles2/gx_gpu.cpp
+		render/backend/gles2/gx_gpu_textured_program.cpp
+		render/backend/gles2/gx_gpu_primitive_program.cpp
+		render/backend/gles2/gx_gpu_draw_targets.cpp
 		render/backend/gles2/texture_copy.cpp
 		render/post/crt/gles2/pipeline.cpp
 		render/post/device_quantize/gles2/pipeline.cpp
@@ -740,6 +751,18 @@ if(BMSX_BUILD_TESTS)
 			target_link_options(bmsx_gles2_gx_words_tests PRIVATE -static-libstdc++ -static-libgcc)
 		endif()
 		add_test(NAME bmsx_gles2_gx_words_tests COMMAND bmsx_gles2_gx_words_tests)
+		# Opt-in architecture probe: candidate mismatches are experimental results,
+		# not permission to change the installed renderer or relax normal tests.
+		add_executable(bmsx_gles2_vram_experiment
+			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gles2_vram_format_experiment.cpp
+			${BMSX_LIBRETRO_HOST_DIR}/video_context.c
+			${BMSX_LIBRETRO_HOST_DIR}/host_fatal.c)
+		target_include_directories(bmsx_gles2_vram_experiment PRIVATE
+			${CMAKE_CURRENT_BINARY_DIR}/generated/tests ${BMSX_LIBRETRO_HOST_DIR})
+		target_link_libraries(bmsx_gles2_vram_experiment PRIVATE bmsx_host_support ${BMSX_TEST_EGL_LIBRARY} dl)
+		if(BMSX_SNESMINI_TARGET)
+			target_link_options(bmsx_gles2_vram_experiment PRIVATE -static-libstdc++ -static-libgcc)
+		endif()
 		add_executable(bmsx_gx_gpu_textured_gles2_tests
 			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gx_gpu_textured_gles2_test.cpp
 			${BMSX_LIBRETRO_HOST_DIR}/video_context.c

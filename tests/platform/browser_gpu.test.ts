@@ -139,6 +139,9 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} and CPU render flat/raw t
 	assert.deepEqual(result.transfers[1], [197, 901, 3, 2], 'the small high-row write reads its exclusive rectangle bounds, including WebGPU row padding');
 	assert.deepEqual(result.adjacentDifferences, [-1, -1, -1], 'adjacent texture draws retain whole-frame software parity');
 	assert.deepEqual(result.adjacentCopies, [1, 0, 1], 'an adjacent framebuffer does not dirty its texture page, but an actual write does');
+	assert.deepEqual(result.wrappedDifferences, [-1, -1], 'both UV-wrap directions sample late uploads with whole-frame software parity');
+	assert.deepEqual(result.rectangleDifferences, [-1, -1, -1, -1], 'non-power-of-two sprite flips retain whole-frame software parity');
+	assert.deepEqual(result.flatColorDifferences, [-1, -1], 'all flat color/gain bytes retain whole-frame software parity');
 	assert.deepEqual(result.samples.map(sample => sample.software), [
 		[255, 0, 0, 0], [0, 255, 0, 0], [0, 0, 255, 0], [0, 0, 0, 0],
 		[255, 0, 0, 0], [0, 255, 0, 0], [0, 0, 255, 0], [0, 0, 0, 0],

@@ -123,12 +123,20 @@ Options:
 - `--system-dir <path>`: used for `RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY`
 - `--save-dir <path>`: used for `RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY`
 - `--backend software|gles2`: sets the `bmsx_render_backend` core option
+- `--core-option <key> <value>`: sets any core option before initialization;
+  repeat for multiple options. Dedicated host flags take precedence. For a
+  noise-only CRT measurement, keep CRT and noise on, and set
+  `bmsx_crt_color_bleed`, `bmsx_crt_scanlines`, `bmsx_crt_blur`,
+  `bmsx_crt_glow`, `bmsx_crt_fringing` and `bmsx_crt_aperture` to `off`.
 - `--video fb|sdl`: `fb` uses `/dev/fb0` + evdev; `sdl` provides windowed software or GLES2 video and SDL input
 - `--hidden-window`: keeps the SDL window unmapped while retaining its GLES2 context for unattended runs
 - `--input-timeline <path>`: replays an explicit input timeline
 - `--paced-timeline`: keeps an active timeline on the normal host deadline instead of running it as fast as possible
 - `--max-frames <count>`: owns run lifetime explicitly, including when the timeline has ended
 - `--timing-report`: prints fixed-size `retro_run`, core-without-presentation, final-blit and swap histograms at shutdown; the GLES2 backend additionally reports GX CPU-to-VRAM command/call/byte/time totals
+  It retains the 32 slowest measured calls with their host-frame numbers,
+  presentation times and matching GX upload counters. Samples use fixed
+  storage; no per-frame log output is emitted.
   The ALSA underrun line covers the same measured window; `before_timing` counts
   earlier underruns. The final `audio stats` line covers the entire session,
   including teardown.

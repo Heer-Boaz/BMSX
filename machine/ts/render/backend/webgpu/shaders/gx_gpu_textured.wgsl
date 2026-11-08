@@ -192,7 +192,7 @@ fn shadeTextured(vertex8: vec3<u32>, fragCoord: vec2<u32>, texcoord: vec2<u32>, 
 fn fs_main(input: VSOut) -> @location(0) vec4<f32> {
 	let fragCoord = vec2<u32>(input.position.xy) + vec2<u32>(0u, u.destinationYBase);
 	let texcoord = polygonTexcoord(fragCoord, input.uvPlaneBase, input.uvPlaneStepX, input.uvPlaneStepY);
-	return shadeTextured(vec3<u32>(input.color * vec3<f32>(255.0)), fragCoord, texcoord, input.textureSource);
+	return shadeTextured(vec3<u32>(input.color), fragCoord, texcoord, input.textureSource);
 }
 
 @fragment

@@ -85,7 +85,7 @@ void main() {
 	uvec3 colorAccumulator = v_colorPlaneBase + v_colorPlaneStepX * uint(logicalCoord.x) + v_colorPlaneStepY * uint(logicalCoord.y);
 	uvec3 src5 = rgb8ToRgb5((colorAccumulator >> uvec3(12u)) & uvec3(0xffu), logicalCoord);
 #else
-	uvec3 src5 = rgb8ToRgb5(uvec3(v_color.rgb * 255.0), logicalCoord);
+	uvec3 src5 = rgb8ToRgb5(uvec3(v_color.rgb), logicalCoord);
 #endif
 	if (u_checkMaskBit != 0u || u_blendEnable != 0u) {
 		uint dstWord = rawStorageVramWord(storageCoord);
