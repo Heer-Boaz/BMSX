@@ -13,6 +13,7 @@ export const STREAMING_CONFIGURATIONS: Readonly<Record<string, StreamingConfigur
 	'direct16-128': { width: 128, height: 128, palette4: false, uploads: 1, actors: 32, voices: 4 },
 	'direct16-128-idle': { width: 128, height: 128, palette4: false, uploads: 1, actors: 0, voices: 4 },
 	'direct16-128-four': { width: 128, height: 128, palette4: false, uploads: 4, actors: 32, voices: 4 },
+	'direct16-128-four-silent': { width: 128, height: 128, palette4: false, uploads: 4, actors: 32, voices: 0 },
 	'direct16-256': { width: 256, height: 224, palette4: false, uploads: 1, actors: 32, voices: 4 },
 	'palette4-128': { width: 128, height: 128, palette4: true, uploads: 1, actors: 32, voices: 4 },
 };

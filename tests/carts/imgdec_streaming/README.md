@@ -17,10 +17,11 @@ npm run test:exec -- tsx --tsconfig tsconfig.base.json \
 ```
 
 Other workloads: `direct16-128-idle` (no actors), `direct16-128-four` (four
-uploads/draws each frame), `direct16-256` (256x224) and `palette4-128`.
+uploads/draws each frame), `direct16-128-four-silent` (the same four uploads,
+without active voices), `direct16-256` (256x224) and `palette4-128`.
 `streaming.json` records the configuration, compressed/decoded sizes and hashes.
 The TS software reference checks every uploaded texture/CLUT word, rendered
-frame/asset markers, uninterrupted guest progress and non-silent mixed audio.
+frame/asset markers, uninterrupted guest progress and the configured audible or silent audio.
 
 For a hardware-backend comparison, use the custom libretro host with GLES2,
 rewind off and the same ROM/BIOS. Measure noise CRT with real audio separately

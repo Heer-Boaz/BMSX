@@ -83,7 +83,8 @@ async function main() {
 		previousFrame = frame;
 	}
 	assert.ok(checkedFrames > 8);
-	assert.ok(audibleFrames > 0, 'the four PCM voices must produce non-silent audio while streaming');
+	assert.equal(audibleFrames > 0, configuration.voices > 0,
+		'configured PCM voices must be audible; the zero-voice control must stay silent');
 	assert.equal(runtime.machine.audioController.captureState().output.voices.length,
 		configuration.voices, 'every requested voice must still be active after sustained streaming');
 	assert.equal((cpu.getGlobalByKey(cpu.stringPool.intern('stream_checksum')) as number) > 0, configuration.actors > 0);
