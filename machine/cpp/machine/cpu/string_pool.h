@@ -35,6 +35,8 @@ public:
 	std::optional<StringId> find(std::string_view value) const;
 	const std::string& toString(StringId id) const;
 	int codepointCount(StringId id) const;
+	// index is a zero-based codepoint index below codepointCount(id).
+	uint32_t codepointAt(StringId id, size_t index) const;
 	size_t trackedLuaHeapBytes() const { return m_trackedBytes; }
 	StringPoolState captureState() const;
 	void restoreState(const StringPoolState& state);

@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "common/utf8.h"
 #include "machine/cpu/lua_heap.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/execution_address_space.h"
@@ -39,6 +40,28 @@ struct PoolMachine {
 	CPU cpu{memory, irq, addresses};
 };
 
+void indexCodepointsAcrossRepresentations() {
+	PoolMachine machine;
+	auto& pool = machine.cpu.stringPool();
+	std::string ascii;
+	for (int code = 0; code < 128; ++code) ascii.push_back(static_cast<char>(code));
+	for (const auto& text : {ascii, std::string("Aé雪\0Z", 8),
+		std::string("β😀A🚀\0é", 14), std::string("😀"), std::string(4096, 'a')}) {
+		const auto id = pool.intern(text);
+		std::vector<u32> expected;
+		for (size_t offset = 0; offset < text.size();) expected.push_back(readUtf8Codepoint(text, offset));
+		const auto state = pool.captureState();
+		for (size_t index = expected.size(); index > 0; --index) {
+			require(pool.codepointAt(id, index - 1u) == expected[index - 1u], "random indexing preserves complete Unicode scalars");
+		}
+		requireSameSnapshot(pool.captureState(), state);
+		pool.restoreState(state);
+		for (size_t index = 0; index < expected.size(); ++index) {
+			require(pool.codepointAt(id, index) == expected[index], "indexing survives snapshot restore");
+		}
+	}
+}
+
 void reclaimTextAndSnapshotStorage() {
 	PoolMachine machine;
 	auto& cpu = machine.cpu;
@@ -68,6 +91,7 @@ void recycleUnicodeAndUntrackedStrings() {
 	const auto replacement = pool.intern("β😀");
 	require(replacement == old, "dead trailing IDs are recycled without growing the pool");
 	require(pool.toString(replacement) == "β😀" && pool.codepointCount(replacement) == 2, "recycled slots publish the new Unicode metadata");
+	require(pool.codepointAt(replacement, 0) == 0x3b2u && pool.codepointAt(replacement, 1) == 0x1f600u, "recycled IDs index the new content");
 	require(pool.trackedLuaHeapBytes() == baselineTracked + 6, "new runtime text owns its actual UTF-8 payload bytes");
 }
 
@@ -209,6 +233,7 @@ void admitExternalArgumentsAcrossStackGrowth() {
 
 int main() {
 	try {
+		indexCodepointsAcrossRepresentations();
 		reclaimTextAndSnapshotStorage();
 		recycleUnicodeAndUntrackedStrings();
 		promoteAcrossReservationCollection();

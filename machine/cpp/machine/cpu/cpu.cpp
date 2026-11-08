@@ -2204,7 +2204,7 @@ void CPU::runBuiltinStringByte(BuiltinArgsView args, BuiltinResults& out) {
 	if (!valueIsString(sourceValue)) {
 		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	}
-	const std::string& source = m_stringPool.toString(asStringId(sourceValue));
+	const StringId sourceId = asStringId(sourceValue);
 	int position = 1;
 	if (args.size() > 1) {
 		const Value positionValue = args[1];
@@ -2215,21 +2215,13 @@ void CPU::runBuiltinStringByte(BuiltinArgsView args, BuiltinResults& out) {
 			position = toI32(positionValue);
 		}
 	}
-	if (position < 1) {
+	if (position < 1 || position > m_stringPool.codepointCount(sourceId)) {
 		out.push_back(valueNil());
 		return;
 	}
-	size_t byteIndex = 0;
-	int current = 1;
-	while (byteIndex < source.size()) {
-		if (current == position) {
-			out.push_back(valueNumber(static_cast<double>(readUtf8Codepoint(source, byteIndex))));
-			return;
-		}
-		byteIndex = nextUtf8Index(source, byteIndex);
-		current += 1;
-	}
-	out.push_back(valueNil());
+	out.push_back(valueNumber(static_cast<double>(
+		m_stringPool.codepointAt(sourceId, static_cast<size_t>(position - 1))
+	)));
 }
 
 void CPU::runBuiltinStringChar(BuiltinArgsView args, BuiltinResults& out) {

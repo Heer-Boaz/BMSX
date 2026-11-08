@@ -5,7 +5,8 @@ import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { createDecodedInstructionPage, DecodedDispatchOp } from '../../machine/ts/machine/cpu/execution_image';
-import { type Value, valueIsString } from '../../machine/ts/machine/cpu/value';
+import { type Value, valueIsString, ValueTag } from '../../machine/ts/machine/cpu/value';
+import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { readLE32, writeLE32 } from '../../machine/ts/common/endian';
 import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, CPU_CAUSE_CODE_RESERVED_INSTRUCTION, CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
@@ -24,6 +25,34 @@ function returnImage(op = OpCode.RET, a = 0, b = 1, c = 0) {
 	writeInstruction(text, 0, op, a, b, c);
 	return linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1 }], constants: [11, 29] });
 }
+
+test('string.byte preserves codepoint, default and signed-word position semantics in both dispatch modes', () => {
+	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
+	writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
+	for (const instrumented of [false, true]) {
+		for (const [source, position, expected] of [
+			['Aé雪\0😀Z', undefined, 65], ['Aé雪\0😀Z', null, 65],
+			['Aé雪\0😀Z', 2, 233], ['Aé雪\0😀Z', 3, 0x96ea],
+			['Aé雪\0😀Z', 4, 0], ['Aé雪\0😀Z', 5, 0x1f600], ['Aé雪\0😀Z', 6, 90],
+			['Aé雪\0😀Z', 7, null], ['', undefined, null], ['abc', 0, null],
+			['abc', -1, null], ['abc', 2.9, 98], ['abc', 0x100000002, 98],
+			['abc', NaN, null], ['abc', Infinity, null], ['a'.repeat(4096), 4096, 97],
+		] as const) {
+			writeInstruction(text, 0, OpCode.CALL, 0, position === undefined ? 2 : 3, 1);
+			const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32({
+				text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 3 }],
+			}));
+			if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+			const registers = cpu.rootThread.frames[0].registers;
+			registers.setEncoded(0, ValueTag.BuiltinFunction, BuiltinFunctionId.StringByte, null);
+			registers.setStringId(1, cpu.stringPool.intern(source));
+			if (position === null) registers.setNil(2);
+			else if (position !== undefined) registers.setNumber(2, position);
+			assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+			assert.equal(cpu.readFrameRegister(0, 0), expected);
+		}
+	}
+});
 
 test('LOADKR converts its Number index to U32 and faults outside the constant pool', () => {
 	for (const [input, expected] of [[0, 11], [1.9, 29], [4294967296, 11], [NaN, 11], [Infinity, 11], [-Infinity, 11], [-0, 11]]) {

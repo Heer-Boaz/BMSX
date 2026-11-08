@@ -1,4 +1,5 @@
 import { utf8ByteLength, utf8CodepointCount } from '../../common/utf8';
+import { nextCodePointOffset } from '../../common/utf16';
 import type { LuaHeap } from './lua_heap';
 import { ValueTag } from './value';
 
@@ -63,6 +64,19 @@ export class StringPool {
 
 	public codepointCount(id: StringId): number {
 		return this.codepointCounts[id];
+	}
+
+	/** index is a zero-based codepoint index below codepointCount(id). */
+	public codepointAt(id: StringId, index: number): number {
+		const text = this.values[id]!;
+		if (this.codepointCounts[id] === text.length) {
+			return text.charCodeAt(index);
+		}
+		let offset = 0;
+		for (let current = 0; current < index; current += 1) {
+			offset = nextCodePointOffset(text, offset);
+		}
+		return text.codePointAt(offset)!;
 	}
 
 	public trackedLuaHeapBytes(): number {

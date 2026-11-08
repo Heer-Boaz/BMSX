@@ -82,6 +82,19 @@ int StringPool::codepointCount(StringId id) const {
 	return entry(id).codepointCount;
 }
 
+uint32_t StringPool::codepointAt(StringId id, size_t index) const {
+	const InternedString& stringEntry = entry(id);
+	const std::string& text = stringEntry.value;
+	if (static_cast<size_t>(stringEntry.codepointCount) == text.size()) {
+		return utf8ByteAt(text, index);
+	}
+	size_t byteIndex = 0;
+	for (size_t current = 0; current < index; ++current) {
+		byteIndex = nextUtf8Index(text, byteIndex);
+	}
+	return readUtf8Codepoint(text, byteIndex);
+}
+
 StringPoolState StringPool::captureState() const {
 	StringPoolState state;
 	for (const auto& entry : m_entries) {

@@ -4382,7 +4382,7 @@ export class CPU implements MappedPageInvalidator {
 		if (args.length === 0 || registers.getTag(base) !== ValueTag.String) {
 			throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		}
-		const source = this.stringPool.toString(registers.getStringId(base));
+		const sourceId = registers.getStringId(base);
 		let position = 1;
 		if (args.length > 1) {
 			const positionIndex = base + 1;
@@ -4394,19 +4394,11 @@ export class CPU implements MappedPageInvalidator {
 				position = registers.getScalar(positionIndex) | 0;
 			}
 		}
-		if (position < 1) {
+		if (position < 1 || position > this.stringPool.codepointCount(sourceId)) {
 			out.push(ValueTag.Nil);
 			return;
 		}
-		let current = 1;
-		for (const char of source) {
-			if (current === position) {
-				out.push(ValueTag.Number, char.codePointAt(0) as number);
-				return;
-			}
-			current += 1;
-		}
-		out.push(ValueTag.Nil);
+		out.push(ValueTag.Number, this.stringPool.codepointAt(sourceId, position - 1));
 	}
 
 	private runBuiltinStringChar(args: BuiltinArgsView, out: BuiltinResults): void {

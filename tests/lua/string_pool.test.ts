@@ -13,6 +13,24 @@ function createCpu(): CPU {
 	return new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 }
 
+test('codepoint indexing uses the host representation without changing Unicode positions or snapshot state', () => {
+	const pool = createCpu().stringPool;
+	for (const text of [Array.from({ length: 128 }, (_, code) => String.fromCharCode(code)).join(''),
+		'Aé雪\0Z', 'β😀A🚀\0é', '😀', 'a'.repeat(4096)]) {
+		const id = pool.intern(text);
+		const expected = Array.from(text, char => char.codePointAt(0)!);
+		const state = pool.captureState();
+		for (let index = expected.length - 1; index >= 0; index -= 1) {
+			assert.equal(pool.codepointAt(id, index), expected[index]);
+		}
+		assert.deepEqual(pool.captureState(), state);
+		pool.restoreState(state);
+		for (let index = 0; index < expected.length; index += 1) {
+			assert.equal(pool.codepointAt(id, index), expected[index]);
+		}
+	}
+});
+
 test('collection removes unreachable text from the intern index and snapshots without accumulating IDs', () => {
 	const cpu = createCpu(), pool = cpu.stringPool;
 	const baselineBytes = cpu.collectTrackedHeapBytes(), baseline = pool.captureState();
@@ -38,6 +56,8 @@ test('untracked literals and empty strings are collectible; recycled slots publi
 	assert.equal(replacement, old);
 	assert.equal(pool.toString(replacement), 'β😀');
 	assert.equal(pool.codepointCount(replacement), 2);
+	assert.equal(pool.codepointAt(replacement, 0), 0x3b2);
+	assert.equal(pool.codepointAt(replacement, 1), 0x1f600);
 	assert.equal(pool.trackedLuaHeapBytes(), baselineTracked + 6);
 });
 

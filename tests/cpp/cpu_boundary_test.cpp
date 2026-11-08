@@ -5,6 +5,7 @@
 #include "machine/execution_address_space.h"
 #include "machine/memory/memory.h"
 #include "spec/blua32/instruction_format.h"
+#include "spec/blua32/builtin.h"
 #include "spec/blua32/opcode.h"
 #include "spec/bmsx/model.h"
 #include "spec/bmsx/rom_header.h"
@@ -45,6 +46,46 @@ struct CpuMachine {
 		cpu.reset();
 	}
 };
+
+void stringBytePositions() {
+	struct Case { std::string source; Value position; u8 arguments; Value expected; };
+	const std::string unicode("Aé雪\0😀Z", 12);
+	for (const bool instrumented : {false, true}) {
+		for (const Case& testCase : {
+			Case{unicode, valueNil(), 1, valueNumber(65)},
+			Case{unicode, valueNil(), 2, valueNumber(65)},
+			Case{unicode, valueNumber(2), 2, valueNumber(233)},
+			Case{unicode, valueNumber(3), 2, valueNumber(0x96ea)},
+			Case{unicode, valueNumber(4), 2, valueNumber(0)},
+			Case{unicode, valueNumber(5), 2, valueNumber(0x1f600)},
+			Case{unicode, valueNumber(6), 2, valueNumber(90)},
+			Case{unicode, valueNumber(7), 2, valueNil()},
+			Case{"", valueNil(), 1, valueNil()},
+			Case{"abc", valueNumber(0), 2, valueNil()},
+			Case{"abc", valueNumber(-1), 2, valueNil()},
+			Case{"abc", valueNumber(2.9), 2, valueNumber(98)},
+			Case{"abc", valueNumber(4294967298.0), 2, valueNumber(98)},
+			Case{"abc", valueNumber(std::numeric_limits<f64>::quiet_NaN()), 2, valueNil()},
+			Case{"abc", valueNumber(std::numeric_limits<f64>::infinity()), 2, valueNil()},
+			Case{std::string(4096, 'a'), valueNumber(4096), 2, valueNumber(97)},
+		}) {
+			auto image = returnImage(OpCode::CALL, 0, encodeFixedCallArgCount(testCase.arguments), 1);
+			image.text.resize(2 * INSTRUCTION_BYTES);
+			writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+			image.functions[0].wordCount = 2;
+			image.functions[0].maxStack = 3;
+			CpuMachine machine(image);
+			auto& cpu = machine.cpu;
+			if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+			Value* registers = cpu.activeThread()->frames[0]->registers;
+			registers[0] = cpu.createBuiltinFunction(BuiltinFunctionId::StringByte);
+			registers[1] = valueString(cpu.stringPool().intern(testCase.source));
+			registers[2] = testCase.position;
+			require(cpu.runUntilDepth(0, 100) == RunResult::Halted, "string.byte executes in both dispatch modes");
+			require(cpu.readFrameRegister(0, 0) == testCase.expected, "string.byte preserves scalar, default and signed-word position semantics");
+		}
+	}
+}
 
 void loadKrIndices() {
 	const f64 infinity = std::numeric_limits<f64>::infinity();
@@ -294,7 +335,7 @@ void bootAddressWrap() {
 
 int main() {
 	try {
-		loadKrIndices(); zeroLoadNil(); successorFetchOrdering(); reservedMemoryKinds(); zeroStackReuse();
+		stringBytePositions(); loadKrIndices(); zeroLoadNil(); successorFetchOrdering(); reservedMemoryKinds(); zeroStackReuse();
 		haltYieldPrecedence(); cachedPcWrapping(); imageTextImport(); bootAddressWrap();
 		std::cout << "CPU boundary tests passed\n";
 		return 0;
