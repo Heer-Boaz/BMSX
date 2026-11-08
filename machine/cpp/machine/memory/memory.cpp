@@ -211,17 +211,39 @@ void Memory::bindMappedPage(
 }
 
 void Memory::mapIoRead(uint32_t addr, void* context, IoReadHandler handler) {
-	m_ioReadHandlers[static_cast<size_t>((addr - IO_BASE) / IO_WORD_SIZE)] = { context, handler };
+	const size_t slot = static_cast<size_t>((addr - IO_BASE) / IO_WORD_SIZE);
+	m_ioReadHandlers[slot] = { context, handler };
+	if (auto* prefix = findIoDmaPrefix(static_cast<int>(slot))) prefix->read = nullptr;
 }
 
 void Memory::mapIoWrite(uint32_t addr, void* context, IoWriteHandler handler) {
 	IoWriteBinding& binding = m_ioWriteHandlers[static_cast<size_t>((addr - IO_BASE) / IO_WORD_SIZE)];
 	binding.context = context;
 	binding.handler = handler;
+	if (auto* prefix = findIoDmaPrefix(static_cast<int>((addr - IO_BASE) / IO_WORD_SIZE))) prefix->write = nullptr;
 }
 
 void Memory::mapIoWriteReady(uint32_t addr, IoWriteReadyHandler handler) {
-	m_ioWriteHandlers[static_cast<size_t>((addr - IO_BASE) / IO_WORD_SIZE)].ready = handler;
+	const size_t slot = static_cast<size_t>((addr - IO_BASE) / IO_WORD_SIZE);
+	m_ioWriteHandlers[slot].ready = handler;
+	if (auto* prefix = findIoDmaPrefix(static_cast<int>(slot))) prefix->write = nullptr;
+}
+
+Memory::IoDmaPrefixBinding* Memory::findIoDmaPrefix(int slot) {
+	for (auto& prefix : m_ioDmaPrefixes) if (prefix.slot == slot) return &prefix;
+	return nullptr;
+}
+
+void Memory::mapIoDmaReadPrefix(u32 address, IoDmaReadPrefixHandler handler) {
+	const int slot = static_cast<int>((address - IO_BASE) / IO_WORD_SIZE);
+	if (auto* prefix = findIoDmaPrefix(slot)) prefix->read = handler;
+	else if (handler != nullptr) m_ioDmaPrefixes.push_back({slot, handler, nullptr});
+}
+
+void Memory::mapIoDmaWritePrefix(u32 address, IoDmaWritePrefixHandler handler) {
+	const int slot = static_cast<int>((address - IO_BASE) / IO_WORD_SIZE);
+	if (auto* prefix = findIoDmaPrefix(slot)) prefix->write = handler;
+	else if (handler != nullptr) m_ioDmaPrefixes.push_back({slot, nullptr, handler});
 }
 
 bool Memory::mappedWriteReady(uint32_t addr) {
@@ -563,6 +585,54 @@ void Memory::writeMappedU32LE(uint32_t addr, uint32_t value, uint32_t faultAcces
 
 void Memory::writeMappedDmaU32LE(uint32_t addr, uint32_t value, MappedBusSignals busSignals) {
 	writeMappedBusU32LE(addr, value, BUS_ACCESS_WRITE_U32, busSignals);
+}
+
+// Only declared end-silent FIFO ports may batch the prefix. Arbitrary MMIO
+// retains per-word bus order, and every block's last read precedes its last write.
+void Memory::transferDmaBlock(u32 readAddress, u32 writeAddress, u32 wordCount,
+	u32 readStep, u32 writeStep, MappedBusSignals readSignals, MappedBusSignals writeSignals) {
+	const int writeSlot = writeStep == 0u ? ioAlignedSlot(writeAddress) : -1;
+	auto* writePrefix = wordCount > 1u && writeSlot >= 0 ? findIoDmaPrefix(writeSlot) : nullptr;
+	if (writePrefix != nullptr && writePrefix->write != nullptr
+		&& !kReadOnlyIoSlots[static_cast<size_t>(writeSlot)]) {
+		std::array<u32, (DMA_CONTROL_BLOCK_WORDS_MASK >> DMA_CONTROL_BLOCK_WORDS_SHIFT) + 1u> words;
+		const u32 prefix = wordCount - 1u;
+		const int readSlot = readStep == 0u ? ioAlignedSlot(readAddress) : -1;
+		auto* readPrefix = readSlot >= 0 ? findIoDmaPrefix(readSlot) : nullptr;
+		bool prefixRead = false;
+		if (readPrefix != nullptr && readPrefix->read != nullptr) {
+			readPrefix->read(
+				m_ioReadHandlers[static_cast<size_t>(readSlot)].context, readAddress, words.data(), prefix, readSignals);
+			prefixRead = true;
+		} else if (readStep == 0u || readStep == IO_WORD_SIZE) {
+			Span<const u8> bytes;
+			const u32 byteCount = readStep == 0u ? IO_WORD_SIZE : prefix * IO_WORD_SIZE;
+			bool bound;
+			if (readAddress >= IO_BASE + IO_SLOT_COUNT * IO_WORD_SIZE && isRamRange(readAddress, byteCount)) {
+				bytes.data_ = m_ram.data() + (readAddress - RAM_BASE);
+				bound = true;
+			} else {
+				bound = bindRomByteView(readAddress, byteCount, m_cartridgeController.selectedSlot(readSignals), bytes);
+			}
+			if (bound) {
+				for (u32 i = 0u; i < prefix; ++i) words[i] = readLE32(bytes.data_ + i * readStep);
+				prefixRead = true;
+			}
+		}
+		if (prefixRead) {
+			writePrefix->write(
+				m_ioWriteHandlers[static_cast<size_t>(writeSlot)].context, writeAddress, words.data(), prefix, writeSignals);
+			readAddress += prefix * readStep;
+			wordCount = 1u;
+		}
+	}
+	for (u32 i = 0u; i < wordCount; ++i) {
+		const MappedBusSignals end = i + 1u == wordCount ? MAPPED_BUS_DMA_BLOCK_END : 0u;
+		const u32 word = readMappedDmaU32LE(readAddress, readSignals | end);
+		writeMappedDmaU32LE(writeAddress, word, writeSignals | end);
+		readAddress += readStep;
+		writeAddress += writeStep;
+	}
 }
 
 void Memory::writeMappedBusU32LE(uint32_t addr, uint32_t value, uint32_t faultAccess, MappedBusSignals busSignals) {

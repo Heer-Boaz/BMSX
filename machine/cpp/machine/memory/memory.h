@@ -35,6 +35,10 @@ public:
 	using IoReadHandler = u32 (*)(void* context, uint32_t addr, MappedBusSignals busSignals);
 	using IoWriteHandler = void (*)(void* context, uint32_t addr, u32 value, MappedBusSignals busSignals);
 	using IoWriteReadyHandler = bool (*)(void* context, uint32_t addr, MappedBusSignals busSignals);
+	// Prefix callbacks perform only end-silent FIFO/latch/counter operations.
+	// The final word always uses the ordinary read -> ready -> write bus path.
+	using IoDmaReadPrefixHandler = void (*)(void*, u32 address, u32* words, u32 count, MappedBusSignals);
+	using IoDmaWritePrefixHandler = void (*)(void*, u32 address, const u32* words, u32 count, MappedBusSignals);
 
 	Memory(const MemoryInit& init, u32 ramByteCount);
 
@@ -50,14 +54,16 @@ public:
 	void mapIoRead(uint32_t addr, void* context, IoReadHandler handler);
 	template <auto Method, typename TObject>
 	void mapIoRead(uint32_t addr, TObject& object) {
-		m_ioReadHandlers[static_cast<size_t>((addr - IO_BASE) / IO_WORD_SIZE)] = { &object, &readMember<Method, TObject> };
+		mapIoRead(addr, &object, &readMember<Method, TObject>);
 	}
 	void mapIoWrite(uint32_t addr, void* context, IoWriteHandler handler);
 	void mapIoWriteReady(uint32_t addr, IoWriteReadyHandler handler);
 	template <auto Method, typename TObject>
 	void mapIoWrite(uint32_t addr, TObject& object) {
-		m_ioWriteHandlers[static_cast<size_t>((addr - IO_BASE) / IO_WORD_SIZE)] = { &object, &writeMember<Method, TObject> };
+		mapIoWrite(addr, &object, &writeMember<Method, TObject>);
 	}
+	void mapIoDmaReadPrefix(u32 address, IoDmaReadPrefixHandler handler);
+	void mapIoDmaWritePrefix(u32 address, IoDmaWritePrefixHandler handler);
 	bool mappedWriteReady(uint32_t addr);
 	u32 firstBlockedMappedWordWrite(uint32_t addr, uint32_t wordCount);
 	uint32_t readBusFaultSequence() const { return m_busFaultSequence; }
@@ -92,6 +98,8 @@ public:
 	void writeMappedU16LE(uint32_t addr, uint32_t value);
 	void writeMappedU32LE(uint32_t addr, uint32_t value, uint32_t faultAccess = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
 	void writeMappedDmaU32LE(uint32_t addr, uint32_t value, MappedBusSignals busSignals);
+	void transferDmaBlock(u32 readAddress, u32 writeAddress, u32 wordCount,
+		u32 readStep, u32 writeStep, MappedBusSignals readSignals, MappedBusSignals writeSignals);
 	void writeMappedF32LE(uint32_t addr, float value);
 	void writeMappedF64LE(uint32_t addr, double value);
 
@@ -117,6 +125,11 @@ private:
 		IoWriteHandler handler = nullptr;
 		IoWriteReadyHandler ready = nullptr;
 	};
+	struct IoDmaPrefixBinding {
+		int slot;
+		IoDmaReadPrefixHandler read = nullptr;
+		IoDmaWritePrefixHandler write = nullptr;
+	};
 	std::span<const u8> m_systemRom;
 	CartridgeController m_cartridgeController;
 	std::vector<u8> m_ram;
@@ -125,6 +138,8 @@ private:
 	mutable std::vector<u32> m_ioSlots;
 	std::vector<IoReadBinding> m_ioReadHandlers;
 	std::vector<IoWriteBinding> m_ioWriteHandlers;
+	std::vector<IoDmaPrefixBinding> m_ioDmaPrefixes;
+	IoDmaPrefixBinding* findIoDmaPrefix(int slot);
 	mutable uint32_t m_busFaultCode = BUS_FAULT_NONE;
 	mutable uint32_t m_busFaultAddr = 0;
 	mutable uint32_t m_busFaultAccess = 0;

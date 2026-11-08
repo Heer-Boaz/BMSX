@@ -35,6 +35,13 @@ export class WordFifo {
 		this.wordCount += 1;
 	}
 
+	/** count words fit the available target space. */
+	public writeWords(source: Uint32Array, offset: number, count: number): void {
+		const writeIndex = this.readIndex + this.wordCount, words = this.words, mask = this.indexMask;
+		for (let i = 0; i < count; ++i) words[(writeIndex + i) & mask] = source[offset + i];
+		this.wordCount += count;
+	}
+
 	public peek(index = 0): number {
 		return this.words[(this.readIndex + index) & this.indexMask]!;
 	}

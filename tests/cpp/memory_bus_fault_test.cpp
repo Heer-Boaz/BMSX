@@ -5,6 +5,7 @@
 
 #include <array>
 #include <stdexcept>
+#include <vector>
 
 namespace {
 
@@ -102,6 +103,47 @@ void testIoPermissionsApplyToCpuAndDmaWordWrites() {
 	}
 }
 
+struct PrefixMappingTrace {
+	bmsx::u32 reads = 0u, readyCalls = 0u, writes = 0u;
+	std::vector<bmsx::MappedBusSignals> readSignals, writeSignals;
+	static bmsx::u32 read(void* context, bmsx::u32, bmsx::MappedBusSignals signals) {
+		auto& t = *static_cast<PrefixMappingTrace*>(context); t.readSignals.push_back(signals); return ++t.reads;
+	}
+	static bool ready(void* context, bmsx::u32, bmsx::MappedBusSignals) {
+		return ++static_cast<PrefixMappingTrace*>(context)->readyCalls % 3u != 0u;
+	}
+	static void write(void* context, bmsx::u32, bmsx::u32, bmsx::MappedBusSignals signals) {
+		auto& t = *static_cast<PrefixMappingTrace*>(context); ++t.writes; t.writeSignals.push_back(signals);
+	}
+	static void readPrefix(void*, bmsx::u32, bmsx::u32*, bmsx::u32, bmsx::MappedBusSignals) { throw std::runtime_error("revoked/readonly prefix read cannot run"); }
+	static void writePrefix(void*, bmsx::u32, const bmsx::u32*, bmsx::u32, bmsx::MappedBusSignals) { throw std::runtime_error("revoked/readonly prefix write cannot run"); }
+};
+
+void testDmaPrefixesAreRevokedByScalarRebindingAndRespectPermissions() {
+	using namespace bmsx;
+	for (u32 rebind = 0u; rebind < 4u; ++rebind) {
+		Memory memory(MemoryInit{{}, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
+		PrefixMappingTrace trace;
+		const u32 target = rebind == 3u ? IO_SYS_STATUS : IO_GX_GPU_GP0;
+		memory.mapIoRead(IO_IMGDEC_DATA, &trace, PrefixMappingTrace::read);
+		memory.mapIoWrite(target, &trace, PrefixMappingTrace::write);
+		memory.mapIoWriteReady(target, PrefixMappingTrace::ready);
+		memory.mapIoDmaReadPrefix(IO_IMGDEC_DATA, PrefixMappingTrace::readPrefix);
+		memory.mapIoDmaWritePrefix(target, PrefixMappingTrace::writePrefix);
+		if (rebind == 0u) memory.mapIoRead(IO_IMGDEC_DATA, &trace, PrefixMappingTrace::read);
+		if (rebind == 1u) memory.mapIoWrite(target, &trace, PrefixMappingTrace::write);
+		if (rebind == 2u) memory.mapIoWriteReady(target, PrefixMappingTrace::ready);
+		memory.writeIoU32(target, 0x24681357u);
+		memory.transferDmaBlock(IO_IMGDEC_DATA, target, 4u, 0u, 0u,
+			MAPPED_BUS_MASTER_DMA | mappedBusSignalsForCartridgeSlot(0u), MAPPED_BUS_MASTER_DMA | mappedBusSignalsForCartridgeSlot(1u));
+		require(trace.reads == 4u && trace.readSignals == std::vector<MappedBusSignals>({5u, 5u, 5u, 7u}), "scalar rebinding retains all reads and raw source strobes");
+		if (rebind == 3u) {
+			require(trace.writes == 0u && trace.readyCalls == 0u && memory.readBusFaultSequence() == 4u, "readonly ports fault on every write and never invoke prefixes or gates");
+			require(memory.readIoU32(target) == 0x24681357u, "readonly latch stays intact");
+		} else require(trace.readyCalls == 4u && trace.writes == 3u && trace.writeSignals == std::vector<MappedBusSignals>({13u, 13u, 15u}), "readiness remains per word after rebinding with the final write strobe");
+	}
+}
+
 } // namespace
 
 int main() {
@@ -109,5 +151,6 @@ int main() {
 	testMappedWordBurstPreflightStopsWhenBurstCrossesPhysicalIoRegisterfileBoundary();
 	testSystemStatusRejectsMappedWrites();
 	testIoPermissionsApplyToCpuAndDmaWordWrites();
+	testDmaPrefixesAreRevokedByScalarRebindingAndRespectPermissions();
 	return 0;
 }

@@ -26,6 +26,15 @@ public:
 		m_wordCount += 1u;
 	}
 
+	// count words fit the available target space.
+	void writeWords(const u32* source, size_t count) {
+		const size_t writeIndex = (m_readIndex + m_wordCount) & (Capacity - 1u);
+		const size_t first = std::min(count, Capacity - writeIndex);
+		std::copy_n(source, first, m_words.data() + writeIndex);
+		std::copy_n(source + first, count - first, m_words.data());
+		m_wordCount += count;
+	}
+
 	u32 peek(size_t index = 0u) const {
 		return m_words[(m_readIndex + index) & (Capacity - 1u)];
 	}

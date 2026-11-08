@@ -10,9 +10,32 @@ namespace {
 void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
 }
+template <size_t Capacity>
+void compareScalarAndBurstWrites() {
+	bmsx::WordFifo<Capacity> scalar, burst;
+	std::array<bmsx::u32, Capacity + 1u> words{};
+	for (size_t round = 0u; round < 513u; ++round) {
+		const size_t remove = std::min(scalar.count(), round % (Capacity + 1u));
+		for (size_t n = 0u; n < remove; ++n) {
+			if (scalar.pop() != burst.pop()) throw std::runtime_error("burst writes retain ring read order");
+		}
+		const size_t count = std::min(scalar.free(), (round * 7u) % (Capacity + 1u));
+		for (size_t n = 0u; n < count; ++n) {
+			words[n + 1u] = 0xf1234567u + static_cast<bmsx::u32>(round * Capacity + n);
+			scalar.writeWord(words[n + 1u]);
+		}
+		burst.writeWords(words.data() + 1u, count);
+		if (burst.count() != scalar.count() || burst.captureWords() != scalar.captureWords())
+			throw std::runtime_error("burst writes retain every word across wraps and partial/full ranges");
+	}
+}
+
 }
 
 int main() {
+	compareScalarAndBurstWrites<4u>();
+	compareScalarAndBurstWrites<16u>();
+	compareScalarAndBurstWrites<64u>();
 	for (size_t sourceStart = 0; sourceStart < 8; ++sourceStart) {
 		for (size_t targetStart = 0; targetStart < 16; ++targetStart) {
 			for (size_t count = 0; count <= 8; ++count) {

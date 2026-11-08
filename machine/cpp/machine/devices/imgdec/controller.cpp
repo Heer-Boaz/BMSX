@@ -51,6 +51,8 @@ ImgDecController::ImgDecController(
 	m_memory.mapIoRead(IO_IMGDEC_DATA, this, &ImgDecController::readDataThunk);
 	m_memory.mapIoWrite(IO_IMGDEC_DATA, this, &ImgDecController::writeDataThunk);
 	m_memory.mapIoWriteReady(IO_IMGDEC_DATA, &ImgDecController::dataWriteReadyThunk);
+	m_memory.mapIoDmaReadPrefix(IO_IMGDEC_DATA, &ImgDecController::readDataPrefixThunk);
+	m_memory.mapIoDmaWritePrefix(IO_IMGDEC_DATA, &ImgDecController::writeDataPrefixThunk);
 }
 
 void ImgDecController::reset() {
@@ -486,6 +488,26 @@ void ImgDecController::writeConfigThunk(void* context, u32 address, u32 value, M
 bool ImgDecController::configWriteReadyThunk(void* context, u32, MappedBusSignals) {
 	auto& controller = *static_cast<ImgDecController*>(context);
 	return !controller.m_active && !controller.m_supervisorQuiesceRequested;
+}
+
+void ImgDecController::readDataPrefixThunk(void* context, u32, u32* words, u32 count, MappedBusSignals) {
+	auto& controller = *static_cast<ImgDecController*>(context);
+	const u32 available = static_cast<u32>(std::min<size_t>(count, controller.m_outputFifo.count()));
+	controller.m_outputFifo.readWords(words, available);
+	if (available != 0u) {
+		controller.m_dataWord = words[available - 1u];
+		controller.m_outputWordsRead += available;
+		controller.m_memory.writeIoU32(IO_IMGDEC_DATA, controller.m_dataWord);
+	}
+	std::fill(words + available, words + count, controller.m_dataWord);
+}
+
+void ImgDecController::writeDataPrefixThunk(void* context, u32, const u32* words, u32 count, MappedBusSignals) {
+	auto& controller = *static_cast<ImgDecController*>(context);
+	controller.m_inputFifo.writeWords(words, std::min<size_t>(count, controller.m_inputFifo.free()));
+	controller.m_dataWord = words[count - 1u];
+	controller.m_inputWordsReceived += count;
+	controller.m_memory.writeIoU32(IO_IMGDEC_DATA, controller.m_dataWord);
 }
 
 u32 ImgDecController::readDataThunk(void* context, u32, MappedBusSignals busSignals) {

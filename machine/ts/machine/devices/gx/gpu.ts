@@ -499,6 +499,7 @@ export class GxGpu {
 		this.memory.mapIoRead(IO_GX_GPU_GP0, this, GxGpu.readGp0Thunk);
 		this.memory.mapIoWrite(IO_GX_GPU_GP0, this, GxGpu.writeGp0Thunk);
 		this.memory.mapIoWriteReady(IO_GX_GPU_GP0, GxGpu.gp0WriteReadyThunk);
+		this.memory.mapIoDmaWritePrefix(IO_GX_GPU_GP0, GxGpu.writeGp0PrefixThunk);
 		this.memory.mapIoRead(IO_GX_GPU_GP1, this, GxGpu.readStatusThunk);
 		this.memory.mapIoWrite(IO_GX_GPU_GP1, this, GxGpu.writeGp1Thunk);
 		this.memory.mapIoWriteReady(IO_GX_GPU_GP1, GxGpu.gp1WriteReadyThunk);
@@ -2146,6 +2147,13 @@ export class GxGpu {
 	}
 
 	// disable-next-line single_line_method_pattern -- MMIO write thunk is the Memory-owned device callback ABI for GP0.
+	private static writeGp0PrefixThunk(context: GxGpu, _address: number, words: Uint32Array, count: number): void {
+		if (context.supervisorIngressStopped) return;
+		context.gp0DmaIngress.writeWords(words, 0, Math.min(count, context.gp0DmaIngress.free()));
+		context.gp0Word = words[count - 1];
+		context.memory.writeIoU32(IO_GX_GPU_GP0, context.gp0Word);
+	}
+
 	private static writeGp0Thunk(context: GxGpu, _addr: number, value: number, busSignals: MappedBusSignals): void {
 		context.writeGp0(value, busSignals);
 	}

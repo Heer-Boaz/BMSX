@@ -27,3 +27,22 @@ test('bulk FIFO reads and transfers preserve raw words across both ring boundari
 		}
 	}
 });
+
+test('FIFO burst writes match scalar ring order through wraps and partial/full ranges', () => {
+	for (const capacity of [4, 16, 64]) {
+		const scalar = new WordFifo(capacity), burst = new WordFifo(capacity);
+		const words = new Uint32Array(capacity + 1);
+		for (let round = 0; round < 513; ++round) {
+			const remove = Math.min(scalar.count(), round % (capacity + 1));
+			for (let n = 0; n < remove; ++n) assert.equal(burst.pop(), scalar.pop());
+			const count = Math.min(scalar.free(), (round * 7) % (capacity + 1));
+			for (let n = 0; n < count; ++n) {
+				words[n + 1] = 0xf1234567 + round * capacity + n;
+				scalar.writeWord(words[n + 1]);
+			}
+			burst.writeWords(words, 1, count);
+			assert.equal(burst.count(), scalar.count());
+			assert.deepEqual(burst.captureWords(), scalar.captureWords());
+		}
+	}
+});

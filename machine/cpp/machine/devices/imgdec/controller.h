@@ -83,6 +83,8 @@ private:
 	static u32 readProgressThunk(void* context, u32 address, MappedBusSignals busSignals);
 	static void writeConfigThunk(void* context, u32 address, u32 value, MappedBusSignals busSignals);
 	static bool configWriteReadyThunk(void* context, u32 address, MappedBusSignals busSignals);
+	static void readDataPrefixThunk(void*, u32, u32* words, u32 count, MappedBusSignals);
+	static void writeDataPrefixThunk(void*, u32, const u32* words, u32 count, MappedBusSignals);
 	static u32 readDataThunk(void* context, u32 address, MappedBusSignals busSignals);
 	static void writeDataThunk(void* context, u32 address, u32 value, MappedBusSignals busSignals);
 	static bool dataWriteReadyThunk(void* context, u32 address, MappedBusSignals busSignals);

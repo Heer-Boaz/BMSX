@@ -482,6 +482,62 @@ void testActivePipelineRestore() {
 	require(restoredWords == firstWords, "restored pipeline emits the identical native GP0 packet");
 }
 
+void testDmaPrefixMatchesScalarDatapathAtEveryBlockBoundary() {
+	using namespace bmsx;
+	for (u32 mode = 0u; mode < 8u; ++mode) for (u32 count : {1u, 2u, 7u, 16u}) {
+		ImgDecHarness scalar, prefix;
+		u32 source = DYNAMIC_RAM_BASE + 0x1000u, target = IO_IMGDEC_DATA, step = IO_WORD_SIZE;
+		if (mode == 1u) source = CART_ROM_BASE;
+		if (mode == 2u || mode == 3u || mode == 4u) source = IO_IMGDEC_DATA, step = 0u;
+		if (mode == 2u || mode == 4u || mode == 5u) target = IO_GX_GPU_GP0;
+		if (mode == 5u) step = 0u;
+		if (mode == 6u) source = RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 8u;
+		if (mode == 7u) source = CART_ROM_BASE + 4092u;
+		for (ImgDecHarness* h : {&scalar, &prefix}) {
+			for (u32 n = 0u; n < 16u; ++n) {
+				h->memory.writeMappedU32LE(DYNAMIC_RAM_BASE + 0x1000u + n * 4u, 0u);
+				h->writeCartWord(n, 0x137b0000u + n);
+			}
+			auto state = h->imgDec.captureState();
+			if (mode == 0u || mode == 1u) {
+				state.inputWords.assign(IMGDEC_INPUT_FIFO_WORD_CAPACITY - 1u, 0x02460000u);
+				state.inputWordsReceived = 0xfffffff9u;
+			}
+			if (mode == 3u) {
+				// The last read must see earlier input writes before the last write.
+				state.statusWord = IMGDEC_STATUS_BUSY;
+				state.inputWordCountWord = 16u;
+				state.outputWords = {IMGDEC_STREAM_MAGIC, 12u, 0u, 11u};
+				for (u32 n = 0u; n < 12u; ++n) state.outputWords.push_back(0x81230000u + n);
+			}
+			if (mode == 4u) state.outputWords = {0u, 0u, 0u};
+			h->imgDec.restoreState(state);
+			if (mode == 2u) h->memory.writeIoU32(IO_IMGDEC_DATA, 0x13572468u);
+			if (mode == 4u) {
+				auto gpu = h->gpu.captureState(); gpu.supervisorIngressStopped = true;
+				h->gpu.restoreState(gpu);
+				h->memory.writeIoU32(IO_GX_GPU_GP0, 0x24681357u);
+			}
+		}
+		for (u32 n = 0u; n < count; ++n) {
+			const MappedBusSignals signals = MAPPED_BUS_MASTER_DMA | (n + 1u == count ? MAPPED_BUS_DMA_BLOCK_END : 0u);
+			const u32 word = scalar.memory.readMappedDmaU32LE(source + n * step, signals);
+			scalar.memory.writeMappedDmaU32LE(target, word, signals);
+		}
+		prefix.memory.transferDmaBlock(source, target, count, step, 0u, MAPPED_BUS_MASTER_DMA, MAPPED_BUS_MASTER_DMA);
+		const auto a = scalar.imgDec.captureState(), b = prefix.imgDec.captureState();
+		require(a.inputWords == b.inputWords && a.outputWords == b.outputWords && a.historyWords == b.historyWords, "prefix preserves all IMGDEC FIFO/history words");
+		require(a.dataWord == b.dataWord && a.inputWordsReceived == b.inputWordsReceived && a.outputWordsRead == b.outputWordsRead, "prefix preserves latch, underflow, overflow and wrapping counters");
+		require(a.statusWord == b.statusWord && a.decodePhase == b.decodePhase && a.outputStage == b.outputStage && a.scheduledDecodeWords == b.scheduledDecodeWords && a.scheduledDecodeCycles == b.scheduledDecodeCycles, "last read/write preserves decoder and completion scheduling");
+		if (mode == 3u && count == 16u) require(b.scheduledDecodeWords != 0u, "final read observes earlier input writes in the same bidirectional DATA port");
+		const auto ga = scalar.gpu.captureState(), gb = prefix.gpu.captureState();
+		require(ga.gp0Word == gb.gp0Word && ga.statusWord == gb.statusWord && ga.gp0CommandWords == gb.gp0CommandWords && ga.gp0FifoWords == gb.gp0FifoWords && ga.gp0DmaIngressWords == gb.gp0DmaIngressWords, "prefix preserves GP0 latch, FIFO and final-word processing, including stopped ingress");
+		for (u32 address : {IO_IMGDEC_DATA, IO_IMGDEC_STATUS, IO_GX_GPU_GP0, IO_IRQ_FLAGS}) require(scalar.memory.readIoU32(address) == prefix.memory.readIoU32(address), "prefix preserves visible IO latches and IRQ flags");
+		require(scalar.memory.readBusFaultSequence() == prefix.memory.readBusFaultSequence() && scalar.memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == prefix.memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), "partial source ranges retain every scalar fault");
+		require(scalar.scheduler.nextDeadline() == prefix.scheduler.nextDeadline(), "prefix preserves the next device deadline");
+	}
+}
+
 } // namespace
 
 int main() {
@@ -492,5 +548,6 @@ int main() {
 	testForcedDmaPresentsWordsToFullInputFifo();
 	testFormatFaultLeavesAdmittedGp0Block();
 	testActivePipelineRestore();
+	testDmaPrefixMatchesScalarDatapathAtEveryBlockBoundary();
 	return 0;
 }

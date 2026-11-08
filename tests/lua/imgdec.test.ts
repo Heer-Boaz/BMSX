@@ -75,8 +75,9 @@ import type { InputControllerInputSource, InputControllerSnapshot } from '../../
 import { Machine } from '../../machine/ts/machine/machine';
 import { MAPPED_BUS_DMA_BLOCK_END, MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CART_ROM_BASE, DYNAMIC_RAM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { captureMachineState, restoreMachineState, type MachineState } from '../../machine/ts/machine/save_state';
+import { writeLE32 } from '../../machine/ts/common/endian';
 import { encodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
 
 const IMGDEC_INPUT_DMA_CONTROL = 0x00003d41;
@@ -447,4 +448,53 @@ test('active IMGDEC and both DMA channels resume from one machine-state snapshot
 		Array.from(commands.words.subarray(restoredStart, restoredStart + commands.commandWordCount[0])),
 		firstWords,
 	);
+});
+
+
+test('DMA prefixes retain scalar FIFO, latch, counter and last-word scheduling effects', () => {
+	for (let mode = 0; mode < 8; ++mode) for (const count of [1, 2, 7, 16]) {
+		const rom = new Uint8Array(4096);
+		for (let n = 0; n < 16; ++n) writeLE32(rom, n * 4, 0x137b0000 + n);
+		const fixtures = [createFixture(rom), createFixture(rom)];
+		let source = DYNAMIC_RAM_BASE + 0x1000, target = IO_IMGDEC_DATA, step = 4;
+		if (mode === 1) source = CART_ROM_BASE;
+		if (mode === 2 || mode === 3 || mode === 4) { source = IO_IMGDEC_DATA; step = 0; }
+		if (mode === 2 || mode === 4 || mode === 5) target = IO_GX_GPU_GP0;
+		if (mode === 5) step = 0;
+		if (mode === 6) source = RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 8;
+		if (mode === 7) source = CART_ROM_BASE + 4092;
+		for (const f of fixtures) {
+			for (let n = 0; n < 16; ++n) f.memory.writeMappedU32LE(DYNAMIC_RAM_BASE + 0x1000 + 4 * n, 0);
+			const state = f.machine.imgDecController.captureState();
+			if (mode === 0 || mode === 1) {
+				state.inputWords = Array(IMGDEC_INPUT_FIFO_WORD_CAPACITY - 1).fill(0x02460000);
+				state.inputWordsReceived = 0xfffffff9;
+			}
+			if (mode === 3) {
+				state.statusWord = IMGDEC_STATUS_BUSY;
+				state.inputWordCountWord = 16;
+				state.outputWords = [IMGDEC_STREAM_MAGIC, 12, 0, 11, ...Array.from({ length: 12 }, (_, n) => 0x81230000 + n)];
+			}
+			if (mode === 4) state.outputWords = [0, 0, 0];
+			f.machine.imgDecController.restoreState(state);
+			if (mode === 2) f.memory.writeIoU32(IO_IMGDEC_DATA, 0x13572468);
+			if (mode === 4) {
+				const gpu = f.gpu.captureState(); gpu.supervisorIngressStopped = true;
+				f.gpu.restoreState(gpu); f.memory.writeIoU32(IO_GX_GPU_GP0, 0x24681357);
+			}
+		}
+		const [a, b] = fixtures;
+		for (let n = 0; n < count; ++n) {
+			const signals = MAPPED_BUS_MASTER_DMA | (n + 1 === count ? MAPPED_BUS_DMA_BLOCK_END : 0);
+			const word = a.memory.readMappedDmaU32LE((source + n * step) >>> 0, signals);
+			a.memory.writeMappedDmaU32LE(target, word, signals);
+		}
+		b.memory.transferDmaBlock(source, target, count, step, 0, MAPPED_BUS_MASTER_DMA, MAPPED_BUS_MASTER_DMA);
+		assert.deepEqual(b.machine.imgDecController.captureState(), a.machine.imgDecController.captureState(), `IMGDEC mode=${mode} count=${count}`);
+		assert.deepEqual(b.gpu.captureState(), a.gpu.captureState(), `GP0 mode=${mode} count=${count}`);
+		if (mode === 3 && count === 16) assert.ok(b.machine.imgDecController.captureState().scheduledDecodeWords > 0);
+		for (const address of [IO_IMGDEC_DATA, IO_IMGDEC_STATUS, IO_GX_GPU_GP0, IO_IRQ_FLAGS]) assert.equal(b.memory.readIoU32(address), a.memory.readIoU32(address));
+		assert.equal(b.memory.readBusFaultSequence(), a.memory.readBusFaultSequence());
+		assert.equal(b.machine.scheduler.nextDeadline(), a.machine.scheduler.nextDeadline());
+	}
 });

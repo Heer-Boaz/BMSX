@@ -53,6 +53,7 @@ GxGpu::GxGpu(
 	m_memory.mapIoRead(IO_GX_GPU_GP0, this, &GxGpu::readGp0Thunk);
 	m_memory.mapIoWrite(IO_GX_GPU_GP0, this, &GxGpu::writeGp0Thunk);
 	m_memory.mapIoWriteReady(IO_GX_GPU_GP0, &GxGpu::gp0WriteReadyThunk);
+	m_memory.mapIoDmaWritePrefix(IO_GX_GPU_GP0, &GxGpu::writeGp0PrefixThunk);
 	m_memory.mapIoRead(IO_GX_GPU_GP1, this, &GxGpu::readStatusThunk);
 	m_memory.mapIoWrite(IO_GX_GPU_GP1, this, &GxGpu::writeGp1Thunk);
 	m_memory.mapIoWriteReady(IO_GX_GPU_GP1, &GxGpu::gp1WriteReadyThunk);
@@ -1573,6 +1574,14 @@ u32 GxGpu::readGp0Thunk(void* context, u32 addr, MappedBusSignals busSignals) {
 	(void)addr;
 	GxGpu& gpu = *static_cast<GxGpu*>(context);
 	return gpu.readGp0(busSignals);
+}
+
+void GxGpu::writeGp0PrefixThunk(void* context, u32, const u32* words, u32 count, MappedBusSignals) {
+	auto& gpu = *static_cast<GxGpu*>(context);
+	if (gpu.m_supervisorIngressStopped) return;
+	gpu.m_gp0DmaIngress.writeWords(words, std::min<size_t>(count, gpu.m_gp0DmaIngress.free()));
+	gpu.m_gp0Word = words[count - 1u];
+	gpu.m_memory.writeIoU32(IO_GX_GPU_GP0, gpu.m_gp0Word);
 }
 
 void GxGpu::writeGp0Thunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals) {

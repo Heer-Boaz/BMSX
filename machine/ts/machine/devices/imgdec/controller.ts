@@ -146,6 +146,8 @@ export class ImgDecController {
 		this.memory.mapIoRead(IO_IMGDEC_DATA, this, ImgDecController.readDataThunk);
 		this.memory.mapIoWrite(IO_IMGDEC_DATA, this, ImgDecController.writeDataThunk);
 		this.memory.mapIoWriteReady(IO_IMGDEC_DATA, ImgDecController.dataWriteReadyThunk);
+		this.memory.mapIoDmaReadPrefix(IO_IMGDEC_DATA, ImgDecController.readDataPrefixThunk);
+		this.memory.mapIoDmaWritePrefix(IO_IMGDEC_DATA, ImgDecController.writeDataPrefixThunk);
 	}
 
 	public reset(): void {
@@ -578,6 +580,24 @@ export class ImgDecController {
 
 	private static configWriteReadyThunk(context: ImgDecController): boolean {
 		return !context.active && !context.supervisorQuiesceRequested;
+	}
+
+	private static readDataPrefixThunk(context: ImgDecController, _address: number, words: Uint32Array, count: number): void {
+		const available = Math.min(count, context.outputFifo.count());
+		context.outputFifo.readWords(words, 0, available);
+		if (available !== 0) {
+			context.dataWord = words[available - 1];
+			context.outputWordsRead = (context.outputWordsRead + available) >>> 0;
+			context.memory.writeIoU32(IO_IMGDEC_DATA, context.dataWord);
+		}
+		words.fill(context.dataWord, available, count);
+	}
+
+	private static writeDataPrefixThunk(context: ImgDecController, _address: number, words: Uint32Array, count: number): void {
+		context.inputFifo.writeWords(words, 0, Math.min(count, context.inputFifo.free()));
+		context.dataWord = words[count - 1];
+		context.inputWordsReceived = (context.inputWordsReceived + count) >>> 0;
+		context.memory.writeIoU32(IO_IMGDEC_DATA, context.dataWord);
 	}
 
 	private static readDataThunk(context: ImgDecController, _address: number, busSignals: MappedBusSignals): number {

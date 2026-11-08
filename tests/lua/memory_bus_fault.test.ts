@@ -161,3 +161,28 @@ test('DMA blocks retain scalar bus order, per-word readiness, faults and live ha
 	memory.writeMappedWord(IO_SYS_STATUS, 0xffffffff);
 	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ACCESS), BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_WORD);
 });
+
+
+test('DMA prefix capabilities are revoked by scalar rebinding and obey read-only words', () => {
+	for (let rebind = 0; rebind < 4; ++rebind) {
+		const memory = new Memory({ systemRom: new Uint8Array(), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+		const trace = { reads: 0, ready: 0, writes: 0, readSignals: [] as number[], writeSignals: [] as number[] };
+		const target = rebind === 3 ? IO_SYS_STATUS : IO_GX_GPU_GP0;
+		const read = (t: typeof trace, _address: number, signals: number) => { t.readSignals.push(signals); return ++t.reads; };
+		const ready = (t: typeof trace) => ++t.ready % 3 !== 0;
+		const write = (t: typeof trace, _address: number, _word: number, signals: number) => { ++t.writes; t.writeSignals.push(signals); };
+		const prefix = () => { throw new Error('revoked/readonly prefix cannot run'); };
+		memory.mapIoRead(IO_IMGDEC_DATA, trace, read); memory.mapIoWrite(target, trace, write); memory.mapIoWriteReady(target, ready);
+		memory.mapIoDmaReadPrefix(IO_IMGDEC_DATA, prefix); memory.mapIoDmaWritePrefix(target, prefix);
+		if (rebind === 0) memory.mapIoRead(IO_IMGDEC_DATA, trace, read);
+		if (rebind === 1) memory.mapIoWrite(target, trace, write);
+		if (rebind === 2) memory.mapIoWriteReady(target, ready);
+		memory.writeIoU32(target, 0x24681357);
+		memory.transferDmaBlock(IO_IMGDEC_DATA, target, 4, 0, 0, 5, 13);
+		assert.equal(trace.reads, 4); assert.deepEqual(trace.readSignals, [5, 5, 5, 7]);
+		if (rebind === 3) {
+			assert.equal(trace.writes, 0); assert.equal(trace.ready, 0); assert.equal(memory.readBusFaultSequence(), 4);
+			assert.equal(memory.readIoU32(target), 0x24681357);
+		} else { assert.equal(trace.ready, 4); assert.equal(trace.writes, 3); assert.deepEqual(trace.writeSignals, [13, 13, 15]); }
+	}
+});
