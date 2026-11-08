@@ -377,8 +377,58 @@ void partialCodeWritesRetainOtherDecodedStarts() {
 		writeInstruction(code, 8, static_cast<u8>(OpCode::KM1), 1, 0, 0);
 		machine.memory.writeMappedU16LE(pc + 8u * INSTRUCTION_BYTES, readLE16(code.data() + 8u * INSTRUCTION_BYTES));
 		require(page.refreshState[8] == DECODED_REFRESH_DECODE && page.refreshState[4] == 0u, "a second write before re-decode still invalidates its independent cached instruction");
+		require(page.refreshState[5] == 0u && page.refreshState[6] == 0u && page.refreshState[7] == 0u, "ordinary predecessors do not consume the rewritten instruction's source words");
 		require(cpu.runUntilDepth(0, 10) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0, "partial code writes preserve exact guest charges");
 		require(cpu.readFrameRegister(0, 0) == valueNumber(0) && cpu.readFrameRegister(0, 1) == valueNumber(-1), "both changed instructions execute, without losing the retained watch");
+	}
+}
+
+void sourceAndFusionDependenciesRemainSeparate() {
+	for (u32 first = 0; first < DECODED_DISPATCH_OP_COUNT; ++first) {
+		bool canFuse = false;
+		for (u32 second = 0; second < OPCODE_COUNT; ++second) {
+			canFuse |= decodedDispatchOp(static_cast<u8>(first), static_cast<u8>(second)) != first;
+		}
+		require(decodedDispatchCanFuse(static_cast<u8>(first)) == canFuse, "fusion eligibility matches the actual pair producer");
+	}
+	for (const bool instrumented : {false, true}) for (const bool wideHead : {false, true}) for (const bool wideSuccessor : {false, true}) {
+		auto image = returnImage();
+		image.functions[0].maxStack = 5;
+		CpuMachine machine(image);
+		auto& cpu = machine.cpu;
+		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+		const u32 headWords = wideHead ? 2u : 1u;
+		const u32 bodyWord = headWords + (wideSuccessor ? 1u : 0u);
+		const u32 wordCount = bodyWord + 2u;
+		std::vector<u8> code(wordCount * INSTRUCTION_BYTES);
+		if (wideHead) writeInstruction(code, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(code, headWords - 1u, static_cast<u8>(OpCode::ADD), 3, 0, 1);
+		if (wideSuccessor) writeInstruction(code, headWords, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(code, wordCount - 1u, static_cast<u8>(OpCode::JMP), 0, 63, 64u - wordCount, 255);
+		const u32 pc = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - headWords * INSTRUCTION_BYTES;
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], pc);
+		cpu.activeThread()->frames[0]->registers[0] = valueNumber(2);
+		cpu.activeThread()->frames[0]->registers[1] = valueNumber(3);
+		cpu.activeThread()->frames[0]->registers[2] = valueNumber(1);
+		const std::array<OpCode, 3> successors{OpCode::MOV, OpCode::SHL, OpCode::BXOR};
+		const std::array<int, 3> results{5, 10, 4};
+		for (size_t phase = 0; phase < successors.size(); ++phase) {
+			writeInstruction(code, bodyWord, static_cast<u8>(successors[phase]), 4, 3, 2);
+			if (phase == 0) {
+				machine.memory.writeBytes(pc, code.data(), code.size());
+			} else {
+				machine.memory.writeMappedU8(pc + bodyWord * INSTRUCTION_BYTES + 1u, code[bodyWord * INSTRUCTION_BYTES + 1u]);
+				const auto& page = cpu.activeThread()->frames[0]->executionImage->decodedPages.at(pc & ~MAPPED_PAGE_BYTE_MASK);
+				require(page.refreshState[DECODED_PAGE_WORDS - headWords] == DECODED_REFRESH_FUSION, "successor writes dirty fusion eligibility, not the unchanged head's source decode");
+			}
+			require(cpu.runUntilDepth(0, 6) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0, "WIDE and narrow pairs retain their three-cycle loop budget");
+			require(cpu.readFramePc(0) == pc && cpu.readFrameRegister(0, 4) == valueNumber(results[phase]), "negative and positive fusion decisions observe the rewritten successor");
+			if (!instrumented) {
+				const auto& page = cpu.activeThread()->frames[0]->executionImage->decodedPages.at(pc & ~MAPPED_PAGE_BYTE_MASK);
+				const u8 expected = phase == 1 ? static_cast<u8>(DecodedDispatchOp::FusedAddShl) : static_cast<u8>(OpCode::ADD);
+				require(page.words[DECODED_PAGE_WORDS - headWords].dispatchOp == expected, "source writes create and retire the cached fusion across pages");
+			}
+		}
 	}
 }
 
@@ -772,7 +822,7 @@ int main() {
 		instructionBoundaryResynchronizesAfterFetchOrObservation();
 		cachedFetchCrossesWidePagesAndObservesCodeWrites();
 		rewrittenInstructionRetainsItsOwnCycleCharge();
-		partialCodeWritesRetainOtherDecodedStarts(); changedWideFusionBodyInvalidatesItsCrossPageHead();
+		partialCodeWritesRetainOtherDecodedStarts(); sourceAndFusionDependenciesRemainSeparate(); changedWideFusionBodyInvalidatesItsCrossPageHead();
 		writableCodeWatchesBelongToTheirPhysicalSocket();
 		closureCallAndReturnRespectFrameBoundaries();
 		haltYieldPrecedence(); cachedPcWrapping(); imageTextImport(); bootAddressWrap();

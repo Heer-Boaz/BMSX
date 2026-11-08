@@ -770,17 +770,34 @@ DecodedInstructionPage& CPU::decodedPageForAddress(
 }
 
 void CPU::invalidateDecodedWords(u64 key, u32 firstWord, u32 endWord) {
+	const u32 firstPredecessor = firstWord >= DECODED_DEPENDENCY_PREDECESSOR_WORDS
+		? firstWord - DECODED_DEPENDENCY_PREDECESSOR_WORDS : 0u;
+	const u32 predecessorEnd = std::min(firstWord, static_cast<u32>(DECODED_PAGE_WORDS));
 	for (const std::unique_ptr<Blua32ExecutionImage>& image : m_executionImagesByDomain) {
 		if (!image) {
 			continue;
 		}
 		auto page = image->decodedPages.find(key);
 		if (page != image->decodedPages.end()) {
-			std::fill(
-				page->second.refreshState.begin() + firstWord,
-				page->second.refreshState.begin() + endWord,
-				DECODED_REFRESH_DECODE
-			);
+			auto& decodedPage = page->second;
+			for (u32 index = firstPredecessor; index < predecessorEnd; ++index) {
+				u8& refresh = decodedPage.refreshState[index];
+				if ((refresh & DECODED_REFRESH_DECODE) != 0u) continue;
+				const auto& decoded = decodedPage.words[index];
+				const u32 ownEnd = index + decoded.width;
+				if (ownEnd > firstWord) {
+					refresh = DECODED_REFRESH_DECODE;
+				} else if (ownEnd + 2u > firstWord && decodedDispatchCanFuse(decoded.op)) {
+					refresh |= DECODED_REFRESH_FUSION;
+				}
+			}
+			if (firstWord < DECODED_PAGE_WORDS) {
+				std::fill(
+					decodedPage.refreshState.begin() + firstWord,
+					decodedPage.refreshState.begin() + std::min(endWord, static_cast<u32>(DECODED_PAGE_WORDS)),
+					DECODED_REFRESH_DECODE
+				);
+			}
 		}
 	}
 }
@@ -788,17 +805,12 @@ void CPU::invalidateDecodedWords(u64 key, u32 firstWord, u32 endWord) {
 void CPU::invalidateMappedWrite(u64 key, u32 firstByte, u32 endByte) {
 	const u32 firstWord = firstByte >> 2u;
 	const u32 endWord = (endByte + INSTRUCTION_BYTES - 1u) >> 2u;
-	invalidateDecodedWords(
-		key,
-		firstWord >= DECODED_DEPENDENCY_PREDECESSOR_WORDS
-			? firstWord - DECODED_DEPENDENCY_PREDECESSOR_WORDS : 0u,
-		endWord
-	);
+	invalidateDecodedWords(key, firstWord, endWord);
 	if (firstWord < DECODED_DEPENDENCY_PREDECESSOR_WORDS && key >= MAPPED_PAGE_BYTE_SIZE) {
 		invalidateDecodedWords(
 			key - MAPPED_PAGE_BYTE_SIZE,
-			DECODED_PAGE_WORDS - (DECODED_DEPENDENCY_PREDECESSOR_WORDS - firstWord),
-			DECODED_PAGE_WORDS
+			DECODED_PAGE_WORDS + firstWord,
+			DECODED_PAGE_WORDS + endWord
 		);
 	}
 }
@@ -992,9 +1004,7 @@ bool CPU::decodeInstruction(
 		decoded.dispatchCycles = DECODED_DISPATCH_BASE_CYCLES[decoded.dispatchOp];
 		return true;
 	}
-	const bool fusionCandidate = static_cast<OpCode>(op) == OpCode::SHL
-		|| static_cast<OpCode>(op) == OpCode::ADD
-		|| static_cast<OpCode>(op) == OpCode::SHR;
+	const bool fusionCandidate = decodedDispatchCanFuse(op);
 	if (!allowFusion) {
 		if (fusionCandidate && instructionCacheable) {
 			page.refreshState[pageOffset] = DECODED_REFRESH_FUSION;

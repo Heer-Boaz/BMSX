@@ -26,6 +26,12 @@ enum class DecodedDispatchOp : uint8_t {
 inline constexpr size_t DECODED_DISPATCH_OP_COUNT = OPCODE_COUNT + 5u;
 extern const std::array<uint8_t, DECODED_DISPATCH_OP_COUNT> DECODED_DISPATCH_BASE_CYCLES;
 
+inline constexpr bool decodedDispatchCanFuse(uint8_t op) {
+	return op == static_cast<uint8_t>(OpCode::SHL)
+		|| op == static_cast<uint8_t>(OpCode::ADD)
+		|| op == static_cast<uint8_t>(OpCode::SHR);
+}
+
 inline constexpr uint8_t decodedDispatchOp(uint8_t first, uint8_t second) {
 	switch (static_cast<OpCode>(first)) {
 		case OpCode::SHL:
