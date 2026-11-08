@@ -156,10 +156,14 @@ void DmaController::onService(i64) {
 	const i64 previousBlockDeadline = m_serviceDeadline;
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 	m_serviceActive = true;
-	m_memory.transferDmaBlock(readAddress, writeAddress, blockWords, readStep, writeStep, readBusSignals, writeBusSignals);
-	readAddress += blockWords * readStep;
-	writeAddress += blockWords * writeStep;
-	transferCount -= blockWords;
+	for (u32 slot = 0u; slot < blockWords; slot += 1u) {
+		const MappedBusSignals blockEnd = slot + 1u == blockWords ? MAPPED_BUS_DMA_BLOCK_END : 0u;
+		const u32 word = m_memory.readMappedDmaU32LE(readAddress, readBusSignals | blockEnd);
+		m_memory.writeMappedDmaU32LE(writeAddress, word, writeBusSignals | blockEnd);
+		readAddress += readStep;
+		writeAddress += writeStep;
+		transferCount -= 1u;
+	}
 	DmaChannelState& registers = m_registers.channels[channel];
 	registers.readAddressWord = readAddress;
 	registers.writeAddressWord = writeAddress;

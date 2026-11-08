@@ -92,8 +92,6 @@ public:
 	void writeMappedU16LE(uint32_t addr, uint32_t value);
 	void writeMappedU32LE(uint32_t addr, uint32_t value, uint32_t faultAccess = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
 	void writeMappedDmaU32LE(uint32_t addr, uint32_t value, MappedBusSignals busSignals);
-	void transferDmaBlock(u32 readAddress, u32 writeAddress, u32 wordCount,
-		u32 readStep, u32 writeStep, MappedBusSignals readBusSignals, MappedBusSignals writeBusSignals);
 	void writeMappedF32LE(uint32_t addr, float value);
 	void writeMappedF64LE(uint32_t addr, double value);
 
@@ -141,7 +139,7 @@ private:
 		return static_cast<int>(delta / IO_WORD_SIZE);
 	}
 	u32 readIoSlot(int slot, uint32_t addr, MappedBusSignals busSignals) const;
-	void writeIoSlot(int slot, uint32_t addr, u32 value, u32 faultAccess, MappedBusSignals busSignals);
+	void writeIoSlot(int slot, uint32_t addr, u32 value, MappedBusSignals busSignals);
 	void writeMappedBusU32LE(uint32_t addr, uint32_t value, uint32_t faultAccess, MappedBusSignals busSignals);
 	bool writeRamU8(uint32_t addr, u8 value);
 	bool writeRamWordLE(uint32_t addr, size_t byteLength, uint32_t value);

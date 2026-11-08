@@ -296,19 +296,10 @@ u32 Memory::readIoSlot(int slot, uint32_t addr, MappedBusSignals busSignals) con
 	return m_ioSlots[static_cast<size_t>(slot)];
 }
 
-void Memory::writeIoSlot(int slot, uint32_t addr, u32 value, u32 faultAccess, MappedBusSignals busSignals) {
+void Memory::writeIoSlot(int slot, uint32_t addr, u32 value, MappedBusSignals busSignals) {
 	const size_t slotIndex = static_cast<size_t>(slot);
-	if (kReadOnlyIoSlots[slotIndex]) {
-		raiseBusFault(BUS_FAULT_READ_ONLY, addr, faultAccess);
-		return;
-	}
-	const IoWriteBinding& binding = m_ioWriteHandlers[slotIndex];
-	if ((busSignals & MAPPED_BUS_MASTER_DMA) != 0u
-		&& binding.ready != nullptr
-		&& !binding.ready(binding.context, addr, busSignals)) {
-		return;
-	}
 	m_ioSlots[slotIndex] = value;
+	const IoWriteBinding& binding = m_ioWriteHandlers[slotIndex];
 	if (binding.handler != nullptr) {
 		binding.handler(binding.context, addr, value, busSignals);
 	}
@@ -574,51 +565,20 @@ void Memory::writeMappedDmaU32LE(uint32_t addr, uint32_t value, MappedBusSignals
 	writeMappedBusU32LE(addr, value, BUS_ACCESS_WRITE_U32, busSignals);
 }
 
-// Resolve fixed device ports once per admitted block. Every word still observes
-// the live binding, ready gate, permission bits and read-before-write ordering.
-void Memory::transferDmaBlock(u32 readAddress, u32 writeAddress, u32 wordCount,
-	u32 readStep, u32 writeStep, MappedBusSignals readBusSignals, MappedBusSignals writeBusSignals) {
-	const int readSlot = readStep == 0u ? ioAlignedSlot(readAddress) : -1;
-	const int writeSlot = writeStep == 0u ? ioAlignedSlot(writeAddress) : -1;
-	if (readSlot >= 0 && writeSlot >= 0) {
-		for (u32 i = 0; i < wordCount; ++i) {
-			const MappedBusSignals end = i + 1u == wordCount ? MAPPED_BUS_DMA_BLOCK_END : 0u;
-			const u32 word = readIoSlot(readSlot, readAddress, readBusSignals | end);
-			writeIoSlot(writeSlot, writeAddress, word, BUS_ACCESS_WRITE_U32, writeBusSignals | end);
-		}
-		return;
-	}
-	if (writeSlot >= 0) {
-		for (u32 i = 0; i < wordCount; ++i) {
-			const MappedBusSignals end = i + 1u == wordCount ? MAPPED_BUS_DMA_BLOCK_END : 0u;
-			const u32 word = readMappedDmaU32LE(readAddress, readBusSignals | end);
-			writeIoSlot(writeSlot, writeAddress, word, BUS_ACCESS_WRITE_U32, writeBusSignals | end);
-			readAddress += readStep;
-		}
-		return;
-	}
-	if (readSlot >= 0) {
-		for (u32 i = 0; i < wordCount; ++i) {
-			const MappedBusSignals end = i + 1u == wordCount ? MAPPED_BUS_DMA_BLOCK_END : 0u;
-			const u32 word = readIoSlot(readSlot, readAddress, readBusSignals | end);
-			writeMappedDmaU32LE(writeAddress, word, writeBusSignals | end);
-			writeAddress += writeStep;
-		}
-		return;
-	}
-	for (u32 i = 0; i < wordCount; ++i) {
-		const MappedBusSignals end = i + 1u == wordCount ? MAPPED_BUS_DMA_BLOCK_END : 0u;
-		const u32 word = readMappedDmaU32LE(readAddress, readBusSignals | end);
-		writeMappedDmaU32LE(writeAddress, word, writeBusSignals | end);
-		readAddress += readStep;
-		writeAddress += writeStep;
-	}
-}
-
 void Memory::writeMappedBusU32LE(uint32_t addr, uint32_t value, uint32_t faultAccess, MappedBusSignals busSignals) {
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
-		writeIoSlot(slot, addr, value, faultAccess, busSignals);
+		if (kReadOnlyIoSlots[static_cast<size_t>(slot)]) {
+			raiseBusFault(BUS_FAULT_READ_ONLY, addr, faultAccess);
+			return;
+		}
+		const IoWriteBinding& binding = m_ioWriteHandlers[static_cast<size_t>(slot)];
+		if ((busSignals & MAPPED_BUS_MASTER_DMA) != 0u
+			&& binding.ready != nullptr
+			&& !binding.ready(binding.context, addr, busSignals)) {
+			return;
+		}
+		writeIoSlot(slot, addr, value, busSignals);
 		return;
 	}
 	if (isIoRegionRange(addr, 4)) {

@@ -5,7 +5,6 @@
 
 #include <array>
 #include <stdexcept>
-#include <vector>
 
 namespace {
 
@@ -103,81 +102,6 @@ void testIoPermissionsApplyToCpuAndDmaWordWrites() {
 	}
 }
 
-struct DmaBusTrace {
-	bmsx::Memory& memory;
-	std::vector<std::array<bmsx::u32, 4>> calls{};
-	bmsx::u32 reads = 0;
-	bmsx::u32 readiness = 0;
-
-	static bmsx::u32 read(void* context, bmsx::u32 address, bmsx::MappedBusSignals signals) {
-		auto& trace = *static_cast<DmaBusTrace*>(context);
-		const bmsx::u32 word = 0x81234560u + trace.reads++;
-		trace.calls.push_back({0u, address, word, signals});
-		if (trace.reads == 2u) trace.memory.mapIoWrite(bmsx::IO_GX_GPU_GP0, &trace, writeRebound);
-		return word;
-	}
-	static bool ready(void* context, bmsx::u32 address, bmsx::MappedBusSignals signals) {
-		auto& trace = *static_cast<DmaBusTrace*>(context);
-		const bmsx::u32 ready = ++trace.readiness % 3u != 0u;
-		trace.calls.push_back({1u, address, ready, signals});
-		return ready != 0u;
-	}
-	static void write(void* context, bmsx::u32 address, bmsx::u32 word, bmsx::MappedBusSignals signals) {
-		static_cast<DmaBusTrace*>(context)->calls.push_back({2u, address, word, signals});
-	}
-	static void writeRebound(void* context, bmsx::u32 address, bmsx::u32 word, bmsx::MappedBusSignals signals) {
-		static_cast<DmaBusTrace*>(context)->calls.push_back({3u, address, word, signals});
-	}
-};
-
-void testDmaBlockPreservesScalarBusOrderAndFaults() {
-	using namespace bmsx;
-	constexpr u32 source = DYNAMIC_RAM_BASE + 0x100u;
-	constexpr u32 destination = DYNAMIC_RAM_BASE + 0x200u;
-	struct Route { u32 read, write, readStep, writeStep; };
-	for (const Route& route : {
-		Route{IO_IMGDEC_DATA, IO_GX_GPU_GP0, 0, 0}, Route{source, IO_GX_GPU_GP0, 4, 0},
-		Route{IO_IMGDEC_DATA, destination, 0, 4}, Route{source, destination, 4, 4},
-		Route{source, source + 4u, 4, 4}, Route{IO_IMGDEC_DATA, IO_SYS_STATUS, 0, 0},
-		Route{IO_IMGDEC_DATA + 1u, IO_GX_GPU_GP0, 0, 0}, Route{UNMAPPED_ADDRESS, IO_GX_GPU_GP0, 0, 0},
-		Route{0xfffffffcu, destination, 4, 4}, Route{IO_IMGDEC_DATA, IO_GX_GPU_GP0, 4, 4},
-		Route{IO_BASE + IO_SLOT_COUNT * IO_WORD_SIZE - IO_WORD_SIZE, destination, 4, 4},
-	}) for (const u32 count : {0u, 1u, 5u, 16u}) {
-		Memory scalar(MemoryInit{{}, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
-		Memory block(MemoryInit{{}, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
-		DmaBusTrace scalarTrace{scalar}, blockTrace{block};
-		for (DmaBusTrace* trace : {&scalarTrace, &blockTrace}) {
-			for (u32 i = 0; i < 32u; ++i) trace->memory.writeMappedU32LE(source + 4u * i, 0xf1234500u + i);
-			trace->memory.mapIoRead(IO_IMGDEC_DATA, trace, DmaBusTrace::read);
-			trace->memory.mapIoWrite(IO_GX_GPU_GP0, trace, DmaBusTrace::write);
-			trace->memory.mapIoWriteReady(IO_GX_GPU_GP0, DmaBusTrace::ready);
-			trace->memory.writeIoU32(IO_SYS_STATUS, 0x89abcdefu);
-		}
-		const MappedBusSignals readSignals = MAPPED_BUS_MASTER_DMA | mappedBusSignalsForCartridgeSlot(0);
-		const MappedBusSignals writeSignals = MAPPED_BUS_MASTER_DMA | mappedBusSignalsForCartridgeSlot(1);
-		u32 read = route.read, write = route.write;
-		for (u32 i = 0; i < count; ++i) {
-			const MappedBusSignals end = i + 1u == count ? MAPPED_BUS_DMA_BLOCK_END : 0u;
-			const u32 word = scalar.readMappedDmaU32LE(read, readSignals | end);
-			scalar.writeMappedDmaU32LE(write, word, writeSignals | end);
-			read += route.readStep; write += route.writeStep;
-		}
-		block.transferDmaBlock(route.read, route.write, count, route.readStep, route.writeStep, readSignals, writeSignals);
-		require(blockTrace.calls == scalarTrace.calls, "DMA block retains read/ready/write order, raw strobes and live rebound handlers");
-		require(blockTrace.reads == scalarTrace.reads && blockTrace.readiness == scalarTrace.readiness, "DMA reads precede even rejected writes");
-		require(block.readBusFaultSequence() == scalar.readBusFaultSequence(), "DMA block retains every fault cycle");
-		for (const u32 address : {IO_SYS_BUS_FAULT_CODE, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_ACCESS, IO_SYS_STATUS})
-			require(block.readIoU32(address) == scalar.readIoU32(address), "DMA block retains fault metadata and read-only latches");
-		for (u32 i = 0; i < 32u; ++i) {
-			require(block.readMappedU32LE(source + 4u * i) == scalar.readMappedU32LE(source + 4u * i), "DMA overlap retains forward word semantics");
-			require(block.readMappedU32LE(destination + 4u * i) == scalar.readMappedU32LE(destination + 4u * i), "DMA block preserves destination words");
-		}
-	}
-	Memory memory(MemoryInit{{}, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
-	memory.writeMappedWord(IO_SYS_STATUS, 0xffffffffu);
-	require(memory.readIoU32(IO_SYS_BUS_FAULT_ACCESS) == (BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_WORD), "shared IO write boundary retains CPU Word access format");
-}
-
 } // namespace
 
 int main() {
@@ -185,6 +109,5 @@ int main() {
 	testMappedWordBurstPreflightStopsWhenBurstCrossesPhysicalIoRegisterfileBoundary();
 	testSystemStatusRejectsMappedWrites();
 	testIoPermissionsApplyToCpuAndDmaWordWrites();
-	testDmaBlockPreservesScalarBusOrderAndFaults();
 	return 0;
 }
