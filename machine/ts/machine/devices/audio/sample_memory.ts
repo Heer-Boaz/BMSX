@@ -1,5 +1,5 @@
 import { readLE32, writeLE32 } from '../../../common/endian';
-import type { Memory, RomByteView } from '../../memory/memory';
+import type { Memory, MemoryByteView } from '../../memory/memory';
 import {
 	APU_SAMPLE_RAM_ADDRESS_MASK,
 	APU_SAMPLE_RAM_BASE,
@@ -9,7 +9,7 @@ import type { ApuSourceByteView } from './source';
 
 export class ApuSampleMemory {
 	private readonly ram = new Uint8Array(APU_SAMPLE_RAM_BYTES);
-	private readonly romView: RomByteView = { bytes: this.ram, byteOffset: 0, byteLength: 0 };
+	private readonly romView: MemoryByteView = { bytes: this.ram, byteOffset: 0, byteLength: 0 };
 
 	public constructor(private readonly memory: Memory) {}
 

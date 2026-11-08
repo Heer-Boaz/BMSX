@@ -52,6 +52,38 @@ struct CpuMachine {
 	}
 };
 
+void compactAndPaddedRomFunctionRecordsAgree() {
+	for (const bool instrumented : {false, true}) for (const bool padded : {false, true}) {
+		test::Blua32TestImage image;
+		image.text.resize(6u * INSTRUCTION_BYTES);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::CALL), 0, encodeFixedCallArgCount(0), 1);
+		writeInstruction(image.text, 3, static_cast<u8>(OpCode::RET), 0, 1, 0);
+		writeInstruction(image.text, 4, static_cast<u8>(OpCode::K1), 0, 0, 0);
+		writeInstruction(image.text, 5, static_cast<u8>(OpCode::RET), 0, 1, 0);
+		image.functions = {{.firstWord = 0, .wordCount = 4}, {.firstWord = 4, .wordCount = 2}};
+		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+		auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
+		if (padded) rom.bytes.resize((rom.bytes.size() + MAPPED_PAGE_BYTE_MASK) & ~static_cast<size_t>(MAPPED_PAGE_BYTE_MASK));
+		Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
+		IrqController irq(memory);
+		ExecutionAddressSpace addresses(memory);
+		CPU cpu(memory, irq, addresses);
+		cpu.reset();
+		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+		const u32 record = rom.functionAddresses[1];
+		Span<const u8> recordView;
+		require(memory.bindMappedReadView(record, BLUA32_FUNCTION_RECORD_SIZE, MAPPED_BUS_MASTER_CPU, recordView), "compact and padded ROM both admit the complete function record");
+		const int cycles = BASE_CYCLES[static_cast<size_t>(OpCode::CLOSURE)] + BASE_CYCLES[static_cast<size_t>(OpCode::CALL)]
+			+ 2 * BASE_CYCLES[static_cast<size_t>(OpCode::RET)] + BASE_CYCLES[static_cast<size_t>(OpCode::K1)];
+		require(cpu.runUntilDepth(0, cycles) == RunResult::Halted, "compact and padded calls complete");
+		require(cpu.readCompletionValues().size() == 1u && cpu.readCompletionValues()[0] == valueNumber(1), "compact and padded ROM calls return the same guest value");
+		require(cpu.instructionBudgetRemaining == 0, "direct record reads preserve exact call and return charges");
+		require(memory.readBusFaultSequence() == 0u, "backed record reads do not invent a bus transaction fault");
+	}
+}
+
 void stringBytePositions() {
 	struct Case { std::string source; Value position; u8 arguments; Value expected; };
 	const std::string unicode("Aé雪\0😀Z", 12);
@@ -732,6 +764,7 @@ void bootAddressWrap() {
 } // namespace
 
 int main() {
+	compactAndPaddedRomFunctionRecordsAgree();
 	try {
 		stringBytePositions(); loadKrIndices(); zeroLoadNil(); successorFetchOrdering(); reservedMemoryKinds(); zeroStackReuse();
 		returnRangesSurviveCallerStackGrowth(); builtinReturnRangesSurviveDestinationGrowth();

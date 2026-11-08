@@ -107,6 +107,7 @@ public:
 	void readBytes(uint32_t addr, u8* out, size_t length) const;
 	bool isReadableMainMemoryRange(uint32_t addr, size_t length) const;
 	bool bindRomByteView(uint32_t addr, size_t length, u32 cartridgeSlot, Span<const u8>& out) const;
+	bool bindMappedReadView(uint32_t addr, size_t length, MappedBusSignals busSignals, Span<const u8>& out) const;
 	bool isRamRange(uint32_t addr, size_t length) const;
 	MemoryRegionKind mappedRegion(uint32_t addr) const;
 	u32 mappedRegionWordSpan(u32 addr, u32 wordLimit, MemoryRegionKind region) const;

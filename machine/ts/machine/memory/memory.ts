@@ -169,7 +169,7 @@ export type MemorySaveState = {
 	busFaultAccess: number;
 };
 
-export type RomByteView = {
+export type MemoryByteView = {
 	bytes: Uint8Array;
 	byteOffset: number;
 	byteLength: number;
@@ -196,7 +196,7 @@ export class Memory {
 	private readonly ioWriteReadyHandlers: Array<StoredIoWriteReadyHandler | null>;
 	private readonly ioDmaPrefixes: IoDmaPrefixBinding[] = [];
 	private readonly dmaPrefixWords = new Uint32Array((DMA_CONTROL_BLOCK_WORDS_MASK >>> DMA_CONTROL_BLOCK_WORDS_SHIFT) + 1);
-	private readonly dmaRomView: RomByteView;
+	private readonly dmaRomView: MemoryByteView;
 	private readonly ioByteLength = IO_SLOT_COUNT * IO_WORD_SIZE;
 	private readonly busFaultCodeSlot = (IO_SYS_BUS_FAULT_CODE - IO_BASE) / IO_WORD_SIZE;
 	private readonly busFaultAddrSlot = (IO_SYS_BUS_FAULT_ADDR - IO_BASE) / IO_WORD_SIZE;
@@ -850,7 +850,7 @@ export class Memory {
 			&& addr - CART_ROM_BASE <= CART_BUS_END - CART_ROM_BASE - length;
 	}
 
-	public bindRomByteView(addr: number, length: number, cartridgeSlot: number, out: RomByteView): boolean {
+	public bindRomByteView(addr: number, length: number, cartridgeSlot: number, out: MemoryByteView): boolean {
 		if (length > 0 && this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, this.systemRom.byteLength)) {
 			out.bytes = this.systemRom;
 			out.byteOffset = addr - SYSTEM_ROM_BASE;
@@ -865,6 +865,20 @@ export class Memory {
 
 	public isRamRange(addr: number, length: number): boolean {
 		return addr >= RAM_BASE && addr - RAM_BASE + length <= this.ram.byteLength;
+	}
+
+	public bindMappedReadView(addr: number, length: number, busSignals: MappedBusSignals, out: MemoryByteView): boolean {
+		if (addr < RAM_BASE) return this.bindRomByteView(addr, length, 0, out);
+		if (addr < CART_ROM_BASE) {
+			const offset = addr - RAM_BASE;
+			if (length === 0 || offset + length > this.ram.byteLength
+				|| (addr < IO_BASE + this.ioByteLength && addr + length > IO_BASE)) return false;
+			out.bytes = this.ram;
+			out.byteOffset = offset;
+			out.byteLength = length;
+			return true;
+		}
+		return addr < CART_BUS_END && this.cartridgeController.bindMappedReadView(addr, length, busSignals, out);
 	}
 
 	public mappedRegion(addr: number): MemoryRegionKind {

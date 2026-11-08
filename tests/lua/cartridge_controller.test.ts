@@ -1,5 +1,6 @@
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import assert from 'node:assert/strict';
+import { MAPPED_BUS_MASTER_CPU } from '../../machine/ts/machine/memory/bus_signals';
 import { test } from 'node:test';
 
 import { writeLE32 } from '../../machine/ts/common/endian';
@@ -110,6 +111,9 @@ test('cartridge bus selects one physical socket and retains the raw selection la
 	memory.writeMappedU32LE(IO_CART_SELECT, 0xa5a50001);
 	assert.equal(memory.readMappedU32LE(IO_CART_SELECT), 0xa5a50001);
 	assert.equal(memory.readMappedU32LE(CART_ROM_BASE), 0xaabbccdd);
+	const view = { bytes: slot0.rom!, byteOffset: 0, byteLength: 0 };
+	assert.equal(memory.bindMappedReadView(CART_ROM_BASE, 4, MAPPED_BUS_MASTER_CPU, view), true);
+	assert.equal(view.bytes, slot1.rom);
 	assert.equal(
 		memory.readMappedU32LE(IO_CART_STATUS),
 		CARTRIDGE_STATUS_SLOT0_PRESENT

@@ -33,6 +33,7 @@ public:
 	u32 writeU32(u32 address, u32 value);
 	void readBytes(u32 address, u8* out, size_t length) const;
 	bool bindRomByteView(u32 address, size_t length, Span<const u8>& out) const;
+	bool bindMappedReadView(u32 address, size_t length, Span<const u8>& out) const;
 	u32 dreqLines() const;
 
 private:

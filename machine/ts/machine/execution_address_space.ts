@@ -1,5 +1,5 @@
 import { readLE32 } from '../common/endian';
-import { MemoryRegionKind, type Memory, type RomByteView } from './memory/memory';
+import { MemoryRegionKind, type Memory, type MemoryByteView } from './memory/memory';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../spec/bmsx/memory_map';
 import type { MappedBusSignals } from './memory/bus_signals';
 import {
@@ -25,7 +25,7 @@ export type Blua32ExecutionBoot = {
 const EMPTY_ROM_BYTES = new Uint8Array(0);
 
 export class ExecutionAddressSpace {
-	private readonly headerView: RomByteView = {
+	private readonly headerView: MemoryByteView = {
 		bytes: EMPTY_ROM_BYTES,
 		byteOffset: 0,
 		byteLength: 0,
@@ -48,7 +48,7 @@ export class ExecutionAddressSpace {
 		executionDomainId: ExecutionDomainId,
 		address: number,
 		byteLength: number,
-		out: RomByteView,
+		out: MemoryByteView,
 	): void {
 		const cartridgeSlot = executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID
 			? 0

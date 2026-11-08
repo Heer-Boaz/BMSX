@@ -202,6 +202,11 @@ export class CartridgeController {
 		return card === null ? false : card.bindRomByteView(address, length, out);
 	}
 
+	public bindMappedReadView(address: number, length: number, busSignals: MappedBusSignals, out: CartridgeByteView): boolean {
+		const card = this.cards[this.selectedSlot(busSignals)];
+		return card !== null && card.bindMappedReadView(address, length, out);
+	}
+
 	private publishDreqLines(slotIndex: CartridgeSlotIndex): void {
 		let asserted = 0;
 		const card = this.cards[slotIndex];

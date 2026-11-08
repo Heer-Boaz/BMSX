@@ -4,6 +4,7 @@
 #include "machine/execution_address_space.h"
 #include "machine/memory/memory.h"
 #include "spec/blua32/builtin.h"
+#include "spec/blua32/image_format.h"
 #include "spec/blua32/memory_access_kind.h"
 #include "spec/blua32/opcode.h"
 #include "spec/bmsx/model.h"
@@ -17,11 +18,13 @@
 #include <iomanip>
 #include <iostream>
 #include <stdexcept>
+#include <string_view>
 
 namespace {
 using namespace bmsx;
 
-enum class Workload { Registers, Tables, Builtin, Ram, Calls, CallsBacked, CodeWrites, Fractions };
+enum class Workload { Registers, Tables, Builtin, Ram, Calls, CallsBacked, CallsRamRecord, CodeWrites, Fractions };
+constexpr u32 RAM_RECORD_ADDRESS = DYNAMIC_RAM_BASE + 0x18000;
 
 test::Blua32TestImage program(Workload workload) {
 	test::Blua32TestImage image;
@@ -65,6 +68,7 @@ test::Blua32TestImage program(Workload workload) {
 		break;
 	case Workload::Calls:
 	case Workload::CallsBacked:
+	case Workload::CallsRamRecord:
 		writeInstruction(text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 		writeInstruction(text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
 		writeInstruction(text, 2, static_cast<u8>(OpCode::MOV), 4, 0, 0);
@@ -75,7 +79,8 @@ test::Blua32TestImage program(Workload workload) {
 		writeInstruction(text, 7, static_cast<u8>(OpCode::K1), 0, 0, 0);
 		writeInstruction(text, 8, static_cast<u8>(OpCode::RET), 0, 1, 0);
 		image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 8}, {.firstWord = 7, .wordCount = 2}};
-		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+		image.closureRelocations = {{1, workload == Workload::CallsRamRecord
+			? RAM_RECORD_ADDRESS : test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 		break;
 	case Workload::CodeWrites:
 		writeInstruction(text, 0, static_cast<u8>(OpCode::STORE_MEM_D), 0, 1, static_cast<u8>(MemoryAccessKind::U32LE));
@@ -100,7 +105,7 @@ test::Blua32TestImage program(Workload workload) {
 void measure(Workload workload, const char* name, int grant, int round) {
 	const auto image = program(workload);
 	auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
-	if (workload == Workload::CallsBacked) {
+	if (workload == Workload::CallsBacked || workload == Workload::CallsRamRecord) {
 		// The same program with a fully backed final page complements the ROM-tail case.
 		rom.bytes.resize((rom.bytes.size() + MAPPED_PAGE_BYTE_MASK) & ~static_cast<size_t>(MAPPED_PAGE_BYTE_MASK));
 	}
@@ -125,6 +130,9 @@ void measure(Workload workload, const char* name, int grant, int round) {
 		registers[1] = valueNumber(DYNAMIC_RAM_BASE + 0x100);
 		registers[2] = valueNumber(1);
 		memory.writeMappedU32LE(DYNAMIC_RAM_BASE + 0x100, 1);
+	} else if (workload == Workload::CallsRamRecord) {
+		memory.writeBytes(RAM_RECORD_ADDRESS, rom.bytes.data() + rom.functionAddresses[1] - SYSTEM_ROM_BASE,
+			BLUA32_FUNCTION_RECORD_SIZE);
 	} else if (workload == Workload::CodeWrites) {
 		const u32 codeAddress = DYNAMIC_RAM_BASE + 0x1000;
 		for (u32 offset = 0; offset < image.text.size(); offset += INSTRUCTION_BYTES) {
@@ -163,6 +171,9 @@ void measure(Workload workload, const char* name, int grant, int round) {
 	if (workload == Workload::CodeWrites && codeOutcomes != 3u) {
 		throw std::runtime_error("Executable RAM writes must change both the instruction and its observed result.");
 	}
+	if (workload == Workload::CallsRamRecord && cpu.readFrameRegister(0, 6) != valueNumber(1)) {
+		throw std::runtime_error("RAM record calls must execute the callee and return its result.");
+	}
 	i64 cycles = 0;
 	const auto start = std::chrono::steady_clock::now();
 	while (cycles < measuredCycles) {
@@ -185,9 +196,15 @@ void measure(Workload workload, const char* name, int grant, int round) {
 }
 }
 
-int main() {
+int main(int argc, char** argv) {
+	const bool ramRecords = argc == 2 && std::string_view(argv[1]) == "--ram-records";
+	if (argc != 1 && !ramRecords) throw std::runtime_error("Expected no arguments or --ram-records.");
 	std::cout << std::fixed << std::setprecision(3);
 	for (const int grant : {256, 4096}) for (int round = 0; round < 3; ++round) {
+		if (ramRecords) {
+			measure(Workload::CallsRamRecord, "calls-ram-record", grant, round);
+			continue;
+		}
 		measure(Workload::Registers, "registers", grant, round);
 		measure(Workload::Tables, "tables", grant, round);
 		measure(Workload::Builtin, "builtin-byte", grant, round);

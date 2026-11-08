@@ -248,6 +248,15 @@ bool CartridgeCard::bindRomByteView(
 	return true;
 }
 
+bool CartridgeCard::bindMappedReadView(u32 address, size_t length, Span<const u8>& out) const {
+	if (address < CART_RAM_BASE) return bindRomByteView(address, length, out);
+	const size_t offset = static_cast<size_t>(address - CART_RAM_BASE);
+	if (address >= CART_MMIO_BASE || !m_ram || length == 0u
+		|| offset >= m_ram->bytes.size() || length > m_ram->bytes.size() - offset) return false;
+	out = Span<const u8>(m_ram->bytes.data() + offset, length);
+	return true;
+}
+
 u32 CartridgeCard::dreqLines() const {
 	return m_mailbox ? m_mailbox->dreqLines() : 0u;
 }

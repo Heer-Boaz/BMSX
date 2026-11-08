@@ -70,6 +70,7 @@ public:
 	}
 	void readBytes(u32 address, u8* out, size_t length) const;
 	bool bindRomByteView(u32 slotIndex, u32 address, size_t length, Span<const u8>& out) const;
+	bool bindMappedReadView(u32 address, size_t length, MappedBusSignals busSignals, Span<const u8>& out) const;
 
 private:
 	static u32 readSelectionThunk(void* context, u32 address, MappedBusSignals busSignals);

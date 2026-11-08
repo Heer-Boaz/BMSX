@@ -23,11 +23,50 @@ import {
 	IO_SYS_BUS_FAULT_CODE,
 	IO_SLOT_COUNT,
 } from '../../machine/ts/spec/bmsx/io';
-import { DYNAMIC_RAM_BASE, IO_BASE, IO_WORD_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
-import { Memory, NO_BLOCKED_MAPPED_WRITE } from '../../machine/ts/machine/memory/memory';
-import { MAPPED_BUS_MASTER_DMA, MAPPED_BUS_DMA_BLOCK_END, mappedBusSignalsForCartridgeSlot, type MappedBusSignals } from '../../machine/ts/machine/memory/bus_signals';
+import { CART_MMIO_BASE, CART_RAM_BASE, CART_ROM_BASE, DYNAMIC_RAM_BASE, IO_BASE, IO_WORD_SIZE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { Memory, NO_BLOCKED_MAPPED_WRITE, type MemoryByteView } from '../../machine/ts/machine/memory/memory';
+import { MAPPED_BUS_MASTER_CPU, MAPPED_BUS_MASTER_DMA, MAPPED_BUS_DMA_BLOCK_END, mappedBusSignalsForCartridgeSlot, type MappedBusSignals } from '../../machine/ts/machine/memory/bus_signals';
+import { readLE32 } from '../../machine/ts/common/endian';
 
 const UNMAPPED_ADDRESS = 0x06000000;
+
+test('mapped read views admit physical backing without reading IO or unbacked tails', () => {
+	const system = new Uint8Array(67), rom0 = new Uint8Array(67).fill(0x31), rom1 = new Uint8Array(67).fill(0x72);
+	const slots = cartridgeSlots(rom0, rom1);
+	slots[0]!.ramByteCount = 67; slots[1]!.ramByteCount = 67;
+	const memory = new Memory({ systemRom: system, cartridgeSlots: slots }, PSX_MACHINE_SPEC.ramBytes);
+	const view: MemoryByteView = { bytes: system, byteOffset: 0, byteLength: 0 };
+	assert.equal(memory.bindMappedReadView(SYSTEM_ROM_BASE + 35, 32, MAPPED_BUS_MASTER_CPU, view), true);
+	assert.equal(view.bytes, system); assert.equal(view.byteOffset, 35); assert.equal(view.byteLength, 32);
+	memory.writeMappedU32LE(DYNAMIC_RAM_BASE + 3, 0x12345678);
+	assert.equal(memory.bindMappedReadView(DYNAMIC_RAM_BASE + 3, 32, MAPPED_BUS_MASTER_CPU, view), true);
+	assert.equal(readLE32(view.bytes, view.byteOffset), 0x12345678);
+	memory.writeMappedU32LE(DYNAMIC_RAM_BASE + 3, 0x87654321);
+	assert.equal(readLE32(view.bytes, view.byteOffset), 0x87654321, 'RAM views consume live backing, not a captured copy');
+	for (const slot of [0, 1]) {
+		const signals = MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_BLOCK_END | mappedBusSignalsForCartridgeSlot(slot);
+		assert.equal(memory.bindMappedReadView(CART_ROM_BASE + 35, 32, signals, view), true);
+		assert.equal(view.bytes[view.byteOffset], slot === 0 ? 0x31 : 0x72);
+		memory.cartridgeController.writeU32(CART_RAM_BASE + 3, slot + 11, signals);
+		assert.equal(memory.bindMappedReadView(CART_RAM_BASE + 3, 32, signals, view), true);
+		assert.equal(readLE32(view.bytes, view.byteOffset), slot + 11);
+	}
+	assert.equal(memory.bindMappedReadView(CART_ROM_BASE, 32, MAPPED_BUS_MASTER_CPU, view), true);
+	assert.equal(view.bytes[view.byteOffset], 0x31);
+	let ioReads = 0;
+	memory.mapIoRead(IO_GX_GPU_GP0, memory, () => { ioReads++; return 0; });
+	const ioEnd = IO_BASE + IO_SLOT_COUNT * IO_WORD_SIZE;
+	for (const [address, length] of [[IO_BASE - 4, 8], [IO_GX_GPU_GP0, 4], [ioEnd - 4, 8],
+		[RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 4, 8], [SYSTEM_ROM_BASE + 36, 32],
+		[CART_ROM_BASE + 36, 32], [CART_RAM_BASE + 36, 32], [CART_MMIO_BASE, 4], [UNMAPPED_ADDRESS, 4], [0xfffffff0, 32]]) {
+		assert.equal(memory.bindMappedReadView(address, length, MAPPED_BUS_MASTER_CPU, view), false);
+	}
+	assert.equal(ioReads, 0); assert.equal(memory.readBusFaultSequence(), 0);
+	for (const address of [SYSTEM_ROM_BASE, DYNAMIC_RAM_BASE, CART_ROM_BASE, CART_RAM_BASE])
+		assert.equal(memory.bindMappedReadView(address, 0, MAPPED_BUS_MASTER_CPU, view), false);
+	const empty = new Memory({ systemRom: system, cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	assert.equal(empty.bindMappedReadView(CART_ROM_BASE, 32, MAPPED_BUS_MASTER_CPU, view), false);
+});
 
 test('IO word permissions apply to CPU and DMA without changing raw register values', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);

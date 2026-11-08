@@ -1,10 +1,12 @@
 #include "spec/bmsx/io.h"
+#include "common/endian.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
 #include "support/cartridge_fixture.h"
 
 #include <array>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -21,6 +23,47 @@ void requireBusFault(const bmsx::Memory& memory, uint32_t access) {
 	require(memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_CODE) == bmsx::BUS_FAULT_UNMAPPED, "floating mapped access latches an unmapped fault");
 	require(memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ADDR) == UNMAPPED_ADDRESS, "floating mapped access latches the first cycle address");
 	require(memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ACCESS) == access, "floating mapped access latches its transaction width");
+}
+
+void testMappedReadViewsRespectPhysicalBoundaries() {
+	using namespace bmsx;
+	std::array<u8, 67> system{}, rom0{}, rom1{};
+	rom0.fill(0x31u); rom1.fill(0x72u);
+	auto slots = test::cartridgeSlots(rom0, rom1);
+	slots[0]->ramByteCount = 67u; slots[1]->ramByteCount = 67u;
+	Memory memory(MemoryInit{system, slots}, PSX_MACHINE_SPEC.ramBytes);
+	Span<const u8> view;
+	require(memory.bindMappedReadView(SYSTEM_ROM_BASE + 35u, 32u, MAPPED_BUS_MASTER_CPU, view), "a ROM tail admits its exactly backed record span");
+	require(view.data() == system.data() + 35u && view.size() == 32u, "ROM view contains precisely the admitted bytes");
+	memory.writeMappedU32LE(DYNAMIC_RAM_BASE + 3u, 0x12345678u);
+	require(memory.bindMappedReadView(DYNAMIC_RAM_BASE + 3u, 32u, MAPPED_BUS_MASTER_CPU, view), "ordinary unaligned RAM spans are directly readable");
+	require(readLE32(view.data()) == 0x12345678u, "RAM view keeps raw little-endian word bytes");
+	memory.writeMappedU32LE(DYNAMIC_RAM_BASE + 3u, 0x87654321u);
+	require(readLE32(view.data()) == 0x87654321u, "a RAM view is live backing, not a captured copy");
+	for (const u32 slot : {0u, 1u}) {
+		const auto signals = static_cast<MappedBusSignals>(MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_BLOCK_END | mappedBusSignalsForCartridgeSlot(slot));
+		require(memory.bindMappedReadView(CART_ROM_BASE + 35u, 32u, signals, view), "both sockets admit backed ROM spans with raw bus strobes");
+		require(view.data()[0] == (slot == 0u ? 0x31u : 0x72u), "direct ROM reads obey physical chip select");
+		memory.cartridgeController().writeU32(CART_RAM_BASE + 3u, slot + 11u, signals);
+		require(memory.bindMappedReadView(CART_RAM_BASE + 3u, 32u, signals, view), "both sockets admit card RAM without exposing device words");
+		require(readLE32(view.data()) == slot + 11u, "card RAM view obeys the same raw socket signals");
+	}
+	require(memory.bindMappedReadView(CART_ROM_BASE, 32u, MAPPED_BUS_MASTER_CPU, view) && view.data()[0] == 0x31u, "ordinary CPU reads use the default selected socket without an override");
+	u32 ioReads = 0u;
+	memory.mapIoRead(IO_GX_GPU_GP0, &ioReads, [](void* context, u32, MappedBusSignals) -> u32 { ++*static_cast<u32*>(context); return 0u; });
+	const u32 ioEnd = IO_BASE + IO_SLOT_COUNT * IO_WORD_SIZE;
+	for (const auto [address, length] : std::array<std::pair<u32, u32>, 10>{{
+		{IO_BASE - 4u, 8u}, {IO_GX_GPU_GP0, 4u}, {ioEnd - 4u, 8u},
+		{RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 4u, 8u}, {SYSTEM_ROM_BASE + 36u, 32u},
+		{CART_ROM_BASE + 36u, 32u}, {CART_RAM_BASE + 36u, 32u},
+		{CART_MMIO_BASE, 4u}, {UNMAPPED_ADDRESS, 4u}, {0xfffffff0u, 32u}}}) {
+		require(!memory.bindMappedReadView(address, length, MAPPED_BUS_MASTER_CPU, view), "direct views exclude IO overlaps, unbacked tails and unmapped ranges");
+	}
+	require(ioReads == 0u && memory.readBusFaultSequence() == 0u, "span admission neither invokes IO nor fabricates a bus transaction");
+	for (const u32 address : {SYSTEM_ROM_BASE, DYNAMIC_RAM_BASE, CART_ROM_BASE, CART_RAM_BASE})
+		require(!memory.bindMappedReadView(address, 0u, MAPPED_BUS_MASTER_CPU, view), "a zero-byte request admits no direct read");
+	Memory empty(MemoryInit{system, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
+	require(!empty.bindMappedReadView(CART_ROM_BASE, 32u, MAPPED_BUS_MASTER_CPU, view), "an absent socket supplies no direct ROM backing");
 }
 
 void testFloatingMappedTransactionsKeepTheirBusWidth() {
@@ -147,6 +190,7 @@ void testDmaPrefixesAreRevokedByScalarRebindingAndRespectPermissions() {
 } // namespace
 
 int main() {
+	testMappedReadViewsRespectPhysicalBoundaries();
 	testFloatingMappedTransactionsKeepTheirBusWidth();
 	testMappedWordBurstPreflightStopsWhenBurstCrossesPhysicalIoRegisterfileBoundary();
 	testSystemStatusRejectsMappedWrites();

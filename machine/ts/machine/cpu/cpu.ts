@@ -5,7 +5,7 @@ import {
 	type MappedPageBinding,
 	type MappedPageInvalidator,
 	type Memory,
-	type RomByteView,
+	type MemoryByteView,
 } from '../memory/memory';
 import {
 	MAPPED_BUS_MASTER_CPU,
@@ -461,12 +461,12 @@ export class CPU implements MappedPageInvalidator {
 		upvalueTableAddress: 0,
 		upvalueCount: 0,
 	};
-	private readonly executionReadView: RomByteView = {
+	private readonly executionReadView: MemoryByteView = {
 		bytes: new Uint8Array(0),
 		byteOffset: 0,
 		byteLength: 0,
 	};
-	private readonly executionTableView: RomByteView = {
+	private readonly executionTableView: MemoryByteView = {
 		bytes: new Uint8Array(0),
 		byteOffset: 0,
 		byteLength: 0,
@@ -1480,43 +1480,35 @@ export class CPU implements MappedPageInvalidator {
 		latch.image = image;
 		latch.busSignals = busSignals;
 		latch.address = address;
-		const pageOffset = address & MAPPED_PAGE_BYTE_MASK;
-		if (pageOffset <= MAPPED_PAGE_BYTE_SIZE - BLUA32_FUNCTION_RECORD_SIZE) {
-			const binding = this.mappedPageBinding;
-			this.memory.bindMappedPage(
-				(address & ~MAPPED_PAGE_BYTE_MASK) >>> 0,
-				busSignals,
-				binding,
+		const view = this.executionReadView;
+		if (this.memory.bindMappedReadView(address, BLUA32_FUNCTION_RECORD_SIZE, busSignals, view)) {
+			const bytes = view.bytes;
+			const recordByteOffset = view.byteOffset;
+			latch.codeAddress = readLE32(
+				bytes,
+				recordByteOffset + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
 			);
-			const bytes = binding.readBytes;
-			if (bytes !== null) {
-				const recordByteOffset = binding.readByteOffset + pageOffset;
-				latch.codeAddress = readLE32(
-					bytes,
-					recordByteOffset + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
-				);
-				latch.numParams = readLE32(
-					bytes,
-					recordByteOffset + BLUA32_FUNCTION_NUM_PARAMS_OFFSET,
-				);
-				latch.maxStack = readLE32(
-					bytes,
-					recordByteOffset + BLUA32_FUNCTION_MAX_STACK_OFFSET,
-				);
-				latch.flags = readLE32(
-					bytes,
-					recordByteOffset + BLUA32_FUNCTION_FLAGS_OFFSET,
-				);
-				latch.upvalueTableAddress = readLE32(
-					bytes,
-					recordByteOffset + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
-				);
-				latch.upvalueCount = readLE32(
-					bytes,
-					recordByteOffset + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET,
-				);
-				return true;
-			}
+			latch.numParams = readLE32(
+				bytes,
+				recordByteOffset + BLUA32_FUNCTION_NUM_PARAMS_OFFSET,
+			);
+			latch.maxStack = readLE32(
+				bytes,
+				recordByteOffset + BLUA32_FUNCTION_MAX_STACK_OFFSET,
+			);
+			latch.flags = readLE32(
+				bytes,
+				recordByteOffset + BLUA32_FUNCTION_FLAGS_OFFSET,
+			);
+			latch.upvalueTableAddress = readLE32(
+				bytes,
+				recordByteOffset + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
+			);
+			latch.upvalueCount = readLE32(
+				bytes,
+				recordByteOffset + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET,
+			);
+			return true;
 		}
 		const faultSequence = this.memory.readBusFaultSequence();
 		latch.codeAddress = this.memory.readMappedBusU32LE(

@@ -749,6 +749,19 @@ bool Memory::bindRomByteView(uint32_t addr, size_t length, u32 cartridgeSlot, Sp
 	return false;
 }
 
+bool Memory::bindMappedReadView(uint32_t addr, size_t length, MappedBusSignals busSignals, Span<const u8>& out) const {
+	if (addr < RAM_BASE) return bindRomByteView(addr, length, 0u, out);
+	if (addr < CART_ROM_BASE) {
+		size_t offset;
+		const u32 ioEnd = IO_BASE + static_cast<u32>(m_ioSlots.size()) * IO_WORD_SIZE;
+		if (length == 0u || !addressRangeOffset(addr, RAM_BASE, m_ram.size(), length, offset)
+			|| (addr < ioEnd && (addr >= IO_BASE || length > IO_BASE - addr))) return false;
+		out = Span<const u8>(m_ram.data() + offset, length);
+		return true;
+	}
+	return addr < CART_BUS_END && m_cartridgeController.bindMappedReadView(addr, length, busSignals, out);
+}
+
 bool Memory::isRamRange(uint32_t addr, size_t length) const {
 	return addr >= RAM_BASE
 		&& length <= m_ram.size()

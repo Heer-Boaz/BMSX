@@ -153,6 +153,11 @@ bool CartridgeController::bindRomByteView(
 	return card ? card->bindRomByteView(address, length, out) : false;
 }
 
+bool CartridgeController::bindMappedReadView(u32 address, size_t length, MappedBusSignals busSignals, Span<const u8>& out) const {
+	const auto& card = m_cards[selectedSlot(busSignals)];
+	return card && card->bindMappedReadView(address, length, out);
+}
+
 void CartridgeController::publishDreqLines(u32 slotIndex) {
 	u32 asserted = 0u;
 	const auto& card = m_cards[slotIndex];

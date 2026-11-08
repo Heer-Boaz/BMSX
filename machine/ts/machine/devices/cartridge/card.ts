@@ -273,6 +273,18 @@ export class CartridgeCard {
 		return true;
 	}
 
+	public bindMappedReadView(address: number, length: number, out: CartridgeByteView): boolean {
+		if (address < CART_RAM_BASE) return this.bindRomByteView(address, length, out);
+		const ram = this.ram;
+		const offset = address - CART_RAM_BASE;
+		if (address >= CART_MMIO_BASE || ram === null || length === 0
+			|| offset >= ram.bytes.byteLength || length > ram.bytes.byteLength - offset) return false;
+		out.bytes = ram.bytes;
+		out.byteOffset = offset;
+		out.byteLength = length;
+		return true;
+	}
+
 	public dreqLines(): number {
 		return this.mailbox === null ? 0 : this.mailbox.dreqLines();
 	}

@@ -5,10 +5,12 @@ import { Closure } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import {
 	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
+	BLUA32_FUNCTION_ALIGNMENT,
 	BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
 	BLUA32_FUNCTION_FLAGS_OFFSET,
 	BLUA32_FUNCTION_MAX_STACK_OFFSET,
 	BLUA32_FUNCTION_NUM_PARAMS_OFFSET,
+	BLUA32_FUNCTION_RECORD_SIZE,
 	BLUA32_FUNCTION_STATIC,
 	BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET,
 	BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
@@ -20,13 +22,55 @@ import {
 	MAX_BX_BITS,
 	writeInstruction,
 } from '../../machine/ts/spec/blua32/instruction_format';
-import { OpCode, encodeFixedCallArgCount } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode, encodeFixedCallArgCount } from '../../machine/ts/spec/blua32/opcode';
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
+import { MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { materializeCpuCompletionValues } from './cpu_test_harness';
 
 const RAM_FUNCTION_ADDRESS = DYNAMIC_RAM_BASE + 0x1000;
 const RAM_CODE_ADDRESS = RAM_FUNCTION_ADDRESS + 0x100;
+
+test('compact and padded ROM calls use admitted record spans with identical cycles and results', () => {
+	const text = new Uint8Array(6 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.WIDE, 0, 0, CLOSURE_ADDRESS_REGISTER_WIDE_C);
+	writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 1);
+	writeInstruction(text, 2, OpCode.CALL, 0, encodeFixedCallArgCount(0), 1);
+	writeInstruction(text, 3, OpCode.RET, 0, 1, 0);
+	writeInstruction(text, 4, OpCode.K1, 0, 0, 0);
+	writeInstruction(text, 5, OpCode.RET, 0, 1, 0);
+	const image = linkRawTestSystemBlua32({ text,
+		functions: [{ firstWord: 0, wordCount: 4, maxStack: 2 }, { firstWord: 4, wordCount: 2 }],
+	});
+	const sourceRecord = image.symbols.functionAddresses[1];
+	const record = (image.romBytes.byteLength + BLUA32_FUNCTION_ALIGNMENT - 1) & ~(BLUA32_FUNCTION_ALIGNMENT - 1);
+	const compactLength = record + BLUA32_FUNCTION_RECORD_SIZE;
+	for (const instrumented of [false, true]) for (const padded of [false, true]) {
+		const romBytes = new Uint8Array(padded ? (compactLength + MAPPED_PAGE_BYTE_MASK) & ~MAPPED_PAGE_BYTE_MASK : compactLength);
+		romBytes.set(image.romBytes);
+		romBytes.set(image.romBytes.subarray(sourceRecord, sourceRecord + BLUA32_FUNCTION_RECORD_SIZE), record);
+		const { cpu, memory } = createTestSystemCpu({ romBytes });
+		cpu.rootThread.frames[0].registers.setNumber(1, record);
+		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+		const readWord = memory.readMappedBusU32LE.bind(memory);
+		let scalarRecordReads = 0;
+		memory.readMappedBusU32LE = (address, signals, access) => {
+			if (address >= record && address < record + BLUA32_FUNCTION_RECORD_SIZE) scalarRecordReads++;
+			return readWord(address, signals, access);
+		};
+		const cycles = BASE_CYCLES[OpCode.CLOSURE] + BASE_CYCLES[OpCode.CALL] + 2 * BASE_CYCLES[OpCode.RET] + BASE_CYCLES[OpCode.K1];
+		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Halted);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [1]);
+		assert.equal(cpu.instructionBudgetRemaining, 0);
+		assert.equal(memory.readBusFaultSequence(), 0);
+		assert.equal(scalarRecordReads, 0, 'a fully backed record needs no repeated per-word bus dispatch, including in a partial page');
+		if (!padded) {
+			assert.notEqual(romBytes.byteLength & MAPPED_PAGE_BYTE_MASK, 0);
+			assert.equal(record & ~MAPPED_PAGE_BYTE_MASK, romBytes.byteLength & ~MAPPED_PAGE_BYTE_MASK, 'the callee record is in the compact image\'s partial final page');
+		}
+	}
+});
 
 test('WIDE and sequential fetch cross function-record metadata boundaries', () => {
 	const code = new Uint8Array(3 * INSTRUCTION_BYTES);

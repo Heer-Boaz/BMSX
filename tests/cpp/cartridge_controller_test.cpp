@@ -63,6 +63,9 @@ void testPhysicalSocketSelectionAndRawLatch() {
 	memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 0xa5a50001u);
 	require(memory.readMappedU32LE(bmsx::IO_CART_SELECT) == 0xa5a50001u, "selection register retains its raw word");
 	require(memory.readMappedU32LE(bmsx::CART_ROM_BASE) == 0xaabbccddu, "CPU aperture reads slot 1 when CS1 is selected");
+	bmsx::Span<const bmsx::u8> view;
+	require(memory.bindMappedReadView(bmsx::CART_ROM_BASE, 4u, bmsx::MAPPED_BUS_MASTER_CPU, view)
+		&& view.data() == slot1Rom.data(), "admitted CPU read spans follow the same raw selection latch");
 	require(
 		memory.readMappedU32LE(bmsx::IO_CART_STATUS)
 			== (bmsx::CARTRIDGE_STATUS_SLOT0_PRESENT
