@@ -351,43 +351,40 @@ void ImgDecController::decodeScheduledWords() {
 		m_outputStage = OutputClutPayload;
 		return;
 	}
-	switch (m_decodePhase) {
-	case DecodeLiteral:
-		for (u32 index = 0u; index < decodeWords; index += 1u) {
-			emitPayloadWord(m_inputFifo.pop());
+	size_t writeIndex = m_historyWriteIndex;
+	u32 remaining = decodeWords;
+	while (remaining != 0u) {
+		const size_t words = std::min<size_t>(remaining, IMGDEC_HISTORY_WORD_CAPACITY - writeIndex);
+		u32* const output = m_history.data() + writeIndex;
+		switch (m_decodePhase) {
+		case DecodeLiteral:
+			m_inputFifo.readWords(output, words);
+			break;
+		case DecodeRepeat:
+			std::fill_n(output, words, m_repeatWord);
+			break;
+		case DecodeBackReference:
+			// Forward order preserves copies whose source overlaps this batch.
+			for (size_t index = 0u; index < words; ++index) {
+				output[index] = m_history[(writeIndex + index - m_backReferenceDistance) & IMGDEC_HISTORY_WORD_MASK];
+			}
+			break;
+		case DecodeZero:
+			std::fill_n(output, words, 0u);
+			break;
 		}
-		break;
-	case DecodeRepeat:
-		for (u32 index = 0u; index < decodeWords; index += 1u) {
-			emitPayloadWord(m_repeatWord);
-		}
-		break;
-	case DecodeBackReference:
-		for (u32 index = 0u; index < decodeWords; index += 1u) {
-			emitPayloadWord(m_history[(m_historyWriteIndex - m_backReferenceDistance) & IMGDEC_HISTORY_WORD_MASK]);
-		}
-		break;
-	case DecodeZero:
-		for (u32 index = 0u; index < decodeWords; index += 1u) {
-			emitPayloadWord(0u);
-		}
-		break;
+		m_outputFifo.writeWords(output, words);
+		writeIndex = (writeIndex + words) & IMGDEC_HISTORY_WORD_MASK;
+		remaining -= static_cast<u32>(words);
 	}
+	m_historyWriteIndex = writeIndex;
+	m_historyWordCount = std::min<size_t>(IMGDEC_HISTORY_WORD_CAPACITY, m_historyWordCount + decodeWords);
+	m_decodedWordCount += decodeWords;
 	m_runWordsRemaining -= decodeWords;
 	if (m_runWordsRemaining == 0u) {
 		m_decodePhase = DecodeToken;
 	}
 	advanceOutputStage();
-}
-
-void ImgDecController::emitPayloadWord(u32 word) {
-	m_outputFifo.writeWord(word);
-	m_history[m_historyWriteIndex] = word;
-	m_historyWriteIndex = (m_historyWriteIndex + 1u) & IMGDEC_HISTORY_WORD_MASK;
-	if (m_historyWordCount < IMGDEC_HISTORY_WORD_CAPACITY) {
-		m_historyWordCount += 1u;
-	}
-	m_decodedWordCount += 1u;
 }
 
 void ImgDecController::updateDmaRequests() {

@@ -446,43 +446,40 @@ export class ImgDecController {
 			this.outputStage = OUTPUT_CLUT_PAYLOAD;
 			return;
 		}
-		switch (this.decodePhase) {
-			case DECODE_LITERAL:
-				for (let index = 0; index < decodeWords; index += 1) {
-					this.emitPayloadWord(this.inputFifo.pop());
-				}
-				break;
-			case DECODE_REPEAT:
-				for (let index = 0; index < decodeWords; index += 1) {
-					this.emitPayloadWord(this.repeatWord);
-				}
-				break;
-			case DECODE_BACK_REFERENCE:
-				for (let index = 0; index < decodeWords; index += 1) {
-					this.emitPayloadWord(this.history[(this.historyWriteIndex - this.backReferenceDistance) & IMGDEC_HISTORY_WORD_MASK]!);
-				}
-				break;
-			case DECODE_ZERO:
-				for (let index = 0; index < decodeWords; index += 1) {
-					this.emitPayloadWord(0);
-				}
-				break;
+		let writeIndex = this.historyWriteIndex;
+		let remaining = decodeWords;
+		const history = this.history;
+		while (remaining !== 0) {
+			const words = Math.min(remaining, IMGDEC_HISTORY_WORD_CAPACITY - writeIndex);
+			switch (this.decodePhase) {
+				case DECODE_LITERAL:
+					this.inputFifo.readWords(history, writeIndex, words);
+					break;
+				case DECODE_REPEAT:
+					history.fill(this.repeatWord, writeIndex, writeIndex + words);
+					break;
+				case DECODE_BACK_REFERENCE:
+					// Forward order preserves copies whose source overlaps this batch.
+					for (let index = 0; index < words; ++index) {
+						history[writeIndex + index] = history[(writeIndex + index - this.backReferenceDistance) & IMGDEC_HISTORY_WORD_MASK];
+					}
+					break;
+				case DECODE_ZERO:
+					history.fill(0, writeIndex, writeIndex + words);
+					break;
+			}
+			this.outputFifo.writeWords(history, writeIndex, words);
+			writeIndex = (writeIndex + words) & IMGDEC_HISTORY_WORD_MASK;
+			remaining -= words;
 		}
+		this.historyWriteIndex = writeIndex;
+		this.historyWordCount = Math.min(IMGDEC_HISTORY_WORD_CAPACITY, this.historyWordCount + decodeWords);
+		this.decodedWordCount = (this.decodedWordCount + decodeWords) >>> 0;
 		this.runWordsRemaining -= decodeWords;
 		if (this.runWordsRemaining === 0) {
 			this.decodePhase = DECODE_TOKEN;
 		}
 		this.advanceOutputStage();
-	}
-
-	private emitPayloadWord(word: number): void {
-		this.outputFifo.writeWord(word);
-		this.history[this.historyWriteIndex] = word >>> 0;
-		this.historyWriteIndex = (this.historyWriteIndex + 1) & IMGDEC_HISTORY_WORD_MASK;
-		if (this.historyWordCount < IMGDEC_HISTORY_WORD_CAPACITY) {
-			this.historyWordCount += 1;
-		}
-		this.decodedWordCount = (this.decodedWordCount + 1) >>> 0;
 	}
 
 	private updateDmaRequests(): void {

@@ -61,8 +61,12 @@ import {
 	IMGDEC_STATUS_FORMAT_FAULT,
 } from '../../machine/ts/spec/imgdec/registers';
 import {
+	IMGDEC_HISTORY_WORD_CAPACITY,
 	IMGDEC_STREAM_MAGIC,
 	IMGDEC_TOKEN_KIND_BACK_REFERENCE,
+	IMGDEC_TOKEN_BACK_REFERENCE_MIN_LENGTH,
+	IMGDEC_TOKEN_BACK_REFERENCE_LENGTH_SHIFT,
+	IMGDEC_TOKEN_KIND_LITERAL,
 	IMGDEC_TOKEN_KIND_REPEAT,
 	IMGDEC_TOKEN_KIND_SHIFT,
 	IMGDEC_TOKEN_KIND_ZERO,
@@ -496,5 +500,61 @@ test('DMA prefixes retain scalar FIFO, latch, counter and last-word scheduling e
 		for (const address of [IO_IMGDEC_DATA, IO_IMGDEC_STATUS, IO_GX_GPU_GP0, IO_IRQ_FLAGS]) assert.equal(b.memory.readIoU32(address), a.memory.readIoU32(address));
 		assert.equal(b.memory.readBusFaultSequence(), a.memory.readBusFaultSequence());
 		assert.equal(b.machine.scheduler.nextDeadline(), a.machine.scheduler.nextDeadline());
+	}
+});
+
+test('payload runs cross the history ring without changing any GP0 or retained history word', () => {
+	const prefix = 2 * IMGDEC_HISTORY_WORD_CAPACITY - 5;
+	const run = 33;
+	const words = prefix + run + 4;
+	for (let mode = 0; mode < 7; ++mode) {
+		const stream = [IMGDEC_STREAM_MAGIC, words, 0,
+			(IMGDEC_TOKEN_KIND_REPEAT << IMGDEC_TOKEN_KIND_SHIFT) | (prefix - 17), 0x7e813579,
+			(IMGDEC_TOKEN_KIND_LITERAL << IMGDEC_TOKEN_KIND_SHIFT) | 15];
+		const expected: number[] = Array(prefix - 16).fill(0x7e813579);
+		for (let index = 0; index < 16; ++index) {
+			const word = (0x80010001 + index * 0x01010101) >>> 0;
+			stream.push(word);
+			expected.push(word);
+		}
+		if (mode === 0) {
+			stream.push((IMGDEC_TOKEN_KIND_LITERAL << IMGDEC_TOKEN_KIND_SHIFT) | (run - 1));
+			for (let index = 0; index < run; ++index) {
+				const word = 0xfedc0000 + index;
+				stream.push(word);
+				expected.push(word);
+			}
+		} else if (mode < 3) {
+			const kind = mode === 1 ? IMGDEC_TOKEN_KIND_REPEAT : IMGDEC_TOKEN_KIND_ZERO;
+			const word = mode === 1 ? 0xf000ffff : 0;
+			stream.push((kind << IMGDEC_TOKEN_KIND_SHIFT) | (run - 1));
+			if (mode === 1) stream.push(word);
+			for (let index = 0; index < run; ++index) expected.push(word);
+		} else {
+			const distance = [1, 3, 16, IMGDEC_HISTORY_WORD_CAPACITY][mode - 3];
+			stream.push((IMGDEC_TOKEN_KIND_BACK_REFERENCE << IMGDEC_TOKEN_KIND_SHIFT)
+				| ((run - IMGDEC_TOKEN_BACK_REFERENCE_MIN_LENGTH) << IMGDEC_TOKEN_BACK_REFERENCE_LENGTH_SHIFT)
+				| (distance - 1));
+			for (let index = 0; index < run; ++index) expected.push(expected[expected.length - distance]);
+		}
+		stream.push((IMGDEC_TOKEN_KIND_LITERAL << IMGDEC_TOKEN_KIND_SHIFT) | 3);
+		for (const word of [0xffffffff, 0, 0x8001ffff, 0x01234567]) {
+			stream.push(word);
+			expected.push(word);
+		}
+		const rom = new Uint8Array(stream.length * 4);
+		for (let index = 0; index < stream.length; ++index) writeLE32(rom, index * 4, stream[index]);
+		const fixture = createFixture(rom);
+		armUpload(fixture, stream.length, words, 0, 0, 64 | (257 << 16), 0);
+		fixture.memory.writeMappedU32LE(IO_IMGDEC_CONTROL, IMGDEC_CONTROL_START);
+		runUntilImgDecStatus(fixture, IMGDEC_STATUS_DONE);
+		runUntilGpuCommandCount(fixture, 1);
+		const state = fixture.machine.imgDecController.captureState();
+		assert.equal(state.decodedWordCount, words);
+		assert.deepEqual(state.historyWords, expected.slice(-IMGDEC_HISTORY_WORD_CAPACITY));
+		const commands = fixture.gpu.readDeviceOutput().commandBuffer;
+		assert.equal(commands.commandWordCount[0], words + 3);
+		const first = commands.commandWordStart[0] + 3;
+		assert.deepEqual(Array.from(commands.words.subarray(first, first + words)), expected, `mode=${mode}`);
 	}
 });

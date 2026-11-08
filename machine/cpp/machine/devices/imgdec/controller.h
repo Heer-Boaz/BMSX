@@ -71,7 +71,6 @@ private:
 	void prepareDecodeRun();
 	auto scheduleDecode(i64 anchorCycle) -> bool;
 	void decodeScheduledWords();
-	void emitPayloadWord(u32 word);
 	void updateDmaRequests();
 	[[nodiscard]] auto streamComplete() const -> bool;
 	void failIfInputExhausted();

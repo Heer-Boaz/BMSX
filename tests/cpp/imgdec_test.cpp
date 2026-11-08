@@ -538,6 +538,64 @@ void testDmaPrefixMatchesScalarDatapathAtEveryBlockBoundary() {
 	}
 }
 
+void testPayloadRunsCrossHistoryRingAndKeepExactWords() {
+	using namespace bmsx;
+	constexpr u32 prefix = 2u * IMGDEC_HISTORY_WORD_CAPACITY - 5u;
+	constexpr u32 run = 33u;
+	constexpr u32 words = prefix + run + 4u;
+	for (u32 mode = 0u; mode < 7u; ++mode) {
+		ImgDecHarness harness;
+		std::vector<u32> stream{IMGDEC_STREAM_MAGIC, words, 0u,
+			(IMGDEC_TOKEN_KIND_REPEAT << IMGDEC_TOKEN_KIND_SHIFT) | (prefix - 17u), 0x7e813579u,
+			(IMGDEC_TOKEN_KIND_LITERAL << IMGDEC_TOKEN_KIND_SHIFT) | 15u};
+		std::vector<u32> expected(prefix - 16u, 0x7e813579u);
+		for (u32 index = 0u; index < 16u; ++index) {
+			const u32 word = 0x80010001u + index * 0x01010101u;
+			stream.push_back(word);
+			expected.push_back(word);
+		}
+		if (mode == 0u) {
+			stream.push_back((IMGDEC_TOKEN_KIND_LITERAL << IMGDEC_TOKEN_KIND_SHIFT) | (run - 1u));
+			for (u32 index = 0u; index < run; ++index) {
+				const u32 word = 0xfedc0000u + index;
+				stream.push_back(word);
+				expected.push_back(word);
+			}
+		} else if (mode < 3u) {
+			const u32 kind = mode == 1u ? IMGDEC_TOKEN_KIND_REPEAT : IMGDEC_TOKEN_KIND_ZERO;
+			const u32 word = mode == 1u ? 0xf000ffffu : 0u;
+			stream.push_back((kind << IMGDEC_TOKEN_KIND_SHIFT) | (run - 1u));
+			if (mode == 1u) stream.push_back(word);
+			expected.insert(expected.end(), run, word);
+		} else {
+			const u32 distance = std::array<u32, 4>{1u, 3u, 16u, IMGDEC_HISTORY_WORD_CAPACITY}[mode - 3u];
+			stream.push_back((IMGDEC_TOKEN_KIND_BACK_REFERENCE << IMGDEC_TOKEN_KIND_SHIFT)
+				| ((run - IMGDEC_TOKEN_BACK_REFERENCE_MIN_LENGTH) << IMGDEC_TOKEN_BACK_REFERENCE_LENGTH_SHIFT)
+				| (distance - 1u));
+			for (u32 index = 0u; index < run; ++index) expected.push_back(expected[expected.size() - distance]);
+		}
+		stream.push_back((IMGDEC_TOKEN_KIND_LITERAL << IMGDEC_TOKEN_KIND_SHIFT) | 3u);
+		for (u32 word : {0xffffffffu, 0u, 0x8001ffffu, 0x01234567u}) {
+			stream.push_back(word);
+			expected.push_back(word);
+		}
+		for (u32 index = 0u; index < stream.size(); ++index) harness.writeCartWord(index, stream[index]);
+		armUpload(harness, static_cast<u32>(stream.size()), words, 0u, 0u, 64u | (257u << 16u), 0u);
+		harness.memory.writeMappedU32LE(IO_IMGDEC_CONTROL, IMGDEC_CONTROL_START);
+		runUntilImgDecStatus(harness, IMGDEC_STATUS_DONE);
+		runUntilGpuCommandCount(harness, 1u);
+		const auto state = harness.imgDec.captureState();
+		require(state.decodedWordCount == words, "history wrapping retains decoded word count");
+		require(state.historyWords == std::vector<u32>(expected.end() - IMGDEC_HISTORY_WORD_CAPACITY, expected.end()),
+			"every payload phase retains the chronological full history after ring wrap");
+		const auto& commands = harness.gpu.readDeviceOutput().commandBuffer;
+		require(commands.commandWordCount[0] == words + 3u, "wrapped decode reaches GP0 without lost words");
+		const u32 first = commands.commandWordStart[0] + 3u;
+		for (u32 index = 0u; index < words; ++index) require(commands.words[first + index] == expected[index],
+			"literal/repeat/zero and overlapping/max-distance backreferences retain every raw word");
+	}
+}
+
 } // namespace
 
 int main() {
@@ -549,5 +607,6 @@ int main() {
 	testFormatFaultLeavesAdmittedGp0Block();
 	testActivePipelineRestore();
 	testDmaPrefixMatchesScalarDatapathAtEveryBlockBoundary();
+	testPayloadRunsCrossHistoryRingAndKeepExactWords();
 	return 0;
 }
