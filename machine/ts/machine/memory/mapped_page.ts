@@ -4,7 +4,7 @@ export const MAPPED_PAGE_BYTE_MASK = MAPPED_PAGE_BYTE_SIZE - 1;
 const MAPPED_PAGE_WATCH_GROUP_COUNT = MAPPED_PAGE_BYTE_SIZE / (4 * 32);
 
 export interface MappedPageInvalidator {
-	invalidateMappedWrite(key: number, firstByte: number, endByte: number): void;
+	invalidateMappedWords(key: number, firstWord: number, endWord: number): void;
 	invalidateMappedRange(firstKey: number, endKey: number): void;
 }
 
@@ -45,6 +45,17 @@ export class MappedPageWriteWatches {
 	}
 
 	private consume(pageIndex: number, firstWord: number, endWord: number): boolean {
+		if (endWord === firstWord + 1) {
+			const group = firstWord >>> 5;
+			const bit = 1 << (firstWord & 31);
+			const index = pageIndex * MAPPED_PAGE_WATCH_GROUP_COUNT + group;
+			const watched = this.words[index];
+			if ((watched & bit) === 0) return false;
+			const remaining = watched & ~bit;
+			this.words[index] = remaining;
+			if (remaining === 0) this.values[pageIndex] &= ~(1 << group);
+			return true;
+		}
 		const firstGroup = firstWord >>> 5;
 		const lastGroup = (endWord - 1) >>> 5;
 		let affected = false;
@@ -78,9 +89,11 @@ export class MappedPageWriteWatches {
 			if (this.values[firstPage] !== 0) {
 				const firstByte = offset & MAPPED_PAGE_BYTE_MASK;
 				const endByte = firstByte + byteLength;
-				if (this.consume(firstPage, firstByte >>> 2, (endByte + 3) >>> 2)) {
-					invalidator.invalidateMappedWrite(
-						keyBase + firstPage * MAPPED_PAGE_BYTE_SIZE, firstByte, endByte,
+				const firstWord = firstByte >>> 2;
+				const endWord = (endByte + 3) >>> 2;
+				if (this.consume(firstPage, firstWord, endWord)) {
+					invalidator.invalidateMappedWords(
+						keyBase + firstPage * MAPPED_PAGE_BYTE_SIZE, firstWord, endWord,
 					);
 				}
 			}
@@ -92,9 +105,11 @@ export class MappedPageWriteWatches {
 				const endByte = page === lastPage
 					? ((offset + byteLength - 1) & MAPPED_PAGE_BYTE_MASK) + 1
 					: MAPPED_PAGE_BYTE_SIZE;
-				if (this.consume(page, firstByte >>> 2, (endByte + 3) >>> 2)) {
-					invalidator.invalidateMappedWrite(
-						keyBase + page * MAPPED_PAGE_BYTE_SIZE, firstByte, endByte,
+				const firstWord = firstByte >>> 2;
+				const endWord = (endByte + 3) >>> 2;
+				if (this.consume(page, firstWord, endWord)) {
+					invalidator.invalidateMappedWords(
+						keyBase + page * MAPPED_PAGE_BYTE_SIZE, firstWord, endWord,
 					);
 				}
 			}

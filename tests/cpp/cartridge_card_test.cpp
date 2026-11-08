@@ -21,8 +21,8 @@ void require(bool condition, const char* message) {
 
 class RecordingInvalidator final : public bmsx::MappedPageInvalidator {
 public:
-	void invalidateMappedWrite(bmsx::u64 key, bmsx::u32 firstByte, bmsx::u32 endByte) override {
-		writes.emplace_back(key, firstByte, endByte);
+	void invalidateMappedWords(bmsx::u64 key, bmsx::u32 firstWord, bmsx::u32 endWord) override {
+		writes.emplace_back(key, firstWord, endWord);
 	}
 
 	void invalidateMappedRange(bmsx::u64 firstKey, bmsx::u64 endKey) override {
@@ -66,8 +66,8 @@ void testDirectMappedPagesAndSocketLocalKeys() {
 	ramBinding.writeWatch.armWord(8u);
 	fixture.card.writeU32(bmsx::CART_RAM_BASE, 0xaabbccddu);
 	require(fixture.card.readU32(bmsx::CART_RAM_BASE) == 0xaabbccddu, "RAM scalar datapath sees the mapped bytes");
-	require(invalidator.writes.size() == 1u, "watched RAM write reports its byte range once");
-	require(invalidator.writes[0] == std::tuple{MAPPED_KEY_OFFSET + bmsx::CART_RAM_BASE, 0u, 4u}, "RAM write uses the socket-local key and exact bytes");
+	require(invalidator.writes.size() == 1u, "watched RAM write reports its word range once");
+	require(invalidator.writes[0] == std::tuple{MAPPED_KEY_OFFSET + bmsx::CART_RAM_BASE, 0u, 1u}, "RAM write uses the socket-local key and containing word span");
 
 	fixture.card.writeU32(bmsx::CART_RAM_BASE, 0x55667788u);
 	require(invalidator.writes.size() == 1u, "an already invalidated source word needs no repeated callback");
@@ -90,12 +90,12 @@ void testMappedWriteRangesRetainAllTouchedWatches() {
 	RecordingInvalidator invalidator;
 	watches.invalidateWrite(MAPPED_PAGE_BYTE_SIZE - 3u, MAPPED_PAGE_BYTE_SIZE + 7u, MAPPED_KEY_OFFSET, &invalidator);
 	require(invalidator.writes == decltype(invalidator.writes){
-		{MAPPED_KEY_OFFSET, MAPPED_PAGE_BYTE_SIZE - 3u, MAPPED_PAGE_BYTE_SIZE},
-		{MAPPED_KEY_OFFSET + MAPPED_PAGE_BYTE_SIZE, 0u, MAPPED_PAGE_BYTE_SIZE},
-		{MAPPED_KEY_OFFSET + 2u * MAPPED_PAGE_BYTE_SIZE, 0u, 4u},
-	}, "a spanning write emits only each page's changed byte window");
+		{MAPPED_KEY_OFFSET, 255u, 256u},
+		{MAPPED_KEY_OFFSET + MAPPED_PAGE_BYTE_SIZE, 0u, 256u},
+		{MAPPED_KEY_OFFSET + 2u * MAPPED_PAGE_BYTE_SIZE, 0u, 1u},
+	}, "a spanning write emits each page's containing source-word window");
 	watches.invalidateWrite(1u, 2u, MAPPED_KEY_OFFSET, &invalidator);
-	require(invalidator.writes.back() == std::tuple{MAPPED_KEY_OFFSET, 1u, 3u}, "even a second partial write before re-decode remains visible");
+	require(invalidator.writes.back() == std::tuple{MAPPED_KEY_OFFSET, 0u, 1u}, "even a second partial write before re-decode remains visible");
 	watches.clear();
 	watches.invalidateWrite(0u, 3u * MAPPED_PAGE_BYTE_SIZE, MAPPED_KEY_OFFSET, &invalidator);
 	require(invalidator.writes.size() == 4u, "cleared watches produce no invalidations");
@@ -118,11 +118,29 @@ void testEveryMappedSourceWordConsumesOnlyItsOwnBytes() {
 			const bool overlaps = static_cast<u32>(firstByte) < (word + 1u) * 4u
 				&& static_cast<u32>(firstByte) + length > word * 4u;
 			require(invalidator.writes.size() == (overlaps ? 1u : 0u), "word watches test only the changed bytes, including group edges");
+			if (overlaps) require(invalidator.writes[0] == std::tuple{MAPPED_KEY_OFFSET,
+				static_cast<u32>(firstByte) >> 2u, (static_cast<u32>(firstByte) + length + 3u) >> 2u}, "the producer emits the exact containing word span for every byte window");
 			watches.invalidateWrite(firstByte, length, MAPPED_KEY_OFFSET, &invalidator);
 			require(invalidator.writes.size() == (overlaps ? 1u : 0u), "consumed word bits do not trigger repeated invalidation");
 			watches.invalidateWrite(word * 4u, 1u, MAPPED_KEY_OFFSET, &invalidator);
 			require(invalidator.writes.size() == 1u, "unaffected source words remain armed until written");
 		}
+	}
+}
+
+void testSingleWordConsumptionRetainsOtherGroups() {
+	using namespace bmsx;
+	MappedPageWriteWatches watches(MAPPED_PAGE_BYTE_SIZE);
+	MappedPageBinding binding{};
+	watches.bind(0u, binding);
+	for (u32 word : {30u, 31u, 32u, 63u, 64u, 255u}) binding.writeWatch.armWord(word);
+	RecordingInvalidator invalidator;
+	for (u32 word : {31u, 30u, 32u, 64u, 63u, 255u}) {
+		const size_t before = invalidator.writes.size();
+		watches.invalidateWrite(word * 4u + 3u, 1u, MAPPED_KEY_OFFSET, &invalidator);
+		require(invalidator.writes.size() == before + 1u && invalidator.writes.back() == std::tuple{MAPPED_KEY_OFFSET, word, word + 1u}, "single-word consumption keeps every other group and the high mask bit armed");
+		watches.invalidateWrite(word * 4u, 4u, MAPPED_KEY_OFFSET, &invalidator);
+		require(invalidator.writes.size() == before + 1u, "a consumed single-word watch does not fire again");
 	}
 }
 
@@ -239,6 +257,7 @@ int main() {
 	testDirectMappedPagesAndSocketLocalKeys();
 	testMappedWriteRangesRetainAllTouchedWatches();
 	testEveryMappedSourceWordConsumesOnlyItsOwnBytes();
+	testSingleWordConsumptionRetainsOtherGroups();
 	testRomInstallAndRamRestoreInvalidateOwnedRegions();
 	testMailboxRegistersSignalsAndState();
 	testRomOnlyStateHasNoSyntheticDevices();

@@ -232,7 +232,7 @@ public:
 		ExecutionAddressSpace& executionAddressSpace
 	);
 	~CPU() override;
-	void invalidateMappedWrite(u64 key, u32 firstByte, u32 endByte) override;
+	void invalidateMappedWords(u64 key, u32 firstWord, u32 endWord) override;
 	void invalidateMappedRange(u64 firstKey, u64 endKey) override;
 
 	void reset();

@@ -15,7 +15,7 @@ constexpr u32 MAPPED_PAGE_BYTE_MASK = MAPPED_PAGE_BYTE_SIZE - 1u;
 class MappedPageInvalidator {
 public:
 	virtual ~MappedPageInvalidator() = default;
-	virtual void invalidateMappedWrite(u64 key, u32 firstByte, u32 endByte) = 0;
+	virtual void invalidateMappedWords(u64 key, u32 firstWord, u32 endWord) = 0;
 	virtual void invalidateMappedRange(u64 firstKey, u64 endKey) = 0;
 };
 
@@ -33,6 +33,16 @@ struct MappedPageWriteWatch {
 	}
 
 	bool consume(u32 firstWord, u32 endWord) {
+		if (endWord == firstWord + 1u) {
+			const u32 group = firstWord >> 5u;
+			const u32 bit = 1u << (firstWord & 31u);
+			const u32 watched = words[group];
+			if ((watched & bit) == 0u) return false;
+			const u32 remaining = watched & ~bit;
+			words[group] = remaining;
+			if (remaining == 0u) *groups &= static_cast<u8>(~(1u << group));
+			return true;
+		}
 		const u32 firstGroup = firstWord >> 5u;
 		const u32 lastGroup = (endWord - 1u) >> 5u;
 		bool affected = false;

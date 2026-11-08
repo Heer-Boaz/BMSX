@@ -14,9 +14,11 @@ void MappedPageWriteWatches::invalidateWatchedWrite(
 		const u32 endByte = page == lastPage
 			? static_cast<u32>(((offset + byteLength - 1u) & MAPPED_PAGE_BYTE_MASK) + 1u)
 			: MAPPED_PAGE_BYTE_SIZE;
-		if (watch.consume(firstByte >> 2u, (endByte + 3u) >> 2u)) {
-			invalidator->invalidateMappedWrite(
-				keyBase + page * MAPPED_PAGE_BYTE_SIZE, firstByte, endByte
+		const u32 firstWord = firstByte >> 2u;
+		const u32 endWord = (endByte + 3u) >> 2u;
+		if (watch.consume(firstWord, endWord)) {
+			invalidator->invalidateMappedWords(
+				keyBase + page * MAPPED_PAGE_BYTE_SIZE, firstWord, endWord
 			);
 		}
 	}

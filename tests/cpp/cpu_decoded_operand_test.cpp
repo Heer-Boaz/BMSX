@@ -3,6 +3,7 @@
 #include "machine/execution_address_space.h"
 #include "machine/memory/memory.h"
 #include "spec/blua32/instruction_format.h"
+#include "spec/blua32/memory_access_kind.h"
 #include "spec/blua32/opcode.h"
 #include "spec/bmsx/memory_map.h"
 #include "spec/bmsx/model.h"
@@ -138,11 +139,48 @@ void rewrittenPayloadVariants() {
 		}
 	}
 }
+
+void wideDisplacementsKeepTheirOwnOperandLanes() {
+	for (const bool instrumented : {false, true}) {
+		test::Blua32TestImage image;
+		image.text.resize(2u * INSTRUCTION_BYTES);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 63, 63, 0);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::LOAD_MEM_D), 63, 63, static_cast<u8>(MemoryAccessKind::U32LE), 255);
+		image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 4096}};
+		CpuMachine machine(image, instrumented);
+		const u32 address = DYNAMIC_RAM_BASE + 0x1000u;
+		machine.memory.writeMappedU32LE(address, 0x12345678u);
+		machine.cpu.activeThread()->frames[0]->registers[4095] = valueNumber(address - (255u << 2u));
+		require(machine.cpu.runUntilDepth(0, 2) == RunResult::Yielded && machine.cpu.instructionBudgetRemaining == 0, "WIDE displaced load retains its scalar charge");
+		require(machine.cpu.readFrameRegister(0, 4095) == valueNumber(0x12345678u), "EXT is displacement, not ABC register extension; WIDE A/B retain all12bits");
+	}
+}
+
+void wideDisplacedStoreCountRemainsUnsigned() {
+	for (const bool instrumented : {false, true}) {
+		test::Blua32TestImage image;
+		image.text.resize(2u * INSTRUCTION_BYTES);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 63, 63);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::STORE_MEM_WORDS_D), 0, 63, 63, 255);
+		image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 4096}};
+		CpuMachine machine(image, instrumented);
+		const u32 address = DYNAMIC_RAM_BASE + 0x4000u;
+		Value* registers = machine.cpu.activeThread()->frames[0]->registers;
+		registers[0] = valueNumber(0x10203040u);
+		registers[4094] = valueNumber(0xa1b2c3d4u);
+		registers[4095] = valueNumber(address - (255u << 2u));
+		const int charge = BASE_CYCLES[static_cast<u8>(OpCode::STORE_MEM_WORDS_D)] + ((4095 + 3) >> 2);
+		require(machine.cpu.runUntilDepth(0, charge) == RunResult::Yielded && machine.cpu.instructionBudgetRemaining == 0, "WIDE counted store retains its complete count surcharge");
+		require(machine.memory.readMappedWord(address) == 0x10203040u && machine.memory.readMappedWord(address + 4094u * 4u) == 0xa1b2c3d4u, "WIDE displacement B/C remain raw unsigned12-bit register/count fields");
+		require(machine.memory.readMappedWord(address + 4095u * 4u) == 0u, "counted store writes exactly C words");
+	}
+}
 } // namespace
 
 int main() {
 	try {
 		opcodeOperandInterpretations(); signedRkBoundaries(); rawFieldsAndInlineCaches(); rewrittenPayloadVariants();
+		wideDisplacementsKeepTheirOwnOperandLanes(); wideDisplacedStoreCountRemainsUnsigned();
 		std::cout << "CPU decoded operand tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {

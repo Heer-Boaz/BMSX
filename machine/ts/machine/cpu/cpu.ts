@@ -49,7 +49,7 @@ import {
 	LUA_FAULT_REASON_UNKNOWN,
 	LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION,
 } from '../../spec/blua32/cop0';
-import { CLOSURE_ADDRESS_REGISTER_FLAG, EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, signExtend } from '../../spec/blua32/instruction_format';
+import { BASE_BX_BITS, BASE_OPERAND_A_BITS, BASE_OPERAND_BC_BITS, CLOSURE_ADDRESS_REGISTER_FLAG, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_LOW_BX, MAX_OPERAND_BITS, signExtend } from '../../spec/blua32/instruction_format';
 import {
 	BLUA32_CONSTANT_PAYLOAD_OFFSET,
 	BLUA32_CONSTANT_RECORD_SIZE,
@@ -1236,9 +1236,7 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	public invalidateMappedWrite(key: number, firstByte: number, endByte: number): void {
-		const firstWord = firstByte >>> 2;
-		const endWord = (endByte + INSTRUCTION_BYTES - 1) >>> 2;
+	public invalidateMappedWords(key: number, firstWord: number, endWord: number): void {
 		this.invalidateDecodedWords(
 			key,
 			firstWord >= DECODED_DEPENDENCY_PREDECESSOR_WORDS
@@ -1337,71 +1335,61 @@ export class CPU implements MappedPageInvalidator {
 			const aLow = (bodyWord >>> 12) & 0x3f;
 			const bLow = (bodyWord >>> 6) & 0x3f;
 			const cLow = bodyWord & 0x3f;
-			const usesDisp = OPCODE_USES_DISP[op] !== 0;
-			const usesBx = !usesDisp && OPCODE_USES_BX[op] !== 0;
-			const extA = usesBx || usesDisp ? 0 : (ext >>> 6) & 0x3;
-			const extB = usesBx || usesDisp ? 0 : (ext >>> 3) & 0x7;
-			const extC = usesBx || usesDisp ? 0 : (ext & 0x7);
-			const aShift = usesDisp
-				? MAX_OPERAND_BITS
-				: MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
-			const bShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_B_BITS;
-			const cShift = usesDisp ? MAX_OPERAND_BITS : MAX_OPERAND_BITS + EXT_C_BITS;
-			const bxLow = (bLow << MAX_OPERAND_BITS) | cLow;
-			const rawB = (wideB << bShift) | (extB << MAX_OPERAND_BITS) | bLow;
-			const rawC = (wideC << cShift) | (extC << MAX_OPERAND_BITS) | cLow;
-			const decodedBx = (wideB << (MAX_BX_BITS + EXT_BX_BITS))
-				| ((usesBx ? ext : 0) << MAX_BX_BITS)
-				| bxLow;
-			const decodedSbx = signExtend(
-				decodedBx,
-				MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS),
-			);
 			page.widths[pageOffset] = width;
 			page.sourceWords[pageOffset] = sourceWord;
 			page.bodyWords[pageOffset] = bodyWord;
 			page.ops[pageOffset] = op;
-			page.a[pageOffset] = (wideA << aShift) | (extA << MAX_OPERAND_BITS) | aLow;
-			const rkOperands = OPCODE_RK_OPERANDS[op];
-			page.b[pageOffset] = (rkOperands & RK_OPERAND_B) !== 0
-				? signExtend(rawB, MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS))
-				: rawB;
-			page.c[pageOffset] = (rkOperands & RK_OPERAND_C) !== 0
-				? signExtend(rawC, MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS))
-				: rawC;
-			switch (op) {
-				case OpCode.KSMI:
-					page.sbx[pageOffset] = decodedSbx;
-					break;
-				case OpCode.GETFIELD:
-				case OpCode.SETFIELD:
-				case OpCode.SELF:
+			if (OPCODE_USES_DISP[op] !== 0) {
+				page.a[pageOffset] = (wideA << MAX_OPERAND_BITS) | aLow;
+				page.b[pageOffset] = (wideB << MAX_OPERAND_BITS) | bLow;
+				page.c[pageOffset] = (wideC << MAX_OPERAND_BITS) | cLow;
+				page.disp[pageOffset] = ext;
+				if (page.c[pageOffset] > MemoryAccessKind.F64LE
+					&& (op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM_D)) {
+					page.ops[pageOffset] = DecodedDispatchOp.ReservedMemory;
+				}
+			} else if (OPCODE_USES_BX[op] !== 0) {
+				page.a[pageOffset] = (wideA << MAX_OPERAND_BITS) | aLow;
+				const bx = (wideB << BASE_BX_BITS) | (ext << MAX_BX_BITS) | (bodyWord & MAX_LOW_BX);
+				switch (op) {
+					case OpCode.KSMI:
+						page.sbx[pageOffset] = signExtend(bx, BASE_BX_BITS + ((width - 1) * MAX_OPERAND_BITS));
+						break;
+					case OpCode.GETGL:
+					case OpCode.SETGL:
+						page.bx[pageOffset] = frame.executionImage.globalSlots[bx];
+						break;
+					case OpCode.GETSYS:
+					case OpCode.SETSYS:
+						page.bx[pageOffset] = frame.executionImage.systemGlobalSlots[bx];
+						break;
+					case OpCode.JMP:
+					case OpCode.JMPIF:
+					case OpCode.JMPIFNOT:
+						page.bx[pageOffset] = (pc + width * INSTRUCTION_BYTES
+							+ signExtend(bx, BASE_BX_BITS + ((width - 1) * MAX_OPERAND_BITS)) * INSTRUCTION_BYTES) >>> 0;
+						break;
+					case OpCode.CLOSURE:
+						page.c[pageOffset] = (wideC << BASE_OPERAND_BC_BITS) | cLow;
+					default:
+						page.bx[pageOffset] = bx;
+						break;
+				}
+			} else {
+				page.a[pageOffset] = (wideA << BASE_OPERAND_A_BITS) | ((ext >>> 6) << MAX_OPERAND_BITS) | aLow;
+				const rawB = (wideB << BASE_OPERAND_BC_BITS) | (((ext >>> 3) & 7) << MAX_OPERAND_BITS) | bLow;
+				const rawC = (wideC << BASE_OPERAND_BC_BITS) | ((ext & 7) << MAX_OPERAND_BITS) | cLow;
+				const rkOperands = OPCODE_RK_OPERANDS[op];
+				page.b[pageOffset] = (rkOperands & RK_OPERAND_B) !== 0
+					? signExtend(rawB, BASE_OPERAND_BC_BITS + ((width - 1) * MAX_OPERAND_BITS)) : rawB;
+				page.c[pageOffset] = (rkOperands & RK_OPERAND_C) !== 0
+					? signExtend(rawC, BASE_OPERAND_BC_BITS + ((width - 1) * MAX_OPERAND_BITS)) : rawC;
+				if (op === OpCode.GETFIELD || op === OpCode.SETFIELD || op === OpCode.SELF) {
 					page.tableCacheSlots[pageOffset] = -1;
-					break;
-				case OpCode.GETGL:
-				case OpCode.SETGL:
-					page.bx[pageOffset] = frame.executionImage.globalSlots[decodedBx];
-					break;
-				case OpCode.GETSYS:
-				case OpCode.SETSYS:
-					page.bx[pageOffset] = frame.executionImage.systemGlobalSlots[decodedBx];
-					break;
-				case OpCode.JMP:
-				case OpCode.JMPIF:
-				case OpCode.JMPIFNOT:
-					page.bx[pageOffset] = (
-						pc + width * INSTRUCTION_BYTES + decodedSbx * INSTRUCTION_BYTES
-					) >>> 0;
-					break;
-				default:
-					page.bx[pageOffset] = decodedBx;
-					break;
-			}
-			page.disp[pageOffset] = ext;
-			if (rawC > MemoryAccessKind.F64LE
-				&& (op === OpCode.LOAD_MEM || op === OpCode.STORE_MEM
-					|| op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM_D)) {
-				page.ops[pageOffset] = DecodedDispatchOp.ReservedMemory;
+				}
+				if (rawC > MemoryAccessKind.F64LE && (op === OpCode.LOAD_MEM || op === OpCode.STORE_MEM)) {
+					page.ops[pageOffset] = DecodedDispatchOp.ReservedMemory;
+				}
 			}
 		}
 		page.dispatchOps[pageOffset] = page.ops[pageOffset];

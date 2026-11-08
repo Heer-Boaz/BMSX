@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { BASE_BX_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_BX, MAX_LOW_OPERAND, MAX_OPERAND_BITS, MIN_SIGNED_BX, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OPCODE_COUNT, OPCODE_RK_OPERANDS, OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
@@ -108,5 +109,44 @@ test('rewriting the same cached PC changes its signed, branch and field-cache pa
 			if (op === OpCode.LOADK) assert.equal(cpu.readFrameRegister(0, 0), 73.5);
 			assert.equal(cpu.readFramePc(0), DYNAMIC_RAM_BASE + (op === OpCode.JMP ? 20 : 8));
 		}
+	}
+});
+
+test('WIDE displaced load retains twelve-bit register fields and uses EXT solely as displacement', () => {
+	for (const instrumented of [false, true]) {
+		const text = new Uint8Array(2 * INSTRUCTION_BYTES);
+		writeInstruction(text, 0, OpCode.WIDE, 63, 63, 0);
+		writeInstruction(text, 1, OpCode.LOAD_MEM_D, 63, 63, MemoryAccessKind.U32LE, 255);
+		const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32({ text,
+			functions: [{ firstWord: 0, wordCount: 2, maxStack: 4096 }] }));
+		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+		const address = DYNAMIC_RAM_BASE + 0x1000;
+		memory.writeMappedU32LE(address, 0x12345678);
+		cpu.rootThread.frames[0].registers.setNumber(4095, address - (255 << 2));
+		assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded);
+		assert.equal(cpu.instructionBudgetRemaining, 0);
+		assert.equal(cpu.readFrameRegister(0, 4095), 0x12345678);
+	}
+});
+
+test('WIDE displaced counted store keeps its unsigned twelve-bit count and complete surcharge', () => {
+	for (const instrumented of [false, true]) {
+		const text = new Uint8Array(2 * INSTRUCTION_BYTES);
+		writeInstruction(text, 0, OpCode.WIDE, 0, 63, 63);
+		writeInstruction(text, 1, OpCode.STORE_MEM_WORDS_D, 0, 63, 63, 255);
+		const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32({ text,
+			functions: [{ firstWord: 0, wordCount: 2, maxStack: 4096 }] }));
+		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+		const address = DYNAMIC_RAM_BASE + 0x4000;
+		const registers = cpu.rootThread.frames[0].registers;
+		registers.setNumber(0, 0x10203040);
+		registers.setNumber(4094, 0xa1b2c3d4);
+		registers.setNumber(4095, address - (255 << 2));
+		const charge = BASE_CYCLES[OpCode.STORE_MEM_WORDS_D] + ((4095 + 3) >>> 2);
+		assert.equal(cpu.runUntilDepth(0, charge), RunResult.Yielded);
+		assert.equal(cpu.instructionBudgetRemaining, 0);
+		assert.equal(memory.readMappedWord(address), 0x10203040);
+		assert.equal(memory.readMappedWord(address + 4094 * 4), 0xa1b2c3d4);
+		assert.equal(memory.readMappedWord(address + 4095 * 4), 0);
 	}
 });

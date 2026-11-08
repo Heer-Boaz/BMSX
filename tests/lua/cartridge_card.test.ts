@@ -36,8 +36,8 @@ class RecordingInvalidator implements MappedPageInvalidator {
 	public readonly writes: Array<readonly [number, number, number]> = [];
 	public readonly ranges: Array<readonly [number, number]> = [];
 
-	public invalidateMappedWrite(key: number, firstByte: number, endByte: number): void {
-		this.writes.push([key, firstByte, endByte]);
+	public invalidateMappedWords(key: number, firstWord: number, endWord: number): void {
+		this.writes.push([key, firstWord, endWord]);
 	}
 
 	public invalidateMappedRange(firstKey: number, endKey: number): void {
@@ -88,18 +88,18 @@ test('cartridge card binds ROM and RAM pages directly with socket-local keys', (
 	ramBinding.writeWatches!.armWord(ramBinding.writeWatchIndex, 8);
 	card.writeU32(CART_RAM_BASE, 0xaabbccdd);
 	assert.equal(card.readU32(CART_RAM_BASE), 0xaabbccdd);
-	assert.deepEqual(invalidator.writes, [[MAPPED_KEY_OFFSET + CART_RAM_BASE, 0, 4]]);
+	assert.deepEqual(invalidator.writes, [[MAPPED_KEY_OFFSET + CART_RAM_BASE, 0, 1]]);
 
 	card.writeU32(CART_RAM_BASE, 0x55667788);
 	assert.equal(invalidator.writes.length, 1, 'already invalidated source word needs no repeated callback');
 	card.writeU16(CART_RAM_BASE + 8 * 4, 0x1234);
-	assert.deepEqual(invalidator.writes, [[MAPPED_KEY_OFFSET + CART_RAM_BASE, 0, 4], [MAPPED_KEY_OFFSET + CART_RAM_BASE, 8 * 4, 8 * 4 + 2]]);
+	assert.deepEqual(invalidator.writes, [[MAPPED_KEY_OFFSET + CART_RAM_BASE, 0, 1], [MAPPED_KEY_OFFSET + CART_RAM_BASE, 8, 9]]);
 	card.clearMappedPageWriteWatches();
 	card.writeU8(CART_RAM_BASE, 0x99);
 	assert.equal(invalidator.writes.length, 2);
 });
 
-test('mapped writes retain watches and report each touched byte window', () => {
+test('mapped writes retain watches and report each containing source-word window', () => {
 	const pageBytes = MAPPED_PAGE_BYTE_SIZE;
 	const watches = new MappedPageWriteWatches(3 * pageBytes);
 	for (let page = 0; page < 3; page++) {
@@ -111,12 +111,12 @@ test('mapped writes retain watches and report each touched byte window', () => {
 	const invalidator = new RecordingInvalidator();
 	watches.invalidateWrite(pageBytes - 3, pageBytes + 7, MAPPED_KEY_OFFSET, invalidator);
 	assert.deepEqual(invalidator.writes, [
-		[MAPPED_KEY_OFFSET, pageBytes - 3, pageBytes],
-		[MAPPED_KEY_OFFSET + pageBytes, 0, pageBytes],
-		[MAPPED_KEY_OFFSET + 2 * pageBytes, 0, 4],
+		[MAPPED_KEY_OFFSET, 255, 256],
+		[MAPPED_KEY_OFFSET + pageBytes, 0, 256],
+		[MAPPED_KEY_OFFSET + 2 * pageBytes, 0, 1],
 	]);
 	watches.invalidateWrite(1, 2, MAPPED_KEY_OFFSET, invalidator);
-	assert.deepEqual(invalidator.writes[3], [MAPPED_KEY_OFFSET, 1, 3]);
+	assert.deepEqual(invalidator.writes[3], [MAPPED_KEY_OFFSET, 0, 1]);
 	watches.clear();
 	watches.invalidateWrite(0, 3 * pageBytes, MAPPED_KEY_OFFSET, invalidator);
 	assert.equal(invalidator.writes.length, 4);
@@ -137,11 +137,28 @@ test('every mapped source word consumes only its own changed bytes', () => {
 			watches.invalidateWrite(firstByte, length, MAPPED_KEY_OFFSET, invalidator);
 			const overlaps = firstByte < (word + 1) * 4 && firstByte + length > word * 4;
 			assert.equal(invalidator.writes.length, overlaps ? 1 : 0);
+			if (overlaps) assert.deepEqual(invalidator.writes[0], [MAPPED_KEY_OFFSET, firstByte >>> 2, (firstByte + length + 3) >>> 2]);
 			watches.invalidateWrite(firstByte, length, MAPPED_KEY_OFFSET, invalidator);
 			assert.equal(invalidator.writes.length, overlaps ? 1 : 0, 'consumed word bits do not invalidate twice');
 			watches.invalidateWrite(word * 4, 1, MAPPED_KEY_OFFSET, invalidator);
 			assert.equal(invalidator.writes.length, 1, 'unaffected source word remains armed');
 		}
+	}
+});
+
+test('single-word consumption retains neighboring words, groups and the high mask bit', () => {
+	const watches = new MappedPageWriteWatches(MAPPED_PAGE_BYTE_SIZE);
+	const pageBinding = binding();
+	watches.bind(0, pageBinding);
+	for (const word of [30, 31, 32, 63, 64, 255]) watches.armWord(0, word);
+	const invalidator = new RecordingInvalidator();
+	for (const word of [31, 30, 32, 64, 63, 255]) {
+		const before = invalidator.writes.length;
+		watches.invalidateWrite(word * 4 + 3, 1, MAPPED_KEY_OFFSET, invalidator);
+		assert.equal(invalidator.writes.length, before + 1);
+		assert.deepEqual(invalidator.writes.at(-1), [MAPPED_KEY_OFFSET, word, word + 1]);
+		watches.invalidateWrite(word * 4, 4, MAPPED_KEY_OFFSET, invalidator);
+		assert.equal(invalidator.writes.length, before + 1);
 	}
 });
 

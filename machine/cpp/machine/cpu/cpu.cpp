@@ -792,19 +792,21 @@ void CPU::invalidateDecodedWords(u64 key, u32 firstWord, u32 endWord) {
 				}
 			}
 			if (firstWord < DECODED_PAGE_WORDS) {
-				std::fill(
-					decodedPage.refreshState.begin() + firstWord,
-					decodedPage.refreshState.begin() + std::min(endWord, static_cast<u32>(DECODED_PAGE_WORDS)),
-					DECODED_REFRESH_DECODE
-				);
+				if (endWord == firstWord + 1u) {
+					decodedPage.refreshState[firstWord] = DECODED_REFRESH_DECODE;
+				} else {
+					std::fill(
+						decodedPage.refreshState.begin() + firstWord,
+						decodedPage.refreshState.begin() + endWord,
+						DECODED_REFRESH_DECODE
+					);
+				}
 			}
 		}
 	}
 }
 
-void CPU::invalidateMappedWrite(u64 key, u32 firstByte, u32 endByte) {
-	const u32 firstWord = firstByte >> 2u;
-	const u32 endWord = (endByte + INSTRUCTION_BYTES - 1u) >> 2u;
+void CPU::invalidateMappedWords(u64 key, u32 firstWord, u32 endWord) {
 	invalidateDecodedWords(key, firstWord, endWord);
 	if (firstWord < DECODED_DEPENDENCY_PREDECESSOR_WORDS && key >= MAPPED_PAGE_BYTE_SIZE) {
 		invalidateDecodedWords(
