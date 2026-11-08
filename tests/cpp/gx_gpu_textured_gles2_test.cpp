@@ -166,6 +166,12 @@ struct TexturedModelFixture {
 			scheduler.advanceTo(scheduler.currentNowCycles() + 10'000);
 			gpu.onService(scheduler.currentNowCycles());
 		}
+		// Exercise every raw word through CPU upload staging, not just snapshot
+		// installation. The complete VRAM comparison includes both mask states.
+		for (const u32 word : {0xa0000000u, (768u << 16u) | 768u, (256u << 16u) | 256u}) gpu.writeGp0(word);
+		for (u32 pair = 0u; pair < 32768u; ++pair) gpu.writeGp0((pair * 2u) | ((pair * 2u + 1u) << 16u));
+		scheduler.advanceTo(scheduler.currentNowCycles() + 1'000'000);
+		gpu.onService(scheduler.currentNowCycles());
 		gpu.presentReadyFrameOnVblankEdge();
 	}
 };

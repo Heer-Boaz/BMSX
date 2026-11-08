@@ -501,7 +501,7 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	gx.cpuUploadTextureCount = backend.gxGpuDrawTargetMode() == GxGpuDrawTargetMode::FullVram ? 1u : gx.cpuUploadTextures.size();
 	for (u32 i = 0u; i < gx.cpuUploadTextureCount; ++i)
 		initializeGxGpuTexture(gx, gx.cpuUploadTextures[i], GLES2_TEXTURE_UNIT_GX_TRANSFER,
-			kGxGpuVramXAddressPeriod, static_cast<i32>(GX_GPU_TRANSFER_MAX_HEIGHT), GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE);
+			kGxGpuVramXAddressPeriod, static_cast<i32>(GX_GPU_TRANSFER_MAX_HEIGHT), GL_RGBA, GL_UNSIGNED_SHORT_4_4_4_4);
 	initializeGxGpuTexture(gx, gx.readbackTexture, GLES2_TEXTURE_UNIT_GX_SCANOUT, kGxGpuReadbackPackWidth, static_cast<i32>(GX_GPU_TRANSFER_MAX_HEIGHT), GL_RGBA, GL_UNSIGNED_BYTE);
 
 	glGenFramebuffers(1, &gx.vramFramebuffer);
@@ -1426,8 +1426,8 @@ void uploadCpuToVramPayload(OpenGLES2GxGpuState& gx,
 			0,
 			kGxGpuVramXAddressPeriod,
 			static_cast<GLsizei>(fullRows),
-			GL_LUMINANCE_ALPHA,
-			GL_UNSIGNED_BYTE,
+			GL_RGBA,
+			GL_UNSIGNED_SHORT_4_4_4_4,
 			sourceBytes);
 		if constexpr (Profile) {
 			profile->hostCalls += 1u;
@@ -1447,8 +1447,8 @@ void uploadCpuToVramPayload(OpenGLES2GxGpuState& gx,
 			static_cast<GLint>(fullRows),
 			static_cast<GLsizei>(lastRowWidth),
 			1,
-			GL_LUMINANCE_ALPHA,
-			GL_UNSIGNED_BYTE,
+			GL_RGBA,
+			GL_UNSIGNED_SHORT_4_4_4_4,
 			sourceBytes);
 		if constexpr (Profile) {
 			profile->hostCalls += 1u;
