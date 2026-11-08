@@ -75,11 +75,39 @@ void testSystemStatusRejectsMappedWrites() {
 	);
 }
 
+void testIoPermissionsApplyToCpuAndDmaWordWrites() {
+	using namespace bmsx;
+	std::array<u8, 1> emptyRom{{0}};
+	Memory memory(MemoryInit{{emptyRom.data(), 0u}, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
+	for (const bool dma : {false, true}) {
+		for (const u32 address : {IO_SYS_STATUS, IO_IRQ_FLAGS, IO_DMA0_STATUS, IO_DMA1_STATUS,
+			IO_IMGDEC_STATUS, IO_IMGDEC_INPUT_WORDS_RECEIVED, IO_IMGDEC_DECODED_WORD_COUNT,
+			IO_GEO_STATUS, IO_INP_STATUS, IO_APU_EVENT_SEQ, IO_CART_STATUS,
+			IO_SYS_SUPERVISOR_FAULT_DOMAIN, IO_INP_KEYS, IO_INP_OUTPUT_PORT - IO_WORD_SIZE}) {
+			memory.writeMappedU32LE(IO_SYS_BUS_FAULT_ACK, 1u);
+			memory.writeIoU32(address, 0x81234567u);
+			if (dma) memory.writeMappedDmaU32LE(address, 0xffffffffu, MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_BLOCK_END);
+			else memory.writeMappedU32LE(address, 0xffffffffu);
+			require(memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_READ_ONLY, "CPU and DMA reject read-only IO words");
+			require(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == address, "read-only fault retains the actual register address");
+			require(memory.readIoU32(address) == 0x81234567u, "a rejected write retains the device register's raw bits");
+		}
+		for (const u32 address : {IO_DMA0_CONTROL, IO_IMGDEC_DATA, IO_INP_OUTPUT_PORT}) {
+			memory.writeMappedU32LE(IO_SYS_BUS_FAULT_ACK, 1u);
+			if (dma) memory.writeMappedDmaU32LE(address, 0x81234567u, MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_BLOCK_END);
+			else memory.writeMappedU32LE(address, 0x81234567u);
+			require(memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_NONE, "writable IO words remain writable for both bus masters");
+			require(memory.readIoU32(address) == 0x81234567u, "writable IO words retain all supplied bits");
+		}
+	}
+}
+
 } // namespace
 
 int main() {
 	testFloatingMappedTransactionsKeepTheirBusWidth();
 	testMappedWordBurstPreflightStopsWhenBurstCrossesPhysicalIoRegisterfileBoundary();
 	testSystemStatusRejectsMappedWrites();
+	testIoPermissionsApplyToCpuAndDmaWordWrites();
 	return 0;
 }

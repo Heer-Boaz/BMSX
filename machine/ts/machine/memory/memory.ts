@@ -95,6 +95,46 @@ const BUS_ACCESS_WRITE_U32 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32;
 const BUS_ACCESS_WRITE_F32 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_F32;
 const BUS_ACCESS_WRITE_F64 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_F64;
 
+// Decode the physical IO word permissions once, not on every DMA/CPU write.
+const READ_ONLY_IO_SLOTS = new Uint8Array(IO_SLOT_COUNT);
+READ_ONLY_IO_SLOTS.fill(1, (IO_INP_KEYS - IO_BASE) >>> 2, (IO_INP_OUTPUT_PORT - IO_BASE) >>> 2);
+for (const address of [
+	IO_SYS_BUS_FAULT_CODE,
+	IO_SYS_BUS_FAULT_ADDR,
+	IO_SYS_BUS_FAULT_ACCESS,
+	IO_SYS_TIME_MS,
+	IO_SYS_FRAME_MS_Q16,
+	IO_SYS_CYCLES_PER_FRAME,
+	IO_SYS_STATUS,
+	IO_IRQ_FLAGS,
+	IO_DMA0_STATUS,
+	IO_DMA1_STATUS,
+	IO_IMGDEC_STATUS,
+	IO_IMGDEC_INPUT_WORDS_RECEIVED,
+	IO_IMGDEC_DECODED_WORD_COUNT,
+	IO_GEO_STATUS,
+	IO_GEO_PROCESSED,
+	IO_GEO_FAULT,
+	IO_INP_STATUS,
+	IO_INP_OUTPUT_STATUS,
+	IO_APU_STATUS,
+	IO_APU_FAULT_CODE,
+	IO_APU_FAULT_DETAIL,
+	IO_APU_EVENT_KIND,
+	IO_APU_EVENT_SLOT,
+	IO_APU_EVENT_SOURCE_ADDR,
+	IO_APU_EVENT_SEQ,
+	IO_APU_SELECTED_SOURCE_ADDR,
+	IO_APU_ACTIVE_MASK,
+	IO_CART_STATUS,
+	IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
+	IO_SYS_SUPERVISOR_FAULT_CAUSE,
+	IO_SYS_SUPERVISOR_FAULT_EPC,
+	IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS,
+	IO_SYS_SUPERVISOR_FAULT_LUA_REASON,
+	IO_SYS_SUPERVISOR_FAULT_DOMAIN,
+]) READ_ONLY_IO_SLOTS[(address - IO_BASE) >>> 2] = 1;
+
 export type IoReadHandler<TContext> = (context: TContext, addr: number, busSignals: MappedBusSignals) => number;
 export type IoWriteHandler<TContext> = (context: TContext, addr: number, value: number, busSignals: MappedBusSignals) => void;
 export type IoWriteReadyHandler<TContext> = (
@@ -627,7 +667,7 @@ export class Memory {
 	private writeMappedBusU32LE(addr: number, value: number, faultAccess: number, busSignals: MappedBusSignals): void {
 		const slot = this.ioAlignedSlot(addr);
 		if (slot >= 0) {
-			if (this.isReadOnlyIoAddress(addr)) {
+			if (READ_ONLY_IO_SLOTS[slot] !== 0) {
 				this.raiseBusFault(BUS_FAULT_READ_ONLY, addr, faultAccess);
 				return;
 			}
@@ -849,49 +889,5 @@ export class Memory {
 		return addr >= base && addr + length <= base + size;
 	}
 
-	private isReadOnlyIoAddress(addr: number): boolean {
-		if (addr >= IO_INP_KEYS && addr < IO_INP_OUTPUT_PORT) {
-			return true; // latched keyboard/pointer/pad snapshot words
-		}
-		switch (addr) {
-			case IO_SYS_BUS_FAULT_CODE:
-			case IO_SYS_BUS_FAULT_ADDR:
-			case IO_SYS_BUS_FAULT_ACCESS:
-			case IO_SYS_TIME_MS:
-			case IO_SYS_FRAME_MS_Q16:
-			case IO_SYS_CYCLES_PER_FRAME:
-			case IO_SYS_STATUS:
-			case IO_IRQ_FLAGS:
-			case IO_DMA0_STATUS:
-			case IO_DMA1_STATUS:
-			case IO_IMGDEC_STATUS:
-			case IO_IMGDEC_INPUT_WORDS_RECEIVED:
-			case IO_IMGDEC_DECODED_WORD_COUNT:
-			case IO_GEO_STATUS:
-			case IO_GEO_PROCESSED:
-			case IO_GEO_FAULT:
-			case IO_INP_STATUS:
-			case IO_INP_OUTPUT_STATUS:
-			case IO_APU_STATUS:
-			case IO_APU_FAULT_CODE:
-			case IO_APU_FAULT_DETAIL:
-			case IO_APU_EVENT_KIND:
-			case IO_APU_EVENT_SLOT:
-			case IO_APU_EVENT_SOURCE_ADDR:
-			case IO_APU_EVENT_SEQ:
-			case IO_APU_SELECTED_SOURCE_ADDR:
-			case IO_APU_ACTIVE_MASK:
-			case IO_CART_STATUS:
-			case IO_SYS_SUPERVISOR_FAULT_SEQUENCE:
-			case IO_SYS_SUPERVISOR_FAULT_CAUSE:
-			case IO_SYS_SUPERVISOR_FAULT_EPC:
-			case IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS:
-			case IO_SYS_SUPERVISOR_FAULT_LUA_REASON:
-			case IO_SYS_SUPERVISOR_FAULT_DOMAIN:
-				return true;
-			default:
-				return false;
-		}
-	}
 
 }

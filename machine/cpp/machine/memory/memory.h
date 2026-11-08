@@ -138,7 +138,6 @@ private:
 		}
 		return static_cast<int>(delta / IO_WORD_SIZE);
 	}
-	bool isReadOnlyIoAddress(uint32_t addr) const;
 	u32 readIoSlot(int slot, uint32_t addr, MappedBusSignals busSignals) const;
 	void writeIoSlot(int slot, uint32_t addr, u32 value, MappedBusSignals busSignals);
 	void writeMappedBusU32LE(uint32_t addr, uint32_t value, uint32_t faultAccess, MappedBusSignals busSignals);

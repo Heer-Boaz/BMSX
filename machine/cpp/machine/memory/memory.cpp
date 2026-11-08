@@ -4,10 +4,56 @@
 #include "spec/bmsx/memory_map.h"
 
 #include <cstring>
+#include <array>
 
 namespace bmsx {
 
 namespace {
+
+// Decode the physical IO word permissions once, not on every DMA/CPU write.
+constexpr auto kReadOnlyIoSlots = [] {
+	std::array<bool, IO_SLOT_COUNT> slots{};
+	for (u32 address = IO_INP_KEYS; address < IO_INP_OUTPUT_PORT; address += IO_WORD_SIZE)
+		slots[(address - IO_BASE) / IO_WORD_SIZE] = true;
+	const u32 addresses[]{
+		IO_SYS_BUS_FAULT_CODE,
+		IO_SYS_BUS_FAULT_ADDR,
+		IO_SYS_BUS_FAULT_ACCESS,
+		IO_SYS_TIME_MS,
+		IO_SYS_FRAME_MS_Q16,
+		IO_SYS_CYCLES_PER_FRAME,
+		IO_SYS_STATUS,
+		IO_IRQ_FLAGS,
+		IO_DMA0_STATUS,
+		IO_DMA1_STATUS,
+		IO_IMGDEC_STATUS,
+		IO_IMGDEC_INPUT_WORDS_RECEIVED,
+		IO_IMGDEC_DECODED_WORD_COUNT,
+		IO_GEO_STATUS,
+		IO_GEO_PROCESSED,
+		IO_GEO_FAULT,
+		IO_INP_STATUS,
+		IO_INP_OUTPUT_STATUS,
+		IO_APU_STATUS,
+		IO_APU_FAULT_CODE,
+		IO_APU_FAULT_DETAIL,
+		IO_APU_EVENT_KIND,
+		IO_APU_EVENT_SLOT,
+		IO_APU_EVENT_SOURCE_ADDR,
+		IO_APU_EVENT_SEQ,
+		IO_APU_SELECTED_SOURCE_ADDR,
+		IO_APU_ACTIVE_MASK,
+		IO_CART_STATUS,
+		IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
+		IO_SYS_SUPERVISOR_FAULT_CAUSE,
+		IO_SYS_SUPERVISOR_FAULT_EPC,
+		IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS,
+		IO_SYS_SUPERVISOR_FAULT_LUA_REASON,
+		IO_SYS_SUPERVISOR_FAULT_DOMAIN,
+	};
+	for (const u32 address : addresses) slots[(address - IO_BASE) / IO_WORD_SIZE] = true;
+	return slots;
+}();
 
 constexpr size_t IO_SYS_BUS_FAULT_CODE_SLOT = (IO_SYS_BUS_FAULT_CODE - IO_BASE) / IO_WORD_SIZE;
 constexpr size_t IO_SYS_BUS_FAULT_ADDR_SLOT = (IO_SYS_BUS_FAULT_ADDR - IO_BASE) / IO_WORD_SIZE;
@@ -522,7 +568,7 @@ void Memory::writeMappedDmaU32LE(uint32_t addr, uint32_t value, MappedBusSignals
 void Memory::writeMappedBusU32LE(uint32_t addr, uint32_t value, uint32_t faultAccess, MappedBusSignals busSignals) {
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
-		if (isReadOnlyIoAddress(addr)) {
+		if (kReadOnlyIoSlots[static_cast<size_t>(slot)]) {
 			raiseBusFault(BUS_FAULT_READ_ONLY, addr, faultAccess);
 			return;
 		}
@@ -726,49 +772,5 @@ bool Memory::isIoRegionRange(uint32_t addr, size_t length) const {
 	return addressRangeWithin(addr, IO_BASE, m_ioSlots.size() * IO_WORD_SIZE, length);
 }
 
-bool Memory::isReadOnlyIoAddress(uint32_t addr) const {
-	if (addr >= IO_INP_KEYS && addr < IO_INP_OUTPUT_PORT) {
-		return true; // latched keyboard/pointer/pad snapshot words
-	}
-	switch (addr) {
-		case IO_SYS_BUS_FAULT_CODE:
-		case IO_SYS_BUS_FAULT_ADDR:
-		case IO_SYS_BUS_FAULT_ACCESS:
-		case IO_SYS_TIME_MS:
-		case IO_SYS_FRAME_MS_Q16:
-		case IO_SYS_CYCLES_PER_FRAME:
-		case IO_SYS_STATUS:
-		case IO_IRQ_FLAGS:
-		case IO_DMA0_STATUS:
-		case IO_DMA1_STATUS:
-		case IO_IMGDEC_STATUS:
-		case IO_IMGDEC_INPUT_WORDS_RECEIVED:
-		case IO_IMGDEC_DECODED_WORD_COUNT:
-		case IO_GEO_STATUS:
-		case IO_GEO_PROCESSED:
-		case IO_GEO_FAULT:
-		case IO_INP_STATUS:
-		case IO_INP_OUTPUT_STATUS:
-		case IO_APU_STATUS:
-		case IO_APU_FAULT_CODE:
-		case IO_APU_FAULT_DETAIL:
-		case IO_APU_EVENT_KIND:
-		case IO_APU_EVENT_SLOT:
-		case IO_APU_EVENT_SOURCE_ADDR:
-		case IO_APU_EVENT_SEQ:
-		case IO_APU_SELECTED_SOURCE_ADDR:
-		case IO_APU_ACTIVE_MASK:
-		case IO_CART_STATUS:
-		case IO_SYS_SUPERVISOR_FAULT_SEQUENCE:
-		case IO_SYS_SUPERVISOR_FAULT_CAUSE:
-		case IO_SYS_SUPERVISOR_FAULT_EPC:
-		case IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS:
-		case IO_SYS_SUPERVISOR_FAULT_LUA_REASON:
-		case IO_SYS_SUPERVISOR_FAULT_DOMAIN:
-			return true;
-		default:
-			return false;
-	}
-}
 
 } // namespace bmsx
