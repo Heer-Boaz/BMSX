@@ -74,6 +74,33 @@ test('LOADKR converts its Number index to U32 and faults outside the constant po
 	}
 });
 
+test('word operands truncate and wrap at host conversion edges rather than saturating', () => {
+	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.BOR, 0, 1, 2);
+	writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 3 }] });
+	for (const instrumented of [false, true]) {
+		const { cpu } = createTestSystemCpu(image);
+		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+		const pc = cpu.readFramePc(0);
+		const registers = cpu.rootThread.frames[0].registers;
+		registers.setNumber(2, 0);
+		for (const [input, expected] of [
+			[0, 0], [-0, 0], [0.75, 0], [-0.75, 0], [-1.75, -1],
+			[2147483647.75, 2147483647], [2147483648, -2147483648],
+			[4294967295.75, -1], [4294967296, 0], [4294967297.75, 1],
+			[-4294967295.75, 1], [-4294967296, 0], [-4294967297.75, -1],
+			[9007199254740991, -1], [-9007199254740991, 1], [2 ** 84, 0],
+			[Number.MIN_VALUE, 0], [Number.MAX_VALUE, 0], [NaN, 0], [Infinity, 0], [-Infinity, 0],
+		]) {
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
+			registers.setNumber(1, input);
+			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+			assert.equal(cpu.readFrameRegister(0, 0), expected);
+		}
+	}
+});
+
 test('zero-count LOADNIL neither writes a slot nor extends the frame top', () => {
 	const image = returnImage(OpCode.LOADNIL, 6, 0, 0);
 	const { cpu } = createTestSystemCpu(image);

@@ -197,8 +197,12 @@ inline bool isTruthy(Value v) {
 }
 
 inline uint32_t toU32(double value) {
-	if (value >= -4294967296.0 && value < 4294967296.0) {
-		return static_cast<uint32_t>(static_cast<int64_t>(value));
+	// Keep common word inputs on the host's native 32-bit conversion datapath.
+	if (value >= 0.0 && value < 4294967296.0) {
+		return static_cast<uint32_t>(value);
+	}
+	if (value < 0.0 && value > -4294967296.0) {
+		return 0u - static_cast<uint32_t>(-value);
 	}
 	uint64_t bits = 0;
 	std::memcpy(&bits, &value, sizeof(double));

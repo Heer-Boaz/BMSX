@@ -923,6 +923,12 @@ if(BMSX_BUILD_TESTS)
 	)
 	target_link_libraries(bmsx_cpu_throughput_benchmark PRIVATE bmsx_core bmsx_blua32_tooling)
 
+	add_executable(bmsx_value_conversion_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/value_conversion_test.cpp
+	)
+	target_link_libraries(bmsx_value_conversion_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_value_conversion_tests COMMAND bmsx_value_conversion_tests)
+
 	add_executable(bmsx_table_inspection_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/table_inspection_test.cpp
 	)
