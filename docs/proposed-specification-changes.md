@@ -20,19 +20,34 @@ voedingsstroom goedgekeurd.
 
 ## Plaats van dit document
 
-De console wordt eerst als samenhangend fantasyconsole-ontwerp uitgewerkt. De
-onderstaande fysieke analyses blijven bewaard: ze geven aan welke keuzes en
-verschillen aandacht vragen als het ontwerp later als echte hardware wordt
-uitgevoerd. Een nog niet gekwalificeerde schakeling maakt een beschreven
-fantasyconsole-functie niet automatisch ongeldig. Omgekeerd bewijst een
-functionele beschrijving niet dat de oorspronkelijke timing fysiek haalbaar is.
+Het doel is één samenhangend consoleontwerp met een fysiek realistisch
+hardwarecontract en een efficiënte emulator. De bestaande Books I–III en de
+TypeScript- en C++-runtimes beschrijven het uitgangspunt, niet het bewijs dat
+de huidige timing, capaciteit of garanties fysiek haalbaar zijn. Een voorstel
+wordt dus niet afgewezen omdat het van die bestaande afspraken afwijkt.
+Een eenvoudiger, PSX-achtiger contract mag de huidige organisatie vervangen.
+Dit betreft het hele document, niet alleen IMGDEC en DMA.
 
-De goedgekeurde richtingen voor DMA, GEO, CPU-timing en video blijven staan als
-uitgangspunt voor de latere fysieke uitwerking. De bestaande Books I–III en de
-emulator blijven de huidige programmeercontracten totdat concrete wijzigingen samen
-worden vastgesteld en verwerkt. Ook de keuze voor mono als standaardbron met
-onafhankelijke links-/rechtsniveaus blijft bewaard; de precieze interface is
-nog een voorstel.
+De fysieke analyses helpen die nieuwe afspraken kiezen. Een nog niet
+gekwalificeerde schakeling bewijst niet dat iedere uitvoering van een functie
+onmogelijk is; omgekeerd bewijst een functionele emulator geen haalbaar
+moederbord. Elektrische en mechanische kwalificatie blijven afzonderlijk nodig.
+
+Realistische guesttiming en efficiënte hostuitvoering zijn beide vereist.
+Een nieuwe instructieduur volgt uit de gekozen machine, niet uitsluitend uit
+de snelheid van één emulatorhost. Een grotere theoretische bandbreedte bewijst
+evenmin dat ROM-streaming samen met tekenen, gamecode en geluid werkelijk
+realtime werkt. De prestatie-intentie voor normaal BLua-gebruik uit
+[CPU-uitvoering](#sec-proposal-cpu-execution) blijft daarbij behouden.
+
+Concrete wijzigingen worden samen verwerkt in de publieke handleidingen,
+beide runtimes en de betrokken BIOS-, cartridge- en testproducenten. Behoud
+van oude versies of savestates is geen ontwerpvoorwaarde; een migratie- of
+compatibiliteitslaag is niet vereist. De bestaande registerwerking blijft
+tot die gezamenlijke wijziging wel het beschreven huidige gedrag, niet een
+reden om een onrealistische afspraak te behouden. De goedgekeurde richtingen
+in het overzicht blijven uitgangspunt; nog niet gekozen numerieke grenzen
+worden hiermee niet stilzwijgend vastgesteld.
 
 ## Overzicht en besluitstatus
 
@@ -629,7 +644,7 @@ reeds beschikbaar register.
 Dit is een samenhangend voorstel, geen reeds toegevoegde registerinterface.
 De onderstaande adressering en teruglezing zijn één concrete kandidaat; het
 gedrag voor expliciet geschreven kanaalwoorden anders dan één of twee en de
-overgang van oude savestates blijven afzonderlijk te bepalen. Behoud de
+nieuwe savestate-representatie blijven afzonderlijk te bepalen. Behoud de
 bestaande stereo- en slotfunctionaliteit; stel hier geen nieuwe limiet voor
 gelijktijdige stemmen vast.
 
@@ -830,17 +845,19 @@ schrijven; bestaande expliciet geprogrammeerde mono-/stereobronnen behouden bij
 unity/unity hun bestaande mix. De volledige 32-bit SOURCE_CHANNELS-woorden
 anders dan één of twee worden niet stilzwijgend afgeknipt of heringevuld: hun
 PCM- en BADP-betekenis en fouten zijn nog een expliciete open productkeuze.
-Oude savestates vergen een versiegebonden migratie van staging-, queued- en
-live-niveaus, inclusief het vastleggen van inactieve-slotreadback; er wordt
-géén generieke runtimefallback voorgeschreven.
+De nieuwe savestate-representatie moet staging-, queued- en live-niveaus
+volledig vastleggen, inclusief inactieve-slotreadback. Oude savestates hoeven
+niet te worden gemigreerd; er wordt geen legacydecoder of runtimefallback
+voorgeschreven.
 
 **Implementatie-impact.** Werk de twee runtime-eigenaars, commando-opslag,
 slotbanken, geselecteerde writes, fade, savestates, adresdecode, fysiek
 rekendatapad en [Book I](book1/apu.md) gezamenlijk bij. Controleer oude
 programma's, reset- en commandovolgorde, extremen en geheugenranden. De
 resetwijziging kan met name programma's beïnvloeden die `SOURCE_CHANNELS` niet
-schrijven en nu anders falen. Bepaal ook hoe bestaande savestates worden
-ingelezen. De stereofunctie wordt niet verwijderd.
+schrijven en nu anders falen. Werk de betrokken cartridgeproducenten bij en
+toets de nieuwe states op herstel en cross-runtime replay. De stereofunctie
+wordt niet verwijderd.
 
 ## 5. APU: eventuele belasting- en timinggrenzen
 
@@ -1576,7 +1593,7 @@ Het ontwerp heeft nog geen volledig aangesloten en gekwalificeerde ASICs,
 geen gefabriceerde en doorgemeten console en de print is niet volledig gerouteerd.
 Een gerichte RTL- of rekentoets is geen vervanging voor die kwalificatie.
 
-## 11. CPU: werkelijke uitvoering en systeemklok
+## 11. CPU: werkelijke uitvoering en systeemklok {#sec-proposal-cpu-execution}
 
 **Status: werk- en geheugenafhankelijke timingrichting goedgekeurd; concrete
 productspecificatie nog uit te werken.** De
