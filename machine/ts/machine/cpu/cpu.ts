@@ -3037,10 +3037,6 @@ export class CPU implements MappedPageInvalidator {
 						return;
 					}
 					const caller = this.activeThread.frames[frameIndex - 1];
-					const writeCount = frame.returnCount === 0 ? total : frame.returnCount;
-					if (writeCount > 0) {
-						this.ensureRegisterCapacity(caller, frame.returnBase + writeCount - 1);
-					}
 					this.writeReturnValuesFromRegisters(caller, frame.returnBase, frame.returnCount, registers, a, total);
 					this.activeThread.frames.pop();
 					this.activeThread.stackTop = frame.varargBase;
@@ -3857,8 +3853,6 @@ export class CPU implements MappedPageInvalidator {
 			target.entry = null;
 		} else {
 			const frame = target.frames[target.frames.length - 1];
-			const count = target.returnCount === 0 ? argCount - 1 : target.returnCount;
-			this.ensureRegisterCapacity(frame, target.callBase + count - 1);
 			this.writeReturnValuesFromRegisters(frame, target.callBase, target.returnCount, caller.registers, callBase + 2, argCount - 1);
 		}
 		this.threadSwitchRequested = true;

@@ -5,7 +5,7 @@ import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { createDecodedInstructionPage, DecodedDispatchOp } from '../../machine/ts/machine/cpu/execution_image';
-import { type Value, valueIsString, ValueTag } from '../../machine/ts/machine/cpu/value';
+import { type Value, valueIsString, valueString, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { readLE32, writeLE32 } from '../../machine/ts/common/endian';
 import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, CPU_CAUSE_CODE_RESERVED_INSTRUCTION, CPU_CAUSE_CODE_TRAP, CPU_CAUSE_IRQ, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
@@ -108,6 +108,70 @@ test('zero-count LOADNIL neither writes a slot nor extends the frame top', () =>
 	const { cpu } = createTestSystemCpu(image);
 	cpu.runUntilDepth(0, 1);
 	assert.equal(cpu.getFrameRegisterCount(0), 0);
+});
+
+test('return ranges preserve shifted source slots when growing the caller stack', () => {
+	for (const instrumented of [false, true]) for (const openReturn of [false, true]) {
+		for (const produced of [0, 1, 3, 61]) for (const requested of [0, 1, 4, 48]) {
+			const text = new Uint8Array(5 * INSTRUCTION_BYTES);
+			writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
+			writeInstruction(text, 1, OpCode.CLOSURE, 2, 0, 0);
+			writeInstruction(text, 2, OpCode.CALL, 2, 1, requested);
+			writeInstruction(text, 3, OpCode.HALT, 0, 0, 0);
+			writeInstruction(text, 4, OpCode.RET, 5, openReturn ? 0 : produced, 0);
+			const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32({ text,
+				functions: [{ firstWord: 0, wordCount: 4, maxStack: 3 },
+					{ firstWord: 4, wordCount: 1, maxStack: 5 + Math.max(produced, 1) }],
+				closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }],
+			}));
+			if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+			const table = cpu.createTable(0, 0);
+			cpu.rootThread.frames[0].registers.setNumber(0, 91);
+			cpu.rootThread.frames[0].registers.setTable(1, table);
+			assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
+			assert.equal(cpu.getFrameDepth(), 2);
+			const callee = cpu.rootThread.frames[1];
+			const samples: Value[] = [-0, null, false, valueString(cpu.stringPool.intern('result')), table];
+			for (let i = 0; i < produced; ++i) callee.registers.set(5 + i, samples[i % 5]);
+			callee.top = 5 + produced;
+			assert.equal(cpu.runUntilDepth(1, 2), RunResult.Halted);
+			assert.equal(cpu.getFrameDepth(), 1);
+			const targetCount = requested === 0 ? produced : requested;
+			assert.equal(cpu.getFrameRegisterCount(0), 2 + targetCount);
+			assert.equal(cpu.readFrameRegister(0, 0), 91);
+			assert.equal(cpu.readFrameRegister(0, 1), table);
+			for (let i = 0; i < targetCount; ++i) assert.equal(cpu.readFrameRegister(0, 2 + i), i < produced ? samples[i % 5] : null);
+			const caller = cpu.rootThread.frames[0];
+			assert.equal(cpu.rootThread.stackTop, caller.stackBase + caller.stackCapacity);
+		}
+	}
+});
+
+test('builtin-owned result ranges survive destination growth with exact open/fixed top', () => {
+	for (const instrumented of [false, true]) for (const requested of [0, 1, 4, 48]) for (const kind of [0, 1, 2]) {
+		const text = new Uint8Array(2 * INSTRUCTION_BYTES);
+		writeInstruction(text, 0, OpCode.CALL, 2, kind === 0 ? 2 : 3, requested);
+		writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
+		const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32({ text,
+			functions: [{ firstWord: 0, wordCount: 2, maxStack: 5 }],
+		}));
+		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+		const table = cpu.createTable(1, 0);
+		const result = valueString(cpu.stringPool.intern('result'));
+		if (kind === 2) table.setInteger(1, result);
+		const registers = cpu.rootThread.frames[0].registers;
+		registers.setNumber(0, 91); registers.setBool(1, true);
+		registers.setEncoded(2, ValueTag.BuiltinFunction, kind === 0 ? BuiltinFunctionId.Select : BuiltinFunctionId.Next, null);
+		registers.set(3, kind === 0 ? 1 : table);
+		registers.setNil(4);
+		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+		assert.equal(cpu.readCauseWord(), 0);
+		const targetCount = requested === 0 ? kind : requested;
+		assert.equal(cpu.getFrameRegisterCount(0), 2 + targetCount);
+		assert.equal(cpu.readFrameRegister(0, 0), 91);
+		assert.equal(cpu.readFrameRegister(0, 1), true);
+		for (let i = 0; i < targetCount; ++i) assert.equal(cpu.readFrameRegister(0, 2 + i), kind === 2 && i < 2 ? (i === 0 ? 1 : result) : null);
+	}
 });
 
 test('a device edge during instruction fetch or observation is accepted at the next instruction boundary', () => {

@@ -676,9 +676,7 @@ DISPATCH_LABEL(RET) {
 		m_completionValues.assign(FRAME.registers + a, FRAME.registers + a + count);
 	} else {
 		CallFrame& caller = *m_activeThread->frames[m_activeThread->frames.size() - 2];
-		const int writeCount = FRAME.returnCount == 0 ? count : FRAME.returnCount;
-		if (writeCount > 0) ensureRegisterCapacity(caller, FRAME.returnBase + writeCount - 1);
-		writeReturnValues(caller, FRAME.returnBase, FRAME.returnCount, FRAME.registers + a, count);
+		writeReturnValuesFromRegisters(caller, FRAME.returnBase, FRAME.returnCount, FRAME, a, count);
 	}
 	auto finished = std::move(m_activeThread->frames.back());
 	m_activeThread->frames.pop_back();

@@ -14,6 +14,7 @@
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 
+#include <algorithm>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -113,6 +114,72 @@ void zeroLoadNil() {
 	CpuMachine machine(returnImage(OpCode::LOADNIL, 6, 0, 0));
 	machine.cpu.runUntilDepth(0, 1);
 	require(machine.cpu.getFrameRegisterCount(0) == 0, "zero LOADNIL does not extend top");
+}
+
+void returnRangesSurviveCallerStackGrowth() {
+	for (const bool instrumented : {false, true}) for (const bool openReturn : {false, true}) {
+		for (const u8 produced : {0, 1, 3, 61}) for (const u8 requested : {0, 1, 4, 48}) {
+			test::Blua32TestImage image;
+			image.text.resize(5 * INSTRUCTION_BYTES);
+			writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+			writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 2, 0, 0);
+			writeInstruction(image.text, 2, static_cast<u8>(OpCode::CALL), 2, encodeFixedCallArgCount(0), requested);
+			writeInstruction(image.text, 3, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+			writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 5, openReturn ? 0 : produced, 0);
+			image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 3},
+				{.firstWord = 4, .wordCount = 1, .maxStack = static_cast<u32>(5 + std::max<int>(produced, 1))}};
+			image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+			CpuMachine machine(image);
+			auto& cpu = machine.cpu;
+			if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+			Table* table = cpu.createTable(0, 0);
+			cpu.activeThread()->frames[0]->registers[0] = valueNumber(91);
+			cpu.activeThread()->frames[0]->registers[1] = valueTable(table);
+			require(cpu.runUntilDepth(0, 3) == RunResult::Yielded && cpu.getFrameDepth() == 2, "prepare a real nested return");
+			CallFrame& callee = *cpu.activeThread()->frames[1];
+			const Value samples[] = {valueNumber(-0.0), valueNil(), valueBool(false), valueString(cpu.stringPool().intern("result")), valueTable(table)};
+			for (int i = 0; i < produced; ++i) callee.registers[5 + i] = samples[i % 5];
+			callee.top = 5 + produced;
+			require(cpu.runUntilDepth(1, 2) == RunResult::Halted && cpu.getFrameDepth() == 1, "RET stops before the caller continuation");
+			const int targetCount = requested == 0 ? produced : requested;
+			require(cpu.getFrameRegisterCount(0) == 2 + targetCount, "result placement sets the exact top, including an empty open range");
+			require(cpu.readFrameRegister(0, 0) == valueNumber(91) && cpu.readFrameRegister(0, 1) == valueTable(table), "return preserves slots before its destination");
+			for (int i = 0; i < targetCount; ++i) {
+				require(cpu.readFrameRegister(0, 2 + i) == (i < produced ? samples[i % 5] : valueNil()), "shifted source slots retain values and fixed results truncate or nil-pad");
+			}
+			const CallFrame& caller = *cpu.activeThread()->frames[0];
+			require(cpu.activeThread()->stackTop == caller.stackBase + caller.stackCapacity, "retiring a shifted callee leaves the grown caller stack extent");
+		}
+	}
+}
+
+void builtinReturnRangesSurviveDestinationGrowth() {
+	for (const bool instrumented : {false, true}) for (const u8 requested : {0, 1, 4, 48}) for (int kind = 0; kind < 3; ++kind) {
+		auto image = returnImage(OpCode::CALL, 2, encodeFixedCallArgCount(kind == 0 ? 1 : 2), requested);
+		image.text.resize(2 * INSTRUCTION_BYTES);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		image.functions[0].wordCount = 2;
+		image.functions[0].maxStack = 5;
+		CpuMachine machine(image);
+		auto& cpu = machine.cpu;
+		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+		Table* table = cpu.createTable(1, 0);
+		const Value text = valueString(cpu.stringPool().intern("result"));
+		if (kind == 2) table->setInteger(1, text);
+		Value* registers = cpu.activeThread()->frames[0]->registers;
+		registers[0] = valueNumber(91); registers[1] = valueBool(true);
+		registers[2] = cpu.createBuiltinFunction(kind == 0 ? BuiltinFunctionId::Select : BuiltinFunctionId::Next);
+		registers[3] = kind == 0 ? valueNumber(1) : valueTable(table);
+		registers[4] = valueNil();
+		require(cpu.runUntilDepth(0, 100) == RunResult::Halted && cpu.readCauseWord() == 0u, "builtin result transfer finishes without a machine fault");
+		const int targetCount = requested == 0 ? kind : requested;
+		require(cpu.getFrameRegisterCount(0) == 2 + targetCount, "builtin results set exact top after open and fixed calls");
+		require(cpu.readFrameRegister(0, 0) == valueNumber(91) && cpu.readFrameRegister(0, 1) == valueBool(true), "builtin result growth preserves preceding slots");
+		for (int i = 0; i < targetCount; ++i) {
+			const Value expected = kind == 2 && i < 2 ? (i == 0 ? valueNumber(1) : text) : valueNil();
+			require(cpu.readFrameRegister(0, 2 + i) == expected, "builtin-owned results survive growth, truncate and nil-pad");
+		}
+	}
 }
 
 void instructionBoundaryResynchronizesAfterFetchOrObservation() {
@@ -542,6 +609,7 @@ void bootAddressWrap() {
 int main() {
 	try {
 		stringBytePositions(); loadKrIndices(); zeroLoadNil(); successorFetchOrdering(); reservedMemoryKinds(); zeroStackReuse();
+		returnRangesSurviveCallerStackGrowth(); builtinReturnRangesSurviveDestinationGrowth();
 		instructionBoundaryResynchronizesAfterFetchOrObservation();
 		cachedFetchCrossesWidePagesAndObservesCodeWrites();
 		rewrittenInstructionRetainsItsOwnCycleCharge();

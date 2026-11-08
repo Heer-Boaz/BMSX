@@ -1856,7 +1856,7 @@ void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, int base
 		BuiltinResults& out = scratch.get();
 		out.push_back(valueBool(false));
 		out.push_back(valueString(m_stringPool.intern(exceptionActive ? "cannot resume coroutine across a hardware exception" : "cannot resume non-suspended coroutine")));
-		writeReturnValues(caller, base, count, out.data(), static_cast<int>(out.size()));
+		writeReturnValuesFromBuiltinResults(caller, base, count, out);
 		return;
 	}
 	const bool fresh = target->status == ThreadStatus::New;
@@ -1871,9 +1871,7 @@ void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, int base
 		target->entry = nullptr;
 	} else {
 		CallFrame& frame = *target->frames.back();
-		const int returned = target->returnCount == 0 ? argc - 1 : target->returnCount;
-		ensureRegisterCapacity(frame, target->callBase + returned - 1);
-		writeReturnValues(frame, target->callBase, target->returnCount, caller.registers + base + 2, argc - 1);
+		writeReturnValuesFromRegisters(frame, target->callBase, target->returnCount, caller, base + 2, argc - 1);
 	}
 	m_threadSwitchRequested = true;
 	m_yieldRequested = true;
@@ -1920,7 +1918,7 @@ void CPU::runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, int callBase
 	const BuiltinArgsView args(frame.registers + static_cast<size_t>(callBase + 1), static_cast<size_t>(argCount));
 	callBuiltinFunction(fn, args, out);
 	if (!m_activeThread->frames.empty() && m_activeThread->frames.back().get() == &frame) {
-		writeReturnValues(frame, callBase, returnCount, out.data(), static_cast<int>(out.size()));
+		writeReturnValuesFromBuiltinResults(frame, callBase, returnCount, out);
 	}
 }
 
@@ -3183,19 +3181,37 @@ CallFrame* CPU::pushLatchedFrame(
 	return pushed;
 }
 
-void CPU::writeReturnValues(CallFrame& frame, int base, int count, const Value* values, int valueCount) {
-	if (count == 0) {
-		for (int i = 0; i < valueCount; ++i) {
-			setRegister(frame, base + i, values[i]);
+void CPU::writeReturnValuesFromRegisters(CallFrame& frame, int base, int count, const CallFrame& source, int sourceBase, int sourceCount) {
+	const int targetCount = count == 0 ? sourceCount : count;
+	if (targetCount > 0) {
+		Value* registers = ensureRegisterCapacity(frame, base + targetCount - 1);
+		// Growing the caller can move the stack and shift the returning frame.
+		const Value* values = source.registers + sourceBase;
+		const int copiedCount = std::min(sourceCount, targetCount);
+		for (int i = 0; i < copiedCount; ++i) {
+			registers[base + i] = values[i];
 		}
-		frame.top = base + valueCount;
-		return;
+		for (int i = copiedCount; i < targetCount; ++i) {
+			registers[base + i] = valueNil();
+		}
 	}
-	for (int i = 0; i < count; ++i) {
-		const Value value = i < valueCount ? values[i] : valueNil();
-		setRegister(frame, base + i, value);
+	frame.top = base + targetCount;
+}
+
+void CPU::writeReturnValuesFromBuiltinResults(CallFrame& frame, int base, int count, const BuiltinResults& values) {
+	const int valueCount = static_cast<int>(values.size());
+	const int targetCount = count == 0 ? valueCount : count;
+	if (targetCount > 0) {
+		Value* registers = ensureRegisterCapacity(frame, base + targetCount - 1);
+		const int copiedCount = std::min(valueCount, targetCount);
+		for (int i = 0; i < copiedCount; ++i) {
+			registers[base + i] = values[i];
+		}
+		for (int i = copiedCount; i < targetCount; ++i) {
+			registers[base + i] = valueNil();
+		}
 	}
-	frame.top = base + count;
+	frame.top = base + targetCount;
 }
 
 void CPU::setRegister(CallFrame& frame, int index, Value value) {
