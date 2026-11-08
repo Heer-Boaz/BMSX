@@ -46,8 +46,6 @@ inline constexpr uint8_t decodedDispatchOp(uint8_t first, uint8_t second) {
 }
 
 struct DecodedInstruction {
-	uint32_t sourceWord = 0;
-	uint32_t bodyWord = 0;
 	uint32_t bx = 0;
 	int32_t sbx = 0;
 	int32_t rkB = 0;
@@ -60,7 +58,11 @@ struct DecodedInstruction {
 	uint8_t dispatchOp = 0;
 	uint8_t width = 0;
 	uint8_t disp = 0;
+	uint8_t baseCycles = 0;
+	uint8_t dispatchCycles = 0;
 };
+
+static_assert(sizeof(DecodedInstruction) == 32u);
 
 struct Blua32ExecutionImage;
 
@@ -90,6 +92,8 @@ struct DecodedInstructionPage {
 
 	std::array<DecodedInstruction, DECODED_PAGE_WORDS> words{};
 	std::array<uint8_t, DECODED_PAGE_WORDS> refreshState{};
+	std::array<uint32_t, DECODED_PAGE_WORDS> sourceWords{};
+	std::array<uint32_t, DECODED_PAGE_WORDS> bodyWords{};
 	bool cacheable;
 	u8* writeWatch;
 };

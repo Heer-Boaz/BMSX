@@ -865,8 +865,8 @@ bool CPU::decodeInstruction(
 		ext = static_cast<uint8_t>(bodyWord >> 24);
 	}
 	const bool unchanged = decoded.width != 0u
-		&& decoded.sourceWord == sourceWord
-		&& decoded.bodyWord == bodyWord
+		&& page.sourceWords[pageOffset] == sourceWord
+		&& page.bodyWords[pageOffset] == bodyWord
 		&& decoded.width == static_cast<uint8_t>(width);
 	if (!unchanged) {
 		const uint8_t aLow = static_cast<uint8_t>((bodyWord >> 12) & 0x3f);
@@ -908,8 +908,8 @@ bool CPU::decodeInstruction(
 			decodedBx,
 			MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS)
 		);
-		decoded.sourceWord = sourceWord;
-		decoded.bodyWord = bodyWord;
+		page.sourceWords[pageOffset] = sourceWord;
+		page.bodyWords[pageOffset] = bodyWord;
 		decoded.op = op;
 		decoded.width = static_cast<uint8_t>(width);
 		decoded.a = static_cast<uint16_t>(
@@ -961,6 +961,8 @@ bool CPU::decodeInstruction(
 		}
 	}
 	decoded.dispatchOp = decoded.op;
+	decoded.baseCycles = DECODED_DISPATCH_BASE_CYCLES[decoded.op];
+	decoded.dispatchCycles = decoded.baseCycles;
 	page.refreshState[pageOffset] = instructionCacheable ? 0u : DECODED_REFRESH_DECODE;
 	if (instructionCacheable && page.writeWatch) {
 		*page.writeWatch = 1u;
@@ -971,6 +973,7 @@ bool CPU::decodeInstruction(
 	const auto& observed = m_instructionObserver.points[static_cast<size_t>(frame.executionImage->executionDomainId + 1)];
 	if (observed.contains(pc)) {
 		decoded.dispatchOp = static_cast<u8>(DecodedDispatchOp::Observe);
+		decoded.dispatchCycles = DECODED_DISPATCH_BASE_CYCLES[decoded.dispatchOp];
 		return true;
 	}
 	const bool fusionCandidate = static_cast<OpCode>(op) == OpCode::SHL
@@ -1018,6 +1021,7 @@ bool CPU::decodeInstruction(
 	}
 	const DecodedInstruction& successor = nextPage.words[nextOffset];
 	decoded.dispatchOp = decodedDispatchOp(op, successor.op);
+	decoded.dispatchCycles = DECODED_DISPATCH_BASE_CYCLES[decoded.dispatchOp];
 	return true;
 }
 
@@ -2487,14 +2491,13 @@ dispatch_decode:
 			if constexpr (Instrumented) {
 				dispatchOp = decoded->dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe)
 					? decoded->dispatchOp : decoded->op;
-				instructionBudgetRemaining -= static_cast<int>(DECODED_DISPATCH_BASE_CYCLES[dispatchOp]);
+				instructionBudgetRemaining -= dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe)
+					? decoded->dispatchCycles : decoded->baseCycles;
 			} else {
 				dispatchOp = decoded->dispatchOp;
 				// Cacheable instruction reads cannot raise a device edge during fetch.
 				canReuseFrame = (refreshState & DECODED_REFRESH_DECODE) == 0u;
-				instructionBudgetRemaining -= static_cast<int>(
-					DECODED_DISPATCH_BASE_CYCLES[dispatchOp]
-				);
+				instructionBudgetRemaining -= decoded->dispatchCycles;
 			}
 
 #define FRAME (*frame)
@@ -2585,9 +2588,7 @@ dispatch_instruction:
 					m_lastExecutionDomainId = IMAGE.executionDomainId;
 					lastPc = successorPc
 						+ ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
-					instructionBudgetRemaining -= static_cast<int>(
-						BASE_CYCLES[static_cast<size_t>(OpCode::BXOR)]
-					);
+					instructionBudgetRemaining -= decoded->baseCycles;
 					const Value& xorLeftValue = readRK(IMAGE, registers, decoded->rkB);
 					const Value& xorRightValue = readRK(IMAGE, registers, decoded->rkC);
 					const int32_t xorResult = static_cast<int32_t>(
@@ -2634,9 +2635,7 @@ dispatch_instruction:
 					m_lastExecutionDomainId = IMAGE.executionDomainId;
 					lastPc = successorPc
 						+ ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
-					instructionBudgetRemaining -= static_cast<int>(
-						BASE_CYCLES[static_cast<size_t>(OpCode::SHL)]
-					);
+					instructionBudgetRemaining -= decoded->baseCycles;
 					const Value& shiftLeftValue = readRK(IMAGE, registers, decoded->rkB);
 					const Value& shiftRightValue = readRK(IMAGE, registers, decoded->rkC);
 					const uint32_t shifted = toU32(shiftLeftValue)
@@ -2658,7 +2657,7 @@ dispatch_observe:
 			m_instructionObserver.observe(m_instructionObserver.context, image->executionDomainId, pc, registers);
 			// Observe has zero base cost; execute and charge the original instruction once.
 			dispatchOp = decoded->op;
-			instructionBudgetRemaining -= static_cast<int>(DECODED_DISPATCH_BASE_CYCLES[dispatchOp]);
+			instructionBudgetRemaining -= decoded->baseCycles;
 			goto dispatch_instruction;
 
 dispatch_continue:

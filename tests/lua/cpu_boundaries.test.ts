@@ -12,7 +12,8 @@ import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, CPU_CAUSE_CODE_RESERVED_INSTRUCTI
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET } from '../../machine/ts/spec/blua32/image_format';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { BUS_FAULT_ACCESS_READ, BUS_FAULT_ACCESS_U32, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ACCESS, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE, IO_GX_GPU_GP0, IO_IRQ_MASK, IRQ_GPU } from '../../machine/ts/spec/bmsx/io';
 import { DYNAMIC_RAM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -180,6 +181,38 @@ test('cached fetch crosses WIDE pages and observes code writes between guest gra
 			assert.equal(cpu.readFrameRegister(0, 1), phase === 0 ? 66 : 79);
 			assert.equal(cpu.readFrameRegister(0, 2), 1);
 		}
+	}
+});
+
+test('rewriting a cached instruction replaces its cycle charge in normal, observed and instrumented execution', () => {
+	for (const instrumented of [false, true]) for (const observed of [false, true]) {
+		const text = new Uint8Array(INSTRUCTION_BYTES);
+		writeInstruction(text, 0, OpCode.RET, 0, 1, 0);
+		const image = linkRawTestSystemBlua32({ text,
+			functions: [{ firstWord: 0, wordCount: 1, maxStack: 2 }] });
+		const { cpu, memory } = createTestSystemCpu(image);
+		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+		const pc = DYNAMIC_RAM_BASE + 0x4000;
+		const destination = pc + 0x100;
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
+		cpu.rootThread.frames[0].registers.setNumber(1, destination);
+		let observations = 0;
+		if (observed) cpu.setInstructionObserver({
+			points: [new Set([pc]), new Set(), new Set()],
+			observe: () => { observations += 1; },
+		});
+		const code = new Uint8Array(INSTRUCTION_BYTES);
+		for (const op of [OpCode.K1, OpCode.STORE_MEM_D, OpCode.K1]) {
+			writeInstruction(code, 0, op, 0, 1, MemoryAccessKind.U32LE);
+			memory.writeBytes(pc, code);
+			cpu.rootThread.frames[0].pc = pc;
+			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+			assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[op]);
+			assert.equal(cpu.readFramePc(0), pc + INSTRUCTION_BYTES);
+			assert.equal(cpu.lastPc, pc);
+		}
+		assert.equal(memory.readMappedU32LE(destination), 1);
+		assert.equal(observations, observed ? 3 : 0);
 	}
 });
 

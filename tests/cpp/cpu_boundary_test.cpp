@@ -196,6 +196,41 @@ void cachedFetchCrossesWidePagesAndObservesCodeWrites() {
 	}
 }
 
+void rewrittenInstructionRetainsItsOwnCycleCharge() {
+	for (const bool instrumented : {false, true}) for (const bool observed : {false, true}) {
+		auto image = returnImage();
+		image.functions[0].maxStack = 2;
+		CpuMachine machine(image);
+		auto& cpu = machine.cpu;
+		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+		const u32 pc = DYNAMIC_RAM_BASE + 0x4000u;
+		const u32 destination = pc + 0x100u;
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], pc);
+		cpu.activeThread()->frames[0]->registers[1] = valueNumber(destination);
+		int observations = 0;
+		if (observed) {
+			InstructionObserverBinding observer;
+			observer.points[0].insert(pc);
+			observer.context = &observations;
+			observer.observe = [](void* context, ExecutionDomainId, u32, const Value*) {
+				++*static_cast<int*>(context);
+			};
+			cpu.setInstructionObserver(std::move(observer));
+		}
+		std::vector<u8> code(INSTRUCTION_BYTES);
+		for (const OpCode op : {OpCode::K1, OpCode::STORE_MEM_D, OpCode::K1}) {
+			writeInstruction(code, 0, static_cast<u8>(op), 0, 1, static_cast<u8>(MemoryAccessKind::U32LE));
+			machine.memory.writeBytes(pc, code.data(), code.size());
+			cpu.activeThread()->frames[0]->pc = pc;
+			require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "rewritten instruction completes its grant");
+			require(cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(op)], "rewritten opcode replaces the old cached cycle charge");
+			require(cpu.readFramePc(0) == pc + INSTRUCTION_BYTES && cpu.lastPc == pc, "cycle charge preserves physical PC boundaries");
+		}
+		require(machine.memory.readMappedU32LE(destination) == 1u, "two-cycle rewritten store executes exactly once");
+		require(observations == (observed ? 3 : 0), "observation adds no execution or cycle charge");
+	}
+}
+
 void successorFetchOrdering() {
 	auto image = returnImage(OpCode::K1, 0, 0, 0);
 	image.text.resize(2 * INSTRUCTION_BYTES);
@@ -358,8 +393,10 @@ void cachedPcWrapping() {
 				frame.decodedPageAddress = 0xfffffc00u;
 				page.words[255].width = width;
 				page.words[255].op = page.words[255].dispatchOp = static_cast<u8>(OpCode::K1);
+				page.words[255].baseCycles = page.words[255].dispatchCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)];
 				page.words[254].width = 1;
 				page.words[254].op = page.words[254].dispatchOp = static_cast<u8>(OpCode::EQ);
+				page.words[254].baseCycles = page.words[254].dispatchCycles = BASE_CYCLES[static_cast<u8>(OpCode::EQ)];
 				cpu.runUntilDepth(0, 1);
 				require(frame.pc == (width - 1u) * INSTRUCTION_BYTES, "sequential/wide/skip PC wraps to a word");
 			}
@@ -376,7 +413,9 @@ void cachedPcWrapping() {
 	page.words[254].width = page.words[255].width = 1;
 	page.words[254].op = static_cast<u8>(OpCode::SHL);
 	page.words[254].dispatchOp = static_cast<u8>(DecodedDispatchOp::FusedShlBxor);
+	page.words[254].baseCycles = page.words[254].dispatchCycles = BASE_CYCLES[static_cast<u8>(OpCode::SHL)];
 	page.words[255].op = page.words[255].dispatchOp = static_cast<u8>(OpCode::BXOR);
+	page.words[255].baseCycles = page.words[255].dispatchCycles = BASE_CYCLES[static_cast<u8>(OpCode::BXOR)];
 	cpu.runUntilDepth(0, 2);
 	require(frame.pc == 0u, "fused successor PC wraps to a word");
 }
@@ -421,6 +460,7 @@ int main() {
 		stringBytePositions(); loadKrIndices(); zeroLoadNil(); successorFetchOrdering(); reservedMemoryKinds(); zeroStackReuse();
 		instructionBoundaryResynchronizesAfterFetchOrObservation();
 		cachedFetchCrossesWidePagesAndObservesCodeWrites();
+		rewrittenInstructionRetainsItsOwnCycleCharge();
 		haltYieldPrecedence(); cachedPcWrapping(); imageTextImport(); bootAddressWrap();
 		std::cout << "CPU boundary tests passed\n";
 		return 0;
