@@ -1,12 +1,14 @@
 import type { ExecutionDomainId } from '../../spec/blua32/execution_domain';
 import { BASE_CYCLES, OPCODE_COUNT, OpCode } from '../../spec/blua32/opcode';
 import type { MappedBusSignals } from '../memory/bus_signals';
-import { MAPPED_PAGE_BYTE_SHIFT } from '../memory/mapped_page';
+import { MAPPED_PAGE_BYTE_SHIFT, type MappedPageWriteWatches } from '../memory/mapped_page';
 
 export const DECODED_PAGE_SHIFT = MAPPED_PAGE_BYTE_SHIFT - 2;
 export const DECODED_PAGE_WORDS = 1 << DECODED_PAGE_SHIFT;
 export const DECODED_REFRESH_DECODE = 1;
 export const DECODED_REFRESH_FUSION = 2;
+// A fused dispatch can inspect two instructions, each with one WIDE prefix.
+export const DECODED_DEPENDENCY_PREDECESSOR_WORDS = 3;
 
 export const enum DecodedDispatchOp {
 	FusedShlBxor = OPCODE_COUNT,
@@ -55,7 +57,7 @@ export type DecodedInstructionPage = {
 	tableCacheSlots: Int32Array;
 	refreshState: Uint8Array;
 	cacheable: boolean;
-	writeWatches: Uint8Array | null;
+	writeWatches: MappedPageWriteWatches | null;
 	writeWatchIndex: number;
 };
 
@@ -83,7 +85,7 @@ export type Blua32FunctionRecordLatch = {
 
 export function createDecodedInstructionPage(
 	cacheable: boolean,
-	writeWatches: Uint8Array | null,
+	writeWatches: MappedPageWriteWatches | null,
 	writeWatchIndex: number,
 ): DecodedInstructionPage {
 	const page: DecodedInstructionPage = {

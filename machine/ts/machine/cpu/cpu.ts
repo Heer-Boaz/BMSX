@@ -123,6 +123,7 @@ import { BuiltinArgsView, BuiltinResults, ValueSlots } from './value_slots';
 import {
 	DECODED_DISPATCH_BASE_CYCLES,
 	DECODED_PAGE_WORDS,
+	DECODED_DEPENDENCY_PREDECESSOR_WORDS,
 	DECODED_REFRESH_DECODE,
 	DECODED_REFRESH_FUSION,
 	createDecodedInstructionPage,
@@ -1222,7 +1223,7 @@ export class CPU implements MappedPageInvalidator {
 		return page;
 	}
 
-	private invalidateDecodedPage(key: number): void {
+	private invalidateDecodedWords(key: number, firstWord: number, endWord: number): void {
 		for (let index = 0; index < this.executionImagesByDomain.length; index += 1) {
 			const image = this.executionImagesByDomain[index];
 			if (image === null) {
@@ -1230,15 +1231,26 @@ export class CPU implements MappedPageInvalidator {
 			}
 			const page = image.decodedPages.get(key);
 			if (page !== undefined) {
-				page.refreshState.fill(DECODED_REFRESH_DECODE);
+				page.refreshState.fill(DECODED_REFRESH_DECODE, firstWord, endWord);
 			}
 		}
 	}
 
-	public invalidateMappedPage(key: number): void {
-		this.invalidateDecodedPage(key);
-		if (key >= MAPPED_PAGE_BYTE_SIZE) {
-			this.invalidateDecodedPage(key - MAPPED_PAGE_BYTE_SIZE);
+	public invalidateMappedWrite(key: number, firstByte: number, endByte: number): void {
+		const firstWord = firstByte >>> 2;
+		const endWord = (endByte + INSTRUCTION_BYTES - 1) >>> 2;
+		this.invalidateDecodedWords(
+			key,
+			firstWord >= DECODED_DEPENDENCY_PREDECESSOR_WORDS
+				? firstWord - DECODED_DEPENDENCY_PREDECESSOR_WORDS : 0,
+			endWord,
+		);
+		if (firstWord < DECODED_DEPENDENCY_PREDECESSOR_WORDS && key >= MAPPED_PAGE_BYTE_SIZE) {
+			this.invalidateDecodedWords(
+				key - MAPPED_PAGE_BYTE_SIZE,
+				DECODED_PAGE_WORDS - (DECODED_DEPENDENCY_PREDECESSOR_WORDS - firstWord),
+				DECODED_PAGE_WORDS,
+			);
 		}
 	}
 
@@ -1394,10 +1406,11 @@ export class CPU implements MappedPageInvalidator {
 		page.dispatchOps[pageOffset] = page.ops[pageOffset];
 		page.refreshState[pageOffset] = instructionCacheable ? 0 : DECODED_REFRESH_DECODE;
 		if (instructionCacheable && page.writeWatches !== null) {
-			page.writeWatches[page.writeWatchIndex] = 1;
+			page.writeWatches.armWord(page.writeWatchIndex, pageOffset);
+			if (width === 2 && bodyPage === null) page.writeWatches.armWord(page.writeWatchIndex, pageOffset + 1);
 		}
 		if (instructionCacheable && bodyPage !== null && bodyPage.writeWatches !== null) {
-			bodyPage.writeWatches[bodyPage.writeWatchIndex] = 1;
+			bodyPage.writeWatches.armWord(bodyPage.writeWatchIndex, 0);
 		}
 		const observed = this.instructionObserver?.points[frame.executionImage.executionDomainId + 1];
 		if (observed?.has(pc)) {

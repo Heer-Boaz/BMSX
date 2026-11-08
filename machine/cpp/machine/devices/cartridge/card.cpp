@@ -51,7 +51,7 @@ void CartridgeCard::clearMappedPageWriteWatches() {
 void CartridgeCard::bindMappedPage(u32 address, MappedPageBinding& out) {
 	out.key = address + m_mappedKeyOffset;
 	out.readBytes = nullptr;
-	out.writeWatch = nullptr;
+	out.writeWatch = {};
 	if (address < CART_RAM_BASE) {
 		out.cacheable = true;
 		const size_t offset = static_cast<size_t>(address - CART_ROM_BASE);

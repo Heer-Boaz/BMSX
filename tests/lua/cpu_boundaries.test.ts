@@ -2,12 +2,15 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
+import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
+import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { createDecodedInstructionPage, DecodedDispatchOp } from '../../machine/ts/machine/cpu/execution_image';
+import { createDecodedInstructionPage, DecodedDispatchOp, DECODED_PAGE_WORDS, DECODED_REFRESH_DECODE, type DecodedInstructionPage } from '../../machine/ts/machine/cpu/execution_image';
+import { mappedBusSignalsForCartridgeSlot } from '../../machine/ts/machine/memory/bus_signals';
 import { type Value, valueIsString, valueString, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
-import { readLE32, writeLE32 } from '../../machine/ts/common/endian';
+import { readLE16, readLE32, writeLE32 } from '../../machine/ts/common/endian';
 import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, CPU_CAUSE_CODE_RESERVED_INSTRUCTION, CPU_CAUSE_CODE_TRAP, CPU_CAUSE_IRQ, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { BASE_BX_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_BX, MAX_LOW_OPERAND, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -15,8 +18,8 @@ import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, BLUA32
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
-import { BUS_FAULT_ACCESS_READ, BUS_FAULT_ACCESS_U32, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ACCESS, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE, IO_GX_GPU_GP0, IO_IRQ_MASK, IRQ_GPU } from '../../machine/ts/spec/bmsx/io';
-import { CART_ROM_BASE, DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { BUS_FAULT_ACCESS_READ, BUS_FAULT_ACCESS_U32, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ACCESS, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE, IO_GX_GPU_GP0, IO_IRQ_MASK, IRQ_GPU, IO_CART_SELECT } from '../../machine/ts/spec/bmsx/io';
+import { CART_RAM_BASE, CART_ROM_BASE, DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { blua32TestFunctionAddress, createTestSystemCpu, createTestBlua32PairCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
@@ -298,6 +301,120 @@ test('rewriting a cached instruction replaces its cycle charge in normal, observ
 		}
 		assert.equal(memory.readMappedU32LE(destination), 1);
 		assert.equal(observations, observed ? 3 : 0);
+	}
+});
+
+test('partial code writes retain unrelated decoded starts and the page watch', () => {
+	for (const instrumented of [false, true]) {
+		const text = new Uint8Array(INSTRUCTION_BYTES);
+		writeInstruction(text, 0, OpCode.RET, 0, 1, 0);
+		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 2 }] });
+		const { cpu, memory } = createTestSystemCpu(image);
+		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+		const code = new Uint8Array(10 * INSTRUCTION_BYTES);
+		for (let word = 0; word < 10; word++) writeInstruction(code, word, OpCode.MOV, 0, 0, 0);
+		writeInstruction(code, 0, OpCode.K1, 0, 0, 0);
+		writeInstruction(code, 8, OpCode.K1, 1, 0, 0);
+		writeInstruction(code, 9, OpCode.JMP, 0, 63, 54, 255);
+		const pc = DYNAMIC_RAM_BASE + 0x5000;
+		memory.writeBytes(pc, code);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
+		assert.equal(cpu.runUntilDepth(0, 10), RunResult.Yielded);
+		assert.equal(cpu.readFramePc(0), pc);
+		const page = cpu.rootThread.frames[0].decodedPage!;
+		assert.equal(page.refreshState[0], 0);
+		assert.equal(page.refreshState[8], 0);
+		writeInstruction(code, 0, OpCode.K0, 0, 0, 0);
+		memory.writeMappedU8(pc + 1, code[1]);
+		assert.equal(page.refreshState[0], DECODED_REFRESH_DECODE);
+		assert.equal(page.refreshState[8], 0, 'unrelated cached start remains usable');
+		writeInstruction(code, 8, OpCode.KM1, 1, 0, 0);
+		memory.writeMappedU16LE(pc + 8 * INSTRUCTION_BYTES, readLE16(code, 8 * INSTRUCTION_BYTES));
+		assert.equal(page.refreshState[8], DECODED_REFRESH_DECODE, 'second write before re-decode must remain watched');
+		assert.equal(page.refreshState[4], 0);
+		assert.equal(cpu.runUntilDepth(0, 10), RunResult.Yielded);
+		assert.equal(cpu.instructionBudgetRemaining, 0);
+		assert.equal(cpu.readFrameRegister(0, 0), 0);
+		assert.equal(cpu.readFrameRegister(0, 1), -1);
+	}
+});
+
+test('the fourth word of a cross-page WIDE fusion invalidates its head', () => {
+	for (const instrumented of [false, true]) {
+		const text = new Uint8Array(INSTRUCTION_BYTES);
+		writeInstruction(text, 0, OpCode.RET, 0, 1, 0);
+		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 5 }] });
+		const { cpu, memory } = createTestSystemCpu(image);
+		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+		const code = new Uint8Array(5 * INSTRUCTION_BYTES);
+		writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0);
+		writeInstruction(code, 1, OpCode.ADD, 3, 0, 1);
+		writeInstruction(code, 2, OpCode.WIDE, 0, 0, 0);
+		writeInstruction(code, 3, OpCode.SHL, 4, 3, 2);
+		writeInstruction(code, 4, OpCode.JMP, 0, 63, 59, 255);
+		const pc = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - 2 * INSTRUCTION_BYTES;
+		memory.writeBytes(pc, code);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
+		const frame = cpu.rootThread.frames[0];
+		frame.registers.setNumber(0, 2);
+		frame.registers.setNumber(1, 3);
+		frame.registers.setNumber(2, 1);
+		assert.equal(cpu.runUntilDepth(0, 6), RunResult.Yielded);
+		assert.equal(cpu.readFrameRegister(0, 4), 10);
+		if (!instrumented) {
+			const page = frame.executionImage.decodedPages.get(pc & ~(MAPPED_PAGE_BYTE_SIZE - 1))!;
+			assert.equal(page.dispatchOps[DECODED_PAGE_WORDS - 2], DecodedDispatchOp.FusedAddShl);
+		}
+		writeInstruction(code, 3, OpCode.BXOR, 4, 3, 2);
+		memory.writeMappedU8(pc + 3 * INSTRUCTION_BYTES + 1, code[3 * INSTRUCTION_BYTES + 1]);
+		assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
+		assert.equal(cpu.instructionBudgetRemaining, 0);
+		assert.equal(cpu.readFrameRegister(0, 4), 4);
+	}
+});
+
+test('writable code watches belong to the physical cartridge socket', () => {
+	for (const instrumented of [false, true]) {
+		const text = new Uint8Array(INSTRUCTION_BYTES);
+		writeInstruction(text, 0, OpCode.RET, 0, 1, 0);
+		const source = { text, functions: [{ firstWord: 0, wordCount: 1 }] };
+		const system = linkRawTestSystemBlua32(source);
+		const memory = new Memory({ systemRom: system.romBytes, cartridgeSlots: [
+			{ rom: null, ramByteCount: 2 * MAPPED_PAGE_BYTE_SIZE, mailboxPresent: false },
+			{ rom: null, ramByteCount: 2 * MAPPED_PAGE_BYTE_SIZE, mailboxPresent: false },
+		] }, PSX_MACHINE_SPEC.ramBytes);
+		const irq = new IrqController(memory), cpu = new CPU(memory, irq, new ExecutionAddressSpace(memory));
+		const scheduler = new DeviceScheduler(cpu);
+		const dma = new DmaController(memory, cpu, irq, scheduler);
+		memory.cartridgeController.connect(memory, irq, dma);
+		cpu.reset();
+		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+		const code = new Uint8Array(2 * INSTRUCTION_BYTES);
+		writeInstruction(code, 0, OpCode.K1, 0, 0, 0);
+		writeInstruction(code, 1, OpCode.JMP, 0, 63, 62, 255);
+		const pages: DecodedInstructionPage[] = [];
+		for (const slot of [0, 1] as const) {
+			for (let word = 0; word < 2; word++) memory.cartridgeController.writeU32(
+				CART_RAM_BASE + word * INSTRUCTION_BYTES, readLE32(code, word * INSTRUCTION_BYTES), mappedBusSignalsForCartridgeSlot(slot),
+			);
+			memory.writeMappedU32LE(IO_CART_SELECT, slot);
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, system.symbols.functionAddresses[0], CART_RAM_BASE);
+			assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded);
+			assert.equal(cpu.readFrameRegister(0, 0), 1);
+			pages.push(cpu.rootThread.frames[0].decodedPage!);
+		}
+		writeInstruction(code, 0, OpCode.K0, 0, 0, 0);
+		memory.cartridgeController.writeU8(CART_RAM_BASE + 1, code[1], mappedBusSignalsForCartridgeSlot(1));
+		assert.equal(pages[0].refreshState[0], 0);
+		assert.equal(pages[1].refreshState[0], DECODED_REFRESH_DECODE);
+		writeInstruction(code, 0, OpCode.KM1, 0, 0, 0);
+		memory.cartridgeController.writeU16(CART_RAM_BASE, readLE16(code, 0), mappedBusSignalsForCartridgeSlot(0));
+		for (const slot of [0, 1] as const) {
+			memory.writeMappedU32LE(IO_CART_SELECT, slot);
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, system.symbols.functionAddresses[0], CART_RAM_BASE);
+			assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded);
+			assert.equal(cpu.readFrameRegister(0, 0), slot === 0 ? -1 : 0);
+		}
 	}
 });
 

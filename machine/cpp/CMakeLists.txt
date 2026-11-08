@@ -319,6 +319,7 @@ add_library(bmsx_core STATIC
 	machine/runtime/timing/config.cpp
 	machine/runtime/vblank.cpp
 	machine/memory/memory.cpp
+	machine/memory/mapped_page.cpp
 	machine/devices/gx/gpu.cpp
 	machine/devices/gx/gpu_pcrtc.cpp
 	machine/devices/gx/gpu_command_timing.cpp

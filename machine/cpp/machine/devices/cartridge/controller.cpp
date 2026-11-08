@@ -86,7 +86,7 @@ void CartridgeController::bindMappedPage(
 		: CARTRIDGE_SLOT1_MAPPED_KEY_OFFSET);
 	out.cacheable = address < CART_RAM_BASE;
 	out.readBytes = nullptr;
-	out.writeWatch = nullptr;
+	out.writeWatch = {};
 }
 
 void CartridgeController::reset() {

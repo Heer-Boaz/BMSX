@@ -232,7 +232,7 @@ public:
 		ExecutionAddressSpace& executionAddressSpace
 	);
 	~CPU() override;
-	void invalidateMappedPage(u64 key) override;
+	void invalidateMappedWrite(u64 key, u32 firstByte, u32 endByte) override;
 	void invalidateMappedRange(u64 firstKey, u64 endKey) override;
 
 	void reset();
@@ -414,7 +414,7 @@ private:
 		Blua32ExecutionImage& image,
 		const MappedPageBinding& binding
 	);
-	void invalidateDecodedPage(u64 key);
+	void invalidateDecodedWords(u64 key, u32 firstWord, u32 endWord);
 	DecodedInstructionPage& decodedPageForFrame(CallFrame& frame, u32 pc);
 	bool decodeInstruction(CallFrame& frame, DecodedInstructionPage& page, u32 pageOffset, u32 pc, bool allowFusion);
 	Closure* staticClosureAtAddress(u32 address);

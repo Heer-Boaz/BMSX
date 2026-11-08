@@ -83,9 +83,11 @@ constexpr size_t DECODED_PAGE_SHIFT = MAPPED_PAGE_BYTE_SHIFT - 2u;
 constexpr size_t DECODED_PAGE_WORDS = 1u << DECODED_PAGE_SHIFT;
 inline constexpr u8 DECODED_REFRESH_DECODE = 1u;
 inline constexpr u8 DECODED_REFRESH_FUSION = 2u;
+// A fused dispatch can inspect two instructions, each with one WIDE prefix.
+inline constexpr u32 DECODED_DEPENDENCY_PREDECESSOR_WORDS = 3u;
 
 struct DecodedInstructionPage {
-	explicit DecodedInstructionPage(bool isCacheable, u8* pageWriteWatch)
+	explicit DecodedInstructionPage(bool isCacheable, MappedPageWriteWatch pageWriteWatch)
 		: cacheable(isCacheable)
 		, writeWatch(pageWriteWatch) {
 		refreshState.fill(DECODED_REFRESH_DECODE);
@@ -96,7 +98,7 @@ struct DecodedInstructionPage {
 	std::array<uint32_t, DECODED_PAGE_WORDS> sourceWords{};
 	std::array<uint32_t, DECODED_PAGE_WORDS> bodyWords{};
 	bool cacheable;
-	u8* writeWatch;
+	MappedPageWriteWatch writeWatch;
 };
 
 struct Blua32ExecutionImage {

@@ -769,22 +769,37 @@ DecodedInstructionPage& CPU::decodedPageForAddress(
 	return it->second;
 }
 
-void CPU::invalidateDecodedPage(u64 key) {
+void CPU::invalidateDecodedWords(u64 key, u32 firstWord, u32 endWord) {
 	for (const std::unique_ptr<Blua32ExecutionImage>& image : m_executionImagesByDomain) {
 		if (!image) {
 			continue;
 		}
 		auto page = image->decodedPages.find(key);
 		if (page != image->decodedPages.end()) {
-			page->second.refreshState.fill(DECODED_REFRESH_DECODE);
+			std::fill(
+				page->second.refreshState.begin() + firstWord,
+				page->second.refreshState.begin() + endWord,
+				DECODED_REFRESH_DECODE
+			);
 		}
 	}
 }
 
-void CPU::invalidateMappedPage(u64 key) {
-	invalidateDecodedPage(key);
-	if (key >= MAPPED_PAGE_BYTE_SIZE) {
-		invalidateDecodedPage(key - MAPPED_PAGE_BYTE_SIZE);
+void CPU::invalidateMappedWrite(u64 key, u32 firstByte, u32 endByte) {
+	const u32 firstWord = firstByte >> 2u;
+	const u32 endWord = (endByte + INSTRUCTION_BYTES - 1u) >> 2u;
+	invalidateDecodedWords(
+		key,
+		firstWord >= DECODED_DEPENDENCY_PREDECESSOR_WORDS
+			? firstWord - DECODED_DEPENDENCY_PREDECESSOR_WORDS : 0u,
+		endWord
+	);
+	if (firstWord < DECODED_DEPENDENCY_PREDECESSOR_WORDS && key >= MAPPED_PAGE_BYTE_SIZE) {
+		invalidateDecodedWords(
+			key - MAPPED_PAGE_BYTE_SIZE,
+			DECODED_PAGE_WORDS - (DECODED_DEPENDENCY_PREDECESSOR_WORDS - firstWord),
+			DECODED_PAGE_WORDS
+		);
 	}
 }
 
@@ -964,11 +979,12 @@ bool CPU::decodeInstruction(
 	decoded.baseCycles = DECODED_DISPATCH_BASE_CYCLES[decoded.op];
 	decoded.dispatchCycles = decoded.baseCycles;
 	page.refreshState[pageOffset] = instructionCacheable ? 0u : DECODED_REFRESH_DECODE;
-	if (instructionCacheable && page.writeWatch) {
-		*page.writeWatch = 1u;
+	if (instructionCacheable && page.writeWatch.groups) {
+		page.writeWatch.armWord(pageOffset);
+		if (width == 2 && !bodyPage) page.writeWatch.armWord(pageOffset + 1u);
 	}
-	if (instructionCacheable && bodyPage && bodyPage->writeWatch) {
-		*bodyPage->writeWatch = 1u;
+	if (instructionCacheable && bodyPage && bodyPage->writeWatch.groups) {
+		bodyPage->writeWatch.armWord(0u);
 	}
 	const auto& observed = m_instructionObserver.points[static_cast<size_t>(frame.executionImage->executionDomainId + 1)];
 	if (observed.contains(pc)) {

@@ -2,6 +2,8 @@
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/execution_image.h"
 #include "machine/devices/irq/controller.h"
+#include "machine/devices/dma/controller.h"
+#include "machine/scheduler/device.h"
 #include "machine/execution_address_space.h"
 #include "machine/memory/memory.h"
 #include "spec/blua32/instruction_format.h"
@@ -319,6 +321,108 @@ void rewrittenInstructionRetainsItsOwnCycleCharge() {
 	}
 }
 
+void partialCodeWritesRetainOtherDecodedStarts() {
+	for (const bool instrumented : {false, true}) {
+		auto image = returnImage();
+		image.functions[0].maxStack = 2;
+		CpuMachine machine(image);
+		auto& cpu = machine.cpu;
+		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+		std::vector<u8> code(10 * INSTRUCTION_BYTES);
+		for (u32 word = 0; word < 10u; ++word) writeInstruction(code, word, static_cast<u8>(OpCode::MOV), 0, 0, 0);
+		writeInstruction(code, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
+		writeInstruction(code, 8, static_cast<u8>(OpCode::K1), 1, 0, 0);
+		writeInstruction(code, 9, static_cast<u8>(OpCode::JMP), 0, 63, 54, 255);
+		const u32 pc = DYNAMIC_RAM_BASE + 0x5000u;
+		machine.memory.writeBytes(pc, code.data(), code.size());
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], pc);
+		require(cpu.runUntilDepth(0, 10) == RunResult::Yielded && cpu.readFramePc(0) == pc, "warm all ten decoded starts in one page");
+		auto& page = *cpu.activeThread()->frames[0]->decodedPage;
+		require(page.refreshState[0] == 0u && page.refreshState[8] == 0u, "both independently writable instructions are cached");
+		writeInstruction(code, 0, static_cast<u8>(OpCode::K0), 0, 0, 0);
+		machine.memory.writeMappedU8(pc + 1u, code[1]);
+		require(page.refreshState[0] == DECODED_REFRESH_DECODE && page.refreshState[8] == 0u, "a byte write retires only its decoded dependencies");
+		writeInstruction(code, 8, static_cast<u8>(OpCode::KM1), 1, 0, 0);
+		machine.memory.writeMappedU16LE(pc + 8u * INSTRUCTION_BYTES, readLE16(code.data() + 8u * INSTRUCTION_BYTES));
+		require(page.refreshState[8] == DECODED_REFRESH_DECODE && page.refreshState[4] == 0u, "a second write before re-decode still invalidates its independent cached instruction");
+		require(cpu.runUntilDepth(0, 10) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0, "partial code writes preserve exact guest charges");
+		require(cpu.readFrameRegister(0, 0) == valueNumber(0) && cpu.readFrameRegister(0, 1) == valueNumber(-1), "both changed instructions execute, without losing the retained watch");
+	}
+}
+
+void changedWideFusionBodyInvalidatesItsCrossPageHead() {
+	for (const bool instrumented : {false, true}) {
+		auto image = returnImage();
+		image.functions[0].maxStack = 5;
+		CpuMachine machine(image);
+		auto& cpu = machine.cpu;
+		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+		std::vector<u8> code(5 * INSTRUCTION_BYTES);
+		writeInstruction(code, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(code, 1, static_cast<u8>(OpCode::ADD), 3, 0, 1);
+		writeInstruction(code, 2, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(code, 3, static_cast<u8>(OpCode::SHL), 4, 3, 2);
+		writeInstruction(code, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
+		const u32 pc = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - 2u * INSTRUCTION_BYTES;
+		machine.memory.writeBytes(pc, code.data(), code.size());
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], pc);
+		cpu.activeThread()->frames[0]->registers[0] = valueNumber(2);
+		cpu.activeThread()->frames[0]->registers[1] = valueNumber(3);
+		cpu.activeThread()->frames[0]->registers[2] = valueNumber(1);
+		require(cpu.runUntilDepth(0, 6) == RunResult::Yielded && cpu.readFrameRegister(0, 4) == valueNumber(10), "two WIDE instructions execute across a page boundary");
+		if (!instrumented) {
+			const auto& page = cpu.activeThread()->frames[0]->executionImage->decodedPages.at(pc & ~MAPPED_PAGE_BYTE_MASK);
+			require(page.words[DECODED_PAGE_WORDS - 2u].dispatchOp == static_cast<u8>(DecodedDispatchOp::FusedAddShl), "normal execution actually cached the four-word fusion");
+		}
+		writeInstruction(code, 3, static_cast<u8>(OpCode::BXOR), 4, 3, 2);
+		machine.memory.writeMappedU8(pc + 3u * INSTRUCTION_BYTES + 1u, code[3u * INSTRUCTION_BYTES + 1u]);
+		require(cpu.runUntilDepth(0, 3) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0, "a changed last fusion word preserves the exact charge");
+		require(cpu.readFrameRegister(0, 4) == valueNumber(4), "the fourth word invalidates its fused start three words earlier in the preceding page");
+	}
+}
+
+void writableCodeWatchesBelongToTheirPhysicalSocket() {
+	for (const bool instrumented : {false, true}) {
+		auto image = returnImage();
+		const auto system = test::encodeBlua32TestRom(RomImageDomain::System, image);
+		CartridgeSocketMediaPair media{};
+		for (auto& slot : media) slot = CartridgeCardMedia{std::nullopt, 2u * MAPPED_PAGE_BYTE_SIZE, false};
+		Memory memory(MemoryInit{system.bytes, media}, PSX_MACHINE_SPEC.ramBytes);
+		IrqController irq(memory);
+		ExecutionAddressSpace addresses(memory);
+		CPU cpu(memory, irq, addresses);
+		DeviceScheduler scheduler(cpu);
+		DmaController dma(memory, cpu, irq, scheduler);
+		memory.cartridgeController().connect(memory, irq, dma);
+		cpu.reset();
+		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+		std::vector<u8> code(2 * INSTRUCTION_BYTES);
+		writeInstruction(code, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
+		writeInstruction(code, 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
+		std::array<DecodedInstructionPage*, CARTRIDGE_SLOT_COUNT> pages{};
+		for (u32 slot = 0; slot < CARTRIDGE_SLOT_COUNT; ++slot) {
+			for (u32 word = 0; word < 2u; ++word) memory.cartridgeController().writeU32(
+				CART_RAM_BASE + word * INSTRUCTION_BYTES,
+				readLE32(code.data() + word * INSTRUCTION_BYTES), mappedBusSignalsForCartridgeSlot(slot)
+			);
+			memory.writeMappedU32LE(IO_CART_SELECT, slot);
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, system.functionAddresses[0], CART_RAM_BASE);
+			require(cpu.runUntilDepth(0, 2) == RunResult::Yielded && cpu.readFrameRegister(0, 0) == valueNumber(1), "each physical socket admits its own writable code");
+			pages[slot] = cpu.activeThread()->frames[0]->decodedPage;
+		}
+		writeInstruction(code, 0, static_cast<u8>(OpCode::K0), 0, 0, 0);
+		memory.cartridgeController().writeU8(CART_RAM_BASE + 1u, code[1], mappedBusSignalsForCartridgeSlot(1u));
+		require(pages[0]->refreshState[0] == 0u && pages[1]->refreshState[0] == DECODED_REFRESH_DECODE, "socket-local word invalidation does not retire the other socket's decode");
+		writeInstruction(code, 0, static_cast<u8>(OpCode::KM1), 0, 0, 0);
+		memory.cartridgeController().writeU16(CART_RAM_BASE, readLE16(code.data()), mappedBusSignalsForCartridgeSlot(0u));
+		for (u32 slot = 0; slot < CARTRIDGE_SLOT_COUNT; ++slot) {
+			memory.writeMappedU32LE(IO_CART_SELECT, slot);
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, system.functionAddresses[0], CART_RAM_BASE);
+			require(cpu.runUntilDepth(0, 2) == RunResult::Yielded && cpu.readFrameRegister(0, 0) == valueNumber(slot == 0u ? -1 : 0), "both physical sockets execute their changed instructions");
+		}
+	}
+}
+
 void closureCallAndReturnRespectFrameBoundaries() {
 	for (const bool instrumented : {false, true}) for (int edgeKind = 0; edgeKind < 6; ++edgeKind) {
 		constexpr u32 mappedRecord = IO_GX_GPU_GP0 & ~(BLUA32_FUNCTION_ALIGNMENT - 1u);
@@ -558,7 +662,7 @@ void cachedPcWrapping() {
 				auto& cpu = machine.cpu;
 				if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 				auto& frame = *cpu.activeThread()->frames[0];
-				DecodedInstructionPage page(true, nullptr);
+				DecodedInstructionPage page(true, {});
 				page.refreshState.fill(0);
 				frame.pc = skip ? 0xfffffff8u : 0xfffffffcu;
 				frame.decodedPage = &page;
@@ -577,7 +681,7 @@ void cachedPcWrapping() {
 	CpuMachine machine(returnImage());
 	auto& cpu = machine.cpu;
 	auto& frame = *cpu.activeThread()->frames[0];
-	DecodedInstructionPage page(true, nullptr);
+	DecodedInstructionPage page(true, {});
 	page.refreshState.fill(0);
 	frame.pc = 0xfffffff8u;
 	frame.decodedPage = &page;
@@ -635,6 +739,8 @@ int main() {
 		instructionBoundaryResynchronizesAfterFetchOrObservation();
 		cachedFetchCrossesWidePagesAndObservesCodeWrites();
 		rewrittenInstructionRetainsItsOwnCycleCharge();
+		partialCodeWritesRetainOtherDecodedStarts(); changedWideFusionBodyInvalidatesItsCrossPageHead();
+		writableCodeWatchesBelongToTheirPhysicalSocket();
 		closureCallAndReturnRespectFrameBoundaries();
 		haltYieldPrecedence(); cachedPcWrapping(); imageTextImport(); bootAddressWrap();
 		std::cout << "CPU boundary tests passed\n";

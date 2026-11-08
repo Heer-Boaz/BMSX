@@ -178,7 +178,7 @@ void Memory::bindMappedPage(
 ) {
 	out.key = addr;
 	out.readBytes = nullptr;
-	out.writeWatch = nullptr;
+	out.writeWatch = {};
 	if (addr < RAM_BASE) {
 		out.cacheable = addr < SYSTEM_ROM_SIZE;
 		if (static_cast<size_t>(addr) + MAPPED_PAGE_BYTE_SIZE <= m_systemRom.size()) {
