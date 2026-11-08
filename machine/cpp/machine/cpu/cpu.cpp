@@ -2385,6 +2385,8 @@ RunResult CPU::runLoop(
 	CallFrame* frame = nullptr;
 	Blua32ExecutionImage* image = nullptr;
 	DecodedInstruction* decoded;
+	DecodedInstructionPage* decodedPage = nullptr;
+	u32 pageAddress = 0;
 	u32 pc = 0;
 	Value* registers = nullptr;
 	bool canReuseFrame = false;
@@ -2458,23 +2460,23 @@ dispatch_fetch:
 				enterInstructionFetchException(*frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, pc);
 				continue;
 			}
-			const u32 pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
-			DecodedInstructionPage* decodedPage = frame->decodedPage;
+			pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
+			decodedPage = frame->decodedPage;
 			if (!decodedPage || frame->decodedPageAddress != pageAddress) {
 				decodedPage = &decodedPageForFrame(*frame, pc);
 			}
+			goto dispatch_decode;
+
+dispatch_decode:
 			const u32 pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >> 2;
+			u8 refreshState = decodedPage->refreshState[pageOffset];
 			if ((Instrumented
-					? (decodedPage->refreshState[pageOffset] & DECODED_REFRESH_DECODE)
-					: decodedPage->refreshState[pageOffset]) != 0u
-				&& !decodeInstruction(
-				*frame,
-				*decodedPage,
-				pageOffset,
-				pc,
-				!Instrumented
-			)) {
-				continue;
+					? (refreshState & DECODED_REFRESH_DECODE)
+					: refreshState) != 0u) {
+				if (!decodeInstruction(*frame, *decodedPage, pageOffset, pc, !Instrumented)) {
+					continue;
+				}
+				refreshState = decodedPage->refreshState[pageOffset];
 			}
 			decoded = &decodedPage->words[pageOffset];
 			m_currentInstructionPc = pc;
@@ -2489,7 +2491,7 @@ dispatch_fetch:
 			} else {
 				dispatchOp = decoded->dispatchOp;
 				// Cacheable instruction reads cannot raise a device edge during fetch.
-				canReuseFrame = (decodedPage->refreshState[pageOffset] & DECODED_REFRESH_DECODE) == 0u;
+				canReuseFrame = (refreshState & DECODED_REFRESH_DECODE) == 0u;
 				instructionBudgetRemaining -= static_cast<int>(
 					DECODED_DISPATCH_BASE_CYCLES[dispatchOp]
 				);
@@ -2514,7 +2516,11 @@ dispatch_fetch:
 #define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
 #define DISPATCH_NEXT() do { \
 	if constexpr (!Instrumented) { \
-		if (canReuseFrame && instructionBudgetRemaining > 0) goto dispatch_fetch; \
+		if (canReuseFrame && instructionBudgetRemaining > 0) { \
+			pc = frame->pc; \
+			if ((pc & ~MAPPED_PAGE_BYTE_MASK) == pageAddress) goto dispatch_decode; \
+			goto dispatch_fetch; \
+		} \
 	} \
 	goto dispatch_continue; \
 } while (0)

@@ -15,7 +15,8 @@ import { BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET } from '../../machine/ts/spe
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { BUS_FAULT_ACCESS_READ, BUS_FAULT_ACCESS_U32, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ACCESS, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE, IO_GX_GPU_GP0, IO_IRQ_MASK, IRQ_GPU } from '../../machine/ts/spec/bmsx/io';
-import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { createTestSystemCpu, createTestBlua32PairCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
@@ -142,6 +143,43 @@ test('a device edge during instruction fetch or observation is accepted at the n
 		assert.equal(cpu.readEpcWord(), pc + INSTRUCTION_BYTES);
 		assert.equal(cpu.activeThread.frames[0].registers.getNumber(6), 99);
 		assert.equal(cpu.activeThread.frames[1].registers.getNumber(0), 1);
+	}
+});
+
+test('cached fetch crosses WIDE pages and observes code writes between guest grants', () => {
+	for (const instrumented of [false, true]) {
+		const text = new Uint8Array(INSTRUCTION_BYTES);
+		writeInstruction(text, 0, OpCode.RET, 0, 1, 0);
+		const image = linkRawTestSystemBlua32({ text,
+			functions: [{ firstWord: 0, wordCount: 1, maxStack: 3 }] });
+		const { cpu, memory } = createTestSystemCpu(image);
+		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+		const code = new Uint8Array(5 * INSTRUCTION_BYTES);
+		writeInstruction(code, 0, OpCode.K1, 0, 0, 0);
+		writeInstruction(code, 1, OpCode.WIDE, 0, 0, 0);
+		writeInstruction(code, 2, OpCode.KSMI, 1, 1, 2);
+		writeInstruction(code, 3, OpCode.K1, 2, 0, 0);
+		writeInstruction(code, 4, OpCode.JMP, 0, 63, 59, 255);
+		const pc = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - 2 * INSTRUCTION_BYTES;
+		memory.writeBytes(pc, code);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
+		for (const phase of [0, 1, 2]) {
+			if (phase === 1) {
+				writeInstruction(code, 2, OpCode.KSMI, 1, 1, 15);
+				memory.writeBytes(pc + 2 * INSTRUCTION_BYTES, code.subarray(2 * INSTRUCTION_BYTES, 3 * INSTRUCTION_BYTES));
+			} else if (phase === 2) {
+				writeInstruction(code, 0, OpCode.KM1, 0, 0, 0);
+				memory.writeBytes(pc, code.subarray(0, INSTRUCTION_BYTES));
+			}
+			assert.equal(cpu.runUntilDepth(0, 8), RunResult.Yielded);
+			assert.equal(cpu.instructionBudgetRemaining, 0);
+			assert.equal(cpu.readCauseWord(), 0);
+			assert.equal(cpu.readFramePc(0), pc);
+			assert.equal(cpu.lastPc, pc + 4 * INSTRUCTION_BYTES);
+			assert.equal(cpu.readFrameRegister(0, 0), phase === 2 ? -1 : 1);
+			assert.equal(cpu.readFrameRegister(0, 1), phase === 0 ? 66 : 79);
+			assert.equal(cpu.readFrameRegister(0, 2), 1);
+		}
 	}
 });
 

@@ -9,6 +9,7 @@
 #include "spec/blua32/opcode.h"
 #include "spec/bmsx/model.h"
 #include "spec/bmsx/io.h"
+#include "spec/bmsx/memory_map.h"
 #include "spec/bmsx/rom_header.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
@@ -158,6 +159,40 @@ void instructionBoundaryResynchronizesAfterFetchOrObservation() {
 		require(cpu.readCauseWord() == CPU_CAUSE_IRQ && cpu.readEpcWord() == pc + INSTRUCTION_BYTES, "interrupt saves the next physical PC");
 		require(cpu.activeThread()->frames[0]->registers[6] == valueNumber(99), "the fetched or observed instruction completes before accepting the edge");
 		require(cpu.activeThread()->frames.back()->registers[0] == valueNumber(1), "IRQ execution uses its own frame register base");
+	}
+}
+
+void cachedFetchCrossesWidePagesAndObservesCodeWrites() {
+	for (const bool instrumented : {false, true}) {
+		auto image = returnImage();
+		image.functions[0].maxStack = 3;
+		CpuMachine machine(image);
+		auto& cpu = machine.cpu;
+		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+		std::vector<u8> code(5 * INSTRUCTION_BYTES);
+		writeInstruction(code, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
+		writeInstruction(code, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(code, 2, static_cast<u8>(OpCode::KSMI), 1, 1, 2);
+		writeInstruction(code, 3, static_cast<u8>(OpCode::K1), 2, 0, 0);
+		writeInstruction(code, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
+		const u32 pc = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - 2 * INSTRUCTION_BYTES;
+		machine.memory.writeBytes(pc, code.data(), code.size());
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], pc);
+		for (const int phase : {0, 1, 2}) {
+			if (phase == 1) {
+				writeInstruction(code, 2, static_cast<u8>(OpCode::KSMI), 1, 1, 15);
+				machine.memory.writeBytes(pc + 2 * INSTRUCTION_BYTES, code.data() + 2 * INSTRUCTION_BYTES, INSTRUCTION_BYTES);
+			} else if (phase == 2) {
+				writeInstruction(code, 0, static_cast<u8>(OpCode::KM1), 0, 0, 0);
+				machine.memory.writeBytes(pc, code.data(), INSTRUCTION_BYTES);
+			}
+			require(cpu.runUntilDepth(0, 8) == RunResult::Yielded, "two cross-page loops exhaust exactly eight guest cycles");
+			require(cpu.instructionBudgetRemaining == 0 && cpu.readCauseWord() == 0u, "cached WIDE fetch preserves cycle charge without an exception");
+			require(cpu.readFramePc(0) == pc && cpu.lastPc == pc + 4 * INSTRUCTION_BYTES, "backward branches preserve physical next/last PC");
+			require(cpu.readFrameRegister(0, 0) == valueNumber(phase == 2 ? -1 : 1), "code writes invalidate a cached prefix page");
+			require(cpu.readFrameRegister(0, 1) == valueNumber(phase == 0 ? 66 : 79), "a body-only write invalidates a WIDE prefix in the preceding page");
+			require(cpu.readFrameRegister(0, 2) == valueNumber(1), "execution continues after the cross-page WIDE");
+		}
 	}
 }
 
@@ -385,6 +420,7 @@ int main() {
 	try {
 		stringBytePositions(); loadKrIndices(); zeroLoadNil(); successorFetchOrdering(); reservedMemoryKinds(); zeroStackReuse();
 		instructionBoundaryResynchronizesAfterFetchOrObservation();
+		cachedFetchCrossesWidePagesAndObservesCodeWrites();
 		haltYieldPrecedence(); cachedPcWrapping(); imageTextImport(); bootAddressWrap();
 		std::cout << "CPU boundary tests passed\n";
 		return 0;
