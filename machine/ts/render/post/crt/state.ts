@@ -1,9 +1,8 @@
+import { CRT_NOISE_PHASE_MASK } from './noise';
 import type { CRTPipelineState, PresentPipelineState, RenderGraphPassContext } from '../../backend/backend';
 import type { VideoPresenter } from '../../video_presenter';
 import { fmix32 } from '../../../common/hash';
 import { DeviceQuantizeMode } from '../device_quantize/mode';
-
-const CRT_NOISE_OFFSET_SCALE = 1 / 0x1000000;
 
 export function shouldExecuteAutoPresentPass(presenter: VideoPresenter): boolean {
 	return !presenter.crt_postprocessing_enabled
@@ -84,8 +83,7 @@ export function createCrtPassState(): CRTPipelineState {
 		height: 0,
 		srcWidth: 0,
 		srcHeight: 0,
-		time: 0,
-		noiseOffset: 0,
+		noisePhase: 0,
 		colorTex: null,
 		options: {
 			applyNoise: false,
@@ -110,12 +108,11 @@ export function writeCrtPassState(ctx: RenderGraphPassContext, state: CRTPipelin
 	state.height = presenter.canvasSize.y;
 	state.srcWidth = presenter.offscreenCanvasSize.x;
 	state.srcHeight = presenter.offscreenCanvasSize.y;
-	state.time = ctx.time;
 	state.colorTex = presentedHistoryTexture(ctx);
 	const options = state.options;
 	options.applyNoise = applyCrt && presenter.enable_noise;
 	if (options.applyNoise) {
-		state.noiseOffset = (fmix32(ctx.frameIndex) >>> 8) * CRT_NOISE_OFFSET_SCALE;
+		state.noisePhase = fmix32(ctx.frameIndex) & CRT_NOISE_PHASE_MASK;
 	}
 	options.applyColorBleed = applyCrt && presenter.enable_colorbleed;
 	options.applyScanlines = applyCrt && presenter.enable_scanlines;

@@ -229,9 +229,6 @@ void RenderGraphRuntime::executePass(
 			pass.registry->execute("frame_resolve", nullptr, output);
 			break;
 		case RenderGraphPass::Kind::Registered: {
-			if (!pass.registry->isPassEnabled(pass.passId)) return;
-			if (pass.shouldExecute && !pass.shouldExecute(pass.presenter, pass.passContext)) return;
-
 			if (pass.writeState) {
 				RenderGraphPassContext passCtx;
 				passCtx.presenter = pass.presenter;
@@ -390,6 +387,10 @@ bool RenderGraphRuntime::resolveExecutablePass(i32 orderIndex, bool hasOrder, Ex
 		return false;
 	}
 	out.pass = &m_passes[out.index];
+	if (out.pass->kind == RenderGraphPass::Kind::Registered) {
+		if (!out.pass->registry->isPassEnabled(out.pass->passId)) return false;
+		if (out.pass->shouldExecute && !out.pass->shouldExecute(out.pass->presenter, out.pass->passContext)) return false;
+	}
 	out.targets = writeTargetsForPass(out.index);
 	if (kRenderGraphVerboseLog) {
 		std::fprintf(stderr, "[BMSX][RG] execute pass index=%d name=%s\n",

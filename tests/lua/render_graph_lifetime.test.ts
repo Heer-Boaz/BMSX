@@ -109,3 +109,36 @@ test('render graph realizes retained resources once and destroys them with the g
 	assert.equal(destroyedTextures, 1);
 	assert.equal(destroyedRenderTargets, 1);
 });
+
+test('a disabled graph pass binds and clears no attachments', () => {
+	let begins = 0, ends = 0, executions = 0, enabled = false;
+	const backend = {
+		createColorTexture: () => ({}), createRenderTarget: () => ({}),
+		destroyTexture() {}, destroyRenderTarget() {},
+		beginRenderPass: () => { begins += 1; return {}; },
+		endRenderPass: () => { ends += 1; },
+	} as unknown as GPUBackend;
+	const graph = new RenderGraphRuntime(backend);
+	let color: RGTexHandle = 0;
+	graph.addPass({
+		name: 'Targets',
+		setup(io) { color = io.createTex({ width: 4, height: 4 }); io.exportToBackbuffer(color); },
+		execute() {},
+	});
+	graph.addPass({
+		name: 'Conditional writer', shouldExecute: () => enabled,
+		setup(io) { io.writeTex(color, { clearColor: [1, 0, 0, 1] }); },
+		execute() { executions += 1; },
+	});
+	const frame = { frameIndex: 0, time: 0, delta: 0 };
+	const output = createFrameRuntime().machine.gxGpu.readDeviceOutput();
+	graph.execute(frame, output);
+	assert.deepEqual([begins, executions, ends], [0, 0, 0], 'disabled means no render-target side effects');
+	enabled = true;
+	graph.execute(frame, output);
+	assert.deepEqual([begins, executions, ends], [1, 1, 1]);
+	enabled = false;
+	graph.execute(frame, output);
+	assert.deepEqual([begins, executions, ends], [1, 1, 1], 'turning the pass off retains its previously rendered contents');
+	graph.dispose();
+});

@@ -350,8 +350,7 @@ export interface CRTPipelineState {
 	height: number;
 	srcWidth: number;
 	srcHeight: number;
-	time: number;
-	noiseOffset: number;
+	noisePhase: number;
 	colorTex: TextureHandle;
 	options: CRTPipelineOptions;
 }

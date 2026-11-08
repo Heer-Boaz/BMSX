@@ -15,6 +15,7 @@ before(async () => {
 			export { RenderPassLibrary } from './machine/ts/render/backend/pass/library';
 			export { renderPcrtcBlendCases } from './tests/helpers/pcrtc_scanout_fixture';
 			export { renderTexturedModelCase } from './tests/helpers/textured_model_gpu';
+			export { renderCrtNoiseCases } from './tests/helpers/crt_gpu';
 			export { renderPresentationTarget } from './tests/helpers/presentation_target';
 			export { renderHostFontCases } from './tests/helpers/host_font_gpu';
 		`, resolveDir: process.cwd() },
@@ -96,6 +97,25 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} retains the old workspace
 		assert.deepEqual(pixels.slice((y * 12 + x) * 4, (y * 12 + x + 1) * 4), white ? [255, 255, 255, 255] : [0x11, 0x22, 0x33, 255],
 			'both lanes compose the logical frame viewport, nested transform and scissor independently of target dimensions');
 	}
+});
+
+for (const kind of ['webgl2', 'webgpu']) test(`${kind} CRT noise uses deterministic pixel and line grain across frame phases`, async t => {
+	const browser = await chromium.launch({ args: [
+		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
+		'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
+	] });
+	t.after(() => browser.close());
+	const page = await browser.newPage(), errors: string[] = [];
+	page.on('pageerror', error => errors.push(error.message));
+	await page.route('http://localhost/renderer-test/**', route => route.fulfill({ contentType: 'text/html',
+		body: '<!doctype html><div id="player-surface"><canvas id="gamescreen" width="320" height="240"></canvas></div>' }));
+	await page.goto('http://localhost/renderer-test/crt/'); await page.addScriptTag({ content: backendBundle });
+	const result = await page.evaluate(async kind => (globalThis as any).backendTest.renderCrtNoiseCases(document.getElementById('gamescreen'), kind), kind);
+	t.diagnostic(JSON.stringify(result));
+	assert.equal(result.glError, 0); assert.equal(result.validationError, undefined);
+	assert.deepEqual(result.gpuErrors, []); assert.deepEqual(errors, []);
+	assert.equal(result.differences.length, 9);
+	assert.ok(result.differences.every(value => value <= 1), 'grain, tint and glow agree within RGBA8 rounding');
 });
 
 for (const kind of ['webgl2', 'webgpu']) test(`${kind} and CPU render flat/raw textured model packets with affine point sampling`, async t => {

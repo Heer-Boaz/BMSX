@@ -20,7 +20,55 @@ public:
 	void setDisplaySize(i32 w, i32 h, i32 viewportWidth, i32 viewportHeight) override { width = w; height = h; ++changes; visibleViewportBounds = RectBounds{0, 0, static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight), 0}; }
 };
 
+class ObservedSoftwareBackend final : public SoftwareBackend {
+public:
+	using SoftwareBackend::SoftwareBackend;
+	u32 targetActivations = 0;
+	void activateRenderTarget(void* target, i32 width, i32 height) override {
+		++targetActivations;
+		SoftwareBackend::activateRenderTarget(target, width, height);
+	}
+};
+
+static void testConditionalPassTargets() {
+	TestVideoOutput video(256, 192);
+	auto backend = std::make_unique<ObservedSoftwareBackend>(256, 192, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	auto& observed = *backend;
+	backend->resizePresentationTarget(256, 192);
+	VideoPresenter presenter(video, std::move(backend), 256, 192);
+	auto library = std::make_unique<RenderPassLibrary>(&presenter.backend(), &presenter);
+	auto& registry = *library;
+	bool enabled = false;
+	RenderPassDef pass;
+	pass.id = "conditional_writer";
+	pass.name = "Conditional writer";
+	pass.context = &enabled;
+	pass.shouldExecute = [](VideoPresenter*, void* context) { return *static_cast<bool*>(context); };
+	pass.graph.emplace();
+	pass.graph->writes = {RenderGraphSlot::FrameColor};
+	pass.exec = [](GPUBackend*, VideoPresenter*, void*, RenderPassStateStorage&, void*, const GxGpuDeviceOutput&) {};
+	registry.registerPass(pass);
+	presenter.installRenderPipeline(std::move(library));
+	presenter.crt_postprocessing_enabled = false;
+	test::GpuOutputFixture fixture;
+	presenter.present(fixture.output, 0, 0);
+	observed.targetActivations = 0;
+	presenter.present(fixture.output, 0, 0);
+	const u32 disabledActivations = observed.targetActivations;
+	enabled = true;
+	observed.targetActivations = 0;
+	presenter.present(fixture.output, 0, 0);
+	require(observed.targetActivations == disabledActivations + 1u,
+		"a predicate-disabled pass performs no render-target activation");
+	registry.setPassEnabled(pass.id, false);
+	observed.targetActivations = 0;
+	presenter.present(fixture.output, 0, 0);
+	require(observed.targetActivations == disabledActivations,
+		"a registry-disabled pass performs no render-target activation");
+}
+
 int main() {
+	testConditionalPassTargets();
 	TestVideoOutput video(256, 192);
 	auto backend = std::make_unique<SoftwareBackend>(256, 192, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	auto& software = *backend;

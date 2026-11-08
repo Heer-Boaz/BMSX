@@ -250,10 +250,8 @@ export class RenderPassLibrary {
 					}
 					return { width: offscreenWidth, height: offscreenHeight, present: isPresent };
 				},
+				shouldExecute: () => this.isPassEnabled(desc.id) && (!desc.shouldExecute || desc.shouldExecute(presenter)),
 				execute: (ctx, _frame, data: { width: number; height: number; present: boolean }, output) => {
-					const enabled = this.isPassEnabled(desc.id);
-					const willRun = enabled && (!desc.shouldExecute || desc.shouldExecute(presenter));
-					if (!willRun) return;
 					const graph = desc.graph;
 					if (graph?.writeState) {
 						activePassContext = ctx;

@@ -383,6 +383,7 @@ add_library(bmsx_host_support STATIC
 	render/host_overlay/software/glyph.cpp
 	render/host_overlay/gles2/pipeline.cpp
 	render/post/crt/software/pipeline.cpp
+	render/post/crt/noise.cpp
 	render/post/crt/software/crt_processor.cpp
 	render/post/device_quantize/lut.cpp
 	render/post/device_quantize/software/pipeline.cpp
@@ -718,6 +719,12 @@ if(BMSX_BUILD_TESTS)
 	target_link_libraries(bmsx_video_presenter_tests PRIVATE bmsx_host_support)
 	add_test(NAME bmsx_video_presenter_tests COMMAND bmsx_video_presenter_tests)
 
+	add_executable(bmsx_crt_software_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/crt_software_test.cpp
+	)
+	target_link_libraries(bmsx_crt_software_tests PRIVATE bmsx_host_support)
+	add_test(NAME bmsx_crt_software_tests COMMAND bmsx_crt_software_tests)
+
 	if(UNIX AND NOT APPLE AND BMSX_ENABLE_GLES2)
 		find_library(BMSX_TEST_EGL_LIBRARY EGL REQUIRED)
 		configure_file("${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/gx_gpu_words_shader.h.in"
@@ -745,6 +752,16 @@ if(BMSX_BUILD_TESTS)
 			target_link_options(bmsx_gx_gpu_textured_gles2_tests PRIVATE -static-libstdc++ -static-libgcc)
 		endif()
 		add_test(NAME bmsx_gx_gpu_textured_gles2_tests COMMAND bmsx_gx_gpu_textured_gles2_tests)
+		add_executable(bmsx_crt_gles2_tests
+			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/crt_gles2_test.cpp
+			${BMSX_LIBRETRO_HOST_DIR}/video_context.c
+			${BMSX_LIBRETRO_HOST_DIR}/host_fatal.c)
+		target_include_directories(bmsx_crt_gles2_tests PRIVATE ${BMSX_LIBRETRO_HOST_DIR})
+		target_link_libraries(bmsx_crt_gles2_tests PRIVATE bmsx_host_support ${BMSX_TEST_EGL_LIBRARY} dl)
+		if(BMSX_SNESMINI_TARGET)
+			target_link_options(bmsx_crt_gles2_tests PRIVATE -static-libstdc++ -static-libgcc)
+		endif()
+		add_test(NAME bmsx_crt_gles2_tests COMMAND bmsx_crt_gles2_tests)
 	endif()
 
 	if(BMSX_BUILD_EGL_TESTS)

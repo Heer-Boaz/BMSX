@@ -1,8 +1,10 @@
+import { crtNoiseTextureBytes, CRT_NOISE_WIDTH, CRT_NOISE_HEIGHT } from '../noise';
+import { RGBA8_LINEAR_TEXTURE_PARAMS } from '../../../backend/texture_params';
 import type { RenderPassLibrary } from '../../../backend/pass/library';
 import type { RenderPassStateRegistry } from '../../../backend/backend';
 import type { WebGLBackend } from '../../../backend/webgl/backend';
 import { createCrtPassState, createPresentPassState, shouldExecuteAutoCrtPass, shouldExecuteAutoPresentPass, shouldUpdatePresentationHistoryA, shouldUpdatePresentationHistoryB, writeCrtPassState, writePresentationHistoryPassState, writePresentPassState } from '../state';
-import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../../../backend/webgl/constants';
+import { TEXTURE_UNIT_POST_PROCESSING_SOURCE, TEXTURE_UNIT_CRT_NOISE } from '../../../backend/webgl/constants';
 import fragmentShaderCRTCode from './shaders/crt.frag.glsl';
 import fragmentShaderPresentCode from './shaders/present.frag.glsl';
 import vertexShaderCRTCode from '../../webgl/shaders/fullscreen.vert.glsl';
@@ -33,6 +35,8 @@ export function registerCRT(registry: RenderPassLibrary): void {
 	let historyQuadA: FullscreenQuad;
 	let historyQuadB: FullscreenQuad;
 	let presentQuad: FullscreenQuad;
+	let crtNoiseTexture: WebGLTexture;
+	let crtBackend: WebGLBackend;
 	let crtSourceWidth = 0;
 	let crtSourceHeight = 0;
 	const crtColorBleedScratch = new Float32Array(3);
@@ -48,8 +52,11 @@ export function registerCRT(registry: RenderPassLibrary): void {
 		}
 		const opts = state.options;
 		if (opts.applyNoise) {
-			backend.setUniform1f('u_random', state.noiseOffset);
-			backend.setUniform1f('u_time', state.time);
+			if (crtNoiseTexture === undefined)
+				crtNoiseTexture = backend.createTexture(crtNoiseTextureBytes(), CRT_NOISE_WIDTH, CRT_NOISE_HEIGHT, RGBA8_LINEAR_TEXTURE_PARAMS);
+			backend.setUniform2f('u_noiseOffset', state.noisePhase & (CRT_NOISE_WIDTH - 1), state.noisePhase >>> 9);
+			backend.setActiveTexture(TEXTURE_UNIT_CRT_NOISE);
+			backend.bindTexture2D(crtNoiseTexture);
 		}
 		backend.setUniform1i('u_enableNoise', opts.applyNoise ? 1 : 0);
 		backend.setUniform1i('u_enableColorBleed', opts.applyColorBleed ? 1 : 0);
@@ -185,6 +192,7 @@ export function registerCRT(registry: RenderPassLibrary): void {
 		shouldExecute: shouldExecuteAutoCrtPass,
 		bootstrap: (backend) => {
 			const webgl = backend as WebGLBackend;
+			crtBackend = webgl;
 			crtQuad = {
 				backend: webgl,
 				positionBuffer: null,
@@ -199,9 +207,11 @@ export function registerCRT(registry: RenderPassLibrary): void {
 			};
 			createFullscreenQuad(crtQuad);
 			webgl.setUniform1i('u_texture', TEXTURE_UNIT_POST_PROCESSING_SOURCE);
+			webgl.setUniform1i('u_noise', TEXTURE_UNIT_CRT_NOISE);
 		},
 		teardown: () => {
 			destroyFullscreenQuad(crtQuad);
+			if (crtNoiseTexture !== undefined) crtBackend.destroyTexture(crtNoiseTexture);
 		},
 		exec: (_be: WebGLBackend, _fbo, state: RenderPassStateRegistry['crt']) => {
 			renderFullscreenToFramebuffer(crtQuad, null, state.width, state.height);

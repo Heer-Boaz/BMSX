@@ -10,6 +10,7 @@ struct CRTUniforms {
 @group(0) @binding(0) var<uniform> u: CRTUniforms;
 @group(0) @binding(1) var u_texture: texture_2d<f32>;
 @group(0) @binding(2) var u_sampler: sampler;
+@group(0) @binding(3) var u_noise: texture_2d<f32>;
 
 const LUMA = vec3<f32>(0.299, 0.587, 0.114);
 const APERTURE_STRENGTH = 0.08;
@@ -33,15 +34,6 @@ struct BlurContrast {
 
 fn enabled(flag: f32) -> bool {
 	return flag != 0.0;
-}
-
-fn hashNoise(uv: vec2<f32>, t: f32) -> f32 {
-	let wrappedUV = uv - vec2<f32>(vec2<u32>(uv / vec2<f32>(1024.0))) * vec2<f32>(1024.0);
-	let wrappedT = t - f32(u32(t / 4096.0)) * 4096.0;
-	var p = vec3<f32>(wrappedUV * 0.1, wrappedT * 0.0001);
-	p = fract(p * vec3<f32>(12.9898, 78.233, 43758.5453));
-	p += dot(p, p.yzx + vec3<f32>(19.19));
-	return fract((p.x + p.y) * p.z);
 }
 
 fn sampleColor(uv: vec2<f32>) -> vec3<f32> {
@@ -90,6 +82,17 @@ fn applyBlurAndContrast(uv: vec2<f32>, sourcePixel: vec2<f32>) -> BlurContrast {
 	);
 }
 
+// Four nonzero contrast taps; the blur kernel is unchanged.
+fn applyContrast(uv: vec2<f32>, sourcePixel: vec2<f32>) -> BlurContrast {
+	let side = (step(vec2<f32>(0.5), fract(sourcePixel)) * 2.0 - vec2<f32>(1.0)) * u.src.zw;
+	let center = sampleColor(uv);
+	let horizontal = sampleColor(uv + vec2<f32>(side.x, 0.0));
+	let vertical = sampleColor(uv + vec2<f32>(0.0, side.y));
+	let diagonal = sampleColor(uv + side);
+	let neighborhood = (diagonal + vertical * 2.0) + (horizontal + center * 2.0) * 2.0;
+	return BlurContrast(center, center, abs(dot(center, LUMA) - dot(neighborhood - center, LUMA) * 0.125));
+}
+
 fn applyScanlines(colorLinear: vec3<f32>, sourceY: f32) -> vec3<f32> {
 	let phase = 1.0 - 2.0 * step(0.5, fract(sourceY * 0.5));
 	let lum = dot(colorLinear, LUMA);
@@ -129,11 +132,10 @@ fn applyFringing(color: vec3<f32>, uv: vec2<f32>, centerGreen: f32, contrast: f3
 }
 
 fn applyNoise(color: vec3<f32>, sourcePixel: vec2<f32>) -> vec3<f32> {
-	let time = u.params.z;
-	let lineNoise = hashNoise(vec2<f32>(0.0, f32(u32(sourcePixel.y)) + time * 30.0), 0.0) - 0.5;
-	let pixNoise = hashNoise(sourcePixel + vec2<f32>(u.flags0.x), time) - 0.5;
+	let coord = (vec2<u32>(sourcePixel) + vec2<u32>(vec2<f32>(u.flags0.x, u.params.z))) % vec2<u32>(512, 256);
+	let grain = textureLoad(u_noise, vec2<i32>(coord), 0).rg - vec2<f32>(0.5);
 	let lum = dot(color, LUMA);
-	let n = mix(pixNoise, lineNoise, 0.35);
+	let n = mix(grain.r, grain.g, 0.35);
 	let k = smoothstep(BLACK_CUTOFF, BLACK_SOFT, lum);
 	let amp = u.params.x * mix(0.2, 1.0, 1.0 - lum);
 	return color * (n * amp * k);
@@ -143,8 +145,10 @@ fn applyNoise(color: vec3<f32>, sourcePixel: vec2<f32>) -> vec3<f32> {
 fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
 	let sourcePixel = uv * u.src.xy;
 	var bc: BlurContrast;
-	if (enabled(u.flags1.x) || enabled(u.flags1.z) || enabled(u.flags1.w) || enabled(u.flags0.w)) {
+	if (enabled(u.flags1.x)) {
 		bc = applyBlurAndContrast(uv, sourcePixel);
+	} else if (enabled(u.flags1.z) || enabled(u.flags1.w) || enabled(u.flags0.w)) {
+		bc = applyContrast(uv, sourcePixel);
 	} else {
 		let center = sampleColor(uv);
 		bc = BlurContrast(center, center, 0.0);

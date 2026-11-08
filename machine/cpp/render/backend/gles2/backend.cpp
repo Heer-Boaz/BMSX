@@ -660,7 +660,7 @@ void OpenGLES2Backend::onContextReset() {
 }
 
 void OpenGLES2Backend::onContextDestroy() {
-	CRTPipeline::shutdownCRTGLES2(m_pipelines->crt);
+	CRTPipeline::shutdownCRTGLES2(*this, m_pipelines->crt);
 	CRTPipeline::shutdownPresentGLES2(m_pipelines->present);
 	DeviceQuantizePipeline::GLES2::shutdown(*this, m_pipelines->deviceQuantize);
 	if (m_readback_fbo != 0) {

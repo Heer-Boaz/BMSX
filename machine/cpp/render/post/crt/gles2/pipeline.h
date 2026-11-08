@@ -8,15 +8,18 @@
 #include "render/backend/gles2/fullscreen_quad.h"
 
 #include <GLES2/gl2.h>
+#include <array>
+#include <memory>
 
 namespace bmsx {
 
 class OpenGLES2Backend;
 class RenderPassLibrary;
+struct GLES2Texture;
 
 namespace CRTPipeline {
 
-struct CRTGLES2State {
+struct CRTGLES2Program {
 	GLuint program = 0;
 	GLint attrib_pos = -1;
 	GLint attrib_uv = -1;
@@ -24,15 +27,7 @@ struct CRTGLES2State {
 	GLint uniform_src_resolution = -1;
 	GLint uniform_src_texel = -1;
 	GLint uniform_scale = -1;
-	GLint uniform_time = -1;
-	GLint uniform_random = -1;
-	GLint uniform_apply_noise = -1;
-	GLint uniform_apply_color_bleed = -1;
-	GLint uniform_apply_scanlines = -1;
-	GLint uniform_apply_blur = -1;
-	GLint uniform_apply_glow = -1;
-	GLint uniform_apply_fringing = -1;
-	GLint uniform_apply_aperture = -1;
+	GLint uniform_noise_offset = -1;
 	GLint uniform_noise_intensity = -1;
 	GLint uniform_color_bleed = -1;
 	GLint uniform_blur_intensity = -1;
@@ -40,6 +35,11 @@ struct CRTGLES2State {
 	GLint uniform_texture = -1;
 	i32 source_width = 0;
 	i32 source_height = 0;
+};
+
+struct CRTGLES2State {
+	std::array<CRTGLES2Program, 128> programs{};
+	std::unique_ptr<GLES2Texture> noiseTexture;
 	FullscreenQuad quad;
 };
 
@@ -56,7 +56,7 @@ struct PresentGLES2State {
 void initPresentGLES2(OpenGLES2Backend& backend, PresentGLES2State& pipeline);
 void shutdownPresentGLES2(PresentGLES2State& pipeline);
 void initCRTGLES2(OpenGLES2Backend& backend, CRTGLES2State& pipeline);
-void shutdownCRTGLES2(CRTGLES2State& pipeline);
+void shutdownCRTGLES2(OpenGLES2Backend& backend, CRTGLES2State& pipeline);
 void registerPresentationHistoryGLES2Passes(RenderPassLibrary& registry, PresentGLES2State& pipeline);
 void registerPresentGLES2Pass(RenderPassLibrary& registry, PresentGLES2State& pipeline);
 void registerCRTGLES2Pass(RenderPassLibrary& registry, CRTGLES2State& pipeline);
