@@ -4,7 +4,6 @@
 #include <cstddef>
 #include <memory>
 #include <utility>
-#include <vector>
 
 namespace bmsx {
 
@@ -19,24 +18,26 @@ class ObjectStoragePool {
 		Slot() noexcept {}
 		~Slot() {}
 	};
-	struct Slab { std::array<Slot, SlotsPerSlab> slots; };
+	struct Slab {
+		Slab* next;
+		std::array<Slot, SlotsPerSlab> slots;
+	};
 
 public:
 	ObjectStoragePool() = default;
 	ObjectStoragePool(const ObjectStoragePool&) = delete;
 	ObjectStoragePool& operator=(const ObjectStoragePool&) = delete;
+	~ObjectStoragePool() {
+		while (m_slabs) {
+			Slab* slab = m_slabs;
+			m_slabs = slab->next;
+			delete slab;
+		}
+	}
 
 	template <typename... Args>
 	T* construct(Args&&... args) {
-		if (!m_free) {
-			auto slab = std::unique_ptr<Slab>(new Slab);
-			auto& slots = slab->slots;
-			m_slabs.push_back(std::move(slab));
-			for (auto& slot : slots) {
-				slot.next = m_free;
-				m_free = &slot;
-			}
-		}
+		if (!m_free) [[unlikely]] grow();
 		Slot* slot = m_free;
 		m_free = slot->next;
 		return std::construct_at(&slot->object, std::forward<Args>(args)...);
@@ -50,7 +51,17 @@ public:
 	}
 
 private:
-	std::vector<std::unique_ptr<Slab>> m_slabs;
+	[[gnu::noinline]] void grow() {
+		auto* slab = new Slab;
+		slab->next = m_slabs;
+		m_slabs = slab;
+		for (auto& slot : slab->slots) {
+			slot.next = m_free;
+			m_free = &slot;
+		}
+	}
+
+	Slab* m_slabs = nullptr;
 	Slot* m_free = nullptr;
 };
 
