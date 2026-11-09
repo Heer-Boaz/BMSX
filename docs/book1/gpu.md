@@ -278,10 +278,10 @@ repeated writes to the GP0 stream port.
 | --- | --- | --- |
 | 31 | Displayed-line parity | Beam-derived; calculation below. Not command readiness. |
 | 30:29 | DMA direction | GP1 direction low two bits: 0 off, 1 FIFO, 2 CPU→GP0, 3 GPUREAD→CPU. |
-| 28 | DMA packet acceptance | The packet-state test below; not a general CPU-store-ready bit. |
+| 28 | DMA ingress available | Separate ingress is empty and no system ingress stop is active; not a general CPU-store-ready bit. |
 | 27 | Readback ready | One exactly when a readback stream is READY, not merely when its header has been accepted. |
 | 26 | Idle | One only under all idle conditions below. |
-| 25 | DMA request | Direction 0: zero. Direction 1: DMA ingress empty and GP0 FIFO has room. Direction 2: bit 28. Direction 3: bit 27. A system ingress stop suppresses the write-side requests for directions 1 and 2. |
+| 25 | DMA request | Direction 0: zero. Directions 1 and 2: bit 28. Direction 3: bit 27. A system ingress stop suppresses the write-side requests for directions 1 and 2. |
 | 24 | GPU interrupt request | Latched by GP0(1Fh); GP1(02h) clears this GPU request latch. |
 | 23 | Display disabled | GP1 display-disable low bit; one means disabled. |
 | 22 | Vertical-interlace mode | GP1 display-mode bit 5. |
@@ -317,21 +317,18 @@ If the beam is stopped, bits 13 and 31 retain their existing values.
 input FIFOs are empty, and no incomplete fixed packet, image-upload payload or
 open polyline remains. It does not acknowledge a new displayed picture.
 
-**Bit 28** first requires idle readback, no system ingress stop and empty DMA
-ingress. After those requirements:
-
-- During an image-upload payload, it is one when the GP0 FIFO has room.
-- During a polyline payload, it is zero.
-- With no partial packet and no FIFO words, it is one.
-- Otherwise it is one only for a nonpolygon, nonline packet with fewer
-  accumulated words than its target length.
+**Bit 28** is one when the separate DMA ingress buffer is empty and no
+system ingress stop is active. It depends on storage availability, not on the
+opcode, partial-packet length, an open polyline or pending readback. Those
+conditions can delay parsing after admission without preventing an empty
+ingress buffer from accepting the next burst.
 
 **A direct CPU GP0 word store** instead requires no system ingress stop, empty
 DMA ingress, a physical GP0 FIFO count below sixteen, and no DMA ownership of
 the GP0 write port. It need not wait for GPU idle or readback completion if a
-word can still be admitted. A polygon or line prefix can therefore clear bit 28
-while a CPU word store remains admissible. Do not substitute bit 28 for this
-store-admission protocol.
+word can still be admitted. Conversely, DMA ingress availability does not
+establish free CPU FIFO space or release DMA ownership. Do not substitute
+bit 28 for the CPU store-admission protocol.
 
 The scalar CPU store checks admission before writing. If blocked, it waits and
 retries; no command word has yet been accepted. GP1's store-admission gate is
@@ -496,8 +493,8 @@ readback does not prove that a new displayed presentation has latched.
 | Direction | Selection | GPUSTAT bit 25, DMA request |
 |---|---|---|
 | 0 | Off | Zero |
-| 1 | FIFO | DMA ingress empty and GP0 FIFO has room |
-| 2 | CPU→GP0 | GPUSTAT bit 28, DMA packet acceptance |
+| 1 | FIFO | GPUSTAT bit 28, DMA ingress available |
+| 2 | CPU→GP0 | GPUSTAT bit 28, DMA ingress available |
 | 3 | GPUREAD→CPU | GPUSTAT bit 27, readback READY |
 
 GPUSTAT bits 30:29 return the selected direction. A system ingress stop
@@ -861,9 +858,10 @@ extra CPU FIFO slots. At the end of an admitted DMA block, its words are handed
 to the GP0 command FIFO in order. They continue the current packet or payload,
 subject to command-completion and readback barriers.
 
-The DMA write-ready check at this boundary tests whether ingress is stopped.
-The DMA controller owns block sizing and admission; that limited check is not
-permission to submit an arbitrarily large block to sixteen-word storage. Channel
+DMA admission requires an empty, unpaused ingress buffer and admits at most
+its 256-word capacity. The controller owns burst sizing; GP0 preserves packet
+assembly across bursts, including polygons and polylines. Packet padding to a
+DMA boundary is unnecessary. Channel
 addresses, counts and transfer controls belong to the DMA interface, not an
 additional GPU register map.
 
@@ -3714,12 +3712,15 @@ Move an image along this route: RAM → fixed GP0 port → GPU local memory → 
 
 This example owns DMA0 and the GPU ports, masks interrupts, and polls completion. It uploads a raw 9 × 9 image at local-memory coordinate (96, 64), then reads the same rectangle into a separate RAM buffer. It does not program PCRTC or display the image.
 
-| Transfer | GP1 direction | DMA CONTROL | Read endpoint | Write endpoint | Requests |
-|---|---:|---:|---|---|---|
-| RAM → GP0 | 2 (`04000002H`) | `00003C41H` | RAM, incrementing | GP0, fixed | Read FORCE; write GX_WRITE |
-| GPUREAD → RAM | 3 (`04000003H`) | `00003C0AH` | GPUREAD, fixed | RAM, incrementing | Read GX_READ; write FORCE |
+| Transfer | GP1 direction | DMA ROUTE | Programmed address | Admission |
+|---|---:|---:|---|---|
+| RAM → GP0 | 2 (`04000002H`) | 1 TO_GPU | READ_ADDR in RAM | Empty, unpaused GPU ingress |
+| GPUREAD → RAM | 3 (`04000003H`) | 2 FROM_GPU | WRITE_ADDR in RAM | Ready packed readback words |
 
-Both controls select up to 16 words per block. COUNT counts words, not pixels or bytes. Each admitted block captures its addresses, count, and control; requests are sampled at admission. Both request selectors must permit admission. FORCE permits it unconditionally.
+COUNT counts words, not pixels or bytes. Device ports are wired by ROUTE;
+there are no separate endpoint addresses or request selectors. Each transfer
+below fits in one burst. Channel configuration remains write-disabled while
+BUSY, and an admitted burst holds the CPU bus until its completion.
 
 ### Upload, read back and release the ports {#sec-gpu-upload-read-back-and-release-the-ports}
 
@@ -3759,9 +3760,8 @@ local irq_mask<const>: *word = 0x08000008
 *gp0 = 0xe6000000                  -- No mask check or force-mask
 *gp1 = 0x04000002                  -- CPU-to-GP0 DMA request selection
 dma[0] = upload                   -- READ_ADDR
-dma[1] = 0x0801023c                -- WRITE_ADDR: fixed GP0
 dma[2] = 44                        -- TRANSFER_COUNT
-dma[3] = 0x00003c41                -- CONTROL: up to sixteen words/block
+dma[3] = 1                         -- TO_GPU; destination is wired.
 dma[5] = 1                         -- TRIGGER
 while (dma[4] & 2) == 0 do         -- STATUS.DONE
 end
@@ -3775,10 +3775,9 @@ end
 while (*gp1 & 0x08000000) == 0 do  -- READY, not idle
 end
 *gp1 = 0x04000003
-dma[0] = 0x0801023c                -- Fixed GPUREAD
 dma[1] = returned                  -- Incrementing RAM destination
 dma[2] = 41
-dma[3] = 0x00003c0a
+dma[3] = 2                         -- FROM_GPU; source is wired.
 dma[5] = 1
 while (dma[4] & 2) == 0 do
 end
@@ -3801,7 +3800,7 @@ Readback fills **41 words**, 164 bytes, without headers. Returned words 0, 4,
 39 and 40 are respectively `00020001H`, `000A0009H`, `0050004FH` and
 `00000051H`. The final unused halfword reads zero. At DONE, each DMA COUNT is
 zero; upload advanced its RAM source by 176 bytes and readback advanced its RAM
-destination by 164 bytes. The GP0/GPUREAD endpoint addresses did not advance.
+destination by 164 bytes. Only memory-side addresses advance; unused address registers retain their words.
 The final GPUREAD latch is 00000051H, and another CPU read with no READY stream
 returns that latch rather than an extra pixel.
 
@@ -3813,16 +3812,16 @@ shared bus serially, so a RAM/I/O burst of N words costs 2N + 1 cycles.
 
 | Transfer | Words | Admitted blocks | Block charges | Total |
 |---|---:|---|---|---:|
-| Upload packet | 44 | 16 + 16 + 12 | 33 + 33 + 25 | 91 cycles |
-| READY readback | 41 | 16 + 16 + 9 | 33 + 33 + 19 | 85 cycles |
+| Upload packet | 44 | 44 | 89 | 89 cycles |
+| READY readback | 41 | 41 | 83 | 83 cycles |
 
-These are admitted DMA charges, not end-to-end measurements. They exclude CPU preparation, request waits, other channels, readback preparation, and display timing. The final blocks are partial blocks, not padded sixteen-word transfers.
+These are admitted DMA charges, not end-to-end measurements. They exclude CPU preparation, request waits, other channels, readback preparation, and display timing. Neither transfer is padded to the 256-word burst limit.
 
 ### Keep completion boundaries separate {#sec-gpu-keep-completion-boundaries-separate}
 
 DMA **DONE** means the channel finished its transfers. GP0 DMA words first enter a separate 256-word ingress buffer and pass to the command FIFO at block end. The GPU must still consume the counted A0 payload and complete the upload. Neither channel DONE nor packet acceptance alone establishes command completion.
 
-After the readback drain, an ordered GPU marker and GPU idle are polled separately. GPUSTAT bit 28 reports packet acceptance, bit 27 reports pixel **READY**, and bit 26 reports idle; idle excludes executing commands, FIFO contents, incomplete packets, image uploads, open polylines and active readback. GPU and controller acknowledgements remain separate.
+After the readback drain, an ordered GPU marker and GPU idle are polled separately. GPUSTAT bit 28 reports DMA ingress availability, bit 27 reports pixel **READY**, and bit 26 reports idle; idle excludes executing commands, FIFO contents, incomplete packets, image uploads, open polylines and active readback. GPU and controller acknowledgements remain separate.
 
 Wait for READY before reading image data. Consuming the last word clears
 READY and its DMA request, allowing parsing to advance to the queued marker.

@@ -12,9 +12,9 @@ end
 
 struct imgdec_manual_registers
 	input_word_count: word
-	texture_destination: word
-	texture_size: word
-	clut_destination: word
+	output_word_count: word
+	unassigned0: word
+	unassigned1: word
 	control: word
 	status: word
 	data: word
@@ -38,12 +38,12 @@ struct imgdec_manual_result
 	dma0_sequence: word
 	dma1_sequence: word
 	decoder_sequence: word
-	ram_output: word[26]
+	ram_output: word[20]
 	recovery_output: word[3]
 	phases: imgdec_manual_phase_result[4]
 	gpu_initial_status: word
 	gpu_idle_status: word
-	fault_header: word[3]
+	fault_reads: word[3]
 	fault_retained_read: word
 	final_irq_flags: word
 end

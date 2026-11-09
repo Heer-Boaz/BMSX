@@ -42,14 +42,14 @@ function fixture(stream: number[] = []) {
 		memory.writeMappedU32LE(io.IO_DMA0_READ_ADDR, CART_ROM_BASE);
 		memory.writeMappedU32LE(io.IO_DMA0_WRITE_ADDR, io.IO_IMGDEC_DATA);
 		memory.writeMappedU32LE(io.IO_DMA0_TRANSFER_COUNT, stream.length);
-		memory.writeMappedU32LE(io.IO_DMA0_CONTROL, 0x0003fd41);
+		memory.writeMappedU32LE(io.IO_DMA0_CONTROL, 0x00000003);
 		memory.writeMappedU32LE(io.IO_DMA0_TRIGGER, io.DMA_TRIGGER_START);
 	};
 	const outputDma = (count: number) => {
 		memory.writeMappedU32LE(io.IO_DMA1_READ_ADDR, io.IO_IMGDEC_DATA);
 		memory.writeMappedU32LE(io.IO_DMA1_WRITE_ADDR, io.IO_GX_GPU_GP0);
 		memory.writeMappedU32LE(io.IO_DMA1_TRANSFER_COUNT, count);
-		memory.writeMappedU32LE(io.IO_DMA1_CONTROL, 0x0003fc58);
+		memory.writeMappedU32LE(io.IO_DMA1_CONTROL, 0x00000005);
 		memory.writeMappedU32LE(io.IO_DMA1_TRIGGER, io.DMA_TRIGGER_START);
 	};
 	const header = (destination: number, size: number) => {

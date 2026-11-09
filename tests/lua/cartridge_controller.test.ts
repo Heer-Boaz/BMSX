@@ -5,13 +5,8 @@ import { test } from 'node:test';
 
 import { writeLE32 } from '../../machine/ts/common/endian';
 import {
-	DMA_CONTROL_BLOCK_WORDS_SHIFT,
-	DMA_CONTROL_READ_INCREMENT,
-	DMA_CONTROL_READ_REQUEST_SHIFT,
-	DMA_CONTROL_WRITE_INCREMENT,
-	DMA_CONTROL_WRITE_REQUEST_SHIFT,
-	DMA_REQUEST_CARTRIDGE_SLOT0_WRITE,
-	DMA_REQUEST_CARTRIDGE_SLOT1_READ,
+	DMA_CONTROL_READ_SLOT_SHIFT,
+	DMA_ROUTE_COPY,
 	DMA_TRIGGER_START,
 	IO_CART_SELECT,
 	IO_CART_STATUS,
@@ -223,28 +218,15 @@ test('mailbox IRQ raises once per cartridge source-latch edge', () => {
 	assert.notEqual(memory.readMappedU32LE(IO_IRQ_FLAGS) & IRQ_CARTRIDGE_SLOT0, 0);
 });
 
-test('cartridge DREQ selectors override CPU selection independently on both DMA sides', () => {
+test('DMA socket bits select ROM and RAM independently of CPU selection and device DREQ', () => {
 	const { memory, dma, scheduler } = createHarness([
 		slot([0x01020304, 0x11121314], 16, true),
 		slot([0xa1a2a3a4, 0xb1b2b3b4], 16, true),
 	]);
 
-	memory.writeMappedU32LE(IO_CART_SELECT, 1);
-	memory.writeMappedU32LE(
-		MAILBOX_CONTROL_ADDRESS,
-		CARTRIDGE_MAILBOX_CONTROL_DREQ_READ,
-	);
 	memory.writeMappedU32LE(IO_CART_SELECT, 0);
-	memory.writeMappedU32LE(
-		MAILBOX_CONTROL_ADDRESS,
-		CARTRIDGE_MAILBOX_CONTROL_DREQ_WRITE,
-	);
 
-	const control = DMA_CONTROL_READ_INCREMENT
-		| DMA_CONTROL_WRITE_INCREMENT
-		| (DMA_REQUEST_CARTRIDGE_SLOT1_READ << DMA_CONTROL_READ_REQUEST_SHIFT)
-		| (DMA_REQUEST_CARTRIDGE_SLOT0_WRITE << DMA_CONTROL_WRITE_REQUEST_SHIFT)
-		| (1 << DMA_CONTROL_BLOCK_WORDS_SHIFT);
+	const control = DMA_ROUTE_COPY | (1 << DMA_CONTROL_READ_SLOT_SHIFT);
 	memory.writeMappedU32LE(IO_DMA0_READ_ADDR, CART_ROM_BASE);
 	memory.writeMappedU32LE(IO_DMA0_WRITE_ADDR, CART_RAM_BASE);
 	memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, 2);

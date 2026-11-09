@@ -1,4 +1,5 @@
 export const CARTRIDGE_SLOT_COUNT = 2;
+export const CARTRIDGE_DMA_BURST_WORD_CAPACITY = 16;
 export type CartridgeSlotIndex = 0 | 1;
 
 export const CARTRIDGE_STATUS_SLOT0_PRESENT = 1 << 0;

@@ -188,16 +188,13 @@ local gp1<const>: *word = 0x08010240
 *input_count = 3
 *output_count = 2
 
-dma1[0] = 0x08010414              -- Fixed decoder DATA source.
-dma1[1] = 0x0801023c              -- Fixed GP0 destination.
 dma1[2] = 2                       -- Raw output only; no header words.
-dma1[3] = 0x0003fc58              -- IMGDEC_READ/GX_WRITE, up to 256 words.
+dma1[3] = 5                       -- IMGDEC_TO_GPU; both ports are wired.
 dma1[5] = 1
 
 dma0[0] = stream
-dma0[1] = 0x08010414
 dma0[2] = 3
-dma0[3] = 0x0003fd41              -- Increment source, IMGDEC_WRITE.
+dma0[3] = 3                       -- TO_IMGDEC; memory source increments.
 dma0[5] = 1
 *control = 1
 while (*status & 1) ~= 0 do end
@@ -267,10 +264,9 @@ without advancing output. So does a CPU read while a DMA channel owns the DATA
 read port. Poll STATUS, not DATA, for readiness.
 
 Ordinary CPU writes wait for active input capacity and for release of any DMA
-write-port reservation. A forced DMA write still presents its word and advances
-the submission counter; only words that fit enter the input FIFO. It is not a
-way to bypass the compressed-stream protocol. Submission counters use modulo
-2^32 arithmetic, including such forced accesses.
+write-port reservation. TO_IMGDEC admission is bounded by free input storage
+and remaining declared input. There is no forced DMA route that bypasses these
+conditions. Submission counters use modulo 2^32 arithmetic.
 
 A system pause stops new input and output requests. An admitted decode block
 first reaches its completion edge; partly assembled input or unread results

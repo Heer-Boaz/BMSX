@@ -9,8 +9,8 @@ struct gpu_dma_status
 	upload_gpu_status: word
 	read_latch_before: word
 	read_ready_status: word
-	read_busy_status: word
-	read_owned_latch: word
+	read_post_start_status: word
+	read_post_start_latch: word
 	read_status: word
 	read_count: word
 	read_source: word

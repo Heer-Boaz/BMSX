@@ -1,9 +1,7 @@
 -- Affine geometry consumes the same admitted image/row/glyph records as the
 -- rectangle datapaths. Resolve a pose at the batch owner, not per vertex.
-local command_list<const> = require('cartlib/gx/command_list')
 local gp0<const> = require('cartlib/gx/gp0')
 local affine_batch<const> = {}
-local reserve_atomic<const> = command_list.reserve_atomic
 
 struct affine_textured_quad_packet
 	command: word
@@ -17,12 +15,12 @@ struct affine_textured_quad_packet
 	uv3: word
 end
 
--- One native primitive, including DMA block alignment and the central GP0
+-- One native primitive, using the central GP0
 -- coordinate conversion. UV/page/CLUT words are published by atlas admission.
 local emit_quad<const> = function(draw, source, x, y, ax, ay, bx, by, command)
 	local draw_mode<const> = source._blit_draw_mode
 	if draw_mode ~= draw.draw_mode then draw:mode(draw_mode) end
-	local index<const> = reserve_atomic(draw, 9)
+	local index<const> = draw.word_count
 	local packet<const>: *affine_textured_quad_packet = draw.words + index * sizeof(word)
 	packet.command = command
 	packet.position0 = gp0.pair16(x, y)
@@ -77,7 +75,7 @@ function affine_batch.glyph_rows(draw, glyphs, x_offsets, first, last, visible_h
 		local source<const> = glyphs[glyph_index]
 		local draw_mode<const> = source._blit_draw_mode
 		if draw_mode ~= draw.draw_mode then draw:mode(draw_mode) end
-		local index<const> = reserve_atomic(draw, 9)
+		local index<const> = draw.word_count
 		local packet<const>: *affine_textured_quad_packet = draw.words + index * sizeof(word)
 		local offset<const> = x_offsets[glyph_index]
 		local x<const>, y<const> = ox + xx*offset, oy + xy*offset

@@ -32,7 +32,7 @@ function gpu.ack_irq() gpu.acknowledgements=gpu.acknowledgements+1 end
 return gpu` },
 	{ path: 'cartlib/dma', source: `local irq<const> = require('cartlib/irq')
 local irq_source<const> = require('cartlib/irq/source')
-local dma<const> = {block_words=16,transfers={}}
+local dma<const> = {transfers={}}
 local pending
 function dma.wait0_idle()
  if pending == nil then return end
@@ -54,7 +54,7 @@ return dma` },
 ];
 
 for (const optLevel of [0, 3] as const) for (const capacity of [16, 32])
-test(`GX textured triangles preserve UV/page words and atomic DMA blocks in ${capacity} words (O${optLevel})`, () => {
+test(`GX textured triangles preserve UV/page words without transport padding in ${capacity} words (O${optLevel})`, () => {
 	const { cpu } = createCartlibProgramHarness(checks + `
 local commands<const> = require('cartlib/gx/command_list')
 local dma<const> = require('cartlib/dma')
@@ -83,10 +83,9 @@ for transfer_index=2,#dma.transfers do
  local index=1
  while index<=transfer.count do
   local word<const> = transfer.words[index]
-  if word==0 or word==0xe1000114 then index=index+1
+  if word==0xe1000114 then index=index+1
   else
    local face<const> = order[emitted+3]
-   assert(((index-1)&15)<=9,'a seven-word polygon straddled a DMA admission block')
    assert(word==colors[face] and transfer.words[index+1]==xy0[face] and transfer.words[index+2]==uv0[face]
     and transfer.words[index+3]==xy1[face] and transfer.words[index+4]==(uv1[face]|0x01140000)
     and transfer.words[index+5]==xy2[face] and transfer.words[index+6]==uv2[face], 'textured packet words or order changed')

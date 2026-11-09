@@ -14,8 +14,7 @@ import {
 import { CartridgeController } from '../devices/cartridge/controller';
 import type { CartridgeSocketMediaPair } from '../devices/cartridge/contracts';
 import {
-	DMA_CONTROL_BLOCK_WORDS_MASK,
-	DMA_CONTROL_BLOCK_WORDS_SHIFT,
+	DMA_BURST_WORD_CAPACITY,
 	BUS_FAULT_ACCESS_READ,
 	BUS_FAULT_ACCESS_F32,
 	BUS_FAULT_ACCESS_F64,
@@ -71,6 +70,7 @@ import { readLE16, readLE32, writeLE16, writeLE32 } from '../../common/endian';
 import {
 	MAPPED_BUS_MASTER_CPU,
 	MAPPED_BUS_MASTER_DMA,
+	MAPPED_BUS_DMA_MEMORY,
 	MAPPED_BUS_DMA_BLOCK_END,
 	type MappedBusSignals,
 } from './bus_signals';
@@ -182,6 +182,8 @@ export type MemoryInit = {
 
 export const NO_BLOCKED_MAPPED_WRITE = 0xffffffff;
 
+export const enum IoWriteStorage { Retained, Device }
+
 export class Memory {
 	private systemRom: Uint8Array;
 	public readonly cartridgeController: CartridgeController;
@@ -195,7 +197,8 @@ export class Memory {
 	private readonly ioWriteHandlers: Array<StoredIoWriteHandler | null>;
 	private readonly ioWriteReadyHandlers: Array<StoredIoWriteReadyHandler | null>;
 	private readonly ioDmaPrefixes: IoDmaPrefixBinding[] = [];
-	private readonly dmaPrefixWords = new Uint32Array((DMA_CONTROL_BLOCK_WORDS_MASK >>> DMA_CONTROL_BLOCK_WORDS_SHIFT) + 1);
+	private readonly ioWriteStorage = new Uint8Array(IO_SLOT_COUNT);
+	private readonly dmaPrefixWords = new Uint32Array(DMA_BURST_WORD_CAPACITY);
 	private readonly dmaRomView: MemoryByteView;
 	private readonly ioByteLength = IO_SLOT_COUNT * IO_WORD_SIZE;
 	private readonly busFaultCodeSlot = (IO_SYS_BUS_FAULT_CODE - IO_BASE) / IO_WORD_SIZE;
@@ -305,8 +308,9 @@ export class Memory {
 		if (prefix !== null) prefix.read = null;
 	}
 
-	public mapIoWrite<TContext>(addr: number, context: TContext, handler: IoWriteHandler<TContext>): void {
+	public mapIoWrite<TContext>(addr: number, context: TContext, handler: IoWriteHandler<TContext>, storage = IoWriteStorage.Retained): void {
 		const slot = (addr - IO_BASE) / IO_WORD_SIZE;
+		this.ioWriteStorage[slot] = storage;
 		this.ioWriteContexts[slot] = context;
 		this.ioWriteHandlers[slot] = handler as StoredIoWriteHandler;
 		const prefix = this.findIoDmaPrefix(slot);
@@ -460,7 +464,7 @@ export class Memory {
 			&& !writeReady(this.ioWriteContexts[slot], addr, busSignals)) {
 			return;
 		}
-		this.ioSlots[slot] = word;
+		if (this.ioWriteStorage[slot] === IoWriteStorage.Retained) this.ioSlots[slot] = word;
 		const handler = this.ioWriteHandlers[slot];
 		if (handler !== null) {
 			handler(this.ioWriteContexts[slot], addr, word, busSignals);
@@ -629,6 +633,10 @@ export class Memory {
 	}
 
 	public readMappedDmaU32LE(addr: number, busSignals: MappedBusSignals): number {
+		if ((busSignals & MAPPED_BUS_DMA_MEMORY) !== 0 && this.isIoRegionRange(addr, IO_WORD_SIZE)) {
+			this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U32);
+			return 0;
+		}
 		return this.readMappedBusU32LE(addr, busSignals);
 	}
 
@@ -712,14 +720,18 @@ export class Memory {
 	}
 
 	public writeMappedDmaU32LE(addr: number, value: number, busSignals: MappedBusSignals): void {
+		if ((busSignals & MAPPED_BUS_DMA_MEMORY) !== 0 && this.isIoRegionRange(addr, IO_WORD_SIZE)) {
+			this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U32);
+			return;
+		}
 		this.writeMappedBusU32LE(addr, value, BUS_ACCESS_WRITE_U32, busSignals);
 	}
 
 	// Fixed I/O slots are resolved once; live handlers and per-word bus effects remain ordered.
 	public transferDmaBlock(readAddress: number, writeAddress: number, wordCount: number,
 		readStep: number, writeStep: number, readBusSignals: MappedBusSignals, writeBusSignals: MappedBusSignals): void {
-		const readSlot = readStep === 0 ? this.ioAlignedSlot(readAddress) : -1;
-		const writeSlot = writeStep === 0 ? this.ioAlignedSlot(writeAddress) : -1;
+		const readSlot = (readBusSignals & MAPPED_BUS_DMA_MEMORY) === 0 ? this.ioAlignedSlot(readAddress) : -1;
+		const writeSlot = (writeBusSignals & MAPPED_BUS_DMA_MEMORY) === 0 ? this.ioAlignedSlot(writeAddress) : -1;
 		const writePrefix = wordCount > 1 && writeSlot >= 0 ? this.findIoDmaPrefix(writeSlot) : null;
 		if (writePrefix !== null && writePrefix.write !== null && READ_ONLY_IO_SLOTS[writeSlot] === 0) {
 			const prefix = wordCount - 1, words = this.dmaPrefixWords;

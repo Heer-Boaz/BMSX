@@ -240,8 +240,7 @@ void ImgDecController::updateDmaRequests() {
 	const bool running = (m_statusWord & IMGDEC_STATUS_BUSY) != 0 && !m_supervisorQuiesceRequested;
 	const u32 inputWords = running ? std::min<u32>(m_inputWordCountWord - m_inputWordsReceived, m_inputFifo.free()) : 0;
 	const u32 outputWords = running && m_blockPhase == BlockReady ? m_blockWordCount - m_blockReadIndex : 0;
-	m_dma.setRequestWordCapacity(DMA_REQUEST_IMGDEC_WRITE, inputWords);
-	m_dma.setRequestWordCapacity(DMA_REQUEST_IMGDEC_READ, outputWords);
+	m_dma.setEndpointRequests(DmaEndpoint::ImgDecWrite, inputWords, DmaEndpoint::ImgDecRead, outputWords);
 	const u32 status = (m_statusWord & ~(IMGDEC_STATUS_INPUT_REQUEST | IMGDEC_STATUS_OUTPUT_REQUEST))
 		| (inputWords != 0 ? IMGDEC_STATUS_INPUT_REQUEST : 0u) | (outputWords != 0 ? IMGDEC_STATUS_OUTPUT_REQUEST : 0u);
 	if (status != m_statusWord) { m_statusWord = status; m_memory.writeIoU32(IO_IMGDEC_STATUS, status); }

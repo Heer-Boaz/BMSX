@@ -207,7 +207,7 @@ test('shared-bus DMA stops instruction execution until serial read/write complet
 	memory.writeMappedU32LE(0x0800000c, source);
 	memory.writeMappedU32LE(0x08000010, target);
 	memory.writeMappedU32LE(0x08000014, 256);
-	memory.writeMappedU32LE(0x08000018, 0x0003fc03);
+	memory.writeMappedU32LE(0x08000018, 0x00000000);
 	memory.writeMappedU32LE(0x08000020, 1);
 	const frame = cpu.activeThread.frames[cpu.activeThread.frames.length - 1];
 	const pc = frame.pc;

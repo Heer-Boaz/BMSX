@@ -7,9 +7,9 @@ and polls. It does not program PCRTC or claim displayed-picture evidence.
 
 The complete program is printed in the GPU chapter under
 [Move a raw image through DMA](../../docs/book1/gpu.md#sec-gpu-move-a-raw-image-through-dma):
-`storage.lua` is the const module; the following three code blocks concatenate
-in order into the single entry module `cart.lua`. The literal files here are
-those built and executed, not pseudocode or register values in Lua tables.
+The cartridge separates its typed static storage into `storage.lua` and its
+entry sequence into `cart.lua`. Both use raw route constants and memory-side
+addresses; GP0 and GPUREAD are wired device endpoints.
 
 ## Cartridge files and ordinary commands
 
@@ -34,7 +34,8 @@ npm run headless:test -- gpu_dma_manual tests/carts/gpu_dma_manual/gpu_dma_manua
 The ordinary integration case `raw_image_roundtrip` checks every returned word,
 including the unused upload high half `ffff` becoming zero in the final returned
 `00000051`. It checks completed counts/status/address advancement, the immediate
-BUSY read retaining the earlier GPUREAD latch, READY drainage, and separate
+post-START read observing DONE and the completed GPUREAD latch after the CPU
+bus hold, READY drainage, and separate
 marker and idle observations. This is real TypeScript guest-path evidence,
 not native-runtime, electrical-rate or display acceptance.
 

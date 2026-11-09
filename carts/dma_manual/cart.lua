@@ -50,13 +50,13 @@ end
 *irq_ack = 0x00000141
 *irq_mask = 0x00000101
 
--- 1. Cartridge ROM -> RAM: two incrementing endpoints, block length sixteen.
+-- 1. Cartridge ROM -> RAM: two incrementing memory endpoints.
 result.seed_address = seed
 local seed_sequence<const> = result.dma0_sequence
 *dma0_read = seed
 *dma0_write = &result.source[0]
 *dma0_count = #seed
-*dma0_control = 0x00003c03
+*dma0_control = 0x00000000
 *dma0_trigger = 1
 while result.dma0_sequence == seed_sequence do
 	halt_until_irq
@@ -69,17 +69,17 @@ result.rom_copy.status = *dma0_status
 result.rom_copy.trigger = *dma0_trigger
 result.completed_phase = 1
 
--- 2. Prepare both channels BEFORE either START. RAM -> RAM, different blocks.
+-- 2. Prepare both channels BEFORE either START. RAM -> RAM with the same bounded-burst contract.
 local copy0_sequence<const> = result.dma0_sequence
 local copy1_sequence<const> = result.dma1_sequence
 *dma0_read = &result.source[0]
 *dma0_write = &result.copies[0][0]
 *dma0_count = 20
-*dma0_control = 0x00003c03
+*dma0_control = 0x00000000
 *dma1_read = &result.source[0]
 *dma1_write = &result.copies[1][0]
 *dma1_count = 20
-*dma1_control = 0x00000c03
+*dma1_control = 0x00000000
 *dma0_trigger = 1
 *dma1_trigger = 1
 result.parallel_status[0] = *dma0_status
@@ -101,14 +101,13 @@ result.parallel[1].status = *dma1_status
 result.parallel[1].trigger = *dma1_trigger
 result.completed_phase = 2
 
--- 3. ROM -> fixed GP0. GP1 direction 2 supplies the GX_WRITE request gate.
+-- 3. ROM -> fixed GP0. GP1 direction 2 supplies the GPU ingress request gate.
 *gp1 = 0x04000002
 result.gpu_stream_address = gpu_commands
 local gpu_sequence<const> = result.dma0_sequence
 *dma0_read = gpu_commands
-*dma0_write = 0x0801023c
 *dma0_count = #gpu_commands
-*dma0_control = 0x00003c41
+*dma0_control = 0x00000001
 *dma0_trigger = 1
 while result.dma0_sequence == gpu_sequence do
 	halt_until_irq

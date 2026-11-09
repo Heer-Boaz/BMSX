@@ -1218,7 +1218,7 @@ expression, total program execution time, or sustained memory bandwidth.
 
 The accounting rules above define instruction charges, retries and additional work; the
 [memory instruction reference](#sec-cpu-memory-instruction-reference) gives the complete
-transfer-instruction table. [[DMA — Transfer timing and sharing the bus](dma.md#sec-dma-transfer-timing-and-sharing-the-bus)]{.content-visible when-format="html"}[Book I, §4.10]{.content-visible when-format="pdf"} supplies endpoint rates, block and tail budgets, contention and GPU transport examples; CPU instruction charges are not DMA transfer rates.
+transfer-instruction table. [[DMA — Transfer timing](dma.md#sec-dma-transfer-timing-and-sharing-the-bus)]{.content-visible when-format="html"}[Book I, §4.7]{.content-visible when-format="pdf"} supplies endpoint rates, burst and tail budgets, contention and GPU transport examples; CPU instruction charges are not DMA transfer rates.
 
 ### Additional work and waiting {#sec-cpu-additional-work-and-waiting}
 

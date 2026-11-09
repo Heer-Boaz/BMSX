@@ -5,6 +5,7 @@
 namespace bmsx {
 
 constexpr u32 CARTRIDGE_SLOT_COUNT = 2u;
+constexpr u32 CARTRIDGE_DMA_BURST_WORD_CAPACITY = 16u;
 
 constexpr u32 CARTRIDGE_STATUS_SLOT0_PRESENT = 1u << 0u;
 constexpr u32 CARTRIDGE_STATUS_SLOT1_PRESENT = 1u << 1u;

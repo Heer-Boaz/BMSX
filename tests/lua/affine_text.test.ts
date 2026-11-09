@@ -53,7 +53,8 @@ text:draw_visual(draw)
 assert(output[2]==0x0014000a and output[4]==0x0016000a
  and output[6]==0x00140007 and output[8]==0x00160007,
  'affine text did not transform retained glyph geometry')
-assert(output[17]==0x0017000a,'affine text lost glyph advances')
+-- One mode word and nine words per quad put the next glyph position at 11.
+assert(output[11]==0x0017000a,'affine text lost glyph advances')
 local basis<const> = text._visual_basis_revision
 actor:set_position(-100,20)
 commands.begin(draw,0x100,0)

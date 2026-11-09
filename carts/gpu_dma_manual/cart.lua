@@ -28,12 +28,12 @@ end
 *gp1 = 0x09000000
 *gp0 = 0xe6000000
 
--- RAM -> fixed GP0, GX_WRITE, blocks of up to sixteen words.
+-- RAM -> wired GP0, one 44-word burst.
 *gp1 = 0x04000002
 *dma_read = upload
-*dma_write = 0x0801023c
+-- TO_GPU has a wired destination.
 *dma_count = #storage.upload
-*dma_control = 0x00003c41
+*dma_control = 0x00000001
 *dma_trigger = 1
 while (*dma_status & 2) == 0 do
 end
@@ -63,15 +63,15 @@ while (*gp1 & 0x08000000) == 0 do
 end
 result.read_ready_status = *gp1
 
--- Fixed GPUREAD -> RAM, GX_READ, forty-one packed words, not 81 reads.
+-- Wired GPUREAD -> RAM, forty-one packed words, not 81 reads.
 *gp1 = 0x04000003
-*dma_read = 0x0801023c
+-- FROM_GPU has a wired source.
 *dma_write = returned
 *dma_count = #storage.returned
-*dma_control = 0x00003c0a
+*dma_control = 0x00000002
 *dma_trigger = 1
-result.read_busy_status = *dma_status
-result.read_owned_latch = *gp0
+result.read_post_start_status = *dma_status
+result.read_post_start_latch = *gp0
 while (*dma_status & 2) == 0 do
 end
 result.read_gpu_status = *gp1

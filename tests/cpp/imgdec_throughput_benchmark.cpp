@@ -69,12 +69,12 @@ void measure(Stream kind, const char* name, bool cartridgeSource = false) {
 		memory.writeMappedU32LE(IO_DMA1_READ_ADDR, IO_IMGDEC_DATA);
 		memory.writeMappedU32LE(IO_DMA1_WRITE_ADDR, IO_GX_GPU_GP0);
 		memory.writeMappedU32LE(IO_DMA1_TRANSFER_COUNT, words);
-		memory.writeMappedU32LE(IO_DMA1_CONTROL, 0x0003fc58u);
+		memory.writeMappedU32LE(IO_DMA1_CONTROL, 0x00000005u);
 		memory.writeMappedU32LE(IO_DMA1_TRIGGER, DMA_TRIGGER_START);
 		memory.writeMappedU32LE(IO_DMA0_READ_ADDR, sourceAddress);
 		memory.writeMappedU32LE(IO_DMA0_WRITE_ADDR, IO_IMGDEC_DATA);
 		memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, static_cast<u32>(source.size()));
-		memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x0003fd41u);
+		memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00000003u);
 		memory.writeMappedU32LE(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
 		std::array<u32, DeviceServiceKindCount> services{};
 		const auto start = std::chrono::steady_clock::now();

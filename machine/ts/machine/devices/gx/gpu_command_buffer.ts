@@ -1,4 +1,4 @@
-import { DMA_REQUEST_GX_READ } from '../../../spec/bmsx/io';
+import { DmaEndpoint } from '../dma/endpoints';
 import type { DmaController } from '../dma/controller';
 import {
 	GX_GPU_TRANSFER_MAX_BYTE_COUNT,
@@ -235,7 +235,7 @@ class GxGpuReadbackPort extends GxGpuReadbackContext implements GxGpuReadbackPor
 	private updateDmaRequest(): void {
 		const words = this.dmaReadEnabled && this.phase === GX_GPU_READBACK_READY
 			? (this.width * this.height - this.pixelCursor + 1) >>> 1 : 0;
-		this.dmaController.setRequestWordCapacity(DMA_REQUEST_GX_READ, words);
+		this.dmaController.setEndpointCapacity(DmaEndpoint.GpuRead, words);
 	}
 }
 

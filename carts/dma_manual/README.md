@@ -9,13 +9,14 @@ standard BIOS's display timing continues unchanged.
 The three phases are deliberately different:
 
 1. Copy twenty varied raw words from cartridge `rodata` into BSS RAM with
-   channel 0. Both endpoints increment; blocks contain at most sixteen words.
+   channel 0. Both memory endpoints increment; this transfer fits one burst.
 2. Program both channels before either START. Copy that RAM source into two
-   independent BSS destinations: channel 0 uses sixteen-word blocks and channel
-   1 uses four-word blocks. Retain the two BUSY observations, then wait for both
-   completion sequences. IRQ delivery order is not an arbitration trace.
+   independent BSS destinations, with the same 256-word burst limit. An admitted
+   burst holds the CPU bus; the following CPU status reads observe DONE rather
+   than proving overlapping BUSY channels. Wait for both completion sequences.
+   IRQ delivery order is not an arbitration trace.
 3. Set GP1 DMA direction to CPU-to-GP0. Copy a five-word readonly command stream
-   into the **fixed** GP0 port, gated by GX_WRITE. The stream clears the drawing
+   through the wired TO_GPU route, gated by GPU ingress capacity. The stream clears the drawing
    mask mode, fills a red 64-by-64 area at `(0,0)`, then requests the GPU marker.
    Wait for DMA completion first; observe GPU status; separately wait for the
    GPU-local marker and GPU idle. Acknowledge the GPU-local and controller
@@ -39,8 +40,7 @@ npm run headless:test -- dma_manual tests/carts/dma_manual/dma_manual_assert.lua
 ```
 
 The ordinary integration case checks all sixty destination words, final raw
-register words, three DMA0 services and one DMA1 service, and actual overlap of
-BUSY channels. In this controlled run, GPU-local request and idle are both clear
+register words and three DMA0 completions plus one DMA1 completion. In this controlled run, GPU-local request and idle are both clear
 at the first status observation after DMA completion; the later marker and idle
 are retained separately. The suite then issues a one-pixel C0 readback and
 checks raw RGB555 `0000001FH`, including the zero high half of an odd final

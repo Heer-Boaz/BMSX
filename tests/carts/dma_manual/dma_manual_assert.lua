@@ -30,11 +30,11 @@ return {
 			assert(result.rom_copy.read_address == result.seed_address + sizeof(word[20]))
 			assert(result.rom_copy.write_address == &result.source[0] + sizeof(word[20]))
 			assert(result.rom_copy.count == 0)
-			assert(result.rom_copy.control == 0x00003c03)
+			assert(result.rom_copy.control == 0)
 			assert(result.rom_copy.status == 2)
 			assert(result.rom_copy.trigger == 0)
-			assert(result.parallel_status[0] == 1)
-			assert(result.parallel_status[1] == 1)
+			assert(result.parallel_status[0] == 2)
+			assert(result.parallel_status[1] == 2)
 			for channel = 0, 1 do
 				assert(result.parallel[channel].read_address == &result.source[0] + sizeof(word[20]))
 				assert(result.parallel[channel].write_address == &result.copies[channel][0] + sizeof(word[20]))
@@ -42,12 +42,12 @@ return {
 				assert(result.parallel[channel].status == 2)
 				assert(result.parallel[channel].trigger == 0)
 			end
-			assert(result.parallel[0].control == 0x00003c03)
-			assert(result.parallel[1].control == 0x00000c03)
+			assert(result.parallel[0].control == 0)
+			assert(result.parallel[1].control == 0)
 			assert(result.gpu_copy.read_address == result.gpu_stream_address + sizeof(word[5]))
-			assert(result.gpu_copy.write_address == 0x0801023c)
+			assert(result.gpu_copy.write_address == &result.copies[0][0] + sizeof(word[20]))
 			assert(result.gpu_copy.count == 0)
-			assert(result.gpu_copy.control == 0x00003c41)
+			assert(result.gpu_copy.control == 1)
 			assert(result.gpu_copy.status == 2)
 			assert(result.gpu_copy.trigger == 0)
 			assert((result.gpu_at_dma_done & 0x05000000) == 0)
@@ -68,7 +68,7 @@ return {
 			end, 3)
 			assert(*gp0 == 0x0000001f)
 			assert((*gp1 & 0x08000000) == 0)
-			t:log('60 RAM words match; both channels observed BUSY; DMA IRQ sequences 3/1; all counts zero and DONE; fixed GP0; DMA ended before GPU marker/idle; red pixel 0000001f')
+			t:log('60 RAM words match; CPU observes both RAM jobs after their bus holds complete; DMA IRQ sequences 3/1; all counts zero and DONE; fixed GP0; DMA ended before GPU marker/idle; red pixel 0000001f')
 		end,
 	},
 }

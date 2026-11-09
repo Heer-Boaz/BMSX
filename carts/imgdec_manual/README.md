@@ -18,26 +18,24 @@ marker is polled and acknowledged separately at the GPU and central controller.
 
 ## Four phases
 
-1. Feed the 19-word readonly stream with all four token kinds into IMGDEC using
-   DMA0 (`CTRL=00003D41H`). DMA1 reads the fixed DATA port into 26 incrementing
-   BSS words (`CTRL=00003C1AH`). Both channels are armed before IMGDEC START.
-   The expected payload is twelve texture words and eight CLUT words; the six
-   additional words are the two A0 headers. Final progress is received 19,
-   decoded 20, IMGDEC status `2`, and both channels count `0`/status `2`.
-2. Repeat the same stream with DMA1 writing the **fixed** GP0 port
-   (`CTRL=00003C58H`). Set GP1 DMA direction 2, disable E6 mask protection, and
-   establish initial GPU idle. Wait for both DMA sequences, independently wait
-   for the IMGDEC sequence, then wait for GPU idle. Texture destination/size are
-   `00400040H`/`00060004H`; CLUT destination is `00800040H`.
-3. CPU-feed `[31444D49H, 3, 0, 80000000H]`: its first payload token requests a
-   back-reference before any history exists. Neither DMA channel is armed for
-   this phase, so a format fault cannot strand an output channel waiting for
-   DREQ. Retain status `10H`, received `4`, decoded `0`; drain the three queued
-   A0-header words and read DATA once more to retain the last header word.
-4. START `[31444D49H, 0, 0]` using both DMA channels and a separate three-word
-   BSS output. The new destination `00200020H` and size `0` distinguish its
-   emitted header from the faulted stream. Final IMGDEC status is `2` with
-   received `3`, decoded `0`, and both DMA counts `0`/status `2`.
+1. Feed the 16-word readonly stream with all four token kinds into IMGDEC
+   using TO_IMGDEC on DMA0. FROM_IMGDEC on DMA1 writes twenty raw BSS words:
+   twelve texture words and eight CLUT words, with no headers. Both channels
+   are armed before decoder START. Final progress is received 16, decoded 20,
+   IMGDEC status `2`, and both channels count `0`/status `2`.
+2. Repeat the same stream using IMGDEC_TO_GPU on DMA1. The CPU supplies an
+   A0 header for the texture, drains twelve words, then supplies the CLUT header
+   and drains the remaining eight words. GPU destinations/sizes are
+   `00400040H`/`00060004H` and `00800040H`/`00010010H`. DMA1 completes twice;
+   neither IMGDEC nor DMA manufactures either header.
+3. CPU-feed `[80000000H]`, an invalid reference before any history exists,
+   declaring three output words. No DMA channel is armed. Retain status `10H`,
+   received `1`, decoded `0`; DATA reads retain the input token without exposing
+   unpublished output.
+4. Recover with `[40000002H, 12345678H]`: TO_IMGDEC feeds the two-word stream
+   and FROM_IMGDEC writes three repeated raw words to a separate BSS buffer.
+   Final IMGDEC status is `2`, received `2`, decoded `3`, and both DMA channels
+   have count `0`/status `2`.
 
 ## Display continuation
 
@@ -62,7 +60,7 @@ npm run headless:test -- imgdec_manual tests/carts/imgdec_manual/imgdec_manual_a
 
 The integration case checks every retained output word, decoder progress,
 DMA count/status, both channels armed before each valid START, and per-phase IRQ
-sequences ending at DMA0/DMA1/IMGDEC `3/3/4`. It then performs actual C0/GPUREAD
+sequences ending at DMA0/DMA1/IMGDEC `3/4/4`. It then performs actual C0/GPUREAD
 readback of all twelve texture words and eight CLUT words. Before readback it
 captures the full 256 × 192 image at
 `tests/carts/imgdec_manual/screenshots/frame_00001.png`. It additionally compares

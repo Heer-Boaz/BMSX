@@ -55,14 +55,14 @@ struct Harness {
 		memory.writeMappedU32LE(IO_DMA0_READ_ADDR, CART_ROM_BASE);
 		memory.writeMappedU32LE(IO_DMA0_WRITE_ADDR, IO_IMGDEC_DATA);
 		memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, static_cast<u32>(rom.size() / 4));
-		memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x0003fd41);
+		memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00000003);
 		memory.writeMappedU32LE(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
 	}
 	void outputDma(u32 count) {
 		memory.writeMappedU32LE(IO_DMA1_READ_ADDR, IO_IMGDEC_DATA);
 		memory.writeMappedU32LE(IO_DMA1_WRITE_ADDR, IO_GX_GPU_GP0);
 		memory.writeMappedU32LE(IO_DMA1_TRANSFER_COUNT, count);
-		memory.writeMappedU32LE(IO_DMA1_CONTROL, 0x0003fc58);
+		memory.writeMappedU32LE(IO_DMA1_CONTROL, 0x00000005);
 		memory.writeMappedU32LE(IO_DMA1_TRIGGER, DMA_TRIGGER_START);
 	}
 	void header(u32 destination, u32 size) {

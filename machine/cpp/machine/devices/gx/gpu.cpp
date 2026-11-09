@@ -1412,23 +1412,7 @@ void GxGpu::writeDmaDirectionWord(u32 word) {
 void GxGpu::updateCommandStatusBits() {
 	u32 commandStatusBits = 0u;
 	const bool readbackIdle = m_commandBuffer.readback.phase() == GX_GPU_READBACK_IDLE;
-	bool readyToReceiveDma = false;
-	if (readbackIdle && !m_supervisorIngressStopped && m_gp0DmaIngress.empty()) {
-		if (m_gp0ImageLoadWordsRemaining != 0u) {
-			readyToReceiveDma = m_gp0Fifo.count() < GX_GPU_COMMAND_FIFO_WORD_CAPACITY;
-		} else if (m_gp0PolylineOpcode != 0u) {
-			readyToReceiveDma = false;
-		} else if (m_gp0CommandWordCount == 0u && m_gp0Fifo.empty()) {
-			readyToReceiveDma = true;
-		} else {
-			const bool assemblingPacket = m_gp0CommandWordCount != 0u;
-			const u32 opcode = (assemblingPacket ? m_gp0CommandWords[0] : m_gp0Fifo.peek()) >> GX_GPU_GP0_OPCODE_SHIFT;
-			const u32 packetWordCount = assemblingPacket ? m_gp0CommandWordCount : m_gp0Fifo.count();
-			const u32 packetTargetWordCount = assemblingPacket ? m_gp0CommandTargetWordCount : gp0CommandWordCountForOpcode(opcode);
-			const bool polygonOrLinePacket = opcode >= GX_GPU_GP0_POLYGON_FIRST && opcode <= GX_GPU_GP0_LINE_LAST;
-			readyToReceiveDma = !polygonOrLinePacket && packetWordCount < packetTargetWordCount;
-		}
-	}
+	const bool readyToReceiveDma = !m_supervisorIngressStopped && m_gp0DmaIngress.empty();
 	if (readyToReceiveDma) {
 		commandStatusBits |= GX_GPU_STATUS_READY_TO_RECEIVE_DMA;
 	}
@@ -1445,8 +1429,8 @@ void GxGpu::updateCommandStatusBits() {
 		commandStatusBits |= GX_GPU_STATUS_GPU_IDLE;
 	}
 	m_statusWord = (m_statusWord & ~GX_GPU_STATUS_COMMAND_STATE_MASK) | commandStatusBits;
-	// CPU stores need one physical FIFO slot; DMA packet acceptance is a
-	// separate, stricter GPUSTAT line while a command is being assembled.
+	// CPU writes need a command FIFO slot; DMA reserves its separate ingress buffer.
+	// Packet assembly never restricts an empty ingress buffer.
 	if (!m_supervisorIngressStopped
 		&& m_gp0DmaIngress.empty()
 		&& m_gp0Fifo.count() < GX_GPU_COMMAND_FIFO_WORD_CAPACITY
@@ -1468,10 +1452,6 @@ void GxGpu::updateDmaRequestStatusBit() {
 	} else if (!m_supervisorIngressStopped) {
 		switch (dmaDirection) {
 		case GX_GPU_DMA_DIRECTION_FIFO:
-			dmaRequest = m_gp0DmaIngress.empty() && m_gp0Fifo.count() < GX_GPU_COMMAND_FIFO_WORD_CAPACITY
-				? GX_GPU_STATUS_DMA_DATA_REQUEST
-				: 0u;
-			break;
 		case GX_GPU_DMA_DIRECTION_CPU_TO_GP0:
 			dmaRequest = m_statusWord & GX_GPU_STATUS_READY_TO_RECEIVE_DMA;
 			break;
@@ -1484,7 +1464,7 @@ void GxGpu::updateDmaRequestStatusBit() {
 	}
 	const bool writing = (dmaDirection == GX_GPU_DMA_DIRECTION_FIFO || dmaDirection == GX_GPU_DMA_DIRECTION_CPU_TO_GP0)
 		&& dmaRequest != 0u;
-	m_dmaController.setRequestWordCapacity(DMA_REQUEST_GX_WRITE, writing ? GX_GPU_DMA_INGRESS_WORD_CAPACITY : 0u);
+	m_dmaController.setEndpointCapacity(DmaEndpoint::GpuWrite, writing ? GX_GPU_DMA_INGRESS_WORD_CAPACITY : 0u);
 }
 
 bool GxGpu::gpuStatInInterleaved480iMode() const {

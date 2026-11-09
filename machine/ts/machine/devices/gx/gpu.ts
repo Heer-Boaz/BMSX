@@ -1,6 +1,6 @@
+import { DmaEndpoint } from '../dma/endpoints';
 import type { CPU } from '../../cpu/cpu';
 import {
-	DMA_REQUEST_GX_WRITE,
 	IO_GX_GPU_GP0,
 	IO_GX_GPU_GP1,
 	IO_GX_PCRTC_BASE,
@@ -1980,23 +1980,7 @@ export class GxGpu {
 		let commandStatusBits = 0;
 		const readbackIdle = this.commandBuffer.readback.phase === GX_GPU_READBACK_IDLE;
 		const fifoWordCount = this.gp0Fifo.count();
-		let readyToReceive = false;
-		if (readbackIdle && !this.supervisorIngressStopped && this.gp0DmaIngress.empty()) {
-			if (this.gp0ImageLoadWordsRemaining !== 0) {
-				readyToReceive = fifoWordCount < GX_GPU_COMMAND_FIFO_WORD_CAPACITY;
-			} else if (this.gp0PolylineOpcode !== 0) {
-				readyToReceive = false;
-			} else if (this.gp0CommandWordCount === 0 && fifoWordCount === 0) {
-				readyToReceive = true;
-			} else {
-				const assemblingPacket = this.gp0CommandWordCount !== 0;
-				const opcode = (assemblingPacket ? this.gp0CommandWords[0] : this.gp0Fifo.peek()) >>> GX_GPU_GP0_OPCODE_SHIFT;
-				const packetWordCount = assemblingPacket ? this.gp0CommandWordCount : fifoWordCount;
-				const packetTargetWordCount = assemblingPacket ? this.gp0CommandTargetWordCount : this.gp0CommandWordCountForOpcode(opcode);
-				const polygonOrLinePacket = opcode >= GX_GPU_GP0_POLYGON_FIRST && opcode <= GX_GPU_GP0_LINE_LAST;
-				readyToReceive = !polygonOrLinePacket && packetWordCount < packetTargetWordCount;
-			}
-		}
+		const readyToReceive = !this.supervisorIngressStopped && this.gp0DmaIngress.empty();
 		if (readyToReceive) {
 			commandStatusBits |= GX_GPU_STATUS_READY_TO_RECEIVE_DMA;
 		}
@@ -2013,8 +1997,8 @@ export class GxGpu {
 			commandStatusBits |= GX_GPU_STATUS_GPU_IDLE;
 		}
 		this.statusWord = ((this.statusWord & ~GX_GPU_STATUS_COMMAND_STATE_MASK) | commandStatusBits) >>> 0;
-		// CPU stores need one physical FIFO slot; DMA packet acceptance is a
-		// separate, stricter GPUSTAT line while a command is being assembled.
+		// CPU writes need a command FIFO slot; DMA reserves its separate ingress buffer.
+		// Packet assembly never restricts an empty ingress buffer.
 		if (!this.supervisorIngressStopped
 			&& this.gp0DmaIngress.empty()
 			&& fifoWordCount < GX_GPU_COMMAND_FIFO_WORD_CAPACITY
@@ -2036,11 +2020,6 @@ export class GxGpu {
 		} else if (!this.supervisorIngressStopped) {
 			switch (dmaDirection) {
 				case GX_GPU_DMA_DIRECTION_FIFO:
-					dmaRequest = this.gp0DmaIngress.empty()
-						&& this.gp0Fifo.count() < GX_GPU_COMMAND_FIFO_WORD_CAPACITY
-						? GX_GPU_STATUS_DMA_DATA_REQUEST
-						: 0;
-					break;
 				case GX_GPU_DMA_DIRECTION_CPU_TO_GP0:
 					dmaRequest = this.statusWord & GX_GPU_STATUS_READY_TO_RECEIVE_DMA;
 					break;
@@ -2053,7 +2032,7 @@ export class GxGpu {
 		}
 		const writing = (dmaDirection === GX_GPU_DMA_DIRECTION_FIFO || dmaDirection === GX_GPU_DMA_DIRECTION_CPU_TO_GP0)
 			&& dmaRequest !== 0;
-		this.dmaController.setRequestWordCapacity(DMA_REQUEST_GX_WRITE, writing ? GX_GPU_DMA_INGRESS_WORD_CAPACITY : 0);
+		this.dmaController.setEndpointCapacity(DmaEndpoint.GpuWrite, writing ? GX_GPU_DMA_INGRESS_WORD_CAPACITY : 0);
 	}
 
 	private gpuStatInInterleaved480iMode(): boolean {

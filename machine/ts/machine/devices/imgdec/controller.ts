@@ -1,5 +1,6 @@
+import { DmaEndpoint } from '../dma/endpoints';
 import {
-	DMA_REQUEST_IMGDEC_READ, DMA_REQUEST_IMGDEC_WRITE, IO_IMGDEC_CONFIG_ADDRS,
+	IO_IMGDEC_CONFIG_ADDRS,
 	IO_IMGDEC_CONTROL, IO_IMGDEC_DATA, IO_IMGDEC_DECODED_WORD_COUNT,
 	IO_IMGDEC_INPUT_WORD_COUNT, IO_IMGDEC_INPUT_WORDS_RECEIVED,
 	IO_IMGDEC_OUTPUT_WORD_COUNT, IO_IMGDEC_STATUS, IRQ_IMGDEC,
@@ -288,8 +289,7 @@ export class ImgDecController {
 		const inputRemaining = (this.inputWordCountWord - this.inputWordsReceived) >>> 0;
 		const inputWords = running ? Math.min(inputRemaining, this.inputFifo.free()) : 0;
 		const outputWords = running && this.blockPhase === BLOCK_READY ? this.blockWordCount - this.blockReadIndex : 0;
-		this.dma.setRequestWordCapacity(DMA_REQUEST_IMGDEC_WRITE, inputWords);
-		this.dma.setRequestWordCapacity(DMA_REQUEST_IMGDEC_READ, outputWords);
+		this.dma.setEndpointRequests(DmaEndpoint.ImgDecWrite, inputWords, DmaEndpoint.ImgDecRead, outputWords);
 		const status = (this.statusWord & ~(IMGDEC_STATUS_INPUT_REQUEST | IMGDEC_STATUS_OUTPUT_REQUEST))
 			| (inputWords !== 0 ? IMGDEC_STATUS_INPUT_REQUEST : 0) | (outputWords !== 0 ? IMGDEC_STATUS_OUTPUT_REQUEST : 0);
 		if (status !== this.statusWord) { this.statusWord = status; this.memory.writeIoU32(IO_IMGDEC_STATUS, status); }

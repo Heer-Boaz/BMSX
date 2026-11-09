@@ -877,10 +877,6 @@ function writeDmaControllerState(writer: BinarySink, state: DmaControllerState):
 	writer.u32(state.nextChannel);
 	writer.u32(state.scheduledBlockWords);
 	writer.i64(state.scheduledBlockCycles);
-	writer.u32(state.scheduledReadAddressWord);
-	writer.u32(state.scheduledWriteAddressWord);
-	writer.u32(state.scheduledTransferCountWord);
-	writer.u32(state.scheduledControlWord);
 	writer.bool(state.supervisorQuiesceRequested);
 	writer.bool(state.supervisorAdmissionQuiesceRequested);
 	for (const value of state.userChannels) {
@@ -896,10 +892,6 @@ function readDmaControllerState(reader: BinaryReader): DmaControllerState {
 		nextChannel: reader.u32(),
 		scheduledBlockWords: reader.u32(),
 		scheduledBlockCycles: reader.i64(),
-		scheduledReadAddressWord: reader.u32(),
-		scheduledWriteAddressWord: reader.u32(),
-		scheduledTransferCountWord: reader.u32(),
-		scheduledControlWord: reader.u32(),
 		supervisorQuiesceRequested: reader.bool(),
 		supervisorAdmissionQuiesceRequested: reader.bool(),
 		userChannels: [readDmaChannelState(reader), readDmaChannelState(reader)],

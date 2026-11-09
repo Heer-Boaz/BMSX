@@ -12,12 +12,6 @@
 namespace bmsx {
 namespace {
 
-constexpr u32 CARTRIDGE_SLOT0_DREQ_MASK =
-	(1u << DMA_REQUEST_CARTRIDGE_SLOT0_WRITE)
-	| (1u << DMA_REQUEST_CARTRIDGE_SLOT0_READ);
-constexpr u32 CARTRIDGE_SLOT1_DREQ_MASK =
-	(1u << DMA_REQUEST_CARTRIDGE_SLOT1_WRITE)
-	| (1u << DMA_REQUEST_CARTRIDGE_SLOT1_READ);
 constexpr u64 CARTRIDGE_SLOT0_MAPPED_KEY_OFFSET = 1ull << 32u;
 constexpr u64 CARTRIDGE_SLOT1_MAPPED_KEY_OFFSET = 2ull << 32u;
 
@@ -159,26 +153,12 @@ bool CartridgeController::bindMappedReadView(u32 address, size_t length, MappedB
 }
 
 void CartridgeController::publishDreqLines(u32 slotIndex) {
-	u32 asserted = 0u;
 	const auto& card = m_cards[slotIndex];
 	const u32 lines = card ? card->dreqLines() : 0u;
-	if (slotIndex == 0u) {
-		if ((lines & CARTRIDGE_CARD_DREQ_WRITE) != 0u) {
-			asserted |= 1u << DMA_REQUEST_CARTRIDGE_SLOT0_WRITE;
-		}
-		if ((lines & CARTRIDGE_CARD_DREQ_READ) != 0u) {
-			asserted |= 1u << DMA_REQUEST_CARTRIDGE_SLOT0_READ;
-		}
-		m_dma->setRequestLines(CARTRIDGE_SLOT0_DREQ_MASK, asserted);
-		return;
-	}
-	if ((lines & CARTRIDGE_CARD_DREQ_WRITE) != 0u) {
-		asserted |= 1u << DMA_REQUEST_CARTRIDGE_SLOT1_WRITE;
-	}
-	if ((lines & CARTRIDGE_CARD_DREQ_READ) != 0u) {
-		asserted |= 1u << DMA_REQUEST_CARTRIDGE_SLOT1_READ;
-	}
-	m_dma->setRequestLines(CARTRIDGE_SLOT1_DREQ_MASK, asserted);
+	const u32 write = (lines & CARTRIDGE_CARD_DREQ_WRITE) != 0u ? CARTRIDGE_DMA_BURST_WORD_CAPACITY : 0u;
+	const u32 read = (lines & CARTRIDGE_CARD_DREQ_READ) != 0u ? CARTRIDGE_DMA_BURST_WORD_CAPACITY : 0u;
+	m_dma->setEndpointRequests(slotIndex == 0u ? DmaEndpoint::Cartridge0Write : DmaEndpoint::Cartridge1Write, write,
+		slotIndex == 0u ? DmaEndpoint::Cartridge0Read : DmaEndpoint::Cartridge1Read, read);
 }
 
 u32 CartridgeController::readSelectionThunk(void* context, u32, MappedBusSignals) {

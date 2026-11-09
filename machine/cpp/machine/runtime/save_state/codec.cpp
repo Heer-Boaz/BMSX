@@ -918,10 +918,6 @@ template<class Writer> void writeDmaControllerState(Writer& writer, const DmaCon
 	writer.u32(state.nextChannel);
 	writer.u32(state.scheduledBlockWords);
 	writer.i64(state.scheduledBlockCycles);
-	writer.u32(state.scheduledReadAddressWord);
-	writer.u32(state.scheduledWriteAddressWord);
-	writer.u32(state.scheduledTransferCountWord);
-	writer.u32(state.scheduledControlWord);
 	writer.boolean(state.supervisorQuiesceRequested);
 	writer.boolean(state.supervisorAdmissionQuiesceRequested);
 	for (const auto& value : state.userChannels) {
@@ -939,10 +935,6 @@ DmaControllerState readDmaControllerState(BinaryReader& reader) {
 	state.nextChannel = reader.u32();
 	state.scheduledBlockWords = reader.u32();
 	state.scheduledBlockCycles = reader.i64();
-	state.scheduledReadAddressWord = reader.u32();
-	state.scheduledWriteAddressWord = reader.u32();
-	state.scheduledTransferCountWord = reader.u32();
-	state.scheduledControlWord = reader.u32();
 	state.supervisorQuiesceRequested = reader.boolean();
 	state.supervisorAdmissionQuiesceRequested = reader.boolean();
 	for (auto& value : state.userChannels) {

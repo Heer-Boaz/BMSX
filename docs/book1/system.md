@@ -215,8 +215,9 @@ depends on that work. Main RAM, VRAM and APU sample RAM remain shared storage.
 | DMA boundary | No block remains in progress | An already admitted block completes; a longer BUSY transfer can retain a nonzero remaining count. No next block is admitted during this stage. |
 | GPU boundary | Ingress has stopped, no command completion is pending, readback is idle or its unread result is complete, and no commands remain queued for rendering | The completed unread result and words waiting behind it can be retained. An unfinished readback must complete before this boundary; the fence does not consume pixels. |
 
-At entry's first stage, new GEO CMD, DMA TRIGGER and GPU GP1 writes are held.
-IMGDEC lowers both DMA requests and pauses after decoding already in progress.
+At entry's first stage, new GEO CMD and GPU GP1 writes are held; DMA TRIGGER
+writes are ignored. IMGDEC lowers both DMA requests and pauses after decoding
+already in progress.
 Shared RAM and other device words remain accessible under their normal rules.
 The ordinary request path allows CPU execution during producer quiescence;
 software observing SUPERVISOR_ACTIVE can therefore still be running before NMI.

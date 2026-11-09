@@ -1,8 +1,5 @@
+import { DmaEndpoint } from '../dma/endpoints';
 import {
-	DMA_REQUEST_CARTRIDGE_SLOT0_READ,
-	DMA_REQUEST_CARTRIDGE_SLOT0_WRITE,
-	DMA_REQUEST_CARTRIDGE_SLOT1_READ,
-	DMA_REQUEST_CARTRIDGE_SLOT1_WRITE,
 	IO_CART_SELECT,
 	IO_CART_STATUS,
 	IRQ_CARTRIDGE_SLOT0,
@@ -25,6 +22,7 @@ import type {
 import type { DmaController } from '../dma/controller';
 import type { IrqController } from '../irq/controller';
 import {
+	CARTRIDGE_DMA_BURST_WORD_CAPACITY,
 	CARTRIDGE_STATUS_SELECTED_SLOT1,
 	CARTRIDGE_STATUS_SLOT0_PRESENT,
 	CARTRIDGE_STATUS_SLOT1_PRESENT,
@@ -45,12 +43,6 @@ import {
 
 const CARTRIDGE_SLOT0_MAPPED_KEY_OFFSET = 0x100000000;
 const CARTRIDGE_SLOT1_MAPPED_KEY_OFFSET = 0x200000000;
-const CARTRIDGE_SLOT0_DREQ_MASK =
-	(1 << DMA_REQUEST_CARTRIDGE_SLOT0_WRITE)
-	| (1 << DMA_REQUEST_CARTRIDGE_SLOT0_READ);
-const CARTRIDGE_SLOT1_DREQ_MASK =
-	(1 << DMA_REQUEST_CARTRIDGE_SLOT1_WRITE)
-	| (1 << DMA_REQUEST_CARTRIDGE_SLOT1_READ);
 
 export class CartridgeController {
 	private readonly cards: [CartridgeCard | null, CartridgeCard | null];
@@ -208,26 +200,12 @@ export class CartridgeController {
 	}
 
 	private publishDreqLines(slotIndex: CartridgeSlotIndex): void {
-		let asserted = 0;
 		const card = this.cards[slotIndex];
 		const lines = card === null ? 0 : card.dreqLines();
-		if (slotIndex === 0) {
-			if ((lines & CARTRIDGE_CARD_DREQ_WRITE) !== 0) {
-				asserted |= 1 << DMA_REQUEST_CARTRIDGE_SLOT0_WRITE;
-			}
-			if ((lines & CARTRIDGE_CARD_DREQ_READ) !== 0) {
-				asserted |= 1 << DMA_REQUEST_CARTRIDGE_SLOT0_READ;
-			}
-			this.dma.setRequestLines(CARTRIDGE_SLOT0_DREQ_MASK, asserted);
-			return;
-		}
-		if ((lines & CARTRIDGE_CARD_DREQ_WRITE) !== 0) {
-			asserted |= 1 << DMA_REQUEST_CARTRIDGE_SLOT1_WRITE;
-		}
-		if ((lines & CARTRIDGE_CARD_DREQ_READ) !== 0) {
-			asserted |= 1 << DMA_REQUEST_CARTRIDGE_SLOT1_READ;
-		}
-		this.dma.setRequestLines(CARTRIDGE_SLOT1_DREQ_MASK, asserted);
+		const write = (lines & CARTRIDGE_CARD_DREQ_WRITE) !== 0 ? CARTRIDGE_DMA_BURST_WORD_CAPACITY : 0;
+		const read = (lines & CARTRIDGE_CARD_DREQ_READ) !== 0 ? CARTRIDGE_DMA_BURST_WORD_CAPACITY : 0;
+		this.dma.setEndpointRequests(slotIndex === 0 ? DmaEndpoint.Cartridge0Write : DmaEndpoint.Cartridge1Write, write,
+			slotIndex === 0 ? DmaEndpoint.Cartridge0Read : DmaEndpoint.Cartridge1Read, read);
 	}
 
 	private static readSelectionThunk(context: CartridgeController): number {

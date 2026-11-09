@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -30,6 +31,8 @@ struct MemoryInit {
 
 constexpr u32 NO_BLOCKED_MAPPED_WRITE = 0xffffffffu;
 
+enum class IoWriteStorage : u8 { Retained, Device };
+
 class Memory {
 public:
 	using IoReadHandler = u32 (*)(void* context, uint32_t addr, MappedBusSignals busSignals);
@@ -56,7 +59,7 @@ public:
 	void mapIoRead(uint32_t addr, TObject& object) {
 		mapIoRead(addr, &object, &readMember<Method, TObject>);
 	}
-	void mapIoWrite(uint32_t addr, void* context, IoWriteHandler handler);
+	void mapIoWrite(uint32_t addr, void* context, IoWriteHandler handler, IoWriteStorage storage = IoWriteStorage::Retained);
 	void mapIoWriteReady(uint32_t addr, IoWriteReadyHandler handler);
 	template <auto Method, typename TObject>
 	void mapIoWrite(uint32_t addr, TObject& object) {
@@ -126,6 +129,7 @@ private:
 		IoWriteHandler handler = nullptr;
 		IoWriteReadyHandler ready = nullptr;
 	};
+	std::array<IoWriteStorage, IO_SLOT_COUNT> m_ioWriteStorage{};
 	struct IoDmaPrefixBinding {
 		int slot;
 		IoDmaReadPrefixHandler read = nullptr;

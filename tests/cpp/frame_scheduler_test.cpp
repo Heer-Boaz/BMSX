@@ -132,7 +132,7 @@ void testDmaSharedBusStopsCpu() {
 	memory.writeMappedU32LE(IO_DMA0_READ_ADDR, source);
 	memory.writeMappedU32LE(IO_DMA0_WRITE_ADDR, target);
 	memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, 256);
-	memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x0003fc03);
+	memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00000000);
 	memory.writeMappedU32LE(IO_DMA0_TRIGGER, 1);
 	const int depth = static_cast<int>(cpu.activeThread()->frames.size()) - 1;
 	const u32 pc = cpu.readFramePc(depth);

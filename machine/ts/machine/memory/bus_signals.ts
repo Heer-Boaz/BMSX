@@ -1,5 +1,6 @@
 export const MAPPED_BUS_MASTER_CPU = 0;
 export const MAPPED_BUS_MASTER_DMA = 1;
+export const MAPPED_BUS_DMA_MEMORY = 16;
 export const MAPPED_BUS_DMA_BLOCK_END = 2;
 export const MAPPED_BUS_CARTRIDGE_SLOT_OVERRIDE = 4;
 export const MAPPED_BUS_CARTRIDGE_SLOT1 = 8;

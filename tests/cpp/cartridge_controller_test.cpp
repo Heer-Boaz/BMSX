@@ -184,7 +184,7 @@ void testMailboxIrqRaisesOncePerSourceLatchEdge() {
 	require((memory.readMappedU32LE(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_CARTRIDGE_SLOT0) != 0u, "a new mailbox edge raises the IRQ again");
 }
 
-void testDmaRequestSelectorsOverrideBothChipSelects() {
+void testDmaSocketBitsOverrideCpuChipSelect() {
 	const std::array<bmsx::u8, 8> slot0Rom{{
 		0x04u, 0x03u, 0x02u, 0x01u,
 		0x14u, 0x13u, 0x12u, 0x11u,
@@ -199,22 +199,9 @@ void testDmaRequestSelectorsOverrideBothChipSelects() {
 	CartridgeHarness harness(slots);
 	bmsx::Memory& memory = harness.memory;
 
-	memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 1u);
-	memory.writeMappedU32LE(
-		bmsx::CART_MMIO_BASE + bmsx::CARTRIDGE_MAILBOX_CONTROL_OFFSET,
-		bmsx::CARTRIDGE_MAILBOX_CONTROL_DREQ_READ
-	);
 	memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 0u);
-	memory.writeMappedU32LE(
-		bmsx::CART_MMIO_BASE + bmsx::CARTRIDGE_MAILBOX_CONTROL_OFFSET,
-		bmsx::CARTRIDGE_MAILBOX_CONTROL_DREQ_WRITE
-	);
 
-	const bmsx::u32 control = bmsx::DMA_CONTROL_READ_INCREMENT
-		| bmsx::DMA_CONTROL_WRITE_INCREMENT
-		| (bmsx::DMA_REQUEST_CARTRIDGE_SLOT1_READ << bmsx::DMA_CONTROL_READ_REQUEST_SHIFT)
-		| (bmsx::DMA_REQUEST_CARTRIDGE_SLOT0_WRITE << bmsx::DMA_CONTROL_WRITE_REQUEST_SHIFT)
-		| (1u << bmsx::DMA_CONTROL_BLOCK_WORDS_SHIFT);
+	const bmsx::u32 control = bmsx::DMA_ROUTE_COPY | (1u << bmsx::DMA_CONTROL_READ_SLOT_SHIFT);
 	memory.writeMappedU32LE(bmsx::IO_DMA0_READ_ADDR, bmsx::CART_ROM_BASE);
 	memory.writeMappedU32LE(bmsx::IO_DMA0_WRITE_ADDR, bmsx::CART_RAM_BASE);
 	memory.writeMappedU32LE(bmsx::IO_DMA0_TRANSFER_COUNT, 2u);
@@ -225,10 +212,10 @@ void testDmaRequestSelectorsOverrideBothChipSelects() {
 	harness.scheduler.advanceTo(deadline);
 	harness.dma.onService(deadline);
 
-	require(memory.readMappedU32LE(bmsx::CART_RAM_BASE) == 0xa1a2a3a4u, "DMA read selector drives slot 1 CS");
+	require(memory.readMappedU32LE(bmsx::CART_RAM_BASE) == 0xa1a2a3a4u, "DMA source socket bit drives slot 1 CS");
 	require(memory.readMappedU32LE(bmsx::CART_RAM_BASE + 4u) == 0xb1b2b3b4u, "DMA burst retains slot 1 CS");
 	memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 1u);
-	require(memory.readMappedU32LE(bmsx::CART_RAM_BASE) == 0u, "DMA write selector drives slot 0 CS independently");
+	require(memory.readMappedU32LE(bmsx::CART_RAM_BASE) == 0u, "DMA destination socket bit drives slot 0 CS independently");
 	require(memory.readMappedU32LE(bmsx::CART_RAM_BASE + 4u) == 0u, "slot 1 RAM is not the DMA destination");
 }
 
@@ -239,6 +226,6 @@ int main() {
 	testAbsentSocketDrivesZeroAndHasNoState();
 	testSocketLocalRamMailboxResetAndRestore();
 	testMailboxIrqRaisesOncePerSourceLatchEdge();
-	testDmaRequestSelectorsOverrideBothChipSelects();
+	testDmaSocketBitsOverrideCpuChipSelect();
 	return 0;
 }

@@ -25,9 +25,8 @@ return {
 				assert(result.rearmed[slot] == source_bit)
 				assert(result.after_ack[slot] == 0)
 			end
-			assert(result.requests[0] == 2 and result.requests[1] == 4)
 			assert(result.dma_selection == 1)
-			assert(result.dma_control == 0x00000e63)
+			assert(result.dma_control == 0x00000010)
 			assert(result.dma_status == 2 and result.dma_count == 0)
 			assert(result.dma_read_end == result.seed_address + 16)
 			assert(result.dma_write_end == 0x30000020)
@@ -40,7 +39,7 @@ return {
 				assert(result.untouched[index] == 0)
 			end
 			assert(*bus_fault == 0)
-			t:log('both RAMs, raw selectors, both local IRQ rearms and slot0-ROM to slot1-RAM DMA pass with CPU SELECT1')
+			t:log('both RAMs, raw socket selection, both local IRQ rearms and slot0-ROM to slot1-RAM DMA pass with CPU SELECT1')
 		end,
 	},
 }

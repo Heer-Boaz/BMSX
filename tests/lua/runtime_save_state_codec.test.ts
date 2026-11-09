@@ -118,10 +118,6 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					nextChannel: 1,
 					scheduledBlockWords: 5,
 					scheduledBlockCycles: 17,
-					scheduledReadAddressWord: 0x01002010,
-					scheduledWriteAddressWord: 0x0801023c,
-					scheduledTransferCountWord: 5,
-					scheduledControlWord: 5,
 					supervisorQuiesceRequested: true,
 					supervisorAdmissionQuiesceRequested: true,
 					userChannels: [

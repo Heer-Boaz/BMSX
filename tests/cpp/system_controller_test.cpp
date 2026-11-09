@@ -370,7 +370,9 @@ void testSupervisorFaultParksUnreadReadbackAndWireState() {
 	gpu.writeGp0(bmsx::GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24u);
 	gpu.writeGp0(0u);
 	gpu.writeGp0((1u << 16u) | 1u);
-	gpu.onService(std::numeric_limits<bmsx::i64>::max() >> 1u);
+	const bmsx::i64 readbackDeadline = machine.scheduler.currentNowCycles() + gpu.captureState().pendingCommandCycles;
+	machine.scheduler.advanceTo(readbackDeadline);
+	gpu.onService(readbackDeadline);
 	auto& readback = gpu.readDeviceOutput().readbackPort;
 	require(readback.claimReadback(gpu.readDeviceOutput().commandBuffer.executedCommandCount), "readback backend claims the completed C0 fence");
 	readback.pixelBytes()[0] = bytes[0];

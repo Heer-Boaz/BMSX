@@ -558,7 +558,7 @@ function createTransferEdgeHarness(): ReturnType<typeof createAudioControllerHar
 	harness.memory.writeMappedU32LE(IO_DMA0_READ_ADDR, dmaSource);
 	harness.memory.writeMappedU32LE(IO_DMA0_WRITE_ADDR, IO_APU_TRANSFER_DATA);
 	harness.memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, 1);
-	harness.memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x000000c0);
+	harness.memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00000006);
 	harness.memory.writeMappedU32LE(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
 	serviceScheduledDmaBlock(harness);
 	return { ...harness, audioOutput };
@@ -627,7 +627,7 @@ test('APU DMA round-trip obeys FIFO timing, RAM wrap, and mid-transfer restore',
 	live.memory.writeMappedU32LE(IO_DMA0_READ_ADDR, source);
 	live.memory.writeMappedU32LE(IO_DMA0_WRITE_ADDR, IO_APU_TRANSFER_DATA);
 	live.memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, 32);
-	live.memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00003cc1);
+	live.memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00000006);
 	live.memory.writeMappedU32LE(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
 	assert.equal(live.memory.readIoU32(IO_DMA0_STATUS), DMA_STATUS_BUSY);
 	serviceScheduledDmaBlock(live);
@@ -671,7 +671,7 @@ test('APU DMA round-trip obeys FIFO timing, RAM wrap, and mid-transfer restore',
 	live.memory.writeMappedU32LE(IO_DMA0_READ_ADDR, IO_APU_TRANSFER_DATA);
 	live.memory.writeMappedU32LE(IO_DMA0_WRITE_ADDR, target);
 	live.memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, 32);
-	live.memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00003c12);
+	live.memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00000007);
 	live.memory.writeMappedU32LE(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
 	assert.equal(live.memory.readIoU32(IO_DMA0_STATUS), DMA_STATUS_BUSY);
 	serviceScheduledSampleTransfer(live);
@@ -691,7 +691,7 @@ test('APU DMA round-trip obeys FIFO timing, RAM wrap, and mid-transfer restore',
 	live.memory.writeMappedU32LE(IO_DMA0_READ_ADDR, IO_APU_TRANSFER_DATA);
 	live.memory.writeMappedU32LE(IO_DMA0_WRITE_ADDR, target);
 	live.memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, 1);
-	live.memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x000003fc);
+	live.memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00000007);
 	live.memory.writeMappedU32LE(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
 	assert.equal(live.memory.mappedWriteReady(IO_APU_TRANSFER_DATA), false);
 });
@@ -717,7 +717,7 @@ for (const count of [20, 4]) {
 			memory.writeMappedU32LE(IO_DMA0_READ_ADDR, IO_APU_TRANSFER_DATA);
 			memory.writeMappedU32LE(IO_DMA0_WRITE_ADDR, destination);
 			memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, count);
-			memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00003c12);
+			memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00000007);
 			memory.writeMappedU32LE(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
 			memory.writeMappedU32LE(IO_APU_TRANSFER_CONTROL, APU_TRANSFER_MODE_DMA_READ);
 			const deadlines: number[] = [];
@@ -762,7 +762,7 @@ for (const count of [20, 4]) {
 	}
 }
 
-test('APU transfer FIFO is not consumed by a forced wrong-direction DMA block', () => {
+test('APU download route waits in write mode without consuming the upload FIFO', () => {
 	const harness = createAudioHarness();
 	harness.dma.setTiming(0, 8, 0, 0, 0, 0);
 	harness.audio.setTiming(2 * APU_TRANSFER_WORDS_PER_SECOND, 0);
@@ -776,17 +776,19 @@ test('APU transfer FIFO is not consumed by a forced wrong-direction DMA block', 
 	harness.memory.writeMappedU32LE(IO_DMA0_READ_ADDR, source);
 	harness.memory.writeMappedU32LE(IO_DMA0_WRITE_ADDR, IO_APU_TRANSFER_DATA);
 	harness.memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, 32);
-	harness.memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00003cc1);
+	harness.memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00000006);
 	harness.memory.writeMappedU32LE(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
 	serviceScheduledDmaBlock(harness);
 	const before = harness.audio.captureState().sampleTransfer;
 	assert.equal(before.fifoCount, APU_TRANSFER_FIFO_WORD_CAPACITY);
 	assert.equal(before.scheduledWords, APU_TRANSFER_FIFO_WORD_CAPACITY);
 
-	harness.memory.writeMappedU32LE(IO_DMA0_READ_ADDR, IO_APU_TRANSFER_DATA);
+	harness.memory.writeMappedU32LE(IO_DMA0_TRIGGER, 2); // STOP the pending upload tail, not the APU FIFO.
 	harness.memory.writeMappedU32LE(IO_DMA0_WRITE_ADDR, target);
-	harness.memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00003c02);
-	serviceScheduledDmaBlock(harness);
+	harness.memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, 1);
+	harness.memory.writeMappedU32LE(IO_DMA0_CONTROL, 7);
+	harness.memory.writeMappedU32LE(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
+	assert.equal(harness.dma.cpuBusHeld(), false, 'download route waits while the APU is in write mode');
 	const afterReverseBlock = harness.audio.captureState().sampleTransfer;
 	assert.equal(afterReverseBlock.fifoCount, APU_TRANSFER_FIFO_WORD_CAPACITY);
 	assert.equal(afterReverseBlock.scheduledWords, APU_TRANSFER_FIFO_WORD_CAPACITY);

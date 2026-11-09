@@ -195,7 +195,7 @@ private:
 	void updateDmaRequest() {
 		const u32 words = m_dmaReadEnabled && m_phase == GX_GPU_READBACK_READY
 			? (m_width * m_height - m_pixelCursor + 1u) >> 1u : 0u;
-		m_dmaController.setRequestWordCapacity(DMA_REQUEST_GX_READ, words);
+		m_dmaController.setEndpointCapacity(DmaEndpoint::GpuRead, words);
 	}
 
 	u8 m_phase = GX_GPU_READBACK_IDLE;

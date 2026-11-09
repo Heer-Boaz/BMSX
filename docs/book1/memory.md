@@ -438,19 +438,27 @@ unready port write without raising a bus fault.
    stable through its last DMA read and wait for the final destination write
    before consuming the completed buffer.
 
-2. **Program an idle channel completely.** Set its read address, write address, count, increment choices, request selectors and block length before START. An increment advances its address by four bytes per word; a fixed address advances by zero. The programmed block-length field specifies 1 through 16 words, and the last block uses only the remaining count. Both selected requests must be asserted before a block is admitted. `FORCE` is always asserted; `DISABLED` is never asserted. For a device port, choose its real request selectors rather than use FORCE to send words while the port is not ready.
+2. **Program an idle channel.** Choose its fixed route and program the
+   memory-side addresses, exact word count and any cartridge socket bits.
+   Memory addresses advance by four bytes per word; internal device ports are
+   wired by route. A burst contains at most 256 words and is shortened by
+   endpoint capacity and region boundaries. Prepare the receiving device's
+   mode before expecting its request.
 
-3. **Start once and preserve the live inputs.** An accepted START with a nonzero count sets BUSY; START while BUSY is ignored, not queued as a second transfer. A zero count finishes immediately, before testing requests. Admission retains one block's addresses, remaining count, control and length, but not its source words. Each source word is read and written to the destination before proceeding to the next word. Bytes changed after START can therefore affect later reads; START is not a source-buffer snapshot.
+3. **Start once and preserve the source.** A nonzero count sets BUSY; START
+   while BUSY is ignored. A zero count finishes immediately without testing
+   requests. The channel's address/count/control words are write-disabled
+   while BUSY. An admitted burst holds the CPU bus, but a request wait can
+   allow CPU execution between bursts. START does not capture source bytes;
+   other devices must not overwrite them before their transfer completes.
 
-   Leave the channel's programmed address/count/control words alone through completion. Writes to those words are not automatically rejected while BUSY: an already admitted block uses its captured configuration, and its later address/count writeback can overwrite changes made meanwhile. Reprogramming a busy channel is not a way to revise that admitted block safely.
-
-4. **Wait for completion, then check the outcome.** Finish follows the final mapped transfer accesses, replaces channel status with DONE (`2`), and clears BUSY by that replacement. It also raises the channel's DMA interrupt. Wait for channel status or service its completion IRQ rather than assuming a transfer delay.
-
-   Check the fault report using the procedure above. DMA advances after a
-   faulting access: an unmapped source can supply zero, and an unmapped or
-   read-only destination can reject the write. An unready I/O write can also be
-   discarded without retry. Use the correct device requests and verify the
-   destination's applicable completion/status condition.
+4. **Wait for completion, then check the outcome.** The final mapped accesses
+   and address/count updates precede DONE and the DMA interrupt. Check the
+   fault record using the procedure above. Faulting accesses do not roll back
+   an admitted burst: a source fault supplies the bus value and the destination
+   write is still attempted. Internal console I/O is not a valid memory-side
+   endpoint; use the wired device route. Observe the destination unit's own
+   completion condition separately from DMA DONE.
 
 5. **Reuse according to the completed operation.** Once DMA has finished its source reads, that transfer no longer needs the source bytes; once its final RAM writes have completed, the RAM destination can be inspected as the completed transfer's output. A receiving device may still have work to do. DMA transport completion does not establish GPU-job completion or permission to reuse a live display surface.
 
@@ -460,13 +468,12 @@ Within installed RAM, each DMA word is read before its destination is written, a
 
 ### DMA programming example {#sec-memory-dma-programming-example}
 
-The [DMA chapter's BLua sequence](dma.md#sec-dma-copy-words-in-blua) prepares 20 source words and performs two nonoverlapping RAM copies using declared storage addresses. It programs both channels before either START and uses 16-word and four-word blocks. The two completed destination copies retain the words to inspect.
-
-The DMA chapter's [GP0 sequence](dma.md#sec-dma-send-a-command-stream-to-gp0)
-sends a five-word ROM stream, waits for DMA DONE,
-then separately waits for a GPU marker and GPU idle. These are distinct
-completion conditions; the order of software reads does not establish a
-universal ordering of DMA and device completion.
+The [DMA chapter's BLua sequence](dma.md#sec-dma-copy-words-in-blua)
+copies four initialized RAM words into a separate BSS buffer. The
+[GPU raw-image sequence](gpu.md#sec-gpu-move-a-raw-image-through-dma)
+uses the wired GP0 and GPUREAD routes for a complete upload/readback roundtrip.
+It waits for DMA DONE, then observes GPU completion separately; neither
+condition proves display publication.
 
 ## Device-specific buffer lifetimes {#sec-memory-device-specific-buffer-lifetimes}
 

@@ -93,10 +93,11 @@ overige voorstellen hieronder behouden hun afzonderlijke inhoud en besluitstatus
 IMGDEC is uitgewerkt als een verliesloze woorddecoder zonder GPU-pakketopbouw
 of kennis van textures en palettes. De programmeerinterface, blokpublicatie en
 stroomcodering staan uitsluitend in de [IMGDEC-handleiding](book1/imgdec.md).
-De DMA-stap naar grotere, begrensde overdrachten en gedeeld busbezit is nog niet
-de volledige vereenvoudiging: de onafhankelijke verzoekselectoren en
-willekeurige interne I/O-eindpunten moeten afzonderlijk worden vervangen door
-de werkelijk benodigde apparaatpaden. De APU-interface is nog niet vervangen.
+DMA gebruikt vaste apparaatpaden, een BUSY-beveiligde registerfile en
+begrensde bursts met gedeeld busbezit. Het actuele contract staat in de
+[DMA-handleiding](book1/dma.md); onafhankelijke verzoekselectoren en
+willekeurige interne I/O-eindpunten zijn vervallen. De APU-interface zelf is
+nog niet vervangen.
 
 VRAM-uitlezing moet daarbij afzonderlijk van host-snapshots worden beoordeeld.
 De PSX heeft zelf een VRAM-leespad; dat laat ook
@@ -112,8 +113,8 @@ VRAM-leesfunctie uit de console moet verdwijnen.
 
 | Onderwerp | Richting | Wat nog niet vaststaat |
 |---|---|---|
-| DMA | Eenvoudig blok-/burstcontract met meer-cyclusoverdracht | Eindpunten, busbezit, zichtbare blokvoltooiing en timing |
-| IMGDEC | Blokdecoder met bulktransport en afzonderlijke voltooiing | Blokinterface, buffers, timing en grens met GPU-pakketopbouw |
+| DMA | Vaste routes en begrensde bursts uitgewerkt in Book I | Fysieke integratie en kwalificatie |
+| IMGDEC | Ruwe verliesloze blokdecoder uitgewerkt in Book I | Fysieke integratie en kwalificatie |
 | GEO | Werk- en geheugenafhankelijke timing goedgekeurd | Timing en voortgang per opdracht |
 | GTE | Gedeeld fysiek rekenpad onderzoeken | Voltooiingstijd van gewone commando's en zichtbare wachttijd; niet goedgekeurd |
 | Video | Fysiek begrensde uitvoer goedgekeurd | Exacte bemonstering, sync en gekwalificeerde grenzen |
@@ -134,100 +135,21 @@ VRAM-leesfunctie uit de console moet verdwijnen.
 De goedkeuring van een **richting** legt niet automatisch de genoemde
 voorbeeldwaarden of een nieuwe registerinterface vast. Omgekeerd zijn open
 constructiepunten niet vanzelf wijzigingen van het programmeercontract. Dit
-overzicht is de centrale lijst voor de voorgestelde wijzigingen; de huidige
-boeken en emulator blijven ongewijzigd totdat de concrete contracten worden
-vastgesteld en gezamenlijk worden verwerkt. De volledige bewaarde uitvoeringsstudies
+overzicht is de centrale lijst voor de voorgestelde wijzigingen. Nog niet
+vastgestelde voorstellen wijzigen de boeken en emulator niet automatisch;
+een vastgesteld contract wordt samen in handleidingen en runtimes verwerkt. De volledige bewaarde uitvoeringsstudies
 staan achter de twaalf hoofdonderwerpen in de bijlage.
 
 ## 1. DMA: fysieke voortgang en voltooiing
 
-**Uitgewerkte eerste stap.** De [DMA-specificatie](book1/dma.md#sec-dma-calculating-a-blocks-charge)
-beschrijft begrensde bursts, seriële bron- en bestemmingskosten en CPU-busbezit.
-Daarmee vervalt de eerdere ééncycluscharge voor een volledig I/O-naar-I/O-blok.
-Dit is nog geen vervanging van het generieke eindpunten- en registermodel.
-
-**Goedgekeurde richting.** Een fysieke overdracht gebruikt meerdere cycli.
-Bronlezingen en bestemmingswrites kosten echte bus- en apparaatcycli;
-wachttijden, arbitrage en geheugenverversing beïnvloeden de duur. Uitgangspunt
-is nu het eenvoudige blok-/burstcontract hierboven. De bestaande blokgrootte,
-registerindeling, willekeurige eindpuntcombinaties en tussentijdse
-registerwerking hoeven niet behouden te blijven. De eerder uitgewerkte
-[fysieke DMA-volgorde](book4/hardware.md#physical-dma-sequencing) is een
-constructiekandidaat, geen verplichting om haar interleavings over te nemen.
-
-**Nog uit te werken.** De openbare timingtekst moet bepalen wanneer BUSY,
-resterende count, DONE en IRQ zichtbaar worden, inclusief wachttijden en
-concurrente bronnen. De huidige numerieke blokcharges mogen niet ongemerkt als
-fysieke verstreken cycli blijven gelden. Een concrete vervangende
-maximumdoorvoer of exacte latentie is nog niet vastgesteld. De emulator,
-de [cartridgetransfertiming](book3/cartridge.md#sec-cartridge-dma-transfer-timing)
-en eventuele APU-upload- en andere bandbreedtevoorbeelden moeten met de
-uiteindelijke keuze in overeenstemming worden gebracht.
-
-**Eerdere kandidaat met behoud van de registerindeling.** De volgende
-uitwerking beschrijft wat die behoudskeuze zou vereisen. Zij is niet het
-uitgangspunt voor de vereenvoudiging en mag daarvoor worden vervangen:
-
-1. START met een niet-nulcount zet de gekozen channel op BUSY. START terwijl
-   BUSY is, wordt genegeerd. Bij een nulcount volgt DONE en de channel-IRQ
-   zonder een blok of verzoek af te wachten.
-2. Bij een blokgrens beoordeelt de controller de verzoeken en legt hij de
-   adressen, resterende count en CONTROL voor het toegelaten blok vast. Een
-   later wegvallend verzoek of DISABLED onderbreekt dat blok niet. Als er geen
-   blok is toegelaten, kan een softwarewrite die de count op nul zet de
-   channel laten voltooien zonder op verzoeken te wachten.
-3. Voor ieder woord voltooit hij eerst de bronlezing en daarna de bijbehorende
-   bestemmingswrite. Een gewone DMA-busfout blijft een afzonderlijke
-   geheugenfoutmelding: na een foutieve bronlezing wordt de write nog steeds
-   geprobeerd en het toegelaten blok gaat verder. Er is geen automatische
-   herhaling of terugdraaiing van eerdere effecten.
-4. Adressen en count worden pas na het laatste woord van het blok in de
-   channelregisters teruggeschreven. Een tussentijdse softwarewrite naar die
-   woorden kan daardoor door de blokresultaten worden overschreven; CONTROL
-   blijft het laatst geprogrammeerde woord. De volgende bloktoelating gebruikt
-   de dan aanwezige registerwaarden.
-5. Na het laatste blok worden de eindadressen en nulcount gepubliceerd vóór
-   DONE en wordt daarna de bijbehorende centrale IRQ aangevraagd. DONE is
-   geen bewijs dat iedere bestemming de write accepteerde of dat een
-   ontvangend apparaat zijn eigen werk al heeft afgerond.
-
-De huidige runtimes voeren de woordparen op één geplande blokdeadline uit;
-de fysieke kandidaat spreidt ze over afzonderlijke busvoltooiingen. Daardoor
-kan de volgorde ten opzichte van CPU- en apparaatwerk veranderen, niet alleen
-de totale duur. De precieze randvolgorde van gelijktijdige registerwrites,
-reset en blokvoltooiing en de opname in beide runtimes moeten nog worden
-vastgesteld. Normale verzoeken krijgen hier geen nieuwe timeout of foutregister.
-
-**Kandidaat voor registerarbitrage.** De channelregistreigenaar bepaalt de
-volgorde op het moment van *acceptatie*, niet wanneer een andere busmaster een
-write voor het eerst aanbiedt. Een gewone write die vóór de blokpublicatie is
-geaccepteerd, is direct leesbaar, maar een later gepubliceerd blokresultaat
-overschrijft adres en count. Een conflicterende write die tijdens publicatie op
-hetzelfde channel wacht, wordt pas daarna geaccepteerd en blijft vervolgens
-staan. CONTROL is geen deel van de blokwriteback. Registers van het andere
-channel blijven afzonderlijk programmeerbaar; de twee kanalen delen wel één
-toegelaten blok en rouleren op blokgrenzen.
-
-Dit onderscheid bepaalt ook START: een geaccepteerde START met BUSY hoog
-wordt genegeerd. Een aangeboden START die pas na DONE wordt geaccepteerd, ziet
-een idle channel en kan een nieuwe transfer starten. De kandidaat verandert
-hiermee mogelijk de waarneembare volgorde ten opzichte van de huidige
-blokdeadline, maar verandert niet ongemerkt de betekenis van een al
-gaccepteerde BUSY-START. Zichtbaarheid van een gelijktijdige registerread,
-reset op de publicatierand en de gevolgen voor CPU-wachttijd blijven apart
-vast te stellen; dit is nog geen definitieve openbare timingregel.
-
-**Verzoeken, busacceptatie en apparaatresultaat.** Een requestselector bepaalt
-of een nieuw blok wordt toegelaten. Na toelating wordt de selector niet opnieuw
-gebruikt om een woordpaar te annuleren. Een fysieke bus-DATA-wacht betekent
-dat het aangevraagde woord nog niet is afgehandeld; het blok houdt die
-transactie vast. Een daadwerkelijk afgeronde DMA-write die het doelapparaat
-volgens zijn bestaande poortregels weigert, is iets anders: er ontstaat
-hierdoor niet automatisch een busfout of herhaling, en het woord telt wel mee.
-Daarom moeten de apparaatpoort en busrespons die afhandeling onderscheiden;
-een gedeassert request mag niet stilzwijgend veranderen in een afgebroken blok,
-maar evenmin mag iedere geweigerde devicewrite automatisch oneindig gaan
-wachten. Er wordt geen nieuwe fout of timeout opgelegd.
+De vastgestelde programmeerinterface staat in de [DMA-specificatie](book1/dma.md).
+De constructiekandidaat staat bij de [fysieke DMA-volgorde](book4/hardware.md#physical-dma-sequencing).
+De eerdere kandidaat met willekeurige I/O-eindpunten, aparte verzoekselectoren,
+configureerbare bloklengtes en overschrijfbare BUSY-registers is vervallen.
+GPU-pakketten mogen over bursts doorlopen; pakketuitlijning is geen
+transportvoorwaarde. De fysieke schakeling en elektrische timing moeten nog
+worden geïntegreerd en gekwalificeerd. Dat is geen reden om de geschrapte
+registerinterleavings terug te brengen.
 
 ## 2. GEO: werk- en geheugenafhankelijke timing
 

@@ -97,7 +97,12 @@ void require(bool condition, const char* message) {
 }
 
 void completeGpuCommands(GpuHarness& harness) {
-	harness.gpu.onService(std::numeric_limits<bmsx::i64>::max() >> 1u);
+	for (bmsx::i64 pending = harness.gpu.captureState().pendingCommandCycles; pending != 0;
+		pending = harness.gpu.captureState().pendingCommandCycles) {
+		const bmsx::i64 deadline = harness.scheduler.currentNowCycles() + pending;
+		harness.scheduler.advanceTo(deadline);
+		harness.gpu.onService(deadline);
+	}
 }
 
 void stopPcrtc(GpuHarness& harness) {
@@ -1064,9 +1069,9 @@ void testGpustatReadinessTracksGp0PacketAssemblyAndPayloadPhases() {
 	gpu.writeGp0((bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u) | 0x00010203u);
 	status = gpu.readStatus();
 	require((status & bmsx::GX_GPU_STATUS_GPU_IDLE) == 0u, "GX-GPU GPUSTAT partial packet is not idle");
-	require((status & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) == 0u, "GX-GPU polygon opcode immediately lowers DMA block readiness");
+	require((status & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) != 0u, "GX-GPU empty ingress remains available across packet assembly and execution");
 	require((status & bmsx::GX_GPU_STATUS_READY_TO_SEND_VRAM) == 0u, "GX-GPU GPUSTAT partial packet is not send-ready");
-	require((status & bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST) == 0u, "GX-GPU CPU-to-GP0 request follows polygon packet admission");
+	require((status & bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST) != 0u, "GX-GPU CPU-to-GP0 request follows polygon packet admission");
 
 	gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU);
 	status = gpu.readStatus();
@@ -1086,11 +1091,11 @@ void testGpustatReadinessTracksGp0PacketAssemblyAndPayloadPhases() {
 	gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
 	status = gpu.readStatus();
 	require((status & bmsx::GX_GPU_STATUS_GPU_IDLE) == 0u, "GX-GPU GPUSTAT fixed packet remains busy during execution");
-	require((status & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) == 0u, "GX-GPU complete queued packet lowers receive readiness");
-	require((status & bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST) == 0u, "GX-GPU CPU-to-GP0 request follows DMA-block readiness");
+	require((status & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) != 0u, "GX-GPU empty ingress remains available across packet assembly and execution");
+	require((status & bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST) != 0u, "GX-GPU CPU-to-GP0 request follows DMA-block readiness");
 	gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_FIFO);
 	status = gpu.readStatus();
-	require((status & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) == 0u, "GX-GPU queued packet keeps DMA-block readiness low");
+	require((status & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) != 0u, "GX-GPU empty ingress remains available across packet assembly and execution");
 	require((status & bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST) != 0u, "GX-GPU FIFO request follows physical FIFO capacity");
 	require(commands.commandCount == 1u, "GX-GPU fixed packet command emitted");
 	require(commands.executedCommandCount == 0u, "GX-GPU fixed packet waits at the execution frontier");
@@ -1118,18 +1123,18 @@ void testGpustatReadinessTracksGp0PacketAssemblyAndPayloadPhases() {
 	gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
 	gpu.writeGp0(((bmsx::GX_GPU_GP0_LINE_FIRST | bmsx::GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT) << 24u) | 0x0000ffu);
 	status = gpu.readStatus();
-	require((status & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) == 0u, "GX-GPU polyline opcode lowers DMA block readiness");
-	require((status & bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST) == 0u, "GX-GPU CPU-to-GP0 request stays low for active polyline input");
+	require((status & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) != 0u, "GX-GPU empty ingress remains available across packet assembly and execution");
+	require((status & bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST) != 0u, "GX-GPU CPU-to-GP0 request follows ingress space during polyline input");
 	gpu.writeGp0(0x00010002u);
 	gpu.writeGp0(0x00020003u);
 	status = gpu.readStatus();
 	require((status & bmsx::GX_GPU_STATUS_GPU_IDLE) == 0u, "GX-GPU GPUSTAT polyline waits for terminator");
-	require((status & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) == 0u, "GX-GPU polyline payload keeps DMA block readiness low");
+	require((status & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) != 0u, "GX-GPU empty ingress remains available across packet assembly and execution");
 	gpu.writeGp0(0x50005000u);
 	status = gpu.readStatus();
 	require((status & bmsx::GX_GPU_STATUS_GPU_IDLE) == 0u, "GX-GPU GPUSTAT polyline remains busy during execution");
-	require((status & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) == 0u, "GX-GPU queued polyline terminator waits behind segment execution");
-	require((status & bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST) == 0u, "GX-GPU CPU-to-GP0 request stays low until the polyline terminator executes");
+	require((status & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) != 0u, "GX-GPU empty ingress remains available across packet assembly and execution");
+	require((status & bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST) != 0u, "GX-GPU CPU-to-GP0 request remains independent of polyline completion");
 	require(commands.commandCount == 3u, "GX-GPU polyline command emitted");
 	completeGpuCommands(harness);
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_GPU_IDLE) == bmsx::GX_GPU_STATUS_GPU_IDLE, "GX-GPU polyline reaches idle at completion");
@@ -1998,8 +2003,8 @@ void testGp1ClearFifoClearsPartialGp0PacketsAndFlushesPartialCpuToVramUploads() 
 	gpu.writeGp1(bmsx::GX_GPU_GP1_CLEAR_FIFO << 24u);
 	require(commands.commandCount == 3u, "GX-GPU GP1 clear FIFO preserves completed polyline segments");
 	require(commands.wordCount == 11u, "GX-GPU GP1 clear FIFO has no uncommitted polyline words");
-	require(harness.scheduler.nextDeadline() == continuationDeadline, "GX-GPU GP1 clear FIFO retains its accepted polyline segment deadline");
-	runGpuAtNextDeadline(harness);
+	require(harness.scheduler.nextDeadline() == continuationDeadline, "GX-GPU GP1 clear FIFO retains segment scheduling, including a clipped zero-cost segment");
+	completeGpuCommands(harness);
 
 	gpu.writeGp0((bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x0000ffu);
 	gpu.writeGp0(32u);
@@ -2276,7 +2281,7 @@ void testGpureadFencesBackendWorkAndPacksWrappedOddPixels() {
 	gpu.writeGp0(sizeWord);
 	gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU);
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_READY_TO_SEND_VRAM) == 0u, "GX-GPU GPUREAD stays unready before backend completion");
-	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) == 0u, "GX-GPU GPUREAD blocks command DMA while active");
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) != 0u, "GX-GPU readback does not consume the independent command ingress buffer");
 	completeGpuCommands(harness);
 	const bmsx::GxGpuDeviceOutput& output = gpu.readDeviceOutput();
 	require(output.commandBuffer.presentCommandCount == 0u, "GX-GPU GPUREAD backend fence is independent of VBLANK presentation");
