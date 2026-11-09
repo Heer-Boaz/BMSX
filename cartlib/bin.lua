@@ -98,9 +98,30 @@ local read_value
 local read_array<const> = function(reader)
 	local count<const> = read_varuint(reader)
 	local values<const> = {}
+	local source: *u8 = reader.pos
 	for index = 1, count do
-		values[index] = read_value(reader)
+		if *source == tag_int then
+			local first<const> = source[1]
+			if first < 0x80 then
+				local magnitude<const> = first >> 1
+				if (first & 1) == 0 then
+					values[index] = magnitude
+				else
+					values[index] = -(magnitude + 1)
+				end
+				source = source + 2
+			else
+				reader.pos = source + 1
+				values[index] = read_varint(reader)
+				source = reader.pos
+			end
+		else
+			reader.pos = source
+			values[index] = read_value(reader)
+			source = reader.pos
+		end
 	end
+	reader.pos = source
 	return values
 end
 

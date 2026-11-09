@@ -65,6 +65,22 @@ end`;
 	assert.equal(set.getInteger(1), 3);
 	assert.equal(cpu.stringPool.toString(asStringId(set.getInteger(2) as StringValue)), 'set value');
 	assert.equal(set.getInteger(3), false);
+	const mixedRoot = read(encodeBinary({
+		values: [0, -1, 63, -64, 64, -65, false, 3, null, -4, [5, 8192, -6], 7,
+			'雪🙂', -8, { value: 9 }, 10, 0.25, -11, 0x7fffffff, -0x80000000, 12],
+		after: 77,
+	})) as Table;
+	const mixed = mixedRoot.getStringKey(cpu.stringPool.intern('values')) as Table;
+	for (const [index, value] of [[1, 0], [2, -1], [3, 63], [4, -64], [5, 64], [6, -65],
+		[7, false], [8, 3], [9, null], [10, -4], [12, 7], [14, -8], [16, 10], [17, 0.25],
+		[18, -11], [19, 0x7fffffff], [20, -0x80000000], [21, 12]] as const) {
+		assert.equal(mixed.getInteger(index), value);
+	}
+	assert.deepEqual([1, 2, 3].map(index => (mixed.getInteger(11) as Table).getInteger(index)), [5, 8192, -6]);
+	assert.equal(cpu.stringPool.toString(asStringId(mixed.getInteger(13) as StringValue)), '雪🙂');
+	assert.equal((mixed.getInteger(15) as Table).getStringKey(cpu.stringPool.intern('value')), 9);
+	assert.equal(mixedRoot.getStringKey(cpu.stringPool.intern('after')), 77,
+		'batched scalar runs publish the cursor before a following object field');
 	const key = '雪'.repeat(60);
 	const data = { [key]: { count: 0x7fffffff, nested: [true, 'name', { r: 128 }] }, tail: -0x80000000 };
 	const section = buildRomMetadataSection([data]);
