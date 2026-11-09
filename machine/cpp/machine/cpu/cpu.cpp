@@ -781,7 +781,7 @@ void CPU::invalidateDecodedWords(u64 key, u32 firstWord, u32 endWord) {
 		if (page != image->decodedPages.end()) {
 			auto& decodedPage = page->second;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-			decodedPage.retireNativeBlocks();
+			decodedPage.retireNativeBlocks(firstWord, endWord);
 #endif
 			for (u32 index = firstPredecessor; index < predecessorEnd; ++index) {
 				u8& refresh = decodedPage.refreshState[index];
@@ -1011,6 +1011,14 @@ bool CPU::decodeInstruction(
 		decoded.dispatchCycles = DECODED_DISPATCH_BASE_CYCLES[decoded.dispatchOp];
 		return true;
 	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	if (instructionCacheable && nativeBlockSupports(decoded.op)
+		&& (nativeBlockEndsBlock(decoded.op) || pageOffset + width < DECODED_PAGE_WORDS)) {
+		decoded.dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeWarm);
+		page.nativeVisits[pageOffset] = 0;
+		return true;
+	}
+#endif
 	const bool fusionCandidate = decodedDispatchCanFuse(op);
 	if (!allowFusion) {
 		if (fusionCandidate && instructionCacheable) {
@@ -2404,22 +2412,6 @@ void CPU::resumeMemoryWrite(uint32_t address) {
 	}
 }
 
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-inline void CPU::sampleNativeBlockEntry(CallFrame& frame) {
-	if ((frame.pc & (INSTRUCTION_BYTES - 1u)) != 0u) return;
-	auto& page = decodedPageForFrame(frame, frame.pc);
-	const u32 word = (frame.pc & MAPPED_PAGE_BYTE_MASK) >> 2u;
-	const auto& instruction = page.words[word];
-	if ((page.refreshState[word] & DECODED_REFRESH_DECODE) == 0u
-		&& instruction.dispatchOp != static_cast<u8>(DecodedDispatchOp::Observe)
-		&& instruction.dispatchOp != static_cast<u8>(DecodedDispatchOp::NativeBlock)
-		&& nativeBlockSupports(instruction.op)
-		&& (!page.nativeBlocks || page.nativeBlocks->visits[word] < NATIVE_BLOCK_COMPILATION_THRESHOLD)) {
-		prepareNativeBlock(frame, page, word);
-	}
-}
-#endif
-
 template <bool RootBoundary, bool Instrumented>
 RunResult CPU::runLoop(
 	int targetDepth,
@@ -2494,12 +2486,6 @@ RunResult CPU::runLoop(
 			frame = frames.back().get();
 			image = frame->executionImage;
 			registers = frame->registers;
-			goto dispatch_entry;
-
-dispatch_entry:
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-			if constexpr (!Instrumented) sampleNativeBlockEntry(*frame);
-#endif
 			goto dispatch_fetch;
 
 dispatch_fetch:
@@ -2579,16 +2565,6 @@ dispatch_decode:
 	goto dispatch_continue; \
 } while (0)
 #define DISPATCH_BLOCKED() do { return RunResult::Halted; } while (0)
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-#define DISPATCH_BRANCH() do { \
-	if constexpr (!Instrumented) { \
-		if (canReuseFrame && instructionBudgetRemaining > 0 && frame->pc <= pc) goto dispatch_entry; \
-	} \
-	DISPATCH_NEXT(); \
-} while (0)
-#else
-#define DISPATCH_BRANCH() DISPATCH_NEXT()
-#endif
 #define DISPATCH_REBIND_FRAME() do { \
 	if constexpr (!Instrumented) { \
 		if (canReuseFrame && instructionBudgetRemaining > 0) { \
@@ -2603,7 +2579,7 @@ dispatch_decode:
 			frame = frames.back().get(); \
 			image = frame->executionImage; \
 			registers = frame->registers; \
-			goto dispatch_entry; \
+			goto dispatch_fetch; \
 		} \
 	} \
 	goto dispatch_continue; \
@@ -2622,6 +2598,14 @@ dispatch_instruction:
 			} else {
 				switch (dispatchOp) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+				case static_cast<u8>(DecodedDispatchOp::NativeWarm): {
+					if (++decodedPage->nativeVisits[pageOffset] == NATIVE_BLOCK_COMPILATION_THRESHOLD) {
+						prepareNativeBlock(FRAME, *decodedPage, pageOffset);
+					}
+					dispatchOp = decoded->dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeBlock)
+						? decoded->dispatchOp : decoded->op;
+					goto dispatch_instruction;
+				}
 				case static_cast<u8>(DecodedDispatchOp::NativeBlock): {
 					const auto& block = *decodedPage->nativeBlocks->entries[pageOffset];
 					// The first instruction's ordinary charge/PC publication has
@@ -2764,7 +2748,6 @@ dispatch_observe:
 
 dispatch_continue:
 #undef DISPATCH_BLOCKED
-#undef DISPATCH_BRANCH
 #undef DISPATCH_REBIND_FRAME
 #undef DISPATCH_NEXT
 #undef DISPATCH_CONTINUE

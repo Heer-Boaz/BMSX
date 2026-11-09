@@ -179,6 +179,7 @@ std::unique_ptr<NativeBlock> NativeBlock::compile(
 		const auto& instruction = *source.decoded;
 		compiler.emit(instruction, source.pc + static_cast<u32>(instruction.width) * INSTRUCTION_BYTES);
 		block->cycles += instruction.baseCycles;
+		block->sourceWords += instruction.width;
 		block->currentPc = source.pc;
 		block->lastPc = source.pc + (static_cast<u32>(instruction.width) - 1u) * INSTRUCTION_BYTES;
 		block->nextPc = static_cast<OpCode>(instruction.op) == OpCode::JMP

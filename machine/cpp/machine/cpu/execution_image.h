@@ -28,13 +28,14 @@ enum class DecodedDispatchOp : uint8_t {
 	Observe,
 	ReservedMemory,
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	NativeWarm,
 	NativeBlock,
 #endif
 };
 
 inline constexpr size_t DECODED_DISPATCH_OP_COUNT = OPCODE_COUNT + 5u
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	+ 1u
+	+ 2u
 #endif
 	;
 extern const std::array<uint8_t, DECODED_DISPATCH_OP_COUNT> DECODED_DISPATCH_BASE_CYCLES;
@@ -112,7 +113,7 @@ inline constexpr u32 DECODED_DEPENDENCY_PREDECESSOR_WORDS = 3u;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 struct NativeBlockPage {
 	std::array<std::unique_ptr<NativeBlock>, DECODED_PAGE_WORDS> entries{};
-	std::array<u8, DECODED_PAGE_WORDS> visits{};
+	u32 count = 0;
 };
 #endif
 
@@ -130,18 +131,25 @@ struct DecodedInstructionPage {
 	bool cacheable;
 	MappedPageWriteWatch writeWatch;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	std::array<u8, DECODED_PAGE_WORDS> nativeVisits{};
 	std::unique_ptr<NativeBlockPage> nativeBlocks;
 
-	void retireNativeBlocks() {
+	void retireNativeBlocks(u32 firstWord = 0, u32 endWord = DECODED_PAGE_WORDS + 1u) {
 		if (!nativeBlocks) return;
-		for (size_t word = 0; word < nativeBlocks->entries.size(); ++word) {
-			if (!nativeBlocks->entries[word]) continue;
+		const u32 firstEntry = firstWord > 2u * NATIVE_BLOCK_MAX_INSTRUCTIONS
+			? firstWord - 2u * NATIVE_BLOCK_MAX_INSTRUCTIONS : 0u;
+		const u32 endEntry = endWord < DECODED_PAGE_WORDS ? endWord : DECODED_PAGE_WORDS;
+		for (u32 word = firstEntry; word < endEntry; ++word) {
+			auto& block = nativeBlocks->entries[word];
+			if (!block || word + block->sourceWords <= firstWord) continue;
+			block.reset();
+			--nativeBlocks->count;
 			auto& instruction = words[word];
-			instruction.dispatchOp = instruction.op;
+			instruction.dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeWarm);
 			instruction.dispatchCycles = instruction.baseCycles;
-			if (decodedDispatchCanFuse(instruction.op)) refreshState[word] |= DECODED_REFRESH_FUSION;
+			nativeVisits[word] = 0;
 		}
-		nativeBlocks.reset();
+		if (nativeBlocks->count == 0u) nativeBlocks.reset();
 	}
 #endif
 };

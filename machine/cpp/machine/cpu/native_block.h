@@ -13,6 +13,7 @@ namespace bmsx {
 struct DecodedInstruction;
 
 inline constexpr u8 NATIVE_BLOCK_COMPILATION_THRESHOLD = 8u;
+inline constexpr u32 NATIVE_BLOCK_MAX_INSTRUCTIONS = 64u;
 
 enum class NativeBlockExit : u8 {
 	Continue,
@@ -79,6 +80,7 @@ public:
 	u32 run(Value* registers, const Value* constants) const;
 
 	NativeBlockExit exit = NativeBlockExit::Continue;
+	u16 sourceWords = 0;
 	int cycles = 0;
 	int registerTop = 0;
 	u32 nextPc = 0;

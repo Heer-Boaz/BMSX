@@ -154,6 +154,27 @@ void nativeCodeUsesCachedWordsAtPartialRomTails() {
 		"cached native admission never probes the unbacked ROM tail");
 }
 
+void nativeWarmRetiresRejectedPrefixes() {
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::NEWT), 1, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
+	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 2}};
+	CpuMachine machine(image);
+	auto& cpu = machine.cpu;
+	require(cpu.runUntilDepth(0, 21) == RunResult::Yielded, "a mixed loop warms without compiling yet");
+	const auto& page = *cpu.activeThread()->frames[0]->decodedPage;
+	const u32 word = (machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u;
+	require(!page.nativeBlocks && page.nativeVisits[word] == 7,
+		"hotness counting never allocates an executable-entry page before code exists");
+	require(cpu.runUntilDepth(0, 279) == RunResult::Yielded, "a mixed loop remains runnable");
+	require(page.words[word].dispatchOp == static_cast<u8>(OpCode::K1)
+		&& page.nativeVisits[word] == NATIVE_BLOCK_COMPILATION_THRESHOLD
+		&& page.nativeBlocks->entries[word + 2u],
+		"a rejected single-word prefix stops probing while the terminal jump compiles");
+}
+
 void nativeCodeRetiresOnWritesAndObservation() {
 	test::Blua32TestImage image;
 	image.text.resize(2u * MAPPED_PAGE_BYTE_SIZE);
@@ -241,6 +262,61 @@ void nativeHaltCommitsItsThreadAndFrameLatch() {
 			&& cpu.readCompletionValues()[0] == valueNumber(7),
 			"RFE resumes at the instruction following native WIDE HALT");
 	}
+}
+
+void nativeTerminalAtPageBoundaryTracksItsBody() {
+	CpuMachine machine(returnImage(OpCode::HALT));
+	auto& cpu = machine.cpu;
+	const u32 pc = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - INSTRUCTION_BYTES;
+	std::vector<u8> code(2u * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(code, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	machine.memory.writeBytes(pc, code.data(), code.size());
+	for (int warmup = 0; warmup < 20; ++warmup) {
+		cpu.clearHaltUntilIrq();
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], pc);
+		require(cpu.runUntilDepth(0, 1) == RunResult::Halted && cpu.readFramePc(0) == pc + 2u * INSTRUCTION_BYTES,
+			"a terminal WIDE instruction at the page boundary retains its full extent");
+	}
+	auto& head = cpu.activeThread()->frames[0]->executionImage->decodedPages.at(pc & ~MAPPED_PAGE_BYTE_MASK);
+	require(head.nativeBlocks && head.nativeBlocks->entries[255]
+		&& head.nativeBlocks->entries[255]->exit == NativeBlockExit::Halt,
+		"an already decoded cross-page WIDE terminal can execute as generated code");
+	writeInstruction(code, 1, static_cast<u8>(OpCode::KM1), 0, 0, 0);
+	machine.memory.writeBytes(pc + INSTRUCTION_BYTES, code.data() + INSTRUCTION_BYTES, INSTRUCTION_BYTES);
+	require(!head.nativeBlocks, "changing a generated terminal body retires the preceding page's native entry");
+	cpu.clearHaltUntilIrq();
+	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], pc);
+	require(cpu.runUntilDepth(0, 1) == RunResult::Yielded && cpu.readFrameRegister(0, 0) == valueNumber(-1),
+		"the rewritten WIDE body replaces the generated HALT semantics");
+}
+
+void nativeWritesPreserveIndependentBlocks() {
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	for (const u32 start : {0u, 8u}) {
+		writeInstruction(image.text, start, static_cast<u8>(OpCode::K1), 0, 0, 0);
+		writeInstruction(image.text, start + 1u, static_cast<u8>(OpCode::ADD), 1, 0, 0);
+		writeInstruction(image.text, start + 2u, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
+	}
+	image.functions = {{.firstWord = 0, .wordCount = 11, .maxStack = 2}};
+	CpuMachine machine(image);
+	auto& cpu = machine.cpu;
+	machine.memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
+	for (const u32 start : {0u, 8u}) {
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE + start * INSTRUCTION_BYTES);
+		require(cpu.runUntilDepth(0, 300) == RunResult::Yielded, "independent blocks warm on a shared source page");
+	}
+	auto& page = *cpu.activeThread()->frames[0]->decodedPage;
+	const auto* preserved = page.nativeBlocks->entries[0].get();
+	require(preserved && page.nativeBlocks->entries[8], "both source regions contain real generated code");
+	writeInstruction(image.text, 9, static_cast<u8>(OpCode::SUB), 1, 0, 0);
+	machine.memory.writeBytes(DYNAMIC_RAM_BASE + 9u * INSTRUCTION_BYTES,
+		image.text.data() + 9u * INSTRUCTION_BYTES, INSTRUCTION_BYTES);
+	require(page.nativeBlocks->entries[0].get() == preserved && !page.nativeBlocks->entries[8],
+		"a source write retires exactly the overlapping generated dependencies");
+	require(cpu.runUntilDepth(0, 3) == RunResult::Yielded && cpu.readFrameRegister(0, 1) == valueNumber(0),
+		"the changed region executes its new source without invalidating independent code");
 }
 #endif
 
@@ -1012,8 +1088,11 @@ int main() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		nativeCodeWarmsWithinOneCpuSlice();
 		nativeCodeUsesCachedWordsAtPartialRomTails();
+		nativeWarmRetiresRejectedPrefixes();
 		nativeCodeRetiresOnWritesAndObservation();
 		nativeHaltCommitsItsThreadAndFrameLatch();
+		nativeTerminalAtPageBoundaryTracksItsBody();
+		nativeWritesPreserveIndependentBlocks();
 #endif
 		stringBytePositions(); loadKrIndices(); zeroLoadNil(); successorFetchOrdering(); reservedMemoryKinds(); zeroStackReuse();
 		returnRangesSurviveCallerStackGrowth(); builtinReturnRangesSurviveDestinationGrowth();

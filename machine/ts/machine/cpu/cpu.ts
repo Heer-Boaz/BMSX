@@ -1244,7 +1244,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 			const page = image.decodedPages.get(key);
 			if (page !== undefined) {
-				this.compiledCodeCache.retirePage(page);
+				this.compiledCodeCache.retirePage(page, firstWord, endWord);
 				page.refreshState.fill(DECODED_REFRESH_DECODE, firstWord, endWord);
 			}
 		}
@@ -1424,8 +1424,10 @@ export class CPU implements MappedPageInvalidator {
 			return true;
 		}
 		if (instructionCacheable && this.executionBackend === CpuExecutionBackend.JavaScript
-			&& compiledBlockSupports(page.ops[pageOffset])) {
+			&& compiledBlockSupports(page.ops[pageOffset])
+			&& (compiledBlockEndsBlock(page.ops[pageOffset]) || pageOffset + width < DECODED_PAGE_WORDS)) {
 			if (page.compiledBlocks === null) page.compiledBlocks = new CompiledBlockPage();
+			page.compiledBlocks.visits[pageOffset] = 0;
 			page.dispatchOps[pageOffset] = DecodedDispatchOp.CompiledWarm;
 			return true;
 		}
@@ -2365,9 +2367,9 @@ export class CPU implements MappedPageInvalidator {
 				let cursor = word;
 				let nextPc = pc;
 				let count = 0;
-				while (cursor < DECODED_PAGE_WORDS - 1 && count < COMPILED_BLOCK_MAX_INSTRUCTIONS) {
+				while (cursor < DECODED_PAGE_WORDS && count < COMPILED_BLOCK_MAX_INSTRUCTIONS) {
 					if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) !== 0) {
-						if (binding.readBytes === null) break;
+						if (binding.readBytes === null || cursor === DECODED_PAGE_WORDS - 1) break;
 						if (!this.decodeInstruction(frame, page, cursor, nextPc, false)) return;
 					}
 					if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) !== 0

@@ -483,7 +483,6 @@ private:
 
 	void skipNextInstruction(CallFrame& frame);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	void sampleNativeBlockEntry(CallFrame& frame);
 	void prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32 word);
 	size_t m_nativeCodeBytes = 0;
 #endif

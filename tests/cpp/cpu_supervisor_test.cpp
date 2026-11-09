@@ -628,11 +628,17 @@ void testDecodedSuperinstructionsPreserveGuestBoundaries() {
 		bmsx::asNumber(fused.cpu.readFrameRegister(0, 3)) == 3.0,
 		"fused pair commits its second numeric result"
 	);
+	const auto expectedColdDispatch =
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		bmsx::DecodedDispatchOp::NativeWarm;
+#else
+		bmsx::DecodedDispatchOp::FusedShlBxor;
+#endif
 	require(
 		fused.cpu.activeThread()->frames[0]->decodedPage->words[
 			((entryPc + 2u * bmsx::INSTRUCTION_BYTES) & bmsx::MAPPED_PAGE_BYTE_MASK) >> 2
-		].dispatchOp == static_cast<bmsx::u8>(bmsx::DecodedDispatchOp::FusedShlBxor),
-		"fully backed lookahead retains fused dispatch"
+		].dispatchOp == static_cast<bmsx::u8>(expectedColdDispatch),
+		"cold arithmetic uses the selected backend's decoded admission route"
 	);
 
 	CpuTestMachine budgeted(makeDecodedPairSystemImage());

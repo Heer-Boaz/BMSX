@@ -265,3 +265,55 @@ for (const standalone of [false, true]) test(`generated HALT commits its thread/
 	}
 	assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 });
+
+test('a generated terminal WIDE instruction can straddle pages and retires when its body changes', () => {
+	const text = new Uint8Array(INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1 }] });
+	const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
+	const pc = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - INSTRUCTION_BYTES;
+	const code = new Uint8Array(2 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(code, 1, OpCode.HALT, 0, 0, 0);
+	memory.writeBytes(pc, code);
+	for (let warmup = 0; warmup < 20; ++warmup) {
+		cpu.clearHaltUntilIrq();
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
+		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Halted);
+		assert.equal(cpu.readFramePc(0), pc + 2 * INSTRUCTION_BYTES);
+	}
+	const head = cpu.rootThread.frames[0].executionImage.decodedPages;
+	assert.ok([...head.values()].some(page => page.compiledBlocks?.entries[255]?.exit === CompiledBlockExit.Halt));
+	writeInstruction(code, 1, OpCode.KM1, 0, 0, 0);
+	memory.writeBytes(pc + INSTRUCTION_BYTES, code.subarray(INSTRUCTION_BYTES));
+	assert.equal(compiledEntries(cpu), 0);
+	cpu.clearHaltUntilIrq();
+	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
+	assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+	assert.equal(cpu.readFrameRegister(0, 0), -1);
+});
+
+test('source writes retire overlapping blocks without discarding independent code on the same page', () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	for (const start of [0, 8]) {
+		writeInstruction(text, start, OpCode.K1, 0, 0, 0);
+		writeInstruction(text, start + 1, OpCode.ADD, 1, 0, 0);
+		writeInstruction(text, start + 2, OpCode.JMP, 0, 63, 61, 255);
+	}
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 11, maxStack: 2 }] });
+	const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
+	memory.writeBytes(DYNAMIC_RAM_BASE, text);
+	for (const start of [0, 8]) {
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE + start * INSTRUCTION_BYTES);
+		cpu.runUntilDepth(0, 300);
+	}
+	const page = cpu.rootThread.frames[0].decodedPage!;
+	const preserved = page.compiledBlocks!.entries[0];
+	assert.ok(preserved !== null && page.compiledBlocks!.entries[8] !== null);
+	writeInstruction(text, 9, OpCode.SUB, 1, 0, 0);
+	memory.writeBytes(DYNAMIC_RAM_BASE + 9 * INSTRUCTION_BYTES, text.subarray(9 * INSTRUCTION_BYTES, 10 * INSTRUCTION_BYTES));
+	assert.equal(page.compiledBlocks!.entries[0], preserved);
+	assert.equal(page.compiledBlocks!.entries[8], null);
+	assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
+	assert.equal(cpu.readFrameRegister(0, 1), 0);
+});

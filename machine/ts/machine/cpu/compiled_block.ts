@@ -27,6 +27,7 @@ export type CompiledBlock = {
 	readonly currentPc: number;
 	readonly lastPc: number;
 	readonly sourceUnits: number;
+	readonly sourceWords: number;
 };
 
 export class CompiledBlockPage {
@@ -34,15 +35,19 @@ export class CompiledBlockPage {
 	public readonly visits = new Uint8Array(DECODED_PAGE_WORDS);
 	public sourceUnits = 0;
 
-	public retire(page: DecodedInstructionPage): number {
-		for (let word = 0; word < this.entries.length; ++word) {
-			if (this.entries[word] === null) continue;
+	public retire(page: DecodedInstructionPage, firstWord: number, endWord: number): number {
+		let released = 0;
+		const firstEntry = Math.max(0, firstWord - 2 * COMPILED_BLOCK_MAX_INSTRUCTIONS);
+		const endEntry = Math.min(DECODED_PAGE_WORDS, endWord);
+		for (let word = firstEntry; word < endEntry; ++word) {
+			const block = this.entries[word];
+			if (block === null || word + block.sourceWords <= firstWord) continue;
+			released += block.sourceUnits;
 			page.dispatchOps[word] = DecodedDispatchOp.CompiledWarm;
 			this.entries[word] = null;
+			this.visits[word] = 0;
 		}
-		this.visits.fill(0);
-		const released = this.sourceUnits;
-		this.sourceUnits = 0;
+		this.sourceUnits -= released;
 		return released;
 	}
 }
@@ -63,10 +68,10 @@ export class CompiledCodeCache {
 		page.dispatchOps[word] = DecodedDispatchOp.Compiled;
 	}
 
-	public retirePage(page: DecodedInstructionPage): void {
-		if (page.compiledBlocks === null) return;
-		this.sourceUnits -= page.compiledBlocks.retire(page);
-		this.pages.delete(page);
+	public retirePage(page: DecodedInstructionPage, firstWord = 0, endWord = DECODED_PAGE_WORDS + 1): void {
+		if (page.compiledBlocks === null || page.compiledBlocks.sourceUnits === 0) return;
+		this.sourceUnits -= page.compiledBlocks.retire(page, firstWord, endWord);
+		if (page.compiledBlocks.sourceUnits === 0) this.pages.delete(page);
 	}
 
 	public retireAll(): void {
@@ -125,6 +130,7 @@ export function compileJavaScriptBlock(
 ): CompiledBlock {
 	const source = ['"use strict";'];
 	let cycles = 0;
+	let sourceWords = 0;
 	let registerTop = 0;
 	let currentPc = pc;
 	let lastPc = pc;
@@ -135,6 +141,7 @@ export function compileJavaScriptBlock(
 		const op = page.ops[word];
 		source.push(emitters[op]!(page, word, image));
 		cycles += BASE_CYCLES[op];
+		sourceWords += page.widths[word];
 		currentPc = pc;
 		lastPc = (pc + (page.widths[word] - 1) * INSTRUCTION_BYTES) >>> 0;
 		pc = (pc + page.widths[word] * INSTRUCTION_BYTES) >>> 0;
@@ -150,7 +157,7 @@ export function compileJavaScriptBlock(
 	return {
 		execute: new Function('r', 'k', body) as CompiledBlock['execute'],
 		exit: finalOp === OpCode.HALT ? CompiledBlockExit.Halt : CompiledBlockExit.Continue,
-		cycles, registerTop, nextPc, currentPc, lastPc,
+		cycles, sourceWords, registerTop, nextPc, currentPc, lastPc,
 		sourceUnits: body.length,
 	};
 }
