@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <unordered_map>
 #include <vector>
 
@@ -13,6 +14,10 @@
 #include "spec/blua32/execution_domain.h"
 #include "spec/blua32/instruction_format.h"
 #include "spec/blua32/opcode.h"
+
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+#include "machine/cpu/native_block.h"
+#endif
 
 namespace bmsx {
 
@@ -97,6 +102,13 @@ inline constexpr u8 DECODED_REFRESH_FUSION = 2u;
 // A fused dispatch can inspect two instructions, each with one WIDE prefix.
 inline constexpr u32 DECODED_DEPENDENCY_PREDECESSOR_WORDS = 3u;
 
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+struct NativeBlockPage {
+	std::array<std::unique_ptr<NativeBlock>, DECODED_PAGE_WORDS> entries{};
+	std::array<u8, DECODED_PAGE_WORDS> visits{};
+};
+#endif
+
 struct DecodedInstructionPage {
 	explicit DecodedInstructionPage(bool isCacheable, MappedPageWriteWatch pageWriteWatch)
 		: cacheable(isCacheable)
@@ -110,6 +122,9 @@ struct DecodedInstructionPage {
 	std::array<uint32_t, DECODED_PAGE_WORDS> bodyWords{};
 	bool cacheable;
 	MappedPageWriteWatch writeWatch;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	std::unique_ptr<NativeBlockPage> nativeBlocks;
+#endif
 };
 
 struct Blua32ExecutionImage {

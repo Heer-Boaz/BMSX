@@ -129,10 +129,10 @@ test::Blua32TestImage program(Workload workload) {
 	return image;
 }
 
-void measure(Workload workload, const char* name, int grant, int round) {
+void measure(Workload workload, const char* name, int grant, int round, bool fullyBacked) {
 	const auto image = program(workload);
 	auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
-	if (workload == Workload::CallsBacked || workload == Workload::CallsRamRecord) {
+	if (fullyBacked || workload == Workload::CallsBacked || workload == Workload::CallsRamRecord) {
 		// The same program with a fully backed final page complements the ROM-tail case.
 		rom.bytes.resize((rom.bytes.size() + MAPPED_PAGE_BYTE_MASK) & ~static_cast<size_t>(MAPPED_PAGE_BYTE_MASK));
 	}
@@ -233,6 +233,20 @@ void measure(Workload workload, const char* name, int grant, int round) {
 		}
 	}
 	const double mhz = static_cast<double>(cycles) * 1000.0 / static_cast<double>(nanoseconds);
+	size_t nativeBlocks = 0;
+	size_t nativeCodeBytes = 0;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	for (const auto& [key, page] : cpu.activeThread()->frames[0]->executionImage->decodedPages) {
+		if (!page.nativeBlocks) continue;
+		for (const auto& block : page.nativeBlocks->entries) {
+			if (!block) continue;
+			++nativeBlocks;
+			nativeCodeBytes += block->codeBytes;
+		}
+	}
+	if (fullyBacked && (workload == Workload::Registers || workload == Workload::Fractions)
+		&& nativeBlocks == 0) throw std::runtime_error("Backed arithmetic benchmarks must exercise native code.");
+#endif
 	std::cout << "[cpu-throughput] workload=" << name << " grant=" << cycleGrant
 		<< " grant_work_units=" << grant << " round=" << round
 		<< " active_cycles=" << cycles << " idle_cycles=0 wall_ms=" << static_cast<double>(nanoseconds) / 1000000.0
@@ -242,37 +256,43 @@ void measure(Workload workload, const char* name, int grant, int round) {
 		<< " rom_bytes=" << rom.bytes.size()
 		<< " guest_mhz=" << mhz << " target_mhz=" << static_cast<double>(PSX_MACHINE_SPEC.cpuFreqHz) / 1000000.0
 		<< " realtime=" << mhz * 1000000.0 / static_cast<double>(PSX_MACHINE_SPEC.cpuFreqHz)
-		<< " last_pc=" << cpu.lastPc << std::endl;
+		<< " last_pc=" << cpu.lastPc << " fully_backed=" << fullyBacked
+		<< " native_blocks=" << nativeBlocks << " native_code_bytes=" << nativeCodeBytes << std::endl;
 }
 }
 
 int main(int argc, char** argv) {
-	const bool ramRecords = argc == 2 && std::string_view(argv[1]) == "--ram-records";
-	const bool comparisons = argc == 2 && std::string_view(argv[1]) == "--comparisons";
-	const bool allocations = argc == 2 && std::string_view(argv[1]) == "--allocations";
-	if (argc != 1 && !ramRecords && !comparisons && !allocations) throw std::runtime_error("Expected no arguments, --ram-records, --comparisons or --allocations.");
+	bool ramRecords = false, comparisons = false, allocations = false, fullyBacked = false;
+	for (int argument = 1; argument < argc; ++argument) {
+		const std::string_view option(argv[argument]);
+		if (option == "--ram-records") ramRecords = true;
+		else if (option == "--comparisons") comparisons = true;
+		else if (option == "--allocations") allocations = true;
+		else if (option == "--fully-backed") fullyBacked = true;
+		else throw std::runtime_error("Expected --ram-records, --comparisons, --allocations or --fully-backed.");
+	}
 	std::cout << std::fixed << std::setprecision(3);
 	for (const int grant : {256, 4096}) for (int round = 0; round < 3; ++round) {
 		if (ramRecords) {
-			measure(Workload::CallsRamRecord, "calls-ram-record", grant, round);
+			measure(Workload::CallsRamRecord, "calls-ram-record", grant, round, fullyBacked);
 			continue;
 		}
 		if (comparisons) {
-			measure(Workload::Comparisons, "comparisons", grant, round);
+			measure(Workload::Comparisons, "comparisons", grant, round, fullyBacked);
 			continue;
 		}
 		if (allocations) {
-			measure(Workload::TableChurn, "table-churn", grant, round);
-			measure(Workload::TableChurnLive, "table-churn-live", grant, round);
+			measure(Workload::TableChurn, "table-churn", grant, round, fullyBacked);
+			measure(Workload::TableChurnLive, "table-churn-live", grant, round, fullyBacked);
 			continue;
 		}
-		measure(Workload::Registers, "registers", grant, round);
-		measure(Workload::Tables, "tables", grant, round);
-		measure(Workload::Builtin, "builtin-byte", grant, round);
-		measure(Workload::Ram, "ram-words", grant, round);
-		measure(Workload::Calls, "calls", grant, round);
-		measure(Workload::CallsBacked, "calls-backed", grant, round);
-		measure(Workload::CodeWrites, "code-writes", grant, round);
-		measure(Workload::Fractions, "fractions", grant, round);
+		measure(Workload::Registers, "registers", grant, round, fullyBacked);
+		measure(Workload::Tables, "tables", grant, round, fullyBacked);
+		measure(Workload::Builtin, "builtin-byte", grant, round, fullyBacked);
+		measure(Workload::Ram, "ram-words", grant, round, fullyBacked);
+		measure(Workload::Calls, "calls", grant, round, fullyBacked);
+		measure(Workload::CallsBacked, "calls-backed", grant, round, fullyBacked);
+		measure(Workload::CodeWrites, "code-writes", grant, round, fullyBacked);
+		measure(Workload::Fractions, "fractions", grant, round, fullyBacked);
 	}
 }

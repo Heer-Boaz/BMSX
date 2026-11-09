@@ -63,6 +63,7 @@ void registerRunsPublishAtBudgetBoundaries() {
 	writeInstruction(image.text, 5, static_cast<u8>(OpCode::BNOT), 4, 3, 0);
 	writeInstruction(image.text, 6, static_cast<u8>(OpCode::JMP), 0, 63, 57, 255);
 	image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 8}};
+	image.text.resize(2u * MAPPED_PAGE_BYTE_SIZE);
 	CpuMachine normal(image), instrumented(image);
 	instrumented.cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; },
 		nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
@@ -72,6 +73,11 @@ void registerRunsPublishAtBudgetBoundaries() {
 	for (auto* machine : {&normal, &instrumented}) {
 		require(machine->cpu.runUntilDepth(0, 1000) == RunResult::Yielded, "warm the register loop without halting");
 	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	const auto& page = *normal.cpu.activeThread()->frames[0]->decodedPage;
+	require(page.nativeBlocks && page.nativeBlocks->entries[(entry & MAPPED_PAGE_BYTE_MASK) >> 2u],
+		"budget-boundary comparisons exercise generated machine code, not just cold scalar execution");
+#endif
 	for (int budget = 1; budget <= 96; ++budget) {
 		for (auto* machine : {&normal, &instrumented}) {
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
@@ -90,6 +96,49 @@ void registerRunsPublishAtBudgetBoundaries() {
 			"cached and observed instruction prefixes produce identical raw register values");
 	}
 }
+
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+void nativeCodeRetiresOnWritesAndObservation() {
+	test::Blua32TestImage image;
+	image.text.resize(2u * MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::ADD), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 1, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
+	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 4}};
+	CpuMachine machine(image);
+	auto& cpu = machine.cpu;
+	const u32 pc = DYNAMIC_RAM_BASE + 0x5000u;
+	machine.memory.writeBytes(pc, image.text.data(), 4u * INSTRUCTION_BYTES);
+	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], pc);
+	require(cpu.runUntilDepth(0, 256) == RunResult::Yielded && cpu.readFramePc(0) == pc,
+		"warm native code from ordinary writable instruction memory");
+	auto& page = *cpu.activeThread()->frames[0]->decodedPage;
+	require(page.nativeBlocks && page.nativeBlocks->entries[0], "writable instructions acquire a native block");
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::SUB), 0, 0, 0);
+	machine.memory.writeBytes(pc + INSTRUCTION_BYTES, image.text.data() + INSTRUCTION_BYTES, INSTRUCTION_BYTES);
+	require(!page.nativeBlocks, "a source-word write retires native dependencies before their next execution");
+	require(cpu.runUntilDepth(0, 256) == RunResult::Yielded && cpu.readFrameRegister(0, 1) == valueNumber(0),
+		"rewritten source bytes replace the previously generated arithmetic");
+	require(page.nativeBlocks && page.nativeBlocks->entries[0], "rewritten code can be compiled again");
+	int observations = 0;
+	InstructionObserverBinding binding;
+	binding.context = &observations;
+	binding.points[0].insert(pc + INSTRUCTION_BYTES);
+	binding.observe = [](void* context, ExecutionDomainId domain, u32, const Value* registers) {
+		require(domain == SYSTEM_EXECUTION_DOMAIN_ID && registers[0] == valueNumber(1),
+			"observation sees the exact state before the formerly compiled instruction");
+		++*static_cast<int*>(context);
+	};
+	cpu.setInstructionObserver(std::move(binding));
+	require(!page.nativeBlocks, "installing observation retires existing native code");
+	require(cpu.runUntilDepth(0, 40) == RunResult::Yielded && observations == 10,
+		"native compilation cannot elide or batch through an observed instruction");
+	cpu.setInstructionObserver({});
+	cpu.runUntilDepth(0, 256);
+	require(page.nativeBlocks && page.nativeBlocks->entries[0], "removing observation admits native execution again");
+}
+#endif
 
 void compactAndPaddedRomFunctionRecordsAgree() {
 	for (const bool instrumented : {false, true}) for (const bool padded : {false, true}) {
@@ -856,6 +905,9 @@ int main() {
 	compactAndPaddedRomFunctionRecordsAgree();
 	try {
 		registerRunsPublishAtBudgetBoundaries();
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		nativeCodeRetiresOnWritesAndObservation();
+#endif
 		stringBytePositions(); loadKrIndices(); zeroLoadNil(); successorFetchOrdering(); reservedMemoryKinds(); zeroStackReuse();
 		returnRangesSurviveCallerStackGrowth(); builtinReturnRangesSurviveDestinationGrowth();
 		wideSignedImmediatesKeepTheirRange();

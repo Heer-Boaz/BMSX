@@ -780,6 +780,9 @@ void CPU::invalidateDecodedWords(u64 key, u32 firstWord, u32 endWord) {
 		auto page = image->decodedPages.find(key);
 		if (page != image->decodedPages.end()) {
 			auto& decodedPage = page->second;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			decodedPage.nativeBlocks.reset();
+#endif
 			for (u32 index = firstPredecessor; index < predecessorEnd; ++index) {
 				u8& refresh = decodedPage.refreshState[index];
 				if ((refresh & DECODED_REFRESH_DECODE) != 0u) continue;
@@ -827,6 +830,9 @@ void CPU::invalidateMappedRange(u64 firstKey, u64 endKey) {
 		}
 		for (auto& [key, page] : image->decodedPages) {
 			if (key >= invalidationStart && key < endKey) {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+				page.nativeBlocks.reset();
+#endif
 				page.refreshState.fill(DECODED_REFRESH_DECODE);
 			}
 		}
@@ -2506,6 +2512,17 @@ dispatch_decode:
 				refreshState = decodedPage->refreshState[pageOffset];
 			}
 			decoded = &decodedPage->words[pageOffset];
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			if constexpr (!Instrumented) {
+				if ((refreshState & DECODED_REFRESH_DECODE) == 0u
+					&& decoded->dispatchOp != static_cast<u8>(DecodedDispatchOp::Observe)
+					&& nativeBlockSupports(decoded->op)
+					&& runNativeBlock(*frame, *decodedPage, pageOffset)) {
+					if (instructionBudgetRemaining > 0) goto dispatch_fetch;
+					goto dispatch_continue;
+				}
+			}
+#endif
 			m_currentInstructionPc = pc;
 			frame->pc = pc + (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES);
 			m_lastExecutionDomainId = image->executionDomainId;
@@ -2767,7 +2784,12 @@ void CPU::setInstructionObserver(InstructionObserverBinding binding) {
 	// Predecessors may have fused across a newly observed PC.
 	for (auto& image : m_executionImagesByDomain) {
 		if (!image) continue;
-		for (auto& [key, page] : image->decodedPages) page.refreshState.fill(DECODED_REFRESH_DECODE);
+		for (auto& [key, page] : image->decodedPages) {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			page.nativeBlocks.reset();
+#endif
+			page.refreshState.fill(DECODED_REFRESH_DECODE);
+		}
 	}
 }
 
