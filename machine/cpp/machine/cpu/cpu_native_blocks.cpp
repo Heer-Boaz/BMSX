@@ -56,7 +56,7 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 	const NativeBlockExitHandlers handlers{nullptr, nullptr, &CPU::compiledCallExit, &CPU::compiledReturnExit,
 		&CPU::compiledReadFieldExit, &CPU::compiledWriteFieldExit, &CPU::compiledReadMemoryExit, &CPU::compiledWriteMemoryExit};
 	page.nativeBlocks->entries[word] = NativeBlock::compile(
-		std::span(instructions.data(), count), frame.executionImage->constPool.data(), m_nativeCodeBytes, m_memory, handlers);
+		std::span(instructions.data(), count), frame.executionImage->constPool.data(), m_nativeCodeBytes, m_memory, m_stringPool, handlers);
 	++page.nativeBlocks->count;
 	page.words[word].dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeBlock);
 	page.words[word].dispatchCycles = page.words[word].baseCycles;

@@ -106,6 +106,11 @@ void NativeBlockCompiler::loadHeader(int selector, sljit_s32 target) {
 }
 
 void NativeBlockCompiler::loadPayload(int selector, sljit_s32 target, [[maybe_unused]] sljit_s32 scratch) {
+	if (selector < 0) {
+		sljit_emit_op1(m_compiler, SLJIT_MOV, target, 0, SLJIT_IMM,
+			static_cast<sljit_sw>(valuePayload(m_constants[-selector - 1])));
+		return;
+	}
 	const int slot = findRegister(selector);
 	if (slot >= 0) {
 		m_registers[slot].lastUse = ++m_registerClock;

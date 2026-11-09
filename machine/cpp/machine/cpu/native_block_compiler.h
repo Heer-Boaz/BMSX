@@ -11,7 +11,7 @@ namespace bmsx {
 
 class NativeBlockCompiler {
 public:
-	NativeBlockCompiler(const Value* constants, const NativeBlock* block, Memory& memory,
+	NativeBlockCompiler(const Value* constants, const NativeBlock* block, Memory& memory, StringPool& strings,
 		std::span<const NativeBlockInstruction> instructions);
 	~NativeBlockCompiler();
 	void emit(const DecodedInstruction& instruction, const NativeBlockExitSite* slowExit,
@@ -20,6 +20,7 @@ public:
 
 private:
 	void emitTableField(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
+	void emitComparison(const DecodedInstruction& instruction, const NativeBlockExitSite* skipped);
 	void emitMemory(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
 	void emitScalarLoad(MemoryAccessKind kind, sljit_s32 alignment);
 	void emitScalarStore(MemoryAccessKind kind, int source);
@@ -47,6 +48,8 @@ private:
 	const Value* m_constants;
 	const NativeBlock* m_block;
 	Memory& m_memory;
+	StringPool& m_strings;
+	bool m_hasTerminal = false;
 	struct SlowPath {
 		std::array<sljit_jump*, 7> jumps;
 		size_t count = 0;

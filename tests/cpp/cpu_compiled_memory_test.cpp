@@ -53,6 +53,9 @@ test::Blua32TestImage memoryLoop(OpCode op, MemoryAccessKind kind, u8 displaceme
 
 void ramScalarDatapathsAndGuards() {
 	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes), reference(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
+	IrqController irq(memory);
+	ExecutionAddressSpace addresses(memory);
+	CPU cpu(memory, irq, addresses);
 	const std::array values{valueNumber(-0.0), valueNumber(0.25), valueNumber(-1.75),
 		valueNumber(4294967295.0), valueNumber(-4294967296.75), valueNumber(4294967296.25),
 		valueNumber(1e100), valueNumber(-1e100), valueNumber(std::numeric_limits<double>::denorm_min()),
@@ -68,7 +71,7 @@ void ramScalarDatapathsAndGuards() {
 		store.width = 2; store.baseCycles = 2;
 		load = store; load.op = static_cast<u8>(displaced ? OpCode::LOAD_MEM_D : OpCode::LOAD_MEM); load.a = 2;
 		const std::array source{NativeBlockInstruction{&store, 0x1000}, NativeBlockInstruction{&load, 0x1008}};
-		auto block = NativeBlock::compile(source, nullptr, bytes, memory);
+		auto block = NativeBlock::compile(source, nullptr, bytes, memory, cpu.stringPool());
 		for (const u32 target : {DYNAMIC_RAM_BASE + 0x204u, DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - 4u,
 			RAM_BASE + PSX_MACHINE_SPEC.ramBytes - width}) for (const Value value : values) {
 			std::array registers{value, valueNumber(target - static_cast<u32>(store.disp) * 4u), valueNil()};
@@ -98,7 +101,7 @@ void ramScalarDatapathsAndGuards() {
 		}
 		load.a = load.b;
 		const std::array aliasSource{NativeBlockInstruction{&load, 0x1000}};
-		auto alias = NativeBlock::compile(aliasSource, nullptr, bytes, memory);
+		auto alias = NativeBlock::compile(aliasSource, nullptr, bytes, memory, cpu.stringPool());
 		std::array registers{valueNil(), valueNumber(DYNAMIC_RAM_BASE + 0x204u - store.disp * 4u)};
 		require(alias->run(registers.data(), nullptr) == &alias->terminal && valueIsNumber(registers[1]),
 			"a memory load can replace its own address register");
@@ -107,7 +110,7 @@ void ramScalarDatapathsAndGuards() {
 	DecodedInstruction store;
 	store.op = static_cast<u8>(OpCode::STORE_MEM); store.a = 0; store.b = 1; store.c = 5; store.width = 2; store.baseCycles = 2;
 	const std::array source{NativeBlockInstruction{&store, 0x1000}};
-	auto block = NativeBlock::compile(source, nullptr, bytes, memory);
+	auto block = NativeBlock::compile(source, nullptr, bytes, memory, cpu.stringPool());
 	const u32 target = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - 4u;
 	MappedPageBinding page;
 	memory.bindMappedPage(target + 4u, MAPPED_BUS_MASTER_CPU, page);
@@ -121,7 +124,7 @@ void ramScalarDatapathsAndGuards() {
 	DecodedInstruction load = store;
 	load.op = static_cast<u8>(OpCode::LOAD_MEM); load.a = 2;
 	const std::array numericSource{NativeBlockInstruction{&store, 0x1000}, NativeBlockInstruction{&load, 0x1008}};
-	auto numeric = NativeBlock::compile(numericSource, nullptr, bytes, memory);
+	auto numeric = NativeBlock::compile(numericSource, nullptr, bytes, memory, cpu.stringPool());
 	for (u64 header = 0; header <= 0xffffu; ++header) {
 		const Value value = (header << 48u) | 0x123456789abcu;
 		std::array registers{value, valueNumber(target), valueNil()};
@@ -134,7 +137,7 @@ void ramScalarDatapathsAndGuards() {
 	load.b = -1;
 	const std::array constantSource{NativeBlockInstruction{&load, 0x1000}};
 	const std::array constants{valueNumber(target)};
-	auto constant = NativeBlock::compile(constantSource, constants.data(), bytes, memory);
+	auto constant = NativeBlock::compile(constantSource, constants.data(), bytes, memory, cpu.stringPool());
 	std::array constantRegisters{valueNil(), valueNil(), valueNil()};
 	require(constant->run(constantRegisters.data(), constants.data()) == &constant->terminal
 		&& constant->sideExits[0].exitB == -1, "a constant memory address retains its signed RK selector");

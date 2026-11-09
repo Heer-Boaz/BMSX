@@ -93,7 +93,6 @@ import {
 } from '../../spec/blua32/execution_domain';
 import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
 import { ScratchBuffer } from '../../common/scratchbuffer';
-import { utf8Compare } from '../../common/utf8';
 import { luaFloorDivide, luaModulo } from '../../spec/blua32/numeric';
 import { ceilDiv4 } from '../common/numeric';
 import {
@@ -127,6 +126,7 @@ import {
 	DECODED_REFRESH_DECODE,
 	DECODED_REFRESH_FUSION,
 	createDecodedInstructionPage,
+	decodedDispatchCanFuse,
 	decodedDispatchOp,
 	DecodedDispatchOp,
 	type Blua32ExecutionImage,
@@ -1240,6 +1240,8 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private invalidateDecodedWords(key: number, firstWord: number, endWord: number): void {
+		const firstPredecessor = Math.max(0, firstWord - DECODED_DEPENDENCY_PREDECESSOR_WORDS);
+		const predecessorEnd = Math.min(firstWord, DECODED_PAGE_WORDS);
 		for (let index = 0; index < this.executionImagesByDomain.length; index += 1) {
 			const image = this.executionImagesByDomain[index];
 			if (image === null) {
@@ -1248,23 +1250,27 @@ export class CPU implements MappedPageInvalidator {
 			const page = image.decodedPages.get(key);
 			if (page !== undefined) {
 				this.compiledCodeCache.retirePage(page, firstWord, endWord);
-				page.refreshState.fill(DECODED_REFRESH_DECODE, firstWord, endWord);
+				for (let word = firstPredecessor; word < predecessorEnd; ++word) {
+					if ((page.refreshState[word] & DECODED_REFRESH_DECODE) !== 0) continue;
+					const ownEnd = word + page.widths[word];
+					if (ownEnd > firstWord) page.refreshState[word] = DECODED_REFRESH_DECODE;
+					else if (ownEnd + 2 > firstWord && decodedDispatchCanFuse(page.ops[word])
+						&& (page.compiledBlocks === null || page.compiledBlocks.entries[word] === null)) {
+						page.refreshState[word] |= DECODED_REFRESH_FUSION;
+					}
+				}
+				if (firstWord < DECODED_PAGE_WORDS) page.refreshState.fill(DECODED_REFRESH_DECODE, firstWord, endWord);
 			}
 		}
 	}
 
 	public invalidateMappedWords(key: number, firstWord: number, endWord: number): void {
-		this.invalidateDecodedWords(
-			key,
-			firstWord >= DECODED_DEPENDENCY_PREDECESSOR_WORDS
-				? firstWord - DECODED_DEPENDENCY_PREDECESSOR_WORDS : 0,
-			endWord,
-		);
+		this.invalidateDecodedWords(key, firstWord, endWord);
 		if (firstWord < DECODED_DEPENDENCY_PREDECESSOR_WORDS && key >= MAPPED_PAGE_BYTE_SIZE) {
 			this.invalidateDecodedWords(
 				key - MAPPED_PAGE_BYTE_SIZE,
-				DECODED_PAGE_WORDS - (DECODED_DEPENDENCY_PREDECESSOR_WORDS - firstWord),
-				DECODED_PAGE_WORDS,
+				DECODED_PAGE_WORDS + firstWord,
+				DECODED_PAGE_WORDS + endWord,
 			);
 		}
 	}
@@ -1434,7 +1440,7 @@ export class CPU implements MappedPageInvalidator {
 			page.dispatchOps[pageOffset] = DecodedDispatchOp.CompiledWarm;
 			return true;
 		}
-		const fusionCandidate = op === OpCode.SHL || op === OpCode.ADD || op === OpCode.SHR;
+		const fusionCandidate = decodedDispatchCanFuse(op);
 		if (!allowFusion) {
 			if (fusionCandidate && instructionCacheable) {
 				page.refreshState[pageOffset] = DECODED_REFRESH_FUSION;
@@ -2507,7 +2513,7 @@ export class CPU implements MappedPageInvalidator {
 					if (terminal) break;
 				}
 				if (count >= 2 || (count === 1 && compiledBlockEndsBlock(page.ops[word]))) {
-					const block = compileJavaScriptBlock(page, word, cursor, pc, frame.executionImage, this.memory);
+					const block = compileJavaScriptBlock(page, word, cursor, pc, frame.executionImage, this.memory, this.stringPool);
 					this.compiledCodeCache.install(page, word, block);
 				} else if (warmingSuccessor) {
 					cache.visits[word] = 0;
@@ -2530,6 +2536,7 @@ export class CPU implements MappedPageInvalidator {
 				case CompiledBlockExit.Halt: this.haltUntilIrq(); break;
 				case CompiledBlockExit.Call: this.executeCall(frame, exit.exitA, exit.exitB, exit.exitC); break;
 				case CompiledBlockExit.Return: this.executeReturn(frame, exit.exitA, exit.exitB); break;
+				case CompiledBlockExit.SkipInstruction: this.skipNextInstruction(frame); break;
 				case CompiledBlockExit.ReadMemory:
 				case CompiledBlockExit.WriteMemory: {
 					const address = ((this.readRKNumber(frame, exit.exitB) >>> 0) + (exit.displaced ? exit.displacement * 4 : 0)) >>> 0;
@@ -3008,10 +3015,7 @@ export class CPU implements MappedPageInvalidator {
 					if (leftTag === ValueTag.Number) {
 						ok = rightTag === ValueTag.Number && leftScalar < rightScalar;
 					} else if (leftTag === ValueTag.String) {
-						ok = rightTag === ValueTag.String && utf8Compare(
-								this.stringPool.toString(leftScalar as StringId),
-								this.stringPool.toString(rightScalar as StringId),
-							) < 0;
+						ok = rightTag === ValueTag.String && this.stringPool.compare(leftScalar as StringId, rightScalar as StringId) < 0;
 					}
 					if (ok !== (a !== 0)) {
 						this.skipNextInstruction(frame);
@@ -3124,10 +3128,7 @@ export class CPU implements MappedPageInvalidator {
 					if (leftTag === ValueTag.Number) {
 						ok = rightTag === ValueTag.Number && leftScalar <= rightScalar;
 					} else if (leftTag === ValueTag.String) {
-						ok = rightTag === ValueTag.String && utf8Compare(
-								this.stringPool.toString(leftScalar as StringId),
-								this.stringPool.toString(rightScalar as StringId),
-							) <= 0;
+						ok = rightTag === ValueTag.String && this.stringPool.compare(leftScalar as StringId, rightScalar as StringId) <= 0;
 					}
 					if (ok !== (a !== 0)) {
 						this.skipNextInstruction(frame);

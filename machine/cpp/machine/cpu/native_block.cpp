@@ -12,6 +12,7 @@ std::unique_ptr<NativeBlock> NativeBlock::compile(
 	const Value* constants,
 	size_t& cacheBytes,
 	Memory& memory,
+	StringPool& strings,
 	const NativeBlockExitHandlers& exitHandlers
 ) {
 	auto block = std::unique_ptr<NativeBlock>(new NativeBlock(cacheBytes));
@@ -19,7 +20,8 @@ std::unique_ptr<NativeBlock> NativeBlock::compile(
 		return nativeBlockSlowExit(source.decoded->op) != NativeBlockExit::Continue;
 	});
 	const auto finalOp = static_cast<OpCode>(instructions.back().decoded->op);
-	block->sideExits.reserve(slowCount + (finalOp == OpCode::JMPIF || finalOp == OpCode::JMPIFNOT ? 1 : 0));
+	block->sideExits.reserve(slowCount + (finalOp == OpCode::JMPIF || finalOp == OpCode::JMPIFNOT
+		|| nativeBlockComparison(static_cast<u8>(finalOp)) ? 1 : 0));
 	auto& terminal = block->terminal;
 	for (const auto& source : instructions) {
 		const auto& instruction = *source.decoded;
@@ -51,12 +53,16 @@ std::unique_ptr<NativeBlock> NativeBlock::compile(
 		: op == OpCode::RET ? NativeBlockExit::Return : NativeBlockExit::Continue;
 	terminal.handler = exitHandlers[static_cast<size_t>(terminal.exit)];
 	const NativeBlockExitSite* taken = nullptr;
-	if (op == OpCode::JMPIF || op == OpCode::JMPIFNOT) {
+	if (op == OpCode::JMPIF || op == OpCode::JMPIFNOT || nativeBlockComparison(static_cast<u8>(op))) {
 		auto& exit = block->sideExits.emplace_back(terminal);
-		exit.nextPc = instructions.back().decoded->bx;
+		if (nativeBlockComparison(static_cast<u8>(op))) {
+			exit.exit = NativeBlockExit::SkipInstruction;
+			exit.handler = exitHandlers[static_cast<size_t>(exit.exit)];
+		}
+		else exit.nextPc = instructions.back().decoded->bx;
 		taken = &exit;
 	}
-	NativeBlockCompiler compiler(constants, block.get(), memory, instructions);
+	NativeBlockCompiler compiler(constants, block.get(), memory, strings, instructions);
 	size_t slow = 0;
 	for (const auto& source : instructions) {
 		const auto* exit = nativeBlockSlowExit(source.decoded->op) != NativeBlockExit::Continue ? &block->sideExits[slow++] : nullptr;

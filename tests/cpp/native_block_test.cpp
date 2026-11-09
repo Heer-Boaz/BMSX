@@ -1,4 +1,6 @@
 #include "machine/cpu/native_block.h"
+#include "machine/cpu/cpu.h"
+#include "machine/devices/irq/controller.h"
 #include "machine/cpu/execution_image.h"
 #include "machine/cpu/call_state.h"
 #include "machine/memory/memory.h"
@@ -13,6 +15,9 @@ namespace {
 using namespace bmsx;
 
 Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
+IrqController irq(memory);
+ExecutionAddressSpace addresses(memory);
+CPU cpu(memory, irq, addresses);
 
 void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
@@ -37,13 +42,57 @@ void multipleRegisterDefinitionsSurviveCallAndExit() {
 	}
 	size_t bytes = 0;
 	{
-		auto block = NativeBlock::compile(source, nullptr, bytes, memory);
+		auto block = NativeBlock::compile(source, nullptr, bytes, memory, cpu.stringPool());
 		std::array<Value, 5> registers{valueNil(), valueNil(), valueNil(), valueNil(), valueNil()};
 		const std::array expected{valueNumber(83), valueNumber(11), valueNumber(0), valueNumber(66), valueNumber(72)};
 		require(block->run(registers.data(), nullptr) == &block->terminal && registers == expected,
 			"multiple live native values survive ABI calls, register pressure, alias copies and an actual exit");
 	}
 	require(bytes == 0, "register-allocated blocks retire their executable storage");
+}
+
+void comparisonDatapathsRespectEveryValueKind() {
+	auto& strings = cpu.stringPool();
+	Closure firstClosure, secondClosure;
+	Thread otherThread;
+	BuiltinFunction type{BuiltinFunctionId::Type}, sameType{BuiltinFunctionId::Type}, next{BuiltinFunctionId::Next};
+	const std::array values{valueNil(), valueFromTag(ValueTag::Nil, 37), valueBool(false),
+		valueFromTag(ValueTag::False, 37), valueBool(true), valueFromTag(ValueTag::True, 37),
+		valueNumber(0), valueNumber(-0.0), valueNumber(1), valueNumber(-1), valueNumber(0.25),
+		VALUE_QNAN_MASK, Value{0x7ff0000000000001ULL}, Value{0xfff0000000000001ULL},
+		valueNumber(std::numeric_limits<double>::infinity()), valueNumber(-std::numeric_limits<double>::infinity()),
+		valueString(strings.intern("")), valueString(strings.intern("a")), valueString(strings.intern(std::string_view("a\0b", 3))),
+		valueString(strings.intern("\xee\x80\x80")), valueString(strings.intern("\xf0\x90\x80\x80")),
+		valueTable(cpu.createTable()), valueTable(cpu.createTable()), valueClosure(&firstClosure), valueClosure(&secondClosure),
+		valueThread(cpu.activeThread()), valueThread(&otherThread), valueBuiltinFunction(&type), valueBuiltinFunction(&sameType),
+		valueBuiltinFunction(&next)};
+	size_t bytes = 0;
+	for (const auto op : {OpCode::EQ, OpCode::LT, OpCode::LE}) for (const bool expected : {false, true}) {
+		DecodedInstruction compare;
+		compare.op = static_cast<u8>(op); compare.a = expected ? 0x3fffu : 0u; compare.width = 2; compare.baseCycles = 1;
+		for (const Value left : values) for (const Value right : values) for (u32 constants = 0; constants < 4; ++constants) {
+			bool predicate = false;
+			if (op == OpCode::EQ) predicate = valuesEqual(left, right);
+			else if (valueIsNumber(left) && valueIsNumber(right)) predicate = op == OpCode::LT
+				? asNumber(left) < asNumber(right) : asNumber(left) <= asNumber(right);
+			else if (valueIsString(left) && valueIsString(right)) {
+				const int order = strings.toString(asStringId(left)).compare(strings.toString(asStringId(right)));
+				predicate = op == OpCode::LT ? order < 0 : order <= 0;
+			}
+			compare.b = (constants & 1) != 0 ? -1 : 0;
+			compare.c = (constants & 2) != 0 ? -2 : 1;
+			const std::array source{NativeBlockInstruction{&compare, 0x1000}};
+			const std::array pool{left, right};
+			auto registers = pool;
+			auto block = NativeBlock::compile(source, pool.data(), bytes, memory, strings);
+			const auto* exit = block->run(registers.data(), pool.data());
+			require((exit->exit == NativeBlockExit::SkipInstruction) == (predicate != expected)
+				&& registers == pool && exit->registerTop == 0 && exit->cycles == 1
+				&& exit->nextPc == 0x1008 && exit->currentPc == 0x1000 && exit->lastPc == 0x1004,
+				"native EQ/LT/LE preserve kind rules, RK sources, NaNs, UTF-8 order and non-destination A flags");
+		}
+	}
+	require(bytes == 0, "native comparisons retire all generated storage");
 }
 
 Value evaluate(OpCode op, Value left, Value right) {
@@ -97,7 +146,7 @@ void arithmeticAndWordDatapaths() {
 				const std::array pool{left, right};
 				std::array registers{left, right, valueNil(), valueNil()};
 				{
-					auto block = NativeBlock::compile(instructions, pool.data(), cacheBytes, memory);
+					auto block = NativeBlock::compile(instructions, pool.data(), cacheBytes, memory, cpu.stringPool());
 					block->run(registers.data(), pool.data());
 					const Value expected = evaluate(op, left, right);
 					require(registers[destination] == expected && registers[3] == expected,
@@ -127,7 +176,7 @@ void movesAndLiteralsPreserveRawValues() {
 		move.width = move.baseCycles = 1;
 		move.a = 1;
 		const std::array instructions{NativeBlockInstruction{&load, 0x1000}, NativeBlockInstruction{&move, 0x1004}};
-		auto block = NativeBlock::compile(instructions, pool.data(), bytes, memory);
+		auto block = NativeBlock::compile(instructions, pool.data(), bytes, memory, cpu.stringPool());
 		std::array registers{Value{0}, Value{0}};
 		block->run(registers.data(), pool.data());
 		require(registers[0] == pool[index] && registers[1] == pool[index], "moves preserve every raw tagged and number bit");
@@ -139,7 +188,7 @@ void movesAndLiteralsPreserveRawValues() {
 		load.baseCycles = 1;
 		load.sbx = -33554432;
 		const std::array instructions{NativeBlockInstruction{&load, 0x1000}};
-		auto block = NativeBlock::compile(instructions, pool.data(), bytes, memory);
+		auto block = NativeBlock::compile(instructions, pool.data(), bytes, memory, cpu.stringPool());
 		Value reg = 0;
 		block->run(&reg, pool.data());
 		const Value expected = op == OpCode::KNIL ? valueNil() : op == OpCode::KFALSE ? valueBool(false)
@@ -202,7 +251,7 @@ void dependentInstructionsWriteBackEveryLiveRegister() {
 			}
 			source[index] = {&instruction, index == 0 ? 0x1000u : source[index - 1].pc + decoded[index - 1].width * INSTRUCTION_BYTES};
 			previous = instruction.a;
-			auto block = NativeBlock::compile(std::span(source).first(index + 1), pool.data(), bytes, memory);
+			auto block = NativeBlock::compile(std::span(source).first(index + 1), pool.data(), bytes, memory, cpu.stringPool());
 			auto registers = initial;
 			block->run(registers.data(), pool.data());
 			require(registers == expected, "dependent native instructions preserve every live raw register at each prefix exit");
@@ -212,7 +261,7 @@ void dependentInstructionsWriteBackEveryLiveRegister() {
 			terminal.op = static_cast<u8>(op); terminal.width = 2; terminal.baseCycles = BASE_CYCLES[terminal.op];
 			terminal.a = previous; terminal.bx = 0x2000u;
 			source.back() = {&terminal, source[31].pc + decoded[31].width * INSTRUCTION_BYTES};
-			auto block = NativeBlock::compile(source, pool.data(), bytes, memory);
+			auto block = NativeBlock::compile(source, pool.data(), bytes, memory, cpu.stringPool());
 			auto registers = initial;
 			const auto pc = block->run(registers.data(), pool.data())->nextPc;
 			const bool taken = op == OpCode::JMP || (op == OpCode::JMPIF && isTruthy(expected[previous]))
@@ -235,7 +284,7 @@ void truthinessAndConditionalExits() {
 		instruction.baseCycles = 1;
 		instruction.bx = 0xfffffffcu;
 		const std::array source{NativeBlockInstruction{&instruction, 0x1000u}};
-		auto block = NativeBlock::compile(source, nullptr, bytes, memory);
+		auto block = NativeBlock::compile(source, nullptr, bytes, memory, cpu.stringPool());
 		// Exhaust the entire raw Value-header domain, with nonzero payloads:
 		// falsey tags are not compared as floating-point NaNs or whole values.
 		for (u32 header = 0; header != 65536u; ++header) {
@@ -260,7 +309,7 @@ void truthinessAndConditionalExits() {
 	halt.width = 2;
 	halt.baseCycles = 1;
 	const std::array source{NativeBlockInstruction{&halt, 0xfffffff8u}};
-	auto block = NativeBlock::compile(source, nullptr, bytes, memory);
+	auto block = NativeBlock::compile(source, nullptr, bytes, memory, cpu.stringPool());
 	require(block->run(nullptr, nullptr)->nextPc == 0u && block->terminal.exit == NativeBlockExit::Halt
 		&& block->terminal.registerTop == 0 && block->terminal.cycles == 1 && block->terminal.lastPc == 0xfffffffcu,
 		"a standalone native WIDE HALT has an exact wrapped continuation and explicit exit");
@@ -299,7 +348,7 @@ void sideExitHandlersRunAfterGeneratedFrameReturns() {
 	CallFrame frame;
 	frame.registers = registers.data();
 	{
-		auto block = NativeBlock::compile(source, nullptr, bytes, memory, {nullptr, nullptr, &exitResult});
+		auto block = NativeBlock::compile(source, nullptr, bytes, memory, cpu.stringPool(), {nullptr, nullptr, &exitResult});
 		const auto* exit = block->run(registers.data(), nullptr);
 		require(exit->handler(nullptr, &frame, exit) == NativeBlockTransition::RebindFrame,
 			"the generated side exit returns its typed frame transition");
@@ -307,14 +356,14 @@ void sideExitHandlersRunAfterGeneratedFrameReturns() {
 			"CALL reads do not extend top and retain the terminal WIDE/cycle extent");
 	}
 	{
-		auto block = NativeBlock::compile(source, nullptr, bytes, memory, {nullptr, nullptr, &exitThrow});
+		auto block = NativeBlock::compile(source, nullptr, bytes, memory, cpu.stringPool(), {nullptr, nullptr, &exitThrow});
 		bool caught = false;
 		try { const auto* exit = block->run(registers.data(), nullptr); exit->handler(nullptr, &frame, exit); }
 		catch (const TailFault& error) { caught = error.value == 73; }
 		require(caught, "C++ exceptions unwind ordinary registered frames, never generated code");
 	}
 	{
-		auto block = NativeBlock::compile(source, nullptr, bytes, memory, {nullptr, nullptr, &exitRetire});
+		auto block = NativeBlock::compile(source, nullptr, bytes, memory, cpu.stringPool(), {nullptr, nullptr, &exitRetire});
 		retiringBlock = &block;
 		const auto* exit = block->run(registers.data(), nullptr);
 		require(exit->handler(nullptr, &frame, exit) == NativeBlockTransition::Redispatch && !block,
@@ -329,6 +378,7 @@ void sideExitHandlersRunAfterGeneratedFrameReturns() {
 int main() {
 	try {
 		multipleRegisterDefinitionsSurviveCallAndExit();
+		comparisonDatapathsRespectEveryValueKind();
 		arithmeticAndWordDatapaths();
 		movesAndLiteralsPreserveRawValues();
 		dependentInstructionsWriteBackEveryLiveRegister();

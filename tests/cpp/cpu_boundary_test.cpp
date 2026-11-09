@@ -52,6 +52,31 @@ struct CpuMachine {
 	}
 };
 
+void equalityUsesValueKindsInsteadOfUnusedPayloads() {
+	test::Blua32TestImage image;
+	image.text.resize(3 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::EQ), 0, 0, 1);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::K1), 2, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 3}};
+	for (const auto kind : {ValueTag::Nil, ValueTag::False, ValueTag::True}) {
+		CpuMachine machine(image);
+		auto& frame = *machine.cpu.activeThread()->frames[0];
+		frame.registers[0] = valueFromTag(kind, 1);
+		frame.registers[1] = valueFromTag(kind, 2);
+		frame.registers[2] = valueNumber(0);
+		require(machine.cpu.runUntilDepth(0, 20) == RunResult::Halted && frame.registers[2] == valueNumber(0),
+			"EQ consumes Nil/boolean kinds without treating their unused payload bits as another value");
+	}
+	CpuMachine machine(image);
+	BuiltinFunction left{BuiltinFunctionId::Type}, right{BuiltinFunctionId::Type};
+	auto& frame = *machine.cpu.activeThread()->frames[0];
+	frame.registers[0] = valueBuiltinFunction(&left); frame.registers[1] = valueBuiltinFunction(&right);
+	frame.registers[2] = valueNumber(0);
+	require(machine.cpu.runUntilDepth(0, 20) == RunResult::Halted && frame.registers[2] == valueNumber(0),
+		"EQ compares builtin identifiers instead of the host address of their descriptors");
+}
+
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 NativeBlockTransition fieldSlowExitMarker(CPU*, CallFrame*, const NativeBlockExitSite*) {
 	return NativeBlockTransition::Redispatch;
@@ -73,7 +98,7 @@ void nativeFieldGuardsAndRawSlotAccess() {
 		field.a = 0; field.b = 1; field.c = store ? -1 : 1;
 		field.width = 2; field.baseCycles = BASE_CYCLES[field.op]; field.tableCacheSlot = slot;
 		const std::array source{NativeBlockInstruction{&field, 0x1000u}};
-		auto block = NativeBlock::compile(source, constants.data(), bytes, machine.memory, {nullptr, nullptr, nullptr, nullptr, &fieldSlowExitMarker, &fieldSlowExitMarker});
+		auto block = NativeBlock::compile(source, constants.data(), bytes, machine.memory, machine.cpu.stringPool(), {nullptr, nullptr, nullptr, nullptr, &fieldSlowExitMarker, &fieldSlowExitMarker});
 		std::array registers{valueTable(table), valueTable(table)};
 		if (store) {
 			require(block->sideExits[0].exitC == -1, "native field exits keep signed RK selectors");
@@ -89,7 +114,7 @@ void nativeFieldGuardsAndRawSlotAccess() {
 			DecodedInstruction alias = field;
 			alias.a = alias.b;
 			const std::array aliasSource{NativeBlockInstruction{&alias, 0x1000u}};
-			auto aliasBlock = NativeBlock::compile(aliasSource, constants.data(), bytes, machine.memory);
+			auto aliasBlock = NativeBlock::compile(aliasSource, constants.data(), bytes, machine.memory, machine.cpu.stringPool());
 			table->setStringKey(key, valueNumber(-0.0));
 			require(aliasBlock->run(registers.data(), constants.data())->exit == NativeBlockExit::Continue
 				&& registers[1] == valueNumber(-0.0), "a cached field result can replace its own table receiver");
@@ -1360,6 +1385,7 @@ void bootAddressWrap() {
 int main() {
 	compactAndPaddedRomFunctionRecordsAgree();
 	try {
+		equalityUsesValueKindsInsteadOfUnusedPayloads();
 		registerRunsPublishAtBudgetBoundaries();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		nativeFieldGuardsAndRawSlotAccess();

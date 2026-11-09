@@ -7,6 +7,10 @@
 
 namespace bmsx {
 
+int compareStringIds(const StringPool* pool, StringId left, StringId right) {
+	return pool->toString(left).compare(pool->toString(right));
+}
+
 StringPool::StringPool(LuaHeap& luaHeap)
 	: m_luaHeap(luaHeap) {
 }

@@ -92,4 +92,6 @@ private:
 	std::vector<bool> m_reachable;
 };
 
+int compareStringIds(const StringPool* pool, StringId left, StringId right);
+
 } // namespace bmsx

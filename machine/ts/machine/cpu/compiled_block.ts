@@ -6,6 +6,8 @@ import type { ValueSlots } from './value_slots';
 import type { Memory } from '../memory/memory';
 import { emitMemoryAccess } from './compiled_block_memory';
 import { JavaScriptRegisterCache } from './compiled_block_registers';
+import { emitComparison } from './compiled_block_compare';
+import type { StringPool } from './string_pool';
 
 export const enum CpuExecutionBackend {
 	Interpreter,
@@ -25,6 +27,7 @@ export const enum CompiledBlockExit {
 	WriteField,
 	ReadMemory,
 	WriteMemory,
+	SkipInstruction,
 }
 
 export type CompiledBlockExitSite = {
@@ -153,6 +156,9 @@ for (const [op, operator] of [
 emitters[OpCode.JMP] = () => '';
 emitters[OpCode.JMPIF] = emitters[OpCode.JMP];
 emitters[OpCode.JMPIFNOT] = emitters[OpCode.JMP];
+emitters[OpCode.EQ] = emitters[OpCode.JMP];
+emitters[OpCode.LT] = emitters[OpCode.JMP];
+emitters[OpCode.LE] = emitters[OpCode.JMP];
 emitters[OpCode.HALT] = emitters[OpCode.JMP];
 emitters[OpCode.CALL] = emitters[OpCode.JMP];
 emitters[OpCode.RET] = emitters[OpCode.JMP];
@@ -164,7 +170,7 @@ export function compiledBlockSupports(op: number): boolean {
 
 export function compiledBlockEndsBlock(op: number): boolean {
 	return op === OpCode.JMP || op === OpCode.JMPIF || op === OpCode.JMPIFNOT || op === OpCode.HALT
-		|| op === OpCode.CALL || op === OpCode.RET;
+		|| op === OpCode.CALL || op === OpCode.RET || op === OpCode.EQ || op === OpCode.LT || op === OpCode.LE;
 }
 
 /** Fields and RAM stay in the block; side exits publish only the executed prefix. */
@@ -175,6 +181,7 @@ export function compileJavaScriptBlock(
 	pc: number,
 	image: Blua32ExecutionImage,
 	memory: Memory,
+	strings: StringPool,
 ): CompiledBlock {
 	const source = ['"use strict";'];
 	const registers = new JavaScriptRegisterCache(image);
@@ -240,24 +247,32 @@ export function compileJavaScriptBlock(
 	};
 	const terminalIndex = exits.length;
 	exits.push(terminal);
-	if (finalOp === OpCode.JMPIF || finalOp === OpCode.JMPIFNOT) {
+	const comparison = finalOp === OpCode.EQ || finalOp === OpCode.LT || finalOp === OpCode.LE;
+	const ordering = finalOp === OpCode.LT || finalOp === OpCode.LE;
+	if (comparison) {
+		const skippedIndex = exits.length;
+		exits.push({ ...terminal, exit: CompiledBlockExit.SkipInstruction });
+		const expected = page.a[finalWord] !== 0;
+		source.push(emitComparison(page, finalWord, registers,
+			expected ? terminalIndex : skippedIndex, expected ? skippedIndex : terminalIndex));
+	} else if (finalOp === OpCode.JMPIF || finalOp === OpCode.JMPIFNOT) {
 		const takenIndex = exits.length;
 		exits.push({ ...terminal, nextPc: page.bx[finalWord] });
 		const truth = `${finalOp === OpCode.JMPIFNOT ? '!' : ''}${registers.truthy(page.a[finalWord])}`;
 		source.push(`return ${truth}?${takenIndex}:${terminalIndex};`);
 	} else source.push(`return ${terminalIndex};`);
 	const body = source.join('\n');
-	const functionSource = memoryAccess || registers.localCount !== 0 ? `return function(r,k,p){${body}}` : body;
+	const functionSource = memoryAccess || registers.localCount !== 0 || ordering ? `return function(r,k,p){${body}}` : body;
 	let execute: CompiledBlock['execute'];
 	if (memoryReads) {
 		const cartridges = memory.cartridgeController;
-		execute = new Function('m', 'g', 's', 'c', 'c0', 'c1', 'f', functionSource)(
+		execute = new Function('m', 'g', 's', 'c', 'c0', 'c1', 'f', 'q', functionSource)(
 			memory.ramView, memory.ramWriteWatches().groupData(), memory.systemRomStorage(),
-			cartridges, cartridges.romStorage(0), cartridges.romStorage(1), valueFromNumber) as CompiledBlock['execute'];
+			cartridges, cartridges.romStorage(0), cartridges.romStorage(1), valueFromNumber, strings) as CompiledBlock['execute'];
 	} else if (memoryAccess) {
-		execute = new Function('m', 'g', 'f', functionSource)(memory.ramView, memory.ramWriteWatches().groupData(), valueFromNumber) as CompiledBlock['execute'];
-	} else if (registers.localCount !== 0) {
-		execute = new Function('f', functionSource)(valueFromNumber) as CompiledBlock['execute'];
+		execute = new Function('m', 'g', 'f', 'q', functionSource)(memory.ramView, memory.ramWriteWatches().groupData(), valueFromNumber, strings) as CompiledBlock['execute'];
+	} else if (registers.localCount !== 0 || ordering) {
+		execute = new Function('f', 'q', functionSource)(valueFromNumber, strings) as CompiledBlock['execute'];
 	} else execute = new Function('r', 'k', 'p', functionSource) as CompiledBlock['execute'];
 	return {
 		execute,

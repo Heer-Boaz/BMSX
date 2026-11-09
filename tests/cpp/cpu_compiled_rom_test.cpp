@@ -74,6 +74,9 @@ void directRomLoadsUseCurrentOwners() {
 	for (u32 i = 0; i < slot0.size(); ++i) slot0[i] = static_cast<u8>(i * 7u + 11u);
 	for (u32 i = 0; i < slot1.size(); ++i) slot1[i] = static_cast<u8>(i * 13u + 5u);
 	Memory memory(MemoryInit{system, test::cartridgeSlots(slot0, slot1)}, PSX_MACHINE_SPEC.ramBytes);
+	IrqController irq(memory);
+	ExecutionAddressSpace addresses(memory);
+	CPU cpu(memory, irq, addresses);
 	size_t bytes = 0;
 	for (int format = 0; format <= 5; ++format) for (const bool displaced : {false, true}) {
 		const auto kind = static_cast<MemoryAccessKind>(format);
@@ -82,7 +85,7 @@ void directRomLoadsUseCurrentOwners() {
 		load.op = static_cast<u8>(displaced ? OpCode::LOAD_MEM_D : OpCode::LOAD_MEM);
 		load.a = 0; load.b = 1; load.c = format; load.disp = displaced ? 255 : 0; load.width = 2; load.baseCycles = 2;
 		const std::array source{NativeBlockInstruction{&load, 0x1000}};
-		auto block = NativeBlock::compile(source, nullptr, bytes, memory);
+		auto block = NativeBlock::compile(source, nullptr, bytes, memory, cpu.stringPool());
 		for (const u32 address : {0u, 4u, 16u, CART_ROM_BASE, CART_ROM_BASE + 4u, CART_ROM_BASE + 24u}) {
 			std::array registers{valueNil(), valueNumber(address - static_cast<u32>(load.disp) * 4u)};
 			require(block->run(registers.data(), nullptr) == &block->terminal
@@ -98,7 +101,7 @@ void directRomLoadsUseCurrentOwners() {
 		}
 		load.a = load.b;
 		const std::array aliasSource{NativeBlockInstruction{&load, 0x1000}};
-		auto alias = NativeBlock::compile(aliasSource, nullptr, bytes, memory);
+		auto alias = NativeBlock::compile(aliasSource, nullptr, bytes, memory, cpu.stringPool());
 		std::array registers{valueNil(), valueNumber(CART_ROM_BASE + 4u - load.disp * 4u)};
 		require(alias->run(registers.data(), nullptr) == &alias->terminal
 			&& registers[1] == scalarLoad(memory, kind, CART_ROM_BASE + 4u), "ROM loads can replace the address register");

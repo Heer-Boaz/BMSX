@@ -10,9 +10,9 @@
 
 namespace bmsx {
 
-NativeBlockCompiler::NativeBlockCompiler(const Value* constants, const NativeBlock* block, Memory& memory,
+NativeBlockCompiler::NativeBlockCompiler(const Value* constants, const NativeBlock* block, Memory& memory, StringPool& strings,
 	std::span<const NativeBlockInstruction> instructions)
-	: m_compiler(nullptr), m_constants(constants), m_block(block), m_memory(memory) {
+	: m_compiler(nullptr), m_constants(constants), m_block(block), m_memory(memory), m_strings(strings) {
 	size_t slowPaths = 0, readMappings = 0;
 	bool calls = false;
 	for (const auto& source : instructions) {
@@ -138,6 +138,7 @@ void NativeBlockCompiler::emit(const DecodedInstruction& instruction, const Nati
 			return;
 		case OpCode::JMPIF:
 		case OpCode::JMPIFNOT: {
+			m_hasTerminal = true;
 			const auto falsey = falseyJumps(instruction.a);
 			sljit_emit_return(m_compiler, SLJIT_MOV_P, SLJIT_IMM, reinterpret_cast<sljit_sw>(
 				op == OpCode::JMPIF ? takenExit : &m_block->terminal));
@@ -147,6 +148,12 @@ void NativeBlockCompiler::emit(const DecodedInstruction& instruction, const Nati
 				op == OpCode::JMPIF ? &m_block->terminal : takenExit));
 			return;
 		}
+		case OpCode::EQ:
+		case OpCode::LT:
+		case OpCode::LE:
+			emitComparison(instruction, takenExit);
+			m_hasTerminal = true;
+			return;
 		default:
 			__builtin_unreachable();
 	}
@@ -154,8 +161,10 @@ void NativeBlockCompiler::emit(const DecodedInstruction& instruction, const Nati
 }
 
 void* NativeBlockCompiler::finish(size_t& codeBytes) {
-	flushRegisters();
-	sljit_emit_return(m_compiler, SLJIT_MOV_P, SLJIT_IMM, reinterpret_cast<sljit_sw>(&m_block->terminal));
+	if (!m_hasTerminal) {
+		flushRegisters();
+		sljit_emit_return(m_compiler, SLJIT_MOV_P, SLJIT_IMM, reinterpret_cast<sljit_sw>(&m_block->terminal));
+	}
 	for (const auto& slow : m_slowPaths) {
 		auto* label = sljit_emit_label(m_compiler);
 		for (size_t i = 0; i < slow.count; ++i) sljit_set_label(slow.jumps[i], label);

@@ -1,4 +1,4 @@
-import { utf8ByteLength, utf8CodepointCount } from '../../common/utf8';
+import { utf8ByteLength, utf8CodepointCount, utf8Compare } from '../../common/utf8';
 import { nextCodePointOffset } from '../../common/utf16';
 import type { LuaHeap } from './lua_heap';
 import { ValueTag } from './value';
@@ -60,6 +60,10 @@ export class StringPool {
 
 	public toString(id: StringId): string {
 		return this.values[id]!;
+	}
+
+	public compare(left: StringId, right: StringId): number {
+		return utf8Compare(this.values[left]!, this.values[right]!);
 	}
 
 	public codepointCount(id: StringId): number {

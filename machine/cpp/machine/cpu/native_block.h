@@ -16,6 +16,7 @@ struct DecodedInstruction;
 struct CallFrame;
 class CPU;
 class Memory;
+class StringPool;
 class NativeBlock;
 struct NativeBlockExitSite;
 
@@ -39,6 +40,7 @@ enum class NativeBlockExit : u8 {
 	WriteField,
 	ReadMemory,
 	WriteMemory,
+	SkipInstruction,
 	Count,
 };
 
@@ -93,6 +95,9 @@ inline constexpr bool nativeBlockSupports(u8 op) {
 		case OpCode::JMP:
 		case OpCode::JMPIF:
 		case OpCode::JMPIFNOT:
+		case OpCode::EQ:
+		case OpCode::LT:
+		case OpCode::LE:
 		case OpCode::HALT:
 		case OpCode::CALL:
 		case OpCode::RET:
@@ -108,10 +113,14 @@ inline constexpr bool nativeBlockSupports(u8 op) {
 	}
 }
 
+inline constexpr bool nativeBlockComparison(u8 op) {
+	return op == static_cast<u8>(OpCode::EQ) || op == static_cast<u8>(OpCode::LT) || op == static_cast<u8>(OpCode::LE);
+}
+
 inline constexpr bool nativeBlockEndsBlock(u8 op) {
 	return op == static_cast<u8>(OpCode::JMP) || op == static_cast<u8>(OpCode::JMPIF)
 		|| op == static_cast<u8>(OpCode::JMPIFNOT) || op == static_cast<u8>(OpCode::HALT)
-		|| op == static_cast<u8>(OpCode::CALL) || op == static_cast<u8>(OpCode::RET);
+		|| op == static_cast<u8>(OpCode::CALL) || op == static_cast<u8>(OpCode::RET) || nativeBlockComparison(op);
 }
 
 inline constexpr NativeBlockExit nativeBlockSlowExit(u8 op) {
@@ -133,6 +142,7 @@ public:
 		const Value* constants,
 		size_t& cacheBytes,
 		Memory& memory,
+		StringPool& strings,
 		const NativeBlockExitHandlers& exitHandlers = {}
 	);
 	~NativeBlock();

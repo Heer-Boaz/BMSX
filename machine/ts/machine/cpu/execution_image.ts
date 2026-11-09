@@ -43,6 +43,10 @@ export function decodedDispatchOp(first: OpCode, second: OpCode): number {
 	}
 }
 
+export function decodedDispatchCanFuse(op: number): boolean {
+	return op === OpCode.SHL || op === OpCode.ADD || op === OpCode.SHR;
+}
+
 export type DecodedInstructionPage = {
 	widths: Uint8Array;
 	ops: Uint8Array;

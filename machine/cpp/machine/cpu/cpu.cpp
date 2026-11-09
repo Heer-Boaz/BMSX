@@ -790,7 +790,11 @@ void CPU::invalidateDecodedWords(u64 key, u32 firstWord, u32 endWord) {
 				const u32 ownEnd = index + decoded.width;
 				if (ownEnd > firstWord) {
 					refresh = DECODED_REFRESH_DECODE;
-				} else if (ownEnd + 2u > firstWord && decodedDispatchCanFuse(decoded.op)) {
+				} else if (ownEnd + 2u > firstWord && decodedDispatchCanFuse(decoded.op)
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+					&& (!decodedPage.nativeBlocks || !decodedPage.nativeBlocks->entries[index])
+#endif
+				) {
 					refresh |= DECODED_REFRESH_FUSION;
 				}
 			}
@@ -2635,6 +2639,10 @@ dispatch_instruction:
 					}
 					if (exit->exit == NativeBlockExit::Halt) {
 						haltUntilIrq();
+						DISPATCH_CONTINUE();
+					}
+					if (exit->exit == NativeBlockExit::SkipInstruction) {
+						skipNextInstruction(FRAME);
 						DISPATCH_CONTINUE();
 					}
 					DISPATCH_NEXT();

@@ -442,12 +442,7 @@ DISPATCH_LABEL(EQ) {
 	const int rkC = decoded->c;
 	const Value& left = readRK(IMAGE, registers, rkB);
 	const Value& right = readRK(IMAGE, registers, rkC);
-	bool eq = false;
-	if (valueIsNumber(left) && valueIsNumber(right)) {
-		eq = asNumber(left) == asNumber(right);
-	} else {
-		eq = left == right;
-	}
+	const bool eq = valuesEqual(left, right);
 	if (eq != (a != 0)) {
 		SKIP_NEXT_INSTRUCTION();
 		DISPATCH_CONTINUE();
@@ -465,7 +460,7 @@ DISPATCH_LABEL(LT) {
 	if (valueIsNumber(leftValue) && valueIsNumber(rightValue)) {
 		ok = asNumber(leftValue) < asNumber(rightValue);
 	} else if (valueIsString(leftValue) && valueIsString(rightValue)) {
-		ok = m_stringPool.toString(asStringId(leftValue)) < m_stringPool.toString(asStringId(rightValue));
+		ok = compareStringIds(&m_stringPool, asStringId(leftValue), asStringId(rightValue)) < 0;
 	}
 	if (ok != (a != 0)) {
 		SKIP_NEXT_INSTRUCTION();
@@ -484,7 +479,7 @@ DISPATCH_LABEL(LE) {
 	if (valueIsNumber(leftValue) && valueIsNumber(rightValue)) {
 		ok = asNumber(leftValue) <= asNumber(rightValue);
 	} else if (valueIsString(leftValue) && valueIsString(rightValue)) {
-		ok = m_stringPool.toString(asStringId(leftValue)) <= m_stringPool.toString(asStringId(rightValue));
+		ok = compareStringIds(&m_stringPool, asStringId(leftValue), asStringId(rightValue)) <= 0;
 	}
 	if (ok != (a != 0)) {
 		SKIP_NEXT_INSTRUCTION();

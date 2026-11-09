@@ -274,6 +274,18 @@ inline bool valueIsBuiltinFunction(Value v) {
 	return static_cast<uint16_t>(v >> 48u) == static_cast<uint16_t>(valueFromTag(ValueTag::BuiltinFunction) >> 48u);
 }
 
+// Instruction equality; hash-key identity also accepts identical NaN keys.
+inline bool valuesEqual(Value left, Value right) {
+	const uint8_t kind = valueEncodedTag(left);
+	if (kind != valueEncodedTag(right)) return false;
+	if (kind == 0) return asNumber(left) == asNumber(right);
+	const ValueTag tag = static_cast<ValueTag>(kind - 1u);
+	if (tag == ValueTag::Nil || tag == ValueTag::False || tag == ValueTag::True) return true;
+	if (tag == ValueTag::String) return asStringId(left) == asStringId(right);
+	if (tag == ValueTag::BuiltinFunction) return asBuiltinFunction(left)->id == asBuiltinFunction(right)->id;
+	return left == right;
+}
+
 inline uint32_t valueObjectHashId(Value value) {
 	return reinterpret_cast<const GCObject*>(valuePayload(value))->hashId;
 }
