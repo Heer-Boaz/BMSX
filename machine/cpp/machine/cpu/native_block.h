@@ -14,6 +14,11 @@ struct DecodedInstruction;
 
 inline constexpr u8 NATIVE_BLOCK_COMPILATION_THRESHOLD = 8u;
 
+enum class NativeBlockExit : u8 {
+	Continue,
+	Halt,
+};
+
 struct NativeBlockInstruction {
 	const DecodedInstruction* decoded;
 	u32 pc;
@@ -38,6 +43,7 @@ inline constexpr bool nativeBlockSupports(u8 op) {
 		case OpCode::MUL:
 		case OpCode::DIV:
 		case OpCode::UNM:
+		case OpCode::NOT:
 		case OpCode::BAND:
 		case OpCode::BOR:
 		case OpCode::BXOR:
@@ -45,10 +51,18 @@ inline constexpr bool nativeBlockSupports(u8 op) {
 		case OpCode::SHR:
 		case OpCode::BNOT:
 		case OpCode::JMP:
+		case OpCode::JMPIF:
+		case OpCode::JMPIFNOT:
+		case OpCode::HALT:
 			return true;
 		default:
 			return false;
 	}
+}
+
+inline constexpr bool nativeBlockEndsBlock(u8 op) {
+	return op == static_cast<u8>(OpCode::JMP) || op == static_cast<u8>(OpCode::JMPIF)
+		|| op == static_cast<u8>(OpCode::JMPIFNOT) || op == static_cast<u8>(OpCode::HALT);
 }
 
 class NativeBlock {
@@ -62,8 +76,9 @@ public:
 	NativeBlock(const NativeBlock&) = delete;
 	NativeBlock& operator=(const NativeBlock&) = delete;
 
-	void run(Value* registers, const Value* constants) const;
+	u32 run(Value* registers, const Value* constants) const;
 
+	NativeBlockExit exit = NativeBlockExit::Continue;
 	int cycles = 0;
 	int registerTop = 0;
 	u32 nextPc = 0;

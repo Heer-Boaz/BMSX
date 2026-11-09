@@ -2631,12 +2631,15 @@ dispatch_instruction:
 						dispatchOp = decoded->op;
 						goto dispatch_instruction;
 					}
-					block.run(registers, IMAGE.constPool.data());
+					FRAME.pc = block.run(registers, IMAGE.constPool.data());
 					instructionBudgetRemaining -= remainingCycles;
-					FRAME.pc = block.nextPc;
 					FRAME.top = std::max(FRAME.top, block.registerTop);
 					m_currentInstructionPc = block.currentPc;
 					lastPc = block.lastPc;
+					if (block.exit == NativeBlockExit::Halt) {
+						haltUntilIrq();
+						DISPATCH_CONTINUE();
+					}
 					DISPATCH_NEXT();
 				}
 #endif

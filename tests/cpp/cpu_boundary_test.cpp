@@ -195,6 +195,53 @@ void nativeCodeRetiresOnWritesAndObservation() {
 	for (int warmup = 0; warmup < 16; ++warmup) cpu.runUntilDepth(0, 64);
 	require(page.nativeBlocks && page.nativeBlocks->entries[0], "removing observation admits native execution again");
 }
+
+void nativeHaltCommitsItsThreadAndFrameLatch() {
+	for (const bool standalone : {false, true}) {
+		test::Blua32TestImage image;
+		image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::NOT), 1, 0, 0);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(image.text, 3, static_cast<u8>(OpCode::HALT), 63, 63, 63, 255);
+		writeInstruction(image.text, 4, static_cast<u8>(OpCode::KSMI), 2, 0, 7);
+		writeInstruction(image.text, 5, static_cast<u8>(OpCode::RET), 2, 1, 0);
+		writeInstruction(image.text, 6, static_cast<u8>(OpCode::RFE), 0, 0, 0);
+		writeInstruction(image.text, 7, static_cast<u8>(OpCode::KSMI), 0, 0, 9);
+		writeInstruction(image.text, 8, static_cast<u8>(OpCode::RET), 0, 1, 0);
+		image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 3},
+			{.firstWord = 6, .wordCount = 1}, {.firstWord = 7, .wordCount = 2}};
+		image.irqFunctionIndex = image.exceptionFunctionIndex = 1;
+		CpuMachine machine(image);
+		auto& cpu = machine.cpu;
+		const u32 entry = machine.rom.textAddress;
+		const u32 startPc = entry + (standalone ? 2u : 0u) * INSTRUCTION_BYTES;
+		for (int warmup = 0; warmup < 20; ++warmup) {
+			cpu.clearHaltUntilIrq();
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], startPc);
+			require(cpu.runUntilDepth(0, standalone ? 1 : 3) == RunResult::Halted,
+				"native HALT wins over an exactly exhausted slice");
+			require(cpu.instructionBudgetRemaining == 0 && cpu.isHaltedUntilIrq()
+				&& cpu.readFramePc(0) == entry + 4u * INSTRUCTION_BYTES,
+				"native WIDE HALT commits the exact charge, thread/depth latch and next PC");
+		}
+		const auto& page = *cpu.activeThread()->frames[0]->decodedPage;
+		const auto& block = page.nativeBlocks->entries[(startPc & MAPPED_PAGE_BYTE_MASK) >> 2u];
+		require(block && block->exit == NativeBlockExit::Halt,
+			"both a HALT-only block and a numeric prefix use an explicit generated HALT exit");
+		cpu.restoreRuntimeState(cpu.captureRuntimeState());
+		require(cpu.isHaltedUntilIrq(), "restoring a native HALT retains its owning thread and depth");
+		const int depth = cpu.getFrameDepth();
+		cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[2]);
+		require(cpu.runUntilDepth(depth, 100) == RunResult::Halted && cpu.getFrameDepth() == depth
+			&& cpu.isHaltedUntilIrq(), "a deeper completion call does not consume the root HALT latch");
+		cpu.requestNonMaskableInterrupt();
+		require(cpu.enterPendingInterrupt() && !cpu.isHaltedUntilIrq(), "an accepted NMI releases native HALT");
+		require(cpu.runUntilDepth(0, 100) == RunResult::Halted && cpu.getFrameDepth() == 0
+			&& cpu.readCompletionValues()[0] == valueNumber(7),
+			"RFE resumes at the instruction following native WIDE HALT");
+	}
+}
 #endif
 
 void compactAndPaddedRomFunctionRecordsAgree() {
@@ -966,6 +1013,7 @@ int main() {
 		nativeCodeWarmsWithinOneCpuSlice();
 		nativeCodeUsesCachedWordsAtPartialRomTails();
 		nativeCodeRetiresOnWritesAndObservation();
+		nativeHaltCommitsItsThreadAndFrameLatch();
 #endif
 		stringBytePositions(); loadKrIndices(); zeroLoadNil(); successorFetchOrdering(); reservedMemoryKinds(); zeroStackReuse();
 		returnRangesSurviveCallerStackGrowth(); builtinReturnRangesSurviveDestinationGrowth();

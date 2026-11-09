@@ -137,9 +137,9 @@ import { ProtectedCallContinuation, ProtectedCallKind, type CallFrame } from './
 import { Thread, ThreadStatus, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES } from './thread';
 import { LuaHeap, type LuaHeapState } from './lua_heap';
 import {
-	CpuExecutionBackend, CompiledBlockPage, CompiledCodeCache, COMPILED_BLOCK_THRESHOLD,
+	CpuExecutionBackend, CompiledBlockPage, CompiledCodeCache, CompiledBlockExit, COMPILED_BLOCK_THRESHOLD,
 	COMPILED_BLOCK_MAX_INSTRUCTIONS,
-	compiledBlockSupports, compileJavaScriptBlock,
+	compiledBlockSupports, compiledBlockEndsBlock, compileJavaScriptBlock,
 } from './compiled_block';
 import { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotReader, CpuSnapshotObjectKind, CpuSnapshotClosure, CpuSnapshotTable, CpuSnapshotUpvalue, CpuSnapshotThread, CPU_SNAPSHOT_VALUE_WORDS, type CpuSnapshotObject, type CpuSnapshotValueWriter } from './snapshot';
 
@@ -2375,11 +2375,11 @@ export class CPU implements MappedPageInvalidator {
 						|| !compiledBlockSupports(page.ops[cursor])) break;
 					++count;
 					nextPc = (nextPc + page.widths[cursor] * INSTRUCTION_BYTES) >>> 0;
-					const terminal = page.ops[cursor] === OpCode.JMP;
+					const terminal = compiledBlockEndsBlock(page.ops[cursor]);
 					cursor += page.widths[cursor];
 					if (terminal) break;
 				}
-				if (count >= 2) {
+				if (count >= 2 || (count === 1 && compiledBlockEndsBlock(page.ops[word]))) {
 					const block = compileJavaScriptBlock(page, word, cursor, pc, frame.executionImage);
 					this.compiledCodeCache.install(page, word, block);
 				} else {
@@ -2391,12 +2391,12 @@ export class CPU implements MappedPageInvalidator {
 		if (block !== null) {
 			const remaining = block.cycles - page.dispatchCycles[word];
 			if (this.instructionBudgetRemaining >= remaining) {
-				block.execute(frame.registers, frame.executionImage.constScalars);
+				frame.pc = block.execute(frame.registers, frame.executionImage.constScalars);
 				this.instructionBudgetRemaining -= remaining;
 				frame.top = Math.max(frame.top, block.registerTop);
-				frame.pc = block.nextPc;
 				this.currentInstructionPc = block.currentPc;
 				this.lastPc = block.lastPc;
+				if (block.exit === CompiledBlockExit.Halt) this.haltUntilIrq();
 				return;
 			}
 		}

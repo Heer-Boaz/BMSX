@@ -44,11 +44,11 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 				|| instruction.dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe)
 				|| !nativeBlockSupports(instruction.op)) break;
 			instructions[count++] = {&instruction, pc};
-			if (static_cast<OpCode>(instruction.op) == OpCode::JMP) break;
+			if (nativeBlockEndsBlock(instruction.op)) break;
 			cursor += instruction.width;
 			pc += static_cast<u32>(instruction.width) * INSTRUCTION_BYTES;
 		}
-		if (count < 2u) return;
+		if (count == 0u || (count == 1u && !nativeBlockEndsBlock(instructions[0].decoded->op))) return;
 		page.nativeBlocks->entries[word] = NativeBlock::compile(
 			std::span(instructions.data(), count), frame.executionImage->constPool.data(), m_nativeCodeBytes);
 		page.words[word].dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeBlock);

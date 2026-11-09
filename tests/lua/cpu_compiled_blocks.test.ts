@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunResult, type CPU } from '../../machine/ts/machine/cpu/cpu';
-import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
+import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -185,4 +185,83 @@ return n
 	}
 	assert.equal(result, RunResult.Halted);
 	assert.ok(installed > 0, 'hot callee code and loop bodies actually use generated execution');
+});
+
+for (const op of [OpCode.JMPIF, OpCode.JMPIFNOT]) test(`generated conditional ${op} retains truthiness and exact taken/fallthrough state`, () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(text, 0, OpCode.NOT, 2, 0, 0);
+	writeInstruction(text, 1, op, 63, 0, 2);
+	writeInstruction(text, 2, OpCode.K1, 3, 0, 0);
+	writeInstruction(text, 3, OpCode.JMP, 0, 0, 1);
+	writeInstruction(text, 4, OpCode.KM1, 3, 0, 0);
+	writeInstruction(text, 5, OpCode.JMP, 0, 63, 58, 255);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 6, maxStack: 64 }] });
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
+	const ref = createTestSystemCpu(image).cpu;
+	for (const cpu of [js, ref]) cpu.runUntilDepth(0, 600);
+	assert.ok(compiledEntries(js) > 0);
+	for (const value of [null, false, true, 0, -0, NaN, Infinity, -1]) {
+		for (let grant = 1; grant <= 30; ++grant) {
+			for (const cpu of [js, ref]) {
+				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
+				const registers = cpu.rootThread.frames[0].registers;
+				registers.set(0, value);
+				registers.set(63, value);
+			}
+			assert.equal(js.runUntilDepth(0, grant), ref.runUntilDepth(0, grant));
+			assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
+			assert.equal(js.instructionBudgetRemaining, ref.instructionBudgetRemaining);
+		}
+	}
+});
+
+for (const standalone of [false, true]) test(`generated HALT commits its thread/depth latch and resumes after NMI (standalone: ${standalone})`, () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(text, 0, OpCode.K1, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.NOT, 1, 0, 0);
+	writeInstruction(text, 2, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(text, 3, OpCode.HALT, 63, 63, 63, 255);
+	writeInstruction(text, 4, OpCode.KSMI, 2, 0, 7);
+	writeInstruction(text, 5, OpCode.RET, 2, 1, 0);
+	writeInstruction(text, 6, OpCode.RFE, 0, 0, 0);
+	writeInstruction(text, 7, OpCode.KSMI, 0, 0, 9);
+	writeInstruction(text, 8, OpCode.RET, 0, 1, 0);
+	const image = linkRawTestSystemBlua32({ text, functions: [
+		{ firstWord: 0, wordCount: 6, maxStack: 3 }, { firstWord: 6, wordCount: 1 }, { firstWord: 7, wordCount: 2 },
+	], exceptionFunctionIndex: 1, irqFunctionIndex: 1 });
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
+	const ref = createTestSystemCpu(image).cpu;
+	const entry = image.image.functions[0].codeAddress;
+	const startPc = entry + (standalone ? 2 : 0) * INSTRUCTION_BYTES;
+	const grant = standalone ? 1 : 3;
+	for (let warmup = 0; warmup < 20; ++warmup) {
+		for (const cpu of [js, ref]) {
+			cpu.clearHaltUntilIrq();
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], startPc);
+			assert.equal(cpu.runUntilDepth(0, grant), RunResult.Halted);
+			assert.equal(cpu.instructionBudgetRemaining, 0);
+			assert.equal(cpu.readFramePc(0), entry + 4 * INSTRUCTION_BYTES);
+			assert.equal(cpu.isHaltedUntilIrq(), true);
+		}
+		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
+	}
+	const page = js.rootThread.frames[0].decodedPage!;
+	const block = page.compiledBlocks!.entries[(startPc & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2]!;
+	assert.equal(block.exit, CompiledBlockExit.Halt, 'the executed HALT is a generated exit, not interpreter dispatch');
+	for (const cpu of [js, ref]) {
+		const saved = cpu.captureRuntimeState();
+		cpu.restoreRuntimeState(saved);
+		assert.equal(cpu.isHaltedUntilIrq(), true);
+		const depth = cpu.getFrameDepth();
+		cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[2]);
+		assert.equal(cpu.runUntilDepth(depth, 100), RunResult.Halted);
+		assert.equal(cpu.getFrameDepth(), depth);
+		assert.equal(cpu.isHaltedUntilIrq(), true, 'returning from a deeper tooling call restores the root HALT condition');
+		cpu.requestNonMaskableInterrupt();
+		assert.equal(cpu.enterPendingInterrupt(), true);
+		assert.equal(cpu.isHaltedUntilIrq(), false);
+		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+		assert.equal(cpu.getFrameDepth(), 0);
+	}
+	assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 });

@@ -13,8 +13,14 @@ export const COMPILED_BLOCK_THRESHOLD = 8;
 export const COMPILED_BLOCK_MAX_INSTRUCTIONS = 64;
 export const COMPILED_BLOCK_SOURCE_BUDGET = 1024 * 1024;
 
+export const enum CompiledBlockExit {
+	Continue,
+	Halt,
+}
+
 export type CompiledBlock = {
-	readonly execute: (registers: ValueSlots, constants: Float64Array) => void;
+	readonly execute: (registers: ValueSlots, constants: Float64Array) => number;
+	readonly exit: CompiledBlockExit;
 	readonly cycles: number;
 	readonly registerTop: number;
 	readonly nextPc: number;
@@ -87,6 +93,7 @@ emitters[OpCode.K1] = (p, w) => `r.setNumber(${p.a[w]},1);`;
 emitters[OpCode.KM1] = (p, w) => `r.setNumber(${p.a[w]},-1);`;
 emitters[OpCode.KSMI] = (p, w) => `r.setNumber(${p.a[w]},${p.sbx[w]});`;
 emitters[OpCode.UNM] = (p, w) => `r.setNumber(${p.a[w]},-r.getNumber(${p.b[w]}));`;
+emitters[OpCode.NOT] = (p, w) => `r.setBool(${p.a[w]},!r.isTruthy(${p.b[w]}));`;
 emitters[OpCode.BNOT] = (p, w) => `r.setNumber(${p.a[w]},~r.getNumber(${p.b[w]}));`;
 for (const [op, operator] of [
 	[OpCode.ADD, '+'], [OpCode.SUB, '-'], [OpCode.MUL, '*'], [OpCode.DIV, '/'],
@@ -96,9 +103,16 @@ for (const [op, operator] of [
 	emitters[op] = (p, w, image) => `r.setNumber(${p.a[w]},(${numberOperand(p.b[w], image)})${operator}(${numberOperand(p.c[w], image)}));`;
 }
 emitters[OpCode.JMP] = () => '';
+emitters[OpCode.JMPIF] = emitters[OpCode.JMP];
+emitters[OpCode.JMPIFNOT] = emitters[OpCode.JMP];
+emitters[OpCode.HALT] = emitters[OpCode.JMP];
 
 export function compiledBlockSupports(op: number): boolean {
 	return emitters[op] !== undefined;
+}
+
+export function compiledBlockEndsBlock(op: number): boolean {
+	return op === OpCode.JMP || op === OpCode.JMPIF || op === OpCode.JMPIFNOT || op === OpCode.HALT;
 }
 
 /** The caller admits decoded, non-observed, side-effect-free instructions. */
@@ -115,7 +129,9 @@ export function compileJavaScriptBlock(
 	let currentPc = pc;
 	let lastPc = pc;
 	let nextPc = pc;
+	let finalWord = firstWord;
 	for (let word = firstWord; word < endWord; word += page.widths[word]) {
+		finalWord = word;
 		const op = page.ops[word];
 		source.push(emitters[op]!(page, word, image));
 		cycles += BASE_CYCLES[op];
@@ -123,11 +139,17 @@ export function compileJavaScriptBlock(
 		lastPc = (pc + (page.widths[word] - 1) * INSTRUCTION_BYTES) >>> 0;
 		pc = (pc + page.widths[word] * INSTRUCTION_BYTES) >>> 0;
 		nextPc = op === OpCode.JMP ? page.bx[word] : pc;
-		if (op !== OpCode.JMP) registerTop = Math.max(registerTop, page.a[word] + 1);
+		if (!compiledBlockEndsBlock(op)) registerTop = Math.max(registerTop, page.a[word] + 1);
 	}
+	const finalOp = page.ops[finalWord];
+	if (finalOp === OpCode.JMPIF || finalOp === OpCode.JMPIFNOT) {
+		const truth = `${finalOp === OpCode.JMPIFNOT ? '!' : ''}r.isTruthy(${page.a[finalWord]})`;
+		source.push(`return ${truth}?${page.bx[finalWord]}:${nextPc};`);
+	} else source.push(`return ${nextPc};`);
 	const body = source.join('\n');
 	return {
 		execute: new Function('r', 'k', body) as CompiledBlock['execute'],
+		exit: finalOp === OpCode.HALT ? CompiledBlockExit.Halt : CompiledBlockExit.Continue,
 		cycles, registerTop, nextPc, currentPc, lastPc,
 		sourceUnits: body.length,
 	};

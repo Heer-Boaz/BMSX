@@ -117,12 +117,55 @@ void movesAndLiteralsPreserveRawValues() {
 	}
 }
 
+void truthinessAndConditionalExits() {
+	size_t bytes = 0;
+	for (const auto op : {OpCode::NOT, OpCode::JMPIF, OpCode::JMPIFNOT}) {
+		DecodedInstruction instruction;
+		instruction.op = static_cast<u8>(op);
+		instruction.a = op == OpCode::NOT ? 0 : 1;
+		instruction.b = 1;
+		instruction.width = 2;
+		instruction.baseCycles = 1;
+		instruction.bx = 0xfffffffcu;
+		const std::array source{NativeBlockInstruction{&instruction, 0x1000u}};
+		auto block = NativeBlock::compile(source, nullptr, bytes);
+		// Exhaust the entire raw Value-header domain, with nonzero payloads:
+		// falsey tags are not compared as floating-point NaNs or whole values.
+		for (u32 header = 0; header != 65536u; ++header) {
+			const Value input = (static_cast<Value>(header) << 48u) | 0x123456789abcULL;
+			std::array registers{valueNil(), input};
+			const u32 nextPc = block->run(registers.data(), nullptr);
+			if (op == OpCode::NOT) {
+				require(registers[0] == valueBool(!isTruthy(input)) && nextPc == 0x1008u,
+					"native NOT preserves every representable Value header and boxed Boolean");
+			} else {
+				const bool taken = op == OpCode::JMPIF ? isTruthy(input) : !isTruthy(input);
+				require(nextPc == (taken ? 0xfffffffcu : 0x1008u),
+					"native conditional exits return raw branch or WIDE fallthrough PCs");
+			}
+		}
+		require(block->registerTop == (op == OpCode::NOT ? 1 : 0),
+			"conditional branch register reads never extend the open-result top");
+	}
+	DecodedInstruction halt;
+	halt.op = static_cast<u8>(OpCode::HALT);
+	halt.a = 63; // All operand bits are ignored by HALT.
+	halt.width = 2;
+	halt.baseCycles = 1;
+	const std::array source{NativeBlockInstruction{&halt, 0xfffffff8u}};
+	auto block = NativeBlock::compile(source, nullptr, bytes);
+	require(block->run(nullptr, nullptr) == 0u && block->exit == NativeBlockExit::Halt
+		&& block->registerTop == 0 && block->cycles == 1 && block->lastPc == 0xfffffffcu,
+		"a standalone native WIDE HALT has an exact wrapped continuation and explicit exit");
+}
+
 } // namespace
 
 int main() {
 	try {
 		arithmeticAndWordDatapaths();
 		movesAndLiteralsPreserveRawValues();
+		truthinessAndConditionalExits();
 		std::cout << "Native block datapath tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {
