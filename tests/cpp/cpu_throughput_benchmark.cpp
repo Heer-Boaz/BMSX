@@ -23,7 +23,7 @@
 namespace {
 using namespace bmsx;
 
-enum class Workload { Registers, Tables, Builtin, Ram, Calls, CallsBacked, CallsRamRecord, CodeWrites, Fractions, Comparisons, TableChurn, TableChurnLive };
+enum class Workload { Registers, Tables, Builtin, Ram, Calls, CallsBacked, CallsArithmetic, CallsRamRecord, CodeWrites, Fractions, Comparisons, TableChurn, TableChurnLive };
 constexpr u32 RAM_RECORD_ADDRESS = DYNAMIC_RAM_BASE + 0x18000;
 
 test::Blua32TestImage program(Workload workload) {
@@ -79,7 +79,10 @@ test::Blua32TestImage program(Workload workload) {
 		break;
 	case Workload::Calls:
 	case Workload::CallsBacked:
-	case Workload::CallsRamRecord:
+	case Workload::CallsArithmetic:
+	case Workload::CallsRamRecord: {
+		const bool arithmetic = workload == Workload::CallsArithmetic;
+		if (arithmetic) text.resize(41u * INSTRUCTION_BYTES);
 		writeInstruction(text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 		writeInstruction(text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
 		writeInstruction(text, 2, static_cast<u8>(OpCode::MOV), 4, 0, 0);
@@ -88,11 +91,15 @@ test::Blua32TestImage program(Workload workload) {
 		writeInstruction(text, 5, static_cast<u8>(OpCode::MOV), 6, 0, 0);
 		writeInstruction(text, 6, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
 		writeInstruction(text, 7, static_cast<u8>(OpCode::K1), 0, 0, 0);
-		writeInstruction(text, 8, static_cast<u8>(OpCode::RET), 0, 1, 0);
-		image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 8}, {.firstWord = 7, .wordCount = 2}};
+		if (arithmetic) {
+			for (u32 word = 8; word < 40; ++word) writeInstruction(text, word, static_cast<u8>(OpCode::ADD), 0, 0, 0);
+		}
+		writeInstruction(text, arithmetic ? 40 : 8, static_cast<u8>(OpCode::RET), 0, 1, 0);
+		image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 8}, {.firstWord = 7, .wordCount = arithmetic ? 34u : 2u}};
 		image.closureRelocations = {{1, workload == Workload::CallsRamRecord
 			? RAM_RECORD_ADDRESS : test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 		break;
+	}
 	case Workload::CodeWrites:
 		writeInstruction(text, 0, static_cast<u8>(OpCode::STORE_MEM_D), 0, 1, static_cast<u8>(MemoryAccessKind::U32LE));
 		writeInstruction(text, 1, static_cast<u8>(OpCode::K1), 6, 0, 0);
@@ -213,6 +220,9 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 	if (workload == Workload::CallsRamRecord && cpu.readFrameRegister(0, 6) != valueNumber(1)) {
 		throw std::runtime_error("RAM record calls must execute the callee and return its result.");
 	}
+	if (workload == Workload::CallsArithmetic && cpu.readFrameRegister(0, 6) != valueNumber(4294967296.0)) {
+		throw std::runtime_error("Arithmetic calls must execute the complete callee body and return its result.");
+	}
 	if ((workload == Workload::TableChurn || workload == Workload::TableChurnLive)
 		&& cpu.readFrameRegister(0, 6) != valueNumber(10)) {
 		throw std::runtime_error("Allocation workload must populate and read its new tables.");
@@ -236,16 +246,21 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 	size_t nativeBlocks = 0;
 	size_t nativeCodeBytes = 0;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	bool arithmeticReturn = false;
 	for (const auto& [key, page] : cpu.activeThread()->frames[0]->executionImage->decodedPages) {
 		if (!page.nativeBlocks) continue;
 		for (const auto& block : page.nativeBlocks->entries) {
 			if (!block) continue;
 			++nativeBlocks;
 			nativeCodeBytes += block->codeBytes;
+			arithmeticReturn |= block->terminal.exit == NativeBlockExit::Return && block->sourceWords == 34u;
 		}
 	}
 	if (fullyBacked && (workload == Workload::Registers || workload == Workload::Fractions)
 		&& nativeBlocks == 0) throw std::runtime_error("Backed arithmetic benchmarks must exercise native code.");
+	if (fullyBacked && workload == Workload::CallsArithmetic && !arithmeticReturn) {
+		throw std::runtime_error("Arithmetic calls must compile the full callee, not only the caller.");
+	}
 #endif
 	std::cout << "[cpu-throughput] workload=" << name << " grant=" << cycleGrant
 		<< " grant_work_units=" << grant << " round=" << round
@@ -292,6 +307,7 @@ int main(int argc, char** argv) {
 		measure(Workload::Ram, "ram-words", grant, round, fullyBacked);
 		measure(Workload::Calls, "calls", grant, round, fullyBacked);
 		measure(Workload::CallsBacked, "calls-backed", grant, round, fullyBacked);
+		measure(Workload::CallsArithmetic, "calls-arithmetic", grant, round, fullyBacked);
 		measure(Workload::CodeWrites, "code-writes", grant, round, fullyBacked);
 		measure(Workload::Fractions, "fractions", grant, round, fullyBacked);
 	}

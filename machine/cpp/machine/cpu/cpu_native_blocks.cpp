@@ -53,7 +53,7 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 		}
 	}
 	if (!page.nativeBlocks) page.nativeBlocks = std::make_unique<NativeBlockPage>();
-	const NativeBlockExitHandlers handlers{nullptr, nullptr, &CPU::compiledCallExit, &CPU::compiledReturnExit,
+	const NativeBlockExitHandlers handlers{nullptr, nullptr, nullptr, nullptr,
 		&CPU::compiledReadFieldExit, &CPU::compiledWriteFieldExit, &CPU::compiledReadMemoryExit, &CPU::compiledWriteMemoryExit};
 	page.nativeBlocks->entries[word] = NativeBlock::compile(
 		std::span(instructions.data(), count), frame.executionImage->constPool.data(), m_nativeCodeBytes, m_memory, m_stringPool, handlers);

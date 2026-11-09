@@ -460,6 +460,7 @@ export class CPU implements MappedPageInvalidator {
 	private readonly functionRecordLatch: Blua32FunctionRecordLatch = {
 		image: null!,
 		busSignals: MAPPED_BUS_MASTER_CPU,
+		cacheableRead: false,
 		address: 0,
 		codeAddress: 0,
 		numParams: 0,
@@ -1507,8 +1508,10 @@ export class CPU implements MappedPageInvalidator {
 		latch.image = image;
 		latch.busSignals = busSignals;
 		latch.address = address;
+		latch.cacheableRead = false;
 		const view = this.executionReadView;
 		if (this.memory.bindMappedReadView(address, BLUA32_FUNCTION_RECORD_SIZE, busSignals, view)) {
+			latch.cacheableRead = true;
 			const bytes = view.bytes;
 			const recordByteOffset = view.byteOffset;
 			latch.codeAddress = readLE32(
@@ -1930,6 +1933,7 @@ export class CPU implements MappedPageInvalidator {
 						page,
 						pageOffset,
 						dispatchOp,
+						targetDepth,
 					);
 				}
 			} catch (error) {
@@ -2009,6 +2013,7 @@ export class CPU implements MappedPageInvalidator {
 						page,
 						pageOffset,
 						op,
+						targetDepth,
 					);
 				}
 			} catch (error) {
@@ -2366,15 +2371,15 @@ export class CPU implements MappedPageInvalidator {
 		);
 	}
 
-	private executeCall(frame: CallFrame, a: number, b: number, c: number): void {
+	private executeCall(frame: CallFrame, a: number, b: number, c: number): boolean {
 		const registers = frame.registers;
 		const argCount = b === 0 ? Math.max(frame.top - a - 1, 0) : b - 1;
 		switch (registers.getTag(a)) {
 			case ValueTag.BuiltinFunction:
 				this.runBuiltinFunction(registers.getBuiltinFunctionId(a), frame, a, c, argCount);
-				return;
-			case ValueTag.Closure:
-				this.pushFrameFromCaller(
+				return false;
+			case ValueTag.Closure: {
+				const pushed = this.pushFrameFromCaller(
 					frame,
 					registers.getClosure(a),
 					a + 1,
@@ -2384,13 +2389,14 @@ export class CPU implements MappedPageInvalidator {
 					false,
 					frame.pc - INSTRUCTION_BYTES,
 				);
-				return;
+				return pushed !== null && this.functionRecordLatch.cacheableRead;
+			}
 			default:
 				throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
 		}
 	}
 
-	private executeReturn(frame: CallFrame, a: number, b: number): void {
+	private executeReturn(frame: CallFrame, a: number, b: number): boolean {
 		const registers = frame.registers;
 		const total = b === 0 ? Math.max(frame.top - a, 0) : b;
 		this.closeUpvalues(frame);
@@ -2403,7 +2409,7 @@ export class CPU implements MappedPageInvalidator {
 				this.activeThread.frames.pop();
 				this.activeThread.stackTop = frame.varargBase;
 				this.releaseFrame(frame);
-				return;
+				return false;
 			}
 		}
 		if (frame.returnToCompletionLatch) {
@@ -2411,7 +2417,7 @@ export class CPU implements MappedPageInvalidator {
 			this.activeThread.frames.pop();
 			this.activeThread.stackTop = frame.varargBase;
 			this.releaseFrame(frame);
-			return;
+			return false;
 		}
 		if (frameIndex === 0 && this.activeThread.resumer !== null) {
 			const finished = this.activeThread;
@@ -2420,21 +2426,21 @@ export class CPU implements MappedPageInvalidator {
 			finished.frames.pop();
 			finished.stackTop = 0;
 			this.releaseFrame(frame);
-			return;
+			return false;
 		}
 		if (frameIndex === 0) {
 			this.latchCompletionValues(registers, a, total);
 			this.activeThread.frames.pop();
 			this.activeThread.stackTop = frame.varargBase;
 			this.releaseFrame(frame);
-			return;
+			return true;
 		}
 		const caller = this.activeThread.frames[frameIndex - 1];
 		this.writeReturnValuesFromRegisters(caller, frame.returnBase, frame.returnCount, registers, a, total);
 		this.activeThread.frames.pop();
 		this.activeThread.stackTop = frame.varargBase;
 		this.releaseFrame(frame);
-		return;
+		return true;
 	}
 
 	private executeMemoryLoad(frame: CallFrame, destination: number, kind: MemoryAccessKind, address: number): void {
@@ -2483,8 +2489,8 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	private executeCompiledBlock(frame: CallFrame, page: DecodedInstructionPage, word: number): void {
-		const cache = page.compiledBlocks!;
+	private executeCompiledBlock(frame: CallFrame, page: DecodedInstructionPage, word: number, targetDepth: number): void {
+		let cache = page.compiledBlocks!;
 		if (page.dispatchOps[word] === DecodedDispatchOp.CompiledWarm) {
 			if (++cache.visits[word] === COMPILED_BLOCK_THRESHOLD) {
 				if (this.compiledCodeCache.atCapacity()) {
@@ -2526,12 +2532,17 @@ export class CPU implements MappedPageInvalidator {
 				}
 			}
 		}
-		const block = cache.entries[word];
-		if (block !== null && this.instructionBudgetRemaining >= block.terminal.cycles - page.dispatchCycles[word]) {
+		let block = cache.entries[word];
+		if (block === null || this.instructionBudgetRemaining < block.terminal.cycles - page.dispatchCycles[word]) {
+			this.executeInstruction(frame, page, word, page.ops[word], targetDepth);
+			return;
+		}
+		const frames = this.activeThread.frames;
+		let remaining = this.instructionBudgetRemaining + page.dispatchCycles[word];
+		for (;;) {
 			const registers = frame.registers;
 			const image = frame.executionImage;
 			let current = block;
-			let remaining = this.instructionBudgetRemaining + page.dispatchCycles[word];
 			let registerTop = frame.top;
 			let exit: CompiledBlockExitSite;
 			for (;;) {
@@ -2556,24 +2567,30 @@ export class CPU implements MappedPageInvalidator {
 			frame.pc = exit.nextPc;
 			frame.top = registerTop;
 			this.currentInstructionPc = exit.currentPc;
+			this.lastExecutionDomainId = image.executionDomainId;
 			this.lastPc = exit.lastPc;
 			switch (exit.exit) {
-				case CompiledBlockExit.Halt: this.haltUntilIrq(); break;
-				case CompiledBlockExit.Call: this.executeCall(frame, exit.exitA, exit.exitB, exit.exitC); break;
-				case CompiledBlockExit.Return: this.executeReturn(frame, exit.exitA, exit.exitB); break;
-				case CompiledBlockExit.SkipInstruction: this.skipNextInstruction(frame); break;
+				case CompiledBlockExit.Continue: return;
+				case CompiledBlockExit.Halt: this.haltUntilIrq(); return;
+				case CompiledBlockExit.Call:
+					if (!this.executeCall(frame, exit.exitA, exit.exitB, exit.exitC)) return;
+					break;
+				case CompiledBlockExit.Return:
+					if (!this.executeReturn(frame, exit.exitA, exit.exitB)) return;
+					break;
+				case CompiledBlockExit.SkipInstruction: this.skipNextInstruction(frame); return;
 				case CompiledBlockExit.ReadMemory:
 				case CompiledBlockExit.WriteMemory: {
 					const address = ((this.readRKNumber(frame, exit.exitB) >>> 0) + (exit.displaced ? exit.displacement * 4 : 0)) >>> 0;
 					if (exit.exit === CompiledBlockExit.ReadMemory) this.executeMemoryLoad(frame, exit.exitA, exit.exitC, address);
 					else this.executeMemoryStore(frame, exit.exitA, exit.exitC, address);
-					break;
+					return;
 				}
 				case CompiledBlockExit.ReadField:
 					this.loadTableFieldIndexCached(page, exit.exitWord, registers.getTag(exit.exitB),
 						registers.getTable(exit.exitB), image.constScalars[exit.exitC] as StringId, registers, exit.exitA);
 					this.bumpRegisterTop(frame, exit.exitA);
-					break;
+					return;
 				case CompiledBlockExit.WriteField: {
 					const c = exit.exitC;
 					const index = -c - 1;
@@ -2582,12 +2599,25 @@ export class CPU implements MappedPageInvalidator {
 						c < 0 ? image.constTags[index] : registers.getTag(c),
 						c < 0 ? image.constScalars[index] : registers.getScalar(c),
 						c < 0 ? null : registers.getReference(c));
-					break;
+					return;
 				}
 			}
-			return;
+			// Only effect-free closure entry and ordinary return reach this point.
+			// Budget/depth/HALT ownership is checked before reading a resumed PC.
+			remaining = this.instructionBudgetRemaining;
+			if (frames.length <= targetDepth || remaining <= 0
+				|| (this.haltedUntilIrqThread === this.activeThread && this.haltedUntilIrqFrameDepth === frames.length)) return;
+			frame = frames[frames.length - 1];
+			const pc = frame.pc;
+			if ((pc & (INSTRUCTION_BYTES - 1)) !== 0) return;
+			page = this.decodedPageForFrame(frame, pc);
+			const nextCache = page.compiledBlocks;
+			if (nextCache === null) return;
+			const next = nextCache.entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+			if (next === null || remaining < next.terminal.cycles) return;
+			cache = nextCache;
+			block = next;
 		}
-		this.executeInstruction(frame, page, word, page.ops[word]);
 	}
 
 	private executeInstruction(
@@ -2595,6 +2625,7 @@ export class CPU implements MappedPageInvalidator {
 		page: DecodedInstructionPage,
 		pageOffset: number,
 		op: number,
+		targetDepth: number,
 	): void {
 		const registers = frame.registers;
 		const image = frame.executionImage;
@@ -2602,13 +2633,13 @@ export class CPU implements MappedPageInvalidator {
 		switch (op) {
 				case DecodedDispatchOp.CompiledWarm:
 				case DecodedDispatchOp.Compiled:
-					this.executeCompiledBlock(frame, page, pageOffset);
+					this.executeCompiledBlock(frame, page, pageOffset, targetDepth);
 					return;
 				case DecodedDispatchOp.Observe:
 					this.instructionObserver!.observe(image.executionDomainId, this.currentInstructionPc, registers);
 					// Observe has zero base cost; execute and charge the original instruction once.
 					this.instructionBudgetRemaining -= DECODED_DISPATCH_BASE_CYCLES[page.ops[pageOffset]];
-					this.executeInstruction(frame, page, pageOffset, page.ops[pageOffset]);
+					this.executeInstruction(frame, page, pageOffset, page.ops[pageOffset], targetDepth);
 					return;
 				case DecodedDispatchOp.FusedShlBxor:
 				case DecodedDispatchOp.FusedShrBxor:

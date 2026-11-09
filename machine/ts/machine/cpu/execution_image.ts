@@ -82,6 +82,7 @@ export type Blua32ExecutionImage = {
 export type Blua32FunctionRecordLatch = {
 	image: Blua32ExecutionImage;
 	busSignals: MappedBusSignals;
+	cacheableRead: boolean;
 	address: number;
 	codeAddress: number;
 	numParams: number;

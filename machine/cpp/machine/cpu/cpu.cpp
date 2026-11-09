@@ -1094,7 +1094,7 @@ bool CPU::readFunctionRecord(
 	m_functionRecordLatch.cacheableRead = false;
 	Span<const u8> view;
 	if (m_memory.bindMappedReadView(address, BLUA32_FUNCTION_RECORD_SIZE, busSignals, view)) {
-		m_functionRecordLatch.cacheableRead = (address & MAPPED_PAGE_BYTE_MASK) <= MAPPED_PAGE_BYTE_SIZE - BLUA32_FUNCTION_RECORD_SIZE;
+		m_functionRecordLatch.cacheableRead = true;
 		const u8* record = view.data();
 		m_functionRecordLatch.codeAddress = readLE32(
 			record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET
@@ -2440,6 +2440,10 @@ RunResult CPU::runLoop(
 	u32 pc = 0;
 	Value* registers = nullptr;
 	bool canReuseFrame = false;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	const NativeBlock* nativeBlock = nullptr;
+	int nativeFirstDispatchCycles = 0;
+#endif
 	for (;;) {
 		try {
 			if constexpr (RootBoundary) {
@@ -2572,23 +2576,7 @@ dispatch_decode:
 } while (0)
 #define DISPATCH_BLOCKED() do { return RunResult::Halted; } while (0)
 #define DISPATCH_REBIND_FRAME() do { \
-	if constexpr (!Instrumented) { \
-		if (canReuseFrame && instructionBudgetRemaining > 0) { \
-			if constexpr (RootBoundary) { \
-				if (frames.empty()) return RunResult::Halted; \
-			} else { \
-				if (static_cast<int>(frames.size()) <= targetDepth) return RunResult::Halted; \
-			} \
-			/* A pure frame transition can activate the depth-sensitive HALT latch. */ \
-			if (m_haltedUntilIrqThread == m_activeThread \
-				&& m_haltedUntilIrqFrameDepth == static_cast<int>(frames.size())) return RunResult::Halted; \
-			frame = frames.back().get(); \
-			image = frame->executionImage; \
-			registers = frame->registers; \
-			goto dispatch_fetch; \
-		} \
-	} \
-	goto dispatch_continue; \
+	goto dispatch_rebind_frame; \
 } while (0)
 
 dispatch_instruction:
@@ -2613,46 +2601,16 @@ dispatch_instruction:
 					goto dispatch_instruction;
 				}
 				case static_cast<u8>(DecodedDispatchOp::NativeBlock): {
-					const auto& block = *decodedPage->nativeBlocks->entries[pageOffset];
+					nativeBlock = decodedPage->nativeBlocks->entries[pageOffset].get();
 					// The first instruction's ordinary charge/PC publication has
 					// already happened. Admit the remaining block without undoing it.
-					const int remainingCycles = block.terminal.cycles - decoded->baseCycles;
+					const int remainingCycles = nativeBlock->terminal.cycles - decoded->baseCycles;
 					if (instructionBudgetRemaining < remainingCycles) {
 						dispatchOp = decoded->op;
 						goto dispatch_instruction;
 					}
-					const auto result = block.run(registers, IMAGE.constPool.data(), instructionBudgetRemaining + decoded->baseCycles);
-					const auto* exit = result.exit;
-					// Each return describes exactly the executed prefix, including a
-					// guarded field or memory access. No future state is published.
-					instructionBudgetRemaining = result.remainingCycles;
-					FRAME.pc = exit->nextPc;
-					FRAME.top = std::max(FRAME.top, result.registerTop);
-					m_currentInstructionPc = exit->currentPc;
-					lastPc = exit->lastPc;
-					// Link only already compiled entries in this physical page. No
-					// speculative fetch, page allocation or socket remapping occurs.
-					if (exit->exit == NativeBlockExit::Continue && !exit->link.code
-						&& (exit->nextPc & ~MAPPED_PAGE_BYTE_MASK) == (exit->currentPc & ~MAPPED_PAGE_BYTE_MASK)) {
-						auto& target = decodedPage->nativeBlocks->entries[(exit->nextPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
-						if (target) target->linkFrom(*exit);
-					}
-					if (exit->handler) {
-						const auto transition = exit->handler(this, frame, exit);
-						// A semantic exit may have retired its own source or changed frames.
-						if (transition == NativeBlockTransition::NextInstruction) DISPATCH_NEXT();
-						if (transition == NativeBlockTransition::RebindFrame) DISPATCH_REBIND_FRAME();
-						DISPATCH_CONTINUE();
-					}
-					if (exit->exit == NativeBlockExit::Halt) {
-						haltUntilIrq();
-						DISPATCH_CONTINUE();
-					}
-					if (exit->exit == NativeBlockExit::SkipInstruction) {
-						skipNextInstruction(FRAME);
-						DISPATCH_CONTINUE();
-					}
-					DISPATCH_NEXT();
+					nativeFirstDispatchCycles = decoded->baseCycles;
+					goto dispatch_native_block;
 				}
 #endif
 				case static_cast<u8>(DecodedDispatchOp::ReservedMemory):
@@ -2763,7 +2721,83 @@ dispatch_instruction:
 #include "machine/cpu/cpu_dispatch.inl"
 				}
 			}
+			goto dispatch_continue;
 
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+dispatch_native_block: {
+				const auto result = nativeBlock->run(registers, IMAGE.constPool.data(), instructionBudgetRemaining + nativeFirstDispatchCycles);
+				const auto* exit = result.exit;
+				// Publish precisely the completed prefix before any allocating,
+				// faulting or code-invalidating semantic operation runs.
+				instructionBudgetRemaining = result.remainingCycles;
+				FRAME.pc = exit->nextPc;
+				FRAME.top = std::max(FRAME.top, result.registerTop);
+				m_currentInstructionPc = exit->currentPc;
+				m_lastExecutionDomainId = IMAGE.executionDomainId;
+				lastPc = exit->lastPc;
+				switch (exit->exit) {
+				case NativeBlockExit::Continue: {
+					if (!exit->link.code && (exit->nextPc & ~MAPPED_PAGE_BYTE_MASK) == (exit->currentPc & ~MAPPED_PAGE_BYTE_MASK)) {
+						auto& target = decodedPage->nativeBlocks->entries[(exit->nextPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+						if (target) target->linkFrom(*exit);
+					}
+					DISPATCH_NEXT();
+				}
+				case NativeBlockExit::Call:
+					if (executeCall(FRAME, exit->exitA, exit->exitB, exit->exitC)) DISPATCH_REBIND_FRAME();
+					DISPATCH_CONTINUE();
+				case NativeBlockExit::Return:
+					if (executeReturn(FRAME, exit->exitA, exit->exitB)) DISPATCH_REBIND_FRAME();
+					DISPATCH_CONTINUE();
+				case NativeBlockExit::Halt:
+					haltUntilIrq();
+					DISPATCH_CONTINUE();
+				case NativeBlockExit::SkipInstruction:
+					skipNextInstruction(FRAME);
+					DISPATCH_CONTINUE();
+				default: {
+					const auto transition = exit->handler(this, frame, exit);
+					// The source descriptor may already have been retired by the helper.
+					if (transition == NativeBlockTransition::NextInstruction) DISPATCH_NEXT();
+					if (transition == NativeBlockTransition::RebindFrame) DISPATCH_REBIND_FRAME();
+					DISPATCH_CONTINUE();
+				}
+				}
+			}
+#endif
+
+dispatch_rebind_frame:
+			if constexpr (Instrumented) goto dispatch_continue;
+			if (canReuseFrame && instructionBudgetRemaining > 0) {
+				if constexpr (RootBoundary) {
+					if (frames.empty()) return RunResult::Halted;
+				} else {
+					if (static_cast<int>(frames.size()) <= targetDepth) return RunResult::Halted;
+				}
+				// A pure frame transition can activate the depth-sensitive HALT latch.
+				if (m_haltedUntilIrqThread == m_activeThread
+					&& m_haltedUntilIrqFrameDepth == static_cast<int>(frames.size())) return RunResult::Halted;
+				frame = frames.back().get();
+				image = frame->executionImage;
+				registers = frame->registers;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+				pc = frame->pc;
+				// A function record can supply a raw unaligned code address. Leave
+				// its address exception to the ordinary instruction-fetch boundary.
+				if ((pc & (INSTRUCTION_BYTES - 1u)) == 0u) {
+					pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
+					decodedPage = &decodedPageForFrame(FRAME, pc);
+					if (decodedPage->nativeBlocks) {
+						nativeBlock = decodedPage->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
+						if (nativeBlock && instructionBudgetRemaining >= nativeBlock->terminal.cycles) {
+							nativeFirstDispatchCycles = 0;
+							goto dispatch_native_block;
+						}
+					}
+				}
+#endif
+				goto dispatch_fetch;
+			}
 			goto dispatch_continue;
 
 dispatch_observe:
