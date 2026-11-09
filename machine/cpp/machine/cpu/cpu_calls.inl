@@ -63,15 +63,15 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int b) {
 }
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-NativeBlockTransition CPU::compiledCallExit(NativeBlockExecution* execution, const NativeBlock* block) {
-	const int a = block->exitA, b = block->exitB, c = block->exitC;
-	return execution->cpu->executeCall(*execution->frame, a, b, c)
+NativeBlockTransition CPU::compiledCallExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit) {
+	const int a = exit->exitA, b = exit->exitB, c = exit->exitC;
+	return cpu->executeCall(*frame, a, b, c)
 		? NativeBlockTransition::RebindFrame : NativeBlockTransition::Redispatch;
 }
 
-NativeBlockTransition CPU::compiledReturnExit(NativeBlockExecution* execution, const NativeBlock* block) {
-	const int a = block->exitA, b = block->exitB;
-	return execution->cpu->executeReturn(*execution->frame, a, b)
+NativeBlockTransition CPU::compiledReturnExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit) {
+	const int a = exit->exitA, b = exit->exitB;
+	return cpu->executeReturn(*frame, a, b)
 		? NativeBlockTransition::RebindFrame : NativeBlockTransition::Redispatch;
 }
 #endif

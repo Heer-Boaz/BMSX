@@ -70,9 +70,9 @@ void arithmeticAndWordDatapaths() {
 					const Value expected = evaluate(op, left, right);
 					require(registers[destination] == expected && registers[3] == expected,
 						"native arithmetic retains exact number/word semantics and register aliases");
-					require(block->cycles == operation.baseCycles + 1 && block->registerTop == 4
-						&& block->currentPc == 0x1008u && block->lastPc == 0x1008u
-						&& block->nextPc == 0x100cu, "native block publishes its physical instruction extent");
+					require(block->terminal.cycles == operation.baseCycles + 1 && block->terminal.registerTop == 4
+						&& block->terminal.currentPc == 0x1008u && block->terminal.lastPc == 0x1008u
+						&& block->terminal.nextPc == 0x100cu, "native block publishes its physical instruction extent");
 					require(cacheBytes == block->codeBytes && cacheBytes != 0, "native code allocation is accounted");
 				}
 				require(cacheBytes == 0, "retiring native code releases its cache accounting");
@@ -113,7 +113,7 @@ void movesAndLiteralsPreserveRawValues() {
 		const Value expected = op == OpCode::KNIL ? valueNil() : op == OpCode::KFALSE ? valueBool(false)
 			: op == OpCode::KTRUE ? valueBool(true) : op == OpCode::K0 ? valueNumber(0.0)
 			: op == OpCode::K1 ? valueNumber(1.0) : op == OpCode::KM1 ? valueNumber(-1.0) : valueNumber(-33554432.0);
-		require(reg == expected && block->lastPc == 0x1004 && block->currentPc == 0x1000,
+		require(reg == expected && block->terminal.lastPc == 0x1004 && block->terminal.currentPc == 0x1000,
 			"literal blocks retain raw tags and distinguish WIDE prefix and body PCs");
 	}
 }
@@ -182,7 +182,7 @@ void dependentInstructionsWriteBackEveryLiveRegister() {
 			source.back() = {&terminal, source[31].pc + decoded[31].width * INSTRUCTION_BYTES};
 			auto block = NativeBlock::compile(source, pool.data(), bytes);
 			auto registers = initial;
-			const auto pc = block->run(registers.data(), pool.data());
+			const auto pc = block->run(registers.data(), pool.data())->nextPc;
 			const bool taken = op == OpCode::JMP || (op == OpCode::JMPIF && isTruthy(expected[previous]))
 				|| (op == OpCode::JMPIFNOT && !isTruthy(expected[previous]));
 			require(registers == expected && pc == (taken ? terminal.bx : source.back().pc + 2 * INSTRUCTION_BYTES),
@@ -209,7 +209,7 @@ void truthinessAndConditionalExits() {
 		for (u32 header = 0; header != 65536u; ++header) {
 			const Value input = (static_cast<Value>(header) << 48u) | 0x123456789abcULL;
 			std::array registers{valueNil(), input};
-			const u32 nextPc = block->run(registers.data(), nullptr);
+			const u32 nextPc = block->run(registers.data(), nullptr)->nextPc;
 			if (op == OpCode::NOT) {
 				require(registers[0] == valueBool(!isTruthy(input)) && nextPc == 0x1008u,
 					"native NOT preserves every representable Value header and boxed Boolean");
@@ -219,7 +219,7 @@ void truthinessAndConditionalExits() {
 					"native conditional exits return raw branch or WIDE fallthrough PCs");
 			}
 		}
-		require(block->registerTop == (op == OpCode::NOT ? 1 : 0),
+		require(block->terminal.registerTop == (op == OpCode::NOT ? 1 : 0),
 			"conditional branch register reads never extend the open-result top");
 	}
 	DecodedInstruction halt;
@@ -229,31 +229,31 @@ void truthinessAndConditionalExits() {
 	halt.baseCycles = 1;
 	const std::array source{NativeBlockInstruction{&halt, 0xfffffff8u}};
 	auto block = NativeBlock::compile(source, nullptr, bytes);
-	require(block->run(nullptr, nullptr) == 0u && block->exit == NativeBlockExit::Halt
-		&& block->registerTop == 0 && block->cycles == 1 && block->lastPc == 0xfffffffcu,
+	require(block->run(nullptr, nullptr)->nextPc == 0u && block->terminal.exit == NativeBlockExit::Halt
+		&& block->terminal.registerTop == 0 && block->terminal.cycles == 1 && block->terminal.lastPc == 0xfffffffcu,
 		"a standalone native WIDE HALT has an exact wrapped continuation and explicit exit");
 }
 
 struct TailFault { int value; };
 std::unique_ptr<NativeBlock>* retiringBlock = nullptr;
 
-NativeBlockTransition tailResult(NativeBlockExecution* execution, const NativeBlock* block) {
-	require(execution->frame->registers[1] == valueNumber(2), "word conversions preserve the native exit context");
-	require(block->exit == NativeBlockExit::Call && block->exitA == 3 && block->exitB == 1 && block->exitC == 2,
+NativeBlockTransition exitResult(CPU*, CallFrame* frame, const NativeBlockExitSite* exit) {
+	require(frame->registers[1] == valueNumber(2), "side-exit handlers see committed word conversions");
+	require(exit->exit == NativeBlockExit::Call && exit->exitA == 3 && exit->exitB == 1 && exit->exitC == 2,
 		"a generated exit retains decoded call operands");
 	return NativeBlockTransition::RebindFrame;
 }
 
-NativeBlockTransition tailThrow(NativeBlockExecution*, const NativeBlock*) {
+NativeBlockTransition exitThrow(CPU*, CallFrame*, const NativeBlockExitSite*) {
 	throw TailFault{73};
 }
 
-NativeBlockTransition tailRetire(NativeBlockExecution*, const NativeBlock*) {
+NativeBlockTransition exitRetire(CPU*, CallFrame*, const NativeBlockExitSite*) {
 	retiringBlock->reset();
 	return NativeBlockTransition::Redispatch;
 }
 
-void tailHelpersReleaseTheGeneratedFrame() {
+void sideExitHandlersRunAfterGeneratedFrameReturns() {
 	DecodedInstruction one, shift, call;
 	one.op = static_cast<u8>(OpCode::K1); one.width = one.baseCycles = 1;
 	shift.op = static_cast<u8>(OpCode::SHL); shift.width = shift.baseCycles = 1;
@@ -266,29 +266,30 @@ void tailHelpersReleaseTheGeneratedFrame() {
 	std::array registers{valueNil(), valueNil()};
 	CallFrame frame;
 	frame.registers = registers.data();
-	NativeBlockExecution execution{nullptr, &frame};
 	{
-		auto block = NativeBlock::compile(source, nullptr, bytes, &tailResult);
-		require(block->run(registers.data(), nullptr, execution) == NativeBlockTransition::RebindFrame,
-			"the generated tail exit returns its typed frame transition");
-		require(block->registerTop == 2 && block->cycles == 4 && block->lastPc == 0x100cu,
+		auto block = NativeBlock::compile(source, nullptr, bytes, {nullptr, nullptr, &exitResult});
+		const auto* exit = block->run(registers.data(), nullptr);
+		require(exit->handler(nullptr, &frame, exit) == NativeBlockTransition::RebindFrame,
+			"the generated side exit returns its typed frame transition");
+		require(block->terminal.registerTop == 2 && block->terminal.cycles == 4 && block->terminal.lastPc == 0x100cu,
 			"CALL reads do not extend top and retain the terminal WIDE/cycle extent");
 	}
 	{
-		auto block = NativeBlock::compile(source, nullptr, bytes, &tailThrow);
+		auto block = NativeBlock::compile(source, nullptr, bytes, {nullptr, nullptr, &exitThrow});
 		bool caught = false;
-		try { block->run(registers.data(), nullptr, execution); }
+		try { const auto* exit = block->run(registers.data(), nullptr); exit->handler(nullptr, &frame, exit); }
 		catch (const TailFault& error) { caught = error.value == 73; }
 		require(caught, "C++ exceptions unwind ordinary registered frames, never generated code");
 	}
 	{
-		auto block = NativeBlock::compile(source, nullptr, bytes, &tailRetire);
+		auto block = NativeBlock::compile(source, nullptr, bytes, {nullptr, nullptr, &exitRetire});
 		retiringBlock = &block;
-		require(block->run(registers.data(), nullptr, execution) == NativeBlockTransition::Redispatch && !block,
-			"a tail helper may retire its own code before returning");
+		const auto* exit = block->run(registers.data(), nullptr);
+		require(exit->handler(nullptr, &frame, exit) == NativeBlockTransition::Redispatch && !block,
+			"a side-exit handler may retire its own code before returning");
 		retiringBlock = nullptr;
 	}
-	require(bytes == 0, "retired tail code leaves no executable cache allocation");
+	require(bytes == 0, "retired side-exit code leaves no executable cache allocation");
 }
 
 } // namespace
@@ -299,7 +300,7 @@ int main() {
 		movesAndLiteralsPreserveRawValues();
 		dependentInstructionsWriteBackEveryLiveRegister();
 		truthinessAndConditionalExits();
-		tailHelpersReleaseTheGeneratedFrame();
+		sideExitHandlersRunAfterGeneratedFrameReturns();
 		std::cout << "Native block datapath tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {

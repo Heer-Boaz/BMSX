@@ -18,19 +18,27 @@ export const enum CompiledBlockExit {
 	Halt,
 	Call,
 	Return,
+	ReadField,
+	WriteField,
 }
 
-export type CompiledBlock = {
-	readonly execute: (registers: ValueSlots, constants: Float64Array) => number;
+export type CompiledBlockExitSite = {
 	readonly exit: CompiledBlockExit;
 	readonly exitA: number;
 	readonly exitB: number;
 	readonly exitC: number;
+	readonly exitWord: number;
 	readonly cycles: number;
 	readonly registerTop: number;
 	readonly nextPc: number;
 	readonly currentPc: number;
 	readonly lastPc: number;
+};
+
+export type CompiledBlock = {
+	readonly execute: (registers: ValueSlots, constants: Float64Array, page: DecodedInstructionPage) => number;
+	readonly terminal: CompiledBlockExitSite;
+	readonly exits: readonly CompiledBlockExitSite[];
 	readonly sourceUnits: number;
 	readonly sourceWords: number;
 };
@@ -84,7 +92,7 @@ export class CompiledCodeCache {
 	}
 }
 
-type StatementEmitter = (page: DecodedInstructionPage, word: number, image: Blua32ExecutionImage) => string;
+type StatementEmitter = (page: DecodedInstructionPage, word: number, image: Blua32ExecutionImage, exitIndex: number) => string;
 type NumberEmitter = (page: DecodedInstructionPage, word: number, image: Blua32ExecutionImage, pendingRegister: number) => string;
 
 function numberOperand(selector: number, image: Blua32ExecutionImage, pendingRegister: number): string {
@@ -101,6 +109,17 @@ emitters[OpCode.KNIL] = (p, w) => `r.setNil(${p.a[w]});`;
 emitters[OpCode.KFALSE] = (p, w) => `r.setBool(${p.a[w]},false);`;
 emitters[OpCode.KTRUE] = (p, w) => `r.setBool(${p.a[w]},true);`;
 emitters[OpCode.NOT] = (p, w) => `r.setBool(${p.a[w]},!r.isTruthy(${p.b[w]}));`;
+emitters[OpCode.GETFIELD] = (p, w, _image, exit) => `if(r.getTag(${p.b[w]})!==${ValueTag.Table}) return ${exit};
+{ const t=r.getTable(${p.b[w]});
+if(!t.loadPredictedStringKey(k[${p.c[w]}],p.tableCacheSlots[${w}],r,${p.a[w]})) return ${exit}; }`;
+emitters[OpCode.SETFIELD] = (p, w, image, exit) => {
+	const selector = p.c[w];
+	const constant = -selector - 1;
+	const tag = selector < 0 ? `${image.constTags[constant]}` : `r.getTag(${selector})`;
+	const scalar = selector < 0 ? `k[${constant}]` : `r.getScalar(${selector})`;
+	const reference = selector < 0 ? 'null' : `r.getReference(${selector})`;
+	return `if(r.getTag(${p.a[w]})!==${ValueTag.Table} || !r.getTable(${p.a[w]}).storePredictedStringKey(k[${p.b[w]}],p.tableCacheSlots[${w}],${tag},${scalar},${reference})) return ${exit};`;
+};
 
 const numberEmitters: (NumberEmitter | undefined)[] = new Array(OPCODE_COUNT);
 numberEmitters[OpCode.K0] = () => '0';
@@ -132,7 +151,7 @@ export function compiledBlockEndsBlock(op: number): boolean {
 		|| op === OpCode.CALL || op === OpCode.RET;
 }
 
-/** The caller admits a pure prefix and at most one terminal execution boundary. */
+/** Field hits stay in the block; side exits publish only the executed prefix. */
 export function compileJavaScriptBlock(
 	page: DecodedInstructionPage,
 	firstWord: number,
@@ -141,6 +160,7 @@ export function compileJavaScriptBlock(
 	image: Blua32ExecutionImage,
 ): CompiledBlock {
 	const source = ['"use strict";'];
+	const exits: CompiledBlockExitSite[] = [];
 	let cycles = 0;
 	let sourceWords = 0;
 	let registerTop = 0;
@@ -153,6 +173,18 @@ export function compileJavaScriptBlock(
 	for (let word = firstWord; word < endWord; word += page.widths[word]) {
 		finalWord = word;
 		const op = page.ops[word];
+		cycles += BASE_CYCLES[op];
+		sourceWords += page.widths[word];
+		currentPc = pc;
+		lastPc = (pc + (page.widths[word] - 1) * INSTRUCTION_BYTES) >>> 0;
+		pc = (pc + page.widths[word] * INSTRUCTION_BYTES) >>> 0;
+		nextPc = op === OpCode.JMP ? page.bx[word] : pc;
+		const exitIndex = exits.length;
+		if (op === OpCode.GETFIELD || op === OpCode.SETFIELD) {
+			exits.push({ exit: op === OpCode.GETFIELD ? CompiledBlockExit.ReadField : CompiledBlockExit.WriteField,
+				exitA: page.a[word], exitB: page.b[word], exitC: page.c[word], exitWord: word,
+				cycles, registerTop, nextPc, currentPc, lastPc });
+		}
 		const numberEmitter = numberEmitters[op];
 		if (numberEmitter !== undefined) {
 			if (!numberLocal) {
@@ -168,29 +200,29 @@ export function compileJavaScriptBlock(
 			// Raw copies and execution exits consume the complete ValueSlots state.
 			if (pendingRegister >= 0) source.push(`r.setNumber(${pendingRegister},v);`);
 			pendingRegister = -1;
-			source.push(emitters[op]!(page, word, image));
+			source.push(emitters[op]!(page, word, image, exitIndex));
 		}
-		cycles += BASE_CYCLES[op];
-		sourceWords += page.widths[word];
-		currentPc = pc;
-		lastPc = (pc + (page.widths[word] - 1) * INSTRUCTION_BYTES) >>> 0;
-		pc = (pc + page.widths[word] * INSTRUCTION_BYTES) >>> 0;
-		nextPc = op === OpCode.JMP ? page.bx[word] : pc;
-		if (!compiledBlockEndsBlock(op)) registerTop = Math.max(registerTop, page.a[word] + 1);
+		if (!compiledBlockEndsBlock(op) && op !== OpCode.SETFIELD) registerTop = Math.max(registerTop, page.a[word] + 1);
 	}
 	if (pendingRegister >= 0) source.push(`r.setNumber(${pendingRegister},v);`);
 	const finalOp = page.ops[finalWord];
-	if (finalOp === OpCode.JMPIF || finalOp === OpCode.JMPIFNOT) {
-		const truth = `${finalOp === OpCode.JMPIFNOT ? '!' : ''}r.isTruthy(${page.a[finalWord]})`;
-		source.push(`return ${truth}?${page.bx[finalWord]}:${nextPc};`);
-	} else source.push(`return ${nextPc};`);
-	const body = source.join('\n');
-	return {
-		execute: new Function('r', 'k', body) as CompiledBlock['execute'],
+	const terminal: CompiledBlockExitSite = {
 		exit: finalOp === OpCode.HALT ? CompiledBlockExit.Halt : finalOp === OpCode.CALL ? CompiledBlockExit.Call
 			: finalOp === OpCode.RET ? CompiledBlockExit.Return : CompiledBlockExit.Continue,
-		exitA: page.a[finalWord], exitB: page.b[finalWord], exitC: page.c[finalWord],
-		cycles, sourceWords, registerTop, nextPc, currentPc, lastPc,
-		sourceUnits: body.length,
+		exitA: page.a[finalWord], exitB: page.b[finalWord], exitC: page.c[finalWord], exitWord: finalWord,
+		cycles, registerTop, nextPc, currentPc, lastPc,
+	};
+	const terminalIndex = exits.length;
+	exits.push(terminal);
+	if (finalOp === OpCode.JMPIF || finalOp === OpCode.JMPIFNOT) {
+		const takenIndex = exits.length;
+		exits.push({ ...terminal, nextPc: page.bx[finalWord] });
+		const truth = `${finalOp === OpCode.JMPIFNOT ? '!' : ''}r.isTruthy(${page.a[finalWord]})`;
+		source.push(`return ${truth}?${takenIndex}:${terminalIndex};`);
+	} else source.push(`return ${terminalIndex};`);
+	const body = source.join('\n');
+	return {
+		execute: new Function('r', 'k', 'p', body) as CompiledBlock['execute'],
+		terminal, exits, sourceWords, sourceUnits: body.length,
 	};
 }

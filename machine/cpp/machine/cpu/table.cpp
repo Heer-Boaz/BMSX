@@ -39,6 +39,22 @@ size_t Table::trackedHeapBytesForCapacities(size_t arrayCapacity, size_t hashCap
 		+ (hashCapacity * kTableHashSlotHeapBytes);
 }
 
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+// Generated accesses use this compiler's inherited GC-object layout, not a
+// mirrored ABI or the implementation-specific layout of std::vector.
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winvalid-offsetof"
+#endif
+TableNativeFieldOffsets Table::nativeFieldOffsets() {
+	return {offsetof(Table, m_hashSize),
+		offsetof(Table, m_hashKeys), offsetof(Table, m_hashValues)};
+}
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+#endif
+
 bool Table::getArrayIndex(const Value& key, int& outIndex) const {
 	if (!valueIsNumber(key)) {
 		return false;

@@ -45,15 +45,31 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 		}
 	}
 	if (!page.nativeBlocks) page.nativeBlocks = std::make_unique<NativeBlockPage>();
-	const auto terminal = static_cast<OpCode>(instructions[count - 1u].decoded->op);
-	const NativeBlockExitHandler handler = terminal == OpCode::CALL ? &CPU::compiledCallExit
-		: terminal == OpCode::RET ? &CPU::compiledReturnExit : nullptr;
+	const NativeBlockExitHandlers handlers{nullptr, nullptr, &CPU::compiledCallExit, &CPU::compiledReturnExit,
+		&CPU::compiledReadFieldExit, &CPU::compiledWriteFieldExit};
 	page.nativeBlocks->entries[word] = NativeBlock::compile(
-		std::span(instructions.data(), count), frame.executionImage->constPool.data(), m_nativeCodeBytes, handler);
+		std::span(instructions.data(), count), frame.executionImage->constPool.data(), m_nativeCodeBytes, handlers);
 	++page.nativeBlocks->count;
 	page.words[word].dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeBlock);
 	page.words[word].dispatchCycles = page.words[word].baseCycles;
 	page.refreshState[word] &= static_cast<u8>(~DECODED_REFRESH_FUSION);
+}
+
+NativeBlockTransition CPU::compiledReadFieldExit(CPU* owner, CallFrame* activeFrame, const NativeBlockExitSite* exit) {
+	auto& cpu = *owner;
+	auto& frame = *activeFrame;
+	frame.registers[exit->exitA] = cpu.loadTableFieldIndexCached(exit->tableCacheSlot,
+		frame.registers[exit->exitB], asStringId(frame.executionImage->constPool[exit->exitC]));
+	frame.top = std::max(frame.top, static_cast<int>(exit->exitA) + 1);
+	return NativeBlockTransition::NextInstruction;
+}
+
+NativeBlockTransition CPU::compiledWriteFieldExit(CPU* owner, CallFrame* activeFrame, const NativeBlockExitSite* exit) {
+	auto& cpu = *owner;
+	auto& frame = *activeFrame;
+	cpu.storeTableFieldIndexCached(exit->tableCacheSlot, frame.registers[exit->exitA],
+		asStringId(frame.executionImage->constPool[exit->exitB]), cpu.readRK(*frame.executionImage, frame.registers, exit->exitC));
+	return NativeBlockTransition::NextInstruction;
 }
 
 } // namespace bmsx

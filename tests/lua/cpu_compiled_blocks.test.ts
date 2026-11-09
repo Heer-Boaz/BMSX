@@ -13,6 +13,7 @@ import { LUA_FAULT_REASON_CALL_NON_FUNCTION } from '../../machine/ts/spec/blua32
 import { BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { readLE32 } from '../../machine/ts/common/endian';
 import { compileLuaSource } from './cpu_test_harness';
+import { compileCoroutineTest } from '../helpers/coroutine';
 
 function compiledEntries(cpu: CPU): number {
 	let count = 0;
@@ -165,7 +166,7 @@ test('dependent generated instructions preserve live values, raw copies and ever
 			if (op >= OpCode.ADD && op <= OpCode.SHR) {
 				if ((next() & 3) === 0) b = -1 - next() % constants.length;
 				if ((next() & 3) === 0) c = -1 - next() % constants.length;
-				ext = ((b >>> 6) & 7) << 2 | ((c >>> 6) & 7) << 5;
+				ext = ((b >>> 6) & 7) << 3 | ((c >>> 6) & 7);
 			} else if (op === OpCode.LOADK || op === OpCode.KSMI) {
 				const bx = op === OpCode.LOADK ? next() % constants.length : (next() & 127) - 64;
 				b = bx >>> 6; c = bx & 63; ext = bx >>> 12;
@@ -190,6 +191,91 @@ test('dependent generated instructions preserve live values, raw copies and ever
 		}
 		assert.ok(compiledEntries(js) > 0, `dependent program ${program} used generated code`);
 	}
+});
+
+test('generated field access retains metatables, deletion, rehash, reference values and GC roots', () => {
+	const image = compileCoroutineTest(`
+local parent = { value = 2 }
+local keys = { "a", "b", "c", "d", "e", "f", "g" }
+local t = setmetatable({}, { __index = parent })
+local other = { value = false }
+local n = 0
+for i = 1, 120 do
+ if i % 11 == 0 then t.value = nil end
+ t.value = t.value + 1
+ t[keys[i % 7 + 1]] = other
+ t[i + 10000] = other
+ other.value = t.value
+ n = n + other.value
+ if i % 23 == 0 then collectgarbage() end
+end
+return n, t.value, other.value
+`, 0);
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
+	const ref = createTestSystemCpu(image).cpu;
+	for (const cpu of [js, ref]) cpu.installBootPrimitives();
+	const executionImage = js.rootThread.frames[0].executionImage;
+	let result = RunResult.Yielded;
+	for (let slice = 0; slice < 10000 && result === RunResult.Yielded; ++slice) {
+		const grant = [1, 2, 3, 9, 33, 256][slice % 6];
+		result = js.runUntilDepth(0, grant);
+		assert.equal(result, ref.runUntilDepth(0, grant));
+		assert.equal(js.readLuaFaultReasonWord(), 0, 'the field program must execute without a guest fault');
+		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
+		assert.equal(js.instructionBudgetRemaining, ref.instructionBudgetRemaining);
+	}
+	assert.equal(result, RunResult.Halted);
+	const exits = new Set([...executionImage.decodedPages.values()].flatMap(page =>
+		page.compiledBlocks?.entries.filter(block => block !== null).flatMap(block => block!.exits.map(exit => exit.exit)) ?? []));
+	assert.ok(exits.has(CompiledBlockExit.ReadField) && exits.has(CompiledBlockExit.WriteField), 'field reads and writes used generated execution');
+});
+
+test('field cache hits stay in one generated block and misses publish only the executed prefix', () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(text, 0, OpCode.K1, 3, 0, 0);
+	writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(text, 2, OpCode.GETFIELD, 4, 0, 0);
+	writeInstruction(text, 3, OpCode.ADD, 4, 4, 1);
+	writeInstruction(text, 4, OpCode.SETFIELD, 0, 0, 4);
+	writeInstruction(text, 5, OpCode.JMP, 0, 63, 58, 255);
+	writeInstruction(text, 6, OpCode.HALT, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text, functions: [
+		{ firstWord: 0, wordCount: 6, maxStack: 8 }, { firstWord: 6, wordCount: 1 },
+	], constants: ['field'], exceptionFunctionIndex: 1 });
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
+	const ref = createTestSystemCpu(image).cpu;
+	const entry = image.image.functions[0].codeAddress;
+	for (const cpu of [js, ref]) {
+		const table = cpu.createTable(0, 1);
+		table.storeStringKey(cpu.stringPool.intern('field'), ValueTag.Number, 0, null);
+		cpu.rootThread.frames[0].registers.setTable(0, table);
+		cpu.rootThread.frames[0].registers.setNumber(1, 1);
+		cpu.runUntilDepth(0, 1200);
+	}
+	const frame = js.rootThread.frames[0];
+	const page = frame.decodedPage!;
+	const block = page.compiledBlocks!.entries[(entry & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2]!;
+	assert.equal(block.sourceWords, 6);
+	assert.equal(block.exits.filter(exit => exit.exit === CompiledBlockExit.ReadField || exit.exit === CompiledBlockExit.WriteField).length, 2);
+	assert.equal(block.exits[block.execute(frame.registers, frame.executionImage.constScalars, page)], block.terminal,
+		'both field hits and arithmetic reach the final branch without a host side exit');
+	ref.runUntilDepth(0, 6);
+	assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
+	for (let grant = 1; grant <= 40; ++grant) {
+		for (const cpu of [js, ref]) cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
+		assert.equal(js.runUntilDepth(0, grant), ref.runUntilDepth(0, grant));
+		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
+		assert.equal(js.instructionBudgetRemaining, ref.instructionBudgetRemaining);
+	}
+	for (const cpu of [js, ref]) {
+		const frame = cpu.rootThread.frames[0];
+		frame.registers.setBool(0, false); frame.top = 0;
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
+		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+		assert.equal(frame.top, 4, 'the failed field load did not write its destination');
+		assert.equal(cpu.readEpcWord(), entry + INSTRUCTION_BYTES);
+	}
+	assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 });
 
 test('sparse observation and instrumented stops retire or bypass compiled blocks without lost instruction boundaries', () => {
@@ -300,7 +386,7 @@ for (const standalone of [false, true]) test(`generated HALT commits its thread/
 	}
 	const page = js.rootThread.frames[0].decodedPage!;
 	const block = page.compiledBlocks!.entries[(startPc & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2]!;
-	assert.equal(block.exit, CompiledBlockExit.Halt, 'the executed HALT is a generated exit, not interpreter dispatch');
+	assert.equal(block.terminal.exit, CompiledBlockExit.Halt, 'the executed HALT is a generated exit, not interpreter dispatch');
 	for (const cpu of [js, ref]) {
 		const saved = cpu.captureRuntimeState();
 		cpu.restoreRuntimeState(saved);
@@ -336,7 +422,7 @@ test('a generated terminal WIDE instruction can straddle pages and retires when 
 		assert.equal(cpu.readFramePc(0), pc + 2 * INSTRUCTION_BYTES);
 	}
 	const head = cpu.rootThread.frames[0].executionImage.decodedPages;
-	assert.ok([...head.values()].some(page => page.compiledBlocks?.entries[255]?.exit === CompiledBlockExit.Halt));
+	assert.ok([...head.values()].some(page => page.compiledBlocks?.entries[255]?.terminal.exit === CompiledBlockExit.Halt));
 	writeInstruction(code, 1, OpCode.KM1, 0, 0, 0);
 	memory.writeBytes(pc + INSTRUCTION_BYTES, code.subarray(INSTRUCTION_BYTES));
 	assert.equal(compiledEntries(cpu), 0);
@@ -393,7 +479,7 @@ for (const wide of [false, true]) test(`generated CALL/RET preserve full state a
 	for (const cpu of [js, ref]) assert.equal(cpu.runUntilDepth(0, 10001), RunResult.Yielded);
 	assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 	const executionImage = js.rootThread.frames[0].executionImage;
-	const exits = new Set([...executionImage.decodedPages.values()].flatMap(page => page.compiledBlocks?.entries.filter(block => block !== null).map(block => block!.exit) ?? []));
+	const exits = new Set([...executionImage.decodedPages.values()].flatMap(page => page.compiledBlocks?.entries.filter(block => block !== null).map(block => block!.terminal.exit) ?? []));
 	assert.ok(exits.has(CompiledBlockExit.Call) && exits.has(CompiledBlockExit.Return), 'both sides of the call use generated exits');
 	for (const cpu of [js, ref]) {
 		assert.equal(cpu.getFrameDepth(), 1);
@@ -448,7 +534,7 @@ test('a compiled CALL completes after a mapped record read replaces its source i
 		}
 		assert.equal(cpu.runUntilDepth(0, 10001), RunResult.Yielded);
 		const page = cpu.rootThread.frames[0].decodedPage!;
-		if (backend === CpuExecutionBackend.JavaScript) assert.equal(page.compiledBlocks!.entries[2]!.exit, CompiledBlockExit.Call);
+		if (backend === CpuExecutionBackend.JavaScript) assert.equal(page.compiledBlocks!.entries[2]!.terminal.exit, CompiledBlockExit.Call);
 		source.armed = true;
 		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 		assert.equal(source.writes, 1);

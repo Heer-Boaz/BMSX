@@ -2612,31 +2612,27 @@ dispatch_instruction:
 					const auto& block = *decodedPage->nativeBlocks->entries[pageOffset];
 					// The first instruction's ordinary charge/PC publication has
 					// already happened. Admit the remaining block without undoing it.
-					const int remainingCycles = block.cycles - decoded->baseCycles;
+					const int remainingCycles = block.terminal.cycles - decoded->baseCycles;
 					if (instructionBudgetRemaining < remainingCycles) {
 						dispatchOp = decoded->op;
 						goto dispatch_instruction;
 					}
-					if (block.exit == NativeBlockExit::Call || block.exit == NativeBlockExit::Return) {
-						// The pure prefix cannot observe this publication. The tail
-						// helper must see it before changing frames or raising an error.
-						instructionBudgetRemaining -= remainingCycles;
-						FRAME.pc = block.nextPc;
-						FRAME.top = std::max(FRAME.top, block.registerTop);
-						m_currentInstructionPc = block.currentPc;
-						lastPc = block.lastPc;
-						NativeBlockExecution execution{this, frame};
-						const auto transition = block.run(registers, IMAGE.constPool.data(), execution);
-						// The helper may have retired this block and its source page.
+					const auto* exit = block.run(registers, IMAGE.constPool.data());
+					// Each return describes exactly the executed prefix, including a
+					// guarded field miss. No future instruction state is published.
+					instructionBudgetRemaining -= exit->cycles - decoded->baseCycles;
+					FRAME.pc = exit->nextPc;
+					FRAME.top = std::max(FRAME.top, exit->registerTop);
+					m_currentInstructionPc = exit->currentPc;
+					lastPc = exit->lastPc;
+					if (exit->handler) {
+						const auto transition = exit->handler(this, frame, exit);
+						// A semantic exit may have retired its own source or changed frames.
+						if (transition == NativeBlockTransition::NextInstruction) DISPATCH_NEXT();
 						if (transition == NativeBlockTransition::RebindFrame) DISPATCH_REBIND_FRAME();
 						DISPATCH_CONTINUE();
 					}
-					FRAME.pc = block.run(registers, IMAGE.constPool.data());
-					instructionBudgetRemaining -= remainingCycles;
-					FRAME.top = std::max(FRAME.top, block.registerTop);
-					m_currentInstructionPc = block.currentPc;
-					lastPc = block.lastPc;
-					if (block.exit == NativeBlockExit::Halt) {
+					if (exit->exit == NativeBlockExit::Halt) {
 						haltUntilIrq();
 						DISPATCH_CONTINUE();
 					}
@@ -3367,6 +3363,9 @@ void CPU::writeMappedWordSequence(CallFrame& frame, uint32_t addr, int valueBase
 	}
 }
 
+// TODO: Admit function-valued __index through VM call/return continuations in
+// all indexed-read forms. Table-only resolution is an implementation limitation,
+// not the intended BLua contract; raw Table storage must not execute guest code.
 Value CPU::resolveTableIndex(Table* table, const Value& key) {
 	Value value;
 	if (table->resolveIndex(

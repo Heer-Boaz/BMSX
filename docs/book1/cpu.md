@@ -838,7 +838,7 @@ The table instruction families differ in where the key comes from:
 - `GETI` and `SETI` carry the integer key directly in an instruction operand.
 - `GETFIELD`, `SETFIELD`, and `SELF` select a string key directly from the image constant pool. That constant operand is not an `RK` operand.
 
-Reads accept a table base. A string base instead uses the CPU's string-index table; these instructions do not specify substring indexing. Other base value categories raise `INDEX_NON_TABLE`. Without a metatable, a table read is direct. The table-only inherited lookup and its exact chain bound are specified below.
+Reads accept a table base. A string base instead uses the CPU's string-index table; these instructions do not specify substring indexing. Other base value categories raise `INDEX_NON_TABLE`. Without a metatable, a table read is direct. Indexed lookup, its pending correction and its exact chain bound are specified below.
 
 Writes accept only table bases, including for integer and string-field forms. Assigning through any other value category, including a string, raises `ASSIGN_NON_TABLE`.
 
@@ -879,6 +879,15 @@ An in-capacity non-nil write at key `L + 1`, or a newly inserted hash entry for 
 For example, with array capacity four and keys 1 through 5 populated, the initial length is 5. Deleting key 2 shortens it to 1 without removing key 5. Restoring key 2 advances the length to 5, including that hash-held entry.
 
 #### Metatables and indexed reads {#sec-cpu-metatables-and-indexed-reads}
+
+::: {.callout-warning title="Pending correction: function-valued __index"}
+
+The table-only restriction below is a known implementation limitation, not
+the intended BLua language contract. A function-valued `__index` must be
+invoked as in Lua. That support is still pending; the following paragraphs
+describe the currently available behavior.
+
+:::
 
 A Table may have a metatable. An ordinary indexed read first checks the queried Table's own mapping. A non-nil value wins immediately, including `false`. If the entry is missing, the read obtains the direct `"__index"` member of that Table's metatable. Only a Table-valued `__index` continues the lookup, using the original key on that next Table. Each subsequent Table is processed in the same way.
 
@@ -1055,9 +1064,9 @@ Here infinity and NaN denote Number operands, not additional source keywords.
 
 The second group produces `42`, `9`, then `42`. The inherited read does not
 create an own mapping. Assigning `nil` removes the own mapping and exposes the
-parent again. `rawget(child, 'answer')` is then `nil`. A function-valued
-`__index` is not called by this indexed-read datapath; consult the table
-reference above rather than assuming another Lua version's metatable behavior.
+parent again. `rawget(child, 'answer')` is then `nil`. Function-valued
+`__index` support remains pending; see the marked correction in
+[Metatables and indexed reads](#sec-cpu-metatables-and-indexed-reads).
 
 ## Memory transfers {#sec-cpu-memory-transfers}
 

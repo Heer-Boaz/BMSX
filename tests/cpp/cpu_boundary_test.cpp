@@ -52,6 +52,162 @@ struct CpuMachine {
 	}
 };
 
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+NativeBlockTransition fieldSlowExitMarker(CPU*, CallFrame*, const NativeBlockExitSite*) {
+	return NativeBlockTransition::Redispatch;
+}
+
+void nativeFieldGuardsAndRawSlotAccess() {
+	CpuMachine machine(returnImage());
+	const StringId key = machine.cpu.stringPool().intern("native-field");
+	const StringId other = machine.cpu.stringPool().intern("other-field");
+	Table* table = machine.cpu.createTable(0, 2);
+	int slot = table->setStringKey(key, valueNumber(1));
+	const int otherSlot = table->setStringKey(other, valueNumber(2));
+	table->getStringKeyCached(key, slot);
+	const std::array constants{valueNumber(7), valueString(key)};
+	size_t bytes = 0;
+	for (const bool store : {false, true}) {
+		DecodedInstruction field;
+		field.op = static_cast<u8>(store ? OpCode::SETFIELD : OpCode::GETFIELD);
+		field.a = 0; field.b = 1; field.c = store ? -1 : 1;
+		field.width = 2; field.baseCycles = BASE_CYCLES[field.op]; field.tableCacheSlot = slot;
+		const std::array source{NativeBlockInstruction{&field, 0x1000u}};
+		auto block = NativeBlock::compile(source, constants.data(), bytes, {nullptr, nullptr, nullptr, nullptr, &fieldSlowExitMarker, &fieldSlowExitMarker});
+		std::array registers{valueTable(table), valueTable(table)};
+		if (store) {
+			require(block->sideExits[0].exitC == -1, "native field exits keep signed RK selectors");
+			require(block->run(registers.data(), constants.data())->exit == NativeBlockExit::Continue
+				&& table->getStringKey(key) == constants[0], "a native field store updates the real hash slot without a helper");
+		} else {
+			for (Value value : {valueNumber(-0.0), VALUE_QNAN_MASK, Value{0x7ff0000000000001ULL},
+				valueBool(false), valueBool(true), valueString(other), valueTable(table)}) {
+				table->setStringKey(key, value);
+				require(block->run(registers.data(), constants.data())->exit == NativeBlockExit::Continue
+					&& registers[0] == value, "native cached field loads preserve every raw value and reference bit");
+			}
+			DecodedInstruction alias = field;
+			alias.a = alias.b;
+			const std::array aliasSource{NativeBlockInstruction{&alias, 0x1000u}};
+			auto aliasBlock = NativeBlock::compile(aliasSource, constants.data(), bytes);
+			table->setStringKey(key, valueNumber(-0.0));
+			require(aliasBlock->run(registers.data(), constants.data())->exit == NativeBlockExit::Continue
+				&& registers[1] == valueNumber(-0.0), "a cached field result can replace its own table receiver");
+			registers[1] = valueTable(table);
+		}
+		for (int prediction : {-1, otherSlot, 100000}) {
+			block->sideExits[0].tableCacheSlot = prediction;
+			require(block->run(registers.data(), constants.data())->handler == &fieldSlowExitMarker,
+				"missing, wrong-key and out-of-bounds field predictions leave through the native state-map exit");
+		}
+		block->sideExits[0].tableCacheSlot = slot;
+		registers[store ? 0 : 1] = valueBool(false);
+		require(block->run(registers.data(), constants.data())->handler == &fieldSlowExitMarker,
+			"a non-table field receiver is rejected before any native pointer access");
+		registers[0] = registers[1] = valueTable(table);
+		table->setStringKey(key, valueNil());
+		require(block->run(registers.data(), constants.data())->handler == &fieldSlowExitMarker,
+			"deleted and nil-valued slots cannot satisfy a cached field guard");
+		slot = table->setStringKey(key, valueNumber(1));
+		block->sideExits[0].tableCacheSlot = slot;
+		if (!store) {
+			table->metatable = machine.cpu.createTable(0, 0);
+			require(block->run(registers.data(), constants.data())->exit == NativeBlockExit::Continue,
+				"a live own field bypasses inheritance even when the table has a metatable");
+			table->setStringKey(key, valueNil());
+			require(block->run(registers.data(), constants.data())->handler == &fieldSlowExitMarker,
+				"inherited field resolution leaves the generated direct-storage path");
+			table->metatable = nullptr;
+			slot = table->setStringKey(key, valueNumber(1));
+		}
+	}
+	require(bytes == 0, "native field blocks release their executable cache bytes");
+}
+
+void nativeFieldExitsPublishCyclesAndFaultPc() {
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 3, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::GETFIELD), 4, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::ADD), 4, 4, 1);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::SETFIELD), 0, 0, 4);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 58, 255);
+	writeInstruction(image.text, 6, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 8}, {.firstWord = 6, .wordCount = 1}};
+	image.constants = {std::string("field")}; image.exceptionFunctionIndex = 1;
+	CpuMachine native(image), scalar(image);
+	scalar.cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+	for (auto* machine : {&native, &scalar}) {
+		auto& frame = *machine->cpu.activeThread()->frames[0];
+		Table* table = machine->cpu.createTable(0, 1);
+		frame.registers[0] = valueTable(table); frame.registers[1] = valueNumber(1);
+		table->setStringKey(machine->cpu.stringPool().intern("field"), valueNumber(0));
+		machine->cpu.runUntilDepth(0, 1200);
+	}
+	bool read = false, write = false;
+	for (const auto& [key, page] : native.cpu.activeThread()->frames[0]->executionImage->decodedPages) {
+		if (!page.nativeBlocks) continue;
+		for (const auto& block : page.nativeBlocks->entries) if (block) {
+			for (const auto& exit : block->sideExits) { read |= exit.exit == NativeBlockExit::ReadField; write |= exit.exit == NativeBlockExit::WriteField; }
+		}
+	}
+	require(read && write, "the table loop really uses native field read and write entries");
+	auto& nativeFrame = *native.cpu.activeThread()->frames[0];
+	const auto& loop = nativeFrame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u];
+	require(loop && loop->sourceWords == 6 && loop->sideExits.size() == 2,
+		"field hits and arithmetic are compiled together through the loop branch");
+	require(loop->run(nativeFrame.registers, nativeFrame.executionImage->constPool.data()) == &loop->terminal,
+		"ordinary read and write hits reach the final native branch without a host side exit");
+	// The direct datapath probe executes one loop; keep both reference machines aligned.
+	scalar.cpu.runUntilDepth(0, 6);
+	for (int grant = 1; grant <= 40; ++grant) {
+		for (auto* machine : {&native, &scalar}) {
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
+			require(machine->cpu.runUntilDepth(0, grant) == RunResult::Yielded, "field loops preserve short-grant yields");
+		}
+		require(native.cpu.readFramePc(0) == scalar.cpu.readFramePc(0)
+			&& native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc()
+			&& native.cpu.lastPc == scalar.cpu.lastPc
+			&& native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining,
+			"native field exits retain exact guest cycle and WIDE prefix/body publication");
+		require(native.cpu.readFrameRegister(0, 4) == scalar.cpu.readFrameRegister(0, 4), "native field results agree with scalar dispatch");
+	}
+	for (auto* machine : {&native, &scalar}) {
+		auto& cpu = machine->cpu; auto& frame = *cpu.activeThread()->frames[0];
+		frame.registers[0] = valueBool(false); frame.top = 0;
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
+		require(cpu.runUntilDepth(0, 100) == RunResult::Halted, "a native field miss reaches the normal synchronous fault owner");
+		require(cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INDEX_NON_TABLE
+			&& cpu.readEpcWord() == machine->rom.textAddress + INSTRUCTION_BYTES && frame.top == 4,
+			"a failed field load reports its WIDE prefix and never publishes an unwritten destination top");
+	}
+}
+
+void nativeFieldStoreMissKeepsSignedConstantSelectors() {
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::SETFIELD), 0, 0, 62, 7); // RK(C) = K[1].
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
+	image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 1}};
+	image.constants = {std::string("field"), 7.0};
+	CpuMachine machine(image);
+	Table* table = machine.cpu.createTable(0, 1);
+	machine.cpu.activeThread()->frames[0]->registers[0] = valueTable(table);
+	const StringId key = machine.cpu.stringPool().intern("field");
+	table->setStringKey(key, valueNumber(1));
+	machine.cpu.runUntilDepth(0, 300);
+	const auto& frame = *machine.cpu.activeThread()->frames[0];
+	const auto& block = frame.decodedPage->nativeBlocks->entries[(machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u];
+	require(block && block->sideExits[0].exitC == -2, "compiled field maps retain signed constant selectors");
+	table->setStringKey(key, valueNil());
+	require(machine.cpu.runUntilDepth(0, 3) == RunResult::Yielded
+		&& table->getStringKey(key) == valueNumber(7) && machine.cpu.readLuaFaultReasonWord() == 0,
+		"a generated store miss re-creates a deleted field from the correct raw RK constant");
+}
+
+#endif
+
 void registerRunsPublishAtBudgetBoundaries() {
 	test::Blua32TestImage image;
 	image.text.resize(7u * INSTRUCTION_BYTES);
@@ -248,7 +404,7 @@ void nativeHaltCommitsItsThreadAndFrameLatch() {
 		}
 		const auto& page = *cpu.activeThread()->frames[0]->decodedPage;
 		const auto& block = page.nativeBlocks->entries[(startPc & MAPPED_PAGE_BYTE_MASK) >> 2u];
-		require(block && block->exit == NativeBlockExit::Halt,
+		require(block && block->terminal.exit == NativeBlockExit::Halt,
 			"both a HALT-only block and a numeric prefix use an explicit generated HALT exit");
 		cpu.restoreRuntimeState(cpu.captureRuntimeState());
 		require(cpu.isHaltedUntilIrq(), "restoring a native HALT retains its owning thread and depth");
@@ -280,7 +436,7 @@ void nativeTerminalAtPageBoundaryTracksItsBody() {
 	}
 	auto& head = cpu.activeThread()->frames[0]->executionImage->decodedPages.at(pc & ~MAPPED_PAGE_BYTE_MASK);
 	require(head.nativeBlocks && head.nativeBlocks->entries[255]
-		&& head.nativeBlocks->entries[255]->exit == NativeBlockExit::Halt,
+		&& head.nativeBlocks->entries[255]->terminal.exit == NativeBlockExit::Halt,
 		"an already decoded cross-page WIDE terminal can execute as generated code");
 	writeInstruction(code, 1, static_cast<u8>(OpCode::KM1), 0, 0, 0);
 	machine.memory.writeBytes(pc + INSTRUCTION_BYTES, code.data() + INSTRUCTION_BYTES, INSTRUCTION_BYTES);
@@ -351,8 +507,8 @@ void nativeCallsAndReturnsPublishFaultBoundaries() {
 			if (!page.nativeBlocks) continue;
 			for (const auto& block : page.nativeBlocks->entries) {
 				if (!block) continue;
-				compiledCall |= block->exit == NativeBlockExit::Call;
-				compiledReturn |= block->exit == NativeBlockExit::Return;
+				compiledCall |= block->terminal.exit == NativeBlockExit::Call;
+				compiledReturn |= block->terminal.exit == NativeBlockExit::Return;
 			}
 		}
 		require(compiledCall && compiledReturn, "CALL and RET execute through real generated tail exits");
@@ -426,7 +582,7 @@ void nativeCallCanRetireItsSourceDuringFunctionRecordRead() {
 			"a mapped function record warms a real native call boundary");
 		auto& page = *cpu.activeThread()->frames[0]->decodedPage;
 		if (!instrumented) require(page.nativeBlocks && page.nativeBlocks->entries[2]
-			&& page.nativeBlocks->entries[2]->exit == NativeBlockExit::Call,
+			&& page.nativeBlocks->entries[2]->terminal.exit == NativeBlockExit::Call,
 			"the source mutation test executes generated CALL code");
 		source.armed = true;
 		require(cpu.runUntilDepth(0, 100) == RunResult::Halted && source.writes == 1
@@ -1206,6 +1362,9 @@ int main() {
 	try {
 		registerRunsPublishAtBudgetBoundaries();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		nativeFieldGuardsAndRawSlotAccess();
+		nativeFieldExitsPublishCyclesAndFaultPc();
+		nativeFieldStoreMissKeepsSignedConstantSelectors();
 		nativeCodeWarmsWithinOneCpuSlice();
 		nativeCodeUsesCachedWordsAtPartialRomTails();
 		nativeWarmRetiresRejectedPrefixes();

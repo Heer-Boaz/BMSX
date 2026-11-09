@@ -645,6 +645,9 @@ export class CPU implements MappedPageInvalidator {
 		previous.nextOpen = upvalue;
 	}
 
+	// TODO: Admit function-valued __index through VM call/return continuations in
+	// all indexed-read forms. Table-only resolution is an implementation limitation,
+	// not the intended BLua contract; raw Table storage must not execute guest code.
 	private loadTableIndex(
 		baseTag: ValueTag,
 		baseTable: Table | null,
@@ -2461,21 +2464,36 @@ export class CPU implements MappedPageInvalidator {
 			}
 		}
 		const block = cache.entries[word];
-		if (block !== null) {
-			const remaining = block.cycles - page.dispatchCycles[word];
-			if (this.instructionBudgetRemaining >= remaining) {
-				frame.pc = block.execute(frame.registers, frame.executionImage.constScalars);
-				this.instructionBudgetRemaining -= remaining;
-				frame.top = Math.max(frame.top, block.registerTop);
-				this.currentInstructionPc = block.currentPc;
-				this.lastPc = block.lastPc;
-				switch (block.exit) {
-					case CompiledBlockExit.Halt: this.haltUntilIrq(); break;
-					case CompiledBlockExit.Call: this.executeCall(frame, block.exitA, block.exitB, block.exitC); break;
-					case CompiledBlockExit.Return: this.executeReturn(frame, block.exitA, block.exitB); break;
+		if (block !== null && this.instructionBudgetRemaining >= block.terminal.cycles - page.dispatchCycles[word]) {
+			const registers = frame.registers;
+			const image = frame.executionImage;
+			const exit = block.exits[block.execute(registers, image.constScalars, page)];
+			this.instructionBudgetRemaining -= exit.cycles - page.dispatchCycles[word];
+			frame.pc = exit.nextPc;
+			frame.top = Math.max(frame.top, exit.registerTop);
+			this.currentInstructionPc = exit.currentPc;
+			this.lastPc = exit.lastPc;
+			switch (exit.exit) {
+				case CompiledBlockExit.Halt: this.haltUntilIrq(); break;
+				case CompiledBlockExit.Call: this.executeCall(frame, exit.exitA, exit.exitB, exit.exitC); break;
+				case CompiledBlockExit.Return: this.executeReturn(frame, exit.exitA, exit.exitB); break;
+				case CompiledBlockExit.ReadField:
+					this.loadTableFieldIndexCached(page, exit.exitWord, registers.getTag(exit.exitB),
+						registers.getTable(exit.exitB), image.constScalars[exit.exitC] as StringId, registers, exit.exitA);
+					this.bumpRegisterTop(frame, exit.exitA);
+					break;
+				case CompiledBlockExit.WriteField: {
+					const c = exit.exitC;
+					const index = -c - 1;
+					this.storeTableFieldIndexCached(page, exit.exitWord, registers.getTag(exit.exitA), registers.getTable(exit.exitA),
+						image.constScalars[exit.exitB] as StringId,
+						c < 0 ? image.constTags[index] : registers.getTag(c),
+						c < 0 ? image.constScalars[index] : registers.getScalar(c),
+						c < 0 ? null : registers.getReference(c));
+					break;
 				}
-				return;
 			}
+			return;
 		}
 		this.executeInstruction(frame, page, word, page.ops[word]);
 	}

@@ -486,8 +486,10 @@ private:
 	void skipNextInstruction(CallFrame& frame);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	void prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32 word);
-	static NativeBlockTransition compiledCallExit(NativeBlockExecution* execution, const NativeBlock* block);
-	static NativeBlockTransition compiledReturnExit(NativeBlockExecution* execution, const NativeBlock* block);
+	static NativeBlockTransition compiledCallExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
+	static NativeBlockTransition compiledReturnExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
+	static NativeBlockTransition compiledReadFieldExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
+	static NativeBlockTransition compiledWriteFieldExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
 	size_t m_nativeCodeBytes = 0;
 #endif
 	void clearHaltAfterAcceptedInterrupt();

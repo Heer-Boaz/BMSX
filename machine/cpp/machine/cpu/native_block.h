@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <memory>
 #include <span>
+#include <array>
+#include <vector>
 
 #include "common/primitives.h"
 #include "machine/cpu/value.h"
@@ -14,18 +16,15 @@ struct DecodedInstruction;
 struct CallFrame;
 class CPU;
 class NativeBlock;
-
-struct NativeBlockExecution {
-	CPU* cpu;
-	CallFrame* frame;
-};
+struct NativeBlockExitSite;
 
 enum class NativeBlockTransition : u32 {
 	Redispatch,
 	RebindFrame,
+	NextInstruction,
 };
 
-using NativeBlockExitHandler = NativeBlockTransition (*)(NativeBlockExecution*, const NativeBlock*);
+using NativeBlockExitHandler = NativeBlockTransition (*)(CPU*, CallFrame*, const NativeBlockExitSite*);
 
 inline constexpr u8 NATIVE_BLOCK_COMPILATION_THRESHOLD = 8u;
 inline constexpr u32 NATIVE_BLOCK_MAX_INSTRUCTIONS = 64u;
@@ -35,15 +34,34 @@ enum class NativeBlockExit : u8 {
 	Halt,
 	Call,
 	Return,
+	ReadField,
+	WriteField,
+	Count,
 };
+
+struct NativeBlockExitSite {
+	NativeBlockExit exit = NativeBlockExit::Continue;
+	NativeBlockExitHandler handler = nullptr;
+	u16 exitA = 0;
+	i16 exitB = 0;
+	i16 exitC = 0;
+	mutable int tableCacheSlot = -1;
+	int cycles = 0;
+	int registerTop = 0;
+	u32 nextPc = 0;
+	u32 currentPc = 0;
+	u32 lastPc = 0;
+};
+
+using NativeBlockExitHandlers = std::array<NativeBlockExitHandler, static_cast<size_t>(NativeBlockExit::Count)>;
 
 struct NativeBlockInstruction {
 	const DecodedInstruction* decoded;
 	u32 pc;
 };
 
-// The prefix is side-effect-free. Calls/returns terminate in a native tail
-// helper, after publishing state and releasing the generated host stack frame.
+// Cached field hits stay in generated code. Slow exits return their precise
+// state map before a semantic helper can allocate, raise or invalidate code.
 inline constexpr bool nativeBlockSupports(u8 op) {
 	switch (static_cast<OpCode>(op)) {
 		case OpCode::MOV:
@@ -73,6 +91,8 @@ inline constexpr bool nativeBlockSupports(u8 op) {
 		case OpCode::HALT:
 		case OpCode::CALL:
 		case OpCode::RET:
+		case OpCode::GETFIELD:
+		case OpCode::SETFIELD:
 			return true;
 		default:
 			return false;
@@ -91,25 +111,17 @@ public:
 		std::span<const NativeBlockInstruction> instructions,
 		const Value* constants,
 		size_t& cacheBytes,
-		NativeBlockExitHandler exitHandler = nullptr
+		const NativeBlockExitHandlers& exitHandlers = {}
 	);
 	~NativeBlock();
 	NativeBlock(const NativeBlock&) = delete;
 	NativeBlock& operator=(const NativeBlock&) = delete;
 
-	u32 run(Value* registers, const Value* constants) const;
-	NativeBlockTransition run(Value* registers, const Value* constants, NativeBlockExecution& execution) const;
+	const NativeBlockExitSite* run(Value* registers, const Value* constants) const;
 
-	NativeBlockExit exit = NativeBlockExit::Continue;
-	u16 exitA = 0;
-	u16 exitB = 0;
-	u16 exitC = 0;
+	NativeBlockExitSite terminal;
+	std::vector<NativeBlockExitSite> sideExits;
 	u16 sourceWords = 0;
-	int cycles = 0;
-	int registerTop = 0;
-	u32 nextPc = 0;
-	u32 currentPc = 0;
-	u32 lastPc = 0;
 	size_t codeBytes = 0;
 
 private:

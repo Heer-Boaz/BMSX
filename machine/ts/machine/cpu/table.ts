@@ -292,12 +292,12 @@ export class Table {
 		target.setNil(targetIndex);
 	}
 
-	public loadStringKeyCached(
+	public loadPredictedStringKey(
 		key: StringId,
 		predictedSlot: number,
 		target: ValueWriteTarget,
 		targetIndex: number,
-	): number {
+	): boolean {
 		if (predictedSlot >= 0 && predictedSlot < this.hashSize) {
 			const keySlot = this.hashKeySlot(predictedSlot);
 			const valueSlot = this.hashValueSlot(predictedSlot);
@@ -310,9 +310,19 @@ export class Table {
 					this.scalars[valueSlot],
 					this.references[valueSlot],
 				);
-				return predictedSlot;
+				return true;
 			}
 		}
+		return false;
+	}
+
+	public loadStringKeyCached(
+		key: StringId,
+		predictedSlot: number,
+		target: ValueWriteTarget,
+		targetIndex: number,
+	): number {
+		if (this.loadPredictedStringKey(key, predictedSlot, target, targetIndex)) return predictedSlot;
 		const nodeIndex = this.findStringNodeIndex(key);
 		if (nodeIndex >= 0) {
 			const valueSlot = this.hashValueSlot(nodeIndex);
@@ -467,13 +477,13 @@ export class Table {
 		);
 	}
 
-	public storeStringKeyCached(
+	public storePredictedStringKey(
 		key: StringId,
 		predictedSlot: number,
 		valueTag: ValueTag,
 		valueScalar: number,
 		valueReference: ValueReference,
-	): number {
+	): boolean {
 		if (valueTag !== ValueTag.Nil
 			&& predictedSlot >= 0
 			&& predictedSlot < this.hashSize) {
@@ -483,9 +493,20 @@ export class Table {
 				&& this.scalars[keySlot] === key
 				&& this.tags[valueSlot] !== ValueTag.Nil) {
 				this.setEncoded(valueSlot, valueTag, valueScalar, valueReference);
-				return predictedSlot;
+				return true;
 			}
 		}
+		return false;
+	}
+
+	public storeStringKeyCached(
+		key: StringId,
+		predictedSlot: number,
+		valueTag: ValueTag,
+		valueScalar: number,
+		valueReference: ValueReference,
+	): number {
+		if (this.storePredictedStringKey(key, predictedSlot, valueTag, valueScalar, valueReference)) return predictedSlot;
 		return this.storeStringKey(key, valueTag, valueScalar, valueReference);
 	}
 

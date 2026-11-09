@@ -16,11 +16,22 @@ class LuaHeap;
 inline constexpr int TABLE_INDEX_CHAIN_LIMIT = 32;
 inline constexpr int TABLE_INDEX_CHAIN_EXHAUSTED = -2;
 
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+struct TableNativeFieldOffsets {
+	size_t hashSize;
+	size_t keys;
+	size_t values;
+};
+#endif
+
 class Table : public GCObject {
 public:
 	Table(LuaHeap& luaHeap, size_t arrayCapacity = 0, size_t hashCapacity = 0);
 	static size_t hashCapacity(int hashSize);
 	static size_t trackedHeapBytesForCapacities(size_t arrayCapacity, size_t hashCapacity);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	static TableNativeFieldOffsets nativeFieldOffsets();
+#endif
 
 	Value get(const Value& key) const;
 	void set(const Value& key, const Value& value);

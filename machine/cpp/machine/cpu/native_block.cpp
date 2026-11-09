@@ -6,6 +6,7 @@
 #include <new>
 
 #include "machine/cpu/execution_image.h"
+#include "machine/cpu/table.h"
 #include "sljitLir.h"
 
 namespace bmsx {
@@ -13,29 +14,25 @@ namespace {
 
 class NativeBlockCompiler {
 public:
-	NativeBlockCompiler(const Value* constants, const NativeBlock* block, NativeBlockExitHandler exitHandler)
-		: m_compiler(sljit_create_compiler(nullptr)), m_constants(constants), m_block(block), m_exitHandler(exitHandler) {
+	NativeBlockCompiler(const Value* constants, const NativeBlock* block)
+		: m_compiler(nullptr), m_constants(constants), m_block(block) {
+		m_slowPaths.reserve(std::count_if(block->sideExits.begin(), block->sideExits.end(), [](const auto& exit) {
+			return exit.exit == NativeBlockExit::ReadField || exit.exit == NativeBlockExit::WriteField;
+		}));
+		m_compiler = sljit_create_compiler(nullptr);
 		if (!m_compiler) throw std::bad_alloc();
-		// S0/S1 keep the guest register and constant banks across conversion
-		// calls. S2 keeps a converted word while the other operand is converted.
-		if (exitHandler) {
-			sljit_emit_enter(m_compiler, 0, SLJIT_ARGS3(32, P, P, P),
-				2 | SLJIT_ENTER_FLOAT(3), 4, 0);
-			// S2 is reused for word conversions; S3 keeps the exit context.
-			sljit_emit_op1(m_compiler, SLJIT_MOV, SLJIT_S3, 0, SLJIT_S2, 0);
-		} else {
-			sljit_emit_enter(m_compiler, 0, SLJIT_ARGS2(32, P, P),
-				2 | SLJIT_ENTER_FLOAT(3), 3, 0);
-		}
+		// S0/S1 retain the value banks; S2 retains word/field-address temporaries.
+		sljit_emit_enter(m_compiler, 0, SLJIT_ARGS2(P, P, P), 3 | SLJIT_ENTER_FLOAT(3), 3, 0);
 	}
 
 	~NativeBlockCompiler() { sljit_free_compiler(m_compiler); }
 
-	void emit(const DecodedInstruction& instruction, u32 fallthroughPc) {
+	void emit(const DecodedInstruction& instruction, const NativeBlockExitSite* fieldExit, const NativeBlockExitSite* takenExit) {
 		const auto op = static_cast<OpCode>(instruction.op);
 		const bool wordConversion = op == OpCode::BAND || op == OpCode::BOR || op == OpCode::BXOR
 			|| op == OpCode::SHL || op == OpCode::SHR || op == OpCode::BNOT;
-		if (nativeBlockEndsBlock(instruction.op) || wordConversion || op == OpCode::NOT) {
+		if (nativeBlockEndsBlock(instruction.op) || wordConversion || op == OpCode::NOT
+			|| op == OpCode::GETFIELD || op == OpCode::SETFIELD) {
 			flushRegister();
 		} else if (m_pendingRegister != instruction.a) {
 			commitRegister();
@@ -108,6 +105,11 @@ public:
 				sljit_emit_op2(m_compiler, SLJIT_XOR32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, -1);
 				sljit_emit_fop1(m_compiler, SLJIT_CONV_F64_FROM_S32, SLJIT_FR0, 0, SLJIT_R0, 0);
 				break;
+			case OpCode::GETFIELD:
+			case OpCode::SETFIELD:
+				emitTableField(instruction, fieldExit);
+				if (op == OpCode::GETFIELD) m_pendingRegister = instruction.a;
+				return;
 			case OpCode::JMP:
 			case OpCode::HALT:
 			case OpCode::CALL:
@@ -116,12 +118,12 @@ public:
 			case OpCode::JMPIF:
 			case OpCode::JMPIFNOT: {
 				const auto falsey = falseyJumps(instruction.a);
-				sljit_emit_return(m_compiler, SLJIT_MOV32, SLJIT_IMM,
-					op == OpCode::JMPIF ? instruction.bx : fallthroughPc);
+				sljit_emit_return(m_compiler, SLJIT_MOV_P, SLJIT_IMM, reinterpret_cast<sljit_sw>(
+					op == OpCode::JMPIF ? takenExit : &m_block->terminal));
 				auto* falseyLabel = sljit_emit_label(m_compiler);
 				for (auto* jump : falsey) sljit_set_label(jump, falseyLabel);
-				sljit_emit_return(m_compiler, SLJIT_MOV32, SLJIT_IMM,
-					op == OpCode::JMPIF ? fallthroughPc : instruction.bx);
+				sljit_emit_return(m_compiler, SLJIT_MOV_P, SLJIT_IMM, reinterpret_cast<sljit_sw>(
+					op == OpCode::JMPIF ? &m_block->terminal : takenExit));
 				return;
 			}
 			default:
@@ -130,17 +132,13 @@ public:
 		m_pendingRegister = instruction.a;
 	}
 
-	void* finish(size_t& codeBytes, u32 nextPc) {
+	void* finish(size_t& codeBytes) {
 		flushRegister();
-		if (m_exitHandler) {
-			sljit_emit_op1(m_compiler, SLJIT_MOV, SLJIT_R0, 0, SLJIT_S3, 0);
-			sljit_emit_op1(m_compiler, SLJIT_MOV, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_block));
-			// Two pointer arguments fit the register ABI, including ARM32.
-			// No generated frame remains for C++ exceptions or code retirement.
-			sljit_emit_icall(m_compiler, SLJIT_CALL | SLJIT_CALL_RETURN, SLJIT_ARGS2(32, P, P),
-				SLJIT_IMM, SLJIT_FUNC_ADDR(m_exitHandler));
-		} else {
-			sljit_emit_return(m_compiler, SLJIT_MOV32, SLJIT_IMM, nextPc);
+		sljit_emit_return(m_compiler, SLJIT_MOV_P, SLJIT_IMM, reinterpret_cast<sljit_sw>(&m_block->terminal));
+		for (const auto& slow : m_slowPaths) {
+			auto* label = sljit_emit_label(m_compiler);
+			for (size_t i = 0; i < slow.count; ++i) sljit_set_label(slow.jumps[i], label);
+			sljit_emit_return(m_compiler, SLJIT_MOV_P, SLJIT_IMM, reinterpret_cast<sljit_sw>(slow.exit));
 		}
 		void* code = sljit_generate_code(m_compiler, 0, nullptr);
 		if (!code) throw std::bad_alloc();
@@ -149,6 +147,63 @@ public:
 	}
 
 private:
+	void emitTableField(const DecodedInstruction& instruction, const NativeBlockExitSite* exit) {
+		const bool load = instruction.op == static_cast<u8>(OpCode::GETFIELD);
+		const int base = load ? instruction.b : instruction.a;
+		const StringId key = asStringId(m_constants[load ? instruction.c : instruction.b]);
+		const auto fields = Table::nativeFieldOffsets();
+		constexpr sljit_sw headerOffset = std::endian::native == std::endian::little ? 6 : 0;
+		constexpr sljit_sw payloadOffset = std::endian::native == std::endian::little ? 0 : 4;
+		SlowPath slow;
+		slow.exit = exit;
+		sljit_emit_op1(m_compiler, SLJIT_MOV_U16, SLJIT_R0, 0,
+			SLJIT_MEM1(SLJIT_S0), base * sizeof(Value) + headerOffset);
+		slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R0, 0,
+			SLJIT_IMM, valueFromTag(ValueTag::Table) >> 48u);
+#if defined(SLJIT_64BIT_ARCHITECTURE)
+		sljit_emit_op1(m_compiler, SLJIT_MOV, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_S0), base * sizeof(Value));
+		sljit_emit_op2(m_compiler, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, VALUE_PAYLOAD_MASK);
+#else
+		sljit_emit_op1(m_compiler, SLJIT_MOV, SLJIT_R0, 0,
+			SLJIT_MEM1(SLJIT_S0), base * sizeof(Value) + payloadOffset);
+#endif
+		sljit_emit_op1(m_compiler, SLJIT_MOV_S32, SLJIT_R1, 0,
+			SLJIT_MEM0(), reinterpret_cast<sljit_sw>(&exit->tableCacheSlot));
+		// Unsigned bounds also reject the negative missing-slot sentinel.
+		slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_GREATER_EQUAL,
+			SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), fields.hashSize);
+		sljit_emit_op2(m_compiler, SLJIT_SHL, SLJIT_S2, 0, SLJIT_R1, 0, SLJIT_IMM, 3);
+		sljit_emit_op1(m_compiler, SLJIT_MOV, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), fields.keys);
+		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_S2, 0);
+		sljit_emit_op1(m_compiler, SLJIT_MOV_U16, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), headerOffset);
+		slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R2, 0,
+			SLJIT_IMM, valueString(0) >> 48u);
+		sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), payloadOffset);
+		slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32,
+			SLJIT_R2, 0, SLJIT_IMM, key);
+		sljit_emit_op1(m_compiler, SLJIT_MOV, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), fields.values);
+		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_S2, 0);
+		sljit_emit_op1(m_compiler, SLJIT_MOV_U16, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), headerOffset);
+		slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL,
+			SLJIT_R2, 0, SLJIT_IMM, valueNil() >> 48u);
+		if (load) {
+			// The raw result remains in FR0 for dependent arithmetic or copies.
+			sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0, SLJIT_MEM1(SLJIT_R1), 0);
+		} else {
+			const bool constant = instruction.c < 0;
+			const int valueIndex = constant ? -instruction.c - 1 : instruction.c;
+			const sljit_s32 bank = constant ? SLJIT_S1 : SLJIT_S0;
+			sljit_emit_op1(m_compiler, SLJIT_MOV_U16, SLJIT_R2, 0,
+				SLJIT_MEM1(bank), valueIndex * sizeof(Value) + headerOffset);
+			slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL,
+				SLJIT_R2, 0, SLJIT_IMM, valueNil() >> 48u);
+			sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0,
+				SLJIT_MEM1(bank), valueIndex * sizeof(Value));
+			sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_MEM1(SLJIT_R1), 0, SLJIT_FR0, 0);
+		}
+		m_slowPaths.push_back(slow);
+	}
+
 	void commitRegister() {
 		if (m_pendingRegister < 0) return;
 		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64,
@@ -207,7 +262,12 @@ private:
 	sljit_compiler* m_compiler;
 	const Value* m_constants;
 	const NativeBlock* m_block;
-	NativeBlockExitHandler m_exitHandler;
+	struct SlowPath {
+		std::array<sljit_jump*, 7> jumps;
+		size_t count = 0;
+		const NativeBlockExitSite* exit;
+	};
+	std::vector<SlowPath> m_slowPaths;
 	// FR0 holds this raw Value until eviction, a helper call or an execution exit.
 	int m_pendingRegister = -1;
 };
@@ -218,31 +278,52 @@ std::unique_ptr<NativeBlock> NativeBlock::compile(
 	std::span<const NativeBlockInstruction> instructions,
 	const Value* constants,
 	size_t& cacheBytes,
-	NativeBlockExitHandler exitHandler
+	const NativeBlockExitHandlers& exitHandlers
 ) {
 	auto block = std::unique_ptr<NativeBlock>(new NativeBlock(cacheBytes));
-	NativeBlockCompiler compiler(constants, block.get(), exitHandler);
+	const size_t fieldCount = std::count_if(instructions.begin(), instructions.end(), [](const auto& source) {
+		return source.decoded->op == static_cast<u8>(OpCode::GETFIELD) || source.decoded->op == static_cast<u8>(OpCode::SETFIELD);
+	});
+	const auto finalOp = static_cast<OpCode>(instructions.back().decoded->op);
+	block->sideExits.reserve(fieldCount + (finalOp == OpCode::JMPIF || finalOp == OpCode::JMPIFNOT ? 1 : 0));
+	auto& terminal = block->terminal;
 	for (const auto& source : instructions) {
 		const auto& instruction = *source.decoded;
-		compiler.emit(instruction, source.pc + static_cast<u32>(instruction.width) * INSTRUCTION_BYTES);
-		block->cycles += instruction.baseCycles;
+		const auto op = static_cast<OpCode>(instruction.op);
+		terminal.cycles += instruction.baseCycles;
 		block->sourceWords += instruction.width;
-		block->currentPc = source.pc;
-		block->lastPc = source.pc + (static_cast<u32>(instruction.width) - 1u) * INSTRUCTION_BYTES;
-		block->nextPc = static_cast<OpCode>(instruction.op) == OpCode::JMP
-			? instruction.bx : source.pc + static_cast<u32>(instruction.width) * INSTRUCTION_BYTES;
-		if (!nativeBlockEndsBlock(instruction.op)) {
-			block->registerTop = std::max(block->registerTop, static_cast<int>(instruction.a) + 1);
+		terminal.currentPc = source.pc;
+		terminal.lastPc = source.pc + (static_cast<u32>(instruction.width) - 1u) * INSTRUCTION_BYTES;
+		terminal.nextPc = op == OpCode::JMP ? instruction.bx : source.pc + static_cast<u32>(instruction.width) * INSTRUCTION_BYTES;
+		terminal.exitA = instruction.a; terminal.exitB = instruction.b; terminal.exitC = instruction.c;
+		if (op == OpCode::GETFIELD || op == OpCode::SETFIELD) {
+			auto& exit = block->sideExits.emplace_back(terminal);
+			exit.exit = op == OpCode::GETFIELD ? NativeBlockExit::ReadField : NativeBlockExit::WriteField;
+			exit.handler = exitHandlers[static_cast<size_t>(exit.exit)];
+			exit.tableCacheSlot = instruction.tableCacheSlot;
+		}
+		if (!nativeBlockEndsBlock(instruction.op) && op != OpCode::SETFIELD) {
+			terminal.registerTop = std::max(terminal.registerTop, static_cast<int>(instruction.a) + 1);
 		}
 	}
-	const auto& terminal = *instructions.back().decoded;
-	block->exit = static_cast<OpCode>(terminal.op) == OpCode::HALT ? NativeBlockExit::Halt
-		: static_cast<OpCode>(terminal.op) == OpCode::CALL ? NativeBlockExit::Call
-		: static_cast<OpCode>(terminal.op) == OpCode::RET ? NativeBlockExit::Return : NativeBlockExit::Continue;
-	block->exitA = terminal.a;
-	block->exitB = terminal.b;
-	block->exitC = terminal.c;
-	block->m_code = compiler.finish(block->codeBytes, block->nextPc);
+	const auto op = static_cast<OpCode>(instructions.back().decoded->op);
+	terminal.exit = op == OpCode::HALT ? NativeBlockExit::Halt : op == OpCode::CALL ? NativeBlockExit::Call
+		: op == OpCode::RET ? NativeBlockExit::Return : NativeBlockExit::Continue;
+	terminal.handler = exitHandlers[static_cast<size_t>(terminal.exit)];
+	const NativeBlockExitSite* taken = nullptr;
+	if (op == OpCode::JMPIF || op == OpCode::JMPIFNOT) {
+		auto& exit = block->sideExits.emplace_back(terminal);
+		exit.nextPc = instructions.back().decoded->bx;
+		taken = &exit;
+	}
+	NativeBlockCompiler compiler(constants, block.get());
+	size_t field = 0;
+	for (const auto& source : instructions) {
+		const auto op = static_cast<OpCode>(source.decoded->op);
+		const auto* exit = op == OpCode::GETFIELD || op == OpCode::SETFIELD ? &block->sideExits[field++] : nullptr;
+		compiler.emit(*source.decoded, exit, taken);
+	}
+	block->m_code = compiler.finish(block->codeBytes);
 	cacheBytes += block->codeBytes;
 	return block;
 }
@@ -252,14 +333,9 @@ NativeBlock::~NativeBlock() {
 	m_cacheBytes -= codeBytes;
 }
 
-u32 NativeBlock::run(Value* registers, const Value* constants) const {
-	using Entry = u32 (SLJIT_FUNC *)(Value*, const Value*);
+const NativeBlockExitSite* NativeBlock::run(Value* registers, const Value* constants) const {
+	using Entry = const NativeBlockExitSite* (SLJIT_FUNC *)(Value*, const Value*);
 	return reinterpret_cast<Entry>(m_code)(registers, constants);
-}
-
-NativeBlockTransition NativeBlock::run(Value* registers, const Value* constants, NativeBlockExecution& execution) const {
-	using Entry = NativeBlockTransition (SLJIT_FUNC *)(Value*, const Value*, NativeBlockExecution*);
-	return reinterpret_cast<Entry>(m_code)(registers, constants, &execution);
 }
 
 } // namespace bmsx
