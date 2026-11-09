@@ -23,7 +23,7 @@
 namespace {
 using namespace bmsx;
 
-enum class Workload { Registers, Tables, Builtin, Ram, Calls, CallsBacked, CallsRamRecord, CodeWrites, Fractions };
+enum class Workload { Registers, Tables, Builtin, Ram, Calls, CallsBacked, CallsRamRecord, CodeWrites, Fractions, Comparisons };
 constexpr u32 RAM_RECORD_ADDRESS = DYNAMIC_RAM_BASE + 0x18000;
 
 test::Blua32TestImage program(Workload workload) {
@@ -97,6 +97,22 @@ test::Blua32TestImage program(Workload workload) {
 		writeInstruction(text, 3, static_cast<u8>(OpCode::SUB), 5, 4, 3);
 		writeInstruction(text, 4, static_cast<u8>(OpCode::DIV), 6, 5, 2);
 		writeInstruction(text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 58, 255);
+		break;
+	case Workload::Comparisons:
+		text.resize(12u * INSTRUCTION_BYTES);
+		image.functions[0].wordCount = 12;
+		writeInstruction(text, 0, static_cast<u8>(OpCode::ADD), 0, 0, 1);
+		writeInstruction(text, 1, static_cast<u8>(OpCode::BAND), 0, 0, 3);
+		writeInstruction(text, 2, static_cast<u8>(OpCode::LT), 0, 0, 2);
+		writeInstruction(text, 3, static_cast<u8>(OpCode::JMP), 0, 0, 1);
+		writeInstruction(text, 4, static_cast<u8>(OpCode::MOV), 5, 0, 0);
+		writeInstruction(text, 5, static_cast<u8>(OpCode::LE), 1, 0, 2);
+		writeInstruction(text, 6, static_cast<u8>(OpCode::JMP), 0, 0, 1);
+		writeInstruction(text, 7, static_cast<u8>(OpCode::MOV), 6, 0, 0);
+		writeInstruction(text, 8, static_cast<u8>(OpCode::EQ), 0, 0, 2);
+		writeInstruction(text, 9, static_cast<u8>(OpCode::JMP), 0, 0, 1);
+		writeInstruction(text, 10, static_cast<u8>(OpCode::MOV), 7, 0, 0);
+		writeInstruction(text, 11, static_cast<u8>(OpCode::JMP), 0, 63, 52, 255);
 		break;
 	}
 	return image;
@@ -198,11 +214,16 @@ void measure(Workload workload, const char* name, int grant, int round) {
 
 int main(int argc, char** argv) {
 	const bool ramRecords = argc == 2 && std::string_view(argv[1]) == "--ram-records";
-	if (argc != 1 && !ramRecords) throw std::runtime_error("Expected no arguments or --ram-records.");
+	const bool comparisons = argc == 2 && std::string_view(argv[1]) == "--comparisons";
+	if (argc != 1 && !ramRecords && !comparisons) throw std::runtime_error("Expected no arguments, --ram-records or --comparisons.");
 	std::cout << std::fixed << std::setprecision(3);
 	for (const int grant : {256, 4096}) for (int round = 0; round < 3; ++round) {
 		if (ramRecords) {
 			measure(Workload::CallsRamRecord, "calls-ram-record", grant, round);
+			continue;
+		}
+		if (comparisons) {
+			measure(Workload::Comparisons, "comparisons", grant, round);
 			continue;
 		}
 		measure(Workload::Registers, "registers", grant, round);

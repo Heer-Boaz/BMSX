@@ -227,6 +227,7 @@ function makeRuntime(cpu: CPU, irqController: IrqController, sliceStats?: { begi
 				takeResetRequest: () => false,
 				},
 				gxGpu: { backendServiceBlocksMachine: () => false },
+			dmaController: { cpuBusHeld: () => false },
 			scheduler,
 			advanceDevices: (cycles: number) => {
 				scheduler.nowCycles += cycles;
@@ -601,6 +602,7 @@ function makeCompiledIrqRuntime(source: string): { cpu: CPU; irqController: IrqC
 			irqController,
 			systemController: { cpuHeld: () => false },
 			gxGpu: { backendServiceBlocksMachine: () => false },
+			dmaController: { cpuBusHeld: () => false },
 			scheduler,
 			advanceDevices: (cycles: number) => { scheduler.nowCycles += cycles; },
 		},
