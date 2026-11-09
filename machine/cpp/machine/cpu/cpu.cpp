@@ -781,7 +781,7 @@ void CPU::invalidateDecodedWords(u64 key, u32 firstWord, u32 endWord) {
 		if (page != image->decodedPages.end()) {
 			auto& decodedPage = page->second;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-			decodedPage.nativeBlocks.reset();
+			decodedPage.retireNativeBlocks();
 #endif
 			for (u32 index = firstPredecessor; index < predecessorEnd; ++index) {
 				u8& refresh = decodedPage.refreshState[index];
@@ -831,7 +831,7 @@ void CPU::invalidateMappedRange(u64 firstKey, u64 endKey) {
 		for (auto& [key, page] : image->decodedPages) {
 			if (key >= invalidationStart && key < endKey) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-				page.nativeBlocks.reset();
+				page.retireNativeBlocks();
 #endif
 				page.refreshState.fill(DECODED_REFRESH_DECODE);
 			}
@@ -2512,17 +2512,6 @@ dispatch_decode:
 				refreshState = decodedPage->refreshState[pageOffset];
 			}
 			decoded = &decodedPage->words[pageOffset];
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-			if constexpr (!Instrumented) {
-				if ((refreshState & DECODED_REFRESH_DECODE) == 0u
-					&& decoded->dispatchOp != static_cast<u8>(DecodedDispatchOp::Observe)
-					&& nativeBlockSupports(decoded->op)
-					&& runNativeBlock(*frame, *decodedPage, pageOffset)) {
-					if (instructionBudgetRemaining > 0) goto dispatch_fetch;
-					goto dispatch_continue;
-				}
-			}
-#endif
 			m_currentInstructionPc = pc;
 			frame->pc = pc + (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES);
 			m_lastExecutionDomainId = image->executionDomainId;
@@ -2600,6 +2589,25 @@ dispatch_instruction:
 				}
 			} else {
 				switch (dispatchOp) {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+				case static_cast<u8>(DecodedDispatchOp::NativeBlock): {
+					const auto& block = *decodedPage->nativeBlocks->entries[pageOffset];
+					// The first instruction's ordinary charge/PC publication has
+					// already happened. Admit the remaining block without undoing it.
+					const int remainingCycles = block.cycles - decoded->baseCycles;
+					if (instructionBudgetRemaining < remainingCycles) {
+						dispatchOp = decoded->op;
+						goto dispatch_instruction;
+					}
+					block.run(registers, IMAGE.constPool.data());
+					instructionBudgetRemaining -= remainingCycles;
+					FRAME.pc = block.nextPc;
+					FRAME.top = std::max(FRAME.top, block.registerTop);
+					m_currentInstructionPc = block.currentPc;
+					lastPc = block.lastPc;
+					DISPATCH_NEXT();
+				}
+#endif
 				case static_cast<u8>(DecodedDispatchOp::ReservedMemory):
 					enterSynchronousException(FRAME, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 					DISPATCH_CONTINUE();
@@ -2766,6 +2774,23 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, const Threa
 }
 
 RunResult CPU::runUntilDepthNormal(CPU& cpu, int targetDepth, int instructionBudget) {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	// Heat/compile only at slice entry, not in the scalar instruction loop.
+	// A previously decoded start admits no speculative device or faulting fetch.
+	const auto& frames = cpu.m_activeThread->frames;
+	if (!frames.empty()) {
+		auto& frame = *frames.back();
+		const u32 word = (frame.pc & MAPPED_PAGE_BYTE_MASK) >> 2u;
+		auto* page = frame.decodedPage;
+		if (page && frame.decodedPageAddress == (frame.pc & ~MAPPED_PAGE_BYTE_MASK)
+			&& (frame.pc & (INSTRUCTION_BYTES - 1u)) == 0u
+			&& (page->refreshState[word] & DECODED_REFRESH_DECODE) == 0u
+			&& page->words[word].dispatchOp != static_cast<u8>(DecodedDispatchOp::Observe)
+			&& nativeBlockSupports(page->words[word].op)) {
+			cpu.prepareNativeBlock(frame, *page, word);
+		}
+	}
+#endif
 	if (targetDepth == 0) {
 		return cpu.runLoop<true, false>(targetDepth, instructionBudget);
 	}
@@ -2786,7 +2811,7 @@ void CPU::setInstructionObserver(InstructionObserverBinding binding) {
 		if (!image) continue;
 		for (auto& [key, page] : image->decodedPages) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-			page.nativeBlocks.reset();
+			page.retireNativeBlocks();
 #endif
 			page.refreshState.fill(DECODED_REFRESH_DECODE);
 		}

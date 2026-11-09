@@ -27,9 +27,16 @@ enum class DecodedDispatchOp : uint8_t {
 	FusedShrBxor,
 	Observe,
 	ReservedMemory,
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	NativeBlock,
+#endif
 };
 
-inline constexpr size_t DECODED_DISPATCH_OP_COUNT = OPCODE_COUNT + 5u;
+inline constexpr size_t DECODED_DISPATCH_OP_COUNT = OPCODE_COUNT + 5u
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	+ 1u
+#endif
+	;
 extern const std::array<uint8_t, DECODED_DISPATCH_OP_COUNT> DECODED_DISPATCH_BASE_CYCLES;
 
 inline constexpr bool decodedDispatchCanFuse(uint8_t op) {
@@ -124,6 +131,18 @@ struct DecodedInstructionPage {
 	MappedPageWriteWatch writeWatch;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	std::unique_ptr<NativeBlockPage> nativeBlocks;
+
+	void retireNativeBlocks() {
+		if (!nativeBlocks) return;
+		for (size_t word = 0; word < nativeBlocks->entries.size(); ++word) {
+			if (!nativeBlocks->entries[word]) continue;
+			auto& instruction = words[word];
+			instruction.dispatchOp = instruction.op;
+			instruction.dispatchCycles = instruction.baseCycles;
+			if (decodedDispatchCanFuse(instruction.op)) refreshState[word] |= DECODED_REFRESH_FUSION;
+		}
+		nativeBlocks.reset();
+	}
 #endif
 };
 
