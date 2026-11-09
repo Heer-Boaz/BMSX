@@ -45,8 +45,11 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 		}
 	}
 	if (!page.nativeBlocks) page.nativeBlocks = std::make_unique<NativeBlockPage>();
+	const auto terminal = static_cast<OpCode>(instructions[count - 1u].decoded->op);
+	const NativeBlockExitHandler handler = terminal == OpCode::CALL ? &CPU::compiledCallExit
+		: terminal == OpCode::RET ? &CPU::compiledReturnExit : nullptr;
 	page.nativeBlocks->entries[word] = NativeBlock::compile(
-		std::span(instructions.data(), count), frame.executionImage->constPool.data(), m_nativeCodeBytes);
+		std::span(instructions.data(), count), frame.executionImage->constPool.data(), m_nativeCodeBytes, handler);
 	++page.nativeBlocks->count;
 	page.words[word].dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeBlock);
 	page.words[word].dispatchCycles = page.words[word].baseCycles;

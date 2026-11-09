@@ -616,73 +616,17 @@ DISPATCH_LABEL(VARARG) {
 }
 
 DISPATCH_LABEL(CALL) {
-	const int a = decoded->a;
-	const int b = decoded->b;
-	const int c = decoded->c;
-	int argCount = decodeCallArgCount(b, std::max(FRAME.top - a - 1, 0));
-	int retCount = c;
-	const Value& callee = REG(a);
-	if (valueIsClosure(callee)) {
-		Closure* closure = asClosure(callee);
-		CallFrame* pushed = pushFrame(FRAME, closure, a + 1, argCount, a, retCount, false, FRAME.pc - INSTRUCTION_BYTES);
-		if (pushed && m_functionRecordLatch.cacheableRead) {
-			DISPATCH_REBIND_FRAME();
-		}
-		DISPATCH_CONTINUE();
+	if (executeCall(FRAME, decoded->a, decoded->b, decoded->c)) {
+		DISPATCH_REBIND_FRAME();
 	}
-	if (valueIsBuiltinFunction(callee)) {
-		runBuiltinFunction(*asBuiltinFunction(callee), FRAME, a, retCount, argCount);
-		DISPATCH_CONTINUE();
-	}
-	throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
+	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(RET) {
-	const int a = decoded->a;
-	const int b = decoded->b;
-	int count = b == 0 ? std::max(FRAME.top - a, 0) : b;
-	closeUpvalues(FRAME);
-	if (m_activeThread->protectedCallDepth > 0) {
-		const size_t continuationIndex = m_activeThread->protectedCallDepth - 1;
-		ProtectedCallContinuation& continuation = m_activeThread->protectedCallContinuations.get(continuationIndex);
-		if (continuation.target == &FRAME) {
-			finishProtectedCall(continuationIndex, FRAME, a, count);
-			auto finished = std::move(m_activeThread->frames.back());
-			m_activeThread->frames.pop_back();
-			m_activeThread->stackTop = finished->varargBase;
-			releaseFrame(std::move(finished));
-			DISPATCH_CONTINUE();
-		}
+	if (executeReturn(FRAME, decoded->a, decoded->b)) {
+		DISPATCH_REBIND_FRAME();
 	}
-	if (FRAME.returnToCompletionLatch) {
-		m_completionValues.assign(FRAME.registers + a, FRAME.registers + a + count);
-		auto finished = std::move(m_activeThread->frames.back());
-		m_activeThread->frames.pop_back();
-		m_activeThread->stackTop = finished->varargBase;
-		releaseFrame(std::move(finished));
-		DISPATCH_CONTINUE();
-	}
-	if (m_activeThread->frames.size() == 1 && m_activeThread->resumer != nullptr) {
-		Thread* thread = m_activeThread;
-		thread->status = ThreadStatus::Dead;
-		returnToResumer(FRAME.registers + a, count, true);
-		auto finished = std::move(thread->frames.back());
-		thread->frames.pop_back();
-		thread->stackTop = 0;
-		releaseFrame(std::move(finished));
-		DISPATCH_CONTINUE();
-	}
-	if (m_activeThread->frames.size() == 1) {
-		m_completionValues.assign(FRAME.registers + a, FRAME.registers + a + count);
-	} else {
-		CallFrame& caller = *m_activeThread->frames[m_activeThread->frames.size() - 2];
-		writeReturnValuesFromRegisters(caller, FRAME.returnBase, FRAME.returnCount, FRAME, a, count);
-	}
-	auto finished = std::move(m_activeThread->frames.back());
-	m_activeThread->frames.pop_back();
-	m_activeThread->stackTop = finished->varargBase;
-	releaseFrame(std::move(finished));
-	DISPATCH_REBIND_FRAME();
+	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(LOAD_MEM_D) {

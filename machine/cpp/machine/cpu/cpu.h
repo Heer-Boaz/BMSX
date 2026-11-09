@@ -446,6 +446,8 @@ private:
 	Closure* allocateTrackedClosure(u32 functionAddress, size_t upvalueCount);
 	Closure* createClosure(CallFrame& frame);
 	void closeUpvalues(CallFrame& frame);
+	bool executeCall(CallFrame& frame, int a, int b, int c);
+	bool executeReturn(CallFrame& frame, int a, int b);
 	Upvalue* findOpenUpvalue(const CallFrame& frame, int index) const;
 	void linkOpenUpvalue(CallFrame& frame, Upvalue* upvalue);
 	const Value& readUpvalue(Upvalue* upvalue) const;
@@ -484,6 +486,8 @@ private:
 	void skipNextInstruction(CallFrame& frame);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	void prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32 word);
+	static NativeBlockTransition compiledCallExit(NativeBlockExecution* execution, const NativeBlock* block);
+	static NativeBlockTransition compiledReturnExit(NativeBlockExecution* execution, const NativeBlock* block);
 	size_t m_nativeCodeBytes = 0;
 #endif
 	void clearHaltAfterAcceptedInterrupt();

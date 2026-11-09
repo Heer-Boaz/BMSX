@@ -2353,6 +2353,77 @@ export class CPU implements MappedPageInvalidator {
 		);
 	}
 
+	private executeCall(frame: CallFrame, a: number, b: number, c: number): void {
+		const registers = frame.registers;
+		const argCount = b === 0 ? Math.max(frame.top - a - 1, 0) : b - 1;
+		switch (registers.getTag(a)) {
+			case ValueTag.BuiltinFunction:
+				this.runBuiltinFunction(registers.getBuiltinFunctionId(a), frame, a, c, argCount);
+				return;
+			case ValueTag.Closure:
+				this.pushFrameFromCaller(
+					frame,
+					registers.getClosure(a),
+					a + 1,
+					argCount,
+					a,
+					c,
+					false,
+					frame.pc - INSTRUCTION_BYTES,
+				);
+				return;
+			default:
+				throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
+		}
+	}
+
+	private executeReturn(frame: CallFrame, a: number, b: number): void {
+		const registers = frame.registers;
+		const total = b === 0 ? Math.max(frame.top - a, 0) : b;
+		this.closeUpvalues(frame);
+		const frameIndex = this.activeThread.frames.length - 1;
+		if (this.activeThread.protectedCallDepth > 0) {
+			const continuationIndex = this.activeThread.protectedCallDepth - 1;
+			const continuation = this.activeThread.protectedCallContinuations.peek(continuationIndex);
+			if (continuation.target === frame) {
+				this.finishProtectedCallFromRegisters(continuationIndex, registers, a, total);
+				this.activeThread.frames.pop();
+				this.activeThread.stackTop = frame.varargBase;
+				this.releaseFrame(frame);
+				return;
+			}
+		}
+		if (frame.returnToCompletionLatch) {
+			this.latchCompletionValues(registers, a, total);
+			this.activeThread.frames.pop();
+			this.activeThread.stackTop = frame.varargBase;
+			this.releaseFrame(frame);
+			return;
+		}
+		if (frameIndex === 0 && this.activeThread.resumer !== null) {
+			const finished = this.activeThread;
+			finished.status = ThreadStatus.Dead;
+			this.returnToResumer(registers, a, total, true);
+			finished.frames.pop();
+			finished.stackTop = 0;
+			this.releaseFrame(frame);
+			return;
+		}
+		if (frameIndex === 0) {
+			this.latchCompletionValues(registers, a, total);
+			this.activeThread.frames.pop();
+			this.activeThread.stackTop = frame.varargBase;
+			this.releaseFrame(frame);
+			return;
+		}
+		const caller = this.activeThread.frames[frameIndex - 1];
+		this.writeReturnValuesFromRegisters(caller, frame.returnBase, frame.returnCount, registers, a, total);
+		this.activeThread.frames.pop();
+		this.activeThread.stackTop = frame.varargBase;
+		this.releaseFrame(frame);
+		return;
+	}
+
 	private executeCompiledBlock(frame: CallFrame, page: DecodedInstructionPage, word: number): void {
 		const cache = page.compiledBlocks!;
 		if (page.dispatchOps[word] === DecodedDispatchOp.CompiledWarm) {
@@ -2398,7 +2469,11 @@ export class CPU implements MappedPageInvalidator {
 				frame.top = Math.max(frame.top, block.registerTop);
 				this.currentInstructionPc = block.currentPc;
 				this.lastPc = block.lastPc;
-				if (block.exit === CompiledBlockExit.Halt) this.haltUntilIrq();
+				switch (block.exit) {
+					case CompiledBlockExit.Halt: this.haltUntilIrq(); break;
+					case CompiledBlockExit.Call: this.executeCall(frame, block.exitA, block.exitB, block.exitC); break;
+					case CompiledBlockExit.Return: this.executeReturn(frame, block.exitA, block.exitB); break;
+				}
 				return;
 			}
 		}
@@ -3050,76 +3125,12 @@ export class CPU implements MappedPageInvalidator {
 					}
 					return;
 				}
-				case OpCode.CALL: {
-					const b = page.b[pageOffset];
-					const c = page.c[pageOffset];
-					const argCount = b === 0 ? Math.max(frame.top - a - 1, 0) : b - 1;
-					switch (registers.getTag(a)) {
-						case ValueTag.BuiltinFunction:
-							this.runBuiltinFunction(registers.getBuiltinFunctionId(a), frame, a, c, argCount);
-							return;
-						case ValueTag.Closure:
-							this.pushFrameFromCaller(
-								frame,
-								registers.getClosure(a),
-								a + 1,
-								argCount,
-								a,
-								c,
-								false,
-								frame.pc - INSTRUCTION_BYTES,
-							);
-							return;
-						default:
-							throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
-					}
-				}
-				case OpCode.RET: {
-					const b = page.b[pageOffset];
-					const total = b === 0 ? Math.max(frame.top - a, 0) : b;
-					this.closeUpvalues(frame);
-					const frameIndex = this.activeThread.frames.length - 1;
-					if (this.activeThread.protectedCallDepth > 0) {
-						const continuationIndex = this.activeThread.protectedCallDepth - 1;
-						const continuation = this.activeThread.protectedCallContinuations.peek(continuationIndex);
-						if (continuation.target === frame) {
-							this.finishProtectedCallFromRegisters(continuationIndex, registers, a, total);
-							this.activeThread.frames.pop();
-							this.activeThread.stackTop = frame.varargBase;
-							this.releaseFrame(frame);
-							return;
-						}
-					}
-					if (frame.returnToCompletionLatch) {
-						this.latchCompletionValues(registers, a, total);
-						this.activeThread.frames.pop();
-						this.activeThread.stackTop = frame.varargBase;
-						this.releaseFrame(frame);
-						return;
-					}
-					if (frameIndex === 0 && this.activeThread.resumer !== null) {
-						const finished = this.activeThread;
-						finished.status = ThreadStatus.Dead;
-						this.returnToResumer(registers, a, total, true);
-						finished.frames.pop();
-						finished.stackTop = 0;
-						this.releaseFrame(frame);
-						return;
-					}
-					if (frameIndex === 0) {
-						this.latchCompletionValues(registers, a, total);
-						this.activeThread.frames.pop();
-						this.activeThread.stackTop = frame.varargBase;
-						this.releaseFrame(frame);
-						return;
-					}
-					const caller = this.activeThread.frames[frameIndex - 1];
-					this.writeReturnValuesFromRegisters(caller, frame.returnBase, frame.returnCount, registers, a, total);
-					this.activeThread.frames.pop();
-					this.activeThread.stackTop = frame.varargBase;
-					this.releaseFrame(frame);
+				case OpCode.CALL:
+					this.executeCall(frame, a, page.b[pageOffset], page.c[pageOffset]);
 					return;
-				}
+				case OpCode.RET:
+					this.executeReturn(frame, a, page.b[pageOffset]);
+					return;
 				case OpCode.LOAD_MEM_D:
 				case OpCode.STORE_MEM_D:
 				case OpCode.STORE_MEM_WORDS_D: {

@@ -16,11 +16,16 @@ export const COMPILED_BLOCK_SOURCE_BUDGET = 1024 * 1024;
 export const enum CompiledBlockExit {
 	Continue,
 	Halt,
+	Call,
+	Return,
 }
 
 export type CompiledBlock = {
 	readonly execute: (registers: ValueSlots, constants: Float64Array) => number;
 	readonly exit: CompiledBlockExit;
+	readonly exitA: number;
+	readonly exitB: number;
+	readonly exitC: number;
 	readonly cycles: number;
 	readonly registerTop: number;
 	readonly nextPc: number;
@@ -111,16 +116,19 @@ emitters[OpCode.JMP] = () => '';
 emitters[OpCode.JMPIF] = emitters[OpCode.JMP];
 emitters[OpCode.JMPIFNOT] = emitters[OpCode.JMP];
 emitters[OpCode.HALT] = emitters[OpCode.JMP];
+emitters[OpCode.CALL] = emitters[OpCode.JMP];
+emitters[OpCode.RET] = emitters[OpCode.JMP];
 
 export function compiledBlockSupports(op: number): boolean {
 	return emitters[op] !== undefined;
 }
 
 export function compiledBlockEndsBlock(op: number): boolean {
-	return op === OpCode.JMP || op === OpCode.JMPIF || op === OpCode.JMPIFNOT || op === OpCode.HALT;
+	return op === OpCode.JMP || op === OpCode.JMPIF || op === OpCode.JMPIFNOT || op === OpCode.HALT
+		|| op === OpCode.CALL || op === OpCode.RET;
 }
 
-/** The caller admits decoded, non-observed, side-effect-free instructions. */
+/** The caller admits a pure prefix and at most one terminal execution boundary. */
 export function compileJavaScriptBlock(
 	page: DecodedInstructionPage,
 	firstWord: number,
@@ -156,7 +164,9 @@ export function compileJavaScriptBlock(
 	const body = source.join('\n');
 	return {
 		execute: new Function('r', 'k', body) as CompiledBlock['execute'],
-		exit: finalOp === OpCode.HALT ? CompiledBlockExit.Halt : CompiledBlockExit.Continue,
+		exit: finalOp === OpCode.HALT ? CompiledBlockExit.Halt : finalOp === OpCode.CALL ? CompiledBlockExit.Call
+			: finalOp === OpCode.RET ? CompiledBlockExit.Return : CompiledBlockExit.Continue,
+		exitA: page.a[finalWord], exitB: page.b[finalWord], exitC: page.c[finalWord],
 		cycles, sourceWords, registerTop, nextPc, currentPc, lastPc,
 		sourceUnits: body.length,
 	};

@@ -1,5 +1,6 @@
 #include "machine/cpu/native_block.h"
 #include "machine/cpu/execution_image.h"
+#include "machine/cpu/call_state.h"
 
 #include <array>
 #include <iostream>
@@ -159,6 +160,63 @@ void truthinessAndConditionalExits() {
 		"a standalone native WIDE HALT has an exact wrapped continuation and explicit exit");
 }
 
+struct TailFault { int value; };
+std::unique_ptr<NativeBlock>* retiringBlock = nullptr;
+
+NativeBlockTransition tailResult(NativeBlockExecution* execution, const NativeBlock* block) {
+	require(execution->frame->registers[1] == valueNumber(2), "word conversions preserve the native exit context");
+	require(block->exit == NativeBlockExit::Call && block->exitA == 3 && block->exitB == 1 && block->exitC == 2,
+		"a generated exit retains decoded call operands");
+	return NativeBlockTransition::RebindFrame;
+}
+
+NativeBlockTransition tailThrow(NativeBlockExecution*, const NativeBlock*) {
+	throw TailFault{73};
+}
+
+NativeBlockTransition tailRetire(NativeBlockExecution*, const NativeBlock*) {
+	retiringBlock->reset();
+	return NativeBlockTransition::Redispatch;
+}
+
+void tailHelpersReleaseTheGeneratedFrame() {
+	DecodedInstruction one, shift, call;
+	one.op = static_cast<u8>(OpCode::K1); one.width = one.baseCycles = 1;
+	shift.op = static_cast<u8>(OpCode::SHL); shift.width = shift.baseCycles = 1;
+	shift.a = 1; shift.b = shift.c = 0;
+	call.op = static_cast<u8>(OpCode::CALL); call.width = 2; call.baseCycles = 2;
+	call.a = 3; call.b = 1; call.c = 2;
+	const std::array source{NativeBlockInstruction{&one, 0x1000u}, NativeBlockInstruction{&shift, 0x1004u},
+		NativeBlockInstruction{&call, 0x1008u}};
+	size_t bytes = 0;
+	std::array registers{valueNil(), valueNil()};
+	CallFrame frame;
+	frame.registers = registers.data();
+	NativeBlockExecution execution{nullptr, &frame};
+	{
+		auto block = NativeBlock::compile(source, nullptr, bytes, &tailResult);
+		require(block->run(registers.data(), nullptr, execution) == NativeBlockTransition::RebindFrame,
+			"the generated tail exit returns its typed frame transition");
+		require(block->registerTop == 2 && block->cycles == 4 && block->lastPc == 0x100cu,
+			"CALL reads do not extend top and retain the terminal WIDE/cycle extent");
+	}
+	{
+		auto block = NativeBlock::compile(source, nullptr, bytes, &tailThrow);
+		bool caught = false;
+		try { block->run(registers.data(), nullptr, execution); }
+		catch (const TailFault& error) { caught = error.value == 73; }
+		require(caught, "C++ exceptions unwind ordinary registered frames, never generated code");
+	}
+	{
+		auto block = NativeBlock::compile(source, nullptr, bytes, &tailRetire);
+		retiringBlock = &block;
+		require(block->run(registers.data(), nullptr, execution) == NativeBlockTransition::Redispatch && !block,
+			"a tail helper may retire its own code before returning");
+		retiringBlock = nullptr;
+	}
+	require(bytes == 0, "retired tail code leaves no executable cache allocation");
+}
+
 } // namespace
 
 int main() {
@@ -166,6 +224,7 @@ int main() {
 		arithmeticAndWordDatapaths();
 		movesAndLiteralsPreserveRawValues();
 		truthinessAndConditionalExits();
+		tailHelpersReleaseTheGeneratedFrame();
 		std::cout << "Native block datapath tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {

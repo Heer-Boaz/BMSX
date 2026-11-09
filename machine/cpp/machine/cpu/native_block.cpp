@@ -13,13 +13,20 @@ namespace {
 
 class NativeBlockCompiler {
 public:
-	explicit NativeBlockCompiler(const Value* constants)
-		: m_compiler(sljit_create_compiler(nullptr)), m_constants(constants) {
+	NativeBlockCompiler(const Value* constants, const NativeBlock* block, NativeBlockExitHandler exitHandler)
+		: m_compiler(sljit_create_compiler(nullptr)), m_constants(constants), m_block(block), m_exitHandler(exitHandler) {
 		if (!m_compiler) throw std::bad_alloc();
 		// S0/S1 keep the guest register and constant banks across conversion
 		// calls. S2 keeps a converted word while the other operand is converted.
-		sljit_emit_enter(m_compiler, 0, SLJIT_ARGS2(32, P, P),
-			2 | SLJIT_ENTER_FLOAT(3), 3, 0);
+		if (exitHandler) {
+			sljit_emit_enter(m_compiler, 0, SLJIT_ARGS3(32, P, P, P),
+				2 | SLJIT_ENTER_FLOAT(3), 4, 0);
+			// S2 is reused for word conversions; S3 keeps the exit context.
+			sljit_emit_op1(m_compiler, SLJIT_MOV, SLJIT_S3, 0, SLJIT_S2, 0);
+		} else {
+			sljit_emit_enter(m_compiler, 0, SLJIT_ARGS2(32, P, P),
+				2 | SLJIT_ENTER_FLOAT(3), 3, 0);
+		}
 	}
 
 	~NativeBlockCompiler() { sljit_free_compiler(m_compiler); }
@@ -97,6 +104,8 @@ public:
 				break;
 			case OpCode::JMP:
 			case OpCode::HALT:
+			case OpCode::CALL:
+			case OpCode::RET:
 				return;
 			case OpCode::JMPIF:
 			case OpCode::JMPIFNOT: {
@@ -116,7 +125,16 @@ public:
 	}
 
 	void* finish(size_t& codeBytes, u32 nextPc) {
-		sljit_emit_return(m_compiler, SLJIT_MOV32, SLJIT_IMM, nextPc);
+		if (m_exitHandler) {
+			sljit_emit_op1(m_compiler, SLJIT_MOV, SLJIT_R0, 0, SLJIT_S3, 0);
+			sljit_emit_op1(m_compiler, SLJIT_MOV, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_block));
+			// Two pointer arguments fit the register ABI, including ARM32.
+			// No generated frame remains for C++ exceptions or code retirement.
+			sljit_emit_icall(m_compiler, SLJIT_CALL | SLJIT_CALL_RETURN, SLJIT_ARGS2(32, P, P),
+				SLJIT_IMM, SLJIT_FUNC_ADDR(m_exitHandler));
+		} else {
+			sljit_emit_return(m_compiler, SLJIT_MOV32, SLJIT_IMM, nextPc);
+		}
 		void* code = sljit_generate_code(m_compiler, 0, nullptr);
 		if (!code) throw std::bad_alloc();
 		codeBytes = sljit_get_generated_code_size(m_compiler);
@@ -164,6 +182,8 @@ private:
 
 	sljit_compiler* m_compiler;
 	const Value* m_constants;
+	const NativeBlock* m_block;
+	NativeBlockExitHandler m_exitHandler;
 };
 
 } // namespace
@@ -171,10 +191,11 @@ private:
 std::unique_ptr<NativeBlock> NativeBlock::compile(
 	std::span<const NativeBlockInstruction> instructions,
 	const Value* constants,
-	size_t& cacheBytes
+	size_t& cacheBytes,
+	NativeBlockExitHandler exitHandler
 ) {
 	auto block = std::unique_ptr<NativeBlock>(new NativeBlock(cacheBytes));
-	NativeBlockCompiler compiler(constants);
+	NativeBlockCompiler compiler(constants, block.get(), exitHandler);
 	for (const auto& source : instructions) {
 		const auto& instruction = *source.decoded;
 		compiler.emit(instruction, source.pc + static_cast<u32>(instruction.width) * INSTRUCTION_BYTES);
@@ -188,8 +209,13 @@ std::unique_ptr<NativeBlock> NativeBlock::compile(
 			block->registerTop = std::max(block->registerTop, static_cast<int>(instruction.a) + 1);
 		}
 	}
-	block->exit = static_cast<OpCode>(instructions.back().decoded->op) == OpCode::HALT
-		? NativeBlockExit::Halt : NativeBlockExit::Continue;
+	const auto& terminal = *instructions.back().decoded;
+	block->exit = static_cast<OpCode>(terminal.op) == OpCode::HALT ? NativeBlockExit::Halt
+		: static_cast<OpCode>(terminal.op) == OpCode::CALL ? NativeBlockExit::Call
+		: static_cast<OpCode>(terminal.op) == OpCode::RET ? NativeBlockExit::Return : NativeBlockExit::Continue;
+	block->exitA = terminal.a;
+	block->exitB = terminal.b;
+	block->exitC = terminal.c;
 	block->m_code = compiler.finish(block->codeBytes, block->nextPc);
 	cacheBytes += block->codeBytes;
 	return block;
@@ -203,6 +229,11 @@ NativeBlock::~NativeBlock() {
 u32 NativeBlock::run(Value* registers, const Value* constants) const {
 	using Entry = u32 (SLJIT_FUNC *)(Value*, const Value*);
 	return reinterpret_cast<Entry>(m_code)(registers, constants);
+}
+
+NativeBlockTransition NativeBlock::run(Value* registers, const Value* constants, NativeBlockExecution& execution) const {
+	using Entry = NativeBlockTransition (SLJIT_FUNC *)(Value*, const Value*, NativeBlockExecution*);
+	return reinterpret_cast<Entry>(m_code)(registers, constants, &execution);
 }
 
 } // namespace bmsx

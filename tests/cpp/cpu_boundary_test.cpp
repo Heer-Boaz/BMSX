@@ -318,6 +318,126 @@ void nativeWritesPreserveIndependentBlocks() {
 	require(cpu.runUntilDepth(0, 3) == RunResult::Yielded && cpu.readFrameRegister(0, 1) == valueNumber(0),
 		"the changed region executes its new source without invalidating independent code");
 }
+
+void nativeCallsAndReturnsPublishFaultBoundaries() {
+	for (const bool wide : {false, true}) {
+		const u32 callBody = wide ? 4u : 3u;
+		const u32 calleeStart = callBody + 3u;
+		test::Blua32TestImage image;
+		image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 0, 4, 0);
+		if (wide) writeInstruction(image.text, 3, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(image.text, callBody, static_cast<u8>(OpCode::CALL), 0, 1, 1);
+		writeInstruction(image.text, callBody + 1u, static_cast<u8>(OpCode::MOV), 6, 0, 0);
+		writeInstruction(image.text, callBody + 2u, static_cast<u8>(OpCode::JMP), 0, 63, wide ? 59 : 60, 255);
+		writeInstruction(image.text, calleeStart, static_cast<u8>(OpCode::K1), 0, 0, 0);
+		writeInstruction(image.text, calleeStart + 1u, static_cast<u8>(OpCode::RET), 0, 1, 0);
+		writeInstruction(image.text, calleeStart + 2u, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		image.functions = {{.firstWord = 0, .wordCount = calleeStart, .maxStack = 8},
+			{.firstWord = calleeStart, .wordCount = 2}, {.firstWord = calleeStart + 2u, .wordCount = 1}};
+		image.exceptionFunctionIndex = 2;
+		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+		CpuMachine native(image), scalar(image);
+		scalar.cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; },
+			nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+		for (auto* machine : {&native, &scalar}) {
+			require(machine->cpu.runUntilDepth(0, 10001) == RunResult::Yielded && machine->cpu.getFrameDepth() == 1,
+				"the repeated-call workload warms both sides of the frame boundary");
+		}
+		bool compiledCall = false, compiledReturn = false;
+		for (const auto& [key, page] : native.cpu.activeThread()->frames[0]->executionImage->decodedPages) {
+			if (!page.nativeBlocks) continue;
+			for (const auto& block : page.nativeBlocks->entries) {
+				if (!block) continue;
+				compiledCall |= block->exit == NativeBlockExit::Call;
+				compiledReturn |= block->exit == NativeBlockExit::Return;
+			}
+		}
+		require(compiledCall && compiledReturn, "CALL and RET execute through real generated tail exits");
+		for (auto* machine : {&native, &scalar}) {
+			auto& cpu = machine->cpu;
+			require(cpu.runUntilDepth(0, 3) == RunResult::Yielded && cpu.getFrameDepth() == 2
+				&& cpu.activeThread()->frames[1]->callSitePc == machine->rom.textAddress + callBody * INSTRUCTION_BYTES,
+				"generated CALL saves the physical body PC, including WIDE");
+			require(cpu.runUntilDepth(0, 5) == RunResult::Yielded && cpu.getFrameDepth() == 1,
+				"a generated return resumes and completes the caller loop exactly");
+			cpu.activeThread()->frames[0]->registers[4] = valueNumber(77);
+			require(cpu.runUntilDepth(0, 100) == RunResult::Halted,
+				"a failing native call unwinds through the normal Lua-fault owner");
+			require(cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_CALL_NON_FUNCTION
+				&& cpu.readEpcWord() == machine->rom.textAddress + 3u * INSTRUCTION_BYTES
+				&& cpu.readFrameRegister(0, 6) == valueNumber(1),
+				"native call failure commits its exact faulting PC and preserves the caller continuation");
+		}
+		require(native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining
+			&& native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc()
+			&& native.cpu.lastPc == scalar.cpu.lastPc,
+			"native and scalar fault paths retain identical cycle and PC publication");
+	}
+}
+
+void nativeCallCanRetireItsSourceDuringFunctionRecordRead() {
+	constexpr u32 recordAddress = 0x08005000u;
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 0, 4, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, 1, 1);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::MOV), 6, 0, 0);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
+	writeInstruction(image.text, 6, static_cast<u8>(OpCode::K1), 0, 0, 0);
+	writeInstruction(image.text, 7, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 8}, {.firstWord = 6, .wordCount = 2}};
+	image.closureRelocations = {{1, recordAddress}};
+	for (const bool instrumented : {false, true}) {
+		CpuMachine machine(image);
+		auto& cpu = machine.cpu;
+		machine.memory.writeBytes(DYNAMIC_RAM_BASE,
+			machine.rom.bytes.data() + machine.rom.textAddress - SYSTEM_ROM_BASE, image.text.size());
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE);
+		struct RecordSource {
+			Memory& memory;
+			const u8* record;
+			std::vector<u8> replacement;
+			bool armed = false;
+			int writes = 0;
+		} source{machine.memory, machine.rom.bytes.data() + machine.rom.functionAddresses[1] - SYSTEM_ROM_BASE,
+			std::vector<u8>(INSTRUCTION_BYTES)};
+		writeInstruction(source.replacement, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		for (u32 offset = 0; offset <= BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET; offset += 4u) {
+			machine.memory.mapIoRead(recordAddress + offset, &source, [](void* context, u32 address, MappedBusSignals) {
+				auto& source = *static_cast<RecordSource*>(context);
+				const u32 offset = address - recordAddress;
+				if (source.armed && offset == BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET) {
+					source.armed = false;
+					++source.writes;
+					source.memory.writeBytes(DYNAMIC_RAM_BASE + 3u * INSTRUCTION_BYTES,
+						source.replacement.data(), source.replacement.size());
+				}
+				return readLE32(source.record + offset);
+			});
+		}
+		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; },
+			nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+		require(cpu.runUntilDepth(0, 10001) == RunResult::Yielded && cpu.getFrameDepth() == 1,
+			"a mapped function record warms a real native call boundary");
+		auto& page = *cpu.activeThread()->frames[0]->decodedPage;
+		if (!instrumented) require(page.nativeBlocks && page.nativeBlocks->entries[2]
+			&& page.nativeBlocks->entries[2]->exit == NativeBlockExit::Call,
+			"the source mutation test executes generated CALL code");
+		source.armed = true;
+		require(cpu.runUntilDepth(0, 100) == RunResult::Halted && source.writes == 1
+			&& cpu.getFrameDepth() == 1 && cpu.readFrameRegister(0, 6) == valueNumber(1)
+			&& cpu.readFramePc(0) == DYNAMIC_RAM_BASE + 4u * INSTRUCTION_BYTES
+			&& cpu.instructionBudgetRemaining == 90,
+			"retiring the active call code completes that call before observing the replacement HALT");
+		if (!instrumented) require(!page.nativeBlocks || !page.nativeBlocks->entries[2],
+			"the tail helper does not retain a dangling executable entry");
+	}
+}
 #endif
 
 void compactAndPaddedRomFunctionRecordsAgree() {
@@ -1093,6 +1213,8 @@ int main() {
 		nativeHaltCommitsItsThreadAndFrameLatch();
 		nativeTerminalAtPageBoundaryTracksItsBody();
 		nativeWritesPreserveIndependentBlocks();
+		nativeCallsAndReturnsPublishFaultBoundaries();
+		nativeCallCanRetireItsSourceDuringFunctionRecordRead();
 #endif
 		stringBytePositions(); loadKrIndices(); zeroLoadNil(); successorFetchOrdering(); reservedMemoryKinds(); zeroStackReuse();
 		returnRangesSurviveCallerStackGrowth(); builtinReturnRangesSurviveDestinationGrowth();

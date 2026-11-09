@@ -2412,6 +2412,8 @@ void CPU::resumeMemoryWrite(uint32_t address) {
 	}
 }
 
+#include "machine/cpu/cpu_calls.inl"
+
 template <bool RootBoundary, bool Instrumented>
 RunResult CPU::runLoop(
 	int targetDepth,
@@ -2614,6 +2616,20 @@ dispatch_instruction:
 					if (instructionBudgetRemaining < remainingCycles) {
 						dispatchOp = decoded->op;
 						goto dispatch_instruction;
+					}
+					if (block.exit == NativeBlockExit::Call || block.exit == NativeBlockExit::Return) {
+						// The pure prefix cannot observe this publication. The tail
+						// helper must see it before changing frames or raising an error.
+						instructionBudgetRemaining -= remainingCycles;
+						FRAME.pc = block.nextPc;
+						FRAME.top = std::max(FRAME.top, block.registerTop);
+						m_currentInstructionPc = block.currentPc;
+						lastPc = block.lastPc;
+						NativeBlockExecution execution{this, frame};
+						const auto transition = block.run(registers, IMAGE.constPool.data(), execution);
+						// The helper may have retired this block and its source page.
+						if (transition == NativeBlockTransition::RebindFrame) DISPATCH_REBIND_FRAME();
+						DISPATCH_CONTINUE();
 					}
 					FRAME.pc = block.run(registers, IMAGE.constPool.data());
 					instructionBudgetRemaining -= remainingCycles;
