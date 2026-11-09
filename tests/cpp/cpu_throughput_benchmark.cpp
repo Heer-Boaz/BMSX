@@ -23,7 +23,7 @@
 namespace {
 using namespace bmsx;
 
-enum class Workload { Registers, Tables, Builtin, Ram, Calls, CallsBacked, CallsRamRecord, CodeWrites, Fractions, Comparisons };
+enum class Workload { Registers, Tables, Builtin, Ram, Calls, CallsBacked, CallsRamRecord, CodeWrites, Fractions, Comparisons, TableChurn, TableChurnLive };
 constexpr u32 RAM_RECORD_ADDRESS = DYNAMIC_RAM_BASE + 0x18000;
 
 test::Blua32TestImage program(Workload workload) {
@@ -49,6 +49,17 @@ test::Blua32TestImage program(Workload workload) {
 		writeInstruction(text, 3, static_cast<u8>(OpCode::GETT), 6, 0, 2);
 		writeInstruction(text, 4, static_cast<u8>(OpCode::SETI), 0, 1, 5);
 		writeInstruction(text, 5, static_cast<u8>(OpCode::LEN), 7, 0, 0);
+		writeInstruction(text, 6, static_cast<u8>(OpCode::JMP), 0, 63, 57, 255);
+		break;
+	case Workload::TableChurn:
+	case Workload::TableChurnLive:
+		image.constants = {std::string("field")};
+		writeInstruction(text, 0, static_cast<u8>(OpCode::NEWT), 0, 1, 1);
+		writeInstruction(text, 1, static_cast<u8>(OpCode::SETFIELD), 0, 0, 1);
+		writeInstruction(text, 2, static_cast<u8>(OpCode::GETFIELD), 5, 0, 0);
+		writeInstruction(text, 3, static_cast<u8>(OpCode::ADD), 5, 5, 2);
+		writeInstruction(text, 4, static_cast<u8>(OpCode::SETI), 0, 1, 5);
+		writeInstruction(text, 5, static_cast<u8>(OpCode::GETI), 6, 0, 1);
 		writeInstruction(text, 6, static_cast<u8>(OpCode::JMP), 0, 63, 57, 255);
 		break;
 	case Workload::Builtin:
@@ -133,6 +144,18 @@ void measure(Workload workload, const char* name, int grant, int round) {
 	Value* registers = cpu.activeThread()->frames[0]->registers;
 	registers[0] = valueNumber(1); registers[1] = valueNumber(3);
 	registers[2] = valueNumber(7); registers[3] = valueNumber(65535);
+	Table* retained = nullptr;
+	if (workload == Workload::TableChurnLive) {
+		retained = cpu.createTable(4096, 0);
+		cpu.setGlobalByKey(cpu.stringPool().intern("retained"), valueTable(retained));
+		const auto field = cpu.stringPool().intern("field");
+		for (int index = 1; index <= 4096; ++index) {
+			auto* child = cpu.createTable(1, 1);
+			child->setInteger(1, valueNumber(index));
+			child->setStringKey(field, valueNumber(index));
+			retained->setInteger(index, valueTable(child));
+		}
+	}
 	if (workload == Workload::Tables) {
 		Table* table = cpu.createTable(8, 1);
 		registers[0] = valueTable(table);
@@ -190,6 +213,10 @@ void measure(Workload workload, const char* name, int grant, int round) {
 	if (workload == Workload::CallsRamRecord && cpu.readFrameRegister(0, 6) != valueNumber(1)) {
 		throw std::runtime_error("RAM record calls must execute the callee and return its result.");
 	}
+	if ((workload == Workload::TableChurn || workload == Workload::TableChurnLive)
+		&& cpu.readFrameRegister(0, 6) != valueNumber(10)) {
+		throw std::runtime_error("Allocation workload must populate and read its new tables.");
+	}
 	i64 cycles = 0;
 	const auto start = std::chrono::steady_clock::now();
 	while (cycles < measuredCycles) {
@@ -198,6 +225,13 @@ void measure(Workload workload, const char* name, int grant, int round) {
 		cycles += budget - cpu.instructionBudgetRemaining;
 	}
 	const auto nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count();
+	if (retained) {
+		for (int index = 1; index <= 4096; ++index) {
+			if (asTable(retained->getInteger(index))->getInteger(1) != valueNumber(index)) {
+				throw std::runtime_error("Collection must preserve the entire retained graph.");
+			}
+		}
+	}
 	const double mhz = static_cast<double>(cycles) * 1000.0 / static_cast<double>(nanoseconds);
 	std::cout << "[cpu-throughput] workload=" << name << " grant=" << cycleGrant
 		<< " grant_work_units=" << grant << " round=" << round
@@ -215,7 +249,8 @@ void measure(Workload workload, const char* name, int grant, int round) {
 int main(int argc, char** argv) {
 	const bool ramRecords = argc == 2 && std::string_view(argv[1]) == "--ram-records";
 	const bool comparisons = argc == 2 && std::string_view(argv[1]) == "--comparisons";
-	if (argc != 1 && !ramRecords && !comparisons) throw std::runtime_error("Expected no arguments, --ram-records or --comparisons.");
+	const bool allocations = argc == 2 && std::string_view(argv[1]) == "--allocations";
+	if (argc != 1 && !ramRecords && !comparisons && !allocations) throw std::runtime_error("Expected no arguments, --ram-records, --comparisons or --allocations.");
 	std::cout << std::fixed << std::setprecision(3);
 	for (const int grant : {256, 4096}) for (int round = 0; round < 3; ++round) {
 		if (ramRecords) {
@@ -224,6 +259,11 @@ int main(int argc, char** argv) {
 		}
 		if (comparisons) {
 			measure(Workload::Comparisons, "comparisons", grant, round);
+			continue;
+		}
+		if (allocations) {
+			measure(Workload::TableChurn, "table-churn", grant, round);
+			measure(Workload::TableChurnLive, "table-churn-live", grant, round);
 			continue;
 		}
 		measure(Workload::Registers, "registers", grant, round);

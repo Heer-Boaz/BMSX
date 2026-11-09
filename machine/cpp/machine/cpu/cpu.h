@@ -7,12 +7,14 @@
 #include <new>
 #include <span>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include "common/scratchbuffer.h"
+#include "common/object_storage_pool.h"
 #include "common/primitives.h"
 #include "machine/cpu/call_state.h"
 #include "machine/cpu/thread.h"
@@ -181,7 +183,12 @@ public:
 
 	template <typename T, typename... Args>
 	T* allocate(ObjType type, Args&&... args) {
-		auto* obj = new T(std::forward<Args>(args)...);
+		T* obj;
+		if constexpr (std::is_same_v<T, Table>) {
+			obj = m_tables.construct(std::forward<Args>(args)...);
+		} else {
+			obj = new T(std::forward<Args>(args)...);
+		}
 		obj->type = type;
 		obj->marked = false;
 		obj->hashId = allocateHashId();
@@ -222,6 +229,7 @@ private:
 	uint32_t m_nextObjectHashId = 1;
 	StringId m_modeKey;
 	StringPool& m_stringPool;
+	ObjectStoragePool<Table> m_tables;
 };
 
 class CPU : public MappedPageInvalidator {

@@ -903,6 +903,12 @@ if(BMSX_BUILD_TESTS)
 	target_link_libraries(bmsx_binary_stream_tests PRIVATE bmsx_binary_codec)
 	add_test(NAME bmsx_binary_stream_tests COMMAND bmsx_binary_stream_tests)
 
+	add_executable(bmsx_object_storage_pool_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/object_storage_pool_test.cpp
+	)
+	target_include_directories(bmsx_object_storage_pool_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+	add_test(NAME bmsx_object_storage_pool_tests COMMAND bmsx_object_storage_pool_tests)
+
 	add_executable(bmsx_runtime_save_state_codec_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/runtime_save_state_codec_test.cpp
 	)

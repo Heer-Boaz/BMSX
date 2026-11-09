@@ -248,7 +248,7 @@ void GcHeap::destroyObject(GCObject* object) {
 			break;
 		case ObjType::Table:
 			m_luaHeap.release(static_cast<Table*>(object)->trackedHeapBytes());
-			delete static_cast<Table*>(object);
+			m_tables.destroy(static_cast<Table*>(object));
 			break;
 		case ObjType::Closure:
 			m_luaHeap.release(trackedClosureBytes(*static_cast<Closure*>(object)));
