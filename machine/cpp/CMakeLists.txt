@@ -953,6 +953,9 @@ if(BMSX_BUILD_TESTS)
 		add_executable(bmsx_cpu_compiled_memory_tests ../../tests/cpp/cpu_compiled_memory_test.cpp ${BMSX_TEST_ROM_SOURCE})
 		target_link_libraries(bmsx_cpu_compiled_memory_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 		add_test(NAME bmsx_cpu_compiled_memory_tests COMMAND bmsx_cpu_compiled_memory_tests)
+		add_executable(bmsx_cpu_compiled_rom_tests ../../tests/cpp/cpu_compiled_rom_test.cpp ${BMSX_TEST_ROM_SOURCE})
+		target_link_libraries(bmsx_cpu_compiled_rom_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+		add_test(NAME bmsx_cpu_compiled_rom_tests COMMAND bmsx_cpu_compiled_rom_tests)
 	endif()
 	add_executable(bmsx_cpu_decoded_operand_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/cpu_decoded_operand_test.cpp

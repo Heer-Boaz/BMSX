@@ -6,6 +6,7 @@
 
 #include "machine/cpu/execution_image.h"
 #include "machine/cpu/table.h"
+#include "spec/blua32/memory_access_kind.h"
 
 namespace bmsx {
 
@@ -13,7 +14,11 @@ NativeBlockCompiler::NativeBlockCompiler(const Value* constants, const NativeBlo
 	: m_compiler(nullptr), m_constants(constants), m_block(block), m_memory(memory) {
 	m_slowPaths.reserve(std::count_if(block->sideExits.begin(), block->sideExits.end(), [](const auto& exit) {
 		return exit.exit == NativeBlockExit::ReadField || exit.exit == NativeBlockExit::WriteField
-			|| exit.exit == NativeBlockExit::ReadMemory || exit.exit == NativeBlockExit::WriteMemory;
+			|| exit.exit == NativeBlockExit::WriteMemory
+			|| (exit.exit == NativeBlockExit::ReadMemory && exit.exitC != static_cast<i16>(MemoryAccessKind::U8));
+	}));
+	m_readMappings.reserve(std::count_if(block->sideExits.begin(), block->sideExits.end(), [](const auto& exit) {
+		return exit.exit == NativeBlockExit::ReadMemory;
 	}));
 	m_compiler = sljit_create_compiler(nullptr);
 	if (!m_compiler) throw std::bad_alloc();
@@ -143,6 +148,7 @@ void* NativeBlockCompiler::finish(size_t& codeBytes) {
 		for (size_t i = 0; i < slow.count; ++i) sljit_set_label(slow.jumps[i], label);
 		sljit_emit_return(m_compiler, SLJIT_MOV_P, SLJIT_IMM, reinterpret_cast<sljit_sw>(slow.exit));
 	}
+	emitReadMappings();
 	void* code = sljit_generate_code(m_compiler, 0, nullptr);
 	if (!code) throw std::bad_alloc();
 	codeBytes = sljit_get_generated_code_size(m_compiler);

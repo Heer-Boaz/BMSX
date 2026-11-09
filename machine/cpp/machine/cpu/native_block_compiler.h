@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "machine/cpu/native_block.h"
+#include "spec/blua32/memory_access_kind.h"
 #include "sljitLir.h"
 
 namespace bmsx {
@@ -19,6 +20,11 @@ public:
 private:
 	void emitTableField(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
 	void emitMemory(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
+	void emitScalarLoad(MemoryAccessKind kind, sljit_s32 alignment);
+	void emitScalarStore(MemoryAccessKind kind, int source);
+	void emitReadMappings();
+	sljit_jump* emitRomStorage(const Span<const u8>* storage, u32 width,
+		sljit_label* load, sljit_label* done);
 	void commitRegister();
 	void flushRegister();
 	std::array<sljit_jump*, 2> falseyJumps(int index);
@@ -36,6 +42,13 @@ private:
 		const NativeBlockExitSite* exit;
 	};
 	std::vector<SlowPath> m_slowPaths;
+	struct ReadMapping {
+		std::array<sljit_jump*, 2> ramMisses;
+		const NativeBlockExitSite* exit;
+		sljit_label* done;
+		u32 width;
+	};
+	std::vector<ReadMapping> m_readMappings;
 	// FR0 holds this raw Value until eviction, a helper call or an execution exit.
 	int m_pendingRegister = -1;
 };

@@ -34,6 +34,7 @@ import {
 	type CartridgeSocketMediaPair,
 } from './contracts';
 import { CartridgeCard } from './card';
+import type { RomStorage } from '../../memory/rom_storage';
 import {
 	CARTRIDGE_CARD_DREQ_READ,
 	CARTRIDGE_CARD_DREQ_WRITE,
@@ -78,6 +79,11 @@ export class CartridgeController {
 
 	public installRom(slotIndex: number, rom: Uint8Array): void {
 		this.cards[slotIndex]!.installRom(rom);
+	}
+
+	public romStorage(slotIndex: number): RomStorage | null {
+		const card = this.cards[slotIndex];
+		return card === null ? null : card.romStorage();
 	}
 
 	public attachMappedPageInvalidator(invalidator: MappedPageInvalidator): void {

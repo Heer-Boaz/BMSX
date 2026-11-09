@@ -179,6 +179,7 @@ export function compileJavaScriptBlock(
 	let pendingRegister = -1;
 	let numberLocal = false;
 	let memoryAccess = false;
+	let memoryReads = false;
 	for (let word = firstWord; word < endWord; word += page.widths[word]) {
 		finalWord = word;
 		const op = page.ops[word];
@@ -202,6 +203,7 @@ export function compileJavaScriptBlock(
 		const numberEmitter = numberEmitters[op];
 		if (load || store) {
 			memoryAccess = true;
+			memoryReads ||= load;
 			if (pendingRegister >= 0) source.push(`r.setNumber(${pendingRegister},v);`);
 			pendingRegister = -1;
 			if (load && !numberLocal) {
@@ -210,7 +212,7 @@ export function compileJavaScriptBlock(
 			}
 			const base = numberOperand(page.b[word], image, -1);
 			const address = displaced ? `(((${base})>>>0)+${page.disp[word] * 4})>>>0` : `((${base})>>>0)`;
-			source.push(emitMemoryAccess(page, word, address, exitIndex));
+			source.push(emitMemoryAccess(page, word, address, exitIndex, memory));
 			if (load) pendingRegister = page.a[word];
 		} else if (numberEmitter !== undefined) {
 			if (!numberLocal) {
@@ -249,10 +251,17 @@ export function compileJavaScriptBlock(
 	} else source.push(`return ${terminalIndex};`);
 	const body = source.join('\n');
 	const functionSource = memoryAccess ? `return function(r,k,p){${body}}` : body;
+	let execute: CompiledBlock['execute'];
+	if (memoryReads) {
+		const cartridges = memory.cartridgeController;
+		execute = new Function('m', 'g', 's', 'c', 'c0', 'c1', functionSource)(
+			memory.ramView, memory.ramWriteWatches().groupData(), memory.systemRomStorage(),
+			cartridges, cartridges.romStorage(0), cartridges.romStorage(1)) as CompiledBlock['execute'];
+	} else if (memoryAccess) {
+		execute = new Function('m', 'g', functionSource)(memory.ramView, memory.ramWriteWatches().groupData()) as CompiledBlock['execute'];
+	} else execute = new Function('r', 'k', 'p', functionSource) as CompiledBlock['execute'];
 	return {
-		execute: memoryAccess ? new Function('m', 'g', functionSource)(
-			memory.ramView, memory.ramWriteWatches().groupData()) as CompiledBlock['execute']
-			: new Function('r', 'k', 'p', body) as CompiledBlock['execute'],
+		execute,
 		terminal, exits, sourceWords, sourceUnits: functionSource.length,
 	};
 }

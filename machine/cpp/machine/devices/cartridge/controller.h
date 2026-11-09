@@ -22,6 +22,10 @@ public:
 
 	void connect(Memory& memory, IrqController& irq, DmaController& dma);
 	void installRom(u32 slotIndex, std::span<const u8> rom);
+	const Span<const u8>* romStorage(u32 slotIndex) const {
+		return m_cards[slotIndex] ? m_cards[slotIndex]->romStorage() : nullptr;
+	}
+	const u32& selectionWord() const { return m_selectionWord; }
 	void attachMappedPageInvalidator(MappedPageInvalidator& invalidator);
 	void detachMappedPageInvalidator();
 	void clearMappedPageWriteWatches();

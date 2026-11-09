@@ -146,7 +146,7 @@ Memory::Memory(const MemoryInit& init, u32 ramByteCount)
 }
 
 void Memory::installSystemRom(std::span<const u8> rom) {
-	m_systemRom = rom;
+	m_systemRom = Span<const u8>(rom);
 	if (m_mappedPageInvalidator) {
 		m_mappedPageInvalidator->invalidateMappedRange(
 			SYSTEM_ROM_BASE,

@@ -18,6 +18,7 @@ public:
 		return m_ram ? m_ram->bytes.size() : 0u;
 	}
 	void installRom(std::span<const u8> rom);
+	const Span<const u8>* romStorage() const { return m_rom ? &m_rom->bytes : nullptr; }
 	void attachMappedPageInvalidator(MappedPageInvalidator& invalidator);
 	void detachMappedPageInvalidator();
 	void clearMappedPageWriteWatches();
@@ -38,7 +39,7 @@ public:
 
 private:
 	struct RomRegion {
-		std::span<const u8> bytes;
+		Span<const u8> bytes;
 	};
 	struct RamRegion {
 		explicit RamRegion(size_t byteCount)
@@ -49,10 +50,10 @@ private:
 		MappedPageWriteWatches pageWriteWatches;
 	};
 
-	static u32 readU16From(std::span<const u8> bytes, size_t offset);
-	static u32 readU32From(std::span<const u8> bytes, size_t offset);
+	static u32 readU16From(Span<const u8> bytes, size_t offset);
+	static u32 readU32From(Span<const u8> bytes, size_t offset);
 	static void readByteRun(
-		std::span<const u8> bytes,
+		Span<const u8> bytes,
 		size_t offset,
 		u8* out,
 		size_t length

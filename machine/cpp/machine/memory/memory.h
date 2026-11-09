@@ -50,6 +50,7 @@ public:
 	u8* ramData() { return m_ram.data(); }
 	size_t ramByteCount() const { return m_ram.size(); }
 	const MappedPageWriteWatches& ramWriteWatches() const { return m_ramPageWriteWatches; }
+	const Span<const u8>& systemRomStorage() const { return m_systemRom; }
 	void installSystemRom(std::span<const u8> rom);
 	void attachMappedPageInvalidator(MappedPageInvalidator& invalidator);
 	void detachMappedPageInvalidator();
@@ -136,7 +137,7 @@ private:
 		IoDmaReadPrefixHandler read = nullptr;
 		IoDmaWritePrefixHandler write = nullptr;
 	};
-	std::span<const u8> m_systemRom;
+	Span<const u8> m_systemRom;
 	CartridgeController m_cartridgeController;
 	std::vector<u8> m_ram;
 	MappedPageWriteWatches m_ramPageWriteWatches;

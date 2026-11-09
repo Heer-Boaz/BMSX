@@ -25,7 +25,7 @@ CartridgeCard::CartridgeCard(
 }
 
 void CartridgeCard::installRom(std::span<const u8> rom) {
-	m_rom->bytes = rom;
+	m_rom->bytes = Span<const u8>(rom);
 	if (m_mappedPageInvalidator) {
 		m_mappedPageInvalidator->invalidateMappedRange(
 			CART_ROM_BASE + m_mappedKeyOffset,
@@ -265,12 +265,12 @@ u32 CartridgeCard::readMmioWord(u32 offset) const {
 	return m_mailbox ? m_mailbox->readWord(offset) : 0u;
 }
 
-u32 CartridgeCard::readU16From(std::span<const u8> bytes, size_t offset) {
+u32 CartridgeCard::readU16From(Span<const u8> bytes, size_t offset) {
 	if (offset + 2u <= bytes.size()) return readLE16(bytes.data() + offset);
 	return offset < bytes.size() ? bytes[offset] : 0u;
 }
 
-u32 CartridgeCard::readU32From(std::span<const u8> bytes, size_t offset) {
+u32 CartridgeCard::readU32From(Span<const u8> bytes, size_t offset) {
 	if (offset + 4u <= bytes.size()) return readLE32(bytes.data() + offset);
 	if (offset >= bytes.size()) return 0u;
 	u32 word = bytes[offset];
@@ -280,7 +280,7 @@ u32 CartridgeCard::readU32From(std::span<const u8> bytes, size_t offset) {
 }
 
 void CartridgeCard::readByteRun(
-	std::span<const u8> bytes,
+	Span<const u8> bytes,
 	size_t offset,
 	u8* out,
 	size_t length

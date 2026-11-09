@@ -12,6 +12,7 @@ import {
 	SYSTEM_ROM_SIZE,
 } from '../../spec/bmsx/memory_map';
 import { CartridgeController } from '../devices/cartridge/controller';
+import { RomStorage } from './rom_storage';
 import type { CartridgeSocketMediaPair } from '../devices/cartridge/contracts';
 import {
 	DMA_BURST_WORD_CAPACITY,
@@ -185,7 +186,7 @@ export const NO_BLOCKED_MAPPED_WRITE = 0xffffffff;
 export const enum IoWriteStorage { Retained, Device }
 
 export class Memory {
-	private systemRom: Uint8Array;
+	private readonly systemRom: RomStorage;
 	public readonly cartridgeController: CartridgeController;
 	private readonly ram: Uint8Array;
 	public readonly ramView: DataView;
@@ -214,7 +215,7 @@ export class Memory {
 	private busFaultSequence = 0;
 
 	public constructor(init: MemoryInit, ramByteCount: number) {
-		this.systemRom = init.systemRom;
+		this.systemRom = new RomStorage(init.systemRom);
 		this.dmaRomView = { bytes: init.systemRom, byteOffset: 0, byteLength: 0 };
 		this.cartridgeController = new CartridgeController(init.cartridgeSlots);
 		this.ram = new Uint8Array(ramByteCount);
@@ -248,8 +249,10 @@ export class Memory {
 
 	public ramWriteWatches(): MappedPageWriteWatches { return this.ramPageWriteWatches; }
 
+	public systemRomStorage(): RomStorage { return this.systemRom; }
+
 	public installSystemRom(rom: Uint8Array): void {
-		this.systemRom = rom;
+		this.systemRom.install(rom);
 		if (this.mappedPageInvalidator !== null) {
 			this.mappedPageInvalidator.invalidateMappedRange(SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE);
 		}
@@ -273,8 +276,8 @@ export class Memory {
 		out.writeWatchIndex = 0;
 		if (addr < RAM_BASE) {
 			out.cacheable = addr < SYSTEM_ROM_SIZE;
-			if (addr + MAPPED_PAGE_BYTE_SIZE <= this.systemRom.byteLength) {
-				out.readBytes = this.systemRom;
+			if (addr + MAPPED_PAGE_BYTE_SIZE <= this.systemRom.bytes.byteLength) {
+				out.readBytes = this.systemRom.bytes;
 				out.readByteOffset = addr;
 			}
 			return;
@@ -437,7 +440,7 @@ export class Memory {
 	private readMainMemoryU8(addr: number, faultAccess: number): number {
 		if (addr < RAM_BASE) {
 			if (addr < SYSTEM_ROM_SIZE) {
-				return addr < this.systemRom.byteLength ? this.systemRom[addr]! : 0;
+				return addr < this.systemRom.bytes.byteLength ? this.systemRom.bytes[addr]! : 0;
 			}
 		} else if (addr < CART_ROM_BASE) {
 			const offset = addr - RAM_BASE;
@@ -585,7 +588,7 @@ export class Memory {
 	public readU32(addr: number): number {
 		if (addr < RAM_BASE) {
 			if (addr <= SYSTEM_ROM_SIZE - 4) {
-				return this.readRomWindowU32LE(this.systemRom, addr);
+				return this.readRomWindowU32LE(this.systemRom.bytes, addr);
 			}
 		} else if (addr < CART_ROM_BASE) {
 			const offset = addr - RAM_BASE;
@@ -606,7 +609,7 @@ export class Memory {
 		}
 		if (addr < RAM_BASE) {
 			if (addr <= SYSTEM_ROM_SIZE - 2) {
-				return this.readRomWindowU16LE(this.systemRom, addr);
+				return this.readRomWindowU16LE(this.systemRom.bytes, addr);
 			}
 		} else if (addr < CART_ROM_BASE) {
 			const ramOffset = addr - RAM_BASE;
@@ -659,7 +662,7 @@ export class Memory {
 		}
 		if (addr < RAM_BASE) {
 			if (addr <= SYSTEM_ROM_SIZE - 4) {
-				return this.readRomWindowU32LE(this.systemRom, addr);
+				return this.readRomWindowU32LE(this.systemRom.bytes, addr);
 			}
 		} else if (addr < CART_ROM_BASE) {
 			const ramOffset = addr - RAM_BASE;
@@ -835,7 +838,7 @@ export class Memory {
 	public readBytesInto(addr: number, out: Uint8Array, length: number, dstOffset = 0): void {
 		if (addr < RAM_BASE) {
 			if (length <= SYSTEM_ROM_SIZE && addr <= SYSTEM_ROM_SIZE - length) {
-				this.copyRomWindowInto(this.systemRom, addr, out, dstOffset, length);
+				this.copyRomWindowInto(this.systemRom.bytes, addr, out, dstOffset, length);
 				return;
 			}
 		} else if (addr < CART_ROM_BASE) {
@@ -867,8 +870,8 @@ export class Memory {
 	}
 
 	public bindRomByteView(addr: number, length: number, cartridgeSlot: number, out: MemoryByteView): boolean {
-		if (length > 0 && this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, this.systemRom.byteLength)) {
-			out.bytes = this.systemRom;
+		if (length > 0 && this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, this.systemRom.bytes.byteLength)) {
+			out.bytes = this.systemRom.bytes;
 			out.byteOffset = addr - SYSTEM_ROM_BASE;
 			out.byteLength = length;
 			return true;
