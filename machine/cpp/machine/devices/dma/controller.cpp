@@ -103,7 +103,19 @@ void DmaController::setRequestLines(u32 mask, u32 asserted) {
 	if (next == m_requestLines) {
 		return;
 	}
+	for (u32 request = 1; request < m_requestWordCapacity.size(); ++request) {
+		const u32 bit = 1u << request;
+		if (((next ^ m_requestLines) & bit) != 0) m_requestWordCapacity[request] = (next & bit) != 0 ? 16u : 0u;
+	}
 	m_requestLines = next;
+	arbitrate(m_scheduler.currentNowCycles());
+}
+
+void DmaController::setRequestWordCapacity(u32 request, u32 words) {
+	if (m_requestWordCapacity[request] == words) return;
+	m_requestWordCapacity[request] = words;
+	const u32 bit = 1u << request;
+	m_requestLines = words == 0 ? m_requestLines & ~bit : m_requestLines | bit;
 	arbitrate(m_scheduler.currentNowCycles());
 }
 
@@ -133,6 +145,7 @@ bool DmaController::hasAdmittedWriteBlock(u32 address) const {
 void DmaController::reset() {
 	clearLiveTransfer();
 	m_requestLines = 0u;
+	m_requestWordCapacity.fill(0);
 	m_supervisorQuiesceRequested = false;
 	m_supervisorAdmissionQuiesceRequested = false;
 	clearUserContext();
@@ -334,7 +347,11 @@ void DmaController::admitBlock(u32 channel, i64 anchorCycle) {
 	const u32 remaining = registers.transferCountWord;
 	const u32 control = registers.controlWord;
 	const u32 programmedBlockWords = ((control & DMA_CONTROL_BLOCK_WORDS_MASK) >> DMA_CONTROL_BLOCK_WORDS_SHIFT) + 1u;
-	const u32 blockWords = remaining < programmedBlockWords ? remaining : programmedBlockWords;
+	u32 blockWords = std::min(remaining, programmedBlockWords);
+	const u32 readRequest = (control & DMA_CONTROL_READ_REQUEST_MASK) >> DMA_CONTROL_READ_REQUEST_SHIFT;
+	const u32 writeRequest = (control & DMA_CONTROL_WRITE_REQUEST_MASK) >> DMA_CONTROL_WRITE_REQUEST_SHIFT;
+	if (readRequest != DMA_REQUEST_FORCE) blockWords = std::min(blockWords, m_requestWordCapacity[readRequest]);
+	if (writeRequest != DMA_REQUEST_FORCE) blockWords = std::min(blockWords, m_requestWordCapacity[writeRequest]);
 	const u32 readStep = (control & DMA_CONTROL_READ_INCREMENT) != 0u ? IO_WORD_SIZE : 0u;
 	const u32 writeStep = (control & DMA_CONTROL_WRITE_INCREMENT) != 0u ? IO_WORD_SIZE : 0u;
 	u32 readAddress = registers.readAddressWord;
@@ -355,10 +372,7 @@ void DmaController::admitBlock(u32 channel, i64 anchorCycle) {
 		const u32 spanWords = readRegionWords < writeRegionWords ? readRegionWords : writeRegionWords;
 		const i64 readCycles = regionSpanCycles(readRegion, spanWords, readRegionStart);
 		const i64 writeCycles = regionSpanCycles(writeRegion, spanWords, writeRegionStart);
-		blockCycles += readRegion == writeRegion
-			&& (readRegion == MemoryRegionKind::Ram || readRegion == MemoryRegionKind::Cartridge)
-			? readCycles + writeCycles
-			: readCycles > writeCycles ? readCycles : writeCycles;
+		blockCycles += readCycles + writeCycles;
 		wordsRemaining -= spanWords;
 		readRegionWords -= spanWords;
 		writeRegionWords -= spanWords;
@@ -377,9 +391,6 @@ void DmaController::admitBlock(u32 channel, i64 anchorCycle) {
 			writeRegionStart = true;
 		}
 	}
-	if (blockCycles == 0) {
-		blockCycles = 1;
-	}
 	m_activeChannel = channel;
 	m_scheduledBlockWords = blockWords;
 	m_scheduledReadAddressWord = registers.readAddressWord;
@@ -388,6 +399,7 @@ void DmaController::admitBlock(u32 channel, i64 anchorCycle) {
 	m_scheduledControlWord = control;
 	m_serviceDeadline = anchorCycle + blockCycles;
 	m_scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, m_serviceDeadline);
+	m_scheduler.requestYieldForEarlierDeadline(m_scheduler.currentNowCycles());
 }
 
 i64 DmaController::regionSpanCycles(MemoryRegionKind region, u32 wordCount, bool regionStart) const {
@@ -400,7 +412,7 @@ i64 DmaController::regionSpanCycles(MemoryRegionKind region, u32 wordCount, bool
 		return static_cast<i64>(wordCount) * m_cartRomCyclesPerWord + (regionStart ? m_cartRomBurstSetupCycles : 0);
 	case MemoryRegionKind::Io:
 	case MemoryRegionKind::Other:
-		return 0;
+		return wordCount;
 	}
 	__builtin_unreachable();
 }

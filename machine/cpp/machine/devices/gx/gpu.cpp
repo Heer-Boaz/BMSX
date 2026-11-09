@@ -1482,15 +1482,9 @@ void GxGpu::updateDmaRequestStatusBit() {
 	} else {
 		m_statusWord &= ~GX_GPU_STATUS_DMA_DATA_REQUEST;
 	}
-	const u32 writeRequestBit = 1u << DMA_REQUEST_GX_WRITE;
-	u32 assertedRequests = 0u;
-	if ((dmaDirection == GX_GPU_DMA_DIRECTION_FIFO || dmaDirection == GX_GPU_DMA_DIRECTION_CPU_TO_GP0)
-		&& dmaRequest != 0u) {
-		assertedRequests = writeRequestBit;
-	}
-	m_dmaController.setRequestLines(
-		writeRequestBit,
-		assertedRequests);
+	const bool writing = (dmaDirection == GX_GPU_DMA_DIRECTION_FIFO || dmaDirection == GX_GPU_DMA_DIRECTION_CPU_TO_GP0)
+		&& dmaRequest != 0u;
+	m_dmaController.setRequestWordCapacity(DMA_REQUEST_GX_WRITE, writing ? GX_GPU_DMA_INGRESS_WORD_CAPACITY : 0u);
 }
 
 bool GxGpu::gpuStatInInterleaved480iMode() const {

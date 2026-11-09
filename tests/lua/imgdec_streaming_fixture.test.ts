@@ -15,11 +15,9 @@ for (const palette4 of [false, true]) test(`streaming ${palette4 ? 'CLUT4' : 'di
 			], 'the in-image frame marker is part of the generated payload');
 		}
 		const texture = palette4 ? encodePalette4GxTexture(128, 128, rgba) : encodeDirect16GxTexture(128, 128, rgba);
-		const compressed = encodeImgDecStream(texture.words, texture.textureWordCount, texture.clutWordCount);
-		const decoded = decodeImgDecStream(compressed);
-		assert.deepEqual(Buffer.from(decoded.payload), texture.words);
-		assert.equal(decoded.textureWordCount, texture.textureWordCount);
-		assert.equal(decoded.clutWordCount, palette4 ? 8 : 0);
+		const compressed = encodeImgDecStream(texture.words);
+		const decoded = decodeImgDecStream(compressed, texture.textureWordCount + texture.clutWordCount);
+		assert.deepEqual(Buffer.from(decoded), texture.words);
 		contents.add(compressed.toString('base64'));
 	}
 	assert.equal(contents.size, 8, 'every animation phase has a different ROM stream');

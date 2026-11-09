@@ -11,8 +11,6 @@
 
 namespace bmsx {
 
-constexpr u32 IMGDEC_DECODE_BATCH_WORDS = 16u;
-
 class CPU;
 class DeviceScheduler;
 class DmaController;
@@ -20,73 +18,57 @@ class IrqController;
 class Memory;
 
 struct ImgDecControllerState {
-	u32 inputWordCountWord = 0u;
-	u32 textureDestinationWord = 0u;
-	u32 textureSizeWord = 0u;
-	u32 clutDestinationWord = 0u;
-	u32 controlWord = 0u;
-	u32 statusWord = 0u;
-	u32 dataWord = 0u;
-	u32 inputWordsReceived = 0u;
-	u32 decodedWordCount = 0u;
-	u32 textureWordCount = 0u;
-	u32 clutWordCount = 0u;
-	u32 outputWordsRead = 0u;
-	u32 decodePhase = 0u;
-	u32 outputStage = 0u;
-	u32 runWordsRemaining = 0u;
-	u32 repeatWord = 0u;
-	u32 backReferenceDistance = 0u;
+	u32 inputWordCountWord = 0;
+	u32 outputWordCountWord = 0;
+	u32 controlWord = 0;
+	u32 statusWord = 0;
+	u32 dataWord = 0;
+	u32 inputWordsReceived = 0;
+	u32 decodedWordCount = 0;
+	u32 outputWordsRead = 0;
+	u32 decodePhase = 0;
+	u32 runWordsRemaining = 0;
+	u32 repeatWord = 0;
+	u32 backReferenceDistance = 0;
+	u32 blockPhase = 0;
+	u32 blockReadIndex = 0;
+	i64 blockCyclesRemaining = 0;
 	bool supervisorQuiesceRequested = false;
 	std::vector<u32> inputWords;
-	std::vector<u32> outputWords;
+	std::vector<u32> blockWords;
 	std::vector<u32> historyWords;
-	u32 scheduledDecodeWords = 0u;
-	i64 scheduledDecodeCycles = 0;
 };
 
 class ImgDecController final {
 public:
-	ImgDecController(
-		Memory& memory,
-		CPU& cpu,
-		IrqController& irq,
-		DeviceScheduler& scheduler,
-		DmaController& dma,
-		i64 cyclesPerOutputWord
-	);
-
+	ImgDecController(Memory&, CPU&, IrqController&, DeviceScheduler&, DmaController&, i64 cyclesPerOutputWord);
 	void reset();
-	[[nodiscard]] auto captureState() const -> ImgDecControllerState;
+	ImgDecControllerState captureState() const;
 	void restoreState(const ImgDecControllerState& state);
 	void onService(i64 nowCycles);
 	void beginSupervisorQuiesce();
-	[[nodiscard]] auto supervisorQuiescent() const -> bool { return m_supervisorQuiesceRequested && m_scheduledDecodeWords == 0u; }
+	bool supervisorQuiescent() const;
 	void leaveSupervisorContext();
 
 private:
 	void resetStreamState();
 	void start();
-	void advanceOutputStage();
-	void prepareDecodeRun();
-	auto scheduleDecode(i64 anchorCycle) -> bool;
-	void decodeScheduledWords();
+	void execute(i64 nowCycles);
+	void preparePayloadWords(u32 count);
 	void updateDmaRequests();
-	[[nodiscard]] auto streamComplete() const -> bool;
-	void failIfInputExhausted();
 	void stop(u32 statusWord);
 	void resumeConfigWrites();
 	void notifySupervisorBoundary();
 	void mirrorRegisters();
 
-	static u32 readProgressThunk(void* context, u32 address, MappedBusSignals busSignals);
-	static void writeConfigThunk(void* context, u32 address, u32 value, MappedBusSignals busSignals);
-	static bool configWriteReadyThunk(void* context, u32 address, MappedBusSignals busSignals);
-	static void readDataPrefixThunk(void*, u32, u32* words, u32 count, MappedBusSignals);
-	static void writeDataPrefixThunk(void*, u32, const u32* words, u32 count, MappedBusSignals);
-	static u32 readDataThunk(void* context, u32 address, MappedBusSignals busSignals);
-	static void writeDataThunk(void* context, u32 address, u32 value, MappedBusSignals busSignals);
-	static bool dataWriteReadyThunk(void* context, u32 address, MappedBusSignals busSignals);
+	static u32 readProgressThunk(void*, u32, MappedBusSignals);
+	static void writeConfigThunk(void*, u32, u32, MappedBusSignals);
+	static bool configWriteReadyThunk(void*, u32, MappedBusSignals);
+	static void readDataPrefixThunk(void*, u32, u32*, u32, MappedBusSignals);
+	static void writeDataPrefixThunk(void*, u32, const u32*, u32, MappedBusSignals);
+	static u32 readDataThunk(void*, u32, MappedBusSignals);
+	static void writeDataThunk(void*, u32, u32, MappedBusSignals);
+	static bool dataWriteReadyThunk(void*, u32, MappedBusSignals);
 
 	Memory& m_memory;
 	CPU& m_cpu;
@@ -95,32 +77,27 @@ private:
 	DmaController& m_dma;
 	i64 m_cyclesPerOutputWord;
 	WordFifo<IMGDEC_INPUT_FIFO_WORD_CAPACITY> m_inputFifo;
-	WordFifo<IMGDEC_OUTPUT_FIFO_WORD_CAPACITY> m_outputFifo;
+	std::array<u32, IMGDEC_OUTPUT_BLOCK_WORD_CAPACITY> m_block{};
 	std::array<u32, IMGDEC_HISTORY_WORD_CAPACITY> m_history{};
-	size_t m_historyWriteIndex = 0u;
-	size_t m_historyWordCount = 0u;
-	bool m_active = false;
-	u32 m_inputWordsReceived = 0u;
-	u32 m_decodedWordCount = 0u;
-	u32 m_textureWordCount = 0u;
-	u32 m_clutWordCount = 0u;
-	u32 m_outputWordCount = 0u;
-	u32 m_outputWordsRead = 0u;
-	u32 m_inputWordCountWord = 0u;
-	u32 m_textureDestinationWord = 0u;
-	u32 m_textureSizeWord = 0u;
-	u32 m_clutDestinationWord = 0u;
-	u32 m_controlWord = 0u;
-	u32 m_statusWord = 0u;
-	u32 m_dataWord = 0u;
-	u32 m_decodePhase = 0u;
-	u32 m_outputStage = 0u;
-	u32 m_runWordsRemaining = 0u;
-	u32 m_repeatWord = 0u;
-	u32 m_backReferenceDistance = 0u;
+	size_t m_historyWriteIndex = 0;
+	size_t m_historyWordCount = 0;
+	u32 m_inputWordCountWord = 0;
+	u32 m_outputWordCountWord = 0;
+	u32 m_controlWord = 0;
+	u32 m_statusWord = 0;
+	u32 m_dataWord = 0;
+	u32 m_inputWordsReceived = 0;
+	u32 m_decodedWordCount = 0;
+	u32 m_outputWordsRead = 0;
+	u32 m_decodePhase = 0;
+	u32 m_runWordsRemaining = 0;
+	u32 m_repeatWord = 0;
+	u32 m_backReferenceDistance = 0;
+	u32 m_blockPhase = 0;
+	u32 m_blockWordCount = 0;
+	u32 m_blockReadIndex = 0;
+	i64 m_blockDeadline = -1;
 	bool m_supervisorQuiesceRequested = false;
-	u32 m_scheduledDecodeWords = 0u;
-	i64 m_decodeDeadline = -1;
 };
 
 } // namespace bmsx

@@ -33,8 +33,8 @@ test('imported base-color textures compile to shared native images, selected pag
 	const image = textures + MODEL_TEXTURE_BYTE_LENGTH, offset = view.getUint32(image + MODEL_TEXTURE.streamOffset, true);
 	assert.equal(offset % 4, 0); assert.equal(view.getUint32(image + MODEL_TEXTURE.width, true), 4);
 	assert.equal(view.getUint32(image + MODEL_TEXTURE.streamWordCount, true) * 4, model.textures[1].stream.length);
-	const decoded = decodeImgDecStream(model.textures[1].stream, 0, model.textures[1].stream.length);
-	const pixels = new DataView(decoded.payload.buffer, decoded.payload.byteOffset, decoded.payload.byteLength);
+	const decoded = decodeImgDecStream(model.textures[1].stream, model.textures[1].decodedWords);
+	const pixels = new DataView(decoded.buffer, decoded.byteOffset, decoded.byteLength);
 	assert.equal(pixels.getUint16(0, true), 0x801f, 'OPAQUE preserves red even where the PNG alpha is zero');
 	assert.equal(pixels.getUint16(2, true), 0x83e0, 'source alpha is ignored, not blended into RGB');
 	assert.equal(pixels.getUint16(6, true), 0x8000, 'opaque black must not become a transparent GPU texel');

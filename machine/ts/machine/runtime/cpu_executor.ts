@@ -45,15 +45,15 @@ export class CpuExecutionState {
 		if (gxGpu.backendServiceBlocksMachine()) {
 			return tickCompleted;
 		}
-		if (!cpu.isHaltedUntilIrq() && !machine.systemController.cpuHeld()) {
+		if (!cpu.isHaltedUntilIrq() && !machine.systemController.cpuHeld() && !machine.dmaController.cpuBusHeld()) {
 			return tickCompleted;
 		}
 		const scheduler = machine.scheduler;
 		while (true) {
-			if (!machine.systemController.cpuHeld() && cpu.enterPendingInterrupt()) {
+			if (!machine.systemController.cpuHeld() && !machine.dmaController.cpuBusHeld() && cpu.enterPendingInterrupt()) {
 				return tickCompleted;
 			}
-			if (!cpu.isHaltedUntilIrq() && !machine.systemController.cpuHeld()) {
+			if (!cpu.isHaltedUntilIrq() && !machine.systemController.cpuHeld() && !machine.dmaController.cpuBusHeld()) {
 				return tickCompleted;
 			}
 			if (tickCompleted) {
@@ -152,7 +152,7 @@ export class CpuExecutionState {
 				|| machine.systemController.cpuHeld()) {
 				return CpuSuspendedRunResult.Halted;
 			}
-			if (cpu.isMemoryWriteBlocked()) {
+			if (cpu.isMemoryWriteBlocked() || machine.dmaController.cpuBusHeld()) {
 				const nextDeadline = scheduler.nextDeadline();
 				if (nextDeadline === Number.MAX_SAFE_INTEGER) {
 					return CpuSuspendedRunResult.Halted;
@@ -208,7 +208,7 @@ export class CpuExecutionState {
 					if (machine.gxGpu.backendServiceBlocksMachine()) {
 						return CpuSuspendedRunResult.Halted;
 					}
-					const cpuHeld = machine.systemController.cpuHeld();
+					const cpuHeld = machine.systemController.cpuHeld() || machine.dmaController.cpuBusHeld();
 					if (!cpuHeld && cpu.enterPendingInterrupt()) {
 						break;
 					}
@@ -254,7 +254,7 @@ export class CpuExecutionState {
 			&& !tickCompleted
 			&& !runtime.machine.gxGpu.backendServiceBlocksMachine()
 			&& !runtime.machine.systemController.cpuHeld()) {
-			if (cpu.isMemoryWriteBlocked()) {
+			if (cpu.isMemoryWriteBlocked() || runtime.machine.dmaController.cpuBusHeld()) {
 				const nextDeadline = scheduler.nextDeadline();
 				const deadlineBudget = nextDeadline - scheduler.nowCycles;
 				if (deadlineBudget <= 0) {

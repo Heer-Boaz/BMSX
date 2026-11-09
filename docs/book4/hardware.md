@@ -165,19 +165,20 @@ command, register and result interfaces.
 
 ### IMGDEC stream path {#sec-physical-imgdec-path}
 
-IMGDEC accepts compressed image input and produces upload data for the CPU or
-DMA to send to GFX. GFX, rather than IMGDEC, performs the video-memory writes.
-Input, output and completion are controlled through the interface in Book I.
+IMGDEC reconstructs raw words from a lossless token stream. It has an input
+FIFO, a 4096-word history and one output work block. After the block decode
+interval, the same work block supplies DATA reads; another completed-output
+queue is not required.
 
-For a streamed upload, one DMA channel can feed compressed words from ROM or
-main RAM into IMGDEC while the other is armed to drain its output to GPU GP0
-or RAM. The channels share one block engine; their input and output requests,
-and the destination's request where applicable, govern block admission. If
-output cannot be drained, backpressure can eventually fill the input path.
-IMGDEC completion requires its output to be read; it does not mean the GPU has
-already processed the upload.
+DMA feeds compressed input from ROM or main RAM and drains completed output
+to a receiving device or RAM. The CPU supplies GPU packet headers separately;
+IMGDEC has no texture-coordinate, image-size or CLUT-packet sequencer. GFX
+interprets those packets and performs VRAM writes. Input backpressure and
+output drainage are separate from the decoder's scheduled block completion.
 
-![Image-decompression input and upload paths.](figures/imgdec-datapath.svg){#fig-physical-imgdec-path}
+Book I specifies the block interface and programmer-visible timing. This
+organisation does not qualify the physical SRAM ports, clock crossings or
+board implementation.
 
 ## Shared system bus
 

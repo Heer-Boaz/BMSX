@@ -29,7 +29,7 @@ export class ActorWorldAssets {
 		let bitmap = cache.get(source.address);
 		if (bitmap === undefined) {
 			const rom = system ? this.sources.systemRom : this.sources.cartridgeSlots[domain as 0 | 1]!.rom;
-			const payload = decodeImgDecStream(rom.bytes, source.address - (system ? 0 : CART_ROM_BASE), source.bytes).payload;
+			const payload = decodeImgDecStream(rom.bytes, source.decodedWords, source.address - (system ? 0 : CART_ROM_BASE), source.bytes);
 			const decoded = decodeGxTextureImage(payload, { mode: source.mode, wordWidth: source.wordWidth, height: source.height });
 			bitmap = new HostBitmap({ width: decoded.width, height: decoded.height, pixels: decoded.rgba }); cache.set(source.address, bitmap);
 		}

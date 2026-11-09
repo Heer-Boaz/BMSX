@@ -889,7 +889,7 @@ export async function generateRomAssets(
 					romAssets.push({
 						resid: res.name,
 						type: 'texture',
-						buffer: encodeImgDecStream(texture.words, texture.textureWordCount, texture.clutWordCount),
+						buffer: encodeImgDecStream(texture.words),
 						texturemeta,
 					});
 				}

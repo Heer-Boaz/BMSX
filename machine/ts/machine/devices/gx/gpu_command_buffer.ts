@@ -227,17 +227,15 @@ class GxGpuReadbackPort extends GxGpuReadbackContext implements GxGpuReadbackPor
 			this.width = 0;
 			this.height = 0;
 			this.pixelCursor = 0;
-			this.updateDmaRequest();
 		}
+		this.updateDmaRequest();
 		return word >>> 0;
 	}
 
 	private updateDmaRequest(): void {
-		const requestBit = 1 << DMA_REQUEST_GX_READ;
-		this.dmaController.setRequestLines(
-			requestBit,
-			this.dmaReadEnabled && this.phase === GX_GPU_READBACK_READY ? requestBit : 0,
-		);
+		const words = this.dmaReadEnabled && this.phase === GX_GPU_READBACK_READY
+			? (this.width * this.height - this.pixelCursor + 1) >>> 1 : 0;
+		this.dmaController.setRequestWordCapacity(DMA_REQUEST_GX_READ, words);
 	}
 }
 

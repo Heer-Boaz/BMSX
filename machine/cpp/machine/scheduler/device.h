@@ -30,6 +30,7 @@ public:
 	void setNowCycles(i64 nowCycles);
 	void reset();
 	i64 currentNowCycles() const;
+	void requestYieldForEarlierDeadline(i64 deadlineCycles);
 	bool isCpuSliceActive() const { return m_schedulerSliceActive; }
 	void beginCpuSlice(int sliceBudget) {
 		m_schedulerSliceActive = true;
@@ -53,7 +54,6 @@ private:
 	void pushTimer(i64 deadline, uint8_t deviceKind, uint32_t generation);
 	void removeTopTimer();
 	void discardStaleTopTimers();
-	void requestYieldForEarlierDeadline(i64 deadlineCycles);
 
 	CPU& m_cpu;
 	i64 m_schedulerNowCycles = 0;

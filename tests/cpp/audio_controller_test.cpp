@@ -306,7 +306,7 @@ void testSampleTransferEdgeOrdering() {
 		programVoice(harness);
 		const bmsx::u32 dmaSource = bmsx::DYNAMIC_RAM_BASE + 0x300u;
 		harness.memory.writeMappedU32LE(dmaSource, 0xc0c0c0c0u);
-		harness.scheduler.advanceTo(46);
+		harness.scheduler.advanceTo(45);
 		harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_ADDRESS, 0u);
 		harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_CONTROL, bmsx::APU_TRANSFER_MODE_DMA_WRITE);
 		harness.memory.writeMappedU32LE(bmsx::IO_DMA0_READ_ADDR, dmaSource);
@@ -315,7 +315,7 @@ void testSampleTransferEdgeOrdering() {
 		harness.memory.writeMappedU32LE(bmsx::IO_DMA0_CONTROL, 0x000000c0u);
 		harness.memory.writeMappedU32LE(bmsx::IO_DMA0_TRIGGER, bmsx::DMA_TRIGGER_START);
 		const bmsx::i64 dmaDeadline = harness.scheduler.nextDeadline();
-		require(dmaDeadline == 47, "single-word APU DMA block should reach its deadline on cycle 47");
+		require(dmaDeadline == 47, "two-cycle APU DMA from cycle 45 reaches its deadline on cycle 47");
 		harness.scheduler.advanceTo(dmaDeadline);
 		harness.dma.onService(dmaDeadline);
 	};
@@ -676,7 +676,7 @@ void testSampleBusDmaAndMidTransferRestore() {
 void testSampleTransferWrongDirectionBlock() {
 	AudioHarness harness;
 	harness.dma.setTiming(0, 8, 0, 0, 0, 0);
-	harness.audio.setTiming(bmsx::APU_TRANSFER_WORDS_PER_SECOND, 0);
+	harness.audio.setTiming(2 * bmsx::APU_TRANSFER_WORDS_PER_SECOND, 0);
 	const bmsx::u32 source = bmsx::DYNAMIC_RAM_BASE + 0x500u;
 	const bmsx::u32 target = bmsx::DYNAMIC_RAM_BASE + 0x600u;
 	for (bmsx::u32 index = 0u; index < 32u; index += 1u) {

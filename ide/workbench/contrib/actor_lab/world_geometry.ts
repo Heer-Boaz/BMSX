@@ -9,7 +9,7 @@ import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { ActorRenderQuad, ActorVisualKind } from './render_geometry';
 
 export type WorldActor = { domain: ResourceDomain; hashId: number; label: string };
-export type WorldTexture = { readonly domain: ResourceDomain; readonly address: number | null; readonly bytes: number;
+export type WorldTexture = { readonly domain: ResourceDomain; readonly address: number | null; readonly bytes: number; readonly decodedWords: number;
 	readonly mode: number; readonly wordWidth: number; readonly height: number };
 type Image = { readonly texture: WorldTexture; readonly x: number; readonly y: number; readonly width: number; readonly height: number };
 export type WorldPacket = { readonly image?: Image; readonly x: number; readonly y: number; readonly width: number; readonly height: number; readonly color: number; readonly flipH: boolean; readonly flipV: boolean };
@@ -83,6 +83,7 @@ export class ActorWorldGeometry {
 	private image(source: Table, domain: ResourceDomain, guest: SuspendedGuestSession): Image {
 		const texture = guest.readStringMember(source, '_texture') as Table, address = guest.readStringMember(texture, 'source_addr') as number | null;
 		return { texture: { domain, address, bytes: address === null ? 0 : (guest.readStringMember(texture, 'stream_word_count') as number) * 4,
+			decodedWords: address === null ? 0 : ((guest.readStringMember(texture, 'texture_word_count') as number) + (guest.readStringMember(texture, 'clut_word_count') as number)) >>> 0,
 			mode: guest.readStringMember(texture, 'mode') as number,
 			wordWidth: address === null ? 0 : guest.readStringMember(texture, 'word_width') as number,
 			height: address === null ? 0 : guest.readStringMember(texture, 'height') as number },

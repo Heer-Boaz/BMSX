@@ -223,7 +223,7 @@ The following directory covers the complete I/O aperture in address order. Each 
 | `08010384H` | `080103ACH` | 10 | [GTE PLUS](gte.md#sec-gte-register-reference) — operands, results, flags, command and cycles |
 | `080103ACH` | `080103E4H` | 14 | [PCRTC](pcrtc.md#sec-pcrtc) — beam timing, CSR events and IMR masks |
 | `080103E4H` | `080103FCH` | 6 | [DMA](dma.md#sec-dma-register-reference) — channel 1 |
-| `080103FCH` | `08010420H` | 9 | [IMGDEC](imgdec.md#sec-imgdec-register-reference) — configuration, status, data and progress |
+| `080103FCH` | `08010420H` | 9 | [IMGDEC](imgdec.md#sec-imgdec-register-reference) — configuration, status, data, progress and two unassigned words |
 | `08010420H` | `08010428H` | 2 | [[Cartridge controller](../book3/cartridge.md#sec-cartridge-cartridge-controller)]{.content-visible when-format="html"}[Book III, §1.3]{.content-visible when-format="pdf"} — socket selection and status |
 | `08010428H` | `08010440H` | 6 | [SYSTEM](system.md#sec-system-supervisor-fault-registers) — retained supervisor fault report |
 
@@ -508,15 +508,26 @@ Submit `COMMAND` through the CPU. CPU command submission is interlocked while a 
 
 ### IMGDEC input and output have separate lifetimes {#sec-memory-imgdec-input-and-output-have-separate-lifetimes}
 
-IMGDEC accepts supplied stream words through DATA, not a cartridge source-buffer pointer. An admitted CPU DATA write copies that word into its input storage; the decoder does not retain the original CPU-visible storage location. Texture and CLUT destination words become output command headers, not addresses that IMGDEC itself dereferences.
+IMGDEC accepts supplied stream words through DATA, not a cartridge source
+pointer. Input acceptance copies words into its FIFO. Software programs both
+compressed-input and raw-output counts; no texture destination or size is
+interpreted by this unit.
 
-DMA programming and block admission capture addresses, not the source contents. Keep the source words unchanged until their last DMA read, including repeated reads from a fixed source address. For a whole buffer with no other reader, input DMA completion ends that source transfer's need for the buffer: reuse need not wait for decoder completion or output drainage. This does not certify successful decoding; misprogrammed input writes can be counted without entering the FIFO.
+Keep a DMA source stable until input transport completes. That completion ends
+the source buffer's input lifetime, not decoding or output processing. Raw
+output contains neither image-upload nor CLUT-upload headers. The program
+supplies those headers to GP0 separately when connecting a decode to the GPU.
 
-Output is another word stream. An output DMA count must include the **three-word texture header** and, when CLUT data is present, its **three-word CLUT header**, as well as both payloads. Input words received count submissions, not consumption; decoded words count payload, not headers. Neither progress count is completion. Require normal IMGDEC DONE, not merely an IRQ: faults also raise that interrupt. When output DMA captures into RAM, also require that DMA transfer's completion before treating the destination as completed output; the final source DATA read precedes its destination write. Neither completion establishes downstream GPU execution or visible display completion.
+Decoded progress advances at whole-block completion and is not evidence that
+output has been drained. IMGDEC DONE follows the last output read; a receiving
+DMA write and downstream GPU execution have their own completion. A format
+fault also raises the decoder IRQ, without rolling back already delivered
+words or cancelling an admitted DMA burst.
 
-Do not poll DATA for freshness. An empty read returns the retained DATA latch, which input writes also change. A CPU read while DMA owns the DATA read port likewise returns that latch without popping output. OUTPUT_REQUEST describes a block threshold, not permission for an arbitrary number of reads. Extra DATA reads after successful termination are not harmless polling: they can raise the completion interrupt again.
-
-A format fault stops processing but can leave queued partial output and words already delivered. CONTROL has no ABORT operation. A new START or IMGDEC reset discards queued internal output; it does not cancel a separately admitted DMA transfer or retract prior output. Restarting IMGDEC is therefore not an all-or-nothing recovery of an arbitrary partial output stream.
+DATA is a retained latch as well as a stream port. Poll STATUS for completed
+output rather than treating repeated DATA reads as a readiness test. A new
+START resets internal input, history and block state, but does not cancel
+other units' programmed work.
 
 Use the [IMGDEC chapter](imgdec.md#sec-imgdec) and its [BLua programming sequence](imgdec.md#sec-imgdec-programming-imgdec-in-blua) for stream layout and transfer programming.
 

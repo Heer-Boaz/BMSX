@@ -1,7 +1,5 @@
 import {
 	IMGDEC_HISTORY_WORD_CAPACITY,
-	IMGDEC_STREAM_HEADER_WORDS,
-	IMGDEC_STREAM_MAGIC,
 	IMGDEC_TOKEN_BACK_REFERENCE_DISTANCE_MASK,
 	IMGDEC_TOKEN_BACK_REFERENCE_LENGTH_MASK,
 	IMGDEC_TOKEN_BACK_REFERENCE_LENGTH_SHIFT,
@@ -13,12 +11,6 @@ import {
 	IMGDEC_TOKEN_KIND_ZERO,
 	IMGDEC_TOKEN_RUN_LENGTH_MASK,
 } from '../../../machine/ts/spec/imgdec/stream';
-
-export type DecodedImgDecStream = {
-	payload: Uint8Array;
-	textureWordCount: number;
-	clutWordCount: number;
-};
 
 const MATCH_HASH_BITS = 16;
 const MATCH_HASH_SIZE = 1 << MATCH_HASH_BITS;
@@ -64,8 +56,8 @@ function appendMatchPositions(
 	}
 }
 
-export function encodeImgDecStream(payload: Buffer, textureWordCount: number, clutWordCount: number): Buffer {
-	const wordCount = textureWordCount + clutWordCount;
+export function encodeImgDecStream(payload: Buffer): Buffer {
+	const wordCount = payload.byteLength >>> 2;
 	const tokens = new Uint32Array(wordCount);
 	const head = new Int32Array(MATCH_HASH_SIZE);
 	const previous = new Int32Array(wordCount);
@@ -145,7 +137,7 @@ export function encodeImgDecStream(payload: Buffer, textureWordCount: number, cl
 	}
 
 	tokenCount = appendLiteralTokens(tokens, tokenCount, literalStart, wordCount);
-	let encodedWordCount = IMGDEC_STREAM_HEADER_WORDS;
+	let encodedWordCount = 0;
 	for (let index = 0; index < tokenCount; index += 1) {
 		const token = tokens[index]!;
 		const tokenKind = token >>> IMGDEC_TOKEN_KIND_SHIFT;
@@ -157,10 +149,7 @@ export function encodeImgDecStream(payload: Buffer, textureWordCount: number, cl
 		}
 	}
 	const output = Buffer.allocUnsafe(encodedWordCount << 2);
-	output.writeUInt32LE(IMGDEC_STREAM_MAGIC, 0);
-	output.writeUInt32LE(textureWordCount, 4);
-	output.writeUInt32LE(clutWordCount, 8);
-	let outputWord = IMGDEC_STREAM_HEADER_WORDS;
+	let outputWord = 0;
 	let payloadCursor = 0;
 	for (let index = 0; index < tokenCount; index += 1) {
 		const token = tokens[index]!;
@@ -185,21 +174,15 @@ export function encodeImgDecStream(payload: Buffer, textureWordCount: number, cl
 
 export function decodeImgDecStream(
 	source: Uint8Array,
+	outputWordCount: number,
 	byteOffset = 0,
 	byteLength = source.byteLength - byteOffset,
-): DecodedImgDecStream {
+): Uint8Array {
 	if ((byteLength & 3) !== 0) {
 		throw new Error('Compressed image stream must contain whole words.');
 	}
 	const view = new DataView(source.buffer, source.byteOffset + byteOffset, byteLength);
 	let inputWord = 0;
-	if (view.getUint32(inputWord << 2, true) !== IMGDEC_STREAM_MAGIC) {
-		throw new Error('Compressed image stream has an unsupported format.');
-	}
-	const textureWordCount = view.getUint32((inputWord + 1) << 2, true);
-	const clutWordCount = view.getUint32((inputWord + 2) << 2, true);
-	inputWord += IMGDEC_STREAM_HEADER_WORDS;
-	const outputWordCount = textureWordCount + clutWordCount;
 	const payload = new Uint8Array(outputWordCount << 2);
 	const output = new DataView(payload.buffer);
 	let outputWord = 0;
@@ -255,9 +238,5 @@ export function decodeImgDecStream(
 		throw new Error('Compressed image stream has trailing words.');
 	}
 
-	return {
-		payload,
-		textureWordCount,
-		clutWordCount,
-	};
+	return payload;
 }

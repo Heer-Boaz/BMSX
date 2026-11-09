@@ -86,6 +86,18 @@ kost te redden. Een functie beperken of verwijderen is een geldig resultaat;
 alleen een ander opslagformaat kiezen of hetzelfde gedrag verplaatsen naar een
 nieuwe laag is nog geen vereenvoudiging van het hardwarecontract.
 
+De concrete vereenvoudiging van het apparatenmodel betreft **IMGDEC, DMA en
+APU**. Dat is geen opdracht om alle overige hardware opnieuw te ontwerpen. De
+overige voorstellen hieronder behouden hun afzonderlijke inhoud en besluitstatus.
+
+IMGDEC is uitgewerkt als een verliesloze woorddecoder zonder GPU-pakketopbouw
+of kennis van textures en palettes. De programmeerinterface, blokpublicatie en
+stroomcodering staan uitsluitend in de [IMGDEC-handleiding](book1/imgdec.md).
+De DMA-stap naar grotere, begrensde overdrachten en gedeeld busbezit is nog niet
+de volledige vereenvoudiging: de onafhankelijke verzoekselectoren en
+willekeurige interne I/O-eindpunten moeten afzonderlijk worden vervangen door
+de werkelijk benodigde apparaatpaden. De APU-interface is nog niet vervangen.
+
 VRAM-uitlezing moet daarbij afzonderlijk van host-snapshots worden beoordeeld.
 De PSX heeft zelf een VRAM-leespad; dat laat ook
 [DuckStations GPU-implementatie](https://github.com/stenzek/duckstation/blob/master/src/core/gpu.cpp)
@@ -129,10 +141,10 @@ staan achter de twaalf hoofdonderwerpen in de bijlage.
 
 ## 1. DMA: fysieke voortgang en voltooiing
 
-**Huidig contract.** De [DMA-specificatie](book1/dma.md#sec-dma-calculating-a-blocks-charge)
-kent een berekende blokduur toe. Een blok van maximaal zestien woorden tussen
-I/O-poorten heeft zelfs bij zestien lees-/schrijfparen een blokcharge van één
-systeemcyclus, ongeveer 29,5 ns.
+**Uitgewerkte eerste stap.** De [DMA-specificatie](book1/dma.md#sec-dma-calculating-a-blocks-charge)
+beschrijft begrensde bursts, seriële bron- en bestemmingskosten en CPU-busbezit.
+Daarmee vervalt de eerdere ééncycluscharge voor een volledig I/O-naar-I/O-blok.
+Dit is nog geen vervanging van het generieke eindpunten- en registermodel.
 
 **Goedgekeurde richting.** Een fysieke overdracht gebruikt meerdere cycli.
 Bronlezingen en bestemmingswrites kosten echte bus- en apparaatcycli;

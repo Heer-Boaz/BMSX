@@ -22,8 +22,8 @@ local imgdec_data_addr<const> = 0x08010414
 local control_read_increment_gx_write<const> = 0x00003c41
 local control_read_increment_apu_write<const> = 0x00003cc1
 local control_write_increment_apu_read<const> = 0x00003c12
-local control_read_increment_imgdec_write<const> = 0x00003d41
-local control_imgdec_read_gx_write<const> = 0x00003c58
+local control_read_increment_imgdec_write<const> = 0x0003fd41
+local control_imgdec_read_gx_write<const> = 0x0003fc58
 local trigger_start<const> = 0x00000001
 local status_busy<const> = 0x00000001
 

@@ -20,7 +20,7 @@ const pixels = new Uint8ClampedArray([
 for (const encode of [encodeDirect16GxTexture, encodePalette4GxTexture]) {
 	test(`${encode.name}: selected images crop native words and share one atlas decode with the whole texture preview`, () => {
 		const texture = encode(4, 1, pixels);
-		const compressed = encodeImgDecStream(texture.words, texture.textureWordCount, texture.clutWordCount);
+		const compressed = encodeImgDecStream(texture.words);
 		const rom = new Uint8Array(compressed.length + 7);
 		rom.set(compressed, 3);
 		const textureAsset: RomAsset = {

@@ -139,7 +139,7 @@ test('region-aware DMA charges one RAM burst setup and combines both block sides
 	assert.equal(memory.readMappedU32LE(ramDestination + 4), 0xddeeff00);
 
 	programTransfer(memory, CART_ROM_BASE, romDestination, 2, RAM_COPY_CONTROL);
-	assert.equal(scheduler.nextDeadline(), 26, 'the 20-cycle cartridge side gates the RAM burst');
+	assert.equal(scheduler.nextDeadline(), 29, 'cartridge read and RAM write costs both occupy the shared bus');
 	runNextDmaService(fixture);
 	assert.equal(memory.readMappedU32LE(romDestination), 0x11223344);
 	assert.equal(memory.readMappedU32LE(romDestination + 4), 0x55667788);
@@ -159,7 +159,7 @@ test('system firmware ROM uses its internal bus timing instead of cartridge timi
 	);
 
 	programTransfer(memory, SYSTEM_ROM_BASE, firmwareDestination, 2, RAM_COPY_CONTROL);
-	assert.equal(scheduler.nextDeadline(), 3, 'the RAM destination gates a two-cycle local firmware read');
+	assert.equal(scheduler.nextDeadline(), 5, 'two firmware reads and a three-cycle RAM write are serial');
 	runNextDmaService(fixture);
 	assert.equal(memory.readMappedU32LE(firmwareDestination), 0x01020304);
 	assert.equal(memory.readMappedU32LE(firmwareDestination + 4), 0x05060708);
@@ -177,7 +177,7 @@ test('incrementing DMA timing follows memory regions across physical map boundar
 	);
 	assert.equal(
 		cartRomToRam.scheduler.nextDeadline(),
-		48,
+		50,
 		'cartridge ROM and RAM each pay their physical bus setup and word timing',
 	);
 
@@ -192,7 +192,7 @@ test('incrementing DMA timing follows memory regions across physical map boundar
 	);
 	assert.equal(
 		cartRamToMmio.scheduler.nextDeadline(),
-		48,
+		50,
 		'cartridge RAM and MMIO each begin a physical bus transaction',
 	);
 
@@ -207,7 +207,7 @@ test('incrementing DMA timing follows memory regions across physical map boundar
 	);
 	assert.equal(
 		ioToRam.scheduler.nextDeadline(),
-		12,
+		15,
 		'the first RAM word after the IO aperture pays RAM setup and word timing',
 	);
 });
@@ -226,9 +226,9 @@ test('cartridge ROM pays one setup per admitted block', () => {
 	);
 
 	programTransfer(memory, CART_ROM_BASE, destination, 17, RAM_COPY_CONTROL);
-	assert.equal(scheduler.nextDeadline(), 132, 'sixteen words cost four setup cycles plus eight cycles per word');
+	assert.equal(scheduler.nextDeadline(), 149, 'sixteen ROM reads and RAM writes each pay their bus charge');
 	runNextDmaService(fixture);
-	assert.equal(scheduler.nextDeadline(), 144, 'the final one-word block pays a new four-cycle setup');
+	assert.equal(scheduler.nextDeadline(), 163, 'the final word pays fresh source and destination setups');
 });
 
 test('RAM burst setup is block-local rather than persistent address state', () => {
@@ -253,7 +253,7 @@ test('RAM burst setup is block-local rather than persistent address state', () =
 	assert.equal(scheduler.nextDeadline(), 8, 'a later block pays its own setup even at identical addresses');
 });
 
-test('a fixed MMIO port adds no memory wait beside its RAM block side', () => {
+test('a fixed MMIO port charges one write cycle per transported word', () => {
 	const fixture = createDmaGpuFixture();
 	const { memory, dma, gpu, scheduler } = fixture;
 	const source = DYNAMIC_RAM_BASE + 0x3000;
@@ -270,7 +270,7 @@ test('a fixed MMIO port adds no memory wait beside its RAM block side', () => {
 
 	programTransfer(memory, source, IO_GX_GPU_GP0, 2, GP0_WRITE_CONTROL);
 	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_FIFO);
-	assert.equal(scheduler.nextDeadline(), 3);
+	assert.equal(scheduler.nextDeadline(), 5);
 });
 
 function programTransfer(memory: Memory, readAddress: number, writeAddress: number, wordCount: number, control: number): void {
@@ -447,33 +447,23 @@ test('CPU-to-GP0 DMA streams an A0 payload across programmed blocks', () => {
 	assert.equal(commands.commandKind[0], GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM);
 });
 
-test('forced GP0 DMA saturates the physical command and ingress FIFOs', () => {
+test('forced GP0 DMA saturates physical storage but every supplied word reaches the latch', () => {
 	const fixture = createDmaGpuFixture();
 	const { memory, gpu } = fixture;
 	const source = DYNAMIC_RAM_BASE + 0x1000;
-	gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x0000ff);
+	const words = GX_GPU_COMMAND_FIFO_WORD_CAPACITY + GX_GPU_DMA_INGRESS_WORD_CAPACITY + 16;
+	gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0xff);
 	gpu.writeGp0(0);
 	gpu.writeGp0((511 << 16) | 0x03f1);
-	for (let index = 0; index < 48; index += 1) {
-		memory.writeMappedU32LE(source + index * 4, 0x03000000 | index);
-	}
-
-	programTransfer(memory, source, IO_GX_GPU_GP0, 48, FORCED_GP0_WRITE_CONTROL);
-	runNextDmaService(fixture);
-	let state = gpu.captureState();
-	assert.equal(state.gp0FifoWords.length, GX_GPU_COMMAND_FIFO_WORD_CAPACITY);
-	assert.equal(state.gp0DmaIngressWords.length, 0);
-	runNextDmaService(fixture);
-	state = gpu.captureState();
+	for (let i = 0; i < words; ++i) memory.writeMappedU32LE(source + i * 4, 0x03000000 | i);
+	programTransfer(memory, source, IO_GX_GPU_GP0, words, FORCED_GP0_WRITE_CONTROL);
+	while (memory.readIoU32(IO_DMA0_STATUS) === DMA_STATUS_BUSY) runNextDmaService(fixture);
+	const state = gpu.captureState();
 	assert.equal(state.gp0FifoWords.length, GX_GPU_COMMAND_FIFO_WORD_CAPACITY);
 	assert.equal(state.gp0DmaIngressWords.length, GX_GPU_DMA_INGRESS_WORD_CAPACITY);
-	runNextDmaService(fixture);
-
-	state = gpu.captureState();
-	assert.equal(state.gp0Word, 0x0300002f);
-	assert.equal(state.gp0FifoWords[GX_GPU_COMMAND_FIFO_WORD_CAPACITY - 1], 0x0300000f);
-	assert.equal(state.gp0DmaIngressWords[GX_GPU_DMA_INGRESS_WORD_CAPACITY - 1], 0x0300001f);
-	assert.equal(memory.readIoU32(IO_DMA0_STATUS), DMA_STATUS_DONE);
+	assert.equal(state.gp0Word, 0x03000000 | (words - 1));
+	assert.equal(state.gp0FifoWords[GX_GPU_COMMAND_FIFO_WORD_CAPACITY - 1], 0x03000000 | (GX_GPU_COMMAND_FIFO_WORD_CAPACITY - 1));
+	assert.equal(state.gp0DmaIngressWords[GX_GPU_DMA_INGRESS_WORD_CAPACITY - 1], 0x03000000 | (GX_GPU_COMMAND_FIFO_WORD_CAPACITY + GX_GPU_DMA_INGRESS_WORD_CAPACITY - 1));
 });
 
 test('an admitted DMA block survives DREQ drop, timing changes, and restore', () => {
@@ -485,13 +475,13 @@ test('an admitted DMA block survives DREQ drop, timing changes, and restore', ()
 	dma.setTiming(4, 0, 4, 0, 0, 0);
 	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
 	programTransfer(memory, source, IO_GX_GPU_GP0, 2, GP0_WRITE_CONTROL);
-	assert.equal(scheduler.nextDeadline(), 8);
+	assert.equal(scheduler.nextDeadline(), 10);
 
 	scheduler.advanceTo(3);
 	dma.setTiming(8, 0, 8, 0, 0, 3);
-	assert.equal(scheduler.nextDeadline(), 8);
+	assert.equal(scheduler.nextDeadline(), 10);
 	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_OFF);
-	assert.equal(scheduler.nextDeadline(), 8);
+	assert.equal(scheduler.nextDeadline(), 10);
 	const state = dma.captureState();
 	assert.equal(state.scheduledReadAddressWord, source);
 	assert.equal(state.scheduledWriteAddressWord, IO_GX_GPU_GP0);
@@ -499,7 +489,7 @@ test('an admitted DMA block survives DREQ drop, timing changes, and restore', ()
 	assert.equal(state.scheduledControlWord, GP0_WRITE_CONTROL);
 	dma.restoreState(state, scheduler.nowCycles);
 	dma.postLoad();
-	assert.equal(scheduler.nextDeadline(), 8);
+	assert.equal(scheduler.nextDeadline(), 10);
 
 	runNextDmaService(fixture);
 	assert.equal(memory.readIoU32(IO_DMA0_STATUS), DMA_STATUS_DONE);

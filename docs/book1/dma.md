@@ -27,7 +27,7 @@ sample-RAM batch. Observe transport and device completion separately.
 | Register interface | Six 32-bit word ports per channel; the two banks are not adjacent |
 | Transfer word | 32 bits, four bytes, little-endian |
 | Address and remaining-count words | 32 bits each; addresses count bytes, transfer count counts words |
-| Programmed block length | 1–16 words, independently selected by each channel |
+| Programmed block length | 1–256 words, independently selected by each channel |
 | Shared transfer capacity | One admitted block across both channels |
 | Block configuration | Captured read address, write address, full remaining count and CONTROL |
 | Completion requests | One IRQ source per channel |
@@ -92,11 +92,12 @@ must also be available, and the device's block and payload rules still apply.
 
 ### Source reuse and result use {#sec-dma-source-reuse-and-result-use}
 
-Suppose software starts copying the source array, then replaces its final four
-words with data for the next frame before their block is served. DMA reads
-those new words, so the destination can contain sixteen words from the old
-array followed by four from the new one. Block admission captures the addresses
-and control settings, not a private copy of the source bytes.
+When a channel is armed but waits for a request, software can still change
+source words before the first burst reads them. Once a burst is admitted, DMA
+owns the shared bus and CPU instruction execution waits. Consecutive eligible
+bursts may retain the bus across block boundaries. Do not rely on a CPU write
+being inserted between two such bursts. A source address is not a copied
+private buffer, so preserve it through transfer completion.
 
 Keep the source unchanged through DMA completion, then reuse it. For an
 ordinary memory copy with successful bus accesses, completion also makes the
@@ -148,7 +149,7 @@ also satisfy its own packet, readiness and block-size rules.
 ### Assemble CONTROL {#sec-dma-assemble-control}
 
 The following expression describes its defined fields. Each request is its
-four-bit encoding, and block length is 1–16:
+four-bit encoding, and block length is 1–256:
 
 ```text
 CONTROL = read_increment
@@ -223,7 +224,7 @@ report as well: DONE alone does not certify successful accesses.
 This RAM-to-RAM copy costs 44 admitted DMA cycles, excluding request waits,
 competing-channel service and CPU instructions. Declaring the same source as
 `rodata` instead places it in cartridge ROM: the register sequence is unchanged,
-but the corresponding ROM-to-RAM transfer costs 168 admitted cycles. The source
+but the corresponding ROM-to-RAM transfer costs 190 admitted cycles. The source
 region, not a different DMA operation code, determines that difference.
 
 ### Use both channels {#sec-dma-use-both-channels}
@@ -328,14 +329,14 @@ STATUS.
 
 | Bits | Field | Meaning | Reset |
 |---|---|---|---:|
-| 31:14 | Unassigned retained bits | Stored and read back; not decoded as transfer controls | 0 |
-| 13:10 | BLOCK_WORDS | Programmed block length minus one | 0: one word |
+| 31:18 | Unassigned retained bits | Stored and read back; not decoded as transfer controls | 0 |
+| 17:10 | BLOCK_WORDS | Programmed block length minus one | 0: one word |
 | 9:6 | WRITE_REQUEST | Destination-side admission request selector | 0: FORCE |
 | 5:2 | READ_REQUEST | Source-side admission request selector | 0: FORCE |
 | 1 | WRITE_INCREMENT | 1 adds four bytes per word; 0 repeats the write address | 0 |
 | 0 | READ_INCREMENT | 1 adds four bytes per word; 0 repeats the read address | 0 |
 
-The complete CONTROL word is retained, including bits 31:14. Those bits are
+The complete CONTROL word is retained, including bits 31:18. Those bits are
 not cleared by a write or admission. No transfer-control meaning is assigned
 to them here.
 
@@ -389,7 +390,9 @@ described next. Register reads do not report per-word progress within a block.
 
 A transfer proceeds one block at a time. At admission the channel captures
 READ_ADDR, WRITE_ADDR, the full remaining TRANSFER_COUNT and CONTROL. The actual
-block contains the smaller of the remaining count and the programmed 1–16 words.
+block contains the smaller of the remaining count, programmed maximum and
+words available at its selected device endpoints. FORCE imposes no device
+capacity limit.
 
 These captured values remain in force until block completion, including when
 software rewrites the programmed registers. Source words are read from the
@@ -462,8 +465,8 @@ CONTROL selects a read request and a write request independently. Both must be a
 | 2 | GX_READ | DMA read is enabled by GPUREAD_TO_CPU direction, and readback is READY. Consuming the last packed readback word returns readback to IDLE. |
 | 3 | APU_WRITE | APU transfer mode is DMA_WRITE and the transfer FIFO is empty. |
 | 4 | APU_READ | APU transfer mode is DMA_READ and the 16-word transfer FIFO is full. |
-| 5 | IMGDEC_WRITE | IMGDEC is active, not quiescing, has nonzero input words remaining, and has at least `min(input words remaining, 16)` free input-FIFO words. |
-| 6 | IMGDEC_READ | IMGDEC is active, not quiescing, has nonzero output words remaining, and holds at least `min(output words remaining, 16)` output-FIFO words. |
+| 5 | IMGDEC_WRITE | IMGDEC is active, not quiescing, has nonzero input words remaining, and has free compressed-input storage. |
+| 6 | IMGDEC_READ | IMGDEC is active, not quiescing, has unread words in its completed output block. |
 
 In GPU FIFO direction, GX_WRITE requires ingress not stopped, empty DMA ingress, and room in the command FIFO. In CPU_TO_GP0 direction, packet acceptance requires readback IDLE, ingress not stopped, and empty DMA ingress. With image-load words outstanding, it tests command-FIFO space. During polyline payload it is false. Otherwise, no partial fixed packet and an empty FIFO permit acceptance; the remaining case requires an incomplete packet that is neither a polygon nor a line. This packet request is not the CPU's one-word write-ready condition.
 
@@ -560,10 +563,11 @@ is timed by the receiving unit.
 
 ### Blocks are the unit of admission {#sec-dma-blocks-are-the-unit-of-admission}
 
-The two DMA channels share **one admitted block**. They do not have two independently progressing transfer buses. A channel programs a block size of 1–16 words using CONTROL bits 10–13, which contain the block size minus one. Each word is four bytes. The admitted length is
+The two DMA channels share **one admitted block**. They do not have two independently progressing transfer buses. A channel programs a block size of 1–256 words using CONTROL bits 10–17, which contain the block size minus one. Each word is four bytes. The admitted length is
 
 ```text
-admitted_words = min(remaining_word_count, programmed_block_length)
+admitted_words = min(remaining_word_count, programmed_block_length,
+                     available_source_words, available_destination_words)
 ```
 
 A short final block therefore uses its actual length, not the programmed maximum. Source and destination increment are independently enabled; an enabled endpoint advances four bytes per word, and a disabled endpoint repeats its address. Address arithmetic wraps at 32 bits.
@@ -586,22 +590,29 @@ The installed region costs for a span of n words are:
 | RAM | n | 1 |
 | System ROM | n | 0 |
 | Cartridge region | 8n | 4 |
-| I/O | 0 | 0 |
-| Other | 0 | 0 |
+| I/O | n | 0 |
+| Other, including a faulting unmapped access | n | 0 |
 
-Both endpoints begin a new region span at every block admission. Thus each RAM or cartridge endpoint pays setup again in the next block. Within a block, splitting a span because the *opposite* endpoint crosses a boundary does not repeat setup for the continuing endpoint. An endpoint pays setup again when its own mapping span ends, including crossings between cartridge ROM, RAM, and MMIO subregions. A fixed endpoint has one region span for the entire block: repeated accesses to its address do not repeatedly incur setup.
+Both endpoints begin a new region span at each admission. Each RAM or cartridge
+endpoint therefore pays setup again for its next burst. A boundary crossed by
+the opposite endpoint does not repeat setup for an endpoint that continues in
+the same span. Crossing between cartridge ROM, RAM and MMIO subregions begins
+a new cartridge span. A fixed endpoint has one span for the burst.
 
-For each paired span, let R and W include the applicable endpoint setup charges. Its contribution is
+Source reads and destination writes use the shared bus serially. For paired
+span costs R and W, including their applicable setups:
 
 ```text
-Span charge = R + W       if both endpoints are RAM or both are Cartridge
-            = max(R,W)    otherwise
-Block charge = max(1, sum of all span charges)
+Span charge = R + W
+Block charge = sum of span charges
 ```
 
-“Both” refers to region kind, not matching addresses or cartridge slots. System-ROM-to-system-ROM uses the maximum rule, not addition. The one-cycle minimum applies once to the **whole block**, not to each word or each span. Consequently an all-I/O block costs one cycle regardless of its admitted word count. The cartridge charge applies throughout the cartridge aperture, including
-cartridge RAM and MMIO, not only ROM storage. Cartridge-to-cartridge costs add
-even when different socket request selectors choose its source and destination.
+An I/O-to-I/O burst of N words therefore occupies 2N system cycles, not one
+cycle for the entire block. During an admitted burst the CPU executes no
+instructions and does not enter an interrupt handler. Device clocks and their
+scheduled completions continue. An eligible next burst can take the bus before
+the CPU resumes; if no burst is eligible, the CPU can execute while channels
+remain BUSY waiting for requests.
 
 ### Single-channel examples {#sec-dma-single-channel-examples}
 
@@ -611,10 +622,13 @@ Assume uninterrupted request eligibility, no mapping crossings, and no programmi
 |---|---:|---:|---|---|---:|
 | RAM → RAM | 20 | 16 | 16, 4 | (17 + 17) + (5 + 5) | **44** |
 | RAM → RAM | 20 | 4 | 4, 4, 4, 4, 4 | 5 × (5 + 5) | **50** |
-| Cartridge-region ROM → RAM | 20 | 16 | 16, 4 | max(132,17) + max(36,5) | **168** |
-| Cartridge-region ROM → fixed GP0 I/O port | 5 | 16 | 5 | max(44,0) | **44** |
+| Cartridge-region ROM → RAM | 20 | 16 | 16, 4 | (132 + 17) + (36 + 5) | **190** |
+| Cartridge-region ROM → fixed GP0 I/O port | 5 | 16 | 5 | 44 + 5 | **49** |
 
-For RAM copies, a block of n words costs 2n + 2: the two endpoints share the RAM charge additively, and each has one setup charge. Smaller blocks increase repeated setup. In the cartridge examples the source cost dominates the maximum. **System ROM is different:** the corresponding 20-word system-ROM-to-RAM transfer with block size 16 costs 17 + 5 = 22 cycles, not 168.
+For RAM copies, a burst of N words costs 2N + 2. Smaller bursts repeat setup
+more often. A 20-word system-ROM-to-RAM transfer in sixteen-word bursts costs
+(16 + 17) + (4 + 5) = 42 cycles. Image decoding, GPU execution and request
+waits must be budgeted separately from these transport charges.
 
 ### Transfer rates by route {#sec-dma-transfer-rates-by-route}
 
@@ -639,20 +653,21 @@ The table uses decimal millions: Mword/s is 1,000,000 words/s and MB/s is
 | Source → destination | Cycles per 16 words | Mword/s | MB/s |
 |---|---:|---:|---:|
 | RAM → RAM | 34 | 15.938 | 63.753 |
-| System ROM → RAM | 17 | 31.877 | 127.506 |
-| Cartridge ROM → RAM | 132 | 4.105 | 16.421 |
+| System ROM → RAM | 33 | 16.421 | 65.685 |
+| Cartridge ROM → RAM | 149 | 3.637 | 14.548 |
 | Cartridge region → cartridge region | 264 | 2.053 | 8.211 |
-| RAM → fixed I/O | 17 | 31.877 | 127.506 |
-| System ROM → fixed I/O | 16 | 33.869 | 135.475 |
-| Cartridge ROM → fixed I/O | 132 | 4.105 | 16.421 |
-| Fixed I/O → RAM | 17 | 31.877 | 127.506 |
-| Fixed I/O → fixed I/O | 1 | 541.901 | 2167.603 |
+| RAM → fixed I/O | 33 | 16.421 | 65.685 |
+| System ROM → fixed I/O | 32 | 16.934 | 67.738 |
+| Cartridge ROM → fixed I/O | 148 | 3.661 | 14.646 |
+| Fixed I/O → RAM | 33 | 16.421 | 65.685 |
+| Fixed I/O → fixed I/O | 32 | 16.934 | 67.738 |
 
-The table expresses the DMA controller's admitted transfer rates. The all-I/O
-row follows from the one-cycle block minimum. A usable device-to-device route
-also requires both ports to supply and accept its complete block. Use the
-assigned device requests and count only successful accesses as useful payload;
-FORCE by itself supplies no device readiness.
+These are bus-transport rates, not decoder or renderer throughput. Both device
+endpoints must supply or accept the actual burst. GPU write ingress can
+accept up to 256 words, IMGDEC exposes available input space or completed
+output words, and GPUREAD exposes its remaining packed result words. The
+APU's transfer-FIFO request granule and cartridge request granules are sixteen
+words. FORCE supplies no readiness guarantee.
 
 ### Block size, tails and waiting time {#sec-dma-block-size-tails-and-waiting-time}
 
@@ -728,9 +743,9 @@ request eligibility throughout each data transfer:
 
 | Operation | DMA words | Actual blocks | DMA charge |
 |---|---:|---|---:|
-| Upload command + image, RAM → fixed GP0 | 35 | 16, 16, 3 | 17 + 17 + 4 = **38 cycles** |
-| Same upload, cartridge ROM → fixed GP0 | 35 | 16, 16, 3 | 132 + 132 + 28 = **292 cycles** |
-| Ready readback data, fixed GPUREAD → RAM | 32 | 16, 16 | 17 + 17 = **34 cycles** |
+| Upload command + image, RAM → fixed GP0 | 35 | 16, 16, 3 | 33 + 33 + 7 = **73 cycles** |
+| Same upload, cartridge ROM → fixed GP0 | 35 | 16, 16, 3 | 148 + 148 + 31 = **327 cycles** |
+| Ready readback data, fixed GPUREAD → RAM | 32 | 16, 16 | 33 + 33 = **66 cycles** |
 
 The readback row excludes submission of its three-word command and all waiting
 for readiness. The upload rows count command overhead, not just image bytes.
@@ -738,8 +753,8 @@ All three rows describe DMA work, not a fixed interval to completed VRAM writes
 or a displayed result. Request gaps add elapsed time; an unready endpoint cannot
 be made ready by substituting FORCE.
 
-The GPU has a separate sixteen-word DMA ingress and a sixteen-word GP0 FIFO;
-they are not thirty-two interchangeable CPU input slots. A block's final word
+The GPU has a separate 256-word DMA ingress and a sixteen-word GP0 FIFO;
+they are not interchangeable CPU input slots. A block's final word
 releases its captured ingress block for processing. Upload assembly and ordered
 GPU work are separate from DMA completion. The upload/readback command's
 one-tick charge is not a pixel-transfer bandwidth specification. A local VRAM

@@ -112,6 +112,41 @@ void testBusyCpuBudgetAtVblank() {
 		"instruction stepping updates the same budget owner");
 }
 
+void testDmaSharedBusStopsCpu() {
+	using namespace bmsx;
+	test::Blua32TestImage image;
+	image.text.resize(2 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMP), 0, 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0, 0);
+	image.functions.push_back({.firstWord = 0, .wordCount = 2});
+	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
+	const auto system = test::encodeBlua32TestRom(RomImageDomain::System, image);
+	TickInputSource input;
+	Runtime runtime({system.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
+	runtime.boot();
+	auto& memory = runtime.machine.memory;
+	auto& cpu = runtime.machine.cpu;
+	auto& dma = runtime.machine.dmaController;
+	const u32 source = RAM_BASE + 0x20000, target = RAM_BASE + 0x21000;
+	memory.writeMappedU32LE(source, 0x12345678);
+	memory.writeMappedU32LE(IO_DMA0_READ_ADDR, source);
+	memory.writeMappedU32LE(IO_DMA0_WRITE_ADDR, target);
+	memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, 256);
+	memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x0003fc03);
+	memory.writeMappedU32LE(IO_DMA0_TRIGGER, 1);
+	const int depth = static_cast<int>(cpu.activeThread()->frames.size()) - 1;
+	const u32 pc = cpu.readFramePc(depth);
+	require(dma.captureState().scheduledBlockCycles == 514, "both serial RAM sides occupy 257 bus cycles");
+	runtime.frameScheduler.runCyclesToNextLogicalTick(runtime, 513);
+	require(cpu.readFramePc(depth) == pc && dma.cpuBusHeld(), "CPU instructions wait while DMA owns the bus");
+	require(memory.readMappedU32LE(target) == 0, "block data is not published early");
+	runtime.frameScheduler.runCyclesToNextLogicalTick(runtime, 1);
+	require(memory.readMappedU32LE(target) == 0x12345678 && !dma.cpuBusHeld(), "DMA publishes data then releases the bus");
+	require(cpu.readFramePc(depth) == pc, "no instruction is charged to the final DMA cycle");
+	runtime.frameScheduler.runCyclesToNextLogicalTick(runtime, 1);
+	require(cpu.readFramePc(depth) != pc, "CPU instruction execution resumes after the burst");
+}
+
 void testDeviceSettlementRetainsCpuStop() {
 	TickRuntimeFixture fixture;
 	auto& runtime = fixture.runtime;
@@ -1055,6 +1090,7 @@ void testRuntimeResetNotification() {
 }
 
 int main() {
+	testDmaSharedBusStopsCpu();
 	testDeviceSettlementRetainsCpuStop();
 	testDeviceSettlementBackendFence();
 	testBusyCpuBudgetAtVblank();

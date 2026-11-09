@@ -57,7 +57,7 @@ export async function buildStreamingCartridge(directory: string, systemRom: Uint
 		const texture = configuration.palette4
 			? encodePalette4GxTexture(configuration.width, configuration.height, rgba)
 			: encodeDirect16GxTexture(configuration.width, configuration.height, rgba);
-		const compressed = encodeImgDecStream(texture.words, texture.textureWordCount, texture.clutWordCount);
+		const compressed = encodeImgDecStream(texture.words);
 		await writeFile(join(resources, `frame_${frame}.bin`), compressed);
 		textureWords = texture.textureWordCount; clutWords = texture.clutWordCount; wordWidth = texture.wordWidth;
 		frames.push({ frame, inputWords: compressed.length >> 2, decodedWords: textureWords + clutWords,

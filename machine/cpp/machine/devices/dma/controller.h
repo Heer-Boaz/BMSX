@@ -35,9 +35,11 @@ public:
 
 	void setTiming(i64 ramCyclesPerWord, i64 ramBurstSetupCycles, i64 systemRomCyclesPerWord, i64 cartRomCyclesPerWord, i64 cartRomBurstSetupCycles, i64 nowCycles);
 	void setRequestLines(u32 mask, u32 asserted);
+	void setRequestWordCapacity(u32 request, u32 words);
 	bool ownsReadPort(u32 address) const;
 	bool ownsWritePort(u32 address) const;
 	bool hasAdmittedWriteBlock(u32 address) const;
+	bool cpuBusHeld() const { return m_activeChannel != IO_DMA_CHANNEL_COUNT; }
 	void onService(i64 nowCycles);
 	void reset();
 	DmaControllerState captureState() const;
@@ -75,7 +77,7 @@ private:
 	i64 m_ramCyclesPerWord = 1;
 	i64 m_ramBurstSetupCycles = 0;
 	i64 m_systemRomCyclesPerWord = 1;
-	i64 m_cartRomCyclesPerWord = 0;
+	i64 m_cartRomCyclesPerWord = 1;
 	i64 m_cartRomBurstSetupCycles = 0;
 	u32 m_activeChannel = IO_DMA_CHANNEL_COUNT;
 	u32 m_nextChannel = 0;
@@ -86,6 +88,7 @@ private:
 	u32 m_scheduledControlWord = 0;
 	i64 m_serviceDeadline = 0;
 	u32 m_requestLines = 0;
+	std::array<u32, 16> m_requestWordCapacity{};
 	bool m_serviceActive = false;
 	bool m_restorePending = false;
 	bool m_supervisorQuiesceRequested = false;

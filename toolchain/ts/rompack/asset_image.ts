@@ -36,7 +36,7 @@ export function decodeRomAssetImage(
 	const texture = image === undefined ? asset : assets.find(entry => entry.resid === image.gx_atlas_id)!;
 	let payload = cache.get(texture.resid);
 	if (payload === undefined) {
-		payload = decodeImgDecStream(rom, texture.start, texture.end - texture.start).payload;
+		payload = decodeImgDecStream(rom, texture.texturemeta.texture_word_count + texture.texturemeta.clut_word_count, texture.start, texture.end - texture.start);
 		cache.set(texture.resid, payload);
 	}
 	const metadata = texture.texturemeta;

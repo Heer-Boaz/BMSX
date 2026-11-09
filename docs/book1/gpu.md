@@ -11,7 +11,7 @@ drawing area, coordinate offset, texture page, blending and mask controls.
 Commands and their parameters form a stream of 32-bit words written to GP0.
 The GPU assembles complete packets and executes them in order. CPU stores feed
 a sixteen-word command FIFO. DMA supplies the same stream through a separate
-sixteen-word ingress buffer, handing each admitted block to the command FIFO
+256-word ingress buffer, handing each admitted block to the command FIFO
 at block end. Packet framing continues across those block boundaries. GP1 is
 the separate control port for reset, DMA direction, state queries and GPU mode
 settings.
@@ -169,7 +169,7 @@ costs. Drawing, texture lookup and display sampling share local memory.
 | GP0 — `0801023CH` | Write command/input words; read GPUREAD |
 | GP1 — `08010240H` | Write control words; read GPUSTAT, not the last control word |
 | GP0 input FIFO | 16 thirty-two-bit words |
-| Separate DMA ingress | 16 thirty-two-bit words; not another 16 CPU FIFO slots |
+| Separate DMA ingress | 256 thirty-two-bit words; not another 16 CPU FIFO slots |
 | Ordinary programming access | Thirty-two-bit words, four-byte alignment |
 | Input coordinates | Each supplied X and Y is signed eleven-bit: −1024…1023 |
 | Drawing offset | Separate signed eleven-bit X and Y values |
@@ -856,7 +856,7 @@ transfer owning GP0's write port excludes direct CPU writes even if the physical
 GP0 FIFO has room. Do not use the FIFO's free space or GPUSTAT bit 28 as permission
 to interleave CPU words into that DMA-owned stream.
 
-DMA writes first enter a **separate sixteen-word ingress FIFO**, not sixteen
+DMA writes first enter a **separate 256-word ingress FIFO**, not sixteen
 extra CPU FIFO slots. At the end of an admitted DMA block, its words are handed
 to the GP0 command FIFO in order. They continue the current packet or payload,
 subject to command-completion and readback barriers.
@@ -3818,7 +3818,7 @@ These are admitted DMA charges, not end-to-end measurements. They exclude CPU pr
 
 ### Keep completion boundaries separate {#sec-gpu-keep-completion-boundaries-separate}
 
-DMA **DONE** means the channel finished its transfers. GP0 DMA words first enter a separate sixteen-word ingress buffer and pass to the command FIFO at block end. The GPU must still consume the counted A0 payload and complete the upload. Neither channel DONE nor packet acceptance alone establishes command completion.
+DMA **DONE** means the channel finished its transfers. GP0 DMA words first enter a separate 256-word ingress buffer and pass to the command FIFO at block end. The GPU must still consume the counted A0 payload and complete the upload. Neither channel DONE nor packet acceptance alone establishes command completion.
 
 After the readback drain, an ordered GPU marker and GPU idle are polled separately. GPUSTAT bit 28 reports packet acceptance, bit 27 reports pixel **READY**, and bit 26 reports idle; idle excludes executing commands, FIFO contents, incomplete packets, image uploads, open polylines and active readback. GPU and controller acknowledgements remain separate.
 

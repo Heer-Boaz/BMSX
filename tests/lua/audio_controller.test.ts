@@ -552,7 +552,7 @@ function createTransferEdgeHarness(): ReturnType<typeof createAudioControllerHar
 	harness.audio.onService(0);
 	const dmaSource = DYNAMIC_RAM_BASE + 0x300;
 	harness.memory.writeMappedU32LE(dmaSource, 0xc0c0c0c0);
-	harness.scheduler.advanceTo(46);
+	harness.scheduler.advanceTo(45);
 	harness.memory.writeMappedU32LE(IO_APU_TRANSFER_ADDRESS, 0);
 	harness.memory.writeMappedU32LE(IO_APU_TRANSFER_CONTROL, APU_TRANSFER_MODE_DMA_WRITE);
 	harness.memory.writeMappedU32LE(IO_DMA0_READ_ADDR, dmaSource);
@@ -731,14 +731,14 @@ for (const count of [20, 4]) {
 					}
 				}
 			}
-			assert.deepEqual(deadlines, count === 20 ? [512, 529, 1041, 1046] : [512, 517]);
+			assert.deepEqual(deadlines, count === 20 ? [512, 545, 1057, 1066] : [512, 521]);
 			assert.equal(memory.readMappedU32LE(IO_DMA0_STATUS), DMA_STATUS_DONE);
 			assert.equal(memory.readMappedU32LE(IO_APU_STATUS), 0x420);
 			const pending = audio.captureState().sampleTransfer;
 			assert.equal(pending.fifoCount, 12);
 			assert.equal(pending.scheduledWords, 4);
 			const due = scheduler.nowCycles + pending.scheduledCycles;
-			assert.equal(due, count === 20 ? 1174 : 645);
+			assert.equal(due, count === 20 ? 1194 : 649);
 			machine.advanceDevices(due - (stopBeforeDeadline ? 1 : 0) - scheduler.nowCycles);
 			assert.equal(scheduler.hasDueTimer(), !stopBeforeDeadline);
 			// No capture/status read or timer dispatch: CONTROL itself must service due work.
@@ -765,7 +765,7 @@ for (const count of [20, 4]) {
 test('APU transfer FIFO is not consumed by a forced wrong-direction DMA block', () => {
 	const harness = createAudioHarness();
 	harness.dma.setTiming(0, 8, 0, 0, 0, 0);
-	harness.audio.setTiming(APU_TRANSFER_WORDS_PER_SECOND, 0);
+	harness.audio.setTiming(2 * APU_TRANSFER_WORDS_PER_SECOND, 0);
 	const source = DYNAMIC_RAM_BASE + 0x500;
 	const target = DYNAMIC_RAM_BASE + 0x600;
 	for (let index = 0; index < 32; index += 1) {

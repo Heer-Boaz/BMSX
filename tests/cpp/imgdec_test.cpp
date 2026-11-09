@@ -1,612 +1,223 @@
-#include "spec/bmsx/io.h"
-#include "machine/cpu/cpu.h"
-#include "machine/devices/audio/controller.h"
-#include "machine/devices/audio/output.h"
-#include "machine/devices/dma/controller.h"
-#include "machine/devices/geometry/controller.h"
-#include "machine/devices/geometry/contracts.h"
+#include "machine/machine.h"
+#include "machine/devices/input/contracts.h"
+#include "spec/bmsx/model.h"
+#include "spec/bmsx/memory_map.h"
 #include "spec/gx/gp0.h"
 #include "spec/gx/gp1.h"
 #include "spec/gx/pcrtc.h"
-#include "machine/devices/gx/gpu.h"
-#include "machine/devices/gx/gpu_command_buffer.h"
-#include "machine/devices/gx/gpu_pcrtc.h"
-#include "spec/imgdec/registers.h"
-#include "spec/imgdec/stream.h"
-#include "machine/devices/imgdec/controller.h"
-#include "machine/devices/irq/controller.h"
-#include "machine/devices/system/controller.h"
-#include "machine/memory/bus_signals.h"
-#include "spec/bmsx/memory_map.h"
 #include "machine/memory/memory.h"
-#include "spec/bmsx/model.h"
-#include "machine/scheduler/device.h"
+#include "common/endian.h"
 #include "support/cartridge_fixture.h"
 
-#include <array>
-#include <cstdint>
 #include <limits>
 #include <stdexcept>
 #include <vector>
 
+using namespace bmsx;
 namespace {
-
-constexpr bmsx::u32 ImgDecInputDmaControl = 0x00003d41u;
-constexpr bmsx::u32 ImgDecOutputDmaControl = 0x00003c58u;
-
-void require(bool condition, const char* message) {
-	if (!condition) {
-		throw std::runtime_error(message);
+void require(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
+struct Input final : InputControllerInputSource {
+	void sampleInputControllerSnapshot(InputControllerSnapshot&, InputControllerSampleContext) override {}
+	bool supervisorRequestLineHigh() const override { return false; }
+	void applyInputControllerVibrationEffect(i32, f64, f64) override {}
+};
+struct Harness {
+	std::vector<u8> rom;
+	Input input;
+	Memory memory;
+	Machine machine;
+	std::array<u32, DeviceServiceKindCount> services{};
+	Harness(const std::vector<u32>& stream)
+		: rom(stream.size() * 4), memory(MemoryInit{{}, test::cartridgeSlots(rom)}, PSX_MACHINE_SPEC.ramBytes),
+		  machine(memory, input, PSX_MACHINE_SPEC) {
+		for (size_t i = 0; i < stream.size(); ++i) writeLE32(rom.data() + i * 4, stream[i]);
+		machine.scheduler.reset();
+		machine.resetDevices();
+		const u32 address = gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SMODE1_LOW);
+		memory.writeMappedU32LE(address, memory.readIoU32(address) | GX_GPU_PCRTC_SMODE1_SINT);
+		machine.gxGpu.onService(0);
 	}
-}
-
-struct ImgDecHarness {
-	std::array<bmsx::u8, 4096u> cartRom{};
-	bmsx::Memory memory;
-	bmsx::IrqController irq;
-	bmsx::ExecutionAddressSpace executionAddressSpace;
-	bmsx::CPU cpu;
-	bmsx::DeviceScheduler scheduler;
-	bmsx::ApuOutputMixer audioOutput;
-	bmsx::DmaController dma;
-	bmsx::AudioController audio;
-	bmsx::GeometryController geometry;
-	bmsx::GxGpu gpu;
-	bmsx::ImgDecController imgDec;
-	bmsx::SystemController system;
-
-	ImgDecHarness()
-		: memory(
-			bmsx::MemoryInit{ {}, bmsx::test::cartridgeSlots(cartRom) },
-			bmsx::PSX_MACHINE_SPEC.ramBytes)
-		, irq(memory)
-		, executionAddressSpace(memory)
-		, cpu(memory, irq, executionAddressSpace)
-		, scheduler(cpu)
-		, audioOutput()
-		, dma(memory, cpu, irq, scheduler)
-		, audio(memory, audioOutput, dma, irq, scheduler)
-		, geometry(memory, irq, scheduler)
-		, gpu(memory, cpu, irq, scheduler, dma, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes)
-		, imgDec(memory, cpu, irq, scheduler, dma, bmsx::PSX_MACHINE_SPEC.imgDecCyclesPerOutputWord)
-		, system(memory, cpu, scheduler, irq, dma, geometry, gpu, imgDec, audio, bmsx::PSX_MACHINE_SPEC.cpuFreqHz) {
-		memory.cartridgeController().connect(memory, irq, dma);
-		dma.reset();
-		memory.cartridgeController().reset();
-		geometry.reset();
-		gpu.reset();
-		imgDec.reset();
-		audio.reset();
-		system.reset();
-		irq.reset();
-		dma.setTiming(
-			bmsx::PSX_MACHINE_SPEC.dmaRamCyclesPerWord,
-			bmsx::PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
-			bmsx::PSX_MACHINE_SPEC.dmaSystemRomCyclesPerWord,
-			bmsx::PSX_MACHINE_SPEC.dmaCartRomCyclesPerWord,
-			bmsx::PSX_MACHINE_SPEC.dmaCartRomBurstSetupCycles,
-			scheduler.currentNowCycles()
-		);
-		const bmsx::u32 smode1Address = bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_SMODE1_LOW);
-		memory.writeMappedU32LE(smode1Address, memory.readMappedU32LE(smode1Address) | bmsx::GX_GPU_PCRTC_SMODE1_SINT);
-		gpu.onService(0);
+	void pump() {
+		const i64 deadline = machine.scheduler.nextDeadline();
+		require(deadline != std::numeric_limits<i64>::max(), "pipeline retains its next hardware event");
+		if (!machine.scheduler.hasDueTimer()) machine.scheduler.advanceTo(deadline);
+		while (machine.scheduler.hasDueTimer()) {
+			const u8 kind = machine.scheduler.popDueTimer();
+			++services[kind];
+			machine.runDeviceService(kind);
+		}
 	}
-
-	void writeCartWord(bmsx::u32 index, bmsx::u32 word) {
-		const size_t offset = static_cast<size_t>(index) * 4u;
-		cartRom[offset] = static_cast<bmsx::u8>(word);
-		cartRom[offset + 1u] = static_cast<bmsx::u8>(word >> 8u);
-		cartRom[offset + 2u] = static_cast<bmsx::u8>(word >> 16u);
-		cartRom[offset + 3u] = static_cast<bmsx::u8>(word >> 24u);
+	void configure(u32 inputWords, u32 outputWords) {
+		memory.writeMappedU32LE(IO_IMGDEC_INPUT_WORD_COUNT, inputWords);
+		memory.writeMappedU32LE(IO_IMGDEC_OUTPUT_WORD_COUNT, outputWords);
+	}
+	void inputDma() {
+		memory.writeMappedU32LE(IO_DMA0_READ_ADDR, CART_ROM_BASE);
+		memory.writeMappedU32LE(IO_DMA0_WRITE_ADDR, IO_IMGDEC_DATA);
+		memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, static_cast<u32>(rom.size() / 4));
+		memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x0003fd41);
+		memory.writeMappedU32LE(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
+	}
+	void outputDma(u32 count) {
+		memory.writeMappedU32LE(IO_DMA1_READ_ADDR, IO_IMGDEC_DATA);
+		memory.writeMappedU32LE(IO_DMA1_WRITE_ADDR, IO_GX_GPU_GP0);
+		memory.writeMappedU32LE(IO_DMA1_TRANSFER_COUNT, count);
+		memory.writeMappedU32LE(IO_DMA1_CONTROL, 0x0003fc58);
+		memory.writeMappedU32LE(IO_DMA1_TRIGGER, DMA_TRIGGER_START);
+	}
+	void header(u32 destination, u32 size) {
+		machine.gxGpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+		for (u32 word : {0xa0000000u, destination, size}) memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
+	}
+	std::vector<u32> drain() {
+		std::vector<u32> words;
+		for (u32 step = 0; step < 100000 && (memory.readIoU32(IO_IMGDEC_STATUS) & IMGDEC_STATUS_BUSY) != 0; ++step) {
+			if ((memory.readIoU32(IO_IMGDEC_STATUS) & IMGDEC_STATUS_OUTPUT_REQUEST) != 0) words.push_back(memory.readMappedU32LE(IO_IMGDEC_DATA));
+			else pump();
+		}
+		require(memory.readIoU32(IO_IMGDEC_STATUS) == IMGDEC_STATUS_DONE, "raw decoder reaches DONE after draining every output word");
+		return words;
 	}
 };
 
-void armUpload(
-	ImgDecHarness& harness,
-	bmsx::u32 inputWordCount,
-	bmsx::u32 textureWordCount,
-	bmsx::u32 clutWordCount,
-	bmsx::u32 textureDestination,
-	bmsx::u32 textureSize,
-	bmsx::u32 clutDestination
-) {
-	const bmsx::u32 outputWordCount = textureWordCount + 3u
-		+ (clutWordCount == 0u ? 0u : clutWordCount + 3u);
-	harness.memory.writeMappedU32LE(bmsx::IO_IMGDEC_INPUT_WORD_COUNT, inputWordCount);
-	harness.memory.writeMappedU32LE(bmsx::IO_IMGDEC_TEXTURE_DESTINATION, textureDestination);
-	harness.memory.writeMappedU32LE(bmsx::IO_IMGDEC_TEXTURE_SIZE, textureSize);
-	harness.memory.writeMappedU32LE(bmsx::IO_IMGDEC_CLUT_DESTINATION, clutDestination);
-	harness.gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
-	harness.memory.writeMappedU32LE(bmsx::IO_DMA1_READ_ADDR, bmsx::IO_IMGDEC_DATA);
-	harness.memory.writeMappedU32LE(bmsx::IO_DMA1_WRITE_ADDR, bmsx::IO_GX_GPU_GP0);
-	harness.memory.writeMappedU32LE(bmsx::IO_DMA1_TRANSFER_COUNT, outputWordCount);
-	harness.memory.writeMappedU32LE(bmsx::IO_DMA1_CONTROL, ImgDecOutputDmaControl);
-	harness.memory.writeMappedU32LE(bmsx::IO_DMA1_TRIGGER, bmsx::DMA_TRIGGER_START);
-	harness.memory.writeMappedU32LE(bmsx::IO_DMA0_READ_ADDR, bmsx::CART_ROM_BASE);
-	harness.memory.writeMappedU32LE(bmsx::IO_DMA0_WRITE_ADDR, bmsx::IO_IMGDEC_DATA);
-	harness.memory.writeMappedU32LE(bmsx::IO_DMA0_TRANSFER_COUNT, inputWordCount);
-	harness.memory.writeMappedU32LE(bmsx::IO_DMA0_CONTROL, ImgDecInputDmaControl);
-	harness.memory.writeMappedU32LE(bmsx::IO_DMA0_TRIGGER, bmsx::DMA_TRIGGER_START);
+void testBlocksPublishOnlyAtCompletion() {
+	Harness h({});
+	h.configure(2, 273);
+	h.memory.writeMappedU32LE(IO_IMGDEC_CONTROL, 0x80000001u);
+	h.memory.writeMappedU32LE(IO_IMGDEC_DATA, (IMGDEC_TOKEN_KIND_REPEAT << 30) | 272);
+	h.memory.writeMappedU32LE(IO_IMGDEC_DATA, 0xfedcba98);
+	const auto pending = h.machine.imgDecController.captureState();
+	require(pending.controlWord == 0x80000000u, "START retains all uninterpreted control bits as a raw word");
+	require(pending.blockWords.size() == 256 && pending.decodedWordCount == 0 && pending.blockCyclesRemaining == 512, "one full work block has one charged completion edge");
+	h.machine.scheduler.advanceTo(511);
+	require(!h.machine.scheduler.hasDueTimer(), "no per-run or per-sixteen-word decode event");
+	require(h.memory.readMappedU32LE(IO_IMGDEC_DECODED_WORD_COUNT) == 0, "unpublished words do not advance progress");
+	require((h.memory.readIoU32(IO_IMGDEC_STATUS) & IMGDEC_STATUS_OUTPUT_REQUEST) == 0, "unpublished data has no DMA request");
+	h.pump();
+	require(h.memory.readMappedU32LE(IO_IMGDEC_DECODED_WORD_COUNT) == 256, "whole block becomes visible at its deadline");
+	for (u32 i = 0; i < 256; ++i) require(h.memory.readMappedU32LE(IO_IMGDEC_DATA) == 0xfedcba98, "raw block contains no GPU header");
+	require(h.machine.imgDecController.captureState().blockCyclesRemaining == 34, "short final block charges its actual word count");
+	h.pump();
+	for (u32 i = 0; i < 17; ++i) require(h.memory.readMappedU32LE(IO_IMGDEC_DATA) == 0xfedcba98, "last raw block is exact");
+	require(h.memory.readIoU32(IO_IMGDEC_STATUS) == IMGDEC_STATUS_DONE, "DONE follows the final DATA read");
+	require(h.services[DEVICE_SERVICE_IMGDEC] == 2, "273 output words require exactly two decoder completions");
+	require((h.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_IMGDEC) != 0, "completion raises IMGDEC IRQ");
 }
 
-void runNextService(ImgDecHarness& harness) {
-	const bmsx::i64 deadline = harness.scheduler.nextDeadline();
-	require(deadline != std::numeric_limits<bmsx::i64>::max(), "IMGDEC pipeline must retain a service deadline");
-	harness.scheduler.advanceTo(deadline);
-	while (harness.scheduler.hasDueTimer()) {
-		const bmsx::u8 device = harness.scheduler.popDueTimer();
-		switch (device) {
-		case bmsx::DEVICE_SERVICE_DMA:
-			harness.dma.onService(deadline);
-			break;
-		case bmsx::DEVICE_SERVICE_GPU:
-			harness.gpu.onService(deadline);
-			break;
-		case bmsx::DEVICE_SERVICE_IMGDEC:
-			harness.imgDec.onService(deadline);
-			break;
-		case bmsx::DEVICE_SERVICE_GEO:
-			harness.geometry.onService(deadline);
-			break;
-		case bmsx::DEVICE_SERVICE_SYSTEM:
-			harness.system.onService();
-			break;
-		default:
-			throw std::runtime_error("Unexpected device service in IMGDEC test.");
-		}
+void testCpuBuildsHeadersAndDmaSplitsAtAvailableWords() {
+	std::vector<u32> stream{517};
+	for (u32 i = 0; i < 518; ++i) stream.push_back(0x80010001u + i * 0x00010001u);
+	Harness h(stream);
+	h.configure(static_cast<u32>(stream.size()), 518);
+	h.header(0x00200040, 30 | (34 << 16));
+	h.outputDma(510);
+	h.inputDma();
+	h.memory.writeMappedU32LE(IO_IMGDEC_CONTROL, IMGDEC_CONTROL_START);
+	for (u32 i = 0; i < 1000 && h.memory.readIoU32(IO_DMA1_STATUS) != DMA_STATUS_DONE; ++i) h.pump();
+	require(h.memory.readIoU32(IO_DMA1_STATUS) == DMA_STATUS_DONE, "texture subtransfer completes independently of CLUT");
+	require(h.machine.imgDecController.captureState().outputWordsRead == 510, "DMA consumes no CLUT word as texture payload");
+	h.header(0x00400100, 16 | (1 << 16));
+	h.outputDma(8);
+	for (u32 i = 0; i < 1000 && h.memory.readIoU32(IO_IMGDEC_STATUS) != IMGDEC_STATUS_DONE; ++i) h.pump();
+	for (u32 i = 0; i < 1000 && h.machine.gxGpu.readDeviceOutput().commandBuffer.commandCount != 2; ++i) h.pump();
+	require(h.memory.readIoU32(IO_IMGDEC_STATUS) == IMGDEC_STATUS_DONE, "split CLUT transfer drains the final block");
+	const auto& commands = h.machine.gxGpu.readDeviceOutput().commandBuffer;
+	require(commands.commandCount == 2 && commands.commandWordCount[0] == 513 && commands.commandWordCount[1] == 11, "software-supplied headers frame both complete GPU uploads");
+	for (u32 i = 0; i < 518; ++i) {
+		const u32 command = i < 510 ? 0 : 1;
+		const u32 offset = i < 510 ? i : i - 510;
+		require(commands.words[commands.commandWordStart[command] + 3 + offset] == stream[i + 1], "cross-block partial DMA has neither repeated nor dropped words");
 	}
+	require(h.services[DEVICE_SERVICE_IMGDEC] == 3 && h.services[DEVICE_SERVICE_DMA] == 8, "bulk transport stops at input, output-block and programmed count boundaries");
 }
 
-void runUntilImgDecStatus(ImgDecHarness& harness, bmsx::u32 expectedStatus) {
-	for (bmsx::u32 serviceCount = 0u;
-		serviceCount < 2000u && harness.memory.readIoU32(bmsx::IO_IMGDEC_STATUS) != expectedStatus;
-		serviceCount += 1u) {
-		runNextService(harness);
-	}
-	require(harness.memory.readIoU32(bmsx::IO_IMGDEC_STATUS) == expectedStatus, "IMGDEC did not reach the expected terminal status");
-}
-
-void runUntilGpuCommandCount(ImgDecHarness& harness, bmsx::u32 expectedCommandCount) {
-	for (bmsx::u32 serviceCount = 0u;
-		serviceCount < 2000u && harness.gpu.readDeviceOutput().commandBuffer.commandCount != expectedCommandCount;
-		serviceCount += 1u) {
-		runNextService(harness);
-	}
-	require(harness.gpu.readDeviceOutput().commandBuffer.commandCount == expectedCommandCount, "GX did not consume the expected IMGDEC packets");
-}
-
-void testCompressedTextureAndClutUpload() {
-	constexpr bmsx::u32 textureWordCount = 80u;
-	constexpr bmsx::u32 clutWordCount = 8u;
-	constexpr bmsx::u32 payloadWordCount = textureWordCount + clutWordCount;
-	constexpr bmsx::u32 patternWordCount = 16u;
-	constexpr bmsx::u32 backReferenceWordCount = payloadWordCount - patternWordCount;
-	constexpr bmsx::u32 streamWordCount = 3u + 1u + patternWordCount + 1u;
-	std::array<bmsx::u32, payloadWordCount> payload{};
-	ImgDecHarness harness;
-	harness.writeCartWord(0u, bmsx::IMGDEC_STREAM_MAGIC);
-	harness.writeCartWord(1u, textureWordCount);
-	harness.writeCartWord(2u, clutWordCount);
-	harness.writeCartWord(3u, (bmsx::IMGDEC_TOKEN_KIND_LITERAL << bmsx::IMGDEC_TOKEN_KIND_SHIFT) | (patternWordCount - 1u));
-	for (bmsx::u32 index = 0u; index < payloadWordCount; index += 1u) {
-		payload[index] = ((index & (patternWordCount - 1u)) + 1u) * 0x10204081u;
-		if (index < patternWordCount) {
-			harness.writeCartWord(4u + index, payload[index]);
-		}
-	}
-	harness.writeCartWord(
-		4u + patternWordCount,
-		(bmsx::IMGDEC_TOKEN_KIND_BACK_REFERENCE << bmsx::IMGDEC_TOKEN_KIND_SHIFT)
-			| ((backReferenceWordCount - bmsx::IMGDEC_TOKEN_BACK_REFERENCE_MIN_LENGTH)
-				<< bmsx::IMGDEC_TOKEN_BACK_REFERENCE_LENGTH_SHIFT)
-			| (patternWordCount - 1u)
-	);
-	constexpr bmsx::u32 textureDestination = 0x00200040u;
-	constexpr bmsx::u32 textureSize = 160u | (1u << 16u);
-	constexpr bmsx::u32 clutDestination = 0x00400100u;
-	armUpload(harness, streamWordCount, textureWordCount, clutWordCount, textureDestination, textureSize, clutDestination);
-	require(harness.scheduler.nextDeadline() == std::numeric_limits<bmsx::i64>::max(), "both DMA channels arm while IMGDEC DREQ is low");
-	harness.memory.writeMappedU32LE(bmsx::IO_IMGDEC_CONTROL, bmsx::IMGDEC_CONTROL_START);
-	bool cpuReadInterleaved = false;
-	for (bmsx::u32 serviceCount = 0u; serviceCount < 2000u && !cpuReadInterleaved; serviceCount += 1u) {
-		runNextService(harness);
-		const bmsx::DmaControllerState dmaState = harness.dma.captureState();
-		if (dmaState.activeChannel == 1u && dmaState.scheduledReadAddressWord == bmsx::IO_IMGDEC_DATA) {
-			const bmsx::ImgDecControllerState before = harness.imgDec.captureState();
-			harness.memory.readMappedU32LE(bmsx::IO_IMGDEC_DATA);
-			const bmsx::ImgDecControllerState after = harness.imgDec.captureState();
-			require(after.outputWordsRead == before.outputWordsRead, "CPU DATA read cannot advance DMA-owned output");
-			require(after.outputWords == before.outputWords, "CPU DATA read cannot pop the DMA-owned output FIFO");
-			cpuReadInterleaved = true;
-		}
-	}
-	require(cpuReadInterleaved, "test must interleave a CPU DATA read with an admitted output block");
-	runUntilImgDecStatus(harness, bmsx::IMGDEC_STATUS_DONE);
-	runUntilGpuCommandCount(harness, 2u);
-
-	require(harness.memory.readIoU32(bmsx::IO_DMA0_STATUS) == bmsx::DMA_STATUS_DONE, "input DMA completes");
-	require(harness.memory.readIoU32(bmsx::IO_DMA1_STATUS) == bmsx::DMA_STATUS_DONE, "output DMA completes");
-	require((harness.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & (bmsx::IRQ_DMA0_DONE | bmsx::IRQ_DMA1_DONE | bmsx::IRQ_IMGDEC))
-		== (bmsx::IRQ_DMA0_DONE | bmsx::IRQ_DMA1_DONE | bmsx::IRQ_IMGDEC), "pipeline raises both DMA IRQs and IMGDEC IRQ");
-	const bmsx::GxGpuCommandBuffer& commands = harness.gpu.readDeviceOutput().commandBuffer;
-	require(commands.commandKind[0] == bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, "texture uses the normal GP0 upload command");
-	require(commands.commandKind[1] == bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, "CLUT uses the normal GP0 upload command");
-	require(commands.words[commands.commandWordStart[0] + 1u] == textureDestination, "texture destination reaches GP0 unchanged");
-	require(commands.words[commands.commandWordStart[0] + 2u] == textureSize, "texture dimensions reach GP0 unchanged");
-	for (bmsx::u32 index = 0u; index < textureWordCount; index += 1u) {
-		require(commands.words[commands.commandWordStart[0] + 3u + index] == payload[index], "texture payload reaches GP0 unchanged");
-	}
-	require(commands.words[commands.commandWordStart[1] + 1u] == clutDestination, "CLUT destination reaches GP0 unchanged");
-	require(commands.words[commands.commandWordStart[1] + 2u] == (16u | (1u << 16u)), "CLUT dimensions use one sixteen-word row");
-	for (bmsx::u32 index = 0u; index < clutWordCount; index += 1u) {
-		require(commands.words[commands.commandWordStart[1] + 3u + index] == payload[textureWordCount + index], "CLUT payload reaches GP0 unchanged");
-	}
-}
-
-void testSupervisorPausesImgDecBetweenPackets() {
-	constexpr bmsx::u32 textureWordCount = 13u;
-	constexpr bmsx::u32 clutWordCount = 8u;
-	constexpr bmsx::u32 payloadWordCount = textureWordCount + clutWordCount;
-	constexpr bmsx::u32 streamWordCount = 4u;
-	ImgDecHarness harness;
-	harness.writeCartWord(0u, bmsx::IMGDEC_STREAM_MAGIC);
-	harness.writeCartWord(1u, textureWordCount);
-	harness.writeCartWord(2u, clutWordCount);
-	harness.writeCartWord(3u, (bmsx::IMGDEC_TOKEN_KIND_ZERO << bmsx::IMGDEC_TOKEN_KIND_SHIFT) | (payloadWordCount - 1u));
-	armUpload(harness, streamWordCount, textureWordCount, clutWordCount, 0u, 26u | (1u << 16u), 0x00000100u);
-	harness.memory.writeMappedU32LE(bmsx::IO_IMGDEC_CONTROL, bmsx::IMGDEC_CONTROL_START);
-
-	bool betweenPackets = false;
-	for (bmsx::u32 serviceCount = 0u; serviceCount < 2000u && !betweenPackets; serviceCount += 1u) {
-		runNextService(harness);
-		const bmsx::DmaControllerState dmaState = harness.dma.captureState();
-		const bmsx::GxGpuState gpuState = harness.gpu.captureState();
-		betweenPackets = harness.gpu.readDeviceOutput().commandBuffer.commandCount == 1u
-			&& dmaState.activeChannel == bmsx::IO_DMA_CHANNEL_COUNT
-			&& gpuState.gp0IngressPhase == bmsx::GX_GPU_GP0_INGRESS_COMMAND
-			&& (harness.memory.readIoU32(bmsx::IO_IMGDEC_STATUS) & bmsx::IMGDEC_STATUS_BUSY) != 0u
-			&& (harness.memory.readIoU32(bmsx::IO_DMA1_STATUS) & bmsx::DMA_STATUS_BUSY) != 0u;
-	}
-	require(betweenPackets, "test must reach the DMA gap between texture and CLUT packets");
-
-	harness.system.requestSupervisorLineEdge();
-	for (bmsx::u32 serviceCount = 0u;
-		serviceCount < 2000u
-			&& harness.system.captureState().supervisorPhase != bmsx::SYSTEM_SUPERVISOR_PHASE_GPU_QUIESCE;
-		serviceCount += 1u) {
-		runNextService(harness);
-	}
-	require(harness.system.captureState().supervisorPhase == bmsx::SYSTEM_SUPERVISOR_PHASE_GPU_QUIESCE, "supervisor entry reaches the GPU fence after pausing IMGDEC");
-	require((harness.memory.readIoU32(bmsx::IO_IMGDEC_STATUS) & bmsx::IMGDEC_STATUS_BUSY) != 0u, "the paused IMGDEC stream remains active");
-	require(harness.memory.readIoU32(bmsx::IO_DMA1_STATUS) == bmsx::DMA_STATUS_BUSY, "the paused output DMA remains armed");
-	require(harness.gpu.readDeviceOutput().commandBuffer.commandCount == 1u, "GX receives only the completed packet before its fence closes");
-	const bmsx::ImgDecControllerState pausedImgDec = harness.imgDec.captureState();
-	require(pausedImgDec.supervisorQuiesceRequested, "IMGDEC retains its pause latch");
-	require(pausedImgDec.scheduledDecodeWords == 0u, "IMGDEC pauses at a completed decode batch boundary");
-
-	for (bmsx::u32 serviceCount = 0u;
-		serviceCount < 2000u
-			&& harness.gpu.readDeviceOutput().commandBuffer.executedCommandCount
-				!= harness.gpu.readDeviceOutput().commandBuffer.commandCount;
-		serviceCount += 1u) {
-		runNextService(harness);
-	}
-	harness.gpu.presentReadyFrameOnVblankEdge();
-	harness.gpu.retirePresentedCommands();
-	for (bmsx::u32 serviceCount = 0u;
-		serviceCount < 2000u
-			&& harness.system.captureState().supervisorPhase != bmsx::SYSTEM_SUPERVISOR_PHASE_ENTRY_VECTOR;
-		serviceCount += 1u) {
-		runNextService(harness);
-	}
-	require(harness.system.captureState().supervisorPhase == bmsx::SYSTEM_SUPERVISOR_PHASE_ENTRY_VECTOR, "the completed GPU fence raises the supervisor vector");
-	const bmsx::ImgDecControllerState vectorImgDec = harness.imgDec.captureState();
-	require(vectorImgDec.inputWordsReceived == pausedImgDec.inputWordsReceived, "IMGDEC input position stays frozen through supervisor vectoring");
-	require(vectorImgDec.decodedWordCount == pausedImgDec.decodedWordCount, "IMGDEC decode position stays frozen through supervisor vectoring");
-	require(vectorImgDec.outputWordsRead == pausedImgDec.outputWordsRead, "IMGDEC output position stays frozen through supervisor vectoring");
-	require(vectorImgDec.inputWords == pausedImgDec.inputWords, "IMGDEC input FIFO stays frozen through supervisor vectoring");
-	require(vectorImgDec.outputWords == pausedImgDec.outputWords, "IMGDEC output FIFO stays frozen through supervisor vectoring");
-	require(vectorImgDec.historyWords == pausedImgDec.historyWords, "IMGDEC history stays frozen through supervisor vectoring");
-}
-
-void testPausedImgDecResumesExactStream() {
-	constexpr bmsx::u32 textureWordCount = 24u;
-	constexpr std::array<bmsx::u32, 4> streamWords{
-		bmsx::IMGDEC_STREAM_MAGIC,
-		textureWordCount,
-		0u,
-		(bmsx::IMGDEC_TOKEN_KIND_ZERO << bmsx::IMGDEC_TOKEN_KIND_SHIFT) | (textureWordCount - 1u),
-	};
-	ImgDecHarness harness;
-	harness.memory.writeMappedU32LE(bmsx::IO_IMGDEC_INPUT_WORD_COUNT, static_cast<bmsx::u32>(streamWords.size()));
-	harness.memory.writeMappedU32LE(bmsx::IO_IMGDEC_TEXTURE_DESTINATION, 0x00200040u);
-	harness.memory.writeMappedU32LE(bmsx::IO_IMGDEC_TEXTURE_SIZE, 48u | (1u << 16u));
-	harness.memory.writeMappedU32LE(bmsx::IO_IMGDEC_CLUT_DESTINATION, 0u);
-	harness.memory.writeMappedU32LE(bmsx::IO_IMGDEC_CONTROL, bmsx::IMGDEC_CONTROL_START);
-	for (size_t index = 0u; index < streamWords.size(); index += 1u) {
-		const bmsx::MappedBusSignals signals = bmsx::MAPPED_BUS_MASTER_DMA
-			| (index + 1u == streamWords.size() ? bmsx::MAPPED_BUS_DMA_BLOCK_END : 0u);
-		harness.memory.writeMappedDmaU32LE(bmsx::IO_IMGDEC_DATA, streamWords[index], signals);
-	}
-	require(harness.imgDec.captureState().scheduledDecodeWords != 0u, "the stream has an admitted decode batch before pause");
-
-	harness.imgDec.beginSupervisorQuiesce();
-	for (bmsx::u32 serviceCount = 0u; serviceCount < 10u && !harness.imgDec.supervisorQuiescent(); serviceCount += 1u) {
-		runNextService(harness);
-	}
-	const bmsx::ImgDecControllerState paused = harness.imgDec.captureState();
-	require(harness.imgDec.supervisorQuiescent(), "IMGDEC reaches a finite pause boundary");
-	require((paused.statusWord & bmsx::IMGDEC_STATUS_BUSY) != 0u, "pause preserves the active stream");
-	require(paused.scheduledDecodeWords == 0u, "pause completes only the admitted batch");
-	require(paused.outputWords == std::vector<bmsx::u32>{0xa0000000u, 0x00200040u, 48u | (1u << 16u)}, "pause preserves the first native GP0 header");
-
-	harness.imgDec.leaveSupervisorContext();
-	std::vector<bmsx::u32> outputWords;
-	for (bmsx::u32 serviceCount = 0u;
-		serviceCount < 100u && harness.memory.readIoU32(bmsx::IO_IMGDEC_STATUS) != bmsx::IMGDEC_STATUS_DONE;
-		serviceCount += 1u) {
-		if (!harness.imgDec.captureState().outputWords.empty()) {
-			outputWords.push_back(harness.memory.readMappedU32LE(bmsx::IO_IMGDEC_DATA));
-		} else {
-			runNextService(harness);
-		}
-	}
-	require(harness.memory.readIoU32(bmsx::IO_IMGDEC_STATUS) == bmsx::IMGDEC_STATUS_DONE, "resumed IMGDEC stream completes");
-	require(outputWords.size() == textureWordCount + 3u, "resumed IMGDEC stream keeps its complete word count");
-	require(outputWords[0] == 0xa0000000u && outputWords[1] == 0x00200040u && outputWords[2] == (48u | (1u << 16u)), "resumed IMGDEC stream keeps its GP0 header");
-	for (size_t index = 3u; index < outputWords.size(); index += 1u) {
-		require(outputWords[index] == 0u, "resumed IMGDEC stream keeps its zero-run payload");
-	}
-}
-
-void testSupervisorControlGatesRejectDmaWrites() {
-	ImgDecHarness harness;
-	harness.memory.writeMappedU32LE(bmsx::IO_IMGDEC_INPUT_WORD_COUNT, 7u);
-	const bmsx::u32 gp1Word = harness.gpu.captureState().gp1Word;
-	const bmsx::GeometryControllerState geometryState = harness.geometry.captureState();
-	const bmsx::MappedBusSignals busSignals = bmsx::MAPPED_BUS_MASTER_DMA | bmsx::MAPPED_BUS_DMA_BLOCK_END;
-	harness.gpu.beginSupervisorControlQuiesce();
-	harness.imgDec.beginSupervisorQuiesce();
-	harness.geometry.beginSupervisorQuiesce();
-
-	harness.memory.writeMappedDmaU32LE(
-		bmsx::IO_GX_GPU_GP1,
-		(bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_CPU_TO_GP0,
-		busSignals
-	);
-	harness.memory.writeMappedDmaU32LE(bmsx::IO_IMGDEC_INPUT_WORD_COUNT, 99u, busSignals);
-	harness.memory.writeMappedDmaU32LE(bmsx::IO_IMGDEC_CONTROL, bmsx::IMGDEC_CONTROL_START, busSignals);
-	harness.memory.writeMappedDmaU32LE(bmsx::IO_GEO_CMD, bmsx::IO_CMD_GEO_XFORM2_BATCH, busSignals);
-
-	require(harness.gpu.captureState().gp1Word == gp1Word, "closed GP1 does not latch a DMA command");
-	require(harness.memory.readIoU32(bmsx::IO_IMGDEC_INPUT_WORD_COUNT) == 7u, "closed IMGDEC config keeps its raw word");
-	require(harness.memory.readIoU32(bmsx::IO_IMGDEC_CONTROL) == 0u, "closed IMGDEC START does not latch");
-	const bmsx::GeometryControllerState closedGeometryState = harness.geometry.captureState();
-	require(closedGeometryState.phase == geometryState.phase, "closed geometry doorbell does not start a job");
-	require(closedGeometryState.registerWords == geometryState.registerWords, "closed geometry doorbell does not enter the registerfile");
-}
-
-void testForcedDmaPresentsWordsToFullInputFifo() {
-	ImgDecHarness harness;
-	for (bmsx::u32 index = 0u; index <= bmsx::IMGDEC_INPUT_FIFO_WORD_CAPACITY; index += 1u) {
-		const bmsx::MappedBusSignals busSignals = bmsx::MAPPED_BUS_MASTER_DMA
-			| (index == bmsx::IMGDEC_INPUT_FIFO_WORD_CAPACITY ? bmsx::MAPPED_BUS_DMA_BLOCK_END : 0u);
-		harness.memory.writeMappedDmaU32LE(bmsx::IO_IMGDEC_DATA, index + 1u, busSignals);
-	}
-
-	const bmsx::ImgDecControllerState state = harness.imgDec.captureState();
-	require(state.inputWordsReceived == bmsx::IMGDEC_INPUT_FIFO_WORD_CAPACITY + 1u, "forced DMA advances the physical input counter");
-	require(state.inputWords.size() == bmsx::IMGDEC_INPUT_FIFO_WORD_CAPACITY, "the full FIFO drops the extra presented word");
-	require(state.inputWords.back() == bmsx::IMGDEC_INPUT_FIFO_WORD_CAPACITY, "the full FIFO retains its last accepted word");
-}
-
-void testFormatFaultLeavesAdmittedGp0Block() {
-	constexpr bmsx::u32 textureWordCount = 24u;
-	ImgDecHarness harness;
-	harness.writeCartWord(0u, bmsx::IMGDEC_STREAM_MAGIC);
-	harness.writeCartWord(1u, textureWordCount);
-	harness.writeCartWord(2u, 0u);
-	harness.writeCartWord(3u, (bmsx::IMGDEC_TOKEN_KIND_REPEAT << bmsx::IMGDEC_TOKEN_KIND_SHIFT) | 19u);
-	harness.writeCartWord(4u, 0x12345678u);
-	harness.writeCartWord(5u, (bmsx::IMGDEC_TOKEN_KIND_BACK_REFERENCE << bmsx::IMGDEC_TOKEN_KIND_SHIFT) | 20u);
-	armUpload(harness, 6u, textureWordCount, 0u, 0u, 48u | (1u << 16u), 0u);
-	harness.memory.writeMappedU32LE(bmsx::IO_IMGDEC_CONTROL, bmsx::IMGDEC_CONTROL_START);
-	runUntilImgDecStatus(harness, bmsx::IMGDEC_STATUS_FORMAT_FAULT);
-
-	require(harness.memory.readIoU32(bmsx::IO_DMA0_STATUS) == bmsx::DMA_STATUS_DONE, "faulting stream input DMA completes");
-	require(harness.memory.readIoU32(bmsx::IO_DMA1_STATUS) == bmsx::DMA_STATUS_BUSY, "faulting stream leaves output DMA armed");
-	require(harness.memory.readIoU32(bmsx::IO_DMA1_TRANSFER_COUNT) == 11u, "the admitted GP0 block remains committed");
-	require(!harness.memory.mappedWriteReady(bmsx::IO_GX_GPU_GP0), "the armed output channel retains GP0 ownership");
-	const bmsx::GxGpuState gpuState = harness.gpu.captureState();
-	require(gpuState.gp0IngressPhase == bmsx::GX_GPU_GP0_INGRESS_IMAGE_PAYLOAD, "GX retains the partial native packet");
-	require(gpuState.gp0IngressWordsRemaining == 11u, "GX retains the exact partial payload position");
-	require(harness.gpu.readDeviceOutput().commandBuffer.commandCount == 0u, "GX does not publish an incomplete command");
-	require((harness.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_IMGDEC) != 0u, "format fault raises IMGDEC IRQ");
-}
-
-void testActivePipelineRestore() {
-	constexpr bmsx::u32 textureWordCount = 128u;
-	constexpr bmsx::u32 streamWordCount = 3u + 1u + textureWordCount;
-	ImgDecHarness harness;
-	harness.writeCartWord(0u, bmsx::IMGDEC_STREAM_MAGIC);
-	harness.writeCartWord(1u, textureWordCount);
-	harness.writeCartWord(2u, 0u);
-	harness.writeCartWord(3u, (bmsx::IMGDEC_TOKEN_KIND_LITERAL << bmsx::IMGDEC_TOKEN_KIND_SHIFT) | (textureWordCount - 1u));
-	for (bmsx::u32 index = 0u; index < textureWordCount; index += 1u) {
-		harness.writeCartWord(4u + index, (index + 7u) * 0x045d9f3bu);
-	}
-	armUpload(harness, streamWordCount, textureWordCount, 0u, 0x00010020u, 256u | (1u << 16u), 0u);
-	harness.memory.writeMappedU32LE(bmsx::IO_IMGDEC_CONTROL, bmsx::IMGDEC_CONTROL_START);
-
-	bmsx::DmaControllerState dmaState;
-	bmsx::GxGpuState gpuState;
-	bmsx::ImgDecControllerState imgDecState;
-	bmsx::IrqControllerState irqState;
-	bool snapshotCaptured = false;
-	for (bmsx::u32 serviceCount = 0u; serviceCount < 2000u && !snapshotCaptured; serviceCount += 1u) {
-		runNextService(harness);
-		const bmsx::ImgDecControllerState progress = harness.imgDec.captureState();
-		if (progress.outputWordsRead != 0u && progress.outputWordsRead < textureWordCount + 3u) {
-			gpuState = harness.gpu.captureState();
-			dmaState = harness.dma.captureState();
-			irqState = harness.irq.captureState();
-			imgDecState = harness.imgDec.captureState();
-			snapshotCaptured = true;
-		}
-	}
-	require(snapshotCaptured, "test must capture a live bidirectional IMGDEC pipeline");
-	require(dmaState.channels[0].statusWord == bmsx::DMA_STATUS_BUSY, "snapshot retains input DMA");
-	require(dmaState.channels[1].statusWord == bmsx::DMA_STATUS_BUSY, "snapshot retains output DMA");
-	runUntilImgDecStatus(harness, bmsx::IMGDEC_STATUS_DONE);
-	runUntilGpuCommandCount(harness, 1u);
-	const bmsx::GxGpuCommandBuffer& firstCommands = harness.gpu.readDeviceOutput().commandBuffer;
-	const bmsx::u32 firstStart = firstCommands.commandWordStart[0];
-	const std::vector<bmsx::u32> firstWords(
-		firstCommands.words.begin() + firstStart,
-		firstCommands.words.begin() + firstStart + firstCommands.commandWordCount[0]
-	);
-
-	harness.dma.restoreState(dmaState, harness.scheduler.currentNowCycles());
-	harness.irq.restoreState(irqState);
-	harness.gpu.restoreState(gpuState);
-	harness.imgDec.restoreState(imgDecState);
-	harness.dma.postLoad();
-	runUntilImgDecStatus(harness, bmsx::IMGDEC_STATUS_DONE);
-	runUntilGpuCommandCount(harness, 1u);
-	const bmsx::GxGpuCommandBuffer& restoredCommands = harness.gpu.readDeviceOutput().commandBuffer;
-	const bmsx::u32 restoredStart = restoredCommands.commandWordStart[0];
-	const std::vector<bmsx::u32> restoredWords(
-		restoredCommands.words.begin() + restoredStart,
-		restoredCommands.words.begin() + restoredStart + restoredCommands.commandWordCount[0]
-	);
-	require(restoredWords == firstWords, "restored pipeline emits the identical native GP0 packet");
-}
-
-void testDmaPrefixMatchesScalarDatapathAtEveryBlockBoundary() {
-	using namespace bmsx;
-	for (u32 mode = 0u; mode < 8u; ++mode) for (u32 count : {1u, 2u, 7u, 16u}) {
-		ImgDecHarness scalar, prefix;
-		u32 source = DYNAMIC_RAM_BASE + 0x1000u, target = IO_IMGDEC_DATA, step = IO_WORD_SIZE;
-		if (mode == 1u) source = CART_ROM_BASE;
-		if (mode == 2u || mode == 3u || mode == 4u) source = IO_IMGDEC_DATA, step = 0u;
-		if (mode == 2u || mode == 4u || mode == 5u) target = IO_GX_GPU_GP0;
-		if (mode == 5u) step = 0u;
-		if (mode == 6u) source = RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 8u;
-		if (mode == 7u) source = CART_ROM_BASE + 4092u;
-		for (ImgDecHarness* h : {&scalar, &prefix}) {
-			for (u32 n = 0u; n < 16u; ++n) {
-				h->memory.writeMappedU32LE(DYNAMIC_RAM_BASE + 0x1000u + n * 4u, 0u);
-				h->writeCartWord(n, 0x137b0000u + n);
-			}
-			auto state = h->imgDec.captureState();
-			if (mode == 0u || mode == 1u) {
-				state.inputWords.assign(IMGDEC_INPUT_FIFO_WORD_CAPACITY - 1u, 0x02460000u);
-				state.inputWordsReceived = 0xfffffff9u;
-			}
-			if (mode == 3u) {
-				// The last read must see earlier input writes before the last write.
-				state.statusWord = IMGDEC_STATUS_BUSY;
-				state.inputWordCountWord = 16u;
-				state.outputWords = {IMGDEC_STREAM_MAGIC, 12u, 0u, 11u};
-				for (u32 n = 0u; n < 12u; ++n) state.outputWords.push_back(0x81230000u + n);
-			}
-			if (mode == 4u) state.outputWords = {0u, 0u, 0u};
-			h->imgDec.restoreState(state);
-			if (mode == 2u) h->memory.writeIoU32(IO_IMGDEC_DATA, 0x13572468u);
-			if (mode == 4u) {
-				auto gpu = h->gpu.captureState(); gpu.supervisorIngressStopped = true;
-				h->gpu.restoreState(gpu);
-				h->memory.writeIoU32(IO_GX_GPU_GP0, 0x24681357u);
-			}
-		}
-		for (u32 n = 0u; n < count; ++n) {
-			const MappedBusSignals signals = MAPPED_BUS_MASTER_DMA | (n + 1u == count ? MAPPED_BUS_DMA_BLOCK_END : 0u);
-			const u32 word = scalar.memory.readMappedDmaU32LE(source + n * step, signals);
-			scalar.memory.writeMappedDmaU32LE(target, word, signals);
-		}
-		prefix.memory.transferDmaBlock(source, target, count, step, 0u, MAPPED_BUS_MASTER_DMA, MAPPED_BUS_MASTER_DMA);
-		const auto a = scalar.imgDec.captureState(), b = prefix.imgDec.captureState();
-		require(a.inputWords == b.inputWords && a.outputWords == b.outputWords && a.historyWords == b.historyWords, "prefix preserves all IMGDEC FIFO/history words");
-		require(a.dataWord == b.dataWord && a.inputWordsReceived == b.inputWordsReceived && a.outputWordsRead == b.outputWordsRead, "prefix preserves latch, underflow, overflow and wrapping counters");
-		require(a.statusWord == b.statusWord && a.decodePhase == b.decodePhase && a.outputStage == b.outputStage && a.scheduledDecodeWords == b.scheduledDecodeWords && a.scheduledDecodeCycles == b.scheduledDecodeCycles, "last read/write preserves decoder and completion scheduling");
-		if (mode == 3u && count == 16u) require(b.scheduledDecodeWords != 0u, "final read observes earlier input writes in the same bidirectional DATA port");
-		const auto ga = scalar.gpu.captureState(), gb = prefix.gpu.captureState();
-		require(ga.gp0Word == gb.gp0Word && ga.statusWord == gb.statusWord && ga.gp0CommandWords == gb.gp0CommandWords && ga.gp0FifoWords == gb.gp0FifoWords && ga.gp0DmaIngressWords == gb.gp0DmaIngressWords, "prefix preserves GP0 latch, FIFO and final-word processing, including stopped ingress");
-		for (u32 address : {IO_IMGDEC_DATA, IO_IMGDEC_STATUS, IO_GX_GPU_GP0, IO_IRQ_FLAGS}) require(scalar.memory.readIoU32(address) == prefix.memory.readIoU32(address), "prefix preserves visible IO latches and IRQ flags");
-		require(scalar.memory.readBusFaultSequence() == prefix.memory.readBusFaultSequence() && scalar.memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == prefix.memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), "partial source ranges retain every scalar fault");
-		require(scalar.scheduler.nextDeadline() == prefix.scheduler.nextDeadline(), "prefix preserves the next device deadline");
-	}
-}
-
-void testPayloadRunsCrossHistoryRingAndKeepExactWords() {
-	using namespace bmsx;
-	constexpr u32 prefix = 2u * IMGDEC_HISTORY_WORD_CAPACITY - 5u;
-	constexpr u32 run = 33u;
-	constexpr u32 words = prefix + run + 4u;
-	for (u32 mode = 0u; mode < 7u; ++mode) {
-		ImgDecHarness harness;
-		std::vector<u32> stream{IMGDEC_STREAM_MAGIC, words, 0u,
-			(IMGDEC_TOKEN_KIND_REPEAT << IMGDEC_TOKEN_KIND_SHIFT) | (prefix - 17u), 0x7e813579u,
-			(IMGDEC_TOKEN_KIND_LITERAL << IMGDEC_TOKEN_KIND_SHIFT) | 15u};
-		std::vector<u32> expected(prefix - 16u, 0x7e813579u);
-		for (u32 index = 0u; index < 16u; ++index) {
-			const u32 word = 0x80010001u + index * 0x01010101u;
-			stream.push_back(word);
-			expected.push_back(word);
-		}
-		if (mode == 0u) {
-			stream.push_back((IMGDEC_TOKEN_KIND_LITERAL << IMGDEC_TOKEN_KIND_SHIFT) | (run - 1u));
-			for (u32 index = 0u; index < run; ++index) {
-				const u32 word = 0xfedc0000u + index;
-				stream.push_back(word);
-				expected.push_back(word);
-			}
-		} else if (mode < 3u) {
-			const u32 kind = mode == 1u ? IMGDEC_TOKEN_KIND_REPEAT : IMGDEC_TOKEN_KIND_ZERO;
-			const u32 word = mode == 1u ? 0xf000ffffu : 0u;
-			stream.push_back((kind << IMGDEC_TOKEN_KIND_SHIFT) | (run - 1u));
-			if (mode == 1u) stream.push_back(word);
+void testHistoryWrapAndAllRunKinds() {
+	constexpr u32 prefix = 8187, run = 333;
+	for (u32 mode = 0; mode < 7; ++mode) {
+		std::vector<u32> stream{(IMGDEC_TOKEN_KIND_REPEAT << 30) | (prefix - 17), 0x7e813579, 15};
+		std::vector<u32> expected(prefix - 16, 0x7e813579);
+		for (u32 i = 0; i < 16; ++i) { stream.push_back(0x80010001 + i * 0x01010101); expected.push_back(stream.back()); }
+		if (mode == 0) {
+			stream.push_back(run - 1);
+			for (u32 i = 0; i < run; ++i) { stream.push_back(0xfedc0000 + i); expected.push_back(stream.back()); }
+		} else if (mode < 3) {
+			const u32 word = mode == 1 ? 0xf000ffff : 0;
+			stream.push_back(((mode == 1 ? IMGDEC_TOKEN_KIND_REPEAT : IMGDEC_TOKEN_KIND_ZERO) << 30) | (run - 1));
+			if (mode == 1) stream.push_back(word);
 			expected.insert(expected.end(), run, word);
 		} else {
-			const u32 distance = std::array<u32, 4>{1u, 3u, 16u, IMGDEC_HISTORY_WORD_CAPACITY}[mode - 3u];
-			stream.push_back((IMGDEC_TOKEN_KIND_BACK_REFERENCE << IMGDEC_TOKEN_KIND_SHIFT)
-				| ((run - IMGDEC_TOKEN_BACK_REFERENCE_MIN_LENGTH) << IMGDEC_TOKEN_BACK_REFERENCE_LENGTH_SHIFT)
-				| (distance - 1u));
-			for (u32 index = 0u; index < run; ++index) expected.push_back(expected[expected.size() - distance]);
+			const u32 distance = std::array<u32, 4>{1, 3, 16, 4096}[mode - 3];
+			stream.push_back((IMGDEC_TOKEN_KIND_BACK_REFERENCE << 30) | ((run - 3) << 12) | (distance - 1));
+			for (u32 i = 0; i < run; ++i) expected.push_back(expected[expected.size() - distance]);
 		}
-		stream.push_back((IMGDEC_TOKEN_KIND_LITERAL << IMGDEC_TOKEN_KIND_SHIFT) | 3u);
-		for (u32 word : {0xffffffffu, 0u, 0x8001ffffu, 0x01234567u}) {
-			stream.push_back(word);
-			expected.push_back(word);
-		}
-		for (u32 index = 0u; index < stream.size(); ++index) harness.writeCartWord(index, stream[index]);
-		armUpload(harness, static_cast<u32>(stream.size()), words, 0u, 0u, 64u | (257u << 16u), 0u);
-		harness.memory.writeMappedU32LE(IO_IMGDEC_CONTROL, IMGDEC_CONTROL_START);
-		runUntilImgDecStatus(harness, IMGDEC_STATUS_DONE);
-		runUntilGpuCommandCount(harness, 1u);
-		const auto state = harness.imgDec.captureState();
-		require(state.decodedWordCount == words, "history wrapping retains decoded word count");
-		require(state.historyWords == std::vector<u32>(expected.end() - IMGDEC_HISTORY_WORD_CAPACITY, expected.end()),
-			"every payload phase retains the chronological full history after ring wrap");
-		const auto& commands = harness.gpu.readDeviceOutput().commandBuffer;
-		require(commands.commandWordCount[0] == words + 3u, "wrapped decode reaches GP0 without lost words");
-		const u32 first = commands.commandWordStart[0] + 3u;
-		for (u32 index = 0u; index < words; ++index) require(commands.words[first + index] == expected[index],
-			"literal/repeat/zero and overlapping/max-distance backreferences retain every raw word");
+		stream.push_back(3);
+		for (u32 word : {0xffffffffu, 0u, 0x8001ffffu, 0x01234567u}) { stream.push_back(word); expected.push_back(word); }
+		Harness h(stream);
+		h.configure(static_cast<u32>(stream.size()), static_cast<u32>(expected.size()));
+		h.inputDma();
+		h.memory.writeMappedU32LE(IO_IMGDEC_CONTROL, IMGDEC_CONTROL_START);
+		require(h.drain() == expected, "all token kinds remain exact across output blocks and history wrap");
+		require(h.machine.imgDecController.captureState().historyWords == std::vector<u32>(expected.end() - 4096, expected.end()), "retained history is chronological and exact");
 	}
 }
 
+void testRestoreAndQuiesce() {
+	Harness h({});
+	h.configure(301, 300);
+	h.memory.writeMappedU32LE(IO_IMGDEC_CONTROL, IMGDEC_CONTROL_START);
+	h.memory.writeMappedU32LE(IO_IMGDEC_DATA, 299);
+	h.memory.writeMappedU32LE(IO_IMGDEC_DATA, 0x12345678);
+	const auto partial = h.machine.imgDecController.captureState();
+	require(partial.blockWords.size() == 1 && partial.decodedWordCount == 0, "partial input has private prepared data without a timer");
+	h.machine.imgDecController.beginSupervisorQuiesce();
+	require(h.machine.imgDecController.supervisorQuiescent(), "partial filling pauses without waiting for new input");
+	h.machine.imgDecController.restoreState(partial);
+	std::vector<u32> literal{0x12345678};
+	for (u32 i = 1; i < 300; ++i) { literal.push_back(i * 0x10203); h.memory.writeMappedU32LE(IO_IMGDEC_DATA, literal.back()); }
+	require(h.drain() == literal, "restored partial filling resumes after more compressed input");
+	// Use one compressed zero run for the actual restore sequence.
+	h.machine.imgDecController.reset();
+	h.configure(1, 300);
+	h.memory.writeMappedU32LE(IO_IMGDEC_CONTROL, IMGDEC_CONTROL_START);
+	h.memory.writeMappedU32LE(IO_IMGDEC_DATA, (IMGDEC_TOKEN_KIND_ZERO << 30) | 299);
+	h.machine.scheduler.advanceTo(h.machine.scheduler.currentNowCycles() + 100);
+	const auto pending = h.machine.imgDecController.captureState();
+	require(pending.blockCyclesRemaining == 412, "capture retains elapsed decode work");
+	h.machine.imgDecController.beginSupervisorQuiesce();
+	require(!h.machine.imgDecController.supervisorQuiescent(), "an admitted block reaches its publication boundary");
+	for (u32 i = 0; i < 8 && !h.machine.imgDecController.supervisorQuiescent(); ++i) h.pump();
+	require(h.machine.imgDecController.supervisorQuiescent(), "publication completes quiescence without draining guest words");
+	h.machine.imgDecController.restoreState(pending);
+	require(h.machine.imgDecController.captureState().blockCyclesRemaining == 412, "restored block keeps exact remaining latency");
+	for (u32 i = 0; i < 8 && (h.memory.readIoU32(IO_IMGDEC_STATUS) & IMGDEC_STATUS_OUTPUT_REQUEST) == 0; ++i) h.pump();
+	for (u32 i = 0; i < 13; ++i) require(h.memory.readMappedU32LE(IO_IMGDEC_DATA) == 0, "ready block before partial restore");
+	const auto ready = h.machine.imgDecController.captureState();
+	h.memory.readMappedU32LE(IO_IMGDEC_DATA);
+	h.machine.imgDecController.restoreState(ready);
+	require(h.drain() == std::vector<u32>(287, 0), "partially drained block resumes with exactly the remaining words");
+}
+
+void testFaultsAndEmptyJob() {
+	for (const auto& stream : std::vector<std::vector<u32>>{{(IMGDEC_TOKEN_KIND_BACK_REFERENCE << 30)}, {0}, {(IMGDEC_TOKEN_KIND_REPEAT << 30)}, {(IMGDEC_TOKEN_KIND_ZERO << 30) | 1}, {(IMGDEC_TOKEN_KIND_ZERO << 30), 0}}) {
+		Harness h(stream);
+		h.configure(static_cast<u32>(stream.size()), 1);
+		h.inputDma();
+		h.memory.writeMappedU32LE(IO_IMGDEC_CONTROL, IMGDEC_CONTROL_START);
+		for (u32 i = 0; i < 100 && (h.memory.readIoU32(IO_IMGDEC_STATUS) & IMGDEC_STATUS_BUSY) != 0; ++i) h.pump();
+		require(h.memory.readIoU32(IO_IMGDEC_STATUS) == IMGDEC_STATUS_FORMAT_FAULT, "unavailable history, short input, overshoot and trailing tokens fault deterministically");
+		require(h.machine.imgDecController.captureState().decodedWordCount == 0, "malformed private work is never published");
+	}
+	Harness h({});
+	h.configure(0, 0);
+	h.memory.writeMappedU32LE(IO_IMGDEC_CONTROL, IMGDEC_CONTROL_START);
+	require(h.memory.readIoU32(IO_IMGDEC_STATUS) == IMGDEC_STATUS_DONE, "empty raw job completes without a fabricated header");
+}
 } // namespace
 
 int main() {
-	testCompressedTextureAndClutUpload();
-	testSupervisorPausesImgDecBetweenPackets();
-	testPausedImgDecResumesExactStream();
-	testSupervisorControlGatesRejectDmaWrites();
-	testForcedDmaPresentsWordsToFullInputFifo();
-	testFormatFaultLeavesAdmittedGp0Block();
-	testActivePipelineRestore();
-	testDmaPrefixMatchesScalarDatapathAtEveryBlockBoundary();
-	testPayloadRunsCrossHistoryRingAndKeepExactWords();
-	return 0;
+	testBlocksPublishOnlyAtCompletion();
+	testCpuBuildsHeadersAndDmaSplitsAtAvailableWords();
+	testHistoryWrapAndAllRunKinds();
+	testRestoreAndQuiesce();
+	testFaultsAndEmptyJob();
 }

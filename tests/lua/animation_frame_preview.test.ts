@@ -13,7 +13,7 @@ import { finalizePackedRomAssets, type RomAsset } from '../../toolchain/ts/rompa
 test('only a proven sprite factory treats a native frame value as a packed image reference', t => {
 	const sources = createScenarioTestSourceState([]), context = sources.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]), rom = context.previewRom!;
 	const texture = encodeDirect16GxTexture(1, 1, new Uint8ClampedArray([255, 0, 0, 255]));
-	rom.bytes = new Uint8Array(encodeImgDecStream(texture.words, texture.textureWordCount, texture.clutWordCount));
+	rom.bytes = new Uint8Array(encodeImgDecStream(texture.words));
 	const assets: RomAsset[] = [{ resid: 'sprite', type: 'image', imgmeta: { width: 1, height: 1, texture_u: 0, texture_v: 0, gx_atlas_id: 'atlas' } },
 		{ resid: 'atlas', type: 'texture', start: 0, end: rom.bytes.length, texturemeta: {
 			mode: texture.mode, word_width: texture.wordWidth, height: texture.height,

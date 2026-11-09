@@ -161,8 +161,8 @@ private:
 			m_width = 0u;
 			m_height = 0u;
 			m_pixelCursor = 0u;
-			updateDmaRequest();
 		}
+		updateDmaRequest();
 		return word;
 	}
 
@@ -193,8 +193,9 @@ private:
 	}
 
 	void updateDmaRequest() {
-		const u32 requestBit = 1u << DMA_REQUEST_GX_READ;
-		m_dmaController.setRequestLines(requestBit, m_dmaReadEnabled && m_phase == GX_GPU_READBACK_READY ? requestBit : 0u);
+		const u32 words = m_dmaReadEnabled && m_phase == GX_GPU_READBACK_READY
+			? (m_width * m_height - m_pixelCursor + 1u) >> 1u : 0u;
+		m_dmaController.setRequestWordCapacity(DMA_REQUEST_GX_READ, words);
 	}
 
 	u8 m_phase = GX_GPU_READBACK_IDLE;

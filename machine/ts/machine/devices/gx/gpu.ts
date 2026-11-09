@@ -2051,16 +2051,9 @@ export class GxGpu {
 		} else {
 			this.statusWord = (this.statusWord & ~GX_GPU_STATUS_DMA_DATA_REQUEST) >>> 0;
 		}
-		const writeRequestBit = 1 << DMA_REQUEST_GX_WRITE;
-		let assertedRequests = 0;
-		if ((dmaDirection === GX_GPU_DMA_DIRECTION_FIFO || dmaDirection === GX_GPU_DMA_DIRECTION_CPU_TO_GP0)
-			&& dmaRequest !== 0) {
-			assertedRequests = writeRequestBit;
-		}
-		this.dmaController.setRequestLines(
-			writeRequestBit,
-			assertedRequests,
-		);
+		const writing = (dmaDirection === GX_GPU_DMA_DIRECTION_FIFO || dmaDirection === GX_GPU_DMA_DIRECTION_CPU_TO_GP0)
+			&& dmaRequest !== 0;
+		this.dmaController.setRequestWordCapacity(DMA_REQUEST_GX_WRITE, writing ? GX_GPU_DMA_INGRESS_WORD_CAPACITY : 0);
 	}
 
 	private gpuStatInInterleaved480iMode(): boolean {

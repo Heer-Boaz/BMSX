@@ -909,58 +909,50 @@ function readDmaControllerState(reader: BinaryReader): DmaControllerState {
 
 function writeImgDecControllerState(writer: BinarySink, state: ImgDecControllerState): void {
 	writer.u32(state.inputWordCountWord);
-	writer.u32(state.textureDestinationWord);
-	writer.u32(state.textureSizeWord);
-	writer.u32(state.clutDestinationWord);
+	writer.u32(state.outputWordCountWord);
 	writer.u32(state.controlWord);
 	writer.u32(state.statusWord);
 	writer.u32(state.dataWord);
 	writer.u32(state.inputWordsReceived);
 	writer.u32(state.decodedWordCount);
-	writer.u32(state.textureWordCount);
-	writer.u32(state.clutWordCount);
 	writer.u32(state.outputWordsRead);
 	writer.u32(state.decodePhase);
-	writer.u32(state.outputStage);
 	writer.u32(state.runWordsRemaining);
 	writer.u32(state.repeatWord);
 	writer.u32(state.backReferenceDistance);
+	writer.u32(state.blockPhase);
+	writer.u32(state.blockReadIndex);
+	writer.i64(state.blockCyclesRemaining);
 	writer.bool(state.supervisorQuiesceRequested);
 	writer.u32(state.inputWords.length);
 	writer.u32s(state.inputWords);
-	writer.u32(state.outputWords.length);
-	writer.u32s(state.outputWords);
+	writer.u32(state.blockWords.length);
+	writer.u32s(state.blockWords);
 	writer.u32(state.historyWords.length);
 	writer.u32s(state.historyWords);
-	writer.u32(state.scheduledDecodeWords);
-	writer.i64(state.scheduledDecodeCycles);
 }
 
 function readImgDecControllerState(reader: BinaryReader): ImgDecControllerState {
 	return {
 		inputWordCountWord: reader.u32(),
-		textureDestinationWord: reader.u32(),
-		textureSizeWord: reader.u32(),
-		clutDestinationWord: reader.u32(),
+		outputWordCountWord: reader.u32(),
 		controlWord: reader.u32(),
 		statusWord: reader.u32(),
 		dataWord: reader.u32(),
 		inputWordsReceived: reader.u32(),
 		decodedWordCount: reader.u32(),
-		textureWordCount: reader.u32(),
-		clutWordCount: reader.u32(),
 		outputWordsRead: reader.u32(),
 		decodePhase: reader.u32(),
-		outputStage: reader.u32(),
 		runWordsRemaining: reader.u32(),
 		repeatWord: reader.u32(),
 		backReferenceDistance: reader.u32(),
+		blockPhase: reader.u32(),
+		blockReadIndex: reader.u32(),
+		blockCyclesRemaining: reader.i64(),
 		supervisorQuiesceRequested: reader.bool(),
 		inputWords: reader.u32s(reader.u32()),
-		outputWords: reader.u32s(reader.u32()),
+		blockWords: reader.u32s(reader.u32()),
 		historyWords: reader.u32s(reader.u32()),
-		scheduledDecodeWords: reader.u32(),
-		scheduledDecodeCycles: reader.i64(),
 	};
 }
 

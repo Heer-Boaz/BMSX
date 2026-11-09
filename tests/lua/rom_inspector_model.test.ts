@@ -310,7 +310,7 @@ test('subject binding leaves metadata projection cold until Info actually reads 
 
 test('changing logical image subjects releases one bitmap but reuses the captured atlas decode', t => {
 	const texture = encodeDirect16GxTexture(2, 1, Uint8ClampedArray.of(255, 0, 0, 255, 0, 255, 0, 255));
-	const stream = encodeImgDecStream(texture.words, texture.textureWordCount, texture.clutWordCount), end = 72 + stream.length;
+	const stream = encodeImgDecStream(texture.words), end = 72 + stream.length;
 	const rom = new Uint8Array(end + 48); rom.set(stream, 72);
 	const atlas: RomAsset = { resid: 'atlas', type: 'texture', start: 72, end, texturemeta: {
 		mode: texture.mode, word_width: texture.wordWidth, height: texture.height,

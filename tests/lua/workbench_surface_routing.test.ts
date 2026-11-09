@@ -1957,7 +1957,7 @@ test('Animation body clients and its actual property draft publish exact client-
 		'machine/bios/cartlib/component/sprite_animation_component.lua'));
 	const { editor, sources } = fixture(t, { image, registry });
 	const texture = encodeDirect16GxTexture(1, 1, new Uint8ClampedArray([255, 0, 0, 255]));
-	const encoded = new Uint8Array(encodeImgDecStream(texture.words, texture.textureWordCount, texture.clutWordCount));
+	const encoded = new Uint8Array(encodeImgDecStream(texture.words));
 	const context = sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID), rom = context.previewRom!, start = rom.bytes.length, bytes = new Uint8Array(start + encoded.length);
 	bytes.set(rom.bytes); bytes.set(encoded, start); rom.bytes = bytes;
 	const assets: RomAsset[] = [{ resid: 'picture', type: 'image', imgmeta: { width: 1, height: 1, texture_u: 0, texture_v: 0, gx_atlas_id: 'picture-atlas' } },

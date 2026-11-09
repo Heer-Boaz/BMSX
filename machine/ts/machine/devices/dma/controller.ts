@@ -63,7 +63,7 @@ export class DmaController {
 	private ramCyclesPerWord = 1;
 	private ramBurstSetupCycles = 0;
 	private systemRomCyclesPerWord = 1;
-	private cartRomCyclesPerWord = 0;
+	private cartRomCyclesPerWord = 1;
 	private cartRomBurstSetupCycles = 0;
 	private activeChannel = DMA_CHANNEL_NONE;
 	private nextChannel = 0;
@@ -74,6 +74,7 @@ export class DmaController {
 	private scheduledControlWord = 0;
 	private serviceDeadline = 0;
 	private requestLines = 0;
+	private readonly requestWordCapacity = new Uint32Array(16);
 	private serviceActive = false;
 	private restorePending = false;
 	private supervisorQuiesceRequested = false;
@@ -172,8 +173,24 @@ export class DmaController {
 		if (next === this.requestLines) {
 			return;
 		}
+		for (let request = 1; request < this.requestWordCapacity.length; ++request) {
+			const bit = 1 << request;
+			if (((next ^ this.requestLines) & bit) !== 0) this.requestWordCapacity[request] = (next & bit) !== 0 ? 16 : 0;
+		}
 		this.requestLines = next;
 		this.arbitrate(this.scheduler.currentNowCycles());
+	}
+
+	public setRequestWordCapacity(request: number, words: number): void {
+		if (this.requestWordCapacity[request] === words) return;
+		this.requestWordCapacity[request] = words;
+		const bit = 1 << request;
+		this.requestLines = words === 0 ? this.requestLines & ~bit : this.requestLines | bit;
+		this.arbitrate(this.scheduler.currentNowCycles());
+	}
+
+	public cpuBusHeld(): boolean {
+		return this.activeChannel !== DMA_CHANNEL_NONE;
 	}
 
 	public ownsReadPort(address: number): boolean {
@@ -202,6 +219,7 @@ export class DmaController {
 	public reset(): void {
 		this.clearLiveTransfer();
 		this.requestLines = 0;
+		this.requestWordCapacity.fill(0);
 		this.supervisorQuiesceRequested = false;
 		this.supervisorAdmissionQuiesceRequested = false;
 		this.clearUserContext();
@@ -409,7 +427,11 @@ export class DmaController {
 		const remaining = registers.transferCountWord;
 		const control = registers.controlWord;
 		const programmedBlockWords = ((control & DMA_CONTROL_BLOCK_WORDS_MASK) >>> DMA_CONTROL_BLOCK_WORDS_SHIFT) + 1;
-		const blockWords = remaining < programmedBlockWords ? remaining : programmedBlockWords;
+		let blockWords = Math.min(remaining, programmedBlockWords);
+		const readRequest = (control & DMA_CONTROL_READ_REQUEST_MASK) >>> DMA_CONTROL_READ_REQUEST_SHIFT;
+		const writeRequest = (control & DMA_CONTROL_WRITE_REQUEST_MASK) >>> DMA_CONTROL_WRITE_REQUEST_SHIFT;
+		if (readRequest !== DMA_REQUEST_FORCE) blockWords = Math.min(blockWords, this.requestWordCapacity[readRequest]);
+		if (writeRequest !== DMA_REQUEST_FORCE) blockWords = Math.min(blockWords, this.requestWordCapacity[writeRequest]);
 		const readStep = (control & DMA_CONTROL_READ_INCREMENT) !== 0 ? IO_WORD_SIZE : 0;
 		const writeStep = (control & DMA_CONTROL_WRITE_INCREMENT) !== 0 ? IO_WORD_SIZE : 0;
 		let readAddress = registers.readAddressWord;
@@ -430,10 +452,7 @@ export class DmaController {
 			const spanWords = readRegionWords < writeRegionWords ? readRegionWords : writeRegionWords;
 			const readCycles = this.regionSpanCycles(readRegion, spanWords, readRegionStart);
 			const writeCycles = this.regionSpanCycles(writeRegion, spanWords, writeRegionStart);
-			blockCycles += readRegion === writeRegion
-				&& (readRegion === MemoryRegionKind.Ram || readRegion === MemoryRegionKind.Cartridge)
-				? readCycles + writeCycles
-				: readCycles > writeCycles ? readCycles : writeCycles;
+			blockCycles += readCycles + writeCycles;
 			wordsRemaining -= spanWords;
 			readRegionWords -= spanWords;
 			writeRegionWords -= spanWords;
@@ -452,9 +471,6 @@ export class DmaController {
 				writeRegionStart = true;
 			}
 		}
-		if (blockCycles === 0) {
-			blockCycles = 1;
-		}
 		this.activeChannel = channel;
 		this.scheduledBlockWords = blockWords;
 		this.scheduledReadAddressWord = registers.readAddressWord;
@@ -463,6 +479,7 @@ export class DmaController {
 		this.scheduledControlWord = control;
 		this.serviceDeadline = anchorCycle + blockCycles;
 		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, this.serviceDeadline);
+		this.scheduler.requestYieldForEarlierDeadline(this.scheduler.currentNowCycles());
 	}
 
 	private regionSpanCycles(region: MemoryRegionKind, wordCount: number, regionStart: boolean): number {
@@ -475,7 +492,7 @@ export class DmaController {
 				return wordCount * this.cartRomCyclesPerWord + (regionStart ? this.cartRomBurstSetupCycles : 0);
 			case MemoryRegionKind.Io:
 			case MemoryRegionKind.Other:
-				return 0;
+				return wordCount;
 		}
 	}
 

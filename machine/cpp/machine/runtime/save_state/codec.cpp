@@ -954,58 +954,50 @@ DmaControllerState readDmaControllerState(BinaryReader& reader) {
 
 template<class Writer> void writeImgDecControllerState(Writer& writer, const ImgDecControllerState& state) {
 	writer.u32(state.inputWordCountWord);
-	writer.u32(state.textureDestinationWord);
-	writer.u32(state.textureSizeWord);
-	writer.u32(state.clutDestinationWord);
+	writer.u32(state.outputWordCountWord);
 	writer.u32(state.controlWord);
 	writer.u32(state.statusWord);
 	writer.u32(state.dataWord);
 	writer.u32(state.inputWordsReceived);
 	writer.u32(state.decodedWordCount);
-	writer.u32(state.textureWordCount);
-	writer.u32(state.clutWordCount);
 	writer.u32(state.outputWordsRead);
 	writer.u32(state.decodePhase);
-	writer.u32(state.outputStage);
 	writer.u32(state.runWordsRemaining);
 	writer.u32(state.repeatWord);
 	writer.u32(state.backReferenceDistance);
+	writer.u32(state.blockPhase);
+	writer.u32(state.blockReadIndex);
+	writer.i64(state.blockCyclesRemaining);
 	writer.boolean(state.supervisorQuiesceRequested);
 	writer.u32(static_cast<u32>(state.inputWords.size()));
 	writer.u32s(state.inputWords);
-	writer.u32(static_cast<u32>(state.outputWords.size()));
-	writer.u32s(state.outputWords);
+	writer.u32(static_cast<u32>(state.blockWords.size()));
+	writer.u32s(state.blockWords);
 	writer.u32(static_cast<u32>(state.historyWords.size()));
 	writer.u32s(state.historyWords);
-	writer.u32(state.scheduledDecodeWords);
-	writer.i64(state.scheduledDecodeCycles);
 }
 
 ImgDecControllerState readImgDecControllerState(BinaryReader& reader) {
 	ImgDecControllerState state;
 	state.inputWordCountWord = reader.u32();
-	state.textureDestinationWord = reader.u32();
-	state.textureSizeWord = reader.u32();
-	state.clutDestinationWord = reader.u32();
+	state.outputWordCountWord = reader.u32();
 	state.controlWord = reader.u32();
 	state.statusWord = reader.u32();
 	state.dataWord = reader.u32();
 	state.inputWordsReceived = reader.u32();
 	state.decodedWordCount = reader.u32();
-	state.textureWordCount = reader.u32();
-	state.clutWordCount = reader.u32();
 	state.outputWordsRead = reader.u32();
 	state.decodePhase = reader.u32();
-	state.outputStage = reader.u32();
 	state.runWordsRemaining = reader.u32();
 	state.repeatWord = reader.u32();
 	state.backReferenceDistance = reader.u32();
+	state.blockPhase = reader.u32();
+	state.blockReadIndex = reader.u32();
+	state.blockCyclesRemaining = reader.i64();
 	state.supervisorQuiesceRequested = reader.boolean();
 	state.inputWords = reader.u32s(reader.u32());
-	state.outputWords = reader.u32s(reader.u32());
+	state.blockWords = reader.u32s(reader.u32());
 	state.historyWords = reader.u32s(reader.u32());
-	state.scheduledDecodeWords = reader.u32();
-	state.scheduledDecodeCycles = reader.i64();
 	return state;
 }
 

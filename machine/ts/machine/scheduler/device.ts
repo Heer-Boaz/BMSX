@@ -181,7 +181,7 @@ export class DeviceScheduler {
 		}
 	}
 
-	private requestYieldForEarlierDeadline(deadlineCycles: number): void {
+	public requestYieldForEarlierDeadline(deadlineCycles: number): void {
 		if (!this.schedulerSliceActive) {
 			return;
 		}

@@ -108,7 +108,7 @@ void testRegionAwareBlockTiming() {
 	require(memory.readMappedU32LE(ramDestination + 4u) == 0xddeeff00u, "RAM copy transfers word 1");
 
 	programTransfer(memory, bmsx::CART_ROM_BASE, romDestination, 2u, RAM_COPY_CONTROL);
-	require(harness.scheduler.nextDeadline() == 26, "the 20-cycle cartridge side gates the RAM burst");
+	require(harness.scheduler.nextDeadline() == 29, "cartridge read and RAM write costs both occupy the shared bus");
 	runNextDmaService(harness);
 	require(memory.readMappedU32LE(romDestination) == 0x11223344u, "cartridge ROM DMA transfers word 0");
 	require(memory.readMappedU32LE(romDestination + 4u) == 0x55667788u, "cartridge ROM DMA transfers word 1");
@@ -127,7 +127,7 @@ void testSystemRomTiming() {
 		harness.scheduler.currentNowCycles());
 
 	programTransfer(memory, bmsx::SYSTEM_ROM_BASE, firmwareDestination, 2u, RAM_COPY_CONTROL);
-	require(harness.scheduler.nextDeadline() == 3, "the RAM destination gates a two-cycle local firmware read");
+	require(harness.scheduler.nextDeadline() == 5, "two firmware reads and a three-cycle RAM write are serial");
 	runNextDmaService(harness);
 	require(memory.readMappedU32LE(firmwareDestination) == 0x01020304u, "firmware DMA transfers word 0");
 	require(memory.readMappedU32LE(firmwareDestination + 4u) == 0x05060708u, "firmware DMA transfers word 1");
@@ -143,7 +143,7 @@ void testTimingAcrossMemoryRegionBoundaries() {
 		2u,
 		ForcedGp0WriteControl);
 	require(
-		cartRomToRam.scheduler.nextDeadline() == 48,
+		cartRomToRam.scheduler.nextDeadline() == 50,
 		"cartridge ROM and RAM each pay their physical bus setup and word timing");
 
 	DmaGpuHarness cartRamToMmio;
@@ -155,7 +155,7 @@ void testTimingAcrossMemoryRegionBoundaries() {
 		2u,
 		ForcedGp0WriteControl);
 	require(
-		cartRamToMmio.scheduler.nextDeadline() == 48,
+		cartRamToMmio.scheduler.nextDeadline() == 50,
 		"cartridge RAM and MMIO each begin a physical bus transaction");
 
 	DmaGpuHarness ioToRam;
@@ -167,7 +167,7 @@ void testTimingAcrossMemoryRegionBoundaries() {
 		2u,
 		ForcedGp0WriteControl);
 	require(
-		ioToRam.scheduler.nextDeadline() == 12,
+		ioToRam.scheduler.nextDeadline() == 15,
 		"the first RAM word after the IO aperture pays RAM setup and word timing");
 }
 
@@ -183,9 +183,9 @@ void testCartRomBurstSetupIsBlockLocal() {
 		harness.scheduler.currentNowCycles());
 
 	programTransfer(harness.memory, bmsx::CART_ROM_BASE, destination, 17u, RAM_COPY_CONTROL);
-	require(harness.scheduler.nextDeadline() == 132, "sixteen cartridge words cost four setup cycles plus eight cycles per word");
+	require(harness.scheduler.nextDeadline() == 149, "sixteen ROM reads and RAM writes each pay their bus charge");
 	runNextDmaService(harness);
-	require(harness.scheduler.nextDeadline() == 144, "the final one-word block pays a new cartridge setup");
+	require(harness.scheduler.nextDeadline() == 163, "the final word pays fresh source and destination setups");
 }
 
 void testRamBurstSetupIsBlockLocal() {
@@ -224,7 +224,7 @@ void testPortSideAddsNoMemoryWait() {
 
 	programTransfer(memory, source, bmsx::IO_GX_GPU_GP0, 2u, GP0_WRITE_CONTROL);
 	harness.gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_FIFO);
-	require(harness.scheduler.nextDeadline() == 3, "fixed MMIO contributes no memory wait beside RAM");
+	require(harness.scheduler.nextDeadline() == 5, "fixed MMIO charges one write cycle per transported word");
 }
 
 void testAdmittedRegisterState() {
@@ -387,32 +387,22 @@ void testCpuToGp0ImagePayloadCrossesBlocks() {
 }
 
 void testForcedGp0DmaSaturatesPhysicalFifos() {
-	DmaGpuHarness harness;
-	bmsx::Memory& memory = harness.memory;
-	const uint32_t source = bmsx::DYNAMIC_RAM_BASE + 0x1000u;
-	harness.gpu.writeGp0((bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x0000ffu);
-	harness.gpu.writeGp0(0u);
-	harness.gpu.writeGp0((511u << 16u) | 0x03f1u);
-	for (uint32_t index = 0u; index < 48u; index += 1u) {
-		memory.writeMappedU32LE(source + index * 4u, 0x03000000u | index);
-	}
-
-	programTransfer(memory, source, bmsx::IO_GX_GPU_GP0, 48u, ForcedGp0WriteControl);
-	runNextDmaService(harness);
-	bmsx::GxGpuState state = harness.gpu.captureState();
-	require(state.gp0FifoWords.size() == bmsx::GX_GPU_COMMAND_FIFO_WORD_CAPACITY, "the first forced block occupies the command FIFO");
-	require(state.gp0DmaIngressWords.empty(), "the first forced block drains out of DMA ingress");
-	runNextDmaService(harness);
-	state = harness.gpu.captureState();
-	require(state.gp0FifoWords.size() == bmsx::GX_GPU_COMMAND_FIFO_WORD_CAPACITY, "the command FIFO remains physically bounded");
-	require(state.gp0DmaIngressWords.size() == bmsx::GX_GPU_DMA_INGRESS_WORD_CAPACITY, "the second forced block occupies DMA ingress");
-	runNextDmaService(harness);
-
-	state = harness.gpu.captureState();
-	require(state.gp0Word == 0x0300002fu, "every forced DMA word reaches the GP0 data latch");
-	require(state.gp0FifoWords[bmsx::GX_GPU_COMMAND_FIFO_WORD_CAPACITY - 1u] == 0x0300000fu, "forced overflow preserves the first command-FIFO block");
-	require(state.gp0DmaIngressWords[bmsx::GX_GPU_DMA_INGRESS_WORD_CAPACITY - 1u] == 0x0300001fu, "forced overflow preserves the first ingress block");
-	require(memory.readIoU32(bmsx::IO_DMA0_STATUS) == bmsx::DMA_STATUS_DONE, "forced overflow does not stall DMA completion");
+	using namespace bmsx;
+	DmaGpuHarness h;
+	const u32 source = DYNAMIC_RAM_BASE + 0x1000;
+	const u32 words = GX_GPU_COMMAND_FIFO_WORD_CAPACITY + GX_GPU_DMA_INGRESS_WORD_CAPACITY + 16;
+	h.gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0xff);
+	h.gpu.writeGp0(0);
+	h.gpu.writeGp0((511 << 16) | 0x03f1);
+	for (u32 i = 0; i < words; ++i) h.memory.writeMappedU32LE(source + i * 4, 0x03000000 | i);
+	programTransfer(h.memory, source, IO_GX_GPU_GP0, words, ForcedGp0WriteControl);
+	while (h.memory.readIoU32(IO_DMA0_STATUS) == DMA_STATUS_BUSY) runNextDmaService(h);
+	const auto state = h.gpu.captureState();
+	require(state.gp0FifoWords.size() == GX_GPU_COMMAND_FIFO_WORD_CAPACITY, "command storage remains physically bounded");
+	require(state.gp0DmaIngressWords.size() == GX_GPU_DMA_INGRESS_WORD_CAPACITY, "ingress remains physically bounded");
+	require(state.gp0Word == (0x03000000 | (words - 1)), "every forced word reaches the GP0 latch");
+	require(state.gp0FifoWords.back() == (0x03000000 | (GX_GPU_COMMAND_FIFO_WORD_CAPACITY - 1)), "overflow preserves earlier command words");
+	require(state.gp0DmaIngressWords.back() == (0x03000000 | (GX_GPU_COMMAND_FIFO_WORD_CAPACITY + GX_GPU_DMA_INGRESS_WORD_CAPACITY - 1)), "overflow preserves earlier ingress words");
 }
 
 void testAdmittedBlockSurvivesRequestDropAndRestore() {
@@ -424,13 +414,13 @@ void testAdmittedBlockSurvivesRequestDropAndRestore() {
 	harness.dma.setTiming(4, 0, 4, 0, 0, 0);
 	harness.gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
 	programTransfer(memory, source, bmsx::IO_GX_GPU_GP0, 2u, GP0_WRITE_CONTROL);
-	require(harness.scheduler.nextDeadline() == 8, "DMA blocks two words after eight cycles");
+	require(harness.scheduler.nextDeadline() == 10, "DMA blocks two words after ten serial bus cycles");
 
 	harness.scheduler.advanceTo(3);
 	harness.dma.setTiming(8, 0, 8, 0, 0, 3);
-	require(harness.scheduler.nextDeadline() == 8, "timing changes apply after the admitted block completion edge");
+	require(harness.scheduler.nextDeadline() == 10, "timing changes apply after the admitted block completion edge");
 	harness.gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_OFF);
-	require(harness.scheduler.nextDeadline() == 8, "DREQ low does not cancel an admitted block");
+	require(harness.scheduler.nextDeadline() == 10, "DREQ low does not cancel an admitted block");
 	const bmsx::DmaControllerState state = harness.dma.captureState();
 	require(state.scheduledReadAddressWord == source, "save state retains the admitted read address");
 	require(state.scheduledWriteAddressWord == bmsx::IO_GX_GPU_GP0, "save state retains the admitted write address");
@@ -438,7 +428,7 @@ void testAdmittedBlockSurvivesRequestDropAndRestore() {
 	require(state.scheduledControlWord == GP0_WRITE_CONTROL, "save state retains the admitted control word");
 	harness.dma.restoreState(state, harness.scheduler.nowCycles());
 	harness.dma.postLoad();
-	require(harness.scheduler.nextDeadline() == 8, "restore preserves an admitted block while DREQ is low");
+	require(harness.scheduler.nextDeadline() == 10, "restore preserves an admitted block while DREQ is low");
 	runNextDmaService(harness);
 	require(memory.readIoU32(bmsx::IO_DMA0_STATUS) == bmsx::DMA_STATUS_DONE, "the admitted block completes while DREQ remains low");
 }

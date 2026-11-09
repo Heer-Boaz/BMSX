@@ -182,16 +182,16 @@ commands and result handling.
 ### Image decoding {#sec-console-image-decoding}
 
 Compressed image data needs a different path from vertex arithmetic. IMGDEC
-expands its compressed word stream into GPU upload headers and texture or
-palette words. One DMA channel can feed the compressed input while the other
-carries the generated stream from IMGDEC DATA to GPU GP0. The GPU then performs
-the local-memory writes described by those upload packets.
+expands lossless token streams into raw words in bounded output blocks. One
+DMA channel supplies compressed words from ROM or RAM while another drains
+completed blocks to RAM or a receiving device. The CPU supplies GPU command
+headers when those words are image or palette payloads; the GPU performs the
+VRAM writes.
 
-This route changes the representation of image data, not the drawing geometry.
-The program supplies the source stream, destination fields and word counts;
-request signals pace the DMA transfers as the decoder consumes input and
-produces output. The [IMGDEC chapter](imgdec.md#sec-imgdec) specifies the
-compressed tokens, packet output, FIFO capacities and decoding costs.
+Input, decoded output and GPU packets have separate counts and lifetimes.
+Request signals pace transport, and decoder completion follows output drainage.
+The [IMGDEC chapter](imgdec.md#sec-imgdec) gives the compression operations,
+block timing, flow control and programming sequence.
 
 ### Graphics storage and drawing {#sec-console-graphics-storage-and-drawing}
 

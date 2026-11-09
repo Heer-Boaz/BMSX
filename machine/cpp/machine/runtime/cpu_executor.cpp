@@ -17,15 +17,15 @@ bool CpuExecutionState::runStoppedCpu(Runtime& runtime, FrameState& frameState) 
 	if (gxGpu.backendServiceBlocksMachine()) {
 		return tickCompleted;
 	}
-	if (!cpu.isHaltedUntilIrq() && !system.cpuHeld()) {
+	if (!cpu.isHaltedUntilIrq() && !system.cpuHeld() && !runtime.machine.dmaController.cpuBusHeld()) {
 		return tickCompleted;
 	}
 	auto& scheduler = runtime.machine.scheduler;
 	while (true) {
-		if (!system.cpuHeld() && cpu.enterPendingInterrupt()) {
+		if (!system.cpuHeld() && !runtime.machine.dmaController.cpuBusHeld() && cpu.enterPendingInterrupt()) {
 			return tickCompleted;
 		}
-		if (!cpu.isHaltedUntilIrq() && !system.cpuHeld()) {
+		if (!cpu.isHaltedUntilIrq() && !system.cpuHeld() && !runtime.machine.dmaController.cpuBusHeld()) {
 			return tickCompleted;
 		}
 		if (tickCompleted) {
@@ -131,7 +131,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 			|| machine.systemController.cpuHeld()) {
 			return CpuSuspendedRunResult::Halted;
 		}
-		if (cpu.isMemoryWriteBlocked()) {
+		if (cpu.isMemoryWriteBlocked() || machine.dmaController.cpuBusHeld()) {
 			const i64 nextDeadline = scheduler.nextDeadline();
 			if (nextDeadline == std::numeric_limits<i64>::max()) {
 				return CpuSuspendedRunResult::Halted;
@@ -189,7 +189,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 				if (machine.gxGpu.backendServiceBlocksMachine()) {
 					return CpuSuspendedRunResult::Halted;
 				}
-				const bool cpuHeld = machine.systemController.cpuHeld();
+				const bool cpuHeld = machine.systemController.cpuHeld() || machine.dmaController.cpuBusHeld();
 				if (!cpuHeld && cpu.enterPendingInterrupt()) {
 					break;
 				}
@@ -238,7 +238,7 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 		&& !tickCompleted
 		&& !machine.gxGpu.backendServiceBlocksMachine()
 		&& !machine.systemController.cpuHeld()) {
-		if (cpu.isMemoryWriteBlocked()) {
+		if (cpu.isMemoryWriteBlocked() || machine.dmaController.cpuBusHeld()) {
 			const i64 nextDeadline = scheduler.nextDeadline();
 			const i64 deadlineBudget = nextDeadline - scheduler.nowCycles();
 			if (deadlineBudget <= 0) {

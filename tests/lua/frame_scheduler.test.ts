@@ -192,6 +192,38 @@ test('busy CPU execution publishes consumed cycles before VBlank carries the rem
 		runtime.frameLoop.frameState.cycleBudgetRemaining, 'instruction stepping updates the same budget owner');
 });
 
+test('shared-bus DMA stops instruction execution until serial read/write completion', () => {
+	const code = new Uint8Array(2 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.JMP, 0, 0, 0, 0);
+	writeInstruction(code, 1, OpCode.HALT, 0, 0, 0, 0);
+	const system = linkRawTestSystemBlua32({ text: code, functions: [{ firstWord: 0, wordCount: 2 }],
+		systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
+		startupFunctionIndex: 0, irqFunctionIndex: 0, exceptionFunctionIndex: 0 });
+	const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, new TickInputSource());
+	runtime.boot();
+	const { memory, cpu, dmaController } = runtime.machine;
+	const source = RAM_BASE + 0x20000, target = RAM_BASE + 0x21000;
+	memory.writeMappedU32LE(source, 0x12345678);
+	memory.writeMappedU32LE(0x0800000c, source);
+	memory.writeMappedU32LE(0x08000010, target);
+	memory.writeMappedU32LE(0x08000014, 256);
+	memory.writeMappedU32LE(0x08000018, 0x0003fc03);
+	memory.writeMappedU32LE(0x08000020, 1);
+	const frame = cpu.activeThread.frames[cpu.activeThread.frames.length - 1];
+	const pc = frame.pc;
+	assert.equal(dmaController.captureState().scheduledBlockCycles, 514);
+	runtime.frameScheduler.runCyclesToNextLogicalTick(513);
+	assert.equal(frame.pc, pc, 'no instruction or interrupt entry runs while DMA owns the bus');
+	assert.equal(memory.readMappedU32LE(target), 0);
+	assert.equal(dmaController.cpuBusHeld(), true);
+	runtime.frameScheduler.runCyclesToNextLogicalTick(1);
+	assert.equal(memory.readMappedU32LE(target), 0x12345678);
+	assert.equal(dmaController.cpuBusHeld(), false);
+	assert.equal(frame.pc, pc);
+	runtime.frameScheduler.runCyclesToNextLogicalTick(1);
+	assert.notEqual(frame.pc, pc, 'instruction execution resumes after bus release');
+});
+
 test('runtime checkpoint storage reuses owner buffers without consuming independent snapshots', () => {
 	const { runtime } = createTickRuntime(new TickInputSource(), [
 		{ rom: null, ramByteCount: 12, mailboxPresent: true },

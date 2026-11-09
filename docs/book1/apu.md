@@ -968,19 +968,19 @@ Thus a control write at the batch's exact deadline cannot cancel that already-du
 
 DMA transports words between its source and the APU DATA port. The APU then transfers those words between its FIFO and private sample RAM. Each stage has its own timing and completion condition; adding only the sample-RAM cost does not give the complete upload time.
 
-For a contiguous cartridge-ROM source and a fixed I/O destination, an admitted DMA block of N words costs **8 × N + 4 cycles**. The setup cost applies afresh to each admitted block. This cost and the APU's **32 × N** service cost describe separate stages.
+For a contiguous cartridge-ROM source and a fixed I/O destination, an admitted DMA block of N words costs **9 × N + 4 cycles**. The setup cost applies afresh to each admitted block. This cost and the APU's **32 × N** service cost describe separate stages.
 
 The following controlled upload transfers 20 words. Before cycle 0, the address and DMA registers are programmed, DMA_WRITE is selected, and the FIFO is empty. The DMA source increments through readable cartridge ROM without a region crossing; its destination remains TRANSFER_DATA. Its blocks contain at most 16 words, with FORCE read admission and APU_WRITE write admission. There are no intervening mode/address writes or competing work. Cycle 0 is the first DMA block admission, not the start of CPU setup.
 
 | Cycle | Event |
 |---:|---|
-| 0 | Admit the first 16-word DMA block. Its cost is 8 × 16 + 4 = 132 cycles. |
-| 132 | DMA supplies 16 FIFO words. The end of the block starts a 16-word RAM transfer: 512 cycles. |
-| 644 | The first 16-word sample-RAM transfer completes. The empty FIFO requests the remaining four DMA words; their block costs 8 × 4 + 4 = 36 cycles. |
-| 680 | DMA supplies the four-word tail, starts 128 cycles of RAM transfer, and reaches channel DONE. The tail is not yet in sample RAM. |
-| 808 | The four-word tail commits; TRANSFER_BUSY clears. All 20 words are now in sample RAM. |
+| 0 | Admit the first 16-word DMA block. Its cost is 9 × 16 + 4 = 148 cycles. |
+| 148 | DMA supplies 16 FIFO words. The end of the block starts a 16-word RAM transfer: 512 cycles. |
+| 660 | The first 16-word sample-RAM transfer completes. The empty FIFO requests the remaining four DMA words; their block costs 9 × 4 + 4 = 40 cycles. |
+| 700 | DMA supplies the four-word tail, starts 128 cycles of RAM transfer, and reaches channel DONE. The tail is not yet in sample RAM. |
+| 828 | The four-word tail commits; TRANSFER_BUSY clears. All 20 words are now in sample RAM. |
 
-Here, DMA DONE occurs at cycle 680, while final RAM commit occurs at cycle **132 + 512 + 36 + 128 = 808**. Switching to STOP at DMA DONE would cancel the tail's pending commit.
+Here, DMA DONE occurs at cycle 700, while final RAM commit occurs at cycle **148 + 512 + 40 + 128 = 828**. Switching to STOP at DMA DONE would cancel the tail's pending commit.
 
 ## Worked download: requested data and surplus prefetch {#sec-apu-worked-download-requested-data-and-surplus-prefetch}
 

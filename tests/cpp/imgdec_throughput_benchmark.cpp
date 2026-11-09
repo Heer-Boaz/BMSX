@@ -33,7 +33,7 @@ void measure(Stream kind, const char* name, bool cartridgeSource = false) {
 	constexpr u32 patternWords = 16u;
 	const u32 sourceAddress = cartridgeSource ? CART_ROM_BASE : DYNAMIC_RAM_BASE + 0x1000u;
 	constexpr u32 repeatedWord = 0x137b2468u;
-	std::vector<u32> source{IMGDEC_STREAM_MAGIC, words, 0u};
+	std::vector<u32> source;
 	if (kind == Stream::Literal || kind == Stream::BackReference) {
 		const u32 literalWords = kind == Stream::Literal ? words : patternWords;
 		source.push_back((IMGDEC_TOKEN_KIND_LITERAL << IMGDEC_TOKEN_KIND_SHIFT) | (literalWords - 1u));
@@ -63,19 +63,18 @@ void measure(Stream kind, const char* name, bool cartridgeSource = false) {
 		memory.writeMappedU32LE(smode1, memory.readIoU32(smode1) | GX_GPU_PCRTC_SMODE1_SINT);
 		machine.gxGpu.onService(0);
 		memory.writeMappedU32LE(IO_IMGDEC_INPUT_WORD_COUNT, static_cast<u32>(source.size()));
-		memory.writeMappedU32LE(IO_IMGDEC_TEXTURE_DESTINATION, 0u);
-		memory.writeMappedU32LE(IO_IMGDEC_TEXTURE_SIZE, 320u | (240u << 16u));
-		memory.writeMappedU32LE(IO_IMGDEC_CLUT_DESTINATION, 0u);
+		memory.writeMappedU32LE(IO_IMGDEC_OUTPUT_WORD_COUNT, words);
+		for (u32 word : {0xa0000000u, 0u, 320u | (240u << 16u)}) memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
 		machine.gxGpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24u) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
 		memory.writeMappedU32LE(IO_DMA1_READ_ADDR, IO_IMGDEC_DATA);
 		memory.writeMappedU32LE(IO_DMA1_WRITE_ADDR, IO_GX_GPU_GP0);
-		memory.writeMappedU32LE(IO_DMA1_TRANSFER_COUNT, words + 3u);
-		memory.writeMappedU32LE(IO_DMA1_CONTROL, 0x00003c58u);
+		memory.writeMappedU32LE(IO_DMA1_TRANSFER_COUNT, words);
+		memory.writeMappedU32LE(IO_DMA1_CONTROL, 0x0003fc58u);
 		memory.writeMappedU32LE(IO_DMA1_TRIGGER, DMA_TRIGGER_START);
 		memory.writeMappedU32LE(IO_DMA0_READ_ADDR, sourceAddress);
 		memory.writeMappedU32LE(IO_DMA0_WRITE_ADDR, IO_IMGDEC_DATA);
 		memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, static_cast<u32>(source.size()));
-		memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00003d41u);
+		memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x0003fd41u);
 		memory.writeMappedU32LE(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
 		std::array<u32, DeviceServiceKindCount> services{};
 		const auto start = std::chrono::steady_clock::now();

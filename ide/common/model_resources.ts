@@ -36,7 +36,7 @@ export class ModelRenderResources {
 						const image = model.textures[material.textureIndex];
 						let bitmap = binding.textures.get(material.textureIndex);
 						if (bitmap === undefined) {
-							const decoded = decodeGxTextureImage(decodeImgDecStream(image.stream, 0, image.stream.length).payload,
+							const decoded = decodeGxTextureImage(decodeImgDecStream(image.stream, image.decodedWords),
 								{ mode: GX_GPU_TEXTURE_MODE_DIRECT16, wordWidth: image.width, height: image.height });
 							bitmap = new HostBitmap({ width: decoded.width, height: decoded.height, pixels: decoded.rgba });
 							binding.textures.set(material.textureIndex, bitmap);

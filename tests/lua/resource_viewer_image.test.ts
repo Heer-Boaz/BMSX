@@ -24,7 +24,7 @@ function fixture(t: TestContext) {
 	const expected = [new Uint8Array([255, 0, 0, 255]), new Uint8Array([0, 255, 0, 255])];
 	const images = expected.map(pixels => {
 		const texture = encodeDirect16GxTexture(1, 1, new Uint8ClampedArray(pixels));
-		const bytes = new Uint8Array(encodeImgDecStream(texture.words, texture.textureWordCount, texture.clutWordCount));
+		const bytes = new Uint8Array(encodeImgDecStream(texture.words));
 		const assets: RomAsset[] = [
 			{ resid: 'shared-image', type: 'image', source_path: 'res/img/shared.png',
 				imgmeta: { width: 1, height: 1, texture_u: 0, texture_v: 0, gx_atlas_id: 'shared-atlas' } },

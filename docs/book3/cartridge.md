@@ -411,14 +411,14 @@ the block to start, the CPU's current selection cannot reroute either endpoint.
 
 DMA timing uses the 33,868,800 Hz system clock. A contiguous N-word cartridge
 span costs `8N + 4` cycles, whether it addresses card ROM, card RAM or mailbox
-MMIO. A main-RAM span costs `N + 1` cycles. Two cartridge endpoints have
-additive costs even when they select different sockets:
+MMIO. A main-RAM span costs `N + 1` cycles. Source and destination costs add on the shared bus, including when the two
+endpoints select different sockets:
 
 | Transfer, wholly within each endpoint’s region | Cycles | Four words | Sixteen words |
 | --- | --- | --- | --- |
-| Cartridge ↔ main RAM | `8N + 4` | 36 | 132 |
+| Cartridge ↔ main RAM | `9N + 5` | 41 | 149 |
 | Cartridge ↔ cartridge | `16N + 8` | 72 | 264 |
-| Cartridge ↔ installed I/O | `8N + 4` | 36 | 132 |
+| Cartridge ↔ installed I/O | `9N + 4` | 40 | 148 |
 
 The four-word ROM(socket 0) → RAM(socket 1) block therefore takes
 `(8 × 4 + 4) + (8 × 4 + 4) = 72` cycles once started.
