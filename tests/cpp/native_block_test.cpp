@@ -45,10 +45,98 @@ void multipleRegisterDefinitionsSurviveCallAndExit() {
 		auto block = NativeBlock::compile(source, nullptr, bytes, memory, cpu.stringPool());
 		std::array<Value, 5> registers{valueNil(), valueNil(), valueNil(), valueNil(), valueNil()};
 		const std::array expected{valueNumber(83), valueNumber(11), valueNumber(0), valueNumber(66), valueNumber(72)};
-		require(block->run(registers.data(), nullptr) == &block->terminal && registers == expected,
+		require(block->run(registers.data(), nullptr, block->terminal.cycles).exit == &block->terminal && registers == expected,
 			"multiple live native values survive ABI calls, register pressure, alias copies and an actual exit");
 	}
 	require(bytes == 0, "register-allocated blocks retire their executable storage");
+}
+
+void linkedBodiesShareOneFrameAndRetireTheirEdges() {
+	std::array<DecodedInstruction, 5> decoded{};
+	const std::array ops{OpCode::ADD, OpCode::JMPIF, OpCode::SHL, OpCode::ADD, OpCode::JMP};
+	for (size_t i = 0; i < ops.size(); ++i) {
+		decoded[i].op = static_cast<u8>(ops[i]); decoded[i].width = 1; decoded[i].baseCycles = 1;
+	}
+	decoded[0].a = 7; decoded[0].b = 0; decoded[0].c = -1;
+	decoded[1].a = 2; decoded[1].bx = 0x1080;
+	decoded[2].a = 0; decoded[2].b = 7; decoded[2].c = -1;
+	decoded[3].a = 3; decoded[3].b = 0; decoded[3].c = 7;
+	decoded[4].bx = 0x1000;
+	const std::array firstSource{NativeBlockInstruction{&decoded[0], 0x1000}, NativeBlockInstruction{&decoded[1], 0x1004}};
+	const std::array secondSource{NativeBlockInstruction{&decoded[2], 0x1080}, NativeBlockInstruction{&decoded[3], 0x1084},
+		NativeBlockInstruction{&decoded[4], 0x1088}};
+	const std::array constants{valueNumber(1)};
+	size_t bytes = 0;
+	auto first = NativeBlock::compile(firstSource, constants.data(), bytes, memory, cpu.stringPool());
+	auto second = NativeBlock::compile(secondSource, constants.data(), bytes, memory, cpu.stringPool());
+	second->linkFrom(first->sideExits.back()); first->linkFrom(second->terminal);
+	for (const int budget : {2, 3, 4, 5, 6, 7, 11, 127, 500002}) {
+		std::array<Value, 8> registers{}; registers.fill(valueNil());
+		registers[0] = valueNumber(1); registers[2] = valueBool(true);
+		auto expected = registers;
+		int remaining = budget;
+		bool inFirst = true;
+		const NativeBlockExitSite* expectedExit;
+		for (;;) {
+			if (inFirst) {
+				expected[7] = valueNumber(asNumber(expected[0]) + 1); remaining -= 2;
+				expectedExit = &first->sideExits.back();
+			} else {
+				expected[0] = valueNumber(static_cast<i32>(toU32(expected[7]) << 1u));
+				expected[3] = valueNumber(asNumber(expected[0]) + asNumber(expected[7])); remaining -= 3;
+				expectedExit = &second->terminal;
+			}
+			inFirst = !inFirst;
+			if (remaining < (inFirst ? 2 : 3)) break;
+		}
+		const auto result = first->run(registers.data(), constants.data(), budget);
+		require(result.exit == expectedExit && result.remainingCycles == remaining && result.registerTop == 8 && registers == expected,
+			"linked leaf/calling bodies share one frame, bounded stack, exact grants and the maximum live-register extent");
+	}
+	second->linkFrom(first->terminal);
+	std::array<Value, 8> registers{}; registers.fill(valueNil()); registers[0] = valueNumber(1); registers[2] = valueBool(false);
+	require(first->run(registers.data(), constants.data(), 5).exit == &second->terminal && registers[0] == valueNumber(4),
+		"both conditional exits can link independently to the same target");
+	first->terminal.link.disconnect();
+	require(first->sideExits.back().link.target == second.get(), "unlinking one incoming edge preserves the other");
+	second.reset();
+	require(!first->sideExits.back().link.code && !first->sideExits.back().link.target,
+		"retiring a target disconnects each surviving source before executable storage is freed");
+	registers[2] = valueBool(true);
+	require(first->run(registers.data(), constants.data(), 1000).exit == &first->sideExits.back(),
+		"an unlinked predecessor returns normally instead of entering retired native code");
+	first->linkFrom(first->sideExits.back());
+	first.reset();
+	require(bytes == 0, "retiring a self-linked block releases its frame and executable storage exactly once");
+}
+
+void linkedSlowExitPublishesTheWholeExecutedChain() {
+	std::array<DecodedInstruction, 5> decoded{};
+	const std::array ops{OpCode::K1, OpCode::JMP, OpCode::ADD, OpCode::LOAD_MEM, OpCode::ADD};
+	for (size_t i = 0; i < ops.size(); ++i) {
+		decoded[i].op = static_cast<u8>(ops[i]); decoded[i].width = 1; decoded[i].baseCycles = 1;
+	}
+	decoded[0].a = 7; decoded[1].bx = 0x1080;
+	decoded[2].a = 5; decoded[2].b = 7; decoded[2].c = 7;
+	decoded[3].a = 4; decoded[3].b = 1; decoded[3].c = static_cast<i16>(MemoryAccessKind::U32LE); decoded[3].baseCycles = 2;
+	decoded[4].a = 6; decoded[4].b = 4; decoded[4].c = 0;
+	const std::array firstSource{NativeBlockInstruction{&decoded[0], 0x1000}, NativeBlockInstruction{&decoded[1], 0x1004}};
+	const std::array secondSource{NativeBlockInstruction{&decoded[2], 0x1080}, NativeBlockInstruction{&decoded[3], 0x1084},
+		NativeBlockInstruction{&decoded[4], 0x1088}};
+	size_t bytes = 0;
+	auto first = NativeBlock::compile(firstSource, nullptr, bytes, memory, cpu.stringPool());
+	auto second = NativeBlock::compile(secondSource, nullptr, bytes, memory, cpu.stringPool());
+	second->linkFrom(first->terminal);
+	std::array<Value, 8> registers{}; registers.fill(valueNil());
+	registers[1] = valueNumber(IO_SYS_BUS_FAULT_CODE); registers[6] = valueNumber(73);
+	const auto result = first->run(registers.data(), nullptr, 100);
+	require(result.exit == &second->sideExits[0] && result.exit->exit == NativeBlockExit::ReadMemory
+		&& result.exit->currentPc == 0x1084 && result.exit->nextPc == 0x1088 && result.remainingCycles == 95
+		&& result.registerTop == 8 && registers[5] == valueNumber(2) && registers[6] == valueNumber(73) && registers[4] == valueNil(),
+		"a target's slow exit materializes the complete chain prefix without executing its load or later arithmetic");
+	first.reset();
+	// The surviving target must not retain an incoming node in the freed source.
+	second.reset(); require(bytes == 0, "a slow exit leaves no executable-frame allocation");
 }
 
 void comparisonDatapathsRespectEveryValueKind() {
@@ -85,7 +173,7 @@ void comparisonDatapathsRespectEveryValueKind() {
 			const std::array pool{left, right};
 			auto registers = pool;
 			auto block = NativeBlock::compile(source, pool.data(), bytes, memory, strings);
-			const auto* exit = block->run(registers.data(), pool.data());
+			const auto* exit = block->run(registers.data(), pool.data(), block->terminal.cycles).exit;
 			require((exit->exit == NativeBlockExit::SkipInstruction) == (predicate != expected)
 				&& registers == pool && exit->registerTop == 0 && exit->cycles == 1
 				&& exit->nextPc == 0x1008 && exit->currentPc == 0x1000 && exit->lastPc == 0x1004,
@@ -147,7 +235,7 @@ void arithmeticAndWordDatapaths() {
 				std::array registers{left, right, valueNil(), valueNil()};
 				{
 					auto block = NativeBlock::compile(instructions, pool.data(), cacheBytes, memory, cpu.stringPool());
-					block->run(registers.data(), pool.data());
+					block->run(registers.data(), pool.data(), block->terminal.cycles).exit;
 					const Value expected = evaluate(op, left, right);
 					require(registers[destination] == expected && registers[3] == expected,
 						"native arithmetic retains exact number/word semantics and register aliases");
@@ -178,7 +266,7 @@ void movesAndLiteralsPreserveRawValues() {
 		const std::array instructions{NativeBlockInstruction{&load, 0x1000}, NativeBlockInstruction{&move, 0x1004}};
 		auto block = NativeBlock::compile(instructions, pool.data(), bytes, memory, cpu.stringPool());
 		std::array registers{Value{0}, Value{0}};
-		block->run(registers.data(), pool.data());
+		block->run(registers.data(), pool.data(), block->terminal.cycles).exit;
 		require(registers[0] == pool[index] && registers[1] == pool[index], "moves preserve every raw tagged and number bit");
 	}
 	for (const auto op : {OpCode::KNIL, OpCode::KFALSE, OpCode::KTRUE, OpCode::K0, OpCode::K1, OpCode::KM1, OpCode::KSMI}) {
@@ -190,7 +278,7 @@ void movesAndLiteralsPreserveRawValues() {
 		const std::array instructions{NativeBlockInstruction{&load, 0x1000}};
 		auto block = NativeBlock::compile(instructions, pool.data(), bytes, memory, cpu.stringPool());
 		Value reg = 0;
-		block->run(&reg, pool.data());
+		block->run(&reg, pool.data(), block->terminal.cycles).exit;
 		const Value expected = op == OpCode::KNIL ? valueNil() : op == OpCode::KFALSE ? valueBool(false)
 			: op == OpCode::KTRUE ? valueBool(true) : op == OpCode::K0 ? valueNumber(0.0)
 			: op == OpCode::K1 ? valueNumber(1.0) : op == OpCode::KM1 ? valueNumber(-1.0) : valueNumber(-33554432.0);
@@ -253,7 +341,7 @@ void dependentInstructionsWriteBackEveryLiveRegister() {
 			previous = instruction.a;
 			auto block = NativeBlock::compile(std::span(source).first(index + 1), pool.data(), bytes, memory, cpu.stringPool());
 			auto registers = initial;
-			block->run(registers.data(), pool.data());
+			block->run(registers.data(), pool.data(), block->terminal.cycles).exit;
 			require(registers == expected, "dependent native instructions preserve every live raw register at each prefix exit");
 		}
 		for (const auto op : {OpCode::HALT, OpCode::JMP, OpCode::JMPIF, OpCode::JMPIFNOT}) {
@@ -263,7 +351,7 @@ void dependentInstructionsWriteBackEveryLiveRegister() {
 			source.back() = {&terminal, source[31].pc + decoded[31].width * INSTRUCTION_BYTES};
 			auto block = NativeBlock::compile(source, pool.data(), bytes, memory, cpu.stringPool());
 			auto registers = initial;
-			const auto pc = block->run(registers.data(), pool.data())->nextPc;
+			const auto pc = block->run(registers.data(), pool.data(), block->terminal.cycles).exit->nextPc;
 			const bool taken = op == OpCode::JMP || (op == OpCode::JMPIF && isTruthy(expected[previous]))
 				|| (op == OpCode::JMPIFNOT && !isTruthy(expected[previous]));
 			require(registers == expected && pc == (taken ? terminal.bx : source.back().pc + 2 * INSTRUCTION_BYTES),
@@ -290,7 +378,7 @@ void truthinessAndConditionalExits() {
 		for (u32 header = 0; header != 65536u; ++header) {
 			const Value input = (static_cast<Value>(header) << 48u) | 0x123456789abcULL;
 			std::array registers{valueNil(), input};
-			const u32 nextPc = block->run(registers.data(), nullptr)->nextPc;
+			const u32 nextPc = block->run(registers.data(), nullptr, block->terminal.cycles).exit->nextPc;
 			if (op == OpCode::NOT) {
 				require(registers[0] == valueBool(!isTruthy(input)) && nextPc == 0x1008u,
 					"native NOT preserves every representable Value header and boxed Boolean");
@@ -310,7 +398,7 @@ void truthinessAndConditionalExits() {
 	halt.baseCycles = 1;
 	const std::array source{NativeBlockInstruction{&halt, 0xfffffff8u}};
 	auto block = NativeBlock::compile(source, nullptr, bytes, memory, cpu.stringPool());
-	require(block->run(nullptr, nullptr)->nextPc == 0u && block->terminal.exit == NativeBlockExit::Halt
+	require(block->run(nullptr, nullptr, block->terminal.cycles).exit->nextPc == 0u && block->terminal.exit == NativeBlockExit::Halt
 		&& block->terminal.registerTop == 0 && block->terminal.cycles == 1 && block->terminal.lastPc == 0xfffffffcu,
 		"a standalone native WIDE HALT has an exact wrapped continuation and explicit exit");
 }
@@ -349,7 +437,7 @@ void sideExitHandlersRunAfterGeneratedFrameReturns() {
 	frame.registers = registers.data();
 	{
 		auto block = NativeBlock::compile(source, nullptr, bytes, memory, cpu.stringPool(), {nullptr, nullptr, &exitResult});
-		const auto* exit = block->run(registers.data(), nullptr);
+		const auto* exit = block->run(registers.data(), nullptr, block->terminal.cycles).exit;
 		require(exit->handler(nullptr, &frame, exit) == NativeBlockTransition::RebindFrame,
 			"the generated side exit returns its typed frame transition");
 		require(block->terminal.registerTop == 2 && block->terminal.cycles == 4 && block->terminal.lastPc == 0x100cu,
@@ -358,14 +446,14 @@ void sideExitHandlersRunAfterGeneratedFrameReturns() {
 	{
 		auto block = NativeBlock::compile(source, nullptr, bytes, memory, cpu.stringPool(), {nullptr, nullptr, &exitThrow});
 		bool caught = false;
-		try { const auto* exit = block->run(registers.data(), nullptr); exit->handler(nullptr, &frame, exit); }
+		try { const auto* exit = block->run(registers.data(), nullptr, block->terminal.cycles).exit; exit->handler(nullptr, &frame, exit); }
 		catch (const TailFault& error) { caught = error.value == 73; }
 		require(caught, "C++ exceptions unwind ordinary registered frames, never generated code");
 	}
 	{
 		auto block = NativeBlock::compile(source, nullptr, bytes, memory, cpu.stringPool(), {nullptr, nullptr, &exitRetire});
 		retiringBlock = &block;
-		const auto* exit = block->run(registers.data(), nullptr);
+		const auto* exit = block->run(registers.data(), nullptr, block->terminal.cycles).exit;
 		require(exit->handler(nullptr, &frame, exit) == NativeBlockTransition::Redispatch && !block,
 			"a side-exit handler may retire its own code before returning");
 		retiringBlock = nullptr;
@@ -378,6 +466,8 @@ void sideExitHandlersRunAfterGeneratedFrameReturns() {
 int main() {
 	try {
 		multipleRegisterDefinitionsSurviveCallAndExit();
+		linkedBodiesShareOneFrameAndRetireTheirEdges();
+		linkedSlowExitPublishesTheWholeExecutedChain();
 		comparisonDatapathsRespectEveryValueKind();
 		arithmeticAndWordDatapaths();
 		movesAndLiteralsPreserveRawValues();

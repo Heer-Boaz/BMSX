@@ -75,7 +75,7 @@ void ramScalarDatapathsAndGuards() {
 		for (const u32 target : {DYNAMIC_RAM_BASE + 0x204u, DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - 4u,
 			RAM_BASE + PSX_MACHINE_SPEC.ramBytes - width}) for (const Value value : values) {
 			std::array registers{value, valueNumber(target - static_cast<u32>(store.disp) * 4u), valueNil()};
-			require(block->run(registers.data(), nullptr) == &block->terminal, "ordinary RAM transfers reach the normal block exit");
+			require(block->run(registers.data(), nullptr, block->terminal.cycles).exit == &block->terminal, "ordinary RAM transfers reach the normal block exit");
 			Value expected;
 			switch (kind) {
 				case MemoryAccessKind::Word: reference.writeMappedWord(target, toU32(value)); expected = valueNumber(reference.readMappedWord(target)); break;
@@ -94,7 +94,7 @@ void ramScalarDatapathsAndGuards() {
 			const bool direct = address >= RAM_BASE + IO_SLOT_COUNT * IO_WORD_SIZE
 				&& address <= RAM_BASE + PSX_MACHINE_SPEC.ramBytes - width
 				&& (address & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[format]) == 0u;
-			const auto* exit = block->run(registers.data(), nullptr);
+			const auto* exit = block->run(registers.data(), nullptr, block->terminal.cycles).exit;
 			require((exit == &block->terminal) == direct, "IO, faults and alignment leave before accessing raw RAM");
 			if (!direct) require(exit->exit == NativeBlockExit::WriteMemory && registers[2] == valueNumber(99),
 				"a rejected transfer never executes its following load");
@@ -103,7 +103,7 @@ void ramScalarDatapathsAndGuards() {
 		const std::array aliasSource{NativeBlockInstruction{&load, 0x1000}};
 		auto alias = NativeBlock::compile(aliasSource, nullptr, bytes, memory, cpu.stringPool());
 		std::array registers{valueNil(), valueNumber(DYNAMIC_RAM_BASE + 0x204u - store.disp * 4u)};
-		require(alias->run(registers.data(), nullptr) == &alias->terminal && valueIsNumber(registers[1]),
+		require(alias->run(registers.data(), nullptr, alias->terminal.cycles).exit == &alias->terminal && valueIsNumber(registers[1]),
 			"a memory load can replace its own address register");
 	}
 	// A four-byte-aligned double can cross into the next watched page.
@@ -117,7 +117,7 @@ void ramScalarDatapathsAndGuards() {
 	page.writeWatch.armWord(0);
 	std::array registers{valueNumber(1), valueNumber(target)};
 	const auto before = readLE64(memory.ramData() + target - RAM_BASE);
-	const auto* exit = block->run(registers.data(), nullptr);
+	const auto* exit = block->run(registers.data(), nullptr, block->terminal.cycles).exit;
 	require(exit->exit == NativeBlockExit::WriteMemory && readLE64(memory.ramData() + target - RAM_BASE) == before,
 		"the high half's code watch exits before either half of a direct F64 store");
 	memory.clearMappedPageWriteWatches();
@@ -129,7 +129,7 @@ void ramScalarDatapathsAndGuards() {
 		const Value value = (header << 48u) | 0x123456789abcu;
 		std::array registers{value, valueNumber(target), valueNil()};
 		reference.writeMappedF64LE(target, decodeNumber(value));
-		require(numeric->run(registers.data(), nullptr) == &numeric->terminal
+		require(numeric->run(registers.data(), nullptr, numeric->terminal.cycles).exit == &numeric->terminal
 			&& readLE64(memory.ramData() + target - RAM_BASE) == readLE64(reference.ramData() + target - RAM_BASE)
 			&& registers[2] == valueNumber(reference.readMappedF64LE(target)),
 			"every raw Value header follows the central numeric classification, including signalling NaNs");
@@ -139,7 +139,7 @@ void ramScalarDatapathsAndGuards() {
 	const std::array constants{valueNumber(target)};
 	auto constant = NativeBlock::compile(constantSource, constants.data(), bytes, memory, cpu.stringPool());
 	std::array constantRegisters{valueNil(), valueNil(), valueNil()};
-	require(constant->run(constantRegisters.data(), constants.data()) == &constant->terminal
+	require(constant->run(constantRegisters.data(), constants.data(), constant->terminal.cycles).exit == &constant->terminal
 		&& constant->sideExits[0].exitB == -1, "a constant memory address retains its signed RK selector");
 }
 
@@ -159,7 +159,7 @@ void generatedMemoryBoundaries() {
 		const auto& block = frame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u];
 		require(block && block->sourceWords == 5 && block->sideExits.size() == 1,
 			"RAM accesses compile with their dependent instructions and branch");
-		require(block->run(frame.registers, frame.executionImage->constPool.data()) == &block->terminal,
+		require(block->run(frame.registers, frame.executionImage->constPool.data(), block->terminal.cycles).exit == &block->terminal,
 			"the complete memory loop reaches its final native exit without a bus-owner side exit");
 		for (int grant = 1; grant <= 32; ++grant) {
 			for (auto* machine : {&native, &scalar}) {
@@ -322,7 +322,7 @@ void cachedValuesReachFieldMemoryAndFaultOwners() {
 	}
 	auto& frame = *native.cpu.activeThread()->frames[0];
 	const auto& block = frame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u];
-	require(block && block->sourceWords == 13 && block->run(frame.registers, frame.executionImage->constPool.data()) == &block->terminal,
+	require(block && block->sourceWords == 13 && block->run(frame.registers, frame.executionImage->constPool.data(), block->terminal.cycles).exit == &block->terminal,
 		"cached table references, numbers and memory writes all reach the final native exit");
 	scalar.cpu.runUntilDepth(0, 15);
 	require(native.memory.readMappedWord(address) == 0u && native.memory.readMappedWord(address + 4u) == 0x7ff80000u,

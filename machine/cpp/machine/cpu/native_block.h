@@ -20,6 +20,26 @@ class StringPool;
 class NativeBlock;
 struct NativeBlockExitSite;
 
+struct NativeBlockLink {
+	void disconnect();
+	void* code = nullptr;
+	int cycles = 0;
+	NativeBlock* target = nullptr;
+	NativeBlockLink* previous = nullptr;
+	NativeBlockLink* next = nullptr;
+};
+
+struct NativeBlockRunState {
+	int remainingCycles;
+	int registerTop;
+};
+
+struct NativeBlockRunResult {
+	const NativeBlockExitSite* exit;
+	int remainingCycles;
+	int registerTop;
+};
+
 enum class NativeBlockTransition : u32 {
 	Redispatch,
 	RebindFrame,
@@ -58,6 +78,7 @@ struct NativeBlockExitSite {
 	u32 nextPc = 0;
 	u32 currentPc = 0;
 	u32 lastPc = 0;
+	mutable NativeBlockLink link;
 };
 
 using NativeBlockExitHandlers = std::array<NativeBlockExitHandler, static_cast<size_t>(NativeBlockExit::Count)>;
@@ -149,7 +170,8 @@ public:
 	NativeBlock(const NativeBlock&) = delete;
 	NativeBlock& operator=(const NativeBlock&) = delete;
 
-	const NativeBlockExitSite* run(Value* registers, const Value* constants) const;
+	NativeBlockRunResult run(Value* registers, const Value* constants, int cycleBudget) const;
+	void linkFrom(const NativeBlockExitSite& source);
 
 	NativeBlockExitSite terminal;
 	std::vector<NativeBlockExitSite> sideExits;
@@ -157,8 +179,11 @@ public:
 	size_t codeBytes = 0;
 
 private:
+	friend struct NativeBlockLink;
 	explicit NativeBlock(size_t& cacheBytes) : m_cacheBytes(cacheBytes) {}
 	void* m_code = nullptr;
+	void* m_body = nullptr;
+	NativeBlockLink* m_incoming = nullptr;
 	size_t& m_cacheBytes;
 };
 

@@ -81,12 +81,10 @@ void NativeBlockCompiler::emitComparison(const DecodedInstruction& instruction, 
 	}
 	auto* noLabel = sljit_emit_label(m_compiler);
 	for (size_t i = 0; i < noCount; ++i) sljit_set_label(no[i], noLabel);
-	sljit_emit_return(m_compiler, SLJIT_MOV_P, SLJIT_IMM,
-		reinterpret_cast<sljit_sw>(instruction.a != 0 ? skipped : &m_block->terminal));
+	emitExit(instruction.a != 0 ? skipped : &m_block->terminal);
 	auto* yesLabel = sljit_emit_label(m_compiler);
 	for (size_t i = 0; i < yesCount; ++i) sljit_set_label(yes[i], yesLabel);
-	sljit_emit_return(m_compiler, SLJIT_MOV_P, SLJIT_IMM,
-		reinterpret_cast<sljit_sw>(instruction.a != 0 ? &m_block->terminal : skipped));
+	emitExit(instruction.a != 0 ? &m_block->terminal : skipped);
 }
 
 } // namespace bmsx

@@ -43,6 +43,9 @@ export type CompiledBlockExitSite = {
 	readonly nextPc: number;
 	readonly currentPc: number;
 	readonly lastPc: number;
+	linkedBlock: CompiledBlock | null;
+	previousIncoming: CompiledBlockExitSite | null;
+	nextIncoming: CompiledBlockExitSite | null;
 };
 
 export type CompiledBlock = {
@@ -51,7 +54,25 @@ export type CompiledBlock = {
 	readonly exits: readonly CompiledBlockExitSite[];
 	readonly sourceUnits: number;
 	readonly sourceWords: number;
+	incoming: CompiledBlockExitSite | null;
 };
+
+function unlinkCompiledExit(exit: CompiledBlockExitSite): void {
+	const target = exit.linkedBlock;
+	if (target === null) return;
+	if (exit.previousIncoming === null) target.incoming = exit.nextIncoming;
+	else exit.previousIncoming.nextIncoming = exit.nextIncoming;
+	if (exit.nextIncoming !== null) exit.nextIncoming.previousIncoming = exit.previousIncoming;
+	exit.linkedBlock = exit.previousIncoming = exit.nextIncoming = null;
+}
+
+export function linkCompiledBlock(source: CompiledBlockExitSite, target: CompiledBlock): void {
+	unlinkCompiledExit(source);
+	source.linkedBlock = target;
+	source.nextIncoming = target.incoming;
+	if (target.incoming !== null) target.incoming.previousIncoming = source;
+	target.incoming = source;
+}
 
 export class CompiledBlockPage {
 	public readonly entries = new Array<CompiledBlock | null>(DECODED_PAGE_WORDS).fill(null);
@@ -65,6 +86,8 @@ export class CompiledBlockPage {
 		for (let word = firstEntry; word < endEntry; ++word) {
 			const block = this.entries[word];
 			if (block === null || word + block.sourceWords <= firstWord) continue;
+			for (const exit of block.exits) unlinkCompiledExit(exit);
+			while (block.incoming !== null) unlinkCompiledExit(block.incoming);
 			released += block.sourceUnits;
 			page.dispatchOps[word] = DecodedDispatchOp.CompiledWarm;
 			this.entries[word] = null;
@@ -214,7 +237,8 @@ export function compileJavaScriptBlock(
 				: op === OpCode.GETFIELD ? CompiledBlockExit.ReadField : CompiledBlockExit.WriteField,
 				exitA: page.a[word], exitB: page.b[word], exitC: page.c[word], exitWord: word,
 				displaced, displacement: page.disp[word],
-				cycles, registerTop, nextPc, currentPc, lastPc });
+				cycles, registerTop, nextPc, currentPc, lastPc,
+				linkedBlock: null, previousIncoming: null, nextIncoming: null });
 		}
 		const numberEmitter = numberEmitters[op];
 		if (load || store) {
@@ -244,6 +268,7 @@ export function compileJavaScriptBlock(
 		exitA: page.a[finalWord], exitB: page.b[finalWord], exitC: page.c[finalWord], exitWord: finalWord,
 		displaced: false, displacement: 0,
 		cycles, registerTop, nextPc, currentPc, lastPc,
+		linkedBlock: null, previousIncoming: null, nextIncoming: null,
 	};
 	const terminalIndex = exits.length;
 	exits.push(terminal);
@@ -277,5 +302,6 @@ export function compileJavaScriptBlock(
 	return {
 		execute,
 		terminal, exits, sourceWords, sourceUnits: functionSource.length,
+		incoming: null,
 	};
 }

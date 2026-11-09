@@ -139,7 +139,8 @@ import { LuaHeap, type LuaHeapState } from './lua_heap';
 import {
 	CpuExecutionBackend, CompiledBlockPage, CompiledCodeCache, CompiledBlockExit, COMPILED_BLOCK_THRESHOLD,
 	COMPILED_BLOCK_MAX_INSTRUCTIONS,
-	compiledBlockSupports, compiledBlockEndsBlock, compileJavaScriptBlock,
+	compiledBlockSupports, compiledBlockEndsBlock, compileJavaScriptBlock, linkCompiledBlock,
+	type CompiledBlockExitSite,
 } from './compiled_block';
 import { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotReader, CpuSnapshotObjectKind, CpuSnapshotClosure, CpuSnapshotTable, CpuSnapshotUpvalue, CpuSnapshotThread, CPU_SNAPSHOT_VALUE_WORDS, type CpuSnapshotObject, type CpuSnapshotValueWriter } from './snapshot';
 
@@ -2526,10 +2527,31 @@ export class CPU implements MappedPageInvalidator {
 		if (block !== null && this.instructionBudgetRemaining >= block.terminal.cycles - page.dispatchCycles[word]) {
 			const registers = frame.registers;
 			const image = frame.executionImage;
-			const exit = block.exits[block.execute(registers, image.constScalars, page)];
-			this.instructionBudgetRemaining -= exit.cycles - page.dispatchCycles[word];
+			let current = block;
+			let remaining = this.instructionBudgetRemaining + page.dispatchCycles[word];
+			let registerTop = frame.top;
+			let exit: CompiledBlockExitSite;
+			for (;;) {
+				exit = current.exits[current.execute(registers, image.constScalars, page)];
+				remaining -= exit.cycles;
+				registerTop = Math.max(registerTop, exit.registerTop);
+				if (exit.exit !== CompiledBlockExit.Continue) break;
+				const target = exit.linkedBlock;
+				if (target === null) {
+					// Existing entries in this physical page require neither a future
+					// instruction fetch nor a mapping/cache allocation to link.
+					if ((exit.nextPc & ~MAPPED_PAGE_BYTE_MASK) === (exit.currentPc & ~MAPPED_PAGE_BYTE_MASK)) {
+						const successor = cache.entries[(exit.nextPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+						if (successor !== null) linkCompiledBlock(exit, successor);
+					}
+					break;
+				}
+				if (remaining < target.terminal.cycles) break;
+				current = target;
+			}
+			this.instructionBudgetRemaining = remaining;
 			frame.pc = exit.nextPc;
-			frame.top = Math.max(frame.top, exit.registerTop);
+			frame.top = registerTop;
 			this.currentInstructionPc = exit.currentPc;
 			this.lastPc = exit.lastPc;
 			switch (exit.exit) {

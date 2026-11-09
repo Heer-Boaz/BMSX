@@ -2622,14 +2622,22 @@ dispatch_instruction:
 						dispatchOp = decoded->op;
 						goto dispatch_instruction;
 					}
-					const auto* exit = block.run(registers, IMAGE.constPool.data());
+					const auto result = block.run(registers, IMAGE.constPool.data(), instructionBudgetRemaining + decoded->baseCycles);
+					const auto* exit = result.exit;
 					// Each return describes exactly the executed prefix, including a
 					// guarded field or memory access. No future state is published.
-					instructionBudgetRemaining -= exit->cycles - decoded->baseCycles;
+					instructionBudgetRemaining = result.remainingCycles;
 					FRAME.pc = exit->nextPc;
-					FRAME.top = std::max(FRAME.top, exit->registerTop);
+					FRAME.top = std::max(FRAME.top, result.registerTop);
 					m_currentInstructionPc = exit->currentPc;
 					lastPc = exit->lastPc;
+					// Link only already compiled entries in this physical page. No
+					// speculative fetch, page allocation or socket remapping occurs.
+					if (exit->exit == NativeBlockExit::Continue && !exit->link.code
+						&& (exit->nextPc & ~MAPPED_PAGE_BYTE_MASK) == (exit->currentPc & ~MAPPED_PAGE_BYTE_MASK)) {
+						auto& target = decodedPage->nativeBlocks->entries[(exit->nextPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+						if (target) target->linkFrom(*exit);
+					}
 					if (exit->handler) {
 						const auto transition = exit->handler(this, frame, exit);
 						// A semantic exit may have retired its own source or changed frames.

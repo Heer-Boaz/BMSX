@@ -68,19 +68,45 @@ std::unique_ptr<NativeBlock> NativeBlock::compile(
 		const auto* exit = nativeBlockSlowExit(source.decoded->op) != NativeBlockExit::Continue ? &block->sideExits[slow++] : nullptr;
 		compiler.emit(*source.decoded, exit, taken);
 	}
-	block->m_code = compiler.finish(block->codeBytes);
+	block->m_code = compiler.finish(block->codeBytes, block->m_body);
 	cacheBytes += block->codeBytes;
 	return block;
 }
 
 NativeBlock::~NativeBlock() {
+	terminal.link.disconnect();
+	for (auto& exit : sideExits) exit.link.disconnect();
+	while (m_incoming) m_incoming->disconnect();
 	if (m_code) sljit_free_code(m_code, nullptr);
 	m_cacheBytes -= codeBytes;
 }
 
-const NativeBlockExitSite* NativeBlock::run(Value* registers, const Value* constants) const {
-	using Entry = const NativeBlockExitSite* (SLJIT_FUNC *)(Value*, const Value*);
-	return reinterpret_cast<Entry>(m_code)(registers, constants);
+NativeBlockRunResult NativeBlock::run(Value* registers, const Value* constants, int cycleBudget) const {
+	NativeBlockRunState state{cycleBudget, 0};
+	using Entry = const NativeBlockExitSite* (SLJIT_FUNC *)(Value*, const Value*, NativeBlockRunState*);
+	const auto* exit = reinterpret_cast<Entry>(m_code)(registers, constants, &state);
+	return {exit, state.remainingCycles, state.registerTop};
+}
+
+void NativeBlockLink::disconnect() {
+	if (!target) return;
+	if (previous) previous->next = next;
+	else target->m_incoming = next;
+	if (next) next->previous = previous;
+	target = nullptr;
+	code = nullptr;
+	previous = next = nullptr;
+}
+
+void NativeBlock::linkFrom(const NativeBlockExitSite& source) {
+	auto& link = source.link;
+	link.disconnect();
+	link.code = m_body;
+	link.cycles = terminal.cycles;
+	link.target = this;
+	link.next = m_incoming;
+	if (m_incoming) m_incoming->previous = &link;
+	m_incoming = &link;
 }
 
 } // namespace bmsx

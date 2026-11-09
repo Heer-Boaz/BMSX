@@ -88,14 +88,14 @@ void directRomLoadsUseCurrentOwners() {
 		auto block = NativeBlock::compile(source, nullptr, bytes, memory, cpu.stringPool());
 		for (const u32 address : {0u, 4u, 16u, CART_ROM_BASE, CART_ROM_BASE + 4u, CART_ROM_BASE + 24u}) {
 			std::array registers{valueNil(), valueNumber(address - static_cast<u32>(load.disp) * 4u)};
-			require(block->run(registers.data(), nullptr) == &block->terminal
+			require(block->run(registers.data(), nullptr, block->terminal.cycles).exit == &block->terminal
 				&& registers[0] == scalarLoad(memory, kind, address), "backed system and cartridge ROM reads stay in the native block");
 		}
 		for (u32 address : {SYSTEM_ROM_SIZE - 4u, 72u, CART_ROM_BASE + 32u, CART_ROM_END - 4u}) {
 			std::array registers{valueNumber(73), valueNumber(address - static_cast<u32>(load.disp) * 4u)};
 			const bool backed = address >= CART_ROM_BASE && address < CART_ROM_END
 				&& address - CART_ROM_BASE + width <= slot0.size();
-			const auto* exit = block->run(registers.data(), nullptr);
+			const auto* exit = block->run(registers.data(), nullptr, block->terminal.cycles).exit;
 			require((exit == &block->terminal) == backed, "short tails and logical boundary crossings use the ordered bus owner");
 			if (!backed) require(registers[0] == valueNumber(73), "a ROM side exit has not committed its destination");
 		}
@@ -103,7 +103,7 @@ void directRomLoadsUseCurrentOwners() {
 		const std::array aliasSource{NativeBlockInstruction{&load, 0x1000}};
 		auto alias = NativeBlock::compile(aliasSource, nullptr, bytes, memory, cpu.stringPool());
 		std::array registers{valueNil(), valueNumber(CART_ROM_BASE + 4u - load.disp * 4u)};
-		require(alias->run(registers.data(), nullptr) == &alias->terminal
+		require(alias->run(registers.data(), nullptr, alias->terminal.cycles).exit == &alias->terminal
 			&& registers[1] == scalarLoad(memory, kind, CART_ROM_BASE + 4u), "ROM loads can replace the address register");
 	}
 }

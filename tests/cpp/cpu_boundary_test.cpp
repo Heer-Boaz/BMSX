@@ -102,13 +102,13 @@ void nativeFieldGuardsAndRawSlotAccess() {
 		std::array registers{valueTable(table), valueTable(table)};
 		if (store) {
 			require(block->sideExits[0].exitC == -1, "native field exits keep signed RK selectors");
-			require(block->run(registers.data(), constants.data())->exit == NativeBlockExit::Continue
+			require(block->run(registers.data(), constants.data(), block->terminal.cycles).exit->exit == NativeBlockExit::Continue
 				&& table->getStringKey(key) == constants[0], "a native field store updates the real hash slot without a helper");
 		} else {
 			for (Value value : {valueNumber(-0.0), VALUE_QNAN_MASK, Value{0x7ff0000000000001ULL},
 				valueBool(false), valueBool(true), valueString(other), valueTable(table)}) {
 				table->setStringKey(key, value);
-				require(block->run(registers.data(), constants.data())->exit == NativeBlockExit::Continue
+				require(block->run(registers.data(), constants.data(), block->terminal.cycles).exit->exit == NativeBlockExit::Continue
 					&& registers[0] == value, "native cached field loads preserve every raw value and reference bit");
 			}
 			DecodedInstruction alias = field;
@@ -116,31 +116,31 @@ void nativeFieldGuardsAndRawSlotAccess() {
 			const std::array aliasSource{NativeBlockInstruction{&alias, 0x1000u}};
 			auto aliasBlock = NativeBlock::compile(aliasSource, constants.data(), bytes, machine.memory, machine.cpu.stringPool());
 			table->setStringKey(key, valueNumber(-0.0));
-			require(aliasBlock->run(registers.data(), constants.data())->exit == NativeBlockExit::Continue
+			require(aliasBlock->run(registers.data(), constants.data(), aliasBlock->terminal.cycles).exit->exit == NativeBlockExit::Continue
 				&& registers[1] == valueNumber(-0.0), "a cached field result can replace its own table receiver");
 			registers[1] = valueTable(table);
 		}
 		for (int prediction : {-1, otherSlot, 100000}) {
 			block->sideExits[0].tableCacheSlot = prediction;
-			require(block->run(registers.data(), constants.data())->handler == &fieldSlowExitMarker,
+			require(block->run(registers.data(), constants.data(), block->terminal.cycles).exit->handler == &fieldSlowExitMarker,
 				"missing, wrong-key and out-of-bounds field predictions leave through the native state-map exit");
 		}
 		block->sideExits[0].tableCacheSlot = slot;
 		registers[store ? 0 : 1] = valueBool(false);
-		require(block->run(registers.data(), constants.data())->handler == &fieldSlowExitMarker,
+		require(block->run(registers.data(), constants.data(), block->terminal.cycles).exit->handler == &fieldSlowExitMarker,
 			"a non-table field receiver is rejected before any native pointer access");
 		registers[0] = registers[1] = valueTable(table);
 		table->setStringKey(key, valueNil());
-		require(block->run(registers.data(), constants.data())->handler == &fieldSlowExitMarker,
+		require(block->run(registers.data(), constants.data(), block->terminal.cycles).exit->handler == &fieldSlowExitMarker,
 			"deleted and nil-valued slots cannot satisfy a cached field guard");
 		slot = table->setStringKey(key, valueNumber(1));
 		block->sideExits[0].tableCacheSlot = slot;
 		if (!store) {
 			table->metatable = machine.cpu.createTable(0, 0);
-			require(block->run(registers.data(), constants.data())->exit == NativeBlockExit::Continue,
+			require(block->run(registers.data(), constants.data(), block->terminal.cycles).exit->exit == NativeBlockExit::Continue,
 				"a live own field bypasses inheritance even when the table has a metatable");
 			table->setStringKey(key, valueNil());
-			require(block->run(registers.data(), constants.data())->handler == &fieldSlowExitMarker,
+			require(block->run(registers.data(), constants.data(), block->terminal.cycles).exit->handler == &fieldSlowExitMarker,
 				"inherited field resolution leaves the generated direct-storage path");
 			table->metatable = nullptr;
 			slot = table->setStringKey(key, valueNumber(1));
@@ -182,7 +182,7 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 	const auto& loop = nativeFrame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u];
 	require(loop && loop->sourceWords == 6 && loop->sideExits.size() == 2,
 		"field hits and arithmetic are compiled together through the loop branch");
-	require(loop->run(nativeFrame.registers, nativeFrame.executionImage->constPool.data()) == &loop->terminal,
+	require(loop->run(nativeFrame.registers, nativeFrame.executionImage->constPool.data(), loop->terminal.cycles).exit == &loop->terminal,
 		"ordinary read and write hits reach the final native branch without a host side exit");
 	// The direct datapath probe executes one loop; keep both reference machines aligned.
 	scalar.cpu.runUntilDepth(0, 6);

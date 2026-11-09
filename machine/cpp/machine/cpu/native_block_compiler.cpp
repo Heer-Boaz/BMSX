@@ -38,13 +38,20 @@ NativeBlockCompiler::NativeBlockCompiler(const Value* constants, const NativeBlo
 		: std::min(REGISTER_CACHE_CAPACITY, SLJIT_NUMBER_OF_FLOAT_REGISTERS - SLJIT_NUMBER_OF_SAVED_FLOAT_REGISTERS - 3);
 	m_compiler = sljit_create_compiler(nullptr);
 	if (!m_compiler) throw std::bad_alloc();
-	// S0/S1 retain the value banks; S2 retains word/field-address temporaries.
-	// Leaf blocks need no saved FP bank. Across pure calls, use the ABI's saved
-	// bank where available, otherwise preserve live scratch values in this frame.
-	sljit_emit_enter(m_compiler, 0, SLJIT_ARGS2(P, P, P),
-		3 | SLJIT_ENTER_FLOAT(3 + (m_useSavedFloats ? 0 : m_registerCount)),
-		3 | SLJIT_ENTER_FLOAT(m_useSavedFloats ? m_registerCount : 0),
-		calls && !m_useSavedFloats ? m_registerCount * sizeof(Value) : 0);
+	// Every body shares one frame layout, so a linked jump skips the target's
+	// prologue and any target exit can unwind the original entry frame. S0/S1
+	// retain the value banks, S2 is temporary, S3 retains the result address.
+	// S4/S5 keep cycles/top local until the entire chain actually returns.
+	const int scratchFloats = 3 + std::min(REGISTER_CACHE_CAPACITY,
+		SLJIT_NUMBER_OF_FLOAT_REGISTERS - SLJIT_NUMBER_OF_SAVED_FLOAT_REGISTERS - 3);
+	const int savedFloats = std::min(REGISTER_CACHE_CAPACITY, SLJIT_NUMBER_OF_SAVED_FLOAT_REGISTERS);
+	sljit_emit_enter(m_compiler, 0, SLJIT_ARGS3(P, P, P, P),
+		3 | SLJIT_ENTER_FLOAT(scratchFloats), 6 | SLJIT_ENTER_FLOAT(savedFloats),
+		REGISTER_CACHE_CAPACITY * sizeof(Value));
+	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_S3, 0, SLJIT_S2, 0);
+	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_S4, 0, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, remainingCycles));
+	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_S5, 0, SLJIT_IMM, 0);
+	m_body = sljit_emit_label(m_compiler);
 }
 
 NativeBlockCompiler::~NativeBlockCompiler() { sljit_free_compiler(m_compiler); }
@@ -140,12 +147,10 @@ void NativeBlockCompiler::emit(const DecodedInstruction& instruction, const Nati
 		case OpCode::JMPIFNOT: {
 			m_hasTerminal = true;
 			const auto falsey = falseyJumps(instruction.a);
-			sljit_emit_return(m_compiler, SLJIT_MOV_P, SLJIT_IMM, reinterpret_cast<sljit_sw>(
-				op == OpCode::JMPIF ? takenExit : &m_block->terminal));
+			emitExit(op == OpCode::JMPIF ? takenExit : &m_block->terminal);
 			auto* falseyLabel = sljit_emit_label(m_compiler);
 			for (auto* jump : falsey) sljit_set_label(jump, falseyLabel);
-			sljit_emit_return(m_compiler, SLJIT_MOV_P, SLJIT_IMM, reinterpret_cast<sljit_sw>(
-				op == OpCode::JMPIF ? &m_block->terminal : takenExit));
+			emitExit(op == OpCode::JMPIF ? &m_block->terminal : takenExit);
 			return;
 		}
 		case OpCode::EQ:
@@ -160,21 +165,46 @@ void NativeBlockCompiler::emit(const DecodedInstruction& instruction, const Nati
 	writeRegister(instruction.a);
 }
 
-void* NativeBlockCompiler::finish(size_t& codeBytes) {
+void NativeBlockCompiler::emitExit(const NativeBlockExitSite* exit) {
+	sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_S4, 0, SLJIT_S4, 0, SLJIT_IMM, exit->cycles);
+	if (exit->registerTop != 0) {
+		auto* retained = sljit_emit_cmp(m_compiler, SLJIT_SIG_GREATER_EQUAL | SLJIT_32,
+			SLJIT_S5, 0, SLJIT_IMM, exit->registerTop);
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_S5, 0, SLJIT_IMM, exit->registerTop);
+		sljit_set_label(retained, sljit_emit_label(m_compiler));
+	}
+	if (exit->exit == NativeBlockExit::Continue) {
+		sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM0(), reinterpret_cast<sljit_sw>(&exit->link.code));
+		auto* unlinked = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0);
+		auto* shortGrant = sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS | SLJIT_32,
+			SLJIT_S4, 0,
+			SLJIT_MEM0(), reinterpret_cast<sljit_sw>(&exit->link.cycles));
+		sljit_emit_ijump(m_compiler, SLJIT_JUMP, SLJIT_R0, 0);
+		auto* done = sljit_emit_label(m_compiler);
+		sljit_set_label(unlinked, done);
+		sljit_set_label(shortGrant, done);
+	}
+	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, remainingCycles), SLJIT_S4, 0);
+	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, registerTop), SLJIT_S5, 0);
+	sljit_emit_return(m_compiler, SLJIT_MOV_P, SLJIT_IMM, reinterpret_cast<sljit_sw>(exit));
+}
+
+void* NativeBlockCompiler::finish(size_t& codeBytes, void*& body) {
 	if (!m_hasTerminal) {
 		flushRegisters();
-		sljit_emit_return(m_compiler, SLJIT_MOV_P, SLJIT_IMM, reinterpret_cast<sljit_sw>(&m_block->terminal));
+		emitExit(&m_block->terminal);
 	}
 	for (const auto& slow : m_slowPaths) {
 		auto* label = sljit_emit_label(m_compiler);
 		for (size_t i = 0; i < slow.count; ++i) sljit_set_label(slow.jumps[i], label);
 		emitRegisterSnapshot(slow.registers);
-		sljit_emit_return(m_compiler, SLJIT_MOV_P, SLJIT_IMM, reinterpret_cast<sljit_sw>(slow.exit));
+		emitExit(slow.exit);
 	}
 	emitReadMappings();
 	void* code = sljit_generate_code(m_compiler, 0, nullptr);
 	if (!code) throw std::bad_alloc();
 	codeBytes = sljit_get_generated_code_size(m_compiler);
+	body = reinterpret_cast<void*>(sljit_get_label_addr(m_body));
 	return code;
 }
 

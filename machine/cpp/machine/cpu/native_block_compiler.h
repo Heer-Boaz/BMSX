@@ -16,9 +16,10 @@ public:
 	~NativeBlockCompiler();
 	void emit(const DecodedInstruction& instruction, const NativeBlockExitSite* slowExit,
 		const NativeBlockExitSite* takenExit);
-	void* finish(size_t& codeBytes);
+	void* finish(size_t& codeBytes, void*& body);
 
 private:
+	void emitExit(const NativeBlockExitSite* exit);
 	void emitTableField(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
 	void emitComparison(const DecodedInstruction& instruction, const NativeBlockExitSite* skipped);
 	void emitMemory(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
@@ -45,6 +46,7 @@ private:
 	void convertWord(int selector);
 
 	sljit_compiler* m_compiler;
+	sljit_label* m_body;
 	const Value* m_constants;
 	const NativeBlock* m_block;
 	Memory& m_memory;
