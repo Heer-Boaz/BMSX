@@ -16,6 +16,13 @@ const enum Tag {
 	Int = 9,
 	F32 = 10,
 	Set = 11,
+	IntArray = 12, // varuint count followed by count zigzag varints, without element tags.
+}
+
+function numberTag(value: number): Tag.Int | Tag.F32 | Tag.F64 {
+	if (value !== value || Object.is(value, -0)) return Tag.F32;
+	if (value === (value | 0)) return Tag.Int;
+	return Math.fround(value) === value ? Tag.F32 : Tag.F64;
 }
 
 export interface EncodeOptions {
@@ -213,29 +220,13 @@ class BinWriter {
 	}
 
 	private writeNumber(v: number) {
-		if (Number.isNaN(v)) {
-			this.u8(Tag.F32);
-			this.f32(v);
-			return;
+		const tag = numberTag(v);
+		this.u8(tag);
+		switch (tag) {
+			case Tag.Int: this.varintSigned(v); return;
+			case Tag.F32: this.f32(v); return;
+			case Tag.F64: this.f64(v); return;
 		}
-		if (Object.is(v, -0)) {
-			this.u8(Tag.F32);
-			this.f32(v);
-			return;
-		}
-		if (Number.isSafeInteger(v) && v >= -0x80000000 && v <= 0x7FFFFFFF) {
-			this.u8(Tag.Int);
-			this.varintSigned(v);
-			return;
-		}
-		const f32 = Math.fround(v);
-		if (f32 === v) {
-			this.u8(Tag.F32);
-			this.f32(v);
-			return;
-		}
-		this.u8(Tag.F64);
-		this.f64(v);
 	}
 
 	writeWithPropTable(val: any, propNameToId: Map<string, number>) {
@@ -259,9 +250,22 @@ class BinWriter {
 					return;
 				}
 				if (Array.isArray(val)) {
-					this.u8(Tag.Arr);
+					let integers = true;
+					for (let i = 0; i < val.length; ++i) {
+						const entry = val[i];
+						switch (typeof entry) {
+							case 'number': integers = numberTag(entry) === Tag.Int; break;
+							default: integers = false; break;
+						}
+						if (!integers) break;
+					}
+					this.u8(integers ? Tag.IntArray : Tag.Arr);
 					this.varuint(val.length);
-					for (let i = 0; i < val.length; i++) this.writeWithPropTable(val[i], propNameToId);
+					if (integers) {
+						for (let i = 0; i < val.length; i++) this.varintSigned(val[i]);
+					} else {
+						for (let i = 0; i < val.length; i++) this.writeWithPropTable(val[i], propNameToId);
+					}
 					return;
 				}
 				if (val instanceof Set) {
@@ -383,11 +387,16 @@ class BinReader {
 					return v;
 				}
 				case Tag.Str: return this.readString();
+				case Tag.IntArray:
 				case Tag.Arr: {
 					const len = this.readVarUint();
 					this.checkContainerLength('array', len);
 					const arr = new Array(len);
-					for (let i = 0; i < len; i++) arr[i] = this.readValue();
+					if (tag === Tag.IntArray) {
+						for (let i = 0; i < len; i++) arr[i] = this.readVarIntSigned();
+					} else {
+						for (let i = 0; i < len; i++) arr[i] = this.readValue();
+					}
 					return arr;
 				}
 				case Tag.Ref: {

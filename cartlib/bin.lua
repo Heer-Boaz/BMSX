@@ -15,6 +15,7 @@ local tag_bin<const> = 8
 local tag_int<const> = 9
 local tag_f32<const> = 10
 local tag_set<const> = 11
+local tag_int_array<const> = 12
 local metadata_header_size<const> = 12
 
 local new_reader<const> = function(addr, label)
@@ -95,6 +96,30 @@ end
 
 local read_value
 
+local read_int_array<const> = function(reader)
+	local count<const> = read_varuint(reader)
+	local values<const> = {}
+	local source: *u8 = reader.pos
+	for index = 1, count do
+		local first<const> = *source
+		if first < 0x80 then
+			local magnitude<const> = first >> 1
+			if (first & 1) == 0 then
+				values[index] = magnitude
+			else
+				values[index] = -(magnitude + 1)
+			end
+			source = source + 1
+		else
+			reader.pos = source
+			values[index] = read_varint(reader)
+			source = reader.pos
+		end
+	end
+	reader.pos = source
+	return values
+end
+
 local read_array<const> = function(reader)
 	local count<const> = read_varuint(reader)
 	local values<const> = {}
@@ -142,6 +167,8 @@ read_value = function(reader)
 	reader.pos = source + 1
 	if tag == tag_int then
 		return read_varint(reader)
+	elseif tag == tag_int_array then
+		return read_int_array(reader)
 	elseif tag == tag_arr then
 		return read_array(reader)
 	elseif tag == tag_obj then
