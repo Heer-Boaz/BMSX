@@ -22,6 +22,9 @@ private:
 	void emitExit(const NativeBlockExitSite* exit);
 	void emitTableField(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
 	void emitComparison(const DecodedInstruction& instruction, const NativeBlockExitSite* skipped);
+	void emitContext(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
+	void emitUpvalue(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
+	void emitVararg(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
 	void emitMemory(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
 	void emitScalarLoad(MemoryAccessKind kind, sljit_s32 alignment);
 	void emitScalarStore(MemoryAccessKind kind, int source);
@@ -35,6 +38,7 @@ private:
 	sljit_s32 cachedFloatRegister(int slot) const;
 	void writeRegister(int guest);
 	void flushRegisters();
+	void discardRegisterRange(int first, int end);
 	RegisterSnapshot registerSnapshot() const;
 	void emitRegisterSnapshot(const RegisterSnapshot& snapshot);
 	void emitCallSpills(bool reload);

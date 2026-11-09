@@ -448,6 +448,7 @@ private:
 	void closeUpvalues(CallFrame& frame);
 	bool executeCall(CallFrame& frame, int a, int b, int c);
 	bool executeReturn(CallFrame& frame, int a, int b);
+	void executeVararg(CallFrame& frame, int a, int b);
 	Upvalue* findOpenUpvalue(const CallFrame& frame, int index) const;
 	void linkOpenUpvalue(CallFrame& frame, Upvalue* upvalue);
 	const Value& readUpvalue(Upvalue* upvalue) const;

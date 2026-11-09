@@ -23,7 +23,7 @@
 namespace {
 using namespace bmsx;
 
-enum class Workload { Registers, Tables, Builtin, Ram, Calls, CallsBacked, CallsArithmetic, CallsRamRecord, CodeWrites, Fractions, Comparisons, TableChurn, TableChurnLive };
+enum class Workload { Registers, Tables, Builtin, Ram, Calls, CallsBacked, CallsArithmetic, CallsRamRecord, CodeWrites, Fractions, Comparisons, TableChurn, TableChurnLive, Globals, Upvalues, Varargs };
 constexpr u32 RAM_RECORD_ADDRESS = DYNAMIC_RAM_BASE + 0x18000;
 
 test::Blua32TestImage program(Workload workload) {
@@ -132,6 +132,46 @@ test::Blua32TestImage program(Workload workload) {
 		writeInstruction(text, 10, static_cast<u8>(OpCode::MOV), 7, 0, 0);
 		writeInstruction(text, 11, static_cast<u8>(OpCode::JMP), 0, 63, 52, 255);
 		break;
+	case Workload::Globals:
+		image.globalNames = {"value"}; image.systemGlobalNames = {"value"}; image.constants = {11.0};
+		writeInstruction(text, 0, static_cast<u8>(OpCode::GETGL), 0, 0, 0);
+		writeInstruction(text, 1, static_cast<u8>(OpCode::ADD), 0, 0, 1);
+		writeInstruction(text, 2, static_cast<u8>(OpCode::SETGL), 0, 0, 0);
+		writeInstruction(text, 3, static_cast<u8>(OpCode::GETSYS), 2, 0, 0);
+		writeInstruction(text, 4, static_cast<u8>(OpCode::ADD), 2, 2, 3);
+		writeInstruction(text, 5, static_cast<u8>(OpCode::SETSYS), 2, 0, 0);
+		writeInstruction(text, 6, static_cast<u8>(OpCode::LOADKR), 4, 5, 0);
+		writeInstruction(text, 7, static_cast<u8>(OpCode::LOADNIL), 6, 2, 0);
+		writeInstruction(text, 8, static_cast<u8>(OpCode::JMP), 0, 63, 55, 255);
+		break;
+	case Workload::Upvalues:
+	case Workload::Varargs: {
+		const bool captures = workload == Workload::Upvalues;
+		text.resize(12u * INSTRUCTION_BYTES);
+		writeInstruction(text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(text, 1, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
+		writeInstruction(text, 2, static_cast<u8>(OpCode::MOV), 0, 4, 0);
+		writeInstruction(text, 3, static_cast<u8>(OpCode::CALL), 0, encodeFixedCallArgCount(captures ? 0 : 3), 1);
+		writeInstruction(text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
+		if (captures) {
+			writeInstruction(text, 5, static_cast<u8>(OpCode::K1), 1, 0, 0);
+			writeInstruction(text, 6, static_cast<u8>(OpCode::GETUP), 0, 0, 0);
+			writeInstruction(text, 7, static_cast<u8>(OpCode::ADD), 0, 0, 1);
+			writeInstruction(text, 8, static_cast<u8>(OpCode::SETUP), 0, 0, 0);
+			writeInstruction(text, 9, static_cast<u8>(OpCode::GETUP), 2, 0, 0);
+			writeInstruction(text, 10, static_cast<u8>(OpCode::RET), 2, 1, 0);
+		} else {
+			writeInstruction(text, 5, static_cast<u8>(OpCode::VARARG), 0, 5, 0);
+			writeInstruction(text, 6, static_cast<u8>(OpCode::VARARG), 0, 0, 0);
+			writeInstruction(text, 7, static_cast<u8>(OpCode::ADD), 0, 0, 1);
+			writeInstruction(text, 8, static_cast<u8>(OpCode::RET), 0, 1, 0);
+		}
+		image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8},
+			{.firstWord = 5, .wordCount = captures ? 6u : 4u, .maxStack = 5, .isVararg = !captures, .staticClosure = !captures,
+				.upvalues = captures ? std::vector<Blua32UpvalueRecord>{{true, 1}} : std::vector<Blua32UpvalueRecord>{}}};
+		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+		break;
+	}
 	}
 	return image;
 }
@@ -152,6 +192,10 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 	registers[0] = valueNumber(1); registers[1] = valueNumber(3);
 	registers[2] = valueNumber(7); registers[3] = valueNumber(65535);
 	Table* retained = nullptr;
+	if (workload == Workload::Globals) {
+		cpu.setGlobalByKey(cpu.stringPool().intern("value"), valueNumber(1));
+		cpu.setSystemGlobalByKey(cpu.stringPool().intern("value"), valueNumber(1)); registers[5] = valueNumber(0);
+	}
 	if (workload == Workload::TableChurnLive) {
 		retained = cpu.createTable(4096, 0);
 		cpu.setGlobalByKey(cpu.stringPool().intern("retained"), valueTable(retained));
@@ -223,6 +267,10 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 	if (workload == Workload::CallsArithmetic && cpu.readFrameRegister(0, 6) != valueNumber(4294967296.0)) {
 		throw std::runtime_error("Arithmetic calls must execute the complete callee body and return its result.");
 	}
+	if (workload == Workload::Globals && (cpu.readFrameRegister(0, 4) != valueNumber(11)
+		|| cpu.readFrameRegister(0, 6) != valueNil() || cpu.readFrameRegister(0, 7) != valueNil())) {
+		throw std::runtime_error("Context workloads must perform dynamic constant reads and range fills.");
+	}
 	if ((workload == Workload::TableChurn || workload == Workload::TableChurnLive)
 		&& cpu.readFrameRegister(0, 6) != valueNumber(10)) {
 		throw std::runtime_error("Allocation workload must populate and read its new tables.");
@@ -277,17 +325,24 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 }
 
 int main(int argc, char** argv) {
-	bool ramRecords = false, comparisons = false, allocations = false, fullyBacked = false;
+	bool ramRecords = false, comparisons = false, allocations = false, fullyBacked = false, context = false;
 	for (int argument = 1; argument < argc; ++argument) {
 		const std::string_view option(argv[argument]);
 		if (option == "--ram-records") ramRecords = true;
 		else if (option == "--comparisons") comparisons = true;
 		else if (option == "--allocations") allocations = true;
 		else if (option == "--fully-backed") fullyBacked = true;
-		else throw std::runtime_error("Expected --ram-records, --comparisons, --allocations or --fully-backed.");
+		else if (option == "--context") context = true;
+		else throw std::runtime_error("Expected --ram-records, --comparisons, --allocations, --context or --fully-backed.");
 	}
 	std::cout << std::fixed << std::setprecision(3);
 	for (const int grant : {256, 4096}) for (int round = 0; round < 3; ++round) {
+		if (context) {
+			measure(Workload::Globals, "globals", grant, round, fullyBacked);
+			measure(Workload::Upvalues, "upvalues", grant, round, fullyBacked);
+			measure(Workload::Varargs, "varargs", grant, round, fullyBacked);
+			continue;
+		}
 		if (ramRecords) {
 			measure(Workload::CallsRamRecord, "calls-ram-record", grant, round, fullyBacked);
 			continue;

@@ -30,14 +30,14 @@ struct NativeBlockLink {
 };
 
 struct NativeBlockRunState {
-	int remainingCycles;
-	int registerTop;
-};
-
-struct NativeBlockRunResult {
-	const NativeBlockExitSite* exit;
-	int remainingCycles;
-	int registerTop;
+	Value* registers = nullptr;
+	const Value* constants = nullptr;
+	CallFrame* frame = nullptr;
+	Value* globalValues = nullptr;
+	Value* systemGlobalValues = nullptr;
+	u32 constantCount = 0;
+	int remainingCycles = 0;
+	int registerTop = 0;
 };
 
 enum class NativeBlockTransition : u32 {
@@ -61,6 +61,9 @@ enum class NativeBlockExit : u8 {
 	ReadMemory,
 	WriteMemory,
 	SkipInstruction,
+	WriteUpvalue,
+	Vararg,
+	InvalidConstant,
 	Count,
 };
 
@@ -94,6 +97,15 @@ inline constexpr bool nativeBlockSupports(u8 op) {
 	switch (static_cast<OpCode>(op)) {
 		case OpCode::MOV:
 		case OpCode::LOADK:
+		case OpCode::LOADKR:
+		case OpCode::LOADNIL:
+		case OpCode::GETGL:
+		case OpCode::SETGL:
+		case OpCode::GETSYS:
+		case OpCode::SETSYS:
+		case OpCode::GETUP:
+		case OpCode::SETUP:
+		case OpCode::VARARG:
 		case OpCode::KNIL:
 		case OpCode::KFALSE:
 		case OpCode::KTRUE:
@@ -148,6 +160,9 @@ inline constexpr NativeBlockExit nativeBlockSlowExit(u8 op) {
 	switch (static_cast<OpCode>(op)) {
 		case OpCode::GETFIELD: return NativeBlockExit::ReadField;
 		case OpCode::SETFIELD: return NativeBlockExit::WriteField;
+		case OpCode::SETUP: return NativeBlockExit::WriteUpvalue;
+		case OpCode::VARARG: return NativeBlockExit::Vararg;
+		case OpCode::LOADKR: return NativeBlockExit::InvalidConstant;
 		case OpCode::LOAD_MEM:
 		case OpCode::LOAD_MEM_D: return NativeBlockExit::ReadMemory;
 		case OpCode::STORE_MEM:
@@ -170,7 +185,7 @@ public:
 	NativeBlock(const NativeBlock&) = delete;
 	NativeBlock& operator=(const NativeBlock&) = delete;
 
-	NativeBlockRunResult run(Value* registers, const Value* constants, int cycleBudget) const;
+	const NativeBlockExitSite* run(NativeBlockRunState& state) const;
 	void linkFrom(const NativeBlockExitSite& source);
 
 	NativeBlockExitSite terminal;

@@ -15,6 +15,10 @@ struct Upvalue : GCObject {
 	CallFrame* frame = nullptr;
 	Value value = valueNil();
 	Upvalue* nextOpen = nullptr;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	struct NativeOffsets { size_t open, index, frame, value; };
+	static NativeOffsets nativeOffsets();
+#endif
 };
 
 struct Closure : GCObject {
@@ -22,5 +26,8 @@ struct Closure : GCObject {
 	size_t upvalueCount = 0;
 	Upvalue** upvalues = nullptr;
 	size_t trackedHeapBytes = 0;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	static size_t nativeUpvaluesOffset();
+#endif
 };
 } // namespace bmsx

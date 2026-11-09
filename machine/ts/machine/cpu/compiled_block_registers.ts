@@ -53,6 +53,19 @@ export class JavaScriptRegisterCache {
 	}
 
 	public discard(register: number): void { this.numbers.delete(register); }
+	public discardRange(first: number, end: number): void {
+		for (const register of this.numbers.keys()) if (register >= first && register < end) this.numbers.delete(register);
+	}
+
+	public prepareDynamicOverwrite(first: number, count: string): string {
+		let source = '';
+		for (const [register, local] of this.numbers) {
+			if (register < first) continue;
+			source += `if(${count}<=${register - first}) r.setEncoded(${register},${ValueTag.Number},${local},null);`;
+			this.numbers.delete(register);
+		}
+		return source;
+	}
 
 	public writeBack(): string {
 		let source = '';

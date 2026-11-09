@@ -78,6 +78,13 @@ void NativeBlockCompiler::flushRegisters() {
 	for (int slot = 0; slot < m_registerCount; ++slot) m_registers[slot].dirty = false;
 }
 
+void NativeBlockCompiler::discardRegisterRange(int first, int end) {
+	for (int slot = 0; slot < m_registerCount; ++slot) {
+		const int guest = m_registers[slot].guest;
+		if (guest >= first && guest < end) m_registers[slot] = CachedRegister{};
+	}
+}
+
 void NativeBlockCompiler::emitCallSpills(bool reload) {
 	if (m_useSavedFloats) return;
 	for (int slot = 0; slot < m_registerCount; ++slot) {

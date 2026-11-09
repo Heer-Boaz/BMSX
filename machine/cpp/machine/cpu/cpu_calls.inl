@@ -61,3 +61,14 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int b) {
 	releaseFrame(std::move(finished));
 	return true;
 }
+
+inline void CPU::executeVararg(CallFrame& frame, int a, int b) {
+	const int count = b == 0 ? frame.varargCount : b;
+	if (count != 0) {
+		Value* registers = ensureRegisterCapacity(frame, a + count - 1);
+		const int copied = std::min(count, frame.varargCount);
+		std::copy_n(m_activeThread->stack.data() + frame.varargBase, copied, registers + a);
+		std::fill_n(registers + a + copied, count - copied, valueNil());
+	}
+	frame.top = b == 0 ? a + count : std::max(frame.top, a + count);
+}

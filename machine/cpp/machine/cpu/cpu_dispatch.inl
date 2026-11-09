@@ -594,19 +594,8 @@ DISPATCH_LABEL(SETUP) {
 }
 
 DISPATCH_LABEL(VARARG) {
-	const int a = decoded->a;
-	const int b = decoded->b;
-	const int count = b == 0 ? FRAME.varargCount : b;
-	if (count > 0) registers = ensureRegisterCapacity(FRAME, a + count - 1);
-	const int copyCount = std::min(count, FRAME.varargCount);
-	std::copy_n(m_activeThread->stack.data() + FRAME.varargBase, copyCount, registers + a);
-	std::fill_n(registers + a + copyCount, count - copyCount, valueNil());
-	const int nextTop = a + count;
-	if (b == 0) {
-		FRAME.top = nextTop;
-	} else if (nextTop > FRAME.top) {
-		FRAME.top = nextTop;
-	}
+	executeVararg(FRAME, decoded->a, decoded->b);
+	registers = FRAME.registers;
 	DISPATCH_NEXT();
 }
 

@@ -28,6 +28,23 @@ return n`,
 local function step(x) n = (n + x) & 65535 end
 for i = 1, ${iterations} do step(i) end
 return n`,
+	closed_captures: `local function make()
+local n = 1
+return function(x) n = (n + x) & 65535; return n end
+end
+local step = make()
+for i = 1, ${iterations} do step(i) end
+return step(0)`,
+	globals: `counter = 1
+for i = 1, ${iterations} do counter = (counter + i) & 65535 end
+return counter`,
+	varargs: `local function step(...)
+local a, b, c, d = ...
+return (a + b + c) & 65535, d
+end
+local n, missing = 1, nil
+for i = 1, ${iterations} do n, missing = step(n, i, 3) end
+return n, missing`,
 	ram: `local address = ${DYNAMIC_RAM_BASE + 0x1000}
 mem32le[address] = 1
 for i = 1, ${iterations} do mem32le[address] = (mem32le[address] + i) & 65535 end

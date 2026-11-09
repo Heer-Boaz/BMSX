@@ -52,14 +52,30 @@ export class ValueSlots {
 		this.size = size;
 	}
 
-	public clear(count: number): void {
-		const start = this.base;
+	public clear(count: number, offset = 0): void {
+		const start = this.base + offset;
 		const end = start + count;
 		this.tags.fill(ValueTag.Nil, start, end);
 		this.scalars.fill(NaN, start, end);
 		for (let slot = start; slot < end; slot += 1) {
 			this.refs[slot] = null;
 		}
+	}
+
+	/** Grow this storage, preserving its values and the identity of its owner. */
+	public reserveCapacity(capacity: number): void {
+		if (capacity <= this.size) return;
+		capacity = Math.max(capacity, this.size * 2, 8);
+		const tags = new Uint8Array(capacity);
+		const scalars = new Float64Array(capacity);
+		const refs = new Array<ValueReference>(capacity);
+		for (let index = 0; index < this.size; ++index) {
+			const source = this.base + index;
+			tags[index] = this.tags[source]; scalars[index] = this.scalars[source]; refs[index] = this.refs[source];
+		}
+		for (let index = this.size; index < capacity; ++index) { scalars[index] = NaN; refs[index] = null; }
+		this.tags = tags; this.scalars = scalars; this.refs = refs;
+		this.base = 0; this.size = capacity;
 	}
 
 	public copyTo(target: Value[], count: number): void {

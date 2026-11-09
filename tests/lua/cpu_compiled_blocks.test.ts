@@ -76,7 +76,7 @@ test('multiple numeric definitions stay local across copies and conversions unti
 	let reads = 0, writes = 0;
 	r.getNumber = index => { ++reads; return getNumber(index); };
 	r.setEncoded = (index, tag, scalar, reference) => { ++writes; setEncoded(index, tag, scalar, reference); };
-	assert.equal(block.exits[block.execute(r, frame.executionImage.constScalars, page)], block.terminal);
+	assert.equal(block.exits[block.execute(r, frame.executionImage.constScalars, page, frame)], block.terminal);
 	assert.equal(reads, 0, 'the generated block consumes local numeric definitions, not their stale slot values');
 	assert.equal(writes, 5, 'each final numeric slot is published once instead of after every instruction');
 	assert.deepEqual(Array.from({ length: 5 }, (_, index) => getNumber(index)), [83, 11, 0, 66, 72],
@@ -289,7 +289,7 @@ test('field cache hits stay in one generated block and misses publish only the e
 	const block = page.compiledBlocks!.entries[(entry & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2]!;
 	assert.equal(block.sourceWords, 6);
 	assert.equal(block.exits.filter(exit => exit.exit === CompiledBlockExit.ReadField || exit.exit === CompiledBlockExit.WriteField).length, 2);
-	assert.equal(block.exits[block.execute(frame.registers, frame.executionImage.constScalars, page)], block.terminal,
+	assert.equal(block.exits[block.execute(frame.registers, frame.executionImage.constScalars, page, frame)], block.terminal,
 		'both field hits and arithmetic reach the final branch without a host side exit');
 	ref.runUntilDepth(0, 6);
 	assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());

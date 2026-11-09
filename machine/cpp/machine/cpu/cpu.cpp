@@ -2443,6 +2443,7 @@ RunResult CPU::runLoop(
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const NativeBlock* nativeBlock = nullptr;
 	int nativeFirstDispatchCycles = 0;
+	NativeBlockRunState nativeState;
 #endif
 	for (;;) {
 		try {
@@ -2725,13 +2726,14 @@ dispatch_instruction:
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 dispatch_native_block: {
-				const auto result = nativeBlock->run(registers, IMAGE.constPool.data(), instructionBudgetRemaining + nativeFirstDispatchCycles);
-				const auto* exit = result.exit;
+				nativeState = {registers, IMAGE.constPool.data(), frame, m_globalValues.data(), m_systemGlobalValues.data(),
+					static_cast<u32>(IMAGE.constPool.size()), instructionBudgetRemaining + nativeFirstDispatchCycles, FRAME.top};
+				const auto* exit = nativeBlock->run(nativeState);
 				// Publish precisely the completed prefix before any allocating,
 				// faulting or code-invalidating semantic operation runs.
-				instructionBudgetRemaining = result.remainingCycles;
+				instructionBudgetRemaining = nativeState.remainingCycles;
 				FRAME.pc = exit->nextPc;
-				FRAME.top = std::max(FRAME.top, result.registerTop);
+				FRAME.top = nativeState.registerTop;
 				m_currentInstructionPc = exit->currentPc;
 				m_lastExecutionDomainId = IMAGE.executionDomainId;
 				lastPc = exit->lastPc;
@@ -2755,6 +2757,15 @@ dispatch_native_block: {
 				case NativeBlockExit::SkipInstruction:
 					skipNextInstruction(FRAME);
 					DISPATCH_CONTINUE();
+				case NativeBlockExit::Vararg:
+					executeVararg(FRAME, exit->exitA, exit->exitB);
+					registers = FRAME.registers;
+					DISPATCH_NEXT();
+				case NativeBlockExit::WriteUpvalue:
+					writeUpvalue(FRAME.closure->upvalues[exit->exitB], registers[exit->exitA]);
+					DISPATCH_NEXT();
+				case NativeBlockExit::InvalidConstant:
+					throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 				default: {
 					const auto transition = exit->handler(this, frame, exit);
 					// The source descriptor may already have been retired by the helper.

@@ -39,12 +39,16 @@ std::unique_ptr<NativeBlock> NativeBlock::compile(
 			exit.handler = exitHandlers[static_cast<size_t>(exit.exit)];
 			if (slow == NativeBlockExit::ReadField || slow == NativeBlockExit::WriteField) {
 				exit.tableCacheSlot = instruction.tableCacheSlot;
-			} else {
+			} else if (slow == NativeBlockExit::ReadMemory || slow == NativeBlockExit::WriteMemory) {
 				exit.displaced = op == OpCode::LOAD_MEM_D || op == OpCode::STORE_MEM_D;
 				exit.displacement = instruction.disp;
 			}
 		}
-		if (!nativeBlockEndsBlock(instruction.op) && slow != NativeBlockExit::WriteField && slow != NativeBlockExit::WriteMemory) {
+		if (op == OpCode::VARARG && instruction.b == 0) terminal.registerTop = 0;
+		else if (op == OpCode::VARARG || op == OpCode::LOADNIL) {
+			if (instruction.b != 0) terminal.registerTop = std::max(terminal.registerTop, static_cast<int>(instruction.a) + instruction.b);
+		} else if (!nativeBlockEndsBlock(instruction.op) && slow != NativeBlockExit::WriteField && slow != NativeBlockExit::WriteMemory
+			&& op != OpCode::SETUP && op != OpCode::SETGL && op != OpCode::SETSYS) {
 			terminal.registerTop = std::max(terminal.registerTop, static_cast<int>(instruction.a) + 1);
 		}
 	}
@@ -81,11 +85,9 @@ NativeBlock::~NativeBlock() {
 	m_cacheBytes -= codeBytes;
 }
 
-NativeBlockRunResult NativeBlock::run(Value* registers, const Value* constants, int cycleBudget) const {
-	NativeBlockRunState state{cycleBudget, 0};
-	using Entry = const NativeBlockExitSite* (SLJIT_FUNC *)(Value*, const Value*, NativeBlockRunState*);
-	const auto* exit = reinterpret_cast<Entry>(m_code)(registers, constants, &state);
-	return {exit, state.remainingCycles, state.registerTop};
+const NativeBlockExitSite* NativeBlock::run(NativeBlockRunState& state) const {
+	using Entry = const NativeBlockExitSite* (SLJIT_FUNC *)(NativeBlockRunState*);
+	return reinterpret_cast<Entry>(m_code)(&state);
 }
 
 void NativeBlockLink::disconnect() {

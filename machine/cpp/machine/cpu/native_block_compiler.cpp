@@ -20,10 +20,12 @@ NativeBlockCompiler::NativeBlockCompiler(const Value* constants, const NativeBlo
 		const auto op = static_cast<OpCode>(instruction.op);
 		const auto slow = nativeBlockSlowExit(instruction.op);
 		slowPaths += slow == NativeBlockExit::ReadField || slow == NativeBlockExit::WriteField
+			|| slow == NativeBlockExit::WriteUpvalue
+			|| slow == NativeBlockExit::Vararg || slow == NativeBlockExit::InvalidConstant
 			|| slow == NativeBlockExit::WriteMemory
 			|| (slow == NativeBlockExit::ReadMemory && instruction.c != static_cast<i16>(MemoryAccessKind::U8));
 		readMappings += slow == NativeBlockExit::ReadMemory;
-		calls |= (op == OpCode::BNOT && instruction.b >= 0)
+		calls |= op == OpCode::LOADKR || (op == OpCode::BNOT && instruction.b >= 0)
 			|| ((op == OpCode::BAND || op == OpCode::BOR || op == OpCode::BXOR || op == OpCode::SHL || op == OpCode::SHR)
 				&& (instruction.b >= 0 || instruction.c >= 0))
 			|| ((slow == NativeBlockExit::ReadMemory || slow == NativeBlockExit::WriteMemory)
@@ -40,17 +42,19 @@ NativeBlockCompiler::NativeBlockCompiler(const Value* constants, const NativeBlo
 	if (!m_compiler) throw std::bad_alloc();
 	// Every body shares one frame layout, so a linked jump skips the target's
 	// prologue and any target exit can unwind the original entry frame. S0/S1
-	// retain the value banks, S2 is temporary, S3 retains the result address.
+	// retain the value banks, S2 is temporary, S3 retains the execution state.
 	// S4/S5 keep cycles/top local until the entire chain actually returns.
 	const int scratchFloats = 3 + std::min(REGISTER_CACHE_CAPACITY,
 		SLJIT_NUMBER_OF_FLOAT_REGISTERS - SLJIT_NUMBER_OF_SAVED_FLOAT_REGISTERS - 3);
 	const int savedFloats = std::min(REGISTER_CACHE_CAPACITY, SLJIT_NUMBER_OF_SAVED_FLOAT_REGISTERS);
-	sljit_emit_enter(m_compiler, 0, SLJIT_ARGS3(P, P, P, P),
+	sljit_emit_enter(m_compiler, 0, SLJIT_ARGS1(P, P),
 		3 | SLJIT_ENTER_FLOAT(scratchFloats), 6 | SLJIT_ENTER_FLOAT(savedFloats),
 		REGISTER_CACHE_CAPACITY * sizeof(Value));
-	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_S3, 0, SLJIT_S2, 0);
+	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_S3, 0, SLJIT_S0, 0);
+	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_S0, 0, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, registers));
+	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_S1, 0, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, constants));
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_S4, 0, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, remainingCycles));
-	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_S5, 0, SLJIT_IMM, 0);
+	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_S5, 0, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, registerTop));
 	m_body = sljit_emit_label(m_compiler);
 }
 
@@ -60,6 +64,17 @@ void NativeBlockCompiler::emit(const DecodedInstruction& instruction, const Nati
 	const auto op = static_cast<OpCode>(instruction.op);
 	if (nativeBlockEndsBlock(instruction.op)) flushRegisters();
 	switch (op) {
+		case OpCode::LOADNIL:
+		case OpCode::LOADKR:
+		case OpCode::GETGL:
+		case OpCode::SETGL:
+		case OpCode::GETSYS:
+		case OpCode::SETSYS:
+		case OpCode::GETUP:
+		case OpCode::SETUP:
+		case OpCode::VARARG:
+			emitContext(instruction, slowExit);
+			return;
 		case OpCode::MOV:
 			loadOperand(instruction.b, SLJIT_FR0);
 			break;

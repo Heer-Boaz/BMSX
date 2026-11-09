@@ -352,6 +352,7 @@ if(BMSX_ENABLE_NATIVE_BLOCKS)
 		SLJIT_DEBUG=$<IF:$<CONFIG:Debug>,1,0>)
 	target_sources(bmsx_core PRIVATE machine/cpu/native_block.cpp machine/cpu/native_block_compiler.cpp
 		machine/cpu/native_block_memory.cpp machine/cpu/native_block_registers.cpp machine/cpu/native_block_compare.cpp
+		machine/cpu/native_block_context.cpp machine/cpu/closure.cpp
 		machine/cpu/cpu_native_blocks.cpp)
 	target_compile_definitions(bmsx_core PUBLIC BMSX_ENABLE_NATIVE_BLOCKS=1)
 	target_link_libraries(bmsx_core PRIVATE bmsx_sljit)
@@ -956,6 +957,9 @@ if(BMSX_BUILD_TESTS)
 	add_executable(bmsx_cpu_compiled_calls_tests ../../tests/cpp/cpu_compiled_calls_test.cpp ${BMSX_TEST_ROM_SOURCE})
 	target_link_libraries(bmsx_cpu_compiled_calls_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_compiled_calls_tests COMMAND bmsx_cpu_compiled_calls_tests)
+	add_executable(bmsx_cpu_compiled_context_tests ../../tests/cpp/cpu_compiled_context_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu_compiled_context_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_cpu_compiled_context_tests COMMAND bmsx_cpu_compiled_context_tests)
 	if(BMSX_ENABLE_NATIVE_BLOCKS)
 		add_executable(bmsx_native_block_tests ../../tests/cpp/native_block_test.cpp)
 		target_link_libraries(bmsx_native_block_tests PRIVATE bmsx_core)

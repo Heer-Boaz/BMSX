@@ -8,6 +8,8 @@ import { emitMemoryAccess } from './compiled_block_memory';
 import { JavaScriptRegisterCache } from './compiled_block_registers';
 import { emitComparison } from './compiled_block_compare';
 import type { StringPool } from './string_pool';
+import type { CallFrame } from './call_state';
+import { compiledContextSupports, emitContext } from './compiled_block_context';
 
 export const enum CpuExecutionBackend {
 	Interpreter,
@@ -28,6 +30,9 @@ export const enum CompiledBlockExit {
 	ReadMemory,
 	WriteMemory,
 	SkipInstruction,
+	WriteUpvalue,
+	Vararg,
+	InvalidConstant,
 }
 
 export type CompiledBlockExitSite = {
@@ -40,6 +45,7 @@ export type CompiledBlockExitSite = {
 	readonly displacement: number;
 	readonly cycles: number;
 	readonly registerTop: number;
+	readonly resetsRegisterTop: boolean;
 	readonly nextPc: number;
 	readonly currentPc: number;
 	readonly lastPc: number;
@@ -49,7 +55,7 @@ export type CompiledBlockExitSite = {
 };
 
 export type CompiledBlock = {
-	readonly execute: (registers: ValueSlots, constants: Float64Array, page: DecodedInstructionPage) => number;
+	readonly execute: (registers: ValueSlots, constants: Float64Array, page: DecodedInstructionPage, frame: CallFrame) => number;
 	readonly terminal: CompiledBlockExitSite;
 	readonly exits: readonly CompiledBlockExitSite[];
 	readonly sourceUnits: number;
@@ -188,6 +194,7 @@ emitters[OpCode.RET] = emitters[OpCode.JMP];
 
 export function compiledBlockSupports(op: number): boolean {
 	return emitters[op] !== undefined || numberEmitters[op] !== undefined
+		|| compiledContextSupports(op)
 		|| op === OpCode.LOAD_MEM || op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM || op === OpCode.STORE_MEM_D;
 }
 
@@ -205,6 +212,8 @@ export function compileJavaScriptBlock(
 	image: Blua32ExecutionImage,
 	memory: Memory,
 	strings: StringPool,
+	globalSlots: ValueSlots,
+	systemGlobalSlots: ValueSlots,
 ): CompiledBlock {
 	const source = ['"use strict";'];
 	const registers = new JavaScriptRegisterCache(image);
@@ -212,6 +221,7 @@ export function compileJavaScriptBlock(
 	let cycles = 0;
 	let sourceWords = 0;
 	let registerTop = 0;
+	let resetsRegisterTop = false;
 	let currentPc = pc;
 	let lastPc = pc;
 	let nextPc = pc;
@@ -219,6 +229,7 @@ export function compileJavaScriptBlock(
 	let numberLocal = false;
 	let memoryAccess = false;
 	let memoryReads = false;
+	let contextCapture = false;
 	for (let word = firstWord; word < endWord; word += page.widths[word]) {
 		finalWord = word;
 		const op = page.ops[word];
@@ -232,16 +243,20 @@ export function compileJavaScriptBlock(
 		const load = op === OpCode.LOAD_MEM || op === OpCode.LOAD_MEM_D;
 		const store = op === OpCode.STORE_MEM || op === OpCode.STORE_MEM_D;
 		const displaced = op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM_D;
-		if (op === OpCode.GETFIELD || op === OpCode.SETFIELD || load || store) {
+		if (op === OpCode.GETFIELD || op === OpCode.SETFIELD || load || store || op === OpCode.VARARG || op === OpCode.LOADKR || op === OpCode.SETUP) {
 			exits.push({ exit: load ? CompiledBlockExit.ReadMemory : store ? CompiledBlockExit.WriteMemory
-				: op === OpCode.GETFIELD ? CompiledBlockExit.ReadField : CompiledBlockExit.WriteField,
+				: op === OpCode.GETFIELD ? CompiledBlockExit.ReadField : op === OpCode.SETFIELD ? CompiledBlockExit.WriteField
+				: op === OpCode.VARARG ? CompiledBlockExit.Vararg : op === OpCode.SETUP ? CompiledBlockExit.WriteUpvalue : CompiledBlockExit.InvalidConstant,
 				exitA: page.a[word], exitB: page.b[word], exitC: page.c[word], exitWord: word,
 				displaced, displacement: page.disp[word],
-				cycles, registerTop, nextPc, currentPc, lastPc,
+				cycles, registerTop, resetsRegisterTop, nextPc, currentPc, lastPc,
 				linkedBlock: null, previousIncoming: null, nextIncoming: null });
 		}
 		const numberEmitter = numberEmitters[op];
-		if (load || store) {
+		if (compiledContextSupports(op)) {
+			contextCapture ||= op === OpCode.GETGL || op === OpCode.SETGL || op === OpCode.GETSYS || op === OpCode.SETSYS || op === OpCode.LOADKR;
+			source.push(emitContext(op, page, word, registers, exitIndex));
+		} else if (load || store) {
 			memoryAccess = true;
 			memoryReads ||= load;
 			if (load && !numberLocal) {
@@ -258,7 +273,11 @@ export function compileJavaScriptBlock(
 		} else {
 			source.push(emitters[op]!(page, word, image, registers, exitIndex));
 		}
-		if (!compiledBlockEndsBlock(op) && op !== OpCode.SETFIELD && !store) registerTop = Math.max(registerTop, page.a[word] + 1);
+		if (op === OpCode.VARARG && page.b[word] === 0) { registerTop = 0; resetsRegisterTop = true; }
+		else if (op === OpCode.VARARG || op === OpCode.LOADNIL) {
+			if (page.b[word] !== 0) registerTop = Math.max(registerTop, page.a[word] + page.b[word]);
+		} else if (!compiledBlockEndsBlock(op) && op !== OpCode.SETFIELD && !store
+			&& op !== OpCode.SETUP && op !== OpCode.SETGL && op !== OpCode.SETSYS) registerTop = Math.max(registerTop, page.a[word] + 1);
 	}
 	source.push(registers.writeBack());
 	const finalOp = page.ops[finalWord];
@@ -267,7 +286,7 @@ export function compileJavaScriptBlock(
 			: finalOp === OpCode.RET ? CompiledBlockExit.Return : CompiledBlockExit.Continue,
 		exitA: page.a[finalWord], exitB: page.b[finalWord], exitC: page.c[finalWord], exitWord: finalWord,
 		displaced: false, displacement: 0,
-		cycles, registerTop, nextPc, currentPc, lastPc,
+		cycles, registerTop, resetsRegisterTop, nextPc, currentPc, lastPc,
 		linkedBlock: null, previousIncoming: null, nextIncoming: null,
 	};
 	const terminalIndex = exits.length;
@@ -287,18 +306,18 @@ export function compileJavaScriptBlock(
 		source.push(`return ${truth}?${takenIndex}:${terminalIndex};`);
 	} else source.push(`return ${terminalIndex};`);
 	const body = source.join('\n');
-	const functionSource = memoryAccess || registers.localCount !== 0 || ordering ? `return function(r,k,p){${body}}` : body;
+	const functionSource = memoryAccess || registers.localCount !== 0 || ordering || contextCapture ? `return function(r,k,p,frame){${body}}` : body;
 	let execute: CompiledBlock['execute'];
 	if (memoryReads) {
 		const cartridges = memory.cartridgeController;
-		execute = new Function('m', 'g', 's', 'c', 'c0', 'c1', 'f', 'q', functionSource)(
+		execute = new Function('m', 'g', 's', 'c', 'c0', 'c1', 'f', 'q', 'kt', 'gl', 'sy', functionSource)(
 			memory.ramView, memory.ramWriteWatches().groupData(), memory.systemRomStorage(),
-			cartridges, cartridges.romStorage(0), cartridges.romStorage(1), valueFromNumber, strings) as CompiledBlock['execute'];
+			cartridges, cartridges.romStorage(0), cartridges.romStorage(1), valueFromNumber, strings, image.constTags, globalSlots, systemGlobalSlots) as CompiledBlock['execute'];
 	} else if (memoryAccess) {
-		execute = new Function('m', 'g', 'f', 'q', functionSource)(memory.ramView, memory.ramWriteWatches().groupData(), valueFromNumber, strings) as CompiledBlock['execute'];
-	} else if (registers.localCount !== 0 || ordering) {
-		execute = new Function('f', 'q', functionSource)(valueFromNumber, strings) as CompiledBlock['execute'];
-	} else execute = new Function('r', 'k', 'p', functionSource) as CompiledBlock['execute'];
+		execute = new Function('m', 'g', 'f', 'q', 'kt', 'gl', 'sy', functionSource)(memory.ramView, memory.ramWriteWatches().groupData(), valueFromNumber, strings, image.constTags, globalSlots, systemGlobalSlots) as CompiledBlock['execute'];
+	} else if (registers.localCount !== 0 || ordering || contextCapture) {
+		execute = new Function('f', 'q', 'kt', 'gl', 'sy', functionSource)(valueFromNumber, strings, image.constTags, globalSlots, systemGlobalSlots) as CompiledBlock['execute'];
+	} else execute = new Function('r', 'k', 'p', 'frame', functionSource) as CompiledBlock['execute'];
 	return {
 		execute,
 		terminal, exits, sourceWords, sourceUnits: functionSource.length,

@@ -482,10 +482,10 @@ export class CPU implements MappedPageInvalidator {
 	private readonly staticClosuresByAddress = new Map<number, Closure>();
 	private stringIndexTable: Table | null = null;
 	private systemGlobalNames: StringId[] = [];
-	private systemGlobalSlots = new ValueSlots(0);
+	private readonly systemGlobalSlots = new ValueSlots(0);
 	private systemGlobalSlotByKey: Map<StringId, number> = new Map();
 	private globalNames: StringId[] = [];
-	private globalSlots = new ValueSlots(0);
+	private readonly globalSlots = new ValueSlots(0);
 	private globalSlotByKey: Map<StringId, number> = new Map();
 	private readonly framePool: CallFrame[] = [];
 	private completionValueSlots = new ValueSlots(8);
@@ -1054,8 +1054,8 @@ export class CPU implements MappedPageInvalidator {
 		if (nameCount === 0) {
 			return slots;
 		}
-		this.reserveGlobalSlots(system, registeredNames.length + nameCount);
 		const values = system ? this.systemGlobalSlots : this.globalSlots;
+		values.reserveCapacity(registeredNames.length + nameCount);
 		this.executionAddressSpace.bindReadOnlyView(
 			executionDomainId,
 			tableAddress,
@@ -1081,20 +1081,6 @@ export class CPU implements MappedPageInvalidator {
 			slots[index] = slot;
 		}
 		return slots;
-	}
-
-	private reserveGlobalSlots(system: boolean, capacity: number): void {
-		const current = system ? this.systemGlobalSlots : this.globalSlots;
-		if (capacity <= current.capacity()) {
-			return;
-		}
-		const next = new ValueSlots(Math.max(capacity, current.capacity() * 2, 8));
-		next.copyRangeFrom(current, 0, 0, system ? this.systemGlobalNames.length : this.globalNames.length);
-		if (system) {
-			this.systemGlobalSlots = next;
-		} else {
-			this.globalSlots = next;
-		}
 	}
 
 	private activateExecutionImage(executionBoot: Blua32ExecutionBoot): Blua32ExecutionImage {
@@ -2250,7 +2236,7 @@ export class CPU implements MappedPageInvalidator {
 		let slot = this.globalSlotByKey.get(key);
 		if (slot === undefined) {
 			slot = this.globalNames.length;
-			this.reserveGlobalSlots(false, slot + 1);
+			this.globalSlots.reserveCapacity(slot + 1);
 			this.globalSlotByKey.set(key, slot);
 			this.globalNames.push(key);
 		}
@@ -2276,10 +2262,10 @@ export class CPU implements MappedPageInvalidator {
 
 	public clearGlobalSlots(): void {
 		this.systemGlobalNames = [];
-		this.systemGlobalSlots = new ValueSlots(0);
+		this.systemGlobalSlots.clear(this.systemGlobalSlots.capacity());
 		this.systemGlobalSlotByKey = new Map();
 		this.globalNames = [];
-		this.globalSlots = new ValueSlots(0);
+		this.globalSlots.clear(this.globalSlots.capacity());
 		this.globalSlotByKey = new Map();
 	}
 
@@ -2443,6 +2429,17 @@ export class CPU implements MappedPageInvalidator {
 		return true;
 	}
 
+	private executeVararg(frame: CallFrame, a: number, b: number): void {
+		const count = b === 0 ? frame.varargCount : b;
+		if (count !== 0) {
+			this.ensureRegisterCapacity(frame, a + count - 1);
+			const copied = Math.min(count, frame.varargCount);
+			frame.registers.copyRangeFrom(frame.thread.stackRegisters, a, frame.varargBase, copied);
+			frame.registers.clear(count - copied, a + copied);
+		}
+		frame.top = b === 0 ? a + count : Math.max(frame.top, a + count);
+	}
+
 	private executeMemoryLoad(frame: CallFrame, destination: number, kind: MemoryAccessKind, address: number): void {
 		if ((address & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[kind]) !== 0) {
 			this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, address);
@@ -2523,7 +2520,8 @@ export class CPU implements MappedPageInvalidator {
 					if (terminal) break;
 				}
 				if (count >= 2 || (count === 1 && compiledBlockEndsBlock(page.ops[word]))) {
-					const block = compileJavaScriptBlock(page, word, cursor, pc, frame.executionImage, this.memory, this.stringPool);
+					const block = compileJavaScriptBlock(page, word, cursor, pc, frame.executionImage, this.memory, this.stringPool,
+						this.globalSlots, this.systemGlobalSlots);
 					this.compiledCodeCache.install(page, word, block);
 				} else if (warmingSuccessor) {
 					cache.visits[word] = 0;
@@ -2546,9 +2544,9 @@ export class CPU implements MappedPageInvalidator {
 			let registerTop = frame.top;
 			let exit: CompiledBlockExitSite;
 			for (;;) {
-				exit = current.exits[current.execute(registers, image.constScalars, page)];
+				exit = current.exits[current.execute(registers, image.constScalars, page, frame)];
 				remaining -= exit.cycles;
-				registerTop = Math.max(registerTop, exit.registerTop);
+				registerTop = Math.max(exit.resetsRegisterTop ? frame.top : registerTop, exit.registerTop);
 				if (exit.exit !== CompiledBlockExit.Continue) break;
 				const target = exit.linkedBlock;
 				if (target === null) {
@@ -2579,6 +2577,10 @@ export class CPU implements MappedPageInvalidator {
 					if (!this.executeReturn(frame, exit.exitA, exit.exitB)) return;
 					break;
 				case CompiledBlockExit.SkipInstruction: this.skipNextInstruction(frame); return;
+				case CompiledBlockExit.Vararg: this.executeVararg(frame, exit.exitA, exit.exitB); return;
+				case CompiledBlockExit.WriteUpvalue:
+					this.copyRegisterToUpvalue(frame.closure.upvalues[exit.exitB], registers, exit.exitA); return;
+				case CompiledBlockExit.InvalidConstant: throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 				case CompiledBlockExit.ReadMemory:
 				case CompiledBlockExit.WriteMemory: {
 					const address = ((this.readRKNumber(frame, exit.exitB) >>> 0) + (exit.displaced ? exit.displacement * 4 : 0)) >>> 0;
@@ -2682,9 +2684,8 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				case OpCode.LOADNIL: {
 					const b = page.b[pageOffset];
-					for (let index = 0; index < b; index += 1) {
-						this.setRegisterNilFast(frame, registers, a + index);
-					}
+					registers.clear(b, a);
+					if (b !== 0) frame.top = Math.max(frame.top, a + b);
 					return;
 				}
 				case OpCode.GETSYS:
@@ -3239,25 +3240,7 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				}
 				case OpCode.VARARG: {
-					const b = page.b[pageOffset];
-					const count = b === 0 ? frame.varargCount : b;
-					if (count > 0) this.ensureRegisterCapacity(frame, a + count - 1);
-					const copyCount = Math.min(count, frame.varargCount);
-					registers.copyRangeFrom(
-						this.activeThread.stackRegisters,
-						a,
-						frame.varargBase,
-						copyCount,
-					);
-					for (let index = copyCount; index < count; index += 1) {
-						registers.setNil(a + index);
-					}
-					const nextTop = a + count;
-					if (b === 0) {
-						frame.top = nextTop;
-					} else if (nextTop > frame.top) {
-						frame.top = nextTop;
-					}
+					this.executeVararg(frame, a, page.b[pageOffset]);
 					return;
 				}
 				case OpCode.CALL:
@@ -4859,7 +4842,7 @@ export class CPU implements MappedPageInvalidator {
 		this.memory.clearMappedPageWriteWatches();
 		this.executionImagesByDomain.fill(null);
 		this.clearGlobalSlots();
-		this.reserveGlobalSlots(true, state.systemGlobals.length);
+		this.systemGlobalSlots.reserveCapacity(state.systemGlobals.length);
 		for (let slot = 0; slot < state.systemGlobals.length; slot += 1) {
 			const entry = state.systemGlobals[slot];
 			this.systemGlobalNames.push(entry.key);
@@ -4867,7 +4850,7 @@ export class CPU implements MappedPageInvalidator {
 			reader.readValue(entry.value);
 			this.systemGlobalSlots.setEncoded(slot, reader.tag, reader.scalar, reader.reference);
 		}
-		this.reserveGlobalSlots(false, state.globalSlots.length);
+		this.globalSlots.reserveCapacity(state.globalSlots.length);
 		for (let slot = 0; slot < state.globalSlots.length; slot += 1) {
 			const entry = state.globalSlots[slot];
 			this.globalNames.push(entry.key);
