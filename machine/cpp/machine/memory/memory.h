@@ -49,6 +49,7 @@ public:
 	const CartridgeController& cartridgeController() const { return m_cartridgeController; }
 	u8* ramData() { return m_ram.data(); }
 	size_t ramByteCount() const { return m_ram.size(); }
+	const MappedPageWriteWatches& ramWriteWatches() const { return m_ramPageWriteWatches; }
 	void installSystemRom(std::span<const u8> rom);
 	void attachMappedPageInvalidator(MappedPageInvalidator& invalidator);
 	void detachMappedPageInvalidator();

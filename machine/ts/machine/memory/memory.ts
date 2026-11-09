@@ -188,6 +188,7 @@ export class Memory {
 	private systemRom: Uint8Array;
 	public readonly cartridgeController: CartridgeController;
 	private readonly ram: Uint8Array;
+	public readonly ramView: DataView;
 	private readonly ramPageWriteWatches: MappedPageWriteWatches;
 	private mappedPageInvalidator: MappedPageInvalidator | null = null;
 	private readonly ioSlots: Uint32Array;
@@ -217,6 +218,7 @@ export class Memory {
 		this.dmaRomView = { bytes: init.systemRom, byteOffset: 0, byteLength: 0 };
 		this.cartridgeController = new CartridgeController(init.cartridgeSlots);
 		this.ram = new Uint8Array(ramByteCount);
+		this.ramView = new DataView(this.ram.buffer);
 		this.ramPageWriteWatches = new MappedPageWriteWatches(ramByteCount);
 		this.ioSlots = new Uint32Array(IO_SLOT_COUNT);
 		this.ioReadContexts = new Array<unknown>(IO_SLOT_COUNT);
@@ -243,6 +245,8 @@ export class Memory {
 	public ramByteCount(): number {
 		return this.ram.byteLength;
 	}
+
+	public ramWriteWatches(): MappedPageWriteWatches { return this.ramPageWriteWatches; }
 
 	public installSystemRom(rom: Uint8Array): void {
 		this.systemRom = rom;

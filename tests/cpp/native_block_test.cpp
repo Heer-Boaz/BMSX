@@ -1,6 +1,8 @@
 #include "machine/cpu/native_block.h"
 #include "machine/cpu/execution_image.h"
 #include "machine/cpu/call_state.h"
+#include "machine/memory/memory.h"
+#include "spec/bmsx/model.h"
 
 #include <array>
 #include <iostream>
@@ -9,6 +11,8 @@
 
 namespace {
 using namespace bmsx;
+
+Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
 
 void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
@@ -65,7 +69,7 @@ void arithmeticAndWordDatapaths() {
 				const std::array pool{left, right};
 				std::array registers{left, right, valueNil(), valueNil()};
 				{
-					auto block = NativeBlock::compile(instructions, pool.data(), cacheBytes);
+					auto block = NativeBlock::compile(instructions, pool.data(), cacheBytes, memory);
 					block->run(registers.data(), pool.data());
 					const Value expected = evaluate(op, left, right);
 					require(registers[destination] == expected && registers[3] == expected,
@@ -95,7 +99,7 @@ void movesAndLiteralsPreserveRawValues() {
 		move.width = move.baseCycles = 1;
 		move.a = 1;
 		const std::array instructions{NativeBlockInstruction{&load, 0x1000}, NativeBlockInstruction{&move, 0x1004}};
-		auto block = NativeBlock::compile(instructions, pool.data(), bytes);
+		auto block = NativeBlock::compile(instructions, pool.data(), bytes, memory);
 		std::array registers{Value{0}, Value{0}};
 		block->run(registers.data(), pool.data());
 		require(registers[0] == pool[index] && registers[1] == pool[index], "moves preserve every raw tagged and number bit");
@@ -107,7 +111,7 @@ void movesAndLiteralsPreserveRawValues() {
 		load.baseCycles = 1;
 		load.sbx = -33554432;
 		const std::array instructions{NativeBlockInstruction{&load, 0x1000}};
-		auto block = NativeBlock::compile(instructions, pool.data(), bytes);
+		auto block = NativeBlock::compile(instructions, pool.data(), bytes, memory);
 		Value reg = 0;
 		block->run(&reg, pool.data());
 		const Value expected = op == OpCode::KNIL ? valueNil() : op == OpCode::KFALSE ? valueBool(false)
@@ -170,7 +174,7 @@ void dependentInstructionsWriteBackEveryLiveRegister() {
 			}
 			source[index] = {&instruction, index == 0 ? 0x1000u : source[index - 1].pc + decoded[index - 1].width * INSTRUCTION_BYTES};
 			previous = instruction.a;
-			auto block = NativeBlock::compile(std::span(source).first(index + 1), pool.data(), bytes);
+			auto block = NativeBlock::compile(std::span(source).first(index + 1), pool.data(), bytes, memory);
 			auto registers = initial;
 			block->run(registers.data(), pool.data());
 			require(registers == expected, "dependent native instructions preserve every live raw register at each prefix exit");
@@ -180,7 +184,7 @@ void dependentInstructionsWriteBackEveryLiveRegister() {
 			terminal.op = static_cast<u8>(op); terminal.width = 2; terminal.baseCycles = BASE_CYCLES[terminal.op];
 			terminal.a = previous; terminal.bx = 0x2000u;
 			source.back() = {&terminal, source[31].pc + decoded[31].width * INSTRUCTION_BYTES};
-			auto block = NativeBlock::compile(source, pool.data(), bytes);
+			auto block = NativeBlock::compile(source, pool.data(), bytes, memory);
 			auto registers = initial;
 			const auto pc = block->run(registers.data(), pool.data())->nextPc;
 			const bool taken = op == OpCode::JMP || (op == OpCode::JMPIF && isTruthy(expected[previous]))
@@ -203,7 +207,7 @@ void truthinessAndConditionalExits() {
 		instruction.baseCycles = 1;
 		instruction.bx = 0xfffffffcu;
 		const std::array source{NativeBlockInstruction{&instruction, 0x1000u}};
-		auto block = NativeBlock::compile(source, nullptr, bytes);
+		auto block = NativeBlock::compile(source, nullptr, bytes, memory);
 		// Exhaust the entire raw Value-header domain, with nonzero payloads:
 		// falsey tags are not compared as floating-point NaNs or whole values.
 		for (u32 header = 0; header != 65536u; ++header) {
@@ -228,7 +232,7 @@ void truthinessAndConditionalExits() {
 	halt.width = 2;
 	halt.baseCycles = 1;
 	const std::array source{NativeBlockInstruction{&halt, 0xfffffff8u}};
-	auto block = NativeBlock::compile(source, nullptr, bytes);
+	auto block = NativeBlock::compile(source, nullptr, bytes, memory);
 	require(block->run(nullptr, nullptr)->nextPc == 0u && block->terminal.exit == NativeBlockExit::Halt
 		&& block->terminal.registerTop == 0 && block->terminal.cycles == 1 && block->terminal.lastPc == 0xfffffffcu,
 		"a standalone native WIDE HALT has an exact wrapped continuation and explicit exit");
@@ -267,7 +271,7 @@ void sideExitHandlersRunAfterGeneratedFrameReturns() {
 	CallFrame frame;
 	frame.registers = registers.data();
 	{
-		auto block = NativeBlock::compile(source, nullptr, bytes, {nullptr, nullptr, &exitResult});
+		auto block = NativeBlock::compile(source, nullptr, bytes, memory, {nullptr, nullptr, &exitResult});
 		const auto* exit = block->run(registers.data(), nullptr);
 		require(exit->handler(nullptr, &frame, exit) == NativeBlockTransition::RebindFrame,
 			"the generated side exit returns its typed frame transition");
@@ -275,14 +279,14 @@ void sideExitHandlersRunAfterGeneratedFrameReturns() {
 			"CALL reads do not extend top and retain the terminal WIDE/cycle extent");
 	}
 	{
-		auto block = NativeBlock::compile(source, nullptr, bytes, {nullptr, nullptr, &exitThrow});
+		auto block = NativeBlock::compile(source, nullptr, bytes, memory, {nullptr, nullptr, &exitThrow});
 		bool caught = false;
 		try { const auto* exit = block->run(registers.data(), nullptr); exit->handler(nullptr, &frame, exit); }
 		catch (const TailFault& error) { caught = error.value == 73; }
 		require(caught, "C++ exceptions unwind ordinary registered frames, never generated code");
 	}
 	{
-		auto block = NativeBlock::compile(source, nullptr, bytes, {nullptr, nullptr, &exitRetire});
+		auto block = NativeBlock::compile(source, nullptr, bytes, memory, {nullptr, nullptr, &exitRetire});
 		retiringBlock = &block;
 		const auto* exit = block->run(registers.data(), nullptr);
 		require(exit->handler(nullptr, &frame, exit) == NativeBlockTransition::Redispatch && !block,

@@ -2427,6 +2427,52 @@ export class CPU implements MappedPageInvalidator {
 		return;
 	}
 
+	private executeMemoryLoad(frame: CallFrame, destination: number, kind: MemoryAccessKind, address: number): void {
+		if ((address & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[kind]) !== 0) {
+			this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, address);
+			return;
+		}
+		const faultSequence = this.memory.readBusFaultSequence();
+		let value: number;
+		switch (kind) {
+			case MemoryAccessKind.Word: value = this.memory.readMappedWord(address); break;
+			case MemoryAccessKind.U8: value = this.memory.readMappedU8(address); break;
+			case MemoryAccessKind.U16LE: value = this.memory.readMappedU16LE(address); break;
+			case MemoryAccessKind.U32LE: value = this.memory.readMappedU32LE(address); break;
+			case MemoryAccessKind.F32LE: value = this.memory.readMappedF32LE(address); break;
+			case MemoryAccessKind.F64LE: value = this.memory.readMappedF64LE(address); break;
+		}
+		if (this.memory.readBusFaultSequence() !== faultSequence) {
+			this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
+			return;
+		}
+		this.setRegisterNumberFast(frame, frame.registers, destination, value);
+	}
+
+	private executeMemoryStore(frame: CallFrame, source: number, kind: MemoryAccessKind, address: number): void {
+		if ((address & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[kind]) !== 0) {
+			this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, address);
+			return;
+		}
+		if (!this.memory.mappedWriteReady(address)) {
+			this.blockMappedWrite(frame, address);
+			return;
+		}
+		const value = frame.registers.getNumber(source);
+		const faultSequence = this.memory.readBusFaultSequence();
+		switch (kind) {
+			case MemoryAccessKind.Word: this.memory.writeMappedWord(address, value >>> 0); break;
+			case MemoryAccessKind.U8: this.memory.writeMappedU8(address, value); break;
+			case MemoryAccessKind.U16LE: this.memory.writeMappedU16LE(address, value); break;
+			case MemoryAccessKind.U32LE: this.memory.writeMappedU32LE(address, value); break;
+			case MemoryAccessKind.F32LE: this.memory.writeMappedF32LE(address, value); break;
+			case MemoryAccessKind.F64LE: this.memory.writeMappedF64LE(address, value); break;
+		}
+		if (this.memory.readBusFaultSequence() !== faultSequence) {
+			this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
+		}
+	}
+
 	private executeCompiledBlock(frame: CallFrame, page: DecodedInstructionPage, word: number): void {
 		const cache = page.compiledBlocks!;
 		if (page.dispatchOps[word] === DecodedDispatchOp.CompiledWarm) {
@@ -2441,6 +2487,7 @@ export class CPU implements MappedPageInvalidator {
 				let cursor = word;
 				let nextPc = pc;
 				let count = 0;
+				let warmingSuccessor = false;
 				while (cursor < DECODED_PAGE_WORDS && count < COMPILED_BLOCK_MAX_INSTRUCTIONS) {
 					if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) !== 0) {
 						if (binding.readBytes === null || cursor === DECODED_PAGE_WORDS - 1) break;
@@ -2449,6 +2496,10 @@ export class CPU implements MappedPageInvalidator {
 					if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) !== 0
 						|| page.dispatchOps[cursor] === DecodedDispatchOp.Observe
 						|| !compiledBlockSupports(page.ops[cursor])) break;
+					if (count !== 0 && binding.writeWatches !== null && cache.visits[cursor] + 1 < COMPILED_BLOCK_THRESHOLD) {
+						warmingSuccessor = true;
+						break;
+					}
 					++count;
 					nextPc = (nextPc + page.widths[cursor] * INSTRUCTION_BYTES) >>> 0;
 					const terminal = compiledBlockEndsBlock(page.ops[cursor]);
@@ -2456,8 +2507,10 @@ export class CPU implements MappedPageInvalidator {
 					if (terminal) break;
 				}
 				if (count >= 2 || (count === 1 && compiledBlockEndsBlock(page.ops[word]))) {
-					const block = compileJavaScriptBlock(page, word, cursor, pc, frame.executionImage);
+					const block = compileJavaScriptBlock(page, word, cursor, pc, frame.executionImage, this.memory);
 					this.compiledCodeCache.install(page, word, block);
+				} else if (warmingSuccessor) {
+					cache.visits[word] = 0;
 				} else {
 					page.dispatchOps[word] = page.ops[word];
 				}
@@ -2477,6 +2530,13 @@ export class CPU implements MappedPageInvalidator {
 				case CompiledBlockExit.Halt: this.haltUntilIrq(); break;
 				case CompiledBlockExit.Call: this.executeCall(frame, exit.exitA, exit.exitB, exit.exitC); break;
 				case CompiledBlockExit.Return: this.executeReturn(frame, exit.exitA, exit.exitB); break;
+				case CompiledBlockExit.ReadMemory:
+				case CompiledBlockExit.WriteMemory: {
+					const address = ((this.readRKNumber(frame, exit.exitB) >>> 0) + (exit.displaced ? exit.displacement * 4 : 0)) >>> 0;
+					if (exit.exit === CompiledBlockExit.ReadMemory) this.executeMemoryLoad(frame, exit.exitA, exit.exitC, address);
+					else this.executeMemoryStore(frame, exit.exitA, exit.exitC, address);
+					break;
+				}
 				case CompiledBlockExit.ReadField:
 					this.loadTableFieldIndexCached(page, exit.exitWord, registers.getTag(exit.exitB),
 						registers.getTable(exit.exitB), image.constScalars[exit.exitC] as StringId, registers, exit.exitA);
@@ -3151,171 +3211,24 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				case OpCode.LOAD_MEM_D:
 				case OpCode.STORE_MEM_D:
-				case OpCode.STORE_MEM_WORDS_D: {
+				case OpCode.LOAD_MEM:
+				case OpCode.STORE_MEM: {
+					const b = page.b[pageOffset];
+					const c = page.c[pageOffset] as MemoryAccessKind;
+					const displaced = op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM_D;
+					const addr = displaced ? ((registers.getNumber(b) >>> 0) + (page.disp[pageOffset] << 2)) >>> 0
+						: this.readRKNumber(frame, b) >>> 0;
+					if (op === OpCode.LOAD_MEM_D || op === OpCode.LOAD_MEM) this.executeMemoryLoad(frame, a, c, addr);
+					else this.executeMemoryStore(frame, a, c, addr);
+					return;
+				}
+				case OpCode.STORE_MEM_WORDS_D:
+				case OpCode.STORE_MEM_WORDS: {
 					const b = page.b[pageOffset];
 					const c = page.c[pageOffset];
-					const disp = page.disp[pageOffset];
-					const addr = ((registers.getNumber(b) >>> 0) + (disp << 2)) >>> 0;
-					const alignmentMask = op === OpCode.STORE_MEM_WORDS_D
-						? MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[MemoryAccessKind.Word]
-						: MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[c as MemoryAccessKind];
-					if ((addr & alignmentMask) !== 0) {
-						this.enterSynchronousAddressException(
-							frame,
-							op === OpCode.LOAD_MEM_D ? CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD : CPU_CAUSE_CODE_ADDRESS_ERROR_STORE,
-							addr,
-						);
-						return;
-					}
-					if (op === OpCode.STORE_MEM_WORDS_D) {
-						const blockedAddress = this.memory.firstBlockedMappedWordWrite(addr, c);
-						if (blockedAddress !== NO_BLOCKED_MAPPED_WRITE) {
-							this.blockMappedWrite(frame, blockedAddress);
-							return;
-						}
-						this.charge(ceilDiv4(c));
-						this.writeMappedWordSequence(frame, addr, a, c);
-						return;
-					}
-					if (op === OpCode.STORE_MEM_D) {
-						if (!this.memory.mappedWriteReady(addr)) {
-							this.blockMappedWrite(frame, addr);
-							return;
-						}
-						const faultSequence = this.memory.readBusFaultSequence();
-						switch (c) {
-							case MemoryAccessKind.Word:
-								this.memory.writeMappedWord(addr, registers.getNumber(a) >>> 0);
-								break;
-							case MemoryAccessKind.U8:
-								this.memory.writeMappedU8(addr, registers.getNumber(a));
-								break;
-							case MemoryAccessKind.U16LE:
-								this.memory.writeMappedU16LE(addr, registers.getNumber(a));
-								break;
-							case MemoryAccessKind.U32LE:
-								this.memory.writeMappedU32LE(addr, registers.getNumber(a));
-								break;
-							case MemoryAccessKind.F32LE:
-								this.memory.writeMappedF32LE(addr, registers.getNumber(a));
-								break;
-							case MemoryAccessKind.F64LE:
-								this.memory.writeMappedF64LE(addr, registers.getNumber(a));
-								break;
-						}
-						if (this.memory.readBusFaultSequence() !== faultSequence) {
-							this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
-						}
-						return;
-					}
-					const faultSequence = this.memory.readBusFaultSequence();
-					let value: number;
-					switch (c) {
-						case MemoryAccessKind.Word:
-							value = this.memory.readMappedWord(addr);
-							break;
-						case MemoryAccessKind.U8:
-							value = this.memory.readMappedU8(addr);
-							break;
-						case MemoryAccessKind.U16LE:
-							value = this.memory.readMappedU16LE(addr);
-							break;
-						case MemoryAccessKind.U32LE:
-							value = this.memory.readMappedU32LE(addr);
-							break;
-						case MemoryAccessKind.F32LE:
-							value = this.memory.readMappedF32LE(addr);
-							break;
-						case MemoryAccessKind.F64LE:
-							value = this.memory.readMappedF64LE(addr);
-							break;
-					}
-					if (this.memory.readBusFaultSequence() !== faultSequence) {
-						this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
-						return;
-					}
-					this.setRegisterNumberFast(frame, registers, a, value);
-					return;
-				}
-				case OpCode.LOAD_MEM: {
-					const rkB = page.b[pageOffset];
-					const c = page.c[pageOffset];
-					const addr = this.readRKNumber(frame, rkB) >>> 0;
-					if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[c as MemoryAccessKind]) !== 0) {
-						this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, addr);
-						return;
-					}
-					const faultSequence = this.memory.readBusFaultSequence();
-					let value: number;
-					switch (c) {
-						case MemoryAccessKind.Word:
-							value = this.memory.readMappedWord(addr);
-							break;
-						case MemoryAccessKind.U8:
-							value = this.memory.readMappedU8(addr);
-							break;
-						case MemoryAccessKind.U16LE:
-							value = this.memory.readMappedU16LE(addr);
-							break;
-						case MemoryAccessKind.U32LE:
-							value = this.memory.readMappedU32LE(addr);
-							break;
-						case MemoryAccessKind.F32LE:
-							value = this.memory.readMappedF32LE(addr);
-							break;
-						case MemoryAccessKind.F64LE:
-							value = this.memory.readMappedF64LE(addr);
-							break;
-					}
-					if (this.memory.readBusFaultSequence() !== faultSequence) {
-						this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
-						return;
-					}
-					this.setRegisterNumberFast(frame, registers, a, value);
-					return;
-				}
-				case OpCode.STORE_MEM: {
-					const rkB = page.b[pageOffset];
-					const c = page.c[pageOffset];
-					const addr = this.readRKNumber(frame, rkB) >>> 0;
-					if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[c as MemoryAccessKind]) !== 0) {
-						this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);
-						return;
-					}
-					if (!this.memory.mappedWriteReady(addr)) {
-						this.blockMappedWrite(frame, addr);
-						return;
-					}
-					const faultSequence = this.memory.readBusFaultSequence();
-					switch (c) {
-						case MemoryAccessKind.Word:
-							this.memory.writeMappedWord(addr, registers.getNumber(a) >>> 0);
-							break;
-						case MemoryAccessKind.U8:
-							this.memory.writeMappedU8(addr, registers.getNumber(a));
-							break;
-						case MemoryAccessKind.U16LE:
-							this.memory.writeMappedU16LE(addr, registers.getNumber(a));
-							break;
-						case MemoryAccessKind.U32LE:
-							this.memory.writeMappedU32LE(addr, registers.getNumber(a));
-							break;
-						case MemoryAccessKind.F32LE:
-							this.memory.writeMappedF32LE(addr, registers.getNumber(a));
-							break;
-						case MemoryAccessKind.F64LE:
-							this.memory.writeMappedF64LE(addr, registers.getNumber(a));
-							break;
-					}
-					if (this.memory.readBusFaultSequence() !== faultSequence) {
-						this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
-					}
-					return;
-				}
-				case OpCode.STORE_MEM_WORDS: {
-					const rkB = page.b[pageOffset];
-					const c = page.c[pageOffset];
-					const addr = this.readRKNumber(frame, rkB) >>> 0;
+					const addr = op === OpCode.STORE_MEM_WORDS_D
+						? ((registers.getNumber(b) >>> 0) + (page.disp[pageOffset] << 2)) >>> 0
+						: this.readRKNumber(frame, b) >>> 0;
 					if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[MemoryAccessKind.Word]) !== 0) {
 						this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);
 						return;

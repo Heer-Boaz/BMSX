@@ -630,61 +630,14 @@ DISPATCH_LABEL(RET) {
 }
 
 DISPATCH_LABEL(LOAD_MEM_D) {
-	const int a = decoded->a;
-	const int b = decoded->b;
-	const int c = decoded->c;
-	const int disp = decoded->disp;
-	const uint32_t addr = toU32(REG(b)) + (static_cast<uint32_t>(disp) << 2);
-	if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(c)]) != 0u) {
-		enterSynchronousAddressException(FRAME, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, addr);
-		DISPATCH_CONTINUE();
-	}
-	const uint32_t faultSequence = m_memory.readBusFaultSequence();
-	Value value;
-	switch (static_cast<MemoryAccessKind>(c)) {
-		case MemoryAccessKind::Word: value = valueNumber(static_cast<double>(m_memory.readMappedWord(addr))); break;
-		case MemoryAccessKind::U8: value = valueNumber(static_cast<double>(m_memory.readMappedU8(addr))); break;
-		case MemoryAccessKind::U16LE: value = valueNumber(static_cast<double>(m_memory.readMappedU16LE(addr))); break;
-		case MemoryAccessKind::U32LE: value = valueNumber(static_cast<double>(m_memory.readMappedU32LE(addr))); break;
-		case MemoryAccessKind::F32LE: value = valueNumber(static_cast<double>(m_memory.readMappedF32LE(addr))); break;
-		case MemoryAccessKind::F64LE: value = valueNumber(m_memory.readMappedF64LE(addr)); break;
-		default: __builtin_unreachable();
-	}
-	if (m_memory.readBusFaultSequence() != faultSequence) {
-		enterSynchronousException(FRAME, CPU_CAUSE_CODE_DATA_BUS_ERROR);
-		DISPATCH_CONTINUE();
-	}
-	SET_REGISTER_FAST(a, value);
+	const u32 address = toU32(REG(decoded->b)) + (static_cast<u32>(decoded->disp) << 2u);
+	executeMemoryLoad(FRAME, decoded->a, static_cast<MemoryAccessKind>(decoded->c), address);
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(STORE_MEM_D) {
-	const int a = decoded->a;
-	const int b = decoded->b;
-	const int c = decoded->c;
-	const int disp = decoded->disp;
-	const uint32_t addr = toU32(REG(b)) + (static_cast<uint32_t>(disp) << 2);
-	if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(c)]) != 0u) {
-		enterSynchronousAddressException(FRAME, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);
-		DISPATCH_CONTINUE();
-	}
-	if (!m_memory.mappedWriteReady(addr)) {
-		blockMappedWrite(FRAME, addr);
-		DISPATCH_BLOCKED();
-	}
-	const Value value = REG(a);
-	const uint32_t faultSequence = m_memory.readBusFaultSequence();
-	switch (static_cast<MemoryAccessKind>(c)) {
-		case MemoryAccessKind::Word: m_memory.writeMappedWord(addr, toU32(value)); break;
-		case MemoryAccessKind::U8: m_memory.writeMappedU8(addr, static_cast<u8>(toU32(value))); break;
-		case MemoryAccessKind::U16LE: m_memory.writeMappedU16LE(addr, toU32(value)); break;
-		case MemoryAccessKind::U32LE: m_memory.writeMappedU32LE(addr, toU32(value)); break;
-		case MemoryAccessKind::F32LE: m_memory.writeMappedF32LE(addr, static_cast<float>(decodeNumber(value))); break;
-		case MemoryAccessKind::F64LE: m_memory.writeMappedF64LE(addr, decodeNumber(value)); break;
-	}
-	if (m_memory.readBusFaultSequence() != faultSequence) {
-		enterSynchronousException(FRAME, CPU_CAUSE_CODE_DATA_BUS_ERROR);
-	}
+	const u32 address = toU32(REG(decoded->b)) + (static_cast<u32>(decoded->disp) << 2u);
+	if (!executeMemoryStore(FRAME, decoded->a, static_cast<MemoryAccessKind>(decoded->c), address)) DISPATCH_BLOCKED();
 	DISPATCH_CONTINUE();
 }
 
@@ -709,59 +662,14 @@ DISPATCH_LABEL(STORE_MEM_WORDS_D) {
 }
 
 DISPATCH_LABEL(LOAD_MEM) {
-	const int a = decoded->a;
-	const int c = decoded->c;
-	const int rkB = decoded->b;
-	const uint32_t addr = toU32(readRK(IMAGE, registers, rkB));
-	if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(c)]) != 0u) {
-		enterSynchronousAddressException(FRAME, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, addr);
-		DISPATCH_CONTINUE();
-	}
-	const uint32_t faultSequence = m_memory.readBusFaultSequence();
-	Value value;
-	switch (static_cast<MemoryAccessKind>(c)) {
-		case MemoryAccessKind::Word: value = valueNumber(static_cast<double>(m_memory.readMappedWord(addr))); break;
-		case MemoryAccessKind::U8: value = valueNumber(static_cast<double>(m_memory.readMappedU8(addr))); break;
-		case MemoryAccessKind::U16LE: value = valueNumber(static_cast<double>(m_memory.readMappedU16LE(addr))); break;
-		case MemoryAccessKind::U32LE: value = valueNumber(static_cast<double>(m_memory.readMappedU32LE(addr))); break;
-		case MemoryAccessKind::F32LE: value = valueNumber(static_cast<double>(m_memory.readMappedF32LE(addr))); break;
-		case MemoryAccessKind::F64LE: value = valueNumber(m_memory.readMappedF64LE(addr)); break;
-		default: __builtin_unreachable();
-	}
-	if (m_memory.readBusFaultSequence() != faultSequence) {
-		enterSynchronousException(FRAME, CPU_CAUSE_CODE_DATA_BUS_ERROR);
-		DISPATCH_CONTINUE();
-	}
-	SET_REGISTER_FAST(a, value);
+	const u32 address = toU32(readRK(IMAGE, registers, decoded->b));
+	executeMemoryLoad(FRAME, decoded->a, static_cast<MemoryAccessKind>(decoded->c), address);
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(STORE_MEM) {
-	const int a = decoded->a;
-	const int c = decoded->c;
-	const int rkB = decoded->b;
-	const uint32_t addr = toU32(readRK(IMAGE, registers, rkB));
-	if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(c)]) != 0u) {
-		enterSynchronousAddressException(FRAME, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);
-		DISPATCH_CONTINUE();
-	}
-	if (!m_memory.mappedWriteReady(addr)) {
-		blockMappedWrite(FRAME, addr);
-		DISPATCH_BLOCKED();
-	}
-	const Value value = REG(a);
-	const uint32_t faultSequence = m_memory.readBusFaultSequence();
-	switch (static_cast<MemoryAccessKind>(c)) {
-		case MemoryAccessKind::Word: m_memory.writeMappedWord(addr, toU32(value)); break;
-		case MemoryAccessKind::U8: m_memory.writeMappedU8(addr, static_cast<u8>(toU32(value))); break;
-		case MemoryAccessKind::U16LE: m_memory.writeMappedU16LE(addr, toU32(value)); break;
-		case MemoryAccessKind::U32LE: m_memory.writeMappedU32LE(addr, toU32(value)); break;
-		case MemoryAccessKind::F32LE: m_memory.writeMappedF32LE(addr, static_cast<float>(decodeNumber(value))); break;
-		case MemoryAccessKind::F64LE: m_memory.writeMappedF64LE(addr, decodeNumber(value)); break;
-	}
-	if (m_memory.readBusFaultSequence() != faultSequence) {
-		enterSynchronousException(FRAME, CPU_CAUSE_CODE_DATA_BUS_ERROR);
-	}
+	const u32 address = toU32(readRK(IMAGE, registers, decoded->b));
+	if (!executeMemoryStore(FRAME, decoded->a, static_cast<MemoryAccessKind>(decoded->c), address)) DISPATCH_BLOCKED();
 	DISPATCH_CONTINUE();
 }
 

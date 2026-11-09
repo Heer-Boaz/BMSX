@@ -21,6 +21,8 @@ export class MappedPageWriteWatches {
 	private readonly values: Uint8Array;
 	private readonly words: Uint32Array;
 
+	public groupData(): Uint8Array { return this.values; }
+
 	public constructor(byteLength: number) {
 		this.values = new Uint8Array(
 			(byteLength + MAPPED_PAGE_BYTE_SIZE - 1) >>> MAPPED_PAGE_BYTE_SHIFT,

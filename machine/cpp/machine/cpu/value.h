@@ -95,6 +95,7 @@ inline constexpr std::array<BuiltinFunctionCost, BUILTIN_FUNCTION_COUNT> BUILTIN
 constexpr uint64_t VALUE_QNAN_MASK = 0x7ff8000000000000ULL;
 constexpr uint64_t VALUE_SIGN_BIT = 0x8000000000000000ULL;
 constexpr uint64_t VALUE_PAYLOAD_MASK = 0x0000ffffffffffffULL;
+constexpr uint64_t VALUE_ENCODED_TAG_MASK = VALUE_SIGN_BIT | (0x7ULL << 48u);
 
 inline uint8_t valueEncodedTag(Value v) {
 	if ((v & VALUE_QNAN_MASK) != VALUE_QNAN_MASK) {

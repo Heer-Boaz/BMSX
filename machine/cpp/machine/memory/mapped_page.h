@@ -70,6 +70,8 @@ struct MappedPageBinding {
 
 class MappedPageWriteWatches {
 public:
+	const u8* groupData() const { return reinterpret_cast<const u8*>(m_storage.get()); }
+
 	explicit MappedPageWriteWatches(size_t byteLength) {
 		// The byte group bank precedes aligned word masks in one allocation.
 		const size_t pageCount = (byteLength + MAPPED_PAGE_BYTE_SIZE - 1u) >> MAPPED_PAGE_BYTE_SHIFT;

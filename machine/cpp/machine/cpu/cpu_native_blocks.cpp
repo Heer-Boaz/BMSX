@@ -17,6 +17,7 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 	size_t count = 0;
 	u32 cursor = word;
 	u32 pc = m_currentInstructionPc;
+	bool warmingSuccessor = false;
 	while (cursor < DECODED_PAGE_WORDS && count < instructions.size()) {
 		if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) != 0u) {
 			// A partial backing page can still supply already decoded words.
@@ -28,13 +29,20 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 		if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) != 0u
 			|| instruction.dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe)
 			|| !nativeBlockSupports(instruction.op)) break;
+		if (count != 0u && binding.writeWatch.groups && page.nativeVisits[cursor] + 1u < NATIVE_BLOCK_COMPILATION_THRESHOLD) {
+			// A repeatedly rewritten successor never becomes hot. Do not keep
+			// compiling it into a stable predecessor only to retire that block.
+			warmingSuccessor = true;
+			break;
+		}
 		instructions[count++] = {&instruction, pc};
 		if (nativeBlockEndsBlock(instruction.op)) break;
 		cursor += instruction.width;
 		pc += static_cast<u32>(instruction.width) * INSTRUCTION_BYTES;
 	}
 	if (count == 0u || (count == 1u && !nativeBlockEndsBlock(instructions[0].decoded->op))) {
-		page.words[word].dispatchOp = page.words[word].op;
+		if (warmingSuccessor) page.nativeVisits[word] = 0;
+		else page.words[word].dispatchOp = page.words[word].op;
 		return;
 	}
 	if (m_nativeCodeBytes >= maximumCodeBytes) {
@@ -46,9 +54,9 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 	}
 	if (!page.nativeBlocks) page.nativeBlocks = std::make_unique<NativeBlockPage>();
 	const NativeBlockExitHandlers handlers{nullptr, nullptr, &CPU::compiledCallExit, &CPU::compiledReturnExit,
-		&CPU::compiledReadFieldExit, &CPU::compiledWriteFieldExit};
+		&CPU::compiledReadFieldExit, &CPU::compiledWriteFieldExit, &CPU::compiledReadMemoryExit, &CPU::compiledWriteMemoryExit};
 	page.nativeBlocks->entries[word] = NativeBlock::compile(
-		std::span(instructions.data(), count), frame.executionImage->constPool.data(), m_nativeCodeBytes, handlers);
+		std::span(instructions.data(), count), frame.executionImage->constPool.data(), m_nativeCodeBytes, m_memory, handlers);
 	++page.nativeBlocks->count;
 	page.words[word].dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeBlock);
 	page.words[word].dispatchCycles = page.words[word].baseCycles;

@@ -2413,6 +2413,7 @@ void CPU::resumeMemoryWrite(uint32_t address) {
 }
 
 #include "machine/cpu/cpu_calls.inl"
+#include "machine/cpu/cpu_memory.inl"
 
 template <bool RootBoundary, bool Instrumented>
 RunResult CPU::runLoop(
@@ -2619,7 +2620,7 @@ dispatch_instruction:
 					}
 					const auto* exit = block.run(registers, IMAGE.constPool.data());
 					// Each return describes exactly the executed prefix, including a
-					// guarded field miss. No future instruction state is published.
+					// guarded field or memory access. No future state is published.
 					instructionBudgetRemaining -= exit->cycles - decoded->baseCycles;
 					FRAME.pc = exit->nextPc;
 					FRAME.top = std::max(FRAME.top, exit->registerTop);

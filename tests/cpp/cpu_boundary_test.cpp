@@ -73,7 +73,7 @@ void nativeFieldGuardsAndRawSlotAccess() {
 		field.a = 0; field.b = 1; field.c = store ? -1 : 1;
 		field.width = 2; field.baseCycles = BASE_CYCLES[field.op]; field.tableCacheSlot = slot;
 		const std::array source{NativeBlockInstruction{&field, 0x1000u}};
-		auto block = NativeBlock::compile(source, constants.data(), bytes, {nullptr, nullptr, nullptr, nullptr, &fieldSlowExitMarker, &fieldSlowExitMarker});
+		auto block = NativeBlock::compile(source, constants.data(), bytes, machine.memory, {nullptr, nullptr, nullptr, nullptr, &fieldSlowExitMarker, &fieldSlowExitMarker});
 		std::array registers{valueTable(table), valueTable(table)};
 		if (store) {
 			require(block->sideExits[0].exitC == -1, "native field exits keep signed RK selectors");
@@ -89,7 +89,7 @@ void nativeFieldGuardsAndRawSlotAccess() {
 			DecodedInstruction alias = field;
 			alias.a = alias.b;
 			const std::array aliasSource{NativeBlockInstruction{&alias, 0x1000u}};
-			auto aliasBlock = NativeBlock::compile(aliasSource, constants.data(), bytes);
+			auto aliasBlock = NativeBlock::compile(aliasSource, constants.data(), bytes, machine.memory);
 			table->setStringKey(key, valueNumber(-0.0));
 			require(aliasBlock->run(registers.data(), constants.data())->exit == NativeBlockExit::Continue
 				&& registers[1] == valueNumber(-0.0), "a cached field result can replace its own table receiver");

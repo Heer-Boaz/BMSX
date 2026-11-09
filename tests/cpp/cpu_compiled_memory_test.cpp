@@ -1,0 +1,304 @@
+#include "common/endian.h"
+#include "machine/cpu/cpu.h"
+#include "machine/cpu/native_block.h"
+#include "machine/devices/irq/controller.h"
+#include "machine/memory/memory.h"
+#include "spec/bmsx/model.h"
+#include "support/blua32_test_rom.h"
+#include "support/cartridge_fixture.h"
+
+#include <array>
+#include <cstring>
+#include <iostream>
+#include <limits>
+#include <stdexcept>
+
+namespace {
+using namespace bmsx;
+
+void require(bool condition, const char* message) {
+	if (!condition) throw std::runtime_error(message);
+}
+
+struct CpuMachine {
+	test::Blua32TestRom rom;
+	Memory memory;
+	IrqController irq;
+	ExecutionAddressSpace addresses;
+	CPU cpu;
+	explicit CpuMachine(test::Blua32TestImage image, bool scalar = false)
+		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image))
+		, memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes)
+		, irq(memory), addresses(memory), cpu(memory, irq, addresses) {
+		cpu.reset();
+		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; },
+			nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+	}
+};
+
+test::Blua32TestImage memoryLoop(OpCode op, MemoryAccessKind kind, u8 displacement = 0) {
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 4, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(op), 0, 1, static_cast<u8>(kind), displacement);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::MOV), 6, 0, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8}, {.firstWord = 5, .wordCount = 1}};
+	image.exceptionFunctionIndex = 1;
+	return image;
+}
+
+void ramScalarDatapathsAndGuards() {
+	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes), reference(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
+	const std::array values{valueNumber(-0.0), valueNumber(0.25), valueNumber(-1.75),
+		valueNumber(4294967295.0), valueNumber(-4294967296.75), valueNumber(4294967296.25),
+		valueNumber(1e100), valueNumber(-1e100), valueNumber(std::numeric_limits<double>::denorm_min()),
+		valueNumber(std::numeric_limits<double>::infinity()), VALUE_QNAN_MASK,
+		Value{0x7ff0000000000001ULL}, valueNil(), valueBool(false), valueBool(true), valueString(42)};
+	size_t bytes = 0;
+	for (int format = 0; format <= 5; ++format) for (const bool displaced : {false, true}) {
+		const auto kind = static_cast<MemoryAccessKind>(format);
+		const u32 width = format == 1 ? 1 : format == 2 ? 2 : format == 5 ? 8 : 4;
+		DecodedInstruction store, load;
+		store.op = static_cast<u8>(displaced ? OpCode::STORE_MEM_D : OpCode::STORE_MEM);
+		store.a = 0; store.b = 1; store.c = format; store.disp = displaced ? 255 : 0;
+		store.width = 2; store.baseCycles = 2;
+		load = store; load.op = static_cast<u8>(displaced ? OpCode::LOAD_MEM_D : OpCode::LOAD_MEM); load.a = 2;
+		const std::array source{NativeBlockInstruction{&store, 0x1000}, NativeBlockInstruction{&load, 0x1008}};
+		auto block = NativeBlock::compile(source, nullptr, bytes, memory);
+		for (const u32 target : {DYNAMIC_RAM_BASE + 0x204u, DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - 4u,
+			RAM_BASE + PSX_MACHINE_SPEC.ramBytes - width}) for (const Value value : values) {
+			std::array registers{value, valueNumber(target - static_cast<u32>(store.disp) * 4u), valueNil()};
+			require(block->run(registers.data(), nullptr) == &block->terminal, "ordinary RAM transfers reach the normal block exit");
+			Value expected;
+			switch (kind) {
+				case MemoryAccessKind::Word: reference.writeMappedWord(target, toU32(value)); expected = valueNumber(reference.readMappedWord(target)); break;
+				case MemoryAccessKind::U8: reference.writeMappedU8(target, static_cast<u8>(toU32(value))); expected = valueNumber(reference.readMappedU8(target)); break;
+				case MemoryAccessKind::U16LE: reference.writeMappedU16LE(target, toU32(value)); expected = valueNumber(reference.readMappedU16LE(target)); break;
+				case MemoryAccessKind::U32LE: reference.writeMappedU32LE(target, toU32(value)); expected = valueNumber(reference.readMappedU32LE(target)); break;
+				case MemoryAccessKind::F32LE: reference.writeMappedF32LE(target, static_cast<float>(decodeNumber(value))); expected = valueNumber(reference.readMappedF32LE(target)); break;
+				case MemoryAccessKind::F64LE: reference.writeMappedF64LE(target, decodeNumber(value)); expected = valueNumber(reference.readMappedF64LE(target)); break;
+			}
+			require(registers[2] == expected && std::memcmp(memory.ramData() + target - RAM_BASE,
+				reference.ramData() + target - RAM_BASE, width) == 0, "all scalar formats preserve numeric conversion and little-endian bytes");
+		}
+		for (u32 address : {0u, RAM_BASE, RAM_BASE + IO_SLOT_COUNT * IO_WORD_SIZE - 1u,
+			RAM_BASE + PSX_MACHINE_SPEC.ramBytes, 0xffffffffu, DYNAMIC_RAM_BASE + 1u}) {
+			std::array registers{valueNumber(7), valueNumber(address - static_cast<u32>(store.disp) * 4u), valueNumber(99)};
+			const bool direct = address >= RAM_BASE + IO_SLOT_COUNT * IO_WORD_SIZE
+				&& address <= RAM_BASE + PSX_MACHINE_SPEC.ramBytes - width
+				&& (address & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[format]) == 0u;
+			const auto* exit = block->run(registers.data(), nullptr);
+			require((exit == &block->terminal) == direct, "IO, faults and alignment leave before accessing raw RAM");
+			if (!direct) require(exit->exit == NativeBlockExit::WriteMemory && registers[2] == valueNumber(99),
+				"a rejected transfer never executes its following load");
+		}
+		load.a = load.b;
+		const std::array aliasSource{NativeBlockInstruction{&load, 0x1000}};
+		auto alias = NativeBlock::compile(aliasSource, nullptr, bytes, memory);
+		std::array registers{valueNil(), valueNumber(DYNAMIC_RAM_BASE + 0x204u - store.disp * 4u)};
+		require(alias->run(registers.data(), nullptr) == &alias->terminal && valueIsNumber(registers[1]),
+			"a memory load can replace its own address register");
+	}
+	// A four-byte-aligned double can cross into the next watched page.
+	DecodedInstruction store;
+	store.op = static_cast<u8>(OpCode::STORE_MEM); store.a = 0; store.b = 1; store.c = 5; store.width = 2; store.baseCycles = 2;
+	const std::array source{NativeBlockInstruction{&store, 0x1000}};
+	auto block = NativeBlock::compile(source, nullptr, bytes, memory);
+	const u32 target = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - 4u;
+	MappedPageBinding page;
+	memory.bindMappedPage(target + 4u, MAPPED_BUS_MASTER_CPU, page);
+	page.writeWatch.armWord(0);
+	std::array registers{valueNumber(1), valueNumber(target)};
+	const auto before = readLE64(memory.ramData() + target - RAM_BASE);
+	const auto* exit = block->run(registers.data(), nullptr);
+	require(exit->exit == NativeBlockExit::WriteMemory && readLE64(memory.ramData() + target - RAM_BASE) == before,
+		"the high half's code watch exits before either half of a direct F64 store");
+	memory.clearMappedPageWriteWatches();
+	DecodedInstruction load = store;
+	load.op = static_cast<u8>(OpCode::LOAD_MEM); load.a = 2;
+	const std::array numericSource{NativeBlockInstruction{&store, 0x1000}, NativeBlockInstruction{&load, 0x1008}};
+	auto numeric = NativeBlock::compile(numericSource, nullptr, bytes, memory);
+	for (u64 header = 0; header <= 0xffffu; ++header) {
+		const Value value = (header << 48u) | 0x123456789abcu;
+		std::array registers{value, valueNumber(target), valueNil()};
+		reference.writeMappedF64LE(target, decodeNumber(value));
+		require(numeric->run(registers.data(), nullptr) == &numeric->terminal
+			&& readLE64(memory.ramData() + target - RAM_BASE) == readLE64(reference.ramData() + target - RAM_BASE)
+			&& registers[2] == valueNumber(reference.readMappedF64LE(target)),
+			"every raw Value header follows the central numeric classification, including signalling NaNs");
+	}
+	load.b = -1;
+	const std::array constantSource{NativeBlockInstruction{&load, 0x1000}};
+	const std::array constants{valueNumber(target)};
+	auto constant = NativeBlock::compile(constantSource, constants.data(), bytes, memory);
+	std::array constantRegisters{valueNil(), valueNil(), valueNil()};
+	require(constant->run(constantRegisters.data(), constants.data()) == &constant->terminal
+		&& constant->sideExits[0].exitB == -1, "a constant memory address retains its signed RK selector");
+}
+
+void generatedMemoryBoundaries() {
+	for (const auto op : {OpCode::LOAD_MEM, OpCode::LOAD_MEM_D, OpCode::STORE_MEM, OpCode::STORE_MEM_D}) {
+		const bool displaced = op == OpCode::LOAD_MEM_D || op == OpCode::STORE_MEM_D;
+		const auto image = memoryLoop(op, MemoryAccessKind::F64LE, displaced ? 255 : 0);
+		CpuMachine native(image), scalar(image, true);
+		for (auto* machine : {&native, &scalar}) {
+			auto& frame = *machine->cpu.activeThread()->frames[0];
+			frame.registers[0] = valueNumber(3.25);
+			frame.registers[1] = valueNumber(DYNAMIC_RAM_BASE + 0x404u - (displaced ? 1020u : 0u));
+			machine->memory.writeMappedF64LE(DYNAMIC_RAM_BASE + 0x404u, 3.25);
+			machine->cpu.runUntilDepth(0, 1200);
+		}
+		auto& frame = *native.cpu.activeThread()->frames[0];
+		const auto& block = frame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u];
+		require(block && block->sourceWords == 5 && block->sideExits.size() == 1,
+			"RAM accesses compile with their dependent instructions and branch");
+		require(block->run(frame.registers, frame.executionImage->constPool.data()) == &block->terminal,
+			"the complete memory loop reaches its final native exit without a bus-owner side exit");
+		for (int grant = 1; grant <= 32; ++grant) {
+			for (auto* machine : {&native, &scalar}) {
+				machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
+				machine->cpu.runUntilDepth(0, grant);
+			}
+			require(native.cpu.readFramePc(0) == scalar.cpu.readFramePc(0) && native.cpu.lastPc == scalar.cpu.lastPc
+				&& native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining,
+				"short grants retain memory and WIDE boundaries");
+		}
+		for (auto* machine : {&native, &scalar}) {
+			auto& current = *machine->cpu.activeThread()->frames[0];
+			current.top = 0;
+			current.registers[1] = valueNumber(0xfffffffc - (displaced ? 1020u : 0u));
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
+			require(machine->cpu.runUntilDepth(0, 20) == RunResult::Halted, "a generated memory fault reaches the ordinary exception owner");
+			require(machine->cpu.readEpcWord() == machine->rom.textAddress + INSTRUCTION_BYTES
+				&& current.top == 5 && machine->memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == 0xfffffffcu,
+				"failed memory instructions retain prefix EPC, committed register top and first fault address");
+			require(current.registers[0] == valueNumber(3.25), "a fault does not publish a failed load result");
+			require(machine->cpu.readCauseWord() == CPU_CAUSE_CODE_DATA_BUS_ERROR, "memory side exits preserve bus exceptions");
+		}
+	}
+}
+
+void generatedBusOrdering() {
+	constexpr u32 port = RAM_BASE + 0x5000u;
+	for (const bool scalar : {false, true}) {
+		CpuMachine machine(memoryLoop(OpCode::STORE_MEM, MemoryAccessKind::U16LE), scalar);
+		auto& cpu = machine.cpu;
+		auto& frame = *cpu.activeThread()->frames[0];
+		frame.registers[0] = valueNumber(12); frame.registers[1] = valueNumber(DYNAMIC_RAM_BASE + 0x1000);
+		cpu.runUntilDepth(0, 1200);
+		struct Device { bool ready = false; int writes = 0; } device;
+		machine.memory.mapIoWrite(port, &device, [](void* context, u32, u32, MappedBusSignals) {
+			++static_cast<Device*>(context)->writes;
+		});
+		machine.memory.mapIoWriteReady(port, [](void* context, u32, MappedBusSignals) { return static_cast<Device*>(context)->ready; });
+		frame.top = 0; frame.registers[1] = valueNumber(port);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress);
+		require(cpu.runUntilDepth(0, 20) == RunResult::Halted && cpu.captureRuntimeState().memoryWriteBlocked
+			&& machine.memory.readBusFaultSequence() == 0u && frame.top == 5 && device.writes == 0,
+			"a not-ready MMIO store blocks before width validation or any write");
+		device.ready = true; cpu.resumeMemoryWrite(port);
+		require(cpu.runUntilDepth(0, 20) == RunResult::Halted && machine.memory.readBusFaultSequence() == 1u && device.writes == 0,
+			"the resumed U16 IO transfer faults through the ordinary owner");
+	}
+	for (const bool scalar : {false, true}) {
+		CpuMachine machine(memoryLoop(OpCode::STORE_MEM, MemoryAccessKind::F64LE), scalar);
+		auto& cpu = machine.cpu;
+		auto& frame = *cpu.activeThread()->frames[0];
+		frame.registers[0] = valueNumber(3.25); frame.registers[1] = valueNumber(DYNAMIC_RAM_BASE + 0x1004);
+		cpu.runUntilDepth(0, 1200);
+		const u32 target = RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 4u;
+		machine.memory.writeMappedWord(target, 0xaaaaaaaau);
+		frame.registers[1] = valueNumber(target);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress);
+		require(cpu.runUntilDepth(0, 20) == RunResult::Halted && machine.memory.readMappedWord(target) == 0u
+			&& machine.memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == target + 4u,
+			"an F64 high-half fault retains its already committed low half");
+	}
+}
+
+void generatedMemoryMayRetireExecutingSource() {
+	for (const bool load : {false, true}) for (const bool scalar : {false, true}) {
+		const auto image = memoryLoop(load ? OpCode::LOAD_MEM : OpCode::STORE_MEM, MemoryAccessKind::U32LE);
+		CpuMachine machine(image, scalar);
+		auto& cpu = machine.cpu;
+		auto& frame = *cpu.activeThread()->frames[0];
+		machine.memory.writeBytes(DYNAMIC_RAM_BASE, machine.rom.bytes.data() + machine.rom.textAddress, image.text.size());
+		machine.memory.writeMappedWord(DYNAMIC_RAM_BASE + 0x1000, 7);
+		frame.registers[0] = valueNumber(7); frame.registers[1] = valueNumber(DYNAMIC_RAM_BASE + 0x1000);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE);
+		cpu.runUntilDepth(0, 1200);
+		auto& page = *frame.decodedPage;
+		if (!scalar) require(page.nativeBlocks && page.nativeBlocks->entries[0], "the memory loop really acquired native code");
+		struct Source {
+			Memory& memory;
+			std::vector<u8> replacement;
+			int reads = 0;
+		} source{machine.memory, std::vector<u8>(INSTRUCTION_BYTES)};
+		writeInstruction(source.replacement, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		constexpr u32 port = RAM_BASE + 0x5000;
+		if (load) machine.memory.mapIoRead(port, &source, [](void* context, u32, MappedBusSignals) -> u32 {
+			auto& source = *static_cast<Source*>(context);
+			++source.reads;
+			source.memory.writeBytes(DYNAMIC_RAM_BASE + 2u * INSTRUCTION_BYTES, source.replacement.data(), source.replacement.size());
+			return 11;
+		});
+		frame.top = 0;
+		frame.registers[0] = valueNumber(readLE32(source.replacement.data()));
+		frame.registers[1] = valueNumber(load ? port : DYNAMIC_RAM_BASE + 2u * INSTRUCTION_BYTES);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE);
+		require(cpu.runUntilDepth(0, 3) == RunResult::Yielded && frame.pc == DYNAMIC_RAM_BASE + 3u * INSTRUCTION_BYTES
+			&& frame.top == 5 && frame.registers[6] == valueNumber(7),
+			"a retiring transfer completes only its own prefix before resuming the CPU");
+		if (!scalar) require(!page.nativeBlocks || !page.nativeBlocks->entries[0], "the current memory entry was retired");
+		if (load) require(source.reads == 1 && frame.registers[0] == valueNumber(11), "an MMIO read may retire its source before committing its result");
+		require(cpu.runUntilDepth(0, 20) == RunResult::Halted, "the rewritten instruction is fetched without returning through freed code");
+	}
+}
+
+void changingSuccessorsDoNotRecompileStablePredecessors() {
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::STORE_MEM_D), 0, 1, 3);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::K1), 6, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::BXOR), 0, 0, 4);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::ADD), 7, 6, 2);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
+	writeInstruction(image.text, 8, static_cast<u8>(OpCode::K0), 6, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8}};
+	CpuMachine machine(image);
+	machine.memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
+	auto& frame = *machine.cpu.activeThread()->frames[0];
+	frame.registers[0] = valueNumber(readLE32(image.text.data() + INSTRUCTION_BYTES));
+	frame.registers[1] = valueNumber(DYNAMIC_RAM_BASE + INSTRUCTION_BYTES);
+	frame.registers[2] = valueNumber(1);
+	frame.registers[4] = valueNumber(readLE32(image.text.data() + INSTRUCTION_BYTES) ^ readLE32(image.text.data() + 8u * INSTRUCTION_BYTES));
+	machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE);
+	machine.cpu.runUntilDepth(0, 1200);
+	auto& page = *frame.decodedPage;
+	require(page.nativeBlocks && !page.nativeBlocks->entries[0] && page.nativeBlocks->entries[2],
+		"a continuously changing instruction remains outside stable native prefixes");
+	const auto* stable = page.nativeBlocks->entries[2].get();
+	machine.cpu.runUntilDepth(0, 1200);
+	require(page.nativeBlocks->entries[2].get() == stable && !page.nativeBlocks->entries[0]
+		&& machine.cpu.readCauseWord() == 0u, "independent native code survives repeated source rewrites without recompilation");
+}
+
+} // namespace
+
+int main() {
+	try {
+		ramScalarDatapathsAndGuards();
+		generatedMemoryBoundaries();
+		generatedBusOrdering();
+		generatedMemoryMayRetireExecutingSource();
+		changingSuccessorsDoNotRecompileStablePredecessors();
+		std::cout << "Compiled CPU memory tests passed\n";
+		return 0;
+	} catch (const std::exception& error) {
+		std::cerr << error.what() << '\n';
+		return 1;
+	}
+}

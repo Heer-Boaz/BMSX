@@ -3,6 +3,8 @@ import { BASE_CYCLES, OPCODE_COUNT, OpCode } from '../../spec/blua32/opcode';
 import { DECODED_PAGE_WORDS, DecodedDispatchOp, type Blua32ExecutionImage, type DecodedInstructionPage } from './execution_image';
 import { ValueTag } from './value';
 import type { ValueSlots } from './value_slots';
+import type { Memory } from '../memory/memory';
+import { emitMemoryAccess } from './compiled_block_memory';
 
 export const enum CpuExecutionBackend {
 	Interpreter,
@@ -20,6 +22,8 @@ export const enum CompiledBlockExit {
 	Return,
 	ReadField,
 	WriteField,
+	ReadMemory,
+	WriteMemory,
 }
 
 export type CompiledBlockExitSite = {
@@ -28,6 +32,8 @@ export type CompiledBlockExitSite = {
 	readonly exitB: number;
 	readonly exitC: number;
 	readonly exitWord: number;
+	readonly displaced: boolean;
+	readonly displacement: number;
 	readonly cycles: number;
 	readonly registerTop: number;
 	readonly nextPc: number;
@@ -143,7 +149,8 @@ emitters[OpCode.CALL] = emitters[OpCode.JMP];
 emitters[OpCode.RET] = emitters[OpCode.JMP];
 
 export function compiledBlockSupports(op: number): boolean {
-	return emitters[op] !== undefined || numberEmitters[op] !== undefined;
+	return emitters[op] !== undefined || numberEmitters[op] !== undefined
+		|| op === OpCode.LOAD_MEM || op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM || op === OpCode.STORE_MEM_D;
 }
 
 export function compiledBlockEndsBlock(op: number): boolean {
@@ -151,13 +158,14 @@ export function compiledBlockEndsBlock(op: number): boolean {
 		|| op === OpCode.CALL || op === OpCode.RET;
 }
 
-/** Field hits stay in the block; side exits publish only the executed prefix. */
+/** Fields and RAM stay in the block; side exits publish only the executed prefix. */
 export function compileJavaScriptBlock(
 	page: DecodedInstructionPage,
 	firstWord: number,
 	endWord: number,
 	pc: number,
 	image: Blua32ExecutionImage,
+	memory: Memory,
 ): CompiledBlock {
 	const source = ['"use strict";'];
 	const exits: CompiledBlockExitSite[] = [];
@@ -170,6 +178,7 @@ export function compileJavaScriptBlock(
 	let finalWord = firstWord;
 	let pendingRegister = -1;
 	let numberLocal = false;
+	let memoryAccess = false;
 	for (let word = firstWord; word < endWord; word += page.widths[word]) {
 		finalWord = word;
 		const op = page.ops[word];
@@ -180,13 +189,30 @@ export function compileJavaScriptBlock(
 		pc = (pc + page.widths[word] * INSTRUCTION_BYTES) >>> 0;
 		nextPc = op === OpCode.JMP ? page.bx[word] : pc;
 		const exitIndex = exits.length;
-		if (op === OpCode.GETFIELD || op === OpCode.SETFIELD) {
-			exits.push({ exit: op === OpCode.GETFIELD ? CompiledBlockExit.ReadField : CompiledBlockExit.WriteField,
+		const load = op === OpCode.LOAD_MEM || op === OpCode.LOAD_MEM_D;
+		const store = op === OpCode.STORE_MEM || op === OpCode.STORE_MEM_D;
+		const displaced = op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM_D;
+		if (op === OpCode.GETFIELD || op === OpCode.SETFIELD || load || store) {
+			exits.push({ exit: load ? CompiledBlockExit.ReadMemory : store ? CompiledBlockExit.WriteMemory
+				: op === OpCode.GETFIELD ? CompiledBlockExit.ReadField : CompiledBlockExit.WriteField,
 				exitA: page.a[word], exitB: page.b[word], exitC: page.c[word], exitWord: word,
+				displaced, displacement: page.disp[word],
 				cycles, registerTop, nextPc, currentPc, lastPc });
 		}
 		const numberEmitter = numberEmitters[op];
-		if (numberEmitter !== undefined) {
+		if (load || store) {
+			memoryAccess = true;
+			if (pendingRegister >= 0) source.push(`r.setNumber(${pendingRegister},v);`);
+			pendingRegister = -1;
+			if (load && !numberLocal) {
+				source.push('let v;');
+				numberLocal = true;
+			}
+			const base = numberOperand(page.b[word], image, -1);
+			const address = displaced ? `(((${base})>>>0)+${page.disp[word] * 4})>>>0` : `((${base})>>>0)`;
+			source.push(emitMemoryAccess(page, word, address, exitIndex));
+			if (load) pendingRegister = page.a[word];
+		} else if (numberEmitter !== undefined) {
 			if (!numberLocal) {
 				source.push('let v;');
 				numberLocal = true;
@@ -202,7 +228,7 @@ export function compileJavaScriptBlock(
 			pendingRegister = -1;
 			source.push(emitters[op]!(page, word, image, exitIndex));
 		}
-		if (!compiledBlockEndsBlock(op) && op !== OpCode.SETFIELD) registerTop = Math.max(registerTop, page.a[word] + 1);
+		if (!compiledBlockEndsBlock(op) && op !== OpCode.SETFIELD && !store) registerTop = Math.max(registerTop, page.a[word] + 1);
 	}
 	if (pendingRegister >= 0) source.push(`r.setNumber(${pendingRegister},v);`);
 	const finalOp = page.ops[finalWord];
@@ -210,6 +236,7 @@ export function compileJavaScriptBlock(
 		exit: finalOp === OpCode.HALT ? CompiledBlockExit.Halt : finalOp === OpCode.CALL ? CompiledBlockExit.Call
 			: finalOp === OpCode.RET ? CompiledBlockExit.Return : CompiledBlockExit.Continue,
 		exitA: page.a[finalWord], exitB: page.b[finalWord], exitC: page.c[finalWord], exitWord: finalWord,
+		displaced: false, displacement: 0,
 		cycles, registerTop, nextPc, currentPc, lastPc,
 	};
 	const terminalIndex = exits.length;
@@ -221,8 +248,11 @@ export function compileJavaScriptBlock(
 		source.push(`return ${truth}?${takenIndex}:${terminalIndex};`);
 	} else source.push(`return ${terminalIndex};`);
 	const body = source.join('\n');
+	const functionSource = memoryAccess ? `return function(r,k,p){${body}}` : body;
 	return {
-		execute: new Function('r', 'k', 'p', body) as CompiledBlock['execute'],
-		terminal, exits, sourceWords, sourceUnits: body.length,
+		execute: memoryAccess ? new Function('m', 'g', functionSource)(
+			memory.ramView, memory.ramWriteWatches().groupData()) as CompiledBlock['execute']
+			: new Function('r', 'k', 'p', body) as CompiledBlock['execute'],
+		terminal, exits, sourceWords, sourceUnits: functionSource.length,
 	};
 }

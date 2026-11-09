@@ -17,7 +17,7 @@ option(BMSX_BUILD_SDL "Build SDL standalone executable" OFF)
 option(BMSX_BUILD_TESTS "Build unit tests" OFF)
 option(BMSX_BUILD_EGL_TESTS "Build headless EGL renderer conformance tests (requires GLES2 and EGL 1.5)" OFF)
 option(BMSX_ENABLE_LTO "Enable Link Time Optimization" OFF)
-option(BMSX_ENABLE_NATIVE_BLOCKS "Compile side-effect-free CPU blocks to native machine code" OFF)
+option(BMSX_ENABLE_NATIVE_BLOCKS "Generate native CPU blocks with precise side exits" OFF)
 option(BMSX_ENABLE_ZLIB "Enable PNG screenshot output" ON)
 set(BMSX_ENABLE_GLES2_DEFAULT ON)
 # Previously GLES2 was disabled by default on Windows; enable by default on all platforms
@@ -350,7 +350,8 @@ if(BMSX_ENABLE_NATIVE_BLOCKS)
 	target_include_directories(bmsx_sljit PUBLIC ../../third_party/sljit/sljit_src)
 	target_compile_definitions(bmsx_sljit PUBLIC SLJIT_CONFIG_AUTO=1 SLJIT_VERBOSE=0
 		SLJIT_DEBUG=$<IF:$<CONFIG:Debug>,1,0>)
-	target_sources(bmsx_core PRIVATE machine/cpu/native_block.cpp machine/cpu/cpu_native_blocks.cpp)
+	target_sources(bmsx_core PRIVATE machine/cpu/native_block.cpp machine/cpu/native_block_compiler.cpp
+		machine/cpu/native_block_memory.cpp machine/cpu/cpu_native_blocks.cpp)
 	target_compile_definitions(bmsx_core PUBLIC BMSX_ENABLE_NATIVE_BLOCKS=1)
 	target_link_libraries(bmsx_core PRIVATE bmsx_sljit)
 endif()
@@ -949,6 +950,9 @@ if(BMSX_BUILD_TESTS)
 		add_executable(bmsx_native_block_tests ../../tests/cpp/native_block_test.cpp)
 		target_link_libraries(bmsx_native_block_tests PRIVATE bmsx_core)
 		add_test(NAME bmsx_native_block_tests COMMAND bmsx_native_block_tests)
+		add_executable(bmsx_cpu_compiled_memory_tests ../../tests/cpp/cpu_compiled_memory_test.cpp ${BMSX_TEST_ROM_SOURCE})
+		target_link_libraries(bmsx_cpu_compiled_memory_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+		add_test(NAME bmsx_cpu_compiled_memory_tests COMMAND bmsx_cpu_compiled_memory_tests)
 	endif()
 	add_executable(bmsx_cpu_decoded_operand_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/cpu_decoded_operand_test.cpp

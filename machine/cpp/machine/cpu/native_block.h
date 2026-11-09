@@ -15,6 +15,7 @@ namespace bmsx {
 struct DecodedInstruction;
 struct CallFrame;
 class CPU;
+class Memory;
 class NativeBlock;
 struct NativeBlockExitSite;
 
@@ -36,6 +37,8 @@ enum class NativeBlockExit : u8 {
 	Return,
 	ReadField,
 	WriteField,
+	ReadMemory,
+	WriteMemory,
 	Count,
 };
 
@@ -45,6 +48,8 @@ struct NativeBlockExitSite {
 	u16 exitA = 0;
 	i16 exitB = 0;
 	i16 exitC = 0;
+	u8 displacement = 0;
+	bool displaced = false;
 	mutable int tableCacheSlot = -1;
 	int cycles = 0;
 	int registerTop = 0;
@@ -60,7 +65,7 @@ struct NativeBlockInstruction {
 	u32 pc;
 };
 
-// Cached field hits stay in generated code. Slow exits return their precise
+// Cached fields and plain RAM stay in generated code. Slow exits return their precise
 // state map before a semantic helper can allocate, raise or invalidate code.
 inline constexpr bool nativeBlockSupports(u8 op) {
 	switch (static_cast<OpCode>(op)) {
@@ -93,6 +98,10 @@ inline constexpr bool nativeBlockSupports(u8 op) {
 		case OpCode::RET:
 		case OpCode::GETFIELD:
 		case OpCode::SETFIELD:
+		case OpCode::LOAD_MEM:
+		case OpCode::LOAD_MEM_D:
+		case OpCode::STORE_MEM:
+		case OpCode::STORE_MEM_D:
 			return true;
 		default:
 			return false;
@@ -105,12 +114,25 @@ inline constexpr bool nativeBlockEndsBlock(u8 op) {
 		|| op == static_cast<u8>(OpCode::CALL) || op == static_cast<u8>(OpCode::RET);
 }
 
+inline constexpr NativeBlockExit nativeBlockSlowExit(u8 op) {
+	switch (static_cast<OpCode>(op)) {
+		case OpCode::GETFIELD: return NativeBlockExit::ReadField;
+		case OpCode::SETFIELD: return NativeBlockExit::WriteField;
+		case OpCode::LOAD_MEM:
+		case OpCode::LOAD_MEM_D: return NativeBlockExit::ReadMemory;
+		case OpCode::STORE_MEM:
+		case OpCode::STORE_MEM_D: return NativeBlockExit::WriteMemory;
+		default: return NativeBlockExit::Continue;
+	}
+}
+
 class NativeBlock {
 public:
 	static std::unique_ptr<NativeBlock> compile(
 		std::span<const NativeBlockInstruction> instructions,
 		const Value* constants,
 		size_t& cacheBytes,
+		Memory& memory,
 		const NativeBlockExitHandlers& exitHandlers = {}
 	);
 	~NativeBlock();
