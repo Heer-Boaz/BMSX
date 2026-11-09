@@ -657,8 +657,10 @@ test('cached sequential, wide, skip and fused dispatch keep PC as a wrapping wor
 				frame.decodedPageAddress = 0xfffffc00;
 				page.widths[255] = width;
 				page.ops[255] = page.dispatchOps[255] = OpCode.K1;
+				page.dispatchCycles[255] = BASE_CYCLES[OpCode.K1];
 				page.widths[254] = 1;
 				page.ops[254] = page.dispatchOps[254] = OpCode.EQ;
+				page.dispatchCycles[254] = BASE_CYCLES[OpCode.EQ];
 				cpu.runUntilDepth(0, 1);
 				assert.equal(frame.pc, (width - 1) * INSTRUCTION_BYTES);
 			}
@@ -674,7 +676,9 @@ test('cached sequential, wide, skip and fused dispatch keep PC as a wrapping wor
 	page.widths[254] = page.widths[255] = 1;
 	page.ops[254] = OpCode.SHL;
 	page.dispatchOps[254] = DecodedDispatchOp.FusedShlBxor;
+	page.dispatchCycles[254] = BASE_CYCLES[OpCode.SHL];
 	page.ops[255] = page.dispatchOps[255] = OpCode.BXOR;
+	page.dispatchCycles[255] = BASE_CYCLES[OpCode.BXOR];
 	cpu.runUntilDepth(0, 2);
 	assert.equal(frame.pc, 0);
 });

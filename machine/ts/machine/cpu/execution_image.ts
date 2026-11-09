@@ -2,6 +2,7 @@ import type { ExecutionDomainId } from '../../spec/blua32/execution_domain';
 import { BASE_CYCLES, OPCODE_COUNT, OpCode } from '../../spec/blua32/opcode';
 import type { MappedBusSignals } from '../memory/bus_signals';
 import { MAPPED_PAGE_BYTE_SHIFT, type MappedPageWriteWatches } from '../memory/mapped_page';
+import type { CompiledBlockPage } from './compiled_block';
 
 export const DECODED_PAGE_SHIFT = MAPPED_PAGE_BYTE_SHIFT - 2;
 export const DECODED_PAGE_WORDS = 1 << DECODED_PAGE_SHIFT;
@@ -16,9 +17,11 @@ export const enum DecodedDispatchOp {
 	FusedShrBxor = OPCODE_COUNT + 2,
 	Observe = OPCODE_COUNT + 3,
 	ReservedMemory = OPCODE_COUNT + 4,
+	CompiledWarm = OPCODE_COUNT + 5,
+	Compiled = OPCODE_COUNT + 6,
 }
 
-export const DECODED_DISPATCH_OP_COUNT = OPCODE_COUNT + 5;
+export const DECODED_DISPATCH_OP_COUNT = OPCODE_COUNT + 7;
 
 export const DECODED_DISPATCH_BASE_CYCLES = new Uint8Array(DECODED_DISPATCH_OP_COUNT);
 DECODED_DISPATCH_BASE_CYCLES.set(BASE_CYCLES);
@@ -44,6 +47,7 @@ export type DecodedInstructionPage = {
 	widths: Uint8Array;
 	ops: Uint8Array;
 	dispatchOps: Uint8Array;
+	dispatchCycles: Uint8Array;
 	a: Uint16Array;
 	// The opcode chooses unsigned raw fields or signed RK selectors at decode.
 	b: Int16Array;
@@ -58,6 +62,7 @@ export type DecodedInstructionPage = {
 	cacheable: boolean;
 	writeWatches: MappedPageWriteWatches | null;
 	writeWatchIndex: number;
+	compiledBlocks: CompiledBlockPage | null;
 };
 
 export type Blua32ExecutionImage = {
@@ -95,6 +100,7 @@ export function createDecodedInstructionPage(
 		widths: new Uint8Array(DECODED_PAGE_WORDS),
 		ops: new Uint8Array(DECODED_PAGE_WORDS),
 		dispatchOps: new Uint8Array(DECODED_PAGE_WORDS),
+		dispatchCycles: new Uint8Array(DECODED_PAGE_WORDS),
 		a: new Uint16Array(DECODED_PAGE_WORDS),
 		b: new Int16Array(DECODED_PAGE_WORDS),
 		c: new Int16Array(DECODED_PAGE_WORDS),
@@ -108,6 +114,7 @@ export function createDecodedInstructionPage(
 		cacheable,
 		writeWatches,
 		writeWatchIndex,
+		compiledBlocks: null,
 	};
 	page.refreshState.fill(DECODED_REFRESH_DECODE);
 	page.ops.fill(OpCode.WIDE);

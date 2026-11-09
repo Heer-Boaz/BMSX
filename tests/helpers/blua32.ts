@@ -30,6 +30,7 @@ import {
 	RunResult,
 } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
+import type { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { describeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/disassembler';
 import {
 	BASE_BX_BITS,
@@ -488,11 +489,12 @@ export function linkTestBlua32Pair(
 
 export function createTestSystemCpu(
 	finalized: Pick<TestBlua32Image, 'romBytes'>,
+	executionBackend?: CpuExecutionBackend,
 ): { cpu: CPU; memory: Memory; irqController: IrqController; executionAddressSpace: ExecutionAddressSpace } {
 	const memory = new Memory({ systemRom: finalized.romBytes, cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const irqController = new IrqController(memory);
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
-	const cpu = new CPU(memory, irqController, executionAddressSpace);
+	const cpu = new CPU(memory, irqController, executionAddressSpace, executionBackend);
 	cpu.reset();
 	return { cpu, memory, irqController, executionAddressSpace };
 }

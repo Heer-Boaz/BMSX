@@ -133,6 +133,7 @@ export class Runtime {
 			}, options.machineModel.ramBytes),
 			this.history.input,
 			options.machineModel,
+			options.cpuExecutionBackend,
 		);
 		this.machine.memory.clearIoSlots();
 		this.machine.resetDevices();

@@ -136,6 +136,11 @@ import {
 import { ProtectedCallContinuation, ProtectedCallKind, type CallFrame } from './call_state';
 import { Thread, ThreadStatus, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES } from './thread';
 import { LuaHeap, type LuaHeapState } from './lua_heap';
+import {
+	CpuExecutionBackend, CompiledBlockPage, CompiledCodeCache, COMPILED_BLOCK_THRESHOLD,
+	COMPILED_BLOCK_MAX_INSTRUCTIONS,
+	compiledBlockSupports, compileJavaScriptBlock,
+} from './compiled_block';
 import { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotReader, CpuSnapshotObjectKind, CpuSnapshotClosure, CpuSnapshotTable, CpuSnapshotUpvalue, CpuSnapshotThread, CPU_SNAPSHOT_VALUE_WORDS, type CpuSnapshotObject, type CpuSnapshotValueWriter } from './snapshot';
 
 // start repeated-sequence-acceptable -- Lua VM/table/register hot paths deliberately keep short copy/update sequences inline.
@@ -301,6 +306,7 @@ export class CPU implements MappedPageInvalidator {
 	private executionHookDomainMask: ExecutionDomainMask = 0;
 	private preMaskableInterruptExecutionHookDomainMask: ExecutionDomainMask = 0;
 	private runUntilDepthEntry = this.runUntilDepthNormal;
+	private readonly compiledCodeCache = new CompiledCodeCache();
 	private readonly registerBuiltinArgsScratch = new ScratchBuffer<BuiltinArgsView>(
 		() => new BuiltinArgsView(),
 		1,
@@ -490,6 +496,7 @@ export class CPU implements MappedPageInvalidator {
 		memory: Memory,
 		private readonly irqController: IrqController,
 		private readonly executionAddressSpace: ExecutionAddressSpace,
+		private readonly executionBackend = CpuExecutionBackend.Interpreter,
 	) {
 		this.memory = memory;
 		this.luaHeap = new LuaHeap(this, memory.ramByteCount());
@@ -889,6 +896,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public reset(): void {
+		this.compiledCodeCache.retireAll();
 		const systemBoot = this.executionAddressSpace.resolveSystemDomain();
 		const systemResetFunctionAddress = systemBoot.startupFunctionAddress;
 		this.clearCompletionValues();
@@ -1191,6 +1199,11 @@ export class CPU implements MappedPageInvalidator {
 	public replaceExecutionImage(executionBoot: Blua32ExecutionBoot): void {
 		const imageIndex = executionBoot.executionDomainId + 1;
 		const previousImage = this.executionImagesByDomain[imageIndex];
+		if (previousImage !== null) {
+			for (const page of previousImage.decodedPages.values()) {
+				this.compiledCodeCache.retirePage(page);
+			}
+		}
 		const image = this.activateExecutionImage(executionBoot);
 		this.executionImagesByDomain[imageIndex] = image;
 		if (executionBoot.executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID) {
@@ -1231,6 +1244,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 			const page = image.decodedPages.get(key);
 			if (page !== undefined) {
+				this.compiledCodeCache.retirePage(page);
 				page.refreshState.fill(DECODED_REFRESH_DECODE, firstWord, endWord);
 			}
 		}
@@ -1263,6 +1277,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 			for (const [key, page] of image.decodedPages) {
 				if (key >= invalidationStart && key < endKey) {
+					this.compiledCodeCache.retirePage(page);
 					page.refreshState.fill(DECODED_REFRESH_DECODE);
 				}
 			}
@@ -1393,6 +1408,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 		}
 		page.dispatchOps[pageOffset] = page.ops[pageOffset];
+		page.dispatchCycles[pageOffset] = DECODED_DISPATCH_BASE_CYCLES[page.ops[pageOffset]];
 		page.refreshState[pageOffset] = instructionCacheable ? 0 : DECODED_REFRESH_DECODE;
 		if (instructionCacheable && page.writeWatches !== null) {
 			page.writeWatches.armWord(page.writeWatchIndex, pageOffset);
@@ -1404,6 +1420,13 @@ export class CPU implements MappedPageInvalidator {
 		const observed = this.instructionObserver?.points[frame.executionImage.executionDomainId + 1];
 		if (observed?.has(pc)) {
 			page.dispatchOps[pageOffset] = DecodedDispatchOp.Observe;
+			page.dispatchCycles[pageOffset] = 0;
+			return true;
+		}
+		if (instructionCacheable && this.executionBackend === CpuExecutionBackend.JavaScript
+			&& compiledBlockSupports(page.ops[pageOffset])) {
+			if (page.compiledBlocks === null) page.compiledBlocks = new CompiledBlockPage();
+			page.dispatchOps[pageOffset] = DecodedDispatchOp.CompiledWarm;
 			return true;
 		}
 		const fusionCandidate = op === OpCode.SHL || op === OpCode.ADD || op === OpCode.SHR;
@@ -1630,7 +1653,10 @@ export class CPU implements MappedPageInvalidator {
 		// Also invalidate predecessors: an old fused dispatch may cross a newly observed PC.
 		for (const image of this.executionImagesByDomain) {
 			if (image === null) continue;
-			for (const page of image.decodedPages.values()) page.refreshState.fill(DECODED_REFRESH_DECODE);
+			for (const page of image.decodedPages.values()) {
+				this.compiledCodeCache.retirePage(page);
+				page.refreshState.fill(DECODED_REFRESH_DECODE);
+			}
 		}
 	}
 
@@ -1841,7 +1867,6 @@ export class CPU implements MappedPageInvalidator {
 	private runUntilDepthNormal(targetDepth: number, instructionBudget: number): RunResult {
 		this.instructionBudgetRemaining = instructionBudget;
 		const frames = this.activeThread.frames;
-		const dispatchBaseCycles = DECODED_DISPATCH_BASE_CYCLES;
 		while (frames.length > targetDepth) {
 			try {
 				while (frames.length > targetDepth) {
@@ -1884,7 +1909,7 @@ export class CPU implements MappedPageInvalidator {
 					frame.pc = (pc + (width * INSTRUCTION_BYTES)) >>> 0;
 					this.lastExecutionDomainId = image.executionDomainId;
 					this.lastPc = (pc + ((width - 1) * INSTRUCTION_BYTES)) >>> 0;
-					this.instructionBudgetRemaining -= dispatchBaseCycles[dispatchOp];
+					this.instructionBudgetRemaining -= page.dispatchCycles[pageOffset];
 					this.executeInstruction(
 						frame,
 						page,
@@ -2326,6 +2351,58 @@ export class CPU implements MappedPageInvalidator {
 		);
 	}
 
+	private executeCompiledBlock(frame: CallFrame, page: DecodedInstructionPage, word: number): void {
+		const cache = page.compiledBlocks!;
+		if (page.dispatchOps[word] === DecodedDispatchOp.CompiledWarm) {
+			if (++cache.visits[word] === COMPILED_BLOCK_THRESHOLD) {
+				if (this.compiledCodeCache.atCapacity()) {
+					this.compiledCodeCache.retireAll();
+					cache.visits[word] = COMPILED_BLOCK_THRESHOLD;
+				}
+				const pc = this.currentInstructionPc;
+				const binding = this.mappedPageBinding;
+				this.memory.bindMappedPage((pc & ~MAPPED_PAGE_BYTE_MASK) >>> 0, this.executionBusSignals, binding);
+				let cursor = word;
+				let nextPc = pc;
+				let count = 0;
+				while (cursor < DECODED_PAGE_WORDS - 1 && count < COMPILED_BLOCK_MAX_INSTRUCTIONS) {
+					if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) !== 0) {
+						if (binding.readBytes === null) break;
+						if (!this.decodeInstruction(frame, page, cursor, nextPc, false)) return;
+					}
+					if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) !== 0
+						|| page.dispatchOps[cursor] === DecodedDispatchOp.Observe
+						|| !compiledBlockSupports(page.ops[cursor])) break;
+					++count;
+					nextPc = (nextPc + page.widths[cursor] * INSTRUCTION_BYTES) >>> 0;
+					const terminal = page.ops[cursor] === OpCode.JMP;
+					cursor += page.widths[cursor];
+					if (terminal) break;
+				}
+				if (count >= 2) {
+					const block = compileJavaScriptBlock(page, word, cursor, pc, frame.executionImage);
+					this.compiledCodeCache.install(page, word, block);
+				} else {
+					page.dispatchOps[word] = page.ops[word];
+				}
+			}
+		}
+		const block = cache.entries[word];
+		if (block !== null) {
+			const remaining = block.cycles - page.dispatchCycles[word];
+			if (this.instructionBudgetRemaining >= remaining) {
+				block.execute(frame.registers, frame.executionImage.constScalars);
+				this.instructionBudgetRemaining -= remaining;
+				frame.top = Math.max(frame.top, block.registerTop);
+				frame.pc = block.nextPc;
+				this.currentInstructionPc = block.currentPc;
+				this.lastPc = block.lastPc;
+				return;
+			}
+		}
+		this.executeInstruction(frame, page, word, page.ops[word]);
+	}
+
 	private executeInstruction(
 		frame: CallFrame,
 		page: DecodedInstructionPage,
@@ -2336,6 +2413,10 @@ export class CPU implements MappedPageInvalidator {
 		const image = frame.executionImage;
 		const a = page.a[pageOffset];
 		switch (op) {
+				case DecodedDispatchOp.CompiledWarm:
+				case DecodedDispatchOp.Compiled:
+					this.executeCompiledBlock(frame, page, pageOffset);
+					return;
 				case DecodedDispatchOp.Observe:
 					this.instructionObserver!.observe(image.executionDomainId, this.currentInstructionPc, registers);
 					// Observe has zero base cost; execute and charge the original instruction once.
