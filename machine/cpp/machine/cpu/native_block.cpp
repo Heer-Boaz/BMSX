@@ -33,11 +33,16 @@ public:
 
 	void emit(const DecodedInstruction& instruction, u32 fallthroughPc) {
 		const auto op = static_cast<OpCode>(instruction.op);
-		const sljit_sw destination = static_cast<sljit_sw>(instruction.a) * sizeof(Value);
+		const bool wordConversion = op == OpCode::BAND || op == OpCode::BOR || op == OpCode::BXOR
+			|| op == OpCode::SHL || op == OpCode::SHR || op == OpCode::BNOT;
+		if (nativeBlockEndsBlock(instruction.op) || wordConversion || op == OpCode::NOT) {
+			flushRegister();
+		} else if (m_pendingRegister != instruction.a) {
+			commitRegister();
+		}
 		switch (op) {
 			case OpCode::MOV:
-				sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0,
-					SLJIT_MEM1(SLJIT_S0), static_cast<sljit_sw>(instruction.b) * sizeof(Value));
+				loadOperand(instruction.b, SLJIT_FR0);
 				break;
 			case OpCode::LOADK:
 				sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0,
@@ -54,8 +59,9 @@ public:
 			case OpCode::SUB:
 			case OpCode::MUL:
 			case OpCode::DIV: {
-				loadOperand(instruction.b, SLJIT_FR0);
+				// Preserve a forwarded right operand before replacing FR0 with the left.
 				loadOperand(instruction.c, SLJIT_FR1);
+				loadOperand(instruction.b, SLJIT_FR0);
 				const sljit_s32 operation = op == OpCode::ADD ? SLJIT_ADD_F64
 					: op == OpCode::SUB ? SLJIT_SUB_F64
 					: op == OpCode::MUL ? SLJIT_MUL_F64 : SLJIT_DIV_F64;
@@ -121,10 +127,11 @@ public:
 			default:
 				__builtin_unreachable();
 		}
-		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_MEM1(SLJIT_S0), destination, SLJIT_FR0, 0);
+		m_pendingRegister = instruction.a;
 	}
 
 	void* finish(size_t& codeBytes, u32 nextPc) {
+		flushRegister();
 		if (m_exitHandler) {
 			sljit_emit_op1(m_compiler, SLJIT_MOV, SLJIT_R0, 0, SLJIT_S3, 0);
 			sljit_emit_op1(m_compiler, SLJIT_MOV, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_block));
@@ -142,6 +149,17 @@ public:
 	}
 
 private:
+	void commitRegister() {
+		if (m_pendingRegister < 0) return;
+		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64,
+			SLJIT_MEM1(SLJIT_S0), static_cast<sljit_sw>(m_pendingRegister) * sizeof(Value), SLJIT_FR0, 0);
+	}
+
+	void flushRegister() {
+		commitRegister();
+		m_pendingRegister = -1;
+	}
+
 	std::array<sljit_jump*, 2> falseyJumps(int index) {
 		// isTruthy consumes the upper 16-bit Value header, including for
 		// representable tagged payloads. Never use floating-point NaN equality.
@@ -155,6 +173,12 @@ private:
 	}
 
 	void loadOperand(int selector, sljit_s32 floatingRegister) {
+		if (selector >= 0 && selector == m_pendingRegister) {
+			if (floatingRegister != SLJIT_FR0) {
+				sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, floatingRegister, 0, SLJIT_FR0, 0);
+			}
+			return;
+		}
 		const bool constant = selector < 0;
 		const int index = constant ? -selector - 1 : selector;
 		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, floatingRegister, 0,
@@ -184,6 +208,8 @@ private:
 	const Value* m_constants;
 	const NativeBlock* m_block;
 	NativeBlockExitHandler m_exitHandler;
+	// FR0 holds this raw Value until eviction, a helper call or an execution exit.
+	int m_pendingRegister = -1;
 };
 
 } // namespace

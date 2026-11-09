@@ -118,6 +118,80 @@ void movesAndLiteralsPreserveRawValues() {
 	}
 }
 
+void dependentInstructionsWriteBackEveryLiveRegister() {
+	const std::array pool{valueNumber(-0.0), valueNumber(0.25), valueNumber(-4294967296.75),
+		valueNumber(std::numeric_limits<double>::infinity()), VALUE_QNAN_MASK, valueNil(), valueBool(false),
+		valueBool(true), valueString(0x12345678u), valueFromTag(ValueTag::Table, 0x1234u),
+		Value{0x7ff0000000000001ULL}, Value{0xfff0000000000001ULL}};
+	const std::array operations{OpCode::ADD, OpCode::SUB, OpCode::MUL, OpCode::DIV,
+		OpCode::BAND, OpCode::BOR, OpCode::BXOR, OpCode::SHL, OpCode::SHR, OpCode::UNM, OpCode::BNOT,
+		OpCode::MOV, OpCode::LOADK, OpCode::KNIL, OpCode::KFALSE, OpCode::KTRUE,
+		OpCode::K0, OpCode::K1, OpCode::KM1, OpCode::KSMI, OpCode::NOT};
+	u32 random = 0x915acd38u;
+	auto next = [&]() {
+		random ^= random << 13u; random ^= random >> 17u; random ^= random << 5u;
+		return random;
+	};
+	size_t bytes = 0;
+	for (u32 program = 0; program < 128; ++program) {
+		std::array<Value, 8> initial;
+		for (auto& reg : initial) reg = pool[next() % pool.size()];
+		auto expected = initial;
+		std::array<DecodedInstruction, 33> decoded{};
+		std::array<NativeBlockInstruction, 33> source{};
+		u16 previous = 0;
+		for (u32 index = 0; index < 32; ++index) {
+			auto& instruction = decoded[index];
+			const auto op = operations[next() % operations.size()];
+			instruction.op = static_cast<u8>(op);
+			instruction.width = index % 5 == 0 ? 2 : 1;
+			instruction.baseCycles = BASE_CYCLES[instruction.op];
+			instruction.a = index % 3 == 0 ? previous : next() & 7u;
+			instruction.b = index % 3 == 0 ? previous : next() & 7u;
+			instruction.c = index % 3 == 1 ? previous : next() & 7u;
+			if (op == OpCode::LOADK) instruction.bx = next() % pool.size();
+			if (op == OpCode::KSMI) instruction.sbx = static_cast<i32>(next() & 0x3ffffffu) - 0x2000000;
+			const bool binary = op >= OpCode::ADD && op <= OpCode::SHR;
+			if (binary && (next() & 3u) == 0) instruction.b = -static_cast<i16>(1 + next() % pool.size());
+			if (binary && (next() & 3u) == 0) instruction.c = -static_cast<i16>(1 + next() % pool.size());
+			const auto operand = [&](int selector) { return selector < 0 ? pool[-selector - 1] : expected[selector]; };
+			switch (op) {
+				case OpCode::MOV: expected[instruction.a] = expected[instruction.b]; break;
+				case OpCode::LOADK: expected[instruction.a] = pool[instruction.bx]; break;
+				case OpCode::KNIL: expected[instruction.a] = valueNil(); break;
+				case OpCode::KFALSE: expected[instruction.a] = valueBool(false); break;
+				case OpCode::KTRUE: expected[instruction.a] = valueBool(true); break;
+				case OpCode::K0: expected[instruction.a] = valueNumber(0); break;
+				case OpCode::K1: expected[instruction.a] = valueNumber(1); break;
+				case OpCode::KM1: expected[instruction.a] = valueNumber(-1); break;
+				case OpCode::KSMI: expected[instruction.a] = valueNumber(instruction.sbx); break;
+				case OpCode::NOT: expected[instruction.a] = valueBool(!isTruthy(expected[instruction.b])); break;
+				default: expected[instruction.a] = evaluate(op, operand(instruction.b), operand(instruction.c)); break;
+			}
+			source[index] = {&instruction, index == 0 ? 0x1000u : source[index - 1].pc + decoded[index - 1].width * INSTRUCTION_BYTES};
+			previous = instruction.a;
+			auto block = NativeBlock::compile(std::span(source).first(index + 1), pool.data(), bytes);
+			auto registers = initial;
+			block->run(registers.data(), pool.data());
+			require(registers == expected, "dependent native instructions preserve every live raw register at each prefix exit");
+		}
+		for (const auto op : {OpCode::HALT, OpCode::JMP, OpCode::JMPIF, OpCode::JMPIFNOT}) {
+			auto& terminal = decoded.back();
+			terminal.op = static_cast<u8>(op); terminal.width = 2; terminal.baseCycles = BASE_CYCLES[terminal.op];
+			terminal.a = previous; terminal.bx = 0x2000u;
+			source.back() = {&terminal, source[31].pc + decoded[31].width * INSTRUCTION_BYTES};
+			auto block = NativeBlock::compile(source, pool.data(), bytes);
+			auto registers = initial;
+			const auto pc = block->run(registers.data(), pool.data());
+			const bool taken = op == OpCode::JMP || (op == OpCode::JMPIF && isTruthy(expected[previous]))
+				|| (op == OpCode::JMPIFNOT && !isTruthy(expected[previous]));
+			require(registers == expected && pc == (taken ? terminal.bx : source.back().pc + 2 * INSTRUCTION_BYTES),
+				"all native control exits consume and publish the final pending result");
+		}
+	}
+	require(bytes == 0, "dependent block compilation retires all executable allocations");
+}
+
 void truthinessAndConditionalExits() {
 	size_t bytes = 0;
 	for (const auto op : {OpCode::NOT, OpCode::JMPIF, OpCode::JMPIFNOT}) {
@@ -223,6 +297,7 @@ int main() {
 	try {
 		arithmeticAndWordDatapaths();
 		movesAndLiteralsPreserveRawValues();
+		dependentInstructionsWriteBackEveryLiveRegister();
 		truthinessAndConditionalExits();
 		tailHelpersReleaseTheGeneratedFrame();
 		std::cout << "Native block datapath tests passed\n";

@@ -85,8 +85,10 @@ export class CompiledCodeCache {
 }
 
 type StatementEmitter = (page: DecodedInstructionPage, word: number, image: Blua32ExecutionImage) => string;
+type NumberEmitter = (page: DecodedInstructionPage, word: number, image: Blua32ExecutionImage, pendingRegister: number) => string;
 
-function numberOperand(selector: number, image: Blua32ExecutionImage): string {
+function numberOperand(selector: number, image: Blua32ExecutionImage, pendingRegister: number): string {
+	if (selector >= 0 && selector === pendingRegister) return 'v';
 	if (selector >= 0) return `r.getNumber(${selector})`;
 	const index = -selector - 1;
 	return image.constTags[index] === ValueTag.Number ? `k[${index}]` : 'NaN';
@@ -98,19 +100,21 @@ emitters[OpCode.LOADK] = (p, w, image) => `r.setEncoded(${p.a[w]},${image.constT
 emitters[OpCode.KNIL] = (p, w) => `r.setNil(${p.a[w]});`;
 emitters[OpCode.KFALSE] = (p, w) => `r.setBool(${p.a[w]},false);`;
 emitters[OpCode.KTRUE] = (p, w) => `r.setBool(${p.a[w]},true);`;
-emitters[OpCode.K0] = (p, w) => `r.setNumber(${p.a[w]},0);`;
-emitters[OpCode.K1] = (p, w) => `r.setNumber(${p.a[w]},1);`;
-emitters[OpCode.KM1] = (p, w) => `r.setNumber(${p.a[w]},-1);`;
-emitters[OpCode.KSMI] = (p, w) => `r.setNumber(${p.a[w]},${p.sbx[w]});`;
-emitters[OpCode.UNM] = (p, w) => `r.setNumber(${p.a[w]},-r.getNumber(${p.b[w]}));`;
 emitters[OpCode.NOT] = (p, w) => `r.setBool(${p.a[w]},!r.isTruthy(${p.b[w]}));`;
-emitters[OpCode.BNOT] = (p, w) => `r.setNumber(${p.a[w]},~r.getNumber(${p.b[w]}));`;
+
+const numberEmitters: (NumberEmitter | undefined)[] = new Array(OPCODE_COUNT);
+numberEmitters[OpCode.K0] = () => '0';
+numberEmitters[OpCode.K1] = () => '1';
+numberEmitters[OpCode.KM1] = () => '-1';
+numberEmitters[OpCode.KSMI] = (p, w) => `${p.sbx[w]}`;
+numberEmitters[OpCode.UNM] = (p, w, image, pending) => `-(${numberOperand(p.b[w], image, pending)})`;
+numberEmitters[OpCode.BNOT] = (p, w, image, pending) => `~(${numberOperand(p.b[w], image, pending)})`;
 for (const [op, operator] of [
 	[OpCode.ADD, '+'], [OpCode.SUB, '-'], [OpCode.MUL, '*'], [OpCode.DIV, '/'],
 	[OpCode.BAND, '&'], [OpCode.BOR, '|'], [OpCode.BXOR, '^'],
 	[OpCode.SHL, '<<'], [OpCode.SHR, '>>'],
 ] as const) {
-	emitters[op] = (p, w, image) => `r.setNumber(${p.a[w]},(${numberOperand(p.b[w], image)})${operator}(${numberOperand(p.c[w], image)}));`;
+	numberEmitters[op] = (p, w, image, pending) => `(${numberOperand(p.b[w], image, pending)})${operator}(${numberOperand(p.c[w], image, pending)})`;
 }
 emitters[OpCode.JMP] = () => '';
 emitters[OpCode.JMPIF] = emitters[OpCode.JMP];
@@ -120,7 +124,7 @@ emitters[OpCode.CALL] = emitters[OpCode.JMP];
 emitters[OpCode.RET] = emitters[OpCode.JMP];
 
 export function compiledBlockSupports(op: number): boolean {
-	return emitters[op] !== undefined;
+	return emitters[op] !== undefined || numberEmitters[op] !== undefined;
 }
 
 export function compiledBlockEndsBlock(op: number): boolean {
@@ -144,10 +148,28 @@ export function compileJavaScriptBlock(
 	let lastPc = pc;
 	let nextPc = pc;
 	let finalWord = firstWord;
+	let pendingRegister = -1;
+	let numberLocal = false;
 	for (let word = firstWord; word < endWord; word += page.widths[word]) {
 		finalWord = word;
 		const op = page.ops[word];
-		source.push(emitters[op]!(page, word, image));
+		const numberEmitter = numberEmitters[op];
+		if (numberEmitter !== undefined) {
+			if (!numberLocal) {
+				source.push('let v;');
+				numberLocal = true;
+			}
+			if (pendingRegister >= 0 && pendingRegister !== page.a[word]) {
+				source.push(`r.setNumber(${pendingRegister},v);`);
+			}
+			source.push(`v=${numberEmitter(page, word, image, pendingRegister)};`);
+			pendingRegister = page.a[word];
+		} else {
+			// Raw copies and execution exits consume the complete ValueSlots state.
+			if (pendingRegister >= 0) source.push(`r.setNumber(${pendingRegister},v);`);
+			pendingRegister = -1;
+			source.push(emitters[op]!(page, word, image));
+		}
 		cycles += BASE_CYCLES[op];
 		sourceWords += page.widths[word];
 		currentPc = pc;
@@ -156,6 +178,7 @@ export function compileJavaScriptBlock(
 		nextPc = op === OpCode.JMP ? page.bx[word] : pc;
 		if (!compiledBlockEndsBlock(op)) registerTop = Math.max(registerTop, page.a[word] + 1);
 	}
+	if (pendingRegister >= 0) source.push(`r.setNumber(${pendingRegister},v);`);
 	const finalOp = page.ops[finalWord];
 	if (finalOp === OpCode.JMPIF || finalOp === OpCode.JMPIFNOT) {
 		const truth = `${finalOp === OpCode.JMPIFNOT ? '!' : ''}r.isTruthy(${page.a[finalWord]})`;

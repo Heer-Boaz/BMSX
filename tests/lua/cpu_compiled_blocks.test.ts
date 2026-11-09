@@ -142,6 +142,56 @@ test('generated RK constants preserve numeric kind checks and signed selectors',
 	}
 });
 
+test('dependent generated instructions preserve live values, raw copies and every short-grant boundary', () => {
+	const operations = [OpCode.ADD, OpCode.SUB, OpCode.MUL, OpCode.DIV,
+		OpCode.BAND, OpCode.BOR, OpCode.BXOR, OpCode.SHL, OpCode.SHR, OpCode.UNM, OpCode.BNOT,
+		OpCode.MOV, OpCode.LOADK, OpCode.KNIL, OpCode.KFALSE, OpCode.KTRUE,
+		OpCode.K0, OpCode.K1, OpCode.KM1, OpCode.KSMI, OpCode.NOT];
+	const constants = [-0, 0.25, -4294967296.75, Infinity, NaN, null, false, true, 'literal'];
+	let random = 0x915acd38;
+	const next = () => {
+		random ^= random << 13; random ^= random >>> 17; random ^= random << 5;
+		return random >>> 0;
+	};
+	for (let program = 0; program < 32; ++program) {
+		const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+		let previous = 0;
+		for (let word = 0; word < 32; ++word) {
+			const op = operations[next() % operations.length];
+			const a = word % 3 === 0 ? previous : next() & 7;
+			let b = word % 3 === 0 ? previous : next() & 7;
+			let c = word % 3 === 1 ? previous : next() & 7;
+			let ext = 0;
+			if (op >= OpCode.ADD && op <= OpCode.SHR) {
+				if ((next() & 3) === 0) b = -1 - next() % constants.length;
+				if ((next() & 3) === 0) c = -1 - next() % constants.length;
+				ext = ((b >>> 6) & 7) << 2 | ((c >>> 6) & 7) << 5;
+			} else if (op === OpCode.LOADK || op === OpCode.KSMI) {
+				const bx = op === OpCode.LOADK ? next() % constants.length : (next() & 127) - 64;
+				b = bx >>> 6; c = bx & 63; ext = bx >>> 12;
+			}
+			writeInstruction(text, word, op, a, b, c, ext);
+			previous = a;
+		}
+		writeInstruction(text, 32, OpCode.JMP, 0, (-33 >>> 6) & 63, -33 & 63, 255);
+		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 33, maxStack: 8 }], constants });
+		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
+		const ref = createTestSystemCpu(image).cpu;
+		for (const cpu of [js, ref]) {
+			const registers = cpu.rootThread.frames[0].registers;
+			for (let reg = 0; reg < 8; ++reg) registers.set(reg, constants[reg]);
+			registers.setTable(0, cpu.createTable(0, 0));
+			registers.setNumber(7, -0);
+		}
+		for (const grant of [330, ...Array.from({ length: 40 }, (_, i) => i + 1)]) {
+			assert.equal(js.runUntilDepth(0, grant), ref.runUntilDepth(0, grant));
+			assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState(), `program ${program}, grant ${grant}`);
+			assert.equal(js.instructionBudgetRemaining, ref.instructionBudgetRemaining);
+		}
+		assert.ok(compiledEntries(js) > 0, `dependent program ${program} used generated code`);
+	}
+});
+
 test('sparse observation and instrumented stops retire or bypass compiled blocks without lost instruction boundaries', () => {
 	const image = loopImage();
 	const cpu = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
