@@ -64,12 +64,12 @@
 
 <rect x="1000" y="435" width="360" height="270" rx="8" class="block"/>
 <text x="1180" y="473" text-anchor="middle" class="heading">IMGDEC</text>
-<text x="1180" y="510" text-anchor="middle">IN FIFO: 32 × 32 bits</text>
+<text x="1180" y="510" text-anchor="middle">IN FIFO: 256 × 32 bits</text>
 <text x="1180" y="548" text-anchor="middle">Token / run / back-reference decode</text>
 <text x="1180" y="586" text-anchor="middle">History: 4096 × 32 bits</text>
-<text x="1180" y="624" text-anchor="middle">OUT FIFO: 64 × 32 bits</text>
-<text x="1180" y="661" text-anchor="middle" class="minor">Upload headers + decoded payload</text>
-<text x="1180" y="690" text-anchor="middle" class="small">16.375 KiB FIFO + history storage</text>
+<text x="1180" y="624" text-anchor="middle">Work / read block: 256 × 32 bits</text>
+<text x="1180" y="661" text-anchor="middle" class="minor">Raw decoded words</text>
+<text x="1180" y="690" text-anchor="middle" class="small">18 KiB FIFO + block + history storage</text>
 
 <rect x="70" y="630" width="420" height="125" rx="8" class="block"/>
 <text x="280" y="666" text-anchor="middle" class="heading">CPU memory-access path</text>

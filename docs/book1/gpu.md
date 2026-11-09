@@ -3807,12 +3807,14 @@ returns that latch rather than an extra pixel.
 
 ### Account for admitted transfer time {#sec-gpu-account-for-admitted-transfer-time}
 
-Installed RAM timing charges one cycle per word plus one per burst; the I/O side charges zero. Transfers between these regions use the larger side charge.
+Installed RAM timing charges one cycle per word plus one per burst. Each I/O
+access costs one cycle per word. Source reads and destination writes use the
+shared bus serially, so a RAM/I/O burst of N words costs 2N + 1 cycles.
 
 | Transfer | Words | Admitted blocks | Block charges | Total |
 |---|---:|---|---|---:|
-| Upload packet | 44 | 16 + 16 + 12 | 17 + 17 + 13 | 47 cycles |
-| READY readback | 41 | 16 + 16 + 9 | 17 + 17 + 10 | 44 cycles |
+| Upload packet | 44 | 16 + 16 + 12 | 33 + 33 + 25 | 91 cycles |
+| READY readback | 41 | 16 + 16 + 9 | 33 + 33 + 19 | 85 cycles |
 
 These are admitted DMA charges, not end-to-end measurements. They exclude CPU preparation, request waits, other channels, readback preparation, and display timing. The final blocks are partial blocks, not padded sixteen-word transfers.
 

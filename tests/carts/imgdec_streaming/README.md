@@ -29,6 +29,13 @@ from CRT-off/no-audio controls. Do not include PNG capture calls in performance
 runs. Host timing, present/drop and audio-underrun counts matter: guest-side
 completion alone does not establish realtime host performance.
 
+The host enables unpaced timeline execution only for a nonempty timeline and
+without `--paced-timeline`. An empty `[]` keeps ordinary wall-clock pacing.
+For a bounded unpaced control, place a capture beyond `--max-frames` in the
+timeline: the timeline is active, but no PNG capture occurs during the run.
+Keep host audio off for that control. Timed `retro_run` calls exclude the outer
+pacer sleep; their duration alone does not establish unpaced throughput.
+
 A capture timeline can contain `{"frame":100,"capture":true}` entries for
 frames 100–103 and 200–203. Verify the actual displayed uploads:
 
