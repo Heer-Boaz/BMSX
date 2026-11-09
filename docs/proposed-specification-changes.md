@@ -40,6 +40,15 @@ evenmin dat ROM-streaming samen met tekenen, gamecode en geluid werkelijk
 realtime werkt. De prestatie-intentie voor normaal BLua-gebruik uit
 [CPU-uitvoering](#sec-proposal-cpu-execution) blijft daarbij behouden.
 
+Een nieuw ROM- of apparaatdataformaat moet eveneens uit het gekozen
+hardwarecontract volgen, niet uit een goedkoper pad op de SNES Mini of een
+andere emulatorhost. De packer mag bronmateriaal omzetten naar het echte
+apparaatformaat; hostspecifieke caches, voorberekende decodertoestand en
+uitvoeringsversnellingen horen niet daarom in de cartridgegegevens terecht
+te komen. Een formaatwijziging blijft mogelijk wanneer de hardwarefunctie en
+haar kosten die zelfstandig rechtvaardigen. Alleen vaststellen dat de PSX of
+N64 ook blokken gebruikt, onderbouwt geen specifieke BMSX-blokindeling of timing.
+
 Concrete wijzigingen worden samen verwerkt in de publieke handleidingen,
 beide runtimes en de betrokken BIOS-, cartridge- en testproducenten. Behoud
 van oude versies of savestates is geen ontwerpvoorwaarde; een migratie- of
