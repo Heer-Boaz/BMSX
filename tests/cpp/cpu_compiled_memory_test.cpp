@@ -1,6 +1,7 @@
 #include "common/endian.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/native_block.h"
+#include "machine/cpu/table.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
@@ -286,6 +287,58 @@ void changingSuccessorsDoNotRecompileStablePredecessors() {
 		&& machine.cpu.readCauseWord() == 0u, "independent native code survives repeated source rewrites without recompilation");
 }
 
+void cachedValuesReachFieldMemoryAndFaultOwners() {
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), 0, 1, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::GETFIELD), 2, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::K0), 3, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::DIV), 4, 12, 13);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::SETFIELD), 0, 1, 4);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::STORE_MEM), 4, 5, static_cast<u8>(MemoryAccessKind::F64LE));
+	writeInstruction(image.text, 6, static_cast<u8>(OpCode::K1), 6, 0, 0);
+	writeInstruction(image.text, 7, static_cast<u8>(OpCode::ADD), 7, 6, 2);
+	writeInstruction(image.text, 8, static_cast<u8>(OpCode::MOV), 8, 0, 0);
+	writeInstruction(image.text, 9, static_cast<u8>(OpCode::MOV), 9, 7, 0);
+	writeInstruction(image.text, 10, static_cast<u8>(OpCode::GETFIELD), 10, 8, 1);
+	writeInstruction(image.text, 11, static_cast<u8>(OpCode::MOV), 11, 10, 0);
+	writeInstruction(image.text, 12, static_cast<u8>(OpCode::JMP), 0, 63, 51, 255);
+	writeInstruction(image.text, 13, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 13, .maxStack = 14}, {.firstWord = 13, .wordCount = 1}};
+	image.constants = {std::string("stable"), std::string("result")}; image.exceptionFunctionIndex = 1;
+	constexpr u32 address = DYNAMIC_RAM_BASE + 0x1000;
+	CpuMachine native(image), scalar(image, true);
+	for (auto* machine : {&native, &scalar}) {
+		auto* table = machine->cpu.createTable(0, 2);
+		table->setStringKey(machine->cpu.stringPool().intern("stable"), valueNumber(22));
+		table->setStringKey(machine->cpu.stringPool().intern("result"), valueNumber(0));
+		auto& frame = *machine->cpu.activeThread()->frames[0];
+		frame.registers[1] = valueTable(table); frame.registers[5] = valueNumber(address);
+		frame.registers[12] = frame.registers[13] = valueNumber(std::numeric_limits<double>::infinity());
+		machine->cpu.runUntilDepth(0, 1200);
+	}
+	auto& frame = *native.cpu.activeThread()->frames[0];
+	const auto& block = frame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u];
+	require(block && block->sourceWords == 13 && block->run(frame.registers, frame.executionImage->constPool.data()) == &block->terminal,
+		"cached table references, numbers and memory writes all reach the final native exit");
+	scalar.cpu.runUntilDepth(0, 15);
+	require(native.memory.readMappedWord(address) == 0u && native.memory.readMappedWord(address + 4u) == 0x7ff80000u,
+		"a cached arithmetic result reaches float memory in the canonical guest representation");
+	for (auto* machine : {&native, &scalar}) {
+		auto& current = *machine->cpu.activeThread()->frames[0];
+		require(current.registers[2] == valueNumber(22) && current.registers[7] == valueNumber(23)
+			&& current.registers[9] == valueNumber(23) && current.registers[11] == VALUE_QNAN_MASK
+			&& current.registers[0] == current.registers[1] && current.registers[8] == current.registers[1],
+			"register pressure and pure conversion calls preserve raw references, dependent values and aliases");
+		current.registers[1] = valueNumber(5); current.top = 0;
+		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
+		require(machine->cpu.runUntilDepth(0, 100) == RunResult::Halted
+			&& current.registers[0] == valueNumber(5) && current.registers[2] == valueNumber(22)
+			&& current.top == 1 && machine->cpu.readEpcWord() == machine->rom.textAddress + INSTRUCTION_BYTES,
+			"a field side exit publishes the current cached tag and prefix without committing the failed destination");
+	}
+}
+
 } // namespace
 
 int main() {
@@ -295,6 +348,7 @@ int main() {
 		generatedBusOrdering();
 		generatedMemoryMayRetireExecutingSource();
 		changingSuccessorsDoNotRecompileStablePredecessors();
+		cachedValuesReachFieldMemoryAndFaultOwners();
 		std::cout << "Compiled CPU memory tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {

@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { readLE32 } from '../../machine/ts/common/endian';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
@@ -26,6 +27,61 @@ function memoryLoop(op: OpCode, kind: MemoryAccessKind, displacement = 0) {
 }
 
 const widths = [4, 1, 2, 4, 4, 8];
+
+test('cached values reach field, memory and fault owners without stale tags or noncanonical numeric bits', () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(text, 0, OpCode.MOV, 0, 1, 0);
+	writeInstruction(text, 1, OpCode.GETFIELD, 2, 0, 0);
+	writeInstruction(text, 2, OpCode.K0, 3, 0, 0);
+	writeInstruction(text, 3, OpCode.DIV, 4, 12, 13);
+	writeInstruction(text, 4, OpCode.SETFIELD, 0, 1, 4);
+	writeInstruction(text, 5, OpCode.STORE_MEM, 4, 5, MemoryAccessKind.F64LE);
+	writeInstruction(text, 6, OpCode.K1, 6, 0, 0);
+	writeInstruction(text, 7, OpCode.ADD, 7, 6, 2);
+	writeInstruction(text, 8, OpCode.MOV, 8, 0, 0);
+	writeInstruction(text, 9, OpCode.MOV, 9, 7, 0);
+	writeInstruction(text, 10, OpCode.GETFIELD, 10, 8, 1);
+	writeInstruction(text, 11, OpCode.MOV, 11, 10, 0);
+	writeInstruction(text, 12, OpCode.JMP, 0, 63, 51, 255);
+	writeInstruction(text, 13, OpCode.HALT, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text, functions: [
+		{ firstWord: 0, wordCount: 13, maxStack: 14 }, { firstWord: 13, wordCount: 1 },
+	], constants: ['stable', 'result'], exceptionFunctionIndex: 1 });
+	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image)];
+	const address = DYNAMIC_RAM_BASE + 0x1000;
+	for (const { cpu } of machines) {
+		const table = cpu.createTable(0, 2);
+		table.storeStringKey(cpu.stringPool.intern('stable'), ValueTag.Number, 22, null);
+		table.storeStringKey(cpu.stringPool.intern('result'), ValueTag.Number, 0, null);
+		const frame = cpu.rootThread.frames[0];
+		frame.registers.setTable(1, table); frame.registers.setNumber(5, address);
+		frame.registers.setNumber(12, Infinity); frame.registers.setNumber(13, Infinity);
+		cpu.runUntilDepth(0, 1200);
+	}
+	const frame = machines[0].cpu.rootThread.frames[0], page = frame.decodedPage!;
+	const entry = image.image.functions[0].codeAddress;
+	const block = page.compiledBlocks!.entries[(entry & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2]!;
+	assert.equal(block.sourceWords, 13);
+	assert.equal(block.exits[block.execute(frame.registers, frame.executionImage.constScalars, page)], block.terminal);
+	machines[1].cpu.runUntilDepth(0, 15);
+	assert.equal(machines[0].memory.readMappedWord(address), 0);
+	assert.equal(machines[0].memory.readMappedWord(address + 4), 0x7ff80000);
+	assert.equal(Buffer.compare(machines[0].memory.ramData(), machines[1].memory.ramData()), 0,
+		'float stores consume the canonical guest number');
+	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+	for (const { cpu } of machines) {
+		const current = cpu.rootThread.frames[0];
+		current.registers.setNumber(1, 5); current.top = 0;
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
+		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+		assert.equal(current.registers.getNumber(0), 5, 'the field fault sees the new cached base, not the old table slot');
+		assert.equal(current.registers.getNumber(2), 22, 'the failed field destination remains unchanged');
+		assert.equal(current.top, 1);
+		assert.equal(cpu.readEpcWord(), entry + INSTRUCTION_BYTES);
+	}
+	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+});
+
 for (let format = 0; format <= 5; ++format) for (const displaced of [false, true]) {
 	test(`generated RAM format ${format}, displaced ${displaced}: data, aliases and short grants`, () => {
 		const image = memoryLoop(displaced ? OpCode.STORE_MEM_D : OpCode.STORE_MEM, format, displaced ? 255 : 0);

@@ -10,34 +10,48 @@
 
 namespace bmsx {
 
-NativeBlockCompiler::NativeBlockCompiler(const Value* constants, const NativeBlock* block, Memory& memory)
+NativeBlockCompiler::NativeBlockCompiler(const Value* constants, const NativeBlock* block, Memory& memory,
+	std::span<const NativeBlockInstruction> instructions)
 	: m_compiler(nullptr), m_constants(constants), m_block(block), m_memory(memory) {
-	m_slowPaths.reserve(std::count_if(block->sideExits.begin(), block->sideExits.end(), [](const auto& exit) {
-		return exit.exit == NativeBlockExit::ReadField || exit.exit == NativeBlockExit::WriteField
-			|| exit.exit == NativeBlockExit::WriteMemory
-			|| (exit.exit == NativeBlockExit::ReadMemory && exit.exitC != static_cast<i16>(MemoryAccessKind::U8));
-	}));
-	m_readMappings.reserve(std::count_if(block->sideExits.begin(), block->sideExits.end(), [](const auto& exit) {
-		return exit.exit == NativeBlockExit::ReadMemory;
-	}));
+	size_t slowPaths = 0, readMappings = 0;
+	bool calls = false;
+	for (const auto& source : instructions) {
+		const auto& instruction = *source.decoded;
+		const auto op = static_cast<OpCode>(instruction.op);
+		const auto slow = nativeBlockSlowExit(instruction.op);
+		slowPaths += slow == NativeBlockExit::ReadField || slow == NativeBlockExit::WriteField
+			|| slow == NativeBlockExit::WriteMemory
+			|| (slow == NativeBlockExit::ReadMemory && instruction.c != static_cast<i16>(MemoryAccessKind::U8));
+		readMappings += slow == NativeBlockExit::ReadMemory;
+		calls |= (op == OpCode::BNOT && instruction.b >= 0)
+			|| ((op == OpCode::BAND || op == OpCode::BOR || op == OpCode::BXOR || op == OpCode::SHL || op == OpCode::SHR)
+				&& (instruction.b >= 0 || instruction.c >= 0))
+			|| ((slow == NativeBlockExit::ReadMemory || slow == NativeBlockExit::WriteMemory)
+			&& (instruction.b >= 0 || (slow == NativeBlockExit::WriteMemory
+				&& instruction.c != static_cast<i16>(MemoryAccessKind::F32LE)
+				&& instruction.c != static_cast<i16>(MemoryAccessKind::F64LE))));
+	}
+	m_slowPaths.reserve(slowPaths);
+	m_readMappings.reserve(readMappings);
+	m_useSavedFloats = calls && SLJIT_NUMBER_OF_SAVED_FLOAT_REGISTERS >= REGISTER_CACHE_CAPACITY;
+	m_registerCount = m_useSavedFloats ? REGISTER_CACHE_CAPACITY
+		: std::min(REGISTER_CACHE_CAPACITY, SLJIT_NUMBER_OF_FLOAT_REGISTERS - SLJIT_NUMBER_OF_SAVED_FLOAT_REGISTERS - 3);
 	m_compiler = sljit_create_compiler(nullptr);
 	if (!m_compiler) throw std::bad_alloc();
 	// S0/S1 retain the value banks; S2 retains word/field-address temporaries.
-	sljit_emit_enter(m_compiler, 0, SLJIT_ARGS2(P, P, P), 3 | SLJIT_ENTER_FLOAT(3), 3, 0);
+	// Leaf blocks need no saved FP bank. Across pure calls, use the ABI's saved
+	// bank where available, otherwise preserve live scratch values in this frame.
+	sljit_emit_enter(m_compiler, 0, SLJIT_ARGS2(P, P, P),
+		3 | SLJIT_ENTER_FLOAT(3 + (m_useSavedFloats ? 0 : m_registerCount)),
+		3 | SLJIT_ENTER_FLOAT(m_useSavedFloats ? m_registerCount : 0),
+		calls && !m_useSavedFloats ? m_registerCount * sizeof(Value) : 0);
 }
 
 NativeBlockCompiler::~NativeBlockCompiler() { sljit_free_compiler(m_compiler); }
 
 void NativeBlockCompiler::emit(const DecodedInstruction& instruction, const NativeBlockExitSite* slowExit, const NativeBlockExitSite* takenExit) {
 	const auto op = static_cast<OpCode>(instruction.op);
-	const bool wordConversion = op == OpCode::BAND || op == OpCode::BOR || op == OpCode::BXOR
-		|| op == OpCode::SHL || op == OpCode::SHR || op == OpCode::BNOT;
-	if (nativeBlockEndsBlock(instruction.op) || wordConversion || op == OpCode::NOT
-		|| nativeBlockSlowExit(instruction.op) != NativeBlockExit::Continue) {
-		flushRegister();
-	} else if (m_pendingRegister != instruction.a) {
-		commitRegister();
-	}
+	if (nativeBlockEndsBlock(instruction.op)) flushRegisters();
 	switch (op) {
 		case OpCode::MOV:
 			loadOperand(instruction.b, SLJIT_FR0);
@@ -57,7 +71,6 @@ void NativeBlockCompiler::emit(const DecodedInstruction& instruction, const Nati
 		case OpCode::SUB:
 		case OpCode::MUL:
 		case OpCode::DIV: {
-			// Preserve a forwarded right operand before replacing FR0 with the left.
 			loadOperand(instruction.c, SLJIT_FR1);
 			loadOperand(instruction.b, SLJIT_FR0);
 			const sljit_s32 operation = op == OpCode::ADD ? SLJIT_ADD_F64
@@ -109,14 +122,14 @@ void NativeBlockCompiler::emit(const DecodedInstruction& instruction, const Nati
 		case OpCode::GETFIELD:
 		case OpCode::SETFIELD:
 			emitTableField(instruction, slowExit);
-			if (op == OpCode::GETFIELD) m_pendingRegister = instruction.a;
+			if (op == OpCode::GETFIELD) writeRegister(instruction.a);
 			return;
 		case OpCode::LOAD_MEM:
 		case OpCode::LOAD_MEM_D:
 		case OpCode::STORE_MEM:
 		case OpCode::STORE_MEM_D:
 			emitMemory(instruction, slowExit);
-			if (slowExit->exit == NativeBlockExit::ReadMemory) m_pendingRegister = instruction.a;
+			if (slowExit->exit == NativeBlockExit::ReadMemory) writeRegister(instruction.a);
 			return;
 		case OpCode::JMP:
 		case OpCode::HALT:
@@ -137,15 +150,16 @@ void NativeBlockCompiler::emit(const DecodedInstruction& instruction, const Nati
 		default:
 			__builtin_unreachable();
 	}
-	m_pendingRegister = instruction.a;
+	writeRegister(instruction.a);
 }
 
 void* NativeBlockCompiler::finish(size_t& codeBytes) {
-	flushRegister();
+	flushRegisters();
 	sljit_emit_return(m_compiler, SLJIT_MOV_P, SLJIT_IMM, reinterpret_cast<sljit_sw>(&m_block->terminal));
 	for (const auto& slow : m_slowPaths) {
 		auto* label = sljit_emit_label(m_compiler);
 		for (size_t i = 0; i < slow.count; ++i) sljit_set_label(slow.jumps[i], label);
+		emitRegisterSnapshot(slow.registers);
 		sljit_emit_return(m_compiler, SLJIT_MOV_P, SLJIT_IMM, reinterpret_cast<sljit_sw>(slow.exit));
 	}
 	emitReadMappings();
@@ -164,17 +178,11 @@ void NativeBlockCompiler::emitTableField(const DecodedInstruction& instruction, 
 	constexpr sljit_sw payloadOffset = std::endian::native == std::endian::little ? 0 : 4;
 	SlowPath slow;
 	slow.exit = exit;
-	sljit_emit_op1(m_compiler, SLJIT_MOV_U16, SLJIT_R0, 0,
-		SLJIT_MEM1(SLJIT_S0), base * sizeof(Value) + headerOffset);
+	slow.registers = registerSnapshot();
+	loadHeader(base, SLJIT_R0);
 	slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R0, 0,
 		SLJIT_IMM, valueFromTag(ValueTag::Table) >> 48u);
-#if defined(SLJIT_64BIT_ARCHITECTURE)
-	sljit_emit_op1(m_compiler, SLJIT_MOV, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_S0), base * sizeof(Value));
-	sljit_emit_op2(m_compiler, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, VALUE_PAYLOAD_MASK);
-#else
-	sljit_emit_op1(m_compiler, SLJIT_MOV, SLJIT_R0, 0,
-		SLJIT_MEM1(SLJIT_S0), base * sizeof(Value) + payloadOffset);
-#endif
+	loadPayload(base, SLJIT_R0, SLJIT_R1);
 	sljit_emit_op1(m_compiler, SLJIT_MOV_S32, SLJIT_R1, 0,
 		SLJIT_MEM0(), reinterpret_cast<sljit_sw>(&exit->tableCacheSlot));
 	// Unsigned bounds also reject the negative missing-slot sentinel.
@@ -198,54 +206,23 @@ void NativeBlockCompiler::emitTableField(const DecodedInstruction& instruction, 
 		// The raw result remains in FR0 for dependent arithmetic or copies.
 		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0, SLJIT_MEM1(SLJIT_R1), 0);
 	} else {
-		const bool constant = instruction.c < 0;
-		const int valueIndex = constant ? -instruction.c - 1 : instruction.c;
-		const sljit_s32 bank = constant ? SLJIT_S1 : SLJIT_S0;
-		sljit_emit_op1(m_compiler, SLJIT_MOV_U16, SLJIT_R2, 0,
-			SLJIT_MEM1(bank), valueIndex * sizeof(Value) + headerOffset);
+		loadHeader(instruction.c, SLJIT_R2);
 		slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL,
 			SLJIT_R2, 0, SLJIT_IMM, valueNil() >> 48u);
-		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0,
-			SLJIT_MEM1(bank), valueIndex * sizeof(Value));
+		loadOperand(instruction.c, SLJIT_FR0);
 		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_MEM1(SLJIT_R1), 0, SLJIT_FR0, 0);
 	}
 	m_slowPaths.push_back(slow);
 }
 
-void NativeBlockCompiler::commitRegister() {
-	if (m_pendingRegister < 0) return;
-	sljit_emit_fop1(m_compiler, SLJIT_MOV_F64,
-		SLJIT_MEM1(SLJIT_S0), static_cast<sljit_sw>(m_pendingRegister) * sizeof(Value), SLJIT_FR0, 0);
-}
-
-void NativeBlockCompiler::flushRegister() {
-	commitRegister();
-	m_pendingRegister = -1;
-}
-
 std::array<sljit_jump*, 2> NativeBlockCompiler::falseyJumps(int index) {
 	// isTruthy consumes the upper 16-bit Value header, including for
 	// representable tagged payloads. Never use floating-point NaN equality.
-	constexpr sljit_sw headerOffset = std::endian::native == std::endian::little ? 6 : 0;
-	sljit_emit_op1(m_compiler, SLJIT_MOV_U16, SLJIT_R0, 0,
-		SLJIT_MEM1(SLJIT_S0), static_cast<sljit_sw>(index) * sizeof(Value) + headerOffset);
+	loadHeader(index, SLJIT_R0);
 	return {
 		sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, valueNil() >> 48u),
 		sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, valueBool(false) >> 48u),
 	};
-}
-
-void NativeBlockCompiler::loadOperand(int selector, sljit_s32 floatingRegister) {
-	if (selector >= 0 && selector == m_pendingRegister) {
-		if (floatingRegister != SLJIT_FR0) {
-			sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, floatingRegister, 0, SLJIT_FR0, 0);
-		}
-		return;
-	}
-	const bool constant = selector < 0;
-	const int index = constant ? -selector - 1 : selector;
-	sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, floatingRegister, 0,
-		SLJIT_MEM1(constant ? SLJIT_S1 : SLJIT_S0), static_cast<sljit_sw>(index) * sizeof(Value));
 }
 
 void NativeBlockCompiler::canonicalizeNumber() {
@@ -264,7 +241,9 @@ void NativeBlockCompiler::convertWord(int selector) {
 	}
 	loadOperand(selector, SLJIT_FR0);
 	const auto convert = static_cast<uint32_t (*)(double)>(&toU32);
+	emitCallSpills(false);
 	sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS1(32, F64), SLJIT_IMM, SLJIT_FUNC_ADDR(convert));
+	emitCallSpills(true);
 }
 
 } // namespace bmsx

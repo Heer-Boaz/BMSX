@@ -56,7 +56,7 @@ std::unique_ptr<NativeBlock> NativeBlock::compile(
 		exit.nextPc = instructions.back().decoded->bx;
 		taken = &exit;
 	}
-	NativeBlockCompiler compiler(constants, block.get(), memory);
+	NativeBlockCompiler compiler(constants, block.get(), memory, instructions);
 	size_t slow = 0;
 	for (const auto& source : instructions) {
 		const auto* exit = nativeBlockSlowExit(source.decoded->op) != NativeBlockExit::Continue ? &block->sideExits[slow++] : nullptr;

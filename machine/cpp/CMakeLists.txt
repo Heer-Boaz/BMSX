@@ -351,7 +351,7 @@ if(BMSX_ENABLE_NATIVE_BLOCKS)
 	target_compile_definitions(bmsx_sljit PUBLIC SLJIT_CONFIG_AUTO=1 SLJIT_VERBOSE=0
 		SLJIT_DEBUG=$<IF:$<CONFIG:Debug>,1,0>)
 	target_sources(bmsx_core PRIVATE machine/cpu/native_block.cpp machine/cpu/native_block_compiler.cpp
-		machine/cpu/native_block_memory.cpp machine/cpu/cpu_native_blocks.cpp)
+		machine/cpu/native_block_memory.cpp machine/cpu/native_block_registers.cpp machine/cpu/cpu_native_blocks.cpp)
 	target_compile_definitions(bmsx_core PUBLIC BMSX_ENABLE_NATIVE_BLOCKS=1)
 	target_link_libraries(bmsx_core PRIVATE bmsx_sljit)
 endif()

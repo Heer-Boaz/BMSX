@@ -18,6 +18,34 @@ void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
 }
 
+void multipleRegisterDefinitionsSurviveCallAndExit() {
+	const std::array ops{OpCode::K1, OpCode::KSMI, OpCode::ADD, OpCode::ADD, OpCode::ADD, OpCode::MUL,
+		OpCode::ADD, OpCode::MOV, OpCode::SHR, OpCode::MOV, OpCode::ADD, OpCode::JMP};
+	const std::array<std::array<i16, 3>, 12> operands{{
+		{0, 0, 0}, {1, 0, 5}, {2, 0, 1}, {0, 0, 1}, {1, 2, 1}, {2, 0, 1},
+		{0, 0, 2}, {3, 2, 0}, {2, 2, 0}, {4, 0, 0}, {0, 0, 1}, {0, 0, 0},
+	}};
+	std::array<DecodedInstruction, 12> decoded{};
+	std::array<NativeBlockInstruction, 12> source{};
+	for (size_t i = 0; i < ops.size(); ++i) {
+		auto& instruction = decoded[i];
+		instruction.op = static_cast<u8>(ops[i]); instruction.width = 1; instruction.baseCycles = BASE_CYCLES[instruction.op];
+		instruction.a = operands[i][0]; instruction.b = operands[i][1]; instruction.c = operands[i][2];
+		if (ops[i] == OpCode::KSMI) instruction.sbx = 5;
+		if (ops[i] == OpCode::JMP) instruction.bx = 0x12345678;
+		source[i] = {&instruction, 0x1000u + static_cast<u32>(i) * INSTRUCTION_BYTES};
+	}
+	size_t bytes = 0;
+	{
+		auto block = NativeBlock::compile(source, nullptr, bytes, memory);
+		std::array<Value, 5> registers{valueNil(), valueNil(), valueNil(), valueNil(), valueNil()};
+		const std::array expected{valueNumber(83), valueNumber(11), valueNumber(0), valueNumber(66), valueNumber(72)};
+		require(block->run(registers.data(), nullptr) == &block->terminal && registers == expected,
+			"multiple live native values survive ABI calls, register pressure, alias copies and an actual exit");
+	}
+	require(bytes == 0, "register-allocated blocks retire their executable storage");
+}
+
 Value evaluate(OpCode op, Value left, Value right) {
 	switch (op) {
 		case OpCode::ADD: return valueNumber(asNumber(left) + asNumber(right));
@@ -300,6 +328,7 @@ void sideExitHandlersRunAfterGeneratedFrameReturns() {
 
 int main() {
 	try {
+		multipleRegisterDefinitionsSurviveCallAndExit();
 		arithmeticAndWordDatapaths();
 		movesAndLiteralsPreserveRawValues();
 		dependentInstructionsWriteBackEveryLiveRegister();

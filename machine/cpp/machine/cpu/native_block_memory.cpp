@@ -19,6 +19,7 @@ void NativeBlockCompiler::emitMemory(const DecodedInstruction& instruction, cons
 	slow.exit = exit;
 	ReadMapping* mapping = nullptr;
 	convertWord(instruction.b);
+	slow.registers = registerSnapshot();
 	if (exit->displaced) {
 		sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R0, 0,
 			SLJIT_IMM, static_cast<u32>(instruction.disp) << 2u);
@@ -36,7 +37,7 @@ void NativeBlockCompiler::emitMemory(const DecodedInstruction& instruction, cons
 	auto* aboveRam = sljit_emit_cmp(m_compiler, SLJIT_GREATER | SLJIT_32, SLJIT_S2, 0,
 		SLJIT_IMM, static_cast<sljit_sw>(m_memory.ramByteCount() - width));
 	if (load) {
-		mapping = &m_readMappings.emplace_back(ReadMapping{{belowRam, aboveRam}, exit, nullptr, width});
+		mapping = &m_readMappings.emplace_back(ReadMapping{{belowRam, aboveRam}, exit, nullptr, width, slow.registers});
 	} else {
 		slow.jumps[slow.count++] = belowRam;
 		slow.jumps[slow.count++] = aboveRam;
@@ -129,8 +130,7 @@ void NativeBlockCompiler::emitScalarStore(MemoryAccessKind kind, int source) {
 	}
 	loadOperand(source, SLJIT_FR0);
 	// Preserve numeric bits; only tagged Values decode to canonical numeric NaN.
-	constexpr sljit_sw headerOffset = std::endian::native == std::endian::little ? 6 : 0;
-	sljit_emit_op1(m_compiler, SLJIT_MOV_U16, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_S0), source * sizeof(Value) + headerOffset);
+	loadHeader(source, SLJIT_R0);
 	sljit_emit_op2(m_compiler, SLJIT_AND, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, VALUE_QNAN_MASK >> 48u);
 	auto* number = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R1, 0, SLJIT_IMM, VALUE_QNAN_MASK >> 48u);
 	sljit_emit_op2(m_compiler, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, VALUE_ENCODED_TAG_MASK >> 48u);
@@ -211,6 +211,7 @@ void NativeBlockCompiler::emitReadMappings() {
 		misses[count++] = emitRomStorage(&m_memory.systemRomStorage(), width, romLoad, mapping.done);
 		auto* busExit = sljit_emit_label(m_compiler);
 		for (size_t i = 0; i < count; ++i) sljit_set_label(misses[i], busExit);
+		emitRegisterSnapshot(mapping.registers);
 		sljit_emit_return(m_compiler, SLJIT_MOV_P, SLJIT_IMM, reinterpret_cast<sljit_sw>(mapping.exit));
 	}
 }

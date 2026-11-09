@@ -11,7 +11,8 @@ namespace bmsx {
 
 class NativeBlockCompiler {
 public:
-	NativeBlockCompiler(const Value* constants, const NativeBlock* block, Memory& memory);
+	NativeBlockCompiler(const Value* constants, const NativeBlock* block, Memory& memory,
+		std::span<const NativeBlockInstruction> instructions);
 	~NativeBlockCompiler();
 	void emit(const DecodedInstruction& instruction, const NativeBlockExitSite* slowExit,
 		const NativeBlockExitSite* takenExit);
@@ -25,10 +26,20 @@ private:
 	void emitReadMappings();
 	sljit_jump* emitRomStorage(const Span<const u8>* storage, u32 width,
 		sljit_label* load, sljit_label* done);
-	void commitRegister();
-	void flushRegister();
+	static constexpr int REGISTER_CACHE_CAPACITY = 4;
+	using RegisterSnapshot = std::array<int, REGISTER_CACHE_CAPACITY>;
+	int findRegister(int guest) const;
+	int allocateRegister(int guest);
+	sljit_s32 cachedFloatRegister(int slot) const;
+	void writeRegister(int guest);
+	void flushRegisters();
+	RegisterSnapshot registerSnapshot() const;
+	void emitRegisterSnapshot(const RegisterSnapshot& snapshot);
+	void emitCallSpills(bool reload);
 	std::array<sljit_jump*, 2> falseyJumps(int index);
 	void loadOperand(int selector, sljit_s32 floatingRegister);
+	void loadHeader(int selector, sljit_s32 target);
+	void loadPayload(int selector, sljit_s32 target, sljit_s32 scratch);
 	void canonicalizeNumber();
 	void convertWord(int selector);
 
@@ -40,6 +51,7 @@ private:
 		std::array<sljit_jump*, 7> jumps;
 		size_t count = 0;
 		const NativeBlockExitSite* exit;
+		RegisterSnapshot registers;
 	};
 	std::vector<SlowPath> m_slowPaths;
 	struct ReadMapping {
@@ -47,10 +59,18 @@ private:
 		const NativeBlockExitSite* exit;
 		sljit_label* done;
 		u32 width;
+		RegisterSnapshot registers;
 	};
 	std::vector<ReadMapping> m_readMappings;
-	// FR0 holds this raw Value until eviction, a helper call or an execution exit.
-	int m_pendingRegister = -1;
+	struct CachedRegister {
+		int guest = -1;
+		bool dirty = false;
+		u32 lastUse = 0;
+	};
+	std::array<CachedRegister, REGISTER_CACHE_CAPACITY> m_registers;
+	int m_registerCount;
+	bool m_useSavedFloats;
+	u32 m_registerClock = 0;
 };
 
 } // namespace bmsx

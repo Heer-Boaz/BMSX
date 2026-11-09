@@ -51,6 +51,38 @@ test('generated JavaScript warms within one slice and preserves every budget bou
 	assert.ok(compiledEntries(js) > 0, 'the JavaScript backend really installed generated functions');
 });
 
+test('multiple numeric definitions stay local across copies and conversions until the actual exit', () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(text, 0, OpCode.K1, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.KSMI, 1, 0, 5);
+	writeInstruction(text, 2, OpCode.ADD, 2, 0, 1);
+	writeInstruction(text, 3, OpCode.ADD, 0, 0, 1);
+	writeInstruction(text, 4, OpCode.ADD, 1, 2, 1);
+	writeInstruction(text, 5, OpCode.MUL, 2, 0, 1);
+	writeInstruction(text, 6, OpCode.ADD, 0, 0, 2);
+	writeInstruction(text, 7, OpCode.MOV, 3, 2, 0);
+	writeInstruction(text, 8, OpCode.SHR, 2, 2, 0);
+	writeInstruction(text, 9, OpCode.MOV, 4, 0, 0);
+	writeInstruction(text, 10, OpCode.ADD, 0, 0, 1);
+	writeInstruction(text, 11, OpCode.JMP, 0, 63, 52, 255);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 12, maxStack: 5 }] });
+	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
+	cpu.runUntilDepth(0, 1200);
+	const frame = cpu.rootThread.frames[0], page = frame.decodedPage!;
+	const block = page.compiledBlocks!.entries[(image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2]!;
+	assert.equal(block.sourceWords, 12);
+	const r = frame.registers;
+	const getNumber = r.getNumber.bind(r), setEncoded = r.setEncoded.bind(r);
+	let reads = 0, writes = 0;
+	r.getNumber = index => { ++reads; return getNumber(index); };
+	r.setEncoded = (index, tag, scalar, reference) => { ++writes; setEncoded(index, tag, scalar, reference); };
+	assert.equal(block.exits[block.execute(r, frame.executionImage.constScalars, page)], block.terminal);
+	assert.equal(reads, 0, 'the generated block consumes local numeric definitions, not their stale slot values');
+	assert.equal(writes, 5, 'each final numeric slot is published once instead of after every instruction');
+	assert.deepEqual(Array.from({ length: 5 }, (_, index) => getNumber(index)), [83, 11, 0, 66, 72],
+		'a copied value retains its definition after its source register is reassigned');
+});
+
 test('generated moves retain reference values, string ids, boolean kinds and constant payloads', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.MOV, 4, 0, 0);

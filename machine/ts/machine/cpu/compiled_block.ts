@@ -1,10 +1,11 @@
 import { INSTRUCTION_BYTES } from '../../spec/blua32/instruction_format';
 import { BASE_CYCLES, OPCODE_COUNT, OpCode } from '../../spec/blua32/opcode';
 import { DECODED_PAGE_WORDS, DecodedDispatchOp, type Blua32ExecutionImage, type DecodedInstructionPage } from './execution_image';
-import { ValueTag } from './value';
+import { ValueTag, valueFromNumber } from './value';
 import type { ValueSlots } from './value_slots';
 import type { Memory } from '../memory/memory';
 import { emitMemoryAccess } from './compiled_block_memory';
+import { JavaScriptRegisterCache } from './compiled_block_registers';
 
 export const enum CpuExecutionBackend {
 	Interpreter,
@@ -98,33 +99,41 @@ export class CompiledCodeCache {
 	}
 }
 
-type StatementEmitter = (page: DecodedInstructionPage, word: number, image: Blua32ExecutionImage, exitIndex: number) => string;
-type NumberEmitter = (page: DecodedInstructionPage, word: number, image: Blua32ExecutionImage, pendingRegister: number) => string;
-
-function numberOperand(selector: number, image: Blua32ExecutionImage, pendingRegister: number): string {
-	if (selector >= 0 && selector === pendingRegister) return 'v';
-	if (selector >= 0) return `r.getNumber(${selector})`;
-	const index = -selector - 1;
-	return image.constTags[index] === ValueTag.Number ? `k[${index}]` : 'NaN';
-}
+type StatementEmitter = (page: DecodedInstructionPage, word: number, image: Blua32ExecutionImage,
+	registers: JavaScriptRegisterCache, exitIndex: number) => string;
+type NumberEmitter = (page: DecodedInstructionPage, word: number, registers: JavaScriptRegisterCache) => string;
 
 const emitters: (StatementEmitter | undefined)[] = new Array(OPCODE_COUNT);
-emitters[OpCode.MOV] = (p, w) => `r.copySlot(${p.a[w]},${p.b[w]});`;
-emitters[OpCode.LOADK] = (p, w, image) => `r.setEncoded(${p.a[w]},${image.constTags[p.bx[w]]},k[${p.bx[w]}],null);`;
-emitters[OpCode.KNIL] = (p, w) => `r.setNil(${p.a[w]});`;
-emitters[OpCode.KFALSE] = (p, w) => `r.setBool(${p.a[w]},false);`;
-emitters[OpCode.KTRUE] = (p, w) => `r.setBool(${p.a[w]},true);`;
-emitters[OpCode.NOT] = (p, w) => `r.setBool(${p.a[w]},!r.isTruthy(${p.b[w]}));`;
-emitters[OpCode.GETFIELD] = (p, w, _image, exit) => `if(r.getTag(${p.b[w]})!==${ValueTag.Table}) return ${exit};
+emitters[OpCode.MOV] = (p, w, _image, r) => r.copy(p.a[w], p.b[w]);
+emitters[OpCode.LOADK] = (p, w, image, r) => {
+	if (image.constTags[p.bx[w]] === ValueTag.Number) return r.writeNumber(p.a[w], `k[${p.bx[w]}]`);
+	r.discard(p.a[w]);
+	return `r.setEncoded(${p.a[w]},${image.constTags[p.bx[w]]},k[${p.bx[w]}],null);`;
+};
+emitters[OpCode.KNIL] = (p, w, _image, r) => {
+	r.discard(p.a[w]); return `r.setNil(${p.a[w]});`;
+};
+emitters[OpCode.KFALSE] = (p, w, _image, r) => {
+	r.discard(p.a[w]); return `r.setBool(${p.a[w]},false);`;
+};
+emitters[OpCode.KTRUE] = (p, w, _image, r) => {
+	r.discard(p.a[w]); return `r.setBool(${p.a[w]},true);`;
+};
+emitters[OpCode.NOT] = (p, w, _image, r) => {
+	const truth = r.truthy(p.b[w]);
+	r.discard(p.a[w]);
+	return `r.setBool(${p.a[w]},!${truth});`;
+};
+emitters[OpCode.GETFIELD] = (p, w, _image, r, exit) => {
+	const failure = r.exit(exit);
+	const source = `if(${r.tagOperand(p.b[w])}!==${ValueTag.Table}) ${failure}
 { const t=r.getTable(${p.b[w]});
-if(!t.loadPredictedStringKey(k[${p.c[w]}],p.tableCacheSlots[${w}],r,${p.a[w]})) return ${exit}; }`;
-emitters[OpCode.SETFIELD] = (p, w, image, exit) => {
-	const selector = p.c[w];
-	const constant = -selector - 1;
-	const tag = selector < 0 ? `${image.constTags[constant]}` : `r.getTag(${selector})`;
-	const scalar = selector < 0 ? `k[${constant}]` : `r.getScalar(${selector})`;
-	const reference = selector < 0 ? 'null' : `r.getReference(${selector})`;
-	return `if(r.getTag(${p.a[w]})!==${ValueTag.Table} || !r.getTable(${p.a[w]}).storePredictedStringKey(k[${p.b[w]}],p.tableCacheSlots[${w}],${tag},${scalar},${reference})) return ${exit};`;
+if(!t.loadPredictedStringKey(k[${p.c[w]}],p.tableCacheSlots[${w}],r,${p.a[w]})) ${failure} }`;
+	r.discard(p.a[w]);
+	return source;
+};
+emitters[OpCode.SETFIELD] = (p, w, _image, r, exit) => {
+	return `if(${r.tagOperand(p.a[w])}!==${ValueTag.Table} || !r.getTable(${p.a[w]}).storePredictedStringKey(k[${p.b[w]}],p.tableCacheSlots[${w}],${r.tagOperand(p.c[w])},${r.scalarOperand(p.c[w])},${r.referenceOperand(p.c[w])})) ${r.exit(exit)}`;
 };
 
 const numberEmitters: (NumberEmitter | undefined)[] = new Array(OPCODE_COUNT);
@@ -132,14 +141,14 @@ numberEmitters[OpCode.K0] = () => '0';
 numberEmitters[OpCode.K1] = () => '1';
 numberEmitters[OpCode.KM1] = () => '-1';
 numberEmitters[OpCode.KSMI] = (p, w) => `${p.sbx[w]}`;
-numberEmitters[OpCode.UNM] = (p, w, image, pending) => `-(${numberOperand(p.b[w], image, pending)})`;
-numberEmitters[OpCode.BNOT] = (p, w, image, pending) => `~(${numberOperand(p.b[w], image, pending)})`;
+numberEmitters[OpCode.UNM] = (p, w, r) => `-(${r.numberOperand(p.b[w])})`;
+numberEmitters[OpCode.BNOT] = (p, w, r) => `~(${r.numberOperand(p.b[w])})`;
 for (const [op, operator] of [
 	[OpCode.ADD, '+'], [OpCode.SUB, '-'], [OpCode.MUL, '*'], [OpCode.DIV, '/'],
 	[OpCode.BAND, '&'], [OpCode.BOR, '|'], [OpCode.BXOR, '^'],
 	[OpCode.SHL, '<<'], [OpCode.SHR, '>>'],
 ] as const) {
-	numberEmitters[op] = (p, w, image, pending) => `(${numberOperand(p.b[w], image, pending)})${operator}(${numberOperand(p.c[w], image, pending)})`;
+	numberEmitters[op] = (p, w, r) => `(${r.numberOperand(p.b[w])})${operator}(${r.numberOperand(p.c[w])})`;
 }
 emitters[OpCode.JMP] = () => '';
 emitters[OpCode.JMPIF] = emitters[OpCode.JMP];
@@ -168,6 +177,7 @@ export function compileJavaScriptBlock(
 	memory: Memory,
 ): CompiledBlock {
 	const source = ['"use strict";'];
+	const registers = new JavaScriptRegisterCache(image);
 	const exits: CompiledBlockExitSite[] = [];
 	let cycles = 0;
 	let sourceWords = 0;
@@ -176,7 +186,6 @@ export function compileJavaScriptBlock(
 	let lastPc = pc;
 	let nextPc = pc;
 	let finalWord = firstWord;
-	let pendingRegister = -1;
 	let numberLocal = false;
 	let memoryAccess = false;
 	let memoryReads = false;
@@ -204,35 +213,23 @@ export function compileJavaScriptBlock(
 		if (load || store) {
 			memoryAccess = true;
 			memoryReads ||= load;
-			if (pendingRegister >= 0) source.push(`r.setNumber(${pendingRegister},v);`);
-			pendingRegister = -1;
 			if (load && !numberLocal) {
 				source.push('let v;');
 				numberLocal = true;
 			}
-			const base = numberOperand(page.b[word], image, -1);
+			const base = registers.numberOperand(page.b[word]);
 			const address = displaced ? `(((${base})>>>0)+${page.disp[word] * 4})>>>0` : `((${base})>>>0)`;
-			source.push(emitMemoryAccess(page, word, address, exitIndex, memory));
-			if (load) pendingRegister = page.a[word];
+			source.push(emitMemoryAccess(page, word, address, registers.exit(exitIndex), memory,
+				registers.numberOperand(page.a[word])));
+			if (load) source.push(registers.writeNumber(page.a[word], 'v'));
 		} else if (numberEmitter !== undefined) {
-			if (!numberLocal) {
-				source.push('let v;');
-				numberLocal = true;
-			}
-			if (pendingRegister >= 0 && pendingRegister !== page.a[word]) {
-				source.push(`r.setNumber(${pendingRegister},v);`);
-			}
-			source.push(`v=${numberEmitter(page, word, image, pendingRegister)};`);
-			pendingRegister = page.a[word];
+			source.push(registers.writeNumber(page.a[word], numberEmitter(page, word, registers)));
 		} else {
-			// Raw copies and execution exits consume the complete ValueSlots state.
-			if (pendingRegister >= 0) source.push(`r.setNumber(${pendingRegister},v);`);
-			pendingRegister = -1;
-			source.push(emitters[op]!(page, word, image, exitIndex));
+			source.push(emitters[op]!(page, word, image, registers, exitIndex));
 		}
 		if (!compiledBlockEndsBlock(op) && op !== OpCode.SETFIELD && !store) registerTop = Math.max(registerTop, page.a[word] + 1);
 	}
-	if (pendingRegister >= 0) source.push(`r.setNumber(${pendingRegister},v);`);
+	source.push(registers.writeBack());
 	const finalOp = page.ops[finalWord];
 	const terminal: CompiledBlockExitSite = {
 		exit: finalOp === OpCode.HALT ? CompiledBlockExit.Halt : finalOp === OpCode.CALL ? CompiledBlockExit.Call
@@ -246,19 +243,21 @@ export function compileJavaScriptBlock(
 	if (finalOp === OpCode.JMPIF || finalOp === OpCode.JMPIFNOT) {
 		const takenIndex = exits.length;
 		exits.push({ ...terminal, nextPc: page.bx[finalWord] });
-		const truth = `${finalOp === OpCode.JMPIFNOT ? '!' : ''}r.isTruthy(${page.a[finalWord]})`;
+		const truth = `${finalOp === OpCode.JMPIFNOT ? '!' : ''}${registers.truthy(page.a[finalWord])}`;
 		source.push(`return ${truth}?${takenIndex}:${terminalIndex};`);
 	} else source.push(`return ${terminalIndex};`);
 	const body = source.join('\n');
-	const functionSource = memoryAccess ? `return function(r,k,p){${body}}` : body;
+	const functionSource = memoryAccess || registers.localCount !== 0 ? `return function(r,k,p){${body}}` : body;
 	let execute: CompiledBlock['execute'];
 	if (memoryReads) {
 		const cartridges = memory.cartridgeController;
-		execute = new Function('m', 'g', 's', 'c', 'c0', 'c1', functionSource)(
+		execute = new Function('m', 'g', 's', 'c', 'c0', 'c1', 'f', functionSource)(
 			memory.ramView, memory.ramWriteWatches().groupData(), memory.systemRomStorage(),
-			cartridges, cartridges.romStorage(0), cartridges.romStorage(1)) as CompiledBlock['execute'];
+			cartridges, cartridges.romStorage(0), cartridges.romStorage(1), valueFromNumber) as CompiledBlock['execute'];
 	} else if (memoryAccess) {
-		execute = new Function('m', 'g', functionSource)(memory.ramView, memory.ramWriteWatches().groupData()) as CompiledBlock['execute'];
+		execute = new Function('m', 'g', 'f', functionSource)(memory.ramView, memory.ramWriteWatches().groupData(), valueFromNumber) as CompiledBlock['execute'];
+	} else if (registers.localCount !== 0) {
+		execute = new Function('f', functionSource)(valueFromNumber) as CompiledBlock['execute'];
 	} else execute = new Function('r', 'k', 'p', functionSource) as CompiledBlock['execute'];
 	return {
 		execute,
