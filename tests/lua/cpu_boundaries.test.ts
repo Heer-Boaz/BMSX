@@ -655,6 +655,7 @@ test('cached sequential, wide, skip and fused dispatch keep PC as a wrapping wor
 				frame.pc = skip ? 0xfffffff8 : 0xfffffffc;
 				frame.decodedPage = page;
 				frame.decodedPageAddress = 0xfffffc00;
+				frame.decodedPageBusSignals = mappedBusSignalsForCartridgeSlot(0);
 				page.widths[255] = width;
 				page.ops[255] = page.dispatchOps[255] = OpCode.K1;
 				page.dispatchCycles[255] = BASE_CYCLES[OpCode.K1];
@@ -673,6 +674,7 @@ test('cached sequential, wide, skip and fused dispatch keep PC as a wrapping wor
 	frame.pc = 0xfffffff8;
 	frame.decodedPage = page;
 	frame.decodedPageAddress = 0xfffffc00;
+	frame.decodedPageBusSignals = mappedBusSignalsForCartridgeSlot(0);
 	page.widths[254] = page.widths[255] = 1;
 	page.ops[254] = OpCode.SHL;
 	page.dispatchOps[254] = DecodedDispatchOp.FusedShlBxor;

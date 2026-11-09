@@ -4,6 +4,7 @@
 
 #include "common/primitives.h"
 #include "machine/cpu/value.h"
+#include "machine/memory/bus_signals.h"
 
 namespace bmsx {
 
@@ -25,6 +26,7 @@ struct CallFrame {
 	Blua32ExecutionImage* executionImage = nullptr;
 	DecodedInstructionPage* decodedPage = nullptr;
 	u32 decodedPageAddress = 0;
+	MappedBusSignals decodedPageBusSignals = MAPPED_BUS_MASTER_CPU;
 	u32 pc = 0;
 	int varargBase = 0;
 	int varargCount = 0;

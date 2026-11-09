@@ -845,18 +845,20 @@ void CPU::invalidateMappedRange(u64 firstKey, u64 endKey) {
 
 DecodedInstructionPage& CPU::decodedPageForFrame(CallFrame& frame, u32 pc) {
 	const u32 pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
+	const auto busSignals = mappedBusSignalsForCartridgeSlot(m_memory.cartridgeController().selectedSlot(m_executionBusSignals));
 	if (frame.decodedPage
-		&& frame.decodedPageAddress == pageAddress) {
+		&& frame.decodedPageAddress == pageAddress && frame.decodedPageBusSignals == busSignals) {
 		return *frame.decodedPage;
 	}
 	MappedPageBinding binding;
-	m_memory.bindMappedPage(pageAddress, m_executionBusSignals, binding);
+	m_memory.bindMappedPage(pageAddress, busSignals, binding);
 	DecodedInstructionPage& page = decodedPageForAddress(
 		*frame.executionImage,
 		binding
 	);
 	frame.decodedPage = &page;
 	frame.decodedPageAddress = pageAddress;
+	frame.decodedPageBusSignals = busSignals;
 	return page;
 }
 
@@ -2509,10 +2511,7 @@ dispatch_fetch:
 				continue;
 			}
 			pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
-			decodedPage = frame->decodedPage;
-			if (!decodedPage || frame->decodedPageAddress != pageAddress) {
-				decodedPage = &decodedPageForFrame(*frame, pc);
-			}
+			decodedPage = &decodedPageForFrame(*frame, pc);
 			goto dispatch_decode;
 
 dispatch_decode:

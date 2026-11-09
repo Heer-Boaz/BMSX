@@ -170,3 +170,26 @@ test('data SELECT does not change the physical socket supplying executable instr
 		}
 	}
 });
+
+test('a cached instruction binding follows SELECT when EXEC has not overridden its chip select', () => {
+	const text = new Uint8Array(4); writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 2 }] });
+	const cards = [new Uint8Array(MAPPED_PAGE_BYTE_SIZE), new Uint8Array(MAPPED_PAGE_BYTE_SIZE)];
+	for (let slot = 0; slot < 2; ++slot) {
+		writeInstruction(cards[slot], 0, slot === 0 ? OpCode.K1 : OpCode.K0, 0, 0, 0);
+		writeInstruction(cards[slot], 1, OpCode.MOV, 1, 0, 0);
+		writeInstruction(cards[slot], 2, OpCode.JMP, 0, 63, 61, 255);
+	}
+	for (const backend of [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter]) {
+		const { cpu, memory } = machine(image.romBytes, cartridgeSlots(cards[0], cards[1]), backend);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], CART_ROM_BASE);
+		assert.equal(cpu.runUntilDepth(0, 768), RunResult.Yielded); assert.equal(cpu.readFramePc(0), CART_ROM_BASE);
+		const frame = cpu.rootThread.frames[0], firstPage = frame.decodedPage;
+		for (const select of [1, 0xfffffffe, 0xffffffff, 0]) {
+			memory.writeMappedWord(IO_CART_SELECT, select);
+			assert.equal(cpu.runUntilDepth(0, 768), RunResult.Yielded);
+			assert.equal(frame.registers.getNumber(1), (select & 1) === 0 ? 1 : 0);
+			if ((select & 1) === 0) assert.equal(frame.decodedPage, firstPage, 'physical code is retained, not retired by a bus-selection change');
+		}
+	}
+});

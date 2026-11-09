@@ -2,6 +2,7 @@ import type { Thread } from './thread';
 import type { Closure, Upvalue } from './closure';
 import type { Blua32ExecutionImage, DecodedInstructionPage } from './execution_image';
 import type { ValueSlots } from './value_slots';
+import type { MappedBusSignals } from '../memory/bus_signals';
 
 export const enum ProtectedCallKind {
 	PCall,
@@ -15,6 +16,7 @@ export type CallFrame = {
 	executionImage: Blua32ExecutionImage;
 	decodedPage: DecodedInstructionPage | null;
 	decodedPageAddress: number;
+	decodedPageBusSignals: MappedBusSignals;
 	pc: number;
 	varargBase: number;
 	varargCount: number;

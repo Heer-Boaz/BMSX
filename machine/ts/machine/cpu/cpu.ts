@@ -837,6 +837,7 @@ export class CPU implements MappedPageInvalidator {
 			executionImage: null!,
 			decodedPage: null,
 			decodedPageAddress: 0,
+			decodedPageBusSignals: MAPPED_BUS_MASTER_CPU,
 			pc: 0,
 			varargBase: 0,
 			varargCount: 0,
@@ -1296,16 +1297,18 @@ export class CPU implements MappedPageInvalidator {
 
 	private decodedPageForFrame(frame: CallFrame, pc: number): DecodedInstructionPage {
 		const pageAddress = (pc & ~MAPPED_PAGE_BYTE_MASK) >>> 0;
+		const busSignals = mappedBusSignalsForCartridgeSlot(this.memory.cartridgeController.selectedSlot(this.executionBusSignals));
 		const cached = frame.decodedPage;
 		if (cached !== null
-			&& frame.decodedPageAddress === pageAddress) {
+			&& frame.decodedPageAddress === pageAddress && frame.decodedPageBusSignals === busSignals) {
 			return cached;
 		}
 		const binding = this.mappedPageBinding;
-		this.memory.bindMappedPage(pageAddress, this.executionBusSignals, binding);
+		this.memory.bindMappedPage(pageAddress, busSignals, binding);
 		const page = this.decodedPageForAddress(frame.executionImage, binding);
 		frame.decodedPage = page;
 		frame.decodedPageAddress = pageAddress;
+		frame.decodedPageBusSignals = busSignals;
 		return page;
 	}
 

@@ -1074,6 +1074,36 @@ void writableCodeWatchesBelongToTheirPhysicalSocket() {
 	}
 }
 
+void cachedInstructionBindingsFollowThePhysicalSelector() {
+	for (const bool instrumented : {false, true}) {
+		auto image = returnImage(OpCode::HALT); image.functions[0].maxStack = 2;
+		const auto system = test::encodeBlua32TestRom(RomImageDomain::System, image);
+		std::array<std::vector<u8>, 2> cards;
+		for (u32 slot = 0; slot < 2; ++slot) {
+			cards[slot].resize(MAPPED_PAGE_BYTE_SIZE);
+			writeInstruction(cards[slot], 0, static_cast<u8>(slot == 0 ? OpCode::K1 : OpCode::K0), 0, 0, 0);
+			writeInstruction(cards[slot], 1, static_cast<u8>(OpCode::MOV), 1, 0, 0);
+			writeInstruction(cards[slot], 2, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
+		}
+		Memory memory(MemoryInit{system.bytes, test::cartridgeSlots(cards[0], cards[1])}, PSX_MACHINE_SPEC.ramBytes);
+		IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses);
+		DeviceScheduler scheduler(cpu); DmaController dma(memory, cpu, irq, scheduler);
+		memory.cartridgeController().connect(memory, irq, dma); cpu.reset();
+		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, system.functionAddresses[0], CART_ROM_BASE);
+		require(cpu.runUntilDepth(0, 768) == RunResult::Yielded && cpu.readFramePc(0) == CART_ROM_BASE,
+			"warm a selected cartridge page while the instruction bus remains in the system context");
+		const auto* firstPage = cpu.activeThread()->frames[0]->decodedPage;
+		for (const u32 select : {1u, 0xfffffffeu, 0xffffffffu, 0u}) {
+			memory.writeMappedWord(IO_CART_SELECT, select);
+			require(cpu.runUntilDepth(0, 768) == RunResult::Yielded && cpu.readFrameRegister(0, 1) == valueNumber((select & 1u) == 0u ? 1 : 0),
+				"without EXEC override, changing SELECT changes the physical code at the unchanged cached PC");
+			if ((select & 1u) == 0u) require(cpu.activeThread()->frames[0]->decodedPage == firstPage,
+				"switching sockets retains each socket's independent decoded/native code");
+		}
+	}
+}
+
 void closureCallAndReturnRespectFrameBoundaries() {
 	for (const bool instrumented : {false, true}) for (int edgeKind = 0; edgeKind < 6; ++edgeKind) {
 		constexpr u32 mappedRecord = IO_GX_GPU_GP0 & ~(BLUA32_FUNCTION_ALIGNMENT - 1u);
@@ -1318,6 +1348,7 @@ void cachedPcWrapping() {
 				frame.pc = skip ? 0xfffffff8u : 0xfffffffcu;
 				frame.decodedPage = &page;
 				frame.decodedPageAddress = 0xfffffc00u;
+				frame.decodedPageBusSignals = mappedBusSignalsForCartridgeSlot(0);
 				page.words[255].width = width;
 				page.words[255].op = page.words[255].dispatchOp = static_cast<u8>(OpCode::K1);
 				page.words[255].baseCycles = page.words[255].dispatchCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)];
@@ -1337,6 +1368,7 @@ void cachedPcWrapping() {
 	frame.pc = 0xfffffff8u;
 	frame.decodedPage = &page;
 	frame.decodedPageAddress = 0xfffffc00u;
+	frame.decodedPageBusSignals = mappedBusSignalsForCartridgeSlot(0);
 	page.words[254].width = page.words[255].width = 1;
 	page.words[254].op = static_cast<u8>(OpCode::SHL);
 	page.words[254].dispatchOp = static_cast<u8>(DecodedDispatchOp::FusedShlBxor);
@@ -1409,6 +1441,7 @@ int main() {
 		rewrittenInstructionRetainsItsOwnCycleCharge();
 		partialCodeWritesRetainOtherDecodedStarts(); sourceAndFusionDependenciesRemainSeparate(); changedWideFusionBodyInvalidatesItsCrossPageHead();
 		writableCodeWatchesBelongToTheirPhysicalSocket();
+		cachedInstructionBindingsFollowThePhysicalSelector();
 		closureCallAndReturnRespectFrameBoundaries();
 		haltYieldPrecedence(); cachedPcWrapping(); imageTextImport(); bootAddressWrap();
 		std::cout << "CPU boundary tests passed\n";
