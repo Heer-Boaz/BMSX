@@ -52,6 +52,45 @@ struct CpuMachine {
 	}
 };
 
+void registerRunsPublishAtBudgetBoundaries() {
+	test::Blua32TestImage image;
+	image.text.resize(7u * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 1, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::ADD), 2, 0, 1);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::UNM), 3, 2, 0);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::BNOT), 4, 3, 0);
+	writeInstruction(image.text, 6, static_cast<u8>(OpCode::JMP), 0, 63, 57, 255);
+	image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 8}};
+	CpuMachine normal(image), instrumented(image);
+	instrumented.cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; },
+		nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+	const u32 entry = normal.cpu.readFramePc(0);
+	const int throughWide = BASE_CYCLES[static_cast<u8>(OpCode::K1)]
+		+ BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::ADD)];
+	for (auto* machine : {&normal, &instrumented}) {
+		require(machine->cpu.runUntilDepth(0, 1000) == RunResult::Yielded, "warm the register loop without halting");
+	}
+	for (int budget = 1; budget <= 96; ++budget) {
+		for (auto* machine : {&normal, &instrumented}) {
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
+				machine->rom.functionAddresses[0], entry);
+			require(machine->cpu.runUntilDepth(0, budget) == RunResult::Yielded, "each grant retires an exact instruction prefix");
+		}
+		require(normal.cpu.readFramePc(0) == instrumented.cpu.readFramePc(0), "cached runs publish the next PC at every grant boundary");
+		require(normal.cpu.readCurrentInstructionPc() == instrumented.cpu.readCurrentInstructionPc(), "cached runs publish the last instruction's prefix PC");
+		require(normal.cpu.lastPc == instrumented.cpu.lastPc, "cached runs publish the last body PC, including WIDE");
+		require(normal.cpu.instructionBudgetRemaining == instrumented.cpu.instructionBudgetRemaining, "cached runs retain every cycle charge and overshoot");
+		require(normal.cpu.readLastExecutionDomain() == instrumented.cpu.readLastExecutionDomain(), "cached runs retain the executed domain");
+		if (budget == throughWide) require(normal.cpu.readCurrentInstructionPc() == entry + 8u
+			&& normal.cpu.lastPc == entry + 12u && normal.cpu.readFramePc(0) == entry + 16u,
+			"the WIDE prefix, body and next instruction are distinct raw PC boundaries");
+		for (int reg = 0; reg != 5; ++reg) require(normal.cpu.readFrameRegister(0, reg) == instrumented.cpu.readFrameRegister(0, reg),
+			"cached and observed instruction prefixes produce identical raw register values");
+	}
+}
+
 void compactAndPaddedRomFunctionRecordsAgree() {
 	for (const bool instrumented : {false, true}) for (const bool padded : {false, true}) {
 		test::Blua32TestImage image;
@@ -816,6 +855,7 @@ void bootAddressWrap() {
 int main() {
 	compactAndPaddedRomFunctionRecordsAgree();
 	try {
+		registerRunsPublishAtBudgetBoundaries();
 		stringBytePositions(); loadKrIndices(); zeroLoadNil(); successorFetchOrdering(); reservedMemoryKinds(); zeroStackReuse();
 		returnRangesSurviveCallerStackGrowth(); builtinReturnRangesSurviveDestinationGrowth();
 		wideSignedImmediatesKeepTheirRange();
