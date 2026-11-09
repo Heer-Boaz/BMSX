@@ -11,13 +11,12 @@ namespace bmsx {
 
 void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32 word) {
 	constexpr size_t maximumCodeBytes = 4u * 1024u * 1024u;
-	constexpr u8 compilationThreshold = 8;
 	constexpr size_t maximumInstructions = 64;
 	if (!page.nativeBlocks) page.nativeBlocks = std::make_unique<NativeBlockPage>();
 	if (!page.nativeBlocks->entries[word]) {
 		u8& visits = page.nativeBlocks->visits[word];
-		if (visits >= compilationThreshold) return;
-		if (++visits < compilationThreshold) return;
+		if (visits >= NATIVE_BLOCK_COMPILATION_THRESHOLD) return;
+		if (++visits < NATIVE_BLOCK_COMPILATION_THRESHOLD) return;
 		if (m_nativeCodeBytes >= maximumCodeBytes) {
 			// Guest code is unaffected by eviction; only executable host cache is retired.
 			for (auto& image : m_executionImagesByDomain) {
@@ -25,7 +24,7 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 				for (auto& [key, decodedPage] : image->decodedPages) decodedPage.retireNativeBlocks();
 			}
 			page.nativeBlocks = std::make_unique<NativeBlockPage>();
-			page.nativeBlocks->visits[word] = compilationThreshold;
+			page.nativeBlocks->visits[word] = NATIVE_BLOCK_COMPILATION_THRESHOLD;
 		}
 		MappedPageBinding binding;
 		m_memory.bindMappedPage(frame.pc & ~MAPPED_PAGE_BYTE_MASK, m_executionBusSignals, binding);

@@ -100,6 +100,39 @@ void registerRunsPublishAtBudgetBoundaries() {
 }
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+void nativeCodeWarmsWithinOneCpuSlice() {
+	for (const bool calls : {false, true}) {
+		test::Blua32TestImage image;
+		image.text.resize(2u * MAPPED_PAGE_BYTE_SIZE);
+		if (calls) {
+			writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+			writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
+			writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 0, 4, 0);
+			writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, encodeFixedCallArgCount(0), 1);
+			writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
+			writeInstruction(image.text, 5, static_cast<u8>(OpCode::K1), 0, 0, 0);
+			writeInstruction(image.text, 6, static_cast<u8>(OpCode::MOV), 1, 0, 0);
+			writeInstruction(image.text, 7, static_cast<u8>(OpCode::RET), 0, 1, 0);
+			image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8},
+				{.firstWord = 5, .wordCount = 3, .maxStack = 2}};
+			image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+		} else {
+			writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
+			writeInstruction(image.text, 1, static_cast<u8>(OpCode::ADD), 0, 0, 0);
+			writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 1, 0, 0);
+			writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
+			image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 4}};
+		}
+		CpuMachine machine(image);
+		const u32 target = machine.rom.textAddress + (calls ? 5u : 0u) * INSTRUCTION_BYTES;
+		require(machine.cpu.runUntilDepth(0, 10000) == RunResult::Yielded, "a long runnable slice completes its grant");
+		const auto& pages = machine.cpu.activeThread()->frames[0]->executionImage->decodedPages;
+		const auto& page = pages.at(target & ~MAPPED_PAGE_BYTE_MASK);
+		require(page.nativeBlocks && page.nativeBlocks->entries[(target & MAPPED_PAGE_BYTE_MASK) >> 2u],
+			"loop and function hotness must trigger compilation inside one CPU slice");
+	}
+}
+
 void nativeCodeUsesCachedWordsAtPartialRomTails() {
 	test::Blua32TestImage image;
 	image.text.resize(4u * INSTRUCTION_BYTES);
@@ -930,6 +963,7 @@ int main() {
 	try {
 		registerRunsPublishAtBudgetBoundaries();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		nativeCodeWarmsWithinOneCpuSlice();
 		nativeCodeUsesCachedWordsAtPartialRomTails();
 		nativeCodeRetiresOnWritesAndObservation();
 #endif

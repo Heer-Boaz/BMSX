@@ -538,7 +538,7 @@ DISPATCH_LABEL(MTC0) {
 DISPATCH_LABEL(JMP) {
 	const uint32_t bx = decoded->bx;
 	FRAME.pc = bx;
-	DISPATCH_NEXT();
+	DISPATCH_BRANCH();
 }
 
 DISPATCH_LABEL(JMPIF) {
@@ -547,7 +547,7 @@ DISPATCH_LABEL(JMPIF) {
 	if (isTruthy(REG(a))) {
 		FRAME.pc = bx;
 	}
-	DISPATCH_NEXT();
+	DISPATCH_BRANCH();
 }
 
 DISPATCH_LABEL(JMPIFNOT) {
@@ -556,7 +556,7 @@ DISPATCH_LABEL(JMPIFNOT) {
 	if (!isTruthy(REG(a))) {
 		FRAME.pc = bx;
 	}
-	DISPATCH_NEXT();
+	DISPATCH_BRANCH();
 }
 
 DISPATCH_LABEL(CLOSURE) {

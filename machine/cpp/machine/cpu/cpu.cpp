@@ -2404,6 +2404,22 @@ void CPU::resumeMemoryWrite(uint32_t address) {
 	}
 }
 
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+inline void CPU::sampleNativeBlockEntry(CallFrame& frame) {
+	if ((frame.pc & (INSTRUCTION_BYTES - 1u)) != 0u) return;
+	auto& page = decodedPageForFrame(frame, frame.pc);
+	const u32 word = (frame.pc & MAPPED_PAGE_BYTE_MASK) >> 2u;
+	const auto& instruction = page.words[word];
+	if ((page.refreshState[word] & DECODED_REFRESH_DECODE) == 0u
+		&& instruction.dispatchOp != static_cast<u8>(DecodedDispatchOp::Observe)
+		&& instruction.dispatchOp != static_cast<u8>(DecodedDispatchOp::NativeBlock)
+		&& nativeBlockSupports(instruction.op)
+		&& (!page.nativeBlocks || page.nativeBlocks->visits[word] < NATIVE_BLOCK_COMPILATION_THRESHOLD)) {
+		prepareNativeBlock(frame, page, word);
+	}
+}
+#endif
+
 template <bool RootBoundary, bool Instrumented>
 RunResult CPU::runLoop(
 	int targetDepth,
@@ -2478,6 +2494,12 @@ RunResult CPU::runLoop(
 			frame = frames.back().get();
 			image = frame->executionImage;
 			registers = frame->registers;
+			goto dispatch_entry;
+
+dispatch_entry:
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			if constexpr (!Instrumented) sampleNativeBlockEntry(*frame);
+#endif
 			goto dispatch_fetch;
 
 dispatch_fetch:
@@ -2557,6 +2579,16 @@ dispatch_decode:
 	goto dispatch_continue; \
 } while (0)
 #define DISPATCH_BLOCKED() do { return RunResult::Halted; } while (0)
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+#define DISPATCH_BRANCH() do { \
+	if constexpr (!Instrumented) { \
+		if (canReuseFrame && instructionBudgetRemaining > 0 && frame->pc <= pc) goto dispatch_entry; \
+	} \
+	DISPATCH_NEXT(); \
+} while (0)
+#else
+#define DISPATCH_BRANCH() DISPATCH_NEXT()
+#endif
 #define DISPATCH_REBIND_FRAME() do { \
 	if constexpr (!Instrumented) { \
 		if (canReuseFrame && instructionBudgetRemaining > 0) { \
@@ -2571,7 +2603,7 @@ dispatch_decode:
 			frame = frames.back().get(); \
 			image = frame->executionImage; \
 			registers = frame->registers; \
-			goto dispatch_fetch; \
+			goto dispatch_entry; \
 		} \
 	} \
 	goto dispatch_continue; \
@@ -2729,6 +2761,7 @@ dispatch_observe:
 
 dispatch_continue:
 #undef DISPATCH_BLOCKED
+#undef DISPATCH_BRANCH
 #undef DISPATCH_REBIND_FRAME
 #undef DISPATCH_NEXT
 #undef DISPATCH_CONTINUE
@@ -2774,23 +2807,6 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, const Threa
 }
 
 RunResult CPU::runUntilDepthNormal(CPU& cpu, int targetDepth, int instructionBudget) {
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	// Heat/compile only at slice entry, not in the scalar instruction loop.
-	// A previously decoded start admits no speculative device or faulting fetch.
-	const auto& frames = cpu.m_activeThread->frames;
-	if (!frames.empty()) {
-		auto& frame = *frames.back();
-		const u32 word = (frame.pc & MAPPED_PAGE_BYTE_MASK) >> 2u;
-		auto* page = frame.decodedPage;
-		if (page && frame.decodedPageAddress == (frame.pc & ~MAPPED_PAGE_BYTE_MASK)
-			&& (frame.pc & (INSTRUCTION_BYTES - 1u)) == 0u
-			&& (page->refreshState[word] & DECODED_REFRESH_DECODE) == 0u
-			&& page->words[word].dispatchOp != static_cast<u8>(DecodedDispatchOp::Observe)
-			&& nativeBlockSupports(page->words[word].op)) {
-			cpu.prepareNativeBlock(frame, *page, word);
-		}
-	}
-#endif
 	if (targetDepth == 0) {
 		return cpu.runLoop<true, false>(targetDepth, instructionBudget);
 	}

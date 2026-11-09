@@ -12,6 +12,8 @@ namespace bmsx {
 
 struct DecodedInstruction;
 
+inline constexpr u8 NATIVE_BLOCK_COMPILATION_THRESHOLD = 8u;
+
 struct NativeBlockInstruction {
 	const DecodedInstruction* decoded;
 	u32 pc;
