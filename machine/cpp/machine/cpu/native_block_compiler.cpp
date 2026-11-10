@@ -232,7 +232,7 @@ void NativeBlockCompiler::emitExit(const NativeBlockExitSite* exit) {
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, remainingCycles), SLJIT_S4, 0);
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, registerTop), SLJIT_S5, 0);
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(exit));
-	sljit_emit_ijump(m_compiler, SLJIT_JUMP, SLJIT_IMM, reinterpret_cast<sljit_sw>(nativeBlockGate().exit));
+	sljit_emit_ijump(m_compiler, SLJIT_JUMP, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, exitCode));
 }
 
 void* NativeBlockCompiler::finish(size_t& codeBytes, void*& body) {

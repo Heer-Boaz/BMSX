@@ -236,7 +236,7 @@ test('a continuously rewritten instruction stays outside stable compiled prefixe
 	assert.equal(page.compiledBlocks!.entries[0], null);
 });
 
-test('an MMIO read can retire its generated source before the CPU commits the result', () => {
+for (const grant of [3, 5]) test(`an MMIO read can retire its source and resume a hot continuation (grant=${grant})`, () => {
 	const image = memoryLoop(OpCode.LOAD_MEM, MemoryAccessKind.U32LE);
 	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const [index, { cpu, memory }] of machines.entries()) {
@@ -247,6 +247,10 @@ test('an MMIO read can retire its generated source before the CPU commits the re
 		frame.registers.setNumber(1, DYNAMIC_RAM_BASE + 0x1000);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 		cpu.runUntilDepth(0, 1200);
+		for (let visit = 0; visit < 10; ++visit) {
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE + 3 * INSTRUCTION_BYTES);
+			cpu.runUntilDepth(0, 2);
+		}
 		const page = frame.decodedPage!;
 		if (index === 0) assert.ok(page.compiledBlocks!.entries[0]);
 		const replacement = new Uint8Array(INSTRUCTION_BYTES);
@@ -260,14 +264,44 @@ test('an MMIO read can retire its generated source before the CPU commits the re
 		});
 		frame.top = 0; frame.registers.setNumber(1, port);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
-		assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
-		assert.equal(frame.pc, DYNAMIC_RAM_BASE + 3 * INSTRUCTION_BYTES);
+		assert.equal(cpu.runUntilDepth(0, grant), RunResult.Yielded);
+		assert.equal(frame.pc, DYNAMIC_RAM_BASE + (grant === 3 ? 3 * INSTRUCTION_BYTES : 0));
 		assert.equal(frame.registers.getNumber(0), 11);
-		assert.equal(frame.registers.getNumber(6), 7);
-		assert.equal(frame.top, 5);
+		assert.equal(frame.registers.getNumber(6), grant === 3 ? 7 : 11);
+		assert.equal(frame.top, grant === 3 ? 5 : 7);
 		assert.equal(device.reads, 1);
 		if (index === 0) assert.equal(page.compiledBlocks!.entries[0], null);
 		assert.equal(cpu.runUntilDepth(0, 20), RunResult.Halted);
 	}
 	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+});
+
+test('fatal helper errors unwind after the completed generated prefix, without retrying IO', () => {
+	for (const backend of [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter]) {
+		const image = memoryLoop(OpCode.LOAD_MEM, MemoryAccessKind.U32LE);
+		const { cpu, memory } = createTestSystemCpu(image, backend);
+		const entry = image.image.functions[0].codeAddress, frame = cpu.rootThread.frames[0];
+		memory.writeMappedWord(DYNAMIC_RAM_BASE + 0x1000, 7);
+		frame.registers.setNumber(1, DYNAMIC_RAM_BASE + 0x1000);
+		cpu.runUntilDepth(0, 1200);
+		if (backend === CpuExecutionBackend.JavaScript) assert.ok(frame.decodedPage!.compiledBlocks!.entries[(entry & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]);
+		const failure = new Error('test device failure'), device = { fail: true, reads: 0 };
+		const address = RAM_BASE + 0x5000;
+		memory.mapIoRead(address, device, state => {
+			++state.reads;
+			if (state.fail) throw failure;
+			return 11;
+		});
+		frame.top = 0; frame.registers.setNumber(1, address);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
+		assert.throws(() => cpu.runUntilDepth(0, 9), error => error === failure, 'the original host exception is preserved');
+		assert.equal(device.reads, 1); assert.equal(frame.pc, entry + 3 * INSTRUCTION_BYTES);
+		assert.equal(frame.top, 5); assert.equal(cpu.instructionBudgetRemaining, 6);
+		assert.equal(frame.registers.getNumber(0), 7); assert.equal(frame.registers.getNumber(6), 7);
+		device.fail = false;
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
+		assert.equal(cpu.runUntilDepth(0, 9), RunResult.Yielded);
+		assert.equal(device.reads, 3);
+		assert.equal(frame.registers.getNumber(0), 11); assert.equal(frame.registers.getNumber(6), 11);
+	}
 });

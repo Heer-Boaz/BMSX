@@ -1,5 +1,5 @@
-// Shared bus-visible scalar transfers. Generated code returns before entering
-// these owners: a device access can fault, block or retire its executing source.
+// Shared bus-visible scalar transfers. Generated bodies leave for the stable
+// dispatcher: a device access can fault, block or retire its executing source.
 
 inline void CPU::executeMemoryLoad(CallFrame& frame, int destination, MemoryAccessKind kind, u32 address) {
 	if ((address & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(kind)]) != 0u) {

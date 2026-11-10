@@ -1,5 +1,5 @@
-// Shared call/return datapaths. Included in cpu.cpp so the interpreter keeps
-// its inlining opportunities and native exits share the same semantic owner.
+// Shared call/return datapaths, inlined by the interpreter and the native
+// dispatcher without duplicating their semantic owner.
 
 inline void CPU::executeClosure(CallFrame& frame, int destination, u32 operand, int flags) {
 	const u32 functionAddress = (flags & CLOSURE_ADDRESS_REGISTER_FLAG) != 0

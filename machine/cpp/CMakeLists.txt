@@ -355,7 +355,7 @@ if(BMSX_ENABLE_NATIVE_BLOCKS)
 		machine/cpu/native_block_context.cpp machine/cpu/closure.cpp
 		machine/cpu/native_block_table.cpp
 		machine/cpu/native_block_control.cpp
-		machine/cpu/cpu_native_blocks.cpp)
+		machine/cpu/cpu_native_blocks.cpp machine/cpu/cpu_native_execution.cpp)
 	target_compile_definitions(bmsx_core PUBLIC BMSX_ENABLE_NATIVE_BLOCKS=1)
 	target_link_libraries(bmsx_core PRIVATE bmsx_sljit)
 endif()

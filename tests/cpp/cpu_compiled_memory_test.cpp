@@ -226,7 +226,7 @@ void generatedBusOrdering() {
 }
 
 void generatedMemoryMayRetireExecutingSource() {
-	for (const bool load : {false, true}) for (const bool scalar : {false, true}) {
+	for (const int grant : {3, 5}) for (const bool load : {false, true}) for (const bool scalar : {false, true}) {
 		const auto image = memoryLoop(load ? OpCode::LOAD_MEM : OpCode::STORE_MEM, MemoryAccessKind::U32LE);
 		CpuMachine machine(image, scalar);
 		auto& cpu = machine.cpu;
@@ -236,6 +236,10 @@ void generatedMemoryMayRetireExecutingSource() {
 		frame.registers[0] = valueNumber(7); frame.registers[1] = valueNumber(DYNAMIC_RAM_BASE + 0x1000);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 		cpu.runUntilDepth(0, 1200);
+		for (int visit = 0; visit < 10; ++visit) {
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE + 3u * INSTRUCTION_BYTES);
+			cpu.runUntilDepth(0, 2);
+		}
 		auto& page = *frame.decodedPage;
 		if (!scalar) require(page.nativeBlocks && page.nativeBlocks->entries[0], "the memory loop really acquired native code");
 		struct Source {
@@ -255,12 +259,50 @@ void generatedMemoryMayRetireExecutingSource() {
 		frame.registers[0] = valueNumber(readLE32(source.replacement.data()));
 		frame.registers[1] = valueNumber(load ? port : DYNAMIC_RAM_BASE + 2u * INSTRUCTION_BYTES);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE);
-		require(cpu.runUntilDepth(0, 3) == RunResult::Yielded && frame.pc == DYNAMIC_RAM_BASE + 3u * INSTRUCTION_BYTES
-			&& frame.top == 5 && frame.registers[6] == valueNumber(7),
-			"a retiring transfer completes only its own prefix before resuming the CPU");
+		require(cpu.runUntilDepth(0, grant) == RunResult::Yielded
+			&& frame.pc == DYNAMIC_RAM_BASE + (grant == 3 ? 3u * INSTRUCTION_BYTES : 0u)
+			&& frame.top == (grant == 3 ? 5 : 7)
+			&& frame.registers[6] == valueNumber(grant == 3 ? 7 : load ? 11 : readLE32(source.replacement.data())),
+			"a retiring transfer can resume its hot continuation without returning through retired source code");
 		if (!scalar) require(!page.nativeBlocks || !page.nativeBlocks->entries[0], "the current memory entry was retired");
 		if (load) require(source.reads == 1 && frame.registers[0] == valueNumber(11), "an MMIO read may retire its source before committing its result");
 		require(cpu.runUntilDepth(0, 20) == RunResult::Halted, "the rewritten instruction is fetched without returning through freed code");
+	}
+}
+
+void fatalHelperErrorsLeaveTheNativeFrameBeforeUnwinding() {
+	struct ReadFailure { int code; };
+	for (const bool scalar : {false, true}) {
+		CpuMachine machine(memoryLoop(OpCode::LOAD_MEM, MemoryAccessKind::U32LE), scalar);
+		auto& cpu = machine.cpu;
+		auto& frame = *cpu.activeThread()->frames[0];
+		frame.registers[1] = valueNumber(DYNAMIC_RAM_BASE + 0x1000);
+		machine.memory.writeMappedWord(DYNAMIC_RAM_BASE + 0x1000, 7);
+		cpu.runUntilDepth(0, 1200);
+		if (!scalar) require(frame.decodedPage->nativeBlocks->entries[(machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES] != nullptr,
+			"the failure originates in a warmed native memory body");
+		struct Port { bool fail = true; int reads = 0; } port;
+		constexpr u32 address = IO_BASE + 0x5000;
+		machine.memory.mapIoRead(address, &port, [](void* context, u32, MappedBusSignals) -> u32 {
+			auto& port = *static_cast<Port*>(context);
+			++port.reads;
+			if (port.fail) throw ReadFailure{73};
+			return 11;
+		});
+		frame.top = 0; frame.registers[1] = valueNumber(address);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress);
+		bool caught = false;
+		try { cpu.runUntilDepth(0, 9); }
+		catch (const ReadFailure& error) { caught = error.code == 73; }
+		require(caught && port.reads == 1 && frame.pc == machine.rom.textAddress + 3u * INSTRUCTION_BYTES
+			&& frame.top == 5 && frame.registers[0] == valueNumber(7) && frame.registers[6] == valueNumber(7)
+			&& cpu.instructionBudgetRemaining == 6,
+			"the actual host exception reaches a registered caller with the completed prefix, without retrying the IO read");
+		port.fail = false;
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress);
+		require(cpu.runUntilDepth(0, 9) == RunResult::Yielded && port.reads == 3
+			&& frame.registers[0] == valueNumber(11) && frame.registers[6] == valueNumber(11),
+			"a later native grant uses a fresh error channel and resumes the same instruction stream");
 	}
 }
 
@@ -353,6 +395,7 @@ int main() {
 		generatedMemoryBoundaries();
 		generatedBusOrdering();
 		generatedMemoryMayRetireExecutingSource();
+		fatalHelperErrorsLeaveTheNativeFrameBeforeUnwinding();
 		changingSuccessorsDoNotRecompileStablePredecessors();
 		cachedValuesReachFieldMemoryAndFaultOwners();
 		std::cout << "Compiled CPU memory tests passed\n";

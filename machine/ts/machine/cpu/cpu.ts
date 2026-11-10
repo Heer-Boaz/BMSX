@@ -2698,33 +2698,34 @@ export class CPU implements MappedPageInvalidator {
 			this.currentInstructionPc = exit.currentPc;
 			this.lastExecutionDomainId = image.executionDomainId;
 			this.lastPc = exit.lastPc;
+			let redispatch = false;
 			switch (exit.exit) {
-				case CompiledBlockExit.Continue: return;
-				case CompiledBlockExit.Halt: this.haltUntilIrq(); return;
+				case CompiledBlockExit.Continue: break;
+				case CompiledBlockExit.Halt: this.haltUntilIrq(); redispatch = true; break;
 				case CompiledBlockExit.ControlFault:
 					if (this.isUserMode()) this.enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
 					else this.hardHalt();
-					return;
-				case CompiledBlockExit.ControlBoundary: return;
+					redispatch = true; break;
+				case CompiledBlockExit.ControlBoundary: redispatch = true; break;
 				case CompiledBlockExit.ExecuteFunction:
-					this.executeFunctionAddress(registers.getNumber(exit.exitA) >>> 0); return;
-				case CompiledBlockExit.ExceptionReturn: this.returnFromException(frame); return;
+					this.executeFunctionAddress(registers.getNumber(exit.exitA) >>> 0); redispatch = true; break;
+				case CompiledBlockExit.ExceptionReturn: this.returnFromException(frame); redispatch = true; break;
 				case CompiledBlockExit.CreateClosure:
-					this.executeClosure(frame, exit.exitA, exit.exitBx, exit.exitC); return;
+					this.executeClosure(frame, exit.exitA, exit.exitBx, exit.exitC); redispatch = true; break;
 				case CompiledBlockExit.Concat:
 					this.executeConcat(frame, exit.exitA, exit.exitB, exit.exitC); break;
 				case CompiledBlockExit.ConcatRange:
 					this.executeConcatRange(frame, exit.exitA, exit.exitB, exit.exitC); break;
 				case CompiledBlockExit.Call:
-					if (!this.executeCall(frame, exit.exitA, exit.exitB, exit.exitC)) return;
+					redispatch = !this.executeCall(frame, exit.exitA, exit.exitB, exit.exitC);
 					break;
 				case CompiledBlockExit.Return:
-					if (!this.executeReturn(frame, exit.exitA, exit.exitB)) return;
+					redispatch = !this.executeReturn(frame, exit.exitA, exit.exitB);
 					break;
-				case CompiledBlockExit.SkipInstruction: this.skipNextInstruction(frame); return;
-				case CompiledBlockExit.Vararg: this.executeVararg(frame, exit.exitA, exit.exitB); return;
+				case CompiledBlockExit.SkipInstruction: this.skipNextInstruction(frame); redispatch = true; break;
+				case CompiledBlockExit.Vararg: this.executeVararg(frame, exit.exitA, exit.exitB); break;
 				case CompiledBlockExit.WriteUpvalue:
-					this.copyRegisterToUpvalue(frame.closure.upvalues[exit.exitB], registers, exit.exitA); return;
+					this.copyRegisterToUpvalue(frame.closure.upvalues[exit.exitB], registers, exit.exitA); break;
 				case CompiledBlockExit.InvalidConstant: throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 				case CompiledBlockExit.InvalidLength: throw new LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
 				case CompiledBlockExit.AllocateTable:
@@ -2737,7 +2738,7 @@ export class CPU implements MappedPageInvalidator {
 					if (exit.exit === CompiledBlockExit.ReadMemory) this.executeMemoryLoad(frame, exit.exitA, exit.exitC, address);
 					else if (exit.exit === CompiledBlockExit.WriteWords) this.executeWordStores(frame, address, exit.exitA, exit.exitC);
 					else this.executeMemoryStore(frame, exit.exitA, exit.exitC, address);
-					return;
+					redispatch = true; break;
 				}
 				case CompiledBlockExit.ReadField:
 				case CompiledBlockExit.ReadInteger:
@@ -2788,9 +2789,13 @@ export class CPU implements MappedPageInvalidator {
 					break;
 				}
 			}
-			// Successful value/heap operations and frame transitions can resume
-			// an already compiled continuation without another opcode dispatch.
-			// Budget/depth/HALT ownership is checked before reading a resumed PC.
+			// Device/builtin operations may change execution control. Consume those
+			// boundaries in the ordinary CPU loop, without re-running the opcode.
+			if (redispatch && (this.hardHalted || this.yieldRequested || this.threadSwitchRequested || this.memoryWriteBlocked
+				|| this.nonMaskableInterruptPending || ((this.cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
+					&& this.irqController.hasAssertedMaskableInterruptLine()))) return;
+			// Warm continuations, including cross-page calls and builtins, keep the
+			// same generated execution loop. No recursive block or opcode dispatch.
 			remaining = this.instructionBudgetRemaining;
 			if (frames.length <= targetDepth || remaining <= 0
 				|| (this.haltedUntilIrqThread === this.activeThread && this.haltedUntilIrqFrameDepth === frames.length)) return;

@@ -1,4 +1,7 @@
 #include "machine/cpu/cpu.h"
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+#include "machine/cpu/native_execution.h"
+#endif
 #include "common/endian.h"
 #include "machine/common/numeric.h"
 #include "spec/blua32/numeric.h"
@@ -2477,7 +2480,7 @@ RunResult CPU::runLoop(
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const NativeBlock* nativeBlock = nullptr;
 	int nativeFirstDispatchCycles = 0;
-	NativeBlockRunState nativeState;
+	NativeCpuRunState nativeState{.cpu = this, .targetDepth = targetDepth};
 #endif
 	for (;;) {
 		try {
@@ -2760,85 +2763,13 @@ dispatch_instruction:
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 dispatch_native_block: {
-				nativeState = {.registers = registers, .constants = IMAGE.constPool.data(), .frame = frame,
+				nativeState.state = {.registers = registers, .constants = IMAGE.constPool.data(), .frame = frame,
 					.globalValues = m_globalValues.data(), .systemGlobalValues = m_systemGlobalValues.data(),
 					.cop0Words = m_cop0Words.data(), .constantCount = static_cast<u32>(IMAGE.constPool.size()),
 					.remainingCycles = instructionBudgetRemaining + nativeFirstDispatchCycles, .registerTop = FRAME.top};
-				const auto* exit = nativeBlock->run(nativeState);
-				// Publish precisely the completed prefix before any allocating,
-				// faulting or code-invalidating semantic operation runs.
-				instructionBudgetRemaining = nativeState.remainingCycles;
-				FRAME.pc = exit->nextPc;
-				FRAME.top = nativeState.registerTop;
-				m_currentInstructionPc = exit->currentPc;
-				m_lastExecutionDomainId = IMAGE.executionDomainId;
-				lastPc = exit->lastPc;
-				switch (exit->exit) {
-				case NativeBlockExit::Continue: {
-					if (!exit->link.code && (exit->nextPc & ~MAPPED_PAGE_BYTE_MASK) == (exit->currentPc & ~MAPPED_PAGE_BYTE_MASK)) {
-						auto& target = decodedPage->nativeBlocks->entries[(exit->nextPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
-						if (target) target->linkFrom(*exit);
-					}
-					DISPATCH_NEXT();
-				}
-				case NativeBlockExit::Call:
-					if (executeCall(FRAME, exit->exitA, exit->exitB, exit->exitC)) DISPATCH_REBIND_FRAME();
-					DISPATCH_CONTINUE();
-				case NativeBlockExit::Return:
-					if (executeReturn(FRAME, exit->exitA, exit->exitB)) DISPATCH_REBIND_FRAME();
-					DISPATCH_CONTINUE();
-				case NativeBlockExit::Halt:
-					haltUntilIrq();
-					DISPATCH_CONTINUE();
-				case NativeBlockExit::ControlFault:
-					if (isUserMode()) enterSynchronousException(FRAME, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
-					else hardHalt();
-					DISPATCH_CONTINUE();
-				case NativeBlockExit::ControlBoundary:
-					DISPATCH_CONTINUE();
-				case NativeBlockExit::ExecuteFunction:
-					executeFunctionAddress(toU32(registers[exit->exitA]));
-					DISPATCH_CONTINUE();
-				case NativeBlockExit::ExceptionReturn:
-					returnFromException(FRAME);
-					DISPATCH_CONTINUE();
-				case NativeBlockExit::CreateClosure:
-					executeClosure(FRAME, exit->exitA, exit->exitBx, exit->exitC);
-					DISPATCH_CONTINUE();
-				case NativeBlockExit::Concat:
-					executeConcat(FRAME, exit->exitA, exit->exitB, exit->exitC);
-					DISPATCH_REBIND_FRAME();
-				case NativeBlockExit::ConcatRange:
-					executeConcatRange(FRAME, exit->exitA, exit->exitB, exit->exitC);
-					DISPATCH_REBIND_FRAME();
-				case NativeBlockExit::SkipInstruction:
-					skipNextInstruction(FRAME);
-					DISPATCH_CONTINUE();
-				case NativeBlockExit::Vararg:
-					executeVararg(FRAME, exit->exitA, exit->exitB);
-					registers = FRAME.registers;
-					DISPATCH_NEXT();
-				case NativeBlockExit::WriteUpvalue:
-					writeUpvalue(FRAME.closure->upvalues[exit->exitB], registers[exit->exitA]);
-					DISPATCH_NEXT();
-				case NativeBlockExit::InvalidConstant:
-					throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-				case NativeBlockExit::InvalidLength:
-					throw LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
-				case NativeBlockExit::AllocateTable: {
-					const int a = exit->exitA;
-					FRAME.registers[a] = valueTable(createTable(exit->exitB, exit->exitC));
-					FRAME.top = std::max(FRAME.top, a + 1);
-					DISPATCH_REBIND_FRAME();
-				}
-				default: {
-					const auto transition = exit->handler(this, frame, exit);
-					// The source descriptor may already have been retired by the helper.
-					if (transition == NativeBlockTransition::NextInstruction) DISPATCH_NEXT();
-					if (transition == NativeBlockTransition::RebindFrame) DISPATCH_REBIND_FRAME();
-					DISPATCH_CONTINUE();
-				}
-				}
+				nativeBlock->execute(nativeState);
+				if (nativeState.error) std::rethrow_exception(std::exchange(nativeState.error, {}));
+				DISPATCH_CONTINUE();
 			}
 #endif
 

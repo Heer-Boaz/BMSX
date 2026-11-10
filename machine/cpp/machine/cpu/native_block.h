@@ -19,6 +19,8 @@ class CPU;
 class Memory;
 class StringPool;
 class NativeBlock;
+class NativeBlockGate;
+struct NativeCpuRunState;
 struct NativeBlockExitSite;
 
 struct NativeBlockLink {
@@ -40,11 +42,13 @@ struct NativeBlockRunState {
 	u32 constantCount = 0;
 	int remainingCycles = 0;
 	int registerTop = 0;
+	void* exitCode = nullptr;
 };
 
 enum class NativeBlockTransition : u32 {
 	Redispatch,
 	RebindFrame,
+	// The same frame/image remains active; its register storage may have grown.
 	NextInstruction,
 };
 
@@ -249,10 +253,12 @@ public:
 
 private:
 	friend struct NativeBlockLink;
+	friend class CPU;
+	void execute(NativeCpuRunState& state) const;
 	explicit NativeBlock(size_t& cacheBytes) : m_cacheBytes(cacheBytes) {}
 	void* m_code = nullptr;
 	void* m_body = nullptr;
-	void* m_entry = nullptr;
+	const NativeBlockGate* m_gate = nullptr;
 	NativeBlockLink* m_incoming = nullptr;
 	size_t& m_cacheBytes;
 };

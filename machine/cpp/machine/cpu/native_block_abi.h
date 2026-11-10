@@ -29,6 +29,7 @@ public:
 
 	void* entry;
 	void* exit;
+	void* dispatch;
 };
 
 const NativeBlockGate& nativeBlockGate();
