@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { runCpuParity } from '../helpers/cpu_execution';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { writeLE32 } from '../../machine/ts/common/endian';
@@ -35,20 +36,19 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 			{ firstWord: DECODED_PAGE_WORDS + 32, wordCount: 3, numParams: 2, maxStack: 1024 },
 		], constants: [3, 4], closureRelocations: [{ wordIndex: 1, functionAddress: record }] });
 		const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
-		for (const { cpu, memory } of machines) {
+		for (const { memory } of machines) {
 			memory.writeBytes(record, image.romBytes.subarray(image.symbols.functionAddresses[1], image.symbols.functionAddresses[1] + BLUA32_FUNCTION_RECORD_SIZE));
-			cpu.runUntilDepth(0, 20000);
-			cpu.runUntilDepth(1, 100);
 		}
+		runCpuParity(machines[0].cpu, machines[1].cpu, 20000);
+		runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
 		const frame = machines[0].cpu.rootThread.frames[0];
 		const entry = image.image.functions[0].codeAddress + 2 * INSTRUCTION_BYTES;
 		const blocks = [...frame.executionImage.decodedPages.values()].flatMap(page => page.compiledBlocks?.entries.filter(block => block !== null) ?? []);
 		assert.ok(blocks.some(block => block!.terminal.exit === CompiledBlockExit.Call));
 		assert.ok(blocks.some(block => block!.terminal.exit === CompiledBlockExit.Return), 'the callee itself is generated, not merely its caller');
 		for (let grant = 1; grant <= 128; ++grant) {
-			for (const { cpu } of machines) cpu.runUntilDepth(0, grant);
+			runCpuParity(machines[0].cpu, machines[1].cpu, grant);
 			assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
-			assert.equal(machines[0].cpu.instructionBudgetRemaining, machines[1].cpu.instructionBudgetRemaining);
 		}
 		for (const { cpu } of machines) {
 			cpu.runUntilDepth(1, 100);

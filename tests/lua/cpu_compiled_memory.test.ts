@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { runCpuParity } from '../helpers/cpu_execution';
 import { readLE32 } from '../../machine/ts/common/endian';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -105,11 +106,10 @@ for (let format = 0; format <= 5; ++format) for (const displaced of [false, true
 				for (const machine of [js, ref]) {
 					machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
 					machine.cpu.rootThread.frames[0].registers.set(0, value);
-					machine.cpu.runUntilDepth(0, grant);
 				}
+				runCpuParity(js.cpu, ref.cpu, grant);
 				assert.deepEqual(js.cpu.captureRuntimeState(), ref.cpu.captureRuntimeState());
 				assert.deepEqual(js.memory.ramData(), ref.memory.ramData());
-				assert.equal(js.cpu.instructionBudgetRemaining, ref.cpu.instructionBudgetRemaining);
 			}
 		}
 		const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
@@ -228,7 +228,7 @@ test('a continuously rewritten instruction stays outside stable compiled prefixe
 	const stable = page.compiledBlocks!.entries[2];
 	assert.ok(stable);
 	for (const grant of [1200, 1, 2, 3, 9, 33, 256]) {
-		for (const { cpu } of machines) cpu.runUntilDepth(0, grant);
+		runCpuParity(machines[0].cpu, machines[1].cpu, grant);
 		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 		assert.deepEqual(machines[0].memory.ramData(), machines[1].memory.ramData());
 	}

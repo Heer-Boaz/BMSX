@@ -14,9 +14,9 @@ namespace bmsx {
 std::unique_ptr<NativeBlock> NativeBlock::compile(
 	std::span<const NativeBlockInstruction> instructions, const Value* constants,
 	size_t& cacheBytes, Memory& memory, StringPool& strings,
-	const NativeBlockExitHandlers& exitHandlers, u8 skippedInstructionWidth
+	const NativeBlockExitHandlers& exitHandlers, const DecodedInstruction* skippedInstruction
 ) {
-	const std::array sources{NativeBlockSource{instructions, skippedInstructionWidth}};
+	const std::array sources{NativeBlockSource{instructions, skippedInstruction}};
 	auto blocks = compileRegion(sources, constants, cacheBytes, memory, strings, exitHandlers);
 	return std::move(blocks.front());
 }
@@ -36,7 +36,6 @@ std::vector<std::unique_ptr<NativeBlock>> NativeBlock::compileRegion(
 	}
 	for (size_t index = sources.size(); index-- > 0u;) {
 		if (sources[index].fallthrough) {
-			blocks[index]->entryCycles = blocks[index]->terminal.cycles + blocks[index + 1u]->entryCycles;
 			blocks[index]->sourceWords += blocks[index + 1u]->sourceWords;
 		}
 	}
@@ -69,7 +68,8 @@ NativeCodeRegion::~NativeCodeRegion() {
 
 std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& source, const NativeBlockExitHandlers& exitHandlers) {
 	const auto instructions = source.instructions;
-	const auto skippedInstructionWidth = source.skippedInstructionWidth;
+	const auto* skippedInstruction = source.skippedInstruction;
+	const u8 skippedInstructionWidth = skippedInstruction ? skippedInstruction->width : 0;
 	auto block = std::unique_ptr<NativeBlock>(new NativeBlock());
 	block->firstPc = instructions.front().pc;
 	block->m_gate = &nativeBlockGate();
@@ -84,12 +84,13 @@ std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& sourc
 	const auto finalOp = static_cast<OpCode>(instructions.back().decoded->op);
 	block->sideExits.reserve(slowCount + (finalOp == OpCode::JMPIF || finalOp == OpCode::JMPIFNOT
 		|| nativeBlockComparison(static_cast<u8>(finalOp)) ? 1 : 0));
+	// Service a host deadline after the admitted segment, retaining its full charge.
+	block->entryCycles = 1;
 	auto& terminal = block->terminal;
 	controlGuarded = false;
 	for (const auto& source : instructions) {
 		const auto& instruction = *source.decoded;
 		const auto op = static_cast<OpCode>(instruction.op);
-		block->entryCycles = terminal.cycles + 1;
 		terminal.cycles += instruction.baseCycles;
 		block->sourceWords += instruction.width;
 		terminal.currentPc = source.pc;
@@ -148,6 +149,19 @@ std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& sourc
 			exit.nextPc += static_cast<u32>(skippedInstructionWidth) * INSTRUCTION_BYTES;
 			block->sourceWords += skippedInstructionWidth;
 			exit.handler = exitHandlers[static_cast<size_t>(exit.exit)];
+			if (skippedInstruction && skippedInstruction->op == static_cast<u8>(OpCode::JMP)
+				&& skippedInstruction->dispatchOp != static_cast<u8>(DecodedDispatchOp::Observe)) {
+				// Both paths are one admitted segment. Only the matching path
+				// executes and charges the JMP; its complete source is a dependency.
+				terminal.cycles += skippedInstruction->baseCycles;
+				terminal.currentPc = terminal.nextPc;
+				terminal.lastPc = terminal.currentPc + (static_cast<u32>(skippedInstructionWidth) - 1u) * INSTRUCTION_BYTES;
+				terminal.nextPc = skippedInstruction->bx;
+				terminal.exitA = skippedInstruction->a;
+				terminal.exitB = skippedInstruction->b;
+				terminal.exitC = skippedInstruction->c;
+				terminal.exitBx = skippedInstruction->bx;
+			}
 		}
 		else exit.nextPc = instructions.back().decoded->bx;
 	}

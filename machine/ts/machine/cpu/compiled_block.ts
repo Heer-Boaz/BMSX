@@ -1,6 +1,6 @@
 import { INSTRUCTION_BYTES } from '../../spec/blua32/instruction_format';
 import { BASE_CYCLES, OPCODE_COUNT, OpCode } from '../../spec/blua32/opcode';
-import { type Blua32ExecutionImage, type DecodedInstructionPage } from './execution_image';
+import { DecodedDispatchOp, type Blua32ExecutionImage, type DecodedInstructionPage } from './execution_image';
 import { ValueTag } from './value';
 import type { Memory } from '../memory/memory';
 import { emitMemoryAccess, emitWordStores } from './compiled_block_memory';
@@ -89,7 +89,7 @@ export type CompiledBlock = {
 	readonly region: CompiledRegion;
 	readonly entry: number;
 	readonly firstWord: number;
-	/** Budget through the start of the final instruction, not its full charge. */
+	/** Positive budget admits a bounded segment; its full charge is retained. */
 	readonly entryCycles: number;
 	readonly terminal: CompiledBlockExitSite;
 	readonly exits: readonly CompiledBlockExitSite[];
@@ -223,7 +223,8 @@ export function emitJavaScriptBlock(
 	const source: string[] = [];
 	const registers = new JavaScriptRegisterCache(image, residents);
 	let cycles = 0;
-	let entryCycles = 0;
+	// Service a host deadline after the admitted segment, retaining its full charge.
+	const entryCycles = 1;
 	let sourceWords = 0;
 	let registerTop = 0;
 	let resetsRegisterTop = false;
@@ -236,7 +237,6 @@ export function emitJavaScriptBlock(
 	for (let word = firstWord; word < endWord; word += page.widths[word]) {
 		finalWord = word;
 		const op = page.ops[word];
-		entryCycles = cycles + 1;
 		cycles += BASE_CYCLES[op];
 		sourceWords += page.widths[word];
 		currentPc = pc;
@@ -321,11 +321,20 @@ export function emitJavaScriptBlock(
 		exits.push({ ...terminal, exit: skippedInstructionWidth === 0 ? CompiledBlockExit.SkipInstruction : CompiledBlockExit.Continue,
 			nextPc: (terminal.nextPc + skippedInstructionWidth * INSTRUCTION_BYTES) >>> 0 });
 		sourceWords += skippedInstructionWidth;
+		if (skippedInstructionWidth !== 0 && page.ops[endWord] === OpCode.JMP
+			&& page.dispatchOps[endWord] !== DecodedDispatchOp.Observe) {
+			// Both paths are one admitted segment. Only the matching path
+			// executes and charges the JMP; its complete source is a dependency.
+			exits[terminalIndex] = { ...terminal, cycles: terminal.cycles + BASE_CYCLES[OpCode.JMP],
+				currentPc: terminal.nextPc, lastPc: (terminal.nextPc + (skippedInstructionWidth - 1) * INSTRUCTION_BYTES) >>> 0,
+				nextPc: page.bx[endWord], exitWord: endWord,
+				exitA: page.a[endWord], exitB: page.b[endWord], exitC: page.c[endWord], exitBx: page.bx[endWord] };
+		}
 	} else if (finalOp === OpCode.JMPIF || finalOp === OpCode.JMPIFNOT) {
 		takenIndex = exits.length;
 		exits.push({ ...terminal, nextPc: page.bx[finalWord] });
 	}
-	return { firstWord, entryCycles, terminal, exits: exits.slice(firstExit), sourceWords,
+	return { firstWord, entryCycles, terminal: exits[terminalIndex], exits: exits.slice(firstExit), sourceWords,
 		body: source.join('\n'), registers, finalWord, terminalIndex, takenIndex };
 }
 

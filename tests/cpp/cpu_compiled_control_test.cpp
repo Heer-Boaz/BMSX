@@ -5,6 +5,7 @@
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
+#include "support/cpu_execution_parity.h"
 
 #include <algorithm>
 #include <array>
@@ -48,9 +49,8 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 		b.haltedUntilIrqThreadRef, b.interruptEventPending, b.memoryWriteBlocked, b.memoryWriteBlockedAddress, b.yieldRequested), "all control words and latches agree");
 	require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && a.nextObjectHashId == b.nextObjectHashId
 		&& a.luaHeap.trackedBytes == b.luaHeap.trackedBytes, "guest values, roots and allocation accounting agree");
-	require(native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining
-		&& native.cpu.lastPc == scalar.cpu.lastPc && native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc(),
-		"instruction boundaries, WIDE bodies and exact remaining cycles agree");
+	require(native.cpu.lastPc == scalar.cpu.lastPc && native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc(),
+		"physical instruction boundaries and WIDE bodies agree");
 	const auto& x = native.cpu.activeThread()->frames; const auto& y = scalar.cpu.activeThread()->frames;
 	require(x.size() == y.size(), "control transitions preserve frame depth");
 	for (size_t i = 0; i < x.size(); ++i) {
@@ -204,8 +204,8 @@ void privilegeFaultsAndExceptionReturns(OpCode op, bool wide, bool returnIntoRoo
 		auto& frame = *m->cpu.activeThread()->frames[0]; frame.registers[0] = valueNumber(CPU_STATUS_USER_MODE_CURRENT);
 		frame.registers[12] = valueTable(m->cpu.createTable());
 		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("returnStatus"), valueNumber(0xa5a5a508u));
-		m->cpu.runUntilDepth(0, 900);
 	}
+	test::runCpuParity(native.cpu, scalar.cpu, 900);
 	requireParity(native, scalar);
 	require(native.cpu.readCauseWord() == CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE && native.cpu.readEpcWord() == native.rom.textAddress + 2u * INSTRUCTION_BYTES,
 		"user mode faults before selecting an unknown CP0 field or converting a source");
@@ -298,7 +298,7 @@ void nmiReturnsRetainedWordsAndUsesActiveEpc() {
 				"RFE samples active EPC before restoring all retained NMI words, without restoring Status wholesale");
 		}
 		requireParity(native, scalar);
-		for (auto* m : {&native, &scalar}) m->cpu.runUntilDepth(0, 1);
+		test::runCpuParity(native.cpu, scalar.cpu, 1);
 		requireParity(native, scalar);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)

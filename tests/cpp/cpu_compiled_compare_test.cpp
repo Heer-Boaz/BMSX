@@ -5,6 +5,7 @@
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
+#include "support/cpu_execution_parity.h"
 
 #include <algorithm>
 #include <array>
@@ -104,8 +105,8 @@ void maximumLengthSkipDependencyRetires() {
 		machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
 		auto& frame = *machine->cpu.activeThread()->frames[0]; frame.registers[0] = valueNumber(0); frame.registers[1] = valueNumber(1);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
-		machine->cpu.runUntilDepth(0, 8192);
 	}
+	test::runCpuParity(native.cpu, scalar.cpu, 8192);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	auto& page = *native.cpu.activeThread()->frames[0]->decodedPage;
 	require(page.nativeBlocks->entries[0] && page.nativeBlocks->entries[0]->sourceWords == 130,
@@ -118,11 +119,11 @@ void maximumLengthSkipDependencyRetires() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	require(!page.nativeBlocks || !page.nativeBlocks->entries[0], "the last dependent word retires the complete native body");
 #endif
-	for (auto* machine : {&native, &scalar}) machine->cpu.runUntilDepth(0, 8192);
+	test::runCpuParity(native.cpu, scalar.cpu, 8192);
 	const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
 	require(std::ranges::equal(a.snapshot.words(), b.snapshot.words())
-		&& native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining && native.cpu.lastPc == scalar.cpu.lastPc,
-		"updated WIDE skip dependencies preserve exact execution boundaries");
+		&& native.cpu.lastPc == scalar.cpu.lastPc,
+		"updated WIDE skip dependencies preserve guest state at the admitted boundary");
 }
 
 void resolvedComparisonLinksBothPaths() {
@@ -139,10 +140,12 @@ void resolvedComparisonLinksBothPaths() {
 		machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
 		for (int reg = 0; reg < 5; ++reg) machine->cpu.activeThread()->frames[0]->registers[reg] = valueNumber(reg == 1 ? 1 : 0);
 	}
-	for (const int value : {0, 1}) for (auto* machine : {&native, &scalar}) {
-		machine->cpu.activeThread()->frames[0]->registers[0] = valueNumber(value);
-		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
-		machine->cpu.runUntilDepth(0, 2048);
+	for (const int value : {0, 1}) {
+		for (auto* machine : {&native, &scalar}) {
+			machine->cpu.activeThread()->frames[0]->registers[0] = valueNumber(value);
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
+		}
+		test::runCpuParity(native.cpu, scalar.cpu, 2048);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& cache = *native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks;
@@ -157,13 +160,188 @@ void resolvedComparisonLinksBothPaths() {
 		for (auto* machine : {&native, &scalar}) {
 			machine->cpu.activeThread()->frames[0]->registers[0] = valueNumber(value);
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
-			machine->cpu.runUntilDepth(0, grant);
 		}
+		test::runCpuParity(native.cpu, scalar.cpu, grant);
 		const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
-		require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining
+		require(std::ranges::equal(a.snapshot.words(), b.snapshot.words())
 			&& native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc() && native.cpu.lastPc == scalar.cpu.lastPc,
-			"linked comparisons preserve each exact short grant, including between the comparison and its JMP");
+			"linked comparisons retain the full state and charge of each admitted segment");
 	}
+	std::array<u32, 2> observations{};
+	int index = 0;
+	for (auto* machine : {&native, &scalar}) {
+		InstructionObserverBinding observer;
+		observer.points[0].insert(DYNAMIC_RAM_BASE + INSTRUCTION_BYTES);
+		observer.context = &observations[index++];
+		observer.observe = [](void* context, ExecutionDomainId, u32, const Value*) { ++*static_cast<u32*>(context); };
+		machine->cpu.setInstructionObserver(std::move(observer));
+		machine->cpu.activeThread()->frames[0]->registers[0] = valueNumber(0);
+		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
+	}
+	test::runCpuParity(native.cpu, scalar.cpu, 512);
+	const auto observedNative = native.cpu.captureRuntimeState(), observedScalar = scalar.cpu.captureRuntimeState();
+	require(observations[0] > 0 && observations[0] == observations[1]
+		&& std::ranges::equal(observedNative.snapshot.words(), observedScalar.snapshot.words()),
+		"an observed JMP still executes its observer exactly once per real instruction");
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	const auto& observed = *native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks->entries[0];
+	require(observed.terminal.currentPc == DYNAMIC_RAM_BASE && std::none_of(observed.sideExits.begin(), observed.sideExits.end(), [](const auto& exit) {
+		return exit.currentPc == DYNAMIC_RAM_BASE + INSTRUCTION_BYTES;
+	}), "an observed JMP is not consumed by the paired branch");
+#endif
+}
+
+
+void pairedWideJumpsRetainBoundariesAndMutableTargets() {
+	for (const bool comparisonWide : {false, true}) for (const bool jumpWide : {false, true}) {
+		for (const auto op : {OpCode::EQ, OpCode::LT, OpCode::LE}) for (const bool expected : {false, true}) {
+			test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+			u32 word = 0;
+			if (comparisonWide) writeInstruction(image.text, word++, static_cast<u8>(OpCode::WIDE), expected ? 3 : 0, 0, 0);
+			writeInstruction(image.text, word++, static_cast<u8>(op), comparisonWide ? 0 : expected ? 1 : 0, 0, 2);
+			const u32 jumpWord = word;
+			if (jumpWide) writeInstruction(image.text, word++, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+			const u32 jumpBody = word;
+			writeInstruction(image.text, word, static_cast<u8>(OpCode::JMP), 0, 0, 15 - word); ++word;
+			writeInstruction(image.text, word++, static_cast<u8>(OpCode::ADD), 3, 3, 1);
+			writeInstruction(image.text, word, static_cast<u8>(OpCode::JMP), 0, 63, 63 - word, 255);
+			for (const auto pair : {std::array<u32, 2>{16, 4}, std::array<u32, 2>{20, 6}}) {
+				writeInstruction(image.text, pair[0], static_cast<u8>(OpCode::ADD), pair[1], pair[1], 1);
+				writeInstruction(image.text, pair[0] + 1, static_cast<u8>(OpCode::JMP), 0, 63, 62 - pair[0], 255);
+			}
+			image.functions = {{.firstWord = 0, .wordCount = 22, .maxStack = 8}};
+			CpuMachine native(image, false), scalar(image, true);
+			for (auto* machine : {&native, &scalar}) {
+				machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
+				auto* r = machine->cpu.activeThread()->frames[0]->registers;
+				for (int reg = 0; reg < 8; ++reg) r[reg] = valueNumber(reg == 1 ? 1 : reg == 2 ? 7 : 0);
+			}
+			for (const int value : {6, 7, 8}) {
+				for (auto* machine : {&native, &scalar}) {
+					machine->cpu.activeThread()->frames[0]->registers[0] = valueNumber(value);
+					machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
+				}
+				test::runCpuParity(native.cpu, scalar.cpu, 1024);
+			}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			auto& page = *native.cpu.activeThread()->frames[0]->decodedPage;
+			const auto& root = *page.nativeBlocks->entries[0]; const auto& jumped = root.terminal;
+			require(jumped.currentPc == DYNAMIC_RAM_BASE + jumpWord * INSTRUCTION_BYTES
+				&& jumped.nextPc == DYNAMIC_RAM_BASE + 16u * INSTRUCTION_BYTES
+				&& jumped.lastPc == DYNAMIC_RAM_BASE + jumpBody * INSTRUCTION_BYTES
+				&& jumped.cycles == 2 && root.sideExits.size() == 1 && root.sideExits.back().cycles == 1,
+				"paired WIDE comparison/JMP exits preserve the executed prefix PCs and each instruction charge");
+#endif
+			for (const int value : {6, 7, 8}) for (int grant = 1; grant <= 16; ++grant) {
+				for (auto* machine : {&native, &scalar}) {
+					machine->cpu.activeThread()->frames[0]->registers[0] = valueNumber(value);
+					machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
+				}
+				test::runCpuParity(native.cpu, scalar.cpu, grant);
+				const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
+				require(std::ranges::equal(a.snapshot.words(), b.snapshot.words())
+					&& native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc() && native.cpu.lastPc == scalar.cpu.lastPc,
+					"paired comparison/JMP preserves register state and the complete admitted charge");
+			}
+			std::array<u8, INSTRUCTION_BYTES> replacement{};
+			writeInstruction(replacement, 0, static_cast<u8>(OpCode::JMP), 0, 0, 19 - jumpBody);
+			for (auto* machine : {&native, &scalar}) {
+				machine->memory.writeBytes(DYNAMIC_RAM_BASE + jumpBody * INSTRUCTION_BYTES, replacement.data(), replacement.size());
+				machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
+			}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			require(!page.nativeBlocks || !page.nativeBlocks->entries[0],
+				"changing a paired target retires the comparison, including the second word of a WIDE JMP");
+#endif
+			test::runCpuParity(native.cpu, scalar.cpu, 1024);
+			const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
+			require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()), "the rewritten paired jump executes exactly the new target");
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			require(page.nativeBlocks->entries[0]->terminal.nextPc == DYNAMIC_RAM_BASE + 20u * INSTRUCTION_BYTES,
+				"the new comparison translation retains the live branch destination");
+#endif
+		}
+	}
+}
+
+void pairedJumpLinksAcrossPages() {
+	test::Blua32TestImage image; image.text.resize(2 * MAPPED_PAGE_BYTE_SIZE);
+	constexpr u32 second = MAPPED_PAGE_BYTE_SIZE / INSTRUCTION_BYTES;
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::EQ), 1, 0, 2);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMP), 0, (second - 2) >> 6u, (second - 2) & 63u);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::ADD), 3, 3, 1);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
+	writeInstruction(image.text, second, static_cast<u8>(OpCode::ADD), 4, 4, 1);
+	constexpr i32 back = -static_cast<i32>(second + 2);
+	writeInstruction(image.text, second + 1, static_cast<u8>(OpCode::JMP), 0, (back >> 6) & 63, back & 63, 255);
+	image.functions = {{.firstWord = 0, .wordCount = second + 2, .maxStack = 5}};
+	CpuMachine native(image, false), scalar(image, true);
+	for (auto* machine : {&native, &scalar}) {
+		machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
+		for (int reg = 0; reg < 5; ++reg) machine->cpu.activeThread()->frames[0]->registers[reg] = valueNumber(reg == 1 ? 1 : 0);
+		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
+	}
+	test::runCpuParity(native.cpu, scalar.cpu, 2048);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	const auto& lookup = *native.cpu.activeThread()->frames[0]->executionImage->nativeCodeLookup;
+	auto* page = lookup.find(DYNAMIC_RAM_BASE, 0); auto* target = lookup.find(DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE, 0);
+	const auto* root = page->nativeBlocks->entries[0].get(); const auto& jumped = root->terminal;
+	require(jumped.link.target && jumped.link.target == target->nativeBlocks->entries[0].get(),
+		"the paired JMP links directly to its successor on another physical page");
+#endif
+	std::array<u8, INSTRUCTION_BYTES> replacement{};
+	writeInstruction(replacement, 0, static_cast<u8>(OpCode::SUB), 4, 4, 1);
+	for (auto* machine : {&native, &scalar}) machine->memory.writeBytes(
+		DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE, replacement.data(), replacement.size());
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	require(page->nativeBlocks->entries[0].get() == root && !jumped.link.target,
+		"target retirement unlinks the paired cross-page exit without retiring its independent source");
+#endif
+	for (auto* machine : {&native, &scalar}) {
+		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
+	}
+	test::runCpuParity(native.cpu, scalar.cpu, 2048);
+	const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
+	require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()), "a paired cross-page jump sees the rewritten target");
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	require(jumped.link.target && jumped.link.target == target->nativeBlocks->entries[0].get(), "the paired jump links its regenerated target");
+#endif
+}
+
+void pairedJumpFaultsOnlyOnTheNextGrant() {
+	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::EQ), 1, 0, 2);
+	constexpr u32 jumpWords = MAPPED_PAGE_BYTE_SIZE / INSTRUCTION_BYTES - 2;
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMP), 0, jumpWords >> 6u, jumpWords & 63u);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::ADD), 3, 3, 1);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
+	writeInstruction(image.text, 8, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 4}, {.firstWord = 8, .wordCount = 1}};
+	image.exceptionFunctionIndex = 1;
+	const u32 end = RAM_BASE + PSX_MACHINE_SPEC.ramBytes, start = end - MAPPED_PAGE_BYTE_SIZE;
+	CpuMachine native(image, false), scalar(image, true);
+	for (auto* machine : {&native, &scalar}) {
+		machine->memory.writeBytes(start, image.text.data(), image.text.size());
+		auto* r = machine->cpu.activeThread()->frames[0]->registers;
+		r[0] = valueNumber(1); r[1] = valueNumber(1); r[2] = valueNumber(0); r[3] = valueNumber(0);
+		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);
+		machine->cpu.runUntilDepth(0, 1024);
+		r[0] = valueNumber(0); machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);
+		require(machine->cpu.runUntilDepth(0, 2) == RunResult::Yielded && machine->cpu.readFramePc(0) == end
+			&& machine->cpu.readCurrentInstructionPc() == start + INSTRUCTION_BYTES && machine->cpu.activeThread()->frames.size() == 1,
+			"a paired JMP completes without speculatively fetching its unmapped target beyond the grant");
+	}
+	const auto beforeNative = native.cpu.captureRuntimeState(), beforeScalar = scalar.cpu.captureRuntimeState();
+	require(std::ranges::equal(beforeNative.snapshot.words(), beforeScalar.snapshot.words()), "the pre-fetch paired boundary preserves raw frame state");
+	for (auto* machine : {&native, &scalar}) {
+		machine->cpu.runUntilDepth(0, 1);
+		require(machine->cpu.readEpcWord() == end && machine->memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == end,
+			"the next grant raises the actual destination fetch fault, not a comparison or JMP fault");
+	}
+	const auto afterNative = native.cpu.captureRuntimeState(), afterScalar = scalar.cpu.captureRuntimeState();
+	require(std::ranges::equal(afterNative.snapshot.words(), afterScalar.snapshot.words())
+		&& native.cpu.lastPc == scalar.cpu.lastPc && native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining,
+		"paired and scalar destination faults retain the same precise prefix and cycle charge");
 }
 
 void skipFetchBoundaries() {
@@ -217,7 +395,8 @@ void skipFetchBoundaries() {
 
 int main() {
 	try {
-		changingSkippedBytesRetireResolvedEdges(); maximumLengthSkipDependencyRetires(); resolvedComparisonLinksBothPaths(); skipFetchBoundaries();
+		changingSkippedBytesRetireResolvedEdges(); maximumLengthSkipDependencyRetires(); resolvedComparisonLinksBothPaths();
+		pairedWideJumpsRetainBoundariesAndMutableTargets(); pairedJumpLinksAcrossPages(); pairedJumpFaultsOnlyOnTheNextGrant(); skipFetchBoundaries();
 		std::cout << "Compiled comparison boundary tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {

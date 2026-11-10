@@ -4,6 +4,7 @@
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
+#include "support/cpu_execution_parity.h"
 
 #include <algorithm>
 #include <array>
@@ -35,7 +36,7 @@ struct CpuMachine {
 
 void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	auto& a = native.cpu; auto& b = scalar.cpu;
-	require(a.instructionBudgetRemaining == b.instructionBudgetRemaining && a.lastPc == b.lastPc
+	require(a.lastPc == b.lastPc
 		&& a.readCurrentInstructionPc() == b.readCurrentInstructionPc() && a.readCauseWord() == b.readCauseWord()
 		&& a.readEpcWord() == b.readEpcWord() && a.readLuaFaultReasonWord() == b.readLuaFaultReasonWord(),
 		"table operations retain exact execution and exception boundaries");
@@ -94,7 +95,7 @@ void genericArraysAndHashKeys() {
 		r[1] = valueTable(m->cpu.createTable()); r[2] = valueTable(m->cpu.createTable());
 	}
 	for (const int grant : {9, 1, 2, 1, 2, 1, 1, 1, 256}) {
-		require(native.cpu.runUntilDepth(0, grant) == scalar.cpu.runUntilDepth(0, grant), "short table grants agree"); requireParity(native, scalar);
+		test::runCpuParity(native.cpu, scalar.cpu, grant); requireParity(native, scalar);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	require(page.nativeBlocks->entries[entry].get() == block, "table relocation and helper returns retain the original executable owner");
@@ -168,7 +169,7 @@ void selfAndNilFaults() {
 		meta->setStringKey(cpu.stringPool().intern("__index"), valueTable(table)); table->metatable = meta;
 		cpu.activeThread()->frames[0]->top = 0;
 	}
-	native.cpu.runUntilDepth(0, 3); scalar.cpu.runUntilDepth(0, 3); requireParity(native, scalar);
+	test::runCpuParity(native.cpu, scalar.cpu, 3); requireParity(native, scalar);
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_METATABLE_LOOP && native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES
 		&& native.cpu.activeThread()->frames[0]->top == 8 && native.cpu.readFrameRegister(0, 7) == native.cpu.readFrameRegister(0, 9),
 		"SELF publishes its original receiver and top before a failing inherited lookup");
@@ -199,7 +200,7 @@ void wideAllocationFailure() {
 	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 16}, {.firstWord = 32, .wordCount = 1}};
 	image.globalNames = {"retained"}; image.exceptionFunctionIndex = 1;
 	CpuMachine native(image), scalar(image, true);
-	for (auto* m : {&native, &scalar}) m->cpu.runUntilDepth(0, 100);
+	test::runCpuParity(native.cpu, scalar.cpu, 100);
 	requireParity(native, scalar);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& frame = *native.cpu.activeThread()->frames[0];
@@ -210,7 +211,7 @@ void wideAllocationFailure() {
 		auto& cpu = m->cpu; auto& root = *cpu.activeThread()->frames[0]; root.registers[8] = valueNumber(73); root.registers[9] = valueNil(); root.top = 0;
 		const auto key = cpu.stringPool().find("retained"); auto* retained = cpu.createTable(350000); cpu.setGlobalByKey(*key, valueTable(retained));
 	}
-	native.cpu.runUntilDepth(0, 4); scalar.cpu.runUntilDepth(0, 4); requireParity(native, scalar);
+	test::runCpuParity(native.cpu, scalar.cpu, 4); requireParity(native, scalar);
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
 		&& native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES
 		&& native.cpu.readFrameRegister(0, 8) == valueNumber(73) && native.cpu.activeThread()->frames[0]->top == 8,

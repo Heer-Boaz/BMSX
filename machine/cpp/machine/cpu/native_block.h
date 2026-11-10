@@ -115,7 +115,7 @@ struct NativeBlockInstruction {
 
 struct NativeBlockSource {
 	std::span<const NativeBlockInstruction> instructions;
-	u8 skippedInstructionWidth = 0;
+	const DecodedInstruction* skippedInstruction = nullptr;
 	bool fallthrough = false;
 };
 
@@ -280,7 +280,7 @@ public:
 		Memory& memory,
 		StringPool& strings,
 		const NativeBlockExitHandlers& exitHandlers = {},
-		u8 skippedInstructionWidth = 0
+		const DecodedInstruction* skippedInstruction = nullptr
 	);
 	static std::vector<std::unique_ptr<NativeBlock>> compileRegion(
 		std::span<const NativeBlockSource> sources, const Value* constants,
@@ -298,8 +298,8 @@ public:
 	u32 firstPc = 0;
 	NativeBlockExitSite terminal;
 	std::vector<NativeBlockExitSite> sideExits;
-	// The final instruction may start with one cycle left. Counted stores end
-	// a block so their surcharge cannot run a following instruction past zero.
+	// A positive host budget admits this segment. Instruction charges remain
+	// complete, and the caller receives any resulting negative remainder.
 	int entryCycles = 0;
 	// Dependency extent includes the linear successors admitted by this entry.
 	u16 sourceWords = 0;

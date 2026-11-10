@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { runCpuParity } from '../helpers/cpu_execution';
 import { isDeepStrictEqual } from 'node:util';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
@@ -15,7 +16,6 @@ import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32'
 
 function assertParity(js: CPU, ref: CPU): void {
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()), 'full CPU state, value graphs, frames and CP0/NMI words');
-	assert.equal(js.instructionBudgetRemaining, ref.instructionBudgetRemaining);
 	assert.equal(js.readCurrentInstructionPc(), ref.readCurrentInstructionPc());
 	assert.equal(js.lastPc, ref.lastPc);
 }
@@ -144,7 +144,7 @@ for (const op of [OpCode.MFC0, OpCode.MTC0] as const) for (const wide of [false,
 			cpu.setGlobalByKey(cpu.stringPool.find('returnStatus')!, ValueTag.Number, 0xa5a5a508, null);
 		}
 		const original = registers.getTable(12);
-		for (const cpu of [js, ref]) cpu.runUntilDepth(0, 900);
+		runCpuParity(js, ref, 900);
 		assert.equal(conversions, 0, 'user-mode rejection precedes source conversion');
 		assertParity(js, ref);
 		assert.equal(js.readCauseWord(), CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
@@ -225,7 +225,7 @@ test('compiled NMI return samples active EPC then restores retained words withou
 			assert.equal(cpu.readFramePc(0), image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
 		}
 		assertParity(js, ref);
-		for (const cpu of [js, ref]) cpu.runUntilDepth(0, 1);
+		runCpuParity(js, ref, 1);
 		assertParity(js, ref);
 	}
 	let generated = false;

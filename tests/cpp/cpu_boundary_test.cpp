@@ -15,6 +15,7 @@
 #include "spec/bmsx/rom_header.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
+#include "support/cpu_execution_parity.h"
 
 #include <algorithm>
 #include <iostream>
@@ -182,7 +183,7 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 	require(read && write, "the table loop really uses native field read and write entries");
 	auto& nativeFrame = *native.cpu.activeThread()->frames[0];
 	const auto& loop = nativeFrame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u];
-	require(loop && loop->sourceWords == 6 && loop->entryCycles == 6,
+	require(loop && loop->sourceWords == 6 && loop->entryCycles == 1,
 		"field hits and arithmetic are compiled together through the loop branch");
 	require(loop->run(nativeRunState = {.registers = nativeFrame.registers, .constants = nativeFrame.executionImage->constPool.data(), .remainingCycles = loop->entryCycles})->nextPc == native.rom.textAddress,
 		"ordinary read and write hits reach the final native branch without a host side exit");
@@ -191,12 +192,11 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 	for (int grant = 1; grant <= 40; ++grant) {
 		for (auto* machine : {&native, &scalar}) {
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
-			require(machine->cpu.runUntilDepth(0, grant) == RunResult::Yielded, "field loops preserve short-grant yields");
 		}
+		require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Yielded, "field loops preserve short-grant yields");
 		require(native.cpu.readFramePc(0) == scalar.cpu.readFramePc(0)
 			&& native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc()
-			&& native.cpu.lastPc == scalar.cpu.lastPc
-			&& native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining,
+			&& native.cpu.lastPc == scalar.cpu.lastPc,
 			"native field exits retain exact guest cycle and WIDE prefix/body publication");
 		require(native.cpu.readFrameRegister(0, 4) == scalar.cpu.readFrameRegister(0, 4), "native field results agree with scalar dispatch");
 	}
@@ -253,11 +253,8 @@ void registerRunsPublishAtBudgetBoundaries() {
 	const u32 entry = normal.cpu.readFramePc(0);
 	const int throughWide = BASE_CYCLES[static_cast<u8>(OpCode::K1)]
 		+ BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::ADD)];
-	for (auto* machine : {&normal, &instrumented}) {
-		for (int warmup = 0; warmup < 32; ++warmup) {
-			require(machine->cpu.runUntilDepth(0, 64) == RunResult::Yielded, "warm the register loop without halting");
-		}
-	}
+	for (int warmup = 0; warmup < 32; ++warmup)
+		require(test::runCpuParity(normal.cpu, instrumented.cpu, 64) == RunResult::Yielded, "warm the register loop without halting");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& page = *normal.cpu.activeThread()->frames[0]->decodedPage;
 	require(page.nativeBlocks && page.nativeBlocks->entries[(entry & MAPPED_PAGE_BYTE_MASK) >> 2u],
@@ -267,19 +264,20 @@ void registerRunsPublishAtBudgetBoundaries() {
 		for (auto* machine : {&normal, &instrumented}) {
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
 				machine->rom.functionAddresses[0], entry);
-			require(machine->cpu.runUntilDepth(0, budget) == RunResult::Yielded, "each grant retires an exact instruction prefix");
 		}
+		require(test::runCpuParity(normal.cpu, instrumented.cpu, budget) == RunResult::Yielded, "each grant retires an admitted segment");
 		require(normal.cpu.readFramePc(0) == instrumented.cpu.readFramePc(0), "cached runs publish the next PC at every grant boundary");
 		require(normal.cpu.readCurrentInstructionPc() == instrumented.cpu.readCurrentInstructionPc(), "cached runs publish the last instruction's prefix PC");
 		require(normal.cpu.lastPc == instrumented.cpu.lastPc, "cached runs publish the last body PC, including WIDE");
-		require(normal.cpu.instructionBudgetRemaining == instrumented.cpu.instructionBudgetRemaining, "cached runs retain every cycle charge and overshoot");
 		require(normal.cpu.readLastExecutionDomain() == instrumented.cpu.readLastExecutionDomain(), "cached runs retain the executed domain");
-		if (budget == throughWide) require(normal.cpu.readCurrentInstructionPc() == entry + 8u
-			&& normal.cpu.lastPc == entry + 12u && normal.cpu.readFramePc(0) == entry + 16u,
-			"the WIDE prefix, body and next instruction are distinct raw PC boundaries");
 		for (int reg = 0; reg != 5; ++reg) require(normal.cpu.readFrameRegister(0, reg) == instrumented.cpu.readFrameRegister(0, reg),
 			"cached and observed instruction prefixes produce identical raw register values");
 	}
+	instrumented.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, instrumented.rom.functionAddresses[0], entry);
+	instrumented.cpu.runUntilDepth(0, throughWide);
+	require(instrumented.cpu.readCurrentInstructionPc() == entry + 8u
+		&& instrumented.cpu.lastPc == entry + 12u && instrumented.cpu.readFramePc(0) == entry + 16u,
+		"the scalar reference still distinguishes the WIDE prefix, body and next instruction");
 }
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)

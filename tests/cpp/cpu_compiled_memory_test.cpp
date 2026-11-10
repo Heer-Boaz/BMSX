@@ -7,6 +7,7 @@
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
+#include "support/cpu_execution_parity.h"
 
 #include <array>
 #include <cstring>
@@ -166,10 +167,9 @@ void generatedMemoryBoundaries() {
 		for (int grant = 1; grant <= 32; ++grant) {
 			for (auto* machine : {&native, &scalar}) {
 				machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
-				machine->cpu.runUntilDepth(0, grant);
 			}
-			require(native.cpu.readFramePc(0) == scalar.cpu.readFramePc(0) && native.cpu.lastPc == scalar.cpu.lastPc
-				&& native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining,
+			test::runCpuParity(native.cpu, scalar.cpu, grant);
+			require(native.cpu.readFramePc(0) == scalar.cpu.readFramePc(0) && native.cpu.lastPc == scalar.cpu.lastPc,
 				"short grants retain memory and WIDE boundaries");
 		}
 		for (auto* machine : {&native, &scalar}) {

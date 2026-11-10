@@ -6,6 +6,7 @@
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
+#include "support/cpu_execution_parity.h"
 
 #include <algorithm>
 #include <array>
@@ -50,9 +51,8 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 		b.nmiReturnExceptionDomainWord, b.nonMaskableInterruptPending, b.hardHalted, b.haltedUntilIrqFrameDepth,
 		b.haltedUntilIrqThreadRef, b.interruptEventPending, b.memoryWriteBlocked, b.memoryWriteBlockedAddress, b.yieldRequested),
 		"all control words, interrupt and execution latches agree");
-	require(native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining
-		&& native.cpu.lastPc == scalar.cpu.lastPc && native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc(),
-		"cycle grants and the physical instruction prefix/body boundary agree");
+	require(native.cpu.lastPc == scalar.cpu.lastPc && native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc(),
+		"the physical instruction prefix/body boundary agrees");
 	const auto& x = native.cpu.activeThread()->frames; const auto& y = scalar.cpu.activeThread()->frames;
 	require(x.size() == y.size(), "frame depths agree");
 	for (size_t i = 0; i < x.size(); ++i) require(x[i]->pc == y[i]->pc && x[i]->top == y[i]->top
@@ -82,8 +82,8 @@ void plainSpansAndCycles(int count, bool displaced) {
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& block = native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
-	require(block && block->sourceWords == 5 && block->terminal.cycles == 5 + surcharge && block->entryCycles == 4,
-		"a counted store ends the body and may start with one remaining cycle after its prefix");
+	require(block && block->sourceWords == 5 && block->terminal.cycles == 5 + surcharge && block->entryCycles == 1,
+		"an admitted counted-store segment retains its complete surcharge");
 	require(block->sideExits[0].exit == NativeBlockExit::WriteWords && block->sideExits[0].cycles == 5, "the checked exit precedes its own readiness surcharge");
 #endif
 	const std::array values{valueNumber(-0.0), valueNumber(-1.75), valueNumber(4294967296.25), valueNumber(1e100),
@@ -91,8 +91,9 @@ void plainSpansAndCycles(int count, bool displaced) {
 	for (Value value : values) for (int grant : {1, 3, 4, 5, 5 + surcharge, 6 + surcharge, 7 + surcharge, 4 * (7 + surcharge)}) {
 		for (auto* m : {&native, &scalar}) {
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
-			auto& frame = *m->cpu.activeThread()->frames[0]; frame.registers[12] = value; frame.top = 0; m->cpu.runUntilDepth(0, grant);
+			auto& frame = *m->cpu.activeThread()->frames[0]; frame.registers[12] = value; frame.top = 0;
 		}
+		test::runCpuParity(native.cpu, scalar.cpu, grant);
 		requireParity(native, scalar); require(std::equal(native.memory.ramData(), native.memory.ramData() + PSX_MACHINE_SPEC.ramBytes, scalar.memory.ramData()), "all plain-RAM bytes agree at every short grant");
 	}
 	require(native.cpu.activeThread()->frames[0]->top == 10 && native.cpu.readFrameRegister(0, 7) == valueNumber(2), "source ranges never inflate top and clean cached values remain live after the native call");
@@ -121,13 +122,19 @@ void zeroCount(bool unaligned) {
 	const std::array aligned{0u, 0xfffffffcu, IO_BASE + 0x5000u};
 	for (size_t i = 0; i < (unaligned ? 1u : aligned.size()); ++i) {
 		const u32 address = unaligned ? IO_BASE + 0x5001u : aligned[i];
+		std::array<int, 2> probeCounts{};
+		size_t index = 0;
 		for (auto* m : {&native, &scalar}) {
-			int probes = 0;
+			auto& probes = probeCounts[index++];
 			m->memory.mapIoWrite(IO_BASE + 0x5000u, &probes, [](void*, u32, u32, MappedBusSignals) { throw std::runtime_error("an empty span must never write"); });
 			m->memory.mapIoWriteReady(IO_BASE + 0x5000u, [](void* context, u32, MappedBusSignals) { ++*static_cast<int*>(context); return false; });
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
-			m->cpu.activeThread()->frames[0]->registers[0] = valueNumber(address); m->cpu.runUntilDepth(0, 20);
-			require(probes == 0 && m->memory.readBusFaultSequence() == 0u && !m->cpu.captureRuntimeState().memoryWriteBlocked, "empty spans neither preflight readiness nor access the bus");
+			m->cpu.activeThread()->frames[0]->registers[0] = valueNumber(address);
+		}
+		test::runCpuParity(native.cpu, scalar.cpu, 20);
+		index = 0;
+		for (auto* m : {&native, &scalar}) {
+			require(probeCounts[index++] == 0 && m->memory.readBusFaultSequence() == 0u && !m->cpu.captureRuntimeState().memoryWriteBlocked, "empty spans neither preflight readiness nor access the bus");
 			if (unaligned) require(m->cpu.readCauseWord() == CPU_CAUSE_CODE_ADDRESS_ERROR_STORE && m->cpu.readBadAddressWord() == address
 				&& m->cpu.readEpcWord() == m->rom.textAddress + 3u * INSTRUCTION_BYTES, "alignment still faults at the WIDE prefix for an empty span");
 			else require(m->cpu.readCauseWord() == 0u, "an aligned empty span accepts every raw mapped or unmapped address");

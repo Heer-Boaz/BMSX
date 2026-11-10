@@ -5,6 +5,7 @@
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
+#include "support/cpu_execution_parity.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -37,8 +38,7 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 		&& native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc()
 		&& native.cpu.lastPc == scalar.cpu.lastPc && native.cpu.readLastExecutionDomain() == scalar.cpu.readLastExecutionDomain()
 		&& native.cpu.readCauseWord() == scalar.cpu.readCauseWord() && native.cpu.readEpcWord() == scalar.cpu.readEpcWord()
-		&& native.cpu.readBadAddressWord() == scalar.cpu.readBadAddressWord()
-		&& native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining,
+		&& native.cpu.readBadAddressWord() == scalar.cpu.readBadAddressWord(),
 		"compiled calls and returns preserve exact frame, PC, execution-domain and cycle boundaries");
 	for (size_t index = 0; index < first.frames.size(); ++index) {
 		const auto& a = *first.frames[index]; const auto& b = *second.frames[index];
@@ -78,8 +78,9 @@ void crossPageCalls(bool open, u32 recordOffset) {
 	CpuMachine native(image, false), scalar(image, true);
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.writeBytes(record, machine->rom.bytes.data() + machine->rom.functionAddresses[1], BLUA32_FUNCTION_RECORD_SIZE);
-		machine->cpu.runUntilDepth(0, 20000); machine->cpu.runUntilDepth(1, 100);
 	}
+	test::runCpuParity(native.cpu, scalar.cpu, 20000);
+	test::runCpuParity(native.cpu, scalar.cpu, 100, 1);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	bool call = false, ret = false;
 	for (const auto& [key, page] : native.cpu.activeThread()->frames[0]->executionImage->decodedPages) if (page.nativeBlocks) {
@@ -90,7 +91,7 @@ void crossPageCalls(bool open, u32 recordOffset) {
 	require(call && ret, "both callers and their cross-page callees execute generated blocks");
 #endif
 	for (int grant = 1; grant <= 128; ++grant) {
-		for (auto* machine : {&native, &scalar}) machine->cpu.runUntilDepth(0, grant);
+		test::runCpuParity(native.cpu, scalar.cpu, grant);
 		requireParity(native, scalar);
 	}
 	for (auto* machine : {&native, &scalar}) {

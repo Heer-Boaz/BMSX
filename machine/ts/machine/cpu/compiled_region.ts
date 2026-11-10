@@ -29,7 +29,6 @@ export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: rea
 	const blocks = plans.map(plan => emitJavaScriptBlock(page, plan, image, memory, exits, residents));
 	for (let index = blocks.length - 1; index >= 0; --index) {
 		if (plans[index].fallthrough) {
-			blocks[index].entryCycles = blocks[index].terminal.cycles + blocks[index + 1].entryCycles;
 			blocks[index].sourceWords += blocks[index + 1].sourceWords;
 		}
 	}
@@ -56,7 +55,7 @@ export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: rea
 			const exit = block.terminal;
 			const top = exit.resetsRegisterTop ? `top=Math.max(frame.top,${exit.registerTop});`
 				: exit.registerTop === 0 ? '' : `if(top<${exit.registerTop})top=${exit.registerTop};`;
-			// Entry admission already covers this entire linear span. A successful
+			// A linear span is admitted as one bounded segment. A successful
 			// helper fast path needs neither another budget test nor a switch jump.
 			source.push(`case ${index}:{${block.body}\nbudget-=${exit.cycles};${top}}`);
 		} else source.push(`case ${index}:{${block.body}\n${finishJavaScriptBlock(page, block, index => transfer(block, index))}}`);

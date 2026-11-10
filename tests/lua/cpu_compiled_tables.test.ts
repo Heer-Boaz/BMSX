@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { runCpuParity } from '../helpers/cpu_execution';
 import { isDeepStrictEqual } from 'node:util';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { ValueTag, valueString } from '../../machine/ts/machine/cpu/value';
@@ -35,7 +36,7 @@ test('compiled generic arrays and string-cache probes retain all kinds across ke
 				r.set(1, key === 'field' ? valueString(cpu.stringPool.intern(key)) : key);
 				r.set(2, value === 'value' ? valueString(cpu.stringPool.intern(value)) : value);
 			}
-			assert.equal(js.runUntilDepth(0, 9), ref.runUntilDepth(0, 9));
+			runCpuParity(js, ref, 9);
 			assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()), `generic key ${key}, value ${value}`);
 			assert.equal(frame.registers.get(3), frame.registers.get(2));
 			assert.equal(frame.registers.getNumber(5), 1, 'the array store forwards its pending numeric source');
@@ -46,7 +47,7 @@ test('compiled generic arrays and string-cache probes retain all kinds across ke
 		r.setTable(1, cpu.createTable()); r.setTable(2, cpu.createTable());
 	}
 	for (const grant of [9, 1, 2, 1, 2, 1, 1, 1, 256]) {
-		assert.equal(js.runUntilDepth(0, grant), ref.runUntilDepth(0, grant));
+		runCpuParity(js, ref, grant);
 		assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()), 'reference keys/values and every short boundary agree');
 	}
 	assert.ok(page.compiledBlocks!.entries[entry] === block, 'admitted helper continuations do not retranslate the stable table loop');
@@ -67,7 +68,7 @@ for (const generic of [false, true]) test(`compiled array reads resolve inherite
 	}
 	for (const value of [false, 0, null, true, 19, null]) {
 		for (const cpu of [js, ref]) cpu.rootThread.frames[0].registers.getTable(0).setInteger(1, value);
-		js.runUntilDepth(0, 3); ref.runUntilDepth(0, 3);
+		runCpuParity(js, ref, 3);
 		assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 		assert.equal(js.readFrameRegister(0, 3), value === null ? 73 : value);
 	}
@@ -93,7 +94,7 @@ test('compiled array stores advance length through hash entries and shorten it o
 	}
 	for (const value of [null, false, null, 2]) {
 		for (const cpu of [js, ref]) cpu.rootThread.frames[0].registers.set(2, value);
-		js.runUntilDepth(0, 6); ref.runUntilDepth(0, 6);
+		runCpuParity(js, ref, 6);
 		assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 		assert.equal(js.readFrameRegister(0, 3), value === null ? 1 : 5);
 	}
@@ -138,7 +139,7 @@ test('compiled SELF publishes its original receiver and top before a failing inh
 		table.setStringKey(cpu.stringPool.intern('method'), null); meta.setStringKey(cpu.stringPool.intern('__index'), table);
 		table.metatable = meta; root.top = 0;
 	}
-	assert.equal(js.runUntilDepth(0, 3), ref.runUntilDepth(0, 3));
+	runCpuParity(js, ref, 3);
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_METATABLE_LOOP);
 	assert.equal(js.readEpcWord(), image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
@@ -160,7 +161,7 @@ test('compiled nil-key traps precede any invalid table mutation or destination w
 		r.setTable(0, cpu.createTable(2)); r.setNumber(1, 1); r.setNumber(2, 73); cpu.runUntilDepth(0, 500);
 		r.setNil(1); r.setNumber(3, 19); cpu.rootThread.frames[0].top = 0;
 	}
-	js.runUntilDepth(0, 5); ref.runUntilDepth(0, 5);
+	runCpuParity(js, ref, 5);
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_INDEX_NIL);
 	assert.equal(js.readEpcWord(), image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
@@ -178,7 +179,7 @@ test('compiled NEWT materializes allocation roots and leaves destination untouch
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 16 },
 		{ firstWord: 32, wordCount: 1 }], globalNames: ['retained'], exceptionFunctionIndex: 1 });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
-	for (const cpu of [js, ref]) cpu.runUntilDepth(0, 100);
+	runCpuParity(js, ref, 100);
 	const frame = js.rootThread.frames[0], page = frame.decodedPage!, entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	assert.equal(page.compiledBlocks!.entries[entry]!.terminal.exit, CompiledBlockExit.AllocateTable);
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
@@ -187,7 +188,7 @@ test('compiled NEWT materializes allocation roots and leaves destination untouch
 		const retained = cpu.createTable(350000);
 		cpu.setGlobalByKey(cpu.stringPool.find('retained')!, ValueTag.Table, NaN, retained);
 	}
-	js.runUntilDepth(0, 4); ref.runUntilDepth(0, 4);
+	runCpuParity(js, ref, 4);
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
 	assert.equal(js.readEpcWord(), image.image.functions[0].codeAddress + INSTRUCTION_BYTES);

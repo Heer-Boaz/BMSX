@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { runCpuParity } from '../helpers/cpu_execution';
 import { isDeepStrictEqual } from 'node:util';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CompiledBlockExit, CpuExecutionBackend, compiledBlockSupports } from '../../machine/ts/machine/cpu/compiled_block';
@@ -17,7 +18,6 @@ import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32'
 
 function assertParity(a: CPU, b: CPU): void {
 	assert.ok(isDeepStrictEqual(a.captureRuntimeState(), b.captureRuntimeState()), 'full value graph, roots, frame/control state and heap accounting');
-	assert.equal(a.instructionBudgetRemaining, b.instructionBudgetRemaining);
 	assert.equal(a.readCurrentInstructionPc(), b.readCurrentInstructionPc()); assert.equal(a.lastPc, b.lastPc);
 }
 
@@ -39,7 +39,7 @@ test('generated execution admits every executable BLua32 opcode; WIDE remains a 
 	for (let op = 1; op < OPCODE_COUNT; ++op) assert.equal(compiledBlockSupports(op), true, `opcode ${op}`);
 });
 
-for (const displaced of [false, true]) for (const count of [0, 5, 1025]) test(`generated word span preserves conversions, cached sources and every cycle boundary (count=${count}, displaced=${displaced})`, () => {
+for (const displaced of [false, true]) for (const count of [0, 5, 1025]) test(`generated word span preserves conversions, cached sources and complete segment charges (count=${count}, displaced=${displaced})`, () => {
 	const image = wordLoop(count, displaced), pc = image.image.functions[0].codeAddress, target = DYNAMIC_RAM_BASE + 0x2ffc;
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
 	const surcharge = (count + 3) >> 2;
@@ -49,15 +49,15 @@ for (const displaced of [false, true]) for (const count of [0, 5, 1025]) test(`g
 		cpu.runUntilDepth(0, 20 * (7 + surcharge));
 	}
 	const frame = js.cpu.rootThread.frames[0], page = frame.decodedPage!, block = page.compiledBlocks!.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!;
-	assert.equal(block.sourceWords, 5); assert.equal(block.terminal.cycles, 5 + surcharge); assert.equal(block.entryCycles, 4);
+	assert.equal(block.sourceWords, 5); assert.equal(block.terminal.cycles, 5 + surcharge); assert.equal(block.entryCycles, 1);
 	assert.equal(block.exits[0].exit, CompiledBlockExit.WriteWords); assert.equal(block.exits[0].cycles, 5);
 	for (const value of [-0, -1.75, 4294967296.25, 1e100, Infinity, NaN, null, true]) {
 		for (const grant of [1, 3, 4, 5, 5 + surcharge, 6 + surcharge, 7 + surcharge, 4 * (7 + surcharge)]) {
 			for (const { cpu } of [js, ref]) {
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 				cpu.rootThread.frames[0].registers.set(12, value); cpu.rootThread.frames[0].top = 0;
-				cpu.runUntilDepth(0, grant);
 			}
+			runCpuParity(js.cpu, ref.cpu, grant);
 			assertParity(js.cpu, ref.cpu); assert.deepEqual(js.memory.ramData(), ref.memory.ramData());
 		}
 	}
@@ -91,8 +91,9 @@ for (const unaligned of [false, true]) test(`a zero-count store checks only alig
 			memory.mapIoWrite(IO_BASE + 0x5000, probes, () => assert.fail('empty stores do not write'));
 			memory.mapIoWriteReady(IO_BASE + 0x5000, () => { probes.push(1); return false; });
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-			cpu.rootThread.frames[0].registers.setNumber(0, address); cpu.runUntilDepth(0, 20);
+			cpu.rootThread.frames[0].registers.setNumber(0, address);
 		}
+		runCpuParity(js.cpu, ref.cpu, 20);
 		assertParity(js.cpu, ref.cpu); assert.equal(probes.length, 0); assert.equal(js.memory.readBusFaultSequence(), 0);
 		assert.equal(js.cpu.captureRuntimeState().memoryWriteBlocked, false);
 		if (unaligned) { assert.equal(js.cpu.readCauseWord(), CPU_CAUSE_CODE_ADDRESS_ERROR_STORE); assert.equal(js.cpu.readBadAddressWord(), address); assert.equal(js.cpu.readEpcWord(), pc + 3 * INSTRUCTION_BYTES); }

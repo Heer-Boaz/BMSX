@@ -10,7 +10,7 @@
 namespace bmsx {
 
 void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32 word) {
-	constexpr size_t maximumCodeBytes = 4u * 1024u * 1024u;
+	constexpr size_t maximumCodeBytes = 8u * 1024u * 1024u;
 	if (m_nativeCodeBytes >= maximumCodeBytes) {
 		for (auto& image : m_executionImagesByDomain) {
 			if (!image) continue;
@@ -108,21 +108,21 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 			if (instructionCount - first == NATIVE_BLOCK_MAX_INSTRUCTIONS) { leaders[successor] = 1; break; }
 			cursor = successor;
 		}
-		u8 skippedWidth = 0;
+		const DecodedInstruction* skippedInstruction = nullptr;
 		if (binding.readBytes && nativeBlockComparison(page.words[cursor].op)) {
 			const u32 successor = cursor + page.words[cursor].width;
 			if (successor < DECODED_PAGE_WORDS && (page.refreshState[successor] & DECODED_REFRESH_DECODE) == 0u
-				&& successor + page.words[successor].width <= DECODED_PAGE_WORDS) skippedWidth = page.words[successor].width;
+				&& successor + page.words[successor].width <= DECODED_PAGE_WORDS) skippedInstruction = &page.words[successor];
 		}
-		// Preserve the original admission span (including the 64-instruction
-		// bound), but expose each returning helper's successor as an entry.
+		// Keep the bounded linear span (plus a fused following JMP), while
+		// exposing each returning helper's successor as an entry.
 		size_t segmentFirst = first;
 		for (size_t index = first; index < instructionCount; ++index) {
 			const bool final = index + 1u == instructionCount;
 			const auto& instruction = *instructions[index].decoded;
 			if (!final && !nativeBlockHasContinuation(instruction.op, instruction.b)) continue;
 			sources.push_back({std::span(instructions.data() + segmentFirst, index + 1u - segmentFirst),
-				final ? skippedWidth : u8{0}, !final});
+				final ? skippedInstruction : nullptr, !final});
 			entries.push_back((instructions[segmentFirst].pc - pagePc) / INSTRUCTION_BYTES);
 			segmentFirst = index + 1u;
 		}

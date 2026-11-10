@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { runCpuParity } from '../helpers/cpu_execution';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { Closure, type Upvalue } from '../../machine/ts/machine/cpu/closure';
@@ -25,7 +26,7 @@ test('compiled globals use the live banks across growth, keep namespaces distinc
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 8, maxStack: 16 }],
 		globalNames: ['shared', 'copied', 'numeric'], systemGlobalNames: ['shared', 'copied', 'numeric'] });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
-	for (const cpu of [js, ref]) cpu.runUntilDepth(0, 1100);
+	runCpuParity(js, ref, 1100);
 	const frame = js.rootThread.frames[0], page = frame.decodedPage!;
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const block = page.compiledBlocks!.entries[entry]!;
@@ -40,7 +41,7 @@ test('compiled globals use the live banks across growth, keep namespaces distinc
 			cpu.setGlobalByKey(cpu.stringPool.intern('shared'), r.getTag(12), r.getScalar(12), r.getReference(12));
 			cpu.setSystemGlobalByKey(cpu.stringPool.intern('shared'), ValueTag.Number, 73, null);
 		}
-		assert.equal(js.runUntilDepth(0, 11), ref.runUntilDepth(0, 11));
+		runCpuParity(js, ref, 11);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 		assert.equal(js.getSystemGlobalByKey(js.stringPool.find('copied')!), frame.registers.get(12));
 		assert.equal(js.getGlobalByKey(js.stringPool.find('copied')!), 73);
@@ -51,7 +52,7 @@ test('compiled globals use the live banks across growth, keep namespaces distinc
 		r.setTable(12, cpu.createTable(0, 0));
 		cpu.setGlobalByKey(cpu.stringPool.intern('shared'), r.getTag(12), r.getScalar(12), r.getReference(12));
 	}
-	js.runUntilDepth(0, 11); ref.runUntilDepth(0, 11);
+	runCpuParity(js, ref, 11);
 	assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 	assert.equal(js.getSystemGlobalByKey(js.stringPool.find('copied')!), frame.registers.getTable(12));
 	assert.ok(page.compiledBlocks!.entries[entry] === block, 'growing the bank does not retire or strand the compiled consumer');
@@ -81,7 +82,7 @@ for (const alias of [false, true]) test(`compiled LOADNIL and LOADKR preserve ki
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
 			cpu.rootThread.frames[0].registers.setNumber(2, input);
 		}
-		assert.equal(js.runUntilDepth(0, 7), ref.runUntilDepth(0, 7));
+		runCpuParity(js, ref, 7);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 		const constant = constants[input >>> 0];
 		assert.equal(frame.registers.get(3), constant === 'literal' ? valueString(js.stringPool.find(constant)!) : constant);
@@ -109,7 +110,7 @@ test('a hot WIDE LOADKR fault publishes its prefix before trapping without writi
 			cpu.rootThread.frames[0].registers.setNumber(513, bad);
 			cpu.rootThread.frames[0].top = 0;
 		}
-		js.runUntilDepth(0, 3); ref.runUntilDepth(0, 3);
+		runCpuParity(js, ref, 3);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 		assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
 		assert.equal(js.readEpcWord(), image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
@@ -145,7 +146,7 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 	for (const value of [null, false, true, -0, NaN, 'upvalue'] as const) {
 		for (const cpu of [js, ref]) cpu.rootThread.frames[0].registers.set(12,
 			value === 'upvalue' ? valueString(cpu.stringPool.intern(value)) : value);
-		js.runUntilDepth(0, 11); ref.runUntilDepth(0, 11);
+		runCpuParity(js, ref, 11);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 		assert.equal(frame.registers.getNumber(3), 10, 'SETUP invalidates the earlier cached alias of R0');
 		assert.equal(frame.registers.getNumber(4), 9);
@@ -223,11 +224,11 @@ for (const fixed of [0, 5]) test(`hot VARARG handles exact top resets, nil paddi
 			assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded);
 			assert.equal(cpu.rootThread.frames[1].varargCount, count);
 		}
-		assert.equal(js.runUntilDepth(0, 9), ref.runUntilDepth(0, 9));
+		runCpuParity(js, ref, 9);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState(), 'a full hot-block grant also covers the growing exit');
 		if (count === 63) assert.ok(js.rootThread.frames[1].stackCapacity > 16);
 		for (const grant of [0, 1, 1, 2, 1, 1, 2, 1]) {
-			assert.equal(js.runUntilDepth(0, grant), ref.runUntilDepth(0, grant));
+			runCpuParity(js, ref, grant);
 			assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 		}
 		assert.equal(js.rootThread.frames[1].top, count, 'the second open VARARG replaces, rather than maximizes, top');

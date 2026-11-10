@@ -109,8 +109,8 @@ void helperContinuationsReloadTheCurrentRegisterMap() {
 	decoded[4].a = 5; decoded[4].b = 0;
 	decoded[5].bx = 0x1800u;
 	const std::span instructions(source);
-	const std::array plans{NativeBlockSource{instructions.subspan(0, 2), 0, true},
-		NativeBlockSource{instructions.subspan(2, 2), 0, true}, NativeBlockSource{instructions.subspan(4, 2)}};
+	const std::array plans{NativeBlockSource{instructions.subspan(0, 2), nullptr, true},
+		NativeBlockSource{instructions.subspan(2, 2), nullptr, true}, NativeBlockSource{instructions.subspan(4, 2)}};
 	constexpr u32 target = DYNAMIC_RAM_BASE + 0x84000u;
 	const Value table = valueTable(cpu.createTable()), payload = valueFromTag(ValueTag::False, 37);
 	size_t bytes = 0;
@@ -118,16 +118,16 @@ void helperContinuationsReloadTheCurrentRegisterMap() {
 		auto blocks = NativeBlock::compileRegion(plans, nullptr, bytes, memory, cpu.stringPool());
 		require(blocks[0]->region == blocks[1]->region && blocks[1]->region == blocks[2]->region,
 			"helper continuations are entries of one executable allocation");
-		require(blocks[0]->entryCycles == 8 && blocks[1]->entryCycles == 5 && blocks[2]->entryCycles == 2
+		require(blocks[0]->entryCycles == 1 && blocks[1]->entryCycles == 1 && blocks[2]->entryCycles == 1
 			&& blocks[0]->sourceWords == 6 && blocks[1]->sourceWords == 4 && blocks[2]->sourceWords == 2,
-			"each continuation admits only its own linear suffix");
+			"positive budget admits each continuation's bounded linear suffix");
 		for (int iteration = 0; iteration < 32; ++iteration) for (size_t entry = 0; entry < blocks.size(); ++entry) {
 			std::array<Value, 9> registers; registers.fill(valueNil());
 			registers[0] = payload; registers[1] = valueNumber(target); registers[8] = table;
 			memory.writeMappedWord(target, 17u);
 			NativeBlockRunState state{.registers = registers.data(), .remainingCycles = blocks[entry]->entryCycles};
-			require(blocks[entry]->run(state) == &blocks[2]->terminal && state.remainingCycles == 0,
-				"independent continuation entry runs its complete suffix without a host exit");
+			require(blocks[entry]->run(state) == &blocks[2]->terminal && state.remainingCycles == -(entry == 0 ? 7 : entry == 1 ? 4 : 1),
+				"an admitted suffix returns its complete cycle debt without a mid-span host exit");
 			if (entry == 0) require(registers[0] == valueNumber(17) && registers[4] == valueNumber(1)
 				&& registers[5] == valueNumber(17) && registers[8] == valueNumber(1)
 				&& memory.readMappedWord(target) == 1u && state.registerTop == 9,
@@ -161,7 +161,7 @@ void residentValuesCrossInternalStringBranches() {
 	decoded[8].a = 5; decoded[8].b = 4;
 	decoded[9].bx = 0x1000u;
 	const std::span instructions(source);
-	const std::array plans{NativeBlockSource{instructions.subspan(0, 2), 1},
+	const std::array plans{NativeBlockSource{instructions.subspan(0, 2), &decoded[2]},
 		NativeBlockSource{instructions.subspan(2, 1)}, NativeBlockSource{instructions.subspan(3, 2)},
 		NativeBlockSource{instructions.subspan(5, 5)}};
 	const std::array constants{valueNumber(1)};
@@ -224,11 +224,11 @@ void linkedBodiesShareOneFrameAndRetireTheirEdges() {
 				expectedExit = &second->terminal;
 			}
 			inFirst = !inFirst;
-			if (remaining < (inFirst ? 2 : 3)) break;
+			if (remaining <= 0) break;
 		}
 		const auto result = first->run(nativeRunState = {.registers = registers.data(), .constants = constants.data(), .remainingCycles = budget});
 		require(result == expectedExit && nativeRunState.remainingCycles == remaining && nativeRunState.registerTop == 8 && registers == expected,
-			"linked leaf/calling bodies share one frame, bounded stack, exact grants and the maximum live-register extent");
+			"linked leaf/calling bodies share one frame, bounded stack, complete segment charges and the maximum live-register extent");
 	}
 	second->linkFrom(first->terminal);
 	std::array<Value, 8> registers{}; registers.fill(valueNil()); registers[0] = valueNumber(1); registers[2] = valueBool(false);
@@ -264,8 +264,8 @@ void linkedAtomicStoreDebitsItsWholeChargeBeforeTestingItsSuccessor() {
 	auto second = NativeBlock::compile(span, nullptr, bytes, memory, cpu.stringPool());
 	auto third = NativeBlock::compile(successor, nullptr, bytes, memory, cpu.stringPool());
 	second->linkFrom(first->terminal); third->linkFrom(second->terminal);
-	require(first->entryCycles == 2 && second->entryCycles == 1 && second->terminal.cycles == 4,
-		"block entry needs only a positive budget at the final instruction start");
+	require(first->entryCycles == 1 && second->entryCycles == 1 && second->terminal.cycles == 4,
+		"segment entry needs positive budget and retains the complete atomic store charge");
 	constexpr u32 target = DYNAMIC_RAM_BASE + 0x80000u;
 	for (int budget : {2, 3, 6, 7}) {
 		std::array<Value, 13> registers; registers.fill(valueNil());

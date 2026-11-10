@@ -5,6 +5,7 @@
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
+#include "support/cpu_execution_parity.h"
 
 #include <algorithm>
 #include <array>
@@ -39,7 +40,7 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const auto& second = *scalar.cpu.activeThread()->frames[0];
 	require(first.pc == second.pc && first.top == second.top
 		&& native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc()
-		&& native.cpu.lastPc == scalar.cpu.lastPc && native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining,
+		&& native.cpu.lastPc == scalar.cpu.lastPc,
 		"linked blocks publish the same PC, WIDE body, register extent and cycle boundary as scalar instructions");
 	for (int reg = 0; reg < 12; ++reg) require(first.registers[reg] == second.registers[reg],
 		"linked execution preserves each raw live register at every grant");
@@ -64,10 +65,12 @@ void grantsAndTargetRetirement() {
 		auto& frame = *machine->cpu.activeThread()->frames[0];
 		frame.registers[0] = valueNumber(2); frame.registers[1] = valueNumber(1); frame.registers[8] = valueNumber(0);
 	}
-	for (const bool flag : {true, false}) for (auto* machine : {&native, &scalar}) {
-		machine->cpu.activeThread()->frames[0]->registers[2] = valueBool(flag);
-		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
-		require(machine->cpu.runUntilDepth(0, 2048) == RunResult::Yielded, "warm both branch paths");
+	for (const bool flag : {true, false}) {
+		for (auto* machine : {&native, &scalar}) {
+			machine->cpu.activeThread()->frames[0]->registers[2] = valueBool(flag);
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
+		}
+		require(test::runCpuParity(native.cpu, scalar.cpu, 2048) == RunResult::Yielded, "warm both branch paths");
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	auto& page = *native.cpu.activeThread()->frames[0]->decodedPage;
@@ -100,7 +103,7 @@ void grantsAndTargetRetirement() {
 				expected[4] = valueNumber(asNumber(expected[0]) + asNumber(expected[8])); top = std::max(top, 5); segment = 0;
 			}
 			remaining -= 2;
-			if (remaining < 2) break;
+			if (remaining <= 0) break;
 		}
 		NativeBlockRunState run{.registers = registers.data(), .constants = native.cpu.activeThread()->frames[0]->executionImage->constPool.data(),
 			.remainingCycles = grant};
@@ -114,8 +117,8 @@ void grantsAndTargetRetirement() {
 		for (auto* machine : {&native, &scalar}) {
 			auto& frame = *machine->cpu.activeThread()->frames[0]; frame.registers[2] = flag; frame.top = 0;
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
-			require(machine->cpu.runUntilDepth(0, grant) == RunResult::Yielded, "each short grant yields an exact prefix");
 		}
+		require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Yielded, "each short grant completes its admitted segment");
 		requireParity(native, scalar);
 	}
 	std::array<u8, INSTRUCTION_BYTES> replacement{};
@@ -129,15 +132,15 @@ void grantsAndTargetRetirement() {
 	for (auto* machine : {&native, &scalar}) {
 		machine->cpu.activeThread()->frames[0]->registers[2] = valueBool(true);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
-		machine->cpu.runUntilDepth(0, 2048);
 	}
+	test::runCpuParity(native.cpu, scalar.cpu, 2048);
 	requireParity(native, scalar);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	require(page.nativeBlocks && page.nativeBlocks->entries[0] && page.nativeBlocks->entries[4]
 		&& page.nativeBlocks->entries[0]->region == page.nativeBlocks->entries[4]->region,
 		"the updated target regenerates in the same region as its branch source");
 #endif
-	for (auto* machine : {&native, &scalar}) machine->cpu.runUntilDepth(0, 600002);
+	test::runCpuParity(native.cpu, scalar.cpu, 600002);
 	requireParity(native, scalar);
 	// This also destroys a cyclic incoming/outgoing graph under the sanitizers.
 	native.cpu.reset();
@@ -160,8 +163,8 @@ void crossPageLinksRetireTheirTargetsAndKeepBoundedStack() {
 		auto& frame = *machine->cpu.activeThread()->frames[0];
 		frame.registers[0] = valueNumber(2); frame.registers[1] = valueNumber(1); frame.registers[8] = valueNumber(0);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
-		machine->cpu.runUntilDepth(0, 2048);
 	}
+	test::runCpuParity(native.cpu, scalar.cpu, 2048);
 	const auto& lookup = *native.cpu.activeThread()->frames[0]->executionImage->nativeCodeLookup;
 	auto* firstPage = lookup.find(DYNAMIC_RAM_BASE, 0);
 	auto* secondPage = lookup.find(DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE, 0);
@@ -172,8 +175,8 @@ void crossPageLinksRetireTheirTargetsAndKeepBoundedStack() {
 	for (int grant = 1; grant <= 128; ++grant) {
 		for (auto* machine : {&native, &scalar}) {
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
-			machine->cpu.runUntilDepth(0, grant);
 		}
+		test::runCpuParity(native.cpu, scalar.cpu, grant);
 		requireParity(native, scalar);
 	}
 	std::array<u8, INSTRUCTION_BYTES> replacement{};
@@ -184,11 +187,11 @@ void crossPageLinksRetireTheirTargetsAndKeepBoundedStack() {
 		"retiring a cross-page target disconnects its incoming edge without discarding the independent source");
 	for (auto* machine : {&native, &scalar}) {
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
-		machine->cpu.runUntilDepth(0, 2048);
 	}
+	test::runCpuParity(native.cpu, scalar.cpu, 2048);
 	requireParity(native, scalar);
 	require(root->terminal.link.target == secondPage->nativeBlocks->entries[0].get(), "a rewritten target regenerates and links again");
-	for (auto* machine : {&native, &scalar}) machine->cpu.runUntilDepth(0, 600002);
+	test::runCpuParity(native.cpu, scalar.cpu, 600002);
 	requireParity(native, scalar);
 	native.cpu.reset();
 }
@@ -206,8 +209,8 @@ void shortGrantsDoNotPromoteSequentialPositions(bool inRam) {
 		auto& frame = *machine->cpu.activeThread()->frames[0];
 		frame.registers[0] = valueNumber(0); frame.registers[1] = valueNumber(1);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);
-		machine->cpu.runUntilDepth(0, 4096);
 	}
+	test::runCpuParity(native.cpu, scalar.cpu, 4096);
 	const auto& lookup = *native.cpu.activeThread()->frames[0]->executionImage->nativeCodeLookup;
 	auto& page = *lookup.find(start, 0);
 	const auto entry = (start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
@@ -215,19 +218,19 @@ void shortGrantsDoNotPromoteSequentialPositions(bool inRam) {
 		&& page.nativeBlocks->entries[entry]->sourceWords == 13,
 		"entry admission preserves successor stability heat and compiles a complete ROM/RAM loop");
 	for (int run = 0; run < 512; ++run) {
-		for (auto* machine : {&native, &scalar}) machine->cpu.runUntilDepth(0, 1);
+		test::runCpuParity(native.cpu, scalar.cpu, 1);
 		requireParity(native, scalar);
 	}
 	for (int grant = 2; grant <= 31; ++grant) {
-		for (auto* machine : {&native, &scalar}) machine->cpu.runUntilDepth(0, grant);
+		test::runCpuParity(native.cpu, scalar.cpu, grant);
 		requireParity(native, scalar);
 	}
 	require(page.nativeBlocks->count == 1 && !page.nativeBlocks->entries[entry + 4],
 		"arbitrary sequential grant resumptions do not create overlapping suffix translations");
 	for (auto* machine : {&native, &scalar}) {
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start + 32 * INSTRUCTION_BYTES);
-		machine->cpu.runUntilDepth(0, 128);
 	}
+	test::runCpuParity(native.cpu, scalar.cpu, 128);
 	requireParity(native, scalar);
 	require(static_cast<bool>(page.nativeBlocks->entries[entry + 4]),
 		"an actual branch into the same interior position remains eligible for native execution");
@@ -246,13 +249,13 @@ void entriesIntoWideBodiesShareTheirSequentialJoin() {
 		auto& frame = *machine->cpu.activeThread()->frames[0];
 		frame.registers[0] = frame.registers[2] = valueNumber(0); frame.registers[1] = valueNumber(1);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
-		machine->cpu.runUntilDepth(0, 1200);
 	}
+	test::runCpuParity(native.cpu, scalar.cpu, 1200);
 	for (int visit = 0; visit < 16; ++visit) {
 		for (auto* machine : {&native, &scalar}) {
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE + 16u * INSTRUCTION_BYTES);
-			machine->cpu.runUntilDepth(0, 128);
 		}
+		test::runCpuParity(native.cpu, scalar.cpu, 128);
 		requireParity(native, scalar);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -266,8 +269,8 @@ void entriesIntoWideBodiesShareTheirSequentialJoin() {
 	for (int grant = 1; grant <= 31; ++grant) {
 		for (auto* machine : {&native, &scalar}) {
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE + INSTRUCTION_BYTES);
-			machine->cpu.runUntilDepth(0, grant);
 		}
+		test::runCpuParity(native.cpu, scalar.cpu, grant);
 		requireParity(native, scalar);
 	}
 }

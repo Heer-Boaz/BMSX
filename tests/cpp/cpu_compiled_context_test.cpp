@@ -4,6 +4,7 @@
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
+#include "support/cpu_execution_parity.h"
 
 #include <algorithm>
 #include <array>
@@ -35,7 +36,7 @@ struct CpuMachine {
 
 void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	auto& a = native.cpu; auto& b = scalar.cpu;
-	require(a.instructionBudgetRemaining == b.instructionBudgetRemaining && a.lastPc == b.lastPc
+	require(a.lastPc == b.lastPc
 		&& a.readCurrentInstructionPc() == b.readCurrentInstructionPc() && a.readCauseWord() == b.readCauseWord()
 		&& a.readEpcWord() == b.readEpcWord() && a.readLuaFaultReasonWord() == b.readLuaFaultReasonWord(),
 		"generated context execution preserves instruction, fault and cycle boundaries");
@@ -93,10 +94,10 @@ void hotVarargFrames(int fixed) {
 			require(cpu.runUntilDepth(0, 2) == RunResult::Yielded && thread->frames[1]->varargCount == count,
 				"a new frame binds its current saved-argument range before entering hot code");
 		}
-		require(native.cpu.runUntilDepth(0, 9) == scalar.cpu.runUntilDepth(0, 9), "full block grants agree through stack growth");
+		test::runCpuParity(native.cpu, scalar.cpu, 9);
 		requireParity(native, scalar);
 		for (const int grant : {0, 1, 1, 2, 1, 1, 2, 1}) {
-			require(native.cpu.runUntilDepth(0, grant) == scalar.cpu.runUntilDepth(0, grant), "short grants agree");
+			test::runCpuParity(native.cpu, scalar.cpu, grant);
 			requireParity(native, scalar);
 		}
 		require(native.cpu.activeThread()->frames[1]->top == count, "the final open VARARG replaces the former top exactly");
@@ -145,7 +146,7 @@ void hotConstantTrap() {
 		const auto& block = frame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 		require(block && block->sideExits[0].exit == NativeBlockExit::InvalidConstant, "the trapping instruction is lowered, not skipped");
 #endif
-		native.cpu.runUntilDepth(0, 3); scalar.cpu.runUntilDepth(0, 3); requireParity(native, scalar);
+		test::runCpuParity(native.cpu, scalar.cpu, 3); requireParity(native, scalar);
 		require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT
 			&& native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES
 			&& native.cpu.activeThread()->frames[0]->registers[256] == valueNumber(73)
@@ -163,8 +164,8 @@ void hotGlobalBanks() {
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
 		for (const auto* name : {"shared", "copied", "numeric"}) m->cpu.stringPool().intern(name);
-		m->cpu.runUntilDepth(0, 1100);
 	}
+	test::runCpuParity(native.cpu, scalar.cpu, 1100);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	auto& page = *native.cpu.activeThread()->frames[0]->decodedPage;
 	const u32 entry = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
@@ -178,8 +179,8 @@ void hotGlobalBanks() {
 			auto& cpu = m->cpu; cpu.activeThread()->frames[0]->registers[12] = value;
 			cpu.setGlobalByKey(cpu.stringPool().intern("shared"), value);
 			cpu.setSystemGlobalByKey(cpu.stringPool().intern("shared"), valueNumber(73));
-			cpu.runUntilDepth(0, 11);
 		}
+		test::runCpuParity(native.cpu, scalar.cpu, 11);
 		requireParity(native, scalar);
 		require(native.cpu.getSystemGlobalByKey(native.cpu.stringPool().intern("copied")) == value
 			&& native.cpu.getGlobalByKey(native.cpu.stringPool().intern("copied")) == valueNumber(73)
@@ -218,7 +219,7 @@ void hotUpvalueAlias() {
 #endif
 	for (const auto value : {valueNil(), valueBool(false), valueNumber(-0.0), VALUE_QNAN_MASK, valueNumber(73)}) {
 		for (auto* m : {&native, &scalar}) m->cpu.activeThread()->frames[0]->registers[12] = value;
-		native.cpu.runUntilDepth(0, 11); scalar.cpu.runUntilDepth(0, 11); requireParity(native, scalar);
+		test::runCpuParity(native.cpu, scalar.cpu, 11); requireParity(native, scalar);
 		const auto& frame = *native.cpu.activeThread()->frames[0];
 		require(frame.registers[3] == valueNumber(10) && frame.registers[4] == valueNumber(9)
 			&& frame.registers[6] == value && frame.top == 7, "a self-alias side exit writes the actual cell without losing live values or extending top");

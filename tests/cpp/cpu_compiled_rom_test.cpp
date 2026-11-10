@@ -10,6 +10,7 @@
 #include "spec/bmsx/rom_header.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
+#include "support/cpu_execution_parity.h"
 
 #include <array>
 #include <iostream>
@@ -190,12 +191,11 @@ void tailsAndShortBudgetsAgree() {
 			for (auto* machine : {&native, &scalar}) {
 				machine->cpu.activeThread()->frames[0]->registers[1] = valueNumber(address - (displaced ? 1020u : 0u));
 				machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
-				machine->cpu.runUntilDepth(0, grant);
 			}
+			test::runCpuParity(native.cpu, scalar.cpu, grant);
 			require(native.cpu.readFrameRegister(0, 0) == scalar.cpu.readFrameRegister(0, 0)
 				&& native.cpu.readFrameRegister(0, 5) == scalar.cpu.readFrameRegister(0, 5)
-				&& native.cpu.readFramePc(0) == scalar.cpu.readFramePc(0) && native.cpu.lastPc == scalar.cpu.lastPc
-				&& native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining,
+				&& native.cpu.readFramePc(0) == scalar.cpu.readFramePc(0) && native.cpu.lastPc == scalar.cpu.lastPc,
 				"ROM zero-filled tails, WIDE extents and every short grant agree with scalar execution");
 		}
 	}
