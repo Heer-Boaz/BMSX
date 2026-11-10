@@ -104,9 +104,11 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		frame = frames.back().get();
 		const u32 pc = frame->pc;
 		if ((pc & (INSTRUCTION_BYTES - 1u)) != 0u) return nullptr;
-		auto& page = cpu.decodedPageForFrame(*frame, pc);
-		if (!page.nativeBlocks) return nullptr;
-		auto* target = page.nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
+		const auto& lookup = frame->executionImage->nativeCodeLookup;
+		if (!lookup) return nullptr;
+		auto* page = lookup->find(pc, cpu.m_memory.cartridgeController().selectedSlot(cpu.m_executionBusSignals));
+		if (!page || !page->nativeBlocks) return nullptr;
+		auto* target = page->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
 		if (!target || cpu.instructionBudgetRemaining < target->entryCycles) return nullptr;
 		// Only this pure continuation still owns its source descriptor. Hardware
 		// mux changes remain behind the dispatcher, not cached cross-window links.

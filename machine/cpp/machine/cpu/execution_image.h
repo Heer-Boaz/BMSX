@@ -17,6 +17,7 @@
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 #include "machine/cpu/native_block.h"
+#include "machine/cpu/native_code_lookup.h"
 #endif
 
 namespace bmsx {
@@ -161,6 +162,9 @@ struct Blua32ExecutionImage {
 	std::vector<u32> globalSlots;
 	std::vector<u32> systemGlobalSlots;
 	std::unordered_map<u64, DecodedInstructionPage> decodedPages;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	std::unique_ptr<NativeCodeLookup> nativeCodeLookup;
+#endif
 };
 
 } // namespace bmsx

@@ -50,6 +50,25 @@ struct CpuMachine {
 	}
 };
 
+void sparseCodeLookupPreservesPageOwners() {
+	NativeCodeLookup lookup;
+	DecodedInstructionPage first(true, {}), second(true, {});
+	for (const u32 address : {0u, 0x003ffc00u, 0x00400000u, DYNAMIC_RAM_BASE, CART_ROM_BASE, 0xfffffc00u}) {
+		require(!lookup.find(address, 0) && !lookup.find(address, 1), "an uncompiled page is absent from both socket banks");
+		lookup.install(address, 0, first);
+		require(lookup.find(address + MAPPED_PAGE_BYTE_SIZE - INSTRUCTION_BYTES, 0) == &first,
+			"the sparse index preserves page identity across unsigned address and group boundaries");
+		if (address < CART_ROM_BASE) {
+			require(lookup.find(address, 1) == &first, "system ROM and main RAM have no socket-dependent identity");
+		} else {
+			require(!lookup.find(address, 1), "a cold cartridge socket does not alias the other socket's page");
+			lookup.install(address, 1, second);
+			require(lookup.find(address, 0) == &first && lookup.find(address, 1) == &second,
+				"each cartridge socket owns distinct code at the same virtual address");
+		}
+	}
+}
+
 test::Blua32TestImage loadLoop(MemoryAccessKind kind, bool displaced = false) {
 	test::Blua32TestImage image;
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
@@ -245,6 +264,69 @@ void dataSelectionDoesNotSelectInstructionFetch() {
 	}
 }
 
+void warmContinuationsFollowInBlockMuxWrites() {
+	test::Blua32TestImage image;
+	image.text.resize(INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 1, .maxStack = 8}};
+	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
+	std::array<std::vector<u8>, 2> cards;
+	constexpr u32 second = MAPPED_PAGE_BYTE_SIZE / INSTRUCTION_BYTES;
+	for (u32 slot = 0; slot < cards.size(); ++slot) {
+		auto& code = cards[slot]; code.resize(2 * MAPPED_PAGE_BYTE_SIZE);
+		writeInstruction(code, 0, static_cast<u8>(slot == 0u ? OpCode::K1 : OpCode::K0), 0, 0, 0);
+		writeInstruction(code, 1, static_cast<u8>(OpCode::JMP), 0, 3, 62); // next page, +254 words
+		writeInstruction(code, second, static_cast<u8>(OpCode::MOV), 3, 0, 0);
+		writeInstruction(code, second + 1, static_cast<u8>(OpCode::STORE_MEM), 4, 2, static_cast<u8>(MemoryAccessKind::Word));
+		writeInstruction(code, second + 2, static_cast<u8>(slot == 0u ? OpCode::K1 : OpCode::K0), 5, 0, 0);
+		writeInstruction(code, second + 3, static_cast<u8>(OpCode::MOV), 6, 5, 0);
+		writeInstruction(code, second + 4, static_cast<u8>(OpCode::JMP), 0, 59, 59, 255); // first page, -261 words
+	}
+	CpuMachine native(rom, test::cartridgeSlots(cards[0], cards[1]), false);
+	CpuMachine scalar(rom, test::cartridgeSlots(cards[0], cards[1]), true);
+	for (auto* machine : {&native, &scalar}) {
+		auto& frame = *machine->cpu.activeThread()->frames[0];
+		frame.registers[2] = valueNumber(IO_CART_SELECT);
+		for (const u32 slot : {0u, 1u}) {
+			machine->memory.writeMappedWord(IO_CART_SELECT, slot); frame.registers[4] = valueNumber(slot);
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], CART_ROM_BASE);
+			machine->cpu.runUntilDepth(0, 10000);
+		}
+	}
+	const auto& lookup = *native.cpu.activeThread()->frames[0]->executionImage->nativeCodeLookup;
+	for (const u32 slot : {0u, 1u}) {
+		const auto* page = lookup.find(CART_ROM_BASE + MAPPED_PAGE_BYTE_SIZE, slot);
+		require(page && page->nativeBlocks && page->nativeBlocks->entries[2], "both post-MMIO physical continuations are native, not merely interpreted");
+	}
+	for (const u32 slot : {0u, 1u, 1u, 0u}) {
+		for (auto* machine : {&native, &scalar}) {
+			auto& cpu = machine->cpu; auto& frame = *cpu.activeThread()->frames[0];
+			machine->memory.writeMappedWord(IO_CART_SELECT, slot);
+			frame.registers[0] = valueNumber(1u - slot); frame.registers[4] = valueNumber(slot ^ 1u);
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], CART_ROM_BASE + MAPPED_PAGE_BYTE_SIZE);
+			require(cpu.runUntilDepth(0, 6) == RunResult::Yielded && frame.registers[3] == valueNumber(1u - slot)
+				&& frame.registers[6] == valueNumber(slot) && frame.pc == CART_ROM_BASE && cpu.instructionBudgetRemaining == 0,
+				"a mux write selects the newly selected physical ROM for the very next instruction at the exact grant boundary");
+		}
+		const auto& a = *native.cpu.activeThread()->frames[0]; const auto& b = *scalar.cpu.activeThread()->frames[0];
+		require(native.cpu.lastPc == scalar.cpu.lastPc && native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc()
+			&& a.top == b.top && a.pc == b.pc, "native socket changes retain scalar PC and register-top publication");
+		for (int reg = 0; reg < a.stackCapacity; ++reg) require(a.registers[reg] == b.registers[reg], "all socket-switch registers agree");
+	}
+	const auto* page = lookup.find(CART_ROM_BASE + MAPPED_PAGE_BYTE_SIZE, 1);
+	auto replacement = cards[1]; writeInstruction(replacement, second + 2, static_cast<u8>(OpCode::KSMI), 5, 0, 7);
+	for (auto* machine : {&native, &scalar}) {
+		machine->memory.cartridgeController().installRom(1, replacement);
+		require(!page->nativeBlocks, "ROM replacement retires bodies without deleting the page retained by the native index");
+		machine->memory.writeMappedWord(IO_CART_SELECT, 1);
+		auto& frame = *machine->cpu.activeThread()->frames[0]; frame.registers[4] = valueNumber(1);
+		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], CART_ROM_BASE + MAPPED_PAGE_BYTE_SIZE);
+		machine->cpu.runUntilDepth(0, 6);
+		require(frame.registers[6] == valueNumber(7), "a stale index entry never executes retired ROM code");
+	}
+	require(lookup.find(CART_ROM_BASE + MAPPED_PAGE_BYTE_SIZE, 1) == page, "ROM replacement preserves the page owner");
+}
+
 } // namespace
 
 int main() {
@@ -252,6 +334,7 @@ int main() {
 		directRomLoadsUseCurrentOwners(); romReplacementAndSelectionKeepRamCode();
 		tailsAndShortBudgetsAgree(); emptySocketsAndCrossRegionDoubles();
 		dataSelectionDoesNotSelectInstructionFetch();
+		sparseCodeLookupPreservesPageOwners(); warmContinuationsFollowInBlockMuxWrites();
 		std::cout << "Compiled ROM tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {

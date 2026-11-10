@@ -135,6 +135,7 @@ import {
 	type DecodedInstructionPage,
 } from './execution_image';
 import { ProtectedCallContinuation, ProtectedCallKind, type CallFrame } from './call_state';
+import { CompiledCodeLookup } from './compiled_code_lookup';
 import { Thread, ThreadStatus, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES } from './thread';
 import { LuaHeap, type LuaHeapState } from './lua_heap';
 import {
@@ -1143,6 +1144,7 @@ export class CPU implements MappedPageInvalidator {
 			globalSlots,
 			systemGlobalSlots,
 			decodedPages: new Map(),
+			compiledCodeLookup: null,
 		};
 		return image;
 	}
@@ -2654,6 +2656,10 @@ export class CPU implements MappedPageInvalidator {
 					const block = compileJavaScriptBlock(page, word, cursor, pc, frame.executionImage, this.memory, this.stringPool,
 						this.globalSlots, this.systemGlobalSlots, this.cop0Words, skippedInstructionWidth);
 					this.compiledCodeCache.install(page, word, block);
+					const image = frame.executionImage;
+					if (image.compiledCodeLookup === null) image.compiledCodeLookup = new CompiledCodeLookup();
+					image.compiledCodeLookup.install((pc & ~MAPPED_PAGE_BYTE_MASK) >>> 0,
+						this.memory.cartridgeController.selectedSlot(this.executionBusSignals), page);
 				} else if (warmingSuccessor) {
 					cache.visits[word] = 0;
 				} else {
@@ -2802,7 +2808,11 @@ export class CPU implements MappedPageInvalidator {
 			frame = frames[frames.length - 1];
 			const pc = frame.pc;
 			if ((pc & (INSTRUCTION_BYTES - 1)) !== 0) return;
-			page = this.decodedPageForFrame(frame, pc);
+			const lookup = frame.executionImage.compiledCodeLookup;
+			if (lookup === null) return;
+			const nextPage = lookup.find(pc, this.memory.cartridgeController.selectedSlot(this.executionBusSignals));
+			if (nextPage === null) return;
+			page = nextPage;
 			const nextCache = page.compiledBlocks;
 			if (nextCache === null) return;
 			const next = nextCache.entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];

@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import { writeLE32 } from '../../machine/ts/common/endian';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
+import { CompiledCodeLookup } from '../../machine/ts/machine/cpu/compiled_code_lookup';
+import { createDecodedInstructionPage } from '../../machine/ts/machine/cpu/execution_image';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import type { CartridgeSocketMediaPair } from '../../machine/ts/machine/devices/cartridge/contracts';
@@ -44,6 +46,26 @@ function machine(systemRom: Uint8Array, slots: CartridgeSocketMediaPair, backend
 	cpu.reset();
 	return { cpu, memory, addresses };
 }
+
+test('the sparse code index preserves page identity, socket banks and unsigned address boundaries', () => {
+	const lookup = new CompiledCodeLookup();
+	for (const address of [0, 0x003ffc00, 0x00400000, DYNAMIC_RAM_BASE, CART_ROM_BASE, 0xfffffc00]) {
+		assert.equal(lookup.find(address, 0), null);
+		assert.equal(lookup.find(address, 1), null);
+		const first = createDecodedInstructionPage(true, null, 0);
+		lookup.install(address, 0, first);
+		assert.equal(lookup.find(address + MAPPED_PAGE_BYTE_SIZE - 4, 0), first);
+		if (address < CART_ROM_BASE) {
+			assert.equal(lookup.find(address, 1), first, 'main memory has no socket-dependent identity');
+		} else {
+			assert.equal(lookup.find(address, 1), null);
+			const second = createDecodedInstructionPage(true, null, 0);
+			lookup.install(address, 1, second);
+			assert.equal(lookup.find(address, 0), first);
+			assert.equal(lookup.find(address, 1), second);
+		}
+	}
+});
 
 for (let format = 0; format <= 5; ++format) for (const displaced of [false, true]) {
 	test(`ROM scalar ${format}, displaced ${displaced}: direct reads, tails and every short grant`, () => {
@@ -192,4 +214,57 @@ test('a cached instruction binding follows SELECT when EXEC has not overridden i
 			if ((select & 1) === 0) assert.equal(frame.decodedPage, firstPage, 'physical code is retained, not retired by a bus-selection change');
 		}
 	}
+});
+
+test('warm continuations resolve the live instruction socket after an in-block MMIO mux write', () => {
+	const text = new Uint8Array(4); writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 8 }] });
+	const cards = [new Uint8Array(2 * MAPPED_PAGE_BYTE_SIZE), new Uint8Array(2 * MAPPED_PAGE_BYTE_SIZE)];
+	const second = MAPPED_PAGE_BYTE_SIZE / 4;
+	for (let slot = 0; slot < 2; ++slot) {
+		writeInstruction(cards[slot], 0, slot === 0 ? OpCode.K1 : OpCode.K0, 0, 0, 0);
+		writeInstruction(cards[slot], 1, OpCode.JMP, 0, 3, 62); // next page, +254 words
+		writeInstruction(cards[slot], second, OpCode.MOV, 3, 0, 0);
+		writeInstruction(cards[slot], second + 1, OpCode.STORE_MEM, 4, 2, MemoryAccessKind.Word);
+		writeInstruction(cards[slot], second + 2, slot === 0 ? OpCode.K1 : OpCode.K0, 5, 0, 0);
+		writeInstruction(cards[slot], second + 3, OpCode.MOV, 6, 5, 0);
+		writeInstruction(cards[slot], second + 4, OpCode.JMP, 0, 59, 59, 255); // first page, -261 words
+	}
+	const machines = [machine(image.romBytes, cartridgeSlots(cards[0], cards[1]), CpuExecutionBackend.JavaScript),
+		machine(image.romBytes, cartridgeSlots(cards[0], cards[1]), CpuExecutionBackend.Interpreter)];
+	for (const { cpu, memory } of machines) {
+		const frame = cpu.rootThread.frames[0];
+		frame.registers.setNumber(2, IO_CART_SELECT);
+		for (const slot of [0, 1]) {
+			memory.writeMappedWord(IO_CART_SELECT, slot); frame.registers.setNumber(4, slot);
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], CART_ROM_BASE);
+			cpu.runUntilDepth(0, 10000);
+		}
+	}
+	const lookup = machines[0].cpu.rootThread.frames[0].executionImage.compiledCodeLookup!;
+	for (const slot of [0, 1]) assert.ok(lookup.find(CART_ROM_BASE + MAPPED_PAGE_BYTE_SIZE, slot)!.compiledBlocks!.entries[2]);
+	for (const slot of [0, 1, 1, 0]) {
+		for (const { cpu, memory } of machines) {
+			const frame = cpu.rootThread.frames[0];
+			memory.writeMappedWord(IO_CART_SELECT, slot);
+			frame.registers.setNumber(0, 1 - slot); frame.registers.setNumber(4, slot ^ 1);
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], CART_ROM_BASE + MAPPED_PAGE_BYTE_SIZE);
+			assert.equal(cpu.runUntilDepth(0, 6), RunResult.Yielded);
+			assert.equal(frame.registers.getNumber(3), 1 - slot);
+			assert.equal(frame.registers.getNumber(6), slot, 'the first instruction after the mux write comes from the newly selected ROM');
+			assert.equal(frame.pc, CART_ROM_BASE); assert.equal(cpu.instructionBudgetRemaining, 0);
+		}
+		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+	}
+	// Replace a hot physical ROM without replacing the decoded-page owner.
+	const page = lookup.find(CART_ROM_BASE + MAPPED_PAGE_BYTE_SIZE, 1)!;
+	const replacement = cards[1].slice(); writeInstruction(replacement, second + 2, OpCode.KSMI, 5, 0, 7);
+	for (const { cpu, memory } of machines) {
+		memory.cartridgeController.installRom(1, replacement); memory.writeMappedWord(IO_CART_SELECT, 1);
+		const frame = cpu.rootThread.frames[0]; frame.registers.setNumber(4, 1);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], CART_ROM_BASE + MAPPED_PAGE_BYTE_SIZE);
+		cpu.runUntilDepth(0, 6); assert.equal(frame.registers.getNumber(6), 7);
+	}
+	assert.equal(lookup.find(CART_ROM_BASE + MAPPED_PAGE_BYTE_SIZE, 1), page);
+	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 });

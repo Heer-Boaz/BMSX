@@ -3,6 +3,7 @@ import { BASE_CYCLES, OPCODE_COUNT, OpCode } from '../../spec/blua32/opcode';
 import type { MappedBusSignals } from '../memory/bus_signals';
 import { MAPPED_PAGE_BYTE_SHIFT, type MappedPageWriteWatches } from '../memory/mapped_page';
 import type { CompiledBlockPage } from './compiled_block';
+import type { CompiledCodeLookup } from './compiled_code_lookup';
 
 export const DECODED_PAGE_SHIFT = MAPPED_PAGE_BYTE_SHIFT - 2;
 export const DECODED_PAGE_WORDS = 1 << DECODED_PAGE_SHIFT;
@@ -77,6 +78,7 @@ export type Blua32ExecutionImage = {
 	globalSlots: Uint32Array;
 	systemGlobalSlots: Uint32Array;
 	decodedPages: Map<number, DecodedInstructionPage>;
+	compiledCodeLookup: CompiledCodeLookup | null;
 };
 
 export type Blua32FunctionRecordLatch = {

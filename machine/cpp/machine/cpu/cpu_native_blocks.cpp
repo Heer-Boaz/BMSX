@@ -80,6 +80,10 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 	page.words[word].dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeBlock);
 	page.words[word].dispatchCycles = page.words[word].baseCycles;
 	page.refreshState[word] &= static_cast<u8>(~DECODED_REFRESH_FUSION);
+	auto& lookup = frame.executionImage->nativeCodeLookup;
+	if (!lookup) lookup = std::make_unique<NativeCodeLookup>();
+	lookup->install(m_currentInstructionPc & ~MAPPED_PAGE_BYTE_MASK,
+		m_memory.cartridgeController().selectedSlot(m_executionBusSignals), page);
 }
 
 NativeBlockTransition CPU::compiledReadFieldExit(CPU* owner, CallFrame* activeFrame, const NativeBlockExitSite* exit) {
