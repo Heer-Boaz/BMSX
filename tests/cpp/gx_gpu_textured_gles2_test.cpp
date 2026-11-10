@@ -5,6 +5,7 @@
 #include "machine/devices/irq/controller.h"
 #include "machine/scheduler/device.h"
 #include "render/backend/gles2/backend.h"
+#include "render/backend/gles2/gx_gpu_draw_targets.h"
 #include "render/backend/pass/library.h"
 #include "render/backend/software/gx_gpu_vram.h"
 #include "render/video_presenter.h"
@@ -28,8 +29,14 @@ GLsizeiptr writtenBytes = 0;
 unsigned submissions = 0;
 bool completeSubmissions = true;
 unsigned readbacks = 0;
+unsigned draws = 0;
 }
 
+extern "C" void __real_glDrawArrays(GLenum, GLint, GLsizei);
+extern "C" void __wrap_glDrawArrays(GLenum mode, GLint first, GLsizei count) {
+	++draws;
+	__real_glDrawArrays(mode, first, count);
+}
 extern "C" void __real_glReadPixels(GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void*);
 extern "C" void __wrap_glReadPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, void* pixels) {
 	++readbacks;
@@ -64,6 +71,74 @@ using namespace bmsx;
 
 static void require(bool value, const char* message) {
 	if (!value) throw std::runtime_error(message);
+}
+
+static void testDrawTargetDirtyReads() {
+	OpenGLES2Backend backend(256, 256, false, PSX_MACHINE_SPEC.gxGpuVramBytes, GxGpuDrawTargetMode::SmallNibbles);
+	backend.setContextCallbacks([]() -> uintptr_t { return 0; }, eglGetProcAddress);
+	backend.onContextReset();
+	std::vector<u16> blank(1024u * 1024u);
+	std::array<GLES2Texture, 2> textures{};
+	for (auto& texture : textures) {
+		texture.width = texture.height = 1024;
+		texture.generation = backend.contextGeneration();
+		glGenTextures(1, &texture.id);
+		backend.setActiveTextureUnit(0);
+		backend.bindTexture2D(&texture);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1024, 1024, 0, GL_RGBA, GL_UNSIGNED_SHORT_4_4_4_4, blank.data());
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	}
+	GLuint framebuffer;
+	glGenFramebuffers(1, &framebuffer);
+	backend.setRenderTarget(framebuffer, 1024, 1024);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, textures[0].id, 0);
+	GxGpuDirtyRegions baseDirty;
+	GxGpuDrawTargets targets;
+	targets.initialize(backend, GxGpuDrawTargetMode::SmallNibbles, textures[0], framebuffer, textures[1]);
+	targets.select({0, 0, 128, 64}, baseDirty);
+	targets.synchronizeDestination({0, 0, 128, 64});
+	targets.bind();
+	backend.drawState.enable(GLES2Capability::ScissorTest);
+	glClearColor(1, 1, 1, 1);
+	for (const i32 x : {0, 64}) {
+		backend.drawState.scissor(x, 0, 16, 16);
+		glClear(GL_COLOR_BUFFER_BIT);
+		targets.markDrawn({x, 0, x + 16, 16});
+	}
+	backend.drawState.disable(GLES2Capability::ScissorTest);
+	const unsigned beforeCleanRead = draws;
+	targets.resolve({32, 0, 48, 16}, baseDirty, false);
+	targets.synchronizeDestination({32, 0, 48, 16});
+	require(draws == beforeCleanRead, "reading a clean cell of a dirty cached target performs no copy");
+	targets.resolve({0, 0, 1, 1}, baseDirty, false);
+	require(draws == beforeCleanRead + 1, "a partial target read materializes only its dirty island");
+	backend.setRenderTarget(framebuffer, 1024, 1024);
+	std::array<u8, 4> pixel{};
+	glReadPixels(64, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel.data());
+	require(pixel == std::array<u8, 4>{}, "an unread dirty island remains in its cached owner");
+	glReadPixels(0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel.data());
+	require(pixel == std::array<u8, 4>{255, 255, 255, 255}, "the requested dirty island reaches physical VRAM");
+	targets.resolve({64, 0, 65, 1}, baseDirty, false);
+	require(draws == beforeCleanRead + 2, "a later read still resolves the retained dirty island");
+	targets.synchronizeDestination({0, 0, 1, 1});
+	targets.synchronizeDestination({0, 0, 1, 1});
+	targets.synchronizeDestination({64, 0, 65, 1});
+	require(draws == beforeCleanRead + 4, "destination sampling consumes each island once, independently of base materialization");
+	for (const i32 x : {0, 64}) targets.markDrawn({x, 0, x + 16, 16});
+	targets.resolve({0, 0, 1, 1}, baseDirty, true);
+	require(draws == beforeCleanRead + 6 && !targets.valid(0), "invalidating a partial write preserves every outstanding cached island");
+	unsigned dirtyCopies = 0;
+	baseDirty.consume(0, 0, 1024, 1024, [&](i32, i32, i32, i32) { ++dirtyCopies; });
+	require(dirtyCopies == 2, "base sampling retains separated dirty islands rather than filling their clean gap");
+	backend.setRenderTarget(0, 256, 256);
+	targets.shutdown();
+	glDeleteFramebuffers(1, &framebuffer);
+	for (auto& texture : textures) glDeleteTextures(1, &texture.id);
+	backend.invalidateTextureBindingCache();
+	backend.onContextDestroy();
 }
 
 // The model's projected XY/UV packets enter the ordinary device and scanout
@@ -546,12 +621,55 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 		if (backend.gxGpuDrawTargetMode() != GxGpuDrawTargetMode::FullVram)
 			require(profile.hostCalls == 1u && profile.hostBytes == 168u, "adjacent payloads are uploaded before any sampling draw");
 	}
+	// Partial sampling must visit every physical wrap, not stop after its first
+	// dirty island. Texture words and palette words wrap independently; raw
+	// copies additionally cross the installed VRAM's last row.
+	std::vector<u32> wrapped{
+		0xa0000000u, (600u << 16u) | 1016u, 0x00010008u,
+		0x001f001fu, 0x001f001fu, 0x001f001fu, 0x001f001fu,
+		0xa0000000u, 600u << 16u, 0x00010008u,
+		0x7c007c00u, 0x7c007c00u, 0x7c007c00u, 0x7c007c00u,
+		0xa0000000u, (620u << 16u) | 1008u, 0x00010020u,
+	};
+	for (u32 pair = 0; pair < 8; ++pair) wrapped.push_back(0x001f001fu);
+	for (u32 pair = 0; pair < 8; ++pair) wrapped.push_back(0x03e003e0u);
+	for (const u32 word : {
+		0xa0000000u, (640u << 16u) | 512u, 0x00010001u, 0x00001110u,
+		0xe100090fu, 0x65808080u, (920u << 16u) | 400u, 0x00005838u, 0x00010010u,
+		0xe1000888u, 0x65808080u, (920u << 16u) | 420u, 0x9b3f8000u, 0x00010002u,
+		0xa0000000u, (1023u << 16u) | 1016u, 0x00020010u,
+	}) wrapped.push_back(word);
+	for (u32 pair = 0; pair < 16; ++pair) wrapped.push_back(0x7fff7fffu);
+	for (const u32 word : {0x80000000u, (1023u << 16u) | 1016u, (920u << 16u) | 440u, 0x00020010u})
+		wrapped.push_back(word);
+	for (const u32 word : wrapped) {
+		fixture.gpu.writeGp0(word);
+		fixture.scheduler.advanceTo(fixture.scheduler.currentNowCycles() + 10'000);
+		fixture.gpu.onService(fixture.scheduler.currentNowCycles());
+	}
+	fixture.gpu.presentReadyFrameOnVblankEdge();
+	presenter.present(fixture.gpu.readDeviceOutput(), 133, 0);
 	presenter.backend().captureGxGpuVramSnapshot(fixture.gpu);
 	const auto adjacentBytes = fixture.gpu.readDeviceOutput().vramSnapshotBytes;
 	require(adjacentBytes[(900u * 1024u + 700u) * 2u] == 0x1fu && adjacentBytes[(900u * 1024u + 700u) * 2u + 1u] == 0x80u,
 		"mask-check retains the earlier masked red pixel in an adjacent upload");
 	require(adjacentBytes[(900u * 1024u + 701u) * 2u] == 0u && adjacentBytes[(900u * 1024u + 701u) * 2u + 1u] == 0x7cu,
 		"an odd staging offset preserves the next unmasked pixel and later blue overwrite");
+	for (u32 x = 0; x < 16; ++x) {
+		const size_t at = (920u * 1024u + 400u + x) * 2u;
+		const u32 word = adjacentBytes[at] | (adjacentBytes[at + 1u] << 8u);
+		require(word == (x < 8u ? 0x001fu : 0x7c00u), "both ends of a wrapped texture observe their latest upload");
+	}
+	for (u32 x = 0; x < 2; ++x) {
+		const size_t at = (920u * 1024u + 420u + x) * 2u;
+		require((adjacentBytes[at] | (adjacentBytes[at + 1u] << 8u)) == 0x03e0u,
+			"palette reads observe uploaded words beyond the CLUT row wrap");
+	}
+	for (u32 y = 0; y < 2; ++y) for (u32 x = 0; x < 16; ++x) {
+		const size_t at = ((920u + y) * 1024u + 440u + x) * 2u;
+		require((adjacentBytes[at] | (adjacentBytes[at + 1u] << 8u)) == 0x7fffu,
+			"raw copies observe every dirty island across both physical address wraps");
+	}
 	// The frontend owns the context after endFrame. The next command drain can
 	// precede beginFrame and must not inherit the frontend's color/program state.
 	presenter.backend().endFrame();
@@ -610,6 +728,7 @@ int main(int argc, char** argv) {
 	require(eglMakeCurrent(display, surface, surface, context), "make GLES context current");
 	}
 	{
+		testDrawTargetDirtyReads();
 		TexturedModelFixture referenceFixture;
 		auto software = std::make_unique<SoftwareBackend>(256, 256, PSX_MACHINE_SPEC.gxGpuVramBytes);
 		const auto expected = render(std::move(software), referenceFixture);

@@ -245,7 +245,7 @@ struct OpenGLES2GxGpuState {
 	bool texturedBatchUniformGain = true;
 	GxGpuVramCopyRect texturedCommandRect{};
 	GxGpuVramCopyRect texturedDependencyBatchRect{};
-	GxGpuVramCopyRect sampleDirtyRect{};
+	GxGpuDirtyRegions sampleDirtyRegions;
 	GxGpuVramCopyRect snapshotDirtyRect{};
 	GxGpuRectangle rectangleScratch{};
 	GxGpuPreparedRasterPrimitive linePreparedScratch{};
@@ -516,7 +516,8 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	gx.backend->drawState.viewport(0, 0, kGxGpuVramXAddressPeriod, gx.vramTextureRows);
 	glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 	glClear(GL_COLOR_BUFFER_BIT);
-	gx.sampleDirtyRect = {0, 0, kGxGpuVramXAddressPeriod, gx.vramTextureRows};
+	gx.sampleDirtyRegions.clear();
+	gx.sampleDirtyRegions.mark(0, 0, kGxGpuVramXAddressPeriod, gx.vramTextureRows);
 	gx.drawTargets.initialize(backend, backend.gxGpuDrawTargetMode(), gx.vramTexture, gx.vramFramebuffer, gx.vramSampleTexture);
 	glGenFramebuffers(1, &gx.readbackFramebuffer);
 	gx.backend->drawState.bindFramebuffer(gx.readbackFramebuffer);
@@ -1353,7 +1354,8 @@ void uploadGxGpuVramSnapshot(OpenGLES2GxGpuState& gx, std::span<const u8> snapsh
 	gx.backend->setActiveTextureUnit(GLES2_TEXTURE_UNIT_GX_SCANOUT);
 	gx.backend->bindTexture2D(&gx.vramTexture);
 	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, kGxGpuVramXAddressPeriod, gx.vramTextureRows, GL_RGBA, GL_UNSIGNED_SHORT_4_4_4_4, snapshotBytes.data());
-	gx.sampleDirtyRect = {0, 0, kGxGpuVramXAddressPeriod, gx.vramTextureRows};
+	gx.sampleDirtyRegions.clear();
+	gx.sampleDirtyRegions.mark(0, 0, kGxGpuVramXAddressPeriod, gx.vramTextureRows);
 	std::copy(snapshotBytes.begin(), snapshotBytes.end(), gx.vramSnapshotScratch.begin());
 	gx.snapshotDirtyRect = {};
 }
@@ -1382,7 +1384,7 @@ void completeGxGpuReadback(OpenGLES2GxGpuState& gx, size_t commandLimit, GxGpuRe
 	}
 	const u32 readbackToken = readback.token();
 	gx.drawTargets.resolveLogical(readback.x(), readback.y(), readback.width(), readback.height(),
-		readback.vramYAddressExtensionWord(), gx.sampleDirtyRect, false);
+		readback.vramYAddressExtensionWord(), gx.sampleDirtyRegions, false);
 	const u32 pixelCount = readback.width() * readback.height();
 	const u32 wordCount = (pixelCount + 1u) >> 1u;
 	const u32 packedWidth = wordCount < static_cast<u32>(kGxGpuReadbackPackWidth) ? wordCount : static_cast<u32>(kGxGpuReadbackPackWidth);
@@ -1517,7 +1519,7 @@ u32 executeCpuToVramUpload(OpenGLES2GxGpuState& gx,
 	const u32 fullRows = (uploadedPixels - (uploadedPixels % width)) / width;
 	const u32 lastRowWidth = uploadedPixels % width;
 	const u32 uploadHeight = fullRows + (lastRowWidth != 0u ? 1u : 0u);
-	gx.drawTargets.resolveLogical(x, y, width, uploadHeight, vramYAddressExtensionWord, gx.sampleDirtyRect, true);
+	gx.drawTargets.resolveLogical(x, y, width, uploadHeight, vramYAddressExtensionWord, gx.sampleDirtyRegions, true);
 	const u32 payloadWordStart = wordStart + 3u;
 	const u32 maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
 	size_t transferVertexFloatCount = 0u;
@@ -1743,7 +1745,7 @@ void copyVramToVram(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commandBu
 	const u32 width = gxGpuTransferWidth(sizeWord);
 	const u32 height = gxGpuTransferHeight(sizeWord);
 	const u32 maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
-	gx.drawTargets.resolveLogical(targetX, targetY, width, height, vramYAddressExtensionWord, gx.sampleDirtyRect, true);
+	gx.drawTargets.resolveLogical(targetX, targetY, width, height, vramYAddressExtensionWord, gx.sampleDirtyRegions, true);
 	if (gxGpuVramCopyNeedsChunking(
 		sourceX,
 		sourceY,
@@ -1917,18 +1919,7 @@ void markGxGpuSampleTextureDirtyArea(OpenGLES2GxGpuState& gx, i32 left, i32 top,
 		return;
 	}
 	includeGxGpuVramCopyRect(gx.snapshotDirtyRect, {left, top, right, bottom});
-	if (left < gx.sampleDirtyRect.left) {
-		gx.sampleDirtyRect.left = left;
-	}
-	if (top < gx.sampleDirtyRect.top) {
-		gx.sampleDirtyRect.top = top;
-	}
-	if (right > gx.sampleDirtyRect.right) {
-		gx.sampleDirtyRect.right = right;
-	}
-	if (bottom > gx.sampleDirtyRect.bottom) {
-		gx.sampleDirtyRect.bottom = bottom;
-	}
+	gx.sampleDirtyRegions.mark(left, top, right, bottom);
 }
 
 void markGxGpuSampleTextureDirtyLogicalArea(OpenGLES2GxGpuState& gx, u32 x, u32 y, u32 width, u32 height, u32 vramYAddressExtensionWord) {
@@ -1966,19 +1957,14 @@ void copyGxGpuVramAreaToSampleTexture(OpenGLES2GxGpuState& gx, i32 left, i32 top
 }
 
 bool syncGxGpuSampleTextureArea(OpenGLES2GxGpuState& gx, i32 left, i32 top, i32 right, i32 bottom) {
-	if (left >= gx.sampleDirtyRect.right
-		|| gx.sampleDirtyRect.left >= right
-		|| top >= gx.sampleDirtyRect.bottom
-		|| gx.sampleDirtyRect.top >= bottom) {
-		return false;
-	}
-	copyGxGpuVramAreaToSampleTexture(gx, gx.sampleDirtyRect.left, gx.sampleDirtyRect.top, gx.sampleDirtyRect.right, gx.sampleDirtyRect.bottom);
-	resetGxGpuVramCopyRect(gx.sampleDirtyRect);
-	return true;
+	return gx.sampleDirtyRegions.consume(left, top, right, bottom,
+		[&](i32 copyLeft, i32 copyTop, i32 copyRight, i32 copyBottom) {
+			copyGxGpuVramAreaToSampleTexture(gx, copyLeft, copyTop, copyRight, copyBottom);
+		});
 }
 
 void syncGxGpuSampleTextureLogicalArea(OpenGLES2GxGpuState& gx, u32 x, u32 y, u32 width, u32 height, u32 vramYAddressExtensionWord) {
-	gx.drawTargets.resolveLogical(x, y, width, height, vramYAddressExtensionWord, gx.sampleDirtyRect, false);
+	gx.drawTargets.resolveLogical(x, y, width, height, vramYAddressExtensionWord, gx.sampleDirtyRegions, false);
 	const u32 yAddressMask = gxGpuVramYAddressMask(vramYAddressExtensionWord) & gx.vramTextureRowMask;
 	u32 rowY = y & yAddressMask;
 	u32 remainingHeight = height;
@@ -1992,13 +1978,11 @@ void syncGxGpuSampleTextureLogicalArea(OpenGLES2GxGpuState& gx, u32 x, u32 y, u3
 		u32 remainingWidth = width;
 		while (remainingWidth != 0u) {
 			const u32 runWidth = gxGpuVramWrappedWidth(columnX, remainingWidth);
-			if (syncGxGpuSampleTextureArea(gx,
+			syncGxGpuSampleTextureArea(gx,
 				static_cast<i32>(columnX),
 				static_cast<i32>(rowY),
 				static_cast<i32>(columnX + runWidth),
-				static_cast<i32>(rowY + runHeight))) {
-				return;
-			}
+				static_cast<i32>(rowY + runHeight));
 			columnX = (columnX + runWidth) & (GX_GPU_VRAM_X_ADDRESS_PERIOD - 1u);
 			remainingWidth -= runWidth;
 		}
@@ -2019,10 +2003,10 @@ void drawGxGpuLogicalVramArea(OpenGLES2GxGpuState& gx,
 		const GxGpuVramCopyRect physical{rect.left, std::max(rect.top, bandBase) - bandBase,
 			rect.right, std::min(rect.bottom, bandBase + gx.vramTextureRows) - bandBase};
 		if (gx.vramTextureRows != kGxGpuVramYAddressPeriod && syncSampleBetweenAliasBands) {
-			gx.drawTargets.resolve(physical, gx.sampleDirtyRect, false);
+			gx.drawTargets.resolve(physical, gx.sampleDirtyRegions, false);
 			syncGxGpuSampleTextureArea(gx, physical.left, physical.top, physical.right, physical.bottom);
 		}
-		gx.drawTargets.select(physical, gx.sampleDirtyRect);
+		gx.drawTargets.select(physical, gx.sampleDirtyRegions);
 		if (gx.drawTargets.enabled() && samplesDestination) gx.drawTargets.synchronizeDestination(physical);
 		bindDrawState();
 		const auto& target = gx.drawTargets.bounds();
@@ -3882,7 +3866,7 @@ void OpenGLES2Backend::captureGxGpuVramSnapshot(GxGpu& gxGpu) {
 	OpenGLES2GxGpuState& gx = *m_gx_gpu;
 	const GxGpuDeviceOutput& output = gxGpu.readDeviceOutput();
 	executeGxGpuVramCommands(gx, output.commandBuffer, output.readbackPort, output.vramSnapshotBytes, output.vramSnapshotSerial, output.commandBuffer.executedCommandCount);
-	gx.drawTargets.resolveAll(gx.sampleDirtyRect);
+	gx.drawTargets.resolveAll(gx.sampleDirtyRegions);
 	const GxGpuVramCopyRect& dirty = gx.snapshotDirtyRect;
 	if (dirty.right > dirty.left && dirty.bottom > dirty.top) {
 		setRenderTarget(gx.vramFramebuffer, kGxGpuVramXAddressPeriod, gx.vramTextureRows);

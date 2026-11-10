@@ -1,3 +1,4 @@
+import { GxGpuDirtyRegions } from '../gx_gpu_dirty_regions';
 import type { GxGpu } from '../../../machine/devices/gx/gpu';
 import type { GxGpuDeviceOutput } from '../../../machine/devices/gx/device_output';
 import {
@@ -228,7 +229,7 @@ export type WebGpuGxGpuState = {
 	texturedBatchRect: GxGpuVramCopyRect;
 	lineBatchRect: GxGpuVramCopyRect;
 	lineCommandRect: GxGpuVramCopyRect;
-	sampleDirtyRect: GxGpuVramCopyRect;
+	sampleDirtyRegions: GxGpuDirtyRegions;
 	snapshotDirtyRect: GxGpuVramCopyRect;
 	rectangleScratch: GxGpuRectangle;
 	solidBatchState: GxGpuSolidBatchState;
@@ -703,7 +704,7 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 		texturedBatchRect: { left: 0, top: 0, right: 0, bottom: 0 },
 		lineBatchRect: { left: 0, top: 0, right: 0, bottom: 0 },
 		lineCommandRect: { left: 0, top: 0, right: 0, bottom: 0 },
-		sampleDirtyRect: { left: 0, top: 0, right: 0, bottom: 0 },
+		sampleDirtyRegions: new GxGpuDirtyRegions(),
 		snapshotDirtyRect: { left: 0, top: 0, right: 0, bottom: 0 },
 		rectangleScratch: { x0: 0, y0: 0, x1: 0, y1: 0, width: 0, height: 0 },
 		solidBatchState: {
@@ -1278,10 +1279,8 @@ function uploadGxGpuVramSnapshot(gx: WebGpuGxGpuState, snapshotBytes: Uint8Array
 	gx.vramUploadExtent.height = gx.vramTextureRows;
 	gx.backend.device.queue.writeTexture(gx.vramUploadDestination, gx.vramSnapshotUpload, gx.vramUploadLayout, gx.vramUploadExtent);
 	gx.backend.accountUpload('texture', gx.vramSnapshotUpload.byteLength);
-	gx.sampleDirtyRect.left = 0;
-	gx.sampleDirtyRect.top = 0;
-	gx.sampleDirtyRect.right = GX_GPU_VRAM_X_ADDRESS_PERIOD;
-	gx.sampleDirtyRect.bottom = gx.vramTextureRows;
+	gx.sampleDirtyRegions.clear();
+	gx.sampleDirtyRegions.mark(0, 0, GX_GPU_VRAM_X_ADDRESS_PERIOD, gx.vramTextureRows);
 	gx.vramSnapshotScratch.set(snapshotBytes);
 	gx.snapshotDirtyRect.left = 0;
 	gx.snapshotDirtyRect.top = 0;
@@ -1331,10 +1330,7 @@ function markGxGpuSampleTextureDirtyArea(gx: WebGpuGxGpuState, left: number, top
 		if (right > snapshot.right) snapshot.right = right;
 		if (bottom > snapshot.bottom) snapshot.bottom = bottom;
 	}
-	if (left < gx.sampleDirtyRect.left) gx.sampleDirtyRect.left = left;
-	if (top < gx.sampleDirtyRect.top) gx.sampleDirtyRect.top = top;
-	if (right > gx.sampleDirtyRect.right) gx.sampleDirtyRect.right = right;
-	if (bottom > gx.sampleDirtyRect.bottom) gx.sampleDirtyRect.bottom = bottom;
+	gx.sampleDirtyRegions.mark(left, top, right, bottom);
 }
 
 function markGxGpuSampleTextureDirtyLogicalArea(gx: WebGpuGxGpuState, x: number, y: number, width: number, height: number, vramYAddressExtensionWord: number): void {
@@ -1369,15 +1365,7 @@ function copyGxGpuVramAreaToSampleTexture(gx: WebGpuGxGpuState, left: number, to
 }
 
 function syncGxGpuSampleTextureArea(gx: WebGpuGxGpuState, left: number, top: number, right: number, bottom: number): boolean {
-	if (left >= gx.sampleDirtyRect.right
-		|| gx.sampleDirtyRect.left >= right
-		|| top >= gx.sampleDirtyRect.bottom
-		|| gx.sampleDirtyRect.top >= bottom) {
-		return false;
-	}
-	copyGxGpuVramAreaToSampleTexture(gx, gx.sampleDirtyRect.left, gx.sampleDirtyRect.top, gx.sampleDirtyRect.right, gx.sampleDirtyRect.bottom);
-	resetGxGpuVramCopyRect(gx.sampleDirtyRect);
-	return true;
+	return gx.sampleDirtyRegions.consume(left, top, right, bottom, gx, copyGxGpuVramAreaToSampleTexture);
 }
 
 function syncGxGpuSampleTextureLogicalArea(gx: WebGpuGxGpuState, x: number, y: number, width: number, height: number, vramYAddressExtensionWord: number): void {
@@ -1390,7 +1378,7 @@ function syncGxGpuSampleTextureLogicalArea(gx: WebGpuGxGpuState, x: number, y: n
 		let remainingWidth = width;
 		while (remainingWidth !== 0) {
 			const runWidth = gxGpuVramWrappedWidth(columnX, remainingWidth);
-			if (syncGxGpuSampleTextureArea(gx, columnX, physicalY, columnX + runWidth, physicalY + runHeight)) return;
+			syncGxGpuSampleTextureArea(gx, columnX, physicalY, columnX + runWidth, physicalY + runHeight);
 			columnX = (columnX + runWidth) & (GX_GPU_VRAM_X_ADDRESS_PERIOD - 1);
 			remainingWidth -= runWidth;
 		}

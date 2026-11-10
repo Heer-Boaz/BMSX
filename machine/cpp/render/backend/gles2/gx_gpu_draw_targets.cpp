@@ -70,18 +70,18 @@ void GxGpuDrawTargets::copy(GLES2Texture& source, GLuint framebuffer,
 	glDrawArrays(GL_TRIANGLES, 0, 3);
 }
 
-void GxGpuDrawTargets::materialize(Entry& entry, GxGpuVramCopyRect& globalDirty) {
-	const auto& dirty = entry.dirty;
-	if (dirty.right <= dirty.left || dirty.bottom <= dirty.top) return;
-	copy(entry.color, m_baseFramebuffer,
-		dirty.left - entry.bounds.left, dirty.top - entry.bounds.top, dirty.left, dirty.top,
-		dirty.right - dirty.left, dirty.bottom - dirty.top, rgb5(), false);
-	includeGxGpuVramCopyRect(globalDirty, dirty);
-	entry.dirty = {};
-	++m_resolves;
+void GxGpuDrawTargets::materialize(Entry& entry, const GxGpuVramCopyRect& requested, GxGpuDirtyRegions& globalDirty) {
+	entry.dirty.consume(requested.left, requested.top, requested.right, requested.bottom,
+		[&](i32 left, i32 top, i32 right, i32 bottom) {
+			copy(entry.color, m_baseFramebuffer,
+				left - entry.bounds.left, top - entry.bounds.top, left, top,
+				right - left, bottom - top, rgb5(), false);
+			globalDirty.mark(left, top, right, bottom);
+			++m_resolves;
+		});
 }
 
-void GxGpuDrawTargets::select(const GxGpuVramCopyRect& bounds, GxGpuVramCopyRect& globalDirty) {
+void GxGpuDrawTargets::select(const GxGpuVramCopyRect& bounds, GxGpuDirtyRegions& globalDirty) {
 	if (!enabled()) return;
 	++m_selections;
 	for (size_t i = 0; i < m_entries.size(); ++i) {
@@ -98,58 +98,69 @@ void GxGpuDrawTargets::select(const GxGpuVramCopyRect& bounds, GxGpuVramCopyRect
 	resolve(region, globalDirty, true);
 	m_current = !m_entries[0].valid ? 0 : (!m_entries[1].valid ? 1 : (m_entries[0].used <= m_entries[1].used ? 0 : 1));
 	auto& entry = m_entries[m_current];
-	materialize(entry, globalDirty);
+	materialize(entry, entry.bounds, globalDirty);
 	const i32 width = region.right - region.left, height = region.bottom - region.top;
 	if (entry.color.width != width || entry.color.height != height) allocate(entry, width, height);
 	entry.bounds = region; entry.valid = true; entry.used = ++m_clock;
-	entry.dirty = {}; entry.sampleDirty = region;
+	entry.dirty.clear(); entry.sampleDirty.clear();
+	entry.sampleDirty.mark(region.left, region.top, region.right, region.bottom);
 	copy(*m_base, entry.framebuffer, region.left, region.top, 0, 0, width, height, false, rgb5());
 	++m_revision;
 }
 
 void GxGpuDrawTargets::markDrawn(const GxGpuVramCopyRect& bounds) {
 	auto& entry = m_entries[m_current];
-	includeGxGpuVramCopyRect(entry.dirty, bounds);
-	includeGxGpuVramCopyRect(entry.sampleDirty, bounds);
+	entry.dirty.mark(bounds.left, bounds.top, bounds.right, bounds.bottom);
+	entry.sampleDirty.mark(bounds.left, bounds.top, bounds.right, bounds.bottom);
 }
 
 void GxGpuDrawTargets::synchronizeDestination(const GxGpuVramCopyRect& bounds) {
 	auto& entry = m_entries[m_current];
-	if (!gxGpuPhysicalVramRectsOverlap(bounds, entry.sampleDirty)) return;
-	const auto& dirty = entry.sampleDirty;
-	const i32 x = dirty.left - entry.bounds.left, y = dirty.top - entry.bounds.top;
-	copy(entry.color, entry.sampleFramebuffer,
-		x, y, x, y, dirty.right - dirty.left, dirty.bottom - dirty.top, rgb5(), rgb5());
-	entry.sampleDirty = {};
-	++m_sampleCopies;
+	entry.sampleDirty.consume(bounds.left, bounds.top, bounds.right, bounds.bottom,
+		[&](i32 left, i32 top, i32 right, i32 bottom) {
+			const i32 x = left - entry.bounds.left, y = top - entry.bounds.top;
+			copy(entry.color, entry.sampleFramebuffer,
+				x, y, x, y, right - left, bottom - top, rgb5(), rgb5());
+			++m_sampleCopies;
+		});
 }
 
-void GxGpuDrawTargets::resolve(const GxGpuVramCopyRect& bounds, GxGpuVramCopyRect& globalDirty, bool invalidate) {
+void GxGpuDrawTargets::resolve(const GxGpuVramCopyRect& bounds, GxGpuDirtyRegions& globalDirty, bool invalidate) {
 	if (!enabled()) return;
 	for (auto& entry : m_entries) if (entry.valid && gxGpuPhysicalVramRectsOverlap(entry.bounds, bounds)) {
-		materialize(entry, globalDirty);
+		materialize(entry, invalidate ? entry.bounds : bounds, globalDirty);
 		if (invalidate) { entry.valid = false; ++m_revision; }
 	}
 }
 
 void GxGpuDrawTargets::resolveLogical(u32 x, u32 y, u32 width, u32 height, u32 yAddressWord,
-	GxGpuVramCopyRect& globalDirty, bool invalidate) {
+	GxGpuDirtyRegions& globalDirty, bool invalidate) {
 	if (!enabled()) return;
-	for (auto& entry : m_entries) if (entry.valid && gxGpuVramLogicalAreaOverlapsBounds(x, y, width, height,
-		entry.bounds.left, entry.bounds.top, entry.bounds.right, entry.bounds.bottom,
-		yAddressWord, static_cast<u32>(m_base->height - 1))) {
-		materialize(entry, globalDirty);
-		if (invalidate) { entry.valid = false; ++m_revision; }
+	const u32 rowMask = static_cast<u32>(m_base->height - 1);
+	const u32 yMask = gxGpuVramYAddressMask(yAddressWord) & rowMask;
+	u32 row = y & yMask;
+	while (height != 0u) {
+		const u32 rows = gxGpuVramWrappedHeight(row, height, yAddressWord, rowMask);
+		u32 column = x & (GX_GPU_VRAM_X_ADDRESS_PERIOD - 1u), remaining = width;
+		while (remaining != 0u) {
+			const u32 columns = gxGpuVramWrappedWidth(column, remaining);
+			resolve({static_cast<i32>(column), static_cast<i32>(row),
+				static_cast<i32>(column + columns), static_cast<i32>(row + rows)}, globalDirty, invalidate);
+			column = (column + columns) & (GX_GPU_VRAM_X_ADDRESS_PERIOD - 1u);
+			remaining -= columns;
+		}
+		row = (row + rows) & yMask;
+		height -= rows;
 	}
 }
 
-void GxGpuDrawTargets::resolveAll(GxGpuVramCopyRect& globalDirty) {
+void GxGpuDrawTargets::resolveAll(GxGpuDirtyRegions& globalDirty) {
 	if (!enabled()) return;
-	for (auto& entry : m_entries) if (entry.valid) materialize(entry, globalDirty);
+	for (auto& entry : m_entries) if (entry.valid) materialize(entry, entry.bounds, globalDirty);
 }
 
 void GxGpuDrawTargets::replace() {
-	for (auto& entry : m_entries) { entry.valid = false; entry.dirty = {}; entry.sampleDirty = {}; }
+	for (auto& entry : m_entries) { entry.valid = false; entry.dirty.clear(); entry.sampleDirty.clear(); }
 	++m_revision;
 }
 

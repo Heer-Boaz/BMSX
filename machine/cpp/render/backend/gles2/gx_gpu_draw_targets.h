@@ -2,6 +2,7 @@
 
 #include "render/backend/gles2/backend.h"
 #include "render/backend/gles2/gx_gpu_vram_rect.h"
+#include "render/backend/gx_gpu_dirty_regions.h"
 
 namespace bmsx {
 
@@ -16,13 +17,13 @@ public:
 	bool rgb5() const { return m_mode == GxGpuDrawTargetMode::SmallRgb5 || hardwareBlending(); }
 	bool hardwareBlending() const { return m_mode == GxGpuDrawTargetMode::SmallRgb5Mali; }
 	void bindHardwareBlend(u32 mode);
-	void select(const GxGpuVramCopyRect& bounds, GxGpuVramCopyRect& globalDirty);
+	void select(const GxGpuVramCopyRect& bounds, GxGpuDirtyRegions& globalDirty);
 	void markDrawn(const GxGpuVramCopyRect& bounds);
 	void synchronizeDestination(const GxGpuVramCopyRect& bounds);
-	void resolve(const GxGpuVramCopyRect& bounds, GxGpuVramCopyRect& globalDirty, bool invalidate);
+	void resolve(const GxGpuVramCopyRect& bounds, GxGpuDirtyRegions& globalDirty, bool invalidate);
 	void resolveLogical(u32 x, u32 y, u32 width, u32 height, u32 yAddressWord,
-		GxGpuVramCopyRect& globalDirty, bool invalidate);
-	void resolveAll(GxGpuVramCopyRect& globalDirty);
+		GxGpuDirtyRegions& globalDirty, bool invalidate);
+	void resolveAll(GxGpuDirtyRegions& globalDirty);
 	void replace();
 	void bind();
 	const GxGpuVramCopyRect& bounds() const;
@@ -37,13 +38,14 @@ private:
 	struct Entry {
 		GLES2Texture color{}, sample{};
 		GLuint framebuffer = 0, sampleFramebuffer = 0;
-		GxGpuVramCopyRect bounds{}, dirty{}, sampleDirty{};
+		GxGpuVramCopyRect bounds{};
+		GxGpuDirtyRegions dirty, sampleDirty;
 		u64 used = 0;
 		bool valid = false;
 	};
 	struct CopyProgram { GLuint id = 0; GLint region = -1; };
 	void allocate(Entry& entry, i32 width, i32 height);
-	void materialize(Entry& entry, GxGpuVramCopyRect& globalDirty);
+	void materialize(Entry& entry, const GxGpuVramCopyRect& requested, GxGpuDirtyRegions& globalDirty);
 	void copy(GLES2Texture& source, GLuint framebuffer,
 		i32 sourceX, i32 sourceY, i32 targetX, i32 targetY, i32 width, i32 height,
 		bool sourceRgb5, bool targetRgb5);
