@@ -17,12 +17,15 @@ const { values, positionals } = parseArgs({ allowPositionals: true, options: {
 	native: { type: 'string' }, interpreter: { type: 'string' }, output: { type: 'string' },
 	filter: { type: 'string', default: '.*' }, 'opt-level': { type: 'string', default: '3' },
 	grants: { type: 'string', default: '256,4096' },
+	'warmup-passes': { type: 'string', default: '0' },
 } });
 assert.ok(positionals.length <= 2, 'Expected [iterations] [rounds]');
 assert.equal(values.native === undefined, values.interpreter === undefined, 'Supply both actual C++ executables, or neither');
 assert.ok(values['opt-level'] === '0' || values['opt-level'] === '3', 'Expected --opt-level 0 or 3');
 const iterations = Number(positionals[0] ?? 100000), rounds = Number(positionals[1] ?? 3);
+const warmupPasses = Number(values['warmup-passes']);
 assert.ok(iterations >= 32 && rounds > 0 && iterations === Math.trunc(iterations) && rounds === Math.trunc(rounds));
+assert.ok(warmupPasses >= 0 && warmupPasses === Math.trunc(warmupPasses));
 const grants = values.grants.split(',').map(Number);
 assert.ok(grants.length > 0 && grants.every(grant => grant > 0 && grant <= 0x7fffffff && grant === Math.trunc(grant)));
 const optLevel = values['opt-level'] === '0' ? 0 : 3;
@@ -45,7 +48,7 @@ try {
 			for (let round = 0; round < rounds; ++round) {
 				const order = round % 2 === 0 ? backends : [...backends].reverse();
 				for (const backend of order) {
-					const args = [romPath, statePath, String(grant), String(workload.wordCount)];
+					const args = [romPath, statePath, String(grant), String(workload.wordCount), String(warmupPasses)];
 					const command = backend.startsWith('cpp-')
 						? resolve(backend === 'cpp-native' ? values.native : values.interpreter) : process.execPath;
 					if (!backend.startsWith('cpp-')) args.unshift(...process.execArgv, runner, backend);
@@ -54,6 +57,7 @@ try {
 					assert.equal(child.status, 0, `${workload.name}/${backend}: ${child.stderr}`);
 					const result = JSON.parse(child.stdout);
 					assert.equal(result.backend, backend, 'The C++ reference must be a real native-OFF binary');
+					assert.equal(result.warmupPasses, warmupPasses);
 					const bytes = readFileSync(statePath);
 					const state = decodeRuntimeSaveState(bytes, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
 					const execution = { activeCycles: result.activeCycles, remainingCycles: result.remainingCycles,
@@ -64,7 +68,7 @@ try {
 						assert.ok(isDeepStrictEqual(state, expectedState), `${workload.name}/${backend}: entire runtime state, including RAM, must match`);
 					}
 					const record = { workload: workload.name, iterations: workload.iterations, wordCount: workload.wordCount,
-						optLevel, round, grant, cache: 'cold-bmsx', modelHz: PSX_MACHINE_SPEC.cpuFreqHz,
+						optLevel, round, grant, cache: warmupPasses === 0 ? 'cold-bmsx' : 'warm-bmsx', modelHz: PSX_MACHINE_SPEC.cpuFreqHz,
 						romSha256, stateSha256: createHash('sha256').update(bytes).digest('hex'), ...result };
 					console.log(JSON.stringify(record));
 					// Keep ROMs/results, not hundreds of complete RAM/device snapshots.
