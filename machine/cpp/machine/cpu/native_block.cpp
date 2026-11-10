@@ -5,6 +5,7 @@
 #include <algorithm>
 
 #include "machine/cpu/execution_image.h"
+#include "machine/common/numeric.h"
 
 namespace bmsx {
 
@@ -50,15 +51,19 @@ std::unique_ptr<NativeBlock> NativeBlock::compile(
 			if (slow == NativeBlockExit::ReadField || slow == NativeBlockExit::WriteField
 				|| slow == NativeBlockExit::ReadIndex || slow == NativeBlockExit::WriteIndex) {
 				exit.tableCacheSlot = instruction.tableCacheSlot;
-			} else if (slow == NativeBlockExit::ReadMemory || slow == NativeBlockExit::WriteMemory) {
-				exit.displaced = op == OpCode::LOAD_MEM_D || op == OpCode::STORE_MEM_D;
+			} else if (slow == NativeBlockExit::ReadMemory || slow == NativeBlockExit::WriteMemory || slow == NativeBlockExit::WriteWords) {
+				exit.displaced = op == OpCode::LOAD_MEM_D || op == OpCode::STORE_MEM_D || op == OpCode::STORE_MEM_WORDS_D;
 				exit.displacement = instruction.disp;
 			}
 		}
+		// The checked exit owns this instruction's preflight and surcharge. All
+		// following exits, and admission to the complete body, include success.
+		if (slow == NativeBlockExit::WriteWords) terminal.cycles += ceilDiv4(instruction.c);
 		if (op == OpCode::VARARG && instruction.b == 0) terminal.registerTop = 0;
 		else if (op == OpCode::VARARG || op == OpCode::LOADNIL) {
 			if (instruction.b != 0) terminal.registerTop = std::max(terminal.registerTop, static_cast<int>(instruction.a) + instruction.b);
 		} else if (!nativeBlockEndsBlock(instruction.op, instruction.b) && slow != NativeBlockExit::WriteField && slow != NativeBlockExit::WriteMemory
+			&& slow != NativeBlockExit::WriteWords
 			&& slow != NativeBlockExit::WriteIndex && slow != NativeBlockExit::WriteInteger
 			&& op != OpCode::MTC0 && op != OpCode::SETUP && op != OpCode::SETGL && op != OpCode::SETSYS) {
 			terminal.registerTop = std::max(terminal.registerTop, static_cast<int>(instruction.a) + 1);

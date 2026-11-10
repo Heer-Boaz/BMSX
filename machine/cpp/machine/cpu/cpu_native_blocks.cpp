@@ -58,6 +58,7 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 	handlers[static_cast<size_t>(NativeBlockExit::WriteField)] = &CPU::compiledWriteFieldExit;
 	handlers[static_cast<size_t>(NativeBlockExit::ReadMemory)] = &CPU::compiledReadMemoryExit;
 	handlers[static_cast<size_t>(NativeBlockExit::WriteMemory)] = &CPU::compiledWriteMemoryExit;
+	handlers[static_cast<size_t>(NativeBlockExit::WriteWords)] = &CPU::compiledWriteWordsExit;
 	handlers[static_cast<size_t>(NativeBlockExit::ReadIndex)] = &CPU::compiledReadIndexExit;
 	handlers[static_cast<size_t>(NativeBlockExit::WriteIndex)] = &CPU::compiledWriteIndexExit;
 	handlers[static_cast<size_t>(NativeBlockExit::ReadInteger)] = &CPU::compiledReadIntegerExit;

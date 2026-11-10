@@ -567,22 +567,8 @@ DISPATCH_LABEL(STORE_MEM_D) {
 }
 
 DISPATCH_LABEL(STORE_MEM_WORDS_D) {
-	const int a = decoded->a;
-	const int b = decoded->b;
-	const int c = decoded->c;
-	const int disp = decoded->disp;
-	const uint32_t addr = toU32(REG(b)) + (static_cast<uint32_t>(disp) << 2);
-	if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(MemoryAccessKind::Word)]) != 0u) {
-		enterSynchronousAddressException(FRAME, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);
-		DISPATCH_CONTINUE();
-	}
-	const uint32_t blockedAddress = m_memory.firstBlockedMappedWordWrite(addr, c);
-	if (blockedAddress != NO_BLOCKED_MAPPED_WRITE) {
-		blockMappedWrite(FRAME, blockedAddress);
-		DISPATCH_BLOCKED();
-	}
-	CYCLES_ADD(ceilDiv4(c));
-	writeMappedWordSequence(FRAME, addr, a, c);
+	const u32 address = toU32(REG(decoded->b)) + (static_cast<u32>(decoded->disp) << 2u);
+	if (!executeWordStores(FRAME, address, decoded->a, decoded->c)) DISPATCH_BLOCKED();
 	DISPATCH_CONTINUE();
 }
 
@@ -599,21 +585,8 @@ DISPATCH_LABEL(STORE_MEM) {
 }
 
 DISPATCH_LABEL(STORE_MEM_WORDS) {
-	const int a = decoded->a;
-	const int c = decoded->c;
-	const int rkB = decoded->b;
-	const uint32_t addr = toU32(readRK(IMAGE, registers, rkB));
-	if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(MemoryAccessKind::Word)]) != 0u) {
-		enterSynchronousAddressException(FRAME, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);
-		DISPATCH_CONTINUE();
-	}
-	const uint32_t blockedAddress = m_memory.firstBlockedMappedWordWrite(addr, c);
-	if (blockedAddress != NO_BLOCKED_MAPPED_WRITE) {
-		blockMappedWrite(FRAME, blockedAddress);
-		DISPATCH_BLOCKED();
-	}
-	CYCLES_ADD(ceilDiv4(c));
-	writeMappedWordSequence(FRAME, addr, a, c);
+	const u32 address = toU32(readRK(IMAGE, registers, decoded->b));
+	if (!executeWordStores(FRAME, address, decoded->a, decoded->c)) DISPATCH_BLOCKED();
 	DISPATCH_CONTINUE();
 }
 

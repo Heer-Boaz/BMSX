@@ -2,6 +2,7 @@
 
 #include <bit>
 
+#include "common/endian.h"
 #include "machine/cpu/execution_image.h"
 #include "machine/memory/memory.h"
 #include "spec/blua32/memory_access_kind.h"
@@ -9,6 +10,63 @@
 #include "spec/bmsx/memory_map.h"
 
 namespace bmsx {
+
+namespace {
+// Called only after the complete span is admitted as unwatched, backed RAM.
+// One pure native call consumes the Value bank without per-word bus dispatch.
+void storeRamRegisterWords(u8* destination, const Value* source, u32 count) noexcept {
+	for (u32 word = 0; word < count; ++word) writeLE32(destination + word * 4u, toU32(source[word]));
+}
+}
+
+void NativeBlockCompiler::emitWordStores(const DecodedInstruction& instruction, const NativeBlockExitSite* exit) {
+	convertWord(instruction.b);
+	SlowPath slow; slow.exit = exit; slow.registers = registerSnapshot();
+	if (exit->displaced) sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R0, 0,
+		SLJIT_IMM, static_cast<u32>(instruction.disp) << 2u);
+	sljit_emit_op2(m_compiler, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, 3);
+	slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0);
+	const u32 count = instruction.c, width = count * 4u;
+	if (width > m_memory.ramByteCount()) {
+		slow.jumps[slow.count++] = sljit_emit_jump(m_compiler, SLJIT_JUMP);
+		m_slowPaths.push_back(slow);
+		return;
+	}
+	if (count != 0u) {
+		sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_S2, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_BASE);
+		slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_LESS | SLJIT_32, SLJIT_S2, 0,
+			SLJIT_IMM, IO_SLOT_COUNT * IO_WORD_SIZE);
+		slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_GREATER | SLJIT_32, SLJIT_S2, 0,
+			SLJIT_IMM, static_cast<sljit_sw>(m_memory.ramByteCount() - width));
+		sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_S2, 0, SLJIT_S2, 0);
+		// Inspect every touched watch group before the first store, including
+		// middle pages. A watched span leaves the native frame before acting.
+		sljit_emit_op2(m_compiler, SLJIT_LSHR, SLJIT_R1, 0, SLJIT_S2, 0, SLJIT_IMM, MAPPED_PAGE_BYTE_SHIFT);
+		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R2, 0, SLJIT_S2, 0, SLJIT_IMM, width - 4u);
+		sljit_emit_op2(m_compiler, SLJIT_LSHR, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, MAPPED_PAGE_BYTE_SHIFT);
+		auto* watch = sljit_emit_label(m_compiler);
+		sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R1),
+			reinterpret_cast<sljit_sw>(m_memory.ramWriteWatches().groupData()));
+		slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0);
+		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, 1);
+		sljit_set_label(sljit_emit_cmp(m_compiler, SLJIT_LESS_EQUAL, SLJIT_R1, 0, SLJIT_R2, 0), watch);
+		// Only the source range is observed by this non-allocating call. Keep
+		// other definitions local, and retain clean cached sources afterwards.
+		for (int slot = 0; slot < m_registerCount; ++slot) {
+			auto& entry = m_registers[slot];
+			if (!entry.dirty || entry.guest < instruction.a || entry.guest >= instruction.a + instruction.c) continue;
+			sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_MEM1(SLJIT_S0), entry.guest * sizeof(Value), cachedFloatRegister(slot), 0);
+			entry.dirty = false;
+		}
+		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R0, 0, SLJIT_S2, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_memory.ramData()));
+		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R1, 0, SLJIT_S0, 0, SLJIT_IMM, instruction.a * sizeof(Value));
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_IMM, count);
+		emitCallSpills(false);
+		sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS3V(P, P, 32), SLJIT_IMM, SLJIT_FUNC_ADDR(&storeRamRegisterWords));
+		emitCallSpills(true);
+	}
+	m_slowPaths.push_back(slow);
+}
 
 void NativeBlockCompiler::emitMemory(const DecodedInstruction& instruction, const NativeBlockExitSite* exit) {
 	const bool load = exit->exit == NativeBlockExit::ReadMemory;

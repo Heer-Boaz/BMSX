@@ -2585,6 +2585,29 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
+	private executeWordStores(frame: CallFrame, addr: number, valueBase: number, valueCount: number): void {
+		if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[MemoryAccessKind.Word]) !== 0) {
+			this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);
+			return;
+		}
+		const blockedAddress = this.memory.firstBlockedMappedWordWrite(addr, valueCount);
+		if (blockedAddress !== NO_BLOCKED_MAPPED_WRITE) {
+			this.blockMappedWrite(frame, blockedAddress);
+			return;
+		}
+		this.charge(ceilDiv4(valueCount));
+		const faultSequence = this.memory.readBusFaultSequence();
+		let writeAddr = addr;
+		for (let offset = 0; offset < valueCount; offset += 1) {
+			this.memory.writeMappedWord(writeAddr, frame.registers.getNumber(valueBase + offset) >>> 0);
+			if (this.memory.readBusFaultSequence() !== faultSequence) {
+				this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
+				return;
+			}
+			writeAddr = (writeAddr + 4) >>> 0;
+		}
+	}
+
 	private executeCompiledBlock(frame: CallFrame, page: DecodedInstructionPage, word: number, targetDepth: number): void {
 		let cache = page.compiledBlocks!;
 		if (page.dispatchOps[word] === DecodedDispatchOp.CompiledWarm) {
@@ -2699,9 +2722,11 @@ export class CPU implements MappedPageInvalidator {
 					this.setRegisterTableFast(frame, registers, exit.exitA, this.createTable(exit.exitB, exit.exitC));
 					break;
 				case CompiledBlockExit.ReadMemory:
-				case CompiledBlockExit.WriteMemory: {
+				case CompiledBlockExit.WriteMemory:
+				case CompiledBlockExit.WriteWords: {
 					const address = ((this.readRKNumber(frame, exit.exitB) >>> 0) + (exit.displaced ? exit.displacement * 4 : 0)) >>> 0;
 					if (exit.exit === CompiledBlockExit.ReadMemory) this.executeMemoryLoad(frame, exit.exitA, exit.exitC, address);
+					else if (exit.exit === CompiledBlockExit.WriteWords) this.executeWordStores(frame, address, exit.exitA, exit.exitC);
 					else this.executeMemoryStore(frame, exit.exitA, exit.exitC, address);
 					return;
 				}
@@ -3315,21 +3340,10 @@ export class CPU implements MappedPageInvalidator {
 				case OpCode.STORE_MEM_WORDS_D:
 				case OpCode.STORE_MEM_WORDS: {
 					const b = page.b[pageOffset];
-					const c = page.c[pageOffset];
-					const addr = op === OpCode.STORE_MEM_WORDS_D
+					const address = op === OpCode.STORE_MEM_WORDS_D
 						? ((registers.getNumber(b) >>> 0) + (page.disp[pageOffset] << 2)) >>> 0
 						: this.readRKNumber(frame, b) >>> 0;
-					if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[MemoryAccessKind.Word]) !== 0) {
-						this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);
-						return;
-					}
-					const blockedAddress = this.memory.firstBlockedMappedWordWrite(addr, c);
-					if (blockedAddress !== NO_BLOCKED_MAPPED_WRITE) {
-						this.blockMappedWrite(frame, blockedAddress);
-						return;
-					}
-					this.charge(ceilDiv4(c));
-					this.writeMappedWordSequence(frame, addr, a, c);
+					this.executeWordStores(frame, address, a, page.c[pageOffset]);
 					return;
 				}
 		}
@@ -3693,18 +3707,6 @@ export class CPU implements MappedPageInvalidator {
 		this.bumpRegisterTop(frame, registerIndex);
 	}
 
-	private writeMappedWordSequence(frame: CallFrame, addr: number, valueBase: number, valueCount: number): void {
-		const faultSequence = this.memory.readBusFaultSequence();
-		let writeAddr = addr;
-		for (let offset = 0; offset < valueCount; offset += 1) {
-			this.memory.writeMappedWord(writeAddr, frame.registers.getNumber(valueBase + offset) >>> 0);
-			if (this.memory.readBusFaultSequence() !== faultSequence) {
-				this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
-				return;
-			}
-			writeAddr = (writeAddr + 4) >>> 0;
-		}
-	}
 
 	private readRKEquals(frame: CallFrame, left: number, right: number): boolean {
 		const image = frame.executionImage;

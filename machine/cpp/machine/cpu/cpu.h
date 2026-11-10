@@ -460,7 +460,7 @@ private:
 	void writeReturnValuesFromBuiltinResults(CallFrame& frame, int base, int count, const BuiltinResults& values);
 	void setRegister(CallFrame& frame, int index, Value value);
 	Value* ensureRegisterCapacity(CallFrame& frame, int index);
-	void writeMappedWordSequence(CallFrame& frame, uint32_t addr, int valueBase, int valueCount);
+	bool executeWordStores(CallFrame& frame, u32 address, int source, int count);
 	void executeMemoryLoad(CallFrame& frame, int destination, MemoryAccessKind kind, u32 address);
 	bool executeMemoryStore(CallFrame& frame, int source, MemoryAccessKind kind, u32 address);
 	static const Value& readRK(Blua32ExecutionImage& image, Value* registers, int rk) {
@@ -500,6 +500,7 @@ private:
 	static NativeBlockTransition compiledWriteIntegerExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
 	static NativeBlockTransition compiledReadMemoryExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
 	static NativeBlockTransition compiledWriteMemoryExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
+	static NativeBlockTransition compiledWriteWordsExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
 	size_t m_nativeCodeBytes = 0;
 #endif
 	void clearHaltAfterAcceptedInterrupt();

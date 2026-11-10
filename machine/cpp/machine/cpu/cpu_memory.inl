@@ -50,6 +50,29 @@ inline bool CPU::executeMemoryStore(CallFrame& frame, int source, MemoryAccessKi
 	return true;
 }
 
+inline bool CPU::executeWordStores(CallFrame& frame, u32 address, int source, int count) {
+	if ((address & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(MemoryAccessKind::Word)]) != 0u) {
+		enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, address);
+		return true;
+	}
+	const u32 blockedAddress = m_memory.firstBlockedMappedWordWrite(address, count);
+	if (blockedAddress != NO_BLOCKED_MAPPED_WRITE) {
+		blockMappedWrite(frame, blockedAddress);
+		return false;
+	}
+	instructionBudgetRemaining -= ceilDiv4(count);
+	const u32 faultSequence = m_memory.readBusFaultSequence();
+	for (int offset = 0; offset < count; ++offset) {
+		m_memory.writeMappedWord(address, toU32(frame.registers[source + offset]));
+		if (m_memory.readBusFaultSequence() != faultSequence) {
+			enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
+			return true;
+		}
+		address += 4u;
+	}
+	return true;
+}
+
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 NativeBlockTransition CPU::compiledReadMemoryExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit) {
 	const int a = exit->exitA, b = exit->exitB;
@@ -66,6 +89,15 @@ NativeBlockTransition CPU::compiledWriteMemoryExit(CPU* cpu, CallFrame* frame, c
 	const u32 displacement = exit->displaced ? static_cast<u32>(exit->displacement) << 2u : 0u;
 	const u32 address = toU32(readRK(*frame->executionImage, frame->registers, b)) + displacement;
 	cpu->executeMemoryStore(*frame, a, kind, address);
+	return NativeBlockTransition::Redispatch;
+}
+
+NativeBlockTransition CPU::compiledWriteWordsExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit) {
+	const int a = exit->exitA, b = exit->exitB, count = exit->exitC;
+	const u32 displacement = exit->displaced ? static_cast<u32>(exit->displacement) << 2u : 0u;
+	const u32 address = toU32(readRK(*frame->executionImage, frame->registers, b)) + displacement;
+	// A write may retire the source descriptor; no descriptor access follows it.
+	cpu->executeWordStores(*frame, address, a, count);
 	return NativeBlockTransition::Redispatch;
 }
 #endif

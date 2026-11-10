@@ -79,6 +79,7 @@ enum class NativeBlockExit : u8 {
 	Concat,
 	ConcatRange,
 	CreateClosure,
+	WriteWords,
 	Count,
 };
 
@@ -172,6 +173,8 @@ inline constexpr bool nativeBlockSupports(u8 op) {
 		case OpCode::LOAD_MEM_D:
 		case OpCode::STORE_MEM:
 		case OpCode::STORE_MEM_D:
+		case OpCode::STORE_MEM_WORDS:
+		case OpCode::STORE_MEM_WORDS_D:
 			return true;
 		default:
 			return false;
@@ -211,6 +214,8 @@ inline constexpr NativeBlockExit nativeBlockSlowExit(u8 op, int field, bool cont
 		case OpCode::LOAD_MEM_D: return NativeBlockExit::ReadMemory;
 		case OpCode::STORE_MEM:
 		case OpCode::STORE_MEM_D: return NativeBlockExit::WriteMemory;
+		case OpCode::STORE_MEM_WORDS:
+		case OpCode::STORE_MEM_WORDS_D: return NativeBlockExit::WriteWords;
 		default: return NativeBlockExit::Continue;
 	}
 }

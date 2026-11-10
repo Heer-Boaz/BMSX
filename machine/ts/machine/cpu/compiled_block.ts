@@ -4,7 +4,8 @@ import { DECODED_PAGE_WORDS, DecodedDispatchOp, type Blua32ExecutionImage, type 
 import { ValueTag, valueFromNumber } from './value';
 import type { ValueSlots } from './value_slots';
 import type { Memory } from '../memory/memory';
-import { emitMemoryAccess } from './compiled_block_memory';
+import { emitMemoryAccess, emitWordStores } from './compiled_block_memory';
+import { ceilDiv4 } from '../common/numeric';
 import { JavaScriptRegisterCache } from './compiled_block_registers';
 import { emitComparison } from './compiled_block_compare';
 import type { StringPool } from './string_pool';
@@ -51,6 +52,7 @@ export const enum CompiledBlockExit {
 	Concat,
 	ConcatRange,
 	CreateClosure,
+	WriteWords,
 }
 
 const sideExitKinds: (CompiledBlockExit | undefined)[] = [];
@@ -62,6 +64,7 @@ for (const [op, exit] of [
 	[OpCode.SETI, CompiledBlockExit.WriteInteger], [OpCode.LEN, CompiledBlockExit.InvalidLength],
 	[OpCode.LOAD_MEM, CompiledBlockExit.ReadMemory], [OpCode.LOAD_MEM_D, CompiledBlockExit.ReadMemory],
 	[OpCode.STORE_MEM, CompiledBlockExit.WriteMemory], [OpCode.STORE_MEM_D, CompiledBlockExit.WriteMemory],
+	[OpCode.STORE_MEM_WORDS, CompiledBlockExit.WriteWords], [OpCode.STORE_MEM_WORDS_D, CompiledBlockExit.WriteWords],
 	[OpCode.VARARG, CompiledBlockExit.Vararg], [OpCode.SETUP, CompiledBlockExit.WriteUpvalue],
 	[OpCode.LOADKR, CompiledBlockExit.InvalidConstant],
 ] as const) sideExitKinds[op] = exit;
@@ -227,7 +230,8 @@ export function compiledBlockSupports(op: number): boolean {
 		|| compiledContextSupports(op)
 		|| compiledTableSupports(op)
 		|| compiledControlSupports(op)
-		|| op === OpCode.LOAD_MEM || op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM || op === OpCode.STORE_MEM_D;
+		|| op === OpCode.LOAD_MEM || op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM || op === OpCode.STORE_MEM_D
+		|| op === OpCode.STORE_MEM_WORDS || op === OpCode.STORE_MEM_WORDS_D;
 }
 
 export function compiledBlockEndsBlock(op: number, field: number): boolean {
@@ -279,7 +283,8 @@ export function compileJavaScriptBlock(
 		const exitIndex = exits.length;
 		const load = op === OpCode.LOAD_MEM || op === OpCode.LOAD_MEM_D;
 		const store = op === OpCode.STORE_MEM || op === OpCode.STORE_MEM_D;
-		const displaced = op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM_D;
+		const words = op === OpCode.STORE_MEM_WORDS || op === OpCode.STORE_MEM_WORDS_D;
+		const displaced = op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM_D || op === OpCode.STORE_MEM_WORDS_D;
 		if (op === OpCode.SELF) registerTop = Math.max(registerTop, page.a[word] + 2);
 		const control = compiledControlSupports(op);
 		const sideExit = control && controlAccess && cop0FieldImplemented(page.b[word]) ? undefined : sideExitKinds[op];
@@ -299,7 +304,7 @@ export function compileJavaScriptBlock(
 			source.push(emitContext(op, page, word, registers, exitIndex));
 		} else if (compiledTableSupports(op)) {
 			source.push(emitTableOperation(op, page, word, registers, exitIndex));
-		} else if (load || store) {
+		} else if (load || store || words) {
 			memoryAccess = true;
 			memoryReads ||= load;
 			if (load && !numberLocal) {
@@ -308,7 +313,8 @@ export function compileJavaScriptBlock(
 			}
 			const base = registers.numberOperand(page.b[word]);
 			const address = displaced ? `(((${base})>>>0)+${page.disp[word] * 4})>>>0` : `((${base})>>>0)`;
-			source.push(emitMemoryAccess(page, word, address, registers.exit(exitIndex), memory,
+			if (words) source.push(emitWordStores(page, word, address, registers.exit(exitIndex), memory, registers));
+			else source.push(emitMemoryAccess(page, word, address, registers.exit(exitIndex), memory,
 				registers.numberOperand(page.a[word])));
 			if (load) source.push(registers.writeNumber(page.a[word], 'v'));
 		} else if (numberEmitter !== undefined) {
@@ -316,10 +322,12 @@ export function compileJavaScriptBlock(
 		} else {
 			source.push(emitters[op]!(page, word, image, registers, exitIndex));
 		}
+		// The checked exit precedes this instruction's readiness surcharge.
+		if (words) cycles += ceilDiv4(page.c[word]);
 		if (op === OpCode.VARARG && page.b[word] === 0) { registerTop = 0; resetsRegisterTop = true; }
 		else if (op === OpCode.VARARG || op === OpCode.LOADNIL) {
 			if (page.b[word] !== 0) registerTop = Math.max(registerTop, page.a[word] + page.b[word]);
-		} else if (!compiledBlockEndsBlock(op, page.b[word]) && op !== OpCode.SETFIELD && op !== OpCode.SETT && op !== OpCode.SETI && !store
+		} else if (!compiledBlockEndsBlock(op, page.b[word]) && op !== OpCode.SETFIELD && op !== OpCode.SETT && op !== OpCode.SETI && !store && !words
 			&& op !== OpCode.MTC0 && op !== OpCode.SETUP && op !== OpCode.SETGL && op !== OpCode.SETSYS) registerTop = Math.max(registerTop, page.a[word] + 1);
 	}
 	source.push(registers.writeBack());

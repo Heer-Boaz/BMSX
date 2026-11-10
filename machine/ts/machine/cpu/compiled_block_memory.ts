@@ -5,9 +5,23 @@ import { OpCode } from '../../spec/blua32/opcode';
 import { MAPPED_PAGE_BYTE_SHIFT } from '../memory/mapped_page';
 import type { DecodedInstructionPage } from './execution_image';
 import type { Memory } from '../memory/memory';
+import type { JavaScriptRegisterCache } from './compiled_block_registers';
 
 const viewMethods = ['Uint32', 'Uint8', 'Uint16', 'Uint32', 'Float32', 'Float64'] as const;
 const widths = [4, 1, 2, 4, 4, 8] as const;
+
+/** The entire counted span must be plain, unwatched RAM before any write. */
+export function emitWordStores(page: DecodedInstructionPage, word: number, address: string, exit: string,
+	memory: Memory, registers: JavaScriptRegisterCache): string {
+	const count = page.c[word], source = page.a[word];
+	if (count === 0) return `{const a=${address}; if((a&3)!==0) ${exit}}`;
+	return `{const a=${address},o=(a-${RAM_BASE})>>>0;
+if((a&3)!==0||o<${IO_SLOT_COUNT * IO_WORD_SIZE}||o>${memory.ramByteCount() - count * 4}) ${exit}
+const end=(o+${count * 4 - 4})>>>${MAPPED_PAGE_BYTE_SHIFT};
+for(let p=o>>>${MAPPED_PAGE_BYTE_SHIFT};p<=end;++p) if(g[p]!==0) ${exit}
+${registers.publishRange(source, source + count)}
+for(let i=0;i<${count};++i) m.setUint32(o+i*4,r.getNumber(${source}+i)>>>0,true);}`;
+}
 
 function emitRomStorageRead(storage: string, read: string, width: number, exit: string): string {
 	return `const d=${storage}.view; if(o+${width}>d.byteLength) ${exit} ${read}`;

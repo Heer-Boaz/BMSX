@@ -31,6 +31,7 @@ private:
 	void emitUpvalue(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
 	void emitVararg(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
 	void emitMemory(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
+	void emitWordStores(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
 	void emitScalarLoad(MemoryAccessKind kind, sljit_s32 alignment);
 	void emitScalarStore(MemoryAccessKind kind, int source);
 	void emitReadMappings();

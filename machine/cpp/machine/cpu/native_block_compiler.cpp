@@ -28,10 +28,11 @@ NativeBlockCompiler::NativeBlockCompiler(const Value* constants, const NativeBlo
 			|| slow == NativeBlockExit::ReadInteger || slow == NativeBlockExit::WriteInteger || slow == NativeBlockExit::InvalidLength
 			|| slow == NativeBlockExit::WriteUpvalue
 			|| slow == NativeBlockExit::Vararg || slow == NativeBlockExit::InvalidConstant
-			|| slow == NativeBlockExit::WriteMemory
+			|| slow == NativeBlockExit::WriteMemory || slow == NativeBlockExit::WriteWords
 			|| (slow == NativeBlockExit::ReadMemory && instruction.c != static_cast<i16>(MemoryAccessKind::U8));
 		readMappings += slow == NativeBlockExit::ReadMemory;
 		calls |= op == OpCode::MOD || op == OpCode::FLOORDIV || op == OpCode::POW
+			|| (slow == NativeBlockExit::WriteWords && (instruction.b >= 0 || instruction.c != 0))
 			|| (op == OpCode::MTC0 && instruction.b != COP0_EXEC)
 			|| op == OpCode::LEN || op == OpCode::SETI || op == OpCode::SETT || op == OpCode::LOADKR || (op == OpCode::BNOT && instruction.b >= 0)
 			|| ((op == OpCode::BAND || op == OpCode::BOR || op == OpCode::BXOR || op == OpCode::SHL || op == OpCode::SHR)
@@ -176,6 +177,10 @@ void NativeBlockCompiler::emit(const DecodedInstruction& instruction, const Nati
 			return;
 		case OpCode::LEN:
 			emitLength(instruction, slowExit);
+			return;
+		case OpCode::STORE_MEM_WORDS:
+		case OpCode::STORE_MEM_WORDS_D:
+			emitWordStores(instruction, slowExit);
 			return;
 		case OpCode::LOAD_MEM:
 		case OpCode::LOAD_MEM_D:
