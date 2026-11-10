@@ -214,6 +214,157 @@ void residentValuesCrossInternalStringBranches() {
 	require(bytes == 0, "regional resident bindings do not retain an executable allocation");
 }
 
+void segmentEntryPermutationsPreserveRawValuesAndDeadDefinitions() {
+	std::array<DecodedInstruction, 12> decoded{};
+	std::array<NativeBlockInstruction, 12> instructions{};
+	const std::array ops{OpCode::LOADK, OpCode::LOADK, OpCode::LOADK, OpCode::LOADK, OpCode::LOADK, OpCode::JMP,
+		OpCode::MOV, OpCode::MOV, OpCode::MOV, OpCode::MOV, OpCode::ADD, OpCode::JMP};
+	for (size_t index = 0; index < ops.size(); ++index) {
+		decoded[index].op = static_cast<u8>(ops[index]);
+		decoded[index].width = decoded[index].baseCycles = 1;
+		instructions[index] = {&decoded[index], 0x1000u + static_cast<u32>(index) * INSTRUCTION_BYTES};
+	}
+	// r8 has no future use but must still be observable at a short grant.
+	decoded[0].a = 8; decoded[0].bx = 4;
+	for (int index = 0; index < 4; ++index) {
+		decoded[index + 1].a = index; decoded[index + 1].bx = index;
+		decoded[index + 6].a = index + 4;
+	}
+	decoded[5].bx = 0x1018u;
+	decoded[10].a = 9; decoded[10].b = -6; decoded[10].c = -7;
+	decoded[11].bx = 0x2000u;
+	const std::span source(instructions);
+	const std::array plans{NativeBlockSource{source.first(6)}, NativeBlockSource{source.subspan(6)}};
+	const std::array constants{valueFromTag(ValueTag::False, 37), valueTable(cpu.createTable()),
+		valueNumber(-0.0), valueString(cpu.stringPool().intern("register permutation")), valueNumber(73), valueNumber(2), valueNumber(4)};
+	const std::array<std::array<int, 4>, 3> permutations{{{3, 2, 1, 0}, {1, 2, 3, 0}, {2, 0, 3, 1}}};
+	size_t bytes = 0;
+	for (const auto& permutation : permutations) for (bool helper : {false, true}) {
+		for (int index = 0; index < 4; ++index) decoded[index + 6].b = permutation[index];
+		decoded[10].op = static_cast<u8>(helper ? OpCode::POW : OpCode::ADD);
+		auto blocks = NativeBlock::compileRegion(plans, constants.data(), bytes, memory, cpu.stringPool());
+		for (int grant : {1, 6, 7, 12, 100}) {
+			std::array<Value, 10> registers; registers.fill(valueNil());
+			NativeBlockRunState run{.registers = registers.data(), .constants = constants.data(), .remainingCycles = grant};
+			const auto* exit = blocks[0]->run(run);
+			const bool entered = grant > 6;
+			require(exit == &blocks[entered ? 1 : 0]->terminal && run.remainingCycles == grant - (entered ? 12 : 6),
+				"permuted entries preserve exact bounded-segment admission and exit identity");
+			for (int index = 0; index < 4; ++index) {
+				require(registers[index] == constants[index], "entry permutation preserves every raw Value, including at the budget guard");
+				require(registers[index + 4] == (entered ? constants[permutation[index]] : valueNil()),
+					"only admitted segment bodies execute after parallel register moves");
+			}
+			require(registers[8] == constants[4], "liveness does not erase a dead but observable register definition");
+			require(registers[9] == (entered ? valueNumber(helper ? 16 : 6) : valueNil()),
+				"both scratch and saved FP banks reconcile joins across a native helper");
+		}
+		// Every segment is independently enterable after a semantic helper.
+		std::array<Value, 10> registers; registers.fill(valueNil());
+		for (int index = 0; index < 4; ++index) registers[index] = constants[3 - index];
+		NativeBlockRunState run{.registers = registers.data(), .constants = constants.data(), .remainingCycles = 1};
+		blocks[1]->run(run);
+		for (int index = 0; index < 4; ++index) require(registers[index + 4] == constants[3 - permutation[index]],
+			"external entry reloads the target segment map rather than the previous predecessor's values");
+	}
+	require(bytes == 0, "per-segment register plans do not retain executable storage");
+}
+
+void diamondBackedgesPreserveFullStateFromEveryEntry() {
+	const std::array ops{OpCode::MOV, OpCode::MOV, OpCode::MOV, OpCode::MOV, OpCode::JMPIF,
+		OpCode::MOV, OpCode::MOV, OpCode::LOADK, OpCode::MOV, OpCode::JMP,
+		OpCode::MOV, OpCode::MOV, OpCode::LOADK, OpCode::MOV, OpCode::JMP,
+		OpCode::MOV, OpCode::MOV, OpCode::ADD,
+		OpCode::MOV, OpCode::MOV, OpCode::NOT, OpCode::JMPIF,
+		OpCode::LOADK, OpCode::MOV, OpCode::JMP};
+	const std::array<std::array<i16, 3>, 25> operands{{
+		{4, 0, 0}, {5, 1, 0}, {6, 2, 0}, {7, 3, 0}, {10, 0, 0},
+		{0, 5, 0}, {2, 7, 0}, {9, 0, 0}, {11, 3, 0}, {0, 0, 0},
+		{1, 4, 0}, {3, 6, 0}, {9, 0, 0}, {11, 0, 0}, {0, 0, 0},
+		{4, 3, 0}, {6, 1, 0}, {13, -1, -2},
+		{5, 2, 0}, {7, 0, 0}, {10, 10, 0}, {12, 0, 0},
+		{9, 0, 0}, {14, 11, 0}, {0, 0, 0},
+	}};
+	std::array<DecodedInstruction, 25> decoded{};
+	std::array<NativeBlockInstruction, 25> instructions{};
+	for (size_t index = 0; index < ops.size(); ++index) {
+		auto& instruction = decoded[index];
+		instruction.op = static_cast<u8>(ops[index]);
+		instruction.width = instruction.baseCycles = 1;
+		instruction.a = operands[index][0]; instruction.b = operands[index][1]; instruction.c = operands[index][2];
+		instructions[index] = {&instruction, 0x1000u + static_cast<u32>(index) * INSTRUCTION_BYTES};
+	}
+	decoded[4].bx = instructions[10].pc;
+	decoded[7].bx = 2; decoded[12].bx = 3; decoded[22].bx = 4;
+	decoded[9].bx = decoded[14].bx = instructions[15].pc;
+	decoded[21].bx = instructions[0].pc;
+	decoded[24].bx = 0x2000u;
+	const std::span source(instructions);
+	const std::array plans{NativeBlockSource{source.first(5)}, NativeBlockSource{source.subspan(5, 5)},
+		NativeBlockSource{source.subspan(10, 5)}, NativeBlockSource{source.subspan(15, 3), nullptr, true},
+		NativeBlockSource{source.subspan(18, 4)}, NativeBlockSource{source.subspan(22)}};
+	const std::array constants{valueNumber(2), valueNumber(3), valueFromTag(ValueTag::False, 57),
+		valueTable(cpu.createTable()), valueNumber(-0.0), valueString(cpu.stringPool().intern("diamond register"))};
+	size_t bytes = 0;
+	for (const bool helper : {false, true}) for (const bool bypassHelper : {false, true}) {
+		decoded[17].op = static_cast<u8>(helper ? OpCode::POW : OpCode::ADD);
+		// A forward branch directly into the inherited continuation cannot
+		// borrow the values or dirty state of its linear helper predecessor.
+		decoded[9].bx = instructions[bypassHelper ? 18 : 15].pc;
+		auto blocks = NativeBlock::compileRegion(plans, constants.data(), bytes, memory, cpu.stringPool());
+		for (size_t entry = 0; entry < plans.size(); ++entry) for (const bool arm : {false, true})
+		for (const bool loop : {false, true}) for (const int grant : {1, 4, 5, 6, 9, 10, 11, 14, 20, 31, 64, 257}) {
+			std::array<Value, 16> actual{constants[2], constants[3], constants[4], constants[5],
+				valueNumber(23), valueNumber(std::numeric_limits<double>::infinity()), valueNil(), valueBool(true),
+				valueNumber(-71), valueNumber(std::numeric_limits<double>::quiet_NaN()), valueBool(arm), constants[5],
+				valueBool(loop), valueNumber(-std::numeric_limits<double>::infinity()), constants[2], constants[3]};
+			auto expected = actual;
+			int remaining = grant, top = -5;
+			size_t segment = entry;
+			const NativeBlockExitSite* expectedExit;
+			// Independent scalar execution admits a complete bounded segment,
+			// including an inherited helper-success suffix, then checks debt.
+			for (;;) {
+				bool taken = false;
+				u32 nextPc = 0;
+				for (const auto& item : plans[segment].instructions) {
+					const auto& op = *item.decoded;
+					const auto operand = [&](int selector) { return selector < 0 ? constants[-selector - 1] : expected[selector]; };
+					nextPc = item.pc + INSTRUCTION_BYTES;
+					remaining -= op.baseCycles;
+					switch (static_cast<OpCode>(op.op)) {
+						case OpCode::MOV: expected[op.a] = operand(op.b); break;
+						case OpCode::LOADK: expected[op.a] = constants[op.bx]; break;
+						case OpCode::ADD: expected[op.a] = valueNumber(asNumber(operand(op.b)) + asNumber(operand(op.c))); break;
+						case OpCode::POW: expected[op.a] = valueNumber(luaPow(asNumber(operand(op.b)), asNumber(operand(op.c)))); break;
+						case OpCode::NOT: expected[op.a] = valueBool(!isTruthy(operand(op.b))); break;
+						case OpCode::JMP: nextPc = op.bx; continue;
+						case OpCode::JMPIF:
+							taken = isTruthy(expected[op.a]);
+							if (taken) nextPc = op.bx;
+							continue;
+						default: throw std::runtime_error("unexpected scalar register-graph instruction");
+					}
+					top = std::max(top, static_cast<int>(op.a) + 1);
+				}
+				expectedExit = taken ? &blocks[segment]->sideExits.back() : &blocks[segment]->terminal;
+				if (plans[segment].fallthrough) { ++segment; continue; }
+				if (remaining <= 0) break;
+				for (segment = 0; segment < plans.size(); ++segment) if (plans[segment].instructions.front().pc == nextPc) break;
+				if (segment == plans.size()) break;
+			}
+			NativeBlockRunState run{.registers = actual.data(), .constants = constants.data(), .remainingCycles = grant, .registerTop = -5};
+			const auto* exit = blocks[entry]->run(run);
+			if (actual != expected || exit != expectedExit || run.remainingCycles != remaining || run.registerTop != top) {
+				std::cerr << "register graph helper=" << helper << " bypass=" << bypassHelper << " entry=" << entry << " arm=" << arm
+					<< " loop=" << loop << " grant=" << grant << '\n';
+				throw std::runtime_error("diamond/backedge allocation must preserve the full raw bank, exit, debt and top");
+			}
+		}
+	}
+	require(bytes == 0, "diamond and backedge entry maps release their shared generated code");
+}
+
 void linkedBodiesShareOneFrameAndRetireTheirEdges() {
 	NativeBlockRunState nativeRunState;
 	std::array<DecodedInstruction, 5> decoded{};
@@ -767,6 +918,8 @@ int main() {
 		independentEntriesBindTheirOwnValueBanks();
 		helperContinuationsReloadTheCurrentRegisterMap();
 		residentValuesCrossInternalStringBranches();
+		segmentEntryPermutationsPreserveRawValuesAndDeadDefinitions();
+		diamondBackedgesPreserveFullStateFromEveryEntry();
 		linkedBodiesShareOneFrameAndRetireTheirEdges();
 		linkedAtomicStoreDebitsItsWholeChargeBeforeTestingItsSuccessor();
 		linkedSlowExitPublishesTheWholeExecutedChain();

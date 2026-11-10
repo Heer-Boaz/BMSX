@@ -52,8 +52,8 @@ private:
 	std::array<sljit_s32, 2> readOperands(int left, int right);
 	sljit_s32 destinationRegister(int guest);
 	void writeRegister(int guest, sljit_s32 source = SLJIT_FR0);
-	void planResidentRegisters(std::span<const NativeBlockSource> sources);
-	void reloadResidentRange(int first, int end);
+	void planRegisterEntries(std::span<const NativeBlockSource> sources);
+	void emitInternalBranches();
 	void discardRegisterRange(int first, int end);
 	RegisterSnapshot registerSnapshot(bool dirtyOnly = true) const;
 	void emitRegisterSnapshot(const RegisterSnapshot& snapshot);
@@ -67,16 +67,29 @@ private:
 
 	sljit_compiler* m_compiler;
 	std::span<const std::unique_ptr<NativeBlock>> m_blocks;
+	struct CachedRegister {
+		int guest = -1;
+		bool dirty = false;
+		u32 lastUse = 0;
+	};
+	using RegisterState = std::array<CachedRegister, REGISTER_CACHE_CAPACITY>;
+	bool emitRegisterTransfer(const RegisterState& source, const RegisterState& target, NativeBlockExitSite& exit);
 	struct EntryPoint {
 		sljit_label* guarded = nullptr;
 		sljit_label* external = nullptr;
 		sljit_label* linked = nullptr;
 		sljit_label* body = nullptr;
-		RegisterSnapshot registers;
+		RegisterState registers;
 		bool inherited = false;
 	};
 	std::vector<EntryPoint> m_entries;
-	struct InternalBranch { sljit_jump* jump; size_t target; };
+	struct InternalBranch {
+		sljit_jump* jump;
+		size_t target;
+		NativeBlockExitSite* exit;
+		RegisterState registers;
+		bool transferDeferred;
+	};
 	std::vector<InternalBranch> m_internalBranches;
 	struct ExternalBranch { sljit_jump* jump; NativeBlockLink* link; };
 	std::vector<ExternalBranch> m_externalBranches;
@@ -102,14 +115,7 @@ private:
 		RegisterSnapshot registers;
 	};
 	std::vector<ReadMapping> m_readMappings;
-	struct CachedRegister {
-		int guest = -1;
-		bool dirty = false;
-		u32 lastUse = 0;
-	};
-	std::array<CachedRegister, REGISTER_CACHE_CAPACITY> m_registers;
-	std::array<CachedRegister, REGISTER_CACHE_CAPACITY> m_residentRegisters;
-	int m_residentCount = 0;
+	RegisterState m_registers;
 	int m_registerCount;
 	bool m_useSavedFloats;
 	u32 m_registerClock = 0;
