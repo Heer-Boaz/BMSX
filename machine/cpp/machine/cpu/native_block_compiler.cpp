@@ -1,11 +1,9 @@
 #include "machine/cpu/native_block_compiler.h"
 
 #include <algorithm>
-#include <bit>
 #include <new>
 
 #include "machine/cpu/execution_image.h"
-#include "machine/cpu/table.h"
 #include "spec/blua32/memory_access_kind.h"
 
 namespace bmsx {
@@ -20,12 +18,14 @@ NativeBlockCompiler::NativeBlockCompiler(const Value* constants, const NativeBlo
 		const auto op = static_cast<OpCode>(instruction.op);
 		const auto slow = nativeBlockSlowExit(instruction.op);
 		slowPaths += slow == NativeBlockExit::ReadField || slow == NativeBlockExit::WriteField
+			|| slow == NativeBlockExit::ReadIndex || slow == NativeBlockExit::WriteIndex
+			|| slow == NativeBlockExit::ReadInteger || slow == NativeBlockExit::WriteInteger || slow == NativeBlockExit::InvalidLength
 			|| slow == NativeBlockExit::WriteUpvalue
 			|| slow == NativeBlockExit::Vararg || slow == NativeBlockExit::InvalidConstant
 			|| slow == NativeBlockExit::WriteMemory
 			|| (slow == NativeBlockExit::ReadMemory && instruction.c != static_cast<i16>(MemoryAccessKind::U8));
 		readMappings += slow == NativeBlockExit::ReadMemory;
-		calls |= op == OpCode::LOADKR || (op == OpCode::BNOT && instruction.b >= 0)
+		calls |= op == OpCode::LEN || op == OpCode::SETI || op == OpCode::SETT || op == OpCode::LOADKR || (op == OpCode::BNOT && instruction.b >= 0)
 			|| ((op == OpCode::BAND || op == OpCode::BOR || op == OpCode::BXOR || op == OpCode::SHL || op == OpCode::SHR)
 				&& (instruction.b >= 0 || instruction.c >= 0))
 			|| ((slow == NativeBlockExit::ReadMemory || slow == NativeBlockExit::WriteMemory)
@@ -48,7 +48,7 @@ NativeBlockCompiler::NativeBlockCompiler(const Value* constants, const NativeBlo
 		SLJIT_NUMBER_OF_FLOAT_REGISTERS - SLJIT_NUMBER_OF_SAVED_FLOAT_REGISTERS - 3);
 	const int savedFloats = std::min(REGISTER_CACHE_CAPACITY, SLJIT_NUMBER_OF_SAVED_FLOAT_REGISTERS);
 	sljit_emit_enter(m_compiler, 0, SLJIT_ARGS1(P, P),
-		3 | SLJIT_ENTER_FLOAT(scratchFloats), 6 | SLJIT_ENTER_FLOAT(savedFloats),
+		4 | SLJIT_ENTER_FLOAT(scratchFloats), 6 | SLJIT_ENTER_FLOAT(savedFloats),
 		REGISTER_CACHE_CAPACITY * sizeof(Value));
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_S3, 0, SLJIT_S0, 0);
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_S0, 0, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, registers));
@@ -143,8 +143,15 @@ void NativeBlockCompiler::emit(const DecodedInstruction& instruction, const Nati
 			break;
 		case OpCode::GETFIELD:
 		case OpCode::SETFIELD:
-			emitTableField(instruction, slowExit);
-			if (op == OpCode::GETFIELD) writeRegister(instruction.a);
+		case OpCode::SELF:
+		case OpCode::GETT:
+		case OpCode::SETT:
+		case OpCode::GETI:
+		case OpCode::SETI:
+			emitTableAccess(instruction, slowExit);
+			return;
+		case OpCode::LEN:
+			emitLength(instruction, slowExit);
 			return;
 		case OpCode::LOAD_MEM:
 		case OpCode::LOAD_MEM_D:
@@ -157,6 +164,7 @@ void NativeBlockCompiler::emit(const DecodedInstruction& instruction, const Nati
 		case OpCode::HALT:
 		case OpCode::CALL:
 		case OpCode::RET:
+		case OpCode::NEWT:
 			return;
 		case OpCode::JMPIF:
 		case OpCode::JMPIFNOT: {
@@ -221,52 +229,6 @@ void* NativeBlockCompiler::finish(size_t& codeBytes, void*& body) {
 	codeBytes = sljit_get_generated_code_size(m_compiler);
 	body = reinterpret_cast<void*>(sljit_get_label_addr(m_body));
 	return code;
-}
-
-void NativeBlockCompiler::emitTableField(const DecodedInstruction& instruction, const NativeBlockExitSite* exit) {
-	const bool load = instruction.op == static_cast<u8>(OpCode::GETFIELD);
-	const int base = load ? instruction.b : instruction.a;
-	const StringId key = asStringId(m_constants[load ? instruction.c : instruction.b]);
-	const auto fields = Table::nativeFieldOffsets();
-	constexpr sljit_sw headerOffset = std::endian::native == std::endian::little ? 6 : 0;
-	constexpr sljit_sw payloadOffset = std::endian::native == std::endian::little ? 0 : 4;
-	SlowPath slow;
-	slow.exit = exit;
-	slow.registers = registerSnapshot();
-	loadHeader(base, SLJIT_R0);
-	slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R0, 0,
-		SLJIT_IMM, valueFromTag(ValueTag::Table) >> 48u);
-	loadPayload(base, SLJIT_R0, SLJIT_R1);
-	sljit_emit_op1(m_compiler, SLJIT_MOV_S32, SLJIT_R1, 0,
-		SLJIT_MEM0(), reinterpret_cast<sljit_sw>(&exit->tableCacheSlot));
-	// Unsigned bounds also reject the negative missing-slot sentinel.
-	slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_GREATER_EQUAL,
-		SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), fields.hashSize);
-	sljit_emit_op2(m_compiler, SLJIT_SHL, SLJIT_S2, 0, SLJIT_R1, 0, SLJIT_IMM, 3);
-	sljit_emit_op1(m_compiler, SLJIT_MOV, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), fields.keys);
-	sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_S2, 0);
-	sljit_emit_op1(m_compiler, SLJIT_MOV_U16, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), headerOffset);
-	slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R2, 0,
-		SLJIT_IMM, valueString(0) >> 48u);
-	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), payloadOffset);
-	slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32,
-		SLJIT_R2, 0, SLJIT_IMM, key);
-	sljit_emit_op1(m_compiler, SLJIT_MOV, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), fields.values);
-	sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_S2, 0);
-	sljit_emit_op1(m_compiler, SLJIT_MOV_U16, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), headerOffset);
-	slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL,
-		SLJIT_R2, 0, SLJIT_IMM, valueNil() >> 48u);
-	if (load) {
-		// The raw result remains in FR0 for dependent arithmetic or copies.
-		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0, SLJIT_MEM1(SLJIT_R1), 0);
-	} else {
-		loadHeader(instruction.c, SLJIT_R2);
-		slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL,
-			SLJIT_R2, 0, SLJIT_IMM, valueNil() >> 48u);
-		loadOperand(instruction.c, SLJIT_FR0);
-		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_MEM1(SLJIT_R1), 0, SLJIT_FR0, 0);
-	}
-	m_slowPaths.push_back(slow);
 }
 
 std::array<sljit_jump*, 2> NativeBlockCompiler::falseyJumps(int index) {

@@ -109,7 +109,7 @@ DISPATCH_LABEL(GETI) {
 	if (valueIsTable(tableValue)) {
 		Table* table = asTable(tableValue);
 		Value value;
-		if (!table->metatable && table->getIntegerArrayKey(c, value)) {
+		if (table->getIntegerArrayKey(c, value)) {
 			SET_REGISTER_FAST(a, value);
 			DISPATCH_NEXT();
 		}
@@ -182,7 +182,7 @@ DISPATCH_LABEL(GETT) {
 	if (valueIsTable(tableValue) && valueIsNumber(key)) {
 		Table* table = asTable(tableValue);
 		Value value;
-		if (!table->metatable && table->getNumberArrayKey(asNumber(key), value)) {
+		if (table->getNumberArrayKey(asNumber(key), value)) {
 			SET_REGISTER_FAST(a, value);
 			DISPATCH_NEXT();
 		}

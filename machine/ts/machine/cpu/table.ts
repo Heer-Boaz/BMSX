@@ -218,8 +218,16 @@ export class Table {
 		target: ValueWriteTarget,
 		targetIndex: number,
 	): boolean {
-		const index = indexValue - 1;
-		if (index < 0 || index >= this.arrayCapacity) {
+		return this.loadArraySlot(indexValue - 1, target, targetIndex);
+	}
+
+	public loadNumberArrayKey(indexValue: number, target: ValueWriteTarget, targetIndex: number): boolean {
+		return this.loadArraySlot(this.getArrayIndex(ValueTag.Number, indexValue), target, targetIndex);
+	}
+
+	private loadArraySlot(index: number, target: ValueWriteTarget, targetIndex: number): boolean {
+		if (index < 0 || index >= this.arrayCapacity
+			|| (this.tableMetatable !== null && this.tags[index] === ValueTag.Nil)) {
 			return false;
 		}
 		target.setEncoded(
@@ -257,7 +265,14 @@ export class Table {
 		valueScalar: number,
 		valueReference: ValueReference,
 	): boolean {
-		const index = indexValue - 1;
+		return this.storeArraySlot(indexValue - 1, valueTag, valueScalar, valueReference);
+	}
+
+	public storeNumberArrayKey(indexValue: number, valueTag: ValueTag, valueScalar: number, valueReference: ValueReference): boolean {
+		return this.storeArraySlot(this.getArrayIndex(ValueTag.Number, indexValue), valueTag, valueScalar, valueReference);
+	}
+
+	private storeArraySlot(index: number, valueTag: ValueTag, valueScalar: number, valueReference: ValueReference): boolean {
 		if (index < 0 || index >= this.arrayCapacity) {
 			return false;
 		}

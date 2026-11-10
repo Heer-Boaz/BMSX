@@ -19,8 +19,12 @@ public:
 	void* finish(size_t& codeBytes, void*& body);
 
 private:
+	struct SlowPath;
 	void emitExit(const NativeBlockExitSite* exit);
-	void emitTableField(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
+	void emitTableAccess(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
+	void emitArraySlot(bool load, int value, SlowPath& slow);
+	void emitStringSlot(bool load, int value, SlowPath& slow);
+	void emitLength(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
 	void emitComparison(const DecodedInstruction& instruction, const NativeBlockExitSite* skipped);
 	void emitContext(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
 	void emitUpvalue(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
@@ -57,7 +61,7 @@ private:
 	StringPool& m_strings;
 	bool m_hasTerminal = false;
 	struct SlowPath {
-		std::array<sljit_jump*, 7> jumps;
+		std::array<sljit_jump*, 16> jumps;
 		size_t count = 0;
 		const NativeBlockExitSite* exit;
 		RegisterSnapshot registers;

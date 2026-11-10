@@ -10,6 +10,7 @@ import { emitComparison } from './compiled_block_compare';
 import type { StringPool } from './string_pool';
 import type { CallFrame } from './call_state';
 import { compiledContextSupports, emitContext } from './compiled_block_context';
+import { compiledTableSupports, emitTableOperation } from './compiled_block_table';
 
 export const enum CpuExecutionBackend {
 	Interpreter,
@@ -33,7 +34,25 @@ export const enum CompiledBlockExit {
 	WriteUpvalue,
 	Vararg,
 	InvalidConstant,
+	ReadIndex,
+	WriteIndex,
+	ReadInteger,
+	WriteInteger,
+	InvalidLength,
+	AllocateTable,
 }
+
+const sideExitKinds: (CompiledBlockExit | undefined)[] = [];
+for (const [op, exit] of [
+	[OpCode.GETFIELD, CompiledBlockExit.ReadField], [OpCode.SELF, CompiledBlockExit.ReadField],
+	[OpCode.SETFIELD, CompiledBlockExit.WriteField], [OpCode.GETT, CompiledBlockExit.ReadIndex],
+	[OpCode.SETT, CompiledBlockExit.WriteIndex], [OpCode.GETI, CompiledBlockExit.ReadInteger],
+	[OpCode.SETI, CompiledBlockExit.WriteInteger], [OpCode.LEN, CompiledBlockExit.InvalidLength],
+	[OpCode.LOAD_MEM, CompiledBlockExit.ReadMemory], [OpCode.LOAD_MEM_D, CompiledBlockExit.ReadMemory],
+	[OpCode.STORE_MEM, CompiledBlockExit.WriteMemory], [OpCode.STORE_MEM_D, CompiledBlockExit.WriteMemory],
+	[OpCode.VARARG, CompiledBlockExit.Vararg], [OpCode.SETUP, CompiledBlockExit.WriteUpvalue],
+	[OpCode.LOADKR, CompiledBlockExit.InvalidConstant],
+] as const) sideExitKinds[op] = exit;
 
 export type CompiledBlockExitSite = {
 	readonly exit: CompiledBlockExit;
@@ -156,18 +175,6 @@ emitters[OpCode.NOT] = (p, w, _image, r) => {
 	r.discard(p.a[w]);
 	return `r.setBool(${p.a[w]},!${truth});`;
 };
-emitters[OpCode.GETFIELD] = (p, w, _image, r, exit) => {
-	const failure = r.exit(exit);
-	const source = `if(${r.tagOperand(p.b[w])}!==${ValueTag.Table}) ${failure}
-{ const t=r.getTable(${p.b[w]});
-if(!t.loadPredictedStringKey(k[${p.c[w]}],p.tableCacheSlots[${w}],r,${p.a[w]})) ${failure} }`;
-	r.discard(p.a[w]);
-	return source;
-};
-emitters[OpCode.SETFIELD] = (p, w, _image, r, exit) => {
-	return `if(${r.tagOperand(p.a[w])}!==${ValueTag.Table} || !r.getTable(${p.a[w]}).storePredictedStringKey(k[${p.b[w]}],p.tableCacheSlots[${w}],${r.tagOperand(p.c[w])},${r.scalarOperand(p.c[w])},${r.referenceOperand(p.c[w])})) ${r.exit(exit)}`;
-};
-
 const numberEmitters: (NumberEmitter | undefined)[] = new Array(OPCODE_COUNT);
 numberEmitters[OpCode.K0] = () => '0';
 numberEmitters[OpCode.K1] = () => '1';
@@ -191,16 +198,18 @@ emitters[OpCode.LE] = emitters[OpCode.JMP];
 emitters[OpCode.HALT] = emitters[OpCode.JMP];
 emitters[OpCode.CALL] = emitters[OpCode.JMP];
 emitters[OpCode.RET] = emitters[OpCode.JMP];
+emitters[OpCode.NEWT] = emitters[OpCode.JMP];
 
 export function compiledBlockSupports(op: number): boolean {
 	return emitters[op] !== undefined || numberEmitters[op] !== undefined
 		|| compiledContextSupports(op)
+		|| compiledTableSupports(op)
 		|| op === OpCode.LOAD_MEM || op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM || op === OpCode.STORE_MEM_D;
 }
 
 export function compiledBlockEndsBlock(op: number): boolean {
 	return op === OpCode.JMP || op === OpCode.JMPIF || op === OpCode.JMPIFNOT || op === OpCode.HALT
-		|| op === OpCode.CALL || op === OpCode.RET || op === OpCode.EQ || op === OpCode.LT || op === OpCode.LE;
+		|| op === OpCode.CALL || op === OpCode.RET || op === OpCode.NEWT || op === OpCode.EQ || op === OpCode.LT || op === OpCode.LE;
 }
 
 /** Fields and RAM stay in the block; side exits publish only the executed prefix. */
@@ -243,10 +252,10 @@ export function compileJavaScriptBlock(
 		const load = op === OpCode.LOAD_MEM || op === OpCode.LOAD_MEM_D;
 		const store = op === OpCode.STORE_MEM || op === OpCode.STORE_MEM_D;
 		const displaced = op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM_D;
-		if (op === OpCode.GETFIELD || op === OpCode.SETFIELD || load || store || op === OpCode.VARARG || op === OpCode.LOADKR || op === OpCode.SETUP) {
-			exits.push({ exit: load ? CompiledBlockExit.ReadMemory : store ? CompiledBlockExit.WriteMemory
-				: op === OpCode.GETFIELD ? CompiledBlockExit.ReadField : op === OpCode.SETFIELD ? CompiledBlockExit.WriteField
-				: op === OpCode.VARARG ? CompiledBlockExit.Vararg : op === OpCode.SETUP ? CompiledBlockExit.WriteUpvalue : CompiledBlockExit.InvalidConstant,
+		if (op === OpCode.SELF) registerTop = Math.max(registerTop, page.a[word] + 2);
+		const sideExit = sideExitKinds[op];
+		if (sideExit !== undefined) {
+			exits.push({ exit: sideExit,
 				exitA: page.a[word], exitB: page.b[word], exitC: page.c[word], exitWord: word,
 				displaced, displacement: page.disp[word],
 				cycles, registerTop, resetsRegisterTop, nextPc, currentPc, lastPc,
@@ -256,6 +265,8 @@ export function compileJavaScriptBlock(
 		if (compiledContextSupports(op)) {
 			contextCapture ||= op === OpCode.GETGL || op === OpCode.SETGL || op === OpCode.GETSYS || op === OpCode.SETSYS || op === OpCode.LOADKR;
 			source.push(emitContext(op, page, word, registers, exitIndex));
+		} else if (compiledTableSupports(op)) {
+			source.push(emitTableOperation(op, page, word, registers, exitIndex));
 		} else if (load || store) {
 			memoryAccess = true;
 			memoryReads ||= load;
@@ -276,14 +287,14 @@ export function compileJavaScriptBlock(
 		if (op === OpCode.VARARG && page.b[word] === 0) { registerTop = 0; resetsRegisterTop = true; }
 		else if (op === OpCode.VARARG || op === OpCode.LOADNIL) {
 			if (page.b[word] !== 0) registerTop = Math.max(registerTop, page.a[word] + page.b[word]);
-		} else if (!compiledBlockEndsBlock(op) && op !== OpCode.SETFIELD && !store
+		} else if (!compiledBlockEndsBlock(op) && op !== OpCode.SETFIELD && op !== OpCode.SETT && op !== OpCode.SETI && !store
 			&& op !== OpCode.SETUP && op !== OpCode.SETGL && op !== OpCode.SETSYS) registerTop = Math.max(registerTop, page.a[word] + 1);
 	}
 	source.push(registers.writeBack());
 	const finalOp = page.ops[finalWord];
 	const terminal: CompiledBlockExitSite = {
 		exit: finalOp === OpCode.HALT ? CompiledBlockExit.Halt : finalOp === OpCode.CALL ? CompiledBlockExit.Call
-			: finalOp === OpCode.RET ? CompiledBlockExit.Return : CompiledBlockExit.Continue,
+			: finalOp === OpCode.RET ? CompiledBlockExit.Return : finalOp === OpCode.NEWT ? CompiledBlockExit.AllocateTable : CompiledBlockExit.Continue,
 		exitA: page.a[finalWord], exitB: page.b[finalWord], exitC: page.c[finalWord], exitWord: finalWord,
 		displaced: false, displacement: 0,
 		cycles, registerTop, resetsRegisterTop, nextPc, currentPc, lastPc,

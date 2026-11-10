@@ -32,12 +32,14 @@ std::unique_ptr<NativeBlock> NativeBlock::compile(
 		terminal.lastPc = source.pc + (static_cast<u32>(instruction.width) - 1u) * INSTRUCTION_BYTES;
 		terminal.nextPc = op == OpCode::JMP ? instruction.bx : source.pc + static_cast<u32>(instruction.width) * INSTRUCTION_BYTES;
 		terminal.exitA = instruction.a; terminal.exitB = instruction.b; terminal.exitC = instruction.c;
+		if (op == OpCode::SELF) terminal.registerTop = std::max(terminal.registerTop, static_cast<int>(instruction.a) + 2);
 		const auto slow = nativeBlockSlowExit(instruction.op);
 		if (slow != NativeBlockExit::Continue) {
 			auto& exit = block->sideExits.emplace_back(terminal);
 			exit.exit = slow;
 			exit.handler = exitHandlers[static_cast<size_t>(exit.exit)];
-			if (slow == NativeBlockExit::ReadField || slow == NativeBlockExit::WriteField) {
+			if (slow == NativeBlockExit::ReadField || slow == NativeBlockExit::WriteField
+				|| slow == NativeBlockExit::ReadIndex || slow == NativeBlockExit::WriteIndex) {
 				exit.tableCacheSlot = instruction.tableCacheSlot;
 			} else if (slow == NativeBlockExit::ReadMemory || slow == NativeBlockExit::WriteMemory) {
 				exit.displaced = op == OpCode::LOAD_MEM_D || op == OpCode::STORE_MEM_D;
@@ -48,13 +50,14 @@ std::unique_ptr<NativeBlock> NativeBlock::compile(
 		else if (op == OpCode::VARARG || op == OpCode::LOADNIL) {
 			if (instruction.b != 0) terminal.registerTop = std::max(terminal.registerTop, static_cast<int>(instruction.a) + instruction.b);
 		} else if (!nativeBlockEndsBlock(instruction.op) && slow != NativeBlockExit::WriteField && slow != NativeBlockExit::WriteMemory
+			&& slow != NativeBlockExit::WriteIndex && slow != NativeBlockExit::WriteInteger
 			&& op != OpCode::SETUP && op != OpCode::SETGL && op != OpCode::SETSYS) {
 			terminal.registerTop = std::max(terminal.registerTop, static_cast<int>(instruction.a) + 1);
 		}
 	}
 	const auto op = static_cast<OpCode>(instructions.back().decoded->op);
 	terminal.exit = op == OpCode::HALT ? NativeBlockExit::Halt : op == OpCode::CALL ? NativeBlockExit::Call
-		: op == OpCode::RET ? NativeBlockExit::Return : NativeBlockExit::Continue;
+		: op == OpCode::RET ? NativeBlockExit::Return : op == OpCode::NEWT ? NativeBlockExit::AllocateTable : NativeBlockExit::Continue;
 	terminal.handler = exitHandlers[static_cast<size_t>(terminal.exit)];
 	const NativeBlockExitSite* taken = nullptr;
 	if (op == OpCode::JMPIF || op == OpCode::JMPIFNOT || nativeBlockComparison(static_cast<u8>(op))) {

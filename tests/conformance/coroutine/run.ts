@@ -7,14 +7,20 @@ import { join } from 'node:path';
 import { compileCoroutineTest, coroutineVectors } from '../../helpers/coroutine';
 import { completionBoundaryVectors, exerciseCompletionBoundary } from '../../helpers/completion_boundary';
 import { RunResult } from '../../../machine/ts/machine/cpu/cpu';
+import { CpuExecutionBackend } from '../../../machine/ts/machine/cpu/compiled_block';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 
+const compiled = process.argv[2] === '--compiled';
+assert.deepEqual(process.argv.slice(2), compiled ? ['--compiled'] : [], 'Expected no arguments or --compiled');
+const buildDirectory = compiled ? 'build-native-cpu-blocks' : 'build-cpp-tests';
 for (const [command, args] of [
-	['cmake', ['-S', 'machine/cpp', '-B', 'build-cpp-tests', '-G', 'Ninja', '-DBMSX_BUILD_TESTS=ON', '-DCMAKE_BUILD_TYPE=Release']],
-	['cmake', ['--build', 'build-cpp-tests', '--target', 'bmsx_coroutine_runner', '--parallel', '4']],
+	['cmake', ['-S', 'machine/cpp', '-B', buildDirectory, '-G', 'Ninja', '-DBMSX_BUILD_TESTS=ON',
+		`-DCMAKE_BUILD_TYPE=${compiled ? 'Debug' : 'Release'}`, `-DBMSX_ENABLE_NATIVE_BLOCKS=${compiled ? 'ON' : 'OFF'}`,
+		...(compiled ? ['-DBMSX_ENABLE_GLES2=OFF', '-DBMSX_ENABLE_ZLIB=OFF'] : [])]],
+	['cmake', ['--build', buildDirectory, '--target', 'bmsx_coroutine_runner', '--parallel', '4']],
 ] as const) {
 	assert.equal(spawnSync(command, args, { stdio: 'inherit' }).status, 0);
 }
@@ -25,7 +31,8 @@ try {
 			const path = join(directory, `${name}-O${level}.rom`);
 			const image = compileCoroutineTest(body, level);
 			writeFileSync(path, image.romBytes);
-			const runtime = new Runtime({ systemRomBytes: image.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
+			const runtime = new Runtime({ systemRomBytes: image.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC,
+				cpuExecutionBackend: compiled ? CpuExecutionBackend.JavaScript : CpuExecutionBackend.Interpreter }, {
 				sampleInputControllerSnapshot: () => {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect: () => {},
 			});
 			runtime.boot();
@@ -75,7 +82,7 @@ try {
 			assert.deepEqual(decodeRuntimeSaveState(encodeRuntimeSaveState(decoded), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes), decoded);
 			applyRuntimeSaveState(runtime, decoded);
 			assert.deepEqual(cpu.captureRuntimeState(), decoded.cpuState);
-			assert.equal(spawnSync('build-cpp-tests/bmsx_coroutine_runner', [path], { stdio: 'inherit' }).status, 0);
+			assert.equal(spawnSync(`${buildDirectory}/bmsx_coroutine_runner`, [path], { stdio: 'inherit' }).status, 0);
 			assert.deepEqual(decodeRuntimeSaveState(new Uint8Array(readFileSync(`${path}.state`)), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes), decoded, `${name} O${level}: TS/C++ runtime snapshot parity`);
 		}
 	}

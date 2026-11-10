@@ -93,5 +93,7 @@ private:
 };
 
 int compareStringIds(const StringPool* pool, StringId left, StringId right);
+// C ABI entry for generated code; no allocation or guest execution.
+int stringCodepointCount(const StringPool* pool, StringId id) noexcept;
 
 } // namespace bmsx

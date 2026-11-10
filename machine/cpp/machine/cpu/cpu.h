@@ -491,6 +491,10 @@ private:
 	void prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32 word);
 	static NativeBlockTransition compiledReadFieldExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
 	static NativeBlockTransition compiledWriteFieldExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
+	static NativeBlockTransition compiledReadIndexExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
+	static NativeBlockTransition compiledWriteIndexExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
+	static NativeBlockTransition compiledReadIntegerExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
+	static NativeBlockTransition compiledWriteIntegerExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
 	static NativeBlockTransition compiledReadMemoryExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
 	static NativeBlockTransition compiledWriteMemoryExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
 	size_t m_nativeCodeBytes = 0;

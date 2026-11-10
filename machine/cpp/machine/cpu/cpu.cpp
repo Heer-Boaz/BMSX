@@ -970,6 +970,8 @@ bool CPU::decodeInstruction(
 			case OpCode::GETFIELD:
 			case OpCode::SETFIELD:
 			case OpCode::SELF:
+			case OpCode::GETT:
+			case OpCode::SETT:
 				decoded.tableCacheSlot = -1;
 				break;
 			case OpCode::GETGL:
@@ -2766,6 +2768,14 @@ dispatch_native_block: {
 					DISPATCH_NEXT();
 				case NativeBlockExit::InvalidConstant:
 					throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+				case NativeBlockExit::InvalidLength:
+					throw LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
+				case NativeBlockExit::AllocateTable: {
+					const int a = exit->exitA;
+					FRAME.registers[a] = valueTable(createTable(exit->exitB, exit->exitC));
+					FRAME.top = std::max(FRAME.top, a + 1);
+					DISPATCH_REBIND_FRAME();
+				}
 				default: {
 					const auto transition = exit->handler(this, frame, exit);
 					// The source descriptor may already have been retired by the helper.

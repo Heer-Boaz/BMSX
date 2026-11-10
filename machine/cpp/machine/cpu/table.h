@@ -5,8 +5,8 @@
 #include <limits>
 #include <memory>
 #include <new>
-#include <vector>
 
+#include "common/primitives.h"
 #include "machine/cpu/value.h"
 #include "machine/cpu/snapshot.h"
 
@@ -21,6 +21,10 @@ struct TableNativeFieldOffsets {
 	size_t hashSize;
 	size_t keys;
 	size_t values;
+	size_t arrayData;
+	size_t arraySize;
+	size_t arrayLength;
+	size_t metatable;
 };
 #endif
 
@@ -37,12 +41,7 @@ public:
 	void set(const Value& key, const Value& value);
 	bool getNumberArrayKey(double key, Value& value) const {
 		int index = 0;
-		if (!getNumberArrayIndex(key, index)
-			|| index >= static_cast<int>(m_array.size())) {
-			return false;
-		}
-		value = m_array[static_cast<size_t>(index)];
-		return true;
+		return getNumberArrayIndex(key, index) && getArraySlot(static_cast<size_t>(index), value);
 	}
 	bool setNumberArrayKey(double key, const Value& value) {
 		int index = 0;
@@ -54,12 +53,7 @@ public:
 		return true;
 	}
 	bool getIntegerArrayKey(int key, Value& value) const {
-		const size_t slot = static_cast<size_t>(key - 1);
-		if (slot >= m_array.size()) {
-			return false;
-		}
-		value = m_array[slot];
-		return true;
+		return getArraySlot(static_cast<size_t>(key) - 1u, value);
 	}
 	bool setIntegerArrayKey(int key, const Value& value) {
 		const size_t slot = static_cast<size_t>(key - 1);
@@ -121,6 +115,8 @@ public:
 		return TABLE_INDEX_CHAIN_EXHAUSTED;
 	}
 	int length() const;
+	// Nonallocating mutation primitive, also callable through the native ABI.
+	static void advanceArrayLength(Table* table) noexcept;
 	void clear();
 	// Physical array positions followed by hash nodes, including vacant/dead slots.
 	size_t storedSlotCount() const { return m_array.size() + m_hashSize; }
@@ -176,7 +172,15 @@ public:
 	Table* metatable = nullptr;
 
 private:
-	struct HashStorageDeleter {
+	bool getArraySlot(size_t slot, Value& value) const {
+		if (slot >= m_array.size()) return false;
+		const Value own = m_array[slot];
+		if (isNil(own) && metatable) return false;
+		value = own;
+		return true;
+	}
+
+	struct StorageDeleter {
 		void operator()(void* ptr) const noexcept { ::operator delete(ptr); }
 	};
 
@@ -187,7 +191,7 @@ private:
 				m_arrayLength = slot;
 			}
 		} else if (slot == m_arrayLength) {
-			updateArrayLengthFrom(m_arrayLength);
+			advanceArrayLength(this);
 		}
 	}
 
@@ -205,7 +209,6 @@ private:
 		return true;
 	}
 	bool hasArrayIndex(size_t index) const;
-	void updateArrayLengthFrom(size_t startIndex);
 	size_t hashValue(const Value& key) const;
 	bool keyEquals(const Value& a, const Value& b) const;
 	int findNodeIndex(const Value& key, bool matchDead = false) const;
@@ -214,7 +217,7 @@ private:
 	int getFreeIndex();
 	void rehash(const Value& key, const Value& value);
 	void resize(size_t newArraySize, size_t newHashSize, const Value& key, const Value& value);
-	void allocateHash(size_t size);
+	void allocateStorage(size_t arraySize, size_t hashSize);
 	int rawSet(const Value& key, const Value& value);
 	int insertHash(const Value& key, const Value& value);
 	void removeFromHash(const Value& key);
@@ -236,9 +239,9 @@ private:
 	}
 
 	LuaHeap& m_luaHeap;
-	std::vector<Value> m_array;
+	Span<Value> m_array;
 	size_t m_arrayLength = 0;
-	std::unique_ptr<void, HashStorageDeleter> m_hashStorage;
+	std::unique_ptr<void, StorageDeleter> m_storage;
 	Value* m_hashKeys = nullptr;
 	Value* m_hashValues = nullptr;
 	int32_t* m_hashNext = nullptr;

@@ -1399,7 +1399,7 @@ export class CPU implements MappedPageInvalidator {
 					? signExtend(rawB, BASE_OPERAND_BC_BITS + ((width - 1) * MAX_OPERAND_BITS)) : rawB;
 				page.c[pageOffset] = (rkOperands & RK_OPERAND_C) !== 0
 					? signExtend(rawC, BASE_OPERAND_BC_BITS + ((width - 1) * MAX_OPERAND_BITS)) : rawC;
-				if (op === OpCode.GETFIELD || op === OpCode.SETFIELD || op === OpCode.SELF) {
+				if (op === OpCode.GETFIELD || op === OpCode.SETFIELD || op === OpCode.SELF || op === OpCode.GETT || op === OpCode.SETT) {
 					page.tableCacheSlots[pageOffset] = -1;
 				}
 				if (rawC > MemoryAccessKind.F64LE && (op === OpCode.LOAD_MEM || op === OpCode.STORE_MEM)) {
@@ -2581,6 +2581,10 @@ export class CPU implements MappedPageInvalidator {
 				case CompiledBlockExit.WriteUpvalue:
 					this.copyRegisterToUpvalue(frame.closure.upvalues[exit.exitB], registers, exit.exitA); return;
 				case CompiledBlockExit.InvalidConstant: throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+				case CompiledBlockExit.InvalidLength: throw new LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
+				case CompiledBlockExit.AllocateTable:
+					this.setRegisterTableFast(frame, registers, exit.exitA, this.createTable(exit.exitB, exit.exitC));
+					break;
 				case CompiledBlockExit.ReadMemory:
 				case CompiledBlockExit.WriteMemory: {
 					const address = ((this.readRKNumber(frame, exit.exitB) >>> 0) + (exit.displaced ? exit.displacement * 4 : 0)) >>> 0;
@@ -2589,22 +2593,56 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				}
 				case CompiledBlockExit.ReadField:
-					this.loadTableFieldIndexCached(page, exit.exitWord, registers.getTag(exit.exitB),
-						registers.getTable(exit.exitB), image.constScalars[exit.exitC] as StringId, registers, exit.exitA);
+				case CompiledBlockExit.ReadInteger:
+				case CompiledBlockExit.ReadIndex: {
+					const tag = registers.getTag(exit.exitB), table = registers.getTable(exit.exitB);
+					if (exit.exit === CompiledBlockExit.ReadField) {
+						this.loadTableFieldIndexCached(page, exit.exitWord, tag, table,
+							image.constScalars[exit.exitC] as StringId, registers, exit.exitA);
+					} else if (exit.exit === CompiledBlockExit.ReadInteger) {
+						this.loadTableIntegerIndex(tag, table, exit.exitC, registers, exit.exitA);
+					} else {
+						const c = exit.exitC, index = -c - 1;
+						const keyTag = c < 0 ? image.constTags[index] : registers.getTag(c);
+						const keyScalar = c < 0 ? image.constScalars[index] : registers.getScalar(c);
+						if (keyTag === ValueTag.String) {
+							this.loadTableFieldIndexCached(page, exit.exitWord, tag, table, keyScalar as StringId, registers, exit.exitA);
+						} else {
+							this.loadTableIndex(tag, table, keyTag, keyScalar, c < 0 ? null : registers.getReference(c), registers, exit.exitA);
+						}
+					}
 					this.bumpRegisterTop(frame, exit.exitA);
-					return;
-				case CompiledBlockExit.WriteField: {
+					break;
+				}
+				case CompiledBlockExit.WriteField:
+				case CompiledBlockExit.WriteInteger:
+				case CompiledBlockExit.WriteIndex: {
 					const c = exit.exitC;
 					const index = -c - 1;
-					this.storeTableFieldIndexCached(page, exit.exitWord, registers.getTag(exit.exitA), registers.getTable(exit.exitA),
-						image.constScalars[exit.exitB] as StringId,
-						c < 0 ? image.constTags[index] : registers.getTag(c),
-						c < 0 ? image.constScalars[index] : registers.getScalar(c),
-						c < 0 ? null : registers.getReference(c));
-					return;
+					const tag = registers.getTag(exit.exitA), table = registers.getTable(exit.exitA);
+					const valueTag = c < 0 ? image.constTags[index] : registers.getTag(c);
+					const valueScalar = c < 0 ? image.constScalars[index] : registers.getScalar(c);
+					const valueReference = c < 0 ? null : registers.getReference(c);
+					if (exit.exit === CompiledBlockExit.WriteField) {
+						this.storeTableFieldIndexCached(page, exit.exitWord, tag, table,
+							image.constScalars[exit.exitB] as StringId, valueTag, valueScalar, valueReference);
+					} else if (exit.exit === CompiledBlockExit.WriteInteger) {
+						this.storeTableIntegerIndex(tag, table, exit.exitB, valueTag, valueScalar, valueReference);
+					} else {
+						const b = exit.exitB, keyIndex = -b - 1;
+						const keyTag = b < 0 ? image.constTags[keyIndex] : registers.getTag(b);
+						const keyScalar = b < 0 ? image.constScalars[keyIndex] : registers.getScalar(b);
+						if (keyTag === ValueTag.String) {
+							this.storeTableFieldIndexCached(page, exit.exitWord, tag, table, keyScalar as StringId, valueTag, valueScalar, valueReference);
+						} else {
+							this.storeTableIndex(tag, table, keyTag, keyScalar, b < 0 ? null : registers.getReference(b), valueTag, valueScalar, valueReference);
+						}
+					}
+					break;
 				}
 			}
-			// Only effect-free closure entry and ordinary return reach this point.
+			// Successful value/heap operations and frame transitions can resume
+			// an already compiled continuation without another opcode dispatch.
 			// Budget/depth/HALT ownership is checked before reading a resumed PC.
 			remaining = this.instructionBudgetRemaining;
 			if (frames.length <= targetDepth || remaining <= 0
@@ -2707,7 +2745,6 @@ export class CPU implements MappedPageInvalidator {
 					const baseTag = registers.getTag(b);
 					const table = registers.getTable(b);
 					if (baseTag === ValueTag.Table
-						&& table.metatable === null
 						&& table.loadIntegerArrayKey(page.c[pageOffset], registers, a)) {
 						this.bumpRegisterTop(frame, a);
 						return;

@@ -64,6 +64,12 @@ enum class NativeBlockExit : u8 {
 	WriteUpvalue,
 	Vararg,
 	InvalidConstant,
+	ReadIndex,
+	WriteIndex,
+	ReadInteger,
+	WriteInteger,
+	InvalidLength,
+	AllocateTable,
 	Count,
 };
 
@@ -96,6 +102,13 @@ struct NativeBlockInstruction {
 inline constexpr bool nativeBlockSupports(u8 op) {
 	switch (static_cast<OpCode>(op)) {
 		case OpCode::MOV:
+		case OpCode::GETT:
+		case OpCode::SETT:
+		case OpCode::GETI:
+		case OpCode::SETI:
+		case OpCode::SELF:
+		case OpCode::LEN:
+		case OpCode::NEWT:
 		case OpCode::LOADK:
 		case OpCode::LOADKR:
 		case OpCode::LOADNIL:
@@ -153,13 +166,20 @@ inline constexpr bool nativeBlockComparison(u8 op) {
 inline constexpr bool nativeBlockEndsBlock(u8 op) {
 	return op == static_cast<u8>(OpCode::JMP) || op == static_cast<u8>(OpCode::JMPIF)
 		|| op == static_cast<u8>(OpCode::JMPIFNOT) || op == static_cast<u8>(OpCode::HALT)
-		|| op == static_cast<u8>(OpCode::CALL) || op == static_cast<u8>(OpCode::RET) || nativeBlockComparison(op);
+		|| op == static_cast<u8>(OpCode::CALL) || op == static_cast<u8>(OpCode::RET)
+		|| op == static_cast<u8>(OpCode::NEWT) || nativeBlockComparison(op);
 }
 
 inline constexpr NativeBlockExit nativeBlockSlowExit(u8 op) {
 	switch (static_cast<OpCode>(op)) {
 		case OpCode::GETFIELD: return NativeBlockExit::ReadField;
+		case OpCode::SELF: return NativeBlockExit::ReadField;
 		case OpCode::SETFIELD: return NativeBlockExit::WriteField;
+		case OpCode::GETT: return NativeBlockExit::ReadIndex;
+		case OpCode::SETT: return NativeBlockExit::WriteIndex;
+		case OpCode::GETI: return NativeBlockExit::ReadInteger;
+		case OpCode::SETI: return NativeBlockExit::WriteInteger;
+		case OpCode::LEN: return NativeBlockExit::InvalidLength;
 		case OpCode::SETUP: return NativeBlockExit::WriteUpvalue;
 		case OpCode::VARARG: return NativeBlockExit::Vararg;
 		case OpCode::LOADKR: return NativeBlockExit::InvalidConstant;

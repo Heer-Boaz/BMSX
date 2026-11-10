@@ -11,6 +11,10 @@ int compareStringIds(const StringPool* pool, StringId left, StringId right) {
 	return pool->toString(left).compare(pool->toString(right));
 }
 
+int stringCodepointCount(const StringPool* pool, StringId id) noexcept {
+	return pool->codepointCount(id);
+}
+
 StringPool::StringPool(LuaHeap& luaHeap)
 	: m_luaHeap(luaHeap) {
 }

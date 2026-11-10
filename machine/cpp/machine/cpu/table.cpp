@@ -18,13 +18,7 @@ constexpr int32_t kTableHashNextEnd = -1;
 } // namespace
 Table::Table(LuaHeap& luaHeap, size_t arrayCapacity, size_t hashCapacity)
 	: m_luaHeap(luaHeap) {
-	if (arrayCapacity > 0) {
-		m_array.resize(arrayCapacity, valueNil());
-	}
-	if (hashCapacity > 0) {
-		allocateHash(hashCapacity);
-		m_hashFree = static_cast<int>(hashCapacity) - 1;
-	}
+	allocateStorage(arrayCapacity, hashCapacity);
 }
 
 size_t Table::hashCapacity(int hashSize) {
@@ -48,7 +42,10 @@ size_t Table::trackedHeapBytesForCapacities(size_t arrayCapacity, size_t hashCap
 #endif
 TableNativeFieldOffsets Table::nativeFieldOffsets() {
 	return {offsetof(Table, m_hashSize),
-		offsetof(Table, m_hashKeys), offsetof(Table, m_hashValues)};
+		offsetof(Table, m_hashKeys), offsetof(Table, m_hashValues),
+		offsetof(Table, m_array) + offsetof(Span<Value>, data_),
+		offsetof(Table, m_array) + offsetof(Span<Value>, size_),
+		offsetof(Table, m_arrayLength), offsetof(Table, metatable)};
 }
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
@@ -74,12 +71,12 @@ bool Table::hasArrayIndex(size_t index) const {
 	return nodeIndex >= 0 && !isNil(m_hashValues[static_cast<size_t>(nodeIndex)]);
 }
 
-void Table::updateArrayLengthFrom(size_t startIndex) {
-	size_t newLength = startIndex;
-	while (hasArrayIndex(newLength)) {
+void Table::advanceArrayLength(Table* table) noexcept {
+	size_t newLength = table->m_arrayLength;
+	while (table->hasArrayIndex(newLength)) {
 		++newLength;
 	}
-	m_arrayLength = newLength;
+	table->m_arrayLength = newLength;
 }
 
 size_t Table::hashValue(const Value& key) const {
@@ -218,16 +215,14 @@ void Table::resize(
 	if (resizedBytes > previousBytes) {
 		m_luaHeap.reserve(resizedBytes - previousBytes, valueTable(this), key, value);
 	}
-	std::vector<Value> oldArray = std::move(m_array);
-	std::unique_ptr<void, HashStorageDeleter> oldHashStorage = std::move(m_hashStorage);
+	const Span<Value> oldArray = m_array;
+	std::unique_ptr<void, StorageDeleter> oldStorage = std::move(m_storage);
 	Value* oldHashKeys = m_hashKeys;
 	Value* oldHashValues = m_hashValues;
 	const size_t oldHashSize = m_hashSize;
 
-	m_array.assign(newArraySize, valueNil());
 	m_arrayLength = 0;
-	allocateHash(newHashSize);
-	m_hashFree = newHashSize > 0 ? static_cast<int>(newHashSize) - 1 : -1;
+	allocateStorage(newArraySize, newHashSize);
 
 	for (size_t i = 0; i < oldArray.size(); ++i) {
 		if (!isNil(oldArray[i])) {
@@ -240,29 +235,25 @@ void Table::resize(
 			rawSet(key, oldHashValues[i]);
 		}
 	}
-	oldHashStorage.reset();
+	oldStorage.reset();
 	if (resizedBytes < previousBytes) {
 		m_luaHeap.release(previousBytes - resizedBytes);
 	}
 }
 
-void Table::allocateHash(size_t size) {
-	m_hashSize = size;
-	if (size == 0) {
-		m_hashStorage.reset();
-		m_hashKeys = nullptr;
-		m_hashValues = nullptr;
-		m_hashNext = nullptr;
-		return;
-	}
-	const size_t byteCount = (size * sizeof(Value) * 2) + (size * sizeof(int32_t));
-	m_hashStorage.reset(::operator new(byteCount));
-	m_hashKeys = static_cast<Value*>(m_hashStorage.get());
-	m_hashValues = m_hashKeys + size;
-	m_hashNext = reinterpret_cast<int32_t*>(m_hashValues + size);
-	std::fill(m_hashKeys, m_hashKeys + size, valueNil());
-	std::fill(m_hashValues, m_hashValues + size, valueNil());
-	std::fill(m_hashNext, m_hashNext + size, kTableHashNextEnd);
+void Table::allocateStorage(size_t arraySize, size_t hashSize) {
+	const size_t valueCount = arraySize + hashSize * 2;
+	const size_t byteCount = valueCount * sizeof(Value) + hashSize * sizeof(int32_t);
+	m_storage.reset(byteCount == 0 ? nullptr : ::operator new(byteCount));
+	Value* values = static_cast<Value*>(m_storage.get());
+	m_array = {values, arraySize};
+	m_hashSize = hashSize;
+	m_hashKeys = hashSize == 0 ? nullptr : values + arraySize;
+	m_hashValues = hashSize == 0 ? nullptr : m_hashKeys + hashSize;
+	m_hashNext = hashSize == 0 ? nullptr : reinterpret_cast<int32_t*>(m_hashValues + hashSize);
+	m_hashFree = hashSize == 0 ? -1 : static_cast<int>(hashSize) - 1;
+	std::fill_n(values, valueCount, valueNil());
+	std::fill_n(m_hashNext, hashSize, kTableHashNextEnd);
 }
 
 int Table::rawSet(const Value& key, const Value& value) {
@@ -277,7 +268,7 @@ int Table::rawSet(const Value& key, const Value& value) {
 	}
 	const int nodeIndex = insertHash(key, value);
 	if (isArrayKey && static_cast<size_t>(index) == m_arrayLength) {
-		updateArrayLengthFrom(m_arrayLength);
+		advanceArrayLength(this);
 	}
 	return nodeIndex;
 }
@@ -490,10 +481,8 @@ int Table::length() const {
 
 void Table::clear() {
 	const size_t previousBytes = trackedHeapBytes();
-	m_array.clear();
 	m_arrayLength = 0;
-	allocateHash(0);
-	m_hashFree = -1;
+	allocateStorage(0, 0);
 	m_luaHeap.release(previousBytes - trackedHeapBytes());
 }
 
@@ -605,10 +594,8 @@ size_t Table::trackedHeapBytes() const {
 
 void Table::prepareRestoreStorage(size_t arrayCapacity, size_t hashCapacity) {
 	const size_t previousBytes = trackedHeapBytes();
-	m_array.assign(arrayCapacity, valueNil());
 	m_arrayLength = 0;
-	allocateHash(hashCapacity);
-	m_hashFree = hashCapacity > 0 ? static_cast<int>(hashCapacity) - 1 : -1;
+	allocateStorage(arrayCapacity, hashCapacity);
 	m_luaHeap.adjustForRestore(previousBytes, trackedHeapBytes());
 }
 
