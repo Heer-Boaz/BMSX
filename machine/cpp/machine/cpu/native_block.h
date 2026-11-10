@@ -130,6 +130,9 @@ inline constexpr bool nativeBlockSupports(u8 op) {
 		case OpCode::SUB:
 		case OpCode::MUL:
 		case OpCode::DIV:
+		case OpCode::MOD:
+		case OpCode::FLOORDIV:
+		case OpCode::POW:
 		case OpCode::UNM:
 		case OpCode::NOT:
 		case OpCode::BAND:

@@ -11,6 +11,8 @@ import type { StringPool } from './string_pool';
 import type { CallFrame } from './call_state';
 import { compiledContextSupports, emitContext } from './compiled_block_context';
 import { compiledTableSupports, emitTableOperation } from './compiled_block_table';
+import { luaFloorDivide, luaModulo } from '../../spec/blua32/numeric';
+import { luaPow } from '../../spec/blua32/pow';
 
 export const enum CpuExecutionBackend {
 	Interpreter,
@@ -189,6 +191,11 @@ for (const [op, operator] of [
 ] as const) {
 	numberEmitters[op] = (p, w, r) => `(${r.numberOperand(p.b[w])})${operator}(${r.numberOperand(p.c[w])})`;
 }
+for (const [op, functionName] of [
+	[OpCode.MOD, 'mod'], [OpCode.FLOORDIV, 'floorDiv'], [OpCode.POW, 'pow'],
+] as const) {
+	numberEmitters[op] = (p, w, r) => `${functionName}(${r.numberOperand(p.b[w])},${r.numberOperand(p.c[w])})`;
+}
 emitters[OpCode.JMP] = () => '';
 emitters[OpCode.JMPIF] = emitters[OpCode.JMP];
 emitters[OpCode.JMPIFNOT] = emitters[OpCode.JMP];
@@ -321,13 +328,16 @@ export function compileJavaScriptBlock(
 	let execute: CompiledBlock['execute'];
 	if (memoryReads) {
 		const cartridges = memory.cartridgeController;
-		execute = new Function('m', 'g', 's', 'c', 'c0', 'c1', 'f', 'q', 'kt', 'gl', 'sy', functionSource)(
+		execute = new Function('m', 'g', 's', 'c', 'c0', 'c1', 'f', 'q', 'kt', 'gl', 'sy', 'mod', 'floorDiv', 'pow', functionSource)(
 			memory.ramView, memory.ramWriteWatches().groupData(), memory.systemRomStorage(),
-			cartridges, cartridges.romStorage(0), cartridges.romStorage(1), valueFromNumber, strings, image.constTags, globalSlots, systemGlobalSlots) as CompiledBlock['execute'];
+			cartridges, cartridges.romStorage(0), cartridges.romStorage(1), valueFromNumber, strings, image.constTags, globalSlots, systemGlobalSlots,
+			luaModulo, luaFloorDivide, luaPow) as CompiledBlock['execute'];
 	} else if (memoryAccess) {
-		execute = new Function('m', 'g', 'f', 'q', 'kt', 'gl', 'sy', functionSource)(memory.ramView, memory.ramWriteWatches().groupData(), valueFromNumber, strings, image.constTags, globalSlots, systemGlobalSlots) as CompiledBlock['execute'];
+		execute = new Function('m', 'g', 'f', 'q', 'kt', 'gl', 'sy', 'mod', 'floorDiv', 'pow', functionSource)(memory.ramView, memory.ramWriteWatches().groupData(), valueFromNumber, strings, image.constTags, globalSlots, systemGlobalSlots,
+			luaModulo, luaFloorDivide, luaPow) as CompiledBlock['execute'];
 	} else if (registers.localCount !== 0 || ordering || contextCapture) {
-		execute = new Function('f', 'q', 'kt', 'gl', 'sy', functionSource)(valueFromNumber, strings, image.constTags, globalSlots, systemGlobalSlots) as CompiledBlock['execute'];
+		execute = new Function('f', 'q', 'kt', 'gl', 'sy', 'mod', 'floorDiv', 'pow', functionSource)(valueFromNumber, strings, image.constTags, globalSlots, systemGlobalSlots,
+			luaModulo, luaFloorDivide, luaPow) as CompiledBlock['execute'];
 	} else execute = new Function('r', 'k', 'p', 'frame', functionSource) as CompiledBlock['execute'];
 	return {
 		execute,

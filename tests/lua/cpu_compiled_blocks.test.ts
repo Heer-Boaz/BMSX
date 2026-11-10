@@ -14,6 +14,8 @@ import { BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET } from '../../machine/ts/spec/blua
 import { readLE32 } from '../../machine/ts/common/endian';
 import { compileLuaSource } from './cpu_test_harness';
 import { compileCoroutineTest } from '../helpers/coroutine';
+import { luaFloorDivide, luaModulo } from '../../machine/ts/spec/blua32/numeric';
+import { luaPow } from '../../machine/ts/spec/blua32/pow';
 
 function compiledEntries(cpu: CPU): number {
 	let count = 0;
@@ -51,7 +53,7 @@ test('generated JavaScript warms within one slice and preserves every budget bou
 	assert.ok(compiledEntries(js) > 0, 'the JavaScript backend really installed generated functions');
 });
 
-test('multiple numeric definitions stay local across copies and conversions until the actual exit', () => {
+for (const op of [OpCode.SHR, OpCode.MOD, OpCode.FLOORDIV, OpCode.POW]) test(`multiple numeric definitions stay local across ${OpCode[op]} and copies until the actual exit`, () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.K1, 0, 0, 0);
 	writeInstruction(text, 1, OpCode.KSMI, 1, 0, 5);
@@ -61,7 +63,7 @@ test('multiple numeric definitions stay local across copies and conversions unti
 	writeInstruction(text, 5, OpCode.MUL, 2, 0, 1);
 	writeInstruction(text, 6, OpCode.ADD, 0, 0, 2);
 	writeInstruction(text, 7, OpCode.MOV, 3, 2, 0);
-	writeInstruction(text, 8, OpCode.SHR, 2, 2, 0);
+	writeInstruction(text, 8, op, 2, 2, 0);
 	writeInstruction(text, 9, OpCode.MOV, 4, 0, 0);
 	writeInstruction(text, 10, OpCode.ADD, 0, 0, 1);
 	writeInstruction(text, 11, OpCode.JMP, 0, 63, 52, 255);
@@ -79,7 +81,9 @@ test('multiple numeric definitions stay local across copies and conversions unti
 	assert.equal(block.exits[block.execute(r, frame.executionImage.constScalars, page, frame)], block.terminal);
 	assert.equal(reads, 0, 'the generated block consumes local numeric definitions, not their stale slot values');
 	assert.equal(writes, 5, 'each final numeric slot is published once instead of after every instruction');
-	assert.deepEqual(Array.from({ length: 5 }, (_, index) => getNumber(index)), [83, 11, 0, 66, 72],
+	const result = op === OpCode.SHR ? 0 : op === OpCode.MOD ? luaModulo(66, 72)
+		: op === OpCode.FLOORDIV ? luaFloorDivide(66, 72) : luaPow(66, 72);
+	assert.deepEqual(Array.from({ length: 5 }, (_, index) => getNumber(index)), [83, 11, result, 66, 72],
 		'a copied value retains its definition after its source register is reassigned');
 });
 
@@ -111,10 +115,12 @@ test('generated moves retain reference values, string ids, boolean kinds and con
 	}
 });
 
-for (const op of [OpCode.ADD, OpCode.SUB, OpCode.MUL, OpCode.DIV, OpCode.BAND, OpCode.BOR, OpCode.BXOR, OpCode.SHL, OpCode.SHR, OpCode.UNM, OpCode.BNOT]) {
+for (const op of [OpCode.ADD, OpCode.SUB, OpCode.MUL, OpCode.DIV, OpCode.MOD, OpCode.FLOORDIV, OpCode.POW,
+	OpCode.BAND, OpCode.BOR, OpCode.BXOR, OpCode.SHL, OpCode.SHR, OpCode.UNM, OpCode.BNOT]) {
 	test(`generated opcode ${OpCode[op]} agrees with scalar dispatch for numeric edges, non-Numbers and destination aliases`, () => {
 		const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 		const values = [0, -0, 0.25, -0.75, 1, -1, 31, 32, 2147483648, -2147483648,
+			10, 0.05, 2, 1 / 12, 1.0000000000000002, 2147483649,
 			4294967295, -4294967296.75, 4294967296.25, 1e100, -1e100, Number.MIN_VALUE,
 			Infinity, -Infinity, NaN, null, false, true];
 		for (const destination of [0, 1, 2]) {
@@ -126,6 +132,10 @@ for (const op of [OpCode.ADD, OpCode.SUB, OpCode.MUL, OpCode.DIV, OpCode.BAND, O
 			const ref = createTestSystemCpu(image).cpu;
 			for (const cpu of [js, ref]) cpu.runUntilDepth(0, 90);
 			assert.ok(compiledEntries(js) > 0);
+			const frame = js.rootThread.frames[0];
+			const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2;
+			assert.equal(frame.decodedPage!.compiledBlocks!.entries[entry]!.sourceWords, 3,
+				'the numeric opcode itself executes inside the generated body');
 			for (const left of values) for (const right of values) {
 				for (const cpu of [js, ref]) {
 					cpu.rootThread.frames[0].registers.set(0, left);
@@ -163,20 +173,25 @@ test('generated RK constants preserve numeric kind checks and signed selectors',
 	writeInstruction(text, 0, OpCode.ADD, 0, 63, 62, 63); // K[0] + K[1]
 	writeInstruction(text, 1, OpCode.SHL, 1, 63, 62, 63);
 	writeInstruction(text, 2, OpCode.DIV, 2, 63, 62, 63);
-	writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
+	writeInstruction(text, 3, OpCode.MOD, 3, 63, 62, 63);
+	writeInstruction(text, 4, OpCode.FLOORDIV, 4, 63, 62, 63);
+	writeInstruction(text, 5, OpCode.POW, 5, 63, 62, 63);
+	writeInstruction(text, 6, OpCode.JMP, 0, 63, 57, 255);
 	for (const left of [null, false, true, '7', -0, NaN, Infinity, -4294967296.75]) {
-		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 3 }], constants: [left, -1] });
+		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 7, maxStack: 6 }], constants: [left, -1] });
 		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
 		const ref = createTestSystemCpu(image).cpu;
 		js.runUntilDepth(0, 400);
 		ref.runUntilDepth(0, 400);
 		assert.ok(compiledEntries(js) > 0);
+		const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2;
+		assert.equal(js.rootThread.frames[0].decodedPage!.compiledBlocks!.entries[entry]!.sourceWords, 7);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 	}
 });
 
 test('dependent generated instructions preserve live values, raw copies and every short-grant boundary', () => {
-	const operations = [OpCode.ADD, OpCode.SUB, OpCode.MUL, OpCode.DIV,
+	const operations = [OpCode.ADD, OpCode.SUB, OpCode.MUL, OpCode.DIV, OpCode.MOD, OpCode.FLOORDIV, OpCode.POW,
 		OpCode.BAND, OpCode.BOR, OpCode.BXOR, OpCode.SHL, OpCode.SHR, OpCode.UNM, OpCode.BNOT,
 		OpCode.MOV, OpCode.LOADK, OpCode.KNIL, OpCode.KFALSE, OpCode.KTRUE,
 		OpCode.K0, OpCode.K1, OpCode.KM1, OpCode.KSMI, OpCode.NOT];

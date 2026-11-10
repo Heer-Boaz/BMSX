@@ -341,7 +341,7 @@ void nativeWarmRetiresRejectedPrefixes() {
 	test::Blua32TestImage image;
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOD), 1, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::MFC0), 1, COP0_STATUS, 0);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
 	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 2}};
 	CpuMachine machine(image);

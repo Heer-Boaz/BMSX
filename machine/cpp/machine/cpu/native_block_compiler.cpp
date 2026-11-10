@@ -5,6 +5,8 @@
 
 #include "machine/cpu/execution_image.h"
 #include "spec/blua32/memory_access_kind.h"
+#include "spec/blua32/numeric.h"
+#include "spec/blua32/pow.h"
 
 namespace bmsx {
 
@@ -25,7 +27,8 @@ NativeBlockCompiler::NativeBlockCompiler(const Value* constants, const NativeBlo
 			|| slow == NativeBlockExit::WriteMemory
 			|| (slow == NativeBlockExit::ReadMemory && instruction.c != static_cast<i16>(MemoryAccessKind::U8));
 		readMappings += slow == NativeBlockExit::ReadMemory;
-		calls |= op == OpCode::LEN || op == OpCode::SETI || op == OpCode::SETT || op == OpCode::LOADKR || (op == OpCode::BNOT && instruction.b >= 0)
+		calls |= op == OpCode::MOD || op == OpCode::FLOORDIV || op == OpCode::POW
+			|| op == OpCode::LEN || op == OpCode::SETI || op == OpCode::SETT || op == OpCode::LOADKR || (op == OpCode::BNOT && instruction.b >= 0)
 			|| ((op == OpCode::BAND || op == OpCode::BOR || op == OpCode::BXOR || op == OpCode::SHL || op == OpCode::SHR)
 				&& (instruction.b >= 0 || instruction.c >= 0))
 			|| ((slow == NativeBlockExit::ReadMemory || slow == NativeBlockExit::WriteMemory)
@@ -99,6 +102,18 @@ void NativeBlockCompiler::emit(const DecodedInstruction& instruction, const Nati
 				: op == OpCode::SUB ? SLJIT_SUB_F64
 				: op == OpCode::MUL ? SLJIT_MUL_F64 : SLJIT_DIV_F64;
 			sljit_emit_fop2(m_compiler, operation, SLJIT_FR0, 0, SLJIT_FR0, 0, SLJIT_FR1, 0);
+			canonicalizeNumber();
+			break;
+		}
+		case OpCode::MOD:
+		case OpCode::FLOORDIV:
+		case OpCode::POW: {
+			loadOperand(instruction.c, SLJIT_FR1);
+			loadOperand(instruction.b, SLJIT_FR0);
+			const auto function = op == OpCode::MOD ? luaModulo : op == OpCode::FLOORDIV ? luaFloorDivide : luaPow;
+			emitCallSpills(false);
+			sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS2(F64, F64, F64), SLJIT_IMM, SLJIT_FUNC_ADDR(function));
+			emitCallSpills(true);
 			canonicalizeNumber();
 			break;
 		}

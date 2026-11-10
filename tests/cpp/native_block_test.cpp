@@ -5,6 +5,8 @@
 #include "machine/cpu/call_state.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
+#include "spec/blua32/numeric.h"
+#include "spec/blua32/pow.h"
 
 #include <array>
 #include <iostream>
@@ -42,10 +44,13 @@ void multipleRegisterDefinitionsSurviveCallAndExit() {
 		source[i] = {&instruction, 0x1000u + static_cast<u32>(i) * INSTRUCTION_BYTES};
 	}
 	size_t bytes = 0;
-	{
+	for (const auto op : {OpCode::SHR, OpCode::MOD, OpCode::FLOORDIV, OpCode::POW}) {
+		decoded[8].op = static_cast<u8>(op);
 		auto block = NativeBlock::compile(source, nullptr, bytes, memory, cpu.stringPool());
 		std::array<Value, 5> registers{valueNil(), valueNil(), valueNil(), valueNil(), valueNil()};
-		const std::array expected{valueNumber(83), valueNumber(11), valueNumber(0), valueNumber(66), valueNumber(72)};
+		const double result = op == OpCode::SHR ? 0.0 : op == OpCode::MOD ? luaModulo(66, 72)
+			: op == OpCode::FLOORDIV ? luaFloorDivide(66, 72) : luaPow(66, 72);
+		const std::array expected{valueNumber(83), valueNumber(11), valueNumber(result), valueNumber(66), valueNumber(72)};
 		require(block->run(nativeRunState = {.registers = registers.data(), .constants = nullptr, .remainingCycles = block->terminal.cycles}) == &block->terminal && registers == expected,
 			"multiple live native values survive ABI calls, register pressure, alias copies and an actual exit");
 	}
@@ -193,6 +198,9 @@ Value evaluate(OpCode op, Value left, Value right) {
 		case OpCode::SUB: return valueNumber(asNumber(left) - asNumber(right));
 		case OpCode::MUL: return valueNumber(asNumber(left) * asNumber(right));
 		case OpCode::DIV: return valueNumber(asNumber(left) / asNumber(right));
+		case OpCode::MOD: return valueNumber(luaModulo(asNumber(left), asNumber(right)));
+		case OpCode::FLOORDIV: return valueNumber(luaFloorDivide(asNumber(left), asNumber(right)));
+		case OpCode::POW: return valueNumber(luaPow(asNumber(left), asNumber(right)));
 		case OpCode::UNM: return valueNumber(-asNumber(left));
 		case OpCode::BAND: return valueNumber(static_cast<i32>(toU32(left) & toU32(right)));
 		case OpCode::BOR: return valueNumber(static_cast<i32>(toU32(left) | toU32(right)));
@@ -209,6 +217,8 @@ void arithmeticAndWordDatapaths() {
 	const std::array values{
 		valueNumber(0.0), valueNumber(-0.0), valueNumber(1.0), valueNumber(-1.0),
 		valueNumber(0.25), valueNumber(-0.75), valueNumber(31.0), valueNumber(32.0),
+		valueNumber(10), valueNumber(0.05), valueNumber(2), valueNumber(1.0 / 12.0),
+		valueNumber(1.0000000000000002), valueNumber(2147483649.0),
 		valueNumber(2147483647.0), valueNumber(2147483648.0), valueNumber(4294967295.0),
 		valueNumber(-2147483648.0), valueNumber(-4294967296.75), valueNumber(4294967296.25),
 		valueNumber(1e100), valueNumber(-1e100), valueNumber(std::numeric_limits<double>::denorm_min()),
@@ -217,7 +227,7 @@ void arithmeticAndWordDatapaths() {
 		valueBool(true), valueString(0x12345678u), valueFromTag(ValueTag::Table, 0x1234u),
 	};
 	size_t cacheBytes = 0;
-	for (const auto op : {OpCode::ADD, OpCode::SUB, OpCode::MUL, OpCode::DIV,
+	for (const auto op : {OpCode::ADD, OpCode::SUB, OpCode::MUL, OpCode::DIV, OpCode::MOD, OpCode::FLOORDIV, OpCode::POW,
 		OpCode::BAND, OpCode::BOR, OpCode::BXOR, OpCode::SHL, OpCode::SHR, OpCode::UNM, OpCode::BNOT}) {
 		for (const Value left : values) for (const Value right : values) {
 			for (const bool constants : {false, true}) for (const u16 destination : {u16{0}, u16{1}, u16{2}}) {
@@ -299,7 +309,7 @@ void dependentInstructionsWriteBackEveryLiveRegister() {
 		valueNumber(std::numeric_limits<double>::infinity()), VALUE_QNAN_MASK, valueNil(), valueBool(false),
 		valueBool(true), valueString(0x12345678u), valueFromTag(ValueTag::Table, 0x1234u),
 		Value{0x7ff0000000000001ULL}, Value{0xfff0000000000001ULL}};
-	const std::array operations{OpCode::ADD, OpCode::SUB, OpCode::MUL, OpCode::DIV,
+	const std::array operations{OpCode::ADD, OpCode::SUB, OpCode::MUL, OpCode::DIV, OpCode::MOD, OpCode::FLOORDIV, OpCode::POW,
 		OpCode::BAND, OpCode::BOR, OpCode::BXOR, OpCode::SHL, OpCode::SHR, OpCode::UNM, OpCode::BNOT,
 		OpCode::MOV, OpCode::LOADK, OpCode::KNIL, OpCode::KFALSE, OpCode::KTRUE,
 		OpCode::K0, OpCode::K1, OpCode::KM1, OpCode::KSMI, OpCode::NOT};
