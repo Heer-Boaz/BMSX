@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <span>
 #include <array>
@@ -26,7 +27,8 @@ struct NativeBlockExitSite;
 
 struct NativeBlockLink {
 	void disconnect();
-	void* code = nullptr;
+	std::uintptr_t patchAddress = 0;
+	std::intptr_t executableOffset = 0;
 	NativeBlock* target = nullptr;
 	NativeBlockLink* previous = nullptr;
 	NativeBlockLink* next = nullptr;
@@ -312,6 +314,7 @@ private:
 	static std::unique_ptr<NativeBlock> prepare(const NativeBlockSource& source, const NativeBlockExitHandlers& exitHandlers);
 	NativeBlock() = default;
 	void* m_body = nullptr;
+	void* m_linkEntry = nullptr;
 	const NativeBlockGate* m_gate = nullptr;
 	NativeBlockLink* m_incoming = nullptr;
 };

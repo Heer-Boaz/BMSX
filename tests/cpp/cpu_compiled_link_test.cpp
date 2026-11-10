@@ -78,7 +78,7 @@ void grantsAndTargetRetirement() {
 	const auto& taken = root->sideExits.back();
 	require(page.nativeBlocks->entries[2] && page.nativeBlocks->entries[4]
 		&& root->region == page.nativeBlocks->entries[2]->region && root->region == page.nativeBlocks->entries[4]->region
-		&& !root->terminal.link.code && !taken.link.code,
+		&& !root->terminal.link.target && !taken.link.target,
 		"both branch targets are internal entries of one code region, not dispatcher links");
 	for (const bool flag : {false, true}) for (const u32 start : {0u, 2u, 4u, 6u}) for (int grant = 2; grant <= 64; ++grant) {
 		std::array<Value, 12> registers; registers.fill(valueNumber(0));

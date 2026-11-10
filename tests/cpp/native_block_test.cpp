@@ -136,6 +136,34 @@ void helperContinuationsReloadTheCurrentRegisterMap() {
 				&& memory.readMappedWord(target) == (entry == 1 ? 0u : 17u) && state.registerTop == 6,
 				"cold entries reload current raw Values, not predecessor values, types or register top");
 		}
+		for (size_t entry = 0; entry < blocks.size(); ++entry) {
+			std::array<DecodedInstruction, 2> prefix{};
+			prefix[0].op = static_cast<u8>(OpCode::MOV); prefix[0].a = 8; prefix[0].b = 2;
+			prefix[1].op = static_cast<u8>(OpCode::JMP); prefix[1].bx = blocks[entry]->firstPc;
+			for (auto& op : prefix) op.width = op.baseCycles = 1;
+			const std::array prefixSource{NativeBlockInstruction{&prefix[0], 0x2000}, NativeBlockInstruction{&prefix[1], 0x2004}};
+			auto predecessor = NativeBlock::compile(prefixSource, nullptr, bytes, memory, cpu.stringPool());
+			require(predecessor->terminal.link.patchAddress != 0,
+				"an external continuation owns a patchable generated-code edge");
+			blocks[entry]->linkFrom(predecessor->terminal);
+			for (const int grant : {1, 2, 3}) {
+				std::array<Value, 9> registers; registers.fill(valueNil());
+				registers[0] = payload; registers[1] = valueNumber(target); registers[2] = table;
+				memory.writeMappedWord(target, 17u);
+				NativeBlockRunState state{.registers = registers.data(), .remainingCycles = grant};
+				const auto* exit = predecessor->run(state);
+				if (grant <= 2) {
+					require(exit == &predecessor->terminal && state.remainingCycles == grant - 2 && state.registerTop == 9
+						&& registers[8] == table && registers[5] == valueNil() && memory.readMappedWord(target) == 17u,
+						"a patched target guard preserves the source descriptor and never admits an exhausted successor");
+				} else {
+					require(exit == &blocks[2]->terminal && state.remainingCycles == 1 - (entry == 0 ? 8 : entry == 1 ? 5 : 2)
+						&& state.registerTop == 9 && registers[5] == (entry == 0 ? valueNumber(17) : payload)
+						&& registers[8] == (entry == 0 ? valueNumber(1) : table),
+						"patched edges enter inherited helper continuations with current values and the target's FP map");
+				}
+			}
+		}
 	}
 	require(bytes == 0, "continuation descriptors release their shared executable exactly once");
 }
@@ -236,7 +264,7 @@ void linkedBodiesShareOneFrameAndRetireTheirEdges() {
 	first->terminal.link.disconnect();
 	require(first->sideExits.back().link.target == second.get(), "unlinking one incoming edge preserves the other");
 	second.reset();
-	require(!first->sideExits.back().link.code && !first->sideExits.back().link.target,
+	require(!first->sideExits.back().link.target,
 		"retiring a target disconnects each surviving source before executable storage is freed");
 	registers[2] = valueBool(true);
 	require(first->run(nativeRunState = {.registers = registers.data(), .constants = constants.data(), .remainingCycles = 1000}) == &first->sideExits.back(),

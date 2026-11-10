@@ -153,7 +153,7 @@ void resolvedComparisonLinksBothPaths() {
 	require(root.sourceWords == 2 && !cache.entries[1] && cache.entries[2] && cache.entries[4]
 		&& root.region == cache.entries[2]->region && root.region == cache.entries[4]->region
 		&& root.sideExits.back().exit == NativeBlockExit::Continue
-		&& !root.terminal.link.code && !root.sideExits.back().link.code,
+		&& !root.terminal.link.target && !root.sideExits.back().link.target,
 		"both comparison outcomes stay in their code region without dynamic skip or link dispatch");
 #endif
 	for (const int value : {0, 1}) for (int grant = 1; grant <= 32; ++grant) {

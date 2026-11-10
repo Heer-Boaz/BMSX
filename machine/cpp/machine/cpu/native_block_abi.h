@@ -34,6 +34,8 @@ public:
 	// An internal deadline exit has already charged its segment.
 	std::array<void*, 2> finishSegment;
 	std::array<void*, 2> publishSegment;
+	// Already materialized/charged edges arrive here when unlinked or expired.
+	void* leaveSegment;
 };
 
 const NativeBlockGate& nativeBlockGate();

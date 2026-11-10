@@ -188,18 +188,18 @@ void NativeBlock::execute(NativeCpuRunState& state) const {
 
 void NativeBlockLink::disconnect() {
 	if (!target) return;
+	sljit_set_jump_addr(patchAddress, reinterpret_cast<sljit_uw>(nativeBlockGate().leaveSegment), executableOffset);
 	if (previous) previous->next = next;
 	else target->m_incoming = next;
 	if (next) next->previous = previous;
 	target = nullptr;
-	code = nullptr;
 	previous = next = nullptr;
 }
 
 void NativeBlock::linkFrom(const NativeBlockExitSite& source) {
 	auto& link = source.link;
 	link.disconnect();
-	link.code = m_body;
+	sljit_set_jump_addr(link.patchAddress, reinterpret_cast<sljit_uw>(m_linkEntry), link.executableOffset);
 	link.target = this;
 	link.next = m_incoming;
 	if (m_incoming) m_incoming->previous = &link;

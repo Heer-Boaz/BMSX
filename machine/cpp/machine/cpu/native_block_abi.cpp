@@ -63,22 +63,10 @@ NativeBlockGate::NativeBlockGate() {
 		}
 		published[saved] = sljit_emit_jump(compiler, SLJIT_JUMP);
 	}
-	auto* publishedLabel = sljit_emit_label(compiler);
-	for (auto* jump : published) sljit_set_label(jump, publishedLabel);
-	// A warm pure edge keeps the same host frame. Other exits publish the
-	// complete state before entering C++, where the descriptor may be retired.
-	sljit_emit_op1(compiler, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), offsetof(NativeBlockExitSite, exit));
-	auto* semanticExit = sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL, SLJIT_R1, 0,
-		SLJIT_IMM, static_cast<sljit_sw>(NativeBlockExit::Continue));
-	auto* deadline = sljit_emit_cmp(compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, SLJIT_S4, 0, SLJIT_IMM, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0),
-		offsetof(NativeBlockExitSite, link) + offsetof(NativeBlockLink, code));
-	auto* unlinked = sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R1, 0, SLJIT_IMM, 0);
-	sljit_emit_ijump(compiler, SLJIT_JUMP, SLJIT_R1, 0);
 	auto* leaveLabel = sljit_emit_label(compiler);
-	sljit_set_label(semanticExit, leaveLabel);
-	sljit_set_label(deadline, leaveLabel);
-	sljit_set_label(unlinked, leaveLabel);
+	for (auto* jump : published) sljit_set_label(jump, leaveLabel);
+	// The cold path publishes complete state before entering C++, where the
+	// descriptor may be retired. Warm edges jump directly between bodies.
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, remainingCycles), SLJIT_S4, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, registerTop), SLJIT_S5, 0);
 	sljit_emit_ijump(compiler, SLJIT_JUMP, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, exitCode));
@@ -86,6 +74,7 @@ NativeBlockGate::NativeBlockGate() {
 	if (!entry) throw std::bad_alloc();
 	exit = reinterpret_cast<void*>(sljit_get_label_addr(returnLabel));
 	dispatch = reinterpret_cast<void*>(sljit_get_label_addr(dispatchLabel));
+	leaveSegment = reinterpret_cast<void*>(sljit_get_label_addr(leaveLabel));
 	for (size_t bank = 0; bank < finishLabels.size(); ++bank) {
 		finishSegment[bank] = reinterpret_cast<void*>(sljit_get_label_addr(finishLabels[bank]));
 		publishSegment[bank] = reinterpret_cast<void*>(sljit_get_label_addr(publishLabels[bank]));

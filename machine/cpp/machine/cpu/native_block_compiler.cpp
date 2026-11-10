@@ -48,6 +48,7 @@ NativeBlockCompiler::NativeBlockCompiler(const Value* constants, std::span<const
 	m_slowPaths.reserve(slowPaths);
 	m_readMappings.reserve(readMappings);
 	m_internalBranches.reserve(blocks.size() * 2u);
+	m_externalBranches.reserve(blocks.size() * 2u);
 	m_shortGrants.reserve(blocks.size());
 	m_useSavedFloats = calls && SLJIT_NUMBER_OF_SAVED_FLOAT_REGISTERS >= REGISTER_CACHE_CAPACITY;
 	m_registerCount = m_useSavedFloats ? REGISTER_CACHE_CAPACITY
@@ -263,6 +264,16 @@ void NativeBlockCompiler::emitExit(NativeBlockExitSite* exit, bool fallthrough) 
 			m_internalBranches.push_back({sljit_emit_jump(m_compiler, SLJIT_JUMP), index});
 			return;
 		}
+		// Independently compiled regions have independent register maps. Publish
+		// only dirty values, then patch this edge to the target's entry guard.
+		// Warm links bypass the cold state-map materializer and dispatcher.
+		emitRegisterSnapshot(registers);
+		emitSegmentCharge(*exit);
+		sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(exit));
+		auto* jump = sljit_emit_jump(m_compiler, SLJIT_JUMP | SLJIT_REWRITABLE_JUMP);
+		sljit_set_target(jump, reinterpret_cast<sljit_uw>(nativeBlockGate().leaveSegment));
+		m_externalBranches.push_back({jump, &exit->link});
+		return;
 	}
 	emitSharedExit(*exit, registers);
 }
@@ -274,7 +285,7 @@ void NativeBlockCompiler::setExitRegisterMap(NativeBlockExitSite& exit, const Re
 
 void NativeBlockCompiler::emitSharedExit(NativeBlockExitSite& exit, const RegisterSnapshot& registers) {
 	setExitRegisterMap(exit, registers);
-	// The stable gate owns materialization, charging and external chaining.
+	// The stable gate owns cold materialization and charging.
 	// A semantic helper may retire this descriptor and its code after that.
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&exit));
 	sljit_emit_ijump(m_compiler, SLJIT_JUMP, SLJIT_IMM,
@@ -296,6 +307,9 @@ void* NativeBlockCompiler::finish(size_t& codeBytes) {
 		auto& entry = m_entries[index];
 		bool dynamic = false;
 		for (int slot = m_residentCount; slot < m_registerCount; ++slot) dynamic |= entry.registers[slot] >= 0;
+		entry.linked = sljit_emit_label(m_compiler);
+		sljit_set_target(sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32,
+			SLJIT_S4, 0, SLJIT_IMM, 0), reinterpret_cast<sljit_uw>(nativeBlockGate().leaveSegment));
 		entry.external = entry.body;
 		if (m_residentCount != 0) {
 			entry.external = sljit_emit_label(m_compiler);
@@ -304,7 +318,7 @@ void* NativeBlockCompiler::finish(size_t& codeBytes) {
 					SLJIT_MEM1(SLJIT_S0), m_residentRegisters[slot].guest * sizeof(Value));
 		}
 		sljit_jump* external = nullptr;
-		if (entry.inherited && m_residentCount != 0) external = sljit_emit_jump(m_compiler, SLJIT_JUMP);
+		if (entry.inherited) external = sljit_emit_jump(m_compiler, SLJIT_JUMP);
 		if (entry.inherited) {
 			entry.guarded = sljit_emit_label(m_compiler);
 			m_shortGrants.push_back(sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32,
@@ -317,8 +331,7 @@ void* NativeBlockCompiler::finish(size_t& codeBytes) {
 			if (entry.registers[slot] >= 0) sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, cachedFloatRegister(slot), 0,
 				SLJIT_MEM1(SLJIT_S0), entry.registers[slot] * sizeof(Value));
 		}
-		if (entry.inherited || m_residentCount != 0 || dynamic)
-			sljit_set_label(sljit_emit_jump(m_compiler, SLJIT_JUMP), entry.body);
+		sljit_set_label(sljit_emit_jump(m_compiler, SLJIT_JUMP), entry.body);
 	}
 	for (const auto& branch : m_internalBranches) sljit_set_label(branch.jump, m_entries[branch.target].guarded);
 	auto* shortGrant = sljit_emit_label(m_compiler);
@@ -334,8 +347,15 @@ void* NativeBlockCompiler::finish(size_t& codeBytes) {
 	void* code = sljit_generate_code(m_compiler, 0, nullptr);
 	if (!code) throw std::bad_alloc();
 	codeBytes = sljit_get_generated_code_size(m_compiler);
-	for (size_t index = 0; index < m_blocks.size(); ++index)
+	for (size_t index = 0; index < m_blocks.size(); ++index) {
 		m_blocks[index]->m_body = reinterpret_cast<void*>(sljit_get_label_addr(m_entries[index].external));
+		m_blocks[index]->m_linkEntry = reinterpret_cast<void*>(sljit_get_label_addr(m_entries[index].linked));
+	}
+	const auto executableOffset = sljit_get_executable_offset(m_compiler);
+	for (const auto& branch : m_externalBranches) {
+		branch.link->patchAddress = sljit_get_jump_addr(branch.jump);
+		branch.link->executableOffset = executableOffset;
+	}
 	return code;
 }
 

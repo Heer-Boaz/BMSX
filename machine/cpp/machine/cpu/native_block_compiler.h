@@ -70,6 +70,7 @@ private:
 	struct EntryPoint {
 		sljit_label* guarded = nullptr;
 		sljit_label* external = nullptr;
+		sljit_label* linked = nullptr;
 		sljit_label* body = nullptr;
 		RegisterSnapshot registers;
 		bool inherited = false;
@@ -77,6 +78,8 @@ private:
 	std::vector<EntryPoint> m_entries;
 	struct InternalBranch { sljit_jump* jump; size_t target; };
 	std::vector<InternalBranch> m_internalBranches;
+	struct ExternalBranch { sljit_jump* jump; NativeBlockLink* link; };
+	std::vector<ExternalBranch> m_externalBranches;
 	std::vector<sljit_jump*> m_shortGrants;
 	const Value* m_constants;
 	NativeBlock* m_block = nullptr;
