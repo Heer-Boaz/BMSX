@@ -24,7 +24,8 @@ export const enum CpuExecutionBackend {
 
 export const COMPILED_BLOCK_THRESHOLD = 8;
 export const COMPILED_BLOCK_MAX_INSTRUCTIONS = 64;
-export const COMPILED_BLOCK_SOURCE_BUDGET = 1024 * 1024;
+/** Generated source code units, not executable bytes or an upfront allocation. */
+export const COMPILED_BLOCK_SOURCE_BUDGET = 4 * 1024 * 1024;
 
 export const enum CompiledBlockExit {
 	Continue,
