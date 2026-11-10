@@ -42,16 +42,16 @@ std::vector<std::unique_ptr<NativeBlock>> NativeBlock::compileRegion(
 	NativeBlockCompiler compiler(constants, blocks, memory, strings, sources);
 	for (size_t index = 0; index < sources.size(); ++index) {
 		const auto& source = sources[index];
-		const auto& block = *blocks[index];
+		auto& block = *blocks[index];
 		compiler.beginBlock(index, index != 0u && sources[index - 1u].fallthrough);
 		size_t slow = 0;
 		const bool branch = nativeBlockComparison(source.instructions.back().decoded->op)
 			|| source.instructions.back().decoded->op == static_cast<u8>(OpCode::JMPIF)
 			|| source.instructions.back().decoded->op == static_cast<u8>(OpCode::JMPIFNOT);
 		const size_t slowCount = block.sideExits.size() - (branch ? 1u : 0u);
-		const auto* taken = branch ? &block.sideExits.back() : nullptr;
+		auto* taken = branch ? &block.sideExits.back() : nullptr;
 		for (const auto& instruction : source.instructions) {
-			const auto* exit = slow < slowCount && block.sideExits[slow].currentPc == instruction.pc ? &block.sideExits[slow++] : nullptr;
+			auto* exit = slow < slowCount && block.sideExits[slow].currentPc == instruction.pc ? &block.sideExits[slow++] : nullptr;
 			compiler.emit(*instruction.decoded, exit, taken);
 		}
 		compiler.endBlock(source.fallthrough);
@@ -84,8 +84,6 @@ std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& sourc
 	const auto finalOp = static_cast<OpCode>(instructions.back().decoded->op);
 	block->sideExits.reserve(slowCount + (finalOp == OpCode::JMPIF || finalOp == OpCode::JMPIFNOT
 		|| nativeBlockComparison(static_cast<u8>(finalOp)) ? 1 : 0));
-	// Service a host deadline after the admitted segment, retaining its full charge.
-	block->entryCycles = 1;
 	auto& terminal = block->terminal;
 	controlGuarded = false;
 	for (const auto& source : instructions) {
@@ -202,7 +200,6 @@ void NativeBlock::linkFrom(const NativeBlockExitSite& source) {
 	auto& link = source.link;
 	link.disconnect();
 	link.code = m_body;
-	link.cycles = entryCycles;
 	link.target = this;
 	link.next = m_incoming;
 	if (m_incoming) m_incoming->previous = &link;

@@ -183,9 +183,9 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 	require(read && write, "the table loop really uses native field read and write entries");
 	auto& nativeFrame = *native.cpu.activeThread()->frames[0];
 	const auto& loop = nativeFrame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u];
-	require(loop && loop->sourceWords == 6 && loop->entryCycles == 1,
+	require(loop && loop->sourceWords == 6,
 		"field hits and arithmetic are compiled together through the loop branch");
-	require(loop->run(nativeRunState = {.registers = nativeFrame.registers, .constants = nativeFrame.executionImage->constPool.data(), .remainingCycles = loop->entryCycles})->nextPc == native.rom.textAddress,
+	require(loop->run(nativeRunState = {.registers = nativeFrame.registers, .constants = nativeFrame.executionImage->constPool.data(), .remainingCycles = 1})->nextPc == native.rom.textAddress,
 		"ordinary read and write hits reach the final native branch without a host side exit");
 	// The direct datapath probe executes one loop; keep both reference machines aligned.
 	scalar.cpu.runUntilDepth(0, 6);

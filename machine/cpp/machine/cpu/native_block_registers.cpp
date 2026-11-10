@@ -48,12 +48,6 @@ void NativeBlockCompiler::planResidentRegisters(std::span<const NativeBlockSourc
 	}
 }
 
-void NativeBlockCompiler::emitResidentWriteback() {
-	for (int slot = 0; slot < m_residentCount; ++slot) if (m_residentRegisters[slot].dirty)
-		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_MEM1(SLJIT_S0),
-			m_residentRegisters[slot].guest * sizeof(Value), cachedFloatRegister(slot), 0);
-}
-
 void NativeBlockCompiler::reloadResidentRange(int first, int end) {
 	for (int slot = 0; slot < m_residentCount; ++slot) {
 		auto& resident = m_registers[slot];

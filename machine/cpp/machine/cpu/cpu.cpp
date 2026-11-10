@@ -2651,13 +2651,7 @@ dispatch_instruction:
 				case static_cast<u8>(DecodedDispatchOp::NativeBlock): {
 					nativeBlock = decodedPage->nativeBlocks->entries[pageOffset].get();
 					// The first instruction's ordinary charge/PC publication has
-					// already happened. Admit the remaining block without undoing it.
-					const int remainingCycles = nativeBlock->entryCycles - decoded->baseCycles;
-					if (instructionBudgetRemaining < remainingCycles) {
-						FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b);
-						dispatchOp = decoded->op;
-						goto dispatch_instruction;
-					}
+					// already happened with positive budget, admitting this segment.
 					nativeFirstDispatchCycles = decoded->baseCycles;
 					goto dispatch_native_block;
 				}
@@ -2807,7 +2801,7 @@ dispatch_rebind_frame:
 					decodedPage = &decodedPageForFrame(FRAME, pc);
 					if (decodedPage->nativeBlocks) {
 						nativeBlock = decodedPage->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
-						if (nativeBlock && instructionBudgetRemaining >= nativeBlock->entryCycles) {
+						if (nativeBlock && instructionBudgetRemaining > 0) {
 							nativeFirstDispatchCycles = 0;
 							goto dispatch_native_block;
 						}

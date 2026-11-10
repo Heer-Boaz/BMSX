@@ -118,14 +118,13 @@ void helperContinuationsReloadTheCurrentRegisterMap() {
 		auto blocks = NativeBlock::compileRegion(plans, nullptr, bytes, memory, cpu.stringPool());
 		require(blocks[0]->region == blocks[1]->region && blocks[1]->region == blocks[2]->region,
 			"helper continuations are entries of one executable allocation");
-		require(blocks[0]->entryCycles == 1 && blocks[1]->entryCycles == 1 && blocks[2]->entryCycles == 1
-			&& blocks[0]->sourceWords == 6 && blocks[1]->sourceWords == 4 && blocks[2]->sourceWords == 2,
+		require(blocks[0]->sourceWords == 6 && blocks[1]->sourceWords == 4 && blocks[2]->sourceWords == 2,
 			"positive budget admits each continuation's bounded linear suffix");
 		for (int iteration = 0; iteration < 32; ++iteration) for (size_t entry = 0; entry < blocks.size(); ++entry) {
 			std::array<Value, 9> registers; registers.fill(valueNil());
 			registers[0] = payload; registers[1] = valueNumber(target); registers[8] = table;
 			memory.writeMappedWord(target, 17u);
-			NativeBlockRunState state{.registers = registers.data(), .remainingCycles = blocks[entry]->entryCycles};
+			NativeBlockRunState state{.registers = registers.data(), .remainingCycles = 1};
 			require(blocks[entry]->run(state) == &blocks[2]->terminal && state.remainingCycles == -(entry == 0 ? 7 : entry == 1 ? 4 : 1),
 				"an admitted suffix returns its complete cycle debt without a mid-span host exit");
 			if (entry == 0) require(registers[0] == valueNumber(17) && registers[4] == valueNumber(1)
@@ -264,7 +263,7 @@ void linkedAtomicStoreDebitsItsWholeChargeBeforeTestingItsSuccessor() {
 	auto second = NativeBlock::compile(span, nullptr, bytes, memory, cpu.stringPool());
 	auto third = NativeBlock::compile(successor, nullptr, bytes, memory, cpu.stringPool());
 	second->linkFrom(first->terminal); third->linkFrom(second->terminal);
-	require(first->entryCycles == 1 && second->entryCycles == 1 && second->terminal.cycles == 4,
+	require(second->terminal.cycles == 4,
 		"segment entry needs positive budget and retains the complete atomic store charge");
 	constexpr u32 target = DYNAMIC_RAM_BASE + 0x80000u;
 	for (int budget : {2, 3, 6, 7}) {
@@ -686,11 +685,57 @@ void sideExitHandlersRunAfterGeneratedFrameReturns() {
 	require(bytes == 0, "retired side-exit code leaves no executable cache allocation");
 }
 
+void sharedExitMapsPublishRawValuesFromEitherRegisterBank() {
+	const std::array constants{valueFromTag(ValueTag::False, 37), valueNumber(-0.0),
+		valueFromTag(ValueTag::Nil, 19), valueTable(cpu.createTable()),
+		valueString(cpu.stringPool().intern("field")), valueNumber(5), valueNumber(2)};
+	size_t bytes = 0;
+	for (bool calling : {false, true}) for (int definitions = 0; definitions <= 4; ++definitions) {
+		for (auto terminal : {OpCode::JMP, OpCode::GETFIELD, OpCode::LOAD_MEM}) {
+			std::array<DecodedInstruction, 6> decoded{};
+			std::array<NativeBlockInstruction, 6> source{};
+			size_t count = 0;
+			std::array<Value, 16> registers;
+			registers.fill(valueFromTag(ValueTag::True, 53));
+			registers[12] = valueNumber(0xf0000000u);
+			auto expected = registers;
+			if (calling) {
+				auto& op = decoded[count++]; op.op = static_cast<u8>(OpCode::MOD);
+				op.a = 15; op.b = -6; op.c = -7; expected[15] = valueNumber(1);
+			}
+			for (int index = 0; index < definitions; ++index) {
+				auto& op = decoded[count++]; op.op = static_cast<u8>(OpCode::LOADK);
+				op.a = index; op.bx = index; expected[index] = constants[index];
+			}
+			auto& last = decoded[count++]; last.op = static_cast<u8>(terminal);
+			last.a = 8; last.b = 12;
+			last.c = terminal == OpCode::GETFIELD ? 4 : static_cast<i16>(MemoryAccessKind::U32LE);
+			last.bx = 0x8000;
+			for (size_t index = 0; index < count; ++index) {
+				decoded[index].width = 1; decoded[index].baseCycles = BASE_CYCLES[decoded[index].op];
+				source[index] = {&decoded[index], 0x1000u + static_cast<u32>(index) * INSTRUCTION_BYTES};
+			}
+			auto block = NativeBlock::compile(std::span(source).first(count), constants.data(), bytes, memory, cpu.stringPool());
+			NativeBlockRunState state{.registers = registers.data(), .constants = constants.data(), .remainingCycles = 1, .registerTop = -3};
+			const auto* exit = block->run(state);
+			require(exit->exit == (terminal == OpCode::JMP ? NativeBlockExit::Continue
+				: terminal == OpCode::GETFIELD ? NativeBlockExit::ReadField : NativeBlockExit::ReadMemory),
+				"normal, typed-table and bus exits reach the shared gate with the actual descriptor");
+			require(registers == expected, "shared exit maps preserve raw payloads and publish no unwritten register");
+			require(state.remainingCycles == 1 - exit->cycles
+				&& state.registerTop == (calling ? 16 : definitions == 0 ? -3 : definitions),
+				"the shared gate charges a segment once and preserves an unchanged register top");
+		}
+	}
+	require(bytes == 0, "shared exit descriptors do not retain retired code allocations");
+}
+
 } // namespace
 
 int main() {
 	try {
 		multipleRegisterDefinitionsSurviveCallAndExit();
+		sharedExitMapsPublishRawValuesFromEitherRegisterBank();
 		independentEntriesBindTheirOwnValueBanks();
 		helperContinuationsReloadTheCurrentRegisterMap();
 		residentValuesCrossInternalStringBranches();

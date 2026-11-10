@@ -49,7 +49,7 @@ for (const displaced of [false, true]) for (const count of [0, 5, 1025]) test(`g
 		cpu.runUntilDepth(0, 20 * (7 + surcharge));
 	}
 	const frame = js.cpu.rootThread.frames[0], page = frame.decodedPage!, block = page.compiledBlocks!.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!;
-	assert.equal(block.sourceWords, 5); assert.equal(block.terminal.cycles, 5 + surcharge); assert.equal(block.entryCycles, 1);
+	assert.equal(block.sourceWords, 5); assert.equal(block.terminal.cycles, 5 + surcharge);
 	assert.equal(block.exits[0].exit, CompiledBlockExit.WriteWords); assert.equal(block.exits[0].cycles, 5);
 	for (const value of [-0, -1.75, 4294967296.25, 1e100, Infinity, NaN, null, true]) {
 		for (const grant of [1, 3, 4, 5, 5 + surcharge, 6 + surcharge, 7 + surcharge, 4 * (7 + surcharge)]) {
@@ -179,7 +179,7 @@ for (const blocked of [false, true]) test(`later counted blocks retain earlier c
 	const block = js.cpu.rootThread.frames[0].decodedPage!.compiledBlocks!.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / 4]!;
 	assert.equal(block.terminal.cycles, 5); assert.equal(block.exits[0].cycles, 3);
 	const second = block.page.compiledBlocks!.entries[(block.terminal.nextPc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!;
-	assert.ok(second); assert.equal(second.region, block.region); assert.equal(second.entryCycles, 1); assert.equal(second.terminal.cycles, 3); assert.equal(second.exits[0].cycles, 2);
+	assert.ok(second); assert.equal(second.region, block.region); assert.equal(second.terminal.cycles, 3); assert.equal(second.exits[0].cycles, 2);
 	for (const { cpu, memory } of [js, ref]) {
 		memory.mapIoWrite(IO_BASE + 0x5000, null, () => assert.fail('not ready')); memory.mapIoWriteReady(IO_BASE + 0x5000, () => false);
 		const frame = cpu.rootThread.frames[0]; frame.top = 0; frame.registers.setNumber(1, blocked ? IO_BASE + 0x5000 : RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 4);
@@ -221,7 +221,7 @@ for (const displaced of [false, true]) for (const count of [0, 1025, displaced ?
 	}
 	assertParity(js.cpu, ref.cpu); assert.deepEqual(js.memory.ramData(), ref.memory.ramData());
 	const frame = js.cpu.rootThread.frames[0], block = frame.decodedPage!.compiledBlocks!.entries[(start & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!;
-	assert.ok(block); assert.equal(block.entryCycles, 1); assert.equal(block.sourceWords, 2); assert.equal(block.terminal.cycles, charge);
+	assert.ok(block); assert.equal(block.sourceWords, 2); assert.equal(block.terminal.cycles, charge);
 	if (count > 0) {
 		assert.equal(js.memory.readMappedWord(target), 0x20000000);
 		assert.equal(js.memory.readMappedWord(target + (count - 1) * 4), 0x20000000 | (count - 1));

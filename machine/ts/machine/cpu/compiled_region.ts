@@ -44,7 +44,7 @@ export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: rea
 			if (target !== undefined) {
 				const top = exit.resetsRegisterTop ? `top=Math.max(frame.top,${exit.registerTop});`
 					: exit.registerTop === 0 ? '' : `if(top<${exit.registerTop})top=${exit.registerTop};`;
-				return `if(budget-${exit.cycles}>=${blocks[target].entryCycles}){budget-=${exit.cycles};${top}entry=${target};continue region;}${block.registers.writeResidents()}exit=${index};break region;`;
+				return `if(budget-${exit.cycles}>0){budget-=${exit.cycles};${top}entry=${target};continue region;}${block.registers.writeResidents()}exit=${index};break region;`;
 			}
 		}
 		return `${block.registers.writeResidents()}exit=${index};break region;`;
@@ -71,7 +71,7 @@ export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: rea
 	const region = new CompiledRegion(execute, exits, functionSource.length);
 	for (let entry = 0; entry < blocks.length; ++entry) {
 		const block = blocks[entry];
-		region.entries.push({ region, entry, page, firstWord: block.firstWord, entryCycles: block.entryCycles,
+		region.entries.push({ region, entry, page, firstWord: block.firstWord,
 			terminal: block.terminal, exits: block.exits, sourceWords: block.sourceWords, incoming: null });
 	}
 	return region;

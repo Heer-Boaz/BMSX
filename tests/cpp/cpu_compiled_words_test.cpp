@@ -82,7 +82,7 @@ void plainSpansAndCycles(int count, bool displaced) {
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& block = native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
-	require(block && block->sourceWords == 5 && block->terminal.cycles == 5 + surcharge && block->entryCycles == 1,
+	require(block && block->sourceWords == 5 && block->terminal.cycles == 5 + surcharge,
 		"an admitted counted-store segment retains its complete surcharge");
 	require(block->sideExits[0].exit == NativeBlockExit::WriteWords && block->sideExits[0].cycles == 5, "the checked exit precedes its own readiness surcharge");
 #endif
@@ -232,7 +232,7 @@ void previousChargesSurviveLaterExit(bool blocked) {
 	const auto& block = native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(block && block->terminal.cycles == 5 && block->sideExits[0].cycles == 3, "the first block charges its successful surcharge");
 	const auto* second = native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks->entries[(block->terminal.nextPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
-	require(second && second->region == block->region && second->entryCycles == 1 && second->terminal.cycles == 3 && second->sideExits[0].cycles == 2,
+	require(second && second->region == block->region && second->terminal.cycles == 3 && second->sideExits[0].cycles == 2,
 		"an internal counted entry separates admission, success and blocked preflight charges");
 #endif
 	for (auto* m : {&native, &scalar}) {
@@ -264,7 +264,7 @@ void terminalSpanStartsWithOneCycle(int count, bool displaced) {
 	require(std::equal(native.memory.ramData(), native.memory.ramData() + PSX_MACHINE_SPEC.ramBytes, scalar.memory.ramData()), "all RAM agrees after overrun by a terminal store");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& block = native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks->entries[(start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
-	require(block && block->entryCycles == 1 && block->sourceWords == 2 && block->terminal.cycles == charge,
+	require(block && block->sourceWords == 2 && block->terminal.cycles == charge,
 		"a single counted WIDE store has a native body even when its cost exceeds every grant");
 #endif
 	if (count > 0) require(native.memory.readMappedWord(target) == 0x20000000u

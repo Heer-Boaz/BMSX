@@ -10,7 +10,7 @@ namespace bmsx {
 // One native frame spans every linked body, including bodies compiled later.
 // Keep its register banks, helper spill space and host save area identical.
 struct NativeBlockAbi {
-	static constexpr int registerCacheCapacity = 4;
+	static constexpr int registerCacheCapacity = NATIVE_BLOCK_REGISTER_CACHE_CAPACITY;
 	static constexpr int scratchFloats = 3 + std::min(registerCacheCapacity,
 		SLJIT_NUMBER_OF_FLOAT_REGISTERS - SLJIT_NUMBER_OF_SAVED_FLOAT_REGISTERS - 3);
 	static constexpr int savedFloats = std::min(registerCacheCapacity, SLJIT_NUMBER_OF_SAVED_FLOAT_REGISTERS);
@@ -30,6 +30,10 @@ public:
 	void* entry;
 	void* exit;
 	void* dispatch;
+	// Both entries consume R0=exit descriptor and retain the native frame.
+	// An internal deadline exit has already charged its segment.
+	std::array<void*, 2> finishSegment;
+	std::array<void*, 2> publishSegment;
 };
 
 const NativeBlockGate& nativeBlockGate();

@@ -72,8 +72,8 @@ void NativeBlockCompiler::beginBlock(size_t index, bool inheritRegisters) {
 		m_registers.fill(CachedRegister{});
 		m_registerClock = 0;
 		entry.guarded = sljit_emit_label(m_compiler);
-		m_shortGrants.push_back(sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS | SLJIT_32,
-			SLJIT_S4, 0, SLJIT_IMM, m_block->entryCycles));
+		m_shortGrants.push_back(sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32,
+			SLJIT_S4, 0, SLJIT_IMM, 0));
 	}
 	for (int slot = 0; slot < m_residentCount; ++slot) {
 		m_registers[slot] = m_residentRegisters[slot];
@@ -87,7 +87,7 @@ void NativeBlockCompiler::endBlock(bool fallthrough) {
 	if (!m_hasTerminal) emitExit(&m_block->terminal, fallthrough);
 }
 
-void NativeBlockCompiler::emit(const DecodedInstruction& instruction, const NativeBlockExitSite* slowExit, const NativeBlockExitSite* takenExit) {
+void NativeBlockCompiler::emit(const DecodedInstruction& instruction, NativeBlockExitSite* slowExit, NativeBlockExitSite* takenExit) {
 	const auto op = static_cast<OpCode>(instruction.op);
 	switch (op) {
 		case OpCode::MFC0:
@@ -240,50 +240,55 @@ void NativeBlockCompiler::emit(const DecodedInstruction& instruction, const Nati
 	writeRegister(instruction.a);
 }
 
-void NativeBlockCompiler::emitExit(const NativeBlockExitSite* exit, bool fallthrough) {
-	if (!fallthrough) {
-		bool internal = false;
-		if (exit->exit == NativeBlockExit::Continue)
-			for (const auto& block : m_blocks) internal |= block->firstPc == exit->nextPc;
-		auto registers = registerSnapshot();
-		if (internal) for (int slot = 0; slot < m_residentCount; ++slot) registers[slot] = -1;
-		emitRegisterSnapshot(registers);
+void NativeBlockCompiler::emitExit(NativeBlockExitSite* exit, bool fallthrough) {
+	if (fallthrough) {
+		emitSegmentCharge(*exit);
+		return;
 	}
-	emitExitCode(exit, fallthrough);
-}
-
-void NativeBlockCompiler::emitExitCode(const NativeBlockExitSite* exit, bool fallthrough) {
-	sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_S4, 0, SLJIT_S4, 0, SLJIT_IMM, exit->cycles);
-	if (exit->registerTop != 0) {
-		auto* retained = sljit_emit_cmp(m_compiler, SLJIT_SIG_GREATER_EQUAL | SLJIT_32,
-			SLJIT_S5, 0, SLJIT_IMM, exit->registerTop);
-		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_S5, 0, SLJIT_IMM, exit->registerTop);
-		sljit_set_label(retained, sljit_emit_label(m_compiler));
-	}
-	if (fallthrough) return;
+	auto registers = registerSnapshot();
 	if (exit->exit == NativeBlockExit::Continue) {
 		for (size_t index = 0; index < m_blocks.size(); ++index) {
 			if (m_blocks[index]->firstPc != exit->nextPc) continue;
+			// Internal edges retain the resident bank. The source map publishes
+			// it only if the target's budget guard leaves the generated region.
+			auto residents = registers;
+			for (int slot = 0; slot < REGISTER_CACHE_CAPACITY; ++slot) {
+				if (slot < m_residentCount) registers[slot] = -1;
+				else residents[slot] = -1;
+			}
+			setExitRegisterMap(*exit, residents);
+			emitRegisterSnapshot(registers);
+			emitSegmentCharge(*exit);
 			sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(exit));
 			m_internalBranches.push_back({sljit_emit_jump(m_compiler, SLJIT_JUMP), index});
 			return;
 		}
 	}
-	if (exit->exit == NativeBlockExit::Continue) {
-		sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM0(), reinterpret_cast<sljit_sw>(&exit->link.code));
-		auto* unlinked = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0);
-		auto* shortGrant = sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS | SLJIT_32,
-			SLJIT_S4, 0,
-			SLJIT_MEM0(), reinterpret_cast<sljit_sw>(&exit->link.cycles));
-		sljit_emit_ijump(m_compiler, SLJIT_JUMP, SLJIT_R0, 0);
-		auto* done = sljit_emit_label(m_compiler);
-		sljit_set_label(unlinked, done);
-		sljit_set_label(shortGrant, done);
+	emitSharedExit(*exit, registers);
+}
+
+void NativeBlockCompiler::setExitRegisterMap(NativeBlockExitSite& exit, const RegisterSnapshot& registers) {
+	for (int slot = 0; slot < REGISTER_CACHE_CAPACITY; ++slot)
+		exit.registerOffsets[slot] = registers[slot] < 0 ? -1 : registers[slot] * static_cast<int>(sizeof(Value));
+}
+
+void NativeBlockCompiler::emitSharedExit(NativeBlockExitSite& exit, const RegisterSnapshot& registers) {
+	setExitRegisterMap(exit, registers);
+	// The stable gate owns materialization, charging and external chaining.
+	// A semantic helper may retire this descriptor and its code after that.
+	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&exit));
+	sljit_emit_ijump(m_compiler, SLJIT_JUMP, SLJIT_IMM,
+		reinterpret_cast<sljit_sw>(nativeBlockGate().finishSegment[m_useSavedFloats]));
+}
+
+void NativeBlockCompiler::emitSegmentCharge(const NativeBlockExitSite& exit) {
+	sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_S4, 0, SLJIT_S4, 0, SLJIT_IMM, exit.cycles);
+	if (exit.registerTop != 0) {
+		auto* retained = sljit_emit_cmp(m_compiler, SLJIT_SIG_GREATER_EQUAL | SLJIT_32,
+			SLJIT_S5, 0, SLJIT_IMM, exit.registerTop);
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_S5, 0, SLJIT_IMM, exit.registerTop);
+		sljit_set_label(retained, sljit_emit_label(m_compiler));
 	}
-	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, remainingCycles), SLJIT_S4, 0);
-	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, registerTop), SLJIT_S5, 0);
-	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(exit));
-	sljit_emit_ijump(m_compiler, SLJIT_JUMP, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, exitCode));
 }
 
 void* NativeBlockCompiler::finish(size_t& codeBytes) {
@@ -302,8 +307,8 @@ void* NativeBlockCompiler::finish(size_t& codeBytes) {
 		if (entry.inherited && m_residentCount != 0) external = sljit_emit_jump(m_compiler, SLJIT_JUMP);
 		if (entry.inherited) {
 			entry.guarded = sljit_emit_label(m_compiler);
-			m_shortGrants.push_back(sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS | SLJIT_32,
-				SLJIT_S4, 0, SLJIT_IMM, m_blocks[index]->entryCycles));
+			m_shortGrants.push_back(sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32,
+				SLJIT_S4, 0, SLJIT_IMM, 0));
 		}
 		auto* reload = sljit_emit_label(m_compiler);
 		if (external) sljit_set_label(external, reload);
@@ -318,15 +323,12 @@ void* NativeBlockCompiler::finish(size_t& codeBytes) {
 	for (const auto& branch : m_internalBranches) sljit_set_label(branch.jump, m_entries[branch.target].guarded);
 	auto* shortGrant = sljit_emit_label(m_compiler);
 	for (auto* jump : m_shortGrants) sljit_set_label(jump, shortGrant);
-	emitResidentWriteback();
-	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, remainingCycles), SLJIT_S4, 0);
-	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, registerTop), SLJIT_S5, 0);
-	sljit_emit_ijump(m_compiler, SLJIT_JUMP, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, exitCode));
+	sljit_emit_ijump(m_compiler, SLJIT_JUMP, SLJIT_IMM,
+		reinterpret_cast<sljit_sw>(nativeBlockGate().publishSegment[m_useSavedFloats]));
 	for (const auto& slow : m_slowPaths) {
 		auto* label = sljit_emit_label(m_compiler);
 		for (size_t i = 0; i < slow.count; ++i) sljit_set_label(slow.jumps[i], label);
-		emitRegisterSnapshot(slow.registers);
-		emitExitCode(slow.exit);
+		emitSharedExit(*slow.exit, slow.registers);
 	}
 	emitReadMappings();
 	void* code = sljit_generate_code(m_compiler, 0, nullptr);

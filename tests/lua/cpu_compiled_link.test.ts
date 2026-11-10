@@ -28,14 +28,13 @@ test('helper continuations are predeclared entries and read their own current Va
 	const page = frame.decodedPage!, first = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const entries = [0, 2, 4].map(word => page.compiledBlocks!.entries[first + word]!);
 	assert.ok(entries.every(entry => entry.region === entries[0].region), 'all helper returns are known before a slow helper is taken');
-	assert.deepEqual(entries.map(entry => entry.entryCycles), [1, 1, 1]);
 	assert.deepEqual(entries.map(entry => entry.sourceWords), [6, 4, 2]);
 	const table = cpu.createTable();
 	for (let iteration = 0; iteration < 32; ++iteration) for (let start = 0; start < entries.length; ++start) {
 		const registers = new ValueSlots(9), block = entries[start];
 		registers.setEncoded(0, ValueTag.False, 37, null); registers.setNumber(1, DYNAMIC_RAM_BASE); registers.setTable(8, table);
 		memory.writeMappedWord(DYNAMIC_RAM_BASE, 17);
-		const run = { remainingCycles: block.entryCycles, registerTop: 0 };
+		const run = { remainingCycles: 1, registerTop: 0 };
 		const exit = block.region.exits[block.region.execute(registers, frame.executionImage.constScalars, page, frame, block.entry, run)];
 		assert.ok(exit === entries[2].terminal, 'one generated invocation executes the complete suffix');
 		assert.deepEqual(run, { remainingCycles: -[7, 4, 1][start], registerTop: start === 0 ? 9 : 6 });
@@ -276,9 +275,8 @@ test('linked counted stores need only one cycle, then stop or block before the f
 		cpu.runUntilDepth(0, 1024);
 	}
 	const cache = js.cpu.rootThread.frames[0].decodedPage!.compiledBlocks!, first = cache.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!;
-	assert.equal(first.entryCycles, 1);
 	const store = cache.entries[((pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES) + 4]!;
-	assert.ok(store && store.region === first.region); assert.equal(store.entryCycles, 1); assert.equal(store.terminal.cycles, 4);
+	assert.ok(store && store.region === first.region); assert.equal(store.terminal.cycles, 4);
 	assert.ok(cache.entries[store.firstWord + 2]?.region === first.region);
 	for (const grant of [2, 3, 6, 7, 8, 9]) {
 		for (const { cpu } of [js, ref]) {

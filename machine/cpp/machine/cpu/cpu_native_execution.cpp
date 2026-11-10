@@ -111,7 +111,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		auto* page = lookup->find(pc, cpu.m_memory.cartridgeController().selectedSlot(cpu.m_executionBusSignals));
 		if (!page || !page->nativeBlocks) return nullptr;
 		auto* target = page->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
-		if (!target || cpu.instructionBudgetRemaining < target->entryCycles) return nullptr;
+		if (!target) return nullptr;
 		// A pure continuation still owns its descriptor. Cross-page links are
 		// stable except a system-image edge from shared memory into the selectable
 		// cartridge window. Cartridge source pages already have physical identity;

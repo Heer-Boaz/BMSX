@@ -15,27 +15,27 @@ public:
 	NativeBlockCompiler(const Value* constants, std::span<const std::unique_ptr<NativeBlock>> blocks, Memory& memory, StringPool& strings,
 		std::span<const NativeBlockSource> sources);
 	~NativeBlockCompiler();
-	void emit(const DecodedInstruction& instruction, const NativeBlockExitSite* slowExit,
-		const NativeBlockExitSite* takenExit);
+	void emit(const DecodedInstruction& instruction, NativeBlockExitSite* slowExit,
+		NativeBlockExitSite* takenExit);
 	void beginBlock(size_t index, bool inheritRegisters);
 	void endBlock(bool fallthrough);
 	void* finish(size_t& codeBytes);
 
 private:
 	struct SlowPath;
-	void emitControl(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
-	void emitExit(const NativeBlockExitSite* exit, bool fallthrough = false);
-	void emitExitCode(const NativeBlockExitSite* exit, bool fallthrough = false);
-	void emitTableAccess(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
+	void emitControl(const DecodedInstruction& instruction, NativeBlockExitSite* exit);
+	void emitExit(NativeBlockExitSite* exit, bool fallthrough = false);
+	void emitSegmentCharge(const NativeBlockExitSite& exit);
+	void emitTableAccess(const DecodedInstruction& instruction, NativeBlockExitSite* exit);
 	void emitArraySlot(bool load, int value, SlowPath& slow);
 	void emitStringSlot(bool load, int value, SlowPath& slow);
-	void emitLength(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
-	void emitComparison(const DecodedInstruction& instruction, const NativeBlockExitSite* skipped);
-	void emitContext(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
-	void emitUpvalue(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
-	void emitVararg(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
-	void emitMemory(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
-	void emitWordStores(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
+	void emitLength(const DecodedInstruction& instruction, NativeBlockExitSite* exit);
+	void emitComparison(const DecodedInstruction& instruction, NativeBlockExitSite* skipped);
+	void emitContext(const DecodedInstruction& instruction, NativeBlockExitSite* exit);
+	void emitUpvalue(const DecodedInstruction& instruction, NativeBlockExitSite* exit);
+	void emitVararg(const DecodedInstruction& instruction, NativeBlockExitSite* exit);
+	void emitMemory(const DecodedInstruction& instruction, NativeBlockExitSite* exit);
+	void emitWordStores(const DecodedInstruction& instruction, NativeBlockExitSite* exit);
 	void emitScalarLoad(MemoryAccessKind kind, sljit_s32 alignment);
 	void emitScalarStore(MemoryAccessKind kind, int source);
 	void emitReadMappings();
@@ -43,6 +43,8 @@ private:
 		sljit_label* load, sljit_label* done);
 	static constexpr int REGISTER_CACHE_CAPACITY = NativeBlockAbi::registerCacheCapacity;
 	using RegisterSnapshot = std::array<int, REGISTER_CACHE_CAPACITY>;
+	void setExitRegisterMap(NativeBlockExitSite& exit, const RegisterSnapshot& registers);
+	void emitSharedExit(NativeBlockExitSite& exit, const RegisterSnapshot& registers);
 	int findRegister(int guest) const;
 	int allocateRegister(int guest, sljit_s32 pinned = 0);
 	sljit_s32 cachedFloatRegister(int slot) const;
@@ -52,7 +54,6 @@ private:
 	void writeRegister(int guest, sljit_s32 source = SLJIT_FR0);
 	void planResidentRegisters(std::span<const NativeBlockSource> sources);
 	void reloadResidentRange(int first, int end);
-	void emitResidentWriteback();
 	void discardRegisterRange(int first, int end);
 	RegisterSnapshot registerSnapshot(bool dirtyOnly = true) const;
 	void emitRegisterSnapshot(const RegisterSnapshot& snapshot);
@@ -78,7 +79,7 @@ private:
 	std::vector<InternalBranch> m_internalBranches;
 	std::vector<sljit_jump*> m_shortGrants;
 	const Value* m_constants;
-	const NativeBlock* m_block = nullptr;
+	NativeBlock* m_block = nullptr;
 	Memory& m_memory;
 	StringPool& m_strings;
 	bool m_hasTerminal = false;
@@ -86,13 +87,13 @@ private:
 	struct SlowPath {
 		std::array<sljit_jump*, 16> jumps;
 		size_t count = 0;
-		const NativeBlockExitSite* exit;
+		NativeBlockExitSite* exit;
 		RegisterSnapshot registers;
 	};
 	std::vector<SlowPath> m_slowPaths;
 	struct ReadMapping {
 		std::array<sljit_jump*, 2> ramMisses;
-		const NativeBlockExitSite* exit;
+		NativeBlockExitSite* exit;
 		sljit_label* done;
 		u32 width;
 		RegisterSnapshot registers;

@@ -27,7 +27,6 @@ struct NativeBlockExitSite;
 struct NativeBlockLink {
 	void disconnect();
 	void* code = nullptr;
-	int cycles = 0;
 	NativeBlock* target = nullptr;
 	NativeBlockLink* previous = nullptr;
 	NativeBlockLink* next = nullptr;
@@ -57,6 +56,7 @@ using NativeBlockExitHandler = NativeBlockTransition (*)(CPU*, CallFrame*, const
 
 inline constexpr u8 NATIVE_BLOCK_COMPILATION_THRESHOLD = 8u;
 inline constexpr u32 NATIVE_BLOCK_MAX_INSTRUCTIONS = 64u;
+inline constexpr int NATIVE_BLOCK_REGISTER_CACHE_CAPACITY = 4;
 
 enum class NativeBlockExit : u8 {
 	Continue,
@@ -103,6 +103,9 @@ struct NativeBlockExitSite {
 	u32 nextPc = 0;
 	u32 currentPc = 0;
 	u32 lastPc = 0;
+	// Generated exit state: byte offsets into the Value bank, or -1 for
+	// host registers whose contents need no publication at this exit.
+	std::array<i32, NATIVE_BLOCK_REGISTER_CACHE_CAPACITY> registerOffsets{};
 	mutable NativeBlockLink link;
 };
 
@@ -298,9 +301,6 @@ public:
 	u32 firstPc = 0;
 	NativeBlockExitSite terminal;
 	std::vector<NativeBlockExitSite> sideExits;
-	// A positive host budget admits this segment. Instruction charges remain
-	// complete, and the caller receives any resulting negative remainder.
-	int entryCycles = 0;
 	// Dependency extent includes the linear successors admitted by this entry.
 	u16 sourceWords = 0;
 

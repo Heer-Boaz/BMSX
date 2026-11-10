@@ -8,7 +8,7 @@
 
 namespace bmsx {
 
-void NativeBlockCompiler::emitContext(const DecodedInstruction& instruction, const NativeBlockExitSite* exit) {
+void NativeBlockCompiler::emitContext(const DecodedInstruction& instruction, NativeBlockExitSite* exit) {
 	const auto op = static_cast<OpCode>(instruction.op);
 	if (op == OpCode::GETUP || op == OpCode::SETUP) { emitUpvalue(instruction, exit); return; }
 	if (op == OpCode::VARARG) { emitVararg(instruction, exit); return; }
@@ -51,7 +51,7 @@ void NativeBlockCompiler::emitContext(const DecodedInstruction& instruction, con
 	}
 }
 
-void NativeBlockCompiler::emitUpvalue(const DecodedInstruction& instruction, const NativeBlockExitSite* exit) {
+void NativeBlockCompiler::emitUpvalue(const DecodedInstruction& instruction, NativeBlockExitSite* exit) {
 	const bool store = instruction.op == static_cast<u8>(OpCode::SETUP);
 	const auto fields = Upvalue::nativeOffsets();
 	if (store) loadOperand(instruction.a, SLJIT_FR0);
@@ -88,7 +88,7 @@ void NativeBlockCompiler::emitUpvalue(const DecodedInstruction& instruction, con
 	}
 }
 
-void NativeBlockCompiler::emitVararg(const DecodedInstruction& instruction, const NativeBlockExitSite* exit) {
+void NativeBlockCompiler::emitVararg(const DecodedInstruction& instruction, NativeBlockExitSite* exit) {
 	const int first = instruction.a, count = instruction.b;
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, frame));
 	if (count == 0) sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, varargCount));

@@ -89,8 +89,6 @@ export type CompiledBlock = {
 	readonly region: CompiledRegion;
 	readonly entry: number;
 	readonly firstWord: number;
-	/** Positive budget admits a bounded segment; its full charge is retained. */
-	readonly entryCycles: number;
 	readonly terminal: CompiledBlockExitSite;
 	readonly exits: readonly CompiledBlockExitSite[];
 	/** Source dependencies through the linear successors admitted by this entry. */
@@ -201,7 +199,6 @@ export type CompiledBlockSource = {
 
 export type EmittedJavaScriptBlock = {
 	readonly firstWord: number;
-	entryCycles: number;
 	readonly terminal: CompiledBlockExitSite;
 	readonly exits: readonly CompiledBlockExitSite[];
 	sourceWords: number;
@@ -223,8 +220,6 @@ export function emitJavaScriptBlock(
 	const source: string[] = [];
 	const registers = new JavaScriptRegisterCache(image, residents);
 	let cycles = 0;
-	// Service a host deadline after the admitted segment, retaining its full charge.
-	const entryCycles = 1;
 	let sourceWords = 0;
 	let registerTop = 0;
 	let resetsRegisterTop = false;
@@ -334,7 +329,7 @@ export function emitJavaScriptBlock(
 		takenIndex = exits.length;
 		exits.push({ ...terminal, nextPc: page.bx[finalWord] });
 	}
-	return { firstWord, entryCycles, terminal: exits[terminalIndex], exits: exits.slice(firstExit), sourceWords,
+	return { firstWord, terminal: exits[terminalIndex], exits: exits.slice(firstExit), sourceWords,
 		body: source.join('\n'), registers, finalWord, terminalIndex, takenIndex };
 }
 

@@ -9,7 +9,7 @@
 
 namespace bmsx {
 
-void NativeBlockCompiler::emitTableAccess(const DecodedInstruction& instruction, const NativeBlockExitSite* exit) {
+void NativeBlockCompiler::emitTableAccess(const DecodedInstruction& instruction, NativeBlockExitSite* exit) {
 	const auto op = static_cast<OpCode>(instruction.op);
 	const bool load = op == OpCode::GETT || op == OpCode::GETI || op == OpCode::GETFIELD || op == OpCode::SELF;
 	const bool generic = op == OpCode::GETT || op == OpCode::SETT;
@@ -125,7 +125,7 @@ void NativeBlockCompiler::emitStringSlot(bool load, int value, SlowPath& slow) {
 	}
 }
 
-void NativeBlockCompiler::emitLength(const DecodedInstruction& instruction, const NativeBlockExitSite* exit) {
+void NativeBlockCompiler::emitLength(const DecodedInstruction& instruction, NativeBlockExitSite* exit) {
 	loadHeader(instruction.b, SLJIT_R0);
 	auto* string = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, valueString(0) >> 48u);
 	SlowPath slow; slow.exit = exit; slow.registers = registerSnapshot();

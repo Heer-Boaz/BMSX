@@ -5,7 +5,7 @@
 
 namespace bmsx {
 
-void NativeBlockCompiler::emitControl(const DecodedInstruction& instruction, const NativeBlockExitSite* exit) {
+void NativeBlockCompiler::emitControl(const DecodedInstruction& instruction, NativeBlockExitSite* exit) {
 	SlowPath slow; slow.exit = exit; slow.registers = registerSnapshot();
 	const int field = instruction.b;
 	const bool read = instruction.op == static_cast<u8>(OpCode::MFC0);

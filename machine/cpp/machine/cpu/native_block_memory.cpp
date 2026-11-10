@@ -19,7 +19,7 @@ void storeRamRegisterWords(u8* destination, const Value* source, u32 count) noex
 }
 }
 
-void NativeBlockCompiler::emitWordStores(const DecodedInstruction& instruction, const NativeBlockExitSite* exit) {
+void NativeBlockCompiler::emitWordStores(const DecodedInstruction& instruction, NativeBlockExitSite* exit) {
 	convertWord(instruction.b);
 	SlowPath slow; slow.exit = exit; slow.registers = registerSnapshot();
 	if (exit->displaced) sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R0, 0,
@@ -68,7 +68,7 @@ void NativeBlockCompiler::emitWordStores(const DecodedInstruction& instruction, 
 	m_slowPaths.push_back(slow);
 }
 
-void NativeBlockCompiler::emitMemory(const DecodedInstruction& instruction, const NativeBlockExitSite* exit) {
+void NativeBlockCompiler::emitMemory(const DecodedInstruction& instruction, NativeBlockExitSite* exit) {
 	const bool load = exit->exit == NativeBlockExit::ReadMemory;
 	const auto kind = static_cast<MemoryAccessKind>(instruction.c);
 	const u32 width = kind == MemoryAccessKind::U8 ? 1u : kind == MemoryAccessKind::U16LE ? 2u
@@ -269,8 +269,7 @@ void NativeBlockCompiler::emitReadMappings() {
 		misses[count++] = emitRomStorage(&m_memory.systemRomStorage(), width, romLoad, mapping.done);
 		auto* busExit = sljit_emit_label(m_compiler);
 		for (size_t i = 0; i < count; ++i) sljit_set_label(misses[i], busExit);
-		emitRegisterSnapshot(mapping.registers);
-		emitExitCode(mapping.exit);
+		emitSharedExit(*mapping.exit, mapping.registers);
 	}
 }
 

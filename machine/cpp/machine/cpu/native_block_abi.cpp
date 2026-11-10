@@ -34,10 +34,62 @@ NativeBlockGate::NativeBlockGate() {
 		SLJIT_IMM, SLJIT_FUNC_ADDR(&CPU::dispatchNativeExit));
 	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0), returnLabel);
 	sljit_set_label(sljit_emit_jump(compiler, SLJIT_JUMP), resumeLabel);
+
+	// Region bodies name an exit and its register map. Materialization and
+	// dispatch live here once, not in every generated instruction's side exit.
+	std::array<sljit_label*, 2> finishLabels, publishLabels;
+	std::array<sljit_jump*, 2> published;
+	for (int saved = 0; saved != 2; ++saved) {
+		finishLabels[saved] = sljit_emit_label(compiler);
+		sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_S4, 0, SLJIT_S4, 0,
+			SLJIT_MEM1(SLJIT_R0), offsetof(NativeBlockExitSite, cycles));
+		sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R1, 0,
+			SLJIT_MEM1(SLJIT_R0), offsetof(NativeBlockExitSite, registerTop));
+		auto* noExtent = sljit_emit_cmp(compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0);
+		auto* retained = sljit_emit_cmp(compiler, SLJIT_SIG_GREATER_EQUAL | SLJIT_32, SLJIT_S5, 0, SLJIT_R1, 0);
+		sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_S5, 0, SLJIT_R1, 0);
+		publishLabels[saved] = sljit_emit_label(compiler);
+		sljit_set_label(noExtent, publishLabels[saved]);
+		sljit_set_label(retained, publishLabels[saved]);
+		const int count = saved ? NativeBlockAbi::savedFloats : NativeBlockAbi::scratchFloats - 3;
+		for (int slot = 0; slot < count; ++slot) {
+			sljit_emit_op1(compiler, SLJIT_MOV_S32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0),
+				offsetof(NativeBlockExitSite, registerOffsets) + slot * sizeof(i32));
+			auto* absent = sljit_emit_cmp(compiler, SLJIT_SIG_LESS, SLJIT_R1, 0, SLJIT_IMM, 0);
+			sljit_emit_op2(compiler, SLJIT_ADD, SLJIT_R1, 0, SLJIT_S0, 0, SLJIT_R1, 0);
+			sljit_emit_fop1(compiler, SLJIT_MOV_F64, SLJIT_MEM1(SLJIT_R1), 0,
+				saved ? SLJIT_FS(slot) : SLJIT_FR(3 + slot), 0);
+			sljit_set_label(absent, sljit_emit_label(compiler));
+		}
+		published[saved] = sljit_emit_jump(compiler, SLJIT_JUMP);
+	}
+	auto* publishedLabel = sljit_emit_label(compiler);
+	for (auto* jump : published) sljit_set_label(jump, publishedLabel);
+	// A warm pure edge keeps the same host frame. Other exits publish the
+	// complete state before entering C++, where the descriptor may be retired.
+	sljit_emit_op1(compiler, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), offsetof(NativeBlockExitSite, exit));
+	auto* semanticExit = sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL, SLJIT_R1, 0,
+		SLJIT_IMM, static_cast<sljit_sw>(NativeBlockExit::Continue));
+	auto* deadline = sljit_emit_cmp(compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, SLJIT_S4, 0, SLJIT_IMM, 0);
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0),
+		offsetof(NativeBlockExitSite, link) + offsetof(NativeBlockLink, code));
+	auto* unlinked = sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R1, 0, SLJIT_IMM, 0);
+	sljit_emit_ijump(compiler, SLJIT_JUMP, SLJIT_R1, 0);
+	auto* leaveLabel = sljit_emit_label(compiler);
+	sljit_set_label(semanticExit, leaveLabel);
+	sljit_set_label(deadline, leaveLabel);
+	sljit_set_label(unlinked, leaveLabel);
+	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, remainingCycles), SLJIT_S4, 0);
+	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, registerTop), SLJIT_S5, 0);
+	sljit_emit_ijump(compiler, SLJIT_JUMP, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, exitCode));
 	entry = sljit_generate_code(compiler, 0, nullptr);
 	if (!entry) throw std::bad_alloc();
 	exit = reinterpret_cast<void*>(sljit_get_label_addr(returnLabel));
 	dispatch = reinterpret_cast<void*>(sljit_get_label_addr(dispatchLabel));
+	for (size_t bank = 0; bank < finishLabels.size(); ++bank) {
+		finishSegment[bank] = reinterpret_cast<void*>(sljit_get_label_addr(finishLabels[bank]));
+		publishSegment[bank] = reinterpret_cast<void*>(sljit_get_label_addr(publishLabels[bank]));
+	}
 }
 
 NativeBlockGate::~NativeBlockGate() { sljit_free_code(entry, nullptr); }

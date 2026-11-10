@@ -5,7 +5,7 @@
 
 namespace bmsx {
 
-void NativeBlockCompiler::emitComparison(const DecodedInstruction& instruction, const NativeBlockExitSite* skipped) {
+void NativeBlockCompiler::emitComparison(const DecodedInstruction& instruction, NativeBlockExitSite* skipped) {
 	const auto op = static_cast<OpCode>(instruction.op);
 	std::array<sljit_jump*, 8> yes, no;
 	size_t yesCount = 0, noCount = 0;
