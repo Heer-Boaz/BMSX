@@ -1,5 +1,7 @@
 #include "machine/cpu/native_block_compiler.h"
 
+#include <climits>
+
 #include "machine/cpu/call_state.h"
 #include "machine/cpu/closure.h"
 #include "machine/cpu/execution_image.h"
@@ -21,6 +23,7 @@ void NativeBlockCompiler::emitContext(const DecodedInstruction& instruction, con
 		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, sizeof(Value));
 		sljit_emit_op2(m_compiler, SLJIT_SUB32 | SLJIT_SET_Z, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, 1);
 		sljit_set_label(sljit_emit_jump(m_compiler, SLJIT_NOT_ZERO), loop);
+		reloadResidentRange(instruction.a, static_cast<int>(instruction.a) + instruction.b);
 		return;
 	}
 	if (op == OpCode::LOADKR) {
@@ -108,7 +111,8 @@ void NativeBlockCompiler::emitVararg(const DecodedInstruction& instruction, cons
 				sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_MEM1(SLJIT_S0), cached.guest * sizeof(Value), cachedFloatRegister(slot), 0);
 				sljit_set_label(overwritten, sljit_emit_label(m_compiler));
 			}
-			cached = CachedRegister{};
+			if (slot < m_residentCount) cached.dirty = false;
+			else cached = CachedRegister{};
 		}
 		sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_S5, 0, SLJIT_R0, 0, SLJIT_IMM, first);
 	} else discardRegisterRange(first, first + count);
@@ -141,5 +145,6 @@ void NativeBlockCompiler::emitVararg(const DecodedInstruction& instruction, cons
 		sljit_set_label(sljit_emit_cmp(m_compiler, SLJIT_LESS, SLJIT_R2, 0, SLJIT_S2, 0), fill);
 		sljit_set_label(noFill, sljit_emit_label(m_compiler));
 	}
+	reloadResidentRange(first, count == 0 ? INT_MAX : first + count);
 }
 } // namespace bmsx

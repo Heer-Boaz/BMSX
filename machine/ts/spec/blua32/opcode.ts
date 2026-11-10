@@ -117,3 +117,28 @@ export const OPCODE_RK_OPERANDS = new Uint8Array([
 	0, 1, 1, 1, 0, 0, 0, 0,
 	0, 0, 0, 2, 0, 2, 0, 0,
 ]);
+
+// Scalar register operands only; register/count ranges are interpreted by their operation.
+export const REGISTER_OPERAND_A = 1;
+export const REGISTER_OPERAND_B = 2;
+export const REGISTER_OPERAND_C = 4;
+export const OPCODE_SCALAR_REGISTER_READS = new Uint8Array([
+	0, 2, 0, 0, 2, 0, 0, 0,
+	0, 0, 0, 0, 3, 2, 6, 7,
+	0, 6, 6, 6, 6, 6, 6, 6,
+	6, 6, 6, 6, 6, 6, 0, 2,
+	2, 2, 2, 6, 6, 6, 0, 1,
+	0, 1, 1, 0, 0, 1, 0, 1,
+	0, 2, 3, 2, 0, 2, 0, 1,
+	0, 1, 2, 5, 2, 5, 2, 0,
+]);
+export const OPCODE_WRITES_REGISTER_A = new Uint8Array([
+	0, 1, 1, 0, 1, 1, 1, 1,
+	1, 1, 1, 1, 0, 0, 1, 0,
+	1, 1, 1, 1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1, 1, 1, 1,
+	1, 1, 1, 0, 0, 0, 1, 0,
+	0, 0, 0, 1, 1, 0, 0, 0,
+	0, 1, 0, 0, 0, 1, 1, 0,
+	1, 0, 1, 0, 1, 0, 1, 0,
+]);

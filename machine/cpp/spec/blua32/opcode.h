@@ -17,6 +17,12 @@ inline constexpr size_t OPCODE_COUNT = 64U;
 extern const std::array<uint8_t, OPCODE_COUNT> BASE_CYCLES;
 extern const std::array<uint8_t, OPCODE_COUNT> OPCODE_USES_BX;
 extern const std::array<uint8_t, OPCODE_COUNT> OPCODE_USES_DISP;
+// Scalar register operands only; register/count ranges are interpreted by their operation.
+inline constexpr uint8_t REGISTER_OPERAND_A = 1u;
+inline constexpr uint8_t REGISTER_OPERAND_B = 2u;
+inline constexpr uint8_t REGISTER_OPERAND_C = 4u;
+extern const std::array<uint8_t, OPCODE_COUNT> OPCODE_SCALAR_REGISTER_READS;
+extern const std::array<uint8_t, OPCODE_COUNT> OPCODE_WRITES_REGISTER_A;
 inline constexpr uint8_t RK_OPERAND_B = 1u;
 inline constexpr uint8_t RK_OPERAND_C = 2u;
 extern const std::array<uint8_t, OPCODE_COUNT> OPCODE_RK_OPERANDS;

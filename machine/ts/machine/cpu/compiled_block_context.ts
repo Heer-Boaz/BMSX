@@ -15,26 +15,24 @@ export function emitContext(op: ContextOpCode, page: DecodedInstructionPage, wor
 	switch (op) {
 		case OpCode.LOADNIL:
 			registers.discardRange(a, a + b);
-			return b === 0 ? '' : `r.clear(${b},${a});`;
+			return b === 0 ? '' : `r.clear(${b},${a});${registers.reloadRange(a, a + b)}`;
 		case OpCode.LOADKR: {
 			const index = registers.numberOperand(b), failure = registers.exit(exit);
-			registers.discard(a);
-			return `{const i=(${index})>>>0;if(i>=kt.length) ${failure} r.setEncoded(${a},kt[i],k[i],null);}`;
+			return `{const i=(${index})>>>0;if(i>=kt.length) ${failure} ${registers.writeEncoded(a, 'kt[i]', 'k[i]', 'null')}}`;
 		}
 		case OpCode.GETGL:
 		case OpCode.GETSYS:
-			registers.discard(a);
-			return `r.copySlotFrom(${op === OpCode.GETGL ? 'gl' : 'sy'},${a},${page.bx[word]});`;
+			return registers.copyFrom(a, op === OpCode.GETGL ? 'gl' : 'sy', `${page.bx[word]}`);
 		case OpCode.SETGL:
 		case OpCode.SETSYS:
 			return `${op === OpCode.SETGL ? 'gl' : 'sy'}.setEncoded(${page.bx[word]},${registers.tagOperand(a)},${registers.scalarOperand(a)},${registers.referenceOperand(a)});`;
 		case OpCode.GETUP: {
-			const published = registers.writeBack();
+			const published = registers.writeBack(true);
 			registers.discard(a);
 			return `{const u=frame.closure.upvalues[${b}];if(u.open){
 				${published === '' ? '' : `if(u.frame===frame){${published}}`}
-				r.copySlotFrom(u.frame.registers,${a},u.index);
-			}else r.setEncoded(${a},u.valueTag,u.valueScalar,u.valueReference);}`;
+				${registers.copyFrom(a, 'u.frame.registers', 'u.index')}
+			}else{${registers.writeEncoded(a, 'u.valueTag', 'u.valueScalar', 'u.valueReference')}}}`;
 		}
 		case OpCode.SETUP: {
 			const tag = registers.tagOperand(a), scalar = registers.scalarOperand(a), reference = registers.referenceOperand(a);
@@ -53,7 +51,7 @@ export function emitContext(op: ContextOpCode, page: DecodedInstructionPage, wor
 				const copied=Math.min(n,frame.varargCount);
 				r.copyRangeFrom(frame.thread.stackRegisters,${a},frame.varargBase,copied);
 				r.clear(n-copied,${a}+copied);
-				${b === 0 ? `frame.top=${a}+n;` : ''}}`;
+				${b === 0 ? `frame.top=${a}+n;` : ''}${registers.reloadRange(a, b === 0 ? Infinity : a + b)}}`;
 		}
 	}
 }

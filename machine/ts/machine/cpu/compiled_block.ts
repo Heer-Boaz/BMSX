@@ -106,22 +106,20 @@ const emitters: (StatementEmitter | undefined)[] = new Array(OPCODE_COUNT);
 emitters[OpCode.MOV] = (p, w, _image, r) => r.copy(p.a[w], p.b[w]);
 emitters[OpCode.LOADK] = (p, w, image, r) => {
 	if (image.constTags[p.bx[w]] === ValueTag.Number) return r.writeNumber(p.a[w], `k[${p.bx[w]}]`);
-	r.discard(p.a[w]);
-	return `r.setEncoded(${p.a[w]},${image.constTags[p.bx[w]]},k[${p.bx[w]}],null);`;
+	return r.writeEncoded(p.a[w], `${image.constTags[p.bx[w]]}`, `k[${p.bx[w]}]`, 'null');
 };
 emitters[OpCode.KNIL] = (p, w, _image, r) => {
-	r.discard(p.a[w]); return `r.setNil(${p.a[w]});`;
+	return r.writeEncoded(p.a[w], `${ValueTag.Nil}`, 'NaN', 'null');
 };
 emitters[OpCode.KFALSE] = (p, w, _image, r) => {
-	r.discard(p.a[w]); return `r.setBool(${p.a[w]},false);`;
+	return r.writeEncoded(p.a[w], `${ValueTag.False}`, 'NaN', 'null');
 };
 emitters[OpCode.KTRUE] = (p, w, _image, r) => {
-	r.discard(p.a[w]); return `r.setBool(${p.a[w]},true);`;
+	return r.writeEncoded(p.a[w], `${ValueTag.True}`, 'NaN', 'null');
 };
 emitters[OpCode.NOT] = (p, w, _image, r) => {
 	const truth = r.truthy(p.b[w]);
-	r.discard(p.a[w]);
-	return `r.setBool(${p.a[w]},!${truth});`;
+	return r.writeEncoded(p.a[w], `${truth}?${ValueTag.False}:${ValueTag.True}`, 'NaN', 'null');
 };
 const numberEmitters: (NumberEmitter | undefined)[] = new Array(OPCODE_COUNT);
 numberEmitters[OpCode.K0] = () => '0';
@@ -217,13 +215,13 @@ export type EmittedJavaScriptBlock = {
 /** Emit a segment and its precise side exits; the region owns control flow. */
 export function emitJavaScriptBlock(
 	page: DecodedInstructionPage, plan: CompiledBlockSource,
-	image: Blua32ExecutionImage, memory: Memory, exits: CompiledBlockExitSite[],
+	image: Blua32ExecutionImage, memory: Memory, exits: CompiledBlockExitSite[], residents: ReadonlyMap<number, boolean>,
 ): EmittedJavaScriptBlock {
 	const { firstWord, endWord, skippedInstructionWidth } = plan;
 	let pc = plan.pc;
 	const firstExit = exits.length;
 	const source: string[] = [];
-	const registers = new JavaScriptRegisterCache(image);
+	const registers = new JavaScriptRegisterCache(image, residents);
 	let cycles = 0;
 	let entryCycles = 0;
 	let sourceWords = 0;

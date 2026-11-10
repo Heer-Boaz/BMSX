@@ -50,6 +50,44 @@ test('helper continuations are predeclared entries and read their own current Va
 	}
 });
 
+test('resident Values cross internal string branches and publish only when leaving the region', () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(text, 0, OpCode.MOV, 7, 8, 0);
+	writeInstruction(text, 1, OpCode.LT, 0, 0, 1);
+	writeInstruction(text, 2, OpCode.JMP, 0, 0, 2);
+	writeInstruction(text, 3, OpCode.MOV, 3, 7, 0);
+	writeInstruction(text, 4, OpCode.MOV, 9, 8, 0);
+	writeInstruction(text, 5, OpCode.MOV, 6, 7, 0);
+	writeInstruction(text, 6, OpCode.MOV, 10, 8, 0);
+	writeInstruction(text, 7, OpCode.ADD, 4, 4, -1, 7);
+	writeInstruction(text, 8, OpCode.MOV, 5, 4, 0);
+	writeInstruction(text, 9, OpCode.JMP, 0, 63, 54, 255);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 10, maxStack: 11 }], constants: [1] });
+	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), frame = cpu.rootThread.frames[0];
+	const alpha = cpu.stringPool.intern('alpha'), omega = cpu.stringPool.intern('omega');
+	frame.registers.setStringId(0, alpha); frame.registers.setStringId(1, omega); frame.registers.setNumber(4, 0);
+	frame.registers.setEncoded(8, ValueTag.False, 37, null); cpu.runUntilDepth(0, 1024);
+	const page = frame.decodedPage!, first = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
+	const block = page.compiledBlocks!.entries[first]!, table = cpu.createTable();
+	for (const less of [false, true]) for (const kind of [ValueTag.False, ValueTag.Table, ValueTag.Number]) for (const grant of [32, 63, 128, 257]) {
+		const r = new ValueSlots(11), writes = new Uint32Array(11), store = r.setEncoded.bind(r);
+		r.setStringId(0, less ? alpha : omega); r.setStringId(1, less ? omega : alpha);
+		r.setNumber(3, 73); r.setNumber(4, 0);
+		r.setEncoded(8, kind, kind === ValueTag.False ? 37 : kind === ValueTag.Number ? -0 : NaN, kind === ValueTag.Table ? table : null);
+		r.setEncoded = (register, tag, scalar, reference) => { ++writes[register]; store(register, tag, scalar, reference); };
+		const run = { remainingCycles: grant, registerTop: 0 };
+		block.region.execute(r, frame.executionImage.constScalars, page, frame, block.entry, run);
+		assert.ok(r.getNumber(4) > 0); assert.equal(r.getNumber(5), r.getNumber(4)); assert.equal(run.registerTop, 11);
+		if (!less) { assert.equal(r.getNumber(3), 73); assert.equal(r.getTag(9), ValueTag.Nil); }
+		for (const register of less ? [3, 6, 7, 9, 10] : [6, 7, 10]) {
+			assert.equal(r.getTag(register), r.getTag(8)); assert.equal(r.getScalar(register), r.getScalar(8));
+			assert.equal(r.getReference(register), r.getReference(8));
+		}
+		assert.ok(writes[4] <= 1 && writes[7] <= 1, 'resident definitions are not written back at internal branches');
+		assert.equal(writes[8], 0, 'the read-only resident is never redundantly published');
+	}
+});
+
 test('linked physical-page blocks preserve every grant and disconnect rewritten targets', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.ADD, 8, 8, 1);

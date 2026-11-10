@@ -1,8 +1,68 @@
 #include "machine/cpu/native_block_compiler.h"
 
 #include <bit>
+#include <algorithm>
+#include <limits>
+
+#include "machine/cpu/execution_image.h"
 
 namespace bmsx {
+
+void NativeBlockCompiler::planResidentRegisters(std::span<const NativeBlockSource> sources) {
+	std::vector<int> reads;
+	size_t instructionCount = 0;
+	for (const auto& source : sources) instructionCount += source.instructions.size();
+	reads.reserve(instructionCount * 3u);
+	for (const auto& source : sources) for (const auto& item : source.instructions) {
+		const auto& op = *item.decoded;
+		const auto kind = static_cast<OpCode>(op.op);
+		// A zero counted transfer never consumes its address operand.
+		if ((kind == OpCode::STORE_MEM_WORDS || kind == OpCode::STORE_MEM_WORDS_D) && op.c == 0) continue;
+		const auto operands = OPCODE_SCALAR_REGISTER_READS[op.op];
+		if (operands & REGISTER_OPERAND_A) reads.push_back(op.a);
+		if ((operands & REGISTER_OPERAND_B) && op.b >= 0) reads.push_back(op.b);
+		if ((operands & REGISTER_OPERAND_C) && op.c >= 0) reads.push_back(op.c);
+	}
+	std::sort(reads.begin(), reads.end());
+	std::vector<std::pair<int, size_t>> counts;
+	counts.reserve(reads.size());
+	for (size_t index = 0; index < reads.size();) {
+		const auto first = index++;
+		while (index < reads.size() && reads[index] == reads[first]) ++index;
+		if (index - first > 1u) counts.emplace_back(reads[first], index - first);
+	}
+	std::sort(counts.begin(), counts.end(), [](const auto& left, const auto& right) {
+		return left.second != right.second ? left.second > right.second : left.first < right.first;
+	});
+	// Keep two slots for local operands/definitions that are not resident.
+	m_residentCount = std::min(std::max(m_registerCount - 2, 0), static_cast<int>(counts.size()));
+	for (int slot = 0; slot < m_residentCount; ++slot) {
+		auto& resident = m_residentRegisters[slot];
+		resident.guest = counts[slot].first;
+		for (const auto& source : sources) for (const auto& item : source.instructions) {
+			const auto& op = *item.decoded;
+			resident.dirty |= OPCODE_WRITES_REGISTER_A[op.op] && op.a == resident.guest
+				&& !nativeBlockEndsBlock(op.op, op.b);
+			resident.dirty |= op.op == static_cast<u8>(OpCode::SELF) && op.a + 1 == resident.guest;
+		}
+	}
+}
+
+void NativeBlockCompiler::emitResidentWriteback() {
+	for (int slot = 0; slot < m_residentCount; ++slot) if (m_residentRegisters[slot].dirty)
+		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_MEM1(SLJIT_S0),
+			m_residentRegisters[slot].guest * sizeof(Value), cachedFloatRegister(slot), 0);
+}
+
+void NativeBlockCompiler::reloadResidentRange(int first, int end) {
+	for (int slot = 0; slot < m_residentCount; ++slot) {
+		auto& resident = m_registers[slot];
+		if (resident.guest < first || resident.guest >= end) continue;
+		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, cachedFloatRegister(slot), 0,
+			SLJIT_MEM1(SLJIT_S0), resident.guest * sizeof(Value));
+		resident.dirty = false;
+	}
+}
 
 sljit_s32 NativeBlockCompiler::cachedFloatRegister(int slot) const {
 	return m_useSavedFloats ? SLJIT_FS(slot) : SLJIT_FR(3 + slot);
@@ -17,7 +77,7 @@ int NativeBlockCompiler::findRegister(int guest) const {
 
 int NativeBlockCompiler::allocateRegister(int guest, sljit_s32 pinned) {
 	int selected = -1;
-	for (int slot = 0; slot < m_registerCount; ++slot) {
+	for (int slot = m_residentCount; slot < m_registerCount; ++slot) {
 		if (cachedFloatRegister(slot) == pinned) continue;
 		if (m_registers[slot].guest < 0) {
 			selected = slot;
@@ -95,15 +155,13 @@ void NativeBlockCompiler::emitRegisterSnapshot(const RegisterSnapshot& snapshot)
 	}
 }
 
-void NativeBlockCompiler::flushRegisters() {
-	emitRegisterSnapshot(registerSnapshot());
-	for (int slot = 0; slot < m_registerCount; ++slot) m_registers[slot].dirty = false;
-}
-
 void NativeBlockCompiler::discardRegisterRange(int first, int end) {
 	for (int slot = 0; slot < m_registerCount; ++slot) {
 		const int guest = m_registers[slot].guest;
-		if (guest >= first && guest < end) m_registers[slot] = CachedRegister{};
+		if (guest >= first && guest < end) {
+			if (slot < m_residentCount) m_registers[slot].dirty = false;
+			else m_registers[slot] = CachedRegister{};
+		}
 	}
 }
 

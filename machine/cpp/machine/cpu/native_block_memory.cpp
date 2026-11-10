@@ -270,7 +270,7 @@ void NativeBlockCompiler::emitReadMappings() {
 		auto* busExit = sljit_emit_label(m_compiler);
 		for (size_t i = 0; i < count; ++i) sljit_set_label(misses[i], busExit);
 		emitRegisterSnapshot(mapping.registers);
-		emitExit(mapping.exit);
+		emitExitCode(mapping.exit);
 	}
 }
 

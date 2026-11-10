@@ -72,9 +72,10 @@ void NativeBlockCompiler::emitComparison(const DecodedInstruction& instruction, 
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_R1, 0);
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_R2, 0);
 		sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&m_strings));
-		// Terminal compare: guest state is published, and cached FP values have
-		// no later consumers. The pure string kernel needs no spill/reload bank.
+		// Internal successors retain the raw register map across the pure string kernel.
+		emitCallSpills(false);
 		sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS3(32, P, 32, 32), SLJIT_IMM, SLJIT_FUNC_ADDR(&compareStringIds));
+		emitCallSpills(true);
 		yes[yesCount++] = sljit_emit_cmp(m_compiler, (op == OpCode::LT ? SLJIT_SIG_LESS : SLJIT_SIG_LESS_EQUAL) | SLJIT_32,
 			SLJIT_R0, 0, SLJIT_IMM, 0);
 	}

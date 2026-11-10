@@ -15,7 +15,7 @@ export function emitTableOperation(op: TableOpCode, page: DecodedInstructionPage
 	const a = page.a[word], b = page.b[word], c = page.c[word];
 	if (op === OpCode.LEN) {
 		const tag = `l${word}`, failure = r.exit(exit);
-		const length = `${tag}===${ValueTag.Table}?r.getTable(${b}).arrayLength:q.codepointCount(${r.scalarOperand(b)})`;
+		const length = `${tag}===${ValueTag.Table}?${r.referenceOperand(b)}.arrayLength:q.codepointCount(${r.scalarOperand(b)})`;
 		return `const ${tag}=${r.tagOperand(b)};if(${tag}!==${ValueTag.Table}&&${tag}!==${ValueTag.String}) ${failure}
 			${r.writeNumber(a, length)}`;
 	}
@@ -36,7 +36,10 @@ export function emitTableOperation(op: TableOpCode, page: DecodedInstructionPage
 			if(tag===${ValueTag.Number}){if(!t.${load ? 'load' : 'store'}NumberArrayKey(key,${target})) ${failure}}
 			else if(tag!==${ValueTag.String} || !t.${load ? 'load' : 'store'}PredictedStringKey(key,p.tableCacheSlots[${word}],${target})) ${failure}`;
 	}
-	const source = `${receiver}if(${r.tagOperand(base)}!==${ValueTag.Table}) ${failure}{const t=r.getTable(${base});${access}}`;
-	if (load) r.discard(a);
+	const source = `${receiver}if(${r.tagOperand(base)}!==${ValueTag.Table}) ${failure}{const t=${r.referenceOperand(base)};${access}}`;
+	if (load) {
+		r.discard(a);
+		return source + r.reloadRange(a, a + 1);
+	}
 	return source;
 }

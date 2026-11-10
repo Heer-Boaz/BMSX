@@ -141,6 +141,52 @@ void helperContinuationsReloadTheCurrentRegisterMap() {
 	require(bytes == 0, "continuation descriptors release their shared executable exactly once");
 }
 
+void residentValuesCrossInternalStringBranches() {
+	std::array<DecodedInstruction, 10> decoded{};
+	const std::array ops{OpCode::MOV, OpCode::LT, OpCode::JMP, OpCode::MOV, OpCode::MOV,
+		OpCode::MOV, OpCode::MOV, OpCode::ADD, OpCode::MOV, OpCode::JMP};
+	std::array<NativeBlockInstruction, 10> source{};
+	for (size_t i = 0; i < ops.size(); ++i) {
+		decoded[i].op = static_cast<u8>(ops[i]); decoded[i].width = 1; decoded[i].baseCycles = BASE_CYCLES[decoded[i].op];
+		source[i] = {&decoded[i], 0x1000u + static_cast<u32>(i) * INSTRUCTION_BYTES};
+	}
+	decoded[0].a = 7; decoded[0].b = 8;
+	decoded[1].a = 0; decoded[1].b = 0; decoded[1].c = 1;
+	decoded[2].bx = 0x1014u;
+	decoded[3].a = 3; decoded[3].b = 7;
+	decoded[4].a = 9; decoded[4].b = 8;
+	decoded[5].a = 6; decoded[5].b = 7;
+	decoded[6].a = 10; decoded[6].b = 8;
+	decoded[7].a = 4; decoded[7].b = 4; decoded[7].c = -1;
+	decoded[8].a = 5; decoded[8].b = 4;
+	decoded[9].bx = 0x1000u;
+	const std::span instructions(source);
+	const std::array plans{NativeBlockSource{instructions.subspan(0, 2), 1},
+		NativeBlockSource{instructions.subspan(2, 1)}, NativeBlockSource{instructions.subspan(3, 2)},
+		NativeBlockSource{instructions.subspan(5, 5)}};
+	const std::array constants{valueNumber(1)};
+	const auto alpha = valueString(cpu.stringPool().intern("alpha")), omega = valueString(cpu.stringPool().intern("omega"));
+	const std::array values{valueFromTag(ValueTag::False, 37), valueTable(cpu.createTable()), valueNumber(-0.0)};
+	size_t bytes = 0;
+	{
+		auto blocks = NativeBlock::compileRegion(plans, constants.data(), bytes, memory, cpu.stringPool());
+		for (bool less : {false, true}) for (auto value : values) for (int grant : {32, 63, 128, 257}) {
+			std::array<Value, 11> registers; registers.fill(valueNil());
+			registers[0] = less ? alpha : omega; registers[1] = less ? omega : alpha;
+			registers[3] = valueNumber(73); registers[4] = valueNumber(0); registers[8] = value;
+			NativeBlockRunState run{.registers = registers.data(), .constants = constants.data(), .remainingCycles = grant};
+			blocks[0]->run(run);
+			require(registers[7] == value && registers[6] == value
+				&& asNumber(registers[4]) > 0 && registers[5] == registers[4] && run.registerTop == 11,
+				"internal string branches preserve and finally publish resident definitions and their top");
+			require(registers[8] == value && registers[10] == value
+				&& registers[3] == (less ? value : valueNumber(73)) && registers[9] == (less ? value : valueNil()),
+				"raw tagged payloads, references and negative zero survive both branch edges and native helper calls");
+		}
+	}
+	require(bytes == 0, "regional resident bindings do not retain an executable allocation");
+}
+
 void linkedBodiesShareOneFrameAndRetireTheirEdges() {
 	NativeBlockRunState nativeRunState;
 	std::array<DecodedInstruction, 5> decoded{};
@@ -647,6 +693,7 @@ int main() {
 		multipleRegisterDefinitionsSurviveCallAndExit();
 		independentEntriesBindTheirOwnValueBanks();
 		helperContinuationsReloadTheCurrentRegisterMap();
+		residentValuesCrossInternalStringBranches();
 		linkedBodiesShareOneFrameAndRetireTheirEdges();
 		linkedAtomicStoreDebitsItsWholeChargeBeforeTestingItsSuccessor();
 		linkedSlowExitPublishesTheWholeExecutedChain();

@@ -25,6 +25,7 @@ private:
 	struct SlowPath;
 	void emitControl(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
 	void emitExit(const NativeBlockExitSite* exit, bool fallthrough = false);
+	void emitExitCode(const NativeBlockExitSite* exit, bool fallthrough = false);
 	void emitTableAccess(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
 	void emitArraySlot(bool load, int value, SlowPath& slow);
 	void emitStringSlot(bool load, int value, SlowPath& slow);
@@ -49,7 +50,9 @@ private:
 	std::array<sljit_s32, 2> readOperands(int left, int right);
 	sljit_s32 destinationRegister(int guest);
 	void writeRegister(int guest, sljit_s32 source = SLJIT_FR0);
-	void flushRegisters();
+	void planResidentRegisters(std::span<const NativeBlockSource> sources);
+	void reloadResidentRange(int first, int end);
+	void emitResidentWriteback();
 	void discardRegisterRange(int first, int end);
 	RegisterSnapshot registerSnapshot(bool dirtyOnly = true) const;
 	void emitRegisterSnapshot(const RegisterSnapshot& snapshot);
@@ -101,6 +104,8 @@ private:
 		u32 lastUse = 0;
 	};
 	std::array<CachedRegister, REGISTER_CACHE_CAPACITY> m_registers;
+	std::array<CachedRegister, REGISTER_CACHE_CAPACITY> m_residentRegisters;
+	int m_residentCount = 0;
 	int m_registerCount;
 	bool m_useSavedFloats;
 	u32 m_registerClock = 0;
