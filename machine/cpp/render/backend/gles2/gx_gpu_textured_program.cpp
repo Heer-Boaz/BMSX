@@ -30,7 +30,7 @@ void GxGpuTexturedProgram::initialize(OpenGLES2Backend& backend, const char* lab
 	colorPlaneBaseAttrib = glGetAttribLocation(id, "a_colorPlaneBase");
 	colorPlaneStepXAttrib = glGetAttribLocation(id, "a_colorPlaneStepX");
 	colorPlaneStepYAttrib = glGetAttribLocation(id, "a_colorPlaneStepY");
-	glUseProgram(id);
+	backend.drawState.useProgram(id);
 	glUniform1i(glGetUniformLocation(id, "u_vram"), GLES2_TEXTURE_UNIT_GX_SAMPLE);
 	if (!framebufferFetch) {
 		glUniform1i(glGetUniformLocation(id, "u_destination"),

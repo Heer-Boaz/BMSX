@@ -54,7 +54,7 @@ struct PresentGLES2State {
 };
 
 void initPresentGLES2(OpenGLES2Backend& backend, PresentGLES2State& pipeline);
-void shutdownPresentGLES2(PresentGLES2State& pipeline);
+void shutdownPresentGLES2(OpenGLES2Backend& backend, PresentGLES2State& pipeline);
 void initCRTGLES2(OpenGLES2Backend& backend, CRTGLES2State& pipeline);
 void shutdownCRTGLES2(OpenGLES2Backend& backend, CRTGLES2State& pipeline);
 void registerPresentationHistoryGLES2Passes(RenderPassLibrary& registry, PresentGLES2State& pipeline);

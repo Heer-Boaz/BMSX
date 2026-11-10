@@ -6,6 +6,7 @@
 #define BMSX_GLES2_BACKEND_H
 
 #include "render/backend/backend.h"
+#include "render/backend/gles2/draw_state.h"
 #include <array>
 #include <cstdint>
 #include <memory>
@@ -53,6 +54,7 @@ struct GxCpuToVramProfileFrame {
 
 class OpenGLES2Backend : public GPUBackend {
 public:
+	GLES2DrawState drawState;
 	using FramebufferGetter = uintptr_t (*)();
 	using ProcAddress = void (*)();
 	using ProcAddressGetter = ProcAddress (*)(const char*);
@@ -107,7 +109,6 @@ public:
 	void setActiveTextureUnit(i32 unit);
 	void bindTexture2D(TextureHandle tex);
 	void invalidateTextureBindingCache();
-	void setBlendColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha);
 	GLuint framebufferName(void* target) const;
 	void setRenderTarget(GLuint fbo, i32 width, i32 height);
 	GLuint compileShader(
@@ -166,12 +167,9 @@ private:
 	void bindTextureForUpload(GLuint texture, const TextureParams& params);
 	FramebufferGetter m_get_framebuffer = nullptr;
 	ProcAddressGetter m_get_proc_address = nullptr;
-	GLuint m_current_fbo = 0;
 	GLuint m_backbuffer_fbo = 0;
 	i32 m_default_width = 0;
 	i32 m_default_height = 0;
-	i32 m_target_width = 0;
-	i32 m_target_height = 0;
 	FrameStats m_stats{};
 	bool m_profile_gx_uploads = false;
 	GxGpuDrawTargetMode m_gx_draw_target_mode;
@@ -180,11 +178,6 @@ private:
 	i32 m_active_texture_unit = -1;
 	std::array<GLuint, kTrackedTextureUnits> m_bound_texture_2d_by_unit{};
 	u32 m_touched_texture_units = 0u;
-	GLfloat m_blend_red = 0.0f;
-	GLfloat m_blend_green = 0.0f;
-	GLfloat m_blend_blue = 0.0f;
-	GLfloat m_blend_alpha = 0.0f;
-	bool m_blend_color_valid = false;
 	std::unique_ptr<OpenGLES2Pipelines> m_pipelines;
 	GLuint m_readback_fbo = 0;
 	u32 m_context_generation = 0;

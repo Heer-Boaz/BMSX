@@ -552,6 +552,31 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 		"mask-check retains the earlier masked red pixel in an adjacent upload");
 	require(adjacentBytes[(900u * 1024u + 701u) * 2u] == 0u && adjacentBytes[(900u * 1024u + 701u) * 2u + 1u] == 0x7cu,
 		"an odd staging offset preserves the next unmasked pixel and later blue overwrite");
+	// The frontend owns the context after endFrame. The next command drain can
+	// precede beginFrame and must not inherit the frontend's color/program state.
+	presenter.backend().endFrame();
+	if (gles) {
+		glUseProgram(0);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+		glEnable(GL_DITHER);
+		glEnable(GL_STENCIL_TEST);
+		glViewport(0, 0, 1, 1);
+	}
+	for (const u32 word : {0xe6000000u, 0x600000ffu, 0x03f003f0u, 0x00020002u}) {
+		fixture.gpu.writeGp0(word);
+		fixture.scheduler.advanceTo(fixture.scheduler.currentNowCycles() + 10'000);
+		fixture.gpu.onService(fixture.scheduler.currentNowCycles());
+	}
+	presenter.backend().executeGxGpuCommandDrain(fixture.gpu);
+	presenter.backend().captureGxGpuVramSnapshot(fixture.gpu);
+	const auto drained = fixture.gpu.readDeviceOutput().vramSnapshotBytes;
+	for (u32 y = 1008u; y < 1010u; ++y) for (u32 x = 1008u; x < 1010u; ++x) {
+		const size_t at = (y * 1024u + x) * 2u;
+		require(drained[at] == 31u && drained[at + 1u] == 0u,
+			"a pre-beginFrame GX drain restores its context state after frontend rendering");
+	}
 	if (profiling) {
 		// Match the libretro context owner: release passes/textures while current,
 		// then destroy the backend context resources before its C++ owner dies.

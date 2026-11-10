@@ -439,6 +439,7 @@ target_link_libraries(bmsx_host_support PUBLIC bmsx_core)
 if(BMSX_ENABLE_GLES2)
 	target_sources(bmsx_host_support PRIVATE
 		render/backend/gles2/backend.cpp
+		render/backend/gles2/draw_state.cpp
 		render/backend/gles2/fullscreen_quad.cpp
 		render/backend/gles2/gx_gpu.cpp
 		render/backend/gles2/gx_gpu_textured_program.cpp
@@ -755,6 +756,14 @@ if(BMSX_BUILD_TESTS)
 	)
 	target_link_libraries(bmsx_crt_software_tests PRIVATE bmsx_host_support)
 	add_test(NAME bmsx_crt_software_tests COMMAND bmsx_crt_software_tests)
+
+	if(UNIX AND NOT APPLE AND BMSX_ENABLE_GLES2)
+		add_executable(bmsx_gles2_draw_state_tests
+			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gles2_draw_state_test.cpp
+			render/backend/gles2/draw_state.cpp)
+		target_include_directories(bmsx_gles2_draw_state_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+		add_test(NAME bmsx_gles2_draw_state_tests COMMAND bmsx_gles2_draw_state_tests)
+	endif()
 
 	if(UNIX AND NOT APPLE AND BMSX_ENABLE_GLES2)
 		find_library(BMSX_TEST_EGL_LIBRARY EGL REQUIRED)

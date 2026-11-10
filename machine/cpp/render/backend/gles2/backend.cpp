@@ -117,10 +117,10 @@ std::vector<u8> OpenGLES2Backend::readColorTexture(TextureHandle handle, i32 wid
 	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previous);
 	GLuint fbo;
 	glGenFramebuffers(1, &fbo);
-	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	drawState.bindFramebuffer(fbo);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, static_cast<GLES2Texture*>(handle)->id, 0);
 	glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-	glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previous));
+	drawState.bindFramebuffer(static_cast<GLuint>(previous));
 	glDeleteFramebuffers(1, &fbo);
 	const size_t stride = static_cast<size_t>(width) * 4u;
 	for (i32 y = 0; y < height / 2; ++y) {
@@ -242,8 +242,6 @@ OpenGLES2Backend::OpenGLES2Backend(
 	GxGpuDrawTargetMode drawTargetMode)
 	: m_default_width(width)
 	, m_default_height(height)
-	, m_target_width(width)
-	, m_target_height(height)
 	, m_profile_gx_uploads(profileGxUploads)
 	, m_gx_draw_target_mode(drawTargetMode)
 	, m_gx_gpu_vram_texture_rows(gxGpuVramByteCount / GX_GPU_VRAM_ADDRESS_ROW_BYTE_COUNT)
@@ -402,7 +400,7 @@ TextureHandle OpenGLES2Backend::createColorTexture(i32 width, i32 height, const 
 	if (initialClearColor != nullptr) {
 		void* target = createRenderTarget(handle, nullptr);
 		activateRenderTarget(target, width, height);
-		glDisable(GL_SCISSOR_TEST);
+		drawState.disable(GLES2Capability::ScissorTest);
 		clear(initialClearColor, nullptr);
 		destroyRenderTarget(target);
 	}
@@ -432,7 +430,7 @@ void* OpenGLES2Backend::createRenderTarget(TextureHandle color, TextureHandle de
 	auto* target = new GLES2RenderTarget{};
 	target->generation = m_context_generation;
 	glGenFramebuffers(1, &target->id);
-	glBindFramebuffer(GL_FRAMEBUFFER, target->id);
+	drawState.bindFramebuffer(target->id);
 	if (color != nullptr) {
 		auto* texture = static_cast<GLES2Texture*>(color);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture->id, 0);
@@ -447,6 +445,7 @@ void* OpenGLES2Backend::createRenderTarget(TextureHandle color, TextureHandle de
 void OpenGLES2Backend::destroyRenderTarget(void* target) {
 	auto* renderTarget = static_cast<GLES2RenderTarget*>(target);
 	if (renderTarget->generation == m_context_generation) {
+		drawState.invalidate();
 		glDeleteFramebuffers(1, &renderTarget->id);
 	}
 	delete renderTarget;
@@ -457,17 +456,8 @@ void OpenGLES2Backend::activateRenderTarget(void* target, i32 width, i32 height)
 }
 
 void OpenGLES2Backend::activateDefaultRenderTarget() {
-	const bool fboChanged = (m_current_fbo != m_backbuffer_fbo);
-	const bool sizeChanged = (m_target_width != m_default_width) || (m_target_height != m_default_height);
-	m_current_fbo = m_backbuffer_fbo;
-	m_target_width = m_default_width;
-	m_target_height = m_default_height;
-	if (fboChanged) {
-		glBindFramebuffer(GL_FRAMEBUFFER, m_current_fbo);
-	}
-	if (fboChanged || sizeChanged) {
-		glViewport(0, 0, m_target_width, m_target_height);
-	}
+	drawState.bindFramebuffer(m_backbuffer_fbo);
+	drawState.viewport(0, 0, m_default_width, m_default_height);
 }
 
 void OpenGLES2Backend::clear(const std::array<f32, 4>* color, const f32* depth) {
@@ -508,7 +498,7 @@ PassEncoder OpenGLES2Backend::beginRenderPass(const RenderPassDesc& desc) {
 
 	clear(clearColor, clearDepth);
 	PassEncoder pass;
-	pass.fbo = reinterpret_cast<void*>(static_cast<uintptr_t>(m_current_fbo));
+	pass.fbo = reinterpret_cast<void*>(static_cast<uintptr_t>(drawState.framebuffer()));
 	pass.desc = desc;
 	return pass;
 }
@@ -531,8 +521,8 @@ void OpenGLES2Backend::drawIndexed(PassEncoder& pass, i32 indexCount,
 }
 
 void OpenGLES2Backend::beginFrame() {
+	drawState.invalidate();
 	m_stats = FrameStats{};
-	m_blend_color_valid = false;
 	// RetroArch can mutate GL state between frames; reset caches so bindings are
 	// refreshed.
 	invalidateTextureBindingCache();
@@ -542,15 +532,13 @@ void OpenGLES2Backend::beginFrame() {
 			stderr, "[BMSX][GLES2] beginFrame backbuffer_fbo=%u size=%dx%d\n",
 			static_cast<unsigned>(m_backbuffer_fbo), m_default_width, m_default_height);
 	}
-	m_current_fbo = m_backbuffer_fbo;
-	glBindFramebuffer(GL_FRAMEBUFFER, m_current_fbo);
-	m_target_width = m_default_width;
-	m_target_height = m_default_height;
-	glViewport(0, 0, m_target_width, m_target_height);
-	glDisable(GL_DITHER);
-	glDisable(GL_SCISSOR_TEST);
-	glDisable(GL_STENCIL_TEST);
-	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	drawState.bindFramebuffer(m_backbuffer_fbo);
+	drawState.viewport(0, 0, m_default_width, m_default_height);
+	drawState.disable(GLES2Capability::Dither);
+	drawState.disable(GLES2Capability::ScissorTest);
+	drawState.disable(GLES2Capability::StencilTest);
+	drawState.colorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	drawState.blendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
 }
 
 void OpenGLES2Backend::beginGxCpuToVramProfileFrame() {
@@ -589,9 +577,9 @@ void OpenGLES2Backend::endFrame() {
 	std::fprintf(stderr, "[BMSX][GLES2] endFrame\n");
 	}
 	// Reset the core state we touched so frontend present paths don't inherit it.
-	glUseProgram(0);
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+	drawState.useProgram(0);
+	drawState.bindBuffer(GL_ARRAY_BUFFER, 0);
+	drawState.bindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 	u32 touchedTextureUnits = m_touched_texture_units;
 	while (touchedTextureUnits != 0u) {
 		const i32 unit = static_cast<i32>(std::countr_zero(touchedTextureUnits));
@@ -607,6 +595,7 @@ void OpenGLES2Backend::endFrame() {
 	}
 	m_touched_texture_units = 0u;
 	invalidateTextureBindingCache();
+	drawState.invalidate();
 	if constexpr (kGLES2FinishFrame) {
 	glFinish();
 	}
@@ -629,18 +618,15 @@ void OpenGLES2Backend::setContextCallbacks(FramebufferGetter framebufferGetter, 
 }
 
 void OpenGLES2Backend::onContextReset() {
+	drawState.invalidate();
 	m_context_ready = true;
 	m_context_generation += 1u;
-	m_current_fbo = 0;
 	m_backbuffer_fbo = 0;
-	m_target_width = m_default_width;
-	m_target_height = m_default_height;
 	m_readback_fbo = 0;
 	*m_pipelines = OpenGLES2Pipelines{};
 	m_touched_texture_units = 0u;
-	m_blend_color_valid = false;
 	invalidateTextureBindingCache();
-	glDisable(GL_DITHER);
+	drawState.disable(GLES2Capability::Dither);
 	const char* extensions = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
 	m_supports_srgb_textures = hasExtensionToken(extensions, "GL_EXT_sRGB");
 	m_supports_uint_indices = hasExtensionToken(extensions, "GL_OES_element_index_uint");
@@ -663,7 +649,7 @@ void OpenGLES2Backend::onContextReset() {
 
 void OpenGLES2Backend::onContextDestroy() {
 	CRTPipeline::shutdownCRTGLES2(*this, m_pipelines->crt);
-	CRTPipeline::shutdownPresentGLES2(m_pipelines->present);
+	CRTPipeline::shutdownPresentGLES2(*this, m_pipelines->present);
 	DeviceQuantizePipeline::GLES2::shutdown(*this, m_pipelines->deviceQuantize);
 	if (m_readback_fbo != 0) {
 		glDeleteFramebuffers(1, &m_readback_fbo);
@@ -672,19 +658,16 @@ void OpenGLES2Backend::onContextDestroy() {
 }
 
 void OpenGLES2Backend::onContextLost() {
+	drawState.invalidate();
 	m_context_ready = false;
 	m_context_generation += 1u;
 	DeviceQuantizePipeline::GLES2::releaseLostTextureHandles(*this, m_pipelines->deviceQuantize);
-	m_current_fbo = 0;
 	m_backbuffer_fbo = 0;
-	m_target_width = m_default_width;
-	m_target_height = m_default_height;
 	m_readback_fbo = 0;
 	m_pipelines->deviceQuantize = DeviceQuantizePipeline::GLES2::State{};
 	m_pipelines->present = CRTPipeline::PresentGLES2State{};
 	m_pipelines->crt = CRTPipeline::CRTGLES2State{};
 	m_touched_texture_units = 0u;
-	m_blend_color_valid = false;
 	invalidateTextureBindingCache();
 	m_supports_srgb_textures = false;
 	m_supports_uint_indices = false;
@@ -707,21 +690,6 @@ void OpenGLES2Backend::setActiveTextureUnit(i32 unit) {
 	}
 }
 
-void OpenGLES2Backend::setBlendColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha) {
-	if (m_blend_color_valid
-		&& m_blend_red == red
-		&& m_blend_green == green
-		&& m_blend_blue == blue
-		&& m_blend_alpha == alpha) {
-		return;
-	}
-	glBlendColor(red, green, blue, alpha);
-	m_blend_red = red;
-	m_blend_green = green;
-	m_blend_blue = blue;
-	m_blend_alpha = alpha;
-	m_blend_color_valid = true;
-}
 
 void OpenGLES2Backend::bindTexture2D(TextureHandle tex) {
 	auto* gltex = static_cast<GLES2Texture*>(tex);
@@ -740,24 +708,12 @@ void OpenGLES2Backend::bindTexture2D(TextureHandle tex) {
 }
 
 void OpenGLES2Backend::setRenderTarget(GLuint fbo, i32 width, i32 height) {
-	const bool fboChanged = (m_current_fbo != fbo);
-	const bool sizeChanged = (m_target_width != width) || (m_target_height != height);
-	m_current_fbo = fbo;
-	m_target_width = width;
-	m_target_height = height;
-	if (fboChanged) {
-		glBindFramebuffer(GL_FRAMEBUFFER, m_current_fbo);
-	}
-	// CRITICAL FIX: Always update viewport when FBO changes OR size changes
-	// Previously, viewport was only updated on size change, which broke rendering
-	// when switching between FBOs of same size (e.g., framebuffer text rendering)
-	if (fboChanged || sizeChanged) {
-		glViewport(0, 0, m_target_width, m_target_height);
-	}
+	drawState.bindFramebuffer(fbo);
+	// Cached-region/copy passes can change the viewport without changing FBO.
+	drawState.viewport(0, 0, width, height);
 	if (kGLES2VerboseLog) {
-	std::fprintf(stderr, "[BMSX][GLES2] setRenderTarget fbo=%u size=%dx%d%s\n",
-					static_cast<unsigned>(fbo), width, height,
-					fboChanged ? " (FBO changed)" : sizeChanged ? " (size changed)" : "");
+		std::fprintf(stderr, "[BMSX][GLES2] setRenderTarget fbo=%u size=%dx%d\n",
+			static_cast<unsigned>(fbo), width, height);
 	}
 }
 

@@ -14,24 +14,26 @@ constexpr float POST_PROCESS_TEXCOORDS[12] = {
 
 } // namespace
 
-void createFullscreenQuad(FullscreenQuad& quad) {
+void createFullscreenQuad(GLES2DrawState& state, FullscreenQuad& quad) {
 	glGenBuffers(1, &quad.positionBuffer);
 	glGenBuffers(1, &quad.texcoordBuffer);
-	glBindBuffer(GL_ARRAY_BUFFER, quad.texcoordBuffer);
+	state.bindBuffer(GL_ARRAY_BUFFER, quad.texcoordBuffer);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(POST_PROCESS_TEXCOORDS), POST_PROCESS_TEXCOORDS, GL_STATIC_DRAW);
 }
 
-void destroyFullscreenQuad(FullscreenQuad& quad) {
+void destroyFullscreenQuad(GLES2DrawState& state, FullscreenQuad& quad) {
 	if (quad.positionBuffer != 0u) {
+		state.forgetBuffer(quad.positionBuffer);
 		glDeleteBuffers(1, &quad.positionBuffer);
 	}
 	if (quad.texcoordBuffer != 0u) {
+		state.forgetBuffer(quad.texcoordBuffer);
 		glDeleteBuffers(1, &quad.texcoordBuffer);
 	}
 	quad = FullscreenQuad{};
 }
 
-void updateFullscreenQuad(FullscreenQuad& quad, i32 width, i32 height) {
+void updateFullscreenQuad(GLES2DrawState& state, FullscreenQuad& quad, i32 width, i32 height) {
 	if (quad.width == width && quad.height == height) {
 		return;
 	}
@@ -52,18 +54,18 @@ void updateFullscreenQuad(FullscreenQuad& quad, i32 width, i32 height) {
 	quad.positions[10] = w;
 	quad.positions[11] = h;
 
-	glBindBuffer(GL_ARRAY_BUFFER, quad.positionBuffer);
+	state.bindBuffer(GL_ARRAY_BUFFER, quad.positionBuffer);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(quad.positions), quad.positions.data(), GL_STATIC_DRAW);
 }
 
-void bindFullscreenQuad(const FullscreenQuad& quad, GLint positionAttrib, GLint texcoordAttrib) {
-	glBindBuffer(GL_ARRAY_BUFFER, quad.positionBuffer);
-	glEnableVertexAttribArray(static_cast<GLuint>(positionAttrib));
-	glVertexAttribPointer(static_cast<GLuint>(positionAttrib), 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+void bindFullscreenQuad(GLES2DrawState& state, const FullscreenQuad& quad, GLint positionAttrib, GLint texcoordAttrib) {
+	state.bindBuffer(GL_ARRAY_BUFFER, quad.positionBuffer);
+	state.enableVertexAttribArray(static_cast<GLuint>(positionAttrib));
+	state.vertexAttribPointer(static_cast<GLuint>(positionAttrib), 2, GL_FLOAT, GL_FALSE, 0, nullptr);
 
-	glBindBuffer(GL_ARRAY_BUFFER, quad.texcoordBuffer);
-	glEnableVertexAttribArray(static_cast<GLuint>(texcoordAttrib));
-	glVertexAttribPointer(static_cast<GLuint>(texcoordAttrib), 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+	state.bindBuffer(GL_ARRAY_BUFFER, quad.texcoordBuffer);
+	state.enableVertexAttribArray(static_cast<GLuint>(texcoordAttrib));
+	state.vertexAttribPointer(static_cast<GLuint>(texcoordAttrib), 2, GL_FLOAT, GL_FALSE, 0, nullptr);
 }
 
 } // namespace bmsx

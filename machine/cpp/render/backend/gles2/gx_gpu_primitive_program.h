@@ -24,6 +24,9 @@ struct GxGpuPrimitiveProgram : GxGpuRasterProgram {
 	GLint rasterPhaseUniform = -1;
 	GLint logicalYBaseUniform = -1;
 
+	std::array<GLint, 7> uniformState{};
+	bool uniformStateValid = false;
+
 	void initialize(OpenGLES2Backend& backend, const char* vertex, const char* fragment,
 		const char* label, const char* defines);
 };

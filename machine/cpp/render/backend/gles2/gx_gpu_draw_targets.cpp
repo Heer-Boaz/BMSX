@@ -17,10 +17,10 @@ void GxGpuDrawTargets::initialize(OpenGLES2Backend& backend, GxGpuDrawTargetMode
 		program.id = backend.buildProgram(kGxGpuCacheCopyVertexShader, kGxGpuCacheCopyFragmentShader,
 			"gx_vram_cache_copy", defines[i], bindings);
 		program.region = glGetUniformLocation(program.id, "u_region");
-		glUseProgram(program.id); glUniform1i(glGetUniformLocation(program.id, "u_source"), 0);
+		m_backend->drawState.useProgram(program.id); glUniform1i(glGetUniformLocation(program.id, "u_source"), 0);
 	}
 	const GLfloat vertices[]{-1, -1, 3, -1, -1, 3};
-	glGenBuffers(1, &m_vertices); glBindBuffer(GL_ARRAY_BUFFER, m_vertices);
+	glGenBuffers(1, &m_vertices); m_backend->drawState.bindBuffer(GL_ARRAY_BUFFER, m_vertices);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 	for (auto& entry : m_entries) {
 		glGenTextures(1, &entry.color.id); glGenTextures(1, &entry.sample.id);
@@ -49,27 +49,31 @@ void GxGpuDrawTargets::allocate(Entry& entry, i32 width, i32 height) {
 	++m_resizes;
 }
 
-void GxGpuDrawTargets::copy(GLES2Texture& source, GLuint framebuffer, i32 targetWidth, i32 targetHeight,
+void GxGpuDrawTargets::copy(GLES2Texture& source, GLuint framebuffer,
 	i32 sourceX, i32 sourceY, i32 targetX, i32 targetY, i32 width, i32 height,
 	bool sourceRgb5, bool targetRgb5) {
 	const auto& program = m_copyPrograms[sourceRgb5 == targetRgb5 ? 0 : (targetRgb5 ? 1 : 2)];
-	m_backend->setRenderTarget(framebuffer, targetWidth, targetHeight);
+	m_backend->drawState.bindFramebuffer(framebuffer);
 	m_backend->setActiveTextureUnit(0); m_backend->bindTexture2D(&source);
-	glViewport(targetX, targetY, width, height);
-	glDisable(GL_SCISSOR_TEST); glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glDisable(GL_BLEND); glDisable(GL_DITHER);
-	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-	glUseProgram(program.id);
+	m_backend->drawState.viewport(targetX, targetY, width, height);
+	m_backend->drawState.disable(GLES2Capability::ScissorTest);
+	m_backend->drawState.disable(GLES2Capability::DepthTest);
+	m_backend->drawState.disable(GLES2Capability::CullFace);
+	m_backend->drawState.disable(GLES2Capability::Blend);
+	m_backend->drawState.disable(GLES2Capability::Dither);
+	m_backend->drawState.colorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	m_backend->drawState.useProgram(program.id);
 	glUniform4f(program.region, static_cast<f32>(sourceX) / source.width, static_cast<f32>(sourceY) / source.height,
 		static_cast<f32>(width) / source.width, static_cast<f32>(height) / source.height);
-	glBindBuffer(GL_ARRAY_BUFFER, m_vertices); glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+	m_backend->drawState.bindBuffer(GL_ARRAY_BUFFER, m_vertices); m_backend->drawState.enableVertexAttribArray(0);
+	m_backend->drawState.vertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
 	glDrawArrays(GL_TRIANGLES, 0, 3);
 }
 
 void GxGpuDrawTargets::materialize(Entry& entry, GxGpuVramCopyRect& globalDirty) {
 	const auto& dirty = entry.dirty;
 	if (dirty.right <= dirty.left || dirty.bottom <= dirty.top) return;
-	copy(entry.color, m_baseFramebuffer, m_base->width, m_base->height,
+	copy(entry.color, m_baseFramebuffer,
 		dirty.left - entry.bounds.left, dirty.top - entry.bounds.top, dirty.left, dirty.top,
 		dirty.right - dirty.left, dirty.bottom - dirty.top, rgb5(), false);
 	includeGxGpuVramCopyRect(globalDirty, dirty);
@@ -99,7 +103,7 @@ void GxGpuDrawTargets::select(const GxGpuVramCopyRect& bounds, GxGpuVramCopyRect
 	if (entry.color.width != width || entry.color.height != height) allocate(entry, width, height);
 	entry.bounds = region; entry.valid = true; entry.used = ++m_clock;
 	entry.dirty = {}; entry.sampleDirty = region;
-	copy(*m_base, entry.framebuffer, width, height, region.left, region.top, 0, 0, width, height, false, rgb5());
+	copy(*m_base, entry.framebuffer, region.left, region.top, 0, 0, width, height, false, rgb5());
 	++m_revision;
 }
 
@@ -114,7 +118,7 @@ void GxGpuDrawTargets::synchronizeDestination(const GxGpuVramCopyRect& bounds) {
 	if (!gxGpuPhysicalVramRectsOverlap(bounds, entry.sampleDirty)) return;
 	const auto& dirty = entry.sampleDirty;
 	const i32 x = dirty.left - entry.bounds.left, y = dirty.top - entry.bounds.top;
-	copy(entry.color, entry.sampleFramebuffer, entry.sample.width, entry.sample.height,
+	copy(entry.color, entry.sampleFramebuffer,
 		x, y, x, y, dirty.right - dirty.left, dirty.bottom - dirty.top, rgb5(), rgb5());
 	entry.sampleDirty = {};
 	++m_sampleCopies;
@@ -155,24 +159,26 @@ GLES2Texture& GxGpuDrawTargets::color() { return enabled() ? m_entries[m_current
 void GxGpuDrawTargets::bind() {
 	if (!enabled()) { m_backend->setRenderTarget(m_baseFramebuffer, m_base->width, m_base->height); return; }
 	auto& entry = m_entries[m_current];
-	m_backend->setRenderTarget(entry.framebuffer, entry.color.width, entry.color.height);
-	glViewport(-entry.bounds.left, -entry.bounds.top, GX_GPU_VRAM_X_ADDRESS_PERIOD, GX_GPU_VRAM_Y_ADDRESS_PERIOD);
+	m_backend->drawState.bindFramebuffer(entry.framebuffer);
+	m_backend->drawState.viewport(-entry.bounds.left, -entry.bounds.top, GX_GPU_VRAM_X_ADDRESS_PERIOD, GX_GPU_VRAM_Y_ADDRESS_PERIOD);
 }
 
 void GxGpuDrawTargets::bindHardwareBlend(u32 mode) {
-	glEnable(GL_BLEND);
-	glBlendEquationSeparate(mode == 2u ? GL_FUNC_REVERSE_SUBTRACT : GL_FUNC_ADD, GL_FUNC_ADD);
+	m_backend->drawState.enable(GLES2Capability::Blend);
+	m_backend->drawState.blendEquationSeparate(mode == 2u ? GL_FUNC_REVERSE_SUBTRACT : GL_FUNC_ADD, GL_FUNC_ADD);
 	if (mode == 0u) {
 		// Validated Mali-400 RGB5_A1 quantization profile. Quarter-foreground
 		// truncation is performed on the source in the fragment datapath.
 		constexpr GLfloat half = 0.5f - 1.0f / 256.0f;
-		m_backend->setBlendColor(half, half, half, half);
-		glBlendFuncSeparate(GL_CONSTANT_COLOR, GL_CONSTANT_COLOR, GL_ONE, GL_ZERO);
-	} else glBlendFuncSeparate(GL_ONE, GL_ONE, GL_ONE, GL_ZERO);
+		m_backend->drawState.blendColor(half, half, half, half);
+		m_backend->drawState.blendFuncSeparate(GL_CONSTANT_COLOR, GL_CONSTANT_COLOR, GL_ONE, GL_ZERO);
+	} else m_backend->drawState.blendFuncSeparate(GL_ONE, GL_ONE, GL_ONE, GL_ZERO);
 }
 
 void GxGpuDrawTargets::shutdown() {
 	if (!enabled()) return;
+	m_backend->drawState.invalidate();
+	m_backend->invalidateTextureBindingCache();
 	if (m_backend->profilesGxUploads()) std::fprintf(stderr,
 		"[gx-cache] format=%s hardware_blending=%d selections=%llu resizes=%llu resolves=%llu sample_copies=%llu\n",
 		rgb5() ? "rgb5" : "nibbles", hardwareBlending() ? 1 : 0,

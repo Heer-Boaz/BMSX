@@ -40,9 +40,9 @@ void init(OpenGLES2Backend& backend, State& pipeline) {
 		static_cast<i32>(DEVICE_QUANTIZE_LUT_HEIGHT),
 		RGBA8_LINEAR_TEXTURE_PARAMS);
 
-	createFullscreenQuad(pipeline.quad);
+	createFullscreenQuad(backend.drawState, pipeline.quad);
 
-	glUseProgram(pipeline.program);
+	backend.drawState.useProgram(pipeline.program);
 	glUniform1i(pipeline.uniform_texture, GLES2_TEXTURE_UNIT_POST_PROCESSING_SOURCE);
 	glUniform1i(pipeline.uniform_quantize_lut, GLES2_TEXTURE_UNIT_DEVICE_QUANTIZE_LUT);
 	glUniform1f(pipeline.uniform_scale, 1.0f);
@@ -52,8 +52,11 @@ void init(OpenGLES2Backend& backend, State& pipeline) {
 void shutdown(OpenGLES2Backend& backend, State& pipeline) {
 	backend.destroyTexture(pipeline.lutTextures[0]);
 	backend.destroyTexture(pipeline.lutTextures[1]);
-	if (pipeline.program != 0) glDeleteProgram(pipeline.program);
-	destroyFullscreenQuad(pipeline.quad);
+	if (pipeline.program != 0) {
+		backend.drawState.forgetProgram(pipeline.program);
+		glDeleteProgram(pipeline.program);
+	}
+	destroyFullscreenQuad(backend.drawState, pipeline.quad);
 	pipeline = State{};
 }
 
@@ -85,15 +88,15 @@ void registerPass(RenderPassLibrary& registry, State& pipeline) {
 }
 
 void renderDeviceQuantizeGLES2(OpenGLES2Backend& backend, State& pipeline, const DeviceQuantizePipelineState& state) {
-	glUseProgram(pipeline.program);
+	backend.drawState.useProgram(pipeline.program);
 
-	updateFullscreenQuad(pipeline.quad, state.width, state.height);
+	updateFullscreenQuad(backend.drawState, pipeline.quad, state.width, state.height);
 
-	glDisable(GL_DEPTH_TEST);
-	glDisable(GL_CULL_FACE);
-	glDisable(GL_BLEND);
+	backend.drawState.disable(GLES2Capability::DepthTest);
+	backend.drawState.disable(GLES2Capability::CullFace);
+	backend.drawState.disable(GLES2Capability::Blend);
 
-	bindFullscreenQuad(pipeline.quad, pipeline.attrib_pos, pipeline.attrib_uv);
+	bindFullscreenQuad(backend.drawState, pipeline.quad, pipeline.attrib_pos, pipeline.attrib_uv);
 
 	if (pipeline.publishedConfigurationRevision != state.configurationRevision) {
 		glUniform2f(pipeline.uniform_resolution, static_cast<float>(state.width), static_cast<float>(state.height));

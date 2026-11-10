@@ -25,7 +25,7 @@ void GxGpuPrimitiveProgram::initialize(OpenGLES2Backend& backend, const char* ve
 	skippedLineParityUniform = glGetUniformLocation(id, "u_skippedLineParity");
 	rasterPhaseUniform = glGetUniformLocation(id, "u_rasterPhase");
 	logicalYBaseUniform = glGetUniformLocation(id, "u_logicalYBase");
-	glUseProgram(id);
+	backend.drawState.useProgram(id);
 	glUniform1i(glGetUniformLocation(id, "u_vram"), GLES2_TEXTURE_UNIT_GX_SAMPLE);
 }
 

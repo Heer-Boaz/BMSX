@@ -42,9 +42,9 @@ void logFramebufferDitherState() {
 					static_cast<int>(alpha_bits), dither_enabled);
 }
 
-void initializeFullscreenPostProcessProgram(GLuint program, GLint uniformTexture, FullscreenQuad& quad) {
-	createFullscreenQuad(quad);
-	glUseProgram(program);
+void initializeFullscreenPostProcessProgram(OpenGLES2Backend& backend, GLuint program, GLint uniformTexture, FullscreenQuad& quad) {
+	createFullscreenQuad(backend.drawState, quad);
+	backend.drawState.useProgram(program);
 	glUniform1i(uniformTexture, GLES2_TEXTURE_UNIT_POST_PROCESSING_SOURCE);
 }
 
@@ -56,13 +56,13 @@ void beginFullscreenPostProcessDraw(OpenGLES2Backend& backend,
 										GLuint targetFbo,
 										i32 width,
 										i32 height) {
-	glUseProgram(program);
-	updateFullscreenQuad(quad, width, height);
+	backend.drawState.useProgram(program);
+	updateFullscreenQuad(backend.drawState, quad, width, height);
 	backend.setRenderTarget(targetFbo, width, height);
-	glDisable(GL_DEPTH_TEST);
-	glDisable(GL_CULL_FACE);
-	glDisable(GL_BLEND);
-	bindFullscreenQuad(quad, attribPosition, attribUv);
+	backend.drawState.disable(GLES2Capability::DepthTest);
+	backend.drawState.disable(GLES2Capability::CullFace);
+	backend.drawState.disable(GLES2Capability::Blend);
+	bindFullscreenQuad(backend.drawState, quad, attribPosition, attribUv);
 }
 
 } // namespace
@@ -77,12 +77,12 @@ void initPresentGLES2(OpenGLES2Backend& backend, PresentGLES2State& pipeline) {
 	pipeline.uniform_scale = glGetUniformLocation(pipeline.program, "u_scale");
 	pipeline.uniform_texture = glGetUniformLocation(pipeline.program, "u_texture");
 
-	initializeFullscreenPostProcessProgram(pipeline.program, pipeline.uniform_texture, pipeline.quad);
+	initializeFullscreenPostProcessProgram(backend, pipeline.program, pipeline.uniform_texture, pipeline.quad);
 }
 
-void initCRTGLES2(OpenGLES2Backend&, CRTGLES2State& pipeline) {
+void initCRTGLES2(OpenGLES2Backend& backend, CRTGLES2State& pipeline) {
 	logFramebufferDitherState();
-	createFullscreenQuad(pipeline.quad);
+	createFullscreenQuad(backend.drawState, pipeline.quad);
 }
 
 static void initializeCrtProgram(OpenGLES2Backend& backend, CRTGLES2Program& pipeline, u32 effects) {
@@ -112,7 +112,7 @@ static void initializeCrtProgram(OpenGLES2Backend& backend, CRTGLES2Program& pip
 	pipeline.uniform_glow_color = glGetUniformLocation(pipeline.program, "u_glowColor");
 	pipeline.uniform_texture = glGetUniformLocation(pipeline.program, "u_texture");
 
-	glUseProgram(pipeline.program);
+	backend.drawState.useProgram(pipeline.program);
 	glUniform1i(pipeline.uniform_texture, GLES2_TEXTURE_UNIT_POST_PROCESSING_SOURCE);
 	glUniform1i(glGetUniformLocation(pipeline.program, "u_noise"), GLES2_TEXTURE_UNIT_CRT_NOISE);
 	if (kCRTVerboseLog) {
@@ -128,14 +128,20 @@ static void initializeCrtProgram(OpenGLES2Backend& backend, CRTGLES2Program& pip
 void shutdownCRTGLES2(OpenGLES2Backend& backend, CRTGLES2State& pipeline) {
 	if (pipeline.noiseTexture != nullptr) backend.destroyTexture(pipeline.noiseTexture.release());
 	for (const auto& program : pipeline.programs)
-		if (program.program != 0) glDeleteProgram(program.program);
-	destroyFullscreenQuad(pipeline.quad);
+		if (program.program != 0) {
+			backend.drawState.forgetProgram(program.program);
+			glDeleteProgram(program.program);
+		}
+	destroyFullscreenQuad(backend.drawState, pipeline.quad);
 	pipeline = CRTGLES2State{};
 }
 
-void shutdownPresentGLES2(PresentGLES2State& pipeline) {
-	if (pipeline.program != 0) glDeleteProgram(pipeline.program);
-	destroyFullscreenQuad(pipeline.quad);
+void shutdownPresentGLES2(OpenGLES2Backend& backend, PresentGLES2State& pipeline) {
+	if (pipeline.program != 0) {
+		backend.drawState.forgetProgram(pipeline.program);
+		glDeleteProgram(pipeline.program);
+	}
+	destroyFullscreenQuad(backend.drawState, pipeline.quad);
 	pipeline = PresentGLES2State{};
 }
 

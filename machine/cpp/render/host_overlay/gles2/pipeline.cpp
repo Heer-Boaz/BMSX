@@ -208,7 +208,7 @@ void bootstrapHostOverlayGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State&
 	pipeline.uniformResolution = glGetUniformLocation(pipeline.program, "u_resolution");
 	pipeline.uniformGlyphMode = glGetUniformLocation(pipeline.program, "u_glyph_mode");
 	pipeline.uniformScreenRange = glGetUniformLocation(pipeline.program, "u_screen_range");
-	glUseProgram(pipeline.program);
+	backend.drawState.useProgram(pipeline.program);
 	glUniform1i(glGetUniformLocation(pipeline.program, "u_texture"), GLES2_TEXTURE_UNIT_HOST_2D);
 	glGenBuffers(1, &pipeline.vbo);
 	const u8 whitePixel[4] = {255u, 255u, 255u, 255u};
@@ -217,6 +217,8 @@ void bootstrapHostOverlayGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State&
 
 void shutdownHostOverlayGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline) {
 	if (pipeline.generation == backend.contextGeneration()) {
+		backend.drawState.forgetProgram(pipeline.program);
+		backend.drawState.forgetBuffer(pipeline.vbo);
 		glDeleteProgram(pipeline.program);
 		glDeleteBuffers(1, &pipeline.vbo);
 	}
@@ -230,17 +232,17 @@ void beginHostOverlayGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pip
 	pipeline.frameTexture = state.frameTexture;
 	pipeline.transform = IDENTITY_HOST_OVERLAY_TRANSFORM;
 	backend.setRenderTarget(backend.backbuffer(), state.width, state.height);
-	glViewport(0, 0, state.width, state.height);
+	backend.drawState.viewport(0, 0, state.width, state.height);
 	pipeline.targetHeight = state.height;
 	pipeline.pixelScale = 0.5F * (static_cast<f32>(state.width) / state.overlayWidth + static_cast<f32>(state.height) / state.overlayHeight);
 	pipeline.clip.reset(state.overlayWidth, state.overlayHeight, state.width, state.height);
-	glEnable(GL_SCISSOR_TEST);
-	glScissor(0, 0, state.width, state.height);
-	glDisable(GL_DEPTH_TEST);
-	glDisable(GL_CULL_FACE);
-	glEnable(GL_BLEND);
-	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-	glUseProgram(pipeline.program);
+	backend.drawState.enable(GLES2Capability::ScissorTest);
+	backend.drawState.scissor(0, 0, state.width, state.height);
+	backend.drawState.disable(GLES2Capability::DepthTest);
+	backend.drawState.disable(GLES2Capability::CullFace);
+	backend.drawState.enable(GLES2Capability::Blend);
+	backend.drawState.blendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+	backend.drawState.useProgram(pipeline.program);
 	glUniform2f(pipeline.uniformResolution, static_cast<float>(state.overlayWidth), static_cast<float>(state.overlayHeight));
 }
 
@@ -296,14 +298,14 @@ void renderHost2DEntryGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pi
 void endHostOverlayGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline) {
 	const auto& list = pipeline.drawList;
 	if (!list.vertices.empty()) {
-		glBindBuffer(GL_ARRAY_BUFFER, pipeline.vbo);
+		backend.drawState.bindBuffer(GL_ARRAY_BUFFER, pipeline.vbo);
 		glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(list.vertices.size() * sizeof(HostOverlayGLES2Vertex)), list.vertices.data(), GL_STREAM_DRAW);
-		glEnableVertexAttribArray(static_cast<GLuint>(pipeline.attribPos));
-		glVertexAttribPointer(static_cast<GLuint>(pipeline.attribPos), 2, GL_FLOAT, GL_FALSE, sizeof(HostOverlayGLES2Vertex), nullptr);
-		glEnableVertexAttribArray(static_cast<GLuint>(pipeline.attribUv));
-		glVertexAttribPointer(static_cast<GLuint>(pipeline.attribUv), 2, GL_FLOAT, GL_FALSE, sizeof(HostOverlayGLES2Vertex), reinterpret_cast<const void*>(offsetof(HostOverlayGLES2Vertex, u)));
-		glEnableVertexAttribArray(static_cast<GLuint>(pipeline.attribColor));
-		glVertexAttribPointer(static_cast<GLuint>(pipeline.attribColor), 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(HostOverlayGLES2Vertex), reinterpret_cast<const void*>(offsetof(HostOverlayGLES2Vertex, color)));
+		backend.drawState.enableVertexAttribArray(static_cast<GLuint>(pipeline.attribPos));
+		backend.drawState.vertexAttribPointer(static_cast<GLuint>(pipeline.attribPos), 2, GL_FLOAT, GL_FALSE, sizeof(HostOverlayGLES2Vertex), nullptr);
+		backend.drawState.enableVertexAttribArray(static_cast<GLuint>(pipeline.attribUv));
+		backend.drawState.vertexAttribPointer(static_cast<GLuint>(pipeline.attribUv), 2, GL_FLOAT, GL_FALSE, sizeof(HostOverlayGLES2Vertex), reinterpret_cast<const void*>(offsetof(HostOverlayGLES2Vertex, u)));
+		backend.drawState.enableVertexAttribArray(static_cast<GLuint>(pipeline.attribColor));
+		backend.drawState.vertexAttribPointer(static_cast<GLuint>(pipeline.attribColor), 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(HostOverlayGLES2Vertex), reinterpret_cast<const void*>(offsetof(HostOverlayGLES2Vertex, color)));
 		const HostOverlayGLES2DrawState* previous = nullptr;
 		for (const auto& batch : list.batches) {
 			if (batch.count == 0) continue;
@@ -321,15 +323,15 @@ void endHostOverlayGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipel
 				glUniform1f(pipeline.uniformScreenRange, state.screenRange);
 			}
 			if (!previous || state.scissor != previous->scissor) {
-				glScissor(state.scissor[0], state.scissor[1], state.scissor[2], state.scissor[3]);
+				backend.drawState.scissor(state.scissor[0], state.scissor[1], state.scissor[2], state.scissor[3]);
 			}
 			glDrawArrays(GL_TRIANGLES, batch.first, batch.count);
 			previous = &state;
 		}
 	}
-	glDisable(GL_SCISSOR_TEST);
-	glDisable(GL_BLEND);
-	glDepthMask(GL_TRUE);
+	backend.drawState.disable(GLES2Capability::ScissorTest);
+	backend.drawState.disable(GLES2Capability::Blend);
+	backend.drawState.depthMask(GL_TRUE);
 }
 
 } // namespace bmsx

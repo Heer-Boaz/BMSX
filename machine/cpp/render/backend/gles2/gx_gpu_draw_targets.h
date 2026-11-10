@@ -44,7 +44,7 @@ private:
 	struct CopyProgram { GLuint id = 0; GLint region = -1; };
 	void allocate(Entry& entry, i32 width, i32 height);
 	void materialize(Entry& entry, GxGpuVramCopyRect& globalDirty);
-	void copy(GLES2Texture& source, GLuint framebuffer, i32 targetWidth, i32 targetHeight,
+	void copy(GLES2Texture& source, GLuint framebuffer,
 		i32 sourceX, i32 sourceY, i32 targetX, i32 targetY, i32 width, i32 height,
 		bool sourceRgb5, bool targetRgb5);
 

@@ -101,9 +101,9 @@ int main(int argc, char** argv) {
 			referenceProgram = backend.buildProgram(kPostGLES2FullscreenVertexShader, code.c_str(), "crt_reference");
 			referencePosition = glGetAttribLocation(referenceProgram, "a_position");
 			referenceUv = glGetAttribLocation(referenceProgram, "a_texcoord");
-			createFullscreenQuad(referenceQuad);
-			updateFullscreenQuad(referenceQuad, width, height);
-			glUseProgram(referenceProgram);
+			createFullscreenQuad(backend.drawState, referenceQuad);
+			updateFullscreenQuad(backend.drawState, referenceQuad, width, height);
+			backend.drawState.useProgram(referenceProgram);
 			glUniform2f(glGetUniformLocation(referenceProgram, "u_resolution"), width, height);
 			glUniform1f(glGetUniformLocation(referenceProgram, "u_scale"), 1);
 			glUniform2f(glGetUniformLocation(referenceProgram, "u_srcResolution"), width, height);
@@ -114,6 +114,13 @@ int main(int argc, char** argv) {
 		}
 		test::GpuOutputFixture fixture;
 		backend.beginFrame();
+		backend.setRenderTarget(presentationFramebuffer, width, height);
+		backend.drawState.viewport(7, 9, 11, 13);
+		backend.setRenderTarget(presentationFramebuffer, width, height);
+		std::array<GLint, 4> restoredViewport{};
+		glGetIntegerv(GL_VIEWPORT, restoredViewport.data());
+		require(restoredViewport == std::array<GLint, 4>{0, 0, width, height},
+			"binding the same target extent restores a preceding copy's sub-viewport");
 		for (const u32 flags : {0u, 1u, 2u, 4u, 8u, 16u, 32u, 64u, 17u, 3u, 18u, 54u, 55u, 118u, 119u, 63u})
 		for (const u32 phase : {49152u, 0u, 131071u}) {
 			if (measure && (phase != 49152u || flags == 64u)) continue;
@@ -126,7 +133,7 @@ int main(int argc, char** argv) {
 			state.options.applyAperture = (flags & 64u) != 0u;
 			state.noisePhase = phase;
 			if (reference) {
-				glUseProgram(referenceProgram);
+				backend.drawState.useProgram(referenceProgram);
 				const std::array<const char*, 7> names{"u_enableNoise", "u_enableColorBleed", "u_enableScanlines",
 					"u_enableBlur", "u_enableGlow", "u_enableFringing", "u_enableAperture"};
 				for (u32 bit = 0; bit < names.size(); ++bit)
@@ -138,7 +145,7 @@ int main(int argc, char** argv) {
 				backend.setRenderTarget(presentationFramebuffer, width, height);
 				backend.setActiveTextureUnit(3);
 				backend.bindTexture2D(state.colorTex);
-				bindFullscreenQuad(referenceQuad, referencePosition, referenceUv);
+				bindFullscreenQuad(backend.drawState, referenceQuad, referencePosition, referenceUv);
 				for (u32 warmup = 0; warmup < 4u; ++warmup) {
 					glClear(GL_COLOR_BUFFER_BIT); glDrawArrays(GL_TRIANGLES, 0, 6); glFinish();
 				}
@@ -212,7 +219,7 @@ int main(int argc, char** argv) {
 		backend.destroyRenderTarget(target);
 		backend.destroyTexture(destination);
 		presentationFramebuffer = 0;
-		if (reference) { glDeleteProgram(referenceProgram); destroyFullscreenQuad(referenceQuad); }
+		if (reference) { backend.drawState.forgetProgram(referenceProgram); glDeleteProgram(referenceProgram); destroyFullscreenQuad(backend.drawState, referenceQuad); }
 		std::printf("CRT-GLES2:PASS %s\n", glGetString(GL_RENDERER));
 	}
 	if (framebuffer) bmsx_video_context_close();

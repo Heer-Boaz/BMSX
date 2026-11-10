@@ -31,6 +31,9 @@ struct GxGpuTexturedProgram : GxGpuRasterProgram {
 	GLint colorPlaneStepXAttrib = -1;
 	GLint colorPlaneStepYAttrib = -1;
 
+	std::array<GLint, 13> uniformState{};
+	bool uniformStateValid = false;
+
 	void initialize(OpenGLES2Backend& backend, const char* label, const char* defines,
 		bool framebufferFetch, bool textureBarrier);
 };
