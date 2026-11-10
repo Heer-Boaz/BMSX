@@ -20,6 +20,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 	// changing frames or retiring generated code. The descriptor can die there.
 	cpu.instructionBudgetRemaining = state.remainingCycles;
 	frame->pc = exit->nextPc;
+	frame->compilationEntry = true;
 	frame->top = state.registerTop;
 	cpu.m_currentInstructionPc = exit->currentPc;
 	cpu.m_lastExecutionDomainId = frame->executionImage->executionDomainId;

@@ -189,15 +189,20 @@ inline constexpr bool nativeBlockComparison(u8 op) {
 	return op == static_cast<u8>(OpCode::EQ) || op == static_cast<u8>(OpCode::LT) || op == static_cast<u8>(OpCode::LE);
 }
 
+inline constexpr auto NATIVE_BLOCK_BOUNDARY_OPS = [] {
+	// Decoded dispatch opcodes are bytes, including the internal pseudo-ops.
+	std::array<bool, 256> boundaries{};
+	for (const auto op : {OpCode::JMP, OpCode::JMPIF, OpCode::JMPIFNOT, OpCode::HALT,
+		OpCode::CALL, OpCode::RET, OpCode::NEWT, OpCode::CLOSURE, OpCode::CONCAT, OpCode::CONCATN,
+		OpCode::STORE_MEM_WORDS, OpCode::STORE_MEM_WORDS_D, OpCode::RFE, OpCode::EQ, OpCode::LT, OpCode::LE}) {
+		boundaries[static_cast<u8>(op)] = true;
+	}
+	return boundaries;
+}();
+
 inline constexpr bool nativeBlockEndsBlock(u8 op, int field) {
-	return op == static_cast<u8>(OpCode::JMP) || op == static_cast<u8>(OpCode::JMPIF)
-		|| op == static_cast<u8>(OpCode::JMPIFNOT) || op == static_cast<u8>(OpCode::HALT)
-		|| op == static_cast<u8>(OpCode::CALL) || op == static_cast<u8>(OpCode::RET)
-		|| op == static_cast<u8>(OpCode::NEWT) || op == static_cast<u8>(OpCode::CLOSURE)
-		|| op == static_cast<u8>(OpCode::CONCAT) || op == static_cast<u8>(OpCode::CONCATN)
-		|| op == static_cast<u8>(OpCode::STORE_MEM_WORDS) || op == static_cast<u8>(OpCode::STORE_MEM_WORDS_D)
-		|| (op == static_cast<u8>(OpCode::MTC0) && (field == COP0_STATUS || field == COP0_EXEC || !cop0FieldImplemented(field)))
-		|| op == static_cast<u8>(OpCode::RFE) || nativeBlockComparison(op);
+	return NATIVE_BLOCK_BOUNDARY_OPS[op]
+		|| (op == static_cast<u8>(OpCode::MTC0) && (field == COP0_STATUS || field == COP0_EXEC || !cop0FieldImplemented(field)));
 }
 
 inline constexpr NativeBlockExit nativeBlockSlowExit(u8 op, int field, bool controlGuarded) {

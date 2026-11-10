@@ -298,6 +298,8 @@ void nmiReturnsRetainedWordsAndUsesActiveEpc() {
 				"RFE samples active EPC before restoring all retained NMI words, without restoring Status wholesale");
 		}
 		requireParity(native, scalar);
+		for (auto* m : {&native, &scalar}) m->cpu.runUntilDepth(0, 1);
+		requireParity(native, scalar);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	bool generated = false;
@@ -306,6 +308,10 @@ void nmiReturnsRetainedWordsAndUsesActiveEpc() {
 		generated |= block && block->terminal.exit == NativeBlockExit::ExceptionReturn && block->sourceWords == 3;
 	}
 	require(generated, "the repeatedly entered NMI handler executes its CP0 read and WIDE RFE in a native body");
+	const u32 continuation = native.rom.textAddress + INSTRUCTION_BYTES;
+	const auto& page = *native.cpu.activeThread()->frames[0]->decodedPage;
+	require(static_cast<bool>(page.nativeBlocks->entries[(continuation & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]),
+		"a repeated RFE entry into the middle of a hot body is a translation entry, unlike an arbitrary grant resumption");
 #endif
 }
 } // namespace

@@ -839,6 +839,7 @@ export class CPU implements MappedPageInvalidator {
 			decodedPage: null,
 			decodedPageAddress: 0,
 			decodedPageBusSignals: MAPPED_BUS_MASTER_CPU,
+			compilationEntry: true,
 			pc: 0,
 			varargBase: 0,
 			varargCount: 0,
@@ -864,6 +865,7 @@ export class CPU implements MappedPageInvalidator {
 		frame.stackCapacity = 0;
 		frame.decodedPage = null;
 		frame.decodedPageAddress = 0;
+		frame.compilationEntry = true;
 		frame.registers.rebind(this.rootThread.stackRegisters, 0, 0);
 		frame.thread = this.rootThread;
 		frame.isExceptionFrame = false;
@@ -1297,6 +1299,7 @@ export class CPU implements MappedPageInvalidator {
 		frame.decodedPage = page;
 		frame.decodedPageAddress = pageAddress;
 		frame.decodedPageBusSignals = busSignals;
+		frame.compilationEntry = true;
 		return page;
 	}
 
@@ -1851,6 +1854,7 @@ export class CPU implements MappedPageInvalidator {
 			| ((this.cop0Words[COP0_STATUS] >> 2) & CPU_STATUS_RFE_RESTORE_MASK)) >>> 0;
 		if (caller) {
 			caller.pc = returnPc;
+			caller.compilationEntry = true;
 		}
 		if (returnFromNmi) {
 			this.cop0Words[COP0_CAUSE] = this.nmiReturnCauseWord;
@@ -1934,7 +1938,10 @@ export class CPU implements MappedPageInvalidator {
 					}
 					const page = this.decodedPageForFrame(frame, pc);
 					const pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
-					if (page.refreshState[pageOffset] !== 0
+					const refreshState = page.refreshState[pageOffset];
+					const rewritten = (refreshState & DECODED_REFRESH_DECODE) !== 0
+						&& page.widths[pageOffset] !== 0;
+					if (refreshState !== 0
 						&& !this.decodeInstruction(frame, page, pageOffset, pc, true)) {
 						continue;
 					}
@@ -1951,6 +1958,7 @@ export class CPU implements MappedPageInvalidator {
 						pageOffset,
 						dispatchOp,
 						targetDepth,
+						rewritten,
 					);
 				}
 			} catch (error) {
@@ -2251,6 +2259,7 @@ export class CPU implements MappedPageInvalidator {
 		frame.executionImage = image;
 		frame.decodedPage = null;
 		frame.decodedPageAddress = 0;
+		frame.compilationEntry = true;
 		frame.pc = pc;
 	}
 
@@ -2611,10 +2620,11 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	private executeCompiledBlock(frame: CallFrame, page: DecodedInstructionPage, word: number, targetDepth: number): void {
+	private executeCompiledBlock(frame: CallFrame, page: DecodedInstructionPage, word: number, targetDepth: number, rewritten: boolean): void {
 		const cache = page.compiledBlocks!;
 		if (page.dispatchOps[word] === DecodedDispatchOp.CompiledWarm) {
-			if (++cache.visits[word] === COMPILED_BLOCK_THRESHOLD) {
+			if (cache.visits[word] < COMPILED_BLOCK_THRESHOLD) ++cache.visits[word];
+			if (frame.compilationEntry && cache.visits[word] === COMPILED_BLOCK_THRESHOLD) {
 				if (this.compiledCodeCache.atCapacity()) {
 					this.compiledCodeCache.retireAll();
 					cache.visits[word] = COMPILED_BLOCK_THRESHOLD;
@@ -2670,6 +2680,7 @@ export class CPU implements MappedPageInvalidator {
 		}
 		let block = cache.entries[word];
 		if (block === null || this.instructionBudgetRemaining < block.entryCycles - page.dispatchCycles[word]) {
+			frame.compilationEntry = rewritten || compiledBlockEndsBlock(page.ops[word], page.b[word]);
 			this.executeInstruction(frame, page, word, page.ops[word], targetDepth);
 			return;
 		}
@@ -2694,6 +2705,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 			this.instructionBudgetRemaining = remaining;
 			frame.pc = exit.nextPc;
+			frame.compilationEntry = true;
 			frame.top = registerTop;
 			this.currentInstructionPc = exit.currentPc;
 			this.lastExecutionDomainId = image.executionDomainId;
@@ -2826,6 +2838,7 @@ export class CPU implements MappedPageInvalidator {
 		pageOffset: number,
 		op: number,
 		targetDepth: number,
+		rewritten = false,
 	): void {
 		const registers = frame.registers;
 		const image = frame.executionImage;
@@ -2833,9 +2846,10 @@ export class CPU implements MappedPageInvalidator {
 		switch (op) {
 				case DecodedDispatchOp.CompiledWarm:
 				case DecodedDispatchOp.Compiled:
-					this.executeCompiledBlock(frame, page, pageOffset, targetDepth);
+					this.executeCompiledBlock(frame, page, pageOffset, targetDepth, rewritten);
 					return;
 				case DecodedDispatchOp.Observe:
+					frame.compilationEntry = rewritten || compiledBlockEndsBlock(page.ops[pageOffset], page.b[pageOffset]);
 					this.instructionObserver!.observe(image.executionDomainId, this.currentInstructionPc, registers);
 					// Observe has zero base cost; execute and charge the original instruction once.
 					this.instructionBudgetRemaining -= DECODED_DISPATCH_BASE_CYCLES[page.ops[pageOffset]];

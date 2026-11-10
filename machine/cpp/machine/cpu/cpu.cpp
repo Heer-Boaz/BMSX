@@ -863,6 +863,7 @@ DecodedInstructionPage& CPU::decodedPageForFrame(CallFrame& frame, u32 pc) {
 	frame.decodedPage = &page;
 	frame.decodedPageAddress = pageAddress;
 	frame.decodedPageBusSignals = busSignals;
+	frame.compilationEntry = true;
 	return page;
 }
 
@@ -2398,7 +2399,9 @@ void CPU::returnFromException(CallFrame& frame) {
 	m_cop0Words[COP0_STATUS] = (m_cop0Words[COP0_STATUS] & ~CPU_STATUS_RFE_RESTORE_MASK)
 		| ((m_cop0Words[COP0_STATUS] >> 2u) & CPU_STATUS_RFE_RESTORE_MASK);
 	if (!m_activeThread->frames.empty()) {
-		m_activeThread->frames.back()->pc = returnPc;
+		auto& caller = *m_activeThread->frames.back();
+		caller.pc = returnPc;
+		caller.compilationEntry = true;
 	}
 	if (returnFromNmi) {
 		m_cop0Words[COP0_CAUSE] = m_nmiReturnCauseWord;
@@ -2559,6 +2562,10 @@ dispatch_fetch:
 dispatch_decode:
 			const u32 pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >> 2;
 			u8 refreshState = decodedPage->refreshState[pageOffset];
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			[[maybe_unused]] const bool rewritten = (refreshState & DECODED_REFRESH_DECODE) != 0u
+				&& decodedPage->words[pageOffset].width != 0u;
+#endif
 			if ((Instrumented
 					? (refreshState & DECODED_REFRESH_DECODE)
 					: refreshState) != 0u) {
@@ -2631,9 +2638,12 @@ dispatch_instruction:
 				switch (dispatchOp) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 				case static_cast<u8>(DecodedDispatchOp::NativeWarm): {
-					if (++decodedPage->nativeVisits[pageOffset] == NATIVE_BLOCK_COMPILATION_THRESHOLD) {
+					auto& visits = decodedPage->nativeVisits[pageOffset];
+					if (visits < NATIVE_BLOCK_COMPILATION_THRESHOLD) ++visits;
+					if (FRAME.compilationEntry && visits == NATIVE_BLOCK_COMPILATION_THRESHOLD) {
 						prepareNativeBlock(FRAME, *decodedPage, pageOffset);
 					}
+					FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b);
 					dispatchOp = decoded->dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeBlock)
 						? decoded->dispatchOp : decoded->op;
 					goto dispatch_instruction;
@@ -2644,6 +2654,7 @@ dispatch_instruction:
 					// already happened. Admit the remaining block without undoing it.
 					const int remainingCycles = nativeBlock->entryCycles - decoded->baseCycles;
 					if (instructionBudgetRemaining < remainingCycles) {
+						FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b);
 						dispatchOp = decoded->op;
 						goto dispatch_instruction;
 					}
@@ -2809,6 +2820,9 @@ dispatch_rebind_frame:
 
 dispatch_observe:
 			canReuseFrame = false;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b);
+#endif
 			m_instructionObserver.observe(m_instructionObserver.context, image->executionDomainId, pc, registers);
 			// Observe has zero base cost; execute and charge the original instruction once.
 			dispatchOp = decoded->op;
@@ -3075,6 +3089,7 @@ void CPU::writeFrameExecution(
 	frame.executionImage = functionRecord.image;
 	frame.decodedPage = nullptr;
 	frame.decodedPageAddress = 0;
+	frame.compilationEntry = true;
 	frame.pc = pc;
 }
 
@@ -3581,6 +3596,7 @@ void CPU::releaseFrame(std::unique_ptr<CallFrame> frame) {
 	frame->varargCount = 0;
 	frame->decodedPage = nullptr;
 	frame->decodedPageAddress = 0;
+	frame->compilationEntry = true;
 	frame->registers = nullptr;
 	frame->stackBase = 0;
 	frame->stackCapacity = 0;

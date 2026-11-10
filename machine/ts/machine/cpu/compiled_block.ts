@@ -237,13 +237,16 @@ export function compiledBlockSupports(op: number): boolean {
 		|| op === OpCode.STORE_MEM_WORDS || op === OpCode.STORE_MEM_WORDS_D;
 }
 
+const blockBoundaryOps = new Uint8Array(256);
+for (const op of [OpCode.JMP, OpCode.JMPIF, OpCode.JMPIFNOT, OpCode.HALT,
+	OpCode.CALL, OpCode.RET, OpCode.NEWT, OpCode.CLOSURE, OpCode.CONCAT, OpCode.CONCATN,
+	OpCode.STORE_MEM_WORDS, OpCode.STORE_MEM_WORDS_D, OpCode.RFE, OpCode.EQ, OpCode.LT, OpCode.LE]) {
+	blockBoundaryOps[op] = 1;
+}
+
 export function compiledBlockEndsBlock(op: number, field: number): boolean {
-	return op === OpCode.JMP || op === OpCode.JMPIF || op === OpCode.JMPIFNOT || op === OpCode.HALT
-		|| op === OpCode.CALL || op === OpCode.RET || op === OpCode.NEWT || op === OpCode.RFE
-		|| op === OpCode.CONCAT || op === OpCode.CONCATN || op === OpCode.CLOSURE
-		|| op === OpCode.STORE_MEM_WORDS || op === OpCode.STORE_MEM_WORDS_D
-		|| (op === OpCode.MTC0 && (field === COP0_STATUS || field === COP0_EXEC || !cop0FieldImplemented(field)))
-		|| op === OpCode.EQ || op === OpCode.LT || op === OpCode.LE;
+	return blockBoundaryOps[op] !== 0
+		|| (op === OpCode.MTC0 && (field === COP0_STATUS || field === COP0_EXEC || !cop0FieldImplemented(field)));
 }
 
 export function compiledBlockComparison(op: number): boolean {

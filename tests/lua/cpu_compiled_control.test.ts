@@ -225,6 +225,8 @@ test('compiled NMI return samples active EPC then restores retained words withou
 			assert.equal(cpu.readFramePc(0), image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
 		}
 		assertParity(js, ref);
+		for (const cpu of [js, ref]) cpu.runUntilDepth(0, 1);
+		assertParity(js, ref);
 	}
 	let generated = false;
 	const entry = (image.image.functions[1].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2;
@@ -233,4 +235,8 @@ test('compiled NMI return samples active EPC then restores retained words withou
 		generated ||= block !== null && block.terminal.exit === CompiledBlockExit.ExceptionReturn && block.sourceWords === 3;
 	}
 	assert.equal(generated, true, 'the NMI handler executes its CP0 read and WIDE RFE in a generated body');
+	const continuation = image.image.functions[0].codeAddress + INSTRUCTION_BYTES;
+	const page = js.rootThread.frames[0].decodedPage!;
+	assert.ok(page.compiledBlocks!.entries[(continuation & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2],
+		'a repeated RFE entry into the middle of a hot body is a translation entry, unlike an arbitrary grant resumption');
 });

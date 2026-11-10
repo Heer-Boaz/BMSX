@@ -27,6 +27,8 @@ struct CallFrame {
 	DecodedInstructionPage* decodedPage = nullptr;
 	u32 decodedPageAddress = 0;
 	MappedBusSignals decodedPageBusSignals = MAPPED_BUS_MASTER_CPU;
+	// Host translation admission for the next PC; not architectural state.
+	bool compilationEntry = true;
 	u32 pc = 0;
 	int varargBase = 0;
 	int varargCount = 0;

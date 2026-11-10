@@ -156,9 +156,53 @@ void crossPageLinksRetireTheirTargetsAndKeepBoundedStack() {
 	requireParity(native, scalar);
 	native.cpu.reset();
 }
+
+void shortGrantsDoNotPromoteSequentialPositions(bool inRam) {
+	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	for (u32 word = 0; word < 12; ++word) writeInstruction(image.text, word, static_cast<u8>(OpCode::ADD), 0, 0, 1);
+	writeInstruction(image.text, 12, static_cast<u8>(OpCode::JMP), 0, 63, 51, 255); // -13 words
+	writeInstruction(image.text, 32, static_cast<u8>(OpCode::JMP), 0, 63, 35, 255); // enter word 4
+	image.functions = {{.firstWord = 0, .wordCount = 33, .maxStack = 12}};
+	CpuMachine native(image, false), scalar(image, true);
+	const u32 start = inRam ? DYNAMIC_RAM_BASE : native.rom.textAddress;
+	for (auto* machine : {&native, &scalar}) {
+		if (inRam) machine->memory.writeBytes(start, image.text.data(), image.text.size());
+		auto& frame = *machine->cpu.activeThread()->frames[0];
+		frame.registers[0] = valueNumber(0); frame.registers[1] = valueNumber(1);
+		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);
+		machine->cpu.runUntilDepth(0, 4096);
+	}
+	const auto& lookup = *native.cpu.activeThread()->frames[0]->executionImage->nativeCodeLookup;
+	auto& page = *lookup.find(start, 0);
+	const auto entry = (start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	require(page.nativeBlocks && page.nativeBlocks->entries[entry]
+		&& page.nativeBlocks->entries[entry]->sourceWords == 13,
+		"entry admission preserves successor stability heat and compiles a complete ROM/RAM loop");
+	for (int run = 0; run < 512; ++run) {
+		for (auto* machine : {&native, &scalar}) machine->cpu.runUntilDepth(0, 1);
+		requireParity(native, scalar);
+	}
+	for (int grant = 2; grant <= 31; ++grant) {
+		for (auto* machine : {&native, &scalar}) machine->cpu.runUntilDepth(0, grant);
+		requireParity(native, scalar);
+	}
+	require(page.nativeBlocks->count == 1 && !page.nativeBlocks->entries[entry + 4],
+		"arbitrary sequential grant resumptions do not create overlapping suffix translations");
+	for (auto* machine : {&native, &scalar}) {
+		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start + 32 * INSTRUCTION_BYTES);
+		machine->cpu.runUntilDepth(0, 128);
+	}
+	requireParity(native, scalar);
+	require(static_cast<bool>(page.nativeBlocks->entries[entry + 4]),
+		"an actual branch into the same interior position remains eligible for native execution");
+}
 } // namespace
 
 int main() {
-	try { grantsAndTargetRetirement(); crossPageLinksRetireTheirTargetsAndKeepBoundedStack(); std::cout << "Compiled block link tests passed\n"; return 0; }
+	try {
+		grantsAndTargetRetirement(); crossPageLinksRetireTheirTargetsAndKeepBoundedStack();
+		shortGrantsDoNotPromoteSequentialPositions(false); shortGrantsDoNotPromoteSequentialPositions(true);
+		std::cout << "Compiled block link tests passed\n"; return 0;
+	}
 	catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

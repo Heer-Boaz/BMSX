@@ -114,6 +114,45 @@ test('cross-page chains retain successor page ownership and disconnect rewritten
 	machines[0].cpu.reset(); assert.equal(root.terminal.linkedBlock, null);
 });
 
+for (const inRam of [false, true]) test(`short grants do not promote sequential positions (inRam=${inRam})`, () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	for (let word = 0; word < 12; ++word) writeInstruction(text, word, OpCode.ADD, 0, 0, 1);
+	writeInstruction(text, 12, OpCode.JMP, 0, 63, 51, 255); // -13 words
+	writeInstruction(text, 32, OpCode.JMP, 0, 63, 35, 255); // enter word 4
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 33, maxStack: 12 }] });
+	const start = inRam ? DYNAMIC_RAM_BASE : image.image.functions[0].codeAddress;
+	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+	for (const { cpu, memory } of machines) {
+		if (inRam) memory.writeBytes(start, text);
+		const frame = cpu.rootThread.frames[0]; frame.registers.setNumber(0, 0); frame.registers.setNumber(1, 1);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);
+		cpu.runUntilDepth(0, 4096);
+	}
+	const lookup = machines[0].cpu.rootThread.frames[0].executionImage.compiledCodeLookup!;
+	const page = lookup.find(start, 0)!, cache = page.compiledBlocks!;
+	const entry = (start & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
+	assert.ok(cache.entries[entry]); assert.equal(cache.entries[entry]!.sourceWords, 13);
+	for (let run = 0; run < 512; ++run) {
+		for (const { cpu } of machines) cpu.runUntilDepth(0, 1);
+		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+		assert.equal(machines[0].cpu.instructionBudgetRemaining, machines[1].cpu.instructionBudgetRemaining);
+	}
+	for (let grant = 2; grant <= 31; ++grant) {
+		for (const { cpu } of machines) cpu.runUntilDepth(0, grant);
+		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+		assert.equal(machines[0].cpu.instructionBudgetRemaining, machines[1].cpu.instructionBudgetRemaining);
+	}
+	assert.equal(cache.entries.filter(block => block !== null).length, 1,
+		'arbitrary sequential grant resumptions must not create overlapping suffix translations');
+	assert.equal(cache.entries[entry + 4], null);
+	for (const { cpu } of machines) {
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start + 32 * INSTRUCTION_BYTES);
+		cpu.runUntilDepth(0, 128);
+	}
+	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+	assert.ok(cache.entries[entry + 4], 'a real branch into the same interior position is still eligible');
+});
+
 test('linked counted stores need only one cycle, then stop or block before the following instruction', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.K1, 6, 0, 0); writeInstruction(text, 1, OpCode.JMP, 0, 0, 2);

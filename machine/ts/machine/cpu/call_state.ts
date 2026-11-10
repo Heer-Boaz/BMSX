@@ -17,6 +17,8 @@ export type CallFrame = {
 	decodedPage: DecodedInstructionPage | null;
 	decodedPageAddress: number;
 	decodedPageBusSignals: MappedBusSignals;
+	/** Host translation admission for the next PC, not checkpoint state. */
+	compilationEntry: boolean;
 	pc: number;
 	varargBase: number;
 	varargCount: number;
