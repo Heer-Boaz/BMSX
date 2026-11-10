@@ -189,6 +189,9 @@ void NativeBlockCompiler::emit(const DecodedInstruction& instruction, const Nati
 		case OpCode::CALL:
 		case OpCode::RET:
 		case OpCode::NEWT:
+		case OpCode::CONCAT:
+		case OpCode::CONCATN:
+		case OpCode::CLOSURE:
 		case OpCode::RFE:
 			return;
 		case OpCode::JMPIF:

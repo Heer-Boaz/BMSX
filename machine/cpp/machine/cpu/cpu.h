@@ -445,6 +445,9 @@ private:
 		int returnBase, int returnCount, bool returnToCompletionLatch);
 	Closure* allocateTrackedClosure(u32 functionAddress, size_t upvalueCount);
 	Closure* createClosure(CallFrame& frame);
+	void executeClosure(CallFrame& frame, int destination, u32 operand, int flags);
+	void executeConcat(CallFrame& frame, int destination, int left, int right);
+	void executeConcatRange(CallFrame& frame, int destination, int base, int count);
 	void closeUpvalues(CallFrame& frame);
 	bool executeCall(CallFrame& frame, int a, int b, int c);
 	bool executeReturn(CallFrame& frame, int a, int b);

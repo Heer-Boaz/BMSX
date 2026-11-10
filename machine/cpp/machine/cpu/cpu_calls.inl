@@ -1,6 +1,19 @@
 // Shared call/return datapaths. Included in cpu.cpp so the interpreter keeps
 // its inlining opportunities and native exits share the same semantic owner.
 
+inline void CPU::executeClosure(CallFrame& frame, int destination, u32 operand, int flags) {
+	const u32 functionAddress = (flags & CLOSURE_ADDRESS_REGISTER_FLAG) != 0
+		? toU32(frame.registers[operand]) : operand * BLUA32_FUNCTION_ALIGNMENT;
+	if (!readFunctionRecordOnBus(*m_activeExecutionImage, functionAddress, m_executionBusSignals)) {
+		hardHalt();
+		return;
+	}
+	Closure* closure = createClosure(frame);
+	if (!closure) return;
+	frame.registers[destination] = valueClosure(closure);
+	frame.top = std::max(frame.top, destination + 1);
+}
+
 inline bool CPU::executeCall(CallFrame& frame, int a, int b, int c) {
 	const int argCount = decodeCallArgCount(b, std::max(frame.top - a - 1, 0));
 	const Value callee = frame.registers[a];

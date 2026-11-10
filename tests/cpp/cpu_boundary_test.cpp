@@ -337,7 +337,7 @@ void nativeCodeUsesCachedWordsAtPartialRomTails() {
 		"cached native admission never probes the unbacked ROM tail");
 }
 
-void nativeWarmRetiresRejectedPrefixes() {
+void nativeWarmAdmitsAllocatingBodies() {
 	test::Blua32TestImage image;
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
@@ -352,10 +352,10 @@ void nativeWarmRetiresRejectedPrefixes() {
 	require(!page.nativeBlocks && page.nativeVisits[word] == 7,
 		"hotness counting never allocates an executable-entry page before code exists");
 	require(cpu.runUntilDepth(0, 279) == RunResult::Yielded, "a mixed loop remains runnable");
-	require(page.words[word].dispatchOp == static_cast<u8>(OpCode::K1)
-		&& page.nativeVisits[word] == NATIVE_BLOCK_COMPILATION_THRESHOLD
+	require(page.words[word].dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeBlock)
+		&& page.nativeBlocks->entries[word]->terminal.exit == NativeBlockExit::Concat
 		&& page.nativeBlocks->entries[word + 2u],
-		"a rejected single-word prefix stops probing while the terminal jump compiles");
+		"an allocating terminal admits its register prefix and the successor jump compiles independently");
 }
 
 void nativeCodeRetiresOnWritesAndObservation() {
@@ -1427,7 +1427,7 @@ int main() {
 		nativeFieldStoreMissKeepsSignedConstantSelectors();
 		nativeCodeWarmsWithinOneCpuSlice();
 		nativeCodeUsesCachedWordsAtPartialRomTails();
-		nativeWarmRetiresRejectedPrefixes();
+		nativeWarmAdmitsAllocatingBodies();
 		nativeCodeRetiresOnWritesAndObservation();
 		nativeHaltCommitsItsThreadAndFrameLatch();
 		nativeTerminalAtPageBoundaryTracksItsBody();

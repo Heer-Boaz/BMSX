@@ -48,6 +48,9 @@ export const enum CompiledBlockExit {
 	ControlBoundary,
 	ExecuteFunction,
 	ExceptionReturn,
+	Concat,
+	ConcatRange,
+	CreateClosure,
 }
 
 const sideExitKinds: (CompiledBlockExit | undefined)[] = [];
@@ -68,6 +71,7 @@ export type CompiledBlockExitSite = {
 	readonly exitA: number;
 	readonly exitB: number;
 	readonly exitC: number;
+	readonly exitBx: number;
 	readonly exitWord: number;
 	readonly displaced: boolean;
 	readonly displacement: number;
@@ -213,6 +217,9 @@ emitters[OpCode.HALT] = emitters[OpCode.JMP];
 emitters[OpCode.CALL] = emitters[OpCode.JMP];
 emitters[OpCode.RET] = emitters[OpCode.JMP];
 emitters[OpCode.NEWT] = emitters[OpCode.JMP];
+emitters[OpCode.CONCAT] = emitters[OpCode.JMP];
+emitters[OpCode.CONCATN] = emitters[OpCode.JMP];
+emitters[OpCode.CLOSURE] = emitters[OpCode.JMP];
 emitters[OpCode.RFE] = emitters[OpCode.JMP];
 
 export function compiledBlockSupports(op: number): boolean {
@@ -226,6 +233,7 @@ export function compiledBlockSupports(op: number): boolean {
 export function compiledBlockEndsBlock(op: number, field: number): boolean {
 	return op === OpCode.JMP || op === OpCode.JMPIF || op === OpCode.JMPIFNOT || op === OpCode.HALT
 		|| op === OpCode.CALL || op === OpCode.RET || op === OpCode.NEWT || op === OpCode.RFE
+		|| op === OpCode.CONCAT || op === OpCode.CONCATN || op === OpCode.CLOSURE
 		|| (op === OpCode.MTC0 && (field === COP0_STATUS || field === COP0_EXEC || !cop0FieldImplemented(field)))
 		|| op === OpCode.EQ || op === OpCode.LT || op === OpCode.LE;
 }
@@ -277,7 +285,7 @@ export function compileJavaScriptBlock(
 		const sideExit = control && controlAccess && cop0FieldImplemented(page.b[word]) ? undefined : sideExitKinds[op];
 		if (sideExit !== undefined) {
 			exits.push({ exit: sideExit,
-				exitA: page.a[word], exitB: page.b[word], exitC: page.c[word], exitWord: word,
+				exitA: page.a[word], exitB: page.b[word], exitC: page.c[word], exitBx: page.bx[word], exitWord: word,
 				displaced, displacement: page.disp[word],
 				cycles, registerTop, resetsRegisterTop, nextPc, currentPc, lastPc,
 				linkedBlock: null, previousIncoming: null, nextIncoming: null });
@@ -322,6 +330,9 @@ export function compileJavaScriptBlock(
 		case OpCode.CALL: terminalExit = CompiledBlockExit.Call; break;
 		case OpCode.RET: terminalExit = CompiledBlockExit.Return; break;
 		case OpCode.NEWT: terminalExit = CompiledBlockExit.AllocateTable; break;
+		case OpCode.CONCAT: terminalExit = CompiledBlockExit.Concat; break;
+		case OpCode.CONCATN: terminalExit = CompiledBlockExit.ConcatRange; break;
+		case OpCode.CLOSURE: terminalExit = CompiledBlockExit.CreateClosure; break;
 		case OpCode.MTC0: terminalExit = page.b[finalWord] === COP0_EXEC
 			? CompiledBlockExit.ExecuteFunction : page.b[finalWord] === COP0_STATUS
 			? CompiledBlockExit.ControlBoundary : CompiledBlockExit.Continue; break;
@@ -329,7 +340,7 @@ export function compileJavaScriptBlock(
 	}
 	const terminal: CompiledBlockExitSite = {
 		exit: terminalExit,
-		exitA: page.a[finalWord], exitB: page.b[finalWord], exitC: page.c[finalWord], exitWord: finalWord,
+		exitA: page.a[finalWord], exitB: page.b[finalWord], exitC: page.c[finalWord], exitBx: page.bx[finalWord], exitWord: finalWord,
 		displaced: false, displacement: 0,
 		cycles, registerTop, resetsRegisterTop, nextPc, currentPc, lastPc,
 		linkedBlock: null, previousIncoming: null, nextIncoming: null,

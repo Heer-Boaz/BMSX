@@ -2385,6 +2385,77 @@ export class CPU implements MappedPageInvalidator {
 		);
 	}
 
+	private executeConcat(frame: CallFrame, a: number, rkB: number, rkC: number): void {
+		const registers = frame.registers, image = frame.executionImage;
+		let leftTag: ValueTag;
+		let leftScalar: number;
+		if (rkB < 0) {
+			const constantIndex = -1 - rkB;
+			leftTag = image.constTags[constantIndex];
+			leftScalar = image.constScalars[constantIndex];
+		} else {
+			leftTag = registers.getTag(rkB);
+			leftScalar = registers.getScalar(rkB);
+		}
+		let rightTag: ValueTag;
+		let rightScalar: number;
+		if (rkC < 0) {
+			const constantIndex = -1 - rkC;
+			rightTag = image.constTags[constantIndex];
+			rightScalar = image.constScalars[constantIndex];
+		} else {
+			rightTag = registers.getTag(rkC);
+			rightScalar = registers.getScalar(rkC);
+		}
+		const text = storedValueToString(
+			leftTag,
+			leftScalar,
+			this.stringPool,
+		) + storedValueToString(
+			rightTag,
+			rightScalar,
+			this.stringPool,
+		);
+		const handle = this.stringPool.intern(text);
+		this.setRegisterStringFast(frame, registers, a, handle);
+	}
+
+	private executeConcatRange(frame: CallFrame, a: number, b: number, c: number): void {
+		const registers = frame.registers;
+		let text = '';
+		for (let index = 0; index < c; index += 1) {
+			const registerIndex = b + index;
+			text += storedValueToString(
+				registers.getTag(registerIndex),
+				registers.getScalar(registerIndex),
+				this.stringPool,
+			);
+		}
+		const handle = this.stringPool.intern(text);
+		this.setRegisterStringFast(frame, registers, a, handle);
+	}
+
+	private executeClosure(frame: CallFrame, a: number, bx: number, c: number): void {
+		const registers = frame.registers;
+		const functionAddress = (c & CLOSURE_ADDRESS_REGISTER_FLAG) !== 0
+			? registers.getNumber(bx) >>> 0
+			: bx * BLUA32_FUNCTION_ALIGNMENT;
+		if (!this.readFunctionRecordOnBus(
+			this.activeExecutionImage,
+			functionAddress,
+			this.executionBusSignals,
+		)) {
+			this.hardHalt();
+			return;
+		}
+		const closure = this.createClosure(frame);
+		if (closure === null) {
+			return;
+		}
+		this.setRegisterClosureFast(frame, registers, a, closure);
+		return;
+	}
+
 	private executeCall(frame: CallFrame, a: number, b: number, c: number): boolean {
 		const registers = frame.registers;
 		const argCount = b === 0 ? Math.max(frame.top - a - 1, 0) : b - 1;
@@ -2606,6 +2677,12 @@ export class CPU implements MappedPageInvalidator {
 				case CompiledBlockExit.ExecuteFunction:
 					this.executeFunctionAddress(registers.getNumber(exit.exitA) >>> 0); return;
 				case CompiledBlockExit.ExceptionReturn: this.returnFromException(frame); return;
+				case CompiledBlockExit.CreateClosure:
+					this.executeClosure(frame, exit.exitA, exit.exitBx, exit.exitC); return;
+				case CompiledBlockExit.Concat:
+					this.executeConcat(frame, exit.exitA, exit.exitB, exit.exitC); break;
+				case CompiledBlockExit.ConcatRange:
+					this.executeConcatRange(frame, exit.exitA, exit.exitB, exit.exitC); break;
 				case CompiledBlockExit.Call:
 					if (!this.executeCall(frame, exit.exitA, exit.exitB, exit.exitC)) return;
 					break;
@@ -3024,58 +3101,10 @@ export class CPU implements MappedPageInvalidator {
 							return;
 					}
 				}
-				case OpCode.CONCAT: {
-					const rkB = page.b[pageOffset];
-					const rkC = page.c[pageOffset];
-					let leftTag: ValueTag;
-					let leftScalar: number;
-					if (rkB < 0) {
-						const constantIndex = -1 - rkB;
-						leftTag = image.constTags[constantIndex];
-						leftScalar = image.constScalars[constantIndex];
-					} else {
-						leftTag = registers.getTag(rkB);
-						leftScalar = registers.getScalar(rkB);
-					}
-					let rightTag: ValueTag;
-					let rightScalar: number;
-					if (rkC < 0) {
-						const constantIndex = -1 - rkC;
-						rightTag = image.constTags[constantIndex];
-						rightScalar = image.constScalars[constantIndex];
-					} else {
-						rightTag = registers.getTag(rkC);
-						rightScalar = registers.getScalar(rkC);
-					}
-					const text = storedValueToString(
-						leftTag,
-						leftScalar,
-						this.stringPool,
-					) + storedValueToString(
-						rightTag,
-						rightScalar,
-						this.stringPool,
-					);
-					const handle = this.stringPool.intern(text);
-					this.setRegisterStringFast(frame, registers, a, handle);
-					return;
-				}
-				case OpCode.CONCATN: {
-					const b = page.b[pageOffset];
-					const c = page.c[pageOffset];
-					let text = '';
-					for (let index = 0; index < c; index += 1) {
-						const registerIndex = b + index;
-						text += storedValueToString(
-							registers.getTag(registerIndex),
-							registers.getScalar(registerIndex),
-							this.stringPool,
-						);
-					}
-					const handle = this.stringPool.intern(text);
-					this.setRegisterStringFast(frame, registers, a, handle);
-					return;
-				}
+				case OpCode.CONCAT:
+					this.executeConcat(frame, a, page.b[pageOffset], page.c[pageOffset]); return;
+				case OpCode.CONCATN:
+					this.executeConcatRange(frame, a, page.b[pageOffset], page.c[pageOffset]); return;
 				case OpCode.UNM: {
 					const value = registers.getNumber(page.b[pageOffset]);
 					this.setRegisterNumberFast(frame, registers, a, -value);
@@ -3248,27 +3277,8 @@ export class CPU implements MappedPageInvalidator {
 					}
 					return;
 				}
-				case OpCode.CLOSURE: {
-					const bx = page.bx[pageOffset];
-					const c = page.c[pageOffset];
-					const functionAddress = (c & CLOSURE_ADDRESS_REGISTER_FLAG) !== 0
-						? registers.getNumber(bx) >>> 0
-						: bx * BLUA32_FUNCTION_ALIGNMENT;
-					if (!this.readFunctionRecordOnBus(
-						this.activeExecutionImage,
-						functionAddress,
-						this.executionBusSignals,
-					)) {
-						this.hardHalt();
-						return;
-					}
-					const closure = this.createClosure(frame);
-					if (closure === null) {
-						return;
-					}
-					this.setRegisterClosureFast(frame, registers, a, closure);
-					return;
-				}
+				case OpCode.CLOSURE:
+					this.executeClosure(frame, a, page.bx[pageOffset], page.c[pageOffset]); return;
 				case OpCode.GETUP: {
 					const upvalue = frame.closure.upvalues[page.b[pageOffset]];
 					this.copyUpvalueToRegister(frame, registers, a, upvalue);

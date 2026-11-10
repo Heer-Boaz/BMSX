@@ -353,45 +353,12 @@ DISPATCH_LABEL(SHR) {
 }
 
 DISPATCH_LABEL(CONCAT) {
-	const int a = decoded->a;
-	const int rkB = decoded->b;
-	const int rkC = decoded->c;
-	const Value left = readRK(IMAGE, registers, rkB);
-	const Value right = readRK(IMAGE, registers, rkC);
-	size_t stringByteCount = 0;
-	if (valueIsString(left)) {
-		stringByteCount += m_stringPool.toString(asStringId(left)).size();
-	}
-	if (valueIsString(right)) {
-		stringByteCount += m_stringPool.toString(asStringId(right)).size();
-	}
-	std::string text;
-	text.reserve(stringByteCount);
-	appendValueString(text, left, m_stringPool);
-	appendValueString(text, right, m_stringPool);
-	const StringId textId = m_stringPool.internOwned(std::move(text));
-	SET_REGISTER_FAST(a, valueString(textId));
+	executeConcat(FRAME, decoded->a, decoded->b, decoded->c);
 	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(CONCATN) {
-	const int a = decoded->a;
-	const int b = decoded->b;
-	const int c = decoded->c;
-	size_t stringByteCount = 0;
-	for (int index = 0; index < c; ++index) {
-		const Value value = REG(b + index);
-		if (valueIsString(value)) {
-			stringByteCount += m_stringPool.toString(asStringId(value)).size();
-		}
-	}
-	std::string text;
-	text.reserve(stringByteCount);
-	for (int index = 0; index < c; ++index) {
-		appendValueString(text, REG(b + index), m_stringPool);
-	}
-	const StringId textId = m_stringPool.internOwned(std::move(text));
-	SET_REGISTER_FAST(a, valueString(textId));
+	executeConcatRange(FRAME, decoded->a, decoded->b, decoded->c);
 	DISPATCH_NEXT();
 }
 
@@ -547,25 +514,7 @@ DISPATCH_LABEL(JMPIFNOT) {
 }
 
 DISPATCH_LABEL(CLOSURE) {
-	const int a = decoded->a;
-	const int c = decoded->c;
-	const uint32_t bx = decoded->bx;
-	const u32 functionAddress = (c & CLOSURE_ADDRESS_REGISTER_FLAG) != 0
-		? toU32(REG(bx))
-		: bx * BLUA32_FUNCTION_ALIGNMENT;
-	if (!readFunctionRecordOnBus(
-		*m_activeExecutionImage,
-		functionAddress,
-		m_executionBusSignals
-	)) {
-		hardHalt();
-		DISPATCH_CONTINUE();
-	}
-	Closure* closure = createClosure(FRAME);
-	if (!closure) {
-		DISPATCH_CONTINUE();
-	}
-	SET_REGISTER_FAST(a, valueClosure(closure));
+	executeClosure(FRAME, decoded->a, decoded->bx, decoded->c);
 	DISPATCH_CONTINUE();
 }
 

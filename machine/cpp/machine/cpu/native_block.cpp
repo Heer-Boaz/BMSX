@@ -39,6 +39,7 @@ std::unique_ptr<NativeBlock> NativeBlock::compile(
 		terminal.lastPc = source.pc + (static_cast<u32>(instruction.width) - 1u) * INSTRUCTION_BYTES;
 		terminal.nextPc = op == OpCode::JMP ? instruction.bx : source.pc + static_cast<u32>(instruction.width) * INSTRUCTION_BYTES;
 		terminal.exitA = instruction.a; terminal.exitB = instruction.b; terminal.exitC = instruction.c;
+		terminal.exitBx = instruction.bx;
 		if (op == OpCode::SELF) terminal.registerTop = std::max(terminal.registerTop, static_cast<int>(instruction.a) + 2);
 		const auto slow = nativeBlockSlowExit(instruction.op, instruction.b, controlGuarded);
 		controlGuarded |= op == OpCode::MFC0 || op == OpCode::MTC0;
@@ -69,6 +70,9 @@ std::unique_ptr<NativeBlock> NativeBlock::compile(
 		case OpCode::CALL: terminal.exit = NativeBlockExit::Call; break;
 		case OpCode::RET: terminal.exit = NativeBlockExit::Return; break;
 		case OpCode::NEWT: terminal.exit = NativeBlockExit::AllocateTable; break;
+		case OpCode::CONCAT: terminal.exit = NativeBlockExit::Concat; break;
+		case OpCode::CONCATN: terminal.exit = NativeBlockExit::ConcatRange; break;
+		case OpCode::CLOSURE: terminal.exit = NativeBlockExit::CreateClosure; break;
 		case OpCode::MTC0: terminal.exit = instructions.back().decoded->b == COP0_EXEC
 			? NativeBlockExit::ExecuteFunction : instructions.back().decoded->b == COP0_STATUS
 			? NativeBlockExit::ControlBoundary : NativeBlockExit::Continue; break;

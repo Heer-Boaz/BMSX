@@ -76,6 +76,9 @@ enum class NativeBlockExit : u8 {
 	ControlBoundary,
 	ExecuteFunction,
 	ExceptionReturn,
+	Concat,
+	ConcatRange,
+	CreateClosure,
 	Count,
 };
 
@@ -85,6 +88,7 @@ struct NativeBlockExitSite {
 	u16 exitA = 0;
 	i16 exitB = 0;
 	i16 exitC = 0;
+	u32 exitBx = 0;
 	u8 displacement = 0;
 	bool displaced = false;
 	mutable int tableCacheSlot = -1;
@@ -115,6 +119,9 @@ inline constexpr bool nativeBlockSupports(u8 op) {
 		case OpCode::SELF:
 		case OpCode::LEN:
 		case OpCode::NEWT:
+		case OpCode::CONCAT:
+		case OpCode::CONCATN:
+		case OpCode::CLOSURE:
 		case OpCode::MFC0:
 		case OpCode::MTC0:
 		case OpCode::RFE:
@@ -179,7 +186,8 @@ inline constexpr bool nativeBlockEndsBlock(u8 op, int field) {
 	return op == static_cast<u8>(OpCode::JMP) || op == static_cast<u8>(OpCode::JMPIF)
 		|| op == static_cast<u8>(OpCode::JMPIFNOT) || op == static_cast<u8>(OpCode::HALT)
 		|| op == static_cast<u8>(OpCode::CALL) || op == static_cast<u8>(OpCode::RET)
-		|| op == static_cast<u8>(OpCode::NEWT)
+		|| op == static_cast<u8>(OpCode::NEWT) || op == static_cast<u8>(OpCode::CLOSURE)
+		|| op == static_cast<u8>(OpCode::CONCAT) || op == static_cast<u8>(OpCode::CONCATN)
 		|| (op == static_cast<u8>(OpCode::MTC0) && (field == COP0_STATUS || field == COP0_EXEC || !cop0FieldImplemented(field)))
 		|| op == static_cast<u8>(OpCode::RFE) || nativeBlockComparison(op);
 }

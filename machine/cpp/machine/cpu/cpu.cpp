@@ -2453,6 +2453,7 @@ void CPU::resumeMemoryWrite(uint32_t address) {
 
 #include "machine/cpu/cpu_calls.inl"
 #include "machine/cpu/cpu_memory.inl"
+#include "machine/cpu/cpu_strings.inl"
 
 template <bool RootBoundary, bool Instrumented>
 RunResult CPU::runLoop(
@@ -2801,6 +2802,15 @@ dispatch_native_block: {
 				case NativeBlockExit::ExceptionReturn:
 					returnFromException(FRAME);
 					DISPATCH_CONTINUE();
+				case NativeBlockExit::CreateClosure:
+					executeClosure(FRAME, exit->exitA, exit->exitBx, exit->exitC);
+					DISPATCH_CONTINUE();
+				case NativeBlockExit::Concat:
+					executeConcat(FRAME, exit->exitA, exit->exitB, exit->exitC);
+					DISPATCH_REBIND_FRAME();
+				case NativeBlockExit::ConcatRange:
+					executeConcatRange(FRAME, exit->exitA, exit->exitB, exit->exitC);
+					DISPATCH_REBIND_FRAME();
 				case NativeBlockExit::SkipInstruction:
 					skipNextInstruction(FRAME);
 					DISPATCH_CONTINUE();
