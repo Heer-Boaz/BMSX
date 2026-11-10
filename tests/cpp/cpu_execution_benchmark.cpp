@@ -39,7 +39,8 @@ int main(int argc, char** argv) {
 		const auto* image = cpu.rootThread()->frames[0]->executionImage;
 		const auto functionAddress = cpu.rootThread()->frames[0]->functionAddress;
 		auto result = bmsx::RunResult::Yielded;
-		bmsx::i64 cycles = 0;
+		bmsx::i64 cycles = 0, slices = 0;
+		int maxDeadlineOverrun = 0;
 		double milliseconds = 0, firstPassMilliseconds = 0;
 		for (int pass = 0; pass <= warmupPasses; ++pass) {
 			// Retain the real runtime and its executable cache. Re-entry uses
@@ -48,11 +49,13 @@ int main(int argc, char** argv) {
 			for (int index = 0; index < wordCount; ++index) {
 				cpu.rootThread()->frames[0]->registers[8 + index] = bmsx::valueNumber(0x20000000u | (index & 65535u));
 			}
-			result = bmsx::RunResult::Yielded; cycles = 0;
+			result = bmsx::RunResult::Yielded; cycles = slices = 0; maxDeadlineOverrun = 0;
 			const auto start = std::chrono::steady_clock::now();
 			while (result == bmsx::RunResult::Yielded) {
 				result = cpu.runUntilDepth(0, grant);
 				cycles += grant - cpu.instructionBudgetRemaining;
+				++slices;
+				maxDeadlineOverrun = std::max(maxDeadlineOverrun, -cpu.instructionBudgetRemaining);
 			}
 			milliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
 			if (pass == 0) firstPassMilliseconds = milliseconds;
@@ -97,7 +100,8 @@ int main(int argc, char** argv) {
 		output.close();
 		if (!output) throw std::runtime_error("cannot write benchmark state");
 		std::cout << std::setprecision(17) << "{\"backend\":\"" << backend << "\",\"activeCycles\":" << cycles
-			<< ",\"idleCycles\":0,\"milliseconds\":" << milliseconds
+			<< ",\"idleCycles\":0,\"slices\":" << slices << ",\"maxDeadlineOverrunCycles\":" << maxDeadlineOverrun
+			<< ",\"milliseconds\":" << milliseconds
 			<< ",\"warmupPasses\":" << warmupPasses << ",\"firstPassMilliseconds\":" << firstPassMilliseconds
 			<< ",\"megahertz\":" << cycles / milliseconds / 1000.0
 			<< ",\"remainingCycles\":" << cpu.instructionBudgetRemaining
