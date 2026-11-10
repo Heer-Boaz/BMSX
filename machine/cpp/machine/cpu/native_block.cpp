@@ -34,11 +34,17 @@ std::vector<std::unique_ptr<NativeBlock>> NativeBlock::compileRegion(
 		block->region = region;
 		blocks.push_back(std::move(block));
 	}
+	for (size_t index = sources.size(); index-- > 0u;) {
+		if (sources[index].fallthrough) {
+			blocks[index]->entryCycles = blocks[index]->terminal.cycles + blocks[index + 1u]->entryCycles;
+			blocks[index]->sourceWords += blocks[index + 1u]->sourceWords;
+		}
+	}
 	NativeBlockCompiler compiler(constants, blocks, memory, strings, sources);
 	for (size_t index = 0; index < sources.size(); ++index) {
 		const auto& source = sources[index];
 		const auto& block = *blocks[index];
-		compiler.beginBlock(index);
+		compiler.beginBlock(index, index != 0u && sources[index - 1u].fallthrough);
 		size_t slow = 0;
 		const bool branch = nativeBlockComparison(source.instructions.back().decoded->op)
 			|| source.instructions.back().decoded->op == static_cast<u8>(OpCode::JMPIF)
@@ -49,7 +55,7 @@ std::vector<std::unique_ptr<NativeBlock>> NativeBlock::compileRegion(
 			const auto* exit = slow < slowCount && block.sideExits[slow].currentPc == instruction.pc ? &block.sideExits[slow++] : nullptr;
 			compiler.emit(*instruction.decoded, exit, taken);
 		}
-		compiler.endBlock();
+		compiler.endBlock(source.fallthrough);
 	}
 	region->m_code = compiler.finish(region->codeBytes);
 	cacheBytes += region->codeBytes;

@@ -97,7 +97,7 @@ void genericArraysAndHashKeys() {
 		require(native.cpu.runUntilDepth(0, grant) == scalar.cpu.runUntilDepth(0, grant), "short table grants agree"); requireParity(native, scalar);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	require(static_cast<bool>(page.nativeBlocks->entries[entry]), "array/hash reallocation retains generated execution after new helper-resume entries are admitted");
+	require(page.nativeBlocks->entries[entry].get() == block, "table relocation and helper returns retain the original executable owner");
 #endif
 }
 

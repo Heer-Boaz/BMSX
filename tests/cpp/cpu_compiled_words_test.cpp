@@ -224,9 +224,9 @@ void previousChargesSurviveLaterExit(bool blocked) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& block = native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(block && block->terminal.cycles == 5 && block->sideExits[0].cycles == 3, "the first block charges its successful surcharge");
-	const auto* second = block->terminal.link.target;
-	require(second && second->entryCycles == 1 && second->terminal.cycles == 3 && second->sideExits[0].cycles == 2,
-		"a linked counted block separates entry, success and blocked preflight charges");
+	const auto* second = native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks->entries[(block->terminal.nextPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
+	require(second && second->region == block->region && second->entryCycles == 1 && second->terminal.cycles == 3 && second->sideExits[0].cycles == 2,
+		"an internal counted entry separates admission, success and blocked preflight charges");
 #endif
 	for (auto* m : {&native, &scalar}) {
 		m->memory.mapIoWrite(IO_BASE + 0x5000u, nullptr, [](void*, u32, u32, MappedBusSignals) { throw std::runtime_error("not ready"); });

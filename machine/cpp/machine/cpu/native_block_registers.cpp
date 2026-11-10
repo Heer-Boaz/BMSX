@@ -79,11 +79,11 @@ void NativeBlockCompiler::loadOperand(int selector, sljit_s32 floatingRegister) 
 	if (source != floatingRegister) sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, floatingRegister, 0, source, 0);
 }
 
-NativeBlockCompiler::RegisterSnapshot NativeBlockCompiler::registerSnapshot() const {
+NativeBlockCompiler::RegisterSnapshot NativeBlockCompiler::registerSnapshot(bool dirtyOnly) const {
 	RegisterSnapshot snapshot;
 	snapshot.fill(-1);
 	for (int slot = 0; slot < m_registerCount; ++slot) {
-		if (m_registers[slot].dirty) snapshot[slot] = m_registers[slot].guest;
+		if (!dirtyOnly || m_registers[slot].dirty) snapshot[slot] = m_registers[slot].guest;
 	}
 	return snapshot;
 }

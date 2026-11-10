@@ -17,14 +17,14 @@ public:
 	~NativeBlockCompiler();
 	void emit(const DecodedInstruction& instruction, const NativeBlockExitSite* slowExit,
 		const NativeBlockExitSite* takenExit);
-	void beginBlock(size_t index);
-	void endBlock();
+	void beginBlock(size_t index, bool inheritRegisters);
+	void endBlock(bool fallthrough);
 	void* finish(size_t& codeBytes);
 
 private:
 	struct SlowPath;
 	void emitControl(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
-	void emitExit(const NativeBlockExitSite* exit);
+	void emitExit(const NativeBlockExitSite* exit, bool fallthrough = false);
 	void emitTableAccess(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
 	void emitArraySlot(bool load, int value, SlowPath& slow);
 	void emitStringSlot(bool load, int value, SlowPath& slow);
@@ -51,7 +51,7 @@ private:
 	void writeRegister(int guest, sljit_s32 source = SLJIT_FR0);
 	void flushRegisters();
 	void discardRegisterRange(int first, int end);
-	RegisterSnapshot registerSnapshot() const;
+	RegisterSnapshot registerSnapshot(bool dirtyOnly = true) const;
 	void emitRegisterSnapshot(const RegisterSnapshot& snapshot);
 	void emitCallSpills(bool reload);
 	std::array<sljit_jump*, 2> falseyJumps(int index);
@@ -63,8 +63,14 @@ private:
 
 	sljit_compiler* m_compiler;
 	std::span<const std::unique_ptr<NativeBlock>> m_blocks;
-	std::vector<sljit_label*> m_entries;
-	std::vector<sljit_label*> m_bodies;
+	struct EntryPoint {
+		sljit_label* guarded = nullptr;
+		sljit_label* external = nullptr;
+		sljit_label* body = nullptr;
+		RegisterSnapshot registers;
+		bool inherited = false;
+	};
+	std::vector<EntryPoint> m_entries;
 	struct InternalBranch { sljit_jump* jump; size_t target; };
 	std::vector<InternalBranch> m_internalBranches;
 	std::vector<sljit_jump*> m_shortGrants;

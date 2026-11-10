@@ -141,7 +141,7 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 	const frame = js.rootThread.frames[0], page = frame.decodedPage!;
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const region = page.compiledBlocks!.entries[entry]!.region;
-	assert.equal(region.entries.reduce((words, block) => words + block.sourceWords, 0), 9);
+	assert.equal(region.entries[0].sourceWords, 9);
 	for (const value of [null, false, true, -0, NaN, 'upvalue'] as const) {
 		for (const cpu of [js, ref]) cpu.rootThread.frames[0].registers.set(12,
 			value === 'upvalue' ? valueString(cpu.stringPool.intern(value)) : value);
@@ -231,7 +231,7 @@ for (const fixed of [0, 5]) test(`hot VARARG handles exact top resets, nil paddi
 			assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 		}
 		assert.equal(js.rootThread.frames[1].top, count, 'the second open VARARG replaces, rather than maximizes, top');
-		assert.equal(page.compiledBlocks!.entries[entry]!.region.entries.reduce((words, block) => words + block.sourceWords, 0), 7,
+		assert.equal(page.compiledBlocks!.entries[entry]!.region.entries[0].sourceWords, 7,
 			'the complete generated loop survives frame relocation and added helper-resume entries');
 	}
 });

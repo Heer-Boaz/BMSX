@@ -94,6 +94,53 @@ void independentEntriesBindTheirOwnValueBanks() {
 	require(bytes == 0, "independent native bodies retire their own executable allocations");
 }
 
+void helperContinuationsReloadTheCurrentRegisterMap() {
+	std::array<DecodedInstruction, 6> decoded{};
+	std::array<NativeBlockInstruction, 6> source{};
+	const std::array ops{OpCode::K1, OpCode::LOAD_MEM, OpCode::MOV, OpCode::STORE_MEM, OpCode::MOV, OpCode::JMP};
+	for (size_t i = 0; i < ops.size(); ++i) {
+		decoded[i].op = static_cast<u8>(ops[i]); decoded[i].width = 1; decoded[i].baseCycles = BASE_CYCLES[decoded[i].op];
+		source[i] = {&decoded[i], 0x1000u + static_cast<u32>(i) * INSTRUCTION_BYTES};
+	}
+	decoded[0].a = 8;
+	decoded[1].a = 0; decoded[1].b = 1; decoded[1].c = static_cast<i16>(MemoryAccessKind::U32LE);
+	decoded[2].a = 4; decoded[2].b = 8;
+	decoded[3].a = 4; decoded[3].b = 1; decoded[3].c = static_cast<i16>(MemoryAccessKind::U32LE);
+	decoded[4].a = 5; decoded[4].b = 0;
+	decoded[5].bx = 0x1800u;
+	const std::span instructions(source);
+	const std::array plans{NativeBlockSource{instructions.subspan(0, 2), 0, true},
+		NativeBlockSource{instructions.subspan(2, 2), 0, true}, NativeBlockSource{instructions.subspan(4, 2)}};
+	constexpr u32 target = DYNAMIC_RAM_BASE + 0x84000u;
+	const Value table = valueTable(cpu.createTable()), payload = valueFromTag(ValueTag::False, 37);
+	size_t bytes = 0;
+	{
+		auto blocks = NativeBlock::compileRegion(plans, nullptr, bytes, memory, cpu.stringPool());
+		require(blocks[0]->region == blocks[1]->region && blocks[1]->region == blocks[2]->region,
+			"helper continuations are entries of one executable allocation");
+		require(blocks[0]->entryCycles == 8 && blocks[1]->entryCycles == 5 && blocks[2]->entryCycles == 2
+			&& blocks[0]->sourceWords == 6 && blocks[1]->sourceWords == 4 && blocks[2]->sourceWords == 2,
+			"each continuation admits only its own linear suffix");
+		for (int iteration = 0; iteration < 32; ++iteration) for (size_t entry = 0; entry < blocks.size(); ++entry) {
+			std::array<Value, 9> registers; registers.fill(valueNil());
+			registers[0] = payload; registers[1] = valueNumber(target); registers[8] = table;
+			memory.writeMappedWord(target, 17u);
+			NativeBlockRunState state{.registers = registers.data(), .remainingCycles = blocks[entry]->entryCycles};
+			require(blocks[entry]->run(state) == &blocks[2]->terminal && state.remainingCycles == 0,
+				"independent continuation entry runs its complete suffix without a host exit");
+			if (entry == 0) require(registers[0] == valueNumber(17) && registers[4] == valueNumber(1)
+				&& registers[5] == valueNumber(17) && registers[8] == valueNumber(1)
+				&& memory.readMappedWord(target) == 1u && state.registerTop == 9,
+				"fast helper fallthrough preserves dirty live native registers");
+			else require(registers[0] == payload && registers[5] == payload && registers[8] == table
+				&& registers[4] == (entry == 1 ? table : valueNil())
+				&& memory.readMappedWord(target) == (entry == 1 ? 0u : 17u) && state.registerTop == 6,
+				"cold entries reload current raw Values, not predecessor values, types or register top");
+		}
+	}
+	require(bytes == 0, "continuation descriptors release their shared executable exactly once");
+}
+
 void linkedBodiesShareOneFrameAndRetireTheirEdges() {
 	NativeBlockRunState nativeRunState;
 	std::array<DecodedInstruction, 5> decoded{};
@@ -599,6 +646,7 @@ int main() {
 	try {
 		multipleRegisterDefinitionsSurviveCallAndExit();
 		independentEntriesBindTheirOwnValueBanks();
+		helperContinuationsReloadTheCurrentRegisterMap();
 		linkedBodiesShareOneFrameAndRetireTheirEdges();
 		linkedAtomicStoreDebitsItsWholeChargeBeforeTestingItsSuccessor();
 		linkedSlowExitPublishesTheWholeExecutedChain();

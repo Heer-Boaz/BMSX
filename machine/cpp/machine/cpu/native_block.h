@@ -116,6 +116,7 @@ struct NativeBlockInstruction {
 struct NativeBlockSource {
 	std::span<const NativeBlockInstruction> instructions;
 	u8 skippedInstructionWidth = 0;
+	bool fallthrough = false;
 };
 
 // Entry descriptors share one executable allocation. Source invalidation retires
@@ -206,6 +207,25 @@ inline constexpr bool nativeBlockSupports(u8 op) {
 	}
 }
 
+// These instructions can complete through a semantic helper at their next PC.
+// Publish that entry before code generation rather than discovering it by
+// repeatedly translating an already compiled interior.
+inline constexpr bool nativeBlockHasContinuation(u8 op, int field) {
+	switch (static_cast<OpCode>(op)) {
+		case OpCode::GETFIELD: case OpCode::SETFIELD: case OpCode::SELF:
+		case OpCode::GETT: case OpCode::SETT: case OpCode::GETI: case OpCode::SETI:
+		case OpCode::SETUP: case OpCode::VARARG:
+		case OpCode::LOAD_MEM: case OpCode::LOAD_MEM_D:
+		case OpCode::STORE_MEM: case OpCode::STORE_MEM_D:
+		case OpCode::STORE_MEM_WORDS: case OpCode::STORE_MEM_WORDS_D:
+		case OpCode::NEWT: case OpCode::CONCAT: case OpCode::CONCATN:
+		case OpCode::CLOSURE: case OpCode::CALL:
+			return true;
+		case OpCode::MTC0: return field == COP0_STATUS;
+		default: return false;
+	}
+}
+
 inline constexpr bool nativeBlockComparison(u8 op) {
 	return op == static_cast<u8>(OpCode::EQ) || op == static_cast<u8>(OpCode::LT) || op == static_cast<u8>(OpCode::LE);
 }
@@ -281,6 +301,7 @@ public:
 	// The final instruction may start with one cycle left. Counted stores end
 	// a block so their surcharge cannot run a following instruction past zero.
 	int entryCycles = 0;
+	// Dependency extent includes the linear successors admitted by this entry.
 	u16 sourceWords = 0;
 
 private:

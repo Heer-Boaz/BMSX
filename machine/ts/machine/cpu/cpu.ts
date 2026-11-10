@@ -142,7 +142,7 @@ import { LuaHeap, type LuaHeapState } from './lua_heap';
 import {
 	CpuExecutionBackend, CompiledBlockExit, COMPILED_BLOCK_THRESHOLD,
 	COMPILED_BLOCK_MAX_INSTRUCTIONS,
-	compiledBlockSupports, compiledBlockEndsBlock, compiledBlockComparison,
+	compiledBlockSupports, compiledBlockEndsBlock, compiledBlockComparison, compiledBlockHasContinuation,
 	type CompiledBlockExitSite, type CompiledBlockSource,
 } from './compiled_block';
 import { CompiledBlockPage, CompiledCodeCache, linkCompiledBlock } from './compiled_code_cache';
@@ -2681,6 +2681,7 @@ export class CPU implements MappedPageInvalidator {
 				enqueue(page.bx[cursor], true);
 				if (op !== OpCode.JMP) enqueue(successorPc, true);
 			} else if (!compiledBlockEndsBlock(op, page.b[cursor])) enqueue(successorPc, false);
+			else if (compiledBlockHasContinuation(op, page.b[cursor])) enqueue(successorPc, true);
 		}
 		if (available[word] === 0) { page.dispatchOps[word] = page.ops[word]; return; }
 		const plans: CompiledBlockSource[] = [];
@@ -2700,7 +2701,14 @@ export class CPU implements MappedPageInvalidator {
 			if (binding.readBytes !== null && compiledBlockComparison(page.ops[cursor]) && endWord < DECODED_PAGE_WORDS
 				&& (page.refreshState[endWord] & DECODED_REFRESH_DECODE) === 0
 				&& endWord + page.widths[endWord] <= DECODED_PAGE_WORDS) skippedInstructionWidth = page.widths[endWord];
-			plans.push({ firstWord: entry, endWord, pc: (pagePc + entry * INSTRUCTION_BYTES) >>> 0, skippedInstructionWidth });
+			let segmentFirst = entry;
+			for (let word = entry; word < endWord; word += page.widths[word]) {
+				const next = word + page.widths[word], final = next === endWord;
+				if (!final && !compiledBlockHasContinuation(page.ops[word], page.b[word])) continue;
+				plans.push({ firstWord: segmentFirst, endWord: next, pc: (pagePc + segmentFirst * INSTRUCTION_BYTES) >>> 0,
+					skippedInstructionWidth: final ? skippedInstructionWidth : 0, fallthrough: !final });
+				segmentFirst = next;
+			}
 		}
 		for (const region of merged) this.compiledCodeCache.retireRegion(page, region);
 		const region = compileJavaScriptRegion(page, plans, frame.executionImage, this.memory, this.stringPool,

@@ -93,6 +93,7 @@ export type CompiledBlock = {
 	readonly entryCycles: number;
 	readonly terminal: CompiledBlockExitSite;
 	readonly exits: readonly CompiledBlockExitSite[];
+	/** Source dependencies through the linear successors admitted by this entry. */
 	readonly sourceWords: number;
 	incoming: CompiledBlockExitSite | null;
 };
@@ -177,6 +178,17 @@ export function compiledBlockEndsBlock(op: number, field: number): boolean {
 		|| (op === OpCode.MTC0 && (field === COP0_STATUS || field === COP0_EXEC || !cop0FieldImplemented(field)));
 }
 
+const continuationOps = new Uint8Array(256);
+for (const op of [OpCode.GETFIELD, OpCode.SETFIELD, OpCode.SELF, OpCode.GETT, OpCode.SETT, OpCode.GETI, OpCode.SETI,
+	OpCode.SETUP, OpCode.VARARG, OpCode.LOAD_MEM, OpCode.LOAD_MEM_D, OpCode.STORE_MEM, OpCode.STORE_MEM_D,
+	OpCode.STORE_MEM_WORDS, OpCode.STORE_MEM_WORDS_D, OpCode.NEWT, OpCode.CONCAT, OpCode.CONCATN,
+	OpCode.CLOSURE, OpCode.CALL]) continuationOps[op] = 1;
+
+/** Returning semantic operations have a statically known continuation PC. */
+export function compiledBlockHasContinuation(op: number, field: number): boolean {
+	return continuationOps[op] !== 0 || (op === OpCode.MTC0 && field === COP0_STATUS);
+}
+
 export function compiledBlockComparison(op: number): boolean {
 	return op === OpCode.EQ || op === OpCode.LT || op === OpCode.LE;
 }
@@ -186,14 +198,15 @@ export type CompiledBlockSource = {
 	readonly endWord: number;
 	readonly pc: number;
 	readonly skippedInstructionWidth: number;
+	readonly fallthrough: boolean;
 };
 
 export type EmittedJavaScriptBlock = {
 	readonly firstWord: number;
-	readonly entryCycles: number;
+	entryCycles: number;
 	readonly terminal: CompiledBlockExitSite;
 	readonly exits: readonly CompiledBlockExitSite[];
-	readonly sourceWords: number;
+	sourceWords: number;
 	readonly body: string;
 	readonly registers: JavaScriptRegisterCache;
 	readonly finalWord: number;

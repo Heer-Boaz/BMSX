@@ -112,7 +112,7 @@ for (const op of [OpCode.SHR, OpCode.MOD, OpCode.FLOORDIV, OpCode.POW]) test(`mu
 	let reads = 0, writes = 0;
 	r.getNumber = index => { ++reads; return getNumber(index); };
 	r.setEncoded = (index, tag, scalar, reference) => { ++writes; setEncoded(index, tag, scalar, reference); };
-	assert.equal(block.region.exits[block.region.execute(r, frame.executionImage.constScalars, page, frame, block.entry, { remainingCycles: block.terminal.cycles, registerTop: frame.top })], block.terminal);
+	assert.equal(block.region.exits[block.region.execute(r, frame.executionImage.constScalars, page, frame, block.entry, { remainingCycles: block.entryCycles, registerTop: frame.top })].nextPc, image.image.functions[0].codeAddress);
 	assert.equal(reads, 0, 'the generated block consumes local numeric definitions, not their stale slot values');
 	assert.equal(writes, 5, 'each final numeric slot is published once instead of after every instruction');
 	const result = op === OpCode.SHR ? 0 : op === OpCode.MOD ? luaModulo(66, 72)
@@ -338,8 +338,8 @@ test('field cache hits stay in one generated block and misses publish only the e
 	const page = frame.decodedPage!;
 	const block = page.compiledBlocks!.entries[(entry & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2]!;
 	assert.equal(block.sourceWords, 6);
-	assert.equal(block.exits.filter(exit => exit.exit === CompiledBlockExit.ReadField || exit.exit === CompiledBlockExit.WriteField).length, 2);
-	assert.equal(block.region.exits[block.region.execute(frame.registers, frame.executionImage.constScalars, page, frame, block.entry, { remainingCycles: block.terminal.cycles, registerTop: frame.top })], block.terminal,
+	assert.equal(block.region.exits.filter(exit => exit.exit === CompiledBlockExit.ReadField || exit.exit === CompiledBlockExit.WriteField).length, 2);
+	assert.equal(block.region.exits[block.region.execute(frame.registers, frame.executionImage.constScalars, page, frame, block.entry, { remainingCycles: block.entryCycles, registerTop: frame.top })].nextPc, image.image.functions[0].codeAddress,
 		'both field hits and arithmetic reach the final branch without a host side exit');
 	ref.runUntilDepth(0, 6);
 	assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());

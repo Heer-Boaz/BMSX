@@ -83,6 +83,7 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 			enqueue(instruction.bx, true);
 			if (op != OpCode::JMP) enqueue(successorPc, true);
 		} else if (!nativeBlockEndsBlock(instruction.op, instruction.b)) enqueue(successorPc, false);
+		else if (nativeBlockHasContinuation(instruction.op, instruction.b)) enqueue(successorPc, true);
 	}
 	if (!available[word]) {
 		page.words[word].dispatchOp = page.words[word].op;
@@ -91,6 +92,8 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 	std::array<NativeBlockInstruction, DECODED_PAGE_WORDS> instructions;
 	std::vector<NativeBlockSource> sources;
 	std::vector<u32> entries;
+	sources.reserve(pendingCount);
+	entries.reserve(pendingCount);
 	size_t instructionCount = 0;
 	for (u32 entry = 0; entry < DECODED_PAGE_WORDS; ++entry) {
 		if (!leaders[entry] || !available[entry]) continue;
@@ -111,8 +114,18 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 			if (successor < DECODED_PAGE_WORDS && (page.refreshState[successor] & DECODED_REFRESH_DECODE) == 0u
 				&& successor + page.words[successor].width <= DECODED_PAGE_WORDS) skippedWidth = page.words[successor].width;
 		}
-		sources.push_back({std::span(instructions.data() + first, instructionCount - first), skippedWidth});
-		entries.push_back(entry);
+		// Preserve the original admission span (including the 64-instruction
+		// bound), but expose each returning helper's successor as an entry.
+		size_t segmentFirst = first;
+		for (size_t index = first; index < instructionCount; ++index) {
+			const bool final = index + 1u == instructionCount;
+			const auto& instruction = *instructions[index].decoded;
+			if (!final && !nativeBlockHasContinuation(instruction.op, instruction.b)) continue;
+			sources.push_back({std::span(instructions.data() + segmentFirst, index + 1u - segmentFirst),
+				final ? skippedWidth : u8{0}, !final});
+			entries.push_back((instructions[segmentFirst].pc - pagePc) / INSTRUCTION_BYTES);
+			segmentFirst = index + 1u;
+		}
 	}
 	for (const auto* region : merged) page.retireNativeRegion(region);
 	if (!page.nativeBlocks) page.nativeBlocks = std::make_unique<NativeBlockPage>();

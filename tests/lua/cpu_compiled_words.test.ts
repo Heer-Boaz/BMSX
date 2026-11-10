@@ -177,8 +177,8 @@ for (const blocked of [false, true]) test(`later counted blocks retain earlier c
 	for (const { cpu } of [js, ref]) { const r = cpu.rootThread.frames[0].registers; r.setNumber(0, DYNAMIC_RAM_BASE); r.setNumber(1, DYNAMIC_RAM_BASE + 64); cpu.runUntilDepth(0, 200); }
 	const block = js.cpu.rootThread.frames[0].decodedPage!.compiledBlocks!.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / 4]!;
 	assert.equal(block.terminal.cycles, 5); assert.equal(block.exits[0].cycles, 3);
-	const second = block.terminal.linkedBlock!;
-	assert.ok(second); assert.equal(second.entryCycles, 1); assert.equal(second.terminal.cycles, 3); assert.equal(second.exits[0].cycles, 2);
+	const second = block.page.compiledBlocks!.entries[(block.terminal.nextPc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!;
+	assert.ok(second); assert.equal(second.region, block.region); assert.equal(second.entryCycles, 1); assert.equal(second.terminal.cycles, 3); assert.equal(second.exits[0].cycles, 2);
 	for (const { cpu, memory } of [js, ref]) {
 		memory.mapIoWrite(IO_BASE + 0x5000, null, () => assert.fail('not ready')); memory.mapIoWriteReady(IO_BASE + 0x5000, () => false);
 		const frame = cpu.rootThread.frames[0]; frame.top = 0; frame.registers.setNumber(1, blocked ? IO_BASE + 0x5000 : RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 4);

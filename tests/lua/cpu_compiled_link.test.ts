@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
@@ -11,6 +12,43 @@ import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kin
 import { IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
 import { DYNAMIC_RAM_BASE, IO_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+
+test('helper continuations are predeclared entries and read their own current Value bank', () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(text, 0, OpCode.K1, 8, 0, 0);
+	writeInstruction(text, 1, OpCode.LOAD_MEM, 0, 1, MemoryAccessKind.U32LE);
+	writeInstruction(text, 2, OpCode.MOV, 4, 8, 0);
+	writeInstruction(text, 3, OpCode.STORE_MEM, 4, 1, MemoryAccessKind.U32LE);
+	writeInstruction(text, 4, OpCode.MOV, 5, 0, 0);
+	writeInstruction(text, 5, OpCode.JMP, 0, 63, 58, 255);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 6, maxStack: 9 }] });
+	const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), frame = cpu.rootThread.frames[0];
+	frame.registers.setNumber(1, DYNAMIC_RAM_BASE); cpu.runUntilDepth(0, 1024);
+	const page = frame.decodedPage!, first = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
+	const entries = [0, 2, 4].map(word => page.compiledBlocks!.entries[first + word]!);
+	assert.ok(entries.every(entry => entry.region === entries[0].region), 'all helper returns are known before a slow helper is taken');
+	assert.deepEqual(entries.map(entry => entry.entryCycles), [8, 5, 2]);
+	assert.deepEqual(entries.map(entry => entry.sourceWords), [6, 4, 2]);
+	const table = cpu.createTable();
+	for (let iteration = 0; iteration < 32; ++iteration) for (let start = 0; start < entries.length; ++start) {
+		const registers = new ValueSlots(9), block = entries[start];
+		registers.setEncoded(0, ValueTag.False, 37, null); registers.setNumber(1, DYNAMIC_RAM_BASE); registers.setTable(8, table);
+		memory.writeMappedWord(DYNAMIC_RAM_BASE, 17);
+		const run = { remainingCycles: block.entryCycles, registerTop: 0 };
+		const exit = block.region.exits[block.region.execute(registers, frame.executionImage.constScalars, page, frame, block.entry, run)];
+		assert.ok(exit === entries[2].terminal, 'one generated invocation executes the complete suffix');
+		assert.deepEqual(run, { remainingCycles: 0, registerTop: start === 0 ? 9 : 6 });
+		if (start === 0) {
+			assert.equal(registers.getNumber(0), 17); assert.equal(registers.getNumber(4), 1);
+			assert.equal(registers.getNumber(5), 17); assert.equal(registers.getNumber(8), 1);
+			assert.equal(memory.readMappedWord(DYNAMIC_RAM_BASE), 1);
+		} else {
+			for (const register of [0, 5]) { assert.equal(registers.getTag(register), ValueTag.False); assert.equal(registers.getScalar(register), 37); }
+			assert.equal(registers.getTable(8), table); assert.equal(registers.get(4), start === 1 ? table : null);
+			assert.equal(memory.readMappedWord(DYNAMIC_RAM_BASE), start === 1 ? 0 : 17);
+		}
+	}
+});
 
 test('linked physical-page blocks preserve every grant and disconnect rewritten targets', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);

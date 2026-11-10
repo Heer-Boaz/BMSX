@@ -49,7 +49,7 @@ test('compiled generic arrays and string-cache probes retain all kinds across ke
 		assert.equal(js.runUntilDepth(0, grant), ref.runUntilDepth(0, grant));
 		assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()), 'reference keys/values and every short boundary agree');
 	}
-	assert.ok(page.compiledBlocks!.entries[entry] !== null, 'generated execution survives storage relocation and new helper-resume entries');
+	assert.ok(page.compiledBlocks!.entries[entry] === block, 'admitted helper continuations do not retranslate the stable table loop');
 });
 
 for (const generic of [false, true]) test(`compiled array reads resolve inherited nil slots but bypass inheritance for own values (generic=${generic})`, () => {
@@ -73,7 +73,7 @@ for (const generic of [false, true]) test(`compiled array reads resolve inherite
 	}
 	const frame = js.rootThread.frames[0], entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const region = frame.decodedPage!.compiledBlocks!.entries[entry]!.region;
-	assert.equal(region.entries.reduce((words, block) => words + block.sourceWords, 0), 3,
+	assert.equal(region.entries[0].sourceWords, 3,
 		'the field load and its admitted helper continuation stay in one generated region');
 });
 

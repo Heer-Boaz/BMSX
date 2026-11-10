@@ -62,7 +62,7 @@ test('cached values reach field, memory and fault owners without stale tags or n
 	const entry = image.image.functions[0].codeAddress;
 	const block = page.compiledBlocks!.entries[(entry & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2]!;
 	assert.equal(block.sourceWords, 13);
-	assert.equal(block.region.exits[block.region.execute(frame.registers, frame.executionImage.constScalars, page, frame, block.entry, { remainingCycles: block.terminal.cycles, registerTop: frame.top })], block.terminal);
+	assert.equal(block.region.exits[block.region.execute(frame.registers, frame.executionImage.constScalars, page, frame, block.entry, { remainingCycles: block.entryCycles, registerTop: frame.top })].nextPc, image.image.functions[0].codeAddress);
 	machines[1].cpu.runUntilDepth(0, 15);
 	assert.equal(machines[0].memory.readMappedWord(address), 0);
 	assert.equal(machines[0].memory.readMappedWord(address + 4), 0x7ff80000);
@@ -97,7 +97,7 @@ for (let format = 0; format <= 5; ++format) for (const displaced of [false, true
 		const frame = js.cpu.rootThread.frames[0], page = frame.decodedPage!;
 		const block = page.compiledBlocks!.entries[(entry & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2]!;
 		assert.equal(block.sourceWords, 5);
-		assert.equal(block.region.exits[block.region.execute(frame.registers, frame.executionImage.constScalars, page, frame, block.entry, { remainingCycles: block.terminal.cycles, registerTop: frame.top })], block.terminal,
+		assert.equal(block.region.exits[block.region.execute(frame.registers, frame.executionImage.constScalars, page, frame, block.entry, { remainingCycles: block.entryCycles, registerTop: frame.top })].nextPc, image.image.functions[0].codeAddress,
 			'RAM and dependent instructions stay in the generated function');
 		for (const value of [-0, 0.25, -1.75, 4294967295, -4294967296.75, 4294967296.25,
 			1e100, -1e100, Number.MIN_VALUE, Infinity, -Infinity, NaN, null, false, true]) {
