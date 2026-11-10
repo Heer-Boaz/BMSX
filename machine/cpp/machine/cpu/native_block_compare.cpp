@@ -9,10 +9,9 @@ void NativeBlockCompiler::emitComparison(const DecodedInstruction& instruction, 
 	const auto op = static_cast<OpCode>(instruction.op);
 	std::array<sljit_jump*, 8> yes, no;
 	size_t yesCount = 0, noCount = 0;
-	loadOperand(instruction.c, SLJIT_FR1);
-	loadOperand(instruction.b, SLJIT_FR0);
+	const auto [left, right] = readOperands(instruction.b, instruction.c);
 	yes[yesCount++] = sljit_emit_fcmp(m_compiler, op == OpCode::EQ ? SLJIT_ORDERED_EQUAL
-		: op == OpCode::LT ? SLJIT_ORDERED_LESS : SLJIT_ORDERED_LESS_EQUAL, SLJIT_FR0, 0, SLJIT_FR1, 0);
+		: op == OpCode::LT ? SLJIT_ORDERED_LESS : SLJIT_ORDERED_LESS_EQUAL, left, 0, right, 0);
 	loadHeader(instruction.b, SLJIT_R0);
 	loadHeader(instruction.c, SLJIT_R1);
 	if (op == OpCode::EQ) {
@@ -31,24 +30,24 @@ void NativeBlockCompiler::emitComparison(const DecodedInstruction& instruction, 
 		sljit_emit_op2(m_compiler, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, VALUE_ENCODED_TAG_MASK >> 48u);
 		no[noCount++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0);
 #if defined(SLJIT_64BIT_ARCHITECTURE)
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, SLJIT_FR0, SLJIT_R0);
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, SLJIT_FR1, SLJIT_R1);
+		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, left, SLJIT_R0);
+		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, right, SLJIT_R1);
 #else
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, SLJIT_FR0, SLJIT_R0);
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, SLJIT_FR1, SLJIT_R1);
+		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, left, SLJIT_R0);
+		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, right, SLJIT_R1);
 		no[noCount++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R0, 0, SLJIT_R1, 0);
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, SLJIT_FR0, SLJIT_REG_PAIR(SLJIT_R2, SLJIT_R0));
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, SLJIT_FR1, SLJIT_REG_PAIR(SLJIT_R2, SLJIT_R1));
+		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, left, SLJIT_REG_PAIR(SLJIT_R2, SLJIT_R0));
+		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, right, SLJIT_REG_PAIR(SLJIT_R2, SLJIT_R1));
 #endif
 		yes[yesCount++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_R1, 0);
 		no[noCount++] = sljit_emit_jump(m_compiler, SLJIT_JUMP);
 		sljit_set_label(string, sljit_emit_label(m_compiler));
 #if defined(SLJIT_64BIT_ARCHITECTURE)
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, SLJIT_FR0, SLJIT_R0);
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, SLJIT_FR1, SLJIT_R1);
+		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, left, SLJIT_R0);
+		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, right, SLJIT_R1);
 #else
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, SLJIT_FR0, SLJIT_REG_PAIR(SLJIT_R2, SLJIT_R0));
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, SLJIT_FR1, SLJIT_REG_PAIR(SLJIT_R2, SLJIT_R1));
+		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, left, SLJIT_REG_PAIR(SLJIT_R2, SLJIT_R0));
+		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, right, SLJIT_REG_PAIR(SLJIT_R2, SLJIT_R1));
 #endif
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_R0, 0);
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_R1, 0);
@@ -64,11 +63,11 @@ void NativeBlockCompiler::emitComparison(const DecodedInstruction& instruction, 
 		no[noCount++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, valueString(0) >> 48u);
 		no[noCount++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R1, 0, SLJIT_IMM, valueString(0) >> 48u);
 #if defined(SLJIT_64BIT_ARCHITECTURE)
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, SLJIT_FR0, SLJIT_R1);
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, SLJIT_FR1, SLJIT_R2);
+		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, left, SLJIT_R1);
+		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, right, SLJIT_R2);
 #else
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, SLJIT_FR0, SLJIT_REG_PAIR(SLJIT_R0, SLJIT_R1));
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, SLJIT_FR1, SLJIT_REG_PAIR(SLJIT_R0, SLJIT_R2));
+		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, left, SLJIT_REG_PAIR(SLJIT_R0, SLJIT_R1));
+		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, right, SLJIT_REG_PAIR(SLJIT_R0, SLJIT_R2));
 #endif
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_R1, 0);
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_R2, 0);

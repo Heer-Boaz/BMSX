@@ -78,31 +78,31 @@ void NativeBlockCompiler::emit(const DecodedInstruction& instruction, const Nati
 			emitContext(instruction, slowExit);
 			return;
 		case OpCode::MOV:
-			loadOperand(instruction.b, SLJIT_FR0);
-			break;
+			writeRegister(instruction.a, readOperand(instruction.b, SLJIT_FR0));
+			return;
 		case OpCode::LOADK:
-			sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0,
+			sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, destinationRegister(instruction.a), 0,
 				SLJIT_MEM1(SLJIT_S1), static_cast<sljit_sw>(instruction.bx) * sizeof(Value));
-			break;
-		case OpCode::KNIL: sljit_emit_fset64(m_compiler, SLJIT_FR0, asNumber(valueNil())); break;
-		case OpCode::KFALSE: sljit_emit_fset64(m_compiler, SLJIT_FR0, asNumber(valueBool(false))); break;
-		case OpCode::KTRUE: sljit_emit_fset64(m_compiler, SLJIT_FR0, asNumber(valueBool(true))); break;
-		case OpCode::K0: sljit_emit_fset64(m_compiler, SLJIT_FR0, 0.0); break;
-		case OpCode::K1: sljit_emit_fset64(m_compiler, SLJIT_FR0, 1.0); break;
-		case OpCode::KM1: sljit_emit_fset64(m_compiler, SLJIT_FR0, -1.0); break;
-		case OpCode::KSMI: sljit_emit_fset64(m_compiler, SLJIT_FR0, instruction.sbx); break;
+			return;
+		case OpCode::KNIL: sljit_emit_fset64(m_compiler, destinationRegister(instruction.a), asNumber(valueNil())); return;
+		case OpCode::KFALSE: sljit_emit_fset64(m_compiler, destinationRegister(instruction.a), asNumber(valueBool(false))); return;
+		case OpCode::KTRUE: sljit_emit_fset64(m_compiler, destinationRegister(instruction.a), asNumber(valueBool(true))); return;
+		case OpCode::K0: sljit_emit_fset64(m_compiler, destinationRegister(instruction.a), 0.0); return;
+		case OpCode::K1: sljit_emit_fset64(m_compiler, destinationRegister(instruction.a), 1.0); return;
+		case OpCode::KM1: sljit_emit_fset64(m_compiler, destinationRegister(instruction.a), -1.0); return;
+		case OpCode::KSMI: sljit_emit_fset64(m_compiler, destinationRegister(instruction.a), instruction.sbx); return;
 		case OpCode::ADD:
 		case OpCode::SUB:
 		case OpCode::MUL:
 		case OpCode::DIV: {
-			loadOperand(instruction.c, SLJIT_FR1);
-			loadOperand(instruction.b, SLJIT_FR0);
+			const auto [left, right] = readOperands(instruction.b, instruction.c);
+			const auto target = destinationRegister(instruction.a);
 			const sljit_s32 operation = op == OpCode::ADD ? SLJIT_ADD_F64
 				: op == OpCode::SUB ? SLJIT_SUB_F64
 				: op == OpCode::MUL ? SLJIT_MUL_F64 : SLJIT_DIV_F64;
-			sljit_emit_fop2(m_compiler, operation, SLJIT_FR0, 0, SLJIT_FR0, 0, SLJIT_FR1, 0);
-			canonicalizeNumber();
-			break;
+			sljit_emit_fop2(m_compiler, operation, target, 0, left, 0, right, 0);
+			canonicalizeNumber(target);
+			return;
 		}
 		case OpCode::MOD:
 		case OpCode::FLOORDIV:
@@ -116,11 +116,13 @@ void NativeBlockCompiler::emit(const DecodedInstruction& instruction, const Nati
 			canonicalizeNumber();
 			break;
 		}
-		case OpCode::UNM:
-			loadOperand(instruction.b, SLJIT_FR0);
-			sljit_emit_fop1(m_compiler, SLJIT_NEG_F64, SLJIT_FR0, 0, SLJIT_FR0, 0);
-			canonicalizeNumber();
-			break;
+		case OpCode::UNM: {
+			const auto source = readOperand(instruction.b, SLJIT_FR0);
+			const auto target = destinationRegister(instruction.a);
+			sljit_emit_fop1(m_compiler, SLJIT_NEG_F64, target, 0, source, 0);
+			canonicalizeNumber(target);
+			return;
+		}
 		case OpCode::NOT: {
 			const auto falsey = falseyJumps(instruction.b);
 			sljit_emit_fset64(m_compiler, SLJIT_FR0, asNumber(valueBool(false)));
@@ -264,11 +266,11 @@ std::array<sljit_jump*, 2> NativeBlockCompiler::falseyJumps(int index) {
 	};
 }
 
-void NativeBlockCompiler::canonicalizeNumber() {
+void NativeBlockCompiler::canonicalizeNumber(sljit_s32 target) {
 	// Arithmetic returns the canonical numeric NaN, never a tagged payload.
 	auto* ordered = sljit_emit_fcmp(m_compiler, SLJIT_ORDERED,
-		SLJIT_FR0, 0, SLJIT_FR0, 0);
-	sljit_emit_fset64(m_compiler, SLJIT_FR0, asNumber(VALUE_QNAN_MASK));
+		target, 0, target, 0);
+	sljit_emit_fset64(m_compiler, target, asNumber(VALUE_QNAN_MASK));
 	sljit_set_label(ordered, sljit_emit_label(m_compiler));
 }
 

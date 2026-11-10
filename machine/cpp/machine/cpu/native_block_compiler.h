@@ -41,9 +41,12 @@ private:
 	static constexpr int REGISTER_CACHE_CAPACITY = NativeBlockAbi::registerCacheCapacity;
 	using RegisterSnapshot = std::array<int, REGISTER_CACHE_CAPACITY>;
 	int findRegister(int guest) const;
-	int allocateRegister(int guest);
+	int allocateRegister(int guest, sljit_s32 pinned = 0);
 	sljit_s32 cachedFloatRegister(int slot) const;
-	void writeRegister(int guest);
+	sljit_s32 readOperand(int selector, sljit_s32 temporary, sljit_s32 pinned = 0);
+	std::array<sljit_s32, 2> readOperands(int left, int right);
+	sljit_s32 destinationRegister(int guest);
+	void writeRegister(int guest, sljit_s32 source = SLJIT_FR0);
 	void flushRegisters();
 	void discardRegisterRange(int first, int end);
 	RegisterSnapshot registerSnapshot() const;
@@ -53,7 +56,7 @@ private:
 	void loadOperand(int selector, sljit_s32 floatingRegister);
 	void loadHeader(int selector, sljit_s32 target);
 	void loadPayload(int selector, sljit_s32 target, sljit_s32 scratch);
-	void canonicalizeNumber();
+	void canonicalizeNumber(sljit_s32 target = SLJIT_FR0);
 	void convertWord(int selector);
 
 	sljit_compiler* m_compiler;

@@ -15,15 +15,17 @@ int NativeBlockCompiler::findRegister(int guest) const {
 	return -1;
 }
 
-int NativeBlockCompiler::allocateRegister(int guest) {
-	int selected = 0;
+int NativeBlockCompiler::allocateRegister(int guest, sljit_s32 pinned) {
+	int selected = -1;
 	for (int slot = 0; slot < m_registerCount; ++slot) {
+		if (cachedFloatRegister(slot) == pinned) continue;
 		if (m_registers[slot].guest < 0) {
 			selected = slot;
 			break;
 		}
-		if (m_registers[slot].lastUse < m_registers[selected].lastUse) selected = slot;
+		if (selected < 0 || m_registers[slot].lastUse < m_registers[selected].lastUse) selected = slot;
 	}
+	if (selected < 0) return -1;
 	auto& entry = m_registers[selected];
 	if (entry.dirty) sljit_emit_fop1(m_compiler, SLJIT_MOV_F64,
 		SLJIT_MEM1(SLJIT_S0), static_cast<sljit_sw>(entry.guest) * sizeof(Value), cachedFloatRegister(selected), 0);
@@ -31,30 +33,50 @@ int NativeBlockCompiler::allocateRegister(int guest) {
 	return selected;
 }
 
-void NativeBlockCompiler::writeRegister(int guest) {
+sljit_s32 NativeBlockCompiler::destinationRegister(int guest) {
 	int slot = findRegister(guest);
 	if (slot < 0) slot = allocateRegister(guest);
 	m_registers[slot].dirty = true;
 	m_registers[slot].lastUse = ++m_registerClock;
-	sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, cachedFloatRegister(slot), 0, SLJIT_FR0, 0);
+	return cachedFloatRegister(slot);
 }
 
-void NativeBlockCompiler::loadOperand(int selector, sljit_s32 floatingRegister) {
+void NativeBlockCompiler::writeRegister(int guest, sljit_s32 source) {
+	const auto target = destinationRegister(guest);
+	if (target != source) sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, target, 0, source, 0);
+}
+
+sljit_s32 NativeBlockCompiler::readOperand(int selector, sljit_s32 temporary, sljit_s32 pinned) {
 	if (selector < 0) {
-		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, floatingRegister, 0,
+		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, temporary, 0,
 			SLJIT_MEM1(SLJIT_S1), static_cast<sljit_sw>(-selector - 1) * sizeof(Value));
-		return;
+		return temporary;
 	}
 	int slot = findRegister(selector);
 	if (slot >= 0) {
 		m_registers[slot].lastUse = ++m_registerClock;
-		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, floatingRegister, 0, cachedFloatRegister(slot), 0);
-		return;
+		return cachedFloatRegister(slot);
 	}
-	sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, floatingRegister, 0,
+	slot = allocateRegister(selector, pinned);
+	// On a target with a single cache register, the other operand stays pinned
+	// and this read uses its instruction scratch register without caching it.
+	const auto target = slot < 0 ? temporary : cachedFloatRegister(slot);
+	sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, target, 0,
 		SLJIT_MEM1(SLJIT_S0), static_cast<sljit_sw>(selector) * sizeof(Value));
-	slot = allocateRegister(selector);
-	sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, cachedFloatRegister(slot), 0, floatingRegister, 0);
+	return target;
+}
+
+std::array<sljit_s32, 2> NativeBlockCompiler::readOperands(int left, int right) {
+	// Pin both existing inputs before admitting either cold input. Otherwise a
+	// cache miss for the left operand can evict a still-live right operand.
+	const int rightSlot = right < 0 ? -1 : findRegister(right);
+	const auto first = readOperand(left, SLJIT_FR0, rightSlot < 0 ? 0 : cachedFloatRegister(rightSlot));
+	return {first, readOperand(right, SLJIT_FR1, first)};
+}
+
+void NativeBlockCompiler::loadOperand(int selector, sljit_s32 floatingRegister) {
+	const auto source = readOperand(selector, floatingRegister);
+	if (source != floatingRegister) sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, floatingRegister, 0, source, 0);
 }
 
 NativeBlockCompiler::RegisterSnapshot NativeBlockCompiler::registerSnapshot() const {

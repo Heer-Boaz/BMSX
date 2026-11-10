@@ -376,6 +376,46 @@ void movesAndLiteralsPreserveRawValues() {
 	}
 }
 
+void pinnedOperandsSurviveColdReadsAndDestinationReuse() {
+	const std::array values{valueNumber(-0.0), valueNumber(3.5), valueNumber(-17.25),
+		valueNumber(std::numeric_limits<double>::infinity()), VALUE_QNAN_MASK,
+		valueString(0x12345678u), Value{0xfff0000000000001ULL}};
+	size_t bytes = 0;
+	for (const bool helper : {false, true}) for (const bool coldLeft : {false, true}) {
+		for (const auto op : {OpCode::MOV, OpCode::ADD, OpCode::SUB, OpCode::MUL, OpCode::DIV, OpCode::UNM}) {
+			for (const u16 destination : {u16{0}, u16{1}, u16{4}, u16{5}}) for (const Value value : values) {
+				const std::array pool{value, valueNumber(2), valueNumber(3), valueNumber(4)};
+				std::array<Value, 8> registers; registers.fill(valueNil()); registers[4] = valueNumber(0.25);
+				auto expected = registers;
+				std::array<DecodedInstruction, 7> decoded{};
+				std::array<NativeBlockInstruction, 7> source{};
+				for (u16 i = 0; i < 4; ++i) {
+					decoded[i].op = static_cast<u8>(OpCode::LOADK); decoded[i].a = i; decoded[i].bx = i;
+					expected[i] = pool[i];
+				}
+				auto& operation = decoded[4]; operation.op = static_cast<u8>(op); operation.a = destination;
+				operation.b = coldLeft ? 4 : 0; operation.c = coldLeft ? 0 : 4;
+				expected[destination] = op == OpCode::MOV ? expected[operation.b]
+					: evaluate(op, expected[operation.b], expected[operation.c]);
+				decoded[5].op = static_cast<u8>(helper ? OpCode::MOD : OpCode::MOV);
+				decoded[5].a = 7; decoded[5].b = helper ? -2 : destination; decoded[5].c = -3;
+				expected[7] = helper ? valueNumber(2) : expected[destination];
+				decoded[6].op = static_cast<u8>(OpCode::MOV); decoded[6].a = 6; decoded[6].b = destination;
+				expected[6] = expected[destination];
+				for (u32 i = 0; i < decoded.size(); ++i) {
+					decoded[i].width = 1; decoded[i].baseCycles = BASE_CYCLES[decoded[i].op];
+					source[i] = {&decoded[i], 0x1000u + i * INSTRUCTION_BYTES};
+				}
+				auto block = NativeBlock::compile(source, pool.data(), bytes, memory, cpu.stringPool());
+				NativeBlockRunState state{.registers = registers.data(), .constants = pool.data(), .remainingCycles = block->terminal.cycles};
+				require(block->run(state) == &block->terminal && registers == expected && state.remainingCycles == 0,
+					"cold inputs cannot clobber pinned operands, aliased destinations or live values across a helper ABI call");
+			}
+		}
+	}
+	require(bytes == 0, "direct-register bodies release their accounted executable storage");
+}
+
 void dependentInstructionsWriteBackEveryLiveRegister() {
 	NativeBlockRunState nativeRunState;
 	const std::array pool{valueNumber(-0.0), valueNumber(0.25), valueNumber(-4294967296.75),
@@ -565,6 +605,7 @@ int main() {
 		comparisonDatapathsRespectEveryValueKind();
 		arithmeticAndWordDatapaths();
 		movesAndLiteralsPreserveRawValues();
+		pinnedOperandsSurviveColdReadsAndDestinationReuse();
 		dependentInstructionsWriteBackEveryLiveRegister();
 		truthinessAndConditionalExits();
 		sideExitHandlersRunAfterGeneratedFrameReturns();
