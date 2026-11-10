@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import { isDeepStrictEqual } from 'node:util';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CompiledBlockExit, CpuExecutionBackend, compiledBlockSupports } from '../../machine/ts/machine/cpu/compiled_block';
+import { JavaScriptRegisterCache } from '../../machine/ts/machine/cpu/compiled_block_registers';
+import { valueFromNumber } from '../../machine/ts/machine/cpu/value';
 import { readLE32 } from '../../machine/ts/common/endian';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { OPCODE_COUNT, OpCode } from '../../machine/ts/spec/blua32/opcode';
@@ -47,7 +49,7 @@ for (const displaced of [false, true]) for (const count of [0, 5, 1025]) test(`g
 		cpu.runUntilDepth(0, 20 * (7 + surcharge));
 	}
 	const frame = js.cpu.rootThread.frames[0], page = frame.decodedPage!, block = page.compiledBlocks!.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!;
-	assert.equal(block.sourceWords, 7); assert.equal(block.terminal.cycles, 7 + surcharge);
+	assert.equal(block.sourceWords, 5); assert.equal(block.terminal.cycles, 5 + surcharge); assert.equal(block.entryCycles, 4);
 	assert.equal(block.exits[0].exit, CompiledBlockExit.WriteWords); assert.equal(block.exits[0].cycles, 5);
 	for (const value of [-0, -1.75, 4294967296.25, 1e100, Infinity, NaN, null, true]) {
 		for (const grant of [1, 3, 4, 5, 5 + surcharge, 6 + surcharge, 7 + surcharge, 4 * (7 + surcharge)]) {
@@ -165,7 +167,7 @@ test('a counted span checks middle watch pages and can retire its own native sou
 	assert.equal(page.compiledBlocks!.entries[0], null); assertParity(js.cpu, ref.cpu); assert.deepEqual(js.memory.ramData(), ref.memory.ramData());
 });
 
-for (const blocked of [false, true]) test(`later counted exits include earlier successful surcharges, but not their own preflight charge (blocked=${blocked})`, () => {
+for (const blocked of [false, true]) test(`later counted blocks retain earlier cycle debits, but exclude their own blocked surcharge (blocked=${blocked})`, () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.K1, 6, 0, 0); writeInstruction(text, 1, OpCode.STORE_MEM_WORDS, 8, 0, 5);
 	writeInstruction(text, 2, OpCode.STORE_MEM_WORDS, 20, 1, 3); writeInstruction(text, 3, OpCode.MOV, 7, 6, 0);
@@ -174,7 +176,9 @@ for (const blocked of [false, true]) test(`later counted exits include earlier s
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter), pc = image.image.functions[0].codeAddress;
 	for (const { cpu } of [js, ref]) { const r = cpu.rootThread.frames[0].registers; r.setNumber(0, DYNAMIC_RAM_BASE); r.setNumber(1, DYNAMIC_RAM_BASE + 64); cpu.runUntilDepth(0, 200); }
 	const block = js.cpu.rootThread.frames[0].decodedPage!.compiledBlocks!.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / 4]!;
-	assert.equal(block.terminal.cycles, 10); assert.equal(block.exits[0].cycles, 3); assert.equal(block.exits[1].cycles, 7);
+	assert.equal(block.terminal.cycles, 5); assert.equal(block.exits[0].cycles, 3);
+	const second = block.terminal.linkedBlock!;
+	assert.ok(second); assert.equal(second.entryCycles, 1); assert.equal(second.terminal.cycles, 3); assert.equal(second.exits[0].cycles, 2);
 	for (const { cpu, memory } of [js, ref]) {
 		memory.mapIoWrite(IO_BASE + 0x5000, null, () => assert.fail('not ready')); memory.mapIoWriteReady(IO_BASE + 0x5000, () => false);
 		const frame = cpu.rootThread.frames[0]; frame.top = 0; frame.registers.setNumber(1, blocked ? IO_BASE + 0x5000 : RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 4);
@@ -188,17 +192,37 @@ for (const blocked of [false, true]) test(`later counted exits include earlier s
 });
 
 test('bulk source publication neither discards clean SSA values nor repeats their writeback', () => {
-	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE), target = DYNAMIC_RAM_BASE;
-	writeInstruction(text, 0, OpCode.K1, 0, 0, 0); writeInstruction(text, 1, OpCode.K1, 7, 0, 0);
-	writeInstruction(text, 2, OpCode.STORE_MEM_WORDS, 0, 63, 1, 56); writeInstruction(text, 3, OpCode.MOV, 0, 0, 0);
-	writeInstruction(text, 4, OpCode.ADD, 2, 0, 7); writeInstruction(text, 5, OpCode.STORE_MEM_WORDS, 0, 63, 1, 56);
-	writeInstruction(text, 6, OpCode.JMP, 0, 63, 57, 255);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 7, maxStack: 8 }], constants: [target] });
-	const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript); cpu.runUntilDepth(0, 200);
-	const frame = cpu.rootThread.frames[0], r = frame.registers, page = frame.decodedPage!, pc = image.image.functions[0].codeAddress;
-	const block = page.compiledBlocks!.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / 4]!, writes = new Uint32Array(8), set = r.setEncoded.bind(r);
+	const { cpu } = createTestSystemCpu(wordLoop(0), CpuExecutionBackend.JavaScript);
+	const frame = cpu.rootThread.frames[0], r = frame.registers;
+	const cache = new JavaScriptRegisterCache(frame.executionImage), writes = new Uint32Array(8), set = r.setEncoded.bind(r);
+	const source = [cache.writeNumber(0, '1'), cache.writeNumber(7, '1'), cache.publishRange(0, 1),
+		'observed.push(r.getNumber(0));', cache.copy(0, 0),
+		cache.writeNumber(2, `${cache.numberOperand(0)}+${cache.numberOperand(7)}`), cache.publishRange(0, 1),
+		'observed.push(r.getNumber(0));', cache.writeBack()];
+	const observed: number[] = [];
 	r.setEncoded = (index, tag, scalar, reference) => { ++writes[index]; set(index, tag, scalar, reference); };
-	assert.equal(block.exits[block.execute(r, frame.executionImage.constScalars, page, frame)], block.terminal);
+	new Function('r', 'f', 'observed', source.join('\n'))(r, valueFromNumber, observed);
 	assert.equal(writes[0], 1); assert.equal(writes[7], 1); assert.equal(writes[2], 1);
-	assert.equal(r.getNumber(2), 2); assert.equal(memory.readMappedWord(target), 1);
+	assert.equal(r.getNumber(2), 2); assert.deepEqual(observed, [1, 1]);
+});
+
+for (const displaced of [false, true]) for (const count of [0, 1025, displaced ? 4095 : 32767]) test(`a terminal word span starts with one cycle and never starts its successor (count=${count}, displaced=${displaced})`, () => {
+	const image = wordLoop(count, displaced), start = image.image.functions[0].codeAddress + 3 * INSTRUCTION_BYTES;
+	const target = DYNAMIC_RAM_BASE + 0x4000, charge = 2 + ((count + 3) >> 2);
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	for (let attempt = 0; attempt < 12; ++attempt) for (const { cpu } of [js, ref]) {
+		const frame = cpu.rootThread.frames[0]; frame.registers.setNumber(0, target - (displaced ? 1020 : 0)); frame.registers.setNumber(7, 99);
+		for (let i = 0; i < count; ++i) frame.registers.setNumber(8 + i, 0x20000000 | i);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);
+		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+		assert.equal(cpu.instructionBudgetRemaining, 1 - charge); assert.equal(frame.pc, start + 2 * INSTRUCTION_BYTES);
+		assert.equal(cpu.lastPc, start + INSTRUCTION_BYTES); assert.equal(frame.registers.getNumber(7), 99);
+	}
+	assertParity(js.cpu, ref.cpu); assert.deepEqual(js.memory.ramData(), ref.memory.ramData());
+	const frame = js.cpu.rootThread.frames[0], block = frame.decodedPage!.compiledBlocks!.entries[(start & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!;
+	assert.ok(block); assert.equal(block.entryCycles, 1); assert.equal(block.sourceWords, 2); assert.equal(block.terminal.cycles, charge);
+	if (count > 0) {
+		assert.equal(js.memory.readMappedWord(target), 0x20000000);
+		assert.equal(js.memory.readMappedWord(target + (count - 1) * 4), 0x20000000 | (count - 1));
+	}
 });

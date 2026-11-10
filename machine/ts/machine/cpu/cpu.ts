@@ -2653,7 +2653,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 		}
 		let block = cache.entries[word];
-		if (block === null || this.instructionBudgetRemaining < block.terminal.cycles - page.dispatchCycles[word]) {
+		if (block === null || this.instructionBudgetRemaining < block.entryCycles - page.dispatchCycles[word]) {
 			this.executeInstruction(frame, page, word, page.ops[word], targetDepth);
 			return;
 		}
@@ -2680,7 +2680,7 @@ export class CPU implements MappedPageInvalidator {
 					}
 					break;
 				}
-				if (remaining < target.terminal.cycles) break;
+				if (remaining < target.entryCycles) break;
 				current = target;
 			}
 			this.instructionBudgetRemaining = remaining;
@@ -2792,7 +2792,7 @@ export class CPU implements MappedPageInvalidator {
 			const nextCache = page.compiledBlocks;
 			if (nextCache === null) return;
 			const next = nextCache.entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
-			if (next === null || remaining < next.terminal.cycles) return;
+			if (next === null || remaining < next.entryCycles) return;
 			cache = nextCache;
 			block = next;
 		}

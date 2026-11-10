@@ -91,6 +91,8 @@ export type CompiledBlockExitSite = {
 
 export type CompiledBlock = {
 	readonly execute: (registers: ValueSlots, constants: Float64Array, page: DecodedInstructionPage, frame: CallFrame) => number;
+	/** Budget through the start of the final instruction, not its full charge. */
+	readonly entryCycles: number;
 	readonly terminal: CompiledBlockExitSite;
 	readonly exits: readonly CompiledBlockExitSite[];
 	readonly sourceUnits: number;
@@ -238,6 +240,7 @@ export function compiledBlockEndsBlock(op: number, field: number): boolean {
 	return op === OpCode.JMP || op === OpCode.JMPIF || op === OpCode.JMPIFNOT || op === OpCode.HALT
 		|| op === OpCode.CALL || op === OpCode.RET || op === OpCode.NEWT || op === OpCode.RFE
 		|| op === OpCode.CONCAT || op === OpCode.CONCATN || op === OpCode.CLOSURE
+		|| op === OpCode.STORE_MEM_WORDS || op === OpCode.STORE_MEM_WORDS_D
 		|| (op === OpCode.MTC0 && (field === COP0_STATUS || field === COP0_EXEC || !cop0FieldImplemented(field)))
 		|| op === OpCode.EQ || op === OpCode.LT || op === OpCode.LE;
 }
@@ -259,6 +262,7 @@ export function compileJavaScriptBlock(
 	const registers = new JavaScriptRegisterCache(image);
 	const exits: CompiledBlockExitSite[] = [];
 	let cycles = 0;
+	let entryCycles = 0;
 	let sourceWords = 0;
 	let registerTop = 0;
 	let resetsRegisterTop = false;
@@ -274,6 +278,7 @@ export function compileJavaScriptBlock(
 	for (let word = firstWord; word < endWord; word += page.widths[word]) {
 		finalWord = word;
 		const op = page.ops[word];
+		entryCycles = cycles + 1;
 		cycles += BASE_CYCLES[op];
 		sourceWords += page.widths[word];
 		currentPc = pc;
@@ -387,7 +392,7 @@ export function compileJavaScriptBlock(
 	} else execute = new Function('r', 'k', 'p', 'frame', functionSource) as CompiledBlock['execute'];
 	return {
 		execute,
-		terminal, exits, sourceWords, sourceUnits: functionSource.length,
+		entryCycles, terminal, exits, sourceWords, sourceUnits: functionSource.length,
 		incoming: null,
 	};
 }

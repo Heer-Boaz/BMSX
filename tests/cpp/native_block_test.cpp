@@ -117,6 +117,42 @@ void linkedBodiesShareOneFrameAndRetireTheirEdges() {
 	require(bytes == 0, "retiring a self-linked block releases its frame and executable storage exactly once");
 }
 
+void linkedAtomicStoreDebitsItsWholeChargeBeforeTestingItsSuccessor() {
+	std::array<DecodedInstruction, 4> decoded{};
+	const std::array ops{OpCode::K1, OpCode::JMP, OpCode::STORE_MEM_WORDS, OpCode::K1};
+	for (size_t i = 0; i < ops.size(); ++i) {
+		decoded[i].op = static_cast<u8>(ops[i]); decoded[i].width = 1; decoded[i].baseCycles = BASE_CYCLES[decoded[i].op];
+	}
+	decoded[0].a = 6; decoded[1].bx = 0x1080;
+	decoded[2].width = 2; decoded[2].a = 8; decoded[2].b = 0; decoded[2].c = 5;
+	decoded[3].a = 7;
+	const std::array prefix{NativeBlockInstruction{&decoded[0], 0x1000}, NativeBlockInstruction{&decoded[1], 0x1004}};
+	const std::array span{NativeBlockInstruction{&decoded[2], 0x1080}};
+	const std::array successor{NativeBlockInstruction{&decoded[3], 0x1088}};
+	size_t bytes = 0;
+	auto first = NativeBlock::compile(prefix, nullptr, bytes, memory, cpu.stringPool());
+	auto second = NativeBlock::compile(span, nullptr, bytes, memory, cpu.stringPool());
+	auto third = NativeBlock::compile(successor, nullptr, bytes, memory, cpu.stringPool());
+	second->linkFrom(first->terminal); third->linkFrom(second->terminal);
+	require(first->entryCycles == 2 && second->entryCycles == 1 && second->terminal.cycles == 4,
+		"block entry needs only a positive budget at the final instruction start");
+	constexpr u32 target = DYNAMIC_RAM_BASE + 0x80000u;
+	for (int budget : {2, 3, 6, 7}) {
+		std::array<Value, 13> registers; registers.fill(valueNil());
+		registers[0] = valueNumber(target); registers[7] = valueNumber(99);
+		for (u32 i = 0; i < 5; ++i) { registers[8 + i] = valueNumber(73u + i); memory.writeMappedWord(target + i * 4u, 0); }
+		NativeBlockRunState state{.registers = registers.data(), .remainingCycles = budget};
+		const auto* exit = first->run(state);
+		const auto* expected = budget == 2 ? &first->terminal : budget == 7 ? &third->terminal : &second->terminal;
+		require(exit == expected && state.remainingCycles == budget - (budget == 2 ? 2 : budget == 7 ? 7 : 6)
+			&& registers[6] == valueNumber(1) && registers[7] == valueNumber(budget == 7 ? 1 : 99)
+			&& state.registerTop == (budget == 7 ? 8 : 7),
+			"linked native bodies finish the counted store but never start a successor without positive budget");
+		for (u32 i = 0; i < 5; ++i) require(memory.readMappedWord(target + i * 4u) == (budget == 2 ? 0u : 73u + i),
+			"a short positive grant commits the complete ordered RAM span");
+	}
+}
+
 void linkedSlowExitPublishesTheWholeExecutedChain() {
 	NativeBlockRunState nativeRunState;
 	std::array<DecodedInstruction, 5> decoded{};
@@ -486,6 +522,7 @@ int main() {
 	try {
 		multipleRegisterDefinitionsSurviveCallAndExit();
 		linkedBodiesShareOneFrameAndRetireTheirEdges();
+		linkedAtomicStoreDebitsItsWholeChargeBeforeTestingItsSuccessor();
 		linkedSlowExitPublishesTheWholeExecutedChain();
 		comparisonDatapathsRespectEveryValueKind();
 		arithmeticAndWordDatapaths();

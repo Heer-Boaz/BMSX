@@ -34,6 +34,7 @@ std::unique_ptr<NativeBlock> NativeBlock::compile(
 	for (const auto& source : instructions) {
 		const auto& instruction = *source.decoded;
 		const auto op = static_cast<OpCode>(instruction.op);
+		block->entryCycles = terminal.cycles + 1;
 		terminal.cycles += instruction.baseCycles;
 		block->sourceWords += instruction.width;
 		terminal.currentPc = source.pc;
@@ -56,8 +57,8 @@ std::unique_ptr<NativeBlock> NativeBlock::compile(
 				exit.displacement = instruction.disp;
 			}
 		}
-		// The checked exit owns this instruction's preflight and surcharge. All
-		// following exits, and admission to the complete body, include success.
+		// The checked exit owns this instruction's preflight and surcharge.
+		// Later exits include the successful prefix, not a blocked attempt.
 		if (slow == NativeBlockExit::WriteWords) terminal.cycles += ceilDiv4(instruction.c);
 		if (op == OpCode::VARARG && instruction.b == 0) terminal.registerTop = 0;
 		else if (op == OpCode::VARARG || op == OpCode::LOADNIL) {
@@ -133,7 +134,7 @@ void NativeBlock::linkFrom(const NativeBlockExitSite& source) {
 	auto& link = source.link;
 	link.disconnect();
 	link.code = m_body;
-	link.cycles = terminal.cycles;
+	link.cycles = entryCycles;
 	link.target = this;
 	link.next = m_incoming;
 	if (m_incoming) m_incoming->previous = &link;

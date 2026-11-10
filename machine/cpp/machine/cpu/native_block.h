@@ -191,6 +191,7 @@ inline constexpr bool nativeBlockEndsBlock(u8 op, int field) {
 		|| op == static_cast<u8>(OpCode::CALL) || op == static_cast<u8>(OpCode::RET)
 		|| op == static_cast<u8>(OpCode::NEWT) || op == static_cast<u8>(OpCode::CLOSURE)
 		|| op == static_cast<u8>(OpCode::CONCAT) || op == static_cast<u8>(OpCode::CONCATN)
+		|| op == static_cast<u8>(OpCode::STORE_MEM_WORDS) || op == static_cast<u8>(OpCode::STORE_MEM_WORDS_D)
 		|| (op == static_cast<u8>(OpCode::MTC0) && (field == COP0_STATUS || field == COP0_EXEC || !cop0FieldImplemented(field)))
 		|| op == static_cast<u8>(OpCode::RFE) || nativeBlockComparison(op);
 }
@@ -239,6 +240,9 @@ public:
 
 	NativeBlockExitSite terminal;
 	std::vector<NativeBlockExitSite> sideExits;
+	// The final instruction may start with one cycle left. Counted stores end
+	// a block so their surcharge cannot run a following instruction past zero.
+	int entryCycles = 0;
 	u16 sourceWords = 0;
 	size_t codeBytes = 0;
 

@@ -82,7 +82,8 @@ void plainSpansAndCycles(int count, bool displaced) {
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& block = native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
-	require(block && block->sourceWords == 7 && block->terminal.cycles == 7 + surcharge, "counted RAM stores remain inside the complete native body");
+	require(block && block->sourceWords == 5 && block->terminal.cycles == 5 + surcharge && block->entryCycles == 4,
+		"a counted store ends the body and may start with one remaining cycle after its prefix");
 	require(block->sideExits[0].exit == NativeBlockExit::WriteWords && block->sideExits[0].cycles == 5, "the checked exit precedes its own readiness surcharge");
 #endif
 	const std::array values{valueNumber(-0.0), valueNumber(-1.75), valueNumber(4294967296.25), valueNumber(1e100),
@@ -222,7 +223,10 @@ void previousChargesSurviveLaterExit(bool blocked) {
 	for (auto* m : {&native, &scalar}) { auto* r = m->cpu.activeThread()->frames[0]->registers; r[0] = valueNumber(DYNAMIC_RAM_BASE); r[1] = valueNumber(DYNAMIC_RAM_BASE + 64u); m->cpu.runUntilDepth(0, 200); }
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& block = native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
-	require(block && block->terminal.cycles == 10 && block->sideExits[0].cycles == 3 && block->sideExits[1].cycles == 7, "every exit includes exactly the successful prefix surcharges");
+	require(block && block->terminal.cycles == 5 && block->sideExits[0].cycles == 3, "the first block charges its successful surcharge");
+	const auto* second = block->terminal.link.target;
+	require(second && second->entryCycles == 1 && second->terminal.cycles == 3 && second->sideExits[0].cycles == 2,
+		"a linked counted block separates entry, success and blocked preflight charges");
 #endif
 	for (auto* m : {&native, &scalar}) {
 		m->memory.mapIoWrite(IO_BASE + 0x5000u, nullptr, [](void*, u32, u32, MappedBusSignals) { throw std::runtime_error("not ready"); });
@@ -236,6 +240,41 @@ void previousChargesSurviveLaterExit(bool blocked) {
 	}
 	requireParity(native, scalar);
 }
+
+void terminalSpanStartsWithOneCycle(int count, bool displaced) {
+	const auto image = wordLoop(count, displaced); CpuMachine native(image), scalar(image, true);
+	const u32 start = native.rom.textAddress + 3u * INSTRUCTION_BYTES, target = DYNAMIC_RAM_BASE + 0x4000u;
+	const int charge = 2 + ((count + 3) >> 2);
+	for (int attempt = 0; attempt < 12; ++attempt) for (auto* m : {&native, &scalar}) {
+		auto& frame = *m->cpu.activeThread()->frames[0]; frame.registers[0] = valueNumber(target - (displaced ? 1020u : 0u)); frame.registers[7] = valueNumber(99);
+		for (int i = 0; i < count; ++i) frame.registers[8 + i] = valueNumber(0x20000000u | i);
+		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], start);
+		require(m->cpu.runUntilDepth(0, 1) == RunResult::Yielded && m->cpu.instructionBudgetRemaining == 1 - charge
+			&& frame.pc == start + 2u * INSTRUCTION_BYTES && m->cpu.lastPc == start + INSTRUCTION_BYTES
+			&& frame.registers[7] == valueNumber(99), "one cycle starts the complete WIDE store, but never the following ADD");
+	}
+	requireParity(native, scalar);
+	require(std::equal(native.memory.ramData(), native.memory.ramData() + PSX_MACHINE_SPEC.ramBytes, scalar.memory.ramData()), "all RAM agrees after overrun by a terminal store");
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	const auto& block = native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks->entries[(start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	require(block && block->entryCycles == 1 && block->sourceWords == 2 && block->terminal.cycles == charge,
+		"a single counted WIDE store has a native body even when its cost exceeds every grant");
+#endif
+	if (count > 0) require(native.memory.readMappedWord(target) == 0x20000000u
+		&& native.memory.readMappedWord(target + (count - 1) * 4u) == (0x20000000u | (count - 1)), "the entire terminal RAM span was written");
+	if (count > 0) {
+		for (auto* m : {&native, &scalar}) {
+			m->memory.mapIoWrite(IO_BASE + 0x5000u, nullptr, [](void*, u32, u32, MappedBusSignals) { throw std::runtime_error("blocked store wrote a word"); });
+			m->memory.mapIoWriteReady(IO_BASE + 0x5000u, [](void*, u32, MappedBusSignals) { return false; });
+			auto& frame = *m->cpu.activeThread()->frames[0]; frame.registers[0] = valueNumber(IO_BASE + 0x5000u - (displaced ? 1020u : 0u));
+			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], start);
+			require(m->cpu.runUntilDepth(0, 1) == RunResult::Halted && m->cpu.instructionBudgetRemaining == -1
+				&& frame.pc == start && frame.registers[7] == valueNumber(99) && m->cpu.stalledMemoryWriteAddress() == IO_BASE + 0x5000u,
+				"a one-cycle checked exit pays only the base charge and retains the WIDE retry address");
+		}
+		requireParity(native, scalar);
+	}
+}
 } // namespace
 
 int main() {
@@ -247,6 +286,7 @@ int main() {
 		for (bool displaced : {false, true}) for (int count : {0, 5, 1025}) plainSpansAndCycles(count, displaced);
 		wideConstantAddress(); zeroCount(false); zeroCount(true); laterReadinessBeforeEarlierFault(); orderedIoFaultPrefix(); ownCodeInMiddleWatchPage();
 		previousChargesSurviveLaterExit(false); previousChargesSurviveLaterExit(true);
+		for (bool displaced : {false, true}) for (int count : {0, 1025, displaced ? 4095 : 32767}) terminalSpanStartsWithOneCycle(count, displaced);
 		std::cout << "Compiled CPU word-span tests passed\n"; return 0;
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

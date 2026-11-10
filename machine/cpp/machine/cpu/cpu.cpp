@@ -2639,7 +2639,7 @@ dispatch_instruction:
 					nativeBlock = decodedPage->nativeBlocks->entries[pageOffset].get();
 					// The first instruction's ordinary charge/PC publication has
 					// already happened. Admit the remaining block without undoing it.
-					const int remainingCycles = nativeBlock->terminal.cycles - decoded->baseCycles;
+					const int remainingCycles = nativeBlock->entryCycles - decoded->baseCycles;
 					if (instructionBudgetRemaining < remainingCycles) {
 						dispatchOp = decoded->op;
 						goto dispatch_instruction;
@@ -2865,7 +2865,7 @@ dispatch_rebind_frame:
 					decodedPage = &decodedPageForFrame(FRAME, pc);
 					if (decodedPage->nativeBlocks) {
 						nativeBlock = decodedPage->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
-						if (nativeBlock && instructionBudgetRemaining >= nativeBlock->terminal.cycles) {
+						if (nativeBlock && instructionBudgetRemaining >= nativeBlock->entryCycles) {
 							nativeFirstDispatchCycles = 0;
 							goto dispatch_native_block;
 						}
