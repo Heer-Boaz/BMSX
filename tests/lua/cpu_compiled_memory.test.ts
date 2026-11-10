@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readLE32 } from '../../machine/ts/common/endian';
-import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
+import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
@@ -47,7 +47,7 @@ test('cached values reach field, memory and fault owners without stale tags or n
 	const image = linkRawTestSystemBlua32({ text, functions: [
 		{ firstWord: 0, wordCount: 13, maxStack: 14 }, { firstWord: 13, wordCount: 1 },
 	], constants: ['stable', 'result'], exceptionFunctionIndex: 1 });
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image)];
+	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	const address = DYNAMIC_RAM_BASE + 0x1000;
 	for (const { cpu } of machines) {
 		const table = cpu.createTable(0, 2);
@@ -86,7 +86,7 @@ for (let format = 0; format <= 5; ++format) for (const displaced of [false, true
 	test(`generated RAM format ${format}, displaced ${displaced}: data, aliases and short grants`, () => {
 		const image = memoryLoop(displaced ? OpCode.STORE_MEM_D : OpCode.STORE_MEM, format, displaced ? 255 : 0);
 		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
-		const ref = createTestSystemCpu(image);
+		const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
 		const entry = image.image.functions[0].codeAddress;
 		const address = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - 4;
 		for (const machine of [js, ref]) {
@@ -131,7 +131,7 @@ for (let format = 0; format <= 5; ++format) for (const displaced of [false, true
 
 test('a generated MMIO store checks readiness before width faults or source consumption', () => {
 	const image = memoryLoop(OpCode.STORE_MEM, MemoryAccessKind.U16LE);
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image)];
+	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		const frame = cpu.rootThread.frames[0];
 		frame.registers.setNumber(0, 12); frame.registers.setNumber(1, DYNAMIC_RAM_BASE + 0x1000);
@@ -158,7 +158,7 @@ test('a generated MMIO store checks readiness before width faults or source cons
 
 test('a generated F64 load retains its destination when the second bus transfer faults', () => {
 	const image = memoryLoop(OpCode.LOAD_MEM_D, MemoryAccessKind.F64LE, 255);
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image)];
+	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		const frame = cpu.rootThread.frames[0];
 		frame.registers.setNumber(1, DYNAMIC_RAM_BASE + 0x404 - 1020);
@@ -177,7 +177,7 @@ test('a generated F64 load retains its destination when the second bus transfer 
 
 test('a watched RAM store retires its own generated source only after returning', () => {
 	const image = memoryLoop(OpCode.STORE_MEM, MemoryAccessKind.U32LE);
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image)];
+	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const [index, { cpu, memory }] of machines.entries()) {
 		const frame = cpu.rootThread.frames[0];
 		const entry = image.image.functions[0].codeAddress;
@@ -212,7 +212,7 @@ test('a continuously rewritten instruction stays outside stable compiled prefixe
 	writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255);
 	writeInstruction(text, 8, OpCode.K0, 6, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 }] });
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image)];
+	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
 		const frame = cpu.rootThread.frames[0];
@@ -238,7 +238,7 @@ test('a continuously rewritten instruction stays outside stable compiled prefixe
 
 test('an MMIO read can retire its generated source before the CPU commits the result', () => {
 	const image = memoryLoop(OpCode.LOAD_MEM, MemoryAccessKind.U32LE);
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image)];
+	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const [index, { cpu, memory }] of machines.entries()) {
 		const entry = image.image.functions[0].codeAddress;
 		memory.writeBytes(DYNAMIC_RAM_BASE, image.romBytes.subarray(entry, entry + MAPPED_PAGE_BYTE_SIZE));

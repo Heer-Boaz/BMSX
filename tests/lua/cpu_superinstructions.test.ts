@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import {
 	DecodedDispatchOp,
 	decodedDispatchOp,
@@ -56,9 +57,9 @@ test('decoded dispatch recognizes only the selected straight-line numeric pairs'
 
 test('normal decoded dispatch preserves the guest budget boundary inside a fused pair', () => {
 	const image = makePairImage();
-	const { cpu } = createTestSystemCpu(image);
+	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
 	const entryPc = image.image.functions[0].codeAddress;
-	const fusedCpu = createTestSystemCpu(image).cpu;
+	const fusedCpu = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 
 	assert.equal(fusedCpu.runUntilDepth(0, 4), RunResult.Yielded);
 	assert.equal(fusedCpu.readFramePc(0), entryPc + 4 * INSTRUCTION_BYTES);
@@ -88,7 +89,7 @@ test('normal decoded dispatch preserves the guest budget boundary inside a fused
 
 test('warmed fused dispatch does not repeat mapped-page binding or instruction reads', () => {
 	const image = makePairImage(true);
-	const { cpu, memory } = createTestSystemCpu(image);
+	const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
 	assert.equal(cpu.runUntilDepth(0, 9), RunResult.Yielded);
 	let bindings = 0;
 	let reads = 0;
@@ -109,7 +110,7 @@ test('warmed fused dispatch does not repeat mapped-page binding or instruction r
 
 test('instrumented dispatch observes the second instruction of a normally fused pair', () => {
 	const image = makePairImage();
-	const { cpu } = createTestSystemCpu(image);
+	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
 	const entryPc = image.image.functions[0].codeAddress;
 	const secondPc = entryPc + 3 * INSTRUCTION_BYTES;
 	const visited: number[] = [];
@@ -134,7 +135,7 @@ test('instrumented dispatch observes the second instruction of a normally fused 
 });
 
 for (const instrumented of [false, true]) test(`sparse observation respects fusion, source stops and cached removal (source hook: ${instrumented})`, () => {
-	const image = makePairImage(true), { cpu } = createTestSystemCpu(image);
+	const image = makePairImage(true), { cpu } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
 	const pc = image.image.functions[0].codeAddress + 3 * INSTRUCTION_BYTES;
 	assert.equal(cpu.runUntilDepth(0, 9), RunResult.Yielded);
 	const observations: number[] = [];

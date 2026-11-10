@@ -495,7 +495,7 @@ export class CPU implements MappedPageInvalidator {
 		memory: Memory,
 		private readonly irqController: IrqController,
 		private readonly executionAddressSpace: ExecutionAddressSpace,
-		private readonly executionBackend = CpuExecutionBackend.Interpreter,
+		private readonly executionBackend = CpuExecutionBackend.JavaScript,
 	) {
 		this.memory = memory;
 		this.cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;

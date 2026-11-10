@@ -34,7 +34,7 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 			{ firstWord: DECODED_PAGE_WORDS, wordCount: 3, numParams: 2, maxStack: 8 },
 			{ firstWord: DECODED_PAGE_WORDS + 32, wordCount: 3, numParams: 2, maxStack: 1024 },
 		], constants: [3, 4], closureRelocations: [{ wordIndex: 1, functionAddress: record }] });
-		const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image)];
+		const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 		for (const { cpu, memory } of machines) {
 			memory.writeBytes(record, image.romBytes.subarray(image.symbols.functionAddresses[1], image.symbols.functionAddresses[1] + BLUA32_FUNCTION_RECORD_SIZE));
 			cpu.runUntilDepth(0, 20000);

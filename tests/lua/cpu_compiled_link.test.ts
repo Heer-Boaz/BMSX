@@ -23,7 +23,7 @@ test('linked physical-page blocks preserve every grant and disconnect rewritten 
 	writeInstruction(text, 7, OpCode.ADD, 4, 0, 8);
 	writeInstruction(text, 8, OpCode.JMP, 0, 63, 55, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 9, maxStack: 12 }] });
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image)];
+	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
 		const frame = cpu.rootThread.frames[0];
@@ -126,7 +126,7 @@ test('linked memory side exits retain predecessor state before MMIO and synchron
 	const image = linkRawTestSystemBlua32({ text, functions: [
 		{ firstWord: 0, wordCount: 7, maxStack: 12 }, { firstWord: 7, wordCount: 1 },
 	], exceptionFunctionIndex: 1 });
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image)];
+	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text); memory.writeMappedU32LE(DYNAMIC_RAM_BASE + 0x800, 5);
 		const frame = cpu.rootThread.frames[0];

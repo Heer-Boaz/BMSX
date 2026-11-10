@@ -11,8 +11,8 @@ for (const extension of ['.glsl', '.wgsl']) {
 }
 
 async function main(): Promise<void> {
-	const [systemPath, cartPath, outputPrefix, cpuBackend = 'interpreter'] = process.argv.slice(2);
-	assert.ok(cpuBackend === 'interpreter' || cpuBackend === 'javascript', 'CPU backend must be interpreter or javascript');
+	const [systemPath, cartPath, outputPrefix, cpuBackend = 'default'] = process.argv.slice(2);
+	assert.ok(cpuBackend === 'default' || cpuBackend === 'interpreter' || cpuBackend === 'javascript', 'CPU backend must be default, interpreter or javascript');
 	const { CpuExecutionBackend } = await import('../../../machine/ts/machine/cpu/compiled_block');
 	const { Runtime } = await import('../../../machine/ts/machine/runtime/runtime');
 	const { parseSystemRomImage, parseCartridgePackage } = await import('../../../machine/ts/rompack/image');
@@ -43,7 +43,7 @@ async function main(): Promise<void> {
 		systemRomBytes: parseSystemRomImage(readFileSync(systemPath)).bytes,
 		cartridgeSlots: [cartridgeMediaFromPackage(parseCartridgePackage(readFileSync(cartPath))), null],
 		machineModel: PSX_MACHINE_SPEC,
-		cpuExecutionBackend: cpuBackend === 'javascript' ? CpuExecutionBackend.JavaScript : CpuExecutionBackend.Interpreter,
+		cpuExecutionBackend: cpuBackend === 'default' ? undefined : cpuBackend === 'javascript' ? CpuExecutionBackend.JavaScript : CpuExecutionBackend.Interpreter,
 	}, input);
 	const gpu = runtime.machine.gxGpu;
 	const backend = new HeadlessGPUBackend(256, 212, PSX_MACHINE_SPEC.gxGpuVramBytes);
@@ -193,7 +193,7 @@ async function main(): Promise<void> {
 			for (const block of page.compiledBlocks.entries) if (block !== null) ++compiledBlocks;
 		}
 	}
-	if (cpuBackend === 'javascript') assert.ok(compiledBlocks > 0, 'the replay must exercise actual generated JavaScript');
+	if (cpuBackend !== 'interpreter') assert.ok(compiledBlocks > 0, 'the replay must exercise actual generated JavaScript');
 	console.log(JSON.stringify({ cpuBackend, compiledBlocks }));
 	console.log(JSON.stringify({ host: 'ts-history', seekSteps, seekWorkMs, maxSeekStepMs, seekRestoreMs, historyCaptures, historyCaptureMs, checkpoints: history.checkpointCount, inputBytes: history.inputJournal.storageBytes }));
 	applyRuntimeSaveState(runtime, capture());

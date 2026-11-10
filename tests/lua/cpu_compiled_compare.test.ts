@@ -38,7 +38,7 @@ function values(cpu: CPU): Value[] {
 for (const op of [OpCode.EQ, OpCode.LT, OpCode.LE]) for (const expected of [false, true]) {
 	test(`generated comparison ${op}, expected ${expected}: kinds, reference identities, NaNs and UTF-8 order`, () => {
 		const image = comparisonImage(op, expected);
-		const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image)];
+		const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 		const inputs = machines.map(({ cpu }) => values(cpu));
 		const entry = image.image.functions[0].codeAddress;
 		for (const { cpu } of machines) cpu.runUntilDepth(0, 800);
@@ -67,7 +67,7 @@ test('comparison RK constants and every short grant agree with scalar execution'
 	const constants = [null, false, true, -0, NaN, Infinity, 0.25, '', 'a\0b', '\ue000', '\u{10000}'];
 	for (const op of [OpCode.EQ, OpCode.LT, OpCode.LE]) for (const selectors of [[-1, 1], [0, -2], [-10, -11]]) {
 		const image = comparisonImage(op, true, selectors[0], selectors[1], constants);
-		const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image)];
+		const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 		const entry = image.image.functions[0].codeAddress;
 		for (const { cpu } of machines) cpu.runUntilDepth(0, 800);
 		for (let grant = 1; grant <= 31; ++grant) for (const value of [null, false, NaN, -0, 0.25, Infinity]) {
@@ -107,7 +107,7 @@ test('comparison skips decode current WIDE bytes without retiring an independent
 	writeInstruction(text, 4, OpCode.MOV, 5, 2, 0);
 	writeInstruction(text, 5, OpCode.JMP, 0, 63, 58, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 6, maxStack: 8 }] });
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image)];
+	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
 		const frame = cpu.rootThread.frames[0]; frame.registers.setNumber(0, 0); frame.registers.setNumber(1, 1); frame.registers.setNumber(2, 73);
@@ -139,7 +139,7 @@ for (const [currentWide, skippedWide] of [[false, false], [true, false], [false,
 		const text = new Uint8Array(2 * INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.HALT, 0, 0, 0); writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
 		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 4 }, { firstWord: 1, wordCount: 1 }], exceptionFunctionIndex: 1 });
-		const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image)];
+		const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 		const end = RAM_BASE + PSX_MACHINE_SPEC.ramBytes, nextPc = end - (skippedWide ? INSTRUCTION_BYTES : 0);
 		const pc = nextPc - (currentWide ? 2 : 1) * INSTRUCTION_BYTES;
 		const code = new Uint8Array((currentWide || skippedWide ? 2 : 1) * INSTRUCTION_BYTES);

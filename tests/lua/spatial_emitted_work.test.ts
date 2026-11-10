@@ -203,7 +203,7 @@ for (const optLevel of [0, 3] as const) test(`actual spatial AOT and firmware ke
 			let field;
 			if (read.op === OpCode.GETFIELD) field = images.cartImage.constants[page.c[offset]];
 			else {
-				const key = page.rkC[offset];
+				const key = page.c[offset];
 				if (key < 0) field = images.cartImage.constants[-1 - key];
 				else if (registers.getTag(key) === ValueTag.String) field = cpu.stringPool.toString(registers.getStringId(key));
 			}

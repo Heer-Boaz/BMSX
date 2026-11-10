@@ -31,7 +31,7 @@ test('compiled CP0 loads retain full unsigned words and consume the live registe
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 9, maxStack: 10 }, { firstWord: 32, wordCount: 1 },
 		{ firstWord: 48, wordCount: 2 }], exceptionFunctionIndex: 2 });
 	for (const word of [0, 0x80000000, 0xffffffff, 0xa5a55a5a]) {
-		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image).cpu;
+		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 		for (const cpu of [js, ref]) {
 			const state = cpu.captureRuntimeState(); state.statusWord = (word & ~CPU_STATUS_USER_MODE_CURRENT) >>> 0;
 			state.causeWord = word; state.epcWord = (word ^ 0x13579bdf) >>> 0; state.badAddressWord = ~word >>> 0; state.luaFaultReasonWord = word;
@@ -66,7 +66,7 @@ test('compiled CP0 writes convert words without changing their sources or ignore
 	writeInstruction(text, 4, OpCode.MTC0, 12, COP0_CAUSE, 0);
 	writeInstruction(text, 5, OpCode.JMP, 0, 63, 58, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 6, maxStack: 13 }] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image).cpu;
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) { const r = cpu.rootThread.frames[0].registers; r.setNumber(0, 0); r.setNumber(1, 0); r.setTable(12, cpu.createTable()); cpu.runUntilDepth(0, 600); }
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2;
 	assert.equal(js.rootThread.frames[0].decodedPage!.compiledBlocks!.entries[entry]!.sourceWords, 6);
@@ -89,7 +89,7 @@ test('a compiled Status write returns for pending IRQ arbitration before its suc
 	writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
 	writeInstruction(text, 16, OpCode.HALT, 0, 0, 0); writeInstruction(text, 17, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 7 }, { firstWord: 16, wordCount: 2 }], irqFunctionIndex: 1 });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image);
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
 	for (const { cpu, memory, irqController } of [js, ref]) {
 		const frame = cpu.rootThread.frames[0]; frame.registers.setNumber(0, 0); frame.registers.setNumber(1, 0);
 		cpu.runUntilDepth(0, 400); frame.top = 0; frame.registers.setNumber(0, 1); frame.registers.setNumber(6, 73);
@@ -121,7 +121,7 @@ test('a later unknown selector keeps its own sparse fault edge after the privile
 	const source = faultLoopSource(OpCode.MFC0, false);
 	writeInstruction(source.text, 2, OpCode.MFC0, 6, COP0_EPC, 0); writeInstruction(source.text, 3, OpCode.MFC0, 12, 44, 0);
 	writeInstruction(source.text, 4, OpCode.JMP, 0, 63, 61, 255); source.functions[0].wordCount = 5;
-	const image = linkRawTestSystemBlua32(source), js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image).cpu;
+	const image = linkRawTestSystemBlua32(source), js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frames[0].registers; r.setNumber(0, CPU_STATUS_USER_MODE_CURRENT); r.setTable(12, cpu.createTable());
 		cpu.setGlobalByKey(cpu.stringPool.find('returnStatus')!, ValueTag.Number, 8, null); cpu.runUntilDepth(0, 900);
@@ -133,9 +133,9 @@ test('a later unknown selector keeps its own sparse fault edge after the privile
 });
 
 for (const op of [OpCode.MFC0, OpCode.MTC0] as const) for (const wide of [false, true]) {
-	test(`compiled ${OpCode[op]} privilege priority and WIDE=${wide} faults preserve destination/top and use native RFE`, () => {
+	test(`compiled opcode ${op} privilege priority and WIDE=${wide} faults preserve destination/top and use native RFE`, () => {
 		const image = linkRawTestSystemBlua32(faultLoopSource(op, wide));
-		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image).cpu;
+		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 		let conversions = 0;
 		const registers = js.rootThread.frames[0].registers, getNumber = registers.getNumber.bind(registers);
 		registers.getNumber = index => { if (index === 12) ++conversions; return getNumber(index); };
@@ -162,7 +162,7 @@ for (const op of [OpCode.MFC0, OpCode.MTC0] as const) for (const wide of [false,
 
 test('a warmed WIDE RFE rejects an ordinary frame after returning to the active EPC', () => {
 	const image = linkRawTestSystemBlua32(faultLoopSource(OpCode.MFC0, false));
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image).cpu;
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frames[0].registers; r.setNumber(0, CPU_STATUS_USER_MODE_CURRENT); r.setTable(12, cpu.createTable());
 		cpu.setGlobalByKey(cpu.stringPool.find('returnStatus')!, ValueTag.Number, 0xa5a5a508, null); cpu.runUntilDepth(0, 900);
@@ -183,7 +183,7 @@ test('compiled EXEC replaces frames after returning and rejects a non-static tar
 	writeInstruction(text, 32, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2 }, { firstWord: 16, wordCount: 2 },
 		{ firstWord: 32, wordCount: 1, staticClosure: false }], globalNames: ['next', 'start'] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image).cpu;
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		cpu.setGlobalByKey(cpu.stringPool.find('next')!, ValueTag.Number, image.symbols.functionAddresses[1] + 0.75, null);
 		cpu.setGlobalByKey(cpu.stringPool.find('start')!, ValueTag.Number, image.symbols.functionAddresses[0], null); cpu.runUntilDepth(0, 800);
@@ -209,7 +209,7 @@ test('compiled NMI return samples active EPC then restores retained words withou
 	writeInstruction(text, 0, OpCode.K1, 0, 0, 0); writeInstruction(text, 1, OpCode.ADD, 1, 1, 0); writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255);
 	writeInstruction(text, 16, OpCode.MFC0, 0, COP0_CAUSE, 0); writeInstruction(text, 17, OpCode.WIDE, 255, 255, 255); writeInstruction(text, 18, OpCode.RFE, 63, 63, 63, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 2 }, { firstWord: 16, wordCount: 3 }], exceptionFunctionIndex: 1 });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image).cpu;
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const state = cpu.captureRuntimeState(); state.statusWord = 0xa5a5a511; state.causeWord = 0xdeadbeef; state.epcWord = 0x12345679;
 		state.badAddressWord = 0x87654321; state.luaFaultReasonWord = 0x80000000; state.exceptionDomainWord = 7;

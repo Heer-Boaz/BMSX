@@ -95,6 +95,28 @@ their tooling owners. Diagnostic presentation resolves raw machine observations
 against installed symbols outside the core; it does not store formatted source
 errors in CPU state.
 
+### CPU execution backends
+
+The TypeScript CPU defaults to generated JavaScript; the native build defaults
+to SLJIT-generated machine code. The interpreter remains an explicit execution
+choice and the reference for backend comparisons. `Runtime` and `Machine`
+forward an explicit TS backend choice; the CPU owns its default. Native product
+configuration selects codegen explicitly, including when reusing a CMake cache.
+
+Decoded instructions and generated blocks belong to the CPU's execution cache.
+They are derived from machine memory and its mappings, not from source models,
+symbols or editor revisions. The memory and execution owners invalidate those
+caches. Checkpoints contain guest state, never generated functions, executable
+pointers or cache-link topology.
+
+Both engines consume the same guest values, frames, heap and control state.
+Generated execution retains intermediate values in locals or native registers
+where possible and publishes required state at semantic exits. Allocation,
+checked bus operations, exceptions and frame transitions use the CPU's shared
+semantic owners rather than a second implementation of the machine contract.
+Debug observation and bounded execution retain their ordinary CPU boundaries;
+hosts and Studio do not implement another instruction loop.
+
 ### Scheduling and host time
 
 The device scheduler orders CPU slices and device service deadlines in machine

@@ -16,6 +16,10 @@ import { compileLuaSource } from './cpu_test_harness';
 import { compileCoroutineTest } from '../helpers/coroutine';
 import { luaFloorDivide, luaModulo } from '../../machine/ts/spec/blua32/numeric';
 import { luaPow } from '../../machine/ts/spec/blua32/pow';
+import { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import { captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import type { Blua32ExecutionImage } from '../../machine/ts/machine/cpu/execution_image';
 
 function compiledEntries(cpu: CPU): number {
 	let count = 0;
@@ -40,10 +44,40 @@ function loopImage() {
 	return linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 7, maxStack: 257 }] });
 }
 
+test('an unconfigured Runtime generates JavaScript while the explicit interpreter remains a distinct reference', () => {
+	const address = DYNAMIC_RAM_BASE + 0x1000;
+	const image = linkTestSystemBlua32(compileLuaSource(`
+local n = 0
+for i = 1, 256 do n = n + i; mem32le[${address}] = n end
+return n`, 'cpu-default.lua'));
+	const rom = new Uint8Array((image.romBytes.length + MAPPED_PAGE_BYTE_SIZE - 1) & -MAPPED_PAGE_BYTE_SIZE);
+	rom.set(image.romBytes);
+	const options = { systemRomBytes: rom, cartridgeSlots: [null, null] as [null, null], machineModel: PSX_MACHINE_SPEC };
+	const input = { sampleInputControllerSnapshot: () => {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect: () => {} };
+	const fast = new Runtime(options, input), scalar = new Runtime({ ...options, cpuExecutionBackend: CpuExecutionBackend.Interpreter }, input);
+	const images: Blua32ExecutionImage[] = [];
+	for (const runtime of [fast, scalar]) {
+		runtime.boot(); const cpu = runtime.machine.cpu;
+		images.push(cpu.rootThread.frames[0].executionImage);
+		let result = RunResult.Yielded;
+		while (result === RunResult.Yielded) result = cpu.runUntilDepth(0, 31);
+		assert.equal(result, RunResult.Halted); assert.deepEqual(runtime.readCompletionValues(), [32896]);
+		assert.equal(runtime.machine.memory.readMappedWord(address), 32896);
+	}
+	assert.deepEqual(captureRuntimeSaveState(fast), captureRuntimeSaveState(scalar));
+	assert.equal(fast.machine.cpu.instructionBudgetRemaining, scalar.machine.cpu.instructionBudgetRemaining);
+	let generated = 0;
+	for (const page of images[0].decodedPages.values()) if (page.compiledBlocks !== null) {
+		for (const block of page.compiledBlocks.entries) if (block !== null) ++generated;
+	}
+	assert.ok(generated > 0, 'the default Runtime must actually execute the codegen route');
+	for (const page of images[1].decodedPages.values()) assert.equal(page.compiledBlocks, null);
+});
+
 test('generated JavaScript warms within one slice and preserves every budget boundary and WIDE extent', () => {
 	const image = loopImage();
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
-	const ref = createTestSystemCpu(image).cpu;
+	const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) cpu.rootThread.frames[0].registers.setNumber(1, 0);
 	for (const grant of [600, ...Array.from({ length: 40 }, (_, i) => [0, 1, 2, 3, 5, 6, 7, 63, 257][i % 9])]) {
 		assert.equal(js.runUntilDepth(0, grant), ref.runUntilDepth(0, grant));
@@ -53,7 +87,7 @@ test('generated JavaScript warms within one slice and preserves every budget bou
 	assert.ok(compiledEntries(js) > 0, 'the JavaScript backend really installed generated functions');
 });
 
-for (const op of [OpCode.SHR, OpCode.MOD, OpCode.FLOORDIV, OpCode.POW]) test(`multiple numeric definitions stay local across ${OpCode[op]} and copies until the actual exit`, () => {
+for (const op of [OpCode.SHR, OpCode.MOD, OpCode.FLOORDIV, OpCode.POW]) test(`multiple numeric definitions stay local across opcode ${op} and copies until the actual exit`, () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.K1, 0, 0, 0);
 	writeInstruction(text, 1, OpCode.KSMI, 1, 0, 5);
@@ -101,7 +135,7 @@ test('generated moves retain reference values, string ids, boolean kinds and con
 	for (const constant of [null, false, true, 'literal', -0, NaN, Infinity]) {
 		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 9, maxStack: 12 }], constants: [constant] });
 		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
-		const ref = createTestSystemCpu(image).cpu;
+		const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 		for (const cpu of [js, ref]) cpu.rootThread.frames[0].registers.setTable(0, cpu.createTable(0, 0));
 		js.runUntilDepth(0, 900);
 		ref.runUntilDepth(0, 900);
@@ -117,7 +151,7 @@ test('generated moves retain reference values, string ids, boolean kinds and con
 
 for (const op of [OpCode.ADD, OpCode.SUB, OpCode.MUL, OpCode.DIV, OpCode.MOD, OpCode.FLOORDIV, OpCode.POW,
 	OpCode.BAND, OpCode.BOR, OpCode.BXOR, OpCode.SHL, OpCode.SHR, OpCode.UNM, OpCode.BNOT]) {
-	test(`generated opcode ${OpCode[op]} agrees with scalar dispatch for numeric edges, non-Numbers and destination aliases`, () => {
+	test(`generated opcode ${op} agrees with scalar dispatch for numeric edges, non-Numbers and destination aliases`, () => {
 		const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 		const values = [0, -0, 0.25, -0.75, 1, -1, 31, 32, 2147483648, -2147483648,
 			10, 0.05, 2, 1 / 12, 1.0000000000000002, 2147483649,
@@ -129,7 +163,7 @@ for (const op of [OpCode.ADD, OpCode.SUB, OpCode.MUL, OpCode.DIV, OpCode.MOD, Op
 			writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255);
 			const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 4 }] });
 			const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
-			const ref = createTestSystemCpu(image).cpu;
+			const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 			for (const cpu of [js, ref]) cpu.runUntilDepth(0, 90);
 			assert.ok(compiledEntries(js) > 0);
 			const frame = js.rootThread.frames[0];
@@ -180,7 +214,7 @@ test('generated RK constants preserve numeric kind checks and signed selectors',
 	for (const left of [null, false, true, '7', -0, NaN, Infinity, -4294967296.75]) {
 		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 7, maxStack: 6 }], constants: [left, -1] });
 		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
-		const ref = createTestSystemCpu(image).cpu;
+		const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 		js.runUntilDepth(0, 400);
 		ref.runUntilDepth(0, 400);
 		assert.ok(compiledEntries(js) > 0);
@@ -195,7 +229,8 @@ test('dependent generated instructions preserve live values, raw copies and ever
 		OpCode.BAND, OpCode.BOR, OpCode.BXOR, OpCode.SHL, OpCode.SHR, OpCode.UNM, OpCode.BNOT,
 		OpCode.MOV, OpCode.LOADK, OpCode.KNIL, OpCode.KFALSE, OpCode.KTRUE,
 		OpCode.K0, OpCode.K1, OpCode.KM1, OpCode.KSMI, OpCode.NOT];
-	const constants = [-0, 0.25, -4294967296.75, Infinity, NaN, null, false, true, 'literal'];
+	const initialValues = [-0, 0.25, -4294967296.75, Infinity, NaN, null, false, true];
+	const constants = [...initialValues, 'literal'];
 	let random = 0x915acd38;
 	const next = () => {
 		random ^= random << 13; random ^= random >>> 17; random ^= random << 5;
@@ -224,10 +259,10 @@ test('dependent generated instructions preserve live values, raw copies and ever
 		writeInstruction(text, 32, OpCode.JMP, 0, (-33 >>> 6) & 63, -33 & 63, 255);
 		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 33, maxStack: 8 }], constants });
 		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
-		const ref = createTestSystemCpu(image).cpu;
+		const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 		for (const cpu of [js, ref]) {
 			const registers = cpu.rootThread.frames[0].registers;
-			for (let reg = 0; reg < 8; ++reg) registers.set(reg, constants[reg]);
+			for (let reg = 0; reg < initialValues.length; ++reg) registers.set(reg, initialValues[reg]);
 			registers.setTable(0, cpu.createTable(0, 0));
 			registers.setNumber(7, -0);
 		}
@@ -259,7 +294,7 @@ end
 return n, t.value, other.value
 `, 0);
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
-	const ref = createTestSystemCpu(image).cpu;
+	const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) cpu.installBootPrimitives();
 	const executionImage = js.rootThread.frames[0].executionImage;
 	let result = RunResult.Yielded;
@@ -290,7 +325,7 @@ test('field cache hits stay in one generated block and misses publish only the e
 		{ firstWord: 0, wordCount: 6, maxStack: 8 }, { firstWord: 6, wordCount: 1 },
 	], constants: ['field'], exceptionFunctionIndex: 1 });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
-	const ref = createTestSystemCpu(image).cpu;
+	const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	const entry = image.image.functions[0].codeAddress;
 	for (const cpu of [js, ref]) {
 		const table = cpu.createTable(0, 1);
@@ -354,7 +389,7 @@ for i = 1, 200 do n = step(n) end
 return n
 `, 'generated-calls.lua'));
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
-	const ref = createTestSystemCpu(image).cpu;
+	const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	let result = RunResult.Yielded;
 	let installed = 0;
 	for (let slice = 0; slice < 1000 && result === RunResult.Yielded; ++slice) {
@@ -383,7 +418,7 @@ for (const op of [OpCode.JMPIF, OpCode.JMPIFNOT]) test(`generated conditional ${
 	writeInstruction(text, 5, OpCode.JMP, 0, 63, 58, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 6, maxStack: 64 }] });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
-	const ref = createTestSystemCpu(image).cpu;
+	const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) cpu.runUntilDepth(0, 600);
 	assert.ok(compiledEntries(js) > 0);
 	for (const value of [null, false, true, 0, -0, NaN, Infinity, -1]) {
@@ -416,7 +451,7 @@ for (const standalone of [false, true]) test(`generated HALT commits its thread/
 		{ firstWord: 0, wordCount: 6, maxStack: 3 }, { firstWord: 6, wordCount: 1 }, { firstWord: 7, wordCount: 2 },
 	], exceptionFunctionIndex: 1, irqFunctionIndex: 1 });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
-	const ref = createTestSystemCpu(image).cpu;
+	const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	const entry = image.image.functions[0].codeAddress;
 	const startPc = entry + (standalone ? 2 : 0) * INSTRUCTION_BYTES;
 	const grant = standalone ? 1 : 3;
@@ -522,7 +557,7 @@ for (const wide of [false, true]) test(`generated CALL/RET preserve full state a
 		{ firstWord: 0, wordCount: calleeStart, maxStack: 8 }, { firstWord: calleeStart, wordCount: 2 }, { firstWord: calleeStart + 2, wordCount: 1 },
 	], exceptionFunctionIndex: 2, closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }] });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
-	const ref = createTestSystemCpu(image).cpu;
+	const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) assert.equal(cpu.runUntilDepth(0, 10001), RunResult.Yielded);
 	assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 	const executionImage = js.rootThread.frames[0].executionImage;

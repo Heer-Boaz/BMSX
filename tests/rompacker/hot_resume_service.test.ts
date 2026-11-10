@@ -27,6 +27,8 @@ import { createRuntimeDebuggerState, discardRuntimeDebuggerPlans, willExecuteRun
 import { HotResumeService } from '../../ide/workbench/services/execution/hot_resume';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { EditorTextModelService, editorTextModelService } from '../../ide/editor/model/model_service';
+import { valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
+import type { Closure } from '../../machine/ts/machine/cpu/closure';
 
 async function fixture(t: TestContext, init = '') {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-hot-resume-'));
@@ -83,6 +85,49 @@ test('Hot Resume captures admitted documents, not later typing; no-init installa
 	assert.equal(f.sources.cartridgeSlots[0]!.installedBlua32Sources.get('entry'), captured.source);
 	assert.notEqual(f.model.buffer.getText(), captured.source);
 	assert.equal(f.model.dirty, true, 'application is not a source save');
+});
+
+test('Hot Resume retires warmed generated code and runs the edited function without rebooting its caller', async t => {
+	const f = await fixture(t, `function calculate(x) return x + 3 end
+retained = 0
+for i = 1, 512 do retained = calculate(retained) end`);
+	assert.equal(f.cpu.isHaltedUntilIrq(), true);
+	assert.equal(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('retained')), 1536);
+	const image = f.cpu.activeThread.frames[f.cpu.getFrameDepth() - 1].executionImage;
+	let generated = 0;
+	for (const page of image.decodedPages.values()) if (page.compiledBlocks !== null) {
+		for (const block of page.compiledBlocks.entries) if (block !== null) ++generated;
+	}
+	assert.ok(generated > 0, 'the installed program must be hot before the media update');
+	const depth = f.cpu.getFrameDepth();
+	let calculate = f.cpu.getGlobalByKey(f.cpu.stringPool.intern('calculate'));
+	assert.equal(valueTag(calculate), ValueTag.Closure);
+	f.cpu.beginCompletionCall(calculate as Closure, [2]);
+	assert.equal(f.cpu.runUntilDepth(depth, 10000), RunResult.Halted);
+	assert.deepEqual(f.runtime.readCompletionValues(), [5]);
+	const parked = f.cpu.activeThread.frames[depth - 1];
+	f.cpu.setGlobalByKey(f.cpu.stringPool.intern('retained'), ValueTag.Number, 9876, null);
+	const source = f.model.buffer.getText(), offset = source.indexOf('x + 3');
+	assert.ok(offset >= 0);
+	f.model.pushEditOperations([{ offset, deleteLength: 'x + 3'.length, text: 'x + 7' }]);
+	assert.deepEqual(await f.service.resume().completion, { status: 'completed', applied: true });
+	assert.equal(f.cpu.getFrameDepth(), depth); assert.equal(f.cpu.activeThread.frames[depth - 1], parked);
+	assert.equal(f.cpu.isHaltedUntilIrq(), true);
+	assert.equal(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('retained')), 9876, 'Hot Resume must not repeat startup or replace live globals');
+	const caller = f.cpu.readFramePc(depth - 1); // Installation may relocate the parked instruction.
+	calculate = f.cpu.getGlobalByKey(f.cpu.stringPool.intern('calculate'));
+	assert.equal(valueTag(calculate), ValueTag.Closure);
+	for (let attempt = 0; attempt < 12; ++attempt) {
+		f.cpu.beginCompletionCall(calculate as Closure, [2]);
+		assert.equal(f.cpu.runUntilDepth(depth, 10000), RunResult.Halted);
+		assert.deepEqual(f.runtime.readCompletionValues(), [9], 'cold and regenerated bodies must use the edited instructions');
+	}
+	let regenerated = 0;
+	for (const page of f.cpu.activeThread.frames[depth - 1].executionImage.decodedPages.values()) if (page.compiledBlocks !== null) {
+		for (const block of page.compiledBlocks.entries) if (block !== null) ++regenerated;
+	}
+	assert.ok(regenerated > 0, 'the edited callable must become generated code again');
+	assert.equal(f.cpu.getFrameDepth(), depth); assert.equal(f.cpu.readFramePc(depth - 1), caller); assert.equal(f.cpu.isHaltedUntilIrq(), true);
 });
 
 test('build rejection has a result without poisoning execution; repair can use the same queue', async t => {

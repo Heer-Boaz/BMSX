@@ -19,7 +19,7 @@ test('compiled generic arrays and string-cache probes retain all kinds across ke
 	writeInstruction(text, 5, OpCode.MOV, 5, 9, 0);
 	writeInstruction(text, 6, OpCode.JMP, 0, 63, 57, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 7, maxStack: 12 }] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image).cpu;
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frames[0].registers;
 		r.setTable(0, cpu.createTable(4, 1)); r.setNumber(1, 1); r.setNumber(2, 3); cpu.runUntilDepth(0, 900);
@@ -28,8 +28,8 @@ test('compiled generic arrays and string-cache probes retain all kinds across ke
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const block = page.compiledBlocks!.entries[entry]!;
 	assert.equal(block.sourceWords, 7);
-	for (const key of [1, 2, 4, 5, 0, -0, -7, 1.5, 2147483647, 2147483648, 4294967297, NaN, Infinity, -Infinity, false, true, 'field']) {
-		for (const value of [null, false, true, -0, NaN, Infinity, 'value']) {
+	for (const key of [1, 2, 4, 5, 0, -0, -7, 1.5, 2147483647, 2147483648, 4294967297, NaN, Infinity, -Infinity, false, true, 'field'] as const) {
+		for (const value of [null, false, true, -0, NaN, Infinity, 'value'] as const) {
 			for (const cpu of [js, ref]) {
 				const r = cpu.rootThread.frames[0].registers;
 				r.set(1, key === 'field' ? valueString(cpu.stringPool.intern(key)) : key);
@@ -58,7 +58,7 @@ for (const generic of [false, true]) test(`compiled array reads resolve inherite
 	writeInstruction(text, 1, OpCode.MOV, 4, 3, 0);
 	writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 5 }] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image).cpu;
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const own = cpu.createTable(2, 0), parent = cpu.createTable(2, 0), meta = cpu.createTable(0, 1);
 		parent.setInteger(1, 73); meta.setStringKey(cpu.stringPool.intern('__index'), parent); own.metatable = meta;
@@ -83,7 +83,7 @@ test('compiled array stores advance length through hash entries and shorten it o
 	writeInstruction(text, 3, OpCode.ADD, 4, 8, 3);
 	writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 9 }] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image).cpu;
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const table = cpu.createTable(2, 4);
 		for (let i = 1; i <= 5; ++i) table.setInteger(i, i);
@@ -105,7 +105,7 @@ test('compiled UTF-8 length retains live definitions and destination/source alia
 	writeInstruction(text, 3, OpCode.ADD, 3, 2, 4);
 	writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 5 }] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image).cpu;
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		cpu.rootThread.frames[0].registers.setStringId(1, cpu.stringPool.intern('Aé雪\0😀')); cpu.runUntilDepth(0, 500);
 	}
@@ -123,7 +123,7 @@ test('compiled SELF publishes its original receiver and top before a failing inh
 	writeInstruction(text, 32, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 10 },
 		{ firstWord: 32, wordCount: 1 }], constants: ['method'], exceptionFunctionIndex: 1 });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image).cpu;
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const table = cpu.createTable(0, 1); table.setStringKey(cpu.stringPool.intern('method'), 73);
 		cpu.rootThread.frames[0].registers.setTable(9, table); cpu.runUntilDepth(0, 300);
@@ -152,7 +152,7 @@ test('compiled nil-key traps precede any invalid table mutation or destination w
 	writeInstruction(text, 32, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 8 },
 		{ firstWord: 32, wordCount: 1 }], exceptionFunctionIndex: 1 });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image).cpu;
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frames[0].registers;
 		r.setTable(0, cpu.createTable(2)); r.setNumber(1, 1); r.setNumber(2, 73); cpu.runUntilDepth(0, 500);
@@ -175,7 +175,7 @@ test('compiled NEWT materializes allocation roots and leaves destination untouch
 	writeInstruction(text, 32, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 16 },
 		{ firstWord: 32, wordCount: 1 }], globalNames: ['retained'], exceptionFunctionIndex: 1 });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image).cpu;
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) cpu.runUntilDepth(0, 100);
 	const frame = js.rootThread.frames[0], page = frame.decodedPage!, entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	assert.equal(page.compiledBlocks!.entries[entry]!.terminal.exit, CompiledBlockExit.AllocateTable);

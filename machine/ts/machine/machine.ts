@@ -54,7 +54,7 @@ export class Machine {
 		public readonly memory: Memory,
 		input: InputControllerInputSource,
 		model: MachineModelSpec,
-		cpuExecutionBackend = CpuExecutionBackend.Interpreter,
+		cpuExecutionBackend?: CpuExecutionBackend,
 	) {
 		this.cartridgeController = this.memory.cartridgeController;
 		this.irqController = new IrqController(this.memory);

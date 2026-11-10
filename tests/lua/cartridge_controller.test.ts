@@ -23,7 +23,6 @@ import {
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import {
-	CARTRIDGE_MAILBOX_CONTROL_DREQ_READ,
 	CARTRIDGE_MAILBOX_CONTROL_DREQ_WRITE,
 	CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER,
 	CARTRIDGE_MAILBOX_CONTROL_OFFSET,

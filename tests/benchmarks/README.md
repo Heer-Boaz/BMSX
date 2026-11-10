@@ -5,27 +5,31 @@ C++ interpreter and native codegen. C++ comparison uses **two actual binaries**;
 an observer hook forcing scalar execution in a native-enabled binary is not the
 interpreter reference.
 
+Production defaults to generated JS and C++ native execution. The gate selects
+both reference and generated modes explicitly so a default change or reused
+CMake cache cannot silently turn an interpreter comparison into codegen/codegen.
+
 ```sh
-cmake -S machine/cpp -B build-native-cpu-blocks -G Ninja \
-  -DCMAKE_BUILD_TYPE=Debug -DBMSX_BUILD_TESTS=ON \
+cmake -S machine/cpp -B build-native-cpu-default -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DBMSX_BUILD_TESTS=ON \
   -DBMSX_ENABLE_NATIVE_BLOCKS=ON -DBMSX_ENABLE_GLES2=OFF -DBMSX_ENABLE_ZLIB=OFF
-cmake -S machine/cpp -B build-native-cpu-scalar -G Ninja \
-  -DCMAKE_BUILD_TYPE=Debug -DBMSX_BUILD_TESTS=ON \
+cmake -S machine/cpp -B build-native-cpu-default-scalar -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DBMSX_BUILD_TESTS=ON \
   -DBMSX_ENABLE_NATIVE_BLOCKS=OFF -DBMSX_ENABLE_GLES2=OFF -DBMSX_ENABLE_ZLIB=OFF
-cmake --build build-native-cpu-blocks --target bmsx_cpu_execution_benchmark --parallel 4
-cmake --build build-native-cpu-scalar --target bmsx_cpu_execution_benchmark --parallel 4
+cmake --build build-native-cpu-default --target bmsx_cpu_execution_benchmark --parallel 4
+cmake --build build-native-cpu-default-scalar --target bmsx_cpu_execution_benchmark --parallel 4
 
 npm run test:exec -- npx tsx --tsconfig tsconfig.base.json \
   tests/benchmarks/cpu_execution.ts 1000000 3 \
-  --native build-native-cpu-blocks/bmsx_cpu_execution_benchmark \
-  --interpreter build-native-cpu-scalar/bmsx_cpu_execution_benchmark \
+  --native build-native-cpu-default/bmsx_cpu_execution_benchmark \
+  --interpreter build-native-cpu-default-scalar/bmsx_cpu_execution_benchmark \
   --output /tmp/bmsx-cpu-gate > /tmp/bmsx-cpu-gate.jsonl
 ```
 
-Use matching compiler/build options for the two C++ builds. `Debug` above retains
-assertions; the project also applies its ordinary optimization flags. Record the
-compiler, CPU and build flags alongside results. Do not compare Debug with
-Release, or treat QEMU throughput as hardware throughput.
+Use matching compiler/build options for the two C++ builds. Use `Release` for
+production throughput; `Debug` also retains assertions and is a distinct gate.
+Record the compiler, CPU and build flags alongside results. Do not compare Debug
+with Release, or treat QEMU throughput as hardware throughput.
 
 The default compiler optimization level is O3; `--opt-level 0` tests unoptimized
 Lua. Optional `--filter 'math|concat|closure'` selects workloads and

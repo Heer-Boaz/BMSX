@@ -17,7 +17,7 @@ option(BMSX_BUILD_SDL "Build SDL standalone executable" OFF)
 option(BMSX_BUILD_TESTS "Build unit tests" OFF)
 option(BMSX_BUILD_EGL_TESTS "Build headless EGL renderer conformance tests (requires GLES2 and EGL 1.5)" OFF)
 option(BMSX_ENABLE_LTO "Enable Link Time Optimization" OFF)
-option(BMSX_ENABLE_NATIVE_BLOCKS "Generate native CPU blocks with precise side exits" OFF)
+option(BMSX_ENABLE_NATIVE_BLOCKS "Generate native CPU blocks with precise side exits" ON)
 option(BMSX_ENABLE_ZLIB "Enable PNG screenshot output" ON)
 set(BMSX_ENABLE_GLES2_DEFAULT ON)
 # Previously GLES2 was disabled by default on Windows; enable by default on all platforms

@@ -24,7 +24,7 @@ test('compiled globals use the live banks across growth, keep namespaces distinc
 	writeInstruction(text, 7, OpCode.JMP, 0, 63, 56, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 8, maxStack: 16 }],
 		globalNames: ['shared', 'copied', 'numeric'], systemGlobalNames: ['shared', 'copied', 'numeric'] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image).cpu;
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) cpu.runUntilDepth(0, 1100);
 	const frame = js.rootThread.frames[0], page = frame.decodedPage!;
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
@@ -33,7 +33,7 @@ test('compiled globals use the live banks across growth, keep namespaces distinc
 	for (const cpu of [js, ref]) for (let i = 0; i < 257; ++i) {
 		cpu.setGlobalByKey(cpu.stringPool.intern(`grown-${i}`), ValueTag.Number, i, null);
 	}
-	for (const value of [null, false, true, -0, NaN, Infinity, 'text']) {
+	for (const value of [null, false, true, -0, NaN, Infinity, 'text'] as const) {
 		for (const cpu of [js, ref]) {
 			const r = cpu.rootThread.frames[0].registers;
 			r.set(12, value === 'text' ? valueString(cpu.stringPool.intern(value)) : value);
@@ -71,7 +71,7 @@ for (const alias of [false, true]) test(`compiled LOADNIL and LOADKR preserve ki
 	writeInstruction(text, 6, OpCode.JMP, 0, 63, 57, 255);
 	const constants = [null, false, true, 'literal', -0, NaN, Infinity, 11];
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 7, maxStack: 16 }], constants });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image).cpu;
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) { cpu.rootThread.frames[0].registers.setNumber(2, 0); cpu.runUntilDepth(0, 700); }
 	const frame = js.rootThread.frames[0], page = frame.decodedPage!;
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
@@ -99,7 +99,7 @@ test('a hot WIDE LOADKR fault publishes its prefix before trapping without writi
 		writeInstruction(text, 2, OpCode.LOADKR, 0, 1, 0); // R256 = K[U32(R513)], not RK[513].
 		writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
 		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 514 }], constants: [11] });
-		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image).cpu;
+		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 		for (const cpu of [js, ref]) { cpu.rootThread.frames[0].registers.setNumber(513, 0); cpu.runUntilDepth(0, 300); }
 		const frame = js.rootThread.frames[0], page = frame.decodedPage!;
 		const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
@@ -130,7 +130,7 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 	writeInstruction(text, 7, OpCode.GETUP, 6, 1, 0);
 	writeInstruction(text, 8, OpCode.JMP, 0, 63, 55, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 9, maxStack: 16 }] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image).cpu;
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const frame = cpu.rootThread.frames[0];
 		const open: Upvalue = { hashId: 100, open: true, index: 0, frame, valueTag: ValueTag.Nil, valueScalar: NaN, valueReference: null, nextOpen: null };
@@ -141,7 +141,7 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 	const frame = js.rootThread.frames[0], page = frame.decodedPage!;
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	assert.equal(page.compiledBlocks!.entries[entry]!.sourceWords, 9);
-	for (const value of [null, false, true, -0, NaN, 'upvalue']) {
+	for (const value of [null, false, true, -0, NaN, 'upvalue'] as const) {
 		for (const cpu of [js, ref]) cpu.rootThread.frames[0].registers.set(12,
 			value === 'upvalue' ? valueString(cpu.stringPool.intern(value)) : value);
 		js.runUntilDepth(0, 11); ref.runUntilDepth(0, 11);
@@ -167,7 +167,7 @@ test('an empty compiled open VARARG changes top without touching or growing the 
 	writeInstruction(text, 0, OpCode.VARARG, 31, 0, 0);
 	writeInstruction(text, 1, OpCode.JMP, 0, 63, 62, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 4 }] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image).cpu;
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		cpu.rootThread.frames[0].registers.setNumber(0, 73); cpu.runUntilDepth(0, 600);
 	}
@@ -196,7 +196,7 @@ for (const fixed of [0, 5]) test(`hot VARARG handles exact top resets, nil paddi
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 160 },
 		{ firstWord: 16, wordCount: 9, maxStack: 16, isVararg: true }],
 		closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image).cpu;
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		cpu.runUntilDepth(0, 2);
 		cpu.rootThread.frames[0].top = 1;
