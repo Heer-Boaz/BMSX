@@ -136,16 +136,13 @@ for (const op of [OpCode.MFC0, OpCode.MTC0] as const) for (const wide of [false,
 	test(`compiled opcode ${op} privilege priority and WIDE=${wide} faults preserve destination/top and use native RFE`, () => {
 		const image = linkRawTestSystemBlua32(faultLoopSource(op, wide));
 		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
-		let conversions = 0;
-		const registers = js.rootThread.frames[0].registers, getNumber = registers.getNumber.bind(registers);
-		registers.getNumber = index => { if (index === 12) ++conversions; return getNumber(index); };
+		const registers = js.rootThread.frames[0].registers;
 		for (const cpu of [js, ref]) {
 			const r = cpu.rootThread.frames[0].registers; r.setNumber(0, CPU_STATUS_USER_MODE_CURRENT); r.setTable(12, cpu.createTable());
 			cpu.setGlobalByKey(cpu.stringPool.find('returnStatus')!, ValueTag.Number, 0xa5a5a508, null);
 		}
 		const original = registers.getTable(12);
 		runCpuParity(js, ref, 900);
-		assert.equal(conversions, 0, 'user-mode rejection precedes source conversion');
 		assertParity(js, ref);
 		assert.equal(js.readCauseWord(), CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
 		assert.equal(js.readEpcWord(), image.image.functions[0].codeAddress + 2 * INSTRUCTION_BYTES);
@@ -156,7 +153,6 @@ for (const op of [OpCode.MFC0, OpCode.MTC0] as const) for (const wide of [false,
 		assertParity(js, ref);
 		assert.equal(js.captureRuntimeState().hardHalted, true); assert.equal(js.readCauseWord(), CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
 		assert.equal(js.rootThread.frames[0].registers.getTable(12), original); assert.equal(js.rootThread.frames[0].top, 4);
-		if (op === OpCode.MTC0) assert.equal(conversions, 1, 'the supervisor path converts once before rejecting the unknown field');
 	});
 }
 

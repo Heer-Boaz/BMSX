@@ -212,13 +212,13 @@ export type EmittedJavaScriptBlock = {
 /** Emit a segment and its precise side exits; the region owns control flow. */
 export function emitJavaScriptBlock(
 	page: DecodedInstructionPage, plan: CompiledBlockSource,
-	image: Blua32ExecutionImage, memory: Memory, exits: CompiledBlockExitSite[], residents: ReadonlyMap<number, boolean>,
+	image: Blua32ExecutionImage, memory: Memory, exits: CompiledBlockExitSite[], residents: ReadonlyMap<number, boolean>, outputs: ReadonlySet<number>,
 ): EmittedJavaScriptBlock {
 	const { firstWord, endWord, skippedInstructionWidth } = plan;
 	let pc = plan.pc;
 	const firstExit = exits.length;
 	const source: string[] = [];
-	const registers = new JavaScriptRegisterCache(image, residents);
+	const registers = new JavaScriptRegisterCache(image, residents, outputs);
 	let cycles = 0;
 	let sourceWords = 0;
 	let registerTop = 0;

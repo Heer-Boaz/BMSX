@@ -25,18 +25,32 @@ export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: rea
 	image: Blua32ExecutionImage, memory: Memory, strings: StringPool, globalSlots: ValueSlots,
 	systemGlobalSlots: ValueSlots, cop0Words: Uint32Array): CompiledRegion {
 	const exits: CompiledBlockExitSite[] = [];
-	const residents = planRegionRegisters(page, plans);
-	const blocks = plans.map(plan => emitJavaScriptBlock(page, plan, image, memory, exits, residents));
+	const registers = planRegionRegisters(page, plans), residents = registers.map(plan => plan.entry);
+	const blocks: ReturnType<typeof emitJavaScriptBlock>[] = [];
+	for (let index = 0; index < plans.length; ++index) {
+		// Helper-success spans inherit all actual definitions and no new admission.
+		if (index !== 0 && plans[index - 1].fallthrough) residents[index] = blocks[index - 1].registers.residents;
+		blocks.push(emitJavaScriptBlock(page, plans[index], image, memory, exits, residents[index], registers[index].outputs));
+	}
 	for (let index = blocks.length - 1; index >= 0; --index) {
 		if (plans[index].fallthrough) {
 			blocks[index].sourceWords += blocks[index + 1].sourceWords;
 		}
 	}
 	const entries = new Map(plans.map((plan, index) => [plan.pc, index]));
+	const bindings = new Set(blocks.flatMap(block => [...block.registers.residents.keys()]));
 	const source = ['"use strict"; return function(r,k,p,frame,entry,state){',
 		'let budget=state.remainingCycles,top=state.registerTop,exit;',
-		...[...residents.keys()].map(register => `let rt${register}=r.getTag(${register}),rs${register}=r.getScalar(${register}),rv${register}=r.getReference(${register});`),
-		'region:for(;;){switch(entry){'];
+		...[...bindings].map(register => `let rt${register},rs${register},rv${register};`),
+		'switch(entry){'];
+	for (let index = 0; index < residents.length; ++index) {
+		source.push(`case ${index}:`);
+		if (residents[index] === residents[index + 1]) continue;
+		for (const register of residents[index].keys())
+			source.push(`rt${register}=r.getTag(${register});rs${register}=r.getScalar(${register});rv${register}=r.getReference(${register});`);
+		source.push('break;');
+	}
+	source.push('}region:for(;;){switch(entry){');
 	const transfer = (block: typeof blocks[number], index: number): string => {
 		const exit = exits[index];
 		if (exit.exit === CompiledBlockExit.Continue) {
@@ -44,7 +58,7 @@ export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: rea
 			if (target !== undefined) {
 				const top = exit.resetsRegisterTop ? `top=Math.max(frame.top,${exit.registerTop});`
 					: exit.registerTop === 0 ? '' : `if(top<${exit.registerTop})top=${exit.registerTop};`;
-				return `if(budget-${exit.cycles}>0){budget-=${exit.cycles};${top}entry=${target};continue region;}${block.registers.writeResidents()}exit=${index};break region;`;
+				return `if(budget-${exit.cycles}>0){budget-=${exit.cycles};${top}${block.registers.transferResidents(residents[target])}entry=${target};continue region;}${block.registers.writeResidents()}exit=${index};break region;`;
 			}
 		}
 		return `${block.registers.writeResidents()}exit=${index};break region;`;

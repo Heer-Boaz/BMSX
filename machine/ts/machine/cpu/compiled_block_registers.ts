@@ -6,8 +6,12 @@ export class JavaScriptRegisterCache {
 	private readonly numbers = new Map<number, string>();
 	private readonly published = new Set<number>();
 	public localCount = 0;
+	public readonly residents: Map<number, boolean>;
 
-	public constructor(private readonly image: Blua32ExecutionImage, private readonly residents: ReadonlyMap<number, boolean>) {}
+	public constructor(private readonly image: Blua32ExecutionImage, residents: ReadonlyMap<number, boolean>,
+		private readonly outputs: ReadonlySet<number>) {
+		this.residents = new Map(residents);
+	}
 
 	public numberOperand(selector: number): string {
 		if (selector < 0) {
@@ -43,11 +47,13 @@ export class JavaScriptRegisterCache {
 		const local = `n${this.localCount++}`;
 		this.numbers.set(register, local);
 		this.published.delete(register);
+		if (this.residents.has(register) || this.outputs.has(register)) this.residents.set(register, true);
 		return `const ${local}=f(${expression});${this.residents.has(register) ? `rt${register}=${ValueTag.Number};rs${register}=${local};rv${register}=null;` : ''}`;
 	}
 
 	public writeEncoded(register: number, tag: string, scalar: string, reference: string): string {
 		this.discard(register);
+		if (this.residents.has(register) || this.outputs.has(register)) this.residents.set(register, true);
 		return this.residents.has(register) ? `rt${register}=${tag};rs${register}=${scalar};rv${register}=${reference};`
 			: `r.setEncoded(${register},${tag},${scalar},${reference});`;
 	}
@@ -58,6 +64,7 @@ export class JavaScriptRegisterCache {
 		const local = this.numbers.get(source);
 		if (local !== undefined) {
 			this.numbers.set(register, local);
+			if (this.residents.has(register) || this.outputs.has(register)) this.residents.set(register, true);
 			return this.residents.has(register) ? `rt${register}=${ValueTag.Number};rs${register}=${local};rv${register}=null;` : '';
 		}
 		const tag = this.tagOperand(source), scalar = this.scalarOperand(source), reference = this.referenceOperand(source);
@@ -66,7 +73,7 @@ export class JavaScriptRegisterCache {
 
 	public copyFrom(register: number, bank: string, source: string): string {
 		this.discard(register);
-		return this.residents.has(register)
+		return this.residents.has(register) || this.outputs.has(register)
 			? this.writeEncoded(register, `${bank}.getTag(${source})`, `${bank}.getScalar(${source})`, `${bank}.getReference(${source})`)
 			: `r.copySlotFrom(${bank},${register},${source});`;
 	}
@@ -84,6 +91,16 @@ export class JavaScriptRegisterCache {
 		let source = '';
 		for (const [register, written] of this.residents) if (written && !this.published.has(register))
 			source += `r.setEncoded(${register},rt${register},rs${register},rv${register});`;
+		return source;
+	}
+
+	/** Retain common locals; only departing dirty bindings return to the bank. */
+	public transferResidents(target: ReadonlyMap<number, boolean>): string {
+		let source = '';
+		for (const [register, written] of this.residents) if (written && target.get(register) !== true && !this.published.has(register))
+			source += `r.setEncoded(${register},rt${register},rs${register},rv${register});`;
+		for (const register of target.keys()) if (!this.residents.has(register))
+			source += `rt${register}=r.getTag(${register});rs${register}=r.getScalar(${register});rv${register}=r.getReference(${register});`;
 		return source;
 	}
 

@@ -83,7 +83,9 @@ test('resident Values cross internal string branches and publish only when leavi
 			assert.equal(r.getTag(register), r.getTag(8)); assert.equal(r.getScalar(register), r.getScalar(8));
 			assert.equal(r.getReference(register), r.getReference(8));
 		}
-		assert.ok(writes[4] <= 1 && writes[7] <= 1, 'resident definitions are not written back at internal branches');
+		assert.ok(writes[4] <= 1, 'the live-through accumulator is not written back at internal branches');
+		// r7 is redefined before use at the loop head, so it leaves that entry's
+		// map. Its prior raw value must still be published on the backedge.
 		assert.equal(writes[8], 0, 'the read-only resident is never redundantly published');
 	}
 });
@@ -372,5 +374,52 @@ test('an external entry into a WIDE body shares its sequential join without dupl
 		}
 		runCpuParity(machines[0].cpu, machines[1].cpu, grant);
 		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+	}
+});
+
+test('more than six live-through raw Values remain local across every internal edge', () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	const starts: number[] = [];
+	let word = 0;
+	for (let segment = 0; segment < 2; ++segment) {
+		starts.push(word);
+		for (let register = 0; register < 8; ++register) writeInstruction(text, word++, OpCode.MOV, 16 + register, register, 0);
+		for (let first = segment * 4; first < segment * 4 + 4; first += 2) {
+			writeInstruction(text, word++, OpCode.MOV, 24, first, 0);
+			writeInstruction(text, word++, OpCode.MOV, first, first + 1, 0);
+			writeInstruction(text, word++, OpCode.MOV, first + 1, 24, 0);
+		}
+		if (segment === 0) writeInstruction(text, word++, OpCode.JMP, 0, 0, 0);
+		else writeInstruction(text, word++, OpCode.JMP, 0, 63, 34, 255); // -30 words
+	}
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: word, maxStack: 25 }] });
+	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), frame = cpu.rootThread.frames[0];
+	cpu.runUntilDepth(0, 1024);
+	const page = frame.decodedPage!, firstWord = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
+	const table = cpu.createTable(), string = cpu.stringPool.intern('retained');
+	const tags = [ValueTag.Nil, ValueTag.False, ValueTag.True, ValueTag.Number, ValueTag.Number, ValueTag.String, ValueTag.Table, ValueTag.Number];
+	const scalars = [13, 37, 42, -0, NaN, string, NaN, 19];
+	const references = [null, null, null, null, null, null, table, null];
+	for (const start of [0, 1]) for (const grant of [1, 15, 16, 63, 128, 257]) {
+		const block = page.compiledBlocks!.entries[firstWord + starts[start]]!, r = new ValueSlots(25);
+		const expected = Array.from({ length: 8 }, (_, index) => index);
+		for (let register = 0; register < 8; ++register) r.setEncoded(register, tags[register], scalars[register], references[register]);
+		let segment = start, remaining = grant;
+		do {
+			for (let first = segment * 4; first < segment * 4 + 4; first += 2)
+				[expected[first], expected[first + 1]] = [expected[first + 1], expected[first]];
+			remaining -= 15; segment ^= 1;
+		} while (remaining > 0);
+		const writes = new Uint32Array(8), store = r.setEncoded.bind(r);
+		r.setEncoded = (register, tag, scalar, reference) => { if (register < 8) ++writes[register]; store(register, tag, scalar, reference); };
+		const state = { remainingCycles: grant, registerTop: 0 };
+		block.region.execute(r, frame.executionImage.constScalars, page, frame, block.entry, state);
+		assert.equal(state.remainingCycles, remaining); assert.equal(state.registerTop, 25);
+		for (let register = 0; register < 8; ++register) {
+			assert.equal(r.getTag(register), tags[expected[register]]);
+			assert.equal(r.getScalar(register), scalars[expected[register]]);
+			assert.equal(r.getReference(register), references[expected[register]]);
+			assert.ok(writes[register] <= 1, `live-through binding ${register} is published only at the cold exit`);
+		}
 	}
 });
