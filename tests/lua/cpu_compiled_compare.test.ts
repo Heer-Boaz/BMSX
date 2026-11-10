@@ -189,8 +189,9 @@ test('both resolved comparison paths stay in one region and return their full cy
 	}
 	const cache = machines[0].cpu.rootThread.frames[0].decodedPage!.compiledBlocks!, root = cache.entries[0]!;
 	assert.equal(root.sourceWords, 2);
-	assert.ok(cache.entries[1]?.region === root.region && cache.entries[2]?.region === root.region,
+	assert.ok(cache.entries[2]?.region === root.region && cache.entries[4]?.region === root.region,
 		'both comparison targets are entries of one generated function');
+	assert.equal(cache.entries[1], null, 'the folded JMP itself needs no separate entry');
 	assert.equal(root.terminal.linkedBlock, null);
 	const skipped = root.exits.find(exit => exit.nextPc === DYNAMIC_RAM_BASE + 2 * INSTRUCTION_BYTES)!;
 	assert.equal(skipped.exit, CompiledBlockExit.Continue);
@@ -291,6 +292,7 @@ for (const comparisonWide of [false, true]) for (const jumpWide of [false, true]
 			assert.equal(root.terminal, jumped);
 			assert.equal(root.exits.length, 2, 'no third comparison-only exit remains between the fused instructions');
 			assert.equal(jumped.cycles, 2); assert.equal(root.exits.find(exit => exit !== jumped)!.cycles, 1);
+			assert.equal(cache.entries[jumpWord], null, 'a JMP reached only through its fused comparison has no redundant body');
 			for (const value of [6, 7, 8]) for (let grant = 1; grant <= 16; ++grant) {
 				for (const { cpu } of machines) {
 					cpu.rootThread.frames[0].registers.setNumber(0, value);
@@ -300,6 +302,16 @@ for (const comparisonWide of [false, true]) for (const jumpWide of [false, true]
 				assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 				assert.equal(machines[0].cpu.readCurrentInstructionPc(), machines[1].cpu.readCurrentInstructionPc());
 				assert.equal(machines[0].cpu.lastPc, machines[1].cpu.lastPc);
+			}
+			for (const entered of jumpWide ? [jumpWord, jumpBody] : [jumpWord]) {
+				for (let visit = 0; visit < 16; ++visit) {
+					for (const { cpu } of machines) cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
+						image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE + entered * INSTRUCTION_BYTES);
+					runCpuParity(machines[0].cpu, machines[1].cpu, 64);
+					assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+				}
+				assert.ok(cache.entries[entered], 'an independently entered JMP prefix or body acquires its own native entry');
+				assert.ok(cache.entries[0], 'the comparison remains compiled when an interior entry is added');
 			}
 			const replacement = new Uint8Array(INSTRUCTION_BYTES);
 			writeInstruction(replacement, 0, OpCode.JMP, 0, 0, 19 - jumpBody);

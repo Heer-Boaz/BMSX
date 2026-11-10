@@ -150,8 +150,8 @@ void resolvedComparisonLinksBothPaths() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& cache = *native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks;
 	const auto& root = *cache.entries[0];
-	require(root.sourceWords == 2 && cache.entries[1] && cache.entries[2]
-		&& root.region == cache.entries[1]->region && root.region == cache.entries[2]->region
+	require(root.sourceWords == 2 && !cache.entries[1] && cache.entries[2] && cache.entries[4]
+		&& root.region == cache.entries[2]->region && root.region == cache.entries[4]->region
 		&& root.sideExits.back().exit == NativeBlockExit::Continue
 		&& !root.terminal.link.code && !root.sideExits.back().link.code,
 		"both comparison outcomes stay in their code region without dynamic skip or link dispatch");
@@ -231,6 +231,7 @@ void pairedWideJumpsRetainBoundariesAndMutableTargets() {
 				&& jumped.lastPc == DYNAMIC_RAM_BASE + jumpBody * INSTRUCTION_BYTES
 				&& jumped.cycles == 2 && root.sideExits.size() == 1 && root.sideExits.back().cycles == 1,
 				"paired WIDE comparison/JMP exits preserve the executed prefix PCs and each instruction charge");
+			require(!page.nativeBlocks->entries[jumpWord], "a JMP reached only through its fused comparison has no redundant body");
 #endif
 			for (const int value : {6, 7, 8}) for (int grant = 1; grant <= 16; ++grant) {
 				for (auto* machine : {&native, &scalar}) {
@@ -242,6 +243,19 @@ void pairedWideJumpsRetainBoundariesAndMutableTargets() {
 				require(std::ranges::equal(a.snapshot.words(), b.snapshot.words())
 					&& native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc() && native.cpu.lastPc == scalar.cpu.lastPc,
 					"paired comparison/JMP preserves register state and the complete admitted charge");
+			}
+			for (u32 entered = jumpWord; entered <= jumpBody; ++entered) {
+				for (int visit = 0; visit < 16; ++visit) {
+					for (auto* machine : {&native, &scalar}) machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
+						machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE + entered * INSTRUCTION_BYTES);
+					test::runCpuParity(native.cpu, scalar.cpu, 64);
+					const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
+					require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()), "independent entries preserve the full machine state");
+				}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+				require(page.nativeBlocks->entries[entered] && page.nativeBlocks->entries[0],
+					"an independently entered JMP prefix or body acquires its own native entry without losing the comparison");
+#endif
 			}
 			std::array<u8, INSTRUCTION_BYTES> replacement{};
 			writeInstruction(replacement, 0, static_cast<u8>(OpCode::JMP), 0, 0, 19 - jumpBody);

@@ -71,14 +71,23 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 		const u32 successor = cursor + instruction.width;
 		const u32 successorPc = pc + static_cast<u32>(instruction.width) * INSTRUCTION_BYTES;
 		if (nativeBlockComparison(instruction.op)) {
-			enqueue(successorPc, true);
 			if (binding.readBytes && successor < DECODED_PAGE_WORDS) {
 				if ((page.refreshState[successor] & DECODED_REFRESH_DECODE) != 0u && successor < DECODED_PAGE_WORDS - 1u
 					&& !decodeInstruction(frame, page, successor, successorPc, false)) return;
 				if ((page.refreshState[successor] & DECODED_REFRESH_DECODE) == 0u
-					&& successor + page.words[successor].width <= DECODED_PAGE_WORDS)
+					&& successor + page.words[successor].width <= DECODED_PAGE_WORDS) {
 					enqueue(successorPc + static_cast<u32>(page.words[successor].width) * INSTRUCTION_BYTES, true);
+					const auto& skipped = page.words[successor];
+					if (skipped.op == static_cast<u8>(OpCode::JMP)
+						&& skipped.dispatchOp != static_cast<u8>(DecodedDispatchOp::Observe)) {
+						// This edge executes the fused JMP, not a separate entry.
+						// An independent predecessor can still enqueue the JMP itself.
+						enqueue(skipped.bx, true);
+						continue;
+					}
+				}
 			}
+			enqueue(successorPc, true);
 		} else if (op == OpCode::JMP || op == OpCode::JMPIF || op == OpCode::JMPIFNOT) {
 			enqueue(instruction.bx, true);
 			if (op != OpCode::JMP) enqueue(successorPc, true);

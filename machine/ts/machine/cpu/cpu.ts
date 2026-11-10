@@ -2669,14 +2669,21 @@ export class CPU implements MappedPageInvalidator {
 			available[cursor] = 1;
 			const successor = cursor + page.widths[cursor], successorPc = (pagePc + successor * INSTRUCTION_BYTES) >>> 0;
 			if (compiledBlockComparison(op)) {
-				enqueue(successorPc, true);
 				if (binding.readBytes !== null && successor < DECODED_PAGE_WORDS) {
 					if ((page.refreshState[successor] & DECODED_REFRESH_DECODE) !== 0 && successor < DECODED_PAGE_WORDS - 1
 						&& !this.decodeInstruction(frame, page, successor, successorPc, false)) return;
 					if ((page.refreshState[successor] & DECODED_REFRESH_DECODE) === 0
-						&& successor + page.widths[successor] <= DECODED_PAGE_WORDS)
+						&& successor + page.widths[successor] <= DECODED_PAGE_WORDS) {
 						enqueue((successorPc + page.widths[successor] * INSTRUCTION_BYTES) >>> 0, true);
+						if (page.ops[successor] === OpCode.JMP && page.dispatchOps[successor] !== DecodedDispatchOp.Observe) {
+							// This edge executes the fused JMP, not a separate entry.
+							// An independent predecessor can still enqueue the JMP itself.
+							enqueue(page.bx[successor], true);
+							continue;
+						}
+					}
 				}
+				enqueue(successorPc, true);
 			} else if (op === OpCode.JMP || op === OpCode.JMPIF || op === OpCode.JMPIFNOT) {
 				enqueue(page.bx[cursor], true);
 				if (op !== OpCode.JMP) enqueue(successorPc, true);
