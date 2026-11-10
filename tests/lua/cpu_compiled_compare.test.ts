@@ -44,11 +44,11 @@ for (const op of [OpCode.EQ, OpCode.LT, OpCode.LE]) for (const expected of [fals
 		for (const { cpu } of machines) cpu.runUntilDepth(0, 800);
 		const frame = machines[0].cpu.rootThread.frames[0], page = frame.decodedPage!;
 		const block = page.compiledBlocks!.entries[(entry & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2]!;
-		assert.equal(block.sourceWords, 3, 'the block includes the WIDE comparison, not only its arithmetic prefix');
+		assert.equal(block.sourceWords, 4, 'the fixed skip retains its fetched successor as a source dependency');
 		assert.equal(block.terminal.currentPc, entry + INSTRUCTION_BYTES);
 		assert.equal(block.terminal.lastPc, entry + 2 * INSTRUCTION_BYTES);
 		assert.equal(block.terminal.exitA, expected ? 0x300 : 0);
-		assert.ok(block.exits.some(exit => exit.exit === CompiledBlockExit.SkipInstruction));
+		assert.ok(block.exits.some(exit => exit.exit === CompiledBlockExit.Continue && exit.nextPc === entry + 4 * INSTRUCTION_BYTES));
 		for (let left = 0; left < inputs[0].length; ++left) for (let right = 0; right < inputs[0].length; ++right) {
 			for (const [index, { cpu }] of machines.entries()) {
 				const current = cpu.rootThread.frames[0];
@@ -98,7 +98,7 @@ test('EQ ignores unused Nil/boolean scalar payloads without rewriting either sou
 	}
 });
 
-test('comparison skips decode current WIDE bytes without retiring an independent compiled prefix', () => {
+test('resolved comparison skips retire when their fetched WIDE width changes', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.ADD, 3, 6, 6);
 	writeInstruction(text, 1, OpCode.EQ, 1, 0, 1);
@@ -116,21 +116,90 @@ test('comparison skips decode current WIDE bytes without retiring an independent
 		cpu.runUntilDepth(0, 800);
 	}
 	const page = machines[0].cpu.rootThread.frames[0].decodedPage!, block = page.compiledBlocks!.entries[0];
-	assert.ok(block); assert.equal(block.sourceWords, 2);
+	assert.ok(block); assert.equal(block.sourceWords, 4);
+	assert.ok(block.exits.some(exit => exit.exit === CompiledBlockExit.Continue && exit.nextPc === DYNAMIC_RAM_BASE + 4 * INSTRUCTION_BYTES));
 	for (const wide of [false, true, false]) {
 		const replacement = new Uint8Array(INSTRUCTION_BYTES);
 		writeInstruction(replacement, 0, wide ? OpCode.WIDE : OpCode.K0, 0, 0, 0);
 		for (const { cpu, memory } of machines) {
 			memory.writeBytes(DYNAMIC_RAM_BASE + 2 * INSTRUCTION_BYTES, replacement);
-			const frame = cpu.rootThread.frames[0]; frame.top = 0;
+			const frame = cpu.rootThread.frames[0]; frame.top = 0; frame.registers.setNumber(2, 73);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 			cpu.runUntilDepth(0, 2);
 			assert.equal(frame.pc, DYNAMIC_RAM_BASE + (wide ? 4 : 3) * INSTRUCTION_BYTES);
 			assert.equal(frame.registers.getNumber(2), 73); assert.equal(frame.top, 4);
 		}
-		assert.equal(page.compiledBlocks!.entries[0], block);
-		assert.equal(page.refreshState[0], 0, 'a live compiled block has no dependency on the scalar fusion lookahead');
+		assert.equal(page.compiledBlocks!.entries[0], null, 'the resolved edge must not retain its old width');
 		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+		for (const { cpu } of machines) cpu.runUntilDepth(0, 800);
+		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+		assert.ok(page.compiledBlocks!.entries[0], 'the changed comparison warms and compiles again');
+	}
+});
+
+test('a maximum-length compiled comparison retains both words of its skipped WIDE dependency', () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	for (let instruction = 0; instruction < 63; ++instruction) {
+		writeInstruction(text, instruction * 2, OpCode.WIDE, 0, 0, 0);
+		writeInstruction(text, instruction * 2 + 1, OpCode.MOV, 3, 3, 0);
+	}
+	writeInstruction(text, 126, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(text, 127, OpCode.EQ, 1, 0, 1);
+	writeInstruction(text, 128, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(text, 129, OpCode.K1, 2, 0, 0);
+	writeInstruction(text, 130, OpCode.JMP, 0, 61, 61, 255); // -131 words, back to the first prefix.
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 131, maxStack: 4 }] });
+	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+	for (const { cpu, memory } of machines) {
+		memory.writeBytes(DYNAMIC_RAM_BASE, text);
+		const frame = cpu.rootThread.frames[0]; frame.registers.setNumber(0, 0); frame.registers.setNumber(1, 1);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
+		cpu.runUntilDepth(0, 8192);
+	}
+	const cache = machines[0].cpu.rootThread.frames[0].decodedPage!.compiledBlocks!;
+	assert.equal(cache.entries[0]!.sourceWords, 130);
+	const replacement = new Uint8Array(INSTRUCTION_BYTES);
+	writeInstruction(replacement, 0, OpCode.K0, 2, 0, 0);
+	for (const { memory } of machines) memory.writeBytes(DYNAMIC_RAM_BASE + 129 * INSTRUCTION_BYTES, replacement);
+	assert.equal(cache.entries[0], null, 'the final dependent word lies beyond the ordinary 128-word body span');
+	for (const { cpu } of machines) cpu.runUntilDepth(0, 8192);
+	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+});
+
+test('both resolved comparison paths link directly and stop at every short grant', () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(text, 0, OpCode.EQ, 1, 0, 2);
+	writeInstruction(text, 1, OpCode.JMP, 0, 0, 2);
+	writeInstruction(text, 2, OpCode.ADD, 3, 3, 1);
+	writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
+	writeInstruction(text, 4, OpCode.ADD, 4, 4, 1);
+	writeInstruction(text, 5, OpCode.JMP, 0, 63, 58, 255);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 6, maxStack: 5 }] });
+	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+	for (const { cpu, memory } of machines) {
+		memory.writeBytes(DYNAMIC_RAM_BASE, text);
+		const registers = cpu.rootThread.frames[0].registers;
+		for (let i = 0; i < 5; ++i) registers.setNumber(i, i === 1 ? 1 : 0);
+	}
+	for (const value of [0, 1]) for (const { cpu } of machines) {
+		cpu.rootThread.frames[0].registers.setNumber(0, value);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
+		cpu.runUntilDepth(0, 2048);
+	}
+	const cache = machines[0].cpu.rootThread.frames[0].decodedPage!.compiledBlocks!, root = cache.entries[0]!;
+	assert.equal(root.sourceWords, 2);
+	assert.equal(root.terminal.linkedBlock, cache.entries[1]); assert.ok(root.terminal.linkedBlock);
+	const skipped = root.exits.find(exit => exit.nextPc === DYNAMIC_RAM_BASE + 2 * INSTRUCTION_BYTES)!;
+	assert.equal(skipped.exit, CompiledBlockExit.Continue);
+	assert.equal(skipped.linkedBlock, cache.entries[2]); assert.ok(skipped.linkedBlock);
+	for (const value of [0, 1]) for (let grant = 1; grant <= 32; ++grant) {
+		for (const { cpu } of machines) {
+			cpu.rootThread.frames[0].registers.setNumber(0, value);
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
+			cpu.runUntilDepth(0, grant);
+		}
+		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+		assert.equal(machines[0].cpu.instructionBudgetRemaining, machines[1].cpu.instructionBudgetRemaining);
 	}
 });
 

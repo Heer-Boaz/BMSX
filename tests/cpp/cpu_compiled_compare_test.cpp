@@ -6,6 +6,7 @@
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 
+#include <algorithm>
 #include <array>
 #include <iostream>
 #include <stdexcept>
@@ -33,7 +34,7 @@ struct CpuMachine {
 	}
 };
 
-void changingSkippedBytesPreserveIndependentCode() {
+void changingSkippedBytesRetireResolvedEdges() {
 	test::Blua32TestImage image;
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::ADD), 3, 6, 6);
@@ -57,15 +58,16 @@ void changingSkippedBytesPreserveIndependentCode() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	auto& page = *native.cpu.activeThread()->frames[0]->decodedPage;
 	const auto* block = page.nativeBlocks->entries[0].get();
-	require(block && block->sourceWords == 2 && block->sideExits.back().exit == NativeBlockExit::SkipInstruction,
-		"the hot native block contains the comparison and its dirty arithmetic prefix");
+	require(block && block->sourceWords == 4 && block->sideExits.back().exit == NativeBlockExit::Continue
+		&& block->sideExits.back().nextPc == DYNAMIC_RAM_BASE + 4u * INSTRUCTION_BYTES,
+		"the hot native comparison retains the fetched WIDE dependency and a fixed skip edge");
 #endif
 	for (const bool wide : {false, true, false}) {
 		std::array<u8, INSTRUCTION_BYTES> replacement{};
 		writeInstruction(replacement, 0, static_cast<u8>(wide ? OpCode::WIDE : OpCode::K0), 0, 0, 0);
 		for (auto* machine : {&native, &scalar}) {
 			machine->memory.writeBytes(DYNAMIC_RAM_BASE + 2u * INSTRUCTION_BYTES, replacement.data(), replacement.size());
-			auto& frame = *machine->cpu.activeThread()->frames[0]; frame.top = 0;
+			auto& frame = *machine->cpu.activeThread()->frames[0]; frame.top = 0; frame.registers[2] = valueNumber(73);
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 			machine->cpu.runUntilDepth(0, 2);
 			require(frame.pc == DYNAMIC_RAM_BASE + (wide ? 4u : 3u) * INSTRUCTION_BYTES
@@ -73,11 +75,93 @@ void changingSkippedBytesPreserveIndependentCode() {
 				"only a taken comparison skip decodes the current complete successor without executing it");
 		}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-		require(page.nativeBlocks && page.nativeBlocks->entries[0].get() == block && page.refreshState[0] == 0,
-			"a live native block does not depend on scalar fusion lookahead or on the skipped instruction's bytes");
+		require(!page.nativeBlocks || !page.nativeBlocks->entries[0],
+			"rewriting the skipped instruction retires the resolved native edge before reusing its width");
 #endif
 		require(native.cpu.lastPc == scalar.cpu.lastPc && native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining,
 			"comparison and WIDE skips retain scalar budget and last-PC boundaries");
+		for (auto* machine : {&native, &scalar}) machine->cpu.runUntilDepth(0, 800);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		require(page.nativeBlocks && page.nativeBlocks->entries[0], "the changed comparison warms and compiles again");
+#endif
+	}
+}
+
+void maximumLengthSkipDependencyRetires() {
+	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	for (int instruction = 0; instruction < 63; ++instruction) {
+		writeInstruction(image.text, instruction * 2, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(image.text, instruction * 2 + 1, static_cast<u8>(OpCode::MOV), 3, 3, 0);
+	}
+	writeInstruction(image.text, 126, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 127, static_cast<u8>(OpCode::EQ), 1, 0, 1);
+	writeInstruction(image.text, 128, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 129, static_cast<u8>(OpCode::K1), 2, 0, 0);
+	writeInstruction(image.text, 130, static_cast<u8>(OpCode::JMP), 0, 61, 61, 255);
+	image.functions = {{.firstWord = 0, .wordCount = 131, .maxStack = 4}};
+	CpuMachine native(image, false), scalar(image, true);
+	for (auto* machine : {&native, &scalar}) {
+		machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
+		auto& frame = *machine->cpu.activeThread()->frames[0]; frame.registers[0] = valueNumber(0); frame.registers[1] = valueNumber(1);
+		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
+		machine->cpu.runUntilDepth(0, 8192);
+	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	auto& page = *native.cpu.activeThread()->frames[0]->decodedPage;
+	require(page.nativeBlocks->entries[0] && page.nativeBlocks->entries[0]->sourceWords == 130,
+		"the maximum-size body also retains both skipped WIDE words");
+#endif
+	std::array<u8, INSTRUCTION_BYTES> replacement{};
+	writeInstruction(replacement, 0, static_cast<u8>(OpCode::K0), 2, 0, 0);
+	for (auto* machine : {&native, &scalar}) machine->memory.writeBytes(DYNAMIC_RAM_BASE + 129u * INSTRUCTION_BYTES,
+		replacement.data(), replacement.size());
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	require(!page.nativeBlocks || !page.nativeBlocks->entries[0], "the last dependent word retires the complete native body");
+#endif
+	for (auto* machine : {&native, &scalar}) machine->cpu.runUntilDepth(0, 8192);
+	const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
+	require(std::ranges::equal(a.snapshot.words(), b.snapshot.words())
+		&& native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining && native.cpu.lastPc == scalar.cpu.lastPc,
+		"updated WIDE skip dependencies preserve exact execution boundaries");
+}
+
+void resolvedComparisonLinksBothPaths() {
+	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::EQ), 1, 0, 2);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMP), 0, 0, 2);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::ADD), 3, 3, 1);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::ADD), 4, 4, 1);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 58, 255);
+	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 5}};
+	CpuMachine native(image, false), scalar(image, true);
+	for (auto* machine : {&native, &scalar}) {
+		machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
+		for (int reg = 0; reg < 5; ++reg) machine->cpu.activeThread()->frames[0]->registers[reg] = valueNumber(reg == 1 ? 1 : 0);
+	}
+	for (const int value : {0, 1}) for (auto* machine : {&native, &scalar}) {
+		machine->cpu.activeThread()->frames[0]->registers[0] = valueNumber(value);
+		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
+		machine->cpu.runUntilDepth(0, 2048);
+	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	const auto& cache = *native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks;
+	const auto& root = *cache.entries[0];
+	require(root.sourceWords == 2 && root.terminal.link.target && root.terminal.link.target == cache.entries[1].get()
+		&& root.sideExits.back().exit == NativeBlockExit::Continue && root.sideExits.back().link.target
+		&& root.sideExits.back().link.target == cache.entries[2].get(),
+		"both comparison outcomes link to their exact native successor without a dynamic skip handler");
+#endif
+	for (const int value : {0, 1}) for (int grant = 1; grant <= 32; ++grant) {
+		for (auto* machine : {&native, &scalar}) {
+			machine->cpu.activeThread()->frames[0]->registers[0] = valueNumber(value);
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
+			machine->cpu.runUntilDepth(0, grant);
+		}
+		const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
+		require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining
+			&& native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc() && native.cpu.lastPc == scalar.cpu.lastPc,
+			"linked comparisons preserve each exact short grant, including between the comparison and its JMP");
 	}
 }
 
@@ -132,7 +216,7 @@ void skipFetchBoundaries() {
 
 int main() {
 	try {
-		changingSkippedBytesPreserveIndependentCode(); skipFetchBoundaries();
+		changingSkippedBytesRetireResolvedEdges(); maximumLengthSkipDependencyRetires(); resolvedComparisonLinksBothPaths(); skipFetchBoundaries();
 		std::cout << "Compiled comparison boundary tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {

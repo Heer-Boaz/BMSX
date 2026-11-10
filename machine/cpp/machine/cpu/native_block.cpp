@@ -15,7 +15,8 @@ std::unique_ptr<NativeBlock> NativeBlock::compile(
 	size_t& cacheBytes,
 	Memory& memory,
 	StringPool& strings,
-	const NativeBlockExitHandlers& exitHandlers
+	const NativeBlockExitHandlers& exitHandlers,
+	u8 skippedInstructionWidth
 ) {
 	auto block = std::unique_ptr<NativeBlock>(new NativeBlock(cacheBytes));
 	bool controlGuarded = false;
@@ -90,7 +91,9 @@ std::unique_ptr<NativeBlock> NativeBlock::compile(
 	if (op == OpCode::JMPIF || op == OpCode::JMPIFNOT || nativeBlockComparison(static_cast<u8>(op))) {
 		auto& exit = block->sideExits.emplace_back(terminal);
 		if (nativeBlockComparison(static_cast<u8>(op))) {
-			exit.exit = NativeBlockExit::SkipInstruction;
+			exit.exit = skippedInstructionWidth == 0 ? NativeBlockExit::SkipInstruction : NativeBlockExit::Continue;
+			exit.nextPc += static_cast<u32>(skippedInstructionWidth) * INSTRUCTION_BYTES;
+			block->sourceWords += skippedInstructionWidth;
 			exit.handler = exitHandlers[static_cast<size_t>(exit.exit)];
 		}
 		else exit.nextPc = instructions.back().decoded->bx;

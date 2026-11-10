@@ -140,7 +140,7 @@ import { LuaHeap, type LuaHeapState } from './lua_heap';
 import {
 	CpuExecutionBackend, CompiledBlockPage, CompiledCodeCache, CompiledBlockExit, COMPILED_BLOCK_THRESHOLD,
 	COMPILED_BLOCK_MAX_INSTRUCTIONS,
-	compiledBlockSupports, compiledBlockEndsBlock, compileJavaScriptBlock, linkCompiledBlock,
+	compiledBlockSupports, compiledBlockEndsBlock, compiledBlockComparison, compileJavaScriptBlock, linkCompiledBlock,
 	type CompiledBlockExitSite,
 } from './compiled_block';
 import { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotReader, CpuSnapshotObjectKind, CpuSnapshotClosure, CpuSnapshotTable, CpuSnapshotUpvalue, CpuSnapshotThread, CPU_SNAPSHOT_VALUE_WORDS, type CpuSnapshotObject, type CpuSnapshotValueWriter } from './snapshot';
@@ -2620,6 +2620,7 @@ export class CPU implements MappedPageInvalidator {
 				const binding = this.mappedPageBinding;
 				this.memory.bindMappedPage((pc & ~MAPPED_PAGE_BYTE_MASK) >>> 0, this.executionBusSignals, binding);
 				let cursor = word;
+				let finalWord = word;
 				let nextPc = pc;
 				let count = 0;
 				let warmingSuccessor = false;
@@ -2636,14 +2637,22 @@ export class CPU implements MappedPageInvalidator {
 						break;
 					}
 					++count;
+					finalWord = cursor;
 					nextPc = (nextPc + page.widths[cursor] * INSTRUCTION_BYTES) >>> 0;
 					const terminal = compiledBlockEndsBlock(page.ops[cursor], page.b[cursor]);
 					cursor += page.widths[cursor];
 					if (terminal) break;
 				}
 				if (count >= 2 || (count === 1 && compiledBlockEndsBlock(page.ops[word], page.b[word]))) {
+					let skippedInstructionWidth = 0;
+					if (binding.readBytes !== null && compiledBlockComparison(page.ops[finalWord])
+						&& cursor < DECODED_PAGE_WORDS && (page.refreshState[cursor] & DECODED_REFRESH_DECODE) === 0
+						&& cursor + page.widths[cursor] <= DECODED_PAGE_WORDS) {
+						// Keep the already fetched width in this body's source dependency.
+						skippedInstructionWidth = page.widths[cursor];
+					}
 					const block = compileJavaScriptBlock(page, word, cursor, pc, frame.executionImage, this.memory, this.stringPool,
-						this.globalSlots, this.systemGlobalSlots, this.cop0Words);
+						this.globalSlots, this.systemGlobalSlots, this.cop0Words, skippedInstructionWidth);
 					this.compiledCodeCache.install(page, word, block);
 				} else if (warmingSuccessor) {
 					cache.visits[word] = 0;

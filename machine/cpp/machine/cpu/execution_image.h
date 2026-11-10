@@ -136,8 +136,8 @@ struct DecodedInstructionPage {
 
 	void retireNativeBlocks(u32 firstWord = 0, u32 endWord = DECODED_PAGE_WORDS + 1u) {
 		if (!nativeBlocks) return;
-		const u32 firstEntry = firstWord > 2u * NATIVE_BLOCK_MAX_INSTRUCTIONS
-			? firstWord - 2u * NATIVE_BLOCK_MAX_INSTRUCTIONS : 0u;
+		const u32 firstEntry = firstWord > 2u * (NATIVE_BLOCK_MAX_INSTRUCTIONS + 1u)
+			? firstWord - 2u * (NATIVE_BLOCK_MAX_INSTRUCTIONS + 1u) : 0u;
 		const u32 endEntry = endWord < DECODED_PAGE_WORDS ? endWord : DECODED_PAGE_WORDS;
 		for (u32 word = firstEntry; word < endEntry; ++word) {
 			auto& block = nativeBlocks->entries[word];

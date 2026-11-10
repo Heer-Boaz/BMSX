@@ -124,7 +124,7 @@ export class CompiledBlockPage {
 
 	public retire(page: DecodedInstructionPage, firstWord: number, endWord: number): number {
 		let released = 0;
-		const firstEntry = Math.max(0, firstWord - 2 * COMPILED_BLOCK_MAX_INSTRUCTIONS);
+		const firstEntry = Math.max(0, firstWord - 2 * (COMPILED_BLOCK_MAX_INSTRUCTIONS + 1));
 		const endEntry = Math.min(DECODED_PAGE_WORDS, endWord);
 		for (let word = firstEntry; word < endEntry; ++word) {
 			const block = this.entries[word];
@@ -245,6 +245,10 @@ export function compiledBlockEndsBlock(op: number, field: number): boolean {
 		|| op === OpCode.EQ || op === OpCode.LT || op === OpCode.LE;
 }
 
+export function compiledBlockComparison(op: number): boolean {
+	return op === OpCode.EQ || op === OpCode.LT || op === OpCode.LE;
+}
+
 /** Fields and RAM stay in the block; side exits publish only the executed prefix. */
 export function compileJavaScriptBlock(
 	page: DecodedInstructionPage,
@@ -257,6 +261,7 @@ export function compileJavaScriptBlock(
 	globalSlots: ValueSlots,
 	systemGlobalSlots: ValueSlots,
 	cop0Words: Uint32Array,
+	skippedInstructionWidth = 0,
 ): CompiledBlock {
 	const source = ['"use strict";'];
 	const registers = new JavaScriptRegisterCache(image);
@@ -360,11 +365,13 @@ export function compileJavaScriptBlock(
 	};
 	const terminalIndex = exits.length;
 	exits.push(terminal);
-	const comparison = finalOp === OpCode.EQ || finalOp === OpCode.LT || finalOp === OpCode.LE;
+	const comparison = compiledBlockComparison(finalOp);
 	const ordering = finalOp === OpCode.LT || finalOp === OpCode.LE;
 	if (comparison) {
 		const skippedIndex = exits.length;
-		exits.push({ ...terminal, exit: CompiledBlockExit.SkipInstruction });
+		exits.push({ ...terminal, exit: skippedInstructionWidth === 0 ? CompiledBlockExit.SkipInstruction : CompiledBlockExit.Continue,
+			nextPc: (terminal.nextPc + skippedInstructionWidth * INSTRUCTION_BYTES) >>> 0 });
+		sourceWords += skippedInstructionWidth;
 		const expected = page.a[finalWord] !== 0;
 		source.push(emitComparison(page, finalWord, registers,
 			expected ? terminalIndex : skippedIndex, expected ? skippedIndex : terminalIndex));

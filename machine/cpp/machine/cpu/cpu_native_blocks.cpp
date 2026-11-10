@@ -45,6 +45,16 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 		else page.words[word].dispatchOp = page.words[word].op;
 		return;
 	}
+	u8 skippedInstructionWidth = 0;
+	if (binding.readBytes && nativeBlockComparison(instructions[count - 1u].decoded->op)) {
+		const u32 skippedWord = cursor + instructions[count - 1u].decoded->width;
+		if (skippedWord < DECODED_PAGE_WORDS && (page.refreshState[skippedWord] & DECODED_REFRESH_DECODE) == 0u
+			&& skippedWord + page.words[skippedWord].width <= DECODED_PAGE_WORDS) {
+			// Reuse a completed fetch, never speculate across a faulting boundary.
+			// sourceWords retains these words as dependencies of the fixed edge.
+			skippedInstructionWidth = page.words[skippedWord].width;
+		}
+	}
 	if (m_nativeCodeBytes >= maximumCodeBytes) {
 		// Guest code is unaffected by eviction; only executable host cache is retired.
 		for (auto& image : m_executionImagesByDomain) {
@@ -64,7 +74,8 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 	handlers[static_cast<size_t>(NativeBlockExit::ReadInteger)] = &CPU::compiledReadIntegerExit;
 	handlers[static_cast<size_t>(NativeBlockExit::WriteInteger)] = &CPU::compiledWriteIntegerExit;
 	page.nativeBlocks->entries[word] = NativeBlock::compile(
-		std::span(instructions.data(), count), frame.executionImage->constPool.data(), m_nativeCodeBytes, m_memory, m_stringPool, handlers);
+		std::span(instructions.data(), count), frame.executionImage->constPool.data(), m_nativeCodeBytes,
+		m_memory, m_stringPool, handlers, skippedInstructionWidth);
 	++page.nativeBlocks->count;
 	page.words[word].dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeBlock);
 	page.words[word].dispatchCycles = page.words[word].baseCycles;

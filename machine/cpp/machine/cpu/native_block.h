@@ -229,7 +229,8 @@ public:
 		size_t& cacheBytes,
 		Memory& memory,
 		StringPool& strings,
-		const NativeBlockExitHandlers& exitHandlers = {}
+		const NativeBlockExitHandlers& exitHandlers = {},
+		u8 skippedInstructionWidth = 0
 	);
 	~NativeBlock();
 	NativeBlock(const NativeBlock&) = delete;
