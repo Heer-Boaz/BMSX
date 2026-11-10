@@ -368,6 +368,7 @@ CPU::CPU(
 	, m_indexKey(valueString(m_stringPool.intern("__index")))
 	, m_heap(*this, m_luaHeap, m_stringPool, m_stringPool.intern("__mode"))
 	, m_errorInErrorHandlingValue(valueString(m_stringPool.intern("error in error handling", false))) {
+	m_cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 	m_luaFaultErrorValues.fill(valueNil());
 	m_luaFaultErrorValues[LUA_FAULT_REASON_UNKNOWN] = valueString(m_stringPool.intern("Attempted to get length of an unsupported value.", false));
 	m_luaFaultErrorValues[LUA_FAULT_REASON_CALL_NON_FUNCTION] = valueString(m_stringPool.intern("Attempted to call a non-function value.", false));
@@ -443,11 +444,11 @@ void CPU::reset() {
 	m_memoryWriteBlocked = false;
 	m_memoryWriteBlockedAddress = 0u;
 	m_hardHalted = false;
-	m_statusWord = CPU_STATUS_SYSTEM_ENTRY;
-	m_causeWord = 0u;
-	m_epcWord = 0u;
-	m_badAddressWord = 0u;
-	m_luaFaultReasonWord = 0u;
+	m_cop0Words[COP0_STATUS] = CPU_STATUS_SYSTEM_ENTRY;
+	m_cop0Words[COP0_CAUSE] = 0u;
+	m_cop0Words[COP0_EPC] = 0u;
+	m_cop0Words[COP0_BAD_ADDRESS] = 0u;
+	m_cop0Words[COP0_LUA_FAULT_REASON] = 0u;
 	m_exceptionDomainWord = 0u;
 	m_nmiReturnCauseWord = 0u;
 	m_nmiReturnEpcWord = 0u;
@@ -1021,7 +1022,7 @@ bool CPU::decodeInstruction(
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	if (instructionCacheable && nativeBlockSupports(decoded.op)
-		&& (nativeBlockEndsBlock(decoded.op) || pageOffset + width < DECODED_PAGE_WORDS)) {
+		&& (nativeBlockEndsBlock(decoded.op, decoded.b) || pageOffset + width < DECODED_PAGE_WORDS)) {
 		decoded.dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeWarm);
 		page.nativeVisits[pageOffset] = 0;
 		return true;
@@ -1171,7 +1172,7 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 	}
 	clearCallStack();
 	latchActiveExecutionImage(*m_functionRecordLatch.image);
-	m_statusWord = m_functionRecordLatch.image->executionDomainId >= 0
+	m_cop0Words[COP0_STATUS] = m_functionRecordLatch.image->executionDomainId >= 0
 		? CPU_STATUS_CART_ENTRY
 		: CPU_STATUS_SYSTEM_ENTRY;
 	m_haltedUntilIrqFrameDepth = -1;
@@ -1457,11 +1458,11 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 	state.interruptEventPending = m_interruptEventPending;
 	state.memoryWriteBlocked = m_memoryWriteBlocked;
 	state.memoryWriteBlockedAddress = m_memoryWriteBlockedAddress;
-	state.statusWord = m_statusWord;
-	state.causeWord = m_causeWord;
-	state.epcWord = m_epcWord;
-	state.badAddressWord = m_badAddressWord;
-	state.luaFaultReasonWord = m_luaFaultReasonWord;
+	state.statusWord = m_cop0Words[COP0_STATUS];
+	state.causeWord = m_cop0Words[COP0_CAUSE];
+	state.epcWord = m_cop0Words[COP0_EPC];
+	state.badAddressWord = m_cop0Words[COP0_BAD_ADDRESS];
+	state.luaFaultReasonWord = m_cop0Words[COP0_LUA_FAULT_REASON];
 	state.exceptionDomainWord = m_exceptionDomainWord;
 	state.nmiReturnCauseWord = m_nmiReturnCauseWord;
 	state.nmiReturnEpcWord = m_nmiReturnEpcWord;
@@ -1695,11 +1696,11 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_interruptEventPending = state.interruptEventPending;
 	m_memoryWriteBlocked = state.memoryWriteBlocked;
 	m_memoryWriteBlockedAddress = state.memoryWriteBlockedAddress;
-	m_statusWord = state.statusWord;
-	m_causeWord = state.causeWord;
-	m_epcWord = state.epcWord;
-	m_badAddressWord = state.badAddressWord;
-	m_luaFaultReasonWord = state.luaFaultReasonWord;
+	m_cop0Words[COP0_STATUS] = state.statusWord;
+	m_cop0Words[COP0_CAUSE] = state.causeWord;
+	m_cop0Words[COP0_EPC] = state.epcWord;
+	m_cop0Words[COP0_BAD_ADDRESS] = state.badAddressWord;
+	m_cop0Words[COP0_LUA_FAULT_REASON] = state.luaFaultReasonWord;
 	m_exceptionDomainWord = state.exceptionDomainWord;
 	m_nmiReturnCauseWord = state.nmiReturnCauseWord;
 	m_nmiReturnEpcWord = state.nmiReturnEpcWord;
@@ -2307,7 +2308,7 @@ void CPU::requestNonMaskableInterrupt() {
 }
 
 bool CPU::canAcceptMaskableInterruptLine() const {
-	return (m_statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
+	return (m_cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
 		&& m_irqController.hasAssertedMaskableInterruptLine();
 }
 
@@ -2325,10 +2326,10 @@ bool CPU::enterPendingInterrupt() {
 	if (m_nonMaskableInterruptPending) {
 		m_nonMaskableInterruptPending = false;
 		const bool hadHaltLatch = m_haltedUntilIrqFrameDepth >= 0;
-		const u32 returnCauseWord = m_causeWord;
-		const u32 returnEpcWord = m_epcWord;
-		const u32 returnBadAddressWord = m_badAddressWord;
-		const u32 returnLuaFaultReasonWord = m_luaFaultReasonWord;
+		const u32 returnCauseWord = m_cop0Words[COP0_CAUSE];
+		const u32 returnEpcWord = m_cop0Words[COP0_EPC];
+		const u32 returnBadAddressWord = m_cop0Words[COP0_BAD_ADDRESS];
+		const u32 returnLuaFaultReasonWord = m_cop0Words[COP0_LUA_FAULT_REASON];
 		const u32 returnExceptionDomainWord = m_exceptionDomainWord;
 		enterException(
 			m_systemExceptionFunctionAddress,
@@ -2360,7 +2361,7 @@ void CPU::enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord) 
 }
 
 void CPU::enterSynchronousAddressException(CallFrame& interruptedFrame, u32 causeWord, u32 address) {
-	m_badAddressWord = address;
+	m_cop0Words[COP0_BAD_ADDRESS] = address;
 	enterSynchronousException(interruptedFrame, causeWord);
 }
 
@@ -2371,9 +2372,39 @@ void CPU::enterInstructionFetchException(CallFrame& interruptedFrame, u32 causeW
 }
 
 void CPU::enterLuaFaultException(u32 reason, Value errorValue) {
-	m_luaFaultReasonWord = reason;
+	m_cop0Words[COP0_LUA_FAULT_REASON] = reason;
 	enterSynchronousException(*m_activeThread->frames.back(), CPU_CAUSE_CODE_TRAP);
 	m_activeThread->frames.back()->registers[0] = errorValue;
+}
+
+void CPU::returnFromException(CallFrame& frame) {
+	if (isUserMode()) {
+		enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
+		return;
+	}
+	if (!frame.isExceptionFrame) {
+		hardHalt();
+		return;
+	}
+	const bool returnFromNmi = frame.isNonMaskableExceptionFrame;
+	const u32 returnPc = m_cop0Words[COP0_EPC];
+	closeUpvalues(frame);
+	auto finished = std::move(m_activeThread->frames.back());
+	m_activeThread->frames.pop_back();
+	m_activeThread->stackTop = finished->varargBase;
+	m_cop0Words[COP0_STATUS] = (m_cop0Words[COP0_STATUS] & ~CPU_STATUS_RFE_RESTORE_MASK)
+		| ((m_cop0Words[COP0_STATUS] >> 2u) & CPU_STATUS_RFE_RESTORE_MASK);
+	if (!m_activeThread->frames.empty()) {
+		m_activeThread->frames.back()->pc = returnPc;
+	}
+	if (returnFromNmi) {
+		m_cop0Words[COP0_CAUSE] = m_nmiReturnCauseWord;
+		m_cop0Words[COP0_EPC] = m_nmiReturnEpcWord;
+		m_cop0Words[COP0_BAD_ADDRESS] = m_nmiReturnBadAddressWord;
+		m_cop0Words[COP0_LUA_FAULT_REASON] = m_nmiReturnLuaFaultReasonWord;
+		m_exceptionDomainWord = m_nmiReturnExceptionDomainWord;
+	}
+	releaseFrame(std::move(finished));
 }
 
 void CPU::enterException(
@@ -2382,10 +2413,10 @@ void CPU::enterException(
 	u32 epcWord
 ) {
 	m_exceptionDomainWord = static_cast<u32>(m_activeThread->frames.back()->executionImage->executionDomainId);
-	m_epcWord = epcWord;
-	m_causeWord = causeWord;
-	m_statusWord = (m_statusWord & ~CPU_STATUS_MODE_STACK_MASK)
-		| ((m_statusWord << 2u) & CPU_STATUS_MODE_STACK_MASK);
+	m_cop0Words[COP0_EPC] = epcWord;
+	m_cop0Words[COP0_CAUSE] = causeWord;
+	m_cop0Words[COP0_STATUS] = (m_cop0Words[COP0_STATUS] & ~CPU_STATUS_MODE_STACK_MASK)
+		| ((m_cop0Words[COP0_STATUS] << 2u) & CPU_STATUS_MODE_STACK_MASK);
 	clearHaltAfterAcceptedInterrupt();
 	Closure* closure = staticClosureAtAddress(functionAddress);
 	CallFrame* frame = pushFrame(
@@ -2475,7 +2506,7 @@ RunResult CPU::runLoop(
 					enterPendingInterrupt();
 					continue;
 				}
-				if ((m_statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
+				if ((m_cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
 					&& m_irqController.hasAssertedMaskableInterruptLine()) {
 					CallFrame* interruptedFrame = frames.back().get();
 					Blua32ExecutionImage* interruptedImage = interruptedFrame->executionImage;
@@ -2493,7 +2524,7 @@ RunResult CPU::runLoop(
 				}
 			} else {
 				if (m_nonMaskableInterruptPending
-					|| ((m_statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
+					|| ((m_cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
 						&& m_irqController.hasAssertedMaskableInterruptLine())) {
 					enterPendingInterrupt();
 					continue;
@@ -2513,7 +2544,7 @@ dispatch_fetch:
 				}
 			}
 			if ((pc & (INSTRUCTION_BYTES - 1u)) != 0u) {
-				m_badAddressWord = pc;
+				m_cop0Words[COP0_BAD_ADDRESS] = pc;
 				enterInstructionFetchException(*frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, pc);
 				continue;
 			}
@@ -2728,8 +2759,10 @@ dispatch_instruction:
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 dispatch_native_block: {
-				nativeState = {registers, IMAGE.constPool.data(), frame, m_globalValues.data(), m_systemGlobalValues.data(),
-					static_cast<u32>(IMAGE.constPool.size()), instructionBudgetRemaining + nativeFirstDispatchCycles, FRAME.top};
+				nativeState = {.registers = registers, .constants = IMAGE.constPool.data(), .frame = frame,
+					.globalValues = m_globalValues.data(), .systemGlobalValues = m_systemGlobalValues.data(),
+					.cop0Words = m_cop0Words.data(), .constantCount = static_cast<u32>(IMAGE.constPool.size()),
+					.remainingCycles = instructionBudgetRemaining + nativeFirstDispatchCycles, .registerTop = FRAME.top};
 				const auto* exit = nativeBlock->run(nativeState);
 				// Publish precisely the completed prefix before any allocating,
 				// faulting or code-invalidating semantic operation runs.
@@ -2755,6 +2788,18 @@ dispatch_native_block: {
 					DISPATCH_CONTINUE();
 				case NativeBlockExit::Halt:
 					haltUntilIrq();
+					DISPATCH_CONTINUE();
+				case NativeBlockExit::ControlFault:
+					if (isUserMode()) enterSynchronousException(FRAME, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
+					else hardHalt();
+					DISPATCH_CONTINUE();
+				case NativeBlockExit::ControlBoundary:
+					DISPATCH_CONTINUE();
+				case NativeBlockExit::ExecuteFunction:
+					executeFunctionAddress(toU32(registers[exit->exitA]));
+					DISPATCH_CONTINUE();
+				case NativeBlockExit::ExceptionReturn:
+					returnFromException(FRAME);
 					DISPATCH_CONTINUE();
 				case NativeBlockExit::SkipInstruction:
 					skipNextInstruction(FRAME);
@@ -3031,19 +3076,19 @@ Value CPU::readClosureUpvalue(const Closure* closure, int upvalueIndex) const {
 }
 
 u32 CPU::readEpcWord() const {
-	return m_epcWord;
+	return m_cop0Words[COP0_EPC];
 }
 
 u32 CPU::readCauseWord() const {
-	return m_causeWord;
+	return m_cop0Words[COP0_CAUSE];
 }
 
 u32 CPU::readBadAddressWord() const {
-	return m_badAddressWord;
+	return m_cop0Words[COP0_BAD_ADDRESS];
 }
 
 u32 CPU::readLuaFaultReasonWord() const {
-	return m_luaFaultReasonWord;
+	return m_cop0Words[COP0_LUA_FAULT_REASON];
 }
 
 u32 CPU::readExceptionDomainWord() const {
@@ -3051,7 +3096,7 @@ u32 CPU::readExceptionDomainWord() const {
 }
 
 void CPU::writeEpcWord(u32 value) {
-	m_epcWord = value;
+	m_cop0Words[COP0_EPC] = value;
 }
 
 u32 CPU::readNmiReturnEpcWord() const {

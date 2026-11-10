@@ -9,6 +9,7 @@
 #include "common/primitives.h"
 #include "machine/cpu/value.h"
 #include "spec/blua32/opcode.h"
+#include "spec/blua32/cop0.h"
 
 namespace bmsx {
 
@@ -35,6 +36,7 @@ struct NativeBlockRunState {
 	CallFrame* frame = nullptr;
 	Value* globalValues = nullptr;
 	Value* systemGlobalValues = nullptr;
+	u32* cop0Words = nullptr;
 	u32 constantCount = 0;
 	int remainingCycles = 0;
 	int registerTop = 0;
@@ -70,6 +72,10 @@ enum class NativeBlockExit : u8 {
 	WriteInteger,
 	InvalidLength,
 	AllocateTable,
+	ControlFault,
+	ControlBoundary,
+	ExecuteFunction,
+	ExceptionReturn,
 	Count,
 };
 
@@ -109,6 +115,9 @@ inline constexpr bool nativeBlockSupports(u8 op) {
 		case OpCode::SELF:
 		case OpCode::LEN:
 		case OpCode::NEWT:
+		case OpCode::MFC0:
+		case OpCode::MTC0:
+		case OpCode::RFE:
 		case OpCode::LOADK:
 		case OpCode::LOADKR:
 		case OpCode::LOADNIL:
@@ -166,15 +175,19 @@ inline constexpr bool nativeBlockComparison(u8 op) {
 	return op == static_cast<u8>(OpCode::EQ) || op == static_cast<u8>(OpCode::LT) || op == static_cast<u8>(OpCode::LE);
 }
 
-inline constexpr bool nativeBlockEndsBlock(u8 op) {
+inline constexpr bool nativeBlockEndsBlock(u8 op, int field) {
 	return op == static_cast<u8>(OpCode::JMP) || op == static_cast<u8>(OpCode::JMPIF)
 		|| op == static_cast<u8>(OpCode::JMPIFNOT) || op == static_cast<u8>(OpCode::HALT)
 		|| op == static_cast<u8>(OpCode::CALL) || op == static_cast<u8>(OpCode::RET)
-		|| op == static_cast<u8>(OpCode::NEWT) || nativeBlockComparison(op);
+		|| op == static_cast<u8>(OpCode::NEWT)
+		|| (op == static_cast<u8>(OpCode::MTC0) && (field == COP0_STATUS || field == COP0_EXEC || !cop0FieldImplemented(field)))
+		|| op == static_cast<u8>(OpCode::RFE) || nativeBlockComparison(op);
 }
 
-inline constexpr NativeBlockExit nativeBlockSlowExit(u8 op) {
+inline constexpr NativeBlockExit nativeBlockSlowExit(u8 op, int field, bool controlGuarded) {
 	switch (static_cast<OpCode>(op)) {
+		case OpCode::MFC0:
+		case OpCode::MTC0: return controlGuarded && cop0FieldImplemented(field) ? NativeBlockExit::Continue : NativeBlockExit::ControlFault;
 		case OpCode::GETFIELD: return NativeBlockExit::ReadField;
 		case OpCode::SELF: return NativeBlockExit::ReadField;
 		case OpCode::SETFIELD: return NativeBlockExit::WriteField;

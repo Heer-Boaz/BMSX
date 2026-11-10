@@ -13,6 +13,8 @@ import { compiledContextSupports, emitContext } from './compiled_block_context';
 import { compiledTableSupports, emitTableOperation } from './compiled_block_table';
 import { luaFloorDivide, luaModulo } from '../../spec/blua32/numeric';
 import { luaPow } from '../../spec/blua32/pow';
+import { COP0_EXEC, COP0_STATUS, cop0FieldImplemented } from '../../spec/blua32/cop0';
+import { compiledControlSupports, emitControl } from './compiled_block_control';
 
 export const enum CpuExecutionBackend {
 	Interpreter,
@@ -42,10 +44,15 @@ export const enum CompiledBlockExit {
 	WriteInteger,
 	InvalidLength,
 	AllocateTable,
+	ControlFault,
+	ControlBoundary,
+	ExecuteFunction,
+	ExceptionReturn,
 }
 
 const sideExitKinds: (CompiledBlockExit | undefined)[] = [];
 for (const [op, exit] of [
+	[OpCode.MFC0, CompiledBlockExit.ControlFault], [OpCode.MTC0, CompiledBlockExit.ControlFault],
 	[OpCode.GETFIELD, CompiledBlockExit.ReadField], [OpCode.SELF, CompiledBlockExit.ReadField],
 	[OpCode.SETFIELD, CompiledBlockExit.WriteField], [OpCode.GETT, CompiledBlockExit.ReadIndex],
 	[OpCode.SETT, CompiledBlockExit.WriteIndex], [OpCode.GETI, CompiledBlockExit.ReadInteger],
@@ -206,17 +213,21 @@ emitters[OpCode.HALT] = emitters[OpCode.JMP];
 emitters[OpCode.CALL] = emitters[OpCode.JMP];
 emitters[OpCode.RET] = emitters[OpCode.JMP];
 emitters[OpCode.NEWT] = emitters[OpCode.JMP];
+emitters[OpCode.RFE] = emitters[OpCode.JMP];
 
 export function compiledBlockSupports(op: number): boolean {
 	return emitters[op] !== undefined || numberEmitters[op] !== undefined
 		|| compiledContextSupports(op)
 		|| compiledTableSupports(op)
+		|| compiledControlSupports(op)
 		|| op === OpCode.LOAD_MEM || op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM || op === OpCode.STORE_MEM_D;
 }
 
-export function compiledBlockEndsBlock(op: number): boolean {
+export function compiledBlockEndsBlock(op: number, field: number): boolean {
 	return op === OpCode.JMP || op === OpCode.JMPIF || op === OpCode.JMPIFNOT || op === OpCode.HALT
-		|| op === OpCode.CALL || op === OpCode.RET || op === OpCode.NEWT || op === OpCode.EQ || op === OpCode.LT || op === OpCode.LE;
+		|| op === OpCode.CALL || op === OpCode.RET || op === OpCode.NEWT || op === OpCode.RFE
+		|| (op === OpCode.MTC0 && (field === COP0_STATUS || field === COP0_EXEC || !cop0FieldImplemented(field)))
+		|| op === OpCode.EQ || op === OpCode.LT || op === OpCode.LE;
 }
 
 /** Fields and RAM stay in the block; side exits publish only the executed prefix. */
@@ -230,6 +241,7 @@ export function compileJavaScriptBlock(
 	strings: StringPool,
 	globalSlots: ValueSlots,
 	systemGlobalSlots: ValueSlots,
+	cop0Words: Uint32Array,
 ): CompiledBlock {
 	const source = ['"use strict";'];
 	const registers = new JavaScriptRegisterCache(image);
@@ -245,6 +257,7 @@ export function compileJavaScriptBlock(
 	let numberLocal = false;
 	let memoryAccess = false;
 	let memoryReads = false;
+	let controlAccess = false;
 	let contextCapture = false;
 	for (let word = firstWord; word < endWord; word += page.widths[word]) {
 		finalWord = word;
@@ -260,7 +273,8 @@ export function compileJavaScriptBlock(
 		const store = op === OpCode.STORE_MEM || op === OpCode.STORE_MEM_D;
 		const displaced = op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM_D;
 		if (op === OpCode.SELF) registerTop = Math.max(registerTop, page.a[word] + 2);
-		const sideExit = sideExitKinds[op];
+		const control = compiledControlSupports(op);
+		const sideExit = control && controlAccess && cop0FieldImplemented(page.b[word]) ? undefined : sideExitKinds[op];
 		if (sideExit !== undefined) {
 			exits.push({ exit: sideExit,
 				exitA: page.a[word], exitB: page.b[word], exitC: page.c[word], exitWord: word,
@@ -269,7 +283,10 @@ export function compileJavaScriptBlock(
 				linkedBlock: null, previousIncoming: null, nextIncoming: null });
 		}
 		const numberEmitter = numberEmitters[op];
-		if (compiledContextSupports(op)) {
+		if (control) {
+			source.push(emitControl(op, page, word, registers, sideExit === undefined ? null : exitIndex, !controlAccess));
+			controlAccess = true;
+		} else if (compiledContextSupports(op)) {
 			contextCapture ||= op === OpCode.GETGL || op === OpCode.SETGL || op === OpCode.GETSYS || op === OpCode.SETSYS || op === OpCode.LOADKR;
 			source.push(emitContext(op, page, word, registers, exitIndex));
 		} else if (compiledTableSupports(op)) {
@@ -294,14 +311,24 @@ export function compileJavaScriptBlock(
 		if (op === OpCode.VARARG && page.b[word] === 0) { registerTop = 0; resetsRegisterTop = true; }
 		else if (op === OpCode.VARARG || op === OpCode.LOADNIL) {
 			if (page.b[word] !== 0) registerTop = Math.max(registerTop, page.a[word] + page.b[word]);
-		} else if (!compiledBlockEndsBlock(op) && op !== OpCode.SETFIELD && op !== OpCode.SETT && op !== OpCode.SETI && !store
-			&& op !== OpCode.SETUP && op !== OpCode.SETGL && op !== OpCode.SETSYS) registerTop = Math.max(registerTop, page.a[word] + 1);
+		} else if (!compiledBlockEndsBlock(op, page.b[word]) && op !== OpCode.SETFIELD && op !== OpCode.SETT && op !== OpCode.SETI && !store
+			&& op !== OpCode.MTC0 && op !== OpCode.SETUP && op !== OpCode.SETGL && op !== OpCode.SETSYS) registerTop = Math.max(registerTop, page.a[word] + 1);
 	}
 	source.push(registers.writeBack());
 	const finalOp = page.ops[finalWord];
+	let terminalExit = CompiledBlockExit.Continue;
+	switch (finalOp) {
+		case OpCode.HALT: terminalExit = CompiledBlockExit.Halt; break;
+		case OpCode.CALL: terminalExit = CompiledBlockExit.Call; break;
+		case OpCode.RET: terminalExit = CompiledBlockExit.Return; break;
+		case OpCode.NEWT: terminalExit = CompiledBlockExit.AllocateTable; break;
+		case OpCode.MTC0: terminalExit = page.b[finalWord] === COP0_EXEC
+			? CompiledBlockExit.ExecuteFunction : page.b[finalWord] === COP0_STATUS
+			? CompiledBlockExit.ControlBoundary : CompiledBlockExit.Continue; break;
+		case OpCode.RFE: terminalExit = CompiledBlockExit.ExceptionReturn; break;
+	}
 	const terminal: CompiledBlockExitSite = {
-		exit: finalOp === OpCode.HALT ? CompiledBlockExit.Halt : finalOp === OpCode.CALL ? CompiledBlockExit.Call
-			: finalOp === OpCode.RET ? CompiledBlockExit.Return : finalOp === OpCode.NEWT ? CompiledBlockExit.AllocateTable : CompiledBlockExit.Continue,
+		exit: terminalExit,
 		exitA: page.a[finalWord], exitB: page.b[finalWord], exitC: page.c[finalWord], exitWord: finalWord,
 		displaced: false, displacement: 0,
 		cycles, registerTop, resetsRegisterTop, nextPc, currentPc, lastPc,
@@ -324,20 +351,20 @@ export function compileJavaScriptBlock(
 		source.push(`return ${truth}?${takenIndex}:${terminalIndex};`);
 	} else source.push(`return ${terminalIndex};`);
 	const body = source.join('\n');
-	const functionSource = memoryAccess || registers.localCount !== 0 || ordering || contextCapture ? `return function(r,k,p,frame){${body}}` : body;
+	const functionSource = memoryAccess || registers.localCount !== 0 || ordering || contextCapture || controlAccess ? `return function(r,k,p,frame){${body}}` : body;
 	let execute: CompiledBlock['execute'];
 	if (memoryReads) {
 		const cartridges = memory.cartridgeController;
-		execute = new Function('m', 'g', 's', 'c', 'c0', 'c1', 'f', 'q', 'kt', 'gl', 'sy', 'mod', 'floorDiv', 'pow', functionSource)(
+		execute = new Function('m', 'g', 's', 'c', 'c0', 'c1', 'f', 'q', 'kt', 'gl', 'sy', 'mod', 'floorDiv', 'pow', 'cp', functionSource)(
 			memory.ramView, memory.ramWriteWatches().groupData(), memory.systemRomStorage(),
 			cartridges, cartridges.romStorage(0), cartridges.romStorage(1), valueFromNumber, strings, image.constTags, globalSlots, systemGlobalSlots,
-			luaModulo, luaFloorDivide, luaPow) as CompiledBlock['execute'];
+			luaModulo, luaFloorDivide, luaPow, cop0Words) as CompiledBlock['execute'];
 	} else if (memoryAccess) {
-		execute = new Function('m', 'g', 'f', 'q', 'kt', 'gl', 'sy', 'mod', 'floorDiv', 'pow', functionSource)(memory.ramView, memory.ramWriteWatches().groupData(), valueFromNumber, strings, image.constTags, globalSlots, systemGlobalSlots,
-			luaModulo, luaFloorDivide, luaPow) as CompiledBlock['execute'];
-	} else if (registers.localCount !== 0 || ordering || contextCapture) {
-		execute = new Function('f', 'q', 'kt', 'gl', 'sy', 'mod', 'floorDiv', 'pow', functionSource)(valueFromNumber, strings, image.constTags, globalSlots, systemGlobalSlots,
-			luaModulo, luaFloorDivide, luaPow) as CompiledBlock['execute'];
+		execute = new Function('m', 'g', 'f', 'q', 'kt', 'gl', 'sy', 'mod', 'floorDiv', 'pow', 'cp', functionSource)(memory.ramView, memory.ramWriteWatches().groupData(), valueFromNumber, strings, image.constTags, globalSlots, systemGlobalSlots,
+			luaModulo, luaFloorDivide, luaPow, cop0Words) as CompiledBlock['execute'];
+	} else if (registers.localCount !== 0 || ordering || contextCapture || controlAccess) {
+		execute = new Function('f', 'q', 'kt', 'gl', 'sy', 'mod', 'floorDiv', 'pow', 'cp', functionSource)(valueFromNumber, strings, image.constTags, globalSlots, systemGlobalSlots,
+			luaModulo, luaFloorDivide, luaPow, cop0Words) as CompiledBlock['execute'];
 	} else execute = new Function('r', 'k', 'p', 'frame', functionSource) as CompiledBlock['execute'];
 	return {
 		execute,

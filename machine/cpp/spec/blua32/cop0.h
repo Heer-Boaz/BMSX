@@ -11,6 +11,12 @@ constexpr uint8_t COP0_CAUSE = 13u;
 constexpr uint8_t COP0_EPC = 14u;
 constexpr uint8_t COP0_EXEC = 15u;
 
+constexpr bool cop0FieldImplemented(int field) {
+	constexpr uint32_t fields = (1u << COP0_BAD_ADDRESS) | (1u << COP0_LUA_FAULT_REASON)
+		| (1u << COP0_STATUS) | (1u << COP0_CAUSE) | (1u << COP0_EPC) | (1u << COP0_EXEC);
+	return static_cast<uint32_t>(field) <= COP0_EXEC && ((fields >> field) & 1u) != 0u;
+}
+
 constexpr uint32_t CPU_STATUS_INTERRUPT_ENABLE_CURRENT = 1u << 0u;
 constexpr uint32_t CPU_STATUS_USER_MODE_CURRENT = 1u << 1u;
 constexpr uint32_t CPU_STATUS_MODE_STACK_MASK = 0x3fu;

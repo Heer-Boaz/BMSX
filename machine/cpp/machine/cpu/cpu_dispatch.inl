@@ -495,16 +495,8 @@ DISPATCH_LABEL(MFC0) {
 		enterSynchronousException(FRAME, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
 		DISPATCH_CONTINUE();
 	}
-	u32 value = 0u;
-	switch (b) {
-		case COP0_BAD_ADDRESS: value = m_badAddressWord; break;
-		case COP0_LUA_FAULT_REASON: value = m_luaFaultReasonWord; break;
-		case COP0_STATUS: value = m_statusWord; break;
-		case COP0_CAUSE: value = m_causeWord; break;
-		case COP0_EPC: value = m_epcWord; break;
-		case COP0_EXEC: value = 0u; break;
-		default: hardHalt(); DISPATCH_CONTINUE();
-	}
+	if (!cop0FieldImplemented(b)) { hardHalt(); DISPATCH_CONTINUE(); }
+	const u32 value = b == COP0_EXEC ? 0u : m_cop0Words[b];
 	SET_REGISTER_FAST(a, valueNumber(static_cast<double>(value)));
 	DISPATCH_CONTINUE();
 }
@@ -518,8 +510,8 @@ DISPATCH_LABEL(MTC0) {
 	}
 	const u32 value = toU32(REG(a));
 	switch (b) {
-		case COP0_STATUS: m_statusWord = value; break;
-		case COP0_EPC: m_epcWord = value; break;
+		case COP0_STATUS: m_cop0Words[COP0_STATUS] = value; break;
+		case COP0_EPC: m_cop0Words[COP0_EPC] = value; break;
 		case COP0_EXEC: executeFunctionAddress(value); DISPATCH_CONTINUE();
 		case COP0_BAD_ADDRESS:
 		case COP0_LUA_FAULT_REASON:
@@ -677,33 +669,7 @@ DISPATCH_LABEL(STORE_MEM_WORDS) {
 }
 
 DISPATCH_LABEL(RFE) {
-	if (isUserMode()) {
-		enterSynchronousException(FRAME, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
-		DISPATCH_CONTINUE();
-	}
-	if (!FRAME.isExceptionFrame) {
-		hardHalt();
-		DISPATCH_CONTINUE();
-	}
-	const bool returnFromNmi = FRAME.isNonMaskableExceptionFrame;
-	const u32 returnPc = m_epcWord;
-	closeUpvalues(FRAME);
-	auto finished = std::move(m_activeThread->frames.back());
-	m_activeThread->frames.pop_back();
-	m_activeThread->stackTop = finished->varargBase;
-	m_statusWord = (m_statusWord & ~CPU_STATUS_RFE_RESTORE_MASK)
-		| ((m_statusWord >> 2u) & CPU_STATUS_RFE_RESTORE_MASK);
-	if (!m_activeThread->frames.empty()) {
-		m_activeThread->frames.back()->pc = returnPc;
-	}
-	if (returnFromNmi) {
-		m_causeWord = m_nmiReturnCauseWord;
-		m_epcWord = m_nmiReturnEpcWord;
-		m_badAddressWord = m_nmiReturnBadAddressWord;
-		m_luaFaultReasonWord = m_nmiReturnLuaFaultReasonWord;
-		m_exceptionDomainWord = m_nmiReturnExceptionDomainWord;
-	}
-	releaseFrame(std::move(finished));
+	returnFromException(FRAME);
 	DISPATCH_CONTINUE();
 }
 

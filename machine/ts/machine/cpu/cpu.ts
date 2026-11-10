@@ -16,6 +16,7 @@ import { readLE32 } from '../../common/endian';
 import type { IrqController } from '../devices/irq/controller';
 import { BASE_CYCLES, OPCODE_USES_BX, OPCODE_USES_DISP, OPCODE_RK_OPERANDS, RK_OPERAND_B, RK_OPERAND_C, OpCode } from '../../spec/blua32/opcode';
 import {
+	cop0FieldImplemented,
 	COP0_BAD_ADDRESS,
 	COP0_CAUSE,
 	COP0_EPC,
@@ -287,11 +288,7 @@ export class CPU implements MappedPageInvalidator {
 	private currentInstructionPc = 0;
 	private lastExecutionDomainId: ExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	private hardHalted = false;
-	private statusWord = CPU_STATUS_CART_ENTRY;
-	private causeWord = 0;
-	private epcWord = 0;
-	private badAddressWord = 0;
-	private luaFaultReasonWord = 0;
+	private readonly cop0Words = new Uint32Array(COP0_EXEC + 1);
 	private exceptionDomainWord = 0;
 	private nmiReturnCauseWord = 0;
 	private nmiReturnEpcWord = 0;
@@ -501,6 +498,7 @@ export class CPU implements MappedPageInvalidator {
 		private readonly executionBackend = CpuExecutionBackend.Interpreter,
 	) {
 		this.memory = memory;
+		this.cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 		this.luaHeap = new LuaHeap(this, memory.ramByteCount());
 		this.stringPool = new StringPool(this.luaHeap);
 		this.luaHeap.reserve(THREAD_HEAP_BYTES + 8 * THREAD_STACK_SLOT_BYTES);
@@ -914,11 +912,11 @@ export class CPU implements MappedPageInvalidator {
 		this.memoryWriteBlocked = false;
 		this.memoryWriteBlockedAddress = 0;
 		this.hardHalted = false;
-		this.statusWord = CPU_STATUS_SYSTEM_ENTRY;
-		this.causeWord = 0;
-		this.epcWord = 0;
-		this.badAddressWord = 0;
-		this.luaFaultReasonWord = 0;
+		this.cop0Words[COP0_STATUS] = CPU_STATUS_SYSTEM_ENTRY;
+		this.cop0Words[COP0_CAUSE] = 0;
+		this.cop0Words[COP0_EPC] = 0;
+		this.cop0Words[COP0_BAD_ADDRESS] = 0;
+		this.cop0Words[COP0_LUA_FAULT_REASON] = 0;
 		this.exceptionDomainWord = 0;
 		this.nmiReturnCauseWord = 0;
 		this.nmiReturnEpcWord = 0;
@@ -1425,7 +1423,7 @@ export class CPU implements MappedPageInvalidator {
 		}
 		if (instructionCacheable && this.executionBackend === CpuExecutionBackend.JavaScript
 			&& compiledBlockSupports(page.ops[pageOffset])
-			&& (compiledBlockEndsBlock(page.ops[pageOffset]) || pageOffset + width < DECODED_PAGE_WORDS)) {
+			&& (compiledBlockEndsBlock(page.ops[pageOffset], page.b[pageOffset]) || pageOffset + width < DECODED_PAGE_WORDS)) {
 			if (page.compiledBlocks === null) page.compiledBlocks = new CompiledBlockPage();
 			page.compiledBlocks.visits[pageOffset] = 0;
 			page.dispatchOps[pageOffset] = DecodedDispatchOp.CompiledWarm;
@@ -1592,7 +1590,7 @@ export class CPU implements MappedPageInvalidator {
 		this.clearCallStack();
 		this.latchActiveExecutionImage(image);
 		const cartridgeEntry = image.executionDomainId >= 0;
-		this.statusWord = cartridgeEntry ? CPU_STATUS_CART_ENTRY : CPU_STATUS_SYSTEM_ENTRY;
+		this.cop0Words[COP0_STATUS] = cartridgeEntry ? CPU_STATUS_CART_ENTRY : CPU_STATUS_SYSTEM_ENTRY;
 		this.haltedUntilIrqFrameDepth = -1;
 		this.haltedUntilIrqThread = null;
 		this.interruptEventPending = false;
@@ -1733,7 +1731,7 @@ export class CPU implements MappedPageInvalidator {
 
 
 	public isUserMode(): boolean {
-		return (this.statusWord & CPU_STATUS_USER_MODE_CURRENT) !== 0;
+		return (this.cop0Words[COP0_STATUS] & CPU_STATUS_USER_MODE_CURRENT) !== 0;
 	}
 
 	public requestNonMaskableInterrupt(): void {
@@ -1747,7 +1745,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public canAcceptMaskableInterruptLine(): boolean {
-		return (this.statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
+		return (this.cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
 			&& this.irqController.hasAssertedMaskableInterruptLine();
 	}
 
@@ -1765,10 +1763,10 @@ export class CPU implements MappedPageInvalidator {
 		if (this.nonMaskableInterruptPending) {
 			this.nonMaskableInterruptPending = false;
 			const hadHaltLatch = this.haltedUntilIrqFrameDepth >= 0;
-			const returnCauseWord = this.causeWord;
-			const returnEpcWord = this.epcWord;
-			const returnBadAddressWord = this.badAddressWord;
-			const returnLuaFaultReasonWord = this.luaFaultReasonWord;
+			const returnCauseWord = this.cop0Words[COP0_CAUSE];
+			const returnEpcWord = this.cop0Words[COP0_EPC];
+			const returnBadAddressWord = this.cop0Words[COP0_BAD_ADDRESS];
+			const returnLuaFaultReasonWord = this.cop0Words[COP0_LUA_FAULT_REASON];
 			const returnExceptionDomainWord = this.exceptionDomainWord;
 			this.enterException(
 				this.systemExceptionFunctionAddress,
@@ -1804,7 +1802,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private enterSynchronousAddressException(interruptedFrame: CallFrame, causeWord: number, address: number): void {
-		this.badAddressWord = address >>> 0;
+		this.cop0Words[COP0_BAD_ADDRESS] = address >>> 0;
 		this.enterSynchronousException(interruptedFrame, causeWord);
 	}
 
@@ -1820,7 +1818,7 @@ export class CPU implements MappedPageInvalidator {
 		errorScalar: number,
 		errorReference: ValueReference,
 	): void {
-		this.luaFaultReasonWord = reason;
+		this.cop0Words[COP0_LUA_FAULT_REASON] = reason;
 		this.enterSynchronousException(this.activeThread.frames[this.activeThread.frames.length - 1], CPU_CAUSE_CODE_TRAP);
 		this.activeThread.frames[this.activeThread.frames.length - 1].registers.setEncoded(
 			0,
@@ -1830,16 +1828,46 @@ export class CPU implements MappedPageInvalidator {
 		);
 	}
 
+	private returnFromException(frame: CallFrame): void {
+		if (this.isUserMode()) {
+			this.enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
+			return;
+		}
+		if (!frame.isExceptionFrame) {
+			this.hardHalt();
+			return;
+		}
+		const returnFromNmi = frame.isNonMaskableExceptionFrame;
+		const returnPc = this.cop0Words[COP0_EPC];
+		const caller = this.activeThread.frames[this.activeThread.frames.length - 2];
+		this.closeUpvalues(frame);
+		this.activeThread.frames.pop();
+		this.activeThread.stackTop = frame.varargBase;
+		this.releaseFrame(frame);
+		this.cop0Words[COP0_STATUS] = ((this.cop0Words[COP0_STATUS] & ~CPU_STATUS_RFE_RESTORE_MASK)
+			| ((this.cop0Words[COP0_STATUS] >> 2) & CPU_STATUS_RFE_RESTORE_MASK)) >>> 0;
+		if (caller) {
+			caller.pc = returnPc;
+		}
+		if (returnFromNmi) {
+			this.cop0Words[COP0_CAUSE] = this.nmiReturnCauseWord;
+			this.cop0Words[COP0_EPC] = this.nmiReturnEpcWord;
+			this.cop0Words[COP0_BAD_ADDRESS] = this.nmiReturnBadAddressWord;
+			this.cop0Words[COP0_LUA_FAULT_REASON] = this.nmiReturnLuaFaultReasonWord;
+			this.exceptionDomainWord = this.nmiReturnExceptionDomainWord;
+		}
+	}
+
 	private enterException(
 		functionAddress: number,
 		causeWord: number,
 		epcWord: number,
 	): void {
 		this.exceptionDomainWord = this.activeThread.frames[this.activeThread.frames.length - 1].executionImage.executionDomainId >>> 0;
-		this.epcWord = epcWord >>> 0;
-		this.causeWord = causeWord >>> 0;
-		this.statusWord = ((this.statusWord & ~CPU_STATUS_MODE_STACK_MASK)
-			| ((this.statusWord << 2) & CPU_STATUS_MODE_STACK_MASK)) >>> 0;
+		this.cop0Words[COP0_EPC] = epcWord >>> 0;
+		this.cop0Words[COP0_CAUSE] = causeWord >>> 0;
+		this.cop0Words[COP0_STATUS] = ((this.cop0Words[COP0_STATUS] & ~CPU_STATUS_MODE_STACK_MASK)
+			| ((this.cop0Words[COP0_STATUS] << 2) & CPU_STATUS_MODE_STACK_MASK)) >>> 0;
 		this.clearHaltAfterAcceptedInterrupt();
 		const closure = this.staticClosureAtAddress(functionAddress);
 		const frame = this.pushFrame(closure, EMPTY_CALL_ARGS, 0, 0, false)!;
@@ -1887,7 +1915,7 @@ export class CPU implements MappedPageInvalidator {
 						return RunResult.Yielded;
 					}
 					if (this.nonMaskableInterruptPending
-						|| ((this.statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
+						|| ((this.cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
 							&& this.irqController.hasAssertedMaskableInterruptLine())
 					) {
 						this.enterPendingInterrupt();
@@ -1897,7 +1925,7 @@ export class CPU implements MappedPageInvalidator {
 					const image = frame.executionImage;
 					const pc = frame.pc;
 					if ((pc & (INSTRUCTION_BYTES - 1)) !== 0) {
-						this.badAddressWord = pc;
+						this.cop0Words[COP0_BAD_ADDRESS] = pc;
 						this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, pc);
 						continue;
 					}
@@ -1956,7 +1984,7 @@ export class CPU implements MappedPageInvalidator {
 						this.enterPendingInterrupt();
 						continue;
 					}
-					if ((this.statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
+					if ((this.cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
 						&& this.irqController.hasAssertedMaskableInterruptLine()) {
 						const interruptedFrame = frames[frames.length - 1];
 						const interruptedImage = interruptedFrame.executionImage;
@@ -1976,7 +2004,7 @@ export class CPU implements MappedPageInvalidator {
 						return RunResult.ExecutionStopped;
 					}
 					if ((pc & (INSTRUCTION_BYTES - 1)) !== 0) {
-						this.badAddressWord = pc;
+						this.cop0Words[COP0_BAD_ADDRESS] = pc;
 						this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, pc);
 						continue;
 					}
@@ -2162,19 +2190,19 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public readEpcWord(): number {
-		return this.epcWord;
+		return this.cop0Words[COP0_EPC];
 	}
 
 	public readCauseWord(): number {
-		return this.causeWord;
+		return this.cop0Words[COP0_CAUSE];
 	}
 
 	public readBadAddressWord(): number {
-		return this.badAddressWord;
+		return this.cop0Words[COP0_BAD_ADDRESS];
 	}
 
 	public readLuaFaultReasonWord(): number {
-		return this.luaFaultReasonWord;
+		return this.cop0Words[COP0_LUA_FAULT_REASON];
 	}
 
 	public readExceptionDomainWord(): number {
@@ -2182,7 +2210,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public writeEpcWord(value: number): void {
-		this.epcWord = value;
+		this.cop0Words[COP0_EPC] = value;
 	}
 
 	public readNmiReturnEpcWord(): number {
@@ -2515,13 +2543,13 @@ export class CPU implements MappedPageInvalidator {
 					}
 					++count;
 					nextPc = (nextPc + page.widths[cursor] * INSTRUCTION_BYTES) >>> 0;
-					const terminal = compiledBlockEndsBlock(page.ops[cursor]);
+					const terminal = compiledBlockEndsBlock(page.ops[cursor], page.b[cursor]);
 					cursor += page.widths[cursor];
 					if (terminal) break;
 				}
-				if (count >= 2 || (count === 1 && compiledBlockEndsBlock(page.ops[word]))) {
+				if (count >= 2 || (count === 1 && compiledBlockEndsBlock(page.ops[word], page.b[word]))) {
 					const block = compileJavaScriptBlock(page, word, cursor, pc, frame.executionImage, this.memory, this.stringPool,
-						this.globalSlots, this.systemGlobalSlots);
+						this.globalSlots, this.systemGlobalSlots, this.cop0Words);
 					this.compiledCodeCache.install(page, word, block);
 				} else if (warmingSuccessor) {
 					cache.visits[word] = 0;
@@ -2570,6 +2598,14 @@ export class CPU implements MappedPageInvalidator {
 			switch (exit.exit) {
 				case CompiledBlockExit.Continue: return;
 				case CompiledBlockExit.Halt: this.haltUntilIrq(); return;
+				case CompiledBlockExit.ControlFault:
+					if (this.isUserMode()) this.enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
+					else this.hardHalt();
+					return;
+				case CompiledBlockExit.ControlBoundary: return;
+				case CompiledBlockExit.ExecuteFunction:
+					this.executeFunctionAddress(registers.getNumber(exit.exitA) >>> 0); return;
+				case CompiledBlockExit.ExceptionReturn: this.returnFromException(frame); return;
 				case CompiledBlockExit.Call:
 					if (!this.executeCall(frame, exit.exitA, exit.exitB, exit.exitC)) return;
 					break;
@@ -3121,16 +3157,9 @@ export class CPU implements MappedPageInvalidator {
 						this.enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
 						return;
 					}
-					let value: number;
-					switch (page.b[pageOffset]) {
-						case COP0_BAD_ADDRESS: value = this.badAddressWord; break;
-						case COP0_LUA_FAULT_REASON: value = this.luaFaultReasonWord; break;
-						case COP0_STATUS: value = this.statusWord; break;
-						case COP0_CAUSE: value = this.causeWord; break;
-						case COP0_EPC: value = this.epcWord; break;
-						case COP0_EXEC: value = 0; break;
-						default: this.hardHalt(); return;
-					}
+					const field = page.b[pageOffset];
+					if (!cop0FieldImplemented(field)) { this.hardHalt(); return; }
+					const value = field === COP0_EXEC ? 0 : this.cop0Words[field];
 					this.setRegisterNumberFast(frame, registers, a, value);
 					return;
 				}
@@ -3141,8 +3170,8 @@ export class CPU implements MappedPageInvalidator {
 					}
 					const value = registers.getNumber(a) >>> 0;
 					switch (page.b[pageOffset]) {
-						case COP0_STATUS: this.statusWord = value; return;
-						case COP0_EPC: this.epcWord = value; return;
+						case COP0_STATUS: this.cop0Words[COP0_STATUS] = value; return;
+						case COP0_EPC: this.cop0Words[COP0_EPC] = value; return;
 						case COP0_EXEC: this.executeFunctionAddress(value); return;
 						case COP0_BAD_ADDRESS:
 						case COP0_LUA_FAULT_REASON:
@@ -3152,33 +3181,7 @@ export class CPU implements MappedPageInvalidator {
 					}
 				}
 				case OpCode.RFE:
-					if (this.isUserMode()) {
-						this.enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
-						return;
-					}
-					if (!frame.isExceptionFrame) {
-						this.hardHalt();
-						return;
-					}
-					const returnFromNmi = frame.isNonMaskableExceptionFrame;
-					const returnPc = this.epcWord;
-					const caller = this.activeThread.frames[this.activeThread.frames.length - 2];
-					this.closeUpvalues(frame);
-					this.activeThread.frames.pop();
-					this.activeThread.stackTop = frame.varargBase;
-					this.releaseFrame(frame);
-					this.statusWord = ((this.statusWord & ~CPU_STATUS_RFE_RESTORE_MASK)
-						| ((this.statusWord >> 2) & CPU_STATUS_RFE_RESTORE_MASK)) >>> 0;
-					if (caller) {
-						caller.pc = returnPc;
-					}
-					if (returnFromNmi) {
-						this.causeWord = this.nmiReturnCauseWord;
-						this.epcWord = this.nmiReturnEpcWord;
-						this.badAddressWord = this.nmiReturnBadAddressWord;
-						this.luaFaultReasonWord = this.nmiReturnLuaFaultReasonWord;
-						this.exceptionDomainWord = this.nmiReturnExceptionDomainWord;
-					}
+					this.returnFromException(frame);
 					return;
 				case OpCode.LOADKR: {
 					const constantIndex = registers.getNumber(page.b[pageOffset]) >>> 0;
@@ -4761,11 +4764,11 @@ export class CPU implements MappedPageInvalidator {
 			interruptEventPending: this.interruptEventPending,
 			memoryWriteBlocked: this.memoryWriteBlocked,
 			memoryWriteBlockedAddress: this.memoryWriteBlockedAddress,
-			statusWord: this.statusWord,
-			causeWord: this.causeWord,
-			epcWord: this.epcWord,
-			badAddressWord: this.badAddressWord,
-			luaFaultReasonWord: this.luaFaultReasonWord,
+			statusWord: this.cop0Words[COP0_STATUS],
+			causeWord: this.cop0Words[COP0_CAUSE],
+			epcWord: this.cop0Words[COP0_EPC],
+			badAddressWord: this.cop0Words[COP0_BAD_ADDRESS],
+			luaFaultReasonWord: this.cop0Words[COP0_LUA_FAULT_REASON],
 			exceptionDomainWord: this.exceptionDomainWord,
 			nmiReturnCauseWord: this.nmiReturnCauseWord,
 			nmiReturnEpcWord: this.nmiReturnEpcWord,
@@ -5020,11 +5023,11 @@ export class CPU implements MappedPageInvalidator {
 		this.interruptEventPending = state.interruptEventPending;
 		this.memoryWriteBlocked = state.memoryWriteBlocked;
 		this.memoryWriteBlockedAddress = state.memoryWriteBlockedAddress;
-		this.statusWord = state.statusWord;
-		this.causeWord = state.causeWord;
-		this.epcWord = state.epcWord;
-		this.badAddressWord = state.badAddressWord;
-		this.luaFaultReasonWord = state.luaFaultReasonWord;
+		this.cop0Words[COP0_STATUS] = state.statusWord;
+		this.cop0Words[COP0_CAUSE] = state.causeWord;
+		this.cop0Words[COP0_EPC] = state.epcWord;
+		this.cop0Words[COP0_BAD_ADDRESS] = state.badAddressWord;
+		this.cop0Words[COP0_LUA_FAULT_REASON] = state.luaFaultReasonWord;
 		this.exceptionDomainWord = state.exceptionDomainWord;
 		this.nmiReturnCauseWord = state.nmiReturnCauseWord;
 		this.nmiReturnEpcWord = state.nmiReturnEpcWord;

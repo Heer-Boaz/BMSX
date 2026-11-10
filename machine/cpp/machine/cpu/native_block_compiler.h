@@ -20,6 +20,7 @@ public:
 
 private:
 	struct SlowPath;
+	void emitControl(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
 	void emitExit(const NativeBlockExitSite* exit);
 	void emitTableAccess(const DecodedInstruction& instruction, const NativeBlockExitSite* exit);
 	void emitArraySlot(bool load, int value, SlowPath& slow);
@@ -60,6 +61,7 @@ private:
 	Memory& m_memory;
 	StringPool& m_strings;
 	bool m_hasTerminal = false;
+	bool m_controlPrivilegeGuarded = false;
 	struct SlowPath {
 		std::array<sljit_jump*, 16> jumps;
 		size_t count = 0;

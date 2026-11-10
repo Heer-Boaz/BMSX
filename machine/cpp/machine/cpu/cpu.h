@@ -291,7 +291,7 @@ public:
 	uint32_t stalledMemoryWriteAddress() const { return m_memoryWriteBlockedAddress; }
 	void resumeMemoryWrite(uint32_t address);
 	void abortStalledMemoryWrite() { m_memoryWriteBlocked = false; }
-	bool isUserMode() const { return (m_statusWord & CPU_STATUS_USER_MODE_CURRENT) != 0u; }
+	bool isUserMode() const { return (m_cop0Words[COP0_STATUS] & CPU_STATUS_USER_MODE_CURRENT) != 0u; }
 	void requestNonMaskableInterrupt();
 	void cancelNonMaskableInterrupt() { m_nonMaskableInterruptPending = false; }
 	bool canAcceptMaskableInterruptLine() const;
@@ -501,6 +501,7 @@ private:
 #endif
 	void clearHaltAfterAcceptedInterrupt();
 	void enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord);
+	void returnFromException(CallFrame& frame);
 	void enterSynchronousAddressException(CallFrame& interruptedFrame, u32 causeWord, u32 address);
 	void enterInstructionFetchException(CallFrame& interruptedFrame, u32 causeWord, u32 pc);
 	void enterException(u32 functionAddress, u32 causeWord, u32 epcWord);
@@ -524,11 +525,7 @@ private:
 	u32 m_currentInstructionPc = 0;
 	ExecutionDomainId m_lastExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	bool m_hardHalted = false;
-	u32 m_statusWord = CPU_STATUS_CART_ENTRY;
-	u32 m_causeWord = 0;
-	u32 m_epcWord = 0;
-	u32 m_badAddressWord = 0;
-	u32 m_luaFaultReasonWord = 0;
+	std::array<u32, COP0_EXEC + 1u> m_cop0Words{};
 	u32 m_exceptionDomainWord = 0;
 	u32 m_nmiReturnCauseWord = 0;
 	u32 m_nmiReturnEpcWord = 0;

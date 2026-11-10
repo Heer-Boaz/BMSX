@@ -5,6 +5,7 @@
 
 #include "machine/cpu/execution_image.h"
 #include "spec/blua32/memory_access_kind.h"
+#include "spec/blua32/cop0.h"
 #include "spec/blua32/numeric.h"
 #include "spec/blua32/pow.h"
 
@@ -15,11 +16,14 @@ NativeBlockCompiler::NativeBlockCompiler(const Value* constants, const NativeBlo
 	: m_compiler(nullptr), m_constants(constants), m_block(block), m_memory(memory), m_strings(strings) {
 	size_t slowPaths = 0, readMappings = 0;
 	bool calls = false;
+	bool controlGuarded = false;
 	for (const auto& source : instructions) {
 		const auto& instruction = *source.decoded;
 		const auto op = static_cast<OpCode>(instruction.op);
-		const auto slow = nativeBlockSlowExit(instruction.op);
+		const auto slow = nativeBlockSlowExit(instruction.op, instruction.b, controlGuarded);
+		controlGuarded |= op == OpCode::MFC0 || op == OpCode::MTC0;
 		slowPaths += slow == NativeBlockExit::ReadField || slow == NativeBlockExit::WriteField
+			|| slow == NativeBlockExit::ControlFault
 			|| slow == NativeBlockExit::ReadIndex || slow == NativeBlockExit::WriteIndex
 			|| slow == NativeBlockExit::ReadInteger || slow == NativeBlockExit::WriteInteger || slow == NativeBlockExit::InvalidLength
 			|| slow == NativeBlockExit::WriteUpvalue
@@ -28,6 +32,7 @@ NativeBlockCompiler::NativeBlockCompiler(const Value* constants, const NativeBlo
 			|| (slow == NativeBlockExit::ReadMemory && instruction.c != static_cast<i16>(MemoryAccessKind::U8));
 		readMappings += slow == NativeBlockExit::ReadMemory;
 		calls |= op == OpCode::MOD || op == OpCode::FLOORDIV || op == OpCode::POW
+			|| (op == OpCode::MTC0 && instruction.b != COP0_EXEC)
 			|| op == OpCode::LEN || op == OpCode::SETI || op == OpCode::SETT || op == OpCode::LOADKR || (op == OpCode::BNOT && instruction.b >= 0)
 			|| ((op == OpCode::BAND || op == OpCode::BOR || op == OpCode::BXOR || op == OpCode::SHL || op == OpCode::SHR)
 				&& (instruction.b >= 0 || instruction.c >= 0))
@@ -65,8 +70,12 @@ NativeBlockCompiler::~NativeBlockCompiler() { sljit_free_compiler(m_compiler); }
 
 void NativeBlockCompiler::emit(const DecodedInstruction& instruction, const NativeBlockExitSite* slowExit, const NativeBlockExitSite* takenExit) {
 	const auto op = static_cast<OpCode>(instruction.op);
-	if (nativeBlockEndsBlock(instruction.op)) flushRegisters();
+	if (nativeBlockEndsBlock(instruction.op, instruction.b)) flushRegisters();
 	switch (op) {
+		case OpCode::MFC0:
+		case OpCode::MTC0:
+			emitControl(instruction, slowExit);
+			return;
 		case OpCode::LOADNIL:
 		case OpCode::LOADKR:
 		case OpCode::GETGL:
@@ -180,6 +189,7 @@ void NativeBlockCompiler::emit(const DecodedInstruction& instruction, const Nati
 		case OpCode::CALL:
 		case OpCode::RET:
 		case OpCode::NEWT:
+		case OpCode::RFE:
 			return;
 		case OpCode::JMPIF:
 		case OpCode::JMPIFNOT: {

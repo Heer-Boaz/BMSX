@@ -36,11 +36,11 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 			break;
 		}
 		instructions[count++] = {&instruction, pc};
-		if (nativeBlockEndsBlock(instruction.op)) break;
+		if (nativeBlockEndsBlock(instruction.op, instruction.b)) break;
 		cursor += instruction.width;
 		pc += static_cast<u32>(instruction.width) * INSTRUCTION_BYTES;
 	}
-	if (count == 0u || (count == 1u && !nativeBlockEndsBlock(instructions[0].decoded->op))) {
+	if (count == 0u || (count == 1u && !nativeBlockEndsBlock(instructions[0].decoded->op, instructions[0].decoded->b))) {
 		if (warmingSuccessor) page.nativeVisits[word] = 0;
 		else page.words[word].dispatchOp = page.words[word].op;
 		return;

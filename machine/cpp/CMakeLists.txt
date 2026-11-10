@@ -354,6 +354,7 @@ if(BMSX_ENABLE_NATIVE_BLOCKS)
 		machine/cpu/native_block_memory.cpp machine/cpu/native_block_registers.cpp machine/cpu/native_block_compare.cpp
 		machine/cpu/native_block_context.cpp machine/cpu/closure.cpp
 		machine/cpu/native_block_table.cpp
+		machine/cpu/native_block_control.cpp
 		machine/cpu/cpu_native_blocks.cpp)
 	target_compile_definitions(bmsx_core PUBLIC BMSX_ENABLE_NATIVE_BLOCKS=1)
 	target_link_libraries(bmsx_core PRIVATE bmsx_sljit)
@@ -964,6 +965,9 @@ if(BMSX_BUILD_TESTS)
 	add_executable(bmsx_cpu_compiled_table_tests ../../tests/cpp/cpu_compiled_table_test.cpp ${BMSX_TEST_ROM_SOURCE})
 	target_link_libraries(bmsx_cpu_compiled_table_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_compiled_table_tests COMMAND bmsx_cpu_compiled_table_tests)
+	add_executable(bmsx_cpu_compiled_control_tests ../../tests/cpp/cpu_compiled_control_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu_compiled_control_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_cpu_compiled_control_tests COMMAND bmsx_cpu_compiled_control_tests)
 	if(BMSX_ENABLE_NATIVE_BLOCKS)
 		add_executable(bmsx_native_block_tests ../../tests/cpp/native_block_test.cpp)
 		target_link_libraries(bmsx_native_block_tests PRIVATE bmsx_core)
