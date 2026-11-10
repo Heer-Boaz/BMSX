@@ -90,6 +90,7 @@ export type CompiledBlockExitSite = {
 };
 
 export type CompiledBlock = {
+	readonly page: DecodedInstructionPage;
 	readonly execute: (registers: ValueSlots, constants: Float64Array, page: DecodedInstructionPage, frame: CallFrame) => number;
 	/** Budget through the start of the final instruction, not its full charge. */
 	readonly entryCycles: number;
@@ -398,6 +399,7 @@ export function compileJavaScriptBlock(
 			luaModulo, luaFloorDivide, luaPow, cop0Words) as CompiledBlock['execute'];
 	} else execute = new Function('r', 'k', 'p', 'frame', functionSource) as CompiledBlock['execute'];
 	return {
+		page,
 		execute,
 		entryCycles, terminal, exits, sourceWords, sourceUnits: functionSource.length,
 		incoming: null,

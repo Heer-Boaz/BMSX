@@ -1,4 +1,5 @@
 import { luaPow } from '../../spec/blua32/pow';
+import { CART_ROM_BASE } from '../../spec/bmsx/memory_map';
 import { StringPool, type StringId } from './string_pool';
 import {
 	NO_BLOCKED_MAPPED_WRITE,
@@ -2611,7 +2612,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private executeCompiledBlock(frame: CallFrame, page: DecodedInstructionPage, word: number, targetDepth: number): void {
-		let cache = page.compiledBlocks!;
+		const cache = page.compiledBlocks!;
 		if (page.dispatchOps[word] === DecodedDispatchOp.CompiledWarm) {
 			if (++cache.visits[word] === COMPILED_BLOCK_THRESHOLD) {
 				if (this.compiledCodeCache.atCapacity()) {
@@ -2686,17 +2687,10 @@ export class CPU implements MappedPageInvalidator {
 				registerTop = Math.max(exit.resetsRegisterTop ? frame.top : registerTop, exit.registerTop);
 				if (exit.exit !== CompiledBlockExit.Continue) break;
 				const target = exit.linkedBlock;
-				if (target === null) {
-					// Existing entries in this physical page require neither a future
-					// instruction fetch nor a mapping/cache allocation to link.
-					if ((exit.nextPc & ~MAPPED_PAGE_BYTE_MASK) === (exit.currentPc & ~MAPPED_PAGE_BYTE_MASK)) {
-						const successor = cache.entries[(exit.nextPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
-						if (successor !== null) linkCompiledBlock(exit, successor);
-					}
-					break;
-				}
+				if (target === null) break;
 				if (remaining < target.entryCycles) break;
 				current = target;
+				page = target.page;
 			}
 			this.instructionBudgetRemaining = remaining;
 			frame.pc = exit.nextPc;
@@ -2817,7 +2811,11 @@ export class CPU implements MappedPageInvalidator {
 			if (nextCache === null) return;
 			const next = nextCache.entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 			if (next === null || remaining < next.entryCycles) return;
-			cache = nextCache;
+			// Only shared-memory system code entering the selectable cartridge
+			// window needs a fresh chip-select lookup on each traversal.
+			if (exit.exit === CompiledBlockExit.Continue && exit.linkedBlock === null
+				&& (frame.executionImage.executionDomainId !== SYSTEM_EXECUTION_DOMAIN_ID
+					|| pc < CART_ROM_BASE || exit.currentPc >= CART_ROM_BASE)) linkCompiledBlock(exit, next);
 			block = next;
 		}
 	}

@@ -1,10 +1,13 @@
 #include <chrono>
+#include <algorithm>
+#include <array>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
 #include "machine/runtime/runtime.h"
+#include "machine/cpu/execution_image.h"
 #include "machine/runtime/save_state/codec.h"
 #include "spec/bmsx/memory_map.h"
 #include "spec/bmsx/model.h"
@@ -45,15 +48,22 @@ int main(int argc, char** argv) {
 		const double milliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
 		if (result != bmsx::RunResult::Halted || cpu.getFrameDepth() != 0 || cpu.readCauseWord() != 0
 			|| cpu.isHaltedUntilIrq() || cpu.isMemoryWriteBlocked()) throw std::runtime_error("benchmark did not return normally");
-		size_t compiledBlocks = 0, codeBytes = 0;
+		size_t compiledBlocks = 0, codeBytes = 0, compiledSourceWords = 0, distinctPageSourceWords = 0;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		for (const auto& [key, page] : image->decodedPages) {
 			if (!page.nativeBlocks) continue;
-			for (const auto& block : page.nativeBlocks->entries) {
+			std::array<bmsx::u8, bmsx::DECODED_PAGE_WORDS> covered{};
+			for (size_t word = 0; word < page.nativeBlocks->entries.size(); ++word) {
+				const auto& block = page.nativeBlocks->entries[word];
 				if (!block) continue;
 				++compiledBlocks;
 				codeBytes += block->codeBytes;
+				compiledSourceWords += block->sourceWords;
+				// Source extents include fetched skip dependencies, not only
+				// executed instructions. Count their per-page union separately.
+				std::fill(covered.begin() + word, covered.begin() + std::min(word + block->sourceWords, covered.size()), 1);
 			}
+			distinctPageSourceWords += std::count(covered.begin(), covered.end(), 1);
 		}
 		constexpr auto backend = "cpp-native";
 #else
@@ -79,7 +89,8 @@ int main(int argc, char** argv) {
 			<< ",\"megahertz\":" << cycles / milliseconds / 1000.0
 			<< ",\"remainingCycles\":" << cpu.instructionBudgetRemaining
 			<< ",\"currentPc\":" << cpu.readCurrentInstructionPc() << ",\"lastPc\":" << cpu.lastPc
-			<< ",\"compiledBlocks\":" << compiledBlocks << ",\"codeBytes\":" << codeBytes << "}\n";
+			<< ",\"compiledBlocks\":" << compiledBlocks << ",\"codeBytes\":" << codeBytes
+			<< ",\"compiledSourceWords\":" << compiledSourceWords << ",\"distinctPageSourceWords\":" << distinctPageSourceWords << "}\n";
 		return 0;
 	} catch (const std::exception& error) {
 		std::cerr << error.what() << '\n';

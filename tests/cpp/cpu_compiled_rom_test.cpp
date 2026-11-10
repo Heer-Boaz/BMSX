@@ -327,6 +327,83 @@ void warmContinuationsFollowInBlockMuxWrites() {
 	require(lookup.find(CART_ROM_BASE + MAPPED_PAGE_BYTE_SIZE, 1) == page, "ROM replacement preserves the page owner");
 }
 
+void crossPageLinksFollowTheInstructionChipSelect(bool cartridgeBound) {
+	test::Blua32TestImage launcher; launcher.text.resize(4 * INSTRUCTION_BYTES);
+	writeInstruction(launcher.text, 0, static_cast<u8>(OpCode::LOADK), 0, 0, 0);
+	writeInstruction(launcher.text, 1, static_cast<u8>(OpCode::LOAD_MEM), 0, 0, static_cast<u8>(MemoryAccessKind::Word));
+	writeInstruction(launcher.text, 2, static_cast<u8>(OpCode::MTC0), 0, COP0_EXEC, 0);
+	writeInstruction(launcher.text, 3, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	launcher.constants = {static_cast<f64>(CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET)};
+	launcher.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 8}, {.firstWord = 3, .wordCount = 1}};
+	launcher.exceptionFunctionIndex = 1;
+	const auto system = test::encodeBlua32TestRom(RomImageDomain::System, launcher);
+	test::Blua32TestImage source; source.text.resize(3 * INSTRUCTION_BYTES);
+	writeInstruction(source.text, 0, static_cast<u8>(OpCode::KSMI), 3, 0, 11);
+	writeInstruction(source.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(source.text, 2, static_cast<u8>(OpCode::JMP), 0, 0, 0);
+	source.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 8}};
+	auto card0 = test::encodeBlua32TestRom(RomImageDomain::Cartridge, source), card1 = card0;
+	card0.bytes.resize(MAPPED_PAGE_BYTE_SIZE); card1.bytes.resize(MAPPED_PAGE_BYTE_SIZE);
+	const u32 cardWord = (card0.textAddress - CART_ROM_BASE) / INSTRUCTION_BYTES;
+	writeInstruction(card1.bytes, cardWord, static_cast<u8>(OpCode::KSMI), 3, 0, 22);
+	const u32 back = ((DYNAMIC_RAM_BASE - (card0.textAddress + 3 * INSTRUCTION_BYTES)) >> 2u) & MAX_EXT_BX;
+	for (auto* card : {&card0, &card1}) {
+		writeInstruction(card->bytes, cardWord + 1, static_cast<u8>(OpCode::WIDE), 0, back >> BASE_BX_BITS, 0);
+		writeInstruction(card->bytes, cardWord + 2, static_cast<u8>(OpCode::JMP), 0, (back >> 6u) & 63u, back & 63u, (back >> 12u) & 255u);
+	}
+	std::vector<u8> ram(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(ram, 0, static_cast<u8>(OpCode::LOAD_MEM), 0, 5, static_cast<u8>(MemoryAccessKind::Word));
+	writeInstruction(ram, 1, static_cast<u8>(OpCode::MOV), 2, 0, 0);
+	const u32 forward = (card0.textAddress - (DYNAMIC_RAM_BASE + 4 * INSTRUCTION_BYTES)) >> 2u;
+	writeInstruction(ram, 2, static_cast<u8>(OpCode::WIDE), 0, forward >> BASE_BX_BITS, 0);
+	writeInstruction(ram, 3, static_cast<u8>(OpCode::JMP), 0, (forward >> 6u) & 63u, forward & 63u, (forward >> 12u) & 255u);
+	CpuMachine native(system, test::cartridgeSlots(card0.bytes, card1.bytes), false);
+	CpuMachine scalar(system, test::cartridgeSlots(card0.bytes, card1.bytes), true);
+	const auto domain = cartridgeBound ? 0 : SYSTEM_EXECUTION_DOMAIN_ID;
+	const u32 function = cartridgeBound ? card0.functionAddresses[0] : system.functionAddresses[0];
+	for (auto* machine : {&native, &scalar}) {
+		if (cartridgeBound) machine->cpu.runUntilDepth(0, 4);
+		machine->memory.writeBytes(DYNAMIC_RAM_BASE, ram.data(), ram.size());
+		auto& frame = *machine->cpu.activeThread()->frames[0];
+		frame.registers[5] = valueNumber(IO_CART_SELECT); frame.registers[4] = valueNumber(73);
+		for (const u32 slot : {0u, 1u}) {
+			machine->memory.writeMappedWord(IO_CART_SELECT, slot);
+			machine->cpu.writeFrameExecution(0, domain, function, DYNAMIC_RAM_BASE);
+			machine->cpu.runUntilDepth(0, 1200);
+		}
+	}
+	const auto& lookup = *native.cpu.activeThread()->frames[0]->executionImage->nativeCodeLookup;
+	const auto* shared = lookup.find(DYNAMIC_RAM_BASE, 0)->nativeBlocks->entries[1].get();
+	require(shared && static_cast<bool>(shared->terminal.link.target) == cartridgeBound,
+		"a RAM-to-cartridge edge links only when execution has pinned the physical instruction socket");
+	std::array<const NativeBlock*, 2> returns{};
+	for (u32 slot = 0; slot < (cartridgeBound ? 1u : 2u); ++slot) {
+		const auto* page = lookup.find(card0.textAddress, slot);
+		returns[slot] = page->nativeBlocks->entries[(card0.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
+		require(returns[slot] && returns[slot]->terminal.link.target == lookup.find(DYNAMIC_RAM_BASE, 0)->nativeBlocks->entries[0].get(),
+			"cartridge-to-shared-RAM edges link directly for either physical socket");
+	}
+	for (const u32 select : {0u, 1u, 0xffffffffu, 0xfffffffeu, 1u}) {
+		for (auto* machine : {&native, &scalar}) {
+			machine->memory.writeMappedWord(IO_CART_SELECT, select);
+			machine->cpu.writeFrameExecution(0, domain, function, DYNAMIC_RAM_BASE);
+			require(machine->cpu.runUntilDepth(0, 6) == RunResult::Yielded, "the complete two-window traversal uses its six original cycles");
+			const auto& frame = *machine->cpu.activeThread()->frames[0];
+			require(frame.registers[0] == valueNumber(select) && frame.registers[2] == valueNumber(select)
+				&& frame.registers[3] == valueNumber(!cartridgeBound && (select & 1u) != 0u ? 22 : 11)
+				&& frame.pc == DYNAMIC_RAM_BASE && machine->cpu.instructionBudgetRemaining == 0,
+				"ordinary MMIO data selection and the instruction socket remain distinct across warm cross-page links");
+		}
+	}
+	std::array<u8, INSTRUCTION_BYTES> replacement{}; writeInstruction(replacement, 0, static_cast<u8>(OpCode::MOV), 0, 4, 0);
+	for (auto* machine : {&native, &scalar}) machine->memory.writeBytes(DYNAMIC_RAM_BASE, replacement.data(), replacement.size());
+	for (const auto* block : returns) if (block) require(!block->terminal.link.target, "rewriting shared RAM unlinks incoming edges from every socket");
+	for (auto* machine : {&native, &scalar}) {
+		machine->cpu.writeFrameExecution(0, domain, function, DYNAMIC_RAM_BASE); machine->cpu.runUntilDepth(0, 1200);
+		require(machine->cpu.activeThread()->frames[0]->registers[0] == valueNumber(73), "regenerated RAM executes the replacement, not a retired linked body");
+	}
+}
+
 } // namespace
 
 int main() {
@@ -335,6 +412,7 @@ int main() {
 		tailsAndShortBudgetsAgree(); emptySocketsAndCrossRegionDoubles();
 		dataSelectionDoesNotSelectInstructionFetch();
 		sparseCodeLookupPreservesPageOwners(); warmContinuationsFollowInBlockMuxWrites();
+		crossPageLinksFollowTheInstructionChipSelect(false); crossPageLinksFollowTheInstructionChipSelect(true);
 		std::cout << "Compiled ROM tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {

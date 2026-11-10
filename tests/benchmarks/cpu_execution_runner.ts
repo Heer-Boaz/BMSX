@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
+import { DECODED_PAGE_WORDS } from '../../machine/ts/machine/cpu/execution_image';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
@@ -34,12 +35,23 @@ if (wordCount > 0) {
 }
 const state = captureRuntimeSaveState(runtime);
 assert.equal(state.cpuState.hardHalted, false); assert.equal(state.cpuState.memoryWriteBlocked, false);
-let compiledBlocks = 0, sourceUnits = 0;
+let compiledBlocks = 0, sourceUnits = 0, compiledSourceWords = 0, distinctPageSourceWords = 0;
+const covered = new Uint8Array(DECODED_PAGE_WORDS);
 for (const page of image.decodedPages.values()) {
 	if (page.compiledBlocks === null) continue;
 	sourceUnits += page.compiledBlocks.sourceUnits;
-	for (const block of page.compiledBlocks.entries) if (block !== null) ++compiledBlocks;
+	covered.fill(0);
+	for (let word = 0; word < page.compiledBlocks.entries.length; ++word) {
+		const block = page.compiledBlocks.entries[word];
+		if (block === null) continue;
+		++compiledBlocks; compiledSourceWords += block.sourceWords;
+		// Includes fetched skip dependencies; this is source coverage, not
+		// a count of executed instructions. Profiling runs after the timer.
+		covered.fill(1, word, Math.min(word + block.sourceWords, DECODED_PAGE_WORDS));
+	}
+	for (const bit of covered) distinctPageSourceWords += bit;
 }
 writeFileSync(statePath, encodeRuntimeSaveState(state));
 console.log(JSON.stringify({ backend, activeCycles: cycles, idleCycles: 0, milliseconds, megahertz: cycles / milliseconds / 1000,
-	remainingCycles: cpu.instructionBudgetRemaining, currentPc: cpu.readCurrentInstructionPc(), lastPc: cpu.lastPc, compiledBlocks, sourceUnits }));
+	remainingCycles: cpu.instructionBudgetRemaining, currentPc: cpu.readCurrentInstructionPc(), lastPc: cpu.lastPc, compiledBlocks, sourceUnits,
+	compiledSourceWords, distinctPageSourceWords }));

@@ -5,6 +5,7 @@
 
 #include "machine/devices/irq/controller.h"
 #include "spec/blua32/image_format.h"
+#include "spec/bmsx/memory_map.h"
 
 namespace bmsx {
 
@@ -110,10 +111,13 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		if (!page || !page->nativeBlocks) return nullptr;
 		auto* target = page->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
 		if (!target || cpu.instructionBudgetRemaining < target->entryCycles) return nullptr;
-		// Only this pure continuation still owns its source descriptor. Hardware
-		// mux changes remain behind the dispatcher, not cached cross-window links.
+		// A pure continuation still owns its descriptor. Cross-page links are
+		// stable except a system-image edge from shared memory into the selectable
+		// cartridge window. Cartridge source pages already have physical identity;
+		// cartridge execution domains additionally pin every instruction fetch.
 		if (continuing && !exit->link.code
-			&& (pc & ~MAPPED_PAGE_BYTE_MASK) == (exit->currentPc & ~MAPPED_PAGE_BYTE_MASK)) target->linkFrom(*exit);
+			&& (frame->executionImage->executionDomainId != SYSTEM_EXECUTION_DOMAIN_ID
+				|| pc < CART_ROM_BASE || exit->currentPc >= CART_ROM_BASE)) target->linkFrom(*exit);
 		state.registers = frame->registers;
 		if (transition != NativeBlockTransition::NextInstruction) {
 			state.constants = frame->executionImage->constPool.data();

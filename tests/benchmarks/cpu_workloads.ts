@@ -90,6 +90,28 @@ return n`,
 		backed.set(romBytes);
 		yield { name, romBytes: backed, iterations, wordCount: 0 };
 	}
+	// Grow one real compiled Lua control-flow graph, rather than moving a tiny
+	// loop between synthetic addresses. Keep total branch work comparable while
+	// its code/data-cache footprint grows across many physical code pages.
+	for (const stages of [32, 128, 512]) {
+		const loops = Math.max(32, Math.trunc(iterations / stages));
+		const branches = Array.from({ length: stages }, (_, index) => `
+if ((i + ${index + 1}) & 1) == 0 then
+t.a = (t.a + t.b + ${index + 1}) & 65535
+else
+t.b = (t.a ~ ${index + 1}) & 65535
+end`).join('\n');
+		const source = `local t = { a = 1, b = 3 }
+for i = 1, ${loops} do
+${branches}
+end
+return t.a, t.b`;
+		const name = `control_pages_${stages}`;
+		const { romBytes } = linkTestSystemBlua32(compileLuaSource(source, `cpu-execution-${name}.lua`, optLevel));
+		const backed = new Uint8Array((romBytes.length + MAPPED_PAGE_BYTE_SIZE - 1) & -MAPPED_PAGE_BYTE_SIZE);
+		backed.set(romBytes);
+		yield { name, romBytes: backed, iterations: loops, wordCount: 0 };
+	}
 	for (const wordCount of [16, 1025, 32767]) {
 		const loops = Math.max(64, Math.trunc(iterations / wordCount));
 		const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);

@@ -68,6 +68,52 @@ test('linked physical-page blocks preserve every grant and disconnect rewritten 
 	assert.equal(taken.linkedBlock, null); assert.equal(root.terminal.linkedBlock, null);
 });
 
+test('cross-page chains retain successor page ownership and disconnect rewritten targets', () => {
+	const text = new Uint8Array(2 * MAPPED_PAGE_BYTE_SIZE), second = MAPPED_PAGE_BYTE_SIZE / INSTRUCTION_BYTES;
+	writeInstruction(text, 0, OpCode.ADD, 8, 8, 1);
+	writeInstruction(text, 1, OpCode.JMP, 0, 3, 62);
+	writeInstruction(text, second, OpCode.MUL, 0, 0, 1);
+	writeInstruction(text, second + 1, OpCode.MOV, 3, 8, 0);
+	writeInstruction(text, second + 2, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(text, second + 3, OpCode.ADD, 4, 0, 8);
+	writeInstruction(text, second + 4, OpCode.JMP, 0, 59, 59, 255);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: second + 5, maxStack: 12 }] });
+	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+	for (const { cpu, memory } of machines) {
+		memory.writeBytes(DYNAMIC_RAM_BASE, text);
+		const frame = cpu.rootThread.frames[0];
+		frame.registers.setNumber(0, 2); frame.registers.setNumber(1, 1); frame.registers.setNumber(8, 0);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
+		cpu.runUntilDepth(0, 2048);
+	}
+	const lookup = machines[0].cpu.rootThread.frames[0].executionImage.compiledCodeLookup!;
+	const firstPage = lookup.find(DYNAMIC_RAM_BASE, 0)!, secondPage = lookup.find(DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE, 0)!;
+	const root = firstPage.compiledBlocks!.entries[0]!, target = secondPage.compiledBlocks!.entries[0]!;
+	assert.ok(root); assert.ok(target);
+	assert.equal(root.terminal.linkedBlock, target); assert.equal(target.terminal.linkedBlock, root);
+	assert.equal(root.page, firstPage); assert.equal(target.page, secondPage, 'a linked body carries its own page, not the predecessor page');
+	for (let grant = 1; grant <= 128; ++grant) {
+		for (const { cpu } of machines) {
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
+			cpu.runUntilDepth(0, grant);
+		}
+		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+		assert.equal(machines[0].cpu.instructionBudgetRemaining, machines[1].cpu.instructionBudgetRemaining);
+	}
+	const replacement = new Uint8Array(INSTRUCTION_BYTES); writeInstruction(replacement, 0, OpCode.SUB, 4, 0, 8);
+	for (const { memory } of machines) memory.writeBytes(DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE + 3 * INSTRUCTION_BYTES, replacement);
+	assert.equal(firstPage.compiledBlocks!.entries[0], root); assert.equal(root.terminal.linkedBlock, null);
+	for (const { cpu } of machines) {
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
+		cpu.runUntilDepth(0, 2048);
+	}
+	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+	assert.equal(root.terminal.linkedBlock, secondPage.compiledBlocks!.entries[0]); assert.ok(root.terminal.linkedBlock);
+	for (const { cpu } of machines) cpu.runUntilDepth(0, 600002);
+	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+	machines[0].cpu.reset(); assert.equal(root.terminal.linkedBlock, null);
+});
+
 test('linked counted stores need only one cycle, then stop or block before the following instruction', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.K1, 6, 0, 0); writeInstruction(text, 1, OpCode.JMP, 0, 0, 2);
