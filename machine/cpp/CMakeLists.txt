@@ -999,6 +999,9 @@ if(BMSX_BUILD_TESTS)
 	target_link_libraries(bmsx_cpu_throughput_benchmark PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_executable(bmsx_cpu_execution_benchmark ../../tests/cpp/cpu_execution_benchmark.cpp)
 	target_link_libraries(bmsx_cpu_execution_benchmark PRIVATE bmsx_core)
+	if(BMSX_SNESMINI_TARGET)
+		target_link_options(bmsx_cpu_execution_benchmark PRIVATE -static-libstdc++ -static-libgcc)
+	endif()
 
 	add_executable(bmsx_value_conversion_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/value_conversion_test.cpp
