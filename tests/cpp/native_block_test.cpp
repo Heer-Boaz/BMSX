@@ -57,6 +57,43 @@ void multipleRegisterDefinitionsSurviveCallAndExit() {
 	require(bytes == 0, "register-allocated blocks retire their executable storage");
 }
 
+void independentEntriesBindTheirOwnValueBanks() {
+	std::array<DecodedInstruction, 4> decoded{};
+	const std::array ops{OpCode::LOADK, OpCode::SHL, OpCode::ADD, OpCode::JMP};
+	std::array<NativeBlockInstruction, 4> source{};
+	for (size_t i = 0; i < ops.size(); ++i) {
+		decoded[i].op = static_cast<u8>(ops[i]);
+		decoded[i].width = decoded[i].baseCycles = 1;
+		source[i] = {&decoded[i], 0x1000u + static_cast<u32>(i) * INSTRUCTION_BYTES};
+	}
+	decoded[0].a = 1; decoded[0].bx = 0;
+	decoded[1].a = 2; decoded[1].b = 0; decoded[1].c = -2;
+	decoded[2].a = 3; decoded[2].b = 2; decoded[2].c = 1;
+	decoded[3].bx = 0x1800u;
+	const std::array constantsA{valueNumber(3.5), valueNumber(1)};
+	const std::array constantsB{valueNumber(10), valueNumber(2)};
+	size_t bytes = 0;
+	{
+		auto helper = NativeBlock::compile(source, constantsA.data(), bytes, memory, cpu.stringPool());
+		decoded[1].op = static_cast<u8>(OpCode::MUL);
+		auto leaf = NativeBlock::compile(source, constantsB.data(), bytes, memory, cpu.stringPool());
+		std::array registersA{valueNumber(1), valueNil(), valueNil(), valueNil(), valueBool(true)};
+		std::array registersB{valueNumber(2), valueNil(), valueNil(), valueNil(), valueBool(false)};
+		for (int iteration = 0; iteration < 256; ++iteration) {
+			NativeBlockRunState a{.registers = registersA.data(), .constants = constantsA.data(), .remainingCycles = 97, .registerTop = 1};
+			NativeBlockRunState b{.registers = registersB.data(), .constants = constantsB.data(), .remainingCycles = 53, .registerTop = 5};
+			require(helper->run(a) == &helper->terminal && leaf->run(b) == &leaf->terminal,
+				"independent helper and leaf bodies return through the native entry ABI");
+			require(a.remainingCycles == 93 && b.remainingCycles == 49 && a.registerTop == 4 && b.registerTop == 5,
+				"alternating entries preserve each caller's cycle grant and register top");
+			require(registersA[3] == valueNumber(5.5) && registersB[3] == valueNumber(14)
+				&& registersA[4] == valueBool(true) && registersB[4] == valueBool(false),
+				"alternating native entries reload the correct value banks without leaking another caller's state");
+		}
+	}
+	require(bytes == 0, "independent native bodies retire their own executable allocations");
+}
+
 void linkedBodiesShareOneFrameAndRetireTheirEdges() {
 	NativeBlockRunState nativeRunState;
 	std::array<DecodedInstruction, 5> decoded{};
@@ -521,6 +558,7 @@ void sideExitHandlersRunAfterGeneratedFrameReturns() {
 int main() {
 	try {
 		multipleRegisterDefinitionsSurviveCallAndExit();
+		independentEntriesBindTheirOwnValueBanks();
 		linkedBodiesShareOneFrameAndRetireTheirEdges();
 		linkedAtomicStoreDebitsItsWholeChargeBeforeTestingItsSuccessor();
 		linkedSlowExitPublishesTheWholeExecutedChain();

@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "machine/cpu/native_block.h"
+#include "machine/cpu/native_block_abi.h"
 #include "spec/blua32/memory_access_kind.h"
 #include "sljitLir.h"
 
@@ -37,7 +38,7 @@ private:
 	void emitReadMappings();
 	sljit_jump* emitRomStorage(const Span<const u8>* storage, u32 width,
 		sljit_label* load, sljit_label* done);
-	static constexpr int REGISTER_CACHE_CAPACITY = 4;
+	static constexpr int REGISTER_CACHE_CAPACITY = NativeBlockAbi::registerCacheCapacity;
 	using RegisterSnapshot = std::array<int, REGISTER_CACHE_CAPACITY>;
 	int findRegister(int guest) const;
 	int allocateRegister(int guest);

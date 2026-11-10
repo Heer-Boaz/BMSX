@@ -1,4 +1,5 @@
 #include "machine/cpu/native_block.h"
+#include "machine/cpu/native_block_abi.h"
 #include "machine/cpu/native_block_compiler.h"
 #include "spec/blua32/cop0.h"
 
@@ -19,6 +20,7 @@ std::unique_ptr<NativeBlock> NativeBlock::compile(
 	u8 skippedInstructionWidth
 ) {
 	auto block = std::unique_ptr<NativeBlock>(new NativeBlock(cacheBytes));
+	block->m_entry = nativeBlockGate().entry;
 	bool controlGuarded = false;
 	size_t slowCount = 0;
 	for (const auto& source : instructions) {
@@ -119,8 +121,8 @@ NativeBlock::~NativeBlock() {
 }
 
 const NativeBlockExitSite* NativeBlock::run(NativeBlockRunState& state) const {
-	using Entry = const NativeBlockExitSite* (SLJIT_FUNC *)(NativeBlockRunState*);
-	return reinterpret_cast<Entry>(m_code)(&state);
+	using Entry = const NativeBlockExitSite* (SLJIT_FUNC *)(NativeBlockRunState*, void*);
+	return reinterpret_cast<Entry>(m_entry)(&state, m_body);
 }
 
 void NativeBlockLink::disconnect() {

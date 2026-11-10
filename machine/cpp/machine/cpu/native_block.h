@@ -252,6 +252,7 @@ private:
 	explicit NativeBlock(size_t& cacheBytes) : m_cacheBytes(cacheBytes) {}
 	void* m_code = nullptr;
 	void* m_body = nullptr;
+	void* m_entry = nullptr;
 	NativeBlockLink* m_incoming = nullptr;
 	size_t& m_cacheBytes;
 };

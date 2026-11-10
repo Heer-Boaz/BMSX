@@ -49,21 +49,10 @@ NativeBlockCompiler::NativeBlockCompiler(const Value* constants, const NativeBlo
 		: std::min(REGISTER_CACHE_CAPACITY, SLJIT_NUMBER_OF_FLOAT_REGISTERS - SLJIT_NUMBER_OF_SAVED_FLOAT_REGISTERS - 3);
 	m_compiler = sljit_create_compiler(nullptr);
 	if (!m_compiler) throw std::bad_alloc();
-	// Every body shares one frame layout, so a linked jump skips the target's
-	// prologue and any target exit can unwind the original entry frame. S0/S1
-	// retain the value banks, S2 is temporary, S3 retains the execution state.
-	// S4/S5 keep cycles/top local until the entire chain actually returns.
-	const int scratchFloats = 3 + std::min(REGISTER_CACHE_CAPACITY,
-		SLJIT_NUMBER_OF_FLOAT_REGISTERS - SLJIT_NUMBER_OF_SAVED_FLOAT_REGISTERS - 3);
-	const int savedFloats = std::min(REGISTER_CACHE_CAPACITY, SLJIT_NUMBER_OF_SAVED_FLOAT_REGISTERS);
-	sljit_emit_enter(m_compiler, 0, SLJIT_ARGS1(P, P),
-		4 | SLJIT_ENTER_FLOAT(scratchFloats), 6 | SLJIT_ENTER_FLOAT(savedFloats),
-		REGISTER_CACHE_CAPACITY * sizeof(Value));
-	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_S3, 0, SLJIT_S0, 0);
-	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_S0, 0, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, registers));
-	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_S1, 0, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, constants));
-	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_S4, 0, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, remainingCycles));
-	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_S5, 0, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, registerTop));
+	// The shared gate owns the actual host prologue and epilogue. Bodies only
+	// need its ABI context for calls and their helper spill slots.
+	sljit_set_context(m_compiler, 0, NativeBlockAbi::signature,
+		NativeBlockAbi::scratches, NativeBlockAbi::saveds, NativeBlockAbi::stackBytes);
 	m_body = sljit_emit_label(m_compiler);
 }
 
@@ -242,7 +231,8 @@ void NativeBlockCompiler::emitExit(const NativeBlockExitSite* exit) {
 	}
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, remainingCycles), SLJIT_S4, 0);
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, registerTop), SLJIT_S5, 0);
-	sljit_emit_return(m_compiler, SLJIT_MOV_P, SLJIT_IMM, reinterpret_cast<sljit_sw>(exit));
+	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(exit));
+	sljit_emit_ijump(m_compiler, SLJIT_JUMP, SLJIT_IMM, reinterpret_cast<sljit_sw>(nativeBlockGate().exit));
 }
 
 void* NativeBlockCompiler::finish(size_t& codeBytes, void*& body) {

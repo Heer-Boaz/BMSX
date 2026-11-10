@@ -350,7 +350,7 @@ if(BMSX_ENABLE_NATIVE_BLOCKS)
 	target_include_directories(bmsx_sljit PUBLIC ../../third_party/sljit/sljit_src)
 	target_compile_definitions(bmsx_sljit PUBLIC SLJIT_CONFIG_AUTO=1 SLJIT_VERBOSE=0
 		SLJIT_DEBUG=$<IF:$<CONFIG:Debug>,1,0>)
-	target_sources(bmsx_core PRIVATE machine/cpu/native_block.cpp machine/cpu/native_block_compiler.cpp
+	target_sources(bmsx_core PRIVATE machine/cpu/native_block.cpp machine/cpu/native_block_compiler.cpp machine/cpu/native_block_abi.cpp
 		machine/cpu/native_block_memory.cpp machine/cpu/native_block_registers.cpp machine/cpu/native_block_compare.cpp
 		machine/cpu/native_block_context.cpp machine/cpu/closure.cpp
 		machine/cpu/native_block_table.cpp
