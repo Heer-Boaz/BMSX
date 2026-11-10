@@ -141,7 +141,7 @@ void romReplacementAndSelectionKeepRamCode() {
 		CpuMachine machine(rom, test::cartridgeSlots(slot0, slot1), scalar);
 		auto& cpu = machine.cpu;
 		machine.memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
-		auto& frame = *cpu.activeThread()->frames[0];
+		auto& frame = *cpu.activeThread()->frameAtDepth(0);
 		frame.registers[1] = valueNumber(data); frame.registers[2] = valueNumber(1);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 		cpu.runUntilDepth(0, 1000);
@@ -182,14 +182,14 @@ void tailsAndShortBudgetsAgree() {
 		std::vector<u8> card{0x55, 0x33, 0x11};
 		CpuMachine native(rom, test::cartridgeSlots(card), false), scalar(rom, test::cartridgeSlots(card), true);
 		for (auto* machine : {&native, &scalar}) {
-			auto& frame = *machine->cpu.activeThread()->frames[0];
+			auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
 			frame.registers[1] = valueNumber(DYNAMIC_RAM_BASE + 0x1000u - (displaced ? 1020u : 0u));
 			frame.registers[2] = valueNumber(1);
 			machine->cpu.runUntilDepth(0, 1000);
 		}
 		for (u32 address : {0x800u, 0x804u, CART_ROM_BASE, CART_ROM_BASE + 4u}) for (int grant = 1; grant <= 17; ++grant) {
 			for (auto* machine : {&native, &scalar}) {
-				machine->cpu.activeThread()->frames[0]->registers[1] = valueNumber(address - (displaced ? 1020u : 0u));
+				machine->cpu.activeThread()->frameAtDepth(0)->registers[1] = valueNumber(address - (displaced ? 1020u : 0u));
 				machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
 			}
 			test::runCpuParity(native.cpu, scalar.cpu, grant);
@@ -208,7 +208,7 @@ void emptySocketsAndCrossRegionDoubles() {
 		CartridgeSocketMediaPair slots{};
 		slots[0] = CartridgeCardMedia{std::nullopt, 8u, false};
 		CpuMachine machine(rom, slots, scalar);
-		auto& frame = *machine.cpu.activeThread()->frames[0];
+		auto& frame = *machine.cpu.activeThread()->frameAtDepth(0);
 		frame.registers[1] = valueNumber(CART_ROM_BASE); frame.registers[2] = valueNumber(1);
 		machine.cpu.runUntilDepth(0, 1000);
 		require(frame.registers[0] == valueNumber(0), "a present RAM-only card has a zero-valued ROM bus");
@@ -247,7 +247,7 @@ void dataSelectionDoesNotSelectInstructionFetch() {
 		CpuMachine machine(system, test::cartridgeSlots(cart0.bytes, cart1.bytes), scalar);
 		// Enter through CP0.EXEC, establishing socket 0 before any cartridge fetch.
 		machine.cpu.runUntilDepth(0, 4);
-		auto& frame = *machine.cpu.activeThread()->frames[0];
+		auto& frame = *machine.cpu.activeThread()->frameAtDepth(0);
 		require(frame.executionImage->executionDomainId == 0 && frame.pc == cart0.textAddress,
 			"CP0.EXEC latches the selected instruction socket before cartridge execution");
 		frame.registers[1] = valueNumber(CART_ROM_BASE + 0x800); frame.registers[2] = valueNumber(1);
@@ -285,7 +285,7 @@ void warmContinuationsFollowInBlockMuxWrites() {
 	CpuMachine native(rom, test::cartridgeSlots(cards[0], cards[1]), false);
 	CpuMachine scalar(rom, test::cartridgeSlots(cards[0], cards[1]), true);
 	for (auto* machine : {&native, &scalar}) {
-		auto& frame = *machine->cpu.activeThread()->frames[0];
+		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
 		frame.registers[2] = valueNumber(IO_CART_SELECT);
 		for (const u32 slot : {0u, 1u}) {
 			machine->memory.writeMappedWord(IO_CART_SELECT, slot); frame.registers[4] = valueNumber(slot);
@@ -293,14 +293,14 @@ void warmContinuationsFollowInBlockMuxWrites() {
 			machine->cpu.runUntilDepth(0, 10000);
 		}
 	}
-	const auto& lookup = *native.cpu.activeThread()->frames[0]->executionImage->nativeCodeLookup;
+	const auto& lookup = *native.cpu.activeThread()->frameAtDepth(0)->executionImage->nativeCodeLookup;
 	for (const u32 slot : {0u, 1u}) {
 		const auto* page = lookup.find(CART_ROM_BASE + MAPPED_PAGE_BYTE_SIZE, slot);
 		require(page && page->nativeBlocks && page->nativeBlocks->entries[2], "both post-MMIO physical continuations are native, not merely interpreted");
 	}
 	for (const u32 slot : {0u, 1u, 1u, 0u}) {
 		for (auto* machine : {&native, &scalar}) {
-			auto& cpu = machine->cpu; auto& frame = *cpu.activeThread()->frames[0];
+			auto& cpu = machine->cpu; auto& frame = *cpu.activeThread()->frameAtDepth(0);
 			machine->memory.writeMappedWord(IO_CART_SELECT, slot);
 			frame.registers[0] = valueNumber(1u - slot); frame.registers[4] = valueNumber(slot ^ 1u);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], CART_ROM_BASE + MAPPED_PAGE_BYTE_SIZE);
@@ -308,7 +308,7 @@ void warmContinuationsFollowInBlockMuxWrites() {
 				&& frame.registers[6] == valueNumber(slot) && frame.pc == CART_ROM_BASE && cpu.instructionBudgetRemaining == 0,
 				"a mux write selects the newly selected physical ROM for the very next instruction at the exact grant boundary");
 		}
-		const auto& a = *native.cpu.activeThread()->frames[0]; const auto& b = *scalar.cpu.activeThread()->frames[0];
+		const auto& a = *native.cpu.activeThread()->frameAtDepth(0); const auto& b = *scalar.cpu.activeThread()->frameAtDepth(0);
 		require(native.cpu.lastPc == scalar.cpu.lastPc && native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc()
 			&& a.top == b.top && a.pc == b.pc, "native socket changes retain scalar PC and register-top publication");
 		for (int reg = 0; reg < a.stackCapacity; ++reg) require(a.registers[reg] == b.registers[reg], "all socket-switch registers agree");
@@ -319,7 +319,7 @@ void warmContinuationsFollowInBlockMuxWrites() {
 		machine->memory.cartridgeController().installRom(1, replacement);
 		require(!page->nativeBlocks, "ROM replacement retires bodies without deleting the page retained by the native index");
 		machine->memory.writeMappedWord(IO_CART_SELECT, 1);
-		auto& frame = *machine->cpu.activeThread()->frames[0]; frame.registers[4] = valueNumber(1);
+		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0); frame.registers[4] = valueNumber(1);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], CART_ROM_BASE + MAPPED_PAGE_BYTE_SIZE);
 		machine->cpu.runUntilDepth(0, 6);
 		require(frame.registers[6] == valueNumber(7), "a stale index entry never executes retired ROM code");
@@ -364,7 +364,7 @@ void crossPageLinksFollowTheInstructionChipSelect(bool cartridgeBound) {
 	for (auto* machine : {&native, &scalar}) {
 		if (cartridgeBound) machine->cpu.runUntilDepth(0, 4);
 		machine->memory.writeBytes(DYNAMIC_RAM_BASE, ram.data(), ram.size());
-		auto& frame = *machine->cpu.activeThread()->frames[0];
+		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
 		frame.registers[5] = valueNumber(IO_CART_SELECT); frame.registers[4] = valueNumber(73);
 		for (const u32 slot : {0u, 1u}) {
 			machine->memory.writeMappedWord(IO_CART_SELECT, slot);
@@ -372,7 +372,7 @@ void crossPageLinksFollowTheInstructionChipSelect(bool cartridgeBound) {
 			machine->cpu.runUntilDepth(0, 1200);
 		}
 	}
-	const auto& lookup = *native.cpu.activeThread()->frames[0]->executionImage->nativeCodeLookup;
+	const auto& lookup = *native.cpu.activeThread()->frameAtDepth(0)->executionImage->nativeCodeLookup;
 	const auto* shared = lookup.find(DYNAMIC_RAM_BASE, 0)->nativeBlocks->entries[1].get();
 	require(shared && static_cast<bool>(shared->terminal.link.target) == cartridgeBound,
 		"a RAM-to-cartridge edge links only when execution has pinned the physical instruction socket");
@@ -388,7 +388,7 @@ void crossPageLinksFollowTheInstructionChipSelect(bool cartridgeBound) {
 			machine->memory.writeMappedWord(IO_CART_SELECT, select);
 			machine->cpu.writeFrameExecution(0, domain, function, DYNAMIC_RAM_BASE);
 			require(machine->cpu.runUntilDepth(0, 6) == RunResult::Yielded, "the complete two-window traversal uses its six original cycles");
-			const auto& frame = *machine->cpu.activeThread()->frames[0];
+			const auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
 			require(frame.registers[0] == valueNumber(select) && frame.registers[2] == valueNumber(select)
 				&& frame.registers[3] == valueNumber(!cartridgeBound && (select & 1u) != 0u ? 22 : 11)
 				&& frame.pc == DYNAMIC_RAM_BASE && machine->cpu.instructionBudgetRemaining == 0,
@@ -400,7 +400,7 @@ void crossPageLinksFollowTheInstructionChipSelect(bool cartridgeBound) {
 	for (const auto* block : returns) if (block) require(!block->terminal.link.target, "rewriting shared RAM unlinks incoming edges from every socket");
 	for (auto* machine : {&native, &scalar}) {
 		machine->cpu.writeFrameExecution(0, domain, function, DYNAMIC_RAM_BASE); machine->cpu.runUntilDepth(0, 1200);
-		require(machine->cpu.activeThread()->frames[0]->registers[0] == valueNumber(73), "regenerated RAM executes the replacement, not a retired linked body");
+		require(machine->cpu.activeThread()->frameAtDepth(0)->registers[0] == valueNumber(73), "regenerated RAM executes the replacement, not a retired linked body");
 	}
 }
 

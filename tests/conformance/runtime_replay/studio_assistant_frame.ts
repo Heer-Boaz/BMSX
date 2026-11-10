@@ -18,13 +18,13 @@ export async function runAssistantFrame(kind: StudioRendererKind, canvas: HTMLCa
 	const continued = ide.debuggerExecution.resume('continue', 'workbench');
 	await until(() => continued.result !== undefined, 'frame tools: source IRQ stop');
 	const stop = ide.debugger.source.stop!, cpu = runtime.machine.cpu;
-	const exceptionDepth = cpu.readExceptionReturnFrameDepth(), pcs = cpu.activeThread.frames.map(frame => frame.pc);
+	const exceptionDepth = cpu.readExceptionReturnFrameDepth(), pcs = Array.from({ length: cpu.getFrameDepth() }, (_, index) => cpu.readFramePc(index));
 	check(exceptionDepth >= 0, 'frame tools: active IRQ is retained');
 	await test.runPaletteCommand('View: Codex Assistant');
 	await submitAssistantText(test, 'Inspect the current IRQ frame. Evaluate its flags in the Lua Terminal, change them, test a Lua error, and check that stale frame handles expire. Do not continue the game.');
 	await until(() => ide.editor.assistant.state === 'ready', 'frame tools: conversation finishes real Terminal evaluations');
 	check(ide.debugger.source.stop === stop && cpu.readExceptionReturnFrameDepth() === exceptionDepth
-		&& cpu.activeThread.frames.length === pcs.length && cpu.activeThread.frames.every((frame, index) => frame.pc === pcs[index]),
+		&& cpu.activeThread.frameDepth === pcs.length && pcs.every((pc, index) => cpu.readFramePc(index) === pc),
 		'frame tools: no ancestor or IRQ has executed while evaluating the selected frame');
 	const held = cycles(); await frame(); await frame();
 	check(cycles() === held && ide.luaEvaluation.active === undefined, 'frame tools: the conversation leaves the game stopped');

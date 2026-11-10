@@ -66,7 +66,7 @@ test('normal decoded dispatch preserves the guest budget boundary inside a fused
 	assert.equal(fusedCpu.lastPc, entryPc + 3 * INSTRUCTION_BYTES);
 	assert.equal(fusedCpu.readFrameRegister(0, 3), 3);
 	assert.equal(
-		fusedCpu.rootThread.frames[0].decodedPage!.dispatchOps[((entryPc + 2 * INSTRUCTION_BYTES) & MAPPED_PAGE_BYTE_MASK) >>> 2],
+		fusedCpu.rootThread.frameAtDepth(0).decodedPage!.dispatchOps[((entryPc + 2 * INSTRUCTION_BYTES) & MAPPED_PAGE_BYTE_MASK) >>> 2],
 		DecodedDispatchOp.FusedShlBxor,
 	);
 
@@ -81,7 +81,7 @@ test('normal decoded dispatch preserves the guest budget boundary inside a fused
 	assert.equal(cpu.readFrameRegister(0, 5), 8);
 	assert.equal(cpu.readFrameRegister(0, 6), 4);
 	assert.equal(cpu.readFrameRegister(0, 7), 5);
-	const page = cpu.rootThread.frames[0].decodedPage!;
+	const page = cpu.rootThread.frameAtDepth(0).decodedPage!;
 	for (const [word, op] of [[2, DecodedDispatchOp.FusedShlBxor], [4, DecodedDispatchOp.FusedAddShl], [6, DecodedDispatchOp.FusedShrBxor]]) {
 		assert.equal(page.dispatchOps[((entryPc + word * INSTRUCTION_BYTES) & MAPPED_PAGE_BYTE_MASK) >>> 2], op);
 	}

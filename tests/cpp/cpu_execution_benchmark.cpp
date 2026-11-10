@@ -36,8 +36,8 @@ int main(int argc, char** argv) {
 		bmsx::Runtime runtime({rom, {}, bmsx::PSX_MACHINE_SPEC}, input);
 		runtime.boot();
 		auto& cpu = runtime.machine.cpu;
-		const auto* image = cpu.rootThread()->frames[0]->executionImage;
-		const auto functionAddress = cpu.rootThread()->frames[0]->functionAddress;
+		const auto* image = cpu.rootThread()->frameAtDepth(0)->executionImage;
+		const auto functionAddress = cpu.rootThread()->frameAtDepth(0)->functionAddress;
 		auto result = bmsx::RunResult::Yielded;
 		bmsx::i64 cycles = 0, slices = 0;
 		int maxDeadlineOverrun = 0;
@@ -47,7 +47,7 @@ int main(int argc, char** argv) {
 			// the ordinary call owner, not a checkpoint or a second CPU loop.
 			if (pass != 0) cpu.beginCompletionCallInExecutionDomain(image->executionDomainId, functionAddress);
 			for (int index = 0; index < wordCount; ++index) {
-				cpu.rootThread()->frames[0]->registers[8 + index] = bmsx::valueNumber(0x20000000u | (index & 65535u));
+				cpu.rootThread()->frameAtDepth(0)->registers[8 + index] = bmsx::valueNumber(0x20000000u | (index & 65535u));
 			}
 			result = bmsx::RunResult::Yielded; cycles = slices = 0; maxDeadlineOverrun = 0;
 			const auto start = std::chrono::steady_clock::now();

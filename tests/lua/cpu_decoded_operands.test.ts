@@ -34,7 +34,7 @@ test('narrow and WIDE RK sign boundaries select the correct registers and consta
 				constants: Array.from({ length: limit }, (_, i) => i + 0.25),
 			}));
 			if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
-			const registers = cpu.rootThread.frames[0].registers;
+			const registers = cpu.rootThread.frameAtDepth(0).registers;
 			for (let i = 0; i < limit; i++) registers.setNumber(i, -(i + 0.75));
 			const operand = (selector: number) => selector < 0 ? (-1 - selector) + 0.25 : -(selector + 0.75);
 			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
@@ -68,7 +68,7 @@ test('unsigned raw fields and signed RK values remain independent of mutable fie
 		const { cpu } = createTestSystemCpu(image);
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		const table = cpu.createTable();
-		const registers = cpu.rootThread.frames[0].registers;
+		const registers = cpu.rootThread.frameAtDepth(0).registers;
 		registers.setTable(1, table);
 		registers.setNumber(32767, 91.5);
 		const pc = cpu.readFramePc(0);
@@ -91,8 +91,8 @@ test('rewriting the same cached PC changes its signed, branch and field-cache pa
 			functions: [{ firstWord: 0, wordCount: 1, maxStack: 4 }], constants: ['field', 73.5] });
 		const { cpu, memory } = createTestSystemCpu(image);
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
-		cpu.rootThread.frames[0].registers.setTable(1, cpu.createTable());
-		cpu.rootThread.frames[0].registers.setNumber(2, 81.5);
+		cpu.rootThread.frameAtDepth(0).registers.setTable(1, cpu.createTable());
+		cpu.rootThread.frameAtDepth(0).registers.setNumber(2, 81.5);
 		const code = new Uint8Array(2 * INSTRUCTION_BYTES);
 		for (const op of [OpCode.KSMI, OpCode.SETFIELD, OpCode.JMP, OpCode.GETFIELD, OpCode.LOADK, OpCode.KSMI]) {
 			const raw = op === OpCode.KSMI ? MIN_SIGNED_BX & MAX_EXT_BX : op === OpCode.JMP ? 3 : 1;
@@ -122,7 +122,7 @@ test('WIDE displaced load retains twelve-bit register fields and uses EXT solely
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		const address = DYNAMIC_RAM_BASE + 0x1000;
 		memory.writeMappedU32LE(address, 0x12345678);
-		cpu.rootThread.frames[0].registers.setNumber(4095, address - (255 << 2));
+		cpu.rootThread.frameAtDepth(0).registers.setNumber(4095, address - (255 << 2));
 		assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded);
 		assert.equal(cpu.instructionBudgetRemaining, 0);
 		assert.equal(cpu.readFrameRegister(0, 4095), 0x12345678);
@@ -138,7 +138,7 @@ test('WIDE displaced counted store keeps its unsigned twelve-bit count and compl
 			functions: [{ firstWord: 0, wordCount: 2, maxStack: 4096 }] }));
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		const address = DYNAMIC_RAM_BASE + 0x4000;
-		const registers = cpu.rootThread.frames[0].registers;
+		const registers = cpu.rootThread.frameAtDepth(0).registers;
 		registers.setNumber(0, 0x10203040);
 		registers.setNumber(4094, 0xa1b2c3d4);
 		registers.setNumber(4095, address - (255 << 2));

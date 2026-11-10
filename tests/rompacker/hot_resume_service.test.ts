@@ -93,7 +93,7 @@ retained = 0
 for i = 1, 512 do retained = calculate(retained) end`);
 	assert.equal(f.cpu.isHaltedUntilIrq(), true);
 	assert.equal(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('retained')), 1536);
-	const image = f.cpu.activeThread.frames[f.cpu.getFrameDepth() - 1].executionImage;
+	const image = f.cpu.activeThread.frameAtDepth(f.cpu.getFrameDepth() - 1).executionImage;
 	let generated = 0;
 	for (const page of image.decodedPages.values()) if (page.compiledBlocks !== null) {
 		for (const block of page.compiledBlocks.entries) if (block !== null) ++generated;
@@ -105,13 +105,13 @@ for i = 1, 512 do retained = calculate(retained) end`);
 	f.cpu.beginCompletionCall(calculate as Closure, [2]);
 	assert.equal(f.cpu.runUntilDepth(depth, 10000), RunResult.Halted);
 	assert.deepEqual(f.runtime.readCompletionValues(), [5]);
-	const parked = f.cpu.activeThread.frames[depth - 1];
+	const parked = f.cpu.activeThread.frameAtDepth(depth - 1);
 	f.cpu.setGlobalByKey(f.cpu.stringPool.intern('retained'), ValueTag.Number, 9876, null);
 	const source = f.model.buffer.getText(), offset = source.indexOf('x + 3');
 	assert.ok(offset >= 0);
 	f.model.pushEditOperations([{ offset, deleteLength: 'x + 3'.length, text: 'x + 7' }]);
 	assert.deepEqual(await f.service.resume().completion, { status: 'completed', applied: true });
-	assert.equal(f.cpu.getFrameDepth(), depth); assert.equal(f.cpu.activeThread.frames[depth - 1], parked);
+	assert.equal(f.cpu.getFrameDepth(), depth); assert.equal(f.cpu.activeThread.frameAtDepth(depth - 1), parked);
 	assert.equal(f.cpu.isHaltedUntilIrq(), true);
 	assert.equal(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('retained')), 9876, 'Hot Resume must not repeat startup or replace live globals');
 	const caller = f.cpu.readFramePc(depth - 1); // Installation may relocate the parked instruction.
@@ -123,7 +123,7 @@ for i = 1, 512 do retained = calculate(retained) end`);
 		assert.deepEqual(f.runtime.readCompletionValues(), [9], 'cold and regenerated bodies must use the edited instructions');
 	}
 	let regenerated = 0;
-	for (const page of f.cpu.activeThread.frames[depth - 1].executionImage.decodedPages.values()) if (page.compiledBlocks !== null) {
+	for (const page of f.cpu.activeThread.frameAtDepth(depth - 1).executionImage.decodedPages.values()) if (page.compiledBlocks !== null) {
 		for (const block of page.compiledBlocks.entries) if (block !== null) ++regenerated;
 	}
 	assert.ok(regenerated > 0, 'the edited callable must become generated code again');
@@ -205,7 +205,7 @@ test('fault evidence reports applied code and remains final when retained init i
 
 test('workbench Hot Resume runs init to its physical return without continuing the parked game', async t => {
 	const f = await fixture(t, 'local function refresh<init>() refreshed = 1 end');
-	const pcs = f.cpu.activeThread.frames.map((_, index) => f.cpu.readFramePc(index));
+	const pcs = Array.from({ length: f.cpu.getFrameDepth() }, (_, index) => f.cpu.readFramePc(index));
 	const first = f.service.resume('workbench');
 	await first.admission;
 	assert.equal(first.status, 'initializing');
@@ -219,7 +219,7 @@ test('workbench Hot Resume runs init to its physical return without continuing t
 	didExecuteRuntimeDebuggerPlan(f.debuggerState);
 	assert.deepEqual(await first.completion, { status: 'completed', applied: true });
 	assert.equal(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('refreshed')), 1);
-	assert.deepEqual(f.cpu.activeThread.frames.map((_, index) => f.cpu.readFramePc(index)), pcs,
+	assert.deepEqual(Array.from({ length: f.cpu.getFrameDepth() }, (_, index) => f.cpu.readFramePc(index)), pcs,
 		'retained caller frames and PCs have not advanced');
 	assert.equal(f.debuggerState.plans.workbenchExecutionRequested, false);
 	assert.equal(f.debuggerState.plans.mutationActive, false);
@@ -280,7 +280,7 @@ test('readback and host execution failures settle requests as infrastructure fai
 test('relocation rejection preserves installed media and the real retained frame', async t => {
 	const f = await fixture(t, 'local function parked() while true do halt_until_irq end end\nparked()');
 	const media = f.sources.currentBlua32Media;
-	const frame = f.cpu.activeThread.frames.at(-1)!;
+	const frame = f.cpu.activeThread.currentFrame!;
 	f.model.pushEditOperations([{ offset: 0, deleteLength: f.model.buffer.length, text: 'module<entry>\nwhile true do halt_until_irq end' }]);
 	const operation = f.service.resume();
 	assert.equal((await operation.admission).status, 'not-admitted');
@@ -291,7 +291,7 @@ test('relocation rejection preserves installed media and the real retained frame
 	assert.equal(result.applied, false);
 	assert.equal(f.tasks.ready, true);
 	assert.equal(f.sources.currentBlua32Media, media);
-	assert.equal(f.cpu.activeThread.frames.at(-1), frame);
+	assert.equal(f.cpu.activeThread.currentFrame!, frame);
 });
 
 // Source-refresh operations use a real workspace owner, separate from recovery.

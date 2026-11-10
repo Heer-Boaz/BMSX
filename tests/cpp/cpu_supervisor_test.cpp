@@ -635,7 +635,7 @@ void testDecodedSuperinstructionsPreserveGuestBoundaries() {
 		bmsx::DecodedDispatchOp::FusedShlBxor;
 #endif
 	require(
-		fused.cpu.activeThread()->frames[0]->decodedPage->words[
+		fused.cpu.activeThread()->frameAtDepth(0)->decodedPage->words[
 			((entryPc + 2u * bmsx::INSTRUCTION_BYTES) & bmsx::MAPPED_PAGE_BYTE_MASK) >> 2
 		].dispatchOp == static_cast<bmsx::u8>(expectedColdDispatch),
 		"cold arithmetic uses the selected backend's decoded admission route"

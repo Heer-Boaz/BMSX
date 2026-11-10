@@ -50,14 +50,14 @@ void changingSkippedBytesRetireResolvedEdges() {
 	CpuMachine native(image, false), scalar(image, true);
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
-		auto& frame = *machine->cpu.activeThread()->frames[0];
+		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
 		frame.registers[0] = valueNumber(0); frame.registers[1] = valueNumber(1);
 		frame.registers[2] = valueNumber(73); frame.registers[6] = valueNumber(1);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 		machine->cpu.runUntilDepth(0, 800);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	auto& page = *native.cpu.activeThread()->frames[0]->decodedPage;
+	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
 	const auto* block = page.nativeBlocks->entries[0].get();
 	require(block && block->sourceWords == 4 && block->sideExits.back().exit == NativeBlockExit::Continue
 		&& block->sideExits.back().nextPc == DYNAMIC_RAM_BASE + 4u * INSTRUCTION_BYTES,
@@ -68,7 +68,7 @@ void changingSkippedBytesRetireResolvedEdges() {
 		writeInstruction(replacement, 0, static_cast<u8>(wide ? OpCode::WIDE : OpCode::K0), 0, 0, 0);
 		for (auto* machine : {&native, &scalar}) {
 			machine->memory.writeBytes(DYNAMIC_RAM_BASE + 2u * INSTRUCTION_BYTES, replacement.data(), replacement.size());
-			auto& frame = *machine->cpu.activeThread()->frames[0]; frame.top = 0; frame.registers[2] = valueNumber(73);
+			auto& frame = *machine->cpu.activeThread()->frameAtDepth(0); frame.top = 0; frame.registers[2] = valueNumber(73);
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 			machine->cpu.runUntilDepth(0, 2);
 			require(frame.pc == DYNAMIC_RAM_BASE + (wide ? 4u : 3u) * INSTRUCTION_BYTES
@@ -103,12 +103,12 @@ void maximumLengthSkipDependencyRetires() {
 	CpuMachine native(image, false), scalar(image, true);
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
-		auto& frame = *machine->cpu.activeThread()->frames[0]; frame.registers[0] = valueNumber(0); frame.registers[1] = valueNumber(1);
+		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0); frame.registers[0] = valueNumber(0); frame.registers[1] = valueNumber(1);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 8192);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	auto& page = *native.cpu.activeThread()->frames[0]->decodedPage;
+	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
 	require(page.nativeBlocks->entries[0] && page.nativeBlocks->entries[0]->sourceWords == 130,
 		"the maximum-size body also retains both skipped WIDE words");
 #endif
@@ -138,17 +138,17 @@ void resolvedComparisonLinksBothPaths() {
 	CpuMachine native(image, false), scalar(image, true);
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
-		for (int reg = 0; reg < 5; ++reg) machine->cpu.activeThread()->frames[0]->registers[reg] = valueNumber(reg == 1 ? 1 : 0);
+		for (int reg = 0; reg < 5; ++reg) machine->cpu.activeThread()->frameAtDepth(0)->registers[reg] = valueNumber(reg == 1 ? 1 : 0);
 	}
 	for (const int value : {0, 1}) {
 		for (auto* machine : {&native, &scalar}) {
-			machine->cpu.activeThread()->frames[0]->registers[0] = valueNumber(value);
+			machine->cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNumber(value);
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 		}
 		test::runCpuParity(native.cpu, scalar.cpu, 2048);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& cache = *native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks;
+	const auto& cache = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks;
 	const auto& root = *cache.entries[0];
 	require(root.sourceWords == 2 && !cache.entries[1] && cache.entries[2] && cache.entries[4]
 		&& root.region == cache.entries[2]->region && root.region == cache.entries[4]->region
@@ -158,7 +158,7 @@ void resolvedComparisonLinksBothPaths() {
 #endif
 	for (const int value : {0, 1}) for (int grant = 1; grant <= 32; ++grant) {
 		for (auto* machine : {&native, &scalar}) {
-			machine->cpu.activeThread()->frames[0]->registers[0] = valueNumber(value);
+			machine->cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNumber(value);
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 		}
 		test::runCpuParity(native.cpu, scalar.cpu, grant);
@@ -175,7 +175,7 @@ void resolvedComparisonLinksBothPaths() {
 		observer.context = &observations[index++];
 		observer.observe = [](void* context, ExecutionDomainId, u32, const Value*) { ++*static_cast<u32*>(context); };
 		machine->cpu.setInstructionObserver(std::move(observer));
-		machine->cpu.activeThread()->frames[0]->registers[0] = valueNumber(0);
+		machine->cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNumber(0);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 512);
@@ -184,7 +184,7 @@ void resolvedComparisonLinksBothPaths() {
 		&& std::ranges::equal(observedNative.snapshot.words(), observedScalar.snapshot.words()),
 		"an observed JMP still executes its observer exactly once per real instruction");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& observed = *native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks->entries[0];
+	const auto& observed = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[0];
 	require(observed.terminal.currentPc == DYNAMIC_RAM_BASE && std::none_of(observed.sideExits.begin(), observed.sideExits.end(), [](const auto& exit) {
 		return exit.currentPc == DYNAMIC_RAM_BASE + INSTRUCTION_BYTES;
 	}), "an observed JMP is not consumed by the paired branch");
@@ -213,18 +213,18 @@ void pairedWideJumpsRetainBoundariesAndMutableTargets() {
 			CpuMachine native(image, false), scalar(image, true);
 			for (auto* machine : {&native, &scalar}) {
 				machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
-				auto* r = machine->cpu.activeThread()->frames[0]->registers;
+				auto* r = machine->cpu.activeThread()->frameAtDepth(0)->registers;
 				for (int reg = 0; reg < 8; ++reg) r[reg] = valueNumber(reg == 1 ? 1 : reg == 2 ? 7 : 0);
 			}
 			for (const int value : {6, 7, 8}) {
 				for (auto* machine : {&native, &scalar}) {
-					machine->cpu.activeThread()->frames[0]->registers[0] = valueNumber(value);
+					machine->cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNumber(value);
 					machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 				}
 				test::runCpuParity(native.cpu, scalar.cpu, 1024);
 			}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-			auto& page = *native.cpu.activeThread()->frames[0]->decodedPage;
+			auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
 			const auto& root = *page.nativeBlocks->entries[0]; const auto& jumped = root.terminal;
 			require(jumped.currentPc == DYNAMIC_RAM_BASE + jumpWord * INSTRUCTION_BYTES
 				&& jumped.nextPc == DYNAMIC_RAM_BASE + 16u * INSTRUCTION_BYTES
@@ -235,7 +235,7 @@ void pairedWideJumpsRetainBoundariesAndMutableTargets() {
 #endif
 			for (const int value : {6, 7, 8}) for (int grant = 1; grant <= 16; ++grant) {
 				for (auto* machine : {&native, &scalar}) {
-					machine->cpu.activeThread()->frames[0]->registers[0] = valueNumber(value);
+					machine->cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNumber(value);
 					machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 				}
 				test::runCpuParity(native.cpu, scalar.cpu, grant);
@@ -292,12 +292,12 @@ void pairedJumpLinksAcrossPages() {
 	CpuMachine native(image, false), scalar(image, true);
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
-		for (int reg = 0; reg < 5; ++reg) machine->cpu.activeThread()->frames[0]->registers[reg] = valueNumber(reg == 1 ? 1 : 0);
+		for (int reg = 0; reg < 5; ++reg) machine->cpu.activeThread()->frameAtDepth(0)->registers[reg] = valueNumber(reg == 1 ? 1 : 0);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 2048);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& lookup = *native.cpu.activeThread()->frames[0]->executionImage->nativeCodeLookup;
+	const auto& lookup = *native.cpu.activeThread()->frameAtDepth(0)->executionImage->nativeCodeLookup;
 	auto* page = lookup.find(DYNAMIC_RAM_BASE, 0); auto* target = lookup.find(DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE, 0);
 	const auto* root = page->nativeBlocks->entries[0].get(); const auto& jumped = root->terminal;
 	require(jumped.link.target && jumped.link.target == target->nativeBlocks->entries[0].get(),
@@ -336,13 +336,13 @@ void pairedJumpFaultsOnlyOnTheNextGrant() {
 	CpuMachine native(image, false), scalar(image, true);
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.writeBytes(start, image.text.data(), image.text.size());
-		auto* r = machine->cpu.activeThread()->frames[0]->registers;
+		auto* r = machine->cpu.activeThread()->frameAtDepth(0)->registers;
 		r[0] = valueNumber(1); r[1] = valueNumber(1); r[2] = valueNumber(0); r[3] = valueNumber(0);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);
 		machine->cpu.runUntilDepth(0, 1024);
 		r[0] = valueNumber(0); machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);
 		require(machine->cpu.runUntilDepth(0, 2) == RunResult::Yielded && machine->cpu.readFramePc(0) == end
-			&& machine->cpu.readCurrentInstructionPc() == start + INSTRUCTION_BYTES && machine->cpu.activeThread()->frames.size() == 1,
+			&& machine->cpu.readCurrentInstructionPc() == start + INSTRUCTION_BYTES && machine->cpu.activeThread()->frameDepth == 1,
 			"a paired JMP completes without speculatively fetching its unmapped target beyond the grant");
 	}
 	const auto beforeNative = native.cpu.captureRuntimeState(), beforeScalar = scalar.cpu.captureRuntimeState();
@@ -378,7 +378,7 @@ void skipFetchBoundaries() {
 		if (skippedWide) { writeInstruction(code, word, static_cast<u8>(OpCode::WIDE), 0, 0, 0); ++word; }
 		for (auto* machine : {&native, &scalar}) {
 			machine->memory.writeBytes(pc, code.data(), word * INSTRUCTION_BYTES);
-			auto& frame = *machine->cpu.activeThread()->frames[0];
+			auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
 			frame.registers[0] = frame.registers[1] = valueNumber(0);
 			for (u32 visit = 0; visit < 10; ++visit) {
 				machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc);
@@ -388,12 +388,12 @@ void skipFetchBoundaries() {
 			}
 		}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-		const auto& page = *native.cpu.activeThread()->frames[0]->decodedPage;
+		const auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
 		require(page.nativeBlocks && page.nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) >> 2u],
 			"a boundary comparison enters generated machine code rather than remaining a cold scalar opcode");
 #endif
 		for (auto* machine : {&native, &scalar}) {
-			machine->cpu.activeThread()->frames[0]->registers[1] = valueNumber(1);
+			machine->cpu.activeThread()->frameAtDepth(0)->registers[1] = valueNumber(1);
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc);
 			require(machine->cpu.runUntilDepth(0, 1) == RunResult::Yielded && machine->cpu.readEpcWord() == nextPc
 				&& machine->memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_UNMAPPED

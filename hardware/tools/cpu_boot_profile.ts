@@ -41,7 +41,7 @@ function main(): void {
 		}
 	};
 	runtime.boot();
-	let peakTracked = cpu.luaHeap.usedBytes(), peakActiveFrames = cpu.activeThread.frames.length;
+	let peakTracked = cpu.luaHeap.usedBytes(), peakActiveFrames = cpu.activeThread.frameDepth;
 	let peakActiveStackCapacity = cpu.activeThread.stackRegisters.capacity(), firstCart = -1;
 	const baselineGlobals = cpu.globalSlotCount;
 	const snapshots = [];
@@ -60,7 +60,7 @@ function main(): void {
 		gpu.retirePresentedCommands();
 		runtime.machine.audioController.synchronizeOutput().clear();
 		peakTracked = Math.max(peakTracked, cpu.luaHeap.usedBytes());
-		peakActiveFrames = Math.max(peakActiveFrames, cpu.activeThread.frames.length);
+		peakActiveFrames = Math.max(peakActiveFrames, cpu.activeThread.frameDepth);
 		peakActiveStackCapacity = Math.max(peakActiveStackCapacity, cpu.activeThread.stackRegisters.capacity());
 		const newCart = firstCart < 0 && cpu.globalSlotCount > baselineGlobals;
 		if (newCart) firstCart = frame;

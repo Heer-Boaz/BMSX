@@ -43,9 +43,10 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const auto left = a.captureRuntimeState(), right = b.captureRuntimeState();
 	require(std::ranges::equal(left.snapshot.words(), right.snapshot.words()), "the complete retained value graph agrees with scalar execution");
 	const auto& first = *a.activeThread(); const auto& second = *b.activeThread();
-	require(first.frames.size() == second.frames.size() && first.stackTop == second.stackTop, "frame and stack extents agree");
-	for (size_t i = 0; i < first.frames.size(); ++i) {
-		const auto& x = *first.frames[i]; const auto& y = *second.frames[i];
+	require(first.frameDepth == second.frameDepth && first.stackTop == second.stackTop, "frame and stack extents agree");
+	const CallFrame* firstFrame = first.firstFrame; const CallFrame* secondFrame = second.firstFrame;
+	for (size_t i = 0; i < first.frameDepth; ++i, firstFrame = firstFrame->next, secondFrame = secondFrame->next) {
+		const auto& x = *firstFrame; const auto& y = *secondFrame;
 		require(x.pc == y.pc && x.top == y.top && x.stackBase == y.stackBase && x.stackCapacity == y.stackCapacity
 			&& x.varargBase == y.varargBase && x.varargCount == y.varargCount, "all live frame ranges agree after relocation");
 	}
@@ -71,11 +72,11 @@ void hotVarargFrames(int fixed) {
 	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
-		m->cpu.runUntilDepth(0, 2); m->cpu.activeThread()->frames[0]->top = 1;
+		m->cpu.runUntilDepth(0, 2); m->cpu.activeThread()->frameAtDepth(0)->top = 1;
 		m->cpu.runUntilDepth(0, 9002);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	auto& page = *native.cpu.activeThread()->frames[1]->decodedPage;
+	auto& page = *native.cpu.activeThread()->frameAtDepth(1)->decodedPage;
 	const u32 entry = ((native.rom.textAddress + 16u * INSTRUCTION_BYTES) & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 	const auto* block = page.nativeBlocks->entries[entry].get();
 	require(block && block->sourceWords == 7, "varargs and following control flow really execute in a native block");
@@ -83,15 +84,15 @@ void hotVarargFrames(int fixed) {
 	for (const int count : {0, 2, 63}) {
 		for (auto* m : {&native, &scalar}) {
 			auto& cpu = m->cpu; auto* thread = cpu.activeThread();
-			Closure* closure = thread->frames[1]->closure;
+			Closure* closure = thread->frameAtDepth(1)->closure;
 			cpu.writeFrameExecution(1, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[1], m->rom.textAddress + 24u * INSTRUCTION_BYTES);
 			require(cpu.runUntilDepth(1, 2) == RunResult::Halted, "the saved varargs frame returns at its actual depth boundary");
-			auto& root = *thread->frames[0];
+			auto& root = *thread->frameAtDepth(0);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress + 3u * INSTRUCTION_BYTES);
 			root.registers[0] = valueClosure(closure);
 			for (int i = 0; i < count; ++i) root.registers[i + 1] = i == 0 ? valueBool(false) : i == 1 ? valueNil() : valueNumber(i);
 			root.top = count + 1;
-			require(cpu.runUntilDepth(0, 2) == RunResult::Yielded && thread->frames[1]->varargCount == count,
+			require(cpu.runUntilDepth(0, 2) == RunResult::Yielded && thread->frameAtDepth(1)->varargCount == count,
 				"a new frame binds its current saved-argument range before entering hot code");
 		}
 		test::runCpuParity(native.cpu, scalar.cpu, 9);
@@ -100,8 +101,8 @@ void hotVarargFrames(int fixed) {
 			test::runCpuParity(native.cpu, scalar.cpu, grant);
 			requireParity(native, scalar);
 		}
-		require(native.cpu.activeThread()->frames[1]->top == count, "the final open VARARG replaces the former top exactly");
-		if (count == 63) require(native.cpu.activeThread()->frames[1]->stackCapacity > 16, "the hot capacity exit grows the real stack");
+		require(native.cpu.activeThread()->frameAtDepth(1)->top == count, "the final open VARARG replaces the former top exactly");
+		if (count == 63) require(native.cpu.activeThread()->frameAtDepth(1)->stackCapacity > 16, "the hot capacity exit grows the real stack");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		require(page.nativeBlocks->entries[entry].get() == block, "the compiled varargs body survives frame and stack replacement");
 #endif
@@ -115,10 +116,10 @@ void hotEmptyVararg() {
 	image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 4}};
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
-		m->cpu.activeThread()->frames[0]->registers[0] = valueNumber(73); m->cpu.runUntilDepth(0, 600);
+		m->cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNumber(73); m->cpu.runUntilDepth(0, 600);
 	}
 	requireParity(native, scalar);
-	const auto& frame = *native.cpu.activeThread()->frames[0];
+	const auto& frame = *native.cpu.activeThread()->frameAtDepth(0);
 	require(frame.top == 31 && frame.stackCapacity == 4 && frame.registers[0] == valueNumber(73),
 		"zero saved varargs change top without forming an out-of-range host slot or extending capacity");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -137,20 +138,20 @@ void hotConstantTrap() {
 	for (const double bad : {8.0, -1.0, 4294967295.0}) {
 		CpuMachine native(image), scalar(image, true);
 		for (auto* m : {&native, &scalar}) {
-			auto& frame = *m->cpu.activeThread()->frames[0]; frame.registers[513] = valueNumber(0);
+			auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers[513] = valueNumber(0);
 			m->cpu.runUntilDepth(0, 300);
 			frame.registers[513] = valueNumber(bad); frame.registers[256] = valueNumber(73); frame.top = 0;
 		}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-		const auto& frame = *native.cpu.activeThread()->frames[0];
+		const auto& frame = *native.cpu.activeThread()->frameAtDepth(0);
 		const auto& block = frame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 		require(block && block->sideExits[0].exit == NativeBlockExit::InvalidConstant, "the trapping instruction is lowered, not skipped");
 #endif
 		test::runCpuParity(native.cpu, scalar.cpu, 3); requireParity(native, scalar);
 		require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT
 			&& native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES
-			&& native.cpu.activeThread()->frames[0]->registers[256] == valueNumber(73)
-			&& native.cpu.activeThread()->frames[0]->top == 8, "a WIDE load traps after its prefix, without writing its destination or top");
+			&& native.cpu.activeThread()->frameAtDepth(0)->registers[256] == valueNumber(73)
+			&& native.cpu.activeThread()->frameAtDepth(0)->top == 8, "a WIDE load traps after its prefix, without writing its destination or top");
 	}
 }
 
@@ -167,7 +168,7 @@ void hotGlobalBanks() {
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 1100);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	auto& page = *native.cpu.activeThread()->frames[0]->decodedPage;
+	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
 	const u32 entry = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 	const auto* block = page.nativeBlocks->entries[entry].get(); require(block && block->sourceWords == 8, "global transfers stay in one native block");
 #endif
@@ -176,7 +177,7 @@ void hotGlobalBanks() {
 	}
 	for (const Value value : {valueNil(), valueBool(false), valueBool(true), valueNumber(-0.0), VALUE_QNAN_MASK, valueNumber(73)}) {
 		for (auto* m : {&native, &scalar}) {
-			auto& cpu = m->cpu; cpu.activeThread()->frames[0]->registers[12] = value;
+			auto& cpu = m->cpu; cpu.activeThread()->frameAtDepth(0)->registers[12] = value;
 			cpu.setGlobalByKey(cpu.stringPool().intern("shared"), value);
 			cpu.setSystemGlobalByKey(cpu.stringPool().intern("shared"), valueNumber(73));
 		}
@@ -184,7 +185,7 @@ void hotGlobalBanks() {
 		requireParity(native, scalar);
 		require(native.cpu.getSystemGlobalByKey(native.cpu.stringPool().intern("copied")) == value
 			&& native.cpu.getGlobalByKey(native.cpu.stringPool().intern("copied")) == valueNumber(73)
-			&& native.cpu.activeThread()->frames[0]->top == 3, "grown global banks remain live, distinct and do not extend top on stores");
+			&& native.cpu.activeThread()->frameAtDepth(0)->top == 3, "grown global banks remain live, distinct and do not extend top on stores");
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	require(page.nativeBlocks->entries[entry].get() == block, "host bank relocation does not invalidate an unrelated compiled instruction page");
@@ -202,7 +203,7 @@ void hotUpvalueAlias() {
 	std::array<Upvalue, 4> cells; std::array<Upvalue*, 4> pointers; std::array<Closure, 2> closures;
 	int index = 0;
 	for (auto* m : {&native, &scalar}) {
-		auto& frame = *m->cpu.activeThread()->frames[0];
+		auto& frame = *m->cpu.activeThread()->frameAtDepth(0);
 		auto& closure = closures[index]; closure.functionAddress = frame.functionAddress; closure.upvalueCount = 2;
 		closure.upvalues = pointers.data() + index * 2; closure.hashId = 100; closure.type = ObjType::Closure;
 		for (int c = 0; c < 2; ++c) {
@@ -212,15 +213,15 @@ void hotUpvalueAlias() {
 		frame.closure = &closure; m->cpu.runUntilDepth(0, 1100); ++index;
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& first = *native.cpu.activeThread()->frames[0];
+	const auto& first = *native.cpu.activeThread()->frameAtDepth(0);
 	const auto& compiled = first.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(compiled && compiled->sideExits[0].exit == NativeBlockExit::WriteUpvalue,
 		"the VM exercises a real compiled self-alias exit before resuming the remaining operations");
 #endif
 	for (const auto value : {valueNil(), valueBool(false), valueNumber(-0.0), VALUE_QNAN_MASK, valueNumber(73)}) {
-		for (auto* m : {&native, &scalar}) m->cpu.activeThread()->frames[0]->registers[12] = value;
+		for (auto* m : {&native, &scalar}) m->cpu.activeThread()->frameAtDepth(0)->registers[12] = value;
 		test::runCpuParity(native.cpu, scalar.cpu, 11); requireParity(native, scalar);
-		const auto& frame = *native.cpu.activeThread()->frames[0];
+		const auto& frame = *native.cpu.activeThread()->frameAtDepth(0);
 		require(frame.registers[3] == valueNumber(10) && frame.registers[4] == valueNumber(9)
 			&& frame.registers[6] == value && frame.top == 7, "a self-alias side exit writes the actual cell without losing live values or extending top");
 	}
@@ -249,7 +250,7 @@ void rawContextValues(CpuMachine& machine) {
 	auto& cpu = machine.cpu;
 	const std::array values{valueNil(), valueFromTag(ValueTag::False, 37), valueFromTag(ValueTag::True, 37),
 		valueNumber(-0.0), VALUE_QNAN_MASK, valueNumber(std::numeric_limits<double>::infinity()),
-		valueString(cpu.stringPool().intern("context")), valueTable(cpu.createTable()), valueClosure(cpu.activeThread()->frames[0]->closure),
+		valueString(cpu.stringPool().intern("context")), valueTable(cpu.createTable()), valueClosure(cpu.activeThread()->frameAtDepth(0)->closure),
 		valueThread(cpu.activeThread())};
 	ContextBlock globals(machine, {{OpCode::SETGL, 12, 0, 0, 1}, {OpCode::GETGL, 0, 0, 0, 1},
 		{OpCode::SETSYS, 0, 0, 0, 1}, {OpCode::GETSYS, 1, 0, 0, 1}, {OpCode::K1, 2},

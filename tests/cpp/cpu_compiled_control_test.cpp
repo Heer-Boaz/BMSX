@@ -51,12 +51,13 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 		&& a.luaHeap.trackedBytes == b.luaHeap.trackedBytes, "guest values, roots and allocation accounting agree");
 	require(native.cpu.lastPc == scalar.cpu.lastPc && native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc(),
 		"physical instruction boundaries and WIDE bodies agree");
-	const auto& x = native.cpu.activeThread()->frames; const auto& y = scalar.cpu.activeThread()->frames;
-	require(x.size() == y.size(), "control transitions preserve frame depth");
-	for (size_t i = 0; i < x.size(); ++i) {
-		require(x[i]->pc == y[i]->pc && x[i]->top == y[i]->top && x[i]->stackBase == y[i]->stackBase
-			&& x[i]->stackCapacity == y[i]->stackCapacity && x[i]->isExceptionFrame == y[i]->isExceptionFrame
-			&& x[i]->isNonMaskableExceptionFrame == y[i]->isNonMaskableExceptionFrame, "all live frame boundaries agree");
+	const auto& left = *native.cpu.activeThread(); const auto& right = *scalar.cpu.activeThread();
+	const CallFrame* x = left.firstFrame; const CallFrame* y = right.firstFrame;
+	require(left.frameDepth == right.frameDepth, "control transitions preserve frame depth");
+	for (size_t i = 0; i < left.frameDepth; ++i, x = x->next, y = y->next) {
+		require(x->pc == y->pc && x->top == y->top && x->stackBase == y->stackBase
+			&& x->stackCapacity == y->stackCapacity && x->isExceptionFrame == y->isExceptionFrame
+			&& x->isNonMaskableExceptionFrame == y->isNonMaskableExceptionFrame, "all live frame boundaries agree");
 	}
 }
 
@@ -81,7 +82,7 @@ void rawReadsRetainFullWords() {
 		}
 		requireParity(native, scalar);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-		const auto& page = *native.cpu.activeThread()->frames[0]->decodedPage;
+		const auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
 		require(page.nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]->sourceWords == 9,
 			"all six CP0 reads and dependent arithmetic execute in one native body");
 		require(page.nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]->sideExits.size() == 1,
@@ -94,7 +95,7 @@ void rawReadsRetainFullWords() {
 		requireParity(native, scalar);
 		require(native.cpu.readFrameRegister(0, 2) == valueNumber(word + 1u), "compiled reads consume the live registerfile, not captured words");
 		for (auto* m : {&native, &scalar}) {
-			auto& frame = *m->cpu.activeThread()->frames[0]; frame.registers[0] = valueNumber(CPU_STATUS_USER_MODE_CURRENT);
+			auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers[0] = valueNumber(CPU_STATUS_USER_MODE_CURRENT);
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress + 32u * INSTRUCTION_BYTES);
 			m->cpu.runUntilDepth(0, 1); frame.registers[0] = frame.registers[8] = valueNumber(73); frame.top = 0;
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
@@ -102,7 +103,7 @@ void rawReadsRetainFullWords() {
 		}
 		requireParity(native, scalar);
 		require(native.cpu.readFrameRegister(0, 0) == valueNumber(73) && native.cpu.readFrameRegister(0, 8) == valueNumber(1)
-			&& native.cpu.activeThread()->frames[0]->top == 9 && native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES,
+			&& native.cpu.activeThread()->frameAtDepth(0)->top == 9 && native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES,
 			"a hot valid MFC0's privilege exit publishes its pending K1 prefix, not the unexecuted destination");
 	}
 }
@@ -117,9 +118,9 @@ void writesConvertWithoutChangingSources() {
 	writeInstruction(image.text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 58, 255);
 	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 13}};
 	CpuMachine native(image), scalar(image, true);
-	for (auto* m : {&native, &scalar}) { auto* r = m->cpu.activeThread()->frames[0]->registers; r[0] = r[1] = valueNumber(0); r[12] = valueTable(m->cpu.createTable()); m->cpu.runUntilDepth(0, 600); }
+	for (auto* m : {&native, &scalar}) { auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers; r[0] = r[1] = valueNumber(0); r[12] = valueTable(m->cpu.createTable()); m->cpu.runUntilDepth(0, 600); }
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& page = *native.cpu.activeThread()->frames[0]->decodedPage;
+	const auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
 	require(page.nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]->sourceWords == 6,
 		"ordinary CP0 writes, reads and dependent values stay in one native body");
 	require(page.nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]->sideExits.size() == 1,
@@ -127,12 +128,12 @@ void writesConvertWithoutChangingSources() {
 #endif
 	for (const auto value : {valueNumber(-0.0), valueNumber(-1.5), valueNumber(4294967297.75), valueNumber(1e100),
 		valueNumber(std::numeric_limits<double>::infinity()), VALUE_QNAN_MASK, valueNil(), valueBool(true)}) {
-		for (auto* m : {&native, &scalar}) { m->cpu.activeThread()->frames[0]->registers[0] = value; m->cpu.runUntilDepth(0, 6); }
+		for (auto* m : {&native, &scalar}) { m->cpu.activeThread()->frameAtDepth(0)->registers[0] = value; m->cpu.runUntilDepth(0, 6); }
 		requireParity(native, scalar);
 		const Value numeric = valueNumber(asNumber(value) + 0.0);
 		require(native.cpu.readEpcWord() == toU32(numeric) && native.cpu.readCauseWord() == 0u
 			&& native.cpu.readFrameRegister(0, 5) == valueNumber(toU32(numeric)) && native.cpu.readFrameRegister(0, 6) == numeric
-			&& native.cpu.activeThread()->frames[0]->top == 7,
+			&& native.cpu.activeThread()->frameAtDepth(0)->top == 7,
 			"MTC0 converts a word without rewriting its numeric source, and ignored writes retain Cause");
 	}
 }
@@ -149,7 +150,7 @@ void statusWriteRechecksInterrupts() {
 	image.irqFunctionIndex = 1;
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
-		auto& frame = *m->cpu.activeThread()->frames[0]; frame.registers[0] = frame.registers[1] = valueNumber(0);
+		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers[0] = frame.registers[1] = valueNumber(0);
 		m->cpu.runUntilDepth(0, 400); frame.top = 0; frame.registers[0] = valueNumber(1); frame.registers[6] = valueNumber(73);
 		m->memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_VBLANK); m->irq.raise(IRQ_VBLANK);
 		require(m->cpu.runUntilDepth(0, 32) == RunResult::Halted && m->cpu.isExceptionFrame(1),
@@ -185,7 +186,7 @@ void unknownFieldStillFaultsAfterAnEarlierGuard() {
 	image.functions[0].wordCount = 5;
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
-		auto& frame = *m->cpu.activeThread()->frames[0]; frame.registers[0] = valueNumber(CPU_STATUS_USER_MODE_CURRENT);
+		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers[0] = valueNumber(CPU_STATUS_USER_MODE_CURRENT);
 		frame.registers[12] = valueTable(m->cpu.createTable());
 		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("returnStatus"), valueNumber(8)); m->cpu.runUntilDepth(0, 900);
 		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("returnStatus"), valueNumber(0));
@@ -194,14 +195,14 @@ void unknownFieldStillFaultsAfterAnEarlierGuard() {
 	requireParity(native, scalar);
 	require(native.cpu.readCurrentInstructionPc() == native.rom.textAddress + 3u * INSTRUCTION_BYTES
 		&& native.cpu.readFrameRegister(0, 6) == valueNumber(native.rom.textAddress + 2u * INSTRUCTION_BYTES)
-		&& valueIsTable(native.cpu.readFrameRegister(0, 12)) && native.cpu.activeThread()->frames[0]->top == 7,
+		&& valueIsTable(native.cpu.readFrameRegister(0, 12)) && native.cpu.activeThread()->frameAtDepth(0)->top == 7,
 		"the later sparse fault edge publishes the successful CP0-read prefix, not the rejected destination");
 }
 
 void privilegeFaultsAndExceptionReturns(OpCode op, bool wide, bool returnIntoRoot) {
 	const auto image = faultLoopImage(op, wide); CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
-		auto& frame = *m->cpu.activeThread()->frames[0]; frame.registers[0] = valueNumber(CPU_STATUS_USER_MODE_CURRENT);
+		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers[0] = valueNumber(CPU_STATUS_USER_MODE_CURRENT);
 		frame.registers[12] = valueTable(m->cpu.createTable());
 		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("returnStatus"), valueNumber(0xa5a5a508u));
 	}
@@ -211,7 +212,7 @@ void privilegeFaultsAndExceptionReturns(OpCode op, bool wide, bool returnIntoRoo
 		"user mode faults before selecting an unknown CP0 field or converting a source");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	bool compiled = false, returned = false;
-	for (const auto& [key, page] : native.cpu.activeThread()->frames[0]->executionImage->decodedPages) if (page.nativeBlocks) {
+	for (const auto& [key, page] : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages) if (page.nativeBlocks) {
 		for (const auto& block : page.nativeBlocks->entries) if (block) {
 			compiled |= block->sideExits.size() != 0 && block->sideExits[0].currentPc == native.rom.textAddress + 2u * INSTRUCTION_BYTES;
 			returned |= block->terminal.exit == NativeBlockExit::ExceptionReturn && block->sourceWords == 2;
@@ -221,8 +222,8 @@ void privilegeFaultsAndExceptionReturns(OpCode op, bool wide, bool returnIntoRoo
 #endif
 	for (auto* m : {&native, &scalar}) {
 		if (returnIntoRoot) {
-			for (int step = 0; step < 8 && m->cpu.activeThread()->frames.size() > 1; ++step) m->cpu.runUntilDepth(0, 1);
-			require(m->cpu.activeThread()->frames.size() == 1, "the warmed handler must return before revisiting it from an ordinary frame");
+			for (int step = 0; step < 8 && m->cpu.activeThread()->frameDepth > 1; ++step) m->cpu.runUntilDepth(0, 1);
+			require(m->cpu.activeThread()->frameDepth == 1, "the warmed handler must return before revisiting it from an ordinary frame");
 			m->cpu.runUntilDepth(0, 1);
 			m->cpu.writeEpcWord(m->rom.textAddress + 18u * INSTRUCTION_BYTES);
 		}
@@ -231,7 +232,7 @@ void privilegeFaultsAndExceptionReturns(OpCode op, bool wide, bool returnIntoRoo
 	}
 	requireParity(native, scalar);
 	require(native.cpu.captureRuntimeState().hardHalted && native.cpu.readCauseWord() == CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE
-		&& valueIsTable(native.cpu.readFrameRegister(0, 12)) && native.cpu.activeThread()->frames[0]->top == 4,
+		&& valueIsTable(native.cpu.readFrameRegister(0, 12)) && native.cpu.activeThread()->frameAtDepth(0)->top == 4,
 		"a rejected control operation preserves Cause, its unwritten destination and prefix top");
 }
 
@@ -253,7 +254,7 @@ void execReplacesFramesAfterNativeReturn() {
 	requireParity(native, scalar);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	bool generated = false;
-	for (const auto& [key, page] : native.cpu.activeThread()->frames[0]->executionImage->decodedPages) if (page.nativeBlocks) {
+	for (const auto& [key, page] : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages) if (page.nativeBlocks) {
 		const auto& block = page.nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 		generated |= block && block->terminal.exit == NativeBlockExit::ExecuteFunction && block->terminal.currentPc == native.rom.textAddress + INSTRUCTION_BYTES;
 	}
@@ -281,7 +282,7 @@ void nmiReturnsRetainedWordsAndUsesActiveEpc() {
 	for (auto* m : {&native, &scalar}) {
 		auto state = m->cpu.captureRuntimeState(); state.statusWord = 0xa5a5a511u; state.causeWord = 0xdeadbeefu;
 		state.epcWord = 0x12345679u; state.badAddressWord = 0x87654321u; state.luaFaultReasonWord = 0x80000000u; state.exceptionDomainWord = 7;
-		m->cpu.restoreRuntimeState(state); m->cpu.activeThread()->frames[0]->registers[1] = valueNumber(0); m->cpu.runUntilDepth(0, 300);
+		m->cpu.restoreRuntimeState(state); m->cpu.activeThread()->frameAtDepth(0)->registers[1] = valueNumber(0); m->cpu.runUntilDepth(0, 300);
 	}
 	for (int iteration = 0; iteration < 12; ++iteration) {
 		for (auto* m : {&native, &scalar}) {
@@ -303,13 +304,13 @@ void nmiReturnsRetainedWordsAndUsesActiveEpc() {
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	bool generated = false;
-	for (const auto& [key, page] : native.cpu.activeThread()->frames[0]->executionImage->decodedPages) if (page.nativeBlocks) {
+	for (const auto& [key, page] : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages) if (page.nativeBlocks) {
 		const auto& block = page.nativeBlocks->entries[((native.rom.textAddress + 16u * INSTRUCTION_BYTES) & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 		generated |= block && block->terminal.exit == NativeBlockExit::ExceptionReturn && block->sourceWords == 3;
 	}
 	require(generated, "the repeatedly entered NMI handler executes its CP0 read and WIDE RFE in a native body");
 	const u32 continuation = native.rom.textAddress + INSTRUCTION_BYTES;
-	const auto& page = *native.cpu.activeThread()->frames[0]->decodedPage;
+	const auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
 	require(static_cast<bool>(page.nativeBlocks->entries[(continuation & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]),
 		"a repeated RFE entry into the middle of a hot body is a translation entry, unlike an arbitrary grant resumption");
 #endif

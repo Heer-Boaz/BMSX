@@ -194,7 +194,7 @@ for (const optLevel of [0, 3] as const) test(`actual spatial AOT and firmware ke
 		assert.equal(domain, 0);
 		const read = readSites.get(pc);
 		if (read !== undefined) {
-			const frame = cpu.activeThread.frames[cpu.activeThread.frames.length - 1];
+			const frame = cpu.activeThread.frameAtDepth(cpu.activeThread.frameDepth - 1);
 			const page = frame.decodedPage!;
 			const offset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
 			// Consume the CPU owner's already-decoded operands. AOT field keys

@@ -134,7 +134,7 @@ void testDmaSharedBusStopsCpu() {
 	memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, 256);
 	memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x00000000);
 	memory.writeMappedU32LE(IO_DMA0_TRIGGER, 1);
-	const int depth = static_cast<int>(cpu.activeThread()->frames.size()) - 1;
+	const int depth = static_cast<int>(cpu.activeThread()->frameDepth) - 1;
 	const u32 pc = cpu.readFramePc(depth);
 	require(dma.captureState().scheduledBlockCycles == 514, "both serial RAM sides occupy 257 bus cycles");
 	runtime.frameScheduler.runCyclesToNextLogicalTick(runtime, 513);
@@ -155,15 +155,15 @@ void testDeviceSettlementRetainsCpuStop() {
 	runtime.machine.memory.writeMappedU32LE(bmsx::IO_IRQ_MASK, bmsx::IRQ_VBLANK);
 	runtime.machine.memory.writeMappedU32LE(bmsx::IO_INP_CTRL, bmsx::INP_CTRL_ARM);
 	auto* thread = cpu.activeThread();
-	const auto depth = thread->frames.size();
-	const auto pc = thread->frames.back()->pc;
+	const auto depth = thread->frameDepth;
+	const auto pc = thread->currentFrame->pc;
 	const auto stackTop = thread->stackTop;
 	require(!scheduler.runDevicesToNextLogicalTick(runtime, 19), "partial device grant stops before VBlank");
 	require(runtime.machine.scheduler.nowCycles() == 19, "devices consume the exact partial grant");
 	require(scheduler.runDevicesToNextLogicalTick(runtime, runtime.timing.cycleBudgetPerFrame), "device timers reach the real video edge");
 	require(scheduler.lastTickSequence == 1 && fixture.input.sampleCount == 1, "VBlank publishes its ordinary tick and input sample");
 	require((runtime.machine.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_VBLANK) != 0, "VBlank latches its pending IRQ");
-	require(cpu.activeThread() == thread && thread->frames.size() == depth && thread->frames.back()->pc == pc && thread->stackTop == stackTop,
+	require(cpu.activeThread() == thread && thread->frameDepth == depth && thread->currentFrame->pc == pc && thread->stackTop == stackTop,
 		"device settlement neither executes the stopped CPU nor enters its pending interrupt");
 	require(scheduler.lastTickCpuUsedCycles == 0, "device cycles are not CPU execution");
 	require(scheduler.lastTickBudgetGranted - scheduler.lastTickBudgetRemaining == runtime.machine.scheduler.nowCycles(), "only unspent device budget carries");

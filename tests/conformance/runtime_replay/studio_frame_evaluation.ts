@@ -14,7 +14,7 @@ export async function testStudioPinnedFrameEvaluation(test: StudioFixture, while
 	check(ide.debugger.source.stop !== undefined, `frame admission: Continue reached source stop: ${JSON.stringify(continued.result)}`);
 	const cpu = runtime.machine.cpu, depth = cpu.getFrameDepth(), exceptionDepth = cpu.readExceptionReturnFrameDepth();
 	check(exceptionDepth >= 0, 'frame admission: evaluation must not drain the active interrupt');
-	const pcs = cpu.activeThread.frames.map(entry => entry.pc);
+	const pcs = Array.from({ length: cpu.getFrameDepth() }, (_, index) => cpu.readFramePc(index));
 	const stopPc = ide.debugger.source.stop!.pc, stopInlineDepth = ide.debugger.source.stop!.inlineDepth;
 	const media = ide.sources.currentBlua32Media;
 	let selectedContext: import('../../../ide/runtime/lua_evaluation').LuaFrameContext;
@@ -40,7 +40,7 @@ export async function testStudioPinnedFrameEvaluation(test: StudioFixture, while
 		check(ide.debugger.source.stop === stop && ide.luaEvaluation.contextAvailable(selectedContext!),
 			'frame completion republishes the same owned stop, preserving the manual selection');
 		check(cpu.getFrameDepth() === depth && cpu.readExceptionReturnFrameDepth() === exceptionDepth
-			&& cpu.activeThread.frames.every((entry, index) => entry.pc === pcs[index]),
+			&& pcs.every((pc, index) => cpu.readFramePc(index) === pc),
 			'frame admission: every retained ancestor and the active IRQ keep their exact PCs');
 		check(ide.debugger.source.stop !== undefined && ide.debugger.source.stop!.pc === stopPc && ide.debugger.source.stop!.inlineDepth === stopInlineDepth
 			&& !ide.debugger.plans.controlActive && ide.sources.currentBlua32Media === media && inspection.lifetime.isDisposed,

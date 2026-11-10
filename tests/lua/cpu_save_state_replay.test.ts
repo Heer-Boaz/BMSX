@@ -29,7 +29,7 @@ for (const [op, name] of [[OpCode.K1, 'constant'], [OpCode.NEWT, 'table']] as co
 	const returnPc = cpu.readFramePc(0) + 4 * INSTRUCTION_BYTES;
 	cpu.setExecutionHook((_domain, pc) => pc === returnPc, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.ExecutionStopped);
-	assert.equal(cpu.rootThread.frames[0].top, 0, 'open CALL accepts zero results without reviving earlier arguments');
+	assert.equal(cpu.rootThread.frameAtDepth(0).top, 0, 'open CALL accepts zero results without reviving earlier arguments');
 	if (op === OpCode.NEWT) {
 		const weak = cpu.createTable(1, 0);
 		const mode = cpu.createTable(0, 1);
@@ -43,7 +43,7 @@ for (const [op, name] of [[OpCode.K1, 'constant'], [OpCode.NEWT, 'table']] as co
 	const saved = cpu.captureRuntimeState();
 	cpu.setExecutionHook(null, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 	cpu.restoreRuntimeState(saved);
-	assert.equal(cpu.rootThread.frames[0].registers.getTag(7), op === OpCode.K1 ? ValueTag.Number : ValueTag.Table,
+	assert.equal(cpu.rootThread.frameAtDepth(0).registers.getTag(7), op === OpCode.K1 ? ValueTag.Number : ValueTag.Table,
 		'exact-top metadata does not erase reserved register values');
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const values: Value[] = [];

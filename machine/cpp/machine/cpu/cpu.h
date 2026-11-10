@@ -285,7 +285,7 @@ public:
 	void clearHaltUntilIrq();
 	bool isHaltedUntilIrq() const {
 		return m_haltedUntilIrqThread == m_activeThread
-			&& m_haltedUntilIrqFrameDepth == static_cast<int>(m_activeThread->frames.size());
+			&& m_haltedUntilIrqFrameDepth == static_cast<int>(m_activeThread->frameDepth);
 	}
 	bool isMemoryWriteBlocked() const { return m_memoryWriteBlocked; }
 	uint32_t stalledMemoryWriteAddress() const { return m_memoryWriteBlockedAddress; }
@@ -322,7 +322,7 @@ public:
 
 	Thread* activeThread() const { return m_activeThread; }
 	Thread* rootThread() const { return m_rootThread; }
-	int getFrameDepth() const { return static_cast<int>(m_activeThread->frames.size()); }
+	int getFrameDepth() const { return static_cast<int>(m_activeThread->frameDepth); }
 	ExecutionDomainId readFrameExecutionDomain(int frameIndex) const;
 	ExecutionDomainId readLastExecutionDomain() const;
 	// Instruction start (including WIDE), inspected only during CPU execution.
@@ -480,8 +480,6 @@ private:
 	void storeTableIntegerIndex(const Value& base, int index, const Value& value);
 	void storeTableFieldIndexCached(int& predictedSlot, const Value& base, StringId key, const Value& value);
 
-	std::unique_ptr<CallFrame> acquireFrame();
-	void releaseFrame(std::unique_ptr<CallFrame> frame);
 	void clearCallStack();
 	void ensureStackSize(size_t size);
 	void refreshFrameRegisterPointers();
@@ -576,10 +574,8 @@ private:
 	std::vector<Value> m_localRoots;
 	int m_localRootScopeDepth = 0;
 
-	std::vector<std::unique_ptr<CallFrame>> m_framePool;
 	std::vector<Upvalue*> m_closureUpvalueScratch;
 	std::vector<u32> m_closureUpvalueWordScratch;
-	static constexpr int MAX_POOLED_FRAMES = 32;
 	std::vector<StringId> m_systemGlobalNames;
 	std::vector<Value> m_systemGlobalValues;
 	std::unordered_map<StringId, size_t> m_systemGlobalSlotByKey;

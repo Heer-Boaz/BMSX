@@ -22,17 +22,17 @@ test('compiled generic arrays and string-cache probes retain all kinds across ke
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 7, maxStack: 12 }] });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
-		const r = cpu.rootThread.frames[0].registers;
+		const r = cpu.rootThread.frameAtDepth(0).registers;
 		r.setTable(0, cpu.createTable(4, 1)); r.setNumber(1, 1); r.setNumber(2, 3); cpu.runUntilDepth(0, 900);
 	}
-	const frame = js.rootThread.frames[0], page = frame.decodedPage!;
+	const frame = js.rootThread.frameAtDepth(0), page = frame.decodedPage!;
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const block = page.compiledBlocks!.entries[entry]!;
 	assert.equal(block.sourceWords, 7);
 	for (const key of [1, 2, 4, 5, 0, -0, -7, 1.5, 2147483647, 2147483648, 4294967297, NaN, Infinity, -Infinity, false, true, 'field'] as const) {
 		for (const value of [null, false, true, -0, NaN, Infinity, 'value'] as const) {
 			for (const cpu of [js, ref]) {
-				const r = cpu.rootThread.frames[0].registers;
+				const r = cpu.rootThread.frameAtDepth(0).registers;
 				r.set(1, key === 'field' ? valueString(cpu.stringPool.intern(key)) : key);
 				r.set(2, value === 'value' ? valueString(cpu.stringPool.intern(value)) : value);
 			}
@@ -43,7 +43,7 @@ test('compiled generic arrays and string-cache probes retain all kinds across ke
 		}
 	}
 	for (const cpu of [js, ref]) {
-		const r = cpu.rootThread.frames[0].registers;
+		const r = cpu.rootThread.frameAtDepth(0).registers;
 		r.setTable(1, cpu.createTable()); r.setTable(2, cpu.createTable());
 	}
 	for (const grant of [9, 1, 2, 1, 2, 1, 1, 1, 256]) {
@@ -63,16 +63,16 @@ for (const generic of [false, true]) test(`compiled array reads resolve inherite
 	for (const cpu of [js, ref]) {
 		const own = cpu.createTable(2, 0), parent = cpu.createTable(2, 0), meta = cpu.createTable(0, 1);
 		parent.setInteger(1, 73); meta.setStringKey(cpu.stringPool.intern('__index'), parent); own.metatable = meta;
-		cpu.rootThread.frames[0].registers.setTable(0, own); cpu.rootThread.frames[0].registers.setNumber(1, 1);
+		cpu.rootThread.frameAtDepth(0).registers.setTable(0, own); cpu.rootThread.frameAtDepth(0).registers.setNumber(1, 1);
 		cpu.runUntilDepth(0, 300);
 	}
 	for (const value of [false, 0, null, true, 19, null]) {
-		for (const cpu of [js, ref]) cpu.rootThread.frames[0].registers.getTable(0).setInteger(1, value);
+		for (const cpu of [js, ref]) cpu.rootThread.frameAtDepth(0).registers.getTable(0).setInteger(1, value);
 		runCpuParity(js, ref, 3);
 		assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 		assert.equal(js.readFrameRegister(0, 3), value === null ? 73 : value);
 	}
-	const frame = js.rootThread.frames[0], entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
+	const frame = js.rootThread.frameAtDepth(0), entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const region = frame.decodedPage!.compiledBlocks!.entries[entry]!.region;
 	assert.equal(region.entries[0].sourceWords, 3,
 		'the field load and its admitted helper continuation stay in one generated region');
@@ -90,10 +90,10 @@ test('compiled array stores advance length through hash entries and shorten it o
 	for (const cpu of [js, ref]) {
 		const table = cpu.createTable(2, 4);
 		for (let i = 1; i <= 5; ++i) table.setInteger(i, i);
-		cpu.rootThread.frames[0].registers.setTable(0, table); cpu.rootThread.frames[0].registers.setNumber(2, 2); cpu.runUntilDepth(0, 600);
+		cpu.rootThread.frameAtDepth(0).registers.setTable(0, table); cpu.rootThread.frameAtDepth(0).registers.setNumber(2, 2); cpu.runUntilDepth(0, 600);
 	}
 	for (const value of [null, false, null, 2]) {
-		for (const cpu of [js, ref]) cpu.rootThread.frames[0].registers.set(2, value);
+		for (const cpu of [js, ref]) cpu.rootThread.frameAtDepth(0).registers.set(2, value);
 		runCpuParity(js, ref, 6);
 		assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 		assert.equal(js.readFrameRegister(0, 3), value === null ? 1 : 5);
@@ -110,11 +110,11 @@ test('compiled UTF-8 length retains live definitions and destination/source alia
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 5 }] });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
-		cpu.rootThread.frames[0].registers.setStringId(1, cpu.stringPool.intern('Aé雪\0😀')); cpu.runUntilDepth(0, 500);
+		cpu.rootThread.frameAtDepth(0).registers.setStringId(1, cpu.stringPool.intern('Aé雪\0😀')); cpu.runUntilDepth(0, 500);
 	}
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 	assert.equal(js.readFrameRegister(0, 2), 5); assert.equal(js.readFrameRegister(0, 3), 12);
-	const frame = js.rootThread.frames[0], entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
+	const frame = js.rootThread.frameAtDepth(0), entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	assert.equal(frame.decodedPage!.compiledBlocks!.entries[entry]!.sourceWords, 5);
 });
 
@@ -129,13 +129,13 @@ test('compiled SELF publishes its original receiver and top before a failing inh
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const table = cpu.createTable(0, 1); table.setStringKey(cpu.stringPool.intern('method'), 73);
-		cpu.rootThread.frames[0].registers.setTable(9, table); cpu.runUntilDepth(0, 300);
+		cpu.rootThread.frameAtDepth(0).registers.setTable(9, table); cpu.runUntilDepth(0, 300);
 	}
-	const frame = js.rootThread.frames[0], entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
+	const frame = js.rootThread.frameAtDepth(0), entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	assert.equal(frame.decodedPage!.compiledBlocks!.entries[entry]!.sourceWords, 3);
 	assert.equal(frame.registers.getTable(7), frame.registers.getTable(9));
 	for (const cpu of [js, ref]) {
-		const root = cpu.rootThread.frames[0], table = root.registers.getTable(9), meta = cpu.createTable(0, 1);
+		const root = cpu.rootThread.frameAtDepth(0), table = root.registers.getTable(9), meta = cpu.createTable(0, 1);
 		table.setStringKey(cpu.stringPool.intern('method'), null); meta.setStringKey(cpu.stringPool.intern('__index'), table);
 		table.metatable = meta; root.top = 0;
 	}
@@ -157,15 +157,15 @@ test('compiled nil-key traps precede any invalid table mutation or destination w
 		{ firstWord: 32, wordCount: 1 }], exceptionFunctionIndex: 1 });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
-		const r = cpu.rootThread.frames[0].registers;
+		const r = cpu.rootThread.frameAtDepth(0).registers;
 		r.setTable(0, cpu.createTable(2)); r.setNumber(1, 1); r.setNumber(2, 73); cpu.runUntilDepth(0, 500);
-		r.setNil(1); r.setNumber(3, 19); cpu.rootThread.frames[0].top = 0;
+		r.setNil(1); r.setNumber(3, 19); cpu.rootThread.frameAtDepth(0).top = 0;
 	}
 	runCpuParity(js, ref, 5);
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_INDEX_NIL);
 	assert.equal(js.readEpcWord(), image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
-	assert.equal(js.rootThread.frames[0].registers.getNumber(3), 19);
+	assert.equal(js.rootThread.frameAtDepth(0).registers.getNumber(3), 19);
 });
 
 test('compiled NEWT materializes allocation roots and leaves destination untouched when collection cannot admit a WIDE request', () => {
@@ -180,11 +180,11 @@ test('compiled NEWT materializes allocation roots and leaves destination untouch
 		{ firstWord: 32, wordCount: 1 }], globalNames: ['retained'], exceptionFunctionIndex: 1 });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	runCpuParity(js, ref, 100);
-	const frame = js.rootThread.frames[0], page = frame.decodedPage!, entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
+	const frame = js.rootThread.frameAtDepth(0), page = frame.decodedPage!, entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	assert.equal(page.compiledBlocks!.entries[entry]!.terminal.exit, CompiledBlockExit.AllocateTable);
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 	for (const cpu of [js, ref]) {
-		const root = cpu.rootThread.frames[0]; root.registers.setNumber(8, 73); root.registers.setNil(9); root.top = 0;
+		const root = cpu.rootThread.frameAtDepth(0); root.registers.setNumber(8, 73); root.registers.setNil(9); root.top = 0;
 		const retained = cpu.createTable(350000);
 		cpu.setGlobalByKey(cpu.stringPool.find('retained')!, ValueTag.Table, NaN, retained);
 	}

@@ -46,7 +46,7 @@ for (const optLevel of [0, 3] as const) {
 				const state = cpu.captureRuntimeState();
 				cpu.restoreRuntimeState(state);
 				assert.deepEqual(cpu.captureRuntimeState(), state, 'thread snapshot round trip');
-				assert.equal(cpu.activeThread.frames.some(frame => frame.isExceptionFrame) && name !== 'interrupted', false, `unexpected machine fault in ${name}`);
+				assert.equal((cpu.readExceptionReturnFrameDepth() >= 0) && name !== 'interrupted', false, `unexpected machine fault in ${name}`);
 			}
 			assert.equal(result, RunResult.Halted);
 			assert.equal(cpu.getFrameDepth(), 0);
@@ -57,7 +57,7 @@ for (const optLevel of [0, 3] as const) {
 			if (name === 'protected_and_failed') {
 				const failed = cpu.getGlobalByKey(cpu.stringPool.intern('failed_thread')) as Thread;
 				assert.equal(failed.status, ThreadStatus.Failed);
-				assert.ok(failed.frames.length > 0, 'failed coroutine keeps its authored frames');
+				assert.ok(failed.frameDepth > 0, 'failed coroutine keeps its authored frames');
 			}
 			cpu.collectTrackedHeapBytes();
 			if (name === 'collection') {

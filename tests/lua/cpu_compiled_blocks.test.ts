@@ -24,7 +24,7 @@ import type { Blua32ExecutionImage } from '../../machine/ts/machine/cpu/executio
 
 function compiledEntries(cpu: CPU): number {
 	let count = 0;
-	for (const frame of cpu.rootThread.frames) {
+	for (let frame = cpu.rootThread.currentFrame; frame !== null; frame = frame.previous) {
 		for (const page of frame.executionImage.decodedPages.values()) {
 			if (page.compiledBlocks === null) continue;
 			for (const block of page.compiledBlocks.entries) if (block !== null) ++count;
@@ -59,7 +59,7 @@ return n`, 'cpu-default.lua'));
 	const images: Blua32ExecutionImage[] = [], charges: number[] = [];
 	for (const runtime of [fast, scalar]) {
 		runtime.boot(); const cpu = runtime.machine.cpu;
-		images.push(cpu.rootThread.frames[0].executionImage);
+		images.push(cpu.rootThread.frameAtDepth(0).executionImage);
 		let result = RunResult.Yielded, cycles = 0;
 		while (result === RunResult.Yielded) { result = cpu.runUntilDepth(0, 31); cycles += 31 - cpu.instructionBudgetRemaining; }
 		charges.push(cycles);
@@ -80,7 +80,7 @@ test('generated JavaScript warms within one slice and preserves every admitted s
 	const image = loopImage();
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
 	const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
-	for (const cpu of [js, ref]) cpu.rootThread.frames[0].registers.setNumber(1, 0);
+	for (const cpu of [js, ref]) cpu.rootThread.frameAtDepth(0).registers.setNumber(1, 0);
 	for (const grant of [600, ...Array.from({ length: 40 }, (_, i) => [0, 1, 2, 3, 5, 6, 7, 63, 257][i % 9])]) {
 		runCpuParity(js, ref, grant);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState(), `full CPU state at grant ${grant}`);
@@ -105,7 +105,7 @@ for (const op of [OpCode.SHR, OpCode.MOD, OpCode.FLOORDIV, OpCode.POW]) test(`mu
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 12, maxStack: 5 }] });
 	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
 	cpu.runUntilDepth(0, 1200);
-	const frame = cpu.rootThread.frames[0], page = frame.decodedPage!;
+	const frame = cpu.rootThread.frameAtDepth(0), page = frame.decodedPage!;
 	const block = page.compiledBlocks!.entries[(image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2]!;
 	assert.equal(block.sourceWords, 12);
 	const r = frame.registers;
@@ -137,11 +137,11 @@ test('generated moves retain reference values, string ids, boolean kinds and con
 		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 9, maxStack: 12 }], constants: [constant] });
 		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
 		const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
-		for (const cpu of [js, ref]) cpu.rootThread.frames[0].registers.setTable(0, cpu.createTable(0, 0));
+		for (const cpu of [js, ref]) cpu.rootThread.frameAtDepth(0).registers.setTable(0, cpu.createTable(0, 0));
 		runCpuParity(js, ref, 900);
 		assert.ok(compiledEntries(js) > 0);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
-		const registers = js.rootThread.frames[0].registers;
+		const registers = js.rootThread.frameAtDepth(0).registers;
 		assert.equal(registers.getTable(4), registers.getTable(0));
 		assert.equal(registers.getTag(7), ValueTag.False);
 		assert.equal(registers.getTag(8), ValueTag.True);
@@ -166,14 +166,14 @@ for (const op of [OpCode.ADD, OpCode.SUB, OpCode.MUL, OpCode.DIV, OpCode.MOD, Op
 			const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 			runCpuParity(js, ref, 90);
 			assert.ok(compiledEntries(js) > 0);
-			const frame = js.rootThread.frames[0];
+			const frame = js.rootThread.frameAtDepth(0);
 			const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2;
 			assert.equal(frame.decodedPage!.compiledBlocks!.entries[entry]!.sourceWords, 3,
 				'the numeric opcode itself executes inside the generated body');
 			for (const left of values) for (const right of values) {
 				for (const cpu of [js, ref]) {
-					cpu.rootThread.frames[0].registers.set(0, left);
-					cpu.rootThread.frames[0].registers.set(1, right);
+					cpu.rootThread.frameAtDepth(0).registers.set(0, left);
+					cpu.rootThread.frameAtDepth(0).registers.set(1, right);
 				}
 				runCpuParity(js, ref, 3);
 				for (let register = 0; register < 4; ++register) {
@@ -191,7 +191,7 @@ test('writes to cached RAM source retire generated functions before the next exe
 	// Relative JMP targets are decoded at the RAM address, not the ROM address.
 	memory.writeBytes(DYNAMIC_RAM_BASE, code.subarray(0, MAPPED_PAGE_BYTE_SIZE));
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
-	cpu.rootThread.frames[0].registers.setNumber(1, 0);
+	cpu.rootThread.frameAtDepth(0).registers.setNumber(1, 0);
 	cpu.runUntilDepth(0, 600);
 	assert.ok(compiledEntries(cpu) > 0);
 	const replacement = new Uint8Array(INSTRUCTION_BYTES);
@@ -218,7 +218,7 @@ test('generated RK constants preserve numeric kind checks and signed selectors',
 		runCpuParity(js, ref, 400);
 		assert.ok(compiledEntries(js) > 0);
 		const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2;
-		assert.equal(js.rootThread.frames[0].decodedPage!.compiledBlocks!.entries[entry]!.sourceWords, 7);
+		assert.equal(js.rootThread.frameAtDepth(0).decodedPage!.compiledBlocks!.entries[entry]!.sourceWords, 7);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 	}
 });
@@ -260,7 +260,7 @@ test('dependent generated instructions preserve live values, raw copies and comp
 		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
 		const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 		for (const cpu of [js, ref]) {
-			const registers = cpu.rootThread.frames[0].registers;
+			const registers = cpu.rootThread.frameAtDepth(0).registers;
 			for (let reg = 0; reg < initialValues.length; ++reg) registers.set(reg, initialValues[reg]);
 			registers.setTable(0, cpu.createTable(0, 0));
 			registers.setNumber(7, -0);
@@ -294,7 +294,7 @@ return n, t.value, other.value
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
 	const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) cpu.installBootPrimitives();
-	const executionImage = js.rootThread.frames[0].executionImage;
+	const executionImage = js.rootThread.frameAtDepth(0).executionImage;
 	let result = RunResult.Yielded;
 	for (let slice = 0; slice < 10000 && result === RunResult.Yielded; ++slice) {
 		const grant = [1, 2, 3, 9, 33, 256][slice % 6];
@@ -326,11 +326,11 @@ test('field cache hits stay in one generated block and misses publish only the e
 	for (const cpu of [js, ref]) {
 		const table = cpu.createTable(0, 1);
 		table.storeStringKey(cpu.stringPool.intern('field'), ValueTag.Number, 0, null);
-		cpu.rootThread.frames[0].registers.setTable(0, table);
-		cpu.rootThread.frames[0].registers.setNumber(1, 1);
+		cpu.rootThread.frameAtDepth(0).registers.setTable(0, table);
+		cpu.rootThread.frameAtDepth(0).registers.setNumber(1, 1);
 		cpu.runUntilDepth(0, 1200);
 	}
-	const frame = js.rootThread.frames[0];
+	const frame = js.rootThread.frameAtDepth(0);
 	const page = frame.decodedPage!;
 	const block = page.compiledBlocks!.entries[(entry & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2]!;
 	assert.equal(block.sourceWords, 6);
@@ -345,7 +345,7 @@ test('field cache hits stay in one generated block and misses publish only the e
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 	}
 	for (const cpu of [js, ref]) {
-		const frame = cpu.rootThread.frames[0];
+		const frame = cpu.rootThread.frameAtDepth(0);
 		frame.registers.setBool(0, false); frame.top = 0;
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
 		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
@@ -358,7 +358,7 @@ test('field cache hits stay in one generated block and misses publish only the e
 test('sparse observation and instrumented stops retire or bypass compiled blocks without lost instruction boundaries', () => {
 	const image = loopImage();
 	const cpu = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
-	cpu.rootThread.frames[0].registers.setNumber(1, 0);
+	cpu.rootThread.frameAtDepth(0).registers.setNumber(1, 0);
 	cpu.runUntilDepth(0, 600);
 	assert.ok(compiledEntries(cpu) > 0);
 	const observedPc = image.image.functions[0].codeAddress + 3 * INSTRUCTION_BYTES;
@@ -419,7 +419,7 @@ for (const op of [OpCode.JMPIF, OpCode.JMPIFNOT]) test(`generated conditional ${
 		for (let grant = 1; grant <= 30; ++grant) {
 			for (const cpu of [js, ref]) {
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
-				const registers = cpu.rootThread.frames[0].registers;
+				const registers = cpu.rootThread.frameAtDepth(0).registers;
 				registers.set(0, value);
 				registers.set(63, value);
 			}
@@ -459,7 +459,7 @@ for (const standalone of [false, true]) test(`generated HALT commits its thread/
 		}
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 	}
-	const page = js.rootThread.frames[0].decodedPage!;
+	const page = js.rootThread.frameAtDepth(0).decodedPage!;
 	const block = page.compiledBlocks!.entries[(startPc & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2]!;
 	assert.equal(block.terminal.exit, CompiledBlockExit.Halt, 'the executed HALT is a generated exit, not interpreter dispatch');
 	for (const cpu of [js, ref]) {
@@ -496,7 +496,7 @@ test('a generated terminal WIDE instruction can straddle pages and retires when 
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Halted);
 		assert.equal(cpu.readFramePc(0), pc + 2 * INSTRUCTION_BYTES);
 	}
-	const head = cpu.rootThread.frames[0].executionImage.decodedPages;
+	const head = cpu.rootThread.frameAtDepth(0).executionImage.decodedPages;
 	assert.ok([...head.values()].some(page => page.compiledBlocks?.entries[255]?.terminal.exit === CompiledBlockExit.Halt));
 	writeInstruction(code, 1, OpCode.KM1, 0, 0, 0);
 	memory.writeBytes(pc + INSTRUCTION_BYTES, code.subarray(INSTRUCTION_BYTES));
@@ -521,7 +521,7 @@ test('source writes retire overlapping blocks without discarding independent cod
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE + start * INSTRUCTION_BYTES);
 		cpu.runUntilDepth(0, 300);
 	}
-	const page = cpu.rootThread.frames[0].decodedPage!;
+	const page = cpu.rootThread.frameAtDepth(0).decodedPage!;
 	const preserved = page.compiledBlocks!.entries[0];
 	assert.ok(preserved !== null && page.compiledBlocks!.entries[8] !== null);
 	writeInstruction(text, 9, OpCode.SUB, 1, 0, 0);
@@ -553,17 +553,17 @@ for (const wide of [false, true]) test(`generated CALL/RET preserve full state a
 	const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) assert.equal(cpu.runUntilDepth(0, 10001), RunResult.Yielded);
 	assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
-	const executionImage = js.rootThread.frames[0].executionImage;
+	const executionImage = js.rootThread.frameAtDepth(0).executionImage;
 	const exits = new Set([...executionImage.decodedPages.values()].flatMap(page => page.compiledBlocks?.entries.filter(block => block !== null).map(block => block!.terminal.exit) ?? []));
 	assert.ok(exits.has(CompiledBlockExit.Call) && exits.has(CompiledBlockExit.Return), 'both sides of the call use generated exits');
 	for (const cpu of [js, ref]) {
 		assert.equal(cpu.getFrameDepth(), 1);
 		assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
 		assert.equal(cpu.getFrameDepth(), 2);
-		assert.equal(cpu.rootThread.frames[1].callSitePc, image.image.functions[0].codeAddress + callBody * INSTRUCTION_BYTES);
+		assert.equal(cpu.rootThread.frameAtDepth(1).callSitePc, image.image.functions[0].codeAddress + callBody * INSTRUCTION_BYTES);
 		assert.equal(cpu.runUntilDepth(0, 5), RunResult.Yielded);
 		assert.equal(cpu.getFrameDepth(), 1);
-		cpu.rootThread.frames[0].registers.setNumber(4, 77);
+		cpu.rootThread.frameAtDepth(0).registers.setNumber(4, 77);
 		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 		assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_CALL_NON_FUNCTION);
 		assert.equal(cpu.readEpcWord(), image.image.functions[0].codeAddress + 3 * INSTRUCTION_BYTES);
@@ -608,7 +608,7 @@ test('a compiled CALL completes after a mapped record read replaces its source i
 			});
 		}
 		assert.equal(cpu.runUntilDepth(0, 10001), RunResult.Yielded);
-		const page = cpu.rootThread.frames[0].decodedPage!;
+		const page = cpu.rootThread.frameAtDepth(0).decodedPage!;
 		if (backend === CpuExecutionBackend.JavaScript) assert.equal(page.compiledBlocks!.entries[2]!.terminal.exit, CompiledBlockExit.Call);
 		source.armed = true;
 		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);

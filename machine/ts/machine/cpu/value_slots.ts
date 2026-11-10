@@ -22,6 +22,10 @@ export type ValueWriteTarget = {
 	setNil(index: number): void;
 };
 
+const emptyTags = new Uint8Array(0);
+const emptyScalars = new Float64Array(0);
+const emptyReferences: ValueReference[] = [];
+
 export class ValueSlots {
 	private tags: Uint8Array;
 	private scalars: Float64Array;
@@ -50,6 +54,15 @@ export class ValueSlots {
 		this.refs = source.refs;
 		this.base = base;
 		this.size = size;
+	}
+
+	/** Release a borrowed register window without retaining its backing stack. */
+	public unbind(): void {
+		this.tags = emptyTags;
+		this.scalars = emptyScalars;
+		this.refs = emptyReferences;
+		this.base = 0;
+		this.size = 0;
 	}
 
 	public clear(count: number, offset = 0): void {

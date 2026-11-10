@@ -187,7 +187,7 @@ async function main(): Promise<void> {
 	assert.equal(history.inputJournal.endSequence, 87);
 	if (outputPrefix) writeFileSync(`${outputPrefix}-history.state`, encodeRuntimeSaveState(capture()));
 	let compiledBlocks = 0;
-	for (const frame of runtime.machine.cpu.rootThread.frames) {
+	for (let frame = runtime.machine.cpu.rootThread.currentFrame; frame !== null; frame = frame.previous) {
 		for (const page of frame.executionImage.decodedPages.values()) {
 			if (page.compiledBlocks === null) continue;
 			for (const block of page.compiledBlocks.entries) if (block !== null) ++compiledBlocks;

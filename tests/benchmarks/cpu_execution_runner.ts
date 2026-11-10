@@ -18,14 +18,14 @@ const runtime = new Runtime({ systemRomBytes: readFileSync(romPath), cartridgeSl
 	sampleInputControllerSnapshot: () => {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect: () => {},
 });
 runtime.boot();
-const cpu = runtime.machine.cpu, image = cpu.rootThread.frames[0].executionImage;
-const functionAddress = cpu.rootThread.frames[0].functionAddress;
+const cpu = runtime.machine.cpu, image = cpu.rootThread.frameAtDepth(0).executionImage;
+const functionAddress = cpu.rootThread.frameAtDepth(0).functionAddress;
 let result = RunResult.Yielded, cycles = 0, milliseconds = 0, firstPassMilliseconds = 0, slices = 0, maxDeadlineOverrunCycles = 0;
 for (let pass = 0; pass <= warmupPasses; ++pass) {
 	// Re-enter through the ordinary call owner; never restore guest state or
 	// clear executable caches between passes. V8 tiering may still continue.
 	if (pass !== 0) cpu.beginCompletionCallInExecutionDomain(image.executionDomainId, functionAddress);
-	for (let index = 0; index < wordCount; ++index) cpu.rootThread.frames[0].registers.setNumber(8 + index, 0x20000000 | (index & 65535));
+	for (let index = 0; index < wordCount; ++index) cpu.rootThread.frameAtDepth(0).registers.setNumber(8 + index, 0x20000000 | (index & 65535));
 	result = RunResult.Yielded; cycles = slices = maxDeadlineOverrunCycles = 0;
 	const start = performance.now();
 	while (result === RunResult.Yielded) {

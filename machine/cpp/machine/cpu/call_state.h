@@ -22,6 +22,8 @@ enum class ProtectedCallKind : uint8_t {
 
 struct CallFrame {
 	Thread* thread = nullptr;
+	CallFrame* previous = nullptr;
+	CallFrame* next = nullptr;
 	u32 functionAddress = 0;
 	Blua32ExecutionImage* executionImage = nullptr;
 	DecodedInstructionPage* decodedPage = nullptr;

@@ -36,8 +36,8 @@ struct CpuMachine {
 };
 
 void requireParity(CpuMachine& native, CpuMachine& scalar) {
-	const auto& first = *native.cpu.activeThread()->frames[0];
-	const auto& second = *scalar.cpu.activeThread()->frames[0];
+	const auto& first = *native.cpu.activeThread()->frameAtDepth(0);
+	const auto& second = *scalar.cpu.activeThread()->frameAtDepth(0);
 	require(first.pc == second.pc && first.top == second.top
 		&& native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc()
 		&& native.cpu.lastPc == scalar.cpu.lastPc,
@@ -62,18 +62,18 @@ void grantsAndTargetRetirement() {
 	CpuMachine native(image, false), scalar(image, true);
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
-		auto& frame = *machine->cpu.activeThread()->frames[0];
+		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
 		frame.registers[0] = valueNumber(2); frame.registers[1] = valueNumber(1); frame.registers[8] = valueNumber(0);
 	}
 	for (const bool flag : {true, false}) {
 		for (auto* machine : {&native, &scalar}) {
-			machine->cpu.activeThread()->frames[0]->registers[2] = valueBool(flag);
+			machine->cpu.activeThread()->frameAtDepth(0)->registers[2] = valueBool(flag);
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 		}
 		require(test::runCpuParity(native.cpu, scalar.cpu, 2048) == RunResult::Yielded, "warm both branch paths");
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	auto& page = *native.cpu.activeThread()->frames[0]->decodedPage;
+	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
 	const auto* root = page.nativeBlocks->entries[0].get();
 	const auto& taken = root->sideExits.back();
 	require(page.nativeBlocks->entries[2] && page.nativeBlocks->entries[4]
@@ -105,7 +105,7 @@ void grantsAndTargetRetirement() {
 			remaining -= 2;
 			if (remaining <= 0) break;
 		}
-		NativeBlockRunState run{.registers = registers.data(), .constants = native.cpu.activeThread()->frames[0]->executionImage->constPool.data(),
+		NativeBlockRunState run{.registers = registers.data(), .constants = native.cpu.activeThread()->frameAtDepth(0)->executionImage->constPool.data(),
 			.remainingCycles = grant};
 		const auto* exit = page.nativeBlocks->entries[start]->run(run);
 		require(exit == expectedExit && registers == expected && run.remainingCycles == remaining && run.registerTop == top,
@@ -115,7 +115,7 @@ void grantsAndTargetRetirement() {
 #endif
 	for (const Value flag : {valueBool(true), valueBool(false), valueNumber(0), VALUE_QNAN_MASK}) for (int grant = 1; grant <= 96; ++grant) {
 		for (auto* machine : {&native, &scalar}) {
-			auto& frame = *machine->cpu.activeThread()->frames[0]; frame.registers[2] = flag; frame.top = 0;
+			auto& frame = *machine->cpu.activeThread()->frameAtDepth(0); frame.registers[2] = flag; frame.top = 0;
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 		}
 		require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Yielded, "each short grant completes its admitted segment");
@@ -130,7 +130,7 @@ void grantsAndTargetRetirement() {
 		"a write to an internal target retires every reachable label before reusing the source region");
 #endif
 	for (auto* machine : {&native, &scalar}) {
-		machine->cpu.activeThread()->frames[0]->registers[2] = valueBool(true);
+		machine->cpu.activeThread()->frameAtDepth(0)->registers[2] = valueBool(true);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 2048);
@@ -160,12 +160,12 @@ void crossPageLinksRetireTheirTargetsAndKeepBoundedStack() {
 	CpuMachine native(image, false), scalar(image, true);
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
-		auto& frame = *machine->cpu.activeThread()->frames[0];
+		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
 		frame.registers[0] = valueNumber(2); frame.registers[1] = valueNumber(1); frame.registers[8] = valueNumber(0);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 2048);
-	const auto& lookup = *native.cpu.activeThread()->frames[0]->executionImage->nativeCodeLookup;
+	const auto& lookup = *native.cpu.activeThread()->frameAtDepth(0)->executionImage->nativeCodeLookup;
 	auto* firstPage = lookup.find(DYNAMIC_RAM_BASE, 0);
 	auto* secondPage = lookup.find(DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE, 0);
 	const auto* root = firstPage->nativeBlocks->entries[0].get();
@@ -206,12 +206,12 @@ void shortGrantsDoNotPromoteSequentialPositions(bool inRam) {
 	const u32 start = inRam ? DYNAMIC_RAM_BASE : native.rom.textAddress;
 	for (auto* machine : {&native, &scalar}) {
 		if (inRam) machine->memory.writeBytes(start, image.text.data(), image.text.size());
-		auto& frame = *machine->cpu.activeThread()->frames[0];
+		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
 		frame.registers[0] = valueNumber(0); frame.registers[1] = valueNumber(1);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 4096);
-	const auto& lookup = *native.cpu.activeThread()->frames[0]->executionImage->nativeCodeLookup;
+	const auto& lookup = *native.cpu.activeThread()->frameAtDepth(0)->executionImage->nativeCodeLookup;
 	auto& page = *lookup.find(start, 0);
 	const auto entry = (start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 	require(page.nativeBlocks && page.nativeBlocks->entries[entry]
@@ -246,7 +246,7 @@ void entriesIntoWideBodiesShareTheirSequentialJoin() {
 	CpuMachine native(image, false), scalar(image, true);
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
-		auto& frame = *machine->cpu.activeThread()->frames[0];
+		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
 		frame.registers[0] = frame.registers[2] = valueNumber(0); frame.registers[1] = valueNumber(1);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
@@ -259,7 +259,7 @@ void entriesIntoWideBodiesShareTheirSequentialJoin() {
 		requireParity(native, scalar);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& page = *native.cpu.activeThread()->frames[0]->decodedPage;
+	const auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
 	const auto& entries = page.nativeBlocks->entries;
 	require(entries[0] && entries[1] && entries[2] && entries[16]
 		&& entries[0]->region == entries[1]->region && entries[1]->region == entries[2]->region

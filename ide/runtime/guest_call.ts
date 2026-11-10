@@ -55,8 +55,8 @@ export class RuntimeGuestCallPlan implements RuntimeDebuggerControlPlan {
 	public shouldStop(): boolean {
 		// A parked caller can accept an IRQ before the next hook. That IRQ may
 		// reuse the returned call's depth, but it is not its completion root.
-		return this.thread.frames.length <= this.returnDepth
-			|| this.boundary === 'completion' && !this.thread.frames[this.returnDepth].returnToCompletionLatch;
+		return this.thread.frameDepth <= this.returnDepth
+			|| this.boundary === 'completion' && !this.thread.frameAtDepth(this.returnDepth).returnToCompletionLatch;
 	}
 	public willExecute(): void {}
 	public didExecute(): RuntimeDebuggerPlanResult {

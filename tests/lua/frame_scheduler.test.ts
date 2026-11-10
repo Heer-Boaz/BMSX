@@ -130,14 +130,14 @@ test('device settlement reaches real VBlank without executing the stopped CPU or
 	const { cpu, memory } = runtime.machine, scheduler = runtime.frameScheduler;
 	memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_VBLANK);
 	memory.writeMappedU32LE(IO_INP_CTRL, INP_CTRL_ARM);
-	const thread = cpu.activeThread, depth = thread.frames.length, pc = thread.frames[depth - 1].pc, stackTop = thread.stackTop;
+	const thread = cpu.activeThread, depth = thread.frameDepth, pc = thread.currentFrame!.pc, stackTop = thread.stackTop;
 	assert.equal(scheduler.runDevicesToNextLogicalTick(19), false);
 	assert.equal(runtime.machine.scheduler.nowCycles, 19);
 	assert.equal(scheduler.runDevicesToNextLogicalTick(runtime.timing.cycleBudgetPerFrame), true);
 	assert.equal(scheduler.lastTickSequence, 1);
 	assert.equal(input.sampleCount, 1);
 	assert.notEqual(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, 0, 'the real device edge raises its IRQ');
-	assert.equal(cpu.activeThread, thread); assert.equal(thread.frames.length, depth); assert.equal(thread.frames[depth - 1].pc, pc);
+	assert.equal(cpu.activeThread, thread); assert.equal(thread.frameDepth, depth); assert.equal(thread.currentFrame!.pc, pc);
 	assert.equal(thread.stackTop, stackTop);
 	assert.equal(scheduler.lastTickCpuUsedCycles, 0);
 	assert.equal(scheduler.lastTickBudgetGranted - scheduler.lastTickBudgetRemaining, runtime.machine.scheduler.nowCycles);
@@ -209,7 +209,7 @@ test('shared-bus DMA stops instruction execution until serial read/write complet
 	memory.writeMappedU32LE(0x08000014, 256);
 	memory.writeMappedU32LE(0x08000018, 0x00000000);
 	memory.writeMappedU32LE(0x08000020, 1);
-	const frame = cpu.activeThread.frames[cpu.activeThread.frames.length - 1];
+	const frame = cpu.activeThread.frameAtDepth(cpu.activeThread.frameDepth - 1);
 	const pc = frame.pc;
 	assert.equal(dmaController.captureState().scheduledBlockCycles, 514);
 	runtime.frameScheduler.runCyclesToNextLogicalTick(513);

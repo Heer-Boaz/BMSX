@@ -45,9 +45,10 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 		&& left.luaHeap.trackedBytes == right.luaHeap.trackedBytes && left.luaHeap.nextCollectionBytes == right.luaHeap.nextCollectionBytes,
 		"complete value graphs and allocation/collection accounting agree");
 	const auto& first = *a.activeThread(); const auto& second = *b.activeThread();
-	require(first.frames.size() == second.frames.size() && first.stackTop == second.stackTop, "frame extents agree");
-	for (size_t i = 0; i < first.frames.size(); ++i) {
-		const auto& x = *first.frames[i]; const auto& y = *second.frames[i];
+	require(first.frameDepth == second.frameDepth && first.stackTop == second.stackTop, "frame extents agree");
+	const CallFrame* firstFrame = first.firstFrame; const CallFrame* secondFrame = second.firstFrame;
+	for (size_t i = 0; i < first.frameDepth; ++i, firstFrame = firstFrame->next, secondFrame = secondFrame->next) {
+		const auto& x = *firstFrame; const auto& y = *secondFrame;
 		require(x.pc == y.pc && x.top == y.top && x.stackBase == y.stackBase && x.stackCapacity == y.stackCapacity,
 			"all live frame boundaries agree");
 	}
@@ -65,11 +66,11 @@ void genericArraysAndHashKeys() {
 	image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 12}};
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
-		auto* r = m->cpu.activeThread()->frames[0]->registers;
+		auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers;
 		r[0] = valueTable(m->cpu.createTable(4, 1)); r[1] = valueNumber(1); r[2] = valueNumber(3); m->cpu.runUntilDepth(0, 900);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	auto& page = *native.cpu.activeThread()->frames[0]->decodedPage;
+	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
 	const u32 entry = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 	const auto* block = page.nativeBlocks->entries[entry].get();
 	require(block && block->sourceWords == 7, "generic keys, integer stores and length execute in the same native body");
@@ -84,14 +85,14 @@ void genericArraysAndHashKeys() {
 		valueNumber(-0.0), VALUE_QNAN_MASK, valueNumber(std::numeric_limits<double>::infinity()), valueString(valueText)};
 	for (const Value key : keys) for (const Value value : values) {
 		for (auto* m : {&native, &scalar}) {
-			auto* r = m->cpu.activeThread()->frames[0]->registers; r[1] = key; r[2] = value; m->cpu.runUntilDepth(0, 9);
+			auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers; r[1] = key; r[2] = value; m->cpu.runUntilDepth(0, 9);
 		}
 		requireParity(native, scalar);
 		require(native.cpu.readFrameRegister(0, 3) == value && native.cpu.readFrameRegister(0, 5) == valueNumber(1),
 			"all raw values survive generic array/hash access and the pending store source stays live");
 	}
 	for (auto* m : {&native, &scalar}) {
-		auto* r = m->cpu.activeThread()->frames[0]->registers;
+		auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers;
 		r[1] = valueTable(m->cpu.createTable()); r[2] = valueTable(m->cpu.createTable());
 	}
 	for (const int grant : {9, 1, 2, 1, 2, 1, 1, 1, 256}) {
@@ -112,7 +113,7 @@ void inheritedArrayReads(bool generic) {
 	for (auto* m : {&native, &scalar}) {
 		auto& cpu = m->cpu; auto* own = cpu.createTable(2), *parent = cpu.createTable(2), *meta = cpu.createTable(0, 1);
 		parent->setInteger(1, valueNumber(73)); meta->setStringKey(cpu.stringPool().intern("__index"), valueTable(parent)); own->metatable = meta;
-		auto* r = cpu.activeThread()->frames[0]->registers; r[0] = valueTable(own); r[1] = valueNumber(1); cpu.runUntilDepth(0, 300);
+		auto* r = cpu.activeThread()->frameAtDepth(0)->registers; r[0] = valueTable(own); r[1] = valueNumber(1); cpu.runUntilDepth(0, 300);
 	}
 	for (const Value value : {valueBool(false), valueNumber(0), valueNil(), valueBool(true), valueNumber(19), valueNil()}) {
 		for (auto* m : {&native, &scalar}) { asTable(m->cpu.readFrameRegister(0, 0))->setInteger(1, value); m->cpu.runUntilDepth(0, 3); }
@@ -132,10 +133,10 @@ void storedLengthAndUtf8() {
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
 		auto* table = m->cpu.createTable(2, 4); for (int i = 1; i <= 5; ++i) table->setInteger(i, valueNumber(i));
-		auto* r = m->cpu.activeThread()->frames[0]->registers; r[0] = valueTable(table); r[2] = valueNumber(2); m->cpu.runUntilDepth(0, 600);
+		auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers; r[0] = valueTable(table); r[2] = valueNumber(2); m->cpu.runUntilDepth(0, 600);
 	}
 	for (const Value value : {valueNil(), valueBool(false), valueNil(), valueNumber(2)}) {
-		for (auto* m : {&native, &scalar}) { m->cpu.activeThread()->frames[0]->registers[2] = value; m->cpu.runUntilDepth(0, 6); }
+		for (auto* m : {&native, &scalar}) { m->cpu.activeThread()->frameAtDepth(0)->registers[2] = value; m->cpu.runUntilDepth(0, 6); }
 		requireParity(native, scalar);
 		require(native.cpu.readFrameRegister(0, 3) == valueNumber(isNil(value) ? 1 : 5), "native length advancement includes hash-held entries and nil shortens it");
 	}
@@ -145,7 +146,7 @@ void storedLengthAndUtf8() {
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::ADD), 3, 2, 4);
 	CpuMachine textNative(image), textScalar(image, true);
 	for (auto* m : {&textNative, &textScalar}) {
-		m->cpu.activeThread()->frames[0]->registers[1] = valueString(m->cpu.stringPool().intern(std::string_view("A\xc3\xa9\xe9\x9b\xaa\0\xf0\x9f\x98\x80", 11)));
+		m->cpu.activeThread()->frameAtDepth(0)->registers[1] = valueString(m->cpu.stringPool().intern(std::string_view("A\xc3\xa9\xe9\x9b\xaa\0\xf0\x9f\x98\x80", 11)));
 		m->cpu.runUntilDepth(0, 500);
 	}
 	requireParity(textNative, textScalar);
@@ -164,14 +165,14 @@ void selfAndNilFaults() {
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
 		auto& cpu = m->cpu; auto* table = cpu.createTable(0, 1); table->setStringKey(cpu.stringPool().intern("method"), valueNumber(73));
-		cpu.activeThread()->frames[0]->registers[9] = valueTable(table); cpu.runUntilDepth(0, 300);
+		cpu.activeThread()->frameAtDepth(0)->registers[9] = valueTable(table); cpu.runUntilDepth(0, 300);
 		auto* meta = cpu.createTable(0, 1); table->setStringKey(cpu.stringPool().intern("method"), valueNil());
 		meta->setStringKey(cpu.stringPool().intern("__index"), valueTable(table)); table->metatable = meta;
-		cpu.activeThread()->frames[0]->top = 0;
+		cpu.activeThread()->frameAtDepth(0)->top = 0;
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 3); requireParity(native, scalar);
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_METATABLE_LOOP && native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES
-		&& native.cpu.activeThread()->frames[0]->top == 8 && native.cpu.readFrameRegister(0, 7) == native.cpu.readFrameRegister(0, 9),
+		&& native.cpu.activeThread()->frameAtDepth(0)->top == 8 && native.cpu.readFrameRegister(0, 7) == native.cpu.readFrameRegister(0, 9),
 		"SELF publishes its original receiver and top before a failing inherited lookup");
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 7, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::SETT), 0, 1, 2);
@@ -180,8 +181,8 @@ void selfAndNilFaults() {
 	image.functions[0].wordCount = 4;
 	CpuMachine nilNative(image), nilScalar(image, true);
 	for (auto* m : {&nilNative, &nilScalar}) {
-		auto* r = m->cpu.activeThread()->frames[0]->registers; r[0] = valueTable(m->cpu.createTable(2)); r[1] = valueNumber(1); r[2] = valueNumber(73);
-		m->cpu.runUntilDepth(0, 500); r[1] = valueNil(); r[3] = valueNumber(19); m->cpu.activeThread()->frames[0]->top = 0;
+		auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers; r[0] = valueTable(m->cpu.createTable(2)); r[1] = valueNumber(1); r[2] = valueNumber(73);
+		m->cpu.runUntilDepth(0, 500); r[1] = valueNil(); r[3] = valueNumber(19); m->cpu.activeThread()->frameAtDepth(0)->top = 0;
 	}
 	nilNative.cpu.runUntilDepth(0, 5); nilScalar.cpu.runUntilDepth(0, 5); requireParity(nilNative, nilScalar);
 	require(nilNative.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INDEX_NIL
@@ -203,18 +204,18 @@ void wideAllocationFailure() {
 	test::runCpuParity(native.cpu, scalar.cpu, 100);
 	requireParity(native, scalar);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& frame = *native.cpu.activeThread()->frames[0];
+	const auto& frame = *native.cpu.activeThread()->frameAtDepth(0);
 	const auto& block = frame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(block && block->terminal.exit == NativeBlockExit::AllocateTable, "the WIDE allocator is a real typed native exit, not interpreter dispatch");
 #endif
 	for (auto* m : {&native, &scalar}) {
-		auto& cpu = m->cpu; auto& root = *cpu.activeThread()->frames[0]; root.registers[8] = valueNumber(73); root.registers[9] = valueNil(); root.top = 0;
+		auto& cpu = m->cpu; auto& root = *cpu.activeThread()->frameAtDepth(0); root.registers[8] = valueNumber(73); root.registers[9] = valueNil(); root.top = 0;
 		const auto key = cpu.stringPool().find("retained"); auto* retained = cpu.createTable(350000); cpu.setGlobalByKey(*key, valueTable(retained));
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 4); requireParity(native, scalar);
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
 		&& native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES
-		&& native.cpu.readFrameRegister(0, 8) == valueNumber(73) && native.cpu.activeThread()->frames[0]->top == 8,
+		&& native.cpu.readFrameRegister(0, 8) == valueNumber(73) && native.cpu.activeThread()->frameAtDepth(0)->top == 8,
 		"failed allocation retains the precise prefix, original destination and WIDE EPC after collection");
 }
 } // namespace

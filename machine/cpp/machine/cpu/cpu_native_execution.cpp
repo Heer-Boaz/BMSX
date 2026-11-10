@@ -99,11 +99,11 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 				|| cpu.m_nonMaskableInterruptPending
 				|| ((cpu.m_cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
 					&& cpu.m_irqController.hasAssertedMaskableInterruptLine()))) return nullptr;
-		auto& frames = cpu.m_activeThread->frames;
-		if (static_cast<int>(frames.size()) <= run->targetDepth || cpu.instructionBudgetRemaining <= 0
+		const auto& thread = *cpu.m_activeThread;
+		if (static_cast<int>(thread.frameDepth) <= run->targetDepth || cpu.instructionBudgetRemaining <= 0
 			|| (cpu.m_haltedUntilIrqThread == cpu.m_activeThread
-				&& cpu.m_haltedUntilIrqFrameDepth == static_cast<int>(frames.size()))) return nullptr;
-		frame = frames.back().get();
+				&& cpu.m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth))) return nullptr;
+		frame = thread.currentFrame;
 		const u32 pc = frame->pc;
 		if ((pc & (INSTRUCTION_BYTES - 1u)) != 0u) return nullptr;
 		const auto& lookup = frame->executionImage->nativeCodeLookup;

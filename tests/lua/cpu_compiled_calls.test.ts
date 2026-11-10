@@ -41,7 +41,7 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 		}
 		runCpuParity(machines[0].cpu, machines[1].cpu, 20000);
 		runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
-		const frame = machines[0].cpu.rootThread.frames[0];
+		const frame = machines[0].cpu.rootThread.frameAtDepth(0);
 		const entry = image.image.functions[0].codeAddress + 2 * INSTRUCTION_BYTES;
 		const blocks = [...frame.executionImage.decodedPages.values()].flatMap(page => page.compiledBlocks?.entries.filter(block => block !== null) ?? []);
 		assert.ok(blocks.some(block => block!.terminal.exit === CompiledBlockExit.Call));
@@ -52,13 +52,13 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 		}
 		for (const { cpu } of machines) {
 			cpu.runUntilDepth(1, 100);
-			cpu.rootThread.frames[0].registers.setNumber(3, 99);
+			cpu.rootThread.frameAtDepth(0).registers.setNumber(3, 99);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
 			assert.equal(cpu.runUntilDepth(0, 5), RunResult.Yielded);
 			assert.equal(cpu.getFrameDepth(), 2);
 			assert.equal(cpu.runUntilDepth(1, 50), RunResult.Halted);
 			assert.equal(cpu.instructionBudgetRemaining, 46);
-			assert.equal(cpu.rootThread.frames[0].registers.getNumber(3), 99, 'a compiled RET must not execute a compiled caller beyond the requested depth');
+			assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(3), 99, 'a compiled RET must not execute a compiled caller beyond the requested depth');
 		}
 		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 		for (const { cpu, memory } of machines) {
@@ -68,7 +68,7 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 			assert.equal(cpu.runUntilDepth(0, 9), RunResult.Yielded);
 			assert.equal(cpu.getFrameDepth(), 1);
 			assert.ok(cpu.rootThread.stackRegisters.capacity() > capacity, 'a hot native call actually relocates the shared stack');
-			assert.equal(cpu.rootThread.frames[0].registers.getNumber(0), 7);
+			assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(0), 7);
 		}
 		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 		for (const { cpu, memory } of machines) {
@@ -77,7 +77,7 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 			cpu.runUntilDepth(0, 20000); cpu.runUntilDepth(1, 100);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
 			cpu.runUntilDepth(0, 5); cpu.runUntilDepth(1, 100);
-			assert.equal(cpu.rootThread.frames[0].registers.getNumber(0), -1, 'a live closure reads the current RAM function record at each call');
+			assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(0), -1, 'a live closure reads the current RAM function record at each call');
 		}
 		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 		const word = new Uint8Array(4);

@@ -51,10 +51,11 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	require(native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining
 		&& native.cpu.lastPc == scalar.cpu.lastPc && native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc(),
 		"cycle grants and the physical instruction prefix/body boundary agree");
-	const auto& x = native.cpu.activeThread()->frames; const auto& y = scalar.cpu.activeThread()->frames;
-	require(x.size() == y.size(), "frame depths agree");
-	for (size_t i = 0; i < x.size(); ++i) require(x[i]->pc == y[i]->pc && x[i]->top == y[i]->top
-		&& x[i]->stackBase == y[i]->stackBase && x[i]->stackCapacity == y[i]->stackCapacity, "live frame extents agree");
+	const auto& left = *native.cpu.activeThread(); const auto& right = *scalar.cpu.activeThread();
+	const CallFrame* x = left.firstFrame; const CallFrame* y = right.firstFrame;
+	require(left.frameDepth == right.frameDepth, "frame depths agree");
+	for (size_t i = 0; i < left.frameDepth; ++i, x = x->next, y = y->next) require(x->pc == y->pc && x->top == y->top
+		&& x->stackBase == y->stackBase && x->stackCapacity == y->stackCapacity, "live frame extents agree");
 }
 
 void concatKindsAndAliases(int destination) {
@@ -66,11 +67,11 @@ void concatKindsAndAliases(int destination) {
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) for (int warm = 0; warm < 12; ++warm) {
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
-		auto& frame = *m->cpu.activeThread()->frames[0]; frame.registers[0] = valueNumber(1); frame.registers[1] = valueNumber(2);
+		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers[0] = valueNumber(1); frame.registers[1] = valueNumber(2);
 		m->cpu.runUntilDepth(0, 2);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& block = native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(block && block->terminal.exit == NativeBlockExit::Concat && block->sourceWords == 2, "the allocating concatenation really terminates a native prefix");
 #endif
 	BuiltinFunction builtin{BuiltinFunctionId::Type};
@@ -83,7 +84,7 @@ void concatKindsAndAliases(int destination) {
 		const std::string expected = std::string(kind < values.size() ? values[kind].second : std::string_view(extra[kind - values.size()])) + "!";
 		for (auto* m : {&native, &scalar}) {
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
-			auto& frame = *m->cpu.activeThread()->frames[0]; frame.top = 0;
+			auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.top = 0;
 			if (kind < values.size()) frame.registers[0] = values[kind].first;
 			else switch (kind - values.size()) {
 				case 0: frame.registers[0] = valueString(m->cpu.stringPool().intern(extra[0])); break;
@@ -95,7 +96,7 @@ void concatKindsAndAliases(int destination) {
 		}
 		require(native.cpu.runUntilDepth(0, 2) == scalar.cpu.runUntilDepth(0, 2), "aliasing concatenation consumes the same grant"); requireParity(native, scalar);
 		require(native.cpu.stringPool().toString(asStringId(native.cpu.readFrameRegister(0, destination))) == expected, "every language kind uses the specified text conversion");
-		require(native.cpu.activeThread()->frames[0]->top == 9, "the numeric prefix top is retained");
+		require(native.cpu.activeThread()->frameAtDepth(0)->top == 9, "the numeric prefix top is retained");
 	}
 }
 
@@ -107,7 +108,7 @@ void concatConstants() {
 	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 8}}; image.constants = {-0.0, std::string("🍻")};
 	CpuMachine native(image), scalar(image, true); native.cpu.runUntilDepth(0, 300); scalar.cpu.runUntilDepth(0, 300); requireParity(native, scalar);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& block = native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(block && block->terminal.exit == NativeBlockExit::Concat && block->terminal.exitB == -1 && block->terminal.exitC == -2, "the native terminal retains signed RK constants");
 #endif
 	require(native.cpu.stringPool().toString(asStringId(native.cpu.readFrameRegister(0, 0))) == "-0🍻", "numeric conversion is not u32 conversion");
@@ -125,7 +126,7 @@ void concatRange(int count) {
 	for (int warm = 0; warm < 12; ++warm) {
 		for (auto* m : {&native, &scalar}) {
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
-			auto* registers = m->cpu.activeThread()->frames[0]->registers;
+			auto* registers = m->cpu.activeThread()->frameAtDepth(0)->registers;
 			for (int i = 0; i < count; ++i) registers[512 + i] = i == 0 ? valueString(m->cpu.stringPool().intern("L"))
 				: i == 1 ? valueBool(false) : valueNumber(i % 10);
 		}
@@ -133,10 +134,10 @@ void concatRange(int count) {
 		require(native.cpu.stringPool().toString(asStringId(native.cpu.readFrameRegister(0, 513))) == expected, "every source is read before the overlapping destination is written");
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& block = native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(block && block->terminal.exit == NativeBlockExit::ConcatRange && block->terminal.exitC == count, "the full WIDE count belongs to the native terminal");
 #endif
-	require(native.cpu.activeThread()->frames[0]->top == 514, "counted sources do not inflate the destination top");
+	require(native.cpu.activeThread()->frameAtDepth(0)->top == 514, "counted sources do not inflate the destination top");
 }
 
 void allocationRoots(bool closure) {
@@ -155,17 +156,17 @@ void allocationRoots(bool closure) {
 		{.firstWord = 16, .wordCount = 1, .staticClosure = false, .upvalues = {{true, 7}}}};
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
-		auto* r = m->cpu.activeThread()->frames[0]->registers; r[9] = valueNumber(1); r[1] = valueNumber(2); r[2] = valueNumber(3);
+		auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers; r[9] = valueNumber(1); r[1] = valueNumber(2); r[2] = valueNumber(3);
 		m->cpu.runUntilDepth(0, 400);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& block = native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(block && block->terminal.exit == (closure ? NativeBlockExit::CreateClosure : NativeBlockExit::Concat), "collection is reached from actual native code");
 #endif
 	std::array<std::string, 2> garbage; size_t index = 0;
 	for (auto* m : {&native, &scalar}) {
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
-		auto& frame = *m->cpu.activeThread()->frames[0]; auto* r = frame.registers;
+		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); auto* r = frame.registers;
 		Table* table = m->cpu.createTable(0, 1); auto& strings = m->cpu.stringPool();
 		table->setStringKey(strings.intern("payload"), valueString(strings.intern("retained")));
 		r[9] = valueTable(table); r[1] = valueString(strings.intern("fresh-")); r[2] = valueString(strings.intern("result")); frame.top = 0;
@@ -176,7 +177,7 @@ void allocationRoots(bool closure) {
 	index = 0;
 	for (auto* m : {&native, &scalar}) {
 		auto& strings = m->cpu.stringPool(); require(!strings.find(garbage[index++]), "the operation really collected the unrooted pressure string");
-		auto* r = m->cpu.activeThread()->frames[0]->registers; Table* retained = asTable(r[7]);
+		auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers; Table* retained = asTable(r[7]);
 		require(retained->getStringKey(*strings.find("payload")) == valueString(*strings.find("retained")), "a moved reference remains rooted across allocation");
 		if (closure) require(m->cpu.readClosureUpvalue(asClosure(r[0]), 0) == r[7], "capture observes the published reference value");
 		else require(strings.toString(asStringId(r[0])) == "fresh-result", "allocation commits the entire concatenation result");
@@ -199,7 +200,7 @@ void canonicalImmediateClosure() {
 	}
 	requireParity(native, scalar);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& block = native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(block && block->sourceWords == 3 && block->terminal.exit == NativeBlockExit::CreateClosure
 		&& block->terminal.exitBx == DYNAMIC_RAM_BASE / BLUA32_FUNCTION_ALIGNMENT && block->terminal.exitBx > 0xffffu, "the native closure exit retains every Bx bit");
 #endif
@@ -219,7 +220,7 @@ void closureBusFault(bool descriptors) {
 		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueNumber(m->rom.functionAddresses[1] + 0.75)); m->cpu.runUntilDepth(0, 500);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& block = native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(block && block->terminal.exit == NativeBlockExit::CreateClosure && block->terminal.exitA == 256,
 		"the actual hot register-address path retains its WIDE destination");
 #endif
@@ -230,11 +231,11 @@ void closureBusFault(bool descriptors) {
 			m->memory.writeMappedU32LE(DYNAMIC_RAM_BASE + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET, bad);
 		}
 		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueNumber(descriptors ? DYNAMIC_RAM_BASE : bad));
-		auto& frame = *m->cpu.activeThread()->frames[0]; frame.registers[256] = valueNumber(73); frame.top = 0;
+		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers[256] = valueNumber(73); frame.top = 0;
 	}
 	require(native.cpu.runUntilDepth(0, 4) == RunResult::Halted && scalar.cpu.runUntilDepth(0, 4) == RunResult::Halted, "a metadata bus fault hard-halts both paths"); requireParity(native, scalar);
 	require(native.cpu.captureRuntimeState().hardHalted && native.cpu.readFrameRegister(0, 256) == valueNumber(73)
-		&& native.cpu.activeThread()->frames[0]->top == 8, "the failed instruction does not write or extend its destination");
+		&& native.cpu.activeThread()->frameAtDepth(0)->top == 8, "the failed instruction does not write or extend its destination");
 	require(native.cpu.readCurrentInstructionPc() == native.rom.textAddress + 2u * INSTRUCTION_BYTES
 		&& native.cpu.lastPc == native.rom.textAddress + 3u * INSTRUCTION_BYTES, "faults retain the WIDE prefix/body boundary");
 }
@@ -253,7 +254,7 @@ void closureAddressAlias(int source) {
 		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueNumber(m->rom.functionAddresses[1])); m->cpu.runUntilDepth(0, 400);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& block = native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(block && block->terminal.exit == NativeBlockExit::CreateClosure && block->terminal.exitA == source
 		&& block->terminal.exitBx == static_cast<u32>(source), "the generated body retains the aliasing WIDE register operand");
 #endif
@@ -275,19 +276,19 @@ void concatAllocationFault(bool range) {
 	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 16}, {.firstWord = 32, .wordCount = 1}}; image.exceptionFunctionIndex = 1;
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
-		auto& frame = *m->cpu.activeThread()->frames[0]; frame.registers[1] = valueNumber(1); frame.registers[2] = valueNumber(2);
+		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers[1] = valueNumber(1); frame.registers[2] = valueNumber(2);
 		m->cpu.runUntilDepth(0, range ? 400 : 300);
 		const StringId id = m->cpu.stringPool().intern(std::string(2u * 1024u * 1024u, 'x'));
 		frame.registers[1] = valueString(id); frame.registers[2] = valueString(id); frame.registers[0] = valueNumber(73); frame.top = 0;
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& block = native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(block && block->terminal.exit == (range ? NativeBlockExit::ConcatRange : NativeBlockExit::Concat), "the allocation fault leaves generated code before throwing");
 #endif
 	require(native.cpu.runUntilDepth(0, range ? 3 : 2) == scalar.cpu.runUntilDepth(0, range ? 3 : 2), "failed allocations consume the same grant"); requireParity(native, scalar);
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
 		&& native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES, "allocation faults use the completed prefix PC");
-	require(native.cpu.readFrameRegister(0, 0) == valueNumber(73) && native.cpu.activeThread()->frames[0]->top == 9, "the failed allocation preserves its destination and published top");
+	require(native.cpu.readFrameRegister(0, 0) == valueNumber(73) && native.cpu.activeThread()->frameAtDepth(0)->top == 9, "the failed allocation preserves its destination and published top");
 }
 } // namespace
 

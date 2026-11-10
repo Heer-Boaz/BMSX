@@ -53,10 +53,11 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 		"all control words, interrupt and execution latches agree");
 	require(native.cpu.lastPc == scalar.cpu.lastPc && native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc(),
 		"the physical instruction prefix/body boundary agrees");
-	const auto& x = native.cpu.activeThread()->frames; const auto& y = scalar.cpu.activeThread()->frames;
-	require(x.size() == y.size(), "frame depths agree");
-	for (size_t i = 0; i < x.size(); ++i) require(x[i]->pc == y[i]->pc && x[i]->top == y[i]->top
-		&& x[i]->stackBase == y[i]->stackBase && x[i]->stackCapacity == y[i]->stackCapacity, "live frame extents agree");
+	const auto& left = *native.cpu.activeThread(); const auto& right = *scalar.cpu.activeThread();
+	const CallFrame* x = left.firstFrame; const CallFrame* y = right.firstFrame;
+	require(left.frameDepth == right.frameDepth, "frame depths agree");
+	for (size_t i = 0; i < left.frameDepth; ++i, x = x->next, y = y->next) require(x->pc == y->pc && x->top == y->top
+		&& x->stackBase == y->stackBase && x->stackCapacity == y->stackCapacity, "live frame extents agree");
 }
 
 test::Blua32TestImage wordLoop(int count, bool displaced = false) {
@@ -76,12 +77,12 @@ void plainSpansAndCycles(int count, bool displaced) {
 	const auto image = wordLoop(count, displaced); CpuMachine native(image), scalar(image, true);
 	const u32 target = DYNAMIC_RAM_BASE + 0x2ffcu; const int surcharge = (count + 3) >> 2;
 	for (auto* m : {&native, &scalar}) {
-		auto* r = m->cpu.activeThread()->frames[0]->registers; r[0] = valueNumber(target - (displaced ? 1020u : 0u)); r[12] = valueNumber(73);
+		auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers; r[0] = valueNumber(target - (displaced ? 1020u : 0u)); r[12] = valueNumber(73);
 		for (int i = 0; i < count; ++i) if (i != 4) r[8 + i] = valueNumber(i + 100);
 		m->cpu.runUntilDepth(0, 20 * (7 + surcharge));
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& block = native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(block && block->sourceWords == 5 && block->terminal.cycles == 5 + surcharge,
 		"an admitted counted-store segment retains its complete surcharge");
 	require(block->sideExits[0].exit == NativeBlockExit::WriteWords && block->sideExits[0].cycles == 5, "the checked exit precedes its own readiness surcharge");
@@ -91,12 +92,12 @@ void plainSpansAndCycles(int count, bool displaced) {
 	for (Value value : values) for (int grant : {1, 3, 4, 5, 5 + surcharge, 6 + surcharge, 7 + surcharge, 4 * (7 + surcharge)}) {
 		for (auto* m : {&native, &scalar}) {
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
-			auto& frame = *m->cpu.activeThread()->frames[0]; frame.registers[12] = value; frame.top = 0;
+			auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers[12] = value; frame.top = 0;
 		}
 		test::runCpuParity(native.cpu, scalar.cpu, grant);
 		requireParity(native, scalar); require(std::equal(native.memory.ramData(), native.memory.ramData() + PSX_MACHINE_SPEC.ramBytes, scalar.memory.ramData()), "all plain-RAM bytes agree at every short grant");
 	}
-	require(native.cpu.activeThread()->frames[0]->top == 10 && native.cpu.readFrameRegister(0, 7) == valueNumber(2), "source ranges never inflate top and clean cached values remain live after the native call");
+	require(native.cpu.activeThread()->frameAtDepth(0)->top == 10 && native.cpu.readFrameRegister(0, 7) == valueNumber(2), "source ranges never inflate top and clean cached values remain live after the native call");
 }
 
 void wideConstantAddress() {
@@ -106,19 +107,19 @@ void wideConstantAddress() {
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
 	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 1025}}; image.constants = {static_cast<double>(target)};
 	CpuMachine native(image), scalar(image, true);
-	for (auto* m : {&native, &scalar}) { for (int i = 0; i < 513; ++i) m->cpu.activeThread()->frames[0]->registers[512 + i] = valueNumber(i - 1); m->cpu.runUntilDepth(0, 20 * 132); }
+	for (auto* m : {&native, &scalar}) { for (int i = 0; i < 513; ++i) m->cpu.activeThread()->frameAtDepth(0)->registers[512 + i] = valueNumber(i - 1); m->cpu.runUntilDepth(0, 20 * 132); }
 	requireParity(native, scalar);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& block = native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(block && block->sideExits[0].exitA == 512 && block->sideExits[0].exitB == -1 && block->sideExits[0].exitC == 513, "the native descriptor preserves the complete WIDE register range and signed RK address");
 #endif
-	require(native.memory.readMappedWord(target) == 0xffffffffu && native.memory.readMappedWord(target + 512u * 4u) == 511u && native.cpu.activeThread()->frames[0]->top == 0,
+	require(native.memory.readMappedWord(target) == 0xffffffffu && native.memory.readMappedWord(target + 512u * 4u) == 511u && native.cpu.activeThread()->frameAtDepth(0)->top == 0,
 		"wide sources are converted as unsigned words without extending top");
 }
 
 void zeroCount(bool unaligned) {
 	const auto image = wordLoop(0); CpuMachine native(image), scalar(image, true);
-	for (auto* m : {&native, &scalar}) { m->cpu.activeThread()->frames[0]->registers[0] = valueNumber(DYNAMIC_RAM_BASE); m->cpu.runUntilDepth(0, 140); }
+	for (auto* m : {&native, &scalar}) { m->cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNumber(DYNAMIC_RAM_BASE); m->cpu.runUntilDepth(0, 140); }
 	const std::array aligned{0u, 0xfffffffcu, IO_BASE + 0x5000u};
 	for (size_t i = 0; i < (unaligned ? 1u : aligned.size()); ++i) {
 		const u32 address = unaligned ? IO_BASE + 0x5001u : aligned[i];
@@ -129,7 +130,7 @@ void zeroCount(bool unaligned) {
 			m->memory.mapIoWrite(IO_BASE + 0x5000u, &probes, [](void*, u32, u32, MappedBusSignals) { throw std::runtime_error("an empty span must never write"); });
 			m->memory.mapIoWriteReady(IO_BASE + 0x5000u, [](void* context, u32, MappedBusSignals) { ++*static_cast<int*>(context); return false; });
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
-			m->cpu.activeThread()->frames[0]->registers[0] = valueNumber(address);
+			m->cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNumber(address);
 		}
 		test::runCpuParity(native.cpu, scalar.cpu, 20);
 		index = 0;
@@ -145,7 +146,7 @@ void zeroCount(bool unaligned) {
 
 void laterReadinessBeforeEarlierFault() {
 	const auto image = wordLoop(3); CpuMachine native(image), scalar(image, true);
-	for (auto* m : {&native, &scalar}) { m->cpu.activeThread()->frames[0]->registers[0] = valueNumber(DYNAMIC_RAM_BASE); m->cpu.runUntilDepth(0, 160); }
+	for (auto* m : {&native, &scalar}) { m->cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNumber(DYNAMIC_RAM_BASE); m->cpu.runUntilDepth(0, 160); }
 	struct Device { bool ready = false; std::vector<u32> probes; int writes = 0; }; std::array<Device, 2> devices;
 	size_t index = 0;
 	for (auto* m : {&native, &scalar}) {
@@ -155,7 +156,7 @@ void laterReadinessBeforeEarlierFault() {
 			m->memory.mapIoWriteReady(IO_BASE + i * 4u, [](void* context, u32 address, MappedBusSignals) { auto& d = *static_cast<Device*>(context); d.probes.push_back(address); return address == IO_BASE || d.ready; });
 		}
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
-		m->cpu.activeThread()->frames[0]->registers[0] = valueNumber(IO_BASE - 4u);
+		m->cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNumber(IO_BASE - 4u);
 		require(m->cpu.runUntilDepth(0, 20) == RunResult::Halted && m->cpu.instructionBudgetRemaining == 15 && m->memory.readBusFaultSequence() == 0u,
 			"later not-ready IO wins over an earlier fault before charging the sequence");
 		require(m->cpu.readFramePc(0) == m->rom.textAddress + 3u * INSTRUCTION_BYTES && m->cpu.stalledMemoryWriteAddress() == IO_BASE + 4u
@@ -171,7 +172,7 @@ void laterReadinessBeforeEarlierFault() {
 
 void orderedIoFaultPrefix() {
 	const auto image = wordLoop(5); CpuMachine native(image), scalar(image, true); constexpr u32 target = IO_BASE + 0x5000u;
-	for (auto* m : {&native, &scalar}) { m->cpu.activeThread()->frames[0]->registers[0] = valueNumber(DYNAMIC_RAM_BASE); m->cpu.runUntilDepth(0, 180); }
+	for (auto* m : {&native, &scalar}) { m->cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNumber(DYNAMIC_RAM_BASE); m->cpu.runUntilDepth(0, 180); }
 	struct Device { Memory* memory; bool ready = true; std::vector<std::string> trace; std::vector<u32> values; };
 	std::array<Device, 2> devices{{{&native.memory, true, {}, {}}, {&scalar.memory, true, {}, {}}}}; size_t index = 0;
 	for (auto* m : {&native, &scalar}) {
@@ -185,7 +186,7 @@ void orderedIoFaultPrefix() {
 				auto& d = *static_cast<Device*>(context); d.trace.push_back("r" + std::to_string((address - target) / 4u)); return d.ready;
 			});
 		}
-		auto& frame = *m->cpu.activeThread()->frames[0]; frame.registers[0] = valueNumber(target); frame.registers[12] = valueNumber(42); frame.registers[10] = valueNumber(73); frame.registers[7] = valueNumber(99);
+		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers[0] = valueNumber(target); frame.registers[12] = valueNumber(42); frame.registers[10] = valueNumber(73); frame.registers[7] = valueNumber(99);
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress); m->cpu.runUntilDepth(0, 20);
 		require(device.trace == std::vector<std::string>{"r0", "r1", "r2", "r3", "r4", "w0", "w1", "w2"} && device.values == std::vector<u32>{42u, 1u, 73u},
 			"preflight happens once before the ordered store prefix, even if readiness changes while writing");
@@ -202,13 +203,13 @@ void ownCodeInMiddleWatchPage() {
 	for (auto* m : {&native, &scalar}) {
 		m->memory.writeBytes(pc, m->rom.bytes.data() + m->rom.textAddress, MAPPED_PAGE_BYTE_SIZE);
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], pc);
-		m->cpu.activeThread()->frames[0]->registers[0] = valueNumber(pc + 8u * MAPPED_PAGE_BYTE_SIZE); m->cpu.runUntilDepth(0, 20 * cycles);
+		m->cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNumber(pc + 8u * MAPPED_PAGE_BYTE_SIZE); m->cpu.runUntilDepth(0, 20 * cycles);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	auto& page = *native.cpu.activeThread()->frames[0]->decodedPage; require(page.nativeBlocks->entries[0] != nullptr, "the watched source really has a native body");
+	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage; require(page.nativeBlocks->entries[0] != nullptr, "the watched source really has a native body");
 #endif
 	for (auto* m : {&native, &scalar}) {
-		auto& frame = *m->cpu.activeThread()->frames[0]; for (int i = 0; i < count; ++i) frame.registers[8 + i] = valueNumber(0);
+		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); for (int i = 0; i < count; ++i) frame.registers[8 + i] = valueNumber(0);
 		frame.registers[8 + MAPPED_PAGE_BYTE_SIZE / 4 + 5] = valueNumber(readLE32(halt.data())); frame.registers[7] = valueNumber(99); frame.registers[0] = valueNumber(DYNAMIC_RAM_BASE);
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], pc);
 		require(m->cpu.runUntilDepth(0, cycles) == RunResult::Halted && frame.registers[7] == valueNumber(99) && frame.pc == pc + 6u * INSTRUCTION_BYTES,
@@ -227,18 +228,18 @@ void previousChargesSurviveLaterExit(bool blocked) {
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255); writeInstruction(image.text, 32, static_cast<u8>(OpCode::HALT), 0, 0, 0); writeInstruction(image.text, 33, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 32}, {.firstWord = 32, .wordCount = 2}}; image.exceptionFunctionIndex = 1;
 	CpuMachine native(image), scalar(image, true);
-	for (auto* m : {&native, &scalar}) { auto* r = m->cpu.activeThread()->frames[0]->registers; r[0] = valueNumber(DYNAMIC_RAM_BASE); r[1] = valueNumber(DYNAMIC_RAM_BASE + 64u); m->cpu.runUntilDepth(0, 200); }
+	for (auto* m : {&native, &scalar}) { auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers; r[0] = valueNumber(DYNAMIC_RAM_BASE); r[1] = valueNumber(DYNAMIC_RAM_BASE + 64u); m->cpu.runUntilDepth(0, 200); }
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& block = native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(block && block->terminal.cycles == 5 && block->sideExits[0].cycles == 3, "the first block charges its successful surcharge");
-	const auto* second = native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks->entries[(block->terminal.nextPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
+	const auto* second = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(block->terminal.nextPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
 	require(second && second->region == block->region && second->terminal.cycles == 3 && second->sideExits[0].cycles == 2,
 		"an internal counted entry separates admission, success and blocked preflight charges");
 #endif
 	for (auto* m : {&native, &scalar}) {
 		m->memory.mapIoWrite(IO_BASE + 0x5000u, nullptr, [](void*, u32, u32, MappedBusSignals) { throw std::runtime_error("not ready"); });
 		m->memory.mapIoWriteReady(IO_BASE + 0x5000u, [](void*, u32, MappedBusSignals) { return false; });
-		auto& frame = *m->cpu.activeThread()->frames[0]; frame.top = 0; frame.registers[1] = valueNumber(blocked ? IO_BASE + 0x5000u : RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 4u);
+		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.top = 0; frame.registers[1] = valueNumber(blocked ? IO_BASE + 0x5000u : RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 4u);
 		frame.registers[7] = valueNumber(99); frame.registers[20] = valueNumber(73);
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress); m->cpu.runUntilDepth(0, 20);
 		require(frame.registers[7] == valueNumber(99) && frame.top == 7, "the failing second store does not execute or publish a later definition");
@@ -253,7 +254,7 @@ void terminalSpanStartsWithOneCycle(int count, bool displaced) {
 	const u32 start = native.rom.textAddress + 3u * INSTRUCTION_BYTES, target = DYNAMIC_RAM_BASE + 0x4000u;
 	const int charge = 2 + ((count + 3) >> 2);
 	for (int attempt = 0; attempt < 12; ++attempt) for (auto* m : {&native, &scalar}) {
-		auto& frame = *m->cpu.activeThread()->frames[0]; frame.registers[0] = valueNumber(target - (displaced ? 1020u : 0u)); frame.registers[7] = valueNumber(99);
+		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers[0] = valueNumber(target - (displaced ? 1020u : 0u)); frame.registers[7] = valueNumber(99);
 		for (int i = 0; i < count; ++i) frame.registers[8 + i] = valueNumber(0x20000000u | i);
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], start);
 		require(m->cpu.runUntilDepth(0, 1) == RunResult::Yielded && m->cpu.instructionBudgetRemaining == 1 - charge
@@ -263,7 +264,7 @@ void terminalSpanStartsWithOneCycle(int count, bool displaced) {
 	requireParity(native, scalar);
 	require(std::equal(native.memory.ramData(), native.memory.ramData() + PSX_MACHINE_SPEC.ramBytes, scalar.memory.ramData()), "all RAM agrees after overrun by a terminal store");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& block = native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks->entries[(start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(block && block->sourceWords == 2 && block->terminal.cycles == charge,
 		"a single counted WIDE store has a native body even when its cost exceeds every grant");
 #endif
@@ -273,7 +274,7 @@ void terminalSpanStartsWithOneCycle(int count, bool displaced) {
 		for (auto* m : {&native, &scalar}) {
 			m->memory.mapIoWrite(IO_BASE + 0x5000u, nullptr, [](void*, u32, u32, MappedBusSignals) { throw std::runtime_error("blocked store wrote a word"); });
 			m->memory.mapIoWriteReady(IO_BASE + 0x5000u, [](void*, u32, MappedBusSignals) { return false; });
-			auto& frame = *m->cpu.activeThread()->frames[0]; frame.registers[0] = valueNumber(IO_BASE + 0x5000u - (displaced ? 1020u : 0u));
+			auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers[0] = valueNumber(IO_BASE + 0x5000u - (displaced ? 1020u : 0u));
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], start);
 			require(m->cpu.runUntilDepth(0, 1) == RunResult::Halted && m->cpu.instructionBudgetRemaining == -1
 				&& frame.pc == start && frame.registers[7] == valueNumber(99) && m->cpu.stalledMemoryWriteAddress() == IO_BASE + 0x5000u,

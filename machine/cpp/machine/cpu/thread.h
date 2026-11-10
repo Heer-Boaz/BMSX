@@ -1,6 +1,5 @@
 #pragma once
 
-#include <memory>
 #include <vector>
 #include "common/scratchbuffer.h"
 #include "machine/cpu/call_state.h"
@@ -13,8 +12,23 @@ constexpr size_t THREAD_HEAP_BYTES = 64;
 constexpr size_t THREAD_STACK_SLOT_BYTES = 8;
 
 struct Thread : GCObject {
+	Thread() = default;
+	Thread(const Thread&) = delete;
+	Thread& operator=(const Thread&) = delete;
+	~Thread();
+
+	CallFrame* acquireFrame();
+	void enterFrame(CallFrame* frame) { currentFrame = frame; ++frameDepth; }
+	void leaveFrame();
+	CallFrame* frameAtDepth(size_t depth) const;
+	void trimFrames();
+
 	ThreadStatus status = ThreadStatus::New;
-	std::vector<std::unique_ptr<CallFrame>> frames;
+	// Stable nodes belong to this thread. The cursor, not the retained tail,
+	// determines which frames and register ranges are active roots.
+	CallFrame* firstFrame = nullptr;
+	CallFrame* currentFrame = nullptr;
+	size_t frameDepth = 0;
 	std::vector<Value> stack = std::vector<Value>(8, valueNil());
 	int stackTop = 0;
 	ScratchBuffer<ProtectedCallContinuation> protectedCallContinuations{1};

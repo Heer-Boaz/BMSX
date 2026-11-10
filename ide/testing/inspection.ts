@@ -65,7 +65,7 @@ export abstract class TestInspection {
 			const reference = `${this.id}/frame/${this.frames.size}`;
 			const trace: InspectedTestFrame = { ...frame, reference, domain: physical.executionDomainId,
 				pc: physical.tracePc, functionAddress: physical.functionAddress };
-			this.frames.set(reference, { frame: entry.context.thread.frames[frame.physicalFrameIndex], physical, trace,
+			this.frames.set(reference, { frame: entry.context.thread.frameAtDepth(frame.physicalFrameIndex), physical, trace,
 				source: frame.kind === 'source' ? entry.context.sources.get(frame) : undefined });
 			return trace;
 		});

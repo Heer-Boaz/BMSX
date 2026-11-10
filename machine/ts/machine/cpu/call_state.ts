@@ -12,6 +12,8 @@ export const enum ProtectedCallKind {
 
 export type CallFrame = {
 	thread: Thread;
+	previous: CallFrame | null;
+	next: CallFrame | null;
 	functionAddress: number;
 	executionImage: Blua32ExecutionImage;
 	decodedPage: DecodedInstructionPage | null;

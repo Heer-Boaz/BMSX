@@ -1,5 +1,6 @@
 #include "common/endian.h"
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/errors.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
@@ -34,14 +35,15 @@ struct CpuMachine {
 
 void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const auto& first = *native.cpu.activeThread(); const auto& second = *scalar.cpu.activeThread();
-	require(first.frames.size() == second.frames.size() && first.stackTop == second.stackTop
+	require(first.frameDepth == second.frameDepth && first.stackTop == second.stackTop
 		&& native.cpu.readCurrentInstructionPc() == scalar.cpu.readCurrentInstructionPc()
 		&& native.cpu.lastPc == scalar.cpu.lastPc && native.cpu.readLastExecutionDomain() == scalar.cpu.readLastExecutionDomain()
 		&& native.cpu.readCauseWord() == scalar.cpu.readCauseWord() && native.cpu.readEpcWord() == scalar.cpu.readEpcWord()
 		&& native.cpu.readBadAddressWord() == scalar.cpu.readBadAddressWord(),
 		"compiled calls and returns preserve exact frame, PC, execution-domain and cycle boundaries");
-	for (size_t index = 0; index < first.frames.size(); ++index) {
-		const auto& a = *first.frames[index]; const auto& b = *second.frames[index];
+	const CallFrame* firstFrame = first.firstFrame; const CallFrame* secondFrame = second.firstFrame;
+	for (size_t index = 0; index < first.frameDepth; ++index, firstFrame = firstFrame->next, secondFrame = secondFrame->next) {
+		const auto& a = *firstFrame; const auto& b = *secondFrame;
 		require(a.pc == b.pc && a.top == b.top && a.functionAddress == b.functionAddress && a.stackCapacity == b.stackCapacity
 			&& a.stackBase == b.stackBase && a.varargBase == b.varargBase && a.varargCount == b.varargCount
 			&& a.returnBase == b.returnBase && a.returnCount == b.returnCount && a.callSitePc == b.callSitePc,
@@ -52,6 +54,112 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 				"corresponding closures retain the same raw function address");
 			else require(left == right, "every retained numeric/tagged register agrees across call transitions");
 		}
+	}
+}
+
+void reusableFrameChain() {
+	Thread thread;
+	auto* root = thread.acquireFrame();
+	require(thread.currentFrame == nullptr && thread.frameDepth == 0, "preparing a node does not expose an active frame");
+	thread.enterFrame(root);
+	root->isExceptionFrame = true;
+	for (int depth = 1; depth <= 8; ++depth) {
+		auto* previous = thread.currentFrame;
+		auto* frame = thread.acquireFrame();
+		require(frame->previous == previous && previous->next == frame && frame->thread == &thread,
+			"reusable nodes have stable identity and belong to their thread");
+		thread.enterFrame(frame);
+		require(thread.frameAtDepth(depth) == frame, "diagnostic depth follows the active chain");
+	}
+	while (thread.frameDepth > 1) thread.leaveFrame();
+	auto* prepared = thread.acquireFrame();
+	thread.trimFrames();
+	require(thread.currentFrame == root && thread.frameDepth == 1 && thread.acquireFrame() == prepared,
+		"collection retains the first prepared spare without activating it");
+	size_t retained = 0;
+	CallFrame* previous = nullptr;
+	for (auto* frame = thread.firstFrame; frame; frame = frame->next) {
+		require(frame->previous == previous, "tail reclamation repairs backward links");
+		previous = frame;
+		++retained;
+	}
+	require(retained == 5, "collection halves the inactive tail while preserving the active root");
+	thread.enterFrame(prepared);
+	thread.leaveFrame();
+	thread.leaveFrame();
+	require(thread.currentFrame == nullptr && thread.frameDepth == 0 && !root->isExceptionFrame,
+		"retirement clears exception state without deleting reusable frames");
+	thread.trimFrames();
+	require(thread.acquireFrame() == root, "an empty thread retains its first prepared node through collection");
+}
+
+void returnGrowthCollection() {
+	test::Blua32TestImage image;
+	image.text.resize(6 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CALL), 0, 1, 63);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 8},
+		{.firstWord = 4, .wordCount = 1, .maxStack = 8}};
+	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+	for (const bool scalar : {false, true}) {
+		CpuMachine machine(image, scalar);
+		while (machine.cpu.activeThread()->frameDepth != 2) machine.cpu.runUntilDepth(0, 1);
+		auto* caller = machine.cpu.activeThread()->firstFrame;
+		auto* callee = machine.cpu.activeThread()->currentFrame;
+		const Value result = valueString(machine.cpu.stringPool().intern("retained-only-by-returning-frame"));
+		callee->registers[0] = result;
+		const auto heap = machine.cpu.luaHeap().captureState();
+		const std::string garbage(heap.nextCollectionBytes - heap.trackedBytes - 1, 'g');
+		machine.cpu.stringPool().intern(garbage);
+		require(machine.cpu.runUntilDepth(1, 100) == RunResult::Halted, "return stops at the caller depth after growing its window");
+		require(!machine.cpu.stringPool().find(garbage), "return window growth actually triggers collection");
+		require(machine.cpu.stringPool().find("retained-only-by-returning-frame") == asStringId(result)
+			&& caller->registers[0] == result && caller->stackCapacity == 64 && caller->top == 63,
+			"return values remain rooted across collection and caller/callee window relocation");
+		for (int index = 1; index < 63; ++index) require(caller->registers[index] == valueNil(), "missing fixed returns are nil");
+		require(machine.cpu.activeThread()->currentFrame == caller && caller->next == callee,
+			"return retires the same callee only after result transfer completes");
+	}
+}
+
+void failedCallAdmission() {
+	test::Blua32TestImage image;
+	image.text.resize(6 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CALL), 0, 1, 1);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
+	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 8},
+		{.firstWord = 4, .wordCount = 1, .maxStack = PSX_MACHINE_SPEC.ramBytes},
+		{.firstWord = 5, .wordCount = 1, .maxStack = 8}};
+	image.exceptionFunctionIndex = 2;
+	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+	for (const bool scalar : {false, true}) for (const bool completion : {false, true}) {
+		CpuMachine machine(image, scalar);
+		machine.cpu.runUntilDepth(0, 1);
+		auto* thread = machine.cpu.activeThread();
+		auto* caller = thread->currentFrame;
+		if (completion) {
+			bool rejected = false;
+			try { machine.cpu.beginCompletionCall(*asClosure(caller->registers[0])); }
+			catch (const LuaOutOfMemorySignal&) { rejected = true; }
+			require(rejected && thread->frameDepth == 1 && thread->stackTop == 8,
+				"failed completion admission never publishes an unallocated stack extent");
+			require(caller->next->closure == nullptr && caller->next->executionImage == nullptr,
+				"the unadmitted reusable node retains no callee references");
+		} else {
+			machine.cpu.runUntilDepth(0, 2);
+			require(machine.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
+				&& thread->frameDepth == 2 && thread->stackTop == 16 && thread->currentFrame->stackBase == 8,
+				"failed guest CALL enters its fault handler above the real caller, not a phantom callee window");
+		}
+		require(thread->firstFrame == caller && caller->stackBase == 0 && caller->stackCapacity == 8,
+			"call admission preserves the caller's live register extent");
 	}
 }
 
@@ -83,7 +191,7 @@ void crossPageCalls(bool open, u32 recordOffset) {
 	test::runCpuParity(native.cpu, scalar.cpu, 100, 1);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	bool call = false, ret = false;
-	for (const auto& [key, page] : native.cpu.activeThread()->frames[0]->executionImage->decodedPages) if (page.nativeBlocks) {
+	for (const auto& [key, page] : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages) if (page.nativeBlocks) {
 		for (const auto& block : page.nativeBlocks->entries) if (block) {
 			call |= block->terminal.exit == NativeBlockExit::Call; ret |= block->terminal.exit == NativeBlockExit::Return;
 		}
@@ -96,9 +204,9 @@ void crossPageCalls(bool open, u32 recordOffset) {
 	}
 	for (auto* machine : {&native, &scalar}) {
 		machine->cpu.runUntilDepth(1, 100);
-		machine->cpu.activeThread()->frames[0]->registers[3] = valueNumber(99);
+		machine->cpu.activeThread()->frameAtDepth(0)->registers[3] = valueNumber(99);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress + 2u * INSTRUCTION_BYTES);
-		require(machine->cpu.runUntilDepth(0, 5) == RunResult::Yielded && machine->cpu.activeThread()->frames.size() == 2,
+		require(machine->cpu.runUntilDepth(0, 5) == RunResult::Yielded && machine->cpu.activeThread()->frameDepth == 2,
 			"CALL cannot consume a callee instruction without a further cycle grant");
 		require(machine->cpu.runUntilDepth(1, 50) == RunResult::Halted && machine->cpu.instructionBudgetRemaining == 46
 			&& machine->cpu.readFrameRegister(0, 3) == valueNumber(99),
@@ -107,11 +215,20 @@ void crossPageCalls(bool open, u32 recordOffset) {
 	requireParity(native, scalar);
 	for (auto* machine : {&native, &scalar}) {
 		const auto capacity = machine->cpu.activeThread()->stack.size();
+		const auto* caller = machine->cpu.activeThread()->currentFrame;
+		const auto* spare = caller->next;
+		require(spare != nullptr, "warm calls have a reusable callee node");
 		machine->memory.writeMappedU32LE(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, 1024);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress + 2u * INSTRUCTION_BYTES);
-		require(machine->cpu.runUntilDepth(0, 9) == RunResult::Yielded && machine->cpu.activeThread()->frames.size() == 1
+		const auto heap = machine->cpu.luaHeap().captureState();
+		const std::string garbage(heap.nextCollectionBytes - heap.trackedBytes - 1, 'g');
+		machine->cpu.stringPool().intern(garbage);
+		require(machine->cpu.runUntilDepth(0, 9) == RunResult::Yielded && machine->cpu.activeThread()->frameDepth == 1
 			&& machine->cpu.activeThread()->stack.size() > capacity && machine->cpu.readFrameRegister(0, 0) == valueNumber(7),
 			"a hot call relocates the stack before a hot callee and return use the new register bases");
+		require(!machine->cpu.stringPool().find(garbage), "callee stack growth actually collects unrooted pressure data");
+		require(machine->cpu.activeThread()->currentFrame == caller && caller->next == spare,
+			"collection during call preparation preserves the inactive callee and active caller identities");
 	}
 	requireParity(native, scalar);
 	for (auto* machine : {&native, &scalar}) {
@@ -136,6 +253,9 @@ void crossPageCalls(bool open, u32 recordOffset) {
 
 int main() {
 	try {
+		reusableFrameChain();
+		returnGrowthCollection();
+		failedCallAdmission();
 		for (const bool open : {false, true}) for (const u32 offset : {0x1800u, 0x1ff0u}) crossPageCalls(open, offset);
 		std::cout << "Compiled call/return tests passed\n"; return 0;
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

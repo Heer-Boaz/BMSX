@@ -39,21 +39,21 @@ test('compiled CP0 loads retain full unsigned words and consume the live registe
 		}
 		assertParity(js, ref);
 		const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2;
-		assert.equal(js.rootThread.frames[0].decodedPage!.compiledBlocks!.entries[entry]!.sourceWords, 9);
-		assert.equal(js.rootThread.frames[0].decodedPage!.compiledBlocks!.entries[entry]!.exits.length, 2, 'one privilege edge plus the terminal, not one edge per implemented read');
+		assert.equal(js.rootThread.frameAtDepth(0).decodedPage!.compiledBlocks!.entries[entry]!.sourceWords, 9);
+		assert.equal(js.rootThread.frameAtDepth(0).decodedPage!.compiledBlocks!.entries[entry]!.exits.length, 2, 'one privilege edge plus the terminal, not one edge per implemented read');
 		const expected = [(word & ~CPU_STATUS_USER_MODE_CURRENT) >>> 0, word, (word ^ 0x13579bdf) >>> 0, ~word >>> 0, word, 0];
 		for (let i = 0; i < expected.length; ++i) assert.equal(js.readFrameRegister(0, i), expected[i]);
 		assert.equal(js.readFrameRegister(0, 9), word + 1, 'ordinary arithmetic is not word-wrapped');
 		for (const cpu of [js, ref]) { cpu.writeEpcWord((word + 1) >>> 0); cpu.runUntilDepth(0, 9); }
 		assertParity(js, ref); assert.equal(js.readFrameRegister(0, 2), (word + 1) >>> 0);
 		for (const cpu of [js, ref]) {
-			const frame = cpu.rootThread.frames[0]; frame.registers.setNumber(0, CPU_STATUS_USER_MODE_CURRENT);
+			const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setNumber(0, CPU_STATUS_USER_MODE_CURRENT);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[1].codeAddress); cpu.runUntilDepth(0, 1);
 			frame.registers.setNumber(0, 73); frame.registers.setNumber(8, 73); frame.top = 0;
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress); cpu.runUntilDepth(0, 9);
 		}
 		assertParity(js, ref); assert.equal(js.readFrameRegister(0, 0), 73); assert.equal(js.readFrameRegister(0, 8), 1);
-		assert.equal(js.rootThread.frames[0].top, 9); assert.equal(js.readEpcWord(), image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
+		assert.equal(js.rootThread.frameAtDepth(0).top, 9); assert.equal(js.readEpcWord(), image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
 	}
 });
 
@@ -67,17 +67,17 @@ test('compiled CP0 writes convert words without changing their sources or ignore
 	writeInstruction(text, 5, OpCode.JMP, 0, 63, 58, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 6, maxStack: 13 }] });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
-	for (const cpu of [js, ref]) { const r = cpu.rootThread.frames[0].registers; r.setNumber(0, 0); r.setNumber(1, 0); r.setTable(12, cpu.createTable()); cpu.runUntilDepth(0, 600); }
+	for (const cpu of [js, ref]) { const r = cpu.rootThread.frameAtDepth(0).registers; r.setNumber(0, 0); r.setNumber(1, 0); r.setTable(12, cpu.createTable()); cpu.runUntilDepth(0, 600); }
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2;
-	assert.equal(js.rootThread.frames[0].decodedPage!.compiledBlocks!.entries[entry]!.sourceWords, 6);
-	assert.equal(js.rootThread.frames[0].decodedPage!.compiledBlocks!.entries[entry]!.exits.length, 2);
+	assert.equal(js.rootThread.frameAtDepth(0).decodedPage!.compiledBlocks!.entries[entry]!.sourceWords, 6);
+	assert.equal(js.rootThread.frameAtDepth(0).decodedPage!.compiledBlocks!.entries[entry]!.exits.length, 2);
 	for (const value of [-0, -1.5, 4294967297.75, 1e100, Infinity, NaN, null, true]) {
-		for (const cpu of [js, ref]) { cpu.rootThread.frames[0].registers.set(0, value); cpu.runUntilDepth(0, 6); }
+		for (const cpu of [js, ref]) { cpu.rootThread.frameAtDepth(0).registers.set(0, value); cpu.runUntilDepth(0, 6); }
 		assertParity(js, ref);
-		const numeric = js.rootThread.frames[0].registers.getNumber(4);
+		const numeric = js.rootThread.frameAtDepth(0).registers.getNumber(4);
 		assert.equal(js.readEpcWord(), numeric >>> 0); assert.equal(js.readCauseWord(), 0);
 		assert.equal(js.readFrameRegister(0, 5), numeric >>> 0); assert.equal(js.readFrameRegister(0, 6), numeric);
-		assert.equal(js.rootThread.frames[0].top, 7, 'ignored writes do not make their source a destination');
+		assert.equal(js.rootThread.frameAtDepth(0).top, 7, 'ignored writes do not make their source a destination');
 	}
 });
 
@@ -91,7 +91,7 @@ test('a compiled Status write returns for pending IRQ arbitration before its suc
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 7 }, { firstWord: 16, wordCount: 2 }], irqFunctionIndex: 1 });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
 	for (const { cpu, memory, irqController } of [js, ref]) {
-		const frame = cpu.rootThread.frames[0]; frame.registers.setNumber(0, 0); frame.registers.setNumber(1, 0);
+		const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setNumber(0, 0); frame.registers.setNumber(1, 0);
 		cpu.runUntilDepth(0, 400); frame.top = 0; frame.registers.setNumber(0, 1); frame.registers.setNumber(6, 73);
 		memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_VBLANK); irqController.raise(IRQ_VBLANK);
 		assert.equal(cpu.runUntilDepth(0, 32), RunResult.Halted); assert.equal(cpu.isExceptionFrame(1), true);
@@ -123,22 +123,22 @@ test('a later unknown selector keeps its own sparse fault edge after the privile
 	writeInstruction(source.text, 4, OpCode.JMP, 0, 63, 61, 255); source.functions[0].wordCount = 5;
 	const image = linkRawTestSystemBlua32(source), js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
-		const r = cpu.rootThread.frames[0].registers; r.setNumber(0, CPU_STATUS_USER_MODE_CURRENT); r.setTable(12, cpu.createTable());
+		const r = cpu.rootThread.frameAtDepth(0).registers; r.setNumber(0, CPU_STATUS_USER_MODE_CURRENT); r.setTable(12, cpu.createTable());
 		cpu.setGlobalByKey(cpu.stringPool.find('returnStatus')!, ValueTag.Number, 8, null); cpu.runUntilDepth(0, 900);
 		cpu.setGlobalByKey(cpu.stringPool.find('returnStatus')!, ValueTag.Number, 0, null); assert.equal(cpu.runUntilDepth(0, 20), RunResult.Halted);
 	}
 	assertParity(js, ref); assert.equal(js.readCurrentInstructionPc(), image.image.functions[0].codeAddress + 3 * INSTRUCTION_BYTES);
 	assert.equal(js.readFrameRegister(0, 6), image.image.functions[0].codeAddress + 2 * INSTRUCTION_BYTES);
-	assert.equal(js.rootThread.frames[0].top, 7);
+	assert.equal(js.rootThread.frameAtDepth(0).top, 7);
 });
 
 for (const op of [OpCode.MFC0, OpCode.MTC0] as const) for (const wide of [false, true]) {
 	test(`compiled opcode ${op} privilege priority and WIDE=${wide} faults preserve destination/top and use native RFE`, () => {
 		const image = linkRawTestSystemBlua32(faultLoopSource(op, wide));
 		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
-		const registers = js.rootThread.frames[0].registers;
+		const registers = js.rootThread.frameAtDepth(0).registers;
 		for (const cpu of [js, ref]) {
-			const r = cpu.rootThread.frames[0].registers; r.setNumber(0, CPU_STATUS_USER_MODE_CURRENT); r.setTable(12, cpu.createTable());
+			const r = cpu.rootThread.frameAtDepth(0).registers; r.setNumber(0, CPU_STATUS_USER_MODE_CURRENT); r.setTable(12, cpu.createTable());
 			cpu.setGlobalByKey(cpu.stringPool.find('returnStatus')!, ValueTag.Number, 0xa5a5a508, null);
 		}
 		const original = registers.getTable(12);
@@ -146,13 +146,13 @@ for (const op of [OpCode.MFC0, OpCode.MTC0] as const) for (const wide of [false,
 		assertParity(js, ref);
 		assert.equal(js.readCauseWord(), CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
 		assert.equal(js.readEpcWord(), image.image.functions[0].codeAddress + 2 * INSTRUCTION_BYTES);
-		const blocks = Array.from(js.rootThread.frames[0].executionImage.decodedPages.values()).flatMap(page => page.compiledBlocks?.entries.filter(block => block !== null) ?? []);
+		const blocks = Array.from(js.rootThread.frameAtDepth(0).executionImage.decodedPages.values()).flatMap(page => page.compiledBlocks?.entries.filter(block => block !== null) ?? []);
 		assert.ok(blocks.some(block => block.exits.some(exit => exit.exit === CompiledBlockExit.ControlFault && exit.currentPc === js.readEpcWord())));
 		assert.ok(blocks.some(block => block.terminal.exit === CompiledBlockExit.ExceptionReturn && block.sourceWords === 2));
 		for (const cpu of [js, ref]) { cpu.setGlobalByKey(cpu.stringPool.find('returnStatus')!, ValueTag.Number, 0, null); assert.equal(cpu.runUntilDepth(0, 20), RunResult.Halted); }
 		assertParity(js, ref);
 		assert.equal(js.captureRuntimeState().hardHalted, true); assert.equal(js.readCauseWord(), CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
-		assert.equal(js.rootThread.frames[0].registers.getTable(12), original); assert.equal(js.rootThread.frames[0].top, 4);
+		assert.equal(js.rootThread.frameAtDepth(0).registers.getTable(12), original); assert.equal(js.rootThread.frameAtDepth(0).top, 4);
 	});
 }
 
@@ -160,17 +160,17 @@ test('a warmed WIDE RFE rejects an ordinary frame after returning to the active 
 	const image = linkRawTestSystemBlua32(faultLoopSource(OpCode.MFC0, false));
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
-		const r = cpu.rootThread.frames[0].registers; r.setNumber(0, CPU_STATUS_USER_MODE_CURRENT); r.setTable(12, cpu.createTable());
+		const r = cpu.rootThread.frameAtDepth(0).registers; r.setNumber(0, CPU_STATUS_USER_MODE_CURRENT); r.setTable(12, cpu.createTable());
 		cpu.setGlobalByKey(cpu.stringPool.find('returnStatus')!, ValueTag.Number, 0xa5a5a508, null); cpu.runUntilDepth(0, 900);
-		for (let step = 0; step < 8 && cpu.rootThread.frames.length > 1; ++step) cpu.runUntilDepth(0, 1);
-		assert.equal(cpu.rootThread.frames.length, 1); cpu.runUntilDepth(0, 1);
+		for (let step = 0; step < 8 && cpu.rootThread.frameDepth > 1; ++step) cpu.runUntilDepth(0, 1);
+		assert.equal(cpu.rootThread.frameDepth, 1); cpu.runUntilDepth(0, 1);
 		cpu.writeEpcWord(image.image.functions[1].codeAddress + 2 * INSTRUCTION_BYTES);
 		cpu.setGlobalByKey(cpu.stringPool.find('returnStatus')!, ValueTag.Number, 0, null);
 		assert.equal(cpu.runUntilDepth(0, 20), RunResult.Halted);
 	}
 	assertParity(js, ref); assert.equal(js.captureRuntimeState().hardHalted, true);
 	assert.equal(js.readCurrentInstructionPc(), image.image.functions[1].codeAddress + 2 * INSTRUCTION_BYTES);
-	assert.equal(js.rootThread.frames[0].top, 4);
+	assert.equal(js.rootThread.frameAtDepth(0).top, 4);
 });
 
 test('compiled EXEC replaces frames after returning and rejects a non-static target', () => {
@@ -187,7 +187,7 @@ test('compiled EXEC replaces frames after returning and rejects a non-static tar
 	assertParity(js, ref);
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2;
 	let generated = false;
-	for (const page of js.rootThread.frames[0].executionImage.decodedPages.values()) if (page.compiledBlocks !== null) {
+	for (const page of js.rootThread.frameAtDepth(0).executionImage.decodedPages.values()) if (page.compiledBlocks !== null) {
 		const block = page.compiledBlocks.entries[entry];
 		generated ||= block !== null && block.terminal.exit === CompiledBlockExit.ExecuteFunction && block.terminal.currentPc === image.image.functions[0].codeAddress + INSTRUCTION_BYTES;
 	}
@@ -209,7 +209,7 @@ test('compiled NMI return samples active EPC then restores retained words withou
 	for (const cpu of [js, ref]) {
 		const state = cpu.captureRuntimeState(); state.statusWord = 0xa5a5a511; state.causeWord = 0xdeadbeef; state.epcWord = 0x12345679;
 		state.badAddressWord = 0x87654321; state.luaFaultReasonWord = 0x80000000; state.exceptionDomainWord = 7;
-		cpu.restoreRuntimeState(state); cpu.rootThread.frames[0].registers.setNumber(1, 0); cpu.runUntilDepth(0, 300);
+		cpu.restoreRuntimeState(state); cpu.rootThread.frameAtDepth(0).registers.setNumber(1, 0); cpu.runUntilDepth(0, 300);
 	}
 	for (let iteration = 0; iteration < 12; ++iteration) {
 		for (const cpu of [js, ref]) {
@@ -226,13 +226,13 @@ test('compiled NMI return samples active EPC then restores retained words withou
 	}
 	let generated = false;
 	const entry = (image.image.functions[1].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2;
-	for (const page of js.rootThread.frames[0].executionImage.decodedPages.values()) if (page.compiledBlocks !== null) {
+	for (const page of js.rootThread.frameAtDepth(0).executionImage.decodedPages.values()) if (page.compiledBlocks !== null) {
 		const block = page.compiledBlocks.entries[entry];
 		generated ||= block !== null && block.terminal.exit === CompiledBlockExit.ExceptionReturn && block.sourceWords === 3;
 	}
 	assert.equal(generated, true, 'the NMI handler executes its CP0 read and WIDE RFE in a generated body');
 	const continuation = image.image.functions[0].codeAddress + INSTRUCTION_BYTES;
-	const page = js.rootThread.frames[0].decodedPage!;
+	const page = js.rootThread.frameAtDepth(0).decodedPage!;
 	assert.ok(page.compiledBlocks!.entries[(continuation & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2],
 		'a repeated RFE entry into the middle of a hot body is a translation entry, unlike an arbitrary grant resumption');
 });

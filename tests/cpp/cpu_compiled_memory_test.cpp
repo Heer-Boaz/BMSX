@@ -152,13 +152,13 @@ void generatedMemoryBoundaries() {
 		const auto image = memoryLoop(op, MemoryAccessKind::F64LE, displaced ? 255 : 0);
 		CpuMachine native(image), scalar(image, true);
 		for (auto* machine : {&native, &scalar}) {
-			auto& frame = *machine->cpu.activeThread()->frames[0];
+			auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
 			frame.registers[0] = valueNumber(3.25);
 			frame.registers[1] = valueNumber(DYNAMIC_RAM_BASE + 0x404u - (displaced ? 1020u : 0u));
 			machine->memory.writeMappedF64LE(DYNAMIC_RAM_BASE + 0x404u, 3.25);
 			machine->cpu.runUntilDepth(0, 1200);
 		}
-		auto& frame = *native.cpu.activeThread()->frames[0];
+		auto& frame = *native.cpu.activeThread()->frameAtDepth(0);
 		const auto& block = frame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u];
 		require(block && block->sourceWords == 5 && block->sideExits.size() == 1,
 			"RAM accesses compile with their dependent instructions and branch");
@@ -173,7 +173,7 @@ void generatedMemoryBoundaries() {
 				"short grants retain memory and WIDE boundaries");
 		}
 		for (auto* machine : {&native, &scalar}) {
-			auto& current = *machine->cpu.activeThread()->frames[0];
+			auto& current = *machine->cpu.activeThread()->frameAtDepth(0);
 			current.top = 0;
 			current.registers[1] = valueNumber(0xfffffffc - (displaced ? 1020u : 0u));
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
@@ -192,7 +192,7 @@ void generatedBusOrdering() {
 	for (const bool scalar : {false, true}) {
 		CpuMachine machine(memoryLoop(OpCode::STORE_MEM, MemoryAccessKind::U16LE), scalar);
 		auto& cpu = machine.cpu;
-		auto& frame = *cpu.activeThread()->frames[0];
+		auto& frame = *cpu.activeThread()->frameAtDepth(0);
 		frame.registers[0] = valueNumber(12); frame.registers[1] = valueNumber(DYNAMIC_RAM_BASE + 0x1000);
 		cpu.runUntilDepth(0, 1200);
 		struct Device { bool ready = false; int writes = 0; } device;
@@ -212,7 +212,7 @@ void generatedBusOrdering() {
 	for (const bool scalar : {false, true}) {
 		CpuMachine machine(memoryLoop(OpCode::STORE_MEM, MemoryAccessKind::F64LE), scalar);
 		auto& cpu = machine.cpu;
-		auto& frame = *cpu.activeThread()->frames[0];
+		auto& frame = *cpu.activeThread()->frameAtDepth(0);
 		frame.registers[0] = valueNumber(3.25); frame.registers[1] = valueNumber(DYNAMIC_RAM_BASE + 0x1004);
 		cpu.runUntilDepth(0, 1200);
 		const u32 target = RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 4u;
@@ -230,7 +230,7 @@ void generatedMemoryMayRetireExecutingSource() {
 		const auto image = memoryLoop(load ? OpCode::LOAD_MEM : OpCode::STORE_MEM, MemoryAccessKind::U32LE);
 		CpuMachine machine(image, scalar);
 		auto& cpu = machine.cpu;
-		auto& frame = *cpu.activeThread()->frames[0];
+		auto& frame = *cpu.activeThread()->frameAtDepth(0);
 		machine.memory.writeBytes(DYNAMIC_RAM_BASE, machine.rom.bytes.data() + machine.rom.textAddress, image.text.size());
 		machine.memory.writeMappedWord(DYNAMIC_RAM_BASE + 0x1000, 7);
 		frame.registers[0] = valueNumber(7); frame.registers[1] = valueNumber(DYNAMIC_RAM_BASE + 0x1000);
@@ -275,7 +275,7 @@ void fatalHelperErrorsLeaveTheNativeFrameBeforeUnwinding() {
 	for (const bool scalar : {false, true}) {
 		CpuMachine machine(memoryLoop(OpCode::LOAD_MEM, MemoryAccessKind::U32LE), scalar);
 		auto& cpu = machine.cpu;
-		auto& frame = *cpu.activeThread()->frames[0];
+		auto& frame = *cpu.activeThread()->frameAtDepth(0);
 		frame.registers[1] = valueNumber(DYNAMIC_RAM_BASE + 0x1000);
 		machine.memory.writeMappedWord(DYNAMIC_RAM_BASE + 0x1000, 7);
 		cpu.runUntilDepth(0, 1200);
@@ -318,7 +318,7 @@ void changingSuccessorsDoNotRecompileStablePredecessors() {
 	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8}};
 	CpuMachine machine(image);
 	machine.memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
-	auto& frame = *machine.cpu.activeThread()->frames[0];
+	auto& frame = *machine.cpu.activeThread()->frameAtDepth(0);
 	frame.registers[0] = valueNumber(readLE32(image.text.data() + INSTRUCTION_BYTES));
 	frame.registers[1] = valueNumber(DYNAMIC_RAM_BASE + INSTRUCTION_BYTES);
 	frame.registers[2] = valueNumber(1);
@@ -360,12 +360,12 @@ void cachedValuesReachFieldMemoryAndFaultOwners() {
 		auto* table = machine->cpu.createTable(0, 2);
 		table->setStringKey(machine->cpu.stringPool().intern("stable"), valueNumber(22));
 		table->setStringKey(machine->cpu.stringPool().intern("result"), valueNumber(0));
-		auto& frame = *machine->cpu.activeThread()->frames[0];
+		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
 		frame.registers[1] = valueTable(table); frame.registers[5] = valueNumber(address);
 		frame.registers[12] = frame.registers[13] = valueNumber(std::numeric_limits<double>::infinity());
 		machine->cpu.runUntilDepth(0, 1200);
 	}
-	auto& frame = *native.cpu.activeThread()->frames[0];
+	auto& frame = *native.cpu.activeThread()->frameAtDepth(0);
 	const auto& block = frame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u];
 	require(block && block->sourceWords == 13 && block->run(nativeRunState = {.registers = frame.registers, .constants = frame.executionImage->constPool.data(), .remainingCycles = 1})->nextPc == native.rom.textAddress,
 		"cached table references, numbers and memory writes all reach the final native exit");
@@ -373,7 +373,7 @@ void cachedValuesReachFieldMemoryAndFaultOwners() {
 	require(native.memory.readMappedWord(address) == 0u && native.memory.readMappedWord(address + 4u) == 0x7ff80000u,
 		"a cached arithmetic result reaches float memory in the canonical guest representation");
 	for (auto* machine : {&native, &scalar}) {
-		auto& current = *machine->cpu.activeThread()->frames[0];
+		auto& current = *machine->cpu.activeThread()->frameAtDepth(0);
 		require(current.registers[2] == valueNumber(22) && current.registers[7] == valueNumber(23)
 			&& current.registers[9] == valueNumber(23) && current.registers[11] == VALUE_QNAN_MASK
 			&& current.registers[0] == current.registers[1] && current.registers[8] == current.registers[1],

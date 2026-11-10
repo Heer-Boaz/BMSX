@@ -48,7 +48,7 @@ test('string.byte preserves codepoint, default and signed-word position semantic
 				text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 3 }],
 			}));
 			if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
-			const registers = cpu.rootThread.frames[0].registers;
+			const registers = cpu.rootThread.frameAtDepth(0).registers;
 			registers.setEncoded(0, ValueTag.BuiltinFunction, BuiltinFunctionId.StringByte, null);
 			registers.setStringId(1, cpu.stringPool.intern(source));
 			if (position === null) registers.setNil(2);
@@ -63,14 +63,14 @@ test('LOADKR converts its Number index to U32 and faults outside the constant po
 	for (const [input, expected] of [[0, 11], [1.9, 29], [4294967296, 11], [NaN, 11], [Infinity, 11], [-Infinity, 11], [-0, 11]]) {
 		const image = returnImage(OpCode.LOADKR, 0, 0, 0);
 		const { cpu } = createTestSystemCpu(image);
-		cpu.rootThread.frames[0].registers.setNumber(0, input);
+		cpu.rootThread.frameAtDepth(0).registers.setNumber(0, input);
 		cpu.runUntilDepth(0, 1);
 		assert.equal(cpu.readFrameRegister(0, 0), expected);
 	}
 	for (const input of [2, -1, 4294967295]) {
 		const image = returnImage(OpCode.LOADKR, 0, 0, 0);
 		const { cpu } = createTestSystemCpu(image);
-		cpu.rootThread.frames[0].registers.setNumber(0, input);
+		cpu.rootThread.frameAtDepth(0).registers.setNumber(0, input);
 		const pc = cpu.readFramePc(0);
 		cpu.runUntilDepth(0, 1);
 		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_TRAP);
@@ -88,7 +88,7 @@ test('word operands truncate and wrap at host conversion edges rather than satur
 		const { cpu } = createTestSystemCpu(image);
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		const pc = cpu.readFramePc(0);
-		const registers = cpu.rootThread.frames[0].registers;
+		const registers = cpu.rootThread.frameAtDepth(0).registers;
 		registers.setNumber(2, 0);
 		for (const [input, expected] of [
 			[0, 0], [-0, 0], [0.75, 0], [-0.75, 0], [-1.75, -1],
@@ -150,11 +150,11 @@ test('return ranges preserve shifted source slots when growing the caller stack'
 			}));
 			if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 			const table = cpu.createTable(0, 0);
-			cpu.rootThread.frames[0].registers.setNumber(0, 91);
-			cpu.rootThread.frames[0].registers.setTable(1, table);
+			cpu.rootThread.frameAtDepth(0).registers.setNumber(0, 91);
+			cpu.rootThread.frameAtDepth(0).registers.setTable(1, table);
 			assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
 			assert.equal(cpu.getFrameDepth(), 2);
-			const callee = cpu.rootThread.frames[1];
+			const callee = cpu.rootThread.frameAtDepth(1);
 			const samples: Value[] = [-0, null, false, valueString(cpu.stringPool.intern('result')), table];
 			for (let i = 0; i < produced; ++i) callee.registers.set(5 + i, samples[i % 5]);
 			callee.top = 5 + produced;
@@ -165,7 +165,7 @@ test('return ranges preserve shifted source slots when growing the caller stack'
 			assert.equal(cpu.readFrameRegister(0, 0), 91);
 			assert.equal(cpu.readFrameRegister(0, 1), table);
 			for (let i = 0; i < targetCount; ++i) assert.equal(cpu.readFrameRegister(0, 2 + i), i < produced ? samples[i % 5] : null);
-			const caller = cpu.rootThread.frames[0];
+			const caller = cpu.rootThread.frameAtDepth(0);
 			assert.equal(cpu.rootThread.stackTop, caller.stackBase + caller.stackCapacity);
 		}
 	}
@@ -183,7 +183,7 @@ test('builtin-owned result ranges survive destination growth with exact open/fix
 		const table = cpu.createTable(1, 0);
 		const result = valueString(cpu.stringPool.intern('result'));
 		if (kind === 2) table.setInteger(1, result);
-		const registers = cpu.rootThread.frames[0].registers;
+		const registers = cpu.rootThread.frameAtDepth(0).registers;
 		registers.setNumber(0, 91); registers.setBool(1, true);
 		registers.setEncoded(2, ValueTag.BuiltinFunction, kind === 0 ? BuiltinFunctionId.Select : BuiltinFunctionId.Next, null);
 		registers.set(3, kind === 0 ? 1 : table);
@@ -212,8 +212,8 @@ test('a device edge during instruction fetch or observation is accepted at the n
 		const memory = new Memory({ systemRom: image.romBytes, cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 		const irq = new IrqController(memory), cpu = new CPU(memory, irq, new ExecutionAddressSpace(memory));
 		cpu.reset();
-		cpu.rootThread.frames[0].registers.setNumber(6, 0);
-		cpu.rootThread.frames[0].registers.setNumber(7, 99);
+		cpu.rootThread.frameAtDepth(0).registers.setNumber(6, 0);
+		cpu.rootThread.frameAtDepth(0).registers.setNumber(7, 99);
 		let pc = cpu.readFramePc(0), edges = 0;
 		if (mappedFetch) {
 			pc = IO_GX_GPU_GP0;
@@ -227,11 +227,11 @@ test('a device edge during instruction fetch or observation is accepted at the n
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded);
 		assert.equal(edges, 1);
-		assert.equal(cpu.activeThread.frames.length, 2);
+		assert.equal(cpu.activeThread.frameDepth, 2);
 		assert.equal(cpu.readCauseWord(), CPU_CAUSE_IRQ);
 		assert.equal(cpu.readEpcWord(), pc + INSTRUCTION_BYTES);
-		assert.equal(cpu.activeThread.frames[0].registers.getNumber(6), 99);
-		assert.equal(cpu.activeThread.frames[1].registers.getNumber(0), 1);
+		assert.equal(cpu.activeThread.frameAtDepth(0).registers.getNumber(6), 99);
+		assert.equal(cpu.activeThread.frameAtDepth(1).registers.getNumber(0), 1);
 	}
 });
 
@@ -283,7 +283,7 @@ test('rewriting a cached instruction replaces its cycle charge in normal, observ
 		const pc = DYNAMIC_RAM_BASE + 0x4000;
 		const destination = pc + 0x100;
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-		cpu.rootThread.frames[0].registers.setNumber(1, destination);
+		cpu.rootThread.frameAtDepth(0).registers.setNumber(1, destination);
 		let observations = 0;
 		if (observed) cpu.setInstructionObserver({
 			points: [new Set([pc]), new Set(), new Set()],
@@ -293,7 +293,7 @@ test('rewriting a cached instruction replaces its cycle charge in normal, observ
 		for (const op of [OpCode.K1, OpCode.STORE_MEM_D, OpCode.K1]) {
 			writeInstruction(code, 0, op, 0, 1, MemoryAccessKind.U32LE);
 			memory.writeBytes(pc, code);
-			cpu.rootThread.frames[0].pc = pc;
+			cpu.rootThread.frameAtDepth(0).pc = pc;
 			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 			assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[op]);
 			assert.equal(cpu.readFramePc(0), pc + INSTRUCTION_BYTES);
@@ -321,7 +321,7 @@ test('partial code writes retain unrelated decoded starts and the page watch', (
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 		assert.equal(cpu.runUntilDepth(0, 10), RunResult.Yielded);
 		assert.equal(cpu.readFramePc(0), pc);
-		const page = cpu.rootThread.frames[0].decodedPage!;
+		const page = cpu.rootThread.frameAtDepth(0).decodedPage!;
 		assert.equal(page.refreshState[0], 0);
 		assert.equal(page.refreshState[8], 0);
 		writeInstruction(code, 0, OpCode.K0, 0, 0, 0);
@@ -355,7 +355,7 @@ test('the fourth word of a cross-page WIDE fusion invalidates its head', () => {
 		const pc = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - 2 * INSTRUCTION_BYTES;
 		memory.writeBytes(pc, code);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-		const frame = cpu.rootThread.frames[0];
+		const frame = cpu.rootThread.frameAtDepth(0);
 		frame.registers.setNumber(0, 2);
 		frame.registers.setNumber(1, 3);
 		frame.registers.setNumber(2, 1);
@@ -401,7 +401,7 @@ test('writable code watches belong to the physical cartridge socket', () => {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, system.symbols.functionAddresses[0], CART_RAM_BASE);
 			assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded);
 			assert.equal(cpu.readFrameRegister(0, 0), 1);
-			pages.push(cpu.rootThread.frames[0].decodedPage!);
+			pages.push(cpu.rootThread.frameAtDepth(0).decodedPage!);
 		}
 		writeInstruction(code, 0, OpCode.K0, 0, 0, 0);
 		memory.cartridgeController.writeU8(CART_RAM_BASE + 1, code[1], mappedBusSignalsForCartridgeSlot(1));
@@ -451,14 +451,14 @@ test('closure call and return preserve grants, depth, register bases and call-si
 			}
 		}
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
-		cpu.rootThread.frames[0].registers.setNumber(2, 99);
+		cpu.rootThread.frameAtDepth(0).registers.setNumber(2, 99);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 		const callPc = cpu.readFramePc(0);
-		const closure = cpu.rootThread.frames[0].registers.getClosure(0);
+		const closure = cpu.rootThread.frameAtDepth(0).registers.getClosure(0);
 		if (edgeKind === 3) {
 			closure.functionAddress = CART_ROM_BASE;
 			assert.equal(cpu.runUntilDepth(0, 3), RunResult.Halted);
-			assert.equal(cpu.activeThread.frames.length, 1);
+			assert.equal(cpu.activeThread.frameDepth, 1);
 			assert.equal(cpu.readFrameRegister(0, 2), 99);
 			continue;
 		}
@@ -471,7 +471,7 @@ test('closure call and return preserve grants, depth, register bases and call-si
 			assert.equal(cpu.runUntilDepth(0, 3), RunResult.Halted);
 			assert.equal(cpu.instructionBudgetRemaining, 1);
 			assert.equal(cpu.readFrameRegister(0, 2), 99);
-			if (edgeKind === 4) assert.equal(cpu.activeThread.frames[1].registers.getTag(0), ValueTag.Nil);
+			if (edgeKind === 4) assert.equal(cpu.activeThread.frameAtDepth(1).registers.getTag(0), ValueTag.Nil);
 			continue;
 		}
 		if (edgeKind === 2) cpu.setInstructionObserver({ points: [new Set([callPc]), new Set(), new Set()],
@@ -481,14 +481,14 @@ test('closure call and return preserve grants, depth, register bases and call-si
 		assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
 		if (edgeKind !== 0) {
 			assert.equal(edges, 1);
-			assert.equal(cpu.activeThread.frames.length, 3);
+			assert.equal(cpu.activeThread.frameDepth, 3);
 			assert.equal(cpu.readCauseWord(), CPU_CAUSE_IRQ);
 			assert.equal(cpu.readEpcWord(), calleePc);
-			assert.equal(cpu.activeThread.frames[1].registers.getTag(0), ValueTag.Nil);
-			assert.equal(cpu.activeThread.frames[2].registers.getNumber(0), 1);
+			assert.equal(cpu.activeThread.frameAtDepth(1).registers.getTag(0), ValueTag.Nil);
+			assert.equal(cpu.activeThread.frameAtDepth(2).registers.getNumber(0), 1);
 			continue;
 		}
-		assert.equal(cpu.activeThread.frames.length, 2);
+		assert.equal(cpu.activeThread.frameDepth, 2);
 		assert.equal(cpu.readFramePc(1), calleePc + INSTRUCTION_BYTES);
 		assert.equal(cpu.runUntilDepth(1, 20), RunResult.Halted);
 		assert.equal(cpu.instructionBudgetRemaining, 18);
@@ -527,7 +527,7 @@ test('numeric lookahead cannot take a successor fetch fault before current effec
 						memory.writeBytes(currentPc, instructions);
 						const functionAddress = image.symbols.functionAddresses[0];
 						cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, functionAddress, currentPc);
-						const registers = cpu.rootThread.frames[0].registers;
+						const registers = cpu.rootThread.frameAtDepth(0).registers;
 						registers.setNumber(0, 3);
 						registers.setNumber(1, 1);
 						let observations = 0;
@@ -649,7 +649,7 @@ test('cached sequential, wide, skip and fused dispatch keep PC as a wrapping wor
 			for (const skip of [false, true]) {
 				const { cpu } = createTestSystemCpu(returnImage());
 				if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
-				const frame = cpu.rootThread.frames[0];
+				const frame = cpu.rootThread.frameAtDepth(0);
 				const page = createDecodedInstructionPage(true, null, 0);
 				page.refreshState.fill(0);
 				frame.pc = skip ? 0xfffffff8 : 0xfffffffc;
@@ -668,7 +668,7 @@ test('cached sequential, wide, skip and fused dispatch keep PC as a wrapping wor
 		}
 	}
 	const { cpu } = createTestSystemCpu(returnImage());
-	const frame = cpu.rootThread.frames[0];
+	const frame = cpu.rootThread.frameAtDepth(0);
 	const page = createDecodedInstructionPage(true, null, 0);
 	page.refreshState.fill(0);
 	frame.pc = 0xfffffff8;

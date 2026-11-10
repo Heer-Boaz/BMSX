@@ -104,6 +104,18 @@ test('game-context Continue retires at the authoring hold before another instruc
 	assert.equal(f.execution.executionBlocked(), true);
 });
 
+test('retiring a suppressed activation releases instrumentation even while its frame node is retained', t => {
+	const f = fixture(t); f.stopped();
+	const thread = f.cpu.activeThread, retired = thread.currentFrame!, depth = thread.frameDepth;
+	resumeRuntimeDebugger(f.state, RuntimeDebuggerResumeMode.Continue);
+	f.state.breakpoints.set(RESOURCE, []);
+	assert.notEqual(f.state.source.domainMask, 0, 'the stopped instruction owns resume suppression');
+	f.cpu.abortCompletionCall(depth - 1);
+	assert.equal(thread.acquireFrame(), retired, 'the retired activation remains a reusable node');
+	f.state.source.didExecute();
+	assert.equal(f.state.source.domainMask, 0, 'only active frames retain the instrumentation borrow');
+});
+
 test('workbench execution remains admitted intent while a mandatory host hold blocks its physical target', async t => {
 	const f = fixture(t); f.stopped(); f.state.breakpoints.set(RESOURCE, [3]);
 	const operation = f.owner.resume('continue', 'workbench');

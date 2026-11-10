@@ -23,7 +23,7 @@ test('helper continuations are predeclared entries and read their own current Va
 	writeInstruction(text, 4, OpCode.MOV, 5, 0, 0);
 	writeInstruction(text, 5, OpCode.JMP, 0, 63, 58, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 6, maxStack: 9 }] });
-	const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), frame = cpu.rootThread.frames[0];
+	const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), frame = cpu.rootThread.frameAtDepth(0);
 	frame.registers.setNumber(1, DYNAMIC_RAM_BASE); cpu.runUntilDepth(0, 1024);
 	const page = frame.decodedPage!, first = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const entries = [0, 2, 4].map(word => page.compiledBlocks!.entries[first + word]!);
@@ -63,7 +63,7 @@ test('resident Values cross internal string branches and publish only when leavi
 	writeInstruction(text, 8, OpCode.MOV, 5, 4, 0);
 	writeInstruction(text, 9, OpCode.JMP, 0, 63, 54, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 10, maxStack: 11 }], constants: [1] });
-	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), frame = cpu.rootThread.frames[0];
+	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), frame = cpu.rootThread.frameAtDepth(0);
 	const alpha = cpu.stringPool.intern('alpha'), omega = cpu.stringPool.intern('omega');
 	frame.registers.setStringId(0, alpha); frame.registers.setStringId(1, omega); frame.registers.setNumber(4, 0);
 	frame.registers.setEncoded(8, ValueTag.False, 37, null); cpu.runUntilDepth(0, 1024);
@@ -105,24 +105,24 @@ test('linked physical-page segments retain complete charges and disconnect rewri
 	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
-		const frame = cpu.rootThread.frames[0];
+		const frame = cpu.rootThread.frameAtDepth(0);
 		frame.registers.setNumber(0, 2); frame.registers.setNumber(1, 1); frame.registers.setNumber(8, 0);
 	}
 	for (const flag of [true, false]) {
 		for (const { cpu } of machines) {
-			const frame = cpu.rootThread.frames[0]; frame.registers.setBool(2, flag);
+			const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setBool(2, flag);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 		}
 		assert.equal(runCpuParity(machines[0].cpu, machines[1].cpu, 2048), RunResult.Yielded);
 	}
-	const page = machines[0].cpu.rootThread.frames[0].decodedPage!, cache = page.compiledBlocks!;
+	const page = machines[0].cpu.rootThread.frameAtDepth(0).decodedPage!, cache = page.compiledBlocks!;
 	const root = cache.entries[0]!, taken = root.exits.find(exit => exit.nextPc === DYNAMIC_RAM_BASE + 4 * INSTRUCTION_BYTES)!;
 	assert.ok(cache.entries[2]?.region === root.region && cache.entries[4]?.region === root.region,
 		'both conditional targets are local entries of one generated function');
 	assert.equal(root.terminal.linkedBlock, null); assert.equal(taken.linkedBlock, null);
 	assert.equal(taken.exit, CompiledBlockExit.Continue);
 	for (const flag of [false, true]) for (const start of [0, 2, 4, 6]) for (let grant = 2; grant <= 64; ++grant) {
-		const frame = machines[0].cpu.rootThread.frames[0], registers = new ValueSlots(12);
+		const frame = machines[0].cpu.rootThread.frameAtDepth(0), registers = new ValueSlots(12);
 		for (let index = 0; index < 12; ++index) registers.setNumber(index, 0);
 		registers.setNumber(0, 2); registers.setNumber(1, 1); registers.setBool(2, flag);
 		const expected = new Array<number | boolean>(12).fill(0); expected[0] = 2; expected[1] = 1; expected[2] = flag;
@@ -155,7 +155,7 @@ test('linked physical-page segments retain complete charges and disconnect rewri
 
 	for (const flag of [true, false, 0, NaN]) for (let grant = 1; grant <= 96; ++grant) {
 		for (const { cpu } of machines) {
-			const frame = cpu.rootThread.frames[0]; frame.registers.set(2, flag); frame.top = 0;
+			const frame = cpu.rootThread.frameAtDepth(0); frame.registers.set(2, flag); frame.top = 0;
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 		}
 		assert.equal(runCpuParity(machines[0].cpu, machines[1].cpu, grant), RunResult.Yielded);
@@ -167,7 +167,7 @@ test('linked physical-page segments retain complete charges and disconnect rewri
 	assert.ok(cache.entries[0] === null && cache.entries[2] === null && cache.entries[4] === null,
 		'a source write retires the function containing its internal branch targets');
 	for (const { cpu } of machines) {
-		cpu.rootThread.frames[0].registers.setBool(2, true);
+		cpu.rootThread.frameAtDepth(0).registers.setBool(2, true);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	runCpuParity(machines[0].cpu, machines[1].cpu, 2048);
@@ -194,12 +194,12 @@ test('cross-page chains retain successor page ownership and disconnect rewritten
 	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
-		const frame = cpu.rootThread.frames[0];
+		const frame = cpu.rootThread.frameAtDepth(0);
 		frame.registers.setNumber(0, 2); frame.registers.setNumber(1, 1); frame.registers.setNumber(8, 0);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	runCpuParity(machines[0].cpu, machines[1].cpu, 2048);
-	const lookup = machines[0].cpu.rootThread.frames[0].executionImage.compiledCodeLookup!;
+	const lookup = machines[0].cpu.rootThread.frameAtDepth(0).executionImage.compiledCodeLookup!;
 	const firstPage = lookup.find(DYNAMIC_RAM_BASE, 0)!, secondPage = lookup.find(DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE, 0)!;
 	const root = firstPage.compiledBlocks!.entries[0]!, target = secondPage.compiledBlocks!.entries[0]!;
 	assert.ok(root); assert.ok(target);
@@ -236,11 +236,11 @@ for (const inRam of [false, true]) test(`short grants do not promote sequential 
 	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		if (inRam) memory.writeBytes(start, text);
-		const frame = cpu.rootThread.frames[0]; frame.registers.setNumber(0, 0); frame.registers.setNumber(1, 1);
+		const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setNumber(0, 0); frame.registers.setNumber(1, 1);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);
 	}
 	runCpuParity(machines[0].cpu, machines[1].cpu, 4096);
-	const lookup = machines[0].cpu.rootThread.frames[0].executionImage.compiledCodeLookup!;
+	const lookup = machines[0].cpu.rootThread.frameAtDepth(0).executionImage.compiledCodeLookup!;
 	const page = lookup.find(start, 0)!, cache = page.compiledBlocks!;
 	const entry = (start & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	assert.ok(cache.entries[entry]); assert.equal(cache.entries[entry]!.sourceWords, 13);
@@ -272,21 +272,21 @@ test('linked counted stores need only one cycle, then stop or block before the f
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
 	const pc = image.image.functions[0].codeAddress, address = DYNAMIC_RAM_BASE + 0x4000;
 	for (const { cpu } of [js, ref]) {
-		const r = cpu.rootThread.frames[0].registers; r.setNumber(0, address);
+		const r = cpu.rootThread.frameAtDepth(0).registers; r.setNumber(0, address);
 		for (let i = 0; i < 5; ++i) r.setNumber(8 + i, 73 + i);
 		cpu.runUntilDepth(0, 1024);
 	}
-	const cache = js.cpu.rootThread.frames[0].decodedPage!.compiledBlocks!, first = cache.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!;
+	const cache = js.cpu.rootThread.frameAtDepth(0).decodedPage!.compiledBlocks!, first = cache.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!;
 	const store = cache.entries[((pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES) + 4]!;
 	assert.ok(store && store.region === first.region); assert.equal(store.terminal.cycles, 4);
 	assert.ok(cache.entries[store.firstWord + 2]?.region === first.region);
 	for (const grant of [2, 3, 6, 7, 8, 9]) {
 		for (const { cpu } of [js, ref]) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-			const frame = cpu.rootThread.frames[0]; frame.top = 0; frame.registers.setNumber(7, 99);
+			const frame = cpu.rootThread.frameAtDepth(0); frame.top = 0; frame.registers.setNumber(7, 99);
 		}
 		assert.equal(runCpuParity(js.cpu, ref.cpu, grant), RunResult.Yielded);
-		for (const { cpu } of [js, ref]) assert.equal(cpu.rootThread.frames[0].registers.getNumber(7), grant < 7 ? 99 : 1);
+		for (const { cpu } of [js, ref]) assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(7), grant < 7 ? 99 : 1);
 		assert.deepEqual(js.cpu.captureRuntimeState(), ref.cpu.captureRuntimeState());
 	}
 	const endpoints = [];
@@ -296,7 +296,7 @@ test('linked counted stores need only one cycle, then stop or block before the f
 			memory.mapIoWrite(IO_BASE + 0x5000 + i * 4, port, (state, _address, word) => state.writes.push(word));
 			memory.mapIoWriteReady<typeof port>(IO_BASE + 0x5000 + i * 4, state => state.ready);
 		}
-		const frame = cpu.rootThread.frames[0]; frame.registers.setNumber(0, IO_BASE + 0x5000); frame.registers.setNumber(7, 99);
+		const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setNumber(0, IO_BASE + 0x5000); frame.registers.setNumber(7, 99);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 		assert.equal(cpu.runUntilDepth(0, 3), RunResult.Halted); assert.equal(cpu.instructionBudgetRemaining, -1);
 		assert.equal(frame.pc, pc + 4 * INSTRUCTION_BYTES); assert.equal(cpu.stalledMemoryWriteAddress(), IO_BASE + 0x5000); assert.deepEqual(port.writes, []);
@@ -323,17 +323,17 @@ test('linked memory side exits retain predecessor state before MMIO and synchron
 	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text); memory.writeMappedU32LE(DYNAMIC_RAM_BASE + 0x800, 5);
-		const frame = cpu.rootThread.frames[0];
+		const frame = cpu.rootThread.frameAtDepth(0);
 		frame.registers.setNumber(0, DYNAMIC_RAM_BASE + 0x800); frame.registers.setNumber(1, 1);
 		frame.registers.setNumber(2, 0); frame.registers.setNumber(9, 0);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	runCpuParity(machines[0].cpu, machines[1].cpu, 1200);
-	const page = machines[0].cpu.rootThread.frames[0].decodedPage!, root = page.compiledBlocks!.entries[0]!;
+	const page = machines[0].cpu.rootThread.frameAtDepth(0).decodedPage!, root = page.compiledBlocks!.entries[0]!;
 	assert.ok(page.compiledBlocks!.entries[4]?.region === root.region, 'the memory successor remains inside the source region');
 	for (const address of [IO_SYS_BUS_FAULT_CODE, 0x01000000]) {
 		for (const { cpu } of machines) {
-			const frame = cpu.rootThread.frames[0]; frame.registers.setNumber(0, address); frame.top = 0;
+			const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setNumber(0, address); frame.top = 0;
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 		}
 		runCpuParity(machines[0].cpu, machines[1].cpu, 6);
@@ -352,7 +352,7 @@ test('an external entry into a WIDE body shares its sequential join without dupl
 	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
-		const frame = cpu.rootThread.frames[0];
+		const frame = cpu.rootThread.frameAtDepth(0);
 		frame.registers.setNumber(0, 0); frame.registers.setNumber(1, 1); frame.registers.setNumber(2, 0);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
@@ -364,7 +364,7 @@ test('an external entry into a WIDE body shares its sequential join without dupl
 		runCpuParity(machines[0].cpu, machines[1].cpu, 128);
 		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 	}
-	const entries = machines[0].cpu.rootThread.frames[0].decodedPage!.compiledBlocks!.entries;
+	const entries = machines[0].cpu.rootThread.frameAtDepth(0).decodedPage!.compiledBlocks!.entries;
 	assert.ok(entries[0] && entries[1] && entries[2] && entries[16]);
 	assert.ok(entries[0].region === entries[1].region && entries[1].region === entries[2].region);
 	assert.deepEqual([entries[0].sourceWords, entries[1].sourceWords, entries[2].sourceWords], [2, 1, 2]);
@@ -393,7 +393,7 @@ test('more than six live-through raw Values remain local across every internal e
 		else writeInstruction(text, word++, OpCode.JMP, 0, 63, 34, 255); // -30 words
 	}
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: word, maxStack: 25 }] });
-	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), frame = cpu.rootThread.frames[0];
+	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), frame = cpu.rootThread.frameAtDepth(0);
 	cpu.runUntilDepth(0, 1024);
 	const page = frame.decodedPage!, firstWord = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const table = cpu.createTable(), string = cpu.stringPool.intern('retained');

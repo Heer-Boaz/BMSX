@@ -88,7 +88,7 @@ export class BiosTerminal implements RuntimeDebuggerControlPlan {
 		}
 		// CONT can return into BIOS/IRQ code, not just a user-mode cart. Hold
 		// the actual NMI caller before another instruction or maskable IRQ.
-		if (this.phase === TerminalPhase.Monitor && this.returnThread !== undefined && this.returnThread.frames.length <= this.returnDepth) {
+		if (this.phase === TerminalPhase.Monitor && this.returnThread !== undefined && this.returnThread.frameDepth <= this.returnDepth) {
 			this.phase = TerminalPhase.Returned;
 			return true;
 		}

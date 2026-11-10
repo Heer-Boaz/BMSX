@@ -64,7 +64,7 @@ void signedRkBoundaries() {
 			image.functions = {{.firstWord = 0, .wordCount = static_cast<u32>(wide ? 3 : 2), .maxStack = static_cast<u32>(limit)}};
 			for (int i = 0; i < limit; ++i) image.constants.emplace_back(i + 0.25);
 			CpuMachine machine(image, instrumented);
-			Value* registers = machine.cpu.activeThread()->frames[0]->registers;
+			Value* registers = machine.cpu.activeThread()->frameAtDepth(0)->registers;
 			for (int i = 0; i < limit; ++i) registers[i] = valueNumber(-(i + 0.75));
 			const auto operand = [](int selector) { return selector < 0 ? (-1 - selector) + 0.25 : -(selector + 0.75); };
 			require(machine.cpu.runUntilDepth(0, 1) == RunResult::Yielded, "an RK instruction retains its nominal charge");
@@ -97,7 +97,7 @@ void rawFieldsAndInlineCaches() {
 		CpuMachine machine(image, instrumented);
 		auto& cpu = machine.cpu;
 		Table* table = cpu.createTable();
-		Value* registers = cpu.activeThread()->frames[0]->registers;
+		Value* registers = cpu.activeThread()->frameAtDepth(0)->registers;
 		registers[1] = valueTable(table);
 		registers[32767] = valueNumber(91.5);
 		const u32 pc = cpu.readFramePc(0);
@@ -120,8 +120,8 @@ void rewrittenPayloadVariants() {
 		image.constants = {std::string("field"), 73.5};
 		CpuMachine machine(image, instrumented);
 		auto& cpu = machine.cpu;
-		cpu.activeThread()->frames[0]->registers[1] = valueTable(cpu.createTable());
-		cpu.activeThread()->frames[0]->registers[2] = valueNumber(81.5);
+		cpu.activeThread()->frameAtDepth(0)->registers[1] = valueTable(cpu.createTable());
+		cpu.activeThread()->frameAtDepth(0)->registers[2] = valueNumber(81.5);
 		std::array<u8, 2u * INSTRUCTION_BYTES> code{};
 		for (const OpCode op : {OpCode::KSMI, OpCode::SETFIELD, OpCode::JMP, OpCode::GETFIELD, OpCode::LOADK, OpCode::KSMI}) {
 			const u32 raw = op == OpCode::KSMI ? static_cast<u32>(MIN_SIGNED_BX) & MAX_EXT_BX : op == OpCode::JMP ? 3u : 1u;
@@ -150,7 +150,7 @@ void wideDisplacementsKeepTheirOwnOperandLanes() {
 		CpuMachine machine(image, instrumented);
 		const u32 address = DYNAMIC_RAM_BASE + 0x1000u;
 		machine.memory.writeMappedU32LE(address, 0x12345678u);
-		machine.cpu.activeThread()->frames[0]->registers[4095] = valueNumber(address - (255u << 2u));
+		machine.cpu.activeThread()->frameAtDepth(0)->registers[4095] = valueNumber(address - (255u << 2u));
 		require(machine.cpu.runUntilDepth(0, 2) == RunResult::Yielded && machine.cpu.instructionBudgetRemaining == 0, "WIDE displaced load retains its scalar charge");
 		require(machine.cpu.readFrameRegister(0, 4095) == valueNumber(0x12345678u), "EXT is displacement, not ABC register extension; WIDE A/B retain all12bits");
 	}
@@ -165,7 +165,7 @@ void wideDisplacedStoreCountRemainsUnsigned() {
 		image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 4096}};
 		CpuMachine machine(image, instrumented);
 		const u32 address = DYNAMIC_RAM_BASE + 0x4000u;
-		Value* registers = machine.cpu.activeThread()->frames[0]->registers;
+		Value* registers = machine.cpu.activeThread()->frameAtDepth(0)->registers;
 		registers[0] = valueNumber(0x10203040u);
 		registers[4094] = valueNumber(0xa1b2c3d4u);
 		registers[4095] = valueNumber(address - (255u << 2u));

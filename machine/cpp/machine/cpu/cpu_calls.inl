@@ -37,41 +37,33 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int b) {
 		ProtectedCallContinuation& continuation = m_activeThread->protectedCallContinuations.get(continuationIndex);
 		if (continuation.target == &frame) {
 			finishProtectedCall(continuationIndex, frame, a, count);
-			auto finished = std::move(m_activeThread->frames.back());
-			m_activeThread->frames.pop_back();
-			m_activeThread->stackTop = finished->varargBase;
-			releaseFrame(std::move(finished));
+			m_activeThread->stackTop = frame.varargBase;
+			m_activeThread->leaveFrame();
 			return false;
 		}
 	}
 	if (frame.returnToCompletionLatch) {
 		m_completionValues.assign(frame.registers + a, frame.registers + a + count);
-		auto finished = std::move(m_activeThread->frames.back());
-		m_activeThread->frames.pop_back();
-		m_activeThread->stackTop = finished->varargBase;
-		releaseFrame(std::move(finished));
+		m_activeThread->stackTop = frame.varargBase;
+		m_activeThread->leaveFrame();
 		return false;
 	}
-	if (m_activeThread->frames.size() == 1 && m_activeThread->resumer != nullptr) {
+	if (m_activeThread->frameDepth == 1 && m_activeThread->resumer != nullptr) {
 		Thread* thread = m_activeThread;
 		thread->status = ThreadStatus::Dead;
 		returnToResumer(frame.registers + a, count, true);
-		auto finished = std::move(thread->frames.back());
-		thread->frames.pop_back();
 		thread->stackTop = 0;
-		releaseFrame(std::move(finished));
+		thread->leaveFrame();
 		return false;
 	}
-	if (m_activeThread->frames.size() == 1) {
+	if (m_activeThread->frameDepth == 1) {
 		m_completionValues.assign(frame.registers + a, frame.registers + a + count);
 	} else {
-		CallFrame& caller = *m_activeThread->frames[m_activeThread->frames.size() - 2];
+		CallFrame& caller = *frame.previous;
 		writeReturnValuesFromRegisters(caller, frame.returnBase, frame.returnCount, frame, a, count);
 	}
-	auto finished = std::move(m_activeThread->frames.back());
-	m_activeThread->frames.pop_back();
-	m_activeThread->stackTop = finished->varargBase;
-	releaseFrame(std::move(finished));
+	m_activeThread->stackTop = frame.varargBase;
+	m_activeThread->leaveFrame();
 	return true;
 }
 

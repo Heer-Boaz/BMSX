@@ -51,7 +51,7 @@ test('compact and padded ROM calls use admitted record spans with identical cycl
 		romBytes.set(image.romBytes);
 		romBytes.set(image.romBytes.subarray(sourceRecord, sourceRecord + BLUA32_FUNCTION_RECORD_SIZE), record);
 		const { cpu, memory } = createTestSystemCpu({ romBytes });
-		cpu.rootThread.frames[0].registers.setNumber(1, record);
+		cpu.rootThread.frameAtDepth(0).registers.setNumber(1, record);
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		const readWord = memory.readMappedBusU32LE.bind(memory);
 		let scalarRecordReads = 0;

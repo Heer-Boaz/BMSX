@@ -20,7 +20,7 @@ test('both open and closed upvalue paths define output-only region bindings', ()
 	writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 22 }] });
 	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
-	const frame = cpu.rootThread.frames[0], r = frame.registers;
+	const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
 	const upvalue: Upvalue = { hashId: 100, open: true, index: 8, frame,
 		valueTag: ValueTag.Nil, valueScalar: NaN, valueReference: null, nextOpen: null };
 	frame.closure = new Closure(frame.functionAddress, [upvalue], 0);
@@ -59,7 +59,7 @@ test('output locals become observable only after their definition, including hel
 	writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 22 }] });
 	const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
-	const frame = cpu.rootThread.frames[0];
+	const frame = cpu.rootThread.frameAtDepth(0);
 	frame.registers.setNumber(1, DYNAMIC_RAM_BASE);
 	cpu.runUntilDepth(0, 1024);
 	const page = frame.decodedPage!, first = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;

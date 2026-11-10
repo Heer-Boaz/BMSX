@@ -254,7 +254,7 @@ halt_until_irq`, 0));
 	const events: RuntimeDebuggerCompletionResult[] = [];
 	plans.pushCompletionBatch(thread, depth, [SYSTEM_EXECUTION_DOMAIN_ID], result => events.push(result));
 	let switched = false;
-	for (let grant = 0; grant < 10000 && thread.frames.length > depth; grant++) {
+	for (let grant = 0; grant < 10000 && thread.frameDepth > depth; grant++) {
 		cpu.runUntilDepth(depth, 1, thread);
 		plans.pruneCompletedCompletionBatches();
 		if (cpu.activeThread !== thread) {
@@ -265,6 +265,6 @@ halt_until_irq`, 0));
 		}
 	}
 	assert.equal(switched, true, 'test actually executed the retained child thread');
-	assert.equal(thread.frames.length, depth);
+	assert.equal(thread.frameDepth, depth);
 	assert.deepEqual(events, [{ status: 'completed' }]);
 });

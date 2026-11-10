@@ -189,7 +189,7 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 	ExecutionAddressSpace addresses(memory);
 	CPU cpu(memory, irq, addresses);
 	cpu.reset();
-	Value* registers = cpu.activeThread()->frames[0]->registers;
+	Value* registers = cpu.activeThread()->frameAtDepth(0)->registers;
 	registers[0] = valueNumber(1); registers[1] = valueNumber(3);
 	registers[2] = valueNumber(7); registers[3] = valueNumber(65535);
 	Table* retained = nullptr;
@@ -296,7 +296,7 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 	size_t nativeCodeBytes = 0;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	bool arithmeticReturn = false;
-	for (const auto& [key, page] : cpu.activeThread()->frames[0]->executionImage->decodedPages) {
+	for (const auto& [key, page] : cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages) {
 		if (!page.nativeBlocks) continue;
 		std::unordered_set<const NativeCodeRegion*> codeRegions;
 		for (const auto& block : page.nativeBlocks->entries) {

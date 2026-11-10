@@ -61,7 +61,7 @@ export class SourceDebugger {
 	}
 	public get stepping(): boolean { return this.mode !== RuntimeDebuggerResumeMode.Continue; }
 	public get canStepOut(): boolean {
-		return this.stop !== undefined && (this.stop.inlineDepth > 0 || this.stop.thread.frames.length > 1 || this.stop.thread.resumer !== null);
+		return this.stop !== undefined && (this.stop.inlineDepth > 0 || this.stop.thread.frameDepth > 1 || this.stop.thread.resumer !== null);
 	}
 	public get stepThreadFinished(): boolean {
 		return this.stepThread !== undefined && (this.stepThread.status === ThreadStatus.Dead || this.stepThread.status === ThreadStatus.Failed);
@@ -80,10 +80,10 @@ export class SourceDebugger {
 	/** Instrumented path only. Misses allocate nothing; a real hit owns one stop record. */
 	public shouldStop(domain: ExecutionDomainId, pc: number, honorStops = true): boolean {
 		if (this.stop !== undefined) return true;
-		const thread = this.cpu.activeThread, depth = thread.frames.length;
+		const thread = this.cpu.activeThread, depth = thread.frameDepth;
 		for (let index = this.suppression.length - 1; index >= 0; index--) {
 			const entry = this.suppression[index];
-			if (entry.thread !== thread || entry.depth !== depth || entry.frame !== thread.frames[depth - 1]) continue;
+			if (entry.thread !== thread || entry.depth !== depth || entry.frame !== thread.currentFrame) continue;
 			this.suppression.copyWithin(index, index + 1); this.suppression.length--;
 			this.changed(); return false;
 		}
@@ -136,8 +136,8 @@ export class SourceDebugger {
 		return true;
 	}
 	private suppressCurrentInstruction(): void {
-		const thread = this.cpu.activeThread, depth = thread.frames.length;
-		this.suppression.push({ thread, depth, frame: thread.frames[depth - 1] });
+		const thread = this.cpu.activeThread, depth = thread.frameDepth;
+		this.suppression.push({ thread, depth, frame: thread.currentFrame! });
 	}
 	public interrupt(): void {
 		this.mode = RuntimeDebuggerResumeMode.Continue; this.stepThread = undefined; this.changed();
@@ -175,7 +175,7 @@ export class SourceDebugger {
 		let changed = false;
 		for (let index = this.suppression.length - 1; index >= 0; index--) {
 			const entry = this.suppression[index];
-			if (entry.thread.frames[entry.depth - 1] === entry.frame) continue;
+			if (entry.thread.frameDepth >= entry.depth && entry.thread.frameAtDepth(entry.depth - 1) === entry.frame) continue;
 			this.suppression.copyWithin(index, index + 1); this.suppression.length--; changed = true;
 		}
 		if (changed) this.changed();

@@ -146,7 +146,7 @@ export class CpuExecutionState {
 		const scheduler = machine.scheduler;
 		const endCycle = scheduler.nowCycles + cycleBudget;
 		runDueRuntimeTimers(runtime);
-		while (targetThread.frames.length > targetDepth) {
+		while (targetThread.frameDepth > targetDepth) {
 			if (scheduler.nowCycles >= endCycle) return CpuSuspendedRunResult.Yielded;
 			if (machine.gxGpu.backendServiceBlocksMachine()
 				|| machine.systemController.cpuHeld()) {
@@ -189,7 +189,7 @@ export class CpuExecutionState {
 				}
 				runDueRuntimeTimers(runtime);
 			}
-			if (targetThread.frames.length <= targetDepth) {
+			if (targetThread.frameDepth <= targetDepth) {
 				return CpuSuspendedRunResult.Completed;
 			}
 			if (result === RunResult.ExecutionStopped) {

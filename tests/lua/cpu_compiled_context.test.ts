@@ -27,7 +27,7 @@ test('compiled globals use the live banks across growth, keep namespaces distinc
 		globalNames: ['shared', 'copied', 'numeric'], systemGlobalNames: ['shared', 'copied', 'numeric'] });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	runCpuParity(js, ref, 1100);
-	const frame = js.rootThread.frames[0], page = frame.decodedPage!;
+	const frame = js.rootThread.frameAtDepth(0), page = frame.decodedPage!;
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const block = page.compiledBlocks!.entries[entry]!;
 	assert.equal(block.sourceWords, 8);
@@ -36,7 +36,7 @@ test('compiled globals use the live banks across growth, keep namespaces distinc
 	}
 	for (const value of [null, false, true, -0, NaN, Infinity, 'text'] as const) {
 		for (const cpu of [js, ref]) {
-			const r = cpu.rootThread.frames[0].registers;
+			const r = cpu.rootThread.frameAtDepth(0).registers;
 			r.set(12, value === 'text' ? valueString(cpu.stringPool.intern(value)) : value);
 			cpu.setGlobalByKey(cpu.stringPool.intern('shared'), r.getTag(12), r.getScalar(12), r.getReference(12));
 			cpu.setSystemGlobalByKey(cpu.stringPool.intern('shared'), ValueTag.Number, 73, null);
@@ -48,7 +48,7 @@ test('compiled globals use the live banks across growth, keep namespaces distinc
 		assert.equal(frame.top, 3, 'global stores do not extend top to the source register');
 	}
 	for (const cpu of [js, ref]) {
-		const r = cpu.rootThread.frames[0].registers;
+		const r = cpu.rootThread.frameAtDepth(0).registers;
 		r.setTable(12, cpu.createTable(0, 0));
 		cpu.setGlobalByKey(cpu.stringPool.intern('shared'), r.getTag(12), r.getScalar(12), r.getReference(12));
 	}
@@ -73,14 +73,14 @@ for (const alias of [false, true]) test(`compiled LOADNIL and LOADKR preserve ki
 	const constants = [null, false, true, 'literal', -0, NaN, Infinity, 11];
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 7, maxStack: 16 }], constants });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
-	for (const cpu of [js, ref]) { cpu.rootThread.frames[0].registers.setNumber(2, 0); cpu.runUntilDepth(0, 700); }
-	const frame = js.rootThread.frames[0], page = frame.decodedPage!;
+	for (const cpu of [js, ref]) { cpu.rootThread.frameAtDepth(0).registers.setNumber(2, 0); cpu.runUntilDepth(0, 700); }
+	const frame = js.rootThread.frameAtDepth(0), page = frame.decodedPage!;
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	assert.equal(page.compiledBlocks!.entries[entry]!.sourceWords, 7);
 	for (const input of [0, 1.9, 2.9, 3, 4, 5, 6, 7, 4294967296, NaN, Infinity, -Infinity, -0]) {
 		for (const cpu of [js, ref]) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
-			cpu.rootThread.frames[0].registers.setNumber(2, input);
+			cpu.rootThread.frameAtDepth(0).registers.setNumber(2, input);
 		}
 		runCpuParity(js, ref, 7);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
@@ -101,14 +101,14 @@ test('a hot WIDE LOADKR fault publishes its prefix before trapping without writi
 		writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
 		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 514 }], constants: [11] });
 		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
-		for (const cpu of [js, ref]) { cpu.rootThread.frames[0].registers.setNumber(513, 0); cpu.runUntilDepth(0, 300); }
-		const frame = js.rootThread.frames[0], page = frame.decodedPage!;
+		for (const cpu of [js, ref]) { cpu.rootThread.frameAtDepth(0).registers.setNumber(513, 0); cpu.runUntilDepth(0, 300); }
+		const frame = js.rootThread.frameAtDepth(0), page = frame.decodedPage!;
 		const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 		assert.equal(page.compiledBlocks!.entries[entry]!.exits[0].exit, CompiledBlockExit.InvalidConstant);
 		for (const cpu of [js, ref]) {
-			cpu.rootThread.frames[0].registers.setNumber(256, 73);
-			cpu.rootThread.frames[0].registers.setNumber(513, bad);
-			cpu.rootThread.frames[0].top = 0;
+			cpu.rootThread.frameAtDepth(0).registers.setNumber(256, 73);
+			cpu.rootThread.frameAtDepth(0).registers.setNumber(513, bad);
+			cpu.rootThread.frameAtDepth(0).top = 0;
 		}
 		runCpuParity(js, ref, 3);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
@@ -133,18 +133,18 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 9, maxStack: 16 }] });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
-		const frame = cpu.rootThread.frames[0];
+		const frame = cpu.rootThread.frameAtDepth(0);
 		const open: Upvalue = { hashId: 100, open: true, index: 0, frame, valueTag: ValueTag.Nil, valueScalar: NaN, valueReference: null, nextOpen: null };
 		const closed: Upvalue = { hashId: 101, open: false, index: 0, frame: null, valueTag: ValueTag.Nil, valueScalar: NaN, valueReference: null, nextOpen: null };
 		frame.closure = new Closure(frame.functionAddress, [open, closed], 0);
 		cpu.runUntilDepth(0, 1100);
 	}
-	const frame = js.rootThread.frames[0], page = frame.decodedPage!;
+	const frame = js.rootThread.frameAtDepth(0), page = frame.decodedPage!;
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const region = page.compiledBlocks!.entries[entry]!.region;
 	assert.equal(region.entries[0].sourceWords, 9);
 	for (const value of [null, false, true, -0, NaN, 'upvalue'] as const) {
-		for (const cpu of [js, ref]) cpu.rootThread.frames[0].registers.set(12,
+		for (const cpu of [js, ref]) cpu.rootThread.frameAtDepth(0).registers.set(12,
 			value === 'upvalue' ? valueString(cpu.stringPool.intern(value)) : value);
 		runCpuParity(js, ref, 11);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
@@ -174,10 +174,10 @@ test('an empty compiled open VARARG changes top without touching or growing the 
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 4 }] });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
-		cpu.rootThread.frames[0].registers.setNumber(0, 73); cpu.runUntilDepth(0, 600);
+		cpu.rootThread.frameAtDepth(0).registers.setNumber(0, 73); cpu.runUntilDepth(0, 600);
 	}
 	assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
-	const frame = js.rootThread.frames[0];
+	const frame = js.rootThread.frameAtDepth(0);
 	assert.equal(frame.top, 31); assert.equal(frame.stackCapacity, 4); assert.equal(frame.registers.getNumber(0), 73);
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	assert.equal(frame.decodedPage!.compiledBlocks!.entries[entry]!.sourceWords, 2);
@@ -204,34 +204,34 @@ for (const fixed of [0, 5]) test(`hot VARARG handles exact top resets, nil paddi
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		cpu.runUntilDepth(0, 2);
-		cpu.rootThread.frames[0].top = 1;
+		cpu.rootThread.frameAtDepth(0).top = 1;
 		cpu.runUntilDepth(0, 9002);
 	}
-	const first = js.rootThread.frames[1], page = first.decodedPage!;
+	const first = js.rootThread.frameAtDepth(1), page = first.decodedPage!;
 	const entry = (image.image.functions[1].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const block = page.compiledBlocks!.entries[entry]!;
 	assert.ok(block.sourceWords >= 7, 'varargs and the following branch stay in generated code');
 	for (const count of [0, 2, 63]) {
 		for (const cpu of [js, ref]) {
-			const closure = cpu.rootThread.frames[1].closure;
+			const closure = cpu.rootThread.frameAtDepth(1).closure;
 			cpu.writeFrameExecution(1, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[1], image.image.functions[1].codeAddress + 8 * INSTRUCTION_BYTES);
 			assert.equal(cpu.runUntilDepth(1, 2), RunResult.Halted);
-			const root = cpu.rootThread.frames[0];
+			const root = cpu.rootThread.frameAtDepth(0);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress + 3 * INSTRUCTION_BYTES);
 			root.registers.setClosure(0, closure);
 			for (let i = 0; i < count; ++i) root.registers.set(i + 1, i === 0 ? false : i === 1 ? null : i);
 			root.top = count + 1;
 			assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded);
-			assert.equal(cpu.rootThread.frames[1].varargCount, count);
+			assert.equal(cpu.rootThread.frameAtDepth(1).varargCount, count);
 		}
 		runCpuParity(js, ref, 9);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState(), 'a full hot-block grant also covers the growing exit');
-		if (count === 63) assert.ok(js.rootThread.frames[1].stackCapacity > 16);
+		if (count === 63) assert.ok(js.rootThread.frameAtDepth(1).stackCapacity > 16);
 		for (const grant of [0, 1, 1, 2, 1, 1, 2, 1]) {
 			runCpuParity(js, ref, grant);
 			assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 		}
-		assert.equal(js.rootThread.frames[1].top, count, 'the second open VARARG replaces, rather than maximizes, top');
+		assert.equal(js.rootThread.frameAtDepth(1).top, count, 'the second open VARARG replaces, rather than maximizes, top');
 		assert.equal(page.compiledBlocks!.entries[entry]!.region.entries[0].sourceWords, 7,
 			'the complete generated loop survives frame relocation and added helper-resume entries');
 	}

@@ -29,7 +29,7 @@ function comparisonImage(op: OpCode, expected: boolean, left = 0, right = 1, con
 }
 
 function values(cpu: CPU): Value[] {
-	const closure = cpu.rootThread.frames[0].closure;
+	const closure = cpu.rootThread.frameAtDepth(0).closure;
 	return [null, false, true, 0, -0, 1, -1, 0.25, NaN, Infinity, -Infinity,
 		...['', 'a', 'a\0b', '\ue000', '\u{10000}', 'é'].map(text => StringValue.fromId(cpu.stringPool.intern(text))),
 		cpu.createTable(0, 0), cpu.createTable(0, 0), closure, cpu.rootThread, cpu.createThread(closure),
@@ -43,7 +43,7 @@ for (const op of [OpCode.EQ, OpCode.LT, OpCode.LE]) for (const expected of [fals
 		const inputs = machines.map(({ cpu }) => values(cpu));
 		const entry = image.image.functions[0].codeAddress;
 		runCpuParity(machines[0].cpu, machines[1].cpu, 800);
-		const frame = machines[0].cpu.rootThread.frames[0], page = frame.decodedPage!;
+		const frame = machines[0].cpu.rootThread.frameAtDepth(0), page = frame.decodedPage!;
 		const block = page.compiledBlocks!.entries[(entry & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2]!;
 		assert.equal(block.sourceWords, 4, 'the fixed skip retains its fetched successor as a source dependency');
 		assert.equal(block.terminal.currentPc, entry + INSTRUCTION_BYTES);
@@ -52,7 +52,7 @@ for (const op of [OpCode.EQ, OpCode.LT, OpCode.LE]) for (const expected of [fals
 		assert.ok(block.exits.some(exit => exit.exit === CompiledBlockExit.Continue && exit.nextPc === entry + 4 * INSTRUCTION_BYTES));
 		for (let left = 0; left < inputs[0].length; ++left) for (let right = 0; right < inputs[0].length; ++right) {
 			for (const [index, { cpu }] of machines.entries()) {
-				const current = cpu.rootThread.frames[0];
+				const current = cpu.rootThread.frameAtDepth(0);
 				current.registers.set(0, inputs[index][left]); current.registers.set(1, inputs[index][right]); current.top = 0;
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
 				assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded);
@@ -72,7 +72,7 @@ test('comparison RK constants agree after each admitted segment, including short
 		runCpuParity(machines[0].cpu, machines[1].cpu, 800);
 		for (let grant = 1; grant <= 31; ++grant) for (const value of [null, false, NaN, -0, 0.25, Infinity]) {
 			for (const { cpu } of machines) {
-				const current = cpu.rootThread.frames[0]; current.registers.set(0, value); current.registers.set(1, value);
+				const current = cpu.rootThread.frameAtDepth(0); current.registers.set(0, value); current.registers.set(1, value);
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
 			}
 			runCpuParity(machines[0].cpu, machines[1].cpu, grant);
@@ -87,7 +87,7 @@ test('EQ ignores unused Nil/boolean scalar payloads without rewriting either sou
 		const { cpu } = createTestSystemCpu(image, backend);
 		cpu.runUntilDepth(0, 800);
 		for (const kind of [ValueTag.Nil, ValueTag.False, ValueTag.True]) {
-			const frame = cpu.rootThread.frames[0];
+			const frame = cpu.rootThread.frameAtDepth(0);
 			frame.registers.setEncoded(0, kind, 1, null); frame.registers.setEncoded(1, kind, 2, null);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
 			cpu.runUntilDepth(0, 2);
@@ -109,12 +109,12 @@ test('resolved comparison skips retire when their fetched WIDE width changes', (
 	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
-		const frame = cpu.rootThread.frames[0]; frame.registers.setNumber(0, 0); frame.registers.setNumber(1, 1); frame.registers.setNumber(2, 73);
+		const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setNumber(0, 0); frame.registers.setNumber(1, 1); frame.registers.setNumber(2, 73);
 		frame.registers.setNumber(6, 1);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 		cpu.runUntilDepth(0, 800);
 	}
-	const page = machines[0].cpu.rootThread.frames[0].decodedPage!, block = page.compiledBlocks!.entries[0];
+	const page = machines[0].cpu.rootThread.frameAtDepth(0).decodedPage!, block = page.compiledBlocks!.entries[0];
 	assert.ok(block); assert.equal(block.sourceWords, 4);
 	assert.ok(block.exits.some(exit => exit.exit === CompiledBlockExit.Continue && exit.nextPc === DYNAMIC_RAM_BASE + 4 * INSTRUCTION_BYTES));
 	for (const wide of [false, true, false]) {
@@ -122,7 +122,7 @@ test('resolved comparison skips retire when their fetched WIDE width changes', (
 		writeInstruction(replacement, 0, wide ? OpCode.WIDE : OpCode.K0, 0, 0, 0);
 		for (const { cpu, memory } of machines) {
 			memory.writeBytes(DYNAMIC_RAM_BASE + 2 * INSTRUCTION_BYTES, replacement);
-			const frame = cpu.rootThread.frames[0]; frame.top = 0; frame.registers.setNumber(2, 73);
+			const frame = cpu.rootThread.frameAtDepth(0); frame.top = 0; frame.registers.setNumber(2, 73);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 			cpu.runUntilDepth(0, 2);
 			assert.equal(frame.pc, DYNAMIC_RAM_BASE + (wide ? 4 : 3) * INSTRUCTION_BYTES);
@@ -151,11 +151,11 @@ test('a maximum-length compiled comparison retains both words of its skipped WID
 	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
-		const frame = cpu.rootThread.frames[0]; frame.registers.setNumber(0, 0); frame.registers.setNumber(1, 1);
+		const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setNumber(0, 0); frame.registers.setNumber(1, 1);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	runCpuParity(machines[0].cpu, machines[1].cpu, 8192);
-	const cache = machines[0].cpu.rootThread.frames[0].decodedPage!.compiledBlocks!;
+	const cache = machines[0].cpu.rootThread.frameAtDepth(0).decodedPage!.compiledBlocks!;
 	assert.equal(cache.entries[0]!.sourceWords, 130);
 	const replacement = new Uint8Array(INSTRUCTION_BYTES);
 	writeInstruction(replacement, 0, OpCode.K0, 2, 0, 0);
@@ -177,17 +177,17 @@ test('both resolved comparison paths stay in one region and return their full cy
 	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
-		const registers = cpu.rootThread.frames[0].registers;
+		const registers = cpu.rootThread.frameAtDepth(0).registers;
 		for (let i = 0; i < 5; ++i) registers.setNumber(i, i === 1 ? 1 : 0);
 	}
 	for (const value of [0, 1]) {
 		for (const { cpu } of machines) {
-			cpu.rootThread.frames[0].registers.setNumber(0, value);
+			cpu.rootThread.frameAtDepth(0).registers.setNumber(0, value);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 		}
 		runCpuParity(machines[0].cpu, machines[1].cpu, 2048);
 	}
-	const cache = machines[0].cpu.rootThread.frames[0].decodedPage!.compiledBlocks!, root = cache.entries[0]!;
+	const cache = machines[0].cpu.rootThread.frameAtDepth(0).decodedPage!.compiledBlocks!, root = cache.entries[0]!;
 	assert.equal(root.sourceWords, 2);
 	assert.ok(cache.entries[2]?.region === root.region && cache.entries[4]?.region === root.region,
 		'both comparison targets are entries of one generated function');
@@ -198,7 +198,7 @@ test('both resolved comparison paths stay in one region and return their full cy
 	assert.equal(skipped.linkedBlock, null);
 	for (const value of [0, 1]) for (let grant = 1; grant <= 32; ++grant) {
 		for (const { cpu } of machines) {
-			cpu.rootThread.frames[0].registers.setNumber(0, value);
+			cpu.rootThread.frameAtDepth(0).registers.setNumber(0, value);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 		}
 		runCpuParity(machines[0].cpu, machines[1].cpu, grant);
@@ -208,7 +208,7 @@ test('both resolved comparison paths stay in one region and return their full cy
 	for (const [index, { cpu }] of machines.entries()) {
 		cpu.setInstructionObserver({ points: [new Set([DYNAMIC_RAM_BASE + INSTRUCTION_BYTES]), new Set(), new Set()],
 			observe: () => { ++observations[index]; } });
-		cpu.rootThread.frames[0].registers.setNumber(0, 0);
+		cpu.rootThread.frameAtDepth(0).registers.setNumber(0, 0);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	assert.equal(cache.entries[0], null, 'adding an observer retires the region that consumed the JMP');
@@ -233,17 +233,17 @@ for (const [currentWide, skippedWide] of [[false, false], [true, false], [false,
 		if (skippedWide) writeInstruction(code, word, OpCode.WIDE, 0, 0, 0);
 		for (const { cpu, memory } of machines) {
 			memory.writeBytes(pc, code);
-			const frame = cpu.rootThread.frames[0]; frame.registers.setNumber(0, 0); frame.registers.setNumber(1, 0);
+			const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setNumber(0, 0); frame.registers.setNumber(1, 0);
 			for (let visit = 0; visit < 10; ++visit) {
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 				assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 				assert.equal(frame.pc, nextPc); assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_NONE);
 			}
 		}
-		const page = machines[0].cpu.rootThread.frames[0].decodedPage!;
+		const page = machines[0].cpu.rootThread.frameAtDepth(0).decodedPage!;
 		assert.ok(page.compiledBlocks!.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2], 'the boundary comparison really executed generated code');
 		for (const { cpu, memory } of machines) {
-			cpu.rootThread.frames[0].registers.setNumber(1, 1);
+			cpu.rootThread.frameAtDepth(0).registers.setNumber(1, 1);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 			assert.equal(cpu.readEpcWord(), nextPc);
@@ -275,17 +275,17 @@ for (const comparisonWide of [false, true]) for (const jumpWide of [false, true]
 			const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 			for (const { cpu, memory } of machines) {
 				memory.writeBytes(DYNAMIC_RAM_BASE, text);
-				const r = cpu.rootThread.frames[0].registers;
+				const r = cpu.rootThread.frameAtDepth(0).registers;
 				for (let reg = 0; reg < 8; ++reg) r.setNumber(reg, reg === 1 ? 1 : reg === 2 ? 7 : 0);
 			}
 			for (const value of [6, 7, 8]) {
 				for (const { cpu } of machines) {
-					cpu.rootThread.frames[0].registers.setNumber(0, value);
+					cpu.rootThread.frameAtDepth(0).registers.setNumber(0, value);
 					cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 				}
 				runCpuParity(machines[0].cpu, machines[1].cpu, 1024);
 			}
-			const cache = machines[0].cpu.rootThread.frames[0].decodedPage!.compiledBlocks!;
+			const cache = machines[0].cpu.rootThread.frameAtDepth(0).decodedPage!.compiledBlocks!;
 			const root = cache.entries[0]!, jumped = root.exits.find(exit => exit.currentPc === DYNAMIC_RAM_BASE + jumpWord * INSTRUCTION_BYTES)!;
 			assert.ok(jumped); assert.equal(jumped.nextPc, DYNAMIC_RAM_BASE + 16 * INSTRUCTION_BYTES);
 			assert.equal(jumped.lastPc, DYNAMIC_RAM_BASE + jumpBody * INSTRUCTION_BYTES);
@@ -295,7 +295,7 @@ for (const comparisonWide of [false, true]) for (const jumpWide of [false, true]
 			assert.equal(cache.entries[jumpWord], null, 'a JMP reached only through its fused comparison has no redundant body');
 			for (const value of [6, 7, 8]) for (let grant = 1; grant <= 16; ++grant) {
 				for (const { cpu } of machines) {
-					cpu.rootThread.frames[0].registers.setNumber(0, value);
+					cpu.rootThread.frameAtDepth(0).registers.setNumber(0, value);
 					cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 				}
 				runCpuParity(machines[0].cpu, machines[1].cpu, grant);
@@ -339,11 +339,11 @@ test('a paired JMP chains to another physical page and unlinks when that target 
 	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
-		for (let reg = 0; reg < 5; ++reg) cpu.rootThread.frames[0].registers.setNumber(reg, reg === 1 ? 1 : 0);
+		for (let reg = 0; reg < 5; ++reg) cpu.rootThread.frameAtDepth(0).registers.setNumber(reg, reg === 1 ? 1 : 0);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	runCpuParity(machines[0].cpu, machines[1].cpu, 2048);
-	const lookup = machines[0].cpu.rootThread.frames[0].executionImage.compiledCodeLookup!;
+	const lookup = machines[0].cpu.rootThread.frameAtDepth(0).executionImage.compiledCodeLookup!;
 	const page = lookup.find(DYNAMIC_RAM_BASE, 0)!, target = lookup.find(DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE, 0)!;
 	const root = page.compiledBlocks!.entries[0]!, jumped = root.exits.find(exit => exit.currentPc === DYNAMIC_RAM_BASE + INSTRUCTION_BYTES)!;
 	assert.ok(jumped.linkedBlock); assert.equal(jumped.linkedBlock, target.compiledBlocks!.entries[0]);
@@ -371,19 +371,19 @@ test('a paired JMP defers the target fetch until positive budget remains', () =>
 	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(start, text);
-		const r = cpu.rootThread.frames[0].registers;
+		const r = cpu.rootThread.frameAtDepth(0).registers;
 		r.setNumber(0, 1); r.setNumber(1, 1); r.setNumber(2, 0); r.setNumber(3, 0);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);
 	}
 	runCpuParity(machines[0].cpu, machines[1].cpu, 1024);
 	for (const { cpu } of machines) {
-		cpu.rootThread.frames[0].registers.setNumber(0, 0); cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);
+		cpu.rootThread.frameAtDepth(0).registers.setNumber(0, 0); cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);
 	}
 	assert.equal(runCpuParity(machines[0].cpu, machines[1].cpu, 1), RunResult.Yielded);
 	assert.equal(machines[0].cpu.instructionBudgetRemaining, -1, 'the paired JMP retains its own charge');
 	for (const { cpu } of machines) {
 		assert.equal(cpu.readFramePc(0), end); assert.equal(cpu.readCurrentInstructionPc(), start + INSTRUCTION_BYTES);
-		assert.equal(cpu.rootThread.frames.length, 1);
+		assert.equal(cpu.rootThread.frameDepth, 1);
 	}
 	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 	for (const { cpu, memory } of machines) {

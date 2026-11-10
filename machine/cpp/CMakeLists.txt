@@ -269,6 +269,7 @@ add_library(bmsx_core STATIC
 	machine/devices/audio/save_state.cpp
 
 	machine/cpu/cpu.cpp
+	machine/cpu/thread.cpp
 	machine/cpu/snapshot.cpp
 	machine/cpu/execution_image.cpp
 	machine/cpu/lua_heap.cpp

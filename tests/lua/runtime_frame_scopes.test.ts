@@ -36,16 +36,16 @@ return true`, 0);
 	const initialized = materializeCpuCompletionValues(cpu);
 	assert.deepEqual(initialized, [true, true], initialized.map(value => guest.formatValue(value)).join('\t'));
 	const keeper = guest.global('keeper') as Thread;
-	const pcs = keeper.frames.map(frame => frame.pc);
+	const pcs = Array.from({ length: keeper.frameDepth }, (_, index) => keeper.frameAtDepth(index).pc);
 	const reader = guest.global('reader') as Closure;
 	assert.deepEqual(guest.callClosure(reader), [17]);
 	if (mode === 'completion-unwind') {
 		retireRuntimeFrameScopes(runtime, sources, guest, cpu.activeThread, 0);
-		retireRuntimeFrameScopes(runtime, sources, guest, keeper, keeper.frames.length);
+		retireRuntimeFrameScopes(runtime, sources, guest, keeper, keeper.frameDepth);
 		assert.deepEqual(guest.callClosure(reader), [17], 'other threads and lower scopes retain their borrow');
 	}
 	retireRuntimeFrameScopes(runtime, sources, guest, mode === 'completion-unwind' ? keeper : undefined);
-	assert.deepEqual(keeper.frames.map(frame => frame.pc), pcs, 'retirement neither runs Lua nor unwinds/rewrites the physical stack');
+	assert.deepEqual(Array.from({ length: keeper.frameDepth }, (_, index) => keeper.frameAtDepth(index).pc), pcs, 'retirement neither runs Lua nor unwinds/rewrites the physical stack');
 	assert.deepEqual(guest.callClosure(guest.global('verify') as Closure).map(value => guest.formatValue(value)),
 		['false', 'Selected frame evaluation has ended.']);
 });
