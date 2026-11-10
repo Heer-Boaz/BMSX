@@ -1,19 +1,15 @@
 import { INSTRUCTION_BYTES } from '../../spec/blua32/instruction_format';
 import { BASE_CYCLES, OPCODE_COUNT, OpCode } from '../../spec/blua32/opcode';
-import { DECODED_PAGE_WORDS, DecodedDispatchOp, type Blua32ExecutionImage, type DecodedInstructionPage } from './execution_image';
-import { ValueTag, valueFromNumber } from './value';
-import type { ValueSlots } from './value_slots';
+import { type Blua32ExecutionImage, type DecodedInstructionPage } from './execution_image';
+import { ValueTag } from './value';
 import type { Memory } from '../memory/memory';
 import { emitMemoryAccess, emitWordStores } from './compiled_block_memory';
 import { ceilDiv4 } from '../common/numeric';
 import { JavaScriptRegisterCache } from './compiled_block_registers';
 import { emitComparison } from './compiled_block_compare';
-import type { StringPool } from './string_pool';
-import type { CallFrame } from './call_state';
+import type { CompiledRegion } from './compiled_region';
 import { compiledContextSupports, emitContext } from './compiled_block_context';
 import { compiledTableSupports, emitTableOperation } from './compiled_block_table';
-import { luaFloorDivide, luaModulo } from '../../spec/blua32/numeric';
-import { luaPow } from '../../spec/blua32/pow';
 import { COP0_EXEC, COP0_STATUS, cop0FieldImplemented } from '../../spec/blua32/cop0';
 import { compiledControlSupports, emitControl } from './compiled_block_control';
 
@@ -24,8 +20,6 @@ export const enum CpuExecutionBackend {
 
 export const COMPILED_BLOCK_THRESHOLD = 8;
 export const COMPILED_BLOCK_MAX_INSTRUCTIONS = 64;
-/** Generated source code units, not executable bytes or an upfront allocation. */
-export const COMPILED_BLOCK_SOURCE_BUDGET = 4 * 1024 * 1024;
 
 export const enum CompiledBlockExit {
 	Continue,
@@ -92,83 +86,16 @@ export type CompiledBlockExitSite = {
 
 export type CompiledBlock = {
 	readonly page: DecodedInstructionPage;
-	readonly execute: (registers: ValueSlots, constants: Float64Array, page: DecodedInstructionPage, frame: CallFrame) => number;
+	readonly region: CompiledRegion;
+	readonly entry: number;
+	readonly firstWord: number;
 	/** Budget through the start of the final instruction, not its full charge. */
 	readonly entryCycles: number;
 	readonly terminal: CompiledBlockExitSite;
 	readonly exits: readonly CompiledBlockExitSite[];
-	readonly sourceUnits: number;
 	readonly sourceWords: number;
 	incoming: CompiledBlockExitSite | null;
 };
-
-function unlinkCompiledExit(exit: CompiledBlockExitSite): void {
-	const target = exit.linkedBlock;
-	if (target === null) return;
-	if (exit.previousIncoming === null) target.incoming = exit.nextIncoming;
-	else exit.previousIncoming.nextIncoming = exit.nextIncoming;
-	if (exit.nextIncoming !== null) exit.nextIncoming.previousIncoming = exit.previousIncoming;
-	exit.linkedBlock = exit.previousIncoming = exit.nextIncoming = null;
-}
-
-export function linkCompiledBlock(source: CompiledBlockExitSite, target: CompiledBlock): void {
-	unlinkCompiledExit(source);
-	source.linkedBlock = target;
-	source.nextIncoming = target.incoming;
-	if (target.incoming !== null) target.incoming.previousIncoming = source;
-	target.incoming = source;
-}
-
-export class CompiledBlockPage {
-	public readonly entries = new Array<CompiledBlock | null>(DECODED_PAGE_WORDS).fill(null);
-	public readonly visits = new Uint8Array(DECODED_PAGE_WORDS);
-	public sourceUnits = 0;
-
-	public retire(page: DecodedInstructionPage, firstWord: number, endWord: number): number {
-		let released = 0;
-		const firstEntry = Math.max(0, firstWord - 2 * (COMPILED_BLOCK_MAX_INSTRUCTIONS + 1));
-		const endEntry = Math.min(DECODED_PAGE_WORDS, endWord);
-		for (let word = firstEntry; word < endEntry; ++word) {
-			const block = this.entries[word];
-			if (block === null || word + block.sourceWords <= firstWord) continue;
-			for (const exit of block.exits) unlinkCompiledExit(exit);
-			while (block.incoming !== null) unlinkCompiledExit(block.incoming);
-			released += block.sourceUnits;
-			page.dispatchOps[word] = DecodedDispatchOp.CompiledWarm;
-			this.entries[word] = null;
-			this.visits[word] = 0;
-		}
-		this.sourceUnits -= released;
-		return released;
-	}
-}
-
-/** Owns executable-cache lifetime even when an execution image is replaced. */
-export class CompiledCodeCache {
-	private readonly pages = new Set<DecodedInstructionPage>();
-	private sourceUnits = 0;
-
-	public atCapacity(): boolean { return this.sourceUnits >= COMPILED_BLOCK_SOURCE_BUDGET; }
-
-	public install(page: DecodedInstructionPage, word: number, block: CompiledBlock): void {
-		const cache = page.compiledBlocks!;
-		cache.entries[word] = block;
-		cache.sourceUnits += block.sourceUnits;
-		this.sourceUnits += block.sourceUnits;
-		this.pages.add(page);
-		page.dispatchOps[word] = DecodedDispatchOp.Compiled;
-	}
-
-	public retirePage(page: DecodedInstructionPage, firstWord = 0, endWord = DECODED_PAGE_WORDS + 1): void {
-		if (page.compiledBlocks === null || page.compiledBlocks.sourceUnits === 0) return;
-		this.sourceUnits -= page.compiledBlocks.retire(page, firstWord, endWord);
-		if (page.compiledBlocks.sourceUnits === 0) this.pages.delete(page);
-	}
-
-	public retireAll(): void {
-		for (const page of this.pages) this.retirePage(page);
-	}
-}
 
 type StatementEmitter = (page: DecodedInstructionPage, word: number, image: Blua32ExecutionImage,
 	registers: JavaScriptRegisterCache, exitIndex: number) => string;
@@ -254,23 +181,36 @@ export function compiledBlockComparison(op: number): boolean {
 	return op === OpCode.EQ || op === OpCode.LT || op === OpCode.LE;
 }
 
-/** Fields and RAM stay in the block; side exits publish only the executed prefix. */
-export function compileJavaScriptBlock(
-	page: DecodedInstructionPage,
-	firstWord: number,
-	endWord: number,
-	pc: number,
-	image: Blua32ExecutionImage,
-	memory: Memory,
-	strings: StringPool,
-	globalSlots: ValueSlots,
-	systemGlobalSlots: ValueSlots,
-	cop0Words: Uint32Array,
-	skippedInstructionWidth = 0,
-): CompiledBlock {
-	const source = ['"use strict";'];
+export type CompiledBlockSource = {
+	readonly firstWord: number;
+	readonly endWord: number;
+	readonly pc: number;
+	readonly skippedInstructionWidth: number;
+};
+
+export type EmittedJavaScriptBlock = {
+	readonly firstWord: number;
+	readonly entryCycles: number;
+	readonly terminal: CompiledBlockExitSite;
+	readonly exits: readonly CompiledBlockExitSite[];
+	readonly sourceWords: number;
+	readonly body: string;
+	readonly registers: JavaScriptRegisterCache;
+	readonly finalWord: number;
+	readonly terminalIndex: number;
+	readonly takenIndex: number;
+};
+
+/** Emit a segment and its precise side exits; the region owns control flow. */
+export function emitJavaScriptBlock(
+	page: DecodedInstructionPage, plan: CompiledBlockSource,
+	image: Blua32ExecutionImage, memory: Memory, exits: CompiledBlockExitSite[],
+): EmittedJavaScriptBlock {
+	const { firstWord, endWord, skippedInstructionWidth } = plan;
+	let pc = plan.pc;
+	const firstExit = exits.length;
+	const source: string[] = [];
 	const registers = new JavaScriptRegisterCache(image);
-	const exits: CompiledBlockExitSite[] = [];
 	let cycles = 0;
 	let entryCycles = 0;
 	let sourceWords = 0;
@@ -281,10 +221,7 @@ export function compileJavaScriptBlock(
 	let nextPc = pc;
 	let finalWord = firstWord;
 	let numberLocal = false;
-	let memoryAccess = false;
-	let memoryReads = false;
 	let controlAccess = false;
-	let contextCapture = false;
 	for (let word = firstWord; word < endWord; word += page.widths[word]) {
 		finalWord = word;
 		const op = page.ops[word];
@@ -315,13 +252,10 @@ export function compileJavaScriptBlock(
 			source.push(emitControl(op, page, word, registers, sideExit === undefined ? null : exitIndex, !controlAccess));
 			controlAccess = true;
 		} else if (compiledContextSupports(op)) {
-			contextCapture ||= op === OpCode.GETGL || op === OpCode.SETGL || op === OpCode.GETSYS || op === OpCode.SETSYS || op === OpCode.LOADKR;
 			source.push(emitContext(op, page, word, registers, exitIndex));
 		} else if (compiledTableSupports(op)) {
 			source.push(emitTableOperation(op, page, word, registers, exitIndex));
 		} else if (load || store || words) {
-			memoryAccess = true;
-			memoryReads ||= load;
 			if (load && !numberLocal) {
 				source.push('let v;');
 				numberLocal = true;
@@ -370,42 +304,31 @@ export function compileJavaScriptBlock(
 	};
 	const terminalIndex = exits.length;
 	exits.push(terminal);
-	const comparison = compiledBlockComparison(finalOp);
-	const ordering = finalOp === OpCode.LT || finalOp === OpCode.LE;
-	if (comparison) {
-		const skippedIndex = exits.length;
+	let takenIndex = -1;
+	if (compiledBlockComparison(finalOp)) {
+		takenIndex = exits.length;
 		exits.push({ ...terminal, exit: skippedInstructionWidth === 0 ? CompiledBlockExit.SkipInstruction : CompiledBlockExit.Continue,
 			nextPc: (terminal.nextPc + skippedInstructionWidth * INSTRUCTION_BYTES) >>> 0 });
 		sourceWords += skippedInstructionWidth;
-		const expected = page.a[finalWord] !== 0;
-		source.push(emitComparison(page, finalWord, registers,
-			expected ? terminalIndex : skippedIndex, expected ? skippedIndex : terminalIndex));
 	} else if (finalOp === OpCode.JMPIF || finalOp === OpCode.JMPIFNOT) {
-		const takenIndex = exits.length;
+		takenIndex = exits.length;
 		exits.push({ ...terminal, nextPc: page.bx[finalWord] });
-		const truth = `${finalOp === OpCode.JMPIFNOT ? '!' : ''}${registers.truthy(page.a[finalWord])}`;
-		source.push(`return ${truth}?${takenIndex}:${terminalIndex};`);
-	} else source.push(`return ${terminalIndex};`);
-	const body = source.join('\n');
-	const functionSource = memoryAccess || registers.localCount !== 0 || ordering || contextCapture || controlAccess ? `return function(r,k,p,frame){${body}}` : body;
-	let execute: CompiledBlock['execute'];
-	if (memoryReads) {
-		const cartridges = memory.cartridgeController;
-		execute = new Function('m', 'g', 's', 'c', 'c0', 'c1', 'f', 'q', 'kt', 'gl', 'sy', 'mod', 'floorDiv', 'pow', 'cp', functionSource)(
-			memory.ramView, memory.ramWriteWatches().groupData(), memory.systemRomStorage(),
-			cartridges, cartridges.romStorage(0), cartridges.romStorage(1), valueFromNumber, strings, image.constTags, globalSlots, systemGlobalSlots,
-			luaModulo, luaFloorDivide, luaPow, cop0Words) as CompiledBlock['execute'];
-	} else if (memoryAccess) {
-		execute = new Function('m', 'g', 'f', 'q', 'kt', 'gl', 'sy', 'mod', 'floorDiv', 'pow', 'cp', functionSource)(memory.ramView, memory.ramWriteWatches().groupData(), valueFromNumber, strings, image.constTags, globalSlots, systemGlobalSlots,
-			luaModulo, luaFloorDivide, luaPow, cop0Words) as CompiledBlock['execute'];
-	} else if (registers.localCount !== 0 || ordering || contextCapture || controlAccess) {
-		execute = new Function('f', 'q', 'kt', 'gl', 'sy', 'mod', 'floorDiv', 'pow', 'cp', functionSource)(valueFromNumber, strings, image.constTags, globalSlots, systemGlobalSlots,
-			luaModulo, luaFloorDivide, luaPow, cop0Words) as CompiledBlock['execute'];
-	} else execute = new Function('r', 'k', 'p', 'frame', functionSource) as CompiledBlock['execute'];
-	return {
-		page,
-		execute,
-		entryCycles, terminal, exits, sourceWords, sourceUnits: functionSource.length,
-		incoming: null,
-	};
+	}
+	return { firstWord, entryCycles, terminal, exits: exits.slice(firstExit), sourceWords,
+		body: source.join('\n'), registers, finalWord, terminalIndex, takenIndex };
+}
+
+export function finishJavaScriptBlock(page: DecodedInstructionPage, block: EmittedJavaScriptBlock,
+	transfer: (index: number) => string): string {
+	const finalOp = page.ops[block.finalWord];
+	if (compiledBlockComparison(finalOp)) {
+		const expected = page.a[block.finalWord] !== 0;
+		return emitComparison(page, block.finalWord, block.registers,
+			transfer(expected ? block.terminalIndex : block.takenIndex), transfer(expected ? block.takenIndex : block.terminalIndex));
+	}
+	if (finalOp === OpCode.JMPIF || finalOp === OpCode.JMPIFNOT) {
+		const truth = `${finalOp === OpCode.JMPIFNOT ? '!' : ''}${block.registers.truthy(page.a[block.finalWord])}`;
+		return `if(${truth}){${transfer(block.takenIndex)}}else{${transfer(block.terminalIndex)}}`;
+	}
+	return transfer(block.terminalIndex);
 }

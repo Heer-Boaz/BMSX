@@ -330,7 +330,7 @@ void arithmeticAndWordDatapaths() {
 					require(block->terminal.cycles == operation.baseCycles + 1 && block->terminal.registerTop == 4
 						&& block->terminal.currentPc == 0x1008u && block->terminal.lastPc == 0x1008u
 						&& block->terminal.nextPc == 0x100cu, "native block publishes its physical instruction extent");
-					require(cacheBytes == block->codeBytes && cacheBytes != 0, "native code allocation is accounted");
+					require(cacheBytes == block->region->codeBytes && cacheBytes != 0, "native code allocation is accounted");
 				}
 				require(cacheBytes == 0, "retiring native code releases its cache accounting");
 			}

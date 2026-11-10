@@ -12,15 +12,60 @@
 namespace bmsx {
 
 std::unique_ptr<NativeBlock> NativeBlock::compile(
-	std::span<const NativeBlockInstruction> instructions,
-	const Value* constants,
-	size_t& cacheBytes,
-	Memory& memory,
-	StringPool& strings,
-	const NativeBlockExitHandlers& exitHandlers,
-	u8 skippedInstructionWidth
+	std::span<const NativeBlockInstruction> instructions, const Value* constants,
+	size_t& cacheBytes, Memory& memory, StringPool& strings,
+	const NativeBlockExitHandlers& exitHandlers, u8 skippedInstructionWidth
 ) {
-	auto block = std::unique_ptr<NativeBlock>(new NativeBlock(cacheBytes));
+	const std::array sources{NativeBlockSource{instructions, skippedInstructionWidth}};
+	auto blocks = compileRegion(sources, constants, cacheBytes, memory, strings, exitHandlers);
+	return std::move(blocks.front());
+}
+
+std::vector<std::unique_ptr<NativeBlock>> NativeBlock::compileRegion(
+	std::span<const NativeBlockSource> sources, const Value* constants,
+	size_t& cacheBytes, Memory& memory, StringPool& strings,
+	const NativeBlockExitHandlers& exitHandlers
+) {
+	auto region = std::make_shared<NativeCodeRegion>(cacheBytes);
+	std::vector<std::unique_ptr<NativeBlock>> blocks;
+	blocks.reserve(sources.size());
+	for (const auto& source : sources) {
+		auto block = prepare(source, exitHandlers);
+		block->region = region;
+		blocks.push_back(std::move(block));
+	}
+	NativeBlockCompiler compiler(constants, blocks, memory, strings, sources);
+	for (size_t index = 0; index < sources.size(); ++index) {
+		const auto& source = sources[index];
+		const auto& block = *blocks[index];
+		compiler.beginBlock(index);
+		size_t slow = 0;
+		const bool branch = nativeBlockComparison(source.instructions.back().decoded->op)
+			|| source.instructions.back().decoded->op == static_cast<u8>(OpCode::JMPIF)
+			|| source.instructions.back().decoded->op == static_cast<u8>(OpCode::JMPIFNOT);
+		const size_t slowCount = block.sideExits.size() - (branch ? 1u : 0u);
+		const auto* taken = branch ? &block.sideExits.back() : nullptr;
+		for (const auto& instruction : source.instructions) {
+			const auto* exit = slow < slowCount && block.sideExits[slow].currentPc == instruction.pc ? &block.sideExits[slow++] : nullptr;
+			compiler.emit(*instruction.decoded, exit, taken);
+		}
+		compiler.endBlock();
+	}
+	region->m_code = compiler.finish(region->codeBytes);
+	cacheBytes += region->codeBytes;
+	return blocks;
+}
+
+NativeCodeRegion::~NativeCodeRegion() {
+	if (m_code) sljit_free_code(m_code, nullptr);
+	m_cacheBytes -= codeBytes;
+}
+
+std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& source, const NativeBlockExitHandlers& exitHandlers) {
+	const auto instructions = source.instructions;
+	const auto skippedInstructionWidth = source.skippedInstructionWidth;
+	auto block = std::unique_ptr<NativeBlock>(new NativeBlock());
+	block->firstPc = instructions.front().pc;
 	block->m_gate = &nativeBlockGate();
 	bool controlGuarded = false;
 	size_t slowCount = 0;
@@ -90,7 +135,6 @@ std::unique_ptr<NativeBlock> NativeBlock::compile(
 		default: terminal.exit = NativeBlockExit::Continue; break;
 	}
 	terminal.handler = exitHandlers[static_cast<size_t>(terminal.exit)];
-	const NativeBlockExitSite* taken = nullptr;
 	if (op == OpCode::JMPIF || op == OpCode::JMPIFNOT || nativeBlockComparison(static_cast<u8>(op))) {
 		auto& exit = block->sideExits.emplace_back(terminal);
 		if (nativeBlockComparison(static_cast<u8>(op))) {
@@ -100,25 +144,16 @@ std::unique_ptr<NativeBlock> NativeBlock::compile(
 			exit.handler = exitHandlers[static_cast<size_t>(exit.exit)];
 		}
 		else exit.nextPc = instructions.back().decoded->bx;
-		taken = &exit;
 	}
-	NativeBlockCompiler compiler(constants, block.get(), memory, strings, instructions);
-	size_t slow = 0;
-	for (const auto& source : instructions) {
-		const auto* exit = slow < slowCount && block->sideExits[slow].currentPc == source.pc ? &block->sideExits[slow++] : nullptr;
-		compiler.emit(*source.decoded, exit, taken);
-	}
-	block->m_code = compiler.finish(block->codeBytes, block->m_body);
-	cacheBytes += block->codeBytes;
 	return block;
 }
+
 
 NativeBlock::~NativeBlock() {
 	terminal.link.disconnect();
 	for (auto& exit : sideExits) exit.link.disconnect();
 	while (m_incoming) m_incoming->disconnect();
-	if (m_code) sljit_free_code(m_code, nullptr);
-	m_cacheBytes -= codeBytes;
+
 }
 
 const NativeBlockExitSite* NativeBlock::run(NativeBlockRunState& state) const {

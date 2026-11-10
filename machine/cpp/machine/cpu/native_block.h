@@ -20,6 +20,7 @@ class Memory;
 class StringPool;
 class NativeBlock;
 class NativeBlockGate;
+class NativeBlockCompiler;
 struct NativeCpuRunState;
 struct NativeBlockExitSite;
 
@@ -110,6 +111,26 @@ using NativeBlockExitHandlers = std::array<NativeBlockExitHandler, static_cast<s
 struct NativeBlockInstruction {
 	const DecodedInstruction* decoded;
 	u32 pc;
+};
+
+struct NativeBlockSource {
+	std::span<const NativeBlockInstruction> instructions;
+	u8 skippedInstructionWidth = 0;
+};
+
+// Entry descriptors share one executable allocation. Source invalidation retires
+// every entry which can reach its internal labels before this storage is freed.
+class NativeCodeRegion {
+public:
+	explicit NativeCodeRegion(size_t& cacheBytes) : m_cacheBytes(cacheBytes) {}
+	~NativeCodeRegion();
+	NativeCodeRegion(const NativeCodeRegion&) = delete;
+	NativeCodeRegion& operator=(const NativeCodeRegion&) = delete;
+	size_t codeBytes = 0;
+private:
+	friend class NativeBlock;
+	void* m_code = nullptr;
+	size_t& m_cacheBytes;
 };
 
 // Cached fields and plain RAM stay in generated code. Slow exits return their precise
@@ -241,6 +262,11 @@ public:
 		const NativeBlockExitHandlers& exitHandlers = {},
 		u8 skippedInstructionWidth = 0
 	);
+	static std::vector<std::unique_ptr<NativeBlock>> compileRegion(
+		std::span<const NativeBlockSource> sources, const Value* constants,
+		size_t& cacheBytes, Memory& memory, StringPool& strings,
+		const NativeBlockExitHandlers& exitHandlers = {}
+	);
 	~NativeBlock();
 	NativeBlock(const NativeBlock&) = delete;
 	NativeBlock& operator=(const NativeBlock&) = delete;
@@ -248,24 +274,25 @@ public:
 	const NativeBlockExitSite* run(NativeBlockRunState& state) const;
 	void linkFrom(const NativeBlockExitSite& source);
 
+	std::shared_ptr<NativeCodeRegion> region;
+	u32 firstPc = 0;
 	NativeBlockExitSite terminal;
 	std::vector<NativeBlockExitSite> sideExits;
 	// The final instruction may start with one cycle left. Counted stores end
 	// a block so their surcharge cannot run a following instruction past zero.
 	int entryCycles = 0;
 	u16 sourceWords = 0;
-	size_t codeBytes = 0;
 
 private:
 	friend struct NativeBlockLink;
 	friend class CPU;
+	friend class NativeBlockCompiler;
 	void execute(NativeCpuRunState& state) const;
-	explicit NativeBlock(size_t& cacheBytes) : m_cacheBytes(cacheBytes) {}
-	void* m_code = nullptr;
+	static std::unique_ptr<NativeBlock> prepare(const NativeBlockSource& source, const NativeBlockExitHandlers& exitHandlers);
+	NativeBlock() = default;
 	void* m_body = nullptr;
 	const NativeBlockGate* m_gate = nullptr;
 	NativeBlockLink* m_incoming = nullptr;
-	size_t& m_cacheBytes;
 };
 
 } // namespace bmsx

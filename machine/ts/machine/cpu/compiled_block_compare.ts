@@ -5,7 +5,7 @@ import { ValueTag } from './value';
 
 /** A comparison has two control successors and never writes operand A. */
 export function emitComparison(page: DecodedInstructionPage, word: number, registers: JavaScriptRegisterCache,
-	yes: number, no: number): string {
+	yes: string, no: string): string {
 	const left = page.b[word], right = page.c[word];
 	let source = `{const l=${registers.tagOperand(left)},r0=${registers.tagOperand(right)};let matched=false;`;
 	if (page.ops[word] === OpCode.EQ) {
@@ -18,5 +18,5 @@ else if(l===${ValueTag.Table}||l===${ValueTag.Closure}||l===${ValueTag.Thread}) 
 		source += `if(l===${ValueTag.Number}&&r0===${ValueTag.Number}) matched=${registers.scalarOperand(left)}${operator}${registers.scalarOperand(right)};
 else if(l===${ValueTag.String}&&r0===${ValueTag.String}) matched=q.compare(${registers.scalarOperand(left)},${registers.scalarOperand(right)})${operator}0;`;
 	}
-	return `${source}return matched?${yes}:${no};}`;
+	return `${source}if(matched){${yes}}else{${no}}}`;
 }

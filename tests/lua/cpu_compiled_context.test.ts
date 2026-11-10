@@ -54,7 +54,7 @@ test('compiled globals use the live banks across growth, keep namespaces distinc
 	js.runUntilDepth(0, 11); ref.runUntilDepth(0, 11);
 	assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 	assert.equal(js.getSystemGlobalByKey(js.stringPool.find('copied')!), frame.registers.getTable(12));
-	assert.equal(page.compiledBlocks!.entries[entry], block, 'growing the bank does not retire or strand the compiled consumer');
+	assert.ok(page.compiledBlocks!.entries[entry] === block, 'growing the bank does not retire or strand the compiled consumer');
 	const saved = js.captureRuntimeState();
 	js.restoreRuntimeState(saved);
 	assert.deepEqual(js.captureRuntimeState(), saved, 'retained bank capacity is not serialized as extra globals');
@@ -140,7 +140,8 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 	}
 	const frame = js.rootThread.frames[0], page = frame.decodedPage!;
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
-	assert.equal(page.compiledBlocks!.entries[entry]!.sourceWords, 9);
+	const region = page.compiledBlocks!.entries[entry]!.region;
+	assert.equal(region.entries.reduce((words, block) => words + block.sourceWords, 0), 9);
 	for (const value of [null, false, true, -0, NaN, 'upvalue'] as const) {
 		for (const cpu of [js, ref]) cpu.rootThread.frames[0].registers.set(12,
 			value === 'upvalue' ? valueString(cpu.stringPool.intern(value)) : value);
@@ -155,8 +156,11 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 	upvalue.open = false; upvalue.frame = null; upvalue.valueTag = ValueTag.Number; upvalue.valueScalar = 1;
 	const r = frame.registers, setEncoded = r.setEncoded.bind(r), writes = new Uint32Array(16);
 	r.setEncoded = (index, tag, scalar, reference) => { ++writes[index]; setEncoded(index, tag, scalar, reference); };
-	const block = page.compiledBlocks!.entries[entry]!;
-	assert.equal(block.exits[block.execute(r, frame.executionImage.constScalars, page, frame)], block.terminal);
+	const block = page.compiledBlocks!.entries[entry]!, run = {
+		remainingCycles: block.region.entries.reduce((cycles, entry) => cycles + entry.terminal.cycles, 0), registerTop: frame.top,
+	};
+	const exit = block.region.exits[block.region.execute(r, frame.executionImage.constScalars, page, frame, block.entry, run)];
+	assert.equal(exit.nextPc, image.image.functions[0].codeAddress); assert.equal(run.remainingCycles, 0);
 	assert.equal(writes[0], 1, 'an ordinary closed-cell write does not publish unrelated local definitions');
 	assert.equal(writes[2], 1, 'a pending numeric source is forwarded to the upvalue without an intermediate writeback');
 	assert.equal(r.getNumber(3), 2);
@@ -227,6 +231,7 @@ for (const fixed of [0, 5]) test(`hot VARARG handles exact top resets, nil paddi
 			assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 		}
 		assert.equal(js.rootThread.frames[1].top, count, 'the second open VARARG replaces, rather than maximizes, top');
-		assert.equal(page.compiledBlocks!.entries[entry], block, 'the same generated consumer survives a new frame and stack backing');
+		assert.equal(page.compiledBlocks!.entries[entry]!.region.entries.reduce((words, block) => words + block.sourceWords, 0), 7,
+			'the complete generated loop survives frame relocation and added helper-resume entries');
 	}
 });

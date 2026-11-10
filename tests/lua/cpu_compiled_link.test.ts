@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -36,9 +37,42 @@ test('linked physical-page blocks preserve every grant and disconnect rewritten 
 	}
 	const page = machines[0].cpu.rootThread.frames[0].decodedPage!, cache = page.compiledBlocks!;
 	const root = cache.entries[0]!, taken = root.exits.find(exit => exit.nextPc === DYNAMIC_RAM_BASE + 4 * INSTRUCTION_BYTES)!;
-	assert.equal(root.terminal.linkedBlock, cache.entries[2]); assert.ok(root.terminal.linkedBlock);
-	assert.equal(taken.linkedBlock, cache.entries[4]); assert.ok(taken.linkedBlock);
+	assert.ok(cache.entries[2]?.region === root.region && cache.entries[4]?.region === root.region,
+		'both conditional targets are local entries of one generated function');
+	assert.equal(root.terminal.linkedBlock, null); assert.equal(taken.linkedBlock, null);
 	assert.equal(taken.exit, CompiledBlockExit.Continue);
+	for (const flag of [false, true]) for (const start of [0, 2, 4, 6]) for (let grant = 2; grant <= 64; ++grant) {
+		const frame = machines[0].cpu.rootThread.frames[0], registers = new ValueSlots(12);
+		for (let index = 0; index < 12; ++index) registers.setNumber(index, 0);
+		registers.setNumber(0, 2); registers.setNumber(1, 1); registers.setBool(2, flag);
+		const expected = new Array<number | boolean>(12).fill(0); expected[0] = 2; expected[1] = 1; expected[2] = flag;
+		let remaining = grant, top = 0, segment = start;
+		let expectedExit = root.terminal;
+		for (;;) {
+			const current = cache.entries[segment]!;
+			expectedExit = current.terminal;
+			if (segment === 0) {
+				expected[8] = (expected[8] as number) + 1; top = Math.max(top, 9);
+				if (flag) expectedExit = current.exits.find(exit => exit.nextPc === DYNAMIC_RAM_BASE + 4 * INSTRUCTION_BYTES)!;
+				segment = flag ? 4 : 2;
+			} else if (segment === 2) {
+				expected[0] = -(expected[0] as number); top = Math.max(top, 1); segment = 6;
+			} else if (segment === 4) {
+				expected[0] = (expected[0] as number) << 1;
+				expected[3] = expected[8]; top = Math.max(top, 4); segment = 6;
+			} else {
+				expected[4] = (expected[0] as number) + (expected[8] as number); top = Math.max(top, 5); segment = 0;
+			}
+			remaining -= 2;
+			if (remaining < 2) break;
+		}
+		const run = { remainingCycles: grant, registerTop: 0 }, block = cache.entries[start]!;
+		const exit = block.region.exits[block.region.execute(registers, frame.executionImage.constScalars, page, frame, block.entry, run)];
+		assert.ok(exit === expectedExit, 'one function call executes all admitted internal edges');
+		assert.deepEqual(run, { remainingCycles: remaining, registerTop: top });
+		assert.deepEqual(Array.from({ length: 12 }, (_, index) => registers.get(index)), expected);
+	}
+
 	for (const flag of [true, false, 0, NaN]) for (let grant = 1; grant <= 96; ++grant) {
 		for (const { cpu } of machines) {
 			const frame = cpu.rootThread.frames[0]; frame.registers.set(2, flag); frame.top = 0;
@@ -51,16 +85,16 @@ test('linked physical-page blocks preserve every grant and disconnect rewritten 
 	const replacement = new Uint8Array(INSTRUCTION_BYTES);
 	writeInstruction(replacement, 0, OpCode.SUB, 4, 0, 8);
 	for (const { memory } of machines) memory.writeBytes(DYNAMIC_RAM_BASE + 7 * INSTRUCTION_BYTES, replacement);
-	assert.equal(cache.entries[0], root, 'rewriting a target does not discard its independent predecessor');
-	assert.equal(cache.entries[4], null); assert.equal(taken.linkedBlock, null);
-	assert.equal(root.terminal.linkedBlock, cache.entries[2], 'the other outgoing edge remains live');
+	assert.ok(cache.entries[0] === null && cache.entries[2] === null && cache.entries[4] === null,
+		'a source write retires the function containing its internal branch targets');
 	for (const { cpu } of machines) {
 		cpu.rootThread.frames[0].registers.setBool(2, true);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 		cpu.runUntilDepth(0, 2048);
 	}
 	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
-	assert.equal(taken.linkedBlock, cache.entries[4]); assert.ok(taken.linkedBlock);
+	assert.ok(cache.entries[0] !== null && cache.entries[4]?.region === cache.entries[0].region,
+		'the changed target and source regenerate in one function');
 	// A large hot chain must use bounded JS stack, rather than recursive tail calls.
 	for (const { cpu } of machines) cpu.runUntilDepth(0, 600002);
 	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
@@ -168,8 +202,9 @@ test('linked counted stores need only one cycle, then stop or block before the f
 	}
 	const cache = js.cpu.rootThread.frames[0].decodedPage!.compiledBlocks!, first = cache.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!;
 	assert.equal(first.entryCycles, 2);
-	const store = first.terminal.linkedBlock!;
-	assert.ok(store); assert.equal(store.entryCycles, 1); assert.equal(store.terminal.cycles, 4); assert.ok(store.terminal.linkedBlock);
+	const store = cache.entries[((pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES) + 4]!;
+	assert.ok(store && store.region === first.region); assert.equal(store.entryCycles, 1); assert.equal(store.terminal.cycles, 4);
+	assert.ok(cache.entries[store.firstWord + 2]?.region === first.region);
 	for (const grant of [2, 3, 6, 7, 8, 9]) {
 		for (const { cpu } of [js, ref]) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
@@ -221,7 +256,7 @@ test('linked memory side exits retain predecessor state before MMIO and synchron
 		cpu.runUntilDepth(0, 1200);
 	}
 	const page = machines[0].cpu.rootThread.frames[0].decodedPage!, root = page.compiledBlocks!.entries[0]!;
-	assert.ok(root.terminal.linkedBlock); assert.equal(root.terminal.linkedBlock, page.compiledBlocks!.entries[4]);
+	assert.ok(page.compiledBlocks!.entries[4]?.region === root.region, 'the memory successor remains inside the source region');
 	for (const address of [IO_SYS_BUS_FAULT_CODE, 0x01000000]) {
 		for (const { cpu } of machines) {
 			const frame = cpu.rootThread.frames[0]; frame.registers.setNumber(0, address); frame.top = 0;
@@ -232,4 +267,40 @@ test('linked memory side exits retain predecessor state before MMIO and synchron
 		assert.equal(machines[0].cpu.instructionBudgetRemaining, machines[1].cpu.instructionBudgetRemaining);
 	}
 	assert.equal(machines[0].cpu.readEpcWord(), DYNAMIC_RAM_BASE + 4 * INSTRUCTION_BYTES);
+});
+
+
+test('an external entry into a WIDE body shares its sequential join without duplicated suffixes', () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0); writeInstruction(text, 1, OpCode.ADD, 0, 0, 1);
+	writeInstruction(text, 2, OpCode.ADD, 2, 0, 1); writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
+	writeInstruction(text, 16, OpCode.JMP, 0, 63, 48, 255);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 17, maxStack: 12 }] });
+	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+	for (const { cpu, memory } of machines) {
+		memory.writeBytes(DYNAMIC_RAM_BASE, text);
+		const frame = cpu.rootThread.frames[0];
+		frame.registers.setNumber(0, 0); frame.registers.setNumber(1, 1); frame.registers.setNumber(2, 0);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
+		cpu.runUntilDepth(0, 1200);
+	}
+	for (let visit = 0; visit < 16; ++visit) {
+		for (const { cpu } of machines) {
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE + 16 * INSTRUCTION_BYTES);
+			cpu.runUntilDepth(0, 128);
+		}
+		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+	}
+	const entries = machines[0].cpu.rootThread.frames[0].decodedPage!.compiledBlocks!.entries;
+	assert.ok(entries[0] && entries[1] && entries[2] && entries[16]);
+	assert.ok(entries[0].region === entries[1].region && entries[1].region === entries[2].region);
+	assert.deepEqual([entries[0].sourceWords, entries[1].sourceWords, entries[2].sourceWords], [2, 1, 2]);
+	for (let grant = 1; grant <= 31; ++grant) {
+		for (const { cpu } of machines) {
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE + INSTRUCTION_BYTES);
+			cpu.runUntilDepth(0, grant);
+		}
+		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+		assert.equal(machines[0].cpu.instructionBudgetRemaining, machines[1].cpu.instructionBudgetRemaining);
+	}
 });

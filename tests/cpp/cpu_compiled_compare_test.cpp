@@ -147,10 +147,11 @@ void resolvedComparisonLinksBothPaths() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& cache = *native.cpu.activeThread()->frames[0]->decodedPage->nativeBlocks;
 	const auto& root = *cache.entries[0];
-	require(root.sourceWords == 2 && root.terminal.link.target && root.terminal.link.target == cache.entries[1].get()
-		&& root.sideExits.back().exit == NativeBlockExit::Continue && root.sideExits.back().link.target
-		&& root.sideExits.back().link.target == cache.entries[2].get(),
-		"both comparison outcomes link to their exact native successor without a dynamic skip handler");
+	require(root.sourceWords == 2 && cache.entries[1] && cache.entries[2]
+		&& root.region == cache.entries[1]->region && root.region == cache.entries[2]->region
+		&& root.sideExits.back().exit == NativeBlockExit::Continue
+		&& !root.terminal.link.code && !root.sideExits.back().link.code,
+		"both comparison outcomes stay in their code region without dynamic skip or link dispatch");
 #endif
 	for (const int value : {0, 1}) for (int grant = 1; grant <= 32; ++grant) {
 		for (auto* machine : {&native, &scalar}) {

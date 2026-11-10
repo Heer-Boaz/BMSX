@@ -326,11 +326,11 @@ void changingSuccessorsDoNotRecompileStablePredecessors() {
 	machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 	machine.cpu.runUntilDepth(0, 1200);
 	auto& page = *frame.decodedPage;
-	require(page.nativeBlocks && !page.nativeBlocks->entries[0] && page.nativeBlocks->entries[2],
-		"a continuously changing instruction remains outside stable native prefixes");
+	require(page.nativeBlocks && !page.nativeBlocks->entries[1] && page.nativeBlocks->entries[2],
+		"the continuously rewritten instruction, not its stable store predecessor, remains outside native regions");
 	const auto* stable = page.nativeBlocks->entries[2].get();
 	machine.cpu.runUntilDepth(0, 1200);
-	require(page.nativeBlocks->entries[2].get() == stable && !page.nativeBlocks->entries[0]
+	require(page.nativeBlocks->entries[2].get() == stable && !page.nativeBlocks->entries[1]
 		&& machine.cpu.readCauseWord() == 0u, "independent native code survives repeated source rewrites without recompilation");
 }
 

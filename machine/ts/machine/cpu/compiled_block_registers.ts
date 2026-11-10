@@ -87,5 +87,5 @@ export class JavaScriptRegisterCache {
 		return source;
 	}
 
-	public exit(index: number): string { return `{${this.writeBack()}return ${index};}`; }
+	public exit(index: number): string { return `{${this.writeBack()}exit=${index};break region;}`; }
 }

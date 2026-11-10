@@ -112,7 +112,7 @@ for (const op of [OpCode.SHR, OpCode.MOD, OpCode.FLOORDIV, OpCode.POW]) test(`mu
 	let reads = 0, writes = 0;
 	r.getNumber = index => { ++reads; return getNumber(index); };
 	r.setEncoded = (index, tag, scalar, reference) => { ++writes; setEncoded(index, tag, scalar, reference); };
-	assert.equal(block.exits[block.execute(r, frame.executionImage.constScalars, page, frame)], block.terminal);
+	assert.equal(block.region.exits[block.region.execute(r, frame.executionImage.constScalars, page, frame, block.entry, { remainingCycles: block.terminal.cycles, registerTop: frame.top })], block.terminal);
 	assert.equal(reads, 0, 'the generated block consumes local numeric definitions, not their stale slot values');
 	assert.equal(writes, 5, 'each final numeric slot is published once instead of after every instruction');
 	const result = op === OpCode.SHR ? 0 : op === OpCode.MOD ? luaModulo(66, 72)
@@ -339,7 +339,7 @@ test('field cache hits stay in one generated block and misses publish only the e
 	const block = page.compiledBlocks!.entries[(entry & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2]!;
 	assert.equal(block.sourceWords, 6);
 	assert.equal(block.exits.filter(exit => exit.exit === CompiledBlockExit.ReadField || exit.exit === CompiledBlockExit.WriteField).length, 2);
-	assert.equal(block.exits[block.execute(frame.registers, frame.executionImage.constScalars, page, frame)], block.terminal,
+	assert.equal(block.region.exits[block.region.execute(frame.registers, frame.executionImage.constScalars, page, frame, block.entry, { remainingCycles: block.terminal.cycles, registerTop: frame.top })], block.terminal,
 		'both field hits and arithmetic reach the final branch without a host side exit');
 	ref.runUntilDepth(0, 6);
 	assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
@@ -533,7 +533,7 @@ test('source writes retire overlapping blocks without discarding independent cod
 	assert.ok(preserved !== null && page.compiledBlocks!.entries[8] !== null);
 	writeInstruction(text, 9, OpCode.SUB, 1, 0, 0);
 	memory.writeBytes(DYNAMIC_RAM_BASE + 9 * INSTRUCTION_BYTES, text.subarray(9 * INSTRUCTION_BYTES, 10 * INSTRUCTION_BYTES));
-	assert.equal(page.compiledBlocks!.entries[0], preserved);
+	assert.ok(page.compiledBlocks!.entries[0] === preserved);
 	assert.equal(page.compiledBlocks!.entries[8], null);
 	assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
 	assert.equal(cpu.readFrameRegister(0, 1), 0);

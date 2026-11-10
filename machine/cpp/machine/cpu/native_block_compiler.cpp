@@ -11,39 +11,44 @@
 
 namespace bmsx {
 
-NativeBlockCompiler::NativeBlockCompiler(const Value* constants, const NativeBlock* block, Memory& memory, StringPool& strings,
-	std::span<const NativeBlockInstruction> instructions)
-	: m_compiler(nullptr), m_constants(constants), m_block(block), m_memory(memory), m_strings(strings) {
+NativeBlockCompiler::NativeBlockCompiler(const Value* constants, std::span<const std::unique_ptr<NativeBlock>> blocks, Memory& memory, StringPool& strings,
+	std::span<const NativeBlockSource> sources)
+	: m_compiler(nullptr), m_blocks(blocks), m_entries(blocks.size()), m_bodies(blocks.size()),
+	  m_constants(constants), m_memory(memory), m_strings(strings) {
 	size_t slowPaths = 0, readMappings = 0;
 	bool calls = false;
-	bool controlGuarded = false;
-	for (const auto& source : instructions) {
-		const auto& instruction = *source.decoded;
-		const auto op = static_cast<OpCode>(instruction.op);
-		const auto slow = nativeBlockSlowExit(instruction.op, instruction.b, controlGuarded);
-		controlGuarded |= op == OpCode::MFC0 || op == OpCode::MTC0;
-		slowPaths += slow == NativeBlockExit::ReadField || slow == NativeBlockExit::WriteField
-			|| slow == NativeBlockExit::ControlFault
-			|| slow == NativeBlockExit::ReadIndex || slow == NativeBlockExit::WriteIndex
-			|| slow == NativeBlockExit::ReadInteger || slow == NativeBlockExit::WriteInteger || slow == NativeBlockExit::InvalidLength
-			|| slow == NativeBlockExit::WriteUpvalue
-			|| slow == NativeBlockExit::Vararg || slow == NativeBlockExit::InvalidConstant
-			|| slow == NativeBlockExit::WriteMemory || slow == NativeBlockExit::WriteWords
-			|| (slow == NativeBlockExit::ReadMemory && instruction.c != static_cast<i16>(MemoryAccessKind::U8));
-		readMappings += slow == NativeBlockExit::ReadMemory;
-		calls |= op == OpCode::MOD || op == OpCode::FLOORDIV || op == OpCode::POW
-			|| (slow == NativeBlockExit::WriteWords && (instruction.b >= 0 || instruction.c != 0))
-			|| (op == OpCode::MTC0 && instruction.b != COP0_EXEC)
-			|| op == OpCode::LEN || op == OpCode::SETI || op == OpCode::SETT || op == OpCode::LOADKR || (op == OpCode::BNOT && instruction.b >= 0)
-			|| ((op == OpCode::BAND || op == OpCode::BOR || op == OpCode::BXOR || op == OpCode::SHL || op == OpCode::SHR)
-				&& (instruction.b >= 0 || instruction.c >= 0))
-			|| ((slow == NativeBlockExit::ReadMemory || slow == NativeBlockExit::WriteMemory)
-			&& (instruction.b >= 0 || (slow == NativeBlockExit::WriteMemory
-				&& instruction.c != static_cast<i16>(MemoryAccessKind::F32LE)
-				&& instruction.c != static_cast<i16>(MemoryAccessKind::F64LE))));
+	for (const auto& blockSource : sources) {
+		bool controlGuarded = false;
+		for (const auto& source : blockSource.instructions) {
+			const auto& instruction = *source.decoded;
+			const auto op = static_cast<OpCode>(instruction.op);
+			const auto slow = nativeBlockSlowExit(instruction.op, instruction.b, controlGuarded);
+			controlGuarded |= op == OpCode::MFC0 || op == OpCode::MTC0;
+			slowPaths += slow == NativeBlockExit::ReadField || slow == NativeBlockExit::WriteField
+				|| slow == NativeBlockExit::ControlFault
+				|| slow == NativeBlockExit::ReadIndex || slow == NativeBlockExit::WriteIndex
+				|| slow == NativeBlockExit::ReadInteger || slow == NativeBlockExit::WriteInteger || slow == NativeBlockExit::InvalidLength
+				|| slow == NativeBlockExit::WriteUpvalue
+				|| slow == NativeBlockExit::Vararg || slow == NativeBlockExit::InvalidConstant
+				|| slow == NativeBlockExit::WriteMemory || slow == NativeBlockExit::WriteWords
+				|| (slow == NativeBlockExit::ReadMemory && instruction.c != static_cast<i16>(MemoryAccessKind::U8));
+			readMappings += slow == NativeBlockExit::ReadMemory;
+			calls |= op == OpCode::MOD || op == OpCode::FLOORDIV || op == OpCode::POW
+				|| (slow == NativeBlockExit::WriteWords && (instruction.b >= 0 || instruction.c != 0))
+				|| (op == OpCode::MTC0 && instruction.b != COP0_EXEC)
+				|| op == OpCode::LEN || op == OpCode::SETI || op == OpCode::SETT || op == OpCode::LOADKR || (op == OpCode::BNOT && instruction.b >= 0)
+				|| ((op == OpCode::BAND || op == OpCode::BOR || op == OpCode::BXOR || op == OpCode::SHL || op == OpCode::SHR)
+					&& (instruction.b >= 0 || instruction.c >= 0))
+				|| ((slow == NativeBlockExit::ReadMemory || slow == NativeBlockExit::WriteMemory)
+				&& (instruction.b >= 0 || (slow == NativeBlockExit::WriteMemory
+					&& instruction.c != static_cast<i16>(MemoryAccessKind::F32LE)
+					&& instruction.c != static_cast<i16>(MemoryAccessKind::F64LE))));
+		}
 	}
 	m_slowPaths.reserve(slowPaths);
 	m_readMappings.reserve(readMappings);
+	m_internalBranches.reserve(blocks.size() * 2u);
+	m_shortGrants.reserve(blocks.size());
 	m_useSavedFloats = calls && SLJIT_NUMBER_OF_SAVED_FLOAT_REGISTERS >= REGISTER_CACHE_CAPACITY;
 	m_registerCount = m_useSavedFloats ? REGISTER_CACHE_CAPACITY
 		: std::min(REGISTER_CACHE_CAPACITY, SLJIT_NUMBER_OF_FLOAT_REGISTERS - SLJIT_NUMBER_OF_SAVED_FLOAT_REGISTERS - 3);
@@ -53,10 +58,29 @@ NativeBlockCompiler::NativeBlockCompiler(const Value* constants, const NativeBlo
 	// need its ABI context for calls and their helper spill slots.
 	sljit_set_context(m_compiler, 0, NativeBlockAbi::signature,
 		NativeBlockAbi::scratches, NativeBlockAbi::saveds, NativeBlockAbi::stackBytes);
-	m_body = sljit_emit_label(m_compiler);
 }
 
 NativeBlockCompiler::~NativeBlockCompiler() { sljit_free_compiler(m_compiler); }
+
+void NativeBlockCompiler::beginBlock(size_t index) {
+	m_block = m_blocks[index].get();
+	m_registers.fill(CachedRegister{});
+	m_registerClock = 0;
+	m_hasTerminal = m_controlPrivilegeGuarded = false;
+	m_entries[index] = sljit_emit_label(m_compiler);
+	// Internal edges carry the completed source descriptor in R0. On a short
+	// grant publish that prefix, without pretending the target has executed.
+	m_shortGrants.push_back(sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS | SLJIT_32,
+		SLJIT_S4, 0, SLJIT_IMM, m_block->entryCycles));
+	m_bodies[index] = sljit_emit_label(m_compiler);
+}
+
+void NativeBlockCompiler::endBlock() {
+	if (!m_hasTerminal) {
+		flushRegisters();
+		emitExit(&m_block->terminal);
+	}
+}
 
 void NativeBlockCompiler::emit(const DecodedInstruction& instruction, const NativeBlockExitSite* slowExit, const NativeBlockExitSite* takenExit) {
 	const auto op = static_cast<OpCode>(instruction.op);
@@ -221,6 +245,14 @@ void NativeBlockCompiler::emitExit(const NativeBlockExitSite* exit) {
 		sljit_set_label(retained, sljit_emit_label(m_compiler));
 	}
 	if (exit->exit == NativeBlockExit::Continue) {
+		for (size_t index = 0; index < m_blocks.size(); ++index) {
+			if (m_blocks[index]->firstPc != exit->nextPc) continue;
+			sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(exit));
+			m_internalBranches.push_back({sljit_emit_jump(m_compiler, SLJIT_JUMP), index});
+			return;
+		}
+	}
+	if (exit->exit == NativeBlockExit::Continue) {
 		sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM0(), reinterpret_cast<sljit_sw>(&exit->link.code));
 		auto* unlinked = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0);
 		auto* shortGrant = sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS | SLJIT_32,
@@ -237,11 +269,13 @@ void NativeBlockCompiler::emitExit(const NativeBlockExitSite* exit) {
 	sljit_emit_ijump(m_compiler, SLJIT_JUMP, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, exitCode));
 }
 
-void* NativeBlockCompiler::finish(size_t& codeBytes, void*& body) {
-	if (!m_hasTerminal) {
-		flushRegisters();
-		emitExit(&m_block->terminal);
-	}
+void* NativeBlockCompiler::finish(size_t& codeBytes) {
+	for (const auto& branch : m_internalBranches) sljit_set_label(branch.jump, m_entries[branch.target]);
+	auto* shortGrant = sljit_emit_label(m_compiler);
+	for (auto* jump : m_shortGrants) sljit_set_label(jump, shortGrant);
+	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, remainingCycles), SLJIT_S4, 0);
+	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, registerTop), SLJIT_S5, 0);
+	sljit_emit_ijump(m_compiler, SLJIT_JUMP, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, exitCode));
 	for (const auto& slow : m_slowPaths) {
 		auto* label = sljit_emit_label(m_compiler);
 		for (size_t i = 0; i < slow.count; ++i) sljit_set_label(slow.jumps[i], label);
@@ -252,7 +286,8 @@ void* NativeBlockCompiler::finish(size_t& codeBytes, void*& body) {
 	void* code = sljit_generate_code(m_compiler, 0, nullptr);
 	if (!code) throw std::bad_alloc();
 	codeBytes = sljit_get_generated_code_size(m_compiler);
-	body = reinterpret_cast<void*>(sljit_get_label_addr(m_body));
+	for (size_t index = 0; index < m_blocks.size(); ++index)
+		m_blocks[index]->m_body = reinterpret_cast<void*>(sljit_get_label_addr(m_bodies[index]));
 	return code;
 }
 

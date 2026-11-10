@@ -135,23 +135,33 @@ struct DecodedInstructionPage {
 	std::array<u8, DECODED_PAGE_WORDS> nativeVisits{};
 	std::unique_ptr<NativeBlockPage> nativeBlocks;
 
+	void retireNativeRegion(const NativeCodeRegion* region) {
+		for (u32 entry = 0; entry < DECODED_PAGE_WORDS; ++entry) {
+			auto& block = nativeBlocks->entries[entry];
+			if (!block || block->region.get() != region) continue;
+			block.reset();
+			--nativeBlocks->count;
+			auto& instruction = words[entry];
+			instruction.dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeWarm);
+			instruction.dispatchCycles = instruction.baseCycles;
+			nativeVisits[entry] = 0;
+		}
+		if (nativeBlocks->count == 0u) nativeBlocks.reset();
+	}
+
 	void retireNativeBlocks(u32 firstWord = 0, u32 endWord = DECODED_PAGE_WORDS + 1u) {
 		if (!nativeBlocks) return;
 		const u32 firstEntry = firstWord > 2u * (NATIVE_BLOCK_MAX_INSTRUCTIONS + 1u)
 			? firstWord - 2u * (NATIVE_BLOCK_MAX_INSTRUCTIONS + 1u) : 0u;
 		const u32 endEntry = endWord < DECODED_PAGE_WORDS ? endWord : DECODED_PAGE_WORDS;
 		for (u32 word = firstEntry; word < endEntry; ++word) {
-			auto& block = nativeBlocks->entries[word];
+			const auto& block = nativeBlocks->entries[word];
 			if (!block || word + block->sourceWords <= firstWord) continue;
-			block.reset();
-			--nativeBlocks->count;
-			auto& instruction = words[word];
-			instruction.dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeWarm);
-			instruction.dispatchCycles = instruction.baseCycles;
-			nativeVisits[word] = 0;
+			retireNativeRegion(block->region.get());
+			if (!nativeBlocks) return;
 		}
-		if (nativeBlocks->count == 0u) nativeBlocks.reset();
 	}
+
 #endif
 };
 

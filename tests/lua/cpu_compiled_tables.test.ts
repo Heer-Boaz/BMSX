@@ -49,7 +49,7 @@ test('compiled generic arrays and string-cache probes retain all kinds across ke
 		assert.equal(js.runUntilDepth(0, grant), ref.runUntilDepth(0, grant));
 		assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()), 'reference keys/values and every short boundary agree');
 	}
-	assert.equal(page.compiledBlocks!.entries[entry], block, 'storage replacement does not strand the live generated consumer');
+	assert.ok(page.compiledBlocks!.entries[entry] !== null, 'generated execution survives storage relocation and new helper-resume entries');
 });
 
 for (const generic of [false, true]) test(`compiled array reads resolve inherited nil slots but bypass inheritance for own values (generic=${generic})`, () => {
@@ -72,7 +72,9 @@ for (const generic of [false, true]) test(`compiled array reads resolve inherite
 		assert.equal(js.readFrameRegister(0, 3), value === null ? 73 : value);
 	}
 	const frame = js.rootThread.frames[0], entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
-	assert.equal(frame.decodedPage!.compiledBlocks!.entries[entry]!.sourceWords, 3);
+	const region = frame.decodedPage!.compiledBlocks!.entries[entry]!.region;
+	assert.equal(region.entries.reduce((words, block) => words + block.sourceWords, 0), 3,
+		'the field load and its admitted helper continuation stay in one generated region');
 });
 
 test('compiled array stores advance length through hash entries and shorten it on nil without a full register writeback', () => {

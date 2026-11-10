@@ -12,12 +12,14 @@ namespace bmsx {
 
 class NativeBlockCompiler {
 public:
-	NativeBlockCompiler(const Value* constants, const NativeBlock* block, Memory& memory, StringPool& strings,
-		std::span<const NativeBlockInstruction> instructions);
+	NativeBlockCompiler(const Value* constants, std::span<const std::unique_ptr<NativeBlock>> blocks, Memory& memory, StringPool& strings,
+		std::span<const NativeBlockSource> sources);
 	~NativeBlockCompiler();
 	void emit(const DecodedInstruction& instruction, const NativeBlockExitSite* slowExit,
 		const NativeBlockExitSite* takenExit);
-	void* finish(size_t& codeBytes, void*& body);
+	void beginBlock(size_t index);
+	void endBlock();
+	void* finish(size_t& codeBytes);
 
 private:
 	struct SlowPath;
@@ -60,9 +62,14 @@ private:
 	void convertWord(int selector);
 
 	sljit_compiler* m_compiler;
-	sljit_label* m_body;
+	std::span<const std::unique_ptr<NativeBlock>> m_blocks;
+	std::vector<sljit_label*> m_entries;
+	std::vector<sljit_label*> m_bodies;
+	struct InternalBranch { sljit_jump* jump; size_t target; };
+	std::vector<InternalBranch> m_internalBranches;
+	std::vector<sljit_jump*> m_shortGrants;
 	const Value* m_constants;
-	const NativeBlock* m_block;
+	const NativeBlock* m_block = nullptr;
 	Memory& m_memory;
 	StringPool& m_strings;
 	bool m_hasTerminal = false;

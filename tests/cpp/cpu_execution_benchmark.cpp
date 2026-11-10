@@ -1,3 +1,4 @@
+#include <unordered_set>
 #include <chrono>
 #include <algorithm>
 #include <array>
@@ -62,12 +63,13 @@ int main(int argc, char** argv) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		for (const auto& [key, page] : image->decodedPages) {
 			if (!page.nativeBlocks) continue;
+			std::unordered_set<const bmsx::NativeCodeRegion*> codeRegions;
 			std::array<bmsx::u8, bmsx::DECODED_PAGE_WORDS> covered{};
 			for (size_t word = 0; word < page.nativeBlocks->entries.size(); ++word) {
 				const auto& block = page.nativeBlocks->entries[word];
 				if (!block) continue;
 				++compiledBlocks;
-				codeBytes += block->codeBytes;
+				if (codeRegions.insert(block->region.get()).second) codeBytes += block->region->codeBytes;
 				compiledSourceWords += block->sourceWords;
 				// Source extents include fetched skip dependencies, not only
 				// executed instructions. Count their per-page union separately.

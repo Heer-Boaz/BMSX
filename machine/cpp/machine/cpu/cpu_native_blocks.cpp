@@ -11,57 +11,110 @@ namespace bmsx {
 
 void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32 word) {
 	constexpr size_t maximumCodeBytes = 4u * 1024u * 1024u;
-	MappedPageBinding binding;
-	m_memory.bindMappedPage(m_currentInstructionPc & ~MAPPED_PAGE_BYTE_MASK, m_executionBusSignals, binding);
-	std::array<NativeBlockInstruction, NATIVE_BLOCK_MAX_INSTRUCTIONS> instructions;
-	size_t count = 0;
-	u32 cursor = word;
-	u32 pc = m_currentInstructionPc;
-	bool warmingSuccessor = false;
-	while (cursor < DECODED_PAGE_WORDS && count < instructions.size()) {
-		if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) != 0u) {
-			// A partial backing page can still supply already decoded words.
-			// Only a fully backed page admits new speculative instruction reads.
-			if (!binding.readBytes || cursor == DECODED_PAGE_WORDS - 1u) break;
-			if (!decodeInstruction(frame, page, cursor, pc, false)) return;
-		}
-		const auto& instruction = page.words[cursor];
-		if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) != 0u
-			|| instruction.dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe)
-			|| !nativeBlockSupports(instruction.op)) break;
-		if (count != 0u && binding.writeWatch.groups && page.nativeVisits[cursor] + 1u < NATIVE_BLOCK_COMPILATION_THRESHOLD) {
-			// A repeatedly rewritten successor never becomes hot. Do not keep
-			// compiling it into a stable predecessor only to retire that block.
-			warmingSuccessor = true;
-			break;
-		}
-		instructions[count++] = {&instruction, pc};
-		if (nativeBlockEndsBlock(instruction.op, instruction.b)) break;
-		cursor += instruction.width;
-		pc += static_cast<u32>(instruction.width) * INSTRUCTION_BYTES;
-	}
-	if (count == 0u || (count == 1u && !nativeBlockEndsBlock(instructions[0].decoded->op, instructions[0].decoded->b))) {
-		if (warmingSuccessor) page.nativeVisits[word] = 0;
-		else page.words[word].dispatchOp = page.words[word].op;
-		return;
-	}
-	u8 skippedInstructionWidth = 0;
-	if (binding.readBytes && nativeBlockComparison(instructions[count - 1u].decoded->op)) {
-		const u32 skippedWord = cursor + instructions[count - 1u].decoded->width;
-		if (skippedWord < DECODED_PAGE_WORDS && (page.refreshState[skippedWord] & DECODED_REFRESH_DECODE) == 0u
-			&& skippedWord + page.words[skippedWord].width <= DECODED_PAGE_WORDS) {
-			// Reuse a completed fetch, never speculate across a faulting boundary.
-			// sourceWords retains these words as dependencies of the fixed edge.
-			skippedInstructionWidth = page.words[skippedWord].width;
-		}
-	}
 	if (m_nativeCodeBytes >= maximumCodeBytes) {
-		// Guest code is unaffected by eviction; only executable host cache is retired.
 		for (auto& image : m_executionImagesByDomain) {
 			if (!image) continue;
 			for (auto& [key, decodedPage] : image->decodedPages) decodedPage.retireNativeBlocks();
 		}
 	}
+	const u32 pagePc = m_currentInstructionPc & ~MAPPED_PAGE_BYTE_MASK;
+	MappedPageBinding binding;
+	m_memory.bindMappedPage(pagePc, m_executionBusSignals, binding);
+	std::array<u8, DECODED_PAGE_WORDS> roots{}, queued{}, available{}, leaders{};
+	std::array<u32, DECODED_PAGE_WORDS> pending{};
+	std::array<const NativeCodeRegion*, DECODED_PAGE_WORDS> owners{};
+	std::vector<const NativeCodeRegion*> merged;
+	size_t pendingCount = 0;
+	const auto enqueue = [&](u32 pc, bool leader) {
+		const u32 offset = pc - pagePc;
+		if (offset >= MAPPED_PAGE_BYTE_SIZE) return;
+		const u32 next = offset / INSTRUCTION_BYTES;
+		// Two sequential predecessors can meet after an external entry into
+		// a WIDE body. That join also needs its own segment, not duplicate code.
+		if (leader || queued[next]) leaders[next] = 1;
+		if (!queued[next]) { queued[next] = 1; pending[pendingCount++] = next; }
+	};
+	roots[word] = 1;
+	enqueue(m_currentInstructionPc, true);
+	if (page.nativeBlocks) for (u32 entry = 0; entry < DECODED_PAGE_WORDS; ++entry) {
+		const auto& block = page.nativeBlocks->entries[entry];
+		if (!block) continue;
+		std::fill(owners.begin() + entry, owners.begin() + std::min(entry + block->sourceWords, static_cast<u32>(DECODED_PAGE_WORDS)), block->region.get());
+	}
+	for (size_t next = 0; next < pendingCount; ++next) {
+		const u32 cursor = pending[next];
+		const u32 pc = pagePc + cursor * INSTRUCTION_BYTES;
+		if (const auto* region = owners[cursor]; region && std::find(merged.begin(), merged.end(), region) == merged.end()) {
+			// Split a newly entered interior instruction in the same connected
+			// region. Independent functions on the page retain their code owner.
+			merged.push_back(region);
+			leaders[cursor] = 1;
+			for (u32 entry = 0; entry < DECODED_PAGE_WORDS; ++entry) {
+				const auto& block = page.nativeBlocks->entries[entry];
+				if (!block || block->region.get() != region) continue;
+				roots[entry] = 1;
+				enqueue(pagePc + entry * INSTRUCTION_BYTES, true);
+			}
+		}
+		if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) != 0u) {
+			if (!binding.readBytes || cursor == DECODED_PAGE_WORDS - 1u) continue;
+			if (!decodeInstruction(frame, page, cursor, pc, false)) return;
+		}
+		const auto& instruction = page.words[cursor];
+		if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) != 0u
+			|| instruction.dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe)
+			|| !nativeBlockSupports(instruction.op)) continue;
+		if (!roots[cursor] && binding.writeWatch.groups
+			&& page.nativeVisits[cursor] + 1u < NATIVE_BLOCK_COMPILATION_THRESHOLD) continue;
+		available[cursor] = 1;
+		const auto op = static_cast<OpCode>(instruction.op);
+		const u32 successor = cursor + instruction.width;
+		const u32 successorPc = pc + static_cast<u32>(instruction.width) * INSTRUCTION_BYTES;
+		if (nativeBlockComparison(instruction.op)) {
+			enqueue(successorPc, true);
+			if (binding.readBytes && successor < DECODED_PAGE_WORDS) {
+				if ((page.refreshState[successor] & DECODED_REFRESH_DECODE) != 0u && successor < DECODED_PAGE_WORDS - 1u
+					&& !decodeInstruction(frame, page, successor, successorPc, false)) return;
+				if ((page.refreshState[successor] & DECODED_REFRESH_DECODE) == 0u
+					&& successor + page.words[successor].width <= DECODED_PAGE_WORDS)
+					enqueue(successorPc + static_cast<u32>(page.words[successor].width) * INSTRUCTION_BYTES, true);
+			}
+		} else if (op == OpCode::JMP || op == OpCode::JMPIF || op == OpCode::JMPIFNOT) {
+			enqueue(instruction.bx, true);
+			if (op != OpCode::JMP) enqueue(successorPc, true);
+		} else if (!nativeBlockEndsBlock(instruction.op, instruction.b)) enqueue(successorPc, false);
+	}
+	if (!available[word]) {
+		page.words[word].dispatchOp = page.words[word].op;
+		return;
+	}
+	std::array<NativeBlockInstruction, DECODED_PAGE_WORDS> instructions;
+	std::vector<NativeBlockSource> sources;
+	std::vector<u32> entries;
+	size_t instructionCount = 0;
+	for (u32 entry = 0; entry < DECODED_PAGE_WORDS; ++entry) {
+		if (!leaders[entry] || !available[entry]) continue;
+		const size_t first = instructionCount;
+		u32 cursor = entry;
+		for (;;) {
+			const auto& instruction = page.words[cursor];
+			instructions[instructionCount++] = {&instruction, pagePc + cursor * INSTRUCTION_BYTES};
+			const u32 successor = cursor + instruction.width;
+			if (nativeBlockEndsBlock(instruction.op, instruction.b) || successor >= DECODED_PAGE_WORDS
+				|| !available[successor] || leaders[successor]) break;
+			if (instructionCount - first == NATIVE_BLOCK_MAX_INSTRUCTIONS) { leaders[successor] = 1; break; }
+			cursor = successor;
+		}
+		u8 skippedWidth = 0;
+		if (binding.readBytes && nativeBlockComparison(page.words[cursor].op)) {
+			const u32 successor = cursor + page.words[cursor].width;
+			if (successor < DECODED_PAGE_WORDS && (page.refreshState[successor] & DECODED_REFRESH_DECODE) == 0u
+				&& successor + page.words[successor].width <= DECODED_PAGE_WORDS) skippedWidth = page.words[successor].width;
+		}
+		sources.push_back({std::span(instructions.data() + first, instructionCount - first), skippedWidth});
+		entries.push_back(entry);
+	}
+	for (const auto* region : merged) page.retireNativeRegion(region);
 	if (!page.nativeBlocks) page.nativeBlocks = std::make_unique<NativeBlockPage>();
 	NativeBlockExitHandlers handlers{};
 	handlers[static_cast<size_t>(NativeBlockExit::ReadField)] = &CPU::compiledReadFieldExit;
@@ -73,13 +126,16 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 	handlers[static_cast<size_t>(NativeBlockExit::WriteIndex)] = &CPU::compiledWriteIndexExit;
 	handlers[static_cast<size_t>(NativeBlockExit::ReadInteger)] = &CPU::compiledReadIntegerExit;
 	handlers[static_cast<size_t>(NativeBlockExit::WriteInteger)] = &CPU::compiledWriteIntegerExit;
-	page.nativeBlocks->entries[word] = NativeBlock::compile(
-		std::span(instructions.data(), count), frame.executionImage->constPool.data(), m_nativeCodeBytes,
-		m_memory, m_stringPool, handlers, skippedInstructionWidth);
-	++page.nativeBlocks->count;
-	page.words[word].dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeBlock);
-	page.words[word].dispatchCycles = page.words[word].baseCycles;
-	page.refreshState[word] &= static_cast<u8>(~DECODED_REFRESH_FUSION);
+	auto blocks = NativeBlock::compileRegion(sources, frame.executionImage->constPool.data(), m_nativeCodeBytes,
+		m_memory, m_stringPool, handlers);
+	for (size_t index = 0; index < entries.size(); ++index) {
+		const u32 entry = entries[index];
+		page.nativeBlocks->entries[entry] = std::move(blocks[index]);
+		++page.nativeBlocks->count;
+		page.words[entry].dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeBlock);
+		page.words[entry].dispatchCycles = page.words[entry].baseCycles;
+		page.refreshState[entry] &= static_cast<u8>(~DECODED_REFRESH_FUSION);
+	}
 	auto& lookup = frame.executionImage->nativeCodeLookup;
 	if (!lookup) lookup = std::make_unique<NativeCodeLookup>();
 	lookup->install(m_currentInstructionPc & ~MAPPED_PAGE_BYTE_MASK,

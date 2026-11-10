@@ -1,10 +1,12 @@
 #include "machine/cpu/cpu.h"
+#include "machine/common/numeric.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 
+#include <algorithm>
 #include <array>
 #include <iostream>
 #include <stdexcept>
@@ -71,9 +73,42 @@ void grantsAndTargetRetirement() {
 	auto& page = *native.cpu.activeThread()->frames[0]->decodedPage;
 	const auto* root = page.nativeBlocks->entries[0].get();
 	const auto& taken = root->sideExits.back();
-	require(root->terminal.link.target && root->terminal.link.target == page.nativeBlocks->entries[2].get()
-		&& taken.link.target && taken.link.target == page.nativeBlocks->entries[4].get(),
-		"the CPU resolves both actual branch exits to existing compiled targets in their physical page");
+	require(page.nativeBlocks->entries[2] && page.nativeBlocks->entries[4]
+		&& root->region == page.nativeBlocks->entries[2]->region && root->region == page.nativeBlocks->entries[4]->region
+		&& !root->terminal.link.code && !taken.link.code,
+		"both branch targets are internal entries of one code region, not dispatcher links");
+	for (const bool flag : {false, true}) for (const u32 start : {0u, 2u, 4u, 6u}) for (int grant = 2; grant <= 64; ++grant) {
+		std::array<Value, 12> registers; registers.fill(valueNumber(0));
+		registers[0] = valueNumber(2); registers[1] = valueNumber(1); registers[2] = valueBool(flag);
+		auto expected = registers;
+		int remaining = grant, top = 0;
+		u32 segment = start;
+		const NativeBlockExitSite* expectedExit;
+		for (;;) {
+			const auto& current = *page.nativeBlocks->entries[segment];
+			expectedExit = &current.terminal;
+			if (segment == 0) {
+				expected[8] = valueNumber(asNumber(expected[8]) + 1); top = std::max(top, 9);
+				if (flag) expectedExit = &current.sideExits.back();
+				segment = flag ? 4u : 2u;
+			} else if (segment == 2) {
+				expected[0] = valueNumber(-asNumber(expected[0])); top = std::max(top, 1); segment = 6;
+			} else if (segment == 4) {
+				expected[0] = valueNumber(static_cast<i32>(toU32(expected[0]) << 1u));
+				expected[3] = expected[8]; top = std::max(top, 4); segment = 6;
+			} else {
+				expected[4] = valueNumber(asNumber(expected[0]) + asNumber(expected[8])); top = std::max(top, 5); segment = 0;
+			}
+			remaining -= 2;
+			if (remaining < 2) break;
+		}
+		NativeBlockRunState run{.registers = registers.data(), .constants = native.cpu.activeThread()->frames[0]->executionImage->constPool.data(),
+			.remainingCycles = grant};
+		const auto* exit = page.nativeBlocks->entries[start]->run(run);
+		require(exit == expectedExit && registers == expected && run.remainingCycles == remaining && run.registerTop == top,
+			"one native entry traverses both branches, a WIDE merge and a backedge without a CPU dispatcher or intermediate frame");
+	}
+
 #endif
 	for (const Value flag : {valueBool(true), valueBool(false), valueNumber(0), VALUE_QNAN_MASK}) for (int grant = 1; grant <= 96; ++grant) {
 		for (auto* machine : {&native, &scalar}) {
@@ -88,9 +123,8 @@ void grantsAndTargetRetirement() {
 	for (auto* machine : {&native, &scalar}) machine->memory.writeBytes(DYNAMIC_RAM_BASE + 7u * INSTRUCTION_BYTES,
 		replacement.data(), replacement.size());
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	require(page.nativeBlocks->entries[0].get() == root && !page.nativeBlocks->entries[4] && !taken.link.code && !taken.link.target,
-		"a target write unlinks its live predecessor before retiring the target executable");
-	require(root->terminal.link.target == page.nativeBlocks->entries[2].get(), "an unaffected outgoing edge stays live");
+	require(!page.nativeBlocks,
+		"a write to an internal target retires every reachable label before reusing the source region");
 #endif
 	for (auto* machine : {&native, &scalar}) {
 		machine->cpu.activeThread()->frames[0]->registers[2] = valueBool(true);
@@ -99,7 +133,9 @@ void grantsAndTargetRetirement() {
 	}
 	requireParity(native, scalar);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	require(taken.link.target && taken.link.target == page.nativeBlocks->entries[4].get(), "the updated target warms and relinks normally");
+	require(page.nativeBlocks && page.nativeBlocks->entries[0] && page.nativeBlocks->entries[4]
+		&& page.nativeBlocks->entries[0]->region == page.nativeBlocks->entries[4]->region,
+		"the updated target regenerates in the same region as its branch source");
 #endif
 	for (auto* machine : {&native, &scalar}) machine->cpu.runUntilDepth(0, 600002);
 	requireParity(native, scalar);
@@ -196,11 +232,51 @@ void shortGrantsDoNotPromoteSequentialPositions(bool inRam) {
 	require(static_cast<bool>(page.nativeBlocks->entries[entry + 4]),
 		"an actual branch into the same interior position remains eligible for native execution");
 }
+void entriesIntoWideBodiesShareTheirSequentialJoin() {
+	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::ADD), 0, 0, 1);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::ADD), 2, 0, 1);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
+	writeInstruction(image.text, 16, static_cast<u8>(OpCode::JMP), 0, 63, 48, 255);
+	image.functions = {{.firstWord = 0, .wordCount = 17, .maxStack = 12}};
+	CpuMachine native(image, false), scalar(image, true);
+	for (auto* machine : {&native, &scalar}) {
+		machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
+		auto& frame = *machine->cpu.activeThread()->frames[0];
+		frame.registers[0] = frame.registers[2] = valueNumber(0); frame.registers[1] = valueNumber(1);
+		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
+		machine->cpu.runUntilDepth(0, 1200);
+	}
+	for (int visit = 0; visit < 16; ++visit) {
+		for (auto* machine : {&native, &scalar}) {
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE + 16u * INSTRUCTION_BYTES);
+			machine->cpu.runUntilDepth(0, 128);
+		}
+		requireParity(native, scalar);
+	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	const auto& page = *native.cpu.activeThread()->frames[0]->decodedPage;
+	const auto& entries = page.nativeBlocks->entries;
+	require(entries[0] && entries[1] && entries[2] && entries[16]
+		&& entries[0]->region == entries[1]->region && entries[1]->region == entries[2]->region
+		&& entries[0]->sourceWords == 2 && entries[1]->sourceWords == 1 && entries[2]->sourceWords == 2,
+		"prefix and raw-body entries converge at one shared segment instead of duplicating their sequential suffix");
+#endif
+	for (int grant = 1; grant <= 31; ++grant) {
+		for (auto* machine : {&native, &scalar}) {
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE + INSTRUCTION_BYTES);
+			machine->cpu.runUntilDepth(0, grant);
+		}
+		requireParity(native, scalar);
+	}
+}
+
 } // namespace
 
 int main() {
 	try {
-		grantsAndTargetRetirement(); crossPageLinksRetireTheirTargetsAndKeepBoundedStack();
+		grantsAndTargetRetirement(); entriesIntoWideBodiesShareTheirSequentialJoin(); crossPageLinksRetireTheirTargetsAndKeepBoundedStack();
 		shortGrantsDoNotPromoteSequentialPositions(false); shortGrantsDoNotPromoteSequentialPositions(true);
 		std::cout << "Compiled block link tests passed\n"; return 0;
 	}

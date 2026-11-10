@@ -188,10 +188,12 @@ test('both resolved comparison paths link directly and stop at every short grant
 	}
 	const cache = machines[0].cpu.rootThread.frames[0].decodedPage!.compiledBlocks!, root = cache.entries[0]!;
 	assert.equal(root.sourceWords, 2);
-	assert.equal(root.terminal.linkedBlock, cache.entries[1]); assert.ok(root.terminal.linkedBlock);
+	assert.ok(cache.entries[1]?.region === root.region && cache.entries[2]?.region === root.region,
+		'both comparison targets are entries of one generated function');
+	assert.equal(root.terminal.linkedBlock, null);
 	const skipped = root.exits.find(exit => exit.nextPc === DYNAMIC_RAM_BASE + 2 * INSTRUCTION_BYTES)!;
 	assert.equal(skipped.exit, CompiledBlockExit.Continue);
-	assert.equal(skipped.linkedBlock, cache.entries[2]); assert.ok(skipped.linkedBlock);
+	assert.equal(skipped.linkedBlock, null);
 	for (const value of [0, 1]) for (let grant = 1; grant <= 32; ++grant) {
 		for (const { cpu } of machines) {
 			cpu.rootThread.frames[0].registers.setNumber(0, value);

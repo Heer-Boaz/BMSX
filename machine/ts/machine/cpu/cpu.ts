@@ -140,11 +140,13 @@ import { CompiledCodeLookup } from './compiled_code_lookup';
 import { Thread, ThreadStatus, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES } from './thread';
 import { LuaHeap, type LuaHeapState } from './lua_heap';
 import {
-	CpuExecutionBackend, CompiledBlockPage, CompiledCodeCache, CompiledBlockExit, COMPILED_BLOCK_THRESHOLD,
+	CpuExecutionBackend, CompiledBlockExit, COMPILED_BLOCK_THRESHOLD,
 	COMPILED_BLOCK_MAX_INSTRUCTIONS,
-	compiledBlockSupports, compiledBlockEndsBlock, compiledBlockComparison, compileJavaScriptBlock, linkCompiledBlock,
-	type CompiledBlockExitSite,
+	compiledBlockSupports, compiledBlockEndsBlock, compiledBlockComparison,
+	type CompiledBlockExitSite, type CompiledBlockSource,
 } from './compiled_block';
+import { CompiledBlockPage, CompiledCodeCache, linkCompiledBlock } from './compiled_code_cache';
+import { compileJavaScriptRegion, type CompiledRegion, type CompiledRegionRunState } from './compiled_region';
 import { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotReader, CpuSnapshotObjectKind, CpuSnapshotClosure, CpuSnapshotTable, CpuSnapshotUpvalue, CpuSnapshotThread, CPU_SNAPSHOT_VALUE_WORDS, type CpuSnapshotObject, type CpuSnapshotValueWriter } from './snapshot';
 
 // start repeated-sequence-acceptable -- Lua VM/table/register hot paths deliberately keep short copy/update sequences inline.
@@ -307,6 +309,7 @@ export class CPU implements MappedPageInvalidator {
 	private preMaskableInterruptExecutionHookDomainMask: ExecutionDomainMask = 0;
 	private runUntilDepthEntry = this.runUntilDepthNormal;
 	private readonly compiledCodeCache = new CompiledCodeCache();
+	private readonly compiledRunState: CompiledRegionRunState = { remainingCycles: 0, registerTop: 0 };
 	private readonly registerBuiltinArgsScratch = new ScratchBuffer<BuiltinArgsView>(
 		() => new BuiltinArgsView(),
 		1,
@@ -2620,6 +2623,98 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
+	private prepareCompiledRegion(frame: CallFrame, page: DecodedInstructionPage, word: number): void {
+		const pc = this.currentInstructionPc;
+		const pagePc = (pc & ~MAPPED_PAGE_BYTE_MASK) >>> 0;
+		const binding = this.mappedPageBinding;
+		this.memory.bindMappedPage(pagePc, this.executionBusSignals, binding);
+		const roots = new Uint8Array(DECODED_PAGE_WORDS), queued = new Uint8Array(DECODED_PAGE_WORDS);
+		const available = new Uint8Array(DECODED_PAGE_WORDS), leaders = new Uint8Array(DECODED_PAGE_WORDS);
+		const pending: number[] = [];
+		const owners = new Array<CompiledRegion | null>(DECODED_PAGE_WORDS).fill(null);
+		const merged = new Set<CompiledRegion>();
+		const enqueue = (pc: number, leader: boolean): void => {
+			const offset = (pc - pagePc) >>> 0;
+			if (offset >= MAPPED_PAGE_BYTE_MASK + 1) return;
+			const next = offset / INSTRUCTION_BYTES;
+			// A WIDE prefix and an independent entry into its body may share
+			// the same sequential successor. Emit that successor only once.
+			if (leader || queued[next] !== 0) leaders[next] = 1;
+			if (queued[next] === 0) { queued[next] = 1; pending.push(next); }
+		};
+		roots[word] = 1; enqueue(pc, true);
+		const cache = page.compiledBlocks!;
+		for (let entry = 0; entry < DECODED_PAGE_WORDS; ++entry) {
+			const block = cache.entries[entry];
+			if (block !== null) owners.fill(block.region, entry, Math.min(entry + block.sourceWords, DECODED_PAGE_WORDS));
+		}
+		for (let next = 0; next < pending.length; ++next) {
+			const cursor = pending[next], pc = (pagePc + cursor * INSTRUCTION_BYTES) >>> 0;
+			const owner = owners[cursor];
+			if (owner !== null && !merged.has(owner)) {
+				merged.add(owner); leaders[cursor] = 1;
+				for (const block of owner.entries) {
+					roots[block.firstWord] = 1;
+					enqueue(pagePc + block.firstWord * INSTRUCTION_BYTES, true);
+				}
+			}
+			if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) !== 0) {
+				if (binding.readBytes === null || cursor === DECODED_PAGE_WORDS - 1) continue;
+				if (!this.decodeInstruction(frame, page, cursor, pc, false)) return;
+			}
+			const op = page.ops[cursor];
+			if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) !== 0
+				|| page.dispatchOps[cursor] === DecodedDispatchOp.Observe || !compiledBlockSupports(op)) continue;
+			if (roots[cursor] === 0 && binding.writeWatches !== null && cache.visits[cursor] + 1 < COMPILED_BLOCK_THRESHOLD) continue;
+			available[cursor] = 1;
+			const successor = cursor + page.widths[cursor], successorPc = (pagePc + successor * INSTRUCTION_BYTES) >>> 0;
+			if (compiledBlockComparison(op)) {
+				enqueue(successorPc, true);
+				if (binding.readBytes !== null && successor < DECODED_PAGE_WORDS) {
+					if ((page.refreshState[successor] & DECODED_REFRESH_DECODE) !== 0 && successor < DECODED_PAGE_WORDS - 1
+						&& !this.decodeInstruction(frame, page, successor, successorPc, false)) return;
+					if ((page.refreshState[successor] & DECODED_REFRESH_DECODE) === 0
+						&& successor + page.widths[successor] <= DECODED_PAGE_WORDS)
+						enqueue((successorPc + page.widths[successor] * INSTRUCTION_BYTES) >>> 0, true);
+				}
+			} else if (op === OpCode.JMP || op === OpCode.JMPIF || op === OpCode.JMPIFNOT) {
+				enqueue(page.bx[cursor], true);
+				if (op !== OpCode.JMP) enqueue(successorPc, true);
+			} else if (!compiledBlockEndsBlock(op, page.b[cursor])) enqueue(successorPc, false);
+		}
+		if (available[word] === 0) { page.dispatchOps[word] = page.ops[word]; return; }
+		const plans: CompiledBlockSource[] = [];
+		for (let entry = 0; entry < DECODED_PAGE_WORDS; ++entry) {
+			if (leaders[entry] === 0 || available[entry] === 0) continue;
+			let cursor = entry, count = 0;
+			for (;;) {
+				++count;
+				const successor = cursor + page.widths[cursor];
+				if (compiledBlockEndsBlock(page.ops[cursor], page.b[cursor]) || successor >= DECODED_PAGE_WORDS
+					|| available[successor] === 0 || leaders[successor] !== 0) break;
+				if (count === COMPILED_BLOCK_MAX_INSTRUCTIONS) { leaders[successor] = 1; break; }
+				cursor = successor;
+			}
+			const endWord = cursor + page.widths[cursor];
+			let skippedInstructionWidth = 0;
+			if (binding.readBytes !== null && compiledBlockComparison(page.ops[cursor]) && endWord < DECODED_PAGE_WORDS
+				&& (page.refreshState[endWord] & DECODED_REFRESH_DECODE) === 0
+				&& endWord + page.widths[endWord] <= DECODED_PAGE_WORDS) skippedInstructionWidth = page.widths[endWord];
+			plans.push({ firstWord: entry, endWord, pc: (pagePc + entry * INSTRUCTION_BYTES) >>> 0, skippedInstructionWidth });
+		}
+		for (const region of merged) this.compiledCodeCache.retireRegion(page, region);
+		const region = compileJavaScriptRegion(page, plans, frame.executionImage, this.memory, this.stringPool,
+			this.globalSlots, this.systemGlobalSlots, this.cop0Words);
+		this.compiledCodeCache.install(page, region);
+		for (const block of region.entries) {
+			page.dispatchCycles[block.firstWord] = BASE_CYCLES[page.ops[block.firstWord]];
+			page.refreshState[block.firstWord] &= ~DECODED_REFRESH_FUSION;
+		}
+		const image = frame.executionImage;
+		if (image.compiledCodeLookup === null) image.compiledCodeLookup = new CompiledCodeLookup();
+		image.compiledCodeLookup.install(pagePc, this.memory.cartridgeController.selectedSlot(this.executionBusSignals), page);
+	}
+
 	private executeCompiledBlock(frame: CallFrame, page: DecodedInstructionPage, word: number, targetDepth: number, rewritten: boolean): void {
 		const cache = page.compiledBlocks!;
 		if (page.dispatchOps[word] === DecodedDispatchOp.CompiledWarm) {
@@ -2629,53 +2724,7 @@ export class CPU implements MappedPageInvalidator {
 					this.compiledCodeCache.retireAll();
 					cache.visits[word] = COMPILED_BLOCK_THRESHOLD;
 				}
-				const pc = this.currentInstructionPc;
-				const binding = this.mappedPageBinding;
-				this.memory.bindMappedPage((pc & ~MAPPED_PAGE_BYTE_MASK) >>> 0, this.executionBusSignals, binding);
-				let cursor = word;
-				let finalWord = word;
-				let nextPc = pc;
-				let count = 0;
-				let warmingSuccessor = false;
-				while (cursor < DECODED_PAGE_WORDS && count < COMPILED_BLOCK_MAX_INSTRUCTIONS) {
-					if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) !== 0) {
-						if (binding.readBytes === null || cursor === DECODED_PAGE_WORDS - 1) break;
-						if (!this.decodeInstruction(frame, page, cursor, nextPc, false)) return;
-					}
-					if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) !== 0
-						|| page.dispatchOps[cursor] === DecodedDispatchOp.Observe
-						|| !compiledBlockSupports(page.ops[cursor])) break;
-					if (count !== 0 && binding.writeWatches !== null && cache.visits[cursor] + 1 < COMPILED_BLOCK_THRESHOLD) {
-						warmingSuccessor = true;
-						break;
-					}
-					++count;
-					finalWord = cursor;
-					nextPc = (nextPc + page.widths[cursor] * INSTRUCTION_BYTES) >>> 0;
-					const terminal = compiledBlockEndsBlock(page.ops[cursor], page.b[cursor]);
-					cursor += page.widths[cursor];
-					if (terminal) break;
-				}
-				if (count >= 2 || (count === 1 && compiledBlockEndsBlock(page.ops[word], page.b[word]))) {
-					let skippedInstructionWidth = 0;
-					if (binding.readBytes !== null && compiledBlockComparison(page.ops[finalWord])
-						&& cursor < DECODED_PAGE_WORDS && (page.refreshState[cursor] & DECODED_REFRESH_DECODE) === 0
-						&& cursor + page.widths[cursor] <= DECODED_PAGE_WORDS) {
-						// Keep the already fetched width in this body's source dependency.
-						skippedInstructionWidth = page.widths[cursor];
-					}
-					const block = compileJavaScriptBlock(page, word, cursor, pc, frame.executionImage, this.memory, this.stringPool,
-						this.globalSlots, this.systemGlobalSlots, this.cop0Words, skippedInstructionWidth);
-					this.compiledCodeCache.install(page, word, block);
-					const image = frame.executionImage;
-					if (image.compiledCodeLookup === null) image.compiledCodeLookup = new CompiledCodeLookup();
-					image.compiledCodeLookup.install((pc & ~MAPPED_PAGE_BYTE_MASK) >>> 0,
-						this.memory.cartridgeController.selectedSlot(this.executionBusSignals), page);
-				} else if (warmingSuccessor) {
-					cache.visits[word] = 0;
-				} else {
-					page.dispatchOps[word] = page.ops[word];
-				}
+				this.prepareCompiledRegion(frame, page, word);
 			}
 		}
 		let block = cache.entries[word];
@@ -2693,9 +2742,10 @@ export class CPU implements MappedPageInvalidator {
 			let registerTop = frame.top;
 			let exit: CompiledBlockExitSite;
 			for (;;) {
-				exit = current.exits[current.execute(registers, image.constScalars, page, frame)];
-				remaining -= exit.cycles;
-				registerTop = Math.max(exit.resetsRegisterTop ? frame.top : registerTop, exit.registerTop);
+				const run = this.compiledRunState;
+				run.remainingCycles = remaining; run.registerTop = registerTop;
+				exit = current.region.exits[current.region.execute(registers, image.constScalars, page, frame, current.entry, run)];
+				remaining = run.remainingCycles; registerTop = run.registerTop;
 				if (exit.exit !== CompiledBlockExit.Continue) break;
 				const target = exit.linkedBlock;
 				if (target === null) break;

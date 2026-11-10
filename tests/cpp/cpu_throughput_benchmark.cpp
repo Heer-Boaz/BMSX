@@ -1,3 +1,4 @@
+#include <unordered_set>
 #include "common/endian.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/irq/controller.h"
@@ -297,10 +298,11 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 	bool arithmeticReturn = false;
 	for (const auto& [key, page] : cpu.activeThread()->frames[0]->executionImage->decodedPages) {
 		if (!page.nativeBlocks) continue;
+		std::unordered_set<const NativeCodeRegion*> codeRegions;
 		for (const auto& block : page.nativeBlocks->entries) {
 			if (!block) continue;
 			++nativeBlocks;
-			nativeCodeBytes += block->codeBytes;
+			if (codeRegions.insert(block->region.get()).second) nativeCodeBytes += block->region->codeBytes;
 			arithmeticReturn |= block->terminal.exit == NativeBlockExit::Return && block->sourceWords == 34u;
 		}
 	}
