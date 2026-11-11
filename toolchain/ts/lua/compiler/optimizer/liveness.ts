@@ -1,4 +1,4 @@
-import { OpCode, decodeCallArgCount } from '../../../../../machine/ts/spec/blua32/opcode';
+import { OpCode, decodeValueCount } from '../../../../../machine/ts/spec/blua32/opcode';
 import { buildBasicBlocks, buildBlockGraph, type Block } from '../control_flow';
 import type { UpvalueDesc } from '../program';
 import type { Instruction } from './index';
@@ -155,12 +155,12 @@ function visitInstructionUses<T>(
 			visitRegister(state, visitor, instruction.b);
 			break;
 		case OpCode.CALL: {
-			const count = decodeCallArgCount(instruction.b, maxRegister - instruction.a);
+			const count = decodeValueCount(instruction.b, maxRegister - instruction.a);
 			visitRegisterRange(state, visitor, instruction.a, count + 1);
 			break;
 		}
 		case OpCode.RET: {
-			const count = instruction.b === 0 ? maxRegister - instruction.a + 1 : instruction.b;
+			const count = decodeValueCount(instruction.b, maxRegister - instruction.a + 1);
 			visitRegisterRange(state, visitor, instruction.a, count);
 			break;
 		}
@@ -224,12 +224,12 @@ function visitInstructionDefs<T>(
 			visitRegisterRange(state, visitor, instruction.a, instruction.b);
 			break;
 		case OpCode.VARARG: {
-			const count = instruction.b === 0 ? maxRegister - instruction.a + 1 : instruction.b;
+			const count = decodeValueCount(instruction.b, maxRegister - instruction.a + 1);
 			visitRegisterRange(state, visitor, instruction.a, count);
 			break;
 		}
 		case OpCode.CALL: {
-			const count = instruction.c === 0 ? maxRegister - instruction.a + 1 : instruction.c;
+			const count = maxRegister - instruction.a + 1;
 			visitRegisterRange(state, visitor, instruction.a, count);
 			break;
 		}

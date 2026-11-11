@@ -434,7 +434,7 @@ emit_path = function(
 			bytecode.emit_abc(instruction_words, isa.op_mov, name_register,
 				constant_register(state, expression.constant_index), 0)
 			bytecode.emit_abc(instruction_words, isa.op_call, call_base,
-				1 + isa.fixed_call_arg_count_bias, 1)
+				1 + isa.fixed_value_count_bias, 1 + isa.fixed_value_count_bias)
 			if not use_target then
 				bytecode.emit_abc(instruction_words, isa.op_mov, target, call_base, 0)
 			end
@@ -591,7 +591,7 @@ local emit_call_expression<const> = function(
 	expression,
 	target,
 	target_is_temporary,
-	result_count
+	result_operand
 )
 	local temporary_base<const> = state.free_register
 	local use_target<const> = target_is_temporary
@@ -647,7 +647,7 @@ local emit_call_expression<const> = function(
 	end
 	local arguments<const> = expression.arguments
 	local argument_count<const> = #arguments
-	local argument_operand = argument_count + isa.fixed_call_arg_count_bias
+	local argument_operand = argument_count + isa.fixed_value_count_bias
 		+ (method_name ~= nil and 1 or 0)
 	for index = 1, argument_count do
 		local argument_target<const> = reserve_register(state)
@@ -680,7 +680,7 @@ local emit_call_expression<const> = function(
 		isa.op_call,
 		call_base,
 		argument_operand,
-		result_count
+		result_operand
 	)
 	if not use_target then
 		bytecode.emit_abc(
@@ -863,7 +863,7 @@ emit_value = function(
 			expression,
 			target,
 			target_is_temporary,
-			1
+			1 + isa.fixed_value_count_bias
 		)
 	end
 	if kind == syntax.unary_expression
@@ -972,7 +972,7 @@ local emit_assignment<const> = function(
 				bytecode.emit_abc(instruction_words, isa.op_mov, value_target, value_register, 0)
 			end
 			bytecode.emit_abc(instruction_words, isa.op_call, call_base,
-				2 + isa.fixed_call_arg_count_bias, 0)
+				2 + isa.fixed_value_count_bias, isa.fixed_value_count_bias)
 			state.free_register = call_base
 			return
 		end
@@ -1138,14 +1138,7 @@ local emit_return_statement<const> = function(state, instruction_words, statemen
 	local expressions<const> = statement.expressions
 	local expression_count<const> = #expressions
 	if expression_count == 0 then
-		bytecode.emit_abc(
-			instruction_words,
-			isa.op_knil,
-			return_target,
-			0,
-			0
-		)
-		bytecode.emit_abc(instruction_words, isa.op_ret, return_target, 1, 0)
+		bytecode.emit_abc(instruction_words, isa.op_ret, return_target, isa.fixed_value_count_bias, 0)
 		return
 	end
 	for index = 2, expression_count do
@@ -1183,7 +1176,7 @@ local emit_return_statement<const> = function(state, instruction_words, statemen
 		instruction_words,
 		isa.op_ret,
 		return_target,
-		expression_count,
+		expression_count + isa.fixed_value_count_bias,
 		0
 	)
 end
@@ -1625,7 +1618,7 @@ emit_statement = function(state, instruction_words, statement)
 			statement.expression,
 			target,
 			true,
-			1
+			isa.fixed_value_count_bias
 		)
 	elseif kind == syntax.local_statement then
 		emit_local_statement(state, instruction_words, statement)
@@ -1743,8 +1736,7 @@ local compile_function<const> = function(state)
 	if #statements == 0
 		or statements[#statements].kind ~= syntax.return_statement then
 		local return_register<const> = reserve_register(state)
-		bytecode.emit_abc(instruction_words, isa.op_knil, return_register, 0, 0)
-		bytecode.emit_abc(instruction_words, isa.op_ret, return_register, 1, 0)
+		bytecode.emit_abc(instruction_words, isa.op_ret, return_register, isa.fixed_value_count_bias, 0)
 	end
 
 	return {

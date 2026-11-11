@@ -67,10 +67,10 @@ export const enum OpCode {
 
 export const OPCODE_COUNT = 64;
 
-export const encodeFixedCallArgCount = (argCount: number): number => argCount + 1;
+export const encodeFixedValueCount = (count: number): number => count + 1;
 
-export const decodeCallArgCount = (operand: number, openArgCount: number): number =>
-	operand === 0 ? openArgCount : operand - 1;
+export const decodeValueCount = (operand: number, openCount: number): number =>
+	operand === 0 ? openCount : operand - 1;
 
 export const BASE_CYCLES = new Uint8Array([
 	0, 1, 1, 1, 2, 1, 1, 1,

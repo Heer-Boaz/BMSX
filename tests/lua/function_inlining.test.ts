@@ -113,95 +113,52 @@ return forward()
 	assert.match(disassembleEntry(optimized), /\bCALL\b/);
 });
 
-test('inlining does not overwrite a caller register live above the CALL results', () => {
-	const calleeInstructions: Instruction[] = [
-		{ op: OpCode.K1, a: 0, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
-		{ op: OpCode.K1, a: 3, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
-		{ op: OpCode.RET, a: 0, b: 1, c: 0, format: 'ABC', rkMask: 0, target: null },
-	];
-	const callerInstructions: Instruction[] = [
-		{ op: OpCode.GETGL, a: 3, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
-		{ op: OpCode.CLOSURE, a: 0, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
-		{ op: OpCode.CALL, a: 0, b: 1, c: 1, format: 'ABC', rkMask: 0, target: null, callProtoIndex: 0 },
-		{ op: OpCode.ADD, a: 0, b: 0, c: 3, format: 'ABC', rkMask: 0, target: null },
-		{ op: OpCode.RET, a: 0, b: 1, c: 0, format: 'ABC', rkMask: 0, target: null },
-	];
-	const context: OptimizationContext = {
-		currentFunctionId: 'caller',
-		constPool: [],
-		constIndex: () => 0,
-		getClosureUpvalues: () => [],
-		getProtoMeta: () => ({ numParams: 0, isVararg: false, maxStack: 4, upvalueDescs: [] }),
-		getProtoInstructionSet: () => ({
-			instructions: calleeInstructions,
-			ranges: calleeInstructions.map(() => null),
-		}),
-		getProtoFunctionId: () => 'callee',
-		getProtoLocalSlots: () => [],
-		getProtoOuterBindings: () => [],
-		relocatedConstIndices: new Set<number>(),
-		closureWrittenRegisters: new Set<number>(),
-	};
-	const optimized = optimizeInstructions(
-		callerInstructions,
-		callerInstructions.map((_instruction, index) => index === 2 ? INLINE_TEST_RANGE : null),
-		3,
-		context,
-	);
-
-	assert.ok(optimized.instructions.some(instruction => instruction.op === OpCode.CALL));
+test('the compiler keeps live expression operands below nested CALL scratch', () => {
+	const source = `
+local leaf = function(value)
+ local a, b, c, d, e, f = value, value+1, value+2, value+3, value+4, value+5
+ return a+b+c+d+e+f
+end
+local receiver = { value=13 }
+function receiver:mix(first, second) return self.value + first * 10 + second end
+local held = { value=17 }
+held.value = held.value + receiver:mix(leaf(2), leaf(3))
+return held.value, leaf(1) + leaf(4), receiver:mix(leaf(5), (leaf(6)))
+`;
+	for (const optLevel of [0, 3] as const) {
+		assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, optLevel), [333, 60, 514]);
+	}
 });
 
-test('inlining does not overwrite a register retained by an open closure', () => {
-	const calleeInstructions: Instruction[] = [
-		{ op: OpCode.K1, a: 0, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
-		{ op: OpCode.K1, a: 3, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
-		{ op: OpCode.RET, a: 0, b: 1, c: 0, format: 'ABC', rkMask: 0, target: null },
-	];
-	const callerInstructions: Instruction[] = [
-		{ op: OpCode.K1, a: 3, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
-		{ op: OpCode.CLOSURE, a: 4, b: 1, c: 0, format: 'ABC', rkMask: 0, target: null },
-		{ op: OpCode.CLOSURE, a: 0, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
-		{ op: OpCode.CALL, a: 0, b: 1, c: 1, format: 'ABC', rkMask: 0, target: null, callProtoIndex: 0 },
-		{ op: OpCode.RET, a: 4, b: 1, c: 0, format: 'ABC', rkMask: 0, target: null },
-	];
-	const context: OptimizationContext = {
-		currentFunctionId: 'caller',
-		constPool: [],
-		constIndex: () => 0,
-		getClosureUpvalues: protoIndex => protoIndex === 1 ? [{ inStack: true, index: 3 }] : [],
-		getProtoMeta: () => ({ numParams: 0, isVararg: false, maxStack: 4, upvalueDescs: [] }),
-		getProtoInstructionSet: protoIndex => protoIndex === 0 ? {
-			instructions: calleeInstructions,
-			ranges: calleeInstructions.map(() => null),
-		} : null,
-		getProtoFunctionId: protoIndex => protoIndex === 0 ? 'callee' : 'capturing_closure',
-		getProtoLocalSlots: () => [],
-		getProtoOuterBindings: () => [],
-		relocatedConstIndices: new Set<number>(),
-		closureWrittenRegisters: new Set<number>(),
-	};
-	const optimized = optimizeInstructions(
-		callerInstructions,
-		callerInstructions.map((_instruction, index) => index === 3 ? INLINE_TEST_RANGE : null),
-		3,
-		context,
-	);
-
-	assert.ok(optimized.instructions.some(instruction => instruction.op === OpCode.CALL));
+test('inlining and nested calls preserve captured locals below their scratch suffix', () => {
+	const source = `
+local captured = 41
+local reader = function() return captured end
+local callee<const> = function(value)
+ local a, b, c, d = value, value+1, value+2, value+3
+ return a+b+c+d
+end
+local first = callee(reader())
+captured = captured + 1
+return reader(), first, callee(reader()), captured
+`;
+	for (const optLevel of [0, 3] as const) {
+		assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, optLevel), [42, 170, 174, 42]);
+	}
 });
 
 test('inlining can reuse a future capture slot before its closure is opened', () => {
 	const calleeInstructions: Instruction[] = [
+		{ op: OpCode.K1, a: 0, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
 		{ op: OpCode.K1, a: 3, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
-		{ op: OpCode.RET, a: 0, b: 1, c: 0, format: 'ABC', rkMask: 0, target: null },
+		{ op: OpCode.RET, a: 0, b: 2, c: 0, format: 'ABC', rkMask: 0, target: null },
 	];
 	const callerInstructions: Instruction[] = [
 		{ op: OpCode.CLOSURE, a: 0, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
-		{ op: OpCode.CALL, a: 0, b: 1, c: 1, format: 'ABC', rkMask: 0, target: null, callProtoIndex: 0 },
+		{ op: OpCode.CALL, a: 0, b: 1, c: 2, format: 'ABC', rkMask: 0, target: null, callProtoIndex: 0 },
 		{ op: OpCode.K1, a: 3, b: 0, c: 0, format: 'ABC', rkMask: 0, target: null },
 		{ op: OpCode.CLOSURE, a: 4, b: 1, c: 0, format: 'ABC', rkMask: 0, target: null },
-		{ op: OpCode.RET, a: 4, b: 1, c: 0, format: 'ABC', rkMask: 0, target: null },
+		{ op: OpCode.RET, a: 4, b: 2, c: 0, format: 'ABC', rkMask: 0, target: null },
 	];
 	const context: OptimizationContext = {
 		currentFunctionId: 'caller',

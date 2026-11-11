@@ -9,6 +9,10 @@ import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure } from './cpu_test_harness';
 
 const cases: { source: string; values: (number | boolean | null)[] }[] = [
+	{ source: 'return', values: [] },
+	{ source: '', values: [] },
+	{ source: 'return nil', values: [null] },
+	{ source: 'local uninitialized; return uninitialized', values: [null] },
 	{ source: 'return tuple()', values: [7, null, false, 9, null] },
 	{ source: 'return 1, nil, tuple()', values: [1, null, 7, null, false, 9, null] },
 	{ source: 'return tuple(), 0', values: [7, 0] },

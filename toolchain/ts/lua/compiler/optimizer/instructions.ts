@@ -1,4 +1,4 @@
-import { OpCode } from '../../../../../machine/ts/spec/blua32/opcode';
+import { OpCode, decodeValueCount } from '../../../../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from '../../source_range';
 import { cloneSourceRange } from '../source_range';
 import type { Instruction } from './index';
@@ -177,16 +177,16 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 				break;
 			case OpCode.VARARG:
 				updateMax(instruction.a);
-				updateMax(lastRegisterInRange(instruction.a, instruction.b));
+				updateMax(lastRegisterInRange(instruction.a, decodeValueCount(instruction.b, 0)));
 				break;
 			case OpCode.CALL:
 			case OpCode.RET:
 				updateMax(instruction.a);
 				if (instruction.b > 0) {
-					updateMax(instruction.a + instruction.b - 1);
+					updateMax(instruction.a + decodeValueCount(instruction.b, 0) - (instruction.op === OpCode.CALL ? 0 : 1));
 				}
 				if (instruction.op === OpCode.CALL && instruction.c > 0) {
-					updateMax(instruction.a + instruction.c - 1);
+					updateMax(instruction.a + decodeValueCount(instruction.c, 0) - 1);
 				}
 				break;
 			case OpCode.STORE_MEM:

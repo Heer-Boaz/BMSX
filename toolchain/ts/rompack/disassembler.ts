@@ -1,6 +1,6 @@
 import { extractSourceRangeText } from './source_text';
 import { CLOSURE_ADDRESS_REGISTER_FLAG, EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from '../../../machine/ts/spec/blua32/instruction_format';
-import { OpCode, OPCODE_USES_BX, OPCODE_USES_DISP, decodeCallArgCount } from '../../../machine/ts/spec/blua32/opcode';
+import { OpCode, OPCODE_USES_BX, OPCODE_USES_DISP, decodeValueCount } from '../../../machine/ts/spec/blua32/opcode';
 import { OPCODE_NAMES } from '../lua/opcode_metadata';
 import { formatNumber } from '../../../machine/ts/common/number_format';
 import {
@@ -83,8 +83,7 @@ const SOURCE_COMMENT_MAX_CHARS = 120;
 
 const formatBool = (value: number): string => (value !== 0 ? 'true' : 'false');
 
-const formatCount = (value: number): string => (value === 0 ? '*' : value.toString());
-const formatCallArgCount = (value: number): string => (value === 0 ? '*' : decodeCallArgCount(value, 0).toString());
+const formatValueCount = (value: number): string => (value === 0 ? '*' : decodeValueCount(value, 0).toString());
 
 const formatBlua32Value = (constant: Blua32EncodedConstant): string => {
 	switch (constant) {
@@ -426,11 +425,11 @@ const buildInstructionOperands = (
 		case OpCode.SETUP:
 			return [registerOperand('a', 'src', a), plainOperand('b', 'upvalue', `u${b}`)];
 		case OpCode.VARARG:
-			return [registerOperand('a', 'dst', a), plainOperand('b', 'count', formatCount(b))];
+			return [registerOperand('a', 'dst', a), plainOperand('b', 'count', formatValueCount(b))];
 		case OpCode.CALL:
-			return [registerOperand('a', 'callee', a), plainOperand('b', 'args', formatCallArgCount(b)), plainOperand('c', 'returns', formatCount(c))];
+			return [registerOperand('a', 'callee', a), plainOperand('b', 'args', formatValueCount(b)), plainOperand('c', 'returns', formatValueCount(c))];
 		case OpCode.RET:
-			return [registerOperand('a', 'base', a), plainOperand('b', 'count', formatCount(b))];
+			return [registerOperand('a', 'base', a), plainOperand('b', 'count', formatValueCount(b))];
 		case OpCode.LOAD_MEM_D:
 			return [registerOperand('a', 'dst', a), registerOperand('b', 'base', b), plainOperand('c', 'kind', c.toString()), plainOperand('disp', 'disp', `${decoded.disp << 2}`)];
 		case OpCode.STORE_MEM_D:
@@ -630,11 +629,11 @@ const formatInstruction = (
 		case OpCode.SETUP:
 			return `SETUP r${a}, u${b}`;
 		case OpCode.VARARG:
-			return `VARARG r${a}, ${formatCount(b)}`;
+			return `VARARG r${a}, ${formatValueCount(b)}`;
 		case OpCode.CALL:
-			return `CALL r${a}, ${formatCallArgCount(b)}, ${formatCount(c)}`;
+			return `CALL r${a}, ${formatValueCount(b)}, ${formatValueCount(c)}`;
 		case OpCode.RET:
-			return `RET r${a}, ${formatCount(b)}`;
+			return `RET r${a}, ${formatValueCount(b)}`;
 		case OpCode.MFC0:
 			return `MFC0 r${a}, c${b}`;
 		case OpCode.MTC0:

@@ -27,10 +27,10 @@ inline constexpr uint8_t RK_OPERAND_B = 1u;
 inline constexpr uint8_t RK_OPERAND_C = 2u;
 extern const std::array<uint8_t, OPCODE_COUNT> OPCODE_RK_OPERANDS;
 
-inline constexpr int encodeFixedCallArgCount(int argCount) { return argCount + 1; }
+inline constexpr int encodeFixedValueCount(int count) { return count + 1; }
 
-inline constexpr int decodeCallArgCount(int operand, int openArgCount) {
-	return operand == 0 ? openArgCount : operand - 1;
+inline constexpr int decodeValueCount(int operand, int openCount) {
+	return operand == 0 ? openCount : operand - 1;
 }
 
 } // namespace bmsx

@@ -42,7 +42,7 @@ import {
 	type LuaWhileStatement,
 	type LuaGotoStatement,
 } from './syntax/ast';
-import { OpCode, encodeFixedCallArgCount } from '../../../machine/ts/spec/blua32/opcode';
+import { OpCode, decodeValueCount, encodeFixedValueCount } from '../../../machine/ts/spec/blua32/opcode';
 import { formatNumber } from '../../../machine/ts/common/number_format';
 import type { SourcePosition, SourceRange } from './source_range';
 import { sourceRangesEqual } from './source_range';
@@ -816,7 +816,7 @@ class ProgramBuilder {
 		let returnsOneValue = true;
 		for (let instructionIndex = 0; instructionIndex < instructionSet.instructions.length; instructionIndex += 1) {
 			const instruction = instructionSet.instructions[instructionIndex];
-			if (instruction.op === OpCode.RET && instruction.b !== 1) {
+			if (instruction.op === OpCode.RET && instruction.b !== encodeFixedValueCount(1)) {
 				returnsOneValue = false;
 				break;
 			}
@@ -1568,7 +1568,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		this.withRange(range, () => {
 			const callReg = this.allocTemp();
 			this.emitABx(OpCode.CLOSURE, callReg, sectionInitProtoIndex);
-			this.emitABC(OpCode.CALL, callReg, encodeFixedCallArgCount(0), 0);
+			this.emitABC(OpCode.CALL, callReg, encodeFixedValueCount(0), encodeFixedValueCount(0));
 			this.emitStaticModuleInitializers(callReg);
 			if (clearBootPrimitives) {
 				this.emitABC(OpCode.KNIL, callReg, 0, 0);
@@ -1581,7 +1581,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				}
 			}
 			this.emitABx(OpCode.CLOSURE, callReg, entryProtoIndex);
-			this.emitABC(OpCode.CALL, callReg, encodeFixedCallArgCount(0), 0);
+			this.emitABC(OpCode.CALL, callReg, encodeFixedValueCount(0), 0);
 			this.emitABC(OpCode.RET, callReg, 0, 0);
 			const entryReturn = this.code[this.code.length - 1];
 			entryReturn.resumeRange = { ...range };
@@ -1604,10 +1604,10 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 					callReg,
 					participant.objectSlot,
 				);
-				this.emitABC(OpCode.CALL, callReg, encodeFixedCallArgCount(0), 1);
+				this.emitABC(OpCode.CALL, callReg, encodeFixedValueCount(0), encodeFixedValueCount(0));
 			}
 			this.emitABC(OpCode.KNIL, callReg, 0, 0);
-			this.emitABC(OpCode.RET, callReg, 1, 0);
+			this.emitABC(OpCode.RET, callReg, encodeFixedValueCount(1), 0);
 		});
 		this.finalizeLabels();
 	}
@@ -1624,7 +1624,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			} else {
 				this.emitABx(OpCode.CLOSURE, callReg, functionIndex);
 			}
-			this.emitABC(OpCode.CALL, callReg, encodeFixedCallArgCount(0), 0);
+			this.emitABC(OpCode.CALL, callReg, encodeFixedValueCount(0), encodeFixedValueCount(0));
 			// Publish only after a successful return, independently of the export.
 			this.emitABC(OpCode.KTRUE, callReg, 0, 0);
 			this.emitABx(access.system ? OpCode.SETSYS : OpCode.SETGL, callReg, access.slot);
@@ -1646,7 +1646,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			const access = this.program.resolveGlobalAccess('irq');
 			this.emitABx(access.system ? OpCode.GETSYS : OpCode.GETGL, callBase, access.slot);
 			this.emitABC(OpCode.MOV, callBase + 1, flagsReg, 0);
-			this.emitABC(OpCode.CALL, callBase, encodeFixedCallArgCount(1), 0);
+			this.emitABC(OpCode.CALL, callBase, encodeFixedValueCount(1), encodeFixedValueCount(0));
 			this.patchJump(jumpOut, this.code.length);
 			this.emitABC(OpCode.RFE, 0, 0, 0);
 			// Hidden remap boundary for the last-executed RFE, even when linking
@@ -1663,7 +1663,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			const access = this.program.resolveGlobalAccess('exception');
 			this.emitABx(access.system ? OpCode.GETSYS : OpCode.GETGL, callBase, access.slot);
 			this.emitABC(OpCode.MOV, callBase + 1, 0, 0);
-			this.emitABC(OpCode.CALL, callBase, encodeFixedCallArgCount(1), 0);
+			this.emitABC(OpCode.CALL, callBase, encodeFixedValueCount(1), encodeFixedValueCount(0));
 			this.emitABC(OpCode.RFE, 0, 0, 0);
 			// Hidden remap boundary for the last-executed RFE, even when linking
 			// changed this generated vector's other instruction words.
@@ -4197,7 +4197,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			return;
 		}
 		const reg = this.allocTemp();
-		this.compileCallExpression(expression, reg, 1);
+		this.compileCallExpression(expression, reg, encodeFixedValueCount(0));
 	}
 
 	private compileBlua32TraceStatement(expression: LuaCallExpression): boolean {
@@ -4262,7 +4262,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				this.emitABC(OpCode.MOV, destination, argument, 0);
 			}
 		}
-		this.emitABC(OpCode.CALL, callBase, encodeFixedCallArgCount(payloadCount + 1), 1);
+		this.emitABC(OpCode.CALL, callBase, encodeFixedValueCount(payloadCount + 1), encodeFixedValueCount(0));
 		this.patchJump(skip, this.code.length);
 		return true;
 	}
@@ -4270,8 +4270,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	private compileReturn(expressions: ReadonlyArray<LuaExpression>): void {
 		if (expressions.length === 0) {
 			const reg = this.allocTemp();
-			this.emitLoadNil(reg, 1);
-			this.emitABC(OpCode.RET, reg, 1, 0);
+			this.emitABC(OpCode.RET, reg, encodeFixedValueCount(0), 0);
 			return;
 		}
 		const base = this.allocTemp();
@@ -4284,11 +4283,11 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				if (rootSlot !== undefined) {
 					this.emitModuleExportStore(rootSlot, base);
 				}
-				this.emitABC(OpCode.RET, base, 1, 0);
+				this.emitABC(OpCode.RET, base, encodeFixedValueCount(1), 0);
 				return;
 			}
 			this.compileExpressionInto(expressions[0], base, wantsMulti ? 0 : 1);
-			this.emitABC(OpCode.RET, base, wantsMulti ? 0 : 1, 0);
+			this.emitABC(OpCode.RET, base, wantsMulti ? 0 : encodeFixedValueCount(1), 0);
 			return;
 		}
 		const lastIndex = expressions.length - 1;
@@ -4303,7 +4302,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			this.emitABC(OpCode.RET, base, 0, 0);
 			return;
 		}
-		this.emitABC(OpCode.RET, base, expressions.length, 0);
+		this.emitABC(OpCode.RET, base, encodeFixedValueCount(expressions.length), 0);
 	}
 
 	private compileIf(statement: LuaIfStatement): void {
@@ -4456,7 +4455,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		this.emitABC(OpCode.MOV, callBase, iteratorReg, 0);
 		this.emitABC(OpCode.MOV, callBase + 1, stateReg, 0);
 		this.emitABC(OpCode.MOV, callBase + 2, controlReg, 0);
-		this.emitABC(OpCode.CALL, callBase, encodeFixedCallArgCount(argCount), resultCount);
+		this.emitABC(OpCode.CALL, callBase, encodeFixedValueCount(argCount), encodeFixedValueCount(resultCount));
 
 		const nilConst = this.program.constIndex(null);
 		const nilOperand = this.encodeConstOperand(nilConst);
@@ -4628,7 +4627,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 					this.compileBinaryExpression(expression, target);
 					return;
 				case LuaSyntaxKind.CallExpression:
-					this.compileCallExpression(expression as LuaCallExpression, target, resultCount);
+					this.compileCallExpression(expression as LuaCallExpression, target, resultCount === 0 ? 0 : encodeFixedValueCount(resultCount));
 					return;
 				case LuaSyntaxKind.MemberExpression:
 					this.compileMemberExpression(expression, target);
@@ -4645,7 +4644,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 					return;
 				}
 				case LuaSyntaxKind.VarargExpression:
-					this.emitABC(OpCode.VARARG, target, resultCount, 0);
+					this.emitABC(OpCode.VARARG, target, resultCount === 0 ? 0 : encodeFixedValueCount(resultCount), 0);
 					return;
 				case LuaSyntaxKind.FunctionExpression: {
 					const protoId = protoIdHint === null
@@ -5523,7 +5522,8 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		}
 	}
 
-	private compileCallExpression(expression: LuaCallExpression, target: number, resultCount: number): void {
+	private compileCallExpression(expression: LuaCallExpression, target: number, resultOperand: number): void {
+		const resultCount = decodeValueCount(resultOperand, 0);
 		const requireBinding = this.resolveRequireModuleBinding(expression);
 		if (requireBinding) {
 			this.compileRequireExpression(requireBinding, target, resultCount);
@@ -5547,18 +5547,16 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		const lastArg = argCount > 0 ? expression.arguments[argCount - 1] : null;
 		const hasVarArg = lastArg !== null && this.isMultiReturnExpression(lastArg);
 		const fixedArgCount = hasVarArg ? argCount - 1 : argCount;
-		const callSlotCount = fixedArgCount + (methodName ? 2 : 1) + (hasVarArg ? 1 : 0);
-		const resultSlots = resultCount > 0 ? resultCount : 0;
-		const requiredSlots = Math.max(callSlotCount, resultSlots);
+		const resultSlots = resultCount > 0 ? resultCount : 1;
 		const tempBase = this.tempTop;
-		const useTarget = resultCount === 0 || (target >= this.localCount && target === tempBase - 1);
-		const callBase = useTarget ? target : this.allocTempBlock(requiredSlots);
-		if (useTarget) {
-			this.reserveTempRange(callBase, requiredSlots);
-		}
+		// Open tuples own the complete temporary suffix. Fixed calls may reuse only
+		// the newest temporary; live locals and earlier expression values stay below A.
+		const useTarget = resultOperand === 0 || (target >= this.localCount && target === tempBase - 1);
+		const callBase = useTarget ? target : this.allocTemp();
+		this.tempTop = callBase + 1;
 		if (methodName) {
-			this.reserveTempRange(callBase, 2);
 			this.compileExpressionInto(expression.callee, callBase, 1);
+			this.reserveTempRange(callBase, 2);
 			const methodKey = this.program.constIndex(methodName);
 			this.emitSelf(callBase, callBase, methodKey);
 		} else if (moduleCallTarget !== undefined) {
@@ -5569,23 +5567,20 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			this.compileExpressionInto(expression.callee, callBase, 1);
 		}
 		const argBase = callBase + (methodName ? 2 : 1);
-		if (useTarget) {
-			this.ensureMaxStack(callBase + requiredSlots);
-		}
+		this.tempTop = argBase;
 		for (let i = 0; i < fixedArgCount; i += 1) {
 			const argReg = this.allocTemp();
 			this.compileExpressionInto(expression.arguments[i], argReg, 1);
-			const destReg = argBase + i;
-			if (argReg !== destReg) {
-				this.emitABC(OpCode.MOV, destReg, argReg, 0);
-			}
+			this.tempTop = argReg + 1;
 		}
 		let callArgs = fixedArgCount + (methodName ? 1 : 0);
 		if (hasVarArg) {
-			this.compileExpressionInto(expression.arguments[argCount - 1], argBase + fixedArgCount, 0);
+			const argReg = this.allocTemp();
+			this.compileExpressionInto(expression.arguments[argCount - 1], argReg, 0);
 			callArgs = 0;
 		}
-		this.emitABC(OpCode.CALL, callBase, hasVarArg ? 0 : encodeFixedCallArgCount(callArgs), resultCount);
+		this.ensureMaxStack(callBase + resultSlots);
+		this.emitABC(OpCode.CALL, callBase, hasVarArg ? 0 : encodeFixedValueCount(callArgs), resultOperand);
 		if (callProtoIndex !== null) {
 			this.code[this.code.length - 1].callProtoIndex = callProtoIndex;
 		}
@@ -5593,6 +5588,9 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			for (let i = 0; i < resultCount; i += 1) {
 				this.emitABC(OpCode.MOV, target + i, callBase + i, 0);
 			}
+			this.tempTop = tempBase;
+		} else {
+			this.tempTop = callBase + resultSlots;
 		}
 	}
 
@@ -5665,8 +5663,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 
 	private emitDefaultReturn(): void {
 		const reg = this.allocTemp();
-		this.emitLoadNil(reg, 1);
-		this.emitABC(OpCode.RET, reg, 1, 0);
+		this.emitABC(OpCode.RET, reg, encodeFixedValueCount(0), 0);
 	}
 
 	private createLocalFunctionHint(name: string): string {

@@ -1,4 +1,4 @@
-import { OpCode, decodeCallArgCount } from '../../../../../machine/ts/spec/blua32/opcode';
+import { OpCode, decodeValueCount } from '../../../../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from '../../source_range';
 import type {
 	OuterBindingDebug,
@@ -498,13 +498,12 @@ const computeBlockConstantIn = (
 						constants.delete(instruction.a + 1);
 						break;
 					case OpCode.VARARG: {
-						const countValue = instruction.b === 0 ? null : instruction.b;
+						const countValue = instruction.b === 0 ? null : decodeValueCount(instruction.b, 0);
 						clearRegisterRange(constants, instruction.a, countValue);
 						break;
 					}
 					case OpCode.CALL: {
-						const countValue = instruction.c === 0 ? null : instruction.c;
-						clearRegisterRange(constants, instruction.a, countValue);
+						clearRegisterRange(constants, instruction.a, null);
 						break;
 					}
 					default:
@@ -641,13 +640,12 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 					break;
 				}
 				case OpCode.VARARG: {
-					const countValue = instruction.b === 0 ? null : instruction.b;
+					const countValue = instruction.b === 0 ? null : decodeValueCount(instruction.b, 0);
 					clearRegisterRange(constants, instruction.a, countValue);
 					break;
 				}
 				case OpCode.CALL: {
-					const countValue = instruction.c === 0 ? null : instruction.c;
-					clearRegisterRange(constants, instruction.a, countValue);
+					clearRegisterRange(constants, instruction.a, null);
 					break;
 				}
 				case OpCode.GETSYS:
@@ -1036,7 +1034,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					killRegister(constants, copies, instruction.a + 1);
 					break;
 				case OpCode.VARARG: {
-					const countValue = instruction.b === 0 ? null : instruction.b;
+					const countValue = instruction.b === 0 ? null : decodeValueCount(instruction.b, 0);
 					if (countValue === null) {
 						clearRegisterRange(constants, instruction.a, null);
 						clearCopiesTouchingOpenRange(copies, instruction.a);
@@ -1048,15 +1046,8 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					break;
 				}
 				case OpCode.CALL: {
-					const countValue = instruction.c === 0 ? null : instruction.c;
-					if (countValue === null) {
-						clearRegisterRange(constants, instruction.a, null);
-						clearCopiesTouchingOpenRange(copies, instruction.a);
-						break;
-					}
-					for (let offset = 0; offset < countValue; offset += 1) {
-						killRegister(constants, copies, instruction.a + offset);
-					}
+					clearRegisterRange(constants, instruction.a, null);
+					clearCopiesTouchingOpenRange(copies, instruction.a);
 					break;
 				}
 				default:
@@ -1348,13 +1339,12 @@ const applyClosureTransferForInlining = (
 			clearRegisterRange(closures, instruction.a, instruction.b);
 			return;
 		case OpCode.VARARG: {
-			const countValue = instruction.b === 0 ? null : instruction.b;
+			const countValue = instruction.b === 0 ? null : decodeValueCount(instruction.b, 0);
 			clearRegisterRange(closures, instruction.a, countValue);
 			return;
 		}
 		case OpCode.CALL: {
-			const countValue = instruction.c === 0 ? null : instruction.c;
-			clearRegisterRange(closures, instruction.a, countValue);
+			clearRegisterRange(closures, instruction.a, null);
 			for (const register of closureWrittenRegisters) {
 				closures.delete(register);
 			}
@@ -1503,7 +1493,7 @@ const inlineFrameFitsCaller = (
 	if (frameEnd > MAX_EXT_REGISTER_A + 1) {
 		return false;
 	}
-	for (let register = call.a + call.c; register < frameEnd && register < liveOut.length; register += 1) {
+	for (let register = call.a + decodeValueCount(call.c, 0); register < frameEnd && register < liveOut.length; register += 1) {
 		if (liveOut[register] !== 0 || openUpvalues[register] !== 0) {
 			return false;
 		}
@@ -1522,8 +1512,8 @@ const buildInlineExpansion = (
 	callRange: SourceRange,
 	callee: InlineCallee,
 ): InstructionSet | null => {
-	const argCount = decodeCallArgCount(callInstruction.b, 0);
-	const resultCount = callInstruction.c;
+	const argCount = decodeValueCount(callInstruction.b, 0);
+	const resultCount = decodeValueCount(callInstruction.c, 0);
 	const callBase = callInstruction.a;
 	const { instructions, ranges } = callee.set;
 	const calleeCount = instructions.length;
@@ -1607,7 +1597,7 @@ const buildInlineExpansion = (
 				? undefined
 				: duplicateStatementRange(instruction.resumeRange, statementRanges);
 			const inlineCallSites = mapInlineCallSites(instruction.inlineCallSites);
-			const copied = Math.min(instruction.b, resultCount);
+			const copied = Math.min(decodeValueCount(instruction.b, 0), resultCount);
 			const retBase = mapRegister(instruction.a);
 			for (let offset = 0; offset < copied; offset += 1) {
 				appendInstruction({

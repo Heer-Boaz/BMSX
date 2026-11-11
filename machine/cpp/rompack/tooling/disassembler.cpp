@@ -56,12 +56,8 @@ std::string formatBoolLiteral(int value) {
 	return value != 0 ? "true" : "false";
 }
 
-std::string formatCountLiteral(int value) {
-	return value == 0 ? "*" : std::to_string(value);
-}
-
-std::string formatCallArgCountLiteral(int value) {
-	return value == 0 ? "*" : std::to_string(decodeCallArgCount(value, 0));
+std::string formatValueCountLiteral(int value) {
+	return value == 0 ? "*" : std::to_string(decodeValueCount(value, 0));
 }
 
 std::string formatConstValue(const Blua32ImageLayout& image, int index) {
@@ -336,11 +332,11 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 		case OpCode::SETUP:
 			return "SETUP r" + std::to_string(decoded.a) + ", u" + std::to_string(decoded.b);
 		case OpCode::VARARG:
-			return "VARARG r" + std::to_string(decoded.a) + ", " + formatCountLiteral(decoded.b);
+			return "VARARG r" + std::to_string(decoded.a) + ", " + formatValueCountLiteral(decoded.b);
 		case OpCode::CALL:
-			return "CALL r" + std::to_string(decoded.a) + ", " + formatCallArgCountLiteral(decoded.b) + ", " + formatCountLiteral(decoded.c);
+			return "CALL r" + std::to_string(decoded.a) + ", " + formatValueCountLiteral(decoded.b) + ", " + formatValueCountLiteral(decoded.c);
 		case OpCode::RET:
-			return "RET r" + std::to_string(decoded.a) + ", " + formatCountLiteral(decoded.b);
+			return "RET r" + std::to_string(decoded.a) + ", " + formatValueCountLiteral(decoded.b);
 		case OpCode::MFC0:
 			return "MFC0 r" + std::to_string(decoded.a) + ", c" + std::to_string(decoded.b);
 		case OpCode::MTC0:
@@ -464,11 +460,11 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 		case OpCode::SETUP:
 			return {registerOperand("src", decoded.a), plainOperand("upvalue", "u" + std::to_string(decoded.b))};
 		case OpCode::VARARG:
-			return {registerOperand("dst", decoded.a), plainOperand("count", formatCountLiteral(decoded.b))};
+			return {registerOperand("dst", decoded.a), plainOperand("count", formatValueCountLiteral(decoded.b))};
 		case OpCode::CALL:
-			return {registerOperand("callee", decoded.a), plainOperand("args", formatCallArgCountLiteral(decoded.b)), plainOperand("returns", formatCountLiteral(decoded.c))};
+			return {registerOperand("callee", decoded.a), plainOperand("args", formatValueCountLiteral(decoded.b)), plainOperand("returns", formatValueCountLiteral(decoded.c))};
 		case OpCode::RET:
-			return {registerOperand("base", decoded.a), plainOperand("count", formatCountLiteral(decoded.b))};
+			return {registerOperand("base", decoded.a), plainOperand("count", formatValueCountLiteral(decoded.b))};
 		case OpCode::LOAD_MEM_D:
 			return {registerOperand("dst", decoded.a), registerOperand("base", decoded.b), plainOperand("kind", std::to_string(decoded.c)), plainOperand("disp", std::to_string(decoded.disp << 2))};
 		case OpCode::STORE_MEM_D:
