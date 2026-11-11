@@ -17,6 +17,8 @@ typedef struct BmsxSlowFrameSample {
 	bool presented;
 	bool has_gx_upload;
 	BmsxGxUploadProfileFrameV1 gx_upload;
+	bool has_native_compilation;
+	BmsxNativeCompilationProfile native_compilation;
 } BmsxSlowFrameSample;
 
 typedef struct BmsxFrameTimingHistogram {
@@ -34,6 +36,8 @@ typedef struct BmsxFrameTimingReport {
 	uint64_t presented_frames;
 	uint64_t dropped_presentations;
 	uint64_t gx_profiled_frames;
+	uint64_t native_profiled_frames;
+	BmsxNativeCompilationProfile native_compilation;
 	uint64_t gx_cpu_to_vram_commands;
 	uint64_t gx_logical_bytes;
 	uint64_t gx_host_calls;
@@ -67,7 +71,8 @@ void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
 		bool swap_ran,
 		bool dropped,
 		bool presented,
-		const BmsxGxUploadProfileFrameV1* gx_upload);
+		const BmsxGxUploadProfileFrameV1* gx_upload,
+		const BmsxNativeCompilationProfile* native_compilation);
 void bmsx_frame_timing_record_gx_upload(
 	BmsxFrameTimingReport* report,
 	const BmsxGxUploadProfileFrameV1* frame);

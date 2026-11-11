@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 
 #include "machine/cpu/execution_image.h"
 #include "machine/cpu/native_block.h"
@@ -9,13 +10,78 @@
 
 namespace bmsx {
 
+namespace {
+// Compilation may return early or raise while decoding/generating. This scope
+// measures the complete owning operation, including its unfinished phase.
+class NativeCompilationMeasurement {
+public:
+	NativeCompilationMeasurement(NativeCompilationProfile* profile, i32 domain, u32 slot, u32 rootPc)
+		: m_profile(profile), m_domain(domain), m_slot(slot), m_rootPc(rootPc) {
+		if (m_profile) {
+			++m_profile->prepareRequests;
+			m_start = m_phaseStart = Clock::now();
+		}
+	}
+	~NativeCompilationMeasurement() {
+		if (!m_profile) return;
+		const auto now = Clock::now();
+		m_profile->*m_phase += static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now - m_phaseStart).count());
+		const u64 elapsed = static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now - m_start).count());
+		m_profile->prepareNanoseconds += elapsed;
+		if (elapsed > m_profile->maxPrepareNanoseconds) {
+			m_profile->maxPrepareNanoseconds = elapsed;
+			m_profile->maxPrepareDomain = m_domain;
+			m_profile->maxPrepareCartridgeSlot = m_slot;
+			m_profile->maxPrepareRootPc = m_rootPc;
+			m_profile->maxPreparePagePc = m_rootPc & ~MAPPED_PAGE_BYTE_MASK;
+		}
+	}
+	void phase(u64 NativeCompilationProfile::* next) {
+		if (!m_profile) return;
+		const auto now = Clock::now();
+		m_profile->*m_phase += static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now - m_phaseStart).count());
+		m_phaseStart = now;
+		m_phase = next;
+	}
+private:
+	using Clock = std::chrono::steady_clock;
+	NativeCompilationProfile* m_profile;
+	i32 m_domain;
+	u32 m_slot, m_rootPc;
+	Clock::time_point m_start, m_phaseStart;
+	u64 NativeCompilationProfile::* m_phase = &NativeCompilationProfile::discoveryNanoseconds;
+};
+}
+
+void CPU::setNativeCompilationProfiling(bool enabled) {
+	m_nativeCompilationProfiling = enabled;
+	if (enabled) m_nativeCompilationProfile.peakCodeBytes = std::max(m_nativeCompilationProfile.peakCodeBytes,
+		static_cast<u64>(m_nativeCodeBytes));
+}
+
+NativeCompilationProfile CPU::readNativeCompilationProfile() const {
+	auto profile = m_nativeCompilationProfile;
+	profile.codeBytes = m_nativeCodeBytes;
+	return profile;
+}
+
 void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32 word) {
+	auto* profile = m_nativeCompilationProfiling ? &m_nativeCompilationProfile : nullptr;
+	NativeCompilationMeasurement measurement(profile, frame.executionImage->executionDomainId,
+		m_memory.cartridgeController().selectedSlot(m_executionBusSignals), m_currentInstructionPc);
 	constexpr size_t maximumCodeBytes = 8u * 1024u * 1024u;
 	if (m_nativeCodeBytes >= maximumCodeBytes) {
+		measurement.phase(&NativeCompilationProfile::retirementNanoseconds);
+		const auto before = m_nativeCodeBytes;
 		for (auto& image : m_executionImagesByDomain) {
 			if (!image) continue;
 			for (auto& [key, decodedPage] : image->decodedPages) decodedPage.retireNativeBlocks();
 		}
+		if (profile) {
+			++profile->capacityFlushes;
+			profile->capacityRetiredCodeBytes += before - m_nativeCodeBytes;
+		}
+		measurement.phase(&NativeCompilationProfile::discoveryNanoseconds);
 	}
 	const u32 pagePc = m_currentInstructionPc & ~MAPPED_PAGE_BYTE_MASK;
 	MappedPageBinding binding;
@@ -136,7 +202,17 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 			segmentFirst = index + 1u;
 		}
 	}
-	for (const auto* region : merged) page.retireNativeRegion(region);
+	if (!merged.empty()) {
+		measurement.phase(&NativeCompilationProfile::retirementNanoseconds);
+		for (const auto* region : merged) {
+			if (profile) {
+				++profile->mergedRegions;
+				profile->mergedCodeBytes += region->codeBytes;
+			}
+			page.retireNativeRegion(region);
+		}
+	}
+	measurement.phase(&NativeCompilationProfile::compilationNanoseconds);
 	if (!page.nativeBlocks) page.nativeBlocks = std::make_unique<NativeBlockPage>();
 	NativeBlockExitHandlers handlers{};
 	handlers[static_cast<size_t>(NativeBlockExit::ReadField)] = &CPU::compiledReadFieldExit;
@@ -164,6 +240,13 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 	if (!lookup) lookup = std::make_unique<NativeCodeLookup>();
 	lookup->install(m_currentInstructionPc & ~MAPPED_PAGE_BYTE_MASK,
 		m_memory.cartridgeController().selectedSlot(m_executionBusSignals), page);
+	if (profile) {
+		++profile->regionsPublished;
+		profile->entriesPublished += entries.size();
+		profile->sourceInstructions += instructionCount;
+		profile->emittedCodeBytes += page.nativeBlocks->entries[entries[0]]->region->codeBytes;
+		profile->peakCodeBytes = std::max(profile->peakCodeBytes, static_cast<u64>(m_nativeCodeBytes));
+	}
 }
 
 NativeBlockTransition CPU::compiledReadFieldExit(CPU* owner, CallFrame* activeFrame, const NativeBlockExitSite* exit) {

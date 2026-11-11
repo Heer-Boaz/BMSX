@@ -1,4 +1,5 @@
 #include "frame_timing.h"
+#include "native_compilation_profile.h"
 
 #include <stddef.h>
 #include <stdio.h>
@@ -68,7 +69,12 @@ void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
 		bool swap_ran,
 		bool dropped,
 		bool presented,
-		const BmsxGxUploadProfileFrameV1* gx_upload) {
+		const BmsxGxUploadProfileFrameV1* gx_upload,
+		const BmsxNativeCompilationProfile* native_compilation) {
+	if (native_compilation != NULL) {
+		++report->native_profiled_frames;
+		bmsx_native_compilation_profile_accumulate(&report->native_compilation, native_compilation);
+	}
 	record_histogram(&report->retro_run, retro_run_ns);
 	record_histogram(&report->core_without_present, retro_run_ns - final_blit_ns - swap_ns);
 	if (final_blit_ran) {
@@ -102,8 +108,10 @@ void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
 		.dropped = dropped,
 		.presented = presented,
 		.has_gx_upload = gx_upload != NULL,
+		.has_native_compilation = native_compilation != NULL,
 	};
 	if (gx_upload != NULL) report->slow_frames[index].gx_upload = *gx_upload;
+	if (native_compilation != NULL) report->slow_frames[index].native_compilation = *native_compilation;
 }
 
 void bmsx_frame_timing_record_gx_upload(
@@ -139,15 +147,26 @@ void bmsx_frame_timing_print(
 	for (unsigned index = 0u; index < report->slow_frame_count; ++index) {
 		const BmsxSlowFrameSample* sample = &report->slow_frames[index];
 		fprintf(stderr,
-			"[libretro-host][slow-frame] host_frame=%llu run_ms=%.3f blit_ms=%.3f swap_ms=%.3f presented=%u dropped=%u gx_profile=%u render_frame=%llu upload_commands=%llu upload_bytes=%llu upload_ms=%.3f\n",
+			"[libretro-host][slow-frame] host_frame=%llu run_ms=%.3f blit_ms=%.3f swap_ms=%.3f presented=%u dropped=%u gx_profile=%u render_frame=%llu upload_commands=%llu upload_bytes=%llu upload_ms=%.3f native_profile=%u prepares=%llu prepare_ms=%.3f discovery_ms=%.3f retirement_ms=%.3f compilation_ms=%.3f merged_regions=%llu capacity_flushes=%llu live_code_bytes=%llu\n",
 			(unsigned long long)sample->host_frame, (double)sample->retro_run_ns / 1000000.0,
 			(double)sample->final_blit_ns / 1000000.0, (double)sample->swap_ns / 1000000.0,
 			(unsigned)sample->presented, (unsigned)sample->dropped, (unsigned)sample->has_gx_upload,
 			(unsigned long long)sample->gx_upload.render_frame_serial,
 			(unsigned long long)sample->gx_upload.cpu_to_vram_commands,
 			(unsigned long long)sample->gx_upload.logical_bytes,
-			(double)sample->gx_upload.cpu_nanoseconds / 1000000.0);
+			(double)sample->gx_upload.cpu_nanoseconds / 1000000.0,
+			(unsigned)sample->has_native_compilation,
+			(unsigned long long)sample->native_compilation.prepare_requests,
+			(double)sample->native_compilation.prepare_nanoseconds / 1000000.0,
+			(double)sample->native_compilation.discovery_nanoseconds / 1000000.0,
+			(double)sample->native_compilation.retirement_nanoseconds / 1000000.0,
+			(double)sample->native_compilation.compilation_nanoseconds / 1000000.0,
+			(unsigned long long)sample->native_compilation.merged_regions,
+			(unsigned long long)sample->native_compilation.capacity_flushes,
+			(unsigned long long)sample->native_compilation.code_bytes);
 	}
+	if (report->native_profiled_frames != 0u)
+		bmsx_native_compilation_profile_print(stderr, report->native_profiled_frames, &report->native_compilation);
 	if (!include_gx_upload) {
 		return;
 	}

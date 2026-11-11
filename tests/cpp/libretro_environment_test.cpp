@@ -26,6 +26,8 @@ namespace {
 unsigned supervisorInterfaceQueries = 0u;
 bool defaultRequestLineWasLow = false;
 bool acceptPrivateInterfaces = true;
+unsigned nativeProfileOffers = 0u;
+BmsxNativeCompilationProfileInterface nativeProfile{};
 bool acceptXrgb8888 = true;
 unsigned pixelFormatRequests = 0u;
 unsigned requestLineReads = 0u;
@@ -118,6 +120,11 @@ int16_t discardInputState(unsigned, unsigned, unsigned, unsigned) {
 }
 
 bool softwareFrontendEnvironment(unsigned command, void* data) {
+	if (command == BMSX_ENVIRONMENT_SET_NATIVE_COMPILATION_PROFILE_INTERFACE) {
+		++nativeProfileOffers;
+		if (acceptPrivateInterfaces) nativeProfile = *static_cast<BmsxNativeCompilationProfileInterface*>(data);
+		return acceptPrivateInterfaces;
+	}
 	if (command == RETRO_ENVIRONMENT_SET_PIXEL_FORMAT) {
 		pixelFormatRequests += 1u;
 		return acceptXrgb8888
@@ -269,6 +276,12 @@ int main() {
 	retro_set_environment(frontendEnvironment);
 	require(supervisorInterfaceQueries == 2u, "reinstalling the frontend environment should renegotiate the supervisor interface");
 	retro_init();
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	require(nativeProfileOffers == 1u && nativeProfile.read_profile != nullptr,
+		"native core offers the opt-in cumulative compilation profile during initialization");
+#else
+	require(nativeProfileOffers == 0u, "interpreter-only core does not offer native compilation profiling");
+#endif
 	const retro_game_info cartridgeSlots[2] = {
 		{
 			.path = gamePath.c_str(),
@@ -287,6 +300,12 @@ int main() {
 		retro_load_game_special(BMSX_SUBSYSTEM_DUAL_CARTRIDGE, cartridgeSlots, 2u),
 		"the core should load both physical cartridge sockets through the libretro subsystem");
 	require(pixelFormatRequests == 1u, "content load should negotiate the XRGB8888 framebuffer contract once");
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	BmsxNativeCompilationProfile initialNativeProfile{};
+	nativeProfile.read_profile(&initialNativeProfile);
+	require(initialNativeProfile.prepare_requests == 0u && initialNativeProfile.prepare_nanoseconds == 0u,
+		"accepted native profile reads the loaded CPU before guest execution");
+#endif
 	std::vector<bmsx::u8> cartridgeState(retro_serialize_size());
 	require(retro_serialize(cartridgeState.data(), cartridgeState.size()), "the dual-cartridge core should serialize both socket states");
 	const bmsx::u32 cartridgeStateBytes = bmsx::readLE32(cartridgeState.data() + 4u);
@@ -308,6 +327,14 @@ int main() {
 	require(inputPolls == 1u, "the supported core should poll the platform input owner once during the frame");
 	require(requestLineReads == 1u, "an accepted frontend callback should drive the platform supervisor-request line");
 	require(geometryNotifications == 0u && systemAvNotifications == 0u, "unchanged startup AV state should not be republished");
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	BmsxNativeCompilationProfile runningNativeProfile{};
+	nativeProfile.read_profile(&runningNativeProfile);
+	require(runningNativeProfile.prepare_nanoseconds == runningNativeProfile.discovery_nanoseconds
+		+ runningNativeProfile.retirement_nanoseconds + runningNativeProfile.compilation_nanoseconds
+		&& runningNativeProfile.peak_code_bytes >= runningNativeProfile.code_bytes,
+		"private profile readout preserves the owning CPU phase totals and absolute cache gauges");
+#endif
 
 	const std::vector<bmsx::u8> expandedState = makeExpandedPcrtcState();
 	require(retro_unserialize(expandedState.data(), expandedState.size()), "the core should restore the expanded PCRTC state");

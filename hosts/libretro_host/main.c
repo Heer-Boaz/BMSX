@@ -17,6 +17,7 @@
 #include "core_options.h"
 #include "frame_pacer.h"
 #include "frame_timing.h"
+#include "native_compilation_profile.h"
 #include "host_fatal.h"
 #include "host_control.h"
 #include "input_devices.h"
@@ -77,8 +78,8 @@ static uint64_t monotonic_ns(void) {
 static void usage(const char* argv0) {
 	fprintf(stderr,
 			"Usage:\n"
-			"  %s --core ./libretro_bmsx.so --no-game [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--control PORT | --input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--timing-report] [--timing-warmup N] [--rewind on|off] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n"
-			"  %s --core ./libretro_bmsx.so GAME.rom [--slot1 AUX.rom] [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--control PORT | --input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--timing-report] [--timing-warmup N] [--rewind on|off] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n",
+			"  %s --core ./libretro_bmsx.so --no-game [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--control PORT | --input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--timing-report] [--profile-native-compilation] [--timing-warmup N] [--rewind on|off] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n"
+			"  %s --core ./libretro_bmsx.so GAME.rom [--slot1 AUX.rom] [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--control PORT | --input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--timing-report] [--profile-native-compilation] [--timing-warmup N] [--rewind on|off] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n",
 			argv0, argv0);
 	fprintf(stderr, "  --core-option KEY VALUE: set a core option (repeatable; dedicated host flags take precedence)\n");
 	exit(2);
@@ -124,6 +125,7 @@ int main(int argc, char** argv) {
 	bool paced_timeline = false;
 	bool auto_timeline = false;
 	bool audio_disabled = false;
+	bool profile_native_compilation = false;
 	bool hidden_window = false;
 	uint64_t maximum_run_frames = 0;
 	uint64_t run_frame_count = 0;
@@ -184,6 +186,10 @@ int main(int argc, char** argv) {
 			maximum_run_frames = parse_positive_u64_arg(
 					required_arg(argc, argv, &i),
 					"--max-frames");
+			continue;
+		}
+		if (strcmp(argv[i], "--profile-native-compilation") == 0) {
+			profile_native_compilation = true;
 			continue;
 		}
 		if (strcmp(argv[i], "--timing-report") == 0) {
@@ -278,6 +284,8 @@ int main(int argc, char** argv) {
 	if (strcmp(video_backend, "fb") != 0 && strcmp(video_backend, "sdl") != 0) {
 		host_fatal("Invalid --video %s (expected fb|sdl)", video_backend);
 	}
+	if (profile_native_compilation && !frame_timing.enabled)
+		host_fatal("--profile-native-compilation requires --timing-report");
 	const bool profile_gx_upload =
 			frame_timing.enabled && strcmp(backend, "gles2") == 0;
 	const bool use_sdl_backend = strcmp(video_backend, "sdl") == 0;
@@ -301,6 +309,7 @@ int main(int argc, char** argv) {
 	core_session_open(&session, core_path, system_dir, save_dir);
 	session.options = option_overrides;
 	session.accept_gx_upload_profile_interface = profile_gx_upload;
+	session.accept_native_compilation_profile_interface = profile_native_compilation;
 	bmsx_core_options_override(
 			&session.options,
 			"bmsx_render_backend",
@@ -341,6 +350,8 @@ int main(int argc, char** argv) {
 	input_devices_open(input_driver, !hidden_window, video_surface);
 
 	core->retro_init();
+	if (profile_native_compilation && !session.native_compilation_profile_interface_set)
+		host_fatal("--profile-native-compilation requires a native compilation profile interface");
 	if (profile_gx_upload && !session.gx_upload_profile_interface_set) {
 		host_fatal("--timing-report requires GX upload profile interface v1 for the GLES2 backend");
 	}
@@ -424,6 +435,9 @@ int main(int argc, char** argv) {
 		input_timeline_dispatch_before_run();
 		if (use_control) host_control_poll();
 		video_presenter_begin_frame(drop_video);
+		BmsxNativeCompilationProfile native_before;
+		if (profile_native_compilation && frame_timing.record_frame)
+			session.native_compilation_profile.read_profile(&native_before);
 		const uint64_t run_start_ns = frame_timing.record_frame ? monotonic_ns() : 0u;
 		core->retro_run();
 		input_timeline_finish_run();
@@ -445,6 +459,14 @@ int main(int argc, char** argv) {
 					current_gx_upload = &gx_upload_frame;
 				}
 			}
+			BmsxNativeCompilationProfile native_interval;
+			const BmsxNativeCompilationProfile* current_native = NULL;
+			if (profile_native_compilation) {
+				BmsxNativeCompilationProfile native_after;
+				session.native_compilation_profile.read_profile(&native_after);
+				native_interval = bmsx_native_compilation_profile_delta(&native_before, &native_after);
+				current_native = &native_interval;
+			}
 			const uint64_t run_ns = run_end_ns - run_start_ns;
 			bmsx_frame_timing_record(&frame_timing.report,
 					run_frame_count,
@@ -455,7 +477,7 @@ int main(int argc, char** argv) {
 					frame_timing.current_swap_ran,
 					drop_video && frame_timing.current_video_frame_received,
 					!drop_video && presented_frame,
-					current_gx_upload);
+					current_gx_upload, current_native);
 		}
 		++run_frame_count;
 		if (maximum_run_frames == 0 &&

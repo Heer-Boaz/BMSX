@@ -208,6 +208,7 @@ void shortGrantsDoNotPromoteSequentialPositions(bool inRam) {
 	writeInstruction(image.text, 32, static_cast<u8>(OpCode::JMP), 0, 63, 35, 255); // enter word 4
 	image.functions = {{.firstWord = 0, .wordCount = 33, .maxStack = 12}};
 	CpuMachine native(image, false), scalar(image, true);
+	native.cpu.setNativeCompilationProfiling(true);
 	const u32 start = inRam ? DYNAMIC_RAM_BASE : native.rom.textAddress;
 	for (auto* machine : {&native, &scalar}) {
 		if (inRam) machine->memory.writeBytes(start, image.text.data(), image.text.size());
@@ -222,6 +223,22 @@ void shortGrantsDoNotPromoteSequentialPositions(bool inRam) {
 	require(page.nativeBlocks && page.nativeBlocks->entries[entry]
 		&& page.nativeBlocks->entries[entry]->sourceWords == 13,
 		"entry admission preserves successor stability heat and compiles a complete ROM/RAM loop");
+	const auto initialProfile = native.cpu.readNativeCompilationProfile();
+	require(initialProfile.prepareRequests != 0 && initialProfile.regionsPublished != 0
+		&& initialProfile.entriesPublished != 0 && initialProfile.sourceInstructions >= 13
+		&& initialProfile.codeBytes == page.nativeBlocks->entries[entry]->region->codeBytes
+		&& initialProfile.emittedCodeBytes == initialProfile.codeBytes
+		&& initialProfile.peakCodeBytes == initialProfile.codeBytes,
+		"compilation profile counts published regions once and reads the actual executable byte owner");
+	require(initialProfile.prepareNanoseconds != 0 && initialProfile.compilationNanoseconds != 0
+		&& initialProfile.maxPrepareNanoseconds <= initialProfile.prepareNanoseconds
+		&& initialProfile.prepareNanoseconds == initialProfile.discoveryNanoseconds
+			+ initialProfile.retirementNanoseconds + initialProfile.compilationNanoseconds,
+		"prepare timing partitions the owning scope and retains its maximum");
+	require(initialProfile.maxPrepareDomain == SYSTEM_EXECUTION_DOMAIN_ID
+		&& initialProfile.maxPrepareCartridgeSlot == 0u && initialProfile.maxPrepareRootPc == start
+		&& initialProfile.maxPreparePagePc == (start & ~MAPPED_PAGE_BYTE_MASK),
+		"the worst prepare reports its raw guest identity rather than source or debugger metadata");
 	for (int run = 0; run < 512; ++run) {
 		test::runCpuParity(native.cpu, scalar.cpu, 1);
 		requireParity(native, scalar);
@@ -232,6 +249,10 @@ void shortGrantsDoNotPromoteSequentialPositions(bool inRam) {
 	}
 	require(page.nativeBlocks->count == 1 && !page.nativeBlocks->entries[entry + 4],
 		"arbitrary sequential grant resumptions do not create overlapping suffix translations");
+	const auto warmProfile = native.cpu.readNativeCompilationProfile();
+	require(warmProfile.prepareRequests == initialProfile.prepareRequests
+		&& warmProfile.prepareNanoseconds == initialProfile.prepareNanoseconds,
+		"warm execution does not enter compilation profiling or accumulate compilation time");
 	for (auto* machine : {&native, &scalar}) {
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start + 32 * INSTRUCTION_BYTES);
 	}
@@ -239,6 +260,48 @@ void shortGrantsDoNotPromoteSequentialPositions(bool inRam) {
 	requireParity(native, scalar);
 	require(static_cast<bool>(page.nativeBlocks->entries[entry + 4]),
 		"an actual branch into the same interior position remains eligible for native execution");
+	const auto mergedProfile = native.cpu.readNativeCompilationProfile();
+	require(mergedProfile.mergedRegions != 0 && mergedProfile.mergedCodeBytes >= initialProfile.codeBytes
+		&& mergedProfile.regionsPublished > initialProfile.regionsPublished
+		&& mergedProfile.codeBytes == mergedProfile.emittedCodeBytes - mergedProfile.mergedCodeBytes
+		&& mergedProfile.capacityFlushes == 0 && mergedProfile.capacityRetiredCodeBytes == 0
+		&& mergedProfile.maxPrepareNanoseconds >= initialProfile.maxPrepareNanoseconds,
+		"interior-entry replacement is accounted as a merge, not a capacity flush");
+}
+
+void compilationProfilingIsOptInAndSurvivesReset() {
+	test::Blua32TestImage image; image.text.resize(2 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), 0, 1, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
+	image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 4}};
+	CpuMachine native(image, false);
+	native.cpu.runUntilDepth(0, 2048);
+	const auto disabled = native.cpu.readNativeCompilationProfile();
+	require(disabled.codeBytes != 0 && disabled.prepareRequests == 0 && disabled.prepareNanoseconds == 0
+		&& disabled.regionsPublished == 0 && disabled.compilationNanoseconds == 0,
+		"unprofiled compilation publishes executable code without collecting counters or timing");
+	native.cpu.setNativeCompilationProfiling(true);
+	native.cpu.reset();
+	native.cpu.runUntilDepth(0, 2048);
+	const auto first = native.cpu.readNativeCompilationProfile();
+	require(first.prepareRequests != 0 && first.regionsPublished != 0 && first.codeBytes != 0,
+		"opting in observes subsequent real compilation");
+	native.cpu.reset();
+	const auto reset = native.cpu.readNativeCompilationProfile();
+	require(reset.codeBytes == 0 && reset.prepareRequests == first.prepareRequests
+		&& reset.prepareNanoseconds == first.prepareNanoseconds && reset.peakCodeBytes == first.peakCodeBytes,
+		"guest reset clears live executable ownership but not host-lifetime profile counters");
+	native.cpu.runUntilDepth(0, 2048);
+	const auto second = native.cpu.readNativeCompilationProfile();
+	require(second.prepareRequests > first.prepareRequests && second.emittedCodeBytes > first.emittedCodeBytes
+		&& second.maxPrepareNanoseconds >= first.maxPrepareNanoseconds,
+		"recompilation after reset accumulates instead of rewinding host measurements");
+	const auto saved = native.cpu.captureRuntimeState();
+	native.cpu.restoreRuntimeState(saved);
+	const auto restored = native.cpu.readNativeCompilationProfile();
+	require(restored.prepareRequests == second.prepareRequests && restored.prepareNanoseconds == second.prepareNanoseconds
+		&& restored.peakCodeBytes == second.peakCodeBytes && restored.codeBytes == 0,
+		"save-state restore retires code without restoring or rewinding compilation measurements");
 }
 void entriesIntoWideBodiesShareTheirSequentialJoin() {
 	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
@@ -286,6 +349,7 @@ int main() {
 	try {
 		grantsAndTargetRetirement(); entriesIntoWideBodiesShareTheirSequentialJoin(); crossPageLinksRetireTheirTargetsAndKeepBoundedStack();
 		shortGrantsDoNotPromoteSequentialPositions(false); shortGrantsDoNotPromoteSequentialPositions(true);
+		compilationProfilingIsOptInAndSurvivesReset();
 		std::cout << "Compiled block link tests passed\n"; return 0;
 	}
 	catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

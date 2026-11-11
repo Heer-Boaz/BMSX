@@ -21,6 +21,8 @@ extern "C" {
 	(RETRO_ENVIRONMENT_PRIVATE | 0x4281u)
 #define BMSX_ENVIRONMENT_SET_INPUT_LIFECYCLE_INTERFACE_V1 \
 	(RETRO_ENVIRONMENT_PRIVATE | 0x4291u)
+#define BMSX_ENVIRONMENT_SET_NATIVE_COMPILATION_PROFILE_INTERFACE \
+	(RETRO_ENVIRONMENT_PRIVATE | 0x42a1u)
 #define BMSX_SUBSYSTEM_DUAL_CARTRIDGE 1u
 
 typedef bool (RETRO_CALLCONV *bmsx_supervisor_request_line_t)(void);
@@ -46,6 +48,40 @@ typedef bool (RETRO_CALLCONV *bmsx_read_gx_upload_profile_frame_t)(
 typedef struct BmsxGxUploadProfileInterfaceV1 {
 	bmsx_read_gx_upload_profile_frame_t read_frame;
 } BmsxGxUploadProfileInterfaceV1;
+
+/* Cumulative CPU-lifetime counters, not a per-presentation sample. code_bytes
+ * is a live gauge; peak/max fields and their raw guest identity are lifetime
+ * maxima. Read after content load and before unload. Offered by native cores
+ * only; accepting the interface enables measurement for loaded runtimes. */
+typedef struct BmsxNativeCompilationProfile {
+	uint64_t prepare_requests;
+	uint64_t regions_published;
+	uint64_t entries_published;
+	uint64_t source_instructions;
+	uint64_t emitted_code_bytes;
+	uint64_t code_bytes;
+	uint64_t peak_code_bytes;
+	uint64_t prepare_nanoseconds;
+	uint64_t max_prepare_nanoseconds;
+	uint64_t discovery_nanoseconds;
+	uint64_t retirement_nanoseconds;
+	uint64_t compilation_nanoseconds;
+	uint64_t merged_regions;
+	uint64_t merged_code_bytes;
+	uint64_t capacity_flushes;
+	uint64_t capacity_retired_code_bytes;
+	int32_t max_prepare_domain;
+	uint32_t max_prepare_cartridge_slot;
+	uint32_t max_prepare_root_pc;
+	uint32_t max_prepare_page_pc;
+} BmsxNativeCompilationProfile;
+
+typedef void (RETRO_CALLCONV *bmsx_read_native_compilation_profile_t)(
+	BmsxNativeCompilationProfile* profile);
+
+typedef struct BmsxNativeCompilationProfileInterface {
+	bmsx_read_native_compilation_profile_t read_profile;
+} BmsxNativeCompilationProfileInterface;
 
 typedef int32_t (RETRO_CALLCONV *bmsx_read_execution_domain_id_t)(void);
 

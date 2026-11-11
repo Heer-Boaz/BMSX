@@ -105,6 +105,21 @@ static std::unique_ptr<bmsx::VideoPresenter> g_video_presenter;
 static std::unique_ptr<bmsx::Font> g_default_font;
 static const bmsx::SoftwarePresentationTarget* g_software_target = nullptr;
 static std::unique_ptr<bmsx::LibretroContent> g_content;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+static bool g_profile_native_compilation = false;
+
+static void RETRO_CALLCONV read_native_compilation_profile(BmsxNativeCompilationProfile* output) {
+	const auto profile = g_content->runtime.machine.cpu.readNativeCompilationProfile();
+	*output = {
+		profile.prepareRequests, profile.regionsPublished, profile.entriesPublished,
+		profile.sourceInstructions, profile.emittedCodeBytes, profile.codeBytes, profile.peakCodeBytes,
+		profile.prepareNanoseconds, profile.maxPrepareNanoseconds, profile.discoveryNanoseconds,
+		profile.retirementNanoseconds, profile.compilationNanoseconds, profile.mergedRegions,
+		profile.mergedCodeBytes, profile.capacityFlushes, profile.capacityRetiredCodeBytes,
+		profile.maxPrepareDomain, profile.maxPrepareCartridgeSlot, profile.maxPrepareRootPc, profile.maxPreparePagePc,
+	};
+}
+#endif
 static std::optional<bmsx::OnScreenKeyboard> g_keyboard_model;
 static std::optional<bmsx::HostOnScreenKeyboard> g_keyboard_view;
 static std::optional<bmsx::HostKeyboardInteraction> g_keyboard_interaction;
@@ -1183,6 +1198,9 @@ static bool load_default_content() {
 		*g_input,
 		logging);
 	if (!g_content) return false;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	g_content->runtime.machine.cpu.setNativeCompilationProfiling(g_profile_native_compilation);
+#endif
 	activate_runtime(g_content->runtime);
 	logging.log(RETRO_LOG_INFO, "[BMSX] Booted system ROM firmware\n");
 	return true;
@@ -1198,6 +1216,9 @@ static bool load_content_from_paths(
 		*g_input,
 		logging);
 	if (!g_content) return false;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	g_content->runtime.machine.cpu.setNativeCompilationProfiling(g_profile_native_compilation);
+#endif
 	activate_runtime(g_content->runtime);
 	return true;
 }
@@ -1254,6 +1275,11 @@ static void lose_hardware_context() {
 
 void retro_init(void) {
 	logging.log(RETRO_LOG_INFO, "[BMSX] retro_init\n");
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	BmsxNativeCompilationProfileInterface nativeCompilationProfile{read_native_compilation_profile};
+	g_profile_native_compilation = environ_cb(BMSX_ENVIRONMENT_SET_NATIVE_COMPILATION_PROFILE_INTERFACE,
+		&nativeCompilationProfile);
+#endif
 	const RenderBackendPreference preference = read_backend_preference();
 	const bmsx::BackendType desired_backend = resolve_backend_preference(preference);
 	g_crt_postprocessing_enabled = read_crt_postprocessing_enabled();

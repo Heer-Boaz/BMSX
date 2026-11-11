@@ -31,6 +31,9 @@
 #include "machine/cpu/snapshot.h"
 #include "spec/blua32/memory_access_kind.h"
 #include "spec/blua32/execution_domain.h"
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+#include "machine/cpu/native_compilation_profile.h"
+#endif
 
 namespace bmsx {
 
@@ -240,6 +243,10 @@ public:
 		ExecutionAddressSpace& executionAddressSpace
 	);
 	~CPU() override;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	void setNativeCompilationProfiling(bool enabled);
+	NativeCompilationProfile readNativeCompilationProfile() const;
+#endif
 	void invalidateMappedWords(u64 key, u32 firstWord, u32 endWord) override;
 	void invalidateMappedRange(u64 firstKey, u64 endKey) override;
 
@@ -504,6 +511,8 @@ private:
 	static NativeBlockTransition compiledWriteMemoryExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
 	static NativeBlockTransition compiledWriteWordsExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
 	size_t m_nativeCodeBytes = 0;
+	bool m_nativeCompilationProfiling = false;
+	NativeCompilationProfile m_nativeCompilationProfile;
 #endif
 	void clearHaltAfterAcceptedInterrupt();
 	void enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord);

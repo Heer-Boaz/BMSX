@@ -140,6 +140,25 @@ Options:
   The ALSA underrun line covers the same measured window; `before_timing` counts
   earlier underruns. The final `audio stats` line covers the entire session,
   including teardown.
+- `--profile-native-compilation`: requires `--timing-report` and a native-enabled
+  core. Adds compilation deltas to the existing slow-frame records and prints
+  cumulative measured-window totals at shutdown. Discovery includes decoding
+  and region planning; retirement covers capacity flushes and interior-entry
+  merges; compilation includes descriptor allocation, register analysis, SLJIT
+  generation and publication. Timers run only at those cold owner boundaries,
+  not for guest instructions or warm native entries. Profile runs are separate
+  from unprofiled throughput comparisons.
+  Counts, emitted bytes and times cover measured `retro_run` calls only.
+  Source-instruction, entry and emitted-byte totals count compilation work,
+  including repeated or merged source; they are not unique guest instructions,
+  resident entry counts or memory footprint.
+  `live_code_bytes` is the final live executable-code gauge; `lifetime_peak_*`
+  and `lifetime_max_*` remain absolute maxima since profiling was enabled,
+  including excluded warmup runs. The worst prepare identifies its raw domain,
+  physical socket, root PC and page PC. Reset/restore does not rewind these
+  host-only counters; loading another runtime starts a new lifetime. Cache
+  bytes exclude metadata and allocator reservation. A merge is not a capacity
+  eviction, and repeated publications alone do not prove cache churn.
 - `--timing-warmup <count>`: excludes the first `<count>` host runs from timing
   reports (default: 500; must be positive). Use `1` to exclude only the first
   run. Histogram counts and timed ALSA underruns cover the remaining measurement
