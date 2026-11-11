@@ -12,6 +12,8 @@ Upvalue::NativeOffsets Upvalue::nativeOffsets() {
 	return {offsetof(Upvalue, open), offsetof(Upvalue, index), offsetof(Upvalue, frame), offsetof(Upvalue, value)};
 }
 
+size_t Closure::nativeFunctionAddressOffset() { return offsetof(Closure, functionAddress); }
+
 size_t Closure::nativeUpvaluesOffset() { return offsetof(Closure, upvalues); }
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop

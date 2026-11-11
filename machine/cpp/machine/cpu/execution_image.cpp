@@ -4,6 +4,19 @@
 
 namespace bmsx {
 
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winvalid-offsetof"
+#endif
+size_t Blua32ExecutionImage::nativeExecutionDomainOffset() {
+	return offsetof(Blua32ExecutionImage, executionDomainId);
+}
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+#endif
+
 const std::array<uint8_t, DECODED_DISPATCH_OP_COUNT> DECODED_DISPATCH_BASE_CYCLES = [] {
 	std::array<uint8_t, DECODED_DISPATCH_OP_COUNT> cycles{};
 	std::copy(BASE_CYCLES.begin(), BASE_CYCLES.end(), cycles.begin());

@@ -23,7 +23,7 @@ struct Thread : GCObject {
 	void trimFrames();
 	void resizeStack(size_t capacity);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	struct NativeOffsets { size_t currentFrame, frameDepth, stackTop; };
+	struct NativeOffsets { size_t currentFrame, frameDepth, stackTop, stack, stackCapacity; };
 	static NativeOffsets nativeOffsets();
 #endif
 

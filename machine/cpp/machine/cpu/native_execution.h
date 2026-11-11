@@ -15,6 +15,10 @@ struct NativeCpuRunState {
 	CPU* cpu;
 	int targetDepth;
 	NativeCodeLookup::Group* const* codeRoot = nullptr;
+	const Span<const u8>* systemRom = nullptr;
+	const Span<const u8>* cartridgeRom = nullptr;
+	Span<const u8> ram;
+	u32 cartridgeSlot = 0;
 	std::exception_ptr error;
 };
 

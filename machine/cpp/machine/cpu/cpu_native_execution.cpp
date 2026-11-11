@@ -14,7 +14,7 @@ namespace bmsx {
 #pragma GCC diagnostic ignored "-Winvalid-offsetof"
 #endif
 CPU::NativeFrameOffsets CPU::nativeFrameOffsets() {
-	return {offsetof(CPU, m_haltedUntilIrqThread), offsetof(CPU, m_haltedUntilIrqFrameDepth)};
+	return {offsetof(CPU, m_haltedUntilIrqThread), offsetof(CPU, m_haltedUntilIrqFrameDepth), offsetof(CPU, m_activeExecutionImage)};
 }
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
@@ -119,13 +119,16 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		if ((pc & (INSTRUCTION_BYTES - 1u)) != 0u) return nullptr;
 		const auto& lookup = frame->executionImage->nativeCodeLookup;
 		if (!lookup) return nullptr;
-		auto* page = lookup->find(pc, cpu.m_memory.cartridgeController().selectedSlot(cpu.m_executionBusSignals));
+		const u32 slot = cpu.m_memory.cartridgeController().selectedSlot(cpu.m_executionBusSignals);
+		auto* page = lookup->find(pc, slot);
 		if (!page || !page->nativeBlocks) return nullptr;
 		auto* target = page->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
 		if (!target) return nullptr;
 		// Every helper can change socket selection, even without changing the
 		// frame/image. Bind the live physical bank again before native dispatch.
-		run->codeRoot = lookup->root(cpu.m_memory.cartridgeController().selectedSlot(cpu.m_executionBusSignals));
+		run->codeRoot = lookup->root(slot);
+		run->cartridgeSlot = slot;
+		run->cartridgeRom = cpu.m_memory.cartridgeController().romStorage(slot);
 		// A pure continuation still owns its descriptor. Cross-page links are
 		// stable except a system-image edge from shared memory into the selectable
 		// cartridge window. Cartridge source pages already have physical identity;

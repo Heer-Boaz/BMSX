@@ -174,6 +174,9 @@ struct DecodedInstructionPage {
 };
 
 struct Blua32ExecutionImage {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	static size_t nativeExecutionDomainOffset();
+#endif
 	ExecutionDomainId executionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	u32 irqFunctionAddress = 0;
 	std::vector<Value> constPool;

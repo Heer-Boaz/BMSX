@@ -7,6 +7,18 @@
 
 namespace bmsx {
 
+// The stable CALL gate owns these admission temporaries. They reuse the same
+// host frame as register spills, and are never guest activation storage.
+struct NativeCallScratch {
+	const NativeBlockExitSite* exit;
+	CallFrame* caller;
+	CallFrame* callee;
+	Closure* closure;
+	const Value* args;
+	u32 functionAddress, codeAddress, numParams, maxStack, flags;
+	int argCount, varargBase, varargCount, stackBase, stackTop;
+};
+
 // One native frame spans every linked body, including bodies compiled later.
 // Keep its register banks, helper spill space and host save area identical.
 struct NativeBlockAbi {
@@ -16,7 +28,7 @@ struct NativeBlockAbi {
 	static constexpr int savedFloats = std::min(registerCacheCapacity, SLJIT_NUMBER_OF_SAVED_FLOAT_REGISTERS);
 	static constexpr int scratches = 4 | SLJIT_ENTER_FLOAT(scratchFloats);
 	static constexpr int saveds = 6 | SLJIT_ENTER_FLOAT(savedFloats);
-	static constexpr int stackBytes = registerCacheCapacity * sizeof(Value);
+	static constexpr int stackBytes = std::max(registerCacheCapacity * sizeof(Value), sizeof(NativeCallScratch));
 	static constexpr int signature = SLJIT_ARGS2(P, P, P);
 };
 
@@ -38,6 +50,7 @@ public:
 	void* leaveSegment;
 
 private:
+	sljit_label* emitCallGate(sljit_compiler* compiler, sljit_label* coldDispatch);
 	sljit_label* emitReturnGate(sljit_compiler* compiler, sljit_label* coldDispatch);
 };
 

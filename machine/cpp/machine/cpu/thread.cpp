@@ -12,7 +12,7 @@ Thread::Thread() { resizeStack(8); }
 #pragma GCC diagnostic ignored "-Winvalid-offsetof"
 #endif
 Thread::NativeOffsets Thread::nativeOffsets() {
-	return {offsetof(Thread, currentFrame), offsetof(Thread, frameDepth), offsetof(Thread, stackTop)};
+	return {offsetof(Thread, currentFrame), offsetof(Thread, frameDepth), offsetof(Thread, stackTop), offsetof(Thread, stack), offsetof(Thread, stackCapacity)};
 }
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop

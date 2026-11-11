@@ -354,7 +354,7 @@ if(BMSX_ENABLE_NATIVE_BLOCKS)
 	target_sources(bmsx_core PRIVATE machine/cpu/native_block.cpp machine/cpu/native_block_compiler.cpp machine/cpu/native_block_abi.cpp
 		machine/cpu/native_block_memory.cpp machine/cpu/native_block_registers.cpp machine/cpu/native_block_register_plan.cpp
 		machine/cpu/native_block_register_edges.cpp machine/cpu/native_block_compare.cpp
-		machine/cpu/native_block_context.cpp machine/cpu/native_block_calls.cpp machine/cpu/closure.cpp
+		machine/cpu/native_block_context.cpp machine/cpu/native_block_calls.cpp machine/cpu/native_block_call.cpp machine/cpu/closure.cpp
 		machine/cpu/native_block_table.cpp
 		machine/cpu/native_block_control.cpp
 		machine/cpu/cpu_native_blocks.cpp machine/cpu/cpu_native_execution.cpp)

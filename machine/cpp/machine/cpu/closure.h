@@ -28,6 +28,7 @@ struct Closure : GCObject {
 	size_t trackedHeapBytes = 0;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	static size_t nativeUpvaluesOffset();
+	static size_t nativeFunctionAddressOffset();
 #endif
 };
 } // namespace bmsx

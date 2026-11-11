@@ -2478,7 +2478,9 @@ RunResult CPU::runLoop(
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const NativeBlock* nativeBlock = nullptr;
 	int nativeFirstDispatchCycles = 0;
-	NativeCpuRunState nativeState{.cpu = this, .targetDepth = targetDepth};
+	NativeCpuRunState nativeState{.cpu = this, .targetDepth = targetDepth,
+		.systemRom = &m_memory.systemRomStorage(),
+		.ram = {m_memory.ramData(), m_memory.ramByteCount()}};
 #endif
 	for (;;) {
 		try {
@@ -2763,7 +2765,9 @@ dispatch_instruction:
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 dispatch_native_block: {
-				nativeState.codeRoot = IMAGE.nativeCodeLookup->root(m_memory.cartridgeController().selectedSlot(m_executionBusSignals));
+				nativeState.cartridgeSlot = m_memory.cartridgeController().selectedSlot(m_executionBusSignals);
+				nativeState.cartridgeRom = m_memory.cartridgeController().romStorage(nativeState.cartridgeSlot);
+				nativeState.codeRoot = IMAGE.nativeCodeLookup->root(nativeState.cartridgeSlot);
 				nativeState.state = {.registers = registers, .constants = IMAGE.constPool.data(), .frame = frame,
 					.globalValues = m_globalValues.data(), .systemGlobalValues = m_systemGlobalValues.data(),
 					.cop0Words = m_cop0Words.data(), .constantCount = static_cast<u32>(IMAGE.constPool.size()),

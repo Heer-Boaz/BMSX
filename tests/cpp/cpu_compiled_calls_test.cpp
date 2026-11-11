@@ -166,6 +166,87 @@ void protectedNestedFrames() {
 }
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTarget, bool ramRecord, bool alias) {
+	test::Blua32TestImage image;
+	image.text.resize(3 * MAPPED_PAGE_BYTE_SIZE);
+	const int base = alias ? 7 : 0;
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 6, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), base, 6, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), base, open ? 0 : args + 1, 1);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
+	writeInstruction(image.text, DECODED_PAGE_WORDS, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(image.text, 2 * DECODED_PAGE_WORDS, static_cast<u8>(OpCode::SETGL), 0, 0, 0);
+	writeInstruction(image.text, 2 * DECODED_PAGE_WORDS + 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
+	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = alias ? 8u : 16u},
+		{.firstWord = DECODED_PAGE_WORDS, .wordCount = 1, .numParams = static_cast<u32>(params),
+			.maxStack = params == 0 ? 0u : 8u, .isVararg = vararg}};
+	image.globalNames = {"nativeCallMarker"};
+	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+	CpuMachine machine(image, false);
+	const u32 markerPc = machine.rom.textAddress + 2 * MAPPED_PAGE_BYTE_SIZE;
+	machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], markerPc);
+	machine.cpu.runUntilDepth(0, 4096);
+	machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress);
+	machine.cpu.runUntilDepth(0, 12000);
+	machine.cpu.runUntilDepth(1, 100);
+	auto* thread = machine.cpu.activeThread();
+	auto* caller = thread->currentFrame;
+	auto* spare = caller->next;
+	require(spare && thread->frameDepth == 1, "warm CALL owns a spare frame and adequate retained Value backing");
+	const std::array<Value, 5> payloads{valueNumber(99), valueString(machine.cpu.stringPool().intern("native-call-payload")),
+		VALUE_QNAN_MASK | 0x2au, valueBool(true), valueNumber(-0.0)};
+	for (int index = 0; index < args; ++index) caller->registers[base + 1 + index] = payloads[index];
+	if (alias) thread->stack[8] = valueNumber(63);
+	caller->top = open ? base + 1 + args : caller->stackCapacity;
+	const u32 calleePc = machine.rom.textAddress + MAPPED_PAGE_BYTE_SIZE;
+	if (ramRecord) {
+		// Neither a guest address nor the host backing needs function alignment for
+		// an effect-free record span. Cross a decoded page with fresh record fields.
+		const u32 record = DYNAMIC_RAM_BASE + 0x1ff1u;
+		machine.memory.writeBytes(record, machine.rom.bytes.data() + machine.rom.functionAddresses[1], BLUA32_FUNCTION_RECORD_SIZE);
+		asClosure(caller->registers[6])->functionAddress = record;
+		machine.memory.writeMappedU32LE(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, 7);
+	}
+	const auto marker = machine.cpu.stringPool().intern("nativeCallMarker");
+	machine.cpu.setGlobalByKey(marker, valueBool(false));
+	const auto& lookup = *caller->executionImage->nativeCodeLookup;
+	auto* calleePage = lookup.find(calleePc, 0);
+	auto* alternate = lookup.find(markerPc, 0);
+	const u32 word = (calleePc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	const u32 markerWord = (markerPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	require(calleePage->nativeCode && calleePage->nativeCode[word] && alternate->nativeCode && alternate->nativeCode[markerWord],
+		"callee and independent marker have live raw native entries");
+	// A semantic CALL still selects the original RET descriptor. Only the shared
+	// raw CALL gate can follow this independently redirected code word.
+	calleePage->nativeBlocks->code[word] = coldTarget ? nullptr : alternate->nativeCode[markerWord];
+	machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress + 2 * INSTRUCTION_BYTES);
+	const int callerTop = caller->top;
+	require(machine.cpu.runUntilDepth(0, 4) == RunResult::Yielded, "CALL and its first callee instruction retain grant accounting");
+	if (coldTarget) {
+		require(machine.cpu.getGlobalByKey(marker) == valueBool(false) && thread->currentFrame == caller,
+			"missing raw target dispatches the original semantic call and return before any native activation writes");
+		return;
+	}
+	const Value first = params > 0 && args > 0 && !alias ? payloads[0] : valueNil();
+	require(machine.cpu.getGlobalByKey(marker) == first && thread->currentFrame == spare && thread->frameDepth == 2,
+		"warm CALL tail-jumps through the raw native entry without the C++ CALL handler");
+	require(caller->pc == machine.rom.textAddress + 4 * INSTRUCTION_BYTES && caller->top == callerTop
+		&& spare->callSitePc == machine.rom.textAddress + 3 * INSTRUCTION_BYTES
+		&& spare->returnBase == base && spare->returnCount == 1 && !spare->returnToCompletionLatch,
+		"native CALL publishes exact caller continuation and callee result obligations");
+	const int count = vararg ? std::max(args - params, 0) : 0;
+	require(spare->varargBase == caller->stackCapacity && spare->varargCount == count
+		&& spare->stackBase == spare->varargBase + count && spare->top == params
+		&& spare->stackCapacity == (ramRecord ? 7 : params == 0 ? 1 : 8),
+		"fresh record fields govern separate vararg and reserved register windows, including maxStack zero");
+	for (int index = 0; index < params; ++index) require(spare->registers[index] == (index < args && !alias ? payloads[index] : valueNil()),
+		"fixed arguments retain raw Value bits and missing or overlapping cleared arguments are nil");
+	for (int index = params; index < spare->stackCapacity; ++index) require(spare->registers[index] == valueNil(), "new reserved locals are nil");
+	for (int index = 0; index < count; ++index) require(thread->stack[spare->varargBase + index] == payloads[params + index],
+		"varargs retain their own raw Value window rather than borrowing caller storage");
+}
+
 void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bool exceptionFrame) {
 	// The protected target repeatedly calls an ordinary child. A separate live
 	// translation writes a marker without changing top or any frame register.
@@ -408,6 +489,12 @@ int main() {
 		reusableFrameChain();
 		protectedNestedFrames();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		nativeCallRouting(3, 5, true, true, false, false, false);
+		nativeCallRouting(4, 1, false, false, false, false, false);
+		nativeCallRouting(0, 0, false, true, false, false, false);
+		nativeCallRouting(3, 5, true, false, false, true, false);
+		nativeCallRouting(3, 2, false, true, true, false, false);
+		nativeCallRouting(1, 1, false, false, false, false, true);
 		nativeReturnRouting(6, 0, 0, false, true);
 		nativeReturnRouting(2, 4, 0, false, false);
 		nativeReturnRouting(6, 2, 0, false, false);
