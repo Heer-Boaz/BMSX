@@ -42,9 +42,9 @@ try {
 		const romPath = join(directory, `${workload.name}.rom`), statePath = join(directory, 'current.state');
 		writeFileSync(romPath, workload.romBytes);
 		const romSha256 = createHash('sha256').update(workload.romBytes).digest('hex');
+		let expectedState: ReturnType<typeof decodeRuntimeSaveState> | null = null;
+		let expectedExecution: object | null = null;
 		for (const grant of grants) {
-			let expectedState: ReturnType<typeof decodeRuntimeSaveState> | null = null;
-			let expectedExecution: object | null = null;
 			for (let round = 0; round < rounds; ++round) {
 				const order = round % 2 === 0 ? backends : [...backends].reverse();
 				for (const backend of order) {
@@ -60,12 +60,13 @@ try {
 					assert.equal(result.warmupPasses, warmupPasses);
 					const bytes = readFileSync(statePath);
 					const state = decodeRuntimeSaveState(bytes, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
-					const execution = { activeCycles: result.activeCycles, remainingCycles: result.remainingCycles,
-						currentPc: result.currentPc, lastPc: result.lastPc };
+					// Host grants may end after different bounded segments. Compare
+					// the complete guest work, not the final host grant's unused tail.
+					const execution = { activeCycles: result.activeCycles, currentPc: result.currentPc, lastPc: result.lastPc };
 					if (expectedState === null) { expectedState = state; expectedExecution = execution; }
 					else {
-						assert.deepEqual(execution, expectedExecution, `${workload.name}/${backend}: cycle grants and exact PC`);
-						assert.ok(isDeepStrictEqual(state, expectedState), `${workload.name}/${backend}: entire runtime state, including RAM, must match`);
+						assert.deepEqual(execution, expectedExecution, `${workload.name}/${backend}/grant=${grant}: consumed guest cycles and exact completion PC`);
+						assert.ok(isDeepStrictEqual(state, expectedState), `${workload.name}/${backend}/grant=${grant}: entire runtime state, including RAM, must match`);
 					}
 					const record = { workload: workload.name, iterations: workload.iterations, wordCount: workload.wordCount,
 						optLevel, round, grant, cache: warmupPasses === 0 ? 'cold-bmsx' : 'warm-bmsx', modelHz: PSX_MACHINE_SPEC.cpuFreqHz,
