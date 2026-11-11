@@ -1613,8 +1613,34 @@ void testNormalCompletionInterlock() {
  require(h.gte.captureState().normalPendingCycles == 0u, "reset clears deadline");
 }
 
+void testNormalCpuInstructionTiming() {
+ for (bool scalar : {false, true}) {
+  bmsx::test::Blua32TestImage image;
+  image.text.resize(7 * bmsx::INSTRUCTION_BYTES);
+  image.constants = {static_cast<double>(bmsx::IO_GX_GTE_COMMAND), static_cast<double>(bmsx::GX_GTE_FN_RTPT), static_cast<double>(bmsx::IO_GX_GTE_DATA0)};
+  image.functions = {{.firstWord=0, .wordCount=7, .maxStack=5}};
+  bmsx::writeInstruction(image.text,0,static_cast<bmsx::u8>(bmsx::OpCode::LOADK),0,0,0);
+  bmsx::writeInstruction(image.text,1,static_cast<bmsx::u8>(bmsx::OpCode::LOADK),1,0,1);
+  bmsx::writeInstruction(image.text,2,static_cast<bmsx::u8>(bmsx::OpCode::LOADK),2,0,2);
+  bmsx::writeInstruction(image.text,3,static_cast<bmsx::u8>(bmsx::OpCode::STORE_MEM),1,0,0);
+  bmsx::writeInstruction(image.text,4,static_cast<bmsx::u8>(bmsx::OpCode::K1),3,0,0);
+  bmsx::writeInstruction(image.text,5,static_cast<bmsx::u8>(bmsx::OpCode::LOAD_MEM),4,2,0);
+  bmsx::writeInstruction(image.text,6,static_cast<bmsx::u8>(bmsx::OpCode::JMP),0,63,57,255);
+  GteHarness h(image);
+  if (scalar) h.cpu.setExecutionHook({[](void*,bmsx::ExecutionDomainId,bmsx::u32){return false;},nullptr,bmsx::ALL_EXECUTION_DOMAINS_MASK,0u});
+  for(int repeat=0;repeat<24;++repeat) {
+   require(h.scheduler.runCpuSlice(0,29)==bmsx::RunResult::Yielded, "one timed loop completes");
+   require(h.cpu.instructionBudgetRemaining==0, "nine base and twenty GTE wait cycles");
+   require(h.cpu.activeThread()->currentFrame->pc==h.systemRom.textAddress, "loop returns to its entry");
+   h.scheduler.advanceTo(h.scheduler.nowCycles()+29);
+   require(h.gte.captureState().normalPendingCycles==0, "CPU read discharged normal completion");
+  }
+ }
+}
+
 int main() {
 	testNormalCompletionInterlock();
+	testNormalCpuInstructionTiming();
 	testRtpsIdentityProjection();
 	testMmioExecution();
 	testCommandObservation();

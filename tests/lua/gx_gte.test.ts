@@ -13,6 +13,7 @@ import {
 import { IO_WORD_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { MAPPED_BUS_DMA_BLOCK_END, MAPPED_BUS_MASTER_CPU, MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
+import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
@@ -103,7 +104,7 @@ import {
 	GX_GTE_PLUS_SCALAR,
 	GxGte,
 } from '../../machine/ts/machine/devices/gx/gte';
-import { linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
 const GTE_SF = 1 << 19;
 
@@ -1531,3 +1532,28 @@ test('normal GTE chained commands, grant overrun, and restored deadline', () => 
  gte.reset();
  assert.equal(gte.captureState().normalPendingCycles, 0);
 });
+
+for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+ test(`normal GTE latency is included by real BLua memory instructions (${backend})`, () => {
+  const text = new Uint8Array(7 * INSTRUCTION_BYTES);
+  writeInstruction(text, 0, OpCode.LOADK, 0, 0, 0);
+  writeInstruction(text, 1, OpCode.LOADK, 1, 0, 1);
+  writeInstruction(text, 2, OpCode.LOADK, 2, 0, 2);
+  writeInstruction(text, 3, OpCode.STORE_MEM, 1, 0, MemoryAccessKind.Word);
+  writeInstruction(text, 4, OpCode.K1, 3, 0, 0);
+  writeInstruction(text, 5, OpCode.LOAD_MEM, 4, 2, MemoryAccessKind.Word);
+  writeInstruction(text, 6, OpCode.JMP, 0, 63, 57, 255);
+  const image = linkRawTestSystemBlua32({text, constants: [IO_GX_GTE_COMMAND,GX_GTE_FN_RTPT,IO_GX_GTE_DATA0], functions:[{firstWord:0,wordCount:7,maxStack:5}]});
+  const { cpu } = createTestSystemCpu(image, backend);
+  const scheduler = new DeviceScheduler(cpu);
+  const gte = new GxGte(cpu.memory,cpu,scheduler);
+  for (let repeat=0;repeat<24;++repeat) {
+   assert.equal(scheduler.runCpuSlice(0,29),RunResult.Yielded);
+   assert.equal(cpu.instructionBudgetRemaining,0,'9 base cycles plus 20 outstanding GTE cycles');
+   assert.equal(cpu.rootThread.currentFrame!.pc,image.image.functions[0].codeAddress);
+   scheduler.advanceTo(scheduler.nowCycles+29);
+   assert.equal(gte.captureState().normalPendingCycles,0);
+  }
+  if (backend===CpuExecutionBackend.JavaScript) assert.ok(cpu.rootThread.currentFrame!.decodedPage!.compiledBlocks);
+ });
+}
