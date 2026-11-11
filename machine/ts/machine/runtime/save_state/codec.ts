@@ -1044,11 +1044,10 @@ function writeCpuFrameState(writer: BinarySink, state: CpuFrameState): void {
 	writer.u32(state.functionAddress);
 	writer.u32(state.pc);
 	writer.i32(state.closureRef);
+	writer.i32(state.stackBase);
 	writer.i32(state.stackCapacity);
-	writer.u32(state.registers.length);
-	writer.u32s(state.registers);
-	writer.u32(state.varargs.length);
-	writer.u32s(state.varargs);
+	writer.i32(state.varargBase);
+	writer.i32(state.varargCount);
 	writer.i32(state.returnBase);
 	writer.i32(state.returnCount);
 	writer.i32(state.top);
@@ -1063,9 +1062,10 @@ function readCpuFrameState(reader: BinaryReader): CpuFrameState {
 		functionAddress: reader.u32(),
 		pc: reader.u32(),
 		closureRef: reader.i32(),
+		stackBase: reader.i32(),
 		stackCapacity: reader.i32(),
-		registers: reader.u32s(reader.u32()),
-		varargs: reader.u32s(reader.u32()),
+		varargBase: reader.i32(),
+		varargCount: reader.i32(),
 		returnBase: reader.i32(),
 		returnCount: reader.i32(),
 		top: reader.i32(),
@@ -1117,6 +1117,8 @@ function writeCpuThreadState(writer: BinarySink, state: CpuThreadState): void {
 	writer.i32(state.callBase);
 	writer.i32(state.returnCount);
 	writer.u64(state.stackCapacity);
+	writer.u32(state.stack.length);
+	writer.u32s(state.stack);
 	writer.u32(state.error);
 	writer.u32(state.frames.length);
 	for (const value of state.frames) {
@@ -1138,6 +1140,7 @@ function readCpuThreadState(reader: BinaryReader): CpuThreadState {
 		callBase: reader.i32(),
 		returnCount: reader.i32(),
 		stackCapacity: reader.u64(),
+		stack: reader.u32s(reader.u32()),
 		error: reader.u32(),
 		frames: reader.array(readCpuFrameState),
 		protectedCalls: reader.array(readCpuProtectedCallState),

@@ -45,7 +45,7 @@ import {
 import { decodeBlua32BootHeader } from '../../toolchain/ts/rompack/blua32_image';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
-import { OpCode, encodeFixedCallArgCount } from '../../machine/ts/spec/blua32/opcode';
+import { OpCode, encodeFixedValueCount } from '../../machine/ts/spec/blua32/opcode';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { Table } from '../../machine/ts/machine/cpu/table';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
@@ -124,11 +124,11 @@ function makeClosureCartSource(value: number, path: string, staticClosure: boole
 	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0, 0);
 	writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 1, 0);
 	writeInstruction(text, 2, OpCode.SETGL, 0, 0, 0, 0);
-	writeInstruction(text, 3, OpCode.CALL, 0, encodeFixedCallArgCount(0), 1, 0);
+	writeInstruction(text, 3, OpCode.CALL, 0, encodeFixedValueCount(0), 2, 0);
 	writeInstruction(text, 4, OpCode.SETGL, 0, 0, 1, 0);
 	writeInstruction(text, 5, OpCode.HALT, 0, 0, 0, 0);
 	writeInstruction(text, 6, OpCode.LOADK, 0, 0, 0, 0);
-	writeInstruction(text, 7, OpCode.RET, 0, 1, 0, 0);
+	writeInstruction(text, 7, OpCode.RET, 0, 2, 0, 0);
 	writeInstruction(text, 8, OpCode.RFE, 0, 0, 0, 0);
 	return {
 		text,
@@ -154,7 +154,7 @@ function makeCartridgeSelectionSwitchSource(result: 0 | 1): TestBlua32Source {
 	writeInstruction(text, 1, OpCode.K0, 1, 0, 0, 0);
 	writeInstruction(text, 2, OpCode.STORE_MEM_D, 1, 0, MemoryAccessKind.U32LE, 0);
 	writeInstruction(text, 3, result === 0 ? OpCode.K0 : OpCode.K1, 0, 0, 0, 0);
-	writeInstruction(text, 4, OpCode.RET, 0, 1, 0, 0);
+	writeInstruction(text, 4, OpCode.RET, 0, 2, 0, 0);
 	return {
 		text,
 		functions: [{ firstWord: 0, wordCount: 5, maxStack: 2 }],

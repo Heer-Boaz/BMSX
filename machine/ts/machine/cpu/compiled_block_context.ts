@@ -41,17 +41,18 @@ export function emitContext(op: ContextOpCode, page: DecodedInstructionPage, wor
 				else{u.valueTag=${tag};u.valueScalar=${scalar};u.valueReference=${reference};}}`;
 		}
 		case OpCode.VARARG: {
+			if (b === 1) return '';
 			const failure = registers.exit(exit);
 			let published = '';
 			if (b === 0) published = registers.prepareDynamicOverwrite(a, 'n');
-			else registers.discardRange(a, a + b);
-			return `{const n=${b === 0 ? 'frame.varargCount' : b};
+			else registers.discardRange(a, a + b - 1);
+			return `{const n=${b === 0 ? 'frame.varargCount' : b - 1};
 				if(n>0 && ${a}+n>frame.stackCapacity) ${failure}
 				${published}
 				const copied=Math.min(n,frame.varargCount);
 				r.copyRangeFrom(frame.thread.stackRegisters,${a},frame.varargBase,copied);
 				r.clear(n-copied,${a}+copied);
-				${b === 0 ? `frame.top=${a}+n;` : ''}${registers.reloadRange(a, b === 0 ? Infinity : a + b)}}`;
+				${b === 0 ? `frame.top=${a}+n;` : ''}${registers.reloadRange(a, b === 0 ? Infinity : a + b - 1)}}`;
 		}
 	}
 }

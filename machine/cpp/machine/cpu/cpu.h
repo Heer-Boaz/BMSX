@@ -88,9 +88,10 @@ struct CpuFrameState {
 	u32 functionAddress = 0;
 	u32 pc = 0;
 	int closureRef = -1;
-	std::vector<u32> registers;
+	int stackBase = 0;
 	int stackCapacity = 0;
-	std::vector<u32> varargs;
+	int varargBase = 0;
+	int varargCount = 0;
 	int returnBase = 0;
 	int returnCount = 0;
 	int top = 0;
@@ -122,6 +123,7 @@ struct CpuThreadState {
 	int callBase = 0;
 	int returnCount = 0;
 	size_t stackCapacity = 0;
+	std::vector<u32> stack;
 	u32 error = 0;
 	std::vector<CpuFrameState> frames;
 	std::vector<CpuProtectedCallState> protectedCalls;

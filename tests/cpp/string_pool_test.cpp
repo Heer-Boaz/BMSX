@@ -190,8 +190,8 @@ test::Blua32TestImage externalCallImage() {
 	image.text.resize(4 * INSTRUCTION_BYTES);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::RET), 0, 1, 0);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 3}, {.firstWord = 3, .wordCount = 1, .numParams = 1, .maxStack = 512, .staticClosure = false}};
 	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 	return image;

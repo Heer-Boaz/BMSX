@@ -57,16 +57,16 @@ void hotVarargFrames(int fixed) {
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 20, 0, 0);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 0, 20, 0);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, 0, 1);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, 0, 2);
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	writeInstruction(image.text, 16, static_cast<u8>(OpCode::K1), 1, 0, 0);
 	writeInstruction(image.text, 17, static_cast<u8>(OpCode::K1), 7, 0, 0);
-	writeInstruction(image.text, 18, static_cast<u8>(OpCode::VARARG), 2, fixed, 0);
+	writeInstruction(image.text, 18, static_cast<u8>(OpCode::VARARG), 2, fixed == 0 ? 0 : fixed + 1, 0);
 	writeInstruction(image.text, 19, static_cast<u8>(OpCode::MOV), 0, 7, 0);
 	writeInstruction(image.text, 20, static_cast<u8>(OpCode::MOV), 1, 2, 0);
 	writeInstruction(image.text, 21, static_cast<u8>(OpCode::VARARG), 0, 0, 0);
 	writeInstruction(image.text, 22, static_cast<u8>(OpCode::JMP), 0, 63, 57, 255);
-	writeInstruction(image.text, 24, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(image.text, 24, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 160},
 		{.firstWord = 16, .wordCount = 9, .maxStack = 16, .isVararg = true}};
 	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
@@ -310,7 +310,7 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 		&& std::ranges::all_of(stack, [](Value value) { return value == valueNumber(73); }),
 		"an empty open VARARG resets top without touching or growing the destination range");
 	for (const int fixed : {0, 5}) {
-		ContextBlock first(machine, {{OpCode::K1, 1}, {OpCode::K1, 7}, {OpCode::VARARG, 2, static_cast<i16>(fixed)},
+		ContextBlock first(machine, {{OpCode::K1, 1}, {OpCode::K1, 7}, {OpCode::VARARG, 2, static_cast<i16>(fixed == 0 ? 0 : fixed + 1)},
 			{OpCode::MOV, 0, 7}, {OpCode::MOV, 1, 2}, {OpCode::BNOT, 15, 7}, {OpCode::JMP}});
 		ContextBlock second(machine, {{OpCode::VARARG, 0, 0}, {OpCode::LOADKR, 15, 14}});
 		second.block->linkFrom(first.block->terminal);

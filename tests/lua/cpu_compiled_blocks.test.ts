@@ -493,10 +493,10 @@ for (const standalone of [false, true]) test(`generated HALT commits its thread/
 	writeInstruction(text, 2, OpCode.WIDE, 0, 0, 0);
 	writeInstruction(text, 3, OpCode.HALT, 63, 63, 63, 255);
 	writeInstruction(text, 4, OpCode.KSMI, 2, 0, 7);
-	writeInstruction(text, 5, OpCode.RET, 2, 1, 0);
+	writeInstruction(text, 5, OpCode.RET, 2, 2, 0);
 	writeInstruction(text, 6, OpCode.RFE, 0, 0, 0);
 	writeInstruction(text, 7, OpCode.KSMI, 0, 0, 9);
-	writeInstruction(text, 8, OpCode.RET, 0, 1, 0);
+	writeInstruction(text, 8, OpCode.RET, 0, 2, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [
 		{ firstWord: 0, wordCount: 6, maxStack: 3 }, { firstWord: 6, wordCount: 1 }, { firstWord: 7, wordCount: 2 },
 	], exceptionFunctionIndex: 1, irqFunctionIndex: 1 });
@@ -597,11 +597,11 @@ for (const wide of [false, true]) test(`generated CALL/RET preserve full state a
 	writeInstruction(text, 1, OpCode.CLOSURE, 4, 0, 0);
 	writeInstruction(text, 2, OpCode.MOV, 0, 4, 0);
 	if (wide) writeInstruction(text, 3, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, callBody, OpCode.CALL, 0, 1, 1);
+	writeInstruction(text, callBody, OpCode.CALL, 0, 1, 2);
 	writeInstruction(text, callBody + 1, OpCode.MOV, 6, 0, 0);
 	writeInstruction(text, callBody + 2, OpCode.JMP, 0, 63, wide ? 59 : 60, 255);
 	writeInstruction(text, calleeStart, OpCode.K1, 0, 0, 0);
-	writeInstruction(text, calleeStart + 1, OpCode.RET, 0, 1, 0);
+	writeInstruction(text, calleeStart + 1, OpCode.RET, 0, 2, 0);
 	writeInstruction(text, calleeStart + 2, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [
 		{ firstWord: 0, wordCount: calleeStart, maxStack: 8 }, { firstWord: calleeStart, wordCount: 2 }, { firstWord: calleeStart + 2, wordCount: 1 },
@@ -635,11 +635,11 @@ test('a compiled CALL completes after a mapped record read replaces its source i
 	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
 	writeInstruction(text, 1, OpCode.CLOSURE, 4, 0, 0);
 	writeInstruction(text, 2, OpCode.MOV, 0, 4, 0);
-	writeInstruction(text, 3, OpCode.CALL, 0, 1, 1);
+	writeInstruction(text, 3, OpCode.CALL, 0, 1, 2);
 	writeInstruction(text, 4, OpCode.MOV, 6, 0, 0);
 	writeInstruction(text, 5, OpCode.JMP, 0, 63, 60, 255);
 	writeInstruction(text, 6, OpCode.K1, 0, 0, 0);
-	writeInstruction(text, 7, OpCode.RET, 0, 1, 0);
+	writeInstruction(text, 7, OpCode.RET, 0, 2, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [
 		{ firstWord: 0, wordCount: 6, maxStack: 8 }, { firstWord: 6, wordCount: 2 },
 	], closureRelocations: [{ wordIndex: 1, functionAddress: recordAddress }] });

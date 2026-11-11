@@ -41,12 +41,14 @@ sljit_label* NativeBlockGate::emitReturnGate(sljit_compiler* compiler, sljit_lab
 	cold[coldCount++] = sljit_emit_cmp(compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R0), cpu.haltedDepth);
 	sljit_set_label(differentThread, sljit_emit_label(compiler));
 
-	// RET and CALL result counts have different zero encodings. The caller's
-	// final top is exact, and zero results need no capacity admission.
+	// Both operands use count+1; zero selects the open result range.
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), exitSlot);
 	sljit_emit_op1(compiler, SLJIT_MOV32_U16, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R2), offsetof(NativeBlockExitSite, exitA));
 	sljit_emit_op1(compiler, SLJIT_MOV32_S16, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), offsetof(NativeBlockExitSite, exitB));
-	auto* fixedResults = sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
+	auto* openResults = sljit_emit_cmp(compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
+	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, 1);
+	auto* fixedResults = sljit_emit_jump(compiler, SLJIT_JUMP);
+	sljit_set_label(openResults, sljit_emit_label(compiler));
 	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_R0, 0, SLJIT_S5, 0, SLJIT_R3, 0);
 	auto* positiveResults = sljit_emit_cmp(compiler, SLJIT_SIG_GREATER_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_IMM, 0);
@@ -55,7 +57,10 @@ sljit_label* NativeBlockGate::emitReturnGate(sljit_compiler* compiler, sljit_lab
 	sljit_set_label(positiveResults, resultsReady);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), countSlot, SLJIT_R0, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, returnCount));
-	auto* fixedWanted = sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 0);
+	auto* openWanted = sljit_emit_cmp(compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 0);
+	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, 1);
+	auto* fixedWanted = sljit_emit_jump(compiler, SLJIT_JUMP);
+	sljit_set_label(openWanted, sljit_emit_label(compiler));
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_R0, 0);
 	sljit_set_label(fixedWanted, sljit_emit_label(compiler));
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), wantedSlot, SLJIT_R2, 0);
@@ -129,7 +134,8 @@ sljit_label* NativeBlockGate::emitReturnGate(sljit_compiler* compiler, sljit_lab
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, frame));
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), offsetof(CallFrame, thread));
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), callerSlot);
-	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R0), offsetof(CallFrame, varargBase));
+	sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R2), offsetof(CallFrame, stackBase),
+		SLJIT_MEM1(SLJIT_R2), offsetof(CallFrame, stackCapacity));
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R1), thread.stackTop, SLJIT_R3, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_R1), thread.currentFrame, SLJIT_R2, 0);
 	sljit_emit_op2(compiler, SLJIT_SUB, SLJIT_MEM1(SLJIT_R1), thread.frameDepth,

@@ -14,13 +14,13 @@ import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
-function callImage(maxStack: number, returns: number) {
+function callImage(maxStack: number, returns: number, base = 0) {
 	const text = new Uint8Array(6 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);
-	writeInstruction(text, 2, OpCode.CALL, 0, 1, returns);
+	writeInstruction(text, 1, OpCode.CLOSURE, base, 0, 0);
+	writeInstruction(text, 2, OpCode.CALL, base, 1, returns === 0 ? 0 : returns + 1);
 	writeInstruction(text, 3, OpCode.JMP, 0, 63, 63, 255);
-	writeInstruction(text, 4, OpCode.RET, 0, 1, 0);
+	writeInstruction(text, 4, OpCode.RET, 0, 2, 0);
 	writeInstruction(text, 5, OpCode.JMP, 0, 63, 63, 255);
 	return linkRawTestSystemBlua32({ text, functions: [
 		{ firstWord: 0, wordCount: 4, maxStack: 8 },
@@ -63,14 +63,14 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		writeInstruction(text, 0, OpCode.GETSYS, 0, 0, 0);
 		writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
 		writeInstruction(text, 2, OpCode.CLOSURE, 1, 0, 0);
-		writeInstruction(text, 3, OpCode.CALL, 0, 2, 2);
-		writeInstruction(text, 4, OpCode.RET, 0, 2, 0);
+		writeInstruction(text, 3, OpCode.CALL, 0, 2, 3);
+		writeInstruction(text, 4, OpCode.RET, 0, 3, 0);
 		writeInstruction(text, 5, OpCode.WIDE, 0, 0, 0);
 		writeInstruction(text, 6, OpCode.CLOSURE, 0, 0, 0);
-		writeInstruction(text, 7, OpCode.CALL, 0, 1, 1);
-		writeInstruction(text, 8, OpCode.RET, 0, 1, 0);
+		writeInstruction(text, 7, OpCode.CALL, 0, 1, 2);
+		writeInstruction(text, 8, OpCode.RET, 0, 2, 0);
 		writeInstruction(text, 9, OpCode.LOADK, 0, 0, 0);
-		writeInstruction(text, 10, OpCode.RET, 0, 1, 0);
+		writeInstruction(text, 10, OpCode.RET, 0, 2, 0);
 		const image = linkRawTestSystemBlua32({ text, functions: [
 			{ firstWord: 0, wordCount: 5, maxStack: 8 },
 			{ firstWord: 5, wordCount: 4, maxStack: 8 },
@@ -102,10 +102,10 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	});
 
 	test(`collection while admitting a callee preserves prepared identity and only active roots (${backend})`, () => {
-		const { cpu } = createTestSystemCpu(callImage(1024, 1), backend), thread = cpu.rootThread;
+		const { cpu } = createTestSystemCpu(callImage(1024, 1, 4), backend), thread = cpu.rootThread;
 		cpu.runUntilDepth(0, 1);
 		const caller = thread.currentFrame!, prepared = thread.acquireFrame();
-		const live = cpu.stringPool.intern('caller-only-across-admission'); caller.registers.setStringId(7, live);
+		const live = cpu.stringPool.intern('caller-only-across-admission'); caller.registers.setStringId(0, live);
 		const heap = cpu.captureRuntimeState().luaHeap, garbage = 'g'.repeat(heap.nextCollectionBytes - heap.trackedBytes - 1);
 		cpu.stringPool.intern(garbage);
 		cpu.runUntilDepth(0, 2);
@@ -122,17 +122,17 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	});
 
 	test(`return growth keeps the callee rooted until results have moved (${backend})`, () => {
-		const { cpu } = createTestSystemCpu(callImage(8, 63), backend), thread = cpu.rootThread;
+		const { cpu } = createTestSystemCpu(callImage(8, 62), backend), thread = cpu.rootThread;
 		while (thread.frameDepth !== 2) cpu.runUntilDepth(0, 1);
 		const caller = thread.firstFrame!, callee = thread.currentFrame!;
-		const result = cpu.stringPool.intern('returning-frame-only'); callee.registers.setStringId(0, result);
+		const result = cpu.stringPool.intern('returning-frame-only'); callee.registers.setStringId(0, result); callee.top = 1;
 		const heap = cpu.captureRuntimeState().luaHeap, garbage = 'g'.repeat(heap.nextCollectionBytes - heap.trackedBytes - 1);
 		cpu.stringPool.intern(garbage);
 		assert.equal(cpu.runUntilDepth(1, 100), RunResult.Halted);
 		assert.equal(cpu.stringPool.find(garbage), undefined, 'caller window growth actually collected');
 		assert.equal(cpu.stringPool.find('returning-frame-only'), result);
-		assert.equal(caller.registers.getStringId(0), result); assert.equal(caller.stackCapacity, 64); assert.equal(caller.top, 63);
-		for (let index = 1; index < 63; ++index) assert.equal(caller.registers.getTag(index), ValueTag.Nil);
+		assert.equal(caller.registers.getStringId(0), result); assert.equal(caller.stackCapacity, 64); assert.equal(caller.top, 62);
+		for (let index = 1; index < 62; ++index) assert.equal(caller.registers.getTag(index), ValueTag.Nil);
 		assert.equal(thread.currentFrame, caller); assert.equal(caller.next, callee);
 	});
 

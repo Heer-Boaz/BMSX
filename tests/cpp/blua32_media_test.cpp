@@ -30,7 +30,7 @@ void require(bool condition, const char* message) {
 test::Blua32TestImage makeImage(RomImageDomain domain, bool includeSymbols) {
 	test::Blua32TestImage source;
 	source.text.resize(INSTRUCTION_BYTES);
-	writeInstruction(source.text, 0, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(source.text, 0, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	source.functions = {{.firstWord = 0, .wordCount = 1}};
 	if (!includeSymbols) return source;
 

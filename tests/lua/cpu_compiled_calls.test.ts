@@ -19,17 +19,17 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 		const record = DYNAMIC_RAM_BASE + recordOffset;
 		const text = new Uint8Array(2 * MAPPED_PAGE_BYTE_SIZE);
 		writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-		writeInstruction(text, 1, OpCode.CLOSURE, 4, 0, 0);
-		writeInstruction(text, 2, OpCode.MOV, 0, 4, 0);
-		writeInstruction(text, 3, OpCode.LOADK, 1, 0, 0);
-		writeInstruction(text, 4, OpCode.LOADK, 2, 0, 1);
-		writeInstruction(text, 5, OpCode.CALL, 0, open ? 0 : 3, open ? 0 : 2);
-		writeInstruction(text, 6, OpCode.ADD, 3, 0, 1);
+		writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);
+		writeInstruction(text, 2, OpCode.MOV, 4, 0, 0);
+		writeInstruction(text, 3, OpCode.LOADK, 5, 0, 0);
+		writeInstruction(text, 4, OpCode.LOADK, 6, 0, 1);
+		writeInstruction(text, 5, OpCode.CALL, 4, open ? 0 : 3, open ? 0 : 3);
+		writeInstruction(text, 6, OpCode.ADD, 3, 4, 5);
 		writeInstruction(text, 7, OpCode.JMP, 0, 63, 58, 255);
 		for (const start of [DECODED_PAGE_WORDS, DECODED_PAGE_WORDS + 32]) {
 			writeInstruction(text, start, start === DECODED_PAGE_WORDS ? OpCode.ADD : OpCode.SUB, 2, 0, 1);
 			writeInstruction(text, start + 1, OpCode.MOV, 3, start === DECODED_PAGE_WORDS ? 0 : 1, 0);
-			writeInstruction(text, start + 2, OpCode.RET, 2, open ? 0 : 2, 0);
+			writeInstruction(text, start + 2, OpCode.RET, 2, open ? 0 : 3, 0);
 		}
 		const image = linkRawTestSystemBlua32({ text, functions: [
 			{ firstWord: 0, wordCount: 8, maxStack: 8 },
@@ -69,7 +69,7 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 			assert.equal(cpu.runUntilDepth(0, 9), RunResult.Yielded);
 			assert.equal(cpu.getFrameDepth(), 1);
 			assert.ok(cpu.rootThread.stackRegisters.capacity() > capacity, 'a hot native call actually relocates the shared stack');
-			assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(0), 7);
+			assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(4), 7);
 		}
 		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 		for (const { cpu, memory } of machines) {
@@ -78,7 +78,7 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 			cpu.runUntilDepth(0, 20000); cpu.runUntilDepth(1, 100);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
 			cpu.runUntilDepth(0, 5); cpu.runUntilDepth(1, 100);
-			assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(0), -1, 'a live closure reads the current RAM function record at each call');
+			assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(4), -1, 'a live closure reads the current RAM function record at each call');
 		}
 		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 		const word = new Uint8Array(4);
@@ -96,16 +96,16 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 	});
 }
 
-test('CALL clears its reserved window before reading arguments from retained stack slots', () => {
+test('CALL shares supplied argument slots without clearing them', () => {
 	const text = new Uint8Array(8 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
 	writeInstruction(text, 1, OpCode.CLOSURE, 4, 0, 0);
 	writeInstruction(text, 2, OpCode.MOV, 7, 4, 0);
-	writeInstruction(text, 3, OpCode.CALL, 7, 2, 1);
+	writeInstruction(text, 3, OpCode.CALL, 7, 2, 2);
 	writeInstruction(text, 4, OpCode.MOV, 3, 7, 0);
 	writeInstruction(text, 5, OpCode.JMP, 0, 63, 60, 255);
 	writeInstruction(text, 6, OpCode.MOV, 1, 0, 0);
-	writeInstruction(text, 7, OpCode.RET, 1, 1, 0);
+	writeInstruction(text, 7, OpCode.RET, 1, 2, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [
 		{ firstWord: 0, wordCount: 6, maxStack: 8 },
 		{ firstWord: 6, wordCount: 2, numParams: 1, maxStack: 8 },
@@ -133,13 +133,13 @@ test('CALL clears its reserved window before reading arguments from retained sta
 		assert.equal(cpu.getFrameDepth(), 2);
 		assert.equal(cpu.rootThread.currentFrame!.pc, calleeEntry);
 		assert.equal(cpu.rootThread.currentFrame!.stackBase, 8);
-		assert.equal(cpu.rootThread.currentFrame!.registers.get(0), null,
-			'the argument observes nil written during activation, not the retained value 63');
+		assert.equal(cpu.rootThread.currentFrame!.registers.get(0), 63,
+			'activation keeps the supplied argument in its original slot');
 	}
 	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 	runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
-	for (const { cpu } of machines) assert.equal(cpu.rootThread.frameAtDepth(0).registers.get(7), null,
-		'the callee returns the cleared argument through the real result window');
+	for (const { cpu } of machines) assert.equal(cpu.rootThread.frameAtDepth(0).registers.get(7), 63,
+		'the callee returns the original argument through the shared result window');
 	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 });
 
@@ -203,24 +203,28 @@ for (const { numParams, maxStack, argCount } of [
 				const thread = cpu.rootThread;
 				const caller = thread.frameAtDepth(0);
 				const callee = thread.currentFrame!;
-				const capacity = Math.max(maxStack, 1);
+				const capacity = Math.max(maxStack, numParams, 1);
+				const base = completion ? 8 : 1;
 				assert.equal(cpu.getFrameDepth(), 2);
 				assert.equal(callee.pc, calleeEntry);
-				assert.equal(callee.stackBase, 8);
+				assert.equal(callee.stackBase, base);
 				assert.equal(callee.stackCapacity, capacity);
 				assert.equal(callee.top, numParams);
-				assert.equal(thread.stackTop, 8 + capacity, 'fixed-parameter writes do not expand the reserved window');
+				assert.equal(thread.stackTop, base + capacity, 'all formal parameters belong to the active rooted reservation');
 				assert.equal(caller.stackCapacity, 8);
 				assert.equal(caller.top, 0, 'activation does not change the caller active-register extent');
 				assert.equal(thread.stackRegisters.capacity(), retainedCapacities[machineIndex]);
 				for (let index = 0; index < argCount; ++index) assert.equal(callee.registers.get(index), argumentsByMachine[machineIndex][index],
 					'argument movement preserves number identity, value tags and references');
-				for (let index = argCount; index < Math.max(numParams, capacity); ++index) {
-					assert.equal(callee.registers.get(index), null, 'missing formals and reserved locals are nil');
+				for (let index = argCount; index < numParams; ++index) {
+					assert.equal(callee.registers.get(index), null, 'missing formals are nil');
 					assert.equal(callee.registers.getReference(index), null, 'cleared slots do not retain stale references');
 				}
-				for (let index = 8 + Math.max(numParams, capacity); index < 32; ++index) assert.equal(thread.stackRegisters.get(index), caller.registers.getClosure(0),
-					'initialization leaves retained storage beyond the reserved and parameter extents untouched');
+				cpu.collectTrackedHeapBytes();
+				const state = cpu.captureRuntimeState();
+				assert.equal(state.threads[0].stack.length, base + capacity);
+				cpu.restoreRuntimeState(state);
+				for (let index = 0; index < argCount; ++index) assert.equal(cpu.rootThread.currentFrame!.registers.get(index), argumentsByMachine[machineIndex][index]);
 			}
 			assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 			runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
@@ -228,15 +232,15 @@ for (const { numParams, maxStack, argCount } of [
 	});
 }
 
-test('CALL copies fixed arguments before overlapping retained vararg sources', () => {
+test('CALL retains varargs below the relocated fixed-parameter window', () => {
 	const text = new Uint8Array(7 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
 	writeInstruction(text, 1, OpCode.CLOSURE, 4, 0, 0);
 	writeInstruction(text, 2, OpCode.MOV, 7, 4, 0);
-	writeInstruction(text, 3, OpCode.CALL, 7, 4, 1);
+	writeInstruction(text, 3, OpCode.CALL, 7, 4, 2);
 	writeInstruction(text, 4, OpCode.JMP, 0, 63, 61, 255);
-	writeInstruction(text, 5, OpCode.VARARG, 1, 2, 0);
-	writeInstruction(text, 6, OpCode.RET, 0, 3, 0);
+	writeInstruction(text, 5, OpCode.VARARG, 1, 3, 0);
+	writeInstruction(text, 6, OpCode.RET, 0, 4, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [
 		{ firstWord: 0, wordCount: 5, maxStack: 8 },
 		{ firstWord: 5, wordCount: 2, numParams: 1, maxStack: 4, isVararg: true },
@@ -263,18 +267,19 @@ test('CALL copies fixed arguments before overlapping retained vararg sources', (
 	for (const { cpu } of machines) {
 		const thread = cpu.rootThread;
 		const callee = thread.currentFrame!;
-		assert.equal(callee.stackBase, 10);
+		assert.equal(callee.stackBase, 11);
 		assert.equal(callee.stackCapacity, 4);
 		assert.equal(callee.top, 1);
 		assert.equal(callee.registers.getNumber(0), 71);
-		assert.equal(callee.varargBase, 8);
+		assert.equal(callee.varargBase, 9);
 		assert.equal(callee.varargCount, 2);
-		assert.equal(thread.stackRegisters.getNumber(8), 72);
-		assert.equal(thread.stackRegisters.getNumber(9), 71,
-			'the second vararg reads the fixed argument already copied to absolute slot 10, not stale 73 or cleared nil');
-		for (let index = 1; index < 4; ++index) assert.equal(callee.registers.get(index), null);
+		assert.equal(thread.stackRegisters.get(8), null, 'moved fixed parameters do not retain duplicate roots');
+		assert.equal(thread.stackRegisters.getNumber(9), 72);
+		assert.equal(thread.stackRegisters.getNumber(10), 73);
+		callee.registers.setNumber(0, 99);
+		assert.equal(thread.stackRegisters.getNumber(10), 73, 'working parameter writes cannot alter saved extras');
 	}
 	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 	runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
-	for (const { cpu } of machines) assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(7), 71);
+	for (const { cpu } of machines) assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(7), 99);
 });

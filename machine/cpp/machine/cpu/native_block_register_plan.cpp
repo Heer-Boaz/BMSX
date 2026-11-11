@@ -21,7 +21,7 @@ NativeBlockCompiler::RegisterAccess NativeBlockCompiler::registerAccess(const De
 	}
 	if (op == OpCode::LOADNIL || (op == OpCode::VARARG && instruction.b != 0)) {
 		access.writeFirst = instruction.a;
-		access.writeEnd = instruction.a + instruction.b;
+		access.writeEnd = instruction.a + instruction.b - (op == OpCode::VARARG ? 1 : 0);
 	}
 	// Open VARARG may overwrite a suffix, but its runtime count can be zero.
 	// It cannot supply a definite definition or a future destination reuse.

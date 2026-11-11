@@ -188,16 +188,16 @@ for (const fixed of [0, 5]) test(`hot VARARG handles exact top resets, nil paddi
 	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
 	writeInstruction(text, 1, OpCode.CLOSURE, 20, 0, 0);
 	writeInstruction(text, 2, OpCode.MOV, 0, 20, 0);
-	writeInstruction(text, 3, OpCode.CALL, 0, 0, 1);
+	writeInstruction(text, 3, OpCode.CALL, 0, 0, 2);
 	writeInstruction(text, 4, OpCode.HALT, 0, 0, 0);
 	writeInstruction(text, 16, OpCode.K1, 1, 0, 0);
 	writeInstruction(text, 17, OpCode.K1, 7, 0, 0);
-	writeInstruction(text, 18, OpCode.VARARG, 2, fixed, 0);
+	writeInstruction(text, 18, OpCode.VARARG, 2, fixed === 0 ? 0 : fixed + 1, 0);
 	writeInstruction(text, 19, OpCode.MOV, 0, 7, 0);
 	writeInstruction(text, 20, OpCode.MOV, 1, 2, 0);
 	writeInstruction(text, 21, OpCode.VARARG, 0, 0, 0);
 	writeInstruction(text, 22, OpCode.JMP, 0, 63, 57, 255);
-	writeInstruction(text, 24, OpCode.RET, 0, 1, 0);
+	writeInstruction(text, 24, OpCode.RET, 0, 2, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 160 },
 		{ firstWord: 16, wordCount: 9, maxStack: 16, isVararg: true }],
 		closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }] });

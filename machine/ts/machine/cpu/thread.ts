@@ -57,6 +57,7 @@ export class Thread {
 	public leaveFrame(): void {
 		const frame = this.currentFrame!;
 		this.currentFrame = frame.previous;
+		this.stackTop = this.currentFrame === null ? 0 : this.currentFrame.stackBase + this.currentFrame.stackCapacity;
 		--this.frameDepth;
 		frame.executionImage = null!;
 		frame.closure = null!;

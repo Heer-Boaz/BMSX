@@ -223,7 +223,7 @@ test('compiled NEWT materializes allocation roots and leaves destination untouch
 	assert.equal(page.compiledBlocks!.entries[entry]!.terminal.exit, CompiledBlockExit.AllocateTable);
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 	for (const cpu of [js, ref]) {
-		const root = cpu.rootThread.frameAtDepth(0); root.registers.setNumber(8, 73); root.registers.setNil(9); root.top = 0;
+		const root = cpu.rootThread.frameAtDepth(0); root.registers.setNumber(8, 73); root.registers.setNil(9); root.top = 9;
 		const retained = cpu.createTable(350000);
 		cpu.setGlobalByKey(cpu.stringPool.find('retained')!, ValueTag.Table, NaN, retained);
 	}
@@ -231,5 +231,5 @@ test('compiled NEWT materializes allocation roots and leaves destination untouch
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
 	assert.equal(js.readEpcWord(), image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
-	assert.equal(frame.registers.getNumber(8), 73); assert.equal(frame.top, 8);
+	assert.equal(frame.registers.getNumber(8), 73); assert.equal(frame.top, 9);
 });

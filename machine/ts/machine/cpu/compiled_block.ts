@@ -281,7 +281,8 @@ export function emitJavaScriptBlock(
 		if (words) cycles += ceilDiv4(page.c[word]);
 		if (op === OpCode.VARARG && page.b[word] === 0) { registerTop = 0; resetsRegisterTop = true; }
 		else if (op === OpCode.VARARG || op === OpCode.LOADNIL) {
-			if (page.b[word] !== 0) registerTop = Math.max(registerTop, page.a[word] + page.b[word]);
+			const count = page.b[word] - (op === OpCode.VARARG ? 1 : 0);
+			if (count > 0) registerTop = Math.max(registerTop, page.a[word] + count);
 		} else if (!compiledBlockEndsBlock(op, page.b[word]) && op !== OpCode.SETFIELD && op !== OpCode.SETT && op !== OpCode.SETI && !store && !words
 			&& op !== OpCode.MTC0 && op !== OpCode.SETUP && op !== OpCode.SETGL && op !== OpCode.SETSYS) registerTop = Math.max(registerTop, page.a[word] + 1);
 	}

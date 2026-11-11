@@ -64,11 +64,11 @@ test::Blua32TestImage program(Workload workload) {
 		writeInstruction(text, 6, static_cast<u8>(OpCode::JMP), 0, 63, 57, 255);
 		break;
 	case Workload::Builtin:
-		writeInstruction(text, 0, static_cast<u8>(OpCode::MOV), 0, 4, 0);
-		writeInstruction(text, 1, static_cast<u8>(OpCode::MOV), 1, 5, 0);
-		writeInstruction(text, 2, static_cast<u8>(OpCode::MOV), 2, 6, 0);
-		writeInstruction(text, 3, static_cast<u8>(OpCode::CALL), 0, encodeFixedCallArgCount(2), 1);
-		writeInstruction(text, 4, static_cast<u8>(OpCode::MOV), 7, 0, 0);
+		writeInstruction(text, 0, static_cast<u8>(OpCode::MOV), 4, 0, 0);
+		writeInstruction(text, 1, static_cast<u8>(OpCode::MOV), 5, 1, 0);
+		writeInstruction(text, 2, static_cast<u8>(OpCode::MOV), 6, 2, 0);
+		writeInstruction(text, 3, static_cast<u8>(OpCode::CALL), 4, encodeFixedValueCount(2), 2);
+		writeInstruction(text, 4, static_cast<u8>(OpCode::MOV), 7, 4, 0);
 		writeInstruction(text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 58, 255);
 		break;
 	case Workload::Ram:
@@ -87,15 +87,15 @@ test::Blua32TestImage program(Workload workload) {
 		writeInstruction(text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 		writeInstruction(text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
 		writeInstruction(text, 2, static_cast<u8>(OpCode::MOV), 4, 0, 0);
-		writeInstruction(text, 3, static_cast<u8>(OpCode::MOV), 0, 4, 0);
-		writeInstruction(text, 4, static_cast<u8>(OpCode::CALL), 0, encodeFixedCallArgCount(0), 1);
-		writeInstruction(text, 5, static_cast<u8>(OpCode::MOV), 6, 0, 0);
+		writeInstruction(text, 3, static_cast<u8>(OpCode::MOV), 4, 0, 0);
+		writeInstruction(text, 4, static_cast<u8>(OpCode::CALL), 4, encodeFixedValueCount(0), 2);
+		writeInstruction(text, 5, static_cast<u8>(OpCode::MOV), 6, 4, 0);
 		writeInstruction(text, 6, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
 		writeInstruction(text, 7, static_cast<u8>(OpCode::K1), 0, 0, 0);
 		if (arithmetic) {
 			for (u32 word = 8; word < 40; ++word) writeInstruction(text, word, static_cast<u8>(OpCode::ADD), 0, 0, 0);
 		}
-		writeInstruction(text, arithmetic ? 40 : 8, static_cast<u8>(OpCode::RET), 0, 1, 0);
+		writeInstruction(text, arithmetic ? 40 : 8, static_cast<u8>(OpCode::RET), 0, 2, 0);
 		image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 8}, {.firstWord = 7, .wordCount = arithmetic ? 34u : 2u}};
 		image.closureRelocations = {{1, workload == Workload::CallsRamRecord
 			? RAM_RECORD_ADDRESS : test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
@@ -150,25 +150,32 @@ test::Blua32TestImage program(Workload workload) {
 		const bool captures = workload == Workload::Upvalues;
 		text.resize(12u * INSTRUCTION_BYTES);
 		writeInstruction(text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-		writeInstruction(text, 1, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
-		writeInstruction(text, 2, static_cast<u8>(OpCode::MOV), 0, 4, 0);
-		writeInstruction(text, 3, static_cast<u8>(OpCode::CALL), 0, encodeFixedCallArgCount(captures ? 0 : 3), 1);
-		writeInstruction(text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
-		if (captures) {
-			writeInstruction(text, 5, static_cast<u8>(OpCode::K1), 1, 0, 0);
-			writeInstruction(text, 6, static_cast<u8>(OpCode::GETUP), 0, 0, 0);
-			writeInstruction(text, 7, static_cast<u8>(OpCode::ADD), 0, 0, 1);
-			writeInstruction(text, 8, static_cast<u8>(OpCode::SETUP), 0, 0, 0);
-			writeInstruction(text, 9, static_cast<u8>(OpCode::GETUP), 2, 0, 0);
-			writeInstruction(text, 10, static_cast<u8>(OpCode::RET), 2, 1, 0);
-		} else {
-			writeInstruction(text, 5, static_cast<u8>(OpCode::VARARG), 0, 5, 0);
-			writeInstruction(text, 6, static_cast<u8>(OpCode::VARARG), 0, 0, 0);
-			writeInstruction(text, 7, static_cast<u8>(OpCode::ADD), 0, 0, 1);
-			writeInstruction(text, 8, static_cast<u8>(OpCode::RET), 0, 1, 0);
+		writeInstruction(text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+		writeInstruction(text, 2, static_cast<u8>(OpCode::MOV), 4, 0, 0);
+		const u32 call = captures ? 3u : 6u;
+		if (!captures) {
+			for (u32 argument = 1; argument <= 3; ++argument) {
+				writeInstruction(text, 2 + argument, static_cast<u8>(OpCode::MOV), 4 + argument, argument, 0);
+			}
 		}
-		image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8},
-			{.firstWord = 5, .wordCount = captures ? 6u : 4u, .maxStack = 5, .isVararg = !captures, .staticClosure = !captures,
+		writeInstruction(text, call, static_cast<u8>(OpCode::CALL), 4, encodeFixedValueCount(captures ? 0 : 3), 2);
+		writeInstruction(text, call + 1, static_cast<u8>(OpCode::JMP), 0, 63, captures ? 61 : 58, 255);
+		const u32 callee = call + 2;
+		if (captures) {
+			writeInstruction(text, callee, static_cast<u8>(OpCode::K1), 1, 0, 0);
+			writeInstruction(text, callee + 1, static_cast<u8>(OpCode::GETUP), 0, 0, 0);
+			writeInstruction(text, callee + 2, static_cast<u8>(OpCode::ADD), 0, 0, 1);
+			writeInstruction(text, callee + 3, static_cast<u8>(OpCode::SETUP), 0, 0, 0);
+			writeInstruction(text, callee + 4, static_cast<u8>(OpCode::GETUP), 2, 0, 0);
+			writeInstruction(text, callee + 5, static_cast<u8>(OpCode::RET), 2, 2, 0);
+		} else {
+			writeInstruction(text, callee, static_cast<u8>(OpCode::VARARG), 0, 6, 0);
+			writeInstruction(text, callee + 1, static_cast<u8>(OpCode::VARARG), 0, 0, 0);
+			writeInstruction(text, callee + 2, static_cast<u8>(OpCode::ADD), 0, 0, 1);
+			writeInstruction(text, callee + 3, static_cast<u8>(OpCode::RET), 0, 2, 0);
+		}
+		image.functions = {{.firstWord = 0, .wordCount = call + 2, .maxStack = 8},
+			{.firstWord = callee, .wordCount = captures ? 6u : 4u, .maxStack = 5, .isVararg = !captures, .staticClosure = !captures,
 				.upvalues = captures ? std::vector<Blua32UpvalueRecord>{{true, 1}} : std::vector<Blua32UpvalueRecord>{}}};
 		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 		break;
@@ -214,9 +221,9 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 		for (int index = 1; index <= 8; ++index) table->setInteger(index, valueNumber(index));
 		table->setStringKey(cpu.stringPool().intern("field"), valueNumber(1));
 	} else if (workload == Workload::Builtin) {
-		registers[4] = cpu.createBuiltinFunction(BuiltinFunctionId::StringByte);
-		registers[5] = valueString(cpu.stringPool().intern(std::string(1024, 'x')));
-		registers[6] = valueNumber(1024);
+		registers[0] = cpu.createBuiltinFunction(BuiltinFunctionId::StringByte);
+		registers[1] = valueString(cpu.stringPool().intern(std::string(1024, 'x')));
+		registers[2] = valueNumber(1024);
 	} else if (workload == Workload::Ram) {
 		registers[1] = valueNumber(DYNAMIC_RAM_BASE + 0x100);
 		registers[2] = valueNumber(1);

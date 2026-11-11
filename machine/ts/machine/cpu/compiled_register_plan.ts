@@ -44,7 +44,7 @@ export function planRegionRegisters(page: DecodedInstructionPage, plans: readonl
 			if (op === OpCode.SELF) define(page.a[word] + 1);
 			if (op === OpCode.LOADNIL || (op === OpCode.VARARG && page.b[word] !== 0)) {
 				for (const register of candidates)
-					if (register >= page.a[word] && register < page.a[word] + page.b[word]) define(register);
+					if (register >= page.a[word] && register < page.a[word] + page.b[word] - (op === OpCode.VARARG ? 1 : 0)) define(register);
 			}
 			// Open VARARG can copy zero values: its suffix remains live-in.
 		}

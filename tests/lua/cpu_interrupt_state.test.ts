@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { AcceptedInterruptKind, CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { encodeFixedCallArgCount, OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { encodeFixedValueCount, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { Table } from '../../machine/ts/machine/cpu/table';
@@ -120,7 +120,7 @@ function makeHaltTestImages(startupFunctionIndex: number): TestBlua32ImagePair {
 	writeInstruction(code, 3, OpCode.RFE, 0, 0, 0, 0);
 	writeInstruction(code, 4, OpCode.WIDE, 0, 0, 0, 0);
 	writeInstruction(code, 5, OpCode.CLOSURE, 0, 0, 0, 0);
-	writeInstruction(code, 6, OpCode.RET, 0, 1, 0, 0);
+	writeInstruction(code, 6, OpCode.RET, 0, 2, 0, 0);
 	return linkRawTestBlua32Pair(
 		CART_LAUNCHER_SYSTEM_IMAGE_SOURCE,
 		{
@@ -166,9 +166,9 @@ function makeCompletionLatchTestImage(): TestBlua32Image {
 	const code = new Uint8Array(6 * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0, 0);
 	writeInstruction(code, 1, OpCode.CLOSURE, 0, 0, 1, 0);
-	writeInstruction(code, 2, OpCode.RET, 0, 1, 0, 0);
+	writeInstruction(code, 2, OpCode.RET, 0, 2, 0, 0);
 	writeInstruction(code, 3, OpCode.NEWT, 0, 0, 0, 0);
-	writeInstruction(code, 4, OpCode.RET, 0, 1, 0, 0);
+	writeInstruction(code, 4, OpCode.RET, 0, 2, 0, 0);
 	writeInstruction(code, 5, OpCode.RFE, 0, 0, 0, 0);
 	return linkRawTestSystemBlua32({
 		text: code,
@@ -262,7 +262,7 @@ function makeCrossDomainHookRuntime(sliceStats: { begin: number; end: number }):
 	const cartCode = new Uint8Array(6 * INSTRUCTION_BYTES);
 	writeInstruction(cartCode, 0, OpCode.WIDE, 0, 0, 0, 0);
 	writeInstruction(cartCode, 1, OpCode.CLOSURE, 0, 0, 0, 0);
-	writeInstruction(cartCode, 2, OpCode.CALL, 0, encodeFixedCallArgCount(0), 0, 0);
+	writeInstruction(cartCode, 2, OpCode.CALL, 0, encodeFixedValueCount(0), 0, 0);
 	writeInstruction(cartCode, 3, OpCode.K0, 0, 0, 0, 0);
 	writeInstruction(cartCode, 4, OpCode.RET, 0, 0, 0, 0);
 	writeInstruction(cartCode, 5, OpCode.RFE, 0, 0, 0, 0);
@@ -1564,7 +1564,7 @@ test('CPU mapped bus errors enter the system exception vector without committing
 	writeInstruction(cartCode, 0, OpCode.LOADK, 0, 0, 0, 0);
 	writeInstruction(cartCode, 1, OpCode.K1, 1, 0, 0, 0);
 	writeInstruction(cartCode, 2, OpCode.LOAD_MEM_D, 1, 0, MemoryAccessKind.Word, 0);
-	writeInstruction(cartCode, 3, OpCode.RET, 1, 1, 0, 0);
+	writeInstruction(cartCode, 3, OpCode.RET, 1, 2, 0, 0);
 	writeInstruction(cartCode, 4, OpCode.RFE, 0, 0, 0, 0);
 	const images = linkRawTestBlua32Pair(systemSource, {
 		text: cartCode,
@@ -1692,7 +1692,7 @@ test('CPU mapped memory accepts byte addresses and four-byte-aligned f64 address
 	writeInstruction(code, 1, OpCode.LOAD_MEM, 1, 0, MemoryAccessKind.U8, 0);
 	writeInstruction(code, 2, OpCode.LOADK, 0, 0, 1, 0);
 	writeInstruction(code, 3, OpCode.LOAD_MEM, 2, 0, MemoryAccessKind.F64LE, 0);
-	writeInstruction(code, 4, OpCode.RET, 1, 2, 0, 0);
+	writeInstruction(code, 4, OpCode.RET, 1, 3, 0, 0);
 	writeInstruction(code, 5, OpCode.HALT, 0, 0, 0, 0);
 
 	const image = linkRawTestSystemBlua32({

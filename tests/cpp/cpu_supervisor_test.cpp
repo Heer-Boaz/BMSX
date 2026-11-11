@@ -101,15 +101,15 @@ auto makeSupervisorCartImage() -> bmsx::test::Blua32TestImage {
 	std::span<bmsx::u8> code(image.text);
 	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::HALT), 0, 0, 0);
 	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::K1), 0, 0, 0);
-	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
+	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
 	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
 	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::MFC0), 0, bmsx::COP0_STATUS, 0);
 	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::K1), 0, 0, 0);
-	bmsx::writeInstruction(code, 6, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
+	bmsx::writeInstruction(code, 6, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
 	bmsx::writeInstruction(code, 7, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
 	bmsx::writeInstruction(code, 8, static_cast<bmsx::u8>(bmsx::OpCode::K1), 1, 0, 0);
 	bmsx::writeInstruction(code, 9, static_cast<bmsx::u8>(bmsx::OpCode::LOAD_MEM_D), 1, 0, static_cast<bmsx::u8>(bmsx::MemoryAccessKind::Word));
-	bmsx::writeInstruction(code, 10, static_cast<bmsx::u8>(bmsx::OpCode::RET), 1, 1, 0);
+	bmsx::writeInstruction(code, 10, static_cast<bmsx::u8>(bmsx::OpCode::RET), 1, 2, 0);
 	bmsx::writeInstruction(code, 11, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
 	image.functions = {
 		{.firstWord = 0u, .wordCount = 3u},
@@ -164,7 +164,7 @@ auto makeCartridgeSelectionSwitchImage(bmsx::OpCode result) -> bmsx::test::Blua3
 		static_cast<bmsx::u8>(bmsx::MemoryAccessKind::U32LE)
 	);
 	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(result), 0, 0, 0);
-	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
+	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
 	image.functions = {{.firstWord = 0u, .wordCount = 5u, .maxStack = 2u}};
 	return image;
 }
@@ -401,7 +401,7 @@ void testStringOrderingMatchesUtf8CodepointOrder() {
 	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::KFALSE), 3, 0, 0);
 	bmsx::writeInstruction(code, 6, static_cast<bmsx::u8>(bmsx::OpCode::LT), 1, 1, 0);
 	bmsx::writeInstruction(code, 7, static_cast<bmsx::u8>(bmsx::OpCode::KTRUE), 3, 0, 0);
-	bmsx::writeInstruction(code, 8, static_cast<bmsx::u8>(bmsx::OpCode::RET), 2, 2, 0);
+	bmsx::writeInstruction(code, 8, static_cast<bmsx::u8>(bmsx::OpCode::RET), 2, 3, 0);
 	image.functions = {{.firstWord = 0u, .wordCount = 9u, .maxStack = 4u}};
 	CpuTestMachine machine(std::move(image));
 
@@ -418,7 +418,7 @@ void testMappedFetchCrossesFunctionRecordMetadata() {
 	std::span<bmsx::u8> code(image.text);
 	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
 	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::K1), 0, 0, 0);
-	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
+	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
 	image.functions = {
 		{.firstWord = 0u, .wordCount = 1u, .maxStack = 1u},
 		{.firstWord = 1u, .wordCount = 2u, .maxStack = 1u},
@@ -474,7 +474,7 @@ void testCrossImageCallStackPcsBelongToTheirFrames() {
 	std::span<bmsx::u8> systemCode(system.text);
 	bmsx::writeInstruction(systemCode, 0, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
 	bmsx::writeInstruction(systemCode, 1, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 0);
-	bmsx::writeInstruction(systemCode, 2, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedCallArgCount(0), 1);
+	bmsx::writeInstruction(systemCode, 2, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedValueCount(0), 2);
 	bmsx::writeInstruction(systemCode, 3, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
 	bmsx::writeInstruction(systemCode, 4, static_cast<bmsx::u8>(bmsx::OpCode::HALT), 0, 0, 0);
 	bmsx::writeInstruction(systemCode, 5, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
@@ -503,7 +503,7 @@ void testCrossImageCallStackPcsBelongToTheirFrames() {
 	std::span<bmsx::u8> cartCode(cart.text);
 	bmsx::writeInstruction(cartCode, 0, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
 	bmsx::writeInstruction(cartCode, 1, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 0);
-	bmsx::writeInstruction(cartCode, 2, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedCallArgCount(0), 1);
+	bmsx::writeInstruction(cartCode, 2, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedValueCount(0), 2);
 	bmsx::writeInstruction(cartCode, 3, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
 	bmsx::writeInstruction(cartCode, 4, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
 	cart.functions = {
@@ -715,9 +715,9 @@ void testMappedRamFunctionExecution() {
 		bmsx::CLOSURE_ADDRESS_REGISTER_WIDE_C
 	);
 	bmsx::writeInstruction(systemCode, 4, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 1, 0, 1);
-	bmsx::writeInstruction(systemCode, 5, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
+	bmsx::writeInstruction(systemCode, 5, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 3, 0);
 	bmsx::writeInstruction(systemCode, 6, static_cast<bmsx::u8>(bmsx::OpCode::K1), 0, 0, 0);
-	bmsx::writeInstruction(systemCode, 7, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
+	bmsx::writeInstruction(systemCode, 7, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
 	bmsx::writeInstruction(systemCode, 8, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
 	systemImage.functions = {
 		{.firstWord = 0u, .wordCount = 6u, .maxStack = 2u},
@@ -756,10 +756,10 @@ void testMappedRamFunctionExecution() {
 		2,
 		static_cast<bmsx::u8>(bmsx::OpCode::CALL),
 		0,
-		bmsx::encodeFixedCallArgCount(0),
-		1
+		bmsx::encodeFixedValueCount(0),
+		2
 	);
-	bmsx::writeInstruction(ramCode, 3, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
+	bmsx::writeInstruction(ramCode, 3, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
 
 	memory.writeMappedU32LE(
 		RAM_FUNCTION_ADDRESS + bmsx::BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
@@ -816,7 +816,7 @@ void testMappedRamFunctionExecution() {
 
 	std::array<bmsx::u8, 2u * bmsx::INSTRUCTION_BYTES> replacement{};
 	bmsx::writeInstruction(replacement, 0, static_cast<bmsx::u8>(bmsx::OpCode::K0), 0, 0, 0);
-	bmsx::writeInstruction(replacement, 1, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
+	bmsx::writeInstruction(replacement, 1, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
 	memory.writeBytes(RAM_CODE_ADDRESS, replacement.data(), replacement.size());
 
 	cpu.beginCompletionCall(*closure);
@@ -934,7 +934,7 @@ void testInstrumentedExecutionObservesCrossDomainCallAndReturn() {
 	std::span<bmsx::u8> cartCode(cart.text);
 	bmsx::writeInstruction(cartCode, 0, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
 	bmsx::writeInstruction(cartCode, 1, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 0);
-	bmsx::writeInstruction(cartCode, 2, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedCallArgCount(0), 0);
+	bmsx::writeInstruction(cartCode, 2, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedValueCount(0), 0);
 	bmsx::writeInstruction(cartCode, 3, static_cast<bmsx::u8>(bmsx::OpCode::K0), 0, 0, 0);
 	bmsx::writeInstruction(cartCode, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
 	bmsx::writeInstruction(cartCode, 5, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
@@ -1098,11 +1098,11 @@ void testExplicitDomainClosureArguments() {
 	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
 	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
 	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 1, 0, 0);
-	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::RET), 1, 1, 0);
+	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::RET), 1, 2, 0);
 	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::GETUP), 1, 0, 0);
 	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::ADD), 0, 0, 1);
 	bmsx::writeInstruction(code, 6, static_cast<bmsx::u8>(bmsx::OpCode::SETUP), 0, 0, 0);
-	bmsx::writeInstruction(code, 7, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
+	bmsx::writeInstruction(code, 7, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
 	bmsx::writeInstruction(code, 8, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
 	image.functions = {
 		{.firstWord = 0u, .wordCount = 4u, .maxStack = 2u},
@@ -1336,7 +1336,7 @@ void testMappedMemoryAlignmentContract() {
 	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::LOAD_MEM), 1, 0, static_cast<bmsx::u8>(bmsx::MemoryAccessKind::U8));
 	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 1);
 	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::LOAD_MEM), 2, 0, static_cast<bmsx::u8>(bmsx::MemoryAccessKind::F64LE));
-	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 1, 2, 0);
+	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 1, 3, 0);
 	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::HALT), 0, 0, 0);
 	image.functions = {
 		{.firstWord = 0u, .wordCount = 5u, .maxStack = 3u},
@@ -1435,44 +1435,44 @@ auto makeProtectedCallImage() -> bmsx::test::Blua32TestImage {
 	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::GETSYS), 0, 0, 0);
 	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
 	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 1, 0, 1);
-	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedCallArgCount(1), 3);
-	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 3, 0);
+	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedValueCount(1), 4);
+	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 4, 0);
 	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
 	bmsx::writeInstruction(code, 6, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 1, 0, 1);
-	bmsx::writeInstruction(code, 7, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
+	bmsx::writeInstruction(code, 7, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 3, 0);
 	bmsx::writeInstruction(code, 8, static_cast<bmsx::u8>(bmsx::OpCode::GETSYS), 0, 0, 1);
 	bmsx::writeInstruction(code, 9, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
 	bmsx::writeInstruction(code, 10, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 1, 0, 3);
 	bmsx::writeInstruction(code, 11, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
 	bmsx::writeInstruction(code, 12, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 2, 0, 4);
-	bmsx::writeInstruction(code, 13, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedCallArgCount(2), 2);
-	bmsx::writeInstruction(code, 14, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
+	bmsx::writeInstruction(code, 13, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedValueCount(2), 3);
+	bmsx::writeInstruction(code, 14, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 3, 0);
 	bmsx::writeInstruction(code, 15, static_cast<bmsx::u8>(bmsx::OpCode::GETSYS), 0, 0, 2);
 	bmsx::writeInstruction(code, 16, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 1, 0, 2);
-	bmsx::writeInstruction(code, 17, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedCallArgCount(1), 0);
+	bmsx::writeInstruction(code, 17, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedValueCount(1), 0);
 	bmsx::writeInstruction(code, 18, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
 	bmsx::writeInstruction(code, 19, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 1, 0, 0);
-	bmsx::writeInstruction(code, 20, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
+	bmsx::writeInstruction(code, 20, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 3, 0);
 	bmsx::writeInstruction(code, 21, static_cast<bmsx::u8>(bmsx::OpCode::GETSYS), 0, 0, 0);
 	bmsx::writeInstruction(code, 22, static_cast<bmsx::u8>(bmsx::OpCode::GETSYS), 1, 0, 0);
 	bmsx::writeInstruction(code, 23, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
 	bmsx::writeInstruction(code, 24, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 2, 0, 1);
-	bmsx::writeInstruction(code, 25, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedCallArgCount(2), 4);
-	bmsx::writeInstruction(code, 26, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 4, 0);
+	bmsx::writeInstruction(code, 25, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedValueCount(2), 5);
+	bmsx::writeInstruction(code, 26, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 5, 0);
 	bmsx::writeInstruction(code, 27, static_cast<bmsx::u8>(bmsx::OpCode::GETSYS), 0, 0, 0);
 	bmsx::writeInstruction(code, 28, static_cast<bmsx::u8>(bmsx::OpCode::GETSYS), 1, 0, 1);
 	bmsx::writeInstruction(code, 29, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
 	bmsx::writeInstruction(code, 30, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 2, 0, 1);
 	bmsx::writeInstruction(code, 31, static_cast<bmsx::u8>(bmsx::OpCode::LOADNIL), 3, 0, 0);
-	bmsx::writeInstruction(code, 32, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedCallArgCount(3), 2);
-	bmsx::writeInstruction(code, 33, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
+	bmsx::writeInstruction(code, 32, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedValueCount(3), 3);
+	bmsx::writeInstruction(code, 33, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 3, 0);
 	bmsx::writeInstruction(code, 34, static_cast<bmsx::u8>(bmsx::OpCode::GETSYS), 0, 0, 1);
 	bmsx::writeInstruction(code, 35, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
 	bmsx::writeInstruction(code, 36, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 1, 0, 3);
 	bmsx::writeInstruction(code, 37, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
 	bmsx::writeInstruction(code, 38, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 2, 0, 3);
-	bmsx::writeInstruction(code, 39, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedCallArgCount(2), 2);
-	bmsx::writeInstruction(code, 40, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
+	bmsx::writeInstruction(code, 39, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedValueCount(2), 3);
+	bmsx::writeInstruction(code, 40, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 3, 0);
 	image.functions = {
 		{.firstWord = 0u, .wordCount = 5u, .maxStack = 3u},
 		{.firstWord = 5u, .wordCount = 3u, .maxStack = 2u},

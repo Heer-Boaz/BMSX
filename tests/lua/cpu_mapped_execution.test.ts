@@ -22,7 +22,7 @@ import {
 	MAX_BX_BITS,
 	writeInstruction,
 } from '../../machine/ts/spec/blua32/instruction_format';
-import { BASE_CYCLES, OpCode, encodeFixedCallArgCount } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode, encodeFixedValueCount } from '../../machine/ts/spec/blua32/opcode';
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
@@ -36,10 +36,10 @@ test('compact and padded ROM calls use admitted record spans with identical cycl
 	const text = new Uint8Array(6 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.WIDE, 0, 0, CLOSURE_ADDRESS_REGISTER_WIDE_C);
 	writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 1);
-	writeInstruction(text, 2, OpCode.CALL, 0, encodeFixedCallArgCount(0), 1);
-	writeInstruction(text, 3, OpCode.RET, 0, 1, 0);
+	writeInstruction(text, 2, OpCode.CALL, 0, encodeFixedValueCount(0), 2);
+	writeInstruction(text, 3, OpCode.RET, 0, 2, 0);
 	writeInstruction(text, 4, OpCode.K1, 0, 0, 0);
-	writeInstruction(text, 5, OpCode.RET, 0, 1, 0);
+	writeInstruction(text, 5, OpCode.RET, 0, 2, 0);
 	const image = linkRawTestSystemBlua32({ text,
 		functions: [{ firstWord: 0, wordCount: 4, maxStack: 2 }, { firstWord: 4, wordCount: 2 }],
 	});
@@ -76,7 +76,7 @@ test('WIDE and sequential fetch cross function-record metadata boundaries', () =
 	const code = new Uint8Array(3 * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0, 0);
 	writeInstruction(code, 1, OpCode.K1, 0, 0, 0, 0);
-	writeInstruction(code, 2, OpCode.RET, 0, 1, 0, 0);
+	writeInstruction(code, 2, OpCode.RET, 0, 2, 0, 0);
 	const image = linkRawTestSystemBlua32({
 		text: code,
 		functions: [
@@ -121,9 +121,9 @@ test('the CPU addresses mapped RAM functions directly and through a register', (
 	writeInstruction(systemCode, 2, OpCode.LOADK, 1, 0, 0, 0);
 	writeInstruction(systemCode, 3, OpCode.WIDE, 0, 0, CLOSURE_ADDRESS_REGISTER_WIDE_C, 0);
 	writeInstruction(systemCode, 4, OpCode.CLOSURE, 1, 0, 1, 0);
-	writeInstruction(systemCode, 5, OpCode.RET, 0, 2, 0, 0);
+	writeInstruction(systemCode, 5, OpCode.RET, 0, 3, 0, 0);
 	writeInstruction(systemCode, 6, OpCode.K1, 0, 0, 0, 0);
-	writeInstruction(systemCode, 7, OpCode.RET, 0, 1, 0, 0);
+	writeInstruction(systemCode, 7, OpCode.RET, 0, 2, 0, 0);
 	writeInstruction(systemCode, 8, OpCode.RFE, 0, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({
 		text: systemCode,
@@ -151,8 +151,8 @@ test('the CPU addresses mapped RAM functions directly and through a register', (
 		romFunctionOperand & 0x3f,
 		romFunctionOperand >>> MAX_BX_BITS,
 	);
-	writeInstruction(ramCode, 2, OpCode.CALL, 0, encodeFixedCallArgCount(0), 1, 0);
-	writeInstruction(ramCode, 3, OpCode.RET, 0, 1, 0, 0);
+	writeInstruction(ramCode, 2, OpCode.CALL, 0, encodeFixedValueCount(0), 2, 0);
+	writeInstruction(ramCode, 3, OpCode.RET, 0, 2, 0, 0);
 	writeRamFunction(memory, ramCode, 1);
 
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
@@ -178,7 +178,7 @@ test('the CPU addresses mapped RAM functions directly and through a register', (
 
 	const replacement = new Uint8Array(2 * INSTRUCTION_BYTES);
 	writeInstruction(replacement, 0, OpCode.K0, 0, 0, 0, 0);
-	writeInstruction(replacement, 1, OpCode.RET, 0, 1, 0, 0);
+	writeInstruction(replacement, 1, OpCode.RET, 0, 2, 0, 0);
 	memory.writeBytes(RAM_CODE_ADDRESS, replacement);
 
 	cpu.beginCompletionCall(closure);

@@ -26,7 +26,7 @@ import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { blua32TestFunctionAddress, createTestSystemCpu, createTestBlua32PairCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
 
-function returnImage(op = OpCode.RET, a = 0, b = 1, c = 0) {
+function returnImage(op = OpCode.RET, a = 0, b = 2, c = 0) {
 	const text = new Uint8Array(INSTRUCTION_BYTES);
 	writeInstruction(text, 0, op, a, b, c);
 	return linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1 }], constants: [11, 29] });
@@ -44,7 +44,7 @@ test('string.byte preserves codepoint, default and signed-word position semantic
 			['abc', -1, null], ['abc', 2.9, 98], ['abc', 0x100000002, 98],
 			['abc', NaN, null], ['abc', Infinity, null], ['a'.repeat(4096), 4096, 97],
 		] as const) {
-			writeInstruction(text, 0, OpCode.CALL, 0, position === undefined ? 2 : 3, 1);
+			writeInstruction(text, 0, OpCode.CALL, 0, position === undefined ? 2 : 3, 2);
 			const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32({
 				text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 3 }],
 			}));
@@ -120,7 +120,7 @@ test('WIDE signed immediates retain their complete range independently of instru
 		const raw = immediate & MAX_EXT_BX;
 		writeInstruction(text, 0, OpCode.WIDE, 0, raw >>> BASE_BX_BITS, 0);
 		writeInstruction(text, 1, OpCode.KSMI, 0, (raw >>> MAX_OPERAND_BITS) & MAX_LOW_OPERAND, raw & MAX_LOW_OPERAND, (raw >>> MAX_BX_BITS) & 0xff);
-		writeInstruction(text, 2, OpCode.RET, 0, 1, 0);
+		writeInstruction(text, 2, OpCode.RET, 0, 2, 0);
 		const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3 }] }));
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		const pc = cpu.readFramePc(0);
@@ -141,9 +141,9 @@ test('return ranges preserve shifted source slots when growing the caller stack'
 			const text = new Uint8Array(5 * INSTRUCTION_BYTES);
 			writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
 			writeInstruction(text, 1, OpCode.CLOSURE, 2, 0, 0);
-			writeInstruction(text, 2, OpCode.CALL, 2, 1, requested);
+			writeInstruction(text, 2, OpCode.CALL, 2, 1, requested === 0 ? 0 : requested + 1);
 			writeInstruction(text, 3, OpCode.HALT, 0, 0, 0);
-			writeInstruction(text, 4, OpCode.RET, 5, openReturn ? 0 : produced, 0);
+			writeInstruction(text, 4, OpCode.RET, 5, openReturn ? 0 : produced + 1, 0);
 			const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32({ text,
 				functions: [{ firstWord: 0, wordCount: 4, maxStack: 3 },
 					{ firstWord: 4, wordCount: 1, maxStack: 5 + Math.max(produced, 1) }],
@@ -175,7 +175,7 @@ test('return ranges preserve shifted source slots when growing the caller stack'
 test('builtin-owned result ranges survive destination growth with exact open/fixed top', () => {
 	for (const instrumented of [false, true]) for (const requested of [0, 1, 4, 48]) for (const kind of [0, 1, 2]) {
 		const text = new Uint8Array(2 * INSTRUCTION_BYTES);
-		writeInstruction(text, 0, OpCode.CALL, 2, kind === 0 ? 2 : 3, requested);
+		writeInstruction(text, 0, OpCode.CALL, 2, kind === 0 ? 2 : 3, requested === 0 ? 0 : requested + 1);
 		writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
 		const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32({ text,
 			functions: [{ firstWord: 0, wordCount: 2, maxStack: 5 }],
@@ -239,7 +239,7 @@ test('a device edge during instruction fetch or observation is accepted at the n
 test('cached fetch crosses WIDE pages and observes code writes between guest grants', () => {
 	for (const instrumented of [false, true]) {
 		const text = new Uint8Array(INSTRUCTION_BYTES);
-		writeInstruction(text, 0, OpCode.RET, 0, 1, 0);
+		writeInstruction(text, 0, OpCode.RET, 0, 2, 0);
 		const image = linkRawTestSystemBlua32({ text,
 			functions: [{ firstWord: 0, wordCount: 1, maxStack: 3 }] });
 		const { cpu, memory } = createTestSystemCpu(image);
@@ -276,7 +276,7 @@ test('cached fetch crosses WIDE pages and observes code writes between guest gra
 test('rewriting a cached instruction replaces its cycle charge in normal, observed and instrumented execution', () => {
 	for (const instrumented of [false, true]) for (const observed of [false, true]) {
 		const text = new Uint8Array(INSTRUCTION_BYTES);
-		writeInstruction(text, 0, OpCode.RET, 0, 1, 0);
+		writeInstruction(text, 0, OpCode.RET, 0, 2, 0);
 		const image = linkRawTestSystemBlua32({ text,
 			functions: [{ firstWord: 0, wordCount: 1, maxStack: 2 }] });
 		const { cpu, memory } = createTestSystemCpu(image);
@@ -308,7 +308,7 @@ test('rewriting a cached instruction replaces its cycle charge in normal, observ
 test('partial code writes retain unrelated decoded starts and the page watch', () => {
 	for (const instrumented of [false, true]) {
 		const text = new Uint8Array(INSTRUCTION_BYTES);
-		writeInstruction(text, 0, OpCode.RET, 0, 1, 0);
+		writeInstruction(text, 0, OpCode.RET, 0, 2, 0);
 		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 2 }] });
 		const { cpu, memory } = createTestSystemCpu(image);
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
@@ -343,7 +343,7 @@ test('partial code writes retain unrelated decoded starts and the page watch', (
 test('the fourth word of a cross-page WIDE fusion invalidates its head', () => {
 	for (const instrumented of [false, true]) {
 		const text = new Uint8Array(INSTRUCTION_BYTES);
-		writeInstruction(text, 0, OpCode.RET, 0, 1, 0);
+		writeInstruction(text, 0, OpCode.RET, 0, 2, 0);
 		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 5 }] });
 		const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
@@ -377,7 +377,7 @@ test('the fourth word of a cross-page WIDE fusion invalidates its head', () => {
 test('writable code watches belong to the physical cartridge socket', () => {
 	for (const instrumented of [false, true]) {
 		const text = new Uint8Array(INSTRUCTION_BYTES);
-		writeInstruction(text, 0, OpCode.RET, 0, 1, 0);
+		writeInstruction(text, 0, OpCode.RET, 0, 2, 0);
 		const source = { text, functions: [{ firstWord: 0, wordCount: 1 }] };
 		const system = linkRawTestSystemBlua32(source);
 		const memory = new Memory({ systemRom: system.romBytes, cartridgeSlots: [
@@ -424,16 +424,16 @@ test('closure call and return preserve grants, depth, register bases and call-si
 		const mappedRecord = IO_GX_GPU_GP0 & ~(BLUA32_FUNCTION_ALIGNMENT - 1);
 		const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 		writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-		writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);
-		writeInstruction(text, 2, OpCode.CALL, 0, 1, 1);
+		writeInstruction(text, 1, OpCode.CLOSURE, 3, 0, 0);
+		writeInstruction(text, 2, OpCode.CALL, 3, 1, 2);
 		writeInstruction(text, 3, OpCode.K1, 2, 0, 0);
-		writeInstruction(text, 4, OpCode.RET, 0, 1, 0);
+		writeInstruction(text, 4, OpCode.RET, 3, 2, 0);
 		writeInstruction(text, 5, OpCode.K1, 0, 0, 0);
-		writeInstruction(text, 6, OpCode.RET, 0, 1, 0);
+		writeInstruction(text, 6, OpCode.RET, 0, 2, 0);
 		writeInstruction(text, 7, OpCode.K1, 0, 0, 0);
 		writeInstruction(text, 8, OpCode.HALT, 0, 0, 0);
 		const image = linkRawTestSystemBlua32({ text,
-			functions: [{ firstWord: 0, wordCount: 5, maxStack: 3 },
+			functions: [{ firstWord: 0, wordCount: 5, maxStack: 4 },
 				{ firstWord: 5, wordCount: 2 }, { firstWord: 7, wordCount: 2 }],
 			closureRelocations: [{ wordIndex: 1, functionAddress: edgeKind === 1 ? mappedRecord : blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }], irqFunctionIndex: 2, exceptionFunctionIndex: 2 });
 		const memory = new Memory({ systemRom: image.romBytes, cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
@@ -455,7 +455,7 @@ test('closure call and return preserve grants, depth, register bases and call-si
 		cpu.rootThread.frameAtDepth(0).registers.setNumber(2, 99);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 		const callPc = cpu.readFramePc(0);
-		const closure = cpu.rootThread.frameAtDepth(0).registers.getClosure(0);
+		const closure = cpu.rootThread.frameAtDepth(0).registers.getClosure(3);
 		if (edgeKind === 3) {
 			closure.functionAddress = CART_ROM_BASE;
 			assert.equal(cpu.runUntilDepth(0, 3), RunResult.Halted);
@@ -493,7 +493,7 @@ test('closure call and return preserve grants, depth, register bases and call-si
 		assert.equal(cpu.readFramePc(1), calleePc + INSTRUCTION_BYTES);
 		assert.equal(cpu.runUntilDepth(1, 20), RunResult.Halted);
 		assert.equal(cpu.instructionBudgetRemaining, 18);
-		assert.equal(cpu.readFrameRegister(0, 0), 1);
+		assert.equal(cpu.readFrameRegister(0, 3), 1);
 		assert.equal(cpu.readFrameRegister(0, 2), 99);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 		assert.equal(cpu.readFrameRegister(0, 2), 1);
@@ -599,15 +599,15 @@ test('all scalar memory instructions decode reserved kinds into an architectural
 	}
 });
 
-test('a reused zero-maxStack call clears the reserved slot for ordinary and completion calls', () => {
+test('zero-maxStack calls produce true zero results and only requested padding is nil', () => {
 	const text = new Uint8Array(10 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
 	writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);
 	writeInstruction(text, 2, OpCode.CALL, 0, 1, 0);
 	writeInstruction(text, 3, OpCode.WIDE, 0, 0, 0);
 	writeInstruction(text, 4, OpCode.CLOSURE, 0, 0, 0);
-	writeInstruction(text, 5, OpCode.CALL, 0, 1, 1);
-	writeInstruction(text, 6, OpCode.RET, 0, 1, 0);
+	writeInstruction(text, 5, OpCode.CALL, 0, 1, 2);
+	writeInstruction(text, 6, OpCode.RET, 0, 2, 0);
 	writeInstruction(text, 7, OpCode.K1, 0, 0, 0);
 	writeInstruction(text, 8, OpCode.RET, 0, 0, 0);
 	writeInstruction(text, 9, OpCode.RET, 0, 1, 0);
@@ -623,7 +623,10 @@ test('a reused zero-maxStack call clears the reserved slot for ordinary and comp
 	assert.deepEqual(results, [null]);
 	cpu.rootThread.stackRegisters.setNumber(0, 91);
 	cpu.beginCompletionCallInExecutionDomain(-1, 0x1a0);
-	assert.equal(cpu.readFrameRegister(0, 0), null);
+	assert.equal(cpu.readFrameRegister(0, 0), 91, 'scratch storage is not cleared at activation');
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	cpu.readCompletionValues(results);
+	assert.deepEqual(results, []);
 });
 
 test('halt and blocked states retain a concurrent yield request in both dispatch modes', () => {
@@ -689,7 +692,7 @@ test('cached sequential, wide, skip and fused dispatch keep PC as a wrapping wor
 test('image text preserves an initial U+FEFF and rejects non-scalar or incomplete UTF8', () => {
 	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.LOADK, 0, 0, 0);
-	writeInstruction(text, 1, OpCode.RET, 0, 1, 0);
+	writeInstruction(text, 1, OpCode.RET, 0, 2, 0);
 	const source = { text, functions: [{ firstWord: 0, wordCount: 2 }], constants: ['\ufeffA'] };
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source));
 	cpu.runUntilDepth(0, 100);

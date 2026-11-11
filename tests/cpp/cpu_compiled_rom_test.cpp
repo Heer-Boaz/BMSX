@@ -415,11 +415,11 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 	writeInstruction(launcher.text, 3, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(launcher.text, 4, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
 	writeInstruction(launcher.text, 5, static_cast<u8>(OpCode::MOV), 0, 4, 0);
-	writeInstruction(launcher.text, 6, static_cast<u8>(OpCode::CALL), 0, 1, 1);
-	writeInstruction(launcher.text, 7, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(launcher.text, 6, static_cast<u8>(OpCode::CALL), 0, 1, 2);
+	writeInstruction(launcher.text, 7, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	writeInstruction(launcher.text, 8, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	writeInstruction(launcher.text, 9, static_cast<u8>(OpCode::LOADK), 0, 0, 1);
-	writeInstruction(launcher.text, 10, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(launcher.text, 10, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	launcher.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 8},
 		{.firstWord = 3, .wordCount = 5, .maxStack = 8}, {.firstWord = 8, .wordCount = 1},
 		{.firstWord = 9, .wordCount = 2, .maxStack = 8}};
@@ -431,13 +431,13 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 	writeInstruction(source.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(source.text, 1, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
 	writeInstruction(source.text, 2, static_cast<u8>(OpCode::MOV), 0, 4, 0);
-	writeInstruction(source.text, 3, static_cast<u8>(OpCode::CALL), 0, 1, 1);
+	writeInstruction(source.text, 3, static_cast<u8>(OpCode::CALL), 0, 1, 2);
 	writeInstruction(source.text, 4, static_cast<u8>(OpCode::MOV), 3, 0, 0);
 	writeInstruction(source.text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
 	writeInstruction(source.text, 6, static_cast<u8>(OpCode::LOADK), 0, 0, 1);
-	writeInstruction(source.text, 7, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(source.text, 7, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	writeInstruction(source.text, 8, static_cast<u8>(OpCode::LOADK), 0, 0, 2);
-	writeInstruction(source.text, 9, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(source.text, 9, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	source.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 8},
 		{.firstWord = 6, .wordCount = 2, .maxStack = 8}, {.firstWord = 8, .wordCount = 2, .maxStack = 8}};
 	source.constants = {0.0, 22.0, 44.0};

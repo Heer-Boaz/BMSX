@@ -112,7 +112,7 @@ for its closure:
 | Step | Caller state | Execution effect |
 |---|---|---|
 | Construct the function's closure in R3 | R3 holds the callable value | Execution continues in the caller; the callee has not started |
-| Execute `CALL 3,1,1` | R3 supplies that closure; B=1 supplies no arguments; C=1 requests one result | A new frame starts at the code address in the function record |
+| Execute `CALL 3,1,2` | R3 supplies that closure; B=1 supplies no arguments; C=2 requests one result | A new frame starts at the code address in the function record |
 | Return normally from that callee | Its first result replaces the caller's R3, or nil is supplied if it produced none | The caller resumes at the instruction following the CALL |
 
 The callee uses its own R0 and subsequent slots. Its function-record address
@@ -297,7 +297,7 @@ Spaces separate actual code bytes:
 |---|---|---|
 | Construct the closure for the record at `10001230H` in R3 | `00 00 04 00 00 AC 31 23` | `pB=10H`, Bx=`01000123H`; Bx×16=`10001230H` |
 | Construct a closure in R3 from the byte address held in R5 | `00 00 00 20 00 AC 30 05` | Register-address flag set; Bx=5 |
-| Call the closure in R3 with no arguments and one requested result | `00 BC 30 41` | `CALL A=3, B=1, C=1` |
+| Call the closure in R3 with no arguments and one requested result | `00 BC 30 42` | `CALL A=3, B=1, C=2` |
 | Jump back to the branch's own first byte, without WIDE | `FF A0 0F FF` | Signed Bx=−1; one word from instruction end to start |
 | Jump back to the prefix's own first byte, with WIDE | `00 00 0F C0 FF A0 0F FE` | Signed Bx=−2; two words from instruction end to prefix |
 
@@ -317,12 +317,19 @@ K0–K16383. A raw count/key field instead keeps its unsigned encoded value.
 
 An instruction's encoding range does not allocate its referenced registers or
 constants. A frame obtains its entry PC, parameter count and stack allocation
-from its function record. The reserved capacity is at least one slot, including
-when the record's maximum stack is zero. All reserved slots begin nil before
-arguments are copied; missing fixed parameters are nil. Ordinary register writes can
+from its function record. The reserved capacity is the largest of one slot, the declared maximum stack
+and the fixed-parameter count. Missing fixed parameters are nil;
+other scratch slots must be written before they are read. A call may reuse its
+caller's argument and temporary slots as the callee's register window. Ordinary register writes can
 extend the active range, while result placement and open varargs have the
-specific top rules in the call reference. Do not treat the instruction's
-maximum field value as available scratch storage in every function.
+specific top rules in the call reference. The prefix below `top` is live;
+an open upvalue independently retains its captured cell until that upvalue is
+closed. Collection may clear other scratch slots at or above `top`, including
+slots left by a completed call. Keep uncaptured values that must survive an
+open-range operation below its destination register. An empty open range may
+set `top` beyond the reserved capacity without allocating or accessing slots.
+Do not treat the instruction's maximum field value as available scratch storage
+in every function.
 
 ### Execution addresses and instruction reads {#sec-memory-execution-addresses-and-instruction-reads}
 
@@ -764,26 +771,43 @@ The output is not a lossless serialization: distinct inputs such as `999999.5` a
 
 ### Calling and returning values {#sec-cpu-calling-and-returning-values}
 
-Function calls use language value slots. Each call has its own registers and saved variable arguments. The function record's maximum-stack value is a **slot count**, not a RAM address or byte count. These slots have no cartridge-addressable byte-RAM base; do not place an assumed stack at the top of main RAM.
+Function calls use language value slots. Each call has a frame-relative register window in its thread's shared value stack and, for a variable-argument function, a saved argument range. The function record's maximum-stack value is a **slot count**, not a RAM address or byte count. These slots have no cartridge-addressable byte-RAM base; do not place an assumed stack at the top of main RAM.
 
 `CALL A,B,C` takes its callee from `R(A)`. Arguments occupy consecutive registers starting at `R(A+1)`, and returned values replace consecutive registers starting at `R(A)`.
+
+Registers below `A` survive the call. `R(A)` and all higher registers are
+call-clobbered: the caller must place every local, temporary and captured local
+that remains live after the call below `A`. On return, only the selected result
+range has defined result values. This rule also applies to builtin calls.
+
+The first fixed parameter uses the supplied argument slot at `R(A+1)` without
+copying a separate register bank. Variable-argument functions retain their
+extra arguments below a relocated working window. Parameter writes therefore
+cannot change later reads of `...`. The register reservation covers at least one slot, the declared maximum stack,
+and every formal parameter, whichever is largest. Program records normally
+declare a maximum stack no smaller than their formal parameter count.
+Scratch registers are not initialized at
+function entry; initialize a local without an initializer with `LOADNIL` before
+reading it. Missing parameters and missing requested results are always nil.
 
 Only closure and builtin-function values are callable. A number is not callable merely because its numeric value is a function-record address. Calling any other value category raises `CALL_NON_FUNCTION`.
 
 
-The three count operands in the call/return family deliberately do not use one common encoding:
+All count operands in the call/return family use the same encoding: zero
+selects an open range; a positive operand encodes the fixed count plus one.
+An operand of one therefore selects an empty range, distinct from one nil value:
 
 | Instruction operand | Zero | Positive value |
 |---|---|---|
 | `CALL B`: supplied arguments | Use `max(top-A-1, 0)` arguments. | Supply exactly `B-1` arguments. In particular, `B=1` supplies none. |
-| `CALL C`: requested results | Accept all produced results. | Accept exactly `C` results. |
-| `RET B`: produced results | Return `max(top-A, 0)` values. | Return exactly `B` values. |
-| `VARARG B`: copied arguments | Copy all saved varargs. | Copy exactly `B` values, filling any shortage with nil. |
+| `CALL C`: requested results | Accept all produced results. | Accept exactly `C-1` results. `C=1` discards all results. |
+| `RET B`: produced results | Return `max(top-A, 0)` values. | Return exactly `B-1` values. `B=1` returns no values. |
+| `VARARG B`: copied arguments | Copy all saved varargs. | Copy exactly `B-1` values, filling any shortage with nil. `B=1` copies nothing. |
 
 
 
 For example, place a callee in R3 and two arguments in R4 and R5, then execute
-`CALL 3,3,2`. It supplies those two arguments and requests two results in R3 and
+`CALL 3,3,3`. It supplies those two arguments and requests two results in R3 and
 R4. If the function produces only one result, R4 becomes nil; if it produces
 more than two, the excess is discarded. After result placement, `top` is
 exactly 5, so the earlier argument in R5 lies outside the active range.
@@ -792,7 +816,7 @@ An open-result call instead sets `top` to `A` plus the number of results actuall
 
 On entry to a closure, the function record supplies the code address and parameter metadata. The frame starts with `top` equal to its fixed-parameter count, not its maximum stack allocation. Supplied arguments fill the fixed parameters in order, and missing fixed arguments become nil. Excess arguments are retained as varargs only for a function marked vararg; otherwise they are not retained as varargs.
 
-`VARARG A,0` copies the saved excess arguments starting at `R(A)` and sets `top` exactly to the end of that copied range. If there are none, it sets `top` to `A`. A fixed-count `VARARG` pads with nil as needed and only raises `top`, to at least `A+B`.
+`VARARG A,0` copies the saved excess arguments starting at `R(A)` and sets `top` exactly to the end of that copied range. If there are none, it sets `top` to `A`. A nonempty fixed-count `VARARG` pads with nil as needed and only raises `top`, to at least `A+B-1`. `VARARG A,1` writes nothing and leaves `top` unchanged.
 
 `RET` closes the returning frame's open upvalues before routing its results. An ordinary nested return places results in the caller's saved destination range and releases the returning frame. A return need not have an ordinary caller: protected-call targets, completion, and coroutine resumption have distinct return routes. Returning from a root frame with no resumer records completion values.
 
@@ -976,9 +1000,9 @@ The following tables describe the decoded operands. `A`, `B`, `C`, and `Bx` name
 
 | Instruction | Opcode | Operands | Result or effect | Base cycles |
 |---|---:|---|---|---:|
-| `CALL` | `2FH` | `A, B, C` | Call the closure or builtin in `R(A)` with arguments beginning at `R(A+1)`. `B=0`: use the open argument range; otherwise supply `B-1` arguments. `C=0`: accept all results; otherwise accept exactly `C`, truncating or nil-padding. Results begin at `R(A)`. | 2 |
-| `RET` | `30H` | `A, B` | Close the frame's open upvalues and return values beginning at `R(A)`. `B=0`: produce the open range; otherwise produce exactly `B` values. | 2 |
-| `VARARG` | `2EH` | `A, B` | Copy saved varargs beginning at `R(A)`. `B=0`: copy all; otherwise copy exactly `B`, padding with nil. | 2 |
+| `CALL` | `2FH` | `A, B, C` | Call the closure or builtin in `R(A)` with arguments beginning at `R(A+1)`. `B=0`: use the open argument range; otherwise supply `B-1` arguments. `C=0`: accept all results; otherwise accept exactly `C-1`, truncating or nil-padding. Results begin at `R(A)`. | 2 |
+| `RET` | `30H` | `A, B` | Close the frame's open upvalues and return values beginning at `R(A)`. `B=0`: produce the open range; otherwise produce exactly `B-1` values. | 2 |
+| `VARARG` | `2EH` | `A, B` | Copy saved varargs beginning at `R(A)`. `B=0`: copy all; otherwise copy exactly `B-1`, padding with nil. | 2 |
 | `CLOSURE` | `2BH` | `A, Bx`, register-address flag | Construct a closure in `R(A)`. Flag clear: function record at `Bx × 16`. Flag set: address supplied by `R(Bx)`. Capture according to the record's upvalue descriptors. | 1 |
 | `GETUP` | `2CH` | `A, B` | `R(A) = upvalue(B)` of the current closure. | 1 |
 | `SETUP` | `2DH` | `A, B` | `upvalue(B) = R(A)` in the current closure. | 2 |

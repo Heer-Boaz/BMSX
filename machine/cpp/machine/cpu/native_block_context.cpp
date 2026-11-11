@@ -86,18 +86,20 @@ void NativeBlockCompiler::emitUpvalue(const DecodedInstruction& instruction, Nat
 }
 
 void NativeBlockCompiler::emitVararg(const DecodedInstruction& instruction, NativeBlockExitSite* exit) {
-	const int first = instruction.a, count = instruction.b;
+	const int first = instruction.a, count = instruction.b - 1;
+	const bool open = instruction.b == 0;
+	if (count == 0) return;
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, frame));
-	if (count == 0) sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, varargCount));
+	if (open) sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, varargCount));
 	else sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_IMM, count);
-	sljit_jump* empty = count == 0 ? sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0) : nullptr;
+	sljit_jump* empty = open ? sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0) : nullptr;
 	sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R0, 0, SLJIT_IMM, first);
 	SlowPath slow; slow.exit = exit; slow.registers = registerSnapshot();
 	slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_GREATER | SLJIT_32, SLJIT_R2, 0,
 		SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, stackCapacity));
 	m_slowPaths.push_back(slow);
 	if (empty) sljit_set_label(empty, sljit_emit_label(m_compiler));
-	if (count == 0) {
+	if (open) {
 		// Preserve dirty slots which lie beyond the dynamic overwrite range;
 		// overwritten slots need no writeback before the bulk copy.
 		for (int slot = 0; slot < m_registerCount; ++slot) {
@@ -112,7 +114,7 @@ void NativeBlockCompiler::emitVararg(const DecodedInstruction& instruction, Nati
 		}
 		sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_S5, 0, SLJIT_R0, 0, SLJIT_IMM, first);
 	} else discardRegisterRange(first, first + count);
-	if (count != 0) {
+	if (!open) {
 		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_S2, 0, SLJIT_S0, 0, SLJIT_IMM, (first + count) * sizeof(Value));
 		auto* allAvailable = sljit_emit_cmp(m_compiler, SLJIT_LESS_EQUAL | SLJIT_32, SLJIT_R0, 0,
 			SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, varargCount));
@@ -132,7 +134,7 @@ void NativeBlockCompiler::emitVararg(const DecodedInstruction& instruction, Nati
 	sljit_emit_op2(m_compiler, SLJIT_SUB32 | SLJIT_SET_Z, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, 1);
 	sljit_set_label(sljit_emit_jump(m_compiler, SLJIT_NOT_ZERO), copy);
 	sljit_set_label(noCopy, sljit_emit_label(m_compiler));
-	if (count != 0) {
+	if (!open) {
 		auto* noFill = sljit_emit_cmp(m_compiler, SLJIT_GREATER_EQUAL, SLJIT_R2, 0, SLJIT_S2, 0);
 		sljit_emit_fset64(m_compiler, SLJIT_FR0, asNumber(valueNil()));
 		auto* fill = sljit_emit_label(m_compiler);

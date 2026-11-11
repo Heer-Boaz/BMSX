@@ -350,11 +350,11 @@ for (const ramRecord of [false, true]) {
 		writeInstruction(systemText, 3, OpCode.WIDE, 0, 0, 0);
 		writeInstruction(systemText, 4, OpCode.CLOSURE, 4, 0, 0);
 		writeInstruction(systemText, 5, OpCode.MOV, 0, 4, 0);
-		writeInstruction(systemText, 6, OpCode.CALL, 0, 1, 1);
-		writeInstruction(systemText, 7, OpCode.RET, 0, 1, 0);
+		writeInstruction(systemText, 6, OpCode.CALL, 0, 1, 2);
+		writeInstruction(systemText, 7, OpCode.RET, 0, 2, 0);
 		writeInstruction(systemText, 8, OpCode.HALT, 0, 0, 0);
 		writeInstruction(systemText, 9, OpCode.LOADK, 0, 0, 1);
-		writeInstruction(systemText, 10, OpCode.RET, 0, 1, 0);
+		writeInstruction(systemText, 10, OpCode.RET, 0, 2, 0);
 		const system = { text: systemText, functions: [
 			{ firstWord: 0, wordCount: 3, maxStack: 8 },
 			{ firstWord: 3, wordCount: 5, maxStack: 8 },
@@ -365,13 +365,13 @@ for (const ramRecord of [false, true]) {
 		writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
 		writeInstruction(text, 1, OpCode.CLOSURE, 4, 0, 0);
 		writeInstruction(text, 2, OpCode.MOV, 0, 4, 0);
-		writeInstruction(text, 3, OpCode.CALL, 0, 1, 1);
+		writeInstruction(text, 3, OpCode.CALL, 0, 1, 2);
 		writeInstruction(text, 4, OpCode.MOV, 3, 0, 0);
 		writeInstruction(text, 5, OpCode.JMP, 0, 63, 60, 255);
 		writeInstruction(text, 6, OpCode.LOADK, 0, 0, 1);
-		writeInstruction(text, 7, OpCode.RET, 0, 1, 0);
+		writeInstruction(text, 7, OpCode.RET, 0, 2, 0);
 		writeInstruction(text, 8, OpCode.LOADK, 0, 0, 2);
-		writeInstruction(text, 9, OpCode.RET, 0, 1, 0);
+		writeInstruction(text, 9, OpCode.RET, 0, 2, 0);
 		const source = { text, functions: [{ firstWord: 0, wordCount: 6, maxStack: 8 },
 			{ firstWord: 6, wordCount: 2, maxStack: 8 }, { firstWord: 8, wordCount: 2, maxStack: 8 }],
 			constants: [0, 22, 44], closureRelocations: [{ wordIndex: 1,

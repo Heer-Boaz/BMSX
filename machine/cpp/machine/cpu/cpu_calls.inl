@@ -15,7 +15,7 @@ inline void CPU::executeClosure(CallFrame& frame, int destination, u32 operand, 
 }
 
 inline bool CPU::executeCall(CallFrame& frame, int a, int b, int c) {
-	const int argCount = decodeCallArgCount(b, std::max(frame.top - a - 1, 0));
+	const int argCount = decodeValueCount(b, std::max(frame.top - a - 1, 0));
 	const Value callee = frame.registers[a];
 	if (valueIsClosure(callee)) {
 		CallFrame* pushed = pushFrame(frame, asClosure(callee), a + 1, argCount, a, c, false,
@@ -30,17 +30,15 @@ inline bool CPU::executeCall(CallFrame& frame, int a, int b, int c) {
 }
 
 inline bool CPU::executeReturn(CallFrame& frame, int a, int b) {
-	const int count = b == 0 ? std::max(frame.top - a, 0) : b;
+	const int count = decodeValueCount(b, std::max(frame.top - a, 0));
 	closeUpvalues(frame);
 	if (frame.protectedContinuationIndex >= 0) {
 		finishProtectedCall(static_cast<size_t>(frame.protectedContinuationIndex), frame, a, count);
-		m_activeThread->stackTop = frame.varargBase;
 		m_activeThread->leaveFrame();
 		return false;
 	}
 	if (frame.returnToCompletionLatch) {
 		m_completionValues.assign(frame.registers + a, frame.registers + a + count);
-		m_activeThread->stackTop = frame.varargBase;
 		m_activeThread->leaveFrame();
 		return false;
 	}
@@ -58,18 +56,18 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int b) {
 		CallFrame& caller = *frame.previous;
 		writeReturnValuesFromRegisters(caller, frame.returnBase, frame.returnCount, frame, a, count);
 	}
-	m_activeThread->stackTop = frame.varargBase;
 	m_activeThread->leaveFrame();
 	return true;
 }
 
 inline void CPU::executeVararg(CallFrame& frame, int a, int b) {
-	const int count = b == 0 ? frame.varargCount : b;
+	const int count = decodeValueCount(b, frame.varargCount);
 	if (count != 0) {
 		Value* registers = ensureRegisterCapacity(frame, a + count - 1);
 		const int copied = std::min(count, frame.varargCount);
 		std::copy_n(m_activeThread->stack + frame.varargBase, copied, registers + a);
 		std::fill_n(registers + a + copied, count - copied, valueNil());
 	}
-	frame.top = b == 0 ? a + count : std::max(frame.top, a + count);
+	if (b == 0) frame.top = a + count;
+	else if (count != 0) frame.top = std::max(frame.top, a + count);
 }

@@ -49,7 +49,7 @@ function makeDisplacedMemoryCode(): Uint8Array {
 	writeInstruction(code, 6, OpCode.LOADK, 3, 0, 3, 0);
 	writeInstruction(code, 7, OpCode.LOADK, 4, 0, 4, 0);
 	writeInstruction(code, 8, OpCode.STORE_MEM_WORDS_D, 3, 0, 2, 16);
-	writeInstruction(code, 9, OpCode.RET, 2, 1, 0, 0);
+	writeInstruction(code, 9, OpCode.RET, 2, 2, 0, 0);
 	return code;
 }
 

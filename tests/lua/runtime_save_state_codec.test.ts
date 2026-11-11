@@ -513,7 +513,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			rootThreadRef: 0,
 			activeThreadRef: 0,
 			completionThreadRef: 0,
-			threads: [{ status: 1, entryRef: -1, resumerRef: -1, callBase: 0, returnCount: 0, stackCapacity: 8, error: 0, openUpvalues: [],
+			threads: [{ status: 1, entryRef: -1, resumerRef: -1, callBase: 0, returnCount: 0, stackCapacity: 8, stack: [], error: 0, openUpvalues: [],
 
 				frames: [],
 			protectedCalls: [{
@@ -625,8 +625,9 @@ test('runtime save-state codec preserves exception frame metadata', () => {
 		pc: 44,
 		closureRef: 7,
 		stackCapacity: 8,
-		registers: [state.cpuState.stringIndexTable],
-		varargs: [],
+		stackBase: 0,
+		varargBase: 0,
+		varargCount: 0,
 		returnBase: 1,
 		returnCount: 0,
 		top: 1,

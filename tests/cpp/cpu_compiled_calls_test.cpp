@@ -127,14 +127,14 @@ void protectedNestedFrames() {
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::GETSYS), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CLOSURE), 1, 0, 0);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, 2, 2);
-	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, 2, 3);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 3, 0);
 	writeInstruction(image.text, 5, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(image.text, 6, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
-	writeInstruction(image.text, 7, static_cast<u8>(OpCode::CALL), 0, 1, 1);
-	writeInstruction(image.text, 8, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(image.text, 7, static_cast<u8>(OpCode::CALL), 0, 1, 2);
+	writeInstruction(image.text, 8, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	writeInstruction(image.text, 9, static_cast<u8>(OpCode::LOADK), 0, 0, 0);
-	writeInstruction(image.text, 10, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(image.text, 10, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8},
 		{.firstWord = 5, .wordCount = 4, .maxStack = 8}, {.firstWord = 9, .wordCount = 2, .maxStack = 8}};
 	image.constants = {7.0};
@@ -169,16 +169,16 @@ void protectedNestedFrames() {
 void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTarget, bool ramRecord, bool alias, int maxStack = 8) {
 	test::Blua32TestImage image;
 	image.text.resize(3 * MAPPED_PAGE_BYTE_SIZE);
-	const int base = alias ? 7 : 0;
+	const int base = alias ? 7 : 8;
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 6, 0, 0);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), base, 6, 0);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), base, open ? 0 : args + 1, 1);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), base, open ? 0 : args + 1, 2);
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
-	writeInstruction(image.text, DECODED_PAGE_WORDS, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(image.text, DECODED_PAGE_WORDS, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	writeInstruction(image.text, 2 * DECODED_PAGE_WORDS, static_cast<u8>(OpCode::SETGL), 0, 0, 0);
 	writeInstruction(image.text, 2 * DECODED_PAGE_WORDS + 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
-	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = alias ? 8u : 16u},
+	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 16u},
 		{.firstWord = DECODED_PAGE_WORDS, .wordCount = 1, .numParams = static_cast<u32>(params),
 			.maxStack = params == 0 ? 0u : static_cast<u32>(maxStack), .isVararg = vararg}};
 	image.globalNames = {"nativeCallMarker"};
@@ -195,16 +195,16 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 	auto* spare = caller->next;
 	require(spare && thread->frameDepth == 1, "warm CALL owns a spare frame and adequate retained Value backing");
 	const int count = vararg ? std::max(args - params, 0) : 0;
-	const int capacity = ramRecord ? 7 : params == 0 ? 1 : std::max(maxStack, 1);
-	const int calleeBase = caller->stackCapacity + count;
+	const int capacity = std::max({ramRecord ? 7 : params == 0 ? 0 : maxStack, params, 1});
+	const int calleeBase = base + 1 + (vararg ? args : 0);
 	const int initializedExtent = std::max(params, capacity);
 	require(static_cast<size_t>(calleeBase + initializedExtent + (alias ? 0 : 1)) <= thread->stackCapacity,
 		"raw formals and a following sentinel remain inside the retained allocation");
-	std::fill_n(thread->stack + caller->stackCapacity, count + initializedExtent + (alias ? 0 : 1), valueNumber(63));
+	std::fill_n(thread->stack + base + 1, (vararg ? args : 0) + initializedExtent, valueNumber(63));
 	const std::array<Value, 5> payloads{valueNumber(99), valueString(machine.cpu.stringPool().intern("native-call-payload")),
 		VALUE_QNAN_MASK | 0x2au, valueBool(true), valueNumber(-0.0)};
 	for (int index = 0; index < args; ++index) caller->registers[base + 1 + index] = payloads[index];
-	if (alias) thread->stack[8] = valueNumber(63);
+
 	caller->top = open ? base + 1 + args : caller->stackCapacity;
 	const u32 calleePc = machine.rom.textAddress + MAPPED_PAGE_BYTE_SIZE;
 	if (ramRecord) {
@@ -235,23 +235,21 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 			"missing raw target dispatches the original semantic call and return before any native activation writes");
 		return;
 	}
-	const Value first = params > 0 && args > 0 && !alias ? payloads[0] : valueNil();
+	const Value first = params > 0 ? (args > 0 ? payloads[0] : valueNil()) : valueNumber(63);
 	require(machine.cpu.getGlobalByKey(marker) == first && thread->currentFrame == spare && thread->frameDepth == 2,
 		"warm CALL tail-jumps through the raw native entry without the C++ CALL handler");
 	require(caller->pc == machine.rom.textAddress + 4 * INSTRUCTION_BYTES && caller->top == callerTop
 		&& spare->callSitePc == machine.rom.textAddress + 3 * INSTRUCTION_BYTES
-		&& spare->returnBase == base && spare->returnCount == 1 && !spare->returnToCompletionLatch,
+		&& spare->returnBase == base && spare->returnCount == 2 && !spare->returnToCompletionLatch,
 		"native CALL publishes exact caller continuation and callee result obligations");
-	require(spare->varargBase == caller->stackCapacity && spare->varargCount == count
-		&& spare->stackBase == spare->varargBase + count && spare->top == params
+	require(spare->varargBase == base + 1 + params && spare->varargCount == count
+		&& spare->stackBase == calleeBase && spare->top == params
 		&& spare->stackCapacity == capacity,
-		"fresh record fields govern separate vararg and reserved register windows, including maxStack zero");
-	for (int index = 0; index < params; ++index) require(spare->registers[index] == (index < args && !alias ? payloads[index] : valueNil()),
-		"fixed arguments retain raw Value bits and missing or overlapping cleared arguments are nil");
-	for (int index = params; index < spare->stackCapacity; ++index) require(spare->registers[index] == valueNil(), "new reserved locals are nil");
-	if (!alias) require(spare->registers[initializedExtent] == valueNumber(63), "CALL does not clear storage beyond its reserved locals and fixed formals");
+		"fresh record fields govern shared argument and working windows, including formal parameters beyond maxStack");
+	for (int index = 0; index < params; ++index) require(spare->registers[index] == (index < args ? payloads[index] : valueNil()),
+		"fixed arguments retain raw Value bits and missing arguments are nil");
 	for (int index = 0; index < count; ++index) require(thread->stack[spare->varargBase + index] == payloads[params + index],
-		"varargs retain their own raw Value window rather than borrowing caller storage");
+		"varargs retain their ordered original argument slots below the working frame");
 }
 
 void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bool exceptionFrame) {
@@ -262,19 +260,19 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::GETSYS), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CLOSURE), 1, 0, 0);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, 2, 2);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, 2, 3);
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
 	writeInstruction(image.text, 16, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(image.text, 17, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
-	writeInstruction(image.text, 18, static_cast<u8>(OpCode::MOV), 0, 4, 0);
-	writeInstruction(image.text, 19, static_cast<u8>(OpCode::CALL), 0, 1, 0);
+	writeInstruction(image.text, 18, static_cast<u8>(OpCode::MOV), 8, 4, 0);
+	writeInstruction(image.text, 19, static_cast<u8>(OpCode::CALL), 8, 1, 0);
 	writeInstruction(image.text, 20, static_cast<u8>(OpCode::JMP), 0, 0, 0);
 	writeInstruction(image.text, 21, static_cast<u8>(OpCode::RET), 0, 0, 0);
 	writeInstruction(image.text, DECODED_PAGE_WORDS, static_cast<u8>(OpCode::RET), 1, 0, 0);
 	writeInstruction(image.text, 2 * DECODED_PAGE_WORDS, static_cast<u8>(OpCode::SETGL), 7, 0, 0);
 	writeInstruction(image.text, 2 * DECODED_PAGE_WORDS + 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
 	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8},
-		{.firstWord = 16, .wordCount = 6, .maxStack = 8},
+		{.firstWord = 16, .wordCount = 6, .maxStack = 16},
 		{.firstWord = DECODED_PAGE_WORDS, .wordCount = 1, .maxStack = 8}};
 	image.systemGlobalNames = {"pcall"}; image.globalNames = {"nativeReturnMarker"};
 	image.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)},
@@ -296,7 +294,7 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 		valueString(machine.cpu.stringPool().intern("native-return-payload")), caller->registers[4], VALUE_QNAN_MASK | 0x2au};
 	for (int index = 0; index < produced; ++index) callee->registers[1 + index] = payloads[index];
 	callee->top = 1 + produced;
-	callee->returnBase = base; callee->returnCount = wanted;
+	callee->returnBase = base; callee->returnCount = wanted == 0 ? 0 : wanted + 1;
 	callee->isExceptionFrame = exceptionFrame; callee->isNonMaskableExceptionFrame = exceptionFrame;
 	caller->registers[6] = valueNumber(-7);
 	caller->registers[7] = valueNumber(99);
@@ -324,7 +322,7 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	for (int index = copied; index < count; ++index) require(caller->registers[base + index] == valueNil(), "fixed results nil-pad only the requested suffix");
 	if (base + count <= 6 || count == 0) require(caller->registers[6] == valueNumber(-7) && caller->registers[7] == valueNumber(99),
 		"return does not overwrite retained caller registers outside its result range");
-	require(machine.cpu.getGlobalByKey(marker) == ((!coldTarget && !grows) ? valueNumber(99) : valueNil()),
+	require(machine.cpu.getGlobalByKey(marker) == ((!coldTarget && !grows) ? caller->registers[7] : valueNil()),
 		"warm RET branches through the raw native code word without executeReturn or the C++ descriptor dispatcher");
 	require(callee->registers == nullptr && callee->executionImage == nullptr && callee->closure == nullptr
 		&& callee->protectedContinuationIndex == -1 && !callee->isExceptionFrame && !callee->isNonMaskableExceptionFrame,
@@ -334,16 +332,16 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 
 void callFrameInitialization(int params, int maxStack, int args, bool vararg, bool alias) {
 	const u32 record = DYNAMIC_RAM_BASE + 0x1800u;
-	const int base = alias ? 7 : 0;
+	const int base = alias ? 7 : 8;
 	test::Blua32TestImage image;
 	image.text.resize(6 * INSTRUCTION_BYTES);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 6, 0, 0);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), base, 6, 0);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), base, args + 1, 1);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), base, args + 1, 2);
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
-	writeInstruction(image.text, 5, static_cast<u8>(OpCode::RET), 0, 1, 0);
-	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = alias ? 8u : 16u},
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 16u},
 		{.firstWord = 5, .wordCount = 1, .numParams = static_cast<u32>(params), .maxStack = 32, .isVararg = vararg}};
 	image.closureRelocations = {{1, record}};
 	CpuMachine native(image, false), scalar(image, true);
@@ -369,20 +367,18 @@ void callFrameInitialization(int params, int maxStack, int args, bool vararg, bo
 		auto* thread = machine->cpu.activeThread();
 		auto* callee = thread->currentFrame;
 		const int count = vararg ? std::max(args - params, 0) : 0;
-		const int capacity = std::max(maxStack, 1);
+		const int capacity = std::max({maxStack, params, 1});
 		require(thread->frameDepth == 2 && callee->pc == machine->rom.textAddress + 5 * INSTRUCTION_BYTES
 			&& callee->stackCapacity == capacity && callee->top == params && callee->varargCount == count,
 			"CALL exposes exact fixed-parameter and reserved-capacity counts at its exhausted grant");
 		const std::array<Value, 5> payloads{valueNumber(-0.0), VALUE_QNAN_MASK | 0x2au, valueBool(true),
 			valueString(machine->cpu.stringPool().intern("frame-argument")), valueNumber(99)};
 		for (int index = 0; index < params; ++index) require(callee->registers[index]
-			== (index < args ? alias ? valueNumber(71) : payloads[index] : valueNil()),
-			"supplied raw arguments survive and missing fixed formals are nil, even outside the reservation");
-		for (int index = params; index < capacity; ++index) require(callee->registers[index] == valueNil(), "reserved locals begin nil");
-		require(callee->registers[std::max(params, capacity)] == valueNumber(63), "initialization does not touch the following allocated slot");
+			== (index < args ? alias ? valueNumber(71 + index) : payloads[index] : valueNil()),
+			"supplied raw arguments survive and missing fixed formals are nil, inside the owned formal reservation");
 		for (int index = 0; index < count; ++index) require(thread->stack[callee->varargBase + index]
-			== (alias ? valueNumber(index == 0 ? 72 : 71) : payloads[params + index]),
-			"saved varargs read after fixed argument copies, including aliases into the cleared callee window");
+			== (alias ? valueNumber(71 + params + index) : payloads[params + index]),
+			"saved varargs remain in their original slots below relocated fixed parameters");
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 100, 1);
 	requireParity(native, scalar);
@@ -397,12 +393,10 @@ void callFrameInitialization(int params, int maxStack, int args, bool vararg, bo
 			valueString(machine->cpu.stringPool().intern("frame-argument")), valueNumber(99)};
 		machine->cpu.beginCompletionCall(*asClosure(caller->registers[6]), BuiltinArgsView(payloads.data(), args));
 		auto* callee = thread->currentFrame;
-		require(callee->stackCapacity == std::max(maxStack, 1) && callee->top == params && callee->returnToCompletionLatch,
+		require(callee->stackCapacity == std::max({maxStack, params, 1}) && callee->top == params && callee->returnToCompletionLatch,
 			"raw argument calls retain the same frame sizing and completion owner");
 		for (int index = 0; index < params; ++index) require(callee->registers[index] == (index < args ? payloads[index] : valueNil()),
 			"raw argument admission preserves supplied bits and initializes only the missing formal tail");
-		for (int index = params; index < callee->stackCapacity; ++index) require(callee->registers[index] == valueNil(), "raw-call reserved locals begin nil");
-		require(callee->registers[std::max(params, callee->stackCapacity)] == valueNumber(63), "raw-call initialization leaves the following slot intact");
 		for (int index = 0; index < callee->varargCount; ++index) require(thread->stack[callee->varargBase + index] == payloads[params + index],
 			"raw argument varargs retain their separate ordered window");
 	}
@@ -416,7 +410,7 @@ void returnGrowthCollection() {
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CALL), 0, 1, 63);
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
-	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 8},
 		{.firstWord = 4, .wordCount = 1, .maxStack = 8}};
 	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
@@ -427,15 +421,16 @@ void returnGrowthCollection() {
 		auto* callee = machine.cpu.activeThread()->currentFrame;
 		const Value result = valueString(machine.cpu.stringPool().intern("retained-only-by-returning-frame"));
 		callee->registers[0] = result;
+		callee->top = 1;
 		const auto heap = machine.cpu.luaHeap().captureState();
 		const std::string garbage(heap.nextCollectionBytes - heap.trackedBytes - 1, 'g');
 		machine.cpu.stringPool().intern(garbage);
 		require(machine.cpu.runUntilDepth(1, 100) == RunResult::Halted, "return stops at the caller depth after growing its window");
 		require(!machine.cpu.stringPool().find(garbage), "return window growth actually triggers collection");
 		require(machine.cpu.stringPool().find("retained-only-by-returning-frame") == asStringId(result)
-			&& caller->registers[0] == result && caller->stackCapacity == 64 && caller->top == 63,
+			&& caller->registers[0] == result && caller->stackCapacity == 64 && caller->top == 62,
 			"return values remain rooted across collection and caller/callee window relocation");
-		for (int index = 1; index < 63; ++index) require(caller->registers[index] == valueNil(), "missing fixed returns are nil");
+		for (int index = 1; index < 62; ++index) require(caller->registers[index] == valueNil(), "missing fixed returns are nil");
 		require(machine.cpu.activeThread()->currentFrame == caller && caller->next == callee,
 			"return retires the same callee only after result transfer completes");
 	}
@@ -446,9 +441,9 @@ void failedCallAdmission() {
 	image.text.resize(6 * INSTRUCTION_BYTES);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CALL), 0, 1, 1);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CALL), 0, 1, 2);
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
-	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	writeInstruction(image.text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
 	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 8},
 		{.firstWord = 4, .wordCount = 1, .maxStack = PSX_MACHINE_SPEC.ramBytes},
@@ -483,17 +478,17 @@ void crossPageCalls(bool open, u32 recordOffset) {
 	const u32 record = DYNAMIC_RAM_BASE + recordOffset;
 	test::Blua32TestImage image; image.text.resize(2 * MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 0, 4, 0);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::LOADK), 1, 0, 0);
-	writeInstruction(image.text, 4, static_cast<u8>(OpCode::LOADK), 2, 0, 1);
-	writeInstruction(image.text, 5, static_cast<u8>(OpCode::CALL), 0, open ? 0 : 3, open ? 0 : 2);
-	writeInstruction(image.text, 6, static_cast<u8>(OpCode::ADD), 3, 0, 1);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 4, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::LOADK), 5, 0, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::LOADK), 6, 0, 1);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::CALL), 4, open ? 0 : 3, open ? 0 : 3);
+	writeInstruction(image.text, 6, static_cast<u8>(OpCode::ADD), 3, 4, 5);
 	writeInstruction(image.text, 7, static_cast<u8>(OpCode::JMP), 0, 63, 58, 255);
 	for (const u32 start : {DECODED_PAGE_WORDS, DECODED_PAGE_WORDS + 32u}) {
 		writeInstruction(image.text, start, static_cast<u8>(start == DECODED_PAGE_WORDS ? OpCode::ADD : OpCode::SUB), 2, 0, 1);
 		writeInstruction(image.text, start + 1u, static_cast<u8>(OpCode::MOV), 3, start == DECODED_PAGE_WORDS ? 0 : 1, 0);
-		writeInstruction(image.text, start + 2u, static_cast<u8>(OpCode::RET), 2, open ? 0 : 2, 0);
+		writeInstruction(image.text, start + 2u, static_cast<u8>(OpCode::RET), 2, open ? 0 : 3, 0);
 	}
 	image.functions = {{.firstWord = 0, .wordCount = 8, .maxStack = 8},
 		{.firstWord = DECODED_PAGE_WORDS, .wordCount = 3, .numParams = 2, .maxStack = 8},
@@ -540,7 +535,7 @@ void crossPageCalls(bool open, u32 recordOffset) {
 		const std::string garbage(heap.nextCollectionBytes - heap.trackedBytes - 1, 'g');
 		machine->cpu.stringPool().intern(garbage);
 		require(machine->cpu.runUntilDepth(0, 9) == RunResult::Yielded && machine->cpu.activeThread()->frameDepth == 1
-			&& machine->cpu.activeThread()->stackCapacity > capacity && machine->cpu.readFrameRegister(0, 0) == valueNumber(7),
+			&& machine->cpu.activeThread()->stackCapacity > capacity && machine->cpu.readFrameRegister(0, 4) == valueNumber(7),
 			"a hot call relocates the stack before a hot callee and return use the new register bases");
 		require(!machine->cpu.stringPool().find(garbage), "callee stack growth actually collects unrooted pressure data");
 		require(machine->cpu.activeThread()->currentFrame == caller && caller->next == spare,
@@ -554,7 +549,7 @@ void crossPageCalls(bool open, u32 recordOffset) {
 		machine->cpu.runUntilDepth(0, 20000); machine->cpu.runUntilDepth(1, 100);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], entry);
 		machine->cpu.runUntilDepth(0, 5); machine->cpu.runUntilDepth(1, 100);
-		require(machine->cpu.readFrameRegister(0, 0) == valueNumber(-1), "a live closure re-reads its current RAM function record");
+		require(machine->cpu.readFrameRegister(0, 4) == valueNumber(-1), "a live closure re-reads its current RAM function record");
 		machine->memory.writeMappedU32LE(record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, machine->rom.textAddress + DECODED_PAGE_WORDS * INSTRUCTION_BYTES + 1u);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], entry);
 		require(machine->cpu.runUntilDepth(0, 5) == RunResult::Yielded && machine->cpu.readBadAddressWord() == 0u,

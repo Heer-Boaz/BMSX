@@ -46,7 +46,7 @@ bmsx::test::Blua32TestImage allocationImage() {
 	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 1, 0, 0);
 	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
 	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 2, 0, 0);
-	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 3, 0);
+	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 4, 0);
 	bmsx::writeInstruction(code, 6, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
 	bmsx::writeInstruction(code, 7, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
 	image.functions = {
@@ -89,16 +89,16 @@ void replayAllocationIdentities() {
 	}
 }
 
-void preserveRegistersAboveOpenResultTop() {
+void preserveCallerPrefixAcrossOpenResultCall() {
 	for (const auto op : {bmsx::OpCode::K1, bmsx::OpCode::NEWT}) {
 		bmsx::test::Blua32TestImage image;
 		image.text.resize(6u * bmsx::INSTRUCTION_BYTES);
 		std::span<bmsx::u8> code(image.text);
-		bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(op), 7, 0, 0);
+		bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(op), 0, 0, 0);
 		bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
-		bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 0);
-		bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, 1, 0);
-		bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 7, 1, 0);
+		bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 4, 0, 0);
+		bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 4, 1, 0);
+		bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
 		bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
 		image.functions = {{.firstWord = 0u, .wordCount = 5u, .maxStack = 8u}, {.firstWord = 5u, .wordCount = 1u}};
 		image.closureRelocations = {{2u, bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 1u)}};
@@ -112,23 +112,23 @@ void preserveRegistersAboveOpenResultTop() {
 			.preMaskableInterruptDomainMask = 0u,
 		});
 		require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::ExecutionStopped, "stop after zero-result CALL");
-		require(cpu.getFrameRegisterCount(0) == 0, "open result top stays exact");
+		require(cpu.getFrameRegisterCount(0) == 4, "open result top stays exact");
 		if (op == bmsx::OpCode::NEWT) {
 			auto* weak = cpu.createTable(1, 0);
 			auto* mode = cpu.createTable(0, 1);
 			mode->setStringKey(cpu.stringPool().intern("__mode"), bmsx::valueString(cpu.stringPool().intern("v")));
 			weak->metatable = mode;
-			weak->setInteger(1, cpu.readFrameRegister(0, 7));
+			weak->setInteger(1, cpu.readFrameRegister(0, 0));
 			cpu.setGlobalByKey(cpu.stringPool().intern("weak"), bmsx::valueTable(weak));
 			cpu.collectHeap();
-			require(weak->getInteger(1) == cpu.readFrameRegister(0, 7), "reserved registers remain heap roots after top shrinks");
+			require(weak->getInteger(1) == cpu.readFrameRegister(0, 0), "live caller locals remain heap roots across calls");
 		}
 		const auto saved = cpu.captureRuntimeState();
 		cpu.setExecutionHook({});
 		cpu.restoreRuntimeState(saved);
-		const auto restored = cpu.readFrameRegister(0, 7);
+		const auto restored = cpu.readFrameRegister(0, 0);
 		require(op == bmsx::OpCode::K1 ? bmsx::valueIsNumber(restored) : bmsx::valueIsTable(restored),
-			"exact top does not erase reserved register values");
+			"snapshot preserves the caller local below its call area");
 		require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "restored frame returns");
 		const auto values = cpu.readCompletionValues();
 		require(values.size() == 1u, "explicit RET returns its reserved register");
@@ -236,7 +236,7 @@ void restoreUnrootedCanonicalClosure() {
 	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 0);
 	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::KNIL), 0, 0, 0);
 	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::NEWT), 0, 0, 0);
-	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
+	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
 	const auto address = bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 1u);
 	image.closureRelocations = {{1u, address}};
 	SnapshotMachine machine(image);
@@ -244,7 +244,7 @@ void restoreUnrootedCanonicalClosure() {
 	const auto cold = cpu.captureRuntimeState();
 	cpu.runUntilDepth(0, 2);
 	const auto warm = cpu.captureRuntimeState();
-	require(warm.snapshot.word(warm.threads[0].frames[0].registers[0]) == static_cast<bmsx::u32>(bmsx::CpuSnapshotValueTag::Nil), "static closure is no longer a guest root");
+	require(warm.snapshot.word(warm.threads[0].stack[warm.threads[0].frames[0].stackBase]) == static_cast<bmsx::u32>(bmsx::CpuSnapshotValueTag::Nil), "static closure is no longer a guest root");
 	bool captured = false;
 	for (bmsx::u32 offset : warm.snapshot.objectWords()) {
 		if (warm.snapshot.word(offset) == static_cast<bmsx::u32>(bmsx::CpuSnapshotObjectKind::Closure)
@@ -431,7 +431,7 @@ void preserveDynamicGlobalRegisters() {
 int main() {
 	try {
 		replayAllocationIdentities();
-		preserveRegistersAboveOpenResultTop();
+		preserveCallerPrefixAcrossOpenResultCall();
 		mirroredAllocationOrder();
 		inspectOpenAndClosedClosure();
 		restoreAllocationWordWrap();

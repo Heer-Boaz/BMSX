@@ -34,7 +34,8 @@ struct Thread : GCObject {
 	CallFrame* currentFrame = nullptr;
 	size_t frameDepth = 0;
 	// The thread owns the allocation and exposes its actual bounds to generated
-	// calls. stackTop covers active register windows and their vararg ranges.
+	// calls. stackTop is the current physical activation extent; caller
+	// windows overlap it above their call sites.
 	Value* stack = nullptr;
 	size_t stackCapacity = 0;
 	int stackTop = 0;

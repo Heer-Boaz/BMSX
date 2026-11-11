@@ -29,7 +29,7 @@ void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
 }
 
-test::Blua32TestImage returnImage(OpCode op = OpCode::RET, u8 a = 0, u8 b = 1, u8 c = 0) {
+test::Blua32TestImage returnImage(OpCode op = OpCode::RET, u8 a = 0, u8 b = 2, u8 c = 0) {
 	test::Blua32TestImage image;
 	image.text.resize(INSTRUCTION_BYTES);
 	writeInstruction(image.text, 0, static_cast<u8>(op), a, b, c);
@@ -294,11 +294,11 @@ void nativeCodeWarmsWithinOneCpuSlice() {
 			writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 			writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
 			writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 0, 4, 0);
-			writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, encodeFixedCallArgCount(0), 1);
+			writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, encodeFixedValueCount(0), 2);
 			writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
 			writeInstruction(image.text, 5, static_cast<u8>(OpCode::K1), 0, 0, 0);
 			writeInstruction(image.text, 6, static_cast<u8>(OpCode::MOV), 1, 0, 0);
-			writeInstruction(image.text, 7, static_cast<u8>(OpCode::RET), 0, 1, 0);
+			writeInstruction(image.text, 7, static_cast<u8>(OpCode::RET), 0, 2, 0);
 			image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8},
 				{.firstWord = 5, .wordCount = 3, .maxStack = 2}};
 			image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
@@ -412,10 +412,10 @@ void nativeHaltCommitsItsThreadAndFrameLatch() {
 		writeInstruction(image.text, 2, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 		writeInstruction(image.text, 3, static_cast<u8>(OpCode::HALT), 63, 63, 63, 255);
 		writeInstruction(image.text, 4, static_cast<u8>(OpCode::KSMI), 2, 0, 7);
-		writeInstruction(image.text, 5, static_cast<u8>(OpCode::RET), 2, 1, 0);
+		writeInstruction(image.text, 5, static_cast<u8>(OpCode::RET), 2, 2, 0);
 		writeInstruction(image.text, 6, static_cast<u8>(OpCode::RFE), 0, 0, 0);
 		writeInstruction(image.text, 7, static_cast<u8>(OpCode::KSMI), 0, 0, 9);
-		writeInstruction(image.text, 8, static_cast<u8>(OpCode::RET), 0, 1, 0);
+		writeInstruction(image.text, 8, static_cast<u8>(OpCode::RET), 0, 2, 0);
 		image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 3},
 			{.firstWord = 6, .wordCount = 1}, {.firstWord = 7, .wordCount = 2}};
 		image.irqFunctionIndex = image.exceptionFunctionIndex = 1;
@@ -515,11 +515,11 @@ void nativeCallsAndReturnsPublishFaultBoundaries() {
 		writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
 		writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 0, 4, 0);
 		if (wide) writeInstruction(image.text, 3, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-		writeInstruction(image.text, callBody, static_cast<u8>(OpCode::CALL), 0, 1, 1);
+		writeInstruction(image.text, callBody, static_cast<u8>(OpCode::CALL), 0, 1, 2);
 		writeInstruction(image.text, callBody + 1u, static_cast<u8>(OpCode::MOV), 6, 0, 0);
 		writeInstruction(image.text, callBody + 2u, static_cast<u8>(OpCode::JMP), 0, 63, wide ? 59 : 60, 255);
 		writeInstruction(image.text, calleeStart, static_cast<u8>(OpCode::K1), 0, 0, 0);
-		writeInstruction(image.text, calleeStart + 1u, static_cast<u8>(OpCode::RET), 0, 1, 0);
+		writeInstruction(image.text, calleeStart + 1u, static_cast<u8>(OpCode::RET), 0, 2, 0);
 		writeInstruction(image.text, calleeStart + 2u, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 		image.functions = {{.firstWord = 0, .wordCount = calleeStart, .maxStack = 8},
 			{.firstWord = calleeStart, .wordCount = 2}, {.firstWord = calleeStart + 2u, .wordCount = 1}};
@@ -571,11 +571,11 @@ void nativeCallCanRetireItsSourceDuringFunctionRecordRead() {
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 0, 4, 0);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, 1, 1);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, 1, 2);
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::MOV), 6, 0, 0);
 	writeInstruction(image.text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
 	writeInstruction(image.text, 6, static_cast<u8>(OpCode::K1), 0, 0, 0);
-	writeInstruction(image.text, 7, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(image.text, 7, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 8}, {.firstWord = 6, .wordCount = 2}};
 	image.closureRelocations = {{1, recordAddress}};
 	for (const bool instrumented : {false, true}) {
@@ -632,10 +632,10 @@ void compactAndPaddedRomFunctionRecordsAgree() {
 		image.text.resize(6u * INSTRUCTION_BYTES);
 		writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 		writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
-		writeInstruction(image.text, 2, static_cast<u8>(OpCode::CALL), 0, encodeFixedCallArgCount(0), 1);
-		writeInstruction(image.text, 3, static_cast<u8>(OpCode::RET), 0, 1, 0);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::CALL), 0, encodeFixedValueCount(0), 2);
+		writeInstruction(image.text, 3, static_cast<u8>(OpCode::RET), 0, 2, 0);
 		writeInstruction(image.text, 4, static_cast<u8>(OpCode::K1), 0, 0, 0);
-		writeInstruction(image.text, 5, static_cast<u8>(OpCode::RET), 0, 1, 0);
+		writeInstruction(image.text, 5, static_cast<u8>(OpCode::RET), 0, 2, 0);
 		image.functions = {{.firstWord = 0, .wordCount = 4}, {.firstWord = 4, .wordCount = 2}};
 		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 		auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
@@ -680,7 +680,7 @@ void stringBytePositions() {
 			Case{"abc", valueNumber(std::numeric_limits<f64>::infinity()), 2, valueNil()},
 			Case{std::string(4096, 'a'), valueNumber(4096), 2, valueNumber(97)},
 		}) {
-			auto image = returnImage(OpCode::CALL, 0, encodeFixedCallArgCount(testCase.arguments), 1);
+			auto image = returnImage(OpCode::CALL, 0, encodeFixedValueCount(testCase.arguments), 2);
 			image.text.resize(2 * INSTRUCTION_BYTES);
 			writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 			image.functions[0].wordCount = 2;
@@ -732,7 +732,7 @@ void wideSignedImmediatesKeepTheirRange() {
 		writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, static_cast<u8>(raw >> BASE_BX_BITS), 0);
 		writeInstruction(image.text, 1, static_cast<u8>(OpCode::KSMI), 0,
 			static_cast<u8>((raw >> MAX_OPERAND_BITS) & MAX_LOW_OPERAND), static_cast<u8>(raw & MAX_LOW_OPERAND), static_cast<u8>(raw >> MAX_BX_BITS));
-		writeInstruction(image.text, 2, static_cast<u8>(OpCode::RET), 0, 1, 0);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::RET), 0, 2, 0);
 		image.functions[0].wordCount = 3;
 		CpuMachine machine(image);
 		auto& cpu = machine.cpu;
@@ -752,9 +752,9 @@ void returnRangesSurviveCallerStackGrowth() {
 			image.text.resize(5 * INSTRUCTION_BYTES);
 			writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 			writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 2, 0, 0);
-			writeInstruction(image.text, 2, static_cast<u8>(OpCode::CALL), 2, encodeFixedCallArgCount(0), requested);
+			writeInstruction(image.text, 2, static_cast<u8>(OpCode::CALL), 2, encodeFixedValueCount(0), requested == 0 ? 0 : requested + 1);
 			writeInstruction(image.text, 3, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-			writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 5, openReturn ? 0 : produced, 0);
+			writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 5, openReturn ? 0 : produced + 1, 0);
 			image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 3},
 				{.firstWord = 4, .wordCount = 1, .maxStack = static_cast<u32>(5 + std::max<int>(produced, 1))}};
 			image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
@@ -784,7 +784,7 @@ void returnRangesSurviveCallerStackGrowth() {
 
 void builtinReturnRangesSurviveDestinationGrowth() {
 	for (const bool instrumented : {false, true}) for (const u8 requested : {0, 1, 4, 48}) for (int kind = 0; kind < 3; ++kind) {
-		auto image = returnImage(OpCode::CALL, 2, encodeFixedCallArgCount(kind == 0 ? 1 : 2), requested);
+		auto image = returnImage(OpCode::CALL, 2, encodeFixedValueCount(kind == 0 ? 1 : 2), requested == 0 ? 0 : requested + 1);
 		image.text.resize(2 * INSTRUCTION_BYTES);
 		writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 		image.functions[0].wordCount = 2;
@@ -1119,15 +1119,15 @@ void closureCallAndReturnRespectFrameBoundaries() {
 		test::Blua32TestImage image;
 		image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 		writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-		writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
-		writeInstruction(image.text, 2, static_cast<u8>(OpCode::CALL), 0, encodeFixedCallArgCount(0), 1);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 3, 0, 0);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::CALL), 3, encodeFixedValueCount(0), 2);
 		writeInstruction(image.text, 3, static_cast<u8>(OpCode::K1), 2, 0, 0);
-		writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 1, 0);
+		writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 3, 2, 0);
 		writeInstruction(image.text, 5, static_cast<u8>(OpCode::K1), 0, 0, 0);
-		writeInstruction(image.text, 6, static_cast<u8>(OpCode::RET), 0, 1, 0);
+		writeInstruction(image.text, 6, static_cast<u8>(OpCode::RET), 0, 2, 0);
 		writeInstruction(image.text, 7, static_cast<u8>(OpCode::K1), 0, 0, 0);
 		writeInstruction(image.text, 8, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-		image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 3},
+		image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 4},
 			{.firstWord = 5, .wordCount = 2}, {.firstWord = 7, .wordCount = 2}};
 		image.irqFunctionIndex = image.exceptionFunctionIndex = 2;
 		image.closureRelocations = {{1, edgeKind == 1 ? mappedRecord : test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
@@ -1154,7 +1154,7 @@ void closureCallAndReturnRespectFrameBoundaries() {
 		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "closure setup consumes its own physical instruction");
 		const u32 callPc = cpu.readFramePc(0);
 		if (edgeKind == 3) {
-			asClosure(cpu.activeThread()->frameAtDepth(0)->registers[0])->functionAddress = CART_ROM_BASE;
+			asClosure(cpu.activeThread()->frameAtDepth(0)->registers[3])->functionAddress = CART_ROM_BASE;
 			require(cpu.runUntilDepth(0, 3) == RunResult::Halted, "a failed call cannot reuse provenance from the previous function read");
 			require(cpu.activeThread()->frameDepth == 1 && cpu.readFrameRegister(0, 2) == valueNumber(99), "failed call does not execute its continuation");
 			continue;
@@ -1192,7 +1192,7 @@ void closureCallAndReturnRespectFrameBoundaries() {
 		}
 		require(cpu.activeThread()->frameDepth == 2 && cpu.readFramePc(1) == calleePc + INSTRUCTION_BYTES, "direct call rebinds the callee and stops before RET");
 		require(cpu.runUntilDepth(1, 20) == RunResult::Halted && cpu.instructionBudgetRemaining == 18, "return stops at the requested depth with unused cycles retained");
-		require(cpu.readFrameRegister(0, 0) == valueNumber(1) && cpu.readFrameRegister(0, 2) == valueNumber(99), "return publishes results without executing the caller continuation");
+		require(cpu.readFrameRegister(0, 3) == valueNumber(1) && cpu.readFrameRegister(0, 2) == valueNumber(99), "return publishes results without executing the caller continuation");
 		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded && cpu.readFrameRegister(0, 2) == valueNumber(1), "resuming after return binds the caller registers");
 	}
 }
@@ -1308,8 +1308,8 @@ void zeroStackReuse() {
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CALL), 0, 1, 0);
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
-	writeInstruction(image.text, 5, static_cast<u8>(OpCode::CALL), 0, 1, 1);
-	writeInstruction(image.text, 6, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::CALL), 0, 1, 2);
+	writeInstruction(image.text, 6, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	writeInstruction(image.text, 7, static_cast<u8>(OpCode::K1), 0, 0, 0);
 	writeInstruction(image.text, 8, static_cast<u8>(OpCode::RET), 0, 0, 0);
 	writeInstruction(image.text, 9, static_cast<u8>(OpCode::RET), 0, 1, 0);
@@ -1318,10 +1318,11 @@ void zeroStackReuse() {
 	CpuMachine machine(image);
 	auto& cpu = machine.cpu;
 	require(cpu.runUntilDepth(0, 100) == RunResult::Halted, "zero-stack call finishes");
-	require(isNil(cpu.readCompletionValues()[0]), "reused ordinary zero-stack frame clears its spare slot");
+	require(isNil(cpu.readCompletionValues()[0]), "zero results nil-pad only the requested caller slot");
 	cpu.activeThread()->stack[0] = valueNumber(91.0);
 	cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, 0x1a0);
-	require(isNil(cpu.readFrameRegister(0, 0)), "completion zero-stack frame clears its spare slot");
+	require(cpu.readFrameRegister(0, 0) == valueNumber(91), "activation does not initialize scratch storage");
+	require(cpu.runUntilDepth(0, 100) == RunResult::Halted && cpu.readCompletionValues().empty(), "completion preserves true zero results");
 }
 
 void haltYieldPrecedence() {
@@ -1391,7 +1392,7 @@ void cachedPcWrapping() {
 void imageTextImport() {
 	auto image = returnImage(OpCode::LOADK, 0, 0, 0);
 	image.text.resize(2 * INSTRUCTION_BYTES);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	image.functions[0].wordCount = 2;
 	image.constants = {std::string("\xef\xbb\xbf" "A")};
 	CpuMachine machine(image);

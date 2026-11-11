@@ -1089,11 +1089,10 @@ template<class Writer> void writeCpuFrameState(Writer& writer, const CpuFrameSta
 	writer.u32(state.functionAddress);
 	writer.u32(state.pc);
 	writer.i32(state.closureRef);
+	writer.i32(state.stackBase);
 	writer.i32(state.stackCapacity);
-	writer.u32(static_cast<u32>(state.registers.size()));
-	writer.u32s(state.registers);
-	writer.u32(static_cast<u32>(state.varargs.size()));
-	writer.u32s(state.varargs);
+	writer.i32(state.varargBase);
+	writer.i32(state.varargCount);
 	writer.i32(state.returnBase);
 	writer.i32(state.returnCount);
 	writer.i32(state.top);
@@ -1108,9 +1107,10 @@ CpuFrameState readCpuFrameState(BinaryReader& reader) {
 	state.functionAddress = reader.u32();
 	state.pc = reader.u32();
 	state.closureRef = reader.i32();
+	state.stackBase = reader.i32();
 	state.stackCapacity = reader.i32();
-	state.registers = reader.u32s(reader.u32());
-	state.varargs = reader.u32s(reader.u32());
+	state.varargBase = reader.i32();
+	state.varargCount = reader.i32();
 	state.returnBase = reader.i32();
 	state.returnCount = reader.i32();
 	state.top = reader.i32();
@@ -1162,6 +1162,8 @@ template<class Writer> void writeCpuThreadState(Writer& writer, const CpuThreadS
 	writer.i32(state.callBase);
 	writer.i32(state.returnCount);
 	writer.u64(state.stackCapacity);
+	writer.u32(static_cast<u32>(state.stack.size()));
+	writer.u32s(state.stack);
 	writer.u32(state.error);
 	writer.u32(static_cast<u32>(state.frames.size()));
 	for (const auto& value : state.frames) {
@@ -1183,6 +1185,7 @@ CpuThreadState readCpuThreadState(BinaryReader& reader) {
 	state.callBase = reader.i32();
 	state.returnCount = reader.i32();
 	state.stackCapacity = reader.u64();
+	state.stack = reader.u32s(reader.u32());
 	state.error = reader.u32();
 	const u32 framesCount = reader.u32();
 	state.frames.reserve(framesCount);

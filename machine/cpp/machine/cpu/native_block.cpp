@@ -116,7 +116,8 @@ std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& sourc
 		if (slow == NativeBlockExit::WriteWords) terminal.cycles += ceilDiv4(instruction.c);
 		if (op == OpCode::VARARG && instruction.b == 0) terminal.registerTop = 0;
 		else if (op == OpCode::VARARG || op == OpCode::LOADNIL) {
-			if (instruction.b != 0) terminal.registerTop = std::max(terminal.registerTop, static_cast<int>(instruction.a) + instruction.b);
+			const int count = instruction.b - (op == OpCode::VARARG ? 1 : 0);
+			if (count > 0) terminal.registerTop = std::max(terminal.registerTop, static_cast<int>(instruction.a) + count);
 		} else if (!nativeBlockEndsBlock(instruction.op, instruction.b) && slow != NativeBlockExit::WriteField && slow != NativeBlockExit::WriteMemory
 			&& slow != NativeBlockExit::WriteWords
 			&& slow != NativeBlockExit::WriteIndex && slow != NativeBlockExit::WriteInteger

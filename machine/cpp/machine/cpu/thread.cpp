@@ -52,6 +52,7 @@ CallFrame* Thread::acquireFrame() {
 void Thread::leaveFrame() {
 	auto* frame = currentFrame;
 	currentFrame = frame->previous;
+	stackTop = currentFrame ? currentFrame->stackBase + currentFrame->stackCapacity : 0;
 	--frameDepth;
 	frame->executionImage = nullptr;
 	frame->closure = nullptr;

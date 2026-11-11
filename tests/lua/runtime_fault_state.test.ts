@@ -28,7 +28,7 @@ import {
 	INSTRUCTION_BYTES,
 	writeInstruction,
 } from '../../machine/ts/spec/blua32/instruction_format';
-import { OpCode, encodeFixedCallArgCount } from '../../machine/ts/spec/blua32/opcode';
+import { OpCode, encodeFixedValueCount } from '../../machine/ts/spec/blua32/opcode';
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { readBlua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
@@ -47,7 +47,7 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 	};
 	const linkedCode = new Uint8Array(6 * INSTRUCTION_BYTES);
 	writeInstruction(linkedCode, 0, OpCode.HALT, 0, 0, 0, 0);
-	writeInstruction(linkedCode, 1, OpCode.CALL, 0, encodeFixedCallArgCount(0), 0, 0);
+	writeInstruction(linkedCode, 1, OpCode.CALL, 0, encodeFixedValueCount(0), 0, 0);
 	writeInstruction(linkedCode, 2, OpCode.LOADK, 1, 0, 0, 0);
 	writeInstruction(linkedCode, 3, OpCode.LOADK, 2, 0, 1, 0);
 	writeInstruction(linkedCode, 4, OpCode.STORE_MEM_D, 2, 1, MemoryAccessKind.Word, 0);
@@ -84,7 +84,7 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 	memory.writeMappedU32LE(functionAddress + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET, 0);
 	memory.writeMappedU32LE(functionAddress + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, 0);
 	const mappedCode = new Uint8Array(INSTRUCTION_BYTES);
-	writeInstruction(mappedCode, 0, OpCode.CALL, 0, encodeFixedCallArgCount(0), 0, 0);
+	writeInstruction(mappedCode, 0, OpCode.CALL, 0, encodeFixedValueCount(0), 0, 0);
 	memory.writeBytes(codeAddress, mappedCode);
 	cpu.beginCompletionCall(new Closure(functionAddress, [], 0));
 	runToSupervisorFault(runtime);
@@ -151,7 +151,7 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 		0,
 		OpCode.CALL,
 		0,
-		encodeFixedCallArgCount(0),
+		encodeFixedValueCount(0),
 		0,
 		0,
 	);
