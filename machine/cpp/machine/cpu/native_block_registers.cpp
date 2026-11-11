@@ -1,5 +1,6 @@
 #include "machine/cpu/native_block_compiler.h"
 
+#include <algorithm>
 #include <bit>
 
 #include "machine/cpu/execution_image.h"
@@ -21,13 +22,46 @@ int NativeBlockCompiler::allocateRegister(int guest, sljit_s32 pinned) {
 	int selected = -1;
 	for (int slot = 0; slot < m_registerCount; ++slot) {
 		if (cachedFloatRegister(slot) == pinned) continue;
-		if (m_registers[slot].guest < 0) {
-			selected = slot;
-			break;
-		}
-		if (selected < 0 || m_registers[slot].lastUse < m_registers[selected].lastUse) selected = slot;
+		selected = slot;
+		if (m_registers[slot].guest < 0) break;
 	}
 	if (selected < 0) return -1;
+	if (m_registers[selected].guest >= 0) {
+		std::array<size_t, REGISTER_CACHE_CAPACITY> nextAccess;
+		nextAccess.fill(NATIVE_BLOCK_MAX_INSTRUCTIONS);
+		const size_t horizon = std::min(m_remainingInstructions.size(), size_t{NATIVE_BLOCK_MAX_INSTRUCTIONS});
+		int unresolved = m_registerCount;
+		for (int slot = 0; slot < m_registerCount; ++slot) if (cachedFloatRegister(slot) == pinned) --unresolved;
+		for (size_t distance = 0; distance < horizon && unresolved != 0; ++distance) {
+			const auto& instruction = *m_remainingInstructions[distance].decoded;
+			const auto access = registerAccess(instruction);
+			for (int slot = 0; slot < m_registerCount; ++slot) {
+				if (nextAccess[slot] != NATIVE_BLOCK_MAX_INSTRUCTIONS || cachedFloatRegister(slot) == pinned) continue;
+				const int cached = m_registers[slot].guest;
+				if (((access.scalarReads & REGISTER_OPERAND_A) && cached == instruction.a)
+					|| ((access.scalarReads & REGISTER_OPERAND_B) && cached == instruction.b)
+					|| ((access.scalarReads & REGISTER_OPERAND_C) && cached == instruction.c)
+					|| (cached >= access.readFirst && cached < access.readEnd)
+					|| (cached >= access.writeFirst && cached < access.writeEnd)) {
+					nextAccess[slot] = distance;
+					--unresolved;
+				}
+			}
+		}
+		// This caches observable guest slots, not SSA temporaries. An upcoming
+		// overwrite also benefits from keeping its binding: eviction would first
+		// have to publish the old dirty Value. Absence of a future access never
+		// permits discarding it.
+		for (int slot = 0; slot < m_registerCount; ++slot) {
+			if (cachedFloatRegister(slot) == pinned) continue;
+			const auto& candidate = m_registers[slot];
+			const auto& victim = m_registers[selected];
+			if (nextAccess[slot] > nextAccess[selected]
+				|| (nextAccess[slot] == nextAccess[selected]
+					&& (candidate.dirty < victim.dirty
+						|| (candidate.dirty == victim.dirty && candidate.lastUse < victim.lastUse)))) selected = slot;
+		}
+	}
 	auto& entry = m_registers[selected];
 	if (entry.dirty) sljit_emit_fop1(m_compiler, SLJIT_MOV_F64,
 		SLJIT_MEM1(SLJIT_S0), static_cast<sljit_sw>(entry.guest) * sizeof(Value), cachedFloatRegister(selected), 0);

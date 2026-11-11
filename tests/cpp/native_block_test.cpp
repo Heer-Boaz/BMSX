@@ -801,6 +801,77 @@ void pinnedOperandsSurviveColdReadsAndDestinationReuse() {
 	require(bytes == 0, "direct-register bodies release their accounted executable storage");
 }
 
+void nextAccessPressurePreservesEveryRawGuestSlot() {
+	const std::array raw{Value{VALUE_QNAN_MASK | 0x2au}, valueNumber(-0.0),
+		valueFromTag(ValueTag::False, 73), valueString(0xfedcba98u),
+		valueFromTag(ValueTag::Table, u64{1} << 40u), valueFromTag(static_cast<ValueTag>(8), 91)};
+	const std::array<int, 15> reads{0, 1, 0, 2, 0, 3, 0, 4, 0, 1, 0, 2, 0, 3, 0};
+	for (const int base : {0, 512}) for (const bool helper : {false, true}) {
+		std::array<DecodedInstruction, 28> decoded{};
+		std::array<NativeBlockInstruction, 28> source{};
+		for (int index = 0; index < 5; ++index) {
+			decoded[index].op = static_cast<u8>(OpCode::LOADK);
+			decoded[index].a = base + index; decoded[index].bx = index;
+		}
+		// The oldest definitions are repeatedly needed sooner than recent ones.
+		// Destinations remain observable even when they have no later reader.
+		for (size_t index = 0; index < reads.size(); ++index) {
+			auto& op = decoded[5 + index]; op.op = static_cast<u8>(OpCode::MOV);
+			op.a = base + 5 + index % 5; op.b = base + reads[index];
+		}
+		decoded[20].op = static_cast<u8>(OpCode::MOV); decoded[20].a = base; decoded[20].b = base;
+		decoded[21].op = static_cast<u8>(OpCode::LOADNIL); decoded[21].a = base; decoded[21].b = 0;
+		decoded[22].op = static_cast<u8>(OpCode::MOV); decoded[22].a = base + 10; decoded[22].b = base;
+		decoded[23].op = static_cast<u8>(OpCode::LOADNIL); decoded[23].a = base + 1; decoded[23].b = 3;
+		decoded[24].op = static_cast<u8>(OpCode::MOV); decoded[24].a = base + 11; decoded[24].b = base + 2;
+		decoded[25].op = static_cast<u8>(helper ? OpCode::MOD : OpCode::ADD);
+		decoded[25].a = base + 12; decoded[25].b = -6; decoded[25].c = -7;
+		decoded[26].op = static_cast<u8>(OpCode::MOV); decoded[26].a = base + 13; decoded[26].b = base;
+		decoded[27].op = static_cast<u8>(OpCode::JMP); decoded[27].bx = 0x1800u;
+		for (size_t index = 0; index < decoded.size(); ++index) {
+			decoded[index].width = base == 0 ? 1 : 2;
+			decoded[index].baseCycles = BASE_CYCLES[decoded[index].op];
+			source[index] = {&decoded[index], 0x1000u + static_cast<u32>(index) * decoded[index].width * INSTRUCTION_BYTES};
+		}
+		for (size_t rotation = 0; rotation < raw.size(); ++rotation) {
+			std::array<Value, 7> constants;
+			for (size_t index = 0; index < 5; ++index) constants[index] = raw[(index + rotation) % raw.size()];
+			constants[5] = valueNumber(17); constants[6] = valueNumber(3);
+			std::array<Value, 526> initial; initial.fill(raw[rotation]);
+			auto expected = initial;
+			int cycles = 0, top = -7;
+			size_t bytes = 0;
+			for (size_t prefix = 1; prefix <= source.size(); ++prefix) {
+				const auto& op = decoded[prefix - 1]; cycles += op.baseCycles;
+				switch (static_cast<OpCode>(op.op)) {
+					case OpCode::LOADK: expected[op.a] = constants[op.bx]; break;
+					case OpCode::MOV: expected[op.a] = expected[op.b]; break;
+					case OpCode::LOADNIL:
+						for (int index = op.a; index < op.a + op.b; ++index) expected[index] = valueNil();
+						break;
+					case OpCode::ADD: expected[op.a] = valueNumber(20); break;
+					case OpCode::MOD: expected[op.a] = valueNumber(2); break;
+					case OpCode::JMP: break;
+					default: throw std::runtime_error("unexpected pressure fixture instruction");
+				}
+				if (op.op == static_cast<u8>(OpCode::LOADNIL)) {
+					if (op.b != 0) top = std::max(top, static_cast<int>(op.a) + op.b);
+				} else if (op.op != static_cast<u8>(OpCode::JMP)) top = std::max(top, static_cast<int>(op.a) + 1);
+				auto block = NativeBlock::compile(std::span(source).first(prefix), constants.data(), bytes, memory, cpu.stringPool());
+				for (const int grant : {1, 67}) {
+					auto actual = initial;
+					NativeBlockRunState state{.registers = actual.data(), .constants = constants.data(),
+						.remainingCycles = grant, .registerTop = -7};
+					require(block->run(state) == &block->terminal && actual == expected
+						&& state.remainingCycles == grant - cycles && state.registerTop == top,
+						"next-access eviction preserves every raw WIDE register, alias, empty/ranged write and helper prefix");
+				}
+			}
+			require(bytes == 0, "pressure prefixes retire all generated allocations");
+		}
+	}
+}
+
 void dependentInstructionsWriteBackEveryLiveRegister() {
 	NativeBlockRunState nativeRunState;
 	const std::array pool{valueNumber(-0.0), valueNumber(0.25), valueNumber(-4294967296.75),
@@ -1043,6 +1114,7 @@ int main() {
 		wordProducerFactsPreserveRawValuesAndOverwrites();
 		movesAndLiteralsPreserveRawValues();
 		pinnedOperandsSurviveColdReadsAndDestinationReuse();
+		nextAccessPressurePreservesEveryRawGuestSlot();
 		dependentInstructionsWriteBackEveryLiveRegister();
 		truthinessAndConditionalExits();
 		sideExitHandlersRunAfterGeneratedFrameReturns();

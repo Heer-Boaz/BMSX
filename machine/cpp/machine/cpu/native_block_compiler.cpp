@@ -15,7 +15,7 @@ namespace bmsx {
 
 NativeBlockCompiler::NativeBlockCompiler(const Value* constants, std::span<const std::unique_ptr<NativeBlock>> blocks, Memory& memory, StringPool& strings,
 	std::span<const NativeBlockSource> sources)
-	: m_compiler(nullptr), m_blocks(blocks), m_entryPagePc(blocks.front()->firstPc & ~MAPPED_PAGE_BYTE_MASK),
+	: m_compiler(nullptr), m_blocks(blocks), m_sources(sources), m_entryPagePc(blocks.front()->firstPc & ~MAPPED_PAGE_BYTE_MASK),
 	  m_entries(blocks.size()),
 	  m_constants(constants), m_memory(memory), m_strings(strings) {
 	// Region admission supplies unique entries in one decoded page. Keep the
@@ -84,6 +84,7 @@ size_t NativeBlockCompiler::regionEntryIndex(u32 pc) const {
 
 void NativeBlockCompiler::beginBlock(size_t index, bool inheritRegisters) {
 	m_block = m_blocks[index].get();
+	m_remainingInstructions = m_sources[index].instructions;
 	m_hasTerminal = m_controlPrivilegeGuarded = false;
 	auto& entry = m_entries[index];
 	entry.inherited = inheritRegisters;
@@ -106,6 +107,7 @@ void NativeBlockCompiler::endBlock(bool fallthrough) {
 }
 
 void NativeBlockCompiler::emit(const DecodedInstruction& instruction, NativeBlockExitSite* slowExit, NativeBlockExitSite* takenExit) {
+	m_remainingInstructions = m_remainingInstructions.subspan(1);
 	const auto op = static_cast<OpCode>(instruction.op);
 	switch (op) {
 		case OpCode::MFC0:

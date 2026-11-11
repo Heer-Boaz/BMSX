@@ -60,6 +60,12 @@ private:
 	sljit_s32 destinationRegister(int guest, RegisterValueFact fact = {});
 	void writeRegister(int guest, sljit_s32 source = SLJIT_FR0, RegisterValueFact fact = {});
 	size_t regionEntryIndex(u32 pc) const;
+	struct RegisterAccess {
+		u8 scalarReads = 0;
+		int readFirst = 0, readEnd = 0;
+		int writeFirst = 0, writeEnd = 0;
+	};
+	static RegisterAccess registerAccess(const DecodedInstruction& instruction);
 	void planRegisterEntries(std::span<const NativeBlockSource> sources);
 	void emitInternalBranches();
 	void discardRegisterRange(int first, int end);
@@ -75,6 +81,8 @@ private:
 
 	sljit_compiler* m_compiler;
 	std::span<const std::unique_ptr<NativeBlock>> m_blocks;
+	std::span<const NativeBlockSource> m_sources;
+	std::span<const NativeBlockInstruction> m_remainingInstructions;
 	const u32 m_entryPagePc;
 	std::array<u16, MAPPED_PAGE_BYTE_SIZE / INSTRUCTION_BYTES> m_entryByWord;
 	struct CachedRegister {

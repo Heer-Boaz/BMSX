@@ -6,6 +6,28 @@
 
 namespace bmsx {
 
+NativeBlockCompiler::RegisterAccess NativeBlockCompiler::registerAccess(const DecodedInstruction& instruction) {
+	RegisterAccess access;
+	access.scalarReads = OPCODE_SCALAR_REGISTER_READS[instruction.op];
+	const auto op = static_cast<OpCode>(instruction.op);
+	if (op == OpCode::STORE_MEM_WORDS || op == OpCode::STORE_MEM_WORDS_D) {
+		// The address is consumed for alignment even when the data range is empty.
+		access.readFirst = instruction.a;
+		access.readEnd = instruction.a + instruction.c;
+	}
+	if (OPCODE_WRITES_REGISTER_A[instruction.op] && !nativeBlockEndsBlock(instruction.op, instruction.b)) {
+		access.writeFirst = instruction.a;
+		access.writeEnd = instruction.a + (op == OpCode::SELF ? 2 : 1);
+	}
+	if (op == OpCode::LOADNIL || (op == OpCode::VARARG && instruction.b != 0)) {
+		access.writeFirst = instruction.a;
+		access.writeEnd = instruction.a + instruction.b;
+	}
+	// Open VARARG may overwrite a suffix, but its runtime count can be zero.
+	// It cannot supply a definite definition or a future destination reuse.
+	return access;
+}
+
 void NativeBlockCompiler::planRegisterEntries(std::span<const NativeBlockSource> sources) {
 	// Analyze only candidate scalar bindings. A counted range can touch these
 	// bindings without allocating a matrix covering the entire WIDE register bank.
@@ -15,7 +37,6 @@ void NativeBlockCompiler::planRegisterEntries(std::span<const NativeBlockSource>
 	candidates.reserve(instructionCount * 3u);
 	for (const auto& source : sources) for (const auto& item : source.instructions) {
 		const auto& op = *item.decoded;
-		if ((op.op == static_cast<u8>(OpCode::STORE_MEM_WORDS) || op.op == static_cast<u8>(OpCode::STORE_MEM_WORDS_D)) && op.c == 0) continue;
 		const auto operands = OPCODE_SCALAR_REGISTER_READS[op.op];
 		if (operands & REGISTER_OPERAND_A) candidates.push_back(op.a);
 		if ((operands & REGISTER_OPERAND_B) && op.b >= 0) candidates.push_back(op.b);
@@ -54,21 +75,15 @@ void NativeBlockCompiler::planRegisterEntries(std::span<const NativeBlockSource>
 		};
 		for (const auto& item : sources[index].instructions) {
 			const auto& op = *item.decoded;
-			const auto kind = static_cast<OpCode>(op.op);
-			if ((kind == OpCode::STORE_MEM_WORDS || kind == OpCode::STORE_MEM_WORDS_D) && op.c == 0) continue;
-			const auto operands = OPCODE_SCALAR_REGISTER_READS[op.op];
-			if (operands & REGISTER_OPERAND_A) readScalar(op.a);
-			if (operands & REGISTER_OPERAND_B) readScalar(op.b);
-			if (operands & REGISTER_OPERAND_C) readScalar(op.c);
-			if (kind == OpCode::STORE_MEM_WORDS || kind == OpCode::STORE_MEM_WORDS_D) {
-				for (auto it = std::lower_bound(candidates.begin(), candidates.end(), op.a);
-					it != candidates.end() && *it < op.a + op.c; ++it) read(it - candidates.begin());
+			const auto access = registerAccess(op);
+			if (access.scalarReads & REGISTER_OPERAND_A) readScalar(op.a);
+			if (access.scalarReads & REGISTER_OPERAND_B) readScalar(op.b);
+			if (access.scalarReads & REGISTER_OPERAND_C) readScalar(op.c);
+			if (access.readFirst != access.readEnd) {
+				for (auto it = std::lower_bound(candidates.begin(), candidates.end(), access.readFirst);
+					it != candidates.end() && *it < access.readEnd; ++it) read(it - candidates.begin());
 			}
-			if (OPCODE_WRITES_REGISTER_A[op.op] && !nativeBlockEndsBlock(op.op, op.b)) defineRange(op.a, op.a + 1);
-			if (kind == OpCode::SELF) defineRange(op.a + 1, op.a + 2);
-			if (kind == OpCode::LOADNIL || (kind == OpCode::VARARG && op.b != 0)) defineRange(op.a, op.a + op.b);
-			// Open VARARG may overwrite any suffix binding, but its runtime count
-			// can be zero. It must not kill live-in values in the dataflow graph.
+			if (access.writeFirst != access.writeEnd) defineRange(access.writeFirst, access.writeEnd);
 		}
 		size_t successorCount = 0;
 		const auto addSuccessor = [&](const NativeBlockExitSite& exit) {
@@ -125,7 +140,7 @@ void NativeBlockCompiler::planRegisterEntries(std::span<const NativeBlockSource>
 		}
 		// Admission priority and physical placement are different decisions.
 		// Equal live sets use equal maps even if their first-use order differs;
-		// the saved ages still evict the furthest local input first.
+		// the saved ages break ties between equally distant accesses.
 		std::sort(registers.begin(), registers.begin() + count,
 			[](const auto& left, const auto& right) { return left.guest < right.guest; });
 	}
