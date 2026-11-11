@@ -103,10 +103,6 @@ void GlesFrameWorker::executeFrame(f64 hostDeltaMs) {
 		m_runtime.frameScheduler.synchronizeBackendService(m_runtime);
 		m_runtime.frameScheduler.run(m_runtime, 0.0);
 	}
-	// The caller may now observe, serialize, restore or destroy the machine.
-	// No transient backend dependency survives this ownership hand-off.
-	waitConsumed(m_writeSequence);
-	gpu.completePublishedCommands();
 }
 
 bool GlesFrameWorker::submitRumble(void* context, unsigned port, u16 strength) {
@@ -136,6 +132,15 @@ void GlesFrameWorker::workerMain() {
 			executeFrame(delta);
 		} catch (...) {
 			error = std::current_exception();
+		}
+		// The caller may observe, capture or destroy the machine even after a
+		// producer exception. Its already published work still has to finish.
+		// A failed consumer poisons the stream and cannot acknowledge VRAM.
+		try {
+			waitConsumed(m_writeSequence);
+			m_runtime.machine.gxGpu.completePublishedCommands();
+		} catch (...) {
+			if (!error) error = std::current_exception();
 		}
 		m_runtime.machine.gxGpu.setBackendSubmissionCommandLimit(GX_GPU_COMMAND_CAPACITY);
 		m_input.setRumbleSubmission({});

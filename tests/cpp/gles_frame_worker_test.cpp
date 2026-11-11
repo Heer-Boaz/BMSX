@@ -305,6 +305,55 @@ Result runStream(const test::Blua32TestRom& rom, bool threaded, GxGpuDrawTargetM
 	return result;
 }
 
+void testProducerFailure(const test::Blua32TestRom& rom) {
+	struct ProducerFailure {};
+	Observation observed;
+	observed.delayFirstDraw = true;
+	observation = &observed;
+	LibretroInput input([]() -> bool { return false; });
+	Runtime runtime({rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
+	runtime.boot();
+	auto ownedBackend = std::make_unique<OpenGLES2Backend>(256, 256, false, PSX_MACHINE_SPEC.gxGpuVramBytes, GxGpuDrawTargetMode::FullVram);
+	auto& backend = *ownedBackend;
+	backend.setContextCallbacks([]() -> uintptr_t { return 0; }, eglGetProcAddress);
+	backend.onContextReset();
+	TestVideoOutput output(256, 256);
+	VideoPresenter presenter(output, std::move(ownedBackend), 256, 256);
+	presenter.installRenderPipeline(std::make_unique<RenderPassLibrary>(&backend, &presenter));
+	presenter.initializeDefaultTextures();
+	runtime.machine.gxGpu.setOperationObserver({[](void* context, const GxGpuCommandBuffer&, size_t, i64) {
+		auto& value = *static_cast<Observation*>(context);
+		unsigned count;
+		{
+			std::lock_guard lock(value.mutex);
+			count = ++value.emitted;
+		}
+		value.ready.notify_one();
+		// Two prefixes are already published, while the frontend's first draw
+		// is waiting. A producer exception must still join both publications.
+		if (count == value.overlapCommandCount) throw ProducerFailure{};
+	}, &observed});
+	{
+		GlesFrameWorker worker(runtime, backend, input);
+		bool receivedProducerFailure = false;
+		try { worker.run(1000.0 / 60.0); }
+		catch (const ProducerFailure&) { receivedProducerFailure = true; }
+		require(receivedProducerFailure && observed.overlapped, "the original producer error returns after overlapping published work");
+		// GLES readback packs two 16-bit pixels per RGBA8 output word.
+		std::array<u8, 4> pixel{};
+		backend.readGxGpuVram({64u, 6u, 1u, 1u, 1u}, pixel.data());
+		require(readLE16(pixel.data()) == 0x3bb5u, "the second published prefix reaches VRAM before the producer error returns");
+		runtime.machine.gxGpu.beginSupervisorQuiesce();
+		require(!runtime.machine.gxGpu.backendSubmissionFencePending(),
+			"a producer error cannot leave an already consumed publication holding the supervisor fence");
+	}
+	observation = nullptr;
+	presenter.releaseRenderPipeline();
+	presenter.clearTextures();
+	backend.onContextDestroy();
+	std::cout << "GX-WORKER:PASS producer exception completion barrier\n";
+}
+
 
 std::string frontendSystemDirectory;
 retro_hw_render_callback frontendHardware{};
@@ -438,6 +487,7 @@ int main() {
 	EGLContext context = eglCreateContext(display, config, EGL_NO_CONTEXT, contextAttributes);
 	require(eglMakeCurrent(display, surface, surface, context), "make context current");
 	const auto rom = makeStream();
+	testProducerFailure(rom);
 	const auto expected = runStream(rom, false, GxGpuDrawTargetMode::FullVram);
 	bool visibleColor = false;
 	for (size_t pixel = 0; pixel < expected.scanout.size(); pixel += 4u)
