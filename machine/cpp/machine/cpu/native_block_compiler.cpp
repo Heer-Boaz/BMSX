@@ -1,5 +1,7 @@
 #include "machine/cpu/native_block_compiler.h"
 
+#include "common/compiler.h"
+
 #include <algorithm>
 #include <new>
 
@@ -266,7 +268,7 @@ void NativeBlockCompiler::emit(const DecodedInstruction& instruction, NativeBloc
 			m_hasTerminal = true;
 			return;
 		default:
-			__builtin_unreachable();
+			BMSX_UNREACHABLE();
 	}
 	writeRegister(instruction.a);
 }

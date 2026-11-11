@@ -1,5 +1,6 @@
 #include "common/endian.h"
 #include "machine/cpu/cpu.h"
+#include "common/compiler.h"
 #include "machine/cpu/native_block.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/irq/controller.h"
@@ -32,7 +33,7 @@ Value scalarLoad(Memory& memory, MemoryAccessKind kind, u32 address) {
 		case MemoryAccessKind::F32LE: return valueNumber(memory.readMappedF32LE(address));
 		case MemoryAccessKind::F64LE: return valueNumber(memory.readMappedF64LE(address));
 	}
-	__builtin_unreachable();
+	BMSX_UNREACHABLE();
 }
 
 struct CpuMachine {

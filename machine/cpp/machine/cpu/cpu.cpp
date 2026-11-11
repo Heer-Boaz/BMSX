@@ -1,4 +1,6 @@
 #include "machine/cpu/cpu.h"
+
+#include "common/compiler.h"
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 #include "machine/cpu/native_execution.h"
 #endif
@@ -1445,7 +1447,7 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 				writeValue(offset + SNAP_UPVALUE_VALUE, upvalue->open ? upvalue->frame->registers[upvalue->index] : upvalue->value);
 				break;
 			}
-			default: __builtin_unreachable();
+			default: BMSX_UNREACHABLE();
 		}
 		snapshot.setObjectWord(id, offset);
 	}

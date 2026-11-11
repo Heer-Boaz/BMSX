@@ -20,6 +20,7 @@
 #include <span>
 
 #include "audio_output.h"
+#include "common/compiler.h"
 #include "bmsx_libretro.h"
 #include "content.h"
 #include "host_frame.h"
@@ -713,7 +714,7 @@ static bool isHardwareBackendActive() {
 		case HardwareContextLifecycle::Fatal:
 			return false;
 	}
-	__builtin_unreachable();
+	BMSX_UNREACHABLE();
 }
 
 static bool offerGxUploadProfileInterface(retro_environment_t environment) {

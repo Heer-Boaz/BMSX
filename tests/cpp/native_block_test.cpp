@@ -1,4 +1,5 @@
 #include "machine/cpu/native_block.h"
+#include "common/compiler.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/cpu/execution_image.h"
@@ -618,7 +619,7 @@ Value evaluate(OpCode op, Value left, Value right) {
 		case OpCode::SHL: return valueNumber(static_cast<i32>(toU32(left) << (toU32(right) & 31u)));
 		case OpCode::SHR: return valueNumber(toI32(left) >> (toU32(right) & 31u));
 		case OpCode::BNOT: return valueNumber(static_cast<i32>(~toU32(left)));
-		default: __builtin_unreachable();
+		default: BMSX_UNREACHABLE();
 	}
 }
 

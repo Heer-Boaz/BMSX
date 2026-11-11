@@ -15,7 +15,7 @@ inline void CPU::executeMemoryLoad(CallFrame& frame, int destination, MemoryAcce
 		case MemoryAccessKind::U32LE: value = valueNumber(m_memory.readMappedU32LE(address)); break;
 		case MemoryAccessKind::F32LE: value = valueNumber(m_memory.readMappedF32LE(address)); break;
 		case MemoryAccessKind::F64LE: value = valueNumber(m_memory.readMappedF64LE(address)); break;
-		default: __builtin_unreachable();
+		default: BMSX_UNREACHABLE();
 	}
 	if (m_memory.readBusFaultSequence() != faultSequence) {
 		enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);

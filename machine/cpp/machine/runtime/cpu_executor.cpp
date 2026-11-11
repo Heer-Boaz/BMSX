@@ -1,5 +1,7 @@
 #include "machine/runtime/cpu_executor.h"
 
+#include "common/compiler.h"
+
 #include "machine/runtime/runtime.h"
 #include "machine/scheduler/device.h"
 
@@ -110,7 +112,7 @@ InstructionStepResult CpuExecutionState::runInstruction(Runtime& runtime, FrameS
 		case CpuSliceResult::Halted:
 			return InstructionStepResult::Blocked;
 	}
-	__builtin_unreachable();
+	BMSX_UNREACHABLE();
 }
 
 CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(

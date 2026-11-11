@@ -1,4 +1,6 @@
 #include "machine/memory/memory.h"
+
+#include "common/compiler.h"
 #include "common/endian.h"
 #include "machine/devices/cartridge/controller.h"
 #include "spec/bmsx/memory_map.h"
@@ -824,7 +826,7 @@ u32 Memory::mappedRegionWordSpan(u32 addr, u32 wordLimit, MemoryRegionKind regio
 							: addr < CART_BUS_END ? CART_BUS_END : (u64{1} << ADDRESS_BITS);
 		break;
 	default:
-		__builtin_unreachable();
+		BMSX_UNREACHABLE();
 	}
 	const u64 regionWords = (boundary - addr + (IO_WORD_SIZE - 1u)) / IO_WORD_SIZE;
 	return regionWords < wordLimit ? static_cast<u32>(regionWords) : wordLimit;

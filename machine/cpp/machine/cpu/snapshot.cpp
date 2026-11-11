@@ -1,4 +1,6 @@
 #include "machine/cpu/snapshot.h"
+
+#include "common/compiler.h"
 #include "machine/cpu/table.h"
 #include "machine/cpu/closure.h"
 #include "machine/cpu/thread.h"
@@ -31,7 +33,7 @@ Value CpuSnapshotReader::readValue(u32 offset) const {
 		case CpuSnapshotValueTag::Thread: return valueThread(static_cast<Thread*>(m_objects[snapshot.word(offset + 1)]));
 		case CpuSnapshotValueTag::Closure: return valueClosure(static_cast<Closure*>(m_objects[snapshot.word(offset + 1)]));
 	}
-	__builtin_unreachable();
+	BMSX_UNREACHABLE();
 }
 
 } // namespace bmsx

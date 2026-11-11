@@ -1,5 +1,7 @@
 #include "machine/devices/gx/gpu.h"
 
+#include "common/compiler.h"
+
 #include "spec/bmsx/io.h"
 #include "spec/gx/gp1.h"
 #include "spec/gx/pcrtc.h"
@@ -685,7 +687,7 @@ bool GxGpu::acceptGp0Word(u32 word) {
 		}
 		return true;
 	}
-	__builtin_unreachable();
+	BMSX_UNREACHABLE();
 }
 
 void GxGpu::processGp0Pipeline(i64 commandStartCycle) {

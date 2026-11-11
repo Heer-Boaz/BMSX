@@ -1,5 +1,7 @@
 #include "machine/cpu/value.h"
 
+#include "common/compiler.h"
+
 #include <cmath>
 
 #include "common/number_format.h"
@@ -18,7 +20,7 @@ void appendValueString(std::string& out, Value value, const StringPool& stringPo
 			case ValueTag::Thread: out.append("thread"); return;
 			case ValueTag::Closure:
 			case ValueTag::BuiltinFunction: out.append("function"); return;
-			default: __builtin_unreachable();
+			default: BMSX_UNREACHABLE();
 		}
 	}
 	const double number = asNumber(value);

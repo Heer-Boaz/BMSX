@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/compiler.h"
+
 #include <array>
 #include <cstddef>
 #include <memory>
@@ -51,7 +53,7 @@ public:
 	}
 
 private:
-	[[gnu::noinline]] void grow() {
+	BMSX_NOINLINE void grow() {
 		auto* slab = new Slab;
 		slab->next = m_slabs;
 		m_slabs = slab;

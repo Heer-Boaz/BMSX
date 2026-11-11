@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/compiler.h"
+
 #include <algorithm>
 #include <cstddef>
 #include <memory>
@@ -111,9 +113,7 @@ public:
 private:
 	// Keep mask consumption and virtual invalidation out of ordinary RAM stores,
 	// including under LTO: most data pages never contain decoded instructions.
-#if defined(__GNUC__) || defined(__clang__)
-	[[gnu::noinline]]
-#endif
+	BMSX_NOINLINE
 	void invalidateWatchedWrite(
 		size_t offset, size_t byteLength, u64 keyBase, MappedPageInvalidator* invalidator,
 		size_t firstPage, size_t lastPage

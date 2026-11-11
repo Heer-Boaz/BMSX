@@ -1,5 +1,7 @@
 #include "machine/devices/dma/controller.h"
 
+#include "common/compiler.h"
+
 #include "machine/cpu/cpu.h"
 #include "machine/devices/irq/controller.h"
 #include "spec/bmsx/memory_map.h"
@@ -353,7 +355,7 @@ i64 DmaController::regionSpanCycles(MemoryRegionKind region, u32 wordCount) cons
 	case MemoryRegionKind::Other:
 		return wordCount;
 	}
-	__builtin_unreachable();
+	BMSX_UNREACHABLE();
 }
 
 u32 DmaController::availableWords(const DmaChannelState& registers) const {
