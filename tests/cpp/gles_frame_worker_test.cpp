@@ -317,18 +317,26 @@ Result runStream(const test::Blua32TestRom& rom, bool threaded, GxGpuDrawTargetM
 	if (lifecycle) {
 		const auto saved = captureRuntimeSaveState(runtime);
 		auto& gles = static_cast<OpenGLES2Backend&>(presenter.backend());
+		const auto committedSequence = presenter.gameFrameSequence();
+		presentation.beginHostFrame();
+		require(runtime.isDrawPending() && worker->run(1.0, 0.0),
+			"a zero-grant active entry publishes its partial frame through the queue");
+		require(presenter.presentationMode == VideoPresenter::PresentationMode::Partial && !presenter.commitPresentationFrame
+			&& presenter.gameFrameSequence() == committedSequence && presenter.captureGameFrame().pixels == result.scanout,
+			"a queued partial frame does not replace completed history");
+		runtime.suspendExecution();
+		presentation.beginHostFrame();
+		presentation.requestHeldPresentation();
+		require(worker->run(1.0, 0.0), "a suspended machine publishes an explicit held repaint through the queue");
+		require(presenter.presentationMode == VideoPresenter::PresentationMode::Completed && !presenter.commitPresentationFrame
+			&& presenter.gameFrameSequence() == committedSequence && presenter.captureGameFrame().pixels == result.scanout
+			&& runtime.machine.scheduler.nowCycles() == result.cycles,
+			"a queued held repaint preserves completed history and does not advance the machine");
+		applyRuntimeSaveState(runtime, saved);
 		presenter.releaseRenderPipeline(); presenter.clearTextures(); gles.onContextDestroy();
 		gles.onContextReset();
 		presenter.installRenderPipeline(std::make_unique<RenderPassLibrary>(&gles, &presenter));
 		presenter.initializeDefaultTextures();
-	presenter.crt_postprocessing_enabled = false;
-	Font font;
-	presenter.default_font = &font;
-	RenderPresentationState presentation;
-	OnScreenKeyboard keyboard(input, NATIVE_KEYBOARD_PAGES);
-	HostOnScreenKeyboard keyboardView(keyboard);
-	HostKeyboardInteraction keyboardInteraction(keyboard, keyboardView);
-	HostOverlayMenu menu(input, keyboardInteraction);
 		mutateFrontendGlState();
 		gles.invalidateContextState();
 		worker->run(1.0, 0.0);
