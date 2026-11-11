@@ -219,6 +219,11 @@ void testBusyCpuBudgetAtVblank() {
 	require(scheduler.lastTickBudgetGranted - scheduler.lastTickCpuUsedCycles == scheduler.lastTickBudgetRemaining,
 		"VBlank reads the consumed CPU budget before carrying the remainder");
 	require(scheduler.lastTickCpuUsedCycles == runtime.machine.scheduler.nowCycles(), "busy CPU cycles match machine time");
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	require(runtime.machine.scheduler.diagnosticCpuSliceCount > 0
+		&& runtime.machine.scheduler.diagnosticCpuSliceConsumedCycles == scheduler.lastTickCpuUsedCycles,
+		"CPU-slice diagnostics account for the busy loop's execution");
+#endif
 	require(scheduler.captureState().carriedCycleBudget == scheduler.lastTickBudgetRemaining, "only unspent cycles carry");
 
 	const auto before = runtime.machine.scheduler.nowCycles();
@@ -267,8 +272,18 @@ void testDmaSharedBusStopsCpu() {
 	runtime.frameScheduler.runCyclesToNextLogicalTick(runtime, 1);
 	require(memory.readMappedU32LE(target) == 0x12345678 && !dma.cpuBusHeld(), "DMA publishes data then releases the bus");
 	require(cpu.readFramePc(depth) == pc, "no instruction is charged to the final DMA cycle");
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	require(runtime.machine.scheduler.diagnosticCpuSliceCount == 0
+		&& runtime.machine.scheduler.diagnosticCpuSliceConsumedCycles == 0,
+		"CPU-slice diagnostics exclude all 514 DMA-held cycles");
+#endif
 	runtime.frameScheduler.runCyclesToNextLogicalTick(runtime, 1);
 	require(cpu.readFramePc(depth) != pc, "CPU instruction execution resumes after the burst");
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	require(runtime.machine.scheduler.diagnosticCpuSliceCount == 1
+		&& runtime.machine.scheduler.diagnosticCpuSliceConsumedCycles == 1,
+		"CPU-slice diagnostics count only the resumed instruction");
+#endif
 }
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -365,6 +380,11 @@ void testDeviceSettlementRetainsCpuStop() {
 	require(cpu.activeThread() == thread && thread->frameDepth == depth && thread->currentFrame->pc == pc && thread->stackTop == stackTop,
 		"device settlement neither executes the stopped CPU nor enters its pending interrupt");
 	require(scheduler.lastTickCpuUsedCycles == 0, "device cycles are not CPU execution");
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	require(runtime.machine.scheduler.diagnosticCpuSliceCount == 0
+		&& runtime.machine.scheduler.diagnosticCpuSliceConsumedCycles == 0,
+		"device settlement does not manufacture CPU-slice consumption");
+#endif
 	require(scheduler.lastTickBudgetGranted - scheduler.lastTickBudgetRemaining == runtime.machine.scheduler.nowCycles(), "only unspent device budget carries");
 }
 

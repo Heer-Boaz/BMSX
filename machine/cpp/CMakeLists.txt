@@ -19,6 +19,7 @@ option(BMSX_BUILD_EGL_TESTS "Build headless EGL renderer conformance tests (requ
 option(BMSX_ENABLE_LTO "Enable Link Time Optimization" OFF)
 option(BMSX_ENABLE_NATIVE_BLOCKS "Generate native CPU blocks with precise side exits" ON)
 option(BMSX_NATIVE_COMPILER_WORKER "Compile native regions on a bounded background worker" OFF)
+option(BMSX_DIAGNOSTIC_CPU_SLICES "Count scheduler CPU-run consumption in diagnostic builds" OFF)
 option(BMSX_ENABLE_ZLIB "Enable PNG screenshot output" ON)
 set(BMSX_ENABLE_GLES2_DEFAULT ON)
 # Previously GLES2 was disabled by default on Windows; enable by default on all platforms
@@ -349,6 +350,10 @@ target_include_directories(bmsx_core PUBLIC
 )
 
 target_link_libraries(bmsx_core PUBLIC bmsx_binary_codec)
+
+if(BMSX_DIAGNOSTIC_CPU_SLICES)
+	target_compile_definitions(bmsx_core PUBLIC BMSX_DIAGNOSTIC_CPU_SLICES=1)
+endif()
 
 if(BMSX_ENABLE_NATIVE_BLOCKS)
 	add_library(bmsx_sljit STATIC ../../third_party/sljit/sljit_src/sljitLir.c)

@@ -40,7 +40,16 @@ i64 DeviceScheduler::currentNowCycles() const {
 RunResult DeviceScheduler::runCpuSlice(int targetDepth, int sliceBudget, const Thread* targetThread) {
 	beginCpuSlice(sliceBudget);
 	ScopeExit activeSlice([this]() { endCpuSlice(); });
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	// Same admission/consumption boundary as CpuTopologyDiagnostic::scheduler;
+	// this bounded probe needs the cumulative count/sum, not its histograms.
+	const auto result = m_cpu.runUntilDepth(targetDepth, sliceBudget, targetThread);
+	++diagnosticCpuSliceCount;
+	diagnosticCpuSliceConsumedCycles += sliceBudget - m_cpu.instructionBudgetRemaining;
+	return result;
+#else
 	return m_cpu.runUntilDepth(targetDepth, sliceBudget, targetThread);
+#endif
 }
 
 void DeviceScheduler::advanceTo(i64 nowCycles) {

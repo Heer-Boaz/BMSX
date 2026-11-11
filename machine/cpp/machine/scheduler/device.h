@@ -47,6 +47,13 @@ public:
 	void scheduleDeviceService(uint8_t deviceKind, i64 deadlineCycles);
 	void cancelDeviceService(uint8_t deviceKind);
 
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	// Host-only cumulative diagnostics. Unlike the frame CPU budget, these
+	// include only CPU::runUntilDepth consumption, not DMA/MMIO wait loops.
+	u64 diagnosticCpuSliceCount = 0;
+	i64 diagnosticCpuSliceConsumedCycles = 0;
+#endif
+
 private:
 	static uint32_t nextTimerGeneration(uint32_t value);
 

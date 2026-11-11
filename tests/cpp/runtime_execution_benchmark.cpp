@@ -10,6 +10,7 @@
 #include "rompack/image.h"
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/model.h"
+#include "support/runtime_execution_step_profile.h"
 
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -63,13 +64,23 @@ struct CommandEvidence {
 
 int main(int argc, char** argv) {
 	try {
-		if (argc != 9 && argc != 10) throw std::runtime_error("Usage: runtime_execution_benchmark BIOS CART INPUT_WORDS commands|software|gles2 WARMUP FRAMES STATE TRACE_PREFIX_OR_DASH [--profile-compilation]");
-		const bool profileCompilation = argc == 10;
-		if (profileCompilation && std::string_view(argv[9]) != "--profile-compilation") throw std::runtime_error("unknown profiling option");
+		if (argc < 9) throw std::runtime_error("Usage: runtime_execution_benchmark BIOS CART INPUT_WORDS commands|software|gles2 WARMUP FRAMES STATE TRACE_PREFIX_OR_DASH [--profile-compilation] [--profile-steps JSONL]");
+		bool profileCompilation = false;
+		const char* stepProfilePath = nullptr;
+		for (int argument = 9; argument < argc; ++argument) {
+			if (std::string_view(argv[argument]) == "--profile-compilation") profileCompilation = true;
+			else if (std::string_view(argv[argument]) == "--profile-steps" && argument + 1 < argc) {
+				stepProfilePath = argv[++argument];
+				profileCompilation = true;
+			} else throw std::runtime_error("unknown profiling option");
+		}
 		const std::string renderer = argv[4];
 		if (renderer != "commands" && renderer != "software" && renderer != "gles2") throw std::runtime_error("unknown renderer");
 		const int warmup = std::stoi(argv[5]), frames = std::stoi(argv[6]);
 		if (warmup < 0 || frames <= warmup) throw std::runtime_error("require 0 <= warmup < frames");
+		// Allocate once before boot/measurement; one record per requested host step.
+		// No output or vector growth occurs while the guest is running.
+		std::vector<test::RuntimeStepRecord> stepRecords(stepProfilePath ? static_cast<size_t>(frames) : 0u);
 		MmapFile systemFile, cartFile, inputFile;
 		if (!systemFile.open(argv[1]) || !cartFile.open(argv[2]) || !inputFile.open(argv[3])) throw std::runtime_error("cannot map input files");
 		if (inputFile.size() != static_cast<size_t>(frames) * INPUT_CONTROLLER_SNAPSHOT_WORD_COUNT * sizeof(u32)) throw std::runtime_error("input snapshot count differs from requested host frames");
@@ -139,6 +150,13 @@ int main(int argc, char** argv) {
 				static_cast<size_t>(frame) * INPUT_CONTROLLER_SNAPSHOT_WORD_COUNT);
 			presentation.beginHostFrame();
 			const auto previousTick = runtime.frameScheduler.lastTickSequence;
+			test::RuntimeStepRecord* step = stepProfilePath ? &stepRecords[frame] : nullptr;
+			if (step) {
+				step->before = test::RuntimeStepBoundary::capture(runtime);
+				step->commands = commands;
+				step->commandWords = words;
+				step->presentations = presentations;
+			}
 			const auto start = Clock::now();
 			double frameSchedulerMs = 0, frameRenderMs = 0;
 			double remainingDelta = deltaMs;
@@ -184,6 +202,15 @@ int main(int argc, char** argv) {
 			}
 			runtime.machine.audioController.synchronizeOutput().clear();
 			const double elapsed = std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+			if (step) {
+				step->after = test::RuntimeStepBoundary::capture(runtime);
+				step->commands = commands - step->commands;
+				step->commandWords = words - step->commandWords;
+				step->presentations = presentations - step->presentations;
+				step->schedulerMs = frameSchedulerMs;
+				step->renderMs = frameRenderMs;
+				step->totalMs = elapsed;
+			}
 			if (frame >= warmup) {
 				schedulerMs += frameSchedulerMs;
 				renderMs += frameRenderMs;
@@ -198,6 +225,7 @@ int main(int argc, char** argv) {
 		std::ofstream stateFile(argv[7], std::ios::binary);
 		stateFile.write(reinterpret_cast<const char*>(state.data()), state.size());
 		if (!stateFile) throw std::runtime_error("cannot write state evidence");
+		if (stepProfilePath) test::writeRuntimeStepRecords(stepProfilePath, stepRecords);
 		if (trace) {
 			std::ofstream traceFile(std::string(argv[8]) + ".commands", std::ios::binary);
 			traceFile.write(reinterpret_cast<const char*>(evidence.words.data()), evidence.words.size() * sizeof(u32));
