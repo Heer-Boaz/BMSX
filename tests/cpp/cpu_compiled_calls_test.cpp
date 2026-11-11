@@ -57,6 +57,32 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	}
 }
 
+void ownedValueStack() {
+	Thread thread;
+	require(thread.stackCapacity == 8, "a thread owns the initial eight Value slots");
+	for (size_t index = 0; index < thread.stackCapacity; ++index)
+		require(thread.stack[index] == valueNil(), "new stack slots contain the guest nil representation");
+	const Value words[]{valueNumber(-0.0), valueBool(true), valueNil(), UINT64_C(0x7ff800000000002a)};
+	std::copy(std::begin(words), std::end(words), thread.stack);
+	thread.stack[7] = valueNumber(63);
+	thread.stackTop = 4;
+	thread.resizeStack(32);
+	require(thread.stackCapacity == 32 && thread.stackTop == 4, "capacity growth does not activate any stack slots");
+	for (size_t index = 0; index < std::size(words); ++index)
+		require(thread.stack[index] == words[index], "stack relocation preserves raw Value bits");
+	require(thread.stack[7] == valueNumber(63), "relocation preserves allocated argument storage beyond the active prefix");
+	for (size_t index = 8; index < thread.stackCapacity; ++index)
+		require(thread.stack[index] == valueNil(), "growth initializes only the added allocation");
+	auto* storage = thread.stack;
+	thread.resizeStack(32);
+	require(thread.stack == storage, "unchanged capacity retains the existing allocation");
+	thread.stackTop = 0;
+	std::fill_n(thread.stack, thread.stackCapacity, valueNil());
+	thread.resizeStack(8);
+	for (size_t index = 0; index < thread.stackCapacity; ++index)
+		require(thread.stack[index] == valueNil(), "a cleared root can restore a smaller empty backing");
+}
+
 void reusableFrameChain() {
 	Thread thread;
 	auto* root = thread.acquireFrame();
@@ -260,7 +286,7 @@ void crossPageCalls(bool open, u32 recordOffset) {
 	}
 	requireParity(native, scalar);
 	for (auto* machine : {&native, &scalar}) {
-		const auto capacity = machine->cpu.activeThread()->stack.size();
+		const auto capacity = machine->cpu.activeThread()->stackCapacity;
 		const auto* caller = machine->cpu.activeThread()->currentFrame;
 		const auto* spare = caller->next;
 		require(spare != nullptr, "warm calls have a reusable callee node");
@@ -270,7 +296,7 @@ void crossPageCalls(bool open, u32 recordOffset) {
 		const std::string garbage(heap.nextCollectionBytes - heap.trackedBytes - 1, 'g');
 		machine->cpu.stringPool().intern(garbage);
 		require(machine->cpu.runUntilDepth(0, 9) == RunResult::Yielded && machine->cpu.activeThread()->frameDepth == 1
-			&& machine->cpu.activeThread()->stack.size() > capacity && machine->cpu.readFrameRegister(0, 0) == valueNumber(7),
+			&& machine->cpu.activeThread()->stackCapacity > capacity && machine->cpu.readFrameRegister(0, 0) == valueNumber(7),
 			"a hot call relocates the stack before a hot callee and return use the new register bases");
 		require(!machine->cpu.stringPool().find(garbage), "callee stack growth actually collects unrooted pressure data");
 		require(machine->cpu.activeThread()->currentFrame == caller && caller->next == spare,
@@ -299,6 +325,7 @@ void crossPageCalls(bool open, u32 recordOffset) {
 
 int main() {
 	try {
+		ownedValueStack();
 		reusableFrameChain();
 		protectedNestedFrames();
 		returnGrowthCollection();

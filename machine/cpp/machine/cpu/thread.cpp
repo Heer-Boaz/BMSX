@@ -1,6 +1,10 @@
 #include "machine/cpu/thread.h"
 
+#include <algorithm>
+
 namespace bmsx {
+
+Thread::Thread() { resizeStack(8); }
 
 Thread::~Thread() {
 	while (firstFrame) {
@@ -8,6 +12,18 @@ Thread::~Thread() {
 		delete firstFrame;
 		firstFrame = next;
 	}
+	delete[] stack;
+}
+
+void Thread::resizeStack(size_t capacity) {
+	if (capacity == stackCapacity) return;
+	auto* next = new Value[capacity];
+	const size_t retained = std::min(stackCapacity, capacity);
+	std::copy_n(stack, retained, next);
+	std::fill(next + retained, next + capacity, valueNil());
+	delete[] stack;
+	stack = next;
+	stackCapacity = capacity;
 }
 
 CallFrame* Thread::acquireFrame() {

@@ -247,7 +247,7 @@ void GcHeap::clearWeakTables() {
 void GcHeap::destroyObject(GCObject* object) {
 	switch (object->type) {
 		case ObjType::Thread:
-			m_luaHeap.release(THREAD_HEAP_BYTES + static_cast<Thread*>(object)->stack.size() * THREAD_STACK_SLOT_BYTES);
+			m_luaHeap.release(THREAD_HEAP_BYTES + static_cast<Thread*>(object)->stackCapacity * THREAD_STACK_SLOT_BYTES);
 			delete static_cast<Thread*>(object);
 			break;
 		case ObjType::Table:
@@ -273,7 +273,7 @@ size_t GcHeap::sweep() {
 		GCObject* object = *current;
 		if (object->marked) {
 			switch (object->type) {
-				case ObjType::Thread: liveBytes += THREAD_HEAP_BYTES + static_cast<Thread*>(object)->stack.size() * THREAD_STACK_SLOT_BYTES; break;
+				case ObjType::Thread: liveBytes += THREAD_HEAP_BYTES + static_cast<Thread*>(object)->stackCapacity * THREAD_STACK_SLOT_BYTES; break;
 				case ObjType::Table: liveBytes += static_cast<Table*>(object)->trackedHeapBytes(); break;
 				case ObjType::Closure: liveBytes += trackedClosureBytes(*static_cast<Closure*>(object)); break;
 				case ObjType::Upvalue: liveBytes += kUpvalueHeapBytes; break;
@@ -1353,7 +1353,7 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 		saved.resumerRef = thread->resumer == nullptr ? -1 : static_cast<int>(captureObject(thread->resumer));
 		saved.callBase = thread->callBase;
 		saved.returnCount = thread->returnCount;
-		saved.stackCapacity = thread->stack.size();
+		saved.stackCapacity = thread->stackCapacity;
 		saved.error = captureValueState(thread->error);
 		const u32 index = static_cast<u32>(state.threads.size());
 		state.threads.push_back(std::move(saved));
@@ -1504,7 +1504,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 				const auto& saved = state.threads[snapshot.word(offset + SNAP_THREAD_INDEX)];
 				thread->marked = true;
 				thread->hashId = snapshot.word(offset + SNAP_THREAD_HASH_ID);
-				thread->stack.assign(saved.stackCapacity, valueNil());
+				thread->resizeStack(saved.stackCapacity);
 				thread->stackTop = 0;
 				while (thread->currentFrame) thread->leaveFrame();
 				thread->status = saved.status;
@@ -1640,7 +1640,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 			frame->stackCapacity = static_cast<int>(targetCapacity);
 			m_activeThread->stackTop = frame->stackBase + frame->stackCapacity;
 			ensureStackSize(static_cast<size_t>(m_activeThread->stackTop));
-			frame->registers = m_activeThread->stack.data() + frame->stackBase;
+			frame->registers = m_activeThread->stack + frame->stackBase;
 			for (int slot = 0; slot < frame->stackCapacity; ++slot) {
 				frame->registers[static_cast<size_t>(slot)] = valueNil();
 			}
@@ -1950,7 +1950,7 @@ void CPU::closeThread(Thread& thread) {
 	}
 	thread.protectedCallDepth = 0;
 	thread.protectedCallContinuations.clear();
-	std::fill(thread.stack.begin(), thread.stack.end(), valueNil());
+	std::fill_n(thread.stack, thread.stackCapacity, valueNil());
 	thread.stackTop = 0;
 	thread.entry = nullptr;
 	thread.status = ThreadStatus::Dead;
@@ -3227,7 +3227,7 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 	frame->stackBase = stackBase;
 	frame->stackCapacity = static_cast<int>(targetCapacity);
 	m_activeThread->stackTop = stackTop;
-	frame->registers = m_activeThread->stack.data() + frame->stackBase;
+	frame->registers = m_activeThread->stack + frame->stackBase;
 	frame->top = static_cast<int>(functionRecord.numParams);
 	std::fill_n(frame->registers, targetCapacity, valueNil());
 
@@ -3278,8 +3278,8 @@ CallFrame* CPU::pushLatchedFrame(
 	bool returnToCompletionLatch
 ) {
 	const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
-	const uintptr_t stackBegin = reinterpret_cast<uintptr_t>(m_activeThread->stack.data());
-	const uintptr_t stackEnd = stackBegin + m_activeThread->stack.size() * sizeof(Value);
+	const uintptr_t stackBegin = reinterpret_cast<uintptr_t>(m_activeThread->stack);
+	const uintptr_t stackEnd = stackBegin + m_activeThread->stackCapacity * sizeof(Value);
 	const uintptr_t argsBegin = reinterpret_cast<uintptr_t>(args);
 	const uintptr_t argsEnd = argsBegin + argCount * sizeof(Value);
 	const bool argsInStack = argCount > 0 && stackBegin != 0 && argsBegin >= stackBegin && argsEnd <= stackEnd;
@@ -3306,10 +3306,10 @@ CallFrame* CPU::pushLatchedFrame(
 	frame->stackBase = stackBase;
 	frame->stackCapacity = static_cast<int>(targetCapacity);
 	m_activeThread->stackTop = stackTop;
-	frame->registers = m_activeThread->stack.data() + frame->stackBase;
+	frame->registers = m_activeThread->stack + frame->stackBase;
 	frame->top = static_cast<int>(functionRecord.numParams);
 	std::fill_n(frame->registers, targetCapacity, valueNil());
-	const Value* sourceArgs = argsInStack ? m_activeThread->stack.data() + argsOffset : args;
+	const Value* sourceArgs = argsInStack ? m_activeThread->stack + argsOffset : args;
 
 	for (int i = 0; i < static_cast<int>(functionRecord.numParams); ++i) {
 		if (i < static_cast<int>(argCount)) {
@@ -3577,7 +3577,7 @@ void CPU::clearCallStack() {
 			closeUpvalues(*frame);
 			m_activeThread->leaveFrame();
 		}
-		std::fill(m_activeThread->stack.begin(), m_activeThread->stack.end(), valueNil());
+		std::fill_n(m_activeThread->stack, m_activeThread->stackCapacity, valueNil());
 		m_activeThread->stackTop = 0;
 		Thread* thread = m_activeThread;
 		thread->status = ThreadStatus::Dead;
@@ -3594,16 +3594,16 @@ void CPU::clearCallStack() {
 
 
 void CPU::ensureStackSize(size_t size) {
-	if (size <= m_activeThread->stack.size()) return;
+	if (size <= m_activeThread->stackCapacity) return;
 	size_t capacity = 8;
 	while (capacity < size) capacity *= 2;
-	m_luaHeap.reserve((capacity - m_activeThread->stack.size()) * THREAD_STACK_SLOT_BYTES);
-	m_activeThread->stack.resize(capacity, valueNil());
+	m_luaHeap.reserve((capacity - m_activeThread->stackCapacity) * THREAD_STACK_SLOT_BYTES);
+	m_activeThread->resizeStack(capacity);
 	refreshFrameRegisterPointers();
 }
 
 void CPU::refreshFrameRegisterPointers() {
-	Value* base = m_activeThread->stack.data();
+	Value* base = m_activeThread->stack;
 	for (auto* frame = m_activeThread->currentFrame; frame; frame = frame->previous) {
 		frame->registers = base + frame->stackBase;
 	}
