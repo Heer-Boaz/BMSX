@@ -119,6 +119,7 @@ struct GxGteState {
 	i64 mac3 = 0;
 	u32 currentSf = 0;
 	u32 lastCycles = 0;
+	u32 normalPendingCycles = 0;
 	u32 plusPendingCycles = 0;
 	bool plusInterlockArmed = false;
 	u32 plusPendingResultXy = 0;
@@ -179,6 +180,7 @@ private:
 	DeviceScheduler& m_scheduler;
 	u32 m_currentSf = 0;
 	u32 m_lastCycles = 0;
+	i64 m_normalCompletionCycle = 0;
 	i64 m_plusCompletionCycle = 0;
 	bool m_plusInterlockServiceScheduled = false;
 	u32 m_plusPendingResultXy = 0;
@@ -187,6 +189,7 @@ private:
 	GxGteCommandObserver m_commandObserver;
 	GxGtePlusObserver m_plusObserver;
 
+	void synchronizeNormalAccess(MappedBusSignals busSignals);
 	void setFlag(u32 flag);
 	static u32 withFlagError(u32 flag);
 	void updateFlagError();

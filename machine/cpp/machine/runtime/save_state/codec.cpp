@@ -677,6 +677,7 @@ template<class Writer> void writeGxGteState(Writer& writer, const GxGteState& st
 	writer.i64(state.mac3);
 	writer.u32(state.currentSf);
 	writer.u32(state.lastCycles);
+	writer.u32(state.normalPendingCycles);
 	writer.u32(state.plusPendingCycles);
 	writer.boolean(state.plusInterlockArmed);
 	writer.u32(state.plusPendingResultXy);
@@ -695,6 +696,7 @@ GxGteState readGxGteState(BinaryReader& reader) {
 	state.mac3 = reader.i64();
 	state.currentSf = reader.u32();
 	state.lastCycles = reader.u32();
+	state.normalPendingCycles = reader.u32();
 	state.plusPendingCycles = reader.u32();
 	state.plusInterlockArmed = reader.boolean();
 	state.plusPendingResultXy = reader.u32();

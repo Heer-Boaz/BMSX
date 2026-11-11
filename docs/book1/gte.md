@@ -230,7 +230,7 @@ The two command interfaces indicate completion as follows:
 
 | Path | Result visibility | Admission of subsequent work |
 |---|---|---|
-| Normal COMMAND | The command's results are visible when the command write completes | No GTE busy wait or command queue; the next normal command may use those results |
+| Normal COMMAND | Results are available after the command interval | A dependent CPU data/control read or the next normal COMMAND waits for completion; independent CPU work overlaps |
 | PLUS VMAD3 | One result set becomes available five system cycles after acceptance | One pending command; another direct CPU command store waits for completion |
 | Invalid PLUS command | Previous result values are preserved; ERROR and INVALID publish after one system cycle | Occupies the same single pending-command position |
 
@@ -239,9 +239,9 @@ cycles: 6,773,760 commands per second at the installed frequency, with three lan
 results per command. Include operand writes, command issue and result reads
 when calculating the rate of a complete program sequence.
 
-Normal CYCLES reports a nominal count from 5 through 44. Results are already
-available when the command write completes; the issuing instruction pays its
-ordinary CPU cost. [Timing and bus programming](#sec-gte-timing-and-bus-programming)
+Normal CYCLES reports a command interval from 5 through 44. The issuing
+instruction pays its ordinary CPU cost. Subsequent independent CPU work overlaps
+the interval; a dependent read or normal command pays only the remaining wait. [Timing and bus programming](#sec-gte-timing-and-bus-programming)
 and the complete work-interval example explain how to budget transfers and
 arithmetic together.
 
@@ -2361,7 +2361,7 @@ and a covered display pixel are three separate decisions.
 
 ## Command reference {#sec-gte-command-reference}
 
-Choose a command by the result required, not by its nominal cycle count. Normal commands publish their results during the `COMMAND` write at `08010344H`; the listed count is then readable from `CYCLES` at `08010348H`. It does not specify a separate completion delay or busy period. VMAD3 uses the separate PLUS command window and delayed-publication protocol described in its entry.
+Choose a command by the result required. A normal `COMMAND` write at `08010344H` starts its listed execution interval; the duration is readable from `CYCLES` at `08010348H`. A CPU data/control read or subsequent normal command waits for the outstanding interval. Independent CPU instructions and operand writes may overlap it. VMAD3 uses the separate PLUS command window and delayed-publication protocol described in its entry.
 
 For normal commands, the function is in bits 5:0. Add `00080000H` for SF=1 and `00000400H` for LM=1 to the function word shown in each entry. SF=0 performs no main-result shift; SF=1 shifts that result right by 12. LM=0 permits negative IR results down to −32768; LM=1 clamps them at zero. Both modes have an upper IR limit of 32767. Exceptions and forced intermediate clamps are stated below. Only MVMVA consumes the matrix, vector, and control-vector selectors; those fields do not redirect the operands of another command.
 
@@ -4912,12 +4912,13 @@ each, and RET at two cycles: `200+12+7+2 = 221`. The resulting six RAM words are
 ```
 
 The three retained FLAG words are zero and the retained doubled area is 4096.
-Thus the 221-cycle schedule prepares the stated geometry/color packet, including its retained arithmetic results.
+Thus the sequence with 221 base instruction cycles prepares the stated geometry/color packet, including its retained arithmetic results.
 
-RTPT, NCLIP and NCCT report nominal counts 23, 8 and 39. Their arithmetic
-completes during the issuing register writes, whose two-cycle CPU base costs
-are already included in 221. The final CYCLES readback is 39; retain the full
-instruction budget when calculating this work interval.
+RTPT, NCLIP and NCCT have intervals 23, 8 and 39. Each is immediately
+followed by a two-cycle FLAG load, leaving waits of 21, 6 and 37 cycles. The
+complete accepted sequence therefore takes **285 system cycles**: 221 base
+instruction cycles plus 64 interlock cycles. Its RET requests zero results,
+so it adds no result-placement charge. The final CYCLES readback is 39.
 
 ### Keep frame waits outside the fixed preparation number {#sec-gte-keep-frame-waits-outside-the-fixed-preparation-number}
 
@@ -4943,7 +4944,7 @@ Separate the following when making a frame budget:
 Count charged CPU work and elapsed device waits separately, then
 construct the actual timeline if their overlap matters. The cartridge's actual
 loops, changing translation, GP0 traffic and frame-publication path require their
-own accounting; **221 is not their full-frame BLua budget**. This cold work unit also
+own accounting; **285 is not their full-frame BLua budget**. This cold work unit also
 includes control setup that a cartridge can retain across many triangles or
 frames. Reuse changes the work interval and its count; it does not retroactively
 turn a lower-bound transfer estimate into a measured program budget.
@@ -4952,18 +4953,20 @@ turn a lower-bound transfer estimate into a measured program budget.
 
 ### Normal commands: nominal cost and CPU cost {#sec-gte-normal-commands-nominal-cost-and-cpu-cost}
 
-A normal COMMAND write completes with its arithmetic results available. A
-following data/control read sees those results without polling. Normal
-CYCLES records the last nominal command count; it has no busy bit and does not
-count down. For example, RTPS reports 15, MVMVA reports 8, and RTPT reports 23.
-These values do not cause waits of 15, 8 or 23 system cycles.
+An accepted normal COMMAND starts the interval reported by CYCLES: for example,
+RTPS takes 15, MVMVA 8, and RTPT 23 system cycles. CYCLES is a nonblocking
+readback of that interval, not a countdown or busy bit. Data/control reads by
+the CPU and a following normal COMMAND interlock until the previous interval
+ends. Count only the outstanding wait: independent instructions already spent
+in that interval are not charged again. A dependent access completes before
+its following CPU instruction, including when that wait exhausts the current
+execution interval. Operand writes can prepare subsequent work without waiting.
 
-An admitted direct CPU word-store instruction has a two-system-cycle base cost,
-whether it writes an ordinary operand word or normal COMMAND. Normal execution
-does not add the reported GTE CYCLES count to that cost. Address and operand
-preparation, subsequent result loads, and other CPU instructions have their own
-costs. Count these instructions and any actual device waits when budgeting a
-complete operation.
+The command store retains its ordinary two-cycle instruction charge; it does
+not immediately add the whole command duration. For example, after accepting
+RTPT, seven system cycles of independent work leave sixteen cycles to wait at
+a dependent access. A read after twenty-three cycles adds no wait. Normal and
+PLUS commands have independent completion intervals.
 
 An unrecognized normal function performs no arithmetic, leaves normal FLAG
 unchanged and reports zero CYCLES. The raw command word is still retained for
@@ -6000,7 +6003,7 @@ This plane is not a GTE setting. The divider instead tests H>=2×SZ3: A meets eq
 | DBC | 0 | 3072 | 0 |
 | DCE | 0 | 2048 | 0 |
 
-Retain projection FLAG before issuing NCLIP. NCLIP clears FLAG at entry and computes signed doubled screen-space area; its new zero FLAG does not erase the earlier projection condition. Neither command constructs intersections or chooses replacement triangles. Every RTPT here reports IR0=0 and nominal CYCLES=23; 23 is not measured elapsed execution or frame time.
+Retain projection FLAG before issuing NCLIP. NCLIP clears FLAG at entry and computes signed doubled screen-space area; its new zero FLAG does not erase the earlier projection condition. Neither command constructs intersections or chooses replacement triangles. Every RTPT here reports IR0=0 and nominal CYCLES=23; 23 is the command interval, not the complete sequence or frame time.
 
 Keep signed geometry in the software calculation until the intersections have been constructed. For transfer, pack each vertex into two raw words: signed X/Y halfwords in the first, then signed Z in the low half of the second; this example sets the unused high half to zero. Transfer those complete words to D[0]–D[5]. The GTE datapath decodes the signed components; raw halfword bit patterns are not signed working values for the clipping calculation.
 

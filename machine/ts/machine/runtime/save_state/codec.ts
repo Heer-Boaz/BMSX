@@ -653,6 +653,7 @@ function writeGxGteState(writer: BinarySink, state: GxGteState): void {
 	writer.i64(state.mac3);
 	writer.u32(state.currentSf);
 	writer.u32(state.lastCycles);
+	writer.u32(state.normalPendingCycles);
 	writer.u32(state.plusPendingCycles);
 	writer.bool(state.plusInterlockArmed);
 	writer.u32(state.plusPendingResultXy);
@@ -671,6 +672,7 @@ function readGxGteState(reader: BinaryReader): GxGteState {
 		mac3: reader.i64(),
 		currentSf: reader.u32(),
 		lastCycles: reader.u32(),
+		normalPendingCycles: reader.u32(),
 		plusPendingCycles: reader.u32(),
 		plusInterlockArmed: reader.bool(),
 		plusPendingResultXy: reader.u32(),

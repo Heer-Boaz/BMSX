@@ -694,7 +694,7 @@ test('GX-GTE+ observation preserves real CPU interlock/retry cycles, heap and co
 		gte.onService();
 		assert.equal(cpu.isMemoryWriteBlocked(), false);
 		assert.equal(scheduler.runCpuSlice(0, 1000), RunResult.Halted);
-		assert.equal(1000 - cpu.instructionBudgetRemaining, 4);
+		assert.equal(1000 - cpu.instructionBudgetRemaining, 6);
 		scheduler.advanceTo(16);
 		memory.readMappedU32LE(commandAddress);
 	}
@@ -763,7 +763,7 @@ test('GX-GTE+ CPU burst interlock is atomic across save, restore and command res
 	assert.equal(restored.memory.readMappedU32LE(commandAddress), GX_GTE_PLUS_FN_VMAD3);
 	assert.equal(restored.scheduler.hasDueTimer(), false);
 	const resumedState = restored.gte.captureState();
-	assert.equal(resumedState.plusPendingCycles, 3);
+	assert.equal(resumedState.plusPendingCycles, 0);
 	assert.equal(resumedState.plusInterlockArmed, false);
 	completeGtePlus(restored.memory, restored.scheduler, 3);
 	assert.equal(restored.memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_XY * IO_WORD_SIZE), pack16(14, -14));
@@ -1489,4 +1489,45 @@ test('GX-GTE RTPS saturates a 0x20000 UNR divide result without divide overflow 
 	assert.equal(gte.readDataRegister(19), 0x7f20);
 	assert.equal(gte.readDataRegister(14), pack16(160, 120));
 	assert.equal(gte.readControlRegister(31), 0);
+});
+
+// A dependent access consumes only the outstanding coprocessor interval.
+for (const port of [IO_GX_GTE_DATA0, IO_GX_GTE_CONTROL0]) {
+ test(`normal GTE completion interlocks dependent CPU port ${port}`, () => {
+  const { memory, cpu, gte, scheduler } = createGte();
+  cpu.instructionBudgetRemaining = 100;
+  scheduler.beginCpuSlice(100);
+  memory.writeMappedU32LE(IO_GX_GTE_COMMAND, GX_GTE_FN_RTPT);
+  assert.equal(gte.captureState().normalPendingCycles, 23);
+  cpu.instructionBudgetRemaining -= 7; // independent work overlaps GTE
+  assert.equal(memory.readMappedU32LE(IO_GX_GTE_CYCLES), 23);
+  assert.equal(cpu.instructionBudgetRemaining, 93);
+  memory.readMappedU32LE(port);
+  assert.equal(cpu.instructionBudgetRemaining, 77);
+  memory.readMappedU32LE(port);
+  assert.equal(cpu.instructionBudgetRemaining, 77);
+  assert.equal(scheduler.hasDueTimer(), false);
+  scheduler.endCpuSlice();
+ });
+}
+test('normal GTE chained commands, grant overrun, and restored deadline', () => {
+ const { memory, cpu, gte, scheduler } = createGte();
+ cpu.instructionBudgetRemaining = 10;
+ scheduler.beginCpuSlice(10);
+ memory.writeMappedU32LE(IO_GX_GTE_COMMAND, GX_GTE_FN_RTPT);
+ const state = gte.captureState();
+ memory.writeMappedU32LE(IO_GX_GTE_COMMAND, GX_GTE_FN_NCLIP);
+ assert.equal(cpu.instructionBudgetRemaining, -13);
+ assert.equal(gte.captureState().normalPendingCycles, 8);
+ scheduler.endCpuSlice();
+ scheduler.setNowCycles(1000);
+ gte.restoreState(state);
+ cpu.instructionBudgetRemaining = 10;
+ scheduler.beginCpuSlice(10);
+ cpu.instructionBudgetRemaining -= 3;
+ memory.readMappedU32LE(IO_GX_GTE_DATA0);
+ assert.equal(cpu.instructionBudgetRemaining, -13);
+ scheduler.endCpuSlice();
+ gte.reset();
+ assert.equal(gte.captureState().normalPendingCycles, 0);
 });

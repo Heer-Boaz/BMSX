@@ -728,7 +728,7 @@ void testPlusObservationPreservesCpuInterlock() {
 		harness->gte.onService();
 		require(!harness->cpu.isMemoryWriteBlocked(), "actual publication releases interlock");
 		require(harness->scheduler.runCpuSlice(0, 1000) == bmsx::RunResult::Halted, "retried PLUS store and return finish");
-		require(1000 - harness->cpu.instructionBudgetRemaining == 4, "retried store and return retain ordinary cycle cost");
+		require(1000 - harness->cpu.instructionBudgetRemaining == 6, "retried store plus RET base and two completion slots");
 		harness->scheduler.advanceTo(16);
 		harness->memory.readMappedU32LE(commandAddress);
 	}
@@ -807,7 +807,7 @@ void testPlusCpuBurstSaveRestoreInterlock() {
 	require(restored.memory.readMappedU32LE(commandAddress) == bmsx::GX_GTE_PLUS_FN_VMAD3, "GTE+ resumed burst commits command");
 	require(!restored.scheduler.hasDueTimer(), "GTE+ admitted retry allocates no timer");
 	const bmsx::GxGteState resumedState = restored.gte.captureState();
-	require(resumedState.plusPendingCycles == 3u, "GTE+ resumed command retains three cycles after return");
+	require(resumedState.plusPendingCycles == 0u, "GTE+ completes during return result placement");
 	require(!resumedState.plusInterlockArmed, "GTE+ resumed command has no interlock event");
 	completeGtePlus(restored, 3);
 	require(restored.memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_XY * bmsx::IO_WORD_SIZE) == pack16(14u, static_cast<uint32_t>(-14)), "GTE+ resumed burst XY result");
@@ -1576,7 +1576,45 @@ void testRtpsUnrResultSaturatesWithoutDivideOverflow() {
 
 } // namespace
 
+void testNormalCompletionInterlock() {
+ for (const auto port : {bmsx::IO_GX_GTE_DATA0, bmsx::IO_GX_GTE_CONTROL0}) {
+  GteHarness h;
+  h.cpu.instructionBudgetRemaining = 100;
+  h.scheduler.beginCpuSlice(100);
+  h.memory.writeMappedU32LE(bmsx::IO_GX_GTE_COMMAND, bmsx::GX_GTE_FN_RTPT);
+  require(h.gte.captureState().normalPendingCycles == 23u, "normal pending interval");
+  h.cpu.instructionBudgetRemaining -= 7;
+  require(h.memory.readMappedU32LE(bmsx::IO_GX_GTE_CYCLES) == 23u, "CYCLES is nonblocking");
+  h.memory.readMappedU32LE(port);
+  require(h.cpu.instructionBudgetRemaining == 77, "only outstanding interval stalls");
+  h.memory.readMappedU32LE(port);
+  require(h.cpu.instructionBudgetRemaining == 77, "no repeated interval charge");
+  require(!h.scheduler.hasDueTimer(), "normal completion needs no event");
+  h.scheduler.endCpuSlice();
+ }
+ GteHarness h;
+ h.cpu.instructionBudgetRemaining = 10;
+ h.scheduler.beginCpuSlice(10);
+ h.memory.writeMappedU32LE(bmsx::IO_GX_GTE_COMMAND, bmsx::GX_GTE_FN_RTPT);
+ const auto state = h.gte.captureState();
+ h.memory.writeMappedU32LE(bmsx::IO_GX_GTE_COMMAND, bmsx::GX_GTE_FN_NCLIP);
+ require(h.cpu.instructionBudgetRemaining == -13, "command waits even across grant end");
+ require(h.gte.captureState().normalPendingCycles == 8u, "next command gets own deadline");
+ h.scheduler.endCpuSlice();
+ h.scheduler.setNowCycles(1000);
+ h.gte.restoreState(state);
+ h.cpu.instructionBudgetRemaining = 10;
+ h.scheduler.beginCpuSlice(10);
+ h.cpu.instructionBudgetRemaining -= 3;
+ h.memory.readMappedU32LE(bmsx::IO_GX_GTE_DATA0);
+ require(h.cpu.instructionBudgetRemaining == -13, "restore rebases pending interval");
+ h.scheduler.endCpuSlice();
+ h.gte.reset();
+ require(h.gte.captureState().normalPendingCycles == 0u, "reset clears deadline");
+}
+
 int main() {
+	testNormalCompletionInterlock();
 	testRtpsIdentityProjection();
 	testMmioExecution();
 	testCommandObservation();

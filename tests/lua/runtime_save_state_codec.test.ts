@@ -338,6 +338,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					mac3: -4,
 					currentSf: 1,
 					lastCycles: 8,
+					normalPendingCycles: 3,
 					plusPendingCycles: 4,
 					plusInterlockArmed: true,
 					plusPendingResultXy: 0x000efff2,
