@@ -37,6 +37,15 @@ public:
 		return group ? group->pages[(pc >> MAPPED_PAGE_BYTE_SHIFT) & (GROUP_PAGES - 1u)] : nullptr;
 	}
 
+	// A continuation retains this owner slot, never a NativeBlockPage/code
+	// allocation. Groups live until the execution image is destroyed. Installing
+	// a previously absent page or replacing its translations updates this slot.
+	DecodedInstructionPage* const* pageSlot(u32 pc, u32 slot) {
+		auto& group = m_groups[slot][pc >> ROOT_SHIFT];
+		if (!group) group = new Group;
+		return &group->pages[(pc >> MAPPED_PAGE_BYTE_SHIFT) & (GROUP_PAGES - 1u)];
+	}
+
 	void install(u32 pageAddress, u32 slot, DecodedInstructionPage& page) {
 		const u32 firstSlot = pageAddress < CART_ROM_BASE ? 0u : slot;
 		const u32 endSlot = pageAddress < CART_ROM_BASE ? CARTRIDGE_SLOT_COUNT : slot + 1u;

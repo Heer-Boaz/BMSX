@@ -203,6 +203,10 @@ public:
 		return obj;
 	}
 	Closure* allocateClosure(size_t upvalueCount);
+	template <typename Visitor> void visitThreads(Visitor&& visit) {
+		for (auto* object = m_objects; object; object = object->next)
+			if (object->type == ObjType::Thread) visit(*static_cast<Thread*>(object));
+	}
 
 	uint32_t allocateHashId() { return m_nextObjectHashId++; }
 	u32 nextObjectHashId() const { return m_nextObjectHashId; }
@@ -428,6 +432,9 @@ private:
 	Blua32ExecutionImage* executionImageForDomain(ExecutionDomainId executionDomainId);
 	static MappedBusSignals executionBusSignalsForDomain(ExecutionDomainId executionDomainId);
 	void latchActiveExecutionImage(Blua32ExecutionImage& image);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	void clearNativeContinuationBindings();
+#endif
 	DecodedInstructionPage& decodedPageForAddress(
 		Blua32ExecutionImage& image,
 		const MappedPageBinding& binding

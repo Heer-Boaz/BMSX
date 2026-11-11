@@ -410,6 +410,9 @@ CPU::~CPU() {
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	m_nativeCompilerWorker.reset();
 #endif
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	clearNativeContinuationBindings();
+#endif
 	m_memory.detachMappedPageInvalidator();
 }
 
@@ -472,6 +475,9 @@ void CPU::reset() {
 	m_yieldRequested = false;
 	m_staticClosuresByAddress.clear();
 	m_memory.clearMappedPageWriteWatches();
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	clearNativeContinuationBindings();
+#endif
 	for (std::unique_ptr<Blua32ExecutionImage>& image : m_executionImagesByDomain) {
 		image.reset();
 	}
@@ -688,6 +694,9 @@ void CPU::latchActiveExecutionImage(Blua32ExecutionImage& image) {
 void CPU::replaceExecutionImage(Blua32ExecutionBoot executionBoot) {
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	discardNativeCompilation();
+#endif
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	clearNativeContinuationBindings();
 #endif
 	std::unique_ptr<Blua32ExecutionImage>& imageEntry = m_executionImagesByDomain[
 		static_cast<size_t>(executionBoot.executionDomainId + 1)
@@ -1599,6 +1608,9 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	}
 
 	m_memory.clearMappedPageWriteWatches();
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	clearNativeContinuationBindings();
+#endif
 	for (auto& image : m_executionImagesByDomain) {
 		image.reset();
 	}
@@ -3100,6 +3112,9 @@ void CPU::writeFrameExecution(
 	frame.executionImage = functionRecord.image;
 	frame.decodedPage = nullptr;
 	frame.decodedPageAddress = 0;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	frame.nativeContinuationPages = {};
+#endif
 	frame.compilationEntry = true;
 	frame.pc = pc;
 }

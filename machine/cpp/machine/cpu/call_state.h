@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <array>
 
 #include "common/primitives.h"
 #include "machine/cpu/value.h"
@@ -32,6 +33,10 @@ struct CallFrame {
 	// Host translation admission for the next PC; not architectural state.
 	bool compilationEntry = true;
 	u32 pc = 0;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	// Host translation binding for the suspended caller. Not guest/saved state.
+	std::array<DecodedInstructionPage* const*, 2> nativeContinuationPages{};
+#endif
 	int varargBase = 0;
 	int varargCount = 0;
 	Value* registers = nullptr;

@@ -58,6 +58,9 @@ void Thread::leaveFrame() {
 	frame->closure = nullptr;
 	frame->decodedPage = nullptr;
 	frame->decodedPageAddress = 0;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	frame->nativeContinuationPages = {};
+#endif
 	frame->compilationEntry = true;
 	frame->registers = nullptr;
 	frame->protectedContinuationIndex = -1;

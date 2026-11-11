@@ -295,9 +295,16 @@ void CPU::installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPag
 	// This is the only publication boundary for either compilation policy.
 	// All source retirement and emitted-code ownership transfers run on the CPU.
 	if (!page.nativeBlocks) page.nativeBlocks = std::make_unique<NativeBlockPage>();
+	auto& lookup = image.nativeCodeLookup;
+	if (!lookup) lookup = std::make_unique<NativeCodeLookup>();
 	const auto codeBytes = blocks.front()->region->codeBytes;
 	blocks.front()->region->publish(m_nativeCodeBytes);
 	for (size_t index = 0; index < entries.size(); ++index) {
+		auto& exit = blocks[index]->terminal;
+		if (exit.exit == NativeBlockExit::Call) {
+			for (u32 bank = 0; bank < CARTRIDGE_SLOT_COUNT; ++bank)
+				exit.continuationPages[bank] = lookup->pageSlot(exit.nextPc, bank);
+		}
 		const u32 entry = entries[index];
 		page.nativeBlocks->entries[entry] = std::move(blocks[index]);
 		page.nativeBlocks->code[entry] = page.nativeBlocks->entries[entry]->m_body;
@@ -307,8 +314,6 @@ void CPU::installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPag
 		page.refreshState[entry] &= static_cast<u8>(~DECODED_REFRESH_FUSION);
 	}
 	page.nativeCode = page.nativeBlocks->code;
-	auto& lookup = image.nativeCodeLookup;
-	if (!lookup) lookup = std::make_unique<NativeCodeLookup>();
 	lookup->install(pagePc, slot, page);
 	if (m_nativeCompilationProfiling) {
 		auto& profile = m_nativeCompilationProfile;
@@ -318,6 +323,15 @@ void CPU::installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPag
 		profile.emittedCodeBytes += codeBytes;
 		profile.peakCodeBytes = std::max(profile.peakCodeBytes, static_cast<u64>(m_nativeCodeBytes));
 	}
+}
+
+void CPU::clearNativeContinuationBindings() {
+	// Include suspended coroutines, exception activations and pooled nodes;
+	// clearing only the running resumer chain would leave borrowed owner slots.
+	m_heap.visitThreads([](Thread& thread) {
+		for (auto* frame = thread.firstFrame; frame; frame = frame->next)
+			frame->nativeContinuationPages = {};
+	});
 }
 
 NativeBlockTransition CPU::compiledReadFieldExit(CPU* owner, CallFrame* activeFrame, const NativeBlockExitSite* exit) {

@@ -17,7 +17,13 @@ struct Thread : GCObject {
 	~Thread();
 
 	CallFrame* acquireFrame();
-	void enterFrame(CallFrame* frame) { currentFrame = frame; ++frameDepth; }
+	void enterFrame(CallFrame* frame) {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		// Ordinary/interpreter and exception entries have no compiled callsite.
+		if (currentFrame) currentFrame->nativeContinuationPages = {};
+#endif
+		currentFrame = frame; ++frameDepth;
+	}
 	void leaveFrame();
 	CallFrame* frameAtDepth(size_t depth) const;
 	void trimFrames();
