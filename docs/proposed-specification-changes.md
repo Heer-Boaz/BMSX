@@ -108,6 +108,23 @@ begrensde bursts met gedeeld busbezit. Het actuele contract staat in de
 willekeurige interne I/O-eindpunten zijn vervallen. De APU-interface zelf is
 nog niet vervangen.
 
+Ook automatische coherentie tussen VRAM-writes en texture-/CLUT-lezingen is
+**geen behoudseis**. Opdrachten op volgorde uitvoeren vereist niet dat de
+texturelezer iedere eerdere VRAM-write zonder expliciete handeling ziet.
+Een begrensde texturecache met invalidatie of afzonderlijk geladen
+texturegeheugen zijn alternatieven. Referenties zijn
+[DuckStations cache-clear-opdracht](https://github.com/stenzek/duckstation/blob/73c4055ad047c0c93f8143a767205330c8dfaf1a/src/core/gpu.cpp#L2793-L2801)
+en [libdragons expliciete TMEM-loads](https://github.com/DragonMinded/libdragon/blob/e356bf3f56f7afbf7e5246329562f145965cfdfc/include/rdpq_tex.h#L80-L111).
+Die modellen zijn niet onderling gelijk: cachemissers kunnen data ophalen,
+terwijl expliciet texturegeheugen door laadopdrachten wordt gevuld. De keuze
+moet capaciteit, vullen, vervangen en zichtbaarheid bepalen; toevallig oude
+data in een hosttexture is geen hardwarecontract. Er is nog geen van beide
+gekozen. Blending, mask-checks, copies, scanout en CPU-readback hebben eigen
+lees-/schrijfafhankelijkheden, die niet door deze keuze vervallen. Het huidige
+contract in [de GPU-handleiding](book1/gpu.md#sec-memory-shared-gpu-storage-and-display-publication)
+blijft beschreven totdat manuals, runtimes en opdrachtproducenten gezamenlijk
+zijn aangepast.
+
 VRAM-uitlezing moet daarbij afzonderlijk van host-snapshots worden beoordeeld.
 De PSX heeft zelf een VRAM-leespad; dat laat ook
 [DuckStations GPU-implementatie](https://github.com/stenzek/duckstation/blob/master/src/core/gpu.cpp)
@@ -128,6 +145,7 @@ VRAM-leesfunctie uit de console moet verdwijnen.
 | GTE | Gedeeld fysiek rekenpad onderzoeken | Voltooiingstijd van gewone commando's en zichtbare wachttijd; niet goedgekeurd |
 | Video | Fysiek begrensde uitvoer goedgekeurd | Exacte bemonstering, sync en gekwalificeerde grenzen |
 | GPU-uitvoeringstijd | Geheugenplanning en zichtbare commandovoltooiing verenigen | Fysieke architectuur of mogelijke timingwijziging; niet goedgekeurd |
+| GPU-texturecoherentie | Automatische zichtbaarheid van iedere VRAM-write is geen behoudseis | Texturecache of expliciete textureopslag, capaciteit en laad-/invalidatieregels |
 | GPU-readback | Eenvoudig geordend leespad beoordelen; dubbele context-snapshots niet verplicht | Functieomvang, wachttijd en afhandeling bij contextovername |
 | CPU-timing | Werk- en geheugenafhankelijke fysieke timing goedgekeurd, met C++-/assemblyachtige prestatie-intentie voor normaal BLua-gebruik | Concrete instructieduur, implementatie en gevolgen voor devicevolgorde en compatibiliteit |
 | CPU-taalopslag | Eén fysiek runtimebudget inclusief globals, frames en beheer; 4 MiB publiek RAM blijft | Exacte grootte, allocatie- en OOM-regels en compatibiliteit |
