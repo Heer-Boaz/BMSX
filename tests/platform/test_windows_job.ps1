@@ -13,6 +13,15 @@ function Run-Case([string] $Name, [string[]] $ChildArguments, [int] $Expected, [
     & $shell -NoProfile -ExecutionPolicy Bypass -File $launcher -FilePath $fixture -MemoryLimitBytes $Limit -TimeoutSeconds $Timeout @ChildArguments >$out 2>$err
     $actual = $LASTEXITCODE
     if ($actual -ne $Expected) { throw "$Name exit $actual, expected $Expected; see $err" }
+    if ($Expected -ne 125) {
+        $accounting = [regex]::Match((Get-Content -Raw -LiteralPath $err), '\[test-job\] cpu_user_100ns=(\d+) cpu_kernel_100ns=(\d+) total_processes=(\d+)')
+        # Windows may add console/helper processes; every deliberate fixture
+        # process must still be included after it has exited.
+        $processes = if ($Name -eq 'cleanup' -or $Name -eq 'timeout') { 2 } else { 1 }
+        if (-not $accounting.Success -or [int]$accounting.Groups[3].Value -lt $processes) {
+            throw "$Name final job accounting must include the complete process tree; see $err"
+        }
+    }
     return $out
 }
 Run-Case 'success' @('exit','0') 0 | Out-Null

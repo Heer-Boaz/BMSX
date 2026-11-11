@@ -166,9 +166,9 @@ public static class TestJob {
             Check(TerminateJobObject(job, memoryHit ? 137u : timedOut ? 124u : code), "TerminateJobObject cleanup");
             // Completion notifications alone do not prove all descendants left.
             timer.Restart();
+            Accounting accounting;
             while (true) {
                 Message(port, 0, ref memoryHit);
-                Accounting accounting;
                 Check(QueryInformationJobObject(job, AccountingInfo, out accounting, (uint)Marshal.SizeOf(typeof(Accounting)), IntPtr.Zero), "QueryInformationJobObject active processes");
                 if (accounting.ActiveProcesses == 0) break;
                 if (timer.Elapsed.TotalSeconds >= 10)
@@ -179,6 +179,10 @@ public static class TestJob {
                 if (timer.Elapsed.TotalSeconds >= 10)
                     throw new InvalidOperationException("Job notifications did not drain within the cleanup deadline");
             }
+            // Final kernel accounting includes terminated children, not the
+            // PowerShell launcher. Keep the API's integer 100 ns units.
+            Console.Error.WriteLine("[test-job] cpu_user_100ns={0} cpu_kernel_100ns={1} total_processes={2}",
+                accounting.UserTime, accounting.KernelTime, accounting.TotalProcesses);
             if (memoryHit) { Console.Error.WriteLine("[test-job] job memory limit notification: FAILED"); return 137; }
             if (timedOut) { Console.Error.WriteLine("[test-job] timeout: FAILED"); return 124; }
             return unchecked((int)code);

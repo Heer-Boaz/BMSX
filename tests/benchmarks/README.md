@@ -21,6 +21,11 @@ failure 125, and an observed memory-limit notification 137. Root exit terminates
 remaining descendants; cleanup has its own finite deadline. Killing the runner
 closes the last job handle and terminates the tree.
 
+After cleanup, stderr reports the kernel's cumulative user/kernel CPU times in
+integer 100 ns units and total process count, including terminated descendants.
+This is whole-job CPU accounting (startup and teardown included), not wall time,
+sampled function attribution or a warmed emulator-only execution measurement.
+
 This cap concerns Windows aggregate committed/private memory, **not Linux RSS
 or cgroup OOM semantics**. Windows does not guarantee delivery of hard-limit
 notifications. Every observed notification fails the run, including when the
