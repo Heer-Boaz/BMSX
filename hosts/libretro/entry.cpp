@@ -1265,6 +1265,7 @@ static void destroy_hardware_context() {
 #if BMSX_ENABLE_GLES2
 	auto& presenter = *g_video_presenter;
 	auto& backend = static_cast<bmsx::OpenGLES2Backend&>(presenter.backend());
+	backend.invalidateContextState();
 	backend.captureGxGpuVramSnapshot(g_content->runtime.machine.gxGpu);
 	presenter.releaseRenderPipeline();
 	presenter.clearTextures();
@@ -1606,6 +1607,10 @@ void retro_unload_game(void) {
  */
 
 void retro_reset(void) {
+#if BMSX_ENABLE_GLES2
+	if (isHardwareBackendActive())
+		static_cast<bmsx::OpenGLES2Backend&>(g_video_presenter->backend()).invalidateContextState();
+#endif
 	logging.log(RETRO_LOG_INFO, "[BMSX] Reset\n");
 	if (g_content) {
 		g_content->runtime.rebootSystem();
@@ -1662,6 +1667,10 @@ void retro_run(void) {
 		case HardwareContextLifecycle::Fatal:
 			return;
 	}
+#if BMSX_ENABLE_GLES2
+	if (isHardwareBackendActive())
+		static_cast<bmsx::OpenGLES2Backend&>(g_video_presenter->backend()).invalidateContextState();
+#endif
 	bool vars_updated = false;
 	if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &vars_updated) && vars_updated) {
 		const RenderBackendPreference new_preference = read_backend_preference();
@@ -1863,6 +1872,10 @@ bool retro_serialize(void* data, size_t size) {
 	}
 	bool serialized = false;
 	try {
+#if BMSX_ENABLE_GLES2
+		if (isHardwareBackendActive())
+			static_cast<bmsx::OpenGLES2Backend&>(g_video_presenter->backend()).invalidateContextState();
+#endif
 		g_video_presenter->backend().captureGxGpuVramSnapshot(
 			g_content->runtime.machine.gxGpu);
 		serialized = bmsx::serializeLibretroState(

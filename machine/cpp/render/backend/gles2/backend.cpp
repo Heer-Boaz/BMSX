@@ -520,12 +520,14 @@ void OpenGLES2Backend::drawIndexed(PassEncoder& pass, i32 indexCount,
 	m_stats.drawIndexed++;
 }
 
-void OpenGLES2Backend::beginFrame() {
+void OpenGLES2Backend::invalidateContextState() {
 	drawState.invalidate();
-	m_stats = FrameStats{};
-	// RetroArch can mutate GL state between frames; reset caches so bindings are
-	// refreshed.
 	invalidateTextureBindingCache();
+}
+
+void OpenGLES2Backend::beginFrame() {
+	invalidateContextState();
+	m_stats = FrameStats{};
 	m_backbuffer_fbo = static_cast<GLuint>(m_get_framebuffer());
 	if (kGLES2VerboseLog) {
 		std::fprintf(
@@ -594,8 +596,7 @@ void OpenGLES2Backend::endFrame() {
 		glActiveTexture(GL_TEXTURE0);
 	}
 	m_touched_texture_units = 0u;
-	invalidateTextureBindingCache();
-	drawState.invalidate();
+	invalidateContextState();
 	if constexpr (kGLES2FinishFrame) {
 	glFinish();
 	}

@@ -19,6 +19,8 @@ class OpenGLES2Backend;
 
 // The caller keeps the frontend GL context. Only the live scheduler section runs
 // on the worker; run() consumes every publication before returning machine ownership.
+// The caller reacquires backend context state before this interval if an external
+// frontend used GL. Nested jobs within one owned interval need no invalidation.
 class GlesFrameWorker {
 public:
 	GlesFrameWorker(Runtime& runtime, OpenGLES2Backend& backend, LibretroInput& input);

@@ -62,6 +62,24 @@ extern "C" void __wrap_glDrawArrays(GLenum mode, GLint first, GLsizei count) {
 }
 namespace {
 
+// A libretro frontend owns GL between callbacks; none of these writes pass
+// through the core cache. Keep this adversarial owner distinct from GX work.
+void mutateFrontendGlState() {
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glUseProgram(0);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+	for (unsigned unit = 0; unit < 8; ++unit) {
+		glActiveTexture(GL_TEXTURE0 + unit);
+		glBindTexture(GL_TEXTURE_2D, 0);
+	}
+	glViewport(3, 5, 7, 9);
+	glEnable(GL_SCISSOR_TEST);
+	glScissor(0, 0, 0, 0);
+	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+	glEnable(GL_DITHER);
+}
+
 struct Script {
 	test::Blua32TestImage image;
 	std::vector<u32> code;
@@ -256,17 +274,23 @@ Result runStream(const test::Blua32TestRom& rom, bool threaded, GxGpuDrawTargetM
 		gles.onContextReset();
 		presenter.installRenderPipeline(std::make_unique<RenderPassLibrary>(&gles, &presenter));
 		presenter.initializeDefaultTextures();
+		mutateFrontendGlState();
+		gles.invalidateContextState();
 		worker->run(0.0);
 		gles.captureGxGpuVramSnapshot(runtime.machine.gxGpu);
 		require(std::equal(result.vram.begin(), result.vram.end(), runtime.machine.gxGpu.readVramSnapshotBytes().begin()),
 			"a rebuilt GL context consumes the checkpoint with the persistent worker still alive");
 		auto replacement = result.vram; replacement[0] ^= 0x7fu;
 		runtime.machine.gxGpu.replaceVramSnapshotBytes(replacement);
+		mutateFrontendGlState();
+		gles.invalidateContextState();
 		worker->run(0.0);
 		gles.captureGxGpuVramSnapshot(runtime.machine.gxGpu);
 		require(std::equal(replacement.begin(), replacement.end(), runtime.machine.gxGpu.readVramSnapshotBytes().begin()),
 			"external replacement is published before another frame job");
 		applyRuntimeSaveState(runtime, saved);
+		mutateFrontendGlState();
+		gles.invalidateContextState();
 		worker->run(0.0);
 		gles.captureGxGpuVramSnapshot(runtime.machine.gxGpu);
 		require(std::equal(result.vram.begin(), result.vram.end(), runtime.machine.gxGpu.readVramSnapshotBytes().begin()),
@@ -348,21 +372,49 @@ void testLibretroEntry(const test::Blua32TestRom& rom) {
 	require(retro_load_game(&game), "the real libretro entry admits the generated fixture");
 	require(frontendHardware.context_reset != nullptr, "the frontend owns actual context lifecycle callbacks");
 	frontendHardware.context_reset();
-	for (unsigned frame = 0; frame < 2; ++frame) retro_run();
+	for (unsigned frame = 0; frame < 2; ++frame) { mutateFrontendGlState(); retro_run(); }
 	require(frontendFrames == 2u && !frontendShutdown, "threaded retro_run publishes without shutting down");
 	std::vector<u8> envelope(retro_serialize_size());
+	mutateFrontendGlState();
 	require(retro_serialize(envelope.data(), envelope.size()), "serialization follows the completed worker barrier");
 	const auto state = decodeRuntimeSaveState(std::span<const u8>(envelope.data() + 8u, readLE32(envelope.data() + 4u)),
 		PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	require(readLE32(state.machineState.machine.memory.ram.data() + (Finished - RAM_BASE)) == 1u,
 		"real threaded libretro executes the guest through readback completion");
+	// serialize repopulates bindings even after endFrame invalidated them.
+	// Restore changes the source epoch without touching GL, so the next job
+	// must reacquire the frontend's clobbered state before publishing bytes.
+	mutateFrontendGlState();
+	require(retro_unserialize(envelope.data(), envelope.size()), "restore after external GL mutation succeeds");
+	retro_run();
+	std::vector<u8> restoredEnvelope(retro_serialize_size());
+	mutateFrontendGlState();
+	require(retro_serialize(restoredEnvelope.data(), restoredEnvelope.size()), "capture reacquires context ownership after restored execution");
+	const auto restored = decodeRuntimeSaveState(std::span<const u8>(restoredEnvelope.data() + 8u, readLE32(restoredEnvelope.data() + 4u)),
+		PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	require(restored.machineState.machine.gxGpu.vramBytes == state.machineState.machine.gxGpu.vramBytes,
+		"frontend GL writes after a snapshot cannot corrupt the next job's VRAM");
+	mutateFrontendGlState();
 	frontendHardware.context_destroy();
 	frontendHardware.context_reset();
 	retro_run();
 	require(retro_unserialize(envelope.data(), envelope.size()), "external restore reaches an idle worker");
 	retro_run();
+	mutateFrontendGlState();
 	retro_reset();
+	// Capturing the reboot before executing it publishes the replacement VRAM
+	// and leaves its viewport/texture bindings cached. The following frontend
+	// hand-off must be honored before the worker's first ordinary draw.
+	std::vector<u8> rebootEnvelope(retro_serialize_size());
+	require(retro_serialize(rebootEnvelope.data(), rebootEnvelope.size()), "capture the reboot boundary before guest execution");
+	mutateFrontendGlState();
 	retro_run();
+	retro_run();
+	require(retro_serialize(rebootEnvelope.data(), rebootEnvelope.size()), "capture the replayed guest after frontend GL mutation");
+	const auto rebooted = decodeRuntimeSaveState(std::span<const u8>(rebootEnvelope.data() + 8u, readLE32(rebootEnvelope.data() + 4u)),
+		PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	require(rebooted.machineState.machine.gxGpu.vramBytes == state.machineState.machine.gxGpu.vramBytes,
+		"pre-presentation GX draws reacquire a viewport and texture state cached by an earlier external snapshot");
 	require(!frontendShutdown, "context recreation, restore and reboot retain frontend ownership");
 	frontendHardware.context_destroy();
 	retro_unload_game(); retro_deinit();

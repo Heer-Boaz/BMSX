@@ -107,6 +107,8 @@ public:
 	bool readyForTextureUpload() const override { return m_context_ready; }
 
 	void setContextCallbacks(FramebufferGetter framebufferGetter, ProcAddressGetter procAddressGetter);
+	// Called once when an external context owner hands execution back to us.
+	void invalidateContextState();
 	void onContextReset();
 	void onContextDestroy();
 	void onContextLost();
