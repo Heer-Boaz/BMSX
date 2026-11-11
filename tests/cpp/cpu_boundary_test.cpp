@@ -952,6 +952,9 @@ void partialCodeWritesRetainOtherDecodedStarts() {
 	}
 }
 
+// These fixtures assert the decoded interpreter's fused instructions. Native
+// builds admit the same page tails to generated regions instead.
+#if !defined(BMSX_ENABLE_NATIVE_BLOCKS)
 void sourceAndFusionDependenciesRemainSeparate() {
 	for (u32 first = 0; first < DECODED_DISPATCH_OP_COUNT; ++first) {
 		bool canFuse = false;
@@ -1031,6 +1034,7 @@ void changedWideFusionBodyInvalidatesItsCrossPageHead() {
 		require(cpu.readFrameRegister(0, 4) == valueNumber(4), "the fourth word invalidates its fused start three words earlier in the preceding page");
 	}
 }
+#endif
 
 void writableCodeWatchesBelongToTheirPhysicalSocket() {
 	for (const bool instrumented : {false, true}) {
@@ -1439,7 +1443,10 @@ int main() {
 		instructionBoundaryResynchronizesAfterFetchOrObservation();
 		cachedFetchCrossesWidePagesAndObservesCodeWrites();
 		rewrittenInstructionRetainsItsOwnCycleCharge();
-		partialCodeWritesRetainOtherDecodedStarts(); sourceAndFusionDependenciesRemainSeparate(); changedWideFusionBodyInvalidatesItsCrossPageHead();
+		partialCodeWritesRetainOtherDecodedStarts();
+#if !defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		sourceAndFusionDependenciesRemainSeparate(); changedWideFusionBodyInvalidatesItsCrossPageHead();
+#endif
 		writableCodeWatchesBelongToTheirPhysicalSocket();
 		cachedInstructionBindingsFollowThePhysicalSelector();
 		closureCallAndReturnRespectFrameBoundaries();

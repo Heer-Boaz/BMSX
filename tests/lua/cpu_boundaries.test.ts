@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
@@ -344,7 +345,7 @@ test('the fourth word of a cross-page WIDE fusion invalidates its head', () => {
 		const text = new Uint8Array(INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.RET, 0, 1, 0);
 		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 5 }] });
-		const { cpu, memory } = createTestSystemCpu(image);
+		const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		const code = new Uint8Array(5 * INSTRUCTION_BYTES);
 		writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0);
