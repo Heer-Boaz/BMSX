@@ -19,7 +19,7 @@ option(BMSX_BUILD_EGL_TESTS "Build headless EGL renderer conformance tests (requ
 option(BMSX_ENABLE_LTO "Enable Link Time Optimization" OFF)
 option(BMSX_ENABLE_NATIVE_BLOCKS "Generate native CPU blocks with precise side exits" ON)
 option(BMSX_NATIVE_COMPILER_WORKER "Compile native regions on a bounded background worker" OFF)
-option(BMSX_DIAGNOSTIC_CPU_SLICES "Count scheduler CPU-run consumption in diagnostic builds" OFF)
+option(BMSX_DIAGNOSTIC_CPU_SLICES "Measure CPU-run consumption and GC phases in diagnostic builds" OFF)
 option(BMSX_ENABLE_ZLIB "Enable PNG screenshot output" ON)
 set(BMSX_ENABLE_GLES2_DEFAULT ON)
 # Previously GLES2 was disabled by default on Windows; enable by default on all platforms

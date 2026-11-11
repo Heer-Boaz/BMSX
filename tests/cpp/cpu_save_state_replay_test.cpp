@@ -426,6 +426,53 @@ void preserveDynamicGlobalRegisters() {
 	require(std::ranges::equal(after.snapshot.words(), state.snapshot.words()), "dynamic roots retain exact snapshot words");
 }
 
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+void diagnosticGcPhasesDoNotBecomeMachineState() {
+	SnapshotMachine machine(allocationImage());
+	auto& cpu = machine.runtime.machine.cpu;
+	auto& strings = cpu.stringPool();
+	const auto weakKey = strings.intern("weak");
+	auto* weak = cpu.createTable(1, 0);
+	auto* mode = cpu.createTable(0, 1);
+	mode->setStringKey(strings.intern("__mode"), bmsx::valueString(strings.intern("v")));
+	weak->metatable = mode;
+	weak->setInteger(1, bmsx::valueTable(cpu.createTable(64, 0)));
+	cpu.setGlobalByKey(weakKey, bmsx::valueTable(weak));
+	strings.intern("unrooted diagnostic text");
+	const auto anchor = bmsx::captureRuntimeSaveState(machine.runtime);
+	const auto before = cpu.diagnosticGcProfile();
+	cpu.collectHeap();
+	const auto after = cpu.diagnosticGcProfile();
+	require(after.collections == before.collections + 1u, "one collection increments its lifetime counter once");
+	require(bmsx::isNil(weak->getInteger(1)) && !strings.find("unrooted diagnostic text"),
+		"phase measurements retain real weak cleanup and string reclamation");
+	const auto phaseNanoseconds = (after.rootsNanoseconds - before.rootsNanoseconds)
+		+ (after.traceNanoseconds - before.traceNanoseconds)
+		+ (after.weakNanoseconds - before.weakNanoseconds)
+		+ (after.sweepNanoseconds - before.sweepNanoseconds)
+		+ (after.stringReclaimNanoseconds - before.stringReclaimNanoseconds);
+	require(after.totalNanoseconds > before.totalNanoseconds
+		&& after.totalNanoseconds - before.totalNanoseconds >= phaseNanoseconds,
+		"the complete collection interval encloses every disjoint phase and final accounting");
+	const auto expected = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(machine.runtime));
+	strings.restoreState(anchor.machineState.machine.stringPool);
+	cpu.restoreRuntimeState(anchor.cpuState);
+	require(cpu.diagnosticGcProfile().collections == after.collections
+		&& cpu.diagnosticGcProfile().totalNanoseconds == after.totalNanoseconds,
+		"restore-time object retirement is not a guest collection and never rewinds host measurements");
+	cpu.collectHeap();
+	require(cpu.diagnosticGcProfile().collections == after.collections + 1u,
+		"replayed collections accumulate rather than restoring an old profile");
+	require(bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(machine.runtime)) == expected,
+		"GC diagnostic history cannot change a single serialized machine byte");
+	const auto preReset = cpu.diagnosticGcProfile();
+	cpu.reset();
+	require(cpu.diagnosticGcProfile().collections == preReset.collections + 1u
+		&& cpu.diagnosticGcProfile().totalNanoseconds >= preReset.totalNanoseconds,
+		"CPU reset retains profile history and counts its actual collection");
+}
+#endif
+
 } // namespace
 
 int main() {
@@ -443,6 +490,9 @@ int main() {
 		preserveSnapshotValueBits();
 		preserveDeepGraph();
 		preserveDynamicGlobalRegisters();
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+		diagnosticGcPhasesDoNotBecomeMachineState();
+#endif
 		std::cout << "CPU save-state replay tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {

@@ -31,6 +31,9 @@ struct RuntimeStepBoundary {
 	bool supervisorCpuHeld;
 	u64 cpuSliceCount;
 	i64 cpuSliceConsumedCycles;
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	DiagnosticGcProfile gc;
+#endif
 	NativeCompilationProfile compilation;
 
 	static RuntimeStepBoundary capture(const Runtime& runtime) {
@@ -50,6 +53,7 @@ struct RuntimeStepBoundary {
 			runtime.machine.systemController.cpuHeld(),
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 			deviceScheduler.diagnosticCpuSliceCount, deviceScheduler.diagnosticCpuSliceConsumedCycles,
+			runtime.machine.cpu.diagnosticGcProfile(),
 #else
 			0u, 0,
 #endif
@@ -102,6 +106,20 @@ inline void writeRuntimeStepRecords(const char* path, std::span<const RuntimeSte
 		output << "{\"slices\":" << record.after.cpuSliceCount - record.before.cpuSliceCount
 			<< ",\"consumedCycles\":" << cpuConsumed
 			<< ",\"nonCpuScheduledCycles\":" << record.after.nowCycles - record.before.nowCycles - cpuConsumed << '}';
+#else
+		output << "null";
+#endif
+		output << ",\"gc\":";
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+		const auto& gcBefore = record.before.gc;
+		const auto& gcAfter = record.after.gc;
+		output << "{\"collections\":" << gcAfter.collections - gcBefore.collections
+			<< ",\"totalNanoseconds\":" << gcAfter.totalNanoseconds - gcBefore.totalNanoseconds
+			<< ",\"rootsNanoseconds\":" << gcAfter.rootsNanoseconds - gcBefore.rootsNanoseconds
+			<< ",\"traceNanoseconds\":" << gcAfter.traceNanoseconds - gcBefore.traceNanoseconds
+			<< ",\"weakNanoseconds\":" << gcAfter.weakNanoseconds - gcBefore.weakNanoseconds
+			<< ",\"sweepNanoseconds\":" << gcAfter.sweepNanoseconds - gcBefore.sweepNanoseconds
+			<< ",\"stringReclaimNanoseconds\":" << gcAfter.stringReclaimNanoseconds - gcBefore.stringReclaimNanoseconds << '}';
 #else
 		output << "null";
 #endif

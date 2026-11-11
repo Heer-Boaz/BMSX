@@ -20,12 +20,40 @@
 #include <cctype>
 #include <stdexcept>
 #include <unordered_set>
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+#include <chrono>
+#endif
 
 namespace bmsx {
 
 // start repeated-sequence-acceptable -- CPU interpreter hot paths keep duplicated opcode/register statements inline.
 
 namespace {
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+using GcProfileClock = std::chrono::steady_clock;
+
+// Both enclosing and phase intervals close during exception unwinding, so
+// failed collections remain attributable without any per-object clocks.
+class GcPhaseMeasurement {
+public:
+	explicit GcPhaseMeasurement(u64& nanoseconds)
+		: m_nanoseconds(&nanoseconds), m_start(GcProfileClock::now()) {}
+	~GcPhaseMeasurement() {
+		*m_nanoseconds += static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+			GcProfileClock::now() - m_start).count());
+	}
+	void phase(u64& nanoseconds) {
+		const auto now = GcProfileClock::now();
+		*m_nanoseconds += static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now - m_start).count());
+		m_start = now;
+		m_nanoseconds = &nanoseconds;
+	}
+private:
+	u64* m_nanoseconds;
+	GcProfileClock::time_point m_start;
+};
+#endif
+
 constexpr size_t kClosureHeapBytes = 16;
 constexpr size_t kClosureUpvalueSlotHeapBytes = 8;
 constexpr size_t kUpvalueHeapBytes = 24;
@@ -303,6 +331,9 @@ size_t GcHeap::collect(
 	Value root1,
 	Value root2
 ) {
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	GcPhaseMeasurement measurement(m_cpu.m_diagnosticGcProfile.rootsNanoseconds);
+#endif
 	m_weakTables.clear();
 	m_weakTableModes.clear();
 	m_ephemeronTables.clear();
@@ -312,10 +343,22 @@ size_t GcHeap::collect(
 	markValue(root0);
 	markValue(root1);
 	markValue(root2);
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	measurement.phase(m_cpu.m_diagnosticGcProfile.traceNanoseconds);
+#endif
 	trace();
 	convergeEphemerons();
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	measurement.phase(m_cpu.m_diagnosticGcProfile.weakNanoseconds);
+#endif
 	clearWeakTables();
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	measurement.phase(m_cpu.m_diagnosticGcProfile.sweepNanoseconds);
+#endif
 	const size_t liveBytes = sweep();
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	measurement.phase(m_cpu.m_diagnosticGcProfile.stringReclaimNanoseconds);
+#endif
 	m_stringPool.reclaimUnreachable();
 	m_weakTables.clear();
 	m_weakTableModes.clear();
@@ -2962,6 +3005,10 @@ void CPU::collectHeap() {
 }
 
 void CPU::collectHeap(Value root0, Value root1, Value root2) {
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	GcPhaseMeasurement measurement(m_diagnosticGcProfile.totalNanoseconds);
+	++m_diagnosticGcProfile.collections;
+#endif
 	const size_t liveBytes = m_heap.collect(root0, root1, root2);
 	m_luaHeap.finishCollection(liveBytes);
 }

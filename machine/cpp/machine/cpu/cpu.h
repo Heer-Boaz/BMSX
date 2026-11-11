@@ -31,6 +31,9 @@
 #include "machine/cpu/snapshot.h"
 #include "spec/blua32/memory_access_kind.h"
 #include "spec/blua32/execution_domain.h"
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+#include "machine/cpu/diagnostic_gc_profile.h"
+#endif
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 #include "machine/cpu/native_compilation_profile.h"
 #endif
@@ -269,6 +272,9 @@ public:
 	const StringPool& stringPool() const { return m_stringPool; }
 	LuaHeap& luaHeap() { return m_luaHeap; }
 	const LuaHeap& luaHeap() const { return m_luaHeap; }
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	const DiagnosticGcProfile& diagnosticGcProfile() const { return m_diagnosticGcProfile; }
+#endif
 	Memory& memory() { return m_memory; }
 	const Memory& memory() const { return m_memory; }
 	void setGlobalByKey(StringId key, const Value& value);
@@ -621,6 +627,9 @@ private:
 	std::vector<Value> m_globalValues;
 	std::unordered_map<StringId, size_t> m_globalSlotByKey;
 	Table* m_stringIndexTable = nullptr;
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	DiagnosticGcProfile m_diagnosticGcProfile;
+#endif
 };
 
 } // namespace bmsx
