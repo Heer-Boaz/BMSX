@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/execution_image.h"
 #include "common/endian.h"
 #include "spec/audio/apu.h"
 #include "machine/devices/input/contracts.h"
@@ -146,6 +147,81 @@ void testDmaSharedBusStopsCpu() {
 	runtime.frameScheduler.runCyclesToNextLogicalTick(runtime, 1);
 	require(cpu.readFramePc(depth) != pc, "CPU instruction execution resumes after the burst");
 }
+
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+void testWarmedGeneratedDmaSharedBus() {
+	using namespace bmsx;
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	for (u8 word = 0; word < 5; ++word) {
+		writeInstruction(image.text, word, static_cast<u8>(OpCode::STORE_MEM_D), word, 5,
+			static_cast<u8>(MemoryAccessKind::U32LE), word == 4 ? 5 : word);
+	}
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::LOAD_MEM), 7, 1, static_cast<u8>(MemoryAccessKind::U32LE));
+	writeInstruction(image.text, 6, static_cast<u8>(OpCode::ADD), 6, 6, 4);
+	writeInstruction(image.text, 7, static_cast<u8>(OpCode::JMP), 0, 63, 56, 255); // -8 words
+	image.functions.push_back({.firstWord = 0, .wordCount = 8, .maxStack = 8});
+	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
+	const auto system = test::encodeBlua32TestRom(RomImageDomain::System, image);
+	TickInputSource generatedInput, referenceInput;
+	Runtime generated({system.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, generatedInput);
+	Runtime reference({system.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, referenceInput);
+	generated.boot(); reference.boot();
+	// The existing observation route is the scalar C++ reference, not another native cache.
+	reference.machine.cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; },
+		nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+	const std::array<Runtime*, 2> runtimes{&generated, &reference};
+	const u32 source = RAM_BASE + 0x20000, target = RAM_BASE + 0x21000;
+	const u32 entry = system.textAddress;
+	for (auto* runtime : runtimes) {
+		auto& frame = *runtime->machine.cpu.activeThread()->frameAtDepth(0);
+		const std::array<u32, 8> values{source, target, 256, 0, 1, IO_DMA0_READ_ADDR, 0, 0};
+		for (size_t index = 0; index < values.size(); ++index) frame.registers[index] = valueNumber(values[index]);
+		for (u32 word = 0; word < 256; ++word) runtime->machine.memory.writeMappedU32LE(source + word * 4, 0x12340000 + word);
+		// Five two-cycle MMIO stores, 514 bus cycles, then load/add/backedge.
+		runtime->frameScheduler.runCyclesToNextLogicalTick(*runtime, 16 * 528);
+		require(frame.pc == entry && frame.registers[6] == valueNumber(16), "the real DMA loop warms through sixteen bursts");
+	}
+	auto& generatedFrame = *generated.machine.cpu.activeThread()->frameAtDepth(0);
+	const auto& page = *generatedFrame.decodedPage;
+	const u32 triggerWord = ((entry & MAPPED_PAGE_BYTE_MASK) >> 2u) + 4u;
+	require(page.nativeBlocks && page.nativeBlocks->entries[triggerWord] && page.nativeCode[triggerWord],
+		"the DMA trigger has a warmed native entry before the exclusion probes");
+	const auto& trigger = *page.nativeBlocks->entries[triggerWord];
+	require(std::any_of(trigger.sideExits.begin(), trigger.sideExits.end(), [entry](const auto& exit) {
+		return exit.exit == NativeBlockExit::WriteMemory && exit.currentPc == entry + 16;
+	}), "the generated trigger retains the actual MMIO owner exit");
+	require(!reference.machine.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks,
+		"the reference remains interpreter-only");
+	const auto run = [&](i64 grant) {
+		for (auto* runtime : runtimes) runtime->frameScheduler.runCyclesToNextLogicalTick(*runtime, grant);
+		require(encodeRuntimeSaveState(captureRuntimeSaveState(generated)) == encodeRuntimeSaveState(captureRuntimeSaveState(reference)),
+			"generated and scalar machines agree at the same DMA boundary");
+	};
+	for (u32 iteration = 0; iteration < 2; ++iteration) {
+		for (auto* runtime : runtimes) for (u32 word = 0; word < 256; ++word) {
+			runtime->machine.memory.writeMappedU32LE(source + word * 4, 0x43210000 + iteration * 256 + word);
+			runtime->machine.memory.writeMappedU32LE(target + word * 4, 0);
+		}
+		run(11); // Leave budget after TRIGGER: its MMIO exit must yield, not execute the load.
+		auto& memory = generated.machine.memory;
+		auto& dma = generated.machine.dmaController;
+		require(generatedFrame.pc == entry + 20 && generatedFrame.registers[6] == valueNumber(16 + iteration),
+			"the generated DMA-trigger store yields before its following load or counter update");
+		require(dma.cpuBusHeld() && dma.captureState().scheduledBlockCycles == 513, "the real DMA owns the remaining bus interval");
+		run(512);
+		require(generatedFrame.pc == entry + 20 && dma.cpuBusHeld(), "native execution stays excluded until burst completion");
+		for (u32 word = 0; word < 256; ++word) require(memory.readMappedU32LE(target + word * 4) == 0, "no DMA word is published early");
+		run(1);
+		require(generatedFrame.pc == entry + 20 && !dma.cpuBusHeld(), "the final DMA cycle cannot also execute the continuation");
+		for (u32 word = 0; word < 256; ++word) require(memory.readMappedU32LE(target + word * 4) == 0x43210000 + iteration * 256 + word,
+			"the completed burst publishes every raw source word");
+		run(4);
+		require(generatedFrame.pc == entry && generatedFrame.registers[6] == valueNumber(17 + iteration), "generated execution resumes exactly once after bus release");
+		require(generatedFrame.registers[7] == valueNumber(0x43210000 + iteration * 256), "the resumed load observes DMA output");
+	}
+}
+#endif
 
 void testDeviceSettlementRetainsCpuStop() {
 	TickRuntimeFixture fixture;
@@ -1091,6 +1167,9 @@ void testRuntimeResetNotification() {
 
 int main() {
 	testDmaSharedBusStopsCpu();
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	testWarmedGeneratedDmaSharedBus();
+#endif
 	testDeviceSettlementRetainsCpuStop();
 	testDeviceSettlementBackendFence();
 	testBusyCpuBudgetAtVblank();

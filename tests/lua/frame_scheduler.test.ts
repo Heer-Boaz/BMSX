@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { isDeepStrictEqual } from 'node:util';
 import { test } from 'node:test';
 
+import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
+import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
+import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { AcceptedInterruptKind } from '../../machine/ts/machine/cpu/cpu';
 import type {
 	InputControllerInputSource,
@@ -21,6 +24,7 @@ import {
 	IO_APU_TRANSFER_CONTROL,
 	IO_APU_TRANSFER_DATA,
 	IO_CART_SELECT,
+	IO_DMA0_READ_ADDR,
 	IO_INP_CTRL,
 	IO_INP_KEYS,
 	IO_INP_STATUS,
@@ -222,6 +226,75 @@ test('shared-bus DMA stops instruction execution until serial read/write complet
 	assert.equal(frame.pc, pc);
 	runtime.frameScheduler.runCyclesToNextLogicalTick(1);
 	assert.notEqual(frame.pc, pc, 'instruction execution resumes after bus release');
+});
+
+test('warmed generated MMIO starts DMA, yields the bus, and resumes only after real burst completion', () => {
+	const code = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	for (let word = 0; word < 5; ++word) {
+		writeInstruction(code, word, OpCode.STORE_MEM_D, word, 5, MemoryAccessKind.U32LE, word === 4 ? 5 : word);
+	}
+	writeInstruction(code, 5, OpCode.LOAD_MEM, 7, 1, MemoryAccessKind.U32LE);
+	writeInstruction(code, 6, OpCode.ADD, 6, 6, 4);
+	writeInstruction(code, 7, OpCode.JMP, 0, 63, 56, 255); // -8 words
+	const system = linkRawTestSystemBlua32({ text: code, functions: [{ firstWord: 0, wordCount: 8, maxStack: 8 }],
+		systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
+		startupFunctionIndex: 0, irqFunctionIndex: 0, exceptionFunctionIndex: 0 });
+	const runtimes = [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter].map(cpuExecutionBackend => {
+		const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(),
+			machineModel: PSX_MACHINE_SPEC, cpuExecutionBackend }, new TickInputSource());
+		runtime.boot();
+		return runtime;
+	});
+	const source = RAM_BASE + 0x20000, target = RAM_BASE + 0x21000;
+	const entry = system.image.functions[0].codeAddress;
+	for (const runtime of runtimes) {
+		const registers = runtime.machine.cpu.activeThread.frameAtDepth(0).registers;
+		[source, target, 256, 0, 1, IO_DMA0_READ_ADDR, 0, 0].forEach((value, index) => registers.setNumber(index, value));
+		for (let word = 0; word < 256; ++word) runtime.machine.memory.writeMappedU32LE(source + word * 4, 0x12340000 + word);
+		// Five two-cycle MMIO stores, 514 bus cycles, then load/add/backedge.
+		runtime.frameScheduler.runCyclesToNextLogicalTick(16 * 528);
+		assert.equal(runtime.machine.cpu.activeThread.frameAtDepth(0).pc, entry);
+		assert.equal(registers.getNumber(6), 16);
+	}
+	const generatedPage = runtimes[0].machine.cpu.activeThread.frameAtDepth(0).decodedPage!;
+	const triggerWord = ((entry & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2) + 4;
+	const trigger = generatedPage.compiledBlocks!.entries[triggerWord]!;
+	assert.ok(trigger, 'the DMA trigger has a warmed generated entry before the exclusion probes');
+	assert.ok(trigger.exits.some(exit => exit.exit === CompiledBlockExit.WriteMemory && exit.currentPc === entry + 16),
+		'the generated trigger retains the actual MMIO owner exit');
+	assert.equal(runtimes[1].machine.cpu.activeThread.frameAtDepth(0).decodedPage!.compiledBlocks, null);
+	const run = (grant: number): void => {
+		for (const runtime of runtimes) runtime.frameScheduler.runCyclesToNextLogicalTick(grant);
+		assert.deepEqual(captureRuntimeSaveState(runtimes[0]), captureRuntimeSaveState(runtimes[1]),
+			`generated and scalar machines agree at the DMA boundary after grant ${grant}`);
+	};
+	for (let iteration = 0; iteration < 2; ++iteration) {
+		for (const runtime of runtimes) {
+			for (let word = 0; word < 256; ++word) {
+				runtime.machine.memory.writeMappedU32LE(source + word * 4, 0x43210000 + iteration * 256 + word);
+				runtime.machine.memory.writeMappedU32LE(target + word * 4, 0);
+			}
+		}
+		run(11); // Leave budget after TRIGGER: its MMIO exit must yield, not execute the load.
+		const { cpu, memory, dmaController } = runtimes[0].machine;
+		const frame = cpu.activeThread.frameAtDepth(0);
+		assert.equal(frame.pc, entry + 20);
+		assert.equal(frame.registers.getNumber(6), 16 + iteration);
+		assert.equal(dmaController.cpuBusHeld(), true);
+		assert.equal(dmaController.captureState().scheduledBlockCycles, 513);
+		run(512);
+		assert.equal(frame.pc, entry + 20);
+		assert.equal(dmaController.cpuBusHeld(), true);
+		for (let word = 0; word < 256; ++word) assert.equal(memory.readMappedU32LE(target + word * 4), 0);
+		run(1);
+		assert.equal(frame.pc, entry + 20, 'the final DMA cycle cannot also execute the continuation');
+		assert.equal(dmaController.cpuBusHeld(), false);
+		for (let word = 0; word < 256; ++word) assert.equal(memory.readMappedU32LE(target + word * 4), 0x43210000 + iteration * 256 + word);
+		run(4);
+		assert.equal(frame.pc, entry);
+		assert.equal(frame.registers.getNumber(6), 17 + iteration);
+		assert.equal(frame.registers.getNumber(7), 0x43210000 + iteration * 256, 'the resumed load observes DMA output');
+	}
 });
 
 test('runtime checkpoint storage reuses owner buffers without consuming independent snapshots', () => {
