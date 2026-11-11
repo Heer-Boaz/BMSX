@@ -260,24 +260,18 @@ public:
 	const GxGpuPcrtcTiming& readPcrtcTiming() const { return m_pcrtc.timing; }
 	const GxGpuDeviceOutput& readDeviceOutput();
 	bool backendCommandDrainPending() const {
-		return m_commandBuffer.readback.phase() == GX_GPU_READBACK_IDLE
-			&& commandBufferDrainRequired()
-			&& m_commandBuffer.executedCommandCount != 0u;
+		const u8 phase = m_commandBuffer.readback.phase();
+		return m_commandBuffer.executedCommandCount != 0u
+			&& ((phase == GX_GPU_READBACK_IDLE && commandBufferDrainRequired())
+				|| (m_supervisorIngressQuiesceRequested
+					&& (phase == GX_GPU_READBACK_IDLE || phase == GX_GPU_READBACK_READY)));
 	}
 	bool backendServicePending() const {
-		const u8 phase = m_commandBuffer.readback.phase();
-		if (phase == GX_GPU_READBACK_IDLE) {
-			return backendCommandDrainPending();
-		}
-		return phase == GX_GPU_READBACK_PENDING;
+		return backendCommandDrainPending() || m_commandBuffer.readback.phase() == GX_GPU_READBACK_PENDING;
 	}
 	bool backendServiceBlocksMachine() const {
 		const u8 phase = m_commandBuffer.readback.phase();
-		if (phase == GX_GPU_READBACK_IDLE) {
-			return m_commandBuffer.executedCommandCount != 0u
-				&& commandBufferDrainRequired();
-		}
-		return phase == GX_GPU_READBACK_PENDING || phase == GX_GPU_READBACK_SUBMITTED;
+		return backendCommandDrainPending() || phase == GX_GPU_READBACK_PENDING || phase == GX_GPU_READBACK_SUBMITTED;
 	}
 	void presentReadyFrameOnVblankEdge();
 	bool lastFrameCommitted() const { return m_lastFrameCommitted; }

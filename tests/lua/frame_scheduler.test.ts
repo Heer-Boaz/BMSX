@@ -25,6 +25,11 @@ import {
 	IO_APU_TRANSFER_DATA,
 	IO_CART_SELECT,
 	IO_DMA0_READ_ADDR,
+	IO_DMA0_CONTROL,
+	IO_DMA0_TRANSFER_COUNT,
+	IO_DMA0_TRIGGER,
+	IO_GX_GPU_GP0,
+	IO_GX_GPU_GP1,
 	IO_INP_CTRL,
 	IO_INP_KEYS,
 	IO_INP_STATUS,
@@ -33,6 +38,8 @@ import {
 	IO_SYS_CONTROL,
 	IRQ_VBLANK,
 	SYS_CONTROL_RESET,
+	SYS_CONTROL_SUPERVISOR_FAULT,
+	SYS_CONTROL_SUPERVISOR_LEAVE,
 } from '../../machine/ts/spec/bmsx/io';
 import { CART_RAM_BASE, IO_WORD_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import {
@@ -42,6 +49,7 @@ import {
 import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { GX_GPU_READBACK_IDLE, GX_GPU_READBACK_PENDING, GX_GPU_READBACK_READY } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import { GX_GPU_GP0_VRAM_TO_CPU_FIRST } from '../../machine/ts/spec/gx/gp0';
 import {
 	GX_GPU_PCRTC_SMODE1_HIGH,
@@ -162,6 +170,123 @@ test('device settlement retains split grants at a backend fence and resumes with
 	assert.equal(runtime.machine.scheduler.nowCycles, 204);
 	assert.equal(runtime.frameLoop.frameState.cycleBudgetRemaining, 0);
 	assert.equal(runtime.frameLoop.frameState.activeCpuUsedCycles, 0);
+});
+
+test('supervisor GPU service drains completed subcapacity work after device and admitted DMA deadlines', () => {
+	for (const dmaUpload of [false, true]) {
+		const { runtime } = createTickRuntime();
+		const { gxGpu: gpu, memory, systemController: system, dmaController: dma } = runtime.machine;
+		const scheduler = runtime.frameScheduler;
+		const backend = new HeadlessGPUBackend(16, 2, PSX_MACHINE_SPEC.gxGpuVramBytes);
+		const words = [0x020000ff, 0, 0x00020010];
+		if (dmaUpload) {
+			const source = RAM_BASE + 0x20000;
+			memory.writeMappedU32LE(IO_GX_GPU_GP1, 0x04000002);
+			words.forEach((word, index) => memory.writeMappedU32LE(source + index * 4, word));
+			memory.writeMappedU32LE(IO_DMA0_READ_ADDR, source);
+			memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, words.length);
+			memory.writeMappedU32LE(IO_DMA0_CONTROL, 1); // RAM -> GP0
+			memory.writeMappedU32LE(IO_DMA0_TRIGGER, 1);
+		} else for (const word of words) memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
+		memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_FAULT);
+		if (dmaUpload) {
+			const burst = dma.captureState().scheduledBlockCycles;
+			assert.equal(burst, 7, 'three RAM reads and GP0 writes retain their serial bus charge');
+			scheduler.runDevicesToNextLogicalTick(burst - 1);
+			assert.equal(dma.hasAdmittedWriteBlock(IO_GX_GPU_GP0), true);
+			assert.equal(gpu.captureState().supervisorIngressQuiesceRequested, false);
+			assert.equal(gpu.backendServicePending(), false);
+			assert.equal(gpu.readDeviceOutput().commandBuffer.commandCount, 0);
+			scheduler.runDevicesToNextLogicalTick(1);
+			assert.equal(dma.hasAdmittedWriteBlock(IO_GX_GPU_GP0), false);
+		}
+		const completion = gpu.captureState().pendingCommandCycles;
+		assert.ok(completion > 1);
+		scheduler.runDevicesToNextLogicalTick(completion - 1);
+		assert.equal(gpu.backendServicePending(), false, 'accepted drawing does not complete early at quiescence');
+		assert.equal(system.cpuHeld(), true);
+		scheduler.runDevicesToNextLogicalTick(1);
+		const completedAt = runtime.machine.scheduler.nowCycles;
+		assert.equal(gpu.readDeviceOutput().commandBuffer.commandCount, 1);
+		assert.equal(gpu.backendCommandDrainPending(), true, 'one completed command is sufficient at the GPU boundary');
+		scheduler.runDevicesToNextLogicalTick(19);
+		assert.equal(runtime.machine.scheduler.nowCycles, completedAt, 'backend latency does not spend guest cycles');
+		let drains = 0;
+		while (gpu.backendServicePending()) {
+			assert.equal(gpu.backendCommandDrainPending(), true);
+			backend.executeGxGpuCommandDrain(gpu);
+			++drains;
+		}
+		assert.equal(drains, 1);
+		scheduler.synchronizeBackendService();
+		scheduler.runDevicesToNextLogicalTick(0);
+		assert.equal(system.cpuHeld(), false);
+		assert.equal(system.supervisorContextActive(), true);
+		assert.equal(runtime.machine.scheduler.nowCycles, completedAt + 19);
+		assert.equal(scheduler.lastTickSequence, 0, 'supervisor entry does not wait for presentation');
+		backend.captureGxGpuVramSnapshot(gpu);
+		assert.equal(gpu.readVramSnapshotBytes()[0], 31, 'the actual backend executes the completed fill before takeover');
+
+		// LEAVE has the same GPU boundary for supervisor work.
+		for (const word of [0x0200ff00, 0, 0x00020010]) memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
+		memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_LEAVE);
+		const leaveCycles = gpu.captureState().pendingCommandCycles;
+		scheduler.runDevicesToNextLogicalTick(leaveCycles + 1);
+		assert.equal(gpu.backendCommandDrainPending(), true);
+		assert.equal(system.cpuHeld(), true);
+		while (gpu.backendServicePending()) backend.executeGxGpuCommandDrain(gpu);
+		scheduler.synchronizeBackendService();
+		scheduler.runDevicesToNextLogicalTick(0);
+		assert.equal(system.supervisorContextActive(), false);
+		backend.captureGxGpuVramSnapshot(gpu);
+		assert.equal(readLE32(gpu.readVramSnapshotBytes(), 0), 0x03e003e0);
+	}
+});
+
+test('supervisor service completes and banks unread GPUREAD through the ordinary backend loop', () => {
+	const { runtime } = createTickRuntime();
+	const { gxGpu: gpu, memory, systemController: system } = runtime.machine;
+	const scheduler = runtime.frameScheduler;
+	const backend = new HeadlessGPUBackend(16, 2, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	const bytes = new Uint8Array(PSX_MACHINE_SPEC.gxGpuVramBytes);
+	bytes.set([0x11, 0x11, 0x22, 0x22, 0x33, 0x33, 0x44, 0x44, 0x55, 0x55]);
+	gpu.replaceVramSnapshotBytes(bytes);
+	for (const word of [0xc0000000, 0, 0x00010005]) memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
+	const completion = gpu.captureState().pendingCommandCycles;
+	memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_FAULT);
+	scheduler.runDevicesToNextLogicalTick(completion + 9);
+	const readback = gpu.readDeviceOutput().readbackPort;
+	assert.equal(readback.phase, GX_GPU_READBACK_PENDING);
+	assert.equal(gpu.backendCommandDrainPending(), false, 'readback must produce its bytes before retirement');
+	let readbacks = 0, drains = 0;
+	while (gpu.backendServicePending()) {
+		if (gpu.backendCommandDrainPending()) {
+			assert.equal(readback.phase, GX_GPU_READBACK_READY);
+			assert.equal(readback.pixelCursor, 0, 'retirement must not consume guest pixels');
+			backend.executeGxGpuCommandDrain(gpu);
+			++drains;
+		} else {
+			backend.executeGxGpuReadback(gpu);
+			++readbacks;
+		}
+	}
+	assert.equal(readbacks, 1);
+	assert.equal(drains, 1);
+	scheduler.synchronizeBackendService();
+	scheduler.runDevicesToNextLogicalTick(0);
+	assert.equal(system.cpuHeld(), false);
+	assert.equal(readback.phase, GX_GPU_READBACK_IDLE);
+	assert.equal(gpu.captureState().userIngressContext.readbackPhase, GX_GPU_READBACK_READY);
+	assert.equal(gpu.captureState().userIngressContext.readbackPixelCursor, 0);
+	memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_LEAVE);
+	scheduler.runDevicesToNextLogicalTick(1);
+	assert.equal(system.supervisorContextActive(), false);
+	assert.equal(readback.phase, GX_GPU_READBACK_READY);
+	assert.equal(memory.readMappedU32LE(IO_GX_GPU_GP0), 0x22221111);
+	assert.equal(memory.readMappedU32LE(IO_GX_GPU_GP0), 0x44443333);
+	assert.equal(memory.readMappedU32LE(IO_GX_GPU_GP0), 0x5555);
+	assert.equal(readback.phase, GX_GPU_READBACK_IDLE);
+	assert.equal(scheduler.lastTickSequence, 0);
 });
 
 test('busy CPU execution publishes consumed cycles before VBlank carries the remaining grant', () => {

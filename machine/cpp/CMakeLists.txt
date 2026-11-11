@@ -1090,7 +1090,7 @@ if(BMSX_BUILD_TESTS)
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/boot_rom_fixture.cpp
 		${BMSX_TEST_ROM_SOURCE}
 	)
-	target_link_libraries(bmsx_frame_scheduler_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	target_link_libraries(bmsx_frame_scheduler_tests PRIVATE bmsx_host_support bmsx_blua32_tooling)
 	add_test(NAME bmsx_frame_scheduler_tests COMMAND bmsx_frame_scheduler_tests)
 
 	add_executable(bmsx_libretro_save_state_tests

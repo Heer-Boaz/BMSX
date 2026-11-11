@@ -1565,26 +1565,20 @@ export class GxGpu {
 	}
 
 	public backendCommandDrainPending(): boolean {
-		return this.commandBuffer.readback.phase === GX_GPU_READBACK_IDLE
-			&& this.commandBufferDrainRequired()
-			&& this.commandBuffer.executedCommandCount !== 0;
+		const phase = this.commandBuffer.readback.phase;
+		return this.commandBuffer.executedCommandCount !== 0
+			&& ((phase === GX_GPU_READBACK_IDLE && this.commandBufferDrainRequired())
+				|| (this.supervisorIngressQuiesceRequested
+					&& (phase === GX_GPU_READBACK_IDLE || phase === GX_GPU_READBACK_READY)));
 	}
 
 	public backendServicePending(): boolean {
-		const phase = this.commandBuffer.readback.phase;
-		if (phase === GX_GPU_READBACK_IDLE) {
-			return this.backendCommandDrainPending();
-		}
-		return phase === GX_GPU_READBACK_PENDING;
+		return this.backendCommandDrainPending() || this.commandBuffer.readback.phase === GX_GPU_READBACK_PENDING;
 	}
 
 	public backendServiceBlocksMachine(): boolean {
 		const phase = this.commandBuffer.readback.phase;
-		if (phase === GX_GPU_READBACK_IDLE) {
-			return this.commandBuffer.executedCommandCount !== 0
-				&& this.commandBufferDrainRequired();
-		}
-		return phase === GX_GPU_READBACK_PENDING || phase === GX_GPU_READBACK_SUBMITTED;
+		return this.backendCommandDrainPending() || phase === GX_GPU_READBACK_PENDING || phase === GX_GPU_READBACK_SUBMITTED;
 	}
 
 	public presentReadyFrameOnVblankEdge(): void {

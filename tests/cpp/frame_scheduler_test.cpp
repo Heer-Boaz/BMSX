@@ -7,6 +7,7 @@
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state/codec.h"
 #include "machine/scheduler/frame.h"
+#include "render/backend/backend.h"
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/memory_map.h"
 #include "spec/bmsx/model.h"
@@ -80,6 +81,128 @@ struct TickRuntimeFixture {
 		runtime.boot();
 	}
 };
+
+void testSupervisorGpuServiceAtDeviceBoundaries() {
+	using namespace bmsx;
+	for (const bool dmaUpload : {false, true}) {
+		TickRuntimeFixture fixture;
+		auto& runtime = fixture.runtime;
+		auto& gpu = runtime.machine.gxGpu;
+		auto& memory = runtime.machine.memory;
+		auto& system = runtime.machine.systemController;
+		auto& dma = runtime.machine.dmaController;
+		auto& scheduler = runtime.frameScheduler;
+		SoftwareBackend backend(16, 2, PSX_MACHINE_SPEC.gxGpuVramBytes);
+		const std::array<u32, 3> words{0x020000ffu, 0u, 0x00020010u};
+		if (dmaUpload) {
+			const u32 source = RAM_BASE + 0x20000;
+			memory.writeMappedU32LE(IO_GX_GPU_GP1, 0x04000002);
+			for (size_t index = 0; index < words.size(); ++index) memory.writeMappedU32LE(source + index * 4, words[index]);
+			memory.writeMappedU32LE(IO_DMA0_READ_ADDR, source);
+			memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, static_cast<u32>(words.size()));
+			memory.writeMappedU32LE(IO_DMA0_CONTROL, 1); // RAM -> GP0
+			memory.writeMappedU32LE(IO_DMA0_TRIGGER, 1);
+		} else for (const u32 word : words) memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
+		memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_FAULT);
+		if (dmaUpload) {
+			const auto burst = dma.captureState().scheduledBlockCycles;
+			require(burst == 7, "three RAM reads and GP0 writes retain their serial bus charge");
+			scheduler.runDevicesToNextLogicalTick(runtime, burst - 1);
+			require(dma.hasAdmittedWriteBlock(IO_GX_GPU_GP0), "the admitted DMA burst has not completed early");
+			require(!gpu.captureState().supervisorIngressQuiesceRequested, "GPU quiescence waits for the admitted bus work");
+			require(!gpu.backendServicePending() && gpu.readDeviceOutput().commandBuffer.commandCount == 0,
+				"unpublished DMA data cannot request backend execution");
+			scheduler.runDevicesToNextLogicalTick(runtime, 1);
+			require(!dma.hasAdmittedWriteBlock(IO_GX_GPU_GP0), "the last bus cycle releases the admitted burst");
+		}
+		const auto completion = gpu.captureState().pendingCommandCycles;
+		require(completion > 1, "the fill has a future command deadline");
+		scheduler.runDevicesToNextLogicalTick(runtime, completion - 1);
+		require(!gpu.backendServicePending() && system.cpuHeld(), "accepted drawing does not complete early at quiescence");
+		scheduler.runDevicesToNextLogicalTick(runtime, 1);
+		const auto completedAt = runtime.machine.scheduler.nowCycles();
+		require(gpu.readDeviceOutput().commandBuffer.commandCount == 1 && gpu.backendCommandDrainPending(),
+			"one completed command is sufficient at the GPU boundary");
+		scheduler.runDevicesToNextLogicalTick(runtime, 19);
+		require(runtime.machine.scheduler.nowCycles() == completedAt, "backend latency does not spend guest cycles");
+		unsigned drains = 0;
+		while (gpu.backendServicePending()) {
+			require(gpu.backendCommandDrainPending(), "the live host service loop selects the completed command prefix");
+			backend.executeGxGpuCommandDrain(gpu);
+			++drains;
+		}
+		require(drains == 1, "the completed subcapacity prefix is submitted once");
+		scheduler.synchronizeBackendService(runtime);
+		scheduler.runDevicesToNextLogicalTick(runtime, 0);
+		require(!system.cpuHeld() && system.supervisorContextActive(), "service releases supervisor context entry");
+		require(runtime.machine.scheduler.nowCycles() == completedAt + 19, "only the retained grant resumes");
+		require(scheduler.lastTickSequence == 0, "supervisor entry does not wait for presentation");
+		backend.captureGxGpuVramSnapshot(gpu);
+		require(gpu.readVramSnapshotBytes()[0] == 31, "the actual backend executes the completed fill before takeover");
+
+		// LEAVE has the same GPU boundary for supervisor work.
+		for (const u32 word : {0x0200ff00u, 0u, 0x00020010u}) memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
+		memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_LEAVE);
+		const auto leaveCycles = gpu.captureState().pendingCommandCycles;
+		scheduler.runDevicesToNextLogicalTick(runtime, leaveCycles + 1);
+		require(gpu.backendCommandDrainPending() && system.cpuHeld(), "LEAVE also waits for completed supervisor drawing");
+		while (gpu.backendServicePending()) backend.executeGxGpuCommandDrain(gpu);
+		scheduler.synchronizeBackendService(runtime);
+		scheduler.runDevicesToNextLogicalTick(runtime, 0);
+		require(!system.supervisorContextActive(), "backend service releases the return to USER");
+		backend.captureGxGpuVramSnapshot(gpu);
+		require(readLE32(gpu.readVramSnapshotBytes().data()) == 0x03e003e0, "supervisor pixels persist in shared VRAM");
+	}
+}
+
+void testSupervisorServiceBanksUnreadReadback() {
+	using namespace bmsx;
+	TickRuntimeFixture fixture;
+	auto& runtime = fixture.runtime;
+	auto& gpu = runtime.machine.gxGpu;
+	auto& memory = runtime.machine.memory;
+	auto& system = runtime.machine.systemController;
+	auto& scheduler = runtime.frameScheduler;
+	SoftwareBackend backend(16, 2, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	std::vector<u8> bytes(PSX_MACHINE_SPEC.gxGpuVramBytes);
+	const std::array<u8, 10> samples{0x11, 0x11, 0x22, 0x22, 0x33, 0x33, 0x44, 0x44, 0x55, 0x55};
+	std::copy(samples.begin(), samples.end(), bytes.begin());
+	gpu.replaceVramSnapshotBytes(bytes);
+	for (const u32 word : {0xc0000000u, 0u, 0x00010005u}) memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
+	const auto completion = gpu.captureState().pendingCommandCycles;
+	memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_FAULT);
+	scheduler.runDevicesToNextLogicalTick(runtime, completion + 9);
+	auto& readback = gpu.readDeviceOutput().readbackPort;
+	require(readback.phase() == GX_GPU_READBACK_PENDING && !gpu.backendCommandDrainPending(),
+		"readback must produce its bytes before retirement");
+	unsigned readbacks = 0, drains = 0;
+	while (gpu.backendServicePending()) {
+		if (gpu.backendCommandDrainPending()) {
+			require(readback.phase() == GX_GPU_READBACK_READY && readback.pixelCursor() == 0,
+				"retirement must not consume guest pixels");
+			backend.executeGxGpuCommandDrain(gpu);
+			++drains;
+		} else {
+			backend.executeGxGpuReadback(gpu);
+			++readbacks;
+		}
+	}
+	require(readbacks == 1 && drains == 1, "the ordinary service loop completes and retires the readback fence once");
+	scheduler.synchronizeBackendService(runtime);
+	scheduler.runDevicesToNextLogicalTick(runtime, 0);
+	require(!system.cpuHeld() && readback.phase() == GX_GPU_READBACK_IDLE, "supervisor starts with empty active readback");
+	const auto state = gpu.captureState();
+	require(state.userIngressContext.readbackPhase == GX_GPU_READBACK_READY && state.userIngressContext.readbackPixelCursor == 0,
+		"USER retains all completed unread pixels at context entry");
+	memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_LEAVE);
+	scheduler.runDevicesToNextLogicalTick(runtime, 1);
+	require(!system.supervisorContextActive() && readback.phase() == GX_GPU_READBACK_READY, "LEAVE restores the completed USER result");
+	require(memory.readMappedU32LE(IO_GX_GPU_GP0) == 0x22221111u, "the first unread pixel pair is unchanged");
+	require(memory.readMappedU32LE(IO_GX_GPU_GP0) == 0x44443333u, "the next unread pair is unchanged");
+	require(memory.readMappedU32LE(IO_GX_GPU_GP0) == 0x5555u, "the odd final pixel is unchanged");
+	require(readback.phase() == GX_GPU_READBACK_IDLE && scheduler.lastTickSequence == 0,
+		"only guest reads consume the result, without a presentation edge");
+}
 
 void testBusyCpuBudgetAtVblank() {
 	bmsx::test::Blua32TestImage image;
@@ -1166,6 +1289,8 @@ void testRuntimeResetNotification() {
 }
 
 int main() {
+	testSupervisorGpuServiceAtDeviceBoundaries();
+	testSupervisorServiceBanksUnreadReadback();
 	testDmaSharedBusStopsCpu();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	testWarmedGeneratedDmaSharedBus();
