@@ -124,8 +124,11 @@ void nativeFieldGuardsAndRawSlotAccess() {
 		}
 		for (int prediction : {-1, otherSlot, 100000}) {
 			block->sideExits[0].tableCacheSlot = prediction;
-			require(block->run(nativeRunState = {.registers = registers.data(), .constants = constants.data(), .remainingCycles = block->terminal.cycles})->handler == &fieldSlowExitMarker,
-				"missing, wrong-key and out-of-bounds field predictions leave through the native state-map exit");
+			const auto* exit = block->run(nativeRunState = {.registers = registers.data(), .constants = constants.data(), .remainingCycles = block->terminal.cycles});
+			require(store ? exit->exit == NativeBlockExit::Continue && table->getStringKey(key) == constants[0]
+				: exit->handler == &fieldSlowExitMarker,
+				"stale predictions retain ordinary read resolution and allocation-free store completion");
+			if (store) require(block->sideExits[0].tableCacheSlot == slot, "returning store repairs its prediction");
 		}
 		block->sideExits[0].tableCacheSlot = slot;
 		registers[store ? 0 : 1] = valueBool(false);
@@ -133,8 +136,10 @@ void nativeFieldGuardsAndRawSlotAccess() {
 			"a non-table field receiver is rejected before any native pointer access");
 		registers[0] = registers[1] = valueTable(table);
 		table->setStringKey(key, valueNil());
-		require(block->run(nativeRunState = {.registers = registers.data(), .constants = constants.data(), .remainingCycles = block->terminal.cycles})->handler == &fieldSlowExitMarker,
-			"deleted and nil-valued slots cannot satisfy a cached field guard");
+		const auto* deletedExit = block->run(nativeRunState = {.registers = registers.data(), .constants = constants.data(), .remainingCycles = block->terminal.cycles});
+		require(store ? deletedExit->exit == NativeBlockExit::Continue && table->getStringKey(key) == constants[0]
+			: deletedExit->handler == &fieldSlowExitMarker,
+			"a deleted own slot can be restored without growth, but still misses the read guard");
 		slot = table->setStringKey(key, valueNumber(1));
 		block->sideExits[0].tableCacheSlot = slot;
 		if (!store) {

@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { ValueTag, valueString, type Value } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
+import { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotTable } from '../../machine/ts/machine/cpu/snapshot';
+import { TABLE_STORE_REQUIRES_GROWTH } from '../../machine/ts/machine/cpu/table';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { Memory } from '../../machine/ts/machine/memory/memory';
@@ -59,7 +61,11 @@ test('known string chains preserve mixed-key collisions, cached updates, tombsto
 		generic.set(valueString(key), value);
 		slots.set(0, value);
 		if ((n & 1) === 0) {
-			strings.storeStringKey(key, slots.getTag(0), slots.getScalar(0), slots.getReference(0));
+			const before = strings.getTrackedHeapBytes();
+			const slot = strings.storeStringKeyWithoutGrowth(key, slots.getTag(0), slots.getScalar(0), slots.getReference(0));
+			assert.equal(strings.getTrackedHeapBytes(), before, 'bounded mutation reserves no storage');
+			if (slot === TABLE_STORE_REQUIRES_GROWTH)
+				strings.storeStringKey(key, slots.getTag(0), slots.getScalar(0), slots.getReference(0));
 		} else {
 			prediction = strings.storeStringKeyCached(key, prediction, slots.getTag(0), slots.getScalar(0), slots.getReference(0));
 		}
@@ -101,4 +107,19 @@ test('known string lookup follows changing inherited fields and preserves false 
 	parent.storeStringKey(key, ValueTag.Number, -0, null);
 	assert.equal(child.resolveStringIndex(indexKey, key, slots, 0), true);
 	assert.equal(slots.get(0), -0);
+});
+
+
+test('rejected string-store growth leaves the free-slot search hint for allocating completion', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const table = cpu.createTable(0, 1), present = cpu.stringPool.intern('full'), missing = cpu.stringPool.intern('new');
+	table.setStringKey(present, 73);
+	const beforeWriter = new CpuSnapshotWriter(new CpuSnapshot());
+	const beforeOffset = table.captureSnapshot(beforeWriter, () => {}), before = beforeWriter.finish();
+	assert.equal(table.storeStringKeyWithoutGrowth(missing, ValueTag.Number, 19, null), TABLE_STORE_REQUIRES_GROWTH);
+	const afterWriter = new CpuSnapshotWriter(new CpuSnapshot());
+	const afterOffset = table.captureSnapshot(afterWriter, () => {}), after = afterWriter.finish();
+	assert.equal(after.word(afterOffset + CpuSnapshotTable.HashFree), before.word(beforeOffset + CpuSnapshotTable.HashFree));
+	assert.equal(table.getStringKey(present), 73); assert.equal(table.getStringKey(missing), null);
 });

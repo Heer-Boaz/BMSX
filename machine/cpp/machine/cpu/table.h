@@ -15,6 +15,7 @@ class LuaHeap;
 
 inline constexpr int TABLE_INDEX_CHAIN_LIMIT = 32;
 inline constexpr int TABLE_INDEX_CHAIN_EXHAUSTED = -2;
+inline constexpr int TABLE_STORE_REQUIRES_GROWTH = -2;
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 struct TableNativeFieldOffsets {
@@ -68,6 +69,8 @@ public:
 	Value getStringKey(StringId key) const;
 	Value getStringKeyCached(StringId key, int& predictedSlot) const;
 	int setStringKey(StringId key, const Value& value);
+	// Completes mutations within allocated storage; growth leaves the mapping unchanged.
+	static int storeStringKeyWithoutGrowth(Table* table, StringId key, const Value& value) noexcept;
 	void setStringKeyCached(StringId key, const Value& value, int& predictedSlot);
 	Table* metatableIndexTable(StringId indexKey) const {
 		if (!metatable) {
@@ -220,6 +223,7 @@ private:
 	void allocateStorage(size_t arraySize, size_t hashSize);
 	int rawSet(const Value& key, const Value& value);
 	int insertHash(const Value& key, const Value& value);
+	int insertHashWithoutGrowth(const Value& key, const Value& value) noexcept;
 	void removeFromHash(const Value& key);
 	void markHashNodeDead(size_t index);
 	template <typename Lookup>

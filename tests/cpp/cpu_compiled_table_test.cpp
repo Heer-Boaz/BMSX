@@ -220,11 +220,49 @@ void wideAllocationFailure() {
 		&& native.cpu.readFrameRegister(0, 8) == valueNumber(73) && native.cpu.activeThread()->frameAtDepth(0)->top == 8,
 		"failed allocation retains the precise prefix, original destination and WIDE EPC after collection");
 }
+void stringStoreGrowthRoots(bool generic) {
+	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), 7, 9, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::KNIL), 9, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(generic ? OpCode::SETT : OpCode::SETFIELD), 0, generic ? 1 : 0, 7);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
+	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 16}};
+	image.constants = {std::string("field")};
+	CpuMachine native(image), scalar(image, true);
+	for (auto* m : {&native, &scalar}) {
+		auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers;
+		r[0] = valueTable(m->cpu.createTable(0, 1)); r[1] = valueString(m->cpu.stringPool().intern("field")); r[9] = valueNumber(1);
+		m->cpu.runUntilDepth(0, 500);
+	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	require(block != nullptr, "growing string store starts from adopted native code");
+#endif
+	std::array<std::string, 2> garbage; size_t index = 0;
+	for (auto* m : {&native, &scalar}) {
+		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
+		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); auto* r = frame.registers;
+		auto& strings = m->cpu.stringPool(); auto* retained = m->cpu.createTable(0, 1);
+		retained->setStringKey(strings.intern("payload"), valueString(strings.intern("retained")));
+		r[0] = valueTable(m->cpu.createTable()); r[9] = valueTable(retained); frame.top = 0;
+		const auto heap = m->cpu.captureRuntimeState().luaHeap;
+		garbage[index] = std::string(heap.nextCollectionBytes - heap.trackedBytes - 1, 'g'); strings.intern(garbage[index++]);
+	}
+	test::runCpuParity(native.cpu, scalar.cpu, 3); requireParity(native, scalar);
+	index = 0;
+	for (auto* m : {&native, &scalar}) {
+		auto& strings = m->cpu.stringPool(); require(!strings.find(garbage[index++]), "hash growth really collects unreachable pressure");
+		auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers; auto* retained = asTable(r[7]);
+		require(retained->getStringKey(*strings.find("payload")) == valueString(*strings.find("retained")),
+			"growth sees all reference roots published by the completed native prefix");
+		require(asTable(r[0])->getStringKey(*strings.find("field")) == r[7], "growth commits the requested reference store once");
+	}
+}
 } // namespace
 
 int main() {
 	try {
-		genericArraysAndHashKeys(); inheritedArrayReads(false); inheritedArrayReads(true); storedLengthAndUtf8(); selfAndNilFaults(); wideAllocationFailure();
+		genericArraysAndHashKeys(); inheritedArrayReads(false); inheritedArrayReads(true); storedLengthAndUtf8(); selfAndNilFaults(); wideAllocationFailure(); stringStoreGrowthRoots(false); stringStoreGrowthRoots(true);
 		std::cout << "Compiled table tests passed\n";
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

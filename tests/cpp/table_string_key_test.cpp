@@ -61,8 +61,12 @@ void collisionAndMutationParity(CPU& cpu) {
 		const auto key = keys[(n * 7u) & 15u];
 		const Value value = values[(n >> 4u) & 7u];
 		generic->set(valueString(key), value);
-		if ((n & 1u) == 0u) strings->setStringKey(key, value);
-		else strings->setStringKeyCached(key, value, prediction);
+		if ((n & 1u) == 0u) {
+			const auto before = strings->trackedHeapBytes();
+			const int slot = Table::storeStringKeyWithoutGrowth(strings, key, value);
+			require(strings->trackedHeapBytes() == before, "bounded mutation reserves no storage");
+			if (slot == TABLE_STORE_REQUIRES_GROWTH) strings->setStringKey(key, value);
+		} else strings->setStringKeyCached(key, value, prediction);
 		if ((n & 15u) == 0u) {
 			generic->setInteger(static_cast<int>(n / 16u) + 1, valueNumber(n));
 			strings->setInteger(static_cast<int>(n / 16u) + 1, valueNumber(n));
@@ -76,6 +80,21 @@ void collisionAndMutationParity(CPU& cpu) {
 	generic->clear();
 	strings->clear();
 	compare();
+}
+
+void rejectedGrowthPreservesMetadata(CPU& cpu) {
+	auto* table = cpu.createTable(0, 1);
+	const auto present = cpu.stringPool().intern("full"), missing = cpu.stringPool().intern("new");
+	table->setStringKey(present, valueNumber(73));
+	CpuSnapshot before, after;
+	const auto beforeOffset = table->captureSnapshot(before, [](u32, Value) {});
+	require(Table::storeStringKeyWithoutGrowth(table, missing, valueNumber(19)) == TABLE_STORE_REQUIRES_GROWTH,
+		"a full hash requires allocating completion");
+	const auto afterOffset = table->captureSnapshot(after, [](u32, Value) {});
+	require(before.word(beforeOffset + SNAP_TABLE_HASH_FREE) == after.word(afterOffset + SNAP_TABLE_HASH_FREE),
+		"rejected growth preserves the free-slot search hint for the ordinary owner");
+	require(table->getStringKey(present) == valueNumber(73) && isNil(table->getStringKey(missing)),
+		"rejected growth leaves the original mappings intact");
 }
 
 void inheritedAndMaskedPayloads(CPU& cpu) {
@@ -114,6 +133,7 @@ int main() {
 		CPU cpu(memory, irq, addresses);
 		collisionAndMutationParity(cpu);
 		inheritedAndMaskedPayloads(cpu);
+		rejectedGrowthPreservesMetadata(cpu);
 		std::cout << "String-key table tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {

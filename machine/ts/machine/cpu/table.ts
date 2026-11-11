@@ -30,6 +30,7 @@ const TABLE_HASH_ENTRY_BASE = -2;
 const EMPTY_TABLE_HASH_NEXT = new Int32Array(0);
 export const TABLE_INDEX_CHAIN_LIMIT = 32;
 export const TABLE_INDEX_CHAIN_EXHAUSTED = -2;
+export const TABLE_STORE_REQUIRES_GROWTH = -2;
 
 type StoredEntryVisitor = (
 	keyTag: ValueTag,
@@ -498,6 +499,19 @@ export class Table {
 		valueScalar: number,
 		valueReference: ValueReference,
 	): number {
+		const nodeIndex = this.storeStringKeyWithoutGrowth(key, valueTag, valueScalar, valueReference);
+		if (nodeIndex !== TABLE_STORE_REQUIRES_GROWTH) return nodeIndex;
+		this.rehash(ValueTag.String, key, null, valueTag, valueScalar, valueReference);
+		return this.rawSet(ValueTag.String, key, null, valueTag, valueScalar, valueReference);
+	}
+
+	// Completes mutations within allocated storage; growth leaves the mapping unchanged.
+	public storeStringKeyWithoutGrowth(
+		key: StringId,
+		valueTag: ValueTag,
+		valueScalar: number,
+		valueReference: ValueReference,
+	): number {
 		if (valueTag === ValueTag.Nil) {
 			this.removeFromHash(ValueTag.String, key, null);
 			return -1;
@@ -508,7 +522,7 @@ export class Table {
 			this.setEncoded(valueSlot, valueTag, valueScalar, valueReference);
 			return nodeIndex;
 		}
-		return this.rawSet(
+		const inserted = this.insertHashWithoutGrowth(
 			ValueTag.String,
 			key,
 			null,
@@ -516,6 +530,7 @@ export class Table {
 			valueScalar,
 			valueReference,
 		);
+		return inserted >= 0 ? inserted : TABLE_STORE_REQUIRES_GROWTH;
 	}
 
 	public storePredictedStringKey(
@@ -1060,7 +1075,6 @@ export class Table {
 				return index;
 			}
 		}
-		this.hashFree = -1;
 		return -1;
 	}
 
@@ -1072,6 +1086,8 @@ export class Table {
 		valueScalar: number,
 		valueReference: ValueReference,
 	): void {
+		// Commit the exhausted search hint only in the allocating owner.
+		if (this.hashSize !== 0) this.hashFree = -1;
 		let totalKeys = 0;
 		const counts = Table.rehashIntegerCounts;
 		let countBins = 0;
@@ -1257,23 +1273,22 @@ export class Table {
 		valueScalar: number,
 		valueReference: ValueReference,
 	): number {
+		const nodeIndex = this.insertHashWithoutGrowth(keyTag, keyScalar, keyReference, valueTag, valueScalar, valueReference);
+		if (nodeIndex >= 0) return nodeIndex;
+		this.rehash(keyTag, keyScalar, keyReference, valueTag, valueScalar, valueReference);
+		return this.rawSet(keyTag, keyScalar, keyReference, valueTag, valueScalar, valueReference);
+	}
+
+	private insertHashWithoutGrowth(
+		keyTag: ValueTag,
+		keyScalar: number,
+		keyReference: ValueReference,
+		valueTag: ValueTag,
+		valueScalar: number,
+		valueReference: ValueReference,
+	): number {
 		if (this.hashSize === 0) {
-			this.rehash(
-				keyTag,
-				keyScalar,
-				keyReference,
-				valueTag,
-				valueScalar,
-				valueReference,
-			);
-			return this.rawSet(
-				keyTag,
-				keyScalar,
-				keyReference,
-				valueTag,
-				valueScalar,
-				valueReference,
-			);
+			return -1;
 		}
 		const mask = this.hashSize - 1;
 		const mainIndex = (this.hashValue(keyTag, keyScalar, keyReference) & mask) >>> 0;
@@ -1286,22 +1301,7 @@ export class Table {
 		}
 		const freeIndex = this.getFreeIndex();
 		if (freeIndex < 0) {
-			this.rehash(
-				keyTag,
-				keyScalar,
-				keyReference,
-				valueTag,
-				valueScalar,
-				valueReference,
-			);
-			return this.rawSet(
-				keyTag,
-				keyScalar,
-				keyReference,
-				valueTag,
-				valueScalar,
-				valueReference,
-			);
+			return -1;
 		}
 		const freeKeySlot = this.hashKeySlot(freeIndex);
 		const freeValueSlot = this.hashValueSlot(freeIndex);

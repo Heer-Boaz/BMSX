@@ -102,26 +102,51 @@ void NativeBlockCompiler::emitArraySlot(bool load, int value, SlowPath& slow) {
 // R0: actual Table; R3: runtime StringId; FR2: raw stored Value.
 void NativeBlockCompiler::emitStringSlot(bool load, int value, SlowPath& slow) {
 	const auto fields = Table::nativeFieldOffsets();
+	std::array<sljit_jump*, 5> misses;
+	size_t missCount = 0;
 	constexpr sljit_sw headerOffset = std::endian::native == std::endian::little ? 6 : 0;
 	constexpr sljit_sw payloadOffset = std::endian::native == std::endian::little ? 0 : 4;
 	sljit_emit_op1(m_compiler, SLJIT_MOV_S32, SLJIT_R1, 0, SLJIT_MEM0(), reinterpret_cast<sljit_sw>(&slow.exit->tableCacheSlot));
-	slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_GREATER_EQUAL, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), fields.hashSize);
+	misses[missCount++] = sljit_emit_cmp(m_compiler, SLJIT_GREATER_EQUAL, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), fields.hashSize);
 	sljit_emit_op2(m_compiler, SLJIT_SHL, SLJIT_S2, 0, SLJIT_R1, 0, SLJIT_IMM, 3);
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), fields.keys);
 	sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_S2, 0);
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U16, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), headerOffset);
-	slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, valueString(0) >> 48u);
+	misses[missCount++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, valueString(0) >> 48u);
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), payloadOffset);
-	slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_R3, 0);
+	misses[missCount++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_R3, 0);
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), fields.values);
 	sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_S2, 0);
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U16, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), headerOffset);
-	slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, valueNil() >> 48u);
-	if (load) sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0, SLJIT_MEM1(SLJIT_R1), 0);
-	else {
+	misses[missCount++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, valueNil() >> 48u);
+	if (load) {
+		for (size_t i = 0; i < missCount; ++i) slow.jumps[slow.count++] = misses[i];
+		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0, SLJIT_MEM1(SLJIT_R1), 0);
+	} else {
 		loadHeader(value, SLJIT_R2);
-		slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, valueNil() >> 48u);
+		misses[missCount++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, valueNil() >> 48u);
 		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_MEM1(SLJIT_R1), 0, SLJIT_FR2, 0);
+		auto* done = sljit_emit_jump(m_compiler, SLJIT_JUMP);
+		auto* store = sljit_emit_label(m_compiler);
+		for (size_t i = 0; i < missCount; ++i) sljit_set_label(misses[i], store);
+		// No allocation or guest callbacks: preserve the native frame and all
+		// cached values. Only the raw store operand needs an address for the ABI.
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_R3, 0);
+		if (value < 0) {
+			sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_IMM,
+				reinterpret_cast<sljit_sw>(&m_constants[-value - 1]));
+		} else {
+			sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_MEM1(SLJIT_S0), value * sizeof(Value), SLJIT_FR2, 0);
+			sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R2, 0, SLJIT_S0, 0, SLJIT_IMM, value * sizeof(Value));
+		}
+		emitCallSpills(false);
+		sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS3(32, P, 32, P), SLJIT_IMM,
+			SLJIT_FUNC_ADDR(&Table::storeStringKeyWithoutGrowth));
+		emitCallSpills(true);
+		slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0,
+			SLJIT_IMM, TABLE_STORE_REQUIRES_GROWTH);
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM0(), reinterpret_cast<sljit_sw>(&slow.exit->tableCacheSlot), SLJIT_R0, 0);
+		sljit_set_label(done, sljit_emit_label(m_compiler));
 	}
 }
 

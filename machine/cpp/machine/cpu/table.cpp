@@ -144,11 +144,13 @@ int Table::getFreeIndex() {
 			return i;
 		}
 	}
-	m_hashFree = -1;
 	return -1;
 }
 
 void Table::rehash(const Value& key, const Value& value) {
+	// The allocating owner commits the exhausted search hint; a bounded
+	// capacity probe must not change the next search before its completion.
+	if (m_hashSize != 0) m_hashFree = -1;
 	size_t totalKeys = 0;
 	std::array<size_t, sizeof(size_t) * 8u> counts{};
 	size_t countBins = 0;
@@ -274,9 +276,15 @@ int Table::rawSet(const Value& key, const Value& value) {
 }
 
 int Table::insertHash(const Value& key, const Value& value) {
+	const int nodeIndex = insertHashWithoutGrowth(key, value);
+	if (nodeIndex >= 0) return nodeIndex;
+	rehash(key, value);
+	return rawSet(key, value);
+}
+
+int Table::insertHashWithoutGrowth(const Value& key, const Value& value) noexcept {
 	if (m_hashSize == 0) {
-		rehash(key, value);
-		return rawSet(key, value);
+		return -1;
 	}
 	size_t mask = m_hashSize - 1;
 	int mainIndex = static_cast<int>(hashValue(key) & mask);
@@ -289,8 +297,7 @@ int Table::insertHash(const Value& key, const Value& value) {
 	}
 	int freeIndex = getFreeIndex();
 	if (freeIndex < 0) {
-		rehash(key, value);
-		return rawSet(key, value);
+		return -1;
 	}
 	const size_t freeSlot = static_cast<size_t>(freeIndex);
 	int mainIndexOfOccupied = static_cast<int>(hashValue(mainKey) & mask);
@@ -447,17 +454,26 @@ Value Table::getStringKeyCached(StringId key, int& predictedSlot) const {
 }
 
 int Table::setStringKey(StringId key, const Value& value) {
+	const int nodeIndex = storeStringKeyWithoutGrowth(this, key, value);
+	if (nodeIndex != TABLE_STORE_REQUIRES_GROWTH) return nodeIndex;
+	const Value keyValue = valueString(key);
+	rehash(keyValue, value);
+	return rawSet(keyValue, value);
+}
+
+int Table::storeStringKeyWithoutGrowth(Table* table, StringId key, const Value& value) noexcept {
 	const Value keyValue = valueString(key);
 	if (isNil(value)) {
-		removeFromHash(keyValue);
+		table->removeFromHash(keyValue);
 		return -1;
 	}
-	const int nodeIndex = findStringNodeIndex(key);
+	const int nodeIndex = table->findStringNodeIndex(key);
 	if (nodeIndex >= 0) {
-		m_hashValues[static_cast<size_t>(nodeIndex)] = value;
+		table->m_hashValues[static_cast<size_t>(nodeIndex)] = value;
 		return nodeIndex;
 	}
-	return rawSet(keyValue, value);
+	const int inserted = table->insertHashWithoutGrowth(keyValue, value);
+	return inserted >= 0 ? inserted : TABLE_STORE_REQUIRES_GROWTH;
 }
 
 void Table::setStringKeyCached(StringId key, const Value& value, int& predictedSlot) {
