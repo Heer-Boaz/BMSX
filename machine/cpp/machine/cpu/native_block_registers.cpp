@@ -35,16 +35,23 @@ int NativeBlockCompiler::allocateRegister(int guest, sljit_s32 pinned) {
 	return selected;
 }
 
-sljit_s32 NativeBlockCompiler::destinationRegister(int guest) {
+NativeBlockCompiler::RegisterValueFact NativeBlockCompiler::operandFact(int selector) const {
+	if (selector < 0) return {RegisterValueKind::Constant, m_constants[-selector - 1]};
+	const int slot = findRegister(selector);
+	return slot < 0 ? RegisterValueFact{} : m_registers[slot].value;
+}
+
+sljit_s32 NativeBlockCompiler::destinationRegister(int guest, RegisterValueFact fact) {
 	int slot = findRegister(guest);
 	if (slot < 0) slot = allocateRegister(guest);
 	m_registers[slot].dirty = true;
 	m_registers[slot].lastUse = ++m_registerClock;
+	m_registers[slot].value = fact;
 	return cachedFloatRegister(slot);
 }
 
-void NativeBlockCompiler::writeRegister(int guest, sljit_s32 source) {
-	const auto target = destinationRegister(guest);
+void NativeBlockCompiler::writeRegister(int guest, sljit_s32 source, RegisterValueFact fact) {
+	const auto target = destinationRegister(guest, fact);
 	if (target != source) sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, target, 0, source, 0);
 }
 

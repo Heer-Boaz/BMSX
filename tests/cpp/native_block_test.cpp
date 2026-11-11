@@ -120,9 +120,10 @@ void helperContinuationsReloadTheCurrentRegisterMap() {
 			"helper continuations are entries of one executable allocation");
 		require(blocks[0]->sourceWords == 6 && blocks[1]->sourceWords == 4 && blocks[2]->sourceWords == 2,
 			"positive budget admits each continuation's bounded linear suffix");
+		for (const Value incoming : {table, valueNumber(4294967301.0), valueNumber(-2147483649.0)})
 		for (int iteration = 0; iteration < 32; ++iteration) for (size_t entry = 0; entry < blocks.size(); ++entry) {
 			std::array<Value, 9> registers; registers.fill(valueNil());
-			registers[0] = payload; registers[1] = valueNumber(target); registers[8] = table;
+			registers[0] = payload; registers[1] = valueNumber(target); registers[8] = incoming;
 			memory.writeMappedWord(target, 17u);
 			NativeBlockRunState state{.registers = registers.data(), .remainingCycles = 1};
 			require(blocks[entry]->run(state) == &blocks[2]->terminal && state.remainingCycles == -(entry == 0 ? 7 : entry == 1 ? 4 : 1),
@@ -131,9 +132,9 @@ void helperContinuationsReloadTheCurrentRegisterMap() {
 				&& registers[5] == valueNumber(17) && registers[8] == valueNumber(1)
 				&& memory.readMappedWord(target) == 1u && state.registerTop == 9,
 				"fast helper fallthrough preserves dirty live native registers");
-			else require(registers[0] == payload && registers[5] == payload && registers[8] == table
-				&& registers[4] == (entry == 1 ? table : valueNil())
-				&& memory.readMappedWord(target) == (entry == 1 ? 0u : 17u) && state.registerTop == 6,
+			else require(registers[0] == payload && registers[5] == payload && registers[8] == incoming
+				&& registers[4] == (entry == 1 ? incoming : valueNil())
+				&& memory.readMappedWord(target) == (entry == 1 ? toU32(incoming) : 17u) && state.registerTop == 6,
 				"cold entries reload current raw Values, not predecessor values, types or register top");
 		}
 		for (size_t entry = 0; entry < blocks.size(); ++entry) {
@@ -146,20 +147,22 @@ void helperContinuationsReloadTheCurrentRegisterMap() {
 			require(predecessor->terminal.link.patchAddress != 0,
 				"an external continuation owns a patchable generated-code edge");
 			blocks[entry]->linkFrom(predecessor->terminal);
+			for (const Value incoming : {table, valueNumber(4294967301.0), valueNumber(-2147483649.0)})
 			for (const int grant : {1, 2, 3}) {
 				std::array<Value, 9> registers; registers.fill(valueNil());
-				registers[0] = payload; registers[1] = valueNumber(target); registers[2] = table;
+				registers[0] = payload; registers[1] = valueNumber(target); registers[2] = incoming;
 				memory.writeMappedWord(target, 17u);
 				NativeBlockRunState state{.registers = registers.data(), .remainingCycles = grant};
 				const auto* exit = predecessor->run(state);
 				if (grant <= 2) {
 					require(exit == &predecessor->terminal && state.remainingCycles == grant - 2 && state.registerTop == 9
-						&& registers[8] == table && registers[5] == valueNil() && memory.readMappedWord(target) == 17u,
+						&& registers[8] == incoming && registers[5] == valueNil() && memory.readMappedWord(target) == 17u,
 						"a patched target guard preserves the source descriptor and never admits an exhausted successor");
 				} else {
 					require(exit == &blocks[2]->terminal && state.remainingCycles == 1 - (entry == 0 ? 8 : entry == 1 ? 5 : 2)
 						&& state.registerTop == 9 && registers[5] == (entry == 0 ? valueNumber(17) : payload)
-						&& registers[8] == (entry == 0 ? valueNumber(1) : table),
+						&& registers[8] == (entry == 0 ? valueNumber(1) : incoming)
+						&& memory.readMappedWord(target) == (entry == 0 ? 1u : entry == 1 ? toU32(incoming) : 17u),
 						"patched edges enter inherited helper continuations with current values and the target's FP map");
 				}
 			}
@@ -672,6 +675,53 @@ void arithmeticAndWordDatapaths() {
 	}
 }
 
+void wordProducerFactsPreserveRawValuesAndOverwrites() {
+	const std::array inputs{valueNumber(-0.0), valueNumber(0.75), valueNumber(-1.75),
+		valueNumber(2147483647.0), valueNumber(2147483648.0), valueNumber(4294967295.0),
+		valueNumber(4294967301.0), valueNumber(-2147483649.0), valueNumber(-4294967296.75),
+		valueNumber(std::numeric_limits<double>::infinity()), VALUE_QNAN_MASK | 42u,
+		Value{0x7ff0000000000001ULL}, valueNil(), valueFromTag(ValueTag::False, 37),
+		valueString(73), valueFromTag(ValueTag::Table, u64{1} << 40u)};
+	const std::array ops{OpCode::LOADK, OpCode::MOV, OpCode::MOV, OpCode::BAND, OpCode::MOV,
+		OpCode::BNOT, OpCode::SHL, OpCode::SHR, OpCode::ADD, OpCode::BXOR, OpCode::MOV,
+		OpCode::BAND, OpCode::LOADNIL, OpCode::BNOT, OpCode::JMP};
+	const std::array<std::array<i16, 3>, 15> operands{{
+		{0, 0, 0}, {14, 0, 0}, {1, 0, 0}, {2, 1, -2}, {2, 2, 0},
+		{3, 2, 0}, {4, 3, -4}, {5, 4, -4}, {2, 2, -3}, {6, 2, -2},
+		{2, 13, 0}, {7, 2, -2}, {0, 3, 0}, {8, 1, 0}, {0, 0, 0},
+	}};
+	std::array<DecodedInstruction, 15> decoded{};
+	std::array<NativeBlockInstruction, 15> source{};
+	for (size_t i = 0; i < ops.size(); ++i) {
+		auto& op = decoded[i]; op.op = static_cast<u8>(ops[i]); op.width = op.baseCycles = 1;
+		op.a = operands[i][0]; op.b = operands[i][1]; op.c = operands[i][2];
+		source[i] = {&op, 0x1000u + static_cast<u32>(i) * INSTRUCTION_BYTES};
+	}
+	decoded.back().bx = 0x2000;
+	size_t bytes = 0;
+	for (const auto constant : inputs) {
+		const std::array constants{constant, valueNumber(0xffffffffu), valueNumber(4294967296.75), valueNumber(31)};
+		auto block = NativeBlock::compile(source, constants.data(), bytes, memory, cpu.stringPool());
+		for (const auto incoming : inputs) for (const int grant : {1, 15, 100}) {
+			std::array<Value, 16> actual; actual.fill(valueFromTag(ValueTag::True, 53)); actual[13] = incoming;
+			auto expected = actual;
+			for (const auto& op : decoded) {
+				const auto operand = [&](int selector) { return selector < 0 ? constants[-selector - 1] : expected[selector]; };
+				const auto kind = static_cast<OpCode>(op.op);
+				if (kind == OpCode::LOADK) expected[op.a] = constants[op.bx];
+				else if (kind == OpCode::MOV) expected[op.a] = operand(op.b);
+				else if (kind == OpCode::LOADNIL) std::fill_n(expected.begin() + op.a, op.b, valueNil());
+				else if (kind != OpCode::JMP) expected[op.a] = evaluate(kind, operand(op.b), operand(op.c));
+			}
+			NativeBlockRunState state{.registers = actual.data(), .constants = constants.data(), .remainingCycles = grant};
+			require(block->run(state) == &block->terminal && actual == expected && state.registerTop == 15
+				&& state.remainingCycles == grant - 15,
+				"word producer facts preserve full raw state through MOV aliases, signed chains, arithmetic/unknown overwrites and nil ranges");
+		}
+	}
+	require(bytes == 0, "word provenance is compile-time metadata, not retained executable ownership");
+}
+
 void movesAndLiteralsPreserveRawValues() {
 	NativeBlockRunState nativeRunState;
 	const std::array pool{valueNil(), valueBool(false), valueBool(true), valueString(0x12345678u),
@@ -989,6 +1039,7 @@ int main() {
 		linkedSlowExitPublishesTheWholeExecutedChain();
 		comparisonDatapathsRespectEveryValueKind();
 		arithmeticAndWordDatapaths();
+		wordProducerFactsPreserveRawValuesAndOverwrites();
 		movesAndLiteralsPreserveRawValues();
 		pinnedOperandsSurviveColdReadsAndDestinationReuse();
 		dependentInstructionsWriteBackEveryLiveRegister();

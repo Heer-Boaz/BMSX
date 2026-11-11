@@ -387,6 +387,57 @@ void cachedValuesReachFieldMemoryAndFaultOwners() {
 	}
 }
 
+void wordProducerBoundariesMatchCompleteScalarState() {
+	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	struct Instruction { OpCode op; u8 a, b, c, ext = 0; };
+	const std::array<Instruction, 19> code{{
+		Instruction{OpCode::LOADK, 0, 0, 4}, {OpCode::MOV, 1, 0, 0}, {OpCode::BAND, 2, 1, 62, 7},
+		{OpCode::MOV, 3, 2, 0}, {OpCode::BNOT, 4, 3, 0}, {OpCode::ADD, 2, 2, 60, 7},
+		{OpCode::BXOR, 5, 2, 61, 7}, {OpCode::MOV, 2, 12, 0}, {OpCode::BAND, 6, 2, 62, 7},
+		{OpCode::LOADNIL, 0, 2, 0}, {OpCode::BNOT, 7, 1, 0},
+		{OpCode::LOAD_MEM, 8, 13, static_cast<u8>(MemoryAccessKind::U32LE)}, {OpCode::BNOT, 9, 8, 0},
+		{OpCode::STORE_MEM, 9, 14, static_cast<u8>(MemoryAccessKind::U32LE)}, {OpCode::MOV, 10, 9, 0},
+		{OpCode::JMPIF, 15, 0, 1}, {OpCode::MOV, 10, 12, 0}, {OpCode::BAND, 11, 10, 62, 7},
+		{OpCode::JMP, 0, 63, 45, 255},
+	}};
+	for (size_t i = 0; i < code.size(); ++i) {
+		const auto& op = code[i]; writeInstruction(image.text, i, static_cast<u8>(op.op), op.a, op.b, op.c, op.ext);
+	}
+	image.functions = {{.firstWord = 0, .wordCount = static_cast<u32>(code.size()), .maxStack = 16}};
+	for (const auto& constant : {Blua32EncodedConstant{4294967295.0}, Blua32EncodedConstant{std::string("word")}}) {
+		image.constants = {2147483648.0, 4294967295.0, 0.0, 4294967296.75, constant};
+		CpuMachine native(image), scalar(image, true);
+		constexpr u32 inputAddress = DYNAMIC_RAM_BASE + 0x1000, outputAddress = inputAddress + 4;
+		for (auto* machine : {&native, &scalar}) {
+			auto& frame = *machine->cpu.activeThread()->currentFrame;
+			frame.registers[12] = valueNumber(4294967301.0); frame.registers[13] = valueNumber(inputAddress);
+			frame.registers[14] = valueNumber(outputAddress); frame.registers[15] = valueBool(true);
+			machine->memory.writeMappedWord(inputAddress, 0x80000000u);
+		}
+		test::runCpuParity(native.cpu, scalar.cpu, 2048);
+		auto* page = native.cpu.activeThread()->currentFrame->decodedPage;
+		require(page->nativeBlocks && page->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES],
+			"the word producer/consumer loop is genuinely compiled before boundary mutations");
+		for (const auto incoming : {valueNumber(4294967301.0), valueNumber(-2147483649.0),
+			valueNumber(2147483648.0), valueNumber(4294967295.0), valueNumber(-1.75), VALUE_QNAN_MASK, valueNil()})
+		for (const u32 entry : {0u, 3u, 8u, 12u, 14u, 17u}) for (const int grant : {1, 2, 19, 67}) {
+			for (auto* machine : {&native, &scalar}) {
+				machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0],
+					machine->rom.textAddress + entry * INSTRUCTION_BYTES);
+				auto& frame = *machine->cpu.activeThread()->currentFrame;
+				for (int i = 0; i < 13; ++i) frame.registers[i] = incoming;
+				frame.registers[15] = valueBool((grant & 1) != 0); frame.top = 0;
+				machine->memory.writeMappedWord(inputAddress, (entry & 1) == 0 ? 0xffffffffu : 0x80000000u);
+			}
+			test::runCpuParity(native.cpu, scalar.cpu, grant);
+			const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
+			require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && native.cpu.lastPc == scalar.cpu.lastPc
+				&& std::memcmp(native.memory.ramData(), scalar.memory.ramData(), native.memory.ramByteCount()) == 0,
+				"constants, signed chains, full U32 loads, overwrites, diamond/backedges and arbitrary continuation entries match complete scalar state");
+		}
+	}
+}
+
 } // namespace
 
 int main() {
@@ -398,6 +449,7 @@ int main() {
 		fatalHelperErrorsLeaveTheNativeFrameBeforeUnwinding();
 		changingSuccessorsDoNotRecompileStablePredecessors();
 		cachedValuesReachFieldMemoryAndFaultOwners();
+		wordProducerBoundariesMatchCompleteScalarState();
 		std::cout << "Compiled CPU memory tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {

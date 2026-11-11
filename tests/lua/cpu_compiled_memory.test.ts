@@ -305,3 +305,53 @@ test('fatal helper errors unwind after the completed generated prefix, without r
 		assert.equal(frame.registers.getNumber(0), 11); assert.equal(frame.registers.getNumber(6), 11);
 	}
 });
+
+test('word producers, overwrites and externally entered continuations preserve full scalar state', () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	const code = [
+		[OpCode.LOADK, 0, 0, 4], [OpCode.MOV, 1, 0, 0], [OpCode.BAND, 2, 1, 62, 7],
+		[OpCode.MOV, 3, 2, 0], [OpCode.BNOT, 4, 3, 0], [OpCode.ADD, 2, 2, 60, 7],
+		[OpCode.BXOR, 5, 2, 61, 7], [OpCode.MOV, 2, 12, 0], [OpCode.BAND, 6, 2, 62, 7],
+		[OpCode.LOADNIL, 0, 2, 0], [OpCode.BNOT, 7, 1, 0],
+		[OpCode.LOAD_MEM, 8, 13, MemoryAccessKind.U32LE], [OpCode.BNOT, 9, 8, 0],
+		[OpCode.STORE_MEM, 9, 14, MemoryAccessKind.U32LE], [OpCode.MOV, 10, 9, 0],
+		[OpCode.JMPIF, 15, 0, 1], [OpCode.MOV, 10, 12, 0], [OpCode.BAND, 11, 10, 62, 7],
+		[OpCode.JMP, 0, 63, 45, 255],
+	];
+	for (let i = 0; i < code.length; ++i) {
+		const [op, a, b, c, ext = 0] = code[i];
+		writeInstruction(text, i, op, a, b, c, ext);
+	}
+	for (const constant of [4294967295, 'word']) {
+		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: code.length, maxStack: 16 }],
+			constants: [2147483648, 4294967295, 0, 4294967296.75, constant] });
+		const generated = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
+		const reference = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+		const machines = [generated, reference];
+		const inputAddress = DYNAMIC_RAM_BASE + 0x1000, outputAddress = inputAddress + 4;
+		for (const { cpu, memory } of machines) {
+			const r = cpu.rootThread.frameAtDepth(0).registers;
+			r.setNumber(12, 4294967301); r.setNumber(13, inputAddress); r.setNumber(14, outputAddress); r.setBool(15, true);
+			memory.writeMappedWord(inputAddress, 0x80000000);
+		}
+		runCpuParity(generated.cpu, reference.cpu, 2048);
+		const start = image.image.functions[0].codeAddress;
+		assert.ok(generated.cpu.rootThread.frameAtDepth(0).decodedPage!.compiledBlocks!.entries[(start & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES],
+			'the producer/consumer loop is compiled before boundary mutations');
+		for (const incoming of [4294967301, -2147483649, 2147483648, 4294967295, -1.75, NaN, null])
+		for (const entry of [0, 3, 8, 12, 14, 17]) for (const grant of [1, 2, 19, 67]) {
+			for (const { cpu, memory } of machines) {
+				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start + entry * INSTRUCTION_BYTES);
+				const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
+				for (let i = 0; i < 13; ++i) {
+					if (incoming === null) r.setNil(i); else r.setNumber(i, incoming);
+				}
+				r.setBool(15, (grant & 1) !== 0); frame.top = 0;
+				memory.writeMappedWord(inputAddress, (entry & 1) === 0 ? 0xffffffff : 0x80000000);
+			}
+			runCpuParity(generated.cpu, reference.cpu, grant);
+			assert.deepEqual(generated.cpu.captureRuntimeState(), reference.cpu.captureRuntimeState());
+			assert.equal(Buffer.compare(generated.memory.ramData(), reference.memory.ramData()), 0);
+		}
+	}
+});

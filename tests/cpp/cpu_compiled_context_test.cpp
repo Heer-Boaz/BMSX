@@ -311,7 +311,7 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 		"an empty open VARARG resets top without touching or growing the destination range");
 	for (const int fixed : {0, 5}) {
 		ContextBlock first(machine, {{OpCode::K1, 1}, {OpCode::K1, 7}, {OpCode::VARARG, 2, static_cast<i16>(fixed)},
-			{OpCode::MOV, 0, 7}, {OpCode::MOV, 1, 2}, {OpCode::JMP}});
+			{OpCode::MOV, 0, 7}, {OpCode::MOV, 1, 2}, {OpCode::BNOT, 15, 7}, {OpCode::JMP}});
 		ContextBlock second(machine, {{OpCode::VARARG, 0, 0}, {OpCode::LOADKR, 15, 14}});
 		second.block->linkFrom(first.block->terminal);
 		for (const int count : {0, 2, 8}) {
@@ -322,6 +322,8 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 			require(first.block->run(state) == &second.block->sideExits[1] && state.registerTop == count,
 				"an invalid pool load after a linked open VARARG publishes its exact lowered top, not an earlier block maximum");
 			for (int i = 0; i < count; ++i) require(frame.registers[i] == values[i], "varargs preserve every raw value bit");
+			require(frame.registers[15] == valueNumber(fixed == 0 && count == 8 ? -1 : -2),
+				"a word consumer sees the overwritten vararg kind, not a cached literal fact; fixed ranges retain untouched facts");
 		}
 		stack.fill(valueNumber(73)); frame.varargCount = 8; frame.stackCapacity = 8;
 		std::copy(values.begin(), values.end(), frame.registers - 8);

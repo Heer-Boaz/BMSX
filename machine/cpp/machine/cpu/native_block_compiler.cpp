@@ -92,6 +92,9 @@ void NativeBlockCompiler::beginBlock(size_t index, bool inheritRegisters) {
 		m_shortGrants.push_back(sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32,
 			SLJIT_S4, 0, SLJIT_IMM, 0));
 	}
+	// Every body has an external entry which reloads arbitrary current Values.
+	// Even helper fallthrough inherits only placement, never predecessor facts.
+	for (auto& cached : m_registers) cached.value = {};
 	entry.registers = m_registers;
 	entry.body = sljit_emit_label(m_compiler);
 }
@@ -118,20 +121,29 @@ void NativeBlockCompiler::emit(const DecodedInstruction& instruction, NativeBloc
 		case OpCode::VARARG:
 			emitContext(instruction, slowExit);
 			return;
-		case OpCode::MOV:
-			writeRegister(instruction.a, readOperand(instruction.b, SLJIT_FR0));
+		case OpCode::MOV: {
+			const auto fact = operandFact(instruction.b);
+			writeRegister(instruction.a, readOperand(instruction.b, SLJIT_FR0), fact);
 			return;
+		}
 		case OpCode::LOADK:
-			sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, destinationRegister(instruction.a), 0,
+			sljit_emit_fop1(m_compiler, SLJIT_MOV_F64,
+				destinationRegister(instruction.a, {RegisterValueKind::Constant, m_constants[instruction.bx]}), 0,
 				SLJIT_MEM1(SLJIT_S1), static_cast<sljit_sw>(instruction.bx) * sizeof(Value));
 			return;
-		case OpCode::KNIL: sljit_emit_fset64(m_compiler, destinationRegister(instruction.a), asNumber(valueNil())); return;
-		case OpCode::KFALSE: sljit_emit_fset64(m_compiler, destinationRegister(instruction.a), asNumber(valueBool(false))); return;
-		case OpCode::KTRUE: sljit_emit_fset64(m_compiler, destinationRegister(instruction.a), asNumber(valueBool(true))); return;
-		case OpCode::K0: sljit_emit_fset64(m_compiler, destinationRegister(instruction.a), 0.0); return;
-		case OpCode::K1: sljit_emit_fset64(m_compiler, destinationRegister(instruction.a), 1.0); return;
-		case OpCode::KM1: sljit_emit_fset64(m_compiler, destinationRegister(instruction.a), -1.0); return;
-		case OpCode::KSMI: sljit_emit_fset64(m_compiler, destinationRegister(instruction.a), instruction.sbx); return;
+		case OpCode::KNIL:
+		case OpCode::KFALSE:
+		case OpCode::KTRUE:
+		case OpCode::K0:
+		case OpCode::K1:
+		case OpCode::KM1:
+		case OpCode::KSMI: {
+			const Value value = op == OpCode::KNIL ? valueNil() : op == OpCode::KFALSE ? valueBool(false)
+				: op == OpCode::KTRUE ? valueBool(true) : valueNumber(op == OpCode::K0 ? 0.0
+					: op == OpCode::K1 ? 1.0 : op == OpCode::KM1 ? -1.0 : instruction.sbx);
+			sljit_emit_fset64(m_compiler, destinationRegister(instruction.a, {RegisterValueKind::Constant, value}), asNumber(value));
+			return;
+		}
 		case OpCode::ADD:
 		case OpCode::SUB:
 		case OpCode::MUL:
@@ -191,13 +203,15 @@ void NativeBlockCompiler::emit(const DecodedInstruction& instruction, NativeBloc
 				: op == OpCode::SHL ? SLJIT_SHL32 : SLJIT_ASHR32;
 			sljit_emit_op2(m_compiler, operation, SLJIT_R0, 0, SLJIT_S2, 0, SLJIT_R0, 0);
 			sljit_emit_fop1(m_compiler, SLJIT_CONV_F64_FROM_S32, SLJIT_FR0, 0, SLJIT_R0, 0);
-			break;
+			writeRegister(instruction.a, SLJIT_FR0, {RegisterValueKind::SignedWordNumber, 0});
+			return;
 		}
 		case OpCode::BNOT:
 			convertWord(instruction.b);
 			sljit_emit_op2(m_compiler, SLJIT_XOR32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, -1);
 			sljit_emit_fop1(m_compiler, SLJIT_CONV_F64_FROM_S32, SLJIT_FR0, 0, SLJIT_R0, 0);
-			break;
+			writeRegister(instruction.a, SLJIT_FR0, {RegisterValueKind::SignedWordNumber, 0});
+			return;
 		case OpCode::GETFIELD:
 		case OpCode::SETFIELD:
 		case OpCode::SELF:
@@ -219,7 +233,11 @@ void NativeBlockCompiler::emit(const DecodedInstruction& instruction, NativeBloc
 		case OpCode::STORE_MEM:
 		case OpCode::STORE_MEM_D:
 			emitMemory(instruction, slowExit);
-			if (slowExit->exit == NativeBlockExit::ReadMemory) writeRegister(instruction.a);
+			if (slowExit->exit == NativeBlockExit::ReadMemory) {
+				const auto kind = static_cast<MemoryAccessKind>(instruction.c);
+				writeRegister(instruction.a, SLJIT_FR0, {kind == MemoryAccessKind::U8 || kind == MemoryAccessKind::U16LE
+					? RegisterValueKind::SignedWordNumber : RegisterValueKind::Unknown, 0});
+			}
 			return;
 		case OpCode::JMP:
 		case OpCode::HALT:
@@ -374,9 +392,14 @@ void NativeBlockCompiler::canonicalizeNumber(sljit_s32 target) {
 }
 
 void NativeBlockCompiler::convertWord(int selector) {
-	if (selector < 0) {
+	const auto fact = operandFact(selector);
+	if (fact.kind == RegisterValueKind::Constant) {
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_IMM,
-			static_cast<sljit_s32>(toU32(m_constants[-selector - 1])));
+			static_cast<sljit_s32>(toU32(fact.constant)));
+		return;
+	}
+	if (fact.kind == RegisterValueKind::SignedWordNumber) {
+		sljit_emit_fop1(m_compiler, SLJIT_CONV_S32_FROM_F64, SLJIT_R0, 0, readOperand(selector, SLJIT_FR0), 0);
 		return;
 	}
 	loadOperand(selector, SLJIT_FR0);

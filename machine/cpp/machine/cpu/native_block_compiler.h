@@ -50,10 +50,15 @@ private:
 	int findRegister(int guest) const;
 	int allocateRegister(int guest, sljit_s32 pinned = 0);
 	sljit_s32 cachedFloatRegister(int slot) const;
+	// Facts describe the current raw Value, not a different guest encoding.
+	// They are local to one externally enterable body.
+	enum class RegisterValueKind { Unknown, SignedWordNumber, Constant };
+	struct RegisterValueFact { RegisterValueKind kind; Value constant; };
+	RegisterValueFact operandFact(int selector) const;
 	sljit_s32 readOperand(int selector, sljit_s32 temporary, sljit_s32 pinned = 0);
 	std::array<sljit_s32, 2> readOperands(int left, int right);
-	sljit_s32 destinationRegister(int guest);
-	void writeRegister(int guest, sljit_s32 source = SLJIT_FR0);
+	sljit_s32 destinationRegister(int guest, RegisterValueFact fact = {});
+	void writeRegister(int guest, sljit_s32 source = SLJIT_FR0, RegisterValueFact fact = {});
 	size_t regionEntryIndex(u32 pc) const;
 	void planRegisterEntries(std::span<const NativeBlockSource> sources);
 	void emitInternalBranches();
@@ -76,6 +81,7 @@ private:
 		int guest = -1;
 		bool dirty = false;
 		u32 lastUse = 0;
+		RegisterValueFact value{};
 	};
 	using RegisterState = std::array<CachedRegister, REGISTER_CACHE_CAPACITY>;
 	bool emitRegisterTransfer(const RegisterState& source, const RegisterState& target, NativeBlockExitSite& exit);
