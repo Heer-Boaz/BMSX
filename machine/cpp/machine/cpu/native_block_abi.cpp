@@ -43,6 +43,7 @@ NativeBlockGate::NativeBlockGate() {
 	sljit_set_label(sljit_emit_jump(compiler, SLJIT_JUMP), resumeLabel);
 	sljit_set_label(ordinaryReturn, emitReturnGate(compiler, coldDispatchLabel));
 	sljit_set_label(ordinaryCall, emitCallGate(compiler, coldDispatchLabel));
+	auto* equalityLabel = emitEqualityGate(compiler);
 
 	// Region bodies name an exit and its register map. Materialization and
 	// dispatch live here once, not in every generated instruction's side exit.
@@ -84,6 +85,7 @@ NativeBlockGate::NativeBlockGate() {
 	exit = reinterpret_cast<void*>(sljit_get_label_addr(returnLabel));
 	dispatch = reinterpret_cast<void*>(sljit_get_label_addr(dispatchLabel));
 	leaveSegment = reinterpret_cast<void*>(sljit_get_label_addr(leaveLabel));
+	equalValues = reinterpret_cast<void*>(sljit_get_label_addr(equalityLabel));
 	for (size_t bank = 0; bank < finishLabels.size(); ++bank) {
 		finishSegment[bank] = reinterpret_cast<void*>(sljit_get_label_addr(finishLabels[bank]));
 		publishSegment[bank] = reinterpret_cast<void*>(sljit_get_label_addr(publishLabels[bank]));

@@ -7,61 +7,42 @@ namespace bmsx {
 
 void NativeBlockCompiler::emitComparison(const DecodedInstruction& instruction, NativeBlockExitSite* skipped) {
 	const auto op = static_cast<OpCode>(instruction.op);
-	std::array<sljit_jump*, 8> yes, no;
-	size_t yesCount = 0, noCount = 0;
 	const auto [left, right] = readOperands(instruction.b, instruction.c);
-	yes[yesCount++] = sljit_emit_fcmp(m_compiler, op == OpCode::EQ ? SLJIT_ORDERED_EQUAL
+	// The owning execution image retains its decoded constant pool for the
+	// lifetime of this region, as with embedded RK headers and string IDs.
+	// With one Number operand, no tagged pair can compare equal or ordered.
+	const bool numericConstant = (instruction.b < 0 && valueIsNumber(m_constants[-instruction.b - 1]))
+		|| (instruction.c < 0 && valueIsNumber(m_constants[-instruction.c - 1]));
+	// Each comparison owns its flags. sljit_emit_fcmp does not promise flags
+	// reusable for a second, different condition on every supported backend.
+	auto* unordered = numericConstant ? nullptr
+		: sljit_emit_fcmp(m_compiler, SLJIT_UNORDERED, left, 0, right, 0);
+	auto* matched = sljit_emit_fcmp(m_compiler, op == OpCode::EQ ? SLJIT_ORDERED_EQUAL
 		: op == OpCode::LT ? SLJIT_ORDERED_LESS : SLJIT_ORDERED_LESS_EQUAL, left, 0, right, 0);
-	loadHeader(instruction.b, SLJIT_R0);
-	loadHeader(instruction.c, SLJIT_R1);
+	auto* noLabel = sljit_emit_label(m_compiler);
+	emitExit(instruction.a != 0 ? skipped : &m_block->terminal);
+	auto* yesLabel = sljit_emit_label(m_compiler);
+	sljit_set_label(matched, yesLabel);
+	emitExit(instruction.a != 0 ? &m_block->terminal : skipped);
+	if (numericConstant) return;
+
+	// Ordered numeric true and false paths have already left. Tagged values
+	// and numeric NaNs use the cold path without materializing the guest bank.
+	sljit_set_label(unordered, sljit_emit_label(m_compiler));
 	if (op == OpCode::EQ) {
-		no[noCount++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R0, 0, SLJIT_R1, 0);
-		for (const auto tag : {ValueTag::Nil, ValueTag::False, ValueTag::True}) {
-			yes[yesCount++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R0, 0,
-				SLJIT_IMM, valueFromTag(tag) >> 48u);
-		}
-		auto* string = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, valueString(0) >> 48u);
-		auto* builtin = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R0, 0,
-			SLJIT_IMM, valueFromTag(ValueTag::BuiltinFunction) >> 48u);
-		// Raw identity is meaningful for tagged references, not numeric NaNs.
-		sljit_emit_op2(m_compiler, SLJIT_AND, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, VALUE_QNAN_MASK >> 48u);
-		no[noCount++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R1, 0,
-			SLJIT_IMM, VALUE_QNAN_MASK >> 48u);
-		sljit_emit_op2(m_compiler, SLJIT_AND, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, VALUE_ENCODED_TAG_MASK >> 48u);
-		no[noCount++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0);
-#if defined(SLJIT_64BIT_ARCHITECTURE)
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, left, SLJIT_R0);
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, right, SLJIT_R1);
-#else
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, left, SLJIT_R0);
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, right, SLJIT_R1);
-		no[noCount++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R0, 0, SLJIT_R1, 0);
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, left, SLJIT_REG_PAIR(SLJIT_R2, SLJIT_R0));
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, right, SLJIT_REG_PAIR(SLJIT_R2, SLJIT_R1));
-#endif
-		yes[yesCount++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_R1, 0);
-		no[noCount++] = sljit_emit_jump(m_compiler, SLJIT_JUMP);
-		sljit_set_label(string, sljit_emit_label(m_compiler));
-#if defined(SLJIT_64BIT_ARCHITECTURE)
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, left, SLJIT_R0);
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, right, SLJIT_R1);
-#else
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, left, SLJIT_REG_PAIR(SLJIT_R2, SLJIT_R0));
-		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, right, SLJIT_REG_PAIR(SLJIT_R2, SLJIT_R1));
-#endif
-		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_R0, 0);
-		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_R1, 0);
-		yes[yesCount++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_R1, 0);
-		no[noCount++] = sljit_emit_jump(m_compiler, SLJIT_JUMP);
-		sljit_set_label(builtin, sljit_emit_label(m_compiler));
-		loadPayload(instruction.b, SLJIT_R0, SLJIT_R2);
-		loadPayload(instruction.c, SLJIT_R1, SLJIT_R2);
-		sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), offsetof(BuiltinFunction, id));
-		sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R1), offsetof(BuiltinFunction, id));
-		yes[yesCount++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_R1, 0);
+		if (left != SLJIT_FR0) sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0, left, 0);
+		if (right != SLJIT_FR1) sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR1, 0, right, 0);
+		sljit_emit_ijump(m_compiler, SLJIT_FAST_CALL, SLJIT_IMM,
+			reinterpret_cast<sljit_sw>(nativeBlockGate().equalValues));
+		sljit_set_label(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32,
+			SLJIT_R0, 0, SLJIT_IMM, 0), yesLabel);
 	} else {
-		no[noCount++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, valueString(0) >> 48u);
-		no[noCount++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R1, 0, SLJIT_IMM, valueString(0) >> 48u);
+		loadHeader(instruction.b, SLJIT_R0);
+		loadHeader(instruction.c, SLJIT_R1);
+		sljit_set_label(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R0, 0,
+			SLJIT_IMM, valueString(0) >> 48u), noLabel);
+		sljit_set_label(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R1, 0,
+			SLJIT_IMM, valueString(0) >> 48u), noLabel);
 #if defined(SLJIT_64BIT_ARCHITECTURE)
 		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, left, SLJIT_R1);
 		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, right, SLJIT_R2);
@@ -72,19 +53,14 @@ void NativeBlockCompiler::emitComparison(const DecodedInstruction& instruction, 
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_R1, 0);
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_R2, 0);
 		sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&m_strings));
-		// Internal successors retain the raw register map across the pure string kernel.
+		// The pure string kernel retains the region's raw register map.
 		emitCallSpills(false);
 		sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS3(32, P, 32, 32), SLJIT_IMM, SLJIT_FUNC_ADDR(&compareStringIds));
 		emitCallSpills(true);
-		yes[yesCount++] = sljit_emit_cmp(m_compiler, (op == OpCode::LT ? SLJIT_SIG_LESS : SLJIT_SIG_LESS_EQUAL) | SLJIT_32,
-			SLJIT_R0, 0, SLJIT_IMM, 0);
+		sljit_set_label(sljit_emit_cmp(m_compiler, (op == OpCode::LT ? SLJIT_SIG_LESS : SLJIT_SIG_LESS_EQUAL) | SLJIT_32,
+			SLJIT_R0, 0, SLJIT_IMM, 0), yesLabel);
 	}
-	auto* noLabel = sljit_emit_label(m_compiler);
-	for (size_t i = 0; i < noCount; ++i) sljit_set_label(no[i], noLabel);
-	emitExit(instruction.a != 0 ? skipped : &m_block->terminal);
-	auto* yesLabel = sljit_emit_label(m_compiler);
-	for (size_t i = 0; i < yesCount; ++i) sljit_set_label(yes[i], yesLabel);
-	emitExit(instruction.a != 0 ? &m_block->terminal : skipped);
+	sljit_set_label(sljit_emit_jump(m_compiler, SLJIT_JUMP), noLabel);
 }
 
 } // namespace bmsx

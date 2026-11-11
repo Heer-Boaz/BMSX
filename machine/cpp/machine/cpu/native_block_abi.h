@@ -48,10 +48,14 @@ public:
 	std::array<void*, 2> publishSegment;
 	// Already materialized/charged edges arrive here when unlinked or expired.
 	void* leaveSegment;
+	// Pure raw-Value equality: FR0/FR1 inputs, R0 boolean result. The fast
+	// call preserves every cached FPR and saved GPR; R1/R2/R3 are scratch.
+	void* equalValues;
 
 private:
 	sljit_label* emitCallGate(sljit_compiler* compiler, sljit_label* coldDispatch);
 	sljit_label* emitReturnGate(sljit_compiler* compiler, sljit_label* coldDispatch);
+	sljit_label* emitEqualityGate(sljit_compiler* compiler);
 };
 
 const NativeBlockGate& nativeBlockGate();

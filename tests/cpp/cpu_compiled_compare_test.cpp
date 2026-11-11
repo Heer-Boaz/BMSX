@@ -25,15 +25,81 @@ struct CpuMachine {
 	IrqController irq;
 	ExecutionAddressSpace addresses;
 	CPU cpu;
-	CpuMachine(const test::Blua32TestImage& image, bool scalar)
+	CpuMachine(const test::Blua32TestImage& image, bool scalar,
+		const CartridgeSocketMediaPair& slots = test::cartridgeSlots())
 		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image))
-		, memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes)
+		, memory(MemoryInit{rom.bytes, slots}, PSX_MACHINE_SPEC.ramBytes)
 		, irq(memory), addresses(memory), cpu(memory, irq, addresses) {
 		cpu.reset();
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; },
 			nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	}
 };
+
+void numericRkComparisonsBelongToTheirExecutionImage() {
+	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::EQ), 1, 0, 63, 7); // R0 == K0
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMP), 0, 0, 2);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::KFALSE), 1, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 0, 1);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::KTRUE), 1, 0, 0);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 58, 255);
+	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 4}};
+	image.constants = {0.0};
+	auto stringImage = image; stringImage.constants = {std::string("same-slot")};
+	const auto cart = test::encodeBlua32TestRom(RomImageDomain::Cartridge, stringImage);
+	const auto replacement = test::encodeBlua32TestRom(RomImageDomain::System, stringImage);
+	CpuMachine native(image, false, test::cartridgeSlots(cart.bytes)), scalar(image, true, test::cartridgeSlots(cart.bytes));
+	for (auto* machine : {&native, &scalar}) machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
+	std::array<Blua32ExecutionImage*, 2> owners{};
+	for (const auto domain : {SYSTEM_EXECUTION_DOMAIN_ID, ExecutionDomainId{0}, SYSTEM_EXECUTION_DOMAIN_ID, ExecutionDomainId{0}}) {
+		for (auto* machine : {&native, &scalar}) {
+			machine->cpu.writeFrameExecution(0, domain,
+				domain == SYSTEM_EXECUTION_DOMAIN_ID ? machine->rom.functionAddresses[0] : cart.functionAddresses[0], DYNAMIC_RAM_BASE);
+			machine->cpu.activeThread()->currentFrame->registers[0] = valueString(machine->cpu.stringPool().intern("same-slot"));
+		}
+		test::runCpuParity(native.cpu, scalar.cpu, 1024);
+		const auto& frame = *native.cpu.activeThread()->currentFrame;
+		require(frame.registers[1] == valueBool(domain == 0) && frame.pc == DYNAMIC_RAM_BASE,
+			"the same RAM instruction and RK index use the activation's Number or String pool, not another resident image");
+		const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
+		require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()), "both image-local comparisons match complete scalar state");
+		owners[domain == 0 ? 1 : 0] = frame.executionImage;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		require(frame.decodedPage->nativeBlocks && frame.decodedPage->nativeBlocks->entries[0],
+			"each constant-pool kind has its own warmed native comparison at the shared physical RAM PC");
+#endif
+	}
+	require(owners[0] != owners[1], "the two active domains retain distinct constant-pool owners");
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	const auto* cartBlock = owners[1]->nativeCodeLookup->find(DYNAMIC_RAM_BASE, 0)->nativeBlocks->entries[0].get();
+#endif
+	for (auto* machine : {&native, &scalar}) {
+		machine->memory.installSystemRom(replacement.bytes);
+		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, replacement.functionAddresses[0], DYNAMIC_RAM_BASE);
+		machine->cpu.activeThread()->currentFrame->registers[0] = valueString(machine->cpu.stringPool().intern("same-slot"));
+	}
+	test::runCpuParity(native.cpu, scalar.cpu, 4);
+	require(native.cpu.activeThread()->currentFrame->registers[1] == valueBool(false),
+		"replacing raw ROM bytes does not mutate an already activated numeric constant pool");
+	for (auto* machine : {&native, &scalar}) {
+		machine->cpu.replaceExecutionImage(machine->addresses.resolveSystemDomain());
+		// Image replacement retires code; the revision producer then relocates
+		// the suspended activation before executing it again.
+		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, replacement.functionAddresses[0], DYNAMIC_RAM_BASE);
+	}
+	test::runCpuParity(native.cpu, scalar.cpu, 1024);
+	require(native.cpu.activeThread()->currentFrame->registers[1] == valueBool(true),
+		"image replacement recompiles the same RK index as String rather than retaining numeric specialization");
+	const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
+	require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()), "the relocated replacement preserves full scalar state");
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	const auto& frame = *native.cpu.activeThread()->currentFrame;
+	require(frame.decodedPage->nativeBlocks && frame.decodedPage->nativeBlocks->entries[0]
+		&& owners[1]->nativeCodeLookup->find(DYNAMIC_RAM_BASE, 0)->nativeBlocks->entries[0].get() == cartBlock,
+		"replacement publishes a new warmed system comparison without retiring the other domain's RAM code");
+#endif
+}
 
 void changingSkippedBytesRetireResolvedEdges() {
 	test::Blua32TestImage image;
@@ -409,6 +475,7 @@ void skipFetchBoundaries() {
 
 int main() {
 	try {
+		numericRkComparisonsBelongToTheirExecutionImage();
 		changingSkippedBytesRetireResolvedEdges(); maximumLengthSkipDependencyRetires(); resolvedComparisonLinksBothPaths();
 		pairedWideJumpsRetainBoundariesAndMutableTargets(); pairedJumpLinksAcrossPages(); pairedJumpFaultsOnlyOnTheNextGrant(); skipFetchBoundaries();
 		std::cout << "Compiled comparison boundary tests passed\n";

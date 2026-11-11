@@ -168,7 +168,7 @@ void helperContinuationsReloadTheCurrentRegisterMap() {
 	require(bytes == 0, "continuation descriptors release their shared executable exactly once");
 }
 
-void residentValuesCrossInternalStringBranches() {
+void residentValuesCrossInternalComparisonBranches() {
 	std::array<DecodedInstruction, 10> decoded{};
 	const std::array ops{OpCode::MOV, OpCode::LT, OpCode::JMP, OpCode::MOV, OpCode::MOV,
 		OpCode::MOV, OpCode::MOV, OpCode::ADD, OpCode::MOV, OpCode::JMP};
@@ -193,22 +193,32 @@ void residentValuesCrossInternalStringBranches() {
 		NativeBlockSource{instructions.subspan(5, 5)}};
 	const std::array constants{valueNumber(1)};
 	const auto alpha = valueString(cpu.stringPool().intern("alpha")), omega = valueString(cpu.stringPool().intern("omega"));
-	const std::array values{valueFromTag(ValueTag::False, 37), valueTable(cpu.createTable()), valueNumber(-0.0)};
+	const std::array values{valueFromTag(ValueTag::False, 37), valueTable(cpu.createTable()), valueNumber(-0.0),
+		VALUE_QNAN_MASK | 0x2au};
 	size_t bytes = 0;
-	{
+	for (const auto op : {OpCode::EQ, OpCode::LT, OpCode::LE}) for (bool expected : {false, true}) {
+		decoded[1].op = static_cast<u8>(op); decoded[1].a = expected ? 1 : 0;
 		auto blocks = NativeBlock::compileRegion(plans, constants.data(), bytes, memory, cpu.stringPool());
-		for (bool less : {false, true}) for (auto value : values) for (int grant : {32, 63, 128, 257}) {
+		for (bool predicate : {false, true}) for (auto value : values) for (int grant : {1, 2, 32, 63, 128, 257}) {
 			std::array<Value, 11> registers; registers.fill(valueNil());
-			registers[0] = less ? alpha : omega; registers[1] = less ? omega : alpha;
+			registers[0] = op == OpCode::EQ || predicate ? alpha : omega;
+			registers[1] = op == OpCode::EQ ? (predicate ? alpha : omega) : (predicate ? omega : alpha);
 			registers[3] = valueNumber(73); registers[4] = valueNumber(0); registers[8] = value;
 			NativeBlockRunState run{.registers = registers.data(), .constants = constants.data(), .remainingCycles = grant};
 			blocks[0]->run(run);
+			if (grant <= 2) {
+				require(registers[7] == value && registers[8] == value && registers[6] == valueNil()
+					&& run.remainingCycles == grant - (predicate == expected ? 3 : 2) && run.registerTop == 8,
+					"both comparison expectations publish live cached raw values at the exact fused-JMP deadline");
+				continue;
+			}
 			require(registers[7] == value && registers[6] == value
 				&& asNumber(registers[4]) > 0 && registers[5] == registers[4] && run.registerTop == 11,
-				"internal string branches preserve and finally publish resident definitions and their top");
+				"shared equality and string-order branches preserve resident definitions in either FPR cache bank");
 			require(registers[8] == value && registers[10] == value
-				&& registers[3] == (less ? value : valueNumber(73)) && registers[9] == (less ? value : valueNil()),
-				"raw tagged payloads, references and negative zero survive both branch edges and native helper calls");
+				&& registers[3] == (predicate != expected ? value : valueNumber(73))
+				&& registers[9] == (predicate != expected ? value : valueNil()),
+				"raw tagged payloads, references, NaN payloads and negative zero survive both cold comparison paths");
 		}
 	}
 	require(bytes == 0, "regional resident bindings do not retain an executable allocation");
@@ -550,11 +560,14 @@ void comparisonDatapathsRespectEveryValueKind() {
 	const std::array values{valueNil(), valueFromTag(ValueTag::Nil, 37), valueBool(false),
 		valueFromTag(ValueTag::False, 37), valueBool(true), valueFromTag(ValueTag::True, 37),
 		valueNumber(0), valueNumber(-0.0), valueNumber(1), valueNumber(-1), valueNumber(0.25),
-		VALUE_QNAN_MASK, Value{0x7ff0000000000001ULL}, Value{0xfff0000000000001ULL},
+		VALUE_QNAN_MASK, VALUE_QNAN_MASK | 0x2au, Value{0x7ff0000000000001ULL}, Value{0xfff0000000000001ULL},
 		valueNumber(std::numeric_limits<double>::infinity()), valueNumber(-std::numeric_limits<double>::infinity()),
-		valueString(strings.intern("")), valueString(strings.intern("a")), valueString(strings.intern(std::string_view("a\0b", 3))),
+		valueString(strings.intern("")), valueString(strings.intern("a")),
+		valueString(strings.intern("a")) | (Value{1} << 40u), valueString(strings.intern(std::string_view("a\0b", 3))),
 		valueString(strings.intern("\xee\x80\x80")), valueString(strings.intern("\xf0\x90\x80\x80")),
 		valueTable(cpu.createTable()), valueTable(cpu.createTable()), valueClosure(&firstClosure), valueClosure(&secondClosure),
+		valueFromTag(ValueTag::Table, 37), valueFromTag(ValueTag::Table, (Value{1} << 40u) | 37u),
+		valueFromTag(static_cast<ValueTag>(8), 37), valueFromTag(static_cast<ValueTag>(8), (Value{1} << 40u) | 37u),
 		valueThread(cpu.activeThread()), valueThread(&otherThread), valueBuiltinFunction(&type), valueBuiltinFunction(&sameType),
 		valueBuiltinFunction(&next)};
 	size_t bytes = 0;
@@ -967,7 +980,7 @@ int main() {
 		sharedExitMapsPublishRawValuesFromEitherRegisterBank();
 		independentEntriesBindTheirOwnValueBanks();
 		helperContinuationsReloadTheCurrentRegisterMap();
-		residentValuesCrossInternalStringBranches();
+		residentValuesCrossInternalComparisonBranches();
 		segmentEntryPermutationsPreserveRawValuesAndDeadDefinitions();
 		sparseRegionSuccessorsPreserveExactPcIdentity();
 		diamondBackedgesPreserveFullStateFromEveryEntry();
