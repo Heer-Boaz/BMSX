@@ -127,7 +127,7 @@ const CART_STUB_MODULES = [
 	},
 ] as const;
 
-export function createCartlibProgramHarness(
+export function compileCartlibProgram(
 	cartEntrySource: string,
 	{ traceStatements = 'erase', preloadModules = [], optLevel = 3, modules = [] }: CartlibProgramOptions = {},
 ) {
@@ -169,7 +169,12 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 		preloadModules,
 	});
 	const images = linkTestBlua32Pair(systemCompiled, cartCompiled);
+	return { images, cart: cartCompiled };
+}
+
+export function createCartlibProgramHarness(cartEntrySource: string, options: CartlibProgramOptions = {}) {
+	const { images, cart } = compileCartlibProgram(cartEntrySource, options);
 	const { cpu } = createTestBlua32PairCpu(images);
 	cpu.installBootPrimitives();
-	return { cpu, images, cart: cartCompiled };
+	return { cpu, images, cart };
 }

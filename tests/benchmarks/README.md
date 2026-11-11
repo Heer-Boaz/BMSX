@@ -38,6 +38,48 @@ No 8 GiB allocation or BMSX runtime is needed for these gate checks.
 
 ## CPU backend conformance
 
+### Actual firmware-generated FSM adoption
+
+```sh
+npm run test:firmware-fsm-parity
+```
+
+This diagnostic builds Debug native-ON and native-OFF runners, then executes
+the same system/cartridge ROM pair through those binaries and both TS backends.
+The existing cartlib test BIOS initializes the real firmware compiler and enters
+the cartridge normally; the actual `cartlib/fsm/frame_program` generates the
+evaluators. This is not the complete stock BIOS or a device/frame-scheduler test.
+O0/O3 selects compilation of the fixture and firmware/cartlib ROMs, not two
+optimization modes inside the firmware runtime compiler.
+
+Nine checkpoints cover initial setup, compilation, 256 calls, another 256 calls,
+32 same-shape bindings with 256 calls each, a new shape, two more 256-call batches,
+and completion. Ordinary guest HALTs stop execution without an instruction hook
+or restoring state. Every checkpoint requires identical complete serialized
+runtime state, consumed guest cycles and remaining budget across all four
+backends. The specific RAM evaluator entry must become compiled; its executable
+owner and dispatch entry must survive subsequent execution/binding. C++ uses weak
+owner identity so observing retention does not keep retired code alive. All
+same-shape closures must share the original generated function address.
+
+The printed temporary evidence directory retains both ROMs, every backend's
+checkpoint states and C++ JSONL profiles. Phase deltas describe **all CPU native
+compilation**, including firmware, caller loops and binding factories, not just
+the evaluator. Per-evaluator records give function/code addresses, bytecode
+extent, entry adoption and the entry's shared native-region size. A region size
+is not a whole-function size. Retention and normal repeated dispatch prove
+adoption, not an exact native instruction/entry execution count; this diagnostic
+does not establish real-game coverage, cache-churn rates or throughput.
+
+Existing matching runner binaries can be supplied without rebuilding:
+
+```sh
+npm run test:firmware-fsm-parity -- \
+  /path/native/bmsx_firmware_fsm_runner /path/interpreter/bmsx_firmware_fsm_runner
+```
+
+### Identical-ROM workload matrix
+
 Run identical ROM bytes through the TS interpreter, generated JavaScript, the
 C++ interpreter and native codegen. C++ comparison uses **two actual binaries**;
 an observer hook forcing scalar execution in a native-enabled binary is not the

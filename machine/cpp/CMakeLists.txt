@@ -968,6 +968,10 @@ if(BMSX_BUILD_TESTS)
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/frame_evaluation_runner.cpp
 	)
 	target_link_libraries(bmsx_frame_evaluation_runner PRIVATE bmsx_core)
+	add_executable(bmsx_firmware_fsm_runner
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/firmware_fsm_runner.cpp
+	)
+	target_link_libraries(bmsx_firmware_fsm_runner PRIVATE bmsx_core)
 
 	add_executable(bmsx_binary_stream_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/binary_stream_test.cpp
