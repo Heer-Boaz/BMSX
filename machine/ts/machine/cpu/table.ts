@@ -378,14 +378,24 @@ export class Table {
 		target: ValueSlots,
 		targetIndex: number,
 	): boolean {
+		if (keyTag === ValueTag.Nil) {
+			throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
+		}
+		const arrayIndex = this.getArrayIndex(keyTag, keyScalar);
 		let current: Table = this;
 		for (let depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; depth += 1) {
-			current.load(keyTag, keyScalar, keyReference, target, targetIndex);
-			if (target.getTag(targetIndex) !== ValueTag.Nil) {
+			let valueSlot = arrayIndex;
+			if (valueSlot < 0 || valueSlot >= current.arrayCapacity) {
+				const nodeIndex = current.findNodeIndex(keyTag, keyScalar, keyReference);
+				valueSlot = nodeIndex >= 0 ? current.hashValueSlot(nodeIndex) : -1;
+			}
+			if (valueSlot >= 0 && current.tags[valueSlot] !== ValueTag.Nil) {
+				target.setEncoded(targetIndex, current.tags[valueSlot], current.scalars[valueSlot], current.references[valueSlot]);
 				return true;
 			}
 			const next = current.metatableIndexTable(indexKey);
 			if (!next) {
+				target.setNil(targetIndex);
 				return true;
 			}
 			current = next;
@@ -399,14 +409,21 @@ export class Table {
 		target: ValueSlots,
 		targetIndex: number,
 	): boolean {
+		const arrayIndex = key - 1;
 		let current: Table = this;
 		for (let depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; depth += 1) {
-			current.loadInteger(key, target, targetIndex);
-			if (target.getTag(targetIndex) !== ValueTag.Nil) {
+			let valueSlot = arrayIndex;
+			if (valueSlot < 0 || valueSlot >= current.arrayCapacity) {
+				const nodeIndex = current.findNodeIndex(ValueTag.Number, key, null);
+				valueSlot = nodeIndex >= 0 ? current.hashValueSlot(nodeIndex) : -1;
+			}
+			if (valueSlot >= 0 && current.tags[valueSlot] !== ValueTag.Nil) {
+				target.setEncoded(targetIndex, current.tags[valueSlot], current.scalars[valueSlot], current.references[valueSlot]);
 				return true;
 			}
 			const next = current.metatableIndexTable(indexKey);
 			if (!next) {
+				target.setNil(targetIndex);
 				return true;
 			}
 			current = next;
@@ -422,12 +439,17 @@ export class Table {
 	): boolean {
 		let current: Table = this;
 		for (let depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; depth += 1) {
-			current.loadStringKey(key, target, targetIndex);
-			if (target.getTag(targetIndex) !== ValueTag.Nil) {
-				return true;
+			const nodeIndex = current.findStringNodeIndex(key);
+			if (nodeIndex >= 0) {
+				const valueSlot = current.hashValueSlot(nodeIndex);
+				if (current.tags[valueSlot] !== ValueTag.Nil) {
+					target.setEncoded(targetIndex, current.tags[valueSlot], current.scalars[valueSlot], current.references[valueSlot]);
+					return true;
+				}
 			}
 			const next = current.metatableIndexTable(indexKey);
 			if (!next) {
+				target.setNil(targetIndex);
 				return true;
 			}
 			current = next;
@@ -444,17 +466,21 @@ export class Table {
 	): number {
 		let current: Table = this;
 		for (let depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; depth += 1) {
-			predictedSlot = current.loadStringKeyCached(
-				key,
-				predictedSlot,
-				target,
-				targetIndex,
-			);
-			if (target.getTag(targetIndex) !== ValueTag.Nil) {
+			if (current.loadPredictedStringKey(key, predictedSlot, target, targetIndex)) {
 				return predictedSlot;
 			}
+			const nodeIndex = current.findStringNodeIndex(key);
+			if (nodeIndex >= 0) {
+				const valueSlot = current.hashValueSlot(nodeIndex);
+				if (current.tags[valueSlot] !== ValueTag.Nil) {
+					target.setEncoded(targetIndex, current.tags[valueSlot], current.scalars[valueSlot], current.references[valueSlot]);
+					return nodeIndex;
+				}
+			}
+			predictedSlot = -1;
 			const next = current.metatableIndexTable(indexKey);
 			if (!next) {
+				target.setNil(targetIndex);
 				return -1;
 			}
 			current = next;

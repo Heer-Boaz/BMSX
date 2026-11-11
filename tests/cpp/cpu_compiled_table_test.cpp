@@ -174,6 +174,8 @@ void selfAndNilFaults() {
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_METATABLE_LOOP && native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES
 		&& native.cpu.activeThread()->frameAtDepth(0)->top == 8 && native.cpu.readFrameRegister(0, 7) == native.cpu.readFrameRegister(0, 9),
 		"SELF publishes its original receiver and top before a failing inherited lookup");
+	require(native.cpu.readFrameRegister(0, 6) == native.cpu.readFrameRegister(0, 9),
+		"failed inherited lookup leaves the method destination unchanged");
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 7, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::SETT), 0, 1, 2);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::GETT), 3, 0, 1);

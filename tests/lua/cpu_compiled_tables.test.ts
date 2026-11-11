@@ -144,6 +144,45 @@ test('compiled SELF publishes its original receiver and top before a failing inh
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_METATABLE_LOOP);
 	assert.equal(js.readEpcWord(), image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
 	assert.equal(frame.top, 8); assert.equal(frame.registers.getTable(7), frame.registers.getTable(9));
+	assert.ok(frame.registers.getTable(6) === frame.registers.getTable(9), 'failed lookup does not replace the method destination with a transient missing value');
+});
+
+for (const [op, key] of [
+	[OpCode.GETT, 1], [OpCode.GETT, 1.5], [OpCode.GETT, false], [OpCode.GETT, 'field'],
+	[OpCode.GETI, 1], [OpCode.GETFIELD, 'field'],
+] as const) test(`table chain exhaustion preserves the read destination (${op}, ${key})`, () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(text, 0, OpCode.MOV, 6, 9, 0);
+	writeInstruction(text, 1, op, 3, 0, op === OpCode.GETFIELD ? 0 : 1);
+	writeInstruction(text, 2, OpCode.MOV, 4, 3, 0);
+	writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
+	writeInstruction(text, 32, OpCode.HALT, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 10 },
+		{ firstWord: 32, wordCount: 1 }], constants: ['field'], exceptionFunctionIndex: 1 });
+	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+		const cpu = createTestSystemCpu(image, backend).cpu;
+		const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
+		const table = cpu.createTable(2, 1);
+		const encodedKey = key === 'field' ? valueString(cpu.stringPool.intern(key)) : key;
+		table.set(encodedKey, 73);
+		r.setTable(0, table); r.set(1, encodedKey); r.setNumber(9, 17);
+		cpu.runUntilDepth(0, 300);
+		if (backend === CpuExecutionBackend.JavaScript) {
+			const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
+			assert.ok(frame.decodedPage!.compiledBlocks!.entries[entry], 'exercise an adopted generated loop');
+		}
+		table.set(encodedKey, null);
+		const meta = cpu.createTable(0, 1);
+		meta.setStringKey(cpu.stringPool.intern('__index'), table); table.metatable = meta;
+		r.setNumber(3, 91); r.setNumber(4, 57); frame.top = 0;
+		cpu.runUntilDepth(0, 2);
+		assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_METATABLE_LOOP);
+		assert.equal(cpu.readEpcWord(), image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
+		assert.equal(r.getNumber(3), 91, 'an exhausted lookup has no result to publish');
+		assert.equal(r.getNumber(4), 57, 'the following instruction did not execute');
+		assert.equal(r.getNumber(6), 17, 'the completed prefix remains visible');
+		assert.equal(frame.top, 7);
+	}
 });
 
 test('compiled nil-key traps precede any invalid table mutation or destination write', () => {
