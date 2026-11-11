@@ -1,5 +1,43 @@
 # CPU execution gate
 
+## Native Windows test gate
+
+Native Windows executables use the approved Job Object runner, not the Linux
+cgroup launcher. From 64-bit Windows PowerShell/PowerShell:
+
+```powershell
+& .\scripts\test-windows.ps1 -FilePath 'C:\path\test.exe' `
+  -WorkingDirectory 'C:\path' -TimeoutSeconds 600 -ArgumentList @('argument', 'with spaces')
+```
+
+The default is a hard **8 GiB job-wide committed-memory limit**, shared by the
+test and its ordinary child-process tree. `-MemoryLimitBytes` may only lower it.
+The runner creates a non-inheritable kill-on-close job, installs/query-verifies
+its limits, atomically assigns the suspended process, confirms membership and
+only then resumes execution. No breakaway or elevation is used. The executable
+receives inherited input/output/error streams, cwd and environment without shell
+interpretation. Its exit code is preserved; timeout returns 124, launcher/setup
+failure 125, and an observed memory-limit notification 137. Root exit terminates
+remaining descendants; cleanup has its own finite deadline. Killing the runner
+closes the last job handle and terminates the tree.
+
+This cap concerns Windows aggregate committed/private memory, **not Linux RSS
+or cgroup OOM semantics**. Windows does not guarantee delivery of hard-limit
+notifications. Every observed notification fails the run, including when the
+child would return zero, but absence of a notification cannot prove that no
+allocation was denied. Known allocation failure is never accepted as a passing
+test or retried without the cap. Processes delegated to external services are
+not ordinary descendants; this launcher is not a system-wide sandbox.
+
+The small Windows-only gate regressions are
+`tests/platform/test_windows_job.ps1`. They exercise exit propagation,
+descendant cleanup, timeout, rejection of a raised limit, and a 64 MiB job
+denying a 128 MiB untouched commit. The denial test fails explicitly if its
+notification is missing; it does not claim that Windows guarantees delivery.
+No 8 GiB allocation or BMSX runtime is needed for these gate checks.
+
+## CPU backend conformance
+
 Run identical ROM bytes through the TS interpreter, generated JavaScript, the
 C++ interpreter and native codegen. C++ comparison uses **two actual binaries**;
 an observer hook forcing scalar execution in a native-enabled binary is not the
