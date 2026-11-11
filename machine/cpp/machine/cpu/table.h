@@ -24,7 +24,7 @@ struct TableNativeFieldOffsets {
 	size_t values;
 	size_t arrayData;
 	size_t arraySize;
-	size_t arrayLength;
+	size_t lengthHint;
 	size_t metatable;
 };
 #endif
@@ -117,9 +117,8 @@ public:
 		}
 		return TABLE_INDEX_CHAIN_EXHAUSTED;
 	}
-	int length() const;
-	// Nonallocating mutation primitive, also callable through the native ABI.
-	static void advanceArrayLength(Table* table) noexcept;
+	// Pure boundary search; also the generated-code entry point.
+	static double length(const Table* table) noexcept;
 	void clear();
 	// Physical array positions followed by hash nodes, including vacant/dead slots.
 	size_t storedSlotCount() const { return m_array.size() + m_hashSize; }
@@ -147,9 +146,6 @@ public:
 					continue;
 				}
 				m_array[i] = valueNil();
-				if (i < m_arrayLength) {
-					m_arrayLength = i;
-				}
 			}
 		}
 		for (size_t i = 0; i < m_hashSize; ++i) {
@@ -187,15 +183,16 @@ private:
 		void operator()(void* ptr) const noexcept { ::operator delete(ptr); }
 	};
 
+	void updateLengthHint(size_t slot, bool present) {
+		if (present) {
+			if (slot == m_lengthHint) ++m_lengthHint;
+		} else if (slot + 1 == m_lengthHint) {
+			--m_lengthHint;
+		}
+	}
 	void setArraySlot(size_t slot, const Value& value) {
 		m_array[slot] = value;
-		if (isNil(value)) {
-			if (slot < m_arrayLength) {
-				m_arrayLength = slot;
-			}
-		} else if (slot == m_arrayLength) {
-			advanceArrayLength(this);
-		}
+		updateLengthHint(slot, !isNil(value));
 	}
 
 	bool getArrayIndex(const Value& key, int& outIndex) const;
@@ -211,7 +208,7 @@ private:
 		outIndex = index - 1;
 		return true;
 	}
-	bool hasArrayIndex(size_t index) const;
+	bool hasIntegerKey(uint64_t key) const;
 	size_t hashValue(const Value& key) const;
 	bool keyEquals(const Value& a, const Value& b) const;
 	int findNodeIndex(const Value& key, bool matchDead = false) const;
@@ -244,7 +241,7 @@ private:
 
 	LuaHeap& m_luaHeap;
 	Span<Value> m_array;
-	size_t m_arrayLength = 0;
+	u32 m_lengthHint = 0;
 	std::unique_ptr<void, StorageDeleter> m_storage;
 	Value* m_hashKeys = nullptr;
 	Value* m_hashValues = nullptr;

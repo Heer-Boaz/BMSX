@@ -79,6 +79,36 @@ void storesRetainNativeFrame(CPU& cpu, Memory& memory) {
 			"growth publishes the prefix roots without executing the suffix");
 	}
 }
+void boundaryLengthRetainsNativeFrame(CPU& cpu, Memory& memory) {
+	std::array<DecodedInstruction, 4> decoded{};
+	std::array<NativeBlockInstruction, 4> source{};
+	const std::array ops{OpCode::MOV, OpCode::LEN, OpCode::MOV, OpCode::JMP};
+	for (size_t i = 0; i < ops.size(); ++i) {
+		decoded[i].op = static_cast<u8>(ops[i]); decoded[i].width = 1;
+		decoded[i].baseCycles = BASE_CYCLES[decoded[i].op];
+		source[i] = {&decoded[i], 0x1000u + static_cast<u32>(i) * INSTRUCTION_BYTES};
+	}
+	decoded[0].a = 6; decoded[0].b = 1;
+	decoded[1].a = 0; decoded[1].b = 0;
+	decoded[2].a = 5; decoded[2].b = 6;
+	decoded[3].bx = 0x2000;
+	size_t bytes = 0;
+	auto block = NativeBlock::compile(source, nullptr, bytes, memory, cpu.stringPool());
+	auto* table = cpu.createTable(0, 128);
+	for (int bit = 52; bit >= 0; --bit) table->set(valueNumber(static_cast<double>(uint64_t{1} << bit)), valueBool(false));
+	const Value root = valueTable(cpu.createTable());
+	for (const double expected : {4503599627370496.0, 9007199254740991.0}) {
+		if (expected == 9007199254740991.0) table->set(valueNumber(expected), valueBool(false));
+		std::array<Value, 7> registers; registers.fill(valueNil());
+		registers[0] = valueTable(table); registers[1] = root;
+		NativeBlockRunState state{.registers = registers.data(), .constants = nullptr, .remainingCycles = 100};
+		const auto* exit = block->run(state);
+		require(exit == &block->terminal, "table LEN and its suffix stay in one native invocation");
+		require(registers[0] == valueNumber(expected), "native LEN returns F64 without narrowing and supports source aliasing");
+		require(registers[5] == root && registers[6] == root, "live raw references survive the nonallocating length call");
+		require(state.remainingCycles == 100 - block->terminal.cycles, "length search adds no per-probe guest penalty");
+	}
+}
 } // namespace
 
 int main() {
@@ -86,6 +116,7 @@ int main() {
 		Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
 		IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses);
 		storesRetainNativeFrame(cpu, memory);
+		boundaryLengthRetainsNativeFrame(cpu, memory);
 		std::cout << "Native string table store tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {

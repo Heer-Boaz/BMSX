@@ -522,7 +522,7 @@ Shift counts undergo the same word conversion and then use only their low five b
 
 Only nil and false are falsey. Every other value is truthy, including Number 0, Number NaN, and an empty String. NOT writes a boolean, not a Number. In particular, negating the truth of zero produces false.
 
-LEN returns a Number. A String's length is its stored Unicode codepoint count, not its byte count. A Table's length is its maintained array length. LEN on any other value kind faults; it does not invoke a metatable length operation.
+LEN returns a Number. A String's length is its stored Unicode codepoint count, not its byte count. A Table's length is a boundary in its own positive integer keys. LEN on any other value kind faults; it does not invoke a metatable length operation.
 
 
 Concatenation uses language value-to-string conversion rather than accepting only strings and Numbers. CONCAT joins its two RK operands in B-then-C order. CONCATN joins exactly C consecutive registers starting at R[B], in increasing register order. All CONCATN sources are read before the result is written, so the destination may overlap the input range. A zero CONCATN count produces the empty String.
@@ -930,15 +930,31 @@ Only positive integral numeric keys from 1 through `7FFFFFFFH` are eligible for 
 
 A non-nil value establishes a mapping. In particular, `false` is present: it is not a missing entry and does not permit an inherited value to replace it. Assigning nil removes the Table's own mapping. It does not create a retrievable nil-valued entry. An allocated but empty array slot is likewise missing. Deletion does not erase other keys.
 
-#### Stored length {#sec-cpu-stored-length}
+#### Table length {#sec-cpu-table-length}
 
-The Table length operation, `#t`, reads a stored length maintained by Table mutations. It does not count all mappings, find the largest numeric key, traverse a metatable, or search for a boundary when the length is read. Initial capacity allocates storage only: an empty Table has length zero regardless of its array or hash capacity.
+The Table length operation, `#t`, returns a **boundary** in its own positive
+integer keys. A boundary is a nonnegative integer `L` for which both conditions
+hold:
 
-Let `L` denote the stored length. Deleting an array-eligible numeric key `k` shortens the length to `k - 1` when `k - 1 < L`. Otherwise that deletion does not shorten it. Entries above the new boundary remain mapped. Thus a Table can retain entries at keys greater than its reported length.
+- `L` is zero, or `t[L]` is non-nil;
+- `L` is `2^53 - 1`, or `t[L + 1]` is nil.
 
-An in-capacity non-nil write at key `L + 1`, or a newly inserted hash entry for that array-eligible key, advances the length over consecutive non-nil own entries until the first missing numeric key. This scan continues into hash storage beyond array capacity. A `false` entry participates in that advance. Other in-capacity non-nil writes do not advance the boundary merely because their key is large. Replacing an existing non-nil hash mapping does not itself recompute the stored length. Storage redistribution can rebuild length through reinsertion, so not every apparently unrelated insertion is guaranteed to leave an already path-dependent length unchanged.
+These tests read only the Table's own mappings, not inherited entries. `false`
+is present. The terminal boundary is the largest binary64 integer whose
+successor is also exactly representable. Keys outside this sequence range
+remain ordinary hash keys and do not extend the length beyond that boundary.
 
-For example, with array capacity four and keys 1 through 5 populated, the initial length is 5. Deleting key 2 shortens it to 1 without removing key 5. Restoring key 2 advances the length to 5, including that hash-held entry.
+A **sequence** has exactly the keys 1 through `n` in this range, with no holes;
+its length is `n`. The empty sequence has length zero regardless of its initial
+capacity. Length does not count all mappings or find the largest numeric key.
+
+A Table with holes can have several valid boundaries; `#t` may select any one
+of them. For example, with keys 1, 3, 4 and 5 present, both 1 and 5 are valid.
+Deleting key 2 from a sequence of length 5 therefore does not promise length
+1. Restoring key 2 restores the unique boundary 5. Programs that retain holes
+must keep an explicit count or explicit iteration bounds when a particular
+range is required. Repeated length reads without a mutation return the same
+boundary and do not mutate the Table.
 
 #### Metatables and indexed reads {#sec-cpu-metatables-and-indexed-reads}
 
@@ -962,7 +978,7 @@ Writes always modify the named target Table directly. They do not redirect throu
 
 The [BIOS Table and metatable interface](bios-base.md#sec-bios-base-table-and-metatable-access)
 specifies `rawget`, `rawset`, `getmetatable` and `setmetatable`. Raw reads bypass
-the inherited lookup above; raw writes use the same maintained Table length.
+the inherited lookup above; raw writes use the same Table-length rules.
 
 ### Language allocation and lifetime {#sec-cpu-language-allocation-and-lifetime}
 
@@ -1026,8 +1042,8 @@ key = nil
 The entry does not keep the former key alive. Once collection determines that
 key unreachable, the mapping is removed; this sequence does not specify an
 immediate collection or reclamation deadline. Collection removes mappings,
-not their inherited replacements, and can shorten a weak-value array's stored
-length when it clears an earlier element.
+not their inherited replacements, and can change a weak-value Table's
+valid length boundaries when it clears an element.
 
 ### Instruction reference {#sec-cpu-instruction-reference}
 

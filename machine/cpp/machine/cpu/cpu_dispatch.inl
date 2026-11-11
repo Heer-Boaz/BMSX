@@ -388,7 +388,7 @@ DISPATCH_LABEL(LEN) {
 		DISPATCH_NEXT();
 	}
 	if (valueIsTable(val)) {
-		SET_REGISTER_FAST(a, valueNumber(static_cast<double>(asTable(val)->length())));
+		SET_REGISTER_FAST(a, valueNumber(Table::length(asTable(val))));
 		DISPATCH_NEXT();
 	}
 	throw LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);

@@ -78,7 +78,7 @@ for (const generic of [false, true]) test(`compiled array reads resolve inherite
 		'the field load and its admitted helper continuation stay in one generated region');
 });
 
-test('compiled array stores advance length through hash entries and shorten it on nil without a full register writeback', () => {
+test('compiled array stores retain hints and length searches preserve live registers', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.K1, 8, 0, 0);
 	writeInstruction(text, 1, OpCode.SETI, 0, 2, 2);
@@ -96,7 +96,12 @@ test('compiled array stores advance length through hash entries and shorten it o
 		for (const cpu of [js, ref]) cpu.rootThread.frameAtDepth(0).registers.set(2, value);
 		runCpuParity(js, ref, 6);
 		assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
-		assert.equal(js.readFrameRegister(0, 3), value === null ? 1 : 5);
+		const boundary = js.readFrameRegister(0, 3) as number;
+		const table = js.rootThread.frameAtDepth(0).registers.getTable(0);
+		assert.ok(boundary === 0 || table.get(boundary) !== null);
+		assert.equal(table.get(boundary + 1), null);
+		if (value !== null) assert.equal(boundary, 5);
+		assert.equal(js.readFrameRegister(0, 4), boundary + 1, 'the live native definition survives the length helper');
 	}
 });
 
@@ -218,7 +223,7 @@ test('compiled NEWT materializes allocation roots and leaves destination untouch
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 16 },
 		{ firstWord: 32, wordCount: 1 }], globalNames: ['retained'], exceptionFunctionIndex: 1 });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
-	runCpuParity(js, ref, 100);
+	for (let visit = 0; visit < 32; visit++) runCpuParity(js, ref, 1);
 	const frame = js.rootThread.frameAtDepth(0), page = frame.decodedPage!, entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	assert.equal(page.compiledBlocks!.entries[entry]!.terminal.exit, CompiledBlockExit.AllocateTable);
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));

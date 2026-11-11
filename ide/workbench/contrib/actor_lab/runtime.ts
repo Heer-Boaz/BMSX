@@ -46,7 +46,7 @@ export function findRuntimeActor(sources: RuntimeInstalledSourceState, guest: Su
 export function findWorldActor(guest: SuspendedGuestSession, world: Table | undefined, hashId: number): Table | undefined {
 	if (world === undefined) return;
 	const objects = guest.readStringMember(world, '_objects') as Table;
-	for (let i = 1; i <= objects.arrayLength; i += 1) {
+	for (let i = 1, length = objects.length(); i <= length; i += 1) {
 		const actor = objects.getInteger(i) as Table;
 		if (actor.hashId === hashId) return actor;
 	}
@@ -88,19 +88,20 @@ export class ActorRuntimeTree {
 			const id = guest.readStringMember(actor, 'id');
 			const root = this.node(guest, null, 0, 'actor', actor, actor, null, id, guest.isTruthy(guest.readStringMember(actor, 'active')));
 			const components = guest.readStringMember(actor, '_components') as Table;
-			this.kinds.length = components.arrayLength + 1;
+			const componentCount = components.length();
+			this.kinds.length = componentCount + 1;
 			this.kinds.fill(-1);
 			const classes = guest.readStringMember(actor, '_components_by_class') as Table;
 			for (let i = 0; i < COMPONENT_TYPES.length; i += 1) {
 				const type = readRuntimeLuaModuleExport(sources, guest, domain, COMPONENT_TYPES[i][0]);
 				if (type.kind !== 'value' || type.value === null) continue;
 				const bucket = classes.get(type.value) as Table | null;
-				if (bucket !== null) for (let j = 1; j <= bucket.arrayLength; j += 1) {
+				if (bucket !== null) for (let j = 1, length = bucket.length(); j <= length; j += 1) {
 					const index = guest.readStringMember(bucket.getInteger(j), '_owner_component_index') as number;
 					this.kinds[index] = i;
 				}
 			}
-			for (let i = 1; i <= components.arrayLength; i += 1) {
+			for (let i = 1; i <= componentCount; i += 1) {
 				const component = components.getInteger(i) as Table;
 				const type = this.kinds[i];
 				const id = guest.readStringMember(component, type === 1 ? 'tree_id' : 'id');
@@ -110,7 +111,7 @@ export class ActorRuntimeTree {
 				let count = 0;
 				if (type === 0) {
 					const machines = guest.readStringMember(component, '_machines') as Table;
-					for (let index = 1; index <= machines.arrayLength; index++) {
+					for (let index = 1, length = machines.length(); index <= length; index++) {
 						const machine = machines.getInteger(index) as Table;
 						const node = this.node(guest, branch, count++, 'machine', machine, machine, component, guest.readStringMember(machine, 'localdef_id'),
 							branch.active && guest.isTruthy(guest.readStringMember(component, '_started')));
@@ -124,7 +125,7 @@ export class ActorRuntimeTree {
 				}
 				this.finishChildren(branch, count, type === 2 || type === 3);
 			}
-			this.finishChildren(root, components.arrayLength);
+			this.finishChildren(root, componentCount);
 			this.finishChildren(null, 1);
 		}
 		if (this.changed) this.topologyRevision++;
@@ -192,14 +193,15 @@ export class ActorRuntimeTree {
 		const children = guest.readStringMember(state, 'states') as Table;
 		const ids = guest.readStringMember(state, 'state_ids') as Table;
 		const current = guest.readStringMember(state, 'current_id');
-		for (let i = 1; i <= ids.arrayLength; i += 1) {
+		const stateCount = ids.length();
+		for (let i = 1; i <= stateCount; i += 1) {
 			const id = ids.getInteger(i);
 			const child = children.get(id) as Table;
 			const active = parent.active && (current === id || guest.isTruthy(guest.readStringMember(guest.readStringMember(child, 'definition'), 'is_concurrent')));
 			const node = this.node(guest, parent, i - 1, 'state', child, machine, component, id, active);
 			this.states(guest, node, machine, component);
 		}
-		this.finishChildren(parent, ids.arrayLength, true);
+		this.finishChildren(parent, stateCount, true);
 	}
 }
 

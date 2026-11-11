@@ -20,6 +20,7 @@ import {
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { runCompiledLua } from './cpu_test_harness';
+import { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotTable } from '../../machine/ts/machine/cpu/snapshot';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 
 test('runtime values expose one numeric representation tag', () => {
@@ -58,12 +59,12 @@ test('Table stores sparse unsigned integer keys in the hash part', () => {
 
 	assert.equal(table.get(highKey), 11);
 	assert.equal(table.get(tokenKey), 22);
-	assert.equal(table.arrayLength, 0);
+	assert.equal(table.length(), 0);
 	assert.ok(table.getTrackedHeapBytes() < 4096);
 });
 
 for (const route of ['generic', 'encoded', 'integer', 'integer-array'] as const) {
-	test(`Table ${route} hole refill includes the numeric hash tail`, () => {
+	test(`Table ${route} writes preserve sequence boundaries across the numeric hash tail`, () => {
 		const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 		const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 		const table = cpu.createTable(4, 8);
@@ -71,7 +72,7 @@ for (const route of ['generic', 'encoded', 'integer', 'integer-array'] as const)
 			table.set(key, key * 10);
 		}
 		const heapBytes = table.getTrackedHeapBytes();
-		assert.equal(table.arrayLength, 7);
+		assert.equal(table.length(), 7);
 
 		for (const key of [2, 4]) {
 			switch (route) {
@@ -88,7 +89,9 @@ for (const route of ['generic', 'encoded', 'integer', 'integer-array'] as const)
 					assert.equal(table.storeIntegerArrayKey(key, ValueTag.Nil, NaN, null), true);
 					break;
 			}
-			assert.equal(table.arrayLength, key - 1);
+			const boundary = table.length();
+			assert.ok(boundary === 0 || table.get(boundary) !== null);
+			assert.equal(table.get(boundary + 1), null);
 			assert.equal(table.get(7), 70);
 
 			switch (route) {
@@ -105,17 +108,81 @@ for (const route of ['generic', 'encoded', 'integer', 'integer-array'] as const)
 					assert.equal(table.storeIntegerArrayKey(key, ValueTag.False, NaN, null), true);
 					break;
 			}
-			assert.equal(table.arrayLength, 7);
+			assert.equal(table.length(), 7);
 			assert.equal(table.get(key), false);
 			assert.equal(table.getTrackedHeapBytes(), heapBytes);
 		}
 
 		table.set(9, 90);
-		assert.equal(table.arrayLength, 7);
+		assert.equal(table.length(), 7);
 		table.set(8, 80);
-		assert.equal(table.arrayLength, 9);
+		assert.equal(table.length(), 9);
 	});
 }
+
+test('Table length is a pure boundary search and writes never scan a retained suffix', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const table = cpu.createTable(4096, 8);
+	// Descending construction leaves a hint of one, not an eagerly scanned length.
+	for (let key = 4096; key >= 1; key--) table.setInteger(key, false);
+	const snapshot = new CpuSnapshot(), writer = new CpuSnapshotWriter(snapshot);
+	const offset = table.captureSnapshot(writer, () => {}); writer.finish();
+	assert.equal(snapshot.word(offset + CpuSnapshotTable.LengthHint), 1);
+	assert.equal(table.length(), 4096);
+	for (let repeat = 0; repeat < 8; repeat++) {
+		table.setInteger(2048, null); table.setInteger(2048, false);
+	}
+	const after = new CpuSnapshot(), afterWriter = new CpuSnapshotWriter(after);
+	table.captureSnapshot(afterWriter, () => {}); afterWriter.finish();
+	assert.deepEqual(after.words, snapshot.words, 'neither LEN nor distant hole refill scans or changes the raw hint');
+	// Erase the hinted entry without moving the hint (the weak-clearing owner).
+	table.clearWeakEntries(false, true, (_tag, _scalar, _reference) => false);
+	assert.equal(table.length(), 0, 'a stale nonzero hint is only a search seed');
+	const cleared = new CpuSnapshot(), clearedWriter = new CpuSnapshotWriter(cleared);
+	table.captureSnapshot(clearedWriter, () => {}); clearedWriter.finish();
+	assert.equal(cleared.word(offset + CpuSnapshotTable.LengthHint), 1);
+});
+
+test('Table sparse hash boundaries include exact binary64 integers beyond array storage', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const table = cpu.createTable(0, 128);
+	for (let bit = 52; bit >= 0; bit--) table.set(2 ** bit, false);
+	assert.equal(table.length(), 2 ** 52);
+	table.set(0x1fffffffffffff, false);
+	assert.equal(table.length(), 0x1fffffffffffff);
+	table.set(2 ** 53, true);
+	assert.equal(table.length(), 0x1fffffffffffff, 'terminal sequence boundary does not wrap or loop');
+	table.set(0x1fffffffffffff, null);
+	assert.equal(table.length(), 2 ** 52);
+});
+
+test('numeric hash mixing distributes negative integral keys and preserves canonical matching', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const table = cpu.createTable(0, 1024);
+	for (let key = -1; key >= -1024; key--) table.set(key, key);
+	const snapshot = new CpuSnapshot(), writer = new CpuSnapshotWriter(snapshot);
+	const offset = table.captureSnapshot(writer, () => {}); writer.finish();
+	let longest = 0;
+	for (let slot = 0; slot < 1024; slot++) {
+		let count = 0;
+		for (let next = slot; next !== -1; next = snapshot.int(offset + CpuSnapshotTable.Data + next * 7 + 6)) count++;
+		longest = Math.max(longest, count);
+		assert.equal(table.get(-(slot + 1)), -(slot + 1));
+	}
+	assert.ok(longest <= 8, `negative integers must not collapse into a single hash chain (${longest})`);
+	// The same bucket constants are checked against C++ ValueHash.
+	const slots = new ValueSlots(2);
+	for (const [key, bucket] of [[-1, 781], [-2, 1], [-3, 891], [-1024, 661], [0, 0], [0.5, 537], [1.5, 903], [4294967296, 909], [NaN, 903], [Infinity, 781]]) {
+		const one = cpu.createTable(0, 1024); one.set(key, false);
+		assert.equal(one.loadStoredEntry(bucket, slots, 0), true, `hash bucket for ${key}`);
+		assert.equal(slots.get(1), false);
+	}
+	table.set(-0, true); assert.equal(table.get(0), true);
+	table.set(0, false); assert.equal(table.get(-0), false);
+});
 
 test('Table hashes runtime object keys from value-owned identity', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);

@@ -85,16 +85,17 @@ void NativeBlockCompiler::emitArraySlot(bool load, int value, SlowPath& slow) {
 	loadHeader(value, SLJIT_R2);
 	sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_MEM1(SLJIT_S2), 0, SLJIT_FR2, 0);
 	auto* nil = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, valueNil() >> 48u);
-	auto* retained = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), fields.arrayLength);
-	// Advancing length can scan hash-held numeric keys, but cannot allocate,
-	// fault or execute guest code. Keep the native frame and its live values.
-	emitCallSpills(false);
-	sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS1V(P), SLJIT_IMM, SLJIT_FUNC_ADDR(&Table::advanceArrayLength));
-	emitCallSpills(true);
+	sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), fields.lengthHint);
+	auto* retained = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R1, 0, SLJIT_R2, 0);
+	sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, 1);
+	sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_MEM1(SLJIT_R0), fields.lengthHint, SLJIT_R2, 0);
 	auto* advanced = sljit_emit_jump(m_compiler, SLJIT_JUMP);
 	sljit_set_label(nil, sljit_emit_label(m_compiler));
-	auto* unchanged = sljit_emit_cmp(m_compiler, SLJIT_GREATER_EQUAL, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), fields.arrayLength);
-	sljit_emit_op1(m_compiler, SLJIT_MOV, SLJIT_MEM1(SLJIT_R0), fields.arrayLength, SLJIT_R1, 0);
+	sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), fields.lengthHint);
+	sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, 1);
+	auto* unchanged = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R1, 0, SLJIT_R2, 0);
+	sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, 1);
+	sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_MEM1(SLJIT_R0), fields.lengthHint, SLJIT_R2, 0);
 	auto* done = sljit_emit_label(m_compiler);
 	sljit_set_label(retained, done); sljit_set_label(advanced, done); sljit_set_label(unchanged, done);
 }
@@ -156,8 +157,9 @@ void NativeBlockCompiler::emitLength(const DecodedInstruction& instruction, Nati
 	SlowPath slow; slow.exit = exit; slow.registers = registerSnapshot();
 	slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, valueFromTag(ValueTag::Table) >> 48u);
 	loadPayload(instruction.b, SLJIT_R0, SLJIT_R1);
-	sljit_emit_op1(m_compiler, SLJIT_MOV, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), Table::nativeFieldOffsets().arrayLength);
-	sljit_emit_fop1(m_compiler, SLJIT_CONV_F64_FROM_SW, SLJIT_FR0, 0, SLJIT_R0, 0);
+	emitCallSpills(false);
+	sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS1(F64, P), SLJIT_IMM, SLJIT_FUNC_ADDR(&Table::length));
+	emitCallSpills(true);
 	auto* done = sljit_emit_jump(m_compiler, SLJIT_JUMP);
 	sljit_set_label(string, sljit_emit_label(m_compiler));
 	loadPayload(instruction.b, SLJIT_R1, SLJIT_R0);

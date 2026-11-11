@@ -45,7 +45,7 @@ TableNativeFieldOffsets Table::nativeFieldOffsets() {
 		offsetof(Table, m_hashKeys), offsetof(Table, m_hashValues),
 		offsetof(Table, m_array) + offsetof(Span<Value>, data_),
 		offsetof(Table, m_array) + offsetof(Span<Value>, size_),
-		offsetof(Table, m_arrayLength), offsetof(Table, metatable)};
+		offsetof(Table, m_lengthHint), offsetof(Table, metatable)};
 }
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
@@ -59,24 +59,12 @@ bool Table::getArrayIndex(const Value& key, int& outIndex) const {
 	return getNumberArrayIndex(asNumber(key), outIndex);
 }
 
-bool Table::hasArrayIndex(size_t index) const {
-	if (index < m_array.size()) {
-		return !isNil(m_array[index]);
+bool Table::hasIntegerKey(uint64_t key) const {
+	if (key <= m_array.size()) {
+		return !isNil(m_array[static_cast<size_t>(key - 1)]);
 	}
-	if (m_hashSize == 0) {
-		return false;
-	}
-	Value key = valueNumber(static_cast<double>(index + 1));
-	const int nodeIndex = findNodeIndex(key);
+	const int nodeIndex = findNodeIndex(valueNumber(static_cast<double>(key)));
 	return nodeIndex >= 0 && !isNil(m_hashValues[static_cast<size_t>(nodeIndex)]);
-}
-
-void Table::advanceArrayLength(Table* table) noexcept {
-	size_t newLength = table->m_arrayLength;
-	while (table->hasArrayIndex(newLength)) {
-		++newLength;
-	}
-	table->m_arrayLength = newLength;
 }
 
 size_t Table::hashValue(const Value& key) const {
@@ -223,7 +211,6 @@ void Table::resize(
 	Value* oldHashValues = m_hashValues;
 	const size_t oldHashSize = m_hashSize;
 
-	m_arrayLength = 0;
 	allocateStorage(newArraySize, newHashSize);
 
 	for (size_t i = 0; i < oldArray.size(); ++i) {
@@ -258,21 +245,14 @@ void Table::allocateStorage(size_t arraySize, size_t hashSize) {
 	std::fill_n(m_hashNext, hashSize, kTableHashNextEnd);
 }
 
+// Storage redistribution must not change the logical boundary hint.
 int Table::rawSet(const Value& key, const Value& value) {
 	int index = 0;
-	bool isArrayKey = getArrayIndex(key, index);
-	if (isArrayKey) {
-		size_t idx = static_cast<size_t>(index);
-		if (idx < m_array.size()) {
-			setArraySlot(idx, value);
-			return -1;
-		}
+	if (getArrayIndex(key, index) && static_cast<size_t>(index) < m_array.size()) {
+		m_array[static_cast<size_t>(index)] = value;
+		return -1;
 	}
-	const int nodeIndex = insertHash(key, value);
-	if (isArrayKey && static_cast<size_t>(index) == m_arrayLength) {
-		advanceArrayLength(this);
-	}
-	return nodeIndex;
+	return insertHash(key, value);
 }
 
 int Table::insertHash(const Value& key, const Value& value) {
@@ -376,9 +356,7 @@ void Table::set(const Value& key, const Value& value) {
 
 	if (isNil(value)) {
 		removeFromHash(key);
-		if (isArrayKey && static_cast<size_t>(index) < m_arrayLength) {
-			m_arrayLength = static_cast<size_t>(index);
-		}
+		if (isArrayKey) updateLengthHint(static_cast<size_t>(index), false);
 		return;
 	}
 	int nodeIndex = findNodeIndex(key, true);
@@ -388,9 +366,11 @@ void Table::set(const Value& key, const Value& value) {
 			m_hashKeys[slot] = key;
 		}
 		m_hashValues[slot] = value;
+		if (isArrayKey) updateLengthHint(static_cast<size_t>(index), true);
 		return;
 	}
 	rawSet(key, value);
+	if (isArrayKey) updateLengthHint(static_cast<size_t>(index), true);
 }
 
 Value Table::getInteger(int indexValue) const {
@@ -414,17 +394,17 @@ void Table::setInteger(int indexValue, const Value& value) {
 	const Value key = valueNumber(static_cast<double>(indexValue));
 	if (isNil(value)) {
 		removeFromHash(key);
-		if (index >= 0 && static_cast<size_t>(index) < m_arrayLength) {
-			m_arrayLength = static_cast<size_t>(index);
-		}
+		if (index >= 0) updateLengthHint(static_cast<size_t>(index), false);
 		return;
 	}
 	const int nodeIndex = findNodeIndex(key);
 	if (nodeIndex >= 0) {
 		m_hashValues[static_cast<size_t>(nodeIndex)] = value;
+		if (index >= 0) updateLengthHint(static_cast<size_t>(index), true);
 		return;
 	}
 	rawSet(key, value);
+	if (index >= 0) updateLengthHint(static_cast<size_t>(index), true);
 }
 
 Value Table::getStringKey(StringId key) const {
@@ -491,13 +471,35 @@ void Table::setStringKeyCached(StringId key, const Value& value, int& predictedS
 	predictedSlot = setStringKey(key, value);
 }
 
-int Table::length() const {
-	return static_cast<int>(m_arrayLength);
+double Table::length(const Table* table) noexcept {
+	// Binary64's largest integer with a distinct, exactly representable successor.
+	constexpr uint64_t maxBoundary = (uint64_t{1} << 53) - 1;
+	uint64_t low = table->m_lengthHint;
+	uint64_t high;
+	if (low != 0 && !table->hasIntegerKey(low)) {
+		high = low;
+		low = 0;
+	} else {
+		if (!table->hasIntegerKey(low + 1)) return static_cast<double>(low);
+		++low;
+		high = low * 2;
+		while (table->hasIntegerKey(high)) {
+			low = high;
+			if (low == maxBoundary) return static_cast<double>(low);
+			high = std::min(low * 2, maxBoundary);
+		}
+	}
+	while (high - low > 1) {
+		const uint64_t middle = low + (high - low) / 2;
+		if (table->hasIntegerKey(middle)) low = middle;
+		else high = middle;
+	}
+	return static_cast<double>(low);
 }
 
 void Table::clear() {
 	const size_t previousBytes = trackedHeapBytes();
-	m_arrayLength = 0;
+	m_lengthHint = 0;
 	allocateStorage(0, 0);
 	m_luaHeap.release(previousBytes - trackedHeapBytes());
 }
@@ -563,7 +565,7 @@ u32 Table::captureSnapshot(CpuSnapshot& snapshot, const CpuSnapshotValueWriter& 
 	const u32 offset = snapshot.reserveWords(SNAP_TABLE_DATA + arrayCapacity * CPU_SNAPSHOT_VALUE_WORDS + hashSize * (2 * CPU_SNAPSHOT_VALUE_WORDS + 1));
 	snapshot.setWord(offset + SNAP_TABLE_KIND, static_cast<u32>(CpuSnapshotObjectKind::Table));
 	snapshot.setWord(offset + SNAP_TABLE_HASH_ID, hashId);
-	snapshot.setWord(offset + SNAP_TABLE_ARRAY_LENGTH, static_cast<u32>(m_arrayLength));
+	snapshot.setWord(offset + SNAP_TABLE_LENGTH_HINT, static_cast<u32>(m_lengthHint));
 	snapshot.setWord(offset + SNAP_TABLE_ARRAY_CAPACITY, arrayCapacity);
 	snapshot.setWord(offset + SNAP_TABLE_HASH_SIZE, hashSize);
 	snapshot.setWord(offset + SNAP_TABLE_HASH_FREE, static_cast<u32>(m_hashFree));
@@ -587,7 +589,7 @@ void Table::restoreSnapshot(const CpuSnapshotReader& reader, u32 offset) {
 	const u32 arrayCapacity = snapshot.word(offset + SNAP_TABLE_ARRAY_CAPACITY);
 	const u32 hashSize = snapshot.word(offset + SNAP_TABLE_HASH_SIZE);
 	if (m_array.size() != arrayCapacity || m_hashSize != hashSize) prepareRestoreStorage(arrayCapacity, hashSize);
-	m_arrayLength = snapshot.word(offset + SNAP_TABLE_ARRAY_LENGTH);
+	m_lengthHint = snapshot.word(offset + SNAP_TABLE_LENGTH_HINT);
 	m_hashFree = snapshot.integer(offset + SNAP_TABLE_HASH_FREE);
 	const Value savedMetatable = reader.readValue(offset + SNAP_TABLE_METATABLE);
 	metatable = isNil(savedMetatable) ? nullptr : asTable(savedMetatable);
@@ -610,7 +612,7 @@ size_t Table::trackedHeapBytes() const {
 
 void Table::prepareRestoreStorage(size_t arrayCapacity, size_t hashCapacity) {
 	const size_t previousBytes = trackedHeapBytes();
-	m_arrayLength = 0;
+	m_lengthHint = 0;
 	allocateStorage(arrayCapacity, hashCapacity);
 	m_luaHeap.adjustForRestore(previousBytes, trackedHeapBytes());
 }

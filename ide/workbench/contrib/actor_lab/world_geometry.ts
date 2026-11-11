@@ -72,7 +72,7 @@ export class ActorWorldGeometry {
 		if (tiles === null) {
 			const image = this.image(source, item.actor.domain, guest);
 			packets.push({ image, x: 0, y: 0, width: image.width, height: image.height, color, flipH: false, flipV: false });
-		} else for (let i = 1; i <= tiles.arrayLength; i++) {
+		} else for (let i = 1, length = tiles.length(); i <= length; i++) {
 			const tile = tiles.get(i) as Table, image = this.image(tile, item.actor.domain, guest);
 			packets.push({ image, x: guest.readStringMember(tile, 'offset_x') as number, y: guest.readStringMember(tile, 'offset_y') as number,
 				width: image.width, height: image.height, color, flipH: false, flipV: false });
@@ -125,7 +125,7 @@ export class ActorWorldGeometry {
 	}
 	public captureModels(renderer: Table, domain: ResourceDomain, guest: SuspendedGuestSession): void {
 		const view = guest.readStringMember(renderer, '_models') as Table, models = guest.readStringMember(view, 'components') as Table;
-		const count = models.arrayLength, visibility = guest.readStringMember(renderer, '_visible') as Table;
+		const count = models.length(), visibility = guest.readStringMember(renderer, '_visible') as Table;
 		for (let i = 1; i <= count; i++) {
 			if (!guest.isTruthy(visibility.get(i))) continue;
 			const model = models.get(i) as Table, owner = guest.readStringMember(model, 'owner') as Table;

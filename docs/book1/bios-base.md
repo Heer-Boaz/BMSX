@@ -253,7 +253,7 @@ All four functions below require a Table as their first argument; otherwise they
 
 
 For `rawget` and `rawset`, a nil key raises `INDEX_NIL` (4). `rawset` uses the
-ordinary [stored-length mutation rules](cpu.md#sec-cpu-stored-length).
+ordinary [Table-length boundary rules](cpu.md#sec-cpu-table-length).
 
 
 ## Traversal, argument selection, globals, and output {#sec-bios-base-traversal-argument-selection-globals-and-output}

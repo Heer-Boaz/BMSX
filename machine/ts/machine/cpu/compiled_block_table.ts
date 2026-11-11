@@ -16,7 +16,7 @@ export function emitTableOperation(op: TableOpCode, page: DecodedInstructionPage
 	const a = page.a[word], b = page.b[word], c = page.c[word];
 	if (op === OpCode.LEN) {
 		const tag = `l${word}`, failure = r.exit(exit);
-		const length = `${tag}===${ValueTag.Table}?${r.referenceOperand(b)}.arrayLength:q.codepointCount(${r.scalarOperand(b)})`;
+		const length = `${tag}===${ValueTag.Table}?${r.referenceOperand(b)}.length():q.codepointCount(${r.scalarOperand(b)})`;
 		return `const ${tag}=${r.tagOperand(b)};if(${tag}!==${ValueTag.Table}&&${tag}!==${ValueTag.String}) ${failure}
 			${r.writeNumber(a, length)}`;
 	}

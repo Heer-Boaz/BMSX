@@ -17,7 +17,7 @@ export function visitRuntimeComponents(
 	const bucket = index.get(type.value);
 	if (bucket !== null) {
 		const components = guest.readStringMember(bucket, 'items') as Table;
-		for (let i = 1; i <= components.arrayLength; i += 1) visit(components.getInteger(i) as Table);
+		for (let i = 1, length = components.length(); i <= length; i += 1) visit(components.getInteger(i) as Table);
 	}
 	return true;
 }

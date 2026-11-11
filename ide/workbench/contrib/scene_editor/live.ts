@@ -83,7 +83,7 @@ export class SceneLiveService {
 			const world = runtimeWorld(this.sources, guest, installation.domain);
 			if (world === undefined) continue;
 			const objects = guest.readStringMember(world, '_objects') as Table;
-			for (let index = 1; index <= objects.arrayLength; index++) {
+			for (let index = 1, length = objects.length(); index <= length; index++) {
 				const actor = objects.getInteger(index) as Table, scene = guest.readStringMember(actor, 'scene') as Table | null;
 				if (scene === null) continue;
 				const plan = guest.readStringMember(scene, 'definition') as Table;
@@ -136,7 +136,7 @@ export class SceneLiveService {
 		const world = runtimeWorld(this.sources, this.guest, member.domain);
 		if (world?.hashId !== member.worldHashId) return false;
 		const objects = this.guest.readStringMember(world, '_objects') as Table;
-		for (let index = 1; index <= objects.arrayLength; index++) {
+		for (let index = 1, length = objects.length(); index <= length; index++) {
 			const actor = objects.getInteger(index) as Table;
 			if (actor.hashId !== member.actorHashId) continue;
 			const scene = this.guest.readStringMember(actor, 'scene') as Table | null;

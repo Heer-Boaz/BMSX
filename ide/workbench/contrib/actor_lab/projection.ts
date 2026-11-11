@@ -14,7 +14,7 @@ export type ActorChoice = QuickPickItem & { readonly domain: ResourceDomain; rea
 export function readActorChoices(sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain): ActorChoice[] {
 	const actors = readRuntimeActors(sources, guest, domain), choices: ActorChoice[] = [];
 	if (actors.status !== 'available') return choices;
-	for (let i = 1; i <= actors.objects.arrayLength; i++) {
+	for (let i = 1, length = actors.objects.length(); i <= length; i++) {
 		const actor = actors.objects.getInteger(i) as Table;
 		choices.push({ label: guest.formatValue(guest.readStringMember(actor, 'id')),
 			description: guest.formatValue(guest.readStringMember(actor, 'definition_id')),

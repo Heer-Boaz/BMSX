@@ -3190,7 +3190,7 @@ export class CPU implements MappedPageInvalidator {
 							return;
 						}
 						case ValueTag.Table:
-							this.setRegisterNumberFast(frame, registers, a, registers.getTable(b).arrayLength);
+							this.setRegisterNumberFast(frame, registers, a, registers.getTable(b).length());
 							return;
 						default:
 							throw new LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);

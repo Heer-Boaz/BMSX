@@ -60,11 +60,11 @@ test('Scene Inspect opens the exact normally initialized member in the existing 
 test('Inspect never constructs a registered Scene which normal gameplay has not initialized', async t => {
 	const f = await fixture(t, 'scenes/text.lua');
 	const world = runtimeWorld(f.sources, f.ide.guest, 0)!, objects = f.ide.guest.readStringMember(world, '_objects') as Table;
-	const count = objects.arrayLength, identity = world.hashId;
+	const count = objects.length(), identity = world.hashId;
 	assert.equal(f.ide.sceneLive.select(f.authoring).status, 'not-live');
 	f.inspect();
 	assert.equal(f.part.activeGroup.panes.activePane === f.pane, true);
-	assert.equal(objects.arrayLength, count);
+	assert.equal(objects.length(), count);
 	assert.equal(runtimeWorld(f.sources, f.ide.guest, 0)!.hashId, identity);
 	assert.equal(f.ide.fault.faultSnapshot, null);
 });

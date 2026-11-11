@@ -292,3 +292,24 @@ test('deep cyclic guest graphs do not consume the host serialization stack', () 
 	assert.equal(current, restored);
 	assert.deepEqual(cpu.captureRuntimeState(), state);
 });
+
+
+test('table boundary hints and mixed numeric hash layout survive restore without normalization', () => {
+	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource('return 0', 'snapshot-boundaries.lua')));
+	const key = cpu.stringPool.intern('boundary');
+	const table = cpu.createTable(64, 128);
+	for (let n = 64; n > 0; n--) table.setInteger(n, false);
+	for (let n = -1; n >= -64; n--) table.set(n, n);
+	cpu.setGlobalByKey(key, ValueTag.Table, NaN, table);
+	const state = cpu.captureRuntimeState();
+	assert.equal(table.length(), 64);
+	assert.deepEqual(cpu.captureRuntimeState(), state, 'inspection does not normalize a non-boundary hint');
+	table.setInteger(1, null); table.setInteger(64, null); table.set(-32, 999);
+	cpu.restoreRuntimeState(state);
+	const restored = cpu.getGlobalByKey(key) as Table;
+	assert.equal(restored.length(), 64);
+	assert.equal(restored.get(-32), -32);
+	assert.deepEqual(cpu.captureRuntimeState(), state);
+	for (let n = -65; n >= -256; n--) restored.set(n, n);
+	assert.equal(restored.length(), 64, 'hash growth redistributes storage without changing the boundary');
+});

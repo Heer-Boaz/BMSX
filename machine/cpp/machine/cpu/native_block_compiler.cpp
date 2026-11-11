@@ -44,7 +44,7 @@ NativeBlockCompiler::NativeBlockCompiler(const Value* constants, std::span<const
 			calls |= op == OpCode::LT || op == OpCode::LE || op == OpCode::MOD || op == OpCode::FLOORDIV || op == OpCode::POW
 				|| (slow == NativeBlockExit::WriteWords && (instruction.b >= 0 || instruction.c != 0))
 				|| (op == OpCode::MTC0 && instruction.b != COP0_EXEC)
-				|| op == OpCode::LEN || op == OpCode::SETI || op == OpCode::SETT || op == OpCode::SETFIELD || op == OpCode::LOADKR || (op == OpCode::BNOT && instruction.b >= 0)
+				|| op == OpCode::LEN || op == OpCode::SETT || op == OpCode::SETFIELD || op == OpCode::LOADKR || (op == OpCode::BNOT && instruction.b >= 0)
 				|| ((op == OpCode::BAND || op == OpCode::BOR || op == OpCode::BXOR || op == OpCode::SHL || op == OpCode::SHR)
 					&& (instruction.b >= 0 || instruction.c >= 0))
 				|| ((slow == NativeBlockExit::ReadMemory || slow == NativeBlockExit::WriteMemory)

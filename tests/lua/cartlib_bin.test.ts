@@ -48,7 +48,7 @@ end`;
 		0x7fffffff, -0x80000000];
 	for (const value of integers) assert.equal(read(encodeBinary(value)), value);
 	const sequence = read(encodeBinary(integers)) as Table;
-	assert.equal(sequence.arrayLength, integers.length);
+	assert.equal(sequence.length(), integers.length);
 	for (const [index, value] of integers.entries()) assert.equal(sequence.getInteger(index + 1), value);
 	for (const value of [null, false, true, 0.25, Math.PI, -0, Infinity, -Infinity, NaN]) {
 		assert.deepEqual(read(encodeBinary(value)), value);

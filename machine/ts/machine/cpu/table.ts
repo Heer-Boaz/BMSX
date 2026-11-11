@@ -50,7 +50,7 @@ type StoredValuePredicate = (
 export class Table {
 	public readonly [VALUE_TAG] = ValueTag.Table;
 	public hashId = 0;
-	public arrayLength = 0;
+	private lengthHint = 0;
 	private tags: Uint8Array;
 	private scalars: Float64Array;
 	private references: ValueReference[];
@@ -60,9 +60,7 @@ export class Table {
 	private hashFree = -1;
 	private tableMetatable: Table | null = null;
 
-	private static readonly numberBuffer = new ArrayBuffer(8);
-	private static readonly float64View = new Float64Array(Table.numberBuffer);
-	private static readonly uint32View = new Uint32Array(Table.numberBuffer);
+	private static readonly numberBits = new DataView(new ArrayBuffer(8));
 	private static readonly rehashIntegerCounts: number[] = [];
 
 	constructor(
@@ -278,13 +276,7 @@ export class Table {
 			return false;
 		}
 		this.setEncoded(index, valueTag, valueScalar, valueReference);
-		if (valueTag === ValueTag.Nil) {
-			if (index < this.arrayLength) {
-				this.arrayLength = index;
-			}
-		} else if (index === this.arrayLength) {
-			this.updateArrayLengthFrom(this.arrayLength);
-		}
+		this.updateLengthHint(index, valueTag !== ValueTag.Nil);
 		return true;
 	}
 
@@ -569,7 +561,7 @@ export class Table {
 	public clear(): void {
 		const previousBytes = this.getTrackedHeapBytes();
 		this.arrayCapacity = 0;
-		this.arrayLength = 0;
+		this.lengthHint = 0;
 		this.hashSize = 0;
 		this.tags = new Uint8Array(0);
 		this.scalars = new Float64Array(0);
@@ -646,9 +638,6 @@ export class Table {
 					continue;
 				}
 				this.setNil(index);
-				if (index < this.arrayLength) {
-					this.arrayLength = index;
-				}
 			}
 		}
 		for (let index = 0; index < this.hashSize; index += 1) {
@@ -680,7 +669,7 @@ export class Table {
 		const offset = snapshot.reserveWords(CpuSnapshotTable.Data + this.arrayCapacity * CPU_SNAPSHOT_VALUE_WORDS + this.hashSize * (2 * CPU_SNAPSHOT_VALUE_WORDS + 1));
 		snapshot.setWord(offset + CpuSnapshotTable.Kind, CpuSnapshotObjectKind.Table);
 		snapshot.setWord(offset + CpuSnapshotTable.HashId, this.hashId);
-		snapshot.setWord(offset + CpuSnapshotTable.ArrayLength, this.arrayLength);
+		snapshot.setWord(offset + CpuSnapshotTable.LengthHint, this.lengthHint);
 		snapshot.setWord(offset + CpuSnapshotTable.ArrayCapacity, this.arrayCapacity);
 		snapshot.setWord(offset + CpuSnapshotTable.HashSize, this.hashSize);
 		snapshot.setWord(offset + CpuSnapshotTable.HashFree, this.hashFree);
@@ -715,7 +704,7 @@ export class Table {
 		}
 		this.arrayCapacity = arrayCapacity;
 		this.hashSize = hashSize;
-		this.arrayLength = snapshot.word(offset + CpuSnapshotTable.ArrayLength);
+		this.lengthHint = snapshot.word(offset + CpuSnapshotTable.LengthHint);
 		this.hashFree = snapshot.int(offset + CpuSnapshotTable.HashFree);
 		reader.readValue(offset + CpuSnapshotTable.Metatable);
 		this.tableMetatable = reader.reference as Table | null;
@@ -751,7 +740,7 @@ export class Table {
 	public prepareRestoreStorage(arrayCapacity: number, hashCapacity: number): void {
 		const previousBytes = this.getTrackedHeapBytes();
 		this.arrayCapacity = arrayCapacity;
-		this.arrayLength = 0;
+		this.lengthHint = 0;
 		this.hashSize = hashCapacity;
 		const slotCount = arrayCapacity + (hashCapacity * 2);
 		this.tags = new Uint8Array(slotCount);
@@ -861,20 +850,12 @@ export class Table {
 		if (arrayIndex >= 0) {
 			if (arrayIndex < this.arrayCapacity) {
 				this.setEncoded(arrayIndex, valueTag, valueScalar, valueReference);
-				if (valueTag === ValueTag.Nil) {
-					if (arrayIndex < this.arrayLength) {
-						this.arrayLength = arrayIndex;
-					}
-				} else if (arrayIndex === this.arrayLength) {
-					this.updateArrayLengthFrom(this.arrayLength);
-				}
+				this.updateLengthHint(arrayIndex, valueTag !== ValueTag.Nil);
 				return;
 			}
 			if (valueTag === ValueTag.Nil) {
 				this.removeFromHash(keyTag, keyScalar, keyReference);
-				if (arrayIndex < this.arrayLength) {
-					this.arrayLength = arrayIndex;
-				}
+				this.updateLengthHint(arrayIndex, false);
 				return;
 			}
 		}
@@ -890,6 +871,7 @@ export class Table {
 			}
 			const valueSlot = this.hashValueSlot(nodeIndex);
 			this.setEncoded(valueSlot, valueTag, valueScalar, valueReference);
+			if (arrayIndex >= 0) this.updateLengthHint(arrayIndex, true);
 			return;
 		}
 		this.rawSet(
@@ -900,6 +882,7 @@ export class Table {
 			valueScalar,
 			valueReference,
 		);
+		if (arrayIndex >= 0) this.updateLengthHint(arrayIndex, true);
 	}
 
 	private valueAt(slot: number): Value {
@@ -929,12 +912,13 @@ export class Table {
 	private hashValue(tag: ValueTag, scalar: number, reference: ValueReference): number {
 		switch (tag) {
 			case ValueTag.Number: {
-				const normalized = scalar === 0 ? 0 : scalar;
-				if (normalized !== normalized) {
-					return 0x7ff80000;
-				}
-				Table.float64View[0] = normalized;
-				return (Table.uint32View[0] ^ Table.uint32View[1]) >>> 0;
+				Table.numberBits.setFloat64(0, scalar === 0 ? 0 : scalar, true);
+				let lo = scalar !== scalar ? 0 : Table.numberBits.getUint32(0, true);
+				let hi = (scalar !== scalar ? 0x7ff80000 : Table.numberBits.getUint32(4, true)) << 1;
+				lo ^= hi;
+				lo = (lo - ((hi << 14) | (hi >>> 18))) | 0;
+				hi = lo ^ ((hi << 19) | (hi >>> 13));
+				return (hi - ((lo << 13) | (lo >>> 19))) >>> 0;
 			}
 			case ValueTag.False:
 				return 0x85ebca6b;
@@ -1196,7 +1180,6 @@ export class Table {
 		this.references.fill(null);
 		this.hashNext = newHashSize === 0 ? EMPTY_TABLE_HASH_NEXT : new Int32Array(newHashSize);
 		this.hashNext.fill(TABLE_HASH_NEXT_END);
-		this.arrayLength = 0;
 		this.hashFree = newHashSize > 0 ? newHashSize - 1 : -1;
 
 		for (let index = 0; index < oldArrayCapacity; index += 1) {
@@ -1242,13 +1225,6 @@ export class Table {
 		const arrayIndex = this.getArrayIndex(keyTag, keyScalar);
 		if (arrayIndex >= 0 && arrayIndex < this.arrayCapacity) {
 			this.setEncoded(arrayIndex, valueTag, valueScalar, valueReference);
-			if (valueTag === ValueTag.Nil) {
-				if (arrayIndex < this.arrayLength) {
-					this.arrayLength = arrayIndex;
-				}
-			} else if (arrayIndex === this.arrayLength) {
-				this.updateArrayLengthFrom(this.arrayLength);
-			}
 			return -1;
 		}
 		const nodeIndex = this.insertHash(
@@ -1259,9 +1235,6 @@ export class Table {
 			valueScalar,
 			valueReference,
 		);
-		if (arrayIndex >= 0 && arrayIndex === this.arrayLength) {
-			this.updateArrayLengthFrom(this.arrayLength);
-		}
 		return nodeIndex;
 	}
 
@@ -1385,21 +1358,44 @@ export class Table {
 		return scalar - 1;
 	}
 
-	private hasArrayIndex(index: number): boolean {
-		if (index < this.arrayCapacity) {
-			return this.tags[index] !== ValueTag.Nil;
+	private hasIntegerKey(key: number): boolean {
+		if (key <= this.arrayCapacity) {
+			return this.tags[key - 1] !== ValueTag.Nil;
 		}
-		const nodeIndex = this.findNodeIndex(ValueTag.Number, index + 1, null);
-		return nodeIndex >= 0
-			&& this.tags[this.hashValueSlot(nodeIndex)] !== ValueTag.Nil;
+		const nodeIndex = this.findNodeIndex(ValueTag.Number, key, null);
+		return nodeIndex >= 0 && this.tags[this.hashValueSlot(nodeIndex)] !== ValueTag.Nil;
 	}
 
-	private updateArrayLengthFrom(startIndex: number): void {
-		let newLength = startIndex;
-		while (this.hasArrayIndex(newLength)) {
-			newLength += 1;
+	private updateLengthHint(slot: number, present: boolean): void {
+		if (present) {
+			if (slot === this.lengthHint) this.lengthHint += 1;
+		} else if (slot + 1 === this.lengthHint) {
+			this.lengthHint -= 1;
 		}
-		this.arrayLength = newLength;
 	}
 
+	public length(): number {
+		const maxBoundary = 0x1fffffffffffff;
+		let low = this.lengthHint;
+		let high: number;
+		if (low !== 0 && !this.hasIntegerKey(low)) {
+			high = low;
+			low = 0;
+		} else {
+			if (!this.hasIntegerKey(low + 1)) return low;
+			low += 1;
+			high = low * 2;
+			while (this.hasIntegerKey(high)) {
+				low = high;
+				if (low === maxBoundary) return low;
+				high = Math.min(low * 2, maxBoundary);
+			}
+		}
+		while (high - low > 1) {
+			const middle = low + Math.trunc((high - low) / 2);
+			if (this.hasIntegerKey(middle)) low = middle;
+			else high = middle;
+		}
+		return low;
+	}
 }

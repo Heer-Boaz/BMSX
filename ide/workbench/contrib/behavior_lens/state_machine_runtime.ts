@@ -20,7 +20,7 @@ export function findStateMachineState(
 	if (component === undefined) return undefined;
 	let result: { machine: StateMachineInstance; state: Table } | undefined;
 	const machines = guest.readStringMember(component, '_machines') as Table;
-	for (let index = 1; index <= machines.arrayLength; index++) {
+	for (let index = 1, length = machines.length(); index <= length; index++) {
 		const machine = machines.getInteger(index) as Table;
 		if (machine.hashId !== machineHashId) continue;
 		visitStateMachineHierarchy(guest, machine, state => {
@@ -46,7 +46,7 @@ export function readStateMachineInstances(sources: RuntimeInstalledSourceState, 
 	const items: StateMachineInstanceChoice[] = [];
 	const available = visitRuntimeComponents(sources, guest, domain, 'cartlib/fsm/fsm_component', component => {
 		const machines = guest.readStringMember(component, '_machines') as Table;
-		for (let index = 1; index <= machines.arrayLength; index++) {
+		for (let index = 1, length = machines.length(); index <= length; index++) {
 			const machine = machines.getInteger(index) as Table;
 			items.push(stateMachineInstanceChoice(guest, component, guest.readStringMember(machine, 'localdef_id'), machine));
 		}
@@ -74,7 +74,7 @@ function visitStateMachineHierarchy(guest: SuspendedGuestSession, state: Table, 
 	visit(state);
 	const states = guest.readStringMember(state, 'states') as Table;
 	const ids = guest.readStringMember(state, 'state_ids') as Table;
-	for (let i = 1; i <= ids.arrayLength; i += 1) visitStateMachineHierarchy(guest, states.get(ids.getInteger(i)) as Table, visit);
+	for (let i = 1, length = ids.length(); i <= length; i += 1) visitStateMachineHierarchy(guest, states.get(ids.getInteger(i)) as Table, visit);
 }
 
 const EVENT_PRESENTATION = { prefix: 'EVENT ', suffix: ' / EXECUTION TARGET' };
@@ -121,7 +121,7 @@ export function inspectStateMachineDefinition(
 	const patterns = guest.readStringMember(definition, 'input_patterns') as Table | null;
 	if (patterns !== null) {
 		const transitions = guest.readStringMember(definition, 'input_transitions') as Table;
-		for (let i = 1; i <= patterns.arrayLength; i += 1) {
+		for (let i = 1, length = patterns.length(); i <= length; i += 1) {
 			properties.entry('input', i, transitions.getInteger(i), INPUT_PRESENTATION,
 				'COMPILED TRANSITION. THE ORIGINAL HANDLER TABLE IS NO LONGER RETAINED.', undefined, patterns.getInteger(i));
 		}

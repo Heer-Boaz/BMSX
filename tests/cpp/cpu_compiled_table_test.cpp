@@ -122,7 +122,7 @@ void inheritedArrayReads(bool generic) {
 	}
 }
 
-void storedLengthAndUtf8() {
+void boundaryLengthAndUtf8() {
 	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 8, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::SETI), 0, 2, 2);
@@ -138,7 +138,11 @@ void storedLengthAndUtf8() {
 	for (const Value value : {valueNil(), valueBool(false), valueNil(), valueNumber(2)}) {
 		for (auto* m : {&native, &scalar}) { m->cpu.activeThread()->frameAtDepth(0)->registers[2] = value; m->cpu.runUntilDepth(0, 6); }
 		requireParity(native, scalar);
-		require(native.cpu.readFrameRegister(0, 3) == valueNumber(isNil(value) ? 1 : 5), "native length advancement includes hash-held entries and nil shortens it");
+		const double boundary = asNumber(native.cpu.readFrameRegister(0, 3));
+		const Table* table = asTable(native.cpu.readFrameRegister(0, 0));
+		require((boundary == 0 || !isNil(table->get(valueNumber(boundary)))) && isNil(table->get(valueNumber(boundary + 1))), "native LEN returns a valid boundary");
+		if (!isNil(value)) require(boundary == 5, "native LEN finds the unique sequence boundary");
+		require(native.cpu.readFrameRegister(0, 4) == valueNumber(boundary + 1), "the live definition survives the length helper");
 	}
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::KSMI), 4, 0, 7);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 2, 1, 0);
@@ -203,7 +207,7 @@ void wideAllocationFailure() {
 	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 16}, {.firstWord = 32, .wordCount = 1}};
 	image.globalNames = {"retained"}; image.exceptionFunctionIndex = 1;
 	CpuMachine native(image), scalar(image, true);
-	test::runCpuParity(native.cpu, scalar.cpu, 100);
+	for (int visit = 0; visit < 32; ++visit) test::runCpuParity(native.cpu, scalar.cpu, 1);
 	requireParity(native, scalar);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& frame = *native.cpu.activeThread()->frameAtDepth(0);
@@ -262,7 +266,7 @@ void stringStoreGrowthRoots(bool generic) {
 
 int main() {
 	try {
-		genericArraysAndHashKeys(); inheritedArrayReads(false); inheritedArrayReads(true); storedLengthAndUtf8(); selfAndNilFaults(); wideAllocationFailure(); stringStoreGrowthRoots(false); stringStoreGrowthRoots(true);
+		genericArraysAndHashKeys(); inheritedArrayReads(false); inheritedArrayReads(true); boundaryLengthAndUtf8(); selfAndNilFaults(); wideAllocationFailure(); stringStoreGrowthRoots(false); stringStoreGrowthRoots(true);
 		std::cout << "Compiled table tests passed\n";
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

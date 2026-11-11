@@ -52,7 +52,7 @@ export class ActorWorldOutliner {
 		this.objectsRevision = objectsRevision; this.topologyRevision = topologyRevision;
 		const tree = this.tree;
 		const stamp = ++this.revision, objects = guest.readStringMember(world, '_objects') as Table;
-		for (let i = 1; i <= objects.arrayLength; i++) {
+		for (let i = 1, length = objects.length(); i <= length; i++) {
 			const actor = objects.getInteger(i) as Table, parent = guest.readStringMember(actor, 'parent') as Table | null;
 			let entry = this.members.get(actor.hashId);
 			if (entry === undefined) {

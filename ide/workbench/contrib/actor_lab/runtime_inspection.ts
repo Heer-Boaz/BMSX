@@ -32,14 +32,15 @@ export class ActorRuntimeInspection {
 		const roots = this.roots;
 		if (roots.status !== 'available') return { inspection: inspection.id, domain: roots.domain, status: roots.status };
 		const entries = [];
-		for (let i = start, end = Math.min(start + count, roots.objects.arrayLength); i < end; i++) {
+		const total = roots.objects.length();
+		for (let i = start, end = Math.min(start + count, total); i < end; i++) {
 			const actor = roots.objects.getInteger(i + 1) as Table;
 			const reference = `${inspection.id}/actor/${actor.hashId}`;
 			if (!this.actors.has(reference)) this.actors.set(reference, { value: actor });
 			entries.push({ reference, object: values.describe(actor), id: values.describe(guest.readStringMember(actor, 'id')),
 				definitionId: values.describe(guest.readStringMember(actor, 'definition_id')), active: guest.isTruthy(guest.readStringMember(actor, 'active')) });
 		}
-		return { inspection: inspection.id, domain: roots.domain, status: roots.status, start, total: roots.objects.arrayLength, actors: entries };
+		return { inspection: inspection.id, domain: roots.domain, status: roots.status, start, total, actors: entries };
 	}
 
 	public tree(reference: string, start: number, count: number) {

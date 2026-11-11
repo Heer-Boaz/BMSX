@@ -170,7 +170,7 @@ ranges have their own cycle charges.
 returns its result. On a String it counts codepoints, including zero
 codepoints. It does not report an encoded UTF-8 byte count.
 
-On a Table it returns the maintained length, not the number of keys or
+On a Table it returns the length boundary, not the number of keys or
 the largest numeric key. For the Table length operation, its state rules
 and its fault handling, follow the CPU chapter's length-operation procedure.
 Other value categories raise the ordinary length error,
@@ -421,7 +421,7 @@ Builds formatted text and, on normal completion, returns exactly one String. It 
 
 For a String `format`, positions, field widths and String precisions count Unicode codepoints, not UTF-8 bytes. Literal codepoints are copied in order. An embedded NUL does not terminate the format.
 
-**Table-length dependency.** There is no String-only entry check: the first operation is `#format`. Categories other than String and Table fail at that operation. A Table whose length is obtained as zero returns an empty String; a positive length leads to a codepoint-read operation that requires a String and fails. The [CPU's maintained-length rules](cpu.md#sec-cpu-stored-length) also apply to the ordinary Table operations used during formatting.
+**Table-length dependency.** There is no String-only entry check: the first operation is `#format`. Categories other than String and Table fail at that operation. A Table whose length is obtained as zero returns an empty String; a positive length leads to a codepoint-read operation that requires a String and fails. The [CPU's Table-length rules](cpu.md#sec-cpu-table-length) also apply to the ordinary Table operations used during formatting.
 
 
 ### Example: formatted text {#sec-bios-string-example-formatted-text}
@@ -485,7 +485,7 @@ For signed conversions, a value less than zero selects `-`; otherwise `+` select
 
 ### Text, codepoint and quoted conversions {#sec-bios-string-text-codepoint-and-quoted-conversions}
 
-**`%s` — text.** Calls the current `tostring` on the argument, then, if precision is present, takes codepoints 1 through that precision before applying width. For an ordinary converted String, precision zero gives empty content. The argument need not originally be a String. Substring construction uses the maintained-length rule above.
+**`%s` — text.** Calls the current `tostring` on the argument, then, if precision is present, takes codepoints 1 through that precision before applying width. For an ordinary converted String, precision zero gives empty content. The argument need not originally be a String. Substring construction uses the Table-length boundary rule above.
 
 **`%c` — one codepoint.** Takes the integer component from `math.modf` and
 passes that one value to `string.char`. Conversion to an unsigned 32-bit word
@@ -549,7 +549,7 @@ Convert `whole` with the current `tostring`. When `p > 0`, append a dot and `tos
 
 **General construction (`g`, `G`).** Precision defaults to six significant digits; explicit zero becomes one. Determine the decimal exponent from the unrounded magnitude, using exponent zero for zero. If the exponent is below −4 or at least the significant-digit precision, select scientific construction with precision one less than the significant-digit count. Otherwise select fixed construction with precision `significant − exponent − 1`. The choice is not repeated after rounding.
 
-Without `#`, detach the first `e`/`E` suffix, remove every trailing zero from the preceding text, remove a trailing dot if present, and reattach the suffix. This stripping does not require a decimal point: it can remove integer trailing zeros as well. `#` skips stripping. `G` then applies ASCII-only uppercasing to the resulting text. Stripping and uppercasing use the maintained-length rule above.
+Without `#`, detach the first `e`/`E` suffix, remove every trailing zero from the preceding text, remove a trailing dot if present, and reattach the suffix. This stripping does not require a decimal point: it can remove integer trailing zeros as well. `#` skips stripping. `G` then applies ASCII-only uppercasing to the resulting text. Stripping and uppercasing use the Table-length boundary rule above.
 
 **Default numeric text dependency.** The whole, fraction and exponent text pieces above use `tostring`; precision does not substitute an arbitrary-length decimal writer. Under the installed default, Nil becomes `nil`, Booleans become `false` or `true`, Tables become `table`, Threads become `thread`, function values become `function`, and Strings retain their contents. Number specials become `nan`, `-inf` or `inf`.
 
@@ -708,7 +708,7 @@ An opening `(` records the current source position. A closing `)` searches backw
 
 The form `()` is different: it records the numeric current position without consuming text. It is a position capture, not an empty text capture.
 
-**Capture-result dependency.** Capture bookkeeping and extraction use the [CPU's maintained Table lengths](cpu.md#sec-cpu-stored-length). Returned sequences also follow the ordinary caller's result adjustment.
+**Capture-result dependency.** Capture bookkeeping and extraction use the [CPU's Table-length rules](cpu.md#sec-cpu-table-length). Returned sequences also follow the ordinary caller's result adjustment.
 
 Outside sets, `%1` through `%9` refer to a previously recorded, finished text capture. A backreference compares that capture's codepoints at the current source position and, on success, advances by the captured length. A missing capture, an unfinished capture, or a position capture raises `invalid string pattern capture` when that reference is reached.
 
@@ -757,7 +757,7 @@ A terminal `%` has no dedicated rejection. Special-escape dispatch first reads a
 
 Pattern calls return positions, captured substrings or replacement text as
 specified below. Capture and result sequences use ordinary Table lengths and
-ordinary call-result adjustment. The [CPU reference](cpu.md#sec-cpu-stored-length)
+ordinary call-result adjustment. The [CPU reference](cpu.md#sec-cpu-table-length)
 defines those rules. Matching and substitution also allocate temporary
 language objects; budget for them when processing large text.
 
@@ -897,7 +897,7 @@ v1, v2, ..., next_pos = string.unpack(format, packet [, pos])
 - `unpack` returns one value for each integer, floating-point, or text field, followed by the next one-based source position. Controls and padding produce no values. An empty or control-only format normally returns only that position.
 
 **Shared Table dependency.** Temporary packet pieces and unpacked-result
-collections use the [CPU's maintained Table lengths](cpu.md#sec-cpu-stored-length),
+collections use the [CPU's Table-length rules](cpu.md#sec-cpu-table-length),
 including when every supplied format and operand is a String. Accepted Table
 operands are retained in the argument-category account below. Ordinary caller
 result adjustment still applies.
@@ -1202,7 +1202,7 @@ result, these edge cases follow the operations selected by the format:
 - A Table source can pass through control/padding-only unpacking without byte access. A full-span `cN` substring can likewise return the Table itself.
 
 
-These branches use the CPU's maintained-length rule.
+These branches use the CPU's Table-length boundary rule.
 
 Packing keeps its original character, substring, Table-concatenation,
 Table-unpack and floating-word conversion functions. Argument selection reads

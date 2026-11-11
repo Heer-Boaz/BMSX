@@ -12,7 +12,7 @@ bytes or a device address are required.
 | Interface | Purpose | Successful results |
 | --- | --- | --- |
 | `table.pack(...)` | Preserve values and their supplied count | One new Table |
-| `table.insert(target, value)` | Append at the maintained length plus one | One nil |
+| `table.insert(target, value)` | Append at the length boundary plus one | One nil |
 | `table.insert(target, position, value)` | Shift and insert at a numeric key | One nil |
 | `table.remove(target [, position])` | Retain one value, shift and clear the old tail | One value, possibly nil |
 | `table.concat(target [, separator [, start [, end]]])` | Join an inclusive numeric-key interval | One String |
@@ -38,10 +38,10 @@ Table keys; the insertion and removal routines do not convert them into
 positions counted from the end. The relative-endpoint rule belongs only to
 `concat` and `unpack`.
 
-In the following procedures, **L** means the Table's maintained length,
+In the following procedures, **L** means the Table's length boundary,
 `#target`, captured by that call. It is not the number of all mappings, the
 greatest numeric key, a count of metatable-supplied entries, or a tuple's `n`
-field. [CPU — Stored length](cpu.md#sec-cpu-stored-length) defines the maintained length
+field. [CPU — Table length](cpu.md#sec-cpu-table-length) defines the length boundary
 and Table operations. A count stored by the cartridge is a separate value;
 use the explicit `pack`/`unpack` recipe when nil positions must be preserved.
 
@@ -338,7 +338,7 @@ local text = table.concat(packed, '|', 1, packed.n)
 ### Edit and read a sequence {#sec-bios-table-edit-and-read-a-sequence}
 
 The following sequence has consecutive numeric keys starting at one. Append,
-sort and the omitted range endpoints use its maintained length.
+sort and the omitted range endpoints use its length boundary.
 
 ```lua
 local sequence = {9, 3, 7}

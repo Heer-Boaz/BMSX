@@ -4,6 +4,8 @@
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
 
+#include <algorithm>
+#include <array>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -59,7 +61,7 @@ void refillArrayHashPrefix(bmsx::CPU& cpu) {
 			table->set(bmsx::valueNumber(key), bmsx::valueNumber(key * 10));
 		}
 		const auto heapBytes = table->trackedHeapBytes();
-		require(table->length() == 7, "the numeric prefix includes values beyond array capacity");
+		require(bmsx::Table::length(table) == 7, "the numeric prefix includes values beyond array capacity");
 
 		for (const int key : {2, 4}) {
 			switch (route) {
@@ -68,7 +70,9 @@ void refillArrayHashPrefix(bmsx::CPU& cpu) {
 				case 2: table->setInteger(key, bmsx::valueNil()); break;
 				case 3: require(table->setIntegerArrayKey(key, bmsx::valueNil()), "integer fast deletion reaches an array slot"); break;
 			}
-			require(table->length() == key - 1, "deletion shortens the prefix at the hole");
+			const double boundary = bmsx::Table::length(table);
+			require((boundary == 0 || !bmsx::isNil(table->get(bmsx::valueNumber(boundary))))
+				&& bmsx::isNil(table->get(bmsx::valueNumber(boundary + 1))), "a hole permits any valid boundary");
 			require(bmsx::asNumber(table->getInteger(7)) == 70, "deletion preserves the mapped hash tail");
 
 			switch (route) {
@@ -77,16 +81,57 @@ void refillArrayHashPrefix(bmsx::CPU& cpu) {
 				case 2: table->setInteger(key, bmsx::valueBool(false)); break;
 				case 3: require(table->setIntegerArrayKey(key, bmsx::valueBool(false)), "integer fast refill reaches an array slot"); break;
 			}
-			require(table->length() == 7, "all setters refill through the array/hash boundary");
+			require(bmsx::Table::length(table) == 7, "all setters refill through the array/hash boundary");
 			require(table->getInteger(key) == bmsx::valueBool(false), "false is present in the prefix");
 			require(table->trackedHeapBytes() == heapBytes, "refilling an existing array slot does not allocate storage");
 		}
 
 		table->setInteger(9, bmsx::valueNumber(90));
-		require(table->length() == 7, "a later key does not bridge a missing numeric key");
+		require(bmsx::Table::length(table) == 7, "a later key does not bridge a missing numeric key");
 		table->setInteger(8, bmsx::valueNumber(80));
-		require(table->length() == 9, "filling a hash hole extends the same prefix");
+		require(bmsx::Table::length(table) == 9, "filling a hash hole extends the same prefix");
 	}
+}
+
+void boundarySearchAndHashMix(bmsx::CPU& cpu) {
+	using namespace bmsx;
+	auto* table = cpu.createTable(4096, 8);
+	for (int key = 4096; key >= 1; --key) table->setInteger(key, valueBool(false));
+	CpuSnapshot before;
+	const u32 offset = table->captureSnapshot(before, [](u32, Value) {});
+	require(before.word(offset + SNAP_TABLE_LENGTH_HINT) == 1, "descending writes do not scan the retained suffix");
+	require(Table::length(table) == 4096, "pure search finds the unique sequence boundary");
+	for (int repeat = 0; repeat < 8; ++repeat) {
+		table->setInteger(2048, valueNil()); table->setInteger(2048, valueBool(false));
+	}
+	CpuSnapshot after;
+	table->captureSnapshot(after, [](u32, Value) {});
+	require(std::equal(before.words().begin(), before.words().end(), after.words().begin()), "reads and distant hole refills retain the raw hint");
+	table->clearWeakEntries(false, true, [](Value) { return false; });
+	require(Table::length(table) == 0, "a stale nonzero hint is only a search seed");
+	CpuSnapshot cleared;
+	table->captureSnapshot(cleared, [](u32, Value) {});
+	require(cleared.word(offset + SNAP_TABLE_LENGTH_HINT) == 1, "weak clearing need not rebuild the hint");
+
+	auto* sparse = cpu.createTable(0, 128);
+	for (int bit = 52; bit >= 0; --bit) sparse->set(valueNumber(static_cast<double>(uint64_t{1} << bit)), valueBool(false));
+	require(Table::length(sparse) == 4503599627370496.0, "hash boundaries can exceed array index range");
+	sparse->set(valueNumber(9007199254740991.0), valueBool(false));
+	sparse->set(valueNumber(9007199254740992.0), valueBool(true));
+	require(Table::length(sparse) == 9007199254740991.0, "terminal exact integer boundary never wraps");
+	sparse->set(valueNumber(9007199254740991.0), valueNil());
+	require(Table::length(sparse) == 4503599627370496.0, "terminal deletion finds another valid boundary");
+
+	std::array<bool, 1024> buckets{};
+	for (int key = -1; key >= -1024; --key) buckets[ValueHash{}(valueNumber(key)) & 1023] = true;
+	require(std::count(buckets.begin(), buckets.end(), true) >= 700, "negative integers do not collapse into one hash bucket");
+	for (const auto [key, bucket] : std::array<std::pair<double, size_t>, 10>{{
+		{-1, 781}, {-2, 1}, {-3, 891}, {-1024, 661}, {0, 0}, {0.5, 537}, {1.5, 903}, {4294967296.0, 909},
+		{std::numeric_limits<double>::quiet_NaN(), 903}, {std::numeric_limits<double>::infinity(), 781}}}) {
+		require((ValueHash{}(valueNumber(key)) & 1023) == bucket, "numeric hash matches the TS golden buckets");
+	}
+	require(ValueHash{}(valueNumber(-0.0)) == ValueHash{}(valueNumber(0.0)), "signed zeros share a hash");
+	require(ValueHash{}(VALUE_QNAN_MASK | 1) == ValueHash{}(VALUE_QNAN_MASK | 42), "raw numeric NaN payloads share a hash");
 }
 
 void continueAfterDeletedZeroIdentityKey(bmsx::CPU& cpu) {
@@ -114,6 +159,7 @@ int main() {
 		bmsx::CPU cpu(memory, irq, addresses);
 		inspectStoredSlots(cpu);
 		refillArrayHashPrefix(cpu);
+		boundarySearchAndHashMix(cpu);
 		continueAfterDeletedZeroIdentityKey(cpu);
 		std::cout << "Table inspection tests passed\n";
 		return 0;

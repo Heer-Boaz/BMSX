@@ -53,8 +53,9 @@ export function inspectBehaviorTreeInstance(
 			const keys = guest.readStringMember(layout, 'keys') as Table;
 			const defaults = guest.readStringMember(layout, 'initial_values') as Table;
 			const slotsByKey = guest.readStringMember(layout, 'slots_by_key') as Table;
-			if (keys.arrayLength === 0) properties.text('BLACKBOARD', '{}', 'NO DECLARED KEYS.');
-			for (let slot = 1; slot <= keys.arrayLength; slot += 1) {
+			const keyCount = keys.length();
+			if (keyCount === 0) properties.text('BLACKBOARD', '{}', 'NO DECLARED KEYS.');
+			for (let slot = 1; slot <= keyCount; slot += 1) {
 				const key = keys.getInteger(slot);
 				// compile/rebind resolve semantic keys through slots_by_key. Earlier
 				// duplicate declarations remain visible, but are not independent watches.

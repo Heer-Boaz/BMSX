@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -298,13 +299,14 @@ struct ValueHash {
 	size_t operator()(Value v) const noexcept {
 		const uint8_t encodedTag = valueEncodedTag(v);
 		if (encodedTag == 0) {
-			double num = asNumber(v);
-			if (num == 0.0) {
-				num = 0.0;
-			}
-			uint64_t bits = 0;
-			std::memcpy(&bits, &num, sizeof(double));
-			return static_cast<size_t>(bits ^ (bits >> 32));
+			const double num = asNumber(v);
+			const uint64_t bits = valueFromNumber(num == 0.0 ? 0.0 : num);
+			uint32_t lo = static_cast<uint32_t>(bits);
+			uint32_t hi = static_cast<uint32_t>(bits >> 32) << 1;
+			lo ^= hi;
+			lo -= std::rotl(hi, 14);
+			hi = lo ^ std::rotl(hi, 19);
+			return hi - std::rotl(lo, 13);
 		}
 		switch (static_cast<ValueTag>(encodedTag - 1u)) {
 			case ValueTag::False:

@@ -230,7 +230,7 @@ occurs. This is not an exact-mode-name or allowed-character check.
 Acceptance never selects a binary decoder. The scan uses one-based String
 codepoint positions, not UTF-8 byte offsets. Non-String values undergo the same
 length and String-codepoint operations. A
-Table supplies its maintained length to the length operation. In particular,
+Table supplies its length boundary to the length operation. In particular,
 `false` reaches a length failure before parsing, with the reason String
 `"Attempted to get length of an unsupported value."`.
 

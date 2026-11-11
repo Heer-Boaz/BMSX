@@ -8,7 +8,7 @@ import { ValueTag, type ValueReference } from './value';
 export const CPU_SNAPSHOT_VALUE_WORDS = 3;
 export const enum CpuSnapshotObjectKind { Table, Closure, Upvalue, Thread }
 export const enum CpuSnapshotTable {
-	Kind, HashId, ArrayLength, ArrayCapacity, HashSize, HashFree, Metatable,
+	Kind, HashId, LengthHint, ArrayCapacity, HashSize, HashFree, Metatable,
 	Data = 9,
 }
 export const enum CpuSnapshotClosure { Kind, HashId, FunctionAddress, Canonical, UpvalueCount, Data }
