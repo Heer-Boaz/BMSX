@@ -1783,6 +1783,29 @@ eventvolgorde. Het eerdere private DRAM- en RTL-werk blijft daarom een
 onderzoekskandidaat, geen vastgestelde eis aan het moederbord.
 
 
+## 12. Lua-compatibele byte-strings
+
+**Richting goedgekeurd; nog niet in de runtimes verwerkt.** Vervang het
+codepoint-gebaseerde String-contract door Lua-byte-strings. De huidige
+[String-referentie](book1/bios-string.md) beschrijft nog het bestaande gedrag;
+alleen het invoerbereik van `string.char` wijzigen voltooit deze overgang niet.
+
+Een String moet alle bytewaarden kunnen bewaren, inclusief nul en bytevolgorden
+die geen geldige UTF-8 vormen. `string.char` bouwt bytes; lengte, `string.byte`,
+substringposities en de overige String-bewerkingen volgen dezelfde byte-eenheid.
+UTF-8-interpretatie is een afzonderlijke tekstbewerking, met functies zoals
+`utf8.char`. De [Lua String-implementatie](https://github.com/lua/lua/blob/v5.4.8/lstrlib.c)
+en [UTF-8-bibliotheek](https://github.com/lua/lua/blob/v5.4.8/lutf8lib.c) zijn de
+referenties voor die scheiding.
+
+Werk deze wijziging samen uit in literals en compiler, BIOS, TS/C++-waarden en
+String-bewerkingen, ROM-/save-state-codecs en de tekstconsumenten in cartridges
+en tooling. Ook vergelijking, hashing en tabelsleutels moeten dezelfde bytes
+blijven onderscheiden. Decodering voor weergave mag ongeldige bytevolgorden niet
+stilzwijgend in de onderliggende gastwaarde vervangen. De concrete interne
+opslag volgt uit die gedeelde semantiek, niet uit de tekstrepresentatie van één
+host. Oude program images en saves hoeven niet compatibel te blijven.
+
 ## Bijlage: bewaarde ontwerpstudies
 
 De volgende onderzochte uitvoeringen en berekeningen zijn geen vastgestelde
