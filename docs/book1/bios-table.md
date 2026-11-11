@@ -12,16 +12,16 @@ bytes or a device address are required.
 | Interface | Purpose | Successful results |
 | --- | --- | --- |
 | `table.pack(...)` | Preserve values and their supplied count | One new Table |
-| `table.insert(target, value)` | Append at the length boundary plus one | One nil |
-| `table.insert(target, position, value)` | Shift and insert at a numeric key | One nil |
+| `table.insert(target, value)` | Append at the length boundary plus one | No results |
+| `table.insert(target, position, value)` | Shift and insert at a numeric key | No results |
 | `table.remove(target [, position])` | Retain one value, shift and clear the old tail | One value, possibly nil |
 | `table.concat(target [, separator [, start [, end]]])` | Join an inclusive numeric-key interval | One String |
 | `table.unpack(target [, start [, end]])` | Expand an inclusive numeric-key interval | Selected values, or zero results |
-| `table.sort(target [, compare])` | Reorder the maintained sequence in place | One nil |
+| `table.sort(target [, compare])` | Reorder the selected sequence in place | No results |
 
 These result counts are part of the interface. An ordinary bare return or
-fallthrough produces one nil; that is not the zero-result tuple returned by an
-empty `unpack` interval. [BIOS base services](bios-base.md#sec-bios-base) explains `select` and result
+fallthrough produces zero results, as does an empty `unpack` interval. A context
+requesting one result adjusts either empty tuple to one nil. [BIOS base services](bios-base.md#sec-bios-base) explains `select` and result
 adjustment. [Protected calls and coroutines](coroutines.md#sec-coroutines) explains how to
 receive an error value, including nil; earlier writes remain visible.
 
@@ -169,8 +169,8 @@ can prevent the recursive interval from shrinking.
 
 | Call | Effect | Successful return |
 | --- | --- | --- |
-| `table.insert(target, value)` | Assigns `value` to `target[#target + 1]`. | One `nil` value. |
-| `table.insert(target, position, value, ...)` | Inserts at `position // 1`, shifting the selected keys upward as described below. Arguments after `value` are ignored. | One `nil` value. |
+| `table.insert(target, value)` | Assigns `value` to `target[#target + 1]`. | No results. |
+| `table.insert(target, position, value, ...)` | Inserts at `position // 1`, shifting the selected keys upward as described below. Arguments after `value` are ignored. | No results. |
 
 Exactly one argument after `target` selects the append form. A lone explicit `nil` therefore means “append `nil`,” not “position omitted.” Every other trailing argument count selects the positional form. The signatures above require at least one argument after `target`. An indirect call such as `pcall(table.insert, target)` nevertheless reaches the positional form with no trailing arguments; both selected arguments are then `nil`, so the position arithmetic produces NaN. With a separate value, an explicit `nil` position is still passed to `// 1`.
 
@@ -240,11 +240,11 @@ Throughout these functions, element reads are ordinary table reads, including a 
 
 | Call | Ordering | Successful return |
 | --- | --- | --- |
-| `table.sort(target)` | Ordinary `<`. | One `nil` value. |
-| `table.sort(target, nil)` | Ordinary `<`. | One `nil` value. |
-| `table.sort(target, compare)` | `compare(left, right)` is truthy when `left` belongs before `right`. | One `nil` value. |
+| `table.sort(target)` | Ordinary `<`. | No results. |
+| `table.sort(target, nil)` | Ordinary `<`. | No results. |
+| `table.sort(target, compare)` | `compare(left, right)` is truthy when `left` belongs before `right`. | No results. |
 
-Sorting modifies `target` in place. It takes the length snapshot `L` first and operates on keys `1` through `L`; it does not make or return a sorted copy. If `L < 2`, it immediately returns one `nil` value without performing a comparison or checking whether `compare` can be called. Thus `table.sort({1}, false)` returns normally, whereas a nontrivial sort with `false` as its comparator attempts to call `false` and raises the ordinary non-function call error.
+Sorting modifies `target` in place. It takes the length snapshot `L` first and operates on keys `1` through `L`; it does not make or return a sorted copy. If `L < 2`, it immediately returns no results without performing a comparison or checking whether `compare` can be called. Thus `table.sort({1}, false)` returns normally, whereas a nontrivial sort with `false` as its comparator attempts to call `false` and raises the ordinary non-function call error.
 
 The sort begins by scanning from index `2` through `L`. At each index it asks whether the current value belongs before its predecessor. Falsey answers continue the scan. The first truthy answer starts reordering the **entire** range `1` through `L`, not just the remaining suffix. If the scan reaches the end, the sort itself makes no assignments; with a valid custom comparator this ordered-input path makes exactly `L - 1` comparator calls.
 

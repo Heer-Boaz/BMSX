@@ -1607,14 +1607,15 @@ Een gerichte RTL- of rekentoets is geen vervanging voor die kwalificatie.
 
 ## 11. CPU: werkelijke uitvoering en systeemklok {#sec-proposal-cpu-execution}
 
-**Status: werk- en geheugenafhankelijke timingrichting goedgekeurd; concrete
-productspecificatie nog uit te werken.** De
+**Status: werk- en geheugenafhankelijke timingrichting goedgekeurd;
+volumekosten uitgewerkt in de instructiereferentie, fysieke rekenlatenties nog
+uit te werken.** De
 [instructiereferentie](book1/cpu.md#sec-cpu-cycle-accounting-and-execution-boundaries)
-geeft nu vaste basischarges op de 33,8688 MHz-systeemtijd: bijvoorbeeld één
-cyclus voor `DIV`, zonder per-registercharge voor `LOADNIL` of per-bytecharge
-voor `CONCATN`. Die charges zijn geen garantie voor de doorvoer van een
-individuele bus, maar zij bepalen wel de verhouding tussen instructievoortgang
-en waarneembare device-events.
+onderscheidt vaste basischarges en aanvullende kosten voor expliciet uitgevoerd
+waarde-, tekst- en initialisatiewerk. Die charges bepalen de verhouding tussen
+instructievoortgang en waarneembare device-events; zij kwalificeren geen fysieke
+rekeneenheid of individuele bus. De rekeninstructies behouden vooralsnog hun
+huidige basischarges, waaronder die voor `DIV`.
 
 De onderzochte kandidaat deelt een binaire64-rekeneenheid tussen CPU en GEO.
 In een gerichte corpusproef duurde een geaccepteerde deling daarin maximaal 72
