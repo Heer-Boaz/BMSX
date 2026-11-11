@@ -140,7 +140,10 @@ Options:
   The ALSA underrun line covers the same measured window; `before_timing` counts
   earlier underruns. The final `audio stats` line covers the entire session,
   including teardown.
-- `--timing-warmup <count>`: excludes the first frames from the timing report
+- `--timing-warmup <count>`: excludes the first `<count>` host runs from timing
+  reports (default: 500; must be positive). Use `1` to exclude only the first
+  run. Histogram counts and timed ALSA underruns cover the remaining measurement
+  window, not the entire session.
 - `--rewind on|off`: sets the `bmsx_rewind_recording` core option. Automatic
   recording defaults to off on SNES Mini and on elsewhere. Disabling it removes
   periodic rewind checkpoints and their history storage, not manual save states.
@@ -150,7 +153,22 @@ Options:
 
 Input timelines may include `capture: true` entries. Both the libretro host and headless runner save `.png` screenshots into a `screenshots/` subfolder next to the timeline JSON file.
 
-Timeline frame `N` labels the boundary after accepted cartridge presentation `N`. Input posted at that boundary affects the next accepted presentation, and a capture records that next presentation under marker `N`. The clock starts when cartridge execution first becomes active; BIOS output is not part of a cartridge timeline.
+Timeline time advances once after each completed cartridge-session `retro_run()`
+call, independently of presentation. Earlier BIOS-only runs do not advance it.
+The first completed run with cartridge execution active starts the clock; input
+events are dispatched before subsequent runs. Frame-0 input retains startup
+ordering and is first dispatched alongside frame-1 input before the following
+run. Once started, dropped presentations, missing video callbacks and BIOS calls
+within the cartridge session do not pause timeline time.
+
+Capture marker `N` requests the image presented during cartridge run `N`.
+Captures require an actual presentation. If presentation is delayed, the next
+available image consumes the latest overdue marker; it is not a reconstructed
+historical image. Capture polling does not advance input time.
+
+Without `--max-frames`, the host exits after all timeline inputs and requested
+captures have been consumed and the completed-run count has passed the final
+marker. `--max-frames` instead limits total host runs, including BIOS startup.
 
 Native host builds require SDL2 and provide the SDL video, audio, and input path. Cross-compiled SNES Mini host builds use fbdev and evdev without SDL.
 
