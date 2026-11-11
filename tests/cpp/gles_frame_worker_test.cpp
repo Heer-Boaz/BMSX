@@ -258,7 +258,7 @@ Result runStream(const test::Blua32TestRom& rom, bool threaded, GxGpuDrawTargetM
 	presenter.installRenderPipeline(std::make_unique<RenderPassLibrary>(&presenter.backend(), &presenter));
 	presenter.initializeDefaultTextures();
 	presenter.crt_postprocessing_enabled = false;
-	Font font;
+	bmsx::Font font;
 	presenter.default_font = &font;
 	RenderPresentationState presentation;
 	OnScreenKeyboard keyboard(input, NATIVE_KEYBOARD_PAGES);
@@ -413,7 +413,7 @@ void testSubmissionFailure(const test::Blua32TestRom& rom, FailedSubmissionOwner
 	presenter.installRenderPipeline(std::make_unique<RenderPassLibrary>(&backend, &presenter));
 	presenter.initializeDefaultTextures();
 	presenter.crt_postprocessing_enabled = false;
-	Font font;
+	bmsx::Font font;
 	presenter.default_font = &font;
 	RenderPresentationState presentation;
 	OnScreenKeyboard keyboard(input, NATIVE_KEYBOARD_PAGES);
