@@ -32,6 +32,7 @@
 namespace {
 using namespace bmsx;
 void require(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
+struct ConsumerFailure {};
 struct Observation {
 	std::mutex mutex;
 	std::condition_variable ready;
@@ -41,6 +42,9 @@ struct Observation {
 	unsigned overlapCommandCount = 384u;
 	bool delayFirstDraw = false;
 	bool overlapped = false;
+	bool throwOnDraw = false;
+	bool throwOnEmission = false;
+	unsigned drawCalls = 0;
 	unsigned rumbleCalls = 0;
 	bool acceptRumble = true;
 };
@@ -49,6 +53,7 @@ Observation* observation = nullptr;
 extern "C" void __real_glDrawArrays(GLenum, GLint, GLsizei);
 extern "C" void __wrap_glDrawArrays(GLenum mode, GLint first, GLsizei count) {
 	if (observation) {
+		++observation->drawCalls;
 		if (std::this_thread::get_id() != observation->contextThread) observation->wrongThread = true;
 		if (observation->delayFirstDraw) {
 			observation->delayFirstDraw = false;
@@ -57,6 +62,7 @@ extern "C" void __wrap_glDrawArrays(GLenum mode, GLint first, GLsizei count) {
 				"the producer continues through two more batches while the first GL draw is delayed");
 			observation->overlapped = true;
 		}
+		if (observation->throwOnDraw) throw ConsumerFailure{};
 	}
 	__real_glDrawArrays(mode, first, count);
 }
@@ -329,10 +335,14 @@ Result runStream(const test::Blua32TestRom& rom, bool threaded, GxGpuDrawTargetM
 	return result;
 }
 
-void testProducerFailure(const test::Blua32TestRom& rom) {
+enum class FailedSubmissionOwner { Producer, Consumer };
+
+void testSubmissionFailure(const test::Blua32TestRom& rom, FailedSubmissionOwner failedOwner) {
 	struct ProducerFailure {};
 	Observation observed;
 	observed.delayFirstDraw = true;
+	observed.throwOnDraw = failedOwner == FailedSubmissionOwner::Consumer;
+	observed.throwOnEmission = failedOwner == FailedSubmissionOwner::Producer;
 	observation = &observed;
 	LibretroInput input([]() -> bool { return false; });
 	Runtime runtime({rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
@@ -355,27 +365,50 @@ void testProducerFailure(const test::Blua32TestRom& rom) {
 		value.ready.notify_one();
 		// Two prefixes are already published, while the frontend's first draw
 		// is waiting. A producer exception must still join both publications.
-		if (count == value.overlapCommandCount) throw ProducerFailure{};
+		if (value.throwOnEmission && count == value.overlapCommandCount) throw ProducerFailure{};
 	}, &observed});
 	{
 		GlesFrameWorker worker(runtime, backend, input);
-		bool receivedProducerFailure = false;
+		bool receivedExpectedFailure = false;
 		try { worker.run(1000.0 / 60.0); }
-		catch (const ProducerFailure&) { receivedProducerFailure = true; }
-		require(receivedProducerFailure && observed.overlapped, "the original producer error returns after overlapping published work");
-		// GLES readback packs two 16-bit pixels per RGBA8 output word.
-		std::array<u8, 4> pixel{};
-		backend.readGxGpuVram({64u, 6u, 1u, 1u, 1u}, pixel.data());
-		require(readLE16(pixel.data()) == 0x3bb5u, "the second published prefix reaches VRAM before the producer error returns");
-		runtime.machine.gxGpu.beginSupervisorQuiesce();
-		require(!runtime.machine.gxGpu.backendSubmissionFencePending(),
-			"a producer error cannot leave an already consumed publication holding the supervisor fence");
+		catch (const ProducerFailure&) { receivedExpectedFailure = failedOwner == FailedSubmissionOwner::Producer; }
+		catch (const ConsumerFailure&) { receivedExpectedFailure = failedOwner == FailedSubmissionOwner::Consumer; }
+		require(receivedExpectedFailure && observed.overlapped, "the original submission error returns after overlapping published work");
+		if (failedOwner == FailedSubmissionOwner::Producer) {
+			// GLES readback packs two 16-bit pixels per RGBA8 output word.
+			std::array<u8, 4> pixel{};
+			backend.readGxGpuVram({64u, 6u, 1u, 1u, 1u}, pixel.data());
+			require(readLE16(pixel.data()) == 0x3bb5u, "the second published prefix reaches VRAM before the producer error returns");
+		}
+		if (failedOwner == FailedSubmissionOwner::Producer) {
+			runtime.machine.gxGpu.beginSupervisorQuiesce();
+			require(!runtime.machine.gxGpu.backendSubmissionFencePending(),
+				"a producer error cannot leave an already consumed publication holding the supervisor fence");
+		} else {
+			const auto cycles = runtime.machine.scheduler.nowCycles();
+			const auto pc = runtime.machine.cpu.readCurrentInstructionPc();
+			const auto emitted = observed.emitted.load();
+			const auto draws = observed.drawCalls;
+			bool rejected = false;
+			try { worker.run(1000.0 / 60.0); }
+			catch (const ConsumerFailure&) { rejected = true; }
+			require(rejected, "a second run preserves the original permanent consumer failure");
+			require(runtime.machine.scheduler.nowCycles() == cycles && runtime.machine.cpu.readCurrentInstructionPc() == pc
+				&& observed.emitted.load() == emitted && observed.drawCalls == draws,
+				"a poisoned stream rejects another job before guest execution or GL submission");
+			// Request quiescence only after retrying, so the assertion above is
+			// not satisfied merely because a supervisor fence blocked execution.
+			runtime.machine.gxGpu.beginSupervisorQuiesce();
+			require(runtime.machine.gxGpu.backendSubmissionFencePending(),
+				"neither a consumer error nor rejected re-entry acknowledges discarded publications as valid VRAM");
+		}
 	}
+	require(!observed.wrongThread, "failed submission teardown joins without moving GL to the producer");
 	observation = nullptr;
 	presenter.releaseRenderPipeline();
 	presenter.clearTextures();
 	backend.onContextDestroy();
-	std::cout << "GX-WORKER:PASS producer exception completion barrier\n";
+	std::cout << "GX-WORKER:PASS " << (failedOwner == FailedSubmissionOwner::Producer ? "producer exception completion barrier" : "consumer poison and joined teardown") << '\n';
 }
 
 
@@ -511,7 +544,8 @@ int main() {
 	EGLContext context = eglCreateContext(display, config, EGL_NO_CONTEXT, contextAttributes);
 	require(eglMakeCurrent(display, surface, surface, context), "make context current");
 	const auto rom = makeStream();
-	testProducerFailure(rom);
+	testSubmissionFailure(rom, FailedSubmissionOwner::Producer);
+	testSubmissionFailure(rom, FailedSubmissionOwner::Consumer);
 	const auto expected = runStream(rom, false, GxGpuDrawTargetMode::FullVram);
 	bool visibleColor = false;
 	for (size_t pixel = 0; pixel < expected.scanout.size(); pixel += 4u)
