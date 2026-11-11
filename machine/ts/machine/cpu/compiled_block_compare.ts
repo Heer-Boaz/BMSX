@@ -16,7 +16,7 @@ else if(l===${ValueTag.Table}||l===${ValueTag.Closure}||l===${ValueTag.Thread}) 
 	} else {
 		const operator = page.ops[word] === OpCode.LT ? '<' : '<=';
 		source += `if(l===${ValueTag.Number}&&r0===${ValueTag.Number}) matched=${registers.scalarOperand(left)}${operator}${registers.scalarOperand(right)};
-else if(l===${ValueTag.String}&&r0===${ValueTag.String}) matched=q.compare(${registers.scalarOperand(left)},${registers.scalarOperand(right)})${operator}0;`;
+else if(l===${ValueTag.String}&&r0===${ValueTag.String}) {const leftId=${registers.scalarOperand(left)},rightId=${registers.scalarOperand(right)};budget-=Math.min(q.codepointCount(leftId),q.codepointCount(rightId));matched=q.compare(leftId,rightId)${operator}0;}`;
 	}
 	return `${source}if(matched){${yes}}else{${no}}}`;
 }

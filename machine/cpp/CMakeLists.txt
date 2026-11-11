@@ -7,10 +7,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# =============================================================================
-# Options
-# =============================================================================
-
+# ======================================================================# Options
+# ======================================================================
 option(BMSX_BUILD_LIBRETRO "Build libretro core" ON)
 option(BMSX_BUILD_LIBRETRO_HOST "Build libretro host executable" OFF)
 option(BMSX_BUILD_SDL "Build SDL standalone executable" OFF)
@@ -30,10 +28,8 @@ if(BMSX_GLES2_SOFTWARE_GX AND NOT BMSX_ENABLE_GLES2)
 	message(FATAL_ERROR "BMSX_GLES2_SOFTWARE_GX requires BMSX_ENABLE_GLES2")
 endif()
 
-# =============================================================================
-# Find zlib for PNG screenshot output.
-# =============================================================================
-
+# ======================================================================# Find zlib for PNG screenshot output.
+# ======================================================================
 if(BMSX_ENABLE_ZLIB)
 	if(WIN32)
 		find_package(ZLIB)
@@ -66,10 +62,8 @@ if(BMSX_ENABLE_ZLIB)
 	endif()
 endif()
 
-# =============================================================================
-# Compiler flags
-# =============================================================================
-
+# ======================================================================# Compiler flags
+# ======================================================================
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 	add_compile_options(-O3 -Wall -Wextra -Wpedantic)
 	if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -87,10 +81,8 @@ elseif(MSVC)
 	endif()
 endif()
 
-# =============================================================================
-# Shared wire-format libraries
-# =============================================================================
-
+# ======================================================================# Shared wire-format libraries
+# ======================================================================
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/host_overlay/gles2/shaders/host_overlay.vert.glsl"
 	"${CMAKE_CURRENT_SOURCE_DIR}/render/host_overlay/gles2/shaders/host_overlay.frag.glsl"
@@ -246,10 +238,8 @@ foreach(target bmsx_binary_codec bmsx_rom_image)
 	)
 endforeach()
 
-# =============================================================================
-# Machine library (static)
-# =============================================================================
-
+# ======================================================================# Machine library (static)
+# ======================================================================
 add_library(bmsx_core STATIC
 	common/scratchbuffer.cpp
 
@@ -386,10 +376,8 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 	target_compile_options(bmsx_core PUBLIC -fno-fast-math -ffp-contract=off)
 endif()
 
-# =============================================================================
-# Native host support (static)
-# =============================================================================
-
+# ======================================================================# Native host support (static)
+# ======================================================================
 set(SCALABLE_FONT_PIXELS "${CMAKE_CURRENT_BINARY_DIR}/generated/render/host_overlay/scalable_font_pixels.h")
 add_custom_command(OUTPUT "${SCALABLE_FONT_PIXELS}"
 	COMMAND ${CMAKE_COMMAND}
@@ -478,10 +466,8 @@ if(BMSX_ENABLE_GLES2)
 	endif()
 endif()
 
-# =============================================================================
-# ROM and BLua32 source diagnostics tooling
-# =============================================================================
-
+# ======================================================================# ROM and BLua32 source diagnostics tooling
+# ======================================================================
 if(BMSX_BUILD_LIBRETRO OR BMSX_BUILD_TESTS)
 	add_library(bmsx_rom_tooling STATIC
 		rompack/tokens.cpp
@@ -515,10 +501,8 @@ if(BMSX_BUILD_LIBRETRO OR BMSX_BUILD_TESTS)
 	target_link_libraries(bmsx_blua32_tooling PUBLIC bmsx_rom_tooling)
 endif()
 
-# =============================================================================
-# Libretro core (shared library)
-# =============================================================================
-
+# ======================================================================# Libretro core (shared library)
+# ======================================================================
 set(BMSX_LIBRETRO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../hosts/libretro")
 set(BMSX_LIBRETRO_HOST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../hosts/libretro_host")
 set(BMSX_LIBRETRO_CORE_SOURCES
@@ -594,10 +578,8 @@ if(BMSX_BUILD_LIBRETRO)
 
 endif()
 
-# =============================================================================
-# Libretro host executable (Linux)
-# =============================================================================
-
+# ======================================================================# Libretro host executable (Linux)
+# ======================================================================
 if(BMSX_BUILD_LIBRETRO_HOST)
 	if(NOT UNIX OR APPLE)
 		message(FATAL_ERROR "BMSX_BUILD_LIBRETRO_HOST is supported only on Linux-like UNIX platforms.")
@@ -641,20 +623,16 @@ if(BMSX_BUILD_LIBRETRO_HOST)
 	endif()
 endif()
 
-# =============================================================================
-# SDL standalone (for debugging) - TODO: implement
-# =============================================================================
-
+# ======================================================================# SDL standalone (for debugging) - TODO: implement
+# ======================================================================
 if(BMSX_BUILD_SDL)
 	message(WARNING "SDL platform not yet implemented")
 	# find_package(SDL2 REQUIRED)
 	# add_executable(bmsx_sdl ...)
 endif()
 
-# =============================================================================
-# Tests
-# =============================================================================
-
+# ======================================================================# Tests
+# ======================================================================
 if(BMSX_BUILD_TESTS)
 	enable_testing()
 	add_executable(bmsx_gx_gpu_dirty_regions_tests
@@ -1061,6 +1039,10 @@ if(BMSX_BUILD_TESTS)
 	add_executable(bmsx_cpu_bulk_costs_tests ../../tests/cpp/cpu_bulk_costs_test.cpp ${BMSX_TEST_ROM_SOURCE})
 	target_link_libraries(bmsx_cpu_bulk_costs_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_bulk_costs_tests COMMAND bmsx_cpu_bulk_costs_tests)
+	add_executable(bmsx_cpu_string_work_tests ../../tests/cpp/cpu_string_work_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu_string_work_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_cpu_string_work_tests COMMAND bmsx_cpu_string_work_tests)
+
 	add_executable(bmsx_cpu_compiled_heap_tests ../../tests/cpp/cpu_compiled_heap_test.cpp ${BMSX_TEST_ROM_SOURCE})
 	target_link_libraries(bmsx_cpu_compiled_heap_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_compiled_heap_tests COMMAND bmsx_cpu_compiled_heap_tests)
@@ -1357,10 +1339,8 @@ if(BMSX_BUILD_TESTS)
 	endif()
 endif()
 
-# =============================================================================
-# Installation
-# =============================================================================
-
+# ======================================================================# Installation
+# ======================================================================
 install(TARGETS
 	bmsx_binary_codec
 	bmsx_rom_image

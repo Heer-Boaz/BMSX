@@ -288,6 +288,7 @@ void concatAllocationFault(bool range) {
 	require(native.cpu.runUntilDepth(0, range ? 3 : 2) == scalar.cpu.runUntilDepth(0, range ? 3 : 2), "failed allocations consume the same grant"); requireParity(native, scalar);
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
 		&& native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES, "allocation faults use the completed prefix PC");
+	require(native.cpu.instructionBudgetRemaining == -4 * 1024 * 1024 - (range ? 2 : 0), "allocation faults retain complete logical text-work charges");
 	require(native.cpu.readFrameRegister(0, 0) == valueNumber(73) && native.cpu.activeThread()->frameAtDepth(0)->top == 9, "the failed allocation preserves its destination and published top");
 }
 } // namespace

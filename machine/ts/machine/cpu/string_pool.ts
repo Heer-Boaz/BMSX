@@ -20,6 +20,7 @@ export class StringPool {
 	private readonly byText = new Map<string, number>();
 	private readonly values: (string | undefined)[] = [];
 	private readonly codepointCounts: number[] = [];
+	private readonly codepointBlockOffsets: (Uint32Array | undefined)[] = [];
 	private readonly trackedByteLengths: number[] = [];
 	private readonly freeIds: StringId[] = [];
 	private readonly localRoots: StringId[] = [];
@@ -76,8 +77,9 @@ export class StringPool {
 		if (this.codepointCounts[id] === text.length) {
 			return text.charCodeAt(index);
 		}
-		let offset = 0;
-		for (let current = 0; current < index; current += 1) {
+		const block = index >>> 5;
+		let offset = block === 0 ? 0 : this.codepointBlockOffsets[id]![block - 1];
+		for (let current = block << 5; current < index; current += 1) {
 			offset = nextCodePointOffset(text, offset);
 		}
 		return text.codePointAt(offset)!;
@@ -123,6 +125,7 @@ export class StringPool {
 			this.byText.delete(value);
 			this.values[id] = undefined;
 			this.codepointCounts[id] = 0;
+			this.codepointBlockOffsets[id] = undefined;
 			reclaimed += this.trackedByteLengths[id];
 			this.trackedByteLengths[id] = 0;
 			this.freeIds.push(id);
@@ -132,6 +135,7 @@ export class StringPool {
 			this.freeIds.pop();
 		}
 		this.codepointCounts.length = this.values.length;
+		this.codepointBlockOffsets.length = this.values.length;
 		this.trackedByteLengths.length = this.values.length;
 		this.trackedBytes -= reclaimed;
 		this.luaHeap.release(reclaimed);
@@ -151,6 +155,7 @@ export class StringPool {
 		this.byText.clear();
 		this.values.length = 0;
 		this.codepointCounts.length = 0;
+		this.codepointBlockOffsets.length = 0;
 		this.trackedByteLengths.length = 0;
 		this.freeIds.length = 0;
 		this.trackedBytes = 0;
@@ -173,7 +178,19 @@ export class StringPool {
 			this.trackedByteLengths[vacant] = 0;
 		}
 		this.values[id] = value;
-		this.codepointCounts[id] = utf8CodepointCount(value);
+		const count = utf8CodepointCount(value);
+		this.codepointCounts[id] = count;
+		// Host indexing metadata is derived, not guest RAM or serialized state.
+		let offsets: Uint32Array | undefined;
+		if (count !== value.length && count > 32) {
+			offsets = new Uint32Array((count - 1) >>> 5);
+			let offset = 0;
+			for (let index = 0; index < count; index += 1) {
+				if (index !== 0 && (index & 31) === 0) offsets[(index >>> 5) - 1] = offset;
+				offset = nextCodePointOffset(value, offset);
+			}
+		}
+		this.codepointBlockOffsets[id] = offsets;
 		this.trackedByteLengths[id] = 0;
 		this.byText.set(value, id + 1);
 		return id;

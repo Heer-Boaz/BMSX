@@ -16,7 +16,7 @@ function createCpu(): CPU {
 test('codepoint indexing uses the host representation without changing Unicode positions or snapshot state', () => {
 	const pool = createCpu().stringPool;
 	for (const text of [Array.from({ length: 128 }, (_, code) => String.fromCharCode(code)).join(''),
-		'Aé雪\0Z', 'β😀A🚀\0é', '😀', 'a'.repeat(4096)]) {
+		'Aé雪\0Z', 'β😀A🚀\0é', '😀', 'a'.repeat(4096), '雪'.repeat(65), 'β😀A🚀\0é'.repeat(23)]) {
 		const id = pool.intern(text);
 		const expected = Array.from(text, char => char.codePointAt(0)!);
 		const state = pool.captureState();
@@ -139,4 +139,23 @@ test('reusing an unreachable deleted string-key ID cannot resurrect its old mapp
 		keys.push(pool.toString(keyScalar));
 	}
 	assert.deepEqual(keys.sort(), ['replacement key', 'retained key']);
+});
+
+
+test('sparse codepoint indexes are reclaimed with their strings and rebuilt on ID reuse', () => {
+	const cpu = createCpu(), pool = cpu.stringPool;
+	cpu.collectTrackedHeapBytes();
+	const baseline = pool.trackedLuaHeapBytes();
+	const text = 'β😀A🚀\0é'.repeat(23);
+	const old = pool.intern(text);
+	assert.equal(pool.trackedLuaHeapBytes(), baseline + 14 * 23, 'only encoded guest payload is charged, not the host stride index');
+	assert.equal(pool.codepointAt(old, 128), 'A'.codePointAt(0));
+	cpu.collectTrackedHeapBytes();
+	assert.equal(pool.trackedLuaHeapBytes(), baseline);
+	const id = pool.intern('😀'.repeat(65));
+	assert.equal(id, old);
+	assert.equal(pool.codepointAt(id, 64), 0x1f600);
+	cpu.collectTrackedHeapBytes();
+	assert.equal(pool.intern('ascii'), old);
+	assert.equal(pool.codepointAt(old, 4), 105);
 });

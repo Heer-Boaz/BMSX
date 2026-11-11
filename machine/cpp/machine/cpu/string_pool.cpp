@@ -4,10 +4,12 @@
 #include "machine/cpu/lua_heap.h"
 
 #include <utility>
+#include <algorithm>
 
 namespace bmsx {
 
-int compareStringIds(const StringPool* pool, StringId left, StringId right) {
+int compareStringIds(const StringPool* pool, StringId left, StringId right, int* remainingCycles) {
+	*remainingCycles -= std::min(pool->codepointCount(left), pool->codepointCount(right));
 	return pool->toString(left).compare(pool->toString(right));
 }
 
@@ -96,8 +98,9 @@ uint32_t StringPool::codepointAt(StringId id, size_t index) const {
 	if (static_cast<size_t>(stringEntry.codepointCount) == text.size()) {
 		return utf8ByteAt(text, index);
 	}
-	size_t byteIndex = 0;
-	for (size_t current = 0; current < index; ++current) {
+	const size_t block = index >> 5u;
+	size_t byteIndex = block == 0u ? 0u : stringEntry.codepointBlockOffsets[block - 1u];
+	for (size_t current = block << 5u; current < index; ++current) {
 		byteIndex = nextUtf8Index(text, byteIndex);
 	}
 	return readUtf8Codepoint(text, byteIndex);
@@ -183,6 +186,15 @@ StringPool::InternedString& StringPool::insert(StringId id, Text&& value) {
 	stringEntry->id = id;
 	stringEntry->value = std::forward<Text>(value);
 	stringEntry->codepointCount = utf8CodepointCount(stringEntry->value);
+	// Host indexing metadata is derived, not guest RAM or serialized state.
+	if (static_cast<size_t>(stringEntry->codepointCount) != stringEntry->value.size() && stringEntry->codepointCount > 32) {
+		stringEntry->codepointBlockOffsets = std::make_unique<uint32_t[]>((stringEntry->codepointCount - 1) >> 5);
+		size_t offset = 0;
+		for (int index = 0; index < stringEntry->codepointCount; ++index) {
+			if (index != 0 && (index & 31) == 0) stringEntry->codepointBlockOffsets[(index >> 5) - 1] = static_cast<uint32_t>(offset);
+			offset = nextUtf8Index(stringEntry->value, offset);
+		}
+	}
 	InternedString& inserted = *stringEntry;
 	insertEntry(std::move(stringEntry));
 	return inserted;

@@ -53,9 +53,13 @@ void NativeBlockCompiler::emitComparison(const DecodedInstruction& instruction, 
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_R1, 0);
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_R2, 0);
 		sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.strings));
-		// The pure string kernel retains the region's raw register map.
+		// Only the logical budget crosses this nonallocating string kernel;
+		// the region's guest register map remains in native registers.
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, remainingCycles), SLJIT_S4, 0);
+		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R3, 0, SLJIT_S3, 0, SLJIT_IMM, offsetof(NativeBlockRunState, remainingCycles));
 		emitCallSpills(false);
-		sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS3(32, P, 32, 32), SLJIT_IMM, SLJIT_FUNC_ADDR(&compareStringIds));
+		sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS4(32, P, 32, 32, P), SLJIT_IMM, SLJIT_FUNC_ADDR(&compareStringIds));
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_S4, 0, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, remainingCycles));
 		emitCallSpills(true);
 		sljit_set_label(sljit_emit_cmp(m_compiler, (op == OpCode::LT ? SLJIT_SIG_LESS : SLJIT_SIG_LESS_EQUAL) | SLJIT_32,
 			SLJIT_R0, 0, SLJIT_IMM, 0), yesLabel);

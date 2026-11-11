@@ -243,5 +243,6 @@ for (const range of [false, true]) test(`compiled concatenation allocation failu
 		range ? CompiledBlockExit.ConcatRange : CompiledBlockExit.Concat);
 	assert.equal(js.runUntilDepth(0, range ? 3 : 2), ref.runUntilDepth(0, range ? 3 : 2)); assertParity(js, ref);
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY); assert.equal(js.readEpcWord(), pc + INSTRUCTION_BYTES);
+	assert.equal(js.instructionBudgetRemaining, -4 * 1024 * 1024 - (range ? 2 : 0), 'allocation faults retain complete logical text-work charges');
 	assert.equal(frame.registers.getNumber(0), 73); assert.equal(frame.top, 9);
 });

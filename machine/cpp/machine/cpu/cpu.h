@@ -396,13 +396,13 @@ private:
 		int instructionBudget
 	);
 	void runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, int callBase, int returnCount, int argCount);
-	void callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, BuiltinResults& out);
+	void callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, BuiltinResults& out, int resultLimit);
 	void runBuiltinNextValue(Value target, Value key, BuiltinResults& out);
 	void runBuiltinSetMetatable(BuiltinArgsView args, BuiltinResults& out);
 	void runBuiltinGetMetatable(BuiltinArgsView args, BuiltinResults& out);
 	void runBuiltinRawGet(BuiltinArgsView args, BuiltinResults& out);
 	void runBuiltinRawSet(BuiltinArgsView args, BuiltinResults& out);
-	void runBuiltinSelect(BuiltinArgsView args, BuiltinResults& out);
+	void runBuiltinSelect(BuiltinArgsView args, BuiltinResults& out, int resultLimit);
 	void runBuiltinStringByte(BuiltinArgsView args, BuiltinResults& out);
 	void runBuiltinStringChar(BuiltinArgsView args, BuiltinResults& out);
 	void runBuiltinError(BuiltinArgsView args);

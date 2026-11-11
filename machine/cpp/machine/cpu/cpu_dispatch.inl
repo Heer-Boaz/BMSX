@@ -428,7 +428,7 @@ DISPATCH_LABEL(LT) {
 	if (valueIsNumber(leftValue) && valueIsNumber(rightValue)) {
 		ok = asNumber(leftValue) < asNumber(rightValue);
 	} else if (valueIsString(leftValue) && valueIsString(rightValue)) {
-		ok = compareStringIds(&m_stringPool, asStringId(leftValue), asStringId(rightValue)) < 0;
+		ok = compareStringIds(&m_stringPool, asStringId(leftValue), asStringId(rightValue), &instructionBudgetRemaining) < 0;
 	}
 	if (ok != (a != 0)) {
 		SKIP_NEXT_INSTRUCTION();
@@ -447,7 +447,7 @@ DISPATCH_LABEL(LE) {
 	if (valueIsNumber(leftValue) && valueIsNumber(rightValue)) {
 		ok = asNumber(leftValue) <= asNumber(rightValue);
 	} else if (valueIsString(leftValue) && valueIsString(rightValue)) {
-		ok = compareStringIds(&m_stringPool, asStringId(leftValue), asStringId(rightValue)) <= 0;
+		ok = compareStringIds(&m_stringPool, asStringId(leftValue), asStringId(rightValue), &instructionBudgetRemaining) <= 0;
 	}
 	if (ok != (a != 0)) {
 		SKIP_NEXT_INSTRUCTION();

@@ -450,8 +450,8 @@ below.
 Opcode numbers are zero-based. Nominal cycles are the base charge applied before
 an instruction executes. The constant, arithmetic, bitwise, text and comparison
 instructions below each cost one cycle except CONCATN, which costs two.
-LOADNIL adds no per-register charge, and CONCATN adds no per-input or per-byte
-charge. Readiness waits, counted-transfer surcharges and builtin charges are
+LOADNIL adds no per-register charge. Text construction and String ordering add
+the length-dependent charges specified below. Readiness waits, counted-transfer surcharges and builtin charges are
 separate; [Cycle accounting and execution boundaries](#sec-cpu-cycle-accounting-and-execution-boundaries)
 defines their place in the execution budget.
 
@@ -527,6 +527,14 @@ LEN returns a Number. A String's length is its stored Unicode codepoint count, n
 
 Concatenation uses language value-to-string conversion rather than accepting only strings and Numbers. CONCAT joins its two RK operands in B-then-C order. CONCATN joins exactly C consecutive registers starting at R[B], in increasing register order. All CONCATN sources are read before the result is written, so the destination may overlap the input range. A zero CONCATN count produces the empty String.
 
+CONCAT adds one cycle per codepoint in the converted, combined result. CONCATN
+adds C cycles for its supplied source range and one cycle per codepoint in the
+combined result. The result length includes zero codepoints and the text of
+converted non-String values. These charges apply even when an identical String
+already exists. They are debited after conversion, before result allocation;
+an allocation fault retains the charge. A zero-count CONCATN therefore costs
+only its two base cycles.
+
 | Mnemonic | Opcode | Operands and domain | Result in R[A] | Nominal cycles |
 |---|---:|---|---|---:|
 | CONCAT | `1DH` | RK(B), then RK(C); every language value kind has the conversion shown below | Combined String | 1 |
@@ -579,6 +587,13 @@ P+20 with a Boolean in R0 and have three base instruction cycles, assuming
 successful instruction reads. LT itself never writes R0; its A=1 is the
 expected truth, not register R1. The [branch reference](#sec-cpu-branches)
 defines the word-relative offsets used by the two jumps.
+
+When both operands of LT or LE are Strings, add one cycle for each codepoint
+in the shorter operand. This charge depends only on the two lengths, including
+zero codepoints; it does not depend on the position of the first difference or
+whether the operands are the same String. EQ and comparisons involving other
+value kinds have no text-length surcharge. The comparison completes, including
+its skip decision, even if this charge exhausts the current execution grant.
 
 Equality respects value kinds. Different kinds are unequal; there is no numeric-string or boolean-number equality conversion. Numbers use numeric equality, so NaN is unequal even to itself, while +0 and −0 are equal. Table, Closure, and Thread equality is reference identity rather than a comparison of their contents.
 
@@ -1073,7 +1088,8 @@ instruction's initialization charge to ordinary table reads or writes.
 ### Builtin call charges {#sec-cpu-builtin-call-charges}
 
 CALL costs 2 base cycles. A primitive target adds its own base charge of 1, 2
-or 4 cycles; this surcharge has no per-argument or per-result term. Installed
+or 4 cycles. String construction additionally charges the input work specified
+in the String reference. Installed
 BIOS functions can execute ordinary instructions and call further primitives,
 so include the executed sequence when budgeting the whole service. The
 [BIOS base](bios-base.md#sec-bios-base), [String](bios-string.md#sec-bios-string) and

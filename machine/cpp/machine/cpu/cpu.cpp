@@ -1808,7 +1808,7 @@ void CPU::hardHalt() {
 }
 
 
-void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, BuiltinResults& out) {
+void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, BuiltinResults& out, int resultLimit) {
 	switch (fn.id) {
 		case BuiltinFunctionId::Next:
 			runBuiltinNextValue(args[0], args[1], out);
@@ -1837,7 +1837,7 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			setGlobalByKey(asStringId(args[0]), args[1]);
 			break;
 		case BuiltinFunctionId::Select:
-			runBuiltinSelect(args, out);
+			runBuiltinSelect(args, out, resultLimit);
 			break;
 		case BuiltinFunctionId::FrameCount:
 			out.push_back(valueNumber(asThread(args[0])->frameDepth));
@@ -2038,7 +2038,7 @@ void CPU::runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, int callBase
 		return;
 	}
 	const BuiltinArgsView args(frame.registers + static_cast<size_t>(callBase + 1), static_cast<size_t>(argCount));
-	callBuiltinFunction(fn, args, out);
+	callBuiltinFunction(fn, args, out, returnCount == 0 ? -1 : returnCount - 1);
 	if (m_activeThread->frameDepth != 0 && m_activeThread->currentFrame == &frame) {
 		writeReturnValuesFromBuiltinResults(frame, callBase, returnCount, out);
 	}
@@ -2093,7 +2093,7 @@ void CPU::invokeProtectedTarget(size_t continuationIndex, Value target, int argu
 		callBuiltinFunction(
 			builtin,
 			BuiltinArgsView(caller.registers + static_cast<size_t>(argumentBase), static_cast<size_t>(argumentCount)),
-			results
+			results, -1
 		);
 		finishProtectedCall(continuationIndex, results.data(), static_cast<int>(results.size()));
 		return;
@@ -2298,7 +2298,7 @@ void CPU::runBuiltinRawSet(BuiltinArgsView args, BuiltinResults& out) {
 	out.push_back(valueTable(table));
 }
 
-void CPU::runBuiltinSelect(BuiltinArgsView args, BuiltinResults& out) {
+void CPU::runBuiltinSelect(BuiltinArgsView args, BuiltinResults& out, int resultLimit) {
 	const Value selector = args[0];
 	if (valueIsString(selector)) {
 		if (m_stringPool.toString(asStringId(selector)) == "#") {
@@ -2315,10 +2315,11 @@ void CPU::runBuiltinSelect(BuiltinArgsView args, BuiltinResults& out) {
 	if (start < 0) {
 		start = count + start + 1;
 	}
-	for (int index = start; index <= count; ++index) {
-		if (index >= 1 && static_cast<size_t>(index) < args.size()) {
-			out.push_back(args[static_cast<size_t>(index)]);
-		}
+	start = std::max(start, 1);
+	const int available = std::max(count - start + 1, 0);
+	const int produced = resultLimit < 0 ? available : std::min(available, resultLimit);
+	for (int index = 0; index < produced; ++index) {
+		out.push_back(args[static_cast<size_t>(start + index)]);
 	}
 }
 
@@ -2348,6 +2349,7 @@ void CPU::runBuiltinStringByte(BuiltinArgsView args, BuiltinResults& out) {
 }
 
 void CPU::runBuiltinStringChar(BuiltinArgsView args, BuiltinResults& out) {
+	instructionBudgetRemaining -= static_cast<int>(args.size());
 	std::string result;
 	result.reserve(args.size());
 	for (const auto& arg : args) {
@@ -2360,7 +2362,7 @@ void CPU::runBuiltinStringChar(BuiltinArgsView args, BuiltinResults& out) {
 		}
 		appendUtf8Codepoint(result, codepoint);
 	}
-	out.push_back(valueString(m_stringPool.intern(result)));
+	out.push_back(valueString(m_stringPool.internOwned(std::move(result))));
 }
 
 void CPU::runBuiltinError(BuiltinArgsView args) {

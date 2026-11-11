@@ -58,6 +58,7 @@ private:
 		StringId id = 0;
 		std::string value;
 		int codepointCount = 0;
+		std::unique_ptr<uint32_t[]> codepointBlockOffsets;
 		size_t trackedByteLength = 0;
 	};
 
@@ -92,7 +93,7 @@ private:
 	std::vector<bool> m_reachable;
 };
 
-int compareStringIds(const StringPool* pool, StringId left, StringId right);
+int compareStringIds(const StringPool* pool, StringId left, StringId right, int* remainingCycles);
 // C ABI entry for generated code; no allocation or guest execution.
 int stringCodepointCount(const StringPool* pool, StringId id) noexcept;
 

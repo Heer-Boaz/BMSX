@@ -9,8 +9,9 @@ inline void CPU::executeConcat(CallFrame& frame, int destination, int leftOperan
 	if (valueIsString(right)) stringByteCount += m_stringPool.toString(asStringId(right)).size();
 	std::string text;
 	text.reserve(stringByteCount);
-	appendValueString(text, left, m_stringPool);
-	appendValueString(text, right, m_stringPool);
+	const int leftCount = appendValueString(text, left, m_stringPool);
+	const int rightCount = appendValueString(text, right, m_stringPool);
+	instructionBudgetRemaining -= leftCount + rightCount;
 	const StringId id = m_stringPool.internOwned(std::move(text));
 	frame.registers[destination] = valueString(id);
 	frame.top = std::max(frame.top, destination + 1);
@@ -24,7 +25,9 @@ inline void CPU::executeConcatRange(CallFrame& frame, int destination, int base,
 	}
 	std::string text;
 	text.reserve(stringByteCount);
-	for (int index = 0; index < count; ++index) appendValueString(text, frame.registers[base + index], m_stringPool);
+	int codepoints = 0;
+	for (int index = 0; index < count; ++index) codepoints += appendValueString(text, frame.registers[base + index], m_stringPool);
+	instructionBudgetRemaining -= count + codepoints;
 	const StringId id = m_stringPool.internOwned(std::move(text));
 	frame.registers[destination] = valueString(id);
 	frame.top = std::max(frame.top, destination + 1);

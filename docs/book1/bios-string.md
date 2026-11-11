@@ -156,9 +156,13 @@ For `byte` and `char`, `INVALID_ARGUMENT` is a language argument error. A
 protected call receives the original error String `"Invalid argument."`.
 It is not a Memory interrupt.
 
-Each `byte` or `char` call has a builtin surcharge of two cycles, with no
-per-argument, position or per-result term in that surcharge. The surrounding
-BIOS instructions and ordinary calls have their own cycle charges.
+Each `byte` call has a builtin surcharge of two cycles, independent of the
+selected position. Each `char` call has a two-cycle builtin base surcharge plus
+one cycle per supplied argument. The full argument-count charge is applied
+before argument validation, including when an invalid argument faults or the
+caller discards the result. A call with no arguments therefore adds only two
+cycles. The surrounding BIOS instructions, ordinary calls and result receiving
+ranges have their own cycle charges.
 
 ### `string.len(value)` {#sec-bios-string-stringlenvalue}
 

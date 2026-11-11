@@ -2368,15 +2368,11 @@ export class CPU implements MappedPageInvalidator {
 			rightTag = registers.getTag(rkC);
 			rightScalar = registers.getScalar(rkC);
 		}
-		const text = storedValueToString(
-			leftTag,
-			leftScalar,
-			this.stringPool,
-		) + storedValueToString(
-			rightTag,
-			rightScalar,
-			this.stringPool,
-		);
+		const leftText = storedValueToString(leftTag, leftScalar, this.stringPool);
+		const rightText = storedValueToString(rightTag, rightScalar, this.stringPool);
+		const text = leftText + rightText;
+		this.charge((leftTag === ValueTag.String ? this.stringPool.codepointCount(leftScalar as StringId) : leftText.length)
+			+ (rightTag === ValueTag.String ? this.stringPool.codepointCount(rightScalar as StringId) : rightText.length));
 		const handle = this.stringPool.intern(text);
 		this.setRegisterStringFast(frame, registers, a, handle);
 	}
@@ -2384,14 +2380,15 @@ export class CPU implements MappedPageInvalidator {
 	private executeConcatRange(frame: CallFrame, a: number, b: number, c: number): void {
 		const registers = frame.registers;
 		let text = '';
+		let codepoints = 0;
 		for (let index = 0; index < c; index += 1) {
 			const registerIndex = b + index;
-			text += storedValueToString(
-				registers.getTag(registerIndex),
-				registers.getScalar(registerIndex),
-				this.stringPool,
-			);
+			const tag = registers.getTag(registerIndex), scalar = registers.getScalar(registerIndex);
+			const part = storedValueToString(tag, scalar, this.stringPool);
+			text += part;
+			codepoints += tag === ValueTag.String ? this.stringPool.codepointCount(scalar as StringId) : part.length;
 		}
+		this.charge(c + codepoints);
 		const handle = this.stringPool.intern(text);
 		this.setRegisterStringFast(frame, registers, a, handle);
 	}
@@ -3240,7 +3237,10 @@ export class CPU implements MappedPageInvalidator {
 					if (leftTag === ValueTag.Number) {
 						ok = rightTag === ValueTag.Number && leftScalar < rightScalar;
 					} else if (leftTag === ValueTag.String) {
-						ok = rightTag === ValueTag.String && this.stringPool.compare(leftScalar as StringId, rightScalar as StringId) < 0;
+						if (rightTag === ValueTag.String) {
+							this.charge(Math.min(this.stringPool.codepointCount(leftScalar as StringId), this.stringPool.codepointCount(rightScalar as StringId)));
+							ok = this.stringPool.compare(leftScalar as StringId, rightScalar as StringId) < 0;
+						}
 					}
 					if (ok !== (a !== 0)) {
 						this.skipNextInstruction(frame);
@@ -3320,7 +3320,10 @@ export class CPU implements MappedPageInvalidator {
 					if (leftTag === ValueTag.Number) {
 						ok = rightTag === ValueTag.Number && leftScalar <= rightScalar;
 					} else if (leftTag === ValueTag.String) {
-						ok = rightTag === ValueTag.String && this.stringPool.compare(leftScalar as StringId, rightScalar as StringId) <= 0;
+						if (rightTag === ValueTag.String) {
+							this.charge(Math.min(this.stringPool.codepointCount(leftScalar as StringId), this.stringPool.codepointCount(rightScalar as StringId)));
+							ok = this.stringPool.compare(leftScalar as StringId, rightScalar as StringId) <= 0;
+						}
 					}
 					if (ok !== (a !== 0)) {
 						this.skipNextInstruction(frame);
@@ -3784,7 +3787,7 @@ export class CPU implements MappedPageInvalidator {
 		return frame.registers.getNumber(rk);
 	}
 
-	private callBuiltinFunction(id: BuiltinFunctionId, args: BuiltinArgsView, out: BuiltinResults): void {
+	private callBuiltinFunction(id: BuiltinFunctionId, args: BuiltinArgsView, out: BuiltinResults, resultLimit: number): void {
 		switch (id) {
 			case BuiltinFunctionId.Next:
 				this.runBuiltinNextValue(args, out);
@@ -3826,7 +3829,7 @@ export class CPU implements MappedPageInvalidator {
 				break;
 			}
 			case BuiltinFunctionId.Select:
-				this.runBuiltinSelect(args, out);
+				this.runBuiltinSelect(args, out, resultLimit);
 				break;
 			case BuiltinFunctionId.FrameCount:
 				out.push(ValueTag.Number, (args.registers.getReference(args.base) as Thread).frameDepth);
@@ -4042,7 +4045,7 @@ export class CPU implements MappedPageInvalidator {
 		const results = this.acquireBuiltinResults();
 		try {
 			builtinArgs.bind(frame.registers, callBase + 1, argCount);
-			this.callBuiltinFunction(id, builtinArgs, results);
+			this.callBuiltinFunction(id, builtinArgs, results, returnCount === 0 ? -1 : returnCount - 1);
 			if (this.activeThread.frameDepth > 0 && this.activeThread.currentFrame! === frame) {
 				this.writeReturnValuesFromBuiltinResults(frame, callBase, returnCount, results);
 			}
@@ -4130,7 +4133,7 @@ export class CPU implements MappedPageInvalidator {
 				const results = this.acquireBuiltinResults();
 				try {
 					builtinArgs.bind(caller.registers, argumentBase, argumentCount);
-					this.callBuiltinFunction(builtinId, builtinArgs, results);
+					this.callBuiltinFunction(builtinId, builtinArgs, results, -1);
 					this.finishProtectedCallFromBuiltinResults(continuationIndex, results);
 				} finally {
 					this.releaseRegisterBuiltinArgs(builtinArgs);
@@ -4476,7 +4479,7 @@ export class CPU implements MappedPageInvalidator {
 		out.push(ValueTag.Table, NaN, target);
 	}
 
-	private runBuiltinSelect(args: BuiltinArgsView, out: BuiltinResults): void {
+	private runBuiltinSelect(args: BuiltinArgsView, out: BuiltinResults, resultLimit: number): void {
 		const registers = args.registers;
 		const base = args.base;
 		const count = args.length - 1;
@@ -4495,18 +4498,12 @@ export class CPU implements MappedPageInvalidator {
 			throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		}
 		const startSelector = selectorScalar | 0;
-		const start = startSelector >= 0
-			? startSelector
-			: count + startSelector + 1;
-		for (let index = start; index <= count; index += 1) {
-			if (index >= 1 && index < args.length) {
-				const valueIndex = base + index;
-				out.push(
-					registers.getTag(valueIndex),
-					registers.getScalar(valueIndex),
-					registers.getReference(valueIndex),
-				);
-			}
+		const start = Math.max(startSelector >= 0 ? startSelector : count + startSelector + 1, 1);
+		const available = Math.max(count - start + 1, 0);
+		const produced = resultLimit < 0 ? available : Math.min(available, resultLimit);
+		for (let index = 0; index < produced; index += 1) {
+			const valueIndex = base + start + index;
+			out.push(registers.getTag(valueIndex), registers.getScalar(valueIndex), registers.getReference(valueIndex));
 		}
 	}
 
@@ -4536,6 +4533,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private runBuiltinStringChar(args: BuiltinArgsView, out: BuiltinResults): void {
+		this.charge(args.length);
 		const registers = args.registers;
 		let result = '';
 		for (let index = 0; index < args.length; index += 1) {

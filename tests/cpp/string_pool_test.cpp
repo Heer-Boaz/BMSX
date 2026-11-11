@@ -45,8 +45,10 @@ void indexCodepointsAcrossRepresentations() {
 	auto& pool = machine.cpu.stringPool();
 	std::string ascii;
 	for (int code = 0; code < 128; ++code) ascii.push_back(static_cast<char>(code));
+	std::string unicode;
+	for (int i = 0; i < 23; ++i) unicode += std::string("β😀A🚀\0é", 14);
 	for (const auto& text : {ascii, std::string("Aé雪\0Z", 8),
-		std::string("β😀A🚀\0é", 14), std::string("😀"), std::string(4096, 'a')}) {
+		std::string("β😀A🚀\0é", 14), std::string("😀"), std::string(4096, 'a'), unicode}) {
 		const auto id = pool.intern(text);
 		std::vector<u32> expected;
 		for (size_t offset = 0; offset < text.size();) expected.push_back(readUtf8Codepoint(text, offset));
@@ -93,6 +95,25 @@ void recycleUnicodeAndUntrackedStrings() {
 	require(pool.toString(replacement) == "β😀" && pool.codepointCount(replacement) == 2, "recycled slots publish the new Unicode metadata");
 	require(pool.codepointAt(replacement, 0) == 0x3b2u && pool.codepointAt(replacement, 1) == 0x1f600u, "recycled IDs index the new content");
 	require(pool.trackedLuaHeapBytes() == baselineTracked + 6, "new runtime text owns its actual UTF-8 payload bytes");
+}
+
+void reclaimCodepointIndexes() {
+	PoolMachine machine;
+	auto& cpu = machine.cpu; auto& pool = cpu.stringPool();
+	cpu.collectHeap();
+	const auto baseline = pool.trackedLuaHeapBytes();
+	std::string text;
+	for (int i = 0; i < 23; ++i) text += std::string("β😀A🚀\0é", 14);
+	const auto old = pool.intern(text);
+	require(pool.trackedLuaHeapBytes() == baseline + 14 * 23, "host stride metadata does not debit guest RAM");
+	require(pool.codepointAt(old, 128) == 'A', "long indexes address the correct stride");
+	cpu.collectHeap();
+	require(pool.trackedLuaHeapBytes() == baseline, "GC releases the long Unicode payload");
+	text.clear(); for (int i = 0; i < 65; ++i) text += "😀";
+	const auto id = pool.intern(text);
+	require(id == old && pool.codepointAt(id, 64) == 0x1f600, "reused IDs build the new sparse index");
+	cpu.collectHeap();
+	require(pool.intern("ascii") == old && pool.codepointAt(old, 4) == 'i', "directly indexed strings do not reuse stale offsets");
 }
 
 void promoteAcrossReservationCollection() {
@@ -236,6 +257,7 @@ int main() {
 		indexCodepointsAcrossRepresentations();
 		reclaimTextAndSnapshotStorage();
 		recycleUnicodeAndUntrackedStrings();
+		reclaimCodepointIndexes();
 		promoteAcrossReservationCollection();
 		retainNestedMaterializationRoots();
 		replaySparseAllocationOrder();
