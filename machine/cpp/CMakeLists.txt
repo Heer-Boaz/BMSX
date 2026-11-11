@@ -792,6 +792,12 @@ if(BMSX_BUILD_TESTS)
 
 	if(UNIX AND NOT APPLE AND BMSX_ENABLE_GLES2)
 		find_library(BMSX_TEST_EGL_LIBRARY EGL REQUIRED)
+		add_executable(bmsx_runtime_execution_benchmark
+			../../tests/cpp/runtime_execution_benchmark.cpp
+			${BMSX_LIBRETRO_DIR}/cartridge_media.cpp
+			${BMSX_LIBRETRO_DIR}/presentation_state.cpp)
+		target_include_directories(bmsx_runtime_execution_benchmark PRIVATE ${BMSX_LIBRETRO_DIR})
+		target_link_libraries(bmsx_runtime_execution_benchmark PRIVATE bmsx_host_support bmsx_rom_image ${BMSX_TEST_EGL_LIBRARY})
 		configure_file("${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/gx_gpu_words_shader.h.in"
 			"${CMAKE_CURRENT_BINARY_DIR}/generated/tests/gx_gpu_words_shader.h" @ONLY)
 		add_executable(bmsx_gles2_gx_words_tests
