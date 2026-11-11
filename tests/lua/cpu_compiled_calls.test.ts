@@ -11,7 +11,7 @@ import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET, 
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
 for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 	test(`compiled cross-page calls: open counts ${open}, RAM record offset ${recordOffset}`, () => {
@@ -94,3 +94,50 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 		assert.notEqual(entry & ~MAPPED_PAGE_BYTE_MASK, image.image.functions[1].codeAddress & ~MAPPED_PAGE_BYTE_MASK);
 	});
 }
+
+test('CALL clears its reserved window before reading arguments from retained stack slots', () => {
+	const text = new Uint8Array(8 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.CLOSURE, 4, 0, 0);
+	writeInstruction(text, 2, OpCode.MOV, 7, 4, 0);
+	writeInstruction(text, 3, OpCode.CALL, 7, 2, 1);
+	writeInstruction(text, 4, OpCode.MOV, 3, 7, 0);
+	writeInstruction(text, 5, OpCode.JMP, 0, 63, 60, 255);
+	writeInstruction(text, 6, OpCode.MOV, 1, 0, 0);
+	writeInstruction(text, 7, OpCode.RET, 1, 1, 0);
+	const image = linkRawTestSystemBlua32({ text, functions: [
+		{ firstWord: 0, wordCount: 6, maxStack: 8 },
+		{ firstWord: 6, wordCount: 2, numParams: 1, maxStack: 8 },
+	], closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(0, 1) }] });
+	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+	runCpuParity(machines[0].cpu, machines[1].cpu, 20000);
+	runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
+	const entry = image.image.functions[0].codeAddress + 2 * INSTRUCTION_BYTES;
+	const calleeEntry = image.image.functions[1].codeAddress;
+	const lookup = machines[0].cpu.rootThread.frameAtDepth(0).executionImage.compiledCodeLookup!;
+	for (const pc of [entry, calleeEntry]) assert.ok(lookup.find(pc, 0)!.compiledBlocks!.entries[(pc & MAPPED_PAGE_BYTE_MASK) >>> 2],
+		'the caller and callee are both generated before exercising retained storage');
+	for (const { cpu } of machines) {
+		const thread = cpu.rootThread;
+		assert.equal(thread.frameAtDepth(0).stackCapacity, 8);
+		assert.equal(thread.stackTop, 8);
+		assert.ok(thread.stackRegisters.capacity() >= 16, 'the argument address lies inside retained allocation, not outside its backing');
+		// CALL R7,B=2 reads one argument from absolute slot 8, which is also
+		// the next callee window. No frame expansion or active-slot write occurs.
+		thread.stackRegisters.setNumber(8, 63);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
+	}
+	runCpuParity(machines[0].cpu, machines[1].cpu, 3);
+	for (const { cpu } of machines) {
+		assert.equal(cpu.getFrameDepth(), 2);
+		assert.equal(cpu.rootThread.currentFrame!.pc, calleeEntry);
+		assert.equal(cpu.rootThread.currentFrame!.stackBase, 8);
+		assert.equal(cpu.rootThread.currentFrame!.registers.get(0), null,
+			'the argument observes nil written during activation, not the retained value 63');
+	}
+	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+	runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
+	for (const { cpu } of machines) assert.equal(cpu.rootThread.frameAtDepth(0).registers.get(7), null,
+		'the callee returns the cleared argument through the real result window');
+	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+});
