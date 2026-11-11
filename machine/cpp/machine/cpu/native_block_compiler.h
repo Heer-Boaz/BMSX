@@ -5,6 +5,8 @@
 
 #include "machine/cpu/native_block.h"
 #include "machine/cpu/native_block_abi.h"
+#include "machine/memory/mapped_page.h"
+#include "spec/blua32/instruction_format.h"
 #include "spec/blua32/memory_access_kind.h"
 #include "sljitLir.h"
 
@@ -52,6 +54,7 @@ private:
 	std::array<sljit_s32, 2> readOperands(int left, int right);
 	sljit_s32 destinationRegister(int guest);
 	void writeRegister(int guest, sljit_s32 source = SLJIT_FR0);
+	size_t regionEntryIndex(u32 pc) const;
 	void planRegisterEntries(std::span<const NativeBlockSource> sources);
 	void emitInternalBranches();
 	void discardRegisterRange(int first, int end);
@@ -67,6 +70,8 @@ private:
 
 	sljit_compiler* m_compiler;
 	std::span<const std::unique_ptr<NativeBlock>> m_blocks;
+	const u32 m_entryPagePc;
+	std::array<u16, MAPPED_PAGE_BYTE_SIZE / INSTRUCTION_BYTES> m_entryByWord;
 	struct CachedRegister {
 		int guest = -1;
 		bool dirty = false;

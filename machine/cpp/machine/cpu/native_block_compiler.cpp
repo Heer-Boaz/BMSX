@@ -13,8 +13,14 @@ namespace bmsx {
 
 NativeBlockCompiler::NativeBlockCompiler(const Value* constants, std::span<const std::unique_ptr<NativeBlock>> blocks, Memory& memory, StringPool& strings,
 	std::span<const NativeBlockSource> sources)
-	: m_compiler(nullptr), m_blocks(blocks), m_entries(blocks.size()),
+	: m_compiler(nullptr), m_blocks(blocks), m_entryPagePc(blocks.front()->firstPc & ~MAPPED_PAGE_BYTE_MASK),
+	  m_entries(blocks.size()),
 	  m_constants(constants), m_memory(memory), m_strings(strings) {
+	// Region admission supplies unique entries in one decoded page. Keep the
+	// same index for liveness successors and emitted internal branches.
+	m_entryByWord.fill(static_cast<u16>(blocks.size()));
+	for (size_t index = 0; index < blocks.size(); ++index)
+		m_entryByWord[(blocks[index]->firstPc - m_entryPagePc) / INSTRUCTION_BYTES] = static_cast<u16>(index);
 	size_t slowPaths = 0, readMappings = 0;
 	bool calls = false;
 	for (const auto& blockSource : sources) {
@@ -65,6 +71,14 @@ NativeBlockCompiler::NativeBlockCompiler(const Value* constants, std::span<const
 }
 
 NativeBlockCompiler::~NativeBlockCompiler() { sljit_free_compiler(m_compiler); }
+
+size_t NativeBlockCompiler::regionEntryIndex(u32 pc) const {
+	const u32 offset = pc - m_entryPagePc;
+	// External and misaligned targets retain their ordinary dispatch/fetch path;
+	// low page bits alone are not an instruction identity.
+	return offset < MAPPED_PAGE_BYTE_SIZE && (offset & (INSTRUCTION_BYTES - 1u)) == 0u
+		? m_entryByWord[offset / INSTRUCTION_BYTES] : m_blocks.size();
+}
 
 void NativeBlockCompiler::beginBlock(size_t index, bool inheritRegisters) {
 	m_block = m_blocks[index].get();
@@ -246,8 +260,8 @@ void NativeBlockCompiler::emitExit(NativeBlockExitSite* exit, bool fallthrough) 
 	}
 	auto registers = registerSnapshot();
 	if (exit->exit == NativeBlockExit::Continue) {
-		for (size_t index = 0; index < m_blocks.size(); ++index) {
-			if (m_blocks[index]->firstPc != exit->nextPc) continue;
+		const size_t index = regionEntryIndex(exit->nextPc);
+		if (index != m_blocks.size()) {
 			// Ordinary target maps are already planned. Only a forward helper
 			// continuation must await its predecessor's actual allocation.
 			const auto& target = m_entries[index];

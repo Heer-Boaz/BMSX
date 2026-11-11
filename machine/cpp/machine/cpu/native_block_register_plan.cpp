@@ -73,12 +73,8 @@ void NativeBlockCompiler::planRegisterEntries(std::span<const NativeBlockSource>
 		size_t successorCount = 0;
 		const auto addSuccessor = [&](const NativeBlockExitSite& exit) {
 			if (exit.exit != NativeBlockExit::Continue) return;
-			for (size_t target = 0; target < m_blocks.size(); ++target) {
-				if (m_blocks[target]->firstPc == exit.nextPc) {
-					successors[index][successorCount++] = target;
-					break;
-				}
-			}
+			const size_t target = regionEntryIndex(exit.nextPc);
+			if (target != m_blocks.size()) successors[index][successorCount++] = target;
 		};
 		if (sources[index].fallthrough) successors[index][successorCount++] = index + 1u;
 		else addSuccessor(m_blocks[index]->terminal);

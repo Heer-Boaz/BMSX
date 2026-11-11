@@ -270,6 +270,56 @@ void segmentEntryPermutationsPreserveRawValuesAndDeadDefinitions() {
 	require(bytes == 0, "per-segment register plans do not retain executable storage");
 }
 
+void sparseRegionSuccessorsPreserveExactPcIdentity() {
+	const std::array values{valueNumber(-0.0), valueFromTag(ValueTag::False, 73), valueTable(cpu.createTable())};
+	for (const u32 page : {0x1000u, 0xfffffc00u}) {
+		std::array<DecodedInstruction, 5> decoded{};
+		const std::array ops{OpCode::MOV, OpCode::JMPIF, OpCode::JMP, OpCode::MOV, OpCode::JMP};
+		for (size_t index = 0; index < ops.size(); ++index) {
+			decoded[index].op = static_cast<u8>(ops[index]);
+			decoded[index].width = decoded[index].baseCycles = 1;
+		}
+		decoded[0].a = 2; decoded[0].b = 1;
+		decoded[1].a = 0; decoded[1].bx = page + MAPPED_PAGE_BYTE_SIZE - INSTRUCTION_BYTES;
+		decoded[3].a = 3; decoded[3].b = 2;
+		decoded[4].bx = 0x87654320u;
+		// Source order is deliberately not address order. The first and last
+		// page words are entries; the word after the low entry is only its body.
+		const std::array instructions{NativeBlockInstruction{&decoded[0], page + 512u},
+			NativeBlockInstruction{&decoded[1], page + 516u},
+			NativeBlockInstruction{&decoded[2], page + MAPPED_PAGE_BYTE_SIZE - INSTRUCTION_BYTES},
+			NativeBlockInstruction{&decoded[3], page}, NativeBlockInstruction{&decoded[4], page + INSTRUCTION_BYTES}};
+		const std::span source(instructions);
+		const std::array plans{NativeBlockSource{source.first(2)}, NativeBlockSource{source.subspan(2, 1)},
+			NativeBlockSource{source.subspan(3)}};
+		size_t bytes = 0;
+		for (const u32 target : {page, page + MAPPED_PAGE_BYTE_SIZE, page - MAPPED_PAGE_BYTE_SIZE,
+			page + 1u, page + INSTRUCTION_BYTES}) {
+			decoded[2].bx = target;
+			auto blocks = NativeBlock::compileRegion(plans, nullptr, bytes, memory, cpu.stringPool());
+			require(blocks[0]->terminal.link.patchAddress != 0 && blocks[0]->sideExits.back().link.patchAddress == 0,
+				"a sparse conditional leaves its missing fallthrough external but binds its last-word target internally");
+			require((blocks[1]->terminal.link.patchAddress == 0) == (target == page),
+				"only the exact entry PC is internal, not another page, an unaligned PC or an interior body word");
+			for (const auto value : values) for (const bool taken : {false, true}) for (const int grant : {1, 2, 3, 4, 100}) {
+				std::array registers{valueBool(taken), value, valueNumber(19), valueNumber(29)};
+				NativeBlockRunState run{.registers = registers.data(), .remainingCycles = grant};
+				const auto* exit = blocks[0]->run(run);
+				const bool middle = taken && grant > 2;
+				const bool last = middle && target == page && grant > 3;
+				const auto* expected = !taken ? &blocks[0]->terminal : !middle ? &blocks[0]->sideExits.back()
+					: last ? &blocks[2]->terminal : &blocks[1]->terminal;
+				require(exit == expected && run.remainingCycles == grant - (last ? 5 : middle ? 3 : 2),
+					"indexed successors preserve branch identity and complete-segment cycle admission");
+				require(registers[1] == value && registers[2] == value && registers[3] == (last ? value : valueNumber(29))
+					&& run.registerTop == (last ? 4 : 3),
+					"transitive live-in planning preserves raw resident values across sparse reordered entries");
+			}
+		}
+		require(bytes == 0, "indexed region compilation releases the same executable owners");
+	}
+}
+
 void diamondBackedgesPreserveFullStateFromEveryEntry() {
 	const std::array ops{OpCode::MOV, OpCode::MOV, OpCode::MOV, OpCode::MOV, OpCode::JMPIF,
 		OpCode::MOV, OpCode::MOV, OpCode::LOADK, OpCode::MOV, OpCode::JMP,
@@ -919,6 +969,7 @@ int main() {
 		helperContinuationsReloadTheCurrentRegisterMap();
 		residentValuesCrossInternalStringBranches();
 		segmentEntryPermutationsPreserveRawValuesAndDeadDefinitions();
+		sparseRegionSuccessorsPreserveExactPcIdentity();
 		diamondBackedgesPreserveFullStateFromEveryEntry();
 		linkedBodiesShareOneFrameAndRetireTheirEdges();
 		linkedAtomicStoreDebitsItsWholeChargeBeforeTestingItsSuccessor();
