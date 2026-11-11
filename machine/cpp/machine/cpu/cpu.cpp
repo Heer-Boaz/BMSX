@@ -3235,12 +3235,12 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 	frame->top = static_cast<int>(functionRecord.numParams);
 	std::fill_n(frame->registers, targetCapacity, valueNil());
 
-	for (int i = 0; i < static_cast<int>(functionRecord.numParams); ++i) {
-		if (i < argCount) {
-			frame->registers[static_cast<size_t>(i)] = caller.thread->stack[static_cast<size_t>(callerArgBase + i)];
-		} else {
-			frame->registers[static_cast<size_t>(i)] = valueNil();
-		}
+	const int copiedCount = std::min(static_cast<int>(functionRecord.numParams), argCount);
+	for (int i = 0; i < copiedCount; ++i) {
+		frame->registers[static_cast<size_t>(i)] = caller.thread->stack[static_cast<size_t>(callerArgBase + i)];
+	}
+	for (int i = std::max(copiedCount, frame->stackCapacity); i < static_cast<int>(functionRecord.numParams); ++i) {
+		frame->registers[static_cast<size_t>(i)] = valueNil();
 	}
 	if ((functionRecord.flags & BLUA32_FUNCTION_VARARG) != 0u) {
 		for (int i = 0; i < frame->varargCount; ++i) {
@@ -3315,12 +3315,12 @@ CallFrame* CPU::pushLatchedFrame(
 	std::fill_n(frame->registers, targetCapacity, valueNil());
 	const Value* sourceArgs = argsInStack ? m_activeThread->stack + argsOffset : args;
 
-	for (int i = 0; i < static_cast<int>(functionRecord.numParams); ++i) {
-		if (i < static_cast<int>(argCount)) {
-			frame->registers[static_cast<size_t>(i)] = sourceArgs[i];
-		} else {
-			frame->registers[static_cast<size_t>(i)] = valueNil();
-		}
+	const int copiedCount = std::min(static_cast<int>(functionRecord.numParams), static_cast<int>(argCount));
+	for (int i = 0; i < copiedCount; ++i) {
+		frame->registers[static_cast<size_t>(i)] = sourceArgs[i];
+	}
+	for (int i = std::max(copiedCount, frame->stackCapacity); i < static_cast<int>(functionRecord.numParams); ++i) {
+		frame->registers[static_cast<size_t>(i)] = valueNil();
 	}
 	if ((functionRecord.flags & BLUA32_FUNCTION_VARARG) != 0u) {
 		for (int i = 0; i < frame->varargCount; ++i) {

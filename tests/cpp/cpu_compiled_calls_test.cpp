@@ -166,7 +166,7 @@ void protectedNestedFrames() {
 }
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTarget, bool ramRecord, bool alias) {
+void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTarget, bool ramRecord, bool alias, int maxStack = 8) {
 	test::Blua32TestImage image;
 	image.text.resize(3 * MAPPED_PAGE_BYTE_SIZE);
 	const int base = alias ? 7 : 0;
@@ -180,7 +180,7 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 	writeInstruction(image.text, 2 * DECODED_PAGE_WORDS + 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
 	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = alias ? 8u : 16u},
 		{.firstWord = DECODED_PAGE_WORDS, .wordCount = 1, .numParams = static_cast<u32>(params),
-			.maxStack = params == 0 ? 0u : 8u, .isVararg = vararg}};
+			.maxStack = params == 0 ? 0u : static_cast<u32>(maxStack), .isVararg = vararg}};
 	image.globalNames = {"nativeCallMarker"};
 	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 	CpuMachine machine(image, false);
@@ -194,6 +194,13 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 	auto* caller = thread->currentFrame;
 	auto* spare = caller->next;
 	require(spare && thread->frameDepth == 1, "warm CALL owns a spare frame and adequate retained Value backing");
+	const int count = vararg ? std::max(args - params, 0) : 0;
+	const int capacity = ramRecord ? 7 : params == 0 ? 1 : std::max(maxStack, 1);
+	const int calleeBase = caller->stackCapacity + count;
+	const int initializedExtent = std::max(params, capacity);
+	require(static_cast<size_t>(calleeBase + initializedExtent + (alias ? 0 : 1)) <= thread->stackCapacity,
+		"raw formals and a following sentinel remain inside the retained allocation");
+	std::fill_n(thread->stack + caller->stackCapacity, count + initializedExtent + (alias ? 0 : 1), valueNumber(63));
 	const std::array<Value, 5> payloads{valueNumber(99), valueString(machine.cpu.stringPool().intern("native-call-payload")),
 		VALUE_QNAN_MASK | 0x2au, valueBool(true), valueNumber(-0.0)};
 	for (int index = 0; index < args; ++index) caller->registers[base + 1 + index] = payloads[index];
@@ -235,14 +242,14 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 		&& spare->callSitePc == machine.rom.textAddress + 3 * INSTRUCTION_BYTES
 		&& spare->returnBase == base && spare->returnCount == 1 && !spare->returnToCompletionLatch,
 		"native CALL publishes exact caller continuation and callee result obligations");
-	const int count = vararg ? std::max(args - params, 0) : 0;
 	require(spare->varargBase == caller->stackCapacity && spare->varargCount == count
 		&& spare->stackBase == spare->varargBase + count && spare->top == params
-		&& spare->stackCapacity == (ramRecord ? 7 : params == 0 ? 1 : 8),
+		&& spare->stackCapacity == capacity,
 		"fresh record fields govern separate vararg and reserved register windows, including maxStack zero");
 	for (int index = 0; index < params; ++index) require(spare->registers[index] == (index < args && !alias ? payloads[index] : valueNil()),
 		"fixed arguments retain raw Value bits and missing or overlapping cleared arguments are nil");
 	for (int index = params; index < spare->stackCapacity; ++index) require(spare->registers[index] == valueNil(), "new reserved locals are nil");
+	if (!alias) require(spare->registers[initializedExtent] == valueNumber(63), "CALL does not clear storage beyond its reserved locals and fixed formals");
 	for (int index = 0; index < count; ++index) require(thread->stack[spare->varargBase + index] == payloads[params + index],
 		"varargs retain their own raw Value window rather than borrowing caller storage");
 }
@@ -324,6 +331,83 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 		"native retirement clears the same inactive owner fields as an ordinary return, including unusual exception flags");
 }
 #endif
+
+void callFrameInitialization(int params, int maxStack, int args, bool vararg, bool alias) {
+	const u32 record = DYNAMIC_RAM_BASE + 0x1800u;
+	const int base = alias ? 7 : 0;
+	test::Blua32TestImage image;
+	image.text.resize(6 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 6, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), base, 6, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), base, args + 1, 1);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = alias ? 8u : 16u},
+		{.firstWord = 5, .wordCount = 1, .numParams = static_cast<u32>(params), .maxStack = 32, .isVararg = vararg}};
+	image.closureRelocations = {{1, record}};
+	CpuMachine native(image, false), scalar(image, true);
+	for (auto* machine : {&native, &scalar}) {
+		machine->memory.writeBytes(record, machine->rom.bytes.data() + machine->rom.functionAddresses[1], BLUA32_FUNCTION_RECORD_SIZE);
+	}
+	test::runCpuParity(native.cpu, scalar.cpu, 12000);
+	test::runCpuParity(native.cpu, scalar.cpu, 100, 1);
+	for (auto* machine : {&native, &scalar}) {
+		auto* thread = machine->cpu.activeThread();
+		auto* caller = thread->currentFrame;
+		machine->memory.writeMappedU32LE(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, static_cast<u32>(maxStack));
+		require(thread->stackCapacity >= 40, "an actual earlier call retained backing beyond the smaller raw frame reservation");
+		std::fill(thread->stack + thread->stackTop, thread->stack + thread->stackCapacity, valueNumber(63));
+		const std::array<Value, 5> payloads{valueNumber(-0.0), VALUE_QNAN_MASK | 0x2au, valueBool(true),
+			valueString(machine->cpu.stringPool().intern("frame-argument")), valueNumber(99)};
+		for (int index = 0; index < args; ++index) caller->registers[base + 1 + index] = alias ? valueNumber(71 + index) : payloads[index];
+		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress + 2 * INSTRUCTION_BYTES);
+	}
+	test::runCpuParity(native.cpu, scalar.cpu, 3);
+	requireParity(native, scalar);
+	for (auto* machine : {&native, &scalar}) {
+		auto* thread = machine->cpu.activeThread();
+		auto* callee = thread->currentFrame;
+		const int count = vararg ? std::max(args - params, 0) : 0;
+		const int capacity = std::max(maxStack, 1);
+		require(thread->frameDepth == 2 && callee->pc == machine->rom.textAddress + 5 * INSTRUCTION_BYTES
+			&& callee->stackCapacity == capacity && callee->top == params && callee->varargCount == count,
+			"CALL exposes exact fixed-parameter and reserved-capacity counts at its exhausted grant");
+		const std::array<Value, 5> payloads{valueNumber(-0.0), VALUE_QNAN_MASK | 0x2au, valueBool(true),
+			valueString(machine->cpu.stringPool().intern("frame-argument")), valueNumber(99)};
+		for (int index = 0; index < params; ++index) require(callee->registers[index]
+			== (index < args ? alias ? valueNumber(71) : payloads[index] : valueNil()),
+			"supplied raw arguments survive and missing fixed formals are nil, even outside the reservation");
+		for (int index = params; index < capacity; ++index) require(callee->registers[index] == valueNil(), "reserved locals begin nil");
+		require(callee->registers[std::max(params, capacity)] == valueNumber(63), "initialization does not touch the following allocated slot");
+		for (int index = 0; index < count; ++index) require(thread->stack[callee->varargBase + index]
+			== (alias ? valueNumber(index == 0 ? 72 : 71) : payloads[params + index]),
+			"saved varargs read after fixed argument copies, including aliases into the cleared callee window");
+	}
+	test::runCpuParity(native.cpu, scalar.cpu, 100, 1);
+	requireParity(native, scalar);
+	if (alias) return;
+	// Exercise the raw-argument owner as well, with the same reused storage and
+	// unnormalized function record, rather than only bytecode CALL admission.
+	for (auto* machine : {&native, &scalar}) {
+		auto* thread = machine->cpu.activeThread();
+		auto* caller = thread->currentFrame;
+		std::fill(thread->stack + thread->stackTop, thread->stack + thread->stackCapacity, valueNumber(63));
+		const std::array<Value, 5> payloads{valueNumber(-0.0), VALUE_QNAN_MASK | 0x2au, valueBool(true),
+			valueString(machine->cpu.stringPool().intern("frame-argument")), valueNumber(99)};
+		machine->cpu.beginCompletionCall(*asClosure(caller->registers[6]), BuiltinArgsView(payloads.data(), args));
+		auto* callee = thread->currentFrame;
+		require(callee->stackCapacity == std::max(maxStack, 1) && callee->top == params && callee->returnToCompletionLatch,
+			"raw argument calls retain the same frame sizing and completion owner");
+		for (int index = 0; index < params; ++index) require(callee->registers[index] == (index < args ? payloads[index] : valueNil()),
+			"raw argument admission preserves supplied bits and initializes only the missing formal tail");
+		for (int index = params; index < callee->stackCapacity; ++index) require(callee->registers[index] == valueNil(), "raw-call reserved locals begin nil");
+		require(callee->registers[std::max(params, callee->stackCapacity)] == valueNumber(63), "raw-call initialization leaves the following slot intact");
+		for (int index = 0; index < callee->varargCount; ++index) require(thread->stack[callee->varargBase + index] == payloads[params + index],
+			"raw argument varargs retain their separate ordered window");
+	}
+	requireParity(native, scalar);
+}
 
 void returnGrowthCollection() {
 	test::Blua32TestImage image;
@@ -495,6 +579,9 @@ int main() {
 		nativeCallRouting(3, 5, true, false, false, true, false);
 		nativeCallRouting(3, 2, false, true, true, false, false);
 		nativeCallRouting(1, 1, false, false, false, false, true);
+		nativeCallRouting(10, 1, false, false, false, false, false, 2);
+		nativeCallRouting(6, 4, false, false, false, false, false, 2);
+		nativeCallRouting(3, 1, false, false, false, false, false, 0);
 		nativeReturnRouting(6, 0, 0, false, true);
 		nativeReturnRouting(2, 4, 0, false, false);
 		nativeReturnRouting(6, 2, 0, false, false);
@@ -502,6 +589,14 @@ int main() {
 		nativeReturnRouting(6, 0, 0, true, false);
 		nativeReturnRouting(6, 0, 6, false, false);
 #endif
+		callFrameInitialization(4, 8, 1, false, false);
+		callFrameInitialization(8, 8, 0, false, false);
+		callFrameInitialization(6, 2, 1, false, false);
+		callFrameInitialization(6, 2, 4, false, false);
+		callFrameInitialization(3, 0, 1, false, false);
+		callFrameInitialization(0, 0, 0, false, false);
+		callFrameInitialization(2, 4, 5, true, false);
+		callFrameInitialization(1, 4, 3, true, true);
 		returnGrowthCollection();
 		failedCallAdmission();
 		for (const bool open : {false, true}) for (const u32 offset : {0x1800u, 0x1ff0u}) crossPageCalls(open, offset);

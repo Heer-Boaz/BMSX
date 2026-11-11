@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { runCpuParity } from '../helpers/cpu_execution';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { valueString, type Value } from '../../machine/ts/machine/cpu/value';
 import { writeLE32 } from '../../machine/ts/common/endian';
 import { DECODED_PAGE_WORDS } from '../../machine/ts/machine/cpu/execution_image';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
@@ -140,4 +141,140 @@ test('CALL clears its reserved window before reading arguments from retained sta
 	for (const { cpu } of machines) assert.equal(cpu.rootThread.frameAtDepth(0).registers.get(7), null,
 		'the callee returns the cleared argument through the real result window');
 	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+});
+
+for (const { numParams, maxStack, argCount } of [
+	{ numParams: 2, maxStack: 4, argCount: 1 },
+	{ numParams: 4, maxStack: 4, argCount: 2 },
+	{ numParams: 7, maxStack: 2, argCount: 1 },
+	{ numParams: 7, maxStack: 2, argCount: 6 },
+	{ numParams: 3, maxStack: 0, argCount: 1 },
+	{ numParams: 0, maxStack: 0, argCount: 0 },
+]) {
+	test(`call initialization preserves raw values and declared extents: parameters ${numParams}, stack ${maxStack}, arguments ${argCount}`, () => {
+		const text = new Uint8Array(9 * INSTRUCTION_BYTES);
+		writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
+		writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);
+		writeInstruction(text, 2, OpCode.CALL, 0, 1, 0);
+		writeInstruction(text, 3, OpCode.WIDE, 0, 0, 0);
+		writeInstruction(text, 4, OpCode.CLOSURE, 0, 0, 0);
+		writeInstruction(text, 5, OpCode.CALL, 0, argCount + 1, 0);
+		writeInstruction(text, 6, OpCode.JMP, 0, 63, 62, 255);
+		writeInstruction(text, 7, OpCode.RET, numParams, 0, 0);
+		writeInstruction(text, 8, OpCode.RET, 0, 0, 0);
+		const image = linkRawTestSystemBlua32({ text, functions: [
+			{ firstWord: 0, wordCount: 7, maxStack: 8 },
+			{ firstWord: 7, wordCount: 1, numParams, maxStack },
+			{ firstWord: 8, wordCount: 1, maxStack: 32 },
+		], closureRelocations: [
+			{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(0, 2) },
+			{ wordIndex: 4, functionAddress: blua32TestFunctionAddress(0, 1) },
+		] });
+		const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+		// The first guest call retains backing storage before the raw function
+		// record with parameters beyond maxStack is ever entered.
+		runCpuParity(machines[0].cpu, machines[1].cpu, 20000);
+		runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
+		const entry = image.image.functions[0].codeAddress + 5 * INSTRUCTION_BYTES;
+		const calleeEntry = image.image.functions[1].codeAddress;
+		const lookup = machines[0].cpu.rootThread.frameAtDepth(0).executionImage.compiledCodeLookup!;
+		for (const pc of [entry, calleeEntry]) assert.ok(lookup.find(pc, 0)!.compiledBlocks!.entries[(pc & MAPPED_PAGE_BYTE_MASK) >>> 2],
+			'the real caller and callee are generated before the initialization probe');
+		const retainedCapacities = machines.map(({ cpu }) => cpu.rootThread.stackRegisters.capacity());
+		for (const completion of [false, true]) {
+			const argumentsByMachine = machines.map(({ cpu }) => {
+				const thread = cpu.rootThread;
+				const caller = thread.frameAtDepth(0);
+				const closure = caller.registers.getClosure(0);
+				const args: Value[] = [-0, NaN, valueString(cpu.stringPool.intern('call-initialization')), false, true, closure].slice(0, argCount);
+				assert.equal(thread.stackTop, 8);
+				assert.equal(caller.stackCapacity, 8);
+				assert.ok(thread.stackRegisters.capacity() >= 32);
+				for (let index = 8; index < 32; ++index) thread.stackRegisters.set(index, closure);
+				if (completion) cpu.beginCompletionCall(closure, args);
+				else {
+					for (let index = 0; index < args.length; ++index) caller.registers.set(index + 1, args[index]);
+					cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
+				}
+				return args;
+			});
+			if (!completion) runCpuParity(machines[0].cpu, machines[1].cpu, 2);
+			for (const [machineIndex, { cpu }] of machines.entries()) {
+				const thread = cpu.rootThread;
+				const caller = thread.frameAtDepth(0);
+				const callee = thread.currentFrame!;
+				const capacity = Math.max(maxStack, 1);
+				assert.equal(cpu.getFrameDepth(), 2);
+				assert.equal(callee.pc, calleeEntry);
+				assert.equal(callee.stackBase, 8);
+				assert.equal(callee.stackCapacity, capacity);
+				assert.equal(callee.top, numParams);
+				assert.equal(thread.stackTop, 8 + capacity, 'fixed-parameter writes do not expand the reserved window');
+				assert.equal(caller.stackCapacity, 8);
+				assert.equal(caller.top, 0, 'activation does not change the caller active-register extent');
+				assert.equal(thread.stackRegisters.capacity(), retainedCapacities[machineIndex]);
+				for (let index = 0; index < argCount; ++index) assert.equal(callee.registers.get(index), argumentsByMachine[machineIndex][index],
+					'argument movement preserves number identity, value tags and references');
+				for (let index = argCount; index < Math.max(numParams, capacity); ++index) {
+					assert.equal(callee.registers.get(index), null, 'missing formals and reserved locals are nil');
+					assert.equal(callee.registers.getReference(index), null, 'cleared slots do not retain stale references');
+				}
+				for (let index = 8 + Math.max(numParams, capacity); index < 32; ++index) assert.equal(thread.stackRegisters.get(index), caller.registers.getClosure(0),
+					'initialization leaves retained storage beyond the reserved and parameter extents untouched');
+			}
+			assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+			runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
+		}
+	});
+}
+
+test('CALL copies fixed arguments before overlapping retained vararg sources', () => {
+	const text = new Uint8Array(7 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.CLOSURE, 4, 0, 0);
+	writeInstruction(text, 2, OpCode.MOV, 7, 4, 0);
+	writeInstruction(text, 3, OpCode.CALL, 7, 4, 1);
+	writeInstruction(text, 4, OpCode.JMP, 0, 63, 61, 255);
+	writeInstruction(text, 5, OpCode.VARARG, 1, 2, 0);
+	writeInstruction(text, 6, OpCode.RET, 0, 3, 0);
+	const image = linkRawTestSystemBlua32({ text, functions: [
+		{ firstWord: 0, wordCount: 5, maxStack: 8 },
+		{ firstWord: 5, wordCount: 2, numParams: 1, maxStack: 4, isVararg: true },
+	], closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(0, 1) }] });
+	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+	runCpuParity(machines[0].cpu, machines[1].cpu, 20000);
+	runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
+	const entry = image.image.functions[0].codeAddress + 2 * INSTRUCTION_BYTES;
+	const calleeEntry = image.image.functions[1].codeAddress;
+	const lookup = machines[0].cpu.rootThread.frameAtDepth(0).executionImage.compiledCodeLookup!;
+	for (const pc of [entry, calleeEntry]) assert.ok(lookup.find(pc, 0)!.compiledBlocks!.entries[(pc & MAPPED_PAGE_BYTE_MASK) >>> 2],
+		'the caller and callee are generated before the vararg alias probe');
+	for (const { cpu } of machines) {
+		const thread = cpu.rootThread;
+		assert.equal(thread.frameAtDepth(0).stackCapacity, 8);
+		assert.equal(thread.stackTop, 8);
+		assert.ok(thread.stackRegisters.capacity() >= 16);
+		thread.stackRegisters.setNumber(8, 71);
+		thread.stackRegisters.setNumber(9, 72);
+		thread.stackRegisters.setNumber(10, 73);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
+	}
+	runCpuParity(machines[0].cpu, machines[1].cpu, 3);
+	for (const { cpu } of machines) {
+		const thread = cpu.rootThread;
+		const callee = thread.currentFrame!;
+		assert.equal(callee.stackBase, 10);
+		assert.equal(callee.stackCapacity, 4);
+		assert.equal(callee.top, 1);
+		assert.equal(callee.registers.getNumber(0), 71);
+		assert.equal(callee.varargBase, 8);
+		assert.equal(callee.varargCount, 2);
+		assert.equal(thread.stackRegisters.getNumber(8), 72);
+		assert.equal(thread.stackRegisters.getNumber(9), 71,
+			'the second vararg reads the fixed argument already copied to absolute slot 10, not stale 73 or cleared nil');
+		for (let index = 1; index < 4; ++index) assert.equal(callee.registers.get(index), null);
+	}
+	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+	runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
+	for (const { cpu } of machines) assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(7), 71);
 });

@@ -3452,14 +3452,16 @@ export class CPU implements MappedPageInvalidator {
 		frame.returnToCompletionLatch = returnToCompletionLatch;
 		frame.callSitePc = functionRecord.codeAddress;
 
-		let argIndex = 0;
-		for (let index = 0; index < functionRecord.numParams; index += 1) {
-			registers.set(index, argIndex < args.length ? args[argIndex] : null);
-			argIndex += 1;
+		const copiedCount = Math.min(functionRecord.numParams, args.length);
+		for (let index = 0; index < copiedCount; index += 1) {
+			registers.set(index, args[index]);
+		}
+		for (let index = Math.max(copiedCount, frame.stackCapacity); index < functionRecord.numParams; index += 1) {
+			registers.setNil(index);
 		}
 		if ((functionRecord.flags & BLUA32_FUNCTION_VARARG) !== 0) {
 			for (let index = 0; index < frame.varargCount; index += 1) {
-				this.activeThread.stackRegisters.set(frame.varargBase + index, args[argIndex + index]);
+				this.activeThread.stackRegisters.set(frame.varargBase + index, args[functionRecord.numParams + index]);
 			}
 		}
 		this.activeThread.enterFrame(frame);
@@ -3496,7 +3498,7 @@ export class CPU implements MappedPageInvalidator {
 		if (copiedCount > 0) {
 			registers.copyRangeFrom(callerRegisters, 0, argBase, copiedCount);
 		}
-		for (let index = copiedCount; index < functionRecord.numParams; index += 1) {
+		for (let index = Math.max(copiedCount, frame.stackCapacity); index < functionRecord.numParams; index += 1) {
 			registers.setNil(index);
 		}
 		if ((functionRecord.flags & BLUA32_FUNCTION_VARARG) !== 0) {
