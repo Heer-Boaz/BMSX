@@ -24,7 +24,7 @@ set(BMSX_ENABLE_GLES2_DEFAULT ON)
 # Previously GLES2 was disabled by default on Windows; enable by default on all platforms
 message(STATUS "BMSX: Default BMSX_ENABLE_GLES2=${BMSX_ENABLE_GLES2_DEFAULT}")
 option(BMSX_ENABLE_GLES2 "Enable OpenGLES2 backend" ${BMSX_ENABLE_GLES2_DEFAULT})
-option(BMSX_GLES2_SOFTWARE_GX "Experiment: exact software GX and scanout with GLES2 postprocessing" OFF)
+option(BMSX_GLES2_SOFTWARE_GX "Exact software GX and scanout with GLES2 postprocessing" OFF)
 if(BMSX_GLES2_SOFTWARE_GX AND NOT BMSX_ENABLE_GLES2)
 	message(FATAL_ERROR "BMSX_GLES2_SOFTWARE_GX requires BMSX_ENABLE_GLES2")
 endif()

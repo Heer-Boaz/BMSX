@@ -47,7 +47,8 @@ struct OpenGLES2GxGpuState {
 	explicit OpenGLES2GxGpuState(size_t vramByteCount) : software(vramByteCount, 0u) {}
 	GxGpuSoftwareState software;
 	std::vector<u32> scanoutPixels;
-	// An explicit experiment in upload reuse distance, not a stall-free promise.
+	// Rotate frame uploads rather than immediately rewriting the previous source.
+	// Reuse can still stall if the GPU has not finished that texture.
 	std::array<TextureHandle, 3> uploads{};
 	size_t nextUpload = 0u;
 	GLuint program = 0u;

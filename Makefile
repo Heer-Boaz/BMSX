@@ -63,6 +63,8 @@ libretro-snesmini-build-inner:
 		-DBMSX_BUILD_LIBRETRO=ON \
 		-DBMSX_BUILD_LIBRETRO_HOST=OFF \
 		-DBMSX_ENABLE_GLES2=ON \
+		-DBMSX_GLES2_SOFTWARE_GX=ON \
+		-DBMSX_NATIVE_COMPILER_WORKER=ON \
 		-DBMSX_ENABLE_ZLIB=OFF \
 		-DGLESV2_LIBRARY="$(SNESMINI_SDK_USR_LIB_DIR)/libGLESv2.so"
 	cmake --build "$(SNESMINI_BUILD_DIR)" --config "$(SNESMINI_BUILD_TYPE)" --parallel "$$(nproc)" --target bmsx_libretro

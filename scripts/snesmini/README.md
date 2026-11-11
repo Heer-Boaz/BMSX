@@ -29,14 +29,38 @@ the PC collection, use `--hakchi-dir <directory> --collection-only` without SSH.
 A later Hakchi synchronization uses that PC collection, so update it explicitly
 if it should retain changes made by direct SSH deployments.
 
+## Core build defaults
+
+The standard SNES Mini core build explicitly enables native CPU execution,
+background native compilation and hybrid rendering. GX drawing and scanout use
+the exact software renderer; GLES2 uploads that frame and runs CRT postprocessing
+and presentation. Selecting GLES2 in the host therefore still enables GPU CRT
+effects, not CPU CRT processing.
+
+The compiler has one bounded background job. Only the emulation thread publishes
+completed code and handles invalidation. The separate emulation/render submission
+worker described below remains opt-in; it is not required by background compilation
+or hybrid rendering.
+
+Other platform builds keep synchronous compilation and hardware GLES2 drawing by
+default. Direct CMake builds can select `BMSX_NATIVE_COMPILER_WORKER` and
+`BMSX_GLES2_SOFTWARE_GX` independently. Set the latter to `OFF` when comparing the
+hardware drawing modes below. This is a build choice, not an automatic fallback.
+
+Rebuild the BIOS and cartridges with the current toolchain when updating the core:
+the shared activation-stack call ABI requires matching program images. The deploy
+script's `--build` route builds the selected carts and BIOS together with the core.
+
 ## Integrated GLES2 draw-target comparison
 
-The libretro core reads `BMSX_GLES2_TARGETS` once when creating its GLES2 backend:
+In hardware-drawing builds (`BMSX_GLES2_SOFTWARE_GX=OFF`), the libretro core reads
+`BMSX_GLES2_TARGETS` once when creating its GLES2 backend. This setting has no
+effect on the hybrid renderer:
 
 | Value | Drawing storage | Destination blending |
 | --- | --- | --- |
 | `full` | Full nibble VRAM texture | Exact shader arithmetic |
-| `nibbles` (SNES Mini default) | Two disjoint cached nibble regions | Exact shader arithmetic |
+| `nibbles` (SNES Mini hardware-drawing default) | Two disjoint cached nibble regions | Exact shader arithmetic |
 | `rgb5` | Two disjoint cached RGB5_A1 regions | Exact shader arithmetic |
 | `rgb5-mali` | Two disjoint cached RGB5_A1 regions | Mali-400 hardware blend profile; mask-check uses the exact shader |
 
