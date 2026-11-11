@@ -4829,6 +4829,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public restoreRuntimeState(state: CpuRuntimeState): void {
+		this.compiledCodeCache.retireAll();
 		const snapshot = state.snapshot;
 		const restoredObjects = new Array<CpuSnapshotObject>(snapshot.objectCount);
 		this.clearCompletionValues();

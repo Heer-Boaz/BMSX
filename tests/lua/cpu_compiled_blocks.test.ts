@@ -376,6 +376,63 @@ test('sparse observation and instrumented stops retire or bypass compiled blocks
 	assert.equal(observed.length, 20);
 });
 
+test('restore retires warmed cross-page regions and their links before regenerating execution', () => {
+	const text = new Uint8Array(INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 3 }] });
+	const generated = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
+	const scalar = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	const js = generated.cpu, ref = scalar.cpu;
+	const pageWords = MAPPED_PAGE_BYTE_SIZE / INSTRUCTION_BYTES;
+	const code = new Uint8Array(2 * MAPPED_PAGE_BYTE_SIZE);
+	const outward = pageWords - 2, backward = -pageWords - 2;
+	writeInstruction(code, 0, OpCode.ADD, 0, 0, 1);
+	writeInstruction(code, 1, OpCode.JMP, 0, (outward >>> 6) & 63, outward & 63, (outward >>> 12) & 255);
+	writeInstruction(code, pageWords, OpCode.ADD, 0, 0, 2);
+	writeInstruction(code, pageWords + 1, OpCode.JMP, 0, (backward >>> 6) & 63, backward & 63, (backward >>> 12) & 255);
+	for (const { cpu, memory } of [generated, scalar]) {
+		memory.writeBytes(DYNAMIC_RAM_BASE, code);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
+		const registers = cpu.rootThread.frameAtDepth(0).registers;
+		registers.setNumber(0, 0); registers.setNumber(1, 1); registers.setNumber(2, 2);
+	}
+	for (let revision = 0; revision < 3; ++revision) {
+		runCpuParity(js, ref, 1024);
+		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
+		const owner = js.rootThread.frameAtDepth(0).executionImage;
+		const pages = [DYNAMIC_RAM_BASE, DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE]
+			.map(pc => owner.compiledCodeLookup!.find(pc, 0)!);
+		const blocks = pages.map(page => page.compiledBlocks!.entries[0]!);
+		assert.ok(blocks.every(block => block !== null), 'both restored pages really warm into generated code');
+		assert.equal(blocks[0].terminal.linkedBlock, blocks[1]);
+		assert.equal(blocks[1].terminal.linkedBlock, blocks[0]);
+		assert.ok(pages.every(page => page.compiledBlocks!.sourceUnits > 0));
+		const saved = js.captureRuntimeState();
+		js.restoreRuntimeState(saved);
+		ref.restoreRuntimeState(ref.captureRuntimeState());
+		assert.deepEqual(js.captureRuntimeState(), saved);
+		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
+		assert.notEqual(js.rootThread.frameAtDepth(0).executionImage, owner);
+		assert.equal(compiledEntries(js), 0, 'restored execution starts with fresh decoded owners');
+		for (const page of pages) {
+			assert.ok(page.compiledBlocks!.entries.every(block => block === null), 'restore withdraws the discarded generated entries');
+			assert.equal(page.compiledBlocks!.sourceUnits, 0, 'retired regions release their generated-source charge');
+		}
+		for (const block of blocks) {
+			assert.equal(block.incoming, null);
+			for (const exit of block.exits) {
+				assert.equal(exit.linkedBlock, null);
+				assert.equal(exit.previousIncoming, null);
+				assert.equal(exit.nextIncoming, null);
+			}
+		}
+		for (const grant of [1, 2, 7, 19]) {
+			runCpuParity(js, ref, grant);
+			assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
+		}
+	}
+});
+
 test('compiled loops and repeated calls replay the full state through short grants and restore', () => {
 	const image = linkTestSystemBlua32(compileLuaSource(`
 local function step(x) return ((x << 1) ~ 3) + 1 end
