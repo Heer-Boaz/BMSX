@@ -7,9 +7,32 @@
 #include <algorithm>
 
 #include "machine/cpu/execution_image.h"
+#include "machine/memory/memory.h"
 #include "machine/common/numeric.h"
 
 namespace bmsx {
+
+NativeCodeBindings::NativeCodeBindings(Memory& memory, StringPool& pool)
+	: ramBytes(memory.ramByteCount()), ram(memory.ramData()),
+	  ramWriteGroups(memory.ramWriteWatches().groupData()),
+	  cartridgeSelection(&memory.cartridgeController().selectionWord()),
+	  cartridgeRom{memory.cartridgeController().romStorage(0), memory.cartridgeController().romStorage(1)},
+	  systemRom(&memory.systemRomStorage()), strings(&pool) {}
+
+void NativeCodeRegion::publish(size_t& cacheBytes) {
+#if defined(BMSX_NATIVE_COMPILER_WORKER) && defined(SLJIT_CONFIG_ARM)
+	// Emission flushed the worker's instruction stream. Synchronize the
+	// executing core before any entry from this allocation becomes reachable.
+	auto address = reinterpret_cast<sljit_uw>(m_code);
+#if defined(SLJIT_CONFIG_ARM_THUMB2) && SLJIT_CONFIG_ARM_THUMB2
+	address &= ~sljit_uw{1}; // SLJIT's executable handle includes the Thumb bit.
+#endif
+	SLJIT_CACHE_FLUSH(reinterpret_cast<void*>(address), reinterpret_cast<void*>(address + codeBytes));
+#endif
+	m_cacheBytes = &cacheBytes;
+	cacheBytes += codeBytes;
+}
+
 
 std::unique_ptr<NativeBlock> NativeBlock::compile(
 	std::span<const NativeBlockInstruction> instructions, const Value* constants,
@@ -17,16 +40,16 @@ std::unique_ptr<NativeBlock> NativeBlock::compile(
 	const NativeBlockExitHandlers& exitHandlers, const DecodedInstruction* skippedInstruction
 ) {
 	const std::array sources{NativeBlockSource{instructions, skippedInstruction}};
-	auto blocks = compileRegion(sources, constants, cacheBytes, memory, strings, exitHandlers);
+	auto blocks = compileRegion(sources, constants, NativeCodeBindings(memory, strings), exitHandlers);
+	blocks.front()->region->publish(cacheBytes);
 	return std::move(blocks.front());
 }
 
 std::vector<std::unique_ptr<NativeBlock>> NativeBlock::compileRegion(
 	std::span<const NativeBlockSource> sources, const Value* constants,
-	size_t& cacheBytes, Memory& memory, StringPool& strings,
-	const NativeBlockExitHandlers& exitHandlers
+	const NativeCodeBindings& bindings, const NativeBlockExitHandlers& exitHandlers
 ) {
-	auto region = std::make_shared<NativeCodeRegion>(cacheBytes);
+	auto region = std::make_shared<NativeCodeRegion>();
 	std::vector<std::unique_ptr<NativeBlock>> blocks;
 	blocks.reserve(sources.size());
 	for (const auto& source : sources) {
@@ -39,7 +62,7 @@ std::vector<std::unique_ptr<NativeBlock>> NativeBlock::compileRegion(
 			blocks[index]->sourceWords += blocks[index + 1u]->sourceWords;
 		}
 	}
-	NativeBlockCompiler compiler(constants, blocks, memory, strings, sources);
+	NativeBlockCompiler compiler(constants, blocks, bindings, sources);
 	for (size_t index = 0; index < sources.size(); ++index) {
 		const auto& source = sources[index];
 		auto& block = *blocks[index];
@@ -57,13 +80,12 @@ std::vector<std::unique_ptr<NativeBlock>> NativeBlock::compileRegion(
 		compiler.endBlock(source.fallthrough);
 	}
 	region->m_code = compiler.finish(region->codeBytes);
-	cacheBytes += region->codeBytes;
 	return blocks;
 }
 
 NativeCodeRegion::~NativeCodeRegion() {
 	if (m_code) sljit_free_code(m_code, nullptr);
-	m_cacheBytes -= codeBytes;
+	if (m_cacheBytes) *m_cacheBytes -= codeBytes;
 }
 
 std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& source, const NativeBlockExitHandlers& exitHandlers) {

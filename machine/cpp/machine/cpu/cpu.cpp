@@ -1,4 +1,7 @@
 #include "machine/cpu/cpu.h"
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+#include "machine/cpu/native_compiler_worker.h"
+#endif
 
 #include "common/compiler.h"
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -404,6 +407,9 @@ CPU::CPU(
 }
 
 CPU::~CPU() {
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	m_nativeCompilerWorker.reset();
+#endif
 	m_memory.detachMappedPageInvalidator();
 }
 
@@ -435,6 +441,9 @@ Closure* CPU::allocateTrackedClosure(
 }
 
 void CPU::reset() {
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	discardNativeCompilation();
+#endif
 	const Blua32ExecutionBoot systemBoot =
 		m_executionAddressSpace.resolveSystemDomain();
 	const u32 systemResetFunctionAddress = systemBoot.startupFunctionAddress;
@@ -677,6 +686,9 @@ void CPU::latchActiveExecutionImage(Blua32ExecutionImage& image) {
 }
 
 void CPU::replaceExecutionImage(Blua32ExecutionBoot executionBoot) {
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	discardNativeCompilation();
+#endif
 	std::unique_ptr<Blua32ExecutionImage>& imageEntry = m_executionImagesByDomain[
 		static_cast<size_t>(executionBoot.executionDomainId + 1)
 	];
@@ -775,6 +787,10 @@ DecodedInstructionPage& CPU::decodedPageForAddress(
 }
 
 void CPU::invalidateDecodedWords(u64 key, u32 firstWord, u32 endWord) {
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	if (m_nativeCompilerWorker && !m_nativeCompilerWorker->idle() && m_pendingNativeCompilation.key == key)
+		m_pendingNativeCompilation.invalidated = true;
+#endif
 	const u32 firstPredecessor = firstWord >= DECODED_DEPENDENCY_PREDECESSOR_WORDS
 		? firstWord - DECODED_DEPENDENCY_PREDECESSOR_WORDS : 0u;
 	const u32 predecessorEnd = std::min(firstWord, static_cast<u32>(DECODED_PAGE_WORDS));
@@ -830,6 +846,12 @@ void CPU::invalidateMappedWords(u64 key, u32 firstWord, u32 endWord) {
 }
 
 void CPU::invalidateMappedRange(u64 firstKey, u64 endKey) {
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	if (m_nativeCompilerWorker && !m_nativeCompilerWorker->idle()
+		&& m_pendingNativeCompilation.key >= (firstKey >= MAPPED_PAGE_BYTE_SIZE ? firstKey - MAPPED_PAGE_BYTE_SIZE : 0u)
+		&& m_pendingNativeCompilation.key < endKey)
+		m_pendingNativeCompilation.invalidated = true;
+#endif
 	const u64 invalidationStart = firstKey >= MAPPED_PAGE_BYTE_SIZE
 		? firstKey - MAPPED_PAGE_BYTE_SIZE
 		: 0u;
@@ -1477,6 +1499,9 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 }
 
 void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	discardNativeCompilation();
+#endif
 	const auto& snapshot = state.snapshot;
 	m_completionValues.clear();
 	clearCallStack();
@@ -2857,6 +2882,9 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, const Threa
 }
 
 RunResult CPU::runUntilDepthNormal(CPU& cpu, int targetDepth, int instructionBudget) {
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	cpu.publishNativeCompilation();
+#endif
 	if (targetDepth == 0) {
 		return cpu.runLoop<true, false>(targetDepth, instructionBudget);
 	}
@@ -2871,6 +2899,9 @@ RunResult CPU::runUntilDepthInstrumented(CPU& cpu, int targetDepth, int instruct
 }
 
 void CPU::setInstructionObserver(InstructionObserverBinding binding) {
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	discardNativeCompilation();
+#endif
 	m_instructionObserver = std::move(binding);
 	// Predecessors may have fused across a newly observed PC.
 	for (auto& image : m_executionImagesByDomain) {

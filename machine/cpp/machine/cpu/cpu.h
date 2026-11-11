@@ -38,6 +38,7 @@
 namespace bmsx {
 
 class CPU;
+class NativeCompilerWorker;
 class GcHeap;
 class IrqController;
 class Memory;
@@ -503,6 +504,8 @@ private:
 	static NativeFrameOffsets nativeFrameOffsets();
 	static void* dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept;
 	void prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32 word);
+	void installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pagePc, u32 slot,
+		std::span<const u32> entries, std::vector<std::unique_ptr<NativeBlock>> blocks, u32 instructionCount);
 	static NativeBlockTransition compiledReadFieldExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
 	static NativeBlockTransition compiledWriteFieldExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
 	static NativeBlockTransition compiledReadIndexExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
@@ -512,6 +515,21 @@ private:
 	static NativeBlockTransition compiledReadMemoryExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
 	static NativeBlockTransition compiledWriteMemoryExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
 	static NativeBlockTransition compiledWriteWordsExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	void publishNativeCompilation();
+	void discardNativeCompilation();
+	std::unique_ptr<NativeCompilerWorker> m_nativeCompilerWorker;
+	struct PendingNativeCompilation {
+		Blua32ExecutionImage* image = nullptr;
+		DecodedInstructionPage* page = nullptr;
+		u64 key = 0;
+		u32 pagePc = 0, slot = 0;
+		u32 instructionCount = 0;
+		bool invalidated = false;
+		std::vector<u32> entries;
+		std::vector<const NativeCodeRegion*> merged;
+	} m_pendingNativeCompilation;
+#endif
 	size_t m_nativeCodeBytes = 0;
 	bool m_nativeCompilationProfiling = false;
 	NativeCompilationProfile m_nativeCompilationProfile;

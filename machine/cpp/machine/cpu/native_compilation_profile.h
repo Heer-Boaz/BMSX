@@ -24,6 +24,11 @@ struct NativeCompilationProfile {
 	u64 mergedCodeBytes = 0;
 	u64 capacityFlushes = 0;
 	u64 capacityRetiredCodeBytes = 0;
+	// Parallel emission is not CPU-thread preparation time. Keep it separate
+	// rather than adding overlapping worker time to frame-blocking costs.
+	u64 backgroundCompleted = 0;
+	u64 backgroundCancelled = 0;
+	u64 backgroundNanoseconds = 0;
 	i32 maxPrepareDomain = 0;
 	u32 maxPrepareCartridgeSlot = 0;
 	u32 maxPrepareRootPc = 0;

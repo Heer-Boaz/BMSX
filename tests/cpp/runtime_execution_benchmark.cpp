@@ -236,6 +236,9 @@ int main(int argc, char** argv) {
 				<< ",\"sourceInstructions\":" << end.sourceInstructions - compilationStart.sourceInstructions
 				<< ",\"emittedCodeBytes\":" << end.emittedCodeBytes - compilationStart.emittedCodeBytes
 				<< ",\"capacityFlushes\":" << end.capacityFlushes - compilationStart.capacityFlushes
+				<< ",\"backgroundCompleted\":" << end.backgroundCompleted - compilationStart.backgroundCompleted
+				<< ",\"backgroundCancelled\":" << end.backgroundCancelled - compilationStart.backgroundCancelled
+				<< ",\"backgroundMs\":" << (end.backgroundNanoseconds - compilationStart.backgroundNanoseconds) / 1000000.0
 				<< ",\"codeBytes\":" << end.codeBytes << '}';
 		} else
 #endif

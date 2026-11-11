@@ -27,7 +27,7 @@ void NativeBlockCompiler::emitWordStores(const DecodedInstruction& instruction, 
 	sljit_emit_op2(m_compiler, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, 3);
 	slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0);
 	const u32 count = instruction.c, width = count * 4u;
-	if (width > m_memory.ramByteCount()) {
+	if (width > m_bindings.ramBytes) {
 		slow.jumps[slow.count++] = sljit_emit_jump(m_compiler, SLJIT_JUMP);
 		m_slowPaths.push_back(slow);
 		return;
@@ -37,7 +37,7 @@ void NativeBlockCompiler::emitWordStores(const DecodedInstruction& instruction, 
 		slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_LESS | SLJIT_32, SLJIT_S2, 0,
 			SLJIT_IMM, IO_SLOT_COUNT * IO_WORD_SIZE);
 		slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_GREATER | SLJIT_32, SLJIT_S2, 0,
-			SLJIT_IMM, static_cast<sljit_sw>(m_memory.ramByteCount() - width));
+			SLJIT_IMM, static_cast<sljit_sw>(m_bindings.ramBytes - width));
 		sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_S2, 0, SLJIT_S2, 0);
 		// Inspect every touched watch group before the first store, including
 		// middle pages. A watched span leaves the native frame before acting.
@@ -46,7 +46,7 @@ void NativeBlockCompiler::emitWordStores(const DecodedInstruction& instruction, 
 		sljit_emit_op2(m_compiler, SLJIT_LSHR, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, MAPPED_PAGE_BYTE_SHIFT);
 		auto* watch = sljit_emit_label(m_compiler);
 		sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R1),
-			reinterpret_cast<sljit_sw>(m_memory.ramWriteWatches().groupData()));
+			reinterpret_cast<sljit_sw>(m_bindings.ramWriteGroups));
 		slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0);
 		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, 1);
 		sljit_set_label(sljit_emit_cmp(m_compiler, SLJIT_LESS_EQUAL, SLJIT_R1, 0, SLJIT_R2, 0), watch);
@@ -58,7 +58,7 @@ void NativeBlockCompiler::emitWordStores(const DecodedInstruction& instruction, 
 			sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_MEM1(SLJIT_S0), entry.guest * sizeof(Value), cachedFloatRegister(slot), 0);
 			entry.dirty = false;
 		}
-		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R0, 0, SLJIT_S2, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_memory.ramData()));
+		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R0, 0, SLJIT_S2, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.ram));
 		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R1, 0, SLJIT_S0, 0, SLJIT_IMM, instruction.a * sizeof(Value));
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_IMM, count);
 		emitCallSpills(false);
@@ -93,7 +93,7 @@ void NativeBlockCompiler::emitMemory(const DecodedInstruction& instruction, Nati
 	auto* belowRam = sljit_emit_cmp(m_compiler, SLJIT_LESS | SLJIT_32, SLJIT_S2, 0,
 		SLJIT_IMM, IO_SLOT_COUNT * IO_WORD_SIZE);
 	auto* aboveRam = sljit_emit_cmp(m_compiler, SLJIT_GREATER | SLJIT_32, SLJIT_S2, 0,
-		SLJIT_IMM, static_cast<sljit_sw>(m_memory.ramByteCount() - width));
+		SLJIT_IMM, static_cast<sljit_sw>(m_bindings.ramBytes - width));
 	if (load) {
 		mapping = &m_readMappings.emplace_back(ReadMapping{{belowRam, aboveRam}, exit, nullptr, width, slow.registers});
 	} else {
@@ -109,18 +109,18 @@ void NativeBlockCompiler::emitMemory(const DecodedInstruction& instruction, Nati
 		sljit_emit_op2(m_compiler, SLJIT_LSHR, SLJIT_R1, 0, SLJIT_S2, 0,
 			SLJIT_IMM, MAPPED_PAGE_BYTE_SHIFT);
 		sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R1),
-			reinterpret_cast<sljit_sw>(m_memory.ramWriteWatches().groupData()));
+			reinterpret_cast<sljit_sw>(m_bindings.ramWriteGroups));
 		slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R1, 0, SLJIT_IMM, 0);
 		if (width == 8u) {
 			sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R1, 0, SLJIT_S2, 0, SLJIT_IMM, 4);
 			sljit_emit_op2(m_compiler, SLJIT_LSHR, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, MAPPED_PAGE_BYTE_SHIFT);
 			sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R1),
-				reinterpret_cast<sljit_sw>(m_memory.ramWriteWatches().groupData()));
+				reinterpret_cast<sljit_sw>(m_bindings.ramWriteGroups));
 			slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R1, 0, SLJIT_IMM, 0);
 		}
 	}
 	sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_S2, 0, SLJIT_S2, 0,
-		SLJIT_IMM, reinterpret_cast<sljit_sw>(m_memory.ramData()));
+		SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.ram));
 	if (load) {
 		emitScalarLoad(kind, SLJIT_MEM_ALIGNED_32);
 		mapping->done = sljit_emit_label(m_compiler);
@@ -257,16 +257,15 @@ void NativeBlockCompiler::emitReadMappings() {
 		misses[count++] = sljit_emit_cmp(m_compiler, SLJIT_GREATER | SLJIT_32,
 			SLJIT_S2, 0, SLJIT_IMM, CART_ROM_SIZE - width);
 		sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_S2, 0, SLJIT_S2, 0);
-		auto& cartridges = m_memory.cartridgeController();
-		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM0(), reinterpret_cast<sljit_sw>(&cartridges.selectionWord()));
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM0(), reinterpret_cast<sljit_sw>(m_bindings.cartridgeSelection));
 		sljit_emit_op2(m_compiler, SLJIT_AND32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, 1);
 		auto* slot1 = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
-		if (auto* tail = emitRomStorage(cartridges.romStorage(0), width, romLoad, mapping.done)) misses[count++] = tail;
+		if (auto* tail = emitRomStorage(m_bindings.cartridgeRom[0], width, romLoad, mapping.done)) misses[count++] = tail;
 		sljit_set_label(slot1, sljit_emit_label(m_compiler));
-		if (auto* tail = emitRomStorage(cartridges.romStorage(1), width, romLoad, mapping.done)) misses[count++] = tail;
+		if (auto* tail = emitRomStorage(m_bindings.cartridgeRom[1], width, romLoad, mapping.done)) misses[count++] = tail;
 		sljit_set_label(system, sljit_emit_label(m_compiler));
 		sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_S2, 0, SLJIT_R0, 0);
-		misses[count++] = emitRomStorage(&m_memory.systemRomStorage(), width, romLoad, mapping.done);
+		misses[count++] = emitRomStorage(m_bindings.systemRom, width, romLoad, mapping.done);
 		auto* busExit = sljit_emit_label(m_compiler);
 		for (size_t i = 0; i < count; ++i) sljit_set_label(misses[i], busExit);
 		emitSharedExit(*mapping.exit, mapping.registers);

@@ -161,7 +161,7 @@ void NativeBlockCompiler::emitLength(const DecodedInstruction& instruction, Nati
 	auto* done = sljit_emit_jump(m_compiler, SLJIT_JUMP);
 	sljit_set_label(string, sljit_emit_label(m_compiler));
 	loadPayload(instruction.b, SLJIT_R1, SLJIT_R0);
-	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&m_strings));
+	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.strings));
 	emitCallSpills(false);
 	sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS2(32, P, 32), SLJIT_IMM, SLJIT_FUNC_ADDR(stringCodepointCount));
 	emitCallSpills(true);

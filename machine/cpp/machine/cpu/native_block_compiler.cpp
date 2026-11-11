@@ -13,11 +13,11 @@
 
 namespace bmsx {
 
-NativeBlockCompiler::NativeBlockCompiler(const Value* constants, std::span<const std::unique_ptr<NativeBlock>> blocks, Memory& memory, StringPool& strings,
+NativeBlockCompiler::NativeBlockCompiler(const Value* constants, std::span<const std::unique_ptr<NativeBlock>> blocks, const NativeCodeBindings& bindings,
 	std::span<const NativeBlockSource> sources)
 	: m_compiler(nullptr), m_blocks(blocks), m_sources(sources), m_entryPagePc(blocks.front()->firstPc & ~MAPPED_PAGE_BYTE_MASK),
 	  m_entries(blocks.size()),
-	  m_constants(constants), m_memory(memory), m_strings(strings) {
+	  m_constants(constants), m_bindings(bindings) {
 	// Region admission supplies unique entries in one decoded page. Keep the
 	// same index for liveness successors and emitted internal branches.
 	m_entryByWord.fill(static_cast<u16>(blocks.size()));

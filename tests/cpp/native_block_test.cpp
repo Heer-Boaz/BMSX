@@ -116,7 +116,8 @@ void helperContinuationsReloadTheCurrentRegisterMap() {
 	const Value table = valueTable(cpu.createTable()), payload = valueFromTag(ValueTag::False, 37);
 	size_t bytes = 0;
 	{
-		auto blocks = NativeBlock::compileRegion(plans, nullptr, bytes, memory, cpu.stringPool());
+		auto blocks = NativeBlock::compileRegion(plans, nullptr, NativeCodeBindings(memory, cpu.stringPool()));
+		blocks.front()->region->publish(bytes);
 		require(blocks[0]->region == blocks[1]->region && blocks[1]->region == blocks[2]->region,
 			"helper continuations are entries of one executable allocation");
 		require(blocks[0]->sourceWords == 6 && blocks[1]->sourceWords == 4 && blocks[2]->sourceWords == 2,
@@ -202,7 +203,8 @@ void residentValuesCrossInternalComparisonBranches() {
 	size_t bytes = 0;
 	for (const auto op : {OpCode::EQ, OpCode::LT, OpCode::LE}) for (bool expected : {false, true}) {
 		decoded[1].op = static_cast<u8>(op); decoded[1].a = expected ? 1 : 0;
-		auto blocks = NativeBlock::compileRegion(plans, constants.data(), bytes, memory, cpu.stringPool());
+		auto blocks = NativeBlock::compileRegion(plans, constants.data(), NativeCodeBindings(memory, cpu.stringPool()));
+		blocks.front()->region->publish(bytes);
 		for (bool predicate : {false, true}) for (auto value : values) for (int grant : {1, 2, 32, 63, 128, 257}) {
 			std::array<Value, 11> registers; registers.fill(valueNil());
 			registers[0] = op == OpCode::EQ || predicate ? alpha : omega;
@@ -256,7 +258,8 @@ void segmentEntryPermutationsPreserveRawValuesAndDeadDefinitions() {
 	for (const auto& permutation : permutations) for (bool helper : {false, true}) {
 		for (int index = 0; index < 4; ++index) decoded[index + 6].b = permutation[index];
 		decoded[10].op = static_cast<u8>(helper ? OpCode::POW : OpCode::ADD);
-		auto blocks = NativeBlock::compileRegion(plans, constants.data(), bytes, memory, cpu.stringPool());
+		auto blocks = NativeBlock::compileRegion(plans, constants.data(), NativeCodeBindings(memory, cpu.stringPool()));
+		blocks.front()->region->publish(bytes);
 		for (int grant : {1, 6, 7, 12, 100}) {
 			std::array<Value, 10> registers; registers.fill(valueNil());
 			NativeBlockRunState run{.registers = registers.data(), .constants = constants.data(), .remainingCycles = grant};
@@ -310,7 +313,8 @@ void sparseRegionSuccessorsPreserveExactPcIdentity() {
 		for (const u32 target : {page, page + MAPPED_PAGE_BYTE_SIZE, page - MAPPED_PAGE_BYTE_SIZE,
 			page + 1u, page + INSTRUCTION_BYTES}) {
 			decoded[2].bx = target;
-			auto blocks = NativeBlock::compileRegion(plans, nullptr, bytes, memory, cpu.stringPool());
+			auto blocks = NativeBlock::compileRegion(plans, nullptr, NativeCodeBindings(memory, cpu.stringPool()));
+			blocks.front()->region->publish(bytes);
 			require(blocks[0]->terminal.link.patchAddress != 0 && blocks[0]->sideExits.back().link.patchAddress == 0,
 				"a sparse conditional leaves its missing fallthrough external but binds its last-word target internally");
 			require((blocks[1]->terminal.link.patchAddress == 0) == (target == page),
@@ -375,7 +379,8 @@ void diamondBackedgesPreserveFullStateFromEveryEntry() {
 		// A forward branch directly into the inherited continuation cannot
 		// borrow the values or dirty state of its linear helper predecessor.
 		decoded[9].bx = instructions[bypassHelper ? 18 : 15].pc;
-		auto blocks = NativeBlock::compileRegion(plans, constants.data(), bytes, memory, cpu.stringPool());
+		auto blocks = NativeBlock::compileRegion(plans, constants.data(), NativeCodeBindings(memory, cpu.stringPool()));
+		blocks.front()->region->publish(bytes);
 		for (size_t entry = 0; entry < plans.size(); ++entry) for (const bool arm : {false, true})
 		for (const bool loop : {false, true}) for (const int grant : {1, 4, 5, 6, 9, 10, 11, 14, 20, 31, 64, 257}) {
 			std::array<Value, 16> actual{constants[2], constants[3], constants[4], constants[5],

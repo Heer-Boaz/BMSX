@@ -6,6 +6,9 @@
 
 #include "machine/cpu/execution_image.h"
 #include "machine/cpu/native_block.h"
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+#include "machine/cpu/native_compiler_worker.h"
+#endif
 #include "machine/memory/memory.h"
 
 namespace bmsx {
@@ -66,6 +69,12 @@ NativeCompilationProfile CPU::readNativeCompilationProfile() const {
 }
 
 void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32 word) {
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	publishNativeCompilation();
+	if (page.nativeBlocks && page.nativeBlocks->entries[word]) return;
+	if (!m_nativeCompilerWorker) m_nativeCompilerWorker = std::make_unique<NativeCompilerWorker>();
+	if (!m_nativeCompilerWorker->idle()) return;
+#endif
 	auto* profile = m_nativeCompilationProfiling ? &m_nativeCompilationProfile : nullptr;
 	NativeCompilationMeasurement measurement(profile, frame.executionImage->executionDomainId,
 		m_memory.cartridgeController().selectedSlot(m_executionBusSignals), m_currentInstructionPc);
@@ -202,6 +211,7 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 			segmentFirst = index + 1u;
 		}
 	}
+#if !defined(BMSX_NATIVE_COMPILER_WORKER)
 	if (!merged.empty()) {
 		measurement.phase(&NativeCompilationProfile::retirementNanoseconds);
 		for (const auto* region : merged) {
@@ -213,7 +223,7 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 		}
 	}
 	measurement.phase(&NativeCompilationProfile::compilationNanoseconds);
-	if (!page.nativeBlocks) page.nativeBlocks = std::make_unique<NativeBlockPage>();
+#endif
 	NativeBlockExitHandlers handlers{};
 	handlers[static_cast<size_t>(NativeBlockExit::ReadField)] = &CPU::compiledReadFieldExit;
 	handlers[static_cast<size_t>(NativeBlockExit::WriteField)] = &CPU::compiledWriteFieldExit;
@@ -224,8 +234,69 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 	handlers[static_cast<size_t>(NativeBlockExit::WriteIndex)] = &CPU::compiledWriteIndexExit;
 	handlers[static_cast<size_t>(NativeBlockExit::ReadInteger)] = &CPU::compiledReadIntegerExit;
 	handlers[static_cast<size_t>(NativeBlockExit::WriteInteger)] = &CPU::compiledWriteIntegerExit;
-	auto blocks = NativeBlock::compileRegion(sources, frame.executionImage->constPool.data(), m_nativeCodeBytes,
-		m_memory, m_stringPool, handlers);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	auto& pendingJob = m_pendingNativeCompilation;
+	pendingJob.image = frame.executionImage;
+	pendingJob.page = &page;
+	pendingJob.key = binding.key;
+	pendingJob.pagePc = pagePc;
+	pendingJob.slot = m_memory.cartridgeController().selectedSlot(m_executionBusSignals);
+	pendingJob.instructionCount = static_cast<u32>(instructionCount);
+	pendingJob.invalidated = false;
+	pendingJob.entries.assign(entries.begin(), entries.end());
+	pendingJob.merged.assign(merged.begin(), merged.end());
+	m_nativeCompilerWorker->submit(sources, frame.executionImage->constPool.data(), NativeCodeBindings(m_memory, m_stringPool), handlers, profile != nullptr);
+#else
+	auto blocks = NativeBlock::compileRegion(sources, frame.executionImage->constPool.data(),
+		NativeCodeBindings(m_memory, m_stringPool), handlers);
+	installNativeRegion(*frame.executionImage, page, pagePc,
+		m_memory.cartridgeController().selectedSlot(m_executionBusSignals), entries, std::move(blocks), static_cast<u32>(instructionCount));
+#endif
+}
+
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+void CPU::publishNativeCompilation() {
+	if (!m_nativeCompilerWorker || !m_nativeCompilerWorker->ready()) return;
+	auto blocks = m_nativeCompilerWorker->take();
+	auto& job = m_pendingNativeCompilation;
+	if (m_nativeCompilationProfiling) {
+		++m_nativeCompilationProfile.backgroundCompleted;
+		m_nativeCompilationProfile.backgroundNanoseconds += m_nativeCompilerWorker->compilationNanoseconds();
+		m_nativeCompilationProfile.backgroundCancelled += job.invalidated;
+	}
+	if (job.invalidated) return;
+	auto* profile = m_nativeCompilationProfiling ? &m_nativeCompilationProfile : nullptr;
+	auto& page = *job.page;
+	for (const auto* region : job.merged) {
+		if (profile) {
+			++profile->mergedRegions;
+			profile->mergedCodeBytes += region->codeBytes;
+		}
+		page.retireNativeRegion(region);
+	}
+	installNativeRegion(*job.image, page, job.pagePc, job.slot, job.entries, std::move(blocks), job.instructionCount);
+}
+
+void CPU::discardNativeCompilation() {
+	if (!m_nativeCompilerWorker || m_nativeCompilerWorker->idle()) return;
+	m_nativeCompilerWorker->wait();
+	// Retire unpublished code and surface compiler errors on the owning thread.
+	m_nativeCompilerWorker->take();
+	if (m_nativeCompilationProfiling) {
+		++m_nativeCompilationProfile.backgroundCompleted;
+		++m_nativeCompilationProfile.backgroundCancelled;
+		m_nativeCompilationProfile.backgroundNanoseconds += m_nativeCompilerWorker->compilationNanoseconds();
+	}
+}
+#endif
+
+void CPU::installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pagePc, u32 slot,
+	std::span<const u32> entries, std::vector<std::unique_ptr<NativeBlock>> blocks, u32 instructionCount) {
+	// This is the only publication boundary for either compilation policy.
+	// All source retirement and emitted-code ownership transfers run on the CPU.
+	if (!page.nativeBlocks) page.nativeBlocks = std::make_unique<NativeBlockPage>();
+	const auto codeBytes = blocks.front()->region->codeBytes;
+	blocks.front()->region->publish(m_nativeCodeBytes);
 	for (size_t index = 0; index < entries.size(); ++index) {
 		const u32 entry = entries[index];
 		page.nativeBlocks->entries[entry] = std::move(blocks[index]);
@@ -236,16 +307,16 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 		page.refreshState[entry] &= static_cast<u8>(~DECODED_REFRESH_FUSION);
 	}
 	page.nativeCode = page.nativeBlocks->code;
-	auto& lookup = frame.executionImage->nativeCodeLookup;
+	auto& lookup = image.nativeCodeLookup;
 	if (!lookup) lookup = std::make_unique<NativeCodeLookup>();
-	lookup->install(m_currentInstructionPc & ~MAPPED_PAGE_BYTE_MASK,
-		m_memory.cartridgeController().selectedSlot(m_executionBusSignals), page);
-	if (profile) {
-		++profile->regionsPublished;
-		profile->entriesPublished += entries.size();
-		profile->sourceInstructions += instructionCount;
-		profile->emittedCodeBytes += page.nativeBlocks->entries[entries[0]]->region->codeBytes;
-		profile->peakCodeBytes = std::max(profile->peakCodeBytes, static_cast<u64>(m_nativeCodeBytes));
+	lookup->install(pagePc, slot, page);
+	if (m_nativeCompilationProfiling) {
+		auto& profile = m_nativeCompilationProfile;
+		++profile.regionsPublished;
+		profile.entriesPublished += entries.size();
+		profile.sourceInstructions += instructionCount;
+		profile.emittedCodeBytes += codeBytes;
+		profile.peakCodeBytes = std::max(profile.peakCodeBytes, static_cast<u64>(m_nativeCodeBytes));
 	}
 }
 

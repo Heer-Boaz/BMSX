@@ -14,7 +14,7 @@ namespace bmsx {
 
 class NativeBlockCompiler {
 public:
-	NativeBlockCompiler(const Value* constants, std::span<const std::unique_ptr<NativeBlock>> blocks, Memory& memory, StringPool& strings,
+	NativeBlockCompiler(const Value* constants, std::span<const std::unique_ptr<NativeBlock>> blocks, const NativeCodeBindings& bindings,
 		std::span<const NativeBlockSource> sources);
 	~NativeBlockCompiler();
 	void emit(const DecodedInstruction& instruction, NativeBlockExitSite* slowExit,
@@ -115,8 +115,7 @@ private:
 	std::vector<sljit_jump*> m_shortGrants;
 	const Value* m_constants;
 	NativeBlock* m_block = nullptr;
-	Memory& m_memory;
-	StringPool& m_strings;
+	const NativeCodeBindings& m_bindings;
 	bool m_hasTerminal = false;
 	bool m_controlPrivilegeGuarded = false;
 	struct SlowPath {

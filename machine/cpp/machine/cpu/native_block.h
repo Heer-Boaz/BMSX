@@ -124,11 +124,27 @@ struct NativeBlockSource {
 	bool fallthrough = false;
 };
 
+// Captured on the CPU owner thread. Code emission consumes these addresses,
+// not mutable Memory/controller state. The pointed-to owners are used only by
+// the generated code after it has been published on the CPU thread.
+struct NativeCodeBindings {
+	NativeCodeBindings() = default;
+	NativeCodeBindings(Memory& memory, StringPool& strings);
+	u32 ramBytes = 0;
+	u8* ram = nullptr;
+	const u8* ramWriteGroups = nullptr;
+	const u32* cartridgeSelection = nullptr;
+	std::array<const Span<const u8>*, 2> cartridgeRom{};
+	const Span<const u8>* systemRom = nullptr;
+	StringPool* strings = nullptr;
+};
+
 // Entry descriptors share one executable allocation. Source invalidation retires
 // every entry which can reach its internal labels before this storage is freed.
 class NativeCodeRegion {
 public:
-	explicit NativeCodeRegion(size_t& cacheBytes) : m_cacheBytes(cacheBytes) {}
+	NativeCodeRegion() = default;
+	void publish(size_t& cacheBytes);
 	~NativeCodeRegion();
 	NativeCodeRegion(const NativeCodeRegion&) = delete;
 	NativeCodeRegion& operator=(const NativeCodeRegion&) = delete;
@@ -136,7 +152,7 @@ public:
 private:
 	friend class NativeBlock;
 	void* m_code = nullptr;
-	size_t& m_cacheBytes;
+	size_t* m_cacheBytes = nullptr;
 };
 
 // Cached fields and plain RAM stay in generated code. Slow exits return their precise
@@ -289,7 +305,7 @@ public:
 	);
 	static std::vector<std::unique_ptr<NativeBlock>> compileRegion(
 		std::span<const NativeBlockSource> sources, const Value* constants,
-		size_t& cacheBytes, Memory& memory, StringPool& strings,
+		const NativeCodeBindings& bindings,
 		const NativeBlockExitHandlers& exitHandlers = {}
 	);
 	~NativeBlock();
