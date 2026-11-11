@@ -33,28 +33,30 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int b) {
 	const int count = decodeValueCount(b, std::max(frame.top - a, 0));
 	closeUpvalues(frame);
 	if (frame.protectedContinuationIndex >= 0) {
-		finishProtectedCall(static_cast<size_t>(frame.protectedContinuationIndex), frame, a, count);
+		finishProtectedCall(static_cast<size_t>(frame.protectedContinuationIndex), frame, a, count, true);
 		m_activeThread->leaveFrame();
 		return false;
 	}
 	if (frame.returnToCompletionLatch) {
 		m_completionValues.assign(frame.registers + a, frame.registers + a + count);
+		instructionBudgetRemaining -= count;
 		m_activeThread->leaveFrame();
 		return false;
 	}
 	if (m_activeThread->frameDepth == 1 && m_activeThread->resumer != nullptr) {
 		Thread* thread = m_activeThread;
 		thread->status = ThreadStatus::Dead;
-		returnToResumer(frame.registers + a, count, true);
+		instructionBudgetRemaining -= returnToResumer(frame.registers + a, count, true);
 		thread->stackTop = 0;
 		thread->leaveFrame();
 		return false;
 	}
 	if (m_activeThread->frameDepth == 1) {
 		m_completionValues.assign(frame.registers + a, frame.registers + a + count);
+		instructionBudgetRemaining -= count;
 	} else {
 		CallFrame& caller = *frame.previous;
-		writeReturnValuesFromRegisters(caller, frame.returnBase, frame.returnCount, frame, a, count);
+		instructionBudgetRemaining -= writeReturnValuesFromRegisters(caller, frame.returnBase, frame.returnCount, frame, a, count);
 	}
 	m_activeThread->leaveFrame();
 	return true;

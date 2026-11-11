@@ -410,11 +410,11 @@ private:
 		int argumentBase, int argumentCount, bool returnsToProtectedParent);
 	void invokeProtectedTarget(size_t continuationIndex, Value target, int argumentBase, int argumentCount);
 	void finishProtectedCall(size_t continuationIndex, const Value* values, int valueCount);
-	void finishProtectedCall(size_t continuationIndex, CallFrame& source, int sourceBase, int sourceCount);
-	void finishProtectedCallWithError(size_t continuationIndex, Value errorValue);
+	void finishProtectedCall(size_t continuationIndex, CallFrame& source, int sourceBase, int sourceCount, bool chargePlacement = false);
+	void finishProtectedCallWithError(size_t continuationIndex, Value errorValue, bool chargePlacement = false);
 	int writeProtectedResults(ProtectedCallContinuation& continuation, bool prefix, const Value* values, int valueCount);
 	int writeProtectedResults(ProtectedCallContinuation& continuation, bool prefix, CallFrame& source, int sourceBase, int sourceCount);
-	void finishProtectedContinuation(size_t continuationIndex, int resultCount);
+	void finishProtectedContinuation(size_t continuationIndex, int resultCount, bool chargePlacement);
 	bool handleProtectedCallError(Value errorValue);
 	void unwindToDepth(int targetDepth);
 	void collectHeap(Value root0, Value root1, Value root2);
@@ -479,7 +479,7 @@ private:
 	void linkOpenUpvalue(CallFrame& frame, Upvalue* upvalue);
 	const Value& readUpvalue(Upvalue* upvalue) const;
 	void writeUpvalue(Upvalue* upvalue, const Value& value);
-	void writeReturnValuesFromRegisters(CallFrame& frame, int base, int count, const CallFrame& source, int sourceBase, int sourceCount);
+	int writeReturnValuesFromRegisters(CallFrame& frame, int base, int count, const CallFrame& source, int sourceBase, int sourceCount);
 	void writeReturnValuesFromBuiltinResults(CallFrame& frame, int base, int count, const BuiltinResults& values);
 	void setRegister(CallFrame& frame, int index, Value value);
 	Value* ensureRegisterCapacity(CallFrame& frame, int index);
@@ -589,7 +589,7 @@ private:
 	Thread* m_completionThread = nullptr;
 	Thread* createThread(Closure* entry);
 	bool coroutineYieldable(const Thread& thread) const;
-	void returnToResumer(const Value* source, int count, bool succeeded);
+	int returnToResumer(const Value* source, int count, bool succeeded);
 	void runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, int base, int count, int argc);
 	bool handleThreadError(Value error);
 	void closeThread(Thread& thread);

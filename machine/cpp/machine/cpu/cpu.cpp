@@ -1939,7 +1939,7 @@ bool CPU::coroutineYieldable(const Thread& thread) const {
 	return true;
 }
 
-void CPU::returnToResumer(const Value* source, int sourceCount, bool succeeded) {
+int CPU::returnToResumer(const Value* source, int sourceCount, bool succeeded) {
 	Thread* thread = m_activeThread;
 	Thread* resumer = thread->resumer;
 	m_activeThread = resumer;
@@ -1957,6 +1957,7 @@ void CPU::returnToResumer(const Value* source, int sourceCount, bool succeeded) 
 	thread->resumer = nullptr;
 	m_threadSwitchRequested = true;
 	m_yieldRequested = true;
+	return count;
 }
 
 void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, int base, int count, int argc) {
@@ -2107,23 +2108,25 @@ void CPU::finishProtectedCall(size_t continuationIndex, const Value* values, int
 		return;
 	}
 	const int resultCount = writeProtectedResults(continuation, true, values, valueCount);
-	finishProtectedContinuation(continuationIndex, resultCount);
+	finishProtectedContinuation(continuationIndex, resultCount, false);
 }
 
-void CPU::finishProtectedCall(size_t continuationIndex, CallFrame& source, int sourceBase, int sourceCount) {
+void CPU::finishProtectedCall(size_t continuationIndex, CallFrame& source, int sourceBase, int sourceCount, bool chargePlacement) {
 	ProtectedCallContinuation& continuation = m_activeThread->protectedCallContinuations.get(continuationIndex);
 	if (continuation.kind == ProtectedCallKind::XPCallHandler) {
 		finishProtectedCallWithError(
 			continuationIndex,
-			sourceCount > 0 ? source.registers[static_cast<size_t>(sourceBase)] : valueNil()
+			sourceCount > 0 ? source.registers[static_cast<size_t>(sourceBase)] : valueNil(),
+			chargePlacement
 		);
 		return;
 	}
 	const int resultCount = writeProtectedResults(continuation, true, source, sourceBase, sourceCount);
-	finishProtectedContinuation(continuationIndex, resultCount);
+	if (chargePlacement) instructionBudgetRemaining -= resultCount;
+	finishProtectedContinuation(continuationIndex, resultCount, chargePlacement);
 }
 
-void CPU::finishProtectedCallWithError(size_t continuationIndex, Value errorValue) {
+void CPU::finishProtectedCallWithError(size_t continuationIndex, Value errorValue, bool chargePlacement) {
 	ProtectedCallContinuation& continuation = m_activeThread->protectedCallContinuations.get(continuationIndex);
 	CallFrame& caller = *continuation.caller;
 	const int resultCount = decodeValueCount(continuation.returnCount, 2);
@@ -2138,7 +2141,8 @@ void CPU::finishProtectedCallWithError(size_t continuationIndex, Value errorValu
 		}
 	}
 	caller.top = continuation.callBase + resultCount;
-	finishProtectedContinuation(continuationIndex, resultCount);
+	if (chargePlacement) instructionBudgetRemaining -= resultCount;
+	finishProtectedContinuation(continuationIndex, resultCount, chargePlacement);
 }
 
 int CPU::writeProtectedResults(ProtectedCallContinuation& continuation, bool prefix, const Value* values, int valueCount) {
@@ -2185,7 +2189,7 @@ int CPU::writeProtectedResults(ProtectedCallContinuation& continuation, bool pre
 	return resultCount;
 }
 
-void CPU::finishProtectedContinuation(size_t continuationIndex, int resultCount) {
+void CPU::finishProtectedContinuation(size_t continuationIndex, int resultCount, bool chargePlacement) {
 	ProtectedCallContinuation& continuation = m_activeThread->protectedCallContinuations.get(continuationIndex);
 	CallFrame* caller = continuation.caller;
 	const int callBase = continuation.callBase;
@@ -2193,7 +2197,7 @@ void CPU::finishProtectedContinuation(size_t continuationIndex, int resultCount)
 	continuation.caller = nullptr;
 	m_activeThread->protectedCallDepth = continuationIndex;
 	if (returnsToProtectedParent) {
-		finishProtectedCall(continuationIndex - 1, *caller, callBase, resultCount);
+		finishProtectedCall(continuationIndex - 1, *caller, callBase, resultCount, chargePlacement);
 	}
 }
 
@@ -3402,7 +3406,7 @@ CallFrame* CPU::pushLatchedFrame(
 	return frame;
 }
 
-void CPU::writeReturnValuesFromRegisters(CallFrame& frame, int base, int count, const CallFrame& source, int sourceBase, int sourceCount) {
+int CPU::writeReturnValuesFromRegisters(CallFrame& frame, int base, int count, const CallFrame& source, int sourceBase, int sourceCount) {
 	const int targetCount = decodeValueCount(count, sourceCount);
 	if (targetCount > 0) {
 		Value* registers = ensureRegisterCapacity(frame, base + targetCount - 1);
@@ -3417,6 +3421,7 @@ void CPU::writeReturnValuesFromRegisters(CallFrame& frame, int base, int count, 
 		}
 	}
 	frame.top = base + targetCount;
+	return targetCount;
 }
 
 void CPU::writeReturnValuesFromBuiltinResults(CallFrame& frame, int base, int count, const BuiltinResults& values) {

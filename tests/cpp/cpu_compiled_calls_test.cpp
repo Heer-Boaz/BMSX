@@ -252,7 +252,7 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 		"varargs retain their ordered original argument slots below the working frame");
 }
 
-void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bool exceptionFrame) {
+void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bool exceptionFrame, int grant = -1) {
 	// The protected target repeatedly calls an ordinary child. A separate live
 	// translation writes a marker without changing top or any frame register.
 	test::Blua32TestImage image;
@@ -314,7 +314,8 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	const int copied = wanted == 0 ? produced : std::min(produced, wanted);
 	const int count = wanted == 0 ? produced : wanted;
 	const bool grows = count != 0 && base + count > caller->stackCapacity;
-	require(machine.cpu.runUntilDepth(0, 3) == RunResult::Yielded && thread->currentFrame == caller
+	if (grant < 0) grant = count + 3;
+	require(machine.cpu.runUntilDepth(0, grant) == RunResult::Yielded && thread->currentFrame == caller
 		&& thread->frameDepth == 2 && thread->protectedCallDepth == 1, "ordinary native return retains its protected parent and exact grant boundary");
 	require(caller->top == base + count, "fixed, open and empty returns assign exact caller top even after a late cold exit");
 	for (int index = 0; index < copied; ++index) require(caller->registers[base + index] == payloads[index],
@@ -322,8 +323,10 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	for (int index = copied; index < count; ++index) require(caller->registers[base + index] == valueNil(), "fixed results nil-pad only the requested suffix");
 	if (base + count <= 6 || count == 0) require(caller->registers[6] == valueNumber(-7) && caller->registers[7] == valueNumber(99),
 		"return does not overwrite retained caller registers outside its result range");
-	require(machine.cpu.getGlobalByKey(marker) == ((!coldTarget && !grows) ? caller->registers[7] : valueNil()),
+	require(machine.cpu.getGlobalByKey(marker) == ((!coldTarget && !grows && grant > 2 + count) ? caller->registers[7] : valueNil()),
 		"warm RET branches through the raw native code word without executeReturn or the C++ descriptor dispatcher");
+	if (grant <= 2 + count) require(machine.cpu.instructionBudgetRemaining == grant - 2 - count,
+		"native RET charges the receiving range once and cannot execute the next body with an exhausted grant");
 	require(callee->registers == nullptr && callee->executionImage == nullptr && callee->closure == nullptr
 		&& callee->protectedContinuationIndex == -1 && !callee->isExceptionFrame && !callee->isNonMaskableExceptionFrame,
 		"native retirement clears the same inactive owner fields as an ordinary return, including unusual exception flags");
@@ -474,6 +477,176 @@ void failedCallAdmission() {
 	}
 }
 
+void returnPlacementCycles() {
+	for (const bool scalar : {false, true}) for (const int producedOperand : {0, 1, 3}) for (const int wantedOperand : {0, 1, 2, 5}) {
+		test::Blua32TestImage image;
+		image.text.resize(8 * INSTRUCTION_BYTES);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 4, 0, 0);
+		writeInstruction(image.text, 3, static_cast<u8>(OpCode::LOADK), 5, 0, 0);
+		writeInstruction(image.text, 4, static_cast<u8>(OpCode::LOADK), 6, 0, 1);
+		writeInstruction(image.text, 5, static_cast<u8>(OpCode::CALL), 4, 3, wantedOperand);
+		writeInstruction(image.text, 6, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
+		writeInstruction(image.text, 7, static_cast<u8>(OpCode::RET), 0, producedOperand, 0);
+		image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 16}, {.firstWord = 7, .wordCount = 1, .numParams = 2, .maxStack = 2}};
+		image.constants = {17.0, 29.0};
+		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+		CpuMachine machine(image, scalar);
+		machine.cpu.runUntilDepth(0, 1000);
+		const int produced = producedOperand == 0 ? 2 : producedOperand - 1;
+		const int placed = wantedOperand == 0 ? produced : wantedOperand - 1;
+		for (const int grant : {1, 2, 3, 2 + placed}) {
+			machine.cpu.runUntilDepth(1, 100);
+			machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress + 2 * INSTRUCTION_BYTES);
+			while (machine.cpu.getFrameDepth() != 2) machine.cpu.runUntilDepth(0, 1);
+			require(machine.cpu.runUntilDepth(1, grant) == RunResult::Halted, "RET finishes at the caller depth");
+			require(machine.cpu.instructionBudgetRemaining == grant - 2 - placed, "RET charges base plus selected range, even beyond the grant");
+			const auto* caller = machine.cpu.activeThread()->currentFrame;
+			require(caller->pc == machine.rom.textAddress + 6 * INSTRUCTION_BYTES && caller->top == 4 + placed,
+				"RET consumes no receiving instruction and selects the exact top");
+			for (int i = 0; i < placed; ++i) require(caller->registers[4 + i] == (i < produced ? valueNumber(i == 0 ? 17 : 29) : valueNil()),
+				"copied and nil-filled receiving slots are both charged");
+		}
+	}
+}
+
+void protectedReturnPlacementCycles() {
+	for (const bool scalar : {false, true}) for (const int wanted : {0, 1, 2, 6, static_cast<int>(PSX_MACHINE_SPEC.ramBytes), static_cast<int>(PSX_MACHINE_SPEC.ramBytes + 1)}) {
+		test::Blua32TestImage image;
+		image.text.resize(7 * INSTRUCTION_BYTES);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::GETSYS), 0, 0, 0);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::GETSYS), 1, 0, 0);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(image.text, 3, static_cast<u8>(OpCode::CLOSURE), 2, 0, 0);
+		writeInstruction(image.text, 4, static_cast<u8>(OpCode::CALL), 0, 3, 0);
+		writeInstruction(image.text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
+		writeInstruction(image.text, 6, static_cast<u8>(OpCode::RET), 0, 3, 0);
+		image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 8}, {.firstWord = 6, .wordCount = 1, .maxStack = 2}};
+		image.systemGlobalNames = {"pcall"};
+		image.closureRelocations = {{3, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+		CpuMachine machine(image, scalar);
+		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("pcall"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::PCall));
+		while (machine.cpu.getFrameDepth() != 2) machine.cpu.runUntilDepth(0, 1);
+		auto* thread = machine.cpu.activeThread();
+		require(thread->protectedCallDepth == 2, "nested builtin pcall owns two result ranges");
+		thread->currentFrame->registers[0] = valueNumber(17); thread->currentFrame->registers[1] = valueNumber(29);
+		const bool failFirst = wanted == static_cast<int>(PSX_MACHINE_SPEC.ramBytes + 1);
+		thread->protectedCallContinuations.get(failFirst ? 1 : 0).returnCount = failFirst ? PSX_MACHINE_SPEC.ramBytes : wanted;
+		const bool fault = wanted >= static_cast<int>(PSX_MACHINE_SPEC.ramBytes);
+		bool rejected = false;
+		try { require(machine.cpu.runUntilDepth(1, 2) == RunResult::Halted, "protected return completes at caller"); }
+		catch (const LuaOutOfMemorySignal&) { rejected = true; }
+		require(rejected == fault, "only unadmitted outer range raises allocation failure");
+		const int outer = wanted == 0 ? 4 : wanted - 1;
+		require(machine.cpu.instructionBudgetRemaining == 0 - (failFirst ? 0 : 3) - (fault ? 0 : outer),
+			"completed inner status/value range stays charged when outer admission fails");
+		if (!fault) {
+			const Value values[]{valueBool(true), valueBool(true), valueNumber(17), valueNumber(29), valueNil()};
+			for (int i = 0; i < outer; ++i) require(thread->currentFrame->registers[i] == values[i], "protected return retains result order and padding");
+		}
+	}
+}
+
+void coroutineReturnPlacementCycles() {
+	for (const bool scalar : {false, true}) for (const int wanted : {0, 1, 2, 6}) {
+		test::Blua32TestImage image;
+		image.text.resize(9 * INSTRUCTION_BYTES);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::GETSYS), 0, 0, 0);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::CLOSURE), 1, 0, 0);
+		writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, 2, 2);
+		writeInstruction(image.text, 4, static_cast<u8>(OpCode::GETSYS), 4, 0, 1);
+		writeInstruction(image.text, 5, static_cast<u8>(OpCode::MOV), 5, 0, 0);
+		writeInstruction(image.text, 6, static_cast<u8>(OpCode::CALL), 4, 2, wanted);
+		writeInstruction(image.text, 7, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
+		writeInstruction(image.text, 8, static_cast<u8>(OpCode::RET), 0, 3, 0);
+		image.functions = {{.firstWord = 0, .wordCount = 8, .maxStack = 12}, {.firstWord = 8, .wordCount = 1, .maxStack = 2}};
+		image.systemGlobalNames = {"create", "resume"};
+		image.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+		CpuMachine machine(image, scalar);
+		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("create"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineCreate));
+		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("resume"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineResume));
+		auto* root = machine.cpu.activeThread();
+		while (machine.cpu.activeThread() == root) machine.cpu.runUntilDepth(0, 1);
+		machine.cpu.activeThread()->currentFrame->registers[0] = valueNumber(17); machine.cpu.activeThread()->currentFrame->registers[1] = valueNumber(29);
+		require(machine.cpu.runUntilDepth(0, 2) == RunResult::Yielded, "coroutine RET ends the current execution slice");
+		const int placed = wanted == 0 ? 3 : wanted - 1;
+		require(machine.cpu.instructionBudgetRemaining == -placed && machine.cpu.activeThread() == root,
+			"coroutine RET charges status, results and nil padding in its resumer");
+		const Value values[]{valueBool(true), valueNumber(17), valueNumber(29), valueNil(), valueNil()};
+		for (int i = 0; i < placed; ++i) require(root->currentFrame->registers[4 + i] == values[i], "resumer receives the selected range");
+	}
+}
+
+void rootReturnPlacementCycles() {
+	for (const bool scalar : {false, true}) for (const int producedOperand : {0, 1, 3}) {
+		test::Blua32TestImage image;
+		image.text.resize(INSTRUCTION_BYTES);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::RET), 0, producedOperand, 0);
+		image.functions = {{.firstWord = 0, .wordCount = 1, .maxStack = 2}};
+		CpuMachine machine(image, scalar);
+		auto* frame = machine.cpu.activeThread()->currentFrame;
+		frame->registers[0] = valueNumber(17); frame->registers[1] = valueNumber(29); frame->top = 2;
+		require(machine.cpu.runUntilDepth(0, 1) == RunResult::Halted, "root RET completes");
+		const int count = producedOperand == 0 ? 2 : producedOperand - 1;
+		require(machine.cpu.instructionBudgetRemaining == -1 - count && machine.cpu.readCompletionValues().size() == static_cast<size_t>(count),
+			"root completion range charges the produced slot count");
+	}
+	for (const bool scalar : {false, true}) {
+		test::Blua32TestImage image;
+		image.text.resize(4 * INSTRUCTION_BYTES);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
+		writeInstruction(image.text, 3, static_cast<u8>(OpCode::RET), 0, 0, 0);
+		image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 8}, {.firstWord = 3, .wordCount = 1, .numParams = 2, .maxStack = 2}};
+		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+		CpuMachine machine(image, scalar);
+		machine.cpu.runUntilDepth(0, 1);
+		auto* closure = asClosure(machine.cpu.activeThread()->currentFrame->registers[0]);
+		const Value args[]{valueNumber(17), valueNumber(29)};
+		for (int call = 0; call < 16; ++call) {
+			machine.cpu.beginCompletionCall(*closure, BuiltinArgsView(args, 2));
+			require(machine.cpu.runUntilDepth(1, 1) == RunResult::Halted && machine.cpu.instructionBudgetRemaining == -3,
+				"completion-latch RET charges its two produced slots even with an exhausted grant");
+			require(machine.cpu.readCompletionValues().size() == 2 && machine.cpu.readCompletionValues()[0] == args[0]
+				&& machine.cpu.readCompletionValues()[1] == args[1], "completion latch preserves its value range");
+		}
+	}
+}
+
+void errorHandlerReturnPlacementCycles() {
+	for (const bool scalar : {false, true}) {
+		test::Blua32TestImage image;
+		image.text.resize(12 * INSTRUCTION_BYTES);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::GETSYS), 0, 0, 0);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::CLOSURE), 1, 0, 0);
+		writeInstruction(image.text, 3, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(image.text, 4, static_cast<u8>(OpCode::CLOSURE), 2, 0, 0);
+		writeInstruction(image.text, 5, static_cast<u8>(OpCode::CALL), 0, 3, 6);
+		writeInstruction(image.text, 6, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
+		writeInstruction(image.text, 7, static_cast<u8>(OpCode::GETSYS), 0, 0, 1);
+		writeInstruction(image.text, 8, static_cast<u8>(OpCode::LOADK), 1, 0, 0);
+		writeInstruction(image.text, 9, static_cast<u8>(OpCode::CALL), 0, 2, 1);
+		writeInstruction(image.text, 10, static_cast<u8>(OpCode::RET), 0, 1, 0);
+		writeInstruction(image.text, 11, static_cast<u8>(OpCode::RET), 0, 2, 0);
+		image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 8}, {.firstWord = 7, .wordCount = 4, .maxStack = 4},
+			{.firstWord = 11, .wordCount = 1, .numParams = 1, .maxStack = 1}};
+		image.constants = {17.0}; image.systemGlobalNames = {"xpcall", "error"};
+		image.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}, {4, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
+		CpuMachine machine(image, scalar);
+		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("xpcall"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::XPCall));
+		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("error"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::Error));
+		while (machine.cpu.activeThread()->currentFrame->functionAddress != machine.rom.functionAddresses[2]) machine.cpu.runUntilDepth(0, 1);
+		require(machine.cpu.runUntilDepth(1, 1) == RunResult::Halted && machine.cpu.instructionBudgetRemaining == -6,
+			"handler RET charges the selected error receiving range");
+		const Value values[]{valueBool(false), valueNumber(17), valueNil(), valueNil(), valueNil()};
+		for (int i = 0; i < 5; ++i) require(machine.cpu.activeThread()->currentFrame->registers[i] == values[i], "handler result prefix and padding are preserved");
+	}
+}
+
 void crossPageCalls(bool open, u32 recordOffset) {
 	const u32 record = DYNAMIC_RAM_BASE + recordOffset;
 	test::Blua32TestImage image; image.text.resize(2 * MAPPED_PAGE_BYTE_SIZE);
@@ -519,7 +692,7 @@ void crossPageCalls(bool open, u32 recordOffset) {
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress + 2u * INSTRUCTION_BYTES);
 		require(machine->cpu.runUntilDepth(0, 5) == RunResult::Yielded && machine->cpu.activeThread()->frameDepth == 2,
 			"CALL cannot consume a callee instruction without a further cycle grant");
-		require(machine->cpu.runUntilDepth(1, 50) == RunResult::Halted && machine->cpu.instructionBudgetRemaining == 46
+		require(machine->cpu.runUntilDepth(1, 50) == RunResult::Halted && machine->cpu.instructionBudgetRemaining == 44
 			&& machine->cpu.readFrameRegister(0, 3) == valueNumber(99),
 			"a hot RET respects target depth before a hot caller continuation executes");
 	}
@@ -567,6 +740,11 @@ int main() {
 		ownedValueStack();
 		reusableFrameChain();
 		protectedNestedFrames();
+		returnPlacementCycles();
+		protectedReturnPlacementCycles();
+		coroutineReturnPlacementCycles();
+		rootReturnPlacementCycles();
+		errorHandlerReturnPlacementCycles();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		nativeCallRouting(3, 5, true, true, false, false, false);
 		nativeCallRouting(4, 1, false, false, false, false, false);
@@ -583,6 +761,11 @@ int main() {
 		nativeReturnRouting(0, 0, 10, false, false);
 		nativeReturnRouting(6, 0, 0, true, false);
 		nativeReturnRouting(6, 0, 6, false, false);
+		for (const int grant : {1, 2, 3}) {
+			nativeReturnRouting(2, 4, 0, false, false, grant);
+			nativeReturnRouting(6, 2, 0, false, false, grant);
+			nativeReturnRouting(6, 0, 0, true, false, grant);
+		}
 #endif
 		callFrameInitialization(4, 8, 1, false, false);
 		callFrameInitialization(8, 8, 0, false, false);

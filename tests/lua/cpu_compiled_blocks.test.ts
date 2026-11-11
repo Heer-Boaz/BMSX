@@ -608,12 +608,14 @@ for (const wide of [false, true]) test(`generated CALL/RET preserve full state a
 	], exceptionFunctionIndex: 2, closureRelocations: [{ wordIndex: 1, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) }] });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
 	const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
-	for (const cpu of [js, ref]) assert.equal(cpu.runUntilDepth(0, 10001), RunResult.Yielded);
+	assert.equal(runCpuParity(js, ref, 10001), RunResult.Yielded);
 	assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 	const executionImage = js.rootThread.frameAtDepth(0).executionImage;
 	const exits = new Set([...executionImage.decodedPages.values()].flatMap(page => page.compiledBlocks?.entries.filter(block => block !== null).map(block => block!.terminal.exit) ?? []));
 	assert.ok(exits.has(CompiledBlockExit.Call) && exits.has(CompiledBlockExit.Return), 'both sides of the call use generated exits');
 	for (const cpu of [js, ref]) {
+		cpu.runUntilDepth(1, 100);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress + 2 * INSTRUCTION_BYTES);
 		assert.equal(cpu.getFrameDepth(), 1);
 		assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
 		assert.equal(cpu.getFrameDepth(), 2);
@@ -667,10 +669,12 @@ test('a compiled CALL completes after a mapped record read replaces its source i
 		assert.equal(cpu.runUntilDepth(0, 10001), RunResult.Yielded);
 		const page = cpu.rootThread.frameAtDepth(0).decodedPage!;
 		if (backend === CpuExecutionBackend.JavaScript) assert.equal(page.compiledBlocks!.entries[2]!.terminal.exit, CompiledBlockExit.Call);
+		cpu.runUntilDepth(1, 100);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE + 2 * INSTRUCTION_BYTES);
 		source.armed = true;
 		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 		assert.equal(source.writes, 1);
-		assert.equal(cpu.instructionBudgetRemaining, 90);
+		assert.equal(cpu.instructionBudgetRemaining, 89);
 		assert.equal(cpu.readFramePc(0), DYNAMIC_RAM_BASE + 4 * INSTRUCTION_BYTES);
 		assert.equal(cpu.readFrameRegister(0, 6), 1);
 		if (backend === CpuExecutionBackend.JavaScript) assert.equal(page.compiledBlocks!.entries[2], null);

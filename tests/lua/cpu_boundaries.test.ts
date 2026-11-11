@@ -470,7 +470,7 @@ test('closure call and return preserve grants, depth, register bases and call-si
 			state.haltedUntilIrqThreadRef = state.activeThreadRef;
 			cpu.restoreRuntimeState(state);
 			assert.equal(cpu.runUntilDepth(0, 3), RunResult.Halted);
-			assert.equal(cpu.instructionBudgetRemaining, 1);
+			assert.equal(cpu.instructionBudgetRemaining, edgeKind === 5 ? 0 : 1);
 			assert.equal(cpu.readFrameRegister(0, 2), 99);
 			if (edgeKind === 4) assert.equal(cpu.activeThread.frameAtDepth(1).registers.getTag(0), ValueTag.Nil);
 			continue;
@@ -492,7 +492,7 @@ test('closure call and return preserve grants, depth, register bases and call-si
 		assert.equal(cpu.activeThread.frameDepth, 2);
 		assert.equal(cpu.readFramePc(1), calleePc + INSTRUCTION_BYTES);
 		assert.equal(cpu.runUntilDepth(1, 20), RunResult.Halted);
-		assert.equal(cpu.instructionBudgetRemaining, 18);
+		assert.equal(cpu.instructionBudgetRemaining, 17);
 		assert.equal(cpu.readFrameRegister(0, 3), 1);
 		assert.equal(cpu.readFrameRegister(0, 2), 99);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);

@@ -58,7 +58,7 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 			assert.equal(cpu.runUntilDepth(0, 5), RunResult.Yielded);
 			assert.equal(cpu.getFrameDepth(), 2);
 			assert.equal(cpu.runUntilDepth(1, 50), RunResult.Halted);
-			assert.equal(cpu.instructionBudgetRemaining, 46);
+			assert.equal(cpu.instructionBudgetRemaining, 44);
 			assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(3), 99, 'a compiled RET must not execute a compiled caller beyond the requested depth');
 		}
 		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());

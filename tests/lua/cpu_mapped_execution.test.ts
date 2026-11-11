@@ -59,7 +59,7 @@ test('compact and padded ROM calls use admitted record spans with identical cycl
 			if (address >= record && address < record + BLUA32_FUNCTION_RECORD_SIZE) scalarRecordReads++;
 			return readWord(address, signals, access);
 		};
-		const cycles = BASE_CYCLES[OpCode.CLOSURE] + BASE_CYCLES[OpCode.CALL] + 2 * BASE_CYCLES[OpCode.RET] + BASE_CYCLES[OpCode.K1];
+		const cycles = BASE_CYCLES[OpCode.CLOSURE] + BASE_CYCLES[OpCode.CALL] + 2 * (BASE_CYCLES[OpCode.RET] + 1) + BASE_CYCLES[OpCode.K1];
 		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Halted);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [1]);
 		assert.equal(cpu.instructionBudgetRemaining, 0);

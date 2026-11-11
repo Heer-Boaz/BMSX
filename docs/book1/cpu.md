@@ -820,6 +820,29 @@ On entry to a closure, the function record supplies the code address and paramet
 
 `RET` closes the returning frame's open upvalues before routing its results. An ordinary nested return places results in the caller's saved destination range and releases the returning frame. A return need not have an ordinary caller: protected-call targets, completion, and coroutine resumption have distinct return routes. Returning from a root frame with no resumer records completion values.
 
+#### Return result-placement cycles
+
+`RET` has a base charge of **2 cycles**, plus **1 cycle per value slot placed
+in a receiving range**. Count both copied values and nil padding. Do not count
+produced values that the receiver discards. If the caller requests all results,
+the placement charge is the number produced; for a fixed request it is exactly
+the requested count. Discarding all results therefore incurs only the base
+charge, even if the returning function produces values.
+
+Completion without an ordinary caller places the produced values in the
+completion range and charges that range. Returning to a coroutine resumer or a
+protected-call receiver counts its selected range, including a status prefix
+and nil padding. Nested protected completions can place successive receiving
+ranges; each completed range is charged once. If admission of a later range
+fails, charges for earlier completed ranges remain, but the unplaced range adds
+no charge.
+
+Result placement is part of the admitted `RET` instruction: it completes before
+the next instruction or interrupt boundary, even when its charge exhausts the
+current cycle grant. The receiving instruction requires a new positive grant.
+These charges are specific to `RET`; they do not change the fixed builtin-call
+charges or add an argument-copy charge to shared-window `CALL`.
+
 ### Closures and captured variables {#sec-cpu-closures-and-captured-variables}
 
 A closure is a callable language value associated with a function record and captured upvalues. `CLOSURE` constructs this value; it does not merely copy a numeric code address into a callable register.
@@ -993,7 +1016,7 @@ length when it clears an earlier element.
 
 ### Instruction reference {#sec-cpu-instruction-reference}
 
-The following tables describe the decoded operands. `A`, `B`, `C`, and `Bx` name instruction fields, not additional language values. Opcode values use hexadecimal notation (`H`). All costs are base instruction cycles; see **Builtin call charges** below.
+The following tables describe the decoded operands. `A`, `B`, `C`, and `Bx` name instruction fields, not additional language values. Opcode values use hexadecimal notation (`H`). All costs are base instruction cycles; see **Return result-placement cycles** above and **Builtin call charges** below.
 
 
 #### Calls and captured values {#sec-cpu-calls-and-captured-values}

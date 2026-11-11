@@ -31,7 +31,6 @@ sljit_label* NativeBlockGate::emitReturnGate(sljit_compiler* compiler, sljit_lab
 	cold[coldCount++] = sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL, SLJIT_R3, 0,
 		SLJIT_MEM1(SLJIT_R2), offsetof(CallFrame, executionImage));
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), callerSlot, SLJIT_R2, 0);
-	cold[coldCount++] = sljit_emit_cmp(compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, SLJIT_S4, 0, SLJIT_IMM, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, thread));
 	sljit_emit_op2(compiler, SLJIT_SUB, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R2), thread.frameDepth, SLJIT_IMM, 1);
 	sljit_emit_op1(compiler, SLJIT_MOV_S32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_S3), offsetof(NativeCpuRunState, targetDepth));
@@ -63,6 +62,9 @@ sljit_label* NativeBlockGate::emitReturnGate(sljit_compiler* compiler, sljit_lab
 	sljit_set_label(openWanted, sljit_emit_label(compiler));
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_R0, 0);
 	sljit_set_label(fixedWanted, sljit_emit_label(compiler));
+	// Raw external entries require a positive grant. An exhausting RET completes
+	// through the semantic boundary instead of entering its receiving body.
+	cold[coldCount++] = sljit_emit_cmp(compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, SLJIT_S4, 0, SLJIT_R2, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), wantedSlot, SLJIT_R2, 0);
 	sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_S5, 0, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, returnBase));
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), callerSlot);
@@ -104,6 +106,11 @@ sljit_label* NativeBlockGate::emitReturnGate(sljit_compiler* compiler, sljit_lab
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_S2, 0, SLJIT_MEM2(SLJIT_R3, SLJIT_R2), pointerShift);
 	sljit_set_label(codeReady, sljit_emit_label(compiler));
 	cold[coldCount++] = sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_S2, 0, SLJIT_IMM, 0);
+
+	// All cold exits precede the placement charge: the helper owns its charge.
+	// Admission also proved a positive grant for the receiving body.
+	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_S4, 0, SLJIT_S4, 0,
+		SLJIT_MEM1(SLJIT_SP), wantedSlot);
 
 	// Every remaining operation is a raw, allocation-free frame transition.
 	// No host observer runs until the next body's own publication boundary.

@@ -528,10 +528,8 @@ void nativeCallsAndReturnsPublishFaultBoundaries() {
 		CpuMachine native(image), scalar(image);
 		scalar.cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; },
 			nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
-		for (auto* machine : {&native, &scalar}) {
-			require(machine->cpu.runUntilDepth(0, 10001) == RunResult::Yielded && machine->cpu.getFrameDepth() == 1,
-				"the repeated-call workload warms both sides of the frame boundary");
-		}
+		require(test::runCpuParity(native.cpu, scalar.cpu, 10001) == RunResult::Yielded,
+			"the repeated-call workload warms both sides of the frame boundary");
 		bool compiledCall = false, compiledReturn = false;
 		for (const auto& [key, page] : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages) {
 			if (!page.nativeBlocks) continue;
@@ -543,15 +541,22 @@ void nativeCallsAndReturnsPublishFaultBoundaries() {
 		}
 		require(compiledCall && compiledReturn, "CALL and RET execute through real generated tail exits");
 		for (auto* machine : {&native, &scalar}) {
+			machine->cpu.runUntilDepth(1, 100);
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress + 2u * INSTRUCTION_BYTES);
+		}
+		require(test::runCpuParity(native.cpu, scalar.cpu, 3) == RunResult::Yielded, "generated CALL preserves the consumed cycle boundary");
+		for (auto* machine : {&native, &scalar}) require(machine->cpu.getFrameDepth() == 2
+			&& machine->cpu.activeThread()->frameAtDepth(1)->callSitePc == machine->rom.textAddress + callBody * INSTRUCTION_BYTES,
+			"generated CALL saves the physical body PC, including WIDE");
+		require(test::runCpuParity(native.cpu, scalar.cpu, 5) == RunResult::Yielded, "generated RET preserves the consumed cycle boundary");
+		for (auto* machine : {&native, &scalar}) {
+			require(machine->cpu.getFrameDepth() == 1, "a generated return resumes its caller");
+			machine->cpu.activeThread()->frameAtDepth(0)->registers[4] = valueNumber(77);
+		}
+		require(test::runCpuParity(native.cpu, scalar.cpu, 100) == RunResult::Halted,
+			"a failing native call unwinds through the normal Lua-fault owner");
+		for (auto* machine : {&native, &scalar}) {
 			auto& cpu = machine->cpu;
-			require(cpu.runUntilDepth(0, 3) == RunResult::Yielded && cpu.getFrameDepth() == 2
-				&& cpu.activeThread()->frameAtDepth(1)->callSitePc == machine->rom.textAddress + callBody * INSTRUCTION_BYTES,
-				"generated CALL saves the physical body PC, including WIDE");
-			require(cpu.runUntilDepth(0, 5) == RunResult::Yielded && cpu.getFrameDepth() == 1,
-				"a generated return resumes and completes the caller loop exactly");
-			cpu.activeThread()->frameAtDepth(0)->registers[4] = valueNumber(77);
-			require(cpu.runUntilDepth(0, 100) == RunResult::Halted,
-				"a failing native call unwinds through the normal Lua-fault owner");
 			require(cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_CALL_NON_FUNCTION
 				&& cpu.readEpcWord() == machine->rom.textAddress + 3u * INSTRUCTION_BYTES
 				&& cpu.readFrameRegister(0, 6) == valueNumber(1),
@@ -608,17 +613,19 @@ void nativeCallCanRetireItsSourceDuringFunctionRecordRead() {
 		}
 		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; },
 			nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
-		require(cpu.runUntilDepth(0, 10001) == RunResult::Yielded && cpu.getFrameDepth() == 1,
+		require(cpu.runUntilDepth(0, 10001) == RunResult::Yielded,
 			"a mapped function record warms a real native call boundary");
 		auto& page = *cpu.activeThread()->frameAtDepth(0)->decodedPage;
 		if (!instrumented) require(page.nativeBlocks && page.nativeBlocks->entries[2]
 			&& page.nativeBlocks->entries[2]->terminal.exit == NativeBlockExit::Call,
 			"the source mutation test executes generated CALL code");
+		cpu.runUntilDepth(1, 100);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE + 2u * INSTRUCTION_BYTES);
 		source.armed = true;
 		require(cpu.runUntilDepth(0, 100) == RunResult::Halted && source.writes == 1
 			&& cpu.getFrameDepth() == 1 && cpu.readFrameRegister(0, 6) == valueNumber(1)
 			&& cpu.readFramePc(0) == DYNAMIC_RAM_BASE + 4u * INSTRUCTION_BYTES
-			&& cpu.instructionBudgetRemaining == 90,
+			&& cpu.instructionBudgetRemaining == 89,
 			"retiring the active call code completes that call before observing the replacement HALT");
 		if (!instrumented) require(!page.nativeBlocks || !page.nativeBlocks->entries[2],
 			"the tail helper does not retain a dangling executable entry");
@@ -650,7 +657,7 @@ void compactAndPaddedRomFunctionRecordsAgree() {
 		Span<const u8> recordView;
 		require(memory.bindMappedReadView(record, BLUA32_FUNCTION_RECORD_SIZE, MAPPED_BUS_MASTER_CPU, recordView), "compact and padded ROM both admit the complete function record");
 		const int cycles = BASE_CYCLES[static_cast<size_t>(OpCode::CLOSURE)] + BASE_CYCLES[static_cast<size_t>(OpCode::CALL)]
-			+ 2 * BASE_CYCLES[static_cast<size_t>(OpCode::RET)] + BASE_CYCLES[static_cast<size_t>(OpCode::K1)];
+			+ 2 * (BASE_CYCLES[static_cast<size_t>(OpCode::RET)] + 1) + BASE_CYCLES[static_cast<size_t>(OpCode::K1)];
 		require(cpu.runUntilDepth(0, cycles) == RunResult::Halted, "compact and padded calls complete");
 		require(cpu.readCompletionValues().size() == 1u && cpu.readCompletionValues()[0] == valueNumber(1), "compact and padded ROM calls return the same guest value");
 		require(cpu.instructionBudgetRemaining == 0, "direct record reads preserve exact call and return charges");
@@ -1165,7 +1172,7 @@ void closureCallAndReturnRespectFrameBoundaries() {
 			state.haltedUntilIrqFrameDepth = edgeKind == 4 ? 2 : 1;
 			state.haltedUntilIrqThreadRef = state.activeThreadRef;
 			cpu.restoreRuntimeState(state);
-			require(cpu.runUntilDepth(0, 3) == RunResult::Halted && cpu.instructionBudgetRemaining == 1, "frame transition activates the retained depth-sensitive HALT latch before another instruction");
+			require(cpu.runUntilDepth(0, 3) == RunResult::Halted && cpu.instructionBudgetRemaining == (edgeKind == 5 ? 0 : 1), "frame transition activates the retained depth-sensitive HALT latch before another instruction");
 			require(cpu.readFrameRegister(0, 2) == valueNumber(99), "HALT retains the caller continuation");
 			if (edgeKind == 4) require(isNil(cpu.activeThread()->frameAtDepth(1)->registers[0]), "HALT at new callee depth precedes callee execution");
 			continue;
@@ -1191,7 +1198,7 @@ void closureCallAndReturnRespectFrameBoundaries() {
 			continue;
 		}
 		require(cpu.activeThread()->frameDepth == 2 && cpu.readFramePc(1) == calleePc + INSTRUCTION_BYTES, "direct call rebinds the callee and stops before RET");
-		require(cpu.runUntilDepth(1, 20) == RunResult::Halted && cpu.instructionBudgetRemaining == 18, "return stops at the requested depth with unused cycles retained");
+		require(cpu.runUntilDepth(1, 20) == RunResult::Halted && cpu.instructionBudgetRemaining == 17, "return stops at the requested depth with unused cycles retained");
 		require(cpu.readFrameRegister(0, 3) == valueNumber(1) && cpu.readFrameRegister(0, 2) == valueNumber(99), "return publishes results without executing the caller continuation");
 		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded && cpu.readFrameRegister(0, 2) == valueNumber(1), "resuming after return binds the caller registers");
 	}
