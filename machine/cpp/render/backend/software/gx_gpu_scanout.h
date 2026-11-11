@@ -4,14 +4,14 @@
 
 namespace bmsx {
 
-class SoftwareBackend;
 struct GxGpuPcrtcScanout;
 struct GxGpuPipelineState;
 struct GxGpuSoftwareState;
 
 void scanoutGxGpuSoftwareVram(
 	GxGpuSoftwareState& software,
-	SoftwareBackend& backend,
+	u32* pixels,
+	i32 pixelsPerRow,
 	const GxGpuPipelineState& state,
 	const GxGpuPcrtcScanout& scanout,
 	u64 vramReplacementSerial

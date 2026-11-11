@@ -1,6 +1,6 @@
 #include "render/backend/software/gx_gpu_rasterizer.h"
 
-#include "machine/devices/gx/gpu_command_buffer.h"
+#include "machine/devices/gx/gpu_command_storage.h"
 #include "render/backend/gx_gpu_render_rules.h"
 #include "render/backend/software/gx_gpu_vram.h"
 
@@ -164,7 +164,7 @@ inline void dispatchGxGpuSoftwareTextureState(
 
 void drawGxGpuSoftwareRectangle(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex,
 	i32 x0,
 	i32 y0,
@@ -210,7 +210,7 @@ namespace {
 template<bool InterpolatesColor, bool DitherEnabled, bool SemiTransparencyEnabled>
 void drawGxGpuSoftwareTriangleImpl(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex,
 	u32 drawModeWord,
 	i32 x0,
@@ -360,7 +360,7 @@ void drawGxGpuSoftwareTriangleImpl(
 
 void drawGxGpuSoftwareTriangle(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex,
 	i32 x0,
 	i32 y0,
@@ -421,7 +421,7 @@ namespace {
 template<u32 TextureMode, bool RawTextureEnabled, bool SemiTransparencyEnabled, bool InterpolatesColor, bool DitherEnabled>
 void drawGxGpuSoftwareTexturedTriangleImpl(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex,
 	u32 drawModeWord,
 	i32 x0,
@@ -631,7 +631,7 @@ void drawGxGpuSoftwareTexturedTriangleImpl(
 template<u32 TextureMode, bool RawTextureEnabled, bool SemiTransparencyEnabled>
 void drawGxGpuSoftwareTexturedRectangleImpl(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex,
 	u32 drawModeWord,
 	i32 x0,
@@ -716,7 +716,7 @@ void drawGxGpuSoftwareTexturedRectangleImpl(
 
 void drawGxGpuSoftwareTexturedTriangle(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex,
 	i32 x0,
 	i32 y0,
@@ -787,7 +787,7 @@ void drawGxGpuSoftwareTexturedTriangle(
 
 void drawGxGpuSoftwareTexturedRectangle(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex,
 	i32 x0,
 	i32 y0,
@@ -822,7 +822,7 @@ void drawGxGpuSoftwareTexturedRectangle(
 
 void drawGxGpuSoftwareLineSegment(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex,
 	i32 x0,
 	i32 y0,

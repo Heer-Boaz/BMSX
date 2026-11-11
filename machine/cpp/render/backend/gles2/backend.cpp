@@ -402,6 +402,7 @@ TextureHandle OpenGLES2Backend::createColorTexture(i32 width, i32 height, const 
 		void* target = createRenderTarget(handle, nullptr);
 		activateRenderTarget(target, width, height);
 		drawState.disable(GLES2Capability::ScissorTest);
+		drawState.colorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 		clear(initialClearColor, nullptr);
 		destroyRenderTarget(target);
 	}

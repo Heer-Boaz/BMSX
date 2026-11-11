@@ -1,6 +1,6 @@
 #include "render/backend/software/gx_gpu_commands.h"
 
-#include "machine/devices/gx/gpu_command_buffer.h"
+#include "machine/devices/gx/gpu_command_storage.h"
 #include "render/backend/gx_gpu_render_rules.h"
 #include "render/backend/software/gx_gpu_rasterizer.h"
 #include "render/backend/software/gx_gpu_vram.h"
@@ -10,7 +10,7 @@ namespace {
 
 void executeFillRectangle(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex) {
 	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
 	const u16 colorWord = gxGpuSoftwareRgb888WordToRgb555(commandBuffer.words[wordStart]);
@@ -39,7 +39,7 @@ void executeFillRectangle(
 
 void executeCpuToVram(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex) {
 	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
 	const u32 xyWord = commandBuffer.words[wordStart + 1u];
@@ -117,7 +117,7 @@ void copyVramArea(
 
 void executeVramToVram(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex) {
 	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
 	const u32 sourceWord = commandBuffer.words[wordStart + 1u];
@@ -138,7 +138,7 @@ void executeVramToVram(
 
 void executeDrawPolygon(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex) {
 	const u32 opcode = commandBuffer.commandOpcode[commandIndex];
 	const u32 drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
@@ -213,7 +213,7 @@ void executeDrawPolygon(
 
 void executeDrawRectangle(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex) {
 	const u32 opcode = commandBuffer.commandOpcode[commandIndex];
 	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
@@ -234,7 +234,7 @@ void executeDrawRectangle(
 
 void executeDrawLine(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex) {
 	const u32 opcode = commandBuffer.commandOpcode[commandIndex];
 	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
@@ -255,7 +255,7 @@ void executeDrawLine(
 
 void executeDrawPolyline(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t commandIndex) {
 	const u32 opcode = commandBuffer.commandOpcode[commandIndex];
 	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
@@ -288,7 +288,7 @@ void executeDrawPolyline(
 
 size_t executeGxGpuSoftwareCommands(
 	GxGpuSoftwareState& software,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	size_t processedCommandCount,
 	size_t commandLimit) {
 	for (size_t commandIndex = processedCommandCount; commandIndex < commandLimit; commandIndex += 1u) {

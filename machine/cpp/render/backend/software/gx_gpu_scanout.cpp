@@ -3,7 +3,7 @@
 #include "machine/devices/gx/gpu_local_memory.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
 #include "spec/gx/vram.h"
-#include "render/backend/backend.h"
+#include "render/backend/software/gx_gpu_state.h"
 #include "render/backend/pass/library.h"
 #include "render/backend/software/gx_gpu_scanout_palette.h"
 
@@ -365,7 +365,8 @@ void writeOutputRows(
 
 void scanoutInterlacedVram(
 	GxGpuSoftwareState& software,
-	SoftwareBackend& backend,
+	u32* pixels,
+	i32 pixelsPerRow,
 	const GxGpuPipelineState& state,
 	const GxGpuPcrtcScanout& scanout,
 	u64 vramReplacementSerial
@@ -395,9 +396,8 @@ void scanoutInterlacedVram(
 		scanout,
 		static_cast<i32>(scanout.field),
 		2);
-	const i32 targetPixelsPerRow = backend.pitch() / static_cast<i32>(sizeof(u32));
 	for (i32 y = 0; y < state.height; y += 1) {
-		u32* target = backend.framebuffer() + static_cast<size_t>(y) * static_cast<size_t>(targetPixelsPerRow);
+		u32* target = pixels + static_cast<size_t>(y) * static_cast<size_t>(pixelsPerRow);
 		const u32* source = software.interlacedPixels.data()
 			+ static_cast<size_t>(y) * static_cast<size_t>(state.width);
 		std::copy(source, source + state.width, target);
@@ -408,18 +408,18 @@ void scanoutInterlacedVram(
 
 void scanoutGxGpuSoftwareVram(
 	GxGpuSoftwareState& software,
-	SoftwareBackend& backend,
+	u32* pixels,
+	i32 pixelsPerRow,
 	const GxGpuPipelineState& state,
 	const GxGpuPcrtcScanout& scanout,
 	u64 vramReplacementSerial
 ) {
 	if (scanout.interlaced) {
-		scanoutInterlacedVram(software, backend, state, scanout, vramReplacementSerial);
+		scanoutInterlacedVram(software, pixels, pixelsPerRow, state, scanout, vramReplacementSerial);
 		return;
 	}
 	software.interlacedValid = false;
-	const i32 pixelsPerRow = backend.pitch() / static_cast<i32>(sizeof(u32));
-	writeOutputRows(software, backend.framebuffer(), pixelsPerRow, state, scanout, 0, 1);
+	writeOutputRows(software, pixels, pixelsPerRow, state, scanout, 0, 1);
 }
 
 } // namespace bmsx

@@ -24,6 +24,10 @@ set(BMSX_ENABLE_GLES2_DEFAULT ON)
 # Previously GLES2 was disabled by default on Windows; enable by default on all platforms
 message(STATUS "BMSX: Default BMSX_ENABLE_GLES2=${BMSX_ENABLE_GLES2_DEFAULT}")
 option(BMSX_ENABLE_GLES2 "Enable OpenGLES2 backend" ${BMSX_ENABLE_GLES2_DEFAULT})
+option(BMSX_GLES2_SOFTWARE_GX "Experiment: exact software GX and scanout with GLES2 postprocessing" OFF)
+if(BMSX_GLES2_SOFTWARE_GX AND NOT BMSX_ENABLE_GLES2)
+	message(FATAL_ERROR "BMSX_GLES2_SOFTWARE_GX requires BMSX_ENABLE_GLES2")
+endif()
 
 # =============================================================================
 # Find zlib for PNG screenshot output.
@@ -400,6 +404,7 @@ add_library(bmsx_host_support STATIC
 	audio/output_resampler.cpp
 	render/backend/backend.cpp
 	render/backend/software/gx_gpu.cpp
+	render/backend/software/gx_gpu_execution.cpp
 	render/backend/software/gx_gpu_commands.cpp
 	render/backend/software/gx_gpu_rasterizer.cpp
 	render/backend/software/gx_gpu_scanout.cpp
@@ -448,7 +453,6 @@ if(BMSX_ENABLE_GLES2)
 		render/backend/gles2/backend.cpp
 		render/backend/gles2/draw_state.cpp
 		render/backend/gles2/fullscreen_quad.cpp
-		render/backend/gles2/gx_gpu.cpp
 		render/backend/gles2/gx_gpu_textured_program.cpp
 		render/backend/gles2/gx_gpu_primitive_program.cpp
 		render/backend/gles2/gx_gpu_draw_targets.cpp
@@ -456,6 +460,12 @@ if(BMSX_ENABLE_GLES2)
 		render/post/crt/gles2/pipeline.cpp
 		render/post/device_quantize/gles2/pipeline.cpp
 	)
+	if(BMSX_GLES2_SOFTWARE_GX)
+		target_sources(bmsx_host_support PRIVATE render/backend/gles2/software_gx_gpu.cpp)
+		target_compile_definitions(bmsx_host_support PUBLIC BMSX_GLES2_SOFTWARE_GX=1)
+	else()
+		target_sources(bmsx_host_support PRIVATE render/backend/gles2/gx_gpu.cpp)
+	endif()
 	find_library(GLESV2_LIBRARY GLESv2 REQUIRED)
 	target_link_libraries(bmsx_host_support PUBLIC ${GLESV2_LIBRARY})
 	if(UNIX AND NOT APPLE)
@@ -830,6 +840,11 @@ if(BMSX_BUILD_TESTS)
 		if(BMSX_SNESMINI_TARGET)
 			target_link_options(bmsx_gles2_vram_experiment PRIVATE -static-libstdc++ -static-libgcc)
 		endif()
+		if(BMSX_GLES2_SOFTWARE_GX)
+			add_executable(bmsx_software_gx_gles2_tests ../../tests/cpp/software_gx_gles2_test.cpp)
+			target_link_libraries(bmsx_software_gx_gles2_tests PRIVATE bmsx_host_support ${BMSX_TEST_EGL_LIBRARY})
+			add_test(NAME bmsx_software_gx_gles2_tests COMMAND bmsx_software_gx_gles2_tests)
+		else()
 		add_executable(bmsx_gx_gpu_textured_gles2_tests
 			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gx_gpu_textured_gles2_test.cpp
 			${BMSX_LIBRETRO_HOST_DIR}/video_context.c
@@ -842,6 +857,7 @@ if(BMSX_BUILD_TESTS)
 			target_link_options(bmsx_gx_gpu_textured_gles2_tests PRIVATE -static-libstdc++ -static-libgcc)
 		endif()
 		add_test(NAME bmsx_gx_gpu_textured_gles2_tests COMMAND bmsx_gx_gpu_textured_gles2_tests)
+		endif()
 		add_executable(bmsx_gles_frame_worker_tests
 			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gles_frame_worker_test.cpp
 			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/blua32_test_rom.cpp

@@ -443,7 +443,13 @@ void testSubmissionFailure(const test::Blua32TestRom& rom, FailedSubmissionOwner
 		try { worker.run(1.0 / 60.0, 1.0 / 60.0); }
 		catch (const ProducerFailure&) { receivedExpectedFailure = failedOwner == FailedSubmissionOwner::Producer; }
 		catch (const ConsumerFailure&) { receivedExpectedFailure = failedOwner != FailedSubmissionOwner::Producer; }
+		#if BMSX_GLES2_SOFTWARE_GX
+		// CPU command consumption has no GL draw to delay before a producer
+		// exception. Presentation still exercises the GL consumer error path.
+		require(receivedExpectedFailure, "the original submission error returns after published CPU work");
+#else
 		require(receivedExpectedFailure && observed.overlapped, "the original submission error returns after overlapping published work");
+#endif
 		if (failedOwner == FailedSubmissionOwner::Producer) {
 			// GLES readback packs two 16-bit pixels per RGBA8 output word.
 			std::array<u8, 4> pixel{};
@@ -617,7 +623,10 @@ int main() {
 	require(eglMakeCurrent(display, surface, surface, context), "make context current");
 	const auto rom = makeStream();
 	testSubmissionFailure(rom, FailedSubmissionOwner::Producer);
+#if !BMSX_GLES2_SOFTWARE_GX
+	// Only hardware GX command batches issue GL draws before presentation.
 	testSubmissionFailure(rom, FailedSubmissionOwner::Consumer);
+#endif
 	testSubmissionFailure(rom, FailedSubmissionOwner::PresentationConsumer);
 	const auto expected = runStream(rom, false, GxGpuDrawTargetMode::FullVram);
 	bool visibleColor = false;
