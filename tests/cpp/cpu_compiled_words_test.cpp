@@ -4,6 +4,7 @@
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
+#include "spec/bmsx/io.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
@@ -71,6 +72,89 @@ test::Blua32TestImage wordLoop(int count, bool displaced = false) {
 	writeInstruction(image.text, 32, static_cast<u8>(OpCode::HALT), 0, 0, 0); writeInstruction(image.text, 33, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = static_cast<u32>(std::max(16, 8 + count))}, {.firstWord = 32, .wordCount = 2}};
 	image.exceptionFunctionIndex = 1; return image;
+}
+
+void pageTailEntry(int width, bool straddles) {
+	test::Blua32TestImage image; image.text.resize(INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 1, .maxStack = 4}};
+	CpuMachine native(image), scalar(image, true);
+	const u32 pc = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - (straddles ? 1u : width) * INSTRUCTION_BYTES;
+	const u32 bodyPc = pc + (width - 1u) * INSTRUCTION_BYTES;
+	std::array<u8, 2 * INSTRUCTION_BYTES> code{};
+	if (width == 2) writeInstruction(code, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(code, width - 1, static_cast<u8>(OpCode::ADD), 3, 0, 1);
+	for (auto* m : {&native, &scalar}) m->memory.writeBytes(pc, code.data(), width * INSTRUCTION_BYTES);
+	for (int expected : {42, 34}) {
+		for (int visit = 0; visit < 12; ++visit) {
+			for (auto* m : {&native, &scalar}) {
+				m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], pc);
+				auto& frame = *m->cpu.activeThread()->frameAtDepth(0);
+				frame.registers[0] = valueNumber(38); frame.registers[1] = valueNumber(4); frame.registers[3] = valueNumber(7);
+			}
+			test::runCpuParity(native.cpu, scalar.cpu, 1); requireParity(native, scalar);
+			require(native.cpu.readFrameRegister(0, 3) == valueNumber(expected)
+				&& native.cpu.readFramePc(0) == pc + width * INSTRUCTION_BYTES && native.cpu.lastPc == bodyPc,
+				"one cycle executes only the complete standalone tail instruction");
+		}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		const u32 index = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+		DecodedInstructionPage* page = nullptr;
+		for (auto& [key, candidate] : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages) {
+			if (candidate.nativeBlocks && candidate.nativeBlocks->entries[index]
+				&& candidate.nativeBlocks->entries[index]->firstPc == pc) page = &candidate;
+		}
+		require(page && page->nativeBlocks->entries[index]->sourceWords == static_cast<u32>(width),
+			"the hot page-tail instruction has its own generated entry and complete source extent");
+#endif
+		if (expected == 42) {
+			writeInstruction(code, width - 1, static_cast<u8>(OpCode::SUB), 3, 0, 1);
+			for (auto* m : {&native, &scalar}) m->memory.writeBytes(bodyPc, code.data() + (width - 1) * INSTRUCTION_BYTES, INSTRUCTION_BYTES);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			require(!page->nativeBlocks || !page->nativeBlocks->entries[index], "rewriting the body retires its owner, including a second-page WIDE body");
+#endif
+		} else {
+			std::array<u32, 2> observations{}; size_t machine = 0;
+			for (auto* m : {&native, &scalar}) {
+				InstructionObserverBinding observer; observer.points[0].insert(pc); observer.context = &observations[machine++];
+				observer.observe = [](void* context, ExecutionDomainId, u32, const Value*) { ++*static_cast<u32*>(context); };
+				m->cpu.setInstructionObserver(std::move(observer));
+				m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], pc);
+			}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			require(!page->nativeBlocks || !page->nativeBlocks->entries[index], "installing an observer retires the page-tail body");
+#endif
+			test::runCpuParity(native.cpu, scalar.cpu, 1); requireParity(native, scalar);
+			require(observations[0] == 1u && observations[1] == 1u, "both observers see the exact tail instruction once");
+		}
+	}
+}
+
+void pageTailBeforeFetchFault(bool wide) {
+	test::Blua32TestImage image; image.text.resize(2 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0); writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 1, .maxStack = 4}, {.firstWord = 1, .wordCount = 1}};
+	image.exceptionFunctionIndex = 1;
+	CpuMachine native(image), scalar(image, true);
+	const u32 end = RAM_BASE + PSX_MACHINE_SPEC.ramBytes, width = wide ? 2u : 1u, pc = end - width * INSTRUCTION_BYTES;
+	std::array<u8, 2 * INSTRUCTION_BYTES> code{};
+	if (wide) writeInstruction(code, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(code, width - 1u, static_cast<u8>(OpCode::K1), 3, 0, 0);
+	for (auto* m : {&native, &scalar}) m->memory.writeBytes(pc, code.data(), width * INSTRUCTION_BYTES);
+	for (int visit = 0; visit < 12; ++visit) {
+		for (auto* m : {&native, &scalar}) m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], pc);
+		test::runCpuParity(native.cpu, scalar.cpu, 1); requireParity(native, scalar);
+		require(native.cpu.readFrameRegister(0, 3) == valueNumber(1) && native.cpu.readFramePc(0) == end
+			&& native.memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_NONE,
+			"the final backed instruction completes without prefetching the absent next page");
+	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	const auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	require(page.nativeBlocks && page.nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES], "the last backed instruction is generated");
+#endif
+	test::runCpuParity(native.cpu, scalar.cpu, 1); requireParity(native, scalar);
+	require(native.cpu.readEpcWord() == end && native.memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_UNMAPPED
+		&& native.memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == end, "only the following grant raises the precise successor fetch fault");
 }
 
 void plainSpansAndCycles(int count, bool displaced) {
@@ -292,6 +376,8 @@ int main() {
 		for (size_t op = 1; op < OPCODE_COUNT; ++op) require(nativeBlockSupports(op), "every executable BLua32 opcode is admitted by native codegen");
 #endif
 		for (bool displaced : {false, true}) for (int count : {0, 5, 1025}) plainSpansAndCycles(count, displaced);
+		pageTailEntry(1, false); pageTailEntry(2, false); pageTailEntry(2, true);
+		pageTailBeforeFetchFault(false); pageTailBeforeFetchFault(true);
 		wideConstantAddress(); zeroCount(false); zeroCount(true); laterReadinessBeforeEarlierFault(); orderedIoFaultPrefix(); ownCodeInMiddleWatchPage();
 		previousChargesSurviveLaterExit(false); previousChargesSurviveLaterExit(true);
 		for (bool displaced : {false, true}) for (int count : {0, 1025, displaced ? 4095 : 32767}) terminalSpanStartsWithOneCycle(count, displaced);

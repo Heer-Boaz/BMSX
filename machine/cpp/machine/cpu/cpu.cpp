@@ -1026,8 +1026,7 @@ bool CPU::decodeInstruction(
 		return true;
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	if (instructionCacheable && nativeBlockSupports(decoded.op)
-		&& (nativeBlockEndsBlock(decoded.op, decoded.b) || pageOffset + width < DECODED_PAGE_WORDS)) {
+	if (instructionCacheable && nativeBlockSupports(decoded.op)) {
 		decoded.dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeWarm);
 		page.nativeVisits[pageOffset] = 0;
 		return true;

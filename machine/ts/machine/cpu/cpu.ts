@@ -1378,8 +1378,7 @@ export class CPU implements MappedPageInvalidator {
 			return true;
 		}
 		if (instructionCacheable && this.executionBackend === CpuExecutionBackend.JavaScript
-			&& compiledBlockSupports(page.ops[pageOffset])
-			&& (compiledBlockEndsBlock(page.ops[pageOffset], page.b[pageOffset]) || pageOffset + width < DECODED_PAGE_WORDS)) {
+			&& compiledBlockSupports(page.ops[pageOffset])) {
 			if (page.compiledBlocks === null) page.compiledBlocks = new CompiledBlockPage();
 			page.compiledBlocks.visits[pageOffset] = 0;
 			page.dispatchOps[pageOffset] = DecodedDispatchOp.CompiledWarm;

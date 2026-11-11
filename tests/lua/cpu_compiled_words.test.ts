@@ -14,6 +14,7 @@ import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/executi
 import { CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, CPU_CAUSE_CODE_DATA_BUS_ERROR } from '../../machine/ts/spec/blua32/cop0';
 import { DYNAMIC_RAM_BASE, IO_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import { BUS_FAULT_NONE, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
 function assertParity(a: CPU, b: CPU): void {
@@ -37,6 +38,77 @@ function wordLoop(count: number, displaced = false) {
 test('generated execution admits every executable BLua32 opcode; WIDE remains a decode prefix', () => {
 	assert.equal(compiledBlockSupports(OpCode.WIDE), false);
 	for (let op = 1; op < OPCODE_COUNT; ++op) assert.equal(compiledBlockSupports(op), true, `opcode ${op}`);
+});
+
+for (const layout of ['last-word', 'wide-exact-end', 'wide-straddle'] as const) test(`a standalone ${layout} arithmetic entry compiles without fetching its successor`, () => {
+	const text = new Uint8Array(INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 4 }] });
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	const width = layout === 'last-word' ? 1 : 2;
+	const pc = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - (layout === 'wide-exact-end' ? 2 : 1) * INSTRUCTION_BYTES;
+	const bodyPc = pc + (width - 1) * INSTRUCTION_BYTES;
+	const code = new Uint8Array(width * INSTRUCTION_BYTES);
+	if (width === 2) writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(code, width - 1, OpCode.ADD, 3, 0, 1);
+	for (const { memory } of [js, ref]) memory.writeBytes(pc, code);
+	for (const expected of [42, 34]) {
+		for (let visit = 0; visit < 12; ++visit) {
+			for (const { cpu } of [js, ref]) {
+				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
+				const frame = cpu.rootThread.frameAtDepth(0);
+				frame.registers.setNumber(0, 38); frame.registers.setNumber(1, 4); frame.registers.setNumber(3, 7);
+			}
+			runCpuParity(js.cpu, ref.cpu, 1); assertParity(js.cpu, ref.cpu);
+			assert.equal(js.cpu.readFrameRegister(0, 3), expected);
+			assert.equal(js.cpu.readFramePc(0), pc + width * INSTRUCTION_BYTES);
+			assert.equal(js.cpu.lastPc, bodyPc);
+		}
+		const index = (pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
+		const page = [...js.cpu.rootThread.frameAtDepth(0).executionImage.decodedPages.values()]
+			.find(candidate => candidate.compiledBlocks?.entries[index]?.terminal.currentPc === pc)!;
+		assert.ok(page, 'the hot page-tail instruction has its own generated entry');
+		assert.equal(page.compiledBlocks!.entries[index]!.sourceWords, width);
+		if (expected === 42) {
+			writeInstruction(code, width - 1, OpCode.SUB, 3, 0, 1);
+			for (const { memory } of [js, ref]) memory.writeBytes(bodyPc, code.subarray((width - 1) * INSTRUCTION_BYTES));
+			assert.equal(page.compiledBlocks!.entries[index], null, 'rewriting the body retires its owner, including a second-page WIDE body');
+		} else {
+			const observations = [0, 0];
+			for (const [i, { cpu }] of [js, ref].entries()) {
+				cpu.setInstructionObserver({ points: [new Set([pc]), new Set(), new Set()], observe: () => { ++observations[i]; } });
+				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
+			}
+			assert.equal(page.compiledBlocks!.entries[index], null, 'installing an observer retires the page-tail body');
+			runCpuParity(js.cpu, ref.cpu, 1); assertParity(js.cpu, ref.cpu);
+			assert.deepEqual(observations, [1, 1]);
+		}
+	}
+});
+
+for (const wide of [false, true]) test(`a compiled nonterminal at the RAM end faults only when its successor is fetched (WIDE=${wide})`, () => {
+	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0); writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 4 },
+		{ firstWord: 1, wordCount: 1 }], exceptionFunctionIndex: 1 });
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	const end = RAM_BASE + PSX_MACHINE_SPEC.ramBytes, width = wide ? 2 : 1, pc = end - width * INSTRUCTION_BYTES;
+	const code = new Uint8Array(width * INSTRUCTION_BYTES);
+	if (wide) writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(code, width - 1, OpCode.K1, 3, 0, 0);
+	for (const { memory } of [js, ref]) memory.writeBytes(pc, code);
+	for (let visit = 0; visit < 12; ++visit) {
+		for (const { cpu } of [js, ref]) cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
+		runCpuParity(js.cpu, ref.cpu, 1); assertParity(js.cpu, ref.cpu);
+		assert.equal(js.cpu.readFrameRegister(0, 3), 1); assert.equal(js.cpu.readFramePc(0), end);
+		assert.equal(js.memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_NONE);
+	}
+	const index = (pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
+	assert.ok(js.cpu.rootThread.frameAtDepth(0).decodedPage!.compiledBlocks!.entries[index], 'the last backed instruction is generated');
+	runCpuParity(js.cpu, ref.cpu, 1); assertParity(js.cpu, ref.cpu);
+	assert.equal(js.cpu.readEpcWord(), end);
+	assert.equal(js.memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
+	assert.equal(js.memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), end);
 });
 
 for (const displaced of [false, true]) for (const count of [0, 5, 1025]) test(`generated word span preserves conversions, cached sources and complete segment charges (count=${count}, displaced=${displaced})`, () => {
