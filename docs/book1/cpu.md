@@ -1058,6 +1058,16 @@ The following tables describe the decoded operands. `A`, `B`, `C`, and `Bx` name
 | `SELF` | `3EH` | `A, B, C` | Preserve original `R(B)` in `R(A+1)`, then set `R(A) = index(original R(B), K(C))`, where `K(C)` supplies the string key. | 1 |
 | `NEWT` | `10H` | `A, B, C` | Put a new table in `R(A)`, with array-capacity request `B` and hash-size request `C`. | 1 |
 
+After successful table construction, `NEWT` adds one cycle per initialized Value
+slot: `B + 2 × H`, where `H` is zero when `C` is zero and otherwise the smallest
+power of two at least `C`. Each array slot holds one value; each hash entry
+initializes a key and a value. The empty request adds zero. This charge completes
+with the admitted instruction, even if it exhausts the current grant. A failed
+construction incurs the base charge but not this completed-initialization term.
+Later storage growth, collection and allocator implementation do not add this
+instruction's initialization charge to ordinary table reads or writes.
+
+
 
 
 ### Builtin call charges {#sec-cpu-builtin-call-charges}

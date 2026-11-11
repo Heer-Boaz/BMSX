@@ -212,6 +212,7 @@ DISPATCH_LABEL(NEWT) {
 	const int b = decoded->b;
 	const int c = decoded->c;
 	auto* table = createTable(b, c);
+	CYCLES_ADD(b + 2 * static_cast<int>(Table::hashCapacity(c)));
 	SET_REGISTER_FAST(a, valueTable(table));
 	DISPATCH_NEXT();
 }

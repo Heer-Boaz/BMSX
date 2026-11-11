@@ -2745,6 +2745,7 @@ export class CPU implements MappedPageInvalidator {
 				case CompiledBlockExit.InvalidLength: throw new LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
 				case CompiledBlockExit.AllocateTable:
 					this.setRegisterTableFast(frame, registers, exit.exitA, this.createTable(exit.exitB, exit.exitC));
+					this.charge(exit.exitB + 2 * Table.hashCapacity(exit.exitC));
 					break;
 				case CompiledBlockExit.ReadMemory:
 				case CompiledBlockExit.WriteMemory:
@@ -3108,6 +3109,7 @@ export class CPU implements MappedPageInvalidator {
 						a,
 						this.createTable(page.b[pageOffset], page.c[pageOffset]),
 					);
+					this.charge(page.b[pageOffset] + 2 * Table.hashCapacity(page.c[pageOffset]));
 					return;
 				case OpCode.ADD:
 				case OpCode.SUB:

@@ -98,6 +98,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		case NativeBlockExit::AllocateTable: {
 			const int a = exit->exitA;
 			frame->registers[a] = valueTable(cpu.createTable(exit->exitB, exit->exitC));
+			cpu.instructionBudgetRemaining -= exit->exitB + 2 * static_cast<int>(Table::hashCapacity(exit->exitC));
 			frame->top = std::max(frame->top, a + 1);
 			break;
 		}
