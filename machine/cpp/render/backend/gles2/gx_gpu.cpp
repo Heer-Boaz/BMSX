@@ -103,6 +103,16 @@ constexpr std::array<f32, kGxGpuScanoutFloatCount> kGxGpuScanoutVertices{
 };
 
 
+// Geometry is independent of VRAM contents. Prepare the complete command
+// interval once, then publish an immutable store before executing its draws.
+// Source/destination dependencies still execute in GP0 order; only geometry
+// survives those submission boundaries. Immediate transfers use another VBO.
+struct GxGpuTexturedGeometry {
+	std::array<f32, kGxGpuTexturedFloatCapacity> vertices{};
+	std::array<u32, GX_GPU_COMMAND_CAPACITY + 1u> commandFloatOffsets{};
+	GLuint buffer = 0;
+};
+
 struct GxGpuVertexStream {
 	GLuint buffer = 0;
 	GLES2DrawState* state = nullptr;
@@ -229,7 +239,7 @@ struct GxGpuScanoutProgram {
 struct OpenGLES2GxGpuState {
 	std::array<f32, kGxGpuSolidFloatCapacity> solidVertices{};
 	std::array<f32, kGxGpuLineFloatCapacity> lineVertices{};
-	std::array<f32, kGxGpuTexturedFloatCapacity> texturedVertices{};
+	GxGpuTexturedGeometry texturedGeometry{};
 	std::array<u32, kGxGpuTexturedUvComponents * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES> texturedUvPlane{};
 	std::array<u32, kGxGpuColorComponents * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES> colorPlane{};
 	std::array<u16, kGxGpuTextureSourceComponents> texturedTextureSource{};
@@ -534,6 +544,7 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gx.scanoutFieldsTexture.id, 0);
 
 	gx.vertexStream.initialize(backend.drawState);
+	glGenBuffers(1, &gx.texturedGeometry.buffer);
 
 	glGenBuffers(1, &gx.scanoutVertexBuffer);
 	gx.backend->drawState.bindBuffer(GL_ARRAY_BUFFER, gx.scanoutVertexBuffer);
@@ -602,8 +613,9 @@ void shutdownGxGpu(OpenGLES2Backend& backend) {
 		};
 		glDeleteFramebuffers(static_cast<GLsizei>(framebuffers.size()), framebuffers.data());
 
-		const std::array<GLuint, 2> buffers{
+		const std::array<GLuint, 3> buffers{
 			gx.vertexStream.buffer,
+			gx.texturedGeometry.buffer,
 			gx.scanoutVertexBuffer,
 		};
 		glDeleteBuffers(static_cast<GLsizei>(buffers.size()), buffers.data());
@@ -1016,15 +1028,15 @@ size_t appendPreparedLineSegment(OpenGLES2GxGpuState& gx, size_t vertexFloatCoun
 
 void writeTexturedTextureSource(OpenGLES2GxGpuState& gx, size_t offset) {
 	static_assert(sizeof(gx.texturedTextureSource) == kGxGpuTextureSourceFloats * sizeof(f32));
-	std::memcpy(gx.texturedVertices.data() + offset, gx.texturedTextureSource.data(), sizeof(gx.texturedTextureSource));
+	std::memcpy(gx.texturedGeometry.vertices.data() + offset, gx.texturedTextureSource.data(), sizeof(gx.texturedTextureSource));
 }
 
 size_t writeTexturedVertex(OpenGLES2GxGpuState& gx, size_t offset, i32 x, i32 y, u32 colorWord) {
-	gx.texturedVertices[offset] = static_cast<f32>(x);
-	gx.texturedVertices[offset + 1u] = static_cast<f32>(y);
-	gx.texturedVertices[offset + 2u] = static_cast<f32>(colorWord & 0xffu);
-	gx.texturedVertices[offset + 3u] = static_cast<f32>((colorWord >> 8u) & 0xffu);
-	gx.texturedVertices[offset + 4u] = static_cast<f32>((colorWord >> 16u) & 0xffu);
+	gx.texturedGeometry.vertices[offset] = static_cast<f32>(x);
+	gx.texturedGeometry.vertices[offset + 1u] = static_cast<f32>(y);
+	gx.texturedGeometry.vertices[offset + 2u] = static_cast<f32>(colorWord & 0xffu);
+	gx.texturedGeometry.vertices[offset + 3u] = static_cast<f32>((colorWord >> 8u) & 0xffu);
+	gx.texturedGeometry.vertices[offset + 4u] = static_cast<f32>((colorWord >> 16u) & 0xffu);
 	writeTexturedTextureSource(gx, offset + kGxGpuTexturedTextureSourceFloatOffset);
 	return offset + kGxGpuTexturedVertexFloats;
 }
@@ -1076,28 +1088,28 @@ size_t appendTexturedTriangle(OpenGLES2GxGpuState& gx,
 	offset = writeTexturedVertex(gx, offset, x1, y1, color1);
 	offset = writeTexturedVertex(gx, offset, x2, y2, color2);
 	for (size_t vertexOffset = vertexFloatCount; vertexOffset < offset; vertexOffset += kGxGpuTexturedVertexFloats) {
-		gx.texturedVertices[vertexOffset + 5u] = static_cast<f32>(gx.texturedUvPlane[0]);
-		gx.texturedVertices[vertexOffset + 6u] = static_cast<f32>(gx.texturedUvPlane[1]);
-		gx.texturedVertices[vertexOffset + 7u] = static_cast<f32>(gx.texturedUvPlane[2]);
-		gx.texturedVertices[vertexOffset + 8u] = static_cast<f32>(gx.texturedUvPlane[3]);
-		gx.texturedVertices[vertexOffset + 9u] = static_cast<f32>(gx.texturedUvPlane[4]);
-		gx.texturedVertices[vertexOffset + 10u] = static_cast<f32>(gx.texturedUvPlane[5]);
+		gx.texturedGeometry.vertices[vertexOffset + 5u] = static_cast<f32>(gx.texturedUvPlane[0]);
+		gx.texturedGeometry.vertices[vertexOffset + 6u] = static_cast<f32>(gx.texturedUvPlane[1]);
+		gx.texturedGeometry.vertices[vertexOffset + 7u] = static_cast<f32>(gx.texturedUvPlane[2]);
+		gx.texturedGeometry.vertices[vertexOffset + 8u] = static_cast<f32>(gx.texturedUvPlane[3]);
+		gx.texturedGeometry.vertices[vertexOffset + 9u] = static_cast<f32>(gx.texturedUvPlane[4]);
+		gx.texturedGeometry.vertices[vertexOffset + 10u] = static_cast<f32>(gx.texturedUvPlane[5]);
 	}
 	return offset;
 }
 
 size_t writeFixedTexturedVertex(OpenGLES2GxGpuState& gx, size_t offset, i32 x, i32 y) {
-	gx.texturedVertices[offset] = static_cast<f32>(x);
-	gx.texturedVertices[offset + 1u] = static_cast<f32>(y);
+	gx.texturedGeometry.vertices[offset] = static_cast<f32>(x);
+	gx.texturedGeometry.vertices[offset + 1u] = static_cast<f32>(y);
 	for (size_t component = 0u; component < kGxGpuTexturedUvComponents; component += 1u) {
-		gx.texturedVertices[offset + 2u + component] = static_cast<f32>(gx.texturedUvPlane[component]);
-		gx.texturedVertices[offset + 4u + component] = static_cast<f32>(gx.texturedUvPlane[kGxGpuTexturedUvComponents + component]);
-		gx.texturedVertices[offset + 6u + component] = static_cast<f32>(gx.texturedUvPlane[kGxGpuTexturedUvComponents * 2u + component]);
+		gx.texturedGeometry.vertices[offset + 2u + component] = static_cast<f32>(gx.texturedUvPlane[component]);
+		gx.texturedGeometry.vertices[offset + 4u + component] = static_cast<f32>(gx.texturedUvPlane[kGxGpuTexturedUvComponents + component]);
+		gx.texturedGeometry.vertices[offset + 6u + component] = static_cast<f32>(gx.texturedUvPlane[kGxGpuTexturedUvComponents * 2u + component]);
 	}
 	for (size_t component = 0u; component < kGxGpuColorComponents; component += 1u) {
-		gx.texturedVertices[offset + 8u + component] = static_cast<f32>(gx.colorPlane[component]);
-		gx.texturedVertices[offset + 11u + component] = static_cast<f32>(gx.colorPlane[kGxGpuColorComponents + component]);
-		gx.texturedVertices[offset + 14u + component] = static_cast<f32>(gx.colorPlane[kGxGpuColorComponents * 2u + component]);
+		gx.texturedGeometry.vertices[offset + 8u + component] = static_cast<f32>(gx.colorPlane[component]);
+		gx.texturedGeometry.vertices[offset + 11u + component] = static_cast<f32>(gx.colorPlane[kGxGpuColorComponents + component]);
+		gx.texturedGeometry.vertices[offset + 14u + component] = static_cast<f32>(gx.colorPlane[kGxGpuColorComponents * 2u + component]);
 	}
 	writeTexturedTextureSource(gx, offset + kGxGpuFixedTexturedTextureSourceFloatOffset);
 	return offset + kGxGpuFixedTexturedVertexFloats;
@@ -1306,7 +1318,7 @@ size_t appendTexturedRectangle(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer
 	offset = writeTexturedVertex(gx, offset, rect.x1, rect.y1, colorWord);
 	for (size_t vertex = vertexFloatCount; vertex < offset; vertex += kGxGpuTexturedVertexFloats)
 		for (size_t component = 0u; component < gx.texturedUvPlane.size(); ++component)
-			gx.texturedVertices[vertex + 5u + component] = static_cast<f32>(gx.texturedUvPlane[component]);
+			gx.texturedGeometry.vertices[vertex + 5u + component] = static_cast<f32>(gx.texturedUvPlane[component]);
 	return offset;
 }
 
@@ -2080,18 +2092,18 @@ u32 syncGxGpuTexturedSourceTexture(OpenGLES2GxGpuState& gx,
 	// Keep each triangle's UV interval unwrapped until its extent is known.
 	// Wrapped endpoints alone omit texels on either side of a 255->0 crossing.
 	for (size_t triangle = vertexFloatStart; triangle < vertexFloatEnd; triangle += vertexFloatStride * 3u) {
-		const i32 originX = rectangle ? std::clamp(static_cast<i32>(gx.texturedVertices[triangle]), commandRect.left, commandRect.right - 1) : static_cast<i32>(gx.texturedVertices[triangle]);
-		const i32 originY = rectangle ? std::clamp(static_cast<i32>(gx.texturedVertices[triangle + 1u]), commandRect.top, commandRect.bottom - 1) : static_cast<i32>(gx.texturedVertices[triangle + 1u]);
-		const i64 ux = gxGpuTriangleAttributeSignedStep(static_cast<u32>(gx.texturedVertices[triangle + planeOffset + 2u]));
-		const i64 vx = gxGpuTriangleAttributeSignedStep(static_cast<u32>(gx.texturedVertices[triangle + planeOffset + 3u]));
-		const i64 uy = gxGpuTriangleAttributeSignedStep(static_cast<u32>(gx.texturedVertices[triangle + planeOffset + 4u]));
-		const i64 vy = gxGpuTriangleAttributeSignedStep(static_cast<u32>(gx.texturedVertices[triangle + planeOffset + 5u]));
-		const i64 u0 = (static_cast<i64>(gx.texturedVertices[triangle + planeOffset]) + ux * originX + uy * originY) & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
-		const i64 v0 = (static_cast<i64>(gx.texturedVertices[triangle + planeOffset + 1u]) + vx * originX + vy * originY) & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
+		const i32 originX = rectangle ? std::clamp(static_cast<i32>(gx.texturedGeometry.vertices[triangle]), commandRect.left, commandRect.right - 1) : static_cast<i32>(gx.texturedGeometry.vertices[triangle]);
+		const i32 originY = rectangle ? std::clamp(static_cast<i32>(gx.texturedGeometry.vertices[triangle + 1u]), commandRect.top, commandRect.bottom - 1) : static_cast<i32>(gx.texturedGeometry.vertices[triangle + 1u]);
+		const i64 ux = gxGpuTriangleAttributeSignedStep(static_cast<u32>(gx.texturedGeometry.vertices[triangle + planeOffset + 2u]));
+		const i64 vx = gxGpuTriangleAttributeSignedStep(static_cast<u32>(gx.texturedGeometry.vertices[triangle + planeOffset + 3u]));
+		const i64 uy = gxGpuTriangleAttributeSignedStep(static_cast<u32>(gx.texturedGeometry.vertices[triangle + planeOffset + 4u]));
+		const i64 vy = gxGpuTriangleAttributeSignedStep(static_cast<u32>(gx.texturedGeometry.vertices[triangle + planeOffset + 5u]));
+		const i64 u0 = (static_cast<i64>(gx.texturedGeometry.vertices[triangle + planeOffset]) + ux * originX + uy * originY) & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
+		const i64 v0 = (static_cast<i64>(gx.texturedGeometry.vertices[triangle + planeOffset + 1u]) + vx * originX + vy * originY) & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
 		for (size_t vertex = 0u; vertex < 3u; ++vertex) {
 			const size_t offset = triangle + vertex * vertexFloatStride;
-			const i32 x = rectangle ? std::clamp(static_cast<i32>(gx.texturedVertices[offset]), commandRect.left, commandRect.right - 1) : static_cast<i32>(gx.texturedVertices[offset]);
-			const i32 y = rectangle ? std::clamp(static_cast<i32>(gx.texturedVertices[offset + 1u]), commandRect.top, commandRect.bottom - 1) : static_cast<i32>(gx.texturedVertices[offset + 1u]);
+			const i32 x = rectangle ? std::clamp(static_cast<i32>(gx.texturedGeometry.vertices[offset]), commandRect.left, commandRect.right - 1) : static_cast<i32>(gx.texturedGeometry.vertices[offset]);
+			const i32 y = rectangle ? std::clamp(static_cast<i32>(gx.texturedGeometry.vertices[offset + 1u]), commandRect.top, commandRect.bottom - 1) : static_cast<i32>(gx.texturedGeometry.vertices[offset + 1u]);
 			const i32 u = static_cast<i32>((u0 + ux * (x - originX) + uy * (y - originY)) >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS);
 			const i32 v = static_cast<i32>((v0 + vx * (x - originX) + vy * (y - originY)) >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS);
 			includeGxGpuVramCopyVertex(rect, u, v);
@@ -2639,7 +2651,27 @@ u32 executeGxGpuBlendPlan(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& com
 	return commandEnd;
 }
 
+void prepareGxGpuTexturedGeometry(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commandBuffer, size_t commandLimit) {
+	size_t floatCount = 0u;
+	for (size_t commandIndex = gx.processedCommandCount; commandIndex < commandLimit; ++commandIndex) {
+		gx.texturedGeometry.commandFloatOffsets[commandIndex] = static_cast<u32>(floatCount);
+		const u8 kind = commandBuffer.commandKind[commandIndex];
+		if ((kind == GX_GPU_COMMAND_DRAW_POLYGON || kind == GX_GPU_COMMAND_DRAW_RECTANGLE)
+			&& gxGpuCommandTextureEnabled(commandBuffer.commandOpcode[commandIndex])) {
+			floatCount = appendTexturedCommandVertices(gx, commandBuffer, commandIndex, floatCount);
+		}
+	}
+	gx.texturedGeometry.commandFloatOffsets[commandLimit] = static_cast<u32>(floatCount);
+	if (floatCount == 0u) return;
+	gx.backend->drawState.bindBuffer(GL_ARRAY_BUFFER, gx.texturedGeometry.buffer);
+	// Replace the preceding generation in one call. No writes to this store
+	// occur after its first draw, even across atlas uploads and sample copies.
+	glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(floatCount * sizeof(f32)),
+		gx.texturedGeometry.vertices.data(), GL_STREAM_DRAW);
+}
+
 void executeNewGxGpuCommands(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commandBuffer, size_t commandLimit) {
+	prepareGxGpuTexturedGeometry(gx, commandBuffer, commandLimit);
 	u32 commandIndex = gx.processedCommandCount;
 	u32 solidBatchTopLeftWord = kGxGpuFullDrawingAreaTopLeftWord;
 	u32 solidBatchBottomRightWord = kGxGpuFullDrawingAreaBottomRightWord;
@@ -2767,31 +2799,35 @@ void executeNewGxGpuCommands(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& 
 				if (texturedVertexFloatCount == 0u) {
 					texturedBatchCommandIndex = commandIndex;
 				}
-				size_t texturedCommandVertexStart = texturedVertexFloatCount;
-				texturedVertexFloatCount = appendTexturedCommandVertices(gx, commandBuffer, commandIndex, texturedVertexFloatCount);
-				if (texturedVertexFloatCount != texturedCommandVertexStart) {
+				size_t precedingVertexFloatCount = texturedVertexFloatCount;
+				const size_t texturedCommandVertexStart = gx.texturedGeometry.commandFloatOffsets[commandIndex];
+				const size_t texturedCommandVertexEnd = gx.texturedGeometry.commandFloatOffsets[commandIndex + 1u];
+				const size_t commandVertexFloatCount = texturedCommandVertexEnd - texturedCommandVertexStart;
+				texturedVertexFloatCount += commandVertexFloatCount;
+				if (commandVertexFloatCount != 0u) {
 					const size_t texturedVertexFloatStride = fixedTexturedColor ? kGxGpuFixedTexturedVertexFloats : kGxGpuTexturedVertexFloats;
-					setGxGpuVertexBoundsRect(rasterKind, gx.texturedCommandRect, gx.texturedVertices.data(), texturedCommandVertexStart, texturedVertexFloatCount, texturedVertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
-					u32 sourceOverlaps = syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, texturedCommandVertexStart, texturedVertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, fixedTexturedColor);
+					setGxGpuVertexBoundsRect(rasterKind, gx.texturedCommandRect, gx.texturedGeometry.vertices.data(), texturedCommandVertexStart, texturedCommandVertexEnd, texturedVertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
+					u32 sourceOverlaps = syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, texturedCommandVertexStart, texturedCommandVertexEnd, gx.texturedCommandRect, gx.texturedBatchRect, fixedTexturedColor);
 					if ((sourceOverlaps & GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP) != 0u) {
-						texturedVertexFloatCount = flushTexturedCommands(gx, commandBuffer, texturedCommandVertexStart, texturedBatchCommandIndex);
+						flushTexturedCommands(gx, commandBuffer, precedingVertexFloatCount, texturedBatchCommandIndex);
 						texturedBatchCommandIndex = commandIndex;
-						texturedCommandVertexStart = 0u;
-						texturedVertexFloatCount = appendTexturedCommandVertices(gx, commandBuffer, commandIndex, 0u);
-						setGxGpuVertexBoundsRect(rasterKind, gx.texturedCommandRect, gx.texturedVertices.data(), 0u, texturedVertexFloatCount, texturedVertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
-						sourceOverlaps = syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, 0u, texturedVertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, fixedTexturedColor);
+						precedingVertexFloatCount = 0u;
+						texturedVertexFloatCount = commandVertexFloatCount;
+						setGxGpuVertexBoundsRect(rasterKind, gx.texturedCommandRect, gx.texturedGeometry.vertices.data(), texturedCommandVertexStart, texturedCommandVertexEnd, texturedVertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
+						sourceOverlaps = syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, texturedCommandVertexStart, texturedCommandVertexEnd, gx.texturedCommandRect, gx.texturedBatchRect, fixedTexturedColor);
 					}
 					if ((sourceOverlaps & GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP) != 0u) {
-						if (texturedCommandVertexStart != 0u) {
-							texturedVertexFloatCount = flushTexturedCommands(gx, commandBuffer, texturedCommandVertexStart, texturedBatchCommandIndex);
+						if (precedingVertexFloatCount != 0u) {
+							texturedVertexFloatCount = flushTexturedCommands(gx, commandBuffer, precedingVertexFloatCount, texturedBatchCommandIndex);
 						}
 						texturedVertexFloatCount = 0u;
 						resetGxGpuVramCopyRect(gx.texturedBatchRect);
 						renderTexturedCommand(gx, commandBuffer, commandIndex, topLeftWord, bottomRightWord);
 					} else {
 						// Classify only commands admitted to this batch. A dependency
-						// can flush the preceding prefix after vertices were appended.
-						if (texturedCommandVertexStart == 0u) {
+						// can flush the preceding prefix after this command was
+						// admitted; its geometry remains in the same generation.
+						if (precedingVertexFloatCount == 0u) {
 							gx.texturedBatchUniformGain = true;
 						} else {
 							const u32 colorWord = commandBuffer.words[commandBuffer.commandWordStart[commandIndex]];
@@ -3194,25 +3230,25 @@ size_t appendTexturedCommandVertices(OpenGLES2GxGpuState& gx, const GxGpuCommand
 		: appendTexturedRectangle(gx, commandBuffer, commandIndex, vertexFloatCount);
 }
 
-bool canInterpolateGxGpuIntegerUv(const OpenGLES2GxGpuState& gx, size_t vertexFloatCount, bool rectangle) {
+bool canInterpolateGxGpuIntegerUv(std::span<const f32> vertices, bool rectangle) {
 	// Integer unit-step planes need no fragment Q12 multiplication. This also
 	// covers translated, mirrored and quarter-turned sprites emitted as quads.
 	// Keep the quarter-texel bias representable by the minimum mediump mantissa.
 	const f32 samplePhase = rectangle ? -0.5f : 0.0f;
-	for (size_t triangle = 0u; triangle < vertexFloatCount; triangle += kGxGpuTexturedVertexFloats * 3u) {
-		const i32 ux = gxGpuTriangleAttributeSignedStep(static_cast<u32>(gx.texturedVertices[triangle + 7u]));
-		const i32 vx = gxGpuTriangleAttributeSignedStep(static_cast<u32>(gx.texturedVertices[triangle + 8u]));
-		const i32 uy = gxGpuTriangleAttributeSignedStep(static_cast<u32>(gx.texturedVertices[triangle + 9u]));
-		const i32 vy = gxGpuTriangleAttributeSignedStep(static_cast<u32>(gx.texturedVertices[triangle + 10u]));
+	for (size_t triangle = 0u; triangle < vertices.size(); triangle += kGxGpuTexturedVertexFloats * 3u) {
+		const i32 ux = gxGpuTriangleAttributeSignedStep(static_cast<u32>(vertices[triangle + 7u]));
+		const i32 vx = gxGpuTriangleAttributeSignedStep(static_cast<u32>(vertices[triangle + 8u]));
+		const i32 uy = gxGpuTriangleAttributeSignedStep(static_cast<u32>(vertices[triangle + 9u]));
+		const i32 vy = gxGpuTriangleAttributeSignedStep(static_cast<u32>(vertices[triangle + 10u]));
 		if (ux % 4096 != 0 || vx % 4096 != 0 || uy % 4096 != 0 || vy % 4096 != 0
 			|| ux < -4096 || ux > 4096 || vx < -4096 || vx > 4096
 			|| uy < -4096 || uy > 4096 || vy < -4096 || vy > 4096) return false;
-		const i32 baseU = (static_cast<u32>(gx.texturedVertices[triangle + 5u]) >> 12u) - (ux > 0 || uy > 0 ? 256 : 0);
-		const i32 baseV = (static_cast<u32>(gx.texturedVertices[triangle + 6u]) >> 12u) - (vx > 0 || vy > 0 ? 256 : 0);
+		const i32 baseU = (static_cast<u32>(vertices[triangle + 5u]) >> 12u) - (ux > 0 || uy > 0 ? 256 : 0);
+		const i32 baseV = (static_cast<u32>(vertices[triangle + 6u]) >> 12u) - (vx > 0 || vy > 0 ? 256 : 0);
 		for (size_t vertex = 0u; vertex < 3u; ++vertex) {
 			const size_t offset = triangle + vertex * kGxGpuTexturedVertexFloats;
-			const f32 x = gx.texturedVertices[offset] + samplePhase;
-			const f32 y = gx.texturedVertices[offset + 1u] + samplePhase;
+			const f32 x = vertices[offset] + samplePhase;
+			const f32 y = vertices[offset + 1u] + samplePhase;
 			const f32 u = baseU + (ux / 4096) * x + (uy / 4096) * y + 0.25f;
 			const f32 v = baseV + (vx / 4096) * x + (vy / 4096) * y + 0.25f;
 			if (u <= -512.0f || u >= 512.0f || v <= -512.0f || v >= 512.0f) return false;
@@ -3232,6 +3268,8 @@ void renderTexturedVertices(OpenGLES2GxGpuState& gx,
 	bool syncSampleBetweenAliasBands,
 	bool splitTriangles,
 	bool syncSourceBetweenTriangles) {
+	const size_t generationFloatStart = gx.texturedGeometry.commandFloatOffsets[commandIndex];
+	const f32* vertices = gx.texturedGeometry.vertices.data() + generationFloatStart;
 	const u32 vramYAddressExtensionWord = commandBuffer.commandVramYAddressExtensionWord[commandIndex];
 	const u32 opcode = commandBuffer.commandOpcode[commandIndex];
 	const bool hardware = gx.drawTargets.hardwareBlending() && gxGpuCommandSemiTransparencyEnabled(opcode)
@@ -3242,7 +3280,7 @@ void renderTexturedVertices(OpenGLES2GxGpuState& gx,
 		&& gxGpuCommandGouraud(opcode)
 		&& !gxGpuCommandRawTextureEnabled(opcode);
 	const size_t vertexFloatStride = fixedColor ? kGxGpuFixedTexturedVertexFloats : kGxGpuTexturedVertexFloats;
-	const bool integerUv = !fixedColor && canInterpolateGxGpuIntegerUv(gx, vertexFloatCount,
+	const bool integerUv = !fixedColor && canInterpolateGxGpuIntegerUv({vertices, vertexFloatCount},
 		commandBuffer.commandKind[commandIndex] == GX_GPU_COMMAND_DRAW_RECTANGLE);
 	const u32 drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
 	const u32 textureMode = gxGpuDrawModeTextureMode(drawModeWord);
@@ -3263,10 +3301,7 @@ void renderTexturedVertices(OpenGLES2GxGpuState& gx,
 	const GLint logicalYBaseUniform = program.logicalYBaseUniform;
 
 	submitGxGpuPrimitiveBatches(gx);
-	const GLsizeiptr vertexByteCount = static_cast<GLsizeiptr>(vertexFloatCount * sizeof(f32));
-	gx.vertexStream.reserve(vertexByteCount);
-	const GLintptr vertexBufferOffset = gx.vertexStream.append(gx.texturedVertices.data(), vertexByteCount);
-	const uintptr_t vertexBufferAddress = static_cast<uintptr_t>(vertexBufferOffset);
+	const uintptr_t vertexBufferAddress = generationFloatStart * sizeof(f32);
 	const auto bindDrawState = [&] {
 		beginGxGpuVramRenderTarget(gx);
 		gx.backend->drawState.useProgram(program.id);
@@ -3279,7 +3314,7 @@ void renderTexturedVertices(OpenGLES2GxGpuState& gx,
 			gx.backend->setActiveTextureUnit(GLES2_TEXTURE_UNIT_GX_DESTINATION);
 			gx.backend->bindTexture2D(textureBarrier ? &gx.drawTargets.color() : &gx.drawTargets.destinationSample());
 		}
-		gx.backend->drawState.bindBuffer(GL_ARRAY_BUFFER, gx.vertexStream.buffer);
+		gx.backend->drawState.bindBuffer(GL_ARRAY_BUFFER, gx.texturedGeometry.buffer);
 		if (fixedColor) {
 			gx.backend->drawState.enableVertexAttribArray(static_cast<GLuint>(program.positionAttrib));
 			gx.backend->drawState.vertexAttribPointer(static_cast<GLuint>(program.positionAttrib), 2, GL_FLOAT, GL_FALSE, kGxGpuFixedTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress));
@@ -3349,14 +3384,14 @@ void renderTexturedVertices(OpenGLES2GxGpuState& gx,
 			resetGxGpuVramCopyRect(gx.texturedDependencyBatchRect);
 			for (size_t vertexFloatStart = 0u; vertexFloatStart < vertexFloatCount; vertexFloatStart += dependencyPrimitiveFloatCount) {
 				const size_t vertexFloatEnd = vertexFloatStart + dependencyPrimitiveFloatCount;
-				setGxGpuVertexBoundsRect(commandBuffer.commandKind[commandIndex] == GX_GPU_COMMAND_DRAW_POLYGON ? GxGpuRasterKind::Polygon : GxGpuRasterKind::Rectangle, gx.vramCopyRectScratch, gx.texturedVertices.data(), vertexFloatStart, vertexFloatEnd, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
+				setGxGpuVertexBoundsRect(commandBuffer.commandKind[commandIndex] == GX_GPU_COMMAND_DRAW_POLYGON ? GxGpuRasterKind::Polygon : GxGpuRasterKind::Rectangle, gx.vramCopyRectScratch, vertices, vertexFloatStart, vertexFloatEnd, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 				if (vertexFloatStart != dependencyBatchFloatStart
 					&& (gx.vramTextureRows != kGxGpuVramYAddressPeriod
 						|| syncSourceBetweenTriangles
 						|| gxGpuVramCopyRectsOverlap(gx, gx.texturedDependencyBatchRect, gx.vramCopyRectScratch, vramYAddressExtensionWord))) {
 					if (dependencyBatchFloatStart != 0u) {
 						if (syncSourceBetweenTriangles) {
-							syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, 0u, vertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, fixedColor);
+							syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, generationFloatStart, generationFloatStart + vertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, fixedColor);
 						}
 						if (samplesDestination && !gx.drawTargets.enabled()) {
 							syncGxGpuSampleTextureLogicalArea(gx,
@@ -3383,7 +3418,7 @@ void renderTexturedVertices(OpenGLES2GxGpuState& gx,
 			}
 			if (dependencyBatchFloatStart != 0u) {
 				if (syncSourceBetweenTriangles) {
-					syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, 0u, vertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, fixedColor);
+					syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, generationFloatStart, generationFloatStart + vertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, fixedColor);
 				}
 				if (samplesDestination && !gx.drawTargets.enabled()) {
 					syncGxGpuSampleTextureLogicalArea(gx,
@@ -3413,7 +3448,8 @@ void renderTexturedCommand(OpenGLES2GxGpuState& gx,
 	u32 commandIndex,
 	u32 topLeftWord,
 	u32 bottomRightWord) {
-	const size_t vertexFloatCount = appendTexturedCommandVertices(gx, commandBuffer, commandIndex, 0u);
+	const size_t generationFloatStart = gx.texturedGeometry.commandFloatOffsets[commandIndex];
+	const size_t vertexFloatCount = gx.texturedGeometry.commandFloatOffsets[commandIndex + 1u] - generationFloatStart;
 	if (vertexFloatCount == 0u) {
 		return;
 	}
@@ -3425,7 +3461,7 @@ void renderTexturedCommand(OpenGLES2GxGpuState& gx,
 	setGxGpuVertexBoundsRect(
 		commandBuffer.commandKind[commandIndex] == GX_GPU_COMMAND_DRAW_POLYGON ? GxGpuRasterKind::Polygon : GxGpuRasterKind::Rectangle,
 		gx.texturedCommandRect,
-		gx.texturedVertices.data(),
+		gx.texturedGeometry.vertices.data() + generationFloatStart,
 		0u,
 		vertexFloatCount,
 		fixedColor ? kGxGpuFixedTexturedVertexFloats : kGxGpuTexturedVertexFloats,
@@ -3434,7 +3470,7 @@ void renderTexturedCommand(OpenGLES2GxGpuState& gx,
 		vramYAddressExtensionWord);
 	const u32 maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
 	const bool readsVram = gxGpuCommandSemiTransparencyEnabled(opcode) || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
-	const u32 sourceOverlaps = syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, 0u, vertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, fixedColor);
+	const u32 sourceOverlaps = syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, generationFloatStart, generationFloatStart + vertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, fixedColor);
 	const bool sourceOverlapsDestination = (sourceOverlaps & GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP) != 0u;
 	const bool textureBarrier = readsVram && gx.textureBarrier;
 	const bool samplesDestination = readsVram && !gx.framebufferFetch && !textureBarrier;
@@ -3461,6 +3497,7 @@ void renderTexturedCommand(OpenGLES2GxGpuState& gx,
 
 size_t flushTexturedCommands(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commandBuffer, size_t vertexFloatCount, u32 batchCommandIndex) {
 	if (vertexFloatCount != 0u) {
+		const size_t generationFloatStart = gx.texturedGeometry.commandFloatOffsets[batchCommandIndex];
 		const u32 topLeftWord = commandBuffer.commandDrawingAreaTopLeftWord[batchCommandIndex];
 		const u32 bottomRightWord = commandBuffer.commandDrawingAreaBottomRightWord[batchCommandIndex];
 		const u32 opcode = commandBuffer.commandOpcode[batchCommandIndex];
@@ -3471,7 +3508,7 @@ size_t flushTexturedCommands(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& 
 		setGxGpuVertexBoundsRect(
 			commandBuffer.commandKind[batchCommandIndex] == GX_GPU_COMMAND_DRAW_POLYGON ? GxGpuRasterKind::Polygon : GxGpuRasterKind::Rectangle,
 			gx.texturedCommandRect,
-			gx.texturedVertices.data(),
+			gx.texturedGeometry.vertices.data() + generationFloatStart,
 			0u,
 			vertexFloatCount,
 			fixedColor ? kGxGpuFixedTexturedVertexFloats : kGxGpuTexturedVertexFloats,

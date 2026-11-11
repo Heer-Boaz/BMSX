@@ -30,11 +30,17 @@ unsigned submissions = 0;
 bool completeSubmissions = true;
 unsigned readbacks = 0;
 unsigned draws = 0;
+unsigned geometryPublications = 0;
+unsigned geometryDraws = 0;
+GLuint geometryBuffer = 0;
+GLsizeiptr geometryBytes = 0;
+bool immutableGeometry = true;
 }
 
 extern "C" void __real_glDrawArrays(GLenum, GLint, GLsizei);
 extern "C" void __wrap_glDrawArrays(GLenum mode, GLint first, GLsizei count) {
 	++draws;
+	if (boundArrayBuffer == geometryBuffer && geometryBuffer != 0) ++geometryDraws;
 	__real_glDrawArrays(mode, first, count);
 }
 extern "C" void __real_glReadPixels(GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void*);
@@ -50,7 +56,13 @@ extern "C" void __wrap_glBindBuffer(GLenum target, GLuint buffer) {
 	__real_glBindBuffer(target, buffer);
 }
 extern "C" void __wrap_glBufferData(GLenum target, GLsizeiptr bytes, const void* data, GLenum usage) {
+	if (target == GL_ARRAY_BUFFER && usage == GL_STREAM_DRAW && data != nullptr) {
+		++geometryPublications;
+		geometryBuffer = boundArrayBuffer;
+		geometryBytes = bytes;
+	}
 	if (target == GL_ARRAY_BUFFER && usage == GL_STREAM_DRAW && data == nullptr) {
+		if (boundArrayBuffer == geometryBuffer) geometryBuffer = 0;
 		if (submissions != 0) completeSubmissions &= writtenBytes == submissionBytes;
 		submissionBuffer = boundArrayBuffer;
 		submissionBytes = bytes;
@@ -60,6 +72,7 @@ extern "C" void __wrap_glBufferData(GLenum target, GLsizeiptr bytes, const void*
 	__real_glBufferData(target, bytes, data, usage);
 }
 extern "C" void __wrap_glBufferSubData(GLenum target, GLintptr offset, GLsizeiptr bytes, const void* data) {
+	if (target == GL_ARRAY_BUFFER && boundArrayBuffer == geometryBuffer) immutableGeometry = false;
 	if (target == GL_ARRAY_BUFFER && boundArrayBuffer == submissionBuffer) {
 		completeSubmissions &= offset == writtenBytes;
 		writtenBytes += bytes;
@@ -272,7 +285,13 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 	VideoPresenter presenter(video, std::move(backend), 256, 256);
 	presenter.installRenderPipeline(std::make_unique<RenderPassLibrary>(&presenter.backend(), &presenter));
 	presenter.configurePresentation(VideoPresenter::PresentationMode::Completed, true);
+	const unsigned firstPublications = geometryPublications;
+	const unsigned firstGeometryDraws = geometryDraws;
 	presenter.present(fixture.gpu.readDeviceOutput(), 0, 0);
+	if (presenter.backend().type() == BackendType::OpenGLES2) {
+		require(geometryPublications == firstPublications + 1 && geometryDraws > firstGeometryDraws + 1,
+			"state-split textured batches share one geometry publication across solid draws and atlas transfers");
+	}
 	const auto pixels = presenter.captureGameFrame().pixels;
 	presenter.backend().captureGxGpuVramSnapshot(fixture.gpu);
 	const auto uploadedGrid = fixture.gpu.readDeviceOutput().vramSnapshotBytes;
@@ -695,6 +714,64 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 		require(drained[at] == 31u && drained[at + 1u] == 0u,
 			"a pre-beginFrame GX drain restores its context state after frontend rendering");
 	}
+	// A source dependency can split a pending textured batch after its last
+	// command was prepared. The generation must keep both spans alive, including
+	// the self-reading quad's two sequential triangles and a different stride.
+	for (const u32 word : {
+		0xe1000118u, 0xe6000000u, 0x600000ffu, 0x01040208u, 0x00040004u,
+		0x65808080u, 0x01040258u, 0x00000408u, 0x00040004u,
+		// An empty rectangle occupies a command slot but no geometry span.
+		0x65808080u, 0x010402bcu, 0x00000458u, 0x00040000u,
+		0x65808080u, 0x010402bcu, 0x00000458u, 0x00040004u,
+		0x2d808080u, 0x01040208u, 0x00000408u,
+		0x0104020cu, 0x0118040cu, 0x01080208u, 0x00000808u,
+		0x0108020cu, 0x0000080cu,
+		0x3c808080u, 0x01200300u, 0x00000408u,
+		0x00804040u, 0x01200304u, 0x0118040bu,
+		0x00408040u, 0x01240300u, 0x00000708u,
+		0x00404080u, 0x01240304u, 0x0000070bu,
+	}) {
+		fixture.gpu.writeGp0(word);
+		fixture.scheduler.advanceTo(fixture.scheduler.currentNowCycles() + 10'000);
+		fixture.gpu.onService(fixture.scheduler.currentNowCycles());
+	}
+	const unsigned dependentPublications = geometryPublications;
+	presenter.backend().executeGxGpuCommandDrain(fixture.gpu);
+	presenter.backend().captureGxGpuVramSnapshot(fixture.gpu);
+	if (gles) require(geometryPublications == dependentPublications + 1,
+		"source overlaps and mixed vertex strides reuse the published generation without uploads");
+	const auto dependencies = fixture.gpu.readDeviceOutput().vramSnapshotBytes;
+	for (const u32 x : {520u, 600u, 700u}) {
+		const size_t at = (260u * 1024u + x) * 2u;
+		require(dependencies[at] == 31u && dependencies[at + 1u] == 0u,
+			"prepared geometry preserves source visibility across dependent and self-reading draws");
+	}
+	// The device's admitted interval can occupy every command slot. Six vertices
+	// with fixed color planes are the largest textured command representation.
+	require(fixture.gpu.readDeviceOutput().commandBuffer.commandCount == 0u,
+		"the generation-capacity fixture starts after the previous device drain");
+	for (size_t command = 0u; command < GX_GPU_COMMAND_CAPACITY; ++command) {
+		for (const u32 word : {
+			0x3c808080u, 0x03b003b0u, 0x00000408u,
+			0x00804040u, 0x03b003b2u, 0x0118040bu,
+			0x00408040u, 0x03b203b0u, 0x00000708u,
+			0x00404080u, 0x03b203b2u, 0x0000070bu,
+		}) fixture.gpu.writeGp0(word);
+		fixture.scheduler.advanceTo(fixture.scheduler.currentNowCycles() + 10'000);
+		fixture.gpu.onService(fixture.scheduler.currentNowCycles());
+	}
+	require(fixture.gpu.readDeviceOutput().commandBuffer.executedCommandCount == GX_GPU_COMMAND_CAPACITY,
+		"the entire maximum-capacity geometry generation is executed by the device");
+	const unsigned capacityPublications = geometryPublications;
+	presenter.backend().executeGxGpuCommandDrain(fixture.gpu);
+	if (gles) require(geometryPublications == capacityPublications + 1
+		&& geometryBytes == static_cast<GLsizeiptr>(GX_GPU_COMMAND_CAPACITY * 6u * 19u * sizeof(f32)),
+		"one generation contains exactly the used vertices at the command-capacity boundary");
+	presenter.backend().captureGxGpuVramSnapshot(fixture.gpu);
+	const unsigned unchangedPublications = geometryPublications;
+	presenter.backend().executeGxGpuCommandDrain(fixture.gpu);
+	require(geometryPublications == unchangedPublications && immutableGeometry,
+		"empty drains publish no geometry and published stores never receive subdata writes");
 	if (profiling) {
 		// Match the libretro context owner: release passes/textures while current,
 		// then destroy the backend context resources before its C++ owner dies.
