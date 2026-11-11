@@ -78,6 +78,7 @@ void mutateFrontendGlState() {
 	glScissor(0, 0, 0, 0);
 	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
 	glEnable(GL_DITHER);
+	glPixelStorei(GL_PACK_ALIGNMENT, 8);
 }
 
 struct Script {
@@ -295,6 +296,29 @@ Result runStream(const test::Blua32TestRom& rom, bool threaded, GxGpuDrawTargetM
 		gles.captureGxGpuVramSnapshot(runtime.machine.gxGpu);
 		require(std::equal(result.vram.begin(), result.vram.end(), runtime.machine.gxGpu.readVramSnapshotBytes().begin()),
 			"save-state restore cannot be acknowledged by an older publication generation");
+		// Only this 3x2 rectangle is dirty since the last checkpoint. An external
+		// eight-byte pack alignment must not insert padding into its RGBA rows.
+		for (u32 word : {0xe1000000u, 0x600000ffu, 0x001d000bu, 0x00020003u}) {
+			runtime.machine.gxGpu.writeGp0(word);
+			runtime.machine.scheduler.advanceTo(runtime.machine.scheduler.currentNowCycles() + 10'000);
+			runtime.machine.gxGpu.onService(runtime.machine.scheduler.currentNowCycles());
+		}
+		mutateFrontendGlState();
+		gles.invalidateContextState();
+		gles.captureGxGpuVramSnapshot(runtime.machine.gxGpu);
+		const auto narrow = runtime.machine.gxGpu.readVramSnapshotBytes();
+		for (u32 y = 29u; y < 31u; ++y) for (u32 x = 11u; x < 14u; ++x)
+			require(readLE16(narrow.data() + (y * 1024u + x) * 2u) == 0x001fu,
+				"odd-width dirty snapshot rows remain tightly packed after frontend pixel-store changes");
+		const std::array<f32, 4> red{1, 0, 0, 1};
+		auto texture = gles.createColorTexture(3, 2, &red);
+		mutateFrontendGlState();
+		gles.invalidateContextState();
+		const auto pixels = gles.readColorTexture(texture, 3, 2);
+		for (size_t pixel = 0; pixel < pixels.size(); pixel += 4u)
+			require(pixels[pixel] == 255 && pixels[pixel + 1u] == 0 && pixels[pixel + 2u] == 0 && pixels[pixel + 3u] == 255,
+				"odd-width color capture uses its tightly packed caller-owned capacity");
+		gles.destroyTexture(texture);
 	}
 	worker.reset();
 	observation = nullptr;

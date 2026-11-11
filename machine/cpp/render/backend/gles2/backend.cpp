@@ -119,6 +119,7 @@ std::vector<u8> OpenGLES2Backend::readColorTexture(TextureHandle handle, i32 wid
 	glGenFramebuffers(1, &fbo);
 	drawState.bindFramebuffer(fbo);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, static_cast<GLES2Texture*>(handle)->id, 0);
+	glPixelStorei(GL_PACK_ALIGNMENT, 4);
 	glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
 	drawState.bindFramebuffer(static_cast<GLuint>(previous));
 	glDeleteFramebuffers(1, &fbo);

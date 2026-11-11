@@ -3983,6 +3983,7 @@ void OpenGLES2Backend::captureGxGpuVramSnapshot(GxGpu& gxGpu) {
 	const GxGpuVramCopyRect& dirty = gx.snapshotDirtyRect;
 	if (dirty.right > dirty.left && dirty.bottom > dirty.top) {
 		setRenderTarget(gx.vramFramebuffer, kGxGpuVramXAddressPeriod, gx.vramTextureRows);
+		glPixelStorei(GL_PACK_ALIGNMENT, 4);
 		glReadPixels(dirty.left, dirty.top, dirty.right - dirty.left, dirty.bottom - dirty.top,
 			GL_RGBA, GL_UNSIGNED_BYTE, gx.pixelTransferScratch.data());
 		writeGxGpuVramSnapshotFromReadback(gx, dirty);
