@@ -1,4 +1,6 @@
-"""Compile runtime role indexes from the single authored terrain/actor map."""
+"""Compile sparse ROM rows, collision words and role indexes from one map."""
+
+import struct
 
 ACTOR_SYMBOLS = {
     'formation_down': 'p', 'formation_up': 'P', 'red_mitre': 'M',
@@ -21,3 +23,84 @@ def compile_actor_cells(rows, roles):
                 if role in actor_roles:
                     cells.append([x + 1, y + 1, role])
     return cells
+
+
+# Stage-local ROM data, not a machine image format. All offsets are bytes from
+# the asset base; row directories contain (offset, count), then u16 cell pairs.
+TAPE_HEADER_WORDS = 10
+SOLID_ROLES = {ord(symbol) for symbol in '!#%()+-=@RS^_dsw'}
+
+
+def compile_collision_words(rows, roles):
+    width = len(rows[0])
+    packed = []
+    for row in rows:
+        words = [0] * ((width + 31) // 32)
+        for x, tile in enumerate(row):
+            if not tile:
+                continue
+            role = roles[tile - 1]
+            left = roles[row[x - 1] - 1] if x and row[x - 1] else 0
+            right = roles[row[x + 1] - 1] if x + 1 < width and row[x + 1] else 0
+            if role == 116:
+                solid = right != 49 if 49 <= right <= 55 else 50 <= left <= 55
+            elif 49 <= role <= 54:
+                solid = left == 116
+            else:
+                solid = role in SOLID_ROLES
+            if solid:
+                words[x // 32] |= 1 << (x & 31)
+        packed.append(words)
+    return packed
+
+
+def compile_stage_tape(stage):
+    rows, assets = stage['tile_ids'], stage['tile_assets']
+    width, height = len(rows[0]), len(rows)
+    invisible = set(stage['sky_actor_ids'])
+    foreground = [[(x + 1, assets[tile - 1]) for x, tile in enumerate(row)
+                   if tile and tile not in invisible] for row in rows]
+    backdrop = stage['background']
+    background = [[(row[i], backdrop['tile_assets'][row[i + 1] - 1])
+                   for i in range(0, len(row), 2)] for row in backdrop['rows']]
+    data = bytearray(TAPE_HEADER_WORDS * 4)
+
+    def write_rows(sparse_rows):
+        directory = len(data)
+        data.extend(bytes(len(sparse_rows) * 8))
+        for index, row in enumerate(sparse_rows):
+            struct.pack_into('<II', data, directory + index * 8, len(data), len(row))
+            for column, cell in row:
+                data.extend(struct.pack('<HH', column, cell))
+        return directory
+
+    front_offset = write_rows(foreground)
+    back_offset = write_rows(background)
+    collision_offset = len(data)
+    for row in compile_collision_words(rows, stage['tile_roles']):
+        data.extend(struct.pack('<' + 'I' * len(row), *row))
+    water_offset = len(data)
+    water = stage['water_animation']
+    families = water['tile_families']
+    water_count = 0
+    for y in range(water['first_row'] - 1, height):
+        for x, tile in enumerate(rows[y]):
+            if tile and families[tile - 1]:
+                data.extend(struct.pack('<HHH', x + 1, y + 1, families[tile - 1]))
+                water_count += 1
+    struct.pack_into('<10I', data, 0, width, height, front_offset, back_offset,
+                     len(background), collision_offset, (width + 31) // 32,
+                     water_offset, water_count, len(data))
+    return bytes(data)
+
+
+def stage_runtime_config(stage):
+    """Small control data derived from the same map; no second authored map."""
+    config = {key: value for key, value in stage.items() if key not in {
+        'source', 'tile_ids', 'tile_assets', 'tile_roles', 'sky_actor_ids',
+    }}
+    config['background'] = {key: value for key, value in stage['background'].items()
+                            if key not in {'tile_assets', 'rows'}}
+    config['water_animation'] = {key: value for key, value in stage['water_animation'].items()
+                                if key not in {'tile_families', 'first_row'}}
+    return config

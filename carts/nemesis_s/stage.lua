@@ -11,7 +11,7 @@ local stage_scroll_follower_component<const> = require('stage_scroll_follower_co
 require('constants')
 local bin<const> = require('cartlib/bin')
 local assets<const> = require('bmsx/assets')
-local stage_collision<const> = require('stage_collision')
+local stage_tape<const> = require('stage_tape')
 local grachtwater<const> = require('grachtwater')
 local havenanimatie<const> = require('havenanimatie')
 
@@ -21,7 +21,7 @@ setmetatable(stage, { __index = object_2d })
 
 local resume_scrolling_event<const> = 'stage.resume_scrolling'
 
--- The numeric tile IDs own both artwork and terrain/actor roles.
+-- Actor roles retain their authored meaning independently of bank-cell IDs.
 local stage_char_moon<const> = 39 -- '
 local stage_char_kadekanon<const> = 68 -- D
 local stage_char_kerk<const> = 75 -- K
@@ -46,18 +46,6 @@ local mijter_foe_type_by_symbol<const> = {
 	[stage_char_mijter_red] = mijter_foe_type_red,
 }
 local stage_scroll_follower_view
-
-local new_rows<const> = function(width, height, default_value)
-	local out<const> = {}
-	for y = 1, height do
-		local row<const> = {}
-		for x = 1, width do
-			row[x] = default_value
-		end
-		out[y] = row
-	end
-	return out
-end
 
 function stage:apply_stage_config(stage_data)
 	self.tile_size = stage_data.tile_size
@@ -92,79 +80,28 @@ function stage:advance_actor_spawns(column)
 	self.actor_spawn_index = index
 end
 
-function stage:build_background(background, width)
+function stage:build_background(background, tape)
 	local tiles<const> = self.background_tiles
-	local rows<const> = background.rows
-	local art<const> = background.tile_assets
-	tiles:configure(width, #rows, self.tile_size, self.tile_art)
-	for y = 1, #rows do
-		local row<const> = rows[y]
-		for index = 1, #row, 2 do
-			tiles:admit_tile(row[index], y, art[row[index + 1]])
-		end
-		-- The retained row owns the resolved sources now. Release decoded
-		-- admission data before loading the foreground and animation views.
-		rows[y] = nil
-	end
-	background.rows = nil
-	background.tile_assets = nil
+	tiles:configure(tape.width,tape.background_rows,self.tile_size,self.tile_art)
+	stage_tape.admit_rows(tape,tape.background,tape.background_rows,tiles)
 	self.star_spans = background.star_spans
 	self.night_sky_height = background.night_sky_height
 end
 
 function stage:build_tape()
-	local stage_data<const> = bin.decode(assets.data_nemesis_s_stage_addr, stage_asset_id)
-	local numeric_rows<const> = stage_data.tile_ids
-	local numeric_assets<const> = stage_data.tile_assets
-	local roles<const> = stage_data.tile_roles
+	local stage_data<const> = bin.decode(assets.data_nemesis_s_stage_runtime_addr, stage_asset_id)
+	local tape<const> = stage_tape.open(assets.bin_nemesis_s_stage_tape_addr)
 	self:apply_stage_config(stage_data)
 	self.tile_art = tile_art.new(stage_data.tile_banks)
-    -- Blank spawn markers keep their spawn role while exposing the native stars.
-    local numeric_art=numeric_assets
-    if stage_data.sky_actor_ids then
-        numeric_art={}
-        for id,name in ipairs(numeric_assets) do numeric_art[id]=name end
-        for _,id in ipairs(stage_data.sky_actor_ids) do numeric_art[id]=nil end
-    end
-
-	local width<const> = #numeric_rows[1]
-	local height<const> = #numeric_rows
-
-	self.tile_rows = height
-	self.tape_length_tiles = width
-	local background<const> = stage_data.background
-	if background then
-		self:build_background(background, width)
-	end
+	self.tile_rows = tape.height
+	self.tape_length_tiles = tape.width
+	self:build_background(stage_data.background,tape)
 	local stage_tiles<const> = self.stage_tiles
-	stage_tiles:configure(width, height, self.tile_size, self.tile_art)
-	-- Keep the role-derived collision bits in row words, not a Lua value per cell.
-	self.solid_tape = new_rows((width + 31) // 32, height, 0)
-
-	for stage_y = 1, height do
-		local row<const> = numeric_rows[stage_y]
-		local solid_row<const> = self.solid_tape[stage_y]
-		for stage_x = 1, width do
-			local id<const> = row[stage_x]
-			if id ~= 0 then
-				local imgid<const> = numeric_art[id]
-				if imgid then stage_tiles:admit_tile(stage_x, stage_y, imgid) end
-				if stage_collision.is_solid(roles[id], row, roles, stage_x, width) then
-					local bit<const> = stage_x - 1
-					local word<const> = (bit // 32) + 1
-					solid_row[word] = solid_row[word] | (1 << (bit & 31))
-				end
-			end
-		end
-	end
-
-    if stage_data.harbor_animation then
-        self.harbor=havenanimatie.new(stage_data.harbor_animation,stage_tiles,self.solid_tape)
-    end
-
-	if stage_data.water_animation then
-        self.water=grachtwater.new(stage_data.water_animation,numeric_rows,numeric_assets,stage_tiles)
-    end
+	stage_tiles:configure(tape.width,tape.height,self.tile_size,self.tile_art)
+	stage_tape.admit_rows(tape,tape.foreground,tape.height,stage_tiles)
+	self.solid_tape = stage_tape.collision_rows(tape)
+	self.harbor=havenanimatie.new(stage_data.harbor_animation,stage_tiles,self.solid_tape)
+	self.water=grachtwater.new(stage_data.water_animation,tape,stage_tiles)
 
     local actor_spawns<const> = {}
 	for _, cell in ipairs(stage_data.actor_cells) do

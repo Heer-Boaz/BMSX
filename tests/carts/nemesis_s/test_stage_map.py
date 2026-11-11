@@ -31,5 +31,49 @@ class StageMapTest(unittest.TestCase):
         ])
 
 
+class StageTapeTest(unittest.TestCase):
+    def test_sparse_cells_collision_and_water_match_the_authored_map(self):
+        import struct
+        from stage_map import compile_stage_tape, compile_collision_words, stage_runtime_config
+        path = ROOT / 'carts/nemesis_s/res/data'
+        stage = yaml.safe_load((path / 'nemesis_s_stage.yaml').read_text())
+        blob = (path / 'nemesis_s_stage_tape.bin').read_bytes()
+        self.assertEqual(blob, compile_stage_tape(stage))
+        width, height, front, back, back_rows, collision, words, water, count, length = struct.unpack_from('<10I', blob)
+        self.assertEqual((width, height, length), (len(stage['tile_ids'][0]), len(stage['tile_ids']), len(blob)))
+        invisible = set(stage['sky_actor_ids'])
+        for y, row in enumerate(stage['tile_ids']):
+            offset, size = struct.unpack_from('<II', blob, front + y * 8)
+            actual = [struct.unpack_from('<HH', blob, offset + i * 4) for i in range(size)]
+            expected = [(x + 1, stage['tile_assets'][tile - 1]) for x, tile in enumerate(row) if tile and tile not in invisible]
+            self.assertEqual(actual, expected)
+        self.assertEqual(back_rows, len(stage['background']['rows']))
+        for y, row in enumerate(stage['background']['rows']):
+            offset, size = struct.unpack_from('<II', blob, back + y * 8)
+            self.assertEqual([struct.unpack_from('<HH', blob, offset + i * 4) for i in range(size)],
+                             [(row[i], stage['background']['tile_assets'][row[i + 1] - 1]) for i in range(0, len(row), 2)])
+        for y, row in enumerate(compile_collision_words(stage['tile_ids'], stage['tile_roles'])):
+            self.assertEqual(list(struct.unpack_from('<' + 'I' * words, blob, collision + y * words * 4)), row)
+        families = stage['water_animation']['tile_families']
+        expected_water = [(x + 1, y + 1, families[tile - 1])
+                          for y, row in enumerate(stage['tile_ids']) if y + 1 >= stage['water_animation']['first_row']
+                          for x, tile in enumerate(row) if tile and families[tile - 1]]
+        self.assertEqual([struct.unpack_from('<HHH', blob, water + i * 6) for i in range(count)], expected_water)
+        self.assertEqual(yaml.safe_load((path / 'nemesis_s_stage_runtime.yaml').read_text()), stage_runtime_config(stage))
+
+    def test_collision_roles_and_tree_neighbor_precedence(self):
+        from stage_map import compile_collision_words
+        for role in range(128):
+            actual = compile_collision_words([[1]], [role])[0][0]
+            self.assertEqual(actual, int(chr(role) in '!#%()+-=@RS^_dsw'))
+        for left in range(128):
+            for right in range(128):
+                roles = [left, 116, right]
+                expected = right != 49 if 49 <= right <= 55 else 50 <= left <= 55
+                self.assertEqual(bool(compile_collision_words([[1, 2, 3]], roles)[0][0] & 2), expected)
+                for center in range(49, 56):
+                    roles[1] = center
+                    self.assertEqual(bool(compile_collision_words([[1, 2, 3]], roles)[0][0] & 2), left == 116 and center != 55)
+
 if __name__ == '__main__':
     unittest.main()

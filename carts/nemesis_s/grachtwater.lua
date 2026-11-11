@@ -1,40 +1,29 @@
 -- Each four-column water module has its own offset in an eight-pose ripple.
 -- Cells are admitted from the stage's normal tile IDs once, including its
 -- existing occlusion by the terrain. Only visible modules change their art.
-local image<const> = require('cartlib/gx/image')
 local water<const> = {}
 water.__index = water
 
-function water.new(spec, rows, assets, tiles)
-    local self<const> = setmetatable({groups={}, origin=spec.origin_column or 0, hold=spec.ticks_per_pose},water)
-    local width<const>,height<const> = #rows[1],#rows
-    -- Terrain and collision have consumed the shared numeric map; actors use
-    -- its compiled sparse index. Water releases each row after admission.
-    for y=1,spec.first_row-1 do rows[y]=nil end
-    for _,frames in pairs(spec.frames) do
-        for pose=1,#frames do frames[pose]=image.resolve(frames[pose]) end
+function water.new(spec, tape, tiles)
+    local self<const> = setmetatable({groups={}, origin=spec.origin_column, hold=spec.ticks_per_pose},water)
+    for _,frames in ipairs(spec.frames) do
+        for pose=1,#frames do frames[pose]=tiles.art:resolve(frames[pose]) end
     end
-    local sequences<const> = {}
-    for id,name in ipairs(assets) do sequences[id]=spec.frames[name] end
-    for y=spec.first_row,height do
-        local row<const> = rows[y]
-        for x=1,width do
-            local frames<const> = sequences[row[x]]
-            if frames then
-                local strip<const> = (x-1-self.origin)//4
-                local group = self.groups[strip]
-                if not group then
-                    group={offset=spec.phase_offsets[(strip&7)+1]}
-                    self.groups[strip]=group
-                end
-                local n<const> = #group
-                local sources<const>,slot<const> = tiles:bind_tile(x,y)
-                group[n+1]=sources
-                group[n+2]=slot
-                group[n+3]=frames
-            end
+    local cells<const>: *u16 = tape.water
+    for index=0,tape.water_count-1 do
+        local x<const>,y<const> = cells[index*3],cells[index*3+1]
+        local frames<const> = spec.frames[cells[index*3+2]]
+        local strip<const> = (x-1-self.origin)//4
+        local group = self.groups[strip]
+        if not group then
+            group={offset=spec.phase_offsets[(strip&7)+1]}
+            self.groups[strip]=group
         end
-        rows[y]=nil
+        local n<const> = #group
+        local sources<const>,slot<const> = tiles:bind_tile(x,y)
+        group[n+1]=sources
+        group[n+2]=slot
+        group[n+3]=frames
     end
     return self
 end

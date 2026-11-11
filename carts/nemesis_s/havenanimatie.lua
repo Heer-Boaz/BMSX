@@ -1,6 +1,5 @@
 -- Stadsburg animates only the sites currently in view. A cargo character
 -- takes its native terrain role with it when the winch lays more chain.
-local image<const> = require('cartlib/gx/image')
 local world<const> = require('cartlib/world/world')
 local haven<const> = {}
 haven.__index = haven
@@ -42,8 +41,8 @@ function haven.new(spec, tiles, solid_rows)
             if cell[4]==0 then tiles:admit_tile(cell[1],cell[2],spec.empty) end
         end
     end
-    self.patterns[0]=image.resolve(spec.empty)
-    for id=1,#self.patterns do self.patterns[id]=image.resolve(self.patterns[id]) end
+    self.patterns[0]=tiles.art:resolve(spec.empty)
+    for id=1,#self.patterns do self.patterns[id]=tiles.art:resolve(self.patterns[id]) end
     for _,clip in ipairs(self.clips) do
         clip.pose=1
         clip.health=clip.max_health

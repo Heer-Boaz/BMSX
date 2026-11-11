@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Compile De Bevroren Haven from the approved 8x8 assets and native actor symbols.
 
-One numeric map owns terrain and native enemy triggers. No collision map.
+One authored map owns terrain and native enemy triggers. Runtime collision
+words and sparse bank-cell rows are derived here, never authored separately.
 Run from the repository: python scripts/nemesis_s/stadsburg/build_level.py
 """
 from pathlib import Path
@@ -15,7 +16,7 @@ from bake_water import compile_water
 from bake_havenanimatie import compile_harbor
 from bake_stadsgroen import greenery_poses
 from bake_achtergrond import compile_background
-from stage_map import ACTOR_SYMBOLS, compile_actor_cells
+from stage_map import ACTOR_SYMBOLS, compile_actor_cells, compile_stage_tape, stage_runtime_config
 
 ROOT = Path(__file__).resolve().parents[3] / 'carts/nemesis_s'
 
@@ -372,20 +373,18 @@ def main():
     runtime['background']['rows']=[FlowRow(row) for row in runtime['background']['rows']]
     # Validate map composition and animation before relocating source drawings.
     # A rejected placement must not leave the catalog pointing at moved files.
-    animation_assets=set(runtime['harbor_animation']['patterns'])
     for entry in catalog['tiles']:
         source=ROOT/entry['image']
-        active=(entry['id'] in packed and entry['id']!=1) or entry['asset'] in animation_assets
-        target=(ROOT/'res/img' if active
-                else ROOT/'authoring/terreintegels') / source.name
+        banked=(entry['id'] in packed and entry['id']!=1) or source.parent.name=='banked_tiles'
+        target=ROOT/'authoring'/('banked_tiles' if banked else 'terreintegels')/source.name
         if target!=source:
             target.parent.mkdir(parents=True,exist_ok=True)
             source.replace(target)
             entry['image']=target.relative_to(ROOT).as_posix()
-        if not active:
-            (ROOT/'res/img'/source.name).unlink(missing_ok=True)
     out=ROOT/'res/data';out.mkdir(parents=True,exist_ok=True)
     (out/'nemesis_s_stage.yaml').write_text(yaml.dump(runtime,Dumper=Dumper,sort_keys=False,width=100000,allow_unicode=True))
+    (out/'nemesis_s_stage_tape.bin').write_bytes(compile_stage_tape(runtime))
+    (out/'nemesis_s_stage_runtime.yaml').write_text(yaml.dump(stage_runtime_config(runtime),Dumper=Dumper,sort_keys=False,width=100000,allow_unicode=True))
     (ROOT/'authoring/tileset.yaml').write_text(yaml.safe_dump(catalog,sort_keys=False,allow_unicode=True,width=120))
     image=Image.new('RGB',(width*8,height*8),'black')
     for y,row in enumerate(cells):
