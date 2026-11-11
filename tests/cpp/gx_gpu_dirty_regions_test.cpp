@@ -38,6 +38,16 @@ int main() {
 	copies.clear();
 	dirty.consume(0, 0, 1024, 1024, record);
 	require(copies == std::vector<DirtyRect>{{0, 0, 1024, 1024}}, "a full surface is one copy, not one copy per cell");
+	for (const u32 yGate : {0u, 1u}) for (const u32 rowMask : {511u, 1023u}) {
+		const u32 lastRow = gxGpuVramYAddressMask(yGate) & rowMask;
+		dirty.markLogical(1023u, 1023u, 3u, 2u, yGate, rowMask);
+		copies.clear();
+		dirty.consume(0, 0, 1024, 1024, record);
+		require(copies == std::vector<DirtyRect>{{0, 0, 16, 16}, {1008, 0, 1024, 16},
+			{0, static_cast<i32>(lastRow & ~15u), 16, static_cast<i32>(lastRow + 1u)},
+			{1008, static_cast<i32>(lastRow & ~15u), 1024, static_cast<i32>(lastRow + 1u)}},
+			"logical demands wrap independently through X, the guest Y gate and physical rows");
+	}
 
 	std::array<u8, 64 * 64> expected{};
 	u32 random = 0x31b872a9u;

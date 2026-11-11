@@ -279,6 +279,7 @@ struct OpenGLES2GxGpuState {
 	GxGpuVramCopyRect solidCommandRect{};
 	GxGpuVramCopyRect lineBatchRect{};
 	GxGpuVramCopyRect texturedBatchRect{};
+	GxGpuDirtyRegions texturedSourceReads;
 	bool texturedBatchUniformGain = true;
 	GxGpuVramCopyRect texturedCommandRect{};
 	GxGpuVramCopyRect texturedDependencyBatchRect{};
@@ -2124,7 +2125,8 @@ void setGxGpuVertexBoundsRect(
 	clipGxGpuVramCopyRectToDrawingArea(rect, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 }
 
-u32 syncGxGpuTexturedSourceTexture(OpenGLES2GxGpuState& gx,
+template <bool BatchSourceReads = false>
+u32 prepareGxGpuTexturedSourceReads(OpenGLES2GxGpuState& gx,
 	const GxGpuCommandStorage& commandBuffer,
 	u32 commandIndex,
 	size_t vertexFloatStart,
@@ -2217,14 +2219,25 @@ u32 syncGxGpuTexturedSourceTexture(OpenGLES2GxGpuState& gx,
 	u32 overlaps = 0u;
 	if (gxGpuVramLogicalAreaOverlapsBounds(sourceX, sourceY, sourceWidth, sourceHeight, commandRect.left, commandRect.top, commandRect.right, commandRect.bottom, vramYAddressExtensionWord, gx.vramTextureRowMask)) overlaps |= GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP;
 	if (gxGpuVramLogicalAreaOverlapsBounds(sourceX, sourceY, sourceWidth, sourceHeight, batchRect.left, batchRect.top, batchRect.right, batchRect.bottom, vramYAddressExtensionWord, gx.vramTextureRowMask)) overlaps |= GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP;
-	syncGxGpuSampleTextureLogicalArea(gx, sourceX, sourceY, sourceWidth, sourceHeight, vramYAddressExtensionWord);
+	const u32 clutX = gxGpuTextureClutBaseX(textureWord);
+	const u32 clutY = gxGpuTextureClutBaseY(textureWord, vramYAddressExtensionWord);
+	const u32 clutWidth = textureMode == 0u ? GX_GPU_CLUT_4BIT_WORDS : GX_GPU_CLUT_8BIT_WORDS;
 	if (textureMode < 2u) {
-		const u32 clutX = gxGpuTextureClutBaseX(textureWord);
-		const u32 clutY = gxGpuTextureClutBaseY(textureWord, vramYAddressExtensionWord);
-		const u32 clutWidth = textureMode == 0u ? GX_GPU_CLUT_4BIT_WORDS : GX_GPU_CLUT_8BIT_WORDS;
 		if (gxGpuVramLogicalAreaOverlapsBounds(clutX, clutY, clutWidth, 1u, commandRect.left, commandRect.top, commandRect.right, commandRect.bottom, vramYAddressExtensionWord, gx.vramTextureRowMask)) overlaps |= GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP;
 		if (gxGpuVramLogicalAreaOverlapsBounds(clutX, clutY, clutWidth, 1u, batchRect.left, batchRect.top, batchRect.right, batchRect.bottom, vramYAddressExtensionWord, gx.vramTextureRowMask)) overlaps |= GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP;
-		syncGxGpuSampleTextureLogicalArea(gx, clutX, clutY, clutWidth, 1u, vramYAddressExtensionWord);
+	}
+	if constexpr (BatchSourceReads) {
+		// A dependent command is not admitted until its preceding batch has
+		// drawn. Self-reading primitives retain immediate per-triangle reads.
+		if (overlaps == 0u) {
+			gx.texturedSourceReads.markLogical(sourceX, sourceY, sourceWidth, sourceHeight,
+				vramYAddressExtensionWord, gx.vramTextureRowMask);
+			if (textureMode < 2u) gx.texturedSourceReads.markLogical(clutX, clutY, clutWidth, 1u,
+				vramYAddressExtensionWord, gx.vramTextureRowMask);
+		}
+	} else {
+		syncGxGpuSampleTextureLogicalArea(gx, sourceX, sourceY, sourceWidth, sourceHeight, vramYAddressExtensionWord);
+		if (textureMode < 2u) syncGxGpuSampleTextureLogicalArea(gx, clutX, clutY, clutWidth, 1u, vramYAddressExtensionWord);
 	}
 	return overlaps;
 }
@@ -2750,6 +2763,7 @@ void executeNewGxGpuCommands(OpenGLES2GxGpuState& gx, const GxGpuCommandStorage&
 	resetGxGpuVramCopyRect(gx.solidBatchRect);
 	resetGxGpuVramCopyRect(gx.texturedBatchRect);
 	resetGxGpuVramCopyRect(gx.lineBatchRect);
+	gx.texturedSourceReads.clear();
 	for (; commandIndex < commandLimit; commandIndex += 1u) {
 		const u8 commandKind = commandBuffer.commandKind[commandIndex];
 		const bool commandDrawsTexture = (commandKind == GX_GPU_COMMAND_DRAW_POLYGON || commandKind == GX_GPU_COMMAND_DRAW_RECTANGLE)
@@ -2868,14 +2882,14 @@ void executeNewGxGpuCommands(OpenGLES2GxGpuState& gx, const GxGpuCommandStorage&
 				if (commandVertexFloatCount != 0u) {
 					const size_t texturedVertexFloatStride = fixedTexturedColor ? kGxGpuFixedTexturedVertexFloats : kGxGpuTexturedVertexFloats;
 					setGxGpuVertexBoundsRect(rasterKind, gx.texturedCommandRect, gx.texturedGeometry.vertices.data(), texturedCommandVertexStart, texturedCommandVertexEnd, texturedVertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
-					u32 sourceOverlaps = syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, texturedCommandVertexStart, texturedCommandVertexEnd, gx.texturedCommandRect, gx.texturedBatchRect, fixedTexturedColor);
+					u32 sourceOverlaps = prepareGxGpuTexturedSourceReads<true>(gx, commandBuffer, commandIndex, texturedCommandVertexStart, texturedCommandVertexEnd, gx.texturedCommandRect, gx.texturedBatchRect, fixedTexturedColor);
 					if ((sourceOverlaps & GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP) != 0u) {
 						flushTexturedCommands(gx, commandBuffer, precedingVertexFloatCount, texturedBatchCommandIndex);
 						texturedBatchCommandIndex = commandIndex;
 						precedingVertexFloatCount = 0u;
 						texturedVertexFloatCount = commandVertexFloatCount;
 						setGxGpuVertexBoundsRect(rasterKind, gx.texturedCommandRect, gx.texturedGeometry.vertices.data(), texturedCommandVertexStart, texturedCommandVertexEnd, texturedVertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
-						sourceOverlaps = syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, texturedCommandVertexStart, texturedCommandVertexEnd, gx.texturedCommandRect, gx.texturedBatchRect, fixedTexturedColor);
+						sourceOverlaps = prepareGxGpuTexturedSourceReads<true>(gx, commandBuffer, commandIndex, texturedCommandVertexStart, texturedCommandVertexEnd, gx.texturedCommandRect, gx.texturedBatchRect, fixedTexturedColor);
 					}
 					if ((sourceOverlaps & GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP) != 0u) {
 						if (precedingVertexFloatCount != 0u) {
@@ -3448,7 +3462,7 @@ void renderTexturedVertices(OpenGLES2GxGpuState& gx,
 						|| gxGpuVramCopyRectsOverlap(gx, gx.texturedDependencyBatchRect, gx.vramCopyRectScratch, vramYAddressExtensionWord))) {
 					if (dependencyBatchFloatStart != 0u) {
 						if (syncSourceBetweenTriangles) {
-							syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, generationFloatStart, generationFloatStart + vertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, fixedColor);
+							prepareGxGpuTexturedSourceReads(gx, commandBuffer, commandIndex, generationFloatStart, generationFloatStart + vertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, fixedColor);
 						}
 						if (samplesDestination && !gx.drawTargets.enabled()) {
 							syncGxGpuSampleTextureLogicalArea(gx,
@@ -3475,7 +3489,7 @@ void renderTexturedVertices(OpenGLES2GxGpuState& gx,
 			}
 			if (dependencyBatchFloatStart != 0u) {
 				if (syncSourceBetweenTriangles) {
-					syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, generationFloatStart, generationFloatStart + vertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, fixedColor);
+					prepareGxGpuTexturedSourceReads(gx, commandBuffer, commandIndex, generationFloatStart, generationFloatStart + vertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, fixedColor);
 				}
 				if (samplesDestination && !gx.drawTargets.enabled()) {
 					syncGxGpuSampleTextureLogicalArea(gx,
@@ -3527,7 +3541,7 @@ void renderTexturedCommand(OpenGLES2GxGpuState& gx,
 		vramYAddressExtensionWord);
 	const u32 maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
 	const bool readsVram = gxGpuCommandSemiTransparencyEnabled(opcode) || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
-	const u32 sourceOverlaps = syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, generationFloatStart, generationFloatStart + vertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, fixedColor);
+	const u32 sourceOverlaps = prepareGxGpuTexturedSourceReads(gx, commandBuffer, commandIndex, generationFloatStart, generationFloatStart + vertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, fixedColor);
 	const bool sourceOverlapsDestination = (sourceOverlaps & GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP) != 0u;
 	const bool textureBarrier = readsVram && gx.textureBarrier;
 	const bool samplesDestination = readsVram && !gx.framebufferFetch && !textureBarrier;
@@ -3554,6 +3568,13 @@ void renderTexturedCommand(OpenGLES2GxGpuState& gx,
 
 size_t flushTexturedCommands(OpenGLES2GxGpuState& gx, const GxGpuCommandStorage& commandBuffer, size_t vertexFloatCount, u32 batchCommandIndex) {
 	if (vertexFloatCount != 0u) {
+		// Each admitted source is independent of earlier writes in this batch.
+		// Publish the demanded cells together before drawing, not once per tile.
+		gx.texturedSourceReads.consume(0, 0, kGxGpuVramXAddressPeriod, gx.vramTextureRows,
+			[&](i32 left, i32 top, i32 right, i32 bottom) {
+				gx.drawTargets.resolve({left, top, right, bottom}, gx.sampleDirtyRegions, false);
+				syncGxGpuSampleTextureArea(gx, left, top, right, bottom);
+			});
 		const size_t generationFloatStart = gx.texturedGeometry.commandFloatOffsets[batchCommandIndex];
 		const u32 topLeftWord = commandBuffer.commandDrawingAreaTopLeftWord[batchCommandIndex];
 		const u32 bottomRightWord = commandBuffer.commandDrawingAreaBottomRightWord[batchCommandIndex];

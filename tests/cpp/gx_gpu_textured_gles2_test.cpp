@@ -1026,6 +1026,103 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 			&& profile.commands == 2u && profile.logicalBytes == 4u,
 			"the deferred upload is attributed exactly once after completion");
 	}
+	// First use of a static atlas is one source-publication boundary for the
+	// existing textured batch, not one copy per first-touched 16x16 cell.
+	for (const u32 word : {0xe2000000u, 0xe3000000u, 0xe40fffffu, 0xe5000000u, 0xe6000000u,
+		0xe1000118u, 0xa0000000u, 0x01000200u, 0x00300100u}) {
+		fixture.gpu.writeGp0(word);
+		fixture.scheduler.advanceTo(fixture.scheduler.currentNowCycles() + 10'000);
+		fixture.gpu.onService(fixture.scheduler.currentNowCycles());
+	}
+	for (u32 pixel = 0u; pixel < 256u * 48u; pixel += 2u) {
+		const u32 low = ((pixel * 37u) & 0xffffu) | 1u;
+		const u32 high = (((pixel + 1u) * 37u) & 0xffffu) | 1u;
+		fixture.gpu.writeGp0(low | (high << 16u));
+	}
+	fixture.scheduler.advanceTo(fixture.scheduler.currentNowCycles() + 1'000'000);
+	fixture.gpu.onService(fixture.scheduler.currentNowCycles());
+	for (const u32 word : {0x60000000u, 0x00400000u, 0x00400100u}) {
+		fixture.gpu.writeGp0(word);
+		fixture.scheduler.advanceTo(fixture.scheduler.currentNowCycles() + 10'000);
+		fixture.gpu.onService(fixture.scheduler.currentNowCycles());
+	}
+	presenter.backend().executeGxGpuCommandDrain(fixture.gpu);
+	for (u32 tile = 0u; tile < 64u; ++tile) {
+		const u32 x = (tile & 31u) * 8u, y = (tile >> 5u) * 8u;
+		for (const u32 word : {0x65000000u, ((64u + y) << 16u) | x, (y << 8u) | x, 0x00080008u}) {
+			fixture.gpu.writeGp0(word);
+			fixture.scheduler.advanceTo(fixture.scheduler.currentNowCycles() + 10'000);
+			fixture.gpu.onService(fixture.scheduler.currentNowCycles());
+		}
+	}
+	const unsigned atlasDraws = draws, atlasGeometryDraws = geometryDraws;
+	require(fixture.gpu.readDeviceOutput().commandBuffer.executedCommandCount == 64u,
+		"all static tile commands reach execution before the measured submission");
+	presenter.backend().executeGxGpuCommandDrain(fixture.gpu);
+	if (gles) std::cout << "GX-SOURCE-DEMAND: tiles=64 draws=" << draws - atlasDraws
+		<< " textured_draws=" << geometryDraws - atlasGeometryDraws << std::endl;
+	if (gles) require(draws == atlasDraws + 2u && geometryDraws == atlasGeometryDraws + 1u,
+		"64 static tiles share one coalesced source copy and one textured draw");
+	// Demand does not clean unused cells of the uploaded page. Their first use
+	// still copies them, while a repeated read needs no additional source copy.
+	for (u32 tile = 0u; tile < 2u; ++tile) {
+		for (const u32 word : {0x65000000u, 0x00500000u | (tile * 8u), 0x00002000u, 0x00080008u}) {
+			fixture.gpu.writeGp0(word);
+			fixture.scheduler.advanceTo(fixture.scheduler.currentNowCycles() + 10'000);
+			fixture.gpu.onService(fixture.scheduler.currentNowCycles());
+		}
+		const unsigned before = draws;
+		presenter.backend().executeGxGpuCommandDrain(fixture.gpu);
+		if (gles) require(draws == before + (tile == 0u ? 2u : 1u),
+			"unused source cells stay dirty and subsequent unchanged reads stay clean");
+	}
+	presenter.backend().captureGxGpuVramSnapshot(fixture.gpu);
+	const auto atlasResult = fixture.gpu.readDeviceOutput().vramSnapshotBytes;
+	for (u32 y = 0u; y < 16u; ++y) for (u32 x = 0u; x < 256u; ++x) {
+		const size_t at = ((64u + y) * 1024u + x) * 2u;
+		const u32 actual = static_cast<u32>(atlasResult[at]) | (static_cast<u32>(atlasResult[at + 1u]) << 8u);
+		const u32 expected = (((y * 256u + x) * 37u) & 0xffffu) | 1u;
+		const size_t sourceAt = ((256u + y) * 1024u + 512u + x) * 2u;
+		if (actual != expected) throw std::runtime_error("coalesced source raw word at " + std::to_string(x)
+			+ "," + std::to_string(y) + " actual=" + std::to_string(actual) + " expected=" + std::to_string(expected)
+			+ " source=" + std::to_string(atlasResult[sourceAt] | (atlasResult[sourceAt + 1u] << 8u)));
+	}
+	// A palette may be written by a retained textured draw in the same batch
+	// mode. Its next use must split that batch and materialize the cached target
+	// before consuming base-sample dirtiness, not sample the old zero palette.
+	for (const u32 word : {
+		0xa0000000u, 0x00000140u, 0x00010004u, 0x11111111u, 0x11111111u,
+		0xa0000000u, 0x00180140u, 0x00010010u,
+		0x03e003e0u, 0x03e003e0u, 0x03e003e0u, 0x03e003e0u,
+		0x03e003e0u, 0x03e003e0u, 0x03e003e0u, 0x03e003e0u,
+		0xa0000000u, 0x00180150u, 0x00010010u,
+		0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+		0xe1000005u,
+		// Publish the zero B palette before it becomes dirty only in a cached
+		// render target. This source read is transparent and changes no pixel.
+		0x65000000u, 0x00500048u, 0x06150000u, 0x00010008u,
+	}) {
+		fixture.gpu.writeGp0(word);
+		fixture.scheduler.advanceTo(fixture.scheduler.currentNowCycles() + 10'000);
+		fixture.gpu.onService(fixture.scheduler.currentNowCycles());
+	}
+	presenter.backend().executeGxGpuCommandDrain(fixture.gpu);
+	for (const u32 word : {
+		0x65000000u, 0x00180150u, 0x06140000u, 0x00010010u,
+		0x65000000u, 0x00500040u, 0x06150000u, 0x00010008u,
+	}) {
+		fixture.gpu.writeGp0(word);
+		fixture.scheduler.advanceTo(fixture.scheduler.currentNowCycles() + 10'000);
+		fixture.gpu.onService(fixture.scheduler.currentNowCycles());
+	}
+	presenter.backend().executeGxGpuCommandDrain(fixture.gpu);
+	presenter.backend().captureGxGpuVramSnapshot(fixture.gpu);
+	const auto paletteResult = fixture.gpu.readDeviceOutput().vramSnapshotBytes;
+	for (u32 x = 64u; x < 72u; ++x) {
+		const size_t at = (80u * 1024u + x) * 2u;
+		require((paletteResult[at] | (paletteResult[at + 1u] << 8u)) == 0x03e0u,
+			"a pending textured palette write is visible to the following indexed draw");
+	}
 	// The device's admitted interval can occupy every command slot. Six vertices
 	// with fixed color planes are the largest textured command representation.
 	require(fixture.gpu.readDeviceOutput().commandBuffer.commandCount == 0u,

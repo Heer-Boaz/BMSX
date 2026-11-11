@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/types.h"
-#include "spec/gx/vram.h"
+#include "render/backend/gx_gpu_render_rules.h"
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -25,6 +25,27 @@ public:
 		for (u32 row = static_cast<u32>(top) >> kCellShift; row < endRow; ++row) {
 			m_rows[row][0] |= low;
 			m_rows[row][1] |= high;
+		}
+	}
+
+	// Logical reads may wrap in X, through the guest Y gate and through the
+	// installed physical rows. Store their demand in the same physical cells
+	// used by the surfaces that own the words.
+	void markLogical(u32 x, u32 y, u32 width, u32 height, u32 yAddressWord, u32 physicalRowMask) {
+		const u32 yMask = gxGpuVramYAddressMask(yAddressWord) & physicalRowMask;
+		u32 row = y & yMask;
+		while (height != 0u) {
+			const u32 rows = gxGpuVramWrappedHeight(row, height, yAddressWord, physicalRowMask);
+			u32 column = x & (GX_GPU_VRAM_X_ADDRESS_PERIOD - 1u), remainingWidth = width;
+			while (remainingWidth != 0u) {
+				const u32 columns = gxGpuVramWrappedWidth(column, remainingWidth);
+				mark(static_cast<i32>(column), static_cast<i32>(row),
+					static_cast<i32>(column + columns), static_cast<i32>(row + rows));
+				column = 0u;
+				remainingWidth -= columns;
+			}
+			row = 0u;
+			height -= rows;
 		}
 	}
 
