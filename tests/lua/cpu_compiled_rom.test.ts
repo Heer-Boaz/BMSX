@@ -15,6 +15,7 @@ import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_pa
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { COP0_EXEC } from '../../machine/ts/spec/blua32/cop0';
+import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_FUNCTION_RECORD_SIZE } from '../../machine/ts/spec/blua32/image_format';
 import { BASE_BX_BITS, INSTRUCTION_BYTES, MAX_EXT_BX, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
@@ -22,7 +23,7 @@ import { IO_CART_SELECT } from '../../machine/ts/spec/bmsx/io';
 import { CART_RAM_BASE, CART_ROM_BASE, CART_ROM_END, DYNAMIC_RAM_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
-import { linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { blua32TestFunctionAddress, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
 
 function loadSource(kind: MemoryAccessKind, displaced = false) {
@@ -337,3 +338,98 @@ for (const cartridgeBound of [false, true]) test(`cross-page links follow the in
 	}
 	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 });
+
+for (const ramRecord of [false, true]) {
+	test(ramRecord ? 'a system caller uses the ambient EXEC image for a RAM function record'
+		: 'warm cartridge calls read function records through EXEC rather than data SELECT', () => {
+		const record = DYNAMIC_RAM_BASE + 0x4000, code = record + 0x800;
+		const systemText = new Uint8Array(11 * INSTRUCTION_BYTES);
+		writeInstruction(systemText, 0, OpCode.LOADK, 0, 0, 0);
+		writeInstruction(systemText, 1, OpCode.LOAD_MEM, 0, 0, MemoryAccessKind.Word);
+		writeInstruction(systemText, 2, OpCode.MTC0, 0, COP0_EXEC, 0);
+		writeInstruction(systemText, 3, OpCode.WIDE, 0, 0, 0);
+		writeInstruction(systemText, 4, OpCode.CLOSURE, 4, 0, 0);
+		writeInstruction(systemText, 5, OpCode.MOV, 0, 4, 0);
+		writeInstruction(systemText, 6, OpCode.CALL, 0, 1, 1);
+		writeInstruction(systemText, 7, OpCode.RET, 0, 1, 0);
+		writeInstruction(systemText, 8, OpCode.HALT, 0, 0, 0);
+		writeInstruction(systemText, 9, OpCode.LOADK, 0, 0, 1);
+		writeInstruction(systemText, 10, OpCode.RET, 0, 1, 0);
+		const system = { text: systemText, functions: [
+			{ firstWord: 0, wordCount: 3, maxStack: 8 },
+			{ firstWord: 3, wordCount: 5, maxStack: 8 },
+			{ firstWord: 8, wordCount: 1 }, { firstWord: 9, wordCount: 2, maxStack: 8 },
+		], constants: [CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET, 11],
+			exceptionFunctionIndex: 2, closureRelocations: [{ wordIndex: 4, functionAddress: record }] };
+		const text = new Uint8Array(10 * INSTRUCTION_BYTES);
+		writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
+		writeInstruction(text, 1, OpCode.CLOSURE, 4, 0, 0);
+		writeInstruction(text, 2, OpCode.MOV, 0, 4, 0);
+		writeInstruction(text, 3, OpCode.CALL, 0, 1, 1);
+		writeInstruction(text, 4, OpCode.MOV, 3, 0, 0);
+		writeInstruction(text, 5, OpCode.JMP, 0, 63, 60, 255);
+		writeInstruction(text, 6, OpCode.LOADK, 0, 0, 1);
+		writeInstruction(text, 7, OpCode.RET, 0, 1, 0);
+		writeInstruction(text, 8, OpCode.LOADK, 0, 0, 2);
+		writeInstruction(text, 9, OpCode.RET, 0, 1, 0);
+		const source = { text, functions: [{ firstWord: 0, wordCount: 6, maxStack: 8 },
+			{ firstWord: 6, wordCount: 2, maxStack: 8 }, { firstWord: 8, wordCount: 2, maxStack: 8 }],
+			constants: [0, 22, 44], closureRelocations: [{ wordIndex: 1,
+				functionAddress: blua32TestFunctionAddress(ramRecord ? 0 : CART_ROM_BASE, 1) }] };
+		const pair = linkRawTestBlua32Pair(system, source);
+		const other = linkRawTestBlua32Pair(system, { ...source, constants: [0, 33, 55] });
+		const otherRecord = other.cartSymbols.functionAddresses[1] - CART_ROM_BASE;
+		writeLE32(other.cartRomBytes, otherRecord + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, other.cartImage.functions[2].codeAddress);
+		writeLE32(other.cartRomBytes, otherRecord + BLUA32_FUNCTION_MAX_STACK_OFFSET, 12);
+		const machines = [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter].map(backend =>
+			machine(pair.systemRomBytes, cartridgeSlots(pair.cartRomBytes, other.cartRomBytes), backend));
+		for (const { cpu, memory } of machines) {
+			const template = pair.systemSymbols.functionAddresses[3];
+			memory.writeBytes(record, pair.systemRomBytes.subarray(template, template + BLUA32_FUNCTION_RECORD_SIZE));
+			memory.writeMappedU32LE(record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, code);
+			memory.writeBytes(code, systemText.subarray(9 * INSTRUCTION_BYTES));
+			assert.equal(cpu.runUntilDepth(0, 4), RunResult.Yielded);
+			assert.equal(cpu.readFrameExecutionDomain(0), 0, 'EXEC establishes socket 0 before SELECT changes');
+			memory.writeMappedWord(IO_CART_SELECT, 1);
+			assert.equal(memory.readMappedU32LE(pair.cartSymbols.functionAddresses[1]), other.cartImage.functions[2].codeAddress,
+				'ordinary data reads see the different record fitted to socket 1');
+		}
+		runCpuParity(machines[0].cpu, machines[1].cpu, 20000);
+		runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
+		const entry = pair.cartImage.functions[0].codeAddress + 2 * INSTRUCTION_BYTES;
+		for (const { cpu } of machines) {
+			assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(3), 22);
+			cpu.writeFrameExecution(0, 0, pair.cartSymbols.functionAddresses[0], entry);
+		}
+		const root = machines[0].cpu.rootThread.frameAtDepth(0);
+		assert.ok(root.executionImage.compiledCodeLookup!.find(entry, 0)!.compiledBlocks!.entries[(entry & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2],
+			'the repeated caller has a generated entry');
+		for (let grant = 1; grant <= 128; ++grant) {
+			runCpuParity(machines[0].cpu, machines[1].cpu, grant);
+			assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+			assert.equal(machines[0].cpu.rootThread.frameAtDepth(0).registers.getNumber(3), 22);
+		}
+		runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
+		for (const { cpu } of machines) cpu.writeFrameExecution(0, 0, pair.cartSymbols.functionAddresses[0], entry);
+		runCpuParity(machines[0].cpu, machines[1].cpu, 3);
+		if (ramRecord) {
+			assert.equal(machines[0].cpu.readFrameExecutionDomain(1), SYSTEM_EXECUTION_DOMAIN_ID);
+			const relay = machines[0].cpu.rootThread.frameAtDepth(1);
+			const relayEntry = pair.systemImage.functions[1].codeAddress + 2 * INSTRUCTION_BYTES;
+			assert.ok(relay.executionImage.compiledCodeLookup!.find(relayEntry, 0)!.compiledBlocks!.entries[(relayEntry & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2],
+				'the system relay is also generated');
+			for (let step = 0; step < 8 && machines[0].cpu.getFrameDepth() !== 3; ++step) runCpuParity(machines[0].cpu, machines[1].cpu, 1);
+		}
+		assert.equal(machines[0].cpu.getFrameDepth(), ramRecord ? 3 : 2);
+		const callee = machines[0].cpu.rootThread.currentFrame!;
+		assert.equal(callee.executionImage.executionDomainId, 0, 'CALL does not replace the ambient EXEC image with its system caller');
+		assert.equal(callee.stackCapacity, 8, 'CALL consumes the execution-socket record, not SELECT metadata');
+		assert.equal(callee.pc, ramRecord ? code : pair.cartImage.functions[1].codeAddress);
+		assert.ok(callee.executionImage.compiledCodeLookup!.find(callee.pc, 0)!.compiledBlocks!.entries[(callee.pc & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2],
+			'the callee body is generated as well as its caller');
+		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+		runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
+		for (const { cpu } of machines) assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(0), 22,
+			'the result uses cart-0 constants, not system 11, selected socket 33, or the other record target 44');
+	});
+}
