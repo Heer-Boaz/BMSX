@@ -426,6 +426,7 @@ int main(int argc, char** argv) {
 		video_presenter_begin_frame(drop_video);
 		const uint64_t run_start_ns = frame_timing.record_frame ? monotonic_ns() : 0u;
 		core->retro_run();
+		input_timeline_finish_run();
 		const bool presented_frame = video_presenter_end_frame();
 		if (use_control) host_control_after_frame(presented_frame);
 		const uint64_t run_end_ns = frame_timing.record_frame ? monotonic_ns() : 0u;

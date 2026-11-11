@@ -698,6 +698,19 @@ if(BMSX_BUILD_TESTS)
 	)
 
 	if(UNIX AND NOT APPLE)
+		if(BMSX_ENABLE_GLES2 OR BMSX_BUILD_LIBRETRO_HOST)
+			add_executable(bmsx_libretro_host_input_timeline_tests
+				${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_input_timeline_test.c
+				${BMSX_LIBRETRO_HOST_DIR}/input_timeline.c
+				${BMSX_LIBRETRO_HOST_DIR}/keyboard_input.c
+				${BMSX_LIBRETRO_HOST_DIR}/video_presenter.c
+				${BMSX_LIBRETRO_HOST_DIR}/software_frame_blitter.c
+				${BMSX_LIBRETRO_HOST_DIR}/host_fatal.c
+			)
+			target_include_directories(bmsx_libretro_host_input_timeline_tests PRIVATE ${BMSX_LIBRETRO_HOST_DIR} ${BMSX_LIBRETRO_DIR})
+			target_link_libraries(bmsx_libretro_host_input_timeline_tests PRIVATE m)
+			add_test(NAME bmsx_libretro_host_input_timeline_tests COMMAND bmsx_libretro_host_input_timeline_tests)
+		endif()
 		if(BMSX_BUILD_LIBRETRO_HOST AND NOT CMAKE_CROSSCOMPILING)
 			add_executable(bmsx_libretro_host_input_devices_tests
 				${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_input_devices_test.c

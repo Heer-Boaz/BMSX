@@ -70,7 +70,7 @@ static size_t g_test_capture_event_count = 0;
 static size_t g_test_capture_event_capacity = 0;
 static size_t g_test_capture_event_next = 0;
 static uint64_t g_timeline_last_frame = 0;
-static uint64_t g_cartridge_presented_frame_count = 0;
+static uint64_t g_cartridge_run_frame_count = 0;
 static bmsx_read_execution_domain_id_t g_read_execution_domain_id = NULL;
 static bool g_timeline_active = false;
 static bool g_cartridge_timeline_started = false;
@@ -725,7 +725,7 @@ static void parse_input_timeline_file(const char* timeline_path, uint64_t frame_
 	g_test_capture_events = NULL;
 	g_test_capture_event_capacity = 0;
 	g_timeline_last_frame = 0;
-	g_cartridge_presented_frame_count = 0;
+	g_cartridge_run_frame_count = 0;
 	g_timeline_active = false;
 	g_cartridge_timeline_started = false;
 
@@ -898,28 +898,37 @@ void input_timeline_dispatch_before_run(void) {
 	}
 	while (g_test_input_event_next < g_test_input_event_count &&
 			g_test_input_events[g_test_input_event_next].frame <=
-					g_cartridge_presented_frame_count) {
+					g_cartridge_run_frame_count) {
 		const TestInputEvent* event = &g_test_input_events[g_test_input_event_next];
 		keyboard_input_post(KEYBOARD_INPUT_SOURCE_TIMELINE, event->key, event->down);
 		++g_test_input_event_next;
 	}
 }
 
-bool input_timeline_consume_presented_capture(uint64_t* out_frame) {
+void input_timeline_finish_run(void) {
 	if (!g_timeline_active) {
-		return false;
+		return;
 	}
 	if (!g_cartridge_timeline_started) {
 		if (g_read_execution_domain_id() < 0) {
-			return false;
+			return;
 		}
 		g_cartridge_timeline_started = true;
 	}
-	++g_cartridge_presented_frame_count;
+	++g_cartridge_run_frame_count;
+}
+
+bool input_timeline_consume_presented_capture(uint64_t* out_frame) {
+	if (!g_timeline_active ||
+			(!g_cartridge_timeline_started && g_read_execution_domain_id() < 0)) {
+		return false;
+	}
+	// The callback observes the in-flight run. Only the host's completed-run
+	// boundary advances input time, including dropped or absent video callbacks.
 	bool should_capture = false;
 	while (g_test_capture_event_next < g_test_capture_event_count &&
-			g_test_capture_events[g_test_capture_event_next].frame <
-					g_cartridge_presented_frame_count) {
+			g_test_capture_events[g_test_capture_event_next].frame <=
+					g_cartridge_run_frame_count) {
 		*out_frame = g_test_capture_events[g_test_capture_event_next].frame;
 		should_capture = true;
 		++g_test_capture_event_next;
@@ -941,7 +950,7 @@ bool input_timeline_should_auto_quit(uint64_t trailing_frames) {
 	if (g_test_capture_event_next < g_test_capture_event_count) {
 		return false;
 	}
-	return g_cartridge_presented_frame_count >
+	return g_cartridge_run_frame_count >
 			(g_timeline_last_frame + trailing_frames);
 }
 
@@ -958,7 +967,7 @@ void input_timeline_shutdown(void) {
 	g_test_capture_event_capacity = 0;
 	g_test_capture_event_next = 0;
 	g_timeline_last_frame = 0;
-	g_cartridge_presented_frame_count = 0;
+	g_cartridge_run_frame_count = 0;
 	g_timeline_active = false;
 	g_cartridge_timeline_started = false;
 }
