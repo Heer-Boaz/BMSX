@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { runCpuParity } from '../helpers/cpu_execution';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import type { Blua32ExecutionImage } from '../../machine/ts/machine/cpu/execution_image';
 import { createBuiltinFunction, StringValue, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
@@ -12,7 +13,7 @@ import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { BUS_FAULT_NONE, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
 import { DYNAMIC_RAM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { createTestSystemCpu, linkRawTestSystemBlua32, type TestBlua32Source } from '../helpers/blua32';
+import { createTestBlua32PairCpu, createTestSystemCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32, type TestBlua32Source } from '../helpers/blua32';
 
 function comparisonImage(op: OpCode, expected: boolean, left = 0, right = 1, constants: TestBlua32Source['constants'] = []) {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
@@ -79,6 +80,68 @@ test('comparison RK constants agree after each admitted segment, including short
 			assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 		}
 	}
+});
+
+test('warmed RK comparisons at one RAM PC belong to each execution image and retire with its constant pool', () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(text, 0, OpCode.EQ, 1, 0, 63, 7); // R0 == K0
+	writeInstruction(text, 1, OpCode.JMP, 0, 0, 2);
+	writeInstruction(text, 2, OpCode.KFALSE, 1, 0, 0);
+	writeInstruction(text, 3, OpCode.JMP, 0, 0, 1);
+	writeInstruction(text, 4, OpCode.KTRUE, 1, 0, 0);
+	writeInstruction(text, 5, OpCode.JMP, 0, 63, 58, 255);
+	const source = { text, functions: [{ firstWord: 0, wordCount: 6, maxStack: 4 }] };
+	const images = linkRawTestBlua32Pair({ ...source, constants: [0] }, { ...source, constants: ['same-slot'] });
+	const replacement = linkRawTestSystemBlua32({ ...source, constants: ['same-slot'] });
+	const machines = [createTestBlua32PairCpu(images, CpuExecutionBackend.JavaScript),
+		createTestBlua32PairCpu(images, CpuExecutionBackend.Interpreter)];
+	for (const { memory } of machines) memory.writeBytes(DYNAMIC_RAM_BASE, text);
+	const owners = new Map<number, Blua32ExecutionImage>();
+	for (const domain of [SYSTEM_EXECUTION_DOMAIN_ID, 0, SYSTEM_EXECUTION_DOMAIN_ID, 0]) {
+		for (const { cpu } of machines) {
+			cpu.writeFrameExecution(0, domain, domain === SYSTEM_EXECUTION_DOMAIN_ID
+				? images.systemSymbols.functionAddresses[0] : images.cartSymbols.functionAddresses[0], DYNAMIC_RAM_BASE);
+			cpu.rootThread.frameAtDepth(0).registers.set(0, StringValue.fromId(cpu.stringPool.intern('same-slot')));
+		}
+		runCpuParity(machines[0].cpu, machines[1].cpu, 1024);
+		const frame = machines[0].cpu.rootThread.frameAtDepth(0);
+		assert.equal(frame.registers.get(1), domain === 0,
+			'the same physical RAM instruction and RK index consume the activation-owned Number or String pool');
+		assert.equal(frame.pc, DYNAMIC_RAM_BASE);
+		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+		assert.ok(frame.decodedPage!.compiledBlocks!.entries[0], 'both image-local comparisons actually execute generated code');
+		owners.set(domain, frame.executionImage);
+	}
+	const systemOwner = owners.get(SYSTEM_EXECUTION_DOMAIN_ID)!, cartOwner = owners.get(0)!;
+	assert.notEqual(systemOwner, cartOwner);
+	const systemPage = systemOwner.compiledCodeLookup!.find(DYNAMIC_RAM_BASE, 0)!;
+	const cartPage = cartOwner.compiledCodeLookup!.find(DYNAMIC_RAM_BASE, 0)!;
+	const systemBlock = systemPage.compiledBlocks!.entries[0], cartBlock = cartPage.compiledBlocks!.entries[0];
+	assert.notEqual(systemPage, cartPage, 'image ownership is distinct even when executable bytes have one physical backing');
+	for (const { cpu, memory } of machines) {
+		memory.installSystemRom(replacement.romBytes);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, replacement.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
+		cpu.rootThread.frameAtDepth(0).registers.set(0, StringValue.fromId(cpu.stringPool.intern('same-slot')));
+	}
+	runCpuParity(machines[0].cpu, machines[1].cpu, 4);
+	assert.equal(machines[0].cpu.rootThread.frameAtDepth(0).registers.get(1), false,
+		'replacing ROM bytes does not mutate an activated Number constant pool');
+	assert.equal(systemPage.compiledBlocks!.entries[0], systemBlock);
+	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+	for (const { cpu, executionAddressSpace } of machines) {
+		cpu.replaceExecutionImage(executionAddressSpace.resolveSystemDomain());
+		// The revision producer relocates suspended activations after replacing
+		// their image, before any further instruction is allowed to execute.
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, replacement.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
+	}
+	assert.equal(systemPage.compiledBlocks!.entries[0], null, 'image replacement retires the old numeric comparison');
+	runCpuParity(machines[0].cpu, machines[1].cpu, 1024);
+	const frame = machines[0].cpu.rootThread.frameAtDepth(0);
+	assert.notEqual(frame.executionImage, systemOwner);
+	assert.equal(frame.registers.get(1), true, 'the recompiled comparison consumes String K0 rather than the old numeric specialization');
+	assert.ok(frame.decodedPage!.compiledBlocks!.entries[0]);
+	assert.equal(cartPage.compiledBlocks!.entries[0], cartBlock, 'the unrelated image retains its warmed RAM code');
+	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 });
 
 test('EQ ignores unused Nil/boolean scalar payloads without rewriting either source slot', () => {
