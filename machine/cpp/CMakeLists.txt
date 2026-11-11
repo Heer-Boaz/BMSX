@@ -816,7 +816,7 @@ if(BMSX_BUILD_TESTS)
 		target_include_directories(bmsx_gx_gpu_textured_gles2_tests PRIVATE ${BMSX_LIBRETRO_HOST_DIR})
 		target_link_libraries(bmsx_gx_gpu_textured_gles2_tests PRIVATE bmsx_host_support ${BMSX_TEST_EGL_LIBRARY} dl)
 		target_link_options(bmsx_gx_gpu_textured_gles2_tests PRIVATE
-			LINKER:--wrap=glBindBuffer LINKER:--wrap=glBufferData LINKER:--wrap=glBufferSubData LINKER:--wrap=glReadPixels LINKER:--wrap=glDrawArrays)
+			LINKER:--wrap=glBindBuffer LINKER:--wrap=glBufferData LINKER:--wrap=glBufferSubData LINKER:--wrap=glReadPixels LINKER:--wrap=glDrawArrays LINKER:--wrap=glTexSubImage2D)
 		if(BMSX_SNESMINI_TARGET)
 			target_link_options(bmsx_gx_gpu_textured_gles2_tests PRIVATE -static-libstdc++ -static-libgcc)
 		endif()

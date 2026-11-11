@@ -35,13 +35,31 @@ unsigned geometryDraws = 0;
 GLuint geometryBuffer = 0;
 GLsizeiptr geometryBytes = 0;
 bool immutableGeometry = true;
+bool observeUploadGeneration = false;
+bool generationDrawn = false;
+bool uploadsPrecedeDraws = true;
+unsigned generationUploadCalls = 0;
+size_t generationUploadBytes = 0;
+const void* generationLastUploadSource = nullptr;
 }
 
 extern "C" void __real_glDrawArrays(GLenum, GLint, GLsizei);
 extern "C" void __wrap_glDrawArrays(GLenum mode, GLint first, GLsizei count) {
 	++draws;
+	if (observeUploadGeneration) generationDrawn = true;
 	if (boundArrayBuffer == geometryBuffer && geometryBuffer != 0) ++geometryDraws;
 	__real_glDrawArrays(mode, first, count);
+}
+extern "C" void __real_glTexSubImage2D(GLenum, GLint, GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, const void*);
+extern "C" void __wrap_glTexSubImage2D(GLenum target, GLint level, GLint x, GLint y, GLsizei width, GLsizei height,
+	GLenum format, GLenum type, const void* pixels) {
+	if (observeUploadGeneration && type == GL_UNSIGNED_SHORT_4_4_4_4) {
+		uploadsPrecedeDraws &= !generationDrawn;
+		++generationUploadCalls;
+		generationLastUploadSource = pixels;
+		generationUploadBytes += static_cast<size_t>(width) * height * sizeof(uint16_t);
+	}
+	__real_glTexSubImage2D(target, level, x, y, width, height, format, type, pixels);
 }
 extern "C" void __real_glReadPixels(GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void*);
 extern "C" void __wrap_glReadPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, void* pixels) {
@@ -321,7 +339,9 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 	presenter.backend().captureGxGpuVramSnapshot(fixture.gpu);
 	// A rectangle whose UVs cross 255->0 reads both ends of its page. The
 	// narrow late upload lies outside the union of the wrapped endpoint UVs.
-	const bool profiling = presenter.backend().type() == BackendType::OpenGLES2;
+	const bool gles = presenter.backend().type() == BackendType::OpenGLES2;
+	const bool profiling = gles && static_cast<OpenGLES2Backend&>(presenter.backend()).profilesGxUploads();
+	const bool cachedUploads = gles && static_cast<OpenGLES2Backend&>(presenter.backend()).gxGpuDrawTargetMode() != GxGpuDrawTargetMode::FullVram;
 	if (profiling) static_cast<OpenGLES2Backend&>(presenter.backend()).beginGxCpuToVramProfileFrame();
 	for (const u32 word : {
 		0xe1000118u, 0x65808080u, (180u << 16u), 0u, 0x00010100u,
@@ -332,7 +352,7 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 		fixture.scheduler.advanceTo(fixture.scheduler.currentNowCycles() + 10'000);
 		fixture.gpu.onService(fixture.scheduler.currentNowCycles());
 	}
-	if (profiling) presenter.backend().executeGxGpuCommandDrain(fixture.gpu);
+	if (gles) presenter.backend().executeGxGpuCommandDrain(fixture.gpu);
 	fixture.gpu.presentReadyFrameOnVblankEdge();
 	presenter.present(fixture.gpu.readDeviceOutput(), 0, 0);
 	if (profiling) {
@@ -410,7 +430,6 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 	fixture.gpu.presentReadyFrameOnVblankEdge();
 	presenter.present(fixture.gpu.readDeviceOutput(), 0, 0);
 	presenter.backend().captureGxGpuVramSnapshot(fixture.gpu);
-	const bool gles = presenter.backend().type() == BackendType::OpenGLES2;
 	std::vector<u8> plain, toggled;
 	if (gles) { plain.resize(256u * 256u * 4u); toggled.resize(plain.size()); }
 	for (const u32 options : {1u, 2u, 4u, 8u, 16u, 32u, 64u, 127u}) {
@@ -629,7 +648,7 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 		fixture.scheduler.advanceTo(fixture.scheduler.currentNowCycles() + 10'000);
 		fixture.gpu.onService(fixture.scheduler.currentNowCycles());
 	}
-	if (profiling) presenter.backend().executeGxGpuCommandDrain(fixture.gpu);
+	if (gles) presenter.backend().executeGxGpuCommandDrain(fixture.gpu);
 	fixture.gpu.presentReadyFrameOnVblankEdge();
 	presenter.present(fixture.gpu.readDeviceOutput(), 132, 0);
 	if (profiling) {
@@ -746,6 +765,195 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 		require(dependencies[at] == 31u && dependencies[at + 1u] == 0u,
 			"prepared geometry preserves source visibility across dependent and self-reading draws");
 	}
+	// Interleaved atlas/CLUT changes are source preparation, not permission to
+	// reorder VRAM writes. Nine uploads cross more than a full staging-ring turn
+	// in the old route; every dependent draw/copy must retain its own palette.
+	if (profiling) static_cast<OpenGLES2Backend&>(presenter.backend()).beginGxCpuToVramProfileFrame();
+	for (u32 group = 0u; group < 4u; ++group) {
+		for (const u32 word : {0xe6000000u, 0xe1000005u,
+			0xa0000000u, 320u, 0x00010003u, 0x11111111u, 0xdead1111u}) {
+			fixture.gpu.writeGp0(word);
+			fixture.scheduler.advanceTo(fixture.scheduler.currentNowCycles() + 10'000);
+			fixture.gpu.onService(fixture.scheduler.currentNowCycles());
+		}
+		if (group == 0u) {
+			// Clearing an incomplete packet publishes four supplied pixels, not
+			// its six-pixel rectangle. Its packed source starts at odd offset 3.
+			for (const u32 word : {0xa0000000u, (1023u << 16u) | 1023u, 0x00020003u,
+				0x03e0001fu, 0x7fff7c00u}) fixture.gpu.writeGp0(word);
+			fixture.gpu.writeGp1(0x01000000u);
+			fixture.scheduler.advanceTo(fixture.scheduler.currentNowCycles() + 10'000);
+			fixture.gpu.onService(fixture.scheduler.currentNowCycles());
+		}
+		const u32 color = (group + 1u) * 0x0421u;
+		std::vector<u32> words{0x600000ffu, (950u << 16u) | (950u + group), 0x00010001u,
+			0xa0000000u, (24u << 16u) | 320u, 0x00010010u};
+		for (u32 pair = 0u; pair < 8u; ++pair) words.push_back(color | (color << 16u));
+		for (const u32 word : {0x65808080u, (940u << 16u) | (800u + group * 8u),
+			((20u | (24u << 6u)) << 16u), 0x00010004u,
+			0x80000000u, (940u << 16u) | (800u + group * 8u),
+			(942u << 16u) | (800u + group * 8u), 0x00010004u}) words.push_back(word);
+		for (const u32 word : words) {
+			fixture.gpu.writeGp0(word);
+			fixture.scheduler.advanceTo(fixture.scheduler.currentNowCycles() + 10'000);
+			fixture.gpu.onService(fixture.scheduler.currentNowCycles());
+		}
+	}
+	for (const u32 word : {0xc0000000u, (942u << 16u) | 824u, 0x00010004u}) {
+		fixture.gpu.writeGp0(word);
+		fixture.scheduler.advanceTo(fixture.scheduler.currentNowCycles() + 10'000);
+		fixture.gpu.onService(fixture.scheduler.currentNowCycles());
+	}
+	const u64 uploadSerial = fixture.gpu.readDeviceOutput().commandBuffer.serial;
+	generationDrawn = false;
+	uploadsPrecedeDraws = true;
+	generationUploadCalls = 0;
+	generationUploadBytes = 0;
+	observeUploadGeneration = true;
+	presenter.backend().executeGxGpuReadback(fixture.gpu);
+	observeUploadGeneration = false;
+	require(fixture.gpu.readGp0() == 0x10841084u && fixture.gpu.readGp0() == 0x10841084u,
+		"readback after interleaved atlas/CLUT draws and a raw copy observes the last ordered palette");
+	if (cachedUploads) require(uploadsPrecedeDraws && generationUploadCalls == 1u && generationUploadBytes == 160u,
+		"all interleaved raw payloads publish once before the first draw, excluding partial/odd padding");
+	if (profiling) {
+		GxCpuToVramProfileFrame profile;
+		require(static_cast<OpenGLES2Backend&>(presenter.backend()).readGxCpuToVramProfileFrame(0u, profile)
+			&& profile.commands == 9u && profile.logicalBytes == 160u,
+			"generation preparation retains every logical command, including an interrupted transfer");
+		if (cachedUploads) require(profile.hostCalls == generationUploadCalls && profile.hostBytes == generationUploadBytes
+			&& profile.cpuNanoseconds != 0u, "preparation host traffic and time remain attributed to the upload profile");
+	}
+	// A second readback extends the same serial without retiring its first
+	// prefix. Only the new interval is prepared; earlier spans are not replayed.
+	for (const u32 word : {0xa0000000u, (24u << 16u) | 321u, 0x00010001u, 0xbeef7c00u,
+		0x65808080u, (944u << 16u) | 832u, ((20u | (24u << 6u)) << 16u), 0x00010004u,
+		0xc0000000u, (944u << 16u) | 832u, 0x00010004u}) {
+		fixture.gpu.writeGp0(word);
+		fixture.scheduler.advanceTo(fixture.scheduler.currentNowCycles() + 10'000);
+		fixture.gpu.onService(fixture.scheduler.currentNowCycles());
+	}
+	require(fixture.gpu.readDeviceOutput().commandBuffer.serial == uploadSerial,
+		"the second admitted interval extends the same command buffer serial");
+	presenter.backend().executeGxGpuReadback(fixture.gpu);
+	require(fixture.gpu.readGp0() == 0x7c007c00u && fixture.gpu.readGp0() == 0x7c007c00u,
+		"a later interval publishes only its own palette update before the dependent draw");
+	if (profiling) {
+		GxCpuToVramProfileFrame profile;
+		require(static_cast<OpenGLES2Backend&>(presenter.backend()).readGxCpuToVramProfileFrame(0u, profile)
+			&& profile.commands == 10u && profile.logicalBytes == 162u,
+			"successive intervals do not reset or duplicate profile attribution");
+		if (cachedUploads) require(profile.hostCalls == 2u && profile.hostBytes == 162u,
+			"each extended interval adds exactly one immutable staging publication");
+	}
+	presenter.backend().captureGxGpuVramSnapshot(fixture.gpu);
+	const auto uploadBytes = fixture.gpu.readDeviceOutput().vramSnapshotBytes;
+	for (u32 group = 0u; group < 4u; ++group) for (u32 x = 0u; x < 4u; ++x) {
+		const size_t at = (942u * 1024u + 800u + group * 8u + x) * 2u;
+		require(static_cast<u32>(uploadBytes[at] | (uploadBytes[at + 1u] << 8u)) == (group + 1u) * 0x0421u,
+			"early palette-dependent copies survive later atlas and palette uploads");
+	}
+	for (const auto [pixel, value] : std::array<std::pair<u32, u16>, 4>{{
+		{1023u * 1024u + 1023u, 0x001fu}, {1023u * 1024u, 0x03e0u},
+		{1023u * 1024u + 1u, 0x7c00u}, {1023u, 0x7fffu}}}) {
+		require((uploadBytes[pixel * 2u] | (uploadBytes[pixel * 2u + 1u] << 8u)) == value,
+			"an interrupted upload at an odd source offset preserves both destination wraps");
+	}
+	presenter.backend().executeGxGpuCommandDrain(fixture.gpu);
+	// One tiny payload followed by a maximal command cannot share one page.
+	// The real producer admits both, then requests a drain before another packet.
+	if (profiling) static_cast<OpenGLES2Backend&>(presenter.backend()).beginGxCpuToVramProfileFrame();
+	for (const u32 word : {0xa0000000u, (950u << 16u) | 960u, 0x00010003u, 0x03e003e0u, 0xffff03e0u,
+		0x600000ffu, (950u << 16u) | 970u, 0x00010001u}) {
+		fixture.gpu.writeGp0(word);
+		fixture.scheduler.advanceTo(fixture.scheduler.currentNowCycles() + 10'000);
+		fixture.gpu.onService(fixture.scheduler.currentNowCycles());
+	}
+	for (const u32 word : {0xa0000000u, 256u << 16u, 0u}) fixture.gpu.writeGp0(word);
+	for (u32 pair = 0u; pair < GX_GPU_TRANSFER_MAX_PIXEL_COUNT / 2u; ++pair)
+		fixture.gpu.writeGp0(pair * 0x10421u);
+	fixture.scheduler.advanceTo(fixture.scheduler.currentNowCycles() + 1'000'000);
+	fixture.gpu.onService(fixture.scheduler.currentNowCycles());
+	require(fixture.gpu.readDeviceOutput().commandBuffer.executedCommandCount == 3u,
+		"the tiny upload, intervening draw and maximal upload are admitted in one interval");
+	const auto& maximalCommands = fixture.gpu.readDeviceOutput().commandBuffer;
+	const void* maximalSource = maximalCommands.words.data() + maximalCommands.commandWordStart[2] + 3u;
+	generationDrawn = false;
+	uploadsPrecedeDraws = true;
+	generationUploadCalls = 0;
+	generationUploadBytes = 0;
+	observeUploadGeneration = true;
+	presenter.backend().executeGxGpuCommandDrain(fixture.gpu);
+	observeUploadGeneration = false;
+	if (cachedUploads) require(uploadsPrecedeDraws && generationUploadCalls == 2u
+		&& generationUploadBytes == GX_GPU_TRANSFER_MAX_BYTE_COUNT + 6u,
+		"both source pages, including one maximal payload, publish before their first sampling draw");
+	if (cachedUploads) require(generationLastUploadSource == maximalSource,
+		"a single-command page uploads immutable command storage without an extra CPU packing copy");
+	if (profiling) {
+		GxCpuToVramProfileFrame profile;
+		require(static_cast<OpenGLES2Backend&>(presenter.backend()).readGxCpuToVramProfileFrame(0u, profile)
+			&& profile.commands == 2u && profile.logicalBytes == GX_GPU_TRANSFER_MAX_BYTE_COUNT + 6u,
+			"page transitions preserve logical upload accounting");
+		if (cachedUploads) require(profile.hostCalls == 2u && profile.hostBytes == profile.logicalBytes,
+			"each staging page contributes its host traffic once");
+	}
+	presenter.backend().captureGxGpuVramSnapshot(fixture.gpu);
+	const auto maximalBytes = fixture.gpu.readDeviceOutput().vramSnapshotBytes;
+	for (u32 pair = 0u; pair < GX_GPU_TRANSFER_MAX_PIXEL_COUNT / 2u; ++pair) {
+		const size_t at = 256u * 1024u * 2u + pair * 4u;
+		const u32 expected = pair * 0x10421u;
+		for (u32 byte = 0u; byte < 4u; ++byte) require(maximalBytes[at + byte] == static_cast<u8>(expected >> (byte * 8u)),
+			"a maximal source page preserves every raw VRAM word");
+	}
+	// Source preparation stops at execution admission, even if the immutable
+	// command buffer already contains the next upload's complete payload.
+	if (profiling) static_cast<OpenGLES2Backend&>(presenter.backend()).beginGxCpuToVramProfileFrame();
+	for (const u32 word : {0xa0000000u, (950u << 16u) | 980u, 0x00010001u, 0x0000001fu})
+		fixture.gpu.writeGp0(word);
+	fixture.scheduler.advanceTo(fixture.scheduler.currentNowCycles() + 10'000);
+	fixture.gpu.onService(fixture.scheduler.currentNowCycles());
+	for (const u32 word : {0xa0000000u, (950u << 16u) | 980u, 0x00010001u, 0x00007c00u})
+		fixture.gpu.writeGp0(word);
+	require(fixture.gpu.readDeviceOutput().commandBuffer.executedCommandCount == 1u
+		&& fixture.gpu.readDeviceOutput().commandBuffer.commandCount == 2u,
+		"the later upload has a complete payload but has not reached its device deadline");
+	generationUploadCalls = 0;
+	generationUploadBytes = 0;
+	observeUploadGeneration = true;
+	presenter.backend().executeGxGpuCommandDrain(fixture.gpu);
+	observeUploadGeneration = false;
+	if (cachedUploads) require(generationUploadCalls == 1u && generationUploadBytes == 2u,
+		"only the completed prefix is published, not the later unexecuted payload");
+	presenter.backend().captureGxGpuVramSnapshot(fixture.gpu);
+	const auto admittedBytes = fixture.gpu.readDeviceOutput().vramSnapshotBytes;
+	const size_t admissionPixel = (950u * 1024u + 980u) * 2u;
+	require(admittedBytes[admissionPixel] == 31u && admittedBytes[admissionPixel + 1u] == 0u,
+		"a snapshot before the second deadline observes only the first upload");
+	observeUploadGeneration = true;
+	presenter.backend().executeGxGpuCommandDrain(fixture.gpu);
+	observeUploadGeneration = false;
+	if (cachedUploads) require(generationUploadCalls == 1u && generationUploadBytes == 2u,
+		"repeating an empty drain publishes no additional source pages");
+	if (profiling) {
+		GxCpuToVramProfileFrame profile;
+		require(static_cast<OpenGLES2Backend&>(presenter.backend()).readGxCpuToVramProfileFrame(0u, profile)
+			&& profile.commands == 1u && profile.logicalBytes == 2u,
+			"pending uploads and empty drains do not contribute profile work");
+	}
+	fixture.scheduler.advanceTo(fixture.scheduler.currentNowCycles() + 10'000);
+	fixture.gpu.onService(fixture.scheduler.currentNowCycles());
+	presenter.backend().executeGxGpuCommandDrain(fixture.gpu);
+	presenter.backend().captureGxGpuVramSnapshot(fixture.gpu);
+	const auto completedBytes = fixture.gpu.readDeviceOutput().vramSnapshotBytes;
+	require(completedBytes[admissionPixel] == 0u && completedBytes[admissionPixel + 1u] == 0x7cu,
+		"the deferred upload becomes visible after its actual completion");
+	if (profiling) {
+		GxCpuToVramProfileFrame profile;
+		require(static_cast<OpenGLES2Backend&>(presenter.backend()).readGxCpuToVramProfileFrame(0u, profile)
+			&& profile.commands == 2u && profile.logicalBytes == 4u,
+			"the deferred upload is attributed exactly once after completion");
+	}
 	// The device's admitted interval can occupy every command slot. Six vertices
 	// with fixed color planes are the largest textured command representation.
 	require(fixture.gpu.readDeviceOutput().commandBuffer.commandCount == 0u,
@@ -772,7 +980,7 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 	presenter.backend().executeGxGpuCommandDrain(fixture.gpu);
 	require(geometryPublications == unchangedPublications && immutableGeometry,
 		"empty drains publish no geometry and published stores never receive subdata writes");
-	if (profiling) {
+	if (gles) {
 		// Match the libretro context owner: release passes/textures while current,
 		// then destroy the backend context resources before its C++ owner dies.
 		presenter.releaseRenderPipeline();
@@ -812,8 +1020,10 @@ int main(int argc, char** argv) {
 		for (const auto targetMode : {GxGpuDrawTargetMode::FullVram, GxGpuDrawTargetMode::SmallNibbles,
 			GxGpuDrawTargetMode::SmallRgb5, GxGpuDrawTargetMode::SmallRgb5Mali}) {
 		if (targetMode == GxGpuDrawTargetMode::SmallRgb5Mali && !framebuffer) continue;
+		for (const bool profileUploads : {true, false}) {
+		if (!profileUploads && targetMode == GxGpuDrawTargetMode::FullVram) continue;
 		TexturedModelFixture fixture;
-		auto gles = std::make_unique<OpenGLES2Backend>(256, 256, true, PSX_MACHINE_SPEC.gxGpuVramBytes, targetMode);
+		auto gles = std::make_unique<OpenGLES2Backend>(256, 256, profileUploads, PSX_MACHINE_SPEC.gxGpuVramBytes, targetMode);
 		gles->setContextCallbacks([]() -> uintptr_t { return 0; }, eglGetProcAddress); gles->onContextReset();
 		const auto actual = render(std::move(gles), fixture);
 		const auto expectedVram = referenceFixture.gpu.readDeviceOutput().vramSnapshotBytes;
@@ -839,7 +1049,8 @@ int main(int argc, char** argv) {
 		require(submissions > 1 && completeSubmissions && writtenBytes == submissionBytes,
 			"GX streams orphan exactly the current ordered submission, not a live maximum-size arena");
 		require(glGetError() == GL_NO_ERROR, "textured model rendering leaves no GLES error");
-		std::cout << "GX-TEXTURED:PASS software/GLES2 target=" << static_cast<int>(targetMode) << " " << glGetString(GL_RENDERER) << '\n';
+		std::cout << "GX-TEXTURED:PASS software/GLES2 target=" << static_cast<int>(targetMode) << " profile=" << profileUploads << " " << glGetString(GL_RENDERER) << '\n';
+		}
 		}
 	}
 	if (framebuffer) bmsx_video_context_close();

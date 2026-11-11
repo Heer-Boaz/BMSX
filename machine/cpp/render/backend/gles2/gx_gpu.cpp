@@ -113,6 +113,32 @@ struct GxGpuTexturedGeometry {
 	GLuint buffer = 0;
 };
 
+struct GxCpuToVramUploadProfile {
+	u64 hostCalls = 0u;
+	u64 hostBytes = 0u;
+};
+
+// An admitted interval contains at most two pages of packed u16 payloads.
+// Next-fit packing of whole commands needs at most three pages: four pages
+// would require each adjacent pair to contain more than one page of pixels.
+// Headers, odd-pixel padding and partial packets only reduce that bound;
+// destination wrapping does not change the number of source pixels.
+constexpr size_t kGxGpuCpuUploadPageCount = 3u;
+static_assert(GX_GPU_COMMAND_WORD_CAPACITY * 2u <= GX_GPU_TRANSFER_MAX_PIXEL_COUNT * 2u);
+struct GxGpuCpuUploadGeneration {
+	struct Span {
+		u32 pageIndex;
+		u32 pixelOffset;
+	};
+	struct Page {
+		u32 textureIndex;
+		GxCpuToVramUploadProfile profile;
+		u64 cpuNanoseconds;
+	};
+	std::array<Span, GX_GPU_COMMAND_CAPACITY> commands{};
+	std::array<Page, kGxGpuCpuUploadPageCount> pages{};
+};
+
 struct GxGpuVertexStream {
 	GLuint buffer = 0;
 	GLES2DrawState* state = nullptr;
@@ -290,7 +316,8 @@ struct OpenGLES2GxGpuState {
 	GLES2Texture vramSampleTexture{};
 	GLES2TextureCopy sampleCopy;
 	GxGpuDrawTargets drawTargets;
-	std::array<GLES2Texture, 3> cpuUploadTextures{};
+	std::array<GLES2Texture, kGxGpuCpuUploadPageCount> cpuUploadTextures{};
+	GxGpuCpuUploadGeneration cpuUploadGeneration{};
 	u32 cpuUploadTextureCount = 1u;
 	u32 nextCpuUploadTexture = 0u;
 	GLES2Texture readbackTexture{};
@@ -1422,11 +1449,6 @@ void completeGxGpuReadback(OpenGLES2GxGpuState& gx, size_t commandLimit, GxGpuRe
 	readback.completeReadback(readbackToken);
 }
 
-struct GxCpuToVramUploadProfile {
-	u64 hostCalls = 0u;
-	u64 hostBytes = 0u;
-};
-
 template <bool Profile>
 void uploadCpuToVramPayload(OpenGLES2GxGpuState& gx,
 		const u8* sourceBytes,
@@ -1616,69 +1638,100 @@ u32 executeCpuToVramUpload(OpenGLES2GxGpuState& gx,
 	return uploadedPixels;
 }
 
+// Publish every source page before executing any command in this interval.
+// Only immutable payload preparation moves: transfer draws, mask tests,
+// destination resolves and all dependent primitives still execute in GP0 order.
+// The existing texture ring also rotates between intervals; this does not claim
+// that an earlier interval has finished on a GLES2 GPU without fences.
+template <bool Profile>
+void prepareGxGpuCpuUploads(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commands, size_t commandLimit) {
+	u32 first = gx.processedCommandCount;
+	while (first < commandLimit && commands.commandKind[first] != GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM) ++first;
+	if (first == commandLimit) return;
+	std::chrono::steady_clock::time_point start;
+	if constexpr (Profile) start = std::chrono::steady_clock::now();
+	u32 pageIndex = 0u, totalPixels = 0u;
+	const u8* pageSource = nullptr;
+	auto& pages = gx.cpuUploadGeneration.pages;
+	pages[pageIndex].textureIndex = gx.nextCpuUploadTexture;
+	if constexpr (Profile) pages[pageIndex].profile = {};
+	for (u32 index = first; index < commandLimit; ++index) {
+		if (commands.commandKind[index] != GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM) continue;
+		const u32 wordStart = commands.commandWordStart[index];
+		const u32 sizeWord = commands.words[wordStart + 2u];
+		const u32 pixels = gxGpuTransferEmittedPixelCount(gxGpuTransferWidth(sizeWord), gxGpuTransferHeight(sizeWord),
+			commands.commandWordCount[index]);
+		if (pixels > GX_GPU_TRANSFER_MAX_PIXEL_COUNT - totalPixels) {
+			auto& page = pages[pageIndex];
+			uploadCpuToVramPayload<Profile>(gx, pageSource, totalPixels,
+				gx.cpuUploadTextures[page.textureIndex], &page.profile);
+			if constexpr (Profile) {
+				const auto now = std::chrono::steady_clock::now();
+				page.cpuNanoseconds = static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now - start).count());
+				start = now;
+			}
+			const u32 nextTexture = page.textureIndex + 1u;
+			++pageIndex;
+			pages[pageIndex].textureIndex = nextTexture == gx.cpuUploadTextureCount ? 0u : nextTexture;
+			if constexpr (Profile) pages[pageIndex].profile = {};
+			totalPixels = 0u;
+		}
+		gx.cpuUploadGeneration.commands[index] = {pageIndex, totalPixels};
+		const auto* source = reinterpret_cast<const u8*>(commands.words.data() + wordStart + 3u);
+		if (totalPixels == 0u) {
+			// A single-command page can publish directly from immutable command
+			// storage, without an extra CPU copy (including a maximal image).
+			pageSource = source;
+		} else {
+			if (pageSource != gx.pixelTransferScratch.data()) {
+				std::memcpy(gx.pixelTransferScratch.data(), pageSource, static_cast<size_t>(totalPixels) * sizeof(u16));
+				pageSource = gx.pixelTransferScratch.data();
+			}
+			std::memcpy(gx.pixelTransferScratch.data() + static_cast<size_t>(totalPixels) * sizeof(u16),
+				source, static_cast<size_t>(pixels) * sizeof(u16));
+		}
+		totalPixels += pixels;
+	}
+	auto& page = pages[pageIndex];
+	uploadCpuToVramPayload<Profile>(gx, pageSource, totalPixels,
+		gx.cpuUploadTextures[page.textureIndex], &page.profile);
+	if constexpr (Profile) page.cpuNanoseconds = static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+		std::chrono::steady_clock::now() - start).count());
+	gx.nextCpuUploadTexture = page.textureIndex + 1u;
+	if (gx.nextCpuUploadTexture == gx.cpuUploadTextureCount) gx.nextCpuUploadTexture = 0u;
+}
+
 void uploadCpuToVram(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commandBuffer, u32 commandIndex) {
+	GLES2Texture* preparedTexture = nullptr;
+	u32 pixelOffset = 0u;
+	GxGpuCpuUploadGeneration::Page* page = nullptr;
+	if (gx.drawTargets.enabled()) {
+		const auto& span = gx.cpuUploadGeneration.commands[commandIndex];
+		page = &gx.cpuUploadGeneration.pages[span.pageIndex];
+		preparedTexture = &gx.cpuUploadTextures[page->textureIndex];
+		pixelOffset = span.pixelOffset;
+	}
 	if (!gx.backend->profilesGxUploads()) {
-		executeCpuToVramUpload<false>(gx, commandBuffer, commandIndex, nullptr);
+		executeCpuToVramUpload<false>(gx, commandBuffer, commandIndex, nullptr, preparedTexture, pixelOffset);
 		return;
 	}
 	GxCpuToVramUploadProfile profile{};
+	u64 preparationNanoseconds = 0u;
+	if (page != nullptr && pixelOffset == 0u) {
+		// Attribute preparation exactly once, to the page's first logical upload.
+		profile = page->profile;
+		preparationNanoseconds = page->cpuNanoseconds;
+	}
 	const auto start = std::chrono::steady_clock::now();
-	const u32 uploadedPixels = executeCpuToVramUpload<true>(gx, commandBuffer, commandIndex, &profile);
-	const u64 cpuNanoseconds = static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+	const u32 uploadedPixels = executeCpuToVramUpload<true>(gx, commandBuffer, commandIndex, &profile,
+		preparedTexture, pixelOffset);
+	const u64 cpuNanoseconds = preparationNanoseconds + static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
 		std::chrono::steady_clock::now() - start).count());
 	gx.backend->recordGxCpuToVramUpload(
 		static_cast<u64>(uploadedPixels) * sizeof(u16),
 		profile.hostCalls,
 		profile.hostBytes,
 		cpuNanoseconds);
-}
-
-template <bool Profile>
-u32 uploadCpuToVramBatch(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commands, u32 first, size_t commandLimit) {
-	u32 end = first, totalPixels = 0u;
-	while (end < commandLimit && commands.commandKind[end] == GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM) {
-		const u32 sizeWord = commands.words[commands.commandWordStart[end] + 2u];
-		const u32 pixels = gxGpuTransferEmittedPixelCount(gxGpuTransferWidth(sizeWord), gxGpuTransferHeight(sizeWord),
-			commands.commandWordCount[end]);
-		if (pixels > GX_GPU_TRANSFER_MAX_PIXEL_COUNT - totalPixels) break;
-		totalPixels += pixels;
-		++end;
-	}
-	if (end == first + 1u) {
-		uploadCpuToVram(gx, commands, first);
-		return first;
-	}
-	// Prepare the entire adjacent source range before issuing any sampling draw.
-	// Updating even a disjoint part of a live texture can serialize a GLES2 driver.
-	std::chrono::steady_clock::time_point start;
-	if constexpr (Profile) start = std::chrono::steady_clock::now();
-	u32 pixelOffset = 0u;
-	for (u32 index = first; index < end; ++index) {
-		const u32 wordStart = commands.commandWordStart[index], sizeWord = commands.words[wordStart + 2u];
-		const u32 pixels = gxGpuTransferEmittedPixelCount(gxGpuTransferWidth(sizeWord), gxGpuTransferHeight(sizeWord),
-			commands.commandWordCount[index]);
-		std::memcpy(gx.pixelTransferScratch.data() + static_cast<size_t>(pixelOffset) * sizeof(u16),
-			commands.words.data() + wordStart + 3u, static_cast<size_t>(pixels) * sizeof(u16));
-		pixelOffset += pixels;
-	}
-	GLES2Texture& texture = gx.cpuUploadTextures[gx.nextCpuUploadTexture];
-	gx.nextCpuUploadTexture += 1u;
-	if (gx.nextCpuUploadTexture == gx.cpuUploadTextureCount) gx.nextCpuUploadTexture = 0u;
-	GxCpuToVramUploadProfile profile{};
-	uploadCpuToVramPayload<Profile>(gx, gx.pixelTransferScratch.data(), totalPixels, texture, &profile);
-	pixelOffset = 0u;
-	for (u32 index = first; index < end; ++index) {
-		const u32 pixels = executeCpuToVramUpload<Profile>(gx, commands, index, &profile, &texture, pixelOffset);
-		pixelOffset += pixels;
-		if constexpr (Profile) {
-			const auto now = std::chrono::steady_clock::now();
-			gx.backend->recordGxCpuToVramUpload(static_cast<u64>(pixels) * sizeof(u16), profile.hostCalls, profile.hostBytes,
-				static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now - start).count()));
-			profile = {};
-			start = now;
-		}
-	}
-	return end - 1u;
 }
 
 void copyVramToVramArea(OpenGLES2GxGpuState& gx,
@@ -2671,6 +2724,10 @@ void prepareGxGpuTexturedGeometry(OpenGLES2GxGpuState& gx, const GxGpuCommandBuf
 }
 
 void executeNewGxGpuCommands(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commandBuffer, size_t commandLimit) {
+	if (gx.drawTargets.enabled()) {
+		if (gx.backend->profilesGxUploads()) prepareGxGpuCpuUploads<true>(gx, commandBuffer, commandLimit);
+		else prepareGxGpuCpuUploads<false>(gx, commandBuffer, commandLimit);
+	}
 	prepareGxGpuTexturedGeometry(gx, commandBuffer, commandLimit);
 	u32 commandIndex = gx.processedCommandCount;
 	u32 solidBatchTopLeftWord = kGxGpuFullDrawingAreaTopLeftWord;
@@ -2943,11 +3000,7 @@ void executeNewGxGpuCommands(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& 
 		case GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM:
 			finishSolidBatch(gx, gx.primitiveSubmission.solidFloatCount, solidBatchFixedColor, solidBatchBlendEnabled, solidBatchBlendMode, solidBatchMaskBitModeWord, solidBatchVramYAddressExtensionWord, solidBatchDitherEnabled, solidBatchSkippedLineParity, solidBatchReadsVram, solidBatchRasterKind);
 			submitGxGpuPrimitiveBatches(gx);
-			if (gx.drawTargets.enabled()) {
-				commandIndex = gx.backend->profilesGxUploads()
-					? uploadCpuToVramBatch<true>(gx, commandBuffer, commandIndex, commandLimit)
-					: uploadCpuToVramBatch<false>(gx, commandBuffer, commandIndex, commandLimit);
-			} else uploadCpuToVram(gx, commandBuffer, commandIndex);
+			uploadCpuToVram(gx, commandBuffer, commandIndex);
 			break;
 		}
 		if (gx.vramTextureRows != kGxGpuVramYAddressPeriod) {

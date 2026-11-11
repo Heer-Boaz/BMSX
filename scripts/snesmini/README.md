@@ -50,10 +50,16 @@ All cached modes retain exact nibble storage for shared VRAM. Texture-source
 reads, copies and CPU readbacks materialize overlapping dirty regions; writes
 invalidate them. Scanout reads cached pixels directly, and snapshots materialize
 every dirty region. No cartridge, DMA timing or save-state format is changed.
-Cached modes stage uploads through three temporary host-side upload textures
-(1 MiB raw-word capacity each, 3 MiB combined), keeping adjacent transfers on separate storage
-rather than immediately overwriting a queued draw's upload source. This is
-staging capacity, not guest VRAM capacity or measured total renderer memory. Shared VRAM
+Cached modes pack the admitted command interval's raw upload payloads into
+three temporary host-side textures (1 MiB each, 3 MiB combined). All used pages
+are uploaded before any transfer or drawing command in that interval executes;
+intervening draws no longer cause an upload source to be rewritten. Transfers
+still update VRAM in command order. Single-command pages upload directly from
+command storage; shared pages use the existing packing scratch. A fixed 32 KiB
+command-span table selects each payload's page and offset. These are host staging
+resources, not guest VRAM capacity or measured total renderer memory. The textures
+rotate between intervals, but reusing a texture can still stall if the GPU has
+not finished the previous interval. Shared VRAM
 textures and drawing caches use additional host memory; the cartridge-visible
 capacity remains the one specified in the [GPU manual](../../docs/book1/gpu.md).
 The full-target route retains one staging texture.
