@@ -164,9 +164,10 @@ local depth<const> = data[19]         -- SZ3 = 512
 ```
 
 D[14] contains the predicted screen position `(160,112)`, D[19] retains depth
-512, and FLAG is zero. The normal command's results are already available when
-its store completes; do not poll normal CYCLES as a busy flag. Reading these
-words does not draw a pixel. To draw, place the screen word in a GPU packet; to display,
+512, and FLAG is zero. The FLAG load waits for any outstanding part of RTPS's
+15-cycle interval; subsequent result loads see the completed result. Do not
+poll normal CYCLES as a busy flag. Reading these words does not draw a pixel.
+To draw, place the screen word in a GPU packet; to display,
 select the resulting VRAM area through PCRTC. Retain FLAG and any needed results
 before a later command replaces them.
 
@@ -1916,9 +1917,9 @@ Pack the signed vertex coordinates next. The halfword for −64 is `FFC0H`.
 | 20 | `08010258H` — D[5] | `00000200H` | V2.Z=512 |
 | 21 | `08010344H` — COMMAND | `00080030H` | RTPT, SF=1, LM=0 |
 
-The RTPT write completes the arithmetic. No CYCLES polling is required. Read FLAG at `08010340H` now, before the next command. For this sequence it is zero. Each vertex has `q=32768`, so its screen displacement is half its transformed X/Y. The first result is therefore `(128−32,96−32)=(96,64)`, followed by `(160,64)` and `(128,128)`.
+The RTPT write starts a 23-cycle interval. No CYCLES polling is required: the following FLAG load waits for any outstanding part of that interval. Read FLAG at `08010340H` now, before the next command. For this sequence it is zero. Each vertex has `q=32768`, so its screen displacement is half its transformed X/Y. The first result is therefore `(128−32,96−32)=(96,64)`, followed by `(160,64)` and `(128,128)`.
 
-| Read immediately after RTPT | Address(es) | Raw result(s) |
+| Dependent reads after RTPT | Address(es) | Raw result(s) |
 |---|---|---|
 | Screen FIFO, V0 then V1 then V2 | `08010274H`, `08010278H`, `0801027CH` | `00400060H`, `004000A0H`, `00800080H` |
 | Depth FIFO, oldest to newest | `08010284H`–`08010290H` | `00000000H`, `00000200H`, `00000200H`, `00000200H` |
@@ -1926,7 +1927,7 @@ The RTPT write completes the arithmetic. No CYCLES polling is required. Read FLA
 | MAC1, MAC2, MAC3, from V2 | `080102A8H`–`080102B0H` | `00000000H`, `00000040H`, `00000200H` |
 | IR0; MAC0 | `08010264H`; `080102A4H` | `00000000H`; `00000000H` |
 | Depth-average word; FLAG | `08010260H`; `08010340H` | `00000000H`; `00000000H` |
-| CYCLES | `08010348H` | `00000017H` — nominal 23 |
+| CYCLES | `08010348H` | `00000017H` — interval 23 |
 
 RTPT preserves the input vertex words, RGBC, the color FIFO, the depth-average word, and C[0]–C[30]. It replaces IR0–IR3 and MAC0–MAC3 and pushes the screen and depth histories. D[15] reads the new D[14]; the packed IR aliases D[28]/D[29] reflect the new IR values. The three vertices have not been consumed from their input registers.
 
@@ -1937,12 +1938,12 @@ Continue with these commands and reads in order:
 | 22 | Write `08010344H` — COMMAND | `00000006H` — NCLIP |
 | 23 | Read `08010340H` — FLAG | `00000000H` |
 | 24 | Read `080102A4H` — MAC0 | `00001000H` — doubled oriented area 4096 |
-| 25 | Read `08010348H` — CYCLES | `00000008H` — nominal 8 |
+| 25 | Read `08010348H` — CYCLES | `00000008H` — interval 8 |
 | 26 | Write `08010344H` — COMMAND | `0000002DH` — AVSZ3 |
 | 27 | Read `08010340H` — FLAG | `00000000H` |
 | 28 | Read `08010260H` — depth average | `000001FFH` — 511 |
 | 29 | Read `080102A4H` — MAC0 | `001FFE00H` — 2096640 |
-| 30 | Read `08010348H` — CYCLES | `00000005H` — nominal 5 |
+| 30 | Read `08010348H` — CYCLES | `00000005H` — interval 5 |
 
 Neither NCLIP nor AVSZ3 uses SF or LM. NCLIP gives `(160−96)×(128−64) − (128−96)×(64−64) = 4096`, a positive doubled area. AVSZ3 gives `1365×(512+512+512) = 2096640`; the twelve-bit shift yields 511, not 512. This is the deliberate consequence of representing ⅓ by `1365/4096`, not an extra rounding stage.
 
@@ -2216,7 +2217,7 @@ Run the earlier **Project a triangle, test its orientation, and form a depth val
 
 The transformed position is `(64+32,32−16,512+512)=(96,16,1024)`. The new quotient is `16384`, a factor of ¼. Thus the screen result is `(128+96/4,96+16/4)=(152,100)`. Translation does not add a fixed number of screen units: its X/Y displacement is subject to perspective, while its Z displacement changes the denominator.
 
-| Read immediately after RTPS | Raw result(s) |
+| Dependent reads after RTPS | Raw result(s) |
 |---|---|
 | D[9], D[10], D[11] — IR1–IR3 | `00000060H`, `00000010H`, `00000400H` |
 | D[25], D[26], D[27] — MAC1–MAC3 | `00000060H`, `00000010H`, `00000400H` |
@@ -2224,7 +2225,7 @@ The transformed position is `(64+32,32−16,512+512)=(96,16,1024)`. The new quot
 | D[16], D[17], D[18], D[19] — depth history | `00000200H`, `00000200H`, `00000200H`, `00000400H` |
 | D[8] — IR0; D[24] — MAC0 | `00000000H`; `00000000H` |
 | D[7] — previous depth average | `000001FFH`, unchanged |
-| FLAG; CYCLES | `00000000H`; `0000000FH` — nominal 15 |
+| FLAG; CYCLES | `00000000H`; `0000000FH` — interval 15 |
 
 Only one new screen pair and one new depth were pushed. V1 and V2 remain programmed but were not processed by RTPS. The changed translation remains active for the next projection until the cartridge writes another translation.
 
@@ -2239,8 +2240,9 @@ replaces FLAG. Read the flag word belonging to the operation under investigation
 The cases below are independent. Begin each with matrix 0, translation,
 OFX/OFY, H, DQA/DQB and V0 components explicitly zero, then apply the stated
 changes. Other stored state is not an arithmetic input to these cases. Read the
-listed results immediately after the command. All numbers describe register
-contents or the signed arithmetic interpretation explicitly named; no case
+listed results after the command; the first dependent read waits for completion
+when necessary. All numbers describe register contents or the signed arithmetic
+interpretation explicitly named; no case
 requires a register to hold a floating-point value.
 
 ### An arithmetic shift is not rounding towards zero {#sec-gte-an-arithmetic-shift-is-not-rounding-towards-zero}
@@ -2424,7 +2426,7 @@ The old IR values, old MAC values, V1/V2, RGBC and color histories are not arith
 | D[8] — IR0 | New depth-cue coefficient, 0…4096 |
 | D[24] — MAC0 | Low word of the **depth-cue** expression, replacing both screen expressions |
 | C[31] — FLAG | Cleared at command start, then accumulates conditions from every stage |
-| COMMAND; CYCLES | Last raw command word; nominal duration `0000000FH` |
+| COMMAND; CYCLES | Last raw command word; execution interval `0000000FH` |
 
 D[15] reads the new SXY2; it is not a fourth retained screen position. D[28] and D[29] read a packed value derived from the new IR1–IR3, even though RTPS does not write a packed-color latch or push a color. Each derived channel is `clamp(IR ASR 7,0,31)`, packed red in bits 4:0, green in 9:5 and blue in 14:10.
 
@@ -2543,7 +2545,7 @@ All four rows end with IR0=0 and MAC0=0. The first row's negative screen X round
 
 For the other IR3 asymmetry, change only V0.Z to −1 and use SF=1, LM=1. IR3 becomes zero, but its fixed-12 flag test sees −1, which is inside the signed range: IR3 saturation remains clear. SZ3 does clamp to zero, divide overflow still occurs, and FLAG becomes `81060000H` (ERROR, IR1, depth saturation, divide). SXY2 remains `00010000H`. A zero IR3 or a zero SZ3 must therefore not be taken as proof that the input was a usable visible vertex.
 
-**Timing.** RTPS writes 15 to normal CYCLES. Results are available when its COMMAND write completes.
+**Timing.** RTPS writes 15 to normal CYCLES. Results are available after its execution interval ends. A dependent CPU read waits for any outstanding part of that interval.
 
 #### RTPT — transform and project three vectors {#sec-gte-rtpt-transform-and-project-three-vectors}
 
@@ -2642,7 +2644,7 @@ Old IR values, old MAC values, RGBC and RGB histories are not operands. The old 
 | After V1 | C, P0, P1 | c, d, z0, z1 | V1 results | Unchanged |
 | After V2 | P0, P1, P2 | d, z0, z1, z2 | V2 results | Cue from V2 |
 
-The intermediate rows specify calculation order and flag accumulation, not separate asynchronous result-publication events. All normal command results are available when the one COMMAND write completes.
+The intermediate rows specify calculation order and flag accumulation, not separate result-publication events. All three projections complete within one 23-cycle interval; a dependent read waits for its end.
 
 | MODIFIED | Final state |
 |---|---|
@@ -2651,7 +2653,7 @@ The intermediate rows specify calculation order and flag accumulation, not separ
 | D[25]–D[27]; D[9]–D[11] | V2's shifted/wrapped MAC words; V2's clamped IR components |
 | D[24]; D[8] | Low32 of V2 cue expression; V2 cue coefficient |
 | C[31] | Combined conditions from all vertices and the one final cue stage |
-| COMMAND; CYCLES | Last raw command word; nominal count `00000017H` |
+| COMMAND; CYCLES | Last raw command word; execution interval `00000017H` |
 
 D[15] reads final SXY2, hence V2's screen pair, not an additional vertex. Reads of D[28]/D[29] derive from final IR1–IR3: clamp each `IR ASR 7` to 0…31 and pack the results into bits 4:0, 9:5 and 14:10. These derived read values may change without a color-history push or a write to the D[28] input latch.
 
@@ -2712,7 +2714,7 @@ For example, V1 screen Y is `6324224−148×36372=941168`; ASR16 gives 14. Its n
 
 Alternatively, retain the original three vertices but select LM=1 with `00080430H`. V1's negative Y and V2's negative X clamp to zero. The screen pairs become `(175,114)`, `(201,96)`, `(128,128)`; depths and quotients do not change. Final MAC is still (`−68`, `142`, `1500`), but final IR is `(0,142,1500)` and FLAG is `81800000H` (ERROR, IR1 and IR2 saturation). This is a changed projection, not a harmless sign-suppression option.
 
-**Timing.** RTPT writes 23 (`00000017H`) to normal CYCLES. All three projections and the final depth-cue result are available when its COMMAND write completes.
+**Timing.** RTPT writes 23 (`00000017H`) to normal CYCLES. All three projections and the final depth-cue result are available after its execution interval ends. A dependent CPU read waits for any outstanding part of that interval.
 
 #### NCLIP — calculate doubled oriented screen area {#sec-gte-nclip-calculate-doubled-oriented-screen-area}
 
@@ -2749,7 +2751,7 @@ Use the full determinant to test signed32 overflow, then publish its low32 bits 
 |---|---|
 | D[24] — MAC0, `080102A4H` | Low32 bits of area2 |
 | C[31] — FLAG, `08010340H` | New overflow record; previous FLAG is cleared first |
-| COMMAND; CYCLES | Last raw command word; nominal count `00000008H` |
+| COMMAND; CYCLES | Last raw command word; execution interval `00000008H` |
 
 All other stored register state is preserved: MAC1–MAC3, IR0–IR3, all three screen words, all four depths, OTZ, RGB histories, vectors, coefficients, leading-sign ports and all PLUS state. The D[15] alias and IR-derived D[28]/D[29] reads therefore retain their previous values. There is no FIFO mutation or automatic hand-off to the GPU.
 
@@ -2795,7 +2797,7 @@ The two perpendicular edge differences are 65535, so the positive determinant is
 
 If every coordinate really remains within projection's −1024…1023 output interval, the absolute determinant is at most `2047²=4190209`, safely inside signed32. That arithmetic bound does not undo a previous screen clamp or establish geometric visibility.
 
-**Timing.** NCLIP writes 8 to normal CYCLES. MAC0 and FLAG are available when its COMMAND write completes.
+**Timing.** NCLIP writes 8 to normal CYCLES. MAC0 and FLAG are available after its execution interval ends. A dependent CPU read waits for any outstanding part of that interval.
 
 #### MVMVA — selected matrix-vector calculation {#sec-gte-mvmva-selected-matrix-vector-calculation}
 
@@ -2916,7 +2918,7 @@ The first IR clamp **forces the signed lower bound −32768**, even when the com
 | D[25]–D[27] — MAC1–MAC3 | Final shifted/wrapped row results; second-pass results for cv=2 |
 | D[9]–D[11] — IR1–IR3 | Corresponding final clamped components, read as sign-extended halfwords |
 | C[31] — FLAG | Cleared before arithmetic; accumulates every row and both passes when cv=2 |
-| COMMAND; CYCLES | Last raw command word; nominal duration `00000008H` |
+| COMMAND; CYCLES | Last raw command word; execution interval `00000008H` |
 
 Reads of D[28]/D[29] derive from the new IR components: clamp each `IR ASR 7` to 0…31 and pack into bits 4:0, 9:5 and 14:10. MVMVA does not write the D[28] packed-input latch or push a color merely because those read values change.
 
@@ -2985,7 +2987,7 @@ The final MAC and IR read `(2,8,3)`, raw `00000002H`, `00000008H`, `00000003H`. 
 
 **A signed44 boundary is not repaired by SF.** With matrix 0 as Q12 identity, V0 `(1,0,0)` and translation `(2147483647,0,0)`, row 1 starts at `2^43−4096`. Adding `4096×1` reaches `2^43`, sets positive row-1 overflow and wraps to `−2^43`. With SF=1, LM=0 (`00080012H`), MAC1 reads `80000000H`, IR1 reads `FFFF8000H`, and FLAG is `C1000000H` (ERROR, MAC1 positive overflow, IR1 saturation). With SF=0, LM=0 (`00000012H`), low32 of that same wrapped accumulator is zero: MAC1 and IR1 both read zero, but FLAG is `C0000000H`. Rows 2/3 remain zero in both cases. A small-looking public MAC word is not proof that ordered accumulation stayed in range.
 
-**Timing.** Every MVMVA selector and option combination described above writes 8 to normal CYCLES, including the synthetic-matrix and two-pass cases. Results are available when its COMMAND write completes.
+**Timing.** Every MVMVA selector and option combination described above writes 8 to normal CYCLES, including the synthetic-matrix and two-pass cases. Results are available after its execution interval ends. A dependent CPU read waits for any outstanding part of that interval.
 
 #### OP — cross-product components from the matrix diagonal {#sec-gte-op-cross-product-components-from-the-matrix-diagonal}
 
@@ -3040,7 +3042,7 @@ divide, depth, screen, IR0 or color flags. Clamp endpoints are legal.
 All other stored GTE words are preserved, including IR0, MAC0, the diagonal
 inputs, V0–V2, RGBC, and every FIFO. No RGB entry is pushed. D[28]/D[29] derived
 packed reads can change because IR changed, without a color-history update.
-COMMAND retains the issued word and CYCLES reports nominal6. Subsequent commands
+COMMAND retains the issued word and CYCLES reports an interval of 6 cycles. Subsequent commands
 replace FLAG and may replace MAC/IR; retain a needed cross product before SQR or
 another arithmetic stage overwrites it.
 
@@ -3075,7 +3077,7 @@ IR becomes (0,32767,−32768), FLAG=80C00000H: ERROR and IR2/IR3 saturation,
 not a MAC-overflow condition. Read MAC if those wider components are needed;
 reading only the limited IR would change a later squared-length calculation.
 
-**Timing.** OP writes 6 to normal CYCLES. Results are available when its COMMAND write completes.
+**Timing.** OP writes 6 to normal CYCLES. Results are available after its execution interval ends. A dependent CPU read waits for any outstanding part of that interval.
 
 #### AVSZ3 — scale the newest three depths {#sec-gte-avsz3-scale-the-newest-three-depths}
 
@@ -3125,7 +3127,7 @@ MAC1–MAC3, all input vectors, RGBC, screen/depth/color histories, ZSF3 itself 
 all PLUS state. Reading the depth entries does not consume them. Retain a needed
 MAC0 or FLAG before another command replaces it.
 
-**Timing.** AVSZ3 writes 5 (`00000005H`) to normal CYCLES. OTZ, MAC0 and FLAG are available when its COMMAND write completes.
+**Timing.** AVSZ3 writes 5 (`00000005H`) to normal CYCLES. OTZ, MAC0 and FLAG are available after its execution interval ends. A dependent CPU read waits for any outstanding part of that interval.
 
 **Worked case: an approximate triangle mean.** Supply these word contents:
 
@@ -3194,7 +3196,7 @@ Under an equal-scale depth convention, ZSF4 represents a numerical multiplier of
 | D[24] — MAC0, `080102A4H` | Low32 of the full signed product |
 | D[7] — OTZ, `08010260H` | Limited unsigned16 scaled result, read zero-extended |
 | C[31] — FLAG | Previous flags cleared; new product/depth conditions recorded |
-| COMMAND; CYCLES | Last raw command word; nominal duration `00000006H` |
+| COMMAND; CYCLES | Last raw command word; execution interval `00000006H` |
 
 All other stored state is preserved: SZ0–SZ3 themselves, all screen/color histories, vectors, IR0–IR3, MAC1–MAC3, coefficients including ZSF4, leading-sign ports and all PLUS state. Screen/packed-color aliases retain their prior read values. Save a previous command's FLAG before AVSZ4 replaces it; save OTZ/MAC0 before a later command overwrites those results.
 
@@ -3225,7 +3227,7 @@ The normalizing 1024 coefficient covers the full input-depth range without satur
 
 For a small negative boundary, use depths `(0,0,0,1)` and ZSF4=`FFFFFFFFH` (signed low16 −1). Product is −1, MAC0 reads `FFFFFFFFH`, and ASR12 gives −1 rather than zero. OTZ clamps to zero and FLAG is `80040000H`; no signed32 product overflow occurred.
 
-**Timing.** AVSZ4 writes 6 to normal CYCLES. OTZ, MAC0 and FLAG are available when its COMMAND write completes.
+**Timing.** AVSZ4 writes 6 to normal CYCLES. OTZ, MAC0 and FLAG are available after its execution interval ends. A dependent CPU read waits for any outstanding part of that interval.
 
 ### Lighting and color commands {#sec-gte-lighting-and-color-commands}
 
@@ -3278,7 +3280,7 @@ Q12 intermediate responses; for unmodulated output, byte255 corresponds to
 final MAC4080, not4096. The unit does not choose these scales for software.
 
 **Footprint and flags.** Replaces MAC1–MAC3, IR1–IR3, RGB0–RGB2 and FLAG;
-COMMAND/CYCLES retain the raw issue word and nominal14. All other stored words
+COMMAND/CYCLES retain the raw issue word and an interval of 14 cycles. All other stored words
 are preserved, including V0–V2, IR0, MAC0, matrices/ambient/RGBC, OTZ, screen and
 depth histories, packed-input latch, leading-sign words and PLUS state.
 D[28]/D[29] derived reads reflect the new IR, without another color push.
@@ -3318,7 +3320,7 @@ only ambient red to4096 still produces255 but sets R saturation00200000:
 4096 ASR4 is256. A unit gain appropriate to a modulated command is not an
 unsaturated maximum unmodulated color.
 
-**Timing.** NCS writes 14 to normal CYCLES. The color and arithmetic results are available when its COMMAND write completes.
+**Timing.** NCS writes 14 to normal CYCLES. The color and arithmetic results are available after its execution interval ends. A dependent CPU read waits for any outstanding part of that interval.
 
 #### NCT — light and color three normals without modulation {#sec-gte-nct-light-and-color-three-normals-without-modulation}
 
@@ -3389,7 +3391,7 @@ RGBC, matrices/offsets, IR0, MAC0, OTZ, screen/depth histories and PLUS state.
 The derived packed-color read ports D[28]/D[29] reflect the changed IR values;
 NCT does not write a separate packed-color result latch.
 
-**Timing.** NCT writes 30 (`0000001EH`) to normal CYCLES. All three colors are available when its COMMAND write completes.
+**Timing.** NCT writes 30 (`0000001EH`) to normal CYCLES. All three colors are available after its execution interval ends. A dependent CPU read waits for any outstanding part of that interval.
 
 **Worked case: three directions, not three materials.** Keep the preceding
 non-identity light/color matrices and offsets, but supply these three normals:
@@ -3519,7 +3521,7 @@ Final FIFO is `33334444H`, `55556666H`, **`344B519EH`**. FLAG is `00400000H`, re
 
 With LM=0 the back-facing negative response survives into color mixing; it is not replaced by the LM=1 blue gain. With SF=0, every matrix and modulation stage omits its shift, saturating IRs and final bytes in this setup. Neither setting is a substitute for choosing the input/output scales correctly.
 
-**Timing.** NCCS writes 17 to normal CYCLES. Results are available when its COMMAND write completes.
+**Timing.** NCCS writes 17 to normal CYCLES. Results are available after its execution interval ends. A dependent CPU read waits for any outstanding part of that interval.
 
 #### NCCT — three normals with one shared base color {#sec-gte-ncct-three-normals-with-one-shared-base-color}
 
@@ -3571,7 +3573,7 @@ the batch.
 **Footprint and flags.** Final RGB0/1/2 correspond to V0/V1/V2; all three old
 entries are displaced. Final MAC1–MAC3 and IR1–IR3 describe V2 only. FLAG combines
 conditions from every stage of every input, with no vertex identifier.
-COMMAND/CYCLES retain the raw issue and nominal39. All other stored words are
+COMMAND/CYCLES retain the raw issue and an interval of 39 cycles. All other stored words are
 preserved, including V0–V2, RGBC and controls, IR0/MAC0, OTZ and all screen/depth
 histories, packed-input and leading-sign state, and PLUS. Derived D[28]/D[29]
 reads reflect V2's final IR; they are not another retained color.
@@ -3610,7 +3612,7 @@ byte limits set FLAG=00080000H. Final V2 MAC/IR are unchanged, yet the first two
 colors differ. This option changes the per-vertex calculation, not just how a
 batch flag is reported.
 
-**Timing.** NCCT writes 39 to normal CYCLES. Its three colors are available together when the single COMMAND write completes.
+**Timing.** NCCT writes 39 to normal CYCLES. Its three colors are available together after the command interval ends. A dependent CPU read waits for any outstanding part of that interval.
 
 #### NCDS — light, modulate and depth-cue one normal {#sec-gte-ncds-light-modulate-and-depth-cue-one-normal}
 
@@ -3700,7 +3702,7 @@ histories and PLUS. D[28]/D[29]'s derived packed-color reads change with final
 IR, but no separate packed-color result latch is written. Read needed final
 values/FLAG before another normal command replaces them.
 
-**Timing.** NCDS writes 19 (`00000013H`) to normal CYCLES. Results are available when its COMMAND write completes.
+**Timing.** NCDS writes 19 (`00000013H`) to normal CYCLES. Results are available after its execution interval ends. A dependent CPU read waits for any outstanding part of that interval.
 
 **Worked case: cued material under non-identity lighting.** Use the matrices,
 offsets and raw control packing from
@@ -3837,7 +3839,7 @@ For example, V2 red uses `(7864320+2048×(−640)) ASR12=1600`, then ASR4 gives 
 
 At IR0=2048, choosing LM=0 (`00080016H`) preserves negative back-facing responses and produces `34285876H`, `3453362DH`, `34236664H`, with FLAG zero. Choosing SF=0, LM=1 (`00000416H`) omits the shift at every matrix and cue pass: all three colors become `34FF00FFH`, FLAG=`81F80000H`. These are different staged calculations, not alternative encodings of one byte-space blend.
 
-**Timing.** NCDT writes 44 to normal CYCLES. Its three colors are available together when the single COMMAND write completes.
+**Timing.** NCDT writes 44 to normal CYCLES. Its three colors are available together after the command interval ends. A dependent CPU read waits for any outstanding part of that interval.
 
 #### CC — mix a supplied response vector and apply base color {#sec-gte-cc-mix-a-supplied-response-vector-and-apply-base-color}
 
@@ -3883,7 +3885,7 @@ SF0 applies neither twelve-bit shift and therefore needs deliberately chosen
 input scales, not merely another label on the same result.
 
 **Footprint and flags.** Replaces MAC1–MAC3, IR1–IR3, RGB0–RGB2 and FLAG.
-COMMAND/CYCLES retain the issue word and nominal11. All other stored words are
+COMMAND/CYCLES retain the issue word and an interval of 11 cycles. All other stored words are
 preserved, including V0–V2, all controls and RGBC, IR0/MAC0, OTZ, screen/depth
 histories, packed-input latch, leading-sign words and PLUS. D[28]/D[29] derived
 reads reflect the new final IR, not an additional RGB push.
@@ -3924,7 +3926,7 @@ limits with ERROR clear. With LM1 the K outputs first clamp to zero, final
 MAC/IR are zero, the same black is emitted, and FLAG=81C00000H records all three
 IR clamps plus ERROR. Identical packed color does not imply identical arithmetic.
 
-**Timing.** CC writes 11 to normal CYCLES. Results are available when its COMMAND write completes.
+**Timing.** CC writes 11 to normal CYCLES. Results are available after its execution interval ends. A dependent CPU read waits for any outstanding part of that interval.
 
 #### CDP — color-matrix, material and cue from current IR {#sec-gte-cdp-color-matrix-material-and-cue-from-current-ir}
 
@@ -4001,7 +4003,7 @@ material from the same original responses, reload or otherwise supply those
 responses again; the post-CDP IR values are already finished colors. CDP after
 CC does not merely add cue: it applies the color matrix to CC's final IR again.
 
-**Timing.** CDP writes 13 (`0000000DH`) to normal CYCLES. Results are available when its COMMAND write completes.
+**Timing.** CDP writes 13 (`0000000DH`) to normal CYCLES. Results are available after its execution interval ends. A dependent CPU read waits for any outstanding part of that interval.
 
 **Worked case: signed responses and a forced-signed cue difference.** Use
 the non-identity color matrix and offsets from
@@ -4126,7 +4128,7 @@ unshifted, changing the scale of both calculations.
 
 **Flags from a result that contributes zero.** Restore the main source, use IR0=0 and change only far red to 40000 (`C[21]=00009C40H`). The temporary red difference becomes 39488, clamps to 32767 and sets IR1 saturation. Final color still equals the original RGBC, but FLAG is `81000000H`. Changing far red instead to signed32 minimum (`80000000H`) makes its full difference `−2^43−2097152`: signed44 wrap makes the temporary shifted value 2147483136, while negative MAC1 overflow and temporary IR1 saturation remain recorded. Final source color is again unchanged, with FLAG=`89000000H`. Zero weight is not a bypass or a flag-clearing shortcut.
 
-**Timing.** DPCS writes 8 to normal CYCLES. Results are available when its COMMAND write completes.
+**Timing.** DPCS writes 8 to normal CYCLES. Results are available after its execution interval ends. A dependent CPU read waits for any outstanding part of that interval.
 
 #### INTPL — interpolate a supplied vector towards the far vector {#sec-gte-intpl-interpolate-a-supplied-vector-towards-the-far-vector}
 
@@ -4179,7 +4181,7 @@ must not be generalized to unrestricted endpoints, or to SF0 where both passes
 have changed scale.
 
 **Footprint and flags.** Replaces MAC1–MAC3, IR1–IR3, RGB0–RGB2 and FLAG.
-COMMAND/CYCLES retain the issue word and nominal8. Preserves all other stored
+COMMAND/CYCLES retain the issue word and an interval of 8 cycles. Preserves all other stored
 words, including IR0, MAC0, input vectors, far/matrix/projection controls, RGBC,
 OTZ, screen/depth histories, packed-input latch, leading-sign state and PLUS.
 D[28]/D[29] derived reads follow final IR; they are not another color push.
@@ -4219,7 +4221,7 @@ SF1 pushes CODE with black RGB; SF0 pushes 5A00FFFFH. The large SF0 results
 are not a preserved version of the same interpolation with extra output
 fractional bits: the difference also lacked its shift before multiplication.
 
-**Timing.** INTPL writes 8 to normal CYCLES. Results are available when its COMMAND write completes.
+**Timing.** INTPL writes 8 to normal CYCLES. Results are available after its execution interval ends. A dependent CPU read waits for any outstanding part of that interval.
 
 #### DCPL — apply current gains and depth-cue the material {#sec-gte-dcpl-apply-current-gains-and-depth-cue-the-material}
 
@@ -4290,7 +4292,7 @@ packed-color reads from the new IR values, without a separate packed-result
 write. Retain or reload gains when reusing them: post-DCPL IR contains finished
 color values, not the original gain vector.
 
-**Timing.** DCPL writes 8 (`00000008H`) to normal CYCLES. Results are available when its COMMAND write completes.
+**Timing.** DCPL writes 8 (`00000008H`) to normal CYCLES. Results are available after its execution interval ends. A dependent CPU read waits for any outstanding part of that interval.
 
 **Worked case: amplified, reduced and negative gains.** Program these word
 contents; no matrix setup is needed:
@@ -4416,7 +4418,7 @@ For C red, `(240×65536+2048×(−2560)) ASR12=2560`, then ASR4 gives 160. Final
 - With SF=0, LM=1 and IR0=2048, outputs are `7FFFFFFFH`, `7FFF0000H`, `7FFFFF00H`; FLAG=`81F80000H`. Omitting both shifts is not an alternative encoding of the half cue.
 - With SF=1, LM=1, IR0=0 and only far red changed to 35000 (`000088B8H`), A's red difference 34488 clamps, while B/C's differences 32440/31160 fit. Final FIFO still has the original RGB bytes, but FLAG=`81000000H` retains **A's** temporary IR1 clamp. Final C MAC/IR are in range.
 
-**Timing.** DPCT writes 17 to normal CYCLES. All three colors are available when its COMMAND write completes.
+**Timing.** DPCT writes 17 to normal CYCLES. All three colors are available after its execution interval ends. A dependent CPU read waits for any outstanding part of that interval.
 
 #### SQR — square the three current IR components {#sec-gte-sqr-square-the-three-current-ir-components}
 
@@ -4447,7 +4449,7 @@ LM0 and LM1 produce the same values and flags. The selected IR upper limit can
 still discard a large valid square. SQR supplies no signed44 overflow flags.
 
 **Footprint and flags.** Replaces MAC1–MAC3, IR1–IR3 and FLAG;
-COMMAND/CYCLES retain the issue and nominal5. An IR result strictly above32767
+COMMAND/CYCLES retain the issue and an interval of 5 cycles. An IR result strictly above32767
 sets that lane's I1/I2/I3 mask 01000000H/00800000H/00400000H. I1 or I2 also sets
 ERROR; I3 alone does not. No negative clamp is possible from these squares.
 There are no MAC44, MAC0, RGB, depth, divide, screen or IR0 flag stages.
@@ -4491,7 +4493,7 @@ still exceeds the IR upper limit. Its MAC value262144 remains available.
 The absence of MAC-overflow flags is correct, not evidence of a missing
 signed32 wrap signal: all legal products fit the word.
 
-**Timing.** SQR writes 5 to normal CYCLES. Results are available when its COMMAND write completes.
+**Timing.** SQR writes 5 to normal CYCLES. Results are available after its execution interval ends. A dependent CPU read waits for any outstanding part of that interval.
 
 #### GPF — multiply three IR lanes by one scalar {#sec-gte-gpf-multiply-three-ir-lanes-by-one-scalar}
 
@@ -4562,7 +4564,7 @@ packed-color read ports D[28]/D[29] reflect the new IR values; no separate
 packed-result latch is written. Retain numeric results before a later command
 overwrites them, and account for the RGB push even when no color is wanted.
 
-**Timing.** GPF writes 5 (`00000005H`) to normal CYCLES. Results are available when its COMMAND write completes.
+**Timing.** GPF writes 5 (`00000005H`) to normal CYCLES. Results are available after its execution interval ends. A dependent CPU read waits for any outstanding part of that interval.
 
 **Worked case: a signed Q12 vector product with an unwanted color clamp.**
 Program these word contents:
@@ -4682,7 +4684,7 @@ Restore the original complete setup for each option comparison:
 
 The same public result can therefore have different overflow provenance. Neither case should be diagnosed from a raw MAC word alone.
 
-**Timing.** GPL writes 5 to normal CYCLES. Results and the color push are available when its COMMAND write completes.
+**Timing.** GPL writes 5 to normal CYCLES. Results and the color push are available after its execution interval ends. A dependent CPU read waits for any outstanding part of that interval.
 
 #### VMAD3 — timed vector multiply-add through PLUS {#sec-gte-vmad3-timed-vector-multiply-add-through-plus}
 
@@ -4872,7 +4874,7 @@ The current scalar ISA charges two base cycles per displaced word load/store,
 one per LOADK, BAND, BOR or EQ, and two for RET. The function's accepted path
 executes:
 
-| Work | Executed instructions | Charged CPU cycles |
+| Work | Executed instructions | Base instruction cycles |
 |---|---:|---:|
 | Load the twelve addresses/constants | 12 LOADK | 12 |
 | Copy all 26 control words from ROM | 26 loads + 26 stores | 104 |
@@ -4885,7 +4887,7 @@ executes:
 | Issue NCCT and retain its FLAG in RAM | 1 command store + 1 flag load/store pair | 6 |
 | Read/mask three colors, add the first-word opcode, write six packet words | 3 loads + 3 BAND + 1 BOR + 6 stores | 22 |
 | Return | 1 RET | 2 |
-| **Complete interval** | **120 instructions** | **221 cycles** |
+| **Base instruction total** | **120 instructions** | **221 cycles** |
 
 The area selection is real control flow, not a free assumption. An EQ test
 rejects zero; BAND extracts the sign bit; a second EQ rejects negative area.
@@ -4915,8 +4917,8 @@ The three retained FLAG words are zero and the retained doubled area is 4096.
 Thus the sequence with 221 base instruction cycles prepares the stated geometry/color packet, including its retained arithmetic results.
 
 RTPT, NCLIP and NCCT have intervals 23, 8 and 39. Each is immediately
-followed by a two-cycle FLAG load, leaving waits of 21, 6 and 37 cycles. The
-complete accepted sequence therefore takes **285 system cycles**: 221 base
+followed by a two-cycle dependent register load, leaving waits of 21, 6 and
+37 cycles. The complete accepted sequence therefore takes **285 system cycles**: 221 base
 instruction cycles plus 64 interlock cycles. Its RET requests zero results,
 so it adds no result-placement charge. The final CYCLES readback is 39.
 
@@ -4951,7 +4953,7 @@ turn a lower-bound transfer estimate into a measured program budget.
 
 ## Timing and bus programming {#sec-gte-timing-and-bus-programming}
 
-### Normal commands: nominal cost and CPU cost {#sec-gte-normal-commands-nominal-cost-and-cpu-cost}
+### Normal commands: execution interval and CPU cost {#sec-gte-normal-commands-nominal-cost-and-cpu-cost}
 
 An accepted normal COMMAND starts the interval reported by CYCLES: for example,
 RTPS takes 15, MVMVA 8, and RTPT 23 system cycles. CYCLES is a nonblocking
@@ -5002,9 +5004,10 @@ input queue. Write the intended inputs before issuing each command. A direct
 this interlock governs command acceptance, not the readout of an old result.
 Read any result that must be retained before the next completion replaces it.
 
-DMA cannot issue PLUS commands. A DMA write to PLUS COMMAND is denied even when
-the unit is idle and changes neither the command nor its operands or results.
-This restriction does not specify the DMA channel's completion or fault policy.
+DMA has no route to either GTE register window. Memory-side DMA accesses to
+internal I/O are unmapped-access faults, not operand transfers or command
+writes; see [DMA resources and routes](dma.md#sec-dma-dma-specifications). Use
+CPU accesses for both normal and PLUS commands.
 
 ![PLUS command admission and result publication](figures/gte-plus-timing.svg){#fig-gte-plus-timing}
 
@@ -5363,7 +5366,7 @@ Every recognized normal command clears FLAG before arithmetic and forms ERROR af
 | Register | Address | Access | Reset |
 |---|---|---|---|
 | COMMAND | `08010344H` | Write executes; read last raw command write | `00000000H` |
-| CYCLES | `08010348H` | Read last nominal duration; write has no GTE effect | `00000000H` |
+| CYCLES | `08010348H` | Read last execution interval; write has no GTE effect | `00000000H` |
 
 | Word | Bits | Field |
 | --- | --- | --- |
@@ -5381,7 +5384,7 @@ Every recognized normal command clears FLAG before arithmetic and forms ERROR af
 
 | Word | Bits | Field |
 | --- | --- | --- |
-| CYCLES | 31:0 | Last normal-command nominal cycle count |
+| CYCLES | 31:0 | Last normal-command execution interval, in system cycles |
 
 : {tbl-colwidths="[18,18,64]"}
 
@@ -5453,7 +5456,7 @@ An unknown function executes no arithmetic, leaves data/control and accumulator 
 
 : {tbl-colwidths="[18,18,64]"}
 
-Busy clears when the command's results and flag become visible together. The nominal duration remains. RESULT_Z has a zero upper halfword even when its signed low-halfword result is negative.
+Busy clears when the command's results and flag become visible together. The execution interval remains. RESULT_Z has a zero upper halfword even when its signed low-halfword result is negative.
 
 #### PLUS FLAG fields {#sec-gte-plus-flag-fields}
 
@@ -6003,7 +6006,7 @@ This plane is not a GTE setting. The divider instead tests H>=2×SZ3: A meets eq
 | DBC | 0 | 3072 | 0 |
 | DCE | 0 | 2048 | 0 |
 
-Retain projection FLAG before issuing NCLIP. NCLIP clears FLAG at entry and computes signed doubled screen-space area; its new zero FLAG does not erase the earlier projection condition. Neither command constructs intersections or chooses replacement triangles. Every RTPT here reports IR0=0 and nominal CYCLES=23; 23 is the command interval, not the complete sequence or frame time.
+Retain projection FLAG before issuing NCLIP. NCLIP clears FLAG at entry and computes signed doubled screen-space area; its new zero FLAG does not erase the earlier projection condition. Neither command constructs intersections or chooses replacement triangles. Every RTPT here reports IR0=0 and CYCLES=23; 23 is the command interval, not the complete sequence or frame time.
 
 Keep signed geometry in the software calculation until the intersections have been constructed. For transfer, pack each vertex into two raw words: signed X/Y halfwords in the first, then signed Z in the low half of the second; this example sets the unused high half to zero. Transfer those complete words to D[0]–D[5]. The GTE datapath decodes the signed components; raw halfword bit patterns are not signed working values for the clipping calculation.
 
