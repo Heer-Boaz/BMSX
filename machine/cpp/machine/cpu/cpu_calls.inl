@@ -32,15 +32,11 @@ inline bool CPU::executeCall(CallFrame& frame, int a, int b, int c) {
 inline bool CPU::executeReturn(CallFrame& frame, int a, int b) {
 	const int count = b == 0 ? std::max(frame.top - a, 0) : b;
 	closeUpvalues(frame);
-	if (m_activeThread->protectedCallDepth > 0) {
-		const size_t continuationIndex = m_activeThread->protectedCallDepth - 1;
-		ProtectedCallContinuation& continuation = m_activeThread->protectedCallContinuations.get(continuationIndex);
-		if (continuation.target == &frame) {
-			finishProtectedCall(continuationIndex, frame, a, count);
-			m_activeThread->stackTop = frame.varargBase;
-			m_activeThread->leaveFrame();
-			return false;
-		}
+	if (frame.protectedContinuationIndex >= 0) {
+		finishProtectedCall(static_cast<size_t>(frame.protectedContinuationIndex), frame, a, count);
+		m_activeThread->stackTop = frame.varargBase;
+		m_activeThread->leaveFrame();
+		return false;
 	}
 	if (frame.returnToCompletionLatch) {
 		m_completionValues.assign(frame.registers + a, frame.registers + a + count);

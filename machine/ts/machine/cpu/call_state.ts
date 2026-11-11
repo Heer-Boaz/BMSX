@@ -30,6 +30,8 @@ export type CallFrame = {
 	closure: Closure;
 	returnBase: number;
 	returnCount: number;
+	/** Only the activation invoked as a protected target owns its completion. */
+	protectedContinuationIndex: number;
 	top: number;
 	returnToCompletionLatch: boolean;
 	callSitePc: number;
@@ -41,7 +43,6 @@ export type CallFrame = {
 export class ProtectedCallContinuation {
 	public kind = ProtectedCallKind.PCall;
 	public caller: CallFrame | null = null;
-	public target: CallFrame | null = null;
 	public returnsToProtectedParent = false;
 	public callBase = 0;
 	public returnCount = 0;

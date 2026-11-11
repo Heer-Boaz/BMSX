@@ -85,12 +85,58 @@ void reusableFrameChain() {
 	}
 	require(retained == 5, "collection halves the inactive tail while preserving the active root");
 	thread.enterFrame(prepared);
+	prepared->protectedContinuationIndex = 3;
 	thread.leaveFrame();
+	require(prepared->protectedContinuationIndex == -1, "a new activation does not inherit a protected return");
 	thread.leaveFrame();
 	require(thread.currentFrame == nullptr && thread.frameDepth == 0 && !root->isExceptionFrame,
 		"retirement clears exception state without deleting reusable frames");
 	thread.trimFrames();
 	require(thread.acquireFrame() == root, "an empty thread retains its first prepared node through collection");
+}
+
+void protectedNestedFrames() {
+	test::Blua32TestImage image;
+	image.text.resize(11 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::GETSYS), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CLOSURE), 1, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, 2, 2);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 6, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+	writeInstruction(image.text, 7, static_cast<u8>(OpCode::CALL), 0, 1, 1);
+	writeInstruction(image.text, 8, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(image.text, 9, static_cast<u8>(OpCode::LOADK), 0, 0, 0);
+	writeInstruction(image.text, 10, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8},
+		{.firstWord = 5, .wordCount = 4, .maxStack = 8}, {.firstWord = 9, .wordCount = 2, .maxStack = 8}};
+	image.constants = {7.0};
+	image.systemGlobalNames = {"pcall"};
+	image.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)},
+		{6, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
+	for (const bool scalar : {false, true}) {
+		CpuMachine machine(image, scalar);
+		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("pcall"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::PCall));
+		for (int grant = 0; grant < 20 && machine.cpu.getFrameDepth() != 3; ++grant) machine.cpu.runUntilDepth(0, 1);
+		require(machine.cpu.getFrameDepth() == 3, "protected body invokes an ordinary child activation");
+		auto* thread = machine.cpu.activeThread();
+		require(thread->protectedCallDepth == 1 && thread->currentFrame->protectedContinuationIndex == -1
+			&& thread->currentFrame->previous->protectedContinuationIndex == 0, "only the protected target owns its return obligation");
+		const auto state = machine.cpu.captureRuntimeState();
+		require(state.threads[0].protectedCalls[0].targetFrameIndex == 1, "snapshot preserves the existing target-depth representation");
+		machine.cpu.restoreRuntimeState(state);
+		thread = machine.cpu.activeThread();
+		require(thread->currentFrame->protectedContinuationIndex == -1
+			&& thread->currentFrame->previous->protectedContinuationIndex == 0, "restore installs protection on the target rather than its subtree");
+		require(machine.cpu.runUntilDepth(2, 100) == RunResult::Halted && thread->protectedCallDepth == 1,
+			"ordinary child return must not finish protection");
+		require(machine.cpu.runUntilDepth(0, 100) == RunResult::Halted && thread->protectedCallDepth == 0,
+			"only the protected target completes its continuation");
+		const auto values = machine.cpu.readCompletionValues();
+		require(values.size() == 2 && values[0] == valueBool(true) && values[1] == valueNumber(7), "protected result prefix remains exact");
+		require(thread->firstFrame->next->protectedContinuationIndex == -1, "retired target forgets its protected obligation");
+	}
 }
 
 void returnGrowthCollection() {
@@ -254,6 +300,7 @@ void crossPageCalls(bool open, u32 recordOffset) {
 int main() {
 	try {
 		reusableFrameChain();
+		protectedNestedFrames();
 		returnGrowthCollection();
 		failedCallAdmission();
 		for (const bool open : {false, true}) for (const u32 offset : {0x1800u, 0x1ff0u}) crossPageCalls(open, offset);

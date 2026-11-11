@@ -5,7 +5,8 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { Thread } from '../../machine/ts/machine/cpu/thread';
 import type { CallFrame } from '../../machine/ts/machine/cpu/call_state';
-import { ValueTag } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
+import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
@@ -48,13 +49,58 @@ test('thread-owned nodes reuse stable identities and trim only the spare tail', 
 		assert.equal(frame.previous, previous); previous = frame; ++retained;
 	}
 	assert.equal(retained, 5);
-	thread.enterFrame(prepared); thread.leaveFrame(); thread.leaveFrame();
+	thread.enterFrame(prepared); prepared.protectedContinuationIndex = 3; thread.leaveFrame();
+	assert.equal(prepared.protectedContinuationIndex, -1, 'a new activation does not inherit a protected return');
+	thread.leaveFrame();
 	thread.trimFrames();
 	assert.equal(thread.frameDepth, 0); assert.equal(thread.currentFrame, null);
 	assert.equal(thread.acquireFrame(), frames[0], 'an empty thread keeps its first prepared node');
 });
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+	test(`only the protected target owns completion, including after snapshot restore (${backend})`, () => {
+		const text = new Uint8Array(11 * INSTRUCTION_BYTES);
+		writeInstruction(text, 0, OpCode.GETSYS, 0, 0, 0);
+		writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
+		writeInstruction(text, 2, OpCode.CLOSURE, 1, 0, 0);
+		writeInstruction(text, 3, OpCode.CALL, 0, 2, 2);
+		writeInstruction(text, 4, OpCode.RET, 0, 2, 0);
+		writeInstruction(text, 5, OpCode.WIDE, 0, 0, 0);
+		writeInstruction(text, 6, OpCode.CLOSURE, 0, 0, 0);
+		writeInstruction(text, 7, OpCode.CALL, 0, 1, 1);
+		writeInstruction(text, 8, OpCode.RET, 0, 1, 0);
+		writeInstruction(text, 9, OpCode.LOADK, 0, 0, 0);
+		writeInstruction(text, 10, OpCode.RET, 0, 1, 0);
+		const image = linkRawTestSystemBlua32({ text, functions: [
+			{ firstWord: 0, wordCount: 5, maxStack: 8 },
+			{ firstWord: 5, wordCount: 4, maxStack: 8 },
+			{ firstWord: 9, wordCount: 2, maxStack: 8 },
+		], constants: [7], systemGlobalNames: ['pcall'], closureRelocations: [
+			{ wordIndex: 2, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1) },
+			{ wordIndex: 6, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 2) },
+		] });
+		const { cpu } = createTestSystemCpu(image, backend);
+		cpu.setSystemGlobalByKey(cpu.stringPool.intern('pcall'), ValueTag.BuiltinFunction, BuiltinFunctionId.PCall, null);
+		for (let grant = 0; grant < 20 && cpu.getFrameDepth() !== 3; ++grant) cpu.runUntilDepth(0, 1);
+		assert.equal(cpu.getFrameDepth(), 3);
+		assert.equal(cpu.rootThread.protectedCallDepth, 1);
+		assert.equal(cpu.rootThread.currentFrame!.protectedContinuationIndex, -1);
+		assert.equal(cpu.rootThread.currentFrame!.previous!.protectedContinuationIndex, 0);
+		const snapshot = cpu.captureRuntimeState();
+		assert.equal(snapshot.threads[0].protectedCalls[0].targetFrameIndex, 1);
+		cpu.restoreRuntimeState(snapshot);
+		assert.deepEqual(cpu.captureRuntimeState(), snapshot);
+		assert.equal(cpu.rootThread.currentFrame!.protectedContinuationIndex, -1);
+		assert.equal(cpu.rootThread.currentFrame!.previous!.protectedContinuationIndex, 0);
+		assert.equal(cpu.runUntilDepth(2, 100), RunResult.Halted);
+		assert.equal(cpu.rootThread.protectedCallDepth, 1, 'ordinary child return must not finish protection');
+		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+		const values: Value[] = []; cpu.readCompletionValues(values);
+		assert.deepEqual(values, [true, 7]);
+		assert.equal(cpu.rootThread.protectedCallDepth, 0);
+		assert.equal(cpu.rootThread.firstFrame!.next!.protectedContinuationIndex, -1);
+	});
+
 	test(`collection while admitting a callee preserves prepared identity and only active roots (${backend})`, () => {
 		const { cpu } = createTestSystemCpu(callImage(1024, 1), backend), thread = cpu.rootThread;
 		cpu.runUntilDepth(0, 1);

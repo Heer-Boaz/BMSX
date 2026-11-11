@@ -40,6 +40,8 @@ struct CallFrame {
 	Closure* closure = nullptr;
 	int returnBase = 0;
 	int returnCount = 0;
+	// Only the activation invoked as a protected target owns its completion.
+	i32 protectedContinuationIndex = -1;
 	int top = 0;
 	bool returnToCompletionLatch = false;
 	u32 callSitePc = 0;
@@ -51,7 +53,6 @@ struct CallFrame {
 struct ProtectedCallContinuation {
 	ProtectedCallKind kind = ProtectedCallKind::PCall;
 	CallFrame* caller = nullptr;
-	CallFrame* target = nullptr;
 	bool returnsToProtectedParent = false;
 	int callBase = 0;
 	int returnCount = 0;

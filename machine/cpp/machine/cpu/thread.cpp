@@ -30,6 +30,7 @@ void Thread::leaveFrame() {
 	frame->decodedPageAddress = 0;
 	frame->compilationEntry = true;
 	frame->registers = nullptr;
+	frame->protectedContinuationIndex = -1;
 	frame->isExceptionFrame = false;
 	frame->isNonMaskableExceptionFrame = false;
 }

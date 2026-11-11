@@ -38,7 +38,7 @@ export class Thread {
 				decodedPageAddress: 0, decodedPageBusSignals: MAPPED_BUS_MASTER_CPU,
 				compilationEntry: true, pc: 0, varargBase: 0, varargCount: 0,
 				stackBase: 0, stackCapacity: 0, registers: new ValueSlots(0), closure: null!,
-				returnBase: 0, returnCount: 0, top: 0, returnToCompletionLatch: false,
+				returnBase: 0, returnCount: 0, protectedContinuationIndex: -1, top: 0, returnToCompletionLatch: false,
 				callSitePc: 0, isExceptionFrame: false, isNonMaskableExceptionFrame: false,
 				openUpvalueHead: null,
 			};
@@ -64,6 +64,7 @@ export class Thread {
 		frame.decodedPageAddress = 0;
 		frame.compilationEntry = true;
 		frame.registers.unbind();
+		frame.protectedContinuationIndex = -1;
 		frame.isExceptionFrame = false;
 		frame.isNonMaskableExceptionFrame = false;
 	}
