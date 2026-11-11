@@ -165,12 +165,12 @@ int main(int argc, char** argv) {
 				}
 			}
 			for (u32 warmup = 0; warmup < 4u; ++warmup) {
-				glClear(GL_COLOR_BUFFER_BIT); library.execute("crt", nullptr, fixture.output); glFinish();
+				glClear(GL_COLOR_BUFFER_BIT); library.execute("crt", nullptr, {fixture.output.pcrtcScanout, fixture.output.vramReplacementSerial}); glFinish();
 			}
 			const auto start = std::chrono::steady_clock::now();
 			const u32 samples = measure ? 40u : 2u;
 			for (u32 frame = 0; frame < samples; ++frame) {
-				glClear(GL_COLOR_BUFFER_BIT); library.execute("crt", nullptr, fixture.output); glFinish();
+				glClear(GL_COLOR_BUFFER_BIT); library.execute("crt", nullptr, {fixture.output.pcrtcScanout, fixture.output.vramReplacementSerial}); glFinish();
 			}
 			const double elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count() / samples;
 			glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
@@ -204,7 +204,7 @@ int main(int argc, char** argv) {
 				}
 			}
 			glClear(GL_COLOR_BUFFER_BIT);
-			library.execute("crt", nullptr, fixture.output);
+			library.execute("crt", nullptr, {fixture.output.pcrtcScanout, fixture.output.vramReplacementSerial});
 			glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, repeated.data());
 			require(pixels == repeated, "identical CRT state produces identical output");
 			std::array<bool, 256> levels{};

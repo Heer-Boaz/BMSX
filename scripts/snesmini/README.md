@@ -76,9 +76,14 @@ unfavorable result on one workload does not remove another representation.
 `BMSX_GLES2_THREADED=1` enables the C++ libretro emulation worker. The frontend
 thread keeps its GL context, input polling, audio/video callbacks, menu and rewind.
 The worker publishes completed GX command prefixes into two bounded, owned raw-word
-buffers while the frontend submits earlier work. This is intra-frame overlap, not
-an extra asynchronous final blit. Readback and supervisor boundaries wait for the
-ordered publications; every frame returns machine ownership before capture,
+buffers while the frontend submits earlier work. An ordered Present packet owns
+the selected tail commands, latched scanout, history-commit mode and resource-usage
+values; scanout, CRT and live overlays consume it without borrowing the Runtime.
+Selection still follows the fully admitted current cycle grant: no next-frame
+input, extra guest grant, audio queue or one-frame display latency is introduced.
+This is intra-frame submission overlap, not a continuous cross-frame pipeline.
+Readback and supervisor boundaries wait for the ordered publications; every frame
+returns machine ownership before capture,
 restore or context teardown. The TypeScript execution route is unchanged.
 
 For the 2 MiB VRAM model, the command buffers plus snapshot/readback transport

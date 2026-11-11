@@ -64,7 +64,10 @@ void testNativeMoveTarget() {
 	InputControllerSnapshot snapshot{};
 	const auto tick = [&]() { time += 20; input.poll(w, h, time); menu.tickInput(runtime, input, presenter, rewind, time); };
 	const auto press = [&](u16 mask) { buttons = mask; tick(); buttons = 0; tick(); };
-	const auto frame = [&]() { menu.queueRenderCommands(runtime, presenter, rewind); return presenter.hostOverlayQueue.consumeHostMenuFrame(); };
+	const auto frame = [&]() {
+		require(menu.queueLiveOverlayCommands(presenter, 60, {}), "live keyboard publication requires no Runtime or rewind owner");
+		return presenter.hostOverlayQueue.consumeHostMenuFrame();
+	};
 	const auto noKeys = [&]() {
 		tick(); input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext::Normal);
 		for (const auto word : snapshot.keyWords) require(word == 0, "MOVE cannot synthesize any guest key");

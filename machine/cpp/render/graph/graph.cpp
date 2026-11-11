@@ -205,7 +205,7 @@ void RenderGraphRuntime::executePass(
 	RenderGraphPass& pass,
 	RenderGraphContext& ctx,
 	FrameData* frame,
-	const GxGpuDeviceOutput& output
+	const GxGpuPresentation& output
 ) {
 	switch (pass.kind) {
 		case RenderGraphPass::Kind::FrameTargets:
@@ -399,7 +399,7 @@ bool RenderGraphRuntime::resolveExecutablePass(i32 orderIndex, bool hasOrder, Ex
 	return true;
 }
 
-void RenderGraphRuntime::execute(FrameData* frame, const GxGpuDeviceOutput& output) {
+void RenderGraphRuntime::execute(FrameData* frame, const GxGpuPresentation& output) {
 	if (!m_compiled) compile(frame);
 	if (!m_realized) realizeAll();
 

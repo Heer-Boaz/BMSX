@@ -95,6 +95,7 @@ public:
 	void beginFrame() override;
 	void endFrame() override;
 	FrameStats getFrameStats() const override { return m_stats; }
+	void executeGxGpuPresentation(const GxGpuDeviceOutput& output) override;
 	void executeGxGpuCommandDrain(GxGpu& gxGpu) override;
 	void executeGxGpuReadback(GxGpu& gxGpu) override;
 	void executeGxGpuCommands(const GxGpuCommandStorage& commands);
@@ -168,7 +169,7 @@ private:
 		void* framebuffer,
 		RenderPassStateStorage& state,
 		void* context,
-		const GxGpuDeviceOutput& output);
+		const GxGpuPresentation& output);
 
 	static constexpr i32 kTrackedTextureUnits = 16;
 	void bindTextureForUpload(GLuint texture, const TextureParams& params);

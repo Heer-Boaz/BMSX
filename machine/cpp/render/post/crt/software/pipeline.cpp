@@ -18,7 +18,7 @@ void renderPresentSoftware(
 	void* fbo,
 	RenderPassStateStorage& state,
 	void*,
-	const GxGpuDeviceOutput&
+	const GxGpuPresentation&
 ) {
 	auto& software = *static_cast<SoftwareBackend*>(backend);
 	if (fbo != nullptr) {

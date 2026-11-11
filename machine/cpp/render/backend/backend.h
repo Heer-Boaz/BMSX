@@ -69,6 +69,7 @@ using TextureHandle = void*;
 class RenderPassLibrary;
 class GxGpu;
 struct GxGpuDeviceOutput;
+struct GxGpuPresentation;
 struct GxGpuPipelineState;
 
 const std::array<u8, 256>& srgbToLinearLut();
@@ -207,6 +208,7 @@ public:
 	virtual void beginFrame() = 0;
 	virtual void endFrame() = 0;
 	virtual FrameStats getFrameStats() const = 0;
+	virtual void executeGxGpuPresentation(const GxGpuDeviceOutput& output) = 0;
 	virtual void executeGxGpuCommandDrain(GxGpu& gxGpu) = 0;
 	virtual void executeGxGpuReadback(GxGpu& gxGpu) = 0;
 	// Complete callbacks writing machine-owned readback buffers before replacement.
@@ -280,6 +282,7 @@ public:
 	void beginFrame() override;
 	void endFrame() override;
 	FrameStats getFrameStats() const override { return m_stats; }
+	void executeGxGpuPresentation(const GxGpuDeviceOutput& output) override;
 	void executeGxGpuCommandDrain(GxGpu& gxGpu) override;
 	void executeGxGpuReadback(GxGpu& gxGpu) override;
 	void finishGxGpuReadbacks() override;
@@ -311,7 +314,7 @@ private:
 	friend void renderGxGpuSoftwareFrame(
 		SoftwareBackend& backend,
 		const GxGpuPipelineState& state,
-		const GxGpuDeviceOutput& output);
+		const GxGpuPresentation& output);
 
 	SoftwarePresentationTarget m_presentation_target;
 	u32* m_default_framebuffer;

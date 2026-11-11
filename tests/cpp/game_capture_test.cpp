@@ -32,7 +32,11 @@ static RgbaImage capture(std::unique_ptr<GPUBackend> backend) {
 	fixture.scanout.backgroundColor = 0x00332211;
 	fixture.scanout.revision += 1;
 	presenter.configurePresentation(VideoPresenter::PresentationMode::Completed, true);
-	presenter.present(fixture.output, 0, 0);
+	{
+		const auto& deviceOutput = fixture.output;
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+	}
 	const auto sequence = presenter.gameFrameSequence();
 	const RgbaImage first = presenter.captureGameFrame();
 	require(first.width == 65 && first.height == 3, "native dimensions");
@@ -53,12 +57,20 @@ static RgbaImage capture(std::unique_ptr<GPUBackend> backend) {
 	fixture.scanout.backgroundColor = 0x00665544;
 	fixture.scanout.revision += 1;
 	presenter.configurePresentation(VideoPresenter::PresentationMode::Partial, false);
-	presenter.present(fixture.output, 0, 0);
+	{
+		const auto& deviceOutput = fixture.output;
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+	}
 	require(presenter.canvasSize.x == 130 && presenter.canvasSize.y == 6, "presentation allocates the selected size before drawing");
 	require(presenter.gameFrameSequence() == sequence, "UI repaint must not advance game-frame identity");
 	require(presenter.captureGameFrame().pixels == first.pixels, "overlay/partial frame must not contaminate completed history");
 	presenter.configurePresentation(VideoPresenter::PresentationMode::Completed, true);
-	presenter.present(fixture.output, 0, 0);
+	{
+		const auto& deviceOutput = fixture.output;
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+	}
 	require(presenter.captureGameFrame().pixels != first.pixels && presenter.gameFrameSequence() != sequence,
 		"committed image replaces history without mutating owned captures");
 	presenter.setScanoutSize(66, 3);

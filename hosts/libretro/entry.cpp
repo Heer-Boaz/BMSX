@@ -1175,7 +1175,7 @@ static void activate_runtime(bmsx::Runtime& runtime) {
 	const char* threaded = std::getenv("BMSX_GLES2_THREADED");
 	if (g_active_backend == bmsx::BackendType::OpenGLES2 && threaded != nullptr && std::strcmp(threaded, "1") == 0) {
 		g_gles_frame_worker = std::make_unique<bmsx::GlesFrameWorker>(runtime,
-			static_cast<bmsx::OpenGLES2Backend&>(g_video_presenter->backend()), *g_input);
+			*g_video_presenter, *g_input, *g_presentation, *g_overlay_menu);
 		logging.log(RETRO_LOG_INFO, "[BMSX] Threaded GLES submission enabled\n");
 	}
 #endif

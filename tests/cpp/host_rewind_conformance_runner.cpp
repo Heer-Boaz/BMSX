@@ -279,12 +279,12 @@ void testRecordingPolicy() {
 int main(int argc, char** argv) {
 	try {
 		testRecordingPolicy();
+		testPresentationIntentLifetime();
 		if (argc == 1) {
 			std::cout << "HOST-REWIND-POLICY:PASS\n";
 			return 0;
 		}
 		require(argc == 3 || argc == 4, "Usage: bmsx_host_rewind_conformance_runner SYSTEM_DIRECTORY CART_ROM [OUTPUT_DIRECTORY]");
-		testPresentationIntentLifetime();
 		testDefaultRetentionVideoStandards();
 		LibretroInput input(supervisorRequest);
 		input.setInputPollCallback(poll);

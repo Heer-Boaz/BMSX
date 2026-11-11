@@ -2155,7 +2155,8 @@ void testPowerOnVramResetSaveStateAndMachineRecreation() {
 			output.vramSnapshotBytes.end(),
 			frame.vramSnapshot->begin());
 		frame.output.vramSnapshotSerial = output.vramSnapshotSerial;
-		bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, frame.output);
+		frame.backend.executeGxGpuPresentation(frame.output);
+		bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, {frame.output.pcrtcScanout, frame.output.vramReplacementSerial});
 
 		first.writeGp0(bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u);
 		first.writeGp0(0u);
@@ -2163,7 +2164,8 @@ void testPowerOnVramResetSaveStateAndMachineRecreation() {
 		first.writeGp0(0x00001234u);
 		completeGpuCommands(harness);
 		first.presentReadyFrameOnVblankEdge();
-		bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, frame.output);
+		frame.backend.executeGxGpuPresentation(frame.output);
+		bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, {frame.output.pcrtcScanout, frame.output.vramReplacementSerial});
 	}
 
 	{
@@ -2178,7 +2180,8 @@ void testPowerOnVramResetSaveStateAndMachineRecreation() {
 			output.vramSnapshotBytes.end(),
 			frame.vramSnapshot->begin());
 		frame.output.vramSnapshotSerial = output.vramSnapshotSerial;
-		bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, frame.output);
+		frame.backend.executeGxGpuPresentation(frame.output);
+		bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, {frame.output.pcrtcScanout, frame.output.vramReplacementSerial});
 
 		const bmsx::u64 gp1Serial = second.readVramSnapshotSerial();
 		const bmsx::u64 gp1ReplacementSerial = second.readVramReplacementSerial();
@@ -2382,7 +2385,8 @@ void testGpureadQueuesLaterC0BehindActiveFence() {
 		firstOutput.vramSnapshotBytes.end(),
 		frame.vramSnapshot->begin());
 	frame.output.vramSnapshotSerial = firstOutput.vramSnapshotSerial;
-	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, frame.output);
+	frame.backend.executeGxGpuPresentation(frame.output);
+	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, {frame.output.pcrtcScanout, frame.output.vramReplacementSerial});
 	gpu.retirePresentedCommands();
 	require(gpu.readGp0() == 0x00001111u, "GX-GPU first queued C0 returns first pixel");
 
@@ -2390,7 +2394,8 @@ void testGpureadQueuesLaterC0BehindActiveFence() {
 	gpu.presentReadyFrameOnVblankEdge();
 	const bmsx::GxGpuDeviceOutput& secondOutput = gpu.readDeviceOutput();
 	frame.output.vramSnapshotSerial = secondOutput.vramSnapshotSerial;
-	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, frame.output);
+	frame.backend.executeGxGpuPresentation(frame.output);
+	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, {frame.output.pcrtcScanout, frame.output.vramReplacementSerial});
 	require(gpu.readGp0() == 0x00002222u, "GX-GPU second queued C0 runs after first transfer consumption");
 }
 
@@ -2419,7 +2424,8 @@ void testGpureadDoesNotClaimC0AppendedAfterPublishedFence() {
 		firstOutput.vramSnapshotBytes.end(),
 		frame.vramSnapshot->begin());
 	frame.output.vramSnapshotSerial = firstOutput.vramSnapshotSerial;
-	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, frame.output);
+	frame.backend.executeGxGpuPresentation(frame.output);
+	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, {frame.output.pcrtcScanout, frame.output.vramReplacementSerial});
 	require(firstOutput.readbackPort.phase() == bmsx::GX_GPU_READBACK_PENDING, "GX-GPU post-seal C0 remains pending on old frame");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_READY_TO_SEND_VRAM) == 0u, "GX-GPU post-seal C0 is not ready before its fence");
 	gpu.retirePresentedCommands();
@@ -2429,7 +2435,8 @@ void testGpureadDoesNotClaimC0AppendedAfterPublishedFence() {
 	gpu.presentReadyFrameOnVblankEdge();
 	const bmsx::GxGpuDeviceOutput& secondOutput = gpu.readDeviceOutput();
 	frame.output.vramSnapshotSerial = secondOutput.vramSnapshotSerial;
-	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, frame.output);
+	frame.backend.executeGxGpuPresentation(frame.output);
+	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, {frame.output.pcrtcScanout, frame.output.vramReplacementSerial});
 	require(gpu.readGp0() == 0x00001234u, "GX-GPU post-seal C0 reads after intervening upload");
 }
 
@@ -2482,7 +2489,8 @@ void testGp1ClearFifoAbortsPendingGpureadWithoutDroppingPriorCommands() {
 		output.vramSnapshotBytes.end(),
 		frame.vramSnapshot->begin());
 	frame.output.vramSnapshotSerial = output.vramSnapshotSerial;
-	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, frame.output);
+	frame.backend.executeGxGpuPresentation(frame.output);
+	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, {frame.output.pcrtcScanout, frame.output.vramReplacementSerial});
 }
 
 void testSupervisorBanksUnreadReadbackAndTransientTeardown() {
@@ -2616,7 +2624,8 @@ void testGp1ClearFifoAbortsReadyGpureadAndQueuedSuffix() {
 	gpu.writeGp0((1u << 16u) | 1u);
 	completeGpuCommands(harness);
 	gpu.presentReadyFrameOnVblankEdge();
-	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, frame.output);
+	frame.backend.executeGxGpuPresentation(frame.output);
+	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, {frame.output.pcrtcScanout, frame.output.vramReplacementSerial});
 }
 
 void testGpureadRestoreRearmsSubmittedAndResetClearsRequest() {
@@ -3610,7 +3619,8 @@ void testSoftwareScanoutConsumesTransfersAndFill() {
 
 	SoftwareFrameHarness frame(commandBuffer, commandBuffer.readback);
 
-	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, frame.output);
+	frame.backend.executeGxGpuPresentation(frame.output);
+	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, {frame.output.pcrtcScanout, frame.output.vramReplacementSerial});
 
 	requireArgbPixel(frame.framebuffer, 0u, 0u, 0x00ff0000u, "GX-GPU software scanout CPU upload red pixel");
 	requireArgbPixel(frame.framebuffer, 1u, 0u, 0x0000ff00u, "GX-GPU software scanout CPU upload green pixel");
@@ -3667,7 +3677,11 @@ void testNativePresentationRetainsHistoryAcrossHostResizing() {
 	}, &committed});
 	presenter.crt_postprocessing_enabled = false;
 	presenter.configurePresentation(bmsx::VideoPresenter::PresentationMode::Completed, true);
-	presenter.present(frame.output, 0, 0);
+	{
+		const auto& deviceOutput = frame.output;
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+	}
 	const auto* source = static_cast<bmsx::SoftwareTexture*>(registry.getStateRef<bmsx::PresentPipelineState>("present").colorTex);
 	require(source->width == 4 && source->height == 3, "history uses native dimensions");
 	require(std::all_of(source->data.begin(), source->data.end(), [](auto pixel) { return pixel == 0xff112233; }), "history contains native scanout");
@@ -3675,7 +3689,11 @@ void testNativePresentationRetainsHistoryAcrossHostResizing() {
 	frame.pcrtcWords[bmsx::GX_GPU_PCRTC_BGCOLOR_LOW] = 0x00665544;
 	frame.pcrtcScanout.update(frame.pcrtcWords, frame.pcrtcTiming);
 	presenter.configurePresentation(bmsx::VideoPresenter::PresentationMode::Partial, false);
-	presenter.present(frame.output, 0, 0);
+	{
+		const auto& deviceOutput = frame.output;
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+	}
 	require(registry.getStateRef<bmsx::PresentPipelineState>("present").colorTex == source, "host resize retains history texture identity");
 	std::fill_n(software.framebuffer(), 8 * 6, 0xffffffff);
 	require(std::all_of(source->data.begin(), source->data.end(), [](auto pixel) { return pixel == 0xff112233; }), "host drawing and partial output do not change history");
@@ -3685,18 +3703,35 @@ void testNativePresentationRetainsHistoryAcrossHostResizing() {
 	const bmsx::Host2DKind kinds[]{bmsx::Host2DKind::Rect, bmsx::Host2DKind::Clip, bmsx::Host2DKind::Frame};
 	const bmsx::Host2DRef refs[]{{.rect = &background}, {.clip = &clip}, {.frame = &image}};
 	presenter.hostOverlayQueue.publishOverlayFrame({8, 6, kinds, refs, 3});
-	presenter.present(frame.output, 0, 0);
+	{
+		const auto& deviceOutput = frame.output;
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+	}
 	for (int y = 0; y < 6; ++y) for (int x = 0; x < 8; ++x) {
 		require(software.framebuffer()[y * 8 + x] == (x >= 3 && x < 6 && y >= 2 && y < 4 ? 0xff112233u : 0xffffffffu), "embedded frame samples native history through the host clip");
 	}
 	presenter.useScanoutRenderTargetSize();
-	presenter.present(frame.output, 0, 0);
+	{
+		const auto& deviceOutput = frame.output;
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+	}
 	require(std::all_of(software.framebuffer(), software.framebuffer() + 12, [](auto pixel) { return pixel == 0xff112233; }), "return from host surface re-presents retained game pixels");
 	presenter.configurePresentation(bmsx::VideoPresenter::PresentationMode::Completed, true);
-	presenter.present(frame.output, 0, 0);
+	{
+		const auto& deviceOutput = frame.output;
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+	}
 	require(std::all_of(software.framebuffer(), software.framebuffer() + 12, [](auto pixel) { return pixel == 0xff445566; }), "completed output replaces history");
 	require(committed == std::vector<bmsx::u32>{1, 5}, "only completed images notify, not held/partial repaints");
-	presenter.setGameFrameObserver({}); presenter.present(frame.output, 0, 0);
+	presenter.setGameFrameObserver({});
+	{
+		const auto& deviceOutput = frame.output;
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+	}
 	require(committed.size() == 2, "detached observer receives no image commits");
 }
 
@@ -4443,11 +4478,13 @@ void testSoftwareBackendRetiresCommandLogWithoutClearingVram() {
 		bmsx::GX_GPU_COMMAND_FILL_RECTANGLE,
 		bmsx::GX_GPU_GP0_FILL_RECTANGLE);
 	SoftwareFrameHarness frame(commandBuffer, commandBuffer.readback);
-	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, frame.output);
+	frame.backend.executeGxGpuPresentation(frame.output);
+	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, {frame.output.pcrtcScanout, frame.output.vramReplacementSerial});
 	requireArgbPixel(frame.framebuffer, 0u, 0u, 0x00ff0000u, "GX-GPU software retire test initial red pixel");
 
 	commandBuffer.retireCommandsPreservingVram(commandBuffer.presentCommandCount);
-	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, frame.output);
+	frame.backend.executeGxGpuPresentation(frame.output);
+	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, {frame.output.pcrtcScanout, frame.output.vramReplacementSerial});
 	requireArgbPixel(frame.framebuffer, 0u, 0u, 0x00ff0000u, "GX-GPU software retire preserves VRAM");
 
 	pushSoftwareCommand(
@@ -4460,12 +4497,14 @@ void testSoftwareBackendRetiresCommandLogWithoutClearingVram() {
 		3u,
 		bmsx::GX_GPU_COMMAND_FILL_RECTANGLE,
 		bmsx::GX_GPU_GP0_FILL_RECTANGLE);
-	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, frame.output);
+	frame.backend.executeGxGpuPresentation(frame.output);
+	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, {frame.output.pcrtcScanout, frame.output.vramReplacementSerial});
 	requireArgbPixel(frame.framebuffer, 0u, 0u, 0x00ff0000u, "GX-GPU software retire keeps previous VRAM after new log");
 	requireArgbPixel(frame.framebuffer, 16u, 1u, 0x0000ff00u, "GX-GPU software retire executes commands after log reset");
 
 	commandBuffer.reset();
-	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, frame.output);
+	frame.backend.executeGxGpuPresentation(frame.output);
+	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, {frame.output.pcrtcScanout, frame.output.vramReplacementSerial});
 	requireArgbPixel(frame.framebuffer, 0u, 0u, 0x00ff0000u, "GX-GPU command-buffer reset preserves backend VRAM red pixel");
 	requireArgbPixel(frame.framebuffer, 16u, 1u, 0x0000ff00u, "GX-GPU command-buffer reset preserves backend VRAM green pixel");
 }
@@ -4576,7 +4615,8 @@ void testSoftwareScanoutConsumesSolidPrimitives() {
 
 	SoftwareFrameHarness frame(commandBuffer, commandBuffer.readback);
 
-	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, frame.output);
+	frame.backend.executeGxGpuPresentation(frame.output);
+	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, {frame.output.pcrtcScanout, frame.output.vramReplacementSerial});
 
 	requireArgbPixel(frame.framebuffer, 5u, 5u, 0x00ff0000u, "GX-GPU software scanout solid polygon pixel");
 	requireArgbPixel(frame.framebuffer, 13u, 13u, 0x00000000u, "GX-GPU software scanout solid polygon background pixel");
@@ -4696,7 +4736,8 @@ void testSoftwareScanoutConsumesTexturedPrimitives() {
 
 	SoftwareFrameHarness frame(commandBuffer, commandBuffer.readback);
 
-	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, frame.output);
+	frame.backend.executeGxGpuPresentation(frame.output);
+	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state, {frame.output.pcrtcScanout, frame.output.vramReplacementSerial});
 
 	requireArgbPixel(frame.framebuffer, 40u, 10u, 0x00ff0000u, "GX-GPU software scanout direct16 textured rectangle red pixel");
 	requireArgbPixel(frame.framebuffer, 41u, 10u, 0x0000ff00u, "GX-GPU software scanout direct16 textured rectangle green pixel");

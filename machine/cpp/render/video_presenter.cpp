@@ -106,7 +106,7 @@ RgbaImage VideoPresenter::captureGameFrame() {
  * The render graph executes the GX GPU, post, and host passes
  * in the correct order.
  */
-void VideoPresenter::present(const GxGpuDeviceOutput& output, f64 timeSeconds, f64 deltaSeconds) {
+void VideoPresenter::present(const GxGpuPresentation& output, f64 timeSeconds, f64 deltaSeconds) {
 	// Size requests may arrive between frames. Allocate only when the new
 	// target will actually be drawn, retaining the old image in the meantime.
 	const i32 width = static_cast<i32>(m_targetSize.x), height = static_cast<i32>(m_targetSize.y);

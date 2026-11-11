@@ -50,11 +50,14 @@ LibretroFrameResult runLibretroFrame(
 		rewind.service(true);
 		rewind.runPlayback(hostDeltaMs);
 	}
+	bool presented = false;
+	bool workerConsumedFrame = false;
 	if (runtime.isDrawPending() && menuExecution == HostMenuExecution::Live && !rewind.active) {
 		const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
 #if BMSX_ENABLE_GLES2
 		if (worker != nullptr) {
-			worker->run(hostDeltaMs);
+			presented = worker->run(totalTime, deltaTime);
+			workerConsumedFrame = true;
 		} else
 #endif
 		{
@@ -69,27 +72,29 @@ LibretroFrameResult runLibretroFrame(
 				runtime.frameScheduler.synchronizeBackendService(runtime);
 				runtime.frameScheduler.run(runtime, 0.0);
 			}
+			presentation.syncAfterRuntimeUpdate(runtime, previousTickSequence);
 		}
-		presentation.syncAfterRuntimeUpdate(runtime, previousTickSequence);
 	} else {
 		runtime.frameScheduler.clearQueuedTime();
 	}
-	if (overlayMenu.queueFrameOverlayCommands(
-		runtime,
-		presenter,
-		rewind,
-		hostFps
-	)) {
-		presentation.requestHeldPresentation();
+	if (!workerConsumedFrame) {
+		if (overlayMenu.queueFrameOverlayCommands(
+			runtime,
+			presenter,
+			rewind,
+			hostFps
+		)) {
+			presentation.requestHeldPresentation();
+		}
+		if (rewind.active) presentation.requestHeldPresentation();
+		presented = presentation.render(
+			presenter,
+			runtime,
+			totalTime,
+			deltaTime,
+			false
+		);
 	}
-	if (rewind.active) presentation.requestHeldPresentation();
-	const bool presented = presentation.render(
-		presenter,
-		runtime,
-		totalTime,
-		deltaTime,
-		false
-	);
 	if (!menuPaused && runtime.history.checkpointPending) rewind.service(true);
 	return presented ? LibretroFrameResult::Presented : LibretroFrameResult::NotPresented;
 }

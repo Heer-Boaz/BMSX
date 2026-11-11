@@ -172,7 +172,7 @@ void executePresentationHistoryGLES2Pass(
 	void* fbo,
 	RenderPassStateStorage& state,
 	void* context,
-	const GxGpuDeviceOutput&
+	const GxGpuPresentation&
 ) {
 	auto& typedBackend = *static_cast<OpenGLES2Backend*>(backend);
 	auto& typedPipeline = *static_cast<PresentGLES2State*>(context);

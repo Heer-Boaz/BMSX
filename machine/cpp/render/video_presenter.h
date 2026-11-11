@@ -13,6 +13,7 @@
 #include "render/host_overlay/overlay_queue.h"
 #include "render/video_output.h"
 #include "render/image.h"
+#include "render/gx_gpu_presentation.h"
 #include <optional>
 #include <array>
 #include <memory>
@@ -24,7 +25,6 @@ namespace bmsx {
 // Forward declarations
 class RenderPassLibrary;
 class RenderGraphRuntime;
-struct GxGpuDeviceOutput;
 
 /* ============================================================================
  * VideoPresenter - Frontend video presentation
@@ -71,7 +71,7 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	void clearTextures();
 	void initializeDefaultTextures();
-	void present(const GxGpuDeviceOutput& output, f64 timeSeconds, f64 deltaSeconds);
+	void present(const GxGpuPresentation& output, f64 timeSeconds, f64 deltaSeconds);
 	RgbaImage captureGameFrame();
 	void setGameFrameObserver(GameFrameObserver observer) { m_gameFrameObserver = observer; }
 	std::optional<u32> gameFrameSequence() const { return m_committedSequence; }

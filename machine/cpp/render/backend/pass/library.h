@@ -7,6 +7,7 @@
 #ifndef BMSX_RENDERPASSLIB_H
 #define BMSX_RENDERPASSLIB_H
 
+#include "render/gx_gpu_presentation.h"
 #include "../backend.h"
 #include "../../graph/graph.h"
 #include "../../host_overlay/commands.h"
@@ -26,7 +27,7 @@ namespace bmsx {
 
 class VideoPresenter;
 class RenderGraphRuntime;
-struct GxGpuDeviceOutput;
+
 
 /* ============================================================================
  * Render pass state types
@@ -151,7 +152,7 @@ struct RenderPassDef {
 		void*,
 		RenderPassStateStorage&,
 		void*,
-		const GxGpuDeviceOutput&
+		const GxGpuPresentation&
 	) = nullptr;
 	void (*bootstrap)(GPUBackend*, void*) = nullptr;
 	void (*teardown)(GPUBackend*, void*) = nullptr;
@@ -172,7 +173,7 @@ void executeStateRenderPass(
 	void*,
 	RenderPassStateStorage& state,
 	void*,
-	const GxGpuDeviceOutput&
+	const GxGpuPresentation&
 ) {
 	auto& typedBackend = *static_cast<Backend*>(backend);
 	const auto& typedState = state.*StateMember;
@@ -186,7 +187,7 @@ void executePipelineRenderPass(
 	void*,
 	RenderPassStateStorage& state,
 	void* context,
-	const GxGpuDeviceOutput&
+	const GxGpuPresentation&
 ) {
 	auto& typedBackend = *static_cast<Backend*>(backend);
 	auto& typedPipeline = *static_cast<Pipeline*>(context);
@@ -255,7 +256,7 @@ public:
 		return stateRef<T>(it->second.state);
 	}
 
-	void execute(const std::string& id, void* fbo, const GxGpuDeviceOutput& output);
+	void execute(const std::string& id, void* fbo, const GxGpuPresentation& output);
 	void writeGraphState(
 		const std::string& id,
 		const RenderPassDef::RenderGraphPassContext& ctx,
@@ -279,7 +280,7 @@ private:
 			void*,
 			RenderPassStateStorage&,
 			void*,
-			const GxGpuDeviceOutput&
+			const GxGpuPresentation&
 		) = nullptr;
 		void* context = nullptr;
 		RenderPassInstanceHandle pipelineHandle = nullptr;

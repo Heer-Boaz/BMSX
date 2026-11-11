@@ -8,8 +8,10 @@
 
 namespace bmsx {
 
-GlesFrameWorker::GlesFrameWorker(Runtime& runtime, OpenGLES2Backend& backend, LibretroInput& input)
-	: m_runtime(runtime), m_backend(backend), m_input(input),
+GlesFrameWorker::GlesFrameWorker(Runtime& runtime, VideoPresenter& presenter, LibretroInput& input,
+	RenderPresentationState& presentation, HostOverlayMenu& overlayMenu)
+	: m_runtime(runtime), m_backend(static_cast<OpenGLES2Backend&>(presenter.backend())), m_input(input),
+	  m_presenter(presenter), m_presentation(presentation), m_overlayMenu(overlayMenu),
 	  m_batches(std::make_unique<std::array<Batch, QueueCapacity>>()),
 	  m_snapshotBytes(runtime.machine.gxGpu.readDeviceOutput().vramSnapshotBytes.size()),
 	  m_readbackBytes(GX_GPU_TRANSFER_MAX_BYTE_COUNT),
@@ -105,6 +107,23 @@ void GlesFrameWorker::executeFrame(f64 hostDeltaMs) {
 	}
 }
 
+void GlesFrameWorker::publishPresentation(i64 previousTickSequence) {
+	m_presentation.syncAfterRuntimeUpdate(m_runtime, previousTickSequence);
+	if (m_overlayPresent) m_presentation.requestHeldPresentation();
+	RenderPresentation frame;
+	const auto* output = m_presentation.prepare(m_runtime, false, frame);
+	if (output == nullptr) return;
+	Batch& batch = acquireBatch();
+	batch.operation = Operation::Present;
+	batch.presentation = frame;
+	if (m_captureUsage) batch.usage = HostResourceUsage::capture(m_runtime);
+	batch.commands.copyPrefix(output->commandBuffer, output->commandBuffer.presentCommandCount);
+	publishBatch();
+	// The selected presentation prefix is now immutable and independent of the
+	// ingress buffer. Held/partial frames retain it, exactly as the direct path.
+	if (frame.commitFrame) m_runtime.machine.gxGpu.retirePublishedPresentation();
+}
+
 bool GlesFrameWorker::submitRumble(void* context, unsigned port, u16 strength) {
 	auto& worker = *static_cast<GlesFrameWorker*>(context);
 	Batch& batch = worker.acquireBatch();
@@ -122,14 +141,16 @@ void GlesFrameWorker::workerMain() {
 			std::unique_lock lock(m_mutex);
 			m_workAvailable.wait(lock, [this] { return m_jobPending || m_shutdown; });
 			if (m_shutdown) return;
-			delta = m_hostDeltaMs;
+			delta = m_deltaTime * 1000.0;
 			m_jobPending = false;
 		}
 		m_input.setRumbleSubmission({&submitRumble, this});
 		m_runtime.machine.gxGpu.setBackendSubmissionCommandLimit(SubmissionCommandLimit);
 		std::exception_ptr error;
 		try {
+			const i64 previousTickSequence = m_runtime.frameScheduler.lastTickSequence;
 			executeFrame(delta);
+			publishPresentation(previousTickSequence);
 		} catch (...) {
 			error = std::current_exception();
 		}
@@ -153,13 +174,17 @@ void GlesFrameWorker::workerMain() {
 	}
 }
 
-void GlesFrameWorker::run(f64 hostDeltaMs) {
+bool GlesFrameWorker::run(f64 currentTime, f64 deltaTime) {
 	{
 		std::lock_guard lock(m_mutex);
 		// A failed GL publication cancels this stream. It cannot be resumed as
 		// though skipped commands had produced valid VRAM.
 		if (m_submissionError) std::rethrow_exception(m_submissionError);
-		m_hostDeltaMs = hostDeltaMs;
+		m_currentTime = currentTime;
+		m_deltaTime = deltaTime;
+		m_presented = false;
+		m_overlayPresent = m_overlayMenu.livePresentationRequired(m_presenter);
+		m_captureUsage = m_presenter.showResourceUsageGizmo && !m_overlayMenu.active();
 		m_frameDone = false;
 		m_workerError = nullptr;
 		m_jobPending = true;
@@ -174,7 +199,7 @@ void GlesFrameWorker::run(f64 hostDeltaMs) {
 			if (m_readSequence == m_writeSequence && m_frameDone) {
 				if (m_submissionError) std::rethrow_exception(m_submissionError);
 				if (m_workerError) std::rethrow_exception(m_workerError);
-				return;
+				return m_presented;
 			}
 			batch = &(*m_batches)[m_readSequence % QueueCapacity];
 			submit = !m_submissionError;
@@ -182,6 +207,12 @@ void GlesFrameWorker::run(f64 hostDeltaMs) {
 		if (submit) {
 			try {
 				switch (batch->operation) {
+				case Operation::Present:
+					m_backend.executeGxGpuCommands(batch->commands);
+					m_overlayMenu.queueLiveOverlayCommands(m_presenter, 1.0 / m_deltaTime, batch->usage);
+					m_presentation.present(m_presenter, batch->presentation, m_currentTime, m_deltaTime);
+					m_presented = true;
+					break;
 				case Operation::Commands:
 					m_backend.executeGxGpuCommands(batch->commands);
 					break;

@@ -1,4 +1,5 @@
 #include "render/backend/software/gx_gpu.h"
+#include "render/gx_gpu_presentation.h"
 
 #include "render/backend/backend.h"
 #include "render/backend/pass/library.h"
@@ -18,7 +19,7 @@ void executeGxGpuSoftwarePass(
 	void*,
 	RenderPassStateStorage& stateStorage,
 	void*,
-	const GxGpuDeviceOutput& output
+	const GxGpuPresentation& output
 ) {
 	renderGxGpuSoftwareFrame(static_cast<SoftwareBackend&>(*backend), stateStorage.gxGpu, output);
 }
@@ -70,21 +71,19 @@ void executeGxGpuSoftwareVramCommands(
 void renderGxGpuSoftwareFrame(
 	SoftwareBackend& backend,
 	const GxGpuPipelineState& state,
-	const GxGpuDeviceOutput& output
+	const GxGpuPresentation& output
 ) {
-	executeGxGpuSoftwareVramCommands(
-		backend.m_gx_gpu_software,
-		output.commandBuffer,
-		output.readbackPort,
-		output.vramSnapshotBytes,
-		output.vramSnapshotSerial,
-		output.commandBuffer.presentCommandCount);
 	scanoutGxGpuSoftwareVram(
 		backend.m_gx_gpu_software,
 		backend,
 		state,
 		output.pcrtcScanout,
 		output.vramReplacementSerial);
+}
+
+void SoftwareBackend::executeGxGpuPresentation(const GxGpuDeviceOutput& output) {
+	executeGxGpuSoftwareVramCommands(m_gx_gpu_software, output.commandBuffer, output.readbackPort,
+		output.vramSnapshotBytes, output.vramSnapshotSerial, output.commandBuffer.presentCommandCount);
 }
 
 void SoftwareBackend::executeGxGpuReadback(GxGpu& gxGpu) {

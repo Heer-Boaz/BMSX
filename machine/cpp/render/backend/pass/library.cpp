@@ -26,7 +26,7 @@ void noopRenderPass(
 	void*,
 	RenderPassStateStorage&,
 	void*,
-	const GxGpuDeviceOutput&
+	const GxGpuPresentation&
 ) {
 }
 
@@ -266,7 +266,7 @@ bool RenderPassLibrary::has(const std::string& id) const {
 void RenderPassLibrary::execute(
 	const std::string& id,
 	void* fbo,
-	const GxGpuDeviceOutput& output
+	const GxGpuPresentation& output
 ) {
 	auto it = m_registered.find(id);
 	if (it == m_registered.end()) {

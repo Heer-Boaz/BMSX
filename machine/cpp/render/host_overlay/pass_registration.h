@@ -22,7 +22,7 @@ void renderHost2DPass(
 	void*,
 	RenderPassStateStorage& stateStorage,
 	void* context,
-	const GxGpuDeviceOutput&
+	const GxGpuPresentation&
 ) {
 	Backend& typedBackend = *static_cast<Backend*>(backend);
 	const State& state = stateStorage.*StateMember;

@@ -1,4 +1,5 @@
 #include "render/backend/gles2/gx_gpu.h"
+#include "render/gx_gpu_presentation.h"
 
 #include "machine/devices/gx/gpu.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
@@ -3871,7 +3872,7 @@ void scanoutInterlacedGxGpuVram(OpenGLES2GxGpuState& gx,
 void scanoutGxGpuVram(OpenGLES2GxGpuState& gx,
 	GLuint frameFbo,
 	const GxGpuPipelineState& state,
-	const GxGpuDeviceOutput& output
+	const GxGpuPresentation& output
 ) {
 	const GxGpuPcrtcScanout& scanout = output.pcrtcScanout;
 	prepareGxGpuScanoutState(gx, scanout);
@@ -3917,20 +3918,6 @@ void executeGxGpuVramCommands(OpenGLES2GxGpuState& gx, const GxGpuCommandStorage
 	completeGxGpuReadback(gx, commandLimit, readback);
 }
 
-void renderGxGpu(OpenGLES2GxGpuState& gx,
-	GLuint frameFbo,
-	const GxGpuPipelineState& state,
-	const GxGpuDeviceOutput& output
-) {
-	executeGxGpuVramCommands(gx,
-		output.commandBuffer,
-		output.readbackPort,
-		output.vramSnapshotBytes,
-		output.vramSnapshotSerial,
-		output.commandBuffer.presentCommandCount);
-	scanoutGxGpuVram(gx, frameFbo, state, output);
-}
-
 } // namespace
 
 void executeGxGpuPass(
@@ -3939,11 +3926,17 @@ void executeGxGpuPass(
 	void* fbo,
 	RenderPassStateStorage& stateStorage,
 	void*,
-	const GxGpuDeviceOutput& output
+	const GxGpuPresentation& output
 ) {
 	auto& gles = *static_cast<OpenGLES2Backend*>(backend);
 	OpenGLES2GxGpuState& gx = *gles.m_gx_gpu;
-	renderGxGpu(gx, gles.framebufferName(fbo), stateStorage.gxGpu, output);
+	scanoutGxGpuVram(gx, gles.framebufferName(fbo), stateStorage.gxGpu, output);
+}
+
+void OpenGLES2Backend::executeGxGpuPresentation(const GxGpuDeviceOutput& output) {
+	invalidateContextState();
+	executeGxGpuVramCommands(*m_gx_gpu, output.commandBuffer, output.readbackPort,
+		output.vramSnapshotBytes, output.vramSnapshotSerial, output.commandBuffer.presentCommandCount);
 }
 
 void OpenGLES2Backend::executeGxGpuCommands(const GxGpuCommandStorage& commands) {

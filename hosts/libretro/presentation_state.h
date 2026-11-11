@@ -12,8 +12,7 @@ class Runtime;
 struct RenderPresentation {
 	VideoPresenter::PresentationMode mode = VideoPresenter::PresentationMode::Completed;
 	bool commitFrame = false;
-	f64 runtimeDrawMs = 0.0;
-	f64 workbenchModeDrawMs = 0.0;
+	GxGpuPresentation gpu;
 };
 
 class RenderPresentationState {
@@ -25,6 +24,10 @@ public:
 	void requestHeldPresentation();
 	void requestRestoredPresentation();
 	void syncAfterRuntimeUpdate(Runtime& runtime, i64 previousTickSequence);
+	// The producer uses this borrowed output only to submit/copy the selected
+	// prefix. The frame itself owns every value consumed by presentation.
+	const GxGpuDeviceOutput* prepare(Runtime& runtime, bool pausedPresent, RenderPresentation& frame);
+	void present(VideoPresenter& presenter, const RenderPresentation& frame, f64 currentTime, f64 deltaTime);
 	bool render(
 		VideoPresenter& presenter,
 		Runtime& runtime,
@@ -54,7 +57,6 @@ private:
 	u64 m_debugPresentCommitPresents = 0;
 	u64 m_debugPresentHoldPresents = 0;
 	u64 m_debugPresentPausedPresents = 0;
-	RenderPresentation m_presentationScratch;
 	TickCompletion m_tickCompletionScratch;
 };
 

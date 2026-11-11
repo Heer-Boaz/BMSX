@@ -3,11 +3,14 @@
 #include "common/endian.h"
 #include "machine/runtime/save_state/codec.h"
 #include "input.h"
+#include "host_overlay_menu.h"
+#include "presentation_state.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state.h"
 #include "render/backend/gles2/backend.h"
 #include "render/backend/pass/library.h"
 #include "render/video_presenter.h"
+#include "render/shared/bmsx_font.h"
 #include "spec/blua32/builtin.h"
 #include "spec/gx/pcrtc.h"
 #include "machine/devices/gx/gpu_local_memory.h"
@@ -43,6 +46,7 @@ struct Observation {
 	bool delayFirstDraw = false;
 	bool overlapped = false;
 	bool throwOnDraw = false;
+	bool throwDuringPresentation = false;
 	bool throwOnEmission = false;
 	unsigned drawCalls = 0;
 	unsigned rumbleCalls = 0;
@@ -62,7 +66,11 @@ extern "C" void __wrap_glDrawArrays(GLenum mode, GLint first, GLsizei count) {
 				"the producer continues through two more batches while the first GL draw is delayed");
 			observation->overlapped = true;
 		}
-		if (observation->throwOnDraw) throw ConsumerFailure{};
+		if (observation->throwOnDraw) {
+			GLint viewport[4];
+			glGetIntegerv(GL_VIEWPORT, viewport);
+			if (!observation->throwDuringPresentation || viewport[2] == 256) throw ConsumerFailure{};
+		}
 	}
 	__real_glDrawArrays(mode, first, count);
 }
@@ -195,6 +203,9 @@ test::Blua32TestRom makeStream(bool supervisor = false, bool reset = false, bool
 	// GP1 clear publishes an incomplete wrapping upload's consumed words only.
 	script.gp0({0xa0000000u, 0x03ff03ffu, 0x00020003u, 0x22221111u, 0x44443333u});
 	script.write(IO_GX_GPU_GP1, 0x01000000u);
+	// This visible trailing primitive is below the publication threshold. Only
+	// the selected Present packet, not an earlier 128-command drain, draws it.
+	script.gp0({0x600000ffu, 0x00400004u, 0x00010008u});
 	script.write(Finished, 1u);
 	return script.finish();
 }
@@ -205,7 +216,14 @@ public:
 	void setDisplaySize(i32, i32, i32, i32) override {}
 };
 
-struct Result { std::vector<u8> vram; std::vector<u8> scanout; u32 readback; u32 readbackTail; i64 cycles; u32 pc; u32 finished; u32 dma; u32 dmaTail; unsigned rumbleCalls; };
+struct FrameBoundary {
+	i64 cycles;
+	u32 pc;
+	std::optional<u32> committedFrame;
+	bool operator==(const FrameBoundary&) const = default;
+};
+
+struct Result { std::vector<u8> vram; std::vector<u8> scanout; u32 readback; u32 readbackTail; i64 cycles; u32 pc; u32 finished; u32 dma; u32 dmaTail; unsigned rumbleCalls; std::vector<FrameBoundary> boundaries; };
 
 Result runStream(const test::Blua32TestRom& rom, bool threaded, GxGpuDrawTargetMode mode, unsigned frames = 2, bool acceptRumble = true, bool lifecycle = false, bool largeUpload = false) {
 	Observation observed;
@@ -239,6 +257,18 @@ Result runStream(const test::Blua32TestRom& rom, bool threaded, GxGpuDrawTargetM
 	VideoPresenter presenter(output, std::move(backend), 256, 256);
 	presenter.installRenderPipeline(std::make_unique<RenderPassLibrary>(&presenter.backend(), &presenter));
 	presenter.initializeDefaultTextures();
+	presenter.crt_postprocessing_enabled = false;
+	Font font;
+	presenter.default_font = &font;
+	RenderPresentationState presentation;
+	OnScreenKeyboard keyboard(input, NATIVE_KEYBOARD_PAGES);
+	HostOnScreenKeyboard keyboardView(keyboard);
+	HostKeyboardInteraction keyboardInteraction(keyboard, keyboardView);
+	HostOverlayMenu menu(input, keyboardInteraction);
+	// The RGB5 queued route also consumes machine usage captured in its packet.
+	// Its completed history must still match the overlay-free software image.
+	presenter.showResourceUsageGizmo = threaded && mode == GxGpuDrawTargetMode::SmallRgb5;
+	std::vector<FrameBoundary> boundaries;
 	std::unique_ptr<GlesFrameWorker> worker;
 	if (threaded) {
 		observation = &observed; observed.delayFirstDraw = true;
@@ -251,10 +281,16 @@ Result runStream(const test::Blua32TestRom& rom, bool threaded, GxGpuDrawTargetM
 			}
 			value.ready.notify_one();
 		}, &observed});
-		worker = std::make_unique<GlesFrameWorker>(runtime, static_cast<OpenGLES2Backend&>(presenter.backend()), input);
-		for (unsigned frame = 0; frame < frames; ++frame) worker->run(1000.0 / 60.0);
+		worker = std::make_unique<GlesFrameWorker>(runtime, presenter, input, presentation, menu);
+		for (unsigned frame = 0; frame < frames; ++frame) {
+			presentation.beginHostFrame();
+			worker->run(static_cast<f64>(frame + 1u) / 60.0, 1.0 / 60.0);
+			boundaries.push_back({runtime.machine.scheduler.nowCycles(), runtime.machine.cpu.readFramePc(runtime.machine.cpu.getFrameDepth() - 1), presenter.gameFrameSequence()});
+		}
 		require(observed.overlapped && !observed.wrongThread, "guest progress and GLES calls have distinct exclusive owners");
 	} else for (unsigned frame = 0; frame < frames; ++frame) {
+		presentation.beginHostFrame();
+		const i64 previousTick = runtime.frameScheduler.lastTickSequence;
 		runtime.frameScheduler.run(runtime, 1000.0 / 60.0);
 		while (runtime.machine.gxGpu.backendServicePending()) {
 			if (runtime.machine.gxGpu.backendCommandDrainPending()) presenter.backend().executeGxGpuCommandDrain(runtime.machine.gxGpu);
@@ -262,17 +298,21 @@ Result runStream(const test::Blua32TestRom& rom, bool threaded, GxGpuDrawTargetM
 			runtime.frameScheduler.synchronizeBackendService(runtime);
 			runtime.frameScheduler.run(runtime, 0.0);
 		}
+		presentation.syncAfterRuntimeUpdate(runtime, previousTick);
+		presentation.render(presenter, runtime, static_cast<f64>(frame + 1u) / 60.0, 1.0 / 60.0, false);
+		boundaries.push_back({runtime.machine.scheduler.nowCycles(), runtime.machine.cpu.readFramePc(runtime.machine.cpu.getFrameDepth() - 1), presenter.gameFrameSequence()});
 	}
-	presenter.crt_postprocessing_enabled = false;
-	presenter.configurePresentation(VideoPresenter::PresentationMode::Completed, true);
-	presenter.present(runtime.machine.gxGpu.readDeviceOutput(), 1.0, 1.0 / 60.0);
+	require(presenter.gameFrameSequence().has_value(), "the frame path commits history without a later live-device render");
 	const auto scanout = presenter.captureGameFrame();
+	const size_t tailPixel = (64u * static_cast<size_t>(scanout.width) + 4u) * 4u;
+	require(scanout.pixels[tailPixel] == 255u && scanout.pixels[tailPixel + 1u] == 0u && scanout.pixels[tailPixel + 2u] == 0u,
+		"the below-threshold final primitive is visible in the actual presented history before snapshot readback");
 	const u32 finished = runtime.machine.memory.readMappedU32LE(Finished);
 	const auto cycles = runtime.machine.scheduler.nowCycles();
-	const auto pc = runtime.machine.cpu.readCurrentInstructionPc();
+	const auto pc = runtime.machine.cpu.readFramePc(runtime.machine.cpu.getFrameDepth() - 1);
 	presenter.backend().captureGxGpuVramSnapshot(runtime.machine.gxGpu);
 	const auto bytes = runtime.machine.gxGpu.readDeviceOutput().vramSnapshotBytes;
-	Result result{{bytes.begin(), bytes.end()}, scanout.pixels, runtime.machine.memory.readMappedU32LE(ReadbackResult), runtime.machine.memory.readMappedU32LE(ReadbackTail), cycles, pc, finished, runtime.machine.memory.readMappedU32LE(DmaResult), runtime.machine.memory.readMappedU32LE(DmaResult + 4u), observed.rumbleCalls};
+	Result result{{bytes.begin(), bytes.end()}, scanout.pixels, runtime.machine.memory.readMappedU32LE(ReadbackResult), runtime.machine.memory.readMappedU32LE(ReadbackTail), cycles, pc, finished, runtime.machine.memory.readMappedU32LE(DmaResult), runtime.machine.memory.readMappedU32LE(DmaResult + 4u), observed.rumbleCalls, std::move(boundaries)};
 	require(!observed.wrongThread, "frontend rumble stays on the context thread");
 	if (lifecycle) {
 		const auto saved = captureRuntimeSaveState(runtime);
@@ -281,9 +321,17 @@ Result runStream(const test::Blua32TestRom& rom, bool threaded, GxGpuDrawTargetM
 		gles.onContextReset();
 		presenter.installRenderPipeline(std::make_unique<RenderPassLibrary>(&gles, &presenter));
 		presenter.initializeDefaultTextures();
+	presenter.crt_postprocessing_enabled = false;
+	Font font;
+	presenter.default_font = &font;
+	RenderPresentationState presentation;
+	OnScreenKeyboard keyboard(input, NATIVE_KEYBOARD_PAGES);
+	HostOnScreenKeyboard keyboardView(keyboard);
+	HostKeyboardInteraction keyboardInteraction(keyboard, keyboardView);
+	HostOverlayMenu menu(input, keyboardInteraction);
 		mutateFrontendGlState();
 		gles.invalidateContextState();
-		worker->run(0.0);
+		worker->run(1.0, 0.0);
 		gles.captureGxGpuVramSnapshot(runtime.machine.gxGpu);
 		require(std::equal(result.vram.begin(), result.vram.end(), runtime.machine.gxGpu.readVramSnapshotBytes().begin()),
 			"a rebuilt GL context consumes the checkpoint with the persistent worker still alive");
@@ -291,14 +339,14 @@ Result runStream(const test::Blua32TestRom& rom, bool threaded, GxGpuDrawTargetM
 		runtime.machine.gxGpu.replaceVramSnapshotBytes(replacement);
 		mutateFrontendGlState();
 		gles.invalidateContextState();
-		worker->run(0.0);
+		worker->run(1.0, 0.0);
 		gles.captureGxGpuVramSnapshot(runtime.machine.gxGpu);
 		require(std::equal(replacement.begin(), replacement.end(), runtime.machine.gxGpu.readVramSnapshotBytes().begin()),
 			"external replacement is published before another frame job");
 		applyRuntimeSaveState(runtime, saved);
 		mutateFrontendGlState();
 		gles.invalidateContextState();
-		worker->run(0.0);
+		worker->run(1.0, 0.0);
 		gles.captureGxGpuVramSnapshot(runtime.machine.gxGpu);
 		require(std::equal(result.vram.begin(), result.vram.end(), runtime.machine.gxGpu.readVramSnapshotBytes().begin()),
 			"save-state restore cannot be acknowledged by an older publication generation");
@@ -335,13 +383,14 @@ Result runStream(const test::Blua32TestRom& rom, bool threaded, GxGpuDrawTargetM
 	return result;
 }
 
-enum class FailedSubmissionOwner { Producer, Consumer };
+enum class FailedSubmissionOwner { Producer, Consumer, PresentationConsumer };
 
 void testSubmissionFailure(const test::Blua32TestRom& rom, FailedSubmissionOwner failedOwner) {
 	struct ProducerFailure {};
 	Observation observed;
 	observed.delayFirstDraw = true;
-	observed.throwOnDraw = failedOwner == FailedSubmissionOwner::Consumer;
+	observed.throwOnDraw = failedOwner != FailedSubmissionOwner::Producer;
+	observed.throwDuringPresentation = failedOwner == FailedSubmissionOwner::PresentationConsumer;
 	observed.throwOnEmission = failedOwner == FailedSubmissionOwner::Producer;
 	observation = &observed;
 	LibretroInput input([]() -> bool { return false; });
@@ -355,6 +404,14 @@ void testSubmissionFailure(const test::Blua32TestRom& rom, FailedSubmissionOwner
 	VideoPresenter presenter(output, std::move(ownedBackend), 256, 256);
 	presenter.installRenderPipeline(std::make_unique<RenderPassLibrary>(&backend, &presenter));
 	presenter.initializeDefaultTextures();
+	presenter.crt_postprocessing_enabled = false;
+	Font font;
+	presenter.default_font = &font;
+	RenderPresentationState presentation;
+	OnScreenKeyboard keyboard(input, NATIVE_KEYBOARD_PAGES);
+	HostOnScreenKeyboard keyboardView(keyboard);
+	HostKeyboardInteraction keyboardInteraction(keyboard, keyboardView);
+	HostOverlayMenu menu(input, keyboardInteraction);
 	runtime.machine.gxGpu.setOperationObserver({[](void* context, const GxGpuCommandBuffer&, size_t, i64) {
 		auto& value = *static_cast<Observation*>(context);
 		unsigned count;
@@ -368,11 +425,16 @@ void testSubmissionFailure(const test::Blua32TestRom& rom, FailedSubmissionOwner
 		if (value.throwOnEmission && count == value.overlapCommandCount) throw ProducerFailure{};
 	}, &observed});
 	{
-		GlesFrameWorker worker(runtime, backend, input);
+		GlesFrameWorker worker(runtime, presenter, input, presentation, menu);
+		if (failedOwner == FailedSubmissionOwner::PresentationConsumer) {
+			observed.throwOnDraw = false;
+			worker.run(1.0 / 60.0, 1.0 / 60.0);
+			observed.throwOnDraw = true;
+		}
 		bool receivedExpectedFailure = false;
-		try { worker.run(1000.0 / 60.0); }
+		try { worker.run(1.0 / 60.0, 1.0 / 60.0); }
 		catch (const ProducerFailure&) { receivedExpectedFailure = failedOwner == FailedSubmissionOwner::Producer; }
-		catch (const ConsumerFailure&) { receivedExpectedFailure = failedOwner == FailedSubmissionOwner::Consumer; }
+		catch (const ConsumerFailure&) { receivedExpectedFailure = failedOwner != FailedSubmissionOwner::Producer; }
 		require(receivedExpectedFailure && observed.overlapped, "the original submission error returns after overlapping published work");
 		if (failedOwner == FailedSubmissionOwner::Producer) {
 			// GLES readback packs two 16-bit pixels per RGBA8 output word.
@@ -385,15 +447,17 @@ void testSubmissionFailure(const test::Blua32TestRom& rom, FailedSubmissionOwner
 			require(!runtime.machine.gxGpu.backendSubmissionFencePending(),
 				"a producer error cannot leave an already consumed publication holding the supervisor fence");
 		} else {
+			if (failedOwner == FailedSubmissionOwner::PresentationConsumer)
+				require(runtime.machine.memory.readMappedU32LE(Finished) == 1u, "presentation failure occurs after guest completion and tail publication, not an early command draw");
 			const auto cycles = runtime.machine.scheduler.nowCycles();
-			const auto pc = runtime.machine.cpu.readCurrentInstructionPc();
+			const auto pc = runtime.machine.cpu.readFramePc(runtime.machine.cpu.getFrameDepth() - 1);
 			const auto emitted = observed.emitted.load();
 			const auto draws = observed.drawCalls;
 			bool rejected = false;
-			try { worker.run(1000.0 / 60.0); }
+			try { worker.run(1.0 / 60.0, 1.0 / 60.0); }
 			catch (const ConsumerFailure&) { rejected = true; }
 			require(rejected, "a second run preserves the original permanent consumer failure");
-			require(runtime.machine.scheduler.nowCycles() == cycles && runtime.machine.cpu.readCurrentInstructionPc() == pc
+			require(runtime.machine.scheduler.nowCycles() == cycles && runtime.machine.cpu.readFramePc(runtime.machine.cpu.getFrameDepth() - 1) == pc
 				&& observed.emitted.load() == emitted && observed.drawCalls == draws,
 				"a poisoned stream rejects another job before guest execution or GL submission");
 			// Request quiescence only after retrying, so the assertion above is
@@ -546,6 +610,7 @@ int main() {
 	const auto rom = makeStream();
 	testSubmissionFailure(rom, FailedSubmissionOwner::Producer);
 	testSubmissionFailure(rom, FailedSubmissionOwner::Consumer);
+	testSubmissionFailure(rom, FailedSubmissionOwner::PresentationConsumer);
 	const auto expected = runStream(rom, false, GxGpuDrawTargetMode::FullVram);
 	bool visibleColor = false;
 	for (size_t pixel = 0; pixel < expected.scanout.size(); pixel += 4u)
@@ -558,7 +623,7 @@ int main() {
 		require(actual.vram == expected.vram, "immutable queued commands match software VRAM including wrapping partial uploads");
 		require(actual.readback == expected.readback && actual.readback == 0x03e0001fu, "readback completion returns the correct ordered raw words to the guest");
 		require(actual.readbackTail == expected.readbackTail && actual.readbackTail == 0x00007c00u, "queued odd CPU readback retains its unread last pixel");
-		require(actual.cycles == expected.cycles && actual.pc == expected.pc, "submission latency does not change guest cycle or PC boundaries");
+		require(actual.boundaries == expected.boundaries && actual.cycles == expected.cycles && actual.pc == expected.pc, "submission latency does not change guest cycle or PC boundaries");
 		require(actual.dma == expected.dma && actual.dma == actual.readback, "DMA receives ordered readback words through the machine-thread device owner");
 		require(actual.dmaTail == expected.dmaTail && actual.dmaTail == 0x00007c00u, "an odd final readback pixel produces a zero high halfword through DMA");
 		require(actual.rumbleCalls == 4u && expected.rumbleCalls == 4u, "both vibration effects reach both frontend motors");
@@ -567,15 +632,15 @@ int main() {
 	const auto rejected = runStream(rom, true, GxGpuDrawTargetMode::FullVram, 2, false);
 	require(rejected.rumbleCalls == 2u, "frontend rejection updates support before a later guest vibration effect");
 	const auto resetRom = makeStream(false, true);
-	const auto resetDirect = runStream(resetRom, false, GxGpuDrawTargetMode::FullVram, 2);
-	const auto resetWorker = runStream(resetRom, true, GxGpuDrawTargetMode::FullVram, 2);
-	require(resetWorker.finished == 1u && resetWorker.vram == resetDirect.vram && resetWorker.readback == resetDirect.readback
+	const auto resetDirect = runStream(resetRom, false, GxGpuDrawTargetMode::FullVram, 3);
+	const auto resetWorker = runStream(resetRom, true, GxGpuDrawTargetMode::FullVram, 3);
+	require(resetWorker.boundaries == resetDirect.boundaries && resetWorker.finished == 1u && resetWorker.vram == resetDirect.vram && resetWorker.readback == resetDirect.readback
 		&& resetWorker.pc == resetDirect.pc && resetWorker.cycles == resetDirect.cycles,
 		"system reset with queued prior commands replaces VRAM before the new generation runs");
 	const auto largeRom = makeStream(false, false, true);
 	const auto largeDirect = runStream(largeRom, false, GxGpuDrawTargetMode::FullVram, 8, true, false, true);
 	const auto largeWorker = runStream(largeRom, true, GxGpuDrawTargetMode::SmallNibbles, 8, true, false, true);
-	require(largeWorker.finished == 1u && largeWorker.vram == largeDirect.vram && largeWorker.scanout == largeDirect.scanout
+	require(largeWorker.boundaries == largeDirect.boundaries && largeWorker.finished == 1u && largeWorker.vram == largeDirect.vram && largeWorker.scanout == largeDirect.scanout
 		&& largeWorker.cycles == largeDirect.cycles && largeWorker.pc == largeDirect.pc,
 		"a maximal DMA upload owns its full payload across bounded publication and later dependent commands");
 	testLibretroEntry(rom);
@@ -584,7 +649,7 @@ int main() {
 	const auto supervisorWorker = runStream(supervisorRom, true, GxGpuDrawTargetMode::FullVram);
 	std::cout << "supervisor direct done=" << supervisorDirect.finished << " pc=" << supervisorDirect.pc << " cycles=" << supervisorDirect.cycles
 		<< " worker done=" << supervisorWorker.finished << " pc=" << supervisorWorker.pc << " cycles=" << supervisorWorker.cycles << std::endl;
-	require(supervisorDirect.pc == supervisorWorker.pc && supervisorDirect.cycles == supervisorWorker.cycles,
+	require(supervisorDirect.boundaries == supervisorWorker.boundaries && supervisorDirect.pc == supervisorWorker.pc && supervisorDirect.cycles == supervisorWorker.cycles,
 		"supervisor transitions preserve the same guest boundary");
 	require(supervisorWorker.finished == 1u && supervisorWorker.readbackTail == 0x00007c00u
 		&& supervisorWorker.vram == supervisorDirect.vram && supervisorWorker.scanout == supervisorDirect.scanout,

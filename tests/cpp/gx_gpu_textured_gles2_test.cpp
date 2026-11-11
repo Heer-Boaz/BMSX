@@ -305,7 +305,11 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 	presenter.configurePresentation(VideoPresenter::PresentationMode::Completed, true);
 	const unsigned firstPublications = geometryPublications;
 	const unsigned firstGeometryDraws = geometryDraws;
-	presenter.present(fixture.gpu.readDeviceOutput(), 0, 0);
+	{
+		const auto& deviceOutput = fixture.gpu.readDeviceOutput();
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+	}
 	if (presenter.backend().type() == BackendType::OpenGLES2) {
 		require(geometryPublications == firstPublications + 1 && geometryDraws > firstGeometryDraws + 1,
 			"state-split textured batches share one geometry publication across solid draws and atlas transfers");
@@ -335,7 +339,11 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 		fixture.gpu.onService(fixture.scheduler.currentNowCycles());
 	}
 	fixture.gpu.presentReadyFrameOnVblankEdge();
-	presenter.present(fixture.gpu.readDeviceOutput(), 0, 0);
+	{
+		const auto& deviceOutput = fixture.gpu.readDeviceOutput();
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+	}
 	presenter.backend().captureGxGpuVramSnapshot(fixture.gpu);
 	// A rectangle whose UVs cross 255->0 reads both ends of its page. The
 	// narrow late upload lies outside the union of the wrapped endpoint UVs.
@@ -354,7 +362,11 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 	}
 	if (gles) presenter.backend().executeGxGpuCommandDrain(fixture.gpu);
 	fixture.gpu.presentReadyFrameOnVblankEdge();
-	presenter.present(fixture.gpu.readDeviceOutput(), 0, 0);
+	{
+		const auto& deviceOutput = fixture.gpu.readDeviceOutput();
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+	}
 	if (profiling) {
 		auto& backend = static_cast<OpenGLES2Backend&>(presenter.backend());
 		GxCpuToVramProfileFrame profile;
@@ -390,7 +402,11 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 		fixture.gpu.onService(fixture.scheduler.currentNowCycles());
 	}
 	fixture.gpu.presentReadyFrameOnVblankEdge();
-	presenter.present(fixture.gpu.readDeviceOutput(), 0, 0);
+	{
+		const auto& deviceOutput = fixture.gpu.readDeviceOutput();
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+	}
 	presenter.backend().captureGxGpuVramSnapshot(fixture.gpu);
 	for (const u32 word : {
 		// Both direct texture-mode encodings, every raw word, and forced mask.
@@ -405,7 +421,11 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 		fixture.gpu.onService(fixture.scheduler.currentNowCycles());
 	}
 	fixture.gpu.presentReadyFrameOnVblankEdge();
-	presenter.present(fixture.gpu.readDeviceOutput(), 0, 0);
+	{
+		const auto& deviceOutput = fixture.gpu.readDeviceOutput();
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+	}
 	presenter.backend().captureGxGpuVramSnapshot(fixture.gpu);
 	// Flipped palette4 rectangles at a nonzero page/CLUT and a screen X
 	// beyond 256 must preserve the same source as the forward direction.
@@ -428,14 +448,22 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 		fixture.gpu.onService(fixture.scheduler.currentNowCycles());
 	}
 	fixture.gpu.presentReadyFrameOnVblankEdge();
-	presenter.present(fixture.gpu.readDeviceOutput(), 0, 0);
+	{
+		const auto& deviceOutput = fixture.gpu.readDeviceOutput();
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+	}
 	presenter.backend().captureGxGpuVramSnapshot(fixture.gpu);
 	std::vector<u8> plain, toggled;
 	if (gles) { plain.resize(256u * 256u * 4u); toggled.resize(plain.size()); }
 	for (const u32 options : {1u, 2u, 4u, 8u, 16u, 32u, 64u, 127u}) {
 		if (gles) {
 			presenter.crt_postprocessing_enabled = false;
-			presenter.present(fixture.gpu.readDeviceOutput(), 128, 0);
+			{
+				const auto& deviceOutput = fixture.gpu.readDeviceOutput();
+				presenter.backend().executeGxGpuPresentation(deviceOutput);
+				presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 128, 0);
+			}
 			glReadPixels(0, 0, 256, 256, GL_RGBA, GL_UNSIGNED_BYTE, plain.data());
 			presenter.applyNoise = (options & 1u) != 0u;
 			presenter.applyColorBleed = (options & 2u) != 0u;
@@ -445,7 +473,11 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 			presenter.applyFringing = (options & 32u) != 0u;
 			presenter.applyAperture = (options & 64u) != 0u;
 			presenter.crt_postprocessing_enabled = true;
-			presenter.present(fixture.gpu.readDeviceOutput(), 128, 0);
+			{
+				const auto& deviceOutput = fixture.gpu.readDeviceOutput();
+				presenter.backend().executeGxGpuPresentation(deviceOutput);
+				presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 128, 0);
+			}
 			glReadPixels(0, 0, 256, 256, GL_RGBA, GL_UNSIGNED_BYTE, toggled.data());
 			if (options == 1u) for (size_t at = 0; at < plain.size(); at += 4u) {
 				if (plain[at] > 64u || plain[at + 1u] > 64u || plain[at + 2u] > 64u)
@@ -462,10 +494,18 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 			fixture.gpu.onService(fixture.scheduler.currentNowCycles());
 		}
 		fixture.gpu.presentReadyFrameOnVblankEdge();
-		presenter.present(fixture.gpu.readDeviceOutput(), 129, 0);
+		{
+			const auto& deviceOutput = fixture.gpu.readDeviceOutput();
+			presenter.backend().executeGxGpuPresentation(deviceOutput);
+			presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 129, 0);
+		}
 		if (gles) {
 			presenter.crt_postprocessing_enabled = false;
-			presenter.present(fixture.gpu.readDeviceOutput(), 129, 0);
+			{
+				const auto& deviceOutput = fixture.gpu.readDeviceOutput();
+				presenter.backend().executeGxGpuPresentation(deviceOutput);
+				presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 129, 0);
+			}
 			glReadPixels(0, 0, 256, 256, GL_RGBA, GL_UNSIGNED_BYTE, toggled.data());
 			require(toggled == plain, "disabling each CRT effect restores unfiltered output without restarting the core");
 		}
@@ -507,7 +547,11 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 		fixture.gpu.onService(fixture.scheduler.currentNowCycles());
 	}
 	fixture.gpu.presentReadyFrameOnVblankEdge();
-	presenter.present(fixture.gpu.readDeviceOutput(), 130, 0);
+	{
+		const auto& deviceOutput = fixture.gpu.readDeviceOutput();
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 130, 0);
+	}
 	presenter.backend().captureGxGpuVramSnapshot(fixture.gpu);
 	const auto bytes = fixture.gpu.readDeviceOutput().vramSnapshotBytes;
 	for (u32 word = 0u; word < 65536u; ++word) {
@@ -530,7 +574,11 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 	fixture.scheduler.advanceTo(fixture.scheduler.currentNowCycles() + 1'000'000);
 	fixture.gpu.onService(fixture.scheduler.currentNowCycles());
 	fixture.gpu.presentReadyFrameOnVblankEdge();
-	presenter.present(fixture.gpu.readDeviceOutput(), 131, 0);
+	{
+		const auto& deviceOutput = fixture.gpu.readDeviceOutput();
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 131, 0);
+	}
 	presenter.backend().captureGxGpuVramSnapshot(fixture.gpu);
 	const auto neutralBytes = fixture.gpu.readDeviceOutput().vramSnapshotBytes;
 	for (u32 word = 0u; word < 65536u; ++word) {
@@ -575,7 +623,11 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 		fixture.scheduler.advanceTo(fixture.scheduler.currentNowCycles() + 100'000);
 		fixture.gpu.onService(fixture.scheduler.currentNowCycles());
 		fixture.gpu.presentReadyFrameOnVblankEdge();
-		presenter.present(fixture.gpu.readDeviceOutput(), 132, 0);
+		{
+			const auto& deviceOutput = fixture.gpu.readDeviceOutput();
+			presenter.backend().executeGxGpuPresentation(deviceOutput);
+			presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 132, 0);
+		}
 		if (profiling) {
 			GLint equation;
 			glGetIntegerv(GL_BLEND_EQUATION_RGB, &equation);
@@ -619,7 +671,11 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 	require(fixture.gpu.readGp0() == 0x001f7c00u, "GPUREAD sees a CPU upload into a dirty cached source before texturing/copying it");
 	require(fixture.gpu.readGp0() == 0x001f001fu, "GPUREAD preserves row-major transfer order");
 	fixture.gpu.presentReadyFrameOnVblankEdge();
-	presenter.present(fixture.gpu.readDeviceOutput(), 132, 0);
+	{
+		const auto& deviceOutput = fixture.gpu.readDeviceOutput();
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 132, 0);
+	}
 	presenter.backend().captureGxGpuVramSnapshot(fixture.gpu);
 	const auto saved = fixture.gpu.captureSaveState({});
 	for (const u32 word : {0x6000ff00u, 0x01410081u, 0x00020003u}) {
@@ -628,9 +684,17 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 		fixture.gpu.onService(fixture.scheduler.currentNowCycles());
 	}
 	fixture.gpu.presentReadyFrameOnVblankEdge();
-	presenter.present(fixture.gpu.readDeviceOutput(), 132, 0);
+	{
+		const auto& deviceOutput = fixture.gpu.readDeviceOutput();
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 132, 0);
+	}
 	fixture.gpu.restoreSaveState(saved);
-	presenter.present(fixture.gpu.readDeviceOutput(), 132, 0);
+	{
+		const auto& deviceOutput = fixture.gpu.readDeviceOutput();
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 132, 0);
+	}
 	presenter.backend().captureGxGpuVramSnapshot(fixture.gpu);
 	const auto restored = fixture.gpu.readDeviceOutput().vramSnapshotBytes;
 	require(std::equal(saved.vramBytes.begin(), saved.vramBytes.end(), restored.begin()), "a restored snapshot invalidates newer cached drawing words");
@@ -650,7 +714,11 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 	}
 	if (gles) presenter.backend().executeGxGpuCommandDrain(fixture.gpu);
 	fixture.gpu.presentReadyFrameOnVblankEdge();
-	presenter.present(fixture.gpu.readDeviceOutput(), 132, 0);
+	{
+		const auto& deviceOutput = fixture.gpu.readDeviceOutput();
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 132, 0);
+	}
 	if (profiling) {
 		auto& backend = static_cast<OpenGLES2Backend&>(presenter.backend());
 		GxCpuToVramProfileFrame profile;
@@ -686,7 +754,11 @@ static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModel
 		fixture.gpu.onService(fixture.scheduler.currentNowCycles());
 	}
 	fixture.gpu.presentReadyFrameOnVblankEdge();
-	presenter.present(fixture.gpu.readDeviceOutput(), 133, 0);
+	{
+		const auto& deviceOutput = fixture.gpu.readDeviceOutput();
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 133, 0);
+	}
 	presenter.backend().captureGxGpuVramSnapshot(fixture.gpu);
 	const auto adjacentBytes = fixture.gpu.readDeviceOutput().vramSnapshotBytes;
 	require(adjacentBytes[(900u * 1024u + 700u) * 2u] == 0x1fu && adjacentBytes[(900u * 1024u + 700u) * 2u + 1u] == 0x80u,

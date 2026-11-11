@@ -267,6 +267,10 @@ public:
 		m_backendSubmissionPending = true;
 		retireExecutedCommands();
 	}
+	void retirePublishedPresentation() {
+		m_backendSubmissionPending = true;
+		retirePresentedCommands();
+	}
 	void completePublishedCommands() {
 		m_backendSubmissionPending = false;
 		notifySupervisorBoundary();

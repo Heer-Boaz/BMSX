@@ -46,28 +46,76 @@ static void testConditionalPassTargets() {
 	pass.shouldExecute = [](VideoPresenter*, void* context) { return *static_cast<bool*>(context); };
 	pass.graph.emplace();
 	pass.graph->writes = {RenderGraphSlot::FrameColor};
-	pass.exec = [](GPUBackend*, VideoPresenter*, void*, RenderPassStateStorage&, void*, const GxGpuDeviceOutput&) {};
+	pass.exec = [](GPUBackend*, VideoPresenter*, void*, RenderPassStateStorage&, void*, const GxGpuPresentation&) {};
 	registry.registerPass(pass);
 	presenter.installRenderPipeline(std::move(library));
 	presenter.crt_postprocessing_enabled = false;
 	test::GpuOutputFixture fixture;
-	presenter.present(fixture.output, 0, 0);
+	{
+		const auto& deviceOutput = fixture.output;
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+	}
 	observed.targetActivations = 0;
-	presenter.present(fixture.output, 0, 0);
+	{
+		const auto& deviceOutput = fixture.output;
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+	}
 	const u32 disabledActivations = observed.targetActivations;
 	enabled = true;
 	observed.targetActivations = 0;
-	presenter.present(fixture.output, 0, 0);
+	{
+		const auto& deviceOutput = fixture.output;
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+	}
 	require(observed.targetActivations == disabledActivations + 1u,
 		"a predicate-disabled pass performs no render-target activation");
 	registry.setPassEnabled(pass.id, false);
 	observed.targetActivations = 0;
-	presenter.present(fixture.output, 0, 0);
+	{
+		const auto& deviceOutput = fixture.output;
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+	}
 	require(observed.targetActivations == disabledActivations,
 		"a registry-disabled pass performs no render-target activation");
 }
 
+static void testOwnedScanoutPacket() {
+	TestVideoOutput video(256, 192);
+	auto backend = std::make_unique<SoftwareBackend>(256, 192, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	auto& software = *backend;
+	backend->resizePresentationTarget(256, 192);
+	VideoPresenter presenter(video, std::move(backend), 256, 192);
+	presenter.installRenderPipeline(std::make_unique<RenderPassLibrary>(&software, &presenter));
+	presenter.crt_postprocessing_enabled = false;
+	const auto published = [&]() {
+		test::GpuOutputFixture producer;
+		producer.scanout.backgroundColor = 0x00332211u;
+		producer.output.vramReplacementSerial = 7u;
+		const GxGpuPresentation frame{producer.scanout, producer.output.vramReplacementSerial};
+		software.executeGxGpuPresentation(producer.output);
+		producer.scanout.backgroundColor = 0x00ccbbaau;
+		producer.output.vramReplacementSerial = 8u;
+		return frame;
+	}();
+	// Command storage, PCRTC registers and the originating scanout object have
+	// all been reclaimed before any graph pass sees this publication.
+	presenter.configurePresentation(VideoPresenter::PresentationMode::Completed, true);
+	presenter.present(published, 0, 0);
+	require((software.framebuffer()[0] & 0x00ffffffu) == 0x00112233u,
+		"the scanout graph consumes owned display state after producer reuse and destruction");
+	const auto committed = presenter.captureGameFrame();
+	presenter.configurePresentation(VideoPresenter::PresentationMode::Completed, false);
+	presenter.present(published, 1, 1);
+	require(presenter.captureGameFrame().pixels == committed.pixels,
+		"held presentation consumes the same immutable frame without changing game history");
+}
+
 int main() {
+	testOwnedScanoutPacket();
 	testConditionalPassTargets();
 	TestVideoOutput video(256, 192);
 	auto backend = std::make_unique<SoftwareBackend>(256, 192, PSX_MACHINE_SPEC.gxGpuVramBytes);
@@ -83,7 +131,11 @@ int main() {
 	test::GpuOutputFixture fixture;
 	fixture.scanout.backgroundColor = 0x00332211;
 	presenter.configurePresentation(VideoPresenter::PresentationMode::Completed, true);
-	presenter.present(fixture.output, 0, 0);
+	{
+		const auto& deviceOutput = fixture.output;
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+	}
 	const auto* initialPixels = software.framebuffer();
 	const u32 initialPixel = initialPixels[0];
 	const auto sequence = presenter.gameFrameSequence();
@@ -96,7 +148,11 @@ int main() {
 	require(presenter.viewportSize.x == 384 && presenter.canvasSize.x == 256,
 		"logical selection and actual allocation remain distinct until presentation");
 	presenter.configurePresentation(VideoPresenter::PresentationMode::Completed, false);
-	presenter.present(fixture.output, 0, 0);
+	{
+		const auto& deviceOutput = fixture.output;
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+	}
 	require(video.changes == 1 && presenter.canvasSize.x == 384 && presenter.canvasSize.y == 288,
 		"presentation coalesces requests into the final target");
 	require(presenter.gameFrameSequence() == sequence, "host resizing does not commit a new game frame");
@@ -116,21 +172,37 @@ int main() {
 	require(presenter.deviceQuantizeConfigurationRevision() == configuration + 1, "host release retains native graph");
 	require(presenter.viewportSize.x == 320 && presenter.viewportSize.y == 240, "release uses latest scanout, not entry size");
 	require(software.framebuffer() == pixels && video.changes == 1, "host release retains the last rendered target");
-	presenter.present(fixture.output, 0, 0);
+	{
+		const auto& deviceOutput = fixture.output;
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+	}
 	require(software.width() == 320 && software.height() == 240 && video.width == 320 && video.height == 240, "backend and video output share the selected target");
 	presenter.setFixedRenderTargetSize(384, 288, 384, 288);
 	presenter.useScanoutRenderTargetSize();
-	presenter.present(fixture.output, 0, 0);
+	{
+		const auto& deviceOutput = fixture.output;
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+	}
 	require(video.changes == 2, "returning to the allocated size before drawing avoids reallocation");
 	presenter.setFixedRenderTargetSize(320, 240, 320, 240);
 	presenter.setScanoutSize(256, 192);
 	require(video.changes == 2, "same-size host admission still establishes fixed sizing");
 	presenter.setFixedRenderTargetSize(384, 288, 384, 288);
 	presenter.useScanoutRenderTargetSize();
-	presenter.present(fixture.output, 0, 0);
+	{
+		const auto& deviceOutput = fixture.output;
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+	}
 	require(software.width() == 256 && software.height() == 192, "fixed-size changes do not overwrite scanout size");
 	presenter.setScanoutSize(320, 240);
-	presenter.present(fixture.output, 0, 0);
+	{
+		const auto& deviceOutput = fixture.output;
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+	}
 	require(software.width() == 320 && software.height() == 240, "normal gameplay continues following scanout");
 	std::cout << "VIDEO-PRESENTER-SIZING:PASS\n";
 	// Complete frame coordinates survive a different destination allocation.
@@ -143,7 +215,11 @@ int main() {
 	for (const bool menu : {false, true}) {
 		if (menu) presenter.hostOverlayQueue.publishHostMenuFrame(frame); else presenter.hostOverlayQueue.publishOverlayFrame(frame);
 		presenter.setFixedRenderTargetSize(12, 12, 12, 12);
-		presenter.present(fixture.output, 0, 0);
+		{
+			const auto& deviceOutput = fixture.output;
+			presenter.backend().executeGxGpuPresentation(deviceOutput);
+			presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+		}
 		for (i32 y = 0; y < 12; y++) for (i32 x = 0; x < 12; x++) {
 			const bool white = software.framebuffer()[y * 12 + x] == 0xffffffff;
 			require(white == (x >= 3 && x < 9 && y >= 4 && y < 8), "both host lanes map frame-local transforms and clips to the target");
@@ -153,7 +229,11 @@ int main() {
 	const auto nativeSequence = presenter.gameFrameSequence();
 	const auto nativeRevision = presenter.deviceQuantizeConfigurationRevision();
 	presenter.setFixedRenderTargetSize(96, 72, 32, 24);
-	presenter.present(fixture.output, 0, 0);
+	{
+		const auto& deviceOutput = fixture.output;
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+	}
 	require(presenter.canvasSize.x == 96 && presenter.displayedViewportSize.x == 32
 		&& video.visibleViewportBounds.right == 32 && video.visibleViewportBounds.bottom == 24,
 		"raster density and published logical viewport are independent");
@@ -162,7 +242,11 @@ int main() {
 	presenter.setFixedRenderTargetSize(96, 72, 48, 36);
 	require(presenter.displayedViewportSize.x == 32 && video.changes == priorChanges,
 		"logical selection does not publish undrawn input geometry");
-	presenter.present(fixture.output, 0, 0);
+	{
+		const auto& deviceOutput = fixture.output;
+		presenter.backend().executeGxGpuPresentation(deviceOutput);
+		presenter.present({deviceOutput.pcrtcScanout, deviceOutput.vramReplacementSerial}, 0, 0);
+	}
 	require(software.framebuffer() == densePixels && video.width == 96 && video.height == 72,
 		"UI scaling reuses the physical raster buffer");
 	require(video.changes == priorChanges + 1 && presenter.displayedViewportSize.x == 48
