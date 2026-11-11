@@ -22,6 +22,10 @@ struct Thread : GCObject {
 	CallFrame* frameAtDepth(size_t depth) const;
 	void trimFrames();
 	void resizeStack(size_t capacity);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	struct NativeOffsets { size_t currentFrame, frameDepth, stackTop; };
+	static NativeOffsets nativeOffsets();
+#endif
 
 	ThreadStatus status = ThreadStatus::New;
 	// Stable nodes belong to this thread. The cursor, not the retained tail,

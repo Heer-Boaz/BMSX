@@ -170,6 +170,8 @@ void crossPageLinksRetireTheirTargetsAndKeepBoundedStack() {
 	auto* secondPage = lookup.find(DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE, 0);
 	const auto* root = firstPage->nativeBlocks->entries[0].get();
 	const auto* target = secondPage->nativeBlocks->entries[0].get();
+	require(firstPage->nativeCode && firstPage->nativeCode[0]
+		&& secondPage->nativeCode && secondPage->nativeCode[0], "compiled pages publish their native dispatch words");
 	require(root && target && root->terminal.link.target == target && target->terminal.link.target == root,
 		"both cross-page edges enter the real successor body without the CPU dispatcher");
 	for (int grant = 1; grant <= 128; ++grant) {
@@ -185,12 +187,15 @@ void crossPageLinksRetireTheirTargetsAndKeepBoundedStack() {
 		DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE + 3 * INSTRUCTION_BYTES, replacement.data(), replacement.size());
 	require(firstPage->nativeBlocks->entries[0].get() == root && !root->terminal.link.target,
 		"retiring a cross-page target disconnects its incoming edge without discarding the independent source");
+	require(firstPage->nativeCode[0] && secondPage->nativeCode == nullptr,
+		"retirement withdraws the native dispatch bank before releasing the last target region");
 	for (auto* machine : {&native, &scalar}) {
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 2048);
 	requireParity(native, scalar);
 	require(root->terminal.link.target == secondPage->nativeBlocks->entries[0].get(), "a rewritten target regenerates and links again");
+	require(secondPage->nativeCode && secondPage->nativeCode[0], "a regenerated target republishes its native dispatch word");
 	test::runCpuParity(native.cpu, scalar.cpu, 600002);
 	requireParity(native, scalar);
 	native.cpu.reset();

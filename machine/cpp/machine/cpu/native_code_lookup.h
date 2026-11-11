@@ -1,8 +1,5 @@
 #pragma once
 
-#include <array>
-#include <memory>
-
 #include "common/primitives.h"
 #include "machine/memory/mapped_page.h"
 #include "spec/bmsx/cartridge.h"
@@ -16,16 +13,25 @@ struct DecodedInstructionPage;
 // cache. Retiring a body leaves its page and this index intact. Each socket has
 // its own cartridge window; system ROM and main RAM are indexed in both banks.
 class NativeCodeLookup {
+public:
 	static constexpr u32 GROUP_PAGE_SHIFT = 12u;
 	static constexpr u32 GROUP_PAGES = 1u << GROUP_PAGE_SHIFT;
 	static constexpr u32 ROOT_SHIFT = MAPPED_PAGE_BYTE_SHIFT + GROUP_PAGE_SHIFT;
 	static constexpr u32 ROOT_ENTRIES = 1u << (ADDRESS_BITS - ROOT_SHIFT);
 	struct Group {
-		std::array<DecodedInstructionPage*, GROUP_PAGES> pages{};
+		DecodedInstructionPage* pages[GROUP_PAGES]{};
 	};
-	std::array<std::array<std::unique_ptr<Group>, ROOT_ENTRIES>, CARTRIDGE_SLOT_COUNT> m_groups{};
+	using Root = Group* [ROOT_ENTRIES];
 
-public:
+	NativeCodeLookup() = default;
+	~NativeCodeLookup() { for (auto& bank : m_groups) for (auto* group : bank) delete group; }
+	NativeCodeLookup(const NativeCodeLookup&) = delete;
+	NativeCodeLookup& operator=(const NativeCodeLookup&) = delete;
+
+	// Generated dispatch consumes this owner-defined raw index, not a host
+	// container's private layout. A grant binds the physically selected bank.
+	const Root& root(u32 slot) const { return m_groups[slot]; }
+
 	DecodedInstructionPage* find(u32 pc, u32 slot) const {
 		const auto& group = m_groups[slot][pc >> ROOT_SHIFT];
 		return group ? group->pages[(pc >> MAPPED_PAGE_BYTE_SHIFT) & (GROUP_PAGES - 1u)] : nullptr;
@@ -38,10 +44,13 @@ public:
 		const u32 index = (pageAddress >> MAPPED_PAGE_BYTE_SHIFT) & (GROUP_PAGES - 1u);
 		for (u32 bank = firstSlot; bank < endSlot; ++bank) {
 			auto& group = m_groups[bank][root];
-			if (!group) group = std::make_unique<Group>();
+			if (!group) group = new Group;
 			group->pages[index] = &page;
 		}
 	}
+
+private:
+	Root m_groups[CARTRIDGE_SLOT_COUNT]{};
 };
 
 } // namespace bmsx

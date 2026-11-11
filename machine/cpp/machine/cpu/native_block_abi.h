@@ -36,6 +36,9 @@ public:
 	std::array<void*, 2> publishSegment;
 	// Already materialized/charged edges arrive here when unlinked or expired.
 	void* leaveSegment;
+
+private:
+	sljit_label* emitReturnGate(sljit_compiler* compiler, sljit_label* coldDispatch);
 };
 
 const NativeBlockGate& nativeBlockGate();

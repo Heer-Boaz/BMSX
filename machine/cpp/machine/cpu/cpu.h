@@ -490,6 +490,8 @@ private:
 	void skipNextInstruction(CallFrame& frame);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	friend class NativeBlockGate;
+	struct NativeFrameOffsets { size_t haltedThread, haltedDepth; };
+	static NativeFrameOffsets nativeFrameOffsets();
 	static void* dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept;
 	void prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32 word);
 	static NativeBlockTransition compiledReadFieldExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);

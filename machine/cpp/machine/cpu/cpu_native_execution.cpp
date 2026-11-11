@@ -9,6 +9,17 @@
 
 namespace bmsx {
 
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winvalid-offsetof"
+#endif
+CPU::NativeFrameOffsets CPU::nativeFrameOffsets() {
+	return {offsetof(CPU, m_haltedUntilIrqThread), offsetof(CPU, m_haltedUntilIrqFrameDepth)};
+}
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+
 #include "machine/cpu/cpu_calls.inl"
 #include "machine/cpu/cpu_strings.inl"
 
@@ -112,6 +123,9 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		if (!page || !page->nativeBlocks) return nullptr;
 		auto* target = page->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
 		if (!target) return nullptr;
+		// Every helper can change socket selection, even without changing the
+		// frame/image. Bind the live physical bank again before native dispatch.
+		run->codeRoot = lookup->root(cpu.m_memory.cartridgeController().selectedSlot(cpu.m_executionBusSignals));
 		// A pure continuation still owns its descriptor. Cross-page links are
 		// stable except a system-image edge from shared memory into the selectable
 		// cartridge window. Cartridge source pages already have physical identity;

@@ -153,11 +153,13 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 	for (size_t index = 0; index < entries.size(); ++index) {
 		const u32 entry = entries[index];
 		page.nativeBlocks->entries[entry] = std::move(blocks[index]);
+		page.nativeBlocks->code[entry] = page.nativeBlocks->entries[entry]->m_body;
 		++page.nativeBlocks->count;
 		page.words[entry].dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeBlock);
 		page.words[entry].dispatchCycles = page.words[entry].baseCycles;
 		page.refreshState[entry] &= static_cast<u8>(~DECODED_REFRESH_FUSION);
 	}
+	page.nativeCode = page.nativeBlocks->code;
 	auto& lookup = frame.executionImage->nativeCodeLookup;
 	if (!lookup) lookup = std::make_unique<NativeCodeLookup>();
 	lookup->install(m_currentInstructionPc & ~MAPPED_PAGE_BYTE_MASK,

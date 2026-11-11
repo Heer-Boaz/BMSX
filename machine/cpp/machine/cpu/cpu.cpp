@@ -2763,6 +2763,7 @@ dispatch_instruction:
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 dispatch_native_block: {
+				nativeState.codeRoot = IMAGE.nativeCodeLookup->root(m_memory.cartridgeController().selectedSlot(m_executionBusSignals));
 				nativeState.state = {.registers = registers, .constants = IMAGE.constPool.data(), .frame = frame,
 					.globalValues = m_globalValues.data(), .systemGlobalValues = m_systemGlobalValues.data(),
 					.cop0Words = m_cop0Words.data(), .constantCount = static_cast<u32>(IMAGE.constPool.size()),

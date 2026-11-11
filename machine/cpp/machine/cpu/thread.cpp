@@ -6,6 +6,19 @@ namespace bmsx {
 
 Thread::Thread() { resizeStack(8); }
 
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winvalid-offsetof"
+#endif
+Thread::NativeOffsets Thread::nativeOffsets() {
+	return {offsetof(Thread, currentFrame), offsetof(Thread, frameDepth), offsetof(Thread, stackTop)};
+}
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+#endif
+
 Thread::~Thread() {
 	while (firstFrame) {
 		auto* next = firstFrame->next;

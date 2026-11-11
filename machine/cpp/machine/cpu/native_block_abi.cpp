@@ -26,6 +26,11 @@ NativeBlockGate::NativeBlockGate() {
 	auto* returnLabel = sljit_emit_label(compiler);
 	sljit_emit_return(compiler, SLJIT_MOV_P, SLJIT_R0, 0);
 	auto* dispatchLabel = sljit_emit_label(compiler);
+	sljit_emit_op1(compiler, SLJIT_MOV_U8, SLJIT_R1, 0,
+		SLJIT_MEM1(SLJIT_R0), offsetof(NativeBlockExitSite, exit));
+	auto* ordinaryReturn = sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R1, 0,
+		SLJIT_IMM, static_cast<int>(NativeBlockExit::Return));
+	auto* coldDispatchLabel = sljit_emit_label(compiler);
 	// The retiring body has no return address on the host stack. Helpers may
 	// invalidate it; their continuation belongs to this stable dispatcher.
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_R0, 0);
@@ -34,6 +39,7 @@ NativeBlockGate::NativeBlockGate() {
 		SLJIT_IMM, SLJIT_FUNC_ADDR(&CPU::dispatchNativeExit));
 	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0), returnLabel);
 	sljit_set_label(sljit_emit_jump(compiler, SLJIT_JUMP), resumeLabel);
+	sljit_set_label(ordinaryReturn, emitReturnGate(compiler, coldDispatchLabel));
 
 	// Region bodies name an exit and its register map. Materialization and
 	// dispatch live here once, not in every generated instruction's side exit.

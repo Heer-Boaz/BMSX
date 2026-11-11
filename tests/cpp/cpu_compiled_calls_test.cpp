@@ -165,6 +165,85 @@ void protectedNestedFrames() {
 	}
 }
 
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bool exceptionFrame) {
+	// The protected target repeatedly calls an ordinary child. A separate live
+	// translation writes a marker without changing top or any frame register.
+	test::Blua32TestImage image;
+	image.text.resize(3 * MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::GETSYS), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CLOSURE), 1, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, 2, 2);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
+	writeInstruction(image.text, 16, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 17, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
+	writeInstruction(image.text, 18, static_cast<u8>(OpCode::MOV), 0, 4, 0);
+	writeInstruction(image.text, 19, static_cast<u8>(OpCode::CALL), 0, 1, 0);
+	writeInstruction(image.text, 20, static_cast<u8>(OpCode::JMP), 0, 0, 0);
+	writeInstruction(image.text, 21, static_cast<u8>(OpCode::RET), 0, 0, 0);
+	writeInstruction(image.text, DECODED_PAGE_WORDS, static_cast<u8>(OpCode::RET), 1, 0, 0);
+	writeInstruction(image.text, 2 * DECODED_PAGE_WORDS, static_cast<u8>(OpCode::SETGL), 7, 0, 0);
+	writeInstruction(image.text, 2 * DECODED_PAGE_WORDS + 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
+	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8},
+		{.firstWord = 16, .wordCount = 6, .maxStack = 8},
+		{.firstWord = DECODED_PAGE_WORDS, .wordCount = 1, .maxStack = 8}};
+	image.systemGlobalNames = {"pcall"}; image.globalNames = {"nativeReturnMarker"};
+	image.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)},
+		{17, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
+	CpuMachine machine(image, false);
+	machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("pcall"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::PCall));
+	const u32 markerPc = machine.rom.textAddress + 2 * MAPPED_PAGE_BYTE_SIZE;
+	machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], markerPc);
+	machine.cpu.runUntilDepth(0, 4096);
+	machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress);
+	machine.cpu.runUntilDepth(0, 4096);
+	while (machine.cpu.getFrameDepth() != 3) machine.cpu.runUntilDepth(0, 1);
+	auto* thread = machine.cpu.activeThread();
+	auto* callee = thread->currentFrame;
+	auto* caller = callee->previous;
+	require(thread->protectedCallDepth == 1 && caller->protectedContinuationIndex == 0
+		&& callee->protectedContinuationIndex == -1, "native return admission concerns the target activation, not its protected subtree");
+	const std::array<Value, 6> payloads{valueNil(), valueBool(false), valueNumber(-0.0),
+		valueString(machine.cpu.stringPool().intern("native-return-payload")), caller->registers[4], VALUE_QNAN_MASK | 0x2au};
+	for (int index = 0; index < produced; ++index) callee->registers[1 + index] = payloads[index];
+	callee->top = 1 + produced;
+	callee->returnBase = base; callee->returnCount = wanted;
+	callee->isExceptionFrame = exceptionFrame; callee->isNonMaskableExceptionFrame = exceptionFrame;
+	caller->registers[6] = valueNumber(-7);
+	caller->registers[7] = valueNumber(99);
+	const auto marker = machine.cpu.stringPool().intern("nativeReturnMarker");
+	machine.cpu.setGlobalByKey(marker, valueNil());
+	const auto& lookup = *caller->executionImage->nativeCodeLookup;
+	auto* continuation = lookup.find(caller->pc, 0);
+	auto* alternate = lookup.find(markerPc, 0);
+	const u32 word = (caller->pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	const u32 markerWord = (markerPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	require(continuation->nativeCode && continuation->nativeCode[word] && alternate->nativeCode && alternate->nativeCode[markerWord],
+		"both ordinary continuation and independent marker have live native dispatch entries");
+	// Redirect only the raw code word, not the descriptor. A C++ RET dispatcher
+	// still selects the ordinary descriptor and cannot execute this marker.
+	// This disposable fixture never resumes or reuses the redirected cache.
+	continuation->nativeBlocks->code[word] = coldTarget ? nullptr : alternate->nativeCode[markerWord];
+	const int copied = wanted == 0 ? produced : std::min(produced, wanted);
+	const int count = wanted == 0 ? produced : wanted;
+	const bool grows = count != 0 && base + count > caller->stackCapacity;
+	require(machine.cpu.runUntilDepth(0, 3) == RunResult::Yielded && thread->currentFrame == caller
+		&& thread->frameDepth == 2 && thread->protectedCallDepth == 1, "ordinary native return retains its protected parent and exact grant boundary");
+	require(caller->top == base + count, "fixed, open and empty returns assign exact caller top even after a late cold exit");
+	for (int index = 0; index < copied; ++index) require(caller->registers[base + index] == payloads[index],
+		"native and late-cold result movement preserve every raw tagged and numeric bit");
+	for (int index = copied; index < count; ++index) require(caller->registers[base + index] == valueNil(), "fixed results nil-pad only the requested suffix");
+	if (base + count <= 6 || count == 0) require(caller->registers[6] == valueNumber(-7) && caller->registers[7] == valueNumber(99),
+		"return does not overwrite retained caller registers outside its result range");
+	require(machine.cpu.getGlobalByKey(marker) == ((!coldTarget && !grows) ? valueNumber(99) : valueNil()),
+		"warm RET branches through the raw native code word without executeReturn or the C++ descriptor dispatcher");
+	require(callee->registers == nullptr && callee->executionImage == nullptr && callee->closure == nullptr
+		&& callee->protectedContinuationIndex == -1 && !callee->isExceptionFrame && !callee->isNonMaskableExceptionFrame,
+		"native retirement clears the same inactive owner fields as an ordinary return, including unusual exception flags");
+}
+#endif
+
 void returnGrowthCollection() {
 	test::Blua32TestImage image;
 	image.text.resize(6 * INSTRUCTION_BYTES);
@@ -328,6 +407,14 @@ int main() {
 		ownedValueStack();
 		reusableFrameChain();
 		protectedNestedFrames();
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		nativeReturnRouting(6, 0, 0, false, true);
+		nativeReturnRouting(2, 4, 0, false, false);
+		nativeReturnRouting(6, 2, 0, false, false);
+		nativeReturnRouting(0, 0, 10, false, false);
+		nativeReturnRouting(6, 0, 0, true, false);
+		nativeReturnRouting(6, 0, 6, false, false);
+#endif
 		returnGrowthCollection();
 		failedCallAdmission();
 		for (const bool open : {false, true}) for (const u32 offset : {0x1800u, 0x1ff0u}) crossPageCalls(open, offset);

@@ -4,6 +4,7 @@
 #include <type_traits>
 
 #include "machine/cpu/native_block.h"
+#include "machine/cpu/native_code_lookup.h"
 
 namespace bmsx {
 
@@ -13,6 +14,7 @@ struct NativeCpuRunState {
 	NativeBlockRunState state;
 	CPU* cpu;
 	int targetDepth;
+	NativeCodeLookup::Group* const* codeRoot = nullptr;
 	std::exception_ptr error;
 };
 
