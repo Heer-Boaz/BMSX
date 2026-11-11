@@ -499,7 +499,8 @@ bool GxGpu::supervisorFenceReady() const {
 		&& m_pendingCommandCompletionCycle == 0
 		&& (m_commandBuffer.readback.phase() == GX_GPU_READBACK_IDLE
 			|| m_commandBuffer.readback.phase() == GX_GPU_READBACK_READY)
-		&& m_commandBuffer.commandCount == 0u;
+		&& m_commandBuffer.commandCount == 0u
+		&& !m_backendSubmissionPending;
 }
 
 // USER ingress and unread pixels retain ownership while the transient supervisor runs.

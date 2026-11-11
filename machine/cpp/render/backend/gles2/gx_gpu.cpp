@@ -810,7 +810,7 @@ size_t appendSolidQuad(OpenGLES2GxGpuState& gx,
 	return offset;
 }
 
-size_t appendFillRectangle(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commandBuffer, u32 commandIndex, size_t vertexFloatCount) {
+size_t appendFillRectangle(OpenGLES2GxGpuState& gx, const GxGpuCommandStorage& commandBuffer, u32 commandIndex, size_t vertexFloatCount) {
 	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
 	const u32 colorWord = commandBuffer.words[wordStart];
 	const u32 xyWord = commandBuffer.words[wordStart + 1u];
@@ -853,7 +853,7 @@ size_t appendFillRectangle(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& co
 	return offset;
 }
 
-size_t appendSolidPolygon(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commandBuffer, u32 commandIndex, size_t vertexFloatCount) {
+size_t appendSolidPolygon(OpenGLES2GxGpuState& gx, const GxGpuCommandStorage& commandBuffer, u32 commandIndex, size_t vertexFloatCount) {
 	const u32 opcode = commandBuffer.commandOpcode[commandIndex];
 	if (gxGpuCommandTextureEnabled(opcode)) {
 		return vertexFloatCount;
@@ -939,7 +939,7 @@ size_t appendSolidPolygon(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& com
 
 GxGpuRectangle& readGxGpuRectangle(
 	OpenGLES2GxGpuState& gx,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	u32 commandIndex,
 	u32 opcode
 ) {
@@ -960,7 +960,7 @@ GxGpuRectangle& readGxGpuRectangle(
 	return gx.rectangleScratch;
 }
 
-size_t appendSolidRectangle(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commandBuffer, u32 commandIndex, size_t vertexFloatCount) {
+size_t appendSolidRectangle(OpenGLES2GxGpuState& gx, const GxGpuCommandStorage& commandBuffer, u32 commandIndex, size_t vertexFloatCount) {
 	const u32 opcode = commandBuffer.commandOpcode[commandIndex];
 	if (gxGpuCommandTextureEnabled(opcode)) {
 		return vertexFloatCount;
@@ -1213,7 +1213,7 @@ size_t appendTexturedPrimitiveTriangle(OpenGLES2GxGpuState& gx,
 		v2);
 }
 
-size_t appendTexturedPolygon(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commandBuffer, u32 commandIndex, size_t vertexFloatCount) {
+size_t appendTexturedPolygon(OpenGLES2GxGpuState& gx, const GxGpuCommandStorage& commandBuffer, u32 commandIndex, size_t vertexFloatCount) {
 	const u32 opcode = commandBuffer.commandOpcode[commandIndex];
 	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
 	const u32 drawingOffsetWord = commandBuffer.commandDrawingOffsetWord[commandIndex];
@@ -1324,7 +1324,7 @@ size_t appendTexturedPolygon(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& 
 	return offset;
 }
 
-size_t appendTexturedRectangle(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commandBuffer, u32 commandIndex, size_t vertexFloatCount) {
+size_t appendTexturedRectangle(OpenGLES2GxGpuState& gx, const GxGpuCommandStorage& commandBuffer, u32 commandIndex, size_t vertexFloatCount) {
 	const u32 opcode = commandBuffer.commandOpcode[commandIndex];
 	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
 	const u32 colorWord = commandBuffer.words[wordStart];
@@ -1417,14 +1417,10 @@ void writeGxGpuVramSnapshotFromReadback(OpenGLES2GxGpuState& gx, const GxGpuVram
 	}
 }
 
-void completeGxGpuReadback(OpenGLES2GxGpuState& gx, size_t commandLimit, GxGpuReadbackPort& readback) {
-	if (!readback.claimReadback(commandLimit)) {
-		return;
-	}
-	const u32 readbackToken = readback.token();
-	gx.drawTargets.resolveLogical(readback.x(), readback.y(), readback.width(), readback.height(),
-		readback.vramYAddressExtensionWord(), gx.sampleDirtyRegions, false);
-	const u32 pixelCount = readback.width() * readback.height();
+void readGxGpuVram(OpenGLES2GxGpuState& gx, const GxGpuReadbackRequest& request, u8* pixels) {
+	gx.drawTargets.resolveLogical(request.x, request.y, request.width, request.height,
+		request.vramYAddressExtensionWord, gx.sampleDirtyRegions, false);
+	const u32 pixelCount = request.width * request.height;
 	const u32 wordCount = (pixelCount + 1u) >> 1u;
 	const u32 packedWidth = wordCount < static_cast<u32>(kGxGpuReadbackPackWidth) ? wordCount : static_cast<u32>(kGxGpuReadbackPackWidth);
 	const u32 packedHeight = ((wordCount - 1u) / packedWidth) + 1u;
@@ -1437,16 +1433,23 @@ void completeGxGpuReadback(OpenGLES2GxGpuState& gx, size_t commandLimit, GxGpuRe
 	gx.backend->drawState.disable(GLES2Capability::Dither);
 	gx.backend->drawState.colorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 	gx.backend->drawState.useProgram(gx.readbackProgram);
-	glUniform4i(gx.readbackParamsUniform, static_cast<GLint>(readback.x()), static_cast<GLint>(readback.y()), static_cast<GLint>(readback.width()), static_cast<GLint>(packedWidth));
-	glUniform1i(gx.readbackVramYAddressExtensionUniform, static_cast<GLint>(readback.vramYAddressExtensionWord()));
+	glUniform4i(gx.readbackParamsUniform, static_cast<GLint>(request.x), static_cast<GLint>(request.y), static_cast<GLint>(request.width), static_cast<GLint>(packedWidth));
+	glUniform1i(gx.readbackVramYAddressExtensionUniform, static_cast<GLint>(request.vramYAddressExtensionWord));
 	gx.backend->setActiveTextureUnit(GLES2_TEXTURE_UNIT_GX_SCANOUT);
 	gx.backend->bindTexture2D(&gx.vramTexture);
 	gx.backend->drawState.bindBuffer(GL_ARRAY_BUFFER, gx.scanoutVertexBuffer);
 	gx.backend->drawState.enableVertexAttribArray(kGxGpuScanoutPositionAttrib);
 	gx.backend->drawState.vertexAttribPointer(kGxGpuScanoutPositionAttrib, 2, GL_FLOAT, GL_FALSE, kGxGpuScanoutVertexStride, nullptr);
 	glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(kGxGpuScanoutVertexCount));
-	glReadPixels(0, 0, static_cast<GLsizei>(packedWidth), static_cast<GLsizei>(packedHeight), GL_RGBA, GL_UNSIGNED_BYTE, readback.pixelBytes());
-	readback.completeReadback(readbackToken);
+	glReadPixels(0, 0, static_cast<GLsizei>(packedWidth), static_cast<GLsizei>(packedHeight), GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+}
+
+void completeGxGpuReadback(OpenGLES2GxGpuState& gx, size_t commandLimit, GxGpuReadbackPort& readback) {
+	if (!readback.claimReadback(commandLimit)) return;
+	const u32 token = readback.token();
+	const GxGpuReadbackRequest request{readback.x(), readback.y(), readback.width(), readback.height(), readback.vramYAddressExtensionWord()};
+	readGxGpuVram(gx, request, readback.pixelBytes());
+	readback.completeReadback(token);
 }
 
 template <bool Profile>
@@ -1536,7 +1539,7 @@ void submitGxGpuPrimitiveBatches(OpenGLES2GxGpuState& gx);
 
 template <bool Profile>
 u32 executeCpuToVramUpload(OpenGLES2GxGpuState& gx,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	u32 commandIndex,
 	GxCpuToVramUploadProfile* profile,
 	GLES2Texture* preparedTexture = nullptr,
@@ -1644,7 +1647,7 @@ u32 executeCpuToVramUpload(OpenGLES2GxGpuState& gx,
 // The existing texture ring also rotates between intervals; this does not claim
 // that an earlier interval has finished on a GLES2 GPU without fences.
 template <bool Profile>
-void prepareGxGpuCpuUploads(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commands, size_t commandLimit) {
+void prepareGxGpuCpuUploads(OpenGLES2GxGpuState& gx, const GxGpuCommandStorage& commands, size_t commandLimit) {
 	u32 first = gx.processedCommandCount;
 	while (first < commandLimit && commands.commandKind[first] != GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM) ++first;
 	if (first == commandLimit) return;
@@ -1701,7 +1704,7 @@ void prepareGxGpuCpuUploads(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& c
 	if (gx.nextCpuUploadTexture == gx.cpuUploadTextureCount) gx.nextCpuUploadTexture = 0u;
 }
 
-void uploadCpuToVram(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commandBuffer, u32 commandIndex) {
+void uploadCpuToVram(OpenGLES2GxGpuState& gx, const GxGpuCommandStorage& commandBuffer, u32 commandIndex) {
 	GLES2Texture* preparedTexture = nullptr;
 	u32 pixelOffset = 0u;
 	GxGpuCpuUploadGeneration::Page* page = nullptr;
@@ -1797,7 +1800,7 @@ void copyVramToVramArea(OpenGLES2GxGpuState& gx,
 	}
 }
 
-void copyVramToVram(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commandBuffer, u32 commandIndex) {
+void copyVramToVram(OpenGLES2GxGpuState& gx, const GxGpuCommandStorage& commandBuffer, u32 commandIndex) {
 	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
 	const u32 sourceWord = commandBuffer.words[wordStart + 1u];
 	const u32 targetWord = commandBuffer.words[wordStart + 2u];
@@ -1953,7 +1956,7 @@ void prepareGxGpuLineSegment(
 void prepareGxGpuSolidRectangle(
 	OpenGLES2GxGpuState& gx,
 	GxGpuPreparedRasterPrimitive& rectangle,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	u32 commandIndex,
 	u32 topLeftWord,
 	u32 bottomRightWord,
@@ -2121,7 +2124,7 @@ void setGxGpuVertexBoundsRect(
 }
 
 u32 syncGxGpuTexturedSourceTexture(OpenGLES2GxGpuState& gx,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	u32 commandIndex,
 	size_t vertexFloatStart,
 	size_t vertexFloatEnd,
@@ -2246,7 +2249,7 @@ void writePrimitiveUniforms(GxGpuPrimitiveProgram& program,
 	program.uniformStateValid = true;
 }
 
-void writeTexturedUniforms(GxGpuTexturedProgram& program, const GxGpuCommandBuffer& commandBuffer, u32 commandIndex) {
+void writeTexturedUniforms(GxGpuTexturedProgram& program, const GxGpuCommandStorage& commandBuffer, u32 commandIndex) {
 	const u32 opcode = commandBuffer.commandOpcode[commandIndex];
 	const u32 drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
 	const u32 textureWindowWord = commandBuffer.commandTextureWindowWord[commandIndex];
@@ -2301,10 +2304,10 @@ void writeTransferUniforms(GxGpuTransferProgram& program, i32 sourceTextureUnit,
 
 void renderNewSolidCommands(OpenGLES2GxGpuState& gx, bool fixedColor, size_t vertexFloatCount, GLintptr vertexBufferOffset, const GxGpuVramCopyRect& drawBounds, bool blendEnabled, u32 blendMode, u32 maskBitModeWord, bool ditherEnabled, u32 skippedLineParity, GxGpuRasterKind rasterKind);
 void renderReadVramSolidQuad(OpenGLES2GxGpuState& gx, bool fixedColor, u32 topLeftWord, u32 bottomRightWord, u32 vramYAddressExtensionWord, bool blendEnabled, u32 blendMode, u32 maskBitModeWord, bool ditherEnabled, u32 skippedLineParity);
-size_t appendLineCommandVertices(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commandBuffer, u32 commandIndex, size_t vertexFloatCount);
-void renderTexturedCommand(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commandBuffer, u32 commandIndex, u32 topLeftWord, u32 bottomRightWord);
-size_t appendTexturedCommandVertices(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commandBuffer, u32 commandIndex, size_t vertexFloatCount);
-size_t flushTexturedCommands(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commandBuffer, size_t vertexFloatCount, u32 batchCommandIndex);
+size_t appendLineCommandVertices(OpenGLES2GxGpuState& gx, const GxGpuCommandStorage& commandBuffer, u32 commandIndex, size_t vertexFloatCount);
+void renderTexturedCommand(OpenGLES2GxGpuState& gx, const GxGpuCommandStorage& commandBuffer, u32 commandIndex, u32 topLeftWord, u32 bottomRightWord);
+size_t appendTexturedCommandVertices(OpenGLES2GxGpuState& gx, const GxGpuCommandStorage& commandBuffer, u32 commandIndex, size_t vertexFloatCount);
+size_t flushTexturedCommands(OpenGLES2GxGpuState& gx, const GxGpuCommandStorage& commandBuffer, size_t vertexFloatCount, u32 batchCommandIndex);
 
 void finishSolidBatch(OpenGLES2GxGpuState& gx,
 	size_t vertexFloatEnd,
@@ -2337,7 +2340,7 @@ void finishSolidBatch(OpenGLES2GxGpuState& gx,
 	resetGxGpuVramCopyRect(gx.solidBatchRect);
 }
 
-size_t appendSolidCommandVertices(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commandBuffer, u32 commandIndex, size_t vertexFloatCount) {
+size_t appendSolidCommandVertices(OpenGLES2GxGpuState& gx, const GxGpuCommandStorage& commandBuffer, u32 commandIndex, size_t vertexFloatCount) {
 	switch (commandBuffer.commandKind[commandIndex]) {
 		case GX_GPU_COMMAND_DRAW_POLYGON:
 			return appendSolidPolygon(gx, commandBuffer, commandIndex, vertexFloatCount);
@@ -2546,7 +2549,7 @@ size_t appendBatchedLineSegment(OpenGLES2GxGpuState& gx,
 	return offset;
 }
 
-bool gxGpuBlendPlanCommandMatches(const GxGpuCommandBuffer& commandBuffer, u32 commandIndex, u32 firstCommandIndex) {
+bool gxGpuBlendPlanCommandMatches(const GxGpuCommandStorage& commandBuffer, u32 commandIndex, u32 firstCommandIndex) {
 	const u8 kind = commandBuffer.commandKind[commandIndex];
 	if (kind != GX_GPU_COMMAND_DRAW_LINE && kind != GX_GPU_COMMAND_DRAW_RECTANGLE) {
 		return false;
@@ -2570,7 +2573,7 @@ bool gxGpuBlendPlanCommandMatches(const GxGpuCommandBuffer& commandBuffer, u32 c
 
 void prepareGxGpuLineCommand(
 	GxGpuPreparedRasterPrimitive& line,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	u32 commandIndex,
 	u32 topLeftWord,
 	u32 bottomRightWord,
@@ -2598,7 +2601,7 @@ void prepareGxGpuLineCommand(
 		vramYAddressExtensionWord);
 }
 
-u32 executeGxGpuBlendPlan(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commandBuffer, u32 commandStart, u32 commandEnd) {
+u32 executeGxGpuBlendPlan(OpenGLES2GxGpuState& gx, const GxGpuCommandStorage& commandBuffer, u32 commandStart, u32 commandEnd) {
 	const u32 topLeftWord = commandBuffer.commandDrawingAreaTopLeftWord[commandStart];
 	const u32 bottomRightWord = commandBuffer.commandDrawingAreaBottomRightWord[commandStart];
 	const u32 vramYAddressExtensionWord = commandBuffer.commandVramYAddressExtensionWord[commandStart];
@@ -2704,7 +2707,7 @@ u32 executeGxGpuBlendPlan(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& com
 	return commandEnd;
 }
 
-void prepareGxGpuTexturedGeometry(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commandBuffer, size_t commandLimit) {
+void prepareGxGpuTexturedGeometry(OpenGLES2GxGpuState& gx, const GxGpuCommandStorage& commandBuffer, size_t commandLimit) {
 	size_t floatCount = 0u;
 	for (size_t commandIndex = gx.processedCommandCount; commandIndex < commandLimit; ++commandIndex) {
 		gx.texturedGeometry.commandFloatOffsets[commandIndex] = static_cast<u32>(floatCount);
@@ -2723,7 +2726,7 @@ void prepareGxGpuTexturedGeometry(OpenGLES2GxGpuState& gx, const GxGpuCommandBuf
 		gx.texturedGeometry.vertices.data(), GL_STREAM_DRAW);
 }
 
-void executeNewGxGpuCommands(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commandBuffer, size_t commandLimit) {
+void executeNewGxGpuCommands(OpenGLES2GxGpuState& gx, const GxGpuCommandStorage& commandBuffer, size_t commandLimit) {
 	if (gx.drawTargets.enabled()) {
 		if (gx.backend->profilesGxUploads()) prepareGxGpuCpuUploads<true>(gx, commandBuffer, commandLimit);
 		else prepareGxGpuCpuUploads<false>(gx, commandBuffer, commandLimit);
@@ -3018,7 +3021,7 @@ void executeNewGxGpuCommands(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& 
 }
 
 size_t appendLineCommandVertices(OpenGLES2GxGpuState& gx,
-		const GxGpuCommandBuffer& commandBuffer,
+		const GxGpuCommandStorage& commandBuffer,
 	u32 commandIndex,
 	size_t vertexFloatCount) {
 	const u32 opcode = commandBuffer.commandOpcode[commandIndex];
@@ -3269,7 +3272,7 @@ void renderTransferCommands(OpenGLES2GxGpuState& gx,
 	gx.backend->drawState.disable(GLES2Capability::ScissorTest);
 }
 
-size_t appendTexturedCommandVertices(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commandBuffer, u32 commandIndex, size_t vertexFloatCount) {
+size_t appendTexturedCommandVertices(OpenGLES2GxGpuState& gx, const GxGpuCommandStorage& commandBuffer, u32 commandIndex, size_t vertexFloatCount) {
 	const u32 drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
 	const u32 textureWord = commandBuffer.words[commandBuffer.commandWordStart[commandIndex] + 2u];
 	const u32 vramYAddressExtensionWord = commandBuffer.commandVramYAddressExtensionWord[commandIndex];
@@ -3311,7 +3314,7 @@ bool canInterpolateGxGpuIntegerUv(std::span<const f32> vertices, bool rectangle)
 }
 
 void renderTexturedVertices(OpenGLES2GxGpuState& gx,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	u32 commandIndex,
 	size_t vertexFloatCount,
 	bool uniformGain,
@@ -3497,7 +3500,7 @@ void renderTexturedVertices(OpenGLES2GxGpuState& gx,
 }
 
 void renderTexturedCommand(OpenGLES2GxGpuState& gx,
-	const GxGpuCommandBuffer& commandBuffer,
+	const GxGpuCommandStorage& commandBuffer,
 	u32 commandIndex,
 	u32 topLeftWord,
 	u32 bottomRightWord) {
@@ -3548,7 +3551,7 @@ void renderTexturedCommand(OpenGLES2GxGpuState& gx,
 		sourceOverlapsDestination);
 }
 
-size_t flushTexturedCommands(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commandBuffer, size_t vertexFloatCount, u32 batchCommandIndex) {
+size_t flushTexturedCommands(OpenGLES2GxGpuState& gx, const GxGpuCommandStorage& commandBuffer, size_t vertexFloatCount, u32 batchCommandIndex) {
 	if (vertexFloatCount != 0u) {
 		const size_t generationFloatStart = gx.texturedGeometry.commandFloatOffsets[batchCommandIndex];
 		const u32 topLeftWord = commandBuffer.commandDrawingAreaTopLeftWord[batchCommandIndex];
@@ -3886,23 +3889,31 @@ void scanoutGxGpuVram(OpenGLES2GxGpuState& gx,
 	scanoutProgressiveGxGpuVram(gx, frameFbo, state, scanout, boundProgram);
 }
 
-void executeGxGpuVramCommands(OpenGLES2GxGpuState& gx, const GxGpuCommandBuffer& commandBuffer, GxGpuReadbackPort& readback, std::span<const u8> snapshotBytes, u64 snapshotSerial, size_t commandLimit) {
+void replaceGxGpuVramSnapshot(OpenGLES2GxGpuState& gx, std::span<const u8> bytes, u64 serial) {
+	if (!gx.vramSnapshotValid || gx.vramSnapshotSerial != serial) {
+		uploadGxGpuVramSnapshot(gx, bytes);
+		gx.processedCommandCount = 0u;
+		gx.vramSnapshotSerial = serial;
+		gx.vramSnapshotValid = true;
+	}
+}
+
+void executeGxGpuCommandPrefix(OpenGLES2GxGpuState& gx, const GxGpuCommandStorage& commands, size_t commandLimit) {
 	// Drains/readbacks can run before beginFrame, after the frontend used the
 	// context. These are GX invariants, independent of the selected primitive.
 	gx.backend->drawState.disable(GLES2Capability::Dither);
 	gx.backend->drawState.disable(GLES2Capability::StencilTest);
 	gx.backend->drawState.colorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-	if (!gx.vramSnapshotValid || gx.vramSnapshotSerial != snapshotSerial) {
-		uploadGxGpuVramSnapshot(gx, snapshotBytes);
+	if (gx.processedCommandSerial != commands.serial) {
 		gx.processedCommandCount = 0u;
-		gx.processedCommandSerial = commandBuffer.serial;
-		gx.vramSnapshotSerial = snapshotSerial;
-		gx.vramSnapshotValid = true;
-	} else if (gx.processedCommandSerial != commandBuffer.serial) {
-		gx.processedCommandCount = 0u;
-		gx.processedCommandSerial = commandBuffer.serial;
+		gx.processedCommandSerial = commands.serial;
 	}
-	executeNewGxGpuCommands(gx, commandBuffer, commandLimit);
+	executeNewGxGpuCommands(gx, commands, commandLimit);
+}
+
+void executeGxGpuVramCommands(OpenGLES2GxGpuState& gx, const GxGpuCommandStorage& commandBuffer, GxGpuReadbackPort& readback, std::span<const u8> snapshotBytes, u64 snapshotSerial, size_t commandLimit) {
+	replaceGxGpuVramSnapshot(gx, snapshotBytes, snapshotSerial);
+	executeGxGpuCommandPrefix(gx, commandBuffer, commandLimit);
 	completeGxGpuReadback(gx, commandLimit, readback);
 }
 
@@ -3933,6 +3944,18 @@ void executeGxGpuPass(
 	auto& gles = *static_cast<OpenGLES2Backend*>(backend);
 	OpenGLES2GxGpuState& gx = *gles.m_gx_gpu;
 	renderGxGpu(gx, gles.framebufferName(fbo), stateStorage.gxGpu, output);
+}
+
+void OpenGLES2Backend::executeGxGpuCommands(const GxGpuCommandStorage& commands) {
+	executeGxGpuCommandPrefix(*m_gx_gpu, commands, commands.executedCommandCount);
+}
+
+void OpenGLES2Backend::replaceGxGpuVramSnapshot(std::span<const u8> bytes, u64 serial) {
+	bmsx::replaceGxGpuVramSnapshot(*m_gx_gpu, bytes, serial);
+}
+
+void OpenGLES2Backend::readGxGpuVram(const GxGpuReadbackRequest& request, u8* pixels) {
+	bmsx::readGxGpuVram(*m_gx_gpu, request, pixels);
 }
 
 void OpenGLES2Backend::executeGxGpuReadback(GxGpu& gxGpu) {

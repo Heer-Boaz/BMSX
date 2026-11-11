@@ -29,6 +29,8 @@ struct GLES2Texture {
 	bool logicalSrgb = false;
 };
 
+struct GxGpuCommandStorage;
+struct GxGpuReadbackRequest;
 struct OpenGLES2GxGpuState;
 struct OpenGLES2GxGpuStateDeleter {
 	void operator()(OpenGLES2GxGpuState* state) const noexcept;
@@ -95,6 +97,9 @@ public:
 	FrameStats getFrameStats() const override { return m_stats; }
 	void executeGxGpuCommandDrain(GxGpu& gxGpu) override;
 	void executeGxGpuReadback(GxGpu& gxGpu) override;
+	void executeGxGpuCommands(const GxGpuCommandStorage& commands);
+	void replaceGxGpuVramSnapshot(std::span<const u8> bytes, u64 serial);
+	void readGxGpuVram(const GxGpuReadbackRequest& request, u8* pixels);
 	void finishGxGpuReadbacks() override;
 	void captureGxGpuVramSnapshot(GxGpu& gxGpu) override;
 

@@ -5,6 +5,7 @@
 namespace bmsx {
 
 class HostOverlayMenu;
+class GlesFrameWorker;
 class HostRewind;
 class LibretroInput;
 class RenderPresentationState;
@@ -26,6 +27,7 @@ LibretroFrameResult runLibretroFrame(
 	RenderPresentationState& presentation,
 	VideoPresenter& presenter,
 	f64& totalTime,
-	f64 deltaTime);
+	f64 deltaTime,
+	GlesFrameWorker* worker = nullptr);
 
 } // namespace bmsx

@@ -543,6 +543,13 @@ void LibretroInput::setControllerDevice(unsigned port, unsigned device) {
 }
 
 bool LibretroInput::setRumbleStrength(unsigned port, u16 strength) {
+	if (m_rumble_submission.submit != nullptr) {
+		return m_rumble_submission.submit(m_rumble_submission.context, port, strength);
+	}
+	return applyFrontendRumble(port, strength);
+}
+
+bool LibretroInput::applyFrontendRumble(unsigned port, u16 strength) {
 	const bool strongApplied = m_rumble_interface.set_rumble_state(
 		port,
 		RETRO_RUMBLE_STRONG,

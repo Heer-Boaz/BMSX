@@ -521,6 +521,12 @@ set(BMSX_LIBRETRO_CORE_SOURCES
 	${BMSX_LIBRETRO_DIR}/video_output.cpp
 )
 
+if(BMSX_ENABLE_GLES2)
+	list(APPEND BMSX_LIBRETRO_CORE_SOURCES ${BMSX_LIBRETRO_DIR}/gles_frame_worker.cpp)
+	find_package(Threads REQUIRED)
+	target_link_libraries(bmsx_host_support PUBLIC Threads::Threads)
+endif()
+
 if(BMSX_BUILD_LIBRETRO)
 	add_library(bmsx_libretro SHARED
 		${BMSX_LIBRETRO_CORE_SOURCES}
@@ -823,6 +829,16 @@ if(BMSX_BUILD_TESTS)
 			target_link_options(bmsx_gx_gpu_textured_gles2_tests PRIVATE -static-libstdc++ -static-libgcc)
 		endif()
 		add_test(NAME bmsx_gx_gpu_textured_gles2_tests COMMAND bmsx_gx_gpu_textured_gles2_tests)
+		add_executable(bmsx_gles_frame_worker_tests
+			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gles_frame_worker_test.cpp
+			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/blua32_test_rom.cpp
+			${BMSX_LIBRETRO_DIR}/entry.cpp
+			${BMSX_LIBRETRO_CORE_SOURCES})
+		target_include_directories(bmsx_gles_frame_worker_tests PRIVATE ${BMSX_LIBRETRO_DIR})
+		target_link_libraries(bmsx_gles_frame_worker_tests PRIVATE bmsx_host_support bmsx_blua32_tooling ${BMSX_TEST_EGL_LIBRARY})
+		target_link_options(bmsx_gles_frame_worker_tests PRIVATE LINKER:--wrap=glDrawArrays)
+		add_test(NAME bmsx_gles_frame_worker_tests COMMAND bmsx_gles_frame_worker_tests)
+		set_tests_properties(bmsx_gles_frame_worker_tests PROPERTIES TIMEOUT 120)
 		add_executable(bmsx_crt_gles2_tests
 			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/crt_gles2_test.cpp
 			${BMSX_LIBRETRO_HOST_DIR}/video_context.c

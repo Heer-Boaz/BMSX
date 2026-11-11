@@ -23,6 +23,9 @@
 #include "bmsx_libretro.h"
 #include "content.h"
 #include "host_frame.h"
+#if BMSX_ENABLE_GLES2
+#include "gles_frame_worker.h"
+#endif
 #include "host_overlay_menu.h"
 #include "input.h"
 #include "libretro_state.h"
@@ -126,6 +129,9 @@ static std::optional<bmsx::HostKeyboardInteraction> g_keyboard_interaction;
 static std::optional<bmsx::HostOverlayMenu> g_overlay_menu;
 static std::optional<bmsx::RenderPresentationState> g_presentation;
 static std::optional<bmsx::HostRewind> g_rewind;
+#if BMSX_ENABLE_GLES2
+static std::unique_ptr<bmsx::GlesFrameWorker> g_gles_frame_worker;
+#endif
 static double g_frame_time_sec =
 	static_cast<double>(bmsx::HZ_SCALE)
 	/ static_cast<double>(bmsx::GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED);
@@ -1164,6 +1170,15 @@ static void sync_runtime_timing(bmsx::Runtime& runtime) {
 }
 
 static void activate_runtime(bmsx::Runtime& runtime) {
+#if BMSX_ENABLE_GLES2
+	g_gles_frame_worker.reset();
+	const char* threaded = std::getenv("BMSX_GLES2_THREADED");
+	if (g_active_backend == bmsx::BackendType::OpenGLES2 && threaded != nullptr && std::strcmp(threaded, "1") == 0) {
+		g_gles_frame_worker = std::make_unique<bmsx::GlesFrameWorker>(runtime,
+			static_cast<bmsx::OpenGLES2Backend&>(g_video_presenter->backend()), *g_input);
+		logging.log(RETRO_LOG_INFO, "[BMSX] Threaded GLES submission enabled\n");
+	}
+#endif
 	g_rewind.emplace(runtime, *g_video_presenter, *g_presentation);
 	const bool recordRewind = read_toggle_option(kOptionRewindRecording, "Rewind Recording", kDefaultRewindRecording);
 	g_rewind->setRecordingEnabled(recordRewind);
@@ -1176,6 +1191,9 @@ static void activate_runtime(bmsx::Runtime& runtime) {
 }
 
 static void unload_content() {
+#if BMSX_ENABLE_GLES2
+	g_gles_frame_worker.reset();
+#endif
 	const bool wasLoaded = g_content != nullptr;
 	if (wasLoaded) {
 		g_input->reset();
@@ -1744,7 +1762,11 @@ void retro_run(void) {
 			*g_presentation,
 			*g_video_presenter,
 			g_total_time,
-			deltaTime);
+			deltaTime
+#if BMSX_ENABLE_GLES2
+			, g_gles_frame_worker.get()
+#endif
+		);
 		switch (frameResult) {
 			case bmsx::LibretroFrameResult::RebootRequested:
 				runtime.rebootSystem();

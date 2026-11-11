@@ -29,6 +29,11 @@ struct LibretroPointerContact {
 	i32 y;
 };
 
+struct LibretroRumbleSubmission {
+	bool (*submit)(void* context, unsigned port, u16 strength) = nullptr;
+	void* context = nullptr;
+};
+
 class LibretroInput final : public InputControllerInputSource {
 public:
 	explicit LibretroInput(
@@ -38,6 +43,8 @@ public:
 	void setInputPollCallback(retro_input_poll_t callback) { m_input_poll_callback = callback; }
 	void setInputStateCallback(retro_input_state_t callback) { m_input_state_callback = callback; }
 	void installRumbleInterface(retro_rumble_interface rumbleInterface);
+	void setRumbleSubmission(LibretroRumbleSubmission submission) { m_rumble_submission = submission; }
+	bool applyFrontendRumble(unsigned port, u16 strength);
 	void setControllerDevice(unsigned port, unsigned device);
 	void postKeyboardEvent(unsigned keycode, bool down);
 	void setVirtualKeyboardKey(u8 usage, bool down);
@@ -101,6 +108,7 @@ private:
 	retro_input_poll_t m_input_poll_callback = nullptr;
 	retro_input_state_t m_input_state_callback = nullptr;
 	retro_rumble_interface m_rumble_interface{};
+	LibretroRumbleSubmission m_rumble_submission;
 	std::array<unsigned, INPUT_CONTROLLER_PAD_COUNT> m_controller_devices{};
 	std::array<f64, INPUT_CONTROLLER_PAD_COUNT> m_rumble_deadlines_ms{};
 	size_t m_ordinary_held_count = 0;

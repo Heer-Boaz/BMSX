@@ -1,4 +1,7 @@
 #include "host_frame.h"
+#if BMSX_ENABLE_GLES2
+#include "gles_frame_worker.h"
+#endif
 
 #include "host_overlay_menu.h"
 #include "input.h"
@@ -17,7 +20,8 @@ LibretroFrameResult runLibretroFrame(
 	RenderPresentationState& presentation,
 	VideoPresenter& presenter,
 	f64& totalTime,
-	f64 deltaTime
+	f64 deltaTime,
+	[[maybe_unused]] GlesFrameWorker* worker
 ) {
 	presentation.recordHostFrame();
 
@@ -48,16 +52,23 @@ LibretroFrameResult runLibretroFrame(
 	}
 	if (runtime.isDrawPending() && menuExecution == HostMenuExecution::Live && !rewind.active) {
 		const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
-		runtime.frameScheduler.run(runtime, hostDeltaMs);
-		GxGpu& gxGpu = runtime.machine.gxGpu;
-		while (gxGpu.backendServicePending()) {
-			if (gxGpu.backendCommandDrainPending()) {
-				presenter.backend().executeGxGpuCommandDrain(gxGpu);
-			} else {
-				presenter.backend().executeGxGpuReadback(gxGpu);
+#if BMSX_ENABLE_GLES2
+		if (worker != nullptr) {
+			worker->run(hostDeltaMs);
+		} else
+#endif
+		{
+			runtime.frameScheduler.run(runtime, hostDeltaMs);
+			GxGpu& gxGpu = runtime.machine.gxGpu;
+			while (gxGpu.backendServicePending()) {
+				if (gxGpu.backendCommandDrainPending()) {
+					presenter.backend().executeGxGpuCommandDrain(gxGpu);
+				} else {
+					presenter.backend().executeGxGpuReadback(gxGpu);
+				}
+				runtime.frameScheduler.synchronizeBackendService(runtime);
+				runtime.frameScheduler.run(runtime, 0.0);
 			}
-			runtime.frameScheduler.synchronizeBackendService(runtime);
-			runtime.frameScheduler.run(runtime, 0.0);
 		}
 		presentation.syncAfterRuntimeUpdate(runtime, previousTickSequence);
 	} else {

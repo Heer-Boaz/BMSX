@@ -71,6 +71,22 @@ screenshots synchronize GPU readback and distort frame times. These integrated
 modes remain available independently of the synthetic experiment below; an
 unfavorable result on one workload does not remove another representation.
 
+## Experimental threaded GLES2 submission
+
+`BMSX_GLES2_THREADED=1` enables the C++ libretro emulation worker. The frontend
+thread keeps its GL context, input polling, audio/video callbacks, menu and rewind.
+The worker publishes completed GX command prefixes into two bounded, owned raw-word
+buffers while the frontend submits earlier work. This is intra-frame overlap, not
+an extra asynchronous final blit. Readback and supervisor boundaries wait for the
+ordered publications; every frame returns machine ownership before capture,
+restore or context teardown. The TypeScript execution route is unchanged.
+
+For the 2 MiB VRAM model, the command buffers plus snapshot/readback transport
+scratch use approximately 7.28 MiB of additional host RAM, excluding the worker
+stack and renderer resources. Guest VRAM capacity and device timing do not change.
+The route is opt-in for controlled comparisons; local correctness coverage is not
+a claim of faster SNES Mini frame times.
+
 ## Independent GLES2 VRAM experiment
 
 The opt-in `bmsx_gles2_vram_experiment` CMake target probes RGBA4 nibble storage,

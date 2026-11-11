@@ -259,19 +259,37 @@ public:
 	u32 readGpuReadWord() const;
 	const GxGpuPcrtcTiming& readPcrtcTiming() const { return m_pcrtc.timing; }
 	const GxGpuDeviceOutput& readDeviceOutput();
+	// Host submission granularity, not guest FIFO capacity or device timing.
+	void setBackendSubmissionCommandLimit(size_t commands) { m_backendSubmissionCommandLimit = commands; }
+	// Publication transfers command bytes to a backend owner; this outstanding
+	// dependency is completed on the machine thread, never by the GL consumer.
+	void retirePublishedCommands() {
+		m_backendSubmissionPending = true;
+		retireExecutedCommands();
+	}
+	void completePublishedCommands() {
+		m_backendSubmissionPending = false;
+		notifySupervisorBoundary();
+	}
+	bool backendSubmissionFencePending() const {
+		return m_backendSubmissionPending && m_supervisorIngressQuiesceRequested;
+	}
 	bool backendCommandDrainPending() const {
 		const u8 phase = m_commandBuffer.readback.phase();
 		return m_commandBuffer.executedCommandCount != 0u
-			&& ((phase == GX_GPU_READBACK_IDLE && commandBufferDrainRequired())
+			&& ((phase == GX_GPU_READBACK_IDLE && (commandBufferDrainRequired()
+					|| m_commandBuffer.executedCommandCount >= m_backendSubmissionCommandLimit))
 				|| (m_supervisorIngressQuiesceRequested
 					&& (phase == GX_GPU_READBACK_IDLE || phase == GX_GPU_READBACK_READY)));
 	}
 	bool backendServicePending() const {
-		return backendCommandDrainPending() || m_commandBuffer.readback.phase() == GX_GPU_READBACK_PENDING;
+		return backendSubmissionFencePending() || backendCommandDrainPending()
+			|| m_commandBuffer.readback.phase() == GX_GPU_READBACK_PENDING;
 	}
 	bool backendServiceBlocksMachine() const {
 		const u8 phase = m_commandBuffer.readback.phase();
-		return backendCommandDrainPending() || phase == GX_GPU_READBACK_PENDING || phase == GX_GPU_READBACK_SUBMITTED;
+		return backendSubmissionFencePending() || backendCommandDrainPending()
+			|| phase == GX_GPU_READBACK_PENDING || phase == GX_GPU_READBACK_SUBMITTED;
 	}
 	void presentReadyFrameOnVblankEdge();
 	bool lastFrameCommitted() const { return m_lastFrameCommitted; }
@@ -294,6 +312,8 @@ public:
 	void leaveSupervisorContext();
 
 private:
+	size_t m_backendSubmissionCommandLimit = GX_GPU_COMMAND_CAPACITY;
+	bool m_backendSubmissionPending = false;
 	GxGpuOperationObserver m_operationObserver;
 	GxGpuPresentationObserver m_presentationObserver;
 	Memory& m_memory;
