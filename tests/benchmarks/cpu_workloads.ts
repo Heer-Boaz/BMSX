@@ -2,6 +2,7 @@ import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_pa
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
+import { IO_IRQ_MASK } from '../../machine/ts/spec/bmsx/io';
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import type { OptimizationLevel } from '../../toolchain/ts/lua/compiler/optimizer';
 import { linkRawTestSystemBlua32, linkTestSystemBlua32 } from '../helpers/blua32';
@@ -18,7 +19,7 @@ export type CpuWorkload = {
 
 /** Identical ROMs for both languages and both execution backends. */
 export function* cpuWorkloads(iterations: number, optLevel: OptimizationLevel): Generator<CpuWorkload> {
-	const sources = {
+	const sources: Record<string, string> = {
 		registers: `local n = 1
 for i = 1, ${iterations} do n = ((n + 3) ~ (i << 2)) & 65535 end
 return n`,
@@ -72,6 +73,14 @@ return n, missing`,
 mem32le[address] = 1
 for i = 1, ${iterations} do mem32le[address] = (mem32le[address] + i) & 65535 end
 return mem32le[address]`,
+		mixed_mmio: `local addresses = { ${DYNAMIC_RAM_BASE + 0x1000}, ${IO_IRQ_MASK} }
+local n = 1
+for i = 1, ${iterations} do
+local address = addresses[(i & 1) + 1]
+mem32le[address] = (n + i) & 255
+n = (n + mem32le[address]) & 65535
+end
+return n, mem32le[addresses[1]], mem32le[addresses[2]]`,
 		allocation: `local n = 0
 for i = 1, ${iterations} do local t = { i, i + 1, x = i }; n = (n + t.x + t[2]) & 65535 end
 return n`,
@@ -82,6 +91,28 @@ return n`,
 for i = 1, ${iterations} do local s = "entry:" .. i .. ":🍻"; n = (n + #s) & 65535 end
 return n`,
 	};
+	// Each table entry owns distinct code. Dynamic nested calls retain a broad
+	// call graph at O3 instead of allowing a single direct helper to be inlined.
+	for (const functions of [32, 128]) {
+		const mask = functions - 1;
+		const bodies = Array.from({ length: functions }, (_, index) => `
+handlers[${index + 1}] = function(state, depth)
+state.value = (state.value * 3 + ${index + 1}) & 65535
+state.visits = state.visits + 1
+if depth ~= 0 then
+return handlers[((state.value ~ ${index + 1}) & ${mask}) + 1](state, depth - 1)
+end
+return state.value
+end`).join('\n');
+		sources[`dynamic_calls_${functions}`] = `local handlers = {}
+${bodies}
+local state = { value = 1, visits = 0 }
+local checksum = 0
+for i = 1, ${iterations} do
+checksum = (checksum ~ handlers[((i - 1) & ${mask}) + 1](state, 2)) & 65535
+end
+return checksum, state.value, state.visits`;
+	}
 	for (const [name, source] of Object.entries(sources)) {
 		const { romBytes } = linkTestSystemBlua32(compileLuaSource(source, `cpu-execution-${name}.lua`, optLevel));
 		// Include complete physical pages: mapped-page codegen and the interpreter

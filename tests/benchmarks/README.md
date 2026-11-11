@@ -37,6 +37,15 @@ Lua. Optional `--filter 'math|concat|closure'` selects workloads and
 two TS routes. Each JSON line contains the workload, backend, grants, actual
 guest cycles, wall time, code-cache size and ROM/state SHA-256 provenance.
 
+`dynamic_calls_32` and `dynamic_calls_128` traverse distinct function bodies
+through table-selected calls, with three nested activations per iteration.
+They retain real CALL/RET traffic at O3 and vary the executable working set,
+rather than reusing one closure body at many table entries. For the small direct
+`calls`/`closures` fixtures, also run `--opt-level 0`: O3 may inline those helpers.
+`mixed_mmio` alternates RAM and the IRQ mask register at the same load/store
+sites, exercising native/helper transitions without running device time or
+raising interrupts. It does not measure IRQ delivery, DMA or scheduler costs.
+
 The default `--warmup-passes 0` includes cold translation in the measured pass.
 Use `--warmup-passes 1` for a second, measured invocation on the same machine,
 retaining its code cache and guest heap. Larger values perform more invocations
