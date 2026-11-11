@@ -22,6 +22,7 @@ DISPATCH_LABEL(LOADNIL) {
 	const int b = decoded->b;
 	if (b != 0) {
 		std::fill_n(registers + a, b, valueNil());
+		instructionBudgetRemaining -= b;
 		const int nextTop = a + b;
 		if (nextTop > FRAME.top) {
 			FRAME.top = nextTop;

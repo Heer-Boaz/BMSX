@@ -450,8 +450,9 @@ below.
 Opcode numbers are zero-based. Nominal cycles are the base charge applied before
 an instruction executes. The constant, arithmetic, bitwise, text and comparison
 instructions below each cost one cycle except CONCATN, which costs two.
-LOADNIL adds no per-register charge. Text construction and String ordering add
-the length-dependent charges specified below. Readiness waits, counted-transfer surcharges and builtin charges are
+LOADNIL adds one cycle per written register. Text construction and String
+ordering add the length-dependent charges specified below. Readiness waits,
+counted-transfer surcharges and builtin charges are
 separate; [Cycle accounting and execution boundaries](#sec-cpu-cycle-accounting-and-execution-boundaries)
 defines their place in the execution budget.
 
@@ -835,14 +836,40 @@ On entry to a closure, the function record supplies the code address and paramet
 
 `RET` closes the returning frame's open upvalues before routing its results. An ordinary nested return places results in the caller's saved destination range and releases the returning frame. A return need not have an ordinary caller: protected-call targets, completion, and coroutine resumption have distinct return routes. Returning from a root frame with no resumer records completion values.
 
-#### Return result-placement cycles
+#### Value placement and capture cycles
 
-`RET` has a base charge of **2 cycles**, plus **1 cycle per value slot placed
-in a receiving range**. Count both copied values and nil padding. Do not count
-produced values that the receiver discards. If the caller requests all results,
+In addition to their nominal instruction or primitive base charge, these
+operations add **1 cycle per value slot placed**:
+
+- `LOADNIL` counts its B nil writes. `B=0` adds nothing.
+- `VARARG` counts every selected slot, including nil padding. An empty selected
+  range adds nothing.
+- A fixed-parameter closure call counts only missing formal parameters filled
+  with nil: supplied fixed arguments already occupy the callee's slots and add
+  no placement charge. A vararg call counts all formal parameters, copied or
+  nil-filled, in its relocated working window. The saved extra arguments remain
+  in their existing slots and add no charge.
+- A first coroutine resume copies arguments between threads: it counts the
+  formal parameter slots and any retained extra arguments. Subsequent resumes
+  count the selected receiving range of the suspended yield, including padding.
+- Ordinary returns, builtin completions, coroutine yields and completions, and
+  protected success or error completion count their actual receiving ranges.
+  Include status prefixes, copied values and nil padding. The error argument
+  supplied to an `xpcall` handler counts as one placed slot.
+
+`CLOSURE` additionally charges **1 cycle per upvalue descriptor bound**, whether
+it binds a newly opened cell or an existing capture. Closing captures charges
+**1 cycle per open cell actually closed**, not per closure referring to that
+cell. This applies to `RET`, `RFE`, protected error unwinding and coroutine
+close. Traversing calls without open captures adds no capture charge.
+Register reservation size does not add a placement charge.
+
+`RET` has a base charge of **2 cycles** and uses the same receiving-range rule.
+Do not count produced values that the receiver discards. If the caller requests all results,
 the placement charge is the number produced; for a fixed request it is exactly
-the requested count. Discarding all results therefore incurs only the base
-charge, even if the returning function produces values.
+the requested count. Discarding all results adds no result-placement charge,
+even if the returning function produces values; capture-closing charges still
+apply.
 
 Completion without an ordinary caller places the produced values in the
 completion range and charges that range. Returning to a coroutine resumer or a
@@ -852,11 +879,11 @@ ranges; each completed range is charged once. If admission of a later range
 fails, charges for earlier completed ranges remain, but the unplaced range adds
 no charge.
 
-Result placement is part of the admitted `RET` instruction: it completes before
-the next instruction or interrupt boundary, even when its charge exhausts the
-current cycle grant. The receiving instruction requires a new positive grant.
-These charges are specific to `RET`; they do not change the fixed builtin-call
-charges or add an argument-copy charge to shared-window `CALL`.
+Placement and capture work is part of the admitted operation: it completes
+before the next instruction or interrupt boundary, even when its charge exhausts
+the current cycle grant. The following instruction requires a new positive
+grant. An unplaced range whose admission fails adds no placement charge;
+completed ranges and closed captures retain their charges if later work fails.
 
 ### Closures and captured variables {#sec-cpu-closures-and-captured-variables}
 
@@ -1104,8 +1131,9 @@ instruction's initialization charge to ordinary table reads or writes.
 ### Builtin call charges {#sec-cpu-builtin-call-charges}
 
 CALL costs 2 base cycles. A primitive target adds its own base charge of 1, 2
-or 4 cycles. String construction additionally charges the input work specified
-in the String reference. Installed
+or 4 cycles. Its completed receiving ranges also incur the value-placement
+charges above; discarded scratch results do not. String construction additionally
+charges the input work specified in the String reference. Installed
 BIOS functions can execute ordinary instructions and call further primitives,
 so include the executed sequence when budgeting the whole service. The
 [BIOS base](bios-base.md#sec-bios-base), [String](bios-string.md#sec-bios-string) and

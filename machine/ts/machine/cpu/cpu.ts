@@ -1797,7 +1797,7 @@ export class CPU implements MappedPageInvalidator {
 		const returnFromNmi = frame.isNonMaskableExceptionFrame;
 		const returnPc = this.cop0Words[COP0_EPC];
 		const caller = frame.previous;
-		this.closeUpvalues(frame);
+		this.charge(this.closeUpvalues(frame));
 		frame.thread.leaveFrame();
 		this.cop0Words[COP0_STATUS] = ((this.cop0Words[COP0_STATUS] & ~CPU_STATUS_RFE_RESTORE_MASK)
 			| ((this.cop0Words[COP0_STATUS] >> 2) & CPU_STATUS_RFE_RESTORE_MASK)) >>> 0;
@@ -2027,10 +2027,11 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	private unwindToDepth(targetDepth: number): void {
+	private unwindToDepth(targetDepth: number, chargeCaptures: boolean): void {
 		while (this.activeThread.frameDepth > targetDepth) {
 			const frame = this.activeThread.currentFrame!;
-			this.closeUpvalues(frame);
+			const closed = this.closeUpvalues(frame);
+			if (chargeCaptures) this.charge(closed);
 			frame.thread.leaveFrame();
 		}
 		while (this.activeThread.protectedCallDepth > 0) {
@@ -2098,7 +2099,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public abortCompletionCall(frameIndex: number): void {
-		this.unwindToDepth(frameIndex);
+		this.unwindToDepth(frameIndex, false);
 		this.clearCompletionValues();
 	}
 
@@ -2442,10 +2443,10 @@ export class CPU implements MappedPageInvalidator {
 	private executeReturn(frame: CallFrame, a: number, b: number): boolean {
 		const registers = frame.registers;
 		const total = decodeValueCount(b, Math.max(frame.top - a, 0));
-		this.closeUpvalues(frame);
+		this.charge(this.closeUpvalues(frame));
 		const frameIndex = this.activeThread.frameDepth - 1;
 		if (frame.protectedContinuationIndex >= 0) {
-			this.finishProtectedCallFromRegisters(frame.protectedContinuationIndex, registers, a, total, true);
+			this.finishProtectedCallFromRegisters(frame.protectedContinuationIndex, registers, a, total);
 			frame.thread.leaveFrame();
 			return false;
 		}
@@ -2458,7 +2459,7 @@ export class CPU implements MappedPageInvalidator {
 		if (frameIndex === 0 && this.activeThread.resumer !== null) {
 			const finished = this.activeThread;
 			finished.status = ThreadStatus.Dead;
-			this.charge(this.returnToResumer(registers, a, total, true));
+			this.returnToResumer(registers, a, total, true);
 			finished.stackTop = 0;
 			frame.thread.leaveFrame();
 			return false;
@@ -2470,7 +2471,7 @@ export class CPU implements MappedPageInvalidator {
 			return true;
 		}
 		const caller = frame.previous!;
-		this.charge(this.writeReturnValuesFromRegisters(caller, frame.returnBase, frame.returnCount, registers, a, total));
+		this.writeReturnValuesFromRegisters(caller, frame.returnBase, frame.returnCount, registers, a, total);
 		frame.thread.leaveFrame();
 		return true;
 	}
@@ -2483,6 +2484,7 @@ export class CPU implements MappedPageInvalidator {
 			frame.registers.copyRangeFrom(frame.thread.stackRegisters, a, frame.varargBase, copied);
 			frame.registers.clear(count - copied, a + copied);
 		}
+		this.charge(count);
 		if (b === 0) frame.top = a + count;
 		else if (count !== 0) frame.top = Math.max(frame.top, a + count);
 	}
@@ -2898,6 +2900,7 @@ export class CPU implements MappedPageInvalidator {
 				case OpCode.LOADNIL: {
 					const b = page.b[pageOffset];
 					registers.clear(b, a);
+					this.charge(b);
 					if (b !== 0) frame.top = Math.max(frame.top, a + b);
 					return;
 				}
@@ -3517,6 +3520,8 @@ export class CPU implements MappedPageInvalidator {
 					frame.varargBase, argBase + functionRecord.numParams, varargCount);
 			}
 		}
+		this.charge((vararg || !sharedStack ? functionRecord.numParams : functionRecord.numParams - copiedCount)
+			+ (sharedStack ? 0 : varargCount));
 		this.activeThread.enterFrame(frame);
 		return frame;
 	}
@@ -3578,10 +3583,12 @@ export class CPU implements MappedPageInvalidator {
 			this.linkOpenUpvalue(frame, upvalue);
 			upvalues[index] = upvalue;
 		}
+		this.charge(functionRecord.upvalueCount);
 		return closure;
 	}
 
-	private closeUpvalues(frame: CallFrame): void {
+	private closeUpvalues(frame: CallFrame): number {
+		let closed = 0;
 		let upvalue = frame.openUpvalueHead;
 		frame.openUpvalueHead = null;
 		while (upvalue) {
@@ -3593,7 +3600,9 @@ export class CPU implements MappedPageInvalidator {
 			upvalue.frame = null;
 			upvalue.nextOpen = null;
 			upvalue = next;
+			closed += 1;
 		}
+		return closed;
 	}
 
 	private copyUpvalueToRegister(
@@ -3625,7 +3634,7 @@ export class CPU implements MappedPageInvalidator {
 		upvalue.valueReference = registers.getReference(registerIndex);
 	}
 
-	private writeReturnValuesFromRegisters(frame: CallFrame, base: number, count: number, source: ValueSlots, sourceBase: number, sourceCount: number): number {
+	private writeReturnValuesFromRegisters(frame: CallFrame, base: number, count: number, source: ValueSlots, sourceBase: number, sourceCount: number): void {
 		const targetCount = decodeValueCount(count, sourceCount);
 		if (targetCount > 0) {
 			const registers = this.ensureRegisterCapacity(frame, base + targetCount - 1);
@@ -3638,7 +3647,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 		}
 		frame.top = base + targetCount;
-		return targetCount;
+		this.charge(targetCount);
 	}
 
 	private writeReturnValuesFromBuiltinResults(
@@ -3659,6 +3668,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 		}
 		frame.top = base + targetCount;
+		this.charge(targetCount);
 	}
 
 	private ensureRegisterCapacity(frame: CallFrame, index: number): ValueSlots {
@@ -3937,7 +3947,7 @@ export class CPU implements MappedPageInvalidator {
 		return true;
 	}
 
-	private returnToResumer(source: ValueSlots, sourceBase: number, sourceCount: number, succeeded: boolean): number {
+	private returnToResumer(source: ValueSlots, sourceBase: number, sourceCount: number, succeeded: boolean): void {
 		const thread = this.activeThread;
 		const resumer = thread.resumer!;
 		this.activeThread = resumer;
@@ -3955,7 +3965,7 @@ export class CPU implements MappedPageInvalidator {
 		thread.resumer = null;
 		this.threadSwitchRequested = true;
 		this.yieldRequested = true;
-		return count;
+		this.charge(count);
 	}
 
 	private runCoroutineTransfer(id: BuiltinFunctionId, caller: CallFrame, callBase: number, returnCount: number, argCount: number): void {
@@ -4017,7 +4027,7 @@ export class CPU implements MappedPageInvalidator {
 			throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		}
 		while (thread.currentFrame !== null) {
-			this.closeUpvalues(thread.currentFrame);
+			this.charge(this.closeUpvalues(thread.currentFrame));
 			thread.leaveFrame();
 		}
 		for (let index = 0; index < thread.protectedCallDepth; index += 1) {
@@ -4167,10 +4177,11 @@ export class CPU implements MappedPageInvalidator {
 			return;
 		}
 		const resultCount = this.writeProtectedResultsFromBuiltinResults(continuation, true, values);
-		this.finishProtectedContinuation(continuationIndex, resultCount, false);
+		this.charge(resultCount);
+		this.finishProtectedContinuation(continuationIndex, resultCount);
 	}
 
-	private finishProtectedCallFromRegisters(continuationIndex: number, source: ValueSlots, sourceBase: number, sourceCount: number, chargePlacement = false): void {
+	private finishProtectedCallFromRegisters(continuationIndex: number, source: ValueSlots, sourceBase: number, sourceCount: number): void {
 		const continuation = this.activeThread.protectedCallContinuations.peek(continuationIndex);
 		if (continuation.kind === ProtectedCallKind.XPCallHandler) {
 			if (sourceCount > 0) {
@@ -4179,7 +4190,6 @@ export class CPU implements MappedPageInvalidator {
 					source.getTag(sourceBase),
 					source.getScalar(sourceBase),
 					source.getReference(sourceBase),
-					chargePlacement,
 				);
 			} else {
 				this.finishProtectedCallWithError(
@@ -4187,14 +4197,13 @@ export class CPU implements MappedPageInvalidator {
 					ValueTag.Nil,
 					NaN,
 					null,
-					chargePlacement,
 				);
 			}
 			return;
 		}
 		const resultCount = this.writeProtectedResultsFromRegisters(continuation, true, source, sourceBase, sourceCount);
-		if (chargePlacement) this.charge(resultCount);
-		this.finishProtectedContinuation(continuationIndex, resultCount, chargePlacement);
+		this.charge(resultCount);
+		this.finishProtectedContinuation(continuationIndex, resultCount);
 	}
 
 	private finishProtectedCallWithError(
@@ -4202,7 +4211,6 @@ export class CPU implements MappedPageInvalidator {
 		errorTag: ValueTag,
 		errorScalar: number,
 		errorReference: ValueReference,
-		chargePlacement = false,
 	): void {
 		const continuation = this.activeThread.protectedCallContinuations.peek(continuationIndex);
 		const caller = continuation.caller!;
@@ -4223,8 +4231,8 @@ export class CPU implements MappedPageInvalidator {
 			}
 		}
 		caller.top = continuation.callBase + resultCount;
-		if (chargePlacement) this.charge(resultCount);
-		this.finishProtectedContinuation(continuationIndex, resultCount, chargePlacement);
+		this.charge(resultCount);
+		this.finishProtectedContinuation(continuationIndex, resultCount);
 	}
 
 	private writeProtectedResultsFromBuiltinResults(
@@ -4277,7 +4285,7 @@ export class CPU implements MappedPageInvalidator {
 		return resultCount;
 	}
 
-	private finishProtectedContinuation(continuationIndex: number, resultCount: number, chargePlacement: boolean): void {
+	private finishProtectedContinuation(continuationIndex: number, resultCount: number): void {
 		const continuation = this.activeThread.protectedCallContinuations.peek(continuationIndex);
 		const caller = continuation.caller!;
 		const callBase = continuation.callBase;
@@ -4285,7 +4293,7 @@ export class CPU implements MappedPageInvalidator {
 		continuation.caller = null;
 		this.activeThread.protectedCallDepth = continuationIndex;
 		if (returnsToProtectedParent) {
-			this.finishProtectedCallFromRegisters(continuationIndex - 1, caller.registers, callBase, resultCount, chargePlacement);
+			this.finishProtectedCallFromRegisters(continuationIndex - 1, caller.registers, callBase, resultCount);
 		}
 	}
 
@@ -4308,7 +4316,7 @@ export class CPU implements MappedPageInvalidator {
 					return false;
 				}
 			}
-			this.unwindToDepth(callerIndex + 1);
+			this.unwindToDepth(callerIndex + 1, true);
 			if (continuation.kind !== ProtectedCallKind.XPCallBody) {
 				if (continuation.kind === ProtectedCallKind.XPCallHandler) {
 					this.finishProtectedCallWithError(
@@ -4338,6 +4346,7 @@ export class CPU implements MappedPageInvalidator {
 				errorReference,
 			);
 			this.bumpRegisterTop(caller, continuation.callBase);
+			this.charge(1);
 			try {
 				this.invokeProtectedTarget(
 					continuationIndex,

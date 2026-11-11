@@ -279,6 +279,8 @@ export function emitJavaScriptBlock(
 		}
 		// The checked exit precedes this instruction's readiness surcharge.
 		if (words) cycles += ceilDiv4(page.c[word]);
+		if (op === OpCode.LOADNIL) cycles += page.b[word];
+		if (op === OpCode.VARARG && page.b[word] !== 0) cycles += page.b[word] - 1;
 		if (op === OpCode.VARARG && page.b[word] === 0) { registerTop = 0; resetsRegisterTop = true; }
 		else if (op === OpCode.VARARG || op === OpCode.LOADNIL) {
 			const count = page.b[word] - (op === OpCode.VARARG ? 1 : 0);

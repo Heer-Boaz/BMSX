@@ -100,6 +100,7 @@ void NativeBlockCompiler::emitVararg(const DecodedInstruction& instruction, Nati
 	m_slowPaths.push_back(slow);
 	if (empty) sljit_set_label(empty, sljit_emit_label(m_compiler));
 	if (open) {
+		sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_S4, 0, SLJIT_S4, 0, SLJIT_R0, 0);
 		// Preserve dirty slots which lie beyond the dynamic overwrite range;
 		// overwritten slots need no writeback before the bulk copy.
 		for (int slot = 0; slot < m_registerCount; ++slot) {

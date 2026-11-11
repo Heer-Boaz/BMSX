@@ -721,7 +721,7 @@ void wordProducerFactsPreserveRawValuesAndOverwrites() {
 			}
 			NativeBlockRunState state{.registers = actual.data(), .constants = constants.data(), .remainingCycles = grant};
 			require(block->run(state) == &block->terminal && actual == expected && state.registerTop == 15
-				&& state.remainingCycles == grant - 15,
+				&& state.remainingCycles == grant - 18,
 				"word producer facts preserve full raw state through MOV aliases, signed chains, arithmetic/unknown overwrites and nil ranges");
 		}
 	}
@@ -848,6 +848,7 @@ void nextAccessPressurePreservesEveryRawGuestSlot() {
 			size_t bytes = 0;
 			for (size_t prefix = 1; prefix <= source.size(); ++prefix) {
 				const auto& op = decoded[prefix - 1]; cycles += op.baseCycles;
+				if (op.op == static_cast<u8>(OpCode::LOADNIL)) cycles += op.b;
 				switch (static_cast<OpCode>(op.op)) {
 					case OpCode::LOADK: expected[op.a] = constants[op.bx]; break;
 					case OpCode::MOV: expected[op.a] = expected[op.b]; break;

@@ -136,6 +136,8 @@ std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& sourc
 		// The checked exit owns this instruction's preflight and surcharge.
 		// Later exits include the successful prefix, not a blocked attempt.
 		if (slow == NativeBlockExit::WriteWords) terminal.cycles += ceilDiv4(instruction.c);
+		if (op == OpCode::LOADNIL) terminal.cycles += instruction.b;
+		if (op == OpCode::VARARG && instruction.b != 0) terminal.cycles += instruction.b - 1;
 		if (op == OpCode::VARARG && instruction.b == 0) terminal.registerTop = 0;
 		else if (op == OpCode::VARARG || op == OpCode::LOADNIL) {
 			const int count = instruction.b - (op == OpCode::VARARG ? 1 : 0);

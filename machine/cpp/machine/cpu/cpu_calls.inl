@@ -31,9 +31,9 @@ inline bool CPU::executeCall(CallFrame& frame, int a, int b, int c) {
 
 inline bool CPU::executeReturn(CallFrame& frame, int a, int b) {
 	const int count = decodeValueCount(b, std::max(frame.top - a, 0));
-	closeUpvalues(frame);
+	instructionBudgetRemaining -= closeUpvalues(frame);
 	if (frame.protectedContinuationIndex >= 0) {
-		finishProtectedCall(static_cast<size_t>(frame.protectedContinuationIndex), frame, a, count, true);
+		finishProtectedCall(static_cast<size_t>(frame.protectedContinuationIndex), frame, a, count);
 		m_activeThread->leaveFrame();
 		return false;
 	}
@@ -46,7 +46,7 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int b) {
 	if (m_activeThread->frameDepth == 1 && m_activeThread->resumer != nullptr) {
 		Thread* thread = m_activeThread;
 		thread->status = ThreadStatus::Dead;
-		instructionBudgetRemaining -= returnToResumer(frame.registers + a, count, true);
+		returnToResumer(frame.registers + a, count, true);
 		thread->stackTop = 0;
 		thread->leaveFrame();
 		return false;
@@ -56,7 +56,7 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int b) {
 		instructionBudgetRemaining -= count;
 	} else {
 		CallFrame& caller = *frame.previous;
-		instructionBudgetRemaining -= writeReturnValuesFromRegisters(caller, frame.returnBase, frame.returnCount, frame, a, count);
+		writeReturnValuesFromRegisters(caller, frame.returnBase, frame.returnCount, frame, a, count);
 	}
 	m_activeThread->leaveFrame();
 	return true;
@@ -70,6 +70,7 @@ inline void CPU::executeVararg(CallFrame& frame, int a, int b) {
 		std::copy_n(m_activeThread->stack + frame.varargBase, copied, registers + a);
 		std::fill_n(registers + a + copied, count - copied, valueNil());
 	}
+	instructionBudgetRemaining -= count;
 	if (b == 0) frame.top = a + count;
 	else if (count != 0) frame.top = std::max(frame.top, a + count);
 }

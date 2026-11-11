@@ -129,7 +129,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		assert.deepEqual(Array.from({ length: placed }, (_, i) => cpu.rootThread.currentFrame!.registers.get(4 + i)), [true, 17, 29, null, null].slice(0, placed));
 	});
 
-	test(`builtin CALL result placement does not acquire RET charges (${backend})`, () => {
+	test(`builtin CALL result placement charges copied and padded slots (${backend})`, () => {
 		const text = new Uint8Array(5 * INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.GETSYS, 0, 0, 0);
 		writeInstruction(text, 1, OpCode.LOADK, 1, 0, 0);
@@ -141,7 +141,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('select'), ValueTag.BuiltinFunction, BuiltinFunctionId.Select, null);
 		while (cpu.rootThread.currentFrame!.pc !== image.image.functions[0].codeAddress + 3 * INSTRUCTION_BYTES) cpu.runUntilDepth(0, 1);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-		assert.equal(cpu.instructionBudgetRemaining, -2, 'CALL base 2 plus select tier 1, independently of four placed slots');
+		assert.equal(cpu.instructionBudgetRemaining, -6, 'CALL base 2 plus select tier 1 plus four placed slots');
 		assert.deepEqual(Array.from({ length: 4 }, (_, i) => cpu.rootThread.currentFrame!.registers.get(i)), [1, null, null, null]);
 	});
 
@@ -166,6 +166,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('xpcall'), ValueTag.BuiltinFunction, BuiltinFunctionId.XPCall, null);
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('error'), ValueTag.BuiltinFunction, BuiltinFunctionId.Error, null);
 		while (cpu.activeThread.currentFrame!.functionAddress !== image.symbols.functionAddresses[2]) cpu.runUntilDepth(0, 1);
+		assert.equal(cpu.instructionBudgetRemaining, 1 - 2 - 2 - 1, 'error CALL, error primitive and one handler argument placement');
 		assert.equal(cpu.runUntilDepth(1, 1), RunResult.Halted);
 		assert.equal(cpu.instructionBudgetRemaining, -6);
 		assert.deepEqual(Array.from({ length: 5 }, (_, i) => cpu.rootThread.currentFrame!.registers.get(i)), [false, 17, null, null, null]);

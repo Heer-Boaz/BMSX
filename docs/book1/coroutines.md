@@ -68,7 +68,7 @@ When the surrounding expression receives all results, the layouts are:
 | `pcall` catches an error | `false, errorValue` |
 | `xpcall` handles an error | `false, handlerValue` |
 
-Result count and `nil` positions matter. The arithmetic example below produces `true, 10, nil, 4`, not a compressed three-value result. An ordinary BLua function that falls through, or uses a bare return, returns one `nil`; its protected success therefore gives `true, nil`, not just `true`. A caught `nil` error produces exactly two results, `false, nil`. If the caller requests a fixed number of results instead, extra results are discarded and missing positions are filled with `nil`.
+Result count and `nil` positions matter. The arithmetic example below produces `true, 10, nil, 4`, not a compressed three-value result. An ordinary BLua function that falls through, or uses a bare return, returns no values; its protected success therefore gives only `true`. A caught `nil` error produces exactly two results, `false, nil`. If the caller requests a fixed number of results instead, extra results are discarded and missing positions are filled with `nil`.
 
 A protected target can itself be `pcall` or `xpcall`. Its own success flag and remaining results are then ordinary results of the outer target; an outer success flag does not mean that every nested operation succeeded.
 
@@ -115,7 +115,7 @@ below leaves the earlier assignment of `77` in place.
 
 ### Incremental cycle charges {#sec-coroutines-incremental-cycle-charges}
 
-`error` adds 2 cycles; `pcall` and `xpcall` each add 4 cycles, with no additional per-argument or per-result charge. A protected built-in target or handler also incurs its own base charge. These are incremental charges, not total timings: target and handler execution, call and return instructions, and other machine work still contribute. Do not budget an entire protected operation as a fixed 4-cycle service.
+`error` adds 2 base cycles; `pcall` and `xpcall` each add 4 base cycles. Each completed receiving range adds one cycle per placed slot, including status prefixes and nil padding. Supplying an error argument to an `xpcall` handler adds one cycle; unwinding adds one cycle per open capture actually closed. A protected built-in target or handler also incurs its own base charge. These are incremental charges, not total timings: target and handler execution, call and return instructions, and other machine work still contribute. Do not budget an entire protected operation as a fixed 4-cycle service.
 
 ## Coroutines {#sec-coroutines-coroutines}
 
@@ -239,7 +239,7 @@ switching and the [CPU HALT interface](cpu.md#sec-cpu-halt) for interrupt waits.
 
 ### Cycle increments {#sec-coroutines-cycle-increments}
 
-The underlying create, resume, yield, status, running, close, and isyieldable operations each add four cycles, with no additional per-argument or per-result charge. This is not their service time or the total cost of calling the installed function. Ordinary function instructions add work; wrap also creates and resumes a coroutine and may inspect, close, and raise an error. Resumed cartridge code contributes its own execution. No total per-call cycle bound is specified here.
+The underlying create, resume, yield, status, running, close, and isyieldable operations each add four base cycles. Actual argument and result placements add one cycle per receiving slot, and close adds one cycle per open capture closed. See [value placement and capture cycles](cpu.md#sec-cpu-calling-and-returning-values) for selection, padding and shared argument slots. This is not their service time or the total cost of calling the installed function. Ordinary function instructions add work; wrap also creates and resumes a coroutine and may inspect, close, and raise an error. Resumed cartridge code contributes its own execution. No total per-call cycle bound is specified here.
 
 
 ## Language fault reasons {#sec-coroutines-language-fault-reasons}

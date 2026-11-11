@@ -410,13 +410,13 @@ private:
 		int argumentBase, int argumentCount, bool returnsToProtectedParent);
 	void invokeProtectedTarget(size_t continuationIndex, Value target, int argumentBase, int argumentCount);
 	void finishProtectedCall(size_t continuationIndex, const Value* values, int valueCount);
-	void finishProtectedCall(size_t continuationIndex, CallFrame& source, int sourceBase, int sourceCount, bool chargePlacement = false);
-	void finishProtectedCallWithError(size_t continuationIndex, Value errorValue, bool chargePlacement = false);
+	void finishProtectedCall(size_t continuationIndex, CallFrame& source, int sourceBase, int sourceCount);
+	void finishProtectedCallWithError(size_t continuationIndex, Value errorValue);
 	int writeProtectedResults(ProtectedCallContinuation& continuation, bool prefix, const Value* values, int valueCount);
 	int writeProtectedResults(ProtectedCallContinuation& continuation, bool prefix, CallFrame& source, int sourceBase, int sourceCount);
-	void finishProtectedContinuation(size_t continuationIndex, int resultCount, bool chargePlacement);
+	void finishProtectedContinuation(size_t continuationIndex, int resultCount);
 	bool handleProtectedCallError(Value errorValue);
-	void unwindToDepth(int targetDepth);
+	void unwindToDepth(int targetDepth, bool chargeCaptures);
 	void collectHeap(Value root0, Value root1, Value root2);
 	StringId internExecutionString(
 		ExecutionDomainId executionDomainId,
@@ -471,7 +471,7 @@ private:
 	void executeClosure(CallFrame& frame, int destination, u32 operand, int flags);
 	void executeConcat(CallFrame& frame, int destination, int left, int right);
 	void executeConcatRange(CallFrame& frame, int destination, int base, int count);
-	void closeUpvalues(CallFrame& frame);
+	int closeUpvalues(CallFrame& frame);
 	bool executeCall(CallFrame& frame, int a, int b, int c);
 	bool executeReturn(CallFrame& frame, int a, int b);
 	void executeVararg(CallFrame& frame, int a, int b);
@@ -479,7 +479,7 @@ private:
 	void linkOpenUpvalue(CallFrame& frame, Upvalue* upvalue);
 	const Value& readUpvalue(Upvalue* upvalue) const;
 	void writeUpvalue(Upvalue* upvalue, const Value& value);
-	int writeReturnValuesFromRegisters(CallFrame& frame, int base, int count, const CallFrame& source, int sourceBase, int sourceCount);
+	void writeReturnValuesFromRegisters(CallFrame& frame, int base, int count, const CallFrame& source, int sourceBase, int sourceCount);
 	void writeReturnValuesFromBuiltinResults(CallFrame& frame, int base, int count, const BuiltinResults& values);
 	void setRegister(CallFrame& frame, int index, Value value);
 	Value* ensureRegisterCapacity(CallFrame& frame, int index);
@@ -589,7 +589,7 @@ private:
 	Thread* m_completionThread = nullptr;
 	Thread* createThread(Closure* entry);
 	bool coroutineYieldable(const Thread& thread) const;
-	int returnToResumer(const Value* source, int count, bool succeeded);
+	void returnToResumer(const Value* source, int count, bool succeeded);
 	void runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, int base, int count, int argc);
 	bool handleThreadError(Value error);
 	void closeThread(Thread& thread);

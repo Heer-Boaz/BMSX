@@ -165,8 +165,91 @@ void protectedNestedFrames() {
 	}
 }
 
+void valueRangePlacementCycles() {
+	for (const bool scalar : {true, false}) for (const auto op : {OpCode::LOADNIL, OpCode::VARARG})
+	for (const int operand : {0, 1, 3, 129}) {
+		test::Blua32TestImage image;
+		image.text.resize(5 * INSTRUCTION_BYTES);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
+		writeInstruction(image.text, 3, static_cast<u8>(op), 2, operand, 0, (operand >> 6) << 3);
+		writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 1, 0);
+		image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 8},
+			{.firstWord = 3, .wordCount = 2, .maxStack = 160, .isVararg = true}};
+		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+		CpuMachine machine(image, scalar);
+		machine.cpu.runUntilDepth(0, 1);
+		auto* closure = asClosure(machine.cpu.readFrameRegister(0, 0));
+		const std::array args{valueNumber(17), valueNumber(29), valueNumber(31)};
+		const int placed = op == OpCode::LOADNIL ? operand : operand == 0 ? 3 : operand - 1;
+		for (int call = 0; call < 20; ++call) {
+			machine.cpu.beginCompletionCall(*closure, BuiltinArgsView(args.data(), args.size()));
+			const int base = machine.cpu.activeThread()->currentFrame->stackBase;
+			require(machine.cpu.runUntilDepth(1, 1000) == RunResult::Halted
+				&& machine.cpu.instructionBudgetRemaining == 1000 - BASE_CYCLES[static_cast<u8>(op)] - 2 - placed,
+				"cold and warm LOADNIL/VARARG charge each written slot, not reserved capacity");
+			for (int index = 0; index < placed; ++index)
+				require(machine.cpu.activeThread()->stack[base + 2 + index] == (op == OpCode::VARARG && index < 3 ? args[index] : valueNil()),
+					"charged ranges contain copied arguments or explicit nil padding");
+		}
+	}
+}
+
+void closureBindingAndClosingCycles() {
+	test::Blua32TestImage image;
+	image.text.resize(8 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::LOADK), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CLOSURE), 2, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::CLOSURE), 3, 0, 0);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::RET), 2, 3, 0);
+	writeInstruction(image.text, 6, static_cast<u8>(OpCode::GETUP), 0, 0, 0);
+	writeInstruction(image.text, 7, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 8},
+		{.firstWord = 6, .wordCount = 2, .maxStack = 2, .staticClosure = false, .upvalues = {{true, 0}, {true, 1}}}};
+	image.constants = {17.0};
+	image.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)},
+		{4, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+	for (const bool scalar : {true, false}) {
+		CpuMachine machine(image, scalar);
+		machine.cpu.runUntilDepth(0, 1);
+		for (int call = 0; call < 2; ++call) require(machine.cpu.runUntilDepth(0, 1) == RunResult::Yielded
+			&& machine.cpu.instructionBudgetRemaining == -2, "every descriptor costs one even when an earlier closure already opened its cell");
+		auto* first = asClosure(machine.cpu.readFrameRegister(0, 2));
+		auto* second = asClosure(machine.cpu.readFrameRegister(0, 3));
+		require(first->upvalues[0] == second->upvalues[0] && first->upvalues[1] == second->upvalues[1],
+			"successive closures share both captured cells");
+		require(machine.cpu.runUntilDepth(0, 1) == RunResult::Halted && machine.cpu.instructionBudgetRemaining == -5,
+			"RET charges two distinct open cells, not four descriptors, and two received values");
+		require(!first->upvalues[0]->open && !first->upvalues[1]->open, "both charged captures are closed");
+	}
+}
+
+void protectedBuiltinPlacementCycles() {
+	for (const bool scalar : {true, false}) for (const int wanted : {0, 1, 5}) {
+		test::Blua32TestImage image;
+		image.text.resize(5 * INSTRUCTION_BYTES);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::GETSYS), 0, 0, 0);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::GETSYS), 1, 0, 0);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::GETSYS), 2, 0, 1);
+		writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, 3, wanted);
+		writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
+		image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8}};
+		image.systemGlobalNames = {"pcall", "isyieldable"};
+		CpuMachine machine(image, scalar);
+		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("pcall"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::PCall));
+		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("isyieldable"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineIsYieldable));
+		machine.cpu.runUntilDepth(0, 3);
+		require(machine.cpu.runUntilDepth(0, 1) == RunResult::Yielded
+			&& machine.cpu.instructionBudgetRemaining == 1 - 2 - 4 - 4 - 4 - 2 - (wanted == 0 ? 3 : wanted - 1),
+			"nested builtin protection pays each completed receiving range exactly once");
+	}
+}
+
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTarget, bool ramRecord, bool alias, int maxStack = 8) {
+void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTarget, bool ramRecord, bool alias, int maxStack = 8, int grant = -1) {
 	test::Blua32TestImage image;
 	image.text.resize(3 * MAPPED_PAGE_BYTE_SIZE);
 	const int base = alias ? 7 : 8;
@@ -229,7 +312,16 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 	calleePage->nativeCode[word] = coldTarget ? nullptr : alternate->nativeCode[markerWord];
 	machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress + 2 * INSTRUCTION_BYTES);
 	const int callerTop = caller->top;
-	require(machine.cpu.runUntilDepth(0, 4) == RunResult::Yielded, "CALL and its first callee instruction retain grant accounting");
+	const int placed = vararg ? params : std::max(params - args, 0);
+	if (grant < 0) grant = 4 + placed;
+	require(machine.cpu.runUntilDepth(0, grant) == RunResult::Yielded, "CALL placements and its first callee instruction retain grant accounting");
+	if (grant <= 3 + placed) {
+		require(machine.cpu.instructionBudgetRemaining == grant - 3 - placed
+			&& machine.cpu.getGlobalByKey(marker) == valueBool(false)
+			&& thread->currentFrame == spare && spare->pc == calleePc,
+			"an exhausting CALL completes placement once without entering its raw callee body");
+		return;
+	}
 	if (coldTarget) {
 		require(machine.cpu.getGlobalByKey(marker) == valueBool(false) && thread->currentFrame == caller,
 			"missing raw target dispatches the original semantic call and return before any native activation writes");
@@ -640,6 +732,7 @@ void errorHandlerReturnPlacementCycles() {
 		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("xpcall"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::XPCall));
 		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("error"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::Error));
 		while (machine.cpu.activeThread()->currentFrame->functionAddress != machine.rom.functionAddresses[2]) machine.cpu.runUntilDepth(0, 1);
+		require(machine.cpu.instructionBudgetRemaining == 1 - 2 - 2 - 1, "error CALL and primitive plus one placed handler argument");
 		require(machine.cpu.runUntilDepth(1, 1) == RunResult::Halted && machine.cpu.instructionBudgetRemaining == -6,
 			"handler RET charges the selected error receiving range");
 		const Value values[]{valueBool(false), valueNumber(17), valueNil(), valueNil(), valueNil()};
@@ -740,12 +833,19 @@ int main() {
 		ownedValueStack();
 		reusableFrameChain();
 		protectedNestedFrames();
+		valueRangePlacementCycles();
+		closureBindingAndClosingCycles();
+		protectedBuiltinPlacementCycles();
 		returnPlacementCycles();
 		protectedReturnPlacementCycles();
 		coroutineReturnPlacementCycles();
 		rootReturnPlacementCycles();
 		errorHandlerReturnPlacementCycles();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		for (const int grant : {1, 3, 5}) {
+			nativeCallRouting(3, 1, false, false, false, false, false, 8, grant);
+			nativeCallRouting(3, 1, true, false, false, false, false, 8, grant);
+		}
 		nativeCallRouting(3, 5, true, true, false, false, false);
 		nativeCallRouting(4, 1, false, false, false, false, false);
 		nativeCallRouting(0, 0, false, true, false, false, false);
