@@ -187,7 +187,7 @@ void crossPageLinksRetireTheirTargetsAndKeepBoundedStack() {
 		DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE + 3 * INSTRUCTION_BYTES, replacement.data(), replacement.size());
 	require(firstPage->nativeBlocks->entries[0].get() == root && !root->terminal.link.target,
 		"retiring a cross-page target disconnects its incoming edge without discarding the independent source");
-	require(firstPage->nativeCode[0] && secondPage->nativeCode == nullptr,
+	require(firstPage->nativeCode[0] && secondPage->nativeCode && secondPage->nativeCode[0] == nullptr,
 		"retirement withdraws the native dispatch bank before releasing the last target region");
 	for (auto* machine : {&native, &scalar}) {
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);

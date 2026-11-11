@@ -297,24 +297,23 @@ void CPU::installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPag
 	if (!page.nativeBlocks) page.nativeBlocks = std::make_unique<NativeBlockPage>();
 	auto& lookup = image.nativeCodeLookup;
 	if (!lookup) lookup = std::make_unique<NativeCodeLookup>();
+	page.nativeCode = lookup->install(pagePc, slot, page);
 	const auto codeBytes = blocks.front()->region->codeBytes;
 	blocks.front()->region->publish(m_nativeCodeBytes);
 	for (size_t index = 0; index < entries.size(); ++index) {
 		auto& exit = blocks[index]->terminal;
 		if (exit.exit == NativeBlockExit::Call) {
 			for (u32 bank = 0; bank < CARTRIDGE_SLOT_COUNT; ++bank)
-				exit.continuationPages[bank] = lookup->pageSlot(exit.nextPc, bank);
+				exit.continuationCells[bank] = lookup->entrySlot(exit.nextPc, bank);
 		}
 		const u32 entry = entries[index];
 		page.nativeBlocks->entries[entry] = std::move(blocks[index]);
-		page.nativeBlocks->code[entry] = page.nativeBlocks->entries[entry]->m_body;
+		page.nativeCode[entry] = page.nativeBlocks->entries[entry]->m_body;
 		++page.nativeBlocks->count;
 		page.words[entry].dispatchOp = static_cast<u8>(DecodedDispatchOp::NativeBlock);
 		page.words[entry].dispatchCycles = page.words[entry].baseCycles;
 		page.refreshState[entry] &= static_cast<u8>(~DECODED_REFRESH_FUSION);
 	}
-	page.nativeCode = page.nativeBlocks->code;
-	lookup->install(pagePc, slot, page);
 	if (m_nativeCompilationProfiling) {
 		auto& profile = m_nativeCompilationProfile;
 		++profile.regionsPublished;
@@ -327,10 +326,10 @@ void CPU::installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPag
 
 void CPU::clearNativeContinuationBindings() {
 	// Include suspended coroutines, exception activations and pooled nodes;
-	// clearing only the running resumer chain would leave borrowed owner slots.
+	// clearing only the running resumer chain would leave borrowed entry cells.
 	m_heap.visitThreads([](Thread& thread) {
 		for (auto* frame = thread.firstFrame; frame; frame = frame->next)
-			frame->nativeContinuationPages = {};
+			frame->nativeContinuationCells = {};
 	});
 }
 

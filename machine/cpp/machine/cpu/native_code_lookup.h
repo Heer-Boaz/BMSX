@@ -4,61 +4,76 @@
 #include "machine/memory/mapped_page.h"
 #include "spec/bmsx/cartridge.h"
 #include "spec/bmsx/memory_map.h"
+#include "spec/blua32/instruction_format.h"
 
 namespace bmsx {
 
 struct DecodedInstructionPage;
 
-// A sparse index into execution-image-owned decoded pages, not another code
-// cache. Retiring a body leaves its page and this index intact. Each socket has
-// its own cartridge window; system ROM and main RAM are indexed in both banks.
+// Execution-image-owned dispatch cells. Translation descriptors/allocations
+// can retire independently; their cells are withdrawn before code is freed.
 class NativeCodeLookup {
 public:
 	static constexpr u32 GROUP_PAGE_SHIFT = 12u;
 	static constexpr u32 GROUP_PAGES = 1u << GROUP_PAGE_SHIFT;
 	static constexpr u32 ROOT_SHIFT = MAPPED_PAGE_BYTE_SHIFT + GROUP_PAGE_SHIFT;
 	static constexpr u32 ROOT_ENTRIES = 1u << (ADDRESS_BITS - ROOT_SHIFT);
+	static constexpr u32 CART_ROOT = CART_ROM_BASE >> ROOT_SHIFT;
+	static_assert((CART_ROM_BASE & ((1u << ROOT_SHIFT) - 1u)) == 0u);
+	struct DispatchPage {
+		void* code[MAPPED_PAGE_BYTE_SIZE / INSTRUCTION_BYTES]{};
+		DecodedInstructionPage* decoded = nullptr;
+	};
 	struct Group {
-		DecodedInstructionPage* pages[GROUP_PAGES]{};
+		DispatchPage* pages[GROUP_PAGES]{};
+		~Group() { for (auto* page : pages) delete page; }
 	};
 	using Root = Group* [ROOT_ENTRIES];
 
 	NativeCodeLookup() = default;
-	~NativeCodeLookup() { for (auto& bank : m_groups) for (auto* group : bank) delete group; }
+	~NativeCodeLookup() {
+		// Shared-memory groups are aliased in every bank, owned by bank zero.
+		for (u32 bank = 0; bank < CARTRIDGE_SLOT_COUNT; ++bank)
+			for (u32 root = bank == 0 ? 0u : CART_ROOT; root < ROOT_ENTRIES; ++root)
+				delete m_groups[bank][root];
+	}
 	NativeCodeLookup(const NativeCodeLookup&) = delete;
 	NativeCodeLookup& operator=(const NativeCodeLookup&) = delete;
 
-	// Generated dispatch consumes this owner-defined raw index, not a host
-	// container's private layout. A grant binds the physically selected bank.
 	const Root& root(u32 slot) const { return m_groups[slot]; }
 
 	DecodedInstructionPage* find(u32 pc, u32 slot) const {
-		const auto& group = m_groups[slot][pc >> ROOT_SHIFT];
-		return group ? group->pages[(pc >> MAPPED_PAGE_BYTE_SHIFT) & (GROUP_PAGES - 1u)] : nullptr;
+		const auto* group = m_groups[slot][pc >> ROOT_SHIFT];
+		const auto* page = group ? group->pages[(pc >> MAPPED_PAGE_BYTE_SHIFT) & (GROUP_PAGES - 1u)] : nullptr;
+		return page ? page->decoded : nullptr;
 	}
 
-	// A continuation retains this owner slot, never a NativeBlockPage/code
-	// allocation. Groups live until the execution image is destroyed. Installing
-	// a previously absent page or replacing its translations updates this slot.
-	DecodedInstructionPage* const* pageSlot(u32 pc, u32 slot) {
-		auto& group = m_groups[slot][pc >> ROOT_SHIFT];
-		if (!group) group = new Group;
-		return &group->pages[(pc >> MAPPED_PAGE_BYTE_SHIFT) & (GROUP_PAGES - 1u)];
+	// A cold continuation can reserve its zero cell without fetching/decoding
+	// guest memory. Later publication updates this same image-lifetime address.
+	void** entrySlot(u32 pc, u32 slot) {
+		return &dispatchPage(pc, slot).code[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	}
 
-	void install(u32 pageAddress, u32 slot, DecodedInstructionPage& page) {
-		const u32 firstSlot = pageAddress < CART_ROM_BASE ? 0u : slot;
-		const u32 endSlot = pageAddress < CART_ROM_BASE ? CARTRIDGE_SLOT_COUNT : slot + 1u;
-		const u32 root = pageAddress >> ROOT_SHIFT;
-		const u32 index = (pageAddress >> MAPPED_PAGE_BYTE_SHIFT) & (GROUP_PAGES - 1u);
-		for (u32 bank = firstSlot; bank < endSlot; ++bank) {
-			auto& group = m_groups[bank][root];
-			if (!group) group = new Group;
-			group->pages[index] = &page;
-		}
+	void** install(u32 pageAddress, u32 slot, DecodedInstructionPage& decoded) {
+		auto& page = dispatchPage(pageAddress, slot);
+		page.decoded = &decoded;
+		return page.code;
 	}
 
 private:
+	DispatchPage& dispatchPage(u32 pc, u32 slot) {
+		const bool shared = pc < CART_ROM_BASE;
+		const u32 root = pc >> ROOT_SHIFT;
+		auto& group = m_groups[shared ? 0u : slot][root];
+		if (!group) {
+			group = new Group;
+			if (shared) for (u32 bank = 1; bank < CARTRIDGE_SLOT_COUNT; ++bank)
+				m_groups[bank][root] = group;
+		}
+		auto& page = group->pages[(pc >> MAPPED_PAGE_BYTE_SHIFT) & (GROUP_PAGES - 1u)];
+		if (!page) page = new DispatchPage;
+		return *page;
+	}
 	Root m_groups[CARTRIDGE_SLOT_COUNT]{};
 };
 

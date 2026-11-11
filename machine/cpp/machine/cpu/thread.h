@@ -20,7 +20,7 @@ struct Thread : GCObject {
 	void enterFrame(CallFrame* frame) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		// Ordinary/interpreter and exception entries have no compiled callsite.
-		if (currentFrame) currentFrame->nativeContinuationPages = {};
+		if (currentFrame) currentFrame->nativeContinuationCells = {};
 #endif
 		currentFrame = frame; ++frameDepth;
 	}

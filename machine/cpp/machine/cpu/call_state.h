@@ -35,7 +35,7 @@ struct CallFrame {
 	u32 pc = 0;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	// Host translation binding for the suspended caller. Not guest/saved state.
-	std::array<DecodedInstructionPage* const*, 2> nativeContinuationPages{};
+	std::array<void* const*, 2> nativeContinuationCells{};
 #endif
 	int varargBase = 0;
 	int varargCount = 0;

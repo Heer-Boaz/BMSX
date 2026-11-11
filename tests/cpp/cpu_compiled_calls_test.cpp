@@ -226,7 +226,7 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 		"callee and independent marker have live raw native entries");
 	// A semantic CALL still selects the original RET descriptor. Only the shared
 	// raw CALL gate can follow this independently redirected code word.
-	calleePage->nativeBlocks->code[word] = coldTarget ? nullptr : alternate->nativeCode[markerWord];
+	calleePage->nativeCode[word] = coldTarget ? nullptr : alternate->nativeCode[markerWord];
 	machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress + 2 * INSTRUCTION_BYTES);
 	const int callerTop = caller->top;
 	require(machine.cpu.runUntilDepth(0, 4) == RunResult::Yielded, "CALL and its first callee instruction retain grant accounting");
@@ -310,7 +310,7 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	// Redirect only the raw code word, not the descriptor. A C++ RET dispatcher
 	// still selects the ordinary descriptor and cannot execute this marker.
 	// This disposable fixture never resumes or reuses the redirected cache.
-	continuation->nativeBlocks->code[word] = coldTarget ? nullptr : alternate->nativeCode[markerWord];
+	continuation->nativeCode[word] = coldTarget ? nullptr : alternate->nativeCode[markerWord];
 	const int copied = wanted == 0 ? produced : std::min(produced, wanted);
 	const int count = wanted == 0 ? produced : wanted;
 	const bool grows = count != 0 && base + count > caller->stackCapacity;

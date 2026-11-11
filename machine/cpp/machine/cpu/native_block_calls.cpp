@@ -76,17 +76,17 @@ sljit_label* NativeBlockGate::emitReturnGate(sljit_compiler* compiler, sljit_lab
 	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, pc));
 	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R2, 0, SLJIT_R0, 0, SLJIT_IMM, INSTRUCTION_BYTES - 1u);
 	cold[coldCount++] = sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 0);
-	// A published CALL resolves its continuation page slot once. Select the
+	// A published CALL resolves its continuation cell once. Select the
 	// current physical bank here: system code may have changed SELECT in the
-	// callee. The slot owns only a page identity, never a retired code address.
+	// callee. Retirement zeros the cell before freeing its old executable body.
 	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R2, 0,
 		SLJIT_MEM1(SLJIT_S3), offsetof(NativeCpuRunState, cartridgeSlot));
 	sljit_emit_op2(compiler, SLJIT_ADD, SLJIT_R3, 0, SLJIT_R1, 0,
-		SLJIT_IMM, offsetof(CallFrame, nativeContinuationPages));
+		SLJIT_IMM, offsetof(CallFrame, nativeContinuationCells));
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM2(SLJIT_R3, SLJIT_R2), pointerShift);
 	auto* uncached = sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R3, 0, SLJIT_IMM, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R3), 0);
-	auto* pageReady = sljit_emit_jump(compiler, SLJIT_JUMP);
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_S2, 0, SLJIT_MEM1(SLJIT_R3), 0);
+	auto* codeReady = sljit_emit_jump(compiler, SLJIT_JUMP);
 	// Interpreter/exception entries have no native CALL binding. They retain
 	// ordinary live lookup rather than depending on a previous pooled frame.
 	sljit_set_label(uncached, sljit_emit_label(compiler));
@@ -97,13 +97,12 @@ sljit_label* NativeBlockGate::emitReturnGate(sljit_compiler* compiler, sljit_lab
 	sljit_emit_op2(compiler, SLJIT_LSHR, SLJIT_R2, 0, SLJIT_R0, 0, SLJIT_IMM, MAPPED_PAGE_BYTE_SHIFT);
 	sljit_emit_op2(compiler, SLJIT_AND, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, NativeCodeLookup::GROUP_PAGES - 1u);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM2(SLJIT_R3, SLJIT_R2), pointerShift);
-	sljit_set_label(pageReady, sljit_emit_label(compiler));
 	cold[coldCount++] = sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R3, 0, SLJIT_IMM, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R3), offsetof(DecodedInstructionPage, nativeCode));
-	cold[coldCount++] = sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R3, 0, SLJIT_IMM, 0);
+	static_assert(offsetof(NativeCodeLookup::DispatchPage, code) == 0);
 	sljit_emit_op2(compiler, SLJIT_AND, SLJIT_R2, 0, SLJIT_R0, 0, SLJIT_IMM, MAPPED_PAGE_BYTE_MASK);
 	sljit_emit_op2(compiler, SLJIT_LSHR, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, 2);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_S2, 0, SLJIT_MEM2(SLJIT_R3, SLJIT_R2), pointerShift);
+	sljit_set_label(codeReady, sljit_emit_label(compiler));
 	cold[coldCount++] = sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_S2, 0, SLJIT_IMM, 0);
 
 	// Every remaining operation is a raw, allocation-free frame transition.
@@ -161,7 +160,7 @@ sljit_label* NativeBlockGate::emitReturnGate(sljit_compiler* compiler, sljit_lab
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R0), offsetof(CallFrame, decodedPageAddress), SLJIT_IMM, 0);
 	for (size_t bank = 0; bank < CARTRIDGE_SLOT_COUNT; ++bank)
 		sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_R0),
-			offsetof(CallFrame, nativeContinuationPages) + bank * sizeof(void*), SLJIT_IMM, 0);
+			offsetof(CallFrame, nativeContinuationCells) + bank * sizeof(void*), SLJIT_IMM, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV_U8, SLJIT_MEM1(SLJIT_R0), offsetof(CallFrame, compilationEntry), SLJIT_IMM, 1);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R0), offsetof(CallFrame, protectedContinuationIndex), SLJIT_IMM, -1);
 	sljit_emit_op1(compiler, SLJIT_MOV_U8, SLJIT_MEM1(SLJIT_R0), offsetof(CallFrame, isExceptionFrame), SLJIT_IMM, 0);

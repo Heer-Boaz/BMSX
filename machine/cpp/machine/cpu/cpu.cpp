@@ -3113,7 +3113,7 @@ void CPU::writeFrameExecution(
 	frame.decodedPage = nullptr;
 	frame.decodedPageAddress = 0;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	frame.nativeContinuationPages = {};
+	frame.nativeContinuationCells = {};
 #endif
 	frame.compilationEntry = true;
 	frame.pc = pc;

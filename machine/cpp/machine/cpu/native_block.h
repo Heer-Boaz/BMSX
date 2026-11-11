@@ -110,9 +110,9 @@ struct NativeBlockExitSite {
 	// host registers whose contents need no publication at this exit.
 	std::array<i32, NATIVE_BLOCK_REGISTER_CACHE_CAPACITY> registerOffsets{};
 	mutable NativeBlockLink link;
-	// CALL-only, bound on CPU-side publication. The lookup owner outlives any
-	// source/target region and its entries can be published after this callsite.
-	std::array<DecodedInstructionPage* const*, 2> continuationPages{};
+	// CALL-only, bound on CPU-side publication. Image-lifetime entry cells can
+	// be published or withdrawn independently of the callsite/target regions.
+	std::array<void* const*, 2> continuationCells{};
 };
 
 using NativeBlockExitHandlers = std::array<NativeBlockExitHandler, static_cast<size_t>(NativeBlockExit::Count)>;

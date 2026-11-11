@@ -113,7 +113,6 @@ inline constexpr u32 DECODED_DEPENDENCY_PREDECESSOR_WORDS = 3u;
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 struct NativeBlockPage {
-	void* code[DECODED_PAGE_WORDS]{};
 	std::array<std::unique_ptr<NativeBlock>, DECODED_PAGE_WORDS> entries{};
 	u32 count = 0;
 };
@@ -134,16 +133,16 @@ struct DecodedInstructionPage {
 	MappedPageWriteWatch writeWatch;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	std::array<u8, DECODED_PAGE_WORDS> nativeVisits{};
-	// NativeBlockPage owns these dispatch words. Publish only complete bodies;
-	// withdraw them before retiring their descriptors or executable allocation.
-	void* const* nativeCode = nullptr;
+	// Borrowed image-lifetime dispatch cells. Retiring regions zeros entries,
+	// but leaves the cells available to suspended native continuations.
+	void** nativeCode = nullptr;
 	std::unique_ptr<NativeBlockPage> nativeBlocks;
 
 	void retireNativeRegion(const NativeCodeRegion* region) {
 		for (u32 entry = 0; entry < DECODED_PAGE_WORDS; ++entry) {
 			auto& block = nativeBlocks->entries[entry];
 			if (!block || block->region.get() != region) continue;
-			nativeBlocks->code[entry] = nullptr;
+			nativeCode[entry] = nullptr;
 			block.reset();
 			--nativeBlocks->count;
 			auto& instruction = words[entry];
@@ -152,7 +151,6 @@ struct DecodedInstructionPage {
 			nativeVisits[entry] = 0;
 		}
 		if (nativeBlocks->count == 0u) {
-			nativeCode = nullptr;
 			nativeBlocks.reset();
 		}
 	}
@@ -182,10 +180,11 @@ struct Blua32ExecutionImage {
 	std::vector<Value> constPool;
 	std::vector<u32> globalSlots;
 	std::vector<u32> systemGlobalSlots;
-	std::unordered_map<u64, DecodedInstructionPage> decodedPages;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	// Dispatch storage outlives the decoded descriptors which borrow its cells.
 	std::unique_ptr<NativeCodeLookup> nativeCodeLookup;
 #endif
+	std::unordered_map<u64, DecodedInstructionPage> decodedPages;
 };
 
 } // namespace bmsx
