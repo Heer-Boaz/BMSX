@@ -29,6 +29,33 @@ the PC collection, use `--hakchi-dir <directory> --collection-only` without SSH.
 A later Hakchi synchronization uses that PC collection, so update it explicitly
 if it should retain changes made by direct SSH deployments.
 
+## Remote input
+
+The Mini can also be controlled over SSH without installing a helper or building
+an ARM executable. This writes input events to the existing Linux input devices;
+the controller must be connected for controller commands.
+
+```sh
+npm run control:snesmini -- --ssh root@169.254.13.37 button start
+npm run control:snesmini -- --ssh root@169.254.13.37 button left
+npm run control:snesmini -- --ssh root@169.254.13.37 button a --player 2
+npm run control:snesmini -- --ssh root@169.254.13.37 reset
+```
+
+Buttons are named by the SNES controller labels: `a`, `b`, `x`, `y`, `l`, `r`,
+`select`, `start`, `left`, `right`, `up` and `down`. Player 1 is the default.
+The physical Clovercon driver continues polling and can release an injected
+button, so the command reasserts it for 500 ms by default (`--duration-ms`
+changes that interval). This may produce multiple press/release edges, not one
+precise continuous hold; menu navigation may repeat and gameplay timing is not
+guaranteed.
+
+`reset` sends the same two-key press and release as the physical RESET switch.
+It has the same effects, including ending a running game and potentially losing
+unsaved progress. The current BMSX host does not yet integrate with Clover's
+suspend/rewind protocol; RESET during a BMSX game can show Clover error C7 and
+does not create a suspend point.
+
 ## Core build defaults
 
 The standard SNES Mini core build explicitly enables native CPU execution,
