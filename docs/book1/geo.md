@@ -528,6 +528,7 @@ A rejected submission publishes `STATUS = 8H` (`REJECTED` without `DONE`), reset
 | `0007H` | `NUMERIC_OVERFLOW_INTERNAL` |
 | `0008H` | `BAD_RECORD_FLAGS` |
 | `0009H` | `RESULT_CAPACITY` |
+| `000AH` | `CLIP_CAPACITY` |
 | `8001H` | `REJECT_BUSY` |
 | `8002H` | `REJECT_BAD_CMD` |
 
@@ -898,7 +899,14 @@ For signed distances `sd` and `ed`, the intersection uses `t = sd / (sd−ed)` a
 
 A nonempty clipped polygon produces the arithmetic mean of its output vertices—not an area-weighted centroid. Duplicate vertices retain their weight. An empty clipped polygon does not cancel a successful separating-axis test: its point is `(meanA + meanB) / 2`. Clipping does not change normal or depth.
 
-The clipping workspace holds 128 intermediate vertices; there is no explicit clipping-capacity fault. Zero-length edges are skipped, and zero projected overlap rejects contact. Non-finite values receive the stated arithmetic and comparisons, not a separate value-classification check.
+Each clipping plane writes its output sequentially into a 128-vertex workspace.
+Exactly 128 output vertices are permitted. If the plane attempts to append a
+129th vertex, the pass stops with `CLIP_CAPACITY`; no contact is written for
+that pair. This limit applies to generated vertices, not merely to the input
+vertex count. In particular, a crossing that emits both an intersection and
+an endpoint can exhaust the workspace between those two emissions. Zero-length
+edges are skipped, and zero projected overlap rejects contact. Non-finite values
+receive the stated arithmetic and comparisons, not a separate value-classification check.
 
 ### Output records and summary {#sec-geo-output-records-and-summary}
 
@@ -946,6 +954,7 @@ The summary is written initially, after every successful input record, and on ca
 | `6` | `DESCRIPTOR_KIND`: unsupported shape kind or zero-piece compound |
 | `8` | `BAD_RECORD_FLAGS`: candidate self-pair |
 | `9` | `RESULT_CAPACITY`: selected hit exceeds result capacity |
+| `10` | `CLIP_CAPACITY`: a clipping plane attempts to emit a 129th vertex |
 
 The declared alignment fault (`2`) and numeric-overflow fault (`7`) are not emitted by this pass. Reserved parameter bits are not rejected.
 

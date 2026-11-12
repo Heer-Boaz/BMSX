@@ -253,8 +253,7 @@ uint32_t GeometryOverlap2dUnit::computePiecePairContact(
 	if (faultB != GEO_FAULT_NONE) {
 		return faultB;
 	}
-	m_contactHit = computePolyPairContact(m_polyA, m_polyB);
-	return GEO_FAULT_NONE;
+	return computePolyPairContact(m_polyA, m_polyB);
 }
 
 uint32_t GeometryOverlap2dUnit::loadPolyView(uint32_t pieceAddr, double tx, double ty, PolyView& out) const {
@@ -309,7 +308,7 @@ bool GeometryOverlap2dUnit::boundsOverlap(const std::array<double, 4>& a, const 
 	return !(a[0] > b[2] || a[2] < b[0] || a[1] > b[3] || a[3] < b[1]);
 }
 
-bool GeometryOverlap2dUnit::computePolyPairContact(const PolyView& polyA, const PolyView& polyB) {
+uint32_t GeometryOverlap2dUnit::computePolyPairContact(const PolyView& polyA, const PolyView& polyB) {
 	double bestOverlap = std::numeric_limits<double>::infinity();
 	double bestAxisX = 0.0;
 	double bestAxisY = 0.0;
@@ -335,7 +334,7 @@ bool GeometryOverlap2dUnit::computePolyPairContact(const PolyView& polyA, const 
 			projectPolyInto(polyB, ax, ay, m_projectionB);
 			const double overlap = std::min(m_projectionA.max, m_projectionB.max) - std::max(m_projectionA.min, m_projectionB.min);
 			if (!(overlap > 0.0)) {
-				return false;
+				return GEO_FAULT_NONE;
 			}
 			if (overlap < bestOverlap || (overlap == bestOverlap && (owner < bestOwner || (owner == bestOwner && edgeIndex < bestEdgeIndex)))) {
 				bestOverlap = overlap;
@@ -347,7 +346,7 @@ bool GeometryOverlap2dUnit::computePolyPairContact(const PolyView& polyA, const 
 		}
 	}
 	if (!sawAxis) {
-		return false;
+		return GEO_FAULT_NONE;
 	}
 	computePolyAverageInto(polyA, m_centerA);
 	computePolyAverageInto(polyB, m_centerB);
@@ -357,7 +356,9 @@ bool GeometryOverlap2dUnit::computePolyPairContact(const PolyView& polyA, const 
 	}
 	double pointX = 0.0;
 	double pointY = 0.0;
-	clipConvexPolygons(polyA, polyB);
+	if (!clipConvexPolygons(polyA, polyB)) {
+		return GEO_FAULT_CLIP_CAPACITY;
+	}
 	if (m_clipResultVertexCount == 0u) {
 		pointX = (m_centerA.x + m_centerB.x) * 0.5;
 		pointY = (m_centerA.y + m_centerB.y) * 0.5;
@@ -372,7 +373,8 @@ bool GeometryOverlap2dUnit::computePolyPairContact(const PolyView& polyA, const 
 	m_contactPx = pointX;
 	m_contactPy = pointY;
 	m_contactFeatureMeta = bestEdgeIndex;
-	return true;
+	m_contactHit = true;
+	return GEO_FAULT_NONE;
 }
 
 void GeometryOverlap2dUnit::projectPolyInto(const PolyView& poly, double ax, double ay, GeometryProjectionSpan& out) {
@@ -404,7 +406,7 @@ void GeometryOverlap2dUnit::computePolyAverageInto(const PolyView& poly, PointSc
 	out.y = sumY / static_cast<double>(poly.vertexCount);
 }
 
-void GeometryOverlap2dUnit::clipConvexPolygons(const PolyView& polyA, const PolyView& polyB) {
+bool GeometryOverlap2dUnit::clipConvexPolygons(const PolyView& polyA, const PolyView& polyB) {
 	for (uint32_t vertexIndex = 0u; vertexIndex < polyA.vertexCount; vertexIndex += 1u) {
 		readWorldVertexInto(polyA, vertexIndex, m_vertex0);
 		writeClipVertex(m_clip0, vertexIndex, m_vertex0.x, m_vertex0.y);
@@ -434,6 +436,9 @@ void GeometryOverlap2dUnit::clipConvexPolygons(const PolyView& polyA, const Poly
 			const double ey = (*input)[inputOffset + 1u];
 			const double ed = clipPlaneDistance(x0, y0, x1, y1, ex, ey);
 			const bool eInside = ed >= 0.0;
+			if ((sInside || eInside) && outputVertexCount == GEO_OVERLAP2D_MAX_CLIP_VERTICES) {
+				return false;
+			}
 			if (sInside && eInside) {
 				writeClipVertex(*output, outputVertexCount, ex, ey);
 				outputVertexCount += 1u;
@@ -445,6 +450,9 @@ void GeometryOverlap2dUnit::clipConvexPolygons(const PolyView& polyA, const Poly
 				const double t = sd / (sd - ed);
 				writeClipVertex(*output, outputVertexCount, sx + ((ex - sx) * t), sy + ((ey - sy) * t));
 				outputVertexCount += 1u;
+				if (outputVertexCount == GEO_OVERLAP2D_MAX_CLIP_VERTICES) {
+					return false;
+				}
 				writeClipVertex(*output, outputVertexCount, ex, ey);
 				outputVertexCount += 1u;
 			}
@@ -458,6 +466,7 @@ void GeometryOverlap2dUnit::clipConvexPolygons(const PolyView& polyA, const Poly
 	}
 	m_clipResult = input;
 	m_clipResultVertexCount = inputVertexCount;
+	return true;
 }
 
 void GeometryOverlap2dUnit::readWorldVertexInto(const PolyView& poly, uint32_t vertexIndex, PointScratch& out) const {

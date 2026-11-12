@@ -155,6 +155,7 @@ constexpr uint32_t GEO_FAULT_DESCRIPTOR_KIND = 0x0006u;
 constexpr uint32_t GEO_FAULT_NUMERIC_OVERFLOW_INTERNAL = 0x0007u;
 constexpr uint32_t GEO_FAULT_BAD_RECORD_FLAGS = 0x0008u;
 constexpr uint32_t GEO_FAULT_RESULT_CAPACITY = 0x0009u;
+constexpr uint32_t GEO_FAULT_CLIP_CAPACITY = 0x000au;
 constexpr uint32_t GEO_FAULT_CODE_SHIFT = 16u;
 constexpr uint32_t GEO_FAULT_CODE_MASK = 0xffffu;
 constexpr uint32_t GEO_FAULT_RECORD_INDEX_MASK = 0xffffu;

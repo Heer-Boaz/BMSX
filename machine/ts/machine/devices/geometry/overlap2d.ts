@@ -7,6 +7,7 @@ import {
 	GEO_FAULT_DESCRIPTOR_KIND,
 	GEO_FAULT_DST_RANGE,
 	GEO_FAULT_RESULT_CAPACITY,
+	GEO_FAULT_CLIP_CAPACITY,
 	GEO_FAULT_SRC_RANGE,
 	GEO_OVERLAP2D_AABB_DATA_COUNT,
 	GEO_OVERLAP2D_INSTANCE_LAYER_OFFSET,
@@ -355,8 +356,7 @@ export class GeometryOverlap2dUnit {
 		if (faultB !== GEO_FAULT_NONE) {
 			return faultB;
 		}
-		this.contactHit = this.computePolyPairContact(this.polyA, this.polyB);
-		return GEO_FAULT_NONE;
+		return this.computePolyPairContact(this.polyA, this.polyB);
 	}
 
 	private loadPolyView(pieceAddr: number, tx: number, ty: number, out: GeometryPolyView): number {
@@ -411,7 +411,7 @@ export class GeometryOverlap2dUnit {
 		return !(a[0] > b[2] || a[2] < b[0] || a[1] > b[3] || a[3] < b[1]);
 	}
 
-	private computePolyPairContact(polyA: GeometryPolyView, polyB: GeometryPolyView): boolean {
+	private computePolyPairContact(polyA: GeometryPolyView, polyB: GeometryPolyView): number {
 		let bestOverlap = Number.POSITIVE_INFINITY;
 		let bestAxisX = 0;
 		let bestAxisY = 0;
@@ -437,7 +437,7 @@ export class GeometryOverlap2dUnit {
 				this.projectPolyInto(polyB, ax, ay, this.projectionB);
 				const overlap = Math.min(this.projectionA.max, this.projectionB.max) - Math.max(this.projectionA.min, this.projectionB.min);
 				if (!(overlap > 0)) {
-					return false;
+					return GEO_FAULT_NONE;
 				}
 				if (overlap < bestOverlap
 					|| (overlap === bestOverlap && (owner < bestOwner || (owner === bestOwner && edgeIndex < bestEdgeIndex)))) {
@@ -450,7 +450,7 @@ export class GeometryOverlap2dUnit {
 			}
 		}
 		if (!sawAxis) {
-			return false;
+			return GEO_FAULT_NONE;
 		}
 		this.computePolyAverageInto(polyA, this.centerA);
 		this.computePolyAverageInto(polyB, this.centerB);
@@ -460,7 +460,9 @@ export class GeometryOverlap2dUnit {
 		}
 		let pointX;
 		let pointY;
-		this.clipConvexPolygons(polyA, polyB);
+		if (!this.clipConvexPolygons(polyA, polyB)) {
+			return GEO_FAULT_CLIP_CAPACITY;
+		}
 		if (this.clipResultVertexCount === 0) {
 			pointX = (this.centerA.x + this.centerB.x) * 0.5;
 			pointY = (this.centerA.y + this.centerB.y) * 0.5;
@@ -475,7 +477,8 @@ export class GeometryOverlap2dUnit {
 		this.contactPx = pointX;
 		this.contactPy = pointY;
 		this.contactFeatureMeta = bestEdgeIndex >>> 0;
-		return true;
+		this.contactHit = true;
+		return GEO_FAULT_NONE;
 	}
 
 	private projectPolyInto(poly: GeometryPolyView, ax: number, ay: number, out: GeometryProjectionSpan): void {
@@ -507,7 +510,7 @@ export class GeometryOverlap2dUnit {
 		out.y = sumY / poly.vertexCount;
 	}
 
-	private clipConvexPolygons(polyA: GeometryPolyView, polyB: GeometryPolyView): void {
+	private clipConvexPolygons(polyA: GeometryPolyView, polyB: GeometryPolyView): boolean {
 		for (let vertexIndex = 0; vertexIndex < polyA.vertexCount; vertexIndex += 1) {
 			this.readWorldVertexInto(polyA, vertexIndex, this.vertex0);
 			this.writeClipVertex(this.clip0, vertexIndex, this.vertex0.x, this.vertex0.y);
@@ -537,6 +540,9 @@ export class GeometryOverlap2dUnit {
 				const ey = input[inputOffset + 1];
 				const ed = this.clipPlaneDistance(x0, y0, x1, y1, ex, ey);
 				const eInside = ed >= 0;
+				if ((sInside || eInside) && outputVertexCount === GEO_OVERLAP2D_MAX_CLIP_VERTICES) {
+					return false;
+				}
 				if (sInside && eInside) {
 					this.writeClipVertex(output, outputVertexCount, ex, ey);
 					outputVertexCount += 1;
@@ -548,6 +554,9 @@ export class GeometryOverlap2dUnit {
 					const t = sd / (sd - ed);
 					this.writeClipVertex(output, outputVertexCount, sx + ((ex - sx) * t), sy + ((ey - sy) * t));
 					outputVertexCount += 1;
+					if (outputVertexCount === GEO_OVERLAP2D_MAX_CLIP_VERTICES) {
+						return false;
+					}
 					this.writeClipVertex(output, outputVertexCount, ex, ey);
 					outputVertexCount += 1;
 				}
@@ -563,6 +572,7 @@ export class GeometryOverlap2dUnit {
 		}
 		this.clipResult = input;
 		this.clipResultVertexCount = inputVertexCount;
+		return true;
 	}
 
 	private readWorldVertexInto(poly: GeometryPolyView, vertexIndex: number, out: PointScratch): void {

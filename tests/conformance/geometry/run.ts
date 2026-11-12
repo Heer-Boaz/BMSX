@@ -6,7 +6,8 @@ import { join } from 'node:path';
 import { Machine } from '../../../machine/ts/machine/machine';
 import { Memory } from '../../../machine/ts/machine/memory/memory';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { GEO_STATUS_DONE } from '../../../machine/ts/machine/devices/geometry/contracts';
+import { GEO_FAULT_CLIP_CAPACITY, GEO_STATUS_DONE, GEO_STATUS_ERROR } from '../../../machine/ts/machine/devices/geometry/contracts';
+import { IRQ_GEO_ERROR } from '../../../machine/ts/spec/bmsx/io';
 import { IO_GEO_DST1, IO_GEO_PROCESSED } from '../../../machine/ts/spec/bmsx/io';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { geometryVectors } from './vectors';
@@ -57,15 +58,39 @@ for (let i = 0; i < vectors.length; i++) {
 		counterWords.push(progressed.exactPairCount, progressed.broadphasePairCount);
 		assert.deepEqual(counterWords, [(v.pairCounterSeed + 1) >>> 0, (v.pairCounterSeed + 1) >>> 0], `${v.name}: retained raw counters`);
 	}
+	const clip = (machine.geometryController as unknown as {
+		overlap2d: { writeClipVertex(buffer: Float64Array, index: number, x: number, y: number): void };
+	}).overlap2d;
+	const originalClipWrite = clip.writeClipVertex;
+	let maxClipVertices = 0;
+	if (v.clipCapacityBoundary !== 0) {
+		clip.writeClipVertex = function(buffer, index, x, y) {
+			maxClipVertices = Math.max(maxClipVertices, index + 1);
+			originalClipWrite.call(this, buffer, index, x, y);
+		};
+	}
 	machine.geometryController.accrueCycles(1000, 1000);
 	machine.geometryController.onService(1000);
+	clip.writeClipVertex = originalClipWrite;
 	const expected = v.reads.map(address => memory.readMappedWord(address));
-	assert.equal(expected[0], GEO_STATUS_DONE, v.name);
+	if (v.clipCapacityBoundary !== 0) assert.equal(maxClipVertices, 128, `${v.name}: actual emitted workspace boundary`);
+	if (v.clipCapacityBoundary === 129) {
+		assert.deepEqual(expected.slice(0, 4), [GEO_STATUS_DONE | GEO_STATUS_ERROR, GEO_FAULT_CLIP_CAPACITY << 16, 0, IRQ_GEO_ERROR], v.name);
+		assert.notDeepEqual(expected.slice(4, 13), Array(9).fill(0xdeadbeef), `${v.name}: earlier contact survives`);
+		assert.deepEqual(expected.slice(13, 22), Array(9).fill(0xdeadbeef), `${v.name}: faulting contact is not written`);
+		assert.deepEqual(expected.slice(22), [0, 0, 0, 0], `${v.name}: failing record does not refresh the summary`);
+	} else {
+		assert.equal(expected[0], GEO_STATUS_DONE, v.name);
+	}
 	assert.deepEqual(rows[i], [...counterWords, ...expected], `${v.name}: raw result/status words; evidence ${directory}`);
 }
 assert.equal(rows[0][12], 1, 'ordinary overlapping polygons publish a contact');
 assert.equal(rows[1][12], 0, 'overlap excludes touching boundaries');
 assert.equal(rows[5][3], 1, 'SAT publishes a hit');
 assert.equal(rows[5][6], 3 * 65536, 'SAT depth stays Q16.16');
+const completedClipPair = rows[vectors.findIndex(vector => vector.name === 'overlap-contact-before-clip-fault')];
+const faultingClipPair = rows[vectors.findIndex(vector => vector.name === 'overlap-clip-129-after-contact')];
+assert.deepEqual(faultingClipPair.slice(4, 13), completedClipPair.slice(4, 13),
+	'all nine earlier contact words are unchanged when a later pair exceeds clipping capacity');
 rmSync(directory, { recursive: true });
 console.log(`GEO-PARITY:PASS (${vectors.length} RAM/MMIO vectors)`);

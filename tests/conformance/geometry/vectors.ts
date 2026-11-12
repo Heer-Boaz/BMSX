@@ -3,7 +3,7 @@ import { GEO_SCRATCH_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import * as io from '../../../machine/ts/spec/bmsx/io';
 import * as geo from '../../../machine/ts/machine/devices/geometry/contracts';
 
-export type GeometryVector = { name: string; writes: [number, number][]; reads: number[]; pairCounterSeed: number; firstRecordPairs: number };
+export type GeometryVector = { name: string; writes: [number, number][]; reads: number[]; pairCounterSeed: number; firstRecordPairs: number; clipCapacityBoundary: number };
 const instances = GEO_SCRATCH_BASE, shapes = GEO_SCRATCH_BASE + 0x100, vertices = GEO_SCRATCH_BASE + 0x200;
 const result = GEO_SCRATCH_BASE + 0x400, summary = GEO_SCRATCH_BASE + 0x500;
 
@@ -30,7 +30,7 @@ function vector(name: string, a: readonly number[], b: readonly number[], sat: b
 		[io.IO_GEO_STRIDE0, 20], [io.IO_GEO_STRIDE1, sat ? 16 : 0], [io.IO_GEO_STRIDE2, sat ? 8 : 0],
 		[io.IO_GEO_CMD, sat ? geo.IO_CMD_GEO_SAT2_BATCH : geo.IO_CMD_GEO_OVERLAP2D_PASS],
 	);
-	return { name, writes, pairCounterSeed: 0, firstRecordPairs: 0, reads: [io.IO_GEO_STATUS, io.IO_GEO_FAULT, io.IO_GEO_PROCESSED,
+	return { name, writes, pairCounterSeed: 0, firstRecordPairs: 0, clipCapacityBoundary: 0, reads: [io.IO_GEO_STATUS, io.IO_GEO_FAULT, io.IO_GEO_PROCESSED,
 		...Array.from({ length: 9 }, (_, i) => result + i * 4), ...Array.from({ length: 4 }, (_, i) => summary + i * 4)] };
 }
 
@@ -105,5 +105,53 @@ export function geometryVectors(): GeometryVector[] {
 		v.writes.push(command);
 		result.push(v);
 	}
+	// The 64-vertex source is legal raw input; the two fixtures exercise the
+	// 128th output and the first rejected 129th output through registers.
+	const clip128 = [
+			2,-2, -2,1, 2,-2, 0,1, 2,-2, -2,2, 1,-2, -2,0,
+			0,0, -1,2, -1,0, -2,-2, 0,-1, -2,2, 2,-1, 1,1,
+			1,2, -2,-2, 2,2, -1,-2, 1,2, -2,-1, 0,1, 0,2,
+			-1,1, -2,-2, 2,2, 0,-2, -2,2, 2,-2, -1,2, -1,-1,
+			-2,-2, 0,2, 0,-2, 1,2, 0,-2, 2,2, 1,-1, 2,2,
+			0,1, -2,-2, 2,0, -2,2, 0,-2, 0,-2, 0,-1, 2,-2,
+			-1,2, 0,-2, 1,1, -1,2, 1,-1, -2,-2, 0,2, -1,0,
+			2,2, 1,0, 2,2, -1,0, 2,-1, 0,2, 0,-2, -1,2,
+	].map(numberToF32Bits);
+	const clip129 = [
+			2,-2, -2,1, 2,-2, 0,1, 2,-2, -2,0, 1,-2, -1,2,
+			0,0, -2,2, -1,0, -2,-2, 2,2, 0,-2, 0,2, -2,-2,
+			2,2, -2,-2, 2,2, -2,1, 2,-1, -2,-1, 0,2, -1,-1,
+			2,0, -2,-2, 0,0, 0,-2, -2,2, 2,-2, -1,2, -1,-1,
+			-1,-2, 0,2, -1,-1, 1,2, -2,-1, -1,2, 1,1, -2,0,
+			1,2, -2,-2, 2,2, -2,2, 0,-2, -2,2, 1,-1, 2,-2,
+			-1,2, -1,-2, 1,1, -2,-2, 2,0, -2,-2, 0,2, -1,0,
+			2,2, -2,-2, 1,2, -1,0, -1,2, -1,0, 2,-2, 0,2,
+	].map(numberToF32Bits);
+	const smallSquare = [-1,-1,1,-1,1,1,-1,1].map(numberToF32Bits);
+	const atCapacity = vector('overlap-clip-128', clip128, smallSquare, false);
+	atCapacity.clipCapacityBoundary = 128;
+	result.push(atCapacity);
+	const failing = vector('overlap-clip-129-after-contact', clip129, [-4,-4,4,-4,4,4,-4,4].map(numberToF32Bits), false);
+	failing.clipCapacityBoundary = 129;
+	const clipResult = GEO_SCRATCH_BASE + 0x900, clipSummary = GEO_SCRATCH_BASE + 0xa00;
+	const lastCommand = failing.writes.pop()!;
+	for (const write of failing.writes) {
+		if (write[0] === io.IO_GEO_COUNT) write[1] = 3;
+		if (write[0] === io.IO_GEO_PARAM1) write[1] = 2;
+		if (write[0] === io.IO_GEO_DST0) write[1] = clipResult;
+		if (write[0] === io.IO_GEO_DST1) write[1] = clipSummary;
+	}
+	[shapes + 64, 0, 0, 1, 1].forEach((word, index) => failing.writes.push([instances + 40 + index * 4, word]));
+	[geo.GEO_PRIMITIVE_AABB, 4, 16, 16, ...[-1,-1,1,1].map(numberToF32Bits)]
+		.forEach((word, index) => failing.writes.push([shapes + 64 + index * 4, word]));
+	for (let i = 0; i < 18; i++) failing.writes.push([clipResult + i * 4, 0xdeadbeef]);
+	failing.writes.push(lastCommand);
+	failing.reads = [io.IO_GEO_STATUS, io.IO_GEO_FAULT, io.IO_GEO_PROCESSED, io.IO_IRQ_FLAGS,
+		...Array.from({length: 18}, (_, i) => clipResult + i * 4),
+		...Array.from({length: 4}, (_, i) => clipSummary + i * 4)];
+	const completed = { ...failing, name: 'overlap-contact-before-clip-fault', clipCapacityBoundary: 0,
+		writes: failing.writes.map(([address, word]): [number, number] => [address, address === io.IO_GEO_COUNT ? 2 : word]) };
+	result.push(completed);
+	result.push(failing);
 	return result;
 }

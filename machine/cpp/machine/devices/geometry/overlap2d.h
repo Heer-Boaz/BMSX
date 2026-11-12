@@ -44,10 +44,10 @@ private:
 	uint32_t computePiecePairContact(uint32_t pieceAAddr, double txA, double tyA, uint32_t pieceBAddr, double txB, double tyB);
 	uint32_t loadPolyView(uint32_t pieceAddr, double tx, double ty, PolyView& out) const;
 	static bool boundsOverlap(const std::array<double, 4>& a, const std::array<double, 4>& b);
-	bool computePolyPairContact(const PolyView& polyA, const PolyView& polyB);
+	uint32_t computePolyPairContact(const PolyView& polyA, const PolyView& polyB);
 	void projectPolyInto(const PolyView& poly, double ax, double ay, GeometryProjectionSpan& out);
 	void computePolyAverageInto(const PolyView& poly, PointScratch& out);
-	void clipConvexPolygons(const PolyView& polyA, const PolyView& polyB);
+	bool clipConvexPolygons(const PolyView& polyA, const PolyView& polyB);
 	void readWorldVertexInto(const PolyView& poly, uint32_t vertexIndex, PointScratch& out) const;
 	static void writeClipVertex(ClipBuffer& buffer, uint32_t vertexIndex, double x, double y);
 	static void computeClipAverageInto(const ClipBuffer& buffer, uint32_t vertexCount, PointScratch& out);

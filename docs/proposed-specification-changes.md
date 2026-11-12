@@ -240,18 +240,13 @@ zichtbare leesvolgorde vast voordat die werkbank als gelijkwaardige uitvoering
 wordt gekozen; de huidige TypeScript- en C++-eigenaars lezen onder meer bij
 SAT2 de coördinaten meermalen.
 
-**Clippingwerkruimte bij ongebruikelijke invoer.** Book I noemt convexe
-polygonen, maar schrijft ook voor dat onder meer convexiteit en winding niet
-worden gecontroleerd of gerepareerd. Een gerichte proef met de bestaande
-TypeScript-clippingkern gebruikte 64 representabele, zichzelf kruisende
-vertices tegen een AABB en bereikte 144 tussenvertices, terwijl de werkruimte
-128 vertices bevat. Die smalle interne proef leverde een niet-getal als
-contactpunt; het is geen volledige registerpadtest. De C++-eigenaar gebruikt
-ook een vaste array van 128 vertices en zijn ongecontroleerde arraytoegang is
-voor deze situatie niet veilig bewezen; er is geen C++-proef met die invoer
-uitgevoerd. De representatie en het gedrag bij volle werkruimte moeten voor
-beide runtimes en de fysieke engine worden verenigd. Hier is geen verborgen
-clamp, vervangend resultaat of nieuw afkeurpad gekozen.
+**Clippingwerkruimte bij ongebruikelijke invoer.** Convexiteit en winding worden
+niet gecontroleerd. De publieke GEO-interface definieert daarom nu een
+`CLIP_CAPACITY`-uitvoeringsfout wanneer een clippingvlak een 129e vertex naar
+zijn 128 plaatsen probeert te schrijven. Eerdere zichtbare resultaten blijven
+behouden en het falende buitenrecord telt niet mee. Die capaciteitsgrens kiest
+geen timing voor GEO of de geheugenbus; de afzonderlijke fysieke integratie en
+werkafhankelijke voortgang blijven open.
 
 ### GTE: voltooiing van normale commando's
 
