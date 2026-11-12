@@ -95,8 +95,9 @@ Start press. The old
 
 Only content whose SHA-256 differs is transferred or replaced. Transfers use
 SSH and tar, not SCP/SFTP; payload checksums are checked before installation.
-Host, core and game files publish by rename while Clover is stopped, and Clover
-restarts afterward. Updating only the input proxy does not interrupt Clover.
+Core and game files publish by rename while Clover is stopped, and Clover
+restarts afterward. Updating only the host and input executables does not
+interrupt Clover; the installer requires the BMSX game to be stopped first.
 An already identical install does not restart the menu or rewrite files. The
 installer refuses a running BMSX game and retains 30 MiB of NAND headroom for
 saves, including the peak space needed to replace an existing file. No games,

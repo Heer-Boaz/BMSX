@@ -13,7 +13,7 @@ fi
 restart_menu=false
 while IFS= read -r path; do
 	case "$path" in
-		root/bmsx_snesmini_input) ;;
+		root/bmsx_libretro_host|root/bmsx_snesmini_input) ;;
 		*) restart_menu=true ;;
 	esac
 done < files.list
@@ -36,5 +36,5 @@ sync
 if "$restart_menu"; then
 	echo 'BMSX games installed; restoring the Clover menu.'
 else
-	echo 'BMSX input proxy installed; Clover remains running.'
+	echo 'BMSX host tools installed; Clover remains running.'
 fi

@@ -24,12 +24,12 @@ test('remote shell arguments survive spaces, apostrophes and shell operators wit
 	}
 });
 
-test('installing only the input proxy does not restart Clover', async t => {
+test('installing only the host executables does not restart Clover', async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-mini-installer-'));
 	t.after(() => rm(root, { recursive: true, force: true }));
 	const stage = join(root, 'stage'), bin = join(root, 'bin'), calls = join(root, 'calls');
 	await mkdir(stage); await mkdir(bin);
-	await writeFile(join(stage, 'files.list'), 'root/bmsx_snesmini_input\n');
+	await writeFile(join(stage, 'files.list'), 'root/bmsx_libretro_host\nroot/bmsx_snesmini_input\n');
 	await writeFile(join(stage, 'saves.list'), '');
 	for (const command of ['sha256sum', 'pidof', 'uistop', 'uistart', 'mkdir', 'cp', 'chmod', 'mv', 'sync']) {
 		const status = command === 'pidof' ? 1 : 0;
@@ -39,6 +39,7 @@ test('installing only the input proxy does not restart Clover', async t => {
 		env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
 	});
 	const invoked = await readFile(calls, 'utf8');
+	assert.ok(invoked.includes('chmod 755 /root/bmsx_libretro_host.bmsx-new\n'));
 	assert.ok(invoked.includes('chmod 755 /root/bmsx_snesmini_input.bmsx-new\n'));
 	assert.ok(!invoked.includes('uistop ') && !invoked.includes('uistart '));
 });
