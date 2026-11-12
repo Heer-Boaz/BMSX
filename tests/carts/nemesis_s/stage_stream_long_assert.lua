@@ -63,7 +63,7 @@ local check_scenery<const> = function(t,stage,tag)
     t:log(string.format('%s|%d|overrides=%d',tag,first,count_overrides(stage.stage_tiles)))
 end
 
-return {kind='integration',tests={
+return {kind='integration',phase_cycles={full_tape_and_repeated_checkpoint_streaming=67737600},tests={
     full_tape_and_repeated_checkpoint_streaming=function(t)
         local _,stage<const>,pilot<const> = fixture.start_game(t)
         pilot.body_collider:set_enabled(false)

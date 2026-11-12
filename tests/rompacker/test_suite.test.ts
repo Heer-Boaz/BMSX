@@ -32,6 +32,15 @@ test('suite discovery retains named cases in declaration order without executing
 	assert.deepEqual(suite.tests.map(test => test.range.start.line), [7, 8]);
 });
 
+test('suite discovery associates a literal phase allowance only with its named case', () => {
+	const declaration = `return { kind='unit', phase_cycles={ b=67737600 }, tests={
+		a=function() end, b=function() end
+	} }`;
+	const suite = discoverGuestTestSuite(parseLuaChunk(declaration, path).chunk, path);
+	assert.equal(suite.tests[0].phaseCycles, undefined);
+	assert.equal(suite.tests[1].phaseCycles, 67737600);
+});
+
 test('suite declarations diagnose dynamic registration, obsolete phases and duplicate names at build time', () => {
 	for (const [source, message] of [
 		['return register_tests()', /return a suite table/],
@@ -41,6 +50,13 @@ test('suite declarations diagnose dynamic registration, obsolete phases and dupl
 		["return { kind='unit', tests={ a=build_test() } }", /must declare a function/],
 		["return { kind='unit', tests={} }", /nonempty tests table/],
 		["return { kind='unit', setup=true, tests={ a=function() end } }", /must declare a function/],
+		["return { kind='unit', phase_cycles=42, tests={ a=function() end } }", /phase_cycles.*must be a table/],
+		["return { kind='unit', phase_cycles={ a=10, a=20 }, tests={ a=function() end } }", /Duplicate phase cycle budget/],
+		["return { kind='unit', phase_cycles={ b=10 }, tests={ a=function() end } }", /unknown test 'b'/],
+		["return { kind='unit', phase_cycles={ [name]=10 }, tests={ a=function() end } }", /static test names/],
+		["return { kind='unit', phase_cycles={ a=0 }, tests={ a=function() end } }", /positive integer literal/],
+		["return { kind='unit', phase_cycles={ a=1.5 }, tests={ a=function() end } }", /positive integer literal/],
+		["return { kind='unit', phase_cycles={ a=budget }, tests={ a=function() end } }", /positive integer literal/],
 	] as const) {
 		assert.throws(() => discoverGuestTestSuite(parseLuaChunk(source, path).chunk, path), error => {
 			assert.ok(error instanceof LuaSyntaxError);

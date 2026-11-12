@@ -33,6 +33,7 @@ import { readSupervisorFaultReport } from '../../ide/runtime/fault_state';
 const source = `
 return {
  kind = 'unit',
+ phase_cycles = { long_budget = 200000 },
  setup = function(t, fixture) fixture.count = 9 end,
  teardown = function(t, fixture) assert(fixture.count == 10); t:log('cleanup') end,
  tests = {
@@ -41,6 +42,8 @@ return {
    cleanup_failure = function(t, fixture) error('body failure') end,
    timeout = function(t, fixture) while true do fixture.count = 10 end end,
    unit_wait = function(t, fixture) fixture.count = 10; t:wait_ticks(1) end,
+   short_budget = function(t, fixture) for i=1,5000 do fixture.count = 10 end end,
+   long_budget = function(t, fixture) for i=1,5000 do fixture.count = 10 end end,
  },
 }`;
 
@@ -170,9 +173,9 @@ test(`O${optLevel}: named cases use fresh machines, fixture hooks, retained fail
 			for (let grant = 0; execution.active && grant < 10000; grant += 1) execution.advance();
 			assert.equal(execution.active, false);
 			assert.equal(target.runtime.frameScheduler.lastTickSequence, 0, 'unit execution requires no game ticks');
-			if (index === 0) {
+			if (index === 0 || index === 6) {
 				assert.equal(result.state, 'passed', JSON.stringify(result.failures));
-				assert.deepEqual([result.logs.at(0).text, result.logs.at(1).text], ['body', 'cleanup']);
+				if (index === 0) assert.deepEqual([result.logs.at(0).text, result.logs.at(1).text], ['body', 'cleanup']);
 			} else {
 				assert.equal(result.state, 'failed');
 				assert.equal(result.failures[0].phase, 'body');
@@ -182,7 +185,7 @@ test(`O${optLevel}: named cases use fresh machines, fixture hooks, retained fail
 					assert.equal(result.logs.at(0).text, 'cleanup');
 					assert.ok(target.runtime.machine.cpu.captureRuntimeState().threads.some(thread => thread.status === ThreadStatus.Failed && thread.frames.length > 0));
 				} else if (index === 2) assert.deepEqual(result.failures.map(failure => failure.phase), ['body', 'teardown']);
-				else if (index === 3) {
+				else if (index === 3 || index === 5) {
 					assert.match(result.failures[0].message, /cycle budget/);
 					const inspection = execution.inspect();
 					const failure = inspection.state.failures[0];
@@ -199,8 +202,8 @@ test(`O${optLevel}: named cases use fresh machines, fixture hooks, retained fail
 			execution.dispose();
 		}
 		results.completeRun(run);
-		assert.equal(run.passedCount, 1);
-		assert.equal(run.failedCount, 4);
+		assert.equal(run.passedCount, 2);
+		assert.equal(run.failedCount, 5);
 		const setupSource = `return { kind = 'unit',
  setup = function(t, fixture) fixture.started = true; error('setup failed') end,
  teardown = function(t, fixture) assert(fixture.started); error('cleanup failed') end,

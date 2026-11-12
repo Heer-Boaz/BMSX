@@ -40,6 +40,7 @@ export class TestExecution implements FixtureOutput {
 	private inspectionTarget: string | undefined;
 	private readonly fixture: GuestFixture;
 	private readonly operations: FixtureOperations;
+	private readonly phaseCycleBudget: number;
 	private phase: Phase = 'bind';
 	private cancelling = false;
 	private cleanupStartCycles = 0;
@@ -62,6 +63,7 @@ export class TestExecution implements FixtureOutput {
 		private readonly capturedFrame?: (target: TestTarget, label: string) => void,
 		mode: TestExecutionMode = 'run',
 	) {
+		this.phaseCycleBudget = program.suite.tests.find(test => test.name === result.test.caseName)!.phaseCycles ?? budgets.phaseCycles;
 		this.fixture = new GuestFixture(target.runtime, program);
 		this.operations = new FixtureOperations(target, target.input, this, () => this.bindExecutionHook());
 		if (mode === 'debug') this.debugger = new TestDebugger(target.runtime, program, () => this.bindExecutionHook());
@@ -122,7 +124,7 @@ export class TestExecution implements FixtureOutput {
 		if (this.operations.waiting) {
 			return this.operations.advance(this.callArgs, this.budgets.quantumCycles);
 		}
-		const completed = this.fixture.advance(this.callArgs, Math.min(this.budgets.quantumCycles, this.budgets.phaseCycles - this.phaseCycles));
+		const completed = this.fixture.advance(this.callArgs, Math.min(this.budgets.quantumCycles, this.phaseCycleBudget - this.phaseCycles));
 		this.phaseCycles += this.fixture.lastCallCycles;
 		if (completed) {
 			if (this.phase === 'bind') {
@@ -146,7 +148,7 @@ export class TestExecution implements FixtureOutput {
 				else this.complete();
 			}
 			return true;
-		} else if (this.phaseCycles >= this.budgets.phaseCycles) this.stop('Phase exceeded its cycle budget');
+		} else if (this.phaseCycles >= this.phaseCycleBudget) this.stop('Phase exceeded its cycle budget');
 		return false;
 	}
 
