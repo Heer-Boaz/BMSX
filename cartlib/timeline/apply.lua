@@ -6,6 +6,9 @@ local nested_shape<const> = {}
 local leaf_shape<const> = {}
 local close_shape<const> = {}
 local complete_shape<const> = {}
+local weak_values<const> = { __mode = 'v' }
+local step_appliers_by_output<const> = {}
+local step_writers_by_binding<const> = {}
 
 local retain_frame_shape
 retain_frame_shape = function(cache, frame)
@@ -80,10 +83,40 @@ function timeline_apply.compile_step_apply(path, apply, binding_index, writer_in
 		end
 	end
 
-	return compile_syntax(
+	if writer_index ~= nil then
+		local writers = step_writers_by_binding[binding_index]
+		if writers == nil then
+			writers = setmetatable({}, weak_values)
+			step_writers_by_binding[binding_index] = writers
+		end
+		local writer<const> = writers[writer_index]
+		if writer ~= nil then
+			return writer
+		end
+		local compiled<const> = compile_syntax(
+			apply_syntax.build_step(path, binding_index, writer_index, output_index),
+			'[timeline.apply.step]'
+		)()
+		writers[writer_index] = compiled
+		return compiled
+	end
+
+	local leaf<const> = path[#path]
+	local appliers = step_appliers_by_output[output_index]
+	if appliers == nil then
+		appliers = setmetatable({}, weak_values)
+		step_appliers_by_output[output_index] = appliers
+	end
+	local applier<const> = appliers[leaf]
+	if applier ~= nil then
+		return applier
+	end
+	local compiled<const> = compile_syntax(
 		apply_syntax.build_step(path, binding_index, writer_index, output_index),
 		'[timeline.apply.step]'
 	)()
+	appliers[leaf] = compiled
+	return compiled
 end
 
 return timeline_apply

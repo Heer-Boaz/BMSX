@@ -16,6 +16,9 @@ local sample_flag<const> = evaluation_flag.sample
 local wrapped_flag<const> = evaluation_flag.wrapped
 local initial_flag<const> = evaluation_flag.initial
 local reset_step_flags<const> = wrapped_flag | initial_flag
+-- A factory is shared only while a prepared program retains it. Sample and
+-- wave tracks carry per-program literals and callbacks and are compiled apart.
+local value_factories_without_samples<const> = setmetatable({}, { __mode = 'v' })
 
 local first_frame_after<const> = function(records, count, frame)
 	local low = 1
@@ -520,22 +523,42 @@ function track_evaluator.compile_values(program, sample_tracks)
 		sample_functions = sample_functions,
 		tau = tau,
 	}
-	syntax_values.play_value_operands = value_runner_signature.compile(syntax_values, false)
-	if has_frame_steps or has_time_steps then
-		syntax_values.position_value_operands = value_runner_signature.compile(syntax_values, true)
+	local shape = 0
+	local factory
+	if not has_sample_tracks then
+		if has_frame_steps then shape = shape | 0x001 end
+		if has_time_steps then shape = shape | 0x002 end
+		if program.step_has_evaluation_callbacks then shape = shape | 0x004 end
+		if has_scalar_channels then shape = shape | 0x008 end
+		if has_scalar_frame_channels then shape = shape | 0x010 end
+		if has_scalar_time_channels then shape = shape | 0x020 end
+		if program.sample_time_track_count > 0 then shape = shape | 0x040 end
+		if program.has_spatial_frame_channels then shape = shape | 0x080 end
+		if program.has_spatial_time_channels then shape = shape | 0x100 end
+		if value_has_evaluation_context then shape = shape | 0x200 end
+		factory = value_factories_without_samples[shape]
 	end
-	local factory<const> = compile_syntax(
-		track_evaluator_syntax.build(syntax_values),
-		'[timeline.track_values]',
-		{
-			apply_step_bucket = apply_step_bucket,
-			sample_step_tracks = sample_step_tracks,
-			sample_time_step_tracks = sample_time_step_tracks,
-			sample_functions = sample_functions,
-			pingpong01 = pingpong01,
-			sin = sin,
-		}
-	)()
+	if factory == nil then
+		syntax_values.play_value_operands = value_runner_signature.compile(syntax_values, false)
+		if has_frame_steps or has_time_steps then
+			syntax_values.position_value_operands = value_runner_signature.compile(syntax_values, true)
+		end
+		factory = compile_syntax(
+			track_evaluator_syntax.build(syntax_values),
+			'[timeline.track_values]',
+			{
+				apply_step_bucket = apply_step_bucket,
+				sample_step_tracks = sample_step_tracks,
+				sample_time_step_tracks = sample_time_step_tracks,
+				sample_functions = sample_functions,
+				pingpong01 = pingpong01,
+				sin = sin,
+			}
+		)()
+		if not has_sample_tracks then
+			value_factories_without_samples[shape] = factory
+		end
+	end
 	return function(tracks)
 		local scalar_runner
 		if has_scalar_channels then
