@@ -486,7 +486,7 @@ local define_director_fsm<const> = function()
 						go = '/pause',
 					},
 					{
-						pattern = 'lb[jp] || rb[jp]',
+						pattern = 'inventory[jp]',
 						go = function(self)
 							self.events:emit('f1')
 							return '/item_screen'
@@ -722,7 +722,7 @@ local define_director_fsm<const> = function()
 						end,
 						input_event_handlers = {
 							{ pattern = 'start[jp]', go = '/item_screen/halo' },
-							{ pattern = 'lb[jp] || rb[jp]', go = '/item_screen/closing' },
+							{ pattern = 'inventory[jp]', go = '/item_screen/closing' },
 						},
 						},
 						halo = {
