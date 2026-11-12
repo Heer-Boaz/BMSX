@@ -591,7 +591,9 @@ if(BMSX_BUILD_LIBRETRO_HOST)
 		add_executable(bmsx_snesmini_input
 			${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/snesmini/input_proxy.c
 			${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/snesmini/input_merge.c
+			${BMSX_LIBRETRO_HOST_DIR}/keyboard_input.c
 		)
+		target_include_directories(bmsx_snesmini_input PRIVATE ${BMSX_LIBRETRO_HOST_DIR} ${BMSX_LIBRETRO_DIR})
 	endif()
 
 	add_executable(bmsx_libretro_host
@@ -652,8 +654,9 @@ if(BMSX_BUILD_TESTS)
 		add_executable(bmsx_snesmini_input_proxy_tests
 			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/snesmini_input_proxy_test.c
 			${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/snesmini/input_merge.c
+			${BMSX_LIBRETRO_HOST_DIR}/keyboard_input.c
 		)
-		target_include_directories(bmsx_snesmini_input_proxy_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/snesmini)
+		target_include_directories(bmsx_snesmini_input_proxy_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/snesmini ${BMSX_LIBRETRO_HOST_DIR} ${BMSX_LIBRETRO_DIR})
 		add_test(NAME bmsx_snesmini_input_proxy_tests COMMAND bmsx_snesmini_input_proxy_tests)
 		set_tests_properties(bmsx_snesmini_input_proxy_tests PROPERTIES TIMEOUT 10)
 	endif()

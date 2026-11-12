@@ -38,7 +38,13 @@ def write_input(stream, packet):
 
 
 def open_input_stream(target, device_name, mode, connect_timeout=10):
-    remote = f'''\
+    if mode == "keyboard":
+        remote = '''\
+modprobe -q uinput || exit 1
+exec flock -n /tmp/bmsx-input-keyboard.lock /root/bmsx_snesmini_input keyboard
+'''
+    else:
+        remote = f'''\
 modprobe -q uinput || exit 1
 for name in /sys/class/input/event*/device/name; do
     [ "$(cat "$name")" = {shlex.quote(device_name)} ] || continue

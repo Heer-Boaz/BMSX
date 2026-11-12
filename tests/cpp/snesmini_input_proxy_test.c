@@ -2,6 +2,8 @@
 
 #include <errno.h>
 #include <linux/input.h>
+#include <linux/uinput.h>
+#include <stdbool.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,18 +13,32 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+static bool configured_keys[BTN_MISC];
+
 static int fake_ioctl(int fd, unsigned long request, ...) {
 	(void)fd;
+	if (request == UI_DEV_CREATE) return 0;
 	va_list args;
 	va_start(args, request);
-	void* destination = va_arg(args, void*);
-	va_end(args);
+	if (request == UI_SET_KEYBIT) {
+		const unsigned code = va_arg(args, unsigned);
+		configured_keys[code] = true;
+		va_end(args);
+		return 0;
+	}
+	if (request == UI_SET_EVBIT || request == UI_SET_PHYS) {
+		va_end(args);
+		return 0;
+	}
 	if (_IOC_NR(request) == _IOC_NR(EVIOCGKEY(0))) {
+		void* destination = va_arg(args, void*);
+		va_end(args);
 		memset(destination, 0, _IOC_SIZE(request));
 		((unsigned long*)destination)[BTN_B / (sizeof(unsigned long) * 8)] |=
 			1ul << (BTN_B % (sizeof(unsigned long) * 8));
 		return 0;
 	}
+	va_end(args);
 	errno = EINVAL;
 	return -1;
 }
@@ -49,6 +65,20 @@ static void expect_event(int fd, unsigned type, unsigned code, int value) {
 }
 
 int main(void) {
+	int device[2];
+	require(pipe(device) == 0, "the test owns the virtual keyboard descriptor sink");
+	require(configure_virtual_keyboard(device[1]), "the proxy configures a virtual keyboard");
+	struct uinput_user_dev keyboard;
+	require(read(device[0], &keyboard, sizeof(keyboard)) == sizeof(keyboard), "the complete keyboard descriptor is written");
+	require(strcmp(keyboard.name, "BMSX Remote Keyboard") == 0 && keyboard.id.bustype == BUS_VIRTUAL,
+		"the keyboard has its own virtual device identity");
+	require(configured_keys[KEY_A] && configured_keys[KEY_LEFTSHIFT] && configured_keys[KEY_F5]
+		&& configured_keys[KEY_CAPSLOCK] && configured_keys[KEY_KP1] && configured_keys[KEY_F15],
+		"the keyboard advertises the frontend's supported physical keys");
+	require(!configured_keys[KEY_POWER] && !configured_keys[KEY_VOLUMEUP],
+		"unmapped system controls are not published by the keyboard device");
+	close(device[0]); close(device[1]);
+
 	int remote[2], physical[2], output[2];
 	require(pipe(remote) == 0 && pipe(physical) == 0 && pipe(output) == 0, "the test owns its streams");
 	const pid_t child = fork();

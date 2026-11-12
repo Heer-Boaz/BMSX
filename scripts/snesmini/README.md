@@ -60,16 +60,26 @@ Clover through udev, so its player binding is restored without a menu restart.
 The custom host detects the virtual controller even if a BMSX game is already
 running.
 
-`keyboard` opens a small focus window; use the physical PC keyboard rather than
-clicking on buttons. The arrow keys are the D-pad, A/B/X/Y are the face buttons,
-L/R are the shoulders, Enter is Start, Backspace is Select and F5 is RESET.
-Closing the window or switching focus releases held buttons. This mode requires
-Python's Tk support and a connected Clovercon; it does not stream video. The PC
-window sends key transitions rather than repeatedly injecting presses.
-If SSH disconnects, the window stays open; F9 reconnects without replaying
-previous button presses. Terminating the proxy uncatchably (for example with
-SIGKILL) prevents its normal udev cleanup; reconnect and close the keyboard
-control normally, or unplug and reconnect the physical controller.
+`keyboard` opens a focus window for the physical PC keyboard. It requires
+Python's Tk support, an X11/WSLg evdev keyboard and a connected Clovercon; it
+does not stream video. Choose either mode in the window:
+
+- **Gamepad:** arrows are the D-pad; Z/X are B/A, A/S are Y/X, D/C are L/R,
+  Enter is Start, Backspace is Select and F5 is RESET. Click any displayed
+  binding and press a key to change it. Bindings are saved on the PC in
+  `${XDG_CONFIG_HOME:-~/.config}/bmsx/snesmini-keys.json`.
+- **Keyboard:** supported physical keys, including F1–F15 and the numeric
+  keypad, are sent to BMSX as keyboard keys; they do not also press gamepad
+  buttons. This sends key positions, not composed text or input-method events.
+  Scroll Lock remains the host's supervisor input.
+
+Use **Ctrl+F1** to switch modes without clicking. Switching modes, closing the
+window or switching focus releases held inputs. If SSH disconnects, the window
+stays open; F9 reconnects while disconnected without replaying previous presses.
+The PC window sends key transitions rather than repeatedly injecting presses.
+Terminating the proxy uncatchably (for example with SIGKILL) prevents its normal
+udev cleanup; reconnect and close the keyboard control normally, or unplug and
+reconnect the physical controller.
 
 `button reset` and the shorter `reset` command send the same two-key press and
 release as the physical RESET switch. RESET alone defaults to 150 ms; when

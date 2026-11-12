@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 
 #include "input_merge.h"
+#include "keyboard_input.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -23,6 +24,18 @@ static volatile sig_atomic_t stop_requested;
 static void request_stop(int signal_number) {
 	(void)signal_number;
 	stop_requested = 1;
+}
+
+static bool configure_virtual_keyboard(int output) {
+	struct uinput_user_dev device = {.name = "BMSX Remote Keyboard", .id = {.bustype = BUS_VIRTUAL}};
+	if (ioctl(output, UI_SET_PHYS, "bmsx/snesmini-input") < 0
+			|| ioctl(output, UI_SET_EVBIT, EV_KEY) < 0) return false;
+	for (unsigned code = 0; code < BTN_MISC; ++code) {
+		if (keyboard_input_key_from_evdev(code) != RETROK_UNKNOWN
+				&& ioctl(output, UI_SET_KEYBIT, code) < 0) return false;
+	}
+	return write(output, &device, sizeof(device)) == (ssize_t)sizeof(device)
+		&& ioctl(output, UI_DEV_CREATE) == 0;
 }
 
 static bool configure_virtual_device(int source, int output, struct uinput_user_dev* device,
@@ -143,15 +156,16 @@ static bool proxy_input(SnesInputMerge* input, int source, bool forward_physical
 }
 
 int main(int argc, char** argv) {
-	if (argc != 3 || (strcmp(argv[1], "controller") != 0 && strcmp(argv[1], "reset") != 0)) {
-		fprintf(stderr, "Usage: bmsx_snesmini_input controller|reset /dev/input/eventN\n");
+	const bool keyboard = argc == 2 && strcmp(argv[1], "keyboard") == 0;
+	if (!keyboard && (argc != 3 || (strcmp(argv[1], "controller") != 0 && strcmp(argv[1], "reset") != 0))) {
+		fprintf(stderr, "Usage: bmsx_snesmini_input controller|reset /dev/input/eventN | keyboard\n");
 		return 2;
 	}
-	const bool forward_physical = strcmp(argv[1], "controller") == 0;
-	const int source = open(argv[2], O_RDONLY | O_NONBLOCK);
-	if (source < 0) { perror("open physical input"); return 1; }
+	const bool forward_physical = !keyboard && strcmp(argv[1], "controller") == 0;
+	const int source = keyboard ? -1 : open(argv[2], O_RDONLY | O_NONBLOCK);
+	if (!keyboard && source < 0) { perror("open physical input"); return 1; }
 	const int output = open("/dev/uinput", O_WRONLY);
-	if (output < 0) { perror("open uinput"); close(source); return 1; }
+	if (output < 0) { perror("open uinput"); if (!keyboard) close(source); return 1; }
 	struct sigaction action = {.sa_handler = request_stop};
 	sigemptyset(&action.sa_mask);
 	sigaction(SIGINT, &action, NULL);
@@ -160,8 +174,8 @@ int main(int argc, char** argv) {
 	signal(SIGPIPE, SIG_IGN);
 	struct uinput_user_dev device = {0};
 	unsigned long keys[BIT_WORDS(KEY_MAX)] = {0}, axes[BIT_WORDS(ABS_MAX)] = {0};
-	if (!configure_virtual_device(source, output, &device, keys, axes)) {
-		perror("create virtual input"); close(output); close(source); return 1;
+	if (!(keyboard ? configure_virtual_keyboard(output) : configure_virtual_device(source, output, &device, keys, axes))) {
+		perror("create virtual input"); close(output); if (!keyboard) close(source); return 1;
 	}
 	SnesInputMerge input = {.output = output};
 	bool ok = !forward_physical || synchronize_physical(&input, source, keys, axes);
@@ -180,7 +194,7 @@ int main(int argc, char** argv) {
 	}
 	ioctl(output, UI_DEV_DESTROY);
 	close(output);
-	close(source);
+	if (!keyboard) close(source);
 	if (forward_physical) {
 		const char* event_name = strrchr(argv[2], '/') + 1;
 		if (!announce_physical(event_name)) { fprintf(stderr, "Could not reannounce the physical controller\n"); ok = false; }

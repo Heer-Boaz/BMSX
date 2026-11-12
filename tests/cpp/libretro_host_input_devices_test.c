@@ -150,6 +150,26 @@ static void test_controller_close(SDL_GameController* controller) {
 	++controller_closes;
 }
 
+static void test_keyboard_device_mappings(void) {
+	const struct { unsigned evdev; SDL_Scancode sdl; const char* code; enum retro_key retro; } keys[] = {
+		{KEY_CAPSLOCK, SDL_SCANCODE_CAPSLOCK, "CapsLock", RETROK_CAPSLOCK},
+		{KEY_SYSRQ, SDL_SCANCODE_PRINTSCREEN, "PrintScreen", RETROK_PRINT},
+		{KEY_PAUSE, SDL_SCANCODE_PAUSE, "Pause", RETROK_PAUSE},
+		{KEY_NUMLOCK, SDL_SCANCODE_NUMLOCKCLEAR, "NumLock", RETROK_NUMLOCK},
+		{KEY_KP1, SDL_SCANCODE_KP_1, "Numpad1", RETROK_KP1},
+		{KEY_KPSLASH, SDL_SCANCODE_KP_DIVIDE, "NumpadDivide", RETROK_KP_DIVIDE},
+		{KEY_102ND, SDL_SCANCODE_NONUSBACKSLASH, "IntlBackslash", RETROK_OEM_102},
+		{KEY_COMPOSE, SDL_SCANCODE_APPLICATION, "ContextMenu", RETROK_MENU},
+		{KEY_F15, SDL_SCANCODE_F15, "F15", RETROK_F15},
+	};
+	for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); ++i) {
+		require(keyboard_input_key_from_evdev(keys[i].evdev) == keys[i].retro
+			&& keyboard_input_key_from_sdl(keys[i].sdl) == keys[i].retro
+			&& keyboard_input_key_from_code(keys[i].code) == keys[i].retro,
+			"evdev, SDL and physical-code input agree on each keyboard key");
+	}
+}
+
 static void test_lifecycle_cancellation(void) {
 	const uint16_t menu_chord = (1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_START);
 	keyboard_input_set_callback((struct retro_keyboard_callback){keyboard_event});
@@ -522,6 +542,7 @@ void video_presenter_map_surface_point(int x, int y, int16_t* pointer_x, int16_t
 }
 
 int main(void) {
+	test_keyboard_device_mappings();
 	const struct {
 		uint16_t evdev;
 		SDL_GameControllerButton sdl;
