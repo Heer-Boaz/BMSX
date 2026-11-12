@@ -730,6 +730,14 @@ if(BMSX_BUILD_TESTS)
 			target_include_directories(bmsx_libretro_host_input_devices_tests PRIVATE ${BMSX_LIBRETRO_HOST_DIR} ${BMSX_LIBRETRO_DIR})
 			target_link_libraries(bmsx_libretro_host_input_devices_tests PRIVATE SDL2::SDL2)
 			add_test(NAME bmsx_libretro_host_input_devices_tests COMMAND bmsx_libretro_host_input_devices_tests)
+
+			find_package(Python3 REQUIRED COMPONENTS Interpreter)
+			add_library(bmsx_libretro_host_signal_test_core SHARED
+				${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_signal_core.c)
+			target_include_directories(bmsx_libretro_host_signal_test_core PRIVATE ${BMSX_LIBRETRO_DIR})
+			add_test(NAME bmsx_libretro_host_signals_tests
+				COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/platform/libretro_host_signals_test.py
+					$<TARGET_FILE:bmsx_libretro_host> $<TARGET_FILE:bmsx_libretro_host_signal_test_core>)
 		endif()
 		add_executable(bmsx_libretro_host_audio_queue_tests
 			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_audio_queue_test.c

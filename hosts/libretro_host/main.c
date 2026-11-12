@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 
 #include <errno.h>
+#include <pthread.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -304,6 +305,12 @@ int main(int argc, char** argv) {
 
 	signal(SIGINT, on_signal);
 	signal(SIGTERM, on_signal);
+	/* A launcher may block these signals before exec; its mask is inherited. */
+	sigset_t shutdown_signals;
+	sigemptyset(&shutdown_signals);
+	sigaddset(&shutdown_signals, SIGINT);
+	sigaddset(&shutdown_signals, SIGTERM);
+	pthread_sigmask(SIG_UNBLOCK, &shutdown_signals, NULL);
 
 	BmsxCoreSession session;
 	core_session_open(&session, core_path, system_dir, save_dir);
