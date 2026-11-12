@@ -263,7 +263,7 @@ import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
-import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
+import { DEVICE_SERVICE_GPU, DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { PSX_MACHINE_SPEC, PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../machine/ts/spec/bmsx/model';
 import { executeGxGpuSoftwareVramCommands, renderGxGpuSoftwareFrame } from '../../machine/ts/render/backend/software/gx_gpu';
 import { executeGxGpuSoftwareCommands } from '../../machine/ts/render/backend/software/gx_gpu_commands';
@@ -1782,6 +1782,30 @@ test('GX-GPU does not mirror undefined GP1 40h to reset', () => {
 	gpu.writeGp1(GX_GPU_GP1_DISPLAY_MODE << 24);
 	gpu.writeGp1(0x40000000);
 	assert.equal(gpu.readDisplayModeWord(), 0);
+});
+
+test('GX-GPU schedules an IRQ behind queued commands without treating payload as an opcode, including restore', () => {
+	const original = createGpu();
+	stopPcrtc(original.memory, original.gpu, original.scheduler);
+	for (const word of [0x020000ff, 0, 0x00010001, 0x020000aa, 0x1f000000, 0x00010001, 0x1f000000]) {
+		original.gpu.writeGp0(word);
+	}
+	const restored = createGpu();
+	stopPcrtc(restored.memory, restored.gpu, restored.scheduler);
+	restored.gpu.restoreState(original.gpu.captureState());
+	for (const target of [original, restored]) {
+		for (const cycle of [29, 57, 58]) {
+			while (target.scheduler.nextDeadline() <= cycle) {
+				const deadline = target.scheduler.nextDeadline();
+				target.scheduler.advanceTo(deadline);
+				assert.equal(target.scheduler.popDueTimer(), DEVICE_SERVICE_GPU);
+				target.gpu.onService(deadline);
+			}
+			target.scheduler.advanceTo(cycle);
+			assert.equal(target.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, cycle === 58 ? IRQ_GPU : 0,
+				cycle === 29 ? 'payload 1f is not an IRQ' : 'IRQ starts at preceding completion');
+		}
+	}
 });
 
 test('GX-GPU handles PSX GP0 IRQ request and GP1 interrupt acknowledge', () => {

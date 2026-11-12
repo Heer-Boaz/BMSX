@@ -1265,6 +1265,31 @@ void testGp0IngressBypassesOnlyNopsAndExecutesDrawingStateInFifoOrder() {
 	require(harness.gpu.readDrawingOffsetWord() == (0x00345678u & bmsx::GX_GPU_DRAWING_OFFSET_MASK), "GX-GPU executes E5 after E4");
 }
 
+void testQueuedIrqStartsAtPreviousCompletionAcrossRestore() {
+	GpuHarness original;
+	stopPcrtc(original);
+	for (const bmsx::u32 word : {0x020000ffu, 0u, 0x00010001u, 0x020000aau, 0x1f000000u, 0x00010001u, 0x1f000000u}) {
+		original.gpu.writeGp0(word);
+	}
+	GpuHarness restored;
+	stopPcrtc(restored);
+	restored.gpu.restoreState(original.gpu.captureState());
+	for (GpuHarness* target : {&original, &restored}) {
+		for (const bmsx::i64 cycle : {29, 57, 58}) {
+			while (target->scheduler.nextDeadline() <= cycle) {
+				const bmsx::i64 deadline = target->scheduler.nextDeadline();
+				target->scheduler.advanceTo(deadline);
+				require(target->scheduler.popDueTimer() == bmsx::DEVICE_SERVICE_GPU, "GPU test services the scheduled device");
+				target->gpu.onService(deadline);
+			}
+			target->scheduler.advanceTo(cycle);
+			const bmsx::u32 expected = cycle == 58 ? bmsx::IRQ_GPU : 0u;
+			require((target->memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GPU) == expected,
+				"GPU queued IRQ starts at previous completion, not at a payload word");
+		}
+	}
+}
+
 void testGp1CrtcRangeRegistersLatchMaskedRawWords() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
@@ -5135,6 +5160,7 @@ int main() {
 	testGpustatReadinessTracksGp0PacketAssemblyAndPayloadPhases();
 	testCommandTimingGatesGpustatIdleAndVblankExecutionFrontier();
 	testGp0IngressBypassesOnlyNopsAndExecutesDrawingStateInFifoOrder();
+	testQueuedIrqStartsAtPreviousCompletionAcrossRestore();
 	testGp1CrtcRangeRegistersLatchMaskedRawWords();
 	testGp1UndefinedHighOpcodeDoesNotMirrorReset();
 	testGp0IrqRequestAndGp1Acknowledge();
