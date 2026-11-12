@@ -31,9 +31,9 @@ if it should retain changes made by direct SSH deployments.
 
 ## Remote input
 
-The Mini can also be controlled over SSH without installing a helper or building
-an ARM executable. This writes input events to the existing Linux input devices;
-the controller must be connected for controller commands.
+The Mini can also be controlled over SSH. Deployment installs the small input
+proxy alongside the host; no service runs while it is not in use. Controller
+commands require the corresponding physical Clovercon to be connected.
 
 ```sh
 npm run control:snesmini -- --ssh root@169.254.13.37 button start
@@ -51,20 +51,25 @@ names to press them together; controller buttons are sent in one input report.
 RESET can be combined with controller buttons, but uses a separate device and
 SSH stream, so its timing relative to the controller is not exact. Player 1 is
 the default.
-The physical Clovercon driver continues polling and can release an injected
-button, so the command reasserts it for 100 ms by default (`--duration-ms`
-changes that interval). This may produce multiple press/release edges, not one
-precise continuous hold; menu navigation may repeat and gameplay timing is not
-guaranteed.
+The proxy combines the physical controller and remote buttons into a Linux
+virtual input device. Each remote press and release is sent once; one source
+releasing a button does not release it while the other still holds it. The
+default press duration is 100 ms (`--duration-ms` changes it). On disconnect,
+the virtual device is removed and the physical controller is reannounced to
+Clover through udev, so its player binding is restored without a menu restart.
+The custom host detects the virtual controller even if a BMSX game is already
+running.
 
 `keyboard` opens a small focus window; use the physical PC keyboard rather than
 clicking on buttons. The arrow keys are the D-pad, A/B/X/Y are the face buttons,
 L/R are the shoulders, Enter is Start, Backspace is Select and F5 is RESET.
 Closing the window or switching focus releases held buttons. This mode requires
-Python's Tk support and a connected Clovercon; it does not stream video. The
-same physical-driver limitation applies to held keys and long combinations.
+Python's Tk support and a connected Clovercon; it does not stream video. The PC
+window sends key transitions rather than repeatedly injecting presses.
 If SSH disconnects, the window stays open; F9 reconnects without replaying
-previous button presses.
+previous button presses. Terminating the proxy uncatchably (for example with
+SIGKILL) prevents its normal udev cleanup; reconnect and close the keyboard
+control normally, or unplug and reconnect the physical controller.
 
 `button reset` and the shorter `reset` command send the same two-key press and
 release as the physical RESET switch. RESET alone defaults to 150 ms; when

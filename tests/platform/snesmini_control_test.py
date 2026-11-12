@@ -15,6 +15,7 @@ CONTROL = Path(__file__).resolve().parents[2] / "scripts/snesmini/control.py"
 EVENT = struct.Struct("<iiHHi")
 sys.path.insert(0, str(CONTROL.parent))
 from mini_keyboard import KeyboardButtons, KeyboardSession, KeyboardWindow
+from control import send_input
 
 
 class MiniControlTests(unittest.TestCase):
@@ -50,7 +51,7 @@ sys.stdout.buffer.flush()
     def arguments(self, device="controller"):
         return json.loads((self.root / f"{device}-arguments.json").read_text())
 
-    def test_reset_emits_the_physical_two_key_press_and_release(self):
+    def test_reset_emits_the_two_key_press_and_release(self):
         result = self.run_control("reset")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.events("reset"), [
@@ -60,7 +61,7 @@ sys.stdout.buffer.flush()
         args = self.arguments("reset")
         self.assertEqual(args[-2], "root@mini")
         self.assertIn("sunxi-keyboard", args[-1])
-        self.assertIn("bs=48 iflag=fullblock", args[-1])
+        self.assertIn("bmsx_snesmini_input reset", args[-1])
 
     def test_reset_is_also_a_button_without_a_connected_controller(self):
         result = self.run_control("button", "RESET", "--duration-ms", "1")
@@ -71,14 +72,12 @@ sys.stdout.buffer.flush()
         ])
         self.assertFalse((self.root / "controller-arguments.json").exists())
 
-    def test_button_reasserts_then_releases_on_the_selected_controller(self):
+    def test_button_has_one_press_and_release_on_the_selected_controller(self):
         result = self.run_control("button", "START", "--player", "2", "--duration-ms", "20")
         self.assertEqual(result.returncode, 0, result.stderr)
         events = self.events()
-        self.assertGreaterEqual(len(events), 6)
-        self.assertEqual(events[-2:], [(0, 0, 1, 0x13b, 0), (0, 0, 0, 0, 0)])
-        for index in range(0, len(events) - 2, 2):
-            self.assertEqual(events[index:index + 2], [(0, 0, 1, 0x13b, 1), (0, 0, 0, 0, 0)])
+        self.assertEqual(events, [(0, 0, 1, 0x13b, 1), (0, 0, 0, 0, 0),
+                                  (0, 0, 1, 0x13b, 0), (0, 0, 0, 0, 0)])
         args = self.arguments()
         self.assertIn("Nintendo Clovercon - controller2", args[-1])
 
@@ -90,11 +89,8 @@ sys.stdout.buffer.flush()
                  (0, 0, 1, 0x136, 1), (0, 0, 0, 0, 0)]
         release = [(0, 0, 1, 0x131, 0), (0, 0, 1, 0x134, 0),
                    (0, 0, 1, 0x136, 0), (0, 0, 0, 0, 0)]
-        self.assertGreaterEqual(len(events), 12)
-        self.assertEqual(events[-4:], release)
-        for index in range(0, len(events) - 4, 4):
-            self.assertEqual(events[index:index + 4], press)
-        self.assertIn("bs=64 iflag=fullblock", self.arguments()[-1])
+        self.assertEqual(events, press + release)
+        self.assertIn("bmsx_snesmini_input controller", self.arguments()[-1])
 
     def test_reset_can_be_held_with_controller_buttons(self):
         result = self.run_control("button", "start", "select", "reset", "--duration-ms", "20")
@@ -106,6 +102,22 @@ sys.stdout.buffer.flush()
             (0, 0, 1, 115, 1), (0, 0, 1, 102, 1), (0, 0, 0, 0, 0),
             (0, 0, 1, 115, 0), (0, 0, 1, 102, 0), (0, 0, 0, 0, 0),
         ])
+
+    def test_combined_command_closes_reset_before_controller_cleanup(self):
+        order = []
+        class Process:
+            def __init__(self, name):
+                self.name = name
+                self.stdin = io.BytesIO()
+                self.stdout = io.BytesIO()
+            def wait(self):
+                order.append(self.name)
+                return 0
+        processes = [Process("controller"), Process("reset")]
+        with patch("control.open_input_stream", side_effect=processes), patch("control.time.sleep"):
+            self.assertEqual(send_input("root@mini", [("pad", (0x13b,), "controller"),
+                                                       ("reset", (115, 102), "reset")], 20), 0)
+        self.assertEqual(order, ["reset", "controller"])
 
     def test_snes_button_names_emit_the_clovercon_codes(self):
         buttons = {
@@ -146,18 +158,13 @@ class KeyboardControlTests(unittest.TestCase):
         buttons.set("a", True)
         buttons.set("b", True)
         buttons.set("b", True)  # PC key-repeat does not create another transition.
-        buttons.repeat()
         buttons.set("reset", True)
         buttons.set("a", False)
-        buttons.repeat()
         buttons.release_all()
         self.assertEqual(list(EVENT.iter_unpack(controller.getvalue())), [
             (0, 0, 1, 0x130, 1), (0, 0, 0, 0, 0),
             (0, 0, 1, 0x131, 1), (0, 0, 0, 0, 0),
-            (0, 0, 1, 0x130, 1), (0, 0, 0, 0, 0),
-            (0, 0, 1, 0x131, 1), (0, 0, 0, 0, 0),
             (0, 0, 1, 0x130, 0), (0, 0, 0, 0, 0),
-            (0, 0, 1, 0x131, 1), (0, 0, 0, 0, 0),
             (0, 0, 1, 0x131, 0), (0, 0, 0, 0, 0),
         ])
         self.assertEqual(list(EVENT.iter_unpack(reset.getvalue())), [
@@ -186,7 +193,7 @@ class KeyboardControlTests(unittest.TestCase):
                 del self.timers[timer]
         controller, reset = io.BytesIO(), io.BytesIO()
         buttons, root = KeyboardButtons(controller, reset), Root()
-        session = SimpleNamespace(buttons=buttons, reset_release_pending=False)
+        session = SimpleNamespace(buttons=buttons)
         with patch("mini_keyboard.tk.Label") as label, patch("mini_keyboard.tk.StringVar"):
             label.return_value.pack.return_value = None
             window = KeyboardWindow(root, session)
@@ -204,7 +211,7 @@ class KeyboardControlTests(unittest.TestCase):
         self.assertEqual(list(EVENT.iter_unpack(reset.getvalue()))[-3:],
                          [(0, 0, 1, 115, 0), (0, 0, 1, 102, 0), (0, 0, 0, 0, 0)])
 
-    def test_disconnect_releases_reset_after_reconnect_without_repeating_the_press(self):
+    def test_disconnect_does_not_replay_stale_reset_events_on_reconnect(self):
         class Stream:
             def __init__(self):
                 self.packets = []
@@ -231,13 +238,36 @@ class KeyboardControlTests(unittest.TestCase):
             session.buttons.set("reset", True)
             first_reset.stdin.broken = True
             self.assertIsInstance(session.disconnect(), BrokenPipeError)
-            self.assertTrue(session.reset_release_pending)
             session.connect()
-            self.assertFalse(session.reset_release_pending)
-            self.assertEqual([event for packet in next_reset.stdin.packets for event in EVENT.iter_unpack(packet)], [
-                (0, 0, 1, 115, 0), (0, 0, 1, 102, 0), (0, 0, 0, 0, 0),
-            ])
+            self.assertEqual(next_reset.stdin.packets, [])
             session.disconnect()
+
+    def test_proxy_cleanup_failure_is_reported_without_crashing(self):
+        class Process:
+            def __init__(self):
+                self.stdin = io.BytesIO()
+                self.stdout = io.BytesIO()
+            def wait(self, timeout=None): return 1
+        session = KeyboardSession("root@mini", 1)
+        session.streams.append(Process())
+        error = session.disconnect()
+        self.assertIsInstance(error, ConnectionError)
+        self.assertEqual(session.streams, [])
+
+    def test_controller_is_reannounced_after_the_reset_device_is_gone(self):
+        order = []
+        class Process:
+            def __init__(self, name):
+                self.name = name
+                self.stdin = io.BytesIO()
+                self.stdout = io.BytesIO()
+            def wait(self, timeout=None):
+                order.append(self.name)
+                return 0
+        session = KeyboardSession("root@mini", 1)
+        session.streams = [Process("controller"), Process("reset")]
+        self.assertIsNone(session.disconnect())
+        self.assertEqual(order, ["reset", "controller"])
 
     def test_broken_connection_keeps_window_open_and_f9_reconnects(self):
         class Root:
@@ -255,7 +285,6 @@ class KeyboardControlTests(unittest.TestCase):
             def __init__(self):
                 self.buttons = KeyboardButtons(Broken(), io.BytesIO())
                 self.new_controller = io.BytesIO()
-                self.reset_release_pending = False
             def disconnect(self):
                 self.buttons = None
                 return BrokenPipeError("release not delivered")

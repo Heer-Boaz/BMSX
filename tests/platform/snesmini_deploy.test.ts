@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, relative } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { crc32 } from 'node:zlib';
 import { promisify } from 'node:util';
@@ -22,6 +22,25 @@ test('remote shell arguments survive spaces, apostrophes and shell operators wit
 		const result = await promisify(execFile)('sh', ['-c', `printf '%s' ${quotePosixArgument(argument)}`]);
 		assert.equal(result.stdout, argument);
 	}
+});
+
+test('installing only the input proxy does not restart Clover', async t => {
+	const root = await mkdtemp(join(tmpdir(), 'bmsx-mini-installer-'));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const stage = join(root, 'stage'), bin = join(root, 'bin'), calls = join(root, 'calls');
+	await mkdir(stage); await mkdir(bin);
+	await writeFile(join(stage, 'files.list'), 'root/bmsx_snesmini_input\n');
+	await writeFile(join(stage, 'saves.list'), '');
+	for (const command of ['sha256sum', 'pidof', 'uistop', 'uistart', 'mkdir', 'cp', 'chmod', 'mv', 'sync']) {
+		const status = command === 'pidof' ? 1 : 0;
+		await writeFile(join(bin, command), `#!/bin/sh\nprintf '%s %s\\n' ${quotePosixArgument(command)} "$*" >> ${quotePosixArgument(calls)}\nexit ${status}\n`, { mode: 0o755 });
+	}
+	await promisify(execFile)('sh', [resolve('scripts/snesmini/install_hakchi.sh'), stage], {
+		env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+	});
+	const invoked = await readFile(calls, 'utf8');
+	assert.ok(invoked.includes('chmod 755 /root/bmsx_snesmini_input.bmsx-new\n'));
+	assert.ok(!invoked.includes('uistop ') && !invoked.includes('uistart '));
 });
 
 async function fixture(t: TestContext) {
@@ -43,6 +62,7 @@ async function fixture(t: TestContext) {
 		{ target: 'two', code: 'CLV-S-TESTB', title: 'Second cart', icon: 'cover.png' },
 	] };
 	const store = new RomArtifactStore(join(root, 'store')), bios = Buffer.from('paired BIOS');
+	await writeFile(join(hostDirectory, 'bmsx_snesmini_input'), 'selected input proxy');
 	await writeFile(join(coreDirectory, 'acceptance.txt'), `build_type=Release\ninput_sha256=${digest(bios)} system/bmsx-bios.rom\n`);
 	await writeFile(join(hostDirectory, 'acceptance.txt'), 'build_type=Release\n');
 	await writeFile(join(coreDirectory, 'libretro_bmsx.so'), 'selected core');

@@ -2,6 +2,7 @@
 
 #include <SDL.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <linux/input.h>
 #include <stdbool.h>
 #include <stdarg.h>
@@ -26,6 +27,7 @@ static BmsxHostShortcutState keyboard_shortcuts;
 static BmsxHostShortcutState gamepad_shortcuts;
 static uint32_t keyboard_buttons;
 static const char* evdev_name;
+static bool evdev_snapshot;
 static uint64_t clock_milliseconds = 1000;
 static unsigned disconnected_port;
 
@@ -45,8 +47,25 @@ static int test_ioctl(int fd, unsigned long request, ...) {
 		va_end(args);
 		return snprintf(name, 64, "%s", evdev_name) + 1;
 	}
+	if (evdev_snapshot && request == EVIOCGKEY((KEY_MAX + 8) / 8)) {
+		va_list args; va_start(args, request);
+		uint8_t* keys = va_arg(args, uint8_t*); va_end(args);
+		memset(keys, 0, (KEY_MAX + 8) / 8);
+		keys[BTN_B / 8] |= 1u << (BTN_B % 8);
+		return (KEY_MAX + 8) / 8;
+	}
+	if (evdev_snapshot && (request == EVIOCGABS(ABS_X) || request == EVIOCGABS(ABS_Y))) {
+		va_list args; va_start(args, request);
+		struct input_absinfo* axis = va_arg(args, struct input_absinfo*); va_end(args);
+		*axis = (struct input_absinfo){.value = request == EVIOCGABS(ABS_X) ? 40 : -40, .minimum = -72, .maximum = 72};
+		return 0;
+	}
 	errno = ENOTTY;
 	return -1;
+}
+
+static int test_open(const char* path, int flags, ...) {
+	return open(strcmp(path, "/dev/input/event199") == 0 ? "/dev/null" : path, flags);
 }
 
 static void test_controller_close(SDL_GameController* controller);
@@ -70,6 +89,7 @@ static Uint8 test_controller_button(SDL_GameController* controller, SDL_GameCont
 #define SDL_PumpEvents test_pump_events
 #define SDL_PollEvent test_poll_event
 #define ioctl test_ioctl
+#define open test_open
 #define clock_gettime test_clock_gettime
 #include "../../hosts/libretro_host/input_devices.c"
 #undef SDL_GameControllerGetButton
@@ -77,6 +97,7 @@ static Uint8 test_controller_button(SDL_GameController* controller, SDL_GameCont
 #undef SDL_PumpEvents
 #undef SDL_PollEvent
 #undef ioctl
+#undef open
 #undef clock_gettime
 
 static void require(bool condition, const char* message) {
@@ -338,17 +359,34 @@ static void test_evdev_controller_layouts(void) {
 		{BTN_START, BTN_START, RETRO_DEVICE_ID_JOYPAD_START},
 	};
 	int pipes[3][2];
+	char paths[3][64] = {"/tmp/bmsx-input-0-XXXXXX", "/tmp/bmsx-input-1-XXXXXX", "/tmp/bmsx-input-2-XXXXXX"};
 	g_input_devices = (InputDevices){0};
 	const char* names[] = {
 		"Xbox Wireless Controller", "Nintendo Clovercon - controller1", "Nintendo Clovercon - controller2",
 	};
 	for (unsigned source = 0; source < 3; ++source) {
 		evdev_name = names[source];
-		open_evdev_device("/dev/null");
+		const int file = mkstemp(paths[source]);
+		require(file >= 0, "each evdev node has a distinct path");
+		close(file);
+		evdev_snapshot = source == 2;
+		open_evdev_device(paths[source]);
+		if (source == 2) {
+			require(g_input_devices.devices[source].pad_state == (1u << RETRO_DEVICE_ID_JOYPAD_B)
+				&& g_input_devices.devices[source].has_abs_xy
+				&& g_input_devices.devices[source].abs_x == 40 && g_input_devices.devices[source].abs_y == -40,
+				"a newly opened controller starts with its actual held buttons and axes");
+			g_input_devices.devices[source].pad_state = 0;
+			g_input_devices.devices[source].abs_x = g_input_devices.devices[source].abs_y = 0;
+		}
+		evdev_snapshot = false;
 		close(g_input_devices.devices[source].fd);
 		require(pipe2(pipes[source], O_NONBLOCK) == 0, "each evdev controller has its own event stream");
 		g_input_devices.devices[source].fd = pipes[source][0];
 	}
+	open_evdev_device(paths[0]);
+	require(g_input_devices.device_count == 3 && g_input_devices.devices[0].fd == pipes[0][0],
+		"initial enumeration and a queued hotplug notification cannot open a source twice");
 	for (unsigned source = 0; source < 3; ++source) {
 		for (size_t index = 0; index < sizeof(bindings) / sizeof(bindings[0]); ++index) {
 			struct input_event event = {
@@ -418,9 +456,42 @@ static void test_evdev_controller_layouts(void) {
 	require(write(pipes[1][1], &select, sizeof(select)) == sizeof(select), "release player one's Select");
 	poll_evdev_devices();
 	input_devices_set_cancel_gamepad_callback(NULL);
+	open_evdev_device(paths[2]);
+	require(g_input_devices.device_count == 3 && g_input_devices.devices[2].fd >= 0,
+		"a later controller reuses the disconnected source slot");
 	input_devices_close();
 	close(pipes[0][1]);
 	close(pipes[1][1]);
+	for (unsigned source = 0; source < 3; ++source) unlink(paths[source]);
+}
+
+static void test_evdev_hotplug_notifications(void) {
+	char directory[] = "/tmp/bmsx-hotplug-XXXXXX";
+	require(mkdtemp(directory) != NULL, "the test owns a temporary input directory");
+	char path[128];
+	snprintf(path, sizeof(path), "%s/event199", directory);
+	const int watch = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+	require(watch >= 0 && inotify_add_watch(watch, directory, IN_CREATE | IN_MOVED_TO) >= 0,
+		"the test receives real Linux device-directory notifications");
+	g_input_devices = (InputDevices){.evdev_watch_fd = watch, .evdev_watch_active = true};
+	evdev_name = "Nintendo Clovercon - controller2";
+	evdev_snapshot = true;
+	int file = open(path, O_CREAT | O_WRONLY, 0600);
+	require(file >= 0, "the new input node is published"); close(file);
+	poll_evdev_hotplug();
+	require(g_input_devices.device_count == 1 && g_input_devices.devices[0].pad_port == 1
+		&& g_input_devices.devices[0].pad_state == (1u << RETRO_DEVICE_ID_JOYPAD_B),
+		"a notification opens the device on its player port with its current held state");
+	close_evdev_device(&g_input_devices.devices[0], 0);
+	require(unlink(path) == 0, "the old node is removed");
+	file = open(path, O_CREAT | O_WRONLY, 0600);
+	require(file >= 0, "a replacement input node is published"); close(file);
+	poll_evdev_hotplug();
+	require(g_input_devices.device_count == 1 && g_input_devices.devices[0].fd >= 0,
+		"a later notification reuses the retired source slot");
+	evdev_snapshot = false;
+	input_devices_close();
+	require(unlink(path) == 0 && rmdir(directory) == 0, "the test removes its input nodes");
 }
 
 static void test_exit_hold(void) {
@@ -503,6 +574,7 @@ int main(void) {
 	test_keyups_before_source_cancellation();
 	test_evdev_pad_release_before_eof();
 	test_evdev_controller_layouts();
+	test_evdev_hotplug_notifications();
 	test_exit_hold();
 	puts("LIBRETRO-HOST-INPUT-DEVICES:PASS");
 	return 0;

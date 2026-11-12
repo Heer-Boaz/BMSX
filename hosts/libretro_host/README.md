@@ -25,6 +25,7 @@ Accepted target releases are published atomically:
 - `dist/snesmini/core/current/libretro_bmsx.so`
 - `dist/snesmini/core/current/libretro_bmsx.info`
 - `dist/snesmini/host/current/bmsx_libretro_host`
+- `dist/snesmini/host/current/bmsx_snesmini_input`
 
 Each `current` link points at an immutable content-addressed release containing
 an `acceptance.txt` with the immutable builder image, toolchain, build type,
@@ -94,7 +95,8 @@ Start press. The old
 
 Only content whose SHA-256 differs is transferred or replaced. Transfers use
 SSH and tar, not SCP/SFTP; payload checksums are checked before installation.
-Files publish by rename while Clover is stopped, and Clover restarts afterward.
+Host, core and game files publish by rename while Clover is stopped, and Clover
+restarts afterward. Updating only the input proxy does not interrupt Clover.
 An already identical install does not restart the menu or rewrite files. The
 installer refuses a running BMSX game and retains 30 MiB of NAND headroom for
 saves, including the peak space needed to replace an existing file. No games,

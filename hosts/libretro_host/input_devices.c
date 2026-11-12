@@ -11,6 +11,7 @@
 #include <linux/input.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/inotify.h>
 #include <sys/ioctl.h>
 #include <time.h>
 #include <unistd.h>
@@ -78,6 +79,8 @@ typedef struct InputDevices {
 	InputDevice devices[kMaximumInputDevices];
 	char paths[kMaximumInputDevices][64];
 	size_t device_count;
+	int evdev_watch_fd;
+	bool evdev_watch_active;
 	uint16_t pad_states[kGamepadPortCount];
 	int32_t mouse_absolute_x;
 	int32_t mouse_absolute_y;
@@ -233,12 +236,14 @@ static uint16_t map_evdev_key_to_pad(uint16_t code, bool clovercon_buttons) {
 static bool read_absolute_axis(
 		InputDevice* device,
 		unsigned code,
+		int32_t* value,
 		int32_t* minimum,
 		int32_t* maximum) {
 	struct input_absinfo axis;
 	if (ioctl(device->fd, EVIOCGABS(code), &axis) != 0) {
 		return false;
 	}
+	*value = axis.value;
 	*minimum = axis.minimum;
 	*maximum = axis.maximum;
 	return true;
@@ -246,6 +251,12 @@ static bool read_absolute_axis(
 
 static void open_evdev_device(const char* path) {
 	InputDevices* input = &g_input_devices;
+	size_t slot = input->device_count;
+	for (size_t index = 0; index < input->device_count; ++index) {
+		if (input->devices[index].fd >= 0 && strcmp(input->devices[index].path, path) == 0) return;
+		if (input->devices[index].fd < 0 && slot == input->device_count) slot = index;
+	}
+	if (slot == kMaximumInputDevices) return;
 	const int fd = open(path, O_RDONLY | O_NONBLOCK);
 	if (fd < 0) {
 		fprintf(stderr, "[libretro-host] Failed to open %s: %s\n", path, strerror(errno));
@@ -270,82 +281,86 @@ static void open_evdev_device(const char* path) {
 	if (device.clovercon_buttons && strcmp(name, "Nintendo Clovercon - controller2") == 0) {
 		device.pad_port = 1;
 	}
+	uint8_t pressed[(KEY_MAX + 8) / 8] = {0};
+	if (ioctl(fd, EVIOCGKEY(sizeof(pressed)), pressed) >= 0) {
+		for (unsigned code = BTN_MISC; code <= KEY_MAX; ++code) {
+			if (pressed[code / 8] & (1u << (code % 8))) {
+				device.pad_state |= map_evdev_key_to_pad(code, device.clovercon_buttons);
+			}
+		}
+	}
 	snprintf(
-			input->paths[input->device_count],
-			sizeof(input->paths[input->device_count]),
+			input->paths[slot],
+			sizeof(input->paths[slot]),
 			"%s",
 			path);
-	device.path = input->paths[input->device_count];
+	device.path = input->paths[slot];
 	device.hat_x_valid = read_absolute_axis(
 			&device,
 			ABS_HAT0X,
+			&device.hat_x,
 			&device.hat_x_min,
 			&device.hat_x_max);
 	device.hat_y_valid = read_absolute_axis(
 			&device,
 			ABS_HAT0Y,
+			&device.hat_y,
 			&device.hat_y_min,
 			&device.hat_y_max);
 	device.has_hat = device.hat_x_valid || device.hat_y_valid;
 	const bool has_absolute_x = read_absolute_axis(
 			&device,
 			ABS_X,
+			&device.abs_x,
 			&device.abs_x_min,
 			&device.abs_x_max);
 	const bool has_absolute_y = read_absolute_axis(
 			&device,
 			ABS_Y,
+			&device.abs_y,
 			&device.abs_y_min,
 			&device.abs_y_max);
 	device.has_abs_xy = has_absolute_x && has_absolute_y;
-	input->devices[input->device_count++] = device;
+	input->devices[slot] = device;
+	if (slot == input->device_count) ++input->device_count;
 	fprintf(stderr, "[libretro-host] input %s opened%s\n", path, device.clovercon_buttons ? " (Clovercon)" : "");
 }
 
 static void open_evdev_devices(void) {
-	InputDevices* input = &g_input_devices;
 	DIR* directory = opendir("/dev/input");
-	if (directory) {
-		struct dirent* entry = NULL;
-		while ((entry = readdir(directory)) != NULL) {
-			if (strncmp(entry->d_name, "event", 5) != 0) {
-				continue;
-			}
-			char path[64];
-			const size_t prefix_length = sizeof("/dev/input/") - 1;
-			const size_t maximum_name_length =
-					sizeof(path) - prefix_length - 1;
-			snprintf(
-					path,
-					sizeof(path),
-					"/dev/input/%.*s",
-					(int)maximum_name_length,
-					entry->d_name);
-			open_evdev_device(path);
-			if (input->device_count == kMaximumInputDevices) {
-				break;
-			}
+	if (!directory) host_fatal("Cannot open /dev/input: %s", strerror(errno));
+	struct dirent* entry = NULL;
+	while ((entry = readdir(directory)) != NULL) {
+		if (strncmp(entry->d_name, "event", 5) != 0) {
+			continue;
 		}
-		closedir(directory);
+		char path[64];
+		const size_t prefix_length = sizeof("/dev/input/") - 1;
+		const size_t maximum_name_length = sizeof(path) - prefix_length - 1;
+		snprintf(path, sizeof(path), "/dev/input/%.*s", (int)maximum_name_length, entry->d_name);
+		open_evdev_device(path);
 	}
-	if (!input->device_count) {
-		static const char* paths[] = {
-			"/dev/input/event0",
-			"/dev/input/event1",
-			"/dev/input/event2",
-			"/dev/input/event3",
-		};
-		for (size_t index = 0; index < sizeof(paths) / sizeof(paths[0]); ++index) {
-			open_evdev_device(paths[index]);
-			if (input->device_count == kMaximumInputDevices) {
-				break;
+	closedir(directory);
+}
+
+static void poll_evdev_hotplug(void) {
+	union { char bytes[4096]; struct inotify_event aligned; } buffer;
+	for (;;) {
+		const ssize_t count = read(g_input_devices.evdev_watch_fd, buffer.bytes, sizeof(buffer.bytes));
+		if (count < 0 && errno == EINTR) continue;
+		if (count < 0 && errno == EAGAIN) return;
+		if (count <= 0) host_fatal("Cannot read evdev device notifications: %s", strerror(errno));
+		for (size_t offset = 0; offset < (size_t)count;) {
+			const struct inotify_event* event = (const struct inotify_event*)(buffer.bytes + offset);
+			if (event->mask & IN_Q_OVERFLOW) {
+				open_evdev_devices();
+			} else if ((event->mask & (IN_CREATE | IN_MOVED_TO)) && strncmp(event->name, "event", 5) == 0) {
+				char path[64];
+				snprintf(path, sizeof(path), "/dev/input/%.*s", (int)(sizeof(path) - sizeof("/dev/input/")), event->name);
+				open_evdev_device(path);
 			}
+			offset += sizeof(*event) + event->len;
 		}
-	}
-	if (!input->device_count) {
-		host_fatal(
-				"No input devices opened. Are you running as root / "
-				"do you have permissions for /dev/input/event*?");
 	}
 }
 
@@ -786,7 +801,14 @@ void input_devices_open(
 #endif
 	};
 	if (driver == BMSX_INPUT_DRIVER_EVDEV) {
+		g_input_devices.evdev_watch_fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+		if (g_input_devices.evdev_watch_fd < 0 || inotify_add_watch(g_input_devices.evdev_watch_fd,
+				"/dev/input", IN_CREATE | IN_MOVED_TO) < 0) {
+			host_fatal("Cannot watch /dev/input: %s", strerror(errno));
+		}
+		g_input_devices.evdev_watch_active = true;
 		open_evdev_devices();
+		if (!g_input_devices.device_count) host_fatal("No input devices opened in /dev/input");
 		return;
 	}
 #ifdef BMSX_LIBRETRO_HOST_SDL
@@ -816,6 +838,7 @@ void input_devices_close(void) {
 		return;
 	}
 #endif
+	if (input->evdev_watch_active) close(input->evdev_watch_fd);
 	for (size_t index = 0; index < input->device_count; ++index) {
 		if (input->devices[index].fd >= 0) {
 			close_evdev_device(&input->devices[index], index);
@@ -831,6 +854,7 @@ void input_devices_poll(void) {
 #endif
 	{
 		poll_evdev_devices();
+		if (g_input_devices.evdev_watch_active) poll_evdev_hotplug();
 	}
 	RemotePointer* remote = &g_input_devices.remote;
 	remote->delta_x = remote->pending_x;

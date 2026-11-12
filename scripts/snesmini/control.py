@@ -6,38 +6,31 @@ from contextlib import ExitStack
 import sys
 import time
 
-from input_stream import BUTTONS, INPUT_EVENT, KEY_HOME, KEY_VOLUMEUP, input_packet, open_input_stream, write_input
+from input_stream import BUTTONS, KEY_HOME, KEY_VOLUMEUP, input_packet, open_input_stream, write_input
 
 
 def send_input(target, devices, duration_ms):
     streams = []
     try:
-        for device_name, codes, repeat in devices:
-            packet_bytes = INPUT_EVENT.size * (len(codes) + 1)
-            process = open_input_stream(target, device_name, packet_bytes)
+        for device_name, codes, mode in devices:
+            process = open_input_stream(target, device_name, mode)
             press = input_packet(codes, True)
             release = input_packet(codes, False)
-            streams.append((process, press, release, repeat))
+            streams.append((process, press, release))
 
         with ExitStack() as pressed:
-            for process, press, release, repeat in streams:
+            for process, press, release in streams:
                 pressed.callback(write_input, process.stdin, release)
                 write_input(process.stdin, press)
-            deadline = time.monotonic() + duration_ms / 1000
-            if any(repeat for _, _, _, repeat in streams):
-                # Clovercon polls the physical controller and releases injected keys.
-                while time.monotonic() < deadline:
-                    time.sleep(0.001)
-                    for process, press, _, repeat in streams:
-                        if repeat:
-                            write_input(process.stdin, press)
-            else:
-                time.sleep(duration_ms / 1000)
+            time.sleep(duration_ms / 1000)
     finally:
-        for process, _, _, _ in streams:
+        results = []
+        # The controller proxy restores Clover's physical binding when it
+        # exits, after the other virtual devices have disappeared.
+        for process, _, _ in reversed(streams):
             process.stdin.close()
             process.stdout.close()
-        results = [process.wait() for process, _, _, _ in streams]
+            results.append(process.wait())
     return next((result for result in results if result), 0)
 
 
@@ -60,7 +53,7 @@ def main():
         from mini_keyboard import run_keyboard
         return run_keyboard(args.ssh, args.player)
     if args.command == "reset":
-        devices = [("sunxi-keyboard", (KEY_VOLUMEUP, KEY_HOME), False)]
+        devices = [("sunxi-keyboard", (KEY_VOLUMEUP, KEY_HOME), "reset")]
         duration_ms = 150
     else:
         if args.duration_ms is not None and args.duration_ms <= 0:
@@ -69,9 +62,9 @@ def main():
         codes = tuple(BUTTONS[name] for name in buttons if name != "reset")
         devices = []
         if codes:
-            devices.append((f"Nintendo Clovercon - controller{args.player}", codes, True))
+            devices.append((f"Nintendo Clovercon - controller{args.player}", codes, "controller"))
         if "reset" in buttons:
-            devices.append(("sunxi-keyboard", (KEY_VOLUMEUP, KEY_HOME), False))
+            devices.append(("sunxi-keyboard", (KEY_VOLUMEUP, KEY_HOME), "reset"))
         duration_ms = args.duration_ms if args.duration_ms is not None else (100 if codes else 150)
     try:
         return send_input(args.ssh, devices, duration_ms)

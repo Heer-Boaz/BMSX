@@ -37,15 +37,15 @@ def write_input(stream, packet):
         raise BlockingIOError("SSH input stream is not accepting complete events")
 
 
-def open_input_stream(target, device_name, packet_bytes, connect_timeout=10):
+def open_input_stream(target, device_name, mode, connect_timeout=10):
     remote = f'''\
+modprobe -q uinput || exit 1
 for name in /sys/class/input/event*/device/name; do
     [ "$(cat "$name")" = {shlex.quote(device_name)} ] || continue
+    [ "$(cat "${{name%/name}}/phys")" != bmsx/snesmini-input ] || continue
     event=${{name#/sys/class/input/}}
     event=${{event%%/*}}
-    exec 3>"/dev/input/$event" || exit 1
-    printf 'READY\\n'
-    exec dd bs={packet_bytes} iflag=fullblock >&3 2>/dev/null
+    exec flock -n "/tmp/bmsx-input-$event.lock" /root/bmsx_snesmini_input {shlex.quote(mode)} "/dev/input/$event"
 done
 printf 'Input device not found: %s\\n' {shlex.quote(device_name)} >&2
 exit 1

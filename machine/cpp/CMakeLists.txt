@@ -587,6 +587,12 @@ if(BMSX_BUILD_LIBRETRO_HOST)
 	if(NOT BMSX_ENABLE_ZLIB)
 		message(FATAL_ERROR "BMSX_BUILD_LIBRETRO_HOST requires BMSX_ENABLE_ZLIB for PNG screenshot output.")
 	endif()
+	if(BMSX_SNESMINI_TARGET)
+		add_executable(bmsx_snesmini_input
+			${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/snesmini/input_proxy.c
+			${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/snesmini/input_merge.c
+		)
+	endif()
 
 	add_executable(bmsx_libretro_host
 		${BMSX_LIBRETRO_HOST_DIR}/main.c
@@ -636,6 +642,21 @@ endif()
 # ======================================================================
 if(BMSX_BUILD_TESTS)
 	enable_testing()
+	if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+		add_executable(bmsx_snesmini_input_merge_tests
+			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/snesmini_input_merge_test.c
+			${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/snesmini/input_merge.c
+		)
+		target_include_directories(bmsx_snesmini_input_merge_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/snesmini)
+		add_test(NAME bmsx_snesmini_input_merge_tests COMMAND bmsx_snesmini_input_merge_tests)
+		add_executable(bmsx_snesmini_input_proxy_tests
+			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/snesmini_input_proxy_test.c
+			${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/snesmini/input_merge.c
+		)
+		target_include_directories(bmsx_snesmini_input_proxy_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/snesmini)
+		add_test(NAME bmsx_snesmini_input_proxy_tests COMMAND bmsx_snesmini_input_proxy_tests)
+		set_tests_properties(bmsx_snesmini_input_proxy_tests PROPERTIES TIMEOUT 10)
+	endif()
 	add_executable(bmsx_gx_gpu_dirty_regions_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gx_gpu_dirty_regions_test.cpp)
 	target_include_directories(bmsx_gx_gpu_dirty_regions_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

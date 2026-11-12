@@ -60,6 +60,7 @@ export async function prepareMiniPackage(options: {
 		result.files.push({ path, digest: createHash('sha256').update(bytes).digest('hex'), size: bytes.length });
 	}
 	await stage('root/bmsx_libretro_host', await readFile(join(host, 'bmsx_libretro_host')));
+	await stage('root/bmsx_snesmini_input', await readFile(join(host, 'bmsx_snesmini_input')));
 	await stage('root/bmsx_libretro.so', await readFile(join(core, 'libretro_bmsx.so')));
 	await stage('root/bmsx-bios.rom', await readFile(join(store.directory(selected[0].id), bios.file)));
 	const storage = `/var/lib/hakchi/games/${profile.console}/.storage`;
