@@ -882,7 +882,7 @@ test('BADP repeated loop-boundary transitions preserve decoder state and honor s
 	compare(frameCount - 1);
 	assert.equal(reads, 0, 'repeat transition reuses the exact decoder state');
 	compare(0);
-	bytes[8] = 0x71;
+	bytes[8] = 0x17;
 	revision.value += 1;
 	reads = 0;
 	compare(frameCount - 1);
@@ -1641,11 +1641,12 @@ test('APU BADP loop playback preserves live RAM updates across a warmed transiti
 	live.memory.writeMappedWord(IO_APU_GAIN_Q12, 0x1000);
 	live.memory.writeMappedWord(IO_APU_SLOT, 1);
 	writeApuCommand(live.memory, live.audio, APU_CMD_PLAY);
+	let beforeWrite = 0;
 	for (let index = 0; index < 12; index += 1) {
 		if (index === 4) {
 			live.memory.writeMappedWord(IO_APU_TRANSFER_ADDRESS, 56);
 			live.memory.writeMappedWord(IO_APU_TRANSFER_CONTROL, 1);
-			live.memory.writeMappedWord(IO_APU_TRANSFER_DATA, 0x11111171);
+			live.memory.writeMappedWord(IO_APU_TRANSFER_DATA, 0x11111117);
 			live.memory.writeMappedWord(IO_APU_TRANSFER_CONTROL, 0);
 		}
 		if (index === 6) live.memory.writeMappedWord(IO_APU_SOURCE_LOOP_START_SAMPLE, 2);
@@ -1654,7 +1655,10 @@ test('APU BADP loop playback preserves live RAM updates across a warmed transiti
 		const restored = restoreRealAudioHarness(live.audio.captureState());
 		live.audioOutput.renderMachineFrames(1, index);
 		restored.audioOutput.renderMachineFrames(1, index);
-		assert.equal(live.audioOutput.outputRing.readFramePacked(), restored.audioOutput.outputRing.readFramePacked());
+		const sample = live.audioOutput.outputRing.readFramePacked();
+		assert.equal(sample, restored.audioOutput.outputRing.readFramePacked());
+		if (index === 3) beforeWrite = sample;
+		if (index === 4) assert.notEqual(sample, beforeWrite, 'the changed nibble affects the next forward decode');
 		assert.deepEqual(live.audio.captureState().output, restored.audio.captureState().output);
 	}
 });

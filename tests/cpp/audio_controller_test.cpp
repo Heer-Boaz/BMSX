@@ -244,7 +244,7 @@ void testBadpRepeatedLoopBoundaryTransition() {
 		require(actual == expected, "cached BADP transition retains the complete decoder state");
 	};
 	compare(0); compare(frameCount - 1u); compare(0); compare(frameCount - 1u); compare(0);
-	bytes[8] = 0x71u;
+	bytes[8] = 0x17u;
 	++revision;
 	compare(frameCount - 1u);
 	for (size_t frame : std::array<size_t, 8>{0u, 127u, 126u, 3u, 50u, 49u, 127u, 0u}) compare(frame);
@@ -257,11 +257,12 @@ void testBadpLoopSourceWritesAndRestore() {
 	live.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_LOOP_END_SAMPLE, 8u);
 	live.memory.writeMappedU32LE(bmsx::IO_APU_START_SAMPLE, 7u);
 	live.memory.writeMappedU32LE(bmsx::IO_APU_RATE_STEP_Q16, 0u);
+	bmsx::u32 beforeWrite = 0;
 	for (bmsx::i64 index = 0; index < 12; ++index) {
 		if (index == 4) {
 			live.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_ADDRESS, 56u);
 			live.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_CONTROL, 1u);
-			live.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_DATA, 0x11111171u);
+			live.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_DATA, 0x11111117u);
 			live.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_CONTROL, 0u);
 		}
 		if (index == 6) live.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_LOOP_START_SAMPLE, 2u);
@@ -271,8 +272,11 @@ void testBadpLoopSourceWritesAndRestore() {
 		restored.audio.restoreState(live.audio.captureState(), 0);
 		(void)live.output.renderMachineFrames(1, index);
 		(void)restored.output.renderMachineFrames(1, index);
-		require(live.output.outputRing.readFramePacked() == restored.output.outputRing.readFramePacked(),
+		const bmsx::u32 sample = live.output.outputRing.readFramePacked();
+		require(sample == restored.output.outputRing.readFramePacked(),
 			"BADP loop output agrees with a cold restored decoder after live source changes");
+		if (index == 3) beforeWrite = sample;
+		if (index == 4) require(sample != beforeWrite, "changed sample RAM affects the next forward decode");
 		const auto liveState = live.audio.captureState();
 		const auto restoredState = restored.audio.captureState();
 		const auto& a = liveState.output.voices[0];
