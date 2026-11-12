@@ -4,6 +4,9 @@ import { test } from 'node:test';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
+import type { Closure } from '../../machine/ts/machine/cpu/closure';
+import type { Value } from '../../machine/ts/machine/cpu/value';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
@@ -15,9 +18,85 @@ import {
 	linkRawTestSystemBlua32,
 	linkTestSystemBlua32,
 } from '../helpers/blua32';
-import { materializeCpuCompletionValues, runCompiledLua } from './cpu_test_harness';
+import { compileLuaSource, materializeCpuCompletionValues, runCompiledLua, runCompletionClosure } from './cpu_test_harness';
 
 const TEST_RAM_BASE = RAM_BASE + 0x20000;
+
+for (const optLevel of [0, 3] as const) {
+	test(`typed pointer scaling combines only exact binary64 powers of two at O${optLevel}`, () => {
+		const source = `
+local pointer<const>: *u16 = 0
+return function(index)
+    return &pointer[index * 2], &pointer[2 * index], &pointer[index * 3], &pointer[index * 0.5]
+end, function(index)
+    return 0 + (index * 2) * 2, 0 + (2 * index) * 2, 0 + (index * 3) * 2, 0 + (index * 0.5) * 2
+end`;
+		const compiled = compileLuaSource(source, 'pointer-scale.lua', optLevel);
+		const image = linkTestSystemBlua32(compiled);
+		const code = disassembleTestBlua32Functions(image, image.symbols.functionAddresses);
+		// Each power-of-two index has one MUL; the non-power-of-two factor
+		// retains both operations because that transformation is not assumed.
+		assert.equal((code.match(/\bMUL\b/g) ?? []).length, 14);
+		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+			const { cpu } = createTestSystemCpu(image, backend);
+			assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+			const [closure, reference] = materializeCpuCompletionValues(cpu) as Closure[];
+			for (const index of [0, -0, 0.5, -0.5, Number.MIN_VALUE, -Number.MIN_VALUE,
+				2 ** -1022, 2 ** 31, 2 ** 32 - 1, 2 ** 53, Number.MAX_VALUE,
+				Infinity, -Infinity, NaN, null, false] as Value[]) {
+				runCompletionClosure(cpu, closure, [index]);
+				const actual = materializeCpuCompletionValues(cpu);
+				runCompletionClosure(cpu, reference, [index]);
+				const expected = materializeCpuCompletionValues(cpu);
+				const number = index === null || index === false ? NaN : index as number;
+				const ieeeExpected = [0 + (number * 2) * 2, 0 + (2 * number) * 2, 0 + (number * 3) * 2, 0 + (number * 0.5) * 2];
+				for (let i = 0; i < expected.length; ++i) {
+					assert.ok(Object.is(actual[i], expected[i]), `${backend}: ${String(index)} at ${i}: ${String(actual[i])} != ${String(expected[i])}`);
+					assert.ok(Object.is(actual[i], ieeeExpected[i]), `${backend}: IEEE result at ${i} for ${String(index)}`);
+				}
+			}
+		}
+	});
+
+	test(`typed pointer scaling evaluates the dynamic index exactly once at O${optLevel}`, () => {
+		const source = `
+local pointer<const>: *u16 = 0
+local count = 0
+local function value()
+    count = count + 1
+    return count
+end
+local first = &pointer[value() * 2]
+local second = &pointer[2 * value()]
+return first, second, count`;
+		const image = linkTestSystemBlua32(compileLuaSource(source, 'pointer-effects.lua', optLevel));
+		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+			const { cpu } = createTestSystemCpu(image, backend);
+			assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+			assert.deepEqual(materializeCpuCompletionValues(cpu), [4, 8, 2]);
+		}
+	});
+
+	test(`typed pointer scaling preserves wrapped word addresses at O${optLevel}`, () => {
+		const source = `
+local pointer<const>: *u16 = ${TEST_RAM_BASE}
+return function(index)
+    pointer[index * 2] = 4660
+    return pointer[index * 2]
+end`;
+		const image = linkTestSystemBlua32(compileLuaSource(source, 'pointer-wrap.lua', optLevel));
+		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+			const { cpu, memory } = createTestSystemCpu(image, backend);
+			assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+			const closure = materializeCpuCompletionValues(cpu)[0] as Closure;
+			for (const index of [0, 2 ** 30, -(2 ** 30)]) {
+				runCompletionClosure(cpu, closure, [index]);
+				assert.deepEqual(materializeCpuCompletionValues(cpu), [4660]);
+				assert.equal(memory.readMappedU16LE(TEST_RAM_BASE), 4660);
+			}
+		}
+	});
+}
 
 function parseSource(source: string, path = 'struct_addressing.lua') {
 	const lexer = new LuaLexer(source, path);

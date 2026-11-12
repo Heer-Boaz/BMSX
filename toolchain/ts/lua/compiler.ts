@@ -4900,12 +4900,35 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				readOnly: base.readOnly,
 			};
 		}
+		// For a typed view, the layout supplies the outer stride multiplication.
+		// Consecutive positive power-of-two scales are exact in binary64 even for
+		// subnormals and overflow, so combine them before emitting the index.
+		// Other factors keep the source evaluation order and rounding unchanged.
+		let indexValue = indexExpression;
+		let scale = stride;
+		if (stride > 1 && stride <= 0x40000000 && (stride | 0) === stride
+			&& (stride & (stride - 1)) === 0 && indexExpression.kind === LuaSyntaxKind.BinaryExpression) {
+			const binary = indexExpression as LuaBinaryExpression;
+			if (binary.operator === LuaBinaryOperator.Multiply) {
+				let factor = this.evaluateCompileTimeNumber(binary.right);
+				let operand = binary.left;
+				if (factor === undefined) {
+					factor = this.evaluateCompileTimeNumber(binary.left);
+					operand = binary.right;
+				}
+				if (factor !== undefined && factor >= 1 && factor <= 0x40000000
+					&& (factor | 0) === factor && (factor & (factor - 1)) === 0) {
+					indexValue = operand;
+					scale *= factor;
+				}
+			}
+		}
 		const indexReg = this.allocTemp();
-		this.compileExpressionInto(indexExpression, indexReg, 1);
+		this.compileExpressionInto(indexValue, indexReg, 1);
 		let offsetReg = indexReg;
-		if (stride !== 1) {
+		if (scale !== 1) {
 			offsetReg = this.allocTemp();
-			this.emitABC(OpCode.MUL, offsetReg, indexReg, this.encodeConstOperand(this.program.constIndex(stride)), RK_C);
+			this.emitABC(OpCode.MUL, offsetReg, indexReg, this.encodeConstOperand(this.program.constIndex(scale)), RK_C);
 		}
 		const baseReg = this.emitOffsetAddress(base.baseReg, base.byteOffset);
 		const nextBaseReg = this.allocTemp();

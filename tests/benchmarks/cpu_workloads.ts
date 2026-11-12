@@ -20,6 +20,38 @@ export type CpuWorkload = {
 /** Identical ROMs for both languages and both execution backends. */
 export function* cpuWorkloads(iterations: number, optLevel: OptimizationLevel): Generator<CpuWorkload> {
 	const sources: Record<string, string> = {
+		pointer_scaled: `local pointer<const>: *u16 = ${DYNAMIC_RAM_BASE + 0x1000}
+local zero_pointer<const>: *u16 = 0
+local values = {0, -0.0, 4.9406564584124654e-324, -4.9406564584124654e-324,
+1.7976931348623157e308, -1.7976931348623157e308, 1/0, -1/0, 0/0, false}
+for i = 1, 10 do
+local x = values[i]
+local actual = &zero_pointer[x * 2]
+local reference = 0 + (x * 2) * 2
+if actual ~= reference and not (actual ~= actual and reference ~= reference) then
+__bmsx_error('scaled pointer mismatch')
+end
+if actual == 0 and 1 / actual ~= 1 / reference then
+__bmsx_error('scaled pointer zero sign mismatch')
+end
+end
+local total = 0
+for i = 1, ${iterations} do
+local index = i & 127
+pointer[index * 2] = i & 65535
+total = (total + pointer[2 * index]) & 65535
+end
+return total`,
+		arithmetic_identity: `local function operations(x)
+return x + 0, 0 + x, x - 0, 0 - x, x * 1, 1 * x, x / 1, x ^ 1
+end
+local total = 0
+for i = 1, ${iterations} do
+local a, b, c, d, e, f, g, h = operations(i & 127)
+total = (total + a + b + c + d + e + f + g + h) & 65535
+end
+local a, b, c, d, e, f, g, h = operations(-0.0)
+return total, 1 / a, 1 / b, 1 / c, 1 / d, 1 / e, 1 / f, 1 / g, 1 / h`,
 		registers: `local n = 1
 for i = 1, ${iterations} do n = ((n + 3) ~ (i << 2)) & 65535 end
 return n`,

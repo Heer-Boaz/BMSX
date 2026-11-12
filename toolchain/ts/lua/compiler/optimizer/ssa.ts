@@ -4,7 +4,6 @@ import { OpCode } from '../../../../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from '../../source_range';
 import { MAX_EXT_CONST } from '../../../../../machine/ts/spec/blua32/instruction_format';
 import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, isSkipInstruction, type Block } from '../control_flow';
-import type { ProgramConstant } from '../program';
 import type { Instruction, InstructionSet, OptimizationContext } from './index';
 import {
 	cloneDuplicatedInstruction,
@@ -60,8 +59,6 @@ const EMPTY_DEF_SLOTS: DefSlot[] = [];
 const RK_B = 1;
 const RK_C = 2;
 
-const inlineConstEquals = (constant: ConstValue | null, value: ProgramConstant): boolean =>
-	!!constant && constant.value === value;
 const SCCP_UNDEF = 0;
 const SCCP_CONST = 1;
 const SCCP_OVERDEFINED = 2;
@@ -165,18 +162,6 @@ const intersectImmediateDominator = (idom: number[], rpoIndex: number[], a: numb
 		}
 	}
 	return finger1;
-};
-
-const replaceWithUnm = (instruction: Instruction, dst: number, src: number): void => {
-	instruction.op = OpCode.UNM;
-	instruction.a = dst;
-	instruction.b = src;
-	instruction.c = 0;
-	instruction.format = 'ABC';
-	instruction.rkMask = 0;
-	instruction.target = null;
-	instruction.callProtoIndex = null;
-	instruction.symbolicReloc = undefined;
 };
 
 const replaceWithNop = (instruction: Instruction): void => {
@@ -1023,104 +1008,6 @@ const applyAvailableValueNumbering = (
 				const newVn = valueNumber[valueId];
 				addValue(newVn, valueId);
 			}
-		}
-	}
-};
-
-const simplifyAlgebraic = (instructions: Instruction[], context: OptimizationContext): void => {
-	const getInlineConst = (instruction: Instruction, field: 'b' | 'c'): ConstValue | null => {
-		const rkMaskBit = field === 'b' ? RK_B : RK_C;
-		const operand = field === 'b' ? instruction.b : instruction.c;
-		if ((instruction.rkMask & rkMaskBit) !== 0 && operand < 0) {
-			return constPoolValueForOptimization(context, -1 - operand);
-		}
-		return null;
-	};
-
-	const getRegisterOperand = (instruction: Instruction, field: 'b' | 'c'): number | null => {
-		const rkMaskBit = field === 'b' ? RK_B : RK_C;
-		const operand = field === 'b' ? instruction.b : instruction.c;
-		if ((instruction.rkMask & rkMaskBit) !== 0 && operand < 0) {
-			return null;
-		}
-		return operand;
-	};
-
-	const replaceWithOperand = (instruction: Instruction, field: 'b' | 'c', constant: ConstValue | null): void => {
-		if (constant) {
-			replaceWithConst(instruction, instruction.a, constant.value, context);
-			return;
-		}
-		const reg = getRegisterOperand(instruction, field);
-		if (reg || reg === 0) {
-			replaceWithMov(instruction, instruction.a, reg);
-		}
-	};
-
-	const replaceWithNegatedOperand = (instruction: Instruction, field: 'b' | 'c', constant: ConstValue | null): void => {
-		if (constant) {
-			if (constant.kind === ConstValueKind.Number) {
-				replaceWithConst(instruction, instruction.a, -constant.value, context);
-			}
-			return;
-		}
-		const reg = getRegisterOperand(instruction, field);
-		if (reg || reg === 0) {
-			replaceWithUnm(instruction, instruction.a, reg);
-		}
-	};
-
-	for (let i = 0; i < instructions.length; i += 1) {
-		const instruction = instructions[i];
-		switch (instruction.op) {
-			case OpCode.ADD: {
-				const bConst = getInlineConst(instruction, 'b');
-				const cConst = getInlineConst(instruction, 'c');
-				if (inlineConstEquals(bConst, 0)) {
-					replaceWithOperand(instruction, 'c', cConst);
-				} else if (inlineConstEquals(cConst, 0)) {
-					replaceWithOperand(instruction, 'b', bConst);
-				}
-				break;
-			}
-			case OpCode.SUB: {
-				const bConst = getInlineConst(instruction, 'b');
-				const cConst = getInlineConst(instruction, 'c');
-				if (inlineConstEquals(cConst, 0)) {
-					replaceWithOperand(instruction, 'b', bConst);
-				} else if (inlineConstEquals(bConst, 0)) {
-					replaceWithNegatedOperand(instruction, 'c', cConst);
-				}
-				break;
-			}
-			case OpCode.MUL: {
-				const bConst = getInlineConst(instruction, 'b');
-				const cConst = getInlineConst(instruction, 'c');
-				if (inlineConstEquals(bConst, 1)) {
-					replaceWithOperand(instruction, 'c', cConst);
-				} else if (inlineConstEquals(cConst, 1)) {
-					replaceWithOperand(instruction, 'b', bConst);
-				}
-				break;
-			}
-			case OpCode.DIV: {
-				const cConst = getInlineConst(instruction, 'c');
-				if (inlineConstEquals(cConst, 1)) {
-					const bConst = getInlineConst(instruction, 'b');
-					replaceWithOperand(instruction, 'b', bConst);
-				}
-				break;
-			}
-			case OpCode.POW: {
-				const cConst = getInlineConst(instruction, 'c');
-				if (inlineConstEquals(cConst, 1)) {
-					const bConst = getInlineConst(instruction, 'b');
-					replaceWithOperand(instruction, 'b', bConst);
-				}
-				break;
-			}
-			default:
-				break;
 		}
 	}
 };
@@ -2319,7 +2206,6 @@ export const applyGlobalOptimizations = (
 		}
 	}
 
-	simplifyAlgebraic(instructions, context);
 	let current: InstructionSet = { instructions, ranges };
 	const enableLoopOptimizations = true;
 	if (enableLoopOptimizations) {
