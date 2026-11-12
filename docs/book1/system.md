@@ -17,6 +17,32 @@ registers and pending work; main RAM and VRAM remain shared storage. This
 distinction matters when a cartridge resumes: restoring a drawing configuration
 does not restore pixels overwritten while the BIOS was using the GPU.
 
+## Simultaneous device boundaries {#sec-system-simultaneous-device-boundaries}
+
+Device operations advance independently on the system timebase. When two or
+more already-pending boundaries occur on the same system cycle, their effects
+are applied in the following order:
+
+1. GEO record processing;
+2. DMA burst completion;
+3. APU voice and output processing;
+4. GPU command processing and PCRTC timing;
+5. APU sample-memory transfer processing;
+6. SYSTEM control;
+7. GTE processing;
+8. IMGDEC processing.
+
+The GPU command and PCRTC boundaries share one timing domain; at the same
+cycle, GPU command processing precedes PCRTC timing. A boundary made
+pending by another boundary takes effect after its cause; the same priority
+then applies to boundaries still pending at that cycle. For example, GEO
+samples a record before a DMA burst completing on the same cycle publishes its
+destination words.
+
+This is the order in which simultaneous effects become visible. It is not a
+rule for awarding a shared bus, and it does not change the DMA channel
+arbitration or the duration of an admitted transfer.
+
 ## SYSTEM specifications {#sec-system-system-specifications}
 
 | Resource | Specification |

@@ -100,7 +100,8 @@ void DeviceScheduler::pushTimer(i64 deadline, uint8_t deviceKind, uint32_t gener
 	m_timerGenerations.push_back(generation);
 	while (index > 0) {
 		const size_t parent = (index - 1u) >> 1u;
-		if (m_timerDeadlines[parent] <= deadline) {
+		if (m_timerDeadlines[parent] < deadline ||
+			(m_timerDeadlines[parent] == deadline && m_timerDeviceKinds[parent] <= deviceKind)) {
 			break;
 		}
 		m_timerDeadlines[index] = m_timerDeadlines[parent];
@@ -127,10 +128,12 @@ void DeviceScheduler::removeTopTimer() {
 	size_t index = 0u;
 	while (index < (lastIndex >> 1u)) {
 		size_t child = (index << 1u) + 1u;
-		if (child + 1u < lastIndex && m_timerDeadlines[child + 1u] < m_timerDeadlines[child]) {
+		if (child + 1u < lastIndex && (m_timerDeadlines[child + 1u] < m_timerDeadlines[child] ||
+			(m_timerDeadlines[child + 1u] == m_timerDeadlines[child] && m_timerDeviceKinds[child + 1u] < m_timerDeviceKinds[child]))) {
 			child += 1u;
 		}
-		if (m_timerDeadlines[child] >= deadline) {
+		if (m_timerDeadlines[child] > deadline ||
+			(m_timerDeadlines[child] == deadline && m_timerDeviceKinds[child] >= deviceKind)) {
 			break;
 		}
 		m_timerDeadlines[index] = m_timerDeadlines[child];

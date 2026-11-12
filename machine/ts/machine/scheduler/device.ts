@@ -10,6 +10,8 @@ export const DEVICE_SERVICE_SYSTEM = 6;
 export const DEVICE_SERVICE_GTE = 7;
 export const DEVICE_SERVICE_IMGDEC = 8;
 
+// Equal-cycle device edges are serviced in this fixed device-kind order.
+// This does not determine ownership of any shared data bus.
 const DEVICE_SERVICE_KIND_COUNT = DEVICE_SERVICE_IMGDEC + 1;
 
 function nextTimerGeneration(value: number): number {
@@ -128,7 +130,8 @@ export class DeviceScheduler {
 		this.timerGenerations[index] = generation;
 		while (index > 0) {
 			const parent = (index - 1) >> 1;
-			if (this.timerDeadlines[parent]! <= deadline) {
+			if (this.timerDeadlines[parent]! < deadline ||
+				(this.timerDeadlines[parent] === deadline && this.timerDeviceKinds[parent]! <= deviceKind)) {
 				break;
 			}
 			this.timerDeadlines[index] = this.timerDeadlines[parent]!;
@@ -155,10 +158,12 @@ export class DeviceScheduler {
 		let index = 0;
 		while (index < (lastIndex >> 1)) {
 			let child = (index << 1) + 1;
-			if (child + 1 < lastIndex && this.timerDeadlines[child + 1]! < this.timerDeadlines[child]!) {
+			if (child + 1 < lastIndex && (this.timerDeadlines[child + 1]! < this.timerDeadlines[child]! ||
+				(this.timerDeadlines[child + 1] === this.timerDeadlines[child] && this.timerDeviceKinds[child + 1]! < this.timerDeviceKinds[child]!))) {
 				child += 1;
 			}
-			if (this.timerDeadlines[child]! >= deadline) {
+			if (this.timerDeadlines[child]! > deadline ||
+				(this.timerDeadlines[child] === deadline && this.timerDeviceKinds[child]! >= deviceKind)) {
 				break;
 			}
 			this.timerDeadlines[index] = this.timerDeadlines[child]!;

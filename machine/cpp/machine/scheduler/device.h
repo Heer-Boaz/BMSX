@@ -20,6 +20,8 @@ constexpr uint8_t DEVICE_SERVICE_APU_TRANSFER = 5;
 constexpr uint8_t DEVICE_SERVICE_SYSTEM = 6;
 constexpr uint8_t DEVICE_SERVICE_GTE = 7;
 constexpr uint8_t DEVICE_SERVICE_IMGDEC = 8;
+// Equal-cycle device edges are serviced in device-kind order, independently
+// of shared data-bus ownership.
 constexpr uint8_t DeviceServiceKindCount = DEVICE_SERVICE_IMGDEC + 1;
 
 class DeviceScheduler {

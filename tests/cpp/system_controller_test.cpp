@@ -7,6 +7,7 @@
 #include "machine/devices/gx/gpu_display.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
 #include "machine/devices/gx/gte.h"
+#include "machine/devices/geometry/contracts.h"
 #include "spec/blua32/builtin.h"
 #include "machine/machine.h"
 #include "machine/memory/memory.h"
@@ -1109,6 +1110,58 @@ void testRuntimeRestorePreservesInFlightFrameBudget() {
 	require(!runtime.vblank.tickCompleted(), "runtime restore prepares the next physical VBlank edge");
 }
 
+void testGeoDmaSameCycleRuntimeRestore() {
+	SystemRuntimeFixture fixture;
+	auto& runtime = fixture.runtime;
+	auto& machine = runtime.machine;
+	auto& memory = machine.memory;
+	const bmsx::u32 records = bmsx::DYNAMIC_RAM_BASE + 0x1000u;
+	const bmsx::u32 source = bmsx::DYNAMIC_RAM_BASE + 0x2000u;
+	for (bmsx::u32 i = 0; i < 29u; ++i) {
+		const bmsx::u32 record = records + i * bmsx::GEO_XFORM2_RECORD_BYTES;
+		for (bmsx::u32 offset = 0; offset < bmsx::GEO_XFORM2_RECORD_BYTES; offset += 4u) memory.writeU32(record + offset, 0);
+		memory.writeU32(record + bmsx::GEO_XFORM2_RECORD_DST1_INDEX_OFFSET, bmsx::GEO_INDEX_NONE);
+	}
+	memory.writeU32(source, 1u);
+	memory.writeMappedWord(bmsx::IO_GEO_SRC0, records);
+	memory.writeMappedWord(bmsx::IO_GEO_SRC1, records + 0x100u);
+	memory.writeMappedWord(bmsx::IO_GEO_SRC2, records + 0x200u);
+	memory.writeMappedWord(bmsx::IO_GEO_DST0, records + 0x300u);
+	memory.writeMappedWord(bmsx::IO_GEO_DST1, 0u);
+	memory.writeMappedWord(bmsx::IO_GEO_COUNT, 29u);
+	memory.writeMappedWord(bmsx::IO_GEO_PARAM0, 0u);
+	memory.writeMappedWord(bmsx::IO_GEO_PARAM1, 0u);
+	memory.writeMappedWord(bmsx::IO_GEO_STRIDE0, bmsx::GEO_XFORM2_RECORD_BYTES);
+	memory.writeMappedWord(bmsx::IO_GEO_STRIDE1, bmsx::GEO_VERTEX2_BYTES);
+	memory.writeMappedWord(bmsx::IO_GEO_STRIDE2, bmsx::GEO_XFORM2_MATRIX_BYTES);
+	memory.writeMappedWord(bmsx::IO_DMA0_READ_ADDR, source);
+	memory.writeMappedWord(bmsx::IO_DMA0_WRITE_ADDR, records + 28u * bmsx::GEO_XFORM2_RECORD_BYTES);
+	memory.writeMappedWord(bmsx::IO_DMA0_TRANSFER_COUNT, 26u);
+	memory.writeMappedWord(bmsx::IO_DMA0_CONTROL, bmsx::DMA_ROUTE_COPY);
+	memory.writeMappedWord(bmsx::IO_GEO_CMD, bmsx::IO_CMD_GEO_XFORM2_BATCH);
+	const auto advance = [&](bmsx::i64 target) {
+		while (machine.scheduler.nextDeadline() <= target) {
+			const auto deadline = machine.scheduler.nextDeadline();
+			machine.advanceDevices(static_cast<int>(deadline - machine.scheduler.nowCycles()));
+			while (machine.scheduler.hasDueTimer()) machine.runDeviceService(machine.scheduler.popDueTimer());
+		}
+		machine.advanceDevices(static_cast<int>(target - machine.scheduler.nowCycles()));
+	};
+	advance(6);
+	memory.writeMappedWord(bmsx::IO_DMA0_TRIGGER, bmsx::DMA_TRIGGER_START);
+	require(machine.dmaController.cpuBusHeld(), "DMA holds CPU during the GEO job");
+	advance(58);
+	require(machine.scheduler.nextDeadline() == 60, "GEO and DMA share the cycle 60 boundary");
+	const auto saved = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime));
+	advance(60);
+	const std::array<bmsx::u32, 3> first = {memory.readIoU32(bmsx::IO_GEO_STATUS), memory.readIoU32(bmsx::IO_GEO_FAULT), memory.readIoU32(bmsx::IO_IRQ_FLAGS)};
+	require(first[0] == bmsx::GEO_STATUS_DONE && first[1] == 0, "GEO reads the record before DMA writes it");
+	bmsx::applyRuntimeSaveState(runtime, bmsx::decodeRuntimeSaveState(saved, memory.ramByteCount(), machine.gxGpu.readVramSnapshotBytes().size()));
+	advance(60);
+	const std::array<bmsx::u32, 3> replay = {memory.readIoU32(bmsx::IO_GEO_STATUS), memory.readIoU32(bmsx::IO_GEO_FAULT), memory.readIoU32(bmsx::IO_IRQ_FLAGS)};
+	require(replay == first, "same-cycle GEO and DMA ordering survives runtime codec restore");
+}
+
 } // namespace
 
 int main() {
@@ -1130,6 +1183,7 @@ int main() {
 	testExternalClosureAdvancesToGteInterlockDeadline();
 	testExternalClosureVectorsPendingNmiThroughCpuEntry();
 	testRuntimeRestorePreservesInFlightFrameBudget();
+	testGeoDmaSameCycleRuntimeRestore();
 	testHostDeltaGrantsOneFractionallyRetainedMachineBudget();
 	return 0;
 }

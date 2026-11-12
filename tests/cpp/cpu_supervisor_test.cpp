@@ -933,6 +933,30 @@ void testDeviceSchedulerOwnsCpuSliceLifetime() {
 	require(!machine.scheduler.isCpuSliceActive(), "scheduler ends the CPU slice during stack unwinding");
 }
 
+void testDeviceSchedulerEqualDeadlinePriority() {
+	bmsx::test::Blua32TestImage systemImage = makeSupervisorSystemImage();
+	CpuTestMachine machine(std::move(systemImage));
+	const std::array<std::array<uint8_t, 4>, 3> orders = {{
+		{bmsx::DEVICE_SERVICE_IMGDEC, bmsx::DEVICE_SERVICE_DMA, bmsx::DEVICE_SERVICE_GPU, bmsx::DEVICE_SERVICE_GEO},
+		{bmsx::DEVICE_SERVICE_GEO, bmsx::DEVICE_SERVICE_GPU, bmsx::DEVICE_SERVICE_DMA, bmsx::DEVICE_SERVICE_IMGDEC},
+		{bmsx::DEVICE_SERVICE_DMA, bmsx::DEVICE_SERVICE_IMGDEC, bmsx::DEVICE_SERVICE_GEO, bmsx::DEVICE_SERVICE_GPU},
+	}};
+	for (const auto& order : orders) {
+		auto& scheduler = machine.scheduler;
+		scheduler.reset();
+		for (const auto kind : order) scheduler.scheduleDeviceService(kind, 10);
+		scheduler.scheduleDeviceService(bmsx::DEVICE_SERVICE_DMA, 5);
+		scheduler.cancelDeviceService(bmsx::DEVICE_SERVICE_DMA);
+		scheduler.scheduleDeviceService(bmsx::DEVICE_SERVICE_DMA, 10);
+		scheduler.advanceTo(10);
+		for (const auto kind : {bmsx::DEVICE_SERVICE_GEO, bmsx::DEVICE_SERVICE_DMA, bmsx::DEVICE_SERVICE_GPU, bmsx::DEVICE_SERVICE_IMGDEC}) {
+			require(scheduler.hasDueTimer(), "expected timer must remain due");
+			require(scheduler.popDueTimer() == kind, "equal deadlines use fixed device priority");
+		}
+		require(!scheduler.hasDueTimer(), "stale timers do not fire");
+	}
+}
+
 void testInstrumentedExecutionObservesCrossDomainCallAndReturn() {
 	bmsx::test::Blua32TestImage system;
 	system.text.resize(6u * bmsx::INSTRUCTION_BYTES);
@@ -1645,6 +1669,7 @@ int main() {
 	testCartridgeInstructionFetchRetainsExecSlot();
 	testBoundClosureRetainsCartridgeSocket();
 	testDeviceSchedulerOwnsCpuSliceLifetime();
+	testDeviceSchedulerEqualDeadlinePriority();
 	testInstrumentedExecutionObservesCrossDomainCallAndReturn();
 	testInstrumentedExecutionFenceStopsBeforePendingIrqDelivery();
 	testInstrumentedMaskableInterruptFenceDoesNotDelayPendingNmi();
