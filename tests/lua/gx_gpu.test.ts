@@ -1387,6 +1387,40 @@ test('GX-GPU drains a saturated executed prefix into retained backend VRAM', () 
 	assert.equal(gpu.lastFrameCommitted(), true);
 });
 
+test('GX-GPU resumes queued DMA ingress when a saturated command prefix is retired', () => {
+	for (const present of [false, true]) {
+		const { memory, gpu, scheduler } = createGpu();
+		for (let index = 0; index < GX_GPU_COMMAND_CAPACITY; index += 1) {
+			gpu.writeGp0(GX_GPU_GP0_FILL_RECTANGLE << 24);
+			gpu.writeGp0(0);
+			gpu.writeGp0(0x00010001);
+			completeGpuCommands(gpu);
+		}
+		if (present) gpu.presentReadyFrameOnVblankEdge();
+		const packet = [GX_GPU_GP0_FILL_RECTANGLE << 24, 0, 0x00010001];
+		for (let index = 0; index < 27; index += 1) {
+			memory.writeMappedDmaU32LE(IO_GX_GPU_GP0, packet[index % 3], MAPPED_BUS_MASTER_DMA
+				| (index === 26 ? MAPPED_BUS_DMA_BLOCK_END : 0));
+		}
+		let state = gpu.captureState();
+		assert.equal(state.gp0FifoWords.length, GX_GPU_COMMAND_FIFO_WORD_CAPACITY);
+		assert.equal(state.gp0DmaIngressWords.length, 11);
+		assert.equal(state.pendingCommandCycles, 0);
+		assert.equal(state.commandBuffer.executedCommandCount, GX_GPU_COMMAND_CAPACITY);
+		if (present) gpu.retirePresentedCommands(); else gpu.retireExecutedCommands();
+		state = gpu.captureState();
+		assert.ok(state.pendingCommandCycles > 0);
+		assert.equal(state.commandBuffer.commandCount, 1);
+		assert.equal(scheduler.nextDeadline() <= scheduler.currentNowCycles() + state.pendingCommandCycles, true);
+		completeGpuCommands(gpu);
+		state = gpu.captureState();
+		assert.equal(state.gp0DmaIngressWords.length, 0);
+		assert.equal(state.gp0FifoWords.length, 0);
+		assert.equal(state.commandBuffer.executedCommandCount, 9);
+		assert.notEqual(gpu.readStatus() & GX_GPU_STATUS_READY_TO_RECEIVE_DMA, 0);
+	}
+});
+
 test('GX-GPU reserves one maximal CPU upload and drains it before reusing word storage', () => {
 	const { gpu } = createGpu();
 	const commands = gpu.readDeviceOutput().commandBuffer;

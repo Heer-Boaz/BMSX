@@ -1633,6 +1633,8 @@ export class GxGpu {
 				this.gp0ImageLoadCommandWordStart -= retiredWords;
 			}
 		}
+		this.processGp0Pipeline(this.scheduler.currentNowCycles());
+		this.updateDynamicStatusBits();
 	}
 
 	public readDrawModeWord(): number {

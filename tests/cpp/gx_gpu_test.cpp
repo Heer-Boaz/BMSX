@@ -851,6 +851,42 @@ void testSaturatedCommandLogDrainsExecutedPrefixIntoRetainedBackendVram() {
 	require(gpu.lastFrameCommitted(), "GX-GPU command drain publishes materialized VRAM at the next VBlank");
 }
 
+void testRetiringSaturatedCommandPrefixResumesDmaIngress() {
+	for (const bool present : {false, true}) {
+		GpuHarness harness;
+		bmsx::GxGpu& gpu = harness.gpu;
+		for (size_t index = 0u; index < bmsx::GX_GPU_COMMAND_CAPACITY; ++index) {
+			gpu.writeGp0(bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u);
+			gpu.writeGp0(0u);
+			gpu.writeGp0(0x00010001u);
+			completeGpuCommands(harness);
+		}
+		if (present) gpu.presentReadyFrameOnVblankEdge();
+		const std::array<bmsx::u32, 3> packet{{bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u, 0u, 0x00010001u}};
+		for (size_t index = 0u; index < 27u; ++index) {
+			harness.memory.writeMappedDmaU32LE(bmsx::IO_GX_GPU_GP0, packet[index % 3u], bmsx::MAPPED_BUS_MASTER_DMA
+				| (index == 26u ? bmsx::MAPPED_BUS_DMA_BLOCK_END : 0u));
+		}
+		auto state = gpu.captureState();
+		require(state.gp0FifoWords.size() == bmsx::GX_GPU_COMMAND_FIFO_WORD_CAPACITY, "saturated command log retains full GP0 FIFO");
+		require(state.gp0DmaIngressWords.size() == 11u, "saturated command log retains DMA ingress suffix");
+		require(state.pendingCommandCycles == 0, "saturated command log has no pending command deadline");
+		require(state.commandBuffer.executedCommandCount == bmsx::GX_GPU_COMMAND_CAPACITY, "all saturated commands executed");
+		if (present) gpu.retirePresentedCommands(); else gpu.retireExecutedCommands();
+		state = gpu.captureState();
+		require(state.pendingCommandCycles > 0, "retirement schedules the first queued GP0 command");
+		require(state.commandBuffer.commandCount == 1u, "retirement accepts one queued command at its timing boundary");
+		require(harness.scheduler.nextDeadline() <= harness.scheduler.currentNowCycles() + state.pendingCommandCycles,
+			"resumed GP0 command has a scheduled deadline");
+		completeGpuCommands(harness);
+		state = gpu.captureState();
+		require(state.gp0DmaIngressWords.empty(), "resumed GPU consumes DMA ingress");
+		require(state.gp0FifoWords.empty(), "resumed GPU consumes GP0 FIFO");
+		require(state.commandBuffer.executedCommandCount == 9u, "all queued GP0 commands execute");
+		require((gpu.readStatus() & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) != 0u, "DMA ingress becomes ready");
+	}
+}
+
 void testCommandWordStorageReservesOneMaximalCpuUpload() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
@@ -5090,6 +5126,7 @@ int main() {
 	testInterlacedRenderCommandWords();
 	testCommandLogIsPresentableOnlyAfterVblankFrameSeal();
 	testSaturatedCommandLogDrainsExecutedPrefixIntoRetainedBackendVram();
+	testRetiringSaturatedCommandPrefixResumesDmaIngress();
 	testCommandWordStorageReservesOneMaximalCpuUpload();
 	testActivePolylineStateSurvivesSaturatedCommandDrain();
 	testPartialPresentationSnapshotDoesNotExposeQueuedCommands();

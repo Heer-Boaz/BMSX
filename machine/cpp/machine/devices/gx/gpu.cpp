@@ -1072,6 +1072,8 @@ void GxGpu::retireCommandPrefix(size_t retiredCommands) {
 			m_gp0ImageLoadCommandWordStart -= retiredWords;
 		}
 	}
+	processGp0Pipeline(m_scheduler.currentNowCycles());
+	updateDynamicStatusBits();
 }
 
 u32 GxGpu::readDrawModeWord() const {
