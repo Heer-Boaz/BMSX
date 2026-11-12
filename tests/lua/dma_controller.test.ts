@@ -51,6 +51,24 @@ function step(h: Fixture) {
 }
 const source = map.DYNAMIC_RAM_BASE + 0x1000, target = map.DYNAMIC_RAM_BASE + 0x4000;
 
+test('characterize RAM-to-RAM DMA completion in the runtime timing model', () => {
+ for (const words of [1, 2, 4, 16, 256]) {
+  const h=fixture();
+  for(let i=0;i<words;++i) h.memory.writeU32(source+i*4,0xcafe0000+i);
+  const start=h.scheduler.nowCycles;
+  program(h,source,target,words,io.DMA_ROUTE_COPY);
+  const deadline=h.scheduler.nextDeadline();
+  assert.equal(h.dma.cpuBusHeld(),true);
+  step(h);
+  for(let i=0;i<words;++i) assert.equal(h.memory.readMappedU32LE(target+i*4),0xcafe0000+i);
+  assert.equal(h.dma.cpuBusHeld(),false);
+  assert.equal(h.memory.readIoU32(io.IO_DMA0_STATUS),io.DMA_STATUS_DONE);
+  // The RTL test measures arbitration and pin activity with different block
+  // topology; this is the runtime's scheduled guest deadline, not host time.
+  console.log(`RAM_CHARACTERIZE candidate=runtime workload=dma_ram_copy words=${words} blocks=1 guest_cycles=${deadline-start}`);
+ }
+});
+
 for (const [address, words, duration] of [[source,[0x99aabbcc,0xddeeff00],6],
  [map.SYSTEM_ROM_BASE,[0x01020304,0x05060708],5], [map.CART_ROM_BASE,[0x11223344,0x55667788],23]] as const) {
  test(`copy route charges both bus sides at source ${address.toString(16)}`, () => {

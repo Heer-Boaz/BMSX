@@ -13,6 +13,7 @@
 #include "support/cartridge_fixture.h"
 #include <array>
 #include <limits>
+#include <iostream>
 #include <stdexcept>
 #include <vector>
 
@@ -55,6 +56,18 @@ struct Harness {
  }
 };
 constexpr u32 Source=DYNAMIC_RAM_BASE+0x1000, Target=DYNAMIC_RAM_BASE+0x4000;
+void characterizeRamCopy() {
+ for(u32 words:{1u,2u,4u,16u,256u}) {
+  Harness h;for(u32 i=0;i<words;++i)h.memory.writeU32(Source+4*i,0xcafe0000u+i);
+  const i64 start=h.scheduler.nowCycles();
+  h.program(Source,Target,words,DMA_ROUTE_COPY);
+  const i64 deadline=h.scheduler.nextDeadline();require(h.dma.cpuBusHeld(),"RAM DMA characterization owns the CPU bus");
+  h.step();
+  for(u32 i=0;i<words;++i)require(h.memory.readMappedU32LE(Target+4*i)==0xcafe0000u+i,"RAM DMA characterization copies every word");
+  require(!h.dma.cpuBusHeld()&&h.memory.readIoU32(IO_DMA0_STATUS)==DMA_STATUS_DONE,"RAM DMA characterization completes");
+  std::cout << "RAM_CHARACTERIZE candidate=runtime backend=cpp workload=dma_ram_copy words=" << words << " blocks=1 guest_cycles=" << deadline-start << '\n';
+ }
+}
 void testCopyTiming() {
  const u32 addresses[]={Source,SYSTEM_ROM_BASE,CART_ROM_BASE};
  const u32 words[][2]={{0x99aabbcc,0xddeeff00},{0x01020304,0x05060708},{0x11223344,0x55667788}};
@@ -201,6 +214,7 @@ void testPrimitivesAcrossTransportEdge() {
 }
 } // namespace
 int main() {
+ characterizeRamCopy();
  testAdmittedBurstAndSupervisorWriteInhibition();testPrimitivesAcrossTransportEdge();testCopyTiming();testBoundedBurstsAndForwardOverlap();testMemoryExcludesConsoleMmio();testFixedGpuAndRawRegisters();
  testGpuPacketAcrossBursts();testFixedInputRoutes();testDecoderToGpuIntersectionAndRestore();testStopAndEmptyJob();testRoundRobinAndSupervisorBoundary();
  return 0;

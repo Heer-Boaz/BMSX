@@ -5,6 +5,7 @@
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
 #include "spec/bmsx/io.h"
+#include "spec/blua32/memory_access_kind.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
@@ -367,10 +368,89 @@ void terminalSpanStartsWithOneCycle(int count, bool displaced) {
 		requireParity(native, scalar);
 	}
 }
+
+// Alongside the pin-level candidate, report actual interpreter/native guest
+// charges for the same public RAM operations. Pin clocks are not CPU prices.
+void characterizeRamCharges() {
+	for (int count : {0, 1, 4, 16, 256}) {
+		const auto image = wordLoop(count); CpuMachine native(image), scalar(image, true);
+		const u32 pc = native.rom.textAddress + 3u * INSTRUCTION_BYTES;
+		for (auto* m : {&native, &scalar}) {
+			auto& frame = *m->cpu.activeThread()->frameAtDepth(0);
+			frame.registers[0] = valueNumber(DYNAMIC_RAM_BASE);
+			for (int i = 0; i < count; ++i) frame.registers[8 + i] = valueNumber(0xcafe0000u + i);
+			for (int visit = 0; visit < 12; ++visit) {
+				for (int i = 0; i < std::max(count, 1); ++i) m->memory.writeMappedU32LE(DYNAMIC_RAM_BASE + 4u * i, 0xa5a5a5a5u);
+				m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], pc);
+				m->cpu.runUntilDepth(0, 1);
+				for (int i = 0; i < count; ++i) require(m->memory.readMappedU32LE(DYNAMIC_RAM_BASE + 4u * i) == 0xcafe0000u + static_cast<u32>(i), "counted RAM characterization writes every word on every visit");
+				if (count == 0) require(m->memory.readMappedU32LE(DYNAMIC_RAM_BASE) == 0xa5a5a5a5u, "empty counted write leaves the target untouched");
+			}
+		}
+		require(1 - native.cpu.instructionBudgetRemaining == 1 - scalar.cpu.instructionBudgetRemaining, "native/interpreter counted guest charges agree");
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		const auto& entry = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+		require(static_cast<bool>(entry), "counted RAM characterization produces a native entry");
+#endif
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		const char* mode = "cpp_native_enabled";
+#else
+		const char* mode = "cpp_native_off";
+#endif
+		std::cout << "RAM_CHARACTERIZE candidate=runtime backend=" << mode << " workload=cpu_counted_u32_write words=" << count << " guest_cycles=" << 1 - native.cpu.instructionBudgetRemaining << '\n';
+		std::cout << "RAM_CHARACTERIZE candidate=runtime backend=cpp_instrumented_interpreter workload=cpu_counted_u32_write words=" << count << " guest_cycles=" << 1 - scalar.cpu.instructionBudgetRemaining << '\n';
+	}
+	for (OpCode op : {OpCode::STORE_MEM, OpCode::LOAD_MEM}) for (MemoryAccessKind kind : {MemoryAccessKind::U8, MemoryAccessKind::U16LE, MemoryAccessKind::U32LE, MemoryAccessKind::F64LE}) {
+		test::Blua32TestImage image; image.text.resize(2 * INSTRUCTION_BYTES);
+		writeInstruction(image.text, 0, static_cast<u8>(op), 1, 0, static_cast<u8>(kind));
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 2}};
+		CpuMachine native(image), scalar(image, true);
+		for (auto* m : {&native, &scalar}) {
+			auto& frame = *m->cpu.activeThread()->frameAtDepth(0);
+			frame.registers[0] = valueNumber(DYNAMIC_RAM_BASE);
+			for (int visit = 0; visit < 12; ++visit) {
+				if (op == OpCode::LOAD_MEM) {
+					frame.registers[1] = valueNumber(-123);
+					if (kind == MemoryAccessKind::F64LE) m->memory.writeMappedF64LE(DYNAMIC_RAM_BASE, 17);
+					else m->memory.writeMappedU32LE(DYNAMIC_RAM_BASE, 17);
+				} else {
+					frame.registers[1] = valueNumber(17);
+					m->memory.writeMappedU32LE(DYNAMIC_RAM_BASE, 0xa5a5a5a5);
+					m->memory.writeMappedU32LE(DYNAMIC_RAM_BASE + 4, 0xa5a5a5a5);
+				}
+				m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
+				m->cpu.runUntilDepth(0, 1);
+				if (op == OpCode::LOAD_MEM) require(frame.registers[1] == valueNumber(17), "scalar RAM load replaces the sentinel register");
+				else if (kind == MemoryAccessKind::F64LE) {
+					require(m->memory.readMappedF64LE(DYNAMIC_RAM_BASE) == 17 && m->memory.readMappedU32LE(DYNAMIC_RAM_BASE) == 0
+						&& m->memory.readMappedU32LE(DYNAMIC_RAM_BASE + 4) == 0x40310000u, "F64 RAM store replaces both sentinel words");
+				} else {
+					const u32 expected = kind == MemoryAccessKind::U8 ? 0xa5a5a511u : kind == MemoryAccessKind::U16LE ? 0xa5a50011u : 17u;
+					require(m->memory.readMappedU32LE(DYNAMIC_RAM_BASE) == expected && m->memory.readMappedU32LE(DYNAMIC_RAM_BASE + 4) == 0xa5a5a5a5u,
+						"scalar RAM store replaces only the addressed bytes");
+				}
+			}
+		}
+		require(native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining, "native/interpreter scalar guest charges agree");
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		const auto& entry = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+		require(static_cast<bool>(entry), "scalar RAM characterization produces a native entry");
+#endif
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		const char* mode = "cpp_native_enabled";
+#else
+		const char* mode = "cpp_native_off";
+#endif
+		for (auto [name, m] : {std::pair{mode, &native}, std::pair{"cpp_instrumented_interpreter", &scalar}})
+			std::cout << "RAM_CHARACTERIZE candidate=runtime backend=" << name << " workload=cpu_scalar_" << (op == OpCode::STORE_MEM ? "write" : "read") << " kind=" << static_cast<int>(kind) << " guest_cycles=" << 1 - m->cpu.instructionBudgetRemaining << '\n';
+	}
+}
 } // namespace
 
 int main() {
 	try {
+		characterizeRamCharges();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		require(!nativeBlockSupports(static_cast<u8>(OpCode::WIDE)), "WIDE is a decode prefix");
 		for (size_t op = 1; op < OPCODE_COUNT; ++op) require(nativeBlockSupports(op), "every executable BLua32 opcode is admitted by native codegen");

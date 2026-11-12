@@ -43,11 +43,15 @@ module dma_controller_memory_integration_tb;
         .req_data_timeout_enable(dma_timeout_enable),.req_data_wait_last(dma_wait_last),
         .rsp_valid(rsp_valid[1]),.rsp_timeout(rsp_timeout[1]),.rsp_rdata(rsp_rdata[63:32]));
     assign dma_ready=req_ready[1];
-    wire [2:0] req_valid={1'b0,dma_valid,1'b0},req_write={1'b0,dma_write,1'b0},
+    // A CPU-like bus producer, not a complete CPU or an instruction-timing model.
+    reg cpu_valid=0,cpu_write=0,must_begin_dma_locked=0;
+    reg [31:0] cpu_address=0,cpu_wdata=0,cpu_access=0;
+    reg [2:0] cpu_size=4;
+    wire [2:0] req_valid={1'b0,dma_valid,cpu_valid},req_write={1'b0,dma_write,cpu_write},
         req_hold={1'b0,dma_hold,1'b0};
-    wire [95:0] req_address={32'd0,dma_address,32'd0},req_wdata={32'd0,dma_wdata,32'd0},
-        req_access={32'd0,dma_access,32'd0};
-    wire [8:0] req_size_bytes={3'd4,dma_size,3'd4};
+    wire [95:0] req_address={32'd0,dma_address,cpu_address},req_wdata={32'd0,dma_wdata,cpu_wdata},
+        req_access={32'd0,dma_access,cpu_access};
+    wire [8:0] req_size_bytes={3'd4,dma_size,cpu_size};
     wire [23:0] req_bus_signals={8'd0,dma_signals,8'd0};
     wire [2:0] req_data_timeout_enable={1'b0,dma_timeout_enable,1'b0};
     wire [11:0] req_be_n={4'd0,dma_be,4'd0};
@@ -77,12 +81,15 @@ module dma_controller_memory_integration_tb;
     is41lv16100_pair_model memory(.clk(clk),.power_reset_n(power_reset_n),.ma(ma),.md(md),
         .ras_n(mras_n),.cas_n(mcas_n),.we_n(mwe_n),.oe_n(moe_n));
 
-    integer blocks=0,transactions=0,irq0=0,irq1=0,cycles=0;
+    integer blocks=0,transactions=0,irq0=0,irq1=0,cycles=0,clock_count=0,dma_start_clock=0;
+    integer last_cpu_admission_wait=0,last_cpu_submitted=0,last_cpu_response_elapsed=0;
     reg prev_active=0;
     reg [3:0] block_order=0;
     always @(posedge clk) if(reset_n && power_reset_n) begin
+        clock_count<=clock_count+1;
         prev_active<=block_active;
         if(block_active && !prev_active) begin
+            if(blocks==0) dma_start_clock=clock_count;
             block_order<={block_order[2:0],active_channel}; blocks<=blocks+1;
             if(active_channel && !request_lines[11]) $fatal(1,"Channel 1 bypassed its request gate");
         end
@@ -91,6 +98,7 @@ module dma_controller_memory_integration_tb;
             $fatal(1,"Unexpected fabric fault/timeout");
         if(local_valid || cart_valid || sys_bus_request) $fatal(1,"RAM copy selected external device");
         if(irq_raise[0]) begin
+            $display("RAM_CHARACTERIZE candidate=CORE_closed_page workload=dma_channel0_two_blocks_with_cpu_and_channel1 words=4 read_and_write=8 first_block_to_irq_clocks=%0d",clock_count-dma_start_clock);
             if(dma.status[0]!==2 || dma.count[0]!==0 || dma.read_address[0]!==32'h08020010 ||
                 dma.write_address[0]!==32'h08030010) $fatal(1,"Channel 0 IRQ before publication");
             irq0<=irq0+1;
@@ -101,6 +109,47 @@ module dma_controller_memory_integration_tb;
             irq1<=irq1+1;
         end
     end
+    // Clock counts span producer assertion to observed response. They include
+    // this fixture's sequential handshakes and any refresh/arbitration; they
+    // are not a measured CPU-instruction latency or a proposed guest tariff.
+    task automatic cpu_scalar(input bit writing,input [2:0] size,input [31:0] address,
+                              input [31:0] value,input [31:0] expected);
+        integer submitted;
+        begin
+            @(negedge clk);
+            submitted=clock_count;
+            last_cpu_submitted=submitted;
+            cpu_valid=1;cpu_write=writing;cpu_size=size;cpu_address=address;cpu_wdata=value;
+            if(must_begin_dma_locked && !(block_locked && core.locked_owner==1))
+                $fatal(1,"CPU request was not submitted while DMA owned CORE");
+            cpu_access=(writing ? 32'h2 : 32'h1) | (size==1 ? 32'h100 : size==2 ? 32'h200 : 32'h400);
+            do @(posedge clk); while(!req_ready[0]);
+            if(must_begin_dma_locked && block_locked && core.locked_owner==1)
+                $fatal(1,"CORE admitted CPU while DMA held the block");
+            @(negedge clk);cpu_valid=0;
+            must_begin_dma_locked=0;
+            last_cpu_admission_wait=clock_count-submitted;
+            while(!rsp_valid[0]) @(negedge clk);
+            last_cpu_response_elapsed=clock_count-submitted;
+            if(rsp_fault_code[31:0]!==0 || rsp_timeout[0] || (!writing && rsp_rdata[31:0]!==expected))
+                $fatal(1,"CPU scalar addr=%h size=%0d write=%b data=%h fault=%h",address,size,writing,rsp_rdata[31:0],rsp_fault_code[31:0]);
+        end
+    endtask
+    task automatic cpu_words(input integer words);
+        integer i,start,refresh_start,span_start,transaction_clocks,span;
+        begin
+            start=clock_count;refresh_start=memory.refreshes;span_start=start;transaction_clocks=0;
+            for(i=0;i<words;i=i+1) begin
+                cpu_scalar(1,4,32'h080c0000+4*i,32'hcafe0000+i,0);
+                if(i==0) span_start=last_cpu_submitted;
+                transaction_clocks=transaction_clocks+last_cpu_response_elapsed;
+            end
+            span=words==0 ? 0 : clock_count-span_start;
+            $display("RAM_CHARACTERIZE candidate=CORE_closed_page workload=cpu_sequential_u32_write words=%0d fixture_elapsed=%0d first_assertion_to_last_response=%0d transaction_clocks=%0d producer_gaps=%0d refreshes=%0d",words,clock_count-start,span,transaction_clocks,span-transaction_clocks,memory.refreshes-refresh_start);
+            for(i=0;i<words;i=i+1)
+                cpu_scalar(0,4,32'h080c0000+4*i,0,32'hcafe0000+i);
+        end
+    endtask
     task automatic wr(input bit ch,input [2:0] idx,input [31:0] data);
         begin
             @(negedge clk);access_valid=1;access_write=1;access_channel=ch;access_index=idx;access_wdata=data;
@@ -116,7 +165,7 @@ module dma_controller_memory_integration_tb;
             @(negedge clk);access_valid=0;
         end
     endtask
-    integer k;
+    integer k,start,refresh_start;
     initial begin #5000000; $fatal(1,"Integration watchdog"); end
     initial begin
         #1;
@@ -128,6 +177,37 @@ module dma_controller_memory_integration_tb;
         end
         repeat(8) @(negedge clk);power_reset_n=1;reset_n=1;
         wait(memory_ready);
+        start=clock_count;
+        cpu_scalar(1,1,32'h080c0020,32'hab,0);
+        $display("RAM_CHARACTERIZE candidate=CORE_closed_page workload=cpu_u8_write fixture_elapsed=%0d assertion_to_response=%0d",clock_count-start,last_cpu_response_elapsed);start=clock_count;
+        cpu_scalar(0,1,32'h080c0020,0,32'hab);
+        $display("RAM_CHARACTERIZE candidate=CORE_closed_page workload=cpu_u8_read fixture_elapsed=%0d assertion_to_response=%0d",clock_count-start,last_cpu_response_elapsed);start=clock_count;
+        cpu_scalar(1,2,32'h080c0022,32'hcdef,0);
+        $display("RAM_CHARACTERIZE candidate=CORE_closed_page workload=cpu_u16_write fixture_elapsed=%0d assertion_to_response=%0d",clock_count-start,last_cpu_response_elapsed);start=clock_count;
+        cpu_scalar(0,2,32'h080c0022,0,32'hcdef);
+        $display("RAM_CHARACTERIZE candidate=CORE_closed_page workload=cpu_u16_read fixture_elapsed=%0d assertion_to_response=%0d",clock_count-start,last_cpu_response_elapsed);start=clock_count;
+        cpu_scalar(1,4,32'h080c0028,32'h12345678,0);
+        $display("RAM_CHARACTERIZE candidate=CORE_closed_page workload=cpu_u32_write fixture_elapsed=%0d assertion_to_response=%0d",clock_count-start,last_cpu_response_elapsed);start=clock_count;
+        cpu_scalar(0,4,32'h080c0028,0,32'h12345678);
+        $display("RAM_CHARACTERIZE candidate=CORE_closed_page workload=cpu_u32_read fixture_elapsed=%0d assertion_to_response=%0d",clock_count-start,last_cpu_response_elapsed);
+        // Raw bus capability only: BLua aligned scalar instructions reject
+        // these addresses before issuing a request.
+        start=clock_count;
+        cpu_scalar(1,2,32'h080c0023,32'hcdef,0);
+        cpu_scalar(0,2,32'h080c0023,0,32'hcdef);
+        cpu_scalar(1,4,32'h080c0029,32'h12345678,0);
+        cpu_scalar(0,4,32'h080c0029,0,32'h12345678);
+        $display("RAM_CHARACTERIZE candidate=CORE_closed_page workload=raw_unaligned_u16_u32_write_read operations=4 fixture_elapsed=%0d",clock_count-start);
+        // This represents the public F64 transport as two x32 bus requests;
+        // there is no integrated F64 CPU instruction producer in this fixture.
+        start=clock_count;
+        cpu_scalar(1,4,32'h080c0100,32'h00000000,0);
+        cpu_scalar(1,4,32'h080c0104,32'h40310000,0);
+        $display("RAM_CHARACTERIZE candidate=CORE_closed_page workload=f64_pair_write words=2 fixture_elapsed=%0d",clock_count-start);start=clock_count;
+        cpu_scalar(0,4,32'h080c0100,0,32'h00000000);
+        cpu_scalar(0,4,32'h080c0104,0,32'h40310000);
+        $display("RAM_CHARACTERIZE candidate=CORE_closed_page workload=f64_pair_read words=2 fixture_elapsed=%0d",clock_count-start);
+        cpu_words(0);cpu_words(1);cpu_words(4);cpu_words(16);cpu_words(256);
         wr(0,0,32'h08020000);wr(0,1,32'h08030000);wr(0,2,4);wr(0,3,32'h403);
         wr(1,0,32'h08021000);wr(1,1,32'h08031000);wr(1,2,4);wr(1,3,32'h42f);
         wr(1,5,1);rd(1,4,1);
@@ -140,9 +220,20 @@ module dma_controller_memory_integration_tb;
         repeat(6) @(negedge clk);if(blocks!=0) $fatal(1,"Admission inhibit ignored");
         admission_inhibit=0;
         wait(block_active);if(active_channel!==0) $fatal(1,"Gated channel admitted first");
-        repeat(4) @(negedge clk);
-        if(blocks!=1 || active_channel!==0) $fatal(1,"Request gate did not hold second channel");
-        request_lines[11]=1;
+        fork
+            begin
+                wait(block_locked && core.locked_owner==1);
+                must_begin_dma_locked=1;
+                start=clock_count;refresh_start=memory.refreshes;
+                cpu_scalar(0,4,32'h080c0000,0,32'hcafe0000);
+                $display("RAM_CHARACTERIZE candidate=CORE_closed_page workload=cpu_read_contending_dma fixture_elapsed=%0d assertion_to_response=%0d admission_wait=%0d refreshes=%0d",clock_count-start,last_cpu_response_elapsed,last_cpu_admission_wait,memory.refreshes-refresh_start);
+            end
+            begin
+                repeat(4) @(negedge clk);
+                if(blocks!=1 || active_channel!==0) $fatal(1,"Request gate did not hold second channel");
+                request_lines[11]=1;
+            end
+        join
         cycles=0;
         while(irq0!=1 || irq1!=1) begin
             @(negedge clk);cycles=cycles+1;
