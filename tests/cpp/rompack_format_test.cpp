@@ -54,8 +54,14 @@ int main() {
 	std::array<bmsx::u8, bmsx::INSTRUCTION_BYTES> instructionBytes{};
 	bmsx::writeInstructionWord(instructionBytes, 0, instructionWord);
 	if (instructionBytes != std::array<bmsx::u8, bmsx::INSTRUCTION_BYTES>{0xffu, 0xffu, 0xffu, 0xffu}) {
-		throw std::runtime_error("BLua32 instruction word was not written big-endian");
+		throw std::runtime_error("BLua32 instruction word was not written correctly");
 	}
+	bmsx::writeInstructionWord(instructionBytes, 0, 0x78563412u);
+	if (instructionBytes != std::array<bmsx::u8, bmsx::INSTRUCTION_BYTES>{0x12u, 0x34u, 0x56u, 0x78u}
+		|| bmsx::readInstructionWord(instructionBytes, 0) != 0x78563412u) {
+		throw std::runtime_error("BLua32 instruction word byte order is not little-endian");
+	}
+	bmsx::writeInstructionWord(instructionBytes, 0, instructionWord);
 	if (bmsx::readInstructionWord(instructionBytes, 0) != instructionWord) {
 		throw std::runtime_error("BLua32 instruction word did not round-trip");
 	}

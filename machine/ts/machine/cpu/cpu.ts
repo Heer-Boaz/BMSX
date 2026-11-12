@@ -1303,7 +1303,7 @@ export class CPU implements MappedPageInvalidator {
 		let wideA = 0;
 		let wideB = 0;
 		let wideC = 0;
-		const sourceWord = this.memory.readMappedBusU32BE(pc, this.executionBusSignals);
+		const sourceWord = this.memory.readMappedBusU32LE(pc, this.executionBusSignals);
 		if (this.memory.readBusFaultSequence() !== faultSequence) {
 			this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
 			return false;
@@ -1320,7 +1320,7 @@ export class CPU implements MappedPageInvalidator {
 			wideA = (sourceWord >>> 12) & 0x3f;
 			wideB = (sourceWord >>> 6) & 0x3f;
 			wideC = sourceWord & 0x3f;
-			bodyWord = this.memory.readMappedBusU32BE(
+			bodyWord = this.memory.readMappedBusU32LE(
 				(pc + INSTRUCTION_BYTES) >>> 0,
 				this.executionBusSignals,
 			);

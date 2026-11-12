@@ -953,10 +953,10 @@ void partialCodeWritesRetainOtherDecodedStarts() {
 		auto& page = *cpu.activeThread()->frameAtDepth(0)->decodedPage;
 		require(page.refreshState[0] == 0u && page.refreshState[8] == 0u, "both independently writable instructions are cached");
 		writeInstruction(code, 0, static_cast<u8>(OpCode::K0), 0, 0, 0);
-		machine.memory.writeMappedU8(pc + 1u, code[1]);
+		machine.memory.writeMappedU8(pc + 2u, code[2]);
 		require(page.refreshState[0] == DECODED_REFRESH_DECODE && page.refreshState[8] == 0u, "a byte write retires only its decoded dependencies");
 		writeInstruction(code, 8, static_cast<u8>(OpCode::KM1), 1, 0, 0);
-		machine.memory.writeMappedU16LE(pc + 8u * INSTRUCTION_BYTES, readLE16(code.data() + 8u * INSTRUCTION_BYTES));
+		machine.memory.writeMappedU16LE(pc + 8u * INSTRUCTION_BYTES + 2u, readLE16(code.data() + 8u * INSTRUCTION_BYTES + 2u));
 		require(page.refreshState[8] == DECODED_REFRESH_DECODE && page.refreshState[4] == 0u, "a second write before re-decode still invalidates its independent cached instruction");
 		require(page.refreshState[5] == 0u && page.refreshState[6] == 0u && page.refreshState[7] == 0u, "ordinary predecessors do not consume the rewritten instruction's source words");
 		require(cpu.runUntilDepth(0, 10) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0, "partial code writes preserve exact guest charges");
@@ -1001,7 +1001,7 @@ void sourceAndFusionDependenciesRemainSeparate() {
 			if (phase == 0) {
 				machine.memory.writeBytes(pc, code.data(), code.size());
 			} else {
-				machine.memory.writeMappedU8(pc + bodyWord * INSTRUCTION_BYTES + 1u, code[bodyWord * INSTRUCTION_BYTES + 1u]);
+				machine.memory.writeMappedU8(pc + bodyWord * INSTRUCTION_BYTES + 2u, code[bodyWord * INSTRUCTION_BYTES + 2u]);
 				const auto& page = cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.at(pc & ~MAPPED_PAGE_BYTE_MASK);
 				require(page.refreshState[DECODED_PAGE_WORDS - headWords] == DECODED_REFRESH_FUSION, "successor writes dirty fusion eligibility, not the unchanged head's source decode");
 			}
@@ -1041,7 +1041,7 @@ void changedWideFusionBodyInvalidatesItsCrossPageHead() {
 			require(page.words[DECODED_PAGE_WORDS - 2u].dispatchOp == static_cast<u8>(DecodedDispatchOp::FusedAddShl), "normal execution actually cached the four-word fusion");
 		}
 		writeInstruction(code, 3, static_cast<u8>(OpCode::BXOR), 4, 3, 2);
-		machine.memory.writeMappedU8(pc + 3u * INSTRUCTION_BYTES + 1u, code[3u * INSTRUCTION_BYTES + 1u]);
+		machine.memory.writeMappedU8(pc + 3u * INSTRUCTION_BYTES + 2u, code[3u * INSTRUCTION_BYTES + 2u]);
 		require(cpu.runUntilDepth(0, 3) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0, "a changed last fusion word preserves the exact charge");
 		require(cpu.readFrameRegister(0, 4) == valueNumber(4), "the fourth word invalidates its fused start three words earlier in the preceding page");
 	}
@@ -1078,10 +1078,10 @@ void writableCodeWatchesBelongToTheirPhysicalSocket() {
 			pages[slot] = cpu.activeThread()->frameAtDepth(0)->decodedPage;
 		}
 		writeInstruction(code, 0, static_cast<u8>(OpCode::K0), 0, 0, 0);
-		memory.cartridgeController().writeU8(CART_RAM_BASE + 1u, code[1], mappedBusSignalsForCartridgeSlot(1u));
+		memory.cartridgeController().writeU8(CART_RAM_BASE + 2u, code[2], mappedBusSignalsForCartridgeSlot(1u));
 		require(pages[0]->refreshState[0] == 0u && pages[1]->refreshState[0] == DECODED_REFRESH_DECODE, "socket-local word invalidation does not retire the other socket's decode");
 		writeInstruction(code, 0, static_cast<u8>(OpCode::KM1), 0, 0, 0);
-		memory.cartridgeController().writeU16(CART_RAM_BASE, readLE16(code.data()), mappedBusSignalsForCartridgeSlot(0u));
+		memory.cartridgeController().writeU16(CART_RAM_BASE + 2u, readLE16(code.data() + 2u), mappedBusSignalsForCartridgeSlot(0u));
 		for (u32 slot = 0; slot < CARTRIDGE_SLOT_COUNT; ++slot) {
 			memory.writeMappedU32LE(IO_CART_SELECT, slot);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, system.functionAddresses[0], CART_RAM_BASE);

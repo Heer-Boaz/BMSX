@@ -5,7 +5,7 @@ import {createDecodedInstructionPage} from '../../machine/ts/machine/cpu/executi
 const cpu:any=Object.create(CPU.prototype),page=createDecodedInstructionPage(false,null,0);
 const frame:any={executionImage:{executionDomainId:0,globalSlots:new Uint32Array(1),systemGlobalSlots:new Uint32Array(1)}};
 let source=0,body=0,pc=0;cpu.executionBusSignals=0;
-cpu.memory={readBusFaultSequence:()=>0,readMappedBusU32BE:(address:number)=>address===pc?source:body};
+cpu.memory={readBusFaultSequence:()=>0,readMappedBusU32LE:(address:number)=>address===pc?source:body};
 let seed=0x8ab42c31;function random(){seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;return seed>>>0;}
 function hex(v:number){return (v>>>0).toString(16).padStart(8,'0');}
 const count=16384;process.stdout.write(`${count}\n`);

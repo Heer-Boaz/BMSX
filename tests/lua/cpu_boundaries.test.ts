@@ -326,11 +326,11 @@ test('partial code writes retain unrelated decoded starts and the page watch', (
 		assert.equal(page.refreshState[0], 0);
 		assert.equal(page.refreshState[8], 0);
 		writeInstruction(code, 0, OpCode.K0, 0, 0, 0);
-		memory.writeMappedU8(pc + 1, code[1]);
+		memory.writeMappedU8(pc + 2, code[2]);
 		assert.equal(page.refreshState[0], DECODED_REFRESH_DECODE);
 		assert.equal(page.refreshState[8], 0, 'unrelated cached start remains usable');
 		writeInstruction(code, 8, OpCode.KM1, 1, 0, 0);
-		memory.writeMappedU16LE(pc + 8 * INSTRUCTION_BYTES, readLE16(code, 8 * INSTRUCTION_BYTES));
+		memory.writeMappedU16LE(pc + 8 * INSTRUCTION_BYTES + 2, readLE16(code, 8 * INSTRUCTION_BYTES + 2));
 		assert.equal(page.refreshState[8], DECODED_REFRESH_DECODE, 'second write before re-decode must remain watched');
 		assert.equal(page.refreshState[4], 0);
 		assert.equal(cpu.runUntilDepth(0, 10), RunResult.Yielded);
@@ -367,7 +367,7 @@ test('the fourth word of a cross-page WIDE fusion invalidates its head', () => {
 			assert.equal(page.dispatchOps[DECODED_PAGE_WORDS - 2], DecodedDispatchOp.FusedAddShl);
 		}
 		writeInstruction(code, 3, OpCode.BXOR, 4, 3, 2);
-		memory.writeMappedU8(pc + 3 * INSTRUCTION_BYTES + 1, code[3 * INSTRUCTION_BYTES + 1]);
+		memory.writeMappedU8(pc + 3 * INSTRUCTION_BYTES + 2, code[3 * INSTRUCTION_BYTES + 2]);
 		assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
 		assert.equal(cpu.instructionBudgetRemaining, 0);
 		assert.equal(cpu.readFrameRegister(0, 4), 4);
@@ -405,11 +405,11 @@ test('writable code watches belong to the physical cartridge socket', () => {
 			pages.push(cpu.rootThread.frameAtDepth(0).decodedPage!);
 		}
 		writeInstruction(code, 0, OpCode.K0, 0, 0, 0);
-		memory.cartridgeController.writeU8(CART_RAM_BASE + 1, code[1], mappedBusSignalsForCartridgeSlot(1));
+		memory.cartridgeController.writeU8(CART_RAM_BASE + 2, code[2], mappedBusSignalsForCartridgeSlot(1));
 		assert.equal(pages[0].refreshState[0], 0);
 		assert.equal(pages[1].refreshState[0], DECODED_REFRESH_DECODE);
 		writeInstruction(code, 0, OpCode.KM1, 0, 0, 0);
-		memory.cartridgeController.writeU16(CART_RAM_BASE, readLE16(code, 0), mappedBusSignalsForCartridgeSlot(0));
+		memory.cartridgeController.writeU16(CART_RAM_BASE + 2, readLE16(code, 2), mappedBusSignalsForCartridgeSlot(0));
 		for (const slot of [0, 1] as const) {
 			memory.writeMappedU32LE(IO_CART_SELECT, slot);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, system.symbols.functionAddresses[0], CART_RAM_BASE);

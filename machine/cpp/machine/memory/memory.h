@@ -91,11 +91,6 @@ public:
 		MappedBusSignals busSignals,
 		uint32_t faultAccess = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32
 	) const;
-	uint32_t readMappedBusU32BE(
-		uint32_t addr,
-		MappedBusSignals busSignals,
-		uint32_t faultAccess = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32
-	) const;
 	uint32_t readMappedDmaU32LE(uint32_t addr, MappedBusSignals busSignals) const;
 	float readMappedF32LE(uint32_t addr) const;
 	double readMappedF64LE(uint32_t addr) const;

@@ -22,7 +22,7 @@ for(let i=0;i<32768;i++){
 const cpu:any=Object.create(CPU.prototype),page=createDecodedInstructionPage(false,null,0);
 const image:any={executionDomainId:0,globalSlots:new Uint32Array(1),systemGlobalSlots:new Uint32Array(1),constTags:tags,constScalars:scalars};
 const frame:any={executionImage:image,registers};let source=0,body=0,pc=0;
-cpu.executionBusSignals=0;cpu.memory={readBusFaultSequence:()=>0,readMappedBusU32BE:(address:number)=>address===pc?source:body};
+cpu.executionBusSignals=0;cpu.memory={readBusFaultSequence:()=>0,readMappedBusU32LE:(address:number)=>address===pc?source:body};
 let seed=0x9a7132d1;function random(){seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;return seed>>>0;}
 const ops=[24,25,26,27,28,34],count=4096;process.stdout.write(`${count}\n`);
 for(let n=0;n<count;n++){

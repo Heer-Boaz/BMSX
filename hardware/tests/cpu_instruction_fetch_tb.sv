@@ -29,21 +29,21 @@ module cpu_instruction_fetch_tb;
  endtask
  initial begin
   repeat(2)@(negedge clk);reset_n=1;
-  submit(32'h10000010,8'h0c);memory_reply(32'h10000010,8'h0c,32'h2301047b,0);
+  submit(32'h10000010,8'h0c);memory_reply(32'h10000010,8'h0c,32'h7b040123,0);
   if(!rsp_valid||pc!==32'h10000010||next_pc!==32'h10000014||body!==32'h7b040123||wide||misaligned||bus_fault)$fatal(1,"normal fetch");
   finish_reply();
-  submit(32'hfffffffc,8'h04);memory_reply(32'hfffffffc,8'h04,32'h23010099,0);
-  memory_reply(0,8'h04,32'h785600cc,0);
+  submit(32'hfffffffc,8'h04);memory_reply(32'hfffffffc,8'h04,32'h99000123,0);
+  memory_reply(0,8'h04,32'hcc005678,0);
   if(!rsp_valid||pc!==32'hfffffffc||next_pc!==4||!wide||prefix!==32'h99000123||body!==32'hcc005678||misaligned||bus_fault)$fatal(1,"wide wrap/nested body");
   finish_reply();
   submit(32'h08000001,8'h00);
   if(!rsp_valid||!misaligned||bus_fault||mem_valid||pc!==32'h08000001)$fatal(1,"unaligned fetch");finish_reply();
   submit(32'h10000020,8'h04);memory_reply(32'h10000020,8'h04,0,1);
   if(!rsp_valid||!bus_fault||misaligned||pc!==32'h10000020)$fatal(1,"first fetch fault");finish_reply();
-  submit(32'h100000fc,8'h0c);memory_reply(32'h100000fc,8'h0c,32'h23010099,0);
+  submit(32'h100000fc,8'h0c);memory_reply(32'h100000fc,8'h0c,32'h99000123,0);
   memory_reply(32'h10000100,8'h0c,0,1);
   if(!rsp_valid||!bus_fault||!wide||pc!==32'h100000fc)$fatal(1,"wide body fault original pc");finish_reply();
-  $display("PASS CPU instruction fetch: BE words, WIDE/wrap, latched execution-domain strobes, alignment, body/first bus faults and handshake stalls; memory boundary fixture");$finish;
+  $display("PASS CPU instruction fetch: LE words, WIDE/wrap, latched execution-domain strobes, alignment, body/first bus faults and handshake stalls; memory boundary fixture");$finish;
  end
  initial begin #100000;$fatal(1,"timeout");end
 endmodule

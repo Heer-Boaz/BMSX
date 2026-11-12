@@ -176,7 +176,7 @@ stored values. See the Number-to-text rules below.
 | Installed main RAM | 4 MiB; mapped windows, reservations and ownership are in the Memory chapter |
 | Language-allocation budget | 3.5 MiB of shared accounting capacity, not an additional raw RAM region or wholly free register storage |
 | Opcode field | 6 bits, 64 opcode identities including the WIDE prefix |
-| Instruction word | 32 bits, four bytes, big-endian code bytes |
+| Instruction word | 32 bits, four bytes, little-endian |
 | Instruction length | One word; two words with one WIDE prefix |
 | Numeric value | Double-precision Number, distinct from other language values |
 | Data word and CP0 word | 32 bits; scalar data transfers are little-endian |
@@ -186,8 +186,7 @@ stored values. See the Number-to-text rules below.
 
 ### Word fields {#sec-cpu-word-fields}
 
-Code bytes use the opposite byte order from multi-byte scalar data. Do not
-byte-swap one representation merely because the other is little-endian.
+Instruction words use the same little-endian byte order as multi-byte scalar data.
 
 | Word bits | `31:24` | `23:18` | `17:12` | `11:6` | `5:0` |
 |---|---|---|---|---|---|
@@ -234,7 +233,7 @@ To assemble a body word, put its six-bit fields `a`, `b`, `c` and extension byte
 
 `word = (E << 24) | (opcode << 18) | (a << 12) | (b << 6) | c`
 
-Write that word most-significant byte first. The following table splits the
+Write that word least-significant byte first. The following table splits the
 complete operands into those fields and the six-bit prefix fields `pA`, `pB`,
 `pC`. `B` and `C` here mean raw fields, before any RK sign interpretation.
 
@@ -257,8 +256,8 @@ prefix is needed:
 
 | Instruction | A | B | C | Instruction word | Code bytes, in address order |
 |---|---:|---:|---:|---|---|
-| `LOAD_MEM 0,1,2` | 0 | 1 | 2 | `00C40042H` | `00 C4 00 42` |
-| `LOAD_MEM 2,1,3` | 2 | 1 | 3 | `00C42043H` | `00 C4 20 43` |
+| `LOAD_MEM 0,1,2` | 0 | 1 | 2 | `00C40042H` | `42 00 C4 00` |
+| `LOAD_MEM 2,1,3` | 2 | 1 | 3 | `00C42043H` | `43 20 C4 00` |
 
 The instruction bytes describe which operation to perform. The data bytes
 `78 56 34 12` remain at `p` in their little-endian data order. Encoding or
@@ -295,11 +294,11 @@ Spaces separate actual code bytes:
 
 | Operation | Code bytes | Decoded operands |
 |---|---|---|
-| Construct the closure for the record at `10001230H` in R3 | `00 00 04 00 00 AC 31 23` | `pB=10H`, Bx=`01000123H`; Bx×16=`10001230H` |
-| Construct a closure in R3 from the byte address held in R5 | `00 00 00 20 00 AC 30 05` | Register-address flag set; Bx=5 |
-| Call the closure in R3 with no arguments and one requested result | `00 BC 30 42` | `CALL A=3, B=1, C=2` |
-| Jump back to the branch's own first byte, without WIDE | `FF A0 0F FF` | Signed Bx=−1; one word from instruction end to start |
-| Jump back to the prefix's own first byte, with WIDE | `00 00 0F C0 FF A0 0F FE` | Signed Bx=−2; two words from instruction end to prefix |
+| Construct the closure for the record at `10001230H` in R3 | `00 04 00 00 23 31 AC 00` | `pB=10H`, Bx=`01000123H`; Bx×16=`10001230H` |
+| Construct a closure in R3 from the byte address held in R5 | `20 00 00 00 05 30 AC 00` | Register-address flag set; Bx=5 |
+| Call the closure in R3 with no arguments and one requested result | `42 30 BC 00` | `CALL A=3, B=1, C=2` |
+| Jump back to the branch's own first byte, without WIDE | `FF 0F A0 FF` | Signed Bx=−1; one word from instruction end to start |
+| Jump back to the prefix's own first byte, with WIDE | `C0 0F 00 00 FE 0F A0 FF` | Signed Bx=−2; two words from instruction end to prefix |
 
 For branch relocation, compute the signed word difference from the end of the
 **final-width** instruction to the target; the Branches section gives the exact
@@ -339,15 +338,14 @@ A function address points to a **function record**, not to the first
 instruction. The record's `CODE_ADDRESS` word supplies the instruction
 address. These two addresses are not interchangeable.
 
-The record and the instructions also use different byte orders:
+The record and the instructions both use little-endian byte order:
 
 | Item | Representation |
 | --- | --- |
 | Function record's `CODE_ADDRESS` word | 32-bit little-endian |
-| Instruction word | Four bytes, big-endian |
+| Instruction word | Four bytes, little-endian |
 
-Reading a function record therefore does not use the byte order used to
-decode its instructions.
+A word written to memory has the same byte order when fetched as an instruction.
 
 #### Execution domains and cartridge sockets {#sec-memory-execution-domains-and-cartridge-sockets}
 

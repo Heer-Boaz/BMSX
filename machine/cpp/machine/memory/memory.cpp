@@ -486,18 +486,6 @@ uint32_t Memory::readMappedU32LE(uint32_t addr, uint32_t faultAccess) const {
 	return readMappedBusU32LE(addr, MAPPED_BUS_MASTER_CPU, faultAccess);
 }
 
-uint32_t Memory::readMappedBusU32BE(
-	uint32_t addr,
-	MappedBusSignals busSignals,
-	uint32_t faultAccess
-) const {
-	const uint32_t value = readMappedBusU32LE(addr, busSignals, faultAccess);
-	return ((value & 0x000000ffu) << 24)
-		| ((value & 0x0000ff00u) << 8)
-		| ((value & 0x00ff0000u) >> 8)
-		| ((value & 0xff000000u) >> 24);
-}
-
 uint32_t Memory::readMappedDmaU32LE(uint32_t addr, MappedBusSignals busSignals) const {
 	if ((busSignals & MAPPED_BUS_DMA_MEMORY) != 0u && isIoRegionRange(addr, IO_WORD_SIZE)) {
 		raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U32);

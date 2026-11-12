@@ -168,11 +168,11 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [1]);
 
-	const readMappedBusU32BE = memory.readMappedBusU32BE.bind(memory);
+	const readMappedBusU32LE = memory.readMappedBusU32LE.bind(memory);
 	let instructionReadCount = 0;
-	memory.readMappedBusU32BE = (addr, busSignals, faultAccess): number => {
+	memory.readMappedBusU32LE = (addr, busSignals, faultAccess): number => {
 		instructionReadCount += 1;
-		return readMappedBusU32BE(addr, busSignals, faultAccess);
+		return readMappedBusU32LE(addr, busSignals, faultAccess);
 	};
 	cpu.beginCompletionCall(closure);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);

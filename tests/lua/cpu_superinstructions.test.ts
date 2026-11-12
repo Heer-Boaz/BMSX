@@ -94,14 +94,14 @@ test('warmed fused dispatch does not repeat mapped-page binding or instruction r
 	let bindings = 0;
 	let reads = 0;
 	const bindMappedPage = memory.bindMappedPage.bind(memory);
-	const readMappedBusU32BE = memory.readMappedBusU32BE.bind(memory);
+	const readMappedBusU32LE = memory.readMappedBusU32LE.bind(memory);
 	memory.bindMappedPage = (address, signals, out) => {
 		bindings += 1;
 		bindMappedPage(address, signals, out);
 	};
-	memory.readMappedBusU32BE = (address, signals, faultAccess) => {
+	memory.readMappedBusU32LE = (address, signals, faultAccess) => {
 		reads += 1;
-		return readMappedBusU32BE(address, signals, faultAccess);
+		return readMappedBusU32LE(address, signals, faultAccess);
 	};
 	assert.equal(cpu.runUntilDepth(0, 900), RunResult.Yielded);
 	assert.equal(bindings, 0);

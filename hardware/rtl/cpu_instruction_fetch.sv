@@ -1,7 +1,6 @@
 `timescale 1ns/1ps
 // Physical one-instruction fetch sequencer for the BLua32 execution owner.
-// CPU instruction bytes are big-endian; the memory router returns little-endian
-// raw words.  The caller provides the PC and execution-domain bus strobes (a
+// CPU instruction bytes and memory-router words are little-endian.  The caller provides the PC and execution-domain bus strobes (a
 // cartridge instruction stream remains on its bound socket).  A WIDE prefix
 // owns exactly one following word, including across 32-bit address wrap.
 // Faults report the original instruction PC, including for a failed body read.
@@ -25,7 +24,7 @@ module cpu_instruction_fetch (
  reg [2:0] state;
  reg [31:0] pc;
  reg [7:0] signals;
- wire [31:0] instruction={mem_rsp_data[7:0],mem_rsp_data[15:8],mem_rsp_data[23:16],mem_rsp_data[31:24]};
+ wire [31:0] instruction=mem_rsp_data;
  assign req_ready=reset_n && state==IDLE;
  assign mem_valid=reset_n && (state==FIRST_REQ || state==BODY_REQ);
  assign mem_address=pc+(state==BODY_REQ ? 32'd4:32'd0);

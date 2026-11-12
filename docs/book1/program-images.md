@@ -383,7 +383,7 @@ clear captures a parent-closure upvalue. Bits 0–30 contain the zero-based inde
 Function and upvalue records use ordinary mapped-bus reads and may therefore
 occupy mapped memory. Constant and name-table records and their text require ROM.
 
-Function-record words are little-endian; [instruction words are big-endian](cpu.md#sec-cpu-instruction-words-and-execution-resources). Neither a function-record address nor a record's code address is relative to the image header.
+Function-record and [instruction words are little-endian](cpu.md#sec-cpu-instruction-words-and-execution-resources). Neither a function-record address nor a record's code address is relative to the image header.
 
 ## Locating BIOS call targets {#sec-blua-programs-locating-bios-call-targets}
 

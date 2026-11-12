@@ -627,18 +627,6 @@ export class Memory {
 		return this.readMappedBusU32LE(addr, MAPPED_BUS_MASTER_CPU, faultAccess);
 	}
 
-	public readMappedBusU32BE(
-		addr: number,
-		busSignals: MappedBusSignals,
-		faultAccess = BUS_ACCESS_READ_U32,
-	): number {
-		const word = this.readMappedBusU32LE(addr, busSignals, faultAccess);
-		return ((word >>> 24)
-			| ((word >>> 8) & 0x0000ff00)
-			| ((word << 8) & 0x00ff0000)
-			| (word << 24)) >>> 0;
-	}
-
 	public readMappedDmaU32LE(addr: number, busSignals: MappedBusSignals): number {
 		if ((busSignals & MAPPED_BUS_DMA_MEMORY) !== 0 && this.isIoRegionRange(addr, IO_WORD_SIZE)) {
 			this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U32);

@@ -38,9 +38,9 @@ module cpu_instruction_fetch_core_tb;
  assign sys_ready_n=rom_ready ? 1'b0 : 1'bz;
  assign #(70,70,20) flash_data=!flash_ce_n && !flash_oe_n ? flash_word : 16'bz;
  always @* case(flash_address)
-  0: flash_word=16'h047b;1: flash_word=16'h2301;
-  4: flash_word=16'h0099;5: flash_word=16'h2301;
-  6: flash_word=16'h00cc;7: flash_word=16'h7856;
+  0: flash_word=16'h0123;1: flash_word=16'h7b04;
+  4: flash_word=16'h0123;5: flash_word=16'h9900;
+  6: flash_word=16'h5678;7: flash_word=16'hcc00;
   default: flash_word=0;
  endcase
  rom_sys_endpoint rom(.clk(clk),.reset_n(reset_n),.cs_rom_n(cs_rom_n),.bus_ad_in(sys_ad),
@@ -53,7 +53,7 @@ module cpu_instruction_fetch_core_tb;
   if(reset_n && cart_valid && cart_ready) begin
    if(cart_bus_signals!==8'h0c || cart_write || cart_size_bytes!==4 || cart_access!==32'h401)$fatal(1,"cart fetch flags/width");
    cart_reads<=cart_reads+1;cart_rsp_valid<=1;
-   cart_rdata<=32'h23010099;cart_fault_code<=cart_address==32'h10000400 ? 1 : 0;
+   cart_rdata<=32'h99000123;cart_fault_code<=cart_address==32'h10000400 ? 1 : 0;
   end
  end
  task automatic submit(input [31:0] address,input [7:0] flags);
@@ -64,7 +64,7 @@ module cpu_instruction_fetch_core_tb;
   begin @(negedge clk);fetch_rsp_ready=1;@(negedge clk);fetch_rsp_ready=0;end
  endtask
  initial begin
-  memory.words[20'h08000]=32'h2301047b;memory.words[20'h08002]=32'h23010099;memory.words[20'h08003]=32'h785600cc;
+  memory.words[20'h08000]=32'h7b040123;memory.words[20'h08002]=32'h99000123;memory.words[20'h08003]=32'hcc005678;
   #100;power_reset_n=1;#300000;reset_n=1;wait(memory_ready);
   submit(32'h08020000,0);wait(fetch_rsp_valid);
   if(out_pc!==32'h08020000||out_next!==32'h08020004||out_body!==32'h7b040123||fetch_wide||fetch_fault||fetch_misaligned)$fatal(1,"DRAM normal");consume();
@@ -76,7 +76,7 @@ module cpu_instruction_fetch_core_tb;
   if(out_pc!==8||out_next!==16||out_prefix!==32'h99000123||out_body!==32'hcc005678||!fetch_wide||fetch_fault)$fatal(1,"SYS flash WIDE");consume();
   submit(32'h100003fc,8'h0c);wait(fetch_rsp_valid);
   if(!fetch_fault||!fetch_wide||out_pc!==32'h100003fc||cart_reads!==2)$fatal(1,"cartridge body fault/domain");consume();
-  $display("PASS fetch through actual CORE memory router, DRAM pins and SYS/flash pins; BE WIDE; cartridge peer preserves bound socket flags and body fault");$finish;
+  $display("PASS fetch through actual CORE memory router, DRAM pins and SYS/flash pins; LE WIDE; cartridge peer preserves bound socket flags and body fault");$finish;
  end
  initial begin #1000000;$fatal(1,"timeout");end
 endmodule
