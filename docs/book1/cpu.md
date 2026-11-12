@@ -592,7 +592,7 @@ in the shorter operand. This charge depends only on the two lengths, including
 zero codepoints; it does not depend on the position of the first difference or
 whether the operands are the same String. EQ and comparisons involving other
 value kinds have no text-length surcharge. The comparison completes, including
-its skip decision, even if this charge exhausts the current execution grant.
+its skip decision, before the CPU accepts a pending interrupt.
 
 Equality respects value kinds. Different kinds are unequal; there is no numeric-string or boolean-number equality conversion. Numbers use numeric equality, so NaN is unequal even to itself, while +0 and −0 are equal. Table, Closure, and Thread equality is reference identity rather than a comparison of their contents.
 
@@ -877,10 +877,9 @@ ranges; each completed range is charged once. If admission of a later range
 fails, charges for earlier completed ranges remain, but the unplaced range adds
 no charge.
 
-Placement and capture work is part of the admitted operation: it completes
-before the next instruction or interrupt boundary, even when its charge exhausts
-the current cycle grant. The following instruction requires a new positive
-grant. An unplaced range whose admission fails adds no placement charge;
+Placement and capture work is part of the instruction: it completes before the
+next instruction begins or the CPU accepts a pending interrupt. An unplaced
+range whose admission fails adds no placement charge;
 completed ranges and closed captures retain their charges if later work fails.
 
 ### Closures and captured variables {#sec-cpu-closures-and-captured-variables}
@@ -1118,8 +1117,8 @@ The following tables describe the decoded operands. `A`, `B`, `C`, and `Bx` name
 After successful table construction, `NEWT` adds one cycle per initialized Value
 slot: `B + 2 × H`, where `H` is zero when `C` is zero and otherwise the smallest
 power of two at least `C`. Each array slot holds one value; each hash entry
-initializes a key and a value. The empty request adds zero. This charge completes
-with the admitted instruction, even if it exhausts the current grant. A failed
+initializes a key and a value. The empty request adds zero. This initialization
+completes before the next instruction begins or the CPU accepts a pending interrupt. A failed
 construction incurs the base charge but not this completed-initialization term.
 Later storage growth, collection and allocator implementation do not add this
 instruction's initialization charge to ordinary table reads or writes.
