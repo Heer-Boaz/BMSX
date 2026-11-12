@@ -3,7 +3,7 @@ import { GEO_SCRATCH_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import * as io from '../../../machine/ts/spec/bmsx/io';
 import * as geo from '../../../machine/ts/machine/devices/geometry/contracts';
 
-export type GeometryVector = { name: string; writes: [number, number][]; reads: number[]; pairCounterSeed: number };
+export type GeometryVector = { name: string; writes: [number, number][]; reads: number[]; pairCounterSeed: number; firstRecordPairs: number };
 const instances = GEO_SCRATCH_BASE, shapes = GEO_SCRATCH_BASE + 0x100, vertices = GEO_SCRATCH_BASE + 0x200;
 const result = GEO_SCRATCH_BASE + 0x400, summary = GEO_SCRATCH_BASE + 0x500;
 
@@ -30,7 +30,7 @@ function vector(name: string, a: readonly number[], b: readonly number[], sat: b
 		[io.IO_GEO_STRIDE0, 20], [io.IO_GEO_STRIDE1, sat ? 16 : 0], [io.IO_GEO_STRIDE2, sat ? 8 : 0],
 		[io.IO_GEO_CMD, sat ? geo.IO_CMD_GEO_SAT2_BATCH : geo.IO_CMD_GEO_OVERLAP2D_PASS],
 	);
-	return { name, writes, pairCounterSeed: 0, reads: [io.IO_GEO_STATUS, io.IO_GEO_FAULT, io.IO_GEO_PROCESSED,
+	return { name, writes, pairCounterSeed: 0, firstRecordPairs: 0, reads: [io.IO_GEO_STATUS, io.IO_GEO_FAULT, io.IO_GEO_PROCESSED,
 		...Array.from({ length: 9 }, (_, i) => result + i * 4), ...Array.from({ length: 4 }, (_, i) => summary + i * 4)] };
 }
 
@@ -83,6 +83,27 @@ export function geometryVectors(): GeometryVector[] {
 			[1, 1, 5, 1, 5, 5, 1, 5].map(numberToF32Bits), false);
 		seeded.pairCounterSeed = pairCounterSeed;
 		result.push(seeded);
+	}
+	// Characterize the current unit of progress, not a proposed hardware price:
+	// the first full-pass record handles every later instance in one work unit.
+	for (const count of [2, 8]) {
+		const square = [0, 0, 4, 0, 4, 4, 0, 4].map(numberToF32Bits);
+		const v = vector(`full-pass-first-record-${count}`, square, square, false);
+		v.firstRecordPairs = count - 1;
+		const separateSummary = GEO_SCRATCH_BASE + 0x900;
+		v.reads = v.reads.map(address => address >= summary && address < summary + 16
+			? address - summary + separateSummary : address);
+		const command = v.writes.pop()!;
+		for (const write of v.writes) {
+			if (write[0] === io.IO_GEO_COUNT) write[1] = count;
+			if (write[0] === io.IO_GEO_PARAM1) write[1] = count * (count - 1) / 2;
+			if (write[0] === io.IO_GEO_DST1) write[1] = separateSummary;
+		}
+		for (let i = 2; i < count; i++) {
+			[shapes, 0, 0, 1, 1].forEach((word, j) => v.writes.push([instances + i * geo.GEO_OVERLAP2D_INSTANCE_BYTES + j * 4, word]));
+		}
+		v.writes.push(command);
+		result.push(v);
 	}
 	return result;
 }

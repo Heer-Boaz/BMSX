@@ -27,6 +27,18 @@ int main(int argc, char** argv) {
 			input >> address >> word;
 			memory.writeMappedWord(address, word);
 		}
+		bmsx::u32 firstRecordPairs;
+		input >> firstRecordPairs;
+		if (firstRecordPairs != 0u) {
+			geometry.setTiming(bmsx::PSX_MACHINE_SPEC.cpuFreqHz, bmsx::PSX_MACHINE_SPEC.geoWorkUnitsPerSec, 0);
+			geometry.accrueCycles(2, 2);
+			geometry.onService(2);
+			std::cout << memory.readMappedWord(bmsx::IO_GEO_PROCESSED) << ' ';
+			geometry.accrueCycles(1, 3);
+			geometry.onService(3);
+			std::cout << memory.readMappedWord(bmsx::IO_GEO_PROCESSED) << ' '
+				<< memory.readMappedWord(memory.readMappedWord(bmsx::IO_GEO_DST1)) << ' ';
+		}
 		bmsx::u32 pairCounterSeed;
 		input >> pairCounterSeed;
 		if (pairCounterSeed != 0u) {
