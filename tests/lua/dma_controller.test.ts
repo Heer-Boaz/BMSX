@@ -11,7 +11,7 @@ import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_addres
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { DmaEndpoint } from '../../machine/ts/machine/devices/dma/endpoints';
 import { GxGpu } from '../../machine/ts/machine/devices/gx/gpu';
-import { GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
+import { GX_GPU_COMMAND_CAPACITY, GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { DEVICE_SERVICE_DMA, DEVICE_SERVICE_GPU, DEVICE_SERVICE_SYSTEM, DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
@@ -128,6 +128,47 @@ test('GPU upload crosses multiple ingress bursts without a packet-boundary deadl
  const commands=h.gpu.readDeviceOutput().commandBuffer;
  assert.equal(commands.commandKind[0],GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM);
  assert.equal(h.memory.readIoU32(io.IO_DMA0_READ_ADDR),source+words*4);
+});
+test('DMA0 resumes its queued GP0 tail after the saturated command buffer is retired',()=>{
+ const h=fixture(), packets=100, words=packets*3;
+ for(let i=0;i<GX_GPU_COMMAND_CAPACITY;++i) {
+  h.gpu.writeGp0(gp0.GX_GPU_GP0_FILL_RECTANGLE<<24); h.gpu.writeGp0(0); h.gpu.writeGp0(0x00010001);
+  step(h);
+ }
+ assert.equal(h.gpu.captureState().commandBuffer.executedCommandCount,GX_GPU_COMMAND_CAPACITY);
+ for(let i=0;i<packets;++i) {
+  h.memory.writeU32(source+i*12,(gp0.GX_GPU_GP0_FILL_RECTANGLE<<24)|i);
+  h.memory.writeU32(source+i*12+4,(i<<16)|i);
+  h.memory.writeU32(source+i*12+8,0x00010001);
+ }
+ h.gpu.writeGp1((gp1.GX_GPU_GP1_DMA_DIRECTION<<24)|gp0.GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+ program(h,source,0,words,io.DMA_ROUTE_TO_GPU);
+ assert.equal(h.dma.captureState().scheduledBlockWords,gp0.GX_GPU_DMA_INGRESS_WORD_CAPACITY);
+ const firstDeadline=h.scheduler.nextDeadline(); assert.ok(firstDeadline>h.scheduler.nowCycles);
+ step(h);
+ let gpu=h.gpu.captureState();
+ assert.equal(h.memory.readIoU32(io.IO_DMA0_STATUS),io.DMA_STATUS_BUSY);
+ assert.equal(h.memory.readIoU32(io.IO_DMA0_TRANSFER_COUNT),words-gp0.GX_GPU_DMA_INGRESS_WORD_CAPACITY);
+ assert.equal(h.memory.readIoU32(io.IO_DMA0_READ_ADDR),source+gp0.GX_GPU_DMA_INGRESS_WORD_CAPACITY*4);
+ assert.equal(h.memory.readIoU32(io.IO_IRQ_FLAGS)&io.IRQ_DMA0_DONE,0);
+ assert.equal(h.dma.cpuBusHeld(),false);
+ assert.equal(gpu.gp0FifoWords.length,gp0.GX_GPU_COMMAND_FIFO_WORD_CAPACITY);
+ assert.equal(gpu.gp0DmaIngressWords.length,gp0.GX_GPU_DMA_INGRESS_WORD_CAPACITY-gp0.GX_GPU_COMMAND_FIFO_WORD_CAPACITY);
+ assert.equal(gpu.pendingCommandCycles,0);
+ h.gpu.retireExecutedCommands();
+ gpu=h.gpu.captureState();
+ assert.ok(gpu.pendingCommandCycles>0,'retirement schedules the queued GP0 command');
+ assert.ok(h.scheduler.nextDeadline()>firstDeadline,'resumed GPU work has a future service deadline');
+ for(let i=0;i<500 && h.memory.readIoU32(io.IO_DMA0_STATUS)===io.DMA_STATUS_BUSY;++i) step(h);
+ assert.equal(h.memory.readIoU32(io.IO_DMA0_STATUS),io.DMA_STATUS_DONE);
+ assert.equal(h.memory.readIoU32(io.IO_DMA0_TRANSFER_COUNT),0);
+ assert.equal(h.memory.readIoU32(io.IO_DMA0_READ_ADDR),source+words*4);
+ assert.equal(h.memory.readIoU32(io.IO_IRQ_FLAGS)&io.IRQ_DMA0_DONE,io.IRQ_DMA0_DONE);
+ for(let i=0;i<500 && h.gpu.readDeviceOutput().commandBuffer.executedCommandCount<packets;++i) step(h);
+ const commands=h.gpu.readDeviceOutput().commandBuffer;
+ assert.equal(commands.executedCommandCount,packets);
+ assert.equal(commands.wordCount,words);
+ for(let i=0;i<words;++i) assert.equal(commands.words[i],h.memory.readMappedU32LE(source+i*4),`word ${i}`);
 });
 for(const [route,endpoint,port] of [[io.DMA_ROUTE_TO_IMGDEC,DmaEndpoint.ImgDecWrite,io.IO_IMGDEC_DATA],
  [io.DMA_ROUTE_TO_APU,DmaEndpoint.ApuWrite,io.IO_APU_TRANSFER_DATA]] as const) {

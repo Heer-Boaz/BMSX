@@ -130,6 +130,41 @@ void testGpuPacketAcrossBursts() {
  require(h.gpu.readDeviceOutput().commandBuffer.commandKind[0]==GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,"the GPU receives one complete upload packet");
  require(h.memory.readIoU32(IO_DMA0_READ_ADDR)==Source+words*4,"only the memory-side address advances");
 }
+void testGpuDmaTailResumesAfterSaturatedCommandBufferRetirement() {
+ Harness h; constexpr u32 packets=100, words=packets*3;
+ for(u32 i=0;i<GX_GPU_COMMAND_CAPACITY;++i) {
+  h.gpu.writeGp0(GX_GPU_GP0_FILL_RECTANGLE<<24);h.gpu.writeGp0(0);h.gpu.writeGp0(0x00010001);h.step();
+ }
+ require(h.gpu.captureState().commandBuffer.executedCommandCount==GX_GPU_COMMAND_CAPACITY,"command buffer is saturated and executed");
+ for(u32 i=0;i<packets;++i) {
+  h.memory.writeU32(Source+i*12,(GX_GPU_GP0_FILL_RECTANGLE<<24)|i);
+  h.memory.writeU32(Source+i*12+4,(i<<16)|i);
+  h.memory.writeU32(Source+i*12+8,0x00010001);
+ }
+ h.gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION<<24)|GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+ h.program(Source,0,words,DMA_ROUTE_TO_GPU);
+ require(h.dma.captureState().scheduledBlockWords==GX_GPU_DMA_INGRESS_WORD_CAPACITY,"first burst fills the GPU ingress");
+ const i64 firstDeadline=h.scheduler.nextDeadline();require(firstDeadline>h.scheduler.nowCycles(),"first DMA burst has a future deadline");
+ h.step();auto state=h.gpu.captureState();
+ require(h.memory.readIoU32(IO_DMA0_STATUS)==DMA_STATUS_BUSY,"DMA remains busy until its tail is transferred");
+ require(h.memory.readIoU32(IO_DMA0_TRANSFER_COUNT)==words-GX_GPU_DMA_INGRESS_WORD_CAPACITY,"first burst publishes its remaining word count");
+ require(h.memory.readIoU32(IO_DMA0_READ_ADDR)==Source+GX_GPU_DMA_INGRESS_WORD_CAPACITY*4,"source advances only by admitted words");
+ require((h.memory.readIoU32(IO_IRQ_FLAGS)&IRQ_DMA0_DONE)==0&&!h.dma.cpuBusHeld(),"no completion IRQ or bus hold while ingress is full");
+ require(state.gp0FifoWords.size()==GX_GPU_COMMAND_FIFO_WORD_CAPACITY,"GP0 FIFO is full at the drain boundary");
+ require(state.gp0DmaIngressWords.size()==GX_GPU_DMA_INGRESS_WORD_CAPACITY-GX_GPU_COMMAND_FIFO_WORD_CAPACITY,"remaining burst words occupy ingress");
+ require(state.pendingCommandCycles==0,"saturated command buffer has no command deadline");
+ h.gpu.retireExecutedCommands();state=h.gpu.captureState();
+ require(state.pendingCommandCycles>0,"retirement schedules the queued GP0 command");
+ require(h.scheduler.nextDeadline()>firstDeadline,"resumed GPU work has a future deadline");
+ for(u32 i=0;i<500&&h.memory.readIoU32(IO_DMA0_STATUS)==DMA_STATUS_BUSY;++i)h.step();
+ require(h.memory.readIoU32(IO_DMA0_STATUS)==DMA_STATUS_DONE,"DMA completes after ingress becomes available");
+ require(h.memory.readIoU32(IO_DMA0_TRANSFER_COUNT)==0&&h.memory.readIoU32(IO_DMA0_READ_ADDR)==Source+words*4,"DMA publishes its final count and address");
+ require((h.memory.readIoU32(IO_IRQ_FLAGS)&IRQ_DMA0_DONE)!=0,"DMA completion raises its IRQ");
+ for(u32 i=0;i<500&&h.gpu.readDeviceOutput().commandBuffer.executedCommandCount<packets;++i)h.step();
+ const auto& commands=h.gpu.readDeviceOutput().commandBuffer;
+ require(commands.executedCommandCount==packets&&commands.wordCount==words,"all queued GP0 packets execute");
+ for(u32 i=0;i<words;++i)require(commands.words[i]==h.memory.readMappedU32LE(Source+i*4),"DMA preserves every GP0 word in order");
+}
 void testFixedInputRoutes() {
  const u32 routes[]={DMA_ROUTE_FROM_IMGDEC,DMA_ROUTE_FROM_APU,DMA_ROUTE_FROM_GPU};
  const u32 ports[]={IO_IMGDEC_DATA,IO_APU_TRANSFER_DATA,IO_GX_GPU_GP0};
@@ -216,6 +251,6 @@ void testPrimitivesAcrossTransportEdge() {
 int main() {
  characterizeRamCopy();
  testAdmittedBurstAndSupervisorWriteInhibition();testPrimitivesAcrossTransportEdge();testCopyTiming();testBoundedBurstsAndForwardOverlap();testMemoryExcludesConsoleMmio();testFixedGpuAndRawRegisters();
- testGpuPacketAcrossBursts();testFixedInputRoutes();testDecoderToGpuIntersectionAndRestore();testStopAndEmptyJob();testRoundRobinAndSupervisorBoundary();
+ testGpuPacketAcrossBursts();testGpuDmaTailResumesAfterSaturatedCommandBufferRetirement();testFixedInputRoutes();testDecoderToGpuIntersectionAndRestore();testStopAndEmptyJob();testRoundRobinAndSupervisorBoundary();
  return 0;
 }
