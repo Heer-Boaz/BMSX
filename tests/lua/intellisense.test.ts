@@ -219,7 +219,7 @@ end
 	const complete = (success: boolean) => {
 		if (success) {
 			const args = call!.args(); applied.push(args[2] as number);
-			guest.invalidate(); cpu.beginCompletionClosureInExecutionDomain(call!.domain, call!.closure, args);
+			guest.invalidate(); cpu.beginCompletionCall(call!.closure, args);
 			cpu.runUntilDepth(0, 100_000);
 		}
 		call = undefined; observer!(success);

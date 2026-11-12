@@ -372,6 +372,11 @@ A function address identifies a **32-byte function record**, not its first instr
 
 VARARG retains arguments beyond the fixed parameters. STATIC permits direct entry through EXEC; the closure-construction rules are described in [CPU — Closures and captured variables](cpu.md#sec-cpu-closures-and-captured-variables). The immediate-address form of `CLOSURE` encodes a function-record address in **16-byte units**; its register-address form supplies the full address. Function-record reads themselves do not impose a 16-byte alignment check. The declared code byte count does not bound instruction fetches.
 
+Closure construction binds the record's entry and frame data. Rewriting a
+record changes the data bound by a later construction, not the data of an
+existing closure. Instructions remain in addressed memory and are fetched
+there when the closure executes.
+
 Upvalue descriptor `i` is a four-byte unsigned little-endian word at
 `upvalueTableAddress + 4i`. Bit 31 set captures a parent-frame register; bit 31
 clear captures a parent-closure upvalue. Bits 0–30 contain the zero-based index.

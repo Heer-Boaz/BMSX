@@ -383,7 +383,7 @@ return actor, advance
 	const key = cpu.stringPool.find('value')!;
 	const depth = cpu.getFrameDepth();
 	let completed = false;
-	cpu.beginCompletionClosureInExecutionDomain(-1, closure, [actor, 100]);
+	cpu.beginCompletionCall(closure, [actor, 100]);
 	pushRuntimeDebuggerControlPlan(state, new RuntimeGuestCallPlan(runtime, depth, 'completion', false, value => { completed = value; }), 'workbench');
 	cpu.runUntilDepth(depth, 80);
 	const partial = actor.getStringKey(key) as number;
@@ -568,7 +568,7 @@ test(`scheduled evaluation ${honorUserStops ? 'honors' : 'suppresses'} user brea
 	state.breakpoints.set({ contextId: TEST_SYSTEM_CONTEXT_ID, path: DEBUG_SOURCE_PATH }, [2]);
 	assert.ok(state.breakpoints.bindings.pcs[0].size > 0, 'the real source has an emitted breakpoint PC');
 	let finished = 0;
-	cpu.beginCompletionClosureInExecutionDomain(-1, values[0] as Closure, [1]);
+	cpu.beginCompletionCall(values[0] as Closure, [1]);
 	pushRuntimeDebuggerControlPlan(state, new RuntimeGuestCallPlan(runtime, 0, 'completion', honorUserStops, completed => {
 		assert.equal(completed, true); finished++;
 	}), 'workbench');
@@ -709,7 +709,7 @@ while true do halt_until_irq end
 	const { cpu, memory, irqController } = runtime.machine;
 	cpu.reset(); cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET);
 	const depth = cpu.getFrameDepth(), guest = new SuspendedGuestSession(runtime);
-	cpu.beginCompletionClosureInExecutionDomain(-1, guest.global('operation') as Closure, []);
+	cpu.beginCompletionCall(guest.global('operation') as Closure, []);
 	let completed = false;
 	pushRuntimeDebuggerControlPlan(state, new RuntimeGuestCallPlan(runtime, depth, 'completion', true, value => { completed = value; }), 'workbench');
 	cpu.runUntilDepth(depth, DEBUG_RUN_CYCLE_BUDGET);

@@ -105,6 +105,8 @@ export type RuntimeRomAssetEditBatch = readonly [
 export function blua32InstallationNeedsRebuild(sources: RuntimeSourceState, domain: -1 | 0 | 1): boolean {
 	const attachment = domain === -1 ? null : sources.cartridgeSlots[domain];
 	if (domain !== -1 && attachment === null) return false;
+	// A data-only cartridge has no executable installation to rebuild.
+	if (domain !== -1 && attachment!.rom.header.blua32ImageOffset === 0) return false;
 	const context = sources.catalog.getContext(domain === -1 ? sources.systemContextId : attachment!.contextId);
 	if ((domain === -1 ? sources.systemBlua32MediaDirty : sources.cartridgeBlua32MediaDirty[domain])
 		|| context.programRevision !== (domain === -1 ? sources.systemSourceRevision : attachment!.installedSourceRevision)) return true;

@@ -11,7 +11,7 @@ namespace bmsx {
 
 sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label* coldDispatch) {
 	const auto thread = Thread::nativeOffsets();
-	const auto cpu = CPU::nativeFrameOffsets();
+	const auto function = Closure::nativeFunctionOffsets();
 	constexpr sljit_sw pointerShift = std::countr_zero(sizeof(void*));
 	constexpr sljit_sw tagOffset = std::endian::native == std::endian::little ? 6 : 0;
 	constexpr sljit_sw payloadOffset = sizeof(void*) == 4 && std::endian::native == std::endian::big ? 4 : 0;
@@ -45,51 +45,19 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_IMM, 0);
 	sljit_set_label(positiveArgs, sljit_emit_label(compiler));
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, argCount), SLJIT_R1, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R3), Closure::nativeFunctionAddressOffset());
+	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R3), function.address);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, functionAddress), SLJIT_R0, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, caller));
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, executionImage));
-
-	// Select actual backing descriptors, not a parallel memory map. CALL reads
-	// with the latched execution socket; RAM records inherit the ambient image.
-	auto* notSystem = sljit_emit_cmp(compiler, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, RAM_BASE);
-	cold[coldCount++] = sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32,
-		SLJIT_MEM1(SLJIT_R1), Blua32ExecutionImage::nativeExecutionDomainOffset(), SLJIT_IMM, SYSTEM_EXECUTION_DOMAIN_ID);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_S3), offsetof(NativeCpuRunState, systemRom));
-	auto* systemSpan = sljit_emit_jump(compiler, SLJIT_JUMP);
-	sljit_set_label(notSystem, sljit_emit_label(compiler));
-	auto* cartridge = sljit_emit_cmp(compiler, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, CART_ROM_BASE);
-	cold[coldCount++] = sljit_emit_cmp(compiler, SLJIT_LESS | SLJIT_32, SLJIT_R0, 0,
-		SLJIT_IMM, IO_BASE + IO_SLOT_COUNT * IO_WORD_SIZE);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_S3), offsetof(NativeCpuRunState, cpu));
-	cold[coldCount++] = sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R2), cpu.activeImage);
-	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_BASE);
-	sljit_emit_op2(compiler, SLJIT_ADD, SLJIT_R2, 0, SLJIT_S3, 0, SLJIT_IMM, offsetof(NativeCpuRunState, ram));
-	auto* ramSpan = sljit_emit_jump(compiler, SLJIT_JUMP);
-	sljit_set_label(cartridge, sljit_emit_label(compiler));
-	cold[coldCount++] = sljit_emit_cmp(compiler, SLJIT_GREATER | SLJIT_32, SLJIT_R0, 0,
-		SLJIT_IMM, CART_ROM_BASE + CART_ROM_SIZE - BLUA32_FUNCTION_RECORD_SIZE);
-	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_S3), offsetof(NativeCpuRunState, cartridgeSlot));
-	cold[coldCount++] = sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R3, 0,
+	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R3), function.executionDomainId);
+	cold[coldCount++] = sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0,
 		SLJIT_MEM1(SLJIT_R1), Blua32ExecutionImage::nativeExecutionDomainOffset());
-	sljit_emit_op2(compiler, SLJIT_SUB32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, CART_ROM_BASE);
-	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_S3), offsetof(NativeCpuRunState, cartridgeRom));
-	cold[coldCount++] = sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, 0);
-	auto* span = sljit_emit_label(compiler);
-	sljit_set_label(systemSpan, span); sljit_set_label(ramSpan, span);
-	// Guest offsets cross into host pointer arithmetic only after widening.
-	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_R0, 0);
-	// Offsets are bounded guest addresses, so adding the record width cannot wrap.
-	sljit_emit_op2(compiler, SLJIT_ADD, SLJIT_R3, 0, SLJIT_R0, 0, SLJIT_IMM, BLUA32_FUNCTION_RECORD_SIZE);
-	cold[coldCount++] = sljit_emit_cmp(compiler, SLJIT_GREATER, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R2), offsetof(Span<const u8>, size_));
-	sljit_emit_op2(compiler, SLJIT_ADD, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), offsetof(Span<const u8>, data_), SLJIT_R0, 0);
-	for (const auto [recordOffset, scratchOffset] : {
-		std::pair{BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, offsetof(NativeCallScratch, codeAddress)},
-		std::pair{BLUA32_FUNCTION_NUM_PARAMS_OFFSET, offsetof(NativeCallScratch, numParams)},
-		std::pair{BLUA32_FUNCTION_MAX_STACK_OFFSET, offsetof(NativeCallScratch, maxStack)},
-		std::pair{BLUA32_FUNCTION_FLAGS_OFFSET, offsetof(NativeCallScratch, flags)}}) {
-		sljit_emit_mem(compiler, SLJIT_MOV_U32 | SLJIT_MEM_UNALIGNED, SLJIT_R0, SLJIT_MEM1(SLJIT_R2), recordOffset);
-		if constexpr (std::endian::native == std::endian::big) sljit_emit_op1(compiler, SLJIT_REV_U32, SLJIT_R0, 0, SLJIT_R0, 0);
+	for (const auto [fieldOffset, scratchOffset] : {
+		std::pair{function.codeAddress, offsetof(NativeCallScratch, codeAddress)},
+		std::pair{function.numParams, offsetof(NativeCallScratch, numParams)},
+		std::pair{function.maxStack, offsetof(NativeCallScratch, maxStack)},
+		std::pair{function.flags, offsetof(NativeCallScratch, flags)}}) {
+		sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R3), fieldOffset);
 		sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), scratchOffset, SLJIT_R0, 0);
 	}
 
@@ -137,7 +105,7 @@ sljit_label* NativeBlockGate::emitCallGate(sljit_compiler* compiler, sljit_label
 	sljit_emit_op2(compiler, SLJIT_ADD32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_R0, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, stackTop), SLJIT_R3, 0);
 
-	// Resolve the fresh record's code address through the live publication table.
+	// Resolve the bound record's code address through the live publication table.
 	sljit_emit_op1(compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), offsetof(NativeCallScratch, codeAddress));
 	sljit_emit_op2(compiler, SLJIT_AND32, SLJIT_R2, 0, SLJIT_R0, 0, SLJIT_IMM, INSTRUCTION_BYTES - 1u);
 	cold[coldCount++] = sljit_emit_cmp(compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 0);

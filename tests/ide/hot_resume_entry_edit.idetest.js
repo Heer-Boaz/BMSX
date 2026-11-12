@@ -51,9 +51,9 @@ const liveStateProbeKey = cpu.stringPool.intern('__hot_resume_live_state_probe')
 const loopCountKey = cpu.stringPool.intern('hot_resume_loop_count');
 cpu.setGlobalByKey(liveStateProbeKey, tableValueTag, NaN, liveMathTable);
 const cartridge = sourceState.cartridgeSlots[cpu.activeCartridgeSlot()];
-const entryRecord = cartridge.luaSources.path2lua['entry.lua'];
-const valueRecord = cartridge.luaSources.path2lua['value.lua'];
-const baseRecord = sourceState.systemLuaSources.path2lua['base.lua'];
+const entryRecord = sourceState.catalog.getContext(cartridge.contextId).luaSources.path2lua['entry.lua'];
+const valueRecord = sourceState.catalog.getContext(cartridge.contextId).luaSources.path2lua['value.lua'];
+const baseRecord = sourceState.catalog.getContext(sourceState.systemContextId).luaSources.path2lua['base.lua'];
 const initPrintBreakpointLine = revisionSource(entryRecord, 2)
 	.split("\tprint('hot-resume-init')")[0]
 	.split('\n').length;
@@ -77,7 +77,7 @@ for (let frameIndex = 0; frameIndex < frameDepthBeforeRejectedEdit; frameIndex +
 const lastExecutionDomainBeforeRejectedEdit = cpu.readLastExecutionDomain();
 const lastPcBeforeRejectedEdit = cpu.lastPc;
 const initCountBeforeRejectedEdit = cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count'));
-t.openLuaSource('entry.lua');
+t.openLuaSource('entry.lua', cartridge.contextId);
 t.replaceActiveCodeSource(entryRecord.base_src.replace(
 	'\trepeat\n\t\thalt_until_irq\n\tuntil vblank_count ~= 0\n\tvblank_count = vblank_count - 1\n',
 	'\tvblank_count = 0\n',
@@ -106,7 +106,7 @@ t.assert(
 	'rejected edit changed the last-execution latch',
 );
 
-t.openLuaSource('entry.lua');
+t.openLuaSource('entry.lua', cartridge.contextId);
 t.replaceActiveCodeSource(entryRecord.base_src.replace(
 	'local function init<init>()',
 	'local function init()',
@@ -122,11 +122,11 @@ t.assert(
 );
 
 const installRevision = async (revision) => {
-	t.openLuaSource('entry.lua');
+	t.openLuaSource('entry.lua', cartridge.contextId);
 	t.replaceActiveCodeSource(revisionSource(entryRecord, revision));
-	t.openLuaSource('value.lua');
+	t.openLuaSource('value.lua', cartridge.contextId);
 	t.replaceActiveCodeSource(moduleRevisionSource(valueRecord, revision));
-	t.openLuaSource('base.lua');
+	t.openLuaSource('base.lua', sourceState.systemContextId);
 	t.replaceActiveCodeSource(systemRevisionSource(baseRecord, revision));
 	await t.performHotResume().admission;
 };
@@ -182,7 +182,7 @@ cpu.setGlobalByKey(
 	-1,
 	null,
 );
-t.openLuaSource('base.lua');
+t.openLuaSource('base.lua', sourceState.systemContextId);
 t.replaceActiveCodeSource(systemRevisionSource(baseRecord, 3));
 await t.performHotResume().admission;
 await t.frames(60);
@@ -232,6 +232,7 @@ t.assert(
 );
 
 const stoppedInitFrameDepth = cpu.getFrameDepth();
+t.openLuaSource('entry.lua', cartridge.contextId);
 await t.performHotResume().admission;
 
 t.assert(!t.debuggerStopped(), 'nested Hot Resume did not release the stopped init frame');
@@ -322,7 +323,7 @@ t.assert(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_sy
 t.assert(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_init_count')) === 1, 'cold boot did not execute init exactly once');
 t.assert(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_new_game_count')) === 1, 'cold boot did not execute new_game exactly once');
 
-t.openLuaSource('entry.lua');
+t.openLuaSource('entry.lua', cartridge.contextId);
 t.replaceActiveCodeSource(revisionSource(entryRecord, 2).replace(
 	"\tprint('hot-resume-init')\n",
 	"\tprint('hot-resume-init')\n\thot_resume_module_probe()\n",
@@ -372,7 +373,7 @@ const rebootedLoopCountKey = rebootedCpu.stringPool.intern('hot_resume_loop_coun
 rebootedCpu.setGlobalByKey(rebootedLoopCountKey, numberValueTag, 0, null);
 const loopCountAtFault = 0;
 t.assert(rebootedRuntime.completionCallPending(), 'faulted init completion root is not physically pending');
-t.openLuaSource('entry.lua');
+t.openLuaSource('entry.lua', cartridge.contextId);
 t.replaceActiveCodeSource(revisionSource(entryRecord, 2));
 await t.performHotResume().admission;
 

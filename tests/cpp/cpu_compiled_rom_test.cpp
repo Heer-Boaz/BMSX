@@ -464,7 +464,7 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 	test::runCpuParity(native.cpu, scalar.cpu, 100, 1);
 	const u32 entry = card0.textAddress + 2u * INSTRUCTION_BYTES;
 	for (auto* machine : {&native, &scalar}) {
-		require(machine->cpu.rootThread()->frameAtDepth(0)->registers[3] == valueNumber(22), "the warmed call loop returns cart-0 constants");
+		require(machine->cpu.rootThread()->frameAtDepth(0)->registers[3] == valueNumber(ramRecord ? 11 : 22), "the warmed call loop returns the closure-bound constants");
 		machine->cpu.writeFrameExecution(0, 0, card0.functionAddresses[0], entry);
 	}
 	const auto* root = native.cpu.rootThread()->frameAtDepth(0);
@@ -491,7 +491,7 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 				else require(left == right, "every retained register agrees across record-domain transitions");
 			}
 		}
-		require(first.firstFrame->registers[3] == valueNumber(22), "short grants never switch the result to the data-selected image");
+		require(first.firstFrame->registers[3] == valueNumber(ramRecord ? 11 : 22), "short grants preserve the closure-bound constants");
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 100, 1);
 	for (auto* machine : {&native, &scalar}) machine->cpu.writeFrameExecution(0, 0, card0.functionAddresses[0], entry);
@@ -506,14 +506,14 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 	}
 	require(native.cpu.getFrameDepth() == (ramRecord ? 3 : 2), "the grant reaches the selected callee activation");
 	const auto* callee = native.cpu.rootThread()->currentFrame;
-	require(callee->executionImage->executionDomainId == 0 && callee->stackCapacity == 8
+	require(callee->executionImage->executionDomainId == (ramRecord ? SYSTEM_EXECUTION_DOMAIN_ID : 0) && callee->stackCapacity == 8
 		&& callee->pc == (ramRecord ? code : card0.textAddress + 6u * INSTRUCTION_BYTES),
-		"CALL keeps the ambient EXEC image and reads the execution-socket record, not SELECT metadata");
+		"CALL uses the closure-bound domain and record, not SELECT metadata");
 	require(callee->executionImage->nativeCodeLookup->find(callee->pc, 0)->nativeBlocks->entries[(callee->pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES] != nullptr,
 		"the callee body is generated as well as its caller");
 	test::runCpuParity(native.cpu, scalar.cpu, 100, 1);
-	for (auto* machine : {&native, &scalar}) require(machine->cpu.rootThread()->frameAtDepth(0)->registers[0] == valueNumber(22),
-		"the result uses cart-0 constants, not system 11, selected socket 33, or the other record target 44");
+	for (auto* machine : {&native, &scalar}) require(machine->cpu.rootThread()->frameAtDepth(0)->registers[0] == valueNumber(ramRecord ? 11 : 22),
+		"the result uses the closure-bound constants, not the data-selected socket");
 }
 
 } // namespace

@@ -116,6 +116,8 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			|| (cpu.m_haltedUntilIrqThread == cpu.m_activeThread
 				&& cpu.m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth))) return nullptr;
 		frame = thread.currentFrame;
+		// A domain change also changes bus signals and must be latched by the run loop.
+		if (frame->executionImage != cpu.m_activeExecutionImage) return nullptr;
 		const u32 pc = frame->pc;
 		if ((pc & (INSTRUCTION_BYTES - 1u)) != 0u) return nullptr;
 		const auto& lookup = frame->executionImage->nativeCodeLookup;

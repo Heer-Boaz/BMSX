@@ -631,7 +631,7 @@ for (const wide of [false, true]) test(`generated CALL/RET preserve full state a
 	assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 });
 
-test('a compiled CALL completes after a mapped record read replaces its source instruction', () => {
+test('a compiled CALL does not reread its mapped record, and rewritten instructions invalidate the block', () => {
 	const recordAddress = 0x08005000;
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
@@ -672,12 +672,14 @@ test('a compiled CALL completes after a mapped record read replaces its source i
 		cpu.runUntilDepth(1, 100);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE + 2 * INSTRUCTION_BYTES);
 		source.armed = true;
+		assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
+		assert.equal(source.writes, 0, 'the record was bound at CLOSURE, not reread at CALL');
+		memory.writeBytes(DYNAMIC_RAM_BASE + 3 * INSTRUCTION_BYTES, replacement);
+		if (backend === CpuExecutionBackend.JavaScript) assert.equal(page.compiledBlocks!.entries[2], null);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE + 2 * INSTRUCTION_BYTES);
 		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-		assert.equal(source.writes, 1);
-		assert.equal(cpu.instructionBudgetRemaining, 89);
 		assert.equal(cpu.readFramePc(0), DYNAMIC_RAM_BASE + 4 * INSTRUCTION_BYTES);
 		assert.equal(cpu.readFrameRegister(0, 6), 1);
-		if (backend === CpuExecutionBackend.JavaScript) assert.equal(page.compiledBlocks!.entries[2], null);
 		states.push(cpu.captureRuntimeState());
 	}
 	assert.deepEqual(states[1], states[0]);

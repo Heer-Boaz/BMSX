@@ -340,7 +340,7 @@ for (const cartridgeBound of [false, true]) test(`cross-page links follow the in
 });
 
 for (const ramRecord of [false, true]) {
-	test(ramRecord ? 'a system caller uses the ambient EXEC image for a RAM function record'
+	test(ramRecord ? 'a system caller binds a RAM function record to the system image'
 		: 'warm cartridge calls read function records through EXEC rather than data SELECT', () => {
 		const record = DYNAMIC_RAM_BASE + 0x4000, code = record + 0x800;
 		const systemText = new Uint8Array(11 * INSTRUCTION_BYTES);
@@ -398,7 +398,7 @@ for (const ramRecord of [false, true]) {
 		runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
 		const entry = pair.cartImage.functions[0].codeAddress + 2 * INSTRUCTION_BYTES;
 		for (const { cpu } of machines) {
-			assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(3), 22);
+			assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(3), ramRecord ? 11 : 22);
 			cpu.writeFrameExecution(0, 0, pair.cartSymbols.functionAddresses[0], entry);
 		}
 		const root = machines[0].cpu.rootThread.frameAtDepth(0);
@@ -407,7 +407,7 @@ for (const ramRecord of [false, true]) {
 		for (let grant = 1; grant <= 128; ++grant) {
 			runCpuParity(machines[0].cpu, machines[1].cpu, grant);
 			assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
-			assert.equal(machines[0].cpu.rootThread.frameAtDepth(0).registers.getNumber(3), 22);
+			assert.equal(machines[0].cpu.rootThread.frameAtDepth(0).registers.getNumber(3), ramRecord ? 11 : 22);
 		}
 		runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
 		for (const { cpu } of machines) cpu.writeFrameExecution(0, 0, pair.cartSymbols.functionAddresses[0], entry);
@@ -422,14 +422,67 @@ for (const ramRecord of [false, true]) {
 		}
 		assert.equal(machines[0].cpu.getFrameDepth(), ramRecord ? 3 : 2);
 		const callee = machines[0].cpu.rootThread.currentFrame!;
-		assert.equal(callee.executionImage.executionDomainId, 0, 'CALL does not replace the ambient EXEC image with its system caller');
+		assert.equal(callee.executionImage.executionDomainId, ramRecord ? SYSTEM_EXECUTION_DOMAIN_ID : 0, 'the callee uses the domain bound at closure creation');
 		assert.equal(callee.stackCapacity, 8, 'CALL consumes the execution-socket record, not SELECT metadata');
 		assert.equal(callee.pc, ramRecord ? code : pair.cartImage.functions[1].codeAddress);
 		assert.ok(callee.executionImage.compiledCodeLookup!.find(callee.pc, 0)!.compiledBlocks!.entries[(callee.pc & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2],
 			'the callee body is generated as well as its caller');
 		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 		runCpuParity(machines[0].cpu, machines[1].cpu, 100, 1);
-		for (const { cpu } of machines) assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(0), 22,
-			'the result uses cart-0 constants, not system 11, selected socket 33, or the other record target 44');
+		for (const { cpu } of machines) assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(0), ramRecord ? 11 : 22,
+			'the result uses the constants of the closure-bound execution image');
 	});
 }
+
+test('closure records bind their selected socket and survive cross-domain calls and snapshot restore', () => {
+	const launcherText = new Uint8Array(4 * INSTRUCTION_BYTES);
+	writeInstruction(launcherText, 0, OpCode.WIDE, 0, 0, 32);
+	writeInstruction(launcherText, 1, OpCode.CLOSURE, 0, 0, 1);
+	writeInstruction(launcherText, 2, OpCode.JMP, 0, 63, 63, 255);
+	writeInstruction(launcherText, 3, OpCode.HALT, 0, 0, 0);
+	const cartText = new Uint8Array(4 * INSTRUCTION_BYTES);
+	writeInstruction(cartText, 0, OpCode.KSMI, 0, 0, 11);
+	writeInstruction(cartText, 1, OpCode.RET, 0, 2, 0);
+	writeInstruction(cartText, 2, OpCode.KSMI, 0, 0, 22);
+	writeInstruction(cartText, 3, OpCode.RET, 0, 2, 0);
+	const pair = linkRawTestBlua32Pair(
+		{ text: launcherText, functions: [{ firstWord: 0, wordCount: 3, maxStack: 2 }, { firstWord: 3, wordCount: 1 }], exceptionFunctionIndex: 1 },
+		{ text: cartText, functions: [{ firstWord: 0, wordCount: 2, maxStack: 1 }, { firstWord: 2, wordCount: 2, maxStack: 1 }] },
+	);
+	const cards = [pair.cartRomBytes.slice(), pair.cartRomBytes.slice()];
+	writeInstruction(cards[1], (pair.cartImage.functions[0].codeAddress - CART_ROM_BASE) / INSTRUCTION_BYTES, OpCode.KSMI, 0, 0, 55);
+	writeInstruction(cards[0], (pair.cartImage.functions[1].codeAddress - CART_ROM_BASE) / INSTRUCTION_BYTES, OpCode.KSMI, 0, 0, 77);
+	const record = pair.cartSymbols.functionAddresses[0];
+	writeLE32(cards[1], record - CART_ROM_BASE + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, pair.cartImage.functions[1].codeAddress);
+	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+		const { cpu, memory } = machine(pair.systemRomBytes, cartridgeSlots(cards[0], cards[1]), backend);
+		const frame = cpu.rootThread.frameAtDepth(0);
+		const entry = pair.systemImage.functions[0].codeAddress;
+		const closures = [];
+		for (const slot of [0, 1]) {
+			memory.writeMappedWord(IO_CART_SELECT, slot);
+			frame.registers.setNumber(1, record);
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, pair.systemSymbols.functionAddresses[0], entry);
+			cpu.runUntilDepth(0, 2);
+			closures.push(frame.registers.getClosure(0));
+		}
+		assert.notEqual(closures[0], closures[1]);
+		assert.equal(closures[0].executionDomainId, 0);
+		assert.equal(closures[1].executionDomainId, 1);
+		assert.equal(closures[0].codeAddress, pair.cartImage.functions[0].codeAddress);
+		assert.equal(closures[1].codeAddress, pair.cartImage.functions[1].codeAddress);
+		frame.registers.setClosure(0, closures[0]);
+		frame.registers.setClosure(1, closures[1]);
+		const state = cpu.captureRuntimeState();
+		cpu.restoreRuntimeState(state);
+		for (const slot of [0, 1]) {
+			memory.writeMappedWord(IO_CART_SELECT, 1 - slot);
+			const closure = cpu.rootThread.frameAtDepth(0).registers.getClosure(slot);
+			cpu.beginCompletionCall(closure);
+			cpu.runUntilDepth(1, 100);
+			const result: import('../../machine/ts/machine/cpu/value').Value[] = [];
+			cpu.readCompletionValues(result);
+			assert.deepEqual(result, [slot === 0 ? 11 : 22]);
+		}
+	}
+});

@@ -43,6 +43,7 @@ import {
 import { RuntimeGuestCallPlan } from './guest_call';
 import type { RuntimeFaultState } from './fault_state';
 import {
+	applyHotResumeClosureRevision,
 	applyHotResumeRelocation,
 	buildHotResumeRelocation,
 	type HotResumeRevision,
@@ -193,6 +194,7 @@ export function buildBlua32Revision(
 	if (rebuilt.system !== null) {
 		revisions[0] = {
 			previousImage: rebuilt.system.previousImage,
+			nextImage: rebuilt.system.linked.layout,
 			revision: buildBlua32ExecutionRevision(
 				rebuilt.system.previousImage,
 				rebuilt.system.previousSymbols,
@@ -211,6 +213,7 @@ export function buildBlua32Revision(
 		const cartridge = sources.cartridgeSlots[slot]!;
 		revisions[slot + 1] = {
 			previousImage: image.previousImage,
+			nextImage: image.linked.layout,
 			revision: buildBlua32ExecutionRevision(
 				image.previousImage,
 				image.previousSymbols,
@@ -258,6 +261,7 @@ export function installBlua32Revision(
 			cpu.replaceExecutionImage(image);
 		}
 	}
+	applyHotResumeClosureRevision(cpu, built.revisions);
 	applyHotResumeRelocation(cpu, relocation);
 }
 

@@ -219,7 +219,6 @@ test::Blua32TestImage externalCallImage() {
 }
 
 void admitExternalArgumentsAcrossStackGrowth() {
-	for (const bool explicitDomain : {false, true}) {
 		const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, externalCallImage());
 		Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
 		IrqController irq(memory);
@@ -235,20 +234,17 @@ void admitExternalArgumentsAcrossStackGrowth() {
 		const std::array args{valueString(id)};
 		const auto heap = cpu.luaHeap().captureState();
 		cpu.luaHeap().restoreState({heap.trackedBytes, 0});
-		if (explicitDomain) cpu.beginCompletionClosureInExecutionDomain(-1, *closure, BuiltinArgsView(args.data(), args.size()));
-		else cpu.beginCompletionCall(*closure, BuiltinArgsView(args.data(), args.size()));
+		cpu.beginCompletionCall(*closure, BuiltinArgsView(args.data(), args.size()));
 		require(cpu.stringPool().find(text) == id, "stack growth cannot collect incoming host arguments");
 		require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "the admitted callee returns normally");
 		const auto result = cpu.readCompletionValues();
 		require(result.size() == 1 && valueIsString(result[0]) && asStringId(result[0]) == id, "the real call preserves the original string ID");
 		require(cpu.stringPool().toString(id) == text, "the result owns its original payload");
 		const BuiltinArgsView forwarded(result.data(), result.size());
-		if (explicitDomain) cpu.beginCompletionClosureInExecutionDomain(-1, *closure, forwarded);
-		else cpu.beginCompletionCall(*closure, forwarded);
+		cpu.beginCompletionCall(*closure, forwarded);
 		require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "completion-latch arguments can be admitted as the next call's input");
 		const auto forwardedResult = cpu.readCompletionValues();
 		require(forwardedResult.size() == 1 && asStringId(forwardedResult[0]) == id, "admission consumes its retained argument copy before clearing the old latch");
-	}
 }
 } // namespace
 

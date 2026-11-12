@@ -9,6 +9,7 @@ import {
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { Closure } from '../../machine/ts/machine/cpu/closure';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
+import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import {
 	createBuiltinFunction,
 	valueString,
@@ -28,7 +29,7 @@ test('runtime values expose one numeric representation tag', () => {
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const stringValue = valueString(cpu.stringPool.intern('tagged'));
 	const table = cpu.createTable(0, 0);
-	const closure = new Closure(0x1000, [], 0);
+	const closure = new Closure(0x1000, [], 0, 0, 0, 0, 0, 0, SYSTEM_EXECUTION_DOMAIN_ID, 0, false);
 	const builtinFunction = createBuiltinFunction(BuiltinFunctionId.Next);
 	const values: ReadonlyArray<readonly [Value, ValueTag]> = [
 		[null, ValueTag.Nil],

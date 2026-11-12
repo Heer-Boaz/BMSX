@@ -31,7 +31,7 @@ representation.
 
 Register R0 belongs to the current function frame; R0 in a called function is
 a different slot. An ordinary call retains the caller's continuation and uses
-the callee's function record to establish its entry PC and register capacity.
+the callee closure's bound function data to establish its entry PC and register capacity.
 A return places results in the caller's requested result range. Captured locals
 remain connected to their closures; the closure rules below describe their
 lifetime.
@@ -112,11 +112,11 @@ for its closure:
 | Step | Caller state | Execution effect |
 |---|---|---|
 | Construct the function's closure in R3 | R3 holds the callable value | Execution continues in the caller; the callee has not started |
-| Execute `CALL 3,1,2` | R3 supplies that closure; B=1 supplies no arguments; C=2 requests one result | A new frame starts at the code address in the function record |
+| Execute `CALL 3,1,2` | R3 supplies that closure; B=1 supplies no arguments; C=2 requests one result | A new frame starts at the code address bound to the closure |
 | Return normally from that callee | Its first result replaces the caller's R3, or nil is supplied if it produced none | The caller resumes at the instruction following the CALL |
 
 The callee uses its own R0 and subsequent slots. Its function-record address
-identifies the entry metadata, while its PC identifies the instructions being
+identifies the record from which its closure acquired entry metadata, while its PC identifies the instructions being
 executed. The caller retains its next PC during the call; that continuation is
 not an argument or an ordinary returned value. Constructing the closure,
 entering the function and receiving its results are therefore separate steps.
@@ -317,7 +317,7 @@ K0–K16383. A raw count/key field instead keeps its unsigned encoded value.
 
 An instruction's encoding range does not allocate its referenced registers or
 constants. A frame obtains its entry PC, parameter count and stack allocation
-from its function record. The reserved capacity is the largest of one slot, the declared maximum stack
+from its closure's bound function data. The reserved capacity is the largest of one slot, the declared maximum stack
 and the fixed-parameter count. Missing fixed parameters are nil;
 other scratch slots must be written before they are read. A call may reuse its
 caller's argument and temporary slots as the callee's register window. Ordinary register writes can
@@ -830,7 +830,7 @@ exactly 5, so the earlier argument in R5 lies outside the active range.
 
 An open-result call instead sets `top` to `A` plus the number of results actually produced. This exact-top rule makes a returned value range available to a following open-argument call or open return without treating every previously written register as an argument or result. It also means that result placement can lower `top`. Normal builtin completion follows the same result selection, nil padding, and exact-top rules.
 
-On entry to a closure, the function record supplies the code address and parameter metadata. The frame starts with `top` equal to its fixed-parameter count, not its maximum stack allocation. Supplied arguments fill the fixed parameters in order, and missing fixed arguments become nil. Excess arguments are retained as varargs only for a function marked vararg; otherwise they are not retained as varargs.
+On entry to a closure, its bound function data supplies the code address and parameter metadata. The frame starts with `top` equal to its fixed-parameter count, not its maximum stack allocation. Supplied arguments fill the fixed parameters in order, and missing fixed arguments become nil. Excess arguments are retained as varargs only for a function marked vararg; otherwise they are not retained as varargs.
 
 `VARARG A,0` copies the saved excess arguments starting at `R(A)` and sets `top` exactly to the end of that copied range. If there are none, it sets `top` to `A`. A nonempty fixed-count `VARARG` pads with nil as needed and only raises `top`, to at least `A+B-1`. `VARARG A,1` writes nothing and leaves `top` unchanged.
 
@@ -894,7 +894,7 @@ The `CLOSURE` register-address flag chooses how to obtain the function-record ad
 - Flag clear: the address is `Bx × 16`.
 - Flag set: `Bx` selects the register supplying the unsigned address.
 
-The function record is read before the destination is written. It identifies the function's code and frame metadata, including the fixed-parameter count, maximum stack allocation, vararg and static flags, and upvalue information. A failed record read hard-halts without writing `R(A)`. A bus-read fault while reading the upvalue descriptors likewise hard-halts without writing `R(A)`.
+The function record is read before the destination is written. It identifies the function's code and frame metadata, including the fixed-parameter count, maximum stack allocation, vararg and static flags, and upvalue information. The closure binds that function data at construction: later writes to the record do not change an existing closure, and calling it does not read the record again. Instruction bytes are not copied into the closure; instruction fetch continues to use the bound code address. A failed record read hard-halts without writing `R(A)`. A bus-read fault while reading the upvalue descriptors likewise hard-halts without writing `R(A)`.
 
 
 Each upvalue descriptor is a 32-bit word. Descriptor `i` is read at `upvalueTableAddress + 4i`:
@@ -908,10 +908,11 @@ Each upvalue descriptor is a 32-bit word. Descriptor `i` is read at `upvalueTabl
 
 An open upvalue accesses its captured parent-frame register directly. Captures can share an already-linked open upvalue for that slot, so updates through the captured variable remain shared. Closing an upvalue retains the current language value separately from the frame; subsequent reads and writes access that retained storage. `GETUP` and `SETUP` use the same upvalue operand regardless of whether the upvalue is open or closed.
 
-Repeated CLOSURE operations for a STATIC function record with no upvalues
-return the same function value for that record address. An ordinary call uses
-that value; a numeric function-record address is supplied to CLOSURE or EXEC
-under their separate operand rules.
+Repeated CLOSURE operations for a STATIC function record with no upvalues may
+return the same function value when their bound function data and execution
+context are identical. An ordinary call uses that value; a numeric
+function-record address is supplied to CLOSURE or EXEC under their separate
+operand rules.
 
 ### Two global namespaces {#sec-cpu-two-global-namespaces}
 
@@ -1014,7 +1015,7 @@ cartridge execution together. Installed library values and active execution
 state already consume part of it at cartridge entry. Further retained values
 and storage growth use the remaining capacity.
 
-The budget covers Table storage, dynamic closures and captured-variable cells,
+The budget covers Table storage, closures and captured-variable cells,
 Threads and their reserved value-slot capacity, and String storage charges.
 Capacity matters as well as visible contents: a Table can reserve more entries
 than it currently contains, and a Thread's reserved slot storage can exceed its
@@ -1051,12 +1052,12 @@ member selects ordinary strong entries. This lookup does not invoke `__index`.
 | `v` | Keys remain strong; values alone do not retain collectable objects. |
 | `kv` | Neither side alone retains collectable objects. |
 
-Collectable weak entries can refer to Tables, threads and dynamically captured
-closures. Numbers, booleans, builtin functions and canonical static closures do
+Collectable weak entries can refer to Tables, threads and closures, including
+closures without captured variables. Numbers, booleans and builtin functions do
 not disappear through weak-entry collection. Strings also remain in surviving
 weak entries; they are not removed merely because their weak position is their
-only reference. A static function with zero upvalues has the canonical closure
-identity described above, not the lifetime of a newly allocated captured closure.
+only reference. Reusing a closure for a static function does not keep that
+closure alive solely because it was reused.
 
 ```lua
 local owners = {}

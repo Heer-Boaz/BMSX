@@ -772,7 +772,7 @@ while true do end
 	const pc = cpu.readFramePc(baseDepth - 1);
 	const closure = cpu.getGlobalByKey(cpu.stringPool.find('operation')!) as Closure;
 	for (const [argument, expected] of [[3, 10], [5, 15]]) {
-		cpu.beginCompletionClosureInExecutionDomain(0, closure, [argument]);
+		cpu.beginCompletionCall(closure, [argument]);
 		assert.equal(cpu.runUntilDepth(baseDepth, 2000), RunResult.Halted);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [expected]);
 		assert.equal(cpu.readFramePc(baseDepth - 1), pc);

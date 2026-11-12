@@ -29,6 +29,10 @@ import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { EditorTextModelService, editorTextModelService } from '../../ide/editor/model/model_service';
 import { valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
+import { Table } from '../../machine/ts/machine/cpu/table';
+import { buildHotResumeRelocation } from '../../ide/runtime/hot_resume_relocation';
+import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
+import { identityHotResumeRevision } from '../helpers/hot_resume';
 
 async function fixture(t: TestContext, init = '') {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-hot-resume-'));
@@ -128,6 +132,85 @@ for i = 1, 512 do retained = calculate(retained) end`);
 	}
 	assert.ok(regenerated > 0, 'the edited callable must become generated code again');
 	assert.equal(f.cpu.getFrameDepth(), depth); assert.equal(f.cpu.readFramePc(depth - 1), caller); assert.equal(f.cpu.isHaltedUntilIrq(), true);
+});
+
+test('Hot Resume rebinds retained closures without replacing their captures or identity', async t => {
+	const f = await fixture(t, `local retained_value = 17
+function make_retained() return function(x) return x + retained_value + 3 end end
+retained_function = make_retained()`);
+	const key = f.cpu.stringPool.intern('retained_function');
+	const retained = f.cpu.getGlobalByKey(key) as Closure;
+	assert.equal(valueTag(retained), ValueTag.Closure);
+	assert.equal(retained.upvalues.length, 1);
+	const upvalue = retained.upvalues[0];
+	const oldCodeAddress = retained.codeAddress;
+	const depth = f.cpu.getFrameDepth();
+	f.cpu.beginCompletionCall(retained, [2]);
+	assert.equal(f.cpu.runUntilDepth(depth, 10000), RunResult.Halted);
+	assert.deepEqual(f.runtime.readCompletionValues(), [22]);
+	const source = f.model.buffer.getText();
+	const offset = source.indexOf('retained_value + 3');
+	const parentOffset = source.indexOf('return function(x)');
+	assert.ok(offset >= 0);
+	assert.ok(parentOffset >= 0);
+	f.model.pushEditOperations([
+		{ offset: parentOffset, deleteLength: 'return function(x)'.length,
+			text: 'local y = retained_value; retained_value = y + 1; return function(x)' },
+		{ offset, deleteLength: 'retained_value + 3'.length, text: 'retained_value + 7' },
+	]);
+	assert.deepEqual(await f.service.resume().completion, { status: 'completed', applied: true });
+	assert.equal(f.cpu.getGlobalByKey(key), retained);
+	assert.equal(retained.upvalues[0], upvalue);
+	assert.notEqual(retained.codeAddress, oldCodeAddress, 'the retained closure must follow relocated code');
+	f.cpu.beginCompletionCall(retained, [2]);
+	assert.equal(f.cpu.runUntilDepth(depth, 10000), RunResult.Halted);
+	assert.deepEqual(f.runtime.readCompletionValues(), [26]);
+});
+
+test('Hot Resume rejects an unmapped live closure before changing guest state', async t => {
+	const f = await fixture(t, `local retained_value = 17
+function make_retained() return function(x) return x + retained_value end end
+retained_function = make_retained()`);
+	const key = f.cpu.stringPool.intern('retained_function');
+	const retained = f.cpu.getGlobalByKey(key) as Closure;
+	const image = f.sources.currentBlua32Media.cartridgeSlots[0]!.layout;
+	const revision = identityHotResumeRevision(image);
+	const index = blua32FunctionIndexAtAddress(image, retained.functionAddress);
+	assert.notEqual(index, -1);
+	revision.revision.functionAddresses[index] = 0;
+	const oldCodeAddress = retained.codeAddress;
+	assert.throws(() => buildHotResumeRelocation(f.cpu, [null, revision, null], f.cpu.getFrameDepth()), /closure/);
+	assert.equal(f.cpu.getGlobalByKey(key), retained);
+	assert.equal(retained.codeAddress, oldCodeAddress);
+});
+
+test('Hot Resume rebinds a closure retained only in a weak table', async t => {
+	const f = await fixture(t, `weak_values = {}
+weak_meta = { __mode = 'v' }
+local function put_weak()
+ local retained_value = 17
+ weak_values[1] = function(x) return x + retained_value + 3 end
+end
+put_weak()`);
+	const weakValues = f.cpu.getGlobalByKey(f.cpu.stringPool.intern('weak_values')) as Table;
+	weakValues.metatable = f.cpu.getGlobalByKey(f.cpu.stringPool.intern('weak_meta')) as Table;
+	const retained = weakValues.getInteger(1) as Closure;
+	let visited = false;
+	weakValues.setInteger(1, null);
+	f.cpu.visitReachableClosures(closure => { if (closure === retained) visited = true; });
+	assert.equal(visited, false, 'the weak entry must be the only guest path to this closure');
+	weakValues.setInteger(1, retained);
+	f.cpu.visitReachableClosures(closure => { if (closure === retained) visited = true; });
+	assert.equal(visited, true, 'tooling traversal includes stored weak entries');
+	const source = f.model.buffer.getText();
+	const offset = source.indexOf('retained_value + 3');
+	f.model.pushEditOperations([{ offset, deleteLength: 'retained_value + 3'.length, text: 'retained_value + 7' }]);
+	assert.deepEqual(await f.service.resume().completion, { status: 'completed', applied: true });
+	assert.equal(weakValues.getInteger(1), retained);
+	const depth = f.cpu.getFrameDepth();
+	f.cpu.beginCompletionCall(retained, [2]);
+	assert.equal(f.cpu.runUntilDepth(depth, 10000), RunResult.Halted);
+	assert.deepEqual(f.runtime.readCompletionValues(), [26]);
 });
 
 test('build rejection has a result without poisoning execution; repair can use the same queue', async t => {

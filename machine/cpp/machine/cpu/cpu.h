@@ -9,6 +9,7 @@
 #include <string>
 #include <type_traits>
 #include <unordered_map>
+#include <list>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -292,11 +293,6 @@ public:
 		ExecutionDomainId executionDomainId,
 		u32 functionAddress
 	);
-	void beginCompletionClosureInExecutionDomain(
-		ExecutionDomainId executionDomainId,
-		Closure& closure,
-		BuiltinArgsView args = {}
-	);
 	// Move an evicted snapshot here to reuse its storage without copying it.
 	CpuRuntimeState captureRuntimeState(CpuSnapshot snapshot = {}) const;
 	void restoreRuntimeState(const CpuRuntimeState& state);
@@ -448,7 +444,8 @@ private:
 	void invalidateDecodedWords(u64 key, u32 firstWord, u32 endWord);
 	DecodedInstructionPage& decodedPageForFrame(CallFrame& frame, u32 pc);
 	bool decodeInstruction(CallFrame& frame, DecodedInstructionPage& page, u32 pageOffset, u32 pc, bool allowFusion);
-	Closure* staticClosureAtAddress(u32 address);
+	Closure* staticClosureForRecord(const Closure& record);
+	Closure boundFunctionRecord(const Blua32FunctionRecordLatch& record) const;
 	bool readFunctionRecord(
 		Blua32ExecutionImage& image,
 		u32 address,
@@ -504,7 +501,7 @@ private:
 	void storeTableFieldIndexCached(int& predictedSlot, const Value& base, StringId key, const Value& value);
 
 	void clearCallStack();
-	void ensureStackSize(size_t size);
+	void ensureStackSize(size_t size, Value root = valueNil());
 	void refreshFrameRegisterPointers();
 	BuiltinResultsScratchScope acquireBuiltinResultScratch();
 	void releaseLocalRoots(size_t base);
@@ -557,6 +554,7 @@ private:
 	void hardHalt();
 	void blockMappedWrite(CallFrame& frame, uint32_t address);
 	void markRoots(GcHeap& heap);
+	void pruneStaticClosures();
 
 	std::array<
 		std::unique_ptr<Blua32ExecutionImage>,
@@ -609,7 +607,7 @@ private:
 	GcHeap m_heap;
 	std::array<Value, LUA_FAULT_REASON_INVALID_ARGUMENT + 1u> m_luaFaultErrorValues;
 	Value m_errorInErrorHandlingValue;
-	std::unordered_map<u32, Closure> m_staticClosuresByAddress;
+	std::unordered_map<u32, std::list<Closure*>> m_staticClosuresByAddress;
 	std::array<BuiltinFunction, BUILTIN_FUNCTION_COUNT> m_builtinFunctions;
 
 	ScratchBuffer<BuiltinResults> m_builtinResultScratch;

@@ -137,6 +137,8 @@ export type Blua32FunctionRecord = {
 	codeByteCount: number;
 	numParams: number;
 	maxStack: number;
+	flags: number;
+	upvalueTableAddress: number;
 	isVararg: boolean;
 	staticClosure: boolean;
 	upvalues: Blua32UpvalueRecord[];
@@ -271,6 +273,8 @@ export function decodeBlua32Image(bytes: Uint8Array, imageAddress: number): Blua
 			codeByteCount,
 			numParams: view.getUint32(offset + BLUA32_FUNCTION_NUM_PARAMS_OFFSET, true),
 			maxStack: view.getUint32(offset + BLUA32_FUNCTION_MAX_STACK_OFFSET, true),
+			flags,
+			upvalueTableAddress,
 			isVararg: (flags & BLUA32_FUNCTION_VARARG) !== 0,
 			staticClosure: (flags & BLUA32_FUNCTION_STATIC) !== 0,
 			upvalues,

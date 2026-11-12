@@ -20,7 +20,7 @@ import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { BUS_FAULT_ACCESS_READ, BUS_FAULT_ACCESS_U32, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ACCESS, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE, IO_GX_GPU_GP0, IO_IRQ_MASK, IRQ_GPU, IO_CART_SELECT } from '../../machine/ts/spec/bmsx/io';
-import { CART_RAM_BASE, CART_ROM_BASE, DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CART_RAM_BASE, DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { blua32TestFunctionAddress, createTestSystemCpu, createTestBlua32PairCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
@@ -420,7 +420,7 @@ test('writable code watches belong to the physical cartridge socket', () => {
 });
 
 test('closure call and return preserve grants, depth, register bases and call-side device/observer edges', () => {
-	for (const instrumented of [false, true]) for (const edgeKind of [0, 1, 2, 3, 4, 5]) {
+	for (const instrumented of [false, true]) for (const edgeKind of [0, 1, 2, 4, 5]) {
 		const mappedRecord = IO_GX_GPU_GP0 & ~(BLUA32_FUNCTION_ALIGNMENT - 1);
 		const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 		writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
@@ -455,14 +455,6 @@ test('closure call and return preserve grants, depth, register bases and call-si
 		cpu.rootThread.frameAtDepth(0).registers.setNumber(2, 99);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 		const callPc = cpu.readFramePc(0);
-		const closure = cpu.rootThread.frameAtDepth(0).registers.getClosure(3);
-		if (edgeKind === 3) {
-			closure.functionAddress = CART_ROM_BASE;
-			assert.equal(cpu.runUntilDepth(0, 3), RunResult.Halted);
-			assert.equal(cpu.activeThread.frameDepth, 1);
-			assert.equal(cpu.readFrameRegister(0, 2), 99);
-			continue;
-		}
 		if (edgeKind === 4 || edgeKind === 5) {
 			if (edgeKind === 5) assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
 			const state = cpu.captureRuntimeState();
@@ -480,7 +472,7 @@ test('closure call and return preserve grants, depth, register bases and call-si
 		armed = true;
 		memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_GPU);
 		assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
-		if (edgeKind !== 0) {
+		if (edgeKind === 2) {
 			assert.equal(edges, 1);
 			assert.equal(cpu.activeThread.frameDepth, 3);
 			assert.equal(cpu.readCauseWord(), CPU_CAUSE_IRQ);
@@ -489,6 +481,7 @@ test('closure call and return preserve grants, depth, register bases and call-si
 			assert.equal(cpu.activeThread.frameAtDepth(2).registers.getNumber(0), 1);
 			continue;
 		}
+		if (edgeKind === 1) assert.equal(edges, 0, 'CALL does not reread the mapped function record');
 		assert.equal(cpu.activeThread.frameDepth, 2);
 		assert.equal(cpu.readFramePc(1), calleePc + INSTRUCTION_BYTES);
 		assert.equal(cpu.runUntilDepth(1, 20), RunResult.Halted);

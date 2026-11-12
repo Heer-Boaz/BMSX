@@ -12,7 +12,7 @@ import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 	for (const [op, operand, placed] of [[OpCode.LOADNIL, 0, 0], [OpCode.LOADNIL, 128, 128],
 		[OpCode.VARARG, 0, 3], [OpCode.VARARG, 1, 0], [OpCode.VARARG, 3, 2], [OpCode.VARARG, 129, 128]]) {
-		test(`value ranges charge placed slots on cold and warm execution (${backend}, ${OpCode[op]}, ${operand})`, () => {
+		test(`value ranges charge placed slots on cold and warm execution (${backend}, ${op === OpCode.LOADNIL ? 'LOADNIL' : 'VARARG'}, ${operand})`, () => {
 			const text = new Uint8Array(5 * INSTRUCTION_BYTES);
 			writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
 			writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);

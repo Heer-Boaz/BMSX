@@ -265,8 +265,13 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 		{.firstWord = DECODED_PAGE_WORDS, .wordCount = 1, .numParams = static_cast<u32>(params),
 			.maxStack = params == 0 ? 0u : static_cast<u32>(maxStack), .isVararg = vararg}};
 	image.globalNames = {"nativeCallMarker"};
-	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+	const u32 record = DYNAMIC_RAM_BASE + 0x1ff0u;
+	image.closureRelocations = {{1, ramRecord ? record : test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 	CpuMachine machine(image, false);
+	if (ramRecord) {
+		machine.memory.writeBytes(record, machine.rom.bytes.data() + machine.rom.functionAddresses[1], BLUA32_FUNCTION_RECORD_SIZE);
+		machine.memory.writeMappedU32LE(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, 7);
+	}
 	const u32 markerPc = machine.rom.textAddress + 2 * MAPPED_PAGE_BYTE_SIZE;
 	machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], markerPc);
 	machine.cpu.runUntilDepth(0, 4096);
@@ -291,12 +296,9 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 	caller->top = open ? base + 1 + args : caller->stackCapacity;
 	const u32 calleePc = machine.rom.textAddress + MAPPED_PAGE_BYTE_SIZE;
 	if (ramRecord) {
-		// Neither a guest address nor the host backing needs function alignment for
-		// an effect-free record span. Cross a decoded page with fresh record fields.
-		const u32 record = DYNAMIC_RAM_BASE + 0x1ff1u;
-		machine.memory.writeBytes(record, machine.rom.bytes.data() + machine.rom.functionAddresses[1], BLUA32_FUNCTION_RECORD_SIZE);
-		asClosure(caller->registers[6])->functionAddress = record;
-		machine.memory.writeMappedU32LE(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, 7);
+		// The cross-page record can change after closure creation without
+		// changing the reserved frame or native call target.
+		machine.memory.writeMappedU32LE(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, 1024);
 	}
 	const auto marker = machine.cpu.stringPool().intern("nativeCallMarker");
 	machine.cpu.setGlobalByKey(marker, valueBool(false));
@@ -337,7 +339,7 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 	require(spare->varargBase == base + 1 + params && spare->varargCount == count
 		&& spare->stackBase == calleeBase && spare->top == params
 		&& spare->stackCapacity == capacity,
-		"fresh record fields govern shared argument and working windows, including formal parameters beyond maxStack");
+		"bound record fields govern shared argument and working windows, including formal parameters beyond maxStack");
 	for (int index = 0; index < params; ++index) require(spare->registers[index] == (index < args ? payloads[index] : valueNil()),
 		"fixed arguments retain raw Value bits and missing arguments are nil");
 	for (int index = 0; index < count; ++index) require(thread->stack[spare->varargBase + index] == payloads[params + index],
@@ -449,6 +451,8 @@ void callFrameInitialization(int params, int maxStack, int args, bool vararg, bo
 		auto* thread = machine->cpu.activeThread();
 		auto* caller = thread->currentFrame;
 		machine->memory.writeMappedU32LE(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, static_cast<u32>(maxStack));
+		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
+		machine->cpu.runUntilDepth(0, 1);
 		require(thread->stackCapacity >= 40, "an actual earlier call retained backing beyond the smaller raw frame reservation");
 		std::fill(thread->stack + thread->stackTop, thread->stack + thread->stackCapacity, valueNumber(63));
 		const std::array<Value, 5> payloads{valueNumber(-0.0), VALUE_QNAN_MASK | 0x2au, valueBool(true),
@@ -740,6 +744,62 @@ void errorHandlerReturnPlacementCycles() {
 	}
 }
 
+void weakCanonicalClosuresAndStaticEntry() {
+	const u32 record = DYNAMIC_RAM_BASE + 0x5000u;
+	test::Blua32TestImage image;
+	image.text.resize(4 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 2},
+		{.firstWord = 3, .wordCount = 1, .maxStack = 2}};
+	image.closureRelocations = {{1, record}};
+	for (bool scalar : {false, true}) {
+		CpuMachine machine(image, scalar);
+		machine.memory.writeBytes(record, machine.rom.bytes.data() + machine.rom.functionAddresses[1], BLUA32_FUNCTION_RECORD_SIZE);
+		for (u32 version = 1; version <= 64; ++version) {
+			machine.memory.writeMappedU32LE(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, version);
+			machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress);
+			machine.cpu.runUntilDepth(0, 1);
+		}
+		auto countVersions = [&](const CpuRuntimeState& state) {
+			size_t count = 0;
+			for (u32 offset : state.snapshot.objectWords()) {
+				if (state.snapshot.word(offset + SNAP_CLOSURE_KIND) == static_cast<u32>(CpuSnapshotObjectKind::Closure)
+					&& state.snapshot.word(offset + SNAP_CLOSURE_FUNCTION_ADDRESS) == record
+					&& state.snapshot.word(offset + SNAP_CLOSURE_CANONICAL) != 0) ++count;
+			}
+			return count;
+		};
+		const auto before = machine.cpu.captureRuntimeState();
+		require(countVersions(before) == 64, "snapshot retains uncollected weak canonical entries");
+		machine.cpu.restoreRuntimeState(before);
+		require(countVersions(machine.cpu.captureRuntimeState()) == 64, "restore retains the uncollected interning state");
+		const size_t bytesBefore = machine.cpu.luaHeap().usedBytes();
+		machine.cpu.collectHeap();
+		require(countVersions(machine.cpu.captureRuntimeState()) == 1 && machine.cpu.luaHeap().usedBytes() < bytesBefore,
+			"guest GC removes unreachable record versions from the weak index and heap");
+		const auto last = asClosure(machine.cpu.readFrameRegister(0, 0));
+		require(last->maxStack == 64, "the live closure survives guest GC");
+		machine.memory.writeMappedU32LE(record + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, 3);
+		machine.memory.writeMappedU32LE(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, 4096);
+		const auto pressure = machine.cpu.luaHeap().captureState();
+		machine.cpu.luaHeap().restoreState({pressure.trackedBytes, pressure.trackedBytes + 32});
+		machine.cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, record);
+		require(machine.cpu.luaHeap().captureState().nextCollectionBytes > pressure.trackedBytes + 32,
+			"callee stack growth collected while admitting a freshly created canonical closure");
+		const auto direct = machine.cpu.activeThread()->currentFrame->closure;
+		require(direct->recordUpvalueCount == 3 && direct->upvalueCount == 0,
+			"direct STATIC entry binds raw descriptor count but has no captured slots");
+		const auto directState = machine.cpu.captureRuntimeState();
+		machine.cpu.restoreRuntimeState(directState);
+		const auto restored = machine.cpu.activeThread()->currentFrame->closure;
+		require(restored->recordUpvalueCount == 3 && restored->upvalueCount == 0,
+			"snapshot preserves the distinction without reading nonexistent upvalues");
+	}
+}
+
 void crossPageCalls(bool open, u32 recordOffset) {
 	const u32 record = DYNAMIC_RAM_BASE + recordOffset;
 	test::Blua32TestImage image; image.text.resize(2 * MAPPED_PAGE_BYTE_SIZE);
@@ -796,6 +856,8 @@ void crossPageCalls(bool open, u32 recordOffset) {
 		const auto* spare = caller->next;
 		require(spare != nullptr, "warm calls have a reusable callee node");
 		machine->memory.writeMappedU32LE(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, 1024);
+		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
+		machine->cpu.runUntilDepth(0, 1);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress + 2u * INSTRUCTION_BYTES);
 		const auto heap = machine->cpu.luaHeap().captureState();
 		const std::string garbage(heap.nextCollectionBytes - heap.trackedBytes - 1, 'g');
@@ -810,13 +872,78 @@ void crossPageCalls(bool open, u32 recordOffset) {
 	requireParity(native, scalar);
 	for (auto* machine : {&native, &scalar}) {
 		const u32 entry = machine->rom.textAddress + 2u * INSTRUCTION_BYTES;
+		machine->cpu.activeThread()->currentFrame->registers[1] = machine->cpu.activeThread()->currentFrame->registers[0];
 		machine->memory.writeBytes(record, machine->rom.bytes.data() + machine->rom.functionAddresses[2], BLUA32_FUNCTION_RECORD_SIZE);
+		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], entry);
+		machine->cpu.runUntilDepth(0, 5); machine->cpu.runUntilDepth(1, 100);
+		require(machine->cpu.readFrameRegister(0, 4) == valueNumber(7), "an existing closure retains its creation-time function record");
+		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
+		machine->cpu.runUntilDepth(0, 1);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], entry);
 		machine->cpu.runUntilDepth(0, 20000); machine->cpu.runUntilDepth(1, 100);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], entry);
-		machine->cpu.runUntilDepth(0, 5); machine->cpu.runUntilDepth(1, 100);
-		require(machine->cpu.readFrameRegister(0, 4) == valueNumber(-1), "a live closure re-reads its current RAM function record");
+		machine->cpu.runUntilDepth(0, 5);
+		auto* active = machine->cpu.activeThread()->currentFrame;
+		require(active->pc == machine->rom.textAddress + (DECODED_PAGE_WORDS + 32u) * INSTRUCTION_BYTES,
+			"the rebound closure reached its new callee");
+		const auto activeSnapshot = machine->cpu.captureRuntimeState();
+		machine->memory.writeMappedU32LE(record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, machine->rom.textAddress);
+		machine->cpu.restoreRuntimeState(activeSnapshot);
+		active = machine->cpu.activeThread()->currentFrame;
+		require(active->pc == machine->rom.textAddress + (DECODED_PAGE_WORDS + 32u) * INSTRUCTION_BYTES
+			&& active->executionImage->executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID,
+			"snapshot restores an active frame from its closure, not a rewritten record");
+		machine->cpu.runUntilDepth(1, 100);
+		require(machine->cpu.readFrameRegister(0, 4) == valueNumber(-1), "a newly created closure binds the rewritten RAM record");
+		const auto oldFunction = machine->cpu.readFrameRegister(0, 1);
+		const auto newFunction = machine->cpu.readFrameRegister(0, 0);
+		require(oldFunction != newFunction && asClosure(oldFunction)->functionAddress == asClosure(newFunction)->functionAddress
+			&& asClosure(oldFunction)->codeAddress != asClosure(newFunction)->codeAddress,
+			"a rewritten static record creates a distinct canonical closure");
+		const u32 oldCode = asClosure(oldFunction)->codeAddress;
+		const u32 newCode = asClosure(newFunction)->codeAddress;
+		const auto snapshot = machine->cpu.captureRuntimeState();
+		machine->cpu.restoreRuntimeState(snapshot);
+		const auto restoredOld = machine->cpu.readFrameRegister(0, 1);
+		const auto restoredNew = machine->cpu.readFrameRegister(0, 0);
+		require(restoredOld != restoredNew && asClosure(restoredOld)->codeAddress == oldCode
+			&& asClosure(restoredNew)->codeAddress == newCode,
+			"snapshot restores both versions of a canonical closure at one address");
+		// A hot-resume relocation can bind two previously distinct closures to
+		// identical records. Their identities and hash keys must still survive.
+		auto relocatedSnapshot = snapshot;
+		u32 oldOffset = 0, newOffset = 0;
+		for (const u32 offset : relocatedSnapshot.snapshot.objectWords()) {
+			if (relocatedSnapshot.snapshot.word(offset + SNAP_CLOSURE_KIND) != static_cast<u32>(CpuSnapshotObjectKind::Closure)
+				|| relocatedSnapshot.snapshot.word(offset + SNAP_CLOSURE_FUNCTION_ADDRESS) != record) continue;
+			if (relocatedSnapshot.snapshot.word(offset + SNAP_CLOSURE_CODE_ADDRESS) == oldCode) oldOffset = offset;
+			if (relocatedSnapshot.snapshot.word(offset + SNAP_CLOSURE_CODE_ADDRESS) == newCode) newOffset = offset;
+		}
+		for (const u32 field : {SNAP_CLOSURE_CODE_ADDRESS, SNAP_CLOSURE_NUM_PARAMS, SNAP_CLOSURE_MAX_STACK,
+			SNAP_CLOSURE_FLAGS, SNAP_CLOSURE_UPVALUE_TABLE_ADDRESS, SNAP_CLOSURE_EXECUTION_DOMAIN_ID})
+			relocatedSnapshot.snapshot.setWord(oldOffset + field, relocatedSnapshot.snapshot.word(newOffset + field));
+		machine->cpu.restoreRuntimeState(relocatedSnapshot);
+		const auto relocatedOld = asClosure(machine->cpu.readFrameRegister(0, 1));
+		const auto relocatedNew = asClosure(machine->cpu.readFrameRegister(0, 0));
+		require(relocatedOld != relocatedNew && relocatedOld->sameFunction(*relocatedNew)
+			&& relocatedOld->hashId != relocatedNew->hashId,
+			"restore preserves distinct canonical identities even when bound records coincide");
+		relocatedSnapshot.snapshot.setWord(oldOffset + SNAP_CLOSURE_HASH_ID,
+			relocatedSnapshot.snapshot.word(newOffset + SNAP_CLOSURE_HASH_ID));
+		machine->cpu.restoreRuntimeState(relocatedSnapshot);
+		const auto collidedOld = asClosure(machine->cpu.readFrameRegister(0, 1));
+		const auto collidedNew = asClosure(machine->cpu.readFrameRegister(0, 0));
+		require(collidedOld != collidedNew && collidedOld->sameFunction(*collidedNew)
+			&& collidedOld->hashId == collidedNew->hashId,
+			"canonical closure identity also survives object hash collisions");
+		const auto collidedSnapshot = machine->cpu.captureRuntimeState();
+		machine->cpu.restoreRuntimeState(collidedSnapshot);
+		require(machine->cpu.readFrameRegister(0, 1) != machine->cpu.readFrameRegister(0, 0),
+			"canonical closure collision remains distinct across a second snapshot");
+		machine->cpu.restoreRuntimeState(snapshot);
 		machine->memory.writeMappedU32LE(record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, machine->rom.textAddress + DECODED_PAGE_WORDS * INSTRUCTION_BYTES + 1u);
+		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
+		machine->cpu.runUntilDepth(0, 1);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], entry);
 		require(machine->cpu.runUntilDepth(0, 5) == RunResult::Yielded && machine->cpu.readBadAddressWord() == 0u,
 			"an exhausted call grant leaves a raw unaligned callee PC unfetched");
@@ -835,6 +962,7 @@ int main() {
 		protectedNestedFrames();
 		valueRangePlacementCycles();
 		closureBindingAndClosingCycles();
+		weakCanonicalClosuresAndStaticEntry();
 		protectedBuiltinPlacementCycles();
 		returnPlacementCycles();
 		protectedReturnPlacementCycles();

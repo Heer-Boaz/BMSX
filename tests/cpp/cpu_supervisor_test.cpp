@@ -860,6 +860,32 @@ void testCartridgeInstructionFetchRetainsExecSlot() {
 	);
 }
 
+void testBoundClosureRetainsCartridgeSocket() {
+	CpuTestMachine machine(makeSupervisorSystemImage(),
+		makeCartridgeSelectionSwitchImage(bmsx::OpCode::K0),
+		makeCartridgeSelectionSwitchImage(bmsx::OpCode::K1));
+	auto& cpu = machine.cpu;
+	const bmsx::u32 address = machine.cartRom.functionAddresses[0];
+	cpu.beginCompletionCallInExecutionDomain(0, address);
+	auto* first = cpu.activeThread()->currentFrame->closure;
+	require(cpu.runUntilDepth(1, 100) == bmsx::RunResult::Halted, "slot 0 closure returns");
+	cpu.beginCompletionCallInExecutionDomain(1, address);
+	auto* second = cpu.activeThread()->currentFrame->closure;
+	require(cpu.runUntilDepth(1, 100) == bmsx::RunResult::Halted, "slot 1 closure returns");
+	require(first != second && first->functionAddress == second->functionAddress
+		&& first->executionDomainId == 0 && second->executionDomainId == 1,
+		"same cartridge address in different sockets has distinct closures");
+	for (int i = 0; i < 12; ++i) {
+		machine.memory.writeMappedU32LE(bmsx::IO_CART_SELECT, i & 1);
+		auto* closure = (i & 1) ? first : second;
+		cpu.beginCompletionCall(*closure);
+		require(cpu.runUntilDepth(1, 100) == bmsx::RunResult::Halted,
+			"bound closure returns despite subsequent socket selection");
+		require(bmsx::asNumber(cpu.readCompletionValues()[0]) == ((i & 1) ? 0.0 : 1.0),
+			"closure instruction fetch uses its creation socket");
+	}
+}
+
 void testExecutionHookReconfigurationAppliesAtTheNextCpuBurst() {
 	bmsx::test::Blua32TestImage systemImage = makeSupervisorSystemImage();
 	systemImage.startupFunctionIndex = EXEC_CART_FUNCTION;
@@ -1091,7 +1117,7 @@ void testExceptionReturnDepthNamesOuterContinuationAcrossNestedNmi() {
 	require(machine.cpu.readExceptionReturnFrameDepth() == -1, "completed exception roots are no longer present");
 }
 
-void testExplicitDomainClosureArguments() {
+void testBoundClosureArguments() {
 	bmsx::test::Blua32TestImage image;
 	image.text.resize(9u * bmsx::INSTRUCTION_BYTES);
 	std::span<bmsx::u8> code(image.text);
@@ -1119,8 +1145,8 @@ void testExplicitDomainClosureArguments() {
 	auto* closure = bmsx::asClosure(cpu.readCompletionValues()[0]);
 	for (const auto [argument, expected] : {std::pair{3.0, 10.0}, std::pair{5.0, 15.0}}) {
 		const std::array args{bmsx::valueNumber(argument)};
-		cpu.beginCompletionClosureInExecutionDomain(bmsx::SYSTEM_EXECUTION_DOMAIN_ID, *closure, {args.data(), args.size()});
-		require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "explicit-domain call returns");
+		cpu.beginCompletionCall(*closure, {args.data(), args.size()});
+		require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "bound-closure call returns");
 		require(bmsx::asNumber(cpu.readCompletionValues()[0]) == expected, "arguments update the original capture");
 	}
 }
@@ -1605,13 +1631,14 @@ int main() {
 	testDecodedSuperinstructionsPreserveGuestBoundaries();
 	testMappedRamFunctionExecution();
 	testCartridgeInstructionFetchRetainsExecSlot();
+	testBoundClosureRetainsCartridgeSocket();
 	testDeviceSchedulerOwnsCpuSliceLifetime();
 	testInstrumentedExecutionObservesCrossDomainCallAndReturn();
 	testInstrumentedExecutionFenceStopsBeforePendingIrqDelivery();
 	testInstrumentedMaskableInterruptFenceDoesNotDelayPendingNmi();
 	testExceptionReturnDepthNamesOuterContinuationAcrossNestedNmi();
 	testSuspendedCompletionExecutionRunsAboveParkedFrame();
-	testExplicitDomainClosureArguments();
+	testBoundClosureArguments();
 	testRfeResumesAtAnyMappedInstructionAddress();
 	testMappedBusErrorsEnterTheSystemExceptionVector();
 	testInstructionFetchExceptionsEnterTheSystemVector();

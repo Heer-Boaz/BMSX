@@ -43,7 +43,7 @@ try {
 				suspended.push(state);
 				if (name === 'completion_injection') {
 					const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
-					cpu.beginCompletionClosureInExecutionDomain(-1, cpu.getGlobalByKey(cpu.stringPool.find('stopped_probe')!) as Closure, [depth - 1]);
+					cpu.beginCompletionCall(cpu.getGlobalByKey(cpu.stringPool.find('stopped_probe')!) as Closure, [depth - 1]);
 					assert.equal(cpu.runUntilDepth(depth, 30_000_000), RunResult.Halted);
 					assert.deepEqual(runtime.readCompletionValues(), [true, 43, null, false]);
 					assert.equal(cpu.getFrameDepth(), depth); assert.equal(cpu.readFramePc(depth - 1), pc);

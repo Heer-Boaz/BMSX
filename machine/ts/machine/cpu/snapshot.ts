@@ -11,7 +11,7 @@ export const enum CpuSnapshotTable {
 	Kind, HashId, LengthHint, ArrayCapacity, HashSize, HashFree, Metatable,
 	Data = 9,
 }
-export const enum CpuSnapshotClosure { Kind, HashId, FunctionAddress, Canonical, UpvalueCount, Data }
+export const enum CpuSnapshotClosure { Kind, HashId, FunctionAddress, Canonical, UpvalueCount, CodeAddress, NumParams, MaxStack, Flags, UpvalueTableAddress, RecordUpvalueCount, ExecutionDomainId, Data }
 export const enum CpuSnapshotUpvalue { Kind, HashId, Open, Index, ThreadRef, FrameIndex, Value }
 export const enum CpuSnapshotThread { Kind, HashId, Index, Size }
 export type CpuSnapshotObject = Table | Closure | Upvalue | Thread;

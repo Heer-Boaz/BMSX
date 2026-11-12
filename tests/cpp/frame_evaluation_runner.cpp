@@ -52,7 +52,7 @@ int main(int argc, char** argv) {
 						const auto depth = cpu.getFrameDepth();
 						const auto pc = cpu.readFramePc(depth - 1);
 						const auto argument = bmsx::valueNumber(depth - 1);
-						cpu.beginCompletionClosureInExecutionDomain(-1,
+						cpu.beginCompletionCall(
 							*bmsx::asClosure(cpu.getGlobalByKey(*cpu.stringPool().find("stopped_probe"))), {&argument, 1});
 						const auto completion = cpu.runUntilDepth(depth, 30000000);
 						const auto values = runtime.readCompletionValues();

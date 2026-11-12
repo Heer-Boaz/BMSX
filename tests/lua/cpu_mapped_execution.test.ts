@@ -3,6 +3,9 @@ import { test } from 'node:test';
 
 import { Closure } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
+import { CpuSnapshotClosure, CpuSnapshotObjectKind } from '../../machine/ts/machine/cpu/snapshot';
+import { ValueTag, valueString } from '../../machine/ts/machine/cpu/value';
 import {
 	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
 	BLUA32_FUNCTION_ALIGNMENT,
@@ -24,7 +27,7 @@ import {
 } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode, encodeFixedValueCount } from '../../machine/ts/spec/blua32/opcode';
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
+import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { materializeCpuCompletionValues } from './cpu_test_harness';
@@ -114,7 +117,7 @@ function writeRamFunction(
 	memory.writeBytes(RAM_CODE_ADDRESS, code);
 }
 
-test('the CPU addresses mapped RAM functions directly and through a register', () => {
+for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) test(`the CPU addresses mapped RAM functions directly and through a register (${backend})`, () => {
 	const systemCode = new Uint8Array(9 * INSTRUCTION_BYTES);
 	writeInstruction(systemCode, 0, OpCode.WIDE, 0, 0, 0, 0);
 	writeInstruction(systemCode, 1, OpCode.CLOSURE, 0, 0, 0, 0);
@@ -138,7 +141,7 @@ test('the CPU addresses mapped RAM functions directly and through a register', (
 		exceptionFunctionIndex: 2,
 		closureRelocations: [{ wordIndex: 1, functionAddress: RAM_FUNCTION_ADDRESS }],
 	});
-	const { cpu, memory } = createTestSystemCpu(image);
+	const { cpu, memory } = createTestSystemCpu(image, backend);
 	const romFunctionOperand = image.symbols.functionAddresses[1] >>> 4;
 	const ramCode = new Uint8Array(4 * INSTRUCTION_BYTES);
 	writeInstruction(ramCode, 0, OpCode.WIDE, 0, romFunctionOperand >>> BASE_BX_BITS, 0, 0);
@@ -185,4 +188,71 @@ test('the CPU addresses mapped RAM functions directly and through a register', (
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [0]);
 	assert.equal(instructionReadCount, 2);
+});
+
+
+for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) test(`canonical RAM closure versions are guest-GC weak and direct entry retains the raw record count (${backend})`, () => {
+	const systemCode = new Uint8Array(4 * INSTRUCTION_BYTES);
+	writeInstruction(systemCode, 0, OpCode.WIDE, 0, 0, CLOSURE_ADDRESS_REGISTER_WIDE_C);
+	writeInstruction(systemCode, 1, OpCode.CLOSURE, 0, 0, 1);
+	writeInstruction(systemCode, 2, OpCode.JMP, 0, 63, 63, 255);
+	writeInstruction(systemCode, 3, OpCode.HALT, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text: systemCode, functions: [
+		{ firstWord: 0, wordCount: 3, maxStack: 4 }, { firstWord: 3, wordCount: 1 },
+	], exceptionFunctionIndex: 1 });
+	const { cpu, memory } = createTestSystemCpu(image, backend);
+	const code = new Uint8Array(2 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.K1, 0, 0, 0);
+	writeInstruction(code, 1, OpCode.RET, 0, 2, 0);
+	writeRamFunction(memory, code, 4);
+	const frame = cpu.rootThread.frameAtDepth(0);
+	for (let index = 0; index < 32; ++index) {
+		memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_MAX_STACK_OFFSET, 4 + index);
+		frame.registers.setNumber(1, RAM_FUNCTION_ADDRESS);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
+		cpu.runUntilDepth(0, 2);
+		if (index === 0) frame.registers.setClosure(2, frame.registers.getClosure(0));
+	}
+	frame.top = 3;
+	const countVersions = (): number => {
+		const snapshot = cpu.captureRuntimeState().snapshot;
+		let count = 0;
+		for (let index = 0; index < snapshot.objectCount; ++index) {
+			const offset = snapshot.objectWord(index);
+			if (snapshot.word(offset) === CpuSnapshotObjectKind.Closure && snapshot.word(offset + CpuSnapshotClosure.FunctionAddress) === RAM_FUNCTION_ADDRESS) ++count;
+		}
+		return count;
+	};
+	assert.equal(countVersions(), 32, 'uncleared weak cache is captured before guest collection');
+	const retained = frame.registers.getClosure(2);
+	cpu.collectTrackedHeapBytes();
+	assert.equal(countVersions(), 2, 'guest GC prunes unreferenced record versions');
+	assert.equal(frame.registers.getClosure(2), retained);
+	const weak = cpu.createTable(1, 0);
+	const metatable = cpu.createTable(0, 1);
+	metatable.setStringKey(cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
+	weak.metatable = metatable;
+	weak.setInteger(1, retained);
+	cpu.setGlobalByKey(cpu.stringPool.intern('weak_closure'), ValueTag.Table, NaN, weak);
+	cpu.collectTrackedHeapBytes();
+	assert.equal(weak.getInteger(1), retained, 'a strong guest root preserves the weak referent identity');
+	frame.registers.setNil(2);
+	cpu.collectTrackedHeapBytes();
+	assert.equal(weak.getInteger(1), null, 'a canonical closure is collectible when reachable only through a weak table');
+	assert.equal(countVersions(), 1, 'weak cache and weak value are pruned in the same collection');
+	memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, 3);
+	memory.writeMappedU32LE(RAM_FUNCTION_ADDRESS + BLUA32_FUNCTION_MAX_STACK_OFFSET, 1024);
+	const heap = cpu.luaHeap.captureState();
+	cpu.luaHeap.restoreState({ ...heap, nextCollectionBytes: heap.trackedBytes + 16 });
+	cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, RAM_FUNCTION_ADDRESS);
+	assert.equal(countVersions(), 2, 'a new direct-entry closure remains indexed when stack growth collects');
+	const active = cpu.rootThread.currentFrame!;
+	assert.equal(active.closure.recordUpvalueCount, 3);
+	assert.equal(active.closure.upvalues.length, 0, 'direct entry has no captured slots');
+	const state = cpu.captureRuntimeState();
+	cpu.restoreRuntimeState(state);
+	assert.equal(cpu.rootThread.currentFrame!.closure.recordUpvalueCount, 3);
+	assert.equal(cpu.rootThread.currentFrame!.closure.upvalues.length, 0);
+	cpu.runUntilDepth(1, 100);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [1]);
 });

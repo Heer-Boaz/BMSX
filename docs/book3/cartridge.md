@@ -59,8 +59,11 @@ instruction to the same address on that card.
 A cartridge-targeted `CP0.EXEC` samples SELECT and establishes the execution
 socket for the new entry. Since cartridge addresses are identical in both
 sockets, insertion in the other socket does not by itself require relocation.
-A cartridge-function closure contains a function-record address, not a socket
-selection; calling it uses the current execution socket. See [[Program images and startup — EXEC and cartridge entry](../book1/program-images.md#sec-memory-exec-and-cartridge-entry)]{.content-visible when-format="html"}[Book II, §3.3.3]{.content-visible when-format="pdf"}
+A closure binds the execution domain in which its function record is read.
+Calling a closure bound to a cartridge domain executes it in that socket,
+regardless of a later change to SELECT or of the caller's execution socket.
+A function record in main RAM inherits the execution domain of the code
+constructing the closure. See [[Program images and startup — EXEC and cartridge entry](../book1/program-images.md#sec-memory-exec-and-cartridge-entry)]{.content-visible when-format="html"}[Book II, §3.3.3]{.content-visible when-format="pdf"}
 and [[CPU execution control](../book1/cpu.md#sec-cpu-cp0-and-execution-control)]{.content-visible when-format="html"}[Book II, §1.13]{.content-visible when-format="pdf"}.
 
 DMA also distinguishes the address from the socket. Its source and destination

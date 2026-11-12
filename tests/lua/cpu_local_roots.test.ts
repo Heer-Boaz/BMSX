@@ -5,7 +5,6 @@ import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { Table } from '../../machine/ts/machine/cpu/table';
 import { valueString, type StringValue, type Value } from '../../machine/ts/machine/cpu/value';
-import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileLuaSource } from './cpu_test_harness';
 
@@ -43,8 +42,7 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(cpu.stringPool.find('nested-payload'), undefined);
 	});
 
-	for (const explicitDomain of [false, true]) {
-		test(`external call arguments survive stack-growth collection (O${optLevel}, explicit domain ${explicitDomain})`, t => {
+	test(`external call arguments survive stack-growth collection (O${optLevel})`, t => {
 			const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource(
 				'local holder = {1}; return function(...) if holder[1] == 1 then return ... end end', 'call_roots.lua', optLevel,
 			)));
@@ -63,12 +61,10 @@ for (const optLevel of [0, 3] as const) {
 			const gc = t.mock.method(cpu, 'collectTrackedHeapBytes');
 			const heap = cpu.luaHeap.captureState();
 			cpu.luaHeap.restoreState({ ...heap, nextCollectionBytes: 0 });
-			if (explicitDomain) cpu.beginCompletionClosureInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, closure, args);
-			else cpu.beginCompletionCall(closure, args);
+			cpu.beginCompletionCall(closure, args);
 			assert.ok(gc.mock.callCount() > 0, 'actual call entry must grow the stack and collect before copying host arguments');
 			assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 			cpu.readCompletionValues(completion);
 			assert.deepEqual(completion.map(value => cpu.stringPool.toString((value as StringValue).id)), strings);
 		});
-	}
 }

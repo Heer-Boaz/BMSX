@@ -30,6 +30,7 @@ import {
 } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode, encodeFixedValueCount } from '../../machine/ts/spec/blua32/opcode';
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { readBlua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
 import {
@@ -86,7 +87,8 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 	const mappedCode = new Uint8Array(INSTRUCTION_BYTES);
 	writeInstruction(mappedCode, 0, OpCode.CALL, 0, encodeFixedValueCount(0), 0, 0);
 	memory.writeBytes(codeAddress, mappedCode);
-	cpu.beginCompletionCall(new Closure(functionAddress, [], 0));
+	cpu.beginCompletionCall(new Closure(functionAddress, [], 0, codeAddress, 0, 1,
+		BLUA32_FUNCTION_STATIC, 0, SYSTEM_EXECUTION_DOMAIN_ID, 0, false));
 	runToSupervisorFault(runtime);
 
 	const luaSources: LuaSourceRegistry = {
@@ -158,8 +160,10 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 	writeInstruction(mappedCallerCode, 1, OpCode.RET, 0, 0, 0, 0);
 	memory.writeBytes(codeAddress, mappedCallerCode);
 	cpu.beginCompletionCall(
-		new Closure(functionAddress, [], 0),
-		[new Closure(image.symbols.functionAddresses[1], [], 0)],
+		new Closure(functionAddress, [], 0, codeAddress, 1, 1, BLUA32_FUNCTION_STATIC, 0, SYSTEM_EXECUTION_DOMAIN_ID, 0, false),
+		[new Closure(image.symbols.functionAddresses[1], [], 0, image.image.functions[1].codeAddress,
+			image.image.functions[1].numParams, image.image.functions[1].maxStack, image.image.functions[1].flags,
+			image.image.functions[1].upvalueTableAddress, SYSTEM_EXECUTION_DOMAIN_ID, image.image.functions[1].upvalues.length, false)],
 	);
 	runToSupervisorFault(runtime);
 

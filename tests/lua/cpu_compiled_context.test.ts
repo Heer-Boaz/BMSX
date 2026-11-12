@@ -136,7 +136,9 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 		const frame = cpu.rootThread.frameAtDepth(0);
 		const open: Upvalue = { hashId: 100, open: true, index: 0, frame, valueTag: ValueTag.Nil, valueScalar: NaN, valueReference: null, nextOpen: null };
 		const closed: Upvalue = { hashId: 101, open: false, index: 0, frame: null, valueTag: ValueTag.Nil, valueScalar: NaN, valueReference: null, nextOpen: null };
-		frame.closure = new Closure(frame.functionAddress, [open, closed], 0);
+		const bound = frame.closure;
+		frame.closure = new Closure(bound.functionAddress, [open, closed], 0, bound.codeAddress,
+			bound.numParams, bound.maxStack, bound.flags, bound.upvalueTableAddress, bound.executionDomainId, bound.recordUpvalueCount, false);
 		cpu.runUntilDepth(0, 1100);
 	}
 	const frame = js.rootThread.frameAtDepth(0), page = frame.decodedPage!;

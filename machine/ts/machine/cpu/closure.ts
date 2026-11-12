@@ -4,6 +4,7 @@ import {
 	type ValueReference,
 } from './value';
 import type { CallFrame } from './call_state';
+import type { ExecutionDomainId } from '../../spec/blua32/execution_domain';
 
 export type Upvalue = {
 	hashId: number;
@@ -26,6 +27,14 @@ export class Closure {
 		public functionAddress: number,
 		public upvalues: Upvalue[],
 		public heapBytes: number,
+		public codeAddress: number,
+		public numParams: number,
+		public maxStack: number,
+		public flags: number,
+		public upvalueTableAddress: number,
+		public executionDomainId: ExecutionDomainId,
+		public recordUpvalueCount: number,
+		public canonical: boolean,
 	) {
 	}
 }

@@ -12,7 +12,10 @@ Upvalue::NativeOffsets Upvalue::nativeOffsets() {
 	return {offsetof(Upvalue, open), offsetof(Upvalue, index), offsetof(Upvalue, frame), offsetof(Upvalue, value)};
 }
 
-size_t Closure::nativeFunctionAddressOffset() { return offsetof(Closure, functionAddress); }
+Closure::NativeFunctionOffsets Closure::nativeFunctionOffsets() {
+	return {offsetof(Closure, functionAddress), offsetof(Closure, codeAddress), offsetof(Closure, numParams),
+		offsetof(Closure, maxStack), offsetof(Closure, flags), offsetof(Closure, executionDomainId)};
+}
 
 size_t Closure::nativeUpvaluesOffset() { return offsetof(Closure, upvalues); }
 #if defined(__GNUC__)

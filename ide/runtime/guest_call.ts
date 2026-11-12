@@ -117,7 +117,7 @@ export function scheduleRuntimeGuestCall(
 		} : finish);
 		// Source suppression belongs to the stopped caller, not the newly pushed root.
 		retained = pushRuntimeDebuggerControlPlan(debuggerState, plan, 'workbench', request.admission === 'at-stop' ? 'retain' : 'resume');
-		cpu.beginCompletionClosureInExecutionDomain(call.domain, call.closure, args);
+		cpu.beginCompletionCall(call.closure, args);
 	};
 	const admitCall = (checkBoundary: boolean): boolean => {
 		const cpu = runtime.machine.cpu;

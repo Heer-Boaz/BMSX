@@ -102,7 +102,7 @@ export async function runIdeTest(options: IdeTestRunnerOptions): Promise<void> {
 		debuggerStopped: () => options.ide.isDebuggerStopped(),
 		reboot: () => options.ide.reboot(),
 		command: options.ide.executeCommand,
-		openLuaSource: (path: string) => options.ide.openLuaSource(path),
+		openLuaSource: (path: string, contextId?: string) => options.ide.openLuaSource(path, contextId),
 		replaceActiveCodeSource: (source: string) => options.ide.replaceActiveCodeSource(source),
 	};
 

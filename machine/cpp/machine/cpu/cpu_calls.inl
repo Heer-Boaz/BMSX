@@ -20,7 +20,7 @@ inline bool CPU::executeCall(CallFrame& frame, int a, int b, int c) {
 	if (valueIsClosure(callee)) {
 		CallFrame* pushed = pushFrame(frame, asClosure(callee), a + 1, argCount, a, c, false,
 			frame.pc - INSTRUCTION_BYTES);
-		return pushed && m_functionRecordLatch.cacheableRead;
+		return pushed != nullptr;
 	}
 	if (valueIsBuiltinFunction(callee)) {
 		runBuiltinFunction(*asBuiltinFunction(callee), frame, a, c, argCount);

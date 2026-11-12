@@ -1043,8 +1043,10 @@ statement; requesting further results supplies nil in those positions.
 
 The address is consumed as an unsigned 32-bit function-record address in the active execution image.
 The function record is read before closure construction; an unsuccessful record
-read hard-halts execution. Function-record acquisition, capture context and
-closure execution follow the [CPU reference](cpu.md#sec-cpu).
+read hard-halts execution. The closure binds the record's function data at that
+time; changing the record later affects newly constructed closures, not this
+one. Function-record acquisition, capture context and closure execution follow
+the [CPU reference](cpu.md#sec-cpu).
 
 ```lua
 local callback = blua32.closure(function_record_address)

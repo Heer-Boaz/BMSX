@@ -1,7 +1,7 @@
 import { OffscreenMachine } from '../../../../hosts/common/offscreen_machine';
 import type { Closure } from '../../../../machine/ts/machine/cpu/closure';
 import type { Value } from '../../../../machine/ts/machine/cpu/value';
-import { ALL_EXECUTION_DOMAINS_MASK, type ExecutionDomainId } from '../../../../machine/ts/spec/blua32/execution_domain';
+import { ALL_EXECUTION_DOMAINS_MASK } from '../../../../machine/ts/spec/blua32/execution_domain';
 import { captureActiveRuntimeFault, RuntimeGuestFault } from '../../../runtime/fault_state';
 import { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import { TestInput } from '../../../testing/input';
@@ -49,11 +49,11 @@ export class OffscreenExecution {
 		});
 	}
 
-	public async call(domain: ExecutionDomainId, closure: Closure, args: readonly Value[]): Promise<readonly Value[]> {
+	public async call(closure: Closure, args: readonly Value[]): Promise<readonly Value[]> {
 		const values: Value[] = [];
 		await this.execute(async () => {
 			const runtime = this.runtime, cpu = runtime.machine.cpu, thread = cpu.activeThread, depth = thread.frameDepth;
-			cpu.beginCompletionClosureInExecutionDomain(domain, closure, args);
+			cpu.beginCompletionCall(closure, args);
 			await this.pump(() => !cpu.completionCallPending(), () => {
 				runtime.cpuExecution.runSuspendedUntilDepth(depth, runtime.timing.cpuCyclesPerMillisecond * 8, thread);
 			}, 5000);

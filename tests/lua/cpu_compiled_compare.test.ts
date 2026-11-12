@@ -97,7 +97,7 @@ test('warmed RK comparisons at one RAM PC belong to each execution image and ret
 		createTestBlua32PairCpu(images, CpuExecutionBackend.Interpreter)];
 	for (const { memory } of machines) memory.writeBytes(DYNAMIC_RAM_BASE, text);
 	const owners = new Map<number, Blua32ExecutionImage>();
-	for (const domain of [SYSTEM_EXECUTION_DOMAIN_ID, 0, SYSTEM_EXECUTION_DOMAIN_ID, 0]) {
+	for (const domain of [SYSTEM_EXECUTION_DOMAIN_ID, 0, SYSTEM_EXECUTION_DOMAIN_ID, 0] as const) {
 		for (const { cpu } of machines) {
 			cpu.writeFrameExecution(0, domain, domain === SYSTEM_EXECUTION_DOMAIN_ID
 				? images.systemSymbols.functionAddresses[0] : images.cartSymbols.functionAddresses[0], DYNAMIC_RAM_BASE);
