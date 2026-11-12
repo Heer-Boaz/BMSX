@@ -6,7 +6,7 @@ import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { DYNAMIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32 } from '../helpers/blua32';
@@ -335,9 +335,16 @@ test('field cache hits stay in one generated block and misses publish only the e
 	const block = page.compiledBlocks!.entries[(entry & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2]!;
 	assert.equal(block.sourceWords, 6);
 	assert.equal(block.region.exits.filter(exit => exit.exit === CompiledBlockExit.ReadField || exit.exit === CompiledBlockExit.WriteField).length, 2);
+	for (const cpu of [js, ref]) {
+		const f = cpu.rootThread.frameAtDepth(0);
+		f.registers.getTable(0).storeStringKey(cpu.stringPool.intern('field'), ValueTag.Number, 0, null);
+		f.registers.setNumber(4, 0);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
+	}
 	assert.equal(block.region.exits[block.region.execute(frame.registers, frame.executionImage.constScalars, page, frame, block.entry, { remainingCycles: 1, registerTop: frame.top })].nextPc, image.image.functions[0].codeAddress,
 		'both field hits and arithmetic reach the final branch without a host side exit');
-	ref.runUntilDepth(0, 6);
+	ref.runUntilDepth(0, BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.GETFIELD]
+		+ BASE_CYCLES[OpCode.ADD] + BASE_CYCLES[OpCode.SETFIELD] + BASE_CYCLES[OpCode.JMP]);
 	assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 	for (let grant = 1; grant <= 40; ++grant) {
 		for (const cpu of [js, ref]) cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
@@ -365,7 +372,7 @@ test('sparse observation and instrumented stops retire or bypass compiled blocks
 	const observed: number[] = [];
 	cpu.setInstructionObserver({ points: [new Set([observedPc]), new Set(), new Set()], observe(_domain, pc) { observed.push(pc); } });
 	assert.equal(compiledEntries(cpu), 0);
-	for (let i = 0; i < 20; ++i) cpu.runUntilDepth(0, 6);
+	for (let i = 0; i < 20; ++i) cpu.runUntilDepth(0, 6 * BASE_CYCLES[OpCode.K1]);
 	assert.equal(observed.length, 20);
 	cpu.setInstructionObserver(null);
 	cpu.runUntilDepth(0, 600);
@@ -504,7 +511,7 @@ for (const standalone of [false, true]) test(`generated HALT commits its thread/
 	const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	const entry = image.image.functions[0].codeAddress;
 	const startPc = entry + (standalone ? 2 : 0) * INSTRUCTION_BYTES;
-	const grant = standalone ? 1 : 3;
+	const grant = BASE_CYCLES[OpCode.HALT] + (standalone ? 0 : BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.NOT]);
 	for (let warmup = 0; warmup < 20; ++warmup) {
 		for (const cpu of [js, ref]) {
 			cpu.clearHaltUntilIrq();

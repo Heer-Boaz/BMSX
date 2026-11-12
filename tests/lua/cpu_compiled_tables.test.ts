@@ -23,7 +23,7 @@ test('compiled generic arrays and string-cache probes retain all kinds across ke
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers;
-		r.setTable(0, cpu.createTable(4, 1)); r.setNumber(1, 1); r.setNumber(2, 3); cpu.runUntilDepth(0, 900);
+		r.setTable(0, cpu.createTable(4, 1)); r.setNumber(1, 1); r.setNumber(2, 3); cpu.runUntilDepth(0, 896);
 	}
 	const frame = js.rootThread.frameAtDepth(0), page = frame.decodedPage!;
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
@@ -36,7 +36,7 @@ test('compiled generic arrays and string-cache probes retain all kinds across ke
 				r.set(1, key === 'field' ? valueString(cpu.stringPool.intern(key)) : key);
 				r.set(2, value === 'value' ? valueString(cpu.stringPool.intern(value)) : value);
 			}
-			runCpuParity(js, ref, 9);
+			runCpuParity(js, ref, 16);
 			assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()), `generic key ${key}, value ${value}`);
 			assert.equal(frame.registers.get(3), frame.registers.get(2));
 			assert.equal(frame.registers.getNumber(5), 1, 'the array store forwards its pending numeric source');
@@ -68,7 +68,7 @@ for (const generic of [false, true]) test(`compiled array reads resolve inherite
 	}
 	for (const value of [false, 0, null, true, 19, null]) {
 		for (const cpu of [js, ref]) cpu.rootThread.frameAtDepth(0).registers.getTable(0).setInteger(1, value);
-		runCpuParity(js, ref, 3);
+		runCpuParity(js, ref, 6);
 		assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 		assert.equal(js.readFrameRegister(0, 3), value === null ? 73 : value);
 	}
@@ -90,11 +90,11 @@ test('compiled array stores retain hints and length searches preserve live regis
 	for (const cpu of [js, ref]) {
 		const table = cpu.createTable(2, 4);
 		for (let i = 1; i <= 5; ++i) table.setInteger(i, i);
-		cpu.rootThread.frameAtDepth(0).registers.setTable(0, table); cpu.rootThread.frameAtDepth(0).registers.setNumber(2, 2); cpu.runUntilDepth(0, 600);
+		cpu.rootThread.frameAtDepth(0).registers.setTable(0, table); cpu.rootThread.frameAtDepth(0).registers.setNumber(2, 2); cpu.runUntilDepth(0, 605);
 	}
 	for (const value of [null, false, null, 2]) {
 		for (const cpu of [js, ref]) cpu.rootThread.frameAtDepth(0).registers.set(2, value);
-		runCpuParity(js, ref, 6);
+		runCpuParity(js, ref, 11);
 		assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 		const boundary = js.readFrameRegister(0, 3) as number;
 		const table = js.rootThread.frameAtDepth(0).registers.getTable(0);
@@ -144,7 +144,7 @@ test('compiled SELF publishes its original receiver and top before a failing inh
 		table.setStringKey(cpu.stringPool.intern('method'), null); meta.setStringKey(cpu.stringPool.intern('__index'), table);
 		table.metatable = meta; root.top = 0;
 	}
-	runCpuParity(js, ref, 3);
+	runCpuParity(js, ref, 4);
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_METATABLE_LOOP);
 	assert.equal(js.readEpcWord(), image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
@@ -171,7 +171,7 @@ for (const [op, key] of [
 		const encodedKey = key === 'field' ? valueString(cpu.stringPool.intern(key)) : key;
 		table.set(encodedKey, 73);
 		r.setTable(0, table); r.set(1, encodedKey); r.setNumber(9, 17);
-		cpu.runUntilDepth(0, 300);
+		cpu.runUntilDepth(0, 304);
 		if (backend === CpuExecutionBackend.JavaScript) {
 			const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 			assert.ok(frame.decodedPage!.compiledBlocks!.entries[entry], 'exercise an adopted generated loop');
@@ -180,7 +180,7 @@ for (const [op, key] of [
 		const meta = cpu.createTable(0, 1);
 		meta.setStringKey(cpu.stringPool.intern('__index'), table); table.metatable = meta;
 		r.setNumber(3, 91); r.setNumber(4, 57); frame.top = 0;
-		cpu.runUntilDepth(0, 2);
+		cpu.runUntilDepth(0, 4);
 		assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_METATABLE_LOOP);
 		assert.equal(cpu.readEpcWord(), image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
 		assert.equal(r.getNumber(3), 91, 'an exhausted lookup has no result to publish');
@@ -202,7 +202,7 @@ test('compiled nil-key traps precede any invalid table mutation or destination w
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers;
-		r.setTable(0, cpu.createTable(2)); r.setNumber(1, 1); r.setNumber(2, 73); cpu.runUntilDepth(0, 500);
+		r.setTable(0, cpu.createTable(2)); r.setNumber(1, 1); r.setNumber(2, 73); cpu.runUntilDepth(0, 504);
 		r.setNil(1); r.setNumber(3, 19); cpu.rootThread.frameAtDepth(0).top = 0;
 	}
 	runCpuParity(js, ref, 5);

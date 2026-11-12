@@ -7,7 +7,7 @@ import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
@@ -29,7 +29,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 				frame.registers.setStringId(2, cpu.stringPool.intern(right));
 				cpu.runUntilDepth(0, 1);
 				const length = Array.from(left).length + Array.from(right).length;
-				const cycles = op === OpCode.CONCAT ? 1 + length : op === OpCode.CONCATN ? 4 + length : op === OpCode.EQ ? 1 : 1 + Math.min(Array.from(left).length, Array.from(right).length);
+				const cycles = BASE_CYCLES[op] + (op === OpCode.CONCAT ? length : op === OpCode.CONCATN ? 2 + length : op === OpCode.EQ ? 0 : Math.min(Array.from(left).length, Array.from(right).length));
 				assert.equal(cpu.instructionBudgetRemaining, 1 - cycles);
 				if (op === OpCode.CONCAT || op === OpCode.CONCATN) assert.equal(cpu.stringPool.toString(frame.registers.getStringId(0)), left + right);
 				else {
@@ -102,6 +102,6 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		r.setNumber(1, invalid ? -1 : 65); r.setNumber(2, 0); r.setNumber(3, 0x1f600);
 		cpu.runUntilDepth(0, 1);
 		if (invalid) assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
-		assert.equal(cpu.instructionBudgetRemaining, -6, 'CALL 2 + builtin 2 + three supplied codepoints');
+		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 2 - 3, 'CALL base + builtin 2 + three supplied codepoints');
 	});
 }

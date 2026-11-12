@@ -190,10 +190,18 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 	const auto& loop = nativeFrame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u];
 	require(loop && loop->sourceWords == 6,
 		"field hits and arithmetic are compiled together through the loop branch");
+	for (auto* machine : {&native, &scalar}) {
+		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
+		asTable(frame.registers[0])->setStringKey(machine->cpu.stringPool().intern("field"), valueNumber(0));
+		frame.registers[4] = valueNumber(0);
+	}
 	require(loop->run(nativeRunState = {.registers = nativeFrame.registers, .constants = nativeFrame.executionImage->constPool.data(), .remainingCycles = 1})->nextPc == native.rom.textAddress,
 		"ordinary read and write hits reach the final native branch without a host side exit");
 	// The direct datapath probe executes one loop; keep both reference machines aligned.
-	scalar.cpu.runUntilDepth(0, 6);
+	scalar.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, scalar.rom.functionAddresses[0], scalar.rom.textAddress);
+	scalar.cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)]
+		+ BASE_CYCLES[static_cast<u8>(OpCode::ADD)] + BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)]
+		+ BASE_CYCLES[static_cast<u8>(OpCode::JMP)]);
 	for (int grant = 1; grant <= 40; ++grant) {
 		for (auto* machine : {&native, &scalar}) {
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
@@ -349,9 +357,10 @@ void nativeWarmAdmitsAllocatingBodies() {
 	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 2}};
 	CpuMachine machine(image);
 	auto& cpu = machine.cpu;
-	// K1 and JMP cost one cycle each; CONCAT costs one plus the two
-	// codepoints in its "11" result.
-	require(cpu.runUntilDepth(0, 35) == RunResult::Yielded, "a mixed loop warms without compiling yet");
+	// CONCAT additionally charges the two codepoints in its "11" result.
+	const int loopCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::CONCAT)]
+		+ BASE_CYCLES[static_cast<u8>(OpCode::JMP)] + 2;
+	require(cpu.runUntilDepth(0, 7 * loopCycles) == RunResult::Yielded, "a mixed loop warms without compiling yet");
 	const auto& page = *cpu.activeThread()->frameAtDepth(0)->decodedPage;
 	const u32 word = (machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u;
 	require(!page.nativeBlocks && page.nativeVisits[word] == 7,
@@ -398,7 +407,8 @@ void nativeCodeRetiresOnWritesAndObservation() {
 	};
 	cpu.setInstructionObserver(std::move(binding));
 	require(!page.nativeBlocks, "installing observation retires existing native code");
-	require(cpu.runUntilDepth(0, 40) == RunResult::Yielded && observations == 10,
+	require(cpu.runUntilDepth(0, 10 * (BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::SUB)]
+		+ BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)])) == RunResult::Yielded && observations == 10,
 		"native compilation cannot elide or batch through an observed instruction");
 	cpu.setInstructionObserver({});
 	for (int warmup = 0; warmup < 16; ++warmup) cpu.runUntilDepth(0, 64);
@@ -428,7 +438,9 @@ void nativeHaltCommitsItsThreadAndFrameLatch() {
 		for (int warmup = 0; warmup < 20; ++warmup) {
 			cpu.clearHaltUntilIrq();
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], startPc);
-			require(cpu.runUntilDepth(0, standalone ? 1 : 3) == RunResult::Halted,
+			const int charge = BASE_CYCLES[static_cast<u8>(OpCode::HALT)] + (standalone ? 0
+				: BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::NOT)]);
+			require(cpu.runUntilDepth(0, charge) == RunResult::Halted,
 				"native HALT wins over an exactly exhausted slice");
 			require(cpu.instructionBudgetRemaining == 0 && cpu.isHaltedUntilIrq()
 				&& cpu.readFramePc(0) == entry + 4u * INSTRUCTION_BYTES,
@@ -873,7 +885,7 @@ void instructionBoundaryResynchronizesAfterFetchOrObservation() {
 		}
 		machine.memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_GPU);
 		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
-		require(cpu.runUntilDepth(0, 2) == RunResult::Yielded, "fetch/observer edge preserves instruction grant");
+		require(cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::K1)]) == RunResult::Yielded, "fetch/observer edge preserves instruction grant");
 		require(edge.count == 1 && cpu.activeThread()->frameDepth == 2, "device edge enters the IRQ frame before the next instruction");
 		require(cpu.readCauseWord() == CPU_CAUSE_IRQ && cpu.readEpcWord() == pc + INSTRUCTION_BYTES, "interrupt saves the next physical PC");
 		require(cpu.activeThread()->frameAtDepth(0)->registers[6] == valueNumber(99), "the fetched or observed instruction completes before accepting the edge");
@@ -965,7 +977,8 @@ void partialCodeWritesRetainOtherDecodedStarts() {
 		const u32 pc = DYNAMIC_RAM_BASE + 0x5000u;
 		machine.memory.writeBytes(pc, code.data(), code.size());
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], pc);
-		require(cpu.runUntilDepth(0, 10) == RunResult::Yielded && cpu.readFramePc(0) == pc, "warm all ten decoded starts in one page");
+		const int loopCycles = 10 * BASE_CYCLES[static_cast<u8>(OpCode::MOV)];
+		require(cpu.runUntilDepth(0, loopCycles) == RunResult::Yielded && cpu.readFramePc(0) == pc, "warm all ten decoded starts in one page");
 		auto& page = *cpu.activeThread()->frameAtDepth(0)->decodedPage;
 		require(page.refreshState[0] == 0u && page.refreshState[8] == 0u, "both independently writable instructions are cached");
 		writeInstruction(code, 0, static_cast<u8>(OpCode::K0), 0, 0, 0);
@@ -975,7 +988,7 @@ void partialCodeWritesRetainOtherDecodedStarts() {
 		machine.memory.writeMappedU16LE(pc + 8u * INSTRUCTION_BYTES + 2u, readLE16(code.data() + 8u * INSTRUCTION_BYTES + 2u));
 		require(page.refreshState[8] == DECODED_REFRESH_DECODE && page.refreshState[4] == 0u, "a second write before re-decode still invalidates its independent cached instruction");
 		require(page.refreshState[5] == 0u && page.refreshState[6] == 0u && page.refreshState[7] == 0u, "ordinary predecessors do not consume the rewritten instruction's source words");
-		require(cpu.runUntilDepth(0, 10) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0, "partial code writes preserve exact guest charges");
+		require(cpu.runUntilDepth(0, loopCycles) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0, "partial code writes preserve exact guest charges");
 		require(cpu.readFrameRegister(0, 0) == valueNumber(0) && cpu.readFrameRegister(0, 1) == valueNumber(-1), "both changed instructions execute, without losing the retained watch");
 	}
 }
@@ -1058,7 +1071,7 @@ void changedWideFusionBodyInvalidatesItsCrossPageHead() {
 		}
 		writeInstruction(code, 3, static_cast<u8>(OpCode::BXOR), 4, 3, 2);
 		machine.memory.writeMappedU8(pc + 3u * INSTRUCTION_BYTES + 2u, code[3u * INSTRUCTION_BYTES + 2u]);
-		require(cpu.runUntilDepth(0, 3) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0, "a changed last fusion word preserves the exact charge");
+		require(cpu.runUntilDepth(0, 4) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0, "a changed last fusion word preserves the exact charge");
 		require(cpu.readFrameRegister(0, 4) == valueNumber(4), "the fourth word invalidates its fused start three words earlier in the preceding page");
 	}
 }
@@ -1176,13 +1189,15 @@ void closureCallAndReturnRespectFrameBoundaries() {
 		cpu.activeThread()->frameAtDepth(0)->registers[2] = valueNumber(99);
 		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "closure setup consumes its own physical instruction");
 		const u32 callPc = cpu.readFramePc(0);
+		const int callAndValue = BASE_CYCLES[static_cast<u8>(OpCode::CALL)] + BASE_CYCLES[static_cast<u8>(OpCode::K1)];
+		const int callOrReturnWithPlacement = BASE_CYCLES[static_cast<u8>(OpCode::CALL)] + 1;
 		if (edgeKind == 4 || edgeKind == 5) {
-			if (edgeKind == 5) require(cpu.runUntilDepth(0, 3) == RunResult::Yielded, "prepare RET at callee depth");
+			if (edgeKind == 5) require(cpu.runUntilDepth(0, callAndValue) == RunResult::Yielded, "prepare RET at callee depth");
 			auto state = cpu.captureRuntimeState();
 			state.haltedUntilIrqFrameDepth = edgeKind == 4 ? 2 : 1;
 			state.haltedUntilIrqThreadRef = state.activeThreadRef;
 			cpu.restoreRuntimeState(state);
-			require(cpu.runUntilDepth(0, 3) == RunResult::Halted && cpu.instructionBudgetRemaining == (edgeKind == 5 ? 0 : 1), "frame transition activates the retained depth-sensitive HALT latch before another instruction");
+			require(cpu.runUntilDepth(0, callOrReturnWithPlacement) == RunResult::Halted && cpu.instructionBudgetRemaining == (edgeKind == 5 ? 0 : 1), "frame transition activates the retained depth-sensitive HALT latch before another instruction");
 			require(cpu.readFrameRegister(0, 2) == valueNumber(99), "HALT retains the caller continuation");
 			if (edgeKind == 4) require(isNil(cpu.activeThread()->frameAtDepth(1)->registers[0]), "HALT at new callee depth precedes callee execution");
 			continue;
@@ -1200,7 +1215,7 @@ void closureCallAndReturnRespectFrameBoundaries() {
 		}
 		edge.armed = true;
 		machine.memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_GPU);
-		require(cpu.runUntilDepth(0, 3) == RunResult::Yielded, "CALL and the next physical instruction exhaust their grant");
+		require(cpu.runUntilDepth(0, callAndValue) == RunResult::Yielded, "CALL and the next physical instruction exhaust their grant");
 		if (edgeKind == 2) {
 			require(edge.count == 1 && cpu.activeThread()->frameDepth == 3, "call-side device/observer edge enters IRQ before callee execution");
 			require(cpu.readCauseWord() == CPU_CAUSE_IRQ && cpu.readEpcWord() == calleePc, "CALL completes before IRQ saves the callee entry PC");
@@ -1209,7 +1224,7 @@ void closureCallAndReturnRespectFrameBoundaries() {
 		}
 		if (edgeKind == 1) require(edge.count == 0, "CALL does not reread the closure-bound record");
 		require(cpu.activeThread()->frameDepth == 2 && cpu.readFramePc(1) == calleePc + INSTRUCTION_BYTES, "direct call rebinds the callee and stops before RET");
-		require(cpu.runUntilDepth(1, 20) == RunResult::Halted && cpu.instructionBudgetRemaining == 17, "return stops at the requested depth with unused cycles retained");
+		require(cpu.runUntilDepth(1, 20) == RunResult::Halted && cpu.instructionBudgetRemaining == 20 - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - 1, "return stops at the requested depth with unused cycles retained");
 		require(cpu.readFrameRegister(0, 3) == valueNumber(1) && cpu.readFrameRegister(0, 2) == valueNumber(99), "return publishes results without executing the caller continuation");
 		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded && cpu.readFrameRegister(0, 2) == valueNumber(1), "resuming after return binds the caller registers");
 	}
@@ -1260,7 +1275,7 @@ void successorFetchOrdering() {
 						else cpu.setExecutionHook({});
 						registers[2] = valueNumber(-1.0);
 						const u32 faultSequence = machine.memory.readBusFaultSequence();
-						require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "current instruction consumes its own grant");
+						require(cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(op)]) == RunResult::Yielded, "current instruction consumes its own grant");
 						require(asNumber(cpu.readFrameRegister(0, 2)) == expected, "current numeric result precedes successor fault");
 						require(cpu.readFramePc(0) == successorPc, "current instruction advances to successor");
 						require(cpu.lastPc == currentPc, "last PC identifies current instruction");
@@ -1310,7 +1325,7 @@ void reservedMemoryKinds() {
 				require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "reserved memory instruction exhausts grant");
 				require(cpu.readCauseWord() == CPU_CAUSE_CODE_RESERVED_INSTRUCTION, "reserved scalar kind takes instruction exception");
 				require(cpu.readEpcWord() == pc, "reserved scalar instruction EPC");
-				require(cpu.instructionBudgetRemaining == -1, "reserved scalar instruction keeps base charge");
+				require(cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::LOAD_MEM)], "reserved scalar instruction keeps base charge");
 				require(machine.memory.readBusFaultSequence() == faultSequence, "reserved instruction does not issue a memory request");
 				require(observations == 1, "observer sees reserved instruction exactly once");
 			}
@@ -1403,7 +1418,7 @@ void cachedPcWrapping() {
 	page.words[254].baseCycles = page.words[254].dispatchCycles = BASE_CYCLES[static_cast<u8>(OpCode::SHL)];
 	page.words[255].op = page.words[255].dispatchOp = static_cast<u8>(OpCode::BXOR);
 	page.words[255].baseCycles = page.words[255].dispatchCycles = BASE_CYCLES[static_cast<u8>(OpCode::BXOR)];
-	cpu.runUntilDepth(0, 2);
+	cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::SHL)] + BASE_CYCLES[static_cast<u8>(OpCode::BXOR)]);
 	require(frame.pc == 0u, "fused successor PC wraps to a word");
 }
 

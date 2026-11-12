@@ -72,15 +72,17 @@ export const encodeFixedValueCount = (count: number): number => count + 1;
 export const decodeValueCount = (operand: number, openCount: number): number =>
 	operand === 0 ? openCount : operand - 1;
 
+// The base prices include a uniform cycle allowance for instruction supply.
+// WIDE is a prefix, not a separately executed instruction.
 export const BASE_CYCLES = new Uint8Array([
-	0, 1, 1, 1, 2, 1, 1, 1,
-	1, 1, 1, 1, 2, 2, 1, 2,
-	1, 1, 1, 1, 1, 1, 1, 1,
-	1, 1, 1, 1, 1, 1, 2, 1,
-	1, 1, 1, 1, 1, 1, 1, 1,
-	1, 1, 1, 1, 1, 2, 2, 2,
-	2, 2, 2, 2, 1, 1, 1, 2,
-	1, 2, 1, 2, 1, 2, 1, 1,
+	0, 2, 2, 2, 3, 2, 2, 2,
+	2, 2, 2, 2, 3, 3, 2, 3,
+	2, 2, 2, 2, 2, 2, 2, 2,
+	2, 2, 2, 2, 2, 2, 3, 2,
+	2, 2, 2, 2, 2, 2, 2, 2,
+	2, 2, 2, 2, 2, 3, 3, 3,
+	3, 3, 3, 3, 2, 2, 2, 3,
+	2, 3, 2, 3, 2, 3, 2, 2,
 ]);
 
 export const OPCODE_USES_BX = new Uint8Array([

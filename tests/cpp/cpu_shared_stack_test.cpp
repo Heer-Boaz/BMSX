@@ -45,7 +45,8 @@ void slidingFixedCall(bool interpreted) {
 	require(parent->registers[0] == valueNumber(1), "the lower caller prefix survives calls");
 	require(parent->next && parent->next->stackBase == parent->stackBase + 5, "callee parameters alias the supplied argument slots");
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress + INSTRUCTION_BYTES);
-	cpu.runUntilDepth(0, 4);
+	cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)]
+		+ BASE_CYCLES[static_cast<u8>(OpCode::LOADK)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]);
 	require(thread->frameDepth == 2, "exhausted CALL grant leaves the callee before its first instruction");
 	auto* child = thread->currentFrame;
 	require(child->registers == parent->registers + 5, "callee uses a sliding Value pointer");
@@ -92,7 +93,8 @@ void slidingVarargCall(bool interpreted, bool open) {
 	cpu.runUntilDepth(0, 20000);
 	cpu.runUntilDepth(1, 100);
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress + INSTRUCTION_BYTES);
-	cpu.runUntilDepth(0, 6);
+	cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)]
+		+ 3 * BASE_CYCLES[static_cast<u8>(OpCode::LOADK)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]);
 	auto* thread = cpu.activeThread();
 	require(thread->frameDepth == 2, "vararg CALL enters before executing the body");
 	auto* child = thread->currentFrame;

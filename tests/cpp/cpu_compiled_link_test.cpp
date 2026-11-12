@@ -102,7 +102,7 @@ void grantsAndTargetRetirement() {
 			} else {
 				expected[4] = valueNumber(asNumber(expected[0]) + asNumber(expected[8])); top = std::max(top, 5); segment = 0;
 			}
-			remaining -= 2;
+			remaining -= 2 * BASE_CYCLES[static_cast<u8>(OpCode::ADD)];
 			if (remaining <= 0) break;
 		}
 		NativeBlockRunState run{.registers = registers.data(), .constants = native.cpu.activeThread()->frameAtDepth(0)->executionImage->constPool.data(),

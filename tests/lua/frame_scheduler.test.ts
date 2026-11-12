@@ -48,7 +48,7 @@ import {
 } from '../../machine/ts/spec/bmsx/model';
 import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { GX_GPU_READBACK_IDLE, GX_GPU_READBACK_PENDING, GX_GPU_READBACK_READY } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import { GX_GPU_GP0_VRAM_TO_CPU_FIRST } from '../../machine/ts/spec/gx/gp0';
 import {
@@ -376,8 +376,10 @@ test('warmed generated MMIO starts DMA, yields the bus, and resumes only after r
 		const registers = runtime.machine.cpu.activeThread.frameAtDepth(0).registers;
 		[source, target, 256, 0, 1, IO_DMA0_READ_ADDR, 0, 0].forEach((value, index) => registers.setNumber(index, value));
 		for (let word = 0; word < 256; ++word) runtime.machine.memory.writeMappedU32LE(source + word * 4, 0x12340000 + word);
-		// Five two-cycle MMIO stores, 514 bus cycles, then load/add/backedge.
-		runtime.frameScheduler.runCyclesToNextLogicalTick(16 * 528);
+		// Five MMIO stores, 514 bus cycles, then load/add/backedge.
+		const loopCycles = 5 * BASE_CYCLES[OpCode.STORE_MEM_D] + 514
+			+ BASE_CYCLES[OpCode.LOAD_MEM] + BASE_CYCLES[OpCode.ADD] + BASE_CYCLES[OpCode.JMP];
+		runtime.frameScheduler.runCyclesToNextLogicalTick(16 * loopCycles);
 		assert.equal(runtime.machine.cpu.activeThread.frameAtDepth(0).pc, entry);
 		assert.equal(registers.getNumber(6), 16);
 	}
@@ -400,7 +402,7 @@ test('warmed generated MMIO starts DMA, yields the bus, and resumes only after r
 				runtime.machine.memory.writeMappedU32LE(target + word * 4, 0);
 			}
 		}
-		run(11); // Leave budget after TRIGGER: its MMIO exit must yield, not execute the load.
+		run(5 * BASE_CYCLES[OpCode.STORE_MEM_D] + 1); // Leave budget after TRIGGER: its MMIO exit must yield, not execute the load.
 		const { cpu, memory, dmaController } = runtimes[0].machine;
 		const frame = cpu.activeThread.frameAtDepth(0);
 		assert.equal(frame.pc, entry + 20);
@@ -415,7 +417,7 @@ test('warmed generated MMIO starts DMA, yields the bus, and resumes only after r
 		assert.equal(frame.pc, entry + 20, 'the final DMA cycle cannot also execute the continuation');
 		assert.equal(dmaController.cpuBusHeld(), false);
 		for (let word = 0; word < 256; ++word) assert.equal(memory.readMappedU32LE(target + word * 4), 0x43210000 + iteration * 256 + word);
-		run(4);
+		run(BASE_CYCLES[OpCode.LOAD_MEM] + BASE_CYCLES[OpCode.ADD] + BASE_CYCLES[OpCode.JMP]);
 		assert.equal(frame.pc, entry);
 		assert.equal(frame.registers.getNumber(6), 17 + iteration);
 		assert.equal(frame.registers.getNumber(7), 0x43210000 + iteration * 256, 'the resumed load observes DMA output');

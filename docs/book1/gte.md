@@ -4761,7 +4761,7 @@ clears busy and retains5. A waiting CPU command store can then proceed. There
 is no completion interrupt or result-consumed acknowledgement. Individual result
 reads are not one multiword snapshot: another publication between reads can mix
 jobs. Retain every needed result and its flag before allowing the following job
-to replace them. Three scalar word loads alone have a six-cycle CPU base cost,
+to replace them. Three scalar word loads alone have a nine-cycle CPU base cost,
 longer than one pending five-cycle interval.
 
 All normal GTE data/control words, MAC/IR/FLAG and color/screen/depth FIFOs are
@@ -4803,12 +4803,12 @@ instruction, which can retry and issue the next job. This prevents pending-work
 overwrite; it does not retain the old result for software.
 
 For one concrete sequence with operands already supplied, two LOADK instructions
-cost two cycles, the first command store accepts at cycle4, and an immediately
-following store attempts at6 and blocks. The pending completion at9 releases
-it; the retried store accepts at11, and RET finishes at13. The second job is
-still busy until16. Those are ten charged CPU cycles, three elapsed wait cycles,
+cost four cycles, the first command store accepts at cycle7, and an immediately
+following store attempts at10 and blocks. The pending completion at12 releases
+it; the retried store accepts at15, and RET finishes at18. The second job is
+still busy until20. Those are sixteen charged CPU cycles, two elapsed wait cycles,
 and an outstanding result at return—not two jobs fully prepared and consumed
-in ten cycles. Preparation, polling/readout and result retention must be budgeted
+in sixteen cycles. Preparation, polling/readout and result retention must be budgeted
 as well; the repeated-work example below counts the complete sequence.
 
 ## Budgeting a complete geometry work interval {#sec-gte-budgeting-a-complete-geometry-work-interval}
@@ -4870,24 +4870,24 @@ arithmetic, loop tests, spills, or calls.
 
 ### Count the complete accepted-triangle path {#sec-gte-count-the-complete-accepted-triangle-path}
 
-The current scalar ISA charges two base cycles per displaced word load/store,
-one per LOADK, BAND, BOR or EQ, and two for RET. The function's accepted path
+The scalar ISA charges three base cycles per displaced word load/store,
+two per LOADK, BAND, BOR or EQ, and three for RET. The function's accepted path
 executes:
 
 | Work | Executed instructions | Base instruction cycles |
 |---|---:|---:|
-| Load the twelve addresses/constants | 12 LOADK | 12 |
-| Copy all 26 control words from ROM | 26 loads + 26 stores | 104 |
-| Copy six position words from ROM | 6 loads + 6 stores | 24 |
-| Issue RTPT; retain projection FLAG in RAM; read three screen pairs | 1 command store + 1 flag load/store pair + 3 loads | 12 |
-| Issue NCLIP; retain area and its FLAG in RAM | 1 command store + 2 load/store pairs | 10 |
-| Select nonzero positive raw area | 2 EQ + 1 BAND | 3 |
-| Copy six supplied lighting-direction words from ROM | 6 loads + 6 stores | 24 |
-| Supply RGBC | 1 store | 2 |
-| Issue NCCT and retain its FLAG in RAM | 1 command store + 1 flag load/store pair | 6 |
-| Read/mask three colors, add the first-word opcode, write six packet words | 3 loads + 3 BAND + 1 BOR + 6 stores | 22 |
-| Return | 1 RET | 2 |
-| **Base instruction total** | **120 instructions** | **221 cycles** |
+| Load the twelve addresses/constants | 12 LOADK | 24 |
+| Copy all 26 control words from ROM | 26 loads + 26 stores | 156 |
+| Copy six position words from ROM | 6 loads + 6 stores | 36 |
+| Issue RTPT; retain projection FLAG in RAM; read three screen pairs | 1 command store + 1 flag load/store pair + 3 loads | 18 |
+| Issue NCLIP; retain area and its FLAG in RAM | 1 command store + 2 load/store pairs | 15 |
+| Select nonzero positive raw area | 2 EQ + 1 BAND | 6 |
+| Copy six supplied lighting-direction words from ROM | 6 loads + 6 stores | 36 |
+| Supply RGBC | 1 store | 3 |
+| Issue NCCT and retain its FLAG in RAM | 1 command store + 1 flag load/store pair | 9 |
+| Read/mask three colors, add the first-word opcode, write six packet words | 3 loads + 3 BAND + 1 BOR + 6 stores | 35 |
+| Return | 1 RET | 3 |
+| **Base instruction total** | **120 instructions** | **341 cycles** |
 
 The area selection is real control flow, not a free assumption. An EQ test
 rejects zero; BAND extracts the sign bit; a second EQ rejects negative area.
@@ -4903,9 +4903,9 @@ The color reads go to r19–r21, are masked to RGB24, and receive the Gouraud ta
 only in the first packet word. No input transfer, result preservation, mask or
 packet RAM store is omitted from the table.
 
-An independent count is 100 scalar memory instructions at two cycles each,
-12 LOADK at one cycle each, seven bitwise/comparison instructions at one cycle
-each, and RET at two cycles: `200+12+7+2 = 221`. The resulting six RAM words are:
+An independent count is 100 scalar memory instructions at three cycles each,
+12 LOADK at two cycles each, seven bitwise/comparison instructions at two cycles
+each, and RET at three cycles: `300+24+14+3 = 341`. The resulting six RAM words are:
 
 ```text
 0x300000a0  0x00400060
@@ -4914,12 +4914,12 @@ each, and RET at two cycles: `200+12+7+2 = 221`. The resulting six RAM words are
 ```
 
 The three retained FLAG words are zero and the retained doubled area is 4096.
-Thus the sequence with 221 base instruction cycles prepares the stated geometry/color packet, including its retained arithmetic results.
+Thus the sequence with 341 base instruction cycles prepares the stated geometry/color packet, including its retained arithmetic results.
 
 RTPT, NCLIP and NCCT have intervals 23, 8 and 39. Each is immediately
-followed by a two-cycle dependent register load, leaving waits of 21, 6 and
-37 cycles. The complete accepted sequence therefore takes **285 system cycles**: 221 base
-instruction cycles plus 64 interlock cycles. Its RET requests zero results,
+followed by a three-cycle dependent register load, leaving waits of 20, 5 and
+36 cycles. The complete accepted sequence therefore takes **402 system cycles**: 341 base
+instruction cycles plus 61 interlock cycles. Its RET requests zero results,
 so it adds no result-placement charge. The final CYCLES readback is 39.
 
 ### Keep frame waits outside the fixed preparation number {#sec-gte-keep-frame-waits-outside-the-fixed-preparation-number}
@@ -4946,7 +4946,7 @@ Separate the following when making a frame budget:
 Count charged CPU work and elapsed device waits separately, then
 construct the actual timeline if their overlap matters. The cartridge's actual
 loops, changing translation, GP0 traffic and frame-publication path require their
-own accounting; **285 is not their full-frame BLua budget**. This cold work unit also
+own accounting; **402 is not their full-frame BLua budget**. This cold work unit also
 includes control setup that a cartridge can retain across many triangles or
 frames. Reuse changes the work interval and its count; it does not retroactively
 turn a lower-bound transfer estimate into a measured program budget.
@@ -4964,7 +4964,7 @@ in that interval are not charged again. A dependent access completes before
 its following CPU instruction, including when that wait exhausts the current
 execution interval. Operand writes can prepare subsequent work without waiting.
 
-The command store retains its ordinary two-cycle instruction charge; it does
+The command store retains its ordinary three-cycle instruction charge; it does
 not immediately add the whole command duration. For example, after accepting
 RTPT, seven system cycles of independent work leave sixteen cycles to wait at
 a dependent access. A read after twenty-three cycles adds no wait. Normal and
@@ -5778,18 +5778,18 @@ cover the pending interval instead, provided the resulting schedule establishes
 the same result lifetime.
 
 Do not issue work n+1 and then assume there is enough time to copy all of work
-n. Three direct word loads for XY, Z and FLAG have a six-system-cycle base cost
+n. Three direct word loads for XY, Z and FLAG have a nine-system-cycle base cost
 in this CPU, longer than VMAD3's five-cycle pending interval. Starting those
 loads immediately after the new issue can therefore cross its publication
 deadline. Copying before the next issue avoids relying on such a narrow window.
 
 A direct-store interlock adds its wait to the command store's instruction cost.
-For example, with operands already prepared, consider two one-cycle
-constant/address loads followed by consecutive two-cycle command stores. The
-first command is accepted at cycle 4; the next store reaches the busy port at
-cycle 6. The cycle-9 completion releases the waiting instruction, and its
-resumed two-cycle store accepts the second command at cycle 11, with deadline
-16. Instruction issue and the intervening wait are distinct from the five-cycle
+For example, with operands already prepared, consider two two-cycle
+constant/address loads followed by consecutive three-cycle command stores. The
+first command is accepted at cycle 7; the next store reaches the busy port at
+cycle 10. The cycle-12 completion releases the waiting instruction, and its
+resumed three-cycle store accepts the second command at cycle 15, with deadline
+20. Instruction issue and the intervening wait are distinct from the five-cycle
 arithmetic interval.
 
 ### Budget preparation and readout, not just arithmetic {#sec-gte-budget-preparation-and-readout-not-just-arithmetic}
@@ -5797,25 +5797,25 @@ arithmetic interval.
 A schedule for the three displayed work items can retain the next inputs while
 the previous job is pending, but must copy the previous output before issuing
 the next command. With five scalar operand stores per item, preparation alone
-costs ten base CPU cycles, already longer than VMAD3's five-cycle interval.
+costs fifteen base CPU cycles, already longer than VMAD3's five-cycle interval.
 Only the final item then needs an explicit completion wait.
 
 | CPU work in a specified three-item schedule | Charged cycles |
 |---|---:|
-| Nineteen constant/address loads | 19 |
-| Fifteen operand stores | 30 |
-| Three command stores | 6 |
-| Nine result/flag loads | 18 |
-| Nine RAM result stores | 18 |
-| Final CYCLES polling, tests and branches | 7 |
-| Return | 2 |
-| **Total** | **100** |
+| Nineteen constant/address loads | 38 |
+| Fifteen operand stores | 45 |
+| Three command stores | 9 |
+| Nine result/flag loads | 27 |
+| Nine RAM result stores | 27 |
+| Final CYCLES polling, tests and branches | 12 |
+| Return | 3 |
+| **Total** | **161** |
 
-For this schedule, commands are accepted at cycles 31, 55 and 79, with result
-publication due at 36, 60 and 84. Next-item operand stores occupy 33…41 and
-57…65; previous result loads and copies occupy 41…53 and 65…77. Final CYCLES
-reads finish at 81 (busy) and 85 (ready), result copying ends at 98 and return
-at 100. The retained words are the three result/flag triples listed above.
+For this schedule, commands are accepted at cycles 56, 92 and 128, with result
+publication due at 61, 97 and 133. Next-item operand stores occupy 56…71 and
+92…107; previous result loads and copies occupy 71…89 and 107…125. Final CYCLES
+reads finish at 131 (busy) and 138 (ready), result copying ends at 158 and return
+at 161. The retained words are the three result/flag triples listed above.
 
 This count applies to the stated instruction schedule. Operand calculation,
 different storage, unchanged-input reuse and useful independent work change

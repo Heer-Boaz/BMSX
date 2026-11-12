@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { AcceptedInterruptKind, CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { encodeFixedValueCount, OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, encodeFixedValueCount, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { Table } from '../../machine/ts/machine/cpu/table';
@@ -151,7 +151,7 @@ function makeHaltCpu(): {
 	systemExceptionFunctionAddress: number;
 } {
 	const { memory, cpu, irqController } = createTestBlua32PairCpu(HALT_TEST_IMAGES);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	return {
 		memory,
 		cpu,
@@ -295,7 +295,7 @@ function makeCrossDomainHookRuntime(sliceStats: { begin: number; end: number }):
 		},
 	);
 	const { cpu, irqController } = createTestBlua32PairCpu(images);
-	assert.equal(cpu.runUntilDepth(0, 4), RunResult.Yielded);
+	assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.LOAD_MEM] + BASE_CYCLES[OpCode.MTC0]), RunResult.Yielded);
 	assert.equal(cpu.getFrameDepth(), 1);
 	assert.equal(cpu.readFrameExecutionDomain(0), 0);
 	const runtime = makeRuntime(cpu, irqController, sliceStats);
@@ -547,7 +547,7 @@ function makeHaltFrameRuntime(): Runtime {
 		machineModel: { ...PSX_MACHINE_SPEC, cpuFreqHz: 5_000 },
 	}, input);
 	runtime.boot();
-	assert.equal(runtime.machine.cpu.runUntilDepth(0, 4), RunResult.Yielded);
+	assert.equal(runtime.machine.cpu.runUntilDepth(0, BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.LOAD_MEM] + BASE_CYCLES[OpCode.MTC0]), RunResult.Yielded);
 	// Isolate IRQ waiting from automatically scheduled peripheral interrupts.
 	runtime.machine.scheduler.nextDeadline = () => Number.MAX_SAFE_INTEGER;
 	return runtime;
@@ -618,7 +618,7 @@ function makeCompiledIrqRuntime(source: string): { cpu: CPU; irqController: IrqC
 
 function runCompiledVblankIrq(source: string): { cpu: CPU; irqController: IrqController } {
 	const { cpu, irqController, cpuExecution, state } = makeCompiledIrqRuntime(source);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	irqController.raise(IRQ_VBLANK);
 	assert.equal(cpuExecution.runStoppedCpu(state), false);
 	cpuExecution.runWithBudget(state);
@@ -730,7 +730,7 @@ nested_outer, nested_inner, nested_a, nested_b = pcall(pcall, succeed)
 
 test('CPU closure calls that execute HALT without a scheduled interrupt park without host exception', () => {
 	const { cpu, irqController } = createTestBlua32PairCpu(HALT_CLOSURE_TEST_IMAGES);
-	assert.equal(cpu.runUntilDepth(0, 5), RunResult.Yielded);
+	assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.LOAD_MEM] + BASE_CYCLES[OpCode.MTC0] + BASE_CYCLES[OpCode.CLOSURE]), RunResult.Yielded);
 	const haltClosure = cpu.readFrameRegister(0, 0) as Closure;
 	const runtime = makeRuntime(cpu, irqController);
 
@@ -845,7 +845,7 @@ test('IRQ mask starts closed and gates pending maskable IRQs', () => {
 
 test('completion-call return routing survives save-state through the raw CPU latch', () => {
 	const { cpu, irqController } = createTestSystemCpu(COMPLETION_LATCH_TEST_IMAGE);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const closure = materializeCpuCompletionValues(cpu)[0] as Closure;
 	const closureKey = cpu.stringPool.intern('completion_call');
 	cpu.setGlobalByKey(closureKey, ValueTag.Closure, NaN, closure);
@@ -857,7 +857,7 @@ test('completion-call return routing survives save-state through the raw CPU lat
 	assert.equal(state.threads[0].frames[0].returnToCompletionLatch, true);
 
 	cpu.restoreRuntimeState(state);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const restoredTable = materializeCpuCompletionValues(cpu)[0] as Table;
 	cpu.collectTrackedHeapBytes();
 	assert.equal(materializeCpuCompletionValues(cpu)[0], restoredTable);
@@ -873,7 +873,7 @@ test('completion-call return routing survives save-state through the raw CPU lat
 
 test('CPU aborts a physical completion call at its marked root', () => {
 	const { cpu } = createTestSystemCpu(COMPLETION_LATCH_TEST_IMAGE);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const closure = materializeCpuCompletionValues(cpu)[0] as Closure;
 	const completionFrameIndex = cpu.getFrameDepth();
 	cpu.beginCompletionCall(closure);
@@ -890,7 +890,7 @@ test('CPU aborts a physical completion call at its marked root', () => {
 
 test('Runtime callClosure leaves its completion frame pending when the shared executor hits a breakpoint', () => {
 	const { cpu, irqController } = createTestSystemCpu(COMPLETION_LATCH_TEST_IMAGE);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const closure = materializeCpuCompletionValues(cpu)[0] as Closure;
 	const runtime = makeRuntime(cpu, irqController);
 	const closurePc = COMPLETION_LATCH_TEST_IMAGE.image.functions[1].codeAddress;
@@ -938,7 +938,7 @@ test('HALT consumes an interrupt accepted before the wait instruction', () => {
 	assert.equal(cpu.enterPendingInterrupt(), true);
 	assert.equal(cpu.captureRuntimeState().interruptEventPending, true);
 	irqController.acknowledge(IRQ_VBLANK);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 
 	assert.equal(cpu.getFrameDepth(), 0);
 	assert.equal(cpu.isHaltedUntilIrq(), false);
@@ -950,7 +950,7 @@ test('frame loop vectors a pending IRQ above a halted cart frame', () => {
 	const cpu = runtime.machine.cpu;
 	const irqController = runtime.machine.irqController;
 
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	runtime.machine.memory.writeMappedWord(IO_IRQ_MASK, IRQ_VBLANK);
 
@@ -1010,10 +1010,10 @@ observed_sequence = sequence
 `;
 	for (const optLevel of [0, 1, 2, 3] as const) {
 		const { cpu, irqController } = makeCompiledCartCpu(CART_LAUNCHER_SYSTEM_LUA_SOURCE, source, optLevel);
-		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted, `O${optLevel} initial run`);
+		assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted, `O${optLevel} initial run`);
 		irqController.raise(IRQ_VBLANK);
 		assert.equal(cpu.enterPendingInterrupt(), true, `O${optLevel} IRQ entry`);
-		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted, `O${optLevel} resumed run`);
+		assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted, `O${optLevel} resumed run`);
 		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('observed_before')), 0, `O${optLevel} snapshot`);
 		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('observed_sequence')), 1, `O${optLevel} live sequence`);
 	}
@@ -1126,7 +1126,7 @@ test('CPU save-state captured inside an interrupt frame restores and returns to 
 	const runtime = makeHaltFrameRuntime();
 	const cpu = runtime.machine.cpu;
 	const irqController = runtime.machine.irqController;
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	runtime.machine.memory.writeMappedWord(IO_IRQ_MASK, IRQ_VBLANK);
 	irqController.raise(IRQ_VBLANK);
 	const state = makeFrameState();
@@ -1161,7 +1161,7 @@ halt_until_irq
 mem[${resumedAddress}] = 1
 `;
 	const { cpu, memory, images } = makeCompiledCartCpu(systemSource, cartSource);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 
 	cpu.requestNonMaskableInterrupt();
@@ -1171,7 +1171,7 @@ mem[${resumedAddress}] = 1
 	assert.equal(activeState.statusWord, CPU_STATUS_CART_ENTRY << 2);
 	assert.equal(activeState.threads[0].frames.at(-1)!.functionAddress, images.systemVectors.exceptionFunctionAddress);
 	assert.equal(activeState.threads[0].frames.at(-1)!.isExceptionFrame, true);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 
 	assert.equal(memory.readMappedU32LE(exceptionCauseAddress), CPU_CAUSE_NMI);
 	assert.equal(memory.readMappedU32LE(exceptionEpcAddress), activeState.epcWord);
@@ -1235,7 +1235,7 @@ halt_until_irq
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
 	const cpu = new CPU(memory, irqController, executionAddressSpace);
 	cpu.reset();
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const interruptedFrameDepth = cpu.getFrameDepth();
 	memory.writeMappedWord(IO_IRQ_MASK, IRQ_VBLANK);
 	irqController.raise(IRQ_VBLANK);
@@ -1312,7 +1312,7 @@ end
 wait()
 `;
 	const { cpu, images } = makeCompiledCartCpu(CART_LAUNCHER_SYSTEM_LUA_SOURCE, source);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const frameIndex = cpu.getFrameDepth() - 1;
 	assert.equal(cpu.getFrameUpvalueCount(frameIndex), 1);
 	assert.equal(cpu.readFrameUpvalue(frameIndex, 0), 42);
@@ -1378,7 +1378,7 @@ test('BLua32 branches fetch adjacent mapped instructions without function-range 
 		});
 		const { cpu } = createTestSystemCpu(image);
 
-		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+		assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 		assert.equal(cpu.getFrameDepth(), 0);
 	}
 });
@@ -1394,7 +1394,7 @@ test('unmapped CLOSURE records hard-halt without entering host error handling', 
 	});
 	const { cpu } = createTestSystemCpu(image);
 
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	assertFrameFunctionAddresses(cpu, [
 		image.symbols.functionAddresses[0],
 	]);
@@ -1440,7 +1440,7 @@ test('RFE resumes the retained frame at any mapped instruction address', () => {
 	const state = cpu.captureRuntimeState();
 	state.epcWord = HALT_TEST_IMAGES.cartImage.functions[1].codeAddress;
 	cpu.restoreRuntimeState(state);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	assert.equal(cpu.getFrameDepth(), 0);
 });
 
@@ -1476,10 +1476,10 @@ mem[${cartResumedAddress}] = 1
 	});
 	memory.mapIoWriteReady(IO_APU_TRANSFER_DATA, () => port.ready);
 
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	irqController.raise(IRQ_VBLANK);
 	assert.equal(cpu.enterPendingInterrupt(), true);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	assert.equal(cpu.isMemoryWriteBlocked(), true);
 	assert.equal(port.writes, 0);
 	assert.equal(memory.readMappedU32LE(storeCompleteAddress), 0);
@@ -1581,7 +1581,7 @@ test('CPU mapped bus errors enter the system exception vector without committing
 	const { memory, cpu } = createTestBlua32PairCpu(images);
 	const systemExceptionAddress = images.systemSymbols.functionAddresses[1];
 
-	assert.equal(cpu.runUntilDepth(0, 8), RunResult.Yielded);
+	assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.LOAD_MEM] + BASE_CYCLES[OpCode.MTC0] + BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.LOAD_MEM_D]), RunResult.Yielded);
 	const loadFault = cpu.captureRuntimeState();
 	assert.equal(loadFault.causeWord, CPU_CAUSE_CODE_DATA_BUS_ERROR);
 	assert.equal(loadFault.epcWord, images.cartImage.header.textAddress + 2 * INSTRUCTION_BYTES);
@@ -1590,7 +1590,7 @@ test('CPU mapped bus errors enter the system exception vector without committing
 	assert.equal(cpu.readFrameRegister(0, 1), 1);
 	loadFault.epcWord += INSTRUCTION_BYTES;
 	cpu.restoreRuntimeState(loadFault);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [1]);
 
 	memory.writeMappedU32LE(IO_SYS_BUS_FAULT_ACK, 1);
@@ -1601,7 +1601,8 @@ test('CPU mapped bus errors enter the system exception vector without committing
 	});
 	memory.installSystemRom(systemBurstImage.romBytes);
 	cpu.reset();
-	assert.equal(cpu.runUntilDepth(0, 10), RunResult.Yielded);
+	assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.LOADK] + 5 * BASE_CYCLES[OpCode.K1]
+		+ BASE_CYCLES[OpCode.STORE_MEM_WORDS_D] + 2), RunResult.Yielded);
 	const burstFault = cpu.captureRuntimeState();
 	assert.equal(burstFault.causeWord, CPU_CAUSE_CODE_DATA_BUS_ERROR);
 	assert.equal(burstFault.epcWord, systemBurstImage.image.header.textAddress + 11 * INSTRUCTION_BYTES);
@@ -1670,7 +1671,7 @@ test('instruction fetch faults enter the system exception vector at the physical
 		writeInstruction(instructions, 0, OpCode.ADD, 0, 0, 1, 0);
 		writeInstruction(instructions, 1, OpCode.WIDE, 0, 0, 0, 0);
 		memory.writeBytes(instructionPc, instructions);
-		assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded);
+		assert.equal(cpu.runUntilDepth(0, 2 * BASE_CYCLES[OpCode.K1]), RunResult.Yielded);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, entryFunctionAddress, instructionPc);
 
 		assert.equal(cpu.runUntilDepth(0, 10), RunResult.Halted);
@@ -1711,7 +1712,7 @@ test('CPU mapped memory accepts byte addresses and four-byte-aligned f64 address
 	memory.writeMappedU8(byteAddress, 0x5a);
 	memory.writeMappedF64LE(f64Address, Math.PI);
 
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [0x5a, Math.PI]);
 });
 
@@ -1757,7 +1758,7 @@ test('CPU address errors vector before any mapped-memory bus cycle or destinatio
 		memory.writeMappedU32LE(alignedAddress + 8, 0x99aabbcc);
 		const faultSequence = memory.readBusFaultSequence();
 
-		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted, testCase.name);
+		assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted, testCase.name);
 		const state = cpu.captureRuntimeState();
 		assert.equal(state.causeWord, testCase.cause, testCase.name);
 		assert.equal(state.epcWord, image.image.header.textAddress + memoryInstruction * INSTRUCTION_BYTES, testCase.name);
@@ -1829,7 +1830,7 @@ test('frame scheduler discards host time spent waiting for GPU backend execution
 	assert.notEqual(runtime.frameLoop.currentFrameState, null);
 });
 
-test('CPU execution stops at the device deadline that activates GPUREAD', () => {
+test('an atomic CPU instruction completes across the GPUREAD deadline before service', () => {
 	const machine = makeMachine();
 	const cpu = machine.cpu;
 	const instructionCount = 64;
@@ -1865,7 +1866,12 @@ test('CPU execution stops at the device deadline that activates GPUREAD', () => 
 	new CpuExecutionState(runtime).runWithBudget(state);
 
 	assert.equal(machine.gxGpu.readDeviceOutput().readbackPort.phase, GX_GPU_READBACK_PENDING);
-	assert.equal(machine.scheduler.nowCycles, readbackDeadline);
+	assert.equal(readbackDeadline, 1);
+	// The instruction starts before the deadline and commits as a whole. The
+	// device event is currently serviced at the following instruction boundary,
+	// rather than cycle-exactly at the deadline.
+	assert.equal(machine.scheduler.nowCycles, BASE_CYCLES[OpCode.LOADNIL]);
+	assert.equal(cpu.readFramePc(0), image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
 	assert.equal(cpu.getFrameDepth(), 1);
 	assert.equal(state.cycleBudgetRemaining > 0, true);
 });

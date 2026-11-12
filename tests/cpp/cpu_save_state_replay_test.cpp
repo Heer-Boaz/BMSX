@@ -242,7 +242,8 @@ void restoreUnrootedCanonicalClosure() {
 	SnapshotMachine machine(image);
 	auto& cpu = machine.runtime.machine.cpu;
 	const auto cold = cpu.captureRuntimeState();
-	cpu.runUntilDepth(0, 2);
+	cpu.runUntilDepth(0, bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE)]
+		+ bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::KNIL)]);
 	const auto warm = cpu.captureRuntimeState();
 	require(warm.snapshot.word(warm.threads[0].stack[warm.threads[0].frames[0].stackBase]) == static_cast<bmsx::u32>(bmsx::CpuSnapshotValueTag::Nil), "static closure is no longer a guest root");
 	bool captured = false;

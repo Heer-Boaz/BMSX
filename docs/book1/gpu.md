@@ -188,9 +188,9 @@ affine interpolation and ordered local-memory writes are detailed in the
 primitive sections. Display-window sizes are programmed separately through PCRTC.
 
 **Issue cost and command completion.** An ordinary scalar word load or store,
-including its displacement form, has a **two-system-cycle base cost**. Address
+including its displacement form, has a **three-system-cycle base cost**. Address
 and value preparation, control flow and readiness waits are additional. A
-word-sequence store instead charges two base cycles plus its word count divided
+word-sequence store instead charges three base cycles plus its word count divided
 by four, rounded upward. The sequence advances the destination by four
 bytes per word: starting at GP0 reaches GP1 next, not another GP0 stream word.
 
@@ -247,7 +247,7 @@ bits subsequently change with the scanout position.
 ### Access and ordering {#sec-gpu-access-and-ordering}
 
 Use aligned word operations for normal programming. Ordinary scalar word loads
-and stores, including their displacement forms, have a two-system-cycle base
+and stores, including their displacement forms, have a three-system-cycle base
 cost; preparation, control flow and a blocked store's wait/retry are separate.
 
 | Access | Port effect |
@@ -402,7 +402,7 @@ unless explicitly described as retained. An accepted GP1 write applies its
 control directly to programmed state. It does not join the GP0 FIFO or acquire
 a separate queued raster-completion interval.
 
-An ordinary scalar word store has a two-system-cycle base cost, separate from
+An ordinary scalar word store has a three-system-cycle base cost, separate from
 instruction preparation and any admission wait. GP0 busy status does not by
 itself prevent a GP1 store: GP1 admission is the system supervisor-quiesce gate.
 The reset and clear controls can therefore be issued while GP0 has an incomplete
@@ -3569,7 +3569,7 @@ Upload execution and the readback command each cost one tick, independently of a
 
 E1–E6, IRQ request and non-NOP unmatched GP0 operations also cost one tick; their selected register/IRQ effect occurs when execution begins, before command completion. Boundary-discarded NOPs have no queued cost interval. GP1 controls have no separate queued raster-cost interval. For example, an IRQ behind a 32×4 fill starting at cycle 0 executes and raises at 49, then completes at 50; the IRQ does not prove presentation has finished.
 
-Finally, budget the **CPU work**. A scalar word issue has two base CPU cycles;
+Finally, budget the **CPU work**. A scalar word issue has three base CPU cycles;
 include address/value preparation, control flow and admission waits as well.
 CPU issue and GPU execution can overlap. The following complete timeline
 shows how their costs combine for one fill-and-fence sequence.
@@ -3579,7 +3579,7 @@ shows how their costs combine for one fill-and-fence sequence.
 The following complete instruction sequence supplies a
 32×4 red fill, queues an IRQ marker, waits for it, saves the observed status,
 acknowledges both IRQ latches, checks idle separately, saves that status and
-returns. **Its cost is 83 system cycles**, not 83 plus the fill's command interval.
+returns. **Its cost is 110 system cycles**, not 110 plus the fill's command interval.
 CPU issue/polling and GPU work overlap.
 
 The schedule includes address setup, loads and stores, status tests, taken
@@ -3593,7 +3593,7 @@ is idle, with empty input, no partial packet or readback, its IRQ request clear,
 and no pending competing work. The reset drawing/display state supplies no row
 suppression. DMA does not own either port, ingress is not stopped, the controller
 pending and mask words are zero, and no IRQ, fault or other bus master interrupts
-the interval. The beam remains on reset line parity zero throughout these 83
+the interval. The beam remains on reset line parity zero throughout these 110
 cycles. Startup, the caller and initialization that establishes these preconditions
 are outside this stated interval.
 
@@ -3618,8 +3618,8 @@ assumed preloaded:
 | r11 | GPU idle status mask `04000000H`, bit 26 |
 
 r12 holds a GPUSTAT read; r13 holds its masked test. The twelve LOADK instructions
-cost twelve cycles. All memory operations below are scalar displaced **Word**
-loads/stores with two-cycle base cost. An address `base+4` uses displacement 1;
+cost twenty-four cycles. All memory operations below are scalar displaced **Word**
+loads/stores with three-cycle base cost. An address `base+4` uses displacement 1;
 no extra address ADD is hidden in this schedule. Every GP0 store uses the same
 r0 address, not an incrementing destination.
 
@@ -3628,7 +3628,7 @@ r0 address, not an incrementing destination.
 The operation column describes ISA effects, not BLua source syntax. EQ uses
 A=1: if the masked value differs from zero, skip the following JMP. Thus a clear
 status bit executes the backward branch; a set bit exits the polling loop.
-BAND, EQ and an executed JMP each cost one cycle. A skipped JMP is not issued.
+BAND, EQ and an executed JMP each cost two cycles. A skipped JMP is not issued.
 
 | Instruction index | Operation |
 |---|---|
@@ -3649,17 +3649,17 @@ BAND, EQ and an executed JMP each cost one cycle. A skipped JMP is not issued.
 | 25 | EQ: compare r13 with r3; skip instruction 26 when unequal |
 | 26 | JMP: jump to instruction 23 |
 | 27 | STORE_MEM_D: r12 → Word[r10+4], retain idle observation |
-| 28 | RET: return, two cycles |
+| 28 | RET: return, three cycles |
 
 There are 29 stored instruction words, but loops change the executed count. In
-this case instructions 16…19 execute nine unsuccessful passes, followed by
+this case instructions 16…19 execute five unsuccessful passes, followed by
 one successful pass 16…18. Instructions 23…25 succeed at the first idle check;
 JMP at instruction 26 is not issued.
 
 This is an execution fence and status readout, not image readback or a displayed
 frame. A C0 image read requires its separate READY/ownership/count protocol and
 has no fixed whole-transfer latency established by the one-tick command cost.
-Neither the 83-cycle function nor a sum of drawing costs establishes physical bus
+Neither the 110-cycle function nor a sum of drawing costs establishes physical bus
 bandwidth, sustained fill rate or the CPU cost of a complete game frame.
 
 ### Follow issue, command completion and readout {#sec-gpu-follow-issue-command-completion-and-readout}
@@ -3669,40 +3669,41 @@ instruction's charged endpoint:
 
 | Cycle | Event |
 |---|---|
-| 12 | All constants are loaded |
-| 14,16,18 | The three fill words are accepted; the complete fill starts at 18 |
-| 20 | IRQ marker accepted behind the active fill, without waiting for idle |
-| 22,27,…,62 | Nine completed status reads find GPU IRQ bit 24 clear |
-| 67 | Fill reaches `18+49`; marker executes and sets IRQ. The tenth read sees IRQ set but idle clear |
-| 68 | The marker's own one-tick interval completes |
-| 69 | BAND/EQ finish selecting the successful IRQ path; JMP at instruction 19 is skipped |
-| 71 | First retained status is written to result word 0 |
-| 73,75 | GPU request and controller pending latches are acknowledged separately |
-| 77 | First separate idle read completes with bit 26 set |
-| 79 | Idle BAND/EQ complete; JMP at instruction 26 is skipped |
-| 81,83 | Second status is retained, then RET completes |
+| 24 | All constants are loaded |
+| 27,30,33 | The three fill words are accepted; the complete fill starts at 33 |
+| 36 | IRQ marker accepted behind the active fill, without waiting for idle |
+| 39,48,…,75 | Five completed status reads find GPU IRQ bit 24 clear |
+| 82 | Fill reaches `33+49`; the marker executes and sets IRQ |
+| 83 | The marker's own one-tick interval completes |
+| 84 | The sixth read sees IRQ set and the GPU idle |
+| 88 | BAND/EQ finish selecting the successful IRQ path; JMP at instruction 19 is skipped |
+| 91 | First retained status is written to result word 0 |
+| 94,97 | GPU request and controller pending latches are acknowledged separately |
+| 100 | First separate idle read completes with bit 26 set |
+| 104 | Idle BAND/EQ complete; JMP at instruction 26 is skipped |
+| 107,110 | Second status is retained, then RET completes |
 
 The fill costs 98 command ticks, 49 cycles. The marker adds its own one-cycle
-interval: completion of the queued work is at 68, not at the first IRQ observation
-at 67. Under the stated reset/parity conditions, the saved words are `11922000H`
-(IRQ set, idle clear) and `14922000H` (IRQ clear, idle set). In general, beam and
+interval: completion of the queued work is at 83, before the first IRQ observation
+at 84. Under the stated reset/parity conditions, the saved words are `15922000H`
+(IRQ set, idle set) and `14922000H` (IRQ clear, idle set). In general, beam and
 configuration fields must be interpreted rather than compared with these whole
 example constants.
 
 | Executed work | Instructions | CPU cycles |
 |---|---:|---:|
-| Address/value setup | 12 LOADK | 12 |
-| Supply fill and marker | 4 stores | 8 |
-| Nine unsuccessful IRQ passes | 9×(load, BAND, EQ, JMP) | 45 |
-| Successful IRQ pass | load, BAND, EQ | 4 |
-| Retain IRQ status; acknowledge GPU and controller | 3 stores | 6 |
-| Successful idle check | load, BAND, EQ | 4 |
-| Retain idle status | 1 store | 2 |
-| Return | 1 RET | 2 |
-| **Complete entered-function interval** | **63** | **83** |
+| Address/value setup | 12 LOADK | 24 |
+| Supply fill and marker | 4 stores | 12 |
+| Five unsuccessful IRQ passes | 5×(load, BAND, EQ, JMP) | 45 |
+| Successful IRQ pass | load, BAND, EQ | 7 |
+| Retain IRQ status; acknowledge GPU and controller | 3 stores | 9 |
+| Successful idle check | load, BAND, EQ | 7 |
+| Retain idle status | 1 store | 3 |
+| Return | 1 RET | 3 |
+| **Complete entered-function interval** | **47** | **110** |
 
 No direct CPU store stalls in this sequence; the marker fits in the input while
-the fill executes. The 49 IRQ-poll cycles are still charged CPU work, not free
+the fill executes. The 52 IRQ-poll cycles are still charged CPU work, not free
 waiting. Replacing polling with an interrupt handler changes setup, entry,
 acknowledgement and resumption costs and needs its own budget.
 

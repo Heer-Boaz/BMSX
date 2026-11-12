@@ -84,7 +84,8 @@ struct Machine {
 		void* original = callee->nativeCode[word];
 		callee->nativeCode[word] = marker->nativeCode[markerWord];
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rootPc + 2 * INSTRUCTION_BYTES);
-		cpu.runUntilDepth(0, 4);
+		cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::MOV)]
+			+ BASE_CYCLES[static_cast<u8>(OpCode::CALL)] + 1);
 		callee->nativeCode[word] = original;
 		require(cpu.getFrameDepth() == 2, "generated CALL enters a live child");
 		auto* parent = cpu.rootThread()->firstFrame;
@@ -151,7 +152,8 @@ void boundReturn(bool replaceTargetStorage, bool changeBank) {
 	auto& root = const_cast<NativeCodeLookup::Root&>(lookup.root(changeBank ? 1u : 0u));
 	auto* group = root[parent->pc >> NativeCodeLookup::ROOT_SHIFT];
 	root[parent->pc >> NativeCodeLookup::ROOT_SHIFT] = nullptr;
-	machine.cpu.runUntilDepth(0, 3);
+	machine.cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::RET)]
+		+ BASE_CYCLES[static_cast<u8>(OpCode::SETGL)]);
 	root[parent->pc >> NativeCodeLookup::ROOT_SHIFT] = group;
 	require(machine.cpu.getFrameDepth() == 1
 		&& machine.cpu.getGlobalByKey(machine.cpu.stringPool().intern("continuationResult")) == valueNumber(73),
@@ -198,7 +200,7 @@ void cartridgeReturnSelectsLiveBank() {
 			memory.writeMappedWord(IO_CART_SELECT, bank ^ 1u);
 			parent->registers[2] = valueNumber(bank);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, system.functionAddresses[0], first.textAddress);
-			cpu.runUntilDepth(0, 8192);
+			cpu.runUntilDepth(0, 8192 + (round & 31));
 			cpu.runUntilDepth(1, 100);
 			require(parent->registers[1] == valueNumber(bank == 0 ? 11 : 22)
 				&& memory.cartridgeController().selectionWord() == bank,
@@ -256,7 +258,7 @@ void observationAndLifecycle(int action) {
 		binding.context = &observed;
 		binding.observe = [](void* context, ExecutionDomainId, u32, const Value*) { ++*static_cast<unsigned*>(context); };
 		machine.cpu.setInstructionObserver(std::move(binding));
-		machine.cpu.runUntilDepth(0, 3);
+		machine.cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::RET)] + 1);
 		require(observed == 1 && machine.cpu.getFrameDepth() == 1, "retired target obeys a newly installed observer");
 	} else if (action == 1) {
 		const auto state = machine.cpu.captureRuntimeState();
@@ -269,7 +271,8 @@ void observationAndLifecycle(int action) {
 	} else if (action == 2) {
 		machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.markerPc());
 		require(!parent->nativeContinuationCells[0], "hot-resume invalidates the caller's former continuation binding");
-		machine.cpu.runUntilDepth(0, 3);
+		machine.cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::RET)]
+			+ BASE_CYCLES[static_cast<u8>(OpCode::SETGL)]);
 		require(machine.cpu.getGlobalByKey(machine.cpu.stringPool().intern("continuationResult")) == valueNumber(73),
 			"return after hot-resume follows the rewritten caller PC");
 	} else if (action == 3) {

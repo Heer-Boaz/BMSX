@@ -8,11 +8,28 @@ import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
+
+test('every executed opcode has the same additional instruction charge, not a WIDE-prefix charge', () => {
+	const beforeFetchAllowance = [
+		0, 1, 1, 1, 2, 1, 1, 1,
+		1, 1, 1, 1, 2, 2, 1, 2,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 2, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 2, 2, 2,
+		2, 2, 2, 2, 1, 1, 1, 2,
+		1, 2, 1, 2, 1, 2, 1, 1,
+	];
+	assert.equal(BASE_CYCLES[OpCode.WIDE], 0);
+	for (let op = 1; op < BASE_CYCLES.length; ++op) {
+		assert.equal(BASE_CYCLES[op], beforeFetchAllowance[op] + 1, `opcode ${op}`);
+	}
+});
 
 test('builtin cost resolution uses fixed VM primitive tiers', () => {
 	assert.deepEqual(createBuiltinFunction(BuiltinFunctionId.Next).cost, { base: 1, perArg: 0, perRet: 0 });
@@ -47,7 +64,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress + 2 * INSTRUCTION_BYTES);
 				while (cpu.getFrameDepth() !== 2) cpu.runUntilDepth(0, 1);
 				assert.equal(cpu.runUntilDepth(1, grant), RunResult.Halted);
-				assert.equal(cpu.instructionBudgetRemaining, grant - 2 - placed, 'the admitted RET completes atomically, including an overrun');
+				assert.equal(cpu.instructionBudgetRemaining, grant - BASE_CYCLES[OpCode.RET] - placed, 'the admitted RET completes atomically, including an overrun');
 				const caller = cpu.rootThread.currentFrame!;
 				assert.equal(caller.pc, image.image.functions[0].codeAddress + 6 * INSTRUCTION_BYTES);
 				assert.equal(caller.top, 4 + placed);
@@ -63,10 +80,10 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			writeInstruction(text, 2, OpCode.RET, 0, producedOperand, 0);
 			const image = linkRawTestSystemBlua32({ text, constants: [17, 29], functions: [{ firstWord: 0, wordCount: 3, maxStack: 2 }] });
 			const { cpu } = createTestSystemCpu(image, backend);
-			cpu.runUntilDepth(0, 2);
+			cpu.runUntilDepth(0, 2 * BASE_CYCLES[OpCode.LOADK]);
 			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Halted);
 			const count = producedOperand === 0 ? 2 : producedOperand - 1;
-			assert.equal(cpu.instructionBudgetRemaining, -1 - count);
+			assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.RET] - count);
 			const values: Value[] = []; cpu.readCompletionValues(values);
 			assert.deepEqual(values, [17, 29].slice(0, count));
 		});
@@ -96,7 +113,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			if (fault) assert.throws(() => cpu.runUntilDepth(1, 2), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
 			else assert.equal(cpu.runUntilDepth(1, 2), RunResult.Halted);
 			const outer = wanted === 0 ? 4 : wanted - 1;
-			assert.equal(cpu.instructionBudgetRemaining, 0 - (failFirst ? 0 : 3) - (fault ? 0 : outer), 'the inner status plus two values remains charged if outer admission throws');
+			assert.equal(cpu.instructionBudgetRemaining, 2 - BASE_CYCLES[OpCode.RET] - (failFirst ? 0 : 3) - (fault ? 0 : outer), 'the inner status plus two values remains charged if outer admission throws');
 			if (!fault) assert.deepEqual(Array.from({ length: outer }, (_, i) => thread.currentFrame!.registers.get(i)), [true, true, 17, 29, null].slice(0, outer));
 		});
 	}
@@ -124,7 +141,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		cpu.activeThread.currentFrame!.registers.setNumber(0, 17); cpu.activeThread.currentFrame!.registers.setNumber(1, 29);
 		assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded);
 		const placed = wanted === 0 ? 3 : wanted - 1;
-		assert.equal(cpu.instructionBudgetRemaining, 0 - placed);
+		assert.equal(cpu.instructionBudgetRemaining, 2 - BASE_CYCLES[OpCode.RET] - placed);
 		assert.equal(cpu.activeThread, cpu.rootThread);
 		assert.deepEqual(Array.from({ length: placed }, (_, i) => cpu.rootThread.currentFrame!.registers.get(4 + i)), [true, 17, 29, null, null].slice(0, placed));
 	});
@@ -141,7 +158,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('select'), ValueTag.BuiltinFunction, BuiltinFunctionId.Select, null);
 		while (cpu.rootThread.currentFrame!.pc !== image.image.functions[0].codeAddress + 3 * INSTRUCTION_BYTES) cpu.runUntilDepth(0, 1);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-		assert.equal(cpu.instructionBudgetRemaining, -6, 'CALL base 2 plus select tier 1 plus four placed slots');
+		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 1 - 4, 'CALL base, select tier and four placed slots');
 		assert.deepEqual(Array.from({ length: 4 }, (_, i) => cpu.rootThread.currentFrame!.registers.get(i)), [1, null, null, null]);
 	});
 
@@ -166,9 +183,9 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('xpcall'), ValueTag.BuiltinFunction, BuiltinFunctionId.XPCall, null);
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('error'), ValueTag.BuiltinFunction, BuiltinFunctionId.Error, null);
 		while (cpu.activeThread.currentFrame!.functionAddress !== image.symbols.functionAddresses[2]) cpu.runUntilDepth(0, 1);
-		assert.equal(cpu.instructionBudgetRemaining, 1 - 2 - 2 - 1, 'error CALL, error primitive and one handler argument placement');
+		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 2 - 1, 'error CALL, error primitive and one handler argument placement');
 		assert.equal(cpu.runUntilDepth(1, 1), RunResult.Halted);
-		assert.equal(cpu.instructionBudgetRemaining, -6);
+		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.RET] - 5);
 		assert.deepEqual(Array.from({ length: 5 }, (_, i) => cpu.rootThread.currentFrame!.registers.get(i)), [false, 17, null, null, null]);
 	});
 }
@@ -188,7 +205,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	for (let call = 0; call < 16; ++call) {
 		cpu.beginCompletionCall(closure, [17, 29]);
 		assert.equal(cpu.runUntilDepth(1, 1), RunResult.Halted);
-		assert.equal(cpu.instructionBudgetRemaining, -3);
+		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.RET] - 2);
 		const values: Value[] = []; cpu.readCompletionValues(values);
 		assert.deepEqual(values, [17, 29]);
 	}

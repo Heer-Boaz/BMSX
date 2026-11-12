@@ -44,13 +44,13 @@ test('compiled CP0 loads retain full unsigned words and consume the live registe
 		const expected = [(word & ~CPU_STATUS_USER_MODE_CURRENT) >>> 0, word, (word ^ 0x13579bdf) >>> 0, ~word >>> 0, word, 0];
 		for (let i = 0; i < expected.length; ++i) assert.equal(js.readFrameRegister(0, i), expected[i]);
 		assert.equal(js.readFrameRegister(0, 9), word + 1, 'ordinary arithmetic is not word-wrapped');
-		for (const cpu of [js, ref]) { cpu.writeEpcWord((word + 1) >>> 0); cpu.runUntilDepth(0, 9); }
+		for (const cpu of [js, ref]) { cpu.writeEpcWord((word + 1) >>> 0); cpu.runUntilDepth(0, 18); }
 		assertParity(js, ref); assert.equal(js.readFrameRegister(0, 2), (word + 1) >>> 0);
 		for (const cpu of [js, ref]) {
 			const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setNumber(0, CPU_STATUS_USER_MODE_CURRENT);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[1].codeAddress); cpu.runUntilDepth(0, 1);
 			frame.registers.setNumber(0, 73); frame.registers.setNumber(8, 73); frame.top = 0;
-			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress); cpu.runUntilDepth(0, 9);
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress); cpu.runUntilDepth(0, 18);
 		}
 		assertParity(js, ref); assert.equal(js.readFrameRegister(0, 0), 73); assert.equal(js.readFrameRegister(0, 8), 1);
 		assert.equal(js.rootThread.frameAtDepth(0).top, 9); assert.equal(js.readEpcWord(), image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
@@ -72,7 +72,7 @@ test('compiled CP0 writes convert words without changing their sources or ignore
 	assert.equal(js.rootThread.frameAtDepth(0).decodedPage!.compiledBlocks!.entries[entry]!.sourceWords, 6);
 	assert.equal(js.rootThread.frameAtDepth(0).decodedPage!.compiledBlocks!.entries[entry]!.exits.length, 2);
 	for (const value of [-0, -1.5, 4294967297.75, 1e100, Infinity, NaN, null, true]) {
-		for (const cpu of [js, ref]) { cpu.rootThread.frameAtDepth(0).registers.set(0, value); cpu.runUntilDepth(0, 6); }
+		for (const cpu of [js, ref]) { cpu.rootThread.frameAtDepth(0).registers.set(0, value); cpu.runUntilDepth(0, 12); }
 		assertParity(js, ref);
 		const numeric = js.rootThread.frameAtDepth(0).registers.getNumber(4);
 		assert.equal(js.readEpcWord(), numeric >>> 0); assert.equal(js.readCauseWord(), 0);

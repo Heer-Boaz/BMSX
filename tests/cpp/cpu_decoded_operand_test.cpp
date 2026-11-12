@@ -47,6 +47,22 @@ void opcodeOperandInterpretations() {
 	require(OPCODE_RK_OPERANDS == expected, "every opcode selects the specified RK or raw operand interpretation");
 }
 
+void uniformInstructionBaseCycles() {
+	// WIDE is a prefix, not an independently executed instruction.  Every
+	// other opcode's base charge includes the same one-cycle fetch allowance.
+	constexpr std::array<u8, OPCODE_COUNT> withoutFetchAllowance{
+		0, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 2, 1, 2,
+		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1,
+		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2,
+		2, 2, 2, 2, 1, 1, 1, 2, 1, 2, 1, 2, 1, 2, 1, 1,
+	};
+	require(BASE_CYCLES[static_cast<u8>(OpCode::WIDE)] == 0, "WIDE remains a zero-cycle prefix");
+	for (size_t op = 1; op < OPCODE_COUNT; ++op) {
+		require(BASE_CYCLES[op] == withoutFetchAllowance[op] + 1,
+			"every executable opcode receives exactly one additional base cycle");
+	}
+}
+
 void signedRkBoundaries() {
 	for (const bool instrumented : {false, true}) for (const bool wide : {false, true}) {
 		const int limit = wide ? 16384 : 256;
@@ -103,7 +119,10 @@ void rawFieldsAndInlineCaches() {
 		const u32 pc = cpu.readFramePc(0);
 		for (int pass = 0; pass < 2; ++pass) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], pc);
-			require(cpu.runUntilDepth(0, 8) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0, "raw-field and cached-field instructions preserve their charges");
+			const int charge = BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::SETI)]
+				+ BASE_CYCLES[static_cast<u8>(OpCode::GETI)] + BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)]
+				+ BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)] + BASE_CYCLES[static_cast<u8>(OpCode::SELF)];
+			require(cpu.runUntilDepth(0, charge) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0, "raw-field and cached-field instructions preserve their charges");
 			require(cpu.readFrameRegister(0, 0) == valueNumber(91.5), "raw B retains its unsigned 15-bit register index");
 			for (int destination : {2, 3, 4}) require(cpu.readFrameRegister(0, destination) == valueNumber(101.5), "raw integer/string keys and signed RK values remain independent of inline caches");
 			require(cpu.readFrameRegister(0, 5) == valueTable(table), "SELF preserves the original table");
@@ -151,7 +170,7 @@ void wideDisplacementsKeepTheirOwnOperandLanes() {
 		const u32 address = DYNAMIC_RAM_BASE + 0x1000u;
 		machine.memory.writeMappedU32LE(address, 0x12345678u);
 		machine.cpu.activeThread()->frameAtDepth(0)->registers[4095] = valueNumber(address - (255u << 2u));
-		require(machine.cpu.runUntilDepth(0, 2) == RunResult::Yielded && machine.cpu.instructionBudgetRemaining == 0, "WIDE displaced load retains its scalar charge");
+		require(machine.cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::LOAD_MEM_D)]) == RunResult::Yielded && machine.cpu.instructionBudgetRemaining == 0, "WIDE displaced load retains its scalar charge");
 		require(machine.cpu.readFrameRegister(0, 4095) == valueNumber(0x12345678u), "EXT is displacement, not ABC register extension; WIDE A/B retain all12bits");
 	}
 }
@@ -179,7 +198,7 @@ void wideDisplacedStoreCountRemainsUnsigned() {
 
 int main() {
 	try {
-		opcodeOperandInterpretations(); signedRkBoundaries(); rawFieldsAndInlineCaches(); rewrittenPayloadVariants();
+		opcodeOperandInterpretations(); uniformInstructionBaseCycles(); signedRkBoundaries(); rawFieldsAndInlineCaches(); rewrittenPayloadVariants();
 		wideDisplacementsKeepTheirOwnOperandLanes(); wideDisplacedStoreCountRemainsUnsigned();
 		std::cout << "CPU decoded operand tests passed\n";
 		return 0;

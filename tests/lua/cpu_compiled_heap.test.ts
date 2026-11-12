@@ -32,7 +32,7 @@ for (const destination of [0, 1, 2]) test(`compiled CONCAT converts every value 
 	for (const cpu of [js, ref]) for (let warm = 0; warm < 12; ++warm) {
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 		cpu.rootThread.frameAtDepth(0).registers.setNumber(0, 1); cpu.rootThread.frameAtDepth(0).registers.setNumber(1, 2);
-		cpu.runUntilDepth(0, 2);
+		cpu.runUntilDepth(0, 4);
 	}
 	const frame = js.rootThread.frameAtDepth(0), block = frame.decodedPage!.compiledBlocks!.entries[entry]!;
 	assert.equal(block.terminal.exit, CompiledBlockExit.Concat); assert.equal(block.sourceWords, 2);
@@ -53,7 +53,7 @@ for (const destination of [0, 1, 2]) test(`compiled CONCAT converts every value 
 			}
 			r.setStringId(1, cpu.stringPool.intern('!'));
 		}
-		assert.equal(js.runUntilDepth(0, 2), ref.runUntilDepth(0, 2)); assertParity(js, ref);
+		assert.equal(js.runUntilDepth(0, 4), ref.runUntilDepth(0, 4)); assertParity(js, ref);
 		assert.equal(js.stringPool.toString(frame.registers.getStringId(destination)), expected + '!');
 		assert.equal(frame.top, 9);
 	}
@@ -66,7 +66,7 @@ test('compiled CONCAT preserves signed RK constants and Unicode without numeric-
 	writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 8 }], constants: [-0, '🍻'] });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
-	js.runUntilDepth(0, 300); ref.runUntilDepth(0, 300); assertParity(js, ref);
+	js.runUntilDepth(0, 320); ref.runUntilDepth(0, 320); assertParity(js, ref);
 	const frame = js.rootThread.frameAtDepth(0), entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const terminal = frame.decodedPage!.compiledBlocks!.entries[entry]!.terminal;
 	assert.equal(terminal.exit, CompiledBlockExit.Concat); assert.equal(terminal.exitB, -1); assert.equal(terminal.exitC, -2);
@@ -93,7 +93,7 @@ for (const count of [0, 3, 513]) test(`compiled WIDE CONCATN reads exactly its r
 				else if (i === 1) r.setBool(513, false); else r.setNumber(512 + i, i % 10);
 			}
 		}
-		assert.equal(js.runUntilDepth(0, 3), ref.runUntilDepth(0, 3)); assertParity(js, ref);
+		assert.equal(js.runUntilDepth(0, 5), ref.runUntilDepth(0, 5)); assertParity(js, ref);
 		assert.equal(js.stringPool.toString(js.rootThread.frameAtDepth(0).registers.getStringId(513)), expected);
 	}
 	const frame = js.rootThread.frameAtDepth(0), entry = (pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
@@ -119,7 +119,7 @@ for (const closure of [false, true]) test(`compiled allocation publishes moved r
 	const pc = image.image.functions[0].codeAddress;
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers; r.setNumber(9, 1); r.setNumber(1, 2); r.setNumber(2, 3);
-		cpu.runUntilDepth(0, 400);
+		cpu.runUntilDepth(0, closure ? 405 : 400);
 	}
 	const entry = (pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	assert.equal(js.rootThread.frameAtDepth(0).decodedPage!.compiledBlocks!.entries[entry]!.terminal.exit,
@@ -134,7 +134,7 @@ for (const closure of [false, true]) test(`compiled allocation publishes moved r
 		const heap = cpu.captureRuntimeState().luaHeap, text = 'g'.repeat(heap.nextCollectionBytes - heap.trackedBytes - 1);
 		cpu.stringPool.intern(text); garbage.push(text);
 	}
-	assert.equal(js.runUntilDepth(0, 3), ref.runUntilDepth(0, 3)); assertParity(js, ref);
+	assert.equal(js.runUntilDepth(0, 6), ref.runUntilDepth(0, 6)); assertParity(js, ref);
 	for (const [index, cpu] of [js, ref].entries()) {
 		assert.equal(cpu.stringPool.find(garbage[index]), undefined, 'the allocating operation really collected unreachable pressure');
 		const r = cpu.rootThread.frameAtDepth(0).registers, retained = r.getTable(7);
@@ -177,7 +177,7 @@ for (const descriptors of [false, true]) test(`hot register CLOSURE preserves it
 	const left = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), right = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
 	const target = image.symbols.functionAddresses[1], bad = 0xdead0000;
 	for (const { cpu } of [left, right]) {
-		cpu.setGlobalByKey(cpu.stringPool.find('target')!, ValueTag.Number, target + 0.75, null); cpu.runUntilDepth(0, 500);
+		cpu.setGlobalByKey(cpu.stringPool.find('target')!, ValueTag.Number, target + 0.75, null); cpu.runUntilDepth(0, 504);
 	}
 	const js = left.cpu, ref = right.cpu, frame = js.rootThread.frameAtDepth(0);
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
@@ -191,7 +191,7 @@ for (const descriptors of [false, true]) test(`hot register CLOSURE preserves it
 		cpu.setGlobalByKey(cpu.stringPool.find('target')!, ValueTag.Number, descriptors ? DYNAMIC_RAM_BASE : bad, null);
 		cpu.rootThread.frameAtDepth(0).registers.setNumber(256, 73); cpu.rootThread.frameAtDepth(0).top = 0;
 	}
-	assert.equal(js.runUntilDepth(0, 4), RunResult.Halted); assert.equal(ref.runUntilDepth(0, 4), RunResult.Halted); assertParity(js, ref);
+	assert.equal(js.runUntilDepth(0, 6), RunResult.Halted); assert.equal(ref.runUntilDepth(0, 6), RunResult.Halted); assertParity(js, ref);
 	assert.equal(js.captureRuntimeState().hardHalted, true); assert.equal(frame.registers.getNumber(256), 73); assert.equal(frame.top, 8);
 	assert.equal(js.readCurrentInstructionPc(), image.image.functions[0].codeAddress + 2 * INSTRUCTION_BYTES);
 	assert.equal(js.lastPc, image.image.functions[0].codeAddress + 3 * INSTRUCTION_BYTES);
@@ -220,7 +220,7 @@ for (const source of [0, 513]) test(`compiled CLOSURE reads its live register ad
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 			cpu.setGlobalByKey(cpu.stringPool.find('target')!, ValueTag.Number, image.symbols.functionAddresses[index] + 0.75, null);
 		}
-		assert.equal(js.runUntilDepth(0, 3), ref.runUntilDepth(0, 3)); assertParity(js, ref);
+		assert.equal(js.runUntilDepth(0, 4), ref.runUntilDepth(0, 4)); assertParity(js, ref);
 		assert.equal(frame.registers.getClosure(source).functionAddress, image.symbols.functionAddresses[index]);
 	}
 });
@@ -234,14 +234,14 @@ for (const range of [false, true]) test(`compiled concatenation allocation failu
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		cpu.rootThread.frameAtDepth(0).registers.setNumber(1, 1); cpu.rootThread.frameAtDepth(0).registers.setNumber(2, 2);
-		cpu.runUntilDepth(0, range ? 400 : 300);
+		cpu.runUntilDepth(0, range ? 396 : 320);
 		const r = cpu.rootThread.frameAtDepth(0).registers, id = cpu.stringPool.intern('x'.repeat(2 * 1024 * 1024));
 		r.setStringId(1, id); r.setStringId(2, id); r.setNumber(0, 73); cpu.rootThread.frameAtDepth(0).top = 0;
 	}
 	const frame = js.rootThread.frameAtDepth(0), pc = image.image.functions[0].codeAddress;
 	assert.equal(frame.decodedPage!.compiledBlocks!.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!.terminal.exit,
 		range ? CompiledBlockExit.ConcatRange : CompiledBlockExit.Concat);
-	assert.equal(js.runUntilDepth(0, range ? 3 : 2), ref.runUntilDepth(0, range ? 3 : 2)); assertParity(js, ref);
+	assert.equal(js.runUntilDepth(0, range ? 5 : 4), ref.runUntilDepth(0, range ? 5 : 4)); assertParity(js, ref);
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY); assert.equal(js.readEpcWord(), pc + INSTRUCTION_BYTES);
 	assert.equal(js.instructionBudgetRemaining, -4 * 1024 * 1024 - (range ? 2 : 0), 'allocation faults retain complete logical text-work charges');
 	assert.equal(frame.registers.getNumber(0), 73); assert.equal(frame.top, 9);

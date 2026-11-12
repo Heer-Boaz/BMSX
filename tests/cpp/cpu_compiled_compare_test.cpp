@@ -136,7 +136,7 @@ void changingSkippedBytesRetireResolvedEdges() {
 			machine->memory.writeBytes(DYNAMIC_RAM_BASE + 2u * INSTRUCTION_BYTES, replacement.data(), replacement.size());
 			auto& frame = *machine->cpu.activeThread()->frameAtDepth(0); frame.top = 0; frame.registers[2] = valueNumber(73);
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
-			machine->cpu.runUntilDepth(0, 2);
+			machine->cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::ADD)] + BASE_CYCLES[static_cast<u8>(OpCode::EQ)]);
 			require(frame.pc == DYNAMIC_RAM_BASE + (wide ? 4u : 3u) * INSTRUCTION_BYTES
 				&& frame.registers[2] == valueNumber(73) && frame.registers[3] == valueNumber(2) && frame.top == 4,
 				"only a taken comparison skip decodes the current complete successor without executing it");
@@ -301,7 +301,7 @@ void pairedWideJumpsRetainBoundariesAndMutableTargets() {
 			require(jumped.currentPc == DYNAMIC_RAM_BASE + jumpWord * INSTRUCTION_BYTES
 				&& jumped.nextPc == DYNAMIC_RAM_BASE + 16u * INSTRUCTION_BYTES
 				&& jumped.lastPc == DYNAMIC_RAM_BASE + jumpBody * INSTRUCTION_BYTES
-				&& jumped.cycles == 2 && root.sideExits.size() == 2 && root.sideExits.back().cycles == 1
+				&& jumped.cycles == 4 && root.sideExits.size() == 2 && root.sideExits.back().cycles == 2
 				&& root.sideExits[0].nextPc == DYNAMIC_RAM_BASE + jumpWord * INSTRUCTION_BYTES,
 				"paired WIDE comparison/JMP exits preserve the executed prefix PCs and each instruction charge");
 			require(!page.nativeBlocks->entries[jumpWord], "a JMP reached only through its fused comparison has no redundant body");
@@ -337,7 +337,7 @@ void pairedWideJumpsRetainBoundariesAndMutableTargets() {
 						}
 						machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0],
 							DYNAMIC_RAM_BASE + entryWord * INSTRUCTION_BYTES);
-						machine->cpu.runUntilDepth(0, linked != 0 ? 2 : 1);
+						machine->cpu.runUntilDepth(0, linked != 0 ? 4 : 2);
 					}
 					require(native.cpu.readFramePc(0) == DYNAMIC_RAM_BASE + jumpWord * INSTRUCTION_BYTES
 						&& native.cpu.readFramePc(0) == scalar.cpu.readFramePc(0)
@@ -456,7 +456,7 @@ void pairedJumpFaultsOnlyOnTheNextGrant() {
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);
 		machine->cpu.runUntilDepth(0, 1024);
 		r[0] = valueNumber(0); machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);
-		require(machine->cpu.runUntilDepth(0, 2) == RunResult::Yielded && machine->cpu.readFramePc(0) == end
+		require(machine->cpu.runUntilDepth(0, 4) == RunResult::Yielded && machine->cpu.readFramePc(0) == end
 			&& machine->cpu.readCurrentInstructionPc() == start + INSTRUCTION_BYTES && machine->cpu.activeThread()->frameDepth == 1,
 			"a paired JMP completes without speculatively fetching its unmapped target beyond the grant");
 	}

@@ -35,7 +35,7 @@ for (const generic of [false, true]) for (const constant of [false, true]) {
 			for (let prior = 0; prior < n; prior++) table.setStringKey(cpu.stringPool.intern(`prior_${prior}`), prior);
 			for (const value of [values[n], null, values[n]]) {
 				r.setTable(0, table); r.set(3, values[n]); r.set(4, value);
-				const before = table.getTrackedHeapBytes(), state = { remainingCycles: 6, registerTop: frame.top };
+				const before = table.getTrackedHeapBytes(), state = { remainingCycles: 11, registerTop: frame.top };
 				const exit = block.region.exits[block.region.execute(r, frame.executionImage.constScalars, page, frame, block.entry, state)];
 				assert.equal(exit.exit, CompiledBlockExit.Continue, 'new keys, nil deletion and resurrection need no CPU semantic exit');
 				assert.equal(table.getStringKey(key), constant ? false : value);
@@ -46,7 +46,7 @@ for (const generic of [false, true]) for (const constant of [false, true]) {
 			}
 		}
 		const empty = cpu.createTable(); r.setTable(0, empty); r.set(3, values[3]); r.set(4, values[3]); r.setNil(9);
-		const state = { remainingCycles: 6, registerTop: frame.top };
+		const state = { remainingCycles: 11, registerTop: frame.top };
 		const exit = block.region.exits[block.region.execute(r, frame.executionImage.constScalars, page, frame, block.entry, state)];
 		assert.equal(exit.exit, generic ? CompiledBlockExit.WriteIndex : CompiledBlockExit.WriteField);
 		assert.equal(empty.storedSlotCount, 0); assert.equal(empty.getStringKey(key), null);
@@ -66,7 +66,7 @@ for (const generic of [false, true]) test(`growing string stores publish moved r
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers;
 		r.setTable(0, cpu.createTable(0, 1)); r.setStringId(1, cpu.stringPool.intern('field')); r.setNumber(9, 1);
-		cpu.runUntilDepth(0, 500);
+		cpu.runUntilDepth(0, 504);
 	}
 	const frame = js.rootThread.frameAtDepth(0), entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	assert.ok(frame.decodedPage!.compiledBlocks!.entries[entry], 'growth is reached from adopted generated code');
@@ -79,7 +79,7 @@ for (const generic of [false, true]) test(`growing string stores publish moved r
 		const heap = cpu.captureRuntimeState().luaHeap, pressure = 'g'.repeat(heap.nextCollectionBytes - heap.trackedBytes - 1);
 		cpu.stringPool.intern(pressure); garbage.push(pressure);
 	}
-	runCpuParity(js, ref, 3);
+	runCpuParity(js, ref, 6);
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 	for (const [i, cpu] of [js, ref].entries()) {
 		assert.equal(cpu.stringPool.find(garbage[i]), undefined, 'hash growth really collected unreachable pressure');

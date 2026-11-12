@@ -15,7 +15,7 @@ import { Memory } from '../../machine/ts/machine/memory/memory';
 import { MAPPED_BUS_DMA_BLOCK_END, MAPPED_BUS_MASTER_CPU, MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -687,19 +687,19 @@ test('GX-GTE+ observation preserves real CPU interlock/retry cycles, heap and co
 	for (const { cpu, scheduler, memory, gte } of [baseline, observed]) {
 		assert.equal(scheduler.runCpuSlice(0, 1000), RunResult.Halted);
 		assert.equal(cpu.isMemoryWriteBlocked(), true);
-		assert.equal(1000 - cpu.instructionBudgetRemaining, 6);
-		scheduler.advanceTo(6);
-		assert.equal(scheduler.nextDeadline(), 9);
-		scheduler.advanceTo(9);
+		assert.equal(1000 - cpu.instructionBudgetRemaining, 2 * BASE_CYCLES[OpCode.LOADK] + 2 * BASE_CYCLES[OpCode.STORE_MEM_D]);
+		scheduler.advanceTo(10);
+		assert.equal(scheduler.nextDeadline(), 12);
+		scheduler.advanceTo(12);
 		assert.equal(scheduler.popDueTimer(), DEVICE_SERVICE_GTE);
 		gte.onService();
 		assert.equal(cpu.isMemoryWriteBlocked(), false);
 		assert.equal(scheduler.runCpuSlice(0, 1000), RunResult.Halted);
-		assert.equal(1000 - cpu.instructionBudgetRemaining, 6);
-		scheduler.advanceTo(16);
+		assert.equal(1000 - cpu.instructionBudgetRemaining, BASE_CYCLES[OpCode.STORE_MEM_D] + BASE_CYCLES[OpCode.RET] + 2);
+		scheduler.advanceTo(20);
 		memory.readMappedU32LE(commandAddress);
 	}
-	assert.deepEqual(events, [['accepted', 4, 9], ['published', 9, 9], ['accepted', 11, 16], ['published', 16, 16]]);
+	assert.deepEqual(events, [['accepted', 7, 12], ['published', 12, 12], ['accepted', 15, 20], ['published', 20, 20]]);
 	assert.equal(observed.cpu.instructionBudgetRemaining, baseline.cpu.instructionBudgetRemaining);
 	assert.equal(observed.cpu.luaHeap.usedBytes(), baseline.cpu.luaHeap.usedBytes());
 	assert.deepEqual(observed.cpu.captureRuntimeState(), baseline.cpu.captureRuntimeState());
@@ -724,7 +724,7 @@ test('GX-GTE+ CPU burst interlock is atomic across save, restore and command res
 		GX_GTE_PLUS_FN_VMAD3,
 	];
 	installGtePlusBurstProgram(first.cpu, burstWords);
-	assert.equal(first.cpu.runUntilDepth(0, burstWords.length + 1), RunResult.Yielded);
+	assert.equal(first.cpu.runUntilDepth(0, (burstWords.length + 1) * BASE_CYCLES[OpCode.LOADK]), RunResult.Yielded);
 	first.memory.writeMappedU32LE(commandAddress, GX_GTE_PLUS_FN_VMAD3);
 	first.scheduler.beginCpuSlice(10);
 	assert.equal(first.cpu.runUntilDepth(0, 10), RunResult.Halted);
@@ -1547,11 +1547,15 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
   const { cpu } = createTestSystemCpu(image, backend);
   const scheduler = new DeviceScheduler(cpu);
   const gte = new GxGte(cpu.memory,cpu,scheduler);
+  const baseCycles = 3 * BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.STORE_MEM] + BASE_CYCLES[OpCode.K1]
+   + BASE_CYCLES[OpCode.LOAD_MEM] + BASE_CYCLES[OpCode.JMP];
+  const outstanding = GX_GTE_CYCLES_RTPT - BASE_CYCLES[OpCode.K1] - BASE_CYCLES[OpCode.LOAD_MEM];
+  const grant = baseCycles + outstanding;
   for (let repeat=0;repeat<24;++repeat) {
-   assert.equal(scheduler.runCpuSlice(0,29),RunResult.Yielded);
-   assert.equal(cpu.instructionBudgetRemaining,0,'9 base cycles plus 20 outstanding GTE cycles');
+   assert.equal(scheduler.runCpuSlice(0,grant),RunResult.Yielded);
+   assert.equal(cpu.instructionBudgetRemaining,0,`${baseCycles} base cycles plus ${outstanding} outstanding GTE cycles`);
    assert.equal(cpu.rootThread.currentFrame!.pc,image.image.functions[0].codeAddress);
-   scheduler.advanceTo(scheduler.nowCycles+29);
+   scheduler.advanceTo(scheduler.nowCycles+grant);
    assert.equal(gte.captureState().normalPendingCycles,0);
   }
   if (backend===CpuExecutionBackend.JavaScript) assert.ok(cpu.rootThread.currentFrame!.decodedPage!.compiledBlocks);

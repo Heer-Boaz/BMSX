@@ -37,7 +37,7 @@ test('narrow and WIDE RK sign boundaries select the correct registers and consta
 			const registers = cpu.rootThread.frameAtDepth(0).registers;
 			for (let i = 0; i < limit; i++) registers.setNumber(i, -(i + 0.75));
 			const operand = (selector: number) => selector < 0 ? (-1 - selector) + 0.25 : -(selector + 0.75);
-			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+			assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.ADD]), RunResult.Yielded);
 			assert.equal(cpu.instructionBudgetRemaining, 0);
 			assert.equal(cpu.readFrameRegister(0, 0), operand(b) + operand(c));
 		}
@@ -74,7 +74,8 @@ test('unsigned raw fields and signed RK values remain independent of mutable fie
 		const pc = cpu.readFramePc(0);
 		for (let pass = 0; pass < 2; pass++) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-			assert.equal(cpu.runUntilDepth(0, 8), RunResult.Yielded);
+			assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.SETI] + BASE_CYCLES[OpCode.GETI]
+				+ BASE_CYCLES[OpCode.SETFIELD] + BASE_CYCLES[OpCode.GETFIELD] + BASE_CYCLES[OpCode.SELF]), RunResult.Yielded);
 			assert.equal(cpu.instructionBudgetRemaining, 0);
 			assert.equal(cpu.readFrameRegister(0, 0), 91.5);
 			for (const destination of [2, 3, 4]) assert.equal(cpu.readFrameRegister(0, destination), 101.5);
@@ -123,7 +124,7 @@ test('WIDE displaced load retains twelve-bit register fields and uses EXT solely
 		const address = DYNAMIC_RAM_BASE + 0x1000;
 		memory.writeMappedU32LE(address, 0x12345678);
 		cpu.rootThread.frameAtDepth(0).registers.setNumber(4095, address - (255 << 2));
-		assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded);
+		assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.LOAD_MEM_D]), RunResult.Yielded);
 		assert.equal(cpu.instructionBudgetRemaining, 0);
 		assert.equal(cpu.readFrameRegister(0, 4095), 0x12345678);
 	}

@@ -152,24 +152,24 @@ void romReplacementAndSelectionKeepRamCode() {
 		auto replacement = rom.bytes;
 		writeLE32(replacement.data() + data, 44);
 		machine.memory.installSystemRom(replacement);
-		cpu.runUntilDepth(0, 5);
+		cpu.runUntilDepth(0, 9);
 		require(frame.registers[0] == valueNumber(44), "RAM code reads newly installed system ROM without a stale pointer");
 		if (!scalar) require(page.nativeBlocks->entries[0].get() == block, "data replacement does not retire independent RAM code");
 		frame.registers[1] = valueNumber(CART_ROM_BASE);
 		for (u32 select : {0xfffffffeu, 0xffffffffu, 0u, 1u}) {
 			machine.memory.writeMappedWord(IO_CART_SELECT, select);
-			cpu.runUntilDepth(0, 5);
+			cpu.runUntilDepth(0, 9);
 			require(frame.registers[0] == valueNumber((select & 1u) != 0u ? 33 : 22), "ROM reads consume the raw data SELECT latch, masking only bit zero");
 		}
 		writeLE32(replacement.data() + data, 55);
 		machine.memory.cartridgeController().installRom(1, std::span<const u8>(replacement).subspan(data, 16));
-		cpu.runUntilDepth(0, 5);
+		cpu.runUntilDepth(0, 9);
 		require(frame.registers[0] == valueNumber(55), "selected cartridge ROM replacement updates its existing storage identity");
 		if (!scalar) require(page.nativeBlocks->entries[0].get() == block, "cartridge ROM replacement preserves unrelated RAM code");
 		const auto state = machine.memory.cartridgeController().captureState();
-		machine.memory.cartridgeController().reset(); cpu.runUntilDepth(0, 5);
+		machine.memory.cartridgeController().reset(); cpu.runUntilDepth(0, 9);
 		require(frame.registers[0] == valueNumber(22), "reset changes data selection without recreating the native entry");
-		machine.memory.cartridgeController().restoreState(state); cpu.runUntilDepth(0, 5);
+		machine.memory.cartridgeController().restoreState(state); cpu.runUntilDepth(0, 9);
 		require(frame.registers[0] == valueNumber(55), "restore changes the same selector used by direct reads");
 	}
 }
@@ -247,7 +247,7 @@ void dataSelectionDoesNotSelectInstructionFetch() {
 	for (const bool scalar : {false, true}) {
 		CpuMachine machine(system, test::cartridgeSlots(cart0.bytes, cart1.bytes), scalar);
 		// Enter through CP0.EXEC, establishing socket 0 before any cartridge fetch.
-		machine.cpu.runUntilDepth(0, 4);
+		machine.cpu.runUntilDepth(0, 7);
 		auto& frame = *machine.cpu.activeThread()->frameAtDepth(0);
 		require(frame.executionImage->executionDomainId == 0 && frame.pc == cart0.textAddress,
 			"CP0.EXEC latches the selected instruction socket before cartridge execution");
@@ -257,7 +257,7 @@ void dataSelectionDoesNotSelectInstructionFetch() {
 		require(frame.registers[0] == valueNumber(33), "cold instruction fetch ignores the ordinary data selector");
 		for (u32 select : {0u, 1u, 0xfffffffeu, 0xffffffffu}) {
 			machine.memory.writeMappedWord(IO_CART_SELECT, select);
-			machine.cpu.runUntilDepth(0, 5);
+			machine.cpu.runUntilDepth(0, 9);
 			require(frame.registers[0] == valueNumber((select & 1u) != 0u ? 33 : 22)
 				&& frame.executionImage->executionDomainId == 0,
 				"ordinary ROM loads follow SELECT while executable instructions stay on their own physical socket");
@@ -305,7 +305,7 @@ void warmContinuationsFollowInBlockMuxWrites() {
 			machine->memory.writeMappedWord(IO_CART_SELECT, slot);
 			frame.registers[0] = valueNumber(1u - slot); frame.registers[4] = valueNumber(slot ^ 1u);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], CART_ROM_BASE + MAPPED_PAGE_BYTE_SIZE);
-			require(cpu.runUntilDepth(0, 6) == RunResult::Yielded && frame.registers[3] == valueNumber(1u - slot)
+			require(cpu.runUntilDepth(0, 11) == RunResult::Yielded && frame.registers[3] == valueNumber(1u - slot)
 				&& frame.registers[6] == valueNumber(slot) && frame.pc == CART_ROM_BASE && cpu.instructionBudgetRemaining == 0,
 				"a mux write selects the newly selected physical ROM for the very next instruction at the exact grant boundary");
 		}
@@ -322,7 +322,7 @@ void warmContinuationsFollowInBlockMuxWrites() {
 		machine->memory.writeMappedWord(IO_CART_SELECT, 1);
 		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0); frame.registers[4] = valueNumber(1);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], CART_ROM_BASE + MAPPED_PAGE_BYTE_SIZE);
-		machine->cpu.runUntilDepth(0, 6);
+		machine->cpu.runUntilDepth(0, 11);
 		require(frame.registers[6] == valueNumber(7), "a stale index entry never executes retired ROM code");
 	}
 	require(lookup.find(CART_ROM_BASE + MAPPED_PAGE_BYTE_SIZE, 1) == page, "ROM replacement preserves the page owner");
@@ -363,7 +363,7 @@ void crossPageLinksFollowTheInstructionChipSelect(bool cartridgeBound) {
 	const auto domain = cartridgeBound ? 0 : SYSTEM_EXECUTION_DOMAIN_ID;
 	const u32 function = cartridgeBound ? card0.functionAddresses[0] : system.functionAddresses[0];
 	for (auto* machine : {&native, &scalar}) {
-		if (cartridgeBound) machine->cpu.runUntilDepth(0, 4);
+		if (cartridgeBound) machine->cpu.runUntilDepth(0, 7);
 		machine->memory.writeBytes(DYNAMIC_RAM_BASE, ram.data(), ram.size());
 		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
 		frame.registers[5] = valueNumber(IO_CART_SELECT); frame.registers[4] = valueNumber(73);
@@ -388,7 +388,7 @@ void crossPageLinksFollowTheInstructionChipSelect(bool cartridgeBound) {
 		for (auto* machine : {&native, &scalar}) {
 			machine->memory.writeMappedWord(IO_CART_SELECT, select);
 			machine->cpu.writeFrameExecution(0, domain, function, DYNAMIC_RAM_BASE);
-			require(machine->cpu.runUntilDepth(0, 6) == RunResult::Yielded, "the complete two-window traversal uses its six original cycles");
+			require(machine->cpu.runUntilDepth(0, 11) == RunResult::Yielded, "the complete two-window traversal uses its eleven base cycles");
 			const auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
 			require(frame.registers[0] == valueNumber(select) && frame.registers[2] == valueNumber(select)
 				&& frame.registers[3] == valueNumber(!cartridgeBound && (select & 1u) != 0u ? 22 : 11)
@@ -454,7 +454,7 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 		machine->memory.writeBytes(record, system.bytes.data() + system.functionAddresses[3], BLUA32_FUNCTION_RECORD_SIZE);
 		machine->memory.writeMappedU32LE(record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, code);
 		machine->memory.writeBytes(code, launcher.text.data() + 9u * INSTRUCTION_BYTES, 2u * INSTRUCTION_BYTES);
-		require(machine->cpu.runUntilDepth(0, 4) == RunResult::Yielded && machine->cpu.readFrameExecutionDomain(0) == 0,
+		require(machine->cpu.runUntilDepth(0, 7) == RunResult::Yielded && machine->cpu.readFrameExecutionDomain(0) == 0,
 			"EXEC establishes socket 0 before SELECT changes");
 		machine->memory.writeMappedWord(IO_CART_SELECT, 1);
 		require(machine->memory.readMappedU32LE(card0.functionAddresses[1]) == card1.textAddress + 8u * INSTRUCTION_BYTES,

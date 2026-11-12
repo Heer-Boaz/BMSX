@@ -226,7 +226,7 @@ test('a device edge during instruction fetch or observation is accepted at the n
 		}
 		memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_GPU);
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
-		assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded);
+		assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.K1]), RunResult.Yielded);
 		assert.equal(edges, 1);
 		assert.equal(cpu.activeThread.frameDepth, 2);
 		assert.equal(cpu.readCauseWord(), CPU_CAUSE_IRQ);
@@ -320,7 +320,7 @@ test('partial code writes retain unrelated decoded starts and the page watch', (
 		const pc = DYNAMIC_RAM_BASE + 0x5000;
 		memory.writeBytes(pc, code);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-		assert.equal(cpu.runUntilDepth(0, 10), RunResult.Yielded);
+		assert.equal(cpu.runUntilDepth(0, 9 * BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.JMP]), RunResult.Yielded);
 		assert.equal(cpu.readFramePc(0), pc);
 		const page = cpu.rootThread.frameAtDepth(0).decodedPage!;
 		assert.equal(page.refreshState[0], 0);
@@ -333,7 +333,7 @@ test('partial code writes retain unrelated decoded starts and the page watch', (
 		memory.writeMappedU16LE(pc + 8 * INSTRUCTION_BYTES + 2, readLE16(code, 8 * INSTRUCTION_BYTES + 2));
 		assert.equal(page.refreshState[8], DECODED_REFRESH_DECODE, 'second write before re-decode must remain watched');
 		assert.equal(page.refreshState[4], 0);
-		assert.equal(cpu.runUntilDepth(0, 10), RunResult.Yielded);
+		assert.equal(cpu.runUntilDepth(0, 9 * BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.JMP]), RunResult.Yielded);
 		assert.equal(cpu.instructionBudgetRemaining, 0);
 		assert.equal(cpu.readFrameRegister(0, 0), 0);
 		assert.equal(cpu.readFrameRegister(0, 1), -1);
@@ -360,7 +360,7 @@ test('the fourth word of a cross-page WIDE fusion invalidates its head', () => {
 		frame.registers.setNumber(0, 2);
 		frame.registers.setNumber(1, 3);
 		frame.registers.setNumber(2, 1);
-		assert.equal(cpu.runUntilDepth(0, 6), RunResult.Yielded);
+		assert.equal(cpu.runUntilDepth(0, 2 * (BASE_CYCLES[OpCode.ADD] + BASE_CYCLES[OpCode.SHL] + BASE_CYCLES[OpCode.JMP])), RunResult.Yielded);
 		assert.equal(cpu.readFrameRegister(0, 4), 10);
 		if (!instrumented) {
 			const page = frame.executionImage.decodedPages.get(pc & ~(MAPPED_PAGE_BYTE_SIZE - 1))!;
@@ -368,7 +368,7 @@ test('the fourth word of a cross-page WIDE fusion invalidates its head', () => {
 		}
 		writeInstruction(code, 3, OpCode.BXOR, 4, 3, 2);
 		memory.writeMappedU8(pc + 3 * INSTRUCTION_BYTES + 2, code[3 * INSTRUCTION_BYTES + 2]);
-		assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
+		assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.ADD] + BASE_CYCLES[OpCode.BXOR] + BASE_CYCLES[OpCode.JMP]), RunResult.Yielded);
 		assert.equal(cpu.instructionBudgetRemaining, 0);
 		assert.equal(cpu.readFrameRegister(0, 4), 4);
 	}
@@ -456,12 +456,12 @@ test('closure call and return preserve grants, depth, register bases and call-si
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 		const callPc = cpu.readFramePc(0);
 		if (edgeKind === 4 || edgeKind === 5) {
-			if (edgeKind === 5) assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
+			if (edgeKind === 5) assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CALL] + BASE_CYCLES[OpCode.K1]), RunResult.Yielded);
 			const state = cpu.captureRuntimeState();
 			state.haltedUntilIrqFrameDepth = edgeKind === 4 ? 2 : 1;
 			state.haltedUntilIrqThreadRef = state.activeThreadRef;
 			cpu.restoreRuntimeState(state);
-			assert.equal(cpu.runUntilDepth(0, 3), RunResult.Halted);
+			assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.RET] + 1), RunResult.Halted);
 			assert.equal(cpu.instructionBudgetRemaining, edgeKind === 5 ? 0 : 1);
 			assert.equal(cpu.readFrameRegister(0, 2), 99);
 			if (edgeKind === 4) assert.equal(cpu.activeThread.frameAtDepth(1).registers.getTag(0), ValueTag.Nil);
@@ -471,7 +471,7 @@ test('closure call and return preserve grants, depth, register bases and call-si
 			observe: () => { edges += 1; irq.raise(IRQ_GPU); } });
 		armed = true;
 		memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_GPU);
-		assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
+		assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CALL] + BASE_CYCLES[OpCode.K1]), RunResult.Yielded);
 		if (edgeKind === 2) {
 			assert.equal(edges, 1);
 			assert.equal(cpu.activeThread.frameDepth, 3);
@@ -485,7 +485,7 @@ test('closure call and return preserve grants, depth, register bases and call-si
 		assert.equal(cpu.activeThread.frameDepth, 2);
 		assert.equal(cpu.readFramePc(1), calleePc + INSTRUCTION_BYTES);
 		assert.equal(cpu.runUntilDepth(1, 20), RunResult.Halted);
-		assert.equal(cpu.instructionBudgetRemaining, 17);
+		assert.equal(cpu.instructionBudgetRemaining, 20 - BASE_CYCLES[OpCode.RET] - 1);
 		assert.equal(cpu.readFrameRegister(0, 3), 1);
 		assert.equal(cpu.readFrameRegister(0, 2), 99);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
@@ -540,7 +540,7 @@ test('numeric lookahead cannot take a successor fetch fault before current effec
 						cpu.setExecutionHook(dispatch === 'instrumented' ? () => false : null, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 						registers.setNumber(2, -1);
 						const faultSequence = memory.readBusFaultSequence();
-						assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+						assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[op]), RunResult.Yielded);
 						assert.equal(cpu.readFrameRegister(0, 2), expected);
 						assert.equal(cpu.readFramePc(0), successorPc);
 						assert.equal(cpu.lastPc, currentPc);
@@ -584,7 +584,7 @@ test('all scalar memory instructions decode reserved kinds into an architectural
 				assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 				assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 				assert.equal(cpu.readEpcWord(), pc);
-				assert.equal(cpu.instructionBudgetRemaining, -1);
+				assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[op]);
 				assert.equal(memory.readBusFaultSequence(), busSequence);
 				assert.equal(observations, 1);
 			}
@@ -678,7 +678,7 @@ test('cached sequential, wide, skip and fused dispatch keep PC as a wrapping wor
 	page.dispatchCycles[254] = BASE_CYCLES[OpCode.SHL];
 	page.ops[255] = page.dispatchOps[255] = OpCode.BXOR;
 	page.dispatchCycles[255] = BASE_CYCLES[OpCode.BXOR];
-	cpu.runUntilDepth(0, 2);
+	cpu.runUntilDepth(0, BASE_CYCLES[OpCode.SHL] + BASE_CYCLES[OpCode.BXOR]);
 	assert.equal(frame.pc, 0);
 });
 

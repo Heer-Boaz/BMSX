@@ -128,7 +128,9 @@ void helperContinuationsReloadTheCurrentRegisterMap() {
 			registers[0] = payload; registers[1] = valueNumber(target); registers[8] = incoming;
 			memory.writeMappedWord(target, 17u);
 			NativeBlockRunState state{.registers = registers.data(), .remainingCycles = 1};
-			require(blocks[entry]->run(state) == &blocks[2]->terminal && state.remainingCycles == -(entry == 0 ? 7 : entry == 1 ? 4 : 1),
+			int charge = 0;
+			for (size_t i = entry * 2; i < decoded.size(); ++i) charge += decoded[i].baseCycles;
+			require(blocks[entry]->run(state) == &blocks[2]->terminal && state.remainingCycles == 1 - charge,
 				"an admitted suffix returns its complete cycle debt without a mid-span host exit");
 			if (entry == 0) require(registers[0] == valueNumber(17) && registers[4] == valueNumber(1)
 				&& registers[5] == valueNumber(17) && registers[8] == valueNumber(1)
@@ -143,25 +145,28 @@ void helperContinuationsReloadTheCurrentRegisterMap() {
 			std::array<DecodedInstruction, 2> prefix{};
 			prefix[0].op = static_cast<u8>(OpCode::MOV); prefix[0].a = 8; prefix[0].b = 2;
 			prefix[1].op = static_cast<u8>(OpCode::JMP); prefix[1].bx = blocks[entry]->firstPc;
-			for (auto& op : prefix) op.width = op.baseCycles = 1;
+			for (auto& op : prefix) { op.width = 1; op.baseCycles = BASE_CYCLES[op.op]; }
 			const std::array prefixSource{NativeBlockInstruction{&prefix[0], 0x2000}, NativeBlockInstruction{&prefix[1], 0x2004}};
 			auto predecessor = NativeBlock::compile(prefixSource, nullptr, bytes, memory, cpu.stringPool());
 			require(predecessor->terminal.link.patchAddress != 0,
 				"an external continuation owns a patchable generated-code edge");
 			blocks[entry]->linkFrom(predecessor->terminal);
+			const int predecessorCycles = prefix[0].baseCycles + prefix[1].baseCycles;
 			for (const Value incoming : {table, valueNumber(4294967301.0), valueNumber(-2147483649.0)})
-			for (const int grant : {1, 2, 3}) {
+			for (const int grant : {1, predecessorCycles, predecessorCycles + 1}) {
 				std::array<Value, 9> registers; registers.fill(valueNil());
 				registers[0] = payload; registers[1] = valueNumber(target); registers[2] = incoming;
 				memory.writeMappedWord(target, 17u);
 				NativeBlockRunState state{.registers = registers.data(), .remainingCycles = grant};
 				const auto* exit = predecessor->run(state);
-				if (grant <= 2) {
-					require(exit == &predecessor->terminal && state.remainingCycles == grant - 2 && state.registerTop == 9
+				if (grant <= predecessorCycles) {
+					require(exit == &predecessor->terminal && state.remainingCycles == grant - predecessorCycles && state.registerTop == 9
 						&& registers[8] == incoming && registers[5] == valueNil() && memory.readMappedWord(target) == 17u,
 						"a patched target guard preserves the source descriptor and never admits an exhausted successor");
 				} else {
-					require(exit == &blocks[2]->terminal && state.remainingCycles == 1 - (entry == 0 ? 8 : entry == 1 ? 5 : 2)
+					int suffixCycles = 0;
+					for (size_t i = entry * 2; i < decoded.size(); ++i) suffixCycles += decoded[i].baseCycles;
+					require(exit == &blocks[2]->terminal && state.remainingCycles == grant - predecessorCycles - suffixCycles
 						&& state.registerTop == 9 && registers[5] == (entry == 0 ? valueNumber(17) : payload)
 						&& registers[8] == (entry == 0 ? valueNumber(1) : incoming)
 						&& memory.readMappedWord(target) == (entry == 0 ? 1u : entry == 1 ? toU32(incoming) : 17u),
@@ -205,16 +210,17 @@ void residentValuesCrossInternalComparisonBranches() {
 		decoded[1].op = static_cast<u8>(op); decoded[1].a = expected ? 1 : 0;
 		auto blocks = NativeBlock::compileRegion(plans, constants.data(), NativeCodeBindings(memory, cpu.stringPool()));
 		blocks.front()->region->publish(bytes);
-		for (bool predicate : {false, true}) for (auto value : values) for (int grant : {1, 2, 32, 63, 128, 257}) {
+		const int throughCompare = decoded[0].baseCycles + decoded[1].baseCycles;
+		for (bool predicate : {false, true}) for (auto value : values) for (int grant : {1, throughCompare, 32, 63, 128, 257}) {
 			std::array<Value, 11> registers; registers.fill(valueNil());
 			registers[0] = op == OpCode::EQ || predicate ? alpha : omega;
 			registers[1] = op == OpCode::EQ ? (predicate ? alpha : omega) : (predicate ? omega : alpha);
 			registers[3] = valueNumber(73); registers[4] = valueNumber(0); registers[8] = value;
 			NativeBlockRunState run{.registers = registers.data(), .constants = constants.data(), .remainingCycles = grant};
 			blocks[0]->run(run);
-			if (grant <= 2) {
+			if (grant <= throughCompare) {
 				require(registers[7] == value && registers[8] == value && registers[6] == valueNil()
-					&& run.remainingCycles == grant - (predicate == expected ? 3 : 2) && run.registerTop == 8,
+					&& run.remainingCycles == grant - throughCompare - (op == OpCode::EQ ? 0 : 5) && run.registerTop == 8,
 					"both comparison expectations publish live cached raw values at the exact fused-JMP deadline");
 				continue;
 			}
@@ -511,21 +517,26 @@ void linkedAtomicStoreDebitsItsWholeChargeBeforeTestingItsSuccessor() {
 	auto second = NativeBlock::compile(span, nullptr, bytes, memory, cpu.stringPool());
 	auto third = NativeBlock::compile(successor, nullptr, bytes, memory, cpu.stringPool());
 	second->linkFrom(first->terminal); third->linkFrom(second->terminal);
-	require(second->terminal.cycles == 4,
+	const int prefixCycles = decoded[0].baseCycles + decoded[1].baseCycles;
+	const int spanCycles = decoded[2].baseCycles + 2;
+	require(second->terminal.cycles == spanCycles,
 		"segment entry needs positive budget and retains the complete atomic store charge");
 	constexpr u32 target = DYNAMIC_RAM_BASE + 0x80000u;
-	for (int budget : {2, 3, 6, 7}) {
+	for (int budget : {prefixCycles, prefixCycles + 1, prefixCycles + spanCycles, prefixCycles + spanCycles + 1}) {
 		std::array<Value, 13> registers; registers.fill(valueNil());
 		registers[0] = valueNumber(target); registers[7] = valueNumber(99);
 		for (u32 i = 0; i < 5; ++i) { registers[8 + i] = valueNumber(73u + i); memory.writeMappedWord(target + i * 4u, 0); }
 		NativeBlockRunState state{.registers = registers.data(), .remainingCycles = budget};
 		const auto* exit = first->run(state);
-		const auto* expected = budget == 2 ? &first->terminal : budget == 7 ? &third->terminal : &second->terminal;
-		require(exit == expected && state.remainingCycles == budget - (budget == 2 ? 2 : budget == 7 ? 7 : 6)
-			&& registers[6] == valueNumber(1) && registers[7] == valueNumber(budget == 7 ? 1 : 99)
-			&& state.registerTop == (budget == 7 ? 8 : 7),
+		const bool prefixOnly = budget == prefixCycles;
+		const bool successorRuns = budget > prefixCycles + spanCycles;
+		const auto* expected = prefixOnly ? &first->terminal : successorRuns ? &third->terminal : &second->terminal;
+		const int charge = prefixCycles + (prefixOnly ? 0 : spanCycles) + (successorRuns ? decoded[3].baseCycles : 0);
+		require(exit == expected && state.remainingCycles == budget - charge
+			&& registers[6] == valueNumber(1) && registers[7] == valueNumber(successorRuns ? 1 : 99)
+			&& state.registerTop == (successorRuns ? 8 : 7),
 			"linked native bodies finish the counted store but never start a successor without positive budget");
-		for (u32 i = 0; i < 5; ++i) require(memory.readMappedWord(target + i * 4u) == (budget == 2 ? 0u : 73u + i),
+		for (u32 i = 0; i < 5; ++i) require(memory.readMappedWord(target + i * 4u) == (prefixOnly ? 0u : 73u + i),
 			"a short positive grant commits the complete ordered RAM span");
 	}
 }

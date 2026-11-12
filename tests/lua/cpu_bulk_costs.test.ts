@@ -5,7 +5,7 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { Table } from '../../machine/ts/machine/cpu/table';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
@@ -19,7 +19,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
    const { cpu } = createTestSystemCpu(image, backend);
    cpu.runUntilDepth(0, 10000);
    cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
-   const charged = 1 + array + 2 * Table.hashCapacity(hash);
+   const charged = BASE_CYCLES[OpCode.NEWT] + array + 2 * Table.hashCapacity(hash);
    assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
    assert.equal(cpu.instructionBudgetRemaining, 1 - charged);
    assert.equal(cpu.rootThread.currentFrame!.pc, image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
@@ -52,8 +52,8 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
    for (let index = 0; index < keys.length; index += 1) {
     frame.registers.setStringId(1, keys[index]);
     cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
-    assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
-    assert.equal(cpu.instructionBudgetRemaining, 0, 'each store and loop jump costs three cycles');
+    assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.SETT] + BASE_CYCLES[OpCode.JMP]), RunResult.Yielded);
+    assert.equal(cpu.instructionBudgetRemaining, 0, 'each store and loop jump pays only its base charge');
     assert.equal(table.getStringKey(keys[index]), 73);
     const capacity = table.storedSlotCount;
     assert.equal(capacity, initialCapacity || (1 << (32 - Math.clz32(index))));

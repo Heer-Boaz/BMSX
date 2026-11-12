@@ -91,7 +91,7 @@ void rawReadsRetainFullWords() {
 		const std::array expected{word & ~CPU_STATUS_USER_MODE_CURRENT, word, word ^ 0x13579bdfu, ~word, word, 0u};
 		for (size_t i = 0; i < expected.size(); ++i) require(native.cpu.readFrameRegister(0, i) == valueNumber(expected[i]), "CP0 reads are unsigned-word Numbers");
 		require(native.cpu.readFrameRegister(0, 9) == valueNumber(static_cast<double>(word) + 1.0), "ordinary arithmetic after MFC0 is not word-wrapped");
-		for (auto* m : {&native, &scalar}) { m->cpu.writeEpcWord(word + 1u); m->cpu.runUntilDepth(0, 9); }
+		for (auto* m : {&native, &scalar}) { m->cpu.writeEpcWord(word + 1u); m->cpu.runUntilDepth(0, 18); }
 		requireParity(native, scalar);
 		require(native.cpu.readFrameRegister(0, 2) == valueNumber(word + 1u), "compiled reads consume the live registerfile, not captured words");
 		for (auto* m : {&native, &scalar}) {
@@ -99,7 +99,7 @@ void rawReadsRetainFullWords() {
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress + 32u * INSTRUCTION_BYTES);
 			m->cpu.runUntilDepth(0, 1); frame.registers[0] = frame.registers[8] = valueNumber(73); frame.top = 0;
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
-			m->cpu.runUntilDepth(0, 9);
+			m->cpu.runUntilDepth(0, 18);
 		}
 		requireParity(native, scalar);
 		require(native.cpu.readFrameRegister(0, 0) == valueNumber(73) && native.cpu.readFrameRegister(0, 8) == valueNumber(1)
@@ -128,7 +128,7 @@ void writesConvertWithoutChangingSources() {
 #endif
 	for (const auto value : {valueNumber(-0.0), valueNumber(-1.5), valueNumber(4294967297.75), valueNumber(1e100),
 		valueNumber(std::numeric_limits<double>::infinity()), VALUE_QNAN_MASK, valueNil(), valueBool(true)}) {
-		for (auto* m : {&native, &scalar}) { m->cpu.activeThread()->frameAtDepth(0)->registers[0] = value; m->cpu.runUntilDepth(0, 6); }
+		for (auto* m : {&native, &scalar}) { m->cpu.activeThread()->frameAtDepth(0)->registers[0] = value; m->cpu.runUntilDepth(0, 12); }
 		requireParity(native, scalar);
 		const Value numeric = valueNumber(asNumber(value) + 0.0);
 		require(native.cpu.readEpcWord() == toU32(numeric) && native.cpu.readCauseWord() == 0u

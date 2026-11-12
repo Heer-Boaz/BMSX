@@ -68,7 +68,7 @@ void concatKindsAndAliases(int destination) {
 	for (auto* m : {&native, &scalar}) for (int warm = 0; warm < 12; ++warm) {
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers[0] = valueNumber(1); frame.registers[1] = valueNumber(2);
-		m->cpu.runUntilDepth(0, 2);
+		m->cpu.runUntilDepth(0, 4);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
@@ -94,7 +94,7 @@ void concatKindsAndAliases(int destination) {
 			}
 			frame.registers[1] = valueString(m->cpu.stringPool().intern("!"));
 		}
-		require(native.cpu.runUntilDepth(0, 2) == scalar.cpu.runUntilDepth(0, 2), "aliasing concatenation consumes the same grant"); requireParity(native, scalar);
+		require(native.cpu.runUntilDepth(0, 4) == scalar.cpu.runUntilDepth(0, 4), "aliasing concatenation consumes the same grant"); requireParity(native, scalar);
 		require(native.cpu.stringPool().toString(asStringId(native.cpu.readFrameRegister(0, destination))) == expected, "every language kind uses the specified text conversion");
 		require(native.cpu.activeThread()->frameAtDepth(0)->top == 9, "the numeric prefix top is retained");
 	}
@@ -106,7 +106,7 @@ void concatConstants() {
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CONCAT), 0, 63, 62, 63);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
 	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 8}}; image.constants = {-0.0, std::string("🍻")};
-	CpuMachine native(image), scalar(image, true); native.cpu.runUntilDepth(0, 300); scalar.cpu.runUntilDepth(0, 300); requireParity(native, scalar);
+	CpuMachine native(image), scalar(image, true); native.cpu.runUntilDepth(0, 320); scalar.cpu.runUntilDepth(0, 320); requireParity(native, scalar);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(block && block->terminal.exit == NativeBlockExit::Concat && block->terminal.exitB == -1 && block->terminal.exitC == -2, "the native terminal retains signed RK constants");
@@ -130,7 +130,7 @@ void concatRange(int count) {
 			for (int i = 0; i < count; ++i) registers[512 + i] = i == 0 ? valueString(m->cpu.stringPool().intern("L"))
 				: i == 1 ? valueBool(false) : valueNumber(i % 10);
 		}
-		require(native.cpu.runUntilDepth(0, 3) == scalar.cpu.runUntilDepth(0, 3), "WIDE ranges consume the same grant"); requireParity(native, scalar);
+		require(native.cpu.runUntilDepth(0, 5) == scalar.cpu.runUntilDepth(0, 5), "WIDE ranges consume the same grant"); requireParity(native, scalar);
 		require(native.cpu.stringPool().toString(asStringId(native.cpu.readFrameRegister(0, 513))) == expected, "every source is read before the overlapping destination is written");
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -157,7 +157,7 @@ void allocationRoots(bool closure) {
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
 		auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers; r[9] = valueNumber(1); r[1] = valueNumber(2); r[2] = valueNumber(3);
-		m->cpu.runUntilDepth(0, 400);
+		m->cpu.runUntilDepth(0, closure ? 405 : 400);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
@@ -173,7 +173,7 @@ void allocationRoots(bool closure) {
 		const auto heap = m->cpu.captureRuntimeState().luaHeap;
 		garbage[index] = std::string(heap.nextCollectionBytes - heap.trackedBytes - 1, 'g'); strings.intern(garbage[index++]);
 	}
-	require(native.cpu.runUntilDepth(0, 3) == scalar.cpu.runUntilDepth(0, 3), "the allocating instruction consumes the same grant"); requireParity(native, scalar);
+	require(native.cpu.runUntilDepth(0, 6) == scalar.cpu.runUntilDepth(0, 6), "the allocating instruction consumes the same grant"); requireParity(native, scalar);
 	index = 0;
 	for (auto* m : {&native, &scalar}) {
 		auto& strings = m->cpu.stringPool(); require(!strings.find(garbage[index++]), "the operation really collected the unrooted pressure string");
@@ -217,7 +217,7 @@ void closureBusFault(bool descriptors) {
 		{.firstWord = 16, .wordCount = 1, .staticClosure = false, .upvalues = {{true, 7}}}}; image.globalNames = {"target"};
 	CpuMachine native(image), scalar(image, true); constexpr u32 bad = 0xdead0000u;
 	for (auto* m : {&native, &scalar}) {
-		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueNumber(m->rom.functionAddresses[1] + 0.75)); m->cpu.runUntilDepth(0, 500);
+		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueNumber(m->rom.functionAddresses[1] + 0.75)); m->cpu.runUntilDepth(0, 504);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
@@ -233,7 +233,7 @@ void closureBusFault(bool descriptors) {
 		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueNumber(descriptors ? DYNAMIC_RAM_BASE : bad));
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers[256] = valueNumber(73); frame.top = 0;
 	}
-	require(native.cpu.runUntilDepth(0, 4) == RunResult::Halted && scalar.cpu.runUntilDepth(0, 4) == RunResult::Halted, "a metadata bus fault hard-halts both paths"); requireParity(native, scalar);
+	require(native.cpu.runUntilDepth(0, 6) == RunResult::Halted && scalar.cpu.runUntilDepth(0, 6) == RunResult::Halted, "a metadata bus fault hard-halts both paths"); requireParity(native, scalar);
 	require(native.cpu.captureRuntimeState().hardHalted && native.cpu.readFrameRegister(0, 256) == valueNumber(73)
 		&& native.cpu.activeThread()->frameAtDepth(0)->top == 8, "the failed instruction does not write or extend its destination");
 	require(native.cpu.readCurrentInstructionPc() == native.rom.textAddress + 2u * INSTRUCTION_BYTES
@@ -263,7 +263,7 @@ void closureAddressAlias(int source) {
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 			m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueNumber(m->rom.functionAddresses[index] + 0.75));
 		}
-		require(native.cpu.runUntilDepth(0, 3) == scalar.cpu.runUntilDepth(0, 3), "both live operand paths consume the same grant"); requireParity(native, scalar);
+		require(native.cpu.runUntilDepth(0, 4) == scalar.cpu.runUntilDepth(0, 4), "both live operand paths consume the same grant"); requireParity(native, scalar);
 		require(asClosure(native.cpu.readFrameRegister(0, source))->functionAddress == native.rom.functionAddresses[index], "the full source address is sampled before its slot is replaced");
 	}
 }
@@ -277,7 +277,7 @@ void concatAllocationFault(bool range) {
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers[1] = valueNumber(1); frame.registers[2] = valueNumber(2);
-		m->cpu.runUntilDepth(0, range ? 400 : 300);
+		m->cpu.runUntilDepth(0, range ? 396 : 320);
 		const StringId id = m->cpu.stringPool().intern(std::string(2u * 1024u * 1024u, 'x'));
 		frame.registers[1] = valueString(id); frame.registers[2] = valueString(id); frame.registers[0] = valueNumber(73); frame.top = 0;
 	}
@@ -285,7 +285,7 @@ void concatAllocationFault(bool range) {
 	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(block && block->terminal.exit == (range ? NativeBlockExit::ConcatRange : NativeBlockExit::Concat), "the allocation fault leaves generated code before throwing");
 #endif
-	require(native.cpu.runUntilDepth(0, range ? 3 : 2) == scalar.cpu.runUntilDepth(0, range ? 3 : 2), "failed allocations consume the same grant"); requireParity(native, scalar);
+	require(native.cpu.runUntilDepth(0, range ? 5 : 4) == scalar.cpu.runUntilDepth(0, range ? 5 : 4), "failed allocations consume the same grant"); requireParity(native, scalar);
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
 		&& native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES, "allocation faults use the completed prefix PC");
 	require(native.cpu.instructionBudgetRemaining == -4 * 1024 * 1024 - (range ? 2 : 0), "allocation faults retain complete logical text-work charges");

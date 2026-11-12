@@ -316,8 +316,11 @@ void testWarmedGeneratedDmaSharedBus() {
 		const std::array<u32, 8> values{source, target, 256, 0, 1, IO_DMA0_READ_ADDR, 0, 0};
 		for (size_t index = 0; index < values.size(); ++index) frame.registers[index] = valueNumber(values[index]);
 		for (u32 word = 0; word < 256; ++word) runtime->machine.memory.writeMappedU32LE(source + word * 4, 0x12340000 + word);
-		// Five two-cycle MMIO stores, 514 bus cycles, then load/add/backedge.
-		runtime->frameScheduler.runCyclesToNextLogicalTick(*runtime, 16 * 528);
+		// Five MMIO stores, 514 bus cycles, then load/add/backedge.
+		const int loopCycles = 5 * BASE_CYCLES[static_cast<u8>(OpCode::STORE_MEM_D)] + 514
+			+ BASE_CYCLES[static_cast<u8>(OpCode::LOAD_MEM)] + BASE_CYCLES[static_cast<u8>(OpCode::ADD)]
+			+ BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
+		runtime->frameScheduler.runCyclesToNextLogicalTick(*runtime, 16 * loopCycles);
 		require(frame.pc == entry && frame.registers[6] == valueNumber(16), "the real DMA loop warms through sixteen bursts");
 	}
 	auto& generatedFrame = *generated.machine.cpu.activeThread()->frameAtDepth(0);
@@ -341,7 +344,7 @@ void testWarmedGeneratedDmaSharedBus() {
 			runtime->machine.memory.writeMappedU32LE(source + word * 4, 0x43210000 + iteration * 256 + word);
 			runtime->machine.memory.writeMappedU32LE(target + word * 4, 0);
 		}
-		run(11); // Leave budget after TRIGGER: its MMIO exit must yield, not execute the load.
+		run(5 * BASE_CYCLES[static_cast<u8>(OpCode::STORE_MEM_D)] + 1); // TRIGGER yields before the following load.
 		auto& memory = generated.machine.memory;
 		auto& dma = generated.machine.dmaController;
 		require(generatedFrame.pc == entry + 20 && generatedFrame.registers[6] == valueNumber(16 + iteration),
@@ -354,7 +357,8 @@ void testWarmedGeneratedDmaSharedBus() {
 		require(generatedFrame.pc == entry + 20 && !dma.cpuBusHeld(), "the final DMA cycle cannot also execute the continuation");
 		for (u32 word = 0; word < 256; ++word) require(memory.readMappedU32LE(target + word * 4) == 0x43210000 + iteration * 256 + word,
 			"the completed burst publishes every raw source word");
-		run(4);
+		run(BASE_CYCLES[static_cast<u8>(OpCode::LOAD_MEM)] + BASE_CYCLES[static_cast<u8>(OpCode::ADD)]
+			+ BASE_CYCLES[static_cast<u8>(OpCode::JMP)]);
 		require(generatedFrame.pc == entry && generatedFrame.registers[6] == valueNumber(17 + iteration), "generated execution resumes exactly once after bus release");
 		require(generatedFrame.registers[7] == valueNumber(0x43210000 + iteration * 256), "the resumed load observes DMA output");
 	}

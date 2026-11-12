@@ -55,10 +55,10 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 			cpu.runUntilDepth(1, 100);
 			cpu.rootThread.frameAtDepth(0).registers.setNumber(3, 99);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
-			assert.equal(cpu.runUntilDepth(0, 5), RunResult.Yielded);
+			assert.equal(cpu.runUntilDepth(0, 9), RunResult.Yielded);
 			assert.equal(cpu.getFrameDepth(), 2);
 			assert.equal(cpu.runUntilDepth(1, 50), RunResult.Halted);
-			assert.equal(cpu.instructionBudgetRemaining, 44);
+			assert.equal(cpu.instructionBudgetRemaining, 41);
 			assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(3), 99, 'a compiled RET must not execute a compiled caller beyond the requested depth');
 		}
 		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
@@ -67,10 +67,10 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 			const previous = cpu.rootThread.frameAtDepth(0).registers.getClosure(0);
 			memory.writeMappedU32LE(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, 1024);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
-			cpu.runUntilDepth(0, 9);
+			cpu.runUntilDepth(0, 14);
 			assert.equal(cpu.rootThread.stackRegisters.capacity(), capacity, 'existing closure retains its bound stack extent');
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry - 2 * INSTRUCTION_BYTES);
-			cpu.runUntilDepth(0, 11);
+			cpu.runUntilDepth(0, 16);
 			assert.ok(cpu.rootThread.stackRegisters.capacity() > capacity, 'new closure observes the rewritten record');
 			assert.notEqual(cpu.rootThread.frameAtDepth(0).registers.getClosure(0), previous);
 		}
@@ -78,7 +78,7 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 		for (const { cpu, memory } of machines) {
 			const old = cpu.rootThread.frameAtDepth(0).registers.getClosure(0);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
-			cpu.runUntilDepth(0, 5);
+			cpu.runUntilDepth(0, 9);
 			assert.equal(cpu.getFrameDepth(), 2);
 			const state = cpu.captureRuntimeState();
 			memory.writeBytes(record, image.romBytes.subarray(image.symbols.functionAddresses[2], image.symbols.functionAddresses[2] + BLUA32_FUNCTION_RECORD_SIZE));
@@ -89,7 +89,7 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 			cpu.runUntilDepth(1, 50);
 			assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(4), 7, 'existing closure retains the old entry');
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry - 2 * INSTRUCTION_BYTES);
-			cpu.runUntilDepth(0, 11);
+			cpu.runUntilDepth(0, 16);
 			assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(4), -1, 'new closure binds the changed entry');
 			assert.notEqual(cpu.rootThread.frameAtDepth(0).registers.getClosure(0), old);
 		}
@@ -99,7 +99,7 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 		for (const { cpu, memory } of machines) {
 			memory.writeBytes(record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, word);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry - 2 * INSTRUCTION_BYTES);
-			assert.equal(cpu.runUntilDepth(0, 6), RunResult.Yielded);
+			assert.equal(cpu.runUntilDepth(0, 11), RunResult.Yielded);
 			assert.equal(cpu.readBadAddressWord(), 0, 'CALL does not fetch the next instruction without a grant');
 			cpu.runUntilDepth(0, 1);
 			assert.equal(cpu.readBadAddressWord(), image.image.functions[1].codeAddress + 1);

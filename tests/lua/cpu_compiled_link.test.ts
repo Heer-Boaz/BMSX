@@ -8,7 +8,7 @@ import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
 import { DYNAMIC_RAM_BASE, IO_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -37,7 +37,13 @@ test('helper continuations are predeclared entries and read their own current Va
 		const run = { remainingCycles: 1, registerTop: 0 };
 		const exit = block.region.exits[block.region.execute(registers, frame.executionImage.constScalars, page, frame, block.entry, run)];
 		assert.ok(exit === entries[2].terminal, 'one generated invocation executes the complete suffix');
-		assert.deepEqual(run, { remainingCycles: -[7, 4, 1][start], registerTop: start === 0 ? 9 : 6 });
+		const suffixes = [
+			BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.LOAD_MEM] + BASE_CYCLES[OpCode.MOV]
+				+ BASE_CYCLES[OpCode.STORE_MEM] + BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.JMP],
+			BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.STORE_MEM] + BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.JMP],
+			BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.JMP],
+		];
+		assert.deepEqual(run, { remainingCycles: 1 - suffixes[start], registerTop: start === 0 ? 9 : 6 });
 		if (start === 0) {
 			assert.equal(registers.getNumber(0), 17); assert.equal(registers.getNumber(4), 1);
 			assert.equal(registers.getNumber(5), 17); assert.equal(registers.getNumber(8), 1);
@@ -143,7 +149,7 @@ test('linked physical-page segments retain complete charges and disconnect rewri
 			} else {
 				expected[4] = (expected[0] as number) + (expected[8] as number); top = Math.max(top, 5); segment = 0;
 			}
-			remaining -= 2;
+			remaining -= 2 * BASE_CYCLES[OpCode.MOV];
 			if (remaining <= 0) break;
 		}
 		const run = { remainingCycles: grant, registerTop: 0 }, block = cache.entries[start]!;
@@ -278,15 +284,18 @@ test('linked counted stores need only one cycle, then stop or block before the f
 	}
 	const cache = js.cpu.rootThread.frameAtDepth(0).decodedPage!.compiledBlocks!, first = cache.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!;
 	const store = cache.entries[((pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES) + 4]!;
-	assert.ok(store && store.region === first.region); assert.equal(store.terminal.cycles, 4);
+	const prefixCycles = BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.JMP];
+	const storeCycles = BASE_CYCLES[OpCode.STORE_MEM_WORDS] + 2;
+	assert.ok(store && store.region === first.region); assert.equal(store.terminal.cycles, storeCycles);
 	assert.ok(cache.entries[store.firstWord + 2]?.region === first.region);
-	for (const grant of [2, 3, 6, 7, 8, 9]) {
+	for (const grant of [prefixCycles, prefixCycles + 1, prefixCycles + storeCycles,
+		prefixCycles + storeCycles + 1, prefixCycles + storeCycles + 2, prefixCycles + storeCycles + 3]) {
 		for (const { cpu } of [js, ref]) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 			const frame = cpu.rootThread.frameAtDepth(0); frame.top = 0; frame.registers.setNumber(7, 99);
 		}
 		assert.equal(runCpuParity(js.cpu, ref.cpu, grant), RunResult.Yielded);
-		for (const { cpu } of [js, ref]) assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(7), grant < 7 ? 99 : 1);
+		for (const { cpu } of [js, ref]) assert.equal(cpu.rootThread.frameAtDepth(0).registers.getNumber(7), grant <= prefixCycles + storeCycles ? 99 : 1);
 		assert.deepEqual(js.cpu.captureRuntimeState(), ref.cpu.captureRuntimeState());
 	}
 	const endpoints = [];
@@ -298,10 +307,11 @@ test('linked counted stores need only one cycle, then stop or block before the f
 		}
 		const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setNumber(0, IO_BASE + 0x5000); frame.registers.setNumber(7, 99);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-		assert.equal(cpu.runUntilDepth(0, 3), RunResult.Halted); assert.equal(cpu.instructionBudgetRemaining, -1);
+		assert.equal(cpu.runUntilDepth(0, prefixCycles + 1), RunResult.Halted);
+		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.STORE_MEM_WORDS]);
 		assert.equal(frame.pc, pc + 4 * INSTRUCTION_BYTES); assert.equal(cpu.stalledMemoryWriteAddress(), IO_BASE + 0x5000); assert.deepEqual(port.writes, []);
 		port.ready = true; cpu.resumeMemoryWrite(IO_BASE + 0x5000);
-		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded); assert.equal(cpu.instructionBudgetRemaining, -3);
+		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded); assert.equal(cpu.instructionBudgetRemaining, 1 - storeCycles);
 		assert.equal(frame.pc, pc + 6 * INSTRUCTION_BYTES); assert.equal(frame.registers.getNumber(7), 99);
 		assert.deepEqual(port.writes, [73, 74, 75, 76, 77]);
 	}
@@ -408,7 +418,7 @@ test('more than six live-through raw Values remain local across every internal e
 		do {
 			for (let first = segment * 4; first < segment * 4 + 4; first += 2)
 				[expected[first], expected[first + 1]] = [expected[first + 1], expected[first]];
-			remaining -= 15; segment ^= 1;
+			remaining -= 15 * BASE_CYCLES[OpCode.MOV]; segment ^= 1;
 		} while (remaining > 0);
 		const writes = new Uint32Array(8), store = r.setEncoded.bind(r);
 		r.setEncoded = (register, tag, scalar, reference) => { if (register < 8) ++writes[register]; store(register, tag, scalar, reference); };

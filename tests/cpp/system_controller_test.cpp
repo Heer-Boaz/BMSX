@@ -310,7 +310,9 @@ struct ExternalClosureFixture {
 		)
 		, runtime(system.runtime)
 		, cpu(runtime.machine.cpu) {
-		require(cpu.runUntilDepth(0, 6) == bmsx::RunResult::Yielded, "system firmware publishes external-call test closures");
+		const int publicationCycles = 2 * (bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::CLOSURE)]
+			+ bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::SETGL)]);
+		require(cpu.runUntilDepth(0, publicationCycles) == bmsx::RunResult::Yielded, "system firmware publishes external-call test closures");
 		for (size_t index = 0; index < closures.size(); ++index) {
 			const bmsx::StringId name =
 				cpu.stringPool().intern(TEST_EXTERNAL_CLOSURE_GLOBALS[index]);

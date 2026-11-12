@@ -67,8 +67,9 @@ void genericArraysAndHashKeys() {
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
 		auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers;
-		r[0] = valueTable(m->cpu.createTable(4, 1)); r[1] = valueNumber(1); r[2] = valueNumber(3); m->cpu.runUntilDepth(0, 900);
+		r[0] = valueTable(m->cpu.createTable(4, 1)); r[1] = valueNumber(1); r[2] = valueNumber(3);
 	}
+	test::runCpuParity(native.cpu, scalar.cpu, 896);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
 	const u32 entry = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
@@ -85,8 +86,9 @@ void genericArraysAndHashKeys() {
 		valueNumber(-0.0), VALUE_QNAN_MASK, valueNumber(std::numeric_limits<double>::infinity()), valueString(valueText)};
 	for (const Value key : keys) for (const Value value : values) {
 		for (auto* m : {&native, &scalar}) {
-			auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers; r[1] = key; r[2] = value; m->cpu.runUntilDepth(0, 9);
+			auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers; r[1] = key; r[2] = value;
 		}
+		test::runCpuParity(native.cpu, scalar.cpu, 16);
 		requireParity(native, scalar);
 		require(native.cpu.readFrameRegister(0, 3) == value && native.cpu.readFrameRegister(0, 5) == valueNumber(1),
 			"all raw values survive generic array/hash access and the pending store source stays live");
@@ -116,7 +118,7 @@ void inheritedArrayReads(bool generic) {
 		auto* r = cpu.activeThread()->frameAtDepth(0)->registers; r[0] = valueTable(own); r[1] = valueNumber(1); cpu.runUntilDepth(0, 300);
 	}
 	for (const Value value : {valueBool(false), valueNumber(0), valueNil(), valueBool(true), valueNumber(19), valueNil()}) {
-		for (auto* m : {&native, &scalar}) { asTable(m->cpu.readFrameRegister(0, 0))->setInteger(1, value); m->cpu.runUntilDepth(0, 3); }
+		for (auto* m : {&native, &scalar}) { asTable(m->cpu.readFrameRegister(0, 0))->setInteger(1, value); m->cpu.runUntilDepth(0, 6); }
 		requireParity(native, scalar);
 		require(native.cpu.readFrameRegister(0, 3) == (isNil(value) ? valueNumber(73) : value), "only missing own slots traverse inheritance");
 	}
@@ -133,10 +135,10 @@ void boundaryLengthAndUtf8() {
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
 		auto* table = m->cpu.createTable(2, 4); for (int i = 1; i <= 5; ++i) table->setInteger(i, valueNumber(i));
-		auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers; r[0] = valueTable(table); r[2] = valueNumber(2); m->cpu.runUntilDepth(0, 600);
+		auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers; r[0] = valueTable(table); r[2] = valueNumber(2); m->cpu.runUntilDepth(0, 605);
 	}
 	for (const Value value : {valueNil(), valueBool(false), valueNil(), valueNumber(2)}) {
-		for (auto* m : {&native, &scalar}) { m->cpu.activeThread()->frameAtDepth(0)->registers[2] = value; m->cpu.runUntilDepth(0, 6); }
+		for (auto* m : {&native, &scalar}) { m->cpu.activeThread()->frameAtDepth(0)->registers[2] = value; m->cpu.runUntilDepth(0, 11); }
 		requireParity(native, scalar);
 		const double boundary = asNumber(native.cpu.readFrameRegister(0, 3));
 		const Table* table = asTable(native.cpu.readFrameRegister(0, 0));
@@ -188,7 +190,7 @@ void selfAndNilFaults() {
 	CpuMachine nilNative(image), nilScalar(image, true);
 	for (auto* m : {&nilNative, &nilScalar}) {
 		auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers; r[0] = valueTable(m->cpu.createTable(2)); r[1] = valueNumber(1); r[2] = valueNumber(73);
-		m->cpu.runUntilDepth(0, 500); r[1] = valueNil(); r[3] = valueNumber(19); m->cpu.activeThread()->frameAtDepth(0)->top = 0;
+		m->cpu.runUntilDepth(0, 504); r[1] = valueNil(); r[3] = valueNumber(19); m->cpu.activeThread()->frameAtDepth(0)->top = 0;
 	}
 	nilNative.cpu.runUntilDepth(0, 5); nilScalar.cpu.runUntilDepth(0, 5); requireParity(nilNative, nilScalar);
 	require(nilNative.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INDEX_NIL

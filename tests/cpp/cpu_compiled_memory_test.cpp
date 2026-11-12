@@ -226,7 +226,7 @@ void generatedBusOrdering() {
 }
 
 void generatedMemoryMayRetireExecutingSource() {
-	for (const int grant : {3, 5}) for (const bool load : {false, true}) for (const bool scalar : {false, true}) {
+	for (const int grant : {5, 9}) for (const bool load : {false, true}) for (const bool scalar : {false, true}) {
 		const auto image = memoryLoop(load ? OpCode::LOAD_MEM : OpCode::STORE_MEM, MemoryAccessKind::U32LE);
 		CpuMachine machine(image, scalar);
 		auto& cpu = machine.cpu;
@@ -260,9 +260,9 @@ void generatedMemoryMayRetireExecutingSource() {
 		frame.registers[1] = valueNumber(load ? port : DYNAMIC_RAM_BASE + 2u * INSTRUCTION_BYTES);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 		require(cpu.runUntilDepth(0, grant) == RunResult::Yielded
-			&& frame.pc == DYNAMIC_RAM_BASE + (grant == 3 ? 3u * INSTRUCTION_BYTES : 0u)
-			&& frame.top == (grant == 3 ? 5 : 7)
-			&& frame.registers[6] == valueNumber(grant == 3 ? 7 : load ? 11 : readLE32(source.replacement.data())),
+			&& frame.pc == DYNAMIC_RAM_BASE + (grant == 5 ? 3u * INSTRUCTION_BYTES : 0u)
+			&& frame.top == (grant == 5 ? 5 : 7)
+			&& frame.registers[6] == valueNumber(grant == 5 ? 7 : load ? 11 : readLE32(source.replacement.data())),
 			"a retiring transfer can resume its hot continuation without returning through retired source code");
 		if (!scalar) require(!page.nativeBlocks || !page.nativeBlocks->entries[0], "the current memory entry was retired");
 		if (load) require(source.reads == 1 && frame.registers[0] == valueNumber(11), "an MMIO read may retire its source before committing its result");
@@ -296,11 +296,11 @@ void fatalHelperErrorsLeaveTheNativeFrameBeforeUnwinding() {
 		catch (const ReadFailure& error) { caught = error.code == 73; }
 		require(caught && port.reads == 1 && frame.pc == machine.rom.textAddress + 3u * INSTRUCTION_BYTES
 			&& frame.top == 5 && frame.registers[0] == valueNumber(7) && frame.registers[6] == valueNumber(7)
-			&& cpu.instructionBudgetRemaining == 6,
+			&& cpu.instructionBudgetRemaining == 4,
 			"the actual host exception reaches a registered caller with the completed prefix, without retrying the IO read");
 		port.fail = false;
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress);
-		require(cpu.runUntilDepth(0, 9) == RunResult::Yielded && port.reads == 3
+		require(cpu.runUntilDepth(0, 18) == RunResult::Yielded && port.reads == 3
 			&& frame.registers[0] == valueNumber(11) && frame.registers[6] == valueNumber(11),
 			"a later native grant uses a fresh error channel and resumes the same instruction stream");
 	}

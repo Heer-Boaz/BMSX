@@ -11,7 +11,7 @@ import {
 	INSTRUCTION_BYTES,
 	writeInstruction,
 } from '../../machine/ts/spec/blua32/instruction_format';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import {
@@ -61,7 +61,7 @@ test('normal decoded dispatch preserves the guest budget boundary inside a fused
 	const entryPc = image.image.functions[0].codeAddress;
 	const fusedCpu = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 
-	assert.equal(fusedCpu.runUntilDepth(0, 4), RunResult.Yielded);
+	assert.equal(fusedCpu.runUntilDepth(0, 2 * BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.SHL] + BASE_CYCLES[OpCode.BXOR]), RunResult.Yielded);
 	assert.equal(fusedCpu.readFramePc(0), entryPc + 4 * INSTRUCTION_BYTES);
 	assert.equal(fusedCpu.lastPc, entryPc + 3 * INSTRUCTION_BYTES);
 	assert.equal(fusedCpu.readFrameRegister(0, 3), 3);
@@ -70,7 +70,7 @@ test('normal decoded dispatch preserves the guest budget boundary inside a fused
 		DecodedDispatchOp.FusedShlBxor,
 	);
 
-	assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
+	assert.equal(cpu.runUntilDepth(0, 2 * BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.SHL]), RunResult.Yielded);
 	assert.equal(cpu.readFramePc(0), entryPc + 3 * INSTRUCTION_BYTES);
 	assert.equal(cpu.lastPc, entryPc + 2 * INSTRUCTION_BYTES);
 	assert.equal(cpu.readFrameRegister(0, 2), 2);
@@ -90,7 +90,7 @@ test('normal decoded dispatch preserves the guest budget boundary inside a fused
 test('warmed fused dispatch does not repeat mapped-page binding or instruction reads', () => {
 	const image = makePairImage(true);
 	const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
-	assert.equal(cpu.runUntilDepth(0, 9), RunResult.Yielded);
+	assert.equal(cpu.runUntilDepth(0, 2 * BASE_CYCLES[OpCode.K1] + 2 * (BASE_CYCLES[OpCode.SHL] + BASE_CYCLES[OpCode.BXOR]) + BASE_CYCLES[OpCode.ADD] + BASE_CYCLES[OpCode.SHR] + BASE_CYCLES[OpCode.JMP]), RunResult.Yielded);
 	let bindings = 0;
 	let reads = 0;
 	const bindMappedPage = memory.bindMappedPage.bind(memory);
@@ -137,7 +137,7 @@ test('instrumented dispatch observes the second instruction of a normally fused 
 for (const instrumented of [false, true]) test(`sparse observation respects fusion, source stops and cached removal (source hook: ${instrumented})`, () => {
 	const image = makePairImage(true), { cpu } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
 	const pc = image.image.functions[0].codeAddress + 3 * INSTRUCTION_BYTES;
-	assert.equal(cpu.runUntilDepth(0, 9), RunResult.Yielded);
+	assert.equal(cpu.runUntilDepth(0, 2 * BASE_CYCLES[OpCode.K1] + 2 * (BASE_CYCLES[OpCode.SHL] + BASE_CYCLES[OpCode.BXOR]) + BASE_CYCLES[OpCode.ADD] + BASE_CYCLES[OpCode.SHR] + BASE_CYCLES[OpCode.JMP]), RunResult.Yielded);
 	const observations: number[] = [];
 	cpu.setInstructionObserver({
 		points: [new Set([pc]), new Set(), new Set()],
@@ -153,11 +153,11 @@ for (const instrumented of [false, true]) test(`sparse observation respects fusi
 		assert.deepEqual(observations, []);
 		cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 	}
-	assert.equal(cpu.runUntilDepth(0, instrumented ? 1 : 4), RunResult.Yielded);
+	assert.equal(cpu.runUntilDepth(0, instrumented ? BASE_CYCLES[OpCode.BXOR] : 2 * BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.SHL] + BASE_CYCLES[OpCode.BXOR]), RunResult.Yielded);
 	assert.equal(cpu.instructionBudgetRemaining, 0);
 	assert.equal(cpu.readFrameRegister(0, 3), 3);
 	assert.deepEqual(observations, [pc]);
 	cpu.setInstructionObserver(null);
-	cpu.runUntilDepth(0, 9);
+	cpu.runUntilDepth(0, 2 * BASE_CYCLES[OpCode.K1] + 2 * (BASE_CYCLES[OpCode.SHL] + BASE_CYCLES[OpCode.BXOR]) + BASE_CYCLES[OpCode.ADD] + BASE_CYCLES[OpCode.SHR] + BASE_CYCLES[OpCode.JMP]);
 	assert.deepEqual(observations, [pc]);
 });

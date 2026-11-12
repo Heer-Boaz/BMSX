@@ -8,7 +8,7 @@ import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileLuaSource } from './cpu_test_harness';
 
@@ -173,7 +173,7 @@ test('a materialized but unrooted canonical closure remains part of the checkpoi
 		closureRelocations: [{ wordIndex: 1, functionAddress: address }],
 	}));
 	const cold = cpu.captureRuntimeState();
-	assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded);
+	assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE] + BASE_CYCLES[OpCode.KNIL]), RunResult.Yielded);
 	const warm = cpu.captureRuntimeState();
 	assert.equal(warm.snapshot.word(warm.threads[0].stack[warm.threads[0].frames[0].stackBase]), ValueTag.Nil);
 	assert.ok(warm.snapshot.objectWords.some(offset => warm.snapshot.word(offset) === CpuSnapshotObjectKind.Closure

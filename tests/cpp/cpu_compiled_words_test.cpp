@@ -168,9 +168,9 @@ void plainSpansAndCycles(int count, bool displaced) {
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
-	require(block && block->sourceWords == 5 && block->terminal.cycles == 5 + surcharge,
+	require(block && block->sourceWords == 5 && block->terminal.cycles == 9 + surcharge,
 		"an admitted counted-store segment retains its complete surcharge");
-	require(block->sideExits[0].exit == NativeBlockExit::WriteWords && block->sideExits[0].cycles == 5, "the checked exit precedes its own readiness surcharge");
+	require(block->sideExits[0].exit == NativeBlockExit::WriteWords && block->sideExits[0].cycles == 9, "the checked exit precedes its own readiness surcharge");
 #endif
 	const std::array values{valueNumber(-0.0), valueNumber(-1.75), valueNumber(4294967296.25), valueNumber(1e100),
 		valueNumber(std::numeric_limits<double>::infinity()), VALUE_QNAN_MASK, valueNil(), valueBool(true)};
@@ -242,13 +242,13 @@ void laterReadinessBeforeEarlierFault() {
 		}
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 		m->cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNumber(IO_BASE - 4u);
-		require(m->cpu.runUntilDepth(0, 20) == RunResult::Halted && m->cpu.instructionBudgetRemaining == 15 && m->memory.readBusFaultSequence() == 0u,
+		require(m->cpu.runUntilDepth(0, 20) == RunResult::Halted && m->cpu.instructionBudgetRemaining == 11 && m->memory.readBusFaultSequence() == 0u,
 			"later not-ready IO wins over an earlier fault before charging the sequence");
 		require(m->cpu.readFramePc(0) == m->rom.textAddress + 3u * INSTRUCTION_BYTES && m->cpu.stalledMemoryWriteAddress() == IO_BASE + 4u
 			&& device.probes == std::vector<u32>{IO_BASE, IO_BASE + 4u} && device.writes == 0, "the first blocked raw word and prefix PC are retained");
 		m->cpu.resumeMemoryWrite(IO_BASE); require(m->cpu.captureRuntimeState().memoryWriteBlocked, "an unrelated ready event does not release this store");
 		device.ready = true; m->cpu.resumeMemoryWrite(IO_BASE + 4u); m->cpu.runUntilDepth(0, 2);
-		require(m->cpu.instructionBudgetRemaining == -1 && m->cpu.readCauseWord() == CPU_CAUSE_CODE_DATA_BUS_ERROR
+		require(m->cpu.instructionBudgetRemaining == -2 && m->cpu.readCauseWord() == CPU_CAUSE_CODE_DATA_BUS_ERROR
 			&& m->cpu.readEpcWord() == m->rom.textAddress + 3u * INSTRUCTION_BYTES && device.writes == 0,
 			"the retried instruction charges its successful preflight then faults on the earlier unmapped word");
 	}
@@ -282,7 +282,7 @@ void orderedIoFaultPrefix() {
 }
 
 void ownCodeInMiddleWatchPage() {
-	constexpr int count = MAPPED_PAGE_BYTE_SIZE / 2 + 1, cycles = 7 + ((count + 3) >> 2);
+	constexpr int count = MAPPED_PAGE_BYTE_SIZE / 2 + 1, cycles = 13 + ((count + 3) >> 2);
 	const auto image = wordLoop(count); CpuMachine native(image), scalar(image, true); constexpr u32 pc = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE;
 	std::array<u8, 4> halt; writeInstruction(halt, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	for (auto* m : {&native, &scalar}) {
@@ -316,9 +316,9 @@ void previousChargesSurviveLaterExit(bool blocked) {
 	for (auto* m : {&native, &scalar}) { auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers; r[0] = valueNumber(DYNAMIC_RAM_BASE); r[1] = valueNumber(DYNAMIC_RAM_BASE + 64u); m->cpu.runUntilDepth(0, 200); }
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
-	require(block && block->terminal.cycles == 5 && block->sideExits[0].cycles == 3, "the first block charges its successful surcharge");
+	require(block && block->terminal.cycles == 7 && block->sideExits[0].cycles == 5, "the first block charges its successful surcharge");
 	const auto* second = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(block->terminal.nextPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
-	require(second && second->region == block->region && second->terminal.cycles == 3 && second->sideExits[0].cycles == 2,
+	require(second && second->region == block->region && second->terminal.cycles == 4 && second->sideExits[0].cycles == 3,
 		"an internal counted entry separates admission, success and blocked preflight charges");
 #endif
 	for (auto* m : {&native, &scalar}) {
@@ -328,7 +328,7 @@ void previousChargesSurviveLaterExit(bool blocked) {
 		frame.registers[7] = valueNumber(99); frame.registers[20] = valueNumber(73);
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress); m->cpu.runUntilDepth(0, 20);
 		require(frame.registers[7] == valueNumber(99) && frame.top == 7, "the failing second store does not execute or publish a later definition");
-		if (blocked) require(m->cpu.instructionBudgetRemaining == 13, "a later blocked preflight excludes only its own surcharge");
+		if (blocked) require(m->cpu.instructionBudgetRemaining == 10, "a later blocked preflight excludes only its own surcharge");
 		else require(m->cpu.readCauseWord() == CPU_CAUSE_CODE_DATA_BUS_ERROR && m->memory.readMappedWord(RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 4u) == 73u, "a later fault keeps its committed word");
 	}
 	requireParity(native, scalar);
@@ -337,7 +337,7 @@ void previousChargesSurviveLaterExit(bool blocked) {
 void terminalSpanStartsWithOneCycle(int count, bool displaced) {
 	const auto image = wordLoop(count, displaced); CpuMachine native(image), scalar(image, true);
 	const u32 start = native.rom.textAddress + 3u * INSTRUCTION_BYTES, target = DYNAMIC_RAM_BASE + 0x4000u;
-	const int charge = 2 + ((count + 3) >> 2);
+	const int charge = 3 + ((count + 3) >> 2);
 	for (int attempt = 0; attempt < 12; ++attempt) for (auto* m : {&native, &scalar}) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers[0] = valueNumber(target - (displaced ? 1020u : 0u)); frame.registers[7] = valueNumber(99);
 		for (int i = 0; i < count; ++i) frame.registers[8 + i] = valueNumber(0x20000000u | i);
@@ -361,7 +361,7 @@ void terminalSpanStartsWithOneCycle(int count, bool displaced) {
 			m->memory.mapIoWriteReady(IO_BASE + 0x5000u, [](void*, u32, MappedBusSignals) { return false; });
 			auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers[0] = valueNumber(IO_BASE + 0x5000u - (displaced ? 1020u : 0u));
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], start);
-			require(m->cpu.runUntilDepth(0, 1) == RunResult::Halted && m->cpu.instructionBudgetRemaining == -1
+			require(m->cpu.runUntilDepth(0, 1) == RunResult::Halted && m->cpu.instructionBudgetRemaining == -2
 				&& frame.pc == start && frame.registers[7] == valueNumber(99) && m->cpu.stalledMemoryWriteAddress() == IO_BASE + 0x5000u,
 				"a one-cycle checked exit pays only the base charge and retains the WIDE retry address");
 		}

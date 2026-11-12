@@ -35,7 +35,7 @@ int main() {
 #endif
    cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
    const int surcharge = array + 2 * static_cast<int>(Table::hashCapacity(hash));
-   if (cpu.runUntilDepth(0, 1) != RunResult::Yielded || cpu.instructionBudgetRemaining != -surcharge)
+   if (cpu.runUntilDepth(0, 1) != RunResult::Yielded || cpu.instructionBudgetRemaining != 1 - BASE_CYCLES[static_cast<u8>(OpCode::NEWT)] - surcharge)
     throw std::runtime_error("NEWT must finish its admitted logical initialization charge");
    if (cpu.activeThread()->frameAtDepth(0)->pc != rom.textAddress + INSTRUCTION_BYTES || !valueIsTable(cpu.readFrameRegister(0, 0)))
     throw std::runtime_error("exhausting initialization must stop before the next instruction");
@@ -71,8 +71,9 @@ int main() {
     for (size_t i = 0; i < keys.size(); ++i) {
      frame->registers[1] = valueString(keys[i]);
      cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
-     if (cpu.runUntilDepth(0, 3) != RunResult::Yielded || cpu.instructionBudgetRemaining != 0)
-      throw std::runtime_error("table store plus jump must cost three cycles regardless of growth");
+     const int charge = BASE_CYCLES[static_cast<u8>(OpCode::SETT)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
+     if (cpu.runUntilDepth(0, charge) != RunResult::Yielded || cpu.instructionBudgetRemaining != 0)
+      throw std::runtime_error("table store plus jump keeps its base costs regardless of growth");
      if (table->getStringKey(keys[i]) != valueNumber(73)) throw std::runtime_error("table store lost a field");
      const size_t capacity = table->storedSlotCount();
      size_t expectedCapacity = 1;

@@ -30,7 +30,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 				cpu.beginCompletionCall(closure, [17, 29, 31]);
 				const stackBase = cpu.rootThread.currentFrame!.stackBase;
 				assert.equal(cpu.runUntilDepth(1, 1000), RunResult.Halted);
-				assert.equal(cpu.instructionBudgetRemaining, 1000 - BASE_CYCLES[op] - 2 - placed);
+				assert.equal(cpu.instructionBudgetRemaining, 1000 - BASE_CYCLES[op] - BASE_CYCLES[OpCode.RET] - placed);
 				for (let i = 0; i < placed; ++i)
 					assert.equal(cpu.rootThread.stackRegisters.get(stackBase + 2 + i), op === OpCode.VARARG && i < 3 ? [17, 29, 31][i] : null);
 			}
@@ -58,7 +58,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 				for (let i = 0; i < args; ++i) root.registers.setNumber(5 + i, 17 + i);
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, root.functionAddress, image.image.functions[0].codeAddress + 3 * INSTRUCTION_BYTES);
 				assert.equal(cpu.runUntilDepth(0, grant), RunResult.Yielded);
-				assert.equal(cpu.instructionBudgetRemaining, grant - 2 - placed);
+				assert.equal(cpu.instructionBudgetRemaining, grant - BASE_CYCLES[OpCode.CALL] - placed);
 				assert.equal(cpu.getFrameDepth(), 2, 'an exhausted CALL completes placement but cannot execute the callee RET');
 				const callee = cpu.rootThread.currentFrame!;
 				for (let i = 0; i < params; ++i) assert.equal(callee.registers.get(i), i < args ? 17 + i : null);
@@ -84,15 +84,15 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		const { cpu } = createTestSystemCpu(image, backend);
 		cpu.runUntilDepth(0, 1);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-		assert.equal(cpu.instructionBudgetRemaining, 1 - 1 - 2, 'CLOSURE pays for both descriptor bindings');
+		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CLOSURE] - 2, 'CLOSURE pays for both descriptor bindings');
 		const first = cpu.rootThread.currentFrame!.registers.getClosure(2);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-		assert.equal(cpu.instructionBudgetRemaining, -2, 'rebinding already-open cells still processes descriptors');
+		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CLOSURE] - 2, 'rebinding already-open cells still processes descriptors');
 		const second = cpu.rootThread.currentFrame!.registers.getClosure(3);
 		assert.notEqual(first.upvalues[0], first.upvalues[1]);
 		assert.equal(first.upvalues[0], second.upvalues[0]);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Halted);
-		assert.equal(cpu.instructionBudgetRemaining, 1 - 2 - 2 - 2, 'two distinct open captures, plus two received closure values');
+		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.RET] - 2 - 2, 'two distinct open captures, plus two received closure values');
 		assert.equal(first.upvalues[0].open, false);
 	});
 	for (const wanted of [0, 1, 5]) test(`nested builtin protection charges every receiving range (${backend}, C=${wanted})`, () => {
@@ -106,10 +106,10 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		const { cpu } = createTestSystemCpu(image, backend);
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('pcall'), ValueTag.BuiltinFunction, BuiltinFunctionId.PCall, null);
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('isyieldable'), ValueTag.BuiltinFunction, BuiltinFunctionId.CoroutineIsYieldable, null);
-		cpu.runUntilDepth(0, 3);
+		cpu.runUntilDepth(0, 3 * BASE_CYCLES[OpCode.GETSYS]);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 		const placed = wanted === 0 ? 3 : wanted - 1;
-		assert.equal(cpu.instructionBudgetRemaining, 1 - 2 - 4 - 4 - 4 - 2 - placed);
+		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 4 - 4 - 4 - 2 - placed);
 	});
 }
 
@@ -137,16 +137,16 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			cpu.setSystemGlobalByKey(cpu.stringPool.intern(name), ValueTag.BuiltinFunction, id, null);
 		while (cpu.activeThread === cpu.rootThread) cpu.runUntilDepth(0, 1);
 		const child = cpu.activeThread;
-		cpu.runUntilDepth(0, 3);
+		cpu.runUntilDepth(0, BASE_CYCLES[OpCode.GETSYS] + 2 * BASE_CYCLES[OpCode.LOADK]);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-		assert.equal(cpu.instructionBudgetRemaining, 1 - 2 - 4 - 5);
+		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 4 - 5);
 		assert.equal(cpu.activeThread, cpu.rootThread);
 		assert.deepEqual(Array.from({ length: 5 }, (_, i) => cpu.rootThread.currentFrame!.registers.get(4 + i)), [true, 17, 29, null, null]);
 		const root = cpu.rootThread.currentFrame!;
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, root.functionAddress, image.image.functions[0].codeAddress + 4 * INSTRUCTION_BYTES);
-		cpu.runUntilDepth(0, 2);
+		cpu.runUntilDepth(0, BASE_CYCLES[OpCode.GETSYS] + BASE_CYCLES[OpCode.MOV]);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-		assert.equal(cpu.instructionBudgetRemaining, 1 - 2 - 4 - 2, 'resuming the fixed two-result yield fills both missing values');
+		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 4 - 2, 'resuming the fixed two-result yield fills both missing values');
 		assert.equal(cpu.activeThread, child);
 		assert.deepEqual([child.currentFrame!.registers.get(0), child.currentFrame!.registers.get(1)], [null, null]);
 	});
@@ -170,7 +170,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		while (cpu.rootThread.currentFrame!.pc !== image.image.functions[0].codeAddress + 6 * INSTRUCTION_BYTES) cpu.runUntilDepth(0, 1);
 		for (let i = 0; i < 3; ++i) cpu.rootThread.currentFrame!.registers.setNumber(6 + i, 17 + i);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-		assert.equal(cpu.instructionBudgetRemaining, 1 - 2 - 4 - 2 - (vararg ? 1 : 0));
+		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 4 - 2 - (vararg ? 1 : 0));
 		assert.notEqual(cpu.activeThread, cpu.rootThread);
 		assert.deepEqual([cpu.activeThread.currentFrame!.registers.get(0), cpu.activeThread.currentFrame!.registers.get(1)], [17, 18]);
 	});
@@ -202,7 +202,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		while (cpu.activeThread.currentFrame!.pc !== image.image.functions[1].codeAddress + 4 * INSTRUCTION_BYTES) cpu.runUntilDepth(0, 1);
 		const capture = cpu.activeThread.currentFrame!.registers.getClosure(2).upvalues[0];
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-		assert.equal(cpu.instructionBudgetRemaining, 1 - 2 - 2 - 1 - 4);
+		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 2 - 1 - 4);
 		assert.equal(capture.open, false);
 		assert.deepEqual(Array.from({ length: 4 }, (_, i) => cpu.rootThread.currentFrame!.registers.get(i)), [false, 17, null, null]);
 	});
@@ -259,9 +259,9 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	while (cpu.activeThread !== cpu.rootThread) cpu.runUntilDepth(0, 1);
 	const capture = child.currentFrame!.registers.getClosure(2).upvalues[0];
 	assert.equal(capture.open, true);
-	cpu.runUntilDepth(0, 2);
+	cpu.runUntilDepth(0, BASE_CYCLES[OpCode.GETSYS] + BASE_CYCLES[OpCode.MOV]);
 	assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-	assert.equal(cpu.instructionBudgetRemaining, 1 - 2 - 4 - 1 - 4);
+	assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 4 - 1 - 4);
 	assert.equal(capture.open, false);
 	assert.equal(child.frameDepth, 0);
 	assert.deepEqual(Array.from({ length: 4 }, (_, i) => cpu.rootThread.currentFrame!.registers.get(4 + i)), [true, null, null, null]);

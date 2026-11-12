@@ -45,7 +45,8 @@ void logicalStringWork(bool scalar, OpCode op) {
 		frame.registers[2] = valueString(machine.cpu.stringPool().intern(right));
 		machine.cpu.runUntilDepth(0, 1);
 		const int leftCount = repeat % 3 == 2 ? 4 : 3;
-		const int cycles = op == OpCode::CONCAT ? 5 + leftCount : op == OpCode::CONCATN ? 8 + leftCount : op == OpCode::EQ ? 1 : 1 + leftCount;
+		const int cycles = BASE_CYCLES[static_cast<u8>(op)]
+			+ (op == OpCode::CONCAT ? 4 + leftCount : op == OpCode::CONCATN ? 6 + leftCount : op == OpCode::EQ ? 0 : leftCount);
 		require(machine.cpu.instructionBudgetRemaining == 1 - cycles, "logical text work charges agree on cold and warm native paths");
 		if (op == OpCode::CONCAT || op == OpCode::CONCATN) {
 			require(machine.cpu.stringPool().toString(asStringId(frame.registers[0])) == left + right, "concatenation preserves complete Unicode and zero codepoints");
@@ -90,7 +91,7 @@ void selectAndChar(bool scalar) {
 				frame.registers[2] = valueNumber(0); frame.registers[3] = valueNumber(0x1f600);
 				machine.cpu.runUntilDepth(0, 1);
 				if (invalid) require(machine.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT, "discarding char results must not discard validation");
-				require(machine.cpu.instructionBudgetRemaining == -6, "char charges all supplied codepoints, including argument faults");
+				require(machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::CALL)] - 5, "char charges all supplied codepoints, including argument faults");
 			}
 		}
 	}

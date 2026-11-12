@@ -9,7 +9,7 @@ import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_pa
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { BUS_FAULT_NONE, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
 import { DYNAMIC_RAM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
@@ -56,7 +56,7 @@ for (const op of [OpCode.EQ, OpCode.LT, OpCode.LE]) for (const expected of [fals
 				const current = cpu.rootThread.frameAtDepth(0);
 				current.registers.set(0, inputs[index][left]); current.registers.set(1, inputs[index][right]); current.top = 0;
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
-				assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded);
+				assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.K0] + BASE_CYCLES[op]), RunResult.Yielded);
 				assert.equal(current.top, 4, 'expected truth is not a register destination, including wide nonzero A');
 			}
 			assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState(), `pair ${left},${right}`);
@@ -153,7 +153,7 @@ test('EQ ignores unused Nil/boolean scalar payloads without rewriting either sou
 			const frame = cpu.rootThread.frameAtDepth(0);
 			frame.registers.setEncoded(0, kind, 1, null); frame.registers.setEncoded(1, kind, 2, null);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
-			cpu.runUntilDepth(0, 2);
+			cpu.runUntilDepth(0, BASE_CYCLES[OpCode.K0] + BASE_CYCLES[OpCode.EQ]);
 			assert.equal(frame.pc, image.image.functions[0].codeAddress + 4 * INSTRUCTION_BYTES);
 			assert.equal(frame.registers.getScalar(0), 1); assert.equal(frame.registers.getScalar(1), 2);
 		}
@@ -187,7 +187,7 @@ test('resolved comparison skips retire when their fetched WIDE width changes', (
 			memory.writeBytes(DYNAMIC_RAM_BASE + 2 * INSTRUCTION_BYTES, replacement);
 			const frame = cpu.rootThread.frameAtDepth(0); frame.top = 0; frame.registers.setNumber(2, 73);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
-			cpu.runUntilDepth(0, 2);
+			cpu.runUntilDepth(0, BASE_CYCLES[OpCode.ADD] + BASE_CYCLES[OpCode.EQ]);
 			assert.equal(frame.pc, DYNAMIC_RAM_BASE + (wide ? 4 : 3) * INSTRUCTION_BYTES);
 			assert.equal(frame.registers.getNumber(2), 73); assert.equal(frame.top, 4);
 		}
@@ -357,7 +357,7 @@ for (const comparisonWide of [false, true]) for (const jumpWide of [false, true]
 			assert.equal(jumped.lastPc, DYNAMIC_RAM_BASE + jumpBody * INSTRUCTION_BYTES);
 			assert.equal(root.terminal, jumped);
 			assert.equal(root.exits.length, 3, 'an exhausted compare has its own deferred-JMP exit');
-			assert.equal(jumped.cycles, 2); assert.equal(root.exits.find(exit => exit !== jumped)!.cycles, 1);
+			assert.equal(jumped.cycles, BASE_CYCLES[op] + BASE_CYCLES[OpCode.JMP]); assert.equal(root.exits.find(exit => exit !== jumped)!.cycles, BASE_CYCLES[op]);
 			assert.equal(cache.entries[jumpWord], null, 'a JMP reached only through its fused comparison has no redundant body');
 			for (const linked of [0, 1, 2]) {
 				const entryWord = linked === 1 ? 24 : linked === 2 ? crossPageWord : 0;
@@ -384,7 +384,7 @@ for (const comparisonWide of [false, true]) for (const jumpWide of [false, true]
 						}
 						cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0],
 							DYNAMIC_RAM_BASE + entryWord * INSTRUCTION_BYTES);
-						assert.equal(cpu.runUntilDepth(0, linked !== 0 ? 2 : 1), RunResult.Yielded);
+						assert.equal(cpu.runUntilDepth(0, linked !== 0 ? BASE_CYCLES[OpCode.JMP] + BASE_CYCLES[op] : BASE_CYCLES[op]), RunResult.Yielded);
 					}
 					const [js, scalar] = machines.map(machine => machine.cpu);
 					assert.equal(js.readFramePc(0), DYNAMIC_RAM_BASE + jumpWord * INSTRUCTION_BYTES);
@@ -483,11 +483,11 @@ test('a paired JMP defers the target fetch until positive budget remains', () =>
 		cpu.rootThread.frameAtDepth(0).registers.setNumber(0, 0); cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);
 	}
 	for (const { cpu } of machines) {
-		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+		assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.EQ]), RunResult.Yielded);
 		assert.equal(cpu.instructionBudgetRemaining, 0, 'the compare consumes only its own grant');
 		assert.equal(cpu.readFramePc(0), start + INSTRUCTION_BYTES);
 		assert.equal(cpu.readCurrentInstructionPc(), start);
-		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+		assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.JMP]), RunResult.Yielded);
 		assert.equal(cpu.instructionBudgetRemaining, 0, 'the deferred JMP consumes the next grant');
 		assert.equal(cpu.readFramePc(0), end); assert.equal(cpu.readCurrentInstructionPc(), start + INSTRUCTION_BYTES);
 		assert.equal(cpu.rootThread.frameDepth, 1);

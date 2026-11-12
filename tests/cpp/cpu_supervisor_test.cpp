@@ -274,7 +274,10 @@ void testPrivilegeVectorRoutingAndCp0Fault() {
 			makeSupervisorSystemImage(CART_USER_CP0_FUNCTION);
 		systemImage.startupFunctionIndex = EXEC_CART_FUNCTION;
 		CpuTestMachine machine(std::move(systemImage));
-		require(machine.cpu.runUntilDepth(0, 3) == bmsx::RunResult::Yielded, "user MFC0 vectors synchronously");
+		const int charge = bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::LOADK)]
+			+ bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::MTC0)]
+			+ bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::MFC0)];
+		require(machine.cpu.runUntilDepth(0, charge) == bmsx::RunResult::Yielded, "user MFC0 vectors synchronously");
 		bmsx::CpuRuntimeState fault = machine.cpu.captureRuntimeState();
 		require(fault.causeWord == bmsx::CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE, "user CP0 access latches the privileged-instruction cause");
 		require(fault.epcWord == machine.cartRom.textAddress + 4u * bmsx::INSTRUCTION_BYTES, "synchronous EPC identifies the physical faulting instruction");
@@ -613,7 +616,7 @@ void testDecodedSuperinstructionsPreserveGuestBoundaries() {
 	CpuTestMachine fused(makeDecodedPairSystemImage());
 	const bmsx::u32 entryPc = fused.systemRom.textAddress;
 	require(
-		fused.cpu.runUntilDepth(0, 4) == bmsx::RunResult::Yielded,
+		fused.cpu.runUntilDepth(0, 4 * bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::K1)]) == bmsx::RunResult::Yielded,
 		"fused pair consumes the exact guest budget"
 	);
 	require(
@@ -643,7 +646,7 @@ void testDecodedSuperinstructionsPreserveGuestBoundaries() {
 
 	CpuTestMachine budgeted(makeDecodedPairSystemImage());
 	require(
-		budgeted.cpu.runUntilDepth(0, 3) == bmsx::RunResult::Yielded,
+		budgeted.cpu.runUntilDepth(0, 3 * bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::K1)]) == bmsx::RunResult::Yielded,
 		"budget exhaustion stops between fused guest instructions"
 	);
 	require(
@@ -1201,7 +1204,9 @@ void testRfeResumesAtAnyMappedInstructionAddress() {
 	bmsx::test::Blua32TestImage systemImage = makeSupervisorSystemImage();
 	systemImage.startupFunctionIndex = EXEC_CART_FUNCTION;
 	CpuTestMachine machine(std::move(systemImage));
-	require(machine.cpu.runUntilDepth(0, 3) == bmsx::RunResult::Halted, "cart reaches HALT before NMI");
+	require(machine.cpu.runUntilDepth(0, bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::LOADK)]
+		+ bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::MTC0)]
+		+ bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::HALT)]) == bmsx::RunResult::Halted, "cart reaches HALT before NMI");
 	machine.cpu.requestNonMaskableInterrupt();
 	require(machine.cpu.enterPendingInterrupt(), "NMI enters the system exception vector");
 
@@ -1218,7 +1223,10 @@ void testMappedBusErrorsEnterTheSystemExceptionVector() {
 		makeSupervisorSystemImage(CART_USER_BUS_LOAD_FUNCTION);
 	systemImage.startupFunctionIndex = EXEC_CART_FUNCTION;
 	CpuTestMachine machine(std::move(systemImage));
-	require(machine.cpu.runUntilDepth(0, 6) == bmsx::RunResult::Yielded, "faulting mapped load enters the exception root");
+	require(machine.cpu.runUntilDepth(0, 2 * bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::LOADK)]
+		+ bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::MTC0)]
+		+ bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::K1)]
+		+ bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::LOAD_MEM_D)]) == bmsx::RunResult::Yielded, "faulting mapped load enters the exception root");
 	bmsx::CpuRuntimeState loadFault = machine.cpu.captureRuntimeState();
 	require(loadFault.causeWord == bmsx::CPU_CAUSE_CODE_DATA_BUS_ERROR, "mapped load latches DBE");
 	require(loadFault.epcWord == machine.cartRom.textAddress + 9u * bmsx::INSTRUCTION_BYTES, "mapped load EPC identifies the physical faulting instruction");
@@ -1237,7 +1245,10 @@ void testMappedBusErrorsEnterTheSystemExceptionVector() {
 		SYSTEM_BUS_BURST_FUNCTION
 	);
 	machine.cpu.reset();
-	require(machine.cpu.runUntilDepth(0, 10) == bmsx::RunResult::Yielded, "supervisor burst fault enters a nested exception root");
+	const int burstCharge = bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::LOADK)]
+		+ 5 * bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::K1)]
+		+ bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::STORE_MEM_WORDS_D)] + 2;
+	require(machine.cpu.runUntilDepth(0, burstCharge) == bmsx::RunResult::Yielded, "supervisor burst fault enters a nested exception root");
 	const bmsx::CpuRuntimeState burstFault = machine.cpu.captureRuntimeState();
 	require(burstFault.causeWord == bmsx::CPU_CAUSE_CODE_DATA_BUS_ERROR, "supervisor burst latches DBE");
 	require(burstFault.epcWord == machine.systemRom.textAddress + 12u * bmsx::INSTRUCTION_BYTES, "supervisor burst EPC identifies the physical faulting instruction");
@@ -1328,7 +1339,7 @@ void testInstructionFetchExceptionsEnterTheSystemVector() {
 			0
 		);
 		machine.memory.writeBytes(instructionPc, instructions.data(), instructions.size());
-		require(machine.cpu.runUntilDepth(0, 2) == bmsx::RunResult::Yielded, "register setup consumes its two instruction slots");
+		require(machine.cpu.runUntilDepth(0, 2 * bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::K1)]) == bmsx::RunResult::Yielded, "register setup consumes its two instruction slots");
 		machine.cpu.writeFrameExecution(
 			0,
 			bmsx::SYSTEM_EXECUTION_DOMAIN_ID,
@@ -1534,7 +1545,8 @@ void testProtectedCallMicrocodePreemptsSavesAndHandlesLuaErrors() {
 		machine.cpu.setSystemGlobalByKey(key, machine.cpu.createBuiltinFunction(builtinIds[index]));
 	}
 
-	require(machine.cpu.runUntilDepth(0, 3) == bmsx::RunResult::Yielded, "pcall body should remain preemptible");
+	require(machine.cpu.runUntilDepth(0, bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::GETSYS)]
+		+ bmsx::BASE_CYCLES[static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE)] + 1) == bmsx::RunResult::Yielded, "pcall body should remain preemptible");
 	bmsx::CpuRuntimeState state = machine.cpu.captureRuntimeState();
 	require(state.threads[0].protectedCalls.size() == 1u, "save state should retain the active protected call");
 	machine.cpu.restoreRuntimeState(state);
@@ -1577,7 +1589,7 @@ void testSparseInstructionObservation() {
 		CpuTestMachine machine(image);
 		auto pc = machine.systemRom.textAddress + 3u * bmsx::INSTRUCTION_BYTES;
 		// Warm the predecessor's fused dispatch before installing observation.
-		require(machine.cpu.runUntilDepth(0, 9) == bmsx::RunResult::Yielded, "warm decoded pairs");
+		require(machine.cpu.runUntilDepth(0, 18) == bmsx::RunResult::Yielded, "warm decoded pairs");
 		int seen = 0;
 		bmsx::InstructionObserverBinding observer;
 		observer.points[0].insert(pc);
@@ -1604,12 +1616,12 @@ void testSparseInstructionObservation() {
 				.preMaskableInterruptDomainMask = 0u,
 			});
 		}
-		const int budget = instrumented ? 1 : 4;
+		const int budget = instrumented ? 2 : 8;
 		require(machine.cpu.runUntilDepth(0, budget) == bmsx::RunResult::Yielded, "original costs preserved");
 		require(machine.cpu.instructionBudgetRemaining == 0, "observer costs no guest cycles");
 		require(seen == 1 && bmsx::asNumber(machine.cpu.readFrameRegister(0, 3)) == 3.0, "original op executes once");
 		machine.cpu.setInstructionObserver({});
-		machine.cpu.runUntilDepth(0, 9);
+		machine.cpu.runUntilDepth(0, 18);
 		require(seen == 1, "removal invalidates cached observer");
 	}
 }

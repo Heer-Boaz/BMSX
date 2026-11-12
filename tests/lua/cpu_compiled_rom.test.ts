@@ -81,7 +81,7 @@ for (let format = 0; format <= 5; ++format) for (const displaced of [false, true
 		for (const { cpu } of machines) {
 			const frame = cpu.rootThread.frameAtDepth(0);
 			frame.registers.setNumber(1, DYNAMIC_RAM_BASE + 0x1000 - (displaced ? 1020 : 0));
-			frame.registers.setNumber(2, 1); cpu.runUntilDepth(0, 1000);
+			frame.registers.setNumber(2, 1); cpu.runUntilDepth(0, 999);
 		}
 		const frame = machines[0].cpu.rootThread.frameAtDepth(0), page = frame.decodedPage!;
 		const block = page.compiledBlocks!.entries[(image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2]!;
@@ -90,7 +90,7 @@ for (let format = 0; format <= 5; ++format) for (const displaced of [false, true
 		assert.equal(block.region.exits[block.region.execute(frame.registers, frame.executionImage.constScalars, page, frame, block.entry, { remainingCycles: 1, registerTop: frame.top })].nextPc, image.image.functions[0].codeAddress,
 			'a backed system-ROM load and dependent arithmetic do not return through the bus owner');
 		machines[1].cpu.rootThread.frameAtDepth(0).registers.setNumber(1, 4 - (displaced ? 1020 : 0));
-		machines[1].cpu.runUntilDepth(0, 5);
+		machines[1].cpu.runUntilDepth(0, 9);
 		for (const address of [4, data, data + 4, CART_ROM_BASE, CART_ROM_BASE + 4]) for (let grant = 1; grant <= 17; ++grant) {
 			for (const { cpu } of machines) {
 				cpu.rootThread.frameAtDepth(0).registers.setNumber(1, address - (displaced ? 1020 : 0));
@@ -116,26 +116,26 @@ test('ROM replacement, data selection, reset and restore keep a generated RAM en
 		memory.writeBytes(DYNAMIC_RAM_BASE, source.text);
 		frame.registers.setNumber(1, data); frame.registers.setNumber(2, 1);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
-		cpu.runUntilDepth(0, 1000);
+		cpu.runUntilDepth(0, 999);
 		const page = frame.decodedPage!, block = index === 0 ? page.compiledBlocks!.entries[0] : null;
 		if (index === 0) assert.ok(block);
 		const replacement = new Uint8Array(bytes.byteLength + 17).subarray(17);
 		replacement.set(bytes); writeLE32(replacement, data, 44);
-		memory.installSystemRom(replacement); cpu.runUntilDepth(0, 5);
+		memory.installSystemRom(replacement); cpu.runUntilDepth(0, 9);
 		assert.equal(frame.registers.getNumber(0), 44);
 		if (index === 0) assert.equal(page.compiledBlocks!.entries[0], block);
 		frame.registers.setNumber(1, CART_ROM_BASE);
 		for (const select of [0xfffffffe, 0xffffffff, 0, 1]) {
-			memory.writeMappedWord(IO_CART_SELECT, select); cpu.runUntilDepth(0, 5);
+			memory.writeMappedWord(IO_CART_SELECT, select); cpu.runUntilDepth(0, 9);
 			assert.equal(frame.registers.getNumber(0), (select & 1) === 0 ? 22 : 33);
 		}
 		writeLE32(replacement, data, 55);
-		memory.cartridgeController.installRom(1, replacement.subarray(data, data + 16)); cpu.runUntilDepth(0, 5);
+		memory.cartridgeController.installRom(1, replacement.subarray(data, data + 16)); cpu.runUntilDepth(0, 9);
 		assert.equal(frame.registers.getNumber(0), 55);
 		if (index === 0) assert.equal(page.compiledBlocks!.entries[0], block);
 		const saved = memory.cartridgeController.captureState();
-		memory.cartridgeController.reset(); cpu.runUntilDepth(0, 5); assert.equal(frame.registers.getNumber(0), 22);
-		memory.cartridgeController.restoreState(saved); cpu.runUntilDepth(0, 5); assert.equal(frame.registers.getNumber(0), 55);
+		memory.cartridgeController.reset(); cpu.runUntilDepth(0, 9); assert.equal(frame.registers.getNumber(0), 22);
+		memory.cartridgeController.restoreState(saved); cpu.runUntilDepth(0, 9); assert.equal(frame.registers.getNumber(0), 55);
 	}
 	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 });
@@ -147,10 +147,10 @@ test('an empty ROM bus does not hide F64 cross-region reads or high-half faults'
 	for (const { cpu, memory } of machines) {
 		const frame = cpu.rootThread.frameAtDepth(0);
 		frame.registers.setNumber(1, CART_ROM_BASE); frame.registers.setNumber(2, 1);
-		cpu.runUntilDepth(0, 1000); assert.equal(frame.registers.getNumber(0), 0);
-		memory.writeMappedWord(IO_CART_SELECT, 1); cpu.runUntilDepth(0, 5); assert.equal(frame.registers.getNumber(0), 0);
+		cpu.runUntilDepth(0, 999); assert.equal(frame.registers.getNumber(0), 0);
+		memory.writeMappedWord(IO_CART_SELECT, 1); cpu.runUntilDepth(0, 9); assert.equal(frame.registers.getNumber(0), 0);
 		memory.writeMappedWord(IO_CART_SELECT, 0); memory.writeMappedWord(CART_RAM_BASE, 0x3ff00000);
-		frame.registers.setNumber(1, CART_ROM_END - 4); cpu.runUntilDepth(0, 5);
+		frame.registers.setNumber(1, CART_ROM_END - 4); cpu.runUntilDepth(0, 9);
 		assert.equal(frame.registers.getNumber(0), 1, 'the high word comes from cartridge RAM, not ROM padding');
 		frame.registers.setNumber(0, 73); frame.registers.setNumber(1, SYSTEM_ROM_SIZE - 4); frame.top = 0;
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
@@ -178,16 +178,16 @@ test('data SELECT does not change the physical socket supplying executable instr
 	for (const backend of [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter]) {
 		const { cpu, memory } = machine(pair0.systemRomBytes, cartridgeSlots(cart0, cart1), backend);
 		// Enter through CP0.EXEC, establishing socket 0 before any cartridge fetch.
-		cpu.runUntilDepth(0, 4);
+		cpu.runUntilDepth(0, 7);
 		const frame = cpu.rootThread.frameAtDepth(0);
 		assert.equal(frame.executionImage.executionDomainId, 0);
 		assert.equal(frame.pc, pair0.cartImage.functions[0].codeAddress);
 		frame.registers.setNumber(1, CART_ROM_BASE + data); frame.registers.setNumber(2, 1);
 		memory.writeMappedWord(IO_CART_SELECT, 1);
-		cpu.runUntilDepth(0, 1000);
+		cpu.runUntilDepth(0, 999);
 		assert.equal(frame.registers.getNumber(0), 33, 'even the first instruction fetch uses the execution socket');
 		for (const select of [0, 1, 0xfffffffe, 0xffffffff]) {
-			memory.writeMappedWord(IO_CART_SELECT, select); cpu.runUntilDepth(0, 5);
+			memory.writeMappedWord(IO_CART_SELECT, select); cpu.runUntilDepth(0, 9);
 			assert.equal(frame.registers.getNumber(0), (select & 1) === 0 ? 22 : 33);
 			assert.equal(frame.executionImage.executionDomainId, 0);
 		}
@@ -250,7 +250,7 @@ test('warm continuations resolve the live instruction socket after an in-block M
 			memory.writeMappedWord(IO_CART_SELECT, slot);
 			frame.registers.setNumber(0, 1 - slot); frame.registers.setNumber(4, slot ^ 1);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], CART_ROM_BASE + MAPPED_PAGE_BYTE_SIZE);
-			assert.equal(cpu.runUntilDepth(0, 6), RunResult.Yielded);
+			assert.equal(cpu.runUntilDepth(0, 11), RunResult.Yielded);
 			assert.equal(frame.registers.getNumber(3), 1 - slot);
 			assert.equal(frame.registers.getNumber(6), slot, 'the first instruction after the mux write comes from the newly selected ROM');
 			assert.equal(frame.pc, CART_ROM_BASE); assert.equal(cpu.instructionBudgetRemaining, 0);
@@ -264,7 +264,7 @@ test('warm continuations resolve the live instruction socket after an in-block M
 		memory.cartridgeController.installRom(1, replacement); memory.writeMappedWord(IO_CART_SELECT, 1);
 		const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setNumber(4, 1);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], CART_ROM_BASE + MAPPED_PAGE_BYTE_SIZE);
-		cpu.runUntilDepth(0, 6); assert.equal(frame.registers.getNumber(6), 7);
+		cpu.runUntilDepth(0, 11); assert.equal(frame.registers.getNumber(6), 7);
 	}
 	assert.equal(lookup.find(CART_ROM_BASE + MAPPED_PAGE_BYTE_SIZE, 1), page);
 	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
@@ -301,7 +301,7 @@ for (const cartridgeBound of [false, true]) test(`cross-page links follow the in
 	const domain = cartridgeBound ? 0 : SYSTEM_EXECUTION_DOMAIN_ID;
 	const functionAddress = cartridgeBound ? pair.cartSymbols.functionAddresses[0] : pair.systemSymbols.functionAddresses[0];
 	for (const { cpu, memory } of machines) {
-		if (cartridgeBound) cpu.runUntilDepth(0, 4);
+		if (cartridgeBound) cpu.runUntilDepth(0, 7);
 		memory.writeBytes(DYNAMIC_RAM_BASE, ram);
 		const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setNumber(5, IO_CART_SELECT); frame.registers.setNumber(4, 73);
 		for (const slot of [0, 1]) {
@@ -321,7 +321,7 @@ for (const cartridgeBound of [false, true]) test(`cross-page links follow the in
 	for (const select of [0, 1, 0xffffffff, 0xfffffffe, 1]) {
 		for (const { cpu, memory } of machines) {
 			memory.writeMappedWord(IO_CART_SELECT, select); cpu.writeFrameExecution(0, domain, functionAddress, DYNAMIC_RAM_BASE);
-			assert.equal(cpu.runUntilDepth(0, 6), RunResult.Yielded);
+			assert.equal(cpu.runUntilDepth(0, 11), RunResult.Yielded);
 			const frame = cpu.rootThread.frameAtDepth(0);
 			assert.equal(frame.registers.getNumber(0), select); assert.equal(frame.registers.getNumber(2), select);
 			assert.equal(frame.registers.getNumber(3), !cartridgeBound && (select & 1) !== 0 ? 22 : 11);
@@ -388,7 +388,7 @@ for (const ramRecord of [false, true]) {
 			memory.writeBytes(record, pair.systemRomBytes.subarray(template, template + BLUA32_FUNCTION_RECORD_SIZE));
 			memory.writeMappedU32LE(record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, code);
 			memory.writeBytes(code, systemText.subarray(9 * INSTRUCTION_BYTES));
-			assert.equal(cpu.runUntilDepth(0, 4), RunResult.Yielded);
+			assert.equal(cpu.runUntilDepth(0, 7), RunResult.Yielded);
 			assert.equal(cpu.readFrameExecutionDomain(0), 0, 'EXEC establishes socket 0 before SELECT changes');
 			memory.writeMappedWord(IO_CART_SELECT, 1);
 			assert.equal(memory.readMappedU32LE(pair.cartSymbols.functionAddresses[1]), other.cartImage.functions[2].codeAddress,
