@@ -2,77 +2,43 @@
 """Send physical SNES Mini input events over SSH."""
 
 import argparse
-import shlex
-import struct
-import subprocess
+from contextlib import ExitStack
 import sys
 import time
 
-
-# The Mini is 32-bit, so its input_event has two 32-bit timeval fields.
-INPUT_EVENT = struct.Struct("<iiHHi")
-EV_SYN = 0
-EV_KEY = 1
-KEY_HOME = 102
-KEY_VOLUMEUP = 115
-BUTTONS = {
-    "a": 0x130,
-    "b": 0x131,
-    "x": 0x133,
-    "y": 0x134,
-    "l": 0x136,
-    "r": 0x137,
-    "select": 0x13a,
-    "start": 0x13b,
-    "left": 0x2c0,
-    "right": 0x2c1,
-    "up": 0x2c2,
-    "down": 0x2c3,
-}
+from input_stream import BUTTONS, INPUT_EVENT, KEY_HOME, KEY_VOLUMEUP, input_packet, open_input_stream, write_input
 
 
-def send_input(target, device_name, codes, duration_ms, repeat):
-    remote = f'''\
-for name in /sys/class/input/event*/device/name; do
-    [ "$(cat "$name")" = {shlex.quote(device_name)} ] || continue
-    event=${{name#/sys/class/input/}}
-    event=${{event%%/*}}
-    exec 3>"/dev/input/$event" || exit 1
-    printf 'READY\\n'
-    exec dd bs=16 iflag=fullblock >&3 2>/dev/null
-done
-printf 'Input device not found: %s\\n' {shlex.quote(device_name)} >&2
-exit 1
-'''
-    process = subprocess.Popen(
-        ["ssh", "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "--", target, remote],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, bufsize=0,
-    )
-    if process.stdout.readline() != b"READY\n":
-        process.stdin.close()
-        process.stdout.close()
-        return process.wait() or 1
-
-    sync = INPUT_EVENT.pack(0, 0, EV_SYN, 0, 0)
-    press = b"".join(INPUT_EVENT.pack(0, 0, EV_KEY, code, 1) for code in codes) + sync
-    release = b"".join(INPUT_EVENT.pack(0, 0, EV_KEY, code, 0) for code in codes) + sync
+def send_input(target, devices, duration_ms):
+    streams = []
     try:
-        process.stdin.write(press)
-        deadline = time.monotonic() + duration_ms / 1000
-        if repeat:
-            # Clovercon polls the physical controller and releases injected keys.
-            while time.monotonic() < deadline:
-                time.sleep(0.001)
-                process.stdin.write(press)
-        else:
-            time.sleep(duration_ms / 1000)
+        for device_name, codes, repeat in devices:
+            packet_bytes = INPUT_EVENT.size * (len(codes) + 1)
+            process = open_input_stream(target, device_name, packet_bytes)
+            press = input_packet(codes, True)
+            release = input_packet(codes, False)
+            streams.append((process, press, release, repeat))
+
+        with ExitStack() as pressed:
+            for process, press, release, repeat in streams:
+                pressed.callback(write_input, process.stdin, release)
+                write_input(process.stdin, press)
+            deadline = time.monotonic() + duration_ms / 1000
+            if any(repeat for _, _, _, repeat in streams):
+                # Clovercon polls the physical controller and releases injected keys.
+                while time.monotonic() < deadline:
+                    time.sleep(0.001)
+                    for process, press, _, repeat in streams:
+                        if repeat:
+                            write_input(process.stdin, press)
+            else:
+                time.sleep(duration_ms / 1000)
     finally:
-        try:
-            process.stdin.write(release)
-        finally:
+        for process, _, _, _ in streams:
             process.stdin.close()
             process.stdout.close()
-    return process.wait()
+        results = [process.wait() for process, _, _, _ in streams]
+    return next((result for result in results if result), 0)
 
 
 def main():
@@ -80,23 +46,39 @@ def main():
     parser.add_argument("--ssh", required=True, metavar="USER@HOST", help="SSH target for the Mini")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("reset", help="press and release the Mini's physical RESET input")
-    button = commands.add_parser("button", help="press a Clovercon button")
-    button.add_argument("button", type=str.lower, choices=BUTTONS)
+    keyboard = commands.add_parser("keyboard", help="control the Mini with the PC keyboard")
+    keyboard.add_argument("--player", type=int, choices=(1, 2), default=1)
+    button = commands.add_parser("button", help="press one or more buttons together")
+    button.add_argument("buttons", metavar="BUTTON", nargs="+", type=str.lower,
+                        choices=[*BUTTONS, "reset"],
+                        help="button names: " + ", ".join([*BUTTONS, "reset"]))
     button.add_argument("--player", type=int, choices=(1, 2), default=1)
-    button.add_argument("--duration-ms", type=int, default=500,
-                        help="reassert the button for this many milliseconds (default: 500)")
+    button.add_argument("--duration-ms", type=int,
+                        help="press interval in milliseconds (default: 100; reset alone: 150)")
     args = parser.parse_args()
+    if args.command == "keyboard":
+        from mini_keyboard import run_keyboard
+        return run_keyboard(args.ssh, args.player)
     if args.command == "reset":
-        return send_input(args.ssh, "sunxi-keyboard", (KEY_VOLUMEUP, KEY_HOME), 150, False)
-    if args.duration_ms <= 0:
-        parser.error("--duration-ms must be positive")
-    return send_input(args.ssh, f"Nintendo Clovercon - controller{args.player}",
-                      (BUTTONS[args.button],), args.duration_ms, True)
+        devices = [("sunxi-keyboard", (KEY_VOLUMEUP, KEY_HOME), False)]
+        duration_ms = 150
+    else:
+        if args.duration_ms is not None and args.duration_ms <= 0:
+            parser.error("--duration-ms must be positive")
+        buttons = tuple(dict.fromkeys(args.buttons))
+        codes = tuple(BUTTONS[name] for name in buttons if name != "reset")
+        devices = []
+        if codes:
+            devices.append((f"Nintendo Clovercon - controller{args.player}", codes, True))
+        if "reset" in buttons:
+            devices.append(("sunxi-keyboard", (KEY_VOLUMEUP, KEY_HOME), False))
+        duration_ms = args.duration_ms if args.duration_ms is not None else (100 if codes else 150)
+    try:
+        return send_input(args.ssh, devices, duration_ms)
+    except OSError as error:
+        print(f"SNES Mini input was not completed: {error}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except BrokenPipeError:
-        print("SNES Mini input connection closed before the button was released", file=sys.stderr)
-        sys.exit(1)
+    sys.exit(main())

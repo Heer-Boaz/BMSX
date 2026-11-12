@@ -38,23 +38,40 @@ the controller must be connected for controller commands.
 ```sh
 npm run control:snesmini -- --ssh root@169.254.13.37 button start
 npm run control:snesmini -- --ssh root@169.254.13.37 button left
+npm run control:snesmini -- --ssh root@169.254.13.37 button select start
 npm run control:snesmini -- --ssh root@169.254.13.37 button a --player 2
+npm run control:snesmini -- --ssh root@169.254.13.37 button reset
 npm run control:snesmini -- --ssh root@169.254.13.37 reset
+npm run control:snesmini -- --ssh root@169.254.13.37 keyboard
 ```
 
 Buttons are named by the SNES controller labels: `a`, `b`, `x`, `y`, `l`, `r`,
-`select`, `start`, `left`, `right`, `up` and `down`. Player 1 is the default.
+`select`, `start`, `left`, `right`, `up`, `down` and `reset`. Give multiple
+names to press them together; controller buttons are sent in one input report.
+RESET can be combined with controller buttons, but uses a separate device and
+SSH stream, so its timing relative to the controller is not exact. Player 1 is
+the default.
 The physical Clovercon driver continues polling and can release an injected
-button, so the command reasserts it for 500 ms by default (`--duration-ms`
+button, so the command reasserts it for 100 ms by default (`--duration-ms`
 changes that interval). This may produce multiple press/release edges, not one
 precise continuous hold; menu navigation may repeat and gameplay timing is not
 guaranteed.
 
-`reset` sends the same two-key press and release as the physical RESET switch.
+`keyboard` opens a small focus window; use the physical PC keyboard rather than
+clicking on buttons. The arrow keys are the D-pad, A/B/X/Y are the face buttons,
+L/R are the shoulders, Enter is Start, Backspace is Select and F5 is RESET.
+Closing the window or switching focus releases held buttons. This mode requires
+Python's Tk support and a connected Clovercon; it does not stream video. The
+same physical-driver limitation applies to held keys and long combinations.
+If SSH disconnects, the window stays open; F9 reconnects without replaying
+previous button presses.
+
+`button reset` and the shorter `reset` command send the same two-key press and
+release as the physical RESET switch. RESET alone defaults to 150 ms; when
+combined with controller buttons it uses the selected controller interval.
 It has the same effects, including ending a running game and potentially losing
 unsaved progress. The current BMSX host does not yet integrate with Clover's
-suspend/rewind protocol; RESET during a BMSX game can show Clover error C7 and
-does not create a suspend point.
+suspend/rewind protocol; RESET does not create a BMSX suspend point.
 
 ## Core build defaults
 
