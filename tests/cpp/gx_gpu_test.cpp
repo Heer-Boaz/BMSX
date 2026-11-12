@@ -6,6 +6,7 @@
 #include "machine/devices/irq/controller.h"
 #include "render/backend/gx_gpu_render_rules.h"
 #include "spec/bmsx/io.h"
+#include "spec/bmsx/memory_map.h"
 #include "machine/cpu/cpu.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
@@ -1263,6 +1264,45 @@ void testGp0IngressBypassesOnlyNopsAndExecutesDrawingStateInFifoOrder() {
 	require(harness.gpu.readDrawingOffsetWord() == 0u, "GX-GPU keeps E5 ordered behind E4");
 	runGpuAtNextDeadline(harness);
 	require(harness.gpu.readDrawingOffsetWord() == (0x00345678u & bmsx::GX_GPU_DRAWING_OFFSET_MASK), "GX-GPU executes E5 after E4");
+}
+
+void testDmaGp0PrefixCannotRunBeforeBurstPublication() {
+	GpuHarness target;
+	stopPcrtc(target);
+	target.dma.setTiming(1, 40, 1, 1, 0, 0);
+	target.gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+	for (const bmsx::u32 word : {0x020000ffu, 0u, 0x00010001u}) target.gpu.writeGp0(word);
+	const bmsx::u32 source = bmsx::DYNAMIC_RAM_BASE + 0x1000u;
+	const std::array<bmsx::u32, 4> packet{0x020000aau, 0u, 0x00010001u, 0x1f000000u};
+	for (size_t i = 0; i < packet.size(); ++i) target.memory.writeU32(source + 4u * static_cast<bmsx::u32>(i), packet[i]);
+	target.scheduler.advanceTo(10);
+	target.memory.writeMappedWord(bmsx::IO_DMA0_READ_ADDR, source);
+	target.memory.writeMappedWord(bmsx::IO_DMA0_TRANSFER_COUNT, packet.size());
+	target.memory.writeMappedWord(bmsx::IO_DMA0_CONTROL, bmsx::DMA_ROUTE_TO_GPU);
+	target.memory.writeMappedWord(bmsx::IO_DMA0_TRIGGER, bmsx::DMA_TRIGGER_START);
+	require(target.dma.cpuBusHeld(), "TO_GPU burst holds the CPU before publication");
+	const auto advance = [&](bmsx::i64 cycle) {
+		while (target.scheduler.nextDeadline() <= cycle) {
+			const bmsx::i64 deadline = target.scheduler.nextDeadline();
+			target.scheduler.advanceTo(deadline);
+			while (target.scheduler.hasDueTimer()) {
+				const auto kind = target.scheduler.popDueTimer();
+				if (kind == bmsx::DEVICE_SERVICE_GPU) target.gpu.onService(deadline);
+				else if (kind == bmsx::DEVICE_SERVICE_DMA) target.dma.onService(deadline);
+				else require(false, "unexpected device in DMA/GPU causality test");
+			}
+		}
+		target.scheduler.advanceTo(cycle);
+	};
+	for (const bmsx::i64 cycle : {28, 29, 57, 58, 59, 86}) {
+		advance(cycle);
+		require((target.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GPU) == 0u,
+			"DMA-supplied IRQ waits for fill starting at burst publication");
+	}
+	require(!target.dma.cpuBusHeld(), "the DMA burst has completed");
+	advance(87);
+	require((target.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GPU) != 0u,
+		"DMA-supplied IRQ starts when the post-publication fill completes");
 }
 
 void testQueuedIrqStartsAtPreviousCompletionAcrossRestore() {
@@ -5161,6 +5201,7 @@ int main() {
 	testCommandTimingGatesGpustatIdleAndVblankExecutionFrontier();
 	testGp0IngressBypassesOnlyNopsAndExecutesDrawingStateInFifoOrder();
 	testQueuedIrqStartsAtPreviousCompletionAcrossRestore();
+	testDmaGp0PrefixCannotRunBeforeBurstPublication();
 	testGp1CrtcRangeRegistersLatchMaskedRawWords();
 	testGp1UndefinedHighOpcodeDoesNotMirrorReset();
 	testGp0IrqRequestAndGp1Acknowledge();

@@ -13,7 +13,14 @@ import {
 	IRQ_GPU,
 	IRQ_GX_PCRTC,
 	IRQ_VBLANK,
+	IO_DMA0_READ_ADDR,
+	IO_DMA0_TRANSFER_COUNT,
+	IO_DMA0_CONTROL,
+	IO_DMA0_TRIGGER,
+	DMA_ROUTE_TO_GPU,
+	DMA_TRIGGER_START,
 } from '../../machine/ts/spec/bmsx/io';
+import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import {
 	GX_GPU_DRAW_MODE_DITHER_ENABLED,
 	GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH,
@@ -263,7 +270,7 @@ import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
-import { DEVICE_SERVICE_GPU, DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
+import { DEVICE_SERVICE_DMA, DEVICE_SERVICE_GPU, DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { PSX_MACHINE_SPEC, PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../machine/ts/spec/bmsx/model';
 import { executeGxGpuSoftwareVramCommands, renderGxGpuSoftwareFrame } from '../../machine/ts/render/backend/software/gx_gpu';
 import { executeGxGpuSoftwareCommands } from '../../machine/ts/render/backend/software/gx_gpu_commands';
@@ -1782,6 +1789,42 @@ test('GX-GPU does not mirror undefined GP1 40h to reset', () => {
 	gpu.writeGp1(GX_GPU_GP1_DISPLAY_MODE << 24);
 	gpu.writeGp1(0x40000000);
 	assert.equal(gpu.readDisplayModeWord(), 0);
+});
+
+test('DMA GP0 prefix cannot make queued commands begin before burst publication', () => {
+	const { memory, gpu, scheduler, dma } = createGpu();
+	stopPcrtc(memory, gpu, scheduler);
+	dma.setTiming(1, 40, 1, 1, 0, 0);
+	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+	for (const word of [0x020000ff, 0, 0x00010001]) gpu.writeGp0(word);
+	const source = DYNAMIC_RAM_BASE + 0x1000;
+	for (const [index, word] of [0x020000aa, 0, 0x00010001, 0x1f000000].entries()) memory.writeU32(source + 4 * index, word);
+	scheduler.advanceTo(10);
+	memory.writeMappedWord(IO_DMA0_READ_ADDR, source);
+	memory.writeMappedWord(IO_DMA0_TRANSFER_COUNT, 4);
+	memory.writeMappedWord(IO_DMA0_CONTROL, DMA_ROUTE_TO_GPU);
+	memory.writeMappedWord(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
+	assert.equal(dma.cpuBusHeld(), true);
+	const advance = (cycle: number) => {
+		while (scheduler.nextDeadline() <= cycle) {
+			const deadline = scheduler.nextDeadline();
+			scheduler.advanceTo(deadline);
+			while (scheduler.hasDueTimer()) {
+				const kind = scheduler.popDueTimer();
+				if (kind === DEVICE_SERVICE_GPU) gpu.onService(deadline);
+				else if (kind === DEVICE_SERVICE_DMA) dma.onService(deadline);
+				else assert.fail(`unexpected device ${kind}`);
+			}
+		}
+		scheduler.advanceTo(cycle);
+	};
+	for (const cycle of [28, 29, 57, 58, 59, 86]) {
+		advance(cycle);
+		assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, 0, `GPU IRQ before cycle 87 at ${cycle}`);
+	}
+	assert.equal(dma.cpuBusHeld(), false);
+	advance(87);
+	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, IRQ_GPU);
 });
 
 test('GX-GPU schedules an IRQ behind queued commands without treating payload as an opcode, including restore', () => {
