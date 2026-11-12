@@ -17,7 +17,7 @@ local paint<const> = function(self, clip, pose, force)
             source=self.patterns[0]
         elseif cell.visuals then source=cell.visuals[pose]
         else source=self.patterns[id] end
-        if cell.sources[cell.slot]~=source then cell.sources[cell.slot]=source end
+        self.tiles:set_tile_source(cell[1],cell[2],source)
         if cell.pattern ~= id then
             if cell.solid_row then
                 local row<const>,word<const>,mask<const> = cell.solid_row,cell.solid_word,cell.solid_mask
@@ -31,16 +31,9 @@ local paint<const> = function(self, clip, pose, force)
 end
 
 function haven.new(spec, tiles, solid_rows)
-    local self<const> = setmetatable({patterns=spec.patterns,clips=spec.clips,
+    local self<const> = setmetatable({patterns=spec.patterns,clips=spec.clips,tiles=tiles,
         solid={[0]=0},active={},next_clip=1,cargo_patterns={},cargo_rows={}},haven)
     for _,id in ipairs(spec.cargo_patterns) do self.cargo_patterns[id]=true end
-    -- Admit every empty pose cell before binding slots: insertion can move
-    -- later cells in the same retained row, but poses never change topology.
-    for _,clip in ipairs(self.clips) do
-        for _,cell in ipairs(clip.cells) do
-            if cell[4]==0 then tiles:admit_tile(cell[1],cell[2],spec.empty) end
-        end
-    end
     self.patterns[0]=tiles.art:resolve(spec.empty)
     for id=1,#self.patterns do self.patterns[id]=tiles.art:resolve(self.patterns[id]) end
     for _,clip in ipairs(self.clips) do
@@ -49,8 +42,8 @@ function haven.new(spec, tiles, solid_rows)
         if clip.max_health then clip.blast_hits={} end
         for cell_index,cell in ipairs(clip.cells) do
             local x<const>,y<const> = cell[1],cell[2]
-            cell.sources,cell.slot=tiles:bind_tile(x,y)
             cell.pattern=cell[4]
+            if cell[4]==0 then tiles:set_tile_source(x,y,self.patterns[0]) end
             if clip.visuals then
                 local visuals<const> = clip.visuals[cell_index]
                 for pose=1,#visuals do
@@ -59,7 +52,7 @@ function haven.new(spec, tiles, solid_rows)
                     else visuals[pose]=tiles.art:resolve(asset) end
                 end
                 cell.visuals=visuals
-                cell.sources[cell.slot]=visuals[1]
+                tiles:set_tile_source(x,y,visuals[1])
             end
             if cell[3]==1 then
                 cell.solid_row=solid_rows[y]

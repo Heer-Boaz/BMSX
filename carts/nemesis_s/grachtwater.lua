@@ -5,7 +5,7 @@ local water<const> = {}
 water.__index = water
 
 function water.new(spec, tape, tiles)
-    local self<const> = setmetatable({groups={}, origin=spec.origin_column, hold=spec.ticks_per_pose},water)
+    local self<const> = setmetatable({groups={}, tiles=tiles, origin=spec.origin_column, hold=spec.ticks_per_pose},water)
     for _,frames in ipairs(spec.frames) do
         for pose=1,#frames do frames[pose]=tiles.art:resolve(frames[pose]) end
     end
@@ -20,9 +20,8 @@ function water.new(spec, tape, tiles)
             self.groups[strip]=group
         end
         local n<const> = #group
-        local sources<const>,slot<const> = tiles:bind_tile(x,y)
-        group[n+1]=sources
-        group[n+2]=slot
+        group[n+1]=x
+        group[n+2]=y
         group[n+3]=frames
     end
     return self
@@ -34,7 +33,7 @@ function water:show(first,count)
         if group and group.drawn~=self.phase then
             local pose<const> = ((self.phase+group.offset)&7)+1
             for i=1,#group,3 do
-                group[i][group[i+1]]=group[i+2][pose]
+                self.tiles:set_tile_source(group[i],group[i+1],group[i+2][pose])
             end
             group.drawn=self.phase
         end

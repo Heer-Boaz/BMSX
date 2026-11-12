@@ -18,7 +18,7 @@ local assert_cargo_clear<const> = function(harbor,cargo)
     assert(cargo.health==0,'ordinary fire did not destroy the load')
     for _,cell in ipairs(cargo.cells) do
         if harbor.cargo_patterns[cell[cargo.pose+3]] then
-            assert(cell.pattern==0 and cell.sources[cell.slot]==harbor.patterns[0],
+            assert(cell.pattern==0 and harbor.tiles:source_at(cell[1],cell[2])==harbor.patterns[0],
                 'destroyed cargo returned in the animated tile layer')
             assert((cell.solid_row[cell.solid_word]&cell.solid_mask)==0,
                 'destroyed cargo left an invisible solid tile')
@@ -98,7 +98,7 @@ local passage<const> = function(t,left,anchor,row,altitude,moving,rewind)
         for _,cell in ipairs(cargo.cells) do
             if stage.harbor.cargo_patterns[cell[4]] then
                 local art<const> = cell.visuals and cell.visuals[1] or stage.harbor.patterns[cell[4]]
-                assert(cell.pattern==cell[4] and cell.sources[cell.slot]==art,
+                assert(cell.pattern==cell[4] and stage.stage_tiles:source_at(cell[1],cell[2])==art,
                     'checkpoint reset did not restore cargo art')
                 assert((cell.solid_row[cell.solid_word]&cell.solid_mask)~=0,
                     'checkpoint reset did not restore cargo collision')

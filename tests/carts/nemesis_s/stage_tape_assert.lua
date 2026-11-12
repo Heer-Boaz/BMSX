@@ -27,8 +27,8 @@ return {kind='integration',tests={
                     if definition.visuals then id=definition.visuals[cell_index][clip.pose]
                     else id=original.patterns[pattern] end
                     if id==0 or pattern==0 then id=original.empty end
-                    assert(cell.sources[cell.slot]==stage.tile_art:resolve(id),
-                        'animated bank cell changed its retained row-slot owner or pose')
+                    assert(stage.stage_tiles:source_at(cell[1],cell[2])==stage.tile_art:resolve(id),
+                        'animated bank cell changed its world position or pose')
                 end
                 harbor:tick()
             end

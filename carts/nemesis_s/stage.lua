@@ -83,7 +83,7 @@ end
 function stage:build_background(background, tape)
 	local tiles<const> = self.background_tiles
 	tiles:configure(tape.width,tape.background_rows,self.tile_size,self.tile_art)
-	stage_tape.admit_rows(tape,tape.background,tape.background_rows,tiles)
+	stage_tape.bind_rows(tape,tape.background,tape.background_rows,tiles)
 	self.star_spans = background.star_spans
 	self.night_sky_height = background.night_sky_height
 end
@@ -98,7 +98,7 @@ function stage:build_tape()
 	self:build_background(stage_data.background,tape)
 	local stage_tiles<const> = self.stage_tiles
 	stage_tiles:configure(tape.width,tape.height,self.tile_size,self.tile_art)
-	stage_tape.admit_rows(tape,tape.foreground,tape.height,stage_tiles)
+	stage_tape.bind_rows(tape,tape.foreground,tape.height,stage_tiles)
 	self.solid_tape = stage_tape.collision_rows(tape)
 	self.harbor=havenanimatie.new(stage_data.harbor_animation,stage_tiles,self.solid_tape)
 	self.water=grachtwater.new(stage_data.water_animation,tape,stage_tiles)

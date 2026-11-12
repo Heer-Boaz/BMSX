@@ -12,14 +12,12 @@ function tape.open(address)
     }
 end
 
-function tape.admit_rows(view, directory, height, tiles)
+function tape.bind_rows(view, directory, height, tiles)
     local rows<const>: *word = directory
     for y=1,height do
-        local cells<const>: *u16 = view.address+rows[(y-1)*2]
-        local count<const> = rows[(y-1)*2+1]
-        for index=0,count-1 do
-            tiles:admit_tile(cells[index*2],y,cells[index*2+1])
-        end
+        local row<const> = tiles._rows[y]
+        row.tape_address = view.address + rows[(y-1)*2]
+        row.tape_count = rows[(y-1)*2+1]
     end
 end
 

@@ -57,7 +57,7 @@ local flight_and_checkpoints<const> = function(t)
         local x<const>,y<const> = ship:get_global_position()
         local row<const> = rows[(y+4)//stage.tile_size+1]
         local column<const> = stage.left_tile+(x+8)//stage.tile_size
-        for slot=1,row.source_count do
+        for slot=row.first_visible_source,row.last_visible_source do
             if row.columns[slot]==column and row.sources[slot] then
                 crossed_art=true
                 crossed_source=row.sources[slot]
@@ -135,15 +135,7 @@ return {kind='integration',tests={
             and (registered_background==nil or registered_background==next_stage.background_tiles)
             and (registered_stars==nil or registered_stars==next_stage.starfield),
             'scene replacement retained an old registered scenery owner')
-        local reused_view=false
-        local next_row<const> = next_stage.background_tiles._rows[previous.row]
-        for slot=1,next_row.source_count do
-            if next_row.columns[slot]==previous.column then
-                reused_view=next_row.sources[slot]==previous.source
-                break
-            end
-        end
-        assert(reused_view,
+        assert(next_stage.background_tiles:source_at(previous.column,previous.row)==previous.source,
             'a new game allocated another atlas-held view for the same background tile')
         wait_update(t)
         t:capture('new game restores the space approach')

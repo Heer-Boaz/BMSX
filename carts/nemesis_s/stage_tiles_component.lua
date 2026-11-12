@@ -7,15 +7,77 @@ local stage_tiles<const> = {}
 stage_tiles.__index = stage_tiles
 setmetatable(stage_tiles, { __index = visual_2d_component })
 
-local find_slot<const> = function(row, column)
-    local first, last = 1, row.source_count
-    local columns<const> = row.columns
-    while first <= last do
-        local middle<const> = (first + last) // 2
-        if columns[middle] < column then first = middle + 1
-        else last = middle - 1 end
+-- Sparse ROM rows are sorted by world column. Only the visible interval is
+-- materialized; duplicate ring slots keep the draw span contiguous at wrap.
+local lower_bound<const> = function(address, count, column)
+    local cells<const>: *u16 = address
+    local first, last = 0, count
+    while first < last do
+        local middle<const> = (first + last) >> 1
+        if cells[middle * 2] < column then first = middle + 1
+        else last = middle end
     end
     return first
+end
+
+function stage_tiles:source_at(column, y)
+    local row<const> = self._rows[y]
+    local source<const> = row.overrides[column]
+    if source ~= nil then return source end
+    local cells<const>: *u16 = row.tape_address
+    local index<const> = lower_bound(cells, row.tape_count, column)
+    if index < row.tape_count and cells[index * 2] == column then
+        return self.art:resolve(cells[index * 2 + 1])
+    end
+end
+
+local write_slot<const> = function(self, row, slot, column, source)
+    local capacity<const> = self._window_capacity
+    local copy<const> = slot + capacity
+    local domain_columns<const> = self._coordinate_domain_columns
+    local domain<const> = ((column - 1) // domain_columns) + 1
+    local position<const> = gp0.pair16(((column - 1) % domain_columns) * self._tile_size,
+        (row.row_index - 1) * self._tile_size)
+    row.columns[slot], row.columns[copy] = column, column
+    row.coordinate_domains[slot], row.coordinate_domains[copy] = domain, domain
+    row.sources[slot], row.sources[copy] = source, source
+    row.position_words[slot], row.position_words[copy] = position, position
+end
+
+local clear_slot<const> = function(self, row, slot)
+    local copy<const> = slot + self._window_capacity
+    row.columns[slot], row.columns[copy] = nil, nil
+    row.coordinate_domains[slot], row.coordinate_domains[copy] = nil, nil
+    row.sources[slot], row.sources[copy] = nil, nil
+    row.position_words[slot], row.position_words[copy] = nil, nil
+end
+
+local rebuild_row<const> = function(self, row, first, last)
+    local capacity<const> = self._window_capacity
+    local head<const> = row.first_visible_source
+    local count<const> = row.source_count
+    for i = 0, count - 1 do
+        local slot = head + i
+        if slot > capacity then slot = slot - capacity end
+        clear_slot(self, row, slot)
+    end
+    local cells<const>: *u16 = row.tape_address
+    local index = lower_bound(cells, row.tape_count, first)
+    local added = 0
+    for column = first, last do
+        local source = row.overrides[column]
+        if index < row.tape_count and cells[index * 2] == column then
+            if source == nil then source = self.art:resolve(cells[index * 2 + 1]) end
+            index = index + 1
+        end
+        if source ~= nil then
+            added = added + 1
+            write_slot(self, row, added, column, source)
+        end
+    end
+    row.first_visible_source = 1
+    row.last_visible_source = added
+    row.source_count = added
 end
 
 function stage_tiles.new(owner, configuration, id_local)
@@ -35,58 +97,100 @@ function stage_tiles:configure(columns, row_count, tile_size, art)
     self._coordinate_domain_columns = gp0.signed_coordinate_extent // tile_size
     self._first_visible_column = 0
     self._last_visible_column = 0
+    self._window_capacity = 0
     for y = 1, row_count do
         local row<const> = tile_layer_row.new()
         row.row_index = y
-        row.dirty = false
+        row.overrides = {}
         self._rows[y] = row
     end
     self:set_draw_function(stage_tiles.draw_visual)
 end
 
--- Admission builds the ordered native row once. The map arrives in row order;
--- the few initially empty animation cells are inserted before any slot binds.
-function stage_tiles:admit_tile(x, y, imgid)
+-- Scenery changes persist independently of whether their world column is in
+-- the current render window; a visible source updates both ring copies.
+function stage_tiles:set_tile_source(x, y, source)
     local row<const> = self._rows[y]
-    local count<const> = row.source_count
-    local slot = count + 1
-    if count ~= 0 and x <= row.columns[count] then
-        slot = find_slot(row, x)
-        if row.columns[slot] == x then
-            row.sources[slot] = self.art:resolve(imgid)
+    row.overrides[x] = source
+    if x < self._first_visible_column or x > self._last_visible_column then return end
+    local first, last = row.first_visible_source, row.last_visible_source
+    while first <= last do
+        local middle<const> = (first + last) >> 1
+        local column<const> = row.columns[middle]
+        if column < x then first = middle + 1
+        elseif column > x then last = middle - 1
+        else
+            local slot = middle
+            if slot > self._window_capacity then slot = slot - self._window_capacity end
+            row.sources[slot], row.sources[slot + self._window_capacity] = source, source
             return
         end
-        for index = count, slot, -1 do
-            row.columns[index + 1] = row.columns[index]
-            row.coordinate_domains[index + 1] = row.coordinate_domains[index]
-            row.sources[index + 1] = row.sources[index]
-            row.position_words[index + 1] = row.position_words[index]
-        end
     end
-    local domain_columns<const> = self._coordinate_domain_columns
-    local tile_size<const> = self._tile_size
-    row.columns[slot] = x
-    row.coordinate_domains[slot] = ((x - 1) // domain_columns) + 1
-    row.sources[slot] = self.art:resolve(imgid)
-    row.position_words[slot] = gp0.pair16(((x - 1) % domain_columns) * tile_size, (y - 1) * tile_size)
-    row.source_count = count + 1
-end
-
--- Animation retains this source array and slot. No world-index lookup or
--- topology change is needed when a water pose or moving cargo tile changes.
-function stage_tiles:bind_tile(x, y)
-    local row<const> = self._rows[y]
-    local slot<const> = find_slot(row, x)
-    return row.sources, slot
+    rebuild_row(self, row, self._first_visible_column, self._last_visible_column)
 end
 
 function stage_tiles:set_visible_columns(first, count)
     local last<const> = math.min(first + count - 1, self.columns)
-    if first == self._first_visible_column and last == self._last_visible_column then return end
-    self._first_visible_column = first
-    self._last_visible_column = last
+    local old_first<const>, old_last<const> = self._first_visible_column, self._last_visible_column
+    if first == old_first and last == old_last then return end
+    local old_capacity<const> = self._window_capacity
+    self._first_visible_column, self._last_visible_column = first, last
+    if old_capacity ~= count then
+        -- A changed viewport size gives every row a new ring representation.
+        for y = 1, self._row_count do
+            local row<const> = self._rows[y]
+            for slot = 1, old_capacity * 2 do
+                row.columns[slot], row.coordinate_domains[slot] = nil, nil
+                row.sources[slot], row.position_words[slot] = nil, nil
+            end
+            row.source_count, row.first_visible_source, row.last_visible_source = 0, 1, 0
+        end
+        self._window_capacity = count
+    end
+    local capacity<const> = self._window_capacity
+    local forward<const> = old_capacity == count and first == old_first + 1
+        and (last == old_last + 1 or last == old_last)
+    local backward<const> = old_capacity == count and first == old_first - 1
+        and (last == old_last - 1 or last == old_last)
     for y = 1, self._row_count do
-        tile_layer_row.select_visible(self._rows[y], first, last)
+        local row<const> = self._rows[y]
+        if forward then
+            local head, n = row.first_visible_source, row.source_count
+            if n > 0 and row.columns[head] < first then
+                clear_slot(self, row, head)
+                head = head + 1
+                if head > capacity then head = 1 end
+                n = n - 1
+            end
+            if last > old_last then
+                local source<const> = self:source_at(last, y)
+                if source ~= nil then
+                    local slot = head + n
+                    if slot > capacity then slot = slot - capacity end
+                    write_slot(self, row, slot, last, source)
+                    n = n + 1
+                end
+            end
+            row.first_visible_source, row.last_visible_source, row.source_count = head, head + n - 1, n
+        elseif backward then
+            local head, n = row.first_visible_source, row.source_count
+            if n > 0 and row.columns[head + n - 1] > last then
+                local slot = head + n - 1
+                if slot > capacity then slot = slot - capacity end
+                clear_slot(self, row, slot)
+                n = n - 1
+            end
+            local source<const> = self:source_at(first, y)
+            if source ~= nil then
+                head = head - 1
+                if head == 0 then head = capacity end
+                write_slot(self, row, head, first, source)
+                n = n + 1
+            end
+            row.first_visible_source, row.last_visible_source, row.source_count = head, head + n - 1, n
+        else
+            rebuild_row(self, row, first, last)
+        end
     end
 end
 
