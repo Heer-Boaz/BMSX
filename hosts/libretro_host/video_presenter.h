@@ -23,6 +23,7 @@ void video_presenter_surface_changed(void);
 void video_presenter_begin_frame(bool drop_presentation);
 bool video_presenter_end_frame(void);
 void video_presenter_refresh(const void* data, unsigned width, unsigned height, size_t pitch);
+bool video_presenter_save_screenshot(const char* path);
 
 void video_presenter_map_surface_point(
 		int surface_x,

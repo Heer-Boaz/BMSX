@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <time.h>
 #include "host_shortcuts.h"
 
 static uint32_t sdl_buttons;
@@ -25,6 +26,14 @@ static BmsxHostShortcutState keyboard_shortcuts;
 static BmsxHostShortcutState gamepad_shortcuts;
 static uint32_t keyboard_buttons;
 static const char* evdev_name;
+static uint64_t clock_milliseconds = 1000;
+
+static int test_clock_gettime(clockid_t clock, struct timespec* value) {
+	(void)clock;
+	value->tv_sec = (time_t)(clock_milliseconds / 1000);
+	value->tv_nsec = (long)((clock_milliseconds % 1000) * 1000000);
+	return 0;
+}
 
 static int test_ioctl(int fd, unsigned long request, ...) {
 	(void)fd;
@@ -60,12 +69,14 @@ static Uint8 test_controller_button(SDL_GameController* controller, SDL_GameCont
 #define SDL_PumpEvents test_pump_events
 #define SDL_PollEvent test_poll_event
 #define ioctl test_ioctl
+#define clock_gettime test_clock_gettime
 #include "../../hosts/libretro_host/input_devices.c"
 #undef SDL_GameControllerGetButton
 #undef SDL_GameControllerClose
 #undef SDL_PumpEvents
 #undef SDL_PollEvent
 #undef ioctl
+#undef clock_gettime
 
 static void require(bool condition, const char* message) {
 	if (!condition) {
@@ -389,6 +400,63 @@ static void test_evdev_controller_layouts(void) {
 	close(pipes[2][1]);
 }
 
+static void test_clover_reset_hold(void) {
+	int first[2], second[2];
+	require(pipe2(first, O_NONBLOCK) == 0 && pipe2(second, O_NONBLOCK) == 0,
+		"Clover reset test owns two input sources");
+	g_input_devices = (InputDevices){.device_count = 2, .clover_reset_enabled = true};
+	g_input_devices.devices[0] = (InputDevice){.fd = first[0]};
+	g_input_devices.devices[1] = (InputDevice){.fd = second[0]};
+	const struct input_event select_down = {.type = EV_KEY, .code = BTN_SELECT, .value = 1};
+	const struct input_event start_down = {.type = EV_KEY, .code = BTN_START, .value = 1};
+	const struct input_event start_up = {.type = EV_KEY, .code = BTN_START, .value = 0};
+	require(write(first[1], &select_down, sizeof(select_down)) == sizeof(select_down)
+		&& write(second[1], &start_down, sizeof(start_down)) == sizeof(start_down), "publish split chord");
+	clock_milliseconds = 1000;
+	poll_evdev_devices();
+	clock_milliseconds = 2000;
+	poll_evdev_devices();
+	require(!input_devices_quit_requested() && g_input_devices.clover_reset_start_milliseconds == 0,
+		"buttons on different controllers cannot form a reset hold");
+	require(write(first[1], &start_down, sizeof(start_down)) == sizeof(start_down), "complete chord on one source");
+	poll_evdev_devices();
+	clock_milliseconds = 2499;
+	poll_evdev_devices();
+	require(!input_devices_quit_requested() && (g_input_devices.pad_state & kCloverResetButtons) == kCloverResetButtons,
+		"a short chord remains available to the core without quitting");
+	require(write(first[1], &start_up, sizeof(start_up)) == sizeof(start_up), "release before hold threshold");
+	poll_evdev_devices();
+	clock_milliseconds = 3000;
+	require(write(first[1], &start_down, sizeof(start_down)) == sizeof(start_down), "press a fresh chord");
+	poll_evdev_devices();
+	clock_milliseconds = 3499;
+	poll_evdev_devices();
+	require(!input_devices_quit_requested(), "the fresh chord must hold for the full threshold");
+	clock_milliseconds = 3500;
+	poll_evdev_devices();
+	require(input_devices_quit_requested(), "Clover Select+Start requests normal host shutdown at 500 ms");
+	close(first[0]); close(first[1]); close(second[0]); close(second[1]);
+
+	g_input_devices = (InputDevices){0};
+	clock_milliseconds = 4000;
+	finalize_pad_state(kCloverResetButtons, true);
+	clock_milliseconds = 5000;
+	finalize_pad_state(kCloverResetButtons, true);
+	require(!input_devices_quit_requested(), "standalone hosts retain their existing menu/rewind gesture");
+
+	const uint16_t old_combo = (1u << RETRO_DEVICE_ID_JOYPAD_START)
+		| (1u << RETRO_DEVICE_ID_JOYPAD_L) | (1u << RETRO_DEVICE_ID_JOYPAD_R);
+	clock_milliseconds = 6000;
+	finalize_pad_state(old_combo, false);
+	clock_milliseconds = 7999;
+	finalize_pad_state(old_combo, false);
+	require(!input_devices_quit_requested(), "the existing exit combo retains its own threshold");
+	clock_milliseconds = 8000;
+	finalize_pad_state(old_combo, false);
+	require(input_devices_quit_requested(), "the existing exit combo still works");
+	g_input_devices = (InputDevices){0};
+}
+
 // Mapping tests never enter the window/presentation owner.
 bool bmsx_video_context_refresh_drawable_size(void) { abort(); }
 void video_presenter_surface_changed(void) { abort(); }
@@ -429,14 +497,14 @@ int main(void) {
 		sdl_buttons = 1u << bindings[index].sdl;
 		require(sdl_controller_pad_state() == expected,
 			"the shipping SDL table emits the same positional RetroPad bits");
-		finalize_pad_state(sdl_controller_pad_state());
+		finalize_pad_state(sdl_controller_pad_state(), false);
 		for (unsigned button = 0; button < 16; ++button) {
 			require(input_devices_state(0, RETRO_DEVICE_JOYPAD, 0, button) == (button == bindings[index].retro),
 				"the public frontend callback exposes exactly the mapped button");
 		}
 		sdl_buttons = 0;
 		require(sdl_controller_pad_state() == 0, "releasing a physical SDL button clears its RetroPad contribution");
-		finalize_pad_state(sdl_controller_pad_state());
+		finalize_pad_state(sdl_controller_pad_state(), false);
 		require(input_devices_state(0, RETRO_DEVICE_JOYPAD, 0, bindings[index].retro) == 0,
 			"the public frontend callback releases the mapped button");
 		all_buttons |= expected;
@@ -454,6 +522,7 @@ int main(void) {
 	test_keyups_before_source_cancellation();
 	test_evdev_pad_release_before_eof();
 	test_evdev_controller_layouts();
+	test_clover_reset_hold();
 	puts("LIBRETRO-HOST-INPUT-DEVICES:PASS");
 	return 0;
 }

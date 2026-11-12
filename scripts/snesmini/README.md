@@ -70,8 +70,24 @@ previous button presses.
 release as the physical RESET switch. RESET alone defaults to 150 ms; when
 combined with controller buttons it uses the selected controller interval.
 It has the same effects, including ending a running game and potentially losing
-unsaved progress. The current BMSX host does not yet integrate with Clover's
-suspend/rewind protocol; RESET does not create a BMSX suspend point.
+unsaved progress.
+
+## Clover suspend points
+
+The Mini launcher disables background rewind recording and passes Clover's
+suspend-point paths to the host. After RESET, press Down in the Clover menu and
+save the temporary point to a slot with Y. Select a saved point and press Start
+to resume the game. The host stores a compressed libretro state, a screenshot
+and the accumulated playtime; Clover manages the slots.
+
+Holding Select and Start together on one controller for 500 ms exits the game
+through the same suspend-point path as RESET. A shorter press keeps the BMSX
+host-menu shortcut. This replaces the long-press rewind shortcut for Clover
+launches; standalone libretro hosts keep their existing shortcuts.
+
+Rewind is not implemented for these points. Clover still displays its X Rewind
+option, but selecting it returns to the menu without changing the point. State
+compatibility across different core, BIOS or cartridge builds is not guaranteed.
 
 ## Core build defaults
 

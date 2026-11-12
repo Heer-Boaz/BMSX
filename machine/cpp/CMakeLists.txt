@@ -590,6 +590,7 @@ if(BMSX_BUILD_LIBRETRO_HOST)
 
 	add_executable(bmsx_libretro_host
 		${BMSX_LIBRETRO_HOST_DIR}/main.c
+		${BMSX_LIBRETRO_HOST_DIR}/clover.c
 		${BMSX_LIBRETRO_HOST_DIR}/audio_output.c
 		${BMSX_LIBRETRO_HOST_DIR}/audio_queue.c
 		${BMSX_LIBRETRO_HOST_DIR}/core_options.c
@@ -738,6 +739,12 @@ if(BMSX_BUILD_TESTS)
 			add_test(NAME bmsx_libretro_host_signals_tests
 				COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/platform/libretro_host_signals_test.py
 					$<TARGET_FILE:bmsx_libretro_host> $<TARGET_FILE:bmsx_libretro_host_signal_test_core>)
+			add_library(bmsx_libretro_host_clover_test_core SHARED
+				${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_clover_core.c)
+			target_include_directories(bmsx_libretro_host_clover_test_core PRIVATE ${BMSX_LIBRETRO_DIR})
+			add_test(NAME bmsx_libretro_host_clover_tests
+				COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/platform/libretro_host_clover_test.py
+					$<TARGET_FILE:bmsx_libretro_host> $<TARGET_FILE:bmsx_libretro_host_clover_test_core>)
 		endif()
 		add_executable(bmsx_libretro_host_audio_queue_tests
 			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_audio_queue_test.c

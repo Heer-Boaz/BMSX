@@ -117,7 +117,7 @@ test('separate local SNES collections use Hakchi games_snes without moving unrel
 	await assert.rejects(stat(join(options.hakchiDirectory, 'games')), { code: 'ENOENT' });
 });
 
-test('Clover state/transition arguments never reach the strict custom host or enable its rewind', async t => {
+test('Clover arguments reach the host separately while rewind recording stays off', async t => {
 	const { root, options } = await fixture(t);
 	await updateHakchiCollection({ ...options, bundle: await prepareMiniPackage(options) });
 	const game = options.profile.games[0], pc = join(options.hakchiDirectory, 'games', game.code);
@@ -132,7 +132,9 @@ test('Clover state/transition arguments never reach the strict custom host or en
 		'--rollback-mode', 'record', '--rollback-output-dir', '/clover/rollback']);
 	assert.deepEqual((await readFile(argumentsPath, 'utf8')).trimEnd().split('\n'), [
 		join(pc, `${game.target}.rom`), '--core', '/root/bmsx_libretro.so', '--system-dir', '/root',
-		'--save-dir', `/var/saves/${game.code}`, '--backend', 'gles2',
+		'--save-dir', `/var/saves/${game.code}`, '--backend', 'gles2', '--rewind', 'off', '--clover',
+		'--save-data-backing-file', 'cartridge.sram', '--title-code', game.code, '--video-mode', 'keep-aspect-ratio',
+		'--start-transition-fd', '13', '--rollback-mode', 'record', '--rollback-output-dir', '/clover/rollback',
 	]);
 });
 

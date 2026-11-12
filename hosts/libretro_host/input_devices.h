@@ -14,6 +14,7 @@ typedef enum BmsxInputDriverKind {
 void input_devices_open(
 		BmsxInputDriverKind driver,
 		bool initial_focus,
+		bool clover_reset_enabled,
 		const BmsxVideoSurface* surface);
 void input_devices_close(void);
 void input_devices_set_cancel_gamepad_callback(bmsx_cancel_gamepad_input_t callback);

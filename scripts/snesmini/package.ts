@@ -23,13 +23,11 @@ export function renderCloverDesktop(game: MiniGame, mediaRoot: string): string {
 }
 
 function renderCloverLauncher(game: MiniGame, rom: string): string {
-	// Clover appends its Nintendo emulator's state/transition/rollback arguments.
-	// This platform entrypoint owns the custom host's argument vector, not "$@".
+	// Clover's arguments are parsed separately from the host's own options.
 	return '#!/bin/sh\n'
-		+ '# Clover emulator options are not BMSX custom-host options.\n'
 		+ 'directory=$(dirname "$0")\n'
 		+ `exec /root/bmsx_libretro_host "$directory"/${quotePosixArgument(rom)} --core /root/bmsx_libretro.so --system-dir /root `
-		+ `--save-dir ${quotePosixArgument(`/var/saves/${game.code}`)} --backend gles2 > ${quotePosixArgument(`/var/log/bmsx-${game.code}.log`)} 2>&1\n`;
+		+ `--save-dir ${quotePosixArgument(`/var/saves/${game.code}`)} --backend gles2 --rewind off --clover "$@" > ${quotePosixArgument(`/var/log/bmsx-${game.code}.log`)} 2>&1\n`;
 }
 
 export async function prepareMiniPackage(options: {

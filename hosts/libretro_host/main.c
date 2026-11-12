@@ -14,6 +14,7 @@
 
 #include "libretro.h"
 #include "audio_output.h"
+#include "clover.h"
 #include "core_session.h"
 #include "core_options.h"
 #include "frame_pacer.h"
@@ -128,6 +129,8 @@ int main(int argc, char** argv) {
 	bool audio_disabled = false;
 	bool profile_native_compilation = false;
 	bool hidden_window = false;
+	bool clover_launch = false;
+	BmsxClover clover = {0};
 	uint64_t maximum_run_frames = 0;
 	uint64_t run_frame_count = 0;
 	unsigned alsa_underruns_at_timing_start = 0u;
@@ -141,6 +144,11 @@ int main(int argc, char** argv) {
 	const char* video_backend = "fb";
 
 	for (int i = 1; i < argc; ++i) {
+		if (strcmp(argv[i], "--clover") == 0) {
+			clover_launch = true;
+			clover_read_arguments(&clover, argc - i - 1, argv + i + 1);
+			break;
+		}
 		if (strcmp(argv[i], "--core-option") == 0) {
 			const char* key = required_arg(argc, argv, &i);
 			const char* value = required_arg(argc, argv, &i);
@@ -273,6 +281,10 @@ int main(int argc, char** argv) {
 	if (!no_game && !game_path) {
 		usage(argv[0]);
 	}
+	if (clover.replay) {
+		fprintf(stderr, "[libretro-host] Clover rewind is not supported yet\n");
+		return 0;
+	}
 	if (no_game && slot1_path) {
 		usage(argv[0]);
 	}
@@ -354,7 +366,7 @@ int main(int argc, char** argv) {
 	BmsxVideoSurface* video_surface =
 			bmsx_video_context_open(video_context_kind, hidden_window);
 	video_presenter_open(video_surface, &frame_timing);
-	input_devices_open(input_driver, !hidden_window, video_surface);
+	input_devices_open(input_driver, !hidden_window, clover_launch, video_surface);
 
 	core->retro_init();
 	if (profile_native_compilation && !session.native_compilation_profile_interface_set)
@@ -381,6 +393,10 @@ int main(int argc, char** argv) {
 	video_presenter_update_av_info(&av);
 	core_session_update_timing(&session, &av.timing);
 	video_presenter_activate_core_context();
+	if (clover_launch && !clover_load_state(&clover, core)) {
+		host_fatal("[libretro-host] Failed to load the Clover suspend point");
+	}
+	const uint64_t clover_start_ns = monotonic_ns();
 	fprintf(stderr, "[libretro-host] av: base=%ux%u max=%ux%u fps=%.2f sr=%.2f\n",
 			av.geometry.base_width, av.geometry.base_height,
 			av.geometry.max_width, av.geometry.max_height,
@@ -518,6 +534,17 @@ int main(int argc, char** argv) {
 		}
 	}
 
+	int exit_status = 0;
+	if (clover_launch) {
+		const uint64_t save_start_ns = monotonic_ns();
+		if (!clover_save_state(&clover, core, (save_start_ns - clover_start_ns) / BMSX_HOST_NSEC_PER_SECOND)) {
+			fprintf(stderr, "[libretro-host] Failed to save the Clover suspend point\n");
+			exit_status = 1;
+		} else if (clover.output_directory && !clover.demo) {
+			fprintf(stderr, "[libretro-host] Clover suspend point saved in %llums\n",
+					(unsigned long long)((monotonic_ns() - save_start_ns) / 1000000u));
+		}
+	}
 	input_timeline_shutdown();
 	if (use_control) host_control_close();
 	input_devices_close();
@@ -530,5 +557,5 @@ int main(int argc, char** argv) {
 	}
 	bmsx_video_context_close();
 	core_session_close(&session);
-	return 0;
+	return exit_status;
 }
