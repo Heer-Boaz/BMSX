@@ -22,6 +22,7 @@ enum class HostMenuShortcutAction : u8 {
 	None,
 	Menu,
 	Rewind,
+	ExitGame,
 };
 
 struct LibretroPointerContact {
@@ -68,6 +69,7 @@ public:
 	void consumeGamepadButtons(u8 deviceSlot, u32 buttons);
 	void consumeGamepadInput(u8 deviceSlot);
 	void setGamepadHostShortcutTargets(u32 targets);
+	void setGamepadHoldAction(HostMenuShortcutAction action);
 	void cancelControlShortcutGestures();
 	void cancelKeyboardControlShortcutGesture();
 	void cancelGamepadControlShortcutGesture(unsigned port);
@@ -147,6 +149,7 @@ private:
 	u32 m_gamepad_host_shortcut_targets = 0u;
 	u32 m_just_pressed_host_shortcuts = 0u;
 	HostMenuShortcutAction m_host_menu_shortcut_action = HostMenuShortcutAction::None;
+	HostMenuShortcutAction m_gamepad_hold_action = HostMenuShortcutAction::Rewind;
 };
 
 } // namespace bmsx

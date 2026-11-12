@@ -284,7 +284,9 @@ HostMenuExecution HostOverlayMenu::executionMode() const {
 }
 
 HostMenuInput HostOverlayMenu::tickInput(Runtime& runtime, LibretroInput& input, VideoPresenter& presenter, HostRewind& rewind, f64 currentTimeMs) {
-	if (input.hostMenuShortcutAction() == HostMenuShortcutAction::Rewind) {
+	if (input.hostMenuShortcutAction() == HostMenuShortcutAction::ExitGame) {
+		return HostMenuInput::ExitGame;
+	} else if (input.hostMenuShortcutAction() == HostMenuShortcutAction::Rewind) {
 		if (m_page != Page::Rewind && rewind.available()) transitionTo(Page::Rewind, input, rewind);
 	} else if (input.hostShortcutJustPressed(InputControllerGamepadButtonBit::X)) {
 		transitionTo(m_page == Page::Keyboard ? Page::Closed : Page::Keyboard, input, rewind);

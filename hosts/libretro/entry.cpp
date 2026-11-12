@@ -251,6 +251,9 @@ static void RETRO_CALLCONV keyboard_event(bool down, unsigned keycode, uint32_t 
 }
 
 static constexpr const char* kOptionRewindRecording = "bmsx_rewind_recording";
+static constexpr const char* kOptionGamepadHoldAction = "bmsx_gamepad_hold_action";
+static constexpr const char* kGamepadHoldRewind = "rewind";
+static constexpr const char* kGamepadHoldExit = "exit";
 static constexpr const char* kOptionRenderBackend = "bmsx_render_backend";
 static constexpr const char* kRenderBackendSoftware = "software";
 static constexpr const char* kRenderBackendGLES2 = "gles2";
@@ -468,6 +471,16 @@ static retro_core_option_v2_definition g_option_defs_us[] = {
 		{{kToggleOff, "Off"}, {kToggleOn, "On"}, {nullptr, nullptr}},
 		kDefaultRewindRecordingName
 	},
+	{
+		kOptionGamepadHoldAction,
+		"Select + Start Hold",
+		"Select + Start Hold",
+		"Choose the action for holding Select and Start on a controller.",
+		"Choose the action for holding Select and Start on a controller.",
+		"host",
+		{{kGamepadHoldRewind, "Rewind"}, {kGamepadHoldExit, "Exit Game"}, {nullptr, nullptr}},
+		kGamepadHoldRewind
+	},
 	{nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, {{nullptr, nullptr}}, nullptr}
 };
 
@@ -606,6 +619,13 @@ static retro_core_option_definition g_option_defs_v1_us[] = {
 		{{kToggleOff, "Off"}, {kToggleOn, "On"}, {nullptr, nullptr}},
 		kDefaultRewindRecordingName
 	},
+	{
+		kOptionGamepadHoldAction,
+		"Select + Start Hold",
+		"Choose the action for holding Select and Start on a controller.",
+		{{kGamepadHoldRewind, "Rewind"}, {kGamepadHoldExit, "Exit Game"}, {nullptr, nullptr}},
+		kGamepadHoldRewind
+	},
 	{nullptr, nullptr, nullptr, {{nullptr, nullptr}}, nullptr}
 };
 
@@ -634,6 +654,7 @@ static retro_variable g_option_vars[] = {
 	{kOptionDither, nullptr},
 	{kOptionHostShowUsageGizmo, nullptr},
 	{kOptionRewindRecording, nullptr},
+	{kOptionGamepadHoldAction, "Select + Start Hold; rewind|exit"},
 	{nullptr, nullptr}
 };
 
@@ -661,6 +682,7 @@ static bool read_crt_aperture_enabled();
 static bmsx::DeviceQuantizeMode read_device_quantize_mode();
 static bool read_toggle_option(const char* key, const char* label, bool default_value);
 static bool read_resource_usage_gizmo_enabled();
+static bmsx::HostMenuShortcutAction read_gamepad_hold_action();
 
 /* ============================================================================
  * Libretro callback setters
@@ -963,6 +985,14 @@ static bool read_resource_usage_gizmo_enabled() {
 	return read_toggle_option(kOptionHostShowUsageGizmo, "Show Usage Gizmo", false);
 }
 
+static bmsx::HostMenuShortcutAction read_gamepad_hold_action() {
+	retro_variable var{kOptionGamepadHoldAction, nullptr};
+	return environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value
+		&& std::strcmp(var.value, kGamepadHoldExit) == 0
+		? bmsx::HostMenuShortcutAction::ExitGame
+		: bmsx::HostMenuShortcutAction::Rewind;
+}
+
 static bool read_toggle_option(const char* key, const char* label, bool default_value) {
 	retro_variable var;
 	var.key = key;
@@ -1183,6 +1213,7 @@ static void activate_runtime(bmsx::Runtime& runtime) {
 	g_rewind.emplace(runtime, *g_video_presenter, *g_presentation);
 	const bool recordRewind = read_toggle_option(kOptionRewindRecording, "Rewind Recording", kDefaultRewindRecording);
 	g_rewind->setRecordingEnabled(recordRewind);
+	g_input->setGamepadHoldAction(read_gamepad_hold_action());
 	logging.log(RETRO_LOG_INFO, "[BMSX] Rewind recording %s\n", recordRewind ? "enabled" : "disabled");
 	g_audio_output->resetPlayback();
 	g_presentation->reset(*g_video_presenter, runtime);
@@ -1688,6 +1719,7 @@ void retro_run(void) {
 		if (!recordRewind && g_overlay_menu->executionMode() == bmsx::HostMenuExecution::Rewind)
 			g_overlay_menu->resetInputState(*g_input, *g_rewind);
 		g_rewind->setRecordingEnabled(recordRewind);
+		g_input->setGamepadHoldAction(read_gamepad_hold_action());
 		const bool new_crt = read_crt_postprocessing_enabled();
 		if (new_crt != g_crt_postprocessing_enabled) {
 			g_crt_postprocessing_enabled = new_crt;

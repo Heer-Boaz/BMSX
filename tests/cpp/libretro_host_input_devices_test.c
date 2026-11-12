@@ -27,6 +27,7 @@ static BmsxHostShortcutState gamepad_shortcuts;
 static uint32_t keyboard_buttons;
 static const char* evdev_name;
 static uint64_t clock_milliseconds = 1000;
+static unsigned disconnected_port;
 
 static int test_clock_gettime(clockid_t clock, struct timespec* value) {
 	(void)clock;
@@ -93,9 +94,13 @@ static void RETRO_CALLCONV cancel_keyboard(void) {
 
 static void RETRO_CALLCONV cancel_gamepad(unsigned port) {
 	require(port == 0, "the standalone controller producer cancels its actual port zero");
-	pad_at_cancellation = g_input_devices.pad_state;
+	pad_at_cancellation = g_input_devices.pad_states[0];
 	++gamepad_cancellations;
 	bmsx_host_shortcuts_cancel_gesture(&gamepad_shortcuts);
+}
+
+static void RETRO_CALLCONV record_disconnected_port(unsigned port) {
+	disconnected_port = port;
 }
 
 static void RETRO_CALLCONV keyboard_event(bool down, unsigned key, uint32_t character, uint16_t modifiers) {
@@ -129,7 +134,7 @@ static void test_lifecycle_cancellation(void) {
 	keyboard_input_set_callback((struct retro_keyboard_callback){keyboard_event});
 	keyboard_input_set_cancel_callback(cancel_keyboard);
 	input_devices_set_cancel_gamepad_callback(cancel_gamepad);
-	g_input_devices = (InputDevices){.pad_state = menu_chord, .focused = true};
+	g_input_devices = (InputDevices){.pad_states = {menu_chord}, .focused = true};
 	keyboard_input_post(KEYBOARD_INPUT_SOURCE_SDL, RETROK_RCTRL, true);
 	keyboard_input_post(KEYBOARD_INPUT_SOURCE_SDL, RETROK_RALT, true);
 	const SDL_WindowEvent lost_focus = {.event = SDL_WINDOWEVENT_FOCUS_LOST};
@@ -145,12 +150,12 @@ static void test_lifecycle_cancellation(void) {
 	static int controller_token;
 	g_input_devices.controller = (SDL_GameController*)&controller_token;
 	g_input_devices.controller_id = 23;
-	g_input_devices.pad_state = menu_chord;
+	g_input_devices.pad_states[0] = menu_chord;
 	queued_event = (SDL_Event){.cdevice = {.type = SDL_CONTROLLERDEVICEREMOVED, .which = 23}};
 	event_queued = true;
 	poll_sdl_devices();
 	require(gamepad_cancellations == 1 && controller_closes == 1
-		&& pad_at_cancellation == menu_chord && g_input_devices.pad_state == 0,
+		&& pad_at_cancellation == menu_chord && g_input_devices.pad_states[0] == 0,
 		"SDL controller removal cancels before handle close and before its neutral poll snapshot");
 	require(keyboard_cancellations == 0, "removing the SDL gamepad leaves the independent keyboard gesture alone");
 
@@ -158,7 +163,7 @@ static void test_lifecycle_cancellation(void) {
 	int pipe_fds[2];
 	require(pipe(pipe_fds) == 0, "evdev close test owns a real disposable descriptor");
 	g_input_devices.devices[0] = (InputDevice){.fd = pipe_fds[0], .pad_state = menu_chord};
-	g_input_devices.pad_state = menu_chord;
+	g_input_devices.pad_states[0] = menu_chord;
 	keyboard_input_post(KEYBOARD_INPUT_SOURCE_EVDEV_FIRST, RETROK_RCTRL, true);
 	keyboard_input_post(KEYBOARD_INPUT_SOURCE_EVDEV_FIRST, RETROK_RALT, true);
 	close_evdev_device(&g_input_devices.devices[0], 0);
@@ -253,7 +258,7 @@ static void test_keyups_before_source_cancellation(void) {
 static BmsxHostShortcutResult sample_gamepad(double now_ms) {
 	const uint32_t select = 1u << RETRO_DEVICE_ID_JOYPAD_SELECT;
 	const uint32_t start = 1u << RETRO_DEVICE_ID_JOYPAD_START;
-	return bmsx_host_shortcuts_update(&gamepad_shortcuts, g_input_devices.pad_state,
+	return bmsx_host_shortcuts_update(&gamepad_shortcuts, g_input_devices.pad_states[0],
 		select, start, start, 500.0, now_ms);
 }
 
@@ -274,7 +279,7 @@ static void test_evdev_pad_release_before_eof(void) {
 		};
 		require(write(pipe_fds[1], presses, sizeof(presses)) == sizeof(presses), "the pipe publishes complete evdev button-down events");
 		poll_evdev_devices();
-		require(g_input_devices.pad_state == menu_chord
+		require(g_input_devices.pad_states[0] == menu_chord
 			&& g_input_devices.devices[0].published_pad_state == menu_chord,
 			"a live evdev poll retains each device's actual published button contribution");
 		BmsxHostShortcutResult result = sample_gamepad(100.0);
@@ -288,7 +293,7 @@ static void test_evdev_pad_release_before_eof(void) {
 		close(pipe_fds[1]);
 		poll_evdev_devices();
 		require(gamepad_cancellations == 1 && pad_at_cancellation == menu_chord
-			&& g_input_devices.pad_state == 0 && g_input_devices.devices[0].fd == -1,
+			&& g_input_devices.pad_states[0] == 0 && g_input_devices.devices[0].fd == -1,
 			"EOF cancels the previously published pad contribution even after same-poll key-ups clear its latch");
 		result = sample_gamepad(release_times[time]);
 		require(result.short_pressed_targets == 0 && result.long_pressed_targets == 0,
@@ -296,7 +301,7 @@ static void test_evdev_pad_release_before_eof(void) {
 	}
 	gamepad_cancellations = 0;
 	gamepad_shortcuts = (BmsxHostShortcutState){0};
-	g_input_devices = (InputDevices){.pad_state = menu_chord};
+	g_input_devices = (InputDevices){.pad_states = {menu_chord}};
 	sample_gamepad(100.0);
 	int pipe_fds[2];
 	require(pipe(pipe_fds) == 0, "unrelated empty pad node owns its descriptor");
@@ -354,13 +359,13 @@ static void test_evdev_controller_layouts(void) {
 			require(write(pipes[source][1], &event, sizeof(event)) == sizeof(event), "evdev press is delivered");
 			poll_evdev_devices();
 			for (unsigned button = 0; button < 16; ++button) {
-				require(input_devices_state(0, RETRO_DEVICE_JOYPAD, 0, button) == (button == bindings[index].retro),
+				require(input_devices_state(source == 2 ? 1 : 0, RETRO_DEVICE_JOYPAD, 0, button) == (button == bindings[index].retro),
 					"each controller's physical button publishes exactly its positional RetroPad bit");
 			}
 			event.value = 0;
 			require(write(pipes[source][1], &event, sizeof(event)) == sizeof(event), "evdev release is delivered");
 			poll_evdev_devices();
-			require(g_input_devices.pad_state == 0, "releasing a physical button clears its RetroPad contribution");
+			require(g_input_devices.pad_states[source == 2 ? 1 : 0] == 0, "releasing a physical button clears its RetroPad contribution");
 		}
 	}
 	struct input_event press = {.type = EV_KEY, .code = BTN_SOUTH, .value = 1};
@@ -368,17 +373,17 @@ static void test_evdev_controller_layouts(void) {
 	press.code = BTN_B;
 	require(write(pipes[1][1], &press, sizeof(press)) == sizeof(press), "Clovercon bottom press is delivered");
 	poll_evdev_devices();
-	require(g_input_devices.pad_state == (1u << RETRO_DEVICE_ID_JOYPAD_B),
+	require(g_input_devices.pad_states[0] == (1u << RETRO_DEVICE_ID_JOYPAD_B),
 		"different controller encodings combine at the same physical bottom position");
 	press.value = 0;
 	require(write(pipes[1][1], &press, sizeof(press)) == sizeof(press), "Clovercon bottom release is delivered");
 	poll_evdev_devices();
-	require(g_input_devices.pad_state == (1u << RETRO_DEVICE_ID_JOYPAD_B),
+	require(g_input_devices.pad_states[0] == (1u << RETRO_DEVICE_ID_JOYPAD_B),
 		"one controller's release does not erase the other's held bottom button");
 	press.code = BTN_SOUTH;
 	require(write(pipes[0][1], &press, sizeof(press)) == sizeof(press), "standard bottom release is delivered");
 	poll_evdev_devices();
-	require(g_input_devices.pad_state == 0, "the combined button releases when both sources release");
+	require(g_input_devices.pad_states[0] == 0, "the combined button releases when both sources release");
 	struct input_event chord[] = {
 		{.type = EV_KEY, .code = BTN_A, .value = 1},
 		{.type = EV_KEY, .code = BTN_B, .value = 1},
@@ -389,70 +394,46 @@ static void test_evdev_controller_layouts(void) {
 	poll_evdev_devices();
 	const uint16_t face_buttons = (1u << RETRO_DEVICE_ID_JOYPAD_A) | (1u << RETRO_DEVICE_ID_JOYPAD_B)
 		| (1u << RETRO_DEVICE_ID_JOYPAD_X) | (1u << RETRO_DEVICE_ID_JOYPAD_Y);
-	require(g_input_devices.pad_state == face_buttons, "Clovercon face buttons remain independent when held together");
+	require(g_input_devices.pad_states[0] == face_buttons, "Clovercon face buttons remain independent when held together");
 	for (size_t index = 0; index < sizeof(chord) / sizeof(chord[0]); ++index) chord[index].value = 0;
 	require(write(pipes[1][1], chord, sizeof(chord)) == sizeof(chord), "Clovercon face releases are delivered");
 	poll_evdev_devices();
-	require(g_input_devices.pad_state == 0, "all Clovercon face buttons release");
+	require(g_input_devices.pad_states[0] == 0, "all Clovercon face buttons release");
+	struct input_event select = {.type = EV_KEY, .code = BTN_SELECT, .value = 1};
+	struct input_event start = {.type = EV_KEY, .code = BTN_START, .value = 1};
+	require(write(pipes[1][1], &select, sizeof(select)) == sizeof(select)
+		&& write(pipes[2][1], &start, sizeof(start)) == sizeof(start), "publish buttons on both Clovercons");
+	poll_evdev_devices();
+	require(g_input_devices.pad_states[0] == (1u << RETRO_DEVICE_ID_JOYPAD_SELECT)
+		&& g_input_devices.pad_states[1] == (1u << RETRO_DEVICE_ID_JOYPAD_START),
+		"Clovercon players publish independent RetroPad ports and cannot form a split chord");
+	disconnected_port = ~0u;
+	input_devices_set_cancel_gamepad_callback(record_disconnected_port);
+	close(pipes[2][1]);
+	poll_evdev_devices();
+	require(disconnected_port == 1 && g_input_devices.pad_states[0] == (1u << RETRO_DEVICE_ID_JOYPAD_SELECT)
+		&& g_input_devices.pad_states[1] == 0,
+		"disconnecting player two cancels only its own core input");
+	select.value = 0;
+	require(write(pipes[1][1], &select, sizeof(select)) == sizeof(select), "release player one's Select");
+	poll_evdev_devices();
+	input_devices_set_cancel_gamepad_callback(NULL);
 	input_devices_close();
 	close(pipes[0][1]);
 	close(pipes[1][1]);
-	close(pipes[2][1]);
 }
 
-static void test_clover_reset_hold(void) {
-	int first[2], second[2];
-	require(pipe2(first, O_NONBLOCK) == 0 && pipe2(second, O_NONBLOCK) == 0,
-		"Clover reset test owns two input sources");
-	g_input_devices = (InputDevices){.device_count = 2, .clover_reset_enabled = true};
-	g_input_devices.devices[0] = (InputDevice){.fd = first[0]};
-	g_input_devices.devices[1] = (InputDevice){.fd = second[0]};
-	const struct input_event select_down = {.type = EV_KEY, .code = BTN_SELECT, .value = 1};
-	const struct input_event start_down = {.type = EV_KEY, .code = BTN_START, .value = 1};
-	const struct input_event start_up = {.type = EV_KEY, .code = BTN_START, .value = 0};
-	require(write(first[1], &select_down, sizeof(select_down)) == sizeof(select_down)
-		&& write(second[1], &start_down, sizeof(start_down)) == sizeof(start_down), "publish split chord");
-	clock_milliseconds = 1000;
-	poll_evdev_devices();
-	clock_milliseconds = 2000;
-	poll_evdev_devices();
-	require(!input_devices_quit_requested() && g_input_devices.clover_reset_start_milliseconds == 0,
-		"buttons on different controllers cannot form a reset hold");
-	require(write(first[1], &start_down, sizeof(start_down)) == sizeof(start_down), "complete chord on one source");
-	poll_evdev_devices();
-	clock_milliseconds = 2499;
-	poll_evdev_devices();
-	require(!input_devices_quit_requested() && (g_input_devices.pad_state & kCloverResetButtons) == kCloverResetButtons,
-		"a short chord remains available to the core without quitting");
-	require(write(first[1], &start_up, sizeof(start_up)) == sizeof(start_up), "release before hold threshold");
-	poll_evdev_devices();
-	clock_milliseconds = 3000;
-	require(write(first[1], &start_down, sizeof(start_down)) == sizeof(start_down), "press a fresh chord");
-	poll_evdev_devices();
-	clock_milliseconds = 3499;
-	poll_evdev_devices();
-	require(!input_devices_quit_requested(), "the fresh chord must hold for the full threshold");
-	clock_milliseconds = 3500;
-	poll_evdev_devices();
-	require(input_devices_quit_requested(), "Clover Select+Start requests normal host shutdown at 500 ms");
-	close(first[0]); close(first[1]); close(second[0]); close(second[1]);
-
-	g_input_devices = (InputDevices){0};
-	clock_milliseconds = 4000;
-	finalize_pad_state(kCloverResetButtons, true);
-	clock_milliseconds = 5000;
-	finalize_pad_state(kCloverResetButtons, true);
-	require(!input_devices_quit_requested(), "standalone hosts retain their existing menu/rewind gesture");
+static void test_exit_hold(void) {
 
 	const uint16_t old_combo = (1u << RETRO_DEVICE_ID_JOYPAD_START)
 		| (1u << RETRO_DEVICE_ID_JOYPAD_L) | (1u << RETRO_DEVICE_ID_JOYPAD_R);
 	clock_milliseconds = 6000;
-	finalize_pad_state(old_combo, false);
+	finalize_pad_state(old_combo, 0);
 	clock_milliseconds = 7999;
-	finalize_pad_state(old_combo, false);
+	finalize_pad_state(old_combo, 0);
 	require(!input_devices_quit_requested(), "the existing exit combo retains its own threshold");
 	clock_milliseconds = 8000;
-	finalize_pad_state(old_combo, false);
+	finalize_pad_state(old_combo, 0);
 	require(input_devices_quit_requested(), "the existing exit combo still works");
 	g_input_devices = (InputDevices){0};
 }
@@ -497,14 +478,14 @@ int main(void) {
 		sdl_buttons = 1u << bindings[index].sdl;
 		require(sdl_controller_pad_state() == expected,
 			"the shipping SDL table emits the same positional RetroPad bits");
-		finalize_pad_state(sdl_controller_pad_state(), false);
+		finalize_pad_state(sdl_controller_pad_state(), 0);
 		for (unsigned button = 0; button < 16; ++button) {
 			require(input_devices_state(0, RETRO_DEVICE_JOYPAD, 0, button) == (button == bindings[index].retro),
 				"the public frontend callback exposes exactly the mapped button");
 		}
 		sdl_buttons = 0;
 		require(sdl_controller_pad_state() == 0, "releasing a physical SDL button clears its RetroPad contribution");
-		finalize_pad_state(sdl_controller_pad_state(), false);
+		finalize_pad_state(sdl_controller_pad_state(), 0);
 		require(input_devices_state(0, RETRO_DEVICE_JOYPAD, 0, bindings[index].retro) == 0,
 			"the public frontend callback releases the mapped button");
 		all_buttons |= expected;
@@ -522,7 +503,7 @@ int main(void) {
 	test_keyups_before_source_cancellation();
 	test_evdev_pad_release_before_eof();
 	test_evdev_controller_layouts();
-	test_clover_reset_hold();
+	test_exit_hold();
 	puts("LIBRETRO-HOST-INPUT-DEVICES:PASS");
 	return 0;
 }

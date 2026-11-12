@@ -21,6 +21,7 @@
 
 enum {
 	kMaximumInputDevices = KEYBOARD_INPUT_EVDEV_SOURCE_COUNT,
+	kGamepadPortCount = 2,
 	kMouseButtonPrimary = 1 << 0,
 	kMouseButtonSecondary = 1 << 1,
 	kMouseButtonAux = 1 << 2,
@@ -29,9 +30,6 @@ enum {
 };
 
 static const uint64_t kExitComboHoldMilliseconds = 2000;
-static const uint64_t kCloverResetHoldMilliseconds = 500;
-static const uint16_t kCloverResetButtons =
-		(1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_START);
 
 typedef struct InputDevice {
 	const char* path;
@@ -53,6 +51,7 @@ typedef struct InputDevice {
 	bool has_hat;
 	bool has_abs_xy;
 	bool clovercon_buttons;
+	unsigned pad_port;
 	uint16_t pad_state;
 	uint16_t published_pad_state;
 } InputDevice;
@@ -79,7 +78,7 @@ typedef struct InputDevices {
 	InputDevice devices[kMaximumInputDevices];
 	char paths[kMaximumInputDevices][64];
 	size_t device_count;
-	uint16_t pad_state;
+	uint16_t pad_states[kGamepadPortCount];
 	int32_t mouse_absolute_x;
 	int32_t mouse_absolute_y;
 	int32_t mouse_delta_x;
@@ -92,8 +91,6 @@ typedef struct InputDevices {
 	bool pointer_inside_game_viewport;
 	RemotePointer remote;
 	uint64_t exit_combo_start_milliseconds;
-	uint64_t clover_reset_start_milliseconds;
-	bool clover_reset_enabled;
 	bool quit_requested;
 #ifdef BMSX_LIBRETRO_HOST_SDL
 	SDL_GameController* controller;
@@ -270,6 +267,9 @@ static void open_evdev_device(const char* path) {
 	char name[64];
 	device.clovercon_buttons = ioctl(fd, EVIOCGNAME(sizeof(name)), name) >= 0
 		&& strncmp(name, "Nintendo Clovercon - controller", sizeof("Nintendo Clovercon - controller") - 1) == 0;
+	if (device.clovercon_buttons && strcmp(name, "Nintendo Clovercon - controller2") == 0) {
+		device.pad_port = 1;
+	}
 	snprintf(
 			input->paths[input->device_count],
 			sizeof(input->paths[input->device_count]),
@@ -351,7 +351,7 @@ static void open_evdev_devices(void) {
 
 static void close_evdev_device(InputDevice* device, size_t index) {
 	if ((device->pad_state | device->published_pad_state) != 0 && g_cancel_gamepad_input) {
-		g_cancel_gamepad_input(0);
+		g_cancel_gamepad_input(device->pad_port);
 	}
 	keyboard_input_release_source(
 			KEYBOARD_INPUT_SOURCE_EVDEV_FIRST + (unsigned)index);
@@ -361,25 +361,14 @@ static void close_evdev_device(InputDevice* device, size_t index) {
 	device->published_pad_state = 0;
 }
 
-static void finalize_pad_state(uint16_t pad_state, bool clover_reset_down) {
+static void finalize_pad_state(uint16_t pad_state, uint16_t player2_pad_state) {
 	InputDevices* input = &g_input_devices;
-	input->pad_state = pad_state;
-	if (input->clover_reset_enabled && clover_reset_down) {
-		const uint64_t now = monotonic_milliseconds();
-		if (!input->clover_reset_start_milliseconds) {
-			input->clover_reset_start_milliseconds = now;
-		} else if (now - input->clover_reset_start_milliseconds >= kCloverResetHoldMilliseconds) {
-			fprintf(stderr, "[libretro-host] Clover reset combo held %llums, exiting\n",
-					(unsigned long long)(now - input->clover_reset_start_milliseconds));
-			input->quit_requested = true;
-		}
-	} else {
-		input->clover_reset_start_milliseconds = 0;
-	}
+	input->pad_states[0] = pad_state;
+	input->pad_states[1] = player2_pad_state;
 	const bool exit_combo_down =
-			(input->pad_state & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_START)) &&
-			(input->pad_state & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L)) &&
-			(input->pad_state & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R));
+			(pad_state & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_START)) &&
+			(pad_state & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L)) &&
+			(pad_state & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R));
 	if (!exit_combo_down) {
 		input->exit_combo_start_milliseconds = 0;
 		return;
@@ -468,8 +457,7 @@ static void apply_evdev_absolute_axes(InputDevice* device, uint16_t* pad_state) 
 
 static void poll_evdev_devices(void) {
 	InputDevices* input = &g_input_devices;
-	uint16_t pad_state = 0;
-	bool clover_reset_down = false;
+	uint16_t pad_states[kGamepadPortCount] = {0};
 	reset_mouse_frame_state();
 	for (size_t index = 0; index < input->device_count; ++index) {
 		InputDevice* device = &input->devices[index];
@@ -568,16 +556,16 @@ static void poll_evdev_devices(void) {
 			continue;
 		}
 		device->published_pad_state = device->pad_state;
-		clover_reset_down |= (device->pad_state & kCloverResetButtons) == kCloverResetButtons;
-		pad_state |= device->pad_state;
+		uint16_t* pad_state = &pad_states[device->pad_port];
+		*pad_state |= device->pad_state;
 		if (device->has_hat) {
-			apply_evdev_hat(device, &pad_state);
+			apply_evdev_hat(device, pad_state);
 		} else if (device->has_abs_xy) {
-			apply_evdev_absolute_axes(device, &pad_state);
+			apply_evdev_absolute_axes(device, pad_state);
 		}
 	}
 	update_pointer_from_surface();
-	finalize_pad_state(pad_state, clover_reset_down);
+	finalize_pad_state(pad_states[0], pad_states[1]);
 }
 
 #ifdef BMSX_LIBRETRO_HOST_SDL
@@ -781,18 +769,16 @@ static void poll_sdl_devices(void) {
 			pad_state = sdl_controller_pad_state();
 		}
 	}
-	finalize_pad_state(pad_state, (pad_state & kCloverResetButtons) == kCloverResetButtons);
+	finalize_pad_state(pad_state, 0);
 }
 #endif
 
 void input_devices_open(
 		BmsxInputDriverKind driver,
 		bool initial_focus,
-		bool clover_reset_enabled,
 		const BmsxVideoSurface* surface) {
 	g_input_devices = (InputDevices){
 		.driver = driver,
-		.clover_reset_enabled = clover_reset_enabled,
 		.surface = surface,
 #ifdef BMSX_LIBRETRO_HOST_SDL
 		.controller_id = -1,
@@ -889,11 +875,11 @@ int16_t input_devices_state(
 		unsigned index,
 		unsigned id) {
 	InputDevices* input = &g_input_devices;
+	if (device == RETRO_DEVICE_JOYPAD) {
+		return port < kGamepadPortCount && (input->pad_states[port] & (uint16_t)(1u << id)) ? 1 : 0;
+	}
 	if (port != 0) {
 		return 0;
-	}
-	if (device == RETRO_DEVICE_JOYPAD) {
-		return (input->pad_state & (uint16_t)(1u << id)) ? 1 : 0;
 	}
 	if (device == RETRO_DEVICE_MOUSE) {
 		const uint8_t buttons = input->mouse_buttons | input->remote.buttons;

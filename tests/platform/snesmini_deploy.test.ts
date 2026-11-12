@@ -132,7 +132,8 @@ test('Clover arguments reach the host separately while rewind recording stays of
 		'--rollback-mode', 'record', '--rollback-output-dir', '/clover/rollback']);
 	assert.deepEqual((await readFile(argumentsPath, 'utf8')).trimEnd().split('\n'), [
 		join(pc, `${game.target}.rom`), '--core', '/root/bmsx_libretro.so', '--system-dir', '/root',
-		'--save-dir', `/var/saves/${game.code}`, '--backend', 'gles2', '--rewind', 'off', '--clover',
+		'--save-dir', `/var/saves/${game.code}`, '--backend', 'gles2', '--rewind', 'off',
+		'--core-option', 'bmsx_gamepad_hold_action', 'exit', '--clover',
 		'--save-data-backing-file', 'cartridge.sram', '--title-code', game.code, '--video-mode', 'keep-aspect-ratio',
 		'--start-transition-fd', '13', '--rollback-mode', 'record', '--rollback-output-dir', '/clover/rollback',
 	]);

@@ -196,7 +196,7 @@ void LibretroInput::poll(
 	u32 activeHostShortcuts = keyboardShortcuts.active_targets;
 	m_just_pressed_host_shortcuts = keyboardShortcuts.just_pressed_targets;
 	u32 shortPressedTargets = keyboardShortcuts.short_pressed_targets;
-	u32 longPressedTargets = keyboardShortcuts.long_pressed_targets;
+	u32 gamepadLongPressedTargets = 0u;
 
 	for (u8 player = 0u; player < INPUT_CONTROLLER_PAD_COUNT; player += 1u) {
 		InputControllerPadSnapshot& gamepad = m_gamepads[player];
@@ -255,7 +255,7 @@ void LibretroInput::poll(
 		activeHostShortcuts |= shortcuts.active_targets;
 		m_just_pressed_host_shortcuts |= shortcuts.just_pressed_targets;
 		shortPressedTargets |= shortcuts.short_pressed_targets;
-		longPressedTargets |= shortcuts.long_pressed_targets;
+		gamepadLongPressedTargets |= shortcuts.long_pressed_targets;
 		gamepad.buttons = buttons;
 		physicalAxes[static_cast<size_t>(InputControllerGamepadAxis::LeftTrigger)] =
 			(m_physical_gamepad_buttons[player] & (1u << static_cast<u32>(
@@ -272,11 +272,15 @@ void LibretroInput::poll(
 	m_host_supervisor_request_high =
 		m_host_supervisor_request_high ||
 		(activeHostShortcuts & kTerminalShortcutMask) != 0u;
-	m_host_menu_shortcut_action = (longPressedTargets & kMenuShortcutMask) != 0u
-		? HostMenuShortcutAction::Rewind
-		: (shortPressedTargets & kMenuShortcutMask) != 0u
-			? HostMenuShortcutAction::Menu
-			: HostMenuShortcutAction::None;
+	if ((gamepadLongPressedTargets & kMenuShortcutMask) != 0u) {
+		m_host_menu_shortcut_action = m_gamepad_hold_action;
+	} else if ((keyboardShortcuts.long_pressed_targets & kMenuShortcutMask) != 0u) {
+		m_host_menu_shortcut_action = HostMenuShortcutAction::Rewind;
+	} else if ((shortPressedTargets & kMenuShortcutMask) != 0u) {
+		m_host_menu_shortcut_action = HostMenuShortcutAction::Menu;
+	} else {
+		m_host_menu_shortcut_action = HostMenuShortcutAction::None;
+	}
 
 	const i16 mouseDeltaX =
 		m_input_state_callback(0u, RETRO_DEVICE_MOUSE, 0u, RETRO_DEVICE_ID_MOUSE_X);
@@ -427,6 +431,14 @@ void LibretroInput::setGamepadHostShortcutTargets(u32 targets) {
 			kHostShortcutModifier,
 			m_gamepad_host_shortcut_targets);
 	}
+}
+
+void LibretroInput::setGamepadHoldAction(HostMenuShortcutAction action) {
+	if (action == m_gamepad_hold_action) return;
+	for (auto& shortcuts : m_gamepad_shortcuts) {
+		bmsx_host_shortcuts_cancel_gesture(&shortcuts);
+	}
+	m_gamepad_hold_action = action;
 }
 
 void LibretroInput::cancelControlShortcutGestures() {

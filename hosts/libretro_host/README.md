@@ -86,9 +86,10 @@ The mini uses Hakchi's linked-sync layout: payloads in `.storage/<code>` and
 desktop entries in the configured menu folder. Each title has a small Clover
 entrypoint which `exec`s the shared custom host/core in `/root`, with GLES2 and
 its own save directory. Clover appends Nintendo-emulator state, transition and
-rollback arguments; the entrypoint supplies only the custom host's argument
-vector, without passing those incompatible arguments through or weakening its CLI.
-Automatic rewind remains disabled by the Mini core's default policy. The old
+rollback arguments; the entrypoint passes them after `--clover`, where the host
+handles the suspend-point and transition paths separately from its own options.
+The launcher disables background rewind and selects exit for a long Select +
+Start press. The old
 `/root/run.sh` is no longer needed by these menu entries and is left untouched.
 
 Only content whose SHA-256 differs is transferred or replaced. Transfers use
@@ -114,7 +115,8 @@ Path=/var/saves/CLV-S-BMSX
 
 The generated `launch.sh` supplies the actual installed core, game and save
 paths and replaces its shell with the custom host. It does not forward Clover's
-Nintendo-emulator arguments. Do not route the title through RetroArch.
+arguments as ordinary host options; they follow `--clover`. Do not route the
+title through RetroArch.
 
 Options:
 
@@ -128,6 +130,8 @@ Options:
   noise-only CRT measurement, keep CRT and noise on, and set
   `bmsx_crt_color_bleed`, `bmsx_crt_scanlines`, `bmsx_crt_blur`,
   `bmsx_crt_glow`, `bmsx_crt_fringing` and `bmsx_crt_aperture` to `off`.
+  Set `bmsx_gamepad_hold_action` to `exit` instead of its default `rewind` to
+  make a controller's long Select + Start press request frontend shutdown.
 - `--video fb|sdl`: `fb` uses `/dev/fb0` + evdev; `sdl` provides windowed software or GLES2 video and SDL input
 - `--hidden-window`: keeps the SDL window unmapped while retaining its GLES2 context for unattended runs
 - `--input-timeline <path>`: replays an explicit input timeline

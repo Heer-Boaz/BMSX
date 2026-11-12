@@ -366,7 +366,7 @@ int main(int argc, char** argv) {
 	BmsxVideoSurface* video_surface =
 			bmsx_video_context_open(video_context_kind, hidden_window);
 	video_presenter_open(video_surface, &frame_timing);
-	input_devices_open(input_driver, !hidden_window, clover_launch, video_surface);
+	input_devices_open(input_driver, !hidden_window, video_surface);
 
 	core->retro_init();
 	if (profile_native_compilation && !session.native_compilation_profile_interface_set)
@@ -386,6 +386,7 @@ int main(int argc, char** argv) {
 			session.system_info.need_fullpath ? "true" : "false");
 
 	core->retro_set_controller_port_device(0, RETRO_DEVICE_JOYPAD);
+	core->retro_set_controller_port_device(1, RETRO_DEVICE_JOYPAD);
 	core_session_load_content(&session, no_game, game_path, slot1_path);
 
 	struct retro_system_av_info av = {0};

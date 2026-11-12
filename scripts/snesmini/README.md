@@ -84,6 +84,8 @@ Holding Select and Start together on one controller for 500 ms exits the game
 through the same suspend-point path as RESET. A shorter press keeps the BMSX
 host-menu shortcut. This replaces the long-press rewind shortcut for Clover
 launches; standalone libretro hosts keep their existing shortcuts.
+The two original Clovercon controllers are exposed on separate player ports,
+so buttons held on different players do not form a shortcut together.
 
 Rewind is not implemented for these points. Clover still displays its X Rewind
 option, but selecting it returns to the menu without changing the point. State
