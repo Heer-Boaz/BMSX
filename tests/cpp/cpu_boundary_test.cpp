@@ -349,7 +349,9 @@ void nativeWarmAdmitsAllocatingBodies() {
 	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 2}};
 	CpuMachine machine(image);
 	auto& cpu = machine.cpu;
-	require(cpu.runUntilDepth(0, 21) == RunResult::Yielded, "a mixed loop warms without compiling yet");
+	// K1 and JMP cost one cycle each; CONCAT costs one plus the two
+	// codepoints in its "11" result.
+	require(cpu.runUntilDepth(0, 35) == RunResult::Yielded, "a mixed loop warms without compiling yet");
 	const auto& page = *cpu.activeThread()->frameAtDepth(0)->decodedPage;
 	const u32 word = (machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u;
 	require(!page.nativeBlocks && page.nativeVisits[word] == 7,
@@ -569,7 +571,7 @@ void nativeCallsAndReturnsPublishFaultBoundaries() {
 	}
 }
 
-void nativeCallCanRetireItsSourceDuringFunctionRecordRead() {
+void nativeCallUsesItsClosureBoundFunctionRecord() {
 	constexpr u32 recordAddress = 0x08005000u;
 	test::Blua32TestImage image;
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
@@ -622,13 +624,27 @@ void nativeCallCanRetireItsSourceDuringFunctionRecordRead() {
 		cpu.runUntilDepth(1, 100);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE + 2u * INSTRUCTION_BYTES);
 		source.armed = true;
+		require(cpu.runUntilDepth(0, 100) == RunResult::Yielded && source.writes == 0
+			&& source.armed && cpu.readFrameRegister(0, 6) == valueNumber(1),
+			"a call uses its closure-bound function record without rereading the mapped source");
+		if (!instrumented) require(page.nativeBlocks && page.nativeBlocks->entries[2],
+			"no function-record reread means no source-write invalidation");
+		// Closure creation, unlike CALL, does read the record. Have that read
+		// replace the caller's next CALL while generated creation code is active.
+		source.armed = false;
+		for (int visit = 0; visit < 20; ++visit) {
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE);
+			require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "closure creation remains runnable while warming");
+		}
+		if (!instrumented) require(page.nativeBlocks && page.nativeBlocks->entries[0],
+			"the record read can retire generated closure creation code");
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE);
+		source.armed = true;
 		require(cpu.runUntilDepth(0, 100) == RunResult::Halted && source.writes == 1
-			&& cpu.getFrameDepth() == 1 && cpu.readFrameRegister(0, 6) == valueNumber(1)
-			&& cpu.readFramePc(0) == DYNAMIC_RAM_BASE + 4u * INSTRUCTION_BYTES
-			&& cpu.instructionBudgetRemaining == 89,
-			"retiring the active call code completes that call before observing the replacement HALT");
-		if (!instrumented) require(!page.nativeBlocks || !page.nativeBlocks->entries[2],
-			"the tail helper does not retain a dangling executable entry");
+			&& cpu.readFramePc(0) == DYNAMIC_RAM_BASE + 4u * INSTRUCTION_BYTES,
+			"closure creation completes before its modified successor executes");
+		if (!instrumented) require(!page.nativeBlocks || !page.nativeBlocks->entries[0],
+			"the invalidated creation code is not retained after the helper");
 	}
 }
 #endif
@@ -1121,7 +1137,7 @@ void cachedInstructionBindingsFollowThePhysicalSelector() {
 }
 
 void closureCallAndReturnRespectFrameBoundaries() {
-	for (const bool instrumented : {false, true}) for (int edgeKind = 0; edgeKind < 6; ++edgeKind) {
+	for (const bool instrumented : {false, true}) for (const int edgeKind : {0, 1, 2, 4, 5}) {
 		constexpr u32 mappedRecord = IO_GX_GPU_GP0 & ~(BLUA32_FUNCTION_ALIGNMENT - 1u);
 		test::Blua32TestImage image;
 		image.text.resize(MAPPED_PAGE_BYTE_SIZE);
@@ -1160,12 +1176,6 @@ void closureCallAndReturnRespectFrameBoundaries() {
 		cpu.activeThread()->frameAtDepth(0)->registers[2] = valueNumber(99);
 		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "closure setup consumes its own physical instruction");
 		const u32 callPc = cpu.readFramePc(0);
-		if (edgeKind == 3) {
-			asClosure(cpu.activeThread()->frameAtDepth(0)->registers[3])->functionAddress = CART_ROM_BASE;
-			require(cpu.runUntilDepth(0, 3) == RunResult::Halted, "a failed call cannot reuse provenance from the previous function read");
-			require(cpu.activeThread()->frameDepth == 1 && cpu.readFrameRegister(0, 2) == valueNumber(99), "failed call does not execute its continuation");
-			continue;
-		}
 		if (edgeKind == 4 || edgeKind == 5) {
 			if (edgeKind == 5) require(cpu.runUntilDepth(0, 3) == RunResult::Yielded, "prepare RET at callee depth");
 			auto state = cpu.captureRuntimeState();
@@ -1191,12 +1201,13 @@ void closureCallAndReturnRespectFrameBoundaries() {
 		edge.armed = true;
 		machine.memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_GPU);
 		require(cpu.runUntilDepth(0, 3) == RunResult::Yielded, "CALL and the next physical instruction exhaust their grant");
-		if (edgeKind != 0) {
+		if (edgeKind == 2) {
 			require(edge.count == 1 && cpu.activeThread()->frameDepth == 3, "call-side device/observer edge enters IRQ before callee execution");
 			require(cpu.readCauseWord() == CPU_CAUSE_IRQ && cpu.readEpcWord() == calleePc, "CALL completes before IRQ saves the callee entry PC");
 			require(isNil(cpu.activeThread()->frameAtDepth(1)->registers[0]) && cpu.activeThread()->frameAtDepth(2)->registers[0] == valueNumber(1), "IRQ, callee and caller retain separate register bases");
 			continue;
 		}
+		if (edgeKind == 1) require(edge.count == 0, "CALL does not reread the closure-bound record");
 		require(cpu.activeThread()->frameDepth == 2 && cpu.readFramePc(1) == calleePc + INSTRUCTION_BYTES, "direct call rebinds the callee and stops before RET");
 		require(cpu.runUntilDepth(1, 20) == RunResult::Halted && cpu.instructionBudgetRemaining == 17, "return stops at the requested depth with unused cycles retained");
 		require(cpu.readFrameRegister(0, 3) == valueNumber(1) && cpu.readFrameRegister(0, 2) == valueNumber(99), "return publishes results without executing the caller continuation");
@@ -1448,7 +1459,7 @@ int main() {
 		nativeTerminalAtPageBoundaryTracksItsBody();
 		nativeWritesPreserveIndependentBlocks();
 		nativeCallsAndReturnsPublishFaultBoundaries();
-		nativeCallCanRetireItsSourceDuringFunctionRecordRead();
+		nativeCallUsesItsClosureBoundFunctionRecord();
 #endif
 		stringBytePositions(); loadKrIndices(); zeroLoadNil(); successorFetchOrdering(); reservedMemoryKinds(); zeroStackReuse();
 		returnRangesSurviveCallerStackGrowth(); builtinReturnRangesSurviveDestinationGrowth();
