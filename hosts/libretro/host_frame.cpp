@@ -36,6 +36,8 @@ LibretroFrameResult runLibretroFrame(
 			return LibretroFrameResult::RebootRequested;
 		case HostMenuInput::ExitGame:
 			return LibretroFrameResult::ExitRequested;
+		case HostMenuInput::SuspendGame:
+			return LibretroFrameResult::SuspendRequested;
 		case HostMenuInput::Inactive:
 		case HostMenuInput::Active:
 			break;

@@ -23,6 +23,7 @@ enum class HostMenuInput : u8 {
 	Active,
 	RebootCart,
 	ExitGame,
+	SuspendGame,
 };
 
 // Derived from the current page; guest execution state never owns UI pause.

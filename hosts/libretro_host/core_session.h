@@ -56,6 +56,7 @@ typedef struct BmsxCoreSession {
 	BmsxGxUploadProfileInterfaceV1 gx_upload_profile;
 	BmsxNativeCompilationProfileInterface native_compilation_profile;
 	BmsxExecutionDomainInterfaceV1 execution_domain;
+	BmsxShutdownReasonV1 shutdown_reason;
 	bool accept_gx_upload_profile_interface;
 	bool gx_upload_profile_interface_set;
 	bool accept_native_compilation_profile_interface;

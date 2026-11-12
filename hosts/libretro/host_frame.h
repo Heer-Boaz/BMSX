@@ -17,6 +17,7 @@ enum class LibretroFrameResult : u8 {
 	Presented,
 	RebootRequested,
 	ExitRequested,
+	SuspendRequested,
 };
 
 LibretroFrameResult runLibretroFrame(

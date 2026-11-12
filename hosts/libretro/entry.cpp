@@ -1815,8 +1815,13 @@ void retro_run(void) {
 				activate_runtime(runtime);
 				break;
 			case bmsx::LibretroFrameResult::ExitRequested:
+			case bmsx::LibretroFrameResult::SuspendRequested: {
+				BmsxShutdownReasonV1 reason = frameResult == bmsx::LibretroFrameResult::ExitRequested
+					? BMSX_SHUTDOWN_REASON_EXIT_GAME : BMSX_SHUTDOWN_REASON_SUSPEND;
+				environ_cb(BMSX_ENVIRONMENT_SET_SHUTDOWN_REASON_V1, &reason);
 				environ_cb(RETRO_ENVIRONMENT_SHUTDOWN, nullptr);
 				break;
+			}
 			case bmsx::LibretroFrameResult::NotPresented:
 			case bmsx::LibretroFrameResult::Presented:
 				break;

@@ -23,7 +23,19 @@ extern "C" {
 	(RETRO_ENVIRONMENT_PRIVATE | 0x4291u)
 #define BMSX_ENVIRONMENT_SET_NATIVE_COMPILATION_PROFILE_INTERFACE \
 	(RETRO_ENVIRONMENT_PRIVATE | 0x42a1u)
+#define BMSX_ENVIRONMENT_SET_SHUTDOWN_REASON_V1 \
+	(RETRO_ENVIRONMENT_PRIVATE | 0x42b1u)
 #define BMSX_SUBSYSTEM_DUAL_CARTRIDGE 1u
+
+/* Sent immediately before RETRO_ENVIRONMENT_SHUTDOWN. EXIT_GAME asks the
+ * frontend to exit without a suspend point; SUSPEND requests one. A frontend
+ * may ignore the reason and still receive the standard shutdown request. */
+typedef uint32_t BmsxShutdownReasonV1;
+enum {
+	BMSX_SHUTDOWN_REASON_UNSPECIFIED = 0,
+	BMSX_SHUTDOWN_REASON_EXIT_GAME = 1,
+	BMSX_SHUTDOWN_REASON_SUSPEND = 2,
+};
 
 typedef bool (RETRO_CALLCONV *bmsx_supervisor_request_line_t)(void);
 

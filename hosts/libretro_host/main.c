@@ -536,7 +536,9 @@ int main(int argc, char** argv) {
 	}
 
 	int exit_status = 0;
-	if (clover_launch) {
+	if (clover_launch && !(session.shutdown_requested &&
+			session.shutdown_reason == BMSX_SHUTDOWN_REASON_EXIT_GAME &&
+			!g_signal_quit_requested)) {
 		const uint64_t save_start_ns = monotonic_ns();
 		if (!clover_save_state(&clover, core, (save_start_ns - clover_start_ns) / BMSX_HOST_NSEC_PER_SECOND)) {
 			fprintf(stderr, "[libretro-host] Failed to save the Clover suspend point\n");

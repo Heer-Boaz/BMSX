@@ -190,6 +190,9 @@ void core_session_close(BmsxCoreSession* session) {
 bool core_session_environment(unsigned command, void* data) {
 	BmsxCoreSession* session = g_active_session;
 	switch (command) {
+		case BMSX_ENVIRONMENT_SET_SHUTDOWN_REASON_V1:
+			session->shutdown_reason = *(const BmsxShutdownReasonV1*)data;
+			return true;
 		case BMSX_ENVIRONMENT_SET_INPUT_LIFECYCLE_INTERFACE_V1: {
 			const BmsxInputLifecycleInterfaceV1* lifecycle = data;
 			keyboard_input_set_cancel_callback(lifecycle->cancel_keyboard);

@@ -1,6 +1,8 @@
-#include "libretro.h"
+#include "bmsx_libretro.h"
 
+#include <signal.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -44,6 +46,16 @@ void retro_run(void) {
 	if (!ready) {
 		if (write(STDOUT_FILENO, "R", 1) != 1) _exit(1);
 		ready = true;
+	}
+	const char* shutdown = getenv("BMSX_TEST_CLOVER_SHUTDOWN");
+	if (frames == 2 && shutdown) {
+		if (strcmp(shutdown, "standard") != 0) {
+			BmsxShutdownReasonV1 reason = strcmp(shutdown, "suspend") == 0
+				? BMSX_SHUTDOWN_REASON_SUSPEND : BMSX_SHUTDOWN_REASON_EXIT_GAME;
+			environment(BMSX_ENVIRONMENT_SET_SHUTDOWN_REASON_V1, &reason);
+		}
+		environment(RETRO_ENVIRONMENT_SHUTDOWN, NULL);
+		if (strcmp(shutdown, "exit_signal") == 0) raise(SIGTERM);
 	}
 }
 bool retro_load_game(const struct retro_game_info* info) { (void)info; return true; }

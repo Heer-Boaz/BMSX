@@ -29,13 +29,14 @@ def read_exact(stream, size):
 
 
 class CloverStateTest(unittest.TestCase):
-    def run_host(self, arguments, ready):
+    def run_host(self, arguments, ready, shutdown=None):
         log = tempfile.TemporaryFile(mode="w+")
         self.addCleanup(log.close)
         process = subprocess.Popen(
             [HOST, "--core", CORE, "--no-game", "--video", "sdl", "--backend", "software",
              "--hidden-window", "--no-audio", "--rewind", "off", "--clover", *arguments],
-            stdout=subprocess.PIPE, stderr=log, env=ENV,
+            stdout=subprocess.PIPE, stderr=log,
+            env=dict(ENV, BMSX_TEST_CLOVER_SHUTDOWN=shutdown) if shutdown else ENV,
         )
         self.addCleanup(process.stdout.close)
 
@@ -109,6 +110,46 @@ class CloverStateTest(unittest.TestCase):
             process = self.run_host(["--replay-inputs", "--rollback-output-dir", directory], b"R")
             self.stop(process)
             self.assertEqual(list(Path(directory).iterdir()), [])
+
+    def test_menu_exit_leaves_clover_output_untouched(self):
+        for existing in (False, True):
+            with self.subTest(existing=existing), tempfile.TemporaryDirectory() as directory:
+                point = Path(directory)
+                output = point / "rollback"
+                output.mkdir()
+                state = output / "savestate"
+                screenshot = point / "state.png"
+                time = point / "state.time"
+                files = (state, screenshot, time)
+                if existing:
+                    for path in files:
+                        path.write_bytes(b"existing " + path.name.encode())
+                process = self.run_host(["--rollback-mode", "record", "--rollback-output-dir", str(output),
+                                         "--save-screenshot-on-quit", str(screenshot),
+                                         "--save-time-path", str(time)], b"R", shutdown="exit")
+                self.assertEqual(process.wait(timeout=10), 0)
+                for path in files:
+                    if existing:
+                        self.assertEqual(path.read_bytes(), b"existing " + path.name.encode())
+                    else:
+                        self.assertFalse(path.exists())
+
+    def test_suspend_shutdown_and_reset_signal_save_a_point(self):
+        # A normal libretro shutdown has no BMSX reason and keeps Clover's save policy.
+        for shutdown in ("suspend", "standard", "exit_signal"):
+            with self.subTest(shutdown=shutdown), tempfile.TemporaryDirectory() as directory:
+                point = Path(directory)
+                output = point / "rollback"
+                output.mkdir()
+                screenshot = point / "state.png"
+                time = point / "state.time"
+                process = self.run_host(["--rollback-mode", "record", "--rollback-output-dir", str(output),
+                                         "--save-screenshot-on-quit", str(screenshot),
+                                         "--save-time-path", str(time)], b"R", shutdown=shutdown)
+                self.assertEqual(process.wait(timeout=10), 0)
+                self.assertGreater(struct.unpack("=I", gzip.decompress((output / "savestate").read_bytes()))[0], 0)
+                self.assertTrue(screenshot.is_file())
+                self.assertTrue(time.is_file())
 
     def test_incomplete_output_does_not_create_a_partial_suspend_point(self):
         with tempfile.TemporaryDirectory() as directory:
