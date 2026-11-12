@@ -49,6 +49,7 @@ typedef struct InputDevice {
 	bool hat_y_valid;
 	bool has_hat;
 	bool has_abs_xy;
+	bool clovercon_buttons;
 	uint16_t pad_state;
 	uint16_t published_pad_state;
 } InputDevice;
@@ -180,7 +181,7 @@ static uint8_t map_evdev_key_to_mouse(uint16_t code) {
 	}
 }
 
-static uint16_t map_evdev_key_to_pad(uint16_t code) {
+static uint16_t map_evdev_key_to_pad(uint16_t code, bool clovercon_buttons) {
 	switch (code) {
 #ifdef BTN_TRIGGER_HAPPY3
 		case BTN_TRIGGER_HAPPY3:
@@ -215,9 +216,9 @@ static uint16_t map_evdev_key_to_pad(uint16_t code) {
 		case BTN_SELECT:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_SELECT);
 		case BTN_SOUTH:
-			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_B);
+			return (uint16_t)(1u << (clovercon_buttons ? RETRO_DEVICE_ID_JOYPAD_A : RETRO_DEVICE_ID_JOYPAD_B));
 		case BTN_EAST:
-			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_A);
+			return (uint16_t)(1u << (clovercon_buttons ? RETRO_DEVICE_ID_JOYPAD_B : RETRO_DEVICE_ID_JOYPAD_A));
 		case BTN_NORTH:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_X);
 		case BTN_WEST:
@@ -259,6 +260,11 @@ static void open_evdev_device(const char* path) {
 		.abs_y_min = INT32_MIN,
 		.abs_y_max = INT32_MAX,
 	};
+	// Clovercon reports Nintendo A/B labels as BTN_A/B instead of the Linux
+	// south/east positions. Its X/Y codes already match north/west positions.
+	char name[64];
+	device.clovercon_buttons = ioctl(fd, EVIOCGNAME(sizeof(name)), name) >= 0
+		&& strncmp(name, "Nintendo Clovercon - controller", sizeof("Nintendo Clovercon - controller") - 1) == 0;
 	snprintf(
 			input->paths[input->device_count],
 			sizeof(input->paths[input->device_count]),
@@ -288,7 +294,7 @@ static void open_evdev_device(const char* path) {
 			&device.abs_y_max);
 	device.has_abs_xy = has_absolute_x && has_absolute_y;
 	input->devices[input->device_count++] = device;
-	fprintf(stderr, "[libretro-host] input %s opened\n", path);
+	fprintf(stderr, "[libretro-host] input %s opened%s\n", path, device.clovercon_buttons ? " (Clovercon)" : "");
 }
 
 static void open_evdev_devices(void) {
@@ -495,7 +501,7 @@ static void poll_evdev_devices(void) {
 						input->mouse_buttons &= (uint8_t)~mouse_button;
 					}
 				}
-				const uint16_t pad_button = map_evdev_key_to_pad(event.code);
+				const uint16_t pad_button = map_evdev_key_to_pad(event.code, device->clovercon_buttons);
 				if (pad_button) {
 					if (event.value) {
 						device->pad_state |= pad_button;

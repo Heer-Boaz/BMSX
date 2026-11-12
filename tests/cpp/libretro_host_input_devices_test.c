@@ -1,10 +1,15 @@
 #define _GNU_SOURCE
 
 #include <SDL.h>
+#include <errno.h>
+#include <linux/input.h>
 #include <stdbool.h>
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/ioctl.h>
 #include "host_shortcuts.h"
 
 static uint32_t sdl_buttons;
@@ -19,6 +24,20 @@ static bool expect_synthetic_release = true;
 static BmsxHostShortcutState keyboard_shortcuts;
 static BmsxHostShortcutState gamepad_shortcuts;
 static uint32_t keyboard_buttons;
+static const char* evdev_name;
+
+static int test_ioctl(int fd, unsigned long request, ...) {
+	(void)fd;
+	if (request == EVIOCGNAME(64)) {
+		va_list args;
+		va_start(args, request);
+		char* name = va_arg(args, char*);
+		va_end(args);
+		return snprintf(name, 64, "%s", evdev_name) + 1;
+	}
+	errno = ENOTTY;
+	return -1;
+}
 
 static void test_controller_close(SDL_GameController* controller);
 static void test_pump_events(void) {}
@@ -40,11 +59,13 @@ static Uint8 test_controller_button(SDL_GameController* controller, SDL_GameCont
 #define SDL_GameControllerClose test_controller_close
 #define SDL_PumpEvents test_pump_events
 #define SDL_PollEvent test_poll_event
+#define ioctl test_ioctl
 #include "../../hosts/libretro_host/input_devices.c"
 #undef SDL_GameControllerGetButton
 #undef SDL_GameControllerClose
 #undef SDL_PumpEvents
 #undef SDL_PollEvent
+#undef ioctl
 
 static void require(bool condition, const char* message) {
 	if (!condition) {
@@ -276,6 +297,98 @@ static void test_evdev_pad_release_before_eof(void) {
 	input_devices_set_cancel_gamepad_callback(NULL);
 }
 
+static void test_evdev_controller_layouts(void) {
+	// The original Clovercon driver reports Nintendo labels as BTN_A/B/X/Y;
+	// ordinary Linux gamepads report their face positions as BTN_SOUTH/EAST/...
+	// https://github.com/endrift/clovercon-km/blob/master/clvcon.c
+	const struct {
+		uint16_t standard;
+		uint16_t clovercon;
+		unsigned retro;
+	} bindings[] = {
+		{BTN_SOUTH, BTN_B, RETRO_DEVICE_ID_JOYPAD_B},
+		{BTN_EAST, BTN_A, RETRO_DEVICE_ID_JOYPAD_A},
+		{BTN_WEST, BTN_Y, RETRO_DEVICE_ID_JOYPAD_Y},
+		{BTN_NORTH, BTN_X, RETRO_DEVICE_ID_JOYPAD_X},
+		{BTN_DPAD_UP, BTN_TRIGGER_HAPPY3, RETRO_DEVICE_ID_JOYPAD_UP},
+		{BTN_DPAD_DOWN, BTN_TRIGGER_HAPPY4, RETRO_DEVICE_ID_JOYPAD_DOWN},
+		{BTN_DPAD_LEFT, BTN_TRIGGER_HAPPY1, RETRO_DEVICE_ID_JOYPAD_LEFT},
+		{BTN_DPAD_RIGHT, BTN_TRIGGER_HAPPY2, RETRO_DEVICE_ID_JOYPAD_RIGHT},
+		{BTN_TL, BTN_TL, RETRO_DEVICE_ID_JOYPAD_L},
+		{BTN_TR, BTN_TR, RETRO_DEVICE_ID_JOYPAD_R},
+		{BTN_TL2, BTN_TL2, RETRO_DEVICE_ID_JOYPAD_L2},
+		{BTN_TR2, BTN_TR2, RETRO_DEVICE_ID_JOYPAD_R2},
+		{BTN_SELECT, BTN_SELECT, RETRO_DEVICE_ID_JOYPAD_SELECT},
+		{BTN_START, BTN_START, RETRO_DEVICE_ID_JOYPAD_START},
+	};
+	int pipes[3][2];
+	g_input_devices = (InputDevices){0};
+	const char* names[] = {
+		"Xbox Wireless Controller", "Nintendo Clovercon - controller1", "Nintendo Clovercon - controller2",
+	};
+	for (unsigned source = 0; source < 3; ++source) {
+		evdev_name = names[source];
+		open_evdev_device("/dev/null");
+		close(g_input_devices.devices[source].fd);
+		require(pipe2(pipes[source], O_NONBLOCK) == 0, "each evdev controller has its own event stream");
+		g_input_devices.devices[source].fd = pipes[source][0];
+	}
+	for (unsigned source = 0; source < 3; ++source) {
+		for (size_t index = 0; index < sizeof(bindings) / sizeof(bindings[0]); ++index) {
+			struct input_event event = {
+				.type = EV_KEY,
+				.code = source ? bindings[index].clovercon : bindings[index].standard,
+				.value = 1,
+			};
+			require(write(pipes[source][1], &event, sizeof(event)) == sizeof(event), "evdev press is delivered");
+			poll_evdev_devices();
+			for (unsigned button = 0; button < 16; ++button) {
+				require(input_devices_state(0, RETRO_DEVICE_JOYPAD, 0, button) == (button == bindings[index].retro),
+					"each controller's physical button publishes exactly its positional RetroPad bit");
+			}
+			event.value = 0;
+			require(write(pipes[source][1], &event, sizeof(event)) == sizeof(event), "evdev release is delivered");
+			poll_evdev_devices();
+			require(g_input_devices.pad_state == 0, "releasing a physical button clears its RetroPad contribution");
+		}
+	}
+	struct input_event press = {.type = EV_KEY, .code = BTN_SOUTH, .value = 1};
+	require(write(pipes[0][1], &press, sizeof(press)) == sizeof(press), "standard bottom press is delivered");
+	press.code = BTN_B;
+	require(write(pipes[1][1], &press, sizeof(press)) == sizeof(press), "Clovercon bottom press is delivered");
+	poll_evdev_devices();
+	require(g_input_devices.pad_state == (1u << RETRO_DEVICE_ID_JOYPAD_B),
+		"different controller encodings combine at the same physical bottom position");
+	press.value = 0;
+	require(write(pipes[1][1], &press, sizeof(press)) == sizeof(press), "Clovercon bottom release is delivered");
+	poll_evdev_devices();
+	require(g_input_devices.pad_state == (1u << RETRO_DEVICE_ID_JOYPAD_B),
+		"one controller's release does not erase the other's held bottom button");
+	press.code = BTN_SOUTH;
+	require(write(pipes[0][1], &press, sizeof(press)) == sizeof(press), "standard bottom release is delivered");
+	poll_evdev_devices();
+	require(g_input_devices.pad_state == 0, "the combined button releases when both sources release");
+	struct input_event chord[] = {
+		{.type = EV_KEY, .code = BTN_A, .value = 1},
+		{.type = EV_KEY, .code = BTN_B, .value = 1},
+		{.type = EV_KEY, .code = BTN_X, .value = 1},
+		{.type = EV_KEY, .code = BTN_Y, .value = 1},
+	};
+	require(write(pipes[1][1], chord, sizeof(chord)) == sizeof(chord), "Clovercon face chord is delivered");
+	poll_evdev_devices();
+	const uint16_t face_buttons = (1u << RETRO_DEVICE_ID_JOYPAD_A) | (1u << RETRO_DEVICE_ID_JOYPAD_B)
+		| (1u << RETRO_DEVICE_ID_JOYPAD_X) | (1u << RETRO_DEVICE_ID_JOYPAD_Y);
+	require(g_input_devices.pad_state == face_buttons, "Clovercon face buttons remain independent when held together");
+	for (size_t index = 0; index < sizeof(chord) / sizeof(chord[0]); ++index) chord[index].value = 0;
+	require(write(pipes[1][1], chord, sizeof(chord)) == sizeof(chord), "Clovercon face releases are delivered");
+	poll_evdev_devices();
+	require(g_input_devices.pad_state == 0, "all Clovercon face buttons release");
+	input_devices_close();
+	close(pipes[0][1]);
+	close(pipes[1][1]);
+	close(pipes[2][1]);
+}
+
 // Mapping tests never enter the window/presentation owner.
 bool bmsx_video_context_refresh_drawable_size(void) { abort(); }
 void video_presenter_surface_changed(void) { abort(); }
@@ -311,7 +424,7 @@ int main(void) {
 	uint32_t all_sdl_buttons = 0;
 	for (size_t index = 0; index < sizeof(bindings) / sizeof(bindings[0]); ++index) {
 		const uint16_t expected = (uint16_t)(1u << bindings[index].retro);
-		require(map_evdev_key_to_pad(bindings[index].evdev) == expected,
+		require(map_evdev_key_to_pad(bindings[index].evdev, false) == expected,
 			"evdev emits canonical positional RetroPad bits");
 		sdl_buttons = 1u << bindings[index].sdl;
 		require(sdl_controller_pad_state() == expected,
@@ -331,8 +444,8 @@ int main(void) {
 	}
 	sdl_buttons = all_sdl_buttons;
 	require(sdl_controller_pad_state() == all_buttons, "simultaneous SDL buttons retain independent positional bits");
-	require(map_evdev_key_to_pad(BTN_TL2) == (1u << RETRO_DEVICE_ID_JOYPAD_L2)
-		&& map_evdev_key_to_pad(BTN_TR2) == (1u << RETRO_DEVICE_ID_JOYPAD_R2),
+	require(map_evdev_key_to_pad(BTN_TL2, false) == (1u << RETRO_DEVICE_ID_JOYPAD_L2)
+		&& map_evdev_key_to_pad(BTN_TR2, false) == (1u << RETRO_DEVICE_ID_JOYPAD_R2),
 		"evdev trigger positions remain unchanged");
 	sdl_buttons = (1u << SDL_CONTROLLER_BUTTON_LEFTSTICK) | (1u << SDL_CONTROLLER_BUTTON_RIGHTSTICK);
 	require(sdl_controller_pad_state() == ((1u << RETRO_DEVICE_ID_JOYPAD_L3) | (1u << RETRO_DEVICE_ID_JOYPAD_R3)),
@@ -340,6 +453,7 @@ int main(void) {
 	test_lifecycle_cancellation();
 	test_keyups_before_source_cancellation();
 	test_evdev_pad_release_before_eof();
+	test_evdev_controller_layouts();
 	puts("LIBRETRO-HOST-INPUT-DEVICES:PASS");
 	return 0;
 }
