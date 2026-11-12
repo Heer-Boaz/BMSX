@@ -579,9 +579,14 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	assert.equal(cpu.activeCartridgeSlot(), 1);
 	const slot1Closure = cpu.getGlobalByKey(selectedClosureName) as Closure;
-	assert.equal(slot1Closure, slot0Closure);
-	assert.equal(closureTable.get(slot1Closure), 77);
+	assert.notEqual(slot1Closure, slot0Closure, 'different execution domains own distinct canonical closures');
+	assert.equal(slot1Closure.functionAddress, slot0Closure.functionAddress, 'both slots use the same mapped address');
+	assert.equal(closureTable.get(slot0Closure), 77);
+	assert.equal(closureTable.get(slot1Closure), null);
+	assert.deepEqual(guest.linkedFunctionLocation(slot1Closure), { domain: 1, address: slot1Closure.functionAddress });
 	assert.equal(cpu.getGlobalByKey(selectedClosureResultName), 222);
+	assert.deepEqual(runtime.callClosure(slot0Closure), [111], 'a slot 0 closure still executes slot 0 while slot 1 is active');
+	assert.deepEqual(runtime.callClosure(slot1Closure), [222], 'the slot 1 closure executes slot 1');
 	assert.equal(cpu.activeCartridgeSlot(), 1);
 	const slot1SourceRange = blua32SourceRangeAtPc(
 		slot1.cartSymbols,
@@ -599,7 +604,7 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	);
 	assert.ok(sourceRangeAfterBusSelection);
 	assert.equal(sourceRangeAfterBusSelection.path, 'slot1.lua');
-	assert.equal(guest.linkedFunctionLocation(slot0Closure)!.domain, 1, 'the same physical closure now calls into the EXEC-latched slot 1');
+	assert.equal(guest.linkedFunctionLocation(slot0Closure)!.domain, 0, 'source lookup follows the closure, not the current EXEC latch');
 
 		const saveBytes = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	cpu.requestNonMaskableInterrupt();
@@ -618,11 +623,17 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 		);
 	const restoredClosure = cpu.getGlobalByKey(savedClosureName) as Closure;
 	const restoredTable = cpu.getGlobalByKey(closureTableName) as Table;
-	assert.equal(restoredClosure, slot1Closure);
+	assert.equal(restoredClosure, slot0Closure);
 	assert.equal(restoredTable.get(restoredClosure), 77);
+	const restoredPublishedClosure = cpu.getGlobalByKey(selectedClosureName) as Closure;
+	assert.notEqual(restoredPublishedClosure, restoredClosure);
+	assert.equal(restoredTable.get(restoredPublishedClosure), null);
 	assert.equal(cpu.activeCartridgeSlot(), 1);
 	assert.equal(cpu.getGlobalByKey(selectedClosureResultName), 222);
-	assert.equal(guest.linkedFunctionLocation(restoredClosure)!.domain, 1, 'wire restore supplies the instruction bus for callback source');
+	assert.equal(guest.linkedFunctionLocation(restoredClosure)!.domain, 0, 'wire restore retains the closure-bound domain');
+	assert.equal(guest.linkedFunctionLocation(restoredPublishedClosure)!.domain, 1);
+	assert.deepEqual(runtime.callClosure(restoredClosure), [111]);
+	assert.deepEqual(runtime.callClosure(restoredPublishedClosure), [222]);
 });
 
 test('distinct non-static closures remain distinct table keys through the runtime save-state wire format', () => {

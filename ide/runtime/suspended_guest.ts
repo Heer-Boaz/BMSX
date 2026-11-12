@@ -189,11 +189,12 @@ export class SuspendedGuestSession {
 		return value !== null && value !== false;
 	}
 
-	/** A closure has no birth socket. Resolve its address on the current instruction bus. */
+	/** A closure carries the execution domain in which its function record was bound. */
 	public functionLocation(value: SuspendedGuestValue, target?: RuntimeFunctionLocationBuffer): RuntimeFunctionLocation | undefined {
 		if (valueTag(value) !== ValueTag.Closure) return undefined;
-		const address = (value as Closure).functionAddress;
-		const domain = this.runtime.machine.executionAddressSpace.domainIdOnBus(address, this.cpu.readExecutionBusSignals());
+		const closure = value as Closure;
+		const address = closure.functionAddress;
+		const domain = closure.executionDomainId;
 		if (target === undefined) return { domain, address };
 		target.domain = domain; target.address = address;
 		return target;

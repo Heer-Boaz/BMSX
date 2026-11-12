@@ -737,8 +737,7 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 	require(cpu.activeCartridgeSlot() == 0, "CP0.EXEC latches physically selected cartridge slot 0");
 	const bmsx::Value slot0ClosureValue = cpu.getGlobalByKey(publishedClosureName);
 	bmsx::Closure* slot0Closure = bmsx::asClosure(slot0ClosureValue);
-	require(runtime.machine.executionAddressSpace.domainIdOnBus(slot0Closure->functionAddress, cpu.readExecutionBusSignals()) == 0,
-		"callback location reads the current slot 0 instruction bus");
+	require(slot0Closure->executionDomainId == 0, "slot 0 closure binds its execution domain");
 	require(bmsx::asNumber(cpu.getGlobalByKey(publishedValueName)) == 111.0, "slot 0 startup executes its published closure");
 	const bmsx::StringId savedClosureName = cpu.stringPool().intern("saved_closure");
 	const bmsx::StringId closureTableName = cpu.stringPool().intern("closure_table");
@@ -748,25 +747,28 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 	cpu.setGlobalByKey(closureTableName, bmsx::valueTable(closureTable));
 
 	runtime.machine.memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 1u);
-	require(runtime.machine.executionAddressSpace.domainIdOnBus(slot0Closure->functionAddress, cpu.readExecutionBusSignals()) == 0,
-		"data selection is not the current instruction bus");
+	require(slot0Closure->executionDomainId == 0, "data selection does not change the closure domain");
 	cpu.requestNonMaskableInterrupt();
 	require(cpu.enterPendingInterrupt(), "physical NMI enters the system execution selector");
-	require(runtime.machine.executionAddressSpace.domainIdOnBus(slot0Closure->functionAddress, cpu.readExecutionBusSignals()) == 0,
-		"entering a system exception frame does not replace the EXEC latch");
+	require(slot0Closure->executionDomainId == 0, "entering a system exception does not change the closure domain");
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "system NMI handler enters the selected cartridge through CP0.EXEC");
 	require(cpu.activeCartridgeSlot() == 1, "CP0.EXEC latches physically selected cartridge slot 1");
 	const bmsx::Value slot1ClosureValue = cpu.getGlobalByKey(publishedClosureName);
-	require(bmsx::asClosure(slot1ClosureValue) == slot0Closure, "one raw physical function address has one canonical static closure");
-	require(bmsx::asNumber(closureTable->get(slot1ClosureValue)) == 77.0, "canonical closure identity remains a stable table key across cartridge slots");
+	bmsx::Closure* slot1Closure = bmsx::asClosure(slot1ClosureValue);
+	require(slot1Closure != slot0Closure, "different execution domains own distinct canonical closures");
+	require(slot1Closure->functionAddress == slot0Closure->functionAddress, "both slots use the same mapped function address");
+	require(slot1Closure->executionDomainId == 1, "slot 1 closure binds its execution domain");
+	require(bmsx::asNumber(closureTable->get(slot0ClosureValue)) == 77.0 && bmsx::isNil(closureTable->get(slot1ClosureValue)),
+		"closure table keys retain their own execution domain");
 	require(bmsx::asNumber(cpu.getGlobalByKey(publishedValueName)) == 222.0, "slot 1 startup executes the canonical closure against slot 1 code");
+	require(bmsx::asNumber(runtime.callClosure(*slot0Closure)[0]) == 111.0, "slot 0 closure executes its bound socket while slot 1 is active");
+	require(bmsx::asNumber(runtime.callClosure(*slot1Closure)[0]) == 222.0, "slot 1 closure executes its bound socket");
 	runtime.machine.memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 0u);
 	require(
 		cpu.activeCartridgeSlot() == 1,
 		"data-bus cartridge selection does not replace the post-unwind execution domain"
 	);
-	require(runtime.machine.executionAddressSpace.domainIdOnBus(slot0Closure->functionAddress, cpu.readExecutionBusSignals()) == 1,
-		"the same physical closure now calls into the EXEC-latched slot 1");
+	require(slot0Closure->executionDomainId == 0, "data and execution selection do not redirect the slot 0 closure");
 
 	const std::vector<bmsx::u8> saveBytes =
 		bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime));
@@ -788,13 +790,16 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 	bmsx::Table* restoredTable = bmsx::asTable(cpu.getGlobalByKey(closureTableName));
 	require(bmsx::asClosure(restoredClosureValue) == slot0Closure, "wire restore preserves canonical static closure identity");
 	require(bmsx::asNumber(restoredTable->get(restoredClosureValue)) == 77.0, "wire restore preserves closure-keyed table entries");
+	bmsx::Closure* restoredPublished = bmsx::asClosure(cpu.getGlobalByKey(publishedClosureName));
+	require(restoredPublished != slot0Closure && restoredPublished->executionDomainId == 1, "wire restore preserves the distinct slot 1 closure");
 	require(cpu.activeCartridgeSlot() == 1, "wire restore preserves slot 1 as the physical execution source");
-	require(runtime.machine.executionAddressSpace.domainIdOnBus(bmsx::asClosure(restoredClosureValue)->functionAddress, cpu.readExecutionBusSignals()) == 1,
-		"wire restore supplies the instruction bus for callback source");
+	require(bmsx::asClosure(restoredClosureValue)->executionDomainId == 0, "wire restore retains the slot 0 closure's domain");
 	require(
 		bmsx::asNumber(cpu.getGlobalByKey(publishedValueName)) == 222.0,
 		"wire restore preserves the slot 1 closure result"
 	);
+	require(bmsx::asNumber(runtime.callClosure(*bmsx::asClosure(restoredClosureValue))[0]) == 111.0, "restored slot 0 closure executes slot 0 code");
+	require(bmsx::asNumber(runtime.callClosure(*restoredPublished)[0]) == 222.0, "restored slot 1 closure executes slot 1 code");
 }
 
 void testDistinctNonStaticClosuresRemainDistinctTableKeysThroughTheSaveStateWireFormat() {
