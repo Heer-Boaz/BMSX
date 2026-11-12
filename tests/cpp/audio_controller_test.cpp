@@ -475,6 +475,57 @@ void testSourceEndAndFadeBatchSubdivision() {
 	}
 }
 
+void testLoopCursorPcmAcrossLargeAndReverseSteps() {
+	struct Case { bmsx::u32 start; bmsx::i32 step; };
+	constexpr std::array<Case, 6> cases{{
+		{2u, 0x8000}, {5u, -0x8000}, {0u, 0x10000},
+		{7u, 0x94000}, {2u, -0x94000}, {5u, 0},
+	}};
+	constexpr std::array<bmsx::u8, 8> source{{0x80u, 0x90u, 0xa0u, 0xb0u, 0xc0u, 0xd0u, 0xe0u, 0xf0u}};
+	constexpr bmsx::i64 one = bmsx::APU_RATE_STEP_Q16_ONE;
+	constexpr bmsx::i64 loopStart = 2 * one, loopLength = 4 * one;
+	for (const Case& c : cases) {
+		AudioHarness harness;
+		auto& memory = harness.memory;
+		memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_ADDRESS, 0u);
+		memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_CONTROL, bmsx::APU_TRANSFER_MODE_MANUAL_WRITE);
+		memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_DATA, 0xb0a09080u);
+		memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_DATA, 0xf0e0d0c0u);
+		memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_CONTROL, 0u);
+		memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_ADDR, bmsx::APU_SAMPLE_RAM_BASE);
+		memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_BYTES, 8u);
+		memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_SAMPLE_RATE_HZ, bmsx::APU_SAMPLE_RATE_HZ);
+		memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_CHANNELS, 1u);
+		memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_BITS_PER_SAMPLE, 8u);
+		memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_FRAME_COUNT, 8u);
+		memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_DATA_BYTES, 8u);
+		memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_LOOP_START_SAMPLE, 2u);
+		memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_LOOP_END_SAMPLE, 6u);
+		memory.writeMappedU32LE(bmsx::IO_APU_START_SAMPLE, c.start);
+		memory.writeMappedU32LE(bmsx::IO_APU_RATE_STEP_Q16, static_cast<bmsx::u32>(c.step));
+		memory.writeMappedU32LE(bmsx::IO_APU_GAIN_Q12, bmsx::APU_GAIN_Q12_ONE);
+		memory.writeMappedU32LE(bmsx::IO_APU_SLOT, 1u);
+		memory.writeMappedU32LE(bmsx::IO_APU_CMD, bmsx::APU_CMD_PLAY);
+		harness.audio.onService(0);
+		bmsx::i64 cursor = static_cast<bmsx::i64>(c.start) * one;
+		for (bmsx::i64 frame = 0; frame < 40; ++frame) {
+			cursor = loopStart + (((cursor - loopStart) % loopLength) + loopLength) % loopLength;
+			const size_t index = static_cast<size_t>(cursor / one);
+			const size_t next = index + 1u == 6u ? 2u : index + 1u;
+			const auto sample = bmsx::interpolateApuPcmSample(
+				(static_cast<int>(source[index]) - 128) * 256,
+				(static_cast<int>(source[next]) - 128) * 256, static_cast<bmsx::u32>(cursor % one));
+			harness.output.renderMachineFrames(1, frame);
+			const bmsx::u32 word = static_cast<bmsx::u16>(sample);
+			require(harness.output.outputRing.readFramePacked() == (word | (word << 16u)),
+				"looped PCM must preserve interpolation across fractional, reverse and large steps");
+			cursor += c.step;
+			const bmsx::i64 wrapped = loopStart + (((cursor - loopStart) % loopLength) + loopLength) % loopLength;
+			require(harness.output.captureState().voices[0].cursorQ16 == wrapped, "loop cursor must retain exact wrapped Q16 state");
+		}
+	}
+}
+
 void testApuVoiceLatchesCartridgeSocketAcrossRestore() {
 	AudioHarness harness(true);
 	harness.memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 1u);
@@ -1232,6 +1283,7 @@ int main() {
 	testPauseResumeRetainsVoiceTransportAcrossRestore();
 	testFixedPointMixerVectors();
 	testSourceEndAndFadeBatchSubdivision();
+	testLoopCursorPcmAcrossLargeAndReverseSteps();
 	testFilterAndFadeRestore();
 	testResamplerChunkContinuityAndUnderrun();
 	testResamplerDropsOverwrittenInterpolationEndpoints();

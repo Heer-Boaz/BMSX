@@ -547,6 +547,9 @@ export class ApuOutputMixer {
 	}
 
 	private wrapLoopCursor(cursorQ16: number, loopStartQ16: number, loopEndQ16: number): number {
+		if (cursorQ16 >= loopStartQ16 && cursorQ16 < loopEndQ16) {
+			return cursorQ16;
+		}
 		const lengthQ16 = loopEndQ16 - loopStartQ16;
 		let wrapped = (cursorQ16 - loopStartQ16) % lengthQ16;
 		if (wrapped < 0) {

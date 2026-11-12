@@ -846,6 +846,42 @@ function writeBadpSourceRegisters(memory: Memory, sampleRateHz: number): void {
 	memory.writeMappedWord(IO_APU_SOURCE_DATA_BYTES, 12);
 }
 
+test('APU loop cursors preserve PCM for fractional, reverse and multi-loop steps', () => {
+	const source = new Uint8Array([0x80, 0x90, 0xa0, 0xb0, 0xc0, 0xd0, 0xe0, 0xf0]);
+	for (const { start, step } of [
+		{ start: 2, step: 0x8000 }, { start: 5, step: -0x8000 },
+		{ start: 0, step: 0x10000 }, { start: 7, step: 0x94000 },
+		{ start: 2, step: -0x94000 }, { start: 5, step: 0 },
+	]) {
+		const harness = createRealAudioHarness();
+		writeSampleRamBytes(harness.memory, source);
+		writePcmSourceRegisters(harness.memory, APU_SAMPLE_RAM_BASE, source.length);
+		for (const [address, value] of [
+			[IO_APU_SOURCE_SAMPLE_RATE_HZ, APU_SAMPLE_RATE_HZ],
+			[IO_APU_SOURCE_FRAME_COUNT, source.length],
+			[IO_APU_SOURCE_LOOP_START_SAMPLE, 2], [IO_APU_SOURCE_LOOP_END_SAMPLE, 6],
+			[IO_APU_START_SAMPLE, start], [IO_APU_RATE_STEP_Q16, step >>> 0],
+			[IO_APU_GAIN_Q12, APU_GAIN_Q12_ONE], [IO_APU_SLOT, 1],
+		]) harness.memory.writeMappedWord(address!, value!);
+		writeApuCommand(harness.memory, harness.audio, APU_CMD_PLAY);
+		let cursor = start * APU_RATE_STEP_Q16_ONE;
+		const loopStart = 2 * APU_RATE_STEP_Q16_ONE, loopLength = 4 * APU_RATE_STEP_Q16_ONE;
+		for (let frame = 0; frame < 40; frame += 1) {
+			cursor = loopStart + (((cursor - loopStart) % loopLength) + loopLength) % loopLength;
+			const index = (cursor - (cursor % APU_RATE_STEP_Q16_ONE)) / APU_RATE_STEP_Q16_ONE;
+			const next = index + 1 === 6 ? 2 : index + 1;
+			const sample = interpolateApuPcmSample((source[index]! - 128) << 8,
+				(source[next]! - 128) << 8, cursor % APU_RATE_STEP_Q16_ONE);
+			harness.audioOutput.renderMachineFrames(1, frame);
+			assert.equal(harness.audioOutput.outputRing.readFramePacked(), ((sample & 0xffff) * 0x10001) >>> 0,
+				`start ${start}, step ${step}, frame ${frame}`);
+			cursor += step;
+			const wrapped = loopStart + (((cursor - loopStart) % loopLength) + loopLength) % loopLength;
+			assert.equal(harness.audioOutput.captureState().voices[0]!.cursorQ16, wrapped);
+		}
+	}
+});
+
 function writeApuCommand(memory: Memory, audio: AudioController, command: number): void {
 	memory.writeMappedWord(IO_APU_CMD, command);
 	audio.onService(0);

@@ -494,6 +494,9 @@ void ApuOutputMixer::readVoiceFrame(VoiceRecord& record, size_t frame) {
 }
 
 i64 ApuOutputMixer::wrapLoopCursor(i64 cursorQ16, i64 loopStartQ16, i64 loopEndQ16) {
+	if (cursorQ16 >= loopStartQ16 && cursorQ16 < loopEndQ16) {
+		return cursorQ16;
+	}
 	const i64 lengthQ16 = loopEndQ16 - loopStartQ16;
 	i64 wrapped = (cursorQ16 - loopStartQ16) % lengthQ16;
 	if (wrapped < 0) {
