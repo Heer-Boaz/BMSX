@@ -23,7 +23,9 @@ NativeBlockCompiler::NativeBlockCompiler(const Value* constants, std::span<const
 	m_entryByWord.fill(static_cast<u16>(blocks.size()));
 	for (size_t index = 0; index < blocks.size(); ++index)
 		m_entryByWord[(blocks[index]->firstPc - m_entryPagePc) / INSTRUCTION_BYTES] = static_cast<u16>(index);
-	size_t slowPaths = 0, readMappings = 0;
+	size_t slowPaths = std::count_if(blocks.begin(), blocks.end(),
+		[](const auto& block) { return block->hasFusedJump; });
+	size_t readMappings = 0;
 	bool calls = false;
 	for (const auto& blockSource : sources) {
 		bool controlGuarded = false;

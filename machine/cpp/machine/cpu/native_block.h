@@ -321,6 +321,7 @@ public:
 
 	std::shared_ptr<NativeCodeRegion> region;
 	u32 firstPc = 0;
+	bool hasFusedJump = false;
 	NativeBlockExitSite terminal;
 	std::vector<NativeBlockExitSite> sideExits;
 	// Dependency extent includes the linear successors admitted by this entry.

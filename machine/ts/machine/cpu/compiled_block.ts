@@ -207,6 +207,7 @@ export type EmittedJavaScriptBlock = {
 	readonly finalWord: number;
 	readonly terminalIndex: number;
 	readonly takenIndex: number;
+	readonly deferredJumpIndex: number;
 };
 
 /** Emit a segment and its precise side exits; the region owns control flow. */
@@ -314,6 +315,7 @@ export function emitJavaScriptBlock(
 	const terminalIndex = exits.length;
 	exits.push(terminal);
 	let takenIndex = -1;
+	let deferredJumpIndex = -1;
 	if (compiledBlockComparison(finalOp)) {
 		takenIndex = exits.length;
 		exits.push({ ...terminal, exit: skippedInstructionWidth === 0 ? CompiledBlockExit.SkipInstruction : CompiledBlockExit.Continue,
@@ -321,8 +323,10 @@ export function emitJavaScriptBlock(
 		sourceWords += skippedInstructionWidth;
 		if (skippedInstructionWidth !== 0 && page.ops[endWord] === OpCode.JMP
 			&& page.dispatchOps[endWord] !== DecodedDispatchOp.Observe) {
-			// Both paths are one admitted segment. Only the matching path
-			// executes and charges the JMP; its complete source is a dependency.
+			// A comparison can exhaust its grant, including a string surcharge.
+			// Preserve the boundary before executing the fused JMP.
+			deferredJumpIndex = exits.length;
+			exits.push({ ...terminal });
 			exits[terminalIndex] = { ...terminal, cycles: terminal.cycles + BASE_CYCLES[OpCode.JMP],
 				currentPc: terminal.nextPc, lastPc: (terminal.nextPc + (skippedInstructionWidth - 1) * INSTRUCTION_BYTES) >>> 0,
 				nextPc: page.bx[endWord], exitWord: endWord,
@@ -333,7 +337,7 @@ export function emitJavaScriptBlock(
 		exits.push({ ...terminal, nextPc: page.bx[finalWord] });
 	}
 	return { firstWord, terminal: exits[terminalIndex], exits: exits.slice(firstExit), sourceWords,
-		body: source.join('\n'), registers, finalWord, terminalIndex, takenIndex };
+		body: source.join('\n'), registers, finalWord, terminalIndex, takenIndex, deferredJumpIndex };
 }
 
 export function finishJavaScriptBlock(page: DecodedInstructionPage, block: EmittedJavaScriptBlock,
@@ -341,8 +345,10 @@ export function finishJavaScriptBlock(page: DecodedInstructionPage, block: Emitt
 	const finalOp = page.ops[block.finalWord];
 	if (compiledBlockComparison(finalOp)) {
 		const expected = page.a[block.finalWord] !== 0;
+		const continuation = block.deferredJumpIndex < 0 ? transfer(block.terminalIndex)
+			: `if(budget>${block.terminal.cycles - BASE_CYCLES[OpCode.JMP]}){${transfer(block.terminalIndex)}}else{${transfer(block.deferredJumpIndex)}}`;
 		return emitComparison(page, block.finalWord, block.registers,
-			transfer(expected ? block.terminalIndex : block.takenIndex), transfer(expected ? block.takenIndex : block.terminalIndex));
+			expected ? continuation : transfer(block.takenIndex), expected ? transfer(block.takenIndex) : continuation);
 	}
 	if (finalOp === OpCode.JMPIF || finalOp === OpCode.JMPIFNOT) {
 		const truth = `${finalOp === OpCode.JMPIFNOT ? '!' : ''}${block.registers.truthy(page.a[block.finalWord])}`;

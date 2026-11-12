@@ -19,11 +19,23 @@ void NativeBlockCompiler::emitComparison(const DecodedInstruction& instruction, 
 		: sljit_emit_fcmp(m_compiler, SLJIT_UNORDERED, left, 0, right, 0);
 	auto* matched = sljit_emit_fcmp(m_compiler, op == OpCode::EQ ? SLJIT_ORDERED_EQUAL
 		: op == OpCode::LT ? SLJIT_ORDERED_LESS : SLJIT_ORDERED_LESS_EQUAL, left, 0, right, 0);
+	const auto emitOutcome = [&](NativeBlockExitSite* exit) {
+		if (m_block->hasFusedJump && exit == &m_block->terminal) {
+			auto& deferred = m_block->sideExits[m_block->sideExits.size() - 2u];
+			SlowPath slow;
+			slow.exit = &deferred;
+			slow.registers = registerSnapshot();
+			slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32,
+				SLJIT_S4, 0, SLJIT_IMM, deferred.cycles);
+			m_slowPaths.push_back(slow);
+		}
+		emitExit(exit);
+	};
 	auto* noLabel = sljit_emit_label(m_compiler);
-	emitExit(instruction.a != 0 ? skipped : &m_block->terminal);
+	emitOutcome(instruction.a != 0 ? skipped : &m_block->terminal);
 	auto* yesLabel = sljit_emit_label(m_compiler);
 	sljit_set_label(matched, yesLabel);
-	emitExit(instruction.a != 0 ? &m_block->terminal : skipped);
+	emitOutcome(instruction.a != 0 ? &m_block->terminal : skipped);
 	if (numericConstant) return;
 
 	// Ordered numeric true and false paths have already left. Tagged values

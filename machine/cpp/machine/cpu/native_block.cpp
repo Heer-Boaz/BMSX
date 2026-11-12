@@ -71,7 +71,7 @@ std::vector<std::unique_ptr<NativeBlock>> NativeBlock::compileRegion(
 		const bool branch = nativeBlockComparison(source.instructions.back().decoded->op)
 			|| source.instructions.back().decoded->op == static_cast<u8>(OpCode::JMPIF)
 			|| source.instructions.back().decoded->op == static_cast<u8>(OpCode::JMPIFNOT);
-		const size_t slowCount = block.sideExits.size() - (branch ? 1u : 0u);
+		const size_t slowCount = block.sideExits.size() - (branch ? 1u : 0u) - (block.hasFusedJump ? 1u : 0u);
 		auto* taken = branch ? &block.sideExits.back() : nullptr;
 		for (const auto& instruction : source.instructions) {
 			auto* exit = slow < slowCount && block.sideExits[slow].currentPc == instruction.pc ? &block.sideExits[slow++] : nullptr;
@@ -104,8 +104,11 @@ std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& sourc
 		slowCount += slow != NativeBlockExit::Continue;
 	}
 	const auto finalOp = static_cast<OpCode>(instructions.back().decoded->op);
+	block->hasFusedJump = nativeBlockComparison(static_cast<u8>(finalOp)) && skippedInstruction
+		&& skippedInstruction->op == static_cast<u8>(OpCode::JMP)
+		&& skippedInstruction->dispatchOp != static_cast<u8>(DecodedDispatchOp::Observe);
 	block->sideExits.reserve(slowCount + (finalOp == OpCode::JMPIF || finalOp == OpCode::JMPIFNOT
-		|| nativeBlockComparison(static_cast<u8>(finalOp)) ? 1 : 0));
+		|| nativeBlockComparison(static_cast<u8>(finalOp)) ? 1 : 0) + (block->hasFusedJump ? 1 : 0));
 	auto& terminal = block->terminal;
 	controlGuarded = false;
 	for (const auto& source : instructions) {
@@ -166,16 +169,18 @@ std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& sourc
 	}
 	terminal.handler = exitHandlers[static_cast<size_t>(terminal.exit)];
 	if (op == OpCode::JMPIF || op == OpCode::JMPIFNOT || nativeBlockComparison(static_cast<u8>(op))) {
+		if (block->hasFusedJump) {
+			// A compare can exhaust its grant, including a string surcharge.
+			// Retain its successor before constructing the fused JMP edge.
+			block->sideExits.push_back(terminal);
+		}
 		auto& exit = block->sideExits.emplace_back(terminal);
 		if (nativeBlockComparison(static_cast<u8>(op))) {
 			exit.exit = skippedInstructionWidth == 0 ? NativeBlockExit::SkipInstruction : NativeBlockExit::Continue;
 			exit.nextPc += static_cast<u32>(skippedInstructionWidth) * INSTRUCTION_BYTES;
 			block->sourceWords += skippedInstructionWidth;
 			exit.handler = exitHandlers[static_cast<size_t>(exit.exit)];
-			if (skippedInstruction && skippedInstruction->op == static_cast<u8>(OpCode::JMP)
-				&& skippedInstruction->dispatchOp != static_cast<u8>(DecodedDispatchOp::Observe)) {
-				// Both paths are one admitted segment. Only the matching path
-				// executes and charges the JMP; its complete source is a dependency.
+			if (block->hasFusedJump) {
 				terminal.cycles += skippedInstruction->baseCycles;
 				terminal.currentPc = terminal.nextPc;
 				terminal.lastPc = terminal.currentPc + (static_cast<u32>(skippedInstructionWidth) - 1u) * INSTRUCTION_BYTES;

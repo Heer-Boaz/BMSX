@@ -320,7 +320,7 @@ for (const [currentWide, skippedWide] of [[false, false], [true, false], [false,
 for (const comparisonWide of [false, true]) for (const jumpWide of [false, true]) {
 	test(`paired comparison/JMP retains per-path charges and mutable targets (comparison WIDE=${comparisonWide}, JMP WIDE=${jumpWide})`, () => {
 		for (const op of [OpCode.EQ, OpCode.LT, OpCode.LE]) for (const expected of [false, true]) {
-			const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+			const text = new Uint8Array(2 * MAPPED_PAGE_BYTE_SIZE);
 			let word = 0;
 			if (comparisonWide) writeInstruction(text, word++, OpCode.WIDE, expected ? 3 : 0, 0, 0);
 			writeInstruction(text, word++, op, comparisonWide ? 0 : expected ? 1 : 0, 0, 2);
@@ -334,7 +334,10 @@ for (const comparisonWide of [false, true]) for (const jumpWide of [false, true]
 				writeInstruction(text, start, OpCode.ADD, reg, reg, 1);
 				writeInstruction(text, start + 1, OpCode.JMP, 0, 63, 62 - start, 255);
 			}
-			const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 22, maxStack: 8 }] });
+			writeInstruction(text, 24, OpCode.JMP, 0, 63, 39, 255);
+			const crossPageWord = MAPPED_PAGE_BYTE_SIZE / INSTRUCTION_BYTES, delta = -crossPageWord - 1;
+			writeInstruction(text, crossPageWord, OpCode.JMP, 0, (delta >>> 6) & 63, delta & 63, (delta >>> 12) & 255);
+			const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: crossPageWord + 1, maxStack: 8 }] });
 			const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 			for (const { cpu, memory } of machines) {
 				memory.writeBytes(DYNAMIC_RAM_BASE, text);
@@ -353,9 +356,46 @@ for (const comparisonWide of [false, true]) for (const jumpWide of [false, true]
 			assert.ok(jumped); assert.equal(jumped.nextPc, DYNAMIC_RAM_BASE + 16 * INSTRUCTION_BYTES);
 			assert.equal(jumped.lastPc, DYNAMIC_RAM_BASE + jumpBody * INSTRUCTION_BYTES);
 			assert.equal(root.terminal, jumped);
-			assert.equal(root.exits.length, 2, 'no third comparison-only exit remains between the fused instructions');
+			assert.equal(root.exits.length, 3, 'an exhausted compare has its own deferred-JMP exit');
 			assert.equal(jumped.cycles, 2); assert.equal(root.exits.find(exit => exit !== jumped)!.cycles, 1);
 			assert.equal(cache.entries[jumpWord], null, 'a JMP reached only through its fused comparison has no redundant body');
+			for (const linked of [0, 1, 2]) {
+				const entryWord = linked === 1 ? 24 : linked === 2 ? crossPageWord : 0;
+				if (linked !== 0) {
+					for (let visit = 0; visit < 12; ++visit) for (const { cpu } of machines) {
+						cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE + entryWord * INSTRUCTION_BYTES);
+						cpu.runUntilDepth(0, 128);
+					}
+					const lookup = machines[0].cpu.rootThread.frameAtDepth(0).executionImage.compiledCodeLookup!;
+					const predecessor = lookup.find(DYNAMIC_RAM_BASE + entryWord * INSTRUCTION_BYTES, 0)!.compiledBlocks!.entries[entryWord % crossPageWord]!;
+					assert.ok(predecessor, 'the predecessor really compiles before checking its linked successor');
+					assert.ok(predecessor.region === cache.entries[0]!.region
+						|| predecessor.terminal.linkedBlock === cache.entries[0], 'the predecessor really links to the comparison');
+				}
+				for (const strings of [false, true]) {
+					for (const { cpu } of machines) {
+						const r = cpu.rootThread.frameAtDepth(0).registers;
+						if (strings) {
+							r.setStringId(0, cpu.stringPool.intern(expected ? 'aaaaaa' : 'zzzzzz'));
+							r.setStringId(2, cpu.stringPool.intern(op === OpCode.EQ && expected ? 'aaaaaa' : 'mmmmmm'));
+						} else {
+							r.setNumber(0, op === OpCode.EQ ? (expected ? 7 : 6) : (expected ? 6 : 8));
+							r.setNumber(2, 7);
+						}
+						cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0],
+							DYNAMIC_RAM_BASE + entryWord * INSTRUCTION_BYTES);
+						assert.equal(cpu.runUntilDepth(0, linked !== 0 ? 2 : 1), RunResult.Yielded);
+					}
+					const [js, scalar] = machines.map(machine => machine.cpu);
+					assert.equal(js.readFramePc(0), DYNAMIC_RAM_BASE + jumpWord * INSTRUCTION_BYTES);
+					assert.equal(js.readFramePc(0), scalar.readFramePc(0));
+					assert.equal(js.lastPc, scalar.lastPc);
+					assert.equal(js.instructionBudgetRemaining, scalar.instructionBudgetRemaining);
+					assert.equal(js.instructionBudgetRemaining, strings && op !== OpCode.EQ ? -6 : 0,
+						'ordered string comparison charges all six codepoints before deciding whether JMP can start');
+				}
+			}
+			for (const { cpu } of machines) cpu.rootThread.frameAtDepth(0).registers.setNumber(2, 7);
 			for (const value of [6, 7, 8]) for (let grant = 1; grant <= 16; ++grant) {
 				for (const { cpu } of machines) {
 					cpu.rootThread.frameAtDepth(0).registers.setNumber(0, value);
@@ -442,9 +482,13 @@ test('a paired JMP defers the target fetch until positive budget remains', () =>
 	for (const { cpu } of machines) {
 		cpu.rootThread.frameAtDepth(0).registers.setNumber(0, 0); cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);
 	}
-	assert.equal(runCpuParity(machines[0].cpu, machines[1].cpu, 1), RunResult.Yielded);
-	assert.equal(machines[0].cpu.instructionBudgetRemaining, -1, 'the paired JMP retains its own charge');
 	for (const { cpu } of machines) {
+		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+		assert.equal(cpu.instructionBudgetRemaining, 0, 'the compare consumes only its own grant');
+		assert.equal(cpu.readFramePc(0), start + INSTRUCTION_BYTES);
+		assert.equal(cpu.readCurrentInstructionPc(), start);
+		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+		assert.equal(cpu.instructionBudgetRemaining, 0, 'the deferred JMP consumes the next grant');
 		assert.equal(cpu.readFramePc(0), end); assert.equal(cpu.readCurrentInstructionPc(), start + INSTRUCTION_BYTES);
 		assert.equal(cpu.rootThread.frameDepth, 1);
 	}

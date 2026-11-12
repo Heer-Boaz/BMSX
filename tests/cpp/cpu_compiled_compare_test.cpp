@@ -261,7 +261,7 @@ void resolvedComparisonLinksBothPaths() {
 void pairedWideJumpsRetainBoundariesAndMutableTargets() {
 	for (const bool comparisonWide : {false, true}) for (const bool jumpWide : {false, true}) {
 		for (const auto op : {OpCode::EQ, OpCode::LT, OpCode::LE}) for (const bool expected : {false, true}) {
-			test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+			test::Blua32TestImage image; image.text.resize(2u * MAPPED_PAGE_BYTE_SIZE);
 			u32 word = 0;
 			if (comparisonWide) writeInstruction(image.text, word++, static_cast<u8>(OpCode::WIDE), expected ? 3 : 0, 0, 0);
 			writeInstruction(image.text, word++, static_cast<u8>(op), comparisonWide ? 0 : expected ? 1 : 0, 0, 2);
@@ -275,7 +275,13 @@ void pairedWideJumpsRetainBoundariesAndMutableTargets() {
 				writeInstruction(image.text, pair[0], static_cast<u8>(OpCode::ADD), pair[1], pair[1], 1);
 				writeInstruction(image.text, pair[0] + 1, static_cast<u8>(OpCode::JMP), 0, 63, 62 - pair[0], 255);
 			}
-			image.functions = {{.firstWord = 0, .wordCount = 22, .maxStack = 8}};
+			// A separately enterable native predecessor links into the comparison.
+			writeInstruction(image.text, 24, static_cast<u8>(OpCode::JMP), 0, 63, 39, 255);
+			const u32 crossPageWord = MAPPED_PAGE_BYTE_SIZE / INSTRUCTION_BYTES;
+			const u32 crossPageDelta = 0u - crossPageWord - 1u;
+			writeInstruction(image.text, crossPageWord, static_cast<u8>(OpCode::JMP), 0,
+				(crossPageDelta >> 6u) & 63u, crossPageDelta & 63u, (crossPageDelta >> 12u) & 255u);
+			image.functions = {{.firstWord = 0, .wordCount = crossPageWord + 1u, .maxStack = 8}};
 			CpuMachine native(image, false), scalar(image, true);
 			for (auto* machine : {&native, &scalar}) {
 				machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
@@ -295,10 +301,53 @@ void pairedWideJumpsRetainBoundariesAndMutableTargets() {
 			require(jumped.currentPc == DYNAMIC_RAM_BASE + jumpWord * INSTRUCTION_BYTES
 				&& jumped.nextPc == DYNAMIC_RAM_BASE + 16u * INSTRUCTION_BYTES
 				&& jumped.lastPc == DYNAMIC_RAM_BASE + jumpBody * INSTRUCTION_BYTES
-				&& jumped.cycles == 2 && root.sideExits.size() == 1 && root.sideExits.back().cycles == 1,
+				&& jumped.cycles == 2 && root.sideExits.size() == 2 && root.sideExits.back().cycles == 1
+				&& root.sideExits[0].nextPc == DYNAMIC_RAM_BASE + jumpWord * INSTRUCTION_BYTES,
 				"paired WIDE comparison/JMP exits preserve the executed prefix PCs and each instruction charge");
 			require(!page.nativeBlocks->entries[jumpWord], "a JMP reached only through its fused comparison has no redundant body");
 #endif
+			for (const int linked : {0, 1, 2}) {
+				const u32 entryWord = linked == 1 ? 24u : linked == 2 ? crossPageWord : 0u;
+				if (linked != 0) {
+					for (int visit = 0; visit < 12; ++visit) for (auto* machine : {&native, &scalar}) {
+						machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE + entryWord * INSTRUCTION_BYTES);
+						machine->cpu.runUntilDepth(0, 128);
+					}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+					const auto* predecessorPage = native.cpu.activeThread()->frameAtDepth(0)->executionImage->nativeCodeLookup->find(
+						DYNAMIC_RAM_BASE + entryWord * INSTRUCTION_BYTES, 0);
+					require(predecessorPage && predecessorPage->nativeBlocks && predecessorPage->nativeBlocks->entries[entryWord % crossPageWord],
+						"the predecessor is actually compiled before the linked boundary check");
+					const auto& predecessor = *predecessorPage->nativeBlocks->entries[entryWord % crossPageWord];
+					const auto& comparison = *page.nativeBlocks->entries[0];
+					require(predecessor.region == comparison.region || predecessor.terminal.link.target == &comparison,
+						"the native predecessor actually links to the comparison");
+#endif
+				}
+				for (const bool strings : {false, true}) {
+					for (auto* machine : {&native, &scalar}) {
+						auto* r = machine->cpu.activeThread()->frameAtDepth(0)->registers;
+						if (strings) {
+							const auto left = machine->cpu.stringPool().intern(expected ? "aaaaaa" : "zzzzzz");
+							const auto right = machine->cpu.stringPool().intern(op == OpCode::EQ && expected ? "aaaaaa" : "mmmmmm");
+							r[0] = valueString(left); r[2] = valueString(right);
+						} else {
+							r[0] = valueNumber(op == OpCode::EQ ? (expected ? 7 : 6) : (expected ? 6 : 8));
+							r[2] = valueNumber(7);
+						}
+						machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0],
+							DYNAMIC_RAM_BASE + entryWord * INSTRUCTION_BYTES);
+						machine->cpu.runUntilDepth(0, linked != 0 ? 2 : 1);
+					}
+					require(native.cpu.readFramePc(0) == DYNAMIC_RAM_BASE + jumpWord * INSTRUCTION_BYTES
+						&& native.cpu.readFramePc(0) == scalar.cpu.readFramePc(0)
+						&& native.cpu.lastPc == scalar.cpu.lastPc
+						&& native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining
+						&& native.cpu.instructionBudgetRemaining == (strings && op != OpCode::EQ ? -6 : 0),
+						"an exhausted compare must defer its fused JMP at direct and linked entries");
+				}
+			}
+			for (auto* machine : {&native, &scalar}) machine->cpu.activeThread()->frameAtDepth(0)->registers[2] = valueNumber(7);
 			for (const int value : {6, 7, 8}) for (int grant = 1; grant <= 16; ++grant) {
 				for (auto* machine : {&native, &scalar}) {
 					machine->cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNumber(value);
