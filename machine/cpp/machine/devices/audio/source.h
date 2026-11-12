@@ -6,7 +6,10 @@
 
 namespace bmsx {
 
+inline constexpr u64 APU_ROM_SOURCE_REVISION = 0;
+
 struct ApuSourceByteView {
+	const u64* revision = &APU_ROM_SOURCE_REVISION;
 	Span<const u8> bytes;
 	u32 cartridgeSlot = 0;
 };

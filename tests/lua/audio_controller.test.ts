@@ -116,6 +116,7 @@ import {
 import { AudioController } from '../../machine/ts/machine/devices/audio/controller';
 import { BiquadFilterState } from '../../machine/ts/machine/devices/audio/biquad_filter';
 import { ApuOutputMixer } from '../../machine/ts/machine/devices/audio/output';
+import { createApuBadpDecoderState, createApuBadpTransition, readApuBadpFrameAt, resetApuBadpDecoder } from '../../machine/ts/machine/devices/audio/badp_decoder_hot_path';
 import { APU_OUTPUT_RING_CAPACITY_FRAMES } from '../../machine/ts/machine/devices/audio/output_ring';
 import { interpolateApuPcmSample } from '../../machine/ts/machine/devices/audio/pcm_decoder_hot_path';
 import { resolveApuPhaseStep } from '../../machine/ts/machine/devices/audio/playback';
@@ -368,7 +369,7 @@ test('APU sample bus binds ROM directly, owns sample RAM, and rejects CPU memory
 	const cartRom = new Uint8Array([0xb1, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7, 0xb8]);
 	const memory = new Memory({ systemRom, cartridgeSlots: cartridgeSlots(cartRom) }, PSX_MACHINE_SPEC.ramBytes);
 	const sampleMemory = new ApuSampleMemory(memory);
-	const view: ApuSourceByteView = {
+	const view: ApuSourceByteView = { revision: { value: 0 },
 		bytes: new Uint8Array(0),
 		byteOffset: 0,
 		byteLength: 0,
@@ -400,7 +401,7 @@ test('APU source descriptors must fit actual ROM bytes, not their mapped windows
 		],
 	}, PSX_MACHINE_SPEC.ramBytes);
 	const sampleMemory = new ApuSampleMemory(memory);
-	const view: ApuSourceByteView = { bytes: new Uint8Array(0), byteOffset: 0, byteLength: 0, cartridgeSlot: 0 };
+	const view: ApuSourceByteView = { revision: { value: 0 }, bytes: new Uint8Array(0), byteOffset: 0, byteLength: 0, cartridgeSlot: 0 };
 	for (const base of [SYSTEM_ROM_BASE, CART_ROM_BASE]) {
 		assert.equal(sampleMemory.bindSource(base, 4, 0, view), true);
 		assert.equal(sampleMemory.bindSource(base + 3, 1, 0, view), true);
@@ -845,6 +846,49 @@ function writeBadpSourceRegisters(memory: Memory, sampleRateHz: number): void {
 	memory.writeMappedWord(IO_APU_SOURCE_DATA_OFFSET, 48);
 	memory.writeMappedWord(IO_APU_SOURCE_DATA_BYTES, 12);
 }
+
+test('BADP repeated loop-boundary transitions preserve decoder state and honor source writes', () => {
+	const frameCount = 128;
+	const bytes = new Uint8Array(8 + frameCount / 2);
+	writeLE16(bytes, 0, frameCount);
+	writeLE16(bytes, 2, bytes.length);
+	bytes.fill(0x11, 8);
+	let reads = 0;
+	const counted = new Proxy(bytes, { get(target, key) {
+		if (key !== 'length' && Number(key) >= 8) reads += 1;
+		return Reflect.get(target, key, target);
+	} });
+	const revision = { value: 0 };
+	const makeRecord = (sourceBytes: Uint8Array) => ({
+		sourceBytes, dataOffset: 0, frames: frameCount, channels: 1,
+		badpSeekTable: { bytes: new Uint8Array(0), byteOffset: 0, entryCount: 0 },
+		badp: createApuBadpDecoderState(), badpTransition: createApuBadpTransition(), sourceRevision: revision,
+	});
+	const optimized = makeRecord(counted);
+	const reference = makeRecord(bytes);
+	resetApuBadpDecoder(optimized, frameCount - 1);
+	resetApuBadpDecoder(reference, frameCount - 1);
+	const compare = (frame: number) => {
+		reference.badpTransition.target = -1;
+		const expected = readApuBadpFrameAt(reference, frame);
+		const actual = readApuBadpFrameAt(optimized, frame);
+		assert.equal(actual, expected);
+		assert.deepEqual(optimized.badp, reference.badp);
+	};
+	compare(0);
+	compare(frameCount - 1);
+	compare(0);
+	reads = 0;
+	compare(frameCount - 1);
+	assert.equal(reads, 0, 'repeat transition reuses the exact decoder state');
+	compare(0);
+	bytes[8] = 0x71;
+	revision.value += 1;
+	reads = 0;
+	compare(frameCount - 1);
+	assert.equal(reads, frameCount - 1, 'a sample-RAM write invalidates the old transition');
+	for (const frame of [0, frameCount - 1, frameCount - 2, 3, 50, 49, 127, 0]) compare(frame);
+});
 
 test('APU loop cursors preserve PCM for fractional, reverse and multi-loop steps', () => {
 	const source = new Uint8Array([0x80, 0x90, 0xa0, 0xb0, 0xc0, 0xd0, 0xe0, 0xf0]);
@@ -1585,6 +1629,34 @@ test('APU save restore resumes the exact future PCM phase while transport stays 
 	live.hostOutput.pull(live.audioOutput.outputRing, liveOutput, 2, APU_SAMPLE_RATE_HZ);
 	restored.hostOutput.pull(restored.audioOutput.outputRing, restoredOutput, 2, APU_SAMPLE_RATE_HZ);
 	assert.deepEqual(restoredOutput, liveOutput);
+});
+
+test('APU BADP loop playback preserves live RAM updates across a warmed transition and restore', () => {
+	const live = createRealAudioHarness();
+	writeBadpSourceRegisters(live.memory, APU_SAMPLE_RATE_HZ / 2);
+	live.memory.writeMappedWord(IO_APU_SOURCE_LOOP_START_SAMPLE, 0);
+	live.memory.writeMappedWord(IO_APU_SOURCE_LOOP_END_SAMPLE, 8);
+	live.memory.writeMappedWord(IO_APU_START_SAMPLE, 7);
+	live.memory.writeMappedWord(IO_APU_RATE_STEP_Q16, 0);
+	live.memory.writeMappedWord(IO_APU_GAIN_Q12, 0x1000);
+	live.memory.writeMappedWord(IO_APU_SLOT, 1);
+	writeApuCommand(live.memory, live.audio, APU_CMD_PLAY);
+	for (let index = 0; index < 12; index += 1) {
+		if (index === 4) {
+			live.memory.writeMappedWord(IO_APU_TRANSFER_ADDRESS, 56);
+			live.memory.writeMappedWord(IO_APU_TRANSFER_CONTROL, 1);
+			live.memory.writeMappedWord(IO_APU_TRANSFER_DATA, 0x11111171);
+			live.memory.writeMappedWord(IO_APU_TRANSFER_CONTROL, 0);
+		}
+		if (index === 6) live.memory.writeMappedWord(IO_APU_SOURCE_LOOP_START_SAMPLE, 2);
+		if (index === 7) live.memory.writeMappedWord(IO_APU_RATE_STEP_Q16, 0xffff8000);
+		if (index === 9) live.memory.writeMappedWord(IO_APU_SOURCE_ADDR, APU_SAMPLE_RAM_BASE);
+		const restored = restoreRealAudioHarness(live.audio.captureState());
+		live.audioOutput.renderMachineFrames(1, index);
+		restored.audioOutput.renderMachineFrames(1, index);
+		assert.equal(live.audioOutput.outputRing.readFramePacked(), restored.audioOutput.outputRing.readFramePacked());
+		assert.deepEqual(live.audio.captureState().output, restored.audio.captureState().output);
+	}
 });
 
 test('APU BADP interpolation window and selected-slot seek survive save restore', () => {

@@ -156,6 +156,8 @@ inline void readApuBadpFrameAt(const u8* data,
 								u32 channels,
 								const ApuBadpSeekTable& seekTable,
 								ApuBadpDecoderState& decoder,
+								ApuBadpTransition& transition,
+								const u64* sourceRevision,
 								size_t frame,
 								i16& outLeft,
 								i16& outRight) {
@@ -171,6 +173,22 @@ inline void readApuBadpFrameAt(const u8* data,
 	}
 	if (frame < decoder.nextFrame) {
 		seekApuBadpDecoderToFrame(data, frames, channels, seekTable, decoder, frame);
+	} else if (frame > decoder.nextFrame + 1u) {
+		const u64 revision = *sourceRevision;
+		if (transition.target == static_cast<i64>(frame) && transition.revision == revision && transition.from == decoder) {
+			decoder = transition.to;
+		} else {
+			transition.from = decoder;
+			while (decoder.nextFrame <= frame) {
+				decodeNextApuBadpFrame(data, channels, decoder);
+			}
+			transition.to = decoder;
+			transition.target = static_cast<i64>(frame);
+			transition.revision = revision;
+		}
+		outLeft = decoder.decodedLeft;
+		outRight = decoder.decodedRight;
+		return;
 	}
 	while (decoder.nextFrame <= frame) {
 		decodeNextApuBadpFrame(data, channels, decoder);

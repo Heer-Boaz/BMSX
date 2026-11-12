@@ -1,6 +1,7 @@
 import { clamp } from '../../../common/clamp';
 import { readI16LE, readLE16, readLE32 } from '../../../common/endian';
 import { type ApuBadpDecoderState, type ApuBadpSeekTable } from './badp_decoder';
+import type { ApuSourceRevision } from './source';
 
 export type ApuBadpDecodeTarget = {
 	sourceBytes: Uint8Array;
@@ -9,6 +10,15 @@ export type ApuBadpDecodeTarget = {
 	channels: number;
 	badpSeekTable: ApuBadpSeekTable;
 	badp: ApuBadpDecoderState;
+	badpTransition: ApuBadpTransition;
+	sourceRevision: ApuSourceRevision;
+};
+
+export type ApuBadpTransition = {
+	from: ApuBadpDecoderState;
+	to: ApuBadpDecoderState;
+	target: number;
+	revision: number;
 };
 
 const BADP_STEP_TABLE = new Int32Array([
@@ -47,8 +57,47 @@ export function createApuBadpDecoderState(): ApuBadpDecoderState {
 	};
 }
 
+export function createApuBadpTransition(): ApuBadpTransition {
+	return { from: createApuBadpDecoderState(), to: createApuBadpDecoderState(), target: -1, revision: 0 };
+}
+
+function copyDecoderState(to: ApuBadpDecoderState, from: ApuBadpDecoderState): void {
+	to.predictors.set(from.predictors);
+	to.stepIndices.set(from.stepIndices);
+	to.nextFrame = from.nextFrame;
+	to.blockEnd = from.blockEnd;
+	to.blockFrames = from.blockFrames;
+	to.blockFrameIndex = from.blockFrameIndex;
+	to.payloadOffset = from.payloadOffset;
+	to.nibbleCursor = from.nibbleCursor;
+	to.decodedFrame = from.decodedFrame;
+	to.decodedLeft = from.decodedLeft;
+	to.decodedRight = from.decodedRight;
+	to.previousDecodedFrame = from.previousDecodedFrame;
+	to.previousDecodedLeft = from.previousDecodedLeft;
+	to.previousDecodedRight = from.previousDecodedRight;
+}
+
+function sameDecoderState(a: ApuBadpDecoderState, b: ApuBadpDecoderState): boolean {
+	return a.predictors[0] === b.predictors[0] && a.predictors[1] === b.predictors[1]
+		&& a.stepIndices[0] === b.stepIndices[0] && a.stepIndices[1] === b.stepIndices[1]
+		&& a.nextFrame === b.nextFrame
+		&& a.blockEnd === b.blockEnd
+		&& a.blockFrames === b.blockFrames
+		&& a.blockFrameIndex === b.blockFrameIndex
+		&& a.payloadOffset === b.payloadOffset
+		&& a.nibbleCursor === b.nibbleCursor
+		&& a.decodedFrame === b.decodedFrame
+		&& a.decodedLeft === b.decodedLeft
+		&& a.decodedRight === b.decodedRight
+		&& a.previousDecodedFrame === b.previousDecodedFrame
+		&& a.previousDecodedLeft === b.previousDecodedLeft
+		&& a.previousDecodedRight === b.previousDecodedRight;
+}
+
 export function resetApuBadpDecoder(record: ApuBadpDecodeTarget, frame: number): void {
 	const badp = record.badp;
+	record.badpTransition.target = -1;
 	badp.predictors.fill(0);
 	badp.stepIndices.fill(0);
 	badp.nextFrame = 0;
@@ -79,6 +128,21 @@ export function readApuBadpFrameAt(record: ApuBadpDecodeTarget, frame: number): 
 	} else {
 		if (frame < badp.nextFrame) {
 			seekApuBadpDecoderToFrame(record, frame);
+		} else if (frame > badp.nextFrame + 1) {
+			const transition = record.badpTransition;
+			const revision = record.sourceRevision.value;
+			if (transition.target === frame && transition.revision === revision && sameDecoderState(transition.from, badp)) {
+				copyDecoderState(badp, transition.to);
+				return (badp.decodedLeft & 0xffff) | ((badp.decodedRight & 0xffff) << 16);
+			}
+			copyDecoderState(transition.from, badp);
+			while (badp.nextFrame <= frame) {
+				decodeNextApuBadpFrame(record);
+			}
+			copyDecoderState(transition.to, badp);
+			transition.target = frame;
+			transition.revision = revision;
+			return (badp.decodedLeft & 0xffff) | ((badp.decodedRight & 0xffff) << 16);
 		}
 		while (badp.nextFrame <= frame) {
 			decodeNextApuBadpFrame(record);

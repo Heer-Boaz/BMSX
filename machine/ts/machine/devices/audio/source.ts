@@ -18,7 +18,12 @@ import {
 	type ApuParameterRegisterWords,
 } from './contracts';
 
+export type ApuSourceRevision = { value: number };
+
+export const APU_ROM_SOURCE_REVISION: ApuSourceRevision = { value: 0 };
+
 export type ApuSourceByteView = {
+	revision: ApuSourceRevision;
 	bytes: Uint8Array;
 	byteOffset: number;
 	byteLength: number;

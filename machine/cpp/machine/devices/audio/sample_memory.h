@@ -25,6 +25,7 @@ public:
 private:
 	const Memory& m_memory;
 	std::array<u8, APU_SAMPLE_RAM_BYTES> m_ram{};
+	u64 m_revision = 0;
 };
 
 } // namespace bmsx

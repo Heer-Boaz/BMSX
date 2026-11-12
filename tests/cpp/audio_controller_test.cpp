@@ -5,6 +5,7 @@
 #include "machine/cpu/cpu.h"
 #include "machine/devices/audio/controller.h"
 #include "machine/devices/audio/biquad_filter.h"
+#include "machine/devices/audio/badp_decoder_hot_path.h"
 #include "machine/devices/audio/output.h"
 #include "machine/devices/audio/pcm_decoder_hot_path.h"
 #include "machine/devices/audio/sample_memory.h"
@@ -220,6 +221,68 @@ void programBadpVoice(AudioHarness& harness) {
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_SLOT, 1u);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_CMD, bmsx::APU_CMD_PLAY);
 	harness.audio.onService(0);
+}
+
+void testBadpRepeatedLoopBoundaryTransition() {
+	constexpr size_t frameCount = 128u;
+	std::array<bmsx::u8, 8u + frameCount / 2u> bytes{};
+	bmsx::writeLE16(bytes.data(), frameCount);
+	bmsx::writeLE16(bytes.data() + 2u, bytes.size());
+	std::fill(bytes.begin() + 8, bytes.end(), 0x11u);
+	bmsx::ApuBadpDecoderState actual, expected;
+	bmsx::ApuBadpTransition transition, referenceTransition;
+	bmsx::ApuBadpSeekTable seek{};
+	bmsx::u64 revision = 0;
+	bmsx::resetApuBadpDecoder(bytes.data(), frameCount, 1, seek, actual, frameCount - 1u);
+	bmsx::resetApuBadpDecoder(bytes.data(), frameCount, 1, seek, expected, frameCount - 1u);
+	auto compare = [&](size_t frame) {
+		bmsx::i16 actualLeft = 0, actualRight = 0, expectedLeft = 0, expectedRight = 0;
+		referenceTransition.target = -1;
+		bmsx::readApuBadpFrameAt(bytes.data(), frameCount, 1, seek, expected, referenceTransition, &revision, frame, expectedLeft, expectedRight);
+		bmsx::readApuBadpFrameAt(bytes.data(), frameCount, 1, seek, actual, transition, &revision, frame, actualLeft, actualRight);
+		require(actualLeft == expectedLeft && actualRight == expectedRight, "cached BADP samples match forward decoding");
+		require(actual == expected, "cached BADP transition retains the complete decoder state");
+	};
+	compare(0); compare(frameCount - 1u); compare(0); compare(frameCount - 1u); compare(0);
+	bytes[8] = 0x71u;
+	++revision;
+	compare(frameCount - 1u);
+	for (size_t frame : std::array<size_t, 8>{0u, 127u, 126u, 3u, 50u, 49u, 127u, 0u}) compare(frame);
+}
+
+void testBadpLoopSourceWritesAndRestore() {
+	AudioHarness live;
+	programBadpVoice(live);
+	live.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_LOOP_START_SAMPLE, 0u);
+	live.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_LOOP_END_SAMPLE, 8u);
+	live.memory.writeMappedU32LE(bmsx::IO_APU_START_SAMPLE, 7u);
+	live.memory.writeMappedU32LE(bmsx::IO_APU_RATE_STEP_Q16, 0u);
+	for (bmsx::i64 index = 0; index < 12; ++index) {
+		if (index == 4) {
+			live.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_ADDRESS, 56u);
+			live.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_CONTROL, 1u);
+			live.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_DATA, 0x11111171u);
+			live.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_CONTROL, 0u);
+		}
+		if (index == 6) live.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_LOOP_START_SAMPLE, 2u);
+		if (index == 7) live.memory.writeMappedU32LE(bmsx::IO_APU_RATE_STEP_Q16, 0xffff8000u);
+		if (index == 9) live.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_ADDR, bmsx::APU_SAMPLE_RAM_BASE);
+		AudioHarness restored;
+		restored.audio.restoreState(live.audio.captureState(), 0);
+		(void)live.output.renderMachineFrames(1, index);
+		(void)restored.output.renderMachineFrames(1, index);
+		require(live.output.outputRing.readFramePacked() == restored.output.outputRing.readFramePacked(),
+			"BADP loop output agrees with a cold restored decoder after live source changes");
+		const auto liveState = live.audio.captureState();
+		const auto restoredState = restored.audio.captureState();
+		const auto& a = liveState.output.voices[0];
+		const auto& b = restoredState.output.voices[0];
+		require(a.cursorQ16 == b.cursorQ16 && a.badp.nextFrame == b.badp.nextFrame
+			&& a.badp.decodedFrame == b.badp.decodedFrame && a.badp.decodedLeft == b.badp.decodedLeft
+			&& a.badp.previousDecodedFrame == b.badp.previousDecodedFrame
+			&& a.badp.previousDecodedLeft == b.badp.previousDecodedLeft,
+			"BADP loop retains the same observable cursor and sample latches after restore");
+	}
 }
 
 void testBadpInterpolationWindowAndRestore() {
@@ -1271,6 +1334,8 @@ int main() {
 	testOutputRingExposesUnsignedHardwareWords();
 	testMachineCaptureIncludesMaterializedApuEndIrq();
 	testHostSynchronizationExposesEveryElapsedPalSample();
+	testBadpRepeatedLoopBoundaryTransition();
+	testBadpLoopSourceWritesAndRestore();
 	testBadpInterpolationWindowAndRestore();
 	testSampleTransferEdgeOrdering();
 	testApuVoiceLatchesCartridgeSocketAcrossRestore();

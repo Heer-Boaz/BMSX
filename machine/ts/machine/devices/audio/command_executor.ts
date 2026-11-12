@@ -59,6 +59,7 @@ export class ApuCommandExecutor {
 		generatorDutyQ12: 0,
 	};
 	private readonly sourceView: ApuSourceByteView = {
+		revision: { value: 0 },
 		bytes: EMPTY_APU_SOURCE_BYTES,
 		byteOffset: 0,
 		byteLength: 0,
