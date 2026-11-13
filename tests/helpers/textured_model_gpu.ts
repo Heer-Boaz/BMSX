@@ -342,6 +342,7 @@ export async function renderTexturedModelCase(canvas: HTMLCanvasElement, kind: '
 	}
 	let orderedSourceDifference = -1;
 	const orderedSourceWords: number[] = [];
+	const maskedRectangleWords: number[] = [];
 	const orderedReadbackWords: number[] = [];
 	let orderedReadbackPending = false;
 	if (includeAliasCase) {
@@ -391,6 +392,18 @@ export async function renderTexturedModelCase(canvas: HTMLCanvasElement, kind: '
 			0xa0000000, (512 << 16) | 64, 0x00010001, 0,
 			0x600000ff, 64, 0x00010001, 0xe1000901,
 			0x65808080, (120 << 16) | 110, 0, 0x00010001);
+		// Masked rectangles require destination reads. Keep two in one batch,
+		// bracketed by triangles so the producer also changes primitive kind.
+		words.push(0xe1000101, 0xe6000000,
+			0xa0000000, (64 << 16) | 64, 0x00010004, 0x7c007c00, 0x7c007c00,
+			0xa0000000, (450 << 16) | 718, 0x00010004, 0x801f001f, 0x800003e0,
+			0xa0000000, (450 << 16) | 730, 0x00010004, 0x801f001f, 0x800003e0,
+			0xe6000002,
+			0x25808080, (452 << 16) | 700, 0x00004000, (452 << 16) | 704, 0x01014000, (456 << 16) | 700, 0x00004000,
+			0x65808080, (450 << 16) | 718, 0x00004000, 0x00010004,
+			0x65808080, (450 << 16) | 730, 0x00004000, 0x00010004,
+			0x25808080, (452 << 16) | 740, 0x00004000, (452 << 16) | 744, 0x01014000, (456 << 16) | 740, 0x00004000,
+			0xe6000000);
 		machine.gxGpu.writeGp1(0x09000001);
 		for (const word of words) {
 			machine.gxGpu.writeGp0(word);
@@ -414,6 +427,10 @@ export async function renderTexturedModelCase(canvas: HTMLCanvasElement, kind: '
 		library.execute('gx_gpu', framebuffer, next);
 		await backend.captureGxGpuVramSnapshot(machine.gxGpu);
 		const snapshot = machine.gxGpu.readDeviceOutput().vramSnapshotBytes;
+		for (const x of [718, 730]) for (let pixel = 0; pixel < 4; ++pixel) {
+			const offset = (450 * 1024 + x + pixel) * 2;
+			maskedRectangleWords.push(snapshot[offset] | (snapshot[offset + 1] << 8));
+		}
 		orderedSourceDifference = snapshot.findIndex((value, index) => value !== ((software.vram[index >>> 1] >>> ((index & 1) * 8)) & 255));
 		for (const x of [520, 600, 700]) orderedSourceWords.push(software.vram[260 * 1024 + x]);
 		for (let group = 0; group < 4; ++group) orderedSourceWords.push(software.vram[202 * 1024 + 800 + group * 8]);
@@ -423,5 +440,5 @@ export async function renderTexturedModelCase(canvas: HTMLCanvasElement, kind: '
 	const glError = gl === undefined ? 0 : gl.gl.getError();
 	if (framebuffer !== null) gl!.destroyRenderTarget(framebuffer);
 	backend.destroyTexture(target); library.dispose(); gpu?.device.destroy();
-	return { kind, difference, samples, validationError, glError, gpuErrors, commands, transfers, snapshotDifferences, snapshotWords, adjacentCopies, adjacentCopyRects, adjacentPixel, adjacentDifferences, capacityResult, wrappedDifferences, rectangleDifferences, flatColorDifferences, drawLayoutDifferences, drawLayoutPixels, lineExtraWordDifferences, lineExtraWordPixels, lineExtraWordCounts, orderedSourceDifference, orderedSourceWords, orderedReadbackPending, orderedReadbackWords };
+	return { kind, difference, samples, validationError, glError, gpuErrors, commands, transfers, snapshotDifferences, snapshotWords, adjacentCopies, adjacentCopyRects, adjacentPixel, adjacentDifferences, capacityResult, wrappedDifferences, rectangleDifferences, flatColorDifferences, drawLayoutDifferences, drawLayoutPixels, lineExtraWordDifferences, lineExtraWordPixels, lineExtraWordCounts, orderedSourceDifference, orderedSourceWords, orderedReadbackPending, orderedReadbackWords, maskedRectangleWords };
 }

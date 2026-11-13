@@ -1929,7 +1929,7 @@ function renderTexturedVertices(gx: WebGpuGxGpuState,
 		);
 		return;
 	}
-	const triangleFloatCount = vertexFloatStride * 3;
+	const primitiveFloatCount = vertexFloatStride * primitiveVertexCount;
 	if (!syncSourceBetweenTriangles
 		&& !readsVram
 		&& gx.vramTextureRows === GX_GPU_VRAM_Y_ADDRESS_PERIOD) {
@@ -1949,8 +1949,8 @@ function renderTexturedVertices(gx: WebGpuGxGpuState,
 	} else {
 		let dependencyBatchFloatStart = 0;
 		resetGxGpuVramCopyRect(gx.texturedDependencyBatchRect);
-		for (let vertexFloatStart = 0; vertexFloatStart < vertexFloatCount; vertexFloatStart += triangleFloatCount) {
-			const vertexFloatEnd = vertexFloatStart + triangleFloatCount;
+		for (let vertexFloatStart = 0; vertexFloatStart < vertexFloatCount; vertexFloatStart += primitiveFloatCount) {
+			const vertexFloatEnd = vertexFloatStart + primitiveFloatCount;
 			setGxGpuVertexBoundsRect(commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_POLYGON ? GxGpuRasterKind.Polygon : GxGpuRasterKind.Rectangle, gx.vramCopyRectScratch, gx.texturedVertices, vertexFloatStart, vertexFloatEnd, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 			if (vertexFloatStart !== dependencyBatchFloatStart
 				&& (gx.vramTextureRows !== GX_GPU_VRAM_Y_ADDRESS_PERIOD

@@ -188,6 +188,7 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} solid batches publish onl
 		await page.goto('http://localhost/renderer-test/primitive-damage/');
 		await page.addScriptTag({ content: backendBundle });
 		const result = await page.evaluate(async ({ bytes, kind }) => (globalThis as any).backendTest.renderTexturedModelCase(document.getElementById('gamescreen'), kind, bytes, true), { bytes: vramBytes, kind });
+		assert.deepEqual(result.maskedRectangleWords, [0x7c00, 0x801f, 0x7c00, 0x8000, 0x7c00, 0x801f, 0x7c00, 0x8000], 'masked rectangles retain all six vertices across primitive-kind batch changes');
 		assert.equal(result.orderedReadbackPending, true, 'guest C0 requests a backend readback before rendering');
 		assert.deepEqual(result.orderedReadbackWords, [vramBytes === 1024 * 1024 ? 0x03e003e0 : 0x001f03e0], 'guest GPUREAD observes both dependent draws at the C0 fence');
 		assert.deepEqual(result.adjacentDifferences, [-1, -1, -1, -1, -1, -1]);
