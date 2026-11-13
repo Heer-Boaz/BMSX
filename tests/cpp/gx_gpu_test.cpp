@@ -1335,6 +1335,127 @@ void testBlockedCpuGp0StoreResumesAcrossDeviceRestore() {
 	}
 }
 
+void testSplitDmaPolylinePayloadRestoresBeforeIrqAndReadback() {
+	GpuHarness source;
+	stopPcrtc(source);
+	source.dma.setTiming(1, 1, 1, 1, 0, 0);
+	source.gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+	const bmsx::u32 address = bmsx::DYNAMIC_RAM_BASE + 0x5000u;
+	const std::array<bmsx::u32, 5> prefix{0x480000ffu, 0u, 1u, 0xc0000002u, 0x1f000003u};
+	for (size_t i = 0; i < prefix.size(); ++i) source.memory.writeU32(address + 4u * static_cast<bmsx::u32>(i), prefix[i]);
+	source.memory.writeMappedWord(bmsx::IO_DMA0_READ_ADDR, address);
+	source.memory.writeMappedWord(bmsx::IO_DMA0_TRANSFER_COUNT, static_cast<bmsx::u32>(prefix.size()));
+	source.memory.writeMappedWord(bmsx::IO_DMA0_CONTROL, bmsx::DMA_ROUTE_TO_GPU);
+	source.memory.writeMappedWord(bmsx::IO_DMA0_TRIGGER, bmsx::DMA_TRIGGER_START);
+	const bmsx::i64 firstDeadline = source.scheduler.nextDeadline();
+	source.scheduler.advanceTo(firstDeadline);
+	require(source.scheduler.popDueTimer() == bmsx::DEVICE_SERVICE_DMA, "first polyline DMA completes");
+	source.dma.onService(firstDeadline);
+	require((source.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GPU) == 0u, "vertex data do not raise IRQ");
+	require(!source.gpu.backendServicePending(), "vertex data do not start readback");
+	const auto saved = source.gpu.captureSaveState();
+	GpuHarness restored;
+	stopPcrtc(restored);
+	restored.scheduler.advanceTo(firstDeadline);
+	restored.dma.setTiming(1, 1, 1, 1, 0, 0);
+	restored.gpu.restoreSaveState(saved);
+	const std::array<bmsx::u32, 7> suffix{0xc0000004u, 0x1f000005u, 0x50005000u, 0x1f000000u, 0xc0000000u, 0u, 0x00010001u};
+	for (size_t i = 0; i < suffix.size(); ++i) restored.memory.writeU32(address + 4u * static_cast<bmsx::u32>(i), suffix[i]);
+	restored.memory.writeMappedWord(bmsx::IO_DMA0_READ_ADDR, address);
+	restored.memory.writeMappedWord(bmsx::IO_DMA0_TRANSFER_COUNT, static_cast<bmsx::u32>(suffix.size()));
+	restored.memory.writeMappedWord(bmsx::IO_DMA0_CONTROL, bmsx::DMA_ROUTE_TO_GPU);
+	restored.memory.writeMappedWord(bmsx::IO_DMA0_TRIGGER, bmsx::DMA_TRIGGER_START);
+	require(restored.dma.cpuBusHeld(), "second polyline DMA is admitted");
+	while (restored.dma.cpuBusHeld()) {
+		const bmsx::i64 deadline = restored.scheduler.nextDeadline();
+		require(deadline < firstDeadline + 1000, "DMA suffix reaches a deadline");
+		restored.scheduler.advanceTo(deadline);
+		const auto kind = restored.scheduler.popDueTimer();
+		require((restored.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GPU) == 0u, "vertex data before DMA suffix do not raise IRQ");
+		require(!restored.gpu.backendServicePending(), "vertex data before DMA suffix do not start readback");
+		if (kind == bmsx::DEVICE_SERVICE_GPU) restored.gpu.onService(deadline);
+		else if (kind == bmsx::DEVICE_SERVICE_DMA) restored.dma.onService(deadline);
+		else require(false, "unexpected polyline device");
+	}
+	const bmsx::i64 secondDeadline = restored.scheduler.nowCycles();
+	require((restored.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GPU) == bmsx::IRQ_GPU, "true marker fires after polyline");
+	require(!restored.gpu.backendServicePending(), "readback has not completed");
+	for (const bmsx::i64 offset : {1, 2}) {
+		const bmsx::i64 cycle = secondDeadline + offset;
+		while (restored.scheduler.nextDeadline() <= cycle) {
+			const bmsx::i64 deadline = restored.scheduler.nextDeadline();
+			restored.scheduler.advanceTo(deadline);
+			require(restored.scheduler.popDueTimer() == bmsx::DEVICE_SERVICE_GPU, "scheduled GPU service kind");
+			restored.gpu.onService(deadline);
+		}
+		restored.scheduler.advanceTo(cycle);
+		require(restored.gpu.backendServicePending() == (offset == 2), "readback starts at its boundary");
+	}
+	bmsx::SoftwareBackend backend(256, 212, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	backend.executeGxGpuReadback(restored.gpu);
+	require(restored.gpu.readGp0() == 0x001fu, "polyline pixels survive DMA and restore");
+}
+
+void testSplitDmaImagePayloadRestoresBeforeIrqAndReadback() {
+	GpuHarness source;
+	stopPcrtc(source);
+	source.dma.setTiming(1, 1, 1, 1, 0, 0);
+	source.gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+	const bmsx::u32 address = bmsx::DYNAMIC_RAM_BASE + 0x4000u;
+	std::vector<bmsx::u32> words{0xa0000000u, 0u, 0x00100020u};
+	for (bmsx::u32 i = 0; i < 256; ++i) words.push_back((i & 1u) == 0u ? 0xc0121234u : 0x1f005678u);
+	constexpr bmsx::u32 firstWords = 131;
+	for (bmsx::u32 i = 0; i < firstWords; ++i) source.memory.writeU32(address + 4u * i, words[i]);
+	source.memory.writeMappedWord(bmsx::IO_DMA0_READ_ADDR, address);
+	source.memory.writeMappedWord(bmsx::IO_DMA0_TRANSFER_COUNT, firstWords);
+	source.memory.writeMappedWord(bmsx::IO_DMA0_CONTROL, bmsx::DMA_ROUTE_TO_GPU);
+	source.memory.writeMappedWord(bmsx::IO_DMA0_TRIGGER, bmsx::DMA_TRIGGER_START);
+	require(source.dma.cpuBusHeld(), "first image DMA is admitted");
+	const bmsx::i64 firstDeadline = source.scheduler.nextDeadline();
+	source.scheduler.advanceTo(firstDeadline);
+	require(source.scheduler.popDueTimer() == bmsx::DEVICE_SERVICE_DMA, "first image DMA completes");
+	source.dma.onService(firstDeadline);
+	require(!source.dma.cpuBusHeld(), "first image DMA released CPU");
+	require((source.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GPU) == 0u, "image payload does not raise IRQ");
+	require(!source.gpu.backendServicePending(), "image payload does not start readback");
+	const auto saved = source.gpu.captureSaveState();
+	GpuHarness restored;
+	stopPcrtc(restored);
+	restored.scheduler.advanceTo(firstDeadline);
+	restored.dma.setTiming(1, 1, 1, 1, 0, 0);
+	restored.gpu.restoreSaveState(saved);
+	std::vector<bmsx::u32> suffix(words.begin() + firstWords, words.end());
+	suffix.insert(suffix.end(), {0x1f000000u, 0xc0000000u, 0u, 0x00010004u});
+	for (size_t i = 0; i < suffix.size(); ++i) restored.memory.writeU32(address + 4u * static_cast<bmsx::u32>(i), suffix[i]);
+	restored.memory.writeMappedWord(bmsx::IO_DMA0_READ_ADDR, address);
+	restored.memory.writeMappedWord(bmsx::IO_DMA0_TRANSFER_COUNT, static_cast<bmsx::u32>(suffix.size()));
+	restored.memory.writeMappedWord(bmsx::IO_DMA0_CONTROL, bmsx::DMA_ROUTE_TO_GPU);
+	restored.memory.writeMappedWord(bmsx::IO_DMA0_TRIGGER, bmsx::DMA_TRIGGER_START);
+	require(restored.dma.cpuBusHeld(), "second image DMA is admitted");
+	const bmsx::i64 secondDeadline = restored.scheduler.nextDeadline();
+	restored.scheduler.advanceTo(secondDeadline);
+	require(restored.scheduler.popDueTimer() == bmsx::DEVICE_SERVICE_DMA, "second image DMA completes");
+	restored.dma.onService(secondDeadline);
+	require((restored.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GPU) == 0u, "payload has not raised IRQ");
+	require(!restored.gpu.backendServicePending(), "readback has not started");
+	for (const bmsx::i64 offset : {1, 2, 3}) {
+		const bmsx::i64 cycle = secondDeadline + offset;
+		while (restored.scheduler.nextDeadline() <= cycle) {
+			const bmsx::i64 deadline = restored.scheduler.nextDeadline();
+			restored.scheduler.advanceTo(deadline);
+			require(restored.scheduler.popDueTimer() == bmsx::DEVICE_SERVICE_GPU, "scheduled GPU service kind");
+			restored.gpu.onService(deadline);
+		}
+		restored.scheduler.advanceTo(cycle);
+		require((restored.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GPU) == bmsx::IRQ_GPU, "only the true IRQ marker fires");
+		require(restored.gpu.backendServicePending() == (offset == 3), "readback begins at its own boundary");
+	}
+	bmsx::SoftwareBackend backend(256, 212, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	backend.executeGxGpuReadback(restored.gpu);
+	require(restored.gpu.readGp0() == 0xc0121234u, "first image word survives DMA");
+	require(restored.gpu.readGp0() == 0x1f005678u, "second image word survives DMA");
+}
+
 void testPartialImageSurvivesSupervisorRestoreAndQueuedReadback() {
 	GpuHarness source;
 	stopPcrtc(source);
@@ -5347,6 +5468,8 @@ int main() {
 	testDmaGp0PrefixCannotRunBeforeBurstPublication();
 	testDmaStartObservesGpuCapacityFreedWhileNoChannelWaited();
 	testPartialImageSurvivesSupervisorRestoreAndQueuedReadback();
+	testSplitDmaImagePayloadRestoresBeforeIrqAndReadback();
+	testSplitDmaPolylinePayloadRestoresBeforeIrqAndReadback();
 	testBlockedCpuGp0StoreResumesAcrossDeviceRestore();
 	testGp1CrtcRangeRegistersLatchMaskedRawWords();
 	testGp1UndefinedHighOpcodeDoesNotMirrorReset();

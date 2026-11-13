@@ -1858,6 +1858,125 @@ test('blocked CPU GP0 store resumes after completion across device restore', () 
 	}
 });
 
+test('split DMA polyline payload survives restore before real IRQ and readback commands', () => {
+	const source = createGpu();
+	stopPcrtc(source.memory, source.gpu, source.scheduler);
+	source.dma.setTiming(1, 1, 1, 1, 0, 0);
+	source.gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+	const address = DYNAMIC_RAM_BASE + 0x5000;
+	const prefix = [0x480000ff, 0, 1, 0xc0000002, 0x1f000003];
+	for (let i = 0; i < prefix.length; ++i) source.memory.writeU32(address + 4 * i, prefix[i]);
+	source.memory.writeMappedWord(IO_DMA0_READ_ADDR, address);
+	source.memory.writeMappedWord(IO_DMA0_TRANSFER_COUNT, prefix.length);
+	source.memory.writeMappedWord(IO_DMA0_CONTROL, DMA_ROUTE_TO_GPU);
+	source.memory.writeMappedWord(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
+	const firstDeadline = source.scheduler.nextDeadline();
+	source.scheduler.advanceTo(firstDeadline);
+	assert.equal(source.scheduler.popDueTimer(), DEVICE_SERVICE_DMA);
+	source.dma.onService(firstDeadline);
+	assert.equal(source.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, 0);
+	assert.equal(source.gpu.backendServicePending(), false);
+	const saved = source.gpu.captureSaveState();
+	const restored = createGpu();
+	stopPcrtc(restored.memory, restored.gpu, restored.scheduler);
+	restored.scheduler.advanceTo(firstDeadline);
+	restored.dma.setTiming(1, 1, 1, 1, 0, 0);
+	restored.gpu.restoreSaveState(saved);
+	const suffix = [0xc0000004, 0x1f000005, 0x50005000, 0x1f000000, 0xc0000000, 0, 0x00010001];
+	for (let i = 0; i < suffix.length; ++i) restored.memory.writeU32(address + 4 * i, suffix[i]);
+	restored.memory.writeMappedWord(IO_DMA0_READ_ADDR, address);
+	restored.memory.writeMappedWord(IO_DMA0_TRANSFER_COUNT, suffix.length);
+	restored.memory.writeMappedWord(IO_DMA0_CONTROL, DMA_ROUTE_TO_GPU);
+	restored.memory.writeMappedWord(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
+	assert.equal(restored.dma.cpuBusHeld(), true);
+	while (restored.dma.cpuBusHeld()) {
+		const deadline = restored.scheduler.nextDeadline();
+		assert.ok(deadline < firstDeadline + 1000);
+		restored.scheduler.advanceTo(deadline);
+		const kind = restored.scheduler.popDueTimer();
+		assert.equal(restored.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, 0, 'vertex data do not raise IRQ before the DMA suffix arrives');
+		assert.equal(restored.gpu.backendServicePending(), false, 'vertex data do not start readback before the DMA suffix arrives');
+		if (kind === DEVICE_SERVICE_GPU) restored.gpu.onService(deadline);
+		else if (kind === DEVICE_SERVICE_DMA) restored.dma.onService(deadline);
+		else assert.fail(`unexpected device ${kind}`);
+	}
+	const secondDeadline = restored.scheduler.nowCycles;
+	assert.equal(restored.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, IRQ_GPU, 'IRQ fires at the true post-polyline marker');
+	assert.equal(restored.gpu.backendServicePending(), false, 'readback waits for its completion');
+	for (let offset = 1; offset <= 2; ++offset) {
+		const cycle = secondDeadline + offset;
+		while (restored.scheduler.nextDeadline() <= cycle) {
+			const deadline = restored.scheduler.nextDeadline();
+			restored.scheduler.advanceTo(deadline);
+			assert.equal(restored.scheduler.popDueTimer(), DEVICE_SERVICE_GPU);
+			restored.gpu.onService(deadline);
+		}
+		restored.scheduler.advanceTo(cycle);
+		assert.equal(restored.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, IRQ_GPU);
+		assert.equal(restored.gpu.backendServicePending(), offset === 2, 'readback starts on its own completion');
+	}
+	new HeadlessGPUBackend(256, 212, PSX_MACHINE_SPEC.gxGpuVramBytes).executeGxGpuReadback(restored.gpu);
+	assert.equal(restored.gpu.readGp0(), 0x001f, 'polyline pixels survive DMA and restore');
+});
+
+test('split DMA image payload survives restore before real IRQ and readback commands', () => {
+	const source = createGpu();
+	stopPcrtc(source.memory, source.gpu, source.scheduler);
+	source.dma.setTiming(1, 1, 1, 1, 0, 0);
+	source.gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+	const address = DYNAMIC_RAM_BASE + 0x4000;
+	const imageWords = [0xa0000000, 0, 0x00100020];
+	for (let i = 0; i < 256; ++i) imageWords.push((i & 1) === 0 ? 0xc0121234 : 0x1f005678);
+	const firstWords = 131;
+	for (let i = 0; i < firstWords; ++i) source.memory.writeU32(address + 4 * i, imageWords[i]);
+	source.memory.writeMappedWord(IO_DMA0_READ_ADDR, address);
+	source.memory.writeMappedWord(IO_DMA0_TRANSFER_COUNT, firstWords);
+	source.memory.writeMappedWord(IO_DMA0_CONTROL, DMA_ROUTE_TO_GPU);
+	source.memory.writeMappedWord(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
+	assert.equal(source.dma.cpuBusHeld(), true);
+	const firstDeadline = source.scheduler.nextDeadline();
+	source.scheduler.advanceTo(firstDeadline);
+	assert.equal(source.scheduler.popDueTimer(), DEVICE_SERVICE_DMA);
+	source.dma.onService(firstDeadline);
+	assert.equal(source.dma.cpuBusHeld(), false);
+	assert.equal(source.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, 0, 'image payload does not raise IRQ');
+	assert.equal(source.gpu.backendServicePending(), false, 'image payload does not start readback');
+	const saved = source.gpu.captureSaveState();
+	const restored = createGpu();
+	stopPcrtc(restored.memory, restored.gpu, restored.scheduler);
+	restored.scheduler.advanceTo(firstDeadline);
+	restored.dma.setTiming(1, 1, 1, 1, 0, 0);
+	restored.gpu.restoreSaveState(saved);
+	const suffix = [...imageWords.slice(firstWords), 0x1f000000, 0xc0000000, 0, 0x00010004];
+	for (let i = 0; i < suffix.length; ++i) restored.memory.writeU32(address + 4 * i, suffix[i]);
+	restored.memory.writeMappedWord(IO_DMA0_READ_ADDR, address);
+	restored.memory.writeMappedWord(IO_DMA0_TRANSFER_COUNT, suffix.length);
+	restored.memory.writeMappedWord(IO_DMA0_CONTROL, DMA_ROUTE_TO_GPU);
+	restored.memory.writeMappedWord(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
+	assert.equal(restored.dma.cpuBusHeld(), true);
+	const secondDeadline = restored.scheduler.nextDeadline();
+	restored.scheduler.advanceTo(secondDeadline);
+	assert.equal(restored.scheduler.popDueTimer(), DEVICE_SERVICE_DMA);
+	restored.dma.onService(secondDeadline);
+	assert.equal(restored.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, 0);
+	assert.equal(restored.gpu.backendServicePending(), false);
+	for (const cycle of [secondDeadline + 1, secondDeadline + 2, secondDeadline + 3]) {
+		while (restored.scheduler.nextDeadline() <= cycle) {
+			const deadline = restored.scheduler.nextDeadline();
+			restored.scheduler.advanceTo(deadline);
+			const kind = restored.scheduler.popDueTimer();
+			assert.equal(kind, DEVICE_SERVICE_GPU);
+			restored.gpu.onService(deadline);
+		}
+		restored.scheduler.advanceTo(cycle);
+		assert.equal(restored.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, IRQ_GPU, 'only the real IRQ marker fires');
+		assert.equal(restored.gpu.backendServicePending(), cycle === secondDeadline + 3, 'readback starts at its own boundary');
+	}
+	new HeadlessGPUBackend(256, 212, PSX_MACHINE_SPEC.gxGpuVramBytes).executeGxGpuReadback(restored.gpu);
+	assert.equal(restored.gpu.readGp0(), 0xc0121234);
+	assert.equal(restored.gpu.readGp0(), 0x1f005678);
+});
+
 test('partial image survives supervisor restore and queued readback starts at its boundary', () => {
 	const source = createGpu();
 	stopPcrtc(source.memory, source.gpu, source.scheduler);
