@@ -192,6 +192,11 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} solid batches publish onl
 		assert.deepEqual(result.adjacentPixel[5], [0, 255, 0, 0], 'an empty clipped batch cannot suppress the following draw');
 		assert.deepEqual(result.adjacentCopyRects[1], []);
 		assert.deepEqual(result.adjacentCopyRects[2], [[320, 0, 16, 16]], 'a one-pixel source write must not dirty the adjacent CLUT');
+		assert.equal(result.orderedSourceDifference, -1, 'dependent draws and changing palettes match the full software VRAM');
+		assert.deepEqual(result.orderedSourceWords, [31, 31, 31, 0x0421, 0x0842, 0x0c63, 0x1084,
+			0x03e0, 0x03e0, vramBytes === 1024 * 1024 ? 0x03e0 : 0x001f,
+			vramBytes === 1024 * 1024 ? 0x001f : 0],
+			'pending sources, triangle self-reads and aliased palette writes remain ordered');
 		if (vramBytes === 1024 * 1024) {
 			assert.deepEqual(result.adjacentCopyRects[3], [[320, 0, 16, 16]], 'a write through the high logical band dirties the aliased physical texture');
 			assert.deepEqual(result.adjacentPixel[4], [57, 189, 0, 0], 'the second logical band blends over the first');

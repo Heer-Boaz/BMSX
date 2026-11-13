@@ -1,4 +1,5 @@
-import { GX_GPU_VRAM_Y_ADDRESS_PERIOD } from '../../spec/gx/vram';
+import { GX_GPU_VRAM_X_ADDRESS_PERIOD, GX_GPU_VRAM_Y_ADDRESS_PERIOD, gxGpuVramYAddressMask } from '../../spec/gx/vram';
+import { gxGpuVramWrappedHeight, gxGpuVramWrappedWidth } from './gx_gpu_render_rules';
 
 const CELL_SHIFT = 4;
 const CELL_SIZE = 1 << CELL_SHIFT;
@@ -19,6 +20,24 @@ export class GxGpuDirtyRegions {
 		for (let row = top >>> CELL_SHIFT; row < endRow; ++row) {
 			this.rows[row * 2] |= low;
 			this.rows[row * 2 + 1] |= high;
+		}
+	}
+
+	// Logical reads wrap through both the guest Y gate and installed physical rows.
+	markLogical(x: number, y: number, width: number, height: number, vramYAddressExtensionWord: number, physicalRowMask: number): void {
+		const yMask = gxGpuVramYAddressMask(vramYAddressExtensionWord) & physicalRowMask;
+		let row = y & yMask;
+		while (height !== 0) {
+			const rows = gxGpuVramWrappedHeight(row, height, vramYAddressExtensionWord, physicalRowMask);
+			let column = x & (GX_GPU_VRAM_X_ADDRESS_PERIOD - 1), remainingWidth = width;
+			while (remainingWidth !== 0) {
+				const columns = gxGpuVramWrappedWidth(column, remainingWidth);
+				this.mark(column, row, column + columns, row + rows);
+				column = 0;
+				remainingWidth -= columns;
+			}
+			row = 0;
+			height -= rows;
 		}
 	}
 

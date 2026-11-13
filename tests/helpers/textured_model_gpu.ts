@@ -340,9 +340,75 @@ export async function renderTexturedModelCase(canvas: HTMLCanvasElement, kind: '
 		lineExtraWordDifferences.push(rendered.findIndex((value, index) => value !== expected[index]));
 		lineExtraWordPixels.push([pixels[10 * width + 20] & 0xffffff, pixels[40 * width + 80] & 0xffffff]);
 	}
+	let orderedSourceDifference = -1;
+	const orderedSourceWords: number[] = [];
+	if (includeAliasCase) {
+		// A later command reads the pending batch's destination, followed by a
+		// self-reading quad. The last draw also changes the textured vertex stride.
+		const words = [0xe3000000, 0xe40fffff, 0xe5000000, 0xe1000118, 0xe6000000,
+			0x600000ff, 0x01040208, 0x00040004,
+			0x65808080, 0x01040258, 0x00000408, 0x00040004,
+			0x65808080, 0x010402bc, 0x00000458, 0x00040000,
+			0x65808080, 0x010402bc, 0x00000458, 0x00040004,
+			0x2d808080, 0x01040208, 0x00000408, 0x0104020c, 0x0118040c,
+			0x01080208, 0x00000808, 0x0108020c, 0x0000080c,
+			0x3c808080, 0x01200300, 0x00000408, 0x00804040, 0x01200304, 0x0118040b,
+			0x00408040, 0x01240300, 0x00000708, 0x00404080, 0x01240304, 0x0000070b];
+		// Change the indexed palette between draws and copy each result to a
+		// distinct destination, so a deferred stale palette is observable.
+		for (let group = 0; group < 4; ++group) {
+			const color = (group + 1) * 0x0421;
+			words.push(0xe6000000, 0xe1000005, 0xa0000000, 320, 0x00010003, 0x11111111, 0xdead1111,
+				0xa0000000, (24 << 16) | 320, 0x00010010);
+			for (let pair = 0; pair < 8; ++pair) words.push(color | (color << 16));
+			words.push(0x65808080, (200 << 16) | (800 + group * 8), (20 | (24 << 6)) << 16, 0x00010004,
+				0x80000000, (200 << 16) | (800 + group * 8), (202 << 16) | (800 + group * 8), 0x00010004);
+		}
+		// Triangle one reads a fixed texel outside the quad; triangle two reads
+		// part of triangle one's destination. No triangle reads its own writes.
+		words.push(0xe1000101, 0xa0000000, (100 << 16) | 100, (8 << 16) | 8);
+		for (let pair = 0; pair < 32; ++pair) words.push(0);
+		words.push(0xa0000000, (98 << 16) | 98, 0x00010001, 0x000003e0,
+			0x2d808080, (100 << 16) | 100, 34 | (98 << 8),
+			(100 << 16) | 108, 34 | (98 << 8) | (0x0101 << 16),
+			(108 << 16) | 100, 34 | (98 << 8), (108 << 16) | 108, 38 | (102 << 8));
+		// An independent textured batch writes a CLUT which the following draw
+		// samples. Repeat through row 536: it aliases palette row 24 only in 1 MiB.
+		words.push(0xe1000005, 0xa0000000, 320, 0x00010002, 0x11112222,
+			0xa0000000, (24 << 16) | 320, 0x00010010, 0x001f0000);
+		for (let pair = 1; pair < 8; ++pair) words.push(0);
+		words.push(0xa0000000, (25 << 16) | 320, 0x00010010, 0, 0x000003e0);
+		for (let pair = 2; pair < 8; ++pair) words.push(0);
+		words.push(0x65808080, (24 << 16) | 321, (20 | (25 << 6)) << 16, 0x00010001,
+			0x65808080, (120 << 16) | 100, 4 | ((20 | (24 << 6)) << 16), 0x00010001,
+			0xa0000000, (24 << 16) | 321, 0x00010001, 0x0000001f,
+			0x65808080, (536 << 16) | 321, (20 | (25 << 6)) << 16, 0x00010001,
+			0x65808080, (120 << 16) | 101, 4 | ((20 | (24 << 6)) << 16), 0x00010001);
+		// A source on logical row 512 aliases row zero only with 1 MiB.
+		words.push(0x60000000, (120 << 16) | 110, 0x00010001,
+			0xa0000000, (512 << 16) | 64, 0x00010001, 0,
+			0x600000ff, 64, 0x00010001, 0xe1000901,
+			0x65808080, (120 << 16) | 110, 0, 0x00010001);
+		machine.gxGpu.writeGp1(0x09000001);
+		for (const word of words) {
+			machine.gxGpu.writeGp0(word);
+			machine.scheduler.advanceTo(machine.scheduler.currentNowCycles() + 10_000);
+			machine.gxGpu.onService(machine.scheduler.currentNowCycles());
+		}
+		machine.gxGpu.presentReadyFrameOnVblankEdge();
+		const next = machine.gxGpu.readDeviceOutput();
+		renderGxGpuSoftwareFrame(software, state, next, pixels);
+		library.execute('gx_gpu', framebuffer, next);
+		await backend.captureGxGpuVramSnapshot(machine.gxGpu);
+		const snapshot = machine.gxGpu.readDeviceOutput().vramSnapshotBytes;
+		orderedSourceDifference = snapshot.findIndex((value, index) => value !== ((software.vram[index >>> 1] >>> ((index & 1) * 8)) & 255));
+		for (const x of [520, 600, 700]) orderedSourceWords.push(software.vram[260 * 1024 + x]);
+		for (let group = 0; group < 4; ++group) orderedSourceWords.push(software.vram[202 * 1024 + 800 + group * 8]);
+		orderedSourceWords.push(software.vram[107 * 1024 + 107], software.vram[120 * 1024 + 100], software.vram[120 * 1024 + 101], software.vram[120 * 1024 + 110]);
+	}
 	const validationError = gpu === undefined ? undefined : (await gpu.device.popErrorScope())?.message;
 	const glError = gl === undefined ? 0 : gl.gl.getError();
 	if (framebuffer !== null) gl!.destroyRenderTarget(framebuffer);
 	backend.destroyTexture(target); library.dispose(); gpu?.device.destroy();
-	return { kind, difference, samples, validationError, glError, gpuErrors, commands, transfers, snapshotDifferences, snapshotWords, adjacentCopies, adjacentCopyRects, adjacentPixel, adjacentDifferences, capacityResult, wrappedDifferences, rectangleDifferences, flatColorDifferences, drawLayoutDifferences, drawLayoutPixels, lineExtraWordDifferences, lineExtraWordPixels, lineExtraWordCounts };
+	return { kind, difference, samples, validationError, glError, gpuErrors, commands, transfers, snapshotDifferences, snapshotWords, adjacentCopies, adjacentCopyRects, adjacentPixel, adjacentDifferences, capacityResult, wrappedDifferences, rectangleDifferences, flatColorDifferences, drawLayoutDifferences, drawLayoutPixels, lineExtraWordDifferences, lineExtraWordPixels, lineExtraWordCounts, orderedSourceDifference, orderedSourceWords };
 }

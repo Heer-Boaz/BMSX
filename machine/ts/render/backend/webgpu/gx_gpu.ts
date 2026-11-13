@@ -230,6 +230,7 @@ export type WebGpuGxGpuState = {
 	lineBatchRect: GxGpuVramCopyRect;
 	lineCommandRect: GxGpuVramCopyRect;
 	sampleDirtyRegions: GxGpuDirtyRegions;
+	texturedSourceReads: GxGpuDirtyRegions;
 	snapshotDirtyRect: GxGpuVramCopyRect;
 	rectangleScratch: GxGpuRectangle;
 	solidBatchState: GxGpuSolidBatchState;
@@ -707,6 +708,7 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 		lineBatchRect: { left: 0, top: 0, right: 0, bottom: 0 },
 		lineCommandRect: { left: 0, top: 0, right: 0, bottom: 0 },
 		sampleDirtyRegions: new GxGpuDirtyRegions(),
+		texturedSourceReads: new GxGpuDirtyRegions(),
 		snapshotDirtyRect: { left: 0, top: 0, right: 0, bottom: 0 },
 		rectangleScratch: { x0: 0, y0: 0, x1: 0, y1: 0, width: 0, height: 0 },
 		solidBatchState: {
@@ -1470,6 +1472,7 @@ function syncGxGpuTexturedSourceTexture(gx: WebGpuGxGpuState,
 	commandRect: GxGpuVramCopyRect,
 	batchRect: GxGpuVramCopyRect,
 	fixedColor: boolean,
+	batchSourceReads: boolean,
 ): number {
 	if (commandRect.right <= commandRect.left || commandRect.bottom <= commandRect.top) return 0;
 	const wordStart = commandBuffer.commandWordStart[commandIndex];
@@ -1555,14 +1558,24 @@ function syncGxGpuTexturedSourceTexture(gx: WebGpuGxGpuState,
 	let overlaps = 0;
 	if (gxGpuVramLogicalAreaOverlapsBounds(sourceX, sourceY, sourceWidth, sourceHeight, commandRect.left, commandRect.top, commandRect.right, commandRect.bottom, vramYAddressExtensionWord, gx.backend.gxGpuVramTextureRowMask)) overlaps |= GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP;
 	if (gxGpuVramLogicalAreaOverlapsBounds(sourceX, sourceY, sourceWidth, sourceHeight, batchRect.left, batchRect.top, batchRect.right, batchRect.bottom, vramYAddressExtensionWord, gx.backend.gxGpuVramTextureRowMask)) overlaps |= GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP;
-	syncGxGpuSampleTextureLogicalArea(gx, sourceX, sourceY, sourceWidth, sourceHeight, vramYAddressExtensionWord);
+	let clutX = 0, clutY = 0, clutWidth = 0;
 	if (textureMode < 2) {
-		const clutX = gxGpuTextureClutBaseX(textureWord);
-		const clutY = gxGpuTextureClutBaseY(textureWord, vramYAddressExtensionWord);
-		const clutWidth = textureMode === 0 ? GX_GPU_CLUT_4BIT_WORDS : GX_GPU_CLUT_8BIT_WORDS;
+		clutX = gxGpuTextureClutBaseX(textureWord);
+		clutY = gxGpuTextureClutBaseY(textureWord, vramYAddressExtensionWord);
+		clutWidth = textureMode === 0 ? GX_GPU_CLUT_4BIT_WORDS : GX_GPU_CLUT_8BIT_WORDS;
 		if (gxGpuVramLogicalAreaOverlapsBounds(clutX, clutY, clutWidth, 1, commandRect.left, commandRect.top, commandRect.right, commandRect.bottom, vramYAddressExtensionWord, gx.backend.gxGpuVramTextureRowMask)) overlaps |= GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP;
 		if (gxGpuVramLogicalAreaOverlapsBounds(clutX, clutY, clutWidth, 1, batchRect.left, batchRect.top, batchRect.right, batchRect.bottom, vramYAddressExtensionWord, gx.backend.gxGpuVramTextureRowMask)) overlaps |= GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP;
-		syncGxGpuSampleTextureLogicalArea(gx, clutX, clutY, clutWidth, 1, vramYAddressExtensionWord);
+	}
+	if (batchSourceReads) {
+		// A dependency flushes its preceding batch before admission; a self-read
+		// keeps the immediate, per-primitive path.
+		if (overlaps === 0) {
+			gx.texturedSourceReads.markLogical(sourceX, sourceY, sourceWidth, sourceHeight, vramYAddressExtensionWord, gx.backend.gxGpuVramTextureRowMask);
+			if (textureMode < 2) gx.texturedSourceReads.markLogical(clutX, clutY, clutWidth, 1, vramYAddressExtensionWord, gx.backend.gxGpuVramTextureRowMask);
+		}
+	} else {
+		syncGxGpuSampleTextureLogicalArea(gx, sourceX, sourceY, sourceWidth, sourceHeight, vramYAddressExtensionWord);
+		if (textureMode < 2) syncGxGpuSampleTextureLogicalArea(gx, clutX, clutY, clutWidth, 1, vramYAddressExtensionWord);
 	}
 	return overlaps;
 }
@@ -1944,7 +1957,7 @@ function renderTexturedVertices(gx: WebGpuGxGpuState,
 					|| syncSourceBetweenTriangles
 					|| gxGpuVramCopyRectsOverlap(gx, gx.texturedDependencyBatchRect, gx.vramCopyRectScratch, vramYAddressExtensionWord))) {
 				if (dependencyBatchFloatStart !== 0) {
-					if (syncSourceBetweenTriangles) syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, 0, vertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, fixedColor);
+					if (syncSourceBetweenTriangles) syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, 0, vertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, fixedColor, false);
 					if (readsVram) syncGxGpuSampleTextureLogicalArea(gx,
 						gx.texturedDependencyBatchRect.left,
 						gx.texturedDependencyBatchRect.top,
@@ -1972,7 +1985,7 @@ function renderTexturedVertices(gx: WebGpuGxGpuState,
 			includeGxGpuVramCopyRect(gx.texturedDependencyBatchRect, gx.vramCopyRectScratch);
 		}
 		if (dependencyBatchFloatStart !== 0) {
-			if (syncSourceBetweenTriangles) syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, 0, vertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, fixedColor);
+			if (syncSourceBetweenTriangles) syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, 0, vertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, fixedColor, false);
 			if (readsVram) syncGxGpuSampleTextureLogicalArea(gx,
 				gx.texturedDependencyBatchRect.left,
 				gx.texturedDependencyBatchRect.top,
@@ -2007,7 +2020,7 @@ function renderTexturedCommand(gx: WebGpuGxGpuState, commandBuffer: GxGpuCommand
 		&& !gxGpuCommandRawTextureEnabled(opcode);
 	const vertexFloatStride = fixedColor ? GX_GPU_FIXED_TEXTURED_VERTEX_FLOATS : GX_GPU_TEXTURED_VERTEX_FLOATS;
 	setGxGpuVertexBoundsRect(commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_POLYGON ? GxGpuRasterKind.Polygon : GxGpuRasterKind.Rectangle, gx.texturedCommandRect, gx.texturedVertices, 0, vertexFloatCount, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
-	const sourceOverlaps = syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, 0, vertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, fixedColor);
+	const sourceOverlaps = syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, 0, vertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, fixedColor, false);
 	const sourceOverlapsDestination = (sourceOverlaps & GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP) !== 0;
 	const maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
 	const readsVram = gxGpuCommandSemiTransparencyEnabled(opcode) || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
@@ -2027,6 +2040,8 @@ function renderTexturedCommand(gx: WebGpuGxGpuState, commandBuffer: GxGpuCommand
 
 function flushTexturedCommands(gx: WebGpuGxGpuState, commandBuffer: GxGpuCommandBufferView, vertexFloatCount: number, batchCommandIndex: number): number {
 	if (vertexFloatCount !== 0) {
+		// All admitted reads are independent of writes in this batch.
+		gx.texturedSourceReads.consume(0, 0, GX_GPU_VRAM_X_ADDRESS_PERIOD, gx.vramTextureRows, gx, syncGxGpuSampleTextureArea);
 		const topLeftWord = commandBuffer.commandDrawingAreaTopLeftWord[batchCommandIndex];
 		const bottomRightWord = commandBuffer.commandDrawingAreaBottomRightWord[batchCommandIndex];
 		const opcode = commandBuffer.commandOpcode[batchCommandIndex];
@@ -2406,6 +2421,7 @@ function executeNewGxGpuCommands(gx: WebGpuGxGpuState,
 	resetGxGpuVramCopyRect(gx.solidBatchRect);
 	resetGxGpuVramCopyRect(gx.texturedBatchRect);
 	resetGxGpuVramCopyRect(gx.lineBatchRect);
+	gx.texturedSourceReads.clear();
 	for (; commandIndex < commandLimit; commandIndex += 1) {
 		if (gx.vramTextureRows !== GX_GPU_VRAM_Y_ADDRESS_PERIOD) {
 			if (solidVertexFloatCount !== 0) solidVertexFloatCount = flushSolidCommands(gx, solidVertexFloatCount);
@@ -2469,14 +2485,14 @@ function executeNewGxGpuCommands(gx: WebGpuGxGpuState,
 					texturedVertexFloatCount = appendTexturedCommandVertices(gx, commandBuffer, commandIndex, texturedVertexFloatCount);
 					if (texturedVertexFloatCount !== texturedCommandVertexStart) {
 						setGxGpuVertexBoundsRect(commandKind === GX_GPU_COMMAND_DRAW_POLYGON ? GxGpuRasterKind.Polygon : GxGpuRasterKind.Rectangle, gx.texturedCommandRect, gx.texturedVertices, texturedCommandVertexStart, texturedVertexFloatCount, texturedVertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
-						let sourceOverlaps = syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, texturedCommandVertexStart, texturedVertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, fixedColor);
+						let sourceOverlaps = syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, texturedCommandVertexStart, texturedVertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, fixedColor, true);
 						if ((sourceOverlaps & GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP) !== 0) {
 							texturedVertexFloatCount = flushTexturedCommands(gx, commandBuffer, texturedCommandVertexStart, texturedBatchCommandIndex);
 							texturedBatchCommandIndex = commandIndex;
 							texturedCommandVertexStart = 0;
 							texturedVertexFloatCount = appendTexturedCommandVertices(gx, commandBuffer, commandIndex, 0);
 							setGxGpuVertexBoundsRect(commandKind === GX_GPU_COMMAND_DRAW_POLYGON ? GxGpuRasterKind.Polygon : GxGpuRasterKind.Rectangle, gx.texturedCommandRect, gx.texturedVertices, 0, texturedVertexFloatCount, texturedVertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
-							sourceOverlaps = syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, 0, texturedVertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, fixedColor);
+							sourceOverlaps = syncGxGpuTexturedSourceTexture(gx, commandBuffer, commandIndex, 0, texturedVertexFloatCount, gx.texturedCommandRect, gx.texturedBatchRect, fixedColor, true);
 						}
 						if ((sourceOverlaps & GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP) !== 0) {
 							if (texturedCommandVertexStart !== 0) texturedVertexFloatCount = flushTexturedCommands(gx, commandBuffer, texturedCommandVertexStart, texturedBatchCommandIndex);

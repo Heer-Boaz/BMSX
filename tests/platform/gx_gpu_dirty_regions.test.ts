@@ -39,6 +39,21 @@ test('partial consumption retains both sides of a split mask and later writes re
 	assert.deepEqual(copies, [[0, 0, 1024, 1024]]);
 });
 
+test('logical source demands coalesce adjacent cells and retain physical wrapping', () => {
+	const reads = new GxGpuDirtyRegions();
+	const copies: Rect[] = [];
+	reads.markLogical(320, 0, 1, 1, 0, 511);
+	reads.markLogical(320, 16, 16, 1, 0, 511);
+	reads.consume(0, 0, 1024, 512, copies, record);
+	assert.deepEqual(copies, [[320, 0, 336, 32]], 'adjacent texture and palette demand form one physical run');
+	copies.length = 0;
+	reads.markLogical(1020, 510, 8, 4, 0, 511);
+	reads.markLogical(32, 512, 1, 1, 0x100, 511);
+	reads.consume(0, 0, 1024, 512, copies, record);
+	assert.deepEqual(copies, [[0, 0, 16, 16], [32, 0, 48, 16], [1008, 0, 1024, 16],
+		[0, 496, 16, 512], [1008, 496, 1024, 512]], 'both logical and physical wrapping select the proper raw cells');
+});
+
 test('spatial consumption matches independent cell ownership across word and surface boundaries', () => {
 	const dirty = new GxGpuDirtyRegions();
 	const expected = new Uint8Array(64 * 64);
