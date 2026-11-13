@@ -9,6 +9,7 @@
 #include "machine/devices/cartridge/controller.h"
 #include "machine/memory/bus_signals.h"
 #include "machine/memory/mapped_page.h"
+#include "machine/memory/word_counters.h"
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/memory_map.h"
 #include "common/primitives.h"
@@ -84,6 +85,7 @@ public:
 
 	uint32_t readIoU32(uint32_t addr) const;
 	uint32_t readU32(uint32_t addr) const;
+	uint32_t readCountedU32(uint32_t addr, MemoryWordCounters& counters) const;
 	uint32_t readMappedU16LE(uint32_t addr) const;
 	uint32_t readMappedU32LE(uint32_t addr, uint32_t faultAccess = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32) const;
 	uint32_t readMappedBusU32LE(
@@ -94,6 +96,7 @@ public:
 	float readMappedF32LE(uint32_t addr) const;
 	double readMappedF64LE(uint32_t addr) const;
 	void writeU32(uint32_t addr, uint32_t value);
+	void countRawWriteU32(uint32_t addr, MemoryWordCounters& counters) const;
 	void writeMappedU16LE(uint32_t addr, uint32_t value);
 	void writeMappedU32LE(uint32_t addr, uint32_t value, uint32_t faultAccess = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
 	void writeMappedBusU32LE(uint32_t addr, uint32_t value, MappedBusSignals busSignals, uint32_t faultAccess = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
@@ -116,6 +119,7 @@ public:
 	void clearIoSlots();
 	void clearBusFault();
 private:
+	template<bool Count> uint32_t readRawU32(uint32_t addr, MemoryWordCounters* counters) const;
 	struct IoReadBinding {
 		void* context = nullptr;
 		IoReadHandler handler = nullptr;

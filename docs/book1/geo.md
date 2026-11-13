@@ -210,7 +210,8 @@ Choose a command according to the operation and coordinate representation:
 | Installed main RAM | 4 MiB; addressed operand and result storage, not a private GEO payload buffer |
 | Assigned GEO workspace | 512 KiB of main RAM at 08040000H…080BFFFFH; not an automatic operand destination |
 | System-cycle timebase | 33,868,800 cycles/s |
-| Outer-record processing rate | 16,384,000 outer records/s |
+| XFORM2 / SAT2 outer-record rate | 16,384,000 records/s |
+| OVERLAP2D arithmetic rate | 16,384,000 work units/s |
 
 Program source and destination addresses explicitly. The assigned workspace
 is available in main RAM; commands use the addresses supplied by the program.
@@ -219,9 +220,10 @@ Record sizes and operation-specific limits appear in the command reference.
 ![GEO captured configuration and live operand paths](figures/geo-job.svg){#fig-geo-job}
 
 A command latches addresses, counts, parameters and strides. Processing then
-reads the addressed records and writes their results. OVERLAP2D clears its
-summary when the command is accepted. A zero-count job completes at launch
-without processing a record.
+reads the addressed records and writes their results. OVERLAP2D first pays for
+and clears its summary before reading its inputs. A zero-count XFORM2 or SAT2
+job completes at launch; a zero-count OVERLAP2D job completes after clearing
+its summary.
 
 XFORM2 and SAT2 share their fixed-point vertex representation. OVERLAP2D
 requires separately prepared binary32 geometry. The [GTE](gte.md#sec-gte)
@@ -255,9 +257,9 @@ At launch, GEO captures `CMD`, all three source words, both destination words, `
 
 Launch does not capture the payload bytes. Records and their referenced data are read from memory as processing reaches them. Keep an active job's input memory stable when a consistent batch is required. Changing a register and changing the memory addressed by a captured register are different actions: only the latter can change data still to be read by that job.
 
-Command acceptance checks the complete opcode, not the record pointers, strides, parameters, alignment, flags, or payload shape. Those checks belong to the selected operation when it processes a record. A supported command with `COUNT = 0` completes immediately without processing a record; it is not a way to validate a record layout or payload. An unsupported command is still rejected when `COUNT = 0`.
+Command acceptance checks the complete opcode, not the record pointers, strides, parameters, alignment, flags, or payload shape. Those checks belong to the selected operation when it processes a record. With `COUNT = 0`, no command processes a record or validates its layout. XFORM2 and SAT2 complete immediately; OVERLAP2D first clears its summary. An unsupported command is still rejected when `COUNT = 0`.
 
-`OVERLAP2D_PASS` has a launch side effect: after command acceptance, GEO writes four zero summary words at `DST1 + 0`, `+4`, `+8`, and `+12`. This happens before testing `COUNT`, including for a zero-count job. No launch-time destination validation precedes those summary writes. Program `DST1` for this operation even when no outer records will run.
+After accepting `OVERLAP2D_PASS`, GEO pays for four word writes and then writes zero at `DST1 + 0`, `+4`, `+8`, and `+12`, in that order. The unit remains BUSY during this interval, including when `COUNT = 0`. No launch-time destination validation precedes these writes. Program `DST1` even when no outer records will run.
 
 ### Encode and submit the drone jobs {#sec-geo-encode-the-drone-jobs}
 
@@ -477,22 +479,16 @@ allocating buffers, and keep results out of memory reserved for other uses.
 
 ## Processing rate and timing {#sec-geo-work-budget-and-timing}
 
-GEO processes outer records at a rate of 16,384,000 records/s against the
-33,868,800-Hz system timebase. Each attempted outer record, including one that
-faults, uses the same timing budget. XFORM2 counts one record per vertex span,
-SAT2 one per supplied pair, and OVERLAP2D one per candidate or full-pass outer
-instance.
+XFORM2 and SAT2 process outer records at 16,384,000 records/s against the
+33,868,800-Hz system timebase. Each attempted record, including one that faults,
+uses the same budget. One XFORM2 record is a vertex span; one SAT2 record is a
+supplied pair. Their work within a record adds no separate charge.
 
-The work within a record adds no separate charge. In particular, an OVERLAP2D
-full-pass record can test several pairs and produce several contacts. Use the
-outer-record count, rather than vertex or contact count, for this timing budget.
+The rate is `16,384,000 / 33,868,800 = 640 / 1323` records per system cycle.
+Timing starts anew at each accepted launch. The budget for `N > 0` attempted
+XFORM2 or SAT2 records is `ceiling(N × 1323 / 640)` system cycles:
 
-The rate is `16,384,000 / 33,868,800 = 640 / 1323` outer records per system
-cycle. Timing begins anew at each accepted launch; idle time does not shorten
-a later job. The processing budget for `N > 0` attempted outer records is
-`ceiling(N × 1323 / 640)` system cycles:
-
-| Attempted outer records | System-cycle budget |
+| Attempted records | System-cycle budget |
 |---|---|
 | 1 | 3 |
 | 2 | 5 |
@@ -501,13 +497,75 @@ a later job. The processing budget for `N > 0` attempted outer records is
 | 64 | 133 |
 | 640 | 1323 |
 
-The table covers GEO processing. CPU setup and interrupt handling add to an
-operation's elapsed time; a fault, abort or rejection can terminate it early.
-The processing rate is fixed.
+### OVERLAP2D work intervals {#sec-geo-overlap-work-intervals}
 
-COUNT accepts the full unsigned 32-bit range. Per-record limits still apply:
-64 vertices for an XFORM2 span or SAT2/OVERLAP polygon, and 128 clipping vertices
-in OVERLAP2D.
+OVERLAP2D pays for the words and arithmetic it actually reaches rather than
+one fixed charge per outer record. GEO groups consecutive record and pair
+header reads into intervals of at most 256 words. It begins another pair header
+in the same group only if room remains for its maximum of 21 words. A group is
+sampled when its interval starts; GEO proceeds to the next group or exact
+piece pair after the interval has been paid. A rejected pair can therefore
+share an interval with other rejected pairs. The group is a GEO work interval,
+not a DMA burst and not a CPU bus hold.
+
+Each reached source word and each result or summary word costs:
+
+| Word location | System cycles per word |
+|---|---:|
+| Installed main RAM or system-ROM window | 1 |
+| Cartridge-bus window | 8 |
+| Other address | 1 |
+
+These are word charges, without a separate per-group setup charge. A faulting
+word retains the price of its address window, including a cartridge-mapped
+device word. A span rejected before any word is read does not charge those
+unperformed reads.
+The four initial summary words are charged in the same way. For example, a
+summary in main RAM costs four cycles, even for `COUNT = 0`.
+
+For example, in full-pass mode with both instances and both overlapping shape
+descriptors in main RAM, the first group reads five words for A, five for B,
+ten bounds words and six descriptor words. Its charge is 26 cycles. This is in
+addition to the initial four-cycle RAM summary and to any exact piece work.
+
+Exact testing also charges one arithmetic work unit for each of the following:
+
+| Reached operation | Work units |
+|---|---:|
+| Visit one edge as a separating-axis candidate | 1 |
+| Compute its length's square root, including for a zero-length edge | 1 |
+| Divide one component to normalize a usable axis | 1 |
+| Project one vertex onto a usable axis | 1 |
+| Add one vertex to a shape or clipped-polygon average | 1 |
+| Divide one coordinate of an average | 1 |
+| Copy one A vertex into the initial clipping workspace | 1 |
+| Visit one B edge as a clipping plane | 1 |
+| Test one input vertex against a clipping plane | 1 |
+| Divide to locate one crossing of a clipping plane | 1 |
+
+The arithmetic rate is 16,384,000 work units/s. At the installed clock, `U`
+work units over a job require `ceiling(U × 1323 / 640)` system cycles in total;
+GEO retains the fractional remainder between intervals. Word charges are
+additional. A skipped edge, an unvisited axis or an early separation pays only
+for operations actually reached. A fault pays for work performed before the
+fault, not work after it. CPU setup and interrupt handling are separate.
+
+An exact test loads A's piece before B's. For each polygon it samples the
+vertices in ascending word order once for that piece-pair test; projections,
+clipping and averages reuse those sampled words. A later piece-pair test loads
+its exact data again. A's piece bounds remain in use across its B-piece loop.
+A write to source memory can affect words not yet sampled, but cannot change
+words already sampled for an in-progress piece test. If loading B faults,
+the preceding A reads have already happened.
+
+The result of a piece test and a fault found during it remain pending until its
+interval has been paid. A selected contact is written only after all reached
+piece pairs have been tested and the result-write charge has been paid. GEO
+keeps BUSY set through these intervals. `PROCESSED` still advances per completed
+outer record, not per group or piece pair. Input counts and compound piece
+counts remain full unsigned 32-bit words; the number of pieces does not set a
+smaller implicit limit. Each polygon has at most 64 input vertices and the
+clipping workspace has 128 vertices.
 
 ## Completion, faults, and recovery {#sec-geo-completion-faults-and-recovery}
 
@@ -515,7 +573,7 @@ Each successful outer record increments `PROCESSED` by one. Successful completio
 
 An execution fault publishes `STATUS = 6H` (`DONE | ERROR`) and raises `GEO_ERROR`. The failing record is not added to `PROCESSED`. `FAULT` contains its zero-based outer-record index in bits 15:0 and the fault code in bits 31:16. The index is truncated to 16 bits independently of the full-width count and progress words. Preserve `PROCESSED` when diagnosing a large batch; the fault word alone does not retain the index's high bits.
 
-A rejected submission publishes `STATUS = 8H` (`REJECTED` without `DONE`), resets `PROCESSED` to zero, and uses fault index `FFFFH`. It raises `GEO_ERROR`. Rejection during `BUSY` discards the active job even if some records had already completed. Neither rejection nor execution failure rolls back output memory already written.
+A rejected submission publishes `STATUS = 8H` (`REJECTED` without `DONE`), resets `PROCESSED` to zero, and uses fault index `FFFFH`. It raises `GEO_ERROR`. Rejection during `BUSY` discards the active job even if some records had already completed. For OVERLAP2D, unfinished calculation and unpaid output are discarded; reads already issued and words already written are not undone. Neither rejection nor execution failure rolls back output memory already written.
 
 | Fault code | Name |
 |---|---|
@@ -534,13 +592,13 @@ A rejected submission publishes `STATUS = 8H` (`REJECTED` without `DONE`), reset
 
 The command reference below identifies which conditions produce each fault.
 
-To stop a busy job, write `CTRL` with bit 0 set. `ABORT` terminates it with `DONE | ERROR`, code `ABORTED`, and the current completed-record index. Earlier outputs remain. The pulse clears itself. In idle or `DONE`, it changes no job result. With `ERROR` or `REJECTED` already latched, it cannot replace the first fault.
+To stop a busy job, write `CTRL` with bit 0 set. `ABORT` terminates it with `DONE | ERROR`, code `ABORTED`, and the current completed-record index. For OVERLAP2D it discards unfinished calculation and unpaid output, including a pending initial summary; reads already issued and earlier outputs remain. The pulse clears itself. In idle or `DONE`, it changes no job result. With `ERROR` or `REJECTED` already latched, it cannot replace the first fault.
 
 After inspecting a fault, write any nonzero word to `FAULT_ACK`. This clears `ERROR`, `REJECTED`, and `FAULT`; it preserves `DONE`, `BUSY`, and `PROCESSED`. An execution-error result consequently becomes `DONE`; a rejection becomes idle. A zero write has no effect. Acknowledgement never resumes the discarded job.
 
 Local fault acknowledgement and central interrupt acknowledgement are separate. `GEO_DONE` uses central bit 3 (`8H`); `GEO_ERROR` uses bit 4 (`10H`). Success raises only the done source; execution fault, abort, and rejection raise only the error source. Pending sources are recorded regardless of masking. The central IRQ registers are `FLAGS` at `08000000H`, `ACK` at `08000004H`, and `MASK` at `08000008H`. Clear a pending source by writing its one bit to central `ACK`; that write leaves other pending sources untouched. Central `ACK` then reads zero. Masking a source does not clear it. `FAULT_ACK` does not clear central pending bits, and central acknowledgement does not release a sticky GEO fault. Use the interrupt-controller chapter for CPU interrupt entry.
 
-GEO reset discards the active job, returns to idle, and zeroes all 16 bank words and `FAULT_ACK`. It does not itself clear central IRQ pending state; full device reset resets the interrupt controller separately. No GEO register write provides a reset operation.
+GEO reset discards the active job and any unpaid OVERLAP2D output, returns to idle, and zeroes all 16 bank words and `FAULT_ACK`. It does not undo reads or writes already performed. It does not itself clear central IRQ pending state; full device reset resets the interrupt controller separately. No GEO register write provides a reset operation.
 
 ## XFORM2_BATCH: transform vertices and build bounds {#sec-geo-xform2_batch-transform-vertices-and-build-bounds}
 
@@ -803,7 +861,7 @@ For example, `PARAM0=6` selects full pass with the same bounds filtering as
 `PARAM0=2`. Bits outside the mode field do not disable filtering, select
 another contact algorithm or cause a reserved-encoding fault.
 
-A launch clears the processed, result, exact-pair, and broadphase-pair counts and writes a zero summary, including when `COUNT=0`. There is no separate OVERLAP2D configuration-validation stage.
+A launch clears the processed, result, exact-pair, and broadphase-pair counts. GEO then pays for and writes a zero summary, including when `COUNT=0`. There is no separate OVERLAP2D configuration-validation stage.
 
 ### Input records {#sec-geo-input-records}
 
@@ -862,7 +920,8 @@ Compound piece `i` is the descriptor at `parent + dataOffset + i × 16`: the arr
 
 Descriptor offsets are unsigned byte offsets, not signed displacements. Indexed address formation retains the low 32 bits, but an accepted input span must also pass the no-overflow checks: the index-times-stride product and base-plus-offset must fit in 32 bits, and the span end must not exceed `100000000H`. There is no alignment predicate in this pass.
 
-Guarded inputs must lie in the readable system-ROM, main-RAM, or cartridge-bus windows. System-ROM and RAM words are little-endian; cartridge reads use the cartridge bus. Results require installed main RAM. Summary writes use ordinary word writes without a preceding summary-span or RAM check; an invalid `DST1` can produce a bus fault rather than an OVERLAP2D destination-range fault. The four summary words are written separately, in order.
+Guarded inputs must lie in the readable system-ROM, main-RAM, or cartridge-bus windows. System-ROM and RAM words are little-endian; cartridge reads use the cartridge bus. Results require installed main RAM. Summary writes use ordinary word writes without a preceding summary-span or RAM check; an invalid `DST1` can produce a bus fault rather than an OVERLAP2D destination-range fault. The four summary words are written separately, in order, with each address
+addition wrapping modulo 2^32.
 
 ### Filtering, order, and counts {#sec-geo-filtering-order-and-counts}
 

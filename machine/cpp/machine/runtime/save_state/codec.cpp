@@ -293,6 +293,50 @@ GeometryJobState readGeometryJobState(BinaryReader& reader) {
 	return state;
 }
 
+template<class Writer> void writeGeometryOverlapProgress(Writer& writer, const GeometryOverlap2dProgress& state) {
+	writer.u32(state.phase); writer.u32(state.instanceBIndex); writer.u32(state.pairMeta);
+	writer.u32(state.shapeAAddr); writer.u32(state.shapeBAddr);
+	writer.u32(state.shapeAOffset); writer.u32(state.shapeBOffset);
+	writer.u32(state.countA); writer.u32(state.countB); writer.u32(state.pieceA); writer.u32(state.pieceB);
+	writer.boolean(state.compoundA); writer.boolean(state.compoundB); writer.boolean(state.bestHit);
+	writer.u32(state.bestPieceA); writer.u32(state.bestPieceB); writer.u32(state.bestFeature);
+	writer.f64(state.bestDepth); writer.f64(state.bestNx); writer.f64(state.bestNy);
+	writer.f64(state.bestPx); writer.f64(state.bestPy);
+	writer.u32s(state.instanceA); writer.u32s(state.instanceB);
+	for (double value : state.boundsA) writer.f64(value);
+	writer.u32(state.pendingWork.axes); writer.u32(state.pendingWork.projectionVertices);
+	writer.u32(state.pendingWork.averageVertices); writer.u32(state.pendingWork.clipVertices);
+	writer.u32(state.pendingWork.clipEdges); writer.u32(state.pendingWork.squareRoots);
+	writer.u32(state.pendingWork.divisions);
+	writer.u32(state.pendingWriteFlags); writer.u32(state.afterPublishPhase);
+	writer.u32(state.pendingMemory.ramWords); writer.u32(state.pendingMemory.systemRomWords);
+	writer.u32(state.pendingMemory.cartridgeWords); writer.u32(state.pendingMemory.otherWords);
+	writer.u32(state.pendingFault);
+}
+
+GeometryOverlap2dProgress readGeometryOverlapProgress(BinaryReader& reader) {
+	GeometryOverlap2dProgress state;
+	state.phase = reader.u32(); state.instanceBIndex = reader.u32(); state.pairMeta = reader.u32();
+	state.shapeAAddr = reader.u32(); state.shapeBAddr = reader.u32();
+	state.shapeAOffset = reader.u32(); state.shapeBOffset = reader.u32();
+	state.countA = reader.u32(); state.countB = reader.u32(); state.pieceA = reader.u32(); state.pieceB = reader.u32();
+	state.compoundA = reader.boolean(); state.compoundB = reader.boolean(); state.bestHit = reader.boolean();
+	state.bestPieceA = reader.u32(); state.bestPieceB = reader.u32(); state.bestFeature = reader.u32();
+	state.bestDepth = reader.f64(); state.bestNx = reader.f64(); state.bestNy = reader.f64();
+	state.bestPx = reader.f64(); state.bestPy = reader.f64();
+	reader.u32s(state.instanceA); reader.u32s(state.instanceB);
+	for (double& value : state.boundsA) value = reader.f64();
+	state.pendingWork.axes = reader.u32(); state.pendingWork.projectionVertices = reader.u32();
+	state.pendingWork.averageVertices = reader.u32(); state.pendingWork.clipVertices = reader.u32();
+	state.pendingWork.clipEdges = reader.u32(); state.pendingWork.squareRoots = reader.u32();
+	state.pendingWork.divisions = reader.u32();
+	state.pendingWriteFlags = reader.u32(); state.afterPublishPhase = reader.u32();
+	state.pendingMemory.ramWords = reader.u32(); state.pendingMemory.systemRomWords = reader.u32();
+	state.pendingMemory.cartridgeWords = reader.u32(); state.pendingMemory.otherWords = reader.u32();
+	state.pendingFault = reader.u32();
+	return state;
+}
+
 template<class Writer> void writeGeometryControllerState(Writer& writer, const GeometryControllerState& state) {
 	writer.u32(static_cast<u32>(state.phase));
 	writer.u32s(state.registerWords);
@@ -300,8 +344,10 @@ template<class Writer> void writeGeometryControllerState(Writer& writer, const G
 	if (state.activeJob) {
 		writeGeometryJobState(writer, *state.activeJob);
 	}
+	writeGeometryOverlapProgress(writer, state.overlap);
 	writer.i64(state.workCarry);
 	writer.u32(state.availableWorkUnits);
+	writer.i64(state.pendingCycles);
 	writer.boolean(state.supervisorQuiesceRequested);
 }
 
@@ -313,8 +359,10 @@ GeometryControllerState readGeometryControllerState(BinaryReader& reader) {
 		state.activeJob.emplace();
 		*state.activeJob = readGeometryJobState(reader);
 	}
+	state.overlap = readGeometryOverlapProgress(reader);
 	state.workCarry = reader.i64();
 	state.availableWorkUnits = reader.u32();
+	state.pendingCycles = reader.i64();
 	state.supervisorQuiesceRequested = reader.boolean();
 	return state;
 }

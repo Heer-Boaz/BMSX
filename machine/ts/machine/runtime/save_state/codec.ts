@@ -14,6 +14,7 @@ import type { DmaControllerState } from '../../devices/dma/controller';
 import type { DmaChannelState } from '../../devices/dma/registers';
 import type { GeometryControllerPhase } from '../../devices/geometry/contracts';
 import type { GeometryJobState } from '../../devices/geometry/job';
+import type { GeometryOverlap2dPhase, GeometryOverlap2dProgress } from '../../devices/geometry/overlap2d';
 import type { GeometryControllerState } from '../../devices/geometry/save_state';
 import type { InputControllerState } from '../../devices/input/save_state';
 import type { InputControllerRegisterState } from '../../devices/input/registers';
@@ -32,7 +33,7 @@ import type { RuntimeSaveMachineState } from '../save_machine_state';
 import type { RuntimeSaveState } from '../save_state';
 import type { ExecutionDomainId } from '../../../spec/blua32/execution_domain';
 import { APU_COMMAND_FIFO_CAPACITY, APU_COMMAND_FIFO_REGISTER_WORD_COUNT, APU_PARAMETER_REGISTER_COUNT, APU_SAMPLE_RAM_BYTES, APU_SLOT_COUNT, APU_SLOT_REGISTER_WORD_COUNT, APU_TRANSFER_FIFO_WORD_CAPACITY } from '../../../spec/audio/apu';
-import { GEOMETRY_CONTROLLER_REGISTER_COUNT } from '../../devices/geometry/contracts';
+import { GEOMETRY_CONTROLLER_REGISTER_COUNT, GEO_OVERLAP2D_INSTANCE_WORDS } from '../../devices/geometry/contracts';
 import { INPUT_CONTROLLER_KEY_WORD_COUNT, INPUT_CONTROLLER_PAD_AXIS_COUNT, INPUT_CONTROLLER_PAD_COUNT } from '../../devices/input/contracts';
 import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT } from '../../../spec/gx/pcrtc';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../devices/gx/gte';
@@ -280,6 +281,52 @@ function readGeometryJobState(reader: BinaryReader): GeometryJobState {
 	};
 }
 
+function writeGeometryOverlapProgress(writer: BinarySink, state: GeometryOverlap2dProgress): void {
+	writer.u32(state.phase); writer.u32(state.instanceBIndex); writer.u32(state.pairMeta);
+	writer.u32(state.shapeAAddr); writer.u32(state.shapeBAddr);
+	writer.u32(state.shapeAOffset); writer.u32(state.shapeBOffset);
+	writer.u32(state.countA); writer.u32(state.countB); writer.u32(state.pieceA); writer.u32(state.pieceB);
+	writer.bool(state.compoundA); writer.bool(state.compoundB); writer.bool(state.bestHit);
+	writer.u32(state.bestPieceA); writer.u32(state.bestPieceB); writer.u32(state.bestFeature);
+	writer.f64(state.bestDepth); writer.f64(state.bestNx); writer.f64(state.bestNy);
+	writer.f64(state.bestPx); writer.f64(state.bestPy);
+	writer.u32s(state.instanceA); writer.u32s(state.instanceB);
+	for (const value of state.boundsA) writer.f64(value);
+	writer.u32(state.pendingWork.axes); writer.u32(state.pendingWork.projectionVertices);
+	writer.u32(state.pendingWork.averageVertices); writer.u32(state.pendingWork.clipVertices);
+	writer.u32(state.pendingWork.clipEdges); writer.u32(state.pendingWork.squareRoots);
+	writer.u32(state.pendingWork.divisions);
+	writer.u32(state.pendingWriteFlags); writer.u32(state.afterPublishPhase);
+	writer.u32(state.pendingMemory.ramWords); writer.u32(state.pendingMemory.systemRomWords);
+	writer.u32(state.pendingMemory.cartridgeWords); writer.u32(state.pendingMemory.otherWords);
+	writer.u32(state.pendingFault);
+}
+
+function readGeometryOverlapProgress(reader: BinaryReader): GeometryOverlap2dProgress {
+	return {
+		phase: reader.u32() as GeometryOverlap2dPhase,
+		instanceBIndex: reader.u32(), pairMeta: reader.u32(),
+		shapeAAddr: reader.u32(), shapeBAddr: reader.u32(),
+		shapeAOffset: reader.u32(), shapeBOffset: reader.u32(),
+		countA: reader.u32(), countB: reader.u32(), pieceA: reader.u32(), pieceB: reader.u32(),
+		compoundA: reader.bool(), compoundB: reader.bool(), bestHit: reader.bool(),
+		bestPieceA: reader.u32(), bestPieceB: reader.u32(), bestFeature: reader.u32(),
+		bestDepth: reader.f64(), bestNx: reader.f64(), bestNy: reader.f64(),
+		bestPx: reader.f64(), bestPy: reader.f64(),
+		instanceA: reader.u32Array(GEO_OVERLAP2D_INSTANCE_WORDS),
+		instanceB: reader.u32Array(GEO_OVERLAP2D_INSTANCE_WORDS),
+		boundsA: Float64Array.of(reader.f64(), reader.f64(), reader.f64(), reader.f64()),
+		pendingWork: {
+			axes: reader.u32(), projectionVertices: reader.u32(),
+			averageVertices: reader.u32(), clipVertices: reader.u32(),
+			clipEdges: reader.u32(), squareRoots: reader.u32(), divisions: reader.u32(),
+		},
+		pendingWriteFlags: reader.u32(), afterPublishPhase: reader.u32() as GeometryOverlap2dPhase,
+		pendingMemory: { ramWords: reader.u32(), systemRomWords: reader.u32(), cartridgeWords: reader.u32(), otherWords: reader.u32() },
+		pendingFault: reader.u32(),
+	};
+}
+
 function writeGeometryControllerState(writer: BinarySink, state: GeometryControllerState): void {
 	writer.u32(state.phase);
 	writer.u32s(state.registerWords);
@@ -287,8 +334,10 @@ function writeGeometryControllerState(writer: BinarySink, state: GeometryControl
 	if (state.activeJob !== null) {
 		writeGeometryJobState(writer, state.activeJob);
 	}
+	writeGeometryOverlapProgress(writer, state.overlap);
 	writer.i64(state.workCarry);
 	writer.u32(state.availableWorkUnits);
+	writer.i64(state.pendingCycles);
 	writer.bool(state.supervisorQuiesceRequested);
 }
 
@@ -297,8 +346,10 @@ function readGeometryControllerState(reader: BinaryReader): GeometryControllerSt
 		phase: reader.u32() as GeometryControllerPhase,
 		registerWords: reader.u32s(GEOMETRY_CONTROLLER_REGISTER_COUNT),
 		activeJob: reader.bool() ? readGeometryJobState(reader) : null,
+		overlap: readGeometryOverlapProgress(reader),
 		workCarry: reader.i64(),
 		availableWorkUnits: reader.u32(),
+		pendingCycles: reader.i64(),
 		supervisorQuiesceRequested: reader.bool(),
 	};
 }

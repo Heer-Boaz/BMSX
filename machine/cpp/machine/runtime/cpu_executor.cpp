@@ -166,11 +166,10 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 		const RunResult result = scheduler.runCpuSlice(targetDepth, sliceBudget, targetThread);
 		const int consumed = sliceBudget - cpu.instructionBudgetRemaining;
 		if (consumed > 0) {
-			machine.advanceDevices(consumed);
+			advanceRuntimeTime(runtime, consumed);
 			if (machine.systemController.cpuHeld()) {
 				return CpuSuspendedRunResult::Halted;
 			}
-			runDueRuntimeTimers(runtime);
 		}
 		if (static_cast<int>(targetThread->frameDepth) <= targetDepth) {
 			return CpuSuspendedRunResult::Completed;
@@ -308,8 +307,18 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 }
 
 bool advanceRuntimeTime(Runtime& runtime, int cycles) {
-	runtime.machine.advanceDevices(cycles);
-	return runDueRuntimeTimers(runtime);
+	auto& machine = runtime.machine;
+	auto& scheduler = machine.scheduler;
+	const i64 targetCycle = scheduler.nowCycles() + cycles;
+	runDueRuntimeTimers(runtime);
+	// These cycles already elapsed. Holds gate the next CPU slice; device
+	// edges retire before advancing the rest of the completed instruction.
+	while (scheduler.nowCycles() < targetCycle) {
+		const i64 nextCycle = std::min(scheduler.nextDeadline(), targetCycle);
+		machine.advanceDevices(static_cast<int>(nextCycle - scheduler.nowCycles()));
+		runDueRuntimeTimers(runtime);
+	}
+	return runtime.vblank.tickCompleted();
 }
 
 bool runDueRuntimeTimers(Runtime& runtime) {

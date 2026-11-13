@@ -50,6 +50,7 @@ private:
 	void onCtrlWrite();
 	void start(int64_t nowCycles, uint32_t command);
 	void scheduleNextService(int64_t nowCycles);
+	void serviceOverlap(int64_t nowCycles);
 	void onFaultAckWrite(u32 value);
 	void completeRecord(GeoJob& job);
 	void finishSuccess(uint32_t processed);
@@ -63,6 +64,7 @@ private:
 	int64_t m_workUnitsPerSec = 1;
 	int64_t m_workCarry = 0;
 	uint32_t m_availableWorkUnits = 0;
+	int64_t m_pendingCycles = 0;
 	std::array<u32, GEOMETRY_CONTROLLER_REGISTER_COUNT> m_registerWords{};
 	GeometryControllerPhase m_phase = GeometryControllerPhase::Idle;
 	std::optional<GeoJob> m_activeJob;

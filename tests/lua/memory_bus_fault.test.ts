@@ -32,6 +32,41 @@ import { readLE32 } from '../../machine/ts/common/endian';
 
 const UNMAPPED_ADDRESS = 0x06000000;
 
+test('raw word accounting follows the selected decoder region, including underlying IO RAM', () => {
+	const slots = cartridgeSlots(new Uint8Array(16).fill(0x51));
+	slots[0]!.ramByteCount = 16;
+	slots[0]!.mailboxPresent = true;
+	const memory = new Memory({ systemRom: new Uint8Array(16).fill(0x42), cartridgeSlots: slots }, PSX_MACHINE_SPEC.ramBytes);
+	const counters = { ramWords: 0, systemRomWords: 0, cartridgeWords: 0, otherWords: 0 };
+	let ioReads = 0, ioWrites = 0;
+	memory.mapIoRead(IO_GX_GPU_GP0, memory, () => { ioReads++; return 0; });
+	memory.mapIoWrite(IO_GX_GPU_GP0, memory, () => { ioWrites++; });
+	assert.equal(memory.readU32(SYSTEM_ROM_BASE + 1, counters), 0x42424242);
+	memory.countRawWriteU32(SYSTEM_ROM_BASE, counters);
+	memory.writeU32(SYSTEM_ROM_BASE, 0xffffffff);
+	memory.countRawWriteU32(DYNAMIC_RAM_BASE + 1, counters);
+	memory.writeU32(DYNAMIC_RAM_BASE + 1, 0x87654321);
+	assert.equal(memory.readU32(DYNAMIC_RAM_BASE + 1, counters), 0x87654321);
+	memory.countRawWriteU32(IO_GX_GPU_GP0, counters);
+	memory.writeU32(IO_GX_GPU_GP0, 0x12345678);
+	assert.equal(memory.readU32(IO_GX_GPU_GP0, counters), 0x12345678);
+	assert.equal(ioReads + ioWrites, 0, 'raw accesses bypass the mapped IO overlay');
+	assert.equal(memory.readU32(CART_ROM_BASE + 1, counters), 0x51515151);
+	memory.countRawWriteU32(CART_RAM_BASE + 1, counters);
+	memory.writeU32(CART_RAM_BASE + 1, 0x89abcdef);
+	assert.equal(memory.readU32(CART_RAM_BASE + 1, counters), 0x89abcdef);
+	memory.countRawWriteU32(CART_MMIO_BASE, counters);
+	memory.writeU32(CART_MMIO_BASE, 7);
+	memory.readU32(CART_MMIO_BASE, counters);
+	memory.readU32(UNMAPPED_ADDRESS, counters);
+	memory.countRawWriteU32(UNMAPPED_ADDRESS, counters);
+	memory.writeU32(UNMAPPED_ADDRESS, 0);
+	assert.deepEqual(counters, { ramWords: 4, systemRomWords: 2, cartridgeWords: 5, otherWords: 2 });
+	counters.ramWords = 0xffffffff;
+	memory.readU32(DYNAMIC_RAM_BASE, counters);
+	assert.equal(counters.ramWords, 0, 'counter words wrap identically to the native register representation');
+});
+
 test('mapped read views admit physical backing without reading IO or unbacked tails', () => {
 	const system = new Uint8Array(67), rom0 = new Uint8Array(67).fill(0x31), rom1 = new Uint8Array(67).fill(0x72);
 	const slots = cartridgeSlots(rom0, rom1);

@@ -21,7 +21,8 @@ import {
 	APU_SLOT_PHASE_IDLE,
 	APU_SLOT_PHASE_PLAYING,
 } from '../../machine/ts/machine/devices/audio/contracts';
-import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT } from '../../machine/ts/machine/devices/geometry/contracts';
+import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT, GEO_OVERLAP2D_INSTANCE_WORDS } from '../../machine/ts/machine/devices/geometry/contracts';
+import { GeometryOverlap2dPhase } from '../../machine/ts/machine/devices/geometry/overlap2d';
 import { GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD } from '../../machine/ts/machine/devices/gx/gp0_stream';
 import { GX_GPU_READBACK_READY, GX_GPU_READBACK_SUBMITTED } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT } from '../../machine/ts/spec/gx/pcrtc';
@@ -182,8 +183,26 @@ function createRuntimeSaveState(): RuntimeSaveState {
 						exactPairCount: 4,
 						broadphasePairCount: 5,
 					},
+					overlap: {
+						phase: GeometryOverlap2dPhase.CompletePiece, instanceBIndex: 31, pairMeta: 32,
+						shapeAAddr: 0x1000, shapeBAddr: 0x2000,
+						shapeAOffset: 0x30, shapeBOffset: 0x40,
+						countA: 3, countB: 4, pieceA: 1, pieceB: 2,
+						compoundA: true, compoundB: false, bestHit: true,
+						bestPieceA: 5, bestPieceB: 6, bestFeature: 7,
+						bestDepth: 0.25, bestNx: -1, bestNy: -0, bestPx: 3.5, bestPy: 4.5,
+						instanceA: Uint32Array.from(numberedWords(GEO_OVERLAP2D_INSTANCE_WORDS)),
+						instanceB: new Uint32Array(GEO_OVERLAP2D_INSTANCE_WORDS).fill(0xffffffff),
+						boundsA: Float64Array.of(-1, 2, 3, 4),
+						pendingWork: { axes: 8, projectionVertices: 64, averageVertices: 8,
+							clipVertices: 12, clipEdges: 16, squareRoots: 8, divisions: 24 },
+						pendingWriteFlags: 3, afterPublishPhase: GeometryOverlap2dPhase.Pair,
+						pendingMemory: { ramWords: 12, systemRomWords: 13, cartridgeWords: 14, otherWords: 15 },
+						pendingFault: 9,
+					},
 					workCarry: 12,
 					availableWorkUnits: 1,
+					pendingCycles: 17,
 					supervisorQuiesceRequested: true,
 				},
 				gxGpu: {

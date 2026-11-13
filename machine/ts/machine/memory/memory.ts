@@ -14,6 +14,7 @@ import {
 } from '../../spec/bmsx/memory_map';
 import { CartridgeController } from '../devices/cartridge/controller';
 import { RomStorage } from './rom_storage';
+import type { MemoryWordCounters } from './word_counters';
 import type { CartridgeSocketMediaPair } from '../devices/cartridge/contracts';
 import {
 	DMA_BURST_WORD_CAPACITY,
@@ -587,19 +588,23 @@ export class Memory {
 		return this.readIoSlot((addr - IO_BASE) / IO_WORD_SIZE, addr, MAPPED_BUS_MASTER_CPU);
 	}
 
-	public readU32(addr: number): number {
+	public readU32(addr: number, counters: MemoryWordCounters | null = null): number {
 		if (addr < RAM_BASE) {
 			if (addr <= SYSTEM_ROM_SIZE - 4) {
+				if (counters !== null) counters.systemRomWords = (counters.systemRomWords + 1) >>> 0;
 				return this.readRomWindowU32LE(this.systemRom.bytes, addr);
 			}
 		} else if (addr < CART_ROM_BASE) {
 			const offset = addr - RAM_BASE;
 			if (offset + 4 <= this.ram.byteLength) {
+				if (counters !== null) counters.ramWords = (counters.ramWords + 1) >>> 0;
 				return readLE32(this.ram, offset);
 			}
 		} else if (addr <= CART_BUS_END - 4) {
+			if (counters !== null) counters.cartridgeWords = (counters.cartridgeWords + 1) >>> 0;
 			return this.cartridgeController.readU32(addr, MAPPED_BUS_MASTER_CPU);
 		}
+		if (counters !== null) counters.otherWords = (counters.otherWords + 1) >>> 0;
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U32);
 		return 0;
 	}
@@ -696,6 +701,17 @@ export class Memory {
 			return;
 		}
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U32);
+	}
+
+	public countRawWriteU32(addr: number, counters: MemoryWordCounters): void {
+		if (addr < CART_ROM_BASE) {
+			if (this.isRamRange(addr, IO_WORD_SIZE)) { counters.ramWords = (counters.ramWords + 1) >>> 0; return; }
+			if (addr <= SYSTEM_ROM_SIZE - IO_WORD_SIZE) { counters.systemRomWords = (counters.systemRomWords + 1) >>> 0; return; }
+		} else if (addr <= CART_BUS_END - IO_WORD_SIZE) {
+			counters.cartridgeWords = (counters.cartridgeWords + 1) >>> 0;
+			return;
+		}
+		counters.otherWords = (counters.otherWords + 1) >>> 0;
 	}
 
 	public writeMappedU16LE(addr: number, value: number): void {

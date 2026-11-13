@@ -81,6 +81,7 @@
 		"test:host-shortcuts-parity": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/host_shortcuts/run.ts",
 		"test:keyboard-parity": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/keyboard/run.ts",
 		"test:geometry-parity": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/geometry/run.ts",
+		"test:geometry-runtime-migration": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/geometry/runtime_migration.ts",
 		"test:studio-clipboard": "bash scripts/test.sh node --import tsx --test --test-concurrency=1 tests/platform/studio_clipboard.test.ts tests/platform/studio_assistant_images.test.ts",
 		"test:studio-clipboard:os": "bash scripts/test.sh node --import tsx --test --test-concurrency=1 tests/platform/studio_external_clipboard.test.ts",
 		"test:frame-evaluation-parity": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/frame_evaluation/run.ts",

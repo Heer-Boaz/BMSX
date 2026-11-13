@@ -676,6 +676,10 @@ if(BMSX_BUILD_TESTS)
 	if(BMSX_SNESMINI_TARGET)
 		target_link_options(bmsx_geometry_conformance_runner PRIVATE -static-libstdc++ -static-libgcc)
 	endif()
+	add_executable(bmsx_geometry_steps_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/geometry_steps_test.cpp)
+	target_link_libraries(bmsx_geometry_steps_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_geometry_steps_tests COMMAND bmsx_geometry_steps_tests)
 	set(BMSX_TEST_ROM_SOURCE
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/blua32_test_rom.cpp
 	)
@@ -1199,6 +1203,17 @@ if(BMSX_BUILD_TESTS)
 	)
 	target_link_libraries(bmsx_frame_scheduler_tests PRIVATE bmsx_host_support bmsx_blua32_tooling)
 	add_test(NAME bmsx_frame_scheduler_tests COMMAND bmsx_frame_scheduler_tests)
+
+	add_executable(bmsx_geometry_runtime_timing_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/geometry_runtime_timing_test.cpp
+		${BMSX_TEST_ROM_SOURCE}
+	)
+	target_link_libraries(bmsx_geometry_runtime_timing_tests PRIVATE bmsx_host_support bmsx_blua32_tooling)
+	add_test(NAME bmsx_geometry_runtime_timing_tests COMMAND bmsx_geometry_runtime_timing_tests)
+
+	add_executable(bmsx_geometry_runtime_migration_runner
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/geometry_runtime_migration_runner.cpp)
+	target_link_libraries(bmsx_geometry_runtime_migration_runner PRIVATE bmsx_core)
 
 	add_executable(bmsx_libretro_save_state_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_save_state_test.cpp

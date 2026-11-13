@@ -26,6 +26,44 @@ void requireBusFault(const bmsx::Memory& memory, uint32_t access) {
 	require(memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ACCESS) == access, "floating mapped access latches its transaction width");
 }
 
+void testRawWordCountersFollowDecodedRegion() {
+	using namespace bmsx;
+	std::array<u8, 16> system{}, rom{};
+	system.fill(0x42u); rom.fill(0x51u);
+	auto slots = test::cartridgeSlots(rom);
+	slots[0]->ramByteCount = 16u;
+	slots[0]->mailboxPresent = true;
+	Memory memory(MemoryInit{system, slots}, PSX_MACHINE_SPEC.ramBytes);
+	MemoryWordCounters counters;
+	u32 ioReads = 0u, ioWrites = 0u;
+	memory.mapIoRead(IO_GX_GPU_GP0, &ioReads, [](void* context, u32, MappedBusSignals) -> u32 { ++*static_cast<u32*>(context); return 0u; });
+	memory.mapIoWrite(IO_GX_GPU_GP0, &ioWrites, [](void* context, u32, u32, MappedBusSignals) { ++*static_cast<u32*>(context); });
+	require(memory.readCountedU32(SYSTEM_ROM_BASE + 1u, counters) == 0x42424242u, "counted raw ROM reads retain unaligned bytes");
+	memory.countRawWriteU32(SYSTEM_ROM_BASE, counters);
+	memory.writeU32(SYSTEM_ROM_BASE, 0xffffffffu);
+	memory.countRawWriteU32(DYNAMIC_RAM_BASE + 1u, counters);
+	memory.writeU32(DYNAMIC_RAM_BASE + 1u, 0x87654321u);
+	require(memory.readCountedU32(DYNAMIC_RAM_BASE + 1u, counters) == 0x87654321u, "counted raw RAM retains unaligned words");
+	memory.countRawWriteU32(IO_GX_GPU_GP0, counters);
+	memory.writeU32(IO_GX_GPU_GP0, 0x12345678u);
+	require(memory.readCountedU32(IO_GX_GPU_GP0, counters) == 0x12345678u && ioReads + ioWrites == 0u, "raw accounting selects underlying RAM, not the mapped IO overlay");
+	require(memory.readCountedU32(CART_ROM_BASE + 1u, counters) == 0x51515151u, "counted cartridge ROM retains its backing");
+	memory.countRawWriteU32(CART_RAM_BASE + 1u, counters);
+	memory.writeU32(CART_RAM_BASE + 1u, 0x89abcdefu);
+	require(memory.readCountedU32(CART_RAM_BASE + 1u, counters) == 0x89abcdefu, "counted card RAM accesses the selected socket");
+	memory.countRawWriteU32(CART_MMIO_BASE, counters);
+	memory.writeU32(CART_MMIO_BASE, 7u);
+	memory.readCountedU32(CART_MMIO_BASE, counters);
+	memory.readCountedU32(UNMAPPED_ADDRESS, counters);
+	memory.countRawWriteU32(UNMAPPED_ADDRESS, counters);
+	memory.writeU32(UNMAPPED_ADDRESS, 0u);
+	require(counters.ramWords == 4u && counters.systemRomWords == 2u && counters.cartridgeWords == 5u && counters.otherWords == 2u,
+		"word counters follow every admitted or faulting raw decoder branch exactly once");
+	counters.ramWords = 0xffffffffu;
+	memory.readCountedU32(DYNAMIC_RAM_BASE, counters);
+	require(counters.ramWords == 0u, "accounting retains raw counter-word wrapping");
+}
+
 void testMappedReadViewsRespectPhysicalBoundaries() {
 	using namespace bmsx;
 	std::array<u8, 67> system{}, rom0{}, rom1{};
@@ -327,6 +365,7 @@ void testDmaMemorySpansInvalidateWatchedCode() {
 } // namespace
 
 int main() {
+	testRawWordCountersFollowDecodedRegion();
 	testMappedReadViewsRespectPhysicalBoundaries();
 	testFloatingMappedTransactionsKeepTheirBusWidth();
 	testMappedWordBurstPreflightStopsWhenBurstCrossesPhysicalIoRegisterfileBoundary();

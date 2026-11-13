@@ -183,11 +183,10 @@ export class CpuExecutionState {
 			const result = scheduler.runCpuSlice(targetDepth, sliceBudget, targetThread);
 			const consumed = sliceBudget - cpu.instructionBudgetRemaining;
 			if (consumed > 0) {
-				machine.advanceDevices(consumed);
+				advanceRuntimeTime(runtime, consumed);
 				if (machine.systemController.cpuHeld()) {
 					return CpuSuspendedRunResult.Halted;
 				}
-				runDueRuntimeTimers(runtime);
 			}
 			if (targetThread.frameDepth <= targetDepth) {
 				return CpuSuspendedRunResult.Completed;
@@ -320,8 +319,18 @@ export class CpuExecutionState {
 }
 
 export function advanceRuntimeTime(runtime: Runtime, cycles: number): boolean {
-	runtime.machine.advanceDevices(cycles);
-	return runDueRuntimeTimers(runtime);
+	const machine = runtime.machine, scheduler = machine.scheduler;
+	const targetCycle = scheduler.nowCycles + cycles;
+	runDueRuntimeTimers(runtime);
+	// These cycles already elapsed. Holds gate the next CPU slice; device
+	// edges retire before advancing the rest of the completed instruction.
+	while (scheduler.nowCycles < targetCycle) {
+		const deadline = scheduler.nextDeadline();
+		const nextCycle = deadline < targetCycle ? deadline : targetCycle;
+		machine.advanceDevices(nextCycle - scheduler.nowCycles);
+		runDueRuntimeTimers(runtime);
+	}
+	return runtime.vblank.tickCompleted;
 }
 
 export function runDueRuntimeTimers(runtime: Runtime): boolean {

@@ -1,6 +1,7 @@
 #include "machine/devices/geometry/controller.h"
 
 #include "spec/bmsx/io.h"
+#include "spec/bmsx/model.h"
 #include "machine/common/numeric.h"
 #include "machine/devices/geometry/contracts.h"
 #include "machine/devices/irq/controller.h"
@@ -12,6 +13,8 @@ namespace bmsx {
 namespace {
 
 constexpr uint32_t GEO_SERVICE_BATCH_RECORDS = 1u;
+constexpr u32 GEO_OVERLAP_PAIR_HEADER_WORDS = GEO_OVERLAP2D_INSTANCE_WORDS
+	+ 2u * (GEO_OVERLAP2D_SHAPE_DESC_BYTES + GEO_OVERLAP2D_SHAPE_BOUNDS_BYTES) / IO_WORD_SIZE;
 constexpr std::size_t GEO_REGISTER_SRC0 = (IO_GEO_SRC0 - IO_GEO_BASE) / IO_WORD_SIZE;
 constexpr std::size_t GEO_REGISTER_SRC1 = (IO_GEO_SRC1 - IO_GEO_BASE) / IO_WORD_SIZE;
 constexpr std::size_t GEO_REGISTER_SRC2 = (IO_GEO_SRC2 - IO_GEO_BASE) / IO_WORD_SIZE;
@@ -90,6 +93,7 @@ void GeometryController::setTiming(int64_t cpuHz, int64_t workUnitsPerSec, int64
 	if (m_phase != GeometryControllerPhase::Busy) {
 		m_workCarry = 0;
 		m_availableWorkUnits = 0;
+		m_pendingCycles = 0;
 	}
 	scheduleNextService(nowCycles);
 }
@@ -99,6 +103,11 @@ void GeometryController::accrueCycles(int cycles, int64_t nowCycles) {
 		return;
 	}
 
+	if (m_activeJob->cmd == IO_CMD_GEO_OVERLAP2D_PASS) {
+		m_pendingCycles = cycles >= m_pendingCycles ? 0 : m_pendingCycles - cycles;
+		scheduleNextService(nowCycles);
+		return;
+	}
 	BudgetAccrual accrual;
 	accrueBudgetUnits(accrual, m_cpuHz, m_workUnitsPerSec, m_workCarry, cycles);
 	m_workCarry = accrual.carry;
@@ -123,6 +132,8 @@ uint32_t GeometryController::getPendingWorkUnits() const {
 }
 
 void GeometryController::reset() {
+	m_overlap2d.reset();
+	m_pendingCycles = 0;
 	m_phase = GeometryControllerPhase::Idle;
 	m_workCarry = 0;
 	m_availableWorkUnits = 0;
@@ -177,6 +188,10 @@ void GeometryController::onCommandDoorbell(int64_t nowCycles, uint32_t command) 
 }
 
 void GeometryController::onService(int64_t nowCycles) {
+	if (m_phase == GeometryControllerPhase::Busy && m_activeJob->cmd == IO_CMD_GEO_OVERLAP2D_PASS) {
+		serviceOverlap(nowCycles);
+		return;
+	}
 	if (m_phase != GeometryControllerPhase::Busy || m_availableWorkUnits == 0u) {
 		scheduleNextService(nowCycles);
 		return;
@@ -203,15 +218,6 @@ void GeometryController::onService(int64_t nowCycles) {
 				}
 				break;
 			}
-			case IO_CMD_GEO_OVERLAP2D_PASS: {
-				const uint32_t fault = m_overlap2d.processRecord(*m_activeJob);
-				if (fault != 0u) {
-					finishError(fault, m_activeJob->processed);
-				} else {
-					completeRecord(*m_activeJob);
-				}
-				break;
-			}
 			default:
 				finishRejected(GEO_FAULT_REJECT_BAD_CMD);
 				return;
@@ -219,6 +225,50 @@ void GeometryController::onService(int64_t nowCycles) {
 		remaining -= 1u;
 	}
 	m_availableWorkUnits = m_phase == GeometryControllerPhase::Busy ? remaining : 0u;
+	scheduleNextService(nowCycles);
+}
+
+void GeometryController::serviceOverlap(i64 nowCycles) {
+	GeoJob& job = *m_activeJob;
+	while (m_pendingCycles == 0) {
+		const u32 initialPhase = m_overlap2d.progress().phase;
+		const bool readingHeaders = initialPhase == 0u || initialPhase == 1u || initialPhase == 5u;
+		u32 groupWords = 0u;
+		do {
+			const bool publishing = m_overlap2d.progress().phase == 4u;
+			const u32 fault = m_overlap2d.processStep(job);
+			if (fault != 0u) {
+				finishError(fault, job.processed);
+				return;
+			}
+			if (publishing) {
+				if (m_overlap2d.progress().phase == 5u && job.count == 0u) {
+					finishSuccess(0u);
+					return;
+				}
+				if (m_overlap2d.progress().phase == 0u) {
+					completeRecord(job);
+					if (m_phase != GeometryControllerPhase::Busy) return;
+				}
+				break;
+			}
+			const auto& progress = m_overlap2d.progress();
+			const auto& memory = progress.pendingMemory;
+			const auto& work = progress.pendingWork;
+			groupWords += memory.ramWords + memory.systemRomWords + memory.cartridgeWords + memory.otherWords;
+			m_pendingCycles += static_cast<i64>(memory.ramWords) * PSX_DMA_RAM_CYCLES_PER_WORD
+				+ static_cast<i64>(memory.systemRomWords) * PSX_DMA_SYSTEM_ROM_CYCLES_PER_WORD
+				+ static_cast<i64>(memory.cartridgeWords) * PSX_DMA_CART_ROM_CYCLES_PER_WORD + memory.otherWords;
+			const i64 units = static_cast<i64>(work.axes) + work.projectionVertices + work.averageVertices + work.clipVertices
+				+ work.clipEdges + work.squareRoots + work.divisions;
+			if (units != 0) {
+				const i64 cycles = cyclesUntilBudgetUnits(m_cpuHz, m_workUnitsPerSec, m_workCarry, units);
+				m_workCarry += cycles * m_workUnitsPerSec - units * m_cpuHz;
+				m_pendingCycles += cycles;
+			}
+		} while (readingHeaders && m_overlap2d.progress().phase == 1u
+			&& groupWords + GEO_OVERLAP_PAIR_HEADER_WORDS <= DMA_BURST_WORD_CAPACITY);
+	}
 	scheduleNextService(nowCycles);
 }
 
@@ -250,14 +300,21 @@ void GeometryController::start(int64_t nowCycles, uint32_t command) {
 		job.resultCount = 0u;
 		job.exactPairCount = 0u;
 		job.broadphasePairCount = 0u;
-		m_overlap2d.writeSummary(job, 0u);
+		m_overlap2d.beginJob(job);
 	}
-	if (job.count == 0u) {
+	if (job.count == 0u && job.cmd != IO_CMD_GEO_OVERLAP2D_PASS) {
 		finishSuccess(0u);
 		return;
 	}
 	m_workCarry = 0;
 	m_availableWorkUnits = 0;
+	m_pendingCycles = 0;
+	if (job.cmd == IO_CMD_GEO_OVERLAP2D_PASS) {
+		const auto& words = m_overlap2d.progress().pendingMemory;
+		m_pendingCycles = static_cast<i64>(words.ramWords) * PSX_DMA_RAM_CYCLES_PER_WORD
+			+ static_cast<i64>(words.systemRomWords) * PSX_DMA_SYSTEM_ROM_CYCLES_PER_WORD
+			+ static_cast<i64>(words.cartridgeWords) * PSX_DMA_CART_ROM_CYCLES_PER_WORD + words.otherWords;
+	}
 	m_activeJob = job;
 	m_phase = GeometryControllerPhase::Busy;
 	m_registerWords[GEO_REGISTER_STATUS] = GEO_STATUS_BUSY;
@@ -288,6 +345,10 @@ void GeometryController::scheduleNextService(int64_t nowCycles) {
 		m_scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
 		return;
 	}
+	if (m_activeJob->cmd == IO_CMD_GEO_OVERLAP2D_PASS) {
+		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_GEO, nowCycles + m_pendingCycles);
+		return;
+	}
 	const uint32_t remainingRecords = m_activeJob->count - m_activeJob->processed;
 	const uint32_t targetUnits = remainingRecords < GEO_SERVICE_BATCH_RECORDS ? remainingRecords : GEO_SERVICE_BATCH_RECORDS;
 	if (m_availableWorkUnits >= targetUnits) {
@@ -307,6 +368,7 @@ void GeometryController::completeRecord(GeoJob& job) {
 }
 
 void GeometryController::finishSuccess(uint32_t processed) {
+	m_pendingCycles = 0;
 	m_phase = GeometryControllerPhase::Done;
 	m_activeJob.reset();
 	m_workCarry = 0;
@@ -318,6 +380,7 @@ void GeometryController::finishSuccess(uint32_t processed) {
 }
 
 void GeometryController::finishError(uint32_t code, uint32_t recordIndex) {
+	m_pendingCycles = 0;
 	m_phase = GeometryControllerPhase::Error;
 	m_activeJob.reset();
 	m_workCarry = 0;
@@ -332,6 +395,7 @@ void GeometryController::finishError(uint32_t code, uint32_t recordIndex) {
 }
 
 void GeometryController::finishRejected(uint32_t code) {
+	m_pendingCycles = 0;
 	m_phase = GeometryControllerPhase::Rejected;
 	m_activeJob.reset();
 	m_workCarry = 0;

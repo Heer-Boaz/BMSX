@@ -47,6 +47,32 @@ export function geometryVectors(): GeometryVector[] {
 		const encode = sat ? encodeSignedFix16 : numberToF32Bits;
 		result.push(vector(`${sat ? 'sat' : 'overlap'}-${c.name}`, c.a.map(encode), c.b.map(encode), sat));
 	}
+	for (const mode of [0, 3]) {
+		const v = vector(`full-pass-selector-${mode}`,
+			cases[0].a.map(numberToF32Bits), cases[0].b.map(numberToF32Bits), false);
+		v.writes.find(([address]) => address === io.IO_GEO_PARAM0)![1] = mode;
+		result.push(v);
+	}
+	// Both dimensions contain equal-depth contacts. Preserve the A/B/feature
+	// tie rule across separate, paid piece-pair phases, not just one polygon.
+	const compoundTie = vector('overlap-compound-equal-depth',
+		cases[0].a.map(numberToF32Bits), cases[0].b.map(numberToF32Bits), false);
+	const compoundCommand = compoundTie.writes.pop()!;
+	for (let side = 0; side < 2; ++side) {
+		const compound = GEO_SCRATCH_BASE + 0x60 + side * geo.GEO_OVERLAP2D_SHAPE_DESC_BYTES;
+		const pieces = GEO_SCRATCH_BASE + 0x80 + side * 2 * geo.GEO_OVERLAP2D_SHAPE_DESC_BYTES;
+		const bounds = shapes + side * 32 + geo.GEO_OVERLAP2D_SHAPE_DESC_BYTES;
+		compoundTie.writes.push([instances + side * geo.GEO_OVERLAP2D_INSTANCE_BYTES, compound]);
+		[geo.GEO_OVERLAP2D_SHAPE_KIND_COMPOUND, 2, pieces - compound, bounds - compound]
+			.forEach((word, index) => compoundTie.writes.push([compound + index * 4, word]));
+		for (let piece = 0; piece < 2; ++piece) {
+			const descriptor = pieces + piece * geo.GEO_OVERLAP2D_SHAPE_DESC_BYTES;
+			[geo.GEO_PRIMITIVE_CONVEX_POLY, 4, vertices + side * 32 - descriptor, bounds - descriptor]
+				.forEach((word, index) => compoundTie.writes.push([descriptor + index * 4, word]));
+		}
+	}
+	compoundTie.writes.push(compoundCommand);
+	result.push(compoundTie);
 	// Adjacent binary32 values at the touching edge; both signs of zero;
 	// normal/subnormal extremes; quiet/signaling NaNs with differing payloads.
 	const square = [0, 0, 4, 0, 4, 4, 0, 4].map(numberToF32Bits);

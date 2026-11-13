@@ -450,21 +450,34 @@ uint32_t Memory::readIoU32(uint32_t addr) const {
 	return readIoSlot(static_cast<int>((addr - IO_BASE) / IO_WORD_SIZE), addr, MAPPED_BUS_MASTER_CPU);
 }
 
-uint32_t Memory::readU32(uint32_t addr) const {
+template<bool Count>
+uint32_t Memory::readRawU32(uint32_t addr, MemoryWordCounters* counters) const {
 	if (addr < RAM_BASE) {
 		if (addr <= SYSTEM_ROM_SIZE - 4u) {
+			if constexpr (Count) ++counters->systemRomWords;
 			return readRomWindowU32LE(m_systemRom.data(), m_systemRom.size(), addr);
 		}
 	} else if (addr < CART_ROM_BASE) {
 		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
 		if (offset + sizeof(uint32_t) <= m_ram.size()) {
+			if constexpr (Count) ++counters->ramWords;
 			return readLE32(m_ram.data() + offset);
 		}
 	} else if (addr <= CART_BUS_END - 4u) {
+		if constexpr (Count) ++counters->cartridgeWords;
 		return m_cartridgeController.readU32(addr, MAPPED_BUS_MASTER_CPU);
 	}
+	if constexpr (Count) ++counters->otherWords;
 	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U32);
 	return 0;
+}
+
+uint32_t Memory::readU32(uint32_t addr) const {
+	return readRawU32<false>(addr, nullptr);
+}
+
+uint32_t Memory::readCountedU32(uint32_t addr, MemoryWordCounters& counters) const {
+	return readRawU32<true>(addr, &counters);
 }
 
 uint32_t Memory::readMappedU16LE(uint32_t addr) const {
@@ -563,6 +576,17 @@ void Memory::writeU32(uint32_t addr, uint32_t value) {
 		return;
 	}
 	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U32);
+}
+
+void Memory::countRawWriteU32(uint32_t addr, MemoryWordCounters& counters) const {
+	if (addr < CART_ROM_BASE) {
+		if (isRamRange(addr, IO_WORD_SIZE)) { ++counters.ramWords; return; }
+		if (addr <= SYSTEM_ROM_SIZE - IO_WORD_SIZE) { ++counters.systemRomWords; return; }
+	} else if (addr <= CART_BUS_END - IO_WORD_SIZE) {
+		++counters.cartridgeWords;
+		return;
+	}
+	++counters.otherWords;
 }
 
 void Memory::writeMappedU16LE(uint32_t addr, uint32_t value) {
