@@ -61,12 +61,25 @@ void grantsAndTargetRetirement(bool inRam) {
 	writeInstruction(image.text, 8, static_cast<u8>(OpCode::JMP), 0, 63, 55, 255);
 	image.functions = {{.firstWord = 0, .wordCount = 9, .maxStack = 12}};
 	CpuMachine native(image, false), scalar(image, true);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	native.cpu.setNativeCompilationProfiling(true);
+#endif
 	const u32 startPc = inRam ? DYNAMIC_RAM_BASE : native.rom.textAddress;
 	for (auto* machine : {&native, &scalar}) {
 		if (inRam) machine->memory.writeBytes(startPc, image.text.data(), image.text.size());
 		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
 		frame.registers[0] = valueNumber(2); frame.registers[1] = valueNumber(1); frame.registers[8] = valueNumber(0);
 	}
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	// Request the root before either branch can submit a different job.
+	for (int visit = 0; visit < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++visit) {
+		for (auto* machine : {&native, &scalar}) machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
+			machine->rom.functionAddresses[0], startPc);
+		test::runCpuParity(native.cpu, scalar.cpu, 1);
+	}
+	test::waitForNativeEntry(native.cpu, *native.cpu.activeThread()->frameAtDepth(0)->decodedPage,
+		(startPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
+#endif
 	for (const bool flag : {true, false}) {
 		for (auto* machine : {&native, &scalar}) {
 			machine->cpu.activeThread()->frameAtDepth(0)->registers[2] = valueBool(flag);
@@ -75,9 +88,26 @@ void grantsAndTargetRetirement(bool inRam) {
 		require(test::runCpuParity(native.cpu, scalar.cpu, 2048) == RunResult::Yielded, "warm both branch paths");
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& lookup = *native.cpu.activeThread()->frameAtDepth(0)->executionImage->nativeCodeLookup;
-	auto& page = *lookup.find(startPc, 0);
+	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
 	const u32 base = (startPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	test::waitForNativeEntry(native.cpu, page, base);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	if (inRam) for (const bool flag : {true, false}) {
+		for (auto* machine : {&native, &scalar}) {
+			machine->cpu.activeThread()->frameAtDepth(0)->registers[2] = valueBool(flag);
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], startPc);
+		}
+		test::runCpuParity(native.cpu, scalar.cpu, 2048);
+		test::waitForNativeEntry(native.cpu, page, base + (flag ? 4u : 2u));
+	}
+	if (inRam) for (const bool flag : {true, false}) {
+		for (auto* machine : {&native, &scalar}) {
+			machine->cpu.activeThread()->frameAtDepth(0)->registers[2] = valueBool(flag);
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], startPc);
+		}
+		test::runCpuParity(native.cpu, scalar.cpu, 2048);
+	}
+#endif
 	const auto* root = page.nativeBlocks->entries[base].get();
 	require(page.nativeBlocks->entries[base + 2] && page.nativeBlocks->entries[base + 4],
 		"both branch paths have published native entries");
@@ -146,6 +176,9 @@ void grantsAndTargetRetirement(bool inRam) {
 		requireParity(native, scalar);
 	}
 	if (!inRam) return;
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	test::waitForFixtureWorkerRequests(native.cpu);
+#endif
 	std::array<u8, INSTRUCTION_BYTES> replacement{};
 	writeInstruction(replacement, 0, static_cast<u8>(OpCode::SUB), 4, 0, 8);
 	for (auto* machine : {&native, &scalar}) machine->memory.writeBytes(DYNAMIC_RAM_BASE + 7u * INSTRUCTION_BYTES,
@@ -164,6 +197,14 @@ void grantsAndTargetRetirement(bool inRam) {
 	test::runCpuParity(native.cpu, scalar.cpu, 2048);
 	requireParity(native, scalar);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	test::waitForFixtureWorkerRequests(native.cpu);
+	for (int pass = 0; pass < 4 && (!page.nativeBlocks || !page.nativeBlocks->entries[0] || !page.nativeBlocks->entries[4]); ++pass) {
+		test::runCpuParity(native.cpu, scalar.cpu, 2048);
+		test::waitForFixtureWorkerRequests(native.cpu);
+	}
+#endif
+	test::waitForNativeEntry(native.cpu, page, 0);
 	require(page.nativeBlocks && page.nativeBlocks->entries[0] && page.nativeBlocks->entries[4],
 		"both the surviving source and updated target have native entries");
 #endif
@@ -185,6 +226,9 @@ void crossPageLinksRetireTheirTargetsAndKeepBoundedStack() {
 	writeInstruction(image.text, second + 4, static_cast<u8>(OpCode::JMP), 0, 59, 59, 255);
 	image.functions = {{.firstWord = 0, .wordCount = second + 5, .maxStack = 12}};
 	CpuMachine native(image, false), scalar(image, true);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	native.cpu.setNativeCompilationProfiling(true);
+#endif
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
 		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
@@ -192,6 +236,21 @@ void crossPageLinksRetireTheirTargetsAndKeepBoundedStack() {
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 2048);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	test::waitForFixtureWorkerRequests(native.cpu);
+	auto& decodedPages = native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages;
+	auto& sourceDecoded = decodedPages.at(DYNAMIC_RAM_BASE);
+	auto& targetDecoded = decodedPages.at(DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE);
+	for (int pass = 0; pass < 4 && (!sourceDecoded.nativeBlocks || !sourceDecoded.nativeBlocks->entries[0]
+		|| !targetDecoded.nativeBlocks || !targetDecoded.nativeBlocks->entries[0]); ++pass) {
+		test::runCpuParity(native.cpu, scalar.cpu, 2048);
+		test::waitForFixtureWorkerRequests(native.cpu);
+	}
+	test::waitForNativeEntry(native.cpu, sourceDecoded, 0);
+	test::waitForNativeEntry(native.cpu, targetDecoded, 0);
+	test::runCpuParity(native.cpu, scalar.cpu, 2048);
+	test::waitForFixtureWorkerRequests(native.cpu);
+#endif
 	const auto& lookup = *native.cpu.activeThread()->frameAtDepth(0)->executionImage->nativeCodeLookup;
 	auto* firstPage = lookup.find(DYNAMIC_RAM_BASE, 0);
 	auto* secondPage = lookup.find(DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE, 0);
@@ -221,6 +280,15 @@ void crossPageLinksRetireTheirTargetsAndKeepBoundedStack() {
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 2048);
 	requireParity(native, scalar);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	test::waitForFixtureWorkerRequests(native.cpu);
+	for (int pass = 0; pass < 4 && (!targetDecoded.nativeBlocks || !targetDecoded.nativeBlocks->entries[0]); ++pass) {
+		test::runCpuParity(native.cpu, scalar.cpu, 2048);
+		test::waitForFixtureWorkerRequests(native.cpu);
+	}
+	test::waitForNativeEntry(native.cpu, targetDecoded, 0);
+	test::runCpuParity(native.cpu, scalar.cpu, 2048);
+#endif
 	require(root->terminal.link.target == secondPage->nativeBlocks->entries[0].get(), "a rewritten target regenerates and links again");
 	require(secondPage->nativeCode && secondPage->nativeCode[0], "a regenerated target republishes its native dispatch word");
 	test::runCpuParity(native.cpu, scalar.cpu, 600002);
@@ -244,9 +312,9 @@ void shortGrantsDoNotPromoteSequentialPositions(bool inRam) {
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], start);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 4096);
-	const auto& lookup = *native.cpu.activeThread()->frameAtDepth(0)->executionImage->nativeCodeLookup;
-	auto& page = *lookup.find(start, 0);
+	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
 	const auto entry = (start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	test::waitForNativeEntry(native.cpu, page, entry);
 	require(page.nativeBlocks && page.nativeBlocks->entries[entry]
 		&& page.nativeBlocks->entries[entry]->sourceWords == 13,
 		"entry admission preserves successor stability heat and compiles a complete ROM/RAM loop");
@@ -258,11 +326,19 @@ void shortGrantsDoNotPromoteSequentialPositions(bool inRam) {
 		&& initialProfile.emittedCodeBytes == initialProfile.codeBytes
 		&& initialProfile.peakCodeBytes == initialProfile.codeBytes,
 		"compilation profile counts published regions once and reads the actual executable byte owner");
-	require(initialProfile.prepareNanoseconds != 0 && initialProfile.compilationNanoseconds != 0
+	require(initialProfile.prepareNanoseconds != 0
 		&& initialProfile.maxPrepareNanoseconds <= initialProfile.prepareNanoseconds
 		&& initialProfile.prepareNanoseconds == initialProfile.discoveryNanoseconds
 			+ initialProfile.retirementNanoseconds + initialProfile.compilationNanoseconds,
 		"prepare timing partitions the owning scope and retains its maximum");
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	require(initialProfile.compilationNanoseconds == 0 && initialProfile.backgroundCompleted != 0
+		&& initialProfile.backgroundNanoseconds != 0,
+		"worker emission is accounted separately from CPU-thread preparation");
+#else
+	require(initialProfile.compilationNanoseconds != 0,
+		"synchronous emission is included in CPU-thread preparation");
+#endif
 	require(initialProfile.maxPrepareDomain == SYSTEM_EXECUTION_DOMAIN_ID
 		&& initialProfile.maxPrepareCartridgeSlot == 0u && initialProfile.maxPrepareRootPc == start
 		&& initialProfile.maxPreparePagePc == (start & ~MAPPED_PAGE_BYTE_MASK),
@@ -286,6 +362,7 @@ void shortGrantsDoNotPromoteSequentialPositions(bool inRam) {
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 128);
 	requireParity(native, scalar);
+	test::waitForNativeEntry(native.cpu, page, entry + 4);
 	require(static_cast<bool>(page.nativeBlocks->entries[entry + 4]),
 		"an actual branch into the same interior position remains eligible for native execution");
 	const auto incrementalProfile = native.cpu.readNativeCompilationProfile();
@@ -305,6 +382,8 @@ void compilationProfilingIsOptInAndSurvivesReset() {
 	image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 4}};
 	CpuMachine native(image, false);
 	native.cpu.runUntilDepth(0, 2048);
+	test::waitForNativeEntry(native.cpu, *native.cpu.activeThread()->frameAtDepth(0)->decodedPage,
+		(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 	const auto disabled = native.cpu.readNativeCompilationProfile();
 	require(disabled.codeBytes != 0 && disabled.prepareRequests == 0 && disabled.prepareNanoseconds == 0
 		&& disabled.regionsPublished == 0 && disabled.compilationNanoseconds == 0,
@@ -312,6 +391,8 @@ void compilationProfilingIsOptInAndSurvivesReset() {
 	native.cpu.setNativeCompilationProfiling(true);
 	native.cpu.reset();
 	native.cpu.runUntilDepth(0, 2048);
+	test::waitForNativeEntry(native.cpu, *native.cpu.activeThread()->frameAtDepth(0)->decodedPage,
+		(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 	const auto first = native.cpu.readNativeCompilationProfile();
 	require(first.prepareRequests != 0 && first.regionsPublished != 0 && first.codeBytes != 0,
 		"opting in observes subsequent real compilation");
@@ -321,6 +402,8 @@ void compilationProfilingIsOptInAndSurvivesReset() {
 		&& reset.prepareNanoseconds == first.prepareNanoseconds && reset.peakCodeBytes == first.peakCodeBytes,
 		"guest reset clears live executable ownership but not host-lifetime profile counters");
 	native.cpu.runUntilDepth(0, 2048);
+	test::waitForNativeEntry(native.cpu, *native.cpu.activeThread()->frameAtDepth(0)->decodedPage,
+		(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 	const auto second = native.cpu.readNativeCompilationProfile();
 	require(second.prepareRequests > first.prepareRequests && second.emittedCodeBytes > first.emittedCodeBytes
 		&& second.maxPrepareNanoseconds >= first.maxPrepareNanoseconds,
@@ -348,6 +431,18 @@ void entriesIntoWideBodiesRetainIndependentOwners() {
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 1200);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	auto& decoded = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	test::waitForNativeEntry(native.cpu, decoded, 0);
+	for (const u32 entry : {16u, 1u}) {
+		for (int visit = 0; visit < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++visit) {
+			for (auto* machine : {&native, &scalar}) machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
+				machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE + entry * INSTRUCTION_BYTES);
+			test::runCpuParity(native.cpu, scalar.cpu, 1);
+		}
+		test::waitForNativeEntry(native.cpu, decoded, entry);
+	}
+#endif
 	for (int visit = 0; visit < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++visit) {
 		for (auto* machine : {&native, &scalar}) {
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE + 16u * INSTRUCTION_BYTES);
