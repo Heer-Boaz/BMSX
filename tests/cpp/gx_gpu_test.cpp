@@ -1335,6 +1335,38 @@ void testBlockedCpuGp0StoreResumesAcrossDeviceRestore() {
 	}
 }
 
+void testPartialImageSurvivesSupervisorRestoreAndQueuedReadback() {
+	GpuHarness source;
+	stopPcrtc(source);
+	for (const bmsx::u32 word : {0xa0000000u, 0u, 0x00020002u, 0xc0001234u}) source.gpu.writeGp0(word);
+	require(!source.gpu.backendServicePending(), "readback-looking payload is not a command");
+	source.gpu.beginSupervisorQuiesce();
+	require(source.gpu.supervisorQuiescent(), "partial image admits supervisor entry");
+	source.gpu.enterSupervisorContext();
+	const auto saved = source.gpu.captureSaveState();
+	GpuHarness restored;
+	stopPcrtc(restored);
+	restored.gpu.restoreSaveState(saved);
+	restored.gpu.leaveSupervisorContext();
+	restored.gpu.writeGp0(0x1f005678u);
+	for (const bmsx::u32 word : {0xc0000000u, 0u, 0x00020002u}) restored.gpu.writeGp0(word);
+	for (const bmsx::i64 cycle : {0, 1, 2}) {
+		while (restored.scheduler.nextDeadline() <= cycle) {
+			const bmsx::i64 deadline = restored.scheduler.nextDeadline();
+			restored.scheduler.advanceTo(deadline);
+			require(restored.scheduler.popDueTimer() == bmsx::DEVICE_SERVICE_GPU, "scheduled GPU service kind");
+			restored.gpu.onService(deadline);
+		}
+		restored.scheduler.advanceTo(cycle);
+		require((restored.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GPU) == 0u, "IRQ-looking image payload is not a command");
+		require(restored.gpu.backendServicePending() == (cycle == 2), "queued readback activates at its boundary");
+	}
+	bmsx::SoftwareBackend backend(256, 212, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	backend.executeGxGpuReadback(restored.gpu);
+	require(restored.gpu.readGp0() == 0xc0001234u, "first uploaded pixel word read back");
+	require(restored.gpu.readGp0() == 0x1f005678u, "second uploaded pixel word read back");
+}
+
 void testDmaStartObservesGpuCapacityFreedWhileNoChannelWaited() {
 	GpuHarness target;
 	stopPcrtc(target);
@@ -5314,6 +5346,7 @@ int main() {
 	testQueuedIrqStartsAtPreviousCompletionAcrossRestore();
 	testDmaGp0PrefixCannotRunBeforeBurstPublication();
 	testDmaStartObservesGpuCapacityFreedWhileNoChannelWaited();
+	testPartialImageSurvivesSupervisorRestoreAndQueuedReadback();
 	testBlockedCpuGp0StoreResumesAcrossDeviceRestore();
 	testGp1CrtcRangeRegistersLatchMaskedRawWords();
 	testGp1UndefinedHighOpcodeDoesNotMirrorReset();

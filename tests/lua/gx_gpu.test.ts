@@ -1858,6 +1858,37 @@ test('blocked CPU GP0 store resumes after completion across device restore', () 
 	}
 });
 
+test('partial image survives supervisor restore and queued readback starts at its boundary', () => {
+	const source = createGpu();
+	stopPcrtc(source.memory, source.gpu, source.scheduler);
+	for (const word of [0xa0000000, 0, 0x00020002, 0xc0001234]) source.gpu.writeGp0(word);
+	assert.equal(source.gpu.backendServicePending(), false, 'readback-looking image payload is not a command');
+	source.gpu.beginSupervisorQuiesce();
+	assert.equal(source.gpu.supervisorQuiescent(), true);
+	source.gpu.enterSupervisorContext();
+	const saved = source.gpu.captureSaveState();
+	const restored = createGpu();
+	stopPcrtc(restored.memory, restored.gpu, restored.scheduler);
+	restored.gpu.restoreSaveState(saved);
+	restored.gpu.leaveSupervisorContext();
+	restored.gpu.writeGp0(0x1f005678);
+	for (const word of [0xc0000000, 0, 0x00020002]) restored.gpu.writeGp0(word);
+	for (const cycle of [0, 1, 2]) {
+		while (restored.scheduler.nextDeadline() <= cycle) {
+			const deadline = restored.scheduler.nextDeadline();
+			restored.scheduler.advanceTo(deadline);
+			assert.equal(restored.scheduler.popDueTimer(), DEVICE_SERVICE_GPU);
+			restored.gpu.onService(deadline);
+		}
+		restored.scheduler.advanceTo(cycle);
+		assert.equal(restored.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, 0, 'IRQ-looking image payload is not a command');
+		assert.equal(restored.gpu.backendServicePending(), cycle === 2, 'queued readback becomes pending at its boundary');
+	}
+	new HeadlessGPUBackend(256, 212, PSX_MACHINE_SPEC.gxGpuVramBytes).executeGxGpuReadback(restored.gpu);
+	assert.equal(restored.gpu.readGp0(), 0xc0001234);
+	assert.equal(restored.gpu.readGp0(), 0x1f005678);
+});
+
 test('DMA START sees GPU capacity freed while no channel was waiting', () => {
 	const { memory, gpu, scheduler, dma } = createGpu();
 	stopPcrtc(memory, gpu, scheduler);
