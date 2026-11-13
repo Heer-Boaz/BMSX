@@ -95,11 +95,13 @@ size_t NativeBlockCompiler::regionEntryIndex(u32 pc) const {
 }
 
 void NativeBlockCompiler::beginBlock(size_t index, bool inheritRegisters) {
+	m_currentEntry = index;
 	m_block = m_blocks[index].get();
 	m_remainingInstructions = m_sources[index].instructions;
 	m_hasTerminal = m_controlPrivilegeGuarded = false;
 	auto& entry = m_entries[index];
 	entry.inherited = inheritRegisters;
+	entry.tableParents.fill(-1);
 	if (!inheritRegisters) {
 		m_registers = entry.registers;
 		m_registerClock = m_registerCount;
@@ -108,11 +110,29 @@ void NativeBlockCompiler::beginBlock(size_t index, bool inheritRegisters) {
 			SLJIT_S4, 0, SLJIT_IMM, 0));
 	}
 	emitAdmission(index, true);
-	// Every body has an external entry which reloads arbitrary current Values.
-	// Even helper fallthrough inherits only placement, never predecessor facts.
-	for (auto& cached : m_registers) cached.value = {};
+	// A linear helper fallthrough retains only table facts proven by its
+	// successful prefix. Other entries revalidate those facts before the body.
+	for (int slot = 0; slot < m_registerCount; ++slot) {
+		auto& cached = m_registers[slot];
+		if (!inheritRegisters || cached.value.kind != RegisterValueKind::Table) cached.value = {};
+		else {
+			entry.tableParents[slot] = cached.value.entrySource;
+			cached.value.entrySource = cached.guest;
+		}
+	}
 	entry.registers = m_registers;
 	entry.body = sljit_emit_label(m_compiler);
+}
+
+void NativeBlockCompiler::emitEntryTableFacts(size_t index, bool materialize) {
+	for (int slot = 0; slot < m_registerCount; ++slot) {
+		const auto& cached = m_registers[slot];
+		if (!m_entries[index].tableGuards[slot]) continue;
+		loadHeader(cached.guest, SLJIT_R1);
+		auto* failed = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R1, 0,
+			SLJIT_IMM, valueFromTag(ValueTag::Table) >> 48u);
+		m_admissionFallbacks.push_back({failed, index, registerSnapshot(), materialize});
+	}
 }
 
 void NativeBlockCompiler::endBlock(bool fallthrough) {
@@ -383,6 +403,10 @@ void* NativeBlockCompiler::finish(size_t& codeBytes) {
 			if (entry.registers[slot].guest >= 0) sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, cachedFloatRegister(slot), 0,
 				SLJIT_MEM1(SLJIT_S0), entry.registers[slot].guest * sizeof(Value));
 		}
+		const auto previous = m_registers;
+		m_registers = entry.registers;
+		emitEntryTableFacts(index, false);
+		m_registers = previous;
 		sljit_set_label(sljit_emit_jump(m_compiler, SLJIT_JUMP), entry.body);
 		if (entry.inherited) {
 			entry.guarded = sljit_emit_label(m_compiler);
@@ -391,6 +415,7 @@ void* NativeBlockCompiler::finish(size_t& codeBytes) {
 			const auto previous = m_registers;
 			m_registers = entry.registers;
 			emitAdmission(index, true);
+			emitEntryTableFacts(index, true);
 			m_registers = previous;
 			sljit_set_label(sljit_emit_jump(m_compiler, SLJIT_JUMP), entry.body);
 		}

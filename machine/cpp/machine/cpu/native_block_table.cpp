@@ -25,9 +25,26 @@ void NativeBlockCompiler::emitTableAccess(const DecodedInstruction& instruction,
 	if (!load) loadOperand(instruction.c, SLJIT_FR2);
 	if (generic) loadOperand(key, SLJIT_FR0);
 	SlowPath slow; slow.exit = exit; slow.registers = registerSnapshot();
-	loadHeader(base, SLJIT_R0);
-	slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R0, 0,
-		SLJIT_IMM, valueFromTag(ValueTag::Table) >> 48u);
+	const auto receiverFact = operandFact(base);
+	if (receiverFact.kind != RegisterValueKind::Table) {
+		loadHeader(base, SLJIT_R0);
+		slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R0, 0,
+			SLJIT_IMM, valueFromTag(ValueTag::Table) >> 48u);
+		const int slot = base < 0 ? -1 : findRegister(base);
+		if (slot >= 0) m_registers[slot].value = {RegisterValueKind::Table, 0};
+	} else if (receiverFact.entrySource >= 0) {
+		size_t index = m_currentEntry;
+		int guest = receiverFact.entrySource;
+		while (guest >= 0) {
+			auto& entry = m_entries[index];
+			int slot = 0;
+			while (entry.registers[slot].guest != guest) ++slot;
+			if (entry.tableGuards[slot]) break;
+			entry.tableGuards[slot] = true;
+			guest = entry.tableParents[slot];
+			if (guest >= 0) --index;
+		}
+	}
 	loadPayload(base, SLJIT_R0, SLJIT_R1);
 	if (integer) {
 		sljit_emit_op1(m_compiler, SLJIT_MOV, SLJIT_R1, 0, SLJIT_IMM, key - 1);

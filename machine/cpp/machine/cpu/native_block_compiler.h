@@ -21,6 +21,7 @@ public:
 		NativeBlockExitSite* takenExit);
 	void beginBlock(size_t index, bool inheritRegisters);
 	void emitAdmission(size_t index, bool materialize);
+	void emitEntryTableFacts(size_t index, bool materialize);
 	void endBlock(bool fallthrough);
 	void* finish(size_t& codeBytes);
 
@@ -53,8 +54,14 @@ private:
 	sljit_s32 cachedFloatRegister(int slot) const;
 	// Facts describe the current raw Value, not a different guest encoding.
 	// They are local to one externally enterable body.
-	enum class RegisterValueKind { Unknown, SignedWordNumber, Constant };
-	struct RegisterValueFact { RegisterValueKind kind; Value constant; };
+	enum class RegisterValueKind { Unknown, SignedWordNumber, Table, Constant };
+	struct RegisterValueFact {
+		constexpr RegisterValueFact(RegisterValueKind kind = RegisterValueKind::Unknown, Value constant = 0, int entrySource = -1)
+			: kind(kind), constant(constant), entrySource(entrySource) {}
+		RegisterValueKind kind;
+		Value constant;
+		int entrySource;
+	};
 	RegisterValueFact operandFact(int selector) const;
 	sljit_s32 readOperand(int selector, sljit_s32 temporary, sljit_s32 pinned = 0);
 	std::array<sljit_s32, 2> readOperands(int left, int right);
@@ -100,9 +107,12 @@ private:
 		sljit_label* linked = nullptr;
 		sljit_label* body = nullptr;
 		RegisterState registers;
+		std::array<bool, REGISTER_CACHE_CAPACITY> tableGuards{};
+		std::array<int, REGISTER_CACHE_CAPACITY> tableParents{};
 		bool inherited = false;
 	};
 	std::vector<EntryPoint> m_entries;
+	size_t m_currentEntry = 0;
 	struct InternalBranch {
 		sljit_jump* jump;
 		size_t target;

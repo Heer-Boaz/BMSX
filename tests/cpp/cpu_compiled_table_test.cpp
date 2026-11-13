@@ -111,6 +111,47 @@ void genericArraysAndHashKeys() {
 #endif
 }
 
+void inheritedTableFactsAreRecheckedOnCpuEntry() {
+	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), 0, 1, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::GETI), 2, 0, 1);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::K1), 4, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::GETI), 3, 0, 1);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
+	writeInstruction(image.text, 32, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 5}, {.firstWord = 32, .wordCount = 1}};
+	image.exceptionFunctionIndex = 1;
+	CpuMachine native(image), scalar(image, true);
+	for (auto* machine : {&native, &scalar}) {
+		auto* table = machine->cpu.createTable(2); table->setInteger(1, valueNumber(23));
+		machine->cpu.activeThread()->frameAtDepth(0)->registers[1] = valueTable(table);
+	}
+	test::runCpuParity(native.cpu, scalar.cpu, NATIVE_WARM_SCALE * 900);
+	const u32 pc = native.rom.textAddress;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	const u32 first = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	test::waitForNativeEntry(native.cpu, page, first);
+	test::waitForNativeEntry(native.cpu, page, first + 2u);
+	const auto& entry = page.nativeBlocks->entries[first + 2u];
+	require(entry && page.nativeBlocks->entries[first]->region == entry->region,
+		"the table continuation is an externally reachable native entry");
+#endif
+	for (auto* machine : {&native, &scalar}) {
+		machine->cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNil();
+		machine->cpu.activeThread()->frameAtDepth(0)->registers[4] = valueNil();
+		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc + 2u * INSTRUCTION_BYTES);
+	}
+	test::runCpuParity(native.cpu, scalar.cpu, 1);
+	requireParity(native, scalar);
+	require(native.cpu.readFrameRegister(0, 4) == valueNumber(1) && native.cpu.readFramePc(0) == pc + 3u * INSTRUCTION_BYTES,
+		"a failed entry guard executes an earlier unrelated instruction at its exact boundary");
+	test::runCpuParity(native.cpu, scalar.cpu, 1);
+	requireParity(native, scalar);
+	require(native.cpu.readEpcWord() == pc + 3u * INSTRUCTION_BYTES,
+		"a resumed entry rechecks its table fact before the original instruction faults");
+}
+
 void inheritedArrayReads(bool generic) {
 	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(generic ? OpCode::GETT : OpCode::GETI), 3, 0, 1);
@@ -288,7 +329,7 @@ void stringStoreGrowthRoots(bool generic) {
 
 int main() {
 	try {
-		genericArraysAndHashKeys(); inheritedArrayReads(false); inheritedArrayReads(true); boundaryLengthAndUtf8(); selfAndNilFaults(); wideAllocationFailure(); stringStoreGrowthRoots(false); stringStoreGrowthRoots(true);
+		genericArraysAndHashKeys(); inheritedTableFactsAreRecheckedOnCpuEntry(); inheritedArrayReads(false); inheritedArrayReads(true); boundaryLengthAndUtf8(); selfAndNilFaults(); wideAllocationFailure(); stringStoreGrowthRoots(false); stringStoreGrowthRoots(true);
 		std::cout << "Compiled table tests passed\n";
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

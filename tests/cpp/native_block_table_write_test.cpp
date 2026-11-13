@@ -109,6 +109,185 @@ void boundaryLengthRetainsNativeFrame(CPU& cpu, Memory& memory) {
 		require(state.remainingCycles == 100 - block->terminal.cycles, "length search adds no per-probe guest penalty");
 	}
 }
+
+void guardedTableFactsFollowRegisterDefinitions(CPU& cpu, Memory& memory) {
+	for (const bool alias : {false, true}) {
+		std::array<DecodedInstruction, 6> decoded{};
+		std::array<NativeBlockInstruction, 6> source{};
+		const std::array ops{OpCode::MOV, OpCode::GETI, OpCode::GETI, OpCode::MOV, OpCode::GETI, OpCode::JMP};
+		for (size_t i = 0; i < ops.size(); ++i) {
+			decoded[i].op = static_cast<u8>(ops[i]);
+			decoded[i].width = 1;
+			decoded[i].baseCycles = BASE_CYCLES[decoded[i].op];
+			source[i] = {&decoded[i], 0x3000u + static_cast<u32>(i) * INSTRUCTION_BYTES};
+		}
+		decoded[0].a = 0; decoded[0].b = 1;
+		decoded[1].a = alias ? 0 : 2; decoded[1].b = 0; decoded[1].c = 1;
+		decoded[2].a = 3; decoded[2].b = 0; decoded[2].c = 1;
+		decoded[3].a = 0; decoded[3].b = 4;
+		decoded[4].a = 5; decoded[4].b = 0; decoded[4].c = 1;
+		decoded[5].bx = 0x4000u;
+		size_t bytes = 0;
+		auto block = NativeBlock::compile(source, nullptr, bytes, memory, cpu.stringPool());
+		auto* table = cpu.createTable(2);
+		table->setInteger(1, valueNumber(23));
+		for (const Value first : {valueTable(table), valueNil()}) for (const Value next : {valueTable(table), valueNil()}) {
+			std::array<Value, 6> registers; registers.fill(valueNil());
+			registers[1] = first; registers[4] = next;
+			NativeBlockRunState state{.registers = registers.data(), .remainingCycles = 100};
+			const auto* exit = block->run(state);
+			if (isNil(first)) {
+				require(exit->exit == NativeBlockExit::ReadInteger && exit->currentPc == 0x3004u,
+					"the first access still guards a dynamic receiver");
+			} else if (alias) {
+				require(exit->exit == NativeBlockExit::ReadInteger && exit->currentPc == 0x3008u,
+					"an aliased destination invalidates the table fact before the next access");
+			} else if (isNil(next)) {
+				require(exit->exit == NativeBlockExit::ReadInteger && exit->currentPc == 0x3010u,
+					"overwriting a guarded receiver requires a new guard");
+				require(registers[2] == valueNumber(23) && registers[3] == valueNumber(23),
+					"both preceding accesses retained their values before the later fault");
+			} else {
+				require(exit == &block->terminal && registers[2] == valueNumber(23)
+					&& registers[3] == valueNumber(23) && registers[5] == valueNumber(23),
+					"repeated guarded accesses preserve values without leaving the native body");
+			}
+		}
+	}
+}
+
+void tableFactsAreValidatedAtIndependentRegionEntries(CPU& cpu, Memory& memory) {
+	std::array<DecodedInstruction, 9> decoded{};
+	std::array<NativeBlockInstruction, 9> instructions{};
+	const std::array ops{OpCode::MOV, OpCode::GETI, OpCode::K1, OpCode::GETI, OpCode::JMP,
+		OpCode::MOV, OpCode::JMP, OpCode::MOV, OpCode::JMP};
+	for (size_t i = 0; i < ops.size(); ++i) {
+		decoded[i].op = static_cast<u8>(ops[i]); decoded[i].width = 1;
+		decoded[i].baseCycles = BASE_CYCLES[decoded[i].op];
+		instructions[i] = {&decoded[i], 0x3000u + static_cast<u32>(i < 5 ? i : i + 11) * INSTRUCTION_BYTES};
+	}
+	decoded[0].a = 0; decoded[0].b = 1;
+	decoded[1].a = 2; decoded[1].b = 0; decoded[1].c = 1;
+	decoded[2].a = 5;
+	decoded[3].a = 3; decoded[3].b = 0; decoded[3].c = 1;
+	decoded[4].bx = 0x4000u;
+	decoded[5].a = 0; decoded[5].b = 4;
+	decoded[6].bx = 0x3008u;
+	decoded[7].a = 0; decoded[7].b = 6;
+	decoded[8].bx = 0x3008u;
+	const std::array sources{NativeBlockSource{std::span(instructions.data(), 2), nullptr, true},
+		NativeBlockSource{std::span(instructions.data() + 2, 3)}, NativeBlockSource{std::span(instructions.data() + 5, 2)},
+		NativeBlockSource{std::span(instructions.data() + 7, 2)}};
+	auto blocks = NativeBlock::compileRegion(sources, nullptr, NativeCodeBindings(memory, cpu.stringPool()), {});
+	size_t bytes = 0; blocks.front()->region->publish(bytes);
+	auto* table = cpu.createTable(2); table->setInteger(1, valueNumber(23));
+	for (const size_t entry : {0u, 1u, 2u, 3u}) for (const bool valid : {false, true}) {
+		std::array<Value, 7> registers; registers.fill(valueNil());
+		registers[0] = registers[1] = registers[4] = registers[6] = valid ? valueTable(table) : valueNil();
+		NativeBlockRunState state{.registers = registers.data(), .remainingCycles = 100};
+		const auto* exit = blocks[entry]->run(state);
+		if (valid) {
+			require(exit == &blocks[1]->terminal && registers[3] == valueNumber(23) && registers[5] == valueNumber(1),
+				"successful fallthrough and both independent entries retain their table receiver");
+		} else if (entry == 0) {
+			require(exit->exit == NativeBlockExit::ReadInteger && exit->currentPc == 0x3004u,
+				"the first receiver guard still takes its semantic exit");
+		} else {
+			require(exit->exit == NativeBlockExit::ScalarBoundary && state.scalarPc == 0x3008u
+				&& registers[0] == valueNil() && registers[5] == valueNil(),
+				"external and internal entries validate inherited table facts before any side effect");
+		}
+	}
+	std::array<Value, 7> registers; registers.fill(valueNil());
+	registers[6] = valueTable(table);
+	NativeBlockRunState state{.registers = registers.data(), .remainingCycles = 100};
+	require(blocks[2]->run(state)->exit == NativeBlockExit::ScalarBoundary && registers[0] == valueNil(),
+		"the first internal predecessor cannot reuse the second predecessor's table fact");
+	state.remainingCycles = 100;
+	require(blocks[3]->run(state) == &blocks[1]->terminal && registers[3] == valueNumber(23),
+		"another internal predecessor transfers its own table receiver");
+}
+
+void entryGuardsFollowConsumedTableFacts(CPU& cpu, Memory& memory) {
+	std::array<DecodedInstruction, 7> decoded{};
+	std::array<NativeBlockInstruction, 7> instructions{};
+	const std::array ops{OpCode::MOV, OpCode::GETI, OpCode::MOV, OpCode::K1, OpCode::GETI, OpCode::JMP, OpCode::JMP};
+	for (size_t i = 0; i < ops.size(); ++i) {
+		decoded[i].op = static_cast<u8>(ops[i]); decoded[i].width = 1;
+		decoded[i].baseCycles = BASE_CYCLES[decoded[i].op];
+		instructions[i] = {&decoded[i], 0x5000u + static_cast<u32>(i) * INSTRUCTION_BYTES};
+	}
+	decoded[0].a = 0; decoded[0].b = 1;
+	decoded[1].a = 2; decoded[1].b = 0; decoded[1].c = 1;
+	decoded[2].a = 4; decoded[2].b = 0;
+	decoded[3].a = 5;
+	decoded[4].a = 3; decoded[4].b = 4; decoded[4].c = 1;
+	decoded[5].bx = decoded[6].bx = 0x6000u;
+	size_t bytes = 0;
+	{
+		auto unusedDecoded = decoded;
+		unusedDecoded[4] = decoded[5];
+		auto unusedInstructions = instructions;
+		unusedInstructions[4].decoded = &unusedDecoded[4];
+		const std::array unusedSources{NativeBlockSource{std::span(instructions.data(), 2), nullptr, true},
+			NativeBlockSource{std::span(unusedInstructions.data() + 2, 3)}};
+		auto blocks = NativeBlock::compileRegion(unusedSources, nullptr, NativeCodeBindings(memory, cpu.stringPool()), {});
+		blocks.front()->region->publish(bytes);
+		std::array<Value, 6> registers; registers.fill(valueNil());
+		NativeBlockRunState state{.registers = registers.data(), .remainingCycles = 100};
+		require(blocks[1]->run(state) == &blocks[1]->terminal && registers[5] == valueNumber(1),
+			"an inherited but unused table fact does not reject an independent entry");
+	}
+	{
+		const std::array usedSources{NativeBlockSource{std::span(instructions.data(), 2), nullptr, true},
+			NativeBlockSource{std::span(instructions.data() + 2, 2), nullptr, true},
+			NativeBlockSource{std::span(instructions.data() + 4, 2)}};
+		auto blocks = NativeBlock::compileRegion(usedSources, nullptr, NativeCodeBindings(memory, cpu.stringPool()), {});
+		blocks.front()->region->publish(bytes);
+		std::array<Value, 6> registers; registers.fill(valueNil());
+		NativeBlockRunState state{.registers = registers.data(), .remainingCycles = 100};
+		const auto* exit = blocks[1]->run(state);
+		require(exit->exit == NativeBlockExit::ScalarBoundary && state.scalarPc == 0x5008u
+			&& registers[5] == valueNil(),
+			"a copied fact used after another fallthrough guards the preceding external entry");
+		auto* table = cpu.createTable(2); table->setInteger(1, valueNumber(23));
+		registers[0] = valueTable(table); state.remainingCycles = 100;
+		require(blocks[1]->run(state) == &blocks[2]->terminal && registers[3] == valueNumber(23),
+			"the guarded copied fact reaches its later use when the receiver is a table");
+	}
+}
+
+void overwrittenAndEvictedFactsDoNotGuardEntries(CPU& cpu, Memory& memory) {
+	for (const bool evict : {false, true}) {
+		std::array<DecodedInstruction, 12> decoded{};
+		std::array<NativeBlockInstruction, 12> instructions{};
+		const std::array ops{OpCode::MOV, OpCode::GETI, OpCode::K1, OpCode::K1, OpCode::K1, OpCode::K1,
+			OpCode::ADD, OpCode::ADD, OpCode::ADD, OpCode::GETI, OpCode::JMP, OpCode::JMP};
+		for (size_t i = 0; i < ops.size(); ++i) {
+			decoded[i].op = static_cast<u8>(ops[i]); decoded[i].width = 1;
+			decoded[i].baseCycles = BASE_CYCLES[decoded[i].op];
+			instructions[i] = {&decoded[i], 0x7000u + static_cast<u32>(i) * INSTRUCTION_BYTES};
+		}
+		decoded[0].a = 0; decoded[0].b = 1;
+		decoded[1].a = 2; decoded[1].b = 0; decoded[1].c = 1;
+		for (int i = 0; i < 4; ++i) decoded[2 + i].a = evict ? 4 + i : (i == 0 ? 0 : 3 + i);
+		decoded[6].a = 8; decoded[6].b = 4; decoded[6].c = 5;
+		decoded[7].a = 9; decoded[7].b = 6; decoded[7].c = 7;
+		decoded[8].a = 10; decoded[8].b = 8; decoded[8].c = 9;
+		decoded[9].a = 3; decoded[9].b = 0; decoded[9].c = 1;
+		decoded[10].bx = decoded[11].bx = 0x8000u;
+		const std::array sources{NativeBlockSource{std::span(instructions.data(), 2), nullptr, true},
+			NativeBlockSource{std::span(instructions.data() + 2, 9)}};
+		auto blocks = NativeBlock::compileRegion(sources, nullptr, NativeCodeBindings(memory, cpu.stringPool()), {});
+		size_t bytes = 0; blocks.front()->region->publish(bytes);
+		std::array<Value, 11> registers; registers.fill(valueNil());
+		NativeBlockRunState state{.registers = registers.data(), .remainingCycles = 100};
+		const auto* exit = blocks[1]->run(state);
+		require(exit->exit == NativeBlockExit::ReadInteger && exit->currentPc == 0x7024u,
+			"an overwritten or evicted table fact does not guard an earlier independent entry");
+		require(registers[4] == valueNumber(1), "ordinary prefix definitions execute before the later table fault");
+	}
+}
 } // namespace
 
 int main() {
@@ -117,6 +296,10 @@ int main() {
 		IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses);
 		storesRetainNativeFrame(cpu, memory);
 		boundaryLengthRetainsNativeFrame(cpu, memory);
+		guardedTableFactsFollowRegisterDefinitions(cpu, memory);
+		tableFactsAreValidatedAtIndependentRegionEntries(cpu, memory);
+		entryGuardsFollowConsumedTableFacts(cpu, memory);
+		overwrittenAndEvictedFactsDoNotGuardEntries(cpu, memory);
 		std::cout << "Native string table store tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {
