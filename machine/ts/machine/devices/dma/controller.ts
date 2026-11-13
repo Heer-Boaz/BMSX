@@ -335,7 +335,6 @@ export class DmaController {
 		} else {
 			this.arbitrate(this.scheduler.currentNowCycles());
 		}
-		this.gpu.dependencyStateChanged();
 	}
 
 	public beginSupervisorControlQuiesce(): void {

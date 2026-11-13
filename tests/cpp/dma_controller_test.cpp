@@ -268,6 +268,7 @@ void testStopGpuDemandAndRestoreSourceWait() {
   });
   restored.dma.restoreState(dmaState,now);restored.gpu.restoreState(gpuState);
   restored.dma.setEndpointCapacity(DmaEndpoint::ImgDecRead,0);restored.dma.postLoad();
+  restored.gpu.dependencyStateChanged();
   const i64 completion=now+dmaState.scheduledBlockCycles,edge=now+500;
   require(edge<completion&&restored.scheduler.nextDeadline()==completion,"restored active block owns its original deadline");
   restored.scheduler.advanceTo(edge);restored.dma.setEndpointCapacity(DmaEndpoint::ImgDecRead,1);

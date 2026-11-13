@@ -268,7 +268,6 @@ void DmaController::postLoad() {
 	} else {
 		arbitrate(m_scheduler.currentNowCycles());
 	}
-	m_gpu->dependencyStateChanged();
 }
 
 void DmaController::beginSupervisorControlQuiesce() {

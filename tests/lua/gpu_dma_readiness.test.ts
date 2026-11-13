@@ -208,6 +208,7 @@ test('restored GP0 source-wait survives another active DMA block and wakes on la
 	restored.gpu.restoreState(gpuState);
 	restored.dma.setEndpointCapacity(DmaEndpoint.ImgDecRead, 0);
 	restored.dma.postLoad();
+	restored.gpu.dependencyStateChanged();
 	const completion = snapshotTime + dmaState.scheduledBlockCycles;
 	assert.equal(restored.scheduler.nextDeadline(), completion, 'restored active block owns its original deadline');
 	const edge = snapshotTime + 500; assert.ok(edge < completion);

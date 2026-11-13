@@ -26,6 +26,7 @@ void finishDeviceRestore(Machine& machine, const SystemControllerState& systemCo
 	// GPU/APU/IMGDEC restore their request lines while DMA admission is held. Publish
 	// those lines once, then restore the system phase that owns their fences.
 	machine.dmaController.postLoad();
+	machine.gxGpu.dependencyStateChanged();
 	machine.systemController.restoreState(systemControl);
 	machine.systemController.postLoad();
 }
