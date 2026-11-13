@@ -275,8 +275,18 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 	const u32 markerPc = machine.rom.textAddress + 2 * MAPPED_PAGE_BYTE_SIZE;
 	machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], markerPc);
 	machine.cpu.runUntilDepth(0, 4096);
+	test::waitForNativeEntry(machine.cpu, *machine.cpu.activeThread()->currentFrame->decodedPage,
+		(markerPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 	machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress);
 	machine.cpu.runUntilDepth(0, 12000);
+	test::waitForNativeEntry(machine.cpu, *machine.cpu.activeThread()->frameAtDepth(0)->decodedPage,
+		((machine.rom.textAddress + 2u * INSTRUCTION_BYTES) & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	machine.cpu.runUntilDepth(0, 12000);
+#endif
+	const u32 calleePc = machine.rom.textAddress + MAPPED_PAGE_BYTE_SIZE;
+	const auto& decodedCallee = machine.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.at(calleePc & ~MAPPED_PAGE_BYTE_MASK);
+	test::waitForNativeEntry(machine.cpu, decodedCallee, (calleePc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 	machine.cpu.runUntilDepth(1, 100);
 	auto* thread = machine.cpu.activeThread();
 	auto* caller = thread->currentFrame;
@@ -294,7 +304,6 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 	for (int index = 0; index < args; ++index) caller->registers[base + 1 + index] = payloads[index];
 
 	caller->top = open ? base + 1 + args : caller->stackCapacity;
-	const u32 calleePc = machine.rom.textAddress + MAPPED_PAGE_BYTE_SIZE;
 	if (ramRecord) {
 		// The cross-page record can change after closure creation without
 		// changing the reserved frame or native call target.
@@ -381,11 +390,28 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 		{17, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
 	CpuMachine machine(image, false);
 	machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("pcall"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::PCall));
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	machine.cpu.setNativeCompilationProfiling(true);
+#endif
 	const u32 markerPc = machine.rom.textAddress + 2 * MAPPED_PAGE_BYTE_SIZE;
 	machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], markerPc);
 	machine.cpu.runUntilDepth(0, 4096);
+	test::waitForNativeEntry(machine.cpu, *machine.cpu.activeThread()->currentFrame->decodedPage,
+		(markerPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 	machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress);
 	machine.cpu.runUntilDepth(0, 4096);
+	auto& decoded = *machine.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	test::waitForNativeEntry(machine.cpu, decoded, (machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	machine.cpu.runUntilDepth(0, 4096);
+	test::waitForFixtureWorkerRequests(machine.cpu);
+	const u32 continuationWord = ((machine.rom.textAddress + 20u * INSTRUCTION_BYTES) & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	for (int pass = 0; pass < 4 && (!decoded.nativeBlocks || !decoded.nativeBlocks->entries[continuationWord]); ++pass) {
+		machine.cpu.runUntilDepth(0, 4096);
+		test::waitForFixtureWorkerRequests(machine.cpu);
+	}
+#endif
+	test::waitForNativeEntry(machine.cpu, decoded, ((machine.rom.textAddress + 20u * INSTRUCTION_BYTES) & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 	while (machine.cpu.getFrameDepth() != 3) machine.cpu.runUntilDepth(0, 1);
 	auto* thread = machine.cpu.activeThread();
 	auto* callee = thread->currentFrame;
@@ -829,10 +855,27 @@ void crossPageCalls(bool open, u32 recordOffset) {
 		{.firstWord = DECODED_PAGE_WORDS + 32u, .wordCount = 3, .numParams = 2, .maxStack = 1024}};
 	image.constants = {3.0, 4.0}; image.closureRelocations = {{1, record}};
 	CpuMachine native(image, false), scalar(image, true);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	native.cpu.setNativeCompilationProfiling(true);
+#endif
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.writeBytes(record, machine->rom.bytes.data() + machine->rom.functionAddresses[1], BLUA32_FUNCTION_RECORD_SIZE);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 20000);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	for (int pass = 0; pass < 4; ++pass) {
+		test::waitForFixtureWorkerRequests(native.cpu);
+		bool call = false, ret = false;
+		for (const auto& [key, page] : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages) if (page.nativeBlocks)
+			for (const auto& block : page.nativeBlocks->entries) if (block) {
+				call |= block->terminal.exit == NativeBlockExit::Call;
+				ret |= block->terminal.exit == NativeBlockExit::Return;
+			}
+		if (call && ret) break;
+		test::runCpuParity(native.cpu, scalar.cpu, 20000);
+	}
+	test::waitForFixtureWorkerRequests(native.cpu);
+#endif
 	test::runCpuParity(native.cpu, scalar.cpu, 100, 1);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	bool call = false, ret = false;

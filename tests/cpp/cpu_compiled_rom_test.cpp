@@ -148,6 +148,7 @@ void romReplacementAndSelectionKeepRamCode() {
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 		cpu.runUntilDepth(0, 1000);
 		auto& page = *frame.decodedPage;
+		if (!scalar) test::waitForNativeEntry(cpu, page, 0);
 		const NativeBlock* block = scalar ? nullptr : page.nativeBlocks->entries[0].get();
 		if (!scalar) require(block && block->sourceWords == 5, "ROM and arithmetic share an actual native RAM entry");
 		auto replacement = rom.bytes;
@@ -289,6 +290,16 @@ void warmContinuationsFollowInBlockMuxWrites() {
 	for (auto* machine : {&native, &scalar}) {
 		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
 		frame.registers[2] = valueNumber(IO_CART_SELECT);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+		for (const u32 slot : {0u, 1u}) {
+			machine->memory.writeMappedWord(IO_CART_SELECT, slot); frame.registers[4] = valueNumber(slot);
+			for (int visit = 0; visit < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++visit) {
+				machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], CART_ROM_BASE + MAPPED_PAGE_BYTE_SIZE + 2u * INSTRUCTION_BYTES);
+				machine->cpu.runUntilDepth(0, 1);
+			}
+			if (machine == &native) test::waitForNativeEntry(machine->cpu, *frame.decodedPage, 2);
+		}
+#endif
 		for (const u32 slot : {0u, 1u}) {
 			machine->memory.writeMappedWord(IO_CART_SELECT, slot); frame.registers[4] = valueNumber(slot);
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], CART_ROM_BASE);
@@ -361,6 +372,9 @@ void crossPageLinksFollowTheInstructionChipSelect(bool cartridgeBound) {
 	writeInstruction(ram, 3, static_cast<u8>(OpCode::JMP), 0, (forward >> 6u) & 63u, forward & 63u, (forward >> 12u) & 255u);
 	CpuMachine native(system, test::cartridgeSlots(card0.bytes, card1.bytes), false);
 	CpuMachine scalar(system, test::cartridgeSlots(card0.bytes, card1.bytes), true);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	native.cpu.setNativeCompilationProfiling(true);
+#endif
 	const auto domain = cartridgeBound ? 0 : SYSTEM_EXECUTION_DOMAIN_ID;
 	const u32 function = cartridgeBound ? card0.functionAddresses[0] : system.functionAddresses[0];
 	for (auto* machine : {&native, &scalar}) {
@@ -372,6 +386,26 @@ void crossPageLinksFollowTheInstructionChipSelect(bool cartridgeBound) {
 			machine->memory.writeMappedWord(IO_CART_SELECT, slot);
 			machine->cpu.writeFrameExecution(0, domain, function, DYNAMIC_RAM_BASE);
 			machine->cpu.runUntilDepth(0, 1200);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+			if (machine == &native) {
+				test::waitForFixtureWorkerRequests(machine->cpu);
+				const auto available = [&] (u32 pc, u32 selected, u32 word) {
+					const auto* lookup = frame.executionImage->nativeCodeLookup.get();
+					const auto* page = lookup ? lookup->find(pc, selected) : nullptr;
+					return page && page->nativeBlocks && page->nativeBlocks->entries[word];
+				};
+				const u32 codeWord = (card0.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+				for (int pass = 0; pass < 4 && (!available(DYNAMIC_RAM_BASE, 0, 0)
+					|| !available(DYNAMIC_RAM_BASE, 0, 1)
+					|| !available(card0.textAddress, cartridgeBound ? 0 : slot, codeWord)); ++pass) {
+					machine->cpu.runUntilDepth(0, 1200);
+					test::waitForFixtureWorkerRequests(machine->cpu);
+				}
+				// With both sides published, guest execution resolves their links.
+				machine->cpu.runUntilDepth(0, 1200);
+				test::waitForFixtureWorkerRequests(machine->cpu);
+			}
+#endif
 		}
 	}
 	const auto& lookup = *native.cpu.activeThread()->frameAtDepth(0)->executionImage->nativeCodeLookup;
@@ -451,6 +485,9 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 	writeLE32(card1.bytes.data() + otherRecord + BLUA32_FUNCTION_MAX_STACK_OFFSET, 12);
 	CpuMachine native(system, test::cartridgeSlots(card0.bytes, card1.bytes), false);
 	CpuMachine scalar(system, test::cartridgeSlots(card0.bytes, card1.bytes), true);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	native.cpu.setNativeCompilationProfiling(true);
+#endif
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.writeBytes(record, system.bytes.data() + system.functionAddresses[3], BLUA32_FUNCTION_RECORD_SIZE);
 		machine->memory.writeMappedU32LE(record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, code);
@@ -462,6 +499,29 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 			"ordinary data reads see the different record fitted to socket 1");
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 20000);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	for (int pass = 0; pass < 8; ++pass) {
+		test::waitForFixtureWorkerRequests(native.cpu);
+		const int targetDepth = ramRecord ? 3 : 2;
+		for (int step = 0; step < 32 && native.cpu.getFrameDepth() < targetDepth; ++step)
+			test::runCpuParity(native.cpu, scalar.cpu, 1);
+		require(native.cpu.getFrameDepth() == targetDepth, "warm execution reaches the active closure chain");
+		const auto* root = native.cpu.rootThread()->frameAtDepth(0);
+		const auto* relay = native.cpu.rootThread()->frameAtDepth(1);
+		const auto* callee = native.cpu.rootThread()->frameAtDepth(targetDepth - 1);
+		const auto published = [](const CallFrame* frame, u32 pc) {
+			const auto* lookup = frame->executionImage->nativeCodeLookup.get();
+			const auto* page = lookup ? lookup->find(pc, 0) : nullptr;
+			return page && page->nativeBlocks && page->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+		};
+		const bool ready = published(root, card0.textAddress + 2u * INSTRUCTION_BYTES)
+			&& published(callee, ramRecord ? code : card0.textAddress + 6u * INSTRUCTION_BYTES)
+			&& (!ramRecord || published(relay, system.textAddress + 5u * INSTRUCTION_BYTES));
+		if (ready) break;
+		test::runCpuParity(native.cpu, scalar.cpu, 20000);
+	}
+	test::waitForFixtureWorkerRequests(native.cpu);
+#endif
 	test::runCpuParity(native.cpu, scalar.cpu, 100, 1);
 	const u32 entry = card0.textAddress + 2u * INSTRUCTION_BYTES;
 	for (auto* machine : {&native, &scalar}) {

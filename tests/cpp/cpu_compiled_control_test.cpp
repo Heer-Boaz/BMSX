@@ -258,12 +258,25 @@ void execReplacesFramesAfterNativeReturn() {
 	image.functions = {{.firstWord = 0, .wordCount = 2}, {.firstWord = 16, .wordCount = 2}, {.firstWord = 32, .wordCount = 1, .staticClosure = false}};
 	image.globalNames = {"next", "start"};
 	CpuMachine native(image), scalar(image, true);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	native.cpu.setNativeCompilationProfiling(true);
+#endif
 	for (auto* m : {&native, &scalar}) {
 		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("next"), valueNumber(m->rom.functionAddresses[1] + 0.75));
 		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("start"), valueNumber(m->rom.functionAddresses[0]));
 		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 800);
 	}
 	requireParity(native, scalar);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	test::waitForFixtureWorkerRequests(native.cpu);
+	const auto& decoded = native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.at(
+		native.rom.textAddress & ~MAPPED_PAGE_BYTE_MASK);
+	const u32 entry = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	for (int pass = 0; pass < 4 && (!decoded.nativeBlocks || !decoded.nativeBlocks->entries[entry]); ++pass) {
+		test::runCpuParity(native.cpu, scalar.cpu, NATIVE_WARM_SCALE * 800);
+		test::waitForFixtureWorkerRequests(native.cpu);
+	}
+#endif
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	bool generated = false;
 	for (const auto& [key, page] : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages) if (page.nativeBlocks) {
@@ -291,12 +304,24 @@ void nmiReturnsRetainedWordsAndUsesActiveEpc() {
 	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 2}, {.firstWord = 16, .wordCount = 3}};
 	image.exceptionFunctionIndex = 1;
 	CpuMachine native(image), scalar(image, true);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	native.cpu.setNativeCompilationProfiling(true);
+#endif
 	for (auto* m : {&native, &scalar}) {
 		auto state = m->cpu.captureRuntimeState(); state.statusWord = 0xa5a5a511u; state.causeWord = 0xdeadbeefu;
 		state.epcWord = 0x12345679u; state.badAddressWord = 0x87654321u; state.luaFaultReasonWord = 0x80000000u; state.exceptionDomainWord = 7;
 		m->cpu.restoreRuntimeState(state); m->cpu.activeThread()->frameAtDepth(0)->registers[1] = valueNumber(0); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 300);
 	}
-	for (int iteration = 0; iteration < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++iteration) {
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	test::waitForFixtureWorkerRequests(native.cpu);
+	constexpr int warmPhases = 2;
+#else
+	constexpr int warmPhases = 1;
+#endif
+	for (int iteration = 0; iteration < warmPhases * (NATIVE_BLOCK_COMPILATION_THRESHOLD + 8); ++iteration) {
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+		if (iteration == NATIVE_BLOCK_COMPILATION_THRESHOLD + 8) test::waitForFixtureWorkerRequests(native.cpu);
+#endif
 		for (auto* m : {&native, &scalar}) {
 			const auto before = m->cpu.captureRuntimeState(); m->cpu.requestNonMaskableInterrupt();
 			require(m->cpu.enterPendingInterrupt(), "NMI enters its real exception frame");
@@ -314,6 +339,9 @@ void nmiReturnsRetainedWordsAndUsesActiveEpc() {
 		test::runCpuParity(native.cpu, scalar.cpu, 1);
 		requireParity(native, scalar);
 	}
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	test::waitForFixtureWorkerRequests(native.cpu);
+#endif
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	bool generated = false;
 	for (const auto& [key, page] : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages) if (page.nativeBlocks) {
