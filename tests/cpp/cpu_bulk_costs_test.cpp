@@ -4,6 +4,7 @@
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
+#include "support/cpu_execution_parity.h"
 
 #include <array>
 #include <stdexcept>
@@ -29,6 +30,7 @@ int main() {
    cpu.runUntilDepth(0, 10000);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
    if (!scalar) {
+    test::waitForNativeEntry(cpu, *cpu.activeThread()->frameAtDepth(0)->decodedPage, (rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
     const auto& block = cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
     if (!block || block->terminal.exit != NativeBlockExit::AllocateTable) throw std::runtime_error("allocation path was not warmed");
    }
@@ -61,6 +63,7 @@ int main() {
    frame->registers[2] = valueNumber(73);
    cpu.runUntilDepth(0, 10000);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+   if (!scalar) test::waitForNativeEntry(cpu, *frame->decodedPage, (rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
    if (!scalar && !frame->decodedPage->nativeBlocks->entries[(rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES])
     throw std::runtime_error("table store was not warmed in native code");
 #endif

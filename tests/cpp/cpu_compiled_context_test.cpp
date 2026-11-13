@@ -81,6 +81,7 @@ void hotVarargFrames(int fixed) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	auto& page = *native.cpu.activeThread()->frameAtDepth(1)->decodedPage;
 	const u32 entry = ((native.rom.textAddress + 16u * INSTRUCTION_BYTES) & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	test::waitForNativeEntry(native.cpu, page, entry);
 	const auto* block = page.nativeBlocks->entries[entry].get();
 	require(block && block->sourceWords == 7, "varargs and following control flow really execute in a native block");
 #endif
@@ -134,6 +135,7 @@ void hotEmptyVararg() {
 	require(frame.top == 31 && frame.stackCapacity == 4 && frame.registers[0] == valueNumber(73),
 		"zero saved varargs change top without forming an out-of-range host slot or extending capacity");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	test::waitForNativeEntry(native.cpu, *frame.decodedPage, (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 	const auto& block = frame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(block && block->sourceWords == 2, "the empty copy executes through both the native path and scalar warmup");
 #endif
@@ -155,7 +157,8 @@ void hotConstantTrap() {
 		}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		const auto& frame = *native.cpu.activeThread()->frameAtDepth(0);
-		const auto& block = frame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+		test::waitForNativeEntry(native.cpu, *frame.decodedPage, (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
+	const auto& block = frame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 		require(block && block->sideExits[0].exit == NativeBlockExit::InvalidConstant, "the trapping instruction is lowered, not skipped");
 #endif
 		test::runCpuParity(native.cpu, scalar.cpu, 3); requireParity(native, scalar);
@@ -181,6 +184,7 @@ void hotGlobalBanks() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
 	const u32 entry = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	test::waitForNativeEntry(native.cpu, page, entry);
 	const auto* block = page.nativeBlocks->entries[entry].get(); require(block && block->sourceWords == 8, "global transfers stay in one native block");
 #endif
 	for (auto* m : {&native, &scalar}) for (int i = 0; i < 257; ++i) {
@@ -228,6 +232,7 @@ void hotUpvalueAlias() {
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& first = *native.cpu.activeThread()->frameAtDepth(0);
+	test::waitForNativeEntry(native.cpu, *first.decodedPage, (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 	const auto& compiled = first.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(compiled && compiled->sideExits[0].exit == NativeBlockExit::WriteUpvalue,
 		"the VM exercises a real compiled self-alias exit before resuming the remaining operations");

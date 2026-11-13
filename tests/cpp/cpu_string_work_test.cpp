@@ -5,6 +5,7 @@
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
+#include "support/cpu_execution_parity.h"
 #include <iostream>
 #include <stdexcept>
 #include <tuple>
@@ -58,7 +59,11 @@ void logicalStringWork(bool scalar, OpCode op) {
 		}
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	if (!scalar) require(machine.cpu.activeThread()->currentFrame->decodedPage->nativeBlocks != nullptr, "the warm cases really use native regions");
+	if (!scalar) {
+		auto& page = *machine.cpu.activeThread()->currentFrame->decodedPage;
+		test::waitForNativeEntry(machine.cpu, page, (machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
+		require(page.nativeBlocks != nullptr, "the warm cases really use native regions");
+	}
 #endif
 }
 
