@@ -12,6 +12,7 @@ class CPU;
 class DeviceScheduler;
 class IrqController;
 class Memory;
+class GxGpu;
 enum class MemoryRegionKind;
 
 struct DmaControllerState {
@@ -33,6 +34,7 @@ public:
 	void setTiming(i64 ramCyclesPerWord, i64 ramBurstSetupCycles, i64 systemRomCyclesPerWord, i64 cartRomCyclesPerWord, i64 cartRomBurstSetupCycles, i64 nowCycles);
 	void setEndpointCapacity(DmaEndpoint endpoint, u32 words);
 	void setEndpointRequests(DmaEndpoint first, u32 firstWords, DmaEndpoint second, u32 secondWords);
+	void connectGpu(GxGpu& gpu) { m_gpu = &gpu; }
 	bool ownsReadPort(u32 address) const;
 	bool ownsWritePort(u32 address) const;
 	bool hasAdmittedWriteBlock(u32 address) const;
@@ -83,6 +85,7 @@ private:
 	DmaRegisterFile m_userRegisters;
 	u32 m_userNextChannel = 0;
 	Memory& m_memory;
+	GxGpu* m_gpu = nullptr;
 	CPU& m_cpu;
 	IrqController& m_irq;
 	DeviceScheduler& m_scheduler;

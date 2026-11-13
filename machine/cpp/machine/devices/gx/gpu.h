@@ -6,6 +6,7 @@
 #include "spec/gx/gp1.h"
 #include "spec/gx/pcrtc.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
+#include "machine/devices/gx/gp0_stream.h"
 #include "machine/devices/gx/gpu_display.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
 #include "machine/devices/word_fifo.h"
@@ -20,13 +21,6 @@ namespace bmsx {
 
 constexpr u32 GX_GPU_SERVICE_RUNTIME_EDGE_MASK = 0x3u;
 constexpr u32 GX_GPU_SERVICE_TIMING_PUBLISHED = 1u << 2u;
-
-constexpr u32 GX_GPU_GP0_INGRESS_COMMAND = 0u;
-constexpr u32 GX_GPU_GP0_INGRESS_FIXED = 1u;
-constexpr u32 GX_GPU_GP0_INGRESS_IMAGE_HEADER = 2u;
-constexpr u32 GX_GPU_GP0_INGRESS_IMAGE_PAYLOAD = 3u;
-constexpr u32 GX_GPU_GP0_INGRESS_POLYLINE_HEADER = 4u;
-constexpr u32 GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD = 5u;
 
 class Memory;
 class CPU;
@@ -251,6 +245,8 @@ public:
 	u32 readGp0(MappedBusSignals busSignals = MAPPED_BUS_MASTER_CPU);
 	void writeGp0(u32 word, MappedBusSignals busSignals = MAPPED_BUS_MASTER_CPU);
 	u32 readStatus();
+	void synchronizeDmaStart();
+	void dmaRequestStarted();
 	u32 writeGp1(u32 word);
 	u32 onService(i64 nowCycles);
 	u32 readDisplayModeWord() const;
@@ -260,7 +256,7 @@ public:
 	const GxGpuPcrtcTiming& readPcrtcTiming() const { return m_pcrtc.timing; }
 	const GxGpuDeviceOutput& readDeviceOutput();
 	// Host submission granularity, not guest FIFO capacity or device timing.
-	void setBackendSubmissionCommandLimit(size_t commands) { m_backendSubmissionCommandLimit = commands; }
+	void setBackendSubmissionCommandLimit(size_t commands);
 	// Publication transfers command bytes to a backend owner; this outstanding
 	// dependency is completed on the machine thread, never by the GL consumer.
 	void retirePublishedCommands() {
@@ -331,10 +327,10 @@ private:
 	u32 m_statusWord = GX_GPU_STATUS_RESET_WORD;
 	WordFifo<GX_GPU_COMMAND_FIFO_WORD_CAPACITY> m_gp0Fifo;
 	WordFifo<GX_GPU_DMA_INGRESS_WORD_CAPACITY> m_gp0DmaIngress;
-	u32 m_gp0IngressPhase = GX_GPU_GP0_INGRESS_COMMAND;
-	u32 m_gp0IngressWordsRemaining = 0u;
-	u32 m_gp0IngressPolylineWordsPerVertex = 0u;
-	u32 m_gp0IngressPolylinePayloadPhase = 0u;
+	Gp0StreamCursor m_gp0Ingress;
+	Gp0StreamCursor m_gp0Producer;
+	u32 m_queuedGp0Irqs = 0u;
+	u32 m_queuedGp0Readbacks = 0u;
 	i64 m_pendingCommandCompletionCycle = 0;
 	size_t m_pendingCommandTargetCount = 0u;
 	i64 m_deviceServiceDeadlineCycle = -1;
@@ -417,17 +413,15 @@ private:
 	void consumeImageLoadWords(i64 commandStartCycle);
 	void consumeGp0PolylinePayloadWord(u32 word, i64 commandStartCycle);
 	void beginPolylinePayload(u32 opcode, u32 commandWordCount, i64 commandStartCycle);
+	void recordGp0ProducerWord(u32 word);
+	void rebuildGp0Producer();
 	bool acceptGp0Word(u32 word);
 	void processGp0Pipeline(i64 commandStartCycle);
 	void consumeGp0Fifo(i64 commandStartCycle);
 	void synchronizeCommandExecution(i64 nowCycles);
-	void rescheduleDeviceService(bool force = false);
+	void rescheduleDeviceService(bool force = false, bool ensureCompletion = false);
 	void beginCommandCompletion(i64 commandTicks, size_t targetCommandCount, i64 commandStartCycle);
 	void executeGp0Command(i64 commandStartCycle);
-	u32 gp0CommandWordCountForOpcode(u32 opcode) const;
-	u32 gp0PolygonWordCount(u32 opcode) const;
-	u32 gp0LineWordCount(u32 opcode) const;
-	u32 gp0RectangleWordCount(u32 opcode) const;
 	void emitFixedGp0Command(u8 kind, u32 opcode, u32 commandWordCount, i64 commandStartCycle);
 	void pushGpuCommand(u8 kind, u32 opcode, size_t wordStart, u32 commandWordCount, i64 commandStartCycle);
 	void beginImageLoadToVram(u32 opcode, u32 commandWordCount);

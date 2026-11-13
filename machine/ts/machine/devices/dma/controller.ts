@@ -32,6 +32,7 @@ import {
 import { IoWriteStorage, Memory, MemoryRegionKind } from '../../memory/memory';
 import { DEVICE_SERVICE_DMA, DEVICE_SERVICE_SYSTEM, type DeviceScheduler } from '../../scheduler/device';
 import type { IrqController } from '../irq/controller';
+import type { GxGpu } from '../gx/gpu';
 import {
 	DmaRegisterFile,
 	type DmaChannelStates,
@@ -64,6 +65,7 @@ export type DmaControllerState = {
 };
 
 export class DmaController {
+	private gpu!: GxGpu;
 	private ramCyclesPerWord = 1;
 	private ramBurstSetupCycles = 0;
 	private systemRomCyclesPerWord = 1;
@@ -130,12 +132,20 @@ export class DmaController {
 			return;
 		}
 		const registers = context.registers.channels[channel]!;
+		const route = registers.controlWord & DMA_CONTROL_ROUTE_MASK;
+		const gpuJob = registers.transferCountWord !== 0 && (READ_ENDPOINTS[route] === DmaEndpoint.GpuRead || WRITE_ENDPOINTS[route] === DmaEndpoint.GpuWrite);
+		if (gpuJob) context.gpu.synchronizeDmaStart();
 		registers.statusWord = DMA_STATUS_BUSY;
 		context.memory.writeIoU32(IO_DMA_STATUSES[channel]!, DMA_STATUS_BUSY);
+		if (gpuJob) context.gpu.dmaRequestStarted();
 		if (registers.transferCountWord === 0) {
 			context.finishChannel(channel);
 		}
 		context.arbitrate(context.scheduler.currentNowCycles());
+	}
+
+	public connectGpu(gpu: GxGpu): void {
+		this.gpu = gpu;
 	}
 
 	public setTiming(
