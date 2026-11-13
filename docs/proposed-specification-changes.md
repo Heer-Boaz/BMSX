@@ -141,7 +141,7 @@ VRAM-leesfunctie uit de console moet verdwijnen.
 |---|---|---|
 | DMA | Vaste routes en begrensde bursts uitgewerkt in Book I | Fysieke integratie en kwalificatie |
 | IMGDEC | Ruwe verliesloze blokdecoder uitgewerkt in Book I | Fysieke integratie en kwalificatie |
-| GEO | Werk- en geheugenafhankelijke timing goedgekeurd | Timing en voortgang per opdracht |
+| GEO | Werkafhankelijke OVERLAP2D-intervallen uitgewerkt in Book I | Werkafhankelijke XFORM2-/SAT2-timing; fysieke integratie en kwalificatie |
 | GTE | Gedeeld fysiek rekenpad onderzoeken | Voltooiingstijd van gewone commando's en zichtbare wachttijd; niet goedgekeurd |
 | Video | Fysiek begrensde uitvoer goedgekeurd | Exacte bemonstering, sync en gekwalificeerde grenzen |
 | GPU-uitvoeringstijd | Geheugenplanning en zichtbare commandovoltooiing verenigen | Fysieke architectuur of mogelijke timingwijziging; niet goedgekeurd |
@@ -180,73 +180,31 @@ registerinterleavings terug te brengen.
 
 ## 2. GEO: werk- en geheugenafhankelijke timing
 
-**Huidig contract.** De [GEO-specificatie](book1/geo.md#sec-geo-work-budget-and-timing)
-rekent één record in drie cycli af en kent geen extra tijd toe aan het werk
-binnen dat record.
+De werk- en geheugenafhankelijke uitvoering van OVERLAP2D staat in de
+[GEO-specificatie](book1/geo.md#sec-geo-overlap-work-intervals). Daar zijn ook
+bronbemonstering, betaling vóór publicatie, de initiële samenvatting en het
+afbreken van onvoltooid werk vastgelegd. Die regels zijn geen open
+alternatieven meer. Registerwoorden, gegevensformaten, fouten en voortgang
+worden uitsluitend in die handleiding gespecificeerd.
 
-**Goedgekeurde richting.** De uitvoering duurt afhankelijk van de werkelijke
-geheugentransfers en rekenstappen. Bewaar de commandowoorden, formaten,
-precisie, volgorde van resultaten, foutgedrag en `PROCESSED`-betekenis. Een
-voorbeeld met 64 vertices en bounds omvat in de onderzochte organisatie 140
+**Resterende timingwijziging.** XFORM2 en SAT2 behouden hun vaste
+[recordrate](book1/geo.md#sec-geo-work-budget-and-timing). De goedgekeurde
+richting is ook daar een duur op basis van de werkelijke geheugentransfers en
+rekenstappen. Bewaar precisie, resultaatvolgorde, foutgedrag en de betekenis
+van `PROCESSED`; de concrete tarieven en bemonsteringsmomenten moeten nog
+worden bepaald. Een XFORM2-voorbeeld met 64 vertices en bounds omvat in de
+onderzochte organisatie 140
 woordlezingen, 132 woordschrijvingen en 256 producten. Zelfs 272 ideaal
 achtereenvolgende DRAM-paginatransfers van 20 ns kosten 5,44 µs, zonder de
 verdere verwerking. Dit voorbeeld is geen universeel GEO-doorvoercijfer.
 [Constructie en aannames](book4/hardware.md#physical-geo-service).
 
-**Nog uit te werken.** Definieer timing en waarneming van voortgang en
-voltooiing voor alle opdrachten; kwalificeer de echte engine. De oude vaste
-recordrate is geen aangetoonde fysieke eigenschap. Werk Book I en de emulator
-na keuze van het contract bij.
-
-**Voorstel voor waarneembare voortgang.** De engine houdt één taak actief en
-verhoogt `PROCESSED` pas nadat een buitenrecord en zijn vereiste transacties
-zijn afgerond. Een summarywrite kan een afzonderlijk geregistreerde busfout
-opleveren; dat is niet automatisch een GEO-fout. Eerder uitgevoerde writes
-kunnen al zichtbaar zijn; het record is geen automatisch atomair
-geheugenresultaat. Bij succes publiceert de engine het eindresultaat en DONE
-vóór GEO_DONE. Bij een uitvoeringsfout publiceert zij DONE, ERROR en de
-foutgegevens vóór GEO_ERROR; het falende record telt niet mee. Eerder
-uitgevoerde effecten worden niet teruggedraaid. De lokale foutbevestiging en
-de centrale IRQ-bevestiging blijven afzonderlijk.
-
-Een belangrijk geval is `OVERLAP2D_PASS` met count nul: volgens het huidige
-contract gaan vier nulwrites naar de samenvatting aan de countcontrole vooraf.
-Een fysieke uitvoering kan óf BUSY zichtbaar houden tot die writes klaar zijn,
-óf de CMD-write laten wachten voordat DONE zichtbaar wordt. Dit zijn nog te
-kiezen alternatieven; beide kunnen de huidige onmiddellijk zichtbare afhandeling
-veranderen. Ook de volgorde van ABORT of een afgewezen CMD ten opzichte van een
-al geaccepteerde geheugentransfer moet nog worden gekozen. Geen van beide
-gevallen krijgt hier stilzwijgend een nieuwe timingregel.
-Een nieuwe CMD tijdens BUSY blijft een afwijzing die de oude taak beëindigt;
-ABORT blijft een foutieve beëindiging. Reeds uitgevoerde geheugenwerkingen
-blijven in beide gevallen bestaan.
-
-De vier initiële summarywrites zijn gewone buswrites, ook wanneer `DST1` naar
-een I/O-register wijst. De CORE-geheugenroute heeft nu een afzonderlijke
-verzoekbit voor raw GEO-operandtoegang of gewone, gemapte bustoegang. Een
-gerichte simulatie controleert beide routes op hetzelfde adres en controleert
-een gemapte I/O-write. De GEO-verzoekproducer is nog niet aangesloten en moet
-die bit per verzoek leveren. Dit is nog geen volledige GEO-integratie.
-Een CMD-write laten wachten op een summarywrite naar diezelfde bezette
-I/O-eigenaar kan anders vastlopen; bij een adres naar GEO zelf is bovendien de
-herintrede en volgorde zichtbaar. Geen adresbeperking, stille omzetting naar RAM
-of oplossing voor die gevallen is hier vastgesteld.
-
-De referentierichting leest geometrie uit de opgegeven bron wanneer een
-berekening die nodig heeft. Een onderzochte werkbank die elk polygonenpaar
-eenmalig inlaadt kan bij veranderende waarden of een cartridgeapparaat met
-leesbijwerkingen ander gedrag geven dan herhaalde bronlezingen. Stel eerst de
-zichtbare leesvolgorde vast voordat die werkbank als gelijkwaardige uitvoering
-wordt gekozen; de huidige TypeScript- en C++-eigenaars lezen onder meer bij
-SAT2 de coördinaten meermalen.
-
-**Clippingwerkruimte bij ongebruikelijke invoer.** Convexiteit en winding worden
-niet gecontroleerd. De publieke GEO-interface definieert daarom nu een
-`CLIP_CAPACITY`-uitvoeringsfout wanneer een clippingvlak een 129e vertex naar
-zijn 128 plaatsen probeert te schrijven. Eerdere zichtbare resultaten blijven
-behouden en het falende buitenrecord telt niet mee. Die capaciteitsgrens kiest
-geen timing voor GEO of de geheugenbus; de afzonderlijke fysieke integratie en
-werkafhankelijke voortgang blijven open.
+**Fysieke integratie.** De GEO-verzoekproducer is nog niet op de volledige
+CORE-geheugenroute aangesloten. Die producer moet de raw-geheugenroute voor
+GEO kiezen, ook voor de samenvatting. Het bestaande onderscheid met gewone
+gemapte toegang verleent GEO geen nieuw I/O-pad. De volledige engine moet
+nog worden geïntegreerd en gekwalificeerd; de vastgelegde programmeertiming
+bewijst niet dat een fysieke uitvoering haar haalt.
 
 ### GTE: voltooiing van normale commando's
 

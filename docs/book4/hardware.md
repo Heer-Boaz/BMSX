@@ -263,22 +263,21 @@ Book I specifies the records and completion interface.
 ![GEO operation and memory paths.](figures/geo-job-datapath.svg){#fig-physical-geo-datapath}
 
 A physical operation must account for the work and memory accesses it
-performs. Work- and memory-dependent timing is an approved direction, but its
-concrete public timing and progress rules have not replaced Book I.
+performs. Book I specifies work- and memory-dependent intervals for OVERLAP2D;
+XFORM2 and SAT2 retain their fixed outer-record rate. The complete physical
+engine has not yet demonstrated these timing requirements.
 
-GEO's addressed operand and ordinary result accesses use the geometry memory
-path; in main RAM these do not address mapped I/O registers. OVERLAP2D summary
-writes are different: the four separate summary words use ordinary mapped bus
-writes, including the initial zero writes when COUNT is zero. A programmed
-summary address can therefore select an I/O register rather than RAM. A bus
-fault from such a write and a GEO operation fault are separate indications;
-completed writes are not undone.
+GEO's addressed operands, results and OVERLAP2D summaries use the geometry
+memory path. In main RAM this path accesses the stored bytes, including bytes
+at addresses reserved for CPU I/O; it does not operate mapped I/O registers.
+The summary is not a second control path to other units.
 
-The proposed CORE memory fabric distinguishes these access classes per
-request. Connecting the GEO producer and defining command acceptance and
-summary-write ordering are still open, particularly if a summary write
-addresses GEO's own registers. The physical design must not replace that
-mapped access with a RAM-only write or add an unrequested retry.
+The proposed CORE memory fabric distinguishes raw geometry requests from
+ordinary mapped requests. The GEO producer must select the geometry path for
+its summary words as well as its operands and results. Connecting that
+producer, retaining in-progress work and meeting the specified publication
+boundaries remain physical integration tasks. The programming contract and
+its memory-range rules are specified in Book I.
 
 ## Cartridge bus
 
