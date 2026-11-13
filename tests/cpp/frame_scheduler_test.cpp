@@ -17,6 +17,7 @@
 #include "support/boot_rom_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/blua32_test_rom.h"
+#include "support/cpu_execution_parity.h"
 #include "spec/blua32/builtin.h"
 #include "spec/blua32/instruction_format.h"
 #include "spec/blua32/opcode.h"
@@ -328,6 +329,7 @@ void testWarmedGeneratedDmaSharedBus() {
 	auto& generatedFrame = *generated.machine.cpu.activeThread()->frameAtDepth(0);
 	const auto& page = *generatedFrame.decodedPage;
 	const u32 triggerWord = ((entry & MAPPED_PAGE_BYTE_MASK) >> 2u) + 4u;
+	test::waitForNativeEntry(generated.machine.cpu, page, triggerWord);
 	require(page.nativeBlocks && page.nativeBlocks->entries[triggerWord] && page.nativeCode[triggerWord],
 		"the DMA trigger has a warmed native entry before the exclusion probes");
 	const auto& trigger = *page.nativeBlocks->entries[triggerWord];

@@ -102,6 +102,8 @@ void pageTailEntry(int width, bool straddles) {
 		}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		const u32 index = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+		const auto& decoded = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+		test::waitForNativeEntry(native.cpu, decoded, index);
 		DecodedInstructionPage* page = nullptr;
 		for (auto& [key, candidate] : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages) {
 			if (candidate.nativeBlocks && candidate.nativeBlocks->entries[index]
@@ -153,6 +155,7 @@ void pageTailBeforeFetchFault(bool wide) {
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	test::waitForNativeEntry(native.cpu, page, (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 	require(page.nativeBlocks && page.nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES], "the last backed instruction is generated");
 #endif
 	test::runCpuParity(native.cpu, scalar.cpu, 1); requireParity(native, scalar);
@@ -169,6 +172,8 @@ void plainSpansAndCycles(int count, bool displaced) {
 		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 20 * (7 + surcharge));
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	test::waitForNativeEntry(native.cpu, *native.cpu.activeThread()->frameAtDepth(0)->decodedPage,
+		(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(block && block->sourceWords == 5 && block->terminal.cycles == 9 + surcharge,
 		"an admitted counted-store segment retains its complete surcharge");
@@ -197,6 +202,8 @@ void wideConstantAddress() {
 	for (auto* m : {&native, &scalar}) { for (int i = 0; i < 513; ++i) m->cpu.activeThread()->frameAtDepth(0)->registers[512 + i] = valueNumber(i - 1); m->cpu.runUntilDepth(0, (NATIVE_BLOCK_COMPILATION_THRESHOLD + 8) * 132); }
 	requireParity(native, scalar);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	test::waitForNativeEntry(native.cpu, *native.cpu.activeThread()->frameAtDepth(0)->decodedPage,
+		(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(block && block->sideExits[0].exitA == 512 && block->sideExits[0].exitB == -1 && block->sideExits[0].exitC == 513, "the native descriptor preserves the complete WIDE register range and signed RK address");
 #endif
@@ -293,7 +300,9 @@ void ownCodeInMiddleWatchPage() {
 		m->cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNumber(pc + 8u * MAPPED_PAGE_BYTE_SIZE); m->cpu.runUntilDepth(0, (NATIVE_BLOCK_COMPILATION_THRESHOLD + 8) * cycles);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage; require(page.nativeBlocks->entries[0] != nullptr, "the watched source really has a native body");
+	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	test::waitForNativeEntry(native.cpu, page, 0);
+	require(page.nativeBlocks->entries[0] != nullptr, "the watched source really has a native body");
 #endif
 	for (auto* m : {&native, &scalar}) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); for (int i = 0; i < count; ++i) frame.registers[8 + i] = valueNumber(0);
@@ -317,6 +326,8 @@ void previousChargesSurviveLaterExit(bool blocked) {
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) { auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers; r[0] = valueNumber(DYNAMIC_RAM_BASE); r[1] = valueNumber(DYNAMIC_RAM_BASE + 64u); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 200); }
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	test::waitForNativeEntry(native.cpu, *native.cpu.activeThread()->frameAtDepth(0)->decodedPage,
+		(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(block && block->terminal.cycles == 7 && block->sideExits[0].cycles == 5, "the first block charges its successful surcharge");
 	const auto* second = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(block->terminal.nextPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
@@ -351,6 +362,8 @@ void terminalSpanStartsWithOneCycle(int count, bool displaced) {
 	requireParity(native, scalar);
 	require(std::equal(native.memory.ramData(), native.memory.ramData() + PSX_MACHINE_SPEC.ramBytes, scalar.memory.ramData()), "all RAM agrees after overrun by a terminal store");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	test::waitForNativeEntry(native.cpu, *native.cpu.activeThread()->frameAtDepth(0)->decodedPage,
+		(start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(block && block->sourceWords == 2 && block->terminal.cycles == charge,
 		"a single counted WIDE store has a native body even when its cost exceeds every grant");
@@ -391,6 +404,8 @@ void characterizeRamCharges() {
 		}
 		require(1 - native.cpu.instructionBudgetRemaining == 1 - scalar.cpu.instructionBudgetRemaining, "native/interpreter counted guest charges agree");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		test::waitForNativeEntry(native.cpu, *native.cpu.activeThread()->frameAtDepth(0)->decodedPage,
+			(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 		const auto& entry = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 		require(static_cast<bool>(entry), "counted RAM characterization produces a native entry");
 #endif
@@ -436,6 +451,8 @@ void characterizeRamCharges() {
 		}
 		require(native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining, "native/interpreter scalar guest charges agree");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		test::waitForNativeEntry(native.cpu, *native.cpu.activeThread()->frameAtDepth(0)->decodedPage,
+			(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 		const auto& entry = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 		require(static_cast<bool>(entry), "scalar RAM characterization produces a native entry");
 #endif

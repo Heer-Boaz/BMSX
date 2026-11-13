@@ -162,6 +162,7 @@ void generatedMemoryBoundaries() {
 			machine->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1200);
 		}
 		auto& frame = *native.cpu.activeThread()->frameAtDepth(0);
+		test::waitForNativeEntry(native.cpu, *frame.decodedPage, (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u);
 		const auto& block = frame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u];
 		require(block && block->sourceWords == 5 && block->sideExits.size() == 1,
 			"RAM accesses compile with their dependent instructions and branch");
@@ -291,11 +292,13 @@ void generatedMemoryMayRetireExecutingSource() {
 		frame.registers[0] = valueNumber(7); frame.registers[1] = valueNumber(DYNAMIC_RAM_BASE + 0x1000);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 		cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1200);
+		if (!scalar) test::waitForNativeEntry(cpu, *frame.decodedPage, 0);
 		for (int visit = 0; visit < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++visit) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE + 3u * INSTRUCTION_BYTES);
 			cpu.runUntilDepth(0, 2);
 		}
 		auto& page = *frame.decodedPage;
+		if (!scalar) test::waitForNativeEntry(cpu, page, 3);
 		if (!scalar) require(page.nativeBlocks && page.nativeBlocks->entries[0], "the memory loop really acquired native code");
 		struct Source {
 			Memory& memory;
@@ -336,6 +339,7 @@ void dmaMemorySpanRetiresGeneratedCode() {
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 		cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1200);
 		auto& page = *frame.decodedPage;
+		if (!scalar) test::waitForNativeEntry(cpu, page, 0);
 		if (!scalar) require(page.nativeBlocks && page.nativeBlocks->entries[0], "DMA test starts with a published native RAM entry");
 		std::array<u8, 2u * INSTRUCTION_BYTES> replacement{};
 		writeInstruction(replacement, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
@@ -360,6 +364,7 @@ void fatalHelperErrorsLeaveTheNativeFrameBeforeUnwinding() {
 		frame.registers[1] = valueNumber(DYNAMIC_RAM_BASE + 0x1000);
 		machine.memory.writeMappedWord(DYNAMIC_RAM_BASE + 0x1000, 7);
 		cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1200);
+		if (!scalar) test::waitForNativeEntry(cpu, *frame.decodedPage, (machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 		if (!scalar) require(frame.decodedPage->nativeBlocks->entries[(machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES] != nullptr,
 			"the failure originates in a warmed native memory body");
 		struct Port { bool fail = true; int reads = 0; } port;
@@ -404,6 +409,11 @@ void changingSuccessorsDoNotRecompileStablePredecessors() {
 	frame.registers[1] = valueNumber(DYNAMIC_RAM_BASE + INSTRUCTION_BYTES);
 	frame.registers[2] = valueNumber(1);
 	frame.registers[4] = valueNumber(readLE32(image.text.data() + INSTRUCTION_BYTES) ^ readLE32(image.text.data() + 8u * INSTRUCTION_BYTES));
+	for (int visit = 0; visit < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++visit) {
+		machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE + 2u * INSTRUCTION_BYTES);
+		machine.cpu.runUntilDepth(0, 1);
+	}
+	test::waitForNativeEntry(machine.cpu, *frame.decodedPage, 2);
 	machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 	machine.cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1200);
 	auto& page = *frame.decodedPage;
@@ -447,6 +457,7 @@ void cachedValuesReachFieldMemoryAndFaultOwners() {
 		machine->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1200);
 	}
 	auto& frame = *native.cpu.activeThread()->frameAtDepth(0);
+	test::waitForNativeEntry(native.cpu, *frame.decodedPage, (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u);
 	const auto& block = frame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u];
 	int loopCycles = 0;
 	for (const auto op : {OpCode::MOV, OpCode::GETFIELD, OpCode::K0, OpCode::DIV, OpCode::SETFIELD,
@@ -501,6 +512,7 @@ void wordProducerBoundariesMatchCompleteScalarState() {
 		}
 		test::runCpuParity(native.cpu, scalar.cpu, NATIVE_WARM_SCALE * 2048);
 		auto* page = native.cpu.activeThread()->currentFrame->decodedPage;
+		test::waitForNativeEntry(native.cpu, *page, (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 		require(page->nativeBlocks && page->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES],
 			"the word producer/consumer loop is genuinely compiled before boundary mutations");
 		for (const auto incoming : {valueNumber(4294967301.0), valueNumber(-2147483649.0),
