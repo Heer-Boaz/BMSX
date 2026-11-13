@@ -104,6 +104,19 @@ static void require(bool value, const char* message) {
 	if (!value) throw std::runtime_error(message);
 }
 
+static void testVramShaderDefinitions() {
+	for (const u32 vramBytes : {2u * 1024u * 1024u, 1024u * 1024u}) {
+		for (const auto mode : {GxGpuDrawTargetMode::FullVram, GxGpuDrawTargetMode::SmallNibbles,
+			GxGpuDrawTargetMode::SmallRgb5, GxGpuDrawTargetMode::SmallRgb5Mali}) {
+			OpenGLES2Backend backend(256, 256, false, vramBytes, mode);
+			backend.setContextCallbacks([]() -> uintptr_t { return 0; }, eglGetProcAddress);
+			backend.onContextReset();
+			require(glGetError() == GL_NO_ERROR, "all supported VRAM and draw-target shader variants compile");
+			backend.onContextDestroy();
+		}
+	}
+}
+
 static void testDrawTargetDirtyReads() {
 	OpenGLES2Backend backend(256, 256, false, PSX_MACHINE_SPEC.gxGpuVramBytes, GxGpuDrawTargetMode::SmallNibbles);
 	backend.setContextCallbacks([]() -> uintptr_t { return 0; }, eglGetProcAddress);
@@ -1245,6 +1258,7 @@ int main(int argc, char** argv) {
 	require(eglMakeCurrent(display, surface, surface, context), "make GLES context current");
 	}
 	{
+		testVramShaderDefinitions();
 		testDrawTargetDirtyReads();
 		const auto layoutSoftware = renderDrawLayoutMatrix(false);
 		const auto layoutGles = renderDrawLayoutMatrix(true);

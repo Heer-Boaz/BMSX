@@ -70,6 +70,8 @@ constexpr i32 kGxGpuReadbackPackWidth = 512;
 constexpr u32 kGxGpuFullDrawingAreaTopLeftWord = 0u;
 constexpr u32 kGxGpuFullDrawingAreaBottomRightWord = (static_cast<u32>(kGxGpuVramXAddressPeriod) - 1u) | ((static_cast<u32>(kGxGpuVramYAddressPeriod) - 1u) << 10u);
 constexpr char kGxGpuFixedColorPlaneShaderDefine[] = "#define GX_GPU_FIXED_COLOR_PLANE 1\n";
+constexpr char kGxGpuScanoutWeaveShaderDefines[] =
+	"#define GX_GPU_INTERLACED_WEAVE 1\n#define GX_GPU_SCANOUT_STORAGE_PATH 6\n";
 constexpr char kGxGpuCpuUploadShaderDefine[] = "#define GX_GPU_CPU_UPLOAD_SOURCE 1\n";
 constexpr char kGxGpuInterlacedFieldShaderDefine[] = "#define GX_GPU_INTERLACED_FIELD 1\n";
 constexpr char kGxGpuFramebufferFetchArmShaderDefine[] = "#define GX_GPU_FRAMEBUFFER_FETCH_ARM 1\n";
@@ -514,12 +516,9 @@ void initGxGpu(OpenGLES2Backend& backend) {
 			gx.scanoutFieldPrograms[program].id = gx.backend->buildProgramWithVertexShader(
 				scanoutVertexShader, kGxGpuScanoutFragmentShader, label, fieldDefines, kGxGpuScanoutAttributeBindings);
 		}
-		char scanoutWeaveDefines[416]{};
-		std::snprintf(
-			scanoutWeaveDefines,
-			sizeof(scanoutWeaveDefines),
-			"%s#define GX_GPU_INTERLACED_WEAVE 1\n#define GX_GPU_SCANOUT_STORAGE_PATH 6\n",
-			vramShaderDefines);
+		char scanoutWeaveDefines[sizeof(vramShaderDefines) + sizeof(kGxGpuScanoutWeaveShaderDefines) - 1u]{};
+		std::snprintf(scanoutWeaveDefines, sizeof(scanoutWeaveDefines), "%s%s",
+			vramShaderDefines, kGxGpuScanoutWeaveShaderDefines);
 		gx.scanoutWeaveProgram = gx.backend->buildProgramWithVertexShader(
 			scanoutVertexShader,
 			kGxGpuScanoutFragmentShader,
