@@ -21,8 +21,11 @@ import {
 	APU_SLOT_PHASE_IDLE,
 	APU_SLOT_PHASE_PLAYING,
 } from '../../machine/ts/machine/devices/audio/contracts';
-import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT, GEO_OVERLAP2D_INSTANCE_WORDS } from '../../machine/ts/machine/devices/geometry/contracts';
+import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT, GEO_OVERLAP2D_INSTANCE_WORDS,
+	GEO_SAT2_MAX_POLY_VERTICES, GEO_XFORM2_MAX_VERTICES } from '../../machine/ts/machine/devices/geometry/contracts';
 import { GeometryOverlap2dPhase } from '../../machine/ts/machine/devices/geometry/overlap2d';
+import { GeometryXform2Phase } from '../../machine/ts/machine/devices/geometry/xform2';
+import { GeometrySat2Phase } from '../../machine/ts/machine/devices/geometry/sat2';
 import { GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD } from '../../machine/ts/machine/devices/gx/gp0_stream';
 import { GX_GPU_READBACK_READY, GX_GPU_READBACK_SUBMITTED } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT } from '../../machine/ts/spec/gx/pcrtc';
@@ -183,6 +186,25 @@ function createRuntimeSaveState(): RuntimeSaveState {
 						exactPairCount: 4,
 						broadphasePairCount: 5,
 					},
+					xform: {
+						phase: GeometryXform2Phase.Publish,
+						dstAddress: 0x080d0100, boundsAddress: 0x080d0200,
+						vertexCount: 7, hasBounds: true,
+						vertices: Uint32Array.from(numberedWords(GEO_XFORM2_MAX_VERTICES * 2)),
+						bounds: Uint32Array.of(0x80000000, 0xffffffff, 1, 0x7fffffff),
+						pendingMemory: { ramWords: 2, systemRomWords: 0, cartridgeWords: 0, otherWords: 0 },
+						pendingWorkUnits: 1, pendingFault: 0,
+					},
+					sat: {
+						phase: GeometrySat2Phase.Compute,
+						vertexAddressA: 0x080d1000, vertexAddressB: 0x080d1200,
+						countA: 64, countB: 63, resultAddress: 0x080d1400,
+						verticesA: Uint32Array.from(numberedWords(GEO_SAT2_MAX_POLY_VERTICES * 2)),
+						verticesB: new Uint32Array(GEO_SAT2_MAX_POLY_VERTICES * 2).fill(0xffffffff),
+						result: Uint32Array.of(1, 0xffffffff, 0x80000000, 0x7fffffff, 0xffff),
+						pendingMemory: { ramWords: 0, systemRomWords: 0, cartridgeWords: 126, otherWords: 0 },
+						pendingWorkUnits: 0, pendingFault: 0,
+					},
 					overlap: {
 						phase: GeometryOverlap2dPhase.CompletePiece, instanceBIndex: 31, pairMeta: 32,
 						shapeAAddr: 0x1000, shapeBAddr: 0x2000,
@@ -201,7 +223,6 @@ function createRuntimeSaveState(): RuntimeSaveState {
 						pendingFault: 9,
 					},
 					workCarry: 12,
-					availableWorkUnits: 1,
 					pendingCycles: 17,
 					supervisorQuiesceRequested: true,
 				},

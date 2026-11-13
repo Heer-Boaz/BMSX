@@ -25,14 +25,12 @@ int main(int argc, char** argv) {
 		machine.resetDevices();
 		auto& geometry = machine.geometryController;
 		geometry.setTiming(1, 1, 0);
-		bmsx::u32 command = 0u;
 		for (unsigned i = 0; i < count; i++) {
 			bmsx::u32 address, word;
 			input >> address >> word;
 			memory.writeMappedWord(address, word);
-			if (address == bmsx::IO_GEO_CMD) command = word;
 		}
-		auto advanceOverlapEdge = [&]() {
+		auto advanceGeometryEdge = [&]() {
 			const auto now = machine.scheduler.nowCycles();
 			const auto deadline = machine.scheduler.nextDeadline();
 			if (deadline < now || deadline == std::numeric_limits<bmsx::i64>::max())
@@ -63,7 +61,7 @@ int main(int argc, char** argv) {
 		if (firstRecordPairs != 0u || pairCounterSeed != 0u) {
 			if (memory.readMappedWord(bmsx::IO_GEO_PROCESSED) != 0u)
 				throw std::runtime_error("GEO progressed before the first event");
-			while (memory.readMappedWord(bmsx::IO_GEO_PROCESSED) == 0u && geometry.hasPendingWork()) advanceOverlapEdge();
+			while (memory.readMappedWord(bmsx::IO_GEO_PROCESSED) == 0u && geometry.hasPendingWork()) advanceGeometryEdge();
 			if (memory.readMappedWord(bmsx::IO_GEO_PROCESSED) != 1u)
 				throw std::runtime_error("first GEO record did not complete");
 			if (firstRecordPairs != 0u) {
@@ -73,12 +71,7 @@ int main(int argc, char** argv) {
 				std::cout << progressed.activeJob->exactPairCount << ' ' << progressed.activeJob->broadphasePairCount << ' ';
 			}
 		}
-		if (command == bmsx::IO_CMD_GEO_OVERLAP2D_PASS) {
-			while (geometry.hasPendingWork()) advanceOverlapEdge();
-		} else {
-			geometry.accrueCycles(1000, 1000);
-			geometry.onService(1000);
-		}
+		while (geometry.hasPendingWork()) advanceGeometryEdge();
 		input >> count;
 		for (unsigned i = 0; i < count; i++) {
 			bmsx::u32 address;

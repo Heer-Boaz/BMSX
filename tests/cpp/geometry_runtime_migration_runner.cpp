@@ -41,6 +41,7 @@ void trace(Runtime& runtime) {
 	auto& machine = runtime.machine;
 	const auto state = machine.geometryController.captureState();
 	std::cout << machine.scheduler.nowCycles() << ' ' << state.pendingCycles << ' ' << state.overlap.phase
+		<< ' ' << state.xform.phase << ' ' << state.sat.phase
 		<< ' ' << machine.memory.readMappedWord(IO_GEO_STATUS)
 		<< ' ' << machine.memory.readMappedWord(IO_GEO_PROCESSED)
 		<< ' ' << machine.memory.readMappedWord(IO_GEO_FAULT)
@@ -71,7 +72,7 @@ void resume(Runtime& runtime, const std::string& path) {
 }
 }
 
-int main(int, char** argv) {
+int main(int argc, char** argv) {
 	const std::string mode = argv[1], biosPath = argv[2];
 	const auto bios = readBytes(biosPath);
 	IdleInput input;
@@ -81,11 +82,53 @@ int main(int, char** argv) {
 		resume(runtime, argv[3]);
 		return 0;
 	}
+	const std::string scenario = argc > 5 ? argv[5] : "overlap";
+	if (scenario == "sat") {
+		auto initial = runtime.machine.geometryController.captureState();
+		initial.sat.verticesA[127] = 0xfedcba98u;
+		initial.sat.verticesB[126] = 0x89abcdefu;
+		runtime.machine.geometryController.restoreState(initial, runtime.machine.scheduler.nowCycles());
+	} else if (scenario == "xform") {
+		auto initial = runtime.machine.geometryController.captureState();
+		initial.xform.vertices[127] = 0xfedcba98u;
+		runtime.machine.geometryController.restoreState(initial, runtime.machine.scheduler.nowCycles());
+	}
 	std::ifstream vector(argv[3]);
 	u32 address, word;
 	while (vector >> address >> word) runtime.machine.memory.writeMappedWord(address, word);
 	runDueRuntimeTimers(runtime);
 	auto& geo = runtime.machine.geometryController;
+	const auto save = [&](const char* stage) {
+		writeBytes(std::string(argv[4]) + "-" + stage + ".state", encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
+	};
+	const auto payAll = [&]() { advanceRuntimeTime(runtime, static_cast<int>(geo.captureState().pendingCycles)); };
+	const auto leaveOne = [&]() {
+		const auto debt = geo.captureState().pendingCycles;
+		require(debt > 0, "positive pending interval");
+		if (debt > 1) advanceRuntimeTime(runtime, static_cast<int>(debt - 1));
+		require(geo.captureState().pendingCycles == 1, "one cycle remains");
+	};
+	if (scenario == "sat") {
+		require(geo.captureState().sat.phase == 1u && geo.captureState().pendingCycles == 13, "SAT record");
+		payAll();
+		require(geo.captureState().sat.phase == 2u && geo.captureState().pendingCycles == 8, "SAT A sampled");
+		leaveOne(); save("load-a"); payAll();
+		require(geo.captureState().sat.phase == 3u && geo.captureState().pendingCycles == 8, "SAT B sampled");
+		leaveOne(); save("load-b"); payAll();
+		require(geo.captureState().sat.phase == 4u && geo.captureState().pendingCycles > 0, "SAT prepaid result");
+		leaveOne(); save("publish");
+		return 0;
+	}
+	if (scenario == "xform") {
+		require(geo.captureState().xform.phase == 1u && geo.captureState().pendingCycles > 0, "XFORM prepaid output");
+		const auto src = runtime.machine.memory.readMappedWord(IO_GEO_SRC1);
+		const auto matrix = runtime.machine.memory.readMappedWord(IO_GEO_SRC2);
+		runtime.machine.memory.writeU32(src, 0x90000u);
+		runtime.machine.memory.writeU32(matrix + 8u, 0x70000u);
+		leaveOne(); save("publish");
+		return 0;
+	}
+	require(scenario == "overlap", "unknown geometry scenario");
 	require(geo.captureState().pendingCycles == 4, "expected initialization debt");
 	advanceRuntimeTime(runtime, 3);
 	require(geo.captureState().pendingCycles == 1, "expected initial debt of one cycle");

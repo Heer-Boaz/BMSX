@@ -39,7 +39,7 @@ function writeXform2BatchRegisters(memory: Memory, jobBase: number, count: numbe
 
 
 
-test('booted runtime: GEO started before DMA across a snapshot', () => {
+test('booted runtime: equal-deadline GEO sampling precedes DMA across a snapshot', () => {
 	const code = new Uint8Array(2 * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.HALT, 0, 0, 0, 0);
 	writeInstruction(code, 1, OpCode.RFE, 0, 0, 0, 0);
@@ -48,12 +48,12 @@ test('booted runtime: GEO started before DMA across a snapshot', () => {
 	runtime.boot();
 	const machine = runtime.machine, memory = machine.memory;
 	const jobBase = DYNAMIC_RAM_BASE + 0x1000, source = DYNAMIC_RAM_BASE + 0x2000;
-	for (let i = 0; i < 29; ++i) writeNoopXform2Record(memory, jobBase + i * GEO_XFORM2_RECORD_BYTES);
+	for (let i = 0; i < 10; ++i) writeNoopXform2Record(memory, jobBase + i * GEO_XFORM2_RECORD_BYTES);
 	memory.writeU32(source, 1);
-	writeXform2BatchRegisters(memory, jobBase, 29);
+	writeXform2BatchRegisters(memory, jobBase, 10);
 	memory.writeMappedWord(IO_DMA0_READ_ADDR, source);
-	memory.writeMappedWord(IO_DMA0_WRITE_ADDR, jobBase + 28 * GEO_XFORM2_RECORD_BYTES);
-	memory.writeMappedWord(IO_DMA0_TRANSFER_COUNT, 26);
+	memory.writeMappedWord(IO_DMA0_WRITE_ADDR, jobBase + 9 * GEO_XFORM2_RECORD_BYTES);
+	memory.writeMappedWord(IO_DMA0_TRANSFER_COUNT, 23);
 	memory.writeMappedWord(IO_DMA0_CONTROL, DMA_ROUTE_COPY);
 	memory.writeMappedWord(IO_GEO_CMD, IO_CMD_GEO_XFORM2_BATCH);
 	const advance = (target: number) => {
@@ -67,12 +67,14 @@ test('booted runtime: GEO started before DMA across a snapshot', () => {
 	advance(6);
 	memory.writeMappedWord(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
 	assert.equal(machine.dmaController.cpuBusHeld(), true);
-	advance(58);
-	assert.equal(machine.scheduler.nextDeadline(), 60);
+	advance(52);
+	assert.equal(machine.scheduler.nextDeadline(), 54);
 	const saved = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	advance(60);
 	const first = [memory.readIoU32(IO_GEO_STATUS), memory.readIoU32(IO_GEO_FAULT), memory.readIoU32(IO_IRQ_FLAGS)];
 	assert.deepEqual(first, [GEO_STATUS_DONE, 0, IRQ_GEO_DONE | IRQ_DMA0_DONE]);
+	assert.equal(memory.readU32(jobBase + 9 * GEO_XFORM2_RECORD_BYTES), 1,
+		'DMA changed the flags after GEO sampled them at cycle 54');
 	applyRuntimeSaveState(runtime, decodeRuntimeSaveState(saved, machine.memory.ramByteCount(), machine.gxGpu.readVramSnapshotBytes().byteLength));
 	advance(60);
 	const replay = [memory.readIoU32(IO_GEO_STATUS), memory.readIoU32(IO_GEO_FAULT), memory.readIoU32(IO_IRQ_FLAGS)];

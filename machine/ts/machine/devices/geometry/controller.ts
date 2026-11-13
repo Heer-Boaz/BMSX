@@ -52,16 +52,16 @@ import {
 } from './contracts';
 import { GeometryOverlap2dPhase, GeometryOverlap2dUnit } from './overlap2d';
 import { PSX_DMA_RAM_CYCLES_PER_WORD, PSX_DMA_SYSTEM_ROM_CYCLES_PER_WORD, PSX_DMA_CART_ROM_CYCLES_PER_WORD } from '../../../spec/bmsx/model';
-import { GeometrySat2Unit } from './sat2';
-import { GeometryXform2Unit } from './xform2';
+import { GeometrySat2Phase, GeometrySat2Unit } from './sat2';
+import { GeometryXform2Phase, GeometryXform2Unit } from './xform2';
 import type { GeometryJobState } from './job';
 import type { GeometryControllerState } from './save_state';
 import { Memory } from '../../memory/memory';
+import type { MemoryWordCounters } from '../../memory/word_counters';
 import type { IrqController } from '../irq/controller';
-import { accrueBudgetUnits, cyclesUntilBudgetUnits, type BudgetAccrual } from '../../scheduler/budget';
+import { cyclesUntilBudgetUnits } from '../../scheduler/budget';
 import { DEVICE_SERVICE_GEO, DEVICE_SERVICE_SYSTEM, type DeviceScheduler } from '../../scheduler/device';
 
-const GEO_SERVICE_BATCH_RECORDS = 1;
 const GEO_OVERLAP_PAIR_HEADER_WORDS = GEO_OVERLAP2D_INSTANCE_WORDS
 	+ 2 * (GEO_OVERLAP2D_SHAPE_DESC_BYTES + GEO_OVERLAP2D_SHAPE_BOUNDS_BYTES) / IO_WORD_SIZE;
 const GEO_REGISTER_SRC0 = (IO_GEO_SRC0 - IO_GEO_BASE) / IO_WORD_SIZE;
@@ -93,9 +93,7 @@ export class GeometryController {
 	private cpuHz = 1;
 	private workUnitsPerSec = 1;
 	private workCarry = 0;
-	private availableWorkUnits = 0;
 	private pendingCycles = 0;
-	private readonly budgetAccrual: BudgetAccrual = { wholeUnits: 0, carry: 0 };
 	private readonly xform2: GeometryXform2Unit;
 	private readonly sat2: GeometrySat2Unit;
 	private readonly overlap2d: GeometryOverlap2dUnit;
@@ -162,7 +160,6 @@ export class GeometryController {
 		this.workUnitsPerSec = workUnitsPerSec;
 		if (this.phase !== GEOMETRY_CONTROLLER_PHASE_BUSY) {
 			this.workCarry = 0;
-			this.availableWorkUnits = 0;
 			this.pendingCycles = 0;
 		}
 		this.scheduleNextService(nowCycles);
@@ -172,20 +169,7 @@ export class GeometryController {
 		if (this.phase !== GEOMETRY_CONTROLLER_PHASE_BUSY || cycles <= 0) {
 			return;
 		}
-		const job = this.activeJob!;
-		if (job.cmd === IO_CMD_GEO_OVERLAP2D_PASS) {
-			this.pendingCycles = cycles >= this.pendingCycles ? 0 : this.pendingCycles - cycles;
-			this.scheduleNextService(nowCycles);
-			return;
-		}
-		accrueBudgetUnits(this.budgetAccrual, this.cpuHz, this.workUnitsPerSec, this.workCarry, cycles);
-		const wholeUnits = this.budgetAccrual.wholeUnits;
-		this.workCarry = this.budgetAccrual.carry;
-		if (wholeUnits > 0) {
-			const remainingRecords = job.count - job.processed;
-			const maxGrant = remainingRecords - this.availableWorkUnits;
-			this.availableWorkUnits += wholeUnits > maxGrant ? maxGrant : wholeUnits;
-		}
+		this.pendingCycles = cycles >= this.pendingCycles ? 0 : this.pendingCycles - cycles;
 		this.scheduleNextService(nowCycles);
 	}
 
@@ -202,45 +186,46 @@ export class GeometryController {
 	}
 
 	public onService(nowCycles: number): void {
-		if (this.phase === GEOMETRY_CONTROLLER_PHASE_BUSY && this.activeJob!.cmd === IO_CMD_GEO_OVERLAP2D_PASS) {
-			this.serviceOverlap(nowCycles);
-			return;
-		}
-		if (this.phase !== GEOMETRY_CONTROLLER_PHASE_BUSY || this.availableWorkUnits === 0) {
+		if (this.phase !== GEOMETRY_CONTROLLER_PHASE_BUSY) {
 			this.scheduleNextService(nowCycles);
 			return;
 		}
-		const job = this.activeJob!;
-		let remaining = this.availableWorkUnits;
-		this.availableWorkUnits = 0;
-		while (this.phase === GEOMETRY_CONTROLLER_PHASE_BUSY && remaining > 0) {
-			switch (job.cmd) {
-				case IO_CMD_GEO_XFORM2_BATCH: {
-					const fault = this.xform2.processRecord(job);
-					if (fault !== 0) {
-						this.finishError(fault, job.processed);
-					} else {
-						this.completeRecord(job);
-					}
-					break;
-				}
-				case IO_CMD_GEO_SAT2_BATCH: {
-					const fault = this.sat2.processRecord(job);
-					if (fault !== 0) {
-						this.finishError(fault, job.processed);
-					} else {
-						this.completeRecord(job);
-					}
-					break;
-				}
-				default:
-					this.finishRejected(GEO_FAULT_REJECT_BAD_CMD);
-					return;
-			}
-			remaining -= 1;
+		switch (this.activeJob!.cmd) {
+			case IO_CMD_GEO_XFORM2_BATCH: this.serviceRecords(this.xform2, GeometryXform2Phase.Complete, nowCycles); break;
+			case IO_CMD_GEO_SAT2_BATCH: this.serviceRecords(this.sat2, GeometrySat2Phase.Complete, nowCycles); break;
+			case IO_CMD_GEO_OVERLAP2D_PASS: this.serviceOverlap(nowCycles); break;
+			default: this.finishRejected(GEO_FAULT_REJECT_BAD_CMD); break;
 		}
-		this.availableWorkUnits = this.phase === GEOMETRY_CONTROLLER_PHASE_BUSY ? remaining : 0;
+	}
+
+	private serviceRecords(unit: GeometryXform2Unit | GeometrySat2Unit, completePhase: number, nowCycles: number): void {
+		const job = this.activeJob!;
+		while (this.pendingCycles === 0) {
+			const progress = unit.progress();
+			if (progress.phase === completePhase) {
+				if (progress.pendingFault !== 0) {
+					this.finishError(progress.pendingFault, job.processed);
+					return;
+				}
+				this.completeRecord(job);
+				if (this.phase !== GEOMETRY_CONTROLLER_PHASE_BUSY) return;
+				unit.beginJob();
+			}
+			unit.processStep(job);
+			this.chargeInterval(progress.pendingMemory, progress.pendingWorkUnits);
+		}
 		this.scheduleNextService(nowCycles);
+	}
+
+	private chargeInterval(memory: MemoryWordCounters, workUnits: number): void {
+		this.pendingCycles += memory.ramWords * PSX_DMA_RAM_CYCLES_PER_WORD
+			+ memory.systemRomWords * PSX_DMA_SYSTEM_ROM_CYCLES_PER_WORD
+			+ memory.cartridgeWords * PSX_DMA_CART_ROM_CYCLES_PER_WORD + memory.otherWords;
+		if (workUnits !== 0) {
+			const cycles = cyclesUntilBudgetUnits(this.cpuHz, this.workUnitsPerSec, this.workCarry, workUnits);
+			this.workCarry += cycles * this.workUnitsPerSec - workUnits * this.cpuHz;
+			this.pendingCycles += cycles;
+		}
 	}
 
 	private serviceOverlap(nowCycles: number): void {
@@ -271,16 +256,9 @@ export class GeometryController {
 				const progress = this.overlap2d.readProgress();
 				const memory = progress.pendingMemory, work = progress.pendingWork;
 				groupWords += memory.ramWords + memory.systemRomWords + memory.cartridgeWords + memory.otherWords;
-				this.pendingCycles += memory.ramWords * PSX_DMA_RAM_CYCLES_PER_WORD
-					+ memory.systemRomWords * PSX_DMA_SYSTEM_ROM_CYCLES_PER_WORD
-					+ memory.cartridgeWords * PSX_DMA_CART_ROM_CYCLES_PER_WORD + memory.otherWords;
 				const units = work.axes + work.projectionVertices + work.averageVertices + work.clipVertices
 					+ work.clipEdges + work.squareRoots + work.divisions;
-				if (units !== 0) {
-					const cycles = cyclesUntilBudgetUnits(this.cpuHz, this.workUnitsPerSec, this.workCarry, units);
-					this.workCarry += cycles * this.workUnitsPerSec - units * this.cpuHz;
-					this.pendingCycles += cycles;
-				}
+				this.chargeInterval(memory, units);
 			} while (readingHeaders && this.overlap2d.readProgress().phase === GeometryOverlap2dPhase.Pair
 				&& groupWords + GEO_OVERLAP_PAIR_HEADER_WORDS <= DMA_BURST_WORD_CAPACITY);
 		}
@@ -288,10 +266,11 @@ export class GeometryController {
 	}
 
 	public reset(): void {
+		this.xform2.reset();
+		this.sat2.reset();
 		this.overlap2d.reset();
 		this.phase = GEOMETRY_CONTROLLER_PHASE_IDLE;
 		this.workCarry = 0;
-		this.availableWorkUnits = 0;
 		this.pendingCycles = 0;
 		this.activeJob = null;
 		this.supervisorQuiesceRequested = false;
@@ -310,9 +289,10 @@ export class GeometryController {
 			phase: this.phase,
 			registerWords,
 			activeJob: this.activeJob === null ? null : { ...this.activeJob },
+			xform: this.xform2.captureState(),
+			sat: this.sat2.captureState(),
 			overlap: this.overlap2d.captureState(),
 			workCarry: this.workCarry,
-			availableWorkUnits: this.availableWorkUnits,
 			pendingCycles: this.pendingCycles,
 			supervisorQuiesceRequested: this.supervisorQuiesceRequested,
 		};
@@ -326,9 +306,10 @@ export class GeometryController {
 		this.mirrorRegisters();
 		this.phase = state.phase;
 		this.activeJob = state.activeJob === null ? null : { ...state.activeJob };
+		this.xform2.restoreState(state.xform);
+		this.sat2.restoreState(state.sat);
 		this.overlap2d.restoreState(state.overlap);
 		this.workCarry = state.workCarry;
-		this.availableWorkUnits = state.availableWorkUnits;
 		this.pendingCycles = state.pendingCycles;
 		this.supervisorQuiesceRequested = state.supervisorQuiesceRequested;
 		this.scheduleNextService(nowCycles);
@@ -415,19 +396,18 @@ export class GeometryController {
 				return;
 		}
 		this.latchResultRegisters(0, 0, 0);
+		if (job.cmd === IO_CMD_GEO_XFORM2_BATCH) this.xform2.beginJob();
+		if (job.cmd === IO_CMD_GEO_SAT2_BATCH) this.sat2.beginJob();
 		if (job.cmd === IO_CMD_GEO_OVERLAP2D_PASS) this.overlap2d.beginJob(job);
 		if (job.count === 0 && job.cmd !== IO_CMD_GEO_OVERLAP2D_PASS) {
 			this.finishSuccess(0);
 			return;
 		}
 		this.workCarry = 0;
-		this.availableWorkUnits = 0;
 		this.pendingCycles = 0;
 		if (job.cmd === IO_CMD_GEO_OVERLAP2D_PASS) {
 			const memory = this.overlap2d.readProgress().pendingMemory;
-			this.pendingCycles = memory.ramWords * PSX_DMA_RAM_CYCLES_PER_WORD
-				+ memory.systemRomWords * PSX_DMA_SYSTEM_ROM_CYCLES_PER_WORD
-				+ memory.cartridgeWords * PSX_DMA_CART_ROM_CYCLES_PER_WORD + memory.otherWords;
+			this.chargeInterval(memory, 0);
 		}
 		this.activeJob = job;
 		this.phase = GEOMETRY_CONTROLLER_PHASE_BUSY;
@@ -441,18 +421,7 @@ export class GeometryController {
 			this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
 			return;
 		}
-		const job = this.activeJob!;
-		if (job.cmd === IO_CMD_GEO_OVERLAP2D_PASS) {
-			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_GEO, nowCycles + this.pendingCycles);
-			return;
-		}
-		const remainingRecords = job.count - job.processed;
-		const targetUnits = remainingRecords < GEO_SERVICE_BATCH_RECORDS ? remainingRecords : GEO_SERVICE_BATCH_RECORDS;
-		if (this.availableWorkUnits >= targetUnits) {
-			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_GEO, nowCycles);
-			return;
-		}
-		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_GEO, nowCycles + cyclesUntilBudgetUnits(this.cpuHz, this.workUnitsPerSec, this.workCarry, targetUnits - this.availableWorkUnits));
+		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_GEO, nowCycles + this.pendingCycles);
 	}
 
 	private completeRecord(job: GeometryJobState): void {
@@ -468,7 +437,6 @@ export class GeometryController {
 		this.phase = GEOMETRY_CONTROLLER_PHASE_DONE;
 		this.activeJob = null;
 		this.workCarry = 0;
-		this.availableWorkUnits = 0;
 		this.pendingCycles = 0;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
 		this.latchResultRegisters(GEO_STATUS_DONE, processed, 0);
@@ -480,7 +448,6 @@ export class GeometryController {
 		this.phase = GEOMETRY_CONTROLLER_PHASE_ERROR;
 		this.activeJob = null;
 		this.workCarry = 0;
-		this.availableWorkUnits = 0;
 		this.pendingCycles = 0;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
 		this.registerWords[GEO_REGISTER_STATUS] = GEO_STATUS_DONE | GEO_STATUS_ERROR;
@@ -495,7 +462,6 @@ export class GeometryController {
 		this.phase = GEOMETRY_CONTROLLER_PHASE_REJECTED;
 		this.activeJob = null;
 		this.workCarry = 0;
-		this.availableWorkUnits = 0;
 		this.pendingCycles = 0;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
 		this.latchResultRegisters(

@@ -110,8 +110,8 @@ export function geometryVectors(): GeometryVector[] {
 		seeded.pairCounterSeed = pairCounterSeed;
 		result.push(seeded);
 	}
-	// Characterize the current unit of progress, not a proposed hardware price:
-	// the first full-pass record handles every later instance in one work unit.
+	// Outer progress waits for every later pair, even when those pairs span
+	// multiple paid intervals.
 	for (const count of [2, 8]) {
 		const square = [0, 0, 4, 0, 4, 4, 0, 4].map(numberToF32Bits);
 		const v = vector(`full-pass-first-record-${count}`, square, square, false);
@@ -179,5 +179,29 @@ export function geometryVectors(): GeometryVector[] {
 		writes: failing.writes.map(([address, word]): [number, number] => [address, address === io.IO_GEO_COUNT ? 2 : word]) };
 	result.push(completed);
 	result.push(failing);
+	// Exercise the bounded XFORM input/output buffer with raw fixed-point
+	// extremes, fractional products and saturation at both vertex limits.
+	for (const count of [4, geo.GEO_XFORM2_MAX_VERTICES]) {
+		const record = GEO_SCRATCH_BASE + 0x1000, source = record + 0x100, matrix = record + 0x400;
+		const destination = record + 0x500, bounds = record + 0x800;
+		const writes: [number, number][] = [];
+		const words = (address: number, values: readonly number[]) => values.forEach((word, index) => writes.push([address + index * 4, word >>> 0]));
+		words(record, [0, 0, 0, 0, count, 0]);
+		const raw = [0x7fffffff, 0x80000000, 0x10001, 0xffff7fff, 0, 0xffffffff, 0x12345678, 0x87654321];
+		words(source, Array.from({ length: count * 2 }, (_, index) => raw[index % raw.length]));
+		words(matrix, [0x7fffffff, 0x80000000, 0x17fff, 0x10001, 0xffff0000, 0x80000000]);
+		words(destination, new Array(count * 2).fill(0xdeadbeef));
+		words(bounds, new Array(4).fill(0xdeadbeef));
+		writes.push(
+			[io.IO_GEO_SRC0, record], [io.IO_GEO_SRC1, source], [io.IO_GEO_SRC2, matrix],
+			[io.IO_GEO_DST0, destination], [io.IO_GEO_DST1, bounds], [io.IO_GEO_COUNT, 1],
+			[io.IO_GEO_STRIDE0, 24], [io.IO_GEO_STRIDE1, 8], [io.IO_GEO_STRIDE2, 24],
+			[io.IO_GEO_CMD, geo.IO_CMD_GEO_XFORM2_BATCH],
+		);
+		result.push({ name: `xform-raw-${count}`, writes, pairCounterSeed: 0, firstRecordPairs: 0, clipCapacityBoundary: 0,
+			reads: [io.IO_GEO_STATUS, io.IO_GEO_FAULT, io.IO_GEO_PROCESSED,
+				...Array.from({ length: count * 2 }, (_, index) => destination + index * 4),
+				...Array.from({ length: 4 }, (_, index) => bounds + index * 4)] });
+	}
 	return result;
 }

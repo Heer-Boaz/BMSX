@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { Machine } from '../../../machine/ts/machine/machine';
 import { Memory } from '../../../machine/ts/machine/memory/memory';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { GEO_FAULT_CLIP_CAPACITY, GEO_STATUS_DONE, GEO_STATUS_ERROR, IO_CMD_GEO_OVERLAP2D_PASS } from '../../../machine/ts/machine/devices/geometry/contracts';
+import { GEO_FAULT_CLIP_CAPACITY, GEO_STATUS_DONE, GEO_STATUS_ERROR } from '../../../machine/ts/machine/devices/geometry/contracts';
 import { IO_GEO_STATUS, IRQ_GEO_ERROR } from '../../../machine/ts/spec/bmsx/io';
 import { IO_GEO_DST1, IO_GEO_PROCESSED } from '../../../machine/ts/spec/bmsx/io';
 import { cartridgeSlots } from '../../helpers/cartridge';
@@ -32,7 +32,7 @@ const memory = new Memory({ systemRom: new Uint8Array(), cartridgeSlots: cartrid
 const machine = new Machine(memory, { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh() { return false; }, applyInputControllerVibrationEffect() {} }, PSX_MACHINE_SPEC);
 // Exercise the actual timer edges. A partial paid interval cannot commit a
 // record or a completion; the phase edge itself may publish them.
-function advanceOverlapEdge(): void {
+function advanceGeometryEdge(): void {
 	const scheduler = machine.scheduler, deadline = scheduler.nextDeadline();
 	assert.ok(deadline >= scheduler.nowCycles && deadline < Number.MAX_SAFE_INTEGER, 'busy GEO must have a scheduled event');
 	const delta = deadline - scheduler.nowCycles;
@@ -52,7 +52,6 @@ for (let i = 0; i < vectors.length; i++) {
 	machine.geometryController.setTiming(1, 1, 0);
 	for (const [address, word] of v.writes) memory.writeMappedWord(address, word);
 	const counterWords: number[] = [];
-	const overlap = v.writes[v.writes.length - 1][1] === IO_CMD_GEO_OVERLAP2D_PASS;
 	if (v.firstRecordPairs !== 0) {
 		machine.geometryController.setTiming(PSX_MACHINE_SPEC.cpuFreqHz, PSX_MACHINE_SPEC.geoWorkUnitsPerSec, 0);
 	}
@@ -64,7 +63,7 @@ for (let i = 0; i < vectors.length; i++) {
 	}
 	if (v.firstRecordPairs !== 0 || v.pairCounterSeed !== 0) {
 		assert.equal(memory.readMappedWord(IO_GEO_PROCESSED), 0);
-		while (memory.readMappedWord(IO_GEO_PROCESSED) === 0 && machine.geometryController.hasPendingWork()) advanceOverlapEdge();
+		while (memory.readMappedWord(IO_GEO_PROCESSED) === 0 && machine.geometryController.hasPendingWork()) advanceGeometryEdge();
 		assert.equal(memory.readMappedWord(IO_GEO_PROCESSED), 1, `${v.name}: the first complete outer record is published`);
 		if (v.firstRecordPairs !== 0) {
 			counterWords.push(0, 1, memory.readMappedWord(memory.readMappedWord(IO_GEO_DST1)));
@@ -86,12 +85,7 @@ for (let i = 0; i < vectors.length; i++) {
 			originalClipWrite.call(this, buffer, index, x, y);
 		};
 	}
-	if (overlap) {
-		while (machine.geometryController.hasPendingWork()) advanceOverlapEdge();
-	} else {
-		machine.geometryController.accrueCycles(1000, 1000);
-		machine.geometryController.onService(1000);
-	}
+	while (machine.geometryController.hasPendingWork()) advanceGeometryEdge();
 	clip.writeClipVertex = originalClipWrite;
 	const expected = v.reads.map(address => memory.readMappedWord(address));
 	if (v.clipCapacityBoundary !== 0) assert.equal(maxClipVertices, 128, `${v.name}: actual emitted workspace boundary`);

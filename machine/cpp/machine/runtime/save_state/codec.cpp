@@ -337,6 +337,50 @@ GeometryOverlap2dProgress readGeometryOverlapProgress(BinaryReader& reader) {
 	return state;
 }
 
+template<class Writer> void writeGeometryXformProgress(Writer& writer, const GeometryXform2Progress& state) {
+	writer.u32(state.phase);
+	writer.u32(state.dstAddress); writer.u32(state.boundsAddress);
+	writer.u32(state.vertexCount); writer.boolean(state.hasBounds);
+	writer.u32s(state.vertices); writer.u32s(state.bounds);
+	writer.u32(state.pendingMemory.ramWords); writer.u32(state.pendingMemory.systemRomWords);
+	writer.u32(state.pendingMemory.cartridgeWords); writer.u32(state.pendingMemory.otherWords);
+	writer.u32(state.pendingWorkUnits); writer.u32(state.pendingFault);
+}
+
+GeometryXform2Progress readGeometryXformProgress(BinaryReader& reader) {
+	GeometryXform2Progress state;
+	state.phase = reader.u32();
+	state.dstAddress = reader.u32(); state.boundsAddress = reader.u32();
+	state.vertexCount = reader.u32(); state.hasBounds = reader.boolean();
+	reader.u32s(state.vertices); reader.u32s(state.bounds);
+	state.pendingMemory.ramWords = reader.u32(); state.pendingMemory.systemRomWords = reader.u32();
+	state.pendingMemory.cartridgeWords = reader.u32(); state.pendingMemory.otherWords = reader.u32();
+	state.pendingWorkUnits = reader.u32(); state.pendingFault = reader.u32();
+	return state;
+}
+
+template<class Writer> void writeGeometrySatProgress(Writer& writer, const GeometrySat2Progress& state) {
+	writer.u32(state.phase);
+	writer.u32(state.vertexAddressA); writer.u32(state.vertexAddressB);
+	writer.u32(state.countA); writer.u32(state.countB); writer.u32(state.resultAddress);
+	writer.u32s(state.verticesA); writer.u32s(state.verticesB); writer.u32s(state.result);
+	writer.u32(state.pendingMemory.ramWords); writer.u32(state.pendingMemory.systemRomWords);
+	writer.u32(state.pendingMemory.cartridgeWords); writer.u32(state.pendingMemory.otherWords);
+	writer.u32(state.pendingWorkUnits); writer.u32(state.pendingFault);
+}
+
+GeometrySat2Progress readGeometrySatProgress(BinaryReader& reader) {
+	GeometrySat2Progress state;
+	state.phase = reader.u32();
+	state.vertexAddressA = reader.u32(); state.vertexAddressB = reader.u32();
+	state.countA = reader.u32(); state.countB = reader.u32(); state.resultAddress = reader.u32();
+	reader.u32s(state.verticesA); reader.u32s(state.verticesB); reader.u32s(state.result);
+	state.pendingMemory.ramWords = reader.u32(); state.pendingMemory.systemRomWords = reader.u32();
+	state.pendingMemory.cartridgeWords = reader.u32(); state.pendingMemory.otherWords = reader.u32();
+	state.pendingWorkUnits = reader.u32(); state.pendingFault = reader.u32();
+	return state;
+}
+
 template<class Writer> void writeGeometryControllerState(Writer& writer, const GeometryControllerState& state) {
 	writer.u32(static_cast<u32>(state.phase));
 	writer.u32s(state.registerWords);
@@ -344,9 +388,10 @@ template<class Writer> void writeGeometryControllerState(Writer& writer, const G
 	if (state.activeJob) {
 		writeGeometryJobState(writer, *state.activeJob);
 	}
+	writeGeometryXformProgress(writer, state.xform);
+	writeGeometrySatProgress(writer, state.sat);
 	writeGeometryOverlapProgress(writer, state.overlap);
 	writer.i64(state.workCarry);
-	writer.u32(state.availableWorkUnits);
 	writer.i64(state.pendingCycles);
 	writer.boolean(state.supervisorQuiesceRequested);
 }
@@ -359,9 +404,10 @@ GeometryControllerState readGeometryControllerState(BinaryReader& reader) {
 		state.activeJob.emplace();
 		*state.activeJob = readGeometryJobState(reader);
 	}
+	state.xform = readGeometryXformProgress(reader);
+	state.sat = readGeometrySatProgress(reader);
 	state.overlap = readGeometryOverlapProgress(reader);
 	state.workCarry = reader.i64();
-	state.availableWorkUnits = reader.u32();
 	state.pendingCycles = reader.i64();
 	state.supervisorQuiesceRequested = reader.boolean();
 	return state;

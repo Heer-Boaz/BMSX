@@ -141,7 +141,7 @@ VRAM-leesfunctie uit de console moet verdwijnen.
 |---|---|---|
 | DMA | Vaste routes en begrensde bursts uitgewerkt in Book I | Fysieke integratie en kwalificatie |
 | IMGDEC | Ruwe verliesloze blokdecoder uitgewerkt in Book I | Fysieke integratie en kwalificatie |
-| GEO | Werkafhankelijke OVERLAP2D-intervallen uitgewerkt in Book I | Werkafhankelijke XFORM2-/SAT2-timing; fysieke integratie en kwalificatie |
+| GEO | Werk- en geheugenafhankelijke intervallen voor alle opdrachten uitgewerkt in Book I | Fysieke integratie en kwalificatie |
 | GTE | Gedeeld fysiek rekenpad onderzoeken | Voltooiingstijd van gewone commando's en zichtbare wachttijd; niet goedgekeurd |
 | Video | Fysiek begrensde uitvoer goedgekeurd | Exacte bemonstering, sync en gekwalificeerde grenzen |
 | GPU-uitvoeringstijd | Geheugenplanning en zichtbare commandovoltooiing verenigen | Fysieke architectuur of mogelijke timingwijziging; niet goedgekeurd |
@@ -180,24 +180,17 @@ registerinterleavings terug te brengen.
 
 ## 2. GEO: werk- en geheugenafhankelijke timing
 
-De werk- en geheugenafhankelijke uitvoering van OVERLAP2D staat in de
-[GEO-specificatie](book1/geo.md#sec-geo-overlap-work-intervals). Daar zijn ook
-bronbemonstering, betaling vóór publicatie, de initiële samenvatting en het
-afbreken van onvoltooid werk vastgelegd. Die regels zijn geen open
-alternatieven meer. Registerwoorden, gegevensformaten, fouten en voortgang
-worden uitsluitend in die handleiding gespecificeerd.
+De werk- en geheugenafhankelijke uitvoering van XFORM2, SAT2 en OVERLAP2D
+staat in de [GEO-specificatie](book1/geo.md#sec-geo-work-budget-and-timing).
+De eigen commandoreferenties leggen bronbemonstering, werktoerekening,
+betaling vóór publicatie en het afbreken van onvoltooid werk vast. De vaste
+recordrate is vervallen; deze programmeerregels zijn geen open alternatieven
+meer. Registerwoorden, gegevensformaten, fouten en voortgang worden
+uitsluitend in die handleiding gespecificeerd.
 
-**Resterende timingwijziging.** XFORM2 en SAT2 behouden hun vaste
-[recordrate](book1/geo.md#sec-geo-work-budget-and-timing). De goedgekeurde
-richting is ook daar een duur op basis van de werkelijke geheugentransfers en
-rekenstappen. Bewaar precisie, resultaatvolgorde, foutgedrag en de betekenis
-van `PROCESSED`; de concrete tarieven en bemonsteringsmomenten moeten nog
-worden bepaald. Een XFORM2-voorbeeld met 64 vertices en bounds omvat in de
-onderzochte organisatie 140
-woordlezingen, 132 woordschrijvingen en 256 producten. Zelfs 272 ideaal
-achtereenvolgende DRAM-paginatransfers van 20 ns kosten 5,44 µs, zonder de
-verdere verwerking. Dit voorbeeld is geen universeel GEO-doorvoercijfer.
-[Constructie en aannames](book4/hardware.md#physical-geo-service).
+De tarieven gebruiken de BMSX-rekenklok en woordpaden. Het zijn gekozen
+producttarieven, geen gemeten of overgenomen PlayStation-latenties. Zij
+kwalificeren de doorvoer van de voorgestelde fysieke engine niet.
 
 **Fysieke integratie.** De GEO-verzoekproducer is nog niet op de volledige
 CORE-geheugenroute aangesloten. Die producer moet de raw-geheugenroute voor

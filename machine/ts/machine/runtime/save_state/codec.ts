@@ -16,6 +16,8 @@ import type { GeometryControllerPhase } from '../../devices/geometry/contracts';
 import type { GeometryJobState } from '../../devices/geometry/job';
 import type { GeometryOverlap2dPhase, GeometryOverlap2dProgress } from '../../devices/geometry/overlap2d';
 import type { GeometryControllerState } from '../../devices/geometry/save_state';
+import type { GeometryXform2Phase, GeometryXform2Progress } from '../../devices/geometry/xform2';
+import type { GeometrySat2Phase, GeometrySat2Progress } from '../../devices/geometry/sat2';
 import type { InputControllerState } from '../../devices/input/save_state';
 import type { InputControllerRegisterState } from '../../devices/input/registers';
 import type { ImgDecControllerState } from '../../devices/imgdec/controller';
@@ -33,7 +35,9 @@ import type { RuntimeSaveMachineState } from '../save_machine_state';
 import type { RuntimeSaveState } from '../save_state';
 import type { ExecutionDomainId } from '../../../spec/blua32/execution_domain';
 import { APU_COMMAND_FIFO_CAPACITY, APU_COMMAND_FIFO_REGISTER_WORD_COUNT, APU_PARAMETER_REGISTER_COUNT, APU_SAMPLE_RAM_BYTES, APU_SLOT_COUNT, APU_SLOT_REGISTER_WORD_COUNT, APU_TRANSFER_FIFO_WORD_CAPACITY } from '../../../spec/audio/apu';
-import { GEOMETRY_CONTROLLER_REGISTER_COUNT, GEO_OVERLAP2D_INSTANCE_WORDS } from '../../devices/geometry/contracts';
+import { GEOMETRY_CONTROLLER_REGISTER_COUNT, GEO_OVERLAP2D_INSTANCE_WORDS, GEO_SAT2_MAX_POLY_VERTICES,
+	GEO_SAT2_RESULT_BYTES, GEO_XFORM2_AABB_BYTES, GEO_XFORM2_MAX_VERTICES, GEO_VERTEX2_BYTES } from '../../devices/geometry/contracts';
+import { IO_WORD_SIZE } from '../../../spec/bmsx/memory_map';
 import { INPUT_CONTROLLER_KEY_WORD_COUNT, INPUT_CONTROLLER_PAD_AXIS_COUNT, INPUT_CONTROLLER_PAD_COUNT } from '../../devices/input/contracts';
 import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT } from '../../../spec/gx/pcrtc';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../devices/gx/gte';
@@ -327,6 +331,51 @@ function readGeometryOverlapProgress(reader: BinaryReader): GeometryOverlap2dPro
 	};
 }
 
+function writeGeometryXformProgress(writer: BinarySink, state: GeometryXform2Progress): void {
+	writer.u32(state.phase);
+	writer.u32(state.dstAddress); writer.u32(state.boundsAddress);
+	writer.u32(state.vertexCount); writer.bool(state.hasBounds);
+	writer.u32s(state.vertices); writer.u32s(state.bounds);
+	writer.u32(state.pendingMemory.ramWords); writer.u32(state.pendingMemory.systemRomWords);
+	writer.u32(state.pendingMemory.cartridgeWords); writer.u32(state.pendingMemory.otherWords);
+	writer.u32(state.pendingWorkUnits); writer.u32(state.pendingFault);
+}
+
+function readGeometryXformProgress(reader: BinaryReader): GeometryXform2Progress {
+	return {
+		phase: reader.u32() as GeometryXform2Phase,
+		dstAddress: reader.u32(), boundsAddress: reader.u32(),
+		vertexCount: reader.u32(), hasBounds: reader.bool(),
+		vertices: reader.u32Array(GEO_XFORM2_MAX_VERTICES * GEO_VERTEX2_BYTES / IO_WORD_SIZE),
+		bounds: reader.u32Array(GEO_XFORM2_AABB_BYTES / IO_WORD_SIZE),
+		pendingMemory: { ramWords: reader.u32(), systemRomWords: reader.u32(), cartridgeWords: reader.u32(), otherWords: reader.u32() },
+		pendingWorkUnits: reader.u32(), pendingFault: reader.u32(),
+	};
+}
+
+function writeGeometrySatProgress(writer: BinarySink, state: GeometrySat2Progress): void {
+	writer.u32(state.phase);
+	writer.u32(state.vertexAddressA); writer.u32(state.vertexAddressB);
+	writer.u32(state.countA); writer.u32(state.countB); writer.u32(state.resultAddress);
+	writer.u32s(state.verticesA); writer.u32s(state.verticesB); writer.u32s(state.result);
+	writer.u32(state.pendingMemory.ramWords); writer.u32(state.pendingMemory.systemRomWords);
+	writer.u32(state.pendingMemory.cartridgeWords); writer.u32(state.pendingMemory.otherWords);
+	writer.u32(state.pendingWorkUnits); writer.u32(state.pendingFault);
+}
+
+function readGeometrySatProgress(reader: BinaryReader): GeometrySat2Progress {
+	return {
+		phase: reader.u32() as GeometrySat2Phase,
+		vertexAddressA: reader.u32(), vertexAddressB: reader.u32(),
+		countA: reader.u32(), countB: reader.u32(), resultAddress: reader.u32(),
+		verticesA: reader.u32Array(GEO_SAT2_MAX_POLY_VERTICES * GEO_VERTEX2_BYTES / IO_WORD_SIZE),
+		verticesB: reader.u32Array(GEO_SAT2_MAX_POLY_VERTICES * GEO_VERTEX2_BYTES / IO_WORD_SIZE),
+		result: reader.u32Array(GEO_SAT2_RESULT_BYTES / IO_WORD_SIZE),
+		pendingMemory: { ramWords: reader.u32(), systemRomWords: reader.u32(), cartridgeWords: reader.u32(), otherWords: reader.u32() },
+		pendingWorkUnits: reader.u32(), pendingFault: reader.u32(),
+	};
+}
+
 function writeGeometryControllerState(writer: BinarySink, state: GeometryControllerState): void {
 	writer.u32(state.phase);
 	writer.u32s(state.registerWords);
@@ -334,9 +383,10 @@ function writeGeometryControllerState(writer: BinarySink, state: GeometryControl
 	if (state.activeJob !== null) {
 		writeGeometryJobState(writer, state.activeJob);
 	}
+	writeGeometryXformProgress(writer, state.xform);
+	writeGeometrySatProgress(writer, state.sat);
 	writeGeometryOverlapProgress(writer, state.overlap);
 	writer.i64(state.workCarry);
-	writer.u32(state.availableWorkUnits);
 	writer.i64(state.pendingCycles);
 	writer.bool(state.supervisorQuiesceRequested);
 }
@@ -346,9 +396,10 @@ function readGeometryControllerState(reader: BinaryReader): GeometryControllerSt
 		phase: reader.u32() as GeometryControllerPhase,
 		registerWords: reader.u32s(GEOMETRY_CONTROLLER_REGISTER_COUNT),
 		activeJob: reader.bool() ? readGeometryJobState(reader) : null,
+		xform: readGeometryXformProgress(reader),
+		sat: readGeometrySatProgress(reader),
 		overlap: readGeometryOverlapProgress(reader),
 		workCarry: reader.i64(),
-		availableWorkUnits: reader.u32(),
 		pendingCycles: reader.i64(),
 		supervisorQuiesceRequested: reader.bool(),
 	};

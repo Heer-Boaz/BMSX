@@ -263,9 +263,9 @@ Book I specifies the records and completion interface.
 ![GEO operation and memory paths.](figures/geo-job-datapath.svg){#fig-physical-geo-datapath}
 
 A physical operation must account for the work and memory accesses it
-performs. Book I specifies work- and memory-dependent intervals for OVERLAP2D;
-XFORM2 and SAT2 retain their fixed outer-record rate. The complete physical
-engine has not yet demonstrated these timing requirements.
+performs. Book I specifies work- and memory-dependent intervals for XFORM2,
+SAT2 and OVERLAP2D. The complete physical engine has not yet demonstrated
+these timing requirements.
 
 GEO's addressed operands, results and OVERLAP2D summaries use the geometry
 memory path. In main RAM this path accesses the stored bytes, including bytes

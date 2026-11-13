@@ -680,6 +680,14 @@ if(BMSX_BUILD_TESTS)
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/geometry_steps_test.cpp)
 	target_link_libraries(bmsx_geometry_steps_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_geometry_steps_tests COMMAND bmsx_geometry_steps_tests)
+	add_executable(bmsx_geometry_xform_intervals_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/geometry_xform_intervals_test.cpp)
+	target_link_libraries(bmsx_geometry_xform_intervals_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_geometry_xform_intervals_tests COMMAND bmsx_geometry_xform_intervals_tests)
+	add_executable(bmsx_geometry_sat_intervals_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/geometry_sat_intervals_test.cpp)
+	target_link_libraries(bmsx_geometry_sat_intervals_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_geometry_sat_intervals_tests COMMAND bmsx_geometry_sat_intervals_tests)
 	set(BMSX_TEST_ROM_SOURCE
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/blua32_test_rom.cpp
 	)

@@ -267,6 +267,23 @@ function assertGeometryFaultLatch(
 	return capturedGeometry;
 }
 
+function advanceGeometryBoundary(machine: Machine): void {
+	const { scheduler, memory } = machine;
+	while (scheduler.hasDueTimer()) machine.runDeviceService(scheduler.popDueTimer());
+	const before = [memory.readIoU32(IO_GEO_STATUS), memory.readIoU32(IO_GEO_PROCESSED)];
+	const target = scheduler.nowCycles + machine.geometryController.captureState().pendingCycles;
+	assert.ok(target > scheduler.nowCycles, 'GEO has a paid interval before publication');
+	while (scheduler.nextDeadline() < target) {
+		machine.advanceDevices(scheduler.nextDeadline() - scheduler.nowCycles);
+		while (scheduler.hasDueTimer()) machine.runDeviceService(scheduler.popDueTimer());
+	}
+	machine.advanceDevices(target - scheduler.nowCycles - 1);
+	assert.deepEqual([memory.readIoU32(IO_GEO_STATUS), memory.readIoU32(IO_GEO_PROCESSED)], before,
+		'the unpaid final cycle retains status and outer-record progress');
+	machine.advanceDevices(1);
+	while (scheduler.hasDueTimer()) machine.runDeviceService(scheduler.popDueTimer());
+}
+
 test('GEO save-state restores in-flight command latch instead of aborting BUSY work', () => {
 	const machine = makeMachine();
 	const memory = machine.memory;
@@ -280,8 +297,7 @@ test('GEO save-state restores in-flight command latch instead of aborting BUSY w
 	writeXform2BatchRegisters(memory, jobBase, 3);
 	let capturedGeometry = startGeometryCommand(memory, geometry, IO_CMD_GEO_XFORM2_BATCH);
 
-	geometry.accrueCycles(1, 1);
-	geometry.onService(1);
+	advanceGeometryBoundary(machine);
 	assert.equal(memory.readIoU32(IO_GEO_PROCESSED), 1);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
 	capturedGeometry = geometry.captureState();
@@ -290,8 +306,7 @@ test('GEO save-state restores in-flight command latch instead of aborting BUSY w
 	memory.writeMappedWord(IO_GEO_COUNT, 1);
 	const saved = captureMachineSaveState(machine);
 
-	geometry.accrueCycles(8, 9);
-	geometry.onService(9);
+	while (geometry.hasPendingWork()) advanceGeometryBoundary(machine);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE);
 	capturedGeometry = geometry.captureState();
 	assert.equal(capturedGeometry.phase, GEOMETRY_CONTROLLER_PHASE_DONE);
@@ -306,15 +321,13 @@ test('GEO save-state restores in-flight command latch instead of aborting BUSY w
 	capturedGeometry = geometry.captureState();
 	assert.equal(capturedGeometry.phase, GEOMETRY_CONTROLLER_PHASE_BUSY);
 
-	geometry.accrueCycles(1, 2);
-	geometry.onService(2);
+	advanceGeometryBoundary(machine);
 	assert.equal(memory.readIoU32(IO_GEO_PROCESSED), 2);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
 	capturedGeometry = geometry.captureState();
 	assert.equal(capturedGeometry.phase, GEOMETRY_CONTROLLER_PHASE_BUSY);
 
-	geometry.accrueCycles(1, 2);
-	geometry.onService(2);
+	advanceGeometryBoundary(machine);
 	assert.equal(memory.readIoU32(IO_GEO_PROCESSED), 3);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE);
 	capturedGeometry = geometry.captureState();
@@ -335,8 +348,7 @@ test('GEO execution fault ack preserves completed command status', () => {
 	writeXform2BatchRegisters(memory, jobBase, 1);
 	let capturedGeometry = startGeometryCommand(memory, geometry, IO_CMD_GEO_XFORM2_BATCH);
 
-	geometry.accrueCycles(1, 1);
-	geometry.onService(1);
+	advanceGeometryBoundary(machine);
 
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), executionFaultStatus);
 	assert.notEqual(memory.readIoU32(IO_GEO_FAULT), 0);
@@ -434,8 +446,7 @@ test('GEO xform2 faults oversize vertex batches at the device record capacity', 
 	writeXform2BatchRegisters(memory, jobBase, 1);
 	memory.writeMappedWord(IO_GEO_CMD, IO_CMD_GEO_XFORM2_BATCH);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
-	geometry.accrueCycles(1, 1);
-	geometry.onService(1);
+	advanceGeometryBoundary(machine);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE | GEO_STATUS_ERROR);
 	assert.equal(memory.readIoU32(IO_GEO_FAULT) >>> GEO_FAULT_CODE_SHIFT, GEO_FAULT_BAD_VERTEX_COUNT);
 	assert.equal(geometry.captureState().phase, GEOMETRY_CONTROLLER_PHASE_ERROR);
@@ -456,8 +467,7 @@ test('GEO sat2 faults oversize convex polygons at the device scratch capacity', 
 	writeSat2BatchRegisters(memory, pairBase, descBase, vertexBase, resultBase, 1);
 	memory.writeMappedWord(IO_GEO_CMD, IO_CMD_GEO_SAT2_BATCH);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
-	geometry.accrueCycles(1, 1);
-	geometry.onService(1);
+	advanceGeometryBoundary(machine);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE | GEO_STATUS_ERROR);
 	assert.equal(memory.readIoU32(IO_GEO_FAULT) >>> GEO_FAULT_CODE_SHIFT, GEO_FAULT_BAD_VERTEX_COUNT);
 	assert.equal(geometry.captureState().phase, GEOMETRY_CONTROLLER_PHASE_ERROR);
