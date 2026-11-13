@@ -283,11 +283,17 @@ void resumedStoreRetainsDecodedOperation() {
 }
 
 void externalTakeoverFlushesOnlyTheUnacceptedStore() {
-	for (const bool scalar : {false, true}) for (int takeover = 0; takeover < 3; ++takeover) {
+	for (const bool scalar : {false, true}) for (int takeover = 0; takeover < 4; ++takeover) {
 		auto image = memoryLoop(OpCode::STORE_MEM, MemoryAccessKind::Word);
 		writeInstruction(image.text, 6, static_cast<u8>(OpCode::K1), 0, 0, 0);
 		writeInstruction(image.text, 7, static_cast<u8>(OpCode::RET), 0, 2, 0);
 		image.functions.push_back({.firstWord = 6, .wordCount = 2, .maxStack = 1});
+		writeInstruction(image.text, 8, static_cast<u8>(OpCode::LOADK), 0, 0, 0);
+		writeInstruction(image.text, 9, static_cast<u8>(OpCode::LOADK), 1, 0, 1);
+		writeInstruction(image.text, 10, static_cast<u8>(OpCode::STORE_MEM), 0, 1, static_cast<u8>(MemoryAccessKind::Word));
+		writeInstruction(image.text, 11, static_cast<u8>(OpCode::RET), 0, 1, 0);
+		image.functions.push_back({.firstWord = 8, .wordCount = 4, .maxStack = 2});
+		image.constants = {2271560481.0, static_cast<double>(IO_BASE + 0x5000u)};
 		CpuMachine machine(image, scalar);
 		auto& cpu = machine.cpu;
 		auto& frame = *cpu.activeThread()->frameAtDepth(0);
@@ -304,11 +310,20 @@ void externalTakeoverFlushesOnlyTheUnacceptedStore() {
 		frame.registers[0] = valueNumber(0x12345678u); frame.registers[1] = valueNumber(port);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress);
 		require(cpu.runUntilDepth(0, 20) == RunResult::Halted && cpu.isMemoryWriteBlocked(), "store is pending before external takeover");
-		if (takeover != 0) { device.ready = true; cpu.resumeMemoryWrite(port); }
+		if (takeover == 1 || takeover == 2) { device.ready = true; cpu.resumeMemoryWrite(port); }
 		if (takeover == 2) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress + 5u * INSTRUCTION_BYTES);
 			cpu.runUntilDepth(0, 10);
 			require(device.writes.empty(), "active-PC redirect abandons the unaccepted store");
+		} else if (takeover == 3) {
+			cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[3]);
+			cpu.runUntilDepth(1, 20);
+			require(cpu.isMemoryWriteBlocked() && device.writes.empty(), "injected completion reaches its own unaccepted store");
+			cpu.abortCompletionCall(1);
+			device.ready = true;
+			cpu.runUntilDepth(0, 6);
+			require(device.writes == std::vector<u32>{0x12345678u} && cpu.getFrameDepth() == 1,
+				"unwinding drops the callee wait without dropping the caller instruction");
 		} else {
 			cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[2]);
 			require(cpu.runUntilDepth(1, 10) == RunResult::Halted && cpu.getFrameDepth() == 1, "injected completion returns to the suspended frame");
