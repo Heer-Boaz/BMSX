@@ -47,7 +47,7 @@ public:
 struct CommandEvidence {
 	std::vector<u32> words;
 	std::vector<i64> cycles;
-	static void emitted(void* context, const GxGpuCommandBuffer& buffer, size_t i, i64 cycle) {
+	static void emitted(void* context, const GxGpuCommandBuffer& buffer, size_t i, i64 cycle, std::span<const u32> words) {
 		auto& log = *static_cast<CommandEvidence*>(context);
 		log.cycles.push_back(cycle);
 		log.words.insert(log.words.end(), {
@@ -56,8 +56,7 @@ struct CommandEvidence {
 			buffer.commandTextureWindowWord[i], buffer.commandDrawingAreaTopLeftWord[i],
 			buffer.commandDrawingAreaBottomRightWord[i], buffer.commandDrawingOffsetWord[i],
 			buffer.commandMaskBitModeWord[i], buffer.commandSkippedLineParity[i]});
-		const auto first = buffer.words.begin() + buffer.commandWordStart[i];
-		log.words.insert(log.words.end(), first, first + buffer.commandWordCount[i]);
+		log.words.insert(log.words.end(), words.begin(), words.end());
 	}
 };
 }

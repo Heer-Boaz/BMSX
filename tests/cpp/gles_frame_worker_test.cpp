@@ -272,7 +272,7 @@ Result runStream(const test::Blua32TestRom& rom, bool threaded, GxGpuDrawTargetM
 	std::unique_ptr<GlesFrameWorker> worker;
 	if (threaded) {
 		observation = &observed; observed.delayFirstDraw = true;
-		runtime.machine.gxGpu.setOperationObserver({[](void* context, const GxGpuCommandBuffer&, size_t, i64) {
+		runtime.machine.gxGpu.setOperationObserver({[](void* context, const GxGpuCommandBuffer&, size_t, i64, std::span<const u32>) {
 			auto& value = *static_cast<Observation*>(context);
 			if (std::this_thread::get_id() == value.contextThread) value.wrongThread = true;
 			{
@@ -420,7 +420,7 @@ void testSubmissionFailure(const test::Blua32TestRom& rom, FailedSubmissionOwner
 	HostOnScreenKeyboard keyboardView(keyboard);
 	HostKeyboardInteraction keyboardInteraction(keyboard, keyboardView);
 	HostOverlayMenu menu(input, keyboardInteraction);
-	runtime.machine.gxGpu.setOperationObserver({[](void* context, const GxGpuCommandBuffer&, size_t, i64) {
+	runtime.machine.gxGpu.setOperationObserver({[](void* context, const GxGpuCommandBuffer&, size_t, i64, std::span<const u32>) {
 		auto& value = *static_cast<Observation*>(context);
 		unsigned count;
 		{

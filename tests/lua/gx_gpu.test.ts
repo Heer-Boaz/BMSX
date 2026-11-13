@@ -709,19 +709,21 @@ test('GX-GPU operation observer borrows actual packet words and latched state id
 		[0xe1001a55], [0xe2001234], [0xe3000801], [0xe4002008], [0xe5000fff], [0xe6000003],
 		[0x24010203, 0x00010002, 0x00100020, 0x00030004, 0x01650030, 0x00050006, 0x00400050],
 		[0x0200ffff, 0, 0x00010001], [0x600000ff, 0x00010002, 0x00030004],
-		[0x40010203, 0x00010002, 0x00030004], [0x80000000, 0, 0x00010002, 0x00010001],
+		[0x40010203, 0xf001e002, 0xa003c004], [0x80000000, 0, 0x00010002, 0x00010001],
 		[0xa0000000, 0, 0x00010002, 0xfeedbeef], [0xc0000000, 0, 0x00010002],
 	];
 	const histories: unknown[][] = [];
 	for (const dma of [false, true]) {
 		const baseline = createGpu(), observed = createGpu();
 		const records: { kind: number; opcode: number; words: number[]; state: number[]; cycle: number }[] = [];
-		observed.gpu.setOperationObserver({ emitted(buffer, index, cycle) {
+		observed.gpu.setOperationObserver({ emitted(buffer, index, cycle, words, start) {
 			assert.equal(buffer.commandCount, index + 1);
 			assert.ok(buffer.executedCommandCount <= index, 'notification precedes operation timing/completion');
-			const start = buffer.commandWordStart[index];
+			if (buffer.commandKind[index] !== GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM) {
+				assert.notEqual(words, buffer.words, 'fixed operations borrow the emitter rather than backend transport');
+			}
 			records.push({ kind: buffer.commandKind[index], opcode: buffer.commandOpcode[index], cycle,
-				words: Array.from(buffer.words.subarray(start, start + buffer.commandWordCount[index])),
+				words: Array.from(words.subarray(start, start + buffer.commandWordCount[index])),
 				state: [buffer.commandDrawModeWord[index], buffer.commandVramYAddressExtensionWord[index],
 					buffer.commandTextureWindowWord[index], buffer.commandDrawingAreaTopLeftWord[index],
 					buffer.commandDrawingAreaBottomRightWord[index], buffer.commandDrawingOffsetWord[index],
@@ -765,10 +767,9 @@ test('image payload blocks retain packet boundaries, queued commands and consume
 		const { gpu, memory, scheduler } = createGpu();
 		stopPcrtc(memory, gpu, scheduler);
 		const events: { kind: number; words: number[] }[] = [];
-		gpu.setOperationObserver({ emitted(buffer, index) {
-			const start = buffer.commandWordStart[index];
+		gpu.setOperationObserver({ emitted(buffer, index, _cycle, words, start) {
 			events.push({ kind: buffer.commandKind[index],
-				words: Array.from(buffer.words.subarray(start, start + buffer.commandWordCount[index])) });
+				words: Array.from(words.subarray(start, start + buffer.commandWordCount[index])) });
 		} });
 		for (let start = 0; start < packet.length; start += 16) {
 			scheduler.advanceTo((start / 16 + 1) * 1000);
@@ -805,10 +806,9 @@ test('GX-GPU observer reports delayed logical starts, normalized polyline segmen
 	const { gpu, memory, scheduler } = createGpu();
 	stopPcrtc(memory, gpu, scheduler);
 	const events: { kind: number; words: number[]; cycle: number; callbackCycle: number }[] = [];
-	gpu.setOperationObserver({ emitted(buffer, index, cycle) {
-		const start = buffer.commandWordStart[index];
+	gpu.setOperationObserver({ emitted(buffer, index, cycle, words, start) {
 		events.push({ kind: buffer.commandKind[index], cycle, callbackCycle: scheduler.currentNowCycles(),
-			words: Array.from(buffer.words.subarray(start, start + buffer.commandWordCount[index])) });
+			words: Array.from(words.subarray(start, start + buffer.commandWordCount[index])) });
 	} });
 	for (const word of [0x020000ff, 0, 0x00040020, 0x480000ff, 0x00010002, 0x00020003, 0x00030004, 0x50005000]) memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
 	assert.equal(events.length, 1, 'queued words are not emitted operations yet');
@@ -832,9 +832,8 @@ test('GX-GPU observer attach, detach, restore and reset do not synthesize operat
 	for (const word of [0x020000ff, 0, 0x00040020, 0x6000ff00, 0x00010002]) memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
 	const saved = gpu.captureSaveState();
 	const events: number[][] = [];
-	const observer = { emitted(buffer: GxGpuCommandBufferView, index: number) {
-		const start = buffer.commandWordStart[index];
-		events.push(Array.from(buffer.words.subarray(start, start + buffer.commandWordCount[index])));
+	const observer = { emitted(buffer: GxGpuCommandBufferView, index: number, _cycle: number, words: Uint32Array, start: number) {
+		events.push(Array.from(words.subarray(start, start + buffer.commandWordCount[index])));
 	} };
 	gpu.setOperationObserver(observer);
 	gpu.setOperationObserver(null);

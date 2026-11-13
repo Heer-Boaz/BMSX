@@ -1276,7 +1276,10 @@ void GxGpu::pushGpuCommand(u8 kind, u32 opcode, size_t wordStart, u32 commandWor
 		m_maskBitModeWord,
 		m_skippedLineParity);
 	if (m_operationObserver.emitted != nullptr) {
-		m_operationObserver.emitted(m_operationObserver.context, m_commandBuffer, m_commandBuffer.commandCount - 1u, commandStartCycle);
+		const u32* operationWords = kind == GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM
+			? m_commandBuffer.words.data() + wordStart : m_gp0CommandWords.data();
+		m_operationObserver.emitted(m_operationObserver.context, m_commandBuffer, m_commandBuffer.commandCount - 1u, commandStartCycle,
+			std::span<const u32>(operationWords, commandWordCount));
 	}
 	beginCommandCompletion(
 		gxGpuCommandTicks(

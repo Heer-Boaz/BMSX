@@ -208,9 +208,10 @@ struct GxGpuSaveState : GxGpuState {
 
 // Emitted backend operation, not every GP0 word or completion. The buffer is
 // borrowed for the callback only: no mutation, device synchronization, or guest
-// execution. Retained evidence must copy the indexed words.
+// execution. The operation words are borrowed from the emitting datapath;
+// retained evidence must copy them before the callback returns.
 struct GxGpuOperationObserver {
-	void (*emitted)(void* context, const GxGpuCommandBuffer& buffer, size_t index, i64 startCycle) = nullptr;
+	void (*emitted)(void* context, const GxGpuCommandBuffer& buffer, size_t index, i64 startCycle, std::span<const u32> words) = nullptr;
 	void* context = nullptr;
 };
 

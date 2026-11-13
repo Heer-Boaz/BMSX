@@ -153,13 +153,16 @@ struct ObservedGpuOperation {
 struct GpuOperationLog {
 	GpuHarness& harness;
 	std::vector<ObservedGpuOperation> events;
-	static void emitted(void* context, const bmsx::GxGpuCommandBuffer& buffer, size_t index, bmsx::i64 cycle) {
+	static void emitted(void* context, const bmsx::GxGpuCommandBuffer& buffer, size_t index, bmsx::i64 cycle, std::span<const bmsx::u32> words) {
 		auto& log = *static_cast<GpuOperationLog*>(context);
 		require(buffer.commandCount == index + 1u && buffer.executedCommandCount <= index,
 			"GPU operation callback observes the pushed operation before timing/completion");
-		const size_t start = buffer.commandWordStart[index];
+		if (buffer.commandKind[index] != bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM) {
+			require(words.data() != buffer.words.data() + buffer.commandWordStart[index],
+				"fixed operations borrow the emitting datapath rather than backend transport storage");
+		}
 		log.events.push_back({buffer.commandKind[index], buffer.commandOpcode[index],
-			std::vector<bmsx::u32>(buffer.words.begin() + start, buffer.words.begin() + start + buffer.commandWordCount[index]),
+			std::vector<bmsx::u32>(words.begin(), words.end()),
 			{buffer.commandDrawModeWord[index], buffer.commandVramYAddressExtensionWord[index], buffer.commandTextureWindowWord[index],
 				buffer.commandDrawingAreaTopLeftWord[index], buffer.commandDrawingAreaBottomRightWord[index], buffer.commandDrawingOffsetWord[index],
 				buffer.commandMaskBitModeWord[index], buffer.commandSkippedLineParity[index]}, cycle, log.harness.scheduler.currentNowCycles()});
@@ -197,7 +200,7 @@ void testOperationObserverBorrowsActualPacketsAndLatchedStateForCpuAndDma() {
 		{0xe1001a55u}, {0xe2001234u}, {0xe3000801u}, {0xe4002008u}, {0xe5000fffu}, {0xe6000003u},
 		{0x24010203u, 0x00010002u, 0x00100020u, 0x00030004u, 0x01650030u, 0x00050006u, 0x00400050u},
 		{0x0200ffffu, 0u, 0x00010001u}, {0x600000ffu, 0x00010002u, 0x00030004u},
-		{0x40010203u, 0x00010002u, 0x00030004u}, {0x80000000u, 0u, 0x00010002u, 0x00010001u},
+		{0x40010203u, 0xf001e002u, 0xa003c004u}, {0x80000000u, 0u, 0x00010002u, 0x00010001u},
 		{0xa0000000u, 0u, 0x00010002u, 0xfeedbeefu}, {0xc0000000u, 0u, 0x00010002u},
 	};
 	std::vector<ObservedGpuOperation> cpuEvents;

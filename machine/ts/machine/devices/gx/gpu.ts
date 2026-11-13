@@ -338,10 +338,11 @@ export type GxGpuSaveState = GxGpuState & {
 /**
  * Observes an emitted backend operation, not every GP0 word or its completion.
  * The buffer is borrowed for this callback only; do not mutate it, synchronize
- * devices, or execute guest code. Retained evidence must copy the indexed words.
+ * devices, or execute guest code. Operation words are borrowed from the emitter;
+ * retained evidence must copy that range before the callback returns.
  */
 export type GxGpuOperationObserver = {
-	emitted(buffer: GxGpuCommandBufferView, index: number, startCycle: number): void;
+	emitted(buffer: GxGpuCommandBufferView, index: number, startCycle: number, words: Uint32Array, wordStart: number): void;
 };
 
 /** Device VBlank latch, before any host presentation. Borrowed decoded
@@ -1834,7 +1835,10 @@ export class GxGpu {
 			this.skippedLineParity,
 		);
 		if (this.operationObserver !== null) {
-			this.operationObserver.emitted(this.commandBuffer, this.commandBuffer.commandCount - 1, nowCycles);
+			const image = kind === GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM;
+			const operationWords = image ? this.commandBuffer.words : this.gp0CommandWords;
+			const operationWordStart = image ? wordStart : 0;
+			this.operationObserver.emitted(this.commandBuffer, this.commandBuffer.commandCount - 1, nowCycles, operationWords, operationWordStart);
 		}
 		this.startCommandTiming(
 			gxGpuCommandTicks(
