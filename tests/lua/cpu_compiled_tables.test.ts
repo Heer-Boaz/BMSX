@@ -233,6 +233,7 @@ test('compiled NEWT materializes allocation roots and leaves destination untouch
 		cpu.setGlobalByKey(cpu.stringPool.find('retained')!, ValueTag.Table, NaN, retained);
 	}
 	runCpuParity(js, ref, 4);
+	assert.equal(js.instructionBudgetRemaining, 0, 'failed NEWT pays only the completed prefix and base cycles');
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
 	assert.equal(js.readEpcWord(), image.image.functions[0].codeAddress + INSTRUCTION_BYTES);

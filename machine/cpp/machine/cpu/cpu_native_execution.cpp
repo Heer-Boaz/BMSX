@@ -104,8 +104,9 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			throw LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
 		case NativeBlockExit::AllocateTable: {
 			const int a = exit->exitA;
-			frame->registers[a] = valueTable(cpu.createTable(exit->exitB, exit->exitC));
-			cpu.instructionBudgetRemaining -= exit->exitB + 2 * static_cast<int>(Table::hashCapacity(exit->exitC));
+			auto* table = cpu.createTable(exit->exitB, exit->exitC);
+			frame->registers[a] = valueTable(table);
+			cpu.instructionBudgetRemaining -= 2 * static_cast<int>(table->storedSlotCount()) - exit->exitB;
 			frame->top = std::max(frame->top, a + 1);
 			break;
 		}

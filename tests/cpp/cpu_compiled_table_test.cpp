@@ -229,6 +229,7 @@ void wideAllocationFailure() {
 		const auto key = cpu.stringPool().find("retained"); auto* retained = cpu.createTable(350000); cpu.setGlobalByKey(*key, valueTable(retained));
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 4); requireParity(native, scalar);
+	require(native.cpu.instructionBudgetRemaining == 0, "failed NEWT pays only the completed prefix and base cycles");
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
 		&& native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES
 		&& native.cpu.readFrameRegister(0, 8) == valueNumber(73) && native.cpu.activeThread()->frameAtDepth(0)->top == 9,

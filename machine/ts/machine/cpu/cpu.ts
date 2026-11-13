@@ -2762,10 +2762,12 @@ export class CPU implements MappedPageInvalidator {
 					this.copyRegisterToUpvalue(frame.closure.upvalues[exit.exitB], registers, exit.exitA); break;
 				case CompiledBlockExit.InvalidConstant: throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 				case CompiledBlockExit.InvalidLength: throw new LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
-				case CompiledBlockExit.AllocateTable:
-					this.setRegisterTableFast(frame, registers, exit.exitA, this.createTable(exit.exitB, exit.exitC));
-					this.charge(exit.exitB + 2 * Table.hashCapacity(exit.exitC));
+				case CompiledBlockExit.AllocateTable: {
+					const table = this.createTable(exit.exitB, exit.exitC);
+					this.setRegisterTableFast(frame, registers, exit.exitA, table);
+					this.charge(2 * table.storedSlotCount - exit.exitB);
 					break;
+				}
 				case CompiledBlockExit.ReadMemory:
 				case CompiledBlockExit.WriteMemory:
 				case CompiledBlockExit.WriteWords: {
@@ -3124,15 +3126,13 @@ export class CPU implements MappedPageInvalidator {
 					);
 					return;
 				}
-				case OpCode.NEWT:
-					this.setRegisterTableFast(
-						frame,
-						registers,
-						a,
-						this.createTable(page.b[pageOffset], page.c[pageOffset]),
-					);
-					this.charge(page.b[pageOffset] + 2 * Table.hashCapacity(page.c[pageOffset]));
+				case OpCode.NEWT: {
+					const arraySize = page.b[pageOffset];
+					const table = this.createTable(arraySize, page.c[pageOffset]);
+					this.setRegisterTableFast(frame, registers, a, table);
+					this.charge(2 * table.storedSlotCount - arraySize);
 					return;
+				}
 				case OpCode.ADD:
 				case OpCode.SUB:
 				case OpCode.MUL:

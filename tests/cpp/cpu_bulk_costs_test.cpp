@@ -14,7 +14,7 @@ using namespace bmsx;
 
 int main() {
  for (const bool scalar : {false, true}) {
-  for (const auto [array, hash] : {std::array{0, 0}, std::array{1, 0}, std::array{0, 3}, std::array{8, 3}}) {
+  for (const auto [array, hash, capacity] : {std::array{0, 0, 0}, std::array{1, 0, 0}, std::array{0, 1, 1}, std::array{7, 3, 4}, std::array{13, 5, 8}, std::array{0, 31, 32}, std::array{9, 33, 64}, std::array{63, 63, 64}}) {
    test::Blua32TestImage image;
    image.text.resize(2 * INSTRUCTION_BYTES);
    writeInstruction(image.text, 0, static_cast<u8>(OpCode::NEWT), 0, array, hash);
@@ -27,7 +27,7 @@ int main() {
    CPU cpu(memory, irq, addresses);
    cpu.reset();
    if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
-   cpu.runUntilDepth(0, 10000);
+   cpu.runUntilDepth(0, 20000);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
    if (!scalar) {
     test::waitForNativeEntry(cpu, *cpu.activeThread()->frameAtDepth(0)->decodedPage, (rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
@@ -36,11 +36,14 @@ int main() {
    }
 #endif
    cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
-   const int surcharge = array + 2 * static_cast<int>(Table::hashCapacity(hash));
-   if (cpu.runUntilDepth(0, 1) != RunResult::Yielded || cpu.instructionBudgetRemaining != 1 - BASE_CYCLES[static_cast<u8>(OpCode::NEWT)] - surcharge)
+   const int surcharge = array + 2 * capacity;
+   const int grant = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)];
+   if (cpu.runUntilDepth(0, grant) != RunResult::Yielded || cpu.instructionBudgetRemaining != -surcharge)
     throw std::runtime_error("NEWT must finish its admitted logical initialization charge");
    if (cpu.activeThread()->frameAtDepth(0)->pc != rom.textAddress + INSTRUCTION_BYTES || !valueIsTable(cpu.readFrameRegister(0, 0)))
     throw std::runtime_error("exhausting initialization must stop before the next instruction");
+   if (asTable(cpu.readFrameRegister(0, 0))->storedSlotCount() != static_cast<size_t>(array + capacity))
+    throw std::runtime_error("NEWT retains the requested array and rounded hash capacity");
   }
   {
    test::Blua32TestImage image;
