@@ -71,8 +71,6 @@ export type CompiledBlockExitSite = {
 	readonly exitC: number;
 	readonly exitBx: number;
 	readonly exitWord: number;
-	readonly displaced: boolean;
-	readonly displacement: number;
 	readonly cycles: number;
 	readonly registerTop: number;
 	readonly resetsRegisterTop: boolean;
@@ -261,7 +259,6 @@ export function emitJavaScriptBlock(
 		if (sideExit !== undefined) {
 			exits.push({ exit: sideExit,
 				exitA: page.a[word], exitB: page.b[word], exitC: page.c[word], exitBx: page.bx[word], exitWord: word,
-				displaced, displacement: page.disp[word],
 				cycles, registerTop, resetsRegisterTop, nextPc, currentPc, lastPc,
 				linkedBlock: null, previousIncoming: null, nextIncoming: null });
 		}
@@ -280,8 +277,9 @@ export function emitJavaScriptBlock(
 			}
 			const base = registers.numberOperand(page.b[word]);
 			const address = displaced ? `(((${base})>>>0)+${page.disp[word] * 4})>>>0` : `((${base})>>>0)`;
-			if (words) source.push(emitWordStores(page, word, address, registers.exit(exitIndex), memory, registers));
-			else source.push(emitMemoryAccess(page, word, address, registers.exit(exitIndex), memory,
+			const memoryExit = `{state.memoryAddress=a;${registers.exit(exitIndex)}}`;
+			if (words) source.push(emitWordStores(page, word, address, memoryExit, memory, registers));
+			else source.push(emitMemoryAccess(page, word, address, memoryExit, memory,
 				registers.numberOperand(page.a[word])));
 			if (load) source.push(registers.writeNumber(page.a[word], 'v'));
 		} else if (numberEmitter !== undefined) {
@@ -320,7 +318,6 @@ export function emitJavaScriptBlock(
 	const terminal: CompiledBlockExitSite = {
 		exit: terminalExit,
 		exitA: page.a[finalWord], exitB: page.b[finalWord], exitC: page.c[finalWord], exitBx: page.bx[finalWord], exitWord: finalWord,
-		displaced: false, displacement: 0,
 		cycles, registerTop, resetsRegisterTop, nextPc, currentPc, lastPc,
 		linkedBlock: null, previousIncoming: null, nextIncoming: null,
 	};

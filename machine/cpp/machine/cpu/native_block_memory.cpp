@@ -22,7 +22,7 @@ void storeRamRegisterWords(u8* destination, const Value* source, u32 count) noex
 void NativeBlockCompiler::emitWordStores(const DecodedInstruction& instruction, NativeBlockExitSite* exit) {
 	convertWord(instruction.b);
 	SlowPath slow; slow.exit = exit; slow.registers = registerSnapshot();
-	if (exit->displaced) sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R0, 0,
+	if (instruction.op == static_cast<u8>(OpCode::STORE_MEM_WORDS_D)) sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R0, 0,
 		SLJIT_IMM, static_cast<u32>(instruction.disp) << 2u);
 	sljit_emit_op2(m_compiler, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, 3);
 	slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0);
@@ -45,9 +45,9 @@ void NativeBlockCompiler::emitWordStores(const DecodedInstruction& instruction, 
 		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R2, 0, SLJIT_S2, 0, SLJIT_IMM, width - 4u);
 		sljit_emit_op2(m_compiler, SLJIT_LSHR, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, MAPPED_PAGE_BYTE_SHIFT);
 		auto* watch = sljit_emit_label(m_compiler);
-		sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R1),
+		sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R1),
 			reinterpret_cast<sljit_sw>(m_bindings.ramWriteGroups));
-		slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0);
+		slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R3, 0, SLJIT_IMM, 0);
 		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, 1);
 		sljit_set_label(sljit_emit_cmp(m_compiler, SLJIT_LESS_EQUAL, SLJIT_R1, 0, SLJIT_R2, 0), watch);
 		// Only the source range is observed by this non-allocating call. Keep
@@ -78,7 +78,7 @@ void NativeBlockCompiler::emitMemory(const DecodedInstruction& instruction, Nati
 	ReadMapping* mapping = nullptr;
 	convertWord(instruction.b);
 	slow.registers = registerSnapshot();
-	if (exit->displaced) {
+	if (instruction.op == static_cast<u8>(OpCode::LOAD_MEM_D) || instruction.op == static_cast<u8>(OpCode::STORE_MEM_D)) {
 		sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R0, 0,
 			SLJIT_IMM, static_cast<u32>(instruction.disp) << 2u);
 	}
@@ -248,6 +248,9 @@ void NativeBlockCompiler::emitReadMappings() {
 		sljit_set_label(sljit_emit_jump(m_compiler, SLJIT_JUMP), mapping.done);
 		auto* entry = sljit_emit_label(m_compiler);
 		for (auto* miss : mapping.ramMisses) sljit_set_label(miss, entry);
+		// R0 is the computed guest address. ROM selection may overwrite it;
+		// keep it in the cold decoder for an eventual bus exit.
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_R0, 0);
 		const u32 width = mapping.width;
 		auto* system = sljit_emit_cmp(m_compiler, SLJIT_LESS_EQUAL | SLJIT_32,
 			SLJIT_R0, 0, SLJIT_IMM, SYSTEM_ROM_SIZE - width);
@@ -268,6 +271,7 @@ void NativeBlockCompiler::emitReadMappings() {
 		misses[count++] = emitRomStorage(m_bindings.systemRom, width, romLoad, mapping.done);
 		auto* busExit = sljit_emit_label(m_compiler);
 		for (size_t i = 0; i < count; ++i) sljit_set_label(misses[i], busExit);
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, memoryAddress), SLJIT_R3, 0);
 		emitSharedExit(*mapping.exit, mapping.registers);
 	}
 }

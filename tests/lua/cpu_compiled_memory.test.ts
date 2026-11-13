@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { runCpuParity } from '../helpers/cpu_execution';
 import { readLE32 } from '../../machine/ts/common/endian';
-import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
+import { CompiledBlockExit, CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
@@ -10,7 +10,7 @@ import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/executi
 import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { DYNAMIC_RAM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE, IO_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
@@ -29,6 +29,31 @@ function memoryLoop(op: OpCode, kind: MemoryAccessKind, displacement = 0) {
 }
 
 const widths = [4, 1, 2, 4, 4, 8];
+
+test('compiled memory exits retain the computed raw guest address', () => {
+	for (const op of [OpCode.LOAD_MEM, OpCode.LOAD_MEM_D, OpCode.STORE_MEM, OpCode.STORE_MEM_D,
+		OpCode.STORE_MEM_WORDS, OpCode.STORE_MEM_WORDS_D]) {
+		const displaced = op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM_D || op === OpCode.STORE_MEM_WORDS_D;
+		const image = memoryLoop(op, MemoryAccessKind.F64LE, displaced ? 255 : 0);
+		const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
+		const frame = cpu.rootThread.frameAtDepth(0);
+		frame.registers.setNumber(1, DYNAMIC_RAM_BASE + 0x1000 - (displaced ? 1020 : 0));
+		cpu.runUntilDepth(0, 2400);
+		const page = frame.decodedPage!;
+		const block = page.compiledBlocks!.entries[(image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2]!;
+		assert.ok(block, 'the test must execute an adopted generated body');
+		const expected = op === OpCode.LOAD_MEM || op === OpCode.LOAD_MEM_D ? CompiledBlockExit.ReadMemory
+			: op === OpCode.STORE_MEM_WORDS || op === OpCode.STORE_MEM_WORDS_D ? CompiledBlockExit.WriteWords
+				: CompiledBlockExit.WriteMemory;
+		for (const address of [IO_BASE, 0xfffffffc, 0xfffffffd]) {
+			frame.registers.setNumber(1, (address - (displaced ? 1020 : 0)) >>> 0);
+			const run = { remainingCycles: 100, registerTop: frame.top, memoryAddress: 0 };
+			const exit = block.region.exits[block.region.execute(frame.registers, frame.executionImage.constScalars, page, frame, block.entry, run)];
+			assert.equal(exit.exit, expected);
+			assert.equal(run.memoryAddress, address, 'cold paths publish the post-displacement u32 without executing the transfer');
+		}
+	}
+});
 
 test('cached values reach field, memory and fault owners without stale tags or noncanonical numeric bits', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
@@ -64,7 +89,7 @@ test('cached values reach field, memory and fault owners without stale tags or n
 	const entry = image.image.functions[0].codeAddress;
 	const block = page.compiledBlocks!.entries[(entry & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2]!;
 	assert.equal(block.sourceWords, 13);
-	assert.equal(block.region.exits[block.region.execute(frame.registers, frame.executionImage.constScalars, page, frame, block.entry, { remainingCycles: 1, registerTop: frame.top })].nextPc, image.image.functions[0].codeAddress);
+	assert.equal(block.region.exits[block.region.execute(frame.registers, frame.executionImage.constScalars, page, frame, block.entry, { remainingCycles: 1, registerTop: frame.top, memoryAddress: 0 })].nextPc, image.image.functions[0].codeAddress);
 	machines[1].cpu.runUntilDepth(0, 28);
 	assert.equal(machines[0].memory.readMappedWord(address), 0);
 	assert.equal(machines[0].memory.readMappedWord(address + 4), 0x7ff80000);
@@ -99,7 +124,7 @@ for (let format = 0; format <= 5; ++format) for (const displaced of [false, true
 		const frame = js.cpu.rootThread.frameAtDepth(0), page = frame.decodedPage!;
 		const block = page.compiledBlocks!.entries[(entry & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2]!;
 		assert.equal(block.sourceWords, 5);
-		assert.equal(block.region.exits[block.region.execute(frame.registers, frame.executionImage.constScalars, page, frame, block.entry, { remainingCycles: 1, registerTop: frame.top })].nextPc, image.image.functions[0].codeAddress,
+		assert.equal(block.region.exits[block.region.execute(frame.registers, frame.executionImage.constScalars, page, frame, block.entry, { remainingCycles: 1, registerTop: frame.top, memoryAddress: 0 })].nextPc, image.image.functions[0].codeAddress,
 			'RAM and dependent instructions stay in the generated function');
 		for (const value of [-0, 0.25, -1.75, 4294967295, -4294967296.75, 4294967296.25,
 			1e100, -1e100, Number.MIN_VALUE, Infinity, -Infinity, NaN, null, false, true]) {

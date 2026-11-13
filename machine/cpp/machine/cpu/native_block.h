@@ -46,6 +46,7 @@ struct NativeBlockRunState {
 	int remainingCycles = 0;
 	int registerTop = 0;
 	u32 scalarPc = 0;
+	u32 memoryAddress = 0;
 	void* exitCode = nullptr;
 };
 
@@ -100,8 +101,6 @@ struct NativeBlockExitSite {
 	i16 exitB = 0;
 	i16 exitC = 0;
 	u32 exitBx = 0;
-	u8 displacement = 0;
-	bool displaced = false;
 	mutable int tableCacheSlot = -1;
 	int cycles = 0;
 	int registerTop = 0;

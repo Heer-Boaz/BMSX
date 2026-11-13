@@ -119,7 +119,8 @@ void directRomLoadsUseCurrentOwners() {
 				&& address - CART_ROM_BASE + width <= slot0.size();
 			const auto* exit = block->run(nativeRunState = {.registers = registers.data(), .constants = nullptr, .remainingCycles = block->terminal.cycles});
 			require((exit == &block->terminal) == backed, "short tails and logical boundary crossings use the ordered bus owner");
-			if (!backed) require(registers[0] == valueNumber(73), "a ROM side exit has not committed its destination");
+			if (!backed) require(registers[0] == valueNumber(73) && nativeRunState.memoryAddress == address,
+				"a ROM side exit preserves its raw address and has not committed its destination");
 		}
 		load.a = load.b;
 		const std::array aliasSource{NativeBlockInstruction{&load, 0x1000}};

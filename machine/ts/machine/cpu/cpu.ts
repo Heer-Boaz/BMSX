@@ -310,7 +310,7 @@ export class CPU implements MappedPageInvalidator {
 	private preMaskableInterruptExecutionHookDomainMask: ExecutionDomainMask = 0;
 	private runUntilDepthEntry = this.runUntilDepthNormal;
 	private readonly compiledCodeCache = new CompiledCodeCache();
-	private readonly compiledRunState: CompiledRegionRunState = { remainingCycles: 0, registerTop: 0 };
+	private readonly compiledRunState: CompiledRegionRunState = { remainingCycles: 0, registerTop: 0, memoryAddress: 0 };
 	private readonly registerBuiltinArgsScratch = new ScratchBuffer<BuiltinArgsView>(
 		() => new BuiltinArgsView(),
 		1,
@@ -2771,7 +2771,7 @@ export class CPU implements MappedPageInvalidator {
 				case CompiledBlockExit.ReadMemory:
 				case CompiledBlockExit.WriteMemory:
 				case CompiledBlockExit.WriteWords: {
-					const address = ((this.readRKNumber(frame, exit.exitB) >>> 0) + (exit.displaced ? exit.displacement * 4 : 0)) >>> 0;
+					const address = this.compiledRunState.memoryAddress;
 					if (exit.exit === CompiledBlockExit.ReadMemory) this.executeMemoryLoad(frame, exit.exitA, exit.exitC, address);
 					else if (exit.exit === CompiledBlockExit.WriteWords) this.executeWordStores(frame, address, exit.exitA, exit.exitC);
 					else this.executeMemoryStore(frame, exit.exitA, exit.exitC, address);

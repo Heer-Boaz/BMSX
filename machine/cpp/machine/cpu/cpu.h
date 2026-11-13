@@ -523,9 +523,6 @@ private:
 	static NativeBlockTransition compiledWriteIndexExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
 	static NativeBlockTransition compiledReadIntegerExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
 	static NativeBlockTransition compiledWriteIntegerExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
-	static NativeBlockTransition compiledReadMemoryExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
-	static NativeBlockTransition compiledWriteMemoryExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
-	static NativeBlockTransition compiledWriteWordsExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	void publishNativeCompilation();
 	void discardNativeCompilation();

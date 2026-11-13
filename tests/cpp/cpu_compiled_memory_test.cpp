@@ -122,7 +122,8 @@ void ramScalarDatapathsAndGuards() {
 	std::array registers{valueNumber(1), valueNumber(target)};
 	const auto before = readLE64(memory.ramData() + target - RAM_BASE);
 	const auto* exit = block->run(nativeRunState = {.registers = registers.data(), .constants = nullptr, .remainingCycles = block->terminal.cycles});
-	require(exit->exit == NativeBlockExit::WriteMemory && readLE64(memory.ramData() + target - RAM_BASE) == before,
+	require(exit->exit == NativeBlockExit::WriteMemory && nativeRunState.memoryAddress == target
+		&& readLE64(memory.ramData() + target - RAM_BASE) == before,
 		"the high half's code watch exits before either half of a direct F64 store");
 	memory.clearMappedPageWriteWatches();
 	DecodedInstruction load = store;
@@ -186,6 +187,57 @@ void generatedMemoryBoundaries() {
 				"failed memory instructions retain prefix EPC, committed register top and first fault address");
 			require(current.registers[0] == valueNumber(3.25), "a fault does not publish a failed load result");
 			require(machine->cpu.readCauseWord() == CPU_CAUSE_CODE_DATA_BUS_ERROR, "memory side exits preserve bus exceptions");
+		}
+	}
+
+}
+
+void coldScalarExitsCarryTheirComputedGuestAddress() {
+	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
+	IrqController irq(memory);
+	ExecutionAddressSpace addresses(memory);
+	CPU cpu(memory, irq, addresses);
+	for (const auto op : {OpCode::LOAD_MEM, OpCode::LOAD_MEM_D, OpCode::STORE_MEM, OpCode::STORE_MEM_D}) {
+		const bool displaced = op == OpCode::LOAD_MEM_D || op == OpCode::STORE_MEM_D;
+		for (const bool constant : {false, true}) for (const u32 address : {IO_BASE, 0xfffffffcu, 0xfffffffdu}) {
+			DecodedInstruction instruction{};
+			instruction.op = static_cast<u8>(op); instruction.a = 0; instruction.b = constant ? -1 : 1;
+			instruction.c = static_cast<u8>(MemoryAccessKind::F64LE);
+			instruction.disp = displaced ? 255 : 0;
+			instruction.width = 1; instruction.baseCycles = BASE_CYCLES[instruction.op];
+			const std::array source{NativeBlockInstruction{&instruction, 0x1000u}};
+			const std::array constants{valueNumber(address - static_cast<u32>(instruction.disp) * 4u)};
+			size_t bytes = 0;
+			auto block = NativeBlock::compile(source, constants.data(), bytes, memory, cpu.stringPool());
+			std::array registers{valueNumber(17), constants[0]};
+			NativeBlockRunState state{.registers = registers.data(), .constants = constants.data(), .remainingCycles = 100};
+			const auto* exit = block->run(state);
+			require(exit->exit == (op == OpCode::LOAD_MEM || op == OpCode::LOAD_MEM_D
+				? NativeBlockExit::ReadMemory : NativeBlockExit::WriteMemory)
+				&& state.memoryAddress == address && registers[0] == valueNumber(17),
+				"misaligned, MMIO and unmapped exits retain the computed raw address before side effects");
+		}
+	}
+	const u32 watched = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - 4u;
+	MappedPageBinding page;
+	memory.bindMappedPage(watched + INSTRUCTION_BYTES, MAPPED_BUS_MASTER_CPU, page);
+	page.writeWatch.armWord(0);
+	for (const auto op : {OpCode::STORE_MEM_WORDS, OpCode::STORE_MEM_WORDS_D}) {
+		const bool displaced = op == OpCode::STORE_MEM_WORDS_D;
+		for (const bool constant : {false, true}) for (const u32 address : {IO_BASE, 0xfffffffdu, watched}) {
+			DecodedInstruction instruction{};
+			instruction.op = static_cast<u8>(op); instruction.a = 2; instruction.b = constant ? -1 : 1;
+			instruction.c = 2; instruction.disp = displaced ? 255 : 0;
+			instruction.width = 1; instruction.baseCycles = BASE_CYCLES[instruction.op];
+			const std::array source{NativeBlockInstruction{&instruction, 0x1000u}};
+			const std::array constants{valueNumber(address - static_cast<u32>(instruction.disp) * 4u)};
+			size_t bytes = 0;
+			auto block = NativeBlock::compile(source, constants.data(), bytes, memory, cpu.stringPool());
+			std::array registers{valueNil(), constants[0], valueNumber(11), valueNumber(12)};
+			NativeBlockRunState state{.registers = registers.data(), .constants = constants.data(), .remainingCycles = 100};
+			const auto* exit = block->run(state);
+			require(exit->exit == NativeBlockExit::WriteWords && state.memoryAddress == address,
+				"counted stores retain the raw address across bounds, alignment and watched-page exits");
 		}
 	}
 }
@@ -476,6 +528,7 @@ void wordProducerBoundariesMatchCompleteScalarState() {
 int main() {
 	try {
 		ramScalarDatapathsAndGuards();
+		coldScalarExitsCarryTheirComputedGuestAddress();
 		generatedMemoryBoundaries();
 		generatedBusOrdering();
 		generatedMemoryMayRetireExecutingSource();

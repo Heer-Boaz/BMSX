@@ -410,6 +410,9 @@ void* NativeBlockCompiler::finish(size_t& codeBytes) {
 	for (const auto& slow : m_slowPaths) {
 		auto* label = sljit_emit_label(m_compiler);
 		for (size_t i = 0; i < slow.count; ++i) sljit_set_label(slow.jumps[i], label);
+		if (slow.exit->exit == NativeBlockExit::ReadMemory || slow.exit->exit == NativeBlockExit::WriteMemory
+			|| slow.exit->exit == NativeBlockExit::WriteWords)
+			sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, memoryAddress), SLJIT_R0, 0);
 		emitSharedExit(*slow.exit, slow.registers);
 	}
 	emitReadMappings();

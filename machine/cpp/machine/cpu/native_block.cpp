@@ -132,9 +132,6 @@ std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& sourc
 			if (slow == NativeBlockExit::ReadField || slow == NativeBlockExit::WriteField
 				|| slow == NativeBlockExit::ReadIndex || slow == NativeBlockExit::WriteIndex) {
 				exit.tableCacheSlot = instruction.tableCacheSlot;
-			} else if (slow == NativeBlockExit::ReadMemory || slow == NativeBlockExit::WriteMemory || slow == NativeBlockExit::WriteWords) {
-				exit.displaced = op == OpCode::LOAD_MEM_D || op == OpCode::STORE_MEM_D || op == OpCode::STORE_MEM_WORDS_D;
-				exit.displacement = instruction.disp;
 			}
 		}
 		// The checked exit owns this instruction's preflight and surcharge.

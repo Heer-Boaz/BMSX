@@ -72,32 +72,3 @@ inline bool CPU::executeWordStores(CallFrame& frame, u32 address, int source, in
 	}
 	return true;
 }
-
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-NativeBlockTransition CPU::compiledReadMemoryExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit) {
-	const int a = exit->exitA, b = exit->exitB;
-	const auto kind = static_cast<MemoryAccessKind>(exit->exitC);
-	const u32 displacement = exit->displaced ? static_cast<u32>(exit->displacement) << 2u : 0u;
-	const u32 address = toU32(readRK(*frame->executionImage, frame->registers, b)) + displacement;
-	cpu->executeMemoryLoad(*frame, a, kind, address);
-	return NativeBlockTransition::Redispatch;
-}
-
-NativeBlockTransition CPU::compiledWriteMemoryExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit) {
-	const int a = exit->exitA, b = exit->exitB;
-	const auto kind = static_cast<MemoryAccessKind>(exit->exitC);
-	const u32 displacement = exit->displaced ? static_cast<u32>(exit->displacement) << 2u : 0u;
-	const u32 address = toU32(readRK(*frame->executionImage, frame->registers, b)) + displacement;
-	cpu->executeMemoryStore(*frame, a, kind, address);
-	return NativeBlockTransition::Redispatch;
-}
-
-NativeBlockTransition CPU::compiledWriteWordsExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit) {
-	const int a = exit->exitA, b = exit->exitB, count = exit->exitC;
-	const u32 displacement = exit->displaced ? static_cast<u32>(exit->displacement) << 2u : 0u;
-	const u32 address = toU32(readRK(*frame->executionImage, frame->registers, b)) + displacement;
-	// A write may retire the source descriptor; no descriptor access follows it.
-	cpu->executeWordStores(*frame, address, a, count);
-	return NativeBlockTransition::Redispatch;
-}
-#endif

@@ -3,6 +3,7 @@
 
 #include <algorithm>
 
+#include "machine/common/numeric.h"
 #include "machine/devices/irq/controller.h"
 #include "spec/blua32/image_format.h"
 #include "spec/bmsx/memory_map.h"
@@ -21,6 +22,7 @@ CPU::NativeFrameOffsets CPU::nativeFrameOffsets() {
 #endif
 
 #include "machine/cpu/cpu_calls.inl"
+#include "machine/cpu/cpu_memory.inl"
 #include "machine/cpu/cpu_strings.inl"
 
 void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept {
@@ -102,6 +104,18 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		case NativeBlockExit::InvalidLength:
 			throw LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
+		case NativeBlockExit::ReadMemory:
+			cpu.executeMemoryLoad(*frame, exit->exitA, static_cast<MemoryAccessKind>(exit->exitC), state.memoryAddress);
+			transition = NativeBlockTransition::Redispatch;
+			break;
+		case NativeBlockExit::WriteMemory:
+			cpu.executeMemoryStore(*frame, exit->exitA, static_cast<MemoryAccessKind>(exit->exitC), state.memoryAddress);
+			transition = NativeBlockTransition::Redispatch;
+			break;
+		case NativeBlockExit::WriteWords:
+			cpu.executeWordStores(*frame, state.memoryAddress, exit->exitA, exit->exitC);
+			transition = NativeBlockTransition::Redispatch;
+			break;
 		case NativeBlockExit::AllocateTable: {
 			const int a = exit->exitA;
 			auto* table = cpu.createTable(exit->exitB, exit->exitC);

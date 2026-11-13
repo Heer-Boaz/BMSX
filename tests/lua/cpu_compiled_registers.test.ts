@@ -40,7 +40,7 @@ test('both open and closed upvalue paths define output-only region bindings', ()
 		for (const grant of [1, 64]) {
 			r.setEncoded(2, tag, scalar, reference);
 			r.setNumber(8, 73); r.setNumber(20, 74); r.setNumber(21, 75);
-			const state = { remainingCycles: grant, registerTop: 3 };
+			const state = { remainingCycles: grant, registerTop: 3, memoryAddress: 0 };
 			block.region.execute(r, frame.executionImage.constScalars, page, frame, block.entry, state);
 			for (const register of grant === 1 ? [8, 20] : [8, 20, 21]) {
 				assert.equal(r.getTag(register), tag, `${source} upvalue tag R${register}`);
@@ -76,7 +76,7 @@ test('output locals become observable only after their definition, including hel
 		memory.writeMappedWord(DYNAMIC_RAM_BASE, 71);
 		const writes = new Uint32Array(22), store = r.setEncoded.bind(r);
 		r.setEncoded = (register, tag, scalar, reference) => { ++writes[register]; store(register, tag, scalar, reference); };
-		const state = { remainingCycles: grant, registerTop: 3 };
+		const state = { remainingCycles: grant, registerTop: 3, memoryAddress: 0 };
 		const exit = block.region.exits[block.region.execute(r, frame.executionImage.constScalars, page, frame, block.entry, state)];
 		if (!mapped) {
 			assert.equal(exit.exit, CompiledBlockExit.ReadMemory);
