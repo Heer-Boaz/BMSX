@@ -342,6 +342,8 @@ export async function renderTexturedModelCase(canvas: HTMLCanvasElement, kind: '
 	}
 	let orderedSourceDifference = -1;
 	const orderedSourceWords: number[] = [];
+	const orderedReadbackWords: number[] = [];
+	let orderedReadbackPending = false;
 	if (includeAliasCase) {
 		// A later command reads the pending batch's destination, followed by a
 		// self-reading quad. The last draw also changes the textured vertex stride.
@@ -398,6 +400,17 @@ export async function renderTexturedModelCase(canvas: HTMLCanvasElement, kind: '
 		machine.gxGpu.presentReadyFrameOnVblankEdge();
 		const next = machine.gxGpu.readDeviceOutput();
 		renderGxGpuSoftwareFrame(software, state, next, pixels);
+		// The software reference has consumed the draws, but the hardware backend
+		// has not. A real guest C0 therefore fences the pending textured batch.
+		for (const word of [0xc0000000, (120 << 16) | 100, 0x00010002]) {
+			machine.gxGpu.writeGp0(word);
+			machine.scheduler.advanceTo(machine.scheduler.currentNowCycles() + 10_000);
+			machine.gxGpu.onService(machine.scheduler.currentNowCycles());
+		}
+		orderedReadbackPending = machine.gxGpu.backendServicePending();
+		backend.executeGxGpuReadback(machine.gxGpu);
+		await backend.finishGxGpuReadbacks();
+		orderedReadbackWords.push(machine.gxGpu.readGp0());
 		library.execute('gx_gpu', framebuffer, next);
 		await backend.captureGxGpuVramSnapshot(machine.gxGpu);
 		const snapshot = machine.gxGpu.readDeviceOutput().vramSnapshotBytes;
@@ -410,5 +423,5 @@ export async function renderTexturedModelCase(canvas: HTMLCanvasElement, kind: '
 	const glError = gl === undefined ? 0 : gl.gl.getError();
 	if (framebuffer !== null) gl!.destroyRenderTarget(framebuffer);
 	backend.destroyTexture(target); library.dispose(); gpu?.device.destroy();
-	return { kind, difference, samples, validationError, glError, gpuErrors, commands, transfers, snapshotDifferences, snapshotWords, adjacentCopies, adjacentCopyRects, adjacentPixel, adjacentDifferences, capacityResult, wrappedDifferences, rectangleDifferences, flatColorDifferences, drawLayoutDifferences, drawLayoutPixels, lineExtraWordDifferences, lineExtraWordPixels, lineExtraWordCounts, orderedSourceDifference, orderedSourceWords };
+	return { kind, difference, samples, validationError, glError, gpuErrors, commands, transfers, snapshotDifferences, snapshotWords, adjacentCopies, adjacentCopyRects, adjacentPixel, adjacentDifferences, capacityResult, wrappedDifferences, rectangleDifferences, flatColorDifferences, drawLayoutDifferences, drawLayoutPixels, lineExtraWordDifferences, lineExtraWordPixels, lineExtraWordCounts, orderedSourceDifference, orderedSourceWords, orderedReadbackPending, orderedReadbackWords };
 }

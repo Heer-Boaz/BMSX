@@ -188,6 +188,8 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} solid batches publish onl
 		await page.goto('http://localhost/renderer-test/primitive-damage/');
 		await page.addScriptTag({ content: backendBundle });
 		const result = await page.evaluate(async ({ bytes, kind }) => (globalThis as any).backendTest.renderTexturedModelCase(document.getElementById('gamescreen'), kind, bytes, true), { bytes: vramBytes, kind });
+		assert.equal(result.orderedReadbackPending, true, 'guest C0 requests a backend readback before rendering');
+		assert.deepEqual(result.orderedReadbackWords, [vramBytes === 1024 * 1024 ? 0x03e003e0 : 0x001f03e0], 'guest GPUREAD observes both dependent draws at the C0 fence');
 		assert.deepEqual(result.adjacentDifferences, [-1, -1, -1, -1, -1, -1]);
 		assert.deepEqual(result.adjacentPixel[5], [0, 255, 0, 0], 'an empty clipped batch cannot suppress the following draw');
 		assert.deepEqual(result.adjacentCopyRects[1], []);
