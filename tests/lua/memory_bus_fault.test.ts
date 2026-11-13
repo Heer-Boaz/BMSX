@@ -25,6 +25,7 @@ import {
 } from '../../machine/ts/spec/bmsx/io';
 import { CART_MMIO_BASE, CART_RAM_BASE, CART_ROM_BASE, DYNAMIC_RAM_BASE, IO_BASE, IO_WORD_SIZE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { Memory, NO_BLOCKED_MAPPED_WRITE, type MemoryByteView } from '../../machine/ts/machine/memory/memory';
+import { MAPPED_PAGE_BYTE_SIZE, type MappedPageBinding } from '../../machine/ts/machine/memory/mapped_page';
 import { MAPPED_BUS_MASTER_CPU, MAPPED_BUS_MASTER_DMA, MAPPED_BUS_DMA_BLOCK_END, mappedBusSignalsForCartridgeSlot, type MappedBusSignals } from '../../machine/ts/machine/memory/bus_signals';
 import { readLE32 } from '../../machine/ts/common/endian';
 
@@ -159,7 +160,9 @@ test('DMA blocks retain scalar bus order, per-word readiness, faults and live ha
 	for (const [readStart, writeStart, readStep, writeStep] of [
 		[IO_IMGDEC_DATA, IO_GX_GPU_GP0, 0, 0], [source, IO_GX_GPU_GP0, 4, 0],
 		[IO_IMGDEC_DATA, destination, 0, 4], [source, destination, 4, 4],
-		[source, source + 4, 4, 4], [IO_IMGDEC_DATA, IO_SYS_STATUS, 0, 0],
+		[source, source, 4, 4], [source, source + 1, 4, 4], [source, source + 2, 4, 4],
+		[source, source + 3, 4, 4], [source, source + 4, 4, 4], [source, source + 5, 4, 4],
+		[source + 1, source, 4, 4], [source + 4, source, 4, 4], [IO_IMGDEC_DATA, IO_SYS_STATUS, 0, 0],
 		[IO_IMGDEC_DATA + 1, IO_GX_GPU_GP0, 0, 0], [UNMAPPED_ADDRESS, IO_GX_GPU_GP0, 0, 0],
 		[0xfffffffc, destination, 4, 4], [IO_IMGDEC_DATA, IO_GX_GPU_GP0, 4, 4],
 		[IO_BASE + IO_SLOT_COUNT * IO_WORD_SIZE - IO_WORD_SIZE, destination, 4, 4],
@@ -199,6 +202,70 @@ test('DMA blocks retain scalar bus order, per-word readiness, faults and live ha
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	memory.writeMappedWord(IO_SYS_STATUS, 0xffffffff);
 	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ACCESS), BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_WORD);
+});
+
+test('DMA memory spans retain ordered words across ROM, sockets, overlaps and physical tails', () => {
+	const system = Uint8Array.from({ length: 67 }, (_, i) => (i * 13 + 5) & 0xff);
+	const rom0 = Uint8Array.from({ length: 67 }, (_, i) => (i * 7 + 3) & 0xff);
+	const rom1 = Uint8Array.from({ length: 67 }, (_, i) => (i * 11 + 9) & 0xff);
+	const base = DYNAMIC_RAM_BASE;
+	for (const [source, destination, slot] of [
+		[base + 32, base + 64, 0], [base + 32, base + 33, 0],
+		[base + 32, base + 34, 0], [base + 32, base + 35, 0],
+		[base + 32, base + 36, 0], [base + 32, base + 37, 0],
+		[base + 33, base + 32, 0], [base + 36, base + 32, 0],
+		[SYSTEM_ROM_BASE + 3, base + 64, 0], [SYSTEM_ROM_BASE + 59, base + 64, 0],
+		[CART_ROM_BASE + 3, base + 64, 0], [CART_ROM_BASE + 3, base + 64, 1],
+		[CART_RAM_BASE + 3, base + 64, 0], [CART_RAM_BASE + 3, base + 64, 1],
+		[CART_RAM_BASE + 59, base + 64, 1], [UNMAPPED_ADDRESS, base + 125, 0],
+		[base + 32, base + 125, 0],
+	] as const) for (const count of [0, 1, 5, 16]) {
+		const scalarSlots = cartridgeSlots(rom0, rom1), blockSlots = cartridgeSlots(rom0, rom1);
+		for (const slots of [scalarSlots, blockSlots]) { slots[0]!.ramByteCount = 67; slots[1]!.ramByteCount = 67; }
+		const scalar = new Memory({ systemRom: system, cartridgeSlots: scalarSlots }, base - RAM_BASE + 128);
+		const block = new Memory({ systemRom: system, cartridgeSlots: blockSlots }, base - RAM_BASE + 128);
+		for (const memory of [scalar, block]) for (const cardSlot of [0, 1]) {
+			const signals = MAPPED_BUS_MASTER_DMA | mappedBusSignalsForCartridgeSlot(cardSlot);
+			for (let i = 0; i < 16; ++i) memory.cartridgeController.writeU32(CART_RAM_BASE + i * 4, 0x91820000 + cardSlot * 0x100 + i, signals);
+		}
+		for (let i = 0; i < 128; ++i) {
+			const value = (i * 17 + 1) & 0xff;
+			scalar.ramData()[base - RAM_BASE + i] = value;
+			block.ramData()[base - RAM_BASE + i] = value;
+		}
+		const readSignals = MAPPED_BUS_MASTER_DMA | mappedBusSignalsForCartridgeSlot(slot);
+		const writeSignals = MAPPED_BUS_MASTER_DMA;
+		for (let i = 0; i < count; ++i) {
+			const end = i + 1 === count ? MAPPED_BUS_DMA_BLOCK_END : 0;
+			const word = scalar.readMappedDmaU32LE(source + i * 4, readSignals | end);
+			scalar.writeMappedDmaU32LE(destination + i * 4, word, writeSignals | end);
+		}
+		block.transferDmaBlock(source, destination, count, 4, 4, readSignals, writeSignals);
+		assert.deepEqual(block.ramData().subarray(base - RAM_BASE), scalar.ramData().subarray(base - RAM_BASE));
+		assert.equal(block.readBusFaultSequence(), scalar.readBusFaultSequence());
+		for (const address of [IO_SYS_BUS_FAULT_CODE, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_ACCESS]) {
+			assert.equal(block.readIoU32(address), scalar.readIoU32(address));
+		}
+	}
+});
+
+test('DMA memory span invalidates watched code across page boundaries', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(16).fill(0x5a), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const page = DYNAMIC_RAM_BASE, destination = page + MAPPED_PAGE_BYTE_SIZE - 4;
+	const invalidations: Array<readonly [number, number, number]> = [];
+	memory.attachMappedPageInvalidator({
+		invalidateMappedWords(key, first, end) { invalidations.push([key, first, end]); },
+		invalidateMappedRange() {},
+	});
+	const binding: MappedPageBinding = { key: 0, cacheable: false, readBytes: null, readByteOffset: 0, writeWatches: null, writeWatchIndex: 0 };
+	memory.bindMappedPage(page, MAPPED_BUS_MASTER_CPU, binding);
+	binding.writeWatches!.armWord(binding.writeWatchIndex, 255);
+	memory.bindMappedPage(page + MAPPED_PAGE_BYTE_SIZE, MAPPED_BUS_MASTER_CPU, binding);
+	binding.writeWatches!.armWord(binding.writeWatchIndex, 0);
+	binding.writeWatches!.armWord(binding.writeWatchIndex, 1);
+	memory.transferDmaBlock(SYSTEM_ROM_BASE, destination, 3, 4, 4, MAPPED_BUS_MASTER_DMA, MAPPED_BUS_MASTER_DMA);
+	assert.deepEqual(invalidations, [[page, 255, 256], [page + MAPPED_PAGE_BYTE_SIZE, 0, 2]]);
+	for (let i = 0; i < 3; ++i) assert.equal(memory.readMappedU32LE(destination + i * 4), 0x5a5a5a5a);
 });
 
 

@@ -725,8 +725,22 @@ export class Memory {
 	// Fixed I/O slots are resolved once; live handlers and per-word bus effects remain ordered.
 	public transferDmaBlock(readAddress: number, writeAddress: number, wordCount: number,
 		readStep: number, writeStep: number, readBusSignals: MappedBusSignals, writeBusSignals: MappedBusSignals): void {
-		const readSlot = (readBusSignals & MAPPED_BUS_DMA_MEMORY) === 0 ? this.ioAlignedSlot(readAddress) : -1;
-		const writeSlot = (writeBusSignals & MAPPED_BUS_DMA_MEMORY) === 0 ? this.ioAlignedSlot(writeAddress) : -1;
+		if (wordCount !== 0 && readStep === IO_WORD_SIZE && writeStep === IO_WORD_SIZE) {
+			const bytes = wordCount * IO_WORD_SIZE;
+			const view = this.dmaRomView;
+			if (writeAddress >= IO_BASE + this.ioByteLength
+				&& this.isRamRange(writeAddress, bytes)
+				&& this.bindMappedReadView(readAddress, bytes, readBusSignals, view)) {
+				const destination = writeAddress - RAM_BASE;
+				for (let offset = 0; offset < bytes; offset += IO_WORD_SIZE) {
+					writeLE32(this.ram, destination + offset, readLE32(view.bytes, view.byteOffset + offset));
+				}
+				this.ramPageWriteWatches.invalidateWrite(destination, bytes, RAM_BASE, this.mappedPageInvalidator!);
+				return;
+			}
+		}
+		const readSlot = readStep === 0 && (readBusSignals & MAPPED_BUS_DMA_MEMORY) === 0 ? this.ioAlignedSlot(readAddress) : -1;
+		const writeSlot = writeStep === 0 && (writeBusSignals & MAPPED_BUS_DMA_MEMORY) === 0 ? this.ioAlignedSlot(writeAddress) : -1;
 		const writePrefix = wordCount > 1 && writeSlot >= 0 ? this.findIoDmaPrefix(writeSlot) : null;
 		if (writePrefix !== null && writePrefix.write !== null && READ_ONLY_IO_SLOTS[writeSlot] === 0) {
 			const prefix = wordCount - 1, words = this.dmaPrefixWords;
@@ -871,14 +885,15 @@ export class Memory {
 	}
 
 	public isRamRange(addr: number, length: number): boolean {
-		return addr >= RAM_BASE && addr - RAM_BASE + length <= this.ram.byteLength;
+		return addr >= RAM_BASE && addr < CART_ROM_BASE && length <= CART_ROM_BASE - addr
+			&& addr - RAM_BASE + length <= this.ram.byteLength;
 	}
 
 	public bindMappedReadView(addr: number, length: number, busSignals: MappedBusSignals, out: MemoryByteView): boolean {
 		if (addr < RAM_BASE) return this.bindRomByteView(addr, length, 0, out);
 		if (addr < CART_ROM_BASE) {
 			const offset = addr - RAM_BASE;
-			if (length === 0 || offset + length > this.ram.byteLength
+			if (length === 0 || !this.isRamRange(addr, length)
 				|| (addr < IO_BASE + this.ioByteLength && addr + length > IO_BASE)) return false;
 			out.bytes = this.ram;
 			out.byteOffset = offset;

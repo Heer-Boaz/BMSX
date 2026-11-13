@@ -11,6 +11,7 @@ import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/spec/blua3
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { DYNAMIC_RAM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
@@ -201,6 +202,31 @@ test('a watched RAM store retires its own generated source only after returning'
 	}
 	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 	assert.deepEqual(machines[0].memory.ramData(), machines[1].memory.ramData());
+});
+
+test('a DMA memory span retires generated RAM code before its next execution', () => {
+	const image = memoryLoop(OpCode.LOAD_MEM, MemoryAccessKind.U32LE);
+	for (const backend of [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter]) {
+		const { cpu, memory } = createTestSystemCpu(image, backend);
+		const frame = cpu.rootThread.frameAtDepth(0), entry = image.image.functions[0].codeAddress;
+		memory.writeBytes(DYNAMIC_RAM_BASE, image.romBytes.subarray(entry, entry + MAPPED_PAGE_BYTE_SIZE));
+		frame.registers.setNumber(1, DYNAMIC_RAM_BASE + 0x1000);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
+		cpu.runUntilDepth(0, 1200);
+		const page = frame.decodedPage!;
+		if (backend === CpuExecutionBackend.JavaScript) assert.ok(page.compiledBlocks!.entries[0]);
+		const replacement = new Uint8Array(2 * INSTRUCTION_BYTES);
+		writeInstruction(replacement, 0, OpCode.K1, 0, 0, 0);
+		writeInstruction(replacement, 1, OpCode.HALT, 0, 0, 0);
+		const source = DYNAMIC_RAM_BASE + 0x2000;
+		memory.writeBytes(source, replacement);
+		memory.transferDmaBlock(source, DYNAMIC_RAM_BASE, 2, 4, 4, MAPPED_BUS_MASTER_DMA, MAPPED_BUS_MASTER_DMA);
+		if (backend === CpuExecutionBackend.JavaScript) assert.equal(page.compiledBlocks!.entries[0], null);
+		frame.registers.setNumber(0, 0);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
+		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+		assert.equal(frame.registers.getNumber(0), 1);
+	}
 });
 
 test('a continuously rewritten instruction stays outside stable compiled prefixes', () => {

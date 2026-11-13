@@ -4,6 +4,7 @@
 #include "spec/bmsx/model.h"
 #include "support/cartridge_fixture.h"
 
+#include <algorithm>
 #include <array>
 #include <stdexcept>
 #include <utility>
@@ -187,6 +188,104 @@ void testDmaPrefixesAreRevokedByScalarRebindingAndRespectPermissions() {
 	}
 }
 
+void testIncrementingDmaIoDoesNotReuseFixedPort() {
+	using namespace bmsx;
+	Memory memory(MemoryInit{{}, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
+	PrefixMappingTrace trace;
+	memory.mapIoRead(IO_IMGDEC_DATA, &trace, PrefixMappingTrace::read);
+	memory.mapIoWrite(IO_GX_GPU_GP0, &trace, PrefixMappingTrace::write);
+	memory.mapIoDmaReadPrefix(IO_IMGDEC_DATA, PrefixMappingTrace::readPrefix);
+	memory.mapIoDmaWritePrefix(IO_GX_GPU_GP0, PrefixMappingTrace::writePrefix);
+	memory.transferDmaBlock(IO_IMGDEC_DATA, IO_GX_GPU_GP0, 4u, 4u, 4u,
+		MAPPED_BUS_MASTER_DMA, MAPPED_BUS_MASTER_DMA);
+	require(trace.reads == 1u && trace.writes == 1u,
+		"incrementing addresses leave the original IO ports after the first word");
+	require(trace.readSignals == std::vector<MappedBusSignals>({MAPPED_BUS_MASTER_DMA})
+		&& trace.writeSignals == std::vector<MappedBusSignals>({MAPPED_BUS_MASTER_DMA}),
+		"incrementing IO does not reuse fixed-port prefix bindings or final strobes");
+}
+
+void testDmaMemorySpansRetainOrderedWords() {
+	using namespace bmsx;
+	std::array<u8, 67> system{}, rom0{}, rom1{};
+	for (size_t i = 0; i < system.size(); ++i) {
+		system[i] = static_cast<u8>(i * 13u + 5u);
+		rom0[i] = static_cast<u8>(i * 7u + 3u);
+		rom1[i] = static_cast<u8>(i * 11u + 9u);
+	}
+	struct Transfer { u32 source, destination, slot; };
+	const u32 base = DYNAMIC_RAM_BASE;
+	const Transfer transfers[]{
+		{base + 32, base + 64, 0}, {base + 32, base + 33, 0},
+		{base + 32, base + 34, 0}, {base + 32, base + 35, 0},
+		{base + 32, base + 36, 0}, {base + 32, base + 37, 0},
+		{base + 33, base + 32, 0}, {base + 36, base + 32, 0},
+		{SYSTEM_ROM_BASE + 3, base + 64, 0}, {SYSTEM_ROM_BASE + 59, base + 64, 0},
+		{CART_ROM_BASE + 3, base + 64, 0}, {CART_ROM_BASE + 3, base + 64, 1},
+		{CART_RAM_BASE + 3, base + 64, 0}, {CART_RAM_BASE + 3, base + 64, 1},
+		{CART_RAM_BASE + 59, base + 64, 1}, {UNMAPPED_ADDRESS, base + 125, 0},
+		{base + 32, base + 125, 0},
+	};
+	for (const auto transfer : transfers) for (const u32 count : {0u, 1u, 5u, 16u}) {
+		auto slots = test::cartridgeSlots(rom0, rom1);
+		slots[0]->ramByteCount = 67u; slots[1]->ramByteCount = 67u;
+		Memory scalar(MemoryInit{system, slots}, base - RAM_BASE + 128u);
+		Memory block(MemoryInit{system, slots}, base - RAM_BASE + 128u);
+		for (Memory* memory : {&scalar, &block}) for (const u32 slot : {0u, 1u}) {
+			const MappedBusSignals signals = MAPPED_BUS_MASTER_DMA | mappedBusSignalsForCartridgeSlot(slot);
+			for (u32 i = 0; i < 16u; ++i) memory->cartridgeController().writeU32(CART_RAM_BASE + i * 4u, 0x91820000u + slot * 0x100u + i, signals);
+		}
+		const size_t ramOffset = base - RAM_BASE;
+		for (size_t i = 0; i < 128u; ++i) {
+			const u8 value = static_cast<u8>(i * 17u + 1u);
+			scalar.ramData()[ramOffset + i] = value;
+			block.ramData()[ramOffset + i] = value;
+		}
+		const MappedBusSignals readSignals = MAPPED_BUS_MASTER_DMA | mappedBusSignalsForCartridgeSlot(transfer.slot);
+		const MappedBusSignals writeSignals = MAPPED_BUS_MASTER_DMA;
+		for (u32 i = 0; i < count; ++i) {
+			const MappedBusSignals end = i + 1u == count ? MAPPED_BUS_DMA_BLOCK_END : 0u;
+			const u32 word = scalar.readMappedDmaU32LE(transfer.source + i * 4u, readSignals | end);
+			scalar.writeMappedDmaU32LE(transfer.destination + i * 4u, word, writeSignals | end);
+		}
+		block.transferDmaBlock(transfer.source, transfer.destination, count, 4u, 4u, readSignals, writeSignals);
+		require(std::equal(scalar.ramData() + ramOffset, scalar.ramData() + ramOffset + 128u, block.ramData() + ramOffset),
+			"bound DMA spans preserve forward word ordering and physical tails");
+		require(block.readBusFaultSequence() == scalar.readBusFaultSequence(), "bound DMA spans preserve bus fault count");
+		for (const u32 address : {IO_SYS_BUS_FAULT_CODE, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_ACCESS}) {
+			require(block.readIoU32(address) == scalar.readIoU32(address), "bound DMA spans preserve fault latches");
+		}
+	}
+}
+
+struct DmaInvalidationTrace final : bmsx::MappedPageInvalidator {
+	std::vector<std::array<bmsx::u64, 3>> words;
+	void invalidateMappedWords(bmsx::u64 key, bmsx::u32 first, bmsx::u32 end) override {
+		words.push_back({key, first, end});
+	}
+	void invalidateMappedRange(bmsx::u64, bmsx::u64) override {}
+};
+
+void testDmaMemorySpansInvalidateWatchedCode() {
+	using namespace bmsx;
+	std::array<u8, 16> rom{};
+	rom.fill(0x5a);
+	Memory memory(MemoryInit{rom, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
+	DmaInvalidationTrace trace;
+	memory.attachMappedPageInvalidator(trace);
+	const u32 page = DYNAMIC_RAM_BASE, destination = page + MAPPED_PAGE_BYTE_SIZE - 4u;
+	MappedPageBinding binding{};
+	memory.bindMappedPage(page, MAPPED_BUS_MASTER_CPU, binding);
+	binding.writeWatch.armWord(255u);
+	memory.bindMappedPage(page + MAPPED_PAGE_BYTE_SIZE, MAPPED_BUS_MASTER_CPU, binding);
+	binding.writeWatch.armWord(0u);
+	binding.writeWatch.armWord(1u);
+	memory.transferDmaBlock(SYSTEM_ROM_BASE, destination, 3u, 4u, 4u, MAPPED_BUS_MASTER_DMA, MAPPED_BUS_MASTER_DMA);
+	const std::vector<std::array<u64, 3>> expected{{page, 255u, 256u}, {page + MAPPED_PAGE_BYTE_SIZE, 0u, 2u}};
+	require(trace.words == expected, "DMA memory span invalidates watched code on both pages");
+	for (u32 i = 0; i < 3u; ++i) require(memory.readMappedU32LE(destination + i * 4u) == 0x5a5a5a5au, "DMA memory span writes the full source");
+}
+
 } // namespace
 
 int main() {
@@ -196,5 +295,8 @@ int main() {
 	testSystemStatusRejectsMappedWrites();
 	testIoPermissionsApplyToCpuAndDmaWordWrites();
 	testDmaPrefixesAreRevokedByScalarRebindingAndRespectPermissions();
+	testIncrementingDmaIoDoesNotReuseFixedPort();
+	testDmaMemorySpansRetainOrderedWords();
+	testDmaMemorySpansInvalidateWatchedCode();
 	return 0;
 }

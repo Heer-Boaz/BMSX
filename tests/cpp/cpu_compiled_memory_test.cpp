@@ -273,6 +273,32 @@ void generatedMemoryMayRetireExecutingSource() {
 	}
 }
 
+void dmaMemorySpanRetiresGeneratedCode() {
+	const auto image = memoryLoop(OpCode::LOAD_MEM, MemoryAccessKind::U32LE);
+	for (const bool scalar : {false, true}) {
+		CpuMachine machine(image, scalar);
+		auto& cpu = machine.cpu;
+		auto& frame = *cpu.activeThread()->frameAtDepth(0);
+		machine.memory.writeBytes(DYNAMIC_RAM_BASE, machine.rom.bytes.data() + machine.rom.textAddress, image.text.size());
+		frame.registers[1] = valueNumber(DYNAMIC_RAM_BASE + 0x1000u);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE);
+		cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1200);
+		auto& page = *frame.decodedPage;
+		if (!scalar) require(page.nativeBlocks && page.nativeBlocks->entries[0], "DMA test starts with a published native RAM entry");
+		std::array<u8, 2u * INSTRUCTION_BYTES> replacement{};
+		writeInstruction(replacement, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
+		writeInstruction(replacement, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		const u32 source = DYNAMIC_RAM_BASE + 0x2000u;
+		machine.memory.writeBytes(source, replacement.data(), replacement.size());
+		machine.memory.transferDmaBlock(source, DYNAMIC_RAM_BASE, 2u, 4u, 4u, MAPPED_BUS_MASTER_DMA, MAPPED_BUS_MASTER_DMA);
+		if (!scalar) require(!page.nativeBlocks || !page.nativeBlocks->entries[0], "DMA retires native code using the overwritten RAM words");
+		frame.registers[0] = valueNumber(0);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE);
+		require(cpu.runUntilDepth(0, 100) == RunResult::Halted && frame.registers[0] == valueNumber(1),
+			"the next execution observes the DMA-written instructions");
+	}
+}
+
 void fatalHelperErrorsLeaveTheNativeFrameBeforeUnwinding() {
 	struct ReadFailure { int code; };
 	for (const bool scalar : {false, true}) {
@@ -453,6 +479,7 @@ int main() {
 		generatedMemoryBoundaries();
 		generatedBusOrdering();
 		generatedMemoryMayRetireExecutingSource();
+		dmaMemorySpanRetiresGeneratedCode();
 		fatalHelperErrorsLeaveTheNativeFrameBeforeUnwinding();
 		changingSuccessorsDoNotRecompileStablePredecessors();
 		cachedValuesReachFieldMemoryAndFaultOwners();

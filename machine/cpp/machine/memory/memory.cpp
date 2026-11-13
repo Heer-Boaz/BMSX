@@ -590,13 +590,28 @@ void Memory::writeMappedDmaU32LE(uint32_t addr, uint32_t value, MappedBusSignals
 // retains per-word bus order, and every block's last read precedes its last write.
 void Memory::transferDmaBlock(u32 readAddress, u32 writeAddress, u32 wordCount,
 	u32 readStep, u32 writeStep, MappedBusSignals readSignals, MappedBusSignals writeSignals) {
-	const int writeSlot = (writeSignals & MAPPED_BUS_DMA_MEMORY) == 0u ? ioAlignedSlot(writeAddress) : -1;
+	if (wordCount != 0u && readStep == IO_WORD_SIZE && writeStep == IO_WORD_SIZE) {
+		const size_t bytes = static_cast<size_t>(wordCount) * IO_WORD_SIZE;
+		Span<const u8> source;
+		if (writeAddress >= IO_BASE + IO_SLOT_COUNT * IO_WORD_SIZE
+			&& isRamRange(writeAddress, bytes)
+			&& bindMappedReadView(readAddress, bytes, readSignals, source)) {
+			const size_t destinationOffset = writeAddress - RAM_BASE;
+			u8* destination = m_ram.data() + destinationOffset;
+			for (size_t offset = 0; offset < bytes; offset += IO_WORD_SIZE) {
+				writeLE32(destination + offset, readLE32(source.data_ + offset));
+			}
+			m_ramPageWriteWatches.invalidateWrite(destinationOffset, bytes, RAM_BASE, m_mappedPageInvalidator);
+			return;
+		}
+	}
+	const int writeSlot = writeStep == 0u && (writeSignals & MAPPED_BUS_DMA_MEMORY) == 0u ? ioAlignedSlot(writeAddress) : -1;
 	auto* writePrefix = wordCount > 1u && writeSlot >= 0 ? findIoDmaPrefix(writeSlot) : nullptr;
 	if (writePrefix != nullptr && writePrefix->write != nullptr
 		&& !kReadOnlyIoSlots[static_cast<size_t>(writeSlot)]) {
 		std::array<u32, DMA_BURST_WORD_CAPACITY> words;
 		const u32 prefix = wordCount - 1u;
-		const int readSlot = (readSignals & MAPPED_BUS_DMA_MEMORY) == 0u ? ioAlignedSlot(readAddress) : -1;
+		const int readSlot = readStep == 0u && (readSignals & MAPPED_BUS_DMA_MEMORY) == 0u ? ioAlignedSlot(readAddress) : -1;
 		auto* readPrefix = readSlot >= 0 ? findIoDmaPrefix(readSlot) : nullptr;
 		bool prefixRead = false;
 		if (readPrefix != nullptr && readPrefix->read != nullptr) {
@@ -751,11 +766,10 @@ bool Memory::bindRomByteView(uint32_t addr, size_t length, u32 cartridgeSlot, Sp
 bool Memory::bindMappedReadView(uint32_t addr, size_t length, MappedBusSignals busSignals, Span<const u8>& out) const {
 	if (addr < RAM_BASE) return bindRomByteView(addr, length, 0u, out);
 	if (addr < CART_ROM_BASE) {
-		size_t offset;
 		const u32 ioEnd = IO_BASE + static_cast<u32>(m_ioSlots.size()) * IO_WORD_SIZE;
-		if (length == 0u || !addressRangeOffset(addr, RAM_BASE, m_ram.size(), length, offset)
+		if (length == 0u || !isRamRange(addr, length)
 			|| (addr < ioEnd && (addr >= IO_BASE || length > IO_BASE - addr))) return false;
-		out = Span<const u8>(m_ram.data() + offset, length);
+		out = Span<const u8>(m_ram.data() + (addr - RAM_BASE), length);
 		return true;
 	}
 	return addr < CART_BUS_END && m_cartridgeController.bindMappedReadView(addr, length, busSignals, out);
@@ -763,6 +777,7 @@ bool Memory::bindMappedReadView(uint32_t addr, size_t length, MappedBusSignals b
 
 bool Memory::isRamRange(uint32_t addr, size_t length) const {
 	return addr >= RAM_BASE
+		&& addr < CART_ROM_BASE && length <= CART_ROM_BASE - addr
 		&& length <= m_ram.size()
 		&& static_cast<size_t>(addr - RAM_BASE) <= m_ram.size() - length;
 }
