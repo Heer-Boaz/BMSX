@@ -538,7 +538,6 @@ private:
 		u32 instructionCount = 0;
 		bool invalidated = false;
 		std::vector<u32> entries;
-		std::vector<const NativeCodeRegion*> merged;
 	} m_pendingNativeCompilation;
 #endif
 	size_t m_nativeCodeBytes = 0;

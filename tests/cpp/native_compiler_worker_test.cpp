@@ -266,6 +266,89 @@ void invalidatedPendingMergeDoesNotRetireDeadOwners() {
 		"the replacement merge observes the new physical source words");
 }
 
+void independentInteriorEntryRetiresEveryOverlappingOwner(int mutation) {
+	test::Blua32TestImage image;
+	image.text.resize(20);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::ADD), 1, 1, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::ADD), 2, 2, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
+	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 3}};
+	CpuMachine generated(image, false), reference(image, true);
+	const u32 pc = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE;
+	for (auto* machine : {&generated, &reference}) {
+		machine->memory.writeBytes(pc, image.text.data(), image.text.size());
+		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc);
+		machine->cpu.activeThread()->currentFrame->registers[1] = valueNumber(0);
+		machine->cpu.activeThread()->currentFrame->registers[2] = valueNumber(0);
+	}
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(4);
+	for (;;) {
+		const auto* page = generated.cpu.activeThread()->currentFrame->decodedPage;
+		const auto profile = generated.cpu.readNativeCompilationProfile();
+		if (page && page->nativeBlocks && page->nativeBlocks->entries[0]
+			&& page->nativeBlocks->entries[0]->sourceWords == 5
+			&& profile.prepareRequests == profile.backgroundCompleted) break;
+		require(std::chrono::steady_clock::now() < deadline, "original wide loop publishes");
+		test::runCpuParity(generated.cpu, reference.cpu, 32);
+		std::this_thread::yield();
+	}
+	auto& page = *generated.cpu.activeThread()->currentFrame->decodedPage;
+	std::weak_ptr<NativeCodeRegion> oldRegion = page.nativeBlocks->entries[0]->region;
+	for (auto* machine : {&generated, &reference})
+		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc + 2u * INSTRUCTION_BYTES);
+	while (!page.nativeBlocks->entries[2]) {
+		require(std::chrono::steady_clock::now() < deadline, "wide body publishes as independent entry");
+		test::runCpuParity(generated.cpu, reference.cpu, 32);
+		for (auto* machine : {&generated, &reference})
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc + 2u * INSTRUCTION_BYTES);
+		std::this_thread::yield();
+	}
+	require(page.nativeBlocks->entries[0]->region == oldRegion.lock() && page.nativeBlocks->entries[2]->region != oldRegion.lock(),
+		"new body entry preserves original executable owner");
+	for (int grant = 1; grant <= 64; ++grant) test::runCpuParity(generated.cpu, reference.cpu, grant);
+	require(page.nativeBlocks->entries[2]->terminal.link.target == page.nativeBlocks->entries[0].get(),
+		"independent body region links back to the original entry");
+	std::array<u32, 2> observations{};
+	if (mutation < 3) {
+		const u32 word = 1u + static_cast<u32>(mutation);
+		std::array<u8, 4> replacement{};
+		writeInstruction(replacement, 0, static_cast<u8>(OpCode::KSMI), mutation == 2 ? 2 : 1, 0, 7);
+		for (auto* machine : {&generated, &reference}) machine->memory.writeBytes(pc + word * INSTRUCTION_BYTES, replacement.data(), replacement.size());
+		if (mutation == 0) {
+			require(page.nativeBlocks && !page.nativeBlocks->entries[0] && page.nativeBlocks->entries[2]
+				&& !page.nativeBlocks->entries[2]->terminal.link.target,
+				"rewriting only the prefix disconnects the independent body and keeps its owner");
+		} else {
+			require(!page.nativeBlocks || (!page.nativeBlocks->entries[0] && !page.nativeBlocks->entries[2]),
+				"rewriting the body or shared suffix retires both overlapping executable owners");
+		}
+		require(oldRegion.expired(), "the retired original region releases its executable owner");
+	} else if (mutation == 3) {
+		for (size_t index = 0; index < observations.size(); ++index) {
+			auto* machine = index == 0 ? &generated : &reference;
+			InstructionObserverBinding observer;
+			observer.points[0].insert(pc + 2u * INSTRUCTION_BYTES);
+			observer.context = &observations[index];
+			observer.observe = [](void* context, ExecutionDomainId, u32, const Value*) { ++*static_cast<u32*>(context); };
+			machine->cpu.setInstructionObserver(std::move(observer));
+		}
+		require(!page.nativeBlocks && oldRegion.expired(), "a late observer retires both native owners");
+		for (auto* machine : {&generated, &reference})
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc + 2u * INSTRUCTION_BYTES);
+	} else {
+		for (auto* machine : {&generated, &reference}) {
+			const auto state = machine->cpu.captureRuntimeState();
+			machine->cpu.restoreRuntimeState(state);
+		}
+		require(oldRegion.expired(), "restoring state releases the native owners before rebuilding them");
+	}
+	for (int grant = 1; grant <= 64; ++grant) test::runCpuParity(generated.cpu, reference.cpu, grant);
+	if (mutation == 3) require(observations[0] != 0 && observations[0] == observations[1],
+		"late observation agrees after native owners retire");
+}
+
 }
 
 int main() {
@@ -275,6 +358,7 @@ int main() {
 		cpuInvalidationAndLifecycle();
 		imageReplacementRetiresBorrowedConstants();
 		invalidatedPendingMergeDoesNotRetireDeadOwners();
+		for (int mutation = 0; mutation < 5; ++mutation) independentInteriorEntryRetiresEveryOverlappingOwner(mutation);
 		std::cout << "Native compiler worker tests passed\n";
 	} catch (const std::exception& error) {
 		std::cerr << error.what() << '\n';

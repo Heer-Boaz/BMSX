@@ -676,8 +676,12 @@ void nativeCallUsesItsClosureBoundFunctionRecord() {
 		require(cpu.runUntilDepth(0, 100) == RunResult::Halted && source.writes == 1
 			&& cpu.readFramePc(0) == DYNAMIC_RAM_BASE + 4u * INSTRUCTION_BYTES,
 			"closure creation completes before its modified successor executes");
-		if (!instrumented) require(!page.nativeBlocks || !page.nativeBlocks->entries[0],
-			"the invalidated creation code is not retained after the helper");
+		if (!instrumented && page.nativeBlocks) {
+			require(!page.nativeBlocks->entries[2], "the rewritten CALL owner is retired during closure creation");
+			const auto& creation = page.nativeBlocks->entries[0];
+			require(!creation || creation->sourceWords <= 3u,
+				"creation code survives only when it does not depend on the rewritten CALL");
+		}
 	}
 }
 #endif

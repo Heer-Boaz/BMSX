@@ -97,8 +97,6 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 	m_memory.bindMappedPage(pagePc, m_executionBusSignals, binding);
 	std::array<u8, DECODED_PAGE_WORDS> roots{}, queued{}, available{}, leaders{};
 	std::array<u32, DECODED_PAGE_WORDS> pending{};
-	std::array<const NativeCodeRegion*, DECODED_PAGE_WORDS> owners{};
-	std::vector<const NativeCodeRegion*> merged;
 	size_t pendingCount = 0;
 	const auto enqueue = [&](u32 pc, bool leader) {
 		const u32 offset = pc - pagePc;
@@ -111,26 +109,12 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 	};
 	roots[word] = 1;
 	enqueue(m_currentInstructionPc, true);
-	if (page.nativeBlocks) for (u32 entry = 0; entry < DECODED_PAGE_WORDS; ++entry) {
-		const auto& block = page.nativeBlocks->entries[entry];
-		if (!block) continue;
-		std::fill(owners.begin() + entry, owners.begin() + std::min(entry + block->sourceWords, static_cast<u32>(DECODED_PAGE_WORDS)), block->region.get());
-	}
 	for (size_t next = 0; next < pendingCount; ++next) {
 		const u32 cursor = pending[next];
 		const u32 pc = pagePc + cursor * INSTRUCTION_BYTES;
-		if (const auto* region = owners[cursor]; region && std::find(merged.begin(), merged.end(), region) == merged.end()) {
-			// Split a newly entered interior instruction in the same connected
-			// region. Independent functions on the page retain their code owner.
-			merged.push_back(region);
-			leaders[cursor] = 1;
-			for (u32 entry = 0; entry < DECODED_PAGE_WORDS; ++entry) {
-				const auto& block = page.nativeBlocks->entries[entry];
-				if (!block || block->region.get() != region) continue;
-				roots[entry] = 1;
-				enqueue(pagePc + entry * INSTRUCTION_BYTES, true);
-			}
-		}
+		// Existing entry points retain their region; an edge to one becomes an
+		// ordinary external link. Interior entries compile a separate suffix.
+		if (page.nativeBlocks && page.nativeBlocks->entries[cursor]) continue;
 		if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) != 0u) {
 			if (!binding.readBytes || cursor == DECODED_PAGE_WORDS - 1u) continue;
 			if (!decodeInstruction(frame, page, cursor, pc, false)) return;
@@ -212,16 +196,6 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 		}
 	}
 #if !defined(BMSX_NATIVE_COMPILER_WORKER)
-	if (!merged.empty()) {
-		measurement.phase(&NativeCompilationProfile::retirementNanoseconds);
-		for (const auto* region : merged) {
-			if (profile) {
-				++profile->mergedRegions;
-				profile->mergedCodeBytes += region->codeBytes;
-			}
-			page.retireNativeRegion(region);
-		}
-	}
 	measurement.phase(&NativeCompilationProfile::compilationNanoseconds);
 #endif
 	NativeBlockExitHandlers handlers{};
@@ -244,7 +218,6 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32
 	pendingJob.instructionCount = static_cast<u32>(instructionCount);
 	pendingJob.invalidated = false;
 	pendingJob.entries.assign(entries.begin(), entries.end());
-	pendingJob.merged.assign(merged.begin(), merged.end());
 	m_nativeCompilerWorker->submit(sources, frame.executionImage->constPool.data(), NativeCodeBindings(m_memory, m_stringPool), handlers, profile != nullptr);
 #else
 	auto blocks = NativeBlock::compileRegion(sources, frame.executionImage->constPool.data(),
@@ -265,15 +238,7 @@ void CPU::publishNativeCompilation() {
 		m_nativeCompilationProfile.backgroundCancelled += job.invalidated;
 	}
 	if (job.invalidated) return;
-	auto* profile = m_nativeCompilationProfiling ? &m_nativeCompilationProfile : nullptr;
 	auto& page = *job.page;
-	for (const auto* region : job.merged) {
-		if (profile) {
-			++profile->mergedRegions;
-			profile->mergedCodeBytes += region->codeBytes;
-		}
-		page.retireNativeRegion(region);
-	}
 	installNativeRegion(*job.image, page, job.pagePc, job.slot, job.entries, std::move(blocks), job.instructionCount);
 }
 

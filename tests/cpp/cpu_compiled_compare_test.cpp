@@ -218,10 +218,13 @@ void resolvedComparisonLinksBothPaths() {
 	const auto& cache = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks;
 	const auto& root = *cache.entries[0];
 	require(root.sourceWords == 2 && !cache.entries[1] && cache.entries[2] && cache.entries[4]
-		&& root.region == cache.entries[2]->region && root.region == cache.entries[4]->region
-		&& root.sideExits.back().exit == NativeBlockExit::Continue
-		&& !root.terminal.link.target && !root.sideExits.back().link.target,
-		"both comparison outcomes stay in their code region without dynamic skip or link dispatch");
+		&& root.sideExits.back().exit == NativeBlockExit::Continue,
+		"the fused comparison exposes both compiled targets without a dynamic skip");
+	for (const auto* edge : {&root.terminal, &root.sideExits.back()}) {
+		const auto& target = cache.entries[(edge->nextPc - DYNAMIC_RAM_BASE) / INSTRUCTION_BYTES];
+		require(target && (target->region == root.region ? !edge->link.target : edge->link.target == target.get()),
+			"each comparison outcome uses an internal edge or an actual link to its independent owner");
+	}
 #endif
 	for (const int value : {0, 1}) for (int grant = 1; grant <= 32; ++grant) {
 		for (auto* machine : {&native, &scalar}) {
