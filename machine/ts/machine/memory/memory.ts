@@ -1,5 +1,6 @@
 import {
 	CART_BUS_END,
+	CART_MMIO_BASE,
 	CART_MMIO_END,
 	CART_RAM_END,
 	CART_ROM_BASE,
@@ -69,6 +70,7 @@ import {
 } from '../../spec/bmsx/io';
 import { readLE16, readLE32, writeLE16, writeLE32 } from '../../common/endian';
 import {
+	MAPPED_BUS_INSTRUCTION_FETCH,
 	MAPPED_BUS_MASTER_CPU,
 	MAPPED_BUS_MASTER_DMA,
 	MAPPED_BUS_DMA_MEMORY,
@@ -635,6 +637,7 @@ export class Memory {
 		return this.readMappedBusU32LE(addr, busSignals);
 	}
 
+
 	public readMappedBusU32LE(
 		addr: number,
 		busSignals: MappedBusSignals,
@@ -642,10 +645,15 @@ export class Memory {
 	): number {
 		const slot = this.ioAlignedSlot(addr);
 		if (slot >= 0) {
+			if ((busSignals & MAPPED_BUS_INSTRUCTION_FETCH) !== 0) {
+				this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
+				return 0;
+			}
 			return this.readIoSlot(slot, addr, busSignals);
 		}
 		if (this.isIoRegionRange(addr, 4)) {
-			this.raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, faultAccess);
+			this.raiseBusFault((busSignals & MAPPED_BUS_INSTRUCTION_FETCH) !== 0
+				? BUS_FAULT_UNMAPPED : BUS_FAULT_UNALIGNED_IO, addr, faultAccess);
 			return 0;
 		}
 		if (addr < RAM_BASE) {
@@ -658,6 +666,10 @@ export class Memory {
 				return readLE32(this.ram, ramOffset);
 			}
 		} else if (addr <= CART_BUS_END - 4) {
+			if (addr >= CART_MMIO_BASE && (busSignals & MAPPED_BUS_INSTRUCTION_FETCH) !== 0) {
+				this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
+				return 0;
+			}
 			return this.cartridgeController.readU32(addr, busSignals);
 		}
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);

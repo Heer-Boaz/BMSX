@@ -501,10 +501,15 @@ uint32_t Memory::readMappedBusU32LE(
 ) const {
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
+		if ((busSignals & MAPPED_BUS_INSTRUCTION_FETCH) != 0u) {
+			raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
+			return 0u;
+		}
 		return readIoSlot(slot, addr, busSignals);
 	}
 	if (isIoRegionRange(addr, 4)) {
-		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, faultAccess);
+		raiseBusFault((busSignals & MAPPED_BUS_INSTRUCTION_FETCH) != 0u
+			? BUS_FAULT_UNMAPPED : BUS_FAULT_UNALIGNED_IO, addr, faultAccess);
 		return 0;
 	}
 	if (addr < RAM_BASE) {
@@ -517,6 +522,10 @@ uint32_t Memory::readMappedBusU32LE(
 			return readLE32(m_ram.data() + offset);
 		}
 	} else if (addr <= CART_BUS_END - 4u) {
+		if (addr >= CART_MMIO_BASE && (busSignals & MAPPED_BUS_INSTRUCTION_FETCH) != 0u) {
+			raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
+			return 0u;
+		}
 		return m_cartridgeController.readU32(addr, busSignals);
 	}
 	raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);

@@ -985,7 +985,7 @@ bool CPU::decodeInstruction(
 	uint8_t wideA = 0;
 	uint8_t wideB = 0;
 	uint8_t wideC = 0;
-	const uint32_t sourceWord = m_memory.readMappedBusU32LE(pc, m_executionBusSignals);
+	const uint32_t sourceWord = m_memory.readMappedBusU32LE(pc, m_executionBusSignals | MAPPED_BUS_INSTRUCTION_FETCH);
 	if (m_memory.readBusFaultSequence() != faultSequence) {
 		enterInstructionFetchException(frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
 		return false;
@@ -1007,7 +1007,7 @@ bool CPU::decodeInstruction(
 		wideC = static_cast<uint8_t>(sourceWord & 0x3f);
 		bodyWord = m_memory.readMappedBusU32LE(
 			pc + INSTRUCTION_BYTES,
-			m_executionBusSignals
+			m_executionBusSignals | MAPPED_BUS_INSTRUCTION_FETCH
 		);
 		if (m_memory.readBusFaultSequence() != faultSequence) {
 			enterInstructionFetchException(frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);

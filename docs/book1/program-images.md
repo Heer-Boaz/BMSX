@@ -372,6 +372,12 @@ A function address identifies a **32-byte function record**, not its first instr
 
 VARARG retains arguments beyond the fixed parameters. STATIC permits direct entry through EXEC; the closure-construction rules are described in [CPU — Closures and captured variables](cpu.md#sec-cpu-closures-and-captured-variables). The immediate-address form of `CLOSURE` encodes a function-record address in **16-byte units**; its register-address form supplies the full address. Function-record reads themselves do not impose a 16-byte alignment check. The declared code byte count does not bound instruction fetches.
 
+The code address names an instruction in an executable ROM or RAM window.
+Instruction fetch does not access system I/O or cartridge MMIO; the CPU
+[fetch rules](cpu.md#sec-memory-instruction-alignment-and-read-faults) define
+the fault and its timing. This restriction does not apply to the mapped-bus
+reads used to construct a closure from its function record.
+
 Closure construction binds the record's entry and frame data. Rewriting a
 record changes the data bound by a later construction, not the data of an
 existing closure. Instructions remain in addressed memory and are fetched

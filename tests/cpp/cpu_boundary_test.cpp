@@ -998,11 +998,142 @@ void instructionBoundaryResynchronizesAfterFetchOrObservation() {
 		}
 		machine.memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_GPU);
 		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+		if (mappedFetch) {
+			require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "the rejected MMIO fetch consumes one fetch-fault cycle");
+			require(edge.count == 0 && cpu.readCauseWord() == CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR
+				&& cpu.readEpcWord() == pc && interruptedRegisters[6] == valueNumber(0),
+				"MMIO fetch faults before the device read or instruction execution");
+			require(machine.memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_UNMAPPED
+				&& machine.memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == pc
+				&& machine.memory.readIoU32(IO_SYS_BUS_FAULT_ACCESS) == (BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32),
+				"instruction-bus fault records the forbidden MMIO word as an unmapped U32 read");
+			continue;
+		}
 		require(cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::K1)]) == RunResult::Yielded, "fetch/observer edge preserves instruction grant");
 		require(edge.count == 1 && cpu.activeThread()->frameDepth == 2, "device edge enters the IRQ frame before the next instruction");
 		require(cpu.readCauseWord() == CPU_CAUSE_IRQ && cpu.readEpcWord() == pc + INSTRUCTION_BYTES, "interrupt saves the next physical PC");
 		require(cpu.activeThread()->frameAtDepth(0)->registers[6] == valueNumber(99), "the fetched or observed instruction completes before accepting the edge");
 		require(cpu.activeThread()->currentFrame->registers[0] == valueNumber(1), "IRQ execution uses its own frame register base");
+	}
+}
+
+void instructionFetchRejectsCartridgeMmio() {
+	for (const u32 selected : {0u, 1u}) {
+		auto image = returnImage(OpCode::HALT, 0, 0, 0);
+		image.text.resize(2u * INSTRUCTION_BYTES);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		image.functions = {{.firstWord = 0, .wordCount = 1}, {.firstWord = 1, .wordCount = 1}};
+		image.exceptionFunctionIndex = 1;
+		const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
+		auto slots = test::cartridgeSlots();
+		slots[selected] = CartridgeCardMedia{std::nullopt, std::nullopt, true};
+		Memory memory(MemoryInit{rom.bytes, slots}, PSX_MACHINE_SPEC.ramBytes);
+		IrqController irq(memory);
+		ExecutionAddressSpace addresses(memory);
+		CPU cpu(memory, irq, addresses);
+		DeviceScheduler scheduler(cpu);
+		DmaController dma(memory, cpu, irq, scheduler);
+		memory.cartridgeController().connect(memory, irq, dma);
+		cpu.reset();
+		memory.writeMappedU32LE(IO_CART_SELECT, selected);
+		require(memory.cartridgeController().selectedSlot() == selected, "the data selector reaches the intended card");
+		memory.writeMappedU32LE(CART_MMIO_BASE, 0x12345678u);
+		require(memory.readMappedU32LE(CART_MMIO_BASE) == 0x12345678u, "ordinary cartridge MMIO data access still works");
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], CART_MMIO_BASE);
+		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded && cpu.readCauseWord() == CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR
+			&& cpu.readEpcWord() == CART_MMIO_BASE && memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_UNMAPPED
+			&& memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == CART_MMIO_BASE,
+			"instruction fetch from either cartridge mailbox is rejected");
+	}
+	{
+		const auto image = returnImage(OpCode::HALT, 0, 0, 0);
+		const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
+		const std::array<u8, 4> card0{0x11, 0x22, 0x33, 0x44};
+		const std::array<u8, 4> card1{0x55, 0x66, 0x77, 0x88};
+		Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots(card0, card1)}, PSX_MACHINE_SPEC.ramBytes);
+		IrqController irq(memory);
+		ExecutionAddressSpace addresses(memory);
+		CPU cpu(memory, irq, addresses);
+		DeviceScheduler scheduler(cpu);
+		DmaController dma(memory, cpu, irq, scheduler);
+		memory.cartridgeController().connect(memory, irq, dma);
+		for (const u32 selected : {0u, 1u}) {
+			memory.writeMappedU32LE(IO_CART_SELECT, selected);
+			const u32 expected = selected == 0u ? 0x44332211u : 0x88776655u;
+			require(memory.readMappedBusU32LE(CART_ROM_BASE, MAPPED_BUS_MASTER_CPU) == expected
+				&& memory.readMappedBusU32LE(CART_ROM_BASE, MAPPED_BUS_MASTER_CPU | MAPPED_BUS_INSTRUCTION_FETCH) == expected,
+				"fetch select does not change the active data selector");
+			for (const u32 slot : {0u, 1u}) {
+				require(memory.readMappedBusU32LE(CART_ROM_BASE, mappedBusSignalsForCartridgeSlot(slot) | MAPPED_BUS_INSTRUCTION_FETCH)
+					== (slot == 0u ? 0x44332211u : 0x88776655u),
+					"fetch select preserves an explicit cartridge socket override");
+			}
+		}
+	}
+	for (const bool instrumented : {false, true}) for (const bool wide : {false, true}) {
+		test::Blua32TestImage image;
+		image.text.resize(2u * INSTRUCTION_BYTES);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		image.functions = {{.firstWord = 0, .wordCount = 1}, {.firstWord = 1, .wordCount = 1}};
+		image.exceptionFunctionIndex = 1;
+		const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
+		auto slots = test::cartridgeSlots();
+		slots[0] = CartridgeCardMedia{std::nullopt, CART_RAM_SIZE, true};
+		Memory memory(MemoryInit{rom.bytes, slots}, PSX_MACHINE_SPEC.ramBytes);
+		IrqController irq(memory);
+		ExecutionAddressSpace addresses(memory);
+		CPU cpu(memory, irq, addresses);
+		cpu.reset();
+		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+		constexpr u32 pc = CART_MMIO_BASE - INSTRUCTION_BYTES;
+		std::array<u8, INSTRUCTION_BYTES> instruction{};
+		writeInstruction(instruction, 0, static_cast<u8>(wide ? OpCode::WIDE : OpCode::EQ), wide ? 0 : 1, 0, wide ? 0 : 1);
+		memory.cartridgeController().writeU32(pc, readLE32(instruction.data()), mappedBusSignalsForCartridgeSlot(0));
+		if (!wide) {
+			auto* frame = cpu.activeThread()->frameAtDepth(0);
+			frame->registers[0] = valueNumber(0); frame->registers[1] = valueNumber(0);
+			for (unsigned visit = 0; visit < NATIVE_BLOCK_COMPILATION_THRESHOLD + 2u; ++visit) {
+				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], pc);
+				require(cpu.runUntilDepth(0, 1) == RunResult::Yielded && frame->pc == CART_MMIO_BASE,
+					"a non-skipping comparison stops before fetching its successor");
+			}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			if (!instrumented) {
+				const auto word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+				test::waitForNativeEntry(cpu, *frame->decodedPage, word);
+				require(frame->decodedPage->nativeBlocks->entries[word] != nullptr,
+					"the non-skipping comparison warmed an actual native block");
+			}
+#endif
+			frame->registers[1] = valueNumber(1);
+		}
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], pc);
+		require(cpu.runUntilDepth(0, wide ? 1 : 2) == RunResult::Yielded,
+			"a forbidden body or skipped word raises its fetch fault at the instruction boundary");
+		require(cpu.readCauseWord() == CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR
+			&& cpu.readEpcWord() == (wide ? pc : CART_MMIO_BASE),
+			"WIDE preserves the prefix EPC and skip reports the forbidden successor PC");
+		require(memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_UNMAPPED
+			&& memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == CART_MMIO_BASE
+			&& memory.readIoU32(IO_SYS_BUS_FAULT_ACCESS) == (BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32),
+			"the forbidden cartridge word records a U32 instruction bus fault");
+	}
+	{
+		auto image = returnImage(OpCode::HALT, 0, 0, 0);
+		CpuMachine machine(image);
+		require(machine.memory.readMappedBusU32LE(SYSTEM_ROM_SIZE - INSTRUCTION_BYTES, MAPPED_BUS_MASTER_CPU | MAPPED_BUS_INSTRUCTION_FETCH) == 0u
+			&& machine.memory.readMappedBusU32LE(CART_ROM_BASE, mappedBusSignalsForCartridgeSlot(0) | MAPPED_BUS_INSTRUCTION_FETCH) == 0u
+			&& machine.memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == 0u,
+			"unbacked system ROM and an empty cartridge socket retain zero-filled executable windows");
+		constexpr u32 pc = IO_BASE + IO_SLOT_COUNT * IO_WORD_SIZE;
+		std::array<u8, INSTRUCTION_BYTES> instruction{};
+		writeInstruction(instruction, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		machine.memory.writeU32(pc, readLE32(instruction.data()));
+		machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], pc);
+		machine.cpu.runUntilDepth(0, 1);
+		require(machine.cpu.readCauseWord() == 0u && machine.memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == 0u,
+			"RAM immediately beyond the actual I/O decoder remains executable");
 	}
 }
 
@@ -1593,6 +1724,7 @@ int main() {
 		returnRangesSurviveCallerStackGrowth(); builtinReturnRangesSurviveDestinationGrowth();
 		wideSignedImmediatesKeepTheirRange();
 		instructionBoundaryResynchronizesAfterFetchOrObservation();
+		instructionFetchRejectsCartridgeMmio();
 		cachedFetchCrossesWidePagesAndObservesCodeWrites();
 		rewrittenInstructionRetainsItsOwnCycleCharge();
 		partialCodeWritesRetainOtherDecodedStarts();

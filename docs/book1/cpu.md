@@ -369,7 +369,14 @@ allocate isolated RAM.
 Instruction PC is an unsigned 32-bit byte address and must be four-byte aligned.
 Sequential advancement, WIDE-body addresses, branch targets and conditional
 skips retain the low 32 bits of the calculated address. A misaligned
-fetch records BadAddress and raises `AddressErrorLoad`. A new bus fault reading
+fetch records BadAddress and raises `AddressErrorLoad` before attempting a bus
+read. Instruction words may be fetched from system ROM, installed main RAM
+outside the decoded I/O aperture, and cartridge ROM or RAM. The executable
+windows retain their ordinary mapped storage behavior, including zero reads
+outside fitted ROM or card storage. System I/O and cartridge MMIO do not supply
+instructions: a fetch from either is an unmapped U32 bus read, rejected before
+the addressed device is read. Ordinary data access to those devices is unchanged.
+A new bus fault reading
 either the first word or the WIDE body raises `InstructionBusError`; the saved
 fetch PC is the instruction start, including the prefix address when the body
 read fails. Fetch exception entry has a one-cycle charge; an unfetched body is

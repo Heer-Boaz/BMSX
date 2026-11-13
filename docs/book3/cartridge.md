@@ -134,6 +134,11 @@ Instruction fetch and the explicit DMA socket selections bypass SELECT without
 changing it. STATUS bit 16 continues to report ordinary data selection, not
 the socket used by an instruction fetch or by a DMA endpoint.
 
+Cartridge ROM and RAM windows can supply instruction words; cartridge MMIO
+cannot. An attempted instruction fetch from MMIO raises an instruction bus
+error before reading the device. This does not prohibit ordinary data reads or
+DMA transfers through the MMIO window.
+
 The presence bits are independent of selection. Selecting an empty socket
 changes STATUS bit 16 while leaving bits 1:0 unchanged. Reads from that socket
 return zero and writes have no effect.

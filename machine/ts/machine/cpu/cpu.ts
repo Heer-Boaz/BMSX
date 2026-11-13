@@ -9,6 +9,7 @@ import {
 	type MemoryByteView,
 } from '../memory/memory';
 import {
+	MAPPED_BUS_INSTRUCTION_FETCH,
 	MAPPED_BUS_MASTER_CPU,
 	mappedBusSignalsForCartridgeSlot,
 	type MappedBusSignals,
@@ -1306,7 +1307,7 @@ export class CPU implements MappedPageInvalidator {
 		let wideA = 0;
 		let wideB = 0;
 		let wideC = 0;
-		const sourceWord = this.memory.readMappedBusU32LE(pc, this.executionBusSignals);
+		const sourceWord = this.memory.readMappedBusU32LE(pc, this.executionBusSignals | MAPPED_BUS_INSTRUCTION_FETCH);
 		if (this.memory.readBusFaultSequence() !== faultSequence) {
 			this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
 			return false;
@@ -1325,7 +1326,7 @@ export class CPU implements MappedPageInvalidator {
 			wideC = sourceWord & 0x3f;
 			bodyWord = this.memory.readMappedBusU32LE(
 				(pc + INSTRUCTION_BYTES) >>> 0,
-				this.executionBusSignals,
+				this.executionBusSignals | MAPPED_BUS_INSTRUCTION_FETCH,
 			);
 			if (this.memory.readBusFaultSequence() !== faultSequence) {
 				this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);

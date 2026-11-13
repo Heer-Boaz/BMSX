@@ -199,7 +199,7 @@ test('builtin-owned result ranges survive destination growth with exact open/fix
 	}
 });
 
-test('a device edge during instruction fetch or observation is accepted at the next instruction boundary', () => {
+test('an observation edge waits for the instruction; MMIO instruction fetch faults before reading the device', () => {
 	for (const instrumented of [false, true]) for (const mappedFetch of [false, true]) {
 		const text = new Uint8Array(4 * INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.MOV, 6, 7, 0);
@@ -226,6 +226,17 @@ test('a device edge during instruction fetch or observation is accepted at the n
 		}
 		memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_GPU);
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+		if (mappedFetch) {
+			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+			assert.equal(edges, 0);
+			assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR);
+			assert.equal(cpu.readEpcWord(), pc);
+			assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
+			assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), pc);
+			assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ACCESS), BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32);
+			assert.equal(cpu.activeThread.frameAtDepth(0).registers.getNumber(6), 0);
+			continue;
+		}
 		assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.K1]), RunResult.Yielded);
 		assert.equal(edges, 1);
 		assert.equal(cpu.activeThread.frameDepth, 2);
