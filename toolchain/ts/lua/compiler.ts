@@ -1536,23 +1536,30 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			const bssInit = this.program.bssInitBinding();
 			if (bssByteCount !== 0 && bssInit !== null) {
 				const addrReg = this.allocTemp();
-				const countReg = this.allocTemp();
-				const zeroReg = this.allocTemp();
-				const wordBytesReg = this.allocTemp();
-				const oneReg = this.allocTemp();
 				this.emitLoadBssAddress(addrReg, bssInit, -bssInit.offset);
-				this.emitLoadConst(countReg, bssByteCount >> 2);
-				this.emitLoadConst(zeroReg, 0);
-				this.emitLoadConst(wordBytesReg, 4);
-				this.emitLoadConst(oneReg, 1);
-				const loopStart = this.code.length;
-				this.emitABC(OpCode.EQ, 1, countReg, zeroReg);
-				const jumpOut = this.emitJumpPlaceholder();
-				this.emitABC(OpCode.STORE_MEM, zeroReg, addrReg, MemoryAccessKind.Word);
-				this.emitABC(OpCode.ADD, addrReg, addrReg, wordBytesReg);
-				this.emitABC(OpCode.SUB, countReg, countReg, oneReg);
-				this.emitAsBx(OpCode.JMP, 0, loopStart - (this.code.length + 1));
-				this.patchJump(jumpOut, this.code.length);
+				const wordCount = bssByteCount >>> 2;
+				const batchCount = wordCount >>> 3;
+				const tailCount = wordCount & 7;
+				const zeroCount = batchCount !== 0 ? 8 : tailCount;
+				const zeroBase = this.allocTempBlock(zeroCount);
+				for (let index = 0; index < zeroCount; index += 1) {
+					this.emitLoadConst(zeroBase + index, 0);
+				}
+				if (batchCount !== 0) {
+					const countReg = this.allocTemp();
+					const strideReg = this.allocTemp();
+					const oneReg = this.allocTemp();
+					this.emitLoadConst(countReg, batchCount);
+					this.emitLoadConst(strideReg, 32);
+					this.emitLoadConst(oneReg, 1);
+					const loopStart = this.code.length;
+					this.emitABC(OpCode.STORE_MEM_WORDS, zeroBase, addrReg, 8);
+					this.emitABC(OpCode.ADD, addrReg, addrReg, strideReg);
+					this.emitABC(OpCode.SUB, countReg, countReg, oneReg);
+					this.emitABC(OpCode.EQ, 0, countReg, zeroBase);
+					this.emitAsBx(OpCode.JMP, 0, loopStart - (this.code.length + 1));
+				}
+				if (tailCount !== 0) this.emitABC(OpCode.STORE_MEM_WORDS, zeroBase, addrReg, tailCount);
 			}
 			this.emitDefaultReturn();
 		});
