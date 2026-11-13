@@ -504,6 +504,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				hardHalted: true,
 				luaHeap: { trackedBytes: 2345, nextCollectionBytes: 1048576 },
 				executionCartridgeSlot: 0,
+				programExecutionDomainId: 0,
 				systemGlobals: [
 				{ key: 1, value: 0 },
 			],

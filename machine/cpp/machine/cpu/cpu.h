@@ -137,6 +137,7 @@ struct CpuThreadState {
 
 struct CpuRuntimeState {
 	ExecutionDomainId executionCartridgeSlot = SYSTEM_EXECUTION_DOMAIN_ID;
+	ExecutionDomainId programExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	std::vector<CpuRootValueState> systemGlobals;
 	std::vector<CpuRootValueState> globalSlots;
 	ExecutionDomainMask executionResidencyMask = 0;
@@ -549,7 +550,7 @@ private:
 	void returnFromException(CallFrame& frame);
 	void enterSynchronousAddressException(CallFrame& interruptedFrame, u32 causeWord, u32 address);
 	void enterInstructionFetchException(CallFrame& interruptedFrame, u32 causeWord, u32 pc);
-	void enterException(u32 functionAddress, u32 causeWord, u32 epcWord);
+	void enterException(Blua32ExecutionImage& vectorImage, u32 functionAddress, u32 causeWord, u32 epcWord);
 	void enterLuaFaultException(u32 reason, Value errorValue);
 	void hardHalt();
 	void blockMappedWrite(CallFrame& frame, uint32_t address);
@@ -562,6 +563,7 @@ private:
 	> m_executionImagesByDomain;
 	Blua32ExecutionImage* m_systemImage = nullptr;
 	Blua32ExecutionImage* m_activeExecutionImage = nullptr;
+	ExecutionDomainId m_programExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	MappedBusSignals m_executionBusSignals = MAPPED_BUS_MASTER_CPU;
 	int m_haltedUntilIrqFrameDepth = -1;
 	Thread* m_haltedUntilIrqThread = nullptr;

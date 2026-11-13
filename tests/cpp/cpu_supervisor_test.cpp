@@ -957,6 +957,68 @@ void testDeviceSchedulerEqualDeadlinePriority() {
 	}
 }
 
+void testUserIrqInSystemCalleeUsesCartVector() {
+	bmsx::test::Blua32TestImage system;
+	system.text.resize(6u * bmsx::INSTRUCTION_BYTES);
+	std::span<bmsx::u8> systemCode(system.text);
+	bmsx::writeInstruction(systemCode, 0, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
+	bmsx::writeInstruction(systemCode, 1, static_cast<bmsx::u8>(bmsx::OpCode::LOAD_MEM), 0, 0, static_cast<bmsx::u8>(bmsx::MemoryAccessKind::U32LE));
+	bmsx::writeInstruction(systemCode, 2, static_cast<bmsx::u8>(bmsx::OpCode::MTC0), 0, bmsx::COP0_EXEC, 0);
+	bmsx::writeInstruction(systemCode, 3, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
+	bmsx::writeInstruction(systemCode, 4, static_cast<bmsx::u8>(bmsx::OpCode::HALT), 0, 0, 0);
+	bmsx::writeInstruction(systemCode, 5, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
+	system.functions = {
+		{.firstWord = 0u, .wordCount = 3u},
+		{.firstWord = 3u, .wordCount = 1u},
+		{.firstWord = 4u, .wordCount = 2u},
+	};
+	system.constants = {
+		static_cast<bmsx::f64>(
+			bmsx::CART_ROM_BASE
+				+ bmsx::BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET
+		),
+	};
+	system.startupFunctionIndex = 0u;
+	system.irqFunctionIndex = 1u;
+	system.exceptionFunctionIndex = 1u;
+
+	bmsx::test::Blua32TestImage cart;
+	cart.text.resize(6u * bmsx::INSTRUCTION_BYTES);
+	std::span<bmsx::u8> cartCode(cart.text);
+	bmsx::writeInstruction(cartCode, 0, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
+	bmsx::writeInstruction(cartCode, 1, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 0);
+	bmsx::writeInstruction(cartCode, 2, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedValueCount(0), 0);
+	bmsx::writeInstruction(cartCode, 3, static_cast<bmsx::u8>(bmsx::OpCode::K0), 0, 0, 0);
+	bmsx::writeInstruction(cartCode, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
+	bmsx::writeInstruction(cartCode, 5, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
+	cart.functions = {
+		{.firstWord = 0u, .wordCount = 5u, .maxStack = 1u},
+		{.firstWord = 5u, .wordCount = 1u},
+	};
+	cart.closureRelocations = {{
+		1u,
+		bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 2u),
+	}};
+	cart.startupFunctionIndex = 0u;
+	cart.irqFunctionIndex = 1u;
+	cart.exceptionFunctionIndex = 1u;
+
+	CpuTestMachine machine(std::move(system), std::move(cart));
+	require(machine.cpu.runUntilDepth(0, 4) == bmsx::RunResult::Yielded, "system launch reaches the cart entry boundary");
+	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "cart executes HALT inside its system callee");
+	const auto before = machine.cpu.captureRuntimeState();
+	require((before.statusWord & bmsx::CPU_STATUS_USER_MODE_CURRENT) != 0, "system closure must retain user mode");
+	require(before.threads[0].frames.back().functionAddress == machine.systemRom.functionAddresses[2], "current callee is system code");
+	machine.cpu.restoreRuntimeState(before);
+	machine.memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 1u);
+	machine.memory.writeMappedU32LE(bmsx::IO_IRQ_MASK, bmsx::IRQ_VBLANK);
+	machine.irq.raise(bmsx::IRQ_VBLANK);
+	require(machine.cpu.enterPendingInterrupt(), "user IRQ enters");
+	require(machine.cpu.captureRuntimeState().threads[0].frames.back().functionAddress == machine.cartRom.functionAddresses[1], "user IRQ in system callee selects cartridge vector");
+	machine.memory.writeMappedU32LE(bmsx::IO_IRQ_ACK, bmsx::IRQ_VBLANK);
+	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "IRQ return resumes and completes the interrupted system call");
+}
+
 void testInstrumentedExecutionObservesCrossDomainCallAndReturn() {
 	bmsx::test::Blua32TestImage system;
 	system.text.resize(6u * bmsx::INSTRUCTION_BYTES);
@@ -1670,6 +1732,7 @@ int main() {
 	testBoundClosureRetainsCartridgeSocket();
 	testDeviceSchedulerOwnsCpuSliceLifetime();
 	testDeviceSchedulerEqualDeadlinePriority();
+	testUserIrqInSystemCalleeUsesCartVector();
 	testInstrumentedExecutionObservesCrossDomainCallAndReturn();
 	testInstrumentedExecutionFenceStopsBeforePendingIrqDelivery();
 	testInstrumentedMaskableInterruptFenceDoesNotDelayPendingNmi();

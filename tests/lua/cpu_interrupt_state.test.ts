@@ -42,6 +42,7 @@ import {
 	BUS_FAULT_ACCESS_U8,
 	BUS_FAULT_NONE,
 	BUS_FAULT_UNMAPPED,
+	IO_CART_SELECT,
 	IO_IRQ_ACK,
 	IO_IRQ_MASK,
 	IO_IRQ_FLAGS,
@@ -246,7 +247,7 @@ function makeRuntime(cpu: CPU, irqController: IrqController, sliceStats?: { begi
 	return runtime;
 }
 
-function makeCrossDomainHookRuntime(sliceStats: { begin: number; end: number }): {
+function makeCrossDomainHookRuntime(sliceStats: { begin: number; end: number }, systemLeafOp = OpCode.K0): {
 	cpu: CPU;
 	cpuExecution: CpuExecutionState;
 	images: TestBlua32ImagePair;
@@ -257,7 +258,7 @@ function makeCrossDomainHookRuntime(sliceStats: { begin: number; end: number }):
 	writeInstruction(systemCode, 1, OpCode.LOAD_MEM, 0, 0, MemoryAccessKind.U32LE, 0);
 	writeInstruction(systemCode, 2, OpCode.MTC0, 0, COP0_EXEC, 0, 0);
 	writeInstruction(systemCode, 3, OpCode.RFE, 0, 0, 0, 0);
-	writeInstruction(systemCode, 4, OpCode.K0, 0, 0, 0, 0);
+	writeInstruction(systemCode, 4, systemLeafOp, 0, 0, 0, 0);
 	writeInstruction(systemCode, 5, OpCode.RET, 0, 0, 0, 0);
 	const cartCode = new Uint8Array(6 * INSTRUCTION_BYTES);
 	writeInstruction(cartCode, 0, OpCode.WIDE, 0, 0, 0, 0);
@@ -395,6 +396,23 @@ test('device scheduler ends an active CPU slice when instrumented execution thro
 		(error) => error === failure,
 	);
 	assert.equal(scheduler.isCpuSliceActive(), false);
+});
+
+test('user IRQ while executing a BIOS function selects the cartridge IRQ vector', () => {
+	const { cpu, images, runtime } = makeCrossDomainHookRuntime({ begin: 0, end: 0 }, OpCode.HALT);
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted, 'cart executes HALT inside its system callee');
+	assert.equal(cpu.isUserMode(), true, 'calling BIOS does not change privilege');
+	assert.equal(cpu.readFrameFunctionAddress(cpu.getFrameDepth() - 1), images.systemSymbols.functionAddresses[2]);
+	const saved = cpu.captureRuntimeState();
+	cpu.restoreRuntimeState(saved);
+	runtime.machine.memory.writeMappedWord(IO_CART_SELECT, 1);
+	runtime.machine.memory.writeMappedWord(IO_IRQ_MASK, IRQ_VBLANK);
+	runtime.machine.irqController.raise(IRQ_VBLANK);
+	assert.equal(cpu.enterPendingInterrupt(), true);
+	assert.equal(cpu.readFrameFunctionAddress(cpu.getFrameDepth() - 1), images.cartSymbols.functionAddresses[1],
+		'user interrupt belongs to the cartridge even while a BIOS function is active');
+	runtime.machine.memory.writeMappedWord(IO_IRQ_ACK, IRQ_VBLANK);
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted, 'IRQ return resumes and completes the interrupted BIOS call');
 });
 
 test('instrumented execution fence stops before a pending IRQ is delivered', () => {

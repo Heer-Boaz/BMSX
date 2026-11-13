@@ -1152,6 +1152,7 @@ function readCpuThreadState(reader: BinaryReader): CpuThreadState {
 
 function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void {
 	writer.i32(state.executionCartridgeSlot);
+	writer.i32(state.programExecutionDomainId);
 	writer.u32(state.systemGlobals.length);
 	for (const value of state.systemGlobals) {
 		writeCpuRootValueState(writer, value);
@@ -1200,6 +1201,7 @@ function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void 
 function readCpuRuntimeState(reader: BinaryReader): CpuRuntimeState {
 	return {
 		executionCartridgeSlot: reader.i32() as ExecutionDomainId,
+		programExecutionDomainId: reader.i32() as ExecutionDomainId,
 		systemGlobals: reader.array(readCpuRootValueState),
 		globalSlots: reader.array(readCpuRootValueState),
 		stringIndexTable: reader.u32(),

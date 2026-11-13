@@ -208,6 +208,7 @@ export type CpuThreadState = {
 
 export type CpuRuntimeState = {
 	executionCartridgeSlot: ExecutionDomainId;
+	programExecutionDomainId: ExecutionDomainId;
 	systemGlobals: CpuRootValueState[];
 	globalSlots: CpuRootValueState[];
 	executionResidencyMask: ExecutionDomainMask;
@@ -448,6 +449,7 @@ export class CPU implements MappedPageInvalidator {
 		new Array<Blua32ExecutionImage | null>(EXECUTION_DOMAIN_COUNT).fill(null);
 	private systemImage!: Blua32ExecutionImage;
 	private activeExecutionImage!: Blua32ExecutionImage;
+	private programExecutionDomainId: ExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	private executionBusSignals: MappedBusSignals = MAPPED_BUS_MASTER_CPU;
 	private readonly mappedPageBinding: MappedPageBinding = {
 		key: 0,
@@ -866,6 +868,7 @@ export class CPU implements MappedPageInvalidator {
 		this.memoryWriteBlocked = false;
 		this.memoryWriteBlockedAddress = 0;
 		this.hardHalted = false;
+		this.programExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 		this.cop0Words[COP0_STATUS] = CPU_STATUS_SYSTEM_ENTRY;
 		this.cop0Words[COP0_CAUSE] = 0;
 		this.cop0Words[COP0_EPC] = 0;
@@ -1579,6 +1582,7 @@ export class CPU implements MappedPageInvalidator {
 		const image = this.functionRecordLatch.image;
 		this.clearCallStack();
 		this.latchActiveExecutionImage(image);
+		this.programExecutionDomainId = image.executionDomainId;
 		const cartridgeEntry = image.executionDomainId >= 0;
 		this.cop0Words[COP0_STATUS] = cartridgeEntry ? CPU_STATUS_CART_ENTRY : CPU_STATUS_SYSTEM_ENTRY;
 		this.haltedUntilIrqFrameDepth = -1;
@@ -1740,6 +1744,7 @@ export class CPU implements MappedPageInvalidator {
 			const returnLuaFaultReasonWord = this.cop0Words[COP0_LUA_FAULT_REASON];
 			const returnExceptionDomainWord = this.exceptionDomainWord;
 			this.enterException(
+				this.systemImage,
 				this.systemExceptionFunctionAddress,
 				CPU_CAUSE_NMI,
 				this.activeThread.currentFrame!.pc,
@@ -1754,9 +1759,10 @@ export class CPU implements MappedPageInvalidator {
 			return true;
 		}
 		if (this.canAcceptMaskableInterruptLine()) {
-			const image = this.isUserMode() ? this.activeExecutionImage : this.systemImage;
+			const image = this.isUserMode() ? this.executionImageForDomain(this.programExecutionDomainId)! : this.systemImage;
 			const hadHaltLatch = this.haltedUntilIrqFrameDepth >= 0;
 			this.enterException(
+				image,
 				image.irqFunctionAddress,
 				CPU_CAUSE_IRQ,
 				this.activeThread.currentFrame!.pc,
@@ -1769,7 +1775,7 @@ export class CPU implements MappedPageInvalidator {
 
 	private enterSynchronousException(interruptedFrame: CallFrame, causeWord: number): void {
 		interruptedFrame.pc = this.currentInstructionPc;
-		this.enterException(this.systemExceptionFunctionAddress, causeWord, this.currentInstructionPc);
+		this.enterException(this.systemImage, this.systemExceptionFunctionAddress, causeWord, this.currentInstructionPc);
 	}
 
 	private enterSynchronousAddressException(interruptedFrame: CallFrame, causeWord: number, address: number): void {
@@ -1780,7 +1786,7 @@ export class CPU implements MappedPageInvalidator {
 	private enterInstructionFetchException(interruptedFrame: CallFrame, causeWord: number, pc: number): void {
 		this.instructionBudgetRemaining -= 1;
 		interruptedFrame.pc = pc;
-		this.enterException(this.systemExceptionFunctionAddress, causeWord, pc);
+		this.enterException(this.systemImage, this.systemExceptionFunctionAddress, causeWord, pc);
 	}
 
 	private enterLuaFaultException(
@@ -1829,6 +1835,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private enterException(
+		vectorImage: Blua32ExecutionImage,
 		functionAddress: number,
 		causeWord: number,
 		epcWord: number,
@@ -1839,7 +1846,7 @@ export class CPU implements MappedPageInvalidator {
 		this.cop0Words[COP0_STATUS] = ((this.cop0Words[COP0_STATUS] & ~CPU_STATUS_MODE_STACK_MASK)
 			| ((this.cop0Words[COP0_STATUS] << 2) & CPU_STATUS_MODE_STACK_MASK)) >>> 0;
 		this.clearHaltAfterAcceptedInterrupt();
-		if (!this.readFunctionRecordOnBus(this.activeExecutionImage, functionAddress, this.executionBusSignals)) {
+		if (!this.readFunctionRecordOnBus(vectorImage, functionAddress, CPU.executionBusSignalsForDomain(vectorImage.executionDomainId))) {
 			this.hardHalt();
 			return;
 		}
@@ -4796,6 +4803,7 @@ export class CPU implements MappedPageInvalidator {
 		writer.finish();
 		return {
 			executionCartridgeSlot: this.activeExecutionImage.executionDomainId,
+			programExecutionDomainId: this.programExecutionDomainId,
 			systemGlobals,
 			globalSlots,
 			executionResidencyMask,
@@ -5060,6 +5068,7 @@ export class CPU implements MappedPageInvalidator {
 			);
 		}
 		this.completionValueCount = state.completionValues.length;
+		this.programExecutionDomainId = state.programExecutionDomainId;
 		this.lastExecutionDomainId = state.lastExecutionDomainId;
 		this.lastPc = state.lastPc;
 		this.haltedUntilIrqFrameDepth = state.haltedUntilIrqFrameDepth;

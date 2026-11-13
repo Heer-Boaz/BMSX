@@ -1230,6 +1230,7 @@ LuaHeapState readLuaHeapState(BinaryReader& reader) {
 
 template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntimeState& state) {
 	writer.i32(state.executionCartridgeSlot);
+	writer.i32(state.programExecutionDomainId);
 	writer.u32(static_cast<u32>(state.systemGlobals.size()));
 	for (const auto& value : state.systemGlobals) {
 		writeCpuRootValueState(writer, value);
@@ -1278,6 +1279,7 @@ template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntim
 CpuRuntimeState readCpuRuntimeState(BinaryReader& reader) {
 	CpuRuntimeState state;
 	state.executionCartridgeSlot = reader.i32();
+	state.programExecutionDomainId = reader.i32();
 	const u32 systemGlobalsCount = reader.u32();
 	state.systemGlobals.reserve(systemGlobalsCount);
 	for (u32 index = 0; index < systemGlobalsCount; ++index) {

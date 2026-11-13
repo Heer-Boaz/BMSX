@@ -501,6 +501,7 @@ void CPU::reset() {
 	m_memoryWriteBlocked = false;
 	m_memoryWriteBlockedAddress = 0u;
 	m_hardHalted = false;
+	m_programExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	m_cop0Words[COP0_STATUS] = CPU_STATUS_SYSTEM_ENTRY;
 	m_cop0Words[COP0_CAUSE] = 0u;
 	m_cop0Words[COP0_EPC] = 0u;
@@ -1280,6 +1281,7 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 	}
 	clearCallStack();
 	latchActiveExecutionImage(*m_functionRecordLatch.image);
+	m_programExecutionDomainId = m_functionRecordLatch.image->executionDomainId;
 	m_cop0Words[COP0_STATUS] = m_functionRecordLatch.image->executionDomainId >= 0
 		? CPU_STATUS_CART_ENTRY
 		: CPU_STATUS_SYSTEM_ENTRY;
@@ -1455,6 +1457,7 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 		});
 	}
 	state.executionCartridgeSlot = m_activeExecutionImage->executionDomainId;
+	state.programExecutionDomainId = m_programExecutionDomainId;
 	state.completionValues.reserve(m_completionValues.size());
 	for (const Value& value : m_completionValues) {
 		state.completionValues.push_back(captureValueState(value));
@@ -1804,6 +1807,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	for (u32 valueState : state.completionValues) {
 		m_completionValues.push_back(reader.readValue(valueState));
 	}
+	m_programExecutionDomainId = state.programExecutionDomainId;
 	m_lastExecutionDomainId = state.lastExecutionDomainId;
 	lastPc = state.lastPc;
 	m_haltedUntilIrqFrameDepth = state.haltedUntilIrqFrameDepth;
@@ -2451,6 +2455,7 @@ bool CPU::enterPendingInterrupt() {
 		const u32 returnLuaFaultReasonWord = m_cop0Words[COP0_LUA_FAULT_REASON];
 		const u32 returnExceptionDomainWord = m_exceptionDomainWord;
 		enterException(
+			*m_systemImage,
 			m_systemExceptionFunctionAddress,
 			CPU_CAUSE_NMI,
 			m_activeThread->currentFrame->pc
@@ -2465,9 +2470,9 @@ bool CPU::enterPendingInterrupt() {
 		return true;
 	}
 	if (canAcceptMaskableInterruptLine()) {
-		Blua32ExecutionImage& image = isUserMode() ? *m_activeExecutionImage : *m_systemImage;
+		Blua32ExecutionImage& image = isUserMode() ? *executionImageForDomain(m_programExecutionDomainId) : *m_systemImage;
 		const bool hadHaltLatch = m_haltedUntilIrqFrameDepth >= 0;
-		enterException(image.irqFunctionAddress, CPU_CAUSE_IRQ, m_activeThread->currentFrame->pc);
+		enterException(image, image.irqFunctionAddress, CPU_CAUSE_IRQ, m_activeThread->currentFrame->pc);
 		if (!hadHaltLatch) m_interruptEventPending = true;
 		return true;
 	}
@@ -2476,7 +2481,7 @@ bool CPU::enterPendingInterrupt() {
 
 void CPU::enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord) {
 	interruptedFrame.pc = m_currentInstructionPc;
-	enterException(m_systemExceptionFunctionAddress, causeWord, m_currentInstructionPc);
+	enterException(*m_systemImage, m_systemExceptionFunctionAddress, causeWord, m_currentInstructionPc);
 }
 
 void CPU::enterSynchronousAddressException(CallFrame& interruptedFrame, u32 causeWord, u32 address) {
@@ -2487,7 +2492,7 @@ void CPU::enterSynchronousAddressException(CallFrame& interruptedFrame, u32 caus
 void CPU::enterInstructionFetchException(CallFrame& interruptedFrame, u32 causeWord, u32 pc) {
 	instructionBudgetRemaining -= 1;
 	interruptedFrame.pc = pc;
-	enterException(m_systemExceptionFunctionAddress, causeWord, pc);
+	enterException(*m_systemImage, m_systemExceptionFunctionAddress, causeWord, pc);
 }
 
 void CPU::enterLuaFaultException(u32 reason, Value errorValue) {
@@ -2526,6 +2531,7 @@ void CPU::returnFromException(CallFrame& frame) {
 }
 
 void CPU::enterException(
+	Blua32ExecutionImage& vectorImage,
 	u32 functionAddress,
 	u32 causeWord,
 	u32 epcWord
@@ -2536,7 +2542,7 @@ void CPU::enterException(
 	m_cop0Words[COP0_STATUS] = (m_cop0Words[COP0_STATUS] & ~CPU_STATUS_MODE_STACK_MASK)
 		| ((m_cop0Words[COP0_STATUS] << 2u) & CPU_STATUS_MODE_STACK_MASK);
 	clearHaltAfterAcceptedInterrupt();
-	if (!readFunctionRecordOnBus(*m_activeExecutionImage, functionAddress, m_executionBusSignals)) {
+	if (!readFunctionRecordOnBus(vectorImage, functionAddress, executionBusSignalsForDomain(vectorImage.executionDomainId))) {
 		hardHalt();
 		return;
 	}

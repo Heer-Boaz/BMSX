@@ -92,6 +92,12 @@ Masking a source does not discard its pending request. Source requests accumulat
 
 The CPU does not choose the highest-priority source or take one vector per pending bit. An accepted maskable interrupt takes the shared IRQ entry for the current execution context: the active program's entry in user mode, or the system entry in non-user mode. Software determines which pending sources to service.
 
+The active program is the image selected by the most recent successful `EXEC`
+(or the system image after reset). Calls into another image, coroutine switches
+and changes to cartridge SELECT do not replace it. The CPU reads the IRQ
+function record from that program's bound cartridge socket in user mode, or
+from the system image in non-user mode.
+
 The CPU enters the IRQ function whose absolute function-record address is in
 the selected ROM header. It supplies no function arguments. That entry routine
 runs as the exception frame and is responsible for reading source state and
