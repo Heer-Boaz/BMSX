@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/native_block.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
@@ -37,7 +38,7 @@ void logicalStringWork(bool scalar, OpCode op) {
 	for (int i = 1; i < 4; ++i) writeInstruction(image.text, i, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
 	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 8}};
 	CpuMachine machine(image, scalar);
-	for (int repeat = 0; repeat < 24; ++repeat) {
+	for (int repeat = 0; repeat < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++repeat) {
 		auto& frame = machine.restart();
 		const std::string right("a😀雪\0", 9);
 		const std::string left = repeat % 3 == 2 ? right : repeat % 3 == 1 ? "a😀雪" : "z😀雪";

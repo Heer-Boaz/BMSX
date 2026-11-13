@@ -1,5 +1,6 @@
 #include "common/endian.h"
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/native_block.h"
 #include "machine/cpu/execution_image.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/devices/dma/controller.h"
@@ -241,7 +242,8 @@ void nativeFieldStoreMissKeepsSignedConstantSelectors() {
 	machine.cpu.activeThread()->frameAtDepth(0)->registers[0] = valueTable(table);
 	const StringId key = machine.cpu.stringPool().intern("field");
 	table->setStringKey(key, valueNumber(1));
-	machine.cpu.runUntilDepth(0, 300);
+	machine.cpu.runUntilDepth(0, (NATIVE_BLOCK_COMPILATION_THRESHOLD + 8)
+		* (BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)]));
 	const auto& frame = *machine.cpu.activeThread()->frameAtDepth(0);
 	const auto& block = frame.decodedPage->nativeBlocks->entries[(machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u];
 	require(block && block->sideExits[0].exitC == -2, "compiled field maps retain signed constant selectors");
@@ -362,14 +364,26 @@ void nativeWarmAdmitsAllocatingBodies() {
 	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 2}};
 	CpuMachine machine(image);
 	auto& cpu = machine.cpu;
+	cpu.setNativeCompilationProfiling(true);
 	// CONCAT additionally charges the two codepoints in its "11" result.
 	const int loopCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::CONCAT)]
 		+ BASE_CYCLES[static_cast<u8>(OpCode::JMP)] + 2;
-	require(cpu.runUntilDepth(0, 7 * loopCycles) == RunResult::Yielded, "a mixed loop warms without compiling yet");
+	require(cpu.runUntilDepth(0, (NATIVE_BLOCK_COMPILATION_THRESHOLD - 1) * loopCycles) == RunResult::Yielded, "a mixed loop warms without compiling yet");
 	const auto& page = *cpu.activeThread()->frameAtDepth(0)->decodedPage;
 	const u32 word = (machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u;
-	require(!page.nativeBlocks && page.nativeVisits[word] == 7,
+	require(!page.nativeBlocks && page.nativeVisits[word] == NATIVE_BLOCK_COMPILATION_THRESHOLD - 1,
 		"hotness counting never allocates an executable-entry page before code exists");
+	require(cpu.readNativeCompilationProfile().prepareRequests == 0,
+		"no native compilation is requested below the admission threshold");
+	require(cpu.runUntilDepth(0, loopCycles) == RunResult::Yielded,
+		"the threshold visit executes the same complete loop");
+	require(page.nativeVisits[word] == NATIVE_BLOCK_COMPILATION_THRESHOLD
+		&& cpu.readNativeCompilationProfile().prepareRequests == 1,
+		"the threshold visit requests compilation at the actual warm entry");
+#if !defined(BMSX_NATIVE_COMPILER_WORKER)
+	require(page.nativeBlocks && page.nativeBlocks->entries[word],
+		"synchronous compilation publishes the warm entry on the threshold visit");
+#endif
 	require(cpu.runUntilDepth(0, 279) == RunResult::Yielded, "a mixed loop remains runnable");
 	require(page.words[word].dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeBlock)
 		&& page.nativeBlocks->entries[word]->terminal.exit == NativeBlockExit::Concat
@@ -440,7 +454,7 @@ void nativeHaltCommitsItsThreadAndFrameLatch() {
 		auto& cpu = machine.cpu;
 		const u32 entry = machine.rom.textAddress;
 		const u32 startPc = entry + (standalone ? 2u : 0u) * INSTRUCTION_BYTES;
-		for (int warmup = 0; warmup < 20; ++warmup) {
+		for (int warmup = 0; warmup < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++warmup) {
 			cpu.clearHaltUntilIrq();
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], startPc);
 			const int charge = BASE_CYCLES[static_cast<u8>(OpCode::HALT)] + (standalone ? 0
@@ -477,7 +491,7 @@ void nativeTerminalAtPageBoundaryTracksItsBody() {
 	writeInstruction(code, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(code, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	machine.memory.writeBytes(pc, code.data(), code.size());
-	for (int warmup = 0; warmup < 20; ++warmup) {
+	for (int warmup = 0; warmup < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++warmup) {
 		cpu.clearHaltUntilIrq();
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], pc);
 		require(cpu.runUntilDepth(0, 1) == RunResult::Halted && cpu.readFramePc(0) == pc + 2u * INSTRUCTION_BYTES,
@@ -508,9 +522,11 @@ void nativeWritesPreserveIndependentBlocks() {
 	CpuMachine machine(image);
 	auto& cpu = machine.cpu;
 	machine.memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
+	const int loopCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)]
+		+ BASE_CYCLES[static_cast<u8>(OpCode::ADD)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
 	for (const u32 start : {0u, 8u}) {
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE + start * INSTRUCTION_BYTES);
-		require(cpu.runUntilDepth(0, 300) == RunResult::Yielded, "independent blocks warm on a shared source page");
+		require(cpu.runUntilDepth(0, (NATIVE_BLOCK_COMPILATION_THRESHOLD + 8) * loopCycles) == RunResult::Yielded, "independent blocks warm on a shared source page");
 	}
 	auto& page = *cpu.activeThread()->frameAtDepth(0)->decodedPage;
 	const auto* preserved = page.nativeBlocks->entries[0].get();
@@ -649,7 +665,7 @@ void nativeCallUsesItsClosureBoundFunctionRecord() {
 		// Closure creation, unlike CALL, does read the record. Have that read
 		// replace the caller's next CALL while generated creation code is active.
 		source.armed = false;
-		for (int visit = 0; visit < 20; ++visit) {
+		for (int visit = 0; visit < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++visit) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 			require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "closure creation remains runnable while warming");
 		}

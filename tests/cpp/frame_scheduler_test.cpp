@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/native_block.h"
 #include "machine/cpu/execution_image.h"
 #include "common/endian.h"
 #include "spec/audio/apu.h"
@@ -311,6 +312,7 @@ void testWarmedGeneratedDmaSharedBus() {
 	const std::array<Runtime*, 2> runtimes{&generated, &reference};
 	const u32 source = RAM_BASE + 0x20000, target = RAM_BASE + 0x21000;
 	const u32 entry = system.textAddress;
+	constexpr int warmBursts = NATIVE_BLOCK_COMPILATION_THRESHOLD + 8;
 	for (auto* runtime : runtimes) {
 		auto& frame = *runtime->machine.cpu.activeThread()->frameAtDepth(0);
 		const std::array<u32, 8> values{source, target, 256, 0, 1, IO_DMA0_READ_ADDR, 0, 0};
@@ -320,8 +322,8 @@ void testWarmedGeneratedDmaSharedBus() {
 		const int loopCycles = 5 * BASE_CYCLES[static_cast<u8>(OpCode::STORE_MEM_D)] + 514
 			+ BASE_CYCLES[static_cast<u8>(OpCode::LOAD_MEM)] + BASE_CYCLES[static_cast<u8>(OpCode::ADD)]
 			+ BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
-		runtime->frameScheduler.runCyclesToNextLogicalTick(*runtime, 16 * loopCycles);
-		require(frame.pc == entry && frame.registers[6] == valueNumber(16), "the real DMA loop warms through sixteen bursts");
+		runtime->frameScheduler.runCyclesToNextLogicalTick(*runtime, warmBursts * loopCycles);
+		require(frame.pc == entry && frame.registers[6] == valueNumber(warmBursts), "the real DMA loop warms through its admitted bursts");
 	}
 	auto& generatedFrame = *generated.machine.cpu.activeThread()->frameAtDepth(0);
 	const auto& page = *generatedFrame.decodedPage;
@@ -347,7 +349,7 @@ void testWarmedGeneratedDmaSharedBus() {
 		run(5 * BASE_CYCLES[static_cast<u8>(OpCode::STORE_MEM_D)] + 1); // TRIGGER yields before the following load.
 		auto& memory = generated.machine.memory;
 		auto& dma = generated.machine.dmaController;
-		require(generatedFrame.pc == entry + 20 && generatedFrame.registers[6] == valueNumber(16 + iteration),
+		require(generatedFrame.pc == entry + 20 && generatedFrame.registers[6] == valueNumber(warmBursts + iteration),
 			"the generated DMA-trigger store yields before its following load or counter update");
 		require(dma.cpuBusHeld() && dma.captureState().scheduledBlockCycles == 513, "the real DMA owns the remaining bus interval");
 		run(512);
@@ -359,7 +361,7 @@ void testWarmedGeneratedDmaSharedBus() {
 			"the completed burst publishes every raw source word");
 		run(BASE_CYCLES[static_cast<u8>(OpCode::LOAD_MEM)] + BASE_CYCLES[static_cast<u8>(OpCode::ADD)]
 			+ BASE_CYCLES[static_cast<u8>(OpCode::JMP)]);
-		require(generatedFrame.pc == entry && generatedFrame.registers[6] == valueNumber(17 + iteration), "generated execution resumes exactly once after bus release");
+		require(generatedFrame.pc == entry && generatedFrame.registers[6] == valueNumber(warmBursts + 1 + iteration), "generated execution resumes exactly once after bus release");
 		require(generatedFrame.registers[7] == valueNumber(0x43210000 + iteration * 256), "the resumed load observes DMA output");
 	}
 }

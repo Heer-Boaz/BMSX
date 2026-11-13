@@ -1,4 +1,5 @@
 #include "machine/cpu/native_compiler_worker.h"
+#include "machine/cpu/native_block.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
@@ -118,7 +119,7 @@ void cpuInvalidationAndLifecycle() {
 			frame->registers[1] = valueNumber(0);
 		}
 		for (int step = 0; generated.cpu.readNativeCompilationProfile().prepareRequests == 0; ++step) {
-			require(step < 128, "a warmed RAM loop submits a bounded compilation request");
+			require(step < NATIVE_BLOCK_COMPILATION_THRESHOLD * 8, "a warmed RAM loop submits a bounded compilation request");
 			test::runCpuParity(generated.cpu, reference.cpu, 1);
 		}
 		require(generated.cpu.readNativeCompilationProfile().regionsPublished == 0,
@@ -185,7 +186,7 @@ void imageReplacementRetiresBorrowedConstants() {
 	for (auto* machine : {&generated, &reference})
 		machine->cpu.activeThread()->currentFrame->registers[0] = valueString(machine->cpu.stringPool().intern("replacement"));
 	for (int step = 0; generated.cpu.readNativeCompilationProfile().prepareRequests == 0; ++step) {
-		require(step < 128, "the old constant pool is captured by a pending compilation");
+		require(step < NATIVE_BLOCK_COMPILATION_THRESHOLD * 8, "the old constant pool is captured by a pending compilation");
 		test::runCpuParity(generated.cpu, reference.cpu, 1);
 	}
 	for (auto* machine : {&generated, &reference}) {

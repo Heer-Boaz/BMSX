@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/native_block.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
@@ -14,6 +15,8 @@
 
 namespace {
 using namespace bmsx;
+
+constexpr int NATIVE_WARM_SCALE = (NATIVE_BLOCK_COMPILATION_THRESHOLD + 7) / 8;
 
 void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
@@ -147,7 +150,7 @@ void hotConstantTrap() {
 		CpuMachine native(image), scalar(image, true);
 		for (auto* m : {&native, &scalar}) {
 			auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers[513] = valueNumber(0);
-			m->cpu.runUntilDepth(0, 300);
+			m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 300);
 			frame.registers[513] = valueNumber(bad); frame.registers[256] = valueNumber(73); frame.top = 0;
 		}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -174,7 +177,7 @@ void hotGlobalBanks() {
 	for (auto* m : {&native, &scalar}) {
 		for (const auto* name : {"shared", "copied", "numeric"}) m->cpu.stringPool().intern(name);
 	}
-	test::runCpuParity(native.cpu, scalar.cpu, 1100);
+	test::runCpuParity(native.cpu, scalar.cpu, NATIVE_WARM_SCALE * 1100);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
 	const u32 entry = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
@@ -221,7 +224,7 @@ void hotUpvalueAlias() {
 			auto& cell = cells[index * 2 + c]; closure.upvalues[c] = &cell;
 			cell.hashId = 101 + c; cell.type = ObjType::Upvalue; cell.open = c == 0; cell.frame = c == 0 ? &frame : nullptr;
 		}
-		frame.closure = &closure; m->cpu.runUntilDepth(0, 1100); ++index;
+		frame.closure = &closure; m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1100); ++index;
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& first = *native.cpu.activeThread()->frameAtDepth(0);

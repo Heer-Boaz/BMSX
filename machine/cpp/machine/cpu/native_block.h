@@ -58,7 +58,7 @@ enum class NativeBlockTransition : u32 {
 
 using NativeBlockExitHandler = NativeBlockTransition (*)(CPU*, CallFrame*, const NativeBlockExitSite*);
 
-inline constexpr u8 NATIVE_BLOCK_COMPILATION_THRESHOLD = 8u;
+inline constexpr u8 NATIVE_BLOCK_COMPILATION_THRESHOLD = 64u;
 inline constexpr u32 NATIVE_BLOCK_MAX_INSTRUCTIONS = 64u;
 inline constexpr int NATIVE_BLOCK_REGISTER_CACHE_CAPACITY = 4;
 

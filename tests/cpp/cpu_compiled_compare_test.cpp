@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/native_block.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/io.h"
@@ -309,7 +310,7 @@ void pairedWideJumpsRetainBoundariesAndMutableTargets() {
 			for (const int linked : {0, 1, 2}) {
 				const u32 entryWord = linked == 1 ? 24u : linked == 2 ? crossPageWord : 0u;
 				if (linked != 0) {
-					for (int visit = 0; visit < 12; ++visit) for (auto* machine : {&native, &scalar}) {
+					for (int visit = 0; visit < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++visit) for (auto* machine : {&native, &scalar}) {
 						machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE + entryWord * INSTRUCTION_BYTES);
 						machine->cpu.runUntilDepth(0, 128);
 					}
@@ -360,7 +361,7 @@ void pairedWideJumpsRetainBoundariesAndMutableTargets() {
 					"paired comparison/JMP preserves register state and the complete admitted charge");
 			}
 			for (u32 entered = jumpWord; entered <= jumpBody; ++entered) {
-				for (int visit = 0; visit < 16; ++visit) {
+				for (int visit = 0; visit < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++visit) {
 					for (auto* machine : {&native, &scalar}) machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
 						machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE + entered * INSTRUCTION_BYTES);
 					test::runCpuParity(native.cpu, scalar.cpu, 64);
@@ -495,7 +496,7 @@ void skipFetchBoundaries() {
 			machine->memory.writeBytes(pc, code.data(), word * INSTRUCTION_BYTES);
 			auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
 			frame.registers[0] = frame.registers[1] = valueNumber(0);
-			for (u32 visit = 0; visit < 10; ++visit) {
+			for (u32 visit = 0; visit < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8u; ++visit) {
 				machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], pc);
 				require(machine->cpu.runUntilDepth(0, 1) == RunResult::Yielded && frame.pc == nextPc
 					&& machine->memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_NONE,

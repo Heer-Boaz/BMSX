@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/native_block.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
@@ -14,6 +15,8 @@
 
 namespace {
 using namespace bmsx;
+
+constexpr int NATIVE_WARM_SCALE = (NATIVE_BLOCK_COMPILATION_THRESHOLD + 7) / 8;
 
 void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
@@ -65,7 +68,7 @@ void concatKindsAndAliases(int destination) {
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
 	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 16}};
 	CpuMachine native(image), scalar(image, true);
-	for (auto* m : {&native, &scalar}) for (int warm = 0; warm < 12; ++warm) {
+	for (auto* m : {&native, &scalar}) for (int warm = 0; warm < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++warm) {
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers[0] = valueNumber(1); frame.registers[1] = valueNumber(2);
 		m->cpu.runUntilDepth(0, 4);
@@ -106,7 +109,7 @@ void concatConstants() {
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CONCAT), 0, 63, 62, 63);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
 	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 8}}; image.constants = {-0.0, std::string("🍻")};
-	CpuMachine native(image), scalar(image, true); native.cpu.runUntilDepth(0, 320); scalar.cpu.runUntilDepth(0, 320); requireParity(native, scalar);
+	CpuMachine native(image), scalar(image, true); native.cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 320); scalar.cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 320); requireParity(native, scalar);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(block && block->terminal.exit == NativeBlockExit::Concat && block->terminal.exitB == -1 && block->terminal.exitC == -2, "the native terminal retains signed RK constants");
@@ -123,7 +126,7 @@ void concatRange(int count) {
 	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 1025}};
 	CpuMachine native(image), scalar(image, true); std::string expected;
 	for (int i = 0; i < count; ++i) expected += i == 0 ? "L" : i == 1 ? "false" : std::to_string(i % 10);
-	for (int warm = 0; warm < 12; ++warm) {
+	for (int warm = 0; warm < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++warm) {
 		for (auto* m : {&native, &scalar}) {
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 			auto* registers = m->cpu.activeThread()->frameAtDepth(0)->registers;
@@ -157,7 +160,7 @@ void allocationRoots(bool closure) {
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
 		auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers; r[9] = valueNumber(1); r[1] = valueNumber(2); r[2] = valueNumber(3);
-		m->cpu.runUntilDepth(0, closure ? 405 : 400);
+		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * (closure ? 405 : 400));
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
@@ -196,7 +199,7 @@ void canonicalImmediateClosure() {
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
 		const u32 offset = m->rom.functionAddresses[1] - SYSTEM_ROM_BASE;
-		m->memory.writeBytes(DYNAMIC_RAM_BASE, m->rom.bytes.data() + offset, BLUA32_FUNCTION_RECORD_SIZE); m->cpu.runUntilDepth(0, 500);
+		m->memory.writeBytes(DYNAMIC_RAM_BASE, m->rom.bytes.data() + offset, BLUA32_FUNCTION_RECORD_SIZE); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 500);
 	}
 	requireParity(native, scalar);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -217,7 +220,7 @@ void closureBusFault(bool descriptors) {
 		{.firstWord = 16, .wordCount = 1, .staticClosure = false, .upvalues = {{true, 7}}}}; image.globalNames = {"target"};
 	CpuMachine native(image), scalar(image, true); constexpr u32 bad = 0xdead0000u;
 	for (auto* m : {&native, &scalar}) {
-		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueNumber(m->rom.functionAddresses[1] + 0.75)); m->cpu.runUntilDepth(0, 504);
+		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueNumber(m->rom.functionAddresses[1] + 0.75)); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 504);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
@@ -251,7 +254,7 @@ void closureAddressAlias(int source) {
 		{.firstWord = 16, .wordCount = 1}, {.firstWord = 16, .wordCount = 1, .staticClosure = false}}; image.globalNames = {"target"};
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
-		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueNumber(m->rom.functionAddresses[1])); m->cpu.runUntilDepth(0, 400);
+		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueNumber(m->rom.functionAddresses[1])); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 400);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
@@ -277,7 +280,7 @@ void concatAllocationFault(bool range) {
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers[1] = valueNumber(1); frame.registers[2] = valueNumber(2);
-		m->cpu.runUntilDepth(0, range ? 396 : 320);
+		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * (range ? 396 : 320));
 		const StringId id = m->cpu.stringPool().intern(std::string(2u * 1024u * 1024u, 'x'));
 		frame.registers[1] = valueString(id); frame.registers[2] = valueString(id); frame.registers[0] = valueNumber(73); frame.top = 0;
 	}

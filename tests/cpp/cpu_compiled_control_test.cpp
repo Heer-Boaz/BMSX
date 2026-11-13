@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/native_block.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/io.h"
@@ -16,6 +17,8 @@
 
 namespace {
 using namespace bmsx;
+
+constexpr int NATIVE_WARM_SCALE = (NATIVE_BLOCK_COMPILATION_THRESHOLD + 7) / 8;
 
 void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
@@ -78,7 +81,7 @@ void rawReadsRetainFullWords() {
 		for (auto* m : {&native, &scalar}) {
 			auto state = m->cpu.captureRuntimeState(); state.statusWord = word & ~CPU_STATUS_USER_MODE_CURRENT;
 			state.causeWord = word; state.epcWord = word ^ 0x13579bdfu; state.badAddressWord = ~word; state.luaFaultReasonWord = word;
-			m->cpu.restoreRuntimeState(state); m->cpu.runUntilDepth(0, 900);
+			m->cpu.restoreRuntimeState(state); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 900);
 		}
 		requireParity(native, scalar);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -118,7 +121,7 @@ void writesConvertWithoutChangingSources() {
 	writeInstruction(image.text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 58, 255);
 	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 13}};
 	CpuMachine native(image), scalar(image, true);
-	for (auto* m : {&native, &scalar}) { auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers; r[0] = r[1] = valueNumber(0); r[12] = valueTable(m->cpu.createTable()); m->cpu.runUntilDepth(0, 600); }
+	for (auto* m : {&native, &scalar}) { auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers; r[0] = r[1] = valueNumber(0); r[12] = valueTable(m->cpu.createTable()); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 600); }
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
 	require(page.nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]->sourceWords == 6,
@@ -151,7 +154,7 @@ void statusWriteRechecksInterrupts() {
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers[0] = frame.registers[1] = valueNumber(0);
-		m->cpu.runUntilDepth(0, 400); frame.top = 0; frame.registers[0] = valueNumber(1); frame.registers[6] = valueNumber(73);
+		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 400); frame.top = 0; frame.registers[0] = valueNumber(1); frame.registers[6] = valueNumber(73);
 		m->memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_VBLANK); m->irq.raise(IRQ_VBLANK);
 		require(m->cpu.runUntilDepth(0, 32) == RunResult::Halted && m->cpu.isExceptionFrame(1),
 			"enabling interrupts enters the IRQ handler before the successor instruction");
@@ -188,7 +191,7 @@ void unknownFieldStillFaultsAfterAnEarlierGuard() {
 	for (auto* m : {&native, &scalar}) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers[0] = valueNumber(CPU_STATUS_USER_MODE_CURRENT);
 		frame.registers[12] = valueTable(m->cpu.createTable());
-		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("returnStatus"), valueNumber(8)); m->cpu.runUntilDepth(0, 900);
+		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("returnStatus"), valueNumber(8)); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 900);
 		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("returnStatus"), valueNumber(0));
 		require(m->cpu.runUntilDepth(0, 20) == RunResult::Halted, "a late unknown selector still hard-halts after the earlier guard succeeds");
 	}
@@ -206,7 +209,7 @@ void privilegeFaultsAndExceptionReturns(OpCode op, bool wide, bool returnIntoRoo
 		frame.registers[12] = valueTable(m->cpu.createTable());
 		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("returnStatus"), valueNumber(0xa5a5a508u));
 	}
-	test::runCpuParity(native.cpu, scalar.cpu, 900);
+	test::runCpuParity(native.cpu, scalar.cpu, NATIVE_WARM_SCALE * 900);
 	requireParity(native, scalar);
 	require(native.cpu.readCauseWord() == CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE && native.cpu.readEpcWord() == native.rom.textAddress + 2u * INSTRUCTION_BYTES,
 		"user mode faults before selecting an unknown CP0 field or converting a source");
@@ -249,7 +252,7 @@ void execReplacesFramesAfterNativeReturn() {
 	for (auto* m : {&native, &scalar}) {
 		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("next"), valueNumber(m->rom.functionAddresses[1] + 0.75));
 		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("start"), valueNumber(m->rom.functionAddresses[0]));
-		m->cpu.runUntilDepth(0, 800);
+		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 800);
 	}
 	requireParity(native, scalar);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -282,9 +285,9 @@ void nmiReturnsRetainedWordsAndUsesActiveEpc() {
 	for (auto* m : {&native, &scalar}) {
 		auto state = m->cpu.captureRuntimeState(); state.statusWord = 0xa5a5a511u; state.causeWord = 0xdeadbeefu;
 		state.epcWord = 0x12345679u; state.badAddressWord = 0x87654321u; state.luaFaultReasonWord = 0x80000000u; state.exceptionDomainWord = 7;
-		m->cpu.restoreRuntimeState(state); m->cpu.activeThread()->frameAtDepth(0)->registers[1] = valueNumber(0); m->cpu.runUntilDepth(0, 300);
+		m->cpu.restoreRuntimeState(state); m->cpu.activeThread()->frameAtDepth(0)->registers[1] = valueNumber(0); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 300);
 	}
-	for (int iteration = 0; iteration < 12; ++iteration) {
+	for (int iteration = 0; iteration < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++iteration) {
 		for (auto* m : {&native, &scalar}) {
 			const auto before = m->cpu.captureRuntimeState(); m->cpu.requestNonMaskableInterrupt();
 			require(m->cpu.enterPendingInterrupt(), "NMI enters its real exception frame");

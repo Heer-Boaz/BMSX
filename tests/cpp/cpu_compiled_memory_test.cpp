@@ -18,6 +18,8 @@
 namespace {
 using namespace bmsx;
 
+constexpr int NATIVE_WARM_SCALE = (NATIVE_BLOCK_COMPILATION_THRESHOLD + 7) / 8;
+
 void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
 }
@@ -156,7 +158,7 @@ void generatedMemoryBoundaries() {
 			frame.registers[0] = valueNumber(3.25);
 			frame.registers[1] = valueNumber(DYNAMIC_RAM_BASE + 0x404u - (displaced ? 1020u : 0u));
 			machine->memory.writeMappedF64LE(DYNAMIC_RAM_BASE + 0x404u, 3.25);
-			machine->cpu.runUntilDepth(0, 1200);
+			machine->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1200);
 		}
 		auto& frame = *native.cpu.activeThread()->frameAtDepth(0);
 		const auto& block = frame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u];
@@ -195,7 +197,7 @@ void generatedBusOrdering() {
 		auto& cpu = machine.cpu;
 		auto& frame = *cpu.activeThread()->frameAtDepth(0);
 		frame.registers[0] = valueNumber(12); frame.registers[1] = valueNumber(DYNAMIC_RAM_BASE + 0x1000);
-		cpu.runUntilDepth(0, 1200);
+		cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1200);
 		struct Device { bool ready = false; int writes = 0; } device;
 		machine.memory.mapIoWrite(port, &device, [](void* context, u32, u32, MappedBusSignals) {
 			++static_cast<Device*>(context)->writes;
@@ -215,7 +217,7 @@ void generatedBusOrdering() {
 		auto& cpu = machine.cpu;
 		auto& frame = *cpu.activeThread()->frameAtDepth(0);
 		frame.registers[0] = valueNumber(3.25); frame.registers[1] = valueNumber(DYNAMIC_RAM_BASE + 0x1004);
-		cpu.runUntilDepth(0, 1200);
+		cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1200);
 		const u32 target = RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 4u;
 		machine.memory.writeMappedWord(target, 0xaaaaaaaau);
 		frame.registers[1] = valueNumber(target);
@@ -236,8 +238,8 @@ void generatedMemoryMayRetireExecutingSource() {
 		machine.memory.writeMappedWord(DYNAMIC_RAM_BASE + 0x1000, 7);
 		frame.registers[0] = valueNumber(7); frame.registers[1] = valueNumber(DYNAMIC_RAM_BASE + 0x1000);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE);
-		cpu.runUntilDepth(0, 1200);
-		for (int visit = 0; visit < 10; ++visit) {
+		cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1200);
+		for (int visit = 0; visit < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++visit) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE + 3u * INSTRUCTION_BYTES);
 			cpu.runUntilDepth(0, 2);
 		}
@@ -279,7 +281,7 @@ void fatalHelperErrorsLeaveTheNativeFrameBeforeUnwinding() {
 		auto& frame = *cpu.activeThread()->frameAtDepth(0);
 		frame.registers[1] = valueNumber(DYNAMIC_RAM_BASE + 0x1000);
 		machine.memory.writeMappedWord(DYNAMIC_RAM_BASE + 0x1000, 7);
-		cpu.runUntilDepth(0, 1200);
+		cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1200);
 		if (!scalar) require(frame.decodedPage->nativeBlocks->entries[(machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES] != nullptr,
 			"the failure originates in a warmed native memory body");
 		struct Port { bool fail = true; int reads = 0; } port;
@@ -325,12 +327,12 @@ void changingSuccessorsDoNotRecompileStablePredecessors() {
 	frame.registers[2] = valueNumber(1);
 	frame.registers[4] = valueNumber(readLE32(image.text.data() + INSTRUCTION_BYTES) ^ readLE32(image.text.data() + 8u * INSTRUCTION_BYTES));
 	machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE);
-	machine.cpu.runUntilDepth(0, 1200);
+	machine.cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1200);
 	auto& page = *frame.decodedPage;
 	require(page.nativeBlocks && !page.nativeBlocks->entries[1] && page.nativeBlocks->entries[2],
 		"the continuously rewritten instruction, not its stable store predecessor, remains outside native regions");
 	const auto* stable = page.nativeBlocks->entries[2].get();
-	machine.cpu.runUntilDepth(0, 1200);
+	machine.cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1200);
 	require(page.nativeBlocks->entries[2].get() == stable && !page.nativeBlocks->entries[1]
 		&& machine.cpu.readCauseWord() == 0u, "independent native code survives repeated source rewrites without recompilation");
 }
@@ -364,7 +366,7 @@ void cachedValuesReachFieldMemoryAndFaultOwners() {
 		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
 		frame.registers[1] = valueTable(table); frame.registers[5] = valueNumber(address);
 		frame.registers[12] = frame.registers[13] = valueNumber(std::numeric_limits<double>::infinity());
-		machine->cpu.runUntilDepth(0, 1200);
+		machine->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1200);
 	}
 	auto& frame = *native.cpu.activeThread()->frameAtDepth(0);
 	const auto& block = frame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u];
@@ -419,7 +421,7 @@ void wordProducerBoundariesMatchCompleteScalarState() {
 			frame.registers[14] = valueNumber(outputAddress); frame.registers[15] = valueBool(true);
 			machine->memory.writeMappedWord(inputAddress, 0x80000000u);
 		}
-		test::runCpuParity(native.cpu, scalar.cpu, 2048);
+		test::runCpuParity(native.cpu, scalar.cpu, NATIVE_WARM_SCALE * 2048);
 		auto* page = native.cpu.activeThread()->currentFrame->decodedPage;
 		require(page->nativeBlocks && page->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES],
 			"the word producer/consumer loop is genuinely compiled before boundary mutations");

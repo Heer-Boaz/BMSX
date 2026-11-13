@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/native_block.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
@@ -14,6 +15,8 @@
 
 namespace {
 using namespace bmsx;
+
+constexpr int NATIVE_WARM_SCALE = (NATIVE_BLOCK_COMPILATION_THRESHOLD + 7) / 8;
 
 void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
@@ -69,7 +72,7 @@ void genericArraysAndHashKeys() {
 		auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers;
 		r[0] = valueTable(m->cpu.createTable(4, 1)); r[1] = valueNumber(1); r[2] = valueNumber(3);
 	}
-	test::runCpuParity(native.cpu, scalar.cpu, 896);
+	test::runCpuParity(native.cpu, scalar.cpu, NATIVE_WARM_SCALE * 896);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
 	const u32 entry = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
@@ -116,7 +119,7 @@ void inheritedArrayReads(bool generic) {
 	for (auto* m : {&native, &scalar}) {
 		auto& cpu = m->cpu; auto* own = cpu.createTable(2), *parent = cpu.createTable(2), *meta = cpu.createTable(0, 1);
 		parent->setInteger(1, valueNumber(73)); meta->setStringKey(cpu.stringPool().intern("__index"), valueTable(parent)); own->metatable = meta;
-		auto* r = cpu.activeThread()->frameAtDepth(0)->registers; r[0] = valueTable(own); r[1] = valueNumber(1); cpu.runUntilDepth(0, 300);
+		auto* r = cpu.activeThread()->frameAtDepth(0)->registers; r[0] = valueTable(own); r[1] = valueNumber(1); cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 300);
 	}
 	for (const Value value : {valueBool(false), valueNumber(0), valueNil(), valueBool(true), valueNumber(19), valueNil()}) {
 		for (auto* m : {&native, &scalar}) { asTable(m->cpu.readFrameRegister(0, 0))->setInteger(1, value); m->cpu.runUntilDepth(0, 6); }
@@ -136,7 +139,7 @@ void boundaryLengthAndUtf8() {
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
 		auto* table = m->cpu.createTable(2, 4); for (int i = 1; i <= 5; ++i) table->setInteger(i, valueNumber(i));
-		auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers; r[0] = valueTable(table); r[2] = valueNumber(2); m->cpu.runUntilDepth(0, 605);
+		auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers; r[0] = valueTable(table); r[2] = valueNumber(2); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 605);
 	}
 	for (const Value value : {valueNil(), valueBool(false), valueNil(), valueNumber(2)}) {
 		for (auto* m : {&native, &scalar}) { m->cpu.activeThread()->frameAtDepth(0)->registers[2] = value; m->cpu.runUntilDepth(0, 11); }
@@ -154,7 +157,7 @@ void boundaryLengthAndUtf8() {
 	CpuMachine textNative(image), textScalar(image, true);
 	for (auto* m : {&textNative, &textScalar}) {
 		m->cpu.activeThread()->frameAtDepth(0)->registers[1] = valueString(m->cpu.stringPool().intern(std::string_view("A\xc3\xa9\xe9\x9b\xaa\0\xf0\x9f\x98\x80", 11)));
-		m->cpu.runUntilDepth(0, 500);
+		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 500);
 	}
 	requireParity(textNative, textScalar);
 	require(textNative.cpu.readFrameRegister(0, 2) == valueNumber(5) && textNative.cpu.readFrameRegister(0, 3) == valueNumber(12),
@@ -172,7 +175,7 @@ void selfAndNilFaults() {
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
 		auto& cpu = m->cpu; auto* table = cpu.createTable(0, 1); table->setStringKey(cpu.stringPool().intern("method"), valueNumber(73));
-		cpu.activeThread()->frameAtDepth(0)->registers[9] = valueTable(table); cpu.runUntilDepth(0, 300);
+		cpu.activeThread()->frameAtDepth(0)->registers[9] = valueTable(table); cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 300);
 		auto* meta = cpu.createTable(0, 1); table->setStringKey(cpu.stringPool().intern("method"), valueNil());
 		meta->setStringKey(cpu.stringPool().intern("__index"), valueTable(table)); table->metatable = meta;
 		cpu.activeThread()->frameAtDepth(0)->top = 0;
@@ -191,7 +194,7 @@ void selfAndNilFaults() {
 	CpuMachine nilNative(image), nilScalar(image, true);
 	for (auto* m : {&nilNative, &nilScalar}) {
 		auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers; r[0] = valueTable(m->cpu.createTable(2)); r[1] = valueNumber(1); r[2] = valueNumber(73);
-		m->cpu.runUntilDepth(0, 504); r[1] = valueNil(); r[3] = valueNumber(19); m->cpu.activeThread()->frameAtDepth(0)->top = 0;
+		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 504); r[1] = valueNil(); r[3] = valueNumber(19); m->cpu.activeThread()->frameAtDepth(0)->top = 0;
 	}
 	nilNative.cpu.runUntilDepth(0, 5); nilScalar.cpu.runUntilDepth(0, 5); requireParity(nilNative, nilScalar);
 	require(nilNative.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INDEX_NIL
@@ -210,7 +213,7 @@ void wideAllocationFailure() {
 	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 16}, {.firstWord = 32, .wordCount = 1}};
 	image.globalNames = {"retained"}; image.exceptionFunctionIndex = 1;
 	CpuMachine native(image), scalar(image, true);
-	for (int visit = 0; visit < 32; ++visit) test::runCpuParity(native.cpu, scalar.cpu, 1);
+	for (int visit = 0; visit < NATIVE_WARM_SCALE * 32; ++visit) test::runCpuParity(native.cpu, scalar.cpu, 1);
 	requireParity(native, scalar);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& frame = *native.cpu.activeThread()->frameAtDepth(0);
@@ -239,7 +242,7 @@ void stringStoreGrowthRoots(bool generic) {
 	for (auto* m : {&native, &scalar}) {
 		auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers;
 		r[0] = valueTable(m->cpu.createTable(0, 1)); r[1] = valueString(m->cpu.stringPool().intern("field")); r[9] = valueNumber(1);
-		m->cpu.runUntilDepth(0, 500);
+		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 500);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
