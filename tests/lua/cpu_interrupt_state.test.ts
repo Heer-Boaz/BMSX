@@ -14,6 +14,7 @@ import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { Table } from '../../machine/ts/machine/cpu/table';
 import { BuiltinFunctionId, LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
 import {
+	createBuiltinFunction,
 	EMPTY_CALL_ARGS,
 	StringValue,
 	ValueTag,
@@ -54,6 +55,7 @@ import {
 	IRQ_VBLANK,
 } from '../../machine/ts/spec/bmsx/io';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
+import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { GX_GPU_GP0_VRAM_TO_CPU_FIRST } from '../../machine/ts/spec/gx/gp0';
 import { GX_GPU_READBACK_PENDING } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import { Machine } from '../../machine/ts/machine/machine';
@@ -247,19 +249,28 @@ function makeRuntime(cpu: CPU, irqController: IrqController, sliceStats?: { begi
 	return runtime;
 }
 
-function makeCrossDomainHookRuntime(sliceStats: { begin: number; end: number }, systemLeafOp = OpCode.K0): {
+function makeCrossDomainHookRuntime(sliceStats: { begin: number; end: number }, systemLeafOp = OpCode.K0, nested = false): {
 	cpu: CPU;
 	cpuExecution: CpuExecutionState;
 	images: TestBlua32ImagePair;
 	runtime: Runtime;
 } {
-	const systemCode = new Uint8Array(6 * INSTRUCTION_BYTES);
+	const systemCode = new Uint8Array((nested ? 10 : 6) * INSTRUCTION_BYTES);
 	writeInstruction(systemCode, 0, OpCode.LOADK, 0, 0, 0, 0);
 	writeInstruction(systemCode, 1, OpCode.LOAD_MEM, 0, 0, MemoryAccessKind.U32LE, 0);
 	writeInstruction(systemCode, 2, OpCode.MTC0, 0, COP0_EXEC, 0, 0);
 	writeInstruction(systemCode, 3, OpCode.RFE, 0, 0, 0, 0);
-	writeInstruction(systemCode, 4, systemLeafOp, 0, 0, 0, 0);
-	writeInstruction(systemCode, 5, OpCode.RET, 0, 0, 0, 0);
+	if (nested) {
+		writeInstruction(systemCode, 4, OpCode.WIDE, 0, 0, 0, 0);
+		writeInstruction(systemCode, 5, OpCode.CLOSURE, 0, 0, 0, 0);
+		writeInstruction(systemCode, 6, OpCode.CALL, 0, encodeFixedValueCount(0), 0, 0);
+		writeInstruction(systemCode, 7, OpCode.RET, 0, 0, 0, 0);
+		writeInstruction(systemCode, 8, systemLeafOp, 0, 0, 0, 0);
+		writeInstruction(systemCode, 9, OpCode.RET, 0, 0, 0, 0);
+	} else {
+		writeInstruction(systemCode, 4, systemLeafOp, 0, 0, 0, 0);
+		writeInstruction(systemCode, 5, OpCode.RET, 0, 0, 0, 0);
+	}
 	const cartCode = new Uint8Array(6 * INSTRUCTION_BYTES);
 	writeInstruction(cartCode, 0, OpCode.WIDE, 0, 0, 0, 0);
 	writeInstruction(cartCode, 1, OpCode.CLOSURE, 0, 0, 0, 0);
@@ -273,8 +284,9 @@ function makeCrossDomainHookRuntime(sliceStats: { begin: number; end: number }, 
 			functions: [
 				{ firstWord: 0, wordCount: 3 },
 				{ firstWord: 3, wordCount: 1 },
-				{ firstWord: 4, wordCount: 2 },
+				...(nested ? [{ firstWord: 4, wordCount: 4, maxStack: 1 }, { firstWord: 8, wordCount: 2 }] : [{ firstWord: 4, wordCount: 2 }]),
 			],
+			closureRelocations: nested ? [{ wordIndex: 5, functionAddress: blua32TestFunctionAddress(SYSTEM_ROM_BASE, 3) }] : [],
 			constants: [CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET],
 			startupFunctionIndex: 0,
 			irqFunctionIndex: 1,
@@ -295,7 +307,12 @@ function makeCrossDomainHookRuntime(sliceStats: { begin: number; end: number }, 
 			exceptionFunctionIndex: 1,
 		},
 	);
-	const { cpu, irqController } = createTestBlua32PairCpu(images);
+	const memory = new Memory({ systemRom: images.systemRomBytes, cartridgeSlots: cartridgeSlots(images.cartRomBytes, images.cartRomBytes) }, PSX_MACHINE_SPEC.ramBytes);
+	const irqController = new IrqController(memory);
+	const cpu = new CPU(memory, irqController, new ExecutionAddressSpace(memory));
+	const dma = new DmaController(memory, cpu, irqController, new DeviceScheduler(cpu));
+	memory.cartridgeController.connect(memory, irqController, dma);
+	cpu.reset();
 	assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.LOAD_MEM] + BASE_CYCLES[OpCode.MTC0]), RunResult.Yielded);
 	assert.equal(cpu.getFrameDepth(), 1);
 	assert.equal(cpu.readFrameExecutionDomain(0), 0);
@@ -398,21 +415,25 @@ test('device scheduler ends an active CPU slice when instrumented execution thro
 	assert.equal(scheduler.isCpuSliceActive(), false);
 });
 
-test('user IRQ while executing a BIOS function selects the cartridge IRQ vector', () => {
-	const { cpu, images, runtime } = makeCrossDomainHookRuntime({ begin: 0, end: 0 }, OpCode.HALT);
+for (const nested of [false, true]) for (const restore of [false, true]) for (const selectOther of [false, true]) test(`user IRQ while executing a BIOS function selects the cartridge IRQ vector (nested=${nested}, restore=${restore}, selectOther=${selectOther})`, () => {
+	const { cpu, images, runtime } = makeCrossDomainHookRuntime({ begin: 0, end: 0 }, OpCode.HALT, nested);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted, 'cart executes HALT inside its system callee');
 	assert.equal(cpu.isUserMode(), true, 'calling BIOS does not change privilege');
-	assert.equal(cpu.readFrameFunctionAddress(cpu.getFrameDepth() - 1), images.systemSymbols.functionAddresses[2]);
-	const saved = cpu.captureRuntimeState();
-	cpu.restoreRuntimeState(saved);
-	runtime.machine.memory.writeMappedWord(IO_CART_SELECT, 1);
+	assert.equal(cpu.readFrameFunctionAddress(cpu.getFrameDepth() - 1), images.systemSymbols.functionAddresses[nested ? 3 : 2]);
+	if (selectOther) {
+		runtime.machine.memory.writeMappedWord(IO_CART_SELECT, 1);
+	}
+	if (restore) cpu.restoreRuntimeState(cpu.captureRuntimeState());
 	runtime.machine.memory.writeMappedWord(IO_IRQ_MASK, IRQ_VBLANK);
 	runtime.machine.irqController.raise(IRQ_VBLANK);
 	assert.equal(cpu.enterPendingInterrupt(), true);
+	assert.equal(cpu.readFrameExecutionDomain(cpu.getFrameDepth() - 1), 0, 'IRQ follows the execution socket, not SELECT or the BIOS callee');
 	assert.equal(cpu.readFrameFunctionAddress(cpu.getFrameDepth() - 1), images.cartSymbols.functionAddresses[1],
 		'user interrupt belongs to the cartridge even while a BIOS function is active');
 	runtime.machine.memory.writeMappedWord(IO_IRQ_ACK, IRQ_VBLANK);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted, 'IRQ return resumes and completes the interrupted BIOS call');
+	assert.equal(cpu.captureRuntimeState().hardHalted, false);
+	assert.equal(cpu.getFrameDepth(), 0);
 });
 
 test('instrumented execution fence stops before a pending IRQ is delivered', () => {
@@ -601,6 +622,32 @@ function makeCompiledCartCpu(
 	const { cpu, memory, irqController } = createTestBlua32PairCpu(images);
 	return { cpu, memory, irqController, images };
 }
+
+test('cartridge IRQ context survives an active coroutine and CPU restore', () => {
+	const { cpu, memory, irqController, images } = makeCompiledCartCpu(CART_LAUNCHER_SYSTEM_LUA_SOURCE, `
+function irq(flags) end
+function exception() end
+local worker = coroutine.create(function()
+    halt_until_irq
+end)
+coroutine.resume(worker)
+`);
+	const coroutine = cpu.createTable(0, 2);
+	coroutine.setStringKey(cpu.stringPool.intern('create'), createBuiltinFunction(BuiltinFunctionId.CoroutineCreate));
+	coroutine.setStringKey(cpu.stringPool.intern('resume'), createBuiltinFunction(BuiltinFunctionId.CoroutineResume));
+	cpu.setGlobalByKey(cpu.stringPool.intern('coroutine'), ValueTag.Table, NaN, coroutine);
+	let result = RunResult.Yielded;
+	for (let step = 0; step < 10 && result === RunResult.Yielded; step += 1) result = cpu.runUntilDepth(0, 100000);
+	assert.equal(result, RunResult.Halted);
+	const suspended = cpu.captureRuntimeState();
+	assert.notEqual(suspended.activeThreadRef, suspended.rootThreadRef);
+	cpu.restoreRuntimeState(cpu.captureRuntimeState());
+	memory.writeMappedWord(IO_IRQ_MASK, IRQ_VBLANK);
+	irqController.raise(IRQ_VBLANK);
+	assert.equal(cpu.enterPendingInterrupt(), true);
+	assert.equal(cpu.readFrameExecutionDomain(cpu.getFrameDepth() - 1), 0);
+	assert.equal(cpu.readFrameFunctionAddress(cpu.getFrameDepth() - 1), images.cartVectors.irqFunctionAddress);
+});
 
 function makeCompiledIrqRuntime(source: string): { cpu: CPU; irqController: IrqController; cpuExecution: CpuExecutionState; state: FrameState } {
 	const { cpu, memory, irqController } = makeCompiledCartCpu(CART_LAUNCHER_SYSTEM_LUA_SOURCE, source);

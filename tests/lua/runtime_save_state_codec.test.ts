@@ -555,6 +555,15 @@ function createRuntimeSaveState(): RuntimeSaveState {
 	};
 }
 
+for (const domain of [-1, 0, 1] as const) test(`runtime save-state codec preserves independent program domain ${domain}`, () => {
+	const state = createRuntimeSaveState();
+	state.cpuState.programExecutionDomainId = domain;
+	state.cpuState.executionCartridgeSlot = domain === -1 ? 1 : -1;
+	const restored = decodeRuntimeSaveState(encodeRuntimeSaveState(state), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	assert.equal(restored.cpuState.programExecutionDomainId, domain);
+	assert.equal(restored.cpuState.executionCartridgeSlot, state.cpuState.executionCartridgeSlot);
+});
+
 test('runtime save-state codec preserves string pool ROM/runtime ownership', () => {
 	const state = createRuntimeSaveState();
 

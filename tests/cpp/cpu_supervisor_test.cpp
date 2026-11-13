@@ -957,21 +957,36 @@ void testDeviceSchedulerEqualDeadlinePriority() {
 	}
 }
 
-void testUserIrqInSystemCalleeUsesCartVector() {
+void testUserIrqInSystemCalleeUsesCartVector(bool restore, bool nested, bool selectOther) {
 	bmsx::test::Blua32TestImage system;
-	system.text.resize(6u * bmsx::INSTRUCTION_BYTES);
+	system.text.resize((nested ? 10u : 6u) * bmsx::INSTRUCTION_BYTES);
 	std::span<bmsx::u8> systemCode(system.text);
 	bmsx::writeInstruction(systemCode, 0, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
 	bmsx::writeInstruction(systemCode, 1, static_cast<bmsx::u8>(bmsx::OpCode::LOAD_MEM), 0, 0, static_cast<bmsx::u8>(bmsx::MemoryAccessKind::U32LE));
 	bmsx::writeInstruction(systemCode, 2, static_cast<bmsx::u8>(bmsx::OpCode::MTC0), 0, bmsx::COP0_EXEC, 0);
 	bmsx::writeInstruction(systemCode, 3, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
-	bmsx::writeInstruction(systemCode, 4, static_cast<bmsx::u8>(bmsx::OpCode::HALT), 0, 0, 0);
-	bmsx::writeInstruction(systemCode, 5, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
+	if (nested) {
+		bmsx::writeInstruction(systemCode, 4, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
+		bmsx::writeInstruction(systemCode, 5, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 0);
+		bmsx::writeInstruction(systemCode, 6, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedValueCount(0), 0);
+		bmsx::writeInstruction(systemCode, 7, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
+		bmsx::writeInstruction(systemCode, 8, static_cast<bmsx::u8>(bmsx::OpCode::HALT), 0, 0, 0);
+		bmsx::writeInstruction(systemCode, 9, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
+	} else {
+		bmsx::writeInstruction(systemCode, 4, static_cast<bmsx::u8>(bmsx::OpCode::HALT), 0, 0, 0);
+		bmsx::writeInstruction(systemCode, 5, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
+	}
 	system.functions = {
 		{.firstWord = 0u, .wordCount = 3u},
 		{.firstWord = 3u, .wordCount = 1u},
-		{.firstWord = 4u, .wordCount = 2u},
 	};
+	if (nested) {
+		system.functions.push_back({.firstWord = 4u, .wordCount = 4u, .maxStack = 1u});
+		system.functions.push_back({.firstWord = 8u, .wordCount = 2u});
+		system.closureRelocations = {{5u, bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 3u)}};
+	} else {
+		system.functions.push_back({.firstWord = 4u, .wordCount = 2u});
+	}
 	system.constants = {
 		static_cast<bmsx::f64>(
 			bmsx::CART_ROM_BASE
@@ -1003,20 +1018,25 @@ void testUserIrqInSystemCalleeUsesCartVector() {
 	cart.irqFunctionIndex = 1u;
 	cart.exceptionFunctionIndex = 1u;
 
-	CpuTestMachine machine(std::move(system), std::move(cart));
+	auto auxiliary = cart;
+	auxiliary.irqFunctionIndex = 0u;
+	CpuTestMachine machine(std::move(system), std::move(cart), std::move(auxiliary));
 	require(machine.cpu.runUntilDepth(0, 4) == bmsx::RunResult::Yielded, "system launch reaches the cart entry boundary");
 	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "cart executes HALT inside its system callee");
 	const auto before = machine.cpu.captureRuntimeState();
 	require((before.statusWord & bmsx::CPU_STATUS_USER_MODE_CURRENT) != 0, "system closure must retain user mode");
-	require(before.threads[0].frames.back().functionAddress == machine.systemRom.functionAddresses[2], "current callee is system code");
-	machine.cpu.restoreRuntimeState(before);
-	machine.memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 1u);
+	require(before.threads[0].frames.back().functionAddress == machine.systemRom.functionAddresses[nested ? 3 : 2], "current callee is system code");
+	if (selectOther) machine.memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 1u);
+	if (restore) machine.cpu.restoreRuntimeState(machine.cpu.captureRuntimeState());
 	machine.memory.writeMappedU32LE(bmsx::IO_IRQ_MASK, bmsx::IRQ_VBLANK);
 	machine.irq.raise(bmsx::IRQ_VBLANK);
 	require(machine.cpu.enterPendingInterrupt(), "user IRQ enters");
+	require(machine.cpu.readFrameExecutionDomain(machine.cpu.getFrameDepth() - 1) == 0, "user IRQ follows execution socket rather than SELECT or system callee");
 	require(machine.cpu.captureRuntimeState().threads[0].frames.back().functionAddress == machine.cartRom.functionAddresses[1], "user IRQ in system callee selects cartridge vector");
 	machine.memory.writeMappedU32LE(bmsx::IO_IRQ_ACK, bmsx::IRQ_VBLANK);
 	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "IRQ return resumes and completes the interrupted system call");
+	require(!machine.cpu.captureRuntimeState().hardHalted, "IRQ return does not hard-halt");
+	require(machine.cpu.getFrameDepth() == 0, "system calls return to the cartridge and complete");
 }
 
 void testInstrumentedExecutionObservesCrossDomainCallAndReturn() {
@@ -1732,7 +1752,8 @@ int main() {
 	testBoundClosureRetainsCartridgeSocket();
 	testDeviceSchedulerOwnsCpuSliceLifetime();
 	testDeviceSchedulerEqualDeadlinePriority();
-	testUserIrqInSystemCalleeUsesCartVector();
+	testUserIrqInSystemCalleeUsesCartVector(true, true, true);
+	testUserIrqInSystemCalleeUsesCartVector(false, false, false);
 	testInstrumentedExecutionObservesCrossDomainCallAndReturn();
 	testInstrumentedExecutionFenceStopsBeforePendingIrqDelivery();
 	testInstrumentedMaskableInterruptFenceDoesNotDelayPendingNmi();
