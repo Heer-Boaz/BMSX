@@ -91,6 +91,9 @@ export type CompiledBlock = {
 	readonly firstWord: number;
 	readonly terminal: CompiledBlockExitSite;
 	readonly exits: readonly CompiledBlockExitSite[];
+	/** Cost before the last instruction of this entry's linear continuation. */
+	readonly admissionCycles: number;
+	readonly admissionVarargs: number;
 	/** Source dependencies through the linear successors admitted by this entry. */
 	readonly sourceWords: number;
 	incoming: CompiledBlockExitSite | null;
@@ -208,6 +211,9 @@ export type EmittedJavaScriptBlock = {
 	readonly terminalIndex: number;
 	readonly takenIndex: number;
 	readonly deferredJumpIndex: number;
+	readonly admissionCycles: number;
+	readonly admissionVarargs: number;
+	readonly openVarargs: number;
 };
 
 /** Emit a segment and its precise side exits; the region owns control flow. */
@@ -221,6 +227,9 @@ export function emitJavaScriptBlock(
 	const source: string[] = [];
 	const registers = new JavaScriptRegisterCache(image, residents, outputs);
 	let cycles = 0;
+	let openVarargs = 0;
+	let admissionCycles = 0;
+	let admissionVarargs = 0;
 	let sourceWords = 0;
 	let registerTop = 0;
 	let resetsRegisterTop = false;
@@ -233,6 +242,8 @@ export function emitJavaScriptBlock(
 	for (let word = firstWord; word < endWord; word += page.widths[word]) {
 		finalWord = word;
 		const op = page.ops[word];
+		admissionCycles = cycles;
+		admissionVarargs = openVarargs;
 		cycles += BASE_CYCLES[op];
 		sourceWords += page.widths[word];
 		currentPc = pc;
@@ -282,6 +293,7 @@ export function emitJavaScriptBlock(
 		if (words) cycles += ceilDiv4(page.c[word]);
 		if (op === OpCode.LOADNIL) cycles += page.b[word];
 		if (op === OpCode.VARARG && page.b[word] !== 0) cycles += page.b[word] - 1;
+		if (op === OpCode.VARARG && page.b[word] === 0) ++openVarargs;
 		if (op === OpCode.VARARG && page.b[word] === 0) { registerTop = 0; resetsRegisterTop = true; }
 		else if (op === OpCode.VARARG || op === OpCode.LOADNIL) {
 			const count = page.b[word] - (op === OpCode.VARARG ? 1 : 0);
@@ -337,7 +349,8 @@ export function emitJavaScriptBlock(
 		exits.push({ ...terminal, nextPc: page.bx[finalWord] });
 	}
 	return { firstWord, terminal: exits[terminalIndex], exits: exits.slice(firstExit), sourceWords,
-		body: source.join('\n'), registers, finalWord, terminalIndex, takenIndex, deferredJumpIndex };
+		body: source.join('\n'), registers, finalWord, terminalIndex, takenIndex, deferredJumpIndex,
+		admissionCycles, admissionVarargs, openVarargs };
 }
 
 export function finishJavaScriptBlock(page: DecodedInstructionPage, block: EmittedJavaScriptBlock,

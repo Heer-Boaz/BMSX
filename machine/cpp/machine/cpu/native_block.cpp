@@ -112,6 +112,7 @@ std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& sourc
 	auto& terminal = block->terminal;
 	controlGuarded = false;
 	for (const auto& source : instructions) {
+		if (source.pc != block->firstPc) block->admissionCycles = terminal.cycles;
 		const auto& instruction = *source.decoded;
 		const auto op = static_cast<OpCode>(instruction.op);
 		terminal.cycles += instruction.baseCycles;

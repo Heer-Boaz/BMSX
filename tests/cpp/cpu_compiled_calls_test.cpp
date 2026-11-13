@@ -317,6 +317,14 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 	const int placed = vararg ? params : std::max(params - args, 0);
 	if (grant < 0) grant = 6 + placed;
 	require(machine.cpu.runUntilDepth(0, grant) == RunResult::Yielded, "CALL placements and its first callee instruction retain grant accounting");
+	if (grant <= BASE_CYCLES[static_cast<u8>(OpCode::MOV)]) {
+		require(machine.cpu.instructionBudgetRemaining == grant - BASE_CYCLES[static_cast<u8>(OpCode::MOV)]
+			&& thread->currentFrame == caller && caller->pc == machine.rom.textAddress + 3 * INSTRUCTION_BYTES
+			&& caller->registers[base] == caller->registers[6]
+			&& machine.cpu.getGlobalByKey(marker) == valueBool(false),
+			"a grant exhausted by MOV stops before CALL and frame placement");
+		return;
+	}
 	if (grant <= 5 + placed) {
 		require(machine.cpu.instructionBudgetRemaining == grant - 5 - placed
 			&& machine.cpu.getGlobalByKey(marker) == valueBool(false)

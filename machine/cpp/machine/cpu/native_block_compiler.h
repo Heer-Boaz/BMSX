@@ -20,6 +20,7 @@ public:
 	void emit(const DecodedInstruction& instruction, NativeBlockExitSite* slowExit,
 		NativeBlockExitSite* takenExit);
 	void beginBlock(size_t index, bool inheritRegisters);
+	void emitAdmission(size_t index, bool materialize);
 	void endBlock(bool fallthrough);
 	void* finish(size_t& codeBytes);
 
@@ -113,6 +114,8 @@ private:
 	struct ExternalBranch { sljit_jump* jump; NativeBlockLink* link; };
 	std::vector<ExternalBranch> m_externalBranches;
 	std::vector<sljit_jump*> m_shortGrants;
+	struct AdmissionFallback { sljit_jump* jump; size_t index; RegisterSnapshot registers; bool materialize; };
+	std::vector<AdmissionFallback> m_admissionFallbacks;
 	const Value* m_constants;
 	NativeBlock* m_block = nullptr;
 	const NativeCodeBindings& m_bindings;

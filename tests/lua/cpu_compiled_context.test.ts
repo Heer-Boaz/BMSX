@@ -41,7 +41,7 @@ test('compiled globals use the live banks across growth, keep namespaces distinc
 			cpu.setGlobalByKey(cpu.stringPool.intern('shared'), r.getTag(12), r.getScalar(12), r.getReference(12));
 			cpu.setSystemGlobalByKey(cpu.stringPool.intern('shared'), ValueTag.Number, 73, null);
 		}
-		runCpuParity(js, ref, 11);
+		runCpuParity(js, ref, 20);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 		assert.equal(js.getSystemGlobalByKey(js.stringPool.find('copied')!), frame.registers.get(12));
 		assert.equal(js.getGlobalByKey(js.stringPool.find('copied')!), 73);
@@ -52,7 +52,7 @@ test('compiled globals use the live banks across growth, keep namespaces distinc
 		r.setTable(12, cpu.createTable(0, 0));
 		cpu.setGlobalByKey(cpu.stringPool.intern('shared'), r.getTag(12), r.getScalar(12), r.getReference(12));
 	}
-	runCpuParity(js, ref, 11);
+	runCpuParity(js, ref, 20);
 	assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 	assert.equal(js.getSystemGlobalByKey(js.stringPool.find('copied')!), frame.registers.getTable(12));
 	assert.ok(page.compiledBlocks!.entries[entry] === block, 'growing the bank does not retire or strand the compiled consumer');
@@ -82,7 +82,7 @@ for (const alias of [false, true]) test(`compiled LOADNIL and LOADKR preserve ki
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
 			cpu.rootThread.frameAtDepth(0).registers.setNumber(2, input);
 		}
-		runCpuParity(js, ref, 7);
+		runCpuParity(js, ref, 16);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 		const constant = constants[input >>> 0];
 		assert.equal(frame.registers.get(3), constant === 'literal' ? valueString(js.stringPool.find(constant)!) : constant);
@@ -148,7 +148,7 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 	for (const value of [null, false, true, -0, NaN, 'upvalue'] as const) {
 		for (const cpu of [js, ref]) cpu.rootThread.frameAtDepth(0).registers.set(12,
 			value === 'upvalue' ? valueString(cpu.stringPool.intern(value)) : value);
-		runCpuParity(js, ref, 11);
+		runCpuParity(js, ref, 20);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 		assert.equal(frame.registers.getNumber(3), 10, 'SETUP invalidates the earlier cached alias of R0');
 		assert.equal(frame.registers.getNumber(4), 9);
@@ -228,11 +228,16 @@ for (const fixed of [0, 5]) test(`hot VARARG handles exact top resets, nil paddi
 		}
 		runCpuParity(js, ref, 9);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState(), 'a full hot-block grant also covers the growing exit');
-		if (count === 63) assert.ok(js.rootThread.frameAtDepth(1).stackCapacity > 16);
 		for (const grant of [0, 1, 1, 2, 1, 1, 2, 1]) {
 			runCpuParity(js, ref, grant);
 			assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 		}
+		const secondVarargEnd = image.image.functions[1].codeAddress + 6 * INSTRUCTION_BYTES;
+		while (js.rootThread.frameAtDepth(1).pc !== secondVarargEnd) {
+			runCpuParity(js, ref, 1);
+			assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
+		}
+		if (count === 63) assert.ok(js.rootThread.frameAtDepth(1).stackCapacity > 16);
 		assert.equal(js.rootThread.frameAtDepth(1).top, count, 'the second open VARARG replaces, rather than maximizes, top');
 		assert.equal(page.compiledBlocks!.entries[entry]!.region.entries[0].sourceWords, 7,
 			'the complete generated loop survives frame relocation and added helper-resume entries');

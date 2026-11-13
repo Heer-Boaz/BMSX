@@ -101,6 +101,14 @@ void hotVarargFrames(int fixed) {
 			test::runCpuParity(native.cpu, scalar.cpu, grant);
 			requireParity(native, scalar);
 		}
+		// Variable VARARG costs may place the same grant boundary at different
+		// instructions; drive both machines to just past the final VARARG.
+		for (int step = 0; step < 6 && native.cpu.readFramePc(1) != native.rom.textAddress + 22u * INSTRUCTION_BYTES; ++step) {
+			test::runCpuParity(native.cpu, scalar.cpu, 1);
+			requireParity(native, scalar);
+		}
+		require(native.cpu.readFramePc(1) == native.rom.textAddress + 22u * INSTRUCTION_BYTES,
+			"short grants reach the instruction after the final VARARG");
 		require(native.cpu.activeThread()->frameAtDepth(1)->top == count, "the final open VARARG replaces the former top exactly");
 		if (count == 63) require(native.cpu.activeThread()->frameAtDepth(1)->stackCapacity > 16, "the hot capacity exit grows the real stack");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -175,13 +183,16 @@ void hotGlobalBanks() {
 	for (auto* m : {&native, &scalar}) for (int i = 0; i < 257; ++i) {
 		m->cpu.setGlobalByKey(m->cpu.stringPool().intern("grown-" + std::to_string(i)), valueNumber(i));
 	}
+	int loopCycles = 0;
+	for (const auto op : ops) loopCycles += BASE_CYCLES[static_cast<u8>(op)];
 	for (const Value value : {valueNil(), valueBool(false), valueBool(true), valueNumber(-0.0), VALUE_QNAN_MASK, valueNumber(73)}) {
 		for (auto* m : {&native, &scalar}) {
 			auto& cpu = m->cpu; cpu.activeThread()->frameAtDepth(0)->registers[12] = value;
+			cpu.activeThread()->frameAtDepth(0)->pc = m->rom.textAddress;
 			cpu.setGlobalByKey(cpu.stringPool().intern("shared"), value);
 			cpu.setSystemGlobalByKey(cpu.stringPool().intern("shared"), valueNumber(73));
 		}
-		test::runCpuParity(native.cpu, scalar.cpu, 11);
+		test::runCpuParity(native.cpu, scalar.cpu, loopCycles);
 		requireParity(native, scalar);
 		require(native.cpu.getSystemGlobalByKey(native.cpu.stringPool().intern("copied")) == value
 			&& native.cpu.getGlobalByKey(native.cpu.stringPool().intern("copied")) == valueNumber(73)
@@ -218,9 +229,14 @@ void hotUpvalueAlias() {
 	require(compiled && compiled->sideExits[0].exit == NativeBlockExit::WriteUpvalue,
 		"the VM exercises a real compiled self-alias exit before resuming the remaining operations");
 #endif
+	int loopCycles = 0;
+	for (const auto op : ops) loopCycles += BASE_CYCLES[static_cast<u8>(op)];
 	for (const auto value : {valueNil(), valueBool(false), valueNumber(-0.0), VALUE_QNAN_MASK, valueNumber(73)}) {
-		for (auto* m : {&native, &scalar}) m->cpu.activeThread()->frameAtDepth(0)->registers[12] = value;
-		test::runCpuParity(native.cpu, scalar.cpu, 11); requireParity(native, scalar);
+		for (auto* m : {&native, &scalar}) {
+			m->cpu.activeThread()->frameAtDepth(0)->registers[12] = value;
+			m->cpu.activeThread()->frameAtDepth(0)->pc = m->rom.textAddress;
+		}
+		test::runCpuParity(native.cpu, scalar.cpu, loopCycles); requireParity(native, scalar);
 		const auto& frame = *native.cpu.activeThread()->frameAtDepth(0);
 		require(frame.registers[3] == valueNumber(10) && frame.registers[4] == valueNumber(9)
 			&& frame.registers[6] == value && frame.top == 7, "a self-alias side exit writes the actual cell without losing live values or extending top");

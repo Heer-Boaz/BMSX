@@ -75,6 +75,7 @@ void genericArraysAndHashKeys() {
 	const u32 entry = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 	const auto* block = page.nativeBlocks->entries[entry].get();
 	require(block && block->sourceWords == 7, "generic keys, integer stores and length execute in the same native body");
+	const auto region = block->region;
 #endif
 	const auto field = native.cpu.stringPool().intern("field"), valueText = native.cpu.stringPool().intern("value");
 	require(field == scalar.cpu.stringPool().intern("field") && valueText == scalar.cpu.stringPool().intern("value"), "matching runtime string ids");
@@ -101,7 +102,7 @@ void genericArraysAndHashKeys() {
 		test::runCpuParity(native.cpu, scalar.cpu, grant); requireParity(native, scalar);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	require(page.nativeBlocks->entries[entry].get() == block, "table relocation and helper returns retain the original executable owner");
+	require(page.nativeBlocks->entries[entry]->region == region, "table relocation and helper returns retain the original executable owner");
 #endif
 }
 
@@ -255,6 +256,13 @@ void stringStoreGrowthRoots(bool generic) {
 		garbage[index] = std::string(heap.nextCollectionBytes - heap.trackedBytes - 1, 'g'); strings.intern(garbage[index++]);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 3); requireParity(native, scalar);
+	for (size_t i = 0; i < 2; ++i) {
+		auto& machine = i == 0 ? native : scalar;
+		require(machine.cpu.readFramePc(0) == machine.rom.textAddress + 2u * INSTRUCTION_BYTES
+			&& machine.cpu.stringPool().find(garbage[i]).has_value(),
+			"an exhausted grant stops before the store and its possible collection");
+	}
+	test::runCpuParity(native.cpu, scalar.cpu, 1); requireParity(native, scalar);
 	index = 0;
 	for (auto* m : {&native, &scalar}) {
 		auto& strings = m->cpu.stringPool(); require(!strings.find(garbage[index++]), "hash growth really collects unreachable pressure");

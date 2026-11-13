@@ -20,6 +20,7 @@ struct NativeCpuRunState {
 	Span<const u8> ram;
 	u32 cartridgeSlot = 0;
 	std::exception_ptr error;
+	bool forceScalar = false;
 };
 
 static_assert(std::is_standard_layout_v<NativeCpuRunState>);

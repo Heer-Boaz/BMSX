@@ -45,6 +45,7 @@ struct NativeBlockRunState {
 	u32 constantCount = 0;
 	int remainingCycles = 0;
 	int registerTop = 0;
+	u32 scalarPc = 0;
 	void* exitCode = nullptr;
 };
 
@@ -63,6 +64,7 @@ inline constexpr int NATIVE_BLOCK_REGISTER_CACHE_CAPACITY = 4;
 
 enum class NativeBlockExit : u8 {
 	Continue,
+	ScalarBoundary,
 	Halt,
 	Call,
 	Return,
@@ -324,6 +326,7 @@ public:
 	bool hasFusedJump = false;
 	NativeBlockExitSite terminal;
 	std::vector<NativeBlockExitSite> sideExits;
+	int admissionCycles = 0;
 	// Dependency extent includes the linear successors admitted by this entry.
 	u16 sourceWords = 0;
 

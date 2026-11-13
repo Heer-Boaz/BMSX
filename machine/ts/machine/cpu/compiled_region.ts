@@ -37,6 +37,14 @@ export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: rea
 			blocks[index].sourceWords += blocks[index + 1].sourceWords;
 		}
 	}
+	const admissionCycles = blocks.map(block => block.admissionCycles);
+	const admissionVarargs = blocks.map(block => block.admissionVarargs);
+	for (let index = blocks.length - 1; index >= 0; --index) {
+		if (plans[index].fallthrough) {
+			admissionCycles[index] = blocks[index].terminal.cycles + admissionCycles[index + 1];
+			admissionVarargs[index] = blocks[index].openVarargs + admissionVarargs[index + 1];
+		}
+	}
 	const entries = new Map(plans.map((plan, index) => [plan.pc, index]));
 	const bindings = new Set(blocks.flatMap(block => [...block.registers.residents.keys()]));
 	const source = ['"use strict"; return function(r,k,p,frame,entry,state){',
@@ -58,7 +66,9 @@ export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: rea
 			if (target !== undefined) {
 				const top = exit.resetsRegisterTop ? `top=Math.max(frame.top,${exit.registerTop});`
 					: exit.registerTop === 0 ? '' : `if(top<${exit.registerTop})top=${exit.registerTop};`;
-				return `if(budget-${exit.cycles}>0){budget-=${exit.cycles};${top}${block.registers.transferResidents(residents[target])}entry=${target};continue region;}${block.registers.writeResidents()}exit=${index};break region;`;
+				const required = admissionVarargs[target] === 0 ? `${admissionCycles[target]}`
+					: `${admissionCycles[target]}+${admissionVarargs[target]}*frame.varargCount`;
+				return `if(budget-${exit.cycles}>${required}){budget-=${exit.cycles};${top}${block.registers.transferResidents(residents[target])}entry=${target};continue region;}${block.registers.writeResidents()}exit=${index};break region;`;
 			}
 		}
 		return `${block.registers.writeResidents()}exit=${index};break region;`;
@@ -86,7 +96,8 @@ export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: rea
 	for (let entry = 0; entry < blocks.length; ++entry) {
 		const block = blocks[entry];
 		region.entries.push({ region, entry, page, firstWord: block.firstWord,
-			terminal: block.terminal, exits: block.exits, sourceWords: block.sourceWords, incoming: null });
+			terminal: block.terminal, exits: block.exits, admissionCycles: admissionCycles[entry],
+			admissionVarargs: admissionVarargs[entry], sourceWords: block.sourceWords, incoming: null });
 	}
 	return region;
 }

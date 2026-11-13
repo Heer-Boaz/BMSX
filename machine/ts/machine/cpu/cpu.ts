@@ -2702,6 +2702,11 @@ export class CPU implements MappedPageInvalidator {
 		// dispatch. Execute its bounded segment and return the complete charge.
 		const thread = this.activeThread;
 		let remaining = this.instructionBudgetRemaining + page.dispatchCycles[word];
+		if (remaining <= block.admissionCycles + block.admissionVarargs * frame.varargCount) {
+			frame.compilationEntry = rewritten || compiledBlockEndsBlock(page.ops[word], page.b[word]);
+			this.executeInstruction(frame, page, word, page.ops[word], targetDepth);
+			return;
+		}
 		for (;;) {
 			const registers = frame.registers;
 			const image = frame.executionImage;
@@ -2716,7 +2721,7 @@ export class CPU implements MappedPageInvalidator {
 				if (exit.exit !== CompiledBlockExit.Continue) break;
 				const target = exit.linkedBlock;
 				if (target === null) break;
-				if (remaining <= 0) break;
+				if (remaining <= target.admissionCycles + target.admissionVarargs * frame.varargCount) break;
 				current = target;
 				page = target.page;
 			}
@@ -2842,6 +2847,7 @@ export class CPU implements MappedPageInvalidator {
 			if (nextCache === null) return;
 			const next = nextCache.entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 			if (next === null) return;
+			if (remaining <= next.admissionCycles + next.admissionVarargs * frame.varargCount) return;
 			// Only shared-memory system code entering the selectable cartridge
 			// window needs a fresh chip-select lookup on each traversal.
 			if (exit.exit === CompiledBlockExit.Continue && exit.linkedBlock === null

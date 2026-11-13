@@ -100,7 +100,10 @@ void nativeFieldGuardsAndRawSlotAccess() {
 		field.a = 0; field.b = 1; field.c = store ? -1 : 1;
 		field.width = 2; field.baseCycles = BASE_CYCLES[field.op]; field.tableCacheSlot = slot;
 		const std::array source{NativeBlockInstruction{&field, 0x1000u}};
-		auto block = NativeBlock::compile(source, constants.data(), bytes, machine.memory, machine.cpu.stringPool(), {nullptr, nullptr, nullptr, nullptr, &fieldSlowExitMarker, &fieldSlowExitMarker});
+		NativeBlockExitHandlers handlers{};
+		handlers[static_cast<size_t>(NativeBlockExit::ReadField)] = &fieldSlowExitMarker;
+		handlers[static_cast<size_t>(NativeBlockExit::WriteField)] = &fieldSlowExitMarker;
+		auto block = NativeBlock::compile(source, constants.data(), bytes, machine.memory, machine.cpu.stringPool(), handlers);
 		std::array registers{valueTable(table), valueTable(table)};
 		if (store) {
 			require(block->sideExits[0].exitC == -1, "native field exits keep signed RK selectors");
@@ -195,7 +198,9 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 		asTable(frame.registers[0])->setStringKey(machine->cpu.stringPool().intern("field"), valueNumber(0));
 		frame.registers[4] = valueNumber(0);
 	}
-	require(loop->run(nativeRunState = {.registers = nativeFrame.registers, .constants = nativeFrame.executionImage->constPool.data(), .remainingCycles = 1})->nextPc == native.rom.textAddress,
+	require(loop->run(nativeRunState = {.registers = nativeFrame.registers, .constants = nativeFrame.executionImage->constPool.data(), .remainingCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)]
+			+ BASE_CYCLES[static_cast<u8>(OpCode::ADD)] + BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)]
+			+ BASE_CYCLES[static_cast<u8>(OpCode::JMP)]})->nextPc == native.rom.textAddress,
 		"ordinary read and write hits reach the final native branch without a host side exit");
 	// The direct datapath probe executes one loop; keep both reference machines aligned.
 	scalar.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, scalar.rom.functionAddresses[0], scalar.rom.textAddress);

@@ -1,0 +1,430 @@
+#include "machine/cpu/cpu.h"
+#include "machine/cpu/execution_image.h"
+#include "machine/cpu/table.h"
+#include "machine/devices/irq/controller.h"
+#include "machine/execution_address_space.h"
+#include "machine/memory/memory.h"
+#include "spec/blua32/instruction_format.h"
+#include "spec/blua32/memory_access_kind.h"
+#include "spec/blua32/opcode.h"
+#include "spec/bmsx/io.h"
+#include "spec/bmsx/model.h"
+#include "support/blua32_test_rom.h"
+#include "support/cartridge_fixture.h"
+
+#include <chrono>
+#include <cstdio>
+#include <thread>
+#include <stdexcept>
+#include <string_view>
+
+namespace {
+using namespace bmsx;
+
+struct Machine {
+	test::Blua32TestRom rom;
+	Memory memory;
+	IrqController irq;
+	ExecutionAddressSpace addresses;
+	CPU cpu;
+	Machine(const test::Blua32TestImage& image, bool scalar)
+		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image)),
+		  memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes),
+		  irq(memory), addresses(memory), cpu(memory, irq, addresses) {
+		cpu.reset();
+		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr,
+			SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+	}
+};
+
+void require(bool condition, const char* message) {
+	if (!condition) throw std::runtime_error(message);
+}
+
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+void waitForNativeEntries(Machine& machine, u32 base, std::initializer_list<u32> offsets) {
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+	for (;;) {
+		const auto* page = machine.cpu.rootThread()->frameAtDepth(0)->decodedPage;
+		bool ready = page && page->nativeBlocks;
+		for (u32 offset : offsets) {
+			if (!ready) break;
+			ready = page->nativeBlocks->entries[((base + offset * INSTRUCTION_BYTES) & MAPPED_PAGE_BYTE_MASK) >> 2] != nullptr;
+		}
+		if (ready) return;
+		require(std::chrono::steady_clock::now() < deadline, "native entries must actually be published");
+		machine.cpu.runUntilDepth(0, 4000);
+		if (machine.cpu.activeThread()->frameDepth > 1) machine.cpu.runUntilDepth(1, 100);
+		std::this_thread::yield();
+	}
+}
+#endif
+
+void exactGrant(bool store) {
+	constexpr u32 address = DYNAMIC_RAM_BASE + 0x20000u;
+	for (int grant : {2, 4, 6, 8}) {
+		test::Blua32TestImage image;
+		image.text.resize(6u * INSTRUCTION_BYTES);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 1, 0, 0);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 2, 0, 0);
+		if (store) writeInstruction(image.text, 3, static_cast<u8>(OpCode::STORE_MEM), 5, 4,
+			static_cast<u8>(MemoryAccessKind::U32LE));
+		else writeInstruction(image.text, 3, static_cast<u8>(OpCode::NEWT), 3, 0, 0);
+		writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
+		writeInstruction(image.text, 5, static_cast<u8>(OpCode::RFE), 0, 0, 0);
+		image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 6},
+			{.firstWord = 5, .wordCount = 1, .maxStack = 1}};
+		image.irqFunctionIndex = 1;
+		Machine native(image, false), scalar(image, true);
+		for (auto* machine : {&native, &scalar}) {
+			auto* frame = machine->cpu.activeThread()->frameAtDepth(0);
+			frame->registers[4] = valueNumber(address);
+			frame->registers[5] = valueNumber(0x12345678);
+			for (int i = 0; i < 20; ++i) machine->cpu.runUntilDepth(0, 128);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			if (machine == &native) {
+				waitForNativeEntries(*machine, machine->rom.textAddress, {0});
+				const auto* page = frame->decodedPage;
+				require(page && page->nativeBlocks && page->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2],
+				"the measured native entry was actually compiled");
+			}
+#endif
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
+				machine->rom.functionAddresses[0], machine->rom.textAddress);
+			for (int reg = 0; reg < 4; ++reg) frame->registers[reg] = valueNil();
+			machine->memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_GPU);
+			machine->memory.writeU32(address, 0);
+		}
+		const u32 nativeStartHash = native.cpu.captureRuntimeState().nextObjectHashId;
+		const u32 scalarStartHash = scalar.cpu.captureRuntimeState().nextObjectHashId;
+		const auto nativeResult = native.cpu.runUntilDepth(0, grant);
+		const auto scalarResult = scalar.cpu.runUntilDepth(0, grant);
+		const auto nativePc = native.cpu.readFramePc(0), scalarPc = scalar.cpu.readFramePc(0);
+		const u32 nativeAllocations = native.cpu.captureRuntimeState().nextObjectHashId - nativeStartHash;
+		const u32 scalarAllocations = scalar.cpu.captureRuntimeState().nextObjectHashId - scalarStartHash;
+		for (auto* machine : {&native, &scalar}) {
+			machine->irq.raise(IRQ_GPU);
+			require(machine->cpu.enterPendingInterrupt(), "IRQ is accepted");
+		}
+		std::printf("%s grant=%d cycles=%d/%d pc=%08x/%08x EPC=%08x/%08x allocations=%u/%u RAM=%08x/%08x\n",
+			store ? "store" : "allocate", grant, native.cpu.instructionBudgetRemaining, scalar.cpu.instructionBudgetRemaining,
+			nativePc, scalarPc, native.cpu.readEpcWord(), scalar.cpu.readEpcWord(), nativeAllocations, scalarAllocations,
+			native.memory.readU32(address), scalar.memory.readU32(address));
+		require(nativeResult == scalarResult, "both CPUs return the same status for the requested grant");
+		require(native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining, "same grant has the same remaining cycles");
+		require(nativePc == scalarPc && native.cpu.readEpcWord() == scalar.cpu.readEpcWord(), "IRQ is accepted at the same guest instruction boundary");
+		require(nativeAllocations == scalarAllocations, "no premature allocation before the IRQ");
+		require(native.memory.readU32(address) == scalar.memory.readU32(address), "no premature native RAM store before the IRQ");
+	}
+}
+
+// Each pair starts from the same guest state and receives the identical budget.
+// An instruction admitted with positive budget completes even if its variable
+// cost exhausts that budget: parity concerns the *next* instruction boundary.
+void exactGrantSweep(bool scalarControl) {
+	constexpr u32 address = DYNAMIC_RAM_BASE + 0x20000u;
+	test::Blua32TestImage image;
+	image.text.resize(7u * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 1, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 2, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::NEWT), 3, 4, 3);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::STORE_MEM), 5, 4,
+		static_cast<u8>(MemoryAccessKind::U32LE));
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 58, 255);
+	writeInstruction(image.text, 6, static_cast<u8>(OpCode::RFE), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 6},
+		{.firstWord = 6, .wordCount = 1, .maxStack = 1}};
+	image.irqFunctionIndex = 1;
+	unsigned mismatchCount = 0;
+	for (int grant = 1; grant <= 64; ++grant) {
+		Machine native(image, scalarControl), scalar(image, true);
+		for (auto* machine : {&native, &scalar}) {
+			auto* frame = machine->cpu.activeThread()->frameAtDepth(0);
+			frame->registers[4] = valueNumber(address);
+			frame->registers[5] = valueNumber(0x12345678);
+			for (int i = 0; i < 20; ++i) machine->cpu.runUntilDepth(0, 128);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			if (machine == &native && !scalarControl) {
+				waitForNativeEntries(*machine, machine->rom.textAddress, {0});
+				const auto* page = frame->decodedPage;
+				require(page && page->nativeBlocks && page->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2],
+					"the sweep enters compiled native code");
+			}
+#endif
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
+				machine->rom.functionAddresses[0], machine->rom.textAddress);
+			for (int reg = 0; reg < 4; ++reg) frame->registers[reg] = valueNil();
+			machine->memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_GPU);
+			machine->memory.writeU32(address, 0);
+		}
+		const u32 nativeStartHash = native.cpu.captureRuntimeState().nextObjectHashId;
+		const u32 scalarStartHash = scalar.cpu.captureRuntimeState().nextObjectHashId;
+		const auto nativeResult = native.cpu.runUntilDepth(0, grant);
+		const auto scalarResult = scalar.cpu.runUntilDepth(0, grant);
+		const auto nativePc = native.cpu.readFramePc(0), scalarPc = scalar.cpu.readFramePc(0);
+		const u32 nativeAllocations = native.cpu.captureRuntimeState().nextObjectHashId - nativeStartHash;
+		const u32 scalarAllocations = scalar.cpu.captureRuntimeState().nextObjectHashId - scalarStartHash;
+		bool registersEqual = true;
+		for (const int reg : {0, 1, 2, 4, 5}) {
+			registersEqual &= native.cpu.readFrameRegister(0, reg) == scalar.cpu.readFrameRegister(0, reg);
+		}
+		// Table pointers are host identities, not guest values shared across CPUs.
+		const Value nativeTable = native.cpu.readFrameRegister(0, 3), scalarTable = scalar.cpu.readFrameRegister(0, 3);
+		registersEqual &= (nativeTable == valueNil() && scalarTable == valueNil())
+			|| (valueIsTable(nativeTable) && valueIsTable(scalarTable)
+				&& asTable(nativeTable)->storedSlotCount() == asTable(scalarTable)->storedSlotCount());
+		for (auto* machine : {&native, &scalar}) {
+			machine->irq.raise(IRQ_GPU);
+			require(machine->cpu.enterPendingInterrupt(), "IRQ is accepted");
+		}
+		const bool statusEqual = nativeResult == scalarResult;
+		const bool cyclesEqual = native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining;
+		const bool pcEqual = nativePc == scalarPc;
+		const bool epcEqual = native.cpu.readEpcWord() == scalar.cpu.readEpcWord();
+		const bool allocationsEqual = nativeAllocations == scalarAllocations;
+		const bool ramEqual = native.memory.readU32(address) == scalar.memory.readU32(address);
+		const bool equal = statusEqual && cyclesEqual && pcEqual && epcEqual && registersEqual && allocationsEqual && ramEqual;
+		if (!equal) {
+			++mismatchCount;
+			std::printf("grant=%d status=%d cycles=%d/%d pc=%08x/%08x epc=%08x/%08x registers=%d allocations=%u/%u RAM=%08x/%08x\n",
+				grant, statusEqual, native.cpu.instructionBudgetRemaining, scalar.cpu.instructionBudgetRemaining,
+				nativePc, scalarPc, native.cpu.readEpcWord(), scalar.cpu.readEpcWord(), registersEqual,
+				nativeAllocations, scalarAllocations, native.memory.readU32(address), scalar.memory.readU32(address));
+		}
+	}
+	std::printf("exact-grant sweep: %u/64 divergent budgets\n", mismatchCount);
+	require(mismatchCount == 0, "native and scalar differ for at least one identical positive grant");
+}
+
+void irqAfterNativeMmioBeforeShortSuccessor() {
+	test::Blua32TestImage image;
+	image.text.resize(5u * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::STORE_MEM), 5, 4, static_cast<u8>(MemoryAccessKind::U32LE));
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 0, 1, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 2, 1, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RFE), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 6},
+		{.firstWord = 4, .wordCount = 1}};
+	image.irqFunctionIndex = 1;
+	for (int grant = 3; grant <= 16; ++grant) {
+		Machine native(image, false), scalar(image, true);
+		for (auto* machine : {&native, &scalar}) {
+			auto* frame = machine->cpu.activeThread()->frameAtDepth(0);
+			frame->registers[4] = valueNumber(IO_IRQ_MASK);
+			frame->registers[5] = valueNumber(0);
+			for (int n = 0; n < 30; ++n) machine->cpu.runUntilDepth(0, 128);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			if (machine == &native) {
+				waitForNativeEntries(*machine, machine->rom.textAddress, {0});
+				const auto* page = frame->decodedPage;
+				require(page && page->nativeBlocks && page->nativeBlocks->entries[(machine->rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2],
+					"IRQ boundary starts in a published native entry");
+			}
+#endif
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
+				machine->rom.functionAddresses[0], machine->rom.textAddress);
+			frame->registers[5] = valueNumber(IRQ_GPU);
+			machine->irq.raise(IRQ_GPU);
+		}
+		const auto a = native.cpu.runUntilDepth(0, grant);
+		const auto b = scalar.cpu.runUntilDepth(0, grant);
+		const auto left = native.cpu.captureRuntimeState(), right = scalar.cpu.captureRuntimeState();
+		require(a == b && native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining,
+			"IRQ mask write preserves the same grant outcome");
+		require(left.statusWord == right.statusWord && left.causeWord == right.causeWord
+			&& left.epcWord == right.epcWord && left.lastPc == right.lastPc
+			&& std::ranges::equal(left.snapshot.words(), right.snapshot.words()),
+			"IRQ after MMIO is admitted at the same PC with identical live registers and stack");
+	}
+}
+
+void nmiAfterShortGrant() {
+	test::Blua32TestImage image;
+	image.text.resize(5u * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 1, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 2, 1, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RFE), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 4},
+		{.firstWord = 4, .wordCount = 1}};
+	image.exceptionFunctionIndex = 1;
+	for (int grant = 1; grant <= 16; ++grant) {
+		Machine native(image, false), scalar(image, true);
+		for (auto* machine : {&native, &scalar}) {
+			for (int n = 0; n < 30; ++n) machine->cpu.runUntilDepth(0, 128);
+			auto* frame = machine->cpu.activeThread()->frameAtDepth(0);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			if (machine == &native) {
+				waitForNativeEntries(*machine, machine->rom.textAddress, {0});
+				const auto* page = frame->decodedPage;
+				require(page && page->nativeBlocks && page->nativeBlocks->entries[(machine->rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2],
+					"NMI test starts in a published native entry");
+			}
+#endif
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
+				machine->rom.functionAddresses[0], machine->rom.textAddress);
+			machine->cpu.runUntilDepth(0, grant);
+			machine->cpu.requestNonMaskableInterrupt();
+		}
+		const auto a = native.cpu.runUntilDepth(0, grant);
+		const auto b = scalar.cpu.runUntilDepth(0, grant);
+		const auto left = native.cpu.captureRuntimeState(), right = scalar.cpu.captureRuntimeState();
+		require(a == b && native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining
+			&& left.statusWord == right.statusWord && left.causeWord == right.causeWord
+			&& left.epcWord == right.epcWord && left.lastPc == right.lastPc
+			&& std::ranges::equal(left.snapshot.words(), right.snapshot.words()),
+			"NMI and RFE after a short grant preserve the same PC and complete stack");
+	}
+}
+
+void rewriteAndObserveAfterShortGrant() {
+	test::Blua32TestImage image;
+	image.text.resize(4u * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 1, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 2, 1, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
+	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 4}};
+	for (const bool restore : {false, true}) {
+		Machine native(image, false), scalar(image, true);
+		int seenNative = 0, seenScalar = 0;
+		for (auto* machine : {&native, &scalar}) {
+			machine->memory.writeBytes(DYNAMIC_RAM_BASE, image.text.data(), image.text.size());
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
+				machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
+			for (int n = 0; n < 30; ++n) machine->cpu.runUntilDepth(0, 128);
+			auto* frame = machine->cpu.activeThread()->frameAtDepth(0);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			if (machine == &native) {
+				waitForNativeEntries(*machine, DYNAMIC_RAM_BASE, {0});
+				const auto* page = frame->decodedPage;
+				require(page && page->nativeBlocks && page->nativeBlocks->entries[(DYNAMIC_RAM_BASE & MAPPED_PAGE_BYTE_MASK) >> 2],
+					"short rewrite test begins in published RAM code");
+			}
+#endif
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
+				machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
+			require(machine->cpu.runUntilDepth(0, 1) == RunResult::Yielded, "first short grant yields");
+			require(machine->cpu.readFramePc(0) == DYNAMIC_RAM_BASE + INSTRUCTION_BYTES,
+				"only the first instruction precedes the checkpoint");
+			if (restore) machine->cpu.restoreRuntimeState(machine->cpu.captureRuntimeState());
+			std::array<u8, INSTRUCTION_BYTES> replacement{};
+			writeInstruction(replacement, 0, static_cast<u8>(OpCode::K1), 1, 0, 0);
+			machine->memory.writeBytes(DYNAMIC_RAM_BASE + INSTRUCTION_BYTES, replacement.data(), replacement.size());
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			if (machine == &native && !restore) {
+				const auto* page = frame->decodedPage;
+				require(!page->nativeBlocks || !page->nativeBlocks->entries[(DYNAMIC_RAM_BASE & MAPPED_PAGE_BYTE_MASK) >> 2],
+					"rewriting a dependent word retires the published native predecessor");
+			}
+#endif
+			InstructionObserverBinding observer;
+			observer.points[0].insert(DYNAMIC_RAM_BASE + INSTRUCTION_BYTES);
+			observer.context = machine == &native ? &seenNative : &seenScalar;
+			observer.observe = [](void* context, ExecutionDomainId domain, u32 pc, const Value* registers) {
+				++*static_cast<int*>(context);
+				require(domain == SYSTEM_EXECUTION_DOMAIN_ID && pc == DYNAMIC_RAM_BASE + INSTRUCTION_BYTES
+					&& registers[0] == valueNumber(1), "late observer sees the admitted prefix");
+			};
+			machine->cpu.setInstructionObserver(std::move(observer));
+		}
+		const auto a = native.cpu.runUntilDepth(0, 2), b = scalar.cpu.runUntilDepth(0, 2);
+		const auto left = native.cpu.captureRuntimeState(), right = scalar.cpu.captureRuntimeState();
+		require(a == b && native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining
+			&& left.lastPc == right.lastPc && std::ranges::equal(left.snapshot.words(), right.snapshot.words()),
+			"source rewrite and late observation after a short grant preserve the complete guest state");
+		require(seenNative == 1 && seenScalar == 1
+			&& native.cpu.readFrameRegister(0, 1) == valueNumber(1),
+			"both routes observe and execute the replacement exactly once");
+	}
+}
+
+void exactCallVarargSweep() {
+	test::Blua32TestImage image;
+	image.text.resize(18u * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 10, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 0, 10, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::K1), 1, 0, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::CALL), 0, 2, 2);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
+	writeInstruction(image.text, 16, static_cast<u8>(OpCode::VARARG), 0, 0, 0);
+	writeInstruction(image.text, 17, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 16},
+		{.firstWord = 16, .wordCount = 2, .maxStack = 4, .isVararg = true}};
+	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+	unsigned mismatchCount = 0;
+	for (int grant = 1; grant <= 64; ++grant) {
+		Machine native(image, false), scalar(image, true);
+		for (auto* machine : {&native, &scalar}) {
+			machine->cpu.runUntilDepth(0, 4000);
+			auto* thread = machine->cpu.activeThread();
+			if (thread->frameDepth > 1) machine->cpu.runUntilDepth(1, 100);
+			auto* frame = thread->frameAtDepth(0);
+			require(valueIsClosure(frame->registers[10]), "warm caller retains its closure");
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			if (machine == &native) {
+				waitForNativeEntries(*machine, machine->rom.textAddress, {2, 16});
+				const auto* page = frame->decodedPage;
+				const u32 caller = ((machine->rom.textAddress + 2u * INSTRUCTION_BYTES) & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+				const u32 callee = ((machine->rom.textAddress + 16u * INSTRUCTION_BYTES) & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+				require(page && page->nativeBlocks && page->nativeBlocks->entries[caller] && page->nativeBlocks->entries[callee],
+					"both CALL and VARARG paths are compiled");
+			}
+#endif
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
+				machine->rom.functionAddresses[0], machine->rom.textAddress + 2u * INSTRUCTION_BYTES);
+			frame->registers[0] = valueNil(); frame->registers[1] = valueNil(); frame->top = 11;
+			machine->memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_GPU);
+		}
+		const auto nativeResult = native.cpu.runUntilDepth(0, grant);
+		const auto scalarResult = scalar.cpu.runUntilDepth(0, grant);
+		const auto* nativeThread = native.cpu.activeThread();
+		const auto* scalarThread = scalar.cpu.activeThread();
+		bool equal = nativeResult == scalarResult && native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining
+			&& native.cpu.lastPc == scalar.cpu.lastPc && nativeThread->frameDepth == scalarThread->frameDepth;
+		if (nativeThread->frameDepth == scalarThread->frameDepth) {
+			for (u32 depth = 0; depth < nativeThread->frameDepth; ++depth) {
+				const auto* a = nativeThread->frameAtDepth(depth); const auto* b = scalarThread->frameAtDepth(depth);
+				equal &= a->pc == b->pc && a->top == b->top && a->varargCount == b->varargCount;
+				for (int reg = 0; reg < 3; ++reg) {
+					const Value av = a->registers[reg], bv = b->registers[reg];
+					equal &= av == bv || (valueIsClosure(av) && valueIsClosure(bv));
+				}
+			}
+		}
+		if (!equal) {
+			++mismatchCount;
+			std::printf("call-vararg grant=%d cycles=%d/%d lastPc=%08x/%08x depth=%zu/%zu\n", grant,
+				native.cpu.instructionBudgetRemaining, scalar.cpu.instructionBudgetRemaining,
+				native.cpu.lastPc, scalar.cpu.lastPc, nativeThread->frameDepth, scalarThread->frameDepth);
+		}
+	}
+	std::printf("call-vararg sweep: %u/64 divergent budgets\n", mismatchCount);
+	require(mismatchCount == 0, "CALL, RET and open VARARG differ for an identical positive grant");
+}
+}
+
+int main(int argc, char** argv) {
+	try {
+		if (argc != 2) throw std::runtime_error("expected allocate or store");
+		const std::string_view scenario(argv[1]);
+		if (scenario == "allocate") exactGrant(false);
+		else if (scenario == "store") exactGrant(true);
+		else if (scenario == "sweep") exactGrantSweep(false);
+		else if (scenario == "sweep-scalar-control") exactGrantSweep(true);
+		else if (scenario == "call-vararg-sweep") exactCallVarargSweep();
+		else if (scenario == "irq-short") irqAfterNativeMmioBeforeShortSuccessor();
+		else if (scenario == "nmi-short") nmiAfterShortGrant();
+		else if (scenario == "rewrite-short") rewriteAndObserveAfterShortGrant();
+		else throw std::runtime_error("unknown scenario");
+		return 0;
+	} catch (const std::exception& error) {
+		std::fprintf(stderr, "FAIL: %s\n", error.what());
+		return 1;
+	}
+}

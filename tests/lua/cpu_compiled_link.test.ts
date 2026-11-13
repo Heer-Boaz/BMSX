@@ -56,6 +56,38 @@ test('helper continuations are predeclared entries and read their own current Va
 	}
 });
 
+test('helper-success fallthrough does not execute a later store without a grant', () => {
+	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(text, 0, OpCode.K1, 8, 0, 0);
+	writeInstruction(text, 1, OpCode.LOAD_MEM, 0, 1, MemoryAccessKind.U32LE);
+	writeInstruction(text, 2, OpCode.MOV, 4, 8, 0);
+	writeInstruction(text, 3, OpCode.STORE_MEM, 4, 1, MemoryAccessKind.U32LE);
+	writeInstruction(text, 4, OpCode.MOV, 5, 0, 0);
+	writeInstruction(text, 5, OpCode.JMP, 0, 63, 58, 255);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 6, maxStack: 9 }] });
+	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+	for (const { cpu } of machines) {
+		cpu.rootThread.frameAtDepth(0).registers.setNumber(1, DYNAMIC_RAM_BASE);
+		cpu.runUntilDepth(0, 2048);
+	}
+	const frame = machines[0].cpu.rootThread.frameAtDepth(0), page = frame.decodedPage!;
+	const first = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
+	assert.ok(page.compiledBlocks!.entries[first], 'the starting entry is compiled before the grant sweep');
+	assert.ok(page.compiledBlocks!.entries[first + 2], 'the load continuation is compiled in the same region');
+	for (let grant = 1; grant <= 20; ++grant) {
+		for (const { cpu, memory } of machines) {
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
+			memory.writeU32(DYNAMIC_RAM_BASE, 17);
+		}
+		assert.equal(machines[0].cpu.runUntilDepth(0, grant), machines[1].cpu.runUntilDepth(0, grant));
+		assert.equal(machines[0].cpu.instructionBudgetRemaining, machines[1].cpu.instructionBudgetRemaining);
+		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
+		assert.equal(machines[0].memory.readU32(DYNAMIC_RAM_BASE), machines[1].memory.readU32(DYNAMIC_RAM_BASE));
+		if (grant === 7) assert.equal(machines[0].memory.readU32(DYNAMIC_RAM_BASE), 17, 'the store has not been admitted');
+		if (grant === 8) assert.equal(machines[0].memory.readU32(DYNAMIC_RAM_BASE), 1, 'the admitted store finishes even if its cost exceeds the grant');
+	}
+});
+
 test('resident Values cross internal string branches and publish only when leaving the region', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.MOV, 7, 8, 0);
@@ -150,7 +182,8 @@ test('linked physical-page segments retain complete charges and disconnect rewri
 				expected[4] = (expected[0] as number) + (expected[8] as number); top = Math.max(top, 5); segment = 0;
 			}
 			remaining -= 2 * BASE_CYCLES[OpCode.MOV];
-			if (remaining <= 0) break;
+			const next = cache.entries[segment]!;
+			if (remaining <= next.admissionCycles + next.admissionVarargs * frame.varargCount) break;
 		}
 		const run = { remainingCycles: grant, registerTop: 0 }, block = cache.entries[start]!;
 		const exit = block.region.exits[block.region.execute(registers, frame.executionImage.constScalars, page, frame, block.entry, run)];
@@ -164,7 +197,10 @@ test('linked physical-page segments retain complete charges and disconnect rewri
 			const frame = cpu.rootThread.frameAtDepth(0); frame.registers.set(2, flag); frame.top = 0;
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 		}
-		assert.equal(runCpuParity(machines[0].cpu, machines[1].cpu, grant), RunResult.Yielded);
+		assert.equal(machines[0].cpu.runUntilDepth(0, grant), RunResult.Yielded);
+		assert.equal(machines[1].cpu.runUntilDepth(0, grant), RunResult.Yielded);
+		assert.equal(machines[0].cpu.instructionBudgetRemaining, machines[1].cpu.instructionBudgetRemaining,
+			`internal branch charges the same cycles for grant ${grant}`);
 		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 	}
 	const replacement = new Uint8Array(INSTRUCTION_BYTES);
@@ -215,7 +251,9 @@ test('cross-page chains retain successor page ownership and disconnect rewritten
 		for (const { cpu } of machines) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 		}
-		runCpuParity(machines[0].cpu, machines[1].cpu, grant);
+		assert.equal(machines[0].cpu.runUntilDepth(0, grant), machines[1].cpu.runUntilDepth(0, grant));
+		assert.equal(machines[0].cpu.instructionBudgetRemaining, machines[1].cpu.instructionBudgetRemaining,
+			`cross-page linked execution charges the same cycles for grant ${grant}`);
 		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
 	}
 	const replacement = new Uint8Array(INSTRUCTION_BYTES); writeInstruction(replacement, 0, OpCode.SUB, 4, 0, 8);
@@ -419,7 +457,7 @@ test('more than six live-through raw Values remain local across every internal e
 			for (let first = segment * 4; first < segment * 4 + 4; first += 2)
 				[expected[first], expected[first + 1]] = [expected[first + 1], expected[first]];
 			remaining -= 15 * BASE_CYCLES[OpCode.MOV]; segment ^= 1;
-		} while (remaining > 0);
+		} while (remaining > page.compiledBlocks!.entries[firstWord + starts[segment]]!.admissionCycles);
 		const writes = new Uint32Array(8), store = r.setEncoded.bind(r);
 		r.setEncoded = (register, tag, scalar, reference) => { if (register < 8) ++writes[register]; store(register, tag, scalar, reference); };
 		const state = { remainingCycles: grant, registerTop: 0 };

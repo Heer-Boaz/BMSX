@@ -27,6 +27,13 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 	auto& cpu = *run->cpu;
 	auto& state = run->state;
 	CallFrame* frame = state.frame;
+	if (exit->exit == NativeBlockExit::ScalarBoundary) {
+		cpu.instructionBudgetRemaining = state.remainingCycles;
+		frame->pc = state.scalarPc;
+		frame->top = state.registerTop;
+		run->forceScalar = true;
+		return nullptr;
+	}
 	// Publish the complete native prefix before allocating, touching a device,
 	// changing frames or retiring generated code. The descriptor can die there.
 	cpu.instructionBudgetRemaining = state.remainingCycles;

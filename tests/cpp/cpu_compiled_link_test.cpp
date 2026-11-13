@@ -89,26 +89,32 @@ void grantsAndTargetRetirement() {
 		const NativeBlockExitSite* expectedExit;
 		for (;;) {
 			const auto& current = *page.nativeBlocks->entries[segment];
-			expectedExit = &current.terminal;
+			if (remaining <= BASE_CYCLES[static_cast<u8>(OpCode::ADD)]) { expectedExit = nullptr; break; }
 			if (segment == 0) {
 				expected[8] = valueNumber(asNumber(expected[8]) + 1); top = std::max(top, 9);
+			} else if (segment == 2) {
+				expected[0] = valueNumber(-asNumber(expected[0])); top = std::max(top, 1);
+			} else if (segment == 4) {
+				expected[0] = valueNumber(static_cast<i32>(toU32(expected[0]) << 1u)); top = std::max(top, 1);
+			} else {
+				expected[4] = valueNumber(asNumber(expected[0]) + asNumber(expected[8])); top = std::max(top, 5);
+			}
+			remaining -= BASE_CYCLES[static_cast<u8>(OpCode::ADD)];
+			expectedExit = &current.terminal;
+			if (segment == 0) {
 				if (flag) expectedExit = &current.sideExits.back();
 				segment = flag ? 4u : 2u;
-			} else if (segment == 2) {
-				expected[0] = valueNumber(-asNumber(expected[0])); top = std::max(top, 1); segment = 6;
 			} else if (segment == 4) {
-				expected[0] = valueNumber(static_cast<i32>(toU32(expected[0]) << 1u));
 				expected[3] = expected[8]; top = std::max(top, 4); segment = 6;
-			} else {
-				expected[4] = valueNumber(asNumber(expected[0]) + asNumber(expected[8])); top = std::max(top, 5); segment = 0;
-			}
-			remaining -= 2 * BASE_CYCLES[static_cast<u8>(OpCode::ADD)];
+			} else if (segment == 2) segment = 6;
+			else segment = 0;
+			remaining -= BASE_CYCLES[static_cast<u8>(OpCode::ADD)];
 			if (remaining <= 0) break;
 		}
 		NativeBlockRunState run{.registers = registers.data(), .constants = native.cpu.activeThread()->frameAtDepth(0)->executionImage->constPool.data(),
 			.remainingCycles = grant};
 		const auto* exit = page.nativeBlocks->entries[start]->run(run);
-		require(exit == expectedExit && registers == expected && run.remainingCycles == remaining && run.registerTop == top,
+		require((expectedExit ? exit == expectedExit : exit->exit == NativeBlockExit::ScalarBoundary) && registers == expected && run.remainingCycles == remaining && run.registerTop == top,
 			"one native entry traverses both branches, a WIDE merge and a backedge without a CPU dispatcher or intermediate frame");
 	}
 

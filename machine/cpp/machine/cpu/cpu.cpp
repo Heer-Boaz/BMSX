@@ -2605,6 +2605,7 @@ RunResult CPU::runLoop(
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const NativeBlock* nativeBlock = nullptr;
 	int nativeFirstDispatchCycles = 0;
+	bool forceScalarOnce = false;
 	NativeCpuRunState nativeState{.cpu = this, .targetDepth = targetDepth,
 		.systemRom = &m_memory.systemRomStorage(),
 		.ram = {m_memory.ramData(), m_memory.ramByteCount()}};
@@ -2661,6 +2662,11 @@ RunResult CPU::runLoop(
 				if (m_nonMaskableInterruptPending
 					|| ((m_cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
 						&& m_irqController.hasAssertedMaskableInterruptLine())) {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+					// The next instruction belongs to the interrupt handler; retry admission
+					// for the suspended instruction after RFE instead.
+					forceScalarOnce = false;
+#endif
 					enterPendingInterrupt();
 					continue;
 				}
@@ -2774,6 +2780,15 @@ dispatch_instruction:
 					goto dispatch_instruction;
 				}
 				case static_cast<u8>(DecodedDispatchOp::NativeBlock): {
+					// The CPU thread owns code publication and source writes. With no
+					// intervening guest instruction, this is the same published entry;
+					// interrupt entry above cancels the retry before any handler runs.
+					if (forceScalarOnce) {
+						forceScalarOnce = false;
+						FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b);
+						dispatchOp = decoded->op;
+						goto dispatch_instruction;
+					}
 					nativeBlock = decodedPage->nativeBlocks->entries[pageOffset].get();
 					// The first instruction's ordinary charge/PC publication has
 					// already happened with positive budget, admitting this segment.
@@ -2901,6 +2916,7 @@ dispatch_native_block: {
 					.cop0Words = m_cop0Words.data(), .constantCount = static_cast<u32>(IMAGE.constPool.size()),
 					.remainingCycles = instructionBudgetRemaining + nativeFirstDispatchCycles, .registerTop = FRAME.top};
 				nativeBlock->execute(nativeState);
+				if (nativeState.forceScalar) { forceScalarOnce = true; nativeState.forceScalar = false; }
 				if (nativeState.error) std::rethrow_exception(std::exchange(nativeState.error, {}));
 				DISPATCH_CONTINUE();
 			}
