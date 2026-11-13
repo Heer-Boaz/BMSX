@@ -112,6 +112,22 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		}
 	});
 
+	test(`restored PC faults on a forbidden MMIO fetch without touching the device (${backend})`, () => {
+		for (const pc of [IO_GX_GPU_GP0, CART_MMIO_BASE]) {
+			const { cpu, memory } = machine(backend);
+			let reads = 0;
+			memory.mapIoRead(IO_GX_GPU_GP0, memory, () => { reads += 1; return 0; });
+			const cartridge = memory.cartridgeController, read = cartridge.readU32.bind(cartridge);
+			cartridge.readU32 = (address, signals) => { if (address >= CART_MMIO_BASE) reads += 1; return read(address, signals); };
+			jump(cpu, pc);
+			const state = cpu.captureRuntimeState();
+			cpu.restoreRuntimeState(state);
+			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+			fault(cpu, memory, pc, pc);
+			assert.equal(reads, 0, 'restoring the CPU does not allow a device read during fetch');
+		}
+	});
+
 	test(`cartridge MMIO fetch faults without reading either selected card (${backend})`, () => {
 		for (const selected of [0, 1]) {
 			const { cpu, memory } = machine(backend);

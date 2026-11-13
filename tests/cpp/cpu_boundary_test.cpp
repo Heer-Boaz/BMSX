@@ -1045,6 +1045,28 @@ void instructionFetchRejectsCartridgeMmio() {
 			&& memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == CART_MMIO_BASE,
 			"instruction fetch from either cartridge mailbox is rejected");
 	}
+	for (const bool instrumented : {false, true}) for (const u32 pc : {IO_GX_GPU_GP0, CART_MMIO_BASE}) {
+		auto image = returnImage(OpCode::HALT, 0, 0, 0);
+		image.text.resize(2u * INSTRUCTION_BYTES);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		image.functions = {{.firstWord = 0, .wordCount = 1}, {.firstWord = 1, .wordCount = 1}};
+		image.exceptionFunctionIndex = 1;
+		CpuMachine machine(image);
+		if (instrumented) machine.cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+		int reads = 0;
+		machine.memory.mapIoRead(IO_GX_GPU_GP0, &reads, [](void* context, u32, MappedBusSignals) {
+			++*static_cast<int*>(context);
+			return 0u;
+		});
+		machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], pc);
+		machine.cpu.restoreRuntimeState(machine.cpu.captureRuntimeState());
+		require(machine.cpu.runUntilDepth(0, 1) == RunResult::Yielded
+			&& machine.cpu.readCauseWord() == CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR
+			&& machine.cpu.readEpcWord() == pc && reads == 0
+			&& machine.memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_UNMAPPED
+			&& machine.memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == pc,
+			"restored instruction PC rejects MMIO before a device read");
+	}
 	{
 		const auto image = returnImage(OpCode::HALT, 0, 0, 0);
 		const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
