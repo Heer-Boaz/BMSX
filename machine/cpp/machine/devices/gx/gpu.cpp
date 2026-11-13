@@ -597,8 +597,9 @@ u32 GxGpu::readGp0(MappedBusSignals busSignals) {
 
 void GxGpu::writeGp0(u32 word, MappedBusSignals busSignals) {
 	const bool dmaWrite = (busSignals & MAPPED_BUS_MASTER_DMA) != 0u;
+	const i64 nowCycles = m_scheduler.currentNowCycles();
+	synchronizeCommandExecution(nowCycles);
 	if (dmaWrite) {
-		synchronizeCommandExecution(m_scheduler.currentNowCycles());
 		m_gp0Word = word;
 		if (!m_gp0DmaIngress.full()) {
 			m_gp0DmaIngress.writeWord(word);
@@ -608,8 +609,6 @@ void GxGpu::writeGp0(u32 word, MappedBusSignals busSignals) {
 			return;
 		}
 	}
-	const i64 nowCycles = m_scheduler.currentNowCycles();
-	synchronizeCommandExecution(nowCycles);
 	if (!dmaWrite) {
 		m_gp0Word = word;
 		if (acceptGp0Word(word)) recordGp0ProducerWord(word);

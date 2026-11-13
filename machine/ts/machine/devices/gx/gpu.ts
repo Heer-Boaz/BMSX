@@ -1123,8 +1123,9 @@ export class GxGpu {
 
 	public writeGp0(word: number, busSignals: MappedBusSignals = MAPPED_BUS_MASTER_CPU): void {
 		const dmaWrite = (busSignals & MAPPED_BUS_MASTER_DMA) !== 0;
+		const nowCycles = this.scheduler.currentNowCycles();
+		this.synchronizeCommandTiming(nowCycles);
 		if (dmaWrite) {
-			this.synchronizeCommandTiming(this.scheduler.currentNowCycles());
 			this.gp0Word = word >>> 0;
 			if (!this.gp0DmaIngress.full()) {
 				this.gp0DmaIngress.writeWord(this.gp0Word);
@@ -1134,8 +1135,6 @@ export class GxGpu {
 				return;
 			}
 		}
-		const nowCycles = this.scheduler.currentNowCycles();
-		this.synchronizeCommandTiming(nowCycles);
 		if (!dmaWrite) {
 			this.gp0Word = word >>> 0;
 			if (this.acceptGp0Word(this.gp0Word)) this.recordGp0ProducerWord(this.gp0Word);
