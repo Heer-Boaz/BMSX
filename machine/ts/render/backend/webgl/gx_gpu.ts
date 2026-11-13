@@ -2627,6 +2627,7 @@ function renderTexturedVertices(
 	bottomRightWord: number,
 	splitTriangles: boolean,
 	syncSourceBetweenTriangles: boolean,
+	syncSampleBetweenAliasBands: boolean,
 ): void {
 	const vramYAddressExtensionWord = commandBuffer.commandVramYAddressExtensionWord[commandIndex];
 	const backend = gx.backend;
@@ -2634,7 +2635,6 @@ function renderTexturedVertices(
 	const opcode = commandBuffer.commandOpcode[commandIndex];
 	const maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
 	const readsVram = gxGpuCommandSemiTransparencyEnabled(opcode) || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
-	const syncSampleBetweenAliasBands = readsVram || syncSourceBetweenTriangles;
 	const fixedColor = commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_POLYGON
 		&& commandBuffer.drawColorStride[commandBuffer.commandDrawIndex[commandIndex]] !== 0
 		&& !gxGpuCommandRawTextureEnabled(opcode);
@@ -2805,6 +2805,9 @@ function renderTexturedCommand(gx: WebGLGxGpuState, commandBuffer: GxGpuCommandB
 	if (readsVram) {
 		syncGxGpuSampleTextureLogicalArea(gx, gx.texturedCommandRect.left, gx.texturedCommandRect.top, gx.texturedCommandRect.right - gx.texturedCommandRect.left, gx.texturedCommandRect.bottom - gx.texturedCommandRect.top, vramYAddressExtensionWord);
 	}
+	// A primitive spans at most 512 rows, so its physical alias bands are
+	// disjoint. Refreshing a shared dirty cell between bands would publish its
+	// first-band texture writes before the primitive has finished sampling.
 	renderTexturedVertices(
 		gx,
 		commandBuffer,
@@ -2814,6 +2817,7 @@ function renderTexturedCommand(gx: WebGLGxGpuState, commandBuffer: GxGpuCommandB
 		bottomRightWord,
 		commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_POLYGON,
 		sourceOverlapsDestination,
+		false,
 	);
 }
 
@@ -2834,7 +2838,7 @@ function flushTexturedCommands(gx: WebGLGxGpuState, commandBuffer: GxGpuCommandB
 		const maskBitModeWord = commandBuffer.commandMaskBitModeWord[batchCommandIndex];
 		const readsVram = gxGpuCommandSemiTransparencyEnabled(opcode) || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
 		if (readsVram) syncGxGpuSampleTextureLogicalArea(gx, gx.texturedCommandRect.left, gx.texturedCommandRect.top, gx.texturedCommandRect.right - gx.texturedCommandRect.left, gx.texturedCommandRect.bottom - gx.texturedCommandRect.top, vramYAddressExtensionWord);
-		renderTexturedVertices(gx, commandBuffer, batchCommandIndex, vertexFloatCount, topLeftWord, bottomRightWord, readsVram, false);
+		renderTexturedVertices(gx, commandBuffer, batchCommandIndex, vertexFloatCount, topLeftWord, bottomRightWord, readsVram, false, readsVram);
 	}
 	resetGxGpuVramCopyRect(gx.texturedBatchRect);
 	return 0;

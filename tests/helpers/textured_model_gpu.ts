@@ -345,6 +345,8 @@ export async function renderTexturedModelCase(canvas: HTMLCanvasElement, kind: '
 	const maskedRectangleWords: number[] = [];
 	const orderedReadbackWords: number[] = [];
 	let orderedReadbackPending = false;
+	let selfTextureReadback = 0;
+	let selfTextureRestored = 0;
 	if (includeAliasCase) {
 		// A later command reads the pending batch's destination, followed by a
 		// self-reading quad. The last draw also changes the textured vertex stride.
@@ -404,12 +406,45 @@ export async function renderTexturedModelCase(canvas: HTMLCanvasElement, kind: '
 			0x65808080, (450 << 16) | 730, 0x00004000, 0x00010004,
 			0x25808080, (452 << 16) | 740, 0x00004000, (452 << 16) | 744, 0x01014000, (456 << 16) | 740, 0x00004000,
 			0xe6000000);
+		// Within a triangle, an earlier destination is also a later source.
+		words.push(0xe1000111, 0xa0000000, (300 << 16) | 98, (4 << 16) | 6);
+		for (let row = 0; row < 4; ++row) words.push(0x03e0001f, 0x7fff7c00, 0x7c1f03ff);
+		words.push(0x2d808080, (300 << 16) | 100, 34 | (44 << 8),
+			(300 << 16) | 104, 38 | (44 << 8) | (0x0111 << 16),
+			(304 << 16) | 100, 34 | (48 << 8), (304 << 16) | 104, 38 | (48 << 8));
+		// An indexed sprite overwrites its own CLUT entry before fetching it.
+		words.push(0xe1000005, 0xa0000000, 320, 0x00010001, 0x00001112,
+			0xa0000000, (350 << 16) | 320, 0x00010003, 0x7c000000, 0x0000001f,
+			0x65808080, (350 << 16) | 321, (20 | (350 << 6)) << 16, 0x00010004);
+		// An indexed sprite overwrites the packed texel word before fetching
+		// its second nibble. The CLUT itself lies outside the destination.
+		words.push(0xe1000016, 0xa0000000, (380 << 16) | 400, 0x00010001, 0x00001112,
+			0xa0000000, (400 << 16) | 432, 0x00010003, 0x7c000000, 0x0000001f,
+			0x65808080, (380 << 16) | 400, 64 | (124 << 8) | ((27 | (400 << 6)) << 16), 0x00010004);
+		// 8-bit indexed source overwrites its packed source byte.
+		words.push(0xe1000098, 0xa0000000, (420 << 16) | 520, 0x00010001, 0x00000102,
+			0xa0000000, (430 << 16) | 560, 0x00010003, 0x7c000000, 0x0000001f,
+			0x65808080, (420 << 16) | 520, 16 | (164 << 8) | ((35 | (430 << 6)) << 16), 0x00010002);
+		// Texture-window replacement must be included in the latched source.
+		words.push(0xe100011a, 0xe2000001, 0xa0000000, (464 << 16) | 640, 0x00010002, 0x7c00001f,
+			0x65808080, (464 << 16) | 641, 8 | (208 << 8), 0x00010002, 0xe2000000);
+		// The source latch is independent of destination blending.
+		words.push(0xe100011b, 0xe6000000, 0xa0000000, (450 << 16) | 706, 0x00010006,
+			0x83e0801f, 0x7c0003e0, 0x03e07c00,
+			0x67808080, (450 << 16) | 708, 2 | (194 << 8), 0x00010004);
+		// A single rectangle spans the physical row wrap. Its two bands share
+		// a dirty-cell row even though their actual pixels are disjoint.
+		words.push(0xe1000112, 0xa0000000, (500 << 16) | 130, 0x00010006,
+			0x03e0001f, 0x7fff7c00, 0x7c1f03ff,
+			0x65808080, (500 << 16) | 132, 2 | (244 << 8), (511 << 16) | 4);
 		machine.gxGpu.writeGp1(0x09000001);
 		for (const word of words) {
 			machine.gxGpu.writeGp0(word);
 			machine.scheduler.advanceTo(machine.scheduler.currentNowCycles() + 10_000);
 			machine.gxGpu.onService(machine.scheduler.currentNowCycles());
 		}
+		machine.scheduler.advanceTo(machine.scheduler.currentNowCycles() + 10_000_000);
+		machine.gxGpu.onService(machine.scheduler.currentNowCycles());
 		machine.gxGpu.presentReadyFrameOnVblankEdge();
 		const next = machine.gxGpu.readDeviceOutput();
 		renderGxGpuSoftwareFrame(software, state, next, pixels);
@@ -434,11 +469,25 @@ export async function renderTexturedModelCase(canvas: HTMLCanvasElement, kind: '
 		orderedSourceDifference = snapshot.findIndex((value, index) => value !== ((software.vram[index >>> 1] >>> ((index & 1) * 8)) & 255));
 		for (const x of [520, 600, 700]) orderedSourceWords.push(software.vram[260 * 1024 + x]);
 		for (let group = 0; group < 4; ++group) orderedSourceWords.push(software.vram[202 * 1024 + 800 + group * 8]);
-		orderedSourceWords.push(software.vram[107 * 1024 + 107], software.vram[120 * 1024 + 100], software.vram[120 * 1024 + 101], software.vram[120 * 1024 + 110]);
+		orderedSourceWords.push(software.vram[107 * 1024 + 107], software.vram[120 * 1024 + 100], software.vram[120 * 1024 + 101], software.vram[120 * 1024 + 110], software.vram[300 * 1024 + 102], software.vram[350 * 1024 + 322], software.vram[380 * 1024 + 401], software.vram[420 * 1024 + 521], software.vram[464 * 1024 + 642], software.vram[450 * 1024 + 708], software.vram[450 * 1024 + 710]);
+		for (const word of [0xc0000000, (300 << 16) | 102, 0x00010001]) {
+			machine.gxGpu.writeGp0(word);
+			machine.scheduler.advanceTo(machine.scheduler.currentNowCycles() + 10_000);
+			machine.gxGpu.onService(machine.scheduler.currentNowCycles());
+		}
+		backend.executeGxGpuReadback(machine.gxGpu);
+		await backend.finishGxGpuReadbacks();
+		selfTextureReadback = machine.gxGpu.readGp0();
+		const saved = machine.gxGpu.captureSaveState();
+		machine.gxGpu.restoreSaveState(saved);
+		await backend.captureGxGpuVramSnapshot(machine.gxGpu);
+		const restored = machine.gxGpu.readDeviceOutput().vramSnapshotBytes;
+		const restoredOffset = (300 * 1024 + 102) * 2;
+		selfTextureRestored = restored[restoredOffset] | (restored[restoredOffset + 1] << 8);
 	}
 	const validationError = gpu === undefined ? undefined : (await gpu.device.popErrorScope())?.message;
 	const glError = gl === undefined ? 0 : gl.gl.getError();
 	if (framebuffer !== null) gl!.destroyRenderTarget(framebuffer);
 	backend.destroyTexture(target); library.dispose(); gpu?.device.destroy();
-	return { kind, difference, samples, validationError, glError, gpuErrors, commands, transfers, snapshotDifferences, snapshotWords, adjacentCopies, adjacentCopyRects, adjacentPixel, adjacentDifferences, capacityResult, wrappedDifferences, rectangleDifferences, flatColorDifferences, drawLayoutDifferences, drawLayoutPixels, lineExtraWordDifferences, lineExtraWordPixels, lineExtraWordCounts, orderedSourceDifference, orderedSourceWords, orderedReadbackPending, orderedReadbackWords, maskedRectangleWords };
+	return { kind, difference, samples, validationError, glError, gpuErrors, commands, transfers, snapshotDifferences, snapshotWords, adjacentCopies, adjacentCopyRects, adjacentPixel, adjacentDifferences, capacityResult, wrappedDifferences, rectangleDifferences, flatColorDifferences, drawLayoutDifferences, drawLayoutPixels, lineExtraWordDifferences, lineExtraWordPixels, lineExtraWordCounts, orderedSourceDifference, orderedSourceWords, orderedReadbackPending, orderedReadbackWords, maskedRectangleWords, selfTextureReadback, selfTextureRestored };
 }

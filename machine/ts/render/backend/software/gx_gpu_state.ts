@@ -86,6 +86,8 @@ export class GxGpuSoftwareState {
 	public readonly vram: Uint16Array;
 	public readonly vramWordMask: number;
 	public readonly vramSnapshotScratch: Uint8Array;
+	public readonly textureLatchScratch: Uint16Array;
+	public readonly textureBoundsScratch = new Int32Array(4);
 	public processedCommandCount = 0;
 	public processedCommandSerial = 0;
 	public vramSnapshotSerial = 0n;
@@ -105,6 +107,7 @@ export class GxGpuSoftwareState {
 		this.vram = new Uint16Array(vramByteCount >>> 1);
 		this.vramWordMask = this.vram.length - 1;
 		this.vramSnapshotScratch = new Uint8Array(vramByteCount);
+		this.textureLatchScratch = new Uint16Array(this.vramSnapshotScratch.buffer);
 		this.interlacedPixels = new Uint32Array(interlacedPixelCount);
 	}
 }

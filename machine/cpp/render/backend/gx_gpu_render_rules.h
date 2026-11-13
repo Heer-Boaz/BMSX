@@ -4,6 +4,9 @@
 #include "spec/gx/vram.h"
 #include "machine/devices/gx/gpu_display.h"
 
+#include <algorithm>
+#include <array>
+
 namespace bmsx {
 
 constexpr i32 GX_GPU_MAX_PRIMITIVE_WIDTH = 1024;
@@ -20,6 +23,23 @@ constexpr u32 GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP = 2u;
 
 inline i32 gxGpuTriangleAttributeSignedStep(u32 word) {
 	return (word & 0x80000u) != 0u ? static_cast<i32>(word) - 0x100000 : static_cast<i32>(word);
+}
+
+// Conservative texel bounds for an affine fixed-point plane over a draw box.
+inline void gxGpuTextureAxisBounds(std::array<i32, 4u>& out, size_t offset,
+	u32 base, u32 stepX, u32 stepY, i32 width, i32 height, u32 andMask, u32 orMask) {
+	const i32 start = static_cast<i32>(base & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK);
+	const i32 dx = gxGpuTriangleAttributeSignedStep(stepX & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK) * (width - 1);
+	const i32 dy = gxGpuTriangleAttributeSignedStep(stepY & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK) * (height - 1);
+	const i32 low = start + std::min(0, dx) + std::min(0, dy);
+	const i32 high = start + std::max(0, dx) + std::max(0, dy);
+	if (andMask != 0xffu || orMask != 0u || low < 0 || high > static_cast<i32>(GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK)) {
+		out[offset] = static_cast<i32>(orMask);
+		out[offset + 1u] = static_cast<i32>((andMask | orMask) + 1u);
+	} else {
+		out[offset] = low >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS;
+		out[offset + 1u] = (high >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) + 1;
+	}
 }
 
 enum class GxGpuRasterKind : u8 {

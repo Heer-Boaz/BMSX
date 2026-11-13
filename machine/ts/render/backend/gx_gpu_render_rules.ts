@@ -27,6 +27,24 @@ export function gxGpuTriangleAttributeSignedStep(word: number): number {
 	return (word & 0x80000) !== 0 ? word - 0x100000 : word;
 }
 
+// Conservative texel bounds for an affine fixed-point plane over a draw box.
+// Window masks describe all possible output bits when the UV interval wraps.
+export function gxGpuTextureAxisBounds(out: Int32Array, offset: number,
+	base: number, stepX: number, stepY: number, width: number, height: number, andMask: number, orMask: number): void {
+	const start = base & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
+	const dx = gxGpuTriangleAttributeSignedStep(stepX & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK) * (width - 1);
+	const dy = gxGpuTriangleAttributeSignedStep(stepY & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK) * (height - 1);
+	const low = start + Math.min(0, dx) + Math.min(0, dy);
+	const high = start + Math.max(0, dx) + Math.max(0, dy);
+	if (andMask !== 0xff || orMask !== 0 || low < 0 || high > GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK) {
+		out[offset] = orMask;
+		out[offset + 1] = (andMask | orMask) + 1;
+	} else {
+		out[offset] = low >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS;
+		out[offset + 1] = (high >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) + 1;
+	}
+}
+
 export const enum GxGpuRasterKind {
 	Polygon,
 	Rectangle,

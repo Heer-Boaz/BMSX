@@ -433,6 +433,65 @@ static SolidDamageResult renderSolidDamage(bool useGles, GxGpuDrawTargetMode mod
 	return result;
 }
 
+static std::vector<u8> renderSelfTexturedTriangle(bool useGles, GxGpuDrawTargetMode mode, u32 vramBytes) {
+	std::array<u8, 1> rom{};
+	Memory memory{MemoryInit{{rom.data(), 0u}, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes};
+	IrqController irq{memory}; ExecutionAddressSpace addressSpace{memory}; CPU cpu{memory, irq, addressSpace};
+	DeviceScheduler scheduler{cpu}; DmaController dma{memory, cpu, irq, scheduler};
+	GxGpu gpu{memory, cpu, irq, scheduler, dma, vramBytes}; gpu.reset();
+	std::unique_ptr<GPUBackend> backend;
+	if (useGles) {
+		auto gles = std::make_unique<OpenGLES2Backend>(256, 256, false, vramBytes, mode);
+		gles->setContextCallbacks([]() -> uintptr_t { return 0; }, eglGetProcAddress); gles->onContextReset();
+		backend = std::move(gles);
+	} else backend = std::make_unique<SoftwareBackend>(256, 256, vramBytes);
+	TestVideoOutput video(256, 256); VideoPresenter presenter(video, std::move(backend), 256, 256);
+	presenter.installRenderPipeline(std::make_unique<RenderPassLibrary>(&presenter.backend(), &presenter));
+	const auto submit = [&](u32 word) { gpu.writeGp0(word); scheduler.advanceTo(scheduler.currentNowCycles() + 10'000); gpu.onService(scheduler.currentNowCycles()); };
+	gpu.writeGp1(0x09000001u);
+	for (u32 word : {0xe3000000u, 0xe40fffffu, 0xe5000000u, 0xe1000111u, 0xa0000000u,
+		(300u << 16u) | 98u, (4u << 16u) | 6u}) submit(word);
+	for (u32 y = 0u; y < 4u; ++y) for (u32 word : {0x03e0001fu, 0x7fff7c00u, 0x7c1f03ffu}) submit(word);
+	for (u32 word : {0x2d808080u, (300u << 16u) | 100u, 34u | (44u << 8u),
+		(300u << 16u) | 104u, 38u | (44u << 8u) | (0x0111u << 16u),
+		(304u << 16u) | 100u, 34u | (48u << 8u), (304u << 16u) | 104u, 38u | (48u << 8u)}) submit(word);
+	// Self-overwriting CLUT, followed by a self-overwriting packed texel word.
+	for (u32 word : {0xe1000005u, 0xa0000000u, 320u, 0x00010001u, 0x00001112u,
+		0xa0000000u, (350u << 16u) | 320u, 0x00010003u, 0x7c000000u, 0x0000001fu,
+		0x65808080u, (350u << 16u) | 321u, (20u | (350u << 6u)) << 16u, 0x00010004u,
+		0xe1000016u, 0xa0000000u, (380u << 16u) | 400u, 0x00010001u, 0x00001112u,
+		0xa0000000u, (400u << 16u) | 432u, 0x00010003u, 0x7c000000u, 0x0000001fu,
+		0x65808080u, (380u << 16u) | 400u, 64u | (124u << 8u) | ((27u | (400u << 6u)) << 16u), 0x00010004u}) submit(word);
+	for (u32 word : {0xe1000098u, 0xa0000000u, (420u << 16u) | 520u, 0x00010001u, 0x00000102u,
+		0xa0000000u, (430u << 16u) | 560u, 0x00010003u, 0x7c000000u, 0x0000001fu,
+		0x65808080u, (420u << 16u) | 520u, 16u | (164u << 8u) | ((35u | (430u << 6u)) << 16u), 0x00010002u,
+		0xe100011au, 0xe2000001u, 0xa0000000u, (464u << 16u) | 640u, 0x00010002u, 0x7c00001fu,
+		0x65808080u, (464u << 16u) | 641u, 8u | (208u << 8u), 0x00010002u, 0xe2000000u}) submit(word);
+	// A self-reading translucent rectangle uses live destination blending.
+	for (u32 word : {0xe100011bu, 0xe6000000u, 0xa0000000u, (450u << 16u) | 706u, 0x00010006u,
+		0x83e0801fu, 0x7c0003e0u, 0x03e07c00u,
+		0x67808080u, (450u << 16u) | 708u, 2u | (194u << 8u), 0x00010004u}) submit(word);
+	// A rectangle's 1 MiB alias bands share one 16x16 dirty-cell row.
+	for (u32 word : {0xe1000112u, 0xa0000000u, (500u << 16u) | 130u, 0x00010006u,
+		0x03e0001fu, 0x7fff7c00u, 0x7c1f03ffu,
+		0x65808080u, (500u << 16u) | 132u, 2u | (244u << 8u), (511u << 16u) | 4u}) submit(word);
+	scheduler.advanceTo(scheduler.currentNowCycles() + 10'000'000); gpu.onService(scheduler.currentNowCycles());
+	presenter.backend().executeGxGpuCommandDrain(gpu);
+	presenter.backend().captureGxGpuVramSnapshot(gpu);
+	const auto snapshot = gpu.readVramSnapshotBytes();
+	std::vector<u8> result(snapshot.begin(), snapshot.end());
+	for (u32 word : {0xc0000000u, (300u << 16u) | 102u, 0x00010001u}) submit(word);
+	presenter.backend().executeGxGpuReadback(gpu);
+	require(gpu.readGp0() == 0x7c00u, "GPUREAD observes the self-textured triangle");
+	const auto saved = gpu.captureSaveState();
+	gpu.restoreSaveState(saved);
+	presenter.backend().captureGxGpuVramSnapshot(gpu);
+	const auto restored = gpu.readVramSnapshotBytes();
+	require(std::equal(result.begin(), result.end(), restored.begin()), "restored self-textured VRAM matches the saved image");
+	if (useGles) { presenter.releaseRenderPipeline(); presenter.clearTextures(); static_cast<OpenGLES2Backend&>(presenter.backend()).onContextDestroy(); }
+	return result;
+}
+
 static SolidDamageResult renderSolidCapacity(bool useGles, GxGpuDrawTargetMode mode, u32 vramBytes) {
 	std::array<u8, 1> rom{};
 	Memory memory{MemoryInit{{rom.data(), 0u}, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes};
@@ -1465,6 +1524,23 @@ int main(int argc, char** argv) {
 	{
 		testVramShaderDefinitions();
 		for (const u32 vramBytes : {2u * 1024u * 1024u, 1024u * 1024u}) {
+			const auto selfTextureReference = renderSelfTexturedTriangle(false, GxGpuDrawTargetMode::FullVram, vramBytes);
+			const size_t selfIndex = (300u * 1024u + 102u) * 2u;
+			require(selfTextureReference[selfIndex] == 0u && selfTextureReference[selfIndex + 1u] == 0x7cu, "source reads use the triangle-start texel");
+			for (const auto [x, y] : {std::pair{322u, 350u}, std::pair{401u, 380u}, std::pair{521u, 420u}, std::pair{642u, 464u}}) {
+				const size_t index = (y * 1024u + x) * 2u;
+				require(selfTextureReference[index] == 0u && selfTextureReference[index + 1u] == 0x7cu, "indexed source and CLUT retain their start values");
+			}
+			const size_t blendIndex = (450u * 1024u + 708u) * 2u;
+			require(selfTextureReference[blendIndex] == 0xefu && selfTextureReference[blendIndex + 1u] == 0x81u,
+				"self-textured source still blends against its live destination");
+			const size_t aliasIndex = ((vramBytes == 1024u * 1024u ? 244u : 756u) * 1024u + 134u) * 2u;
+			require(selfTextureReference[aliasIndex] == 0u && selfTextureReference[aliasIndex + 1u] == 0x7cu, "rectangle preserves its source snapshot across alias bands");
+			for (const auto mode : {GxGpuDrawTargetMode::FullVram, GxGpuDrawTargetMode::SmallNibbles, GxGpuDrawTargetMode::SmallRgb5}) {
+				const auto actual = renderSelfTexturedTriangle(true, mode, vramBytes);
+				if (actual[aliasIndex] != 0u || actual[aliasIndex + 1u] != 0x7cu) throw std::runtime_error("GLES rectangle snapshot: vram=" + std::to_string(vramBytes) + " mode=" + std::to_string(static_cast<int>(mode)) + " word=" + std::to_string(actual[aliasIndex] | (actual[aliasIndex + 1u] << 8u)));
+				require(actual == selfTextureReference, "self-texturing primitive snapshots match software");
+			}
 			const auto reference = renderSolidDamage(false, GxGpuDrawTargetMode::FullVram, vramBytes);
 			require(reference.aliasBlendReadback == (vramBytes == 1024u * 1024u ? 0x02e7u : 0x01efu),
 				"the small VRAM configuration actually blends both logical rows onto one physical pixel");

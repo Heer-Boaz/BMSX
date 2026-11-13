@@ -5577,7 +5577,30 @@ void testRawVramExtensionWordAcrossCommandAndReadback() {
 
 } // namespace
 
+void testTextureAxisBounds() {
+	std::array<bmsx::i32, 4u> bounds{};
+	bmsx::gxGpuTextureAxisBounds(bounds, 0u, 0x24000u, 0x1000u, 0u, 17, 9, 0xffu, 0u);
+	require(bounds[0] == 36 && bounds[1] == 53, "ordinary small draws bound their texture reads");
+	bmsx::gxGpuTextureAxisBounds(bounds, 0u, 0u, 0x1000u, 0u, 1024, 512, 0x87u, 0x68u);
+	require(bounds[0] == 0x68 && bounds[1] == 0xf0, "window bits restrict wrapped intervals");
+	struct Case { bmsx::u32 base, sx, sy; bmsx::i32 width, height; bmsx::u32 andMask, orMask; };
+	for (const auto& c : std::array<Case, 4>{{
+		{0xfffffu, 0x7ffffu, 0x80000u, 1024, 512, 0xffu, 0u},
+		{0x80000u, 0x80000u, 0x7ffffu, 1024, 512, 0x87u, 0x68u},
+		{0x24000u, 0x1000u, 0u, 17, 9, 0xffu, 0u},
+		{0x81000u, 0xff000u, 0u, 9, 3, 0xffu, 0u},
+	}}) {
+		bmsx::gxGpuTextureAxisBounds(bounds, 0u, c.base, c.sx, c.sy, c.width, c.height, c.andMask, c.orMask);
+		for (bmsx::i32 y = 0; y < c.height; ++y) for (bmsx::i32 x = 0; x < c.width; ++x) {
+			const auto uv = ((c.base + static_cast<bmsx::u32>(x) * c.sx + static_cast<bmsx::u32>(y) * c.sy) >> bmsx::GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu;
+			const auto sample = (uv & c.andMask) | c.orMask;
+			require(static_cast<bmsx::i32>(sample) >= bounds[0] && static_cast<bmsx::i32>(sample) < bounds[1], "texture source bounds cover fixed-point and windowed samples");
+		}
+	}
+}
+
 int main() {
+	testTextureAxisBounds();
 	testDrawOperandLayoutsFollowRestoreAndRetirement();
 	testRawVramExtensionWordAcrossCommandAndReadback();
 	testImagePayloadBlocksPreservePacketBoundariesAndRestore();

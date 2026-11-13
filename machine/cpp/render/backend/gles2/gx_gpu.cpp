@@ -3418,6 +3418,8 @@ void renderTexturedCommand(OpenGLES2GxGpuState& gx,
 			static_cast<u32>(gx.texturedCommandRect.bottom - gx.texturedCommandRect.top),
 			vramYAddressExtensionWord);
 	}
+	// A primitive spans at most 512 rows; its physical alias bands are
+	// disjoint. A dirty-cell refresh between bands would expose its writes.
 	renderTexturedVertices(gx,
 		commandBuffer,
 		commandIndex,
@@ -3426,7 +3428,7 @@ void renderTexturedCommand(OpenGLES2GxGpuState& gx,
 		topLeftWord,
 		bottomRightWord,
 		textureBarrier,
-		samplesDestination || sourceOverlapsDestination,
+		false,
 		commandBuffer.commandKind[commandIndex] == GX_GPU_COMMAND_DRAW_POLYGON,
 		sourceOverlapsDestination);
 }

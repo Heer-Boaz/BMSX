@@ -62,9 +62,48 @@ inline u32 textureWindowCoord(i32 coord, u32 andMask, u32 orMask) {
 	return (static_cast<u32>(coord) & andMask) | orMask;
 }
 
+// Latch source reads at the primitive boundary; this is not a PSX cache model.
+inline u32 latchGxGpuSoftwareTextureReads(GxGpuSoftwareState& software,
+	u32 pageX, u32 pageY, u32 textureMode, u32 clutBaseX, u32 clutBaseY,
+	i32 left, i32 top, i32 right, i32 bottom, u32 vramYAddressExtensionWord,
+	u32 rowU, u32 rowV, u32 uStepX, u32 uStepY, u32 vStepX, u32 vStepY,
+	u32 andX, u32 orX, u32 andY, u32 orY) {
+	const u32 rowMask = static_cast<u32>(software.vramWordMask >> 10u);
+	const u32 shift = textureMode == GX_GPU_TEXTURE_MODE_PALETTE4 ? 2u : textureMode == GX_GPU_TEXTURE_MODE_PALETTE8 ? 1u : 0u;
+	const u32 pageWidth = 256u >> shift;
+	u32 latched = 0u;
+	if (gxGpuVramLogicalAreaOverlapsBounds(pageX, pageY, pageWidth, 256u, left, top, right, bottom, vramYAddressExtensionWord, rowMask)) {
+		auto& bounds = software.textureBoundsScratch;
+		gxGpuTextureAxisBounds(bounds, 0u, rowU, uStepX, uStepY, right-left, bottom-top, andX, orX);
+		gxGpuTextureAxisBounds(bounds, 2u, rowV, vStepX, vStepY, right-left, bottom-top, andY, orY);
+		const u32 sourceX = pageX + (static_cast<u32>(bounds[0]) >> shift);
+		const u32 sourceY = pageY + static_cast<u32>(bounds[2]);
+		const u32 sourceWidth = (static_cast<u32>(bounds[1] - 1) >> shift) + 1u - (static_cast<u32>(bounds[0]) >> shift);
+		const u32 sourceHeight = static_cast<u32>(bounds[3] - bounds[2]);
+		if (gxGpuVramLogicalAreaOverlapsBounds(sourceX, sourceY, sourceWidth, sourceHeight, left, top, right, bottom, vramYAddressExtensionWord, rowMask)) {
+			for (u32 y = 0u; y < sourceHeight; ++y) for (u32 x = 0u; x < sourceWidth; ++x) {
+				const size_t index = gxGpuSoftwareVramIndex(software, static_cast<i32>(sourceX+x), static_cast<i32>(sourceY+y));
+				software.textureLatchScratch[index] = software.vram[index];
+			}
+			latched |= 1u;
+		}
+	}
+	const u32 clutWidth = textureMode == GX_GPU_TEXTURE_MODE_PALETTE4 ? 16u : textureMode == GX_GPU_TEXTURE_MODE_PALETTE8 ? 256u : 0u;
+	if (clutWidth != 0u && gxGpuVramLogicalAreaOverlapsBounds(clutBaseX, clutBaseY, clutWidth, 1u, left, top, right, bottom, vramYAddressExtensionWord, rowMask)) {
+		for (u32 x = 0u; x < clutWidth; ++x) {
+			const size_t index = gxGpuSoftwareVramIndex(software, static_cast<i32>(clutBaseX+x), static_cast<i32>(clutBaseY));
+			software.textureLatchScratch[index] = software.vram[index];
+		}
+		latched |= 2u;
+	}
+	return latched;
+}
+
 template<u32 TextureMode>
 inline u32 sampleGxGpuSoftwareTextureWord(
 	const GxGpuSoftwareState& software,
+	const u16* textureWords,
+	const u16* clutWords,
 	i32 u,
 	i32 v,
 	u32 pageX,
@@ -78,16 +117,16 @@ inline u32 sampleGxGpuSoftwareTextureWord(
 	const u32 windowedU = textureWindowCoord(u, textureWindowAndX, textureWindowOrX);
 	const u32 windowedV = textureWindowCoord(v, textureWindowAndY, textureWindowOrY);
 	if constexpr (TextureMode == GX_GPU_TEXTURE_MODE_PALETTE4) {
-		const u32 textureWord = software.vram[gxGpuSoftwareVramIndex(software, static_cast<i32>(pageX + (windowedU / 4u)), static_cast<i32>(pageY + windowedV))];
+		const u32 textureWord = textureWords[gxGpuSoftwareVramIndex(software, static_cast<i32>(pageX + (windowedU / 4u)), static_cast<i32>(pageY + windowedV))];
 		const u32 paletteIndex = (textureWord >> ((windowedU & 3u) << 2u)) & 0x0fu;
-		return software.vram[gxGpuSoftwareVramIndex(software, static_cast<i32>(clutBaseX + paletteIndex), static_cast<i32>(clutBaseY))];
+		return clutWords[gxGpuSoftwareVramIndex(software, static_cast<i32>(clutBaseX + paletteIndex), static_cast<i32>(clutBaseY))];
 	}
 	if constexpr (TextureMode == GX_GPU_TEXTURE_MODE_PALETTE8) {
-		const u32 textureWord = software.vram[gxGpuSoftwareVramIndex(software, static_cast<i32>(pageX + (windowedU / 2u)), static_cast<i32>(pageY + windowedV))];
+		const u32 textureWord = textureWords[gxGpuSoftwareVramIndex(software, static_cast<i32>(pageX + (windowedU / 2u)), static_cast<i32>(pageY + windowedV))];
 		const u32 paletteIndex = (textureWord >> ((windowedU & 1u) << 3u)) & 0xffu;
-		return software.vram[gxGpuSoftwareVramIndex(software, static_cast<i32>(clutBaseX + paletteIndex), static_cast<i32>(clutBaseY))];
+		return clutWords[gxGpuSoftwareVramIndex(software, static_cast<i32>(clutBaseX + paletteIndex), static_cast<i32>(clutBaseY))];
 	}
-	return software.vram[gxGpuSoftwareVramIndex(software, static_cast<i32>(pageX + windowedU), static_cast<i32>(pageY + windowedV))];
+	return textureWords[gxGpuSoftwareVramIndex(software, static_cast<i32>(pageX + windowedU), static_cast<i32>(pageY + windowedV))];
 }
 
 template<bool RawTextureEnabled, bool SemiTransparencyEnabled>
@@ -551,6 +590,9 @@ void drawGxGpuSoftwareTexturedTriangleImpl(
 	const u32 vStepY = uvPlaneScratch[5];
 	u32 rowU = uvPlaneScratch[0] + static_cast<u32>(left) * uStepX + static_cast<u32>(top) * uStepY;
 	u32 rowV = uvPlaneScratch[1] + static_cast<u32>(left) * vStepX + static_cast<u32>(top) * vStepY;
+	const u32 latched = latchGxGpuSoftwareTextureReads(software, pageX, pageY, TextureMode, clutBaseX, clutBaseY, left, top, rightExclusive, bottomExclusive, vramYAddressExtensionWord, rowU, rowV, uStepX, uStepY, vStepX, vStepY, textureWindowAndX, textureWindowOrX, textureWindowAndY, textureWindowOrY);
+	const u16* textureWords = (latched & 1u) != 0u ? software.textureLatchScratch.data() : software.vram.data();
+	const u16* clutWords = (latched & 2u) != 0u ? software.textureLatchScratch.data() : software.vram.data();
 	rowW0 -= gxGpuTriangleEdgeCoverageMinimum(edge0StepX, edge0StepY);
 	rowW1 -= gxGpuTriangleEdgeCoverageMinimum(edge1StepX, edge1StepY);
 	rowW2 -= gxGpuTriangleEdgeCoverageMinimum(edge2StepX, edge2StepY);
@@ -582,7 +624,7 @@ void drawGxGpuSoftwareTexturedTriangleImpl(
 					const i32 u = static_cast<i32>((uFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu);
 					const i32 v = static_cast<i32>((vFixed >> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xffu);
 					const u32 sampleWord = sampleGxGpuSoftwareTextureWord<TextureMode>(
-						software,
+						software, textureWords, clutWords,
 						u,
 						v,
 						pageX,
@@ -678,6 +720,12 @@ void drawGxGpuSoftwareTexturedRectangleImpl(
 	const i32 vStep = yFlip ? -1 : 1;
 	const i32 firstU = baseU + (left - x0) * uStep;
 	i32 v = baseV + (top - y0) * vStep;
+	const u32 latched = latchGxGpuSoftwareTextureReads(software, pageX, pageY, TextureMode, clutBaseX, clutBaseY, left, top, right, bottom, vramYAddressExtensionWord,
+		static_cast<u32>(firstU) * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE, static_cast<u32>(v) * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE,
+		static_cast<u32>(uStep) * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE, 0u, 0u, static_cast<u32>(vStep) * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE,
+		textureWindowAndX, textureWindowOrX, textureWindowAndY, textureWindowOrY);
+	const u16* textureWords = (latched & 1u) != 0u ? software.textureLatchScratch.data() : software.vram.data();
+	const u16* clutWords = (latched & 2u) != 0u ? software.textureLatchScratch.data() : software.vram.data();
 	for (i32 y = top; y < bottom; y += 1, v += vStep) {
 		if ((y & 1) == skippedLineParity) {
 			continue;
@@ -685,7 +733,7 @@ void drawGxGpuSoftwareTexturedRectangleImpl(
 		i32 u = firstU;
 		for (i32 x = left; x < right; x += 1, u += uStep) {
 			const u32 sampleWord = sampleGxGpuSoftwareTextureWord<TextureMode>(
-				software,
+				software, textureWords, clutWords,
 				u,
 				v,
 				pageX,

@@ -10,6 +10,8 @@ import {
 import { type GxGpuCommandBufferView } from '../../../machine/devices/gx/gpu_command_buffer';
 import {
 	GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS,
+	GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE,
+	gxGpuTextureAxisBounds,
 	GX_GPU_TRIANGLE_COLOR_COMPONENTS,
 	GX_GPU_TRIANGLE_UV_COMPONENTS,
 	gxGpuCommandRawTextureEnabled,
@@ -36,6 +38,7 @@ import {
 	gxGpuTriangleExceedsPrimitiveSize,
 	gxGpuTriangleRasterShift,
 	gxGpuTriangleAttributePlane,
+	gxGpuVramLogicalAreaOverlapsBounds,
 } from '../gx_gpu_render_rules';
 import {
 	gxGpuSoftwareDitherOffset,
@@ -110,8 +113,51 @@ function lineFixedRgbToByte(value: number): number {
 	return integerDivide(value, GX_GPU_SOFTWARE_LINE_RGB_SCALE);
 }
 
+// As in fast GPU renderers, latch source reads at the primitive boundary;
+// this is an approximation, not a model of the PSX texture cache.
+// Reuse snapshot storage; disjoint sources stay in live VRAM without copying.
+function latchGxGpuSoftwareTextureReads(software: GxGpuSoftwareState,
+	pageX: number, pageY: number, textureMode: number, clutBaseX: number, clutBaseY: number,
+	left: number, top: number, right: number, bottom: number, vramYAddressExtensionWord: number,
+	rowU: number, rowV: number, uStepX: number, uStepY: number, vStepX: number, vStepY: number,
+	andX: number, orX: number, andY: number, orY: number): number {
+	const rowMask = software.vramWordMask >>> 10;
+	const shift = textureMode === GX_GPU_TEXTURE_MODE_PALETTE4 ? 2 : textureMode === GX_GPU_TEXTURE_MODE_PALETTE8 ? 1 : 0;
+	const pageWidth = 256 >>> shift;
+	let latched = 0;
+	if (gxGpuVramLogicalAreaOverlapsBounds(pageX, pageY, pageWidth, 256, left, top, right, bottom, vramYAddressExtensionWord, rowMask)) {
+		const bounds = software.textureBoundsScratch;
+		gxGpuTextureAxisBounds(bounds, 0, rowU, uStepX, uStepY, right - left, bottom - top, andX, orX);
+		gxGpuTextureAxisBounds(bounds, 2, rowV, vStepX, vStepY, right - left, bottom - top, andY, orY);
+		const sourceX = pageX + (bounds[0] >>> shift);
+		const sourceY = pageY + bounds[2];
+		const sourceWidth = ((bounds[1] - 1) >>> shift) + 1 - (bounds[0] >>> shift);
+		const sourceHeight = bounds[3] - bounds[2];
+		if (gxGpuVramLogicalAreaOverlapsBounds(sourceX, sourceY, sourceWidth, sourceHeight, left, top, right, bottom, vramYAddressExtensionWord, rowMask)) {
+			for (let y = 0; y < sourceHeight; ++y) {
+				for (let x = 0; x < sourceWidth; ++x) {
+					const index = gxGpuSoftwareVramIndex(software, sourceX + x, sourceY + y);
+					software.textureLatchScratch[index] = software.vram[index];
+				}
+			}
+			latched |= 1;
+		}
+	}
+	const clutWidth = textureMode === GX_GPU_TEXTURE_MODE_PALETTE4 ? 16 : textureMode === GX_GPU_TEXTURE_MODE_PALETTE8 ? 256 : 0;
+	if (clutWidth !== 0 && gxGpuVramLogicalAreaOverlapsBounds(clutBaseX, clutBaseY, clutWidth, 1, left, top, right, bottom, vramYAddressExtensionWord, rowMask)) {
+		for (let x = 0; x < clutWidth; ++x) {
+			const index = gxGpuSoftwareVramIndex(software, clutBaseX + x, clutBaseY);
+			software.textureLatchScratch[index] = software.vram[index];
+		}
+		latched |= 2;
+	}
+	return latched;
+}
+
 function sampleGxGpuSoftwareTextureWord(
 	software: GxGpuSoftwareState,
+	textureWords: Uint16Array,
+	clutWords: Uint16Array,
 	u: number,
 	v: number,
 	pageX: number,
@@ -127,16 +173,16 @@ function sampleGxGpuSoftwareTextureWord(
 	const windowedU = textureWindowCoord(u, textureWindowAndX, textureWindowOrX);
 	const windowedV = textureWindowCoord(v, textureWindowAndY, textureWindowOrY);
 	if (textureMode === GX_GPU_TEXTURE_MODE_PALETTE4) {
-		const textureWord = software.vram[gxGpuSoftwareVramIndex(software, pageX + integerDivide(windowedU, 4), pageY + windowedV)];
+		const textureWord = textureWords[gxGpuSoftwareVramIndex(software, pageX + integerDivide(windowedU, 4), pageY + windowedV)];
 		const paletteIndex = (textureWord >>> ((windowedU & 3) << 2)) & 0x0f;
-		return software.vram[gxGpuSoftwareVramIndex(software, clutBaseX + paletteIndex, clutBaseY)];
+		return clutWords[gxGpuSoftwareVramIndex(software, clutBaseX + paletteIndex, clutBaseY)];
 	}
 	if (textureMode === GX_GPU_TEXTURE_MODE_PALETTE8) {
-		const textureWord = software.vram[gxGpuSoftwareVramIndex(software, pageX + integerDivide(windowedU, 2), pageY + windowedV)];
+		const textureWord = textureWords[gxGpuSoftwareVramIndex(software, pageX + integerDivide(windowedU, 2), pageY + windowedV)];
 		const paletteIndex = (textureWord >>> ((windowedU & 1) << 3)) & 0xff;
-		return software.vram[gxGpuSoftwareVramIndex(software, clutBaseX + paletteIndex, clutBaseY)];
+		return clutWords[gxGpuSoftwareVramIndex(software, clutBaseX + paletteIndex, clutBaseY)];
 	}
-	return software.vram[gxGpuSoftwareVramIndex(software, pageX + windowedU, pageY + windowedV)];
+	return textureWords[gxGpuSoftwareVramIndex(software, pageX + windowedU, pageY + windowedV)];
 }
 
 function writeGxGpuSoftwareTexturedPixel(
@@ -513,6 +559,9 @@ export function drawGxGpuSoftwareTexturedTriangle(software: GxGpuSoftwareState,
 	const vStepY = triangleUvPlaneScratch[5];
 	let rowU = triangleUvPlaneScratch[0] + (left * uStepX) + (top * uStepY);
 	let rowV = triangleUvPlaneScratch[1] + (left * vStepX) + (top * vStepY);
+	const latched = latchGxGpuSoftwareTextureReads(software, pageX, pageY, textureMode, clutBaseX, clutBaseY, left, top, rightExclusive, bottomExclusive, vramYAddressExtensionWord, rowU, rowV, uStepX, uStepY, vStepX, vStepY, textureWindowAndX, textureWindowOrX, textureWindowAndY, textureWindowOrY);
+	const textureWords = (latched & 1) !== 0 ? software.textureLatchScratch : software.vram;
+	const clutWords = (latched & 2) !== 0 ? software.textureLatchScratch : software.vram;
 	rowW0 -= gxGpuTriangleEdgeCoverageMinimum(edge0StepX, edge0StepY);
 	rowW1 -= gxGpuTriangleEdgeCoverageMinimum(edge1StepX, edge1StepY);
 	rowW2 -= gxGpuTriangleEdgeCoverageMinimum(edge2StepX, edge2StepY);
@@ -540,6 +589,7 @@ export function drawGxGpuSoftwareTexturedTriangle(software: GxGpuSoftwareState,
 					const u = (uFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff;
 					const v = (vFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff;
 					const sampleWord = sampleGxGpuSoftwareTextureWord(software,
+						textureWords, clutWords,
 						u,
 						v,
 						pageX,
@@ -633,6 +683,12 @@ export function drawGxGpuSoftwareTexturedRectangle(software: GxGpuSoftwareState,
 	const vStep = yFlip ? -1 : 1;
 	const firstU = baseU + ((left - x0) * uStep);
 	let v = baseV + ((top - y0) * vStep);
+	const latched = latchGxGpuSoftwareTextureReads(software, pageX, pageY, textureMode, clutBaseX, clutBaseY, left, top, right, bottom, vramYAddressExtensionWord,
+		firstU * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE, v * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE,
+		uStep * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE, 0, 0, vStep * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE,
+		textureWindowAndX, textureWindowOrX, textureWindowAndY, textureWindowOrY);
+	const textureWords = (latched & 1) !== 0 ? software.textureLatchScratch : software.vram;
+	const clutWords = (latched & 2) !== 0 ? software.textureLatchScratch : software.vram;
 	for (let y = top; y < bottom; y += 1, v += vStep) {
 		if ((y & 1) === skippedLineParity) {
 			continue;
@@ -640,6 +696,7 @@ export function drawGxGpuSoftwareTexturedRectangle(software: GxGpuSoftwareState,
 		let u = firstU;
 		for (let x = left; x < right; x += 1, u += uStep) {
 			const sampleWord = sampleGxGpuSoftwareTextureWord(software,
+						textureWords, clutWords,
 				u,
 				v,
 				pageX,

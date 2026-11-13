@@ -51,12 +51,13 @@ void executeGxGpuSoftwareVramCommands(GxGpuSoftwareState& software, const GxGpuD
 void captureGxGpuSoftwareVramSnapshot(GxGpuSoftwareState& software, GxGpu& gxGpu) {
 	const GxGpuDeviceOutput& output = gxGpu.readDeviceOutput();
 	executeGxGpuSoftwareVramCommands(software, output, output.commandBuffer.executedCommandCount);
+	auto* snapshotBytes = reinterpret_cast<u8*>(software.textureLatchScratch.data());
 	for (size_t wordIndex = 0u; wordIndex < software.vram.size(); ++wordIndex) {
 		const u16 word = software.vram[wordIndex];
-		software.vramSnapshotScratch[wordIndex * 2u] = static_cast<u8>(word);
-		software.vramSnapshotScratch[wordIndex * 2u + 1u] = static_cast<u8>(word >> 8u);
+		snapshotBytes[wordIndex * 2u] = static_cast<u8>(word);
+		snapshotBytes[wordIndex * 2u + 1u] = static_cast<u8>(word >> 8u);
 	}
-	software.vramSnapshotSerial = gxGpu.commitRenderedVramSnapshotBytes(software.vramSnapshotScratch, software.processedCommandCount);
+	software.vramSnapshotSerial = gxGpu.commitRenderedVramSnapshotBytes(std::span<const u8>(snapshotBytes, software.vram.size() * sizeof(u16)), software.processedCommandCount);
 }
 
 } // namespace bmsx

@@ -190,6 +190,7 @@ import {
 	GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS,
 	GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES,
 	gxGpuTriangleAttributePlane,
+	gxGpuTextureAxisBounds,
 	gxGpuVramLogicalAreaOverlapsBounds,
 } from '../../machine/ts/render/backend/gx_gpu_render_rules';
 import {
@@ -290,6 +291,27 @@ import {
 
 const gxGpuSoftware = new GxGpuSoftwareState(PSX_MACHINE_SPEC.gxGpuVramBytes, 0);
 const gxGpuSoftwareVram = gxGpuSoftware.vram;
+
+test('GX-GPU conservative texture bounds cover wrapped fixed-point and windowed coordinates', () => {
+	const bounds = new Int32Array(4);
+	gxGpuTextureAxisBounds(bounds, 0, 0x24000, 0x1000, 0, 17, 9, 0xff, 0);
+	assert.deepEqual(Array.from(bounds.subarray(0, 2)), [36, 53], 'ordinary small draws do not latch a full texture page');
+	gxGpuTextureAxisBounds(bounds, 0, 0, 0x1000, 0, 1024, 512, 0x87, 0x68);
+	assert.deepEqual(Array.from(bounds.subarray(0, 2)), [0x68, 0xf0], 'window bits restrict even a wrapped interval');
+	for (const [base, sx, sy, width, height, andMask, orMask] of [
+		[0xfffff, 0x7ffff, 0x80000, 1024, 512, 0xff, 0],
+		[0x80000, 0x80000, 0x7ffff, 1024, 512, 0x87, 0x68],
+		[0x24000, 0x1000, 0, 17, 9, 0xff, 0],
+		[0x81000, 0xff000, 0, 9, 3, 0xff, 0],
+	]) {
+		gxGpuTextureAxisBounds(bounds, 0, base, sx, sy, width, height, andMask, orMask);
+		for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+			const uv = ((base + x * sx + y * sy) >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff;
+			const sample = (uv & andMask) | orMask;
+			assert.ok(sample >= bounds[0] && sample < bounds[1], `${sample} outside [${bounds[0]}, ${bounds[1]})`);
+		}
+	}
+});
 
 test('GX-GPU GPUREAD fences prior backend work and packs wrapped odd pixels', () => {
 	const { gpu } = createGpu();

@@ -196,9 +196,11 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} solid batches publish onl
 		assert.deepEqual(result.adjacentCopyRects[1], []);
 		assert.deepEqual(result.adjacentCopyRects[2], [[320, 0, 16, 16]], 'a one-pixel source write must not dirty the adjacent CLUT');
 		assert.equal(result.orderedSourceDifference, -1, 'dependent draws and changing palettes match the full software VRAM');
+		assert.equal(result.selfTextureReadback, 0x7c00, 'GPUREAD observes self-textured pixels');
+		assert.equal(result.selfTextureRestored, 0x7c00, 'restored VRAM retains self-textured pixels');
 		assert.deepEqual(result.orderedSourceWords, [31, 31, 31, 0x0421, 0x0842, 0x0c63, 0x1084,
 			0x03e0, 0x03e0, vramBytes === 1024 * 1024 ? 0x03e0 : 0x001f,
-			vramBytes === 1024 * 1024 ? 0x001f : 0],
+			vramBytes === 1024 * 1024 ? 0x001f : 0, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x7c00, 0x81ef, 0x03e0],
 			'pending sources, triangle self-reads and aliased palette writes remain ordered');
 		if (vramBytes === 1024 * 1024) {
 			assert.deepEqual(result.adjacentCopyRects[3], [[320, 0, 16, 16]], 'a write through the high logical band dirties the aliased physical texture');
