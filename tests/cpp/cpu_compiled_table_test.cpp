@@ -76,6 +76,8 @@ void genericArraysAndHashKeys() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
 	const u32 entry = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	test::waitForNativeEntry(native.cpu, page, entry);
+	requireParity(native, scalar);
 	const auto* block = page.nativeBlocks->entries[entry].get();
 	require(block && block->sourceWords == 7, "generic keys, integer stores and length execute in the same native body");
 	const auto region = block->region;
@@ -217,6 +219,8 @@ void wideAllocationFailure() {
 	requireParity(native, scalar);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& frame = *native.cpu.activeThread()->frameAtDepth(0);
+	test::waitForNativeEntry(native.cpu, *frame.decodedPage, (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
+	requireParity(native, scalar);
 	const auto& block = frame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
 	require(block && block->terminal.exit == NativeBlockExit::AllocateTable, "the WIDE allocator is a real typed native exit, not interpreter dispatch");
 #endif
@@ -245,7 +249,11 @@ void stringStoreGrowthRoots(bool generic) {
 		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 500);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	const u32 word = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	test::waitForNativeEntry(native.cpu, page, word);
+	requireParity(native, scalar);
+	const auto& block = page.nativeBlocks->entries[word];
 	require(block != nullptr, "growing string store starts from adopted native code");
 #endif
 	std::array<std::string, 2> garbage; size_t index = 0;

@@ -5,6 +5,7 @@
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
+#include "support/cpu_execution_parity.h"
 
 #include <algorithm>
 #include <array>
@@ -74,7 +75,11 @@ void concatKindsAndAliases(int destination) {
 		m->cpu.runUntilDepth(0, 4);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	const u32 word = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	test::waitForNativeEntry(native.cpu, page, word);
+	requireParity(native, scalar);
+	const auto& block = page.nativeBlocks->entries[word];
 	require(block && block->terminal.exit == NativeBlockExit::Concat && block->sourceWords == 2, "the allocating concatenation really terminates a native prefix");
 #endif
 	BuiltinFunction builtin{BuiltinFunctionId::Type};
@@ -111,7 +116,11 @@ void concatConstants() {
 	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 8}}; image.constants = {-0.0, std::string("🍻")};
 	CpuMachine native(image), scalar(image, true); native.cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 320); scalar.cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 320); requireParity(native, scalar);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	const u32 word = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	test::waitForNativeEntry(native.cpu, page, word);
+	requireParity(native, scalar);
+	const auto& block = page.nativeBlocks->entries[word];
 	require(block && block->terminal.exit == NativeBlockExit::Concat && block->terminal.exitB == -1 && block->terminal.exitC == -2, "the native terminal retains signed RK constants");
 #endif
 	require(native.cpu.stringPool().toString(asStringId(native.cpu.readFrameRegister(0, 0))) == "-0🍻", "numeric conversion is not u32 conversion");
@@ -137,7 +146,11 @@ void concatRange(int count) {
 		require(native.cpu.stringPool().toString(asStringId(native.cpu.readFrameRegister(0, 513))) == expected, "every source is read before the overlapping destination is written");
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	const u32 word = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	test::waitForNativeEntry(native.cpu, page, word);
+	requireParity(native, scalar);
+	const auto& block = page.nativeBlocks->entries[word];
 	require(block && block->terminal.exit == NativeBlockExit::ConcatRange && block->terminal.exitC == count, "the full WIDE count belongs to the native terminal");
 #endif
 	require(native.cpu.activeThread()->frameAtDepth(0)->top == 514, "counted sources do not inflate the destination top");
@@ -163,7 +176,11 @@ void allocationRoots(bool closure) {
 		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * (closure ? 405 : 400));
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	const u32 word = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	test::waitForNativeEntry(native.cpu, page, word);
+	requireParity(native, scalar);
+	const auto& block = page.nativeBlocks->entries[word];
 	require(block && block->terminal.exit == (closure ? NativeBlockExit::CreateClosure : NativeBlockExit::Concat), "collection is reached from actual native code");
 #endif
 	std::array<std::string, 2> garbage; size_t index = 0;
@@ -203,7 +220,11 @@ void canonicalImmediateClosure() {
 	}
 	requireParity(native, scalar);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	const u32 word = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	test::waitForNativeEntry(native.cpu, page, word);
+	requireParity(native, scalar);
+	const auto& block = page.nativeBlocks->entries[word];
 	require(block && block->sourceWords == 3 && block->terminal.exit == NativeBlockExit::CreateClosure
 		&& block->terminal.exitBx == DYNAMIC_RAM_BASE / BLUA32_FUNCTION_ALIGNMENT && block->terminal.exitBx > 0xffffu, "the native closure exit retains every Bx bit");
 #endif
@@ -223,7 +244,11 @@ void closureBusFault(bool descriptors) {
 		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueNumber(m->rom.functionAddresses[1] + 0.75)); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 504);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	const u32 word = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	test::waitForNativeEntry(native.cpu, page, word);
+	requireParity(native, scalar);
+	const auto& block = page.nativeBlocks->entries[word];
 	require(block && block->terminal.exit == NativeBlockExit::CreateClosure && block->terminal.exitA == 256,
 		"the actual hot register-address path retains its WIDE destination");
 #endif
@@ -257,7 +282,11 @@ void closureAddressAlias(int source) {
 		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueNumber(m->rom.functionAddresses[1])); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 400);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	const u32 word = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	test::waitForNativeEntry(native.cpu, page, word);
+	requireParity(native, scalar);
+	const auto& block = page.nativeBlocks->entries[word];
 	require(block && block->terminal.exit == NativeBlockExit::CreateClosure && block->terminal.exitA == source
 		&& block->terminal.exitBx == static_cast<u32>(source), "the generated body retains the aliasing WIDE register operand");
 #endif
@@ -285,7 +314,11 @@ void concatAllocationFault(bool range) {
 		frame.registers[1] = valueString(id); frame.registers[2] = valueString(id); frame.registers[0] = valueNumber(73); frame.top = 0;
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& block = native.cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
+	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	const u32 word = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	test::waitForNativeEntry(native.cpu, page, word);
+	requireParity(native, scalar);
+	const auto& block = page.nativeBlocks->entries[word];
 	require(block && block->terminal.exit == (range ? NativeBlockExit::ConcatRange : NativeBlockExit::Concat), "the allocation fault leaves generated code before throwing");
 #endif
 	require(native.cpu.runUntilDepth(0, range ? 5 : 4) == scalar.cpu.runUntilDepth(0, range ? 5 : 4), "failed allocations consume the same grant"); requireParity(native, scalar);
