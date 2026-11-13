@@ -38,6 +38,8 @@ bool immutableGeometry = true;
 bool observeUploadGeneration = false;
 bool generationDrawn = false;
 bool uploadsPrecedeDraws = true;
+bool observeSampleCopies = false;
+std::vector<std::array<GLint, 4>> sampleCopyViewports;
 unsigned generationUploadCalls = 0;
 size_t generationUploadBytes = 0;
 const void* generationLastUploadSource = nullptr;
@@ -47,6 +49,11 @@ extern "C" void __real_glDrawArrays(GLenum, GLint, GLsizei);
 extern "C" void __wrap_glDrawArrays(GLenum mode, GLint first, GLsizei count) {
 	++draws;
 	if (observeUploadGeneration) generationDrawn = true;
+	if (observeSampleCopies && glIsEnabled(GL_SCISSOR_TEST) == GL_FALSE) {
+		std::array<GLint, 4> viewport{};
+		glGetIntegerv(GL_VIEWPORT, viewport.data());
+		sampleCopyViewports.push_back(viewport);
+	}
 	if (boundArrayBuffer == geometryBuffer && geometryBuffer != 0) ++geometryDraws;
 	__real_glDrawArrays(mode, first, count);
 }
@@ -309,6 +316,204 @@ public:
 	using VideoOutput::VideoOutput;
 	void setDisplaySize(i32, i32, i32 viewportWidth, i32 viewportHeight) override { visibleViewportBounds = RectBounds{0, 0, static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight), 0}; }
 };
+
+struct SolidDamageResult {
+	std::vector<u8> vram;
+	std::vector<std::array<GLint, 4>> copyViewports;
+	std::vector<std::array<GLint, 4>> aliasCopyViewports;
+	std::vector<std::array<GLint, 4>> blendCopyViewports;
+	std::vector<std::array<GLint, 4>> deferredCopyViewports;
+	u32 deferredReadback = 0u;
+	u32 aliasBlendReadback = 0u;
+	u32 clippedReadback = 0u;
+	u32 readback = 0u;
+};
+
+static SolidDamageResult renderSolidDamage(bool useGles, GxGpuDrawTargetMode mode, u32 vramBytes) {
+	std::array<u8, 1> rom{};
+	Memory memory{MemoryInit{{rom.data(), 0u}, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes};
+	IrqController irq{memory};
+	ExecutionAddressSpace addressSpace{memory};
+	CPU cpu{memory, irq, addressSpace};
+	DeviceScheduler scheduler{cpu};
+	DmaController dma{memory, cpu, irq, scheduler};
+	GxGpu gpu{memory, cpu, irq, scheduler, dma, vramBytes};
+	gpu.reset();
+	std::vector<u8> initial(vramBytes);
+	initial[320u * 2u] = 0x11u;
+	initial[320u * 2u + 1u] = 0x11u;
+	const size_t palette = (24u * 1024u + 321u) * 2u;
+	initial[palette] = 0xe0u;
+	initial[palette + 1u] = 3u;
+	gpu.replaceVramSnapshotBytes(initial);
+	std::unique_ptr<GPUBackend> backend;
+	if (useGles) {
+		auto gles = std::make_unique<OpenGLES2Backend>(256, 256, false, vramBytes, mode);
+		gles->setContextCallbacks([]() -> uintptr_t { return 0; }, eglGetProcAddress);
+		gles->onContextReset();
+		backend = std::move(gles);
+	} else backend = std::make_unique<SoftwareBackend>(256, 256, vramBytes);
+	TestVideoOutput video(256, 256);
+	VideoPresenter presenter(video, std::move(backend), 256, 256);
+	presenter.installRenderPipeline(std::make_unique<RenderPassLibrary>(&presenter.backend(), &presenter));
+	const auto submit = [&](u32 word) {
+		gpu.writeGp0(word);
+		scheduler.advanceTo(scheduler.currentNowCycles() + 10'000);
+		gpu.onService(scheduler.currentNowCycles());
+	};
+	const auto sprite = [&] {
+		for (const u32 word : {0xe1000005u, 0x65808080u, (120u << 16u) | 16u,
+			(20u | (24u << 6u)) << 16u, 0x00080008u}) submit(word);
+		presenter.backend().executeGxGpuCommandDrain(gpu);
+	};
+	// Consume both texture and CLUT cells before the following solid batch.
+	submit(0xe407ffffu);
+	sprite();
+	for (const u32 word : {0xe3000000u, 0xe407ffffu,
+		0x600000ffu, 0u, (240u << 16u) | 320u,
+		0x6000ff00u, 320u, 0x00010001u}) submit(word);
+	presenter.backend().executeGxGpuCommandDrain(gpu);
+	sampleCopyViewports.clear();
+	observeSampleCopies = useGles;
+	sprite();
+	observeSampleCopies = false;
+	SolidDamageResult result;
+	result.copyViewports = sampleCopyViewports;
+	// Two compatible, non-overlapping translucent rectangles are admitted to
+	// the blend planner in one layer. Their bounding union contains the clean
+	// CLUT but neither actual primitive writes it.
+	for (const u32 word : {0x620000ffu, 0u, (240u << 16u) | 320u,
+		0x6200ff00u, 320u, 0x00010001u}) submit(word);
+	presenter.backend().executeGxGpuCommandDrain(gpu);
+	sampleCopyViewports.clear();
+	observeSampleCopies = useGles;
+	sprite();
+	observeSampleCopies = false;
+	result.blendCopyViewports = sampleCopyViewports;
+	// With a 1 MiB target, logical row 512 is physical row 0. The later
+	// texture read must see that write; at 2 MiB it is a distinct source.
+	gpu.writeGp1(0x09000001u);
+	for (const u32 word : {0xe40fffffu, 0x600000ffu, (512u << 16u) | 320u, 0x00010001u}) submit(word);
+	presenter.backend().executeGxGpuCommandDrain(gpu);
+	sampleCopyViewports.clear();
+	observeSampleCopies = useGles;
+	sprite();
+	observeSampleCopies = false;
+	result.aliasCopyViewports = sampleCopyViewports;
+	for (const u32 word : {0xc0000000u, (512u << 16u) | 320u, 0x00010001u}) submit(word);
+	presenter.backend().executeGxGpuReadback(gpu);
+	result.readback = gpu.readGp0();
+	presenter.backend().executeGxGpuCommandDrain(gpu);
+	// Two logical rows alias only on the small physical surface. Both
+	// translucent primitives must remain ordered across planner layers.
+	for (const u32 word : {0x6200ff00u, 20u, 0x00010001u,
+		0x6200ff00u, (512u << 16u) | 20u, 0x00010001u}) submit(word);
+	presenter.backend().executeGxGpuCommandDrain(gpu);
+	for (const u32 word : {0xc0000000u, 20u, 0x00010001u}) submit(word);
+	presenter.backend().executeGxGpuReadback(gpu);
+	result.aliasBlendReadback = gpu.readGp0();
+	presenter.backend().executeGxGpuCommandDrain(gpu);
+	// An empty clipped batch is finalized when the drawing area changes.
+	// The next primitive must retain its own bounds and draw normally.
+	for (const u32 word : {0xe4000000u, 0x60ff0000u, 20u, 0x00010001u,
+		0xe40fffffu, 0x6000ff00u, 20u, 0x00010001u}) submit(word);
+	presenter.backend().executeGxGpuCommandDrain(gpu);
+	for (const u32 word : {0xc0000000u, 20u, 0x00010001u}) submit(word);
+	presenter.backend().executeGxGpuReadback(gpu);
+	result.clippedReadback = gpu.readGp0();
+	presenter.backend().captureGxGpuVramSnapshot(gpu);
+	const auto snapshot = gpu.readVramSnapshotBytes();
+	result.vram.assign(snapshot.begin(), snapshot.end());
+	if (useGles) {
+		require(glGetError() == GL_NO_ERROR, "solid damage rendering leaves no GLES error");
+		presenter.releaseRenderPipeline();
+		presenter.clearTextures();
+		static_cast<OpenGLES2Backend&>(presenter.backend()).onContextDestroy();
+	}
+	return result;
+}
+
+static SolidDamageResult renderSolidCapacity(bool useGles, GxGpuDrawTargetMode mode, u32 vramBytes) {
+	std::array<u8, 1> rom{};
+	Memory memory{MemoryInit{{rom.data(), 0u}, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes};
+	IrqController irq{memory};
+	ExecutionAddressSpace addressSpace{memory};
+	CPU cpu{memory, irq, addressSpace};
+	DeviceScheduler scheduler{cpu};
+	DmaController dma{memory, cpu, irq, scheduler};
+	GxGpu gpu{memory, cpu, irq, scheduler, dma, vramBytes};
+	gpu.reset();
+	std::vector<u8> initial(vramBytes);
+	gpu.replaceVramSnapshotBytes(initial);
+	std::unique_ptr<GPUBackend> backend;
+	if (useGles) {
+		auto gles = std::make_unique<OpenGLES2Backend>(256, 256, false, vramBytes, mode);
+		// Exercise the explicit destination-copy route even on a GL driver that
+		// advertises a texture barrier. This is the path used without that extension.
+		gles->setContextCallbacks([]() -> uintptr_t { return 0; }, [](const char* name) -> OpenGLES2Backend::ProcAddress {
+			if (std::strcmp(name, "glTextureBarrierNV") == 0) return nullptr;
+			return eglGetProcAddress(name);
+		});
+		gles->onContextReset();
+		backend = std::move(gles);
+	} else backend = std::make_unique<SoftwareBackend>(256, 256, vramBytes);
+	TestVideoOutput video(256, 256);
+	VideoPresenter presenter(video, std::move(backend), 256, 256);
+	presenter.installRenderPipeline(std::make_unique<RenderPassLibrary>(&presenter.backend(), &presenter));
+	const auto submit = [&](u32 word) {
+		gpu.writeGp0(word);
+		scheduler.advanceTo(scheduler.currentNowCycles() + 10'000);
+		gpu.onService(scheduler.currentNowCycles());
+	};
+	const auto sprite = [&] {
+		for (const u32 word : {0xe1000100u, 0x65000000u, (120u << 16u) | 120u, 16u, 0x00010001u}) submit(word);
+		presenter.backend().executeGxGpuCommandDrain(gpu);
+	};
+	submit(0xe407ffffu);
+	sprite(); // Consume the source cell before filling it.
+	// Three state-separated batches are queued before the drain. The middle
+	// blend reads the later batch's destination, so publishing future damage
+	// before the last draw would let that read consume the wrong generation.
+	for (const u32 word : {0x600000ffu, 0u, 0x00010001u,
+		0x620000ffu, 16u, 0x00010001u, 0x6000ff00u, 16u, 0x00010001u}) submit(word);
+	presenter.backend().executeGxGpuCommandDrain(gpu);
+	sampleCopyViewports.clear();
+	observeSampleCopies = useGles;
+	sprite();
+	observeSampleCopies = false;
+	SolidDamageResult result;
+	result.deferredCopyViewports = sampleCopyViewports;
+	for (const u32 word : {0xc0000000u, (120u << 16u) | 120u, 0x00010001u}) submit(word);
+	presenter.backend().executeGxGpuReadback(gpu);
+	result.deferredReadback = gpu.readGp0();
+	presenter.backend().executeGxGpuCommandDrain(gpu);
+	for (size_t index = 0u; index < GX_GPU_COMMAND_CAPACITY; ++index) {
+		const bool last = index + 1u == GX_GPU_COMMAND_CAPACITY;
+		for (const u32 word : {last ? 0x0200ff00u : 0x020000ffu,
+			(511u << 16u) | (last ? 992u : 1008u), (2u << 16u) | (last ? 64u : 32u)}) submit(word);
+	}
+	require(gpu.readDeviceOutput().commandBuffer.executedCommandCount == GX_GPU_COMMAND_CAPACITY,
+		"all maximum-capacity wrapped fills reach one retained submission");
+	presenter.backend().executeGxGpuCommandDrain(gpu);
+	sampleCopyViewports.clear();
+	observeSampleCopies = useGles;
+	sprite();
+	observeSampleCopies = false;
+	result.copyViewports = sampleCopyViewports;
+	for (const u32 word : {0xc0000000u, (120u << 16u) | 120u, 0x00010001u}) submit(word);
+	presenter.backend().executeGxGpuReadback(gpu);
+	result.readback = gpu.readGp0();
+	presenter.backend().captureGxGpuVramSnapshot(gpu);
+	const auto snapshot = gpu.readVramSnapshotBytes();
+	result.vram.assign(snapshot.begin(), snapshot.end());
+	if (useGles) {
+		require(glGetError() == GL_NO_ERROR, "capacity rendering leaves no GLES error");
+		presenter.releaseRenderPipeline();
+		presenter.clearTextures();
+		static_cast<OpenGLES2Backend&>(presenter.backend()).onContextDestroy();
+	}
+	return result;
+}
 
 static std::vector<u8> renderDrawLayoutMatrix(bool useGles) {
 	std::array<u8, 1> rom{};
@@ -1259,6 +1464,46 @@ int main(int argc, char** argv) {
 	}
 	{
 		testVramShaderDefinitions();
+		for (const u32 vramBytes : {2u * 1024u * 1024u, 1024u * 1024u}) {
+			const auto reference = renderSolidDamage(false, GxGpuDrawTargetMode::FullVram, vramBytes);
+			require(reference.aliasBlendReadback == (vramBytes == 1024u * 1024u ? 0x02e7u : 0x01efu),
+				"the small VRAM configuration actually blends both logical rows onto one physical pixel");
+			const auto capacityReference = renderSolidCapacity(false, GxGpuDrawTargetMode::FullVram, vramBytes);
+			for (const auto mode : {GxGpuDrawTargetMode::FullVram, GxGpuDrawTargetMode::SmallNibbles, GxGpuDrawTargetMode::SmallRgb5}) {
+				const auto actual = renderSolidDamage(true, mode, vramBytes);
+				const auto capacity = renderSolidCapacity(true, mode, vramBytes);
+				const size_t capacityCopies = mode == GxGpuDrawTargetMode::FullVram ? 1u : 2u;
+				require(capacity.deferredCopyViewports == std::vector<std::array<GLint, 4>>(capacityCopies, {16, 0, 16, 16}),
+					"each deferred batch publishes its own later texture write");
+				require(capacity.deferredReadback == 0x03e0u && capacity.deferredReadback == capacityReference.deferredReadback,
+					"a later deferred batch is visible after the earlier batch's blend read");
+				require(capacity.vram == capacityReference.vram && capacity.readback == 0x03e0u,
+					"the final primitive in the full wrapped-fill submission reaches software-identical VRAM");
+				require(capacity.copyViewports == std::vector<std::array<GLint, 4>>(capacityCopies, {16, 0, 16, 16}),
+					"the final wrapped fill publishes its previously clean source cell");
+				require(actual.vram == reference.vram, "solid batch damage retains software VRAM parity");
+				require(actual.readback == 0x001fu && actual.readback == reference.readback,
+					"ordered GPUREAD observes the high-row write");
+				require(actual.aliasBlendReadback == reference.aliasBlendReadback,
+					"blend-planner layers preserve ordered writes to aliased rows");
+				require(actual.clippedReadback == 0x03e0u && actual.clippedReadback == reference.clippedReadback,
+					"an empty clipped batch does not suppress the following visible draw");
+				const size_t expectedCopies = mode == GxGpuDrawTargetMode::FullVram ? 1u : 2u;
+				require(actual.copyViewports == std::vector<std::array<GLint, 4>>(expectedCopies, {320, 0, 16, 16}),
+					"a single texture write does not republish the adjacent clean CLUT");
+				// A cached target may additionally materialize its 64-aligned owner
+				// when bands switch. Neither route may publish the clean CLUT cell.
+				require(std::count(actual.blendCopyViewports.begin(), actual.blendCopyViewports.end(),
+					std::array<GLint, 4>{320, 0, 16, 16}) == static_cast<ptrdiff_t>(expectedCopies),
+					"blend-planner source writes publish the texture cell");
+				require(std::count(actual.blendCopyViewports.begin(), actual.blendCopyViewports.end(),
+					std::array<GLint, 4>{320, 16, 16, 16}) == 0,
+					"blend-planner bounds do not dirty the intervening CLUT");
+				const size_t expectedAliasCopies = vramBytes == 1024u * 1024u ? expectedCopies : 0u;
+				require(actual.aliasCopyViewports == std::vector<std::array<GLint, 4>>(expectedAliasCopies, {320, 0, 16, 16}),
+					"a high logical row dirties the texture cell only when physical rows alias");
+			}
+		}
 		testDrawTargetDirtyReads();
 		const auto layoutSoftware = renderDrawLayoutMatrix(false);
 		const auto layoutGles = renderDrawLayoutMatrix(true);
