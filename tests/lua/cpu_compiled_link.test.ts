@@ -347,9 +347,13 @@ test('linked counted stores need only one cycle, then stop or block before the f
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 		assert.equal(cpu.runUntilDepth(0, prefixCycles + 1), RunResult.Halted);
 		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.STORE_MEM_WORDS]);
+		const chargedBeforeWait = prefixCycles + 1 - cpu.instructionBudgetRemaining;
 		assert.equal(frame.pc, pc + 4 * INSTRUCTION_BYTES); assert.equal(cpu.stalledMemoryWriteAddress(), IO_BASE + 0x5000); assert.deepEqual(port.writes, []);
 		port.ready = true; cpu.resumeMemoryWrite(IO_BASE + 0x5000);
-		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded); assert.equal(cpu.instructionBudgetRemaining, 1 - storeCycles);
+		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+		assert.equal(cpu.instructionBudgetRemaining, 1 - (storeCycles - BASE_CYCLES[OpCode.STORE_MEM_WORDS]));
+		assert.equal(chargedBeforeWait + 1 - cpu.instructionBudgetRemaining, prefixCycles + storeCycles,
+			'the linked store retains its initial base charge and pays its word surcharge exactly once');
 		assert.equal(frame.pc, pc + 6 * INSTRUCTION_BYTES); assert.equal(frame.registers.getNumber(7), 99);
 		assert.deepEqual(port.writes, [73, 74, 75, 76, 77]);
 	}
