@@ -172,6 +172,39 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} consumes every raw draw l
 	assert.deepEqual(result.gpuErrors, []); assert.deepEqual(errors, []);
 });
 
+test('WebGPU solid batches publish only drawn cells, including aliased VRAM', async t => {
+	const browser = await chromium.launch({ args: [
+		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
+		'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
+	] });
+	t.after(() => browser.close());
+	const page = await browser.newPage(), errors: string[] = [];
+	page.on('pageerror', error => errors.push(error.message));
+	await page.route('http://localhost/renderer-test/**', route => route.fulfill({ contentType: 'text/html',
+		body: '<!doctype html><div id="player-surface"><canvas id="gamescreen" width="256" height="256"></canvas></div>' }));
+	for (const vramBytes of [2 * 1024 * 1024, 1024 * 1024]) {
+		await page.goto('http://localhost/renderer-test/primitive-damage/');
+		await page.addScriptTag({ content: backendBundle });
+		const result = await page.evaluate(async bytes => (globalThis as any).backendTest.renderTexturedModelCase(document.getElementById('gamescreen'), 'webgpu', bytes, true), vramBytes);
+		assert.deepEqual(result.adjacentDifferences, [-1, -1, -1, -1, -1, -1]);
+		assert.deepEqual(result.adjacentPixel[5], [0, 255, 0, 0], 'an empty clipped batch cannot suppress the following draw');
+		assert.deepEqual(result.adjacentCopyRects[1], []);
+		assert.deepEqual(result.adjacentCopyRects[2], [[320, 0, 16, 16]], 'a one-pixel source write must not dirty the adjacent CLUT');
+		if (vramBytes === 1024 * 1024) {
+			assert.deepEqual(result.adjacentCopyRects[3], [[320, 0, 16, 16]], 'a write through the high logical band dirties the aliased physical texture');
+			assert.deepEqual(result.adjacentPixel[4], [57, 189, 0, 0], 'the second logical band blends over the first');
+		} else {
+			assert.deepEqual(result.adjacentPixel[4], [123, 123, 0, 0], 'separate physical bands do not alias');
+			assert.equal(result.capacityResult.commands, 4096);
+			assert.equal(result.capacityResult.difference, -1, 'the full command buffer matches software');
+			assert.deepEqual(result.capacityResult.pixel, [0, 255, 0, 0], 'the final fill reaches the sampled cell');
+			assert.deepEqual(result.capacityResult.copies, [[16, 0, 16, 16]], 'the final wrapped primitive must publish its cell');
+		}
+		assert.deepEqual(result.gpuErrors, []);
+	}
+	assert.deepEqual(errors, []);
+});
+
 test('GX WebGPU pipelines specialize only the overrides used by each stage', async t => {
 	const browser = await chromium.launch({ args: [
 		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan',

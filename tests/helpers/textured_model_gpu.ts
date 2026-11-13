@@ -1,7 +1,7 @@
 import { createWebGLBackend, createWebGPUBackend } from '../../hosts/browser/backend';
 import { BrowserVideoOutput } from '../../hosts/browser/video_output';
 import { Machine } from '../../machine/ts/machine/machine';
-import { GxGpuCommandBuffer, GX_GPU_COMMAND_DRAW_LINE, GX_GPU_COMMAND_FILL_RECTANGLE, GX_GPU_SKIPPED_LINE_NONE } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
+import { GxGpuCommandBuffer, GX_GPU_COMMAND_CAPACITY, GX_GPU_COMMAND_DRAW_LINE, GX_GPU_COMMAND_DRAW_RECTANGLE, GX_GPU_COMMAND_FILL_RECTANGLE, GX_GPU_SKIPPED_LINE_NONE } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { RenderPassLibrary } from '../../machine/ts/render/backend/pass/library';
 import type { GPUBackend } from '../../machine/ts/render/backend/backend';
@@ -14,8 +14,9 @@ import { GX_GPU_PSMGX16 } from '../../machine/ts/machine/devices/gx/gpu_local_me
 import { cartridgeSlots } from './cartridge';
 
 /** Same projected model packets as gx_gpu_textured_gles2_test.cpp, not a gameplay cart. */
-export async function renderTexturedModelCase(canvas: HTMLCanvasElement, kind: 'webgl2' | 'webgpu') {
-	const vramBytes = PSX_MACHINE_SPEC.gxGpuVramBytes, width = 256, height = 256;
+export async function renderTexturedModelCase(canvas: HTMLCanvasElement, kind: 'webgl2' | 'webgpu', vramBytes = PSX_MACHINE_SPEC.gxGpuVramBytes, includeAliasCase = false) {
+	const width = 256, height = 256;
+	const spec = { ...PSX_MACHINE_SPEC, gxGpuVramBytes: vramBytes };
 	const gpu = kind === 'webgpu' ? await createWebGPUBackend(canvas, (await navigator.gpu.requestAdapter())!, vramBytes) : undefined;
 	const gl = kind === 'webgl2' ? createWebGLBackend(canvas, vramBytes) : undefined;
 	const backend: GPUBackend = gpu === undefined ? gl! : gpu;
@@ -29,7 +30,7 @@ export async function renderTexturedModelCase(canvas: HTMLCanvasElement, kind: '
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const machine = new Machine(memory, {
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh() { return false; }, applyInputControllerVibrationEffect() {},
-	}, PSX_MACHINE_SPEC);
+	}, spec);
 	machine.resetDevices(); machine.gxGpu.replaceVramSnapshotBytes(new Uint8Array(vramBytes));
 	for (const [index, word] of [[0, 0x0000ff21], [2, (16 << 9) | (GX_GPU_PSMGX16 << 15)], [4, 3 << 23], [5, 1023 | (255 << 12)]])
 		memory.writeMappedU32LE(gxGpuPcrtcRegisterAddress(index), word);
@@ -106,22 +107,34 @@ export async function renderTexturedModelCase(canvas: HTMLCanvasElement, kind: '
 	snapshotDifferences.push(machine.gxGpu.readDeviceOutput().vramSnapshotBytes.findIndex((value, index) => value !== replacement[index]));
 	observingSnapshots = false;
 	let sampleCopies = 0;
+	const sampleCopyRects: number[][] = [];
 	if (gl !== undefined) {
 		const copy = gl.gl.copyTexSubImage2D.bind(gl.gl);
-		gl.gl.copyTexSubImage2D = (...args: Parameters<typeof copy>) => { ++sampleCopies; copy(...args); };
+		gl.gl.copyTexSubImage2D = (...args: Parameters<typeof copy>) => { ++sampleCopies; sampleCopyRects.push([args[2], args[3], args[6], args[7]]); copy(...args); };
 	} else {
 		const prototype = Object.getPrototypeOf(gpu!.device.createCommandEncoder());
 		const copy = prototype.copyTextureToTexture;
-		prototype.copyTextureToTexture = function (...args: any[]) { ++sampleCopies; copy.apply(this, args); };
+		prototype.copyTextureToTexture = function (...args: any[]) {
+			++sampleCopies;
+			const origin = args[0].origin as GPUOrigin3DDict, extent = args[2] as GPUExtent3DDict;
+			sampleCopyRects.push([origin.x!, origin.y!, extent.width, extent.height!]);
+			copy.apply(this, args);
+		};
 	}
-	const adjacentCopies: number[] = [], adjacentDifferences: number[] = [];
-	for (let phase = 0; phase < 3; ++phase) {
+	const adjacentCopies: number[] = [], adjacentDifferences: number[] = [], adjacentCopyRects: number[][][] = [], adjacentPixel: number[][] = [];
+	for (let phase = 0; phase < (includeAliasCase ? 6 : 3); ++phase) {
 		const before = sampleCopies;
+		if (phase >= 3) machine.gxGpu.writeGp1(0x09000001);
 		// The framebuffer ends immediately before its font page. Touching the
 		// geometric right edge does not write a texel in that page. A deliberate
 		// write into the page in the final phase must still synchronize it.
 		const words = [0xe1000005, 0x600000ff, 0, (240 << 16) | 320];
 		if (phase === 2) words.push(0x6000ff00, 320, 0x00010001);
+		if (phase === 3) words.push(0xe40fffff, 0x6000ff00, (512 << 16) | 320, 0x00010001);
+		if (phase === 4) words.push(0xe40fffff, 0x6200ff00, 20, 0x00010001, 0x6200ff00, (512 << 16) | 20, 0x00010001);
+		// A fully clipped primitive leaves an empty batch; changing the drawing
+		// area flushes it immediately before the following visible primitive.
+		if (phase === 5) words.push(0xe4000000, 0x60ff0000, 20, 0x00010001, 0xe40fffff, 0x6000ff00, 20, 0x00010001);
 		words.push(0x65808080, (120 << 16) | 16, (20 | (24 << 6)) << 16, 0x00080008);
 		for (const word of words) {
 			machine.gxGpu.writeGp0(word);
@@ -135,6 +148,52 @@ export async function renderTexturedModelCase(canvas: HTMLCanvasElement, kind: '
 		const rendered = await backend.readColorTexture(target, width, height);
 		adjacentDifferences.push(rendered.findIndex((value, index) => value !== expected[index]));
 		adjacentCopies.push(sampleCopies - before);
+		adjacentCopyRects.push(sampleCopyRects.slice(before));
+		adjacentPixel.push(Array.from(rendered.subarray(20 * 4, 21 * 4)));
+	}
+	let capacityResult: { difference: number; pixel: number[]; copies: number[][]; commands: number } | undefined;
+	if (includeAliasCase && vramBytes === 2 * 1024 * 1024) {
+		const buffer = new GxGpuCommandBuffer(machine.dmaController);
+		const draw = Uint32Array.from([0x65808080, (120 << 16) | 120, 16, 0x00010001]);
+		const renderBuffer = async (): Promise<Uint8Array> => {
+			buffer.completeCommandExecution(buffer.commandCount);
+			buffer.sealCommandsForPresentation();
+			const output = { ...machine.gxGpu.readDeviceOutput(), commandBuffer: buffer, readbackPort: buffer.readback };
+			renderGxGpuSoftwareFrame(software, state, output, pixels);
+			library.execute('gx_gpu', framebuffer, output);
+			return backend.readColorTexture(target, width, height);
+		};
+		const prepareRead = (): void => {
+			buffer.reset();
+			const start = buffer.appendWords(draw, draw.length);
+			buffer.pushCommand(GX_GPU_COMMAND_DRAW_RECTANGLE, 0x65, start, draw.length, 0x100, 0, 0, 0, 0x0007ffff, 0, 0, GX_GPU_SKIPPED_LINE_NONE);
+		};
+		// Bring the cell into the sample copy before filling, so the very last
+		// command must dirty it again for the later texture read.
+		prepareRead();
+		await renderBuffer();
+		buffer.reset();
+		const fill = Uint32Array.from([0x020000ff, (511 << 16) | 1008, (2 << 16) | 32]);
+		for (let index = 0; index < GX_GPU_COMMAND_CAPACITY; ++index) {
+			if (index === GX_GPU_COMMAND_CAPACITY - 1) {
+				fill[0] = 0x0200ff00;
+				fill[1] = (511 << 16) | 992;
+				fill[2] = (2 << 16) | 64;
+			}
+			const start = buffer.appendWords(fill, fill.length);
+			buffer.pushCommand(GX_GPU_COMMAND_FILL_RECTANGLE, 0x02, start, fill.length, 0, 0, 0, 0, 0x0007ffff, 0, 0, GX_GPU_SKIPPED_LINE_NONE);
+		}
+		const commands = buffer.commandCount;
+		await renderBuffer();
+		const before = sampleCopies;
+		prepareRead();
+		const rendered = await renderBuffer();
+		capacityResult = {
+			difference: rendered.findIndex((value, index) => value !== expected[index]),
+			pixel: Array.from(rendered.subarray((120 * width + 120) * 4, (120 * width + 121) * 4)),
+			copies: sampleCopyRects.slice(before),
+			commands,
+		};
 	}
 	const wrappedDifferences: number[] = [];
 	for (let flip = 0; flip < 2; ++flip) {
@@ -285,5 +344,5 @@ export async function renderTexturedModelCase(canvas: HTMLCanvasElement, kind: '
 	const glError = gl === undefined ? 0 : gl.gl.getError();
 	if (framebuffer !== null) gl!.destroyRenderTarget(framebuffer);
 	backend.destroyTexture(target); library.dispose(); gpu?.device.destroy();
-	return { kind, difference, samples, validationError, glError, gpuErrors, commands, transfers, snapshotDifferences, snapshotWords, adjacentCopies, adjacentDifferences, wrappedDifferences, rectangleDifferences, flatColorDifferences, drawLayoutDifferences, drawLayoutPixels, lineExtraWordDifferences, lineExtraWordPixels, lineExtraWordCounts };
+	return { kind, difference, samples, validationError, glError, gpuErrors, commands, transfers, snapshotDifferences, snapshotWords, adjacentCopies, adjacentCopyRects, adjacentPixel, adjacentDifferences, capacityResult, wrappedDifferences, rectangleDifferences, flatColorDifferences, drawLayoutDifferences, drawLayoutPixels, lineExtraWordDifferences, lineExtraWordPixels, lineExtraWordCounts };
 }
