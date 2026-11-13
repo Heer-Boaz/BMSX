@@ -3,7 +3,6 @@
 #include "common/compiler.h"
 
 #include "machine/cpu/cpu.h"
-#include "machine/devices/gx/gpu.h"
 #include "machine/devices/irq/controller.h"
 #include "spec/bmsx/memory_map.h"
 #include "machine/memory/memory.h"
@@ -77,12 +76,8 @@ void DmaController::onTriggerWrite(u32 channel, u32 value) {
 		return;
 	}
 	DmaChannelState& registers = m_registers.channels[channel];
-	const u32 route = registers.controlWord & DMA_CONTROL_ROUTE_MASK;
-	const bool gpuJob = registers.transferCountWord != 0u && (ReadEndpoints[route] == DmaEndpoint::GpuRead || WriteEndpoints[route] == DmaEndpoint::GpuWrite);
-	if (gpuJob) m_gpu->synchronizeDmaStart();
 	registers.statusWord = DMA_STATUS_BUSY;
 	m_memory.writeIoU32(IO_DMA_STATUSES[channel], DMA_STATUS_BUSY);
-	if (gpuJob) m_gpu->dmaRequestStarted();
 	if (registers.transferCountWord == 0u) {
 		finishChannel(channel);
 	}

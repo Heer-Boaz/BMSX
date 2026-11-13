@@ -1496,52 +1496,6 @@ void testPartialImageSurvivesSupervisorRestoreAndQueuedReadback() {
 	require(restored.gpu.readGp0() == 0x1f005678u, "second uploaded pixel word read back");
 }
 
-void testBackendSubmissionLimitSchedulesAndCatchesUpGpuWork() {
-	GpuHarness target;
-	stopPcrtc(target);
-	for (const bmsx::u32 word : {0x020000ffu, 0u, 0x00010001u}) target.gpu.writeGp0(word);
-	require(target.scheduler.nextDeadline() == std::numeric_limits<bmsx::i64>::max(), "unobserved completion is initially deferred");
-	target.scheduler.advanceTo(10);
-	target.gpu.setBackendSubmissionCommandLimit(1u);
-	require(target.scheduler.nextDeadline() == 29, "lower submission limit schedules pending completion");
-	target.scheduler.advanceTo(20);
-	target.gpu.setBackendSubmissionCommandLimit(bmsx::GX_GPU_COMMAND_CAPACITY);
-	require(target.scheduler.nextDeadline() == std::numeric_limits<bmsx::i64>::max(), "raising limit withdraws unneeded completion deadline");
-	target.scheduler.advanceTo(30);
-	target.gpu.setBackendSubmissionCommandLimit(1u);
-	require(target.gpu.backendServiceBlocksMachine(), "lowering limit after completion catches up and requests submission");
-
-	GpuHarness immediate;
-	stopPcrtc(immediate);
-	immediate.gpu.setBackendSubmissionCommandLimit(1u);
-	for (const bmsx::u32 word : {0x020000ffu, 0u, 0x00010001u}) immediate.gpu.writeGp0(word);
-	while (immediate.scheduler.nextDeadline() <= 29) {
-		const bmsx::i64 deadline = immediate.scheduler.nextDeadline();
-		immediate.scheduler.advanceTo(deadline);
-		require(immediate.scheduler.popDueTimer() == bmsx::DEVICE_SERVICE_GPU, "GPU completion service");
-		immediate.gpu.onService(deadline);
-	}
-	immediate.scheduler.advanceTo(29);
-	require(immediate.gpu.backendServiceBlocksMachine(), "completion activates backend submission at its deadline");
-}
-
-void testUnobservedGpuCompletionsCatchUpOnRegisterAccess() {
-	GpuHarness target;
-	stopPcrtc(target);
-	for (bmsx::u32 i = 0; i < 3; ++i) {
-		target.gpu.writeGp0(0x020000ffu);
-		target.gpu.writeGp0(0u);
-		target.gpu.writeGp0(0x00010001u);
-	}
-	require(target.scheduler.nextDeadline() == std::numeric_limits<bmsx::i64>::max(), "unobserved completions do not cause per-command deadlines");
-	target.scheduler.advanceTo(28);
-	require((target.gpu.readStatus() & bmsx::GX_GPU_STATUS_GPU_IDLE) == 0u, "GPU remains busy before completion");
-	require(target.gpu.readDeviceOutput().commandBuffer.executedCommandCount == 0u, "no command completed early");
-	target.scheduler.advanceTo(87);
-	require((target.gpu.readStatus() & bmsx::GX_GPU_STATUS_GPU_IDLE) != 0u, "GPU catches up through queued commands");
-	require(target.gpu.readDeviceOutput().commandBuffer.executedCommandCount == 3u, "all queued commands complete");
-}
-
 void testDmaStartObservesGpuCapacityFreedWhileNoChannelWaited() {
 	GpuHarness target;
 	stopPcrtc(target);
@@ -5511,8 +5465,6 @@ int main() {
 	testQueuedIrqStartsAtPreviousCompletionAcrossRestore();
 	testDmaGp0PrefixCannotRunBeforeBurstPublication();
 	testDmaStartObservesGpuCapacityFreedWhileNoChannelWaited();
-	testUnobservedGpuCompletionsCatchUpOnRegisterAccess();
-	testBackendSubmissionLimitSchedulesAndCatchesUpGpuWork();
 	testPartialImageSurvivesSupervisorRestoreAndQueuedReadback();
 	testSplitDmaImagePayloadRestoresBeforeIrqAndReadback();
 	testSplitDmaPolylinePayloadRestoresBeforeIrqAndReadback();
