@@ -2017,6 +2017,23 @@ test('partial image survives supervisor restore and queued readback starts at it
 	assert.equal(restored.gpu.readGp0(), 0x1f005678);
 });
 
+test('unobserved GPU completions catch up at register access without per-command deadlines', () => {
+	const { memory, gpu, scheduler } = createGpu();
+	stopPcrtc(memory, gpu, scheduler);
+	for (let i = 0; i < 3; ++i) {
+		gpu.writeGp0(0x020000ff);
+		gpu.writeGp0(0);
+		gpu.writeGp0(0x00010001);
+	}
+	assert.equal(scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER);
+	scheduler.advanceTo(28);
+	assert.equal(gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE, 0);
+	assert.equal(gpu.readDeviceOutput().commandBuffer.executedCommandCount, 0);
+	scheduler.advanceTo(87);
+	assert.equal(gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE, GX_GPU_STATUS_GPU_IDLE);
+	assert.equal(gpu.readDeviceOutput().commandBuffer.executedCommandCount, 3);
+});
+
 test('DMA START sees GPU capacity freed while no channel was waiting', () => {
 	const { memory, gpu, scheduler, dma } = createGpu();
 	stopPcrtc(memory, gpu, scheduler);
