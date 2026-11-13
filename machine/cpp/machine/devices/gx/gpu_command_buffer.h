@@ -26,7 +26,7 @@ struct GxGpuCommandBufferState {
 	std::vector<u32> commandWordStart;
 	std::vector<u32> commandWordCount;
 	std::vector<u32> commandDrawModeWord;
-	std::vector<u8> commandVramYAddressExtensionWord;
+	std::vector<u32> commandVramYAddressExtensionWord;
 	std::vector<u32> commandTextureWindowWord;
 	std::vector<u32> commandDrawingAreaTopLeftWord;
 	std::vector<u32> commandDrawingAreaBottomRightWord;
@@ -38,7 +38,7 @@ struct GxGpuCommandBufferState {
 	size_t readbackFenceCommandCount = 0u;
 	u32 readbackX = 0u;
 	u32 readbackY = 0u;
-	u8 readbackVramYAddressExtensionWord = 0u;
+	u32 readbackVramYAddressExtensionWord = 0u;
 	u32 readbackWidth = 0u;
 	u32 readbackHeight = 0u;
 	u32 readbackPixelCursor = 0u;
@@ -50,7 +50,7 @@ struct GxGpuReadbackContext {
 	size_t fenceCommandCount = 0u;
 	u32 x = 0u;
 	u32 y = 0u;
-	u8 vramYAddressExtensionWord = 0u;
+	u32 vramYAddressExtensionWord = 0u;
 	u32 width = 0u;
 	u32 height = 0u;
 	u32 pixelCursor = 0u;
@@ -78,7 +78,7 @@ public:
 	size_t fenceCommandCount() const { return m_fenceCommandCount; }
 	u32 x() const { return m_x; }
 	u32 y() const { return m_y; }
-	u8 vramYAddressExtensionWord() const { return m_vramYAddressExtensionWord; }
+	u32 vramYAddressExtensionWord() const { return m_vramYAddressExtensionWord; }
 	u32 width() const { return m_width; }
 	u32 height() const { return m_height; }
 	u32 pixelCursor() const { return m_pixelCursor; }
@@ -148,7 +148,7 @@ private:
 		return word;
 	}
 
-	void activate(u32 positionWord, u32 sizeWord, size_t fenceCommandCount, u8 vramYAddressExtensionWord) {
+	void activate(u32 positionWord, u32 sizeWord, size_t fenceCommandCount, u32 vramYAddressExtensionWord) {
 		m_x = positionWord & (GX_GPU_VRAM_X_ADDRESS_PERIOD - 1u);
 		m_vramYAddressExtensionWord = vramYAddressExtensionWord;
 		m_y = gxGpuVramYAddress(positionWord >> 16u, vramYAddressExtensionWord);
@@ -184,7 +184,7 @@ private:
 	size_t m_fenceCommandCount = 0u;
 	u32 m_x = 0u;
 	u32 m_y = 0u;
-	u8 m_vramYAddressExtensionWord = 0u;
+	u32 m_vramYAddressExtensionWord = 0u;
 	u32 m_width = 0u;
 	u32 m_height = 0u;
 	u32 m_pixelCursor = 0u;
@@ -213,6 +213,7 @@ private:
 		executedCommandCount = 0u;
 		presentCommandCount = 0u;
 		wordCount = 0u;
+		drawCount = 0u;
 		readback.reset();
 	}
 
@@ -236,6 +237,7 @@ public:
 				return;
 			}
 			commandCount = commandIndex;
+			drawCount = commandDrawIndex[commandIndex];
 			wordCount = commandWordStart[commandIndex];
 			if (presentCommandCount > commandIndex) {
 				presentCommandCount = commandIndex;
@@ -244,6 +246,7 @@ public:
 		}
 		if (readback.m_phase == GX_GPU_READBACK_PENDING && readback.m_fenceCommandCount != 0u) {
 			commandCount = readback.m_fenceCommandCount - 1u;
+			drawCount = commandDrawIndex[commandCount];
 			wordCount = commandWordStart[commandCount];
 			if (executedCommandCount > commandCount) {
 				executedCommandCount = commandCount;
@@ -298,6 +301,7 @@ public:
 		executedCommandCount = state.executedCommandCount;
 		presentCommandCount = state.presentCommandCount;
 		wordCount = state.wordCount;
+		drawCount = 0u;
 		for (size_t index = 0u; index < commandCount; index += 1u) {
 			commandKind[index] = state.commandKind[index];
 			commandOpcode[index] = state.commandOpcode[index];
@@ -311,6 +315,7 @@ public:
 			commandDrawingOffsetWord[index] = state.commandDrawingOffsetWord[index];
 			commandMaskBitModeWord[index] = state.commandMaskBitModeWord[index];
 			commandSkippedLineParity[index] = state.commandSkippedLineParity[index];
+			appendDrawLayout(index);
 		}
 		for (size_t index = 0u; index < wordCount; index += 1u) {
 			words[index] = state.words[index];
@@ -332,6 +337,8 @@ public:
 			return 0u;
 		}
 		const size_t oldCommandCount = commandCount;
+		const size_t retiredDraws = retiredCommands == oldCommandCount ? drawCount : commandDrawIndex[retiredCommands];
+		const size_t remainingDraws = drawCount - retiredDraws;
 		const size_t retiredWords = retiredCommands == oldCommandCount
 			? commandWordStart[retiredCommands - 1u] + commandWordCount[retiredCommands - 1u]
 			: commandWordStart[retiredCommands];
@@ -351,7 +358,17 @@ public:
 			commandDrawingOffsetWord[commandIndex] = commandDrawingOffsetWord[sourceIndex];
 			commandMaskBitModeWord[commandIndex] = commandMaskBitModeWord[sourceIndex];
 			commandSkippedLineParity[commandIndex] = commandSkippedLineParity[sourceIndex];
+			commandDrawIndex[commandIndex] = static_cast<u16>(commandDrawIndex[sourceIndex] - retiredDraws);
 		}
+		if (retiredDraws != 0u) {
+			for (size_t record = 0u; record < remainingDraws; ++record) {
+				drawVertexCount[record] = drawVertexCount[retiredDraws + record];
+				drawPositionStride[record] = drawPositionStride[retiredDraws + record];
+				drawColorStride[record] = drawColorStride[retiredDraws + record];
+				drawSizeOffset[record] = drawSizeOffset[retiredDraws + record];
+			}
+		}
+		drawCount = remainingDraws;
 		for (size_t wordIndex = 0u; wordIndex < remainingWords; wordIndex += 1u) {
 			words[wordIndex] = words[retiredWords + wordIndex];
 		}
@@ -407,7 +424,7 @@ public:
 		size_t wordStart,
 		u32 commandWords,
 		u32 drawModeWord,
-		u8 vramYAddressExtensionWord,
+		u32 vramYAddressExtensionWord,
 		u32 textureWindowWord,
 		u32 drawingAreaTopLeftWord,
 		u32 drawingAreaBottomRightWord,
@@ -427,6 +444,7 @@ public:
 		commandDrawingOffsetWord[commandIndex] = drawingOffsetWord;
 		commandMaskBitModeWord[commandIndex] = maskBitModeWord;
 		commandSkippedLineParity[commandIndex] = skippedLineParity;
+		appendDrawLayout(commandIndex);
 		commandCount = commandIndex + 1u;
 	}
 };

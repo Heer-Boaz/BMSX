@@ -1268,7 +1268,7 @@ void GxGpu::pushGpuCommand(u8 kind, u32 opcode, size_t wordStart, u32 commandWor
 		wordStart,
 		commandWordCount,
 		m_drawModeWord,
-		static_cast<u8>(m_vramYAddressExtensionWord),
+		m_vramYAddressExtensionWord,
 		m_textureWindowWord,
 		m_drawingAreaTopLeftWord,
 		m_drawingAreaBottomRightWord,
@@ -1282,19 +1282,7 @@ void GxGpu::pushGpuCommand(u8 kind, u32 opcode, size_t wordStart, u32 commandWor
 			std::span<const u32>(operationWords, commandWordCount));
 	}
 	beginCommandCompletion(
-		gxGpuCommandTicks(
-			kind,
-			static_cast<u8>(opcode),
-			m_commandBuffer.words.data(),
-			wordStart,
-			commandWordCount,
-			m_drawModeWord,
-			m_vramYAddressExtensionWord,
-			m_drawingAreaTopLeftWord,
-			m_drawingAreaBottomRightWord,
-			m_drawingOffsetWord,
-			m_maskBitModeWord,
-			m_skippedLineParity),
+		gxGpuCommandTicks(m_commandBuffer, m_commandBuffer.commandCount - 1u),
 		m_commandBuffer.commandCount,
 		commandStartCycle);
 }

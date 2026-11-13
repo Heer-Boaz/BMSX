@@ -297,6 +297,69 @@ public:
 	void setDisplaySize(i32, i32, i32 viewportWidth, i32 viewportHeight) override { visibleViewportBounds = RectBounds{0, 0, static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight), 0}; }
 };
 
+static std::vector<u8> renderDrawLayoutMatrix(bool useGles) {
+	std::array<u8, 1> rom{};
+	Memory memory{MemoryInit{{rom.data(), 0u}, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes};
+	IrqController irq{memory};
+	ExecutionAddressSpace addressSpace{memory};
+	CPU cpu{memory, irq, addressSpace};
+	DeviceScheduler scheduler{cpu};
+	DmaController dma{memory, cpu, irq, scheduler};
+	GxGpu gpu{memory, cpu, irq, scheduler, dma, PSX_MACHINE_SPEC.gxGpuVramBytes};
+	gpu.reset();
+	auto rawState = gpu.captureState();
+	rawState.vramYAddressExtensionWord = 0x100u;
+	gpu.restoreState(rawState);
+	std::vector<u8> clear(PSX_MACHINE_SPEC.gxGpuVramBytes, 0u);
+	for (size_t index = 0u; index < clear.size(); index += 2u) {
+		clear[index] = 0xffu;
+		clear[index + 1u] = 0x7fu;
+	}
+	gpu.replaceVramSnapshotBytes(clear);
+	const auto submit = [&](u32 word) {
+		gpu.writeGp0(word);
+		scheduler.advanceTo(scheduler.currentNowCycles() + 10'000);
+		gpu.onService(scheduler.currentNowCycles());
+	};
+	for (const u32 word : {0xe1000000u, 0xe3000000u, 0xe40fffffu, 0xe5000000u, 0xe6000000u}) submit(word);
+	for (u32 variant = 0u; variant < 8u; ++variant) {
+		const u32 opcode = 0x20u | ((variant & 1u) << 2u) | ((variant & 2u) << 2u) | ((variant & 4u) << 2u);
+		const u32 count = (opcode & 8u) != 0u ? 4u : 3u;
+		const u32 x = 8u + variant * 20u;
+		submit((opcode << 24u) | 0x000000ffu);
+		for (u32 vertex = 0u; vertex < count; ++vertex) {
+			if (vertex != 0u && (opcode & 0x10u) != 0u) submit(0x000000ffu | (vertex * 0x00002000u));
+			const u32 vx = x + ((vertex & 1u) != 0u ? 8u : 0u);
+			const u32 vy = 220u + (vertex >= 2u ? 8u : 0u);
+			submit((vy << 16u) | vx);
+			if ((opcode & 4u) != 0u) submit((vertex == 1u ? 0x01180000u : 0u) | ((vertex & 1u) * 8u));
+		}
+	}
+	for (const u32 word : {0x400000ffu, (205u << 16u) | 10u, (209u << 16u) | 20u,
+		0x500000ffu, (205u << 16u) | 30u, 0x0000ff00u, (209u << 16u) | 40u,
+		0x580000ffu, (205u << 16u) | 50u, 0x0000ff00u, (209u << 16u) | 60u,
+		0x00ff0000u, (205u << 16u) | 70u, 0x50005000u,
+		0x600000ffu, (900u << 16u) | 400u, (8u << 16u) | 8u}) submit(word);
+	const auto& retained = gpu.readDeviceOutput().commandBuffer;
+	require(retained.drawCount == 13u && retained.commandVramYAddressExtensionWord[retained.commandCount - 1u] == 0x100u,
+		"all layout matrix commands and the raw extension word reached the renderer");
+	gpu.presentReadyFrameOnVblankEdge();
+	std::unique_ptr<GPUBackend> backend;
+	if (useGles) {
+		auto gles = std::make_unique<OpenGLES2Backend>(256, 256, false, PSX_MACHINE_SPEC.gxGpuVramBytes, GxGpuDrawTargetMode::FullVram);
+		gles->setContextCallbacks([]() -> uintptr_t { return 0; }, eglGetProcAddress);
+		gles->onContextReset();
+		backend = std::move(gles);
+	} else backend = std::make_unique<SoftwareBackend>(256, 256, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	TestVideoOutput video(256, 256);
+	VideoPresenter presenter(video, std::move(backend), 256, 256);
+	presenter.installRenderPipeline(std::make_unique<RenderPassLibrary>(&presenter.backend(), &presenter));
+	presenter.backend().executeGxGpuPresentation(gpu.readDeviceOutput());
+	presenter.backend().captureGxGpuVramSnapshot(gpu);
+	const auto bytes = gpu.readVramSnapshotBytes();
+	return {bytes.begin(), bytes.end()};
+}
+
 static std::vector<u8> render(std::unique_ptr<GPUBackend> backend, TexturedModelFixture& fixture) {
 	TestVideoOutput video(256, 256);
 	backend->resizePresentationTarget(256, 256);
@@ -1183,6 +1246,16 @@ int main(int argc, char** argv) {
 	}
 	{
 		testDrawTargetDirtyReads();
+		const auto layoutSoftware = renderDrawLayoutMatrix(false);
+		const auto layoutGles = renderDrawLayoutMatrix(true);
+		require(layoutSoftware[(222u * 1024u + 10u) * 2u] == 0x1fu
+			&& layoutSoftware[(222u * 1024u + 30u) * 2u] == 0x1fu
+			&& layoutSoftware[(205u * 1024u + 10u) * 2u] == 0x1fu
+			&& layoutSoftware[(205u * 1024u + 30u) * 2u] == 0x1fu
+			&& layoutSoftware[(205u * 1024u + 50u) * 2u] == 0x1fu
+			&& layoutSoftware[(902u * 1024u + 402u) * 2u] == 0x1fu,
+			"flat and textured polygons, line modes and the raw extension produce actual VRAM pixels");
+		require(layoutGles == layoutSoftware, "all draw layouts and the raw extension match software VRAM on GLES2");
 		TexturedModelFixture referenceFixture;
 		auto software = std::make_unique<SoftwareBackend>(256, 256, PSX_MACHINE_SPEC.gxGpuVramBytes);
 		const auto expected = render(std::move(software), referenceFixture);

@@ -317,7 +317,7 @@ function writeGxGpuCommandBufferState(writer: BinarySink, state: GxGpuCommandBuf
 	writer.u32(state.commandDrawModeWord.length);
 	writer.u32s(state.commandDrawModeWord);
 	writer.u32(state.commandVramYAddressExtensionWord.length);
-	writer.u8s(state.commandVramYAddressExtensionWord);
+	writer.u32s(state.commandVramYAddressExtensionWord);
 	writer.u32(state.commandTextureWindowWord.length);
 	writer.u32s(state.commandTextureWindowWord);
 	writer.u32(state.commandDrawingAreaTopLeftWord.length);
@@ -336,7 +336,7 @@ function writeGxGpuCommandBufferState(writer: BinarySink, state: GxGpuCommandBuf
 	writer.u64(state.readbackFenceCommandCount);
 	writer.u32(state.readbackX);
 	writer.u32(state.readbackY);
-	writer.u8(state.readbackVramYAddressExtensionWord);
+	writer.u32(state.readbackVramYAddressExtensionWord);
 	writer.u32(state.readbackWidth);
 	writer.u32(state.readbackHeight);
 	writer.u32(state.readbackPixelCursor);
@@ -355,7 +355,7 @@ function readGxGpuCommandBufferState(reader: BinaryReader): GxGpuCommandBufferSt
 		commandWordStart: reader.u32s(reader.u32()),
 		commandWordCount: reader.u32s(reader.u32()),
 		commandDrawModeWord: reader.u32s(reader.u32()),
-		commandVramYAddressExtensionWord: reader.u8s(reader.u32()),
+		commandVramYAddressExtensionWord: reader.u32s(reader.u32()),
 		commandTextureWindowWord: reader.u32s(reader.u32()),
 		commandDrawingAreaTopLeftWord: reader.u32s(reader.u32()),
 		commandDrawingAreaBottomRightWord: reader.u32s(reader.u32()),
@@ -367,7 +367,7 @@ function readGxGpuCommandBufferState(reader: BinaryReader): GxGpuCommandBufferSt
 		readbackFenceCommandCount: reader.u64(),
 		readbackX: reader.u32(),
 		readbackY: reader.u32(),
-		readbackVramYAddressExtensionWord: reader.u8(),
+		readbackVramYAddressExtensionWord: reader.u32(),
 		readbackWidth: reader.u32(),
 		readbackHeight: reader.u32(),
 		readbackPixelCursor: reader.u32(),
@@ -454,7 +454,7 @@ function writeGxGpuIngressContextState(writer: BinarySink, state: GxGpuIngressCo
 	writer.u64(state.readbackFenceCommandCount);
 	writer.u32(state.readbackX);
 	writer.u32(state.readbackY);
-	writer.u8(state.readbackVramYAddressExtensionWord);
+	writer.u32(state.readbackVramYAddressExtensionWord);
 	writer.u32(state.readbackWidth);
 	writer.u32(state.readbackHeight);
 	writer.u32(state.readbackPixelCursor);
@@ -488,7 +488,7 @@ function readGxGpuIngressContextState(reader: BinaryReader): GxGpuIngressContext
 		readbackFenceCommandCount: reader.u64(),
 		readbackX: reader.u32(),
 		readbackY: reader.u32(),
-		readbackVramYAddressExtensionWord: reader.u8(),
+		readbackVramYAddressExtensionWord: reader.u32(),
 		readbackWidth: reader.u32(),
 		readbackHeight: reader.u32(),
 		readbackPixelCursor: reader.u32(),

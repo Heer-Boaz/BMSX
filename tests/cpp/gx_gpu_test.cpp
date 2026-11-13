@@ -2,6 +2,7 @@
 #include "common/endian.h"
 #include "machine/devices/gx/gpu_local_memory.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
+#include "machine/devices/gx/gpu_command_timing.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/irq/controller.h"
 #include "render/backend/gx_gpu_render_rules.h"
@@ -5479,9 +5480,106 @@ void testPcrtcPublishesRawWordsAndMapsRetainedUserCircuitOneUnderSupervisor() {
 	require(memory.readMappedU32LE(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_DISPLAY1_LOW)) == userDisplayLow, "GX-GPU supervisor exit restores active user DISPLAY1");
 }
 
+void testDrawOperandLayoutsFollowRestoreAndRetirement() {
+	auto buffer = std::make_unique<bmsx::GxGpuCommandBuffer>(commandBufferDmaHarness.dma);
+	const std::array<bmsx::u32, 12> words{0xf0000000u, 0xf0000001u, 0xf0000002u, 0xf0000003u,
+		0xf0000004u, 0xf0000005u, 0xf0000006u, 0xf0000007u, 0xf0000008u, 0xf0000009u, 0xf000000au, 0xf000000bu};
+	const auto push = [&](bmsx::u8 kind, bmsx::u8 opcode, bmsx::u32 count) {
+		const size_t start = buffer->appendWords(words.data(), count);
+		buffer->pushCommand(kind, opcode, start, count, 0u, 0u, 0u, 0u, 0u, 0u, 0u, bmsx::GX_GPU_SKIPPED_LINE_NONE);
+	};
+	push(bmsx::GX_GPU_COMMAND_DRAW_POLYGON, 0x3cu, 12u);
+	push(bmsx::GX_GPU_COMMAND_FILL_RECTANGLE, 0x02u, 3u);
+	push(bmsx::GX_GPU_COMMAND_DRAW_POLYLINE, 0x58u, 7u);
+	push(bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE, 0x7cu, 3u);
+	push(bmsx::GX_GPU_COMMAND_DRAW_LINE, 0x40u, 3u);
+	require(buffer->drawCount == 4u && buffer->commandDrawIndex[1] == 1u && buffer->commandDrawIndex[2] == 1u
+		&& buffer->drawVertexCount[0] == 4u && buffer->drawPositionStride[0] == 3u && buffer->drawColorStride[0] == 3u
+		&& buffer->drawVertexCount[1] == 3u && buffer->drawPositionStride[1] == 2u && buffer->drawColorStride[1] == 2u
+		&& buffer->drawVertexCount[2] == 1u && buffer->drawColorStride[2] == 0u && buffer->drawSizeOffset[2] == 2u,
+		"draw layout references canonical raw words and admits odd long polylines");
+	auto prefix = std::make_unique<bmsx::GxGpuCommandStorage>();
+	prefix->copyPrefix(*buffer, 3u);
+	require(prefix->drawCount == 2u && prefix->drawVertexCount[1] == 3u && prefix->commandDrawIndex[2] == 1u,
+		"ordered transport copies only the dense draw prefix");
+	const auto state = buffer->captureState();
+	buffer->restoreState(state);
+	require(buffer->drawCount == 4u && buffer->drawVertexCount[1] == 3u,
+		"restore derives layouts from the retained hardware words and metadata");
+	buffer->completeCommandExecution(5u);
+	buffer->retireCommandsPreservingVram(2u);
+	require(buffer->drawCount == 3u && buffer->commandDrawIndex[0] == 0u && buffer->commandDrawIndex[1] == 1u
+		&& buffer->drawVertexCount[0] == 3u && buffer->drawVertexCount[1] == 1u
+		&& buffer->words[buffer->commandWordStart[0] + 5u] == 0xf0000005u,
+		"retirement compacts record indices without changing raw guest words");
+	const std::array<bmsx::u32, 300> longRectangle{};
+	const size_t start = buffer->appendWords(longRectangle.data(), longRectangle.size());
+	buffer->pushCommand(bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE, 0x60u, start, static_cast<bmsx::u32>(longRectangle.size()),
+		0u, 0u, 0u, 0u, 0u, 0u, 0u, bmsx::GX_GPU_SKIPPED_LINE_NONE);
+	require(buffer->drawSizeOffset[buffer->commandDrawIndex[3]] == 299u,
+		"a representable rectangle span retains its full size-word offset");
+	const size_t lineStart = buffer->appendWords(words.data(), 7u);
+	buffer->pushCommand(bmsx::GX_GPU_COMMAND_DRAW_LINE, 0x50u, lineStart, 7u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, bmsx::GX_GPU_SKIPPED_LINE_NONE);
+	require(buffer->drawVertexCount[buffer->commandDrawIndex[4]] == 2u,
+		"a single line retains two vertices even with additional raw words");
+	buffer->reset();
+	struct PolygonCase { bmsx::u8 opcode, positionStride, colorStride, vertexCount; };
+	for (const auto& item : std::array<PolygonCase, 8>{{
+		{0x20u, 1u, 0u, 3u}, {0x24u, 2u, 0u, 3u}, {0x28u, 1u, 0u, 4u}, {0x2cu, 2u, 0u, 4u},
+		{0x30u, 2u, 2u, 3u}, {0x34u, 3u, 3u, 3u}, {0x38u, 2u, 2u, 4u}, {0x3cu, 3u, 3u, 4u},
+	}}) {
+		const bmsx::u32 count = 1u + item.positionStride * item.vertexCount - (item.colorStride != 0u);
+		const size_t command = buffer->commandCount;
+		push(bmsx::GX_GPU_COMMAND_DRAW_POLYGON, item.opcode, count);
+		const auto record = buffer->commandDrawIndex[command];
+		const auto base = buffer->commandWordStart[command];
+		require(buffer->drawVertexCount[record] == item.vertexCount && buffer->drawPositionStride[record] == item.positionStride
+			&& buffer->drawColorStride[record] == item.colorStride, "each polygon mode has its producer-owned operand layout");
+		for (bmsx::u32 vertex = 0u; vertex < item.vertexCount; ++vertex) {
+			require(buffer->words[base + 1u + vertex * buffer->drawPositionStride[record]] == words[1u + vertex * item.positionStride]
+				&& buffer->words[base + vertex * buffer->drawColorStride[record]] == words[vertex * item.colorStride],
+				"polygon layout addresses the exact raw position and color words");
+			if ((item.opcode & 4u) != 0u) require(buffer->words[base + 2u + vertex * buffer->drawPositionStride[record]] == words[2u + vertex * item.positionStride],
+				"textured polygon layout addresses the exact raw texture word");
+		}
+	}
+}
+
+void testRawVramExtensionWordAcrossCommandAndReadback() {
+	GpuHarness harness;
+	auto gpuState = harness.gpu.captureState();
+	gpuState.vramYAddressExtensionWord = 0x100u;
+	harness.gpu.restoreState(gpuState);
+	for (const bmsx::u32 word : {0x600000ffu, 0u, 0x00010001u}) harness.gpu.writeGp0(word);
+	require(harness.gpu.readDeviceOutput().commandBuffer.commandVramYAddressExtensionWord[0] == 0x100u,
+		"the actual GP0 command producer latches the full restored extension word");
+	auto buffer = std::make_unique<bmsx::GxGpuCommandBuffer>(commandBufferDmaHarness.dma);
+	const std::array<bmsx::u32, 3> rect{0x600000ffu, 600u << 16u, (8u << 16u) | 8u};
+	const size_t start = buffer->appendWords(rect.data(), rect.size());
+	buffer->pushCommand(bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE, 0x60u, start, 3u, 0u, 0x100u, 0u,
+		600u << 10u, (620u << 10u) | 10u, 0u, 0u, bmsx::GX_GPU_SKIPPED_LINE_NONE);
+	require(buffer->commandVramYAddressExtensionWord[0] == 0x100u && bmsx::gxGpuCommandTicks(*buffer, 0u) > 16,
+		"draw timing consumes the complete nonzero extension register word");
+	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, 0u);
+	bmsx::executeGxGpuSoftwareCommands(software, *buffer, 0u, 1u);
+	require(software.vram[bmsx::gxGpuSoftwareVramIndex(software, 0, 600)] == 0x001fu,
+		"software raster consumes the same nonzero extension word");
+	const std::array<bmsx::u32, 3> read{0xc0000000u, 600u << 16u, (1u << 16u) | 1u};
+	const size_t readStart = buffer->appendWords(read.data(), read.size());
+	buffer->pushCommand(bmsx::GX_GPU_COMMAND_READ_VRAM_TO_CPU, 0xc0u, readStart, 3u, 0u, 0x100u, 0u, 0u, 0u, 0u, 0u, bmsx::GX_GPU_SKIPPED_LINE_NONE);
+	buffer->completeCommandExecution(2u);
+	require(buffer->readback.y() == 600u, "GPUREAD observes the same raw extension word");
+	const auto saved = buffer->captureState();
+	buffer->restoreState(saved);
+	require(buffer->commandVramYAddressExtensionWord[0] == 0x100u && buffer->readback.vramYAddressExtensionWord() == 0x100u,
+		"command and readback restore retain the complete extension word");
+}
+
 } // namespace
 
 int main() {
+	testDrawOperandLayoutsFollowRestoreAndRetirement();
+	testRawVramExtensionWordAcrossCommandAndReadback();
 	testImagePayloadBlocksPreservePacketBoundariesAndRestore();
 	testPresentationObserverPublishesLatchedPrefixWithoutChangingExecution();
 	testOperationObserverBorrowsActualPacketsAndLatchedStateForCpuAndDma();

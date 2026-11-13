@@ -335,7 +335,7 @@ template<class Writer> void writeGxGpuCommandBufferState(Writer& writer, const G
 	writer.u32(static_cast<u32>(state.commandDrawModeWord.size()));
 	writer.u32s(state.commandDrawModeWord);
 	writer.u32(static_cast<u32>(state.commandVramYAddressExtensionWord.size()));
-	writer.bytes(state.commandVramYAddressExtensionWord);
+	writer.u32s(state.commandVramYAddressExtensionWord);
 	writer.u32(static_cast<u32>(state.commandTextureWindowWord.size()));
 	writer.u32s(state.commandTextureWindowWord);
 	writer.u32(static_cast<u32>(state.commandDrawingAreaTopLeftWord.size()));
@@ -354,7 +354,7 @@ template<class Writer> void writeGxGpuCommandBufferState(Writer& writer, const G
 	writer.u64(state.readbackFenceCommandCount);
 	writer.u32(state.readbackX);
 	writer.u32(state.readbackY);
-	writer.u8(state.readbackVramYAddressExtensionWord);
+	writer.u32(state.readbackVramYAddressExtensionWord);
 	writer.u32(state.readbackWidth);
 	writer.u32(state.readbackHeight);
 	writer.u32(state.readbackPixelCursor);
@@ -373,7 +373,7 @@ GxGpuCommandBufferState readGxGpuCommandBufferState(BinaryReader& reader) {
 	state.commandWordStart = reader.u32s(reader.u32());
 	state.commandWordCount = reader.u32s(reader.u32());
 	state.commandDrawModeWord = reader.u32s(reader.u32());
-	state.commandVramYAddressExtensionWord = reader.bytes(reader.u32());
+	state.commandVramYAddressExtensionWord = reader.u32s(reader.u32());
 	state.commandTextureWindowWord = reader.u32s(reader.u32());
 	state.commandDrawingAreaTopLeftWord = reader.u32s(reader.u32());
 	state.commandDrawingAreaBottomRightWord = reader.u32s(reader.u32());
@@ -385,7 +385,7 @@ GxGpuCommandBufferState readGxGpuCommandBufferState(BinaryReader& reader) {
 	state.readbackFenceCommandCount = reader.u64();
 	state.readbackX = reader.u32();
 	state.readbackY = reader.u32();
-	state.readbackVramYAddressExtensionWord = reader.u8();
+	state.readbackVramYAddressExtensionWord = reader.u32();
 	state.readbackWidth = reader.u32();
 	state.readbackHeight = reader.u32();
 	state.readbackPixelCursor = reader.u32();
@@ -472,7 +472,7 @@ template<class Writer> void writeGxGpuIngressContextState(Writer& writer, const 
 	writer.u64(state.readbackFenceCommandCount);
 	writer.u32(state.readbackX);
 	writer.u32(state.readbackY);
-	writer.u8(state.readbackVramYAddressExtensionWord);
+	writer.u32(state.readbackVramYAddressExtensionWord);
 	writer.u32(state.readbackWidth);
 	writer.u32(state.readbackHeight);
 	writer.u32(state.readbackPixelCursor);
@@ -506,7 +506,7 @@ GxGpuIngressContextState readGxGpuIngressContextState(BinaryReader& reader) {
 	state.readbackFenceCommandCount = reader.u64();
 	state.readbackX = reader.u32();
 	state.readbackY = reader.u32();
-	state.readbackVramYAddressExtensionWord = reader.u8();
+	state.readbackVramYAddressExtensionWord = reader.u32();
 	state.readbackWidth = reader.u32();
 	state.readbackHeight = reader.u32();
 	state.readbackPixelCursor = reader.u32();

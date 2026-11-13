@@ -54,8 +54,6 @@ import {
 	GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES,
 	GX_GPU_VERTEX_COORD_PERIOD,
 	GxGpuRasterKind,
-	gxGpuCommandGouraud,
-	gxGpuCommandQuadPolygon,
 	gxGpuCommandRawTextureEnabled,
 	gxGpuCommandRectangleHeight,
 	gxGpuCommandRectangleWidth,
@@ -941,33 +939,32 @@ function appendSolidPolygon(gx: WebGpuGxGpuState, commandBuffer: GxGpuCommandBuf
 	if (gxGpuCommandTextureEnabled(opcode)) return vertexFloatCount;
 	const wordStart = commandBuffer.commandWordStart[commandIndex];
 	const words = commandBuffer.words;
+	const draw = commandBuffer.commandDrawIndex[commandIndex];
+	const positionStride = commandBuffer.drawPositionStride[draw];
+	const colorStride = commandBuffer.drawColorStride[draw];
 	const drawingOffsetWord = commandBuffer.commandDrawingOffsetWord[commandIndex];
 	const dx = gxGpuSigned11(drawingOffsetWord);
 	const dy = gxGpuDrawingOffsetY(drawingOffsetWord);
-	const gouraud = gxGpuCommandGouraud(opcode);
-	if (gouraud) {
-		const color0 = words[wordStart];
-		const xy0 = words[wordStart + 1];
-		const color1 = words[wordStart + 2];
-		const xy1 = words[wordStart + 3];
-		const color2 = words[wordStart + 4];
-		const xy2 = words[wordStart + 5];
-		let offset = appendFixedSolidPrimitiveTriangle(gx, vertexFloatCount, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color2);
-		if (gxGpuCommandQuadPolygon(opcode)) {
-			const color3 = words[wordStart + 6];
-			const xy3 = words[wordStart + 7];
-			offset = appendFixedSolidPrimitiveTriangle(gx, offset, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color2, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1, dx + gxGpuSigned11(xy3), dy + gxGpuVertexY(xy3), color3);
-		}
-		return offset;
-	}
-	const color = words[wordStart];
 	const xy0 = words[wordStart + 1];
-	const xy1 = words[wordStart + 2];
-	const xy2 = words[wordStart + 3];
-	let offset = appendSolidPrimitiveTriangle(gx, vertexFloatCount, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color);
-	if (gxGpuCommandQuadPolygon(opcode)) {
-		const xy3 = words[wordStart + 4];
-		offset = appendSolidPrimitiveTriangle(gx, offset, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color, dx + gxGpuSigned11(xy3), dy + gxGpuVertexY(xy3), color);
+	const xy1 = words[wordStart + 1 + positionStride];
+	const xy2 = words[wordStart + 1 + 2 * positionStride];
+	const color0 = words[wordStart];
+	const color1 = colorStride !== 0 ? words[wordStart + colorStride] : color0;
+	const color2 = colorStride !== 0 ? words[wordStart + 2 * colorStride] : color0;
+	let offset: number;
+	if (colorStride !== 0) {
+		offset = appendFixedSolidPrimitiveTriangle(gx, vertexFloatCount, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color2);
+	} else {
+		offset = appendSolidPrimitiveTriangle(gx, vertexFloatCount, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color2);
+	}
+	if (commandBuffer.drawVertexCount[draw] === 4) {
+		const xy3 = words[wordStart + 1 + 3 * positionStride];
+		const color3 = colorStride !== 0 ? words[wordStart + 3 * colorStride] : color0;
+		if (colorStride !== 0) {
+			offset = appendFixedSolidPrimitiveTriangle(gx, offset, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color2, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1, dx + gxGpuSigned11(xy3), dy + gxGpuVertexY(xy3), color3);
+		} else {
+			offset = appendSolidPrimitiveTriangle(gx, offset, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color2, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1, dx + gxGpuSigned11(xy3), dy + gxGpuVertexY(xy3), color3);
+		}
 	}
 	return offset;
 }
@@ -975,7 +972,7 @@ function appendSolidPolygon(gx: WebGpuGxGpuState, commandBuffer: GxGpuCommandBuf
 function readGxGpuRectangle(gx: WebGpuGxGpuState, commandBuffer: GxGpuCommandBufferView, commandIndex: number, opcode: number): GxGpuRectangle {
 	const wordStart = commandBuffer.commandWordStart[commandIndex];
 	const xyWord = commandBuffer.words[wordStart + 1];
-	const sizeWord = commandBuffer.words[wordStart + commandBuffer.commandWordCount[commandIndex] - 1];
+	const sizeWord = commandBuffer.words[wordStart + commandBuffer.drawSizeOffset[commandBuffer.commandDrawIndex[commandIndex]]];
 	const width = gxGpuCommandRectangleWidth(opcode, sizeWord);
 	const height = gxGpuCommandRectangleHeight(opcode, sizeWord);
 	const drawingOffsetWord = commandBuffer.commandDrawingOffsetWord[commandIndex];
@@ -1163,42 +1160,36 @@ function appendTexturedPrimitiveTriangle(gx: WebGpuGxGpuState, vertexFloatCount:
 
 function appendTexturedPolygon(gx: WebGpuGxGpuState, commandBuffer: GxGpuCommandBufferView, commandIndex: number, vertexFloatCount: number): number {
 	const opcode = commandBuffer.commandOpcode[commandIndex];
-	const fixedColor = gxGpuCommandGouraud(opcode) && !gxGpuCommandRawTextureEnabled(opcode);
 	const wordStart = commandBuffer.commandWordStart[commandIndex];
+	const words = commandBuffer.words;
+	const draw = commandBuffer.commandDrawIndex[commandIndex];
+	const positionStride = commandBuffer.drawPositionStride[draw];
+	const colorStride = commandBuffer.drawColorStride[draw];
+	const fixedColor = colorStride !== 0 && !gxGpuCommandRawTextureEnabled(opcode);
 	const drawingOffsetWord = commandBuffer.commandDrawingOffsetWord[commandIndex];
 	const dx = gxGpuSigned11(drawingOffsetWord);
 	const dy = gxGpuDrawingOffsetY(drawingOffsetWord);
-	if (gxGpuCommandGouraud(opcode)) {
-		const color0 = commandBuffer.words[wordStart];
-		const xy0 = commandBuffer.words[wordStart + 1];
-		const texture0 = commandBuffer.words[wordStart + 2];
-		const color1 = commandBuffer.words[wordStart + 3];
-		const xy1 = commandBuffer.words[wordStart + 4];
-		const texture1 = commandBuffer.words[wordStart + 5];
-		const color2 = commandBuffer.words[wordStart + 6];
-		const xy2 = commandBuffer.words[wordStart + 7];
-		const texture2 = commandBuffer.words[wordStart + 8];
-		let offset = appendTexturedPrimitiveTriangle(gx, vertexFloatCount, fixedColor, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color0, gxGpuTextureU(texture0), gxGpuTextureV(texture0), dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1, gxGpuTextureU(texture1), gxGpuTextureV(texture1), dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color2, gxGpuTextureU(texture2), gxGpuTextureV(texture2));
-		if (gxGpuCommandQuadPolygon(opcode)) {
-			const color3 = commandBuffer.words[wordStart + 9];
-			const xy3 = commandBuffer.words[wordStart + 10];
-			const texture3 = commandBuffer.words[wordStart + 11];
-			offset = appendTexturedPrimitiveTriangle(gx, offset, fixedColor, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color2, gxGpuTextureU(texture2), gxGpuTextureV(texture2), dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1, gxGpuTextureU(texture1), gxGpuTextureV(texture1), dx + gxGpuSigned11(xy3), dy + gxGpuVertexY(xy3), color3, gxGpuTextureU(texture3), gxGpuTextureV(texture3));
-		}
-		return offset;
-	}
-	const color = commandBuffer.words[wordStart];
-	const xy0 = commandBuffer.words[wordStart + 1];
-	const texture0 = commandBuffer.words[wordStart + 2];
-	const xy1 = commandBuffer.words[wordStart + 3];
-	const texture1 = commandBuffer.words[wordStart + 4];
-	const xy2 = commandBuffer.words[wordStart + 5];
-	const texture2 = commandBuffer.words[wordStart + 6];
-	let offset = appendTexturedPrimitiveTriangle(gx, vertexFloatCount, fixedColor, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color, gxGpuTextureU(texture0), gxGpuTextureV(texture0), dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color, gxGpuTextureU(texture1), gxGpuTextureV(texture1), dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color, gxGpuTextureU(texture2), gxGpuTextureV(texture2));
-	if (gxGpuCommandQuadPolygon(opcode)) {
-		const xy3 = commandBuffer.words[wordStart + 7];
-		const texture3 = commandBuffer.words[wordStart + 8];
-		offset = appendTexturedPrimitiveTriangle(gx, offset, fixedColor, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color, gxGpuTextureU(texture2), gxGpuTextureV(texture2), dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color, gxGpuTextureU(texture1), gxGpuTextureV(texture1), dx + gxGpuSigned11(xy3), dy + gxGpuVertexY(xy3), color, gxGpuTextureU(texture3), gxGpuTextureV(texture3));
+	const color0 = words[wordStart];
+	const xy0 = words[wordStart + 1];
+	const texture0 = words[wordStart + 2];
+	const color1 = colorStride !== 0 ? words[wordStart + colorStride] : color0;
+	const xy1 = words[wordStart + 1 + positionStride];
+	const texture1 = words[wordStart + 2 + positionStride];
+	const color2 = colorStride !== 0 ? words[wordStart + 2 * colorStride] : color0;
+	const xy2 = words[wordStart + 1 + 2 * positionStride];
+	const texture2 = words[wordStart + 2 + 2 * positionStride];
+	let offset = appendTexturedPrimitiveTriangle(gx, vertexFloatCount, fixedColor,
+		dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color0, gxGpuTextureU(texture0), gxGpuTextureV(texture0),
+		dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1, gxGpuTextureU(texture1), gxGpuTextureV(texture1),
+		dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color2, gxGpuTextureU(texture2), gxGpuTextureV(texture2));
+	if (commandBuffer.drawVertexCount[draw] === 4) {
+		const color3 = colorStride !== 0 ? words[wordStart + 3 * colorStride] : color0;
+		const xy3 = words[wordStart + 1 + 3 * positionStride];
+		const texture3 = words[wordStart + 2 + 3 * positionStride];
+		offset = appendTexturedPrimitiveTriangle(gx, offset, fixedColor,
+			dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color2, gxGpuTextureU(texture2), gxGpuTextureV(texture2),
+			dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1, gxGpuTextureU(texture1), gxGpuTextureV(texture1),
+			dx + gxGpuSigned11(xy3), dy + gxGpuVertexY(xy3), color3, gxGpuTextureU(texture3), gxGpuTextureV(texture3));
 	}
 	return offset;
 }
@@ -1836,7 +1827,7 @@ function renderTexturedVertices(gx: WebGpuGxGpuState,
 	const vramYAddressExtensionWord = commandBuffer.commandVramYAddressExtensionWord[commandIndex];
 	const opcode = commandBuffer.commandOpcode[commandIndex];
 	const fixedColor = commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_POLYGON
-		&& gxGpuCommandGouraud(opcode)
+		&& commandBuffer.drawColorStride[commandBuffer.commandDrawIndex[commandIndex]] !== 0
 		&& !gxGpuCommandRawTextureEnabled(opcode);
 	const vertexFloatStride = fixedColor ? GX_GPU_FIXED_TEXTURED_VERTEX_FLOATS : GX_GPU_TEXTURED_VERTEX_FLOATS;
 	const pipeline = fixedColor ? gx.fixedTexturedPipeline : gx.texturedPipeline;
@@ -1968,7 +1959,7 @@ function renderTexturedCommand(gx: WebGpuGxGpuState, commandBuffer: GxGpuCommand
 	const opcode = commandBuffer.commandOpcode[commandIndex];
 	const vramYAddressExtensionWord = commandBuffer.commandVramYAddressExtensionWord[commandIndex];
 	const fixedColor = commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_POLYGON
-		&& gxGpuCommandGouraud(opcode)
+		&& commandBuffer.drawColorStride[commandBuffer.commandDrawIndex[commandIndex]] !== 0
 		&& !gxGpuCommandRawTextureEnabled(opcode);
 	const vertexFloatStride = fixedColor ? GX_GPU_FIXED_TEXTURED_VERTEX_FLOATS : GX_GPU_TEXTURED_VERTEX_FLOATS;
 	setGxGpuVertexBoundsRect(commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_POLYGON ? GxGpuRasterKind.Polygon : GxGpuRasterKind.Rectangle, gx.texturedCommandRect, gx.texturedVertices, 0, vertexFloatCount, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
@@ -1997,7 +1988,7 @@ function flushTexturedCommands(gx: WebGpuGxGpuState, commandBuffer: GxGpuCommand
 		const opcode = commandBuffer.commandOpcode[batchCommandIndex];
 		const vramYAddressExtensionWord = commandBuffer.commandVramYAddressExtensionWord[batchCommandIndex];
 		const fixedColor = commandBuffer.commandKind[batchCommandIndex] === GX_GPU_COMMAND_DRAW_POLYGON
-			&& gxGpuCommandGouraud(opcode)
+			&& commandBuffer.drawColorStride[commandBuffer.commandDrawIndex[batchCommandIndex]] !== 0
 			&& !gxGpuCommandRawTextureEnabled(opcode);
 		const vertexFloatStride = fixedColor ? GX_GPU_FIXED_TEXTURED_VERTEX_FLOATS : GX_GPU_TEXTURED_VERTEX_FLOATS;
 		setGxGpuVertexBoundsRect(commandBuffer.commandKind[batchCommandIndex] === GX_GPU_COMMAND_DRAW_POLYGON ? GxGpuRasterKind.Polygon : GxGpuRasterKind.Rectangle, gx.texturedCommandRect, gx.texturedVertices, 0, vertexFloatCount, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
@@ -2320,42 +2311,24 @@ function appendBatchedLineSegment(gx: WebGpuGxGpuState, vertexFloatCount: number
 }
 
 function appendLineCommandVertices(gx: WebGpuGxGpuState, commandBuffer: GxGpuCommandBufferView, commandIndex: number, vertexFloatCount: number): number {
-	const opcode = commandBuffer.commandOpcode[commandIndex];
 	const wordStart = commandBuffer.commandWordStart[commandIndex];
-	const wordEnd = wordStart + commandBuffer.commandWordCount[commandIndex];
 	const words = commandBuffer.words;
+	const draw = commandBuffer.commandDrawIndex[commandIndex];
+	const positionStride = commandBuffer.drawPositionStride[draw];
+	const colorStride = commandBuffer.drawColorStride[draw];
 	const drawingOffsetWord = commandBuffer.commandDrawingOffsetWord[commandIndex];
 	const dy = gxGpuDrawingOffsetY(drawingOffsetWord);
 	const dx = gxGpuSigned11(drawingOffsetWord);
-	if (commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_LINE) {
-		const color0 = words[wordStart];
-		const xy0 = words[wordStart + 1];
-		if (gxGpuCommandGouraud(opcode)) {
-			const color1 = words[wordStart + 2];
-			const xy1 = words[wordStart + 3];
-			vertexFloatCount = appendBatchedLineSegment(gx, vertexFloatCount, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1);
-		} else {
-			const xy1 = words[wordStart + 2];
-			vertexFloatCount = appendBatchedLineSegment(gx, vertexFloatCount, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color0);
-		}
-	} else if (gxGpuCommandGouraud(opcode)) {
-		let color0 = words[wordStart];
-		let xy0 = words[wordStart + 1];
-		for (let wordIndex = wordStart + 2; wordIndex + 1 < wordEnd; wordIndex += 2) {
-			const color1 = words[wordIndex];
-			const xy1 = words[wordIndex + 1];
-			vertexFloatCount = appendBatchedLineSegment(gx, vertexFloatCount, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1);
-			color0 = color1;
-			xy0 = xy1;
-		}
-	} else {
-		const color = words[wordStart];
-		let xy0 = words[wordStart + 1];
-		for (let wordIndex = wordStart + 2; wordIndex < wordEnd; wordIndex += 1) {
-			const xy1 = words[wordIndex];
-			vertexFloatCount = appendBatchedLineSegment(gx, vertexFloatCount, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color);
-			xy0 = xy1;
-		}
+	let xy0 = words[wordStart + 1];
+	let color0 = words[wordStart];
+	for (let vertex = 1; vertex < commandBuffer.drawVertexCount[draw]; ++vertex) {
+		const xy1 = words[wordStart + 1 + vertex * positionStride];
+		const color1 = colorStride !== 0 ? words[wordStart + vertex * colorStride] : color0;
+		vertexFloatCount = appendBatchedLineSegment(gx, vertexFloatCount,
+			dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color0,
+			dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1);
+		xy0 = xy1;
+		color0 = color1;
 	}
 	return vertexFloatCount;
 }
@@ -2417,7 +2390,7 @@ function executeNewGxGpuCommands(gx: WebGpuGxGpuState,
 				const drawsTexture = commandDrawsTexture;
 				if (drawsTexture) {
 					const fixedColor = commandKind === GX_GPU_COMMAND_DRAW_POLYGON
-						&& gxGpuCommandGouraud(opcode)
+						&& commandBuffer.drawColorStride[commandBuffer.commandDrawIndex[commandIndex]] !== 0
 						&& !gxGpuCommandRawTextureEnabled(opcode);
 					if (solidVertexFloatCount !== 0) solidVertexFloatCount = flushSolidCommands(gx, solidVertexFloatCount);
 					const maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
@@ -2430,7 +2403,7 @@ function executeNewGxGpuCommands(gx: WebGpuGxGpuState,
 						const batchBlendEnabled = gxGpuCommandSemiTransparencyEnabled(batchOpcode);
 						const batchDitherEnabled = commandBuffer.commandKind[texturedBatchCommandIndex] === GX_GPU_COMMAND_DRAW_POLYGON && gxGpuDitheredPolygon(batchDrawModeWord, batchOpcode);
 						const batchFixedColor = commandBuffer.commandKind[texturedBatchCommandIndex] === GX_GPU_COMMAND_DRAW_POLYGON
-							&& gxGpuCommandGouraud(batchOpcode)
+							&& commandBuffer.drawColorStride[commandBuffer.commandDrawIndex[texturedBatchCommandIndex]] !== 0
 							&& !gxGpuCommandRawTextureEnabled(batchOpcode);
 						const batchStateChanged = topLeftWord !== commandBuffer.commandDrawingAreaTopLeftWord[texturedBatchCommandIndex]
 							|| bottomRightWord !== commandBuffer.commandDrawingAreaBottomRightWord[texturedBatchCommandIndex]
@@ -2478,11 +2451,11 @@ function executeNewGxGpuCommands(gx: WebGpuGxGpuState,
 				const blendEnabled = gxGpuCommandSemiTransparencyEnabled(opcode);
 				const blendMode = blendEnabled ? gxGpuDrawModeTransparencyMode(drawModeWord) : 0;
 				const readsVram = blendEnabled || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
-				const fixedColor = commandKind === GX_GPU_COMMAND_DRAW_POLYGON && gxGpuCommandGouraud(opcode);
+				const fixedColor = commandKind === GX_GPU_COMMAND_DRAW_POLYGON && commandBuffer.drawColorStride[commandBuffer.commandDrawIndex[commandIndex]] !== 0;
 				const rasterKind = commandKind === GX_GPU_COMMAND_DRAW_POLYGON
 					? GxGpuRasterKind.Polygon
 					: GxGpuRasterKind.Rectangle;
-				const splitReadVramQuad = readsVram && commandKind === GX_GPU_COMMAND_DRAW_POLYGON && gxGpuCommandQuadPolygon(opcode);
+				const splitReadVramQuad = readsVram && commandKind === GX_GPU_COMMAND_DRAW_POLYGON && commandBuffer.drawVertexCount[commandBuffer.commandDrawIndex[commandIndex]] === 4;
 				const batchStateChanged = topLeftWord !== gx.solidBatchState.topLeftWord
 					|| bottomRightWord !== gx.solidBatchState.bottomRightWord
 					|| vramYAddressExtensionWord !== gx.solidBatchState.vramYAddressExtensionWord

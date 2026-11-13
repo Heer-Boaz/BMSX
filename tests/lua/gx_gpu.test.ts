@@ -704,6 +704,15 @@ test('GX-GPU presentation observer publishes the latched prefix and raw status w
 	assert.equal(records.length, 2, 'retirement detaches observation');
 });
 
+test('GX-GPU latches the full extension word from restored device state', () => {
+	const { gpu } = createGpu();
+	const state = gpu.captureState();
+	state.vramYAddressExtensionWord = 0x100;
+	gpu.restoreState(state);
+	for (const word of [0x600000ff, 0, 0x00010001]) gpu.writeGp0(word);
+	assert.equal(gpu.readDeviceOutput().commandBuffer.commandVramYAddressExtensionWord[0], 0x100);
+});
+
 test('GX-GPU operation observer borrows actual packet words and latched state identically for CPU and DMA', () => {
 	const packets = [
 		[0xe1001a55], [0xe2001234], [0xe3000801], [0xe4002008], [0xe5000fff], [0xe6000003],

@@ -606,17 +606,24 @@ test('runtime save-state codec preserves GPUREAD bytes and raw phase bits', () =
 	readyReadback.readbackPhase = GX_GPU_READBACK_READY;
 	readyReadback.readbackX = 1023;
 	readyReadback.readbackY = 511;
+	readyReadback.commandVramYAddressExtensionWord[0] = 0xfedcba98;
+	readyReadback.readbackVramYAddressExtensionWord = 0x100;
+	ready.machineState.machine.gxGpu.userIngressContext.readbackVramYAddressExtensionWord = 0x80000000;
 	readyReadback.readbackWidth = 3;
 	readyReadback.readbackHeight = 1;
 	readyReadback.readbackPixelCursor = 1;
 	readyReadback.readbackPixelBytes = new Uint8Array([0x11, 0x11, 0x22, 0x22, 0x33, 0x33]);
-	const decodedReady = decodeRuntimeSaveState(
+	const decodedState = decodeRuntimeSaveState(
 		encodeRuntimeSaveState(ready),
 		PSX_MACHINE_SPEC.ramBytes,
 		PSX_MACHINE_SPEC.gxGpuVramBytes,
-	).machineState.machine.gxGpu.commandBuffer;
+	);
+	const decodedReady = decodedState.machineState.machine.gxGpu.commandBuffer;
 	assert.equal(decodedReady.readbackPhase, GX_GPU_READBACK_READY);
 	assert.equal(decodedReady.readbackPixelCursor, 1);
+	assert.equal(decodedReady.commandVramYAddressExtensionWord[0], 0xfedcba98);
+	assert.equal(decodedReady.readbackVramYAddressExtensionWord, 0x100);
+	assert.equal(decodedState.machineState.machine.gxGpu.userIngressContext.readbackVramYAddressExtensionWord, 0x80000000);
 	assert.deepEqual(decodedReady.readbackPixelBytes, readyReadback.readbackPixelBytes);
 
 	const submitted = createRuntimeSaveState();

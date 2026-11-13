@@ -1841,20 +1841,7 @@ export class GxGpu {
 			this.operationObserver.emitted(this.commandBuffer, this.commandBuffer.commandCount - 1, nowCycles, operationWords, operationWordStart);
 		}
 		this.startCommandTiming(
-			gxGpuCommandTicks(
-				kind,
-				opcode,
-				this.commandBuffer.words,
-				wordStart,
-				commandWordCount,
-				this.drawModeWord,
-				this.vramYAddressExtensionWord,
-				this.drawingAreaTopLeftWord,
-				this.drawingAreaBottomRightWord,
-				this.drawingOffsetWord,
-				this.maskBitModeWord,
-				this.skippedLineParity,
-			),
+			gxGpuCommandTicks(this.commandBuffer, this.commandBuffer.commandCount - 1),
 			this.commandBuffer.commandCount,
 			nowCycles,
 		);

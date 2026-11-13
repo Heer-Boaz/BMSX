@@ -118,7 +118,7 @@ struct GxGpuIngressContextState {
 	size_t readbackFenceCommandCount = 0u;
 	u32 readbackX = 0u;
 	u32 readbackY = 0u;
-	u8 readbackVramYAddressExtensionWord = 0u;
+	u32 readbackVramYAddressExtensionWord = 0u;
 	u32 readbackWidth = 0u;
 	u32 readbackHeight = 0u;
 	u32 readbackPixelCursor = 0u;

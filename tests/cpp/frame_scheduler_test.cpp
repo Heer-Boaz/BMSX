@@ -864,6 +864,25 @@ void testNormalHostExecutionKeepsExistingSchedulerContract() {
 	);
 }
 
+void testGpuRawExtensionWordCodec() {
+	TickRuntimeFixture fixture;
+	auto& runtime = fixture.runtime;
+	for (const bmsx::u32 word : {0x600000ffu, 0u, 0x00010001u}) runtime.machine.gxGpu.writeGp0(word);
+	auto state = bmsx::captureRuntimeSaveState(runtime);
+	auto& gpu = state.machineState.machine.gxGpu;
+	require(!gpu.commandBuffer.commandVramYAddressExtensionWord.empty(), "rectangle is present in the saved command stream");
+	gpu.commandBuffer.commandVramYAddressExtensionWord[0] = 0xfedcba98u;
+	gpu.commandBuffer.readbackVramYAddressExtensionWord = 0x100u;
+	gpu.userIngressContext.readbackVramYAddressExtensionWord = 0x80000000u;
+	const auto bytes = bmsx::encodeRuntimeSaveState(state);
+	const auto decoded = bmsx::decodeRuntimeSaveState(bytes, bmsx::PSX_MACHINE_SPEC.ramBytes, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	const auto& actual = decoded.machineState.machine.gxGpu;
+	require(actual.commandBuffer.commandVramYAddressExtensionWord[0] == 0xfedcba98u
+		&& actual.commandBuffer.readbackVramYAddressExtensionWord == 0x100u
+		&& actual.userIngressContext.readbackVramYAddressExtensionWord == 0x80000000u,
+		"the native codec preserves full raw extension words in command, readback and user ingress state");
+}
+
 void testRuntimeCheckpointStorage() {
 	TickRuntimeFixture fixture(bmsx::CartridgeSocketMediaPair{{
 		bmsx::CartridgeCardMedia{std::nullopt, 12u, true},
@@ -1315,6 +1334,7 @@ void testRuntimeResetNotification() {
 }
 
 int main() {
+	testGpuRawExtensionWordCodec();
 	testSupervisorGpuServiceAtDeviceBoundaries();
 	testSupervisorServiceBanksUnreadReadback();
 	testDmaSharedBusStopsCpu();
