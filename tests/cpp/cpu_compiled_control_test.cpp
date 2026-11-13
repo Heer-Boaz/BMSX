@@ -86,6 +86,7 @@ void rawReadsRetainFullWords() {
 		requireParity(native, scalar);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		const auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+		test::waitForNativeEntry(native.cpu, page, (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 		require(page.nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]->sourceWords == 9,
 			"all six CP0 reads and dependent arithmetic execute in one native body");
 		require(page.nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]->sideExits.size() == 1,
@@ -124,6 +125,7 @@ void writesConvertWithoutChangingSources() {
 	for (auto* m : {&native, &scalar}) { auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers; r[0] = r[1] = valueNumber(0); r[12] = valueTable(m->cpu.createTable()); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 600); }
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	test::waitForNativeEntry(native.cpu, page, (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
 	require(page.nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]->sourceWords == 6,
 		"ordinary CP0 writes, reads and dependent values stay in one native body");
 	require(page.nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]->sideExits.size() == 1,
@@ -214,14 +216,21 @@ void privilegeFaultsAndExceptionReturns(OpCode op, bool wide, bool returnIntoRoo
 	require(native.cpu.readCauseWord() == CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE && native.cpu.readEpcWord() == native.rom.textAddress + 2u * INSTRUCTION_BYTES,
 		"user mode faults before selecting an unknown CP0 field or converting a source");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	bool compiled = false, returned = false;
-	for (const auto& [key, page] : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages) if (page.nativeBlocks) {
-		for (const auto& block : page.nativeBlocks->entries) if (block) {
-			compiled |= block->sideExits.size() != 0 && block->sideExits[0].currentPc == native.rom.textAddress + 2u * INSTRUCTION_BYTES;
-			returned |= block->terminal.exit == NativeBlockExit::ExceptionReturn && block->sourceWords == 2;
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+	for (;;) {
+		bool compiled = false, returned = false;
+		for (const auto& [key, page] : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages) if (page.nativeBlocks) {
+			for (const auto& block : page.nativeBlocks->entries) if (block) {
+				compiled |= block->sideExits.size() != 0 && block->sideExits[0].currentPc == native.rom.textAddress + 2u * INSTRUCTION_BYTES;
+				returned |= block->terminal.exit == NativeBlockExit::ExceptionReturn && block->sourceWords == 2;
+			}
 		}
+		if (compiled && returned) break;
+		require(std::chrono::steady_clock::now() < deadline, "the repeated privilege fault and WIDE RFE both execute through generated control exits");
+		test::runCpuParity(native.cpu, scalar.cpu, NATIVE_WARM_SCALE * 900);
+		std::this_thread::yield();
 	}
-	require(compiled && returned, "the repeated privilege fault and WIDE RFE both execute through generated control exits");
+	requireParity(native, scalar);
 #endif
 	for (auto* m : {&native, &scalar}) {
 		if (returnIntoRoot) {
