@@ -277,7 +277,7 @@ void testCommandObservation() {
 	require(after.data[17] == 512u && after.data[18] == 256u && after.data[19] == 1024u, "RTPT matched three depths");
 	require(observed.gte.readDataRegister(15u) == after.data[14], "owner retains port alias semantics");
 	constexpr bmsx::MappedBusSignals bus = bmsx::MAPPED_BUS_MASTER_DMA | bmsx::MAPPED_BUS_DMA_BLOCK_END;
-	for (auto* harness : {&baseline, &observed}) harness->memory.writeMappedDmaU32LE(bmsx::IO_GX_GTE_COMMAND, 0x12340000u, bus);
+	for (auto* harness : {&baseline, &observed}) harness->memory.writeMappedBusU32LE(bmsx::IO_GX_GTE_COMMAND, 0x12340000u, bus);
 	require(trace.records.size() == 4u, "invalid command has a before/after pair");
 	require(!trace.records[2].after && trace.records[3].after, "invalid command observation order");
 	require(trace.records[2].command == 0x12340000u && trace.records[3].command == 0x12340000u, "invalid raw command retained");
@@ -544,13 +544,13 @@ void testPlusCommandAdmission() {
 	GteHarness harness;
 	bmsx::Memory& memory = harness.memory;
 	const uint32_t commandAddress = bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE;
-	memory.writeMappedDmaU32LE(commandAddress, 0xcafe0002u, bmsx::MAPPED_BUS_MASTER_DMA);
+	memory.writeMappedBusU32LE(commandAddress, 0xcafe0002u, bmsx::MAPPED_BUS_MASTER_DMA);
 	require(memory.readMappedU32LE(commandAddress) == 0u, "GTE+ DMA command is ignored while idle");
 	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_CYCLES * bmsx::IO_WORD_SIZE) == 0u, "GTE+ DMA command does not start work");
 
 	memory.writeMappedU32LE(commandAddress, 0xdeadbe01u);
 	memory.writeMappedU32LE(commandAddress, 0xcafe0002u);
-	memory.writeMappedDmaU32LE(commandAddress, 0xabcd0002u, bmsx::MAPPED_BUS_MASTER_DMA);
+	memory.writeMappedBusU32LE(commandAddress, 0xabcd0002u, bmsx::MAPPED_BUS_MASTER_DMA);
 	require(memory.readMappedU32LE(commandAddress) == 0xdeadbe01u, "GTE+ active command cannot be overwritten");
 	require(!harness.scheduler.hasDueTimer(), "GTE+ rejected commands allocate no timer");
 	completeGtePlus(harness, bmsx::GX_GTE_PLUS_CYCLES_VMAD3);
@@ -602,7 +602,7 @@ void testPlusAcceptanceAndLazyPublicationObservation() {
 	const auto commandAddress = bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE;
 	for (auto* harness : {&baseline, &observed}) {
 		auto& memory = harness->memory;
-		memory.writeMappedDmaU32LE(commandAddress, 1u, bmsx::MAPPED_BUS_MASTER_DMA);
+		memory.writeMappedBusU32LE(commandAddress, 1u, bmsx::MAPPED_BUS_MASTER_DMA);
 		memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE, pack16(10u, static_cast<bmsx::u32>(-20)));
 		memory.writeMappedU32LE(commandAddress, 0xdeadbe01u);
 		memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE, pack16(99u, 88u));
@@ -627,7 +627,7 @@ void testPlusAcceptanceAndLazyPublicationObservation() {
 		memory.writeMappedU32LE(commandAddress, 0x41u);
 		harness->scheduler.advanceTo(30);
 		require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_FLAG * bmsx::IO_WORD_SIZE) == 0x81000000u, "invalid PLUS flags publish independently");
-		memory.writeMappedDmaU32LE(commandAddress, 1u, bmsx::MAPPED_BUS_MASTER_DMA);
+		memory.writeMappedBusU32LE(commandAddress, 1u, bmsx::MAPPED_BUS_MASTER_DMA);
 	}
 	const std::array<bmsx::i64, 6> cycles{0, 20, 20, 25, 25, 30}, deadlines{5, 5, 25, 25, 26, 26};
 	require(trace.records.size() == cycles.size(), "exact PLUS acceptance/publication count");

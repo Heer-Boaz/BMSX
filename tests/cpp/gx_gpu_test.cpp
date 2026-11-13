@@ -215,7 +215,7 @@ void testOperationObserverBorrowsActualPacketsAndLatchedStateForCpuAndDma() {
 			target->gpu.writeGp1((bmsx::GX_GPU_GP1_VRAM_Y_ADDRESS_EXTENSION << 24u) | 3u);
 			for (const auto& packet : packets) {
 				for (size_t index = 0u; index < packet.size(); index += 1u) {
-					if (dma) target->memory.writeMappedDmaU32LE(bmsx::IO_GX_GPU_GP0, packet[index], bmsx::MAPPED_BUS_MASTER_DMA
+					if (dma) target->memory.writeMappedBusU32LE(bmsx::IO_GX_GPU_GP0, packet[index], bmsx::MAPPED_BUS_MASTER_DMA
 						| (index + 1u == packet.size() ? bmsx::MAPPED_BUS_DMA_BLOCK_END : 0u));
 					else target->memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP0, packet[index]);
 				}
@@ -883,7 +883,7 @@ void testRetiringSaturatedCommandPrefixResumesDmaIngress() {
 		if (present) gpu.presentReadyFrameOnVblankEdge();
 		const std::array<bmsx::u32, 3> packet{{bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u, 0u, 0x00010001u}};
 		for (size_t index = 0u; index < 27u; ++index) {
-			harness.memory.writeMappedDmaU32LE(bmsx::IO_GX_GPU_GP0, packet[index % 3u], bmsx::MAPPED_BUS_MASTER_DMA
+			harness.memory.writeMappedBusU32LE(bmsx::IO_GX_GPU_GP0, packet[index % 3u], bmsx::MAPPED_BUS_MASTER_DMA
 				| (index == 26u ? bmsx::MAPPED_BUS_DMA_BLOCK_END : 0u));
 		}
 		auto state = gpu.captureState();
@@ -1044,7 +1044,7 @@ void testImagePayloadBlocksPreservePacketBoundariesAndRestore() {
 			harness.scheduler.advanceTo((start / 16u + 1u) * 1000u);
 			const size_t end = std::min(start + 16u, packet.size());
 			for (size_t index = start; index < end; ++index) {
-				if (dma) harness.memory.writeMappedDmaU32LE(bmsx::IO_GX_GPU_GP0, packet[index], bmsx::MAPPED_BUS_MASTER_DMA
+				if (dma) harness.memory.writeMappedBusU32LE(bmsx::IO_GX_GPU_GP0, packet[index], bmsx::MAPPED_BUS_MASTER_DMA
 					| (index + 1u == end ? bmsx::MAPPED_BUS_DMA_BLOCK_END : 0u));
 				else harness.gpu.writeGp0(packet[index]);
 			}

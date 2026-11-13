@@ -536,7 +536,7 @@ export class Memory {
 	}
 
 	public writeMappedWord(addr: number, value: number): void {
-		this.writeMappedBusU32LE(addr, value, BUS_ACCESS_WRITE_WORD, MAPPED_BUS_MASTER_CPU);
+		this.writeMappedBusU32LE(addr, value, MAPPED_BUS_MASTER_CPU, BUS_ACCESS_WRITE_WORD);
 	}
 
 	public readU8(addr: number): number {
@@ -629,14 +629,6 @@ export class Memory {
 		return this.readMappedBusU32LE(addr, MAPPED_BUS_MASTER_CPU, faultAccess);
 	}
 
-	public readMappedDmaU32LE(addr: number, busSignals: MappedBusSignals): number {
-		if ((busSignals & MAPPED_BUS_DMA_MEMORY) !== 0 && this.isIoRegionRange(addr, IO_WORD_SIZE)) {
-			this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U32);
-			return 0;
-		}
-		return this.readMappedBusU32LE(addr, busSignals);
-	}
-
 
 	public readMappedBusU32LE(
 		addr: number,
@@ -645,14 +637,14 @@ export class Memory {
 	): number {
 		const slot = this.ioAlignedSlot(addr);
 		if (slot >= 0) {
-			if ((busSignals & MAPPED_BUS_INSTRUCTION_FETCH) !== 0) {
+			if ((busSignals & (MAPPED_BUS_INSTRUCTION_FETCH | MAPPED_BUS_DMA_MEMORY)) !== 0) {
 				this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
 				return 0;
 			}
 			return this.readIoSlot(slot, addr, busSignals);
 		}
 		if (this.isIoRegionRange(addr, 4)) {
-			this.raiseBusFault((busSignals & MAPPED_BUS_INSTRUCTION_FETCH) !== 0
+			this.raiseBusFault((busSignals & (MAPPED_BUS_INSTRUCTION_FETCH | MAPPED_BUS_DMA_MEMORY)) !== 0
 				? BUS_FAULT_UNMAPPED : BUS_FAULT_UNALIGNED_IO, addr, faultAccess);
 			return 0;
 		}
@@ -723,15 +715,7 @@ export class Memory {
 	}
 
 	public writeMappedU32LE(addr: number, value: number, faultAccess = BUS_ACCESS_WRITE_U32): void {
-		this.writeMappedBusU32LE(addr, value, faultAccess, MAPPED_BUS_MASTER_CPU);
-	}
-
-	public writeMappedDmaU32LE(addr: number, value: number, busSignals: MappedBusSignals): void {
-		if ((busSignals & MAPPED_BUS_DMA_MEMORY) !== 0 && this.isIoRegionRange(addr, IO_WORD_SIZE)) {
-			this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U32);
-			return;
-		}
-		this.writeMappedBusU32LE(addr, value, BUS_ACCESS_WRITE_U32, busSignals);
+		this.writeMappedBusU32LE(addr, value, MAPPED_BUS_MASTER_CPU, faultAccess);
 	}
 
 	// Fixed I/O slots are resolved once; live handlers and per-word bus effects remain ordered.
@@ -789,7 +773,7 @@ export class Memory {
 		if (writeSlot >= 0) {
 			for (let i = 0; i < wordCount; ++i) {
 				const end = i + 1 === wordCount ? MAPPED_BUS_DMA_BLOCK_END : 0;
-				const word = this.readMappedDmaU32LE(readAddress, readBusSignals | end);
+				const word = this.readMappedBusU32LE(readAddress, readBusSignals | end);
 				this.writeIoSlot(writeSlot, writeAddress, word, BUS_ACCESS_WRITE_U32, writeBusSignals | end);
 				readAddress = (readAddress + readStep) >>> 0;
 			}
@@ -799,28 +783,33 @@ export class Memory {
 			for (let i = 0; i < wordCount; ++i) {
 				const end = i + 1 === wordCount ? MAPPED_BUS_DMA_BLOCK_END : 0;
 				const word = this.readIoSlot(readSlot, readAddress, readBusSignals | end);
-				this.writeMappedDmaU32LE(writeAddress, word, writeBusSignals | end);
+				this.writeMappedBusU32LE(writeAddress, word, writeBusSignals | end);
 				writeAddress = (writeAddress + writeStep) >>> 0;
 			}
 			return;
 		}
 		for (let i = 0; i < wordCount; ++i) {
 			const end = i + 1 === wordCount ? MAPPED_BUS_DMA_BLOCK_END : 0;
-			const word = this.readMappedDmaU32LE(readAddress, readBusSignals | end);
-			this.writeMappedDmaU32LE(writeAddress, word, writeBusSignals | end);
+			const word = this.readMappedBusU32LE(readAddress, readBusSignals | end);
+			this.writeMappedBusU32LE(writeAddress, word, writeBusSignals | end);
 			readAddress = (readAddress + readStep) >>> 0;
 			writeAddress = (writeAddress + writeStep) >>> 0;
 		}
 	}
 
-	private writeMappedBusU32LE(addr: number, value: number, faultAccess: number, busSignals: MappedBusSignals): void {
+	public writeMappedBusU32LE(addr: number, value: number, busSignals: MappedBusSignals, faultAccess = BUS_ACCESS_WRITE_U32): void {
 		const slot = this.ioAlignedSlot(addr);
 		if (slot >= 0) {
+			if ((busSignals & MAPPED_BUS_DMA_MEMORY) !== 0) {
+				this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
+				return;
+			}
 			this.writeIoSlot(slot, addr, value, faultAccess, busSignals);
 			return;
 		}
 		if (this.isIoRegionRange(addr, 4)) {
-			this.raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, faultAccess);
+			this.raiseBusFault((busSignals & MAPPED_BUS_DMA_MEMORY) !== 0
+				? BUS_FAULT_UNMAPPED : BUS_FAULT_UNALIGNED_IO, addr, faultAccess);
 			return;
 		}
 		if (addr < CART_ROM_BASE) {

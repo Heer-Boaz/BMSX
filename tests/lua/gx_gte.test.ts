@@ -287,7 +287,7 @@ test('GX-GTE command observation brackets only actual normal MMIO writes with bo
 	assert.equal(observed.gte.readDataRegister(15), records[1].data[14]);
 	assert.equal(records[0].data[14], 0x12345678, 'copied evidence survives register mutation');
 	const bus = MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_BLOCK_END;
-	for (const { memory } of [baseline, observed]) memory.writeMappedDmaU32LE(IO_GX_GTE_COMMAND, 0x12340000, bus);
+	for (const { memory } of [baseline, observed]) memory.writeMappedBusU32LE(IO_GX_GTE_COMMAND, 0x12340000, bus);
 	assert.deepEqual(records.slice(2).map(record => [record.phase, record.command, record.bus, record.cycles]), [
 		['before', 0x12340000, bus, GX_GTE_CYCLES_RTPT], ['after', 0x12340000, bus, 0],
 	]);
@@ -528,13 +528,13 @@ test('GX-GTE+ retains old result and FLAG latches until the retained completion 
 test('GX-GTE+ command admission is CPU-only and cannot overwrite an active command', () => {
 	const { memory, scheduler } = createGte();
 	const commandAddress = IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE;
-	memory.writeMappedDmaU32LE(commandAddress, 0xcafe0002, MAPPED_BUS_MASTER_DMA);
+	memory.writeMappedBusU32LE(commandAddress, 0xcafe0002, MAPPED_BUS_MASTER_DMA);
 	assert.equal(memory.readMappedU32LE(commandAddress), 0);
 	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_CYCLES * IO_WORD_SIZE), 0);
 
 	memory.writeMappedU32LE(commandAddress, 0xdeadbe01);
 	memory.writeMappedU32LE(commandAddress, 0xcafe0002);
-	memory.writeMappedDmaU32LE(commandAddress, 0xabcd0002, MAPPED_BUS_MASTER_DMA);
+	memory.writeMappedBusU32LE(commandAddress, 0xabcd0002, MAPPED_BUS_MASTER_DMA);
 	assert.equal(memory.readMappedU32LE(commandAddress), 0xdeadbe01);
 	assert.equal(scheduler.hasDueTimer(), false);
 	completeGtePlus(memory, scheduler, GX_GTE_PLUS_CYCLES_VMAD3);
@@ -566,7 +566,7 @@ test('GX-GTE+ observes actual acceptance separately from lazy publication, inclu
 		published(deadline, cycle, words) { events.push({ phase: 'published', cycle, deadline, words: Array.from(words) }); },
 	});
 	for (const { memory, scheduler } of [baseline, observed]) {
-		memory.writeMappedDmaU32LE(commandAddress, 1, MAPPED_BUS_MASTER_DMA);
+		memory.writeMappedBusU32LE(commandAddress, 1, MAPPED_BUS_MASTER_DMA);
 		memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE, pack16(10, -20));
 		memory.writeMappedU32LE(commandAddress, 0xdeadbe01);
 		memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE, pack16(99, 88));
@@ -591,7 +591,7 @@ test('GX-GTE+ observes actual acceptance separately from lazy publication, inclu
 		memory.writeMappedU32LE(commandAddress, 0x41);
 		scheduler.advanceTo(30);
 		assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_FLAG * IO_WORD_SIZE), 0x81000000);
-		memory.writeMappedDmaU32LE(commandAddress, 1, MAPPED_BUS_MASTER_DMA);
+		memory.writeMappedBusU32LE(commandAddress, 1, MAPPED_BUS_MASTER_DMA);
 	}
 	assert.deepEqual(events.map(event => [event.phase, event.cycle, event.deadline]), [
 		['accepted', 0, 5], ['published', 20, 5], ['accepted', 20, 25],

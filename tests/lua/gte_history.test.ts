@@ -185,7 +185,7 @@ test('DMA/host writes never acquire the previous CPU command source', () => {
 	const host = history.snapshot(2);
 	assert.equal(host.domain, undefined); assert.equal(host.pc, undefined); assert.equal(host.image, null);
 	assert.equal(host.nominalCycles, 0);
-	memory.writeMappedDmaU32LE(IO_GX_GTE_COMMAND, 0, MAPPED_BUS_MASTER_DMA);
+	memory.writeMappedBusU32LE(IO_GX_GTE_COMMAND, 0, MAPPED_BUS_MASTER_DMA);
 	const dma = history.snapshot(3);
 	assert.equal(dma.busSignals, MAPPED_BUS_MASTER_DMA);
 	assert.equal(dma.domain, undefined); assert.equal(dma.pc, undefined); assert.equal(dma.image, null);

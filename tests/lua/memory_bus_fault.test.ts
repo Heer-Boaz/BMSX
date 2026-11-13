@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import {
 	BUS_FAULT_ACCESS_F32,
 	BUS_FAULT_ACCESS_F64,
+	BUS_FAULT_ACCESS_U32,
 	BUS_FAULT_ACCESS_READ,
 	BUS_FAULT_ACCESS_WRITE,
 	BUS_FAULT_ACCESS_WORD,
@@ -26,7 +27,7 @@ import {
 import { CART_MMIO_BASE, CART_RAM_BASE, CART_ROM_BASE, DYNAMIC_RAM_BASE, IO_BASE, IO_WORD_SIZE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { Memory, NO_BLOCKED_MAPPED_WRITE, type MemoryByteView } from '../../machine/ts/machine/memory/memory';
 import { MAPPED_PAGE_BYTE_SIZE, type MappedPageBinding } from '../../machine/ts/machine/memory/mapped_page';
-import { MAPPED_BUS_MASTER_CPU, MAPPED_BUS_MASTER_DMA, MAPPED_BUS_DMA_BLOCK_END, mappedBusSignalsForCartridgeSlot, type MappedBusSignals } from '../../machine/ts/machine/memory/bus_signals';
+import { MAPPED_BUS_MASTER_CPU, MAPPED_BUS_MASTER_DMA, MAPPED_BUS_DMA_BLOCK_END, MAPPED_BUS_DMA_MEMORY, mappedBusSignalsForCartridgeSlot, type MappedBusSignals } from '../../machine/ts/machine/memory/bus_signals';
 import { readLE32 } from '../../machine/ts/common/endian';
 
 const UNMAPPED_ADDRESS = 0x06000000;
@@ -78,7 +79,7 @@ test('IO word permissions apply to CPU and DMA without changing raw register val
 			IO_SYS_SUPERVISOR_FAULT_DOMAIN, IO_INP_KEYS, IO_INP_OUTPUT_PORT - IO_WORD_SIZE]) {
 			memory.writeMappedU32LE(IO_SYS_BUS_FAULT_ACK, 1);
 			memory.writeIoU32(address, 0x81234567);
-			if (dma) memory.writeMappedDmaU32LE(address, 0xffffffff, MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_BLOCK_END);
+			if (dma) memory.writeMappedBusU32LE(address, 0xffffffff, MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_BLOCK_END);
 			else memory.writeMappedU32LE(address, 0xffffffff);
 			assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_READ_ONLY);
 			assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), address);
@@ -86,7 +87,7 @@ test('IO word permissions apply to CPU and DMA without changing raw register val
 		}
 		for (const address of [IO_DMA0_CONTROL, IO_IMGDEC_DATA, IO_INP_OUTPUT_PORT]) {
 			memory.writeMappedU32LE(IO_SYS_BUS_FAULT_ACK, 1);
-			if (dma) memory.writeMappedDmaU32LE(address, 0x81234567, MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_BLOCK_END);
+			if (dma) memory.writeMappedBusU32LE(address, 0x81234567, MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_BLOCK_END);
 			else memory.writeMappedU32LE(address, 0x81234567);
 			assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_NONE);
 			assert.equal(memory.readIoU32(address), 0x81234567);
@@ -155,6 +156,43 @@ class DmaBusTrace {
 	}
 }
 
+test('DMA memory words inside the IO aperture fault before handlers, including unaligned addresses', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const trace = new DmaBusTrace(memory);
+	memory.mapIoRead(IO_IMGDEC_DATA, trace, DmaBusTrace.read);
+	memory.mapIoWrite(IO_GX_GPU_GP0, trace, DmaBusTrace.write);
+	memory.mapIoWriteReady(IO_GX_GPU_GP0, DmaBusTrace.ready);
+	const end = IO_BASE + IO_SLOT_COUNT * IO_WORD_SIZE;
+	for (const address of [IO_BASE,
+		IO_IMGDEC_DATA, IO_GX_GPU_GP0, IO_SYS_STATUS, IO_GX_GPU_GP0 + 1, end - 4]) {
+		for (const write of [false, true]) {
+			memory.clearBusFault();
+			const signals = MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_MEMORY | MAPPED_BUS_DMA_BLOCK_END;
+			if (write) memory.writeMappedBusU32LE(address, 0x81234567, signals);
+			else assert.equal(memory.readMappedBusU32LE(address, signals), 0);
+			assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
+			assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), address);
+			assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ACCESS),
+				(write ? BUS_FAULT_ACCESS_WRITE : BUS_FAULT_ACCESS_READ) | BUS_FAULT_ACCESS_U32);
+		}
+	}
+	assert.deepEqual(trace.calls, [], 'memory-selected IO must not call a device handler or readiness gate');
+	// A word only partly in the aperture follows the existing ordinary memory
+	// decode, rather than becoming a new whole-word IO fault.
+	const cpu = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	for (const address of [IO_BASE - 3, IO_BASE - 2, IO_BASE - 1, end - 3, end - 2, end - 1]) {
+		for (const write of [false, true]) {
+			memory.clearBusFault(); cpu.clearBusFault();
+			if (write) {
+				memory.writeMappedBusU32LE(address, 0x81234567, MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_MEMORY);
+				cpu.writeMappedU32LE(address, 0x81234567);
+			} else assert.equal(memory.readMappedBusU32LE(address, MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_MEMORY), cpu.readMappedU32LE(address));
+			for (const fault of [IO_SYS_BUS_FAULT_CODE, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_ACCESS])
+				assert.equal(memory.readIoU32(fault), cpu.readIoU32(fault));
+		}
+	}
+});
+
 test('DMA blocks retain scalar bus order, per-word readiness, faults and live handlers', () => {
 	const source = DYNAMIC_RAM_BASE + 0x100, destination = DYNAMIC_RAM_BASE + 0x200;
 	for (const [readStart, writeStart, readStep, writeStep] of [
@@ -182,8 +220,8 @@ test('DMA blocks retain scalar bus order, per-word readiness, faults and live ha
 		let read = readStart, write = writeStart;
 		for (let i = 0; i < count; ++i) {
 			const end = i + 1 === count ? MAPPED_BUS_DMA_BLOCK_END : 0;
-			const word = scalar.readMappedDmaU32LE(read, readSignals | end);
-			scalar.writeMappedDmaU32LE(write, word, writeSignals | end);
+			const word = scalar.readMappedBusU32LE(read, readSignals | end);
+			scalar.writeMappedBusU32LE(write, word, writeSignals | end);
 			read = (read + readStep) >>> 0; write = (write + writeStep) >>> 0;
 		}
 		block.transferDmaBlock(readStart, writeStart, count, readStep, writeStep, readSignals, writeSignals);
@@ -237,8 +275,8 @@ test('DMA memory spans retain ordered words across ROM, sockets, overlaps and ph
 		const writeSignals = MAPPED_BUS_MASTER_DMA;
 		for (let i = 0; i < count; ++i) {
 			const end = i + 1 === count ? MAPPED_BUS_DMA_BLOCK_END : 0;
-			const word = scalar.readMappedDmaU32LE(source + i * 4, readSignals | end);
-			scalar.writeMappedDmaU32LE(destination + i * 4, word, writeSignals | end);
+			const word = scalar.readMappedBusU32LE(source + i * 4, readSignals | end);
+			scalar.writeMappedBusU32LE(destination + i * 4, word, writeSignals | end);
 		}
 		block.transferDmaBlock(source, destination, count, 4, 4, readSignals, writeSignals);
 		assert.deepEqual(block.ramData().subarray(base - RAM_BASE), scalar.ramData().subarray(base - RAM_BASE));

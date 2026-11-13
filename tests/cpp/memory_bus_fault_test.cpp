@@ -131,7 +131,7 @@ void testIoPermissionsApplyToCpuAndDmaWordWrites() {
 			IO_SYS_SUPERVISOR_FAULT_DOMAIN, IO_INP_KEYS, IO_INP_OUTPUT_PORT - IO_WORD_SIZE}) {
 			memory.writeMappedU32LE(IO_SYS_BUS_FAULT_ACK, 1u);
 			memory.writeIoU32(address, 0x81234567u);
-			if (dma) memory.writeMappedDmaU32LE(address, 0xffffffffu, MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_BLOCK_END);
+			if (dma) memory.writeMappedBusU32LE(address, 0xffffffffu, MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_BLOCK_END);
 			else memory.writeMappedU32LE(address, 0xffffffffu);
 			require(memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_READ_ONLY, "CPU and DMA reject read-only IO words");
 			require(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == address, "read-only fault retains the actual register address");
@@ -139,7 +139,7 @@ void testIoPermissionsApplyToCpuAndDmaWordWrites() {
 		}
 		for (const u32 address : {IO_DMA0_CONTROL, IO_IMGDEC_DATA, IO_INP_OUTPUT_PORT}) {
 			memory.writeMappedU32LE(IO_SYS_BUS_FAULT_ACK, 1u);
-			if (dma) memory.writeMappedDmaU32LE(address, 0x81234567u, MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_BLOCK_END);
+			if (dma) memory.writeMappedBusU32LE(address, 0x81234567u, MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_BLOCK_END);
 			else memory.writeMappedU32LE(address, 0x81234567u);
 			require(memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_NONE, "writable IO words remain writable for both bus masters");
 			require(memory.readIoU32(address) == 0x81234567u, "writable IO words retain all supplied bits");
@@ -162,6 +162,44 @@ struct PrefixMappingTrace {
 	static void readPrefix(void*, bmsx::u32, bmsx::u32*, bmsx::u32, bmsx::MappedBusSignals) { throw std::runtime_error("revoked/readonly prefix read cannot run"); }
 	static void writePrefix(void*, bmsx::u32, const bmsx::u32*, bmsx::u32, bmsx::MappedBusSignals) { throw std::runtime_error("revoked/readonly prefix write cannot run"); }
 };
+
+void testDmaMemoryWordsOverlappingIoFaultBeforeHandlers() {
+	using namespace bmsx;
+	Memory memory(MemoryInit{{}, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
+	PrefixMappingTrace trace;
+	memory.mapIoRead(IO_IMGDEC_DATA, &trace, PrefixMappingTrace::read);
+	memory.mapIoWrite(IO_GX_GPU_GP0, &trace, PrefixMappingTrace::write);
+	memory.mapIoWriteReady(IO_GX_GPU_GP0, PrefixMappingTrace::ready);
+	const u32 end = IO_BASE + IO_SLOT_COUNT * IO_WORD_SIZE;
+	for (const u32 address : {IO_BASE,
+		IO_IMGDEC_DATA, IO_GX_GPU_GP0, IO_SYS_STATUS, IO_GX_GPU_GP0 + 1u, end - 4u}) {
+		for (const bool write : {false, true}) {
+			memory.clearBusFault();
+			const MappedBusSignals signals = MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_MEMORY | MAPPED_BUS_DMA_BLOCK_END;
+			if (write) memory.writeMappedBusU32LE(address, 0x81234567u, signals);
+			else require(memory.readMappedBusU32LE(address, signals) == 0u, "DMA memory IO fault returns zero");
+			require(memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_UNMAPPED, "memory-selected IO reports unmapped before permissions");
+			require(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == address, "memory-selected IO retains exact address");
+			require(memory.readIoU32(IO_SYS_BUS_FAULT_ACCESS) == ((write ? BUS_FAULT_ACCESS_WRITE : BUS_FAULT_ACCESS_READ) | BUS_FAULT_ACCESS_U32),
+				"memory-selected IO retains direction and access width");
+		}
+	}
+	require(trace.reads == 0u && trace.writes == 0u && trace.readyCalls == 0u, "memory-selected IO never reaches device or ready handler");
+	// Partially crossing words retain ordinary memory decoding on each edge.
+	Memory cpu(MemoryInit{{}, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
+	for (const u32 address : {IO_BASE - 3u, IO_BASE - 2u, IO_BASE - 1u, end - 3u, end - 2u, end - 1u}) {
+		for (const bool write : {false, true}) {
+			memory.clearBusFault(); cpu.clearBusFault();
+			const MappedBusSignals signals = MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_MEMORY;
+			if (write) {
+				memory.writeMappedBusU32LE(address, 0x81234567u, signals);
+				cpu.writeMappedU32LE(address, 0x81234567u);
+			} else require(memory.readMappedBusU32LE(address, signals) == cpu.readMappedU32LE(address), "partially overlapping DMA read keeps ordinary decoding");
+			for (const u32 fault : {IO_SYS_BUS_FAULT_CODE, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_ACCESS})
+				require(memory.readIoU32(fault) == cpu.readIoU32(fault), "partially overlapping DMA fault keeps ordinary decoding");
+		}
+	}
+}
 
 void testDmaPrefixesAreRevokedByScalarRebindingAndRespectPermissions() {
 	using namespace bmsx;
@@ -245,8 +283,8 @@ void testDmaMemorySpansRetainOrderedWords() {
 		const MappedBusSignals writeSignals = MAPPED_BUS_MASTER_DMA;
 		for (u32 i = 0; i < count; ++i) {
 			const MappedBusSignals end = i + 1u == count ? MAPPED_BUS_DMA_BLOCK_END : 0u;
-			const u32 word = scalar.readMappedDmaU32LE(transfer.source + i * 4u, readSignals | end);
-			scalar.writeMappedDmaU32LE(transfer.destination + i * 4u, word, writeSignals | end);
+			const u32 word = scalar.readMappedBusU32LE(transfer.source + i * 4u, readSignals | end);
+			scalar.writeMappedBusU32LE(transfer.destination + i * 4u, word, writeSignals | end);
 		}
 		block.transferDmaBlock(transfer.source, transfer.destination, count, 4u, 4u, readSignals, writeSignals);
 		require(std::equal(scalar.ramData() + ramOffset, scalar.ramData() + ramOffset + 128u, block.ramData() + ramOffset),
@@ -294,6 +332,7 @@ int main() {
 	testMappedWordBurstPreflightStopsWhenBurstCrossesPhysicalIoRegisterfileBoundary();
 	testSystemStatusRejectsMappedWrites();
 	testIoPermissionsApplyToCpuAndDmaWordWrites();
+	testDmaMemoryWordsOverlappingIoFaultBeforeHandlers();
 	testDmaPrefixesAreRevokedByScalarRebindingAndRespectPermissions();
 	testIncrementingDmaIoDoesNotReuseFixedPort();
 	testDmaMemorySpansRetainOrderedWords();

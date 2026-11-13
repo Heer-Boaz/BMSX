@@ -745,7 +745,7 @@ test('GX-GPU operation observer borrows actual packet words and latched state id
 			target.gpu.writeGp1((GX_GPU_GP1_VRAM_Y_ADDRESS_EXTENSION << 24) | 3);
 			for (const packet of packets) {
 				for (let index = 0; index < packet.length; index += 1) {
-					if (dma) target.memory.writeMappedDmaU32LE(IO_GX_GPU_GP0, packet[index], MAPPED_BUS_MASTER_DMA | (index + 1 === packet.length ? MAPPED_BUS_DMA_BLOCK_END : 0));
+					if (dma) target.memory.writeMappedBusU32LE(IO_GX_GPU_GP0, packet[index], MAPPED_BUS_MASTER_DMA | (index + 1 === packet.length ? MAPPED_BUS_DMA_BLOCK_END : 0));
 					else target.memory.writeMappedU32LE(IO_GX_GPU_GP0, packet[index]);
 				}
 				target.scheduler.advanceTo(target.scheduler.currentNowCycles() + 100000);
@@ -784,7 +784,7 @@ test('image payload blocks retain packet boundaries, queued commands and consume
 			scheduler.advanceTo((start / 16 + 1) * 1000);
 			const end = Math.min(start + 16, packet.length);
 			for (let index = start; index < end; index += 1) {
-				if (dma) memory.writeMappedDmaU32LE(IO_GX_GPU_GP0, packet[index], MAPPED_BUS_MASTER_DMA
+				if (dma) memory.writeMappedBusU32LE(IO_GX_GPU_GP0, packet[index], MAPPED_BUS_MASTER_DMA
 					| (index + 1 === end ? MAPPED_BUS_DMA_BLOCK_END : 0));
 				else gpu.writeGp0(packet[index]);
 			}
@@ -1429,7 +1429,7 @@ test('GX-GPU resumes queued DMA ingress when a saturated command prefix is retir
 		if (present) gpu.presentReadyFrameOnVblankEdge();
 		const packet = [GX_GPU_GP0_FILL_RECTANGLE << 24, 0, 0x00010001];
 		for (let index = 0; index < 27; index += 1) {
-			memory.writeMappedDmaU32LE(IO_GX_GPU_GP0, packet[index % 3], MAPPED_BUS_MASTER_DMA
+			memory.writeMappedBusU32LE(IO_GX_GPU_GP0, packet[index % 3], MAPPED_BUS_MASTER_DMA
 				| (index === 26 ? MAPPED_BUS_DMA_BLOCK_END : 0));
 		}
 		let state = gpu.captureState();
