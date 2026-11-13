@@ -246,8 +246,8 @@ public:
 	u32 readGp0(MappedBusSignals busSignals = MAPPED_BUS_MASTER_CPU);
 	void writeGp0(u32 word, MappedBusSignals busSignals = MAPPED_BUS_MASTER_CPU);
 	u32 readStatus();
-	void synchronizeDmaStart();
-	void dmaRequestStarted();
+	void synchronizeDmaRequest();
+	void dependencyStateChanged();
 	u32 writeGp1(u32 word);
 	u32 onService(i64 nowCycles);
 	u32 readDisplayModeWord() const;

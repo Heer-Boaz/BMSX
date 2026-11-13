@@ -16,6 +16,8 @@ void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state, Runt
 	if (origin == RuntimeRestoreOrigin::ExternalLoad) runtime.history.stop();
 	applyRuntimeSaveMachineState(runtime, state.machineState);
 	runtime.machine.cpu.restoreRuntimeState(state.cpuState);
+	// The CPU's restored GP0 write wait is observable only after CPU restore.
+	runtime.machine.gxGpu.dependencyStateChanged();
 	runtime.m_pendingCall = state.pendingEntryCall ? Runtime::PendingCall::Entry : Runtime::PendingCall::None;
 	if (runtime.onStateRestored) runtime.onStateRestored(origin);
 }

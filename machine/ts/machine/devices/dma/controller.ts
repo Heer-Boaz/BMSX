@@ -52,6 +52,12 @@ const ENDPOINT_ADDRESSES: readonly number[] = [
 	IO_IMGDEC_DATA, IO_IMGDEC_DATA,
 ];
 
+function capacityEndpoint(endpoint: DmaEndpoint, address: number, control: number, read: boolean): DmaEndpoint {
+	if (endpoint !== DmaEndpoint.Memory || address < CART_MMIO_BASE || address >= CART_MMIO_END) return endpoint;
+	if (read) return ((control >>> DMA_CONTROL_READ_SLOT_SHIFT) & 1) !== 0 ? DmaEndpoint.Cartridge1Read : DmaEndpoint.Cartridge0Read;
+	return ((control >>> DMA_CONTROL_WRITE_SLOT_SHIFT) & 1) !== 0 ? DmaEndpoint.Cartridge1Write : DmaEndpoint.Cartridge0Write;
+}
+
 export type DmaControllerState = {
 	channels: DmaChannelStates;
 	activeChannel: number;
@@ -124,8 +130,10 @@ export class DmaController {
 			return;
 		}
 		if ((value & DMA_TRIGGER_STOP) !== 0) {
+			const hadGpuDemand = context.gpuCommandServiceRequired();
 			context.finishChannel(channel, 0);
 			context.arbitrate(context.scheduler.currentNowCycles());
+			if (hadGpuDemand !== context.gpuCommandServiceRequired()) context.gpu.dependencyStateChanged();
 			return;
 		}
 		if ((value & DMA_TRIGGER_START) === 0 || context.busy(channel)) {
@@ -134,14 +142,14 @@ export class DmaController {
 		const registers = context.registers.channels[channel]!;
 		const route = registers.controlWord & DMA_CONTROL_ROUTE_MASK;
 		const gpuJob = registers.transferCountWord !== 0 && (READ_ENDPOINTS[route] === DmaEndpoint.GpuRead || WRITE_ENDPOINTS[route] === DmaEndpoint.GpuWrite);
-		if (gpuJob) context.gpu.synchronizeDmaStart();
+		if (gpuJob) context.gpu.synchronizeDmaRequest();
 		registers.statusWord = DMA_STATUS_BUSY;
 		context.memory.writeIoU32(IO_DMA_STATUSES[channel]!, DMA_STATUS_BUSY);
-		if (gpuJob) context.gpu.dmaRequestStarted();
 		if (registers.transferCountWord === 0) {
 			context.finishChannel(channel);
 		}
 		context.arbitrate(context.scheduler.currentNowCycles());
+		if (gpuJob && context.gpuCommandServiceRequired()) context.gpu.dependencyStateChanged();
 	}
 
 	public connectGpu(gpu: GxGpu): void {
@@ -175,15 +183,24 @@ export class DmaController {
 
 	public setEndpointCapacity(endpoint: DmaEndpoint, words: number): void {
 		if (this.endpointCapacity[endpoint] === words) return;
+		const gpuEndpoint = endpoint === DmaEndpoint.GpuRead || endpoint === DmaEndpoint.GpuWrite;
+		const hadGpuDemand = !gpuEndpoint && this.gpuCommandServiceRequired();
 		this.endpointCapacity[endpoint] = words;
+		// A source request can arrive after lazy GPU progress; publish both sides
+		// before admission. GPU's own request update must not re-enter this catch-up.
+		if (!gpuEndpoint && !hadGpuDemand && this.gpuCommandServiceRequired() && !this.restorePending) this.gpu.synchronizeDmaRequest();
 		this.arbitrate(this.scheduler.currentNowCycles());
+		if (!gpuEndpoint && hadGpuDemand !== this.gpuCommandServiceRequired()) this.gpu.dependencyStateChanged();
 	}
 
 	public setEndpointRequests(first: DmaEndpoint, firstWords: number, second: DmaEndpoint, secondWords: number): void {
 		if (this.endpointCapacity[first] === firstWords && this.endpointCapacity[second] === secondWords) return;
+		const hadGpuDemand = this.gpuCommandServiceRequired();
 		this.endpointCapacity[first] = firstWords;
 		this.endpointCapacity[second] = secondWords;
+		if (!hadGpuDemand && this.gpuCommandServiceRequired() && !this.restorePending) this.gpu.synchronizeDmaRequest();
 		this.arbitrate(this.scheduler.currentNowCycles());
+		if (hadGpuDemand !== this.gpuCommandServiceRequired()) this.gpu.dependencyStateChanged();
 	}
 
 	public cpuBusHeld(): boolean {
@@ -214,6 +231,24 @@ export class DmaController {
 		if (this.activeChannel === DMA_CHANNEL_NONE) return false;
 		const endpoint = WRITE_ENDPOINTS[this.registers.channels[this.activeChannel].controlWord & DMA_CONTROL_ROUTE_MASK];
 		return endpoint !== DmaEndpoint.Memory && ENDPOINT_ADDRESSES[endpoint] === address;
+	}
+
+	public gpuCommandServiceRequired(): boolean {
+		// An admitted burst owns the engine; completion catches the GPU up
+		// before another channel can be admitted.
+		if (this.activeChannel !== DMA_CHANNEL_NONE) return false;
+		for (const registers of this.registers.channels) {
+			const route = registers.controlWord & DMA_CONTROL_ROUTE_MASK;
+			if ((registers.statusWord & DMA_STATUS_BUSY) === 0) continue;
+			if (READ_ENDPOINTS[route] === DmaEndpoint.GpuRead) {
+				const other = capacityEndpoint(WRITE_ENDPOINTS[route], registers.writeAddressWord, registers.controlWord, false);
+				if (this.endpointCapacity[other] !== 0) return true;
+			} else if (WRITE_ENDPOINTS[route] === DmaEndpoint.GpuWrite) {
+				const other = capacityEndpoint(READ_ENDPOINTS[route], registers.readAddressWord, registers.controlWord, true);
+				if (this.endpointCapacity[other] !== 0) return true;
+			}
+		}
+		return false;
 	}
 
 	public reset(): void {
@@ -256,7 +291,9 @@ export class DmaController {
 		if (registers.transferCountWord === 0) {
 			this.finishChannel(channel);
 		}
+		if (this.gpuCommandServiceRequired()) this.gpu.synchronizeDmaRequest();
 		this.arbitrate(previousDeadline);
+		if (this.gpuCommandServiceRequired()) this.gpu.dependencyStateChanged();
 	}
 
 	public captureState(): DmaControllerState {
@@ -298,6 +335,7 @@ export class DmaController {
 		} else {
 			this.arbitrate(this.scheduler.currentNowCycles());
 		}
+		this.gpu.dependencyStateChanged();
 	}
 
 	public beginSupervisorControlQuiesce(): void {
@@ -399,13 +437,8 @@ export class DmaController {
 			const read = READ_ENDPOINTS[route], write = WRITE_ENDPOINTS[route];
 			const readAddress = read === DmaEndpoint.Memory ? registers.readAddressWord : ENDPOINT_ADDRESSES[read];
 			const writeAddress = write === DmaEndpoint.Memory ? registers.writeAddressWord : ENDPOINT_ADDRESSES[write];
-			let readCapacity: DmaEndpoint = read, writeCapacity: DmaEndpoint = write;
-			if (read === DmaEndpoint.Memory && readAddress >= CART_MMIO_BASE && readAddress < CART_MMIO_END) {
-				readCapacity = ((control >>> DMA_CONTROL_READ_SLOT_SHIFT) & 1) !== 0 ? DmaEndpoint.Cartridge1Read : DmaEndpoint.Cartridge0Read;
-			}
-			if (write === DmaEndpoint.Memory && writeAddress >= CART_MMIO_BASE && writeAddress < CART_MMIO_END) {
-				writeCapacity = ((control >>> DMA_CONTROL_WRITE_SLOT_SHIFT) & 1) !== 0 ? DmaEndpoint.Cartridge1Write : DmaEndpoint.Cartridge0Write;
-			}
+			const readCapacity = capacityEndpoint(read, readAddress, control, true);
+			const writeCapacity = capacityEndpoint(write, writeAddress, control, false);
 			let words = Math.min(registers.transferCountWord, DMA_BURST_WORD_CAPACITY, this.endpointCapacity[readCapacity], this.endpointCapacity[writeCapacity]);
 			if (words === 0) continue;
 			const readRegion = this.memory.mappedRegion(readAddress);
@@ -414,12 +447,14 @@ export class DmaController {
 			if (write === DmaEndpoint.Memory) words = this.memory.mappedRegionWordSpan(writeAddress, words, writeRegion);
 			if (words !== 0) {
 				const blockCycles = this.regionSpanCycles(readRegion, words) + this.regionSpanCycles(writeRegion, words);
+				const hadGpuDemand = this.gpuCommandServiceRequired();
 				this.activeChannel = channel;
 				this.scheduledBlockWords = words;
 				this.serviceDeadline = anchorCycle + blockCycles;
 				this.scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, this.serviceDeadline);
 				this.scheduler.requestYieldForEarlierDeadline(this.scheduler.currentNowCycles());
 				this.nextChannel = (channel + 1) % IO_DMA_CHANNEL_COUNT;
+				if (hadGpuDemand) this.gpu.dependencyStateChanged();
 				return;
 			}
 		}

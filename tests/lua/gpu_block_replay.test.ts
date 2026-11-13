@@ -55,6 +55,8 @@ test('runtime codec preserves a blocked GP0 store and its wakeup', () => {
 	for (let iteration = 0; iteration < 2; ++iteration) {
 		if (iteration !== 0) {
 			applyRuntimeSaveState(runtime, decodeRuntimeSaveState(encoded, memory.ramByteCount(), gpu.readVramSnapshotBytes().byteLength));
+			assert.equal(cpu.isMemoryWriteBlocked(), true, 'CPU wait is restored after the device state');
+			assert.equal(scheduler.nextDeadline(), 29, 'the restored CPU dependency re-arms the GPU completion deadline');
 		}
 		advance(28);
 		assert.equal(cpu.isMemoryWriteBlocked(), true);

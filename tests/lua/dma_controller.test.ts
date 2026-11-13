@@ -273,6 +273,7 @@ test('restore retains the admitted deadline and raw registers even if requests f
 });
 test('round-robin arbitration uses burst boundaries, not one complete job',()=>{
  const h=fixture(), order:number[]=[];
+ h.gpu.writeGp1((gp1.GX_GPU_GP1_DMA_DIRECTION << 24) | gp0.GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
  h.memory.mapIoWrite(io.IO_GX_GPU_GP0,h,()=>order.push(0)); h.memory.mapIoWriteReady(io.IO_GX_GPU_GP0,()=>true); h.memory.mapIoWrite(io.IO_IMGDEC_DATA,h,()=>order.push(1));
  program(h,source,0,257,io.DMA_ROUTE_TO_GPU); program(h,source,0,1,io.DMA_ROUTE_TO_IMGDEC,1);
  h.dma.setEndpointRequests(DmaEndpoint.GpuWrite,256,DmaEndpoint.ImgDecWrite,256);

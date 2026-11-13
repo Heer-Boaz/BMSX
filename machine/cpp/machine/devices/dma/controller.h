@@ -38,6 +38,7 @@ public:
 	bool ownsReadPort(u32 address) const;
 	bool ownsWritePort(u32 address) const;
 	bool hasAdmittedWriteBlock(u32 address) const;
+	bool gpuCommandServiceRequired() const;
 	bool cpuBusHeld() const { return m_activeChannel != IO_DMA_CHANNEL_COUNT; }
 	void onService(i64 nowCycles);
 	void reset();

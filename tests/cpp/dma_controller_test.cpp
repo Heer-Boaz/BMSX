@@ -129,6 +129,155 @@ void testFixedGpuAndRawRegisters() {
  require(h.memory.readIoU32(IO_DMA0_CONTROL)==0x80000001&&h.memory.readIoU32(IO_SYS_BUS_FAULT_CODE)==0,"reserved control bits flow unchanged");
  require(h.memory.mappedWriteReady(IO_DMA0_CONTROL),"completion releases configuration writes");
 }
+void testGpuDmaReadinessDeadlines() {
+ // A draw completes at 29 while an admitted DMA block runs until 58. With no
+ // observer the DMA block catches up the draw when it reaches GP0.
+ {
+  Harness h;h.dma.setTiming(1,40,1,1,0,0);
+  h.gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION<<24)|GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+  h.gpu.writeGp0(0x020000ff);h.gpu.writeGp0(0);h.gpu.writeGp0(0x00010001);
+  require(h.scheduler.nextDeadline()==std::numeric_limits<i64>::max(),"unobserved draw starts lazily");
+  for(u32 i=0;i<4;++i)h.memory.writeU32(Source+4*i,0xe1000000);
+  h.scheduler.advanceTo(10);h.program(Source,0,4,DMA_ROUTE_TO_GPU);
+  const i64 deadline=h.scheduler.nowCycles()+h.dma.captureState().scheduledBlockCycles;
+  require(h.dma.cpuBusHeld()&&deadline>29,"GPU DMA burst admitted beyond the draw completion");
+  require(h.scheduler.nextDeadline()==deadline,"admitted DMA does not force an unobservable GPU completion event");
+  h.step();
+  require(h.memory.readIoU32(IO_DMA0_STATUS)==DMA_STATUS_DONE,"GP0 block completes");
+  require(h.gpu.captureState().commandBuffer.executedCommandCount==1,"GP0 transfer catches the earlier draw up");
+ }
+ // A queued IRQ is separately visible and retains its own deadline.
+ {
+  Harness h;h.dma.setTiming(1,40,1,1,0,0);
+  h.gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION<<24)|GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+  h.gpu.writeGp0(0x020000ff);h.gpu.writeGp0(0);h.gpu.writeGp0(0x00010001);h.gpu.writeGp0(0x1f000000);
+  for(u32 i=0;i<4;++i)h.memory.writeU32(Source+4*i,0xe1000000);
+  h.scheduler.advanceTo(10);h.program(Source,0,4,DMA_ROUTE_TO_GPU);
+  require(h.scheduler.nextDeadline()==29,"IRQ retains GPU deadline during an admitted DMA block");
+  h.step();require((h.memory.readIoU32(IO_IRQ_FLAGS)&IRQ_GPU)!=0&&h.dma.cpuBusHeld(),"IRQ is published before DMA completes");
+  h.step();require(h.memory.readIoU32(IO_DMA0_STATUS)==DMA_STATUS_DONE,"DMA completes after IRQ");
+ }
+}
+void testGpuDmaWaitAndLateDecoderSource() {
+ // First fill the GP0 ingress, leaving the last DMA word blocked; GPU progress
+ // must itself wake the channel without a CPU status poll.
+ {
+  Harness h;h.dma.setTiming(1,40,1,1,0,0);
+  h.gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION<<24)|GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+  h.gpu.writeGp0(0x020000ff);h.gpu.writeGp0(0);h.gpu.writeGp0(0x00640001);
+  constexpr u32 count=GX_GPU_DMA_INGRESS_WORD_CAPACITY+1;
+  for(u32 i=0;i<count;++i)h.memory.writeU32(Source+4*i,0xe1000000);
+  h.program(Source,0,count,DMA_ROUTE_TO_GPU);h.step();
+  require(h.memory.readIoU32(IO_DMA0_STATUS)==DMA_STATUS_BUSY&&!h.dma.cpuBusHeld(),"GP0 DMA tail waits for ingress capacity");
+  for(u32 i=0;i<300&&h.memory.readIoU32(IO_DMA0_STATUS)==DMA_STATUS_BUSY;++i)h.step();
+  require(h.memory.readIoU32(IO_DMA0_STATUS)==DMA_STATUS_DONE&&h.memory.readIoU32(IO_DMA0_TRANSFER_COUNT)==0,"GPU drain wakes DMA tail");
+ }
+ // IMGDEC source becomes ready only after the destination has drained; the
+ // source edge must observe the destination's current state without polling it.
+ {
+  Harness h;h.dma.setTiming(1,40,1,1,0,0);
+  h.gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION<<24)|GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+  h.gpu.writeGp0(0x020000ff);h.gpu.writeGp0(0);h.gpu.writeGp0(0x00640001);
+  struct Reader { Harness* h;u32 reads; } reader{&h,0};
+  h.memory.mapIoRead(IO_IMGDEC_DATA,&reader,[](void* p,u32,MappedBusSignals) {
+   auto& r=*static_cast<Reader*>(p);
+   if(++r.reads==1)r.h->dma.setEndpointCapacity(DmaEndpoint::ImgDecRead,0);
+   return 0xe1000000u;
+  });
+  h.dma.setEndpointCapacity(DmaEndpoint::ImgDecRead,GX_GPU_DMA_INGRESS_WORD_CAPACITY);
+  h.program(Source,0,GX_GPU_DMA_INGRESS_WORD_CAPACITY+1,DMA_ROUTE_IMGDEC_TO_GPU);h.step();
+  require(reader.reads==GX_GPU_DMA_INGRESS_WORD_CAPACITY&&!h.dma.cpuBusHeld(),"initial decoder block leaves a source-waiting tail");
+  const i64 observation=h.scheduler.nowCycles()+1000;
+  require(!h.gpu.captureState().gp0DmaIngressWords.empty(),"GPU ingress remains queued while source is not ready");
+  require(h.scheduler.nextDeadline()>observation,"GPU work is lazy while IMGDEC source is not ready");
+  h.scheduler.advanceTo(observation);
+  h.dma.setEndpointCapacity(DmaEndpoint::ImgDecRead,1);
+  require(h.dma.cpuBusHeld(),"late decoder DREQ admits tail using current GPU capacity");
+  h.step();require(h.memory.readIoU32(IO_DMA0_STATUS)==DMA_STATUS_DONE&&reader.reads==GX_GPU_DMA_INGRESS_WORD_CAPACITY+1,"decoder tail is transferred once");
+ }
+}
+void testGpuSourceReadyDuringOtherDmaBlock() {
+ Harness h;h.dma.setTiming(1,40,1,1,0,0);
+ h.gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION<<24)|GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+ h.gpu.writeGp0(0x020000ff);h.gpu.writeGp0(0);h.gpu.writeGp0(0x00640001);
+ struct Reader { Harness* h;u32 reads; } reader{&h,0};
+ h.memory.mapIoRead(IO_IMGDEC_DATA,&reader,[](void* p,u32,MappedBusSignals) {
+  auto& r=*static_cast<Reader*>(p);
+  if(++r.reads==1)r.h->dma.setEndpointCapacity(DmaEndpoint::ImgDecRead,0);
+  return 0xe1000000u;
+ });
+ h.dma.setEndpointCapacity(DmaEndpoint::ImgDecRead,GX_GPU_DMA_INGRESS_WORD_CAPACITY);
+ h.program(Source,0,GX_GPU_DMA_INGRESS_WORD_CAPACITY+1,DMA_ROUTE_IMGDEC_TO_GPU);h.step();
+ require(reader.reads==GX_GPU_DMA_INGRESS_WORD_CAPACITY&&!h.dma.cpuBusHeld(),"decoder tail waits for source");
+ require(!h.gpu.captureState().gp0DmaIngressWords.empty(),"GPU ingress is still queued");
+ h.program(Source,Target,256,DMA_ROUTE_COPY,1);
+ require(h.dma.cpuBusHeld(),"channel 1 owns the engine");
+ const i64 completion=h.scheduler.nowCycles()+h.dma.captureState().scheduledBlockCycles;
+ const i64 edge=h.scheduler.nowCycles()+500;
+ require(edge<completion,"source edge occurs during the other channel's block");
+ require(h.scheduler.nextDeadline()==completion,"no GPU event while other admitted DMA block owns the engine");
+ h.scheduler.advanceTo(edge);
+ h.dma.setEndpointCapacity(DmaEndpoint::ImgDecRead,1);
+ require(h.scheduler.nextDeadline()==completion,"source edge does not force GPU work before DMA release");
+ require(h.memory.readIoU32(IO_DMA0_TRANSFER_COUNT)==1&&h.memory.readIoU32(IO_DMA1_STATUS)==DMA_STATUS_BUSY,"GPU route stays queued during the other block");
+ for(u32 i=0;i<300&&h.memory.readIoU32(IO_DMA0_STATUS)==DMA_STATUS_BUSY;++i)h.step();
+ require(h.memory.readIoU32(IO_DMA1_STATUS)==DMA_STATUS_DONE&&h.memory.readIoU32(IO_DMA0_STATUS)==DMA_STATUS_DONE,"GPU tail resumes when the other block releases the engine");
+ require(reader.reads==GX_GPU_DMA_INGRESS_WORD_CAPACITY+1,"decoder tail is transferred once");
+}
+void testStopGpuDemandAndRestoreSourceWait() {
+ {
+  Harness h;h.dma.setTiming(1,40,1,1,0,0);
+  h.gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION<<24)|GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+  h.gpu.writeGp0(0x020000ff);h.gpu.writeGp0(0);h.gpu.writeGp0(0x00640001);
+  constexpr u32 count=GX_GPU_DMA_INGRESS_WORD_CAPACITY+1;
+  for(u32 i=0;i<count;++i)h.memory.writeU32(Source+4*i,0xe1000000);
+  h.program(Source,0,count,DMA_ROUTE_TO_GPU);h.step();
+  require(!h.dma.cpuBusHeld()&&h.memory.readIoU32(IO_DMA0_STATUS)==DMA_STATUS_BUSY,"DMA tail waits for ingress");
+  require(h.scheduler.nextDeadline()!=std::numeric_limits<i64>::max(),"GPU completion can wake the tail");
+  h.memory.writeMappedU32LE(IO_DMA0_TRIGGER,DMA_TRIGGER_STOP);
+  require(h.memory.readIoU32(IO_DMA0_STATUS)==0&&h.scheduler.nextDeadline()==std::numeric_limits<i64>::max(),"STOP cancels ingress wakeup");
+ }
+ {
+  Harness h;h.dma.setTiming(1,40,1,1,0,0);
+  h.gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION<<24)|GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+  h.gpu.writeGp0(0x020000ff);h.gpu.writeGp0(0);h.gpu.writeGp0(0x00010001);
+  h.gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION<<24)|GX_GPU_DMA_DIRECTION_OFF);
+  h.memory.writeU32(Source,0xe1000000);h.program(Source,0,1,DMA_ROUTE_TO_GPU);
+  require(!h.dma.cpuBusHeld()&&h.scheduler.nextDeadline()==29,"waiting GP0 route schedules GPU progress");
+  h.memory.writeMappedU32LE(IO_DMA0_TRIGGER,DMA_TRIGGER_STOP);
+  require(h.memory.readIoU32(IO_DMA0_STATUS)==0&&h.scheduler.nextDeadline()==std::numeric_limits<i64>::max(),"STOP cancels unnecessary GPU demand");
+ }
+ {
+  Harness h;h.dma.setTiming(1,40,1,1,0,0);
+  h.gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION<<24)|GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+  h.gpu.writeGp0(0x020000ff);h.gpu.writeGp0(0);h.gpu.writeGp0(0x00640001);
+  struct Reader { Harness* h;u32 reads; } reader{&h,0};
+  h.memory.mapIoRead(IO_IMGDEC_DATA,&reader,[](void* p,u32,MappedBusSignals) {
+   auto& r=*static_cast<Reader*>(p);if(++r.reads==1)r.h->dma.setEndpointCapacity(DmaEndpoint::ImgDecRead,0);
+   return 0xe1000000u;
+  });
+  h.dma.setEndpointCapacity(DmaEndpoint::ImgDecRead,GX_GPU_DMA_INGRESS_WORD_CAPACITY);
+  h.program(Source,0,GX_GPU_DMA_INGRESS_WORD_CAPACITY+1,DMA_ROUTE_IMGDEC_TO_GPU);h.step();
+  h.program(Source,Target,256,DMA_ROUTE_COPY,1);
+  const i64 now=h.scheduler.nowCycles();
+  const auto gpuState=h.gpu.captureState();const auto dmaState=h.dma.captureState();
+  Harness restored;restored.dma.setTiming(1,40,1,1,0,0);restored.scheduler.advanceTo(now);
+  u32 restoredReads=0;
+  restored.memory.mapIoRead(IO_IMGDEC_DATA,&restoredReads,[](void* p,u32,MappedBusSignals) {
+   ++*static_cast<u32*>(p);return 0xe1000000u;
+  });
+  restored.dma.restoreState(dmaState,now);restored.gpu.restoreState(gpuState);
+  restored.dma.setEndpointCapacity(DmaEndpoint::ImgDecRead,0);restored.dma.postLoad();
+  const i64 completion=now+dmaState.scheduledBlockCycles,edge=now+500;
+  require(edge<completion&&restored.scheduler.nextDeadline()==completion,"restored active block owns its original deadline");
+  restored.scheduler.advanceTo(edge);restored.dma.setEndpointCapacity(DmaEndpoint::ImgDecRead,1);
+  require(restored.scheduler.nextDeadline()==completion,"restored source edge leaves DMA completion first");
+  require(restored.memory.readIoU32(IO_DMA0_TRANSFER_COUNT)==1,"restored GPU tail stays queued during other block");
+  for(u32 i=0;i<300&&restored.memory.readIoU32(IO_DMA0_STATUS)==DMA_STATUS_BUSY;++i)restored.step();
+  require(restored.memory.readIoU32(IO_DMA1_STATUS)==DMA_STATUS_DONE&&restored.memory.readIoU32(IO_DMA0_STATUS)==DMA_STATUS_DONE,"restored source-waiting route completes");
+  require(restoredReads==1,"restored decoder tail transfers exactly once");
+ }
+}
 void testGpuPacketAcrossBursts() {
  Harness h;constexpr u32 words=515;
  h.memory.writeU32(Source,GX_GPU_GP0_CPU_TO_VRAM_FIRST<<24);h.memory.writeU32(Source+4,0);h.memory.writeU32(Source+8,(16<<16)|64);
@@ -225,6 +374,7 @@ void testAdmittedBurstAndSupervisorWriteInhibition() {
 }
 void testRoundRobinAndSupervisorBoundary() {
  Harness h;std::vector<u32> order;
+ h.gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION<<24)|GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
  h.memory.mapIoWrite(IO_GX_GPU_GP0,&order,[](void* p,u32,u32,MappedBusSignals){static_cast<std::vector<u32>*>(p)->push_back(0);});
  h.memory.mapIoWriteReady(IO_GX_GPU_GP0,[](void*,u32,MappedBusSignals){return true;});
  h.memory.mapIoWrite(IO_IMGDEC_DATA,&order,[](void* p,u32,u32,MappedBusSignals){static_cast<std::vector<u32>*>(p)->push_back(1);});
@@ -260,6 +410,7 @@ void testPrimitivesAcrossTransportEdge() {
 int main() {
  characterizeRamCopy();
  testAdmittedBurstAndSupervisorWriteInhibition();testPrimitivesAcrossTransportEdge();testCopyTiming();testBoundedBurstsAndForwardOverlap();testMemoryExcludesConsoleMmio();testFixedGpuAndRawRegisters();
+ testGpuDmaReadinessDeadlines();testGpuDmaWaitAndLateDecoderSource();testGpuSourceReadyDuringOtherDmaBlock();testStopGpuDemandAndRestoreSourceWait();
  testGpuPacketAcrossBursts();testGpuDmaTailResumesAfterSaturatedCommandBufferRetirement();testFixedInputRoutes();testDecoderToGpuIntersectionAndRestore();testStopAndEmptyJob();testRoundRobinAndSupervisorBoundary();
  return 0;
 }

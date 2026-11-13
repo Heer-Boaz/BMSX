@@ -20,6 +20,7 @@
 #include "support/cpu_execution_parity.h"
 #include "spec/blua32/builtin.h"
 #include "spec/blua32/instruction_format.h"
+#include "spec/blua32/memory_access_kind.h"
 #include "spec/blua32/opcode.h"
 
 #include <algorithm>
@@ -83,6 +84,52 @@ struct TickRuntimeFixture {
 		runtime.boot();
 	}
 };
+
+void testRuntimeRestoreRearmsCpuGp0Wait() {
+	using namespace bmsx;
+	test::Blua32TestImage image;
+	image.text.resize(5u * INSTRUCTION_BYTES);
+	std::span<u8> code(image.text);
+	writeInstruction(code, 0, static_cast<u8>(OpCode::LOADK), 0, 0, 0);
+	writeInstruction(code, 1, static_cast<u8>(OpCode::LOADK), 1, 0, 1);
+	writeInstruction(code, 2, static_cast<u8>(OpCode::STORE_MEM_D), 1, 0, static_cast<u8>(MemoryAccessKind::U32LE));
+	writeInstruction(code, 3, static_cast<u8>(OpCode::RET), 0, 0, 0);
+	writeInstruction(code, 4, static_cast<u8>(OpCode::RFE), 0, 0, 0);
+	image.functions = {{.firstWord = 0u, .wordCount = 4u, .maxStack = 2u}, {.firstWord = 4u, .wordCount = 1u}};
+	image.constants = {static_cast<f64>(IO_GX_GPU_GP0), static_cast<f64>(0x1f000000u)};
+	image.irqFunctionIndex = 1u;
+	image.exceptionFunctionIndex = 1u;
+	for (const LuaBootPrimitive& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
+	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
+	TickInputSource input;
+	Runtime runtime(RuntimeOptions{rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
+	runtime.boot();
+	auto& memory = runtime.machine.memory;
+	auto& scheduler = runtime.machine.scheduler;
+	auto& cpu = runtime.machine.cpu;
+	auto& gpu = runtime.machine.gxGpu;
+	const u32 mode = gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SMODE1_LOW);
+	memory.writeMappedU32LE(mode, memory.readMappedU32LE(mode) | GX_GPU_PCRTC_SMODE1_SINT);
+	gpu.onService(scheduler.currentNowCycles());
+	for (u32 word : {0x020000ffu, 0u, 0x00010001u}) gpu.writeGp0(word);
+	for (u32 i = 0; i < GX_GPU_COMMAND_FIFO_WORD_CAPACITY; ++i) gpu.writeGp0(0xe1000000u);
+	require(scheduler.runCpuSlice(0, 20) == RunResult::Halted && cpu.isMemoryWriteBlocked(), "CPU is blocked at GP0 before checkpoint");
+	scheduler.advanceTo(20 - cpu.instructionBudgetRemaining);
+	const auto state = captureRuntimeSaveState(runtime);
+	scheduler.advanceTo(29);
+	require(scheduler.popDueTimer() == DEVICE_SERVICE_GPU, "original wait has GPU completion");
+	gpu.onService(29);
+	require(!cpu.isMemoryWriteBlocked(), "original GPU completion releases CPU");
+	applyRuntimeSaveState(runtime, state);
+	require(cpu.isMemoryWriteBlocked(), "CPU wait restored after device state");
+	require(scheduler.nextDeadline() == 29, "restored CPU dependency rearms GPU completion deadline");
+	scheduler.advanceTo(29);
+	require(scheduler.popDueTimer() == DEVICE_SERVICE_GPU, "restored wait schedules GPU completion");
+	gpu.onService(29);
+	require(!cpu.isMemoryWriteBlocked(), "restored GPU completion releases CPU");
+	for (int i = 0; i < 4 && cpu.getFrameDepth() > 0; ++i) scheduler.runCpuSlice(0, 20);
+	require(cpu.getFrameDepth() == 0, "restored GP0 store and return retire");
+}
 
 void testSupervisorGpuServiceAtDeviceBoundaries() {
 	using namespace bmsx;
@@ -1336,6 +1383,7 @@ void testRuntimeResetNotification() {
 }
 
 int main() {
+	testRuntimeRestoreRearmsCpuGp0Wait();
 	testGpuRawExtensionWordCodec();
 	testSupervisorGpuServiceAtDeviceBoundaries();
 	testSupervisorServiceBanksUnreadReadback();

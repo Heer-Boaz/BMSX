@@ -734,7 +734,7 @@ void GxGpu::rescheduleDeviceService(bool force, bool ensureCompletion) {
 			&& (m_pendingCommandTargetCount >= m_backendSubmissionCommandLimit || commandBufferDrainRequired()))
 		|| m_commandBuffer.readback.phase() != GX_GPU_READBACK_IDLE || m_supervisorQuiesceRequested
 		|| (m_cpu.isMemoryWriteBlocked() && m_cpu.stalledMemoryWriteAddress() == IO_GX_GPU_GP0)
-		|| m_dmaController.ownsReadPort(IO_GX_GPU_GP0) || m_dmaController.ownsWritePort(IO_GX_GPU_GP0);
+		|| m_dmaController.gpuCommandServiceRequired();
 	i64 deadline = m_pendingCommandCompletionCycle == 0 || !commandObservable ? -1 : m_pendingCommandCompletionCycle;
 	if (m_pcrtcTimingPublicationPending) {
 		deadline = m_scheduler.currentNowCycles();
@@ -1489,12 +1489,12 @@ bool GxGpu::gp0WriteReady(MappedBusSignals busSignals) {
 	return ready;
 }
 
-void GxGpu::synchronizeDmaStart() {
+void GxGpu::synchronizeDmaRequest() {
 	synchronizeCommandExecution(m_scheduler.currentNowCycles());
 	updateDynamicStatusBits();
 }
 
-void GxGpu::dmaRequestStarted() {
+void GxGpu::dependencyStateChanged() {
 	rescheduleDeviceService();
 }
 

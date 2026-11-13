@@ -1376,7 +1376,7 @@ export class GxGpu {
 			|| this.commandBuffer.readback.phase !== GX_GPU_READBACK_IDLE
 			|| this.supervisorQuiesceRequested
 			|| (this.cpu.isMemoryWriteBlocked() && this.cpu.stalledMemoryWriteAddress() === IO_GX_GPU_GP0)
-			|| this.dmaController.ownsReadPort(IO_GX_GPU_GP0) || this.dmaController.ownsWritePort(IO_GX_GPU_GP0);
+			|| this.dmaController.gpuCommandServiceRequired();
 		let deadline = this.pendingCommandCompletionCycle === 0 || !commandObservable ? -1 : this.pendingCommandCompletionCycle;
 		if (this.pcrtcTimingPublicationPending) {
 			deadline = this.scheduler.currentNowCycles();
@@ -1419,12 +1419,12 @@ export class GxGpu {
 		return this.statusWord;
 	}
 
-	public synchronizeDmaStart(): void {
+	public synchronizeDmaRequest(): void {
 		this.synchronizeCommandTiming(this.scheduler.currentNowCycles());
 		this.updateDynamicStatusBits();
 	}
 
-	public dmaRequestStarted(): void {
+	public dependencyStateChanged(): void {
 		this.rescheduleDeviceService();
 	}
 
