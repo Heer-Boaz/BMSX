@@ -1020,7 +1020,6 @@ void testExternalClosureAdvancesToGteInterlockDeadline() {
 		2 * bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::LOADK)]
 		+ bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::STORE_MEM)]
 		+ static_cast<int>(bmsx::GX_GTE_PLUS_CYCLES_VMAD3)
-		+ bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::STORE_MEM)]
 		+ bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::RET)];
 
 	const std::span<const bmsx::Value> out = fixture.runtime.callClosure(*fixture.closures[0]);

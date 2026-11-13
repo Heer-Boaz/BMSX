@@ -722,7 +722,7 @@ void testPlusObservationPreservesCpuInterlock() {
 	const int ret = prices[static_cast<size_t>(bmsx::OpCode::RET)];
 	const bmsx::i64 firstIssue = 2 * load + store;
 	const bmsx::i64 firstDeadline = firstIssue + bmsx::GX_GTE_PLUS_CYCLES_VMAD3;
-	const bmsx::i64 secondIssue = firstDeadline + store;
+	const bmsx::i64 secondIssue = firstDeadline;
 	const bmsx::i64 secondDeadline = secondIssue + bmsx::GX_GTE_PLUS_CYCLES_VMAD3;
 	GteHarness baseline(image), observed(image);
 	PlusTrace trace;
@@ -737,7 +737,7 @@ void testPlusObservationPreservesCpuInterlock() {
 		harness->gte.onService();
 		require(!harness->cpu.isMemoryWriteBlocked(), "actual publication releases interlock");
 		require(harness->scheduler.runCpuSlice(0, 1000) == bmsx::RunResult::Halted, "retried PLUS store and return finish");
-		require(1000 - harness->cpu.instructionBudgetRemaining == store + ret + 2, "retried store plus RET base and two completion slots");
+		require(1000 - harness->cpu.instructionBudgetRemaining == ret + 2, "resumed store retains its paid base; RET charges its base and two completion slots");
 		harness->scheduler.advanceTo(secondDeadline);
 		harness->memory.readMappedU32LE(commandAddress);
 	}

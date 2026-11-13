@@ -679,6 +679,9 @@ test('GX-GTE+ observation preserves real CPU interlock/retry cycles, heap and co
 		constants: [commandAddress, 1], functionIds: ['observed_plus_interlock'] });
 	const baseline = createGte(), observed = createGte();
 	for (const { cpu } of [baseline, observed]) { cpu.memory.installSystemRom(image.romBytes); cpu.reset(); }
+	const firstIssue = 2 * BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.STORE_MEM_D];
+	const firstDeadline = firstIssue + GX_GTE_PLUS_CYCLES_VMAD3;
+	const secondDeadline = firstDeadline + GX_GTE_PLUS_CYCLES_VMAD3;
 	const events: [string, number, number][] = [];
 	observed.gte.setPlusObserver({
 		accepted(_command, _bus, cycle, deadline) { events.push(['accepted', cycle, deadline]); },
@@ -688,18 +691,18 @@ test('GX-GTE+ observation preserves real CPU interlock/retry cycles, heap and co
 		assert.equal(scheduler.runCpuSlice(0, 1000), RunResult.Halted);
 		assert.equal(cpu.isMemoryWriteBlocked(), true);
 		assert.equal(1000 - cpu.instructionBudgetRemaining, 2 * BASE_CYCLES[OpCode.LOADK] + 2 * BASE_CYCLES[OpCode.STORE_MEM_D]);
-		scheduler.advanceTo(10);
-		assert.equal(scheduler.nextDeadline(), 12);
-		scheduler.advanceTo(12);
+		scheduler.advanceTo(2 * BASE_CYCLES[OpCode.LOADK] + 2 * BASE_CYCLES[OpCode.STORE_MEM_D]);
+		assert.equal(scheduler.nextDeadline(), firstDeadline);
+		scheduler.advanceTo(firstDeadline);
 		assert.equal(scheduler.popDueTimer(), DEVICE_SERVICE_GTE);
 		gte.onService();
 		assert.equal(cpu.isMemoryWriteBlocked(), false);
 		assert.equal(scheduler.runCpuSlice(0, 1000), RunResult.Halted);
-		assert.equal(1000 - cpu.instructionBudgetRemaining, BASE_CYCLES[OpCode.STORE_MEM_D] + BASE_CYCLES[OpCode.RET] + 2);
-		scheduler.advanceTo(20);
+		assert.equal(1000 - cpu.instructionBudgetRemaining, BASE_CYCLES[OpCode.RET] + 2);
+		scheduler.advanceTo(secondDeadline);
 		memory.readMappedU32LE(commandAddress);
 	}
-	assert.deepEqual(events, [['accepted', 7, 12], ['published', 12, 12], ['accepted', 15, 20], ['published', 20, 20]]);
+	assert.deepEqual(events, [['accepted', firstIssue, firstDeadline], ['published', firstDeadline, firstDeadline], ['accepted', firstDeadline, secondDeadline], ['published', secondDeadline, secondDeadline]]);
 	assert.equal(observed.cpu.instructionBudgetRemaining, baseline.cpu.instructionBudgetRemaining);
 	assert.equal(observed.cpu.luaHeap.usedBytes(), baseline.cpu.luaHeap.usedBytes());
 	assert.deepEqual(observed.cpu.captureRuntimeState(), baseline.cpu.captureRuntimeState());
