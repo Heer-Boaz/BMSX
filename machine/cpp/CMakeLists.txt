@@ -787,8 +787,9 @@ if(BMSX_BUILD_TESTS)
 
 	add_executable(bmsx_gx_gpu_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gx_gpu_test.cpp
+		${BMSX_TEST_ROM_SOURCE}
 	)
-	target_link_libraries(bmsx_gx_gpu_tests PRIVATE bmsx_host_support)
+	target_link_libraries(bmsx_gx_gpu_tests PRIVATE bmsx_host_support bmsx_rom_tooling)
 	add_test(NAME bmsx_gx_gpu_tests COMMAND bmsx_gx_gpu_tests)
 
 	add_executable(bmsx_device_quantize_tests

@@ -266,7 +266,11 @@ import {
 } from '../../machine/ts/spec/gx/gp0';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { MAPPED_BUS_DMA_BLOCK_END, MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
-import { CPU } from '../../machine/ts/machine/cpu/cpu';
+import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
+import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
+import { linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
@@ -1789,6 +1793,69 @@ test('GX-GPU does not mirror undefined GP1 40h to reset', () => {
 	gpu.writeGp1(GX_GPU_GP1_DISPLAY_MODE << 24);
 	gpu.writeGp1(0x40000000);
 	assert.equal(gpu.readDisplayModeWord(), 0);
+});
+
+test('blocked CPU GP0 store resumes after completion across device restore', () => {
+	const code = new Uint8Array(4 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.LOADK, 0, 0, 0, 0);
+	writeInstruction(code, 1, OpCode.LOADK, 1, 0, 1, 0);
+	writeInstruction(code, 2, OpCode.STORE_MEM_D, 1, 0, MemoryAccessKind.U32LE, 0);
+	writeInstruction(code, 3, OpCode.RET, 0, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text: code, functions: [{ firstWord: 0, wordCount: 4, maxStack: 2 }],
+		constants: [IO_GX_GPU_GP0, 0x1f000000] });
+	const original = createGpu();
+	original.memory.installSystemRom(image.romBytes);
+	original.cpu.reset();
+	stopPcrtc(original.memory, original.gpu, original.scheduler);
+	for (const word of [0x020000ff, 0, 0x00010001]) original.gpu.writeGp0(word);
+	for (let i = 0; i < GX_GPU_COMMAND_FIFO_WORD_CAPACITY; ++i) original.gpu.writeGp0(0xe1000000);
+	assert.equal(original.memory.mappedWriteReady(IO_GX_GPU_GP0), false);
+	assert.equal(original.scheduler.runCpuSlice(0, 20), RunResult.Halted);
+	assert.equal(original.cpu.isMemoryWriteBlocked(), true);
+	assert.equal(original.cpu.stalledMemoryWriteAddress(), IO_GX_GPU_GP0);
+	original.scheduler.advanceTo(20 - original.cpu.instructionBudgetRemaining);
+	const gpuState = original.gpu.captureState();
+	const cpuState = original.cpu.captureRuntimeState();
+	const restored = createGpu();
+	restored.memory.installSystemRom(image.romBytes);
+	restored.cpu.reset();
+	stopPcrtc(restored.memory, restored.gpu, restored.scheduler);
+	restored.scheduler.advanceTo(original.scheduler.nowCycles);
+	restored.gpu.restoreState(gpuState);
+	restored.cpu.restoreRuntimeState(cpuState);
+	for (const target of [original, restored]) {
+		target.scheduler.advanceTo(28);
+		assert.equal(target.cpu.isMemoryWriteBlocked(), true);
+		assert.equal(target.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, 0);
+		while (target.scheduler.nextDeadline() <= 29) {
+			const deadline = target.scheduler.nextDeadline();
+			target.scheduler.advanceTo(deadline);
+			assert.equal(target.scheduler.popDueTimer(), DEVICE_SERVICE_GPU);
+			target.gpu.onService(deadline);
+		}
+		target.scheduler.advanceTo(29);
+		assert.equal(target.cpu.isMemoryWriteBlocked(), false);
+		assert.equal(target.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, 0, 'blocked store has not yet retired');
+		for (let attempt = 0; attempt < 4 && target.cpu.getFrameDepth() > 0; ++attempt) target.scheduler.runCpuSlice(0, 20);
+		assert.equal(target.cpu.getFrameDepth(), 0, 'the blocked store and return retire');
+		assert.equal(target.cpu.isMemoryWriteBlocked(), false);
+		while (target.scheduler.nextDeadline() < 45) {
+			const deadline = target.scheduler.nextDeadline();
+			target.scheduler.advanceTo(deadline);
+			assert.equal(target.scheduler.popDueTimer(), DEVICE_SERVICE_GPU);
+			target.gpu.onService(deadline);
+		}
+		target.scheduler.advanceTo(44);
+		assert.equal(target.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, 0, 'queued IRQ is not early');
+		while (target.scheduler.nextDeadline() <= 45) {
+			const deadline = target.scheduler.nextDeadline();
+			target.scheduler.advanceTo(deadline);
+			assert.equal(target.scheduler.popDueTimer(), DEVICE_SERVICE_GPU);
+			target.gpu.onService(deadline);
+		}
+		target.scheduler.advanceTo(45);
+		assert.equal(target.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, IRQ_GPU, 'retried store reaches the GPU');
+	}
 });
 
 test('DMA GP0 prefix cannot make queued commands begin before burst publication', () => {

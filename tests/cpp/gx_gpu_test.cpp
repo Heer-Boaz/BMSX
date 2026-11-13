@@ -6,6 +6,9 @@
 #include "machine/devices/irq/controller.h"
 #include "render/backend/gx_gpu_render_rules.h"
 #include "spec/bmsx/io.h"
+#include "spec/blua32/instruction_format.h"
+#include "spec/blua32/memory_access_kind.h"
+#include "support/blua32_test_rom.h"
 #include "spec/bmsx/memory_map.h"
 #include "machine/cpu/cpu.h"
 #include "machine/memory/memory.h"
@@ -1264,6 +1267,72 @@ void testGp0IngressBypassesOnlyNopsAndExecutesDrawingStateInFifoOrder() {
 	require(harness.gpu.readDrawingOffsetWord() == 0u, "GX-GPU keeps E5 ordered behind E4");
 	runGpuAtNextDeadline(harness);
 	require(harness.gpu.readDrawingOffsetWord() == (0x00345678u & bmsx::GX_GPU_DRAWING_OFFSET_MASK), "GX-GPU executes E5 after E4");
+}
+
+void testBlockedCpuGp0StoreResumesAcrossDeviceRestore() {
+	bmsx::test::Blua32TestImage image;
+	image.text.resize(4u * bmsx::INSTRUCTION_BYTES);
+	std::span<bmsx::u8> code(image.text);
+	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
+	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 1, 0, 1);
+	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::STORE_MEM_D), 1, 0, static_cast<bmsx::u8>(bmsx::MemoryAccessKind::U32LE));
+	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
+	image.functions.push_back({ .firstWord = 0u, .wordCount = 4u, .maxStack = 2u });
+	image.constants.emplace_back(static_cast<bmsx::f64>(bmsx::IO_GX_GPU_GP0));
+	image.constants.emplace_back(static_cast<bmsx::f64>(0x1f000000u));
+	const auto rom = bmsx::test::encodeBlua32TestRom(bmsx::RomImageDomain::System, image);
+	GpuHarness original;
+	original.memory.installSystemRom(rom.bytes);
+	original.cpu.reset();
+	stopPcrtc(original);
+	for (const bmsx::u32 word : {0x020000ffu, 0u, 0x00010001u}) original.gpu.writeGp0(word);
+	for (bmsx::u32 i = 0; i < bmsx::GX_GPU_COMMAND_FIFO_WORD_CAPACITY; ++i) original.gpu.writeGp0(0xe1000000u);
+	require(!original.memory.mappedWriteReady(bmsx::IO_GX_GPU_GP0), "full GP0 FIFO blocks CPU writes");
+	require(original.scheduler.runCpuSlice(0, 20) == bmsx::RunResult::Halted, "CPU halts at a blocked GP0 store");
+	require(original.cpu.isMemoryWriteBlocked() && original.cpu.stalledMemoryWriteAddress() == bmsx::IO_GX_GPU_GP0,
+		"the blocked GP0 address is retained");
+	original.scheduler.advanceTo(20 - original.cpu.instructionBudgetRemaining);
+	const auto gpuState = original.gpu.captureState();
+	const auto cpuState = original.cpu.captureRuntimeState();
+	GpuHarness restored;
+	restored.memory.installSystemRom(rom.bytes);
+	restored.cpu.reset();
+	stopPcrtc(restored);
+	restored.scheduler.advanceTo(original.scheduler.nowCycles());
+	restored.gpu.restoreState(gpuState);
+	restored.cpu.restoreRuntimeState(cpuState);
+	for (GpuHarness* target : {&original, &restored}) {
+		target->scheduler.advanceTo(28);
+		require(target->cpu.isMemoryWriteBlocked(), "CPU stays blocked before FIFO progresses");
+		require((target->memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GPU) == 0u, "blocked GP0 write has not retired");
+		while (target->scheduler.nextDeadline() <= 29) {
+			const bmsx::i64 deadline = target->scheduler.nextDeadline();
+			target->scheduler.advanceTo(deadline);
+			require(target->scheduler.popDueTimer() == bmsx::DEVICE_SERVICE_GPU, "scheduled GPU event wakes the CPU");
+			target->gpu.onService(deadline);
+		}
+		target->scheduler.advanceTo(29);
+		require(!target->cpu.isMemoryWriteBlocked(), "GPU completion releases the blocked store");
+		require((target->memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GPU) == 0u, "store still awaits retry");
+		for (int attempt = 0; attempt < 4 && target->cpu.getFrameDepth() > 0; ++attempt) target->scheduler.runCpuSlice(0, 20);
+		require(target->cpu.getFrameDepth() == 0 && !target->cpu.isMemoryWriteBlocked(), "store and return retire");
+		while (target->scheduler.nextDeadline() < 45) {
+			const bmsx::i64 deadline = target->scheduler.nextDeadline();
+			target->scheduler.advanceTo(deadline);
+			require(target->scheduler.popDueTimer() == bmsx::DEVICE_SERVICE_GPU, "GPU advances queued commands");
+			target->gpu.onService(deadline);
+		}
+		target->scheduler.advanceTo(44);
+		require((target->memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GPU) == 0u, "queued IRQ is not early");
+		while (target->scheduler.nextDeadline() <= 45) {
+			const bmsx::i64 deadline = target->scheduler.nextDeadline();
+			target->scheduler.advanceTo(deadline);
+			require(target->scheduler.popDueTimer() == bmsx::DEVICE_SERVICE_GPU, "GPU delivers queued IRQ");
+			target->gpu.onService(deadline);
+		}
+		target->scheduler.advanceTo(45);
+		require((target->memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GPU) == bmsx::IRQ_GPU, "retried store reaches the GPU");
+	}
 }
 
 void testDmaGp0PrefixCannotRunBeforeBurstPublication() {
@@ -5202,6 +5271,7 @@ int main() {
 	testGp0IngressBypassesOnlyNopsAndExecutesDrawingStateInFifoOrder();
 	testQueuedIrqStartsAtPreviousCompletionAcrossRestore();
 	testDmaGp0PrefixCannotRunBeforeBurstPublication();
+	testBlockedCpuGp0StoreResumesAcrossDeviceRestore();
 	testGp1CrtcRangeRegistersLatchMaskedRawWords();
 	testGp1UndefinedHighOpcodeDoesNotMirrorReset();
 	testGp0IrqRequestAndGp1Acknowledge();
