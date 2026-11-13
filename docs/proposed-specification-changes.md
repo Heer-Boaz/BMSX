@@ -1616,8 +1616,9 @@ De onderzochte kandidaat deelt een binaire64-rekeneenheid tussen CPU en GEO.
 In een gerichte corpusproef duurde een geaccepteerde deling daarin maximaal 72
 klokken tot het resultaat; die proef is geen maximum voor alle bitpatronen en
 omvat niet het complete CPU-pad. De kandidaat toont dus geen overeenstemming
-met de huidige ééncycluscharge voor afhankelijke delingen. Dit is geen bewijs
-dat iedere andere mogelijke fysieke architectuur onmogelijk is.
+met de huidige basisprijs van twee cycles voor een deling, inclusief de vaste
+cycle voor instructieaanvoer. Dit is geen bewijs dat iedere andere mogelijke
+fysieke architectuur onmogelijk is.
 
 **Prestatie-intentie van BLua32.** De oorspronkelijke lage charges zijn bewust
 gekozen om normaal programmeerwerk te benaderen zoals dat op vergelijkbare
@@ -1635,7 +1636,8 @@ onderscheid: `module<const>` is een statisch opgeloste naamruimte, zonder
 runtime-moduletabel; een gewone module kan juist wel een veranderlijke tabel
 als waarde exporteren. Toegang tot zo'n waarde behoudt de voorgeschreven
 tabelsemantiek, inclusief veranderlijke velden. In de huidige instructietabel
-kosten `GETT`, `GETI` en `GETFIELD` één basiscyclus en hun schrijfvarianten twee;
+kosten `GETT`, `GETI` en `GETFIELD` twee basiscycles en hun schrijfvarianten drie,
+inclusief de vaste cycle voor instructieaanvoer;
 een dynamische tabeltoegang heeft die instructiekosten ook als de tabel uit een
 module komt. Er is geen afzonderlijke moduletabeltoeslag. Hoe de gewenste
 modulekosten en de bestaande veranderlijke modulewaarden samenkomen in fysieke
@@ -1670,10 +1672,10 @@ overgeërfde waarde zichtbaar maken en wordt daarom niet als vaste uitkomst
 vastgezet. De hint is geen publieke objectidentiteit, geen vastgelegde module-
 of cartridge-ABI en geen excuus om mutabele modulevelden in te vriezen.
 
-Dit is een concrete uitvoeringsrichting, geen bewijs dat iedere toegang in één
-systeemcyclus past. Wisselende sleutels, metatabelketens en allocatie kunnen
-meer werk vragen; er is geen vaste kostengarantie voor alle representabele
-invoer. De huidige instructieprijs is gelijk voor een dynamische
+Dit is een concrete uitvoeringsrichting, geen bewijs dat iedere toegang binnen
+de vaste basisprijs van twee cycles past. Wisselende sleutels, metatabelketens
+en allocatie kunnen meer werk vragen; er is geen vaste kostengarantie voor alle
+representabele invoer. De huidige instructieprijs is gelijk voor een dynamische
 tabel die via een module is verkregen en dezelfde tabel via een andere alias;
 de guestwaarde draagt geen afzonderlijke moduleherkomst. Als de bedoelde regel
 zou zijn dat precies dezelfde tabeltoegang via een modulealias een andere prijs
