@@ -121,6 +121,17 @@ bmsx::u32 runGpuAtNextDeadline(GpuHarness& harness) {
 	return harness.gpu.onService(deadline);
 }
 
+// Service real due edges without requiring a separate event per GPU command.
+void advanceGpuTo(GpuHarness& harness, bmsx::i64 cycle) {
+	while (harness.scheduler.nextDeadline() <= cycle) {
+		const bmsx::i64 deadline = harness.scheduler.nextDeadline();
+		harness.scheduler.advanceTo(deadline);
+		require(harness.scheduler.popDueTimer() == bmsx::DEVICE_SERVICE_GPU, "scheduled GPU service kind");
+		harness.gpu.onService(deadline);
+	}
+	harness.scheduler.advanceTo(cycle);
+}
+
 bmsx::u32 gxGpuVramDigest(std::span<const bmsx::u8> bytes) {
 	bmsx::u32 digest = 0x811c9dc5u;
 	for (const bmsx::u8 byte : bytes) {
@@ -880,8 +891,7 @@ void testRetiringSaturatedCommandPrefixResumesDmaIngress() {
 		state = gpu.captureState();
 		require(state.pendingCommandCycles > 0, "retirement schedules the first queued GP0 command");
 		require(state.commandBuffer.commandCount == 1u, "retirement accepts one queued command at its timing boundary");
-		require(harness.scheduler.nextDeadline() <= harness.scheduler.currentNowCycles() + state.pendingCommandCycles,
-			"resumed GP0 command has a scheduled deadline");
+		require(!harness.memory.mappedWriteReady(bmsx::IO_GX_GPU_GP0), "queued DMA ingress blocks CPU writes");
 		completeGpuCommands(harness);
 		state = gpu.captureState();
 		require(state.gp0DmaIngressWords.empty(), "resumed GPU consumes DMA ingress");
@@ -1203,20 +1213,16 @@ void testCommandTimingGatesGpustatIdleAndVblankExecutionFrontier() {
 	require(commands.commandCount == 1u, "GX-GPU timing accepts the fill command");
 	require(commands.executedCommandCount == 0u, "GX-GPU timing keeps the fill behind the execution frontier");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_GPU_IDLE) == 0u, "GX-GPU timing lowers idle during fill execution");
-	require(harness.scheduler.nextDeadline() == 29, "GX-GPU 16x1 fill schedules its exact completion cycle");
 	gpu.presentReadyFrameOnVblankEdge();
 	require(commands.presentCommandCount == 0u, "GX-GPU VBLANK does not publish an executing fill");
 
-	harness.scheduler.advanceTo(28);
-	gpu.onService(28);
-	require(commands.executedCommandCount == 0u, "GX-GPU fill remains pending one cycle before completion");
+	advanceGpuTo(harness, 28);
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_GPU_IDLE) == 0u, "GX-GPU remains busy one cycle before fill completion");
+	require(commands.executedCommandCount == 0u, "GX-GPU fill remains pending one cycle before completion");
 
-	harness.scheduler.advanceTo(29);
-	gpu.onService(29);
-	require(commands.executedCommandCount == 1u, "GX-GPU fill advances the execution frontier at completion");
+	advanceGpuTo(harness, 29);
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_GPU_IDLE) == bmsx::GX_GPU_STATUS_GPU_IDLE, "GX-GPU returns idle at fill completion");
-	require(harness.scheduler.nextDeadline() == std::numeric_limits<bmsx::i64>::max(), "GX-GPU cancels its service while idle");
+	require(commands.executedCommandCount == 1u, "GX-GPU fill advances the execution frontier at completion");
 	gpu.presentReadyFrameOnVblankEdge();
 	require(commands.presentCommandCount == 1u, "GX-GPU VBLANK publishes the completed fill");
 }
@@ -1250,22 +1256,24 @@ void testGp0IngressBypassesOnlyNopsAndExecutesDrawingStateInFifoOrder() {
 	require(harness.gpu.readDrawingAreaBottomRightWord() == 0u, "GX-GPU E4 remains behind queued raster packets");
 	require(harness.gpu.readDrawingOffsetWord() == 0u, "GX-GPU E5 remains behind queued raster packets");
 	require(harness.memory.mappedWriteReady(bmsx::IO_GX_GPU_GP0), "GX-GPU queued drawing state leaves remaining FIFO capacity");
-	require(harness.scheduler.nextDeadline() == 29, "GX-GPU queued drawing state does not overtake the active deadline");
 	for (size_t index = 6u; index < bmsx::GX_GPU_COMMAND_FIFO_WORD_CAPACITY; index += 1u) {
 		harness.gpu.writeGp0(0x03000000u | static_cast<uint32_t>(index));
 	}
 
 	require(!harness.memory.mappedWriteReady(bmsx::IO_GX_GPU_GP0), "GX-GPU lowers GP0 MMIO write-ready at FIFO capacity");
-	runGpuAtNextDeadline(harness);
+	advanceGpuTo(harness, 29);
 	require(harness.memory.mappedWriteReady(bmsx::IO_GX_GPU_GP0), "GX-GPU raises GP0 MMIO write-ready at command completion");
 	require(harness.gpu.readDrawingAreaTopLeftWord() == 0u, "GX-GPU keeps E3 queued while the next raster packet executes");
-	runGpuAtNextDeadline(harness);
+	advanceGpuTo(harness, 58);
+	harness.gpu.readStatus();
 	require(harness.gpu.readDrawingAreaTopLeftWord() == (0x00054321u & bmsx::GX_GPU_DRAWING_AREA_MASK), "GX-GPU executes E3 after prior raster packets");
 	require(harness.gpu.readDrawingAreaBottomRightWord() == 0u, "GX-GPU keeps E4 ordered behind E3");
-	runGpuAtNextDeadline(harness);
+	advanceGpuTo(harness, 59);
+	harness.gpu.readStatus();
 	require(harness.gpu.readDrawingAreaBottomRightWord() == (0x00023456u & bmsx::GX_GPU_DRAWING_AREA_MASK), "GX-GPU executes E4 after E3");
 	require(harness.gpu.readDrawingOffsetWord() == 0u, "GX-GPU keeps E5 ordered behind E4");
-	runGpuAtNextDeadline(harness);
+	advanceGpuTo(harness, 60);
+	harness.gpu.readStatus();
 	require(harness.gpu.readDrawingOffsetWord() == (0x00345678u & bmsx::GX_GPU_DRAWING_OFFSET_MASK), "GX-GPU executes E5 after E4");
 }
 
@@ -2159,19 +2167,15 @@ void testSaveStateRestoresCommandTimeAndFifoSuffixRelativeToSchedulerTime() {
 	GpuHarness restored;
 	restored.scheduler.advanceTo(100);
 	restored.gpu.restoreState(state);
-	restored.gpu.onService(100);
-	require(restored.scheduler.nextDeadline() == 119, "GX-GPU restore schedules remaining command time relative to current time");
-	restored.scheduler.advanceTo(118);
-	restored.gpu.onService(118);
-	require(restored.gpu.readDrawModeWord() == 0u, "GX-GPU restore keeps the FIFO suffix queued before completion");
-	restored.scheduler.advanceTo(119);
-	restored.gpu.onService(119);
-	require(restored.gpu.readDrawModeWord() == 0x000123u, "GX-GPU restore consumes the FIFO suffix at prior command completion");
-	require(restored.gpu.readDeviceOutput().commandBuffer.executedCommandCount == 1u, "GX-GPU restore advances the restored execution frontier");
-	require(restored.scheduler.nextDeadline() == 120, "GX-GPU restore schedules the FIFO suffix command");
-	restored.scheduler.advanceTo(120);
-	restored.gpu.onService(120);
-	require((restored.gpu.readStatus() & bmsx::GX_GPU_STATUS_GPU_IDLE) == bmsx::GX_GPU_STATUS_GPU_IDLE, "GX-GPU restore becomes idle after the FIFO suffix completes");
+	advanceGpuTo(restored, 118);
+	restored.gpu.readStatus();
+	require(restored.gpu.readDrawModeWord() == 0u, "GX-GPU restore keeps FIFO suffix queued before completion");
+	advanceGpuTo(restored, 119);
+	restored.gpu.readStatus();
+	require(restored.gpu.readDrawModeWord() == 0x000123u, "GX-GPU consumes FIFO suffix at prior command completion");
+	require(restored.gpu.readDeviceOutput().commandBuffer.executedCommandCount == 1u, "restored execution frontier advances");
+	advanceGpuTo(restored, 120);
+	require((restored.gpu.readStatus() & bmsx::GX_GPU_STATUS_GPU_IDLE) == bmsx::GX_GPU_STATUS_GPU_IDLE, "GX-GPU restore becomes idle at suffix completion");
 }
 
 void testGp1ClearPreservesAcceptedDrawDeadlineAndCutsC0AtExecutionFrontier() {
@@ -2185,14 +2189,13 @@ void testGp1ClearPreservesAcceptedDrawDeadlineAndCutsC0AtExecutionFrontier() {
 	active.gpu.writeGp0(bmsx::GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24u);
 	active.gpu.writeGp0(0u);
 	active.gpu.writeGp0((1u << 16u) | 1u);
-	const bmsx::i64 fillDeadline = activeScheduler.nextDeadline();
-	activeScheduler.advanceTo(fillDeadline);
-	active.gpu.onService(fillDeadline);
+	const bmsx::i64 fillDeadline = 29;
+	advanceGpuTo(active, fillDeadline);
+	active.gpu.readStatus();
 	const bmsx::GxGpuCommandBuffer& activeCommands = active.gpu.readDeviceOutput().commandBuffer;
 	require(activeCommands.commandCount == 2u, "GX-GPU active C0 clear test retains fill and C0 before clear");
 	require(activeCommands.executedCommandCount == 1u, "GX-GPU active C0 clear test executes its fill prefix");
 	require(activeCommands.readback.phase() == bmsx::GX_GPU_READBACK_IDLE, "GX-GPU active C0 waits for its execution deadline");
-	require(activeScheduler.nextDeadline() == fillDeadline + 1, "GX-GPU active C0 owns the next deadline");
 
 	active.gpu.writeGp1(bmsx::GX_GPU_GP1_CLEAR_FIFO << 24u);
 	require(activeCommands.commandCount == 1u, "GX-GPU GP1 clear removes the active C0 marker");
@@ -2214,18 +2217,17 @@ void testGp1ClearPreservesAcceptedDrawDeadlineAndCutsC0AtExecutionFrontier() {
 	queued.gpu.writeGp0(bmsx::GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24u);
 	queued.gpu.writeGp0(0u);
 	queued.gpu.writeGp0((1u << 16u) | 1u);
-	const bmsx::i64 queuedFillDeadline = queued.scheduler.nextDeadline();
+	const bmsx::i64 queuedFillDeadline = 29;
 	queued.gpu.writeGp1(bmsx::GX_GPU_GP1_CLEAR_FIFO << 24u);
 	const bmsx::GxGpuCommandBuffer& queuedCommands = queued.gpu.readDeviceOutput().commandBuffer;
 	require(queuedCommands.commandCount == 1u, "GX-GPU GP1 clear preserves an active fill");
 	require(queuedCommands.executedCommandCount == 0u, "GX-GPU GP1 clear retains its active fill behind the execution frontier");
 	require(queued.gpu.captureState().gp0FifoWords.size() == 0u, "GX-GPU GP1 clear discards C0 still queued behind a draw");
-	require(queued.scheduler.nextDeadline() == queuedFillDeadline, "GX-GPU GP1 clear preserves its prior draw deadline");
 	require(queuedCommands.readback.phase() == bmsx::GX_GPU_READBACK_IDLE, "GX-GPU queued C0 never activates after GP1 clear");
 	require((queued.gpu.readStatus() & bmsx::GX_GPU_STATUS_GPU_IDLE) == 0u, "GX-GPU GP1 clear remains busy until its accepted fill completes");
-	runGpuAtNextDeadline(queued);
-	require(queuedCommands.executedCommandCount == 1u, "GX-GPU retained fill reaches its execution frontier at its original deadline");
+	advanceGpuTo(queued, queuedFillDeadline);
 	require((queued.gpu.readStatus() & bmsx::GX_GPU_STATUS_GPU_IDLE) != 0u, "GX-GPU GP1 clear becomes idle after its accepted fill completes");
+	require(queuedCommands.executedCommandCount == 1u, "GX-GPU retained fill reaches its execution frontier at its original deadline");
 }
 
 void testGp1ResetCancelsRestoredActiveC0Deadline() {
@@ -2273,25 +2275,22 @@ void testStreamClearRetainsFiniteCommandDeadline() {
 		gpu.writeGp0((bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x0000ffu);
 		gpu.writeGp0(0u);
 		gpu.writeGp0((16u << 16u) | 64u);
-		const auto deadline = scheduler.nextDeadline();
+		const auto deadline = scheduler.currentNowCycles() + gpu.captureState().pendingCommandCycles;
 		gpu.writeGp0((bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | 0x000123u);
-		scheduler.advanceTo(deadline - 1);
+		advanceGpuTo(harness, deadline - 1);
 		harness.memory.writeMappedU32LE(action[0], action[1]);
 		harness.memory.writeMappedU32LE(action[0], action[1]);
 		const auto& commands = gpu.readDeviceOutput().commandBuffer;
 		require(commands.commandCount == 1u && commands.executedCommandCount == 0u, "stream clear retains unfinished drawing");
 		require(gpu.captureState().pendingCommandCycles == 1, "repeated stream clear retains remaining command time");
 		require(gpu.captureState().gp0FifoWords.empty(), "stream clear drops queued settings");
-		if (scheduler.nextDeadline() == scheduler.currentNowCycles()) gpu.onService(scheduler.currentNowCycles());
-		require(scheduler.nextDeadline() == deadline, "stream clear preserves the original drawing deadline");
 		require((gpu.readStatus() & bmsx::GX_GPU_STATUS_GPU_IDLE) == 0u, "stream clear cannot force an executing draw idle");
 		backend.captureGxGpuVramSnapshot(gpu);
 		require(bmsx::readLE16(gpu.readVramSnapshotBytes().data()) == previousPixel, "snapshot cannot render unfinished drawing");
-		scheduler.advanceTo(deadline);
-		gpu.onService(deadline);
+		advanceGpuTo(harness, deadline);
+		require((gpu.readStatus() & bmsx::GX_GPU_STATUS_GPU_IDLE) != 0u, "drawing becomes idle only at completion");
 		require(commands.executedCommandCount == 1u, "retained drawing completes at its original deadline");
 		require(gpu.readDrawModeWord() == 0u, "discarded drawing state must not execute");
-		require((gpu.readStatus() & bmsx::GX_GPU_STATUS_GPU_IDLE) != 0u, "drawing becomes idle only at completion");
 		backend.captureGxGpuVramSnapshot(gpu);
 		require(bmsx::readLE16(gpu.readVramSnapshotBytes().data()) == 0x001fu, "retained drawing reaches VRAM after completion");
 	}
@@ -2306,9 +2305,9 @@ void testStreamClearRetainsTimedStateCommand() {
 	gpu.writeGp1(bmsx::GX_GPU_GP1_CLEAR_FIFO << 24u);
 	require(gpu.captureState().pendingCommandCycles == 1, "stream clear retains a zero-target command interval");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_GPU_IDLE) == 0u, "timed drawing state remains busy");
-	runGpuAtNextDeadline(harness);
-	require(gpu.readDrawModeWord() == 0x000123u, "stream clear retains accepted drawing state");
+	advanceGpuTo(harness, harness.scheduler.currentNowCycles() + 1);
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_GPU_IDLE) != 0u, "drawing state reaches idle at its deadline");
+	require(gpu.readDrawModeWord() == 0x000123u, "stream clear retains accepted drawing state");
 }
 
 void testGp1ClearFifoClearsPartialGp0PacketsAndFlushesPartialCpuToVramUploads() {
@@ -2352,11 +2351,10 @@ void testGp1ClearFifoClearsPartialGp0PacketsAndFlushesPartialCpuToVramUploads() 
 	require(gpu.readDrawModeWord() == 0x000222u, "GX-GPU partial CPU-to-VRAM payload does not execute draw mode");
 	require(gpu.readMaskBitModeWord() == 3u, "GX-GPU partial CPU-to-VRAM payload does not execute mask bit");
 	require(commands.executedCommandCount == 0u, "GX-GPU GP1 clear FIFO retains the flushed CPU-to-VRAM interval");
-	require(harness.scheduler.nextDeadline() == harness.scheduler.currentNowCycles() + 1, "GX-GPU GP1 clear FIFO schedules the flushed upload's normal cost");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_GPU_IDLE) == 0u, "GX-GPU partial CPU-to-VRAM remains busy until its command deadline");
-	runGpuAtNextDeadline(harness);
-	require(commands.executedCommandCount == 1u, "GX-GPU flushed CPU-to-VRAM reaches its frontier at its deadline");
+	advanceGpuTo(harness, harness.scheduler.currentNowCycles() + 1);
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_GPU_IDLE) != 0u, "GX-GPU flushed CPU-to-VRAM becomes idle at its deadline");
+	require(commands.executedCommandCount == 1u, "GX-GPU flushed CPU-to-VRAM reaches its frontier at its deadline");
 
 	gpu.writeGp0((0x48u << 24u) | 0x0000ffu);
 	gpu.writeGp0(0x00010002u);
@@ -2364,11 +2362,11 @@ void testGp1ClearFifoClearsPartialGp0PacketsAndFlushesPartialCpuToVramUploads() 
 	completeGpuCommands(harness);
 	gpu.writeGp0(0x00030004u);
 	require(commands.wordCount == 11u, "GX-GPU active polyline materializes completed segments");
-	const bmsx::i64 continuationDeadline = harness.scheduler.nextDeadline();
+	const bmsx::i64 continuationCycles = gpu.captureState().pendingCommandCycles;
 	gpu.writeGp1(bmsx::GX_GPU_GP1_CLEAR_FIFO << 24u);
 	require(commands.commandCount == 3u, "GX-GPU GP1 clear FIFO preserves completed polyline segments");
 	require(commands.wordCount == 11u, "GX-GPU GP1 clear FIFO has no uncommitted polyline words");
-	require(harness.scheduler.nextDeadline() == continuationDeadline, "GX-GPU GP1 clear FIFO retains segment scheduling, including a clipped zero-cost segment");
+	require(gpu.captureState().pendingCommandCycles == continuationCycles, "GX-GPU GP1 clear FIFO retains segment timing, including a clipped zero-cost segment");
 	completeGpuCommands(harness);
 
 	gpu.writeGp0((bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x0000ffu);

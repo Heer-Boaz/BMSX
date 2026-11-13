@@ -49,6 +49,15 @@ function step(h: Fixture) {
   else assert.equal(kind, DEVICE_SERVICE_SYSTEM, 'only a completed supervisor fence may notify another device');
  }
 }
+// A CPU status poll observes GPU progress without requiring an unobserved completion event.
+function stepGpuWork(h: Fixture) {
+ const pending = h.gpu.captureState().pendingCommandCycles;
+ assert.ok(pending > 0, 'GPU has work to observe');
+ const observation = h.scheduler.nowCycles + pending;
+ while (h.scheduler.nextDeadline() <= observation) step(h);
+ h.scheduler.advanceTo(observation);
+ h.gpu.readStatus();
+}
 const source = map.DYNAMIC_RAM_BASE + 0x1000, target = map.DYNAMIC_RAM_BASE + 0x4000;
 
 test('characterize RAM-to-RAM DMA completion in the runtime timing model', () => {
@@ -133,7 +142,7 @@ test('DMA0 resumes its queued GP0 tail after the saturated command buffer is ret
  const h=fixture(), packets=100, words=packets*3;
  for(let i=0;i<GX_GPU_COMMAND_CAPACITY;++i) {
   h.gpu.writeGp0(gp0.GX_GPU_GP0_FILL_RECTANGLE<<24); h.gpu.writeGp0(0); h.gpu.writeGp0(0x00010001);
-  step(h);
+  stepGpuWork(h);
  }
  assert.equal(h.gpu.captureState().commandBuffer.executedCommandCount,GX_GPU_COMMAND_CAPACITY);
  for(let i=0;i<packets;++i) {
@@ -164,7 +173,7 @@ test('DMA0 resumes its queued GP0 tail after the saturated command buffer is ret
  assert.equal(h.memory.readIoU32(io.IO_DMA0_TRANSFER_COUNT),0);
  assert.equal(h.memory.readIoU32(io.IO_DMA0_READ_ADDR),source+words*4);
  assert.equal(h.memory.readIoU32(io.IO_IRQ_FLAGS)&io.IRQ_DMA0_DONE,io.IRQ_DMA0_DONE);
- for(let i=0;i<500 && h.gpu.readDeviceOutput().commandBuffer.executedCommandCount<packets;++i) step(h);
+ for(let i=0;i<500 && h.gpu.readDeviceOutput().commandBuffer.executedCommandCount<packets;++i) stepGpuWork(h);
  const commands=h.gpu.readDeviceOutput().commandBuffer;
  assert.equal(commands.executedCommandCount,packets);
  assert.equal(commands.wordCount,words);

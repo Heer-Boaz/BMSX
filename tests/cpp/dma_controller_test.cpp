@@ -55,6 +55,15 @@ struct Harness {
   }
  }
 };
+// A CPU status poll observes GPU progress without requiring an unobserved completion event.
+void stepGpuWork(Harness& h) {
+ const i64 pending=h.gpu.captureState().pendingCommandCycles;
+ require(pending>0,"GPU has work to observe");
+ const i64 observation=h.scheduler.nowCycles()+pending;
+ while(h.scheduler.nextDeadline()<=observation)h.step();
+ h.scheduler.advanceTo(observation);
+ h.gpu.readStatus();
+}
 constexpr u32 Source=DYNAMIC_RAM_BASE+0x1000, Target=DYNAMIC_RAM_BASE+0x4000;
 void characterizeRamCopy() {
  for(u32 words:{1u,2u,4u,16u,256u}) {
@@ -133,7 +142,7 @@ void testGpuPacketAcrossBursts() {
 void testGpuDmaTailResumesAfterSaturatedCommandBufferRetirement() {
  Harness h; constexpr u32 packets=100, words=packets*3;
  for(u32 i=0;i<GX_GPU_COMMAND_CAPACITY;++i) {
-  h.gpu.writeGp0(GX_GPU_GP0_FILL_RECTANGLE<<24);h.gpu.writeGp0(0);h.gpu.writeGp0(0x00010001);h.step();
+  h.gpu.writeGp0(GX_GPU_GP0_FILL_RECTANGLE<<24);h.gpu.writeGp0(0);h.gpu.writeGp0(0x00010001);stepGpuWork(h);
  }
  require(h.gpu.captureState().commandBuffer.executedCommandCount==GX_GPU_COMMAND_CAPACITY,"command buffer is saturated and executed");
  for(u32 i=0;i<packets;++i) {
@@ -160,7 +169,7 @@ void testGpuDmaTailResumesAfterSaturatedCommandBufferRetirement() {
  require(h.memory.readIoU32(IO_DMA0_STATUS)==DMA_STATUS_DONE,"DMA completes after ingress becomes available");
  require(h.memory.readIoU32(IO_DMA0_TRANSFER_COUNT)==0&&h.memory.readIoU32(IO_DMA0_READ_ADDR)==Source+words*4,"DMA publishes its final count and address");
  require((h.memory.readIoU32(IO_IRQ_FLAGS)&IRQ_DMA0_DONE)!=0,"DMA completion raises its IRQ");
- for(u32 i=0;i<500&&h.gpu.readDeviceOutput().commandBuffer.executedCommandCount<packets;++i)h.step();
+ for(u32 i=0;i<500&&h.gpu.readDeviceOutput().commandBuffer.executedCommandCount<packets;++i)stepGpuWork(h);
  const auto& commands=h.gpu.readDeviceOutput().commandBuffer;
  require(commands.executedCommandCount==packets&&commands.wordCount==words,"all queued GP0 packets execute");
  for(u32 i=0;i<words;++i)require(commands.words[i]==h.memory.readMappedU32LE(Source+i*4),"DMA preserves every GP0 word in order");

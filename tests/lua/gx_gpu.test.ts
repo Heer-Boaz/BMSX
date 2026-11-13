@@ -663,6 +663,17 @@ function runGpuAtNextDeadline(gpu: GxGpu, scheduler: DeviceScheduler): number {
 	return gpu.onService(deadline);
 }
 
+// Advance real scheduled device boundaries, without requiring a timer for every GPU command.
+function advanceGpuTo(gpu: GxGpu, scheduler: DeviceScheduler, cycle: number): void {
+	while (scheduler.nextDeadline() <= cycle) {
+		const deadline = scheduler.nextDeadline();
+		scheduler.advanceTo(deadline);
+		assert.equal(scheduler.popDueTimer(), DEVICE_SERVICE_GPU);
+		gpu.onService(deadline);
+	}
+	scheduler.advanceTo(cycle);
+}
+
 const standaloneCommandBufferDma = createGpu().dma;
 
 test('GX-GPU presentation observer publishes the latched prefix and raw status without changing execution', () => {
@@ -1400,7 +1411,7 @@ test('GX-GPU drains a saturated executed prefix into retained backend VRAM', () 
 
 test('GX-GPU resumes queued DMA ingress when a saturated command prefix is retired', () => {
 	for (const present of [false, true]) {
-		const { memory, gpu, scheduler } = createGpu();
+		const { memory, gpu } = createGpu();
 		for (let index = 0; index < GX_GPU_COMMAND_CAPACITY; index += 1) {
 			gpu.writeGp0(GX_GPU_GP0_FILL_RECTANGLE << 24);
 			gpu.writeGp0(0);
@@ -1422,7 +1433,7 @@ test('GX-GPU resumes queued DMA ingress when a saturated command prefix is retir
 		state = gpu.captureState();
 		assert.ok(state.pendingCommandCycles > 0);
 		assert.equal(state.commandBuffer.commandCount, 1);
-		assert.equal(scheduler.nextDeadline() <= scheduler.currentNowCycles() + state.pendingCommandCycles, true);
+		assert.equal(memory.mappedWriteReady(IO_GX_GPU_GP0), false, 'queued ingress blocks CPU writes');
 		completeGpuCommands(gpu);
 		state = gpu.captureState();
 		assert.equal(state.gp0DmaIngressWords.length, 0);
@@ -1695,20 +1706,16 @@ test('GX-GPU command timing gates GPUSTAT idle and the VBLANK execution frontier
 	assert.equal(commands.commandCount, 1);
 	assert.equal(commands.executedCommandCount, 0);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE) >>> 0, 0);
-	assert.equal(scheduler.nextDeadline(), 29);
 	gpu.presentReadyFrameOnVblankEdge();
 	assert.equal(commands.presentCommandCount, 0);
 
-	scheduler.advanceTo(28);
-	gpu.onService(28);
-	assert.equal(commands.executedCommandCount, 0);
+	advanceGpuTo(gpu, scheduler, 28);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE) >>> 0, 0);
+	assert.equal(commands.executedCommandCount, 0);
 
-	scheduler.advanceTo(29);
-	gpu.onService(29);
-	assert.equal(commands.executedCommandCount, 1);
+	advanceGpuTo(gpu, scheduler, 29);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE) >>> 0, GX_GPU_STATUS_GPU_IDLE);
-	assert.equal(scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER);
+	assert.equal(commands.executedCommandCount, 1);
 	gpu.presentReadyFrameOnVblankEdge();
 	assert.equal(commands.presentCommandCount, 1);
 });
@@ -1742,22 +1749,24 @@ test('GX-GPU ingress bypasses only NOPs and executes drawing state in FIFO order
 	assert.equal(gpu.readDrawingAreaBottomRightWord(), 0);
 	assert.equal(gpu.readDrawingOffsetWord(), 0);
 	assert.equal(memory.mappedWriteReady(IO_GX_GPU_GP0), true);
-	assert.equal(scheduler.nextDeadline(), 29);
 	for (let index = 6; index < GX_GPU_COMMAND_FIFO_WORD_CAPACITY; index += 1) {
 		gpu.writeGp0(0x03000000 | index);
 	}
 
 	assert.equal(memory.mappedWriteReady(IO_GX_GPU_GP0), false);
-	runGpuAtNextDeadline(gpu, scheduler);
+	advanceGpuTo(gpu, scheduler, 29);
 	assert.equal(memory.mappedWriteReady(IO_GX_GPU_GP0), true);
 	assert.equal(gpu.readDrawingAreaTopLeftWord(), 0);
-	runGpuAtNextDeadline(gpu, scheduler);
+	advanceGpuTo(gpu, scheduler, 58);
+	gpu.readStatus();
 	assert.equal(gpu.readDrawingAreaTopLeftWord(), 0x00054321 & GX_GPU_DRAWING_AREA_MASK);
 	assert.equal(gpu.readDrawingAreaBottomRightWord(), 0);
-	runGpuAtNextDeadline(gpu, scheduler);
+	advanceGpuTo(gpu, scheduler, 59);
+	gpu.readStatus();
 	assert.equal(gpu.readDrawingAreaBottomRightWord(), 0x00023456 & GX_GPU_DRAWING_AREA_MASK);
 	assert.equal(gpu.readDrawingOffsetWord(), 0);
-	runGpuAtNextDeadline(gpu, scheduler);
+	advanceGpuTo(gpu, scheduler, 60);
+	gpu.readStatus();
 	assert.equal(gpu.readDrawingOffsetWord(), 0x00345678 & GX_GPU_DRAWING_OFFSET_MASK);
 });
 
@@ -2675,18 +2684,14 @@ test('GX-GPU save-state restores command time and FIFO suffix relative to schedu
 	const restored = createGpu();
 	restored.scheduler.advanceTo(100);
 	restored.gpu.restoreState(state);
-	restored.gpu.onService(100);
-	assert.equal(restored.scheduler.nextDeadline(), 119);
-	restored.scheduler.advanceTo(118);
-	restored.gpu.onService(118);
+	advanceGpuTo(restored.gpu, restored.scheduler, 118);
+	restored.gpu.readStatus();
 	assert.equal(restored.gpu.readDrawModeWord(), 0);
-	restored.scheduler.advanceTo(119);
-	restored.gpu.onService(119);
+	advanceGpuTo(restored.gpu, restored.scheduler, 119);
+	restored.gpu.readStatus();
 	assert.equal(restored.gpu.readDrawModeWord(), 0x000123);
 	assert.equal(restored.gpu.readDeviceOutput().commandBuffer.executedCommandCount, 1);
-	assert.equal(restored.scheduler.nextDeadline(), 120);
-	restored.scheduler.advanceTo(120);
-	restored.gpu.onService(120);
+	advanceGpuTo(restored.gpu, restored.scheduler, 120);
 	assert.equal((restored.gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE) >>> 0, GX_GPU_STATUS_GPU_IDLE);
 });
 
@@ -2700,14 +2705,13 @@ test('GX-GPU GP1 clear retains accepted draws and cuts C0 at the execution front
 	active.gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
 	active.gpu.writeGp0(0);
 	active.gpu.writeGp0((1 << 16) | 1);
-	const fillDeadline = active.scheduler.nextDeadline();
-	active.scheduler.advanceTo(fillDeadline);
-	active.gpu.onService(fillDeadline);
+	const fillDeadline = 29;
+	advanceGpuTo(active.gpu, active.scheduler, fillDeadline);
+	active.gpu.readStatus();
 	const activeCommands = active.gpu.readDeviceOutput().commandBuffer;
 	assert.equal(activeCommands.commandCount, 2);
 	assert.equal(activeCommands.executedCommandCount, 1);
 	assert.equal(active.gpu.readDeviceOutput().readbackPort.phase, GX_GPU_READBACK_IDLE);
-	assert.equal(active.scheduler.nextDeadline(), fillDeadline + 1);
 
 	active.gpu.writeGp1(GX_GPU_GP1_CLEAR_FIFO << 24);
 	assert.equal(activeCommands.commandCount, 1);
@@ -2729,19 +2733,17 @@ test('GX-GPU GP1 clear retains accepted draws and cuts C0 at the execution front
 	queued.gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
 	queued.gpu.writeGp0(0);
 	queued.gpu.writeGp0((1 << 16) | 1);
-	const queuedFillDeadline = queued.scheduler.nextDeadline();
+	const queuedFillDeadline = 29;
 	queued.gpu.writeGp1(GX_GPU_GP1_CLEAR_FIFO << 24);
 	const queuedCommands = queued.gpu.readDeviceOutput().commandBuffer;
 	assert.equal(queuedCommands.commandCount, 1);
 	assert.equal(queuedCommands.executedCommandCount, 0);
 	assert.equal(queued.gpu.captureState().gp0FifoWords.length, 0);
-	assert.equal(queued.scheduler.nextDeadline(), queuedFillDeadline);
 	assert.equal(queued.gpu.readDeviceOutput().readbackPort.phase, GX_GPU_READBACK_IDLE);
 	assert.equal(queued.gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE, 0);
-	queued.scheduler.advanceTo(queuedFillDeadline);
-	queued.gpu.onService(queuedFillDeadline);
-	assert.equal(queuedCommands.executedCommandCount, 1);
+	advanceGpuTo(queued.gpu, queued.scheduler, queuedFillDeadline);
 	assert.equal((queued.gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE) >>> 0, GX_GPU_STATUS_GPU_IDLE);
+	assert.equal(queuedCommands.executedCommandCount, 1);
 });
 
 test('GX-GPU GP1 reset cancels a restored active C0 deadline', () => {
@@ -2786,9 +2788,9 @@ test('GX-GPU stream clear retains the active finite command deadline without exe
 		gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x0000ff);
 		gpu.writeGp0(0);
 		gpu.writeGp0((16 << 16) | 64);
-		const deadline = scheduler.nextDeadline();
+		const deadline = scheduler.currentNowCycles() + gpu.captureState().pendingCommandCycles;
 		gpu.writeGp0((GX_GPU_GP0_DRAW_MODE << 24) | 0x000123);
-		scheduler.advanceTo(deadline - 1);
+		advanceGpuTo(gpu, scheduler, deadline - 1);
 		memory.writeMappedU32LE(address, action);
 		memory.writeMappedU32LE(address, action);
 		const output = gpu.readDeviceOutput();
@@ -2796,18 +2798,13 @@ test('GX-GPU stream clear retains the active finite command deadline without exe
 		assert.equal(output.commandBuffer.executedCommandCount, 0);
 		assert.equal(gpu.captureState().pendingCommandCycles, 1);
 		assert.equal(gpu.captureState().gp0FifoWords.length, 0);
-		if (scheduler.nextDeadline() === scheduler.currentNowCycles()) {
-			gpu.onService(scheduler.currentNowCycles());
-		}
-		assert.equal(scheduler.nextDeadline(), deadline);
 		assert.equal(gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE, 0);
 		backend.executeGxGpuCommandDrain(gpu);
 		assert.equal(backend.gxGpuSoftware.vram[0], previousPixel, 'unfinished drawing is not rendered by a backend drain');
-		scheduler.advanceTo(deadline);
-		gpu.onService(deadline);
+		advanceGpuTo(gpu, scheduler, deadline);
+		assert.equal((gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE) >>> 0, GX_GPU_STATUS_GPU_IDLE);
 		assert.equal(output.commandBuffer.executedCommandCount, 1);
 		assert.equal(gpu.readDrawModeWord(), 0, 'queued settings must not execute after stream clear');
-		assert.equal((gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE) >>> 0, GX_GPU_STATUS_GPU_IDLE);
 		backend.executeGxGpuCommandDrain(gpu);
 		assert.equal(backend.gxGpuSoftware.vram[0], 0x001f, 'retained drawing reaches VRAM after its original deadline');
 	}
@@ -2822,10 +2819,9 @@ test('GX-GPU stream clear preserves a timed state command without a raster recor
 	gpu.writeGp1(GX_GPU_GP1_CLEAR_FIFO << 24);
 	assert.equal(gpu.captureState().pendingCommandCycles, 1);
 	assert.equal(gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE, 0);
-	scheduler.advanceTo(scheduler.nextDeadline());
-	gpu.onService(scheduler.currentNowCycles());
-	assert.equal(gpu.readDrawModeWord(), 0x000123);
+	advanceGpuTo(gpu, scheduler, scheduler.currentNowCycles() + 1);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE) >>> 0, GX_GPU_STATUS_GPU_IDLE);
+	assert.equal(gpu.readDrawModeWord(), 0x000123);
 });
 
 test('GX-GPU GP1 clear FIFO clears partial GP0 packets and flushes partial CPU-to-VRAM uploads', () => {
@@ -2868,12 +2864,10 @@ test('GX-GPU GP1 clear FIFO clears partial GP0 packets and flushes partial CPU-t
 	assert.equal(gpu.readDrawModeWord(), 0x000222);
 	assert.equal(gpu.readMaskBitModeWord(), 3);
 	assert.equal(commands.executedCommandCount, 0);
-	assert.equal(scheduler.nextDeadline(), scheduler.currentNowCycles() + 1);
 	assert.equal(gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE, 0);
-	scheduler.advanceTo(scheduler.nextDeadline());
-	gpu.onService(scheduler.currentNowCycles());
-	assert.equal(commands.executedCommandCount, 1);
+	advanceGpuTo(gpu, scheduler, scheduler.currentNowCycles() + 1);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE) >>> 0, GX_GPU_STATUS_GPU_IDLE);
+	assert.equal(commands.executedCommandCount, 1);
 
 	gpu.writeGp0((0x48 << 24) | 0x0000ff);
 	gpu.writeGp0(0x00010002);
@@ -2884,8 +2878,8 @@ test('GX-GPU GP1 clear FIFO clears partial GP0 packets and flushes partial CPU-t
 	gpu.writeGp1(GX_GPU_GP1_CLEAR_FIFO << 24);
 	assert.equal(commands.commandCount, 3);
 	assert.equal(commands.wordCount, 11);
-	scheduler.advanceTo(scheduler.nextDeadline());
-	gpu.onService(scheduler.currentNowCycles());
+	advanceGpuTo(gpu, scheduler, scheduler.currentNowCycles() + gpu.captureState().pendingCommandCycles);
+	gpu.readStatus();
 
 	gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x0000ff);
 	gpu.writeGp0(32);
@@ -2895,10 +2889,10 @@ test('GX-GPU GP1 clear FIFO clears partial GP0 packets and flushes partial CPU-t
 
 	gpu.writeGp0((GX_GPU_GP0_DRAW_MODE << 24) | 0x000444);
 	assert.equal(commands.commandCount, 4);
-	scheduler.advanceTo(scheduler.nextDeadline());
-	gpu.onService(scheduler.currentNowCycles());
-	scheduler.advanceTo(scheduler.nextDeadline());
-	gpu.onService(scheduler.currentNowCycles());
+	advanceGpuTo(gpu, scheduler, scheduler.currentNowCycles() + gpu.captureState().pendingCommandCycles);
+	gpu.readStatus();
+	advanceGpuTo(gpu, scheduler, scheduler.currentNowCycles() + gpu.captureState().pendingCommandCycles);
+	gpu.readStatus();
 	assert.equal(gpu.readDrawModeWord(), 0x000444);
 });
 
