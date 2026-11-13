@@ -393,31 +393,37 @@ export class DmaController {
 				this.finishChannel(channel);
 				continue;
 			}
-			const words = this.availableWords(this.registers.channels[channel]);
+			const registers = this.registers.channels[channel];
+			const control = registers.controlWord;
+			const route = control & DMA_CONTROL_ROUTE_MASK;
+			const read = READ_ENDPOINTS[route], write = WRITE_ENDPOINTS[route];
+			const readAddress = read === DmaEndpoint.Memory ? registers.readAddressWord : ENDPOINT_ADDRESSES[read];
+			const writeAddress = write === DmaEndpoint.Memory ? registers.writeAddressWord : ENDPOINT_ADDRESSES[write];
+			let readCapacity: DmaEndpoint = read, writeCapacity: DmaEndpoint = write;
+			if (read === DmaEndpoint.Memory && readAddress >= CART_MMIO_BASE && readAddress < CART_MMIO_END) {
+				readCapacity = ((control >>> DMA_CONTROL_READ_SLOT_SHIFT) & 1) !== 0 ? DmaEndpoint.Cartridge1Read : DmaEndpoint.Cartridge0Read;
+			}
+			if (write === DmaEndpoint.Memory && writeAddress >= CART_MMIO_BASE && writeAddress < CART_MMIO_END) {
+				writeCapacity = ((control >>> DMA_CONTROL_WRITE_SLOT_SHIFT) & 1) !== 0 ? DmaEndpoint.Cartridge1Write : DmaEndpoint.Cartridge0Write;
+			}
+			let words = Math.min(registers.transferCountWord, DMA_BURST_WORD_CAPACITY, this.endpointCapacity[readCapacity], this.endpointCapacity[writeCapacity]);
+			if (words === 0) continue;
+			const readRegion = this.memory.mappedRegion(readAddress);
+			const writeRegion = this.memory.mappedRegion(writeAddress);
+			if (read === DmaEndpoint.Memory) words = this.memory.mappedRegionWordSpan(readAddress, words, readRegion);
+			if (write === DmaEndpoint.Memory) words = this.memory.mappedRegionWordSpan(writeAddress, words, writeRegion);
 			if (words !== 0) {
-				this.admitBlock(channel, words, anchorCycle);
+				const blockCycles = this.regionSpanCycles(readRegion, words) + this.regionSpanCycles(writeRegion, words);
+				this.activeChannel = channel;
+				this.scheduledBlockWords = words;
+				this.serviceDeadline = anchorCycle + blockCycles;
+				this.scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, this.serviceDeadline);
+				this.scheduler.requestYieldForEarlierDeadline(this.scheduler.currentNowCycles());
 				this.nextChannel = (channel + 1) % IO_DMA_CHANNEL_COUNT;
 				return;
 			}
 		}
 		this.notifySupervisorBoundary();
-	}
-
-	private admitBlock(channel: number, blockWords: number, anchorCycle: number): void {
-		const registers = this.registers.channels[channel]!;
-		const route = registers.controlWord & DMA_CONTROL_ROUTE_MASK;
-		const read = READ_ENDPOINTS[route], write = WRITE_ENDPOINTS[route];
-		const readStep = read === DmaEndpoint.Memory ? IO_WORD_SIZE : 0;
-		const writeStep = write === DmaEndpoint.Memory ? IO_WORD_SIZE : 0;
-		const readAddress = readStep !== 0 ? registers.readAddressWord : ENDPOINT_ADDRESSES[read];
-		const writeAddress = writeStep !== 0 ? registers.writeAddressWord : ENDPOINT_ADDRESSES[write];
-		const blockCycles = this.regionSpanCycles(this.memory.mappedRegion(readAddress), blockWords)
-			+ this.regionSpanCycles(this.memory.mappedRegion(writeAddress), blockWords);
-		this.activeChannel = channel;
-		this.scheduledBlockWords = blockWords;
-		this.serviceDeadline = anchorCycle + blockCycles;
-		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, this.serviceDeadline);
-		this.scheduler.requestYieldForEarlierDeadline(this.scheduler.currentNowCycles());
 	}
 
 	private regionSpanCycles(region: MemoryRegionKind, wordCount: number): number {
@@ -432,27 +438,6 @@ export class DmaController {
 			case MemoryRegionKind.Other:
 				return wordCount;
 		}
-	}
-
-	private availableWords(registers: DmaChannelStates[number]): number {
-		const control = registers.controlWord;
-		const route = control & DMA_CONTROL_ROUTE_MASK;
-		let read: DmaEndpoint = READ_ENDPOINTS[route];
-		let write: DmaEndpoint = WRITE_ENDPOINTS[route];
-		if (read === DmaEndpoint.Memory && registers.readAddressWord >= CART_MMIO_BASE && registers.readAddressWord < CART_MMIO_END) {
-			read = ((control >>> DMA_CONTROL_READ_SLOT_SHIFT) & 1) !== 0 ? DmaEndpoint.Cartridge1Read : DmaEndpoint.Cartridge0Read;
-		}
-		if (write === DmaEndpoint.Memory && registers.writeAddressWord >= CART_MMIO_BASE && registers.writeAddressWord < CART_MMIO_END) {
-			write = ((control >>> DMA_CONTROL_WRITE_SLOT_SHIFT) & 1) !== 0 ? DmaEndpoint.Cartridge1Write : DmaEndpoint.Cartridge0Write;
-		}
-		let words = Math.min(registers.transferCountWord, DMA_BURST_WORD_CAPACITY, this.endpointCapacity[read], this.endpointCapacity[write]);
-		if (READ_ENDPOINTS[route] === DmaEndpoint.Memory) {
-			words = this.memory.mappedRegionWordSpan(registers.readAddressWord, words, this.memory.mappedRegion(registers.readAddressWord));
-		}
-		if (WRITE_ENDPOINTS[route] === DmaEndpoint.Memory) {
-			words = this.memory.mappedRegionWordSpan(registers.writeAddressWord, words, this.memory.mappedRegion(registers.writeAddressWord));
-		}
-		return words;
 	}
 
 	private busy(channel: number): boolean {

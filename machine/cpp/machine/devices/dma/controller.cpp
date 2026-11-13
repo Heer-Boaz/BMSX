@@ -321,31 +321,38 @@ void DmaController::arbitrate(i64 anchorCycle) {
 			finishChannel(channel);
 			continue;
 		}
-		const u32 words = availableWords(m_registers.channels[channel]);
+		const auto& registers = m_registers.channels[channel];
+		const u32 control = registers.controlWord;
+		const u32 route = control & DMA_CONTROL_ROUTE_MASK;
+		const auto read = ReadEndpoints[route], write = WriteEndpoints[route];
+		const u32 readAddress = read == DmaEndpoint::Memory ? registers.readAddressWord : EndpointAddresses[static_cast<u32>(read)];
+		const u32 writeAddress = write == DmaEndpoint::Memory ? registers.writeAddressWord : EndpointAddresses[static_cast<u32>(write)];
+		auto readCapacity = read, writeCapacity = write;
+		if (read == DmaEndpoint::Memory && readAddress >= CART_MMIO_BASE && readAddress < CART_MMIO_END) {
+			readCapacity = ((control >> DMA_CONTROL_READ_SLOT_SHIFT) & 1u) != 0u ? DmaEndpoint::Cartridge1Read : DmaEndpoint::Cartridge0Read;
+		}
+		if (write == DmaEndpoint::Memory && writeAddress >= CART_MMIO_BASE && writeAddress < CART_MMIO_END) {
+			writeCapacity = ((control >> DMA_CONTROL_WRITE_SLOT_SHIFT) & 1u) != 0u ? DmaEndpoint::Cartridge1Write : DmaEndpoint::Cartridge0Write;
+		}
+		u32 words = std::min({registers.transferCountWord, DMA_BURST_WORD_CAPACITY,
+			m_endpointCapacity[static_cast<u32>(readCapacity)], m_endpointCapacity[static_cast<u32>(writeCapacity)]});
+		if (words == 0u) continue;
+		const auto readRegion = m_memory.mappedRegion(readAddress);
+		const auto writeRegion = m_memory.mappedRegion(writeAddress);
+		if (read == DmaEndpoint::Memory) words = m_memory.mappedRegionWordSpan(readAddress, words, readRegion);
+		if (write == DmaEndpoint::Memory) words = m_memory.mappedRegionWordSpan(writeAddress, words, writeRegion);
 		if (words != 0u) {
-			admitBlock(channel, words, anchorCycle);
+			const i64 blockCycles = regionSpanCycles(readRegion, words) + regionSpanCycles(writeRegion, words);
+			m_activeChannel = channel;
+			m_scheduledBlockWords = words;
+			m_serviceDeadline = anchorCycle + blockCycles;
+			m_scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, m_serviceDeadline);
+			m_scheduler.requestYieldForEarlierDeadline(m_scheduler.currentNowCycles());
 			m_nextChannel = (channel + 1u) % IO_DMA_CHANNEL_COUNT;
 			return;
 		}
 	}
 	notifySupervisorBoundary();
-}
-
-void DmaController::admitBlock(u32 channel, u32 blockWords, i64 anchorCycle) {
-	const DmaChannelState& registers = m_registers.channels[channel];
-	const u32 route = registers.controlWord & DMA_CONTROL_ROUTE_MASK;
-	const auto read = ReadEndpoints[route], write = WriteEndpoints[route];
-	const u32 readStep = read == DmaEndpoint::Memory ? IO_WORD_SIZE : 0u;
-	const u32 writeStep = write == DmaEndpoint::Memory ? IO_WORD_SIZE : 0u;
-	const u32 readAddress = readStep != 0u ? registers.readAddressWord : EndpointAddresses[static_cast<u32>(read)];
-	const u32 writeAddress = writeStep != 0u ? registers.writeAddressWord : EndpointAddresses[static_cast<u32>(write)];
-	const i64 blockCycles = regionSpanCycles(m_memory.mappedRegion(readAddress), blockWords)
-		+ regionSpanCycles(m_memory.mappedRegion(writeAddress), blockWords);
-	m_activeChannel = channel;
-	m_scheduledBlockWords = blockWords;
-	m_serviceDeadline = anchorCycle + blockCycles;
-	m_scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, m_serviceDeadline);
-	m_scheduler.requestYieldForEarlierDeadline(m_scheduler.currentNowCycles());
 }
 
 i64 DmaController::regionSpanCycles(MemoryRegionKind region, u32 wordCount) const {
@@ -361,28 +368,6 @@ i64 DmaController::regionSpanCycles(MemoryRegionKind region, u32 wordCount) cons
 		return wordCount;
 	}
 	BMSX_UNREACHABLE();
-}
-
-u32 DmaController::availableWords(const DmaChannelState& registers) const {
-	const u32 control = registers.controlWord;
-	const u32 route = control & DMA_CONTROL_ROUTE_MASK;
-	auto read = ReadEndpoints[route];
-	auto write = WriteEndpoints[route];
-	if (read == DmaEndpoint::Memory && registers.readAddressWord >= CART_MMIO_BASE && registers.readAddressWord < CART_MMIO_END) {
-		read = ((control >> DMA_CONTROL_READ_SLOT_SHIFT) & 1u) != 0u ? DmaEndpoint::Cartridge1Read : DmaEndpoint::Cartridge0Read;
-	}
-	if (write == DmaEndpoint::Memory && registers.writeAddressWord >= CART_MMIO_BASE && registers.writeAddressWord < CART_MMIO_END) {
-		write = ((control >> DMA_CONTROL_WRITE_SLOT_SHIFT) & 1u) != 0u ? DmaEndpoint::Cartridge1Write : DmaEndpoint::Cartridge0Write;
-	}
-	u32 words = std::min({registers.transferCountWord, DMA_BURST_WORD_CAPACITY,
-		m_endpointCapacity[static_cast<u32>(read)], m_endpointCapacity[static_cast<u32>(write)]});
-	if (ReadEndpoints[route] == DmaEndpoint::Memory) {
-		words = m_memory.mappedRegionWordSpan(registers.readAddressWord, words, m_memory.mappedRegion(registers.readAddressWord));
-	}
-	if (WriteEndpoints[route] == DmaEndpoint::Memory) {
-		words = m_memory.mappedRegionWordSpan(registers.writeAddressWord, words, m_memory.mappedRegion(registers.writeAddressWord));
-	}
-	return words;
 }
 
 bool DmaController::busy(u32 channel) const {

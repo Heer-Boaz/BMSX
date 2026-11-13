@@ -56,11 +56,9 @@ private:
 
 	void onTriggerWrite(u32 channel, u32 value);
 	void arbitrate(i64 anchorCycle);
-	void admitBlock(u32 channel, u32 blockWords, i64 anchorCycle);
 	i64 regionSpanCycles(MemoryRegionKind region, u32 wordCount) const;
 	void finishChannel(u32 channel, u32 status = DMA_STATUS_DONE);
 	void resumeCpuWriteIfPortReleased(u32 address);
-	u32 availableWords(const DmaChannelState& registers) const;
 	bool busy(u32 channel) const;
 	void clearLiveTransfer();
 	void clearUserContext();
