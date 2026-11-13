@@ -1110,6 +1110,61 @@ void testRuntimeRestorePreservesInFlightFrameBudget() {
 	require(!runtime.vblank.tickCompleted(), "runtime restore prepares the next physical VBlank edge");
 }
 
+void testRuntimeCodecRestoresBlockedGp0StoreWakeup() {
+	bmsx::test::Blua32TestImage image;
+	image.text.resize(5u * bmsx::INSTRUCTION_BYTES);
+	std::span<bmsx::u8> code(image.text);
+	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
+	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 1, 0, 1);
+	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::STORE_MEM_D), 1, 0, static_cast<bmsx::u8>(bmsx::MemoryAccessKind::U32LE));
+	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
+	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
+	image.functions = {{.firstWord=0u, .wordCount=4u, .maxStack=2u}, {.firstWord=4u, .wordCount=1u}};
+	image.constants.emplace_back(static_cast<bmsx::f64>(bmsx::IO_GX_GPU_GP0));
+	image.constants.emplace_back(static_cast<bmsx::f64>(0x1f000000u));
+	image.irqFunctionIndex = 1u;
+	image.exceptionFunctionIndex = 1u;
+	for (const auto& primitive : bmsx::LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
+	SystemRuntimeFixture fixture(image, makeRuntimeImage(bmsx::OpCode::HALT));
+	auto& runtime = fixture.runtime;
+	auto& machine = runtime.machine;
+	auto& memory = machine.memory;
+	auto& scheduler = machine.scheduler;
+	auto& cpu = machine.cpu;
+	auto& gpu = machine.gxGpu;
+	const bmsx::u32 mode = bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_SMODE1_LOW);
+	memory.writeMappedU32LE(mode, memory.readMappedU32LE(mode) | bmsx::GX_GPU_PCRTC_SMODE1_SINT);
+	gpu.onService(scheduler.currentNowCycles());
+	for (const bmsx::u32 word : {0x020000ffu, 0u, 0x00010001u}) gpu.writeGp0(word);
+	for (bmsx::u32 index = 0; index < bmsx::GX_GPU_COMMAND_FIFO_WORD_CAPACITY; ++index) gpu.writeGp0(0xe1000000u);
+	require(!memory.mappedWriteReady(bmsx::IO_GX_GPU_GP0), "full GP0 FIFO blocks CPU writes");
+	require(scheduler.runCpuSlice(0, 20) == bmsx::RunResult::Halted && cpu.isMemoryWriteBlocked(), "CPU blocks on a GP0 store");
+	scheduler.advanceTo(20 - cpu.instructionBudgetRemaining);
+	const auto saved = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime));
+	const auto advance = [&](bmsx::i64 cycle) {
+		while (scheduler.nextDeadline() <= cycle) {
+			const bmsx::i64 deadline = scheduler.nextDeadline();
+			scheduler.advanceTo(deadline);
+			require(scheduler.popDueTimer() == bmsx::DEVICE_SERVICE_GPU, "scheduled GPU wakeup service");
+			gpu.onService(deadline);
+		}
+		scheduler.advanceTo(cycle);
+	};
+	for (int iteration = 0; iteration < 2; ++iteration) {
+		if (iteration != 0) bmsx::applyRuntimeSaveState(runtime, bmsx::decodeRuntimeSaveState(saved, memory.ramByteCount(), gpu.readVramSnapshotBytes().size()));
+		advance(28);
+		require(cpu.isMemoryWriteBlocked() && (memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GPU) == 0u, "CPU remains blocked before completion");
+		advance(29);
+		require(!cpu.isMemoryWriteBlocked() && (memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GPU) == 0u, "GPU completion wakes the CPU before the write");
+		for (int attempt = 0; attempt < 4 && cpu.getFrameDepth() > 0; ++attempt) scheduler.runCpuSlice(0, 20);
+		require(cpu.getFrameDepth() == 0 && !cpu.isMemoryWriteBlocked(), "blocked store and return retire");
+		advance(44);
+		require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GPU) == 0u, "queued IRQ is not early");
+		advance(45);
+		require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GPU) == bmsx::IRQ_GPU, "queued IRQ fires at its boundary");
+	}
+}
+
 void testGeoDmaSameCycleRuntimeRestore() {
 	SystemRuntimeFixture fixture;
 	auto& runtime = fixture.runtime;
@@ -1184,6 +1239,7 @@ int main() {
 	testExternalClosureVectorsPendingNmiThroughCpuEntry();
 	testRuntimeRestorePreservesInFlightFrameBudget();
 	testGeoDmaSameCycleRuntimeRestore();
+	testRuntimeCodecRestoresBlockedGp0StoreWakeup();
 	testHostDeltaGrantsOneFractionallyRetainedMachineBudget();
 	return 0;
 }
