@@ -1243,7 +1243,7 @@ Here `disp` is the instruction's **unsigned eight-bit word displacement**, from 
 
 Scalar loads check alignment before attempting a memory access. If a new bus fault occurs during the read, the destination register is not changed. This does not undo a read or a device side effect that has already occurred.
 
-Scalar stores check alignment, then ask whether the mapped starting address is ready for a write. This readiness check precedes reading and converting the source register for the write. If the target is not ready, no store takes place: the instruction is left blocked on that raw target address. A matching ready event clears the blocked condition; the next attempt starts the instruction again. Readiness is checked only at the starting address, including for `F64LE`.
+Scalar stores check alignment, then ask whether the mapped starting address is ready for a write. This readiness check precedes reading and converting the source register for the write. If the target is not ready, no store takes place: the instruction is left blocked on that raw target address. A matching ready event clears the blocked condition. The CPU retains the decoded operation, effective address and successor PC while waiting; it resumes that operation without fetching it again or charging its base cost a second time. A write to its instruction words during the wait affects a later execution, not the retained operation. Readiness is checked only at the starting address, including for `F64LE`.
 
 A readiness check is not a permission or fault preflight. An aligned but not-ready IO target can defer a store before a width or bus fault would be observed. Once a scalar store is attempted, a new bus fault raises `DataBusError`; effects already produced by the store remain.
 
@@ -1269,7 +1269,9 @@ Before writing anything, the instruction scans the counted span's IO overlap in 
 
 Once preflight succeeds, the instruction charges one additional cost unit per four counted words, rounded up: `(C + 3) >> 2`. It then attempts the words in increasing `i` order and checks for a new bus fault after every word. The first such fault stops the sequence and raises `DataBusError`. Earlier successful words remain written; later words are not attempted. The full sequence surcharge has already been charged even if a later word faults.
 
-A blocked attempt writes nothing and retries from the instruction start.
+A blocked attempt writes nothing. The CPU retains the decoded span and its
+effective start address; a matching ready edge repeats the readiness preflight,
+then continues the retained instruction without another fetch or base charge.
 After writes begin, the first new bus fault terminates the sequence with its
 completed prefix retained. Arrange output and recovery around those ordered
 partial effects.
@@ -1321,13 +1323,15 @@ supply. This is a uniform allowance, not a prediction of individual cache
 hits, misses or refill intervals.
 When an instruction starts, PC advances over its complete width
 and its base charge is incurred. Privilege, address alignment and write-ready
-handling occur after that base charge. There is no refund when a store blocks;
-a later retry incurs its base charge again.
+handling occur after that base charge. A blocked store retains that charge;
+resuming it on the matching ready edge does not incur the base charge again.
+A supervisor-cancelled operation is different: a later execution starts a new
+instruction and pays its ordinary charge.
 
 For example, a two-cycle `LOADK` followed by a successful three-cycle ordinary
 RAM `LOAD_MEM` has a combined base charge of five cycles. Device events do
 not change those base charges. A store whose
-destination is not ready follows the [write-ready and retry rules](#sec-cpu-scalar-access-and-io).
+destination is not ready follows the [write-ready and continuation rules](#sec-cpu-scalar-access-and-io).
 Eight-byte and counted accesses retain their specified ordered, potentially
 partial bus effects; their base charge does not make them atomic.
 
@@ -1378,7 +1382,7 @@ its additional builtin charge; device-specific command work and completion
 remain in the unit chapter.
 
 A blocked store writes nothing while it waits for the owning device's matching
-ready edge. The CPU does not repeatedly execute the store while waiting.
+ready edge. The CPU does not repeatedly execute the store while waiting. The ready edge resumes the retained operation before a pending IRQ is accepted. Supervisor entry may cancel a store that has not yet been accepted; exception return then fetches that instruction again.
 Console devices continue operating during this wait, IRQ HALT and CPU-held intervals.
 A HALT therefore has neither a fixed elapsed
 length nor the meaning of stopping every console device. The IRQ chapter

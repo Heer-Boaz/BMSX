@@ -192,7 +192,7 @@ test('counted preflight blocks on a later IO word before an earlier bus fault or
 		assert.deepEqual(device.probes, [IO_BASE, IO_BASE + 4]); assert.equal(device.writes, 0);
 		cpu.resumeMemoryWrite(IO_BASE); assert.equal(cpu.captureRuntimeState().memoryWriteBlocked, true);
 		device.ready = true; cpu.resumeMemoryWrite(IO_BASE + 4); cpu.runUntilDepth(0, 2);
-		assert.equal(cpu.instructionBudgetRemaining, -2); assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_DATA_BUS_ERROR);
+		assert.equal(cpu.instructionBudgetRemaining, -1, 'resuming the latched store does not charge its base twice'); assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_DATA_BUS_ERROR);
 		assert.equal(cpu.readEpcWord(), pc + 3 * INSTRUCTION_BYTES); assert.equal(device.writes, 0);
 	}
 	assertParity(js.cpu, ref.cpu); assert.deepEqual(devices[0], devices[1]);

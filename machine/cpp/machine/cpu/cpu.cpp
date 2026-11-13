@@ -500,6 +500,7 @@ void CPU::reset() {
 	m_interruptEventPending = false;
 	m_memoryWriteBlocked = false;
 	m_memoryWriteBlockedAddress = 0u;
+	m_pendingMemory.kind = PendingMemoryKind::None;
 	m_hardHalted = false;
 	m_programExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	m_cop0Words[COP0_STATUS] = CPU_STATUS_SYSTEM_ENTRY;
@@ -1290,6 +1291,7 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 	m_interruptEventPending = false;
 	m_memoryWriteBlocked = false;
 	m_memoryWriteBlockedAddress = 0u;
+	m_pendingMemory.kind = PendingMemoryKind::None;
 	m_hardHalted = false;
 	m_yieldRequested = false;
 	Closure* closure = staticClosureForRecord(boundFunctionRecord(m_functionRecordLatch));
@@ -1297,6 +1299,9 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 }
 
 void CPU::beginCompletionCall(Closure& closure, BuiltinArgsView args) {
+	// Call injection takes over the physical instruction stream. The suspended
+	// frame retains its PC; an unaccepted endpoint access must not follow it.
+	abortStalledMemoryWrite();
 	auto roots = acquireLocalRoots();
 	trackLocalRoot(valueClosure(&closure));
 	for (size_t index = 0; index < args.size(); ++index) trackLocalRoot(args[index]);
@@ -1552,6 +1557,7 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 	state.interruptEventPending = m_interruptEventPending;
 	state.memoryWriteBlocked = m_memoryWriteBlocked;
 	state.memoryWriteBlockedAddress = m_memoryWriteBlockedAddress;
+	state.pendingMemory = m_pendingMemory;
 	state.statusWord = m_cop0Words[COP0_STATUS];
 	state.causeWord = m_cop0Words[COP0_CAUSE];
 	state.epcWord = m_cop0Words[COP0_EPC];
@@ -1815,6 +1821,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_interruptEventPending = state.interruptEventPending;
 	m_memoryWriteBlocked = state.memoryWriteBlocked;
 	m_memoryWriteBlockedAddress = state.memoryWriteBlockedAddress;
+	m_pendingMemory = state.pendingMemory;
 	m_cop0Words[COP0_STATUS] = state.statusWord;
 	m_cop0Words[COP0_CAUSE] = state.causeWord;
 	m_cop0Words[COP0_EPC] = state.epcWord;
@@ -2446,6 +2453,7 @@ AcceptedInterruptKind CPU::peekPendingInterrupt() const {
 }
 
 bool CPU::enterPendingInterrupt() {
+	if (m_pendingMemory.kind != PendingMemoryKind::None) return false;
 	if (m_nonMaskableInterruptPending) {
 		m_nonMaskableInterruptPending = false;
 		const bool hadHaltLatch = m_haltedUntilIrqFrameDepth >= 0;
@@ -2612,6 +2620,9 @@ RunResult CPU::runLoop(
 #endif
 	for (;;) {
 		try {
+			if (static_cast<int>(thread.frameDepth) > targetDepth && instructionBudgetRemaining > 0
+				&& !m_memoryWriteBlocked && !m_hardHalted && !m_yieldRequested
+				&& !(m_haltedUntilIrqThread == m_activeThread && m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth))) resumePendingMemoryOperation();
 			if constexpr (RootBoundary) {
 				if (thread.frameDepth == 0) {
 					return RunResult::Halted;
@@ -3056,6 +3067,7 @@ void CPU::setExecutionHook(ExecutionHookBinding binding) {
 }
 
 void CPU::unwindToDepth(int targetDepth, bool chargeCaptures) {
+	if (static_cast<int>(m_activeThread->frameDepth) > targetDepth) abortStalledMemoryWrite();
 	while (static_cast<int>(m_activeThread->frameDepth) > targetDepth) {
 		auto* finished = m_activeThread->currentFrame;
 		const int closed = closeUpvalues(*finished);
@@ -3224,6 +3236,7 @@ void CPU::writeFrameExecution(
 	);
 	const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
 	CallFrame& frame = *m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex));
+	if (&frame == m_activeThread->currentFrame) abortStalledMemoryWrite();
 	const u32 registerCount = std::max(functionRecord.maxStack, functionRecord.numParams);
 	if (registerCount > static_cast<u32>(frame.stackCapacity)) {
 		ensureRegisterCapacity(frame, static_cast<int>(registerCount) - 1);
@@ -3713,6 +3726,7 @@ void CPU::storeTableFieldIndexCached(
 }
 
 void CPU::clearCallStack() {
+	abortStalledMemoryWrite();
 	for (;;) {
 		for (size_t index = 0; index < m_activeThread->protectedCallDepth; ++index) {
 			ProtectedCallContinuation& continuation = m_activeThread->protectedCallContinuations.get(index);

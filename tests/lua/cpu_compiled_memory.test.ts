@@ -9,7 +9,7 @@ import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_pa
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { DYNAMIC_RAM_BASE, IO_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
@@ -403,6 +403,98 @@ test('word producers, overwrites and externally entered continuations preserve f
 			runCpuParity(generated.cpu, reference.cpu, grant);
 			assert.deepEqual(generated.cpu.captureRuntimeState(), reference.cpu.captureRuntimeState());
 			assert.equal(Buffer.compare(generated.memory.ramData(), reference.memory.ramData()), 0);
+		}
+	}
+});
+
+
+test('a ready edge completes the latched store without refetching rewritten code or paying its base twice', () => {
+	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+		const image = memoryLoop(OpCode.STORE_MEM, MemoryAccessKind.Word);
+		const { cpu, memory } = createTestSystemCpu(image, backend);
+		const code = DYNAMIC_RAM_BASE + 0x1000;
+		const source = image.image.functions[0].codeAddress;
+		memory.ramData().set(image.romBytes.subarray(source, source + MAPPED_PAGE_BYTE_SIZE), code - RAM_BASE);
+		const frame = cpu.rootThread.frameAtDepth(0);
+		frame.registers.setNumber(0, 0x12345678);
+		frame.registers.setNumber(1, code + 0x2000);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], code);
+		cpu.runUntilDepth(0, 2400);
+		if (backend === CpuExecutionBackend.JavaScript) assert.ok(frame.decodedPage!.compiledBlocks!.sourceUnits > 0);
+		const device = { ready: false, writes: [] as number[] };
+		const port = IO_BASE + 0x5000;
+		memory.mapIoWrite(port, device, (state, _address, value) => { state.writes.push(value); });
+		memory.mapIoWriteReady(port, (state: typeof device) => state.ready);
+		frame.registers.setNumber(1, port);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], code);
+		assert.equal(cpu.runUntilDepth(0, 20), RunResult.Halted);
+		const saved = cpu.captureRuntimeState();
+		const replacement = new Uint8Array(INSTRUCTION_BYTES);
+		writeInstruction(replacement, 0, OpCode.K1, 0, 0, 0);
+		memory.writeMappedU32LE(code + 2 * INSTRUCTION_BYTES, readLE32(replacement, 0));
+		cpu.restoreRuntimeState(saved);
+		device.ready = true;
+		cpu.resumeMemoryWrite(port);
+		cpu.runUntilDepth(0, 0);
+		assert.deepEqual(device.writes, [], 'a zero grant does not resume the pending instruction');
+		cpu.requestYield();
+		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+		assert.deepEqual(device.writes, [], 'a requested yield precedes the pending side effect');
+		cpu.runUntilDepth(0, 1);
+		assert.deepEqual(device.writes, [0x12345678]);
+		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.MOV]);
+		assert.equal(cpu.readFramePc(0), code + 4 * INSTRUCTION_BYTES, 'the successor MOV uses the new grant');
+	}
+});
+
+
+test('external call entry and active-PC redirection flush an unaccepted physical store latch', () => {
+	const port = IO_BASE + 0x5000;
+	const text = new Uint8Array(8 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.STORE_MEM, 0, 1, MemoryAccessKind.Word);
+	writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
+	writeInstruction(text, 2, OpCode.K1, 0, 0, 0);
+	writeInstruction(text, 3, OpCode.RET, 0, 2, 0);
+	writeInstruction(text, 4, OpCode.LOADK, 0, 0, 0);
+	writeInstruction(text, 5, OpCode.LOADK, 1, 0, 1);
+	writeInstruction(text, 6, OpCode.STORE_MEM, 0, 1, MemoryAccessKind.Word);
+	writeInstruction(text, 7, OpCode.RET, 0, 1, 0);
+	const image = linkRawTestSystemBlua32({ text, constants: [0x87654321, port], functions: [
+		{ firstWord: 0, wordCount: 2, maxStack: 2 }, { firstWord: 2, wordCount: 2, maxStack: 1 },
+		{ firstWord: 4, wordCount: 4, maxStack: 2 },
+	] });
+	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+		for (const takeover of ['call-blocked', 'call-ready', 'redirect', 'abort-call']) {
+			const { cpu, memory } = createTestSystemCpu(image, backend);
+			const device = { ready: false, writes: [] as number[] };
+			memory.mapIoWrite(port, device, (state, _address, word) => { state.writes.push(word); });
+			memory.mapIoWriteReady(port, (state: typeof device) => state.ready);
+			const frame = cpu.rootThread.frameAtDepth(0);
+			frame.registers.setNumber(0, 0x12345678); frame.registers.setNumber(1, port);
+			assert.equal(cpu.runUntilDepth(0, 10), RunResult.Halted);
+			if (takeover === 'call-ready' || takeover === 'redirect') { device.ready = true; cpu.resumeMemoryWrite(port); }
+			if (takeover === 'redirect') {
+				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
+				cpu.runUntilDepth(0, 10);
+				assert.deepEqual(device.writes, [], 'setting the active PC does not execute the abandoned store');
+			} else if (takeover === 'abort-call') {
+				cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[2]);
+				cpu.runUntilDepth(1, 20);
+				assert.equal(cpu.isMemoryWriteBlocked(), true);
+				cpu.abortCompletionCall(1);
+				device.ready = true;
+				cpu.runUntilDepth(0, 20);
+				assert.deepEqual(device.writes, [0x12345678], 'unwinding abandons the callee wait, not the caller instruction');
+				assert.equal(cpu.getFrameDepth(), 1);
+			} else {
+				cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[1]);
+				assert.equal(cpu.runUntilDepth(1, 10), RunResult.Halted);
+				assert.equal(cpu.getFrameDepth(), 1);
+				assert.deepEqual(device.writes, [], 'the suspended access does not execute in the injected call');
+				device.ready = true;
+				cpu.runUntilDepth(0, 10);
+				assert.deepEqual(device.writes, [0x12345678], 'the caller starts a fresh store at its retained PC');
+			}
 		}
 	}
 });

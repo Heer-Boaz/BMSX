@@ -1,3 +1,5 @@
+import { PendingMemoryKind } from '../../machine/ts/machine/cpu/memory_operation';
+import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -537,6 +539,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			interruptEventPending: false,
 			memoryWriteBlocked: false,
 			memoryWriteBlockedAddress: 0,
+			pendingMemory: { kind: PendingMemoryKind.WordStores, instructionPc: 0xfffffffc, nextPc: 0, address: 0x12345678, accessKind: MemoryAccessKind.Word, registerIndex: 7, wordCount: 9 },
 			statusWord: CPU_STATUS_CART_ENTRY,
 			causeWord: 0,
 			epcWord: 0,

@@ -18,6 +18,7 @@
 #include "common/object_storage_pool.h"
 #include "common/primitives.h"
 #include "machine/cpu/call_state.h"
+#include "machine/cpu/memory_operation.h"
 #include "machine/cpu/thread.h"
 #include "machine/cpu/closure.h"
 #include "machine/execution_address_space.h"
@@ -158,6 +159,7 @@ struct CpuRuntimeState {
 	bool interruptEventPending = false;
 	bool memoryWriteBlocked = false;
 	uint32_t memoryWriteBlockedAddress = 0;
+	PendingMemoryOperation pendingMemory;
 	u32 statusWord = CPU_STATUS_CART_ENTRY;
 	u32 causeWord = 0;
 	u32 epcWord = 0;
@@ -307,7 +309,7 @@ public:
 	bool isMemoryWriteBlocked() const { return m_memoryWriteBlocked; }
 	uint32_t stalledMemoryWriteAddress() const { return m_memoryWriteBlockedAddress; }
 	void resumeMemoryWrite(uint32_t address);
-	void abortStalledMemoryWrite() { m_memoryWriteBlocked = false; }
+	void abortStalledMemoryWrite() { m_memoryWriteBlocked = false; m_pendingMemory.kind = PendingMemoryKind::None; }
 	bool isUserMode() const { return (m_cop0Words[COP0_STATUS] & CPU_STATUS_USER_MODE_CURRENT) != 0u; }
 	void requestNonMaskableInterrupt();
 	void cancelNonMaskableInterrupt() { m_nonMaskableInterruptPending = false; }
@@ -482,8 +484,10 @@ private:
 	void setRegister(CallFrame& frame, int index, Value value);
 	Value* ensureRegisterCapacity(CallFrame& frame, int index);
 	bool executeWordStores(CallFrame& frame, u32 address, int source, int count);
+	bool continueWordStores(CallFrame& frame, u32 address, int source, int count);
 	void executeMemoryLoad(CallFrame& frame, int destination, MemoryAccessKind kind, u32 address);
 	bool executeMemoryStore(CallFrame& frame, int source, MemoryAccessKind kind, u32 address);
+	bool continueMemoryStore(CallFrame& frame, int source, MemoryAccessKind kind, u32 address);
 	static const Value& readRK(Blua32ExecutionImage& image, Value* registers, int rk) {
 		if (rk < 0) {
 			return image.constPool[static_cast<size_t>(-1 - rk)];
@@ -550,6 +554,7 @@ private:
 	void enterLuaFaultException(u32 reason, Value errorValue);
 	void hardHalt();
 	void blockMappedWrite(CallFrame& frame, uint32_t address);
+	void resumePendingMemoryOperation();
 	void markRoots(GcHeap& heap);
 	void pruneStaticClosures();
 
@@ -566,6 +571,7 @@ private:
 	bool m_interruptEventPending = false;
 	bool m_memoryWriteBlocked = false;
 	uint32_t m_memoryWriteBlockedAddress = 0;
+	PendingMemoryOperation m_pendingMemory;
 	u32 m_currentInstructionPc = 0;
 	ExecutionDomainId m_lastExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	bool m_hardHalted = false;

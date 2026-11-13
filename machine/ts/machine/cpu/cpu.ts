@@ -1,3 +1,4 @@
+import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { luaPow } from '../../spec/blua32/pow';
 import { CART_ROM_BASE } from '../../spec/bmsx/memory_map';
 import { StringPool, type StringId } from './string_pool';
@@ -230,6 +231,7 @@ export type CpuRuntimeState = {
 	interruptEventPending: boolean;
 	memoryWriteBlocked: boolean;
 	memoryWriteBlockedAddress: number;
+	pendingMemory: PendingMemoryOperation;
 	statusWord: number;
 	causeWord: number;
 	epcWord: number;
@@ -291,6 +293,7 @@ export class CPU implements MappedPageInvalidator {
 	private interruptEventPending = false;
 	private memoryWriteBlocked = false;
 	private memoryWriteBlockedAddress = 0;
+	private readonly pendingMemory: PendingMemoryOperation = { kind: PendingMemoryKind.None, instructionPc: 0, nextPc: 0, address: 0, accessKind: MemoryAccessKind.Word, registerIndex: 0, wordCount: 0 };
 	private currentInstructionPc = 0;
 	private lastExecutionDomainId: ExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	private hardHalted = false;
@@ -830,6 +833,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private clearCallStack(): void {
+		this.abortStalledMemoryWrite();
 		for (;;) {
 			for (let index = 0; index < this.activeThread.protectedCallDepth; index += 1) {
 				const continuation = this.activeThread.protectedCallContinuations.peek(index);
@@ -868,6 +872,7 @@ export class CPU implements MappedPageInvalidator {
 		this.interruptEventPending = false;
 		this.memoryWriteBlocked = false;
 		this.memoryWriteBlockedAddress = 0;
+		this.pendingMemory.kind = PendingMemoryKind.None;
 		this.hardHalted = false;
 		this.programExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 		this.cop0Words[COP0_STATUS] = CPU_STATUS_SYSTEM_ENTRY;
@@ -1591,6 +1596,7 @@ export class CPU implements MappedPageInvalidator {
 		this.interruptEventPending = false;
 		this.memoryWriteBlocked = false;
 		this.memoryWriteBlockedAddress = 0;
+		this.pendingMemory.kind = PendingMemoryKind.None;
 		this.hardHalted = false;
 		this.yieldRequested = false;
 		const closure = this.staticClosureFromLatch();
@@ -1598,6 +1604,9 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public beginCompletionCall(closure: Closure, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
+		// Call injection takes over the physical instruction stream. The suspended
+		// frame retains its PC; an unaccepted endpoint access must not follow it.
+		this.abortStalledMemoryWrite();
 		const roots = this.acquireLocalRoots();
 		this.localRoots.push(closure);
 		for (const arg of args) this.localRoots.push(arg);
@@ -1696,6 +1705,7 @@ export class CPU implements MappedPageInvalidator {
 
 	public abortStalledMemoryWrite(): void {
 		this.memoryWriteBlocked = false;
+		this.pendingMemory.kind = PendingMemoryKind.None;
 	}
 
 	private blockMappedWrite(frame: CallFrame, address: number): void {
@@ -1736,6 +1746,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public enterPendingInterrupt(): boolean {
+		if (this.pendingMemory.kind !== PendingMemoryKind.None) return false;
 		if (this.nonMaskableInterruptPending) {
 			this.nonMaskableInterruptPending = false;
 			const hadHaltLatch = this.haltedUntilIrqFrameDepth >= 0;
@@ -1883,6 +1894,8 @@ export class CPU implements MappedPageInvalidator {
 		const thread = this.activeThread;
 		while (thread.frameDepth > targetDepth) {
 			try {
+				if (this.instructionBudgetRemaining > 0 && !this.memoryWriteBlocked && !this.hardHalted
+					&& !this.yieldRequested && !this.isHaltedUntilIrq()) this.resumePendingMemoryOperation();
 				while (thread.frameDepth > targetDepth) {
 					if (this.hardHalted
 						|| (this.haltedUntilIrqThread === this.activeThread && this.haltedUntilIrqFrameDepth === thread.frameDepth)
@@ -1954,6 +1967,8 @@ export class CPU implements MappedPageInvalidator {
 			this.preMaskableInterruptExecutionHookDomainMask;
 		while (thread.frameDepth > targetDepth) {
 			try {
+				if (this.instructionBudgetRemaining > 0 && !this.memoryWriteBlocked && !this.hardHalted
+					&& !this.yieldRequested && !this.isHaltedUntilIrq()) this.resumePendingMemoryOperation();
 				while (thread.frameDepth > targetDepth) {
 					if (this.hardHalted
 						|| (this.haltedUntilIrqThread === this.activeThread && this.haltedUntilIrqFrameDepth === thread.frameDepth)
@@ -2056,6 +2071,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private unwindToDepth(targetDepth: number, chargeCaptures: boolean): void {
+		if (this.activeThread.frameDepth > targetDepth) this.abortStalledMemoryWrite();
 		while (this.activeThread.frameDepth > targetDepth) {
 			const frame = this.activeThread.currentFrame!;
 			const closed = this.closeUpvalues(frame);
@@ -2217,6 +2233,7 @@ export class CPU implements MappedPageInvalidator {
 	): void {
 		const image = this.executionImageForDomain(executionDomainId)!;
 		const frame = this.activeThread.frameAtDepth(frameIndex);
+		if (frame === this.activeThread.currentFrame) this.abortStalledMemoryWrite();
 		const registerCount = Math.max(frame.closure.maxStack, frame.closure.numParams);
 		if (registerCount > frame.stackCapacity) {
 			this.ensureRegisterCapacity(frame, registerCount - 1);
@@ -2532,7 +2549,19 @@ export class CPU implements MappedPageInvalidator {
 			this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, address);
 			return;
 		}
+		this.continueMemoryStore(frame, source, kind, address);
+	}
+
+	private continueMemoryStore(frame: CallFrame, source: number, kind: MemoryAccessKind, address: number): void {
 		if (!this.memory.mappedWriteReady(address)) {
+			const operation = this.pendingMemory;
+			operation.kind = PendingMemoryKind.Store;
+			operation.instructionPc = this.currentInstructionPc;
+			operation.nextPc = frame.pc;
+			operation.address = address;
+			operation.accessKind = kind;
+			operation.registerIndex = source;
+			operation.wordCount = 0;
 			this.blockMappedWrite(frame, address);
 			return;
 		}
@@ -2556,8 +2585,20 @@ export class CPU implements MappedPageInvalidator {
 			this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);
 			return;
 		}
+		this.continueWordStores(frame, addr, valueBase, valueCount);
+	}
+
+	private continueWordStores(frame: CallFrame, addr: number, valueBase: number, valueCount: number): void {
 		const blockedAddress = this.memory.firstBlockedMappedWordWrite(addr, valueCount);
 		if (blockedAddress !== NO_BLOCKED_MAPPED_WRITE) {
+			const operation = this.pendingMemory;
+			operation.kind = PendingMemoryKind.WordStores;
+			operation.instructionPc = this.currentInstructionPc;
+			operation.nextPc = frame.pc;
+			operation.address = addr;
+			operation.accessKind = MemoryAccessKind.Word;
+			operation.registerIndex = valueBase;
+			operation.wordCount = valueCount;
 			this.blockMappedWrite(frame, blockedAddress);
 			return;
 		}
@@ -2572,6 +2613,19 @@ export class CPU implements MappedPageInvalidator {
 			}
 			writeAddr = (writeAddr + 4) >>> 0;
 		}
+	}
+
+	private resumePendingMemoryOperation(): void {
+		const operation = this.pendingMemory;
+		if (operation.kind === PendingMemoryKind.None) return;
+		const kind = operation.kind, accessKind = operation.accessKind;
+		const address = operation.address, registerIndex = operation.registerIndex, wordCount = operation.wordCount;
+		const frame = this.activeThread.currentFrame!;
+		this.currentInstructionPc = operation.instructionPc;
+		frame.pc = operation.nextPc;
+		operation.kind = PendingMemoryKind.None;
+		if (kind === PendingMemoryKind.Store) this.continueMemoryStore(frame, registerIndex, accessKind, address);
+		else this.continueWordStores(frame, address, registerIndex, wordCount);
 	}
 
 	private prepareCompiledRegion(frame: CallFrame, page: DecodedInstructionPage, word: number): void {
@@ -4828,6 +4882,7 @@ export class CPU implements MappedPageInvalidator {
 			interruptEventPending: this.interruptEventPending,
 			memoryWriteBlocked: this.memoryWriteBlocked,
 			memoryWriteBlockedAddress: this.memoryWriteBlockedAddress,
+			pendingMemory: { ...this.pendingMemory },
 			statusWord: this.cop0Words[COP0_STATUS],
 			causeWord: this.cop0Words[COP0_CAUSE],
 			epcWord: this.cop0Words[COP0_EPC],
@@ -5083,6 +5138,7 @@ export class CPU implements MappedPageInvalidator {
 		this.interruptEventPending = state.interruptEventPending;
 		this.memoryWriteBlocked = state.memoryWriteBlocked;
 		this.memoryWriteBlockedAddress = state.memoryWriteBlockedAddress;
+		Object.assign(this.pendingMemory, state.pendingMemory);
 		this.cop0Words[COP0_STATUS] = state.statusWord;
 		this.cop0Words[COP0_CAUSE] = state.causeWord;
 		this.cop0Words[COP0_EPC] = state.epcWord;

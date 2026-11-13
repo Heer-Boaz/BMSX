@@ -1,3 +1,5 @@
+import type { PendingMemoryKind } from '../../cpu/memory_operation';
+import type { MemoryAccessKind } from '../../../spec/blua32/memory_access_kind';
 import { BinaryReader, BinarySize, BinaryWriter, type BinarySink } from '../../../common/serializer/binary_stream';
 import type { MachineSaveState } from '../../save_state';
 import type { CpuFrameState, CpuThreadState, CpuProtectedCallState, CpuRootValueState, CpuRuntimeState } from '../../cpu/cpu';
@@ -1183,6 +1185,13 @@ function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void 
 	writer.bool(state.interruptEventPending);
 	writer.bool(state.memoryWriteBlocked);
 	writer.u32(state.memoryWriteBlockedAddress);
+	writer.u32(state.pendingMemory.kind);
+	writer.u32(state.pendingMemory.instructionPc);
+	writer.u32(state.pendingMemory.nextPc);
+	writer.u32(state.pendingMemory.address);
+	writer.u32(state.pendingMemory.accessKind);
+	writer.i32(state.pendingMemory.registerIndex);
+	writer.i32(state.pendingMemory.wordCount);
 	writer.u32(state.statusWord);
 	writer.u32(state.causeWord);
 	writer.u32(state.epcWord);
@@ -1222,6 +1231,12 @@ function readCpuRuntimeState(reader: BinaryReader): CpuRuntimeState {
 		interruptEventPending: reader.bool(),
 		memoryWriteBlocked: reader.bool(),
 		memoryWriteBlockedAddress: reader.u32(),
+		pendingMemory: {
+			kind: reader.u32() as PendingMemoryKind,
+			instructionPc: reader.u32(), nextPc: reader.u32(), address: reader.u32(),
+			accessKind: reader.u32() as MemoryAccessKind,
+			registerIndex: reader.i32(), wordCount: reader.i32(),
+		},
 		statusWord: reader.u32(),
 		causeWord: reader.u32(),
 		epcWord: reader.u32(),

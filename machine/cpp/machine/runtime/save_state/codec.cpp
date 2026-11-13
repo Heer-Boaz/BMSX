@@ -1261,6 +1261,13 @@ template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntim
 	writer.boolean(state.interruptEventPending);
 	writer.boolean(state.memoryWriteBlocked);
 	writer.u32(state.memoryWriteBlockedAddress);
+	writer.u32(static_cast<u32>(state.pendingMemory.kind));
+	writer.u32(state.pendingMemory.instructionPc);
+	writer.u32(state.pendingMemory.nextPc);
+	writer.u32(state.pendingMemory.address);
+	writer.u32(static_cast<u32>(state.pendingMemory.accessKind));
+	writer.i32(state.pendingMemory.registerIndex);
+	writer.i32(state.pendingMemory.wordCount);
 	writer.u32(state.statusWord);
 	writer.u32(state.causeWord);
 	writer.u32(state.epcWord);
@@ -1312,6 +1319,13 @@ CpuRuntimeState readCpuRuntimeState(BinaryReader& reader) {
 	state.interruptEventPending = reader.boolean();
 	state.memoryWriteBlocked = reader.boolean();
 	state.memoryWriteBlockedAddress = reader.u32();
+	state.pendingMemory.kind = static_cast<PendingMemoryKind>(reader.u32());
+	state.pendingMemory.instructionPc = reader.u32();
+	state.pendingMemory.nextPc = reader.u32();
+	state.pendingMemory.address = reader.u32();
+	state.pendingMemory.accessKind = static_cast<MemoryAccessKind>(reader.u32());
+	state.pendingMemory.registerIndex = reader.i32();
+	state.pendingMemory.wordCount = reader.i32();
 	state.statusWord = reader.u32();
 	state.causeWord = reader.u32();
 	state.epcWord = reader.u32();

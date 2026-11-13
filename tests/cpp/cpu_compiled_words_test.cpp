@@ -257,9 +257,9 @@ void laterReadinessBeforeEarlierFault() {
 			&& device.probes == std::vector<u32>{IO_BASE, IO_BASE + 4u} && device.writes == 0, "the first blocked raw word and prefix PC are retained");
 		m->cpu.resumeMemoryWrite(IO_BASE); require(m->cpu.captureRuntimeState().memoryWriteBlocked, "an unrelated ready event does not release this store");
 		device.ready = true; m->cpu.resumeMemoryWrite(IO_BASE + 4u); m->cpu.runUntilDepth(0, 2);
-		require(m->cpu.instructionBudgetRemaining == -2 && m->cpu.readCauseWord() == CPU_CAUSE_CODE_DATA_BUS_ERROR
+		require(m->cpu.instructionBudgetRemaining == -1 && m->cpu.readCauseWord() == CPU_CAUSE_CODE_DATA_BUS_ERROR
 			&& m->cpu.readEpcWord() == m->rom.textAddress + 3u * INSTRUCTION_BYTES && device.writes == 0,
-			"the retried instruction charges its successful preflight then faults on the earlier unmapped word");
+			"the resumed instruction charges its successful preflight, not its base again, before the earlier fault");
 	}
 	requireParity(native, scalar); require(devices[0].probes == devices[1].probes, "both paths issue identical readiness probes");
 }

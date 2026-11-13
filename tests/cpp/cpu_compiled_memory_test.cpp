@@ -243,6 +243,83 @@ void coldScalarExitsCarryTheirComputedGuestAddress() {
 	}
 }
 
+void resumedStoreRetainsDecodedOperation() {
+	for (const bool scalar : {false, true}) {
+		const auto image = memoryLoop(OpCode::STORE_MEM, MemoryAccessKind::Word);
+		CpuMachine machine(image, scalar);
+		auto& cpu = machine.cpu;
+		const u32 code = DYNAMIC_RAM_BASE + 0x1000u, port = IO_BASE + 0x5000u;
+		machine.memory.writeBytes(code, image.text.data(), image.text.size());
+		auto& frame = *cpu.activeThread()->frameAtDepth(0);
+		frame.registers[0] = valueNumber(0x12345678u);
+		frame.registers[1] = valueNumber(code + 0x2000u);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], code);
+		cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 2400);
+		if (!scalar) test::waitForNativeEntry(cpu, *frame.decodedPage, (code & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
+		struct Device { bool ready = false; std::vector<u32> writes; } device;
+		machine.memory.mapIoWrite(port, &device, [](void* context, u32, u32 word, MappedBusSignals) {
+			static_cast<Device*>(context)->writes.push_back(word);
+		});
+		machine.memory.mapIoWriteReady(port, [](void* context, u32, MappedBusSignals) { return static_cast<Device*>(context)->ready; });
+		frame.registers[1] = valueNumber(port);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], code);
+		require(cpu.runUntilDepth(0, 20) == RunResult::Halted && cpu.isMemoryWriteBlocked(), "store reaches the endpoint wait");
+		const auto saved = cpu.captureRuntimeState();
+		std::array<u8, INSTRUCTION_BYTES> replacement;
+		writeInstruction(replacement, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
+		machine.memory.writeMappedU32LE(code + 2u * INSTRUCTION_BYTES, readLE32(replacement.data()));
+		cpu.restoreRuntimeState(saved);
+		device.ready = true;
+		cpu.resumeMemoryWrite(port);
+		cpu.runUntilDepth(0, 0);
+		require(device.writes.empty(), "zero grant retains the pending operation");
+		cpu.requestYield();
+		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded && device.writes.empty(), "requested yield precedes the pending side effect");
+		cpu.runUntilDepth(0, 1);
+		require(device.writes == std::vector<u32>{0x12345678u} && cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<size_t>(OpCode::MOV)]
+			&& cpu.readFramePc(0) == code + 4u * INSTRUCTION_BYTES,
+			"ready resumes the decoded store after restore, not rewritten code or its base charge");
+	}
+}
+
+void externalTakeoverFlushesOnlyTheUnacceptedStore() {
+	for (const bool scalar : {false, true}) for (int takeover = 0; takeover < 3; ++takeover) {
+		auto image = memoryLoop(OpCode::STORE_MEM, MemoryAccessKind::Word);
+		writeInstruction(image.text, 6, static_cast<u8>(OpCode::K1), 0, 0, 0);
+		writeInstruction(image.text, 7, static_cast<u8>(OpCode::RET), 0, 2, 0);
+		image.functions.push_back({.firstWord = 6, .wordCount = 2, .maxStack = 1});
+		CpuMachine machine(image, scalar);
+		auto& cpu = machine.cpu;
+		auto& frame = *cpu.activeThread()->frameAtDepth(0);
+		const u32 port = IO_BASE + 0x5000u;
+		frame.registers[0] = valueNumber(0x12345678u);
+		frame.registers[1] = valueNumber(DYNAMIC_RAM_BASE + 0x1000u);
+		cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 2400);
+		if (!scalar) test::waitForNativeEntry(cpu, *frame.decodedPage, (machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
+		struct Device { bool ready = false; std::vector<u32> writes; } device;
+		machine.memory.mapIoWrite(port, &device, [](void* context, u32, u32 value, MappedBusSignals) {
+			static_cast<Device*>(context)->writes.push_back(value);
+		});
+		machine.memory.mapIoWriteReady(port, [](void* context, u32, MappedBusSignals) { return static_cast<Device*>(context)->ready; });
+		frame.registers[0] = valueNumber(0x12345678u); frame.registers[1] = valueNumber(port);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress);
+		require(cpu.runUntilDepth(0, 20) == RunResult::Halted && cpu.isMemoryWriteBlocked(), "store is pending before external takeover");
+		if (takeover != 0) { device.ready = true; cpu.resumeMemoryWrite(port); }
+		if (takeover == 2) {
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress + 5u * INSTRUCTION_BYTES);
+			cpu.runUntilDepth(0, 10);
+			require(device.writes.empty(), "active-PC redirect abandons the unaccepted store");
+		} else {
+			cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[2]);
+			require(cpu.runUntilDepth(1, 10) == RunResult::Halted && cpu.getFrameDepth() == 1, "injected completion returns to the suspended frame");
+			require(device.writes.empty(), "the suspended store does not execute in the injected frame");
+			device.ready = true;
+			cpu.runUntilDepth(0, 6);
+			require(device.writes == std::vector<u32>{0x12345678u}, "original frame refetches and executes its own store exactly once");
+		}
+	}
+}
+
 void generatedBusOrdering() {
 	constexpr u32 port = RAM_BASE + 0x5000u;
 	for (const bool scalar : {false, true}) {
@@ -543,6 +620,8 @@ int main() {
 		coldScalarExitsCarryTheirComputedGuestAddress();
 		generatedMemoryBoundaries();
 		generatedBusOrdering();
+		resumedStoreRetainsDecodedOperation();
+		externalTakeoverFlushesOnlyTheUnacceptedStore();
 		generatedMemoryMayRetireExecutingSource();
 		dmaMemorySpanRetiresGeneratedCode();
 		fatalHelperErrorsLeaveTheNativeFrameBeforeUnwinding();

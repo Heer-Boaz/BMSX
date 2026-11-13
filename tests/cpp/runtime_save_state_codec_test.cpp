@@ -33,6 +33,7 @@ int main() {
 	machine.cartridge.slots[0] = CartridgeCardState{std::vector<u8>{}, CartridgeMailboxState{}};
 	machine.memory.busFaultAddr = 0xffffffff;
 	state.machineState.schedulerNowCycles = (i64{1} << 40) + 17;
+	state.cpuState.pendingMemory = {PendingMemoryKind::WordStores, 0xfffffffcu, 0u, 0x12345678u, MemoryAccessKind::Word, 7, 9};
 	state.cpuState.snapshot = CpuSnapshot({0x12345678, 0xffffffff, 0, 0x80000000, 0x7ff81234}, {2});
 	const size_t beforeOwned = allocations;
 	const auto expected = encodeRuntimeSaveState(state);
