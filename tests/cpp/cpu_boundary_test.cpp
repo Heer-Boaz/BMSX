@@ -182,6 +182,8 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 		table->setStringKey(machine->cpu.stringPool().intern("field"), valueNumber(0));
 		machine->cpu.runUntilDepth(0, 1200);
 	}
+	test::waitForNativeEntry(native.cpu, *native.cpu.activeThread()->frameAtDepth(0)->decodedPage,
+		(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u);
 	bool read = false, write = false;
 	for (const auto& [key, page] : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages) {
 		if (!page.nativeBlocks) continue;
@@ -245,6 +247,7 @@ void nativeFieldStoreMissKeepsSignedConstantSelectors() {
 	machine.cpu.runUntilDepth(0, (NATIVE_BLOCK_COMPILATION_THRESHOLD + 8)
 		* (BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)]));
 	const auto& frame = *machine.cpu.activeThread()->frameAtDepth(0);
+	test::waitForNativeEntry(machine.cpu, *frame.decodedPage, (machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u);
 	const auto& block = frame.decodedPage->nativeBlocks->entries[(machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u];
 	require(block && block->sideExits[0].exitC == -2, "compiled field maps retain signed constant selectors");
 	table->setStringKey(key, valueNil());
@@ -277,6 +280,7 @@ void registerRunsPublishAtBudgetBoundaries() {
 		require(test::runCpuParity(normal.cpu, instrumented.cpu, 64) == RunResult::Yielded, "warm the register loop without halting");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const auto& page = *normal.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	test::waitForNativeEntry(normal.cpu, page, (entry & MAPPED_PAGE_BYTE_MASK) >> 2u);
 	require(page.nativeBlocks && page.nativeBlocks->entries[(entry & MAPPED_PAGE_BYTE_MASK) >> 2u],
 		"budget-boundary comparisons exercise generated machine code, not just cold scalar execution");
 #endif
@@ -326,11 +330,25 @@ void nativeCodeWarmsWithinOneCpuSlice() {
 		}
 		CpuMachine machine(image);
 		const u32 target = machine.rom.textAddress + (calls ? 5u : 0u) * INSTRUCTION_BYTES;
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+		machine.cpu.setNativeCompilationProfiling(true);
+#endif
 		require(machine.cpu.runUntilDepth(0, 10000) == RunResult::Yielded, "a long runnable slice completes its grant");
 		const auto& pages = machine.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages;
 		const auto& page = pages.at(target & ~MAPPED_PAGE_BYTE_MASK);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+		const u32 word = (target & MAPPED_PAGE_BYTE_MASK) >> 2u;
+		require(page.nativeVisits[word] == NATIVE_BLOCK_COMPILATION_THRESHOLD
+			&& machine.cpu.readNativeCompilationProfile().prepareRequests != 0,
+			"one guest slice heats the target and submits supported native code");
+		test::waitForFixtureWorkerRequests(machine.cpu);
+		for (int pass = 0; pass < 4 && (!page.nativeBlocks || !page.nativeBlocks->entries[word]); ++pass) {
+			require(machine.cpu.runUntilDepth(0, 10000) == RunResult::Yielded, "the hot guest loop remains runnable");
+			test::waitForFixtureWorkerRequests(machine.cpu);
+		}
+#endif
 		require(page.nativeBlocks && page.nativeBlocks->entries[(target & MAPPED_PAGE_BYTE_MASK) >> 2u],
-			"loop and function hotness must trigger compilation inside one CPU slice");
+			"loop and function hotness produce a published native entry");
 	}
 }
 
@@ -348,6 +366,7 @@ void nativeCodeUsesCachedWordsAtPartialRomTails() {
 	const u32 faultSequence = machine.memory.readBusFaultSequence();
 	for (int warmup = 0; warmup < 16; ++warmup) cpu.runUntilDepth(0, 64);
 	const auto& page = *cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	test::waitForNativeEntry(cpu, page, (pc & MAPPED_PAGE_BYTE_MASK) >> 2u);
 	require(page.nativeBlocks && page.nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) >> 2u],
 		"a partial ROM page can compile its already decoded instruction prefix");
 	require(cpu.readFramePc(0) == pc && cpu.readFrameRegister(0, 1) == valueNumber(2)
@@ -384,7 +403,9 @@ void nativeWarmAdmitsAllocatingBodies() {
 	require(page.nativeBlocks && page.nativeBlocks->entries[word],
 		"synchronous compilation publishes the warm entry on the threshold visit");
 #endif
+	test::waitForNativeEntry(cpu, page, word);
 	require(cpu.runUntilDepth(0, 279) == RunResult::Yielded, "a mixed loop remains runnable");
+	test::waitForNativeEntry(cpu, page, word + 2u);
 	require(page.words[word].dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeBlock)
 		&& page.nativeBlocks->entries[word]->terminal.exit == NativeBlockExit::Concat
 		&& page.nativeBlocks->entries[word + 2u],
@@ -402,11 +423,15 @@ void nativeCodeRetiresOnWritesAndObservation() {
 	CpuMachine machine(image);
 	auto& cpu = machine.cpu;
 	const u32 pc = DYNAMIC_RAM_BASE + 0x5000u;
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	cpu.setNativeCompilationProfiling(true);
+#endif
 	machine.memory.writeBytes(pc, image.text.data(), 4u * INSTRUCTION_BYTES);
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], pc);
 	for (int warmup = 0; warmup < 16; ++warmup) cpu.runUntilDepth(0, 64);
 	require(cpu.readFramePc(0) == pc, "warm native code from ordinary writable instruction memory");
 	auto& page = *cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	test::waitForNativeEntry(cpu, page, 0);
 	require(page.nativeBlocks && page.nativeBlocks->entries[0], "writable instructions acquire a native block");
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::SUB), 0, 0, 0);
 	machine.memory.writeBytes(pc + INSTRUCTION_BYTES, image.text.data() + INSTRUCTION_BYTES, INSTRUCTION_BYTES);
@@ -414,6 +439,14 @@ void nativeCodeRetiresOnWritesAndObservation() {
 	for (int warmup = 0; warmup < 16; ++warmup) cpu.runUntilDepth(0, 64);
 	require(cpu.readFrameRegister(0, 1) == valueNumber(0),
 		"rewritten source bytes replace the previously generated arithmetic");
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	test::waitForFixtureWorkerRequests(cpu);
+	for (int pass = 0; pass < 4 && (!page.nativeBlocks || !page.nativeBlocks->entries[0]); ++pass) {
+		cpu.runUntilDepth(0, 64);
+		test::waitForFixtureWorkerRequests(cpu);
+	}
+#endif
+	test::waitForNativeEntry(cpu, page, 0);
 	require(page.nativeBlocks && page.nativeBlocks->entries[0], "rewritten code can be compiled again");
 	int observations = 0;
 	InstructionObserverBinding binding;
@@ -431,6 +464,14 @@ void nativeCodeRetiresOnWritesAndObservation() {
 		"native compilation cannot elide or batch through an observed instruction");
 	cpu.setInstructionObserver({});
 	for (int warmup = 0; warmup < 16; ++warmup) cpu.runUntilDepth(0, 64);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	test::waitForFixtureWorkerRequests(cpu);
+	for (int pass = 0; pass < 4 && (!page.nativeBlocks || !page.nativeBlocks->entries[0]); ++pass) {
+		cpu.runUntilDepth(0, 64);
+		test::waitForFixtureWorkerRequests(cpu);
+	}
+#endif
+	test::waitForNativeEntry(cpu, page, 0);
 	require(page.nativeBlocks && page.nativeBlocks->entries[0], "removing observation admits native execution again");
 }
 
@@ -466,6 +507,19 @@ void nativeHaltCommitsItsThreadAndFrameLatch() {
 				"native WIDE HALT commits the exact charge, thread/depth latch and next PC");
 		}
 		const auto& page = *cpu.activeThread()->frameAtDepth(0)->decodedPage;
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+		// An exhausted HALT cannot service worker publication. Release the warmup
+		// latch, publish without guest cycles, then execute the actual native HALT
+		// again so the assertions below still inspect a genuinely halted thread.
+		cpu.clearHaltUntilIrq();
+		test::waitForNativeEntry(cpu, page, (startPc & MAPPED_PAGE_BYTE_MASK) >> 2u);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], startPc);
+		const int nativeCharge = BASE_CYCLES[static_cast<u8>(OpCode::HALT)] + (standalone ? 0
+			: BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::NOT)]);
+		require(cpu.runUntilDepth(0, nativeCharge) == RunResult::Halted && cpu.instructionBudgetRemaining == 0
+			&& cpu.isHaltedUntilIrq() && cpu.readFramePc(0) == entry + 4u * INSTRUCTION_BYTES,
+			"published native HALT commits its exact charge and latch");
+#endif
 		const auto& block = page.nativeBlocks->entries[(startPc & MAPPED_PAGE_BYTE_MASK) >> 2u];
 		require(block && block->terminal.exit == NativeBlockExit::Halt,
 			"both a HALT-only block and a numeric prefix use an explicit generated HALT exit");
@@ -498,6 +552,13 @@ void nativeTerminalAtPageBoundaryTracksItsBody() {
 			"a terminal WIDE instruction at the page boundary retains its full extent");
 	}
 	auto& head = cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages.at(pc & ~MAPPED_PAGE_BYTE_MASK);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	cpu.clearHaltUntilIrq();
+	test::waitForNativeEntry(cpu, head, 255);
+	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], pc);
+	require(cpu.runUntilDepth(0, 1) == RunResult::Halted && cpu.readFramePc(0) == pc + 2u * INSTRUCTION_BYTES,
+		"the published cross-page native WIDE retains its complete HALT semantics");
+#endif
 	require(head.nativeBlocks && head.nativeBlocks->entries[255]
 		&& head.nativeBlocks->entries[255]->terminal.exit == NativeBlockExit::Halt,
 		"an already decoded cross-page WIDE terminal can execute as generated code");
@@ -527,6 +588,7 @@ void nativeWritesPreserveIndependentBlocks() {
 	for (const u32 start : {0u, 8u}) {
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE + start * INSTRUCTION_BYTES);
 		require(cpu.runUntilDepth(0, (NATIVE_BLOCK_COMPILATION_THRESHOLD + 8) * loopCycles) == RunResult::Yielded, "independent blocks warm on a shared source page");
+		test::waitForNativeEntry(cpu, *cpu.activeThread()->frameAtDepth(0)->decodedPage, start);
 	}
 	auto& page = *cpu.activeThread()->frameAtDepth(0)->decodedPage;
 	const auto* preserved = page.nativeBlocks->entries[0].get();
@@ -563,8 +625,26 @@ void nativeCallsAndReturnsPublishFaultBoundaries() {
 		CpuMachine native(image), scalar(image);
 		scalar.cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; },
 			nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+		native.cpu.setNativeCompilationProfiling(true);
+#endif
 		require(test::runCpuParity(native.cpu, scalar.cpu, 10001) == RunResult::Yielded,
 			"the repeated-call workload warms both sides of the frame boundary");
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+		for (int pass = 0; pass < 4; ++pass) {
+			test::waitForFixtureWorkerRequests(native.cpu);
+			const auto& decoded = native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages;
+			bool hasCall = false, hasReturn = false;
+			for (const auto& [key, page] : decoded) if (page.nativeBlocks) for (const auto& block : page.nativeBlocks->entries) if (block) {
+				hasCall |= block->terminal.exit == NativeBlockExit::Call;
+				hasReturn |= block->terminal.exit == NativeBlockExit::Return;
+			}
+			if (hasCall && hasReturn) break;
+			require(test::runCpuParity(native.cpu, scalar.cpu, 10001) == RunResult::Yielded,
+				"both paths remain hot while queued native entries are published");
+		}
+		test::waitForFixtureWorkerRequests(native.cpu);
+#endif
 		bool compiledCall = false, compiledReturn = false;
 		for (const auto& [key, page] : native.cpu.activeThread()->frameAtDepth(0)->executionImage->decodedPages) {
 			if (!page.nativeBlocks) continue;
@@ -648,9 +728,13 @@ void nativeCallUsesItsClosureBoundFunctionRecord() {
 		}
 		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; },
 			nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+		if (!instrumented) cpu.setNativeCompilationProfiling(true);
+#endif
 		require(cpu.runUntilDepth(0, 10001) == RunResult::Yielded,
 			"a mapped function record warms a real native call boundary");
 		auto& page = *cpu.activeThread()->frameAtDepth(0)->decodedPage;
+		if (!instrumented) test::waitForNativeEntry(cpu, page, 2);
 		if (!instrumented) require(page.nativeBlocks && page.nativeBlocks->entries[2]
 			&& page.nativeBlocks->entries[2]->terminal.exit == NativeBlockExit::Call,
 			"the source mutation test executes generated CALL code");
@@ -665,10 +749,14 @@ void nativeCallUsesItsClosureBoundFunctionRecord() {
 		// Closure creation, unlike CALL, does read the record. Have that read
 		// replace the caller's next CALL while generated creation code is active.
 		source.armed = false;
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+		if (!instrumented) test::waitForFixtureWorkerRequests(cpu);
+#endif
 		for (int visit = 0; visit < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++visit) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE);
 			require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "closure creation remains runnable while warming");
 		}
+		if (!instrumented) test::waitForNativeEntry(cpu, page, 0);
 		if (!instrumented) require(page.nativeBlocks && page.nativeBlocks->entries[0],
 			"the record read can retire generated closure creation code");
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], DYNAMIC_RAM_BASE);
