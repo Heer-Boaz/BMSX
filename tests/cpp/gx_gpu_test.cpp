@@ -1335,6 +1335,48 @@ void testBlockedCpuGp0StoreResumesAcrossDeviceRestore() {
 	}
 }
 
+void testDmaStartObservesGpuCapacityFreedWhileNoChannelWaited() {
+	GpuHarness target;
+	stopPcrtc(target);
+	target.dma.setTiming(1, 1, 1, 1, 0, 0);
+	target.gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+	for (const bmsx::u32 word : {0x020000ffu, 0u, 0x00640001u}) target.gpu.writeGp0(word);
+	const bmsx::u32 source = bmsx::DYNAMIC_RAM_BASE + 0x3000u;
+	for (bmsx::u32 i = 0; i < bmsx::GX_GPU_COMMAND_FIFO_WORD_CAPACITY + 1; ++i) target.memory.writeU32(source + 4u * i, 0xe1000000u);
+	target.memory.writeU32(source + 0x100u, 0x1f000000u);
+	target.memory.writeMappedWord(bmsx::IO_DMA0_READ_ADDR, source);
+	target.memory.writeMappedWord(bmsx::IO_DMA0_TRANSFER_COUNT, bmsx::GX_GPU_COMMAND_FIFO_WORD_CAPACITY + 1);
+	target.memory.writeMappedWord(bmsx::IO_DMA0_CONTROL, bmsx::DMA_ROUTE_TO_GPU);
+	target.memory.writeMappedWord(bmsx::IO_DMA0_TRIGGER, bmsx::DMA_TRIGGER_START);
+	require(target.dma.cpuBusHeld(), "first DMA fills the ingress");
+	const auto advance = [&](bmsx::i64 cycle) {
+		while (target.scheduler.nextDeadline() <= cycle) {
+			const bmsx::i64 deadline = target.scheduler.nextDeadline();
+			target.scheduler.advanceTo(deadline);
+			while (target.scheduler.hasDueTimer()) {
+				const auto kind = target.scheduler.popDueTimer();
+				if (kind == bmsx::DEVICE_SERVICE_GPU) target.gpu.onService(deadline);
+				else if (kind == bmsx::DEVICE_SERVICE_DMA) target.dma.onService(deadline);
+				else require(false, "unexpected device in DMA/GPU capacity test");
+			}
+		}
+		target.scheduler.advanceTo(cycle);
+	};
+	advance(50);
+	require(!target.dma.cpuBusHeld(), "first DMA has published");
+	require((target.memory.readIoU32(bmsx::IO_GX_GPU_GP1) & bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST) == 0u,
+		"ingress is still busy after first publication");
+	advance(5000);
+	// No GPU status polling: DMA start itself must observe current capacity.
+	target.memory.writeMappedWord(bmsx::IO_DMA0_READ_ADDR, source + 0x100u);
+	target.memory.writeMappedWord(bmsx::IO_DMA0_TRANSFER_COUNT, 1);
+	target.memory.writeMappedWord(bmsx::IO_DMA0_CONTROL, bmsx::DMA_ROUTE_TO_GPU);
+	target.memory.writeMappedWord(bmsx::IO_DMA0_TRIGGER, bmsx::DMA_TRIGGER_START);
+	require(target.dma.cpuBusHeld(), "new DMA starts after GPU ingress has drained");
+	advance(5100);
+	require((target.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GPU) != 0u, "DMA delivers the IRQ command");
+}
+
 void testDmaGp0PrefixCannotRunBeforeBurstPublication() {
 	GpuHarness target;
 	stopPcrtc(target);
@@ -5271,6 +5313,7 @@ int main() {
 	testGp0IngressBypassesOnlyNopsAndExecutesDrawingStateInFifoOrder();
 	testQueuedIrqStartsAtPreviousCompletionAcrossRestore();
 	testDmaGp0PrefixCannotRunBeforeBurstPublication();
+	testDmaStartObservesGpuCapacityFreedWhileNoChannelWaited();
 	testBlockedCpuGp0StoreResumesAcrossDeviceRestore();
 	testGp1CrtcRangeRegistersLatchMaskedRawWords();
 	testGp1UndefinedHighOpcodeDoesNotMirrorReset();

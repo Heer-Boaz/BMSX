@@ -1858,6 +1858,47 @@ test('blocked CPU GP0 store resumes after completion across device restore', () 
 	}
 });
 
+test('DMA START sees GPU capacity freed while no channel was waiting', () => {
+	const { memory, gpu, scheduler, dma } = createGpu();
+	stopPcrtc(memory, gpu, scheduler);
+	dma.setTiming(1, 1, 1, 1, 0, 0);
+	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+	for (const word of [0x020000ff, 0, 0x00640001]) gpu.writeGp0(word);
+	const source = DYNAMIC_RAM_BASE + 0x3000;
+	for (let i = 0; i < GX_GPU_COMMAND_FIFO_WORD_CAPACITY + 1; ++i) memory.writeU32(source + 4 * i, 0xe1000000);
+	memory.writeU32(source + 0x100, 0x1f000000);
+	memory.writeMappedWord(IO_DMA0_READ_ADDR, source);
+	memory.writeMappedWord(IO_DMA0_TRANSFER_COUNT, GX_GPU_COMMAND_FIFO_WORD_CAPACITY + 1);
+	memory.writeMappedWord(IO_DMA0_CONTROL, DMA_ROUTE_TO_GPU);
+	memory.writeMappedWord(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
+	assert.equal(dma.cpuBusHeld(), true, 'first DMA fills the ingress');
+	const advance = (cycle: number) => {
+		while (scheduler.nextDeadline() <= cycle) {
+			const deadline = scheduler.nextDeadline();
+			scheduler.advanceTo(deadline);
+			while (scheduler.hasDueTimer()) {
+				const kind = scheduler.popDueTimer();
+				if (kind === DEVICE_SERVICE_GPU) gpu.onService(deadline);
+				else if (kind === DEVICE_SERVICE_DMA) dma.onService(deadline);
+				else assert.fail(`unexpected device ${kind}`);
+			}
+		}
+		scheduler.advanceTo(cycle);
+	};
+	advance(50);
+	assert.equal(dma.cpuBusHeld(), false);
+	assert.equal(memory.readIoU32(IO_GX_GPU_GP1) & GX_GPU_STATUS_DMA_DATA_REQUEST, 0, 'ingress remains busy at the first publication');
+	advance(5000);
+	// Do not poll GPU status here: starting DMA itself must observe current capacity.
+	memory.writeMappedWord(IO_DMA0_READ_ADDR, source + 0x100);
+	memory.writeMappedWord(IO_DMA0_TRANSFER_COUNT, 1);
+	memory.writeMappedWord(IO_DMA0_CONTROL, DMA_ROUTE_TO_GPU);
+	memory.writeMappedWord(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
+	assert.equal(dma.cpuBusHeld(), true, 'new DMA starts after the GPU has drained');
+	advance(5100);
+	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, IRQ_GPU, 'newly started DMA delivers its IRQ command');
+});
+
 test('DMA GP0 prefix cannot make queued commands begin before burst publication', () => {
 	const { memory, gpu, scheduler, dma } = createGpu();
 	stopPcrtc(memory, gpu, scheduler);
