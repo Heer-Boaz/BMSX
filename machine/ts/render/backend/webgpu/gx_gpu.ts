@@ -1896,7 +1896,7 @@ function renderTexturedVertices(gx: WebGpuGxGpuState,
 	}
 	gx.texturedVertexByteOffset += vertexFloatCount * 4;
 	gx.backend.accountUpload('vertex', vertexFloatCount * 4);
-	const primitiveVertexCount = splitTriangles ? 3 : GX_GPU_POLYGON_VERTICES_PER_COMMAND;
+	const primitiveVertexCount = commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_POLYGON ? 3 : GX_GPU_POLYGON_VERTICES_PER_COMMAND;
 	const maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
 	const readsVram = gxGpuCommandSemiTransparencyEnabled(opcode) || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
 	const syncSampleBetweenAliasBands = readsVram || syncSourceBetweenTriangles;

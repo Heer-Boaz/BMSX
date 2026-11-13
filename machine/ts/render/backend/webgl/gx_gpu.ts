@@ -2634,14 +2634,15 @@ function renderTexturedVertices(
 				destinationYBaseUniform,
 			);
 		} else {
+			const primitiveVertexCount = commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_POLYGON ? 3 : GX_GPU_POLYGON_VERTICES_PER_COMMAND;
 			for (let firstVertex = 0;
 				firstVertex < vertexCount;
-				firstVertex += GX_GPU_POLYGON_VERTICES_PER_COMMAND) {
+				firstVertex += primitiveVertexCount) {
 				drawGxGpuLogicalVramArea(
 					gx,
 					gx.texturedCommandRect,
 					firstVertex,
-					GX_GPU_POLYGON_VERTICES_PER_COMMAND,
+					primitiveVertexCount,
 					syncSampleBetweenAliasBands,
 					vramYAddressExtensionWord,
 					destinationYBaseUniform,

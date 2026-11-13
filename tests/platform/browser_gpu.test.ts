@@ -159,17 +159,19 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} consumes every raw draw l
 	page.on('pageerror', error => errors.push(error.message));
 	await page.route('http://localhost/renderer-test/**', route => route.fulfill({ contentType: 'text/html',
 		body: '<!doctype html><div id="player-surface"><canvas id="gamescreen" width="256" height="256"></canvas></div>' }));
-	await page.goto('http://localhost/renderer-test/draw-layouts/');
-	await page.addScriptTag({ content: backendBundle });
-	const result = await page.evaluate(async kind => (globalThis as any).backendTest.renderTexturedModelCase(document.getElementById('gamescreen'), kind), kind);
-	assert.deepEqual(result.drawLayoutDifferences, Array(20).fill(-1), 'each layout matches software pixel-for-pixel');
-	assert.equal(result.drawLayoutPixels.length, 20);
-	assert.ok(result.drawLayoutPixels.every((count: number) => count > 0), 'each case drew visible pixels');
-	assert.deepEqual(result.lineExtraWordCounts, [2, 2], 'the producer retains exactly two line vertices');
-	assert.deepEqual(result.lineExtraWordDifferences, [-1, -1], 'extra line words match software');
-	assert.ok(result.lineExtraWordPixels.every(([line, extra]: number[]) => line !== 0 && extra === 0), 'extra raw words never create a third line vertex');
-	assert.equal(result.validationError, undefined); assert.equal(result.glError, 0);
-	assert.deepEqual(result.gpuErrors, []); assert.deepEqual(errors, []);
+	for (const vramBytes of [2 * 1024 * 1024, 1024 * 1024]) {
+		await page.goto('http://localhost/renderer-test/draw-layouts/');
+		await page.addScriptTag({ content: backendBundle });
+		const result = await page.evaluate(async ({ kind, vramBytes }) => (globalThis as any).backendTest.renderTexturedModelCase(document.getElementById('gamescreen'), kind, vramBytes), { kind, vramBytes });
+		assert.deepEqual(result.drawLayoutDifferences, Array(20).fill(-1), 'each layout matches software pixel-for-pixel');
+		assert.equal(result.drawLayoutPixels.length, 20);
+		assert.ok(result.drawLayoutPixels.every((count: number) => count > 0), 'each case drew visible pixels');
+		assert.deepEqual(result.lineExtraWordCounts, [2, 2], 'the producer retains exactly two line vertices');
+		assert.deepEqual(result.lineExtraWordDifferences, [-1, -1], 'extra line words match software');
+		assert.ok(result.lineExtraWordPixels.every(([line, extra]: number[]) => line !== 0 && extra === 0), 'extra raw words never create a third line vertex');
+		assert.equal(result.validationError, undefined); assert.equal(result.glError, 0);
+		assert.deepEqual(result.gpuErrors, []); assert.deepEqual(errors, []);
+	}
 });
 
 test('WebGPU solid batches publish only drawn cells, including aliased VRAM', async t => {
