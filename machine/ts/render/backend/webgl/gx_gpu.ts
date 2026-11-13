@@ -209,6 +209,8 @@ type GxGpuVramSource = Pick<GxGpuDeviceOutput, 'commandBuffer' | 'readbackPort' 
 
 export type WebGLGxGpuState = {
 	solidVertices: Float32Array;
+	solidPrimitiveBounds: Int16Array;
+	solidPrimitiveCount: number;
 	solidVertexWords: Uint32Array;
 	lineVertices: Float32Array;
 	texturedVertices: Float32Array;
@@ -561,6 +563,8 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 	gl.uniform1i(gl.getUniformLocation(readbackProgram, 'u_vram'), GX_GPU_SCANOUT_TEXTURE_UNIT);
 	backend.gxGpuState = {
 		solidVertices,
+		solidPrimitiveBounds: new Int16Array((GX_GPU_COMMAND_CAPACITY * GX_GPU_SOLID_VERTICES_PER_COMMAND / 6) * 4),
+		solidPrimitiveCount: 0,
 		solidVertexWords,
 		lineVertices,
 		texturedVertices,
@@ -1518,6 +1522,8 @@ function drawGxGpuPhysicalVramBands(
 	vertexCount: number,
 	syncSampleBetweenAliasBands: boolean,
 	destinationYBaseUniform: WebGLUniformLocation,
+	primitiveBounds?: Int16Array,
+	primitiveOffset = 0,
 ): void {
 	const backend = gx.backend;
 	const gl = gx.gl;
@@ -1543,7 +1549,12 @@ function drawGxGpuPhysicalVramBands(
 		gl.scissor(left, physicalTop, width, logicalBottom - logicalTop);
 		gl.uniform1ui(destinationYBaseUniform, logicalYBase);
 		gl.drawArrays(gl.TRIANGLES, firstVertex, vertexCount);
-		markGxGpuSampleTextureDirtyArea(gx, left, physicalTop, right, physicalBottom);
+		if (primitiveBounds) {
+			const primitiveLeft = primitiveBounds[primitiveOffset], primitiveRight = primitiveBounds[primitiveOffset + 2];
+			const primitiveTop = Math.max(primitiveBounds[primitiveOffset + 1], logicalTop) - logicalYBase;
+			const primitiveBottom = Math.min(primitiveBounds[primitiveOffset + 3], logicalBottom) - logicalYBase;
+			markGxGpuSampleTextureDirtyArea(gx, primitiveLeft, primitiveTop, primitiveRight, primitiveBottom);
+		} else markGxGpuSampleTextureDirtyArea(gx, left, physicalTop, right, physicalBottom);
 		logicalYBase += gx.vramTextureRows;
 	}
 }
@@ -1556,11 +1567,19 @@ function drawGxGpuLogicalVramArea(
 	syncSampleBetweenAliasBands: boolean,
 	vramYAddressExtensionWord: number,
 	destinationYBaseUniform: WebGLUniformLocation,
+	primitiveBounds?: Int16Array,
+	primitiveOffset = 0,
 ): void {
 	if (rect.right <= rect.left || rect.bottom <= rect.top) return;
-	drawGxGpuPhysicalVramBands(gx, rect.left, rect.top, rect.right, rect.bottom, firstVertex, vertexCount, syncSampleBetweenAliasBands, destinationYBaseUniform);
+	drawGxGpuPhysicalVramBands(gx, rect.left, rect.top, rect.right, rect.bottom, firstVertex, vertexCount, syncSampleBetweenAliasBands, destinationYBaseUniform, primitiveBounds, primitiveOffset);
 	if (gx.vramTextureRows === GX_GPU_VRAM_Y_ADDRESS_PERIOD) {
-		markGxGpuSampleTextureDirtyLogicalArea(gx, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, vramYAddressExtensionWord);
+		if (primitiveBounds) {
+			for (let offset = 0; offset < gx.solidPrimitiveCount * 4; offset += 4) {
+				const primitiveLeft = primitiveBounds[offset], primitiveTop = primitiveBounds[offset + 1];
+				markGxGpuSampleTextureDirtyLogicalArea(gx, primitiveLeft, primitiveTop,
+					primitiveBounds[offset + 2] - primitiveLeft, primitiveBounds[offset + 3] - primitiveTop, vramYAddressExtensionWord);
+			}
+		} else markGxGpuSampleTextureDirtyLogicalArea(gx, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, vramYAddressExtensionWord);
 	}
 }
 
@@ -1736,6 +1755,29 @@ function setGxGpuVertexBoundsRect(
 	rect.top = top;
 	rect.right = right > left ? right : left;
 	rect.bottom = bottom > top ? bottom : top;
+}
+
+function appendSolidPrimitiveBounds(gx: WebGLGxGpuState, rasterKind: GxGpuRasterKind,
+	start: number, end: number, stride: number, topLeftWord: number, bottomRightWord: number,
+	vramYAddressExtensionWord: number): void {
+	const primitiveFloatCount = stride * (rasterKind === GxGpuRasterKind.Polygon ? 3 : 6);
+	const rect = gx.vramCopyRectScratch;
+	for (let first = start; first < end; first += primitiveFloatCount) {
+		if (end - start === primitiveFloatCount) {
+			rect.left = gx.solidCommandRect.left;
+			rect.top = gx.solidCommandRect.top;
+			rect.right = gx.solidCommandRect.right;
+			rect.bottom = gx.solidCommandRect.bottom;
+		} else {
+			setGxGpuVertexBoundsRect(rasterKind, rect, gx.solidVertices, first, first + primitiveFloatCount,
+				stride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
+		}
+		const offset = gx.solidPrimitiveCount++ * 4;
+		gx.solidPrimitiveBounds[offset] = rect.left;
+		gx.solidPrimitiveBounds[offset + 1] = rect.top;
+		gx.solidPrimitiveBounds[offset + 2] = rect.right;
+		gx.solidPrimitiveBounds[offset + 3] = rect.bottom;
+	}
 }
 
 function syncGxGpuTexturedSourceTexture(
@@ -1924,7 +1966,7 @@ function flushSolidCommands(
 		const vertexFloatStride = fixedColor ? GX_GPU_FIXED_SOLID_VERTEX_FLOATS : GX_GPU_SOLID_VERTEX_FLOATS;
 		backend.bindArrayBuffer(gx.solidVertexBuffer);
 		gl.bufferSubData(gl.ARRAY_BUFFER, 0, vertices, 0, vertexFloatCount);
-		renderNewSolidCommands(gx, fixedColor, 0, vertexFloatCount / vertexFloatStride, batchRect, vramYAddressExtensionWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, skippedLineParity, rasterKind);
+		renderNewSolidCommands(gx, fixedColor, 0, vertexFloatCount / vertexFloatStride, batchRect, vramYAddressExtensionWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, skippedLineParity, rasterKind, gx.solidPrimitiveBounds);
 	}
 	return 0;
 }
@@ -1943,6 +1985,7 @@ function finishSolidBatch(
 	rasterKind: GxGpuRasterKind,
 ): number {
 	flushSolidCommands(gx, vertexFloatCount, fixedColor, vramYAddressExtensionWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, skippedLineParity, readsVram, rasterKind, gx.solidBatchRect);
+	gx.solidPrimitiveCount = 0;
 	resetGxGpuVramCopyRect(gx.solidBatchRect);
 	return 0;
 }
@@ -2275,7 +2318,7 @@ function executeNewGxGpuCommands(gx: WebGLGxGpuState, commandBuffer: GxGpuComman
 					const solidVertices = gx.solidVertices;
 					const solidVertexFloatStride = fixedColor ? GX_GPU_FIXED_SOLID_VERTEX_FLOATS : GX_GPU_SOLID_VERTEX_FLOATS;
 					const solidTriangleFloatCount = fixedColor ? GX_GPU_FIXED_SOLID_TRIANGLE_FLOATS : GX_GPU_SOLID_TRIANGLE_FLOATS;
-					const commandVertexStart = vertexFloatCount;
+					let commandVertexStart = vertexFloatCount;
 					vertexFloatCount = appendSolidCommandVertices(gx, commandBuffer, commandIndex, vertexFloatCount);
 					if (vertexFloatCount !== commandVertexStart) {
 						setGxGpuVertexBoundsRect(rasterKind, gx.solidCommandRect, solidVertices, commandVertexStart, vertexFloatCount, solidVertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
@@ -2285,10 +2328,12 @@ function executeNewGxGpuCommands(gx: WebGLGxGpuState, commandBuffer: GxGpuComman
 						} else {
 							if (readsVram && commandVertexStart !== 0 && gxGpuVramCopyRectsOverlap(gx, gx.solidBatchRect, gx.solidCommandRect, vramYAddressExtensionWord)) {
 								vertexFloatCount = finishSolidBatch(gx, commandVertexStart, solidBatchFixedColor, solidBatchVramYAddressExtensionWord, solidBatchBlendEnabled, solidBatchBlendMode, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchSkippedLineParity, solidBatchReadsVram, solidBatchRasterKind);
+								commandVertexStart = 0;
 								vertexFloatCount = appendSolidCommandVertices(gx, commandBuffer, commandIndex, vertexFloatCount);
 								setGxGpuVertexBoundsRect(rasterKind, gx.solidCommandRect, solidVertices, 0, vertexFloatCount, solidVertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 							}
 							includeGxGpuVramCopyRect(gx.solidBatchRect, gx.solidCommandRect);
+							appendSolidPrimitiveBounds(gx, rasterKind, commandVertexStart, vertexFloatCount, solidVertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 						}
 					}
 				}
@@ -2319,6 +2364,7 @@ function executeNewGxGpuCommands(gx: WebGLGxGpuState, commandBuffer: GxGpuComman
 				if (vertexFloatCount !== commandVertexStart) {
 					setGxGpuVertexBoundsRect(GxGpuRasterKind.Rectangle, gx.solidCommandRect, gx.solidVertices, commandVertexStart, vertexFloatCount, GX_GPU_SOLID_VERTEX_FLOATS, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 					includeGxGpuVramCopyRect(gx.solidBatchRect, gx.solidCommandRect);
+					appendSolidPrimitiveBounds(gx, GxGpuRasterKind.Rectangle, commandVertexStart, vertexFloatCount, GX_GPU_SOLID_VERTEX_FLOATS, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 				}
 				break;
 			}
@@ -2390,6 +2436,7 @@ function renderNewSolidCommands(
 	ditherEnabled: boolean,
 	skippedLineParity: number,
 	rasterKind: GxGpuRasterKind,
+	primitiveBounds?: Int16Array,
 ): void {
 	const backend = gx.backend;
 	const gl = gx.gl;
@@ -2445,6 +2492,7 @@ function renderNewSolidCommands(
 			readsVram,
 			vramYAddressExtensionWord,
 			destinationYBaseUniform,
+			primitiveBounds,
 		);
 	} else {
 		const primitiveVertexCount = rasterKind === GxGpuRasterKind.Polygon ? 3 : 6;
@@ -2460,6 +2508,8 @@ function renderNewSolidCommands(
 				readsVram,
 				vramYAddressExtensionWord,
 				destinationYBaseUniform,
+				primitiveBounds,
+				((primitiveFirstVertex - firstVertex) / primitiveVertexCount) * 4,
 			);
 		}
 	}

@@ -174,7 +174,7 @@ for (const kind of ['webgl2', 'webgpu']) test(`${kind} consumes every raw draw l
 	}
 });
 
-test('WebGPU solid batches publish only drawn cells, including aliased VRAM', async t => {
+for (const kind of ['webgl2', 'webgpu']) test(`${kind} solid batches publish only drawn cells, including aliased VRAM`, async t => {
 	const browser = await chromium.launch({ args: [
 		'--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
 		'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface',
@@ -187,7 +187,7 @@ test('WebGPU solid batches publish only drawn cells, including aliased VRAM', as
 	for (const vramBytes of [2 * 1024 * 1024, 1024 * 1024]) {
 		await page.goto('http://localhost/renderer-test/primitive-damage/');
 		await page.addScriptTag({ content: backendBundle });
-		const result = await page.evaluate(async bytes => (globalThis as any).backendTest.renderTexturedModelCase(document.getElementById('gamescreen'), 'webgpu', bytes, true), vramBytes);
+		const result = await page.evaluate(async ({ bytes, kind }) => (globalThis as any).backendTest.renderTexturedModelCase(document.getElementById('gamescreen'), kind, bytes, true), { bytes: vramBytes, kind });
 		assert.deepEqual(result.adjacentDifferences, [-1, -1, -1, -1, -1, -1]);
 		assert.deepEqual(result.adjacentPixel[5], [0, 255, 0, 0], 'an empty clipped batch cannot suppress the following draw');
 		assert.deepEqual(result.adjacentCopyRects[1], []);
@@ -202,6 +202,8 @@ test('WebGPU solid batches publish only drawn cells, including aliased VRAM', as
 			assert.deepEqual(result.capacityResult.pixel, [0, 255, 0, 0], 'the final fill reaches the sampled cell');
 			assert.deepEqual(result.capacityResult.copies, [[16, 0, 16, 16]], 'the final wrapped primitive must publish its cell');
 		}
+		assert.equal(result.glError, 0);
+		assert.equal(result.validationError, undefined);
 		assert.deepEqual(result.gpuErrors, []);
 	}
 	assert.deepEqual(errors, []);
