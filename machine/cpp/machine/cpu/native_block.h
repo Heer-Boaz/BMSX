@@ -61,6 +61,7 @@ using NativeBlockExitHandler = NativeBlockTransition (*)(CPU*, CallFrame*, const
 
 inline constexpr u8 NATIVE_BLOCK_COMPILATION_THRESHOLD = 64u;
 inline constexpr u32 NATIVE_BLOCK_MAX_INSTRUCTIONS = 64u;
+inline constexpr size_t NATIVE_CODE_CACHE_MAX_BYTES = 32u * 1024u * 1024u;
 inline constexpr int NATIVE_BLOCK_REGISTER_CACHE_CAPACITY = 4;
 
 enum class NativeBlockExit : u8 {

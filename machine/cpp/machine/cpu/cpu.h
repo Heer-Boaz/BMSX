@@ -528,6 +528,7 @@ private:
 	static NativeFrameOffsets nativeFrameOffsets();
 	static void* dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept;
 	void prepareNativeBlock(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pc, MappedBusSignals busSignals);
+	void prepareNativeImageCode(Blua32ExecutionImage& image, const Blua32ExecutionBoot& boot);
 	void discoverNativeSource(NativeCompilationSource& source, std::vector<u32>* outgoing);
 	void prepareNativeSource(NativeCompilationSource& source, bool immediate, bool discover);
 	void installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pagePc, u32 slot,

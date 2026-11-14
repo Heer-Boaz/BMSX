@@ -372,13 +372,13 @@ void crossPageLinksFollowTheInstructionChipSelect(bool cartridgeBound) {
 	writeInstruction(ram, 3, static_cast<u8>(OpCode::JMP), 0, (forward >> 6u) & 63u, forward & 63u, (forward >> 12u) & 255u);
 	CpuMachine native(system, test::cartridgeSlots(card0.bytes, card1.bytes), false);
 	CpuMachine scalar(system, test::cartridgeSlots(card0.bytes, card1.bytes), true);
-#if defined(BMSX_NATIVE_COMPILER_WORKER)
-	native.cpu.setNativeCompilationProfiling(true);
-#endif
 	const auto domain = cartridgeBound ? 0 : SYSTEM_EXECUTION_DOMAIN_ID;
 	const u32 function = cartridgeBound ? card0.functionAddresses[0] : system.functionAddresses[0];
 	for (auto* machine : {&native, &scalar}) {
 		if (cartridgeBound) machine->cpu.runUntilDepth(0, 7);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+		if (machine == &native) machine->cpu.setNativeCompilationProfiling(true);
+#endif
 		machine->memory.writeBytes(DYNAMIC_RAM_BASE, ram.data(), ram.size());
 		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
 		frame.registers[5] = valueNumber(IO_CART_SELECT); frame.registers[4] = valueNumber(73);
@@ -485,9 +485,6 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 	writeLE32(card1.bytes.data() + otherRecord + BLUA32_FUNCTION_MAX_STACK_OFFSET, 12);
 	CpuMachine native(system, test::cartridgeSlots(card0.bytes, card1.bytes), false);
 	CpuMachine scalar(system, test::cartridgeSlots(card0.bytes, card1.bytes), true);
-#if defined(BMSX_NATIVE_COMPILER_WORKER)
-	native.cpu.setNativeCompilationProfiling(true);
-#endif
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.writeBytes(record, system.bytes.data() + system.functionAddresses[3], BLUA32_FUNCTION_RECORD_SIZE);
 		machine->memory.writeMappedU32LE(record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, code);
@@ -498,6 +495,9 @@ void callsUseExecutionSocketAndAmbientImage(bool ramRecord) {
 		require(machine->memory.readMappedU32LE(card0.functionAddresses[1]) == card1.textAddress + 8u * INSTRUCTION_BYTES,
 			"ordinary data reads see the different record fitted to socket 1");
 	}
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+		native.cpu.setNativeCompilationProfiling(true);
+#endif
 	test::runCpuParity(native.cpu, scalar.cpu, 20000);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	for (int pass = 0; pass < 8; ++pass) {

@@ -8,8 +8,8 @@ namespace bmsx {
 
 // A physical instruction page and its compilation graph. No running frame,
 // register file, CPU PC latch or device access is needed to discover its source.
-// The lazy compiler keeps this bounded workspace on its stack; the cold BIOS
-// pass retains one per page until all incoming roots have been discovered.
+// The lazy compiler keeps this bounded workspace on its stack; the cold image
+// preparation pass retains one per page until all incoming roots are discovered.
 struct NativeCompilationSource {
 	NativeCompilationSource(Blua32ExecutionImage& image, DecodedInstructionPage& page,
 		MappedPageBinding binding, u32 pagePc, MappedBusSignals busSignals, u32 slot)

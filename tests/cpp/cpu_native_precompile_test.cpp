@@ -278,16 +278,18 @@ void preparationSharesTheExistingCapacityPolicy() {
 	test::Blua32TestImage image;
 	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
 	constexpr u32 functionCount = 8192;
+	image.constants = {std::string("capacity-key")};
 	image.text.resize(static_cast<size_t>(functionCount) * MAPPED_PAGE_BYTE_SIZE);
 	image.functions.reserve(functionCount);
 	for (u32 function = 0; function < functionCount; ++function) {
 		const u32 first = function * DECODED_PAGE_WORDS;
 		for (u32 word = 0; word < DECODED_PAGE_WORDS - 1u; ++word) {
-			writeInstruction(image.text, first + word, static_cast<u8>(OpCode::ADD), 0, 0, 1);
+			writeInstruction(image.text, first + word, static_cast<u8>(OpCode::GETFIELD), 0, 0, 0);
 		}
 		writeInstruction(image.text, first + DECODED_PAGE_WORDS - 1u, static_cast<u8>(OpCode::RET), 0, 1, 0);
 		image.functions.push_back({.firstWord=first, .wordCount=DECODED_PAGE_WORDS, .maxStack=2});
 	}
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::ADD), 0, 0, 1);
 	Fixture machine(test::encodeBlua32TestRom(RomImageDomain::System, image));
 	auto& cpu = machine.runtime.machine.cpu;
 	auto& registers = cpu.rootThread()->frameAtDepth(0)->registers;
@@ -298,8 +300,8 @@ void preparationSharesTheExistingCapacityPolicy() {
 	cpu.prepareSystemNativeCode();
 	const auto profile = cpu.readNativeCompilationProfile();
 	require(encodeRuntimeSaveState(captureRuntimeSaveState(machine.runtime)) == before && profile.codeBytes > 0 && profile.capacityFlushes > 0
-		&& profile.capacityRetiredCodeBytes >= 8u * 1024u * 1024u,
-		"large BIOS preparation uses the ordinary shared 8MiB retirement policy, not a pinned second cache");
+		&& profile.capacityRetiredCodeBytes >= NATIVE_CODE_CACHE_MAX_BYTES,
+		"large BIOS preparation uses the ordinary shared native capacity policy, not a pinned second cache");
 	require(cpu.runUntilDepth(0, 1) == RunResult::Yielded && cpu.instructionBudgetRemaining == -1,
 		"capacity retirement does not change first-instruction admission or its guest charge");
 }

@@ -151,8 +151,7 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool immediate, b
 	const auto firstRoot = std::find(source.roots.begin(), source.roots.end(), u8{1});
 	const u32 rootPc = pagePc + static_cast<u32>(firstRoot - source.roots.begin()) * INSTRUCTION_BYTES;
 	NativeCompilationMeasurement measurement(profile, image.executionDomainId, source.slot, rootPc);
-	constexpr size_t maximumCodeBytes = 8u * 1024u * 1024u;
-	if (m_nativeCodeBytes >= maximumCodeBytes) {
+	if (m_nativeCodeBytes >= NATIVE_CODE_CACHE_MAX_BYTES) {
 		measurement.phase(&NativeCompilationProfile::retirementNanoseconds);
 		const auto before = m_nativeCodeBytes;
 		for (auto& installed : m_executionImagesByDomain) {
