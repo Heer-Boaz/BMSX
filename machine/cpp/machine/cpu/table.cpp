@@ -124,21 +124,18 @@ int Table::findStringNodeIndex(StringId key) const {
 }
 
 int Table::getFreeIndex() {
-	int start = m_hashFree >= 0 ? m_hashFree : static_cast<int>(m_hashSize) - 1;
-	for (int i = start; i >= 0; --i) {
+	for (int i = m_hashFree; i >= 0; --i) {
 		if (isNil(m_hashKeys[static_cast<size_t>(i)])
 			&& isNil(m_hashValues[static_cast<size_t>(i)])) {
 			m_hashFree = i - 1;
 			return i;
 		}
 	}
+	m_hashFree = -1;
 	return -1;
 }
 
 void Table::rehash(const Value& key, const Value& value) {
-	// The allocating owner commits the exhausted search hint; a bounded
-	// capacity probe must not change the next search before its completion.
-	if (m_hashSize != 0) m_hashFree = -1;
 	size_t totalKeys = 0;
 	std::array<size_t, sizeof(size_t) * 8u> counts{};
 	size_t countBins = 0;

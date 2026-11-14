@@ -110,7 +110,7 @@ test('known string lookup follows changing inherited fields and preserves false 
 });
 
 
-test('rejected string-store growth leaves the free-slot search hint for allocating completion', () => {
+test('rejected string-store growth retains the exhausted cursor for allocating completion', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const table = cpu.createTable(0, 1), present = cpu.stringPool.intern('full'), missing = cpu.stringPool.intern('new');
@@ -120,6 +120,12 @@ test('rejected string-store growth leaves the free-slot search hint for allocati
 	assert.equal(table.storeStringKeyWithoutGrowth(missing, ValueTag.Number, 19, null), TABLE_STORE_REQUIRES_GROWTH);
 	const afterWriter = new CpuSnapshotWriter(new CpuSnapshot());
 	const afterOffset = table.captureSnapshot(afterWriter, () => {}), after = afterWriter.finish();
-	assert.equal(after.word(afterOffset + CpuSnapshotTable.HashFree), before.word(beforeOffset + CpuSnapshotTable.HashFree));
+	assert.equal(before.word(beforeOffset + CpuSnapshotTable.HashFree), 0);
+	assert.equal(after.int(afterOffset + CpuSnapshotTable.HashFree), -1);
 	assert.equal(table.getStringKey(present), 73); assert.equal(table.getStringKey(missing), null);
+	assert.equal(table.storeStringKeyWithoutGrowth(missing, ValueTag.Number, 19, null), TABLE_STORE_REQUIRES_GROWTH);
+	table.setStringKey(present, null);
+	assert.equal(table.storeStringKeyWithoutGrowth(missing, ValueTag.Number, 19, null), 0);
+	assert.equal(table.storedSlotCount, 1);
+	assert.equal(table.getStringKey(missing), 19);
 });

@@ -1030,14 +1030,14 @@ export class Table {
 	}
 
 	private getFreeIndex(): number {
-		const start = this.hashFree >= 0 ? this.hashFree : this.hashSize - 1;
-		for (let index = start; index >= 0; index -= 1) {
+		for (let index = this.hashFree; index >= 0; index -= 1) {
 			if (this.tags[this.hashKeySlot(index)] === ValueTag.Nil
 				&& this.tags[this.hashValueSlot(index)] === ValueTag.Nil) {
 				this.hashFree = index - 1;
 				return index;
 			}
 		}
+		this.hashFree = -1;
 		return -1;
 	}
 
@@ -1049,8 +1049,6 @@ export class Table {
 		valueScalar: number,
 		valueReference: ValueReference,
 	): void {
-		// Commit the exhausted search hint only in the allocating owner.
-		if (this.hashSize !== 0) this.hashFree = -1;
 		let totalKeys = 0;
 		const counts = Table.rehashIntegerCounts;
 		let countBins = 0;

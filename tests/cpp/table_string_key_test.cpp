@@ -82,7 +82,7 @@ void collisionAndMutationParity(CPU& cpu) {
 	compare();
 }
 
-void rejectedGrowthPreservesMetadata(CPU& cpu) {
+void rejectedGrowthRetainsExhaustedCursor(CPU& cpu) {
 	auto* table = cpu.createTable(0, 1);
 	const auto present = cpu.stringPool().intern("full"), missing = cpu.stringPool().intern("new");
 	table->setStringKey(present, valueNumber(73));
@@ -91,10 +91,19 @@ void rejectedGrowthPreservesMetadata(CPU& cpu) {
 	require(Table::storeStringKeyWithoutGrowth(table, missing, valueNumber(19)) == TABLE_STORE_REQUIRES_GROWTH,
 		"a full hash requires allocating completion");
 	const auto afterOffset = table->captureSnapshot(after, [](u32, Value) {});
-	require(before.word(beforeOffset + SNAP_TABLE_HASH_FREE) == after.word(afterOffset + SNAP_TABLE_HASH_FREE),
-		"rejected growth preserves the free-slot search hint for the ordinary owner");
+	require(before.word(beforeOffset + SNAP_TABLE_HASH_FREE) == 0u,
+		"a direct main-bucket insertion has not searched the only free-slot candidate");
+	require(after.word(afterOffset + SNAP_TABLE_HASH_FREE) == 0xffffffffu,
+		"rejected growth retains an exhausted cursor for the allocating completion");
 	require(table->getStringKey(present) == valueNumber(73) && isNil(table->getStringKey(missing)),
 		"rejected growth leaves the original mappings intact");
+	require(Table::storeStringKeyWithoutGrowth(table, missing, valueNumber(19)) == TABLE_STORE_REQUIRES_GROWTH,
+		"repeated capacity failure remains a request for allocating completion");
+	table->setStringKey(present, valueNil());
+	require(Table::storeStringKeyWithoutGrowth(table, missing, valueNumber(19)) == 0,
+		"an exhausted free cursor still permits reuse of a deleted main bucket");
+	require(table->storedSlotCount() == 1u && table->getStringKey(missing) == valueNumber(19),
+		"deleted main-bucket reuse does not rebuild storage");
 }
 
 void inheritedAndMaskedPayloads(CPU& cpu) {
@@ -133,7 +142,7 @@ int main() {
 		CPU cpu(memory, irq, addresses);
 		collisionAndMutationParity(cpu);
 		inheritedAndMaskedPayloads(cpu);
-		rejectedGrowthPreservesMetadata(cpu);
+	rejectedGrowthRetainsExhaustedCursor(cpu);
 		std::cout << "String-key table tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {
