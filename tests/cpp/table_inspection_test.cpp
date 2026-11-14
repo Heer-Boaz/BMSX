@@ -37,7 +37,7 @@ void inspectStoredSlots(bmsx::CPU& cpu) {
 	}
 	std::vector<std::pair<bmsx::Value, bmsx::Value>> logical;
 	bmsx::Value key = bmsx::valueNil(), value = bmsx::valueNil();
-	while (table->nextEntry(key, key, value)) logical.emplace_back(key, value);
+	for (table->nextEntry(key, key, value); !bmsx::isNil(key); table->nextEntry(key, key, value)) logical.emplace_back(key, value);
 	require(physical == logical, "inspection preserves iteration order and raw value bits");
 	require(physical.size() == 5, "empty array slots and dead hash nodes are not entries");
 	require(table->trackedHeapBytes() == before, "inspection does not allocate guest storage");
@@ -142,10 +142,12 @@ void continueAfterDeletedZeroIdentityKey(bmsx::CPU& cpu) {
 	table->set(objectKey, bmsx::valueNumber(9));
 	table->set(bmsx::valueBool(true), bmsx::valueNumber(13));
 	bmsx::Value key = bmsx::valueNil(), value = bmsx::valueNil();
-	require(table->nextEntry(objectKey, key, value), "the zero-identity key has a live successor");
+	table->nextEntry(objectKey, key, value);
+	require(!bmsx::isNil(key), "the zero-identity key has a live successor");
 	const auto successor = std::pair{key, value};
 	table->set(objectKey, bmsx::valueNil());
-	require(table->nextEntry(objectKey, key, value), "a deleted zero-identity key remains a continuation");
+	table->nextEntry(objectKey, key, value);
+	require(!bmsx::isNil(key), "a deleted zero-identity key remains a continuation");
 	require(std::pair{key, value} == successor, "deletion preserves the zero-identity key's successor");
 }
 

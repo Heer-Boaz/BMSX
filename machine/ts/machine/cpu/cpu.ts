@@ -47,6 +47,7 @@ import {
 	LUA_FAULT_REASON_INDEX_NIL,
 	LUA_FAULT_REASON_INDEX_NON_TABLE,
 	LUA_FAULT_REASON_INVALID_ARGUMENT,
+	LUA_FAULT_REASON_INVALID_NEXT_KEY,
 	LUA_FAULT_REASON_ITERATE_NON_TABLE,
 	LUA_FAULT_REASON_METATABLE_LOOP,
 	LUA_FAULT_REASON_OUT_OF_MEMORY,
@@ -525,6 +526,7 @@ export class CPU implements MappedPageInvalidator {
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION] = this.stringPool.intern('xpcall error handler must be a function.', false);
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_OUT_OF_MEMORY] = this.stringPool.intern('Out of memory.', false);
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INVALID_ARGUMENT] = this.stringPool.intern('Invalid argument.', false);
+		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INVALID_NEXT_KEY] = this.stringPool.intern("invalid key to 'next'", false);
 		this.memory.attachMappedPageInvalidator(this);
 	}
 
@@ -4451,7 +4453,7 @@ export class CPU implements MappedPageInvalidator {
 			throw new LuaExecutionError(LUA_FAULT_REASON_ITERATE_NON_TABLE);
 		}
 		const table = registers.getTable(base);
-		const found = args.length > 1
+		const inspectedSlots = args.length > 1
 			? table.next(
 				registers.getTag(base + 1),
 				registers.getScalar(base + 1),
@@ -4460,9 +4462,7 @@ export class CPU implements MappedPageInvalidator {
 				0,
 			)
 			: table.next(ValueTag.Nil, NaN, null, out, 0);
-		if (!found) {
-			out.push(ValueTag.Nil);
-		}
+		this.charge(inspectedSlots);
 	}
 
 	private runBuiltinType(tag: ValueTag, out: BuiltinResults): void {

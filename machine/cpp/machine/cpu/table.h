@@ -162,7 +162,8 @@ public:
 			markHashNodeDead(i);
 		}
 	}
-	bool nextEntry(const Value& after, Value& key, Value& value) const;
+	// Returns inspected Value slots; a nil output key denotes exhaustion.
+	size_t nextEntry(const Value& after, Value& key, Value& value) const;
 	u32 captureSnapshot(CpuSnapshot& snapshot, const CpuSnapshotValueWriter& writeValue) const;
 	void restoreSnapshot(const CpuSnapshotReader& reader, u32 offset);
 	size_t trackedHeapBytes() const;

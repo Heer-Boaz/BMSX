@@ -428,6 +428,7 @@ CPU::CPU(
 	m_luaFaultErrorValues[LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION] = valueString(m_stringPool.intern("xpcall error handler must be a function.", false));
 	m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY] = valueString(m_stringPool.intern("Out of memory.", false));
 	m_luaFaultErrorValues[LUA_FAULT_REASON_INVALID_ARGUMENT] = valueString(m_stringPool.intern("Invalid argument.", false));
+	m_luaFaultErrorValues[LUA_FAULT_REASON_INVALID_NEXT_KEY] = valueString(m_stringPool.intern("invalid key to 'next'", false));
 	m_builtinResultScratch.reserve(1);
 	m_builtinResultScratch.get(0).ensureCapacity(8);
 	m_builtinResultScratch.clear();
@@ -2300,12 +2301,9 @@ void CPU::runBuiltinNextValue(Value target, Value key, BuiltinResults& out) {
 	}
 	Value nextKey;
 	Value nextValue;
-	if (!asTable(target)->nextEntry(key, nextKey, nextValue)) {
-		out.push_back(valueNil());
-		return;
-	}
+	instructionBudgetRemaining -= static_cast<int>(asTable(target)->nextEntry(key, nextKey, nextValue));
 	out.push_back(nextKey);
-	out.push_back(nextValue);
+	if (!isNil(nextKey)) out.push_back(nextValue);
 }
 
 void CPU::runBuiltinSetMetatable(BuiltinArgsView args, BuiltinResults& out) {

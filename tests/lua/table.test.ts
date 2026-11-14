@@ -244,12 +244,14 @@ test('physical table inspection preserves Lua iteration order and tagged values 
 	}
 	const logical: Value[][] = [];
 	values.setNil(1);
-	while (table.next(values.getTag(1), values.getScalar(1), values.getReference(1), values, 1)) logical.push([values.get(1), values.get(2)]);
+	for (table.next(values.getTag(1), values.getScalar(1), values.getReference(1), values, 1); values.getTag(1) !== ValueTag.Nil;
+		table.next(values.getTag(1), values.getScalar(1), values.getReference(1), values, 1)) logical.push([values.get(1), values.get(2)]);
 	assert.deepEqual(physical, logical);
 	assert.equal(physical.length, 5);
 	assert.equal(values.get(0), 123);
 	assert.equal(values.get(3), 456);
 	assert.equal(table.getTrackedHeapBytes(), before);
+	const previous = [values.get(1), values.get(2)];
 	assert.equal(table.loadStoredEntry(1, values, 1), false);
-	assert.deepEqual([values.get(1), values.get(2)], physical.at(-1));
+	assert.deepEqual([values.get(1), values.get(2)], previous);
 });

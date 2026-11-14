@@ -23,6 +23,25 @@ ${body}`;
 }
 
 export const tableIterationVectors = {
+	invalid_continuation: `
+local function rejects(values, key)
+ local ok, message = pcall(next, values, key)
+ assert(not ok and message == "invalid key to 'next'")
+end
+rejects({}, 'missing')
+local values<const> = { 11, 22, 33 }
+rejects(values, 'missing')
+rejects(values, false)
+rejects(values, 64)
+values[2] = nil
+local key, value = next(values, 2)
+assert(key == 3 and value == 33, 'a deleted array key remains a continuation')
+local flags<const> = { [false] = 41 }
+key, value = next(flags)
+assert(key == false and value == 41)
+assert(next(flags, key) == nil, 'false is a valid continuation, not exhaustion')
+return true`,
+
 	bios_unpack_multiple_returns: `
 local table<const> = require('table')
 local source<const> = {}

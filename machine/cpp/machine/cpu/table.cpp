@@ -518,45 +518,40 @@ bool Table::loadStoredEntry(size_t slot, Value& key, Value& value) const {
 	return true;
 }
 
-bool Table::nextEntry(const Value& after, Value& key, Value& value) const {
-	int hashIndex = -1;
-	if (isNil(after)) {
-		for (size_t i = 0; i < m_array.size(); ++i) {
-			if (!isNil(m_array[i])) {
-				key = valueNumber(static_cast<double>(i + 1));
-				value = m_array[i];
-				return true;
-			}
-		}
-		hashIndex = findNextLiveHashIndex(0);
-	} else {
+size_t Table::nextEntry(const Value& after, Value& key, Value& value) const {
+	size_t arrayStart = 0;
+	size_t hashStart = 0;
+	if (!isNil(after)) {
 		int index = 0;
 		if (getArrayIndex(after, index)
 			&& index < static_cast<int>(m_array.size())) {
-			const int startIndex = index + 1;
-			for (int i = startIndex; i < static_cast<int>(m_array.size()); ++i) {
-				if (!isNil(m_array[static_cast<size_t>(i)])) {
-					key = valueNumber(static_cast<double>(i + 1));
-					value = m_array[static_cast<size_t>(i)];
-					return true;
-				}
-			}
-			hashIndex = findNextLiveHashIndex(0);
+			arrayStart = static_cast<size_t>(index + 1);
 		} else {
 			const int nodeIndex = findNodeIndex(after, true);
 			if (nodeIndex < 0) {
-				return false;
+				throw LuaExecutionError(LUA_FAULT_REASON_INVALID_NEXT_KEY);
 			}
-			hashIndex = findNextLiveHashIndex(static_cast<size_t>(nodeIndex + 1));
+			arrayStart = m_array.size();
+			hashStart = static_cast<size_t>(nodeIndex + 1);
 		}
 	}
+	for (size_t i = arrayStart; i < m_array.size(); ++i) {
+		if (!isNil(m_array[i])) {
+			key = valueNumber(static_cast<double>(i + 1));
+			value = m_array[i];
+			return i - arrayStart + 1;
+		}
+	}
+	const size_t arraySlots = m_array.size() - arrayStart;
+	const int hashIndex = findNextLiveHashIndex(hashStart);
 	if (hashIndex >= 0) {
 		const size_t slot = static_cast<size_t>(hashIndex);
 		key = m_hashKeys[slot];
 		value = m_hashValues[slot];
-		return true;
+		return arraySlots + 2 * (slot - hashStart + 1);
 	}
-	return false;
+	key = valueNil();
+	return arraySlots + 2 * (m_hashSize - hashStart);
 }
 
 u32 Table::captureSnapshot(CpuSnapshot& snapshot, const CpuSnapshotValueWriter& writeValue) const {

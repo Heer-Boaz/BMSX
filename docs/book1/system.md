@@ -345,6 +345,7 @@ The raw Cause word uses the following values. The exception-code mask is
 | 8 | EXPLICIT_ERROR |
 | 9 | OUT_OF_MEMORY |
 | 10 | INVALID_ARGUMENT |
+| 11 | INVALID_NEXT_KEY |
 
 Interpret LuaReason with Cause rather than treating every retained reason as a
 new Lua failure.

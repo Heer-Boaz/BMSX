@@ -273,7 +273,8 @@ A successful step returns exactly two results, `(key, value)`. Array keys are Nu
 
 Use the returned key to continue traversal of the same Table. An array key
 within the current capacity resumes after that slot even if its value has
-become nil. An unrecognized non-array continuation key ends traversal.
+become nil. An unrecognized non-array continuation key raises `INVALID_NEXT_KEY`
+(11), with the message `invalid key to 'next'`.
 Existing fields may be changed or set to nil during traversal. A returned key
 remains a valid continuation after its mapping is removed, and removing an
 entry does not cause unrelated entries to be skipped. Do not add previously
@@ -281,6 +282,16 @@ absent fields during a traversal: insertion may reorganize the Table's storage
 and changes which entries subsequent steps visit.
 
 `next` visits stored entries, not values supplied by inherited ordinary indexing. Its returned key is also the continuation control for a subsequent step. Test that key for nil when detecting exhaustion: false is not an exhaustion marker.
+
+The traversal examines array positions after the supplied continuation, then
+hash positions. Each examined array position costs one additional cycle;
+each examined hash position costs two, for its key and value. Empty and deleted
+positions count, and a successful step includes the returned position. Exhaustion
+pays for all positions examined before reaching the end. An invalid continuation
+faults without examining any following positions or producing a result tuple.
+This is the same one-cycle-per-Value-slot cadence used for Table initialization.
+The step completes, including its result tuple and traversal charge, before the
+next instruction begins or a pending interrupt is accepted.
 
 ### `pairs(target)` {#sec-bios-base-pairstarget}
 
@@ -375,9 +386,9 @@ For a comparison of the resulting text and monitor display, see
 
 ### Faults and incremental cycle charges {#sec-bios-base-faults-and-incremental-cycle-charges}
 
-Keep iterator construction separate from iterator execution when handling errors. `next` checks its Table argument when called. `pairs` and `ipairs` construct their triples without checking the target; faults arise when their iterators attempt their respective traversal or indexing operations. The primitive argument faults used here have the messages `Attempted to iterate a non-table value.` and `Invalid argument.` as specified above. Ordinary indexing and calls retain their own failure behavior. See [Protected calls and coroutines](coroutines.md#sec-coroutines) for receiving failures.
+Keep iterator construction separate from iterator execution when handling errors. `next` checks its Table argument and continuation key when called. `pairs` and `ipairs` construct their triples without checking the target; faults arise when their iterators attempt their respective traversal or indexing operations. The primitive argument faults used here have the messages `Attempted to iterate a non-table value.`, `invalid key to 'next'`, and `Invalid argument.` as specified above. Ordinary indexing and calls retain their own failure behavior. See [Protected calls and coroutines](coroutines.md#sec-coroutines) for receiving failures.
 
-Each invocation of `next`, `select`, `getglobal`, or `setglobal` adds **one cycle**, with no additional per-argument or per-result charge. This increment is separate from call and return instructions and the surrounding operation. `pairs`, `ipairs`, and `print` execute ordinary instructions, including their calls, branches, indexing, conversion, and console work. The one-cycle increment is not their total call cost. See [[System control and timing](system.md#sec-system)]{.content-visible when-format="html"}[Book I, Chapter 12]{.content-visible when-format="pdf"} for the execution and timing model.
+Each invocation of `next`, `select`, `getglobal`, or `setglobal` adds **one base cycle**, with no additional per-argument or per-result charge from these primitives. `next` also pays for the positions examined as specified under [Table traversal](#sec-bios-base-nexttable-key). These increments are separate from call and return instructions and their value-placement charges. `pairs`, `ipairs`, and `print` execute ordinary instructions, including their calls, branches, indexing, conversion, and console work. The one-cycle increment is not their total call cost. See [[System control and timing](system.md#sec-system)]{.content-visible when-format="html"}[Book I, Chapter 12]{.content-visible when-format="pdf"} for the execution and timing model.
 
 ## Programming examples {#sec-bios-base-programming-examples}
 

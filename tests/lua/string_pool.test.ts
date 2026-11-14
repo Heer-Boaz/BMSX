@@ -132,7 +132,8 @@ test('reusing an unreachable deleted string-key ID cannot resurrect its old mapp
 	assert.equal(table.getStringKey(retained), 23);
 	const entry = new ValueSlots(2), keys: string[] = [];
 	let keyTag: ValueTag = ValueTag.Nil, keyScalar = NaN;
-	while (table.next(keyTag, keyScalar, null, entry, 0)) {
+	for (table.next(keyTag, keyScalar, null, entry, 0); entry.getTag(0) !== ValueTag.Nil;
+		table.next(keyTag, keyScalar, null, entry, 0)) {
 		assert.equal(entry.getTag(0), ValueTag.String);
 		keyTag = ValueTag.String;
 		keyScalar = entry.getStringId(0);

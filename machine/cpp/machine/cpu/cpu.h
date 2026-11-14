@@ -609,7 +609,7 @@ private:
 	StringPool m_stringPool;
 	Value m_indexKey;
 	GcHeap m_heap;
-	std::array<Value, LUA_FAULT_REASON_INVALID_ARGUMENT + 1u> m_luaFaultErrorValues;
+	std::array<Value, LUA_FAULT_REASON_INVALID_NEXT_KEY + 1u> m_luaFaultErrorValues;
 	Value m_errorInErrorHandlingValue;
 	std::unordered_map<u32, std::list<Closure*>> m_staticClosuresByAddress;
 	std::array<BuiltinFunction, BUILTIN_FUNCTION_COUNT> m_builtinFunctions;

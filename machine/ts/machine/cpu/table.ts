@@ -1,5 +1,5 @@
 import { ceilLog2, nextPowerOfTwo } from '../common/numeric';
-import { LUA_FAULT_REASON_INDEX_NIL } from '../../spec/blua32/cop0';
+import { LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_INVALID_NEXT_KEY } from '../../spec/blua32/cop0';
 import { LuaExecutionError } from './errors';
 import type { LuaHeap } from './lua_heap';
 import type { StringId } from './string_pool';
@@ -25,8 +25,6 @@ const TABLE_ARRAY_SLOT_HEAP_BYTES = 8;
 const TABLE_HASH_SLOT_HEAP_BYTES = 20;
 const TABLE_HASH_NEXT_END = -1;
 const TABLE_MAX_ARRAY_INDEX = 0x7fffffff;
-const TABLE_ENTRY_MISSING = -1;
-const TABLE_HASH_ENTRY_BASE = -2;
 const EMPTY_TABLE_HASH_NEXT = new Int32Array(0);
 export const TABLE_INDEX_CHAIN_LIMIT = 32;
 export const TABLE_INDEX_CHAIN_EXHAUSTED = -2;
@@ -754,28 +752,42 @@ export class Table {
 		this.luaHeap.adjustForRestore(previousBytes, this.getTrackedHeapBytes());
 	}
 
+	/** Writes the next Lua result tuple and returns inspected Value slots. */
 	public next(
 		afterTag: ValueTag,
 		afterScalar: number,
 		afterReference: ValueReference,
 		target: ValueWriteTarget,
 		targetIndex: number,
-	): boolean {
-		const entry = this.findNextEntry(afterTag, afterScalar, afterReference);
-		if (entry === TABLE_ENTRY_MISSING) {
-			return false;
+	): number {
+		let arrayStart = 0;
+		let hashStart = 0;
+		if (afterTag !== ValueTag.Nil) {
+			const arrayIndex = this.getArrayIndex(afterTag, afterScalar);
+			if (arrayIndex >= 0 && arrayIndex < this.arrayCapacity) {
+				arrayStart = arrayIndex + 1;
+			} else {
+				const nodeIndex = this.findNodeIndex(afterTag, afterScalar, afterReference, true);
+				if (nodeIndex < 0) {
+					throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_NEXT_KEY);
+				}
+				arrayStart = this.arrayCapacity;
+				hashStart = nodeIndex + 1;
+			}
 		}
-		if (entry >= 0) {
-			target.setNumber(targetIndex, entry + 1);
-			target.setEncoded(
-				targetIndex + 1,
-				this.tags[entry],
-				this.scalars[entry],
-				this.references[entry],
-			);
-			return true;
+		for (let index = arrayStart; index < this.arrayCapacity; index += 1) {
+			if (this.tags[index] !== ValueTag.Nil) {
+				target.setNumber(targetIndex, index + 1);
+				target.setEncoded(targetIndex + 1, this.tags[index], this.scalars[index], this.references[index]);
+				return index - arrayStart + 1;
+			}
 		}
-		const hashIndex = TABLE_HASH_ENTRY_BASE - entry;
+		const arraySlots = this.arrayCapacity - arrayStart;
+		const hashIndex = this.findNextLiveHashIndex(hashStart);
+		if (hashIndex < 0) {
+			target.setNil(targetIndex);
+			return arraySlots + 2 * (this.hashSize - hashStart);
+		}
 		const keySlot = this.hashKeySlot(hashIndex);
 		const valueSlot = this.hashValueSlot(hashIndex);
 		target.setEncoded(
@@ -790,7 +802,7 @@ export class Table {
 			this.scalars[valueSlot],
 			this.references[valueSlot],
 		);
-		return true;
+		return arraySlots + 2 * (hashIndex - hashStart + 1);
 	}
 
 	private getByParts(tag: ValueTag, scalar: number, reference: ValueReference): Value {
@@ -1015,39 +1027,6 @@ export class Table {
 			}
 		}
 		return -1;
-	}
-
-	private findNextEntry(
-		afterTag: ValueTag,
-		afterScalar: number,
-		afterReference: ValueReference,
-	): number {
-		let hashIndex = -1;
-		if (afterTag === ValueTag.Nil) {
-			for (let index = 0; index < this.arrayCapacity; index += 1) {
-				if (this.tags[index] !== ValueTag.Nil) {
-					return index;
-				}
-			}
-			hashIndex = this.findNextLiveHashIndex(0);
-		} else {
-			const arrayIndex = this.getArrayIndex(afterTag, afterScalar);
-			if (arrayIndex >= 0 && arrayIndex < this.arrayCapacity) {
-				for (let cursor = arrayIndex + 1; cursor < this.arrayCapacity; cursor += 1) {
-					if (this.tags[cursor] !== ValueTag.Nil) {
-						return cursor;
-					}
-				}
-				hashIndex = this.findNextLiveHashIndex(0);
-			} else {
-				const nodeIndex = this.findNodeIndex(afterTag, afterScalar, afterReference, true);
-				if (nodeIndex < 0) {
-					return TABLE_ENTRY_MISSING;
-				}
-				hashIndex = this.findNextLiveHashIndex(nodeIndex + 1);
-			}
-		}
-		return hashIndex >= 0 ? TABLE_HASH_ENTRY_BASE - hashIndex : TABLE_ENTRY_MISSING;
 	}
 
 	private getFreeIndex(): number {

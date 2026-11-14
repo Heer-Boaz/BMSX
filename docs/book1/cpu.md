@@ -1137,8 +1137,9 @@ instruction's initialization charge to ordinary table reads or writes.
 
 CALL costs 3 base cycles. A primitive target adds its own base charge of 1, 2
 or 4 cycles. Its completed receiving ranges also incur the value-placement
-charges above; discarded scratch results do not. String construction additionally
-charges the input work specified in the String reference. Installed
+charges above; discarded scratch results do not. Table traversal additionally
+charges the examined positions specified for `next` in the BIOS base reference.
+String construction charges the input work specified in the String reference. Installed
 BIOS functions can execute ordinary instructions and call further primitives,
 so include the executed sequence when budgeting the whole service. The
 [BIOS base](bios-base.md#sec-bios-base), [String](bios-string.md#sec-bios-string) and

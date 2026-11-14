@@ -324,14 +324,14 @@ export class SuspendedGuestSession {
 		let afterScalar = NaN;
 		let afterReference: ValueReference = null;
 		let entryCount = 0;
-		let hasEntry = table.next(
+		table.next(
 			afterTag,
 			afterScalar,
 			afterReference,
 			entry,
 			0,
 		);
-		while (hasEntry && entryCount < maxEntries) {
+		while (entry.getTag(0) !== ValueTag.Nil && entryCount < maxEntries) {
 			const keyTag = entry.getTag(0);
 			const keyScalar = entry.getScalar(0);
 			const keyReference = entry.getReference(0);
@@ -352,7 +352,7 @@ export class SuspendedGuestSession {
 			afterScalar = keyScalar;
 			afterReference = keyReference;
 			entryCount += 1;
-			hasEntry = table.next(
+			table.next(
 				afterTag,
 				afterScalar,
 				afterReference,
@@ -360,7 +360,7 @@ export class SuspendedGuestSession {
 				0,
 			);
 		}
-		if (hasEntry) {
+		if (entry.getTag(0) !== ValueTag.Nil) {
 			parts.push('…');
 		}
 		const preview = parts.length === 0 ? '{}' : `{ ${parts.join(', ')} }`;

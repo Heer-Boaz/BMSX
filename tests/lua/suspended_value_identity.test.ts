@@ -30,3 +30,18 @@ test('retained string identities and property indexes follow text, not recycled 
 	assert.equal(presentation.update(valueString(recreated)), 'retained-identity-before-gc');
 	assert.equal(index.delete(property), true);
 });
+
+test('table previews use the returned key, not traversal work, to detect exhaustion', () => {
+	const runtime = createTestRuntime(createTestRuntimeRomPayload()), cpu = runtime.machine.cpu;
+	const guest = new SuspendedGuestSession(runtime);
+	const table = cpu.createTable(8, 16);
+	const presentation = new SuspendedValuePresentation(guest, 'preview');
+	assert.equal(guest.previewValue(table, 1, 8), '{}', 'vacant allocated storage has no preview entries');
+	assert.equal(presentation.update(table), '{}');
+	table.set(false, 7);
+	assert.equal(guest.previewValue(table, 1, 8), '{ false = 7 }', 'a false key is a live entry');
+	assert.equal(presentation.update(table), '{ false = 7 }');
+	table.set(false, null);
+	assert.equal(guest.previewValue(table, 1, 8), '{}', 'a deleted hash node is not a preview entry');
+	assert.equal(presentation.update(table), '{}');
+});

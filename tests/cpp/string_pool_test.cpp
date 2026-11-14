@@ -198,7 +198,7 @@ void reuseDeletedStringKeyId() {
 	require(asNumber(table->getStringKey(replacement)) == 29 && asNumber(table->getStringKey(retained)) == 23, "a new mapping coexists with retained keys");
 	Value key = valueNil(), value = valueNil();
 	std::vector<std::string> keys;
-	while (table->nextEntry(key, key, value)) {
+	for (table->nextEntry(key, key, value); !isNil(key); table->nextEntry(key, key, value)) {
 		require(valueIsString(key), "the fixture's live mappings retain string representation");
 		keys.push_back(pool.toString(asStringId(key)));
 	}

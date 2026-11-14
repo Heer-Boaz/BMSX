@@ -66,9 +66,11 @@ test('zero-valued object identity remains a deleted-key continuation', () => {
 	table.set(key, 9);
 	for (let index = 1; index <= 8; index++) table.setStringKey(cpu.stringPool.intern(`other_${index}`), index);
 	const continuation = new ValueSlots(2);
-	assert.equal(table.next(ValueTag.Table, NaN, key, continuation, 0), true);
+	table.next(ValueTag.Table, NaN, key, continuation, 0);
+	assert.notEqual(continuation.getTag(0), ValueTag.Nil);
 	const expected = continuation.get(0);
 	table.set(key, null);
-	assert.equal(table.next(ValueTag.Table, NaN, key, continuation, 0), true);
+	table.next(ValueTag.Table, NaN, key, continuation, 0);
+	assert.notEqual(continuation.getTag(0), ValueTag.Nil);
 	assert.equal(continuation.get(0), expected);
 });
