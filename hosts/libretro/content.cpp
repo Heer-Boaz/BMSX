@@ -50,6 +50,9 @@ LibretroContent::LibretroContent(
 {
 	runtime.resetForSystemBoot();
 	runtime.boot();
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	runtime.machine.cpu.prepareSystemNativeCode();
+#endif
 }
 
 std::unique_ptr<LibretroContent> loadLibretroContent(

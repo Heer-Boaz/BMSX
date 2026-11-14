@@ -44,6 +44,7 @@ namespace bmsx {
 
 class CPU;
 class NativeCompilerWorker;
+struct NativeCompilationSource;
 class GcHeap;
 class IrqController;
 class Memory;
@@ -260,6 +261,8 @@ public:
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	void setNativeCompilationProfiling(bool enabled);
 	NativeCompilationProfile readNativeCompilationProfile() const;
+	// Host-only preparation after boot/reset and before guest execution.
+	void prepareSystemNativeCode();
 #endif
 	void invalidateMappedWords(u64 key, u32 firstWord, u32 endWord) override;
 	void invalidateMappedRange(u64 firstKey, u64 endKey) override;
@@ -447,6 +450,12 @@ private:
 	void invalidateDecodedWords(u64 key, u32 firstWord, u32 endWord);
 	DecodedInstructionPage& decodedPageForFrame(CallFrame& frame, u32 pc);
 	bool decodeInstruction(CallFrame& frame, DecodedInstructionPage& page, u32 pageOffset, u32 pc, bool allowFusion);
+	bool decodeInstructionWords(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pageOffset,
+		u32 pc, u32 sourceWord, u32 bodyWord, bool instructionCacheable, DecodedInstructionPage* bodyPage, bool compilation);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	bool decodeBackedInstruction(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pageOffset,
+		u32 pc, MappedBusSignals busSignals);
+#endif
 	Closure* staticClosureForRecord(const Closure& record);
 	Closure boundFunctionRecord(const Blua32FunctionRecordLatch& record) const;
 	bool readFunctionRecord(
@@ -518,7 +527,9 @@ private:
 	struct NativeFrameOffsets { size_t haltedThread, haltedDepth, activeImage; };
 	static NativeFrameOffsets nativeFrameOffsets();
 	static void* dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept;
-	void prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page, u32 word);
+	void prepareNativeBlock(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pc, MappedBusSignals busSignals);
+	void discoverNativeSource(NativeCompilationSource& source, std::vector<u32>* outgoing);
+	void prepareNativeSource(NativeCompilationSource& source, bool immediate, bool discover);
 	void installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pagePc, u32 slot,
 		std::span<const u32> entries, std::vector<std::unique_ptr<NativeBlock>> blocks, u32 instructionCount);
 	static NativeBlockTransition compiledReadFieldExit(CPU* cpu, CallFrame* frame, const NativeBlockExitSite* exit);

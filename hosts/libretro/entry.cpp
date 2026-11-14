@@ -1593,6 +1593,9 @@ void retro_reset(void) {
 	logging.log(RETRO_LOG_INFO, "[BMSX] Reset\n");
 	if (g_content) {
 		g_content->runtime.rebootSystem();
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		g_content->runtime.machine.cpu.prepareSystemNativeCode();
+#endif
 		activate_runtime(g_content->runtime);
 	} else if (!load_default_content()) {
 		logging.log(
@@ -1759,6 +1762,9 @@ void retro_run(void) {
 		switch (frameResult) {
 			case bmsx::LibretroFrameResult::RebootRequested:
 				runtime.rebootSystem();
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+				runtime.machine.cpu.prepareSystemNativeCode();
+#endif
 				activate_runtime(runtime);
 				break;
 			case bmsx::LibretroFrameResult::ExitRequested:

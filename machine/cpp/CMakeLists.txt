@@ -265,6 +265,7 @@ add_library(bmsx_core STATIC
 	machine/devices/audio/save_state.cpp
 
 	machine/cpu/cpu.cpp
+	machine/cpu/cpu_decode.cpp
 	machine/cpu/thread.cpp
 	machine/cpu/snapshot.cpp
 	machine/cpu/execution_image.cpp
@@ -358,7 +359,7 @@ if(BMSX_ENABLE_NATIVE_BLOCKS)
 		machine/cpu/native_block_context.cpp machine/cpu/native_block_calls.cpp machine/cpu/native_block_call.cpp machine/cpu/closure.cpp
 		machine/cpu/native_block_table.cpp
 		machine/cpu/native_block_control.cpp
-		machine/cpu/cpu_native_blocks.cpp machine/cpu/cpu_native_execution.cpp)
+		machine/cpu/cpu_native_blocks.cpp machine/cpu/cpu_native_execution.cpp machine/cpu/cpu_native_prepare.cpp)
 	target_compile_definitions(bmsx_core PUBLIC BMSX_ENABLE_NATIVE_BLOCKS=1)
 	target_link_libraries(bmsx_core PRIVATE bmsx_sljit)
 	if(BMSX_NATIVE_COMPILER_WORKER)
@@ -1125,6 +1126,9 @@ if(BMSX_BUILD_TESTS)
 	target_link_libraries(bmsx_cpu_compiled_words_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_compiled_words_tests COMMAND bmsx_cpu_compiled_words_tests)
 	if(BMSX_ENABLE_NATIVE_BLOCKS)
+		add_executable(bmsx_cpu_native_precompile_tests ../../tests/cpp/cpu_native_precompile_test.cpp ${BMSX_TEST_ROM_SOURCE})
+		target_link_libraries(bmsx_cpu_native_precompile_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+		add_test(NAME bmsx_cpu_native_precompile_tests COMMAND bmsx_cpu_native_precompile_tests)
 		add_executable(bmsx_native_continuation_tests ../../tests/cpp/native_continuation_test.cpp ${BMSX_TEST_ROM_SOURCE})
 		target_link_libraries(bmsx_native_continuation_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 		add_test(NAME bmsx_native_continuation_tests COMMAND bmsx_native_continuation_tests)
