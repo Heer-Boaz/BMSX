@@ -124,6 +124,18 @@ static void RETRO_CALLCONV read_native_compilation_profile(BmsxNativeCompilation
 	};
 }
 #endif
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+static void RETRO_CALLCONV read_execution_profile(BmsxExecutionProfileV1* output) {
+	const auto& machine = g_content->runtime.machine;
+	const auto& gc = machine.cpu.diagnosticGcProfile();
+	*output = {
+		machine.scheduler.nowCycles(), machine.scheduler.diagnosticCpuSliceCount,
+		machine.scheduler.diagnosticCpuSliceConsumedCycles,
+		gc.collections, gc.totalNanoseconds, gc.rootsNanoseconds, gc.traceNanoseconds,
+		gc.weakNanoseconds, gc.sweepNanoseconds, gc.stringReclaimNanoseconds,
+	};
+}
+#endif
 static std::optional<bmsx::OnScreenKeyboard> g_keyboard_model;
 static std::optional<bmsx::HostOnScreenKeyboard> g_keyboard_view;
 static std::optional<bmsx::HostKeyboardInteraction> g_keyboard_interaction;
@@ -1327,6 +1339,10 @@ void retro_init(void) {
 	BmsxNativeCompilationProfileInterface nativeCompilationProfile{read_native_compilation_profile};
 	g_profile_native_compilation = environ_cb(BMSX_ENVIRONMENT_SET_NATIVE_COMPILATION_PROFILE_INTERFACE,
 		&nativeCompilationProfile);
+#endif
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	BmsxExecutionProfileInterfaceV1 executionProfile{read_execution_profile};
+	environ_cb(BMSX_ENVIRONMENT_SET_EXECUTION_PROFILE_INTERFACE_V1, &executionProfile);
 #endif
 	const RenderBackendPreference preference = read_backend_preference();
 	const bmsx::BackendType desired_backend = resolve_backend_preference(preference);

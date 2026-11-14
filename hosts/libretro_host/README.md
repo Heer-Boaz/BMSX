@@ -170,6 +170,32 @@ Options:
   reports (default: 500; must be positive). Use `1` to exclude only the first
   run. Histogram counts and timed ALSA underruns cover the remaining measurement
   window, not the entire session.
+- `--profile-execution`: requires `--timing-report` and a core built with
+  `BMSX_DIAGNOSTIC_CPU_SLICES=ON`; a core without this private diagnostic
+  interface is rejected instead of silently omitting attribution. Works with
+  interpreter and native cores. Adds execution counters to the same retained
+  32 slow-frame records; no per-frame log output or growing trace is produced.
+  Two fixed snapshots bracket each measured host call, outside its elapsed-time
+  clocks, just like native compilation profiling. `scheduler_before_cycles`
+  and `scheduler_after_cycles` are raw signed machine positions: reset and
+  state restore can move them backwards. They are not clamped or relabelled as
+  elapsed time. Without a reset/restore inside the call, their difference less
+  `cpu_consumed_cycles` is scheduled time outside CPU slices, including idle
+  and DMA/MMIO-wait advancement; it is not device host execution time.
+  `cpu_slices` and `cpu_consumed_cycles` are interval deltas of the existing
+  CPU-lifetime counters around `CPU::runUntilDepth`. Consumption is emulated
+  budget cycles, not retired instructions or host nanoseconds.
+  `gc_collections` and `gc_*_ns` are interval deltas of collection attempts and
+  host monotonic phase timings. Total time encloses roots, graph/ephemeron
+  tracing, weak cleanup, object sweep, string reclamation and final heap
+  accounting. Phase timers close on exception unwinding; restore-time heap
+  reconstruction is not a guest collection. CPU reset/restore never rewinds
+  these counters; loading another runtime starts a new lifetime.
+  Diagnostic builds collect these probes regardless of frontend acceptance;
+  ordinary builds contain no slice-counter or GC-timer instrumentation and do
+  not offer the interface. Keep diagnostic attribution runs separate from
+  ordinary throughput comparisons. This does not expose background compiler
+  time, guest-function samples or host device timing.
 - `--rewind on|off`: sets the `bmsx_rewind_recording` core option. Automatic
   recording defaults to off on SNES Mini and on elsewhere. Disabling it removes
   periodic rewind checkpoints and their history storage, not manual save states.

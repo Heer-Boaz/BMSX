@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "bmsx_libretro.h"
+#include "execution_profile.h"
 
 enum { BMSX_FRAME_TIMING_BUCKET_COUNT = 4097 };
 enum { BMSX_FRAME_TIMING_SLOW_FRAME_COUNT = 32 };
@@ -19,6 +20,8 @@ typedef struct BmsxSlowFrameSample {
 	BmsxGxUploadProfileFrameV1 gx_upload;
 	bool has_native_compilation;
 	BmsxNativeCompilationProfile native_compilation;
+	bool has_execution;
+	BmsxExecutionProfileInterval execution;
 } BmsxSlowFrameSample;
 
 typedef struct BmsxFrameTimingHistogram {
@@ -72,7 +75,8 @@ void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
 		bool dropped,
 		bool presented,
 		const BmsxGxUploadProfileFrameV1* gx_upload,
-		const BmsxNativeCompilationProfile* native_compilation);
+		const BmsxNativeCompilationProfile* native_compilation,
+		const BmsxExecutionProfileInterval* execution);
 void bmsx_frame_timing_record_gx_upload(
 	BmsxFrameTimingReport* report,
 	const BmsxGxUploadProfileFrameV1* frame);

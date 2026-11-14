@@ -607,6 +607,7 @@ if(BMSX_BUILD_LIBRETRO_HOST)
 		${BMSX_LIBRETRO_HOST_DIR}/frame_pacer.c
 		${BMSX_LIBRETRO_HOST_DIR}/frame_timing.c
 		${BMSX_LIBRETRO_HOST_DIR}/native_compilation_profile.c
+		${BMSX_LIBRETRO_HOST_DIR}/execution_profile.c
 		${BMSX_LIBRETRO_HOST_DIR}/host_fatal.c
 		${BMSX_LIBRETRO_HOST_DIR}/host_control.c
 		${BMSX_LIBRETRO_HOST_DIR}/control_transport.c
@@ -704,6 +705,7 @@ if(BMSX_BUILD_TESTS)
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_frame_timing_test.c
 		${BMSX_LIBRETRO_HOST_DIR}/frame_timing.c
 		${BMSX_LIBRETRO_HOST_DIR}/native_compilation_profile.c
+		${BMSX_LIBRETRO_HOST_DIR}/execution_profile.c
 	)
 	target_include_directories(bmsx_libretro_host_frame_timing_tests PRIVATE
 		${BMSX_LIBRETRO_HOST_DIR}
@@ -775,6 +777,9 @@ if(BMSX_BUILD_TESTS)
 			target_include_directories(bmsx_libretro_host_signal_test_core PRIVATE ${BMSX_LIBRETRO_DIR})
 			add_test(NAME bmsx_libretro_host_signals_tests
 				COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/platform/libretro_host_signals_test.py
+					$<TARGET_FILE:bmsx_libretro_host> $<TARGET_FILE:bmsx_libretro_host_signal_test_core>)
+			add_test(NAME bmsx_libretro_host_execution_profile_tests
+				COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/platform/libretro_host_execution_profile_test.py
 					$<TARGET_FILE:bmsx_libretro_host> $<TARGET_FILE:bmsx_libretro_host_signal_test_core>)
 			add_library(bmsx_libretro_host_clover_test_core SHARED
 				${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_clover_core.c)

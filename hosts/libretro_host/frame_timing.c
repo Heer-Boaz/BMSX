@@ -70,7 +70,8 @@ void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
 		bool dropped,
 		bool presented,
 		const BmsxGxUploadProfileFrameV1* gx_upload,
-		const BmsxNativeCompilationProfile* native_compilation) {
+		const BmsxNativeCompilationProfile* native_compilation,
+		const BmsxExecutionProfileInterval* execution) {
 	if (native_compilation != NULL) {
 		++report->native_profiled_frames;
 		bmsx_native_compilation_profile_accumulate(&report->native_compilation, native_compilation);
@@ -109,9 +110,11 @@ void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
 		.presented = presented,
 		.has_gx_upload = gx_upload != NULL,
 		.has_native_compilation = native_compilation != NULL,
+		.has_execution = execution != NULL,
 	};
 	if (gx_upload != NULL) report->slow_frames[index].gx_upload = *gx_upload;
 	if (native_compilation != NULL) report->slow_frames[index].native_compilation = *native_compilation;
+	if (execution != NULL) report->slow_frames[index].execution = *execution;
 }
 
 void bmsx_frame_timing_record_gx_upload(
@@ -147,7 +150,7 @@ void bmsx_frame_timing_print(
 	for (unsigned index = 0u; index < report->slow_frame_count; ++index) {
 		const BmsxSlowFrameSample* sample = &report->slow_frames[index];
 		fprintf(stderr,
-			"[libretro-host][slow-frame] host_frame=%llu run_ms=%.3f blit_ms=%.3f swap_ms=%.3f presented=%u dropped=%u gx_profile=%u render_frame=%llu upload_commands=%llu upload_bytes=%llu upload_ms=%.3f native_profile=%u prepares=%llu prepare_ms=%.3f discovery_ms=%.3f retirement_ms=%.3f compilation_ms=%.3f merged_regions=%llu capacity_flushes=%llu live_code_bytes=%llu\n",
+			"[libretro-host][slow-frame] host_frame=%llu run_ms=%.3f blit_ms=%.3f swap_ms=%.3f presented=%u dropped=%u gx_profile=%u render_frame=%llu upload_commands=%llu upload_bytes=%llu upload_ms=%.3f native_profile=%u prepares=%llu prepare_ms=%.3f discovery_ms=%.3f retirement_ms=%.3f compilation_ms=%.3f merged_regions=%llu capacity_flushes=%llu live_code_bytes=%llu execution_profile=%u",
 			(unsigned long long)sample->host_frame, (double)sample->retro_run_ns / 1000000.0,
 			(double)sample->final_blit_ns / 1000000.0, (double)sample->swap_ns / 1000000.0,
 			(unsigned)sample->presented, (unsigned)sample->dropped, (unsigned)sample->has_gx_upload,
@@ -163,7 +166,10 @@ void bmsx_frame_timing_print(
 			(double)sample->native_compilation.compilation_nanoseconds / 1000000.0,
 			(unsigned long long)sample->native_compilation.merged_regions,
 			(unsigned long long)sample->native_compilation.capacity_flushes,
-			(unsigned long long)sample->native_compilation.code_bytes);
+			(unsigned long long)sample->native_compilation.code_bytes,
+			(unsigned)sample->has_execution);
+		if (sample->has_execution) bmsx_execution_profile_print(stderr, &sample->execution);
+		fputc('\n', stderr);
 	}
 	if (report->native_profiled_frames != 0u)
 		bmsx_native_compilation_profile_print(stderr, report->native_profiled_frames, &report->native_compilation);

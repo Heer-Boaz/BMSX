@@ -25,6 +25,8 @@ extern "C" {
 	(RETRO_ENVIRONMENT_PRIVATE | 0x42a1u)
 #define BMSX_ENVIRONMENT_SET_SHUTDOWN_REASON_V1 \
 	(RETRO_ENVIRONMENT_PRIVATE | 0x42b1u)
+#define BMSX_ENVIRONMENT_SET_EXECUTION_PROFILE_INTERFACE_V1 \
+	(RETRO_ENVIRONMENT_PRIVATE | 0x42c1u)
 #define BMSX_SUBSYSTEM_DUAL_CARTRIDGE 1u
 
 /* Sent immediately before RETRO_ENVIRONMENT_SHUTDOWN. EXIT_GAME asks the
@@ -94,6 +96,31 @@ typedef void (RETRO_CALLCONV *bmsx_read_native_compilation_profile_t)(
 typedef struct BmsxNativeCompilationProfileInterface {
 	bmsx_read_native_compilation_profile_t read_profile;
 } BmsxNativeCompilationProfileInterface;
+
+/* Offered only by BMSX_DIAGNOSTIC_CPU_SLICES cores. Read synchronously after
+ * content load and before unload. Reading has no execution or reset effects.
+ * Scheduler position is raw signed machine time: reset/restore can move it
+ * backwards. The remaining fields are host-only CPU-lifetime counters, never
+ * reset or restored with machine state. Cycles are CPU::runUntilDepth budget
+ * consumption, not host time or a count of retired instructions. */
+typedef struct BmsxExecutionProfileV1 {
+	int64_t scheduler_now_cycles;
+	uint64_t cpu_slice_count;
+	int64_t cpu_slice_consumed_cycles;
+	uint64_t gc_collections;
+	uint64_t gc_total_nanoseconds;
+	uint64_t gc_roots_nanoseconds;
+	uint64_t gc_trace_nanoseconds;
+	uint64_t gc_weak_nanoseconds;
+	uint64_t gc_sweep_nanoseconds;
+	uint64_t gc_string_reclaim_nanoseconds;
+} BmsxExecutionProfileV1;
+
+typedef void (RETRO_CALLCONV *bmsx_read_execution_profile_t)(BmsxExecutionProfileV1* profile);
+
+typedef struct BmsxExecutionProfileInterfaceV1 {
+	bmsx_read_execution_profile_t read_profile;
+} BmsxExecutionProfileInterfaceV1;
 
 typedef int32_t (RETRO_CALLCONV *bmsx_read_execution_domain_id_t)(void);
 

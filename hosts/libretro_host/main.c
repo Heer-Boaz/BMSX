@@ -80,8 +80,8 @@ static uint64_t monotonic_ns(void) {
 static void usage(const char* argv0) {
 	fprintf(stderr,
 			"Usage:\n"
-			"  %s --core ./libretro_bmsx.so --no-game [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--control PORT | --input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--timing-report] [--profile-native-compilation] [--timing-warmup N] [--rewind on|off] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n"
-			"  %s --core ./libretro_bmsx.so GAME.rom [--slot1 AUX.rom] [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--control PORT | --input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--timing-report] [--profile-native-compilation] [--timing-warmup N] [--rewind on|off] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n",
+			"  %s --core ./libretro_bmsx.so --no-game [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--control PORT | --input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--timing-report] [--profile-native-compilation] [--profile-execution] [--timing-warmup N] [--rewind on|off] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n"
+			"  %s --core ./libretro_bmsx.so GAME.rom [--slot1 AUX.rom] [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--control PORT | --input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--timing-report] [--profile-native-compilation] [--profile-execution] [--timing-warmup N] [--rewind on|off] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n",
 			argv0, argv0);
 	fprintf(stderr, "  --core-option KEY VALUE: set a core option (repeatable; dedicated host flags take precedence)\n");
 	exit(2);
@@ -128,6 +128,7 @@ int main(int argc, char** argv) {
 	bool auto_timeline = false;
 	bool audio_disabled = false;
 	bool profile_native_compilation = false;
+	bool profile_execution = false;
 	bool hidden_window = false;
 	bool clover_launch = false;
 	BmsxClover clover = {0};
@@ -199,6 +200,10 @@ int main(int argc, char** argv) {
 		}
 		if (strcmp(argv[i], "--profile-native-compilation") == 0) {
 			profile_native_compilation = true;
+			continue;
+		}
+		if (strcmp(argv[i], "--profile-execution") == 0) {
+			profile_execution = true;
 			continue;
 		}
 		if (strcmp(argv[i], "--timing-report") == 0) {
@@ -299,6 +304,8 @@ int main(int argc, char** argv) {
 	}
 	if (profile_native_compilation && !frame_timing.enabled)
 		host_fatal("--profile-native-compilation requires --timing-report");
+	if (profile_execution && !frame_timing.enabled)
+		host_fatal("--profile-execution requires --timing-report");
 	const bool profile_gx_upload =
 			frame_timing.enabled && strcmp(backend, "gles2") == 0;
 	const bool use_sdl_backend = strcmp(video_backend, "sdl") == 0;
@@ -329,6 +336,7 @@ int main(int argc, char** argv) {
 	session.options = option_overrides;
 	session.accept_gx_upload_profile_interface = profile_gx_upload;
 	session.accept_native_compilation_profile_interface = profile_native_compilation;
+	session.accept_execution_profile_interface = profile_execution;
 	bmsx_core_options_override(
 			&session.options,
 			"bmsx_render_backend",
@@ -371,6 +379,8 @@ int main(int argc, char** argv) {
 	core->retro_init();
 	if (profile_native_compilation && !session.native_compilation_profile_interface_set)
 		host_fatal("--profile-native-compilation requires a native compilation profile interface");
+	if (profile_execution && !session.execution_profile_interface_set)
+		host_fatal("--profile-execution requires execution profile interface v1 from a diagnostic core");
 	if (profile_gx_upload && !session.gx_upload_profile_interface_set) {
 		host_fatal("--timing-report requires GX upload profile interface v1 for the GLES2 backend");
 	}
@@ -462,6 +472,9 @@ int main(int argc, char** argv) {
 		BmsxNativeCompilationProfile native_before;
 		if (profile_native_compilation && frame_timing.record_frame)
 			session.native_compilation_profile.read_profile(&native_before);
+		BmsxExecutionProfileV1 execution_before;
+		if (profile_execution && frame_timing.record_frame)
+			session.execution_profile.read_profile(&execution_before);
 		const uint64_t run_start_ns = frame_timing.record_frame ? monotonic_ns() : 0u;
 		core->retro_run();
 		input_timeline_finish_run();
@@ -491,6 +504,14 @@ int main(int argc, char** argv) {
 				native_interval = bmsx_native_compilation_profile_delta(&native_before, &native_after);
 				current_native = &native_interval;
 			}
+			BmsxExecutionProfileInterval execution_interval;
+			const BmsxExecutionProfileInterval* current_execution = NULL;
+			if (profile_execution) {
+				BmsxExecutionProfileV1 execution_after;
+				session.execution_profile.read_profile(&execution_after);
+				execution_interval = bmsx_execution_profile_delta(&execution_before, &execution_after);
+				current_execution = &execution_interval;
+			}
 			const uint64_t run_ns = run_end_ns - run_start_ns;
 			bmsx_frame_timing_record(&frame_timing.report,
 					run_frame_count,
@@ -501,7 +522,7 @@ int main(int argc, char** argv) {
 					frame_timing.current_swap_ran,
 					drop_video && frame_timing.current_video_frame_received,
 					!drop_video && presented_frame,
-					current_gx_upload, current_native);
+					current_gx_upload, current_native, current_execution);
 		}
 		++run_frame_count;
 		if (maximum_run_frames == 0 &&

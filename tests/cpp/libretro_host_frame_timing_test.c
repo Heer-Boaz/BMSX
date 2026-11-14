@@ -16,8 +16,8 @@ int main(void) {
 		.cpu_nanoseconds = 400u,
 		.max_command_nanoseconds = 300u,
 	};
-	bmsx_frame_timing_record(&report, 500u, 10000000u, 1000000u, true, 2000000u, true, false, true, &gx_upload, NULL);
-	bmsx_frame_timing_record(&report, 501u, 5000000000u, 0u, false, 0u, false, true, false, NULL, NULL);
+	bmsx_frame_timing_record(&report, 500u, 10000000u, 1000000u, true, 2000000u, true, false, true, &gx_upload, NULL, NULL);
+	bmsx_frame_timing_record(&report, 501u, 5000000000u, 0u, false, 0u, false, true, false, NULL, NULL, NULL);
 	bmsx_frame_timing_record_gx_upload(&report, &gx_upload);
 
 	CHECK(report.retro_run.count == 2u);
@@ -50,7 +50,7 @@ int main(void) {
 	CHECK(report.slow_frames[1].final_blit_ns == 1000000u);
 	CHECK(report.slow_frames[1].swap_ns == 2000000u);
 	for (unsigned index = 0u; index < 100u; ++index) {
-		bmsx_frame_timing_record(&report, 502u + index, index * 1000000ull, 0u, false, 0u, false, false, true, NULL, NULL);
+		bmsx_frame_timing_record(&report, 502u + index, index * 1000000ull, 0u, false, 0u, false, false, true, NULL, NULL, NULL);
 	}
 	CHECK(report.slow_frame_count == BMSX_FRAME_TIMING_SLOW_FRAME_COUNT);
 	CHECK(report.slow_frames[0].host_frame == 501u);
@@ -86,11 +86,11 @@ int main(void) {
 	CHECK(interval.emitted_code_bytes == 120u && interval.code_bytes == 120u);
 	CHECK(interval.prepare_nanoseconds == 2000000u && interval.max_prepare_nanoseconds == 3000000u);
 	CHECK(interval.peak_code_bytes == 1000u && interval.max_prepare_root_pc == 0x1234u);
-	bmsx_frame_timing_record(&native_report, 20u, 10000000u, 0u, false, 0u, false, false, true, NULL, &interval);
+	bmsx_frame_timing_record(&native_report, 20u, 10000000u, 0u, false, 0u, false, false, true, NULL, &interval, NULL);
 	const BmsxNativeCompilationProfile idle = bmsx_native_compilation_profile_delta(&after, &after);
 	CHECK(idle.prepare_requests == 0u && idle.prepare_nanoseconds == 0u && idle.emitted_code_bytes == 0u);
 	CHECK(idle.code_bytes == 120u && idle.max_prepare_nanoseconds == 3000000u);
-	bmsx_frame_timing_record(&native_report, 21u, 5000000u, 0u, false, 0u, false, false, true, NULL, &idle);
+	bmsx_frame_timing_record(&native_report, 21u, 5000000u, 0u, false, 0u, false, false, true, NULL, &idle, NULL);
 	CHECK(native_report.native_profiled_frames == 2u);
 	CHECK(native_report.native_compilation.prepare_requests == 2u);
 	CHECK(native_report.native_compilation.prepare_nanoseconds == 2000000u);
@@ -116,6 +116,71 @@ int main(void) {
 	CHECK(strstr(line, "total_prepare_ms=2.000") != NULL);
 	CHECK(strstr(line, "lifetime_max_prepare_ms=3.000") != NULL);
 	CHECK(strstr(line, "max_prepare_domain=-1 max_prepare_slot=1 max_prepare_root_pc=00001234 max_prepare_page_pc=00001000") != NULL);
+	CHECK(fclose(output) == 0);
+
+	// Scheduler positions can rewind while the diagnostic lifetime counters
+	// advance. Preserve the signed raw boundaries, including beyond double's
+	// exact integer range; do not manufacture an elapsed/non-CPU cycle count.
+	const BmsxExecutionProfileV1 execution_before = {
+		.scheduler_now_cycles = INT64_C(9007199254740995),
+		.cpu_slice_count = 100u,
+		.cpu_slice_consumed_cycles = INT64_C(9007199254740997),
+		.gc_collections = 20u, .gc_total_nanoseconds = 3000u,
+		.gc_roots_nanoseconds = 100u, .gc_trace_nanoseconds = 200u,
+		.gc_weak_nanoseconds = 300u, .gc_sweep_nanoseconds = 400u,
+		.gc_string_reclaim_nanoseconds = 500u,
+	};
+	BmsxExecutionProfileV1 execution_after = execution_before;
+	execution_after.scheduler_now_cycles = -INT64_C(9007199254740993);
+	execution_after.cpu_slice_count += 3u;
+	execution_after.cpu_slice_consumed_cycles += 172u;
+	execution_after.gc_collections += 1u;
+	execution_after.gc_total_nanoseconds += 800u;
+	execution_after.gc_roots_nanoseconds += 11u;
+	execution_after.gc_trace_nanoseconds += 22u;
+	execution_after.gc_weak_nanoseconds += 33u;
+	execution_after.gc_sweep_nanoseconds += 44u;
+	execution_after.gc_string_reclaim_nanoseconds += 55u;
+	const BmsxExecutionProfileInterval execution = bmsx_execution_profile_delta(&execution_before, &execution_after);
+	CHECK(execution.scheduler_before_cycles == INT64_C(9007199254740995));
+	CHECK(execution.scheduler_after_cycles == -INT64_C(9007199254740993));
+	CHECK(execution.cpu_slice_count == 3u && execution.cpu_slice_consumed_cycles == 172);
+	CHECK(execution.gc_collections == 1u && execution.gc_total_nanoseconds == 800u);
+	CHECK(execution.gc_roots_nanoseconds == 11u && execution.gc_trace_nanoseconds == 22u);
+	CHECK(execution.gc_weak_nanoseconds == 33u && execution.gc_sweep_nanoseconds == 44u);
+	CHECK(execution.gc_string_reclaim_nanoseconds == 55u);
+	const BmsxExecutionProfileInterval execution_idle = bmsx_execution_profile_delta(&execution_after, &execution_after);
+	CHECK(execution_idle.scheduler_before_cycles == execution_after.scheduler_now_cycles);
+	CHECK(execution_idle.scheduler_after_cycles == execution_after.scheduler_now_cycles);
+	CHECK(execution_idle.cpu_slice_count == 0u && execution_idle.cpu_slice_consumed_cycles == 0);
+	CHECK(execution_idle.gc_collections == 0u && execution_idle.gc_total_nanoseconds == 0u);
+	CHECK(execution_idle.gc_roots_nanoseconds == 0u && execution_idle.gc_trace_nanoseconds == 0u);
+	CHECK(execution_idle.gc_weak_nanoseconds == 0u && execution_idle.gc_sweep_nanoseconds == 0u);
+	CHECK(execution_idle.gc_string_reclaim_nanoseconds == 0u);
+	BmsxFrameTimingReport execution_report = {0};
+	bmsx_frame_timing_record(&execution_report, 51u, 100000000u, 0u, false, 0u, false, true, false, NULL, NULL, &execution);
+	bmsx_frame_timing_record(&execution_report, 52u, 50000000u, 0u, false, 0u, false, false, true, NULL, NULL, &execution_idle);
+	CHECK(execution_report.slow_frames[0].host_frame == 51u && execution_report.slow_frames[0].has_execution);
+	CHECK(execution_report.slow_frames[0].execution.scheduler_before_cycles == execution_before.scheduler_now_cycles);
+	CHECK(execution_report.slow_frames[0].execution.scheduler_after_cycles == execution_after.scheduler_now_cycles);
+	CHECK(execution_report.slow_frames[0].execution.gc_trace_nanoseconds == 22u);
+	CHECK(execution_report.slow_frames[1].execution.cpu_slice_count == 0u);
+	for (unsigned index = 0u; index < BMSX_FRAME_TIMING_SLOW_FRAME_COUNT; ++index) {
+		bmsx_frame_timing_record(&execution_report, 53u + index, 200000000ull + index, 0u, false, 0u, false, false, true, NULL, NULL, NULL);
+	}
+	CHECK(execution_report.slow_frame_count == BMSX_FRAME_TIMING_SLOW_FRAME_COUNT);
+	CHECK(execution_report.slow_frames[0].host_frame == 84u);
+	CHECK(!execution_report.slow_frames[0].has_execution);
+	CHECK(execution_report.slow_frames[0].execution.scheduler_before_cycles == 0);
+	CHECK(execution_report.slow_frames[0].execution.cpu_slice_count == 0u);
+	output = tmpfile();
+	CHECK(output != NULL);
+	bmsx_execution_profile_print(output, &execution);
+	rewind(output);
+	CHECK(fgets(line, sizeof(line), output) != NULL);
+	CHECK(strstr(line, "scheduler_before_cycles=9007199254740995 scheduler_after_cycles=-9007199254740993") != NULL);
+	CHECK(strstr(line, "cpu_slices=3 cpu_consumed_cycles=172") != NULL);
+	CHECK(strstr(line, "gc_collections=1 gc_total_ns=800 gc_roots_ns=11 gc_trace_ns=22 gc_weak_ns=33 gc_sweep_ns=44 gc_string_reclaim_ns=55") != NULL);
 	CHECK(fclose(output) == 0);
 
 	return 0;

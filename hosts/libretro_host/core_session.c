@@ -217,6 +217,11 @@ bool core_session_environment(unsigned command, void* data) {
 			session->native_compilation_profile = *(const BmsxNativeCompilationProfileInterface*)data;
 			session->native_compilation_profile_interface_set = true;
 			return true;
+		case BMSX_ENVIRONMENT_SET_EXECUTION_PROFILE_INTERFACE_V1:
+			if (!session->accept_execution_profile_interface) return false;
+			session->execution_profile = *(const BmsxExecutionProfileInterfaceV1*)data;
+			session->execution_profile_interface_set = true;
+			return true;
 		case BMSX_ENVIRONMENT_GET_SUPERVISOR_REQUEST_INTERFACE_V1:
 			((BmsxSupervisorRequestInterfaceV1*)data)->request_line_high =
 					keyboard_input_supervisor_request_line;
