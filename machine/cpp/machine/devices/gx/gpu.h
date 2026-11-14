@@ -417,7 +417,7 @@ private:
 	void beginPolylinePayload(const GxGpuPacket& packet, i64 commandStartCycle);
 	void recordGp0ProducerWord(u32 word);
 	void rebuildGp0Producer();
-	bool acceptGp0Word(u32 word);
+	Gp0WordAdmission acceptGp0Word(u32 word);
 	void processGp0Pipeline(i64 commandStartCycle);
 	void consumeGp0Fifo(i64 commandStartCycle);
 	void synchronizeCommandExecution(i64 nowCycles);

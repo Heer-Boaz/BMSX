@@ -29,20 +29,44 @@ function fixture() {
 	return { memory, irq, cpu, scheduler, dma, gpu };
 }
 type Fixture = ReturnType<typeof fixture>;
+const gouraudTexturedQuad = [
+	0x3c0000ff, 0, 0, 0x0000ff00, 8, 0x01000008,
+	0x00ff0000, 0x00080000, 0x00080000, 0x00ffffff, 0x00080008, 0x00080008,
+];
+function submitDmaCommands(h: Fixture, words: readonly number[]): void {
+	h.gpu.writeGp0((gp0.GX_GPU_GP0_DRAWING_AREA_BOTTOM_RIGHT << 24) | (255 << 10) | 255);
+	h.gpu.writeGp1((gp1.GX_GPU_GP1_DMA_DIRECTION << 24) | gp0.GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+	const source = map.DYNAMIC_RAM_BASE + 0x1000;
+	for (let i = 0; i < words.length; ++i) h.memory.writeU32(source + 4 * i, words[i]);
+	h.memory.writeMappedU32LE(io.IO_DMA0_READ_ADDR, source);
+	h.memory.writeMappedU32LE(io.IO_DMA0_TRANSFER_COUNT, words.length);
+	h.memory.writeMappedU32LE(io.IO_DMA0_CONTROL, io.DMA_ROUTE_TO_GPU);
+	h.memory.writeMappedU32LE(io.IO_DMA0_TRIGGER, io.DMA_TRIGGER_START);
+	for (let i = 0; i < 8 && h.memory.readIoU32(io.IO_DMA0_STATUS) !== io.DMA_STATUS_DONE; ++i) step(h);
+	assert.equal(h.memory.readIoU32(io.IO_DMA0_STATUS), io.DMA_STATUS_DONE, 'the entire command burst is accepted before GPU-only services');
+}
+function runToIrq(h: Fixture): number {
+	let services = 0;
+	for (let i = 0; i < 128 && (h.memory.readIoU32(io.IO_IRQ_FLAGS) & io.IRQ_GPU) === 0; ++i) services += step(h);
+	assert.equal(h.memory.readIoU32(io.IO_IRQ_FLAGS) & io.IRQ_GPU, io.IRQ_GPU, 'the bounded command stream reaches its IRQ');
+	return services;
+}
 function enqueue(h: Fixture, fills: number, irq = true): void {
 	for (let i = 0; i < fills; ++i) for (const word of [0x020000ff, 0, 0x00010001]) h.gpu.writeGp0(word);
 	if (irq) h.gpu.writeGp0(0x1f000000);
 }
-function step(h: Fixture): void {
+function step(h: Fixture): number {
 	const cycle = h.scheduler.nextDeadline();
 	assert.notEqual(cycle, Number.MAX_SAFE_INTEGER, 'a required device event is scheduled');
 	h.scheduler.advanceTo(cycle);
+	let gpuServices = 0;
 	while (h.scheduler.hasDueTimer()) {
 		const kind = h.scheduler.popDueTimer();
-		if (kind === DEVICE_SERVICE_GPU) h.gpu.onService(cycle);
+		if (kind === DEVICE_SERVICE_GPU) { h.gpu.onService(cycle); ++gpuServices; }
 		else if (kind === DEVICE_SERVICE_DMA) h.dma.onService(cycle);
 		else assert.fail(`unexpected device service ${kind}`);
 	}
+	return gpuServices;
 }
 
 test('queued fills require one GPU service at the exact IRQ start, not an event per fill', () => {
@@ -155,4 +179,83 @@ test('an IRQ deep in a completed DMA ingress block does not require a service pe
 	assert.equal(h.scheduler.nowCycles, irqCycle);
 	assert.equal(h.memory.readIoU32(io.IO_IRQ_FLAGS) & io.IRQ_GPU, io.IRQ_GPU);
 	assert.ok(gpuEvents < fills, 'bounded prepared horizon batches at least some fills');
+});
+
+test('sixteen prepared packet records cover long packets across FIFO and accepted DMA ingress', () => {
+	const h = fixture(), words = Array.from({ length: 20 }, () => gouraudTexturedQuad).flat();
+	words.push(0x1f000000);
+	submitDmaCommands(h, words);
+	const queued = h.gpu.captureState();
+	assert.equal(queued.gp0FifoWords.length, 16, 'preparation retains all physical FIFO credits');
+	assert.equal(queued.gp0DmaIngressWords.length, 213, 'accepted words remain in the DMA ingress until real FIFO progress');
+	const services = runToIrq(h);
+	assert.equal(h.scheduler.nowCycles, 7122);
+	assert.ok(services <= 2, `twenty twelve-word packets need at most two GPU services, observed ${services}`);
+	assert.deepEqual(h.gpu.captureState().commandBuffer.words, words.slice(0, -1));
+});
+
+test('lookahead skips header NOPs without stripping NOP-like packet parameters', () => {
+	const h = fixture(), words: number[] = [];
+	const nops = [0, 0x04001234, 0xe700ffff];
+	for (let i = 0; i < 18; ++i) words.push(nops[i % nops.length], ...gouraudTexturedQuad);
+	words.push(0x1f000000);
+	submitDmaCommands(h, words);
+	const dmaDoneCycle = h.scheduler.nowCycles;
+	runToIrq(h);
+	assert.equal(h.scheduler.nowCycles, dmaDoneCycle + 18 * 330);
+	assert.deepEqual(h.gpu.captureState().commandBuffer.words, Array.from({ length: 18 }, () => gouraudTexturedQuad).flat());
+});
+
+test('FIFO reset discards a prepared prefix extending into DMA ingress', () => {
+	const h = fixture(), words = Array.from({ length: 20 }, () => gouraudTexturedQuad).flat();
+	words.push(0x1f000000);
+	submitDmaCommands(h, words);
+	h.scheduler.advanceTo(h.scheduler.nowCycles + 10);
+	h.gpu.writeGp1(gp1.GX_GPU_GP1_CLEAR_FIFO << 24);
+	const cleared = h.gpu.captureState();
+	assert.deepEqual(cleared.gp0FifoWords, []);
+	assert.deepEqual(cleared.gp0DmaIngressWords, []);
+	assert.equal(h.memory.readIoU32(io.IO_IRQ_FLAGS) & io.IRQ_GPU, 0);
+	assert.equal(h.scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER);
+	const resetCycle = h.scheduler.nowCycles;
+	enqueue(h, 1);
+	runToIrq(h);
+	assert.equal(h.scheduler.nowCycles, resetCycle + cleared.pendingCommandCycles + 29, 'new work cannot consume stale prepared packet records');
+});
+
+test('mid-command restore rebuilds packet lookahead from unchanged FIFO and DMA ingress words', () => {
+	const h = fixture(), words = Array.from({ length: 20 }, () => gouraudTexturedQuad).flat();
+	words.push(0x1f000000);
+	submitDmaCommands(h, words);
+	h.scheduler.advanceTo(h.scheduler.nowCycles + 10);
+	const cycle = h.scheduler.nowCycles, gpuState = h.gpu.captureState(), dmaState = h.dma.captureState();
+	assert.equal(gpuState.gp0FifoWords.length, 16);
+	assert.equal(gpuState.gp0DmaIngressWords.length, 213);
+	const restored = fixture(); restored.scheduler.advanceTo(cycle);
+	restored.dma.restoreState(dmaState, cycle); restored.gpu.restoreState(gpuState);
+	restored.dma.postLoad(); restored.gpu.dependencyStateChanged();
+	const restoredState = restored.gpu.captureState();
+	assert.deepEqual(restoredState.gp0FifoWords, gpuState.gp0FifoWords);
+	assert.deepEqual(restoredState.gp0DmaIngressWords, gpuState.gp0DmaIngressWords);
+	const restoredServices = runToIrq(restored);
+	runToIrq(h);
+	assert.equal(restored.scheduler.nowCycles, 7122);
+	assert.equal(h.scheduler.nowCycles, 7122);
+	assert.ok(restoredServices <= 2, `restored ingress lookahead needs at most two GPU services, observed ${restoredServices}`);
+	assert.deepEqual(restored.gpu.captureState().commandBuffer, h.gpu.captureState().commandBuffer);
+});
+
+test('zero-tick clipped packets refill the physical FIFO before consuming cached ingress packets', () => {
+	const h = fixture(), reference = fixture(), words = [0x020000ff, 0, 0x00010001];
+	for (let i = 0; i < 48; ++i) words.push(0x400000ff, 0x012c012c, 0x012d012d);
+	words.push(...gouraudTexturedQuad, 0x1f000000);
+	reference.gpu.setOperationObserver({ emitted() {} });
+	submitDmaCommands(h, words); submitDmaCommands(reference, words);
+	const dmaDoneCycle = h.scheduler.nowCycles;
+	assert.equal(reference.scheduler.nowCycles, dmaDoneCycle);
+	runToIrq(h); runToIrq(reference);
+	assert.equal(h.scheduler.nowCycles, dmaDoneCycle + 29 + 330, 'all clipped finite lines take zero command ticks');
+	assert.equal(reference.scheduler.nowCycles, h.scheduler.nowCycles);
+	assert.deepEqual(h.gpu.captureState().commandBuffer, reference.gpu.captureState().commandBuffer);
+	assert.deepEqual(h.gpu.captureState().commandBuffer.words, words.slice(0, -1));
 });

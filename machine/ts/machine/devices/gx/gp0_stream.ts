@@ -14,6 +14,19 @@ export const GX_GPU_GP0_INGRESS_IMAGE_PAYLOAD = 3;
 export const GX_GPU_GP0_INGRESS_POLYLINE_HEADER = 4;
 export const GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD = 5;
 
+export enum Gp0WordAdmission {
+	Blocked = 0,
+	Queued = 1,
+	Filtered = 2,
+}
+
+export function gxGpuGp0OpcodeIsNop(opcode: number): boolean {
+	return opcode === 0x00
+		|| (opcode >= 0x04 && opcode <= 0x1e)
+		|| opcode === 0xe0
+		|| (opcode >= 0xe7 && opcode <= 0xef);
+}
+
 export function gp0LineWordCount(opcode: number): number {
 	return (opcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) !== 0 ? 4 : 3;
 }

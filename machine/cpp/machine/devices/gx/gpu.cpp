@@ -18,13 +18,6 @@ namespace bmsx {
 
 namespace {
 
-constexpr bool gxGpuGp0OpcodeIsNop(u32 opcode) {
-	return opcode == 0x00u
-		|| (opcode >= 0x04u && opcode <= 0x1eu)
-		|| opcode == 0xe0u
-		|| (opcode >= 0xe7u && opcode <= 0xefu);
-}
-
 constexpr u32 GX_GPU_STATUS_SKIP_ACTIVE_FIELD_MASK = GX_GPU_STATUS_VERTICAL_RESOLUTION | GX_GPU_STATUS_VERTICAL_INTERLACE | GX_GPU_DRAW_MODE_DRAW_TO_DISPLAYED_FIELD;
 constexpr u32 GX_GPU_STATUS_SKIP_ACTIVE_FIELD_WORD = GX_GPU_STATUS_VERTICAL_RESOLUTION | GX_GPU_STATUS_VERTICAL_INTERLACE;
 
@@ -619,7 +612,7 @@ void GxGpu::writeGp0(u32 word, MappedBusSignals busSignals) {
 	}
 	if (!dmaWrite) {
 		m_gp0Word = word;
-		if (acceptGp0Word(word)) recordGp0ProducerWord(word);
+		if (acceptGp0Word(word) != Gp0WordAdmission::Blocked) recordGp0ProducerWord(word);
 	}
 	m_memory.writeIoU32(IO_GX_GPU_GP0, m_gp0Word);
 	processGp0Pipeline(nowCycles);
@@ -657,20 +650,20 @@ void GxGpu::rebuildGp0Producer() {
 	for (size_t index = 0u; index < m_gp0DmaIngress.count(); ++index) recordGp0ProducerWord(m_gp0DmaIngress.peek(index));
 }
 
-bool GxGpu::acceptGp0Word(u32 word) {
+Gp0WordAdmission GxGpu::acceptGp0Word(u32 word) {
 	const u32 phase = m_gp0Ingress.phase;
 	const u32 opcode = word >> GX_GPU_GP0_OPCODE_SHIFT;
 	if (phase == GX_GPU_GP0_INGRESS_COMMAND) {
 		if (gxGpuGp0OpcodeIsNop(opcode)) {
-			return true;
+			return Gp0WordAdmission::Filtered;
 		}
 	}
 	if (m_gp0Fifo.full()) {
-		return false;
+		return Gp0WordAdmission::Blocked;
 	}
 	m_gp0Fifo.writeWord(word);
 	m_gp0Ingress.advance(word);
-	return true;
+	return Gp0WordAdmission::Queued;
 }
 
 void GxGpu::processGp0Pipeline(i64 commandStartCycle) {
@@ -687,7 +680,11 @@ void GxGpu::processGp0Pipeline(i64 commandStartCycle) {
 				m_gp0Ingress.wordsRemaining -= static_cast<u32>(words);
 				if (m_gp0Ingress.wordsRemaining == 0u) m_gp0Ingress.phase = GX_GPU_GP0_INGRESS_COMMAND;
 			} else {
-				if (!acceptGp0Word(m_gp0DmaIngress.peek())) break;
+				const auto admission = acceptGp0Word(m_gp0DmaIngress.peek());
+				if (admission == Gp0WordAdmission::Blocked) break;
+				if (admission == Gp0WordAdmission::Filtered && m_preparedCommands.sourceWordCount > m_gp0Fifo.count()) {
+					--m_preparedCommands.sourceWordCount;
+				}
 				m_gp0DmaIngress.pop();
 			}
 			ingressAdvanced = true;
@@ -766,23 +763,35 @@ void GxGpu::prepareGp0Commands() {
 		&& m_preparedCommands.packets[m_preparedCommands.index(m_preparedCommands.count - 1u)].kind == GX_GPU_COMMAND_READ_VRAM_TO_CPU) return;
 	i64 startCycle = m_preparedCommands.count == 0u ? m_pendingCommandCompletionCycle
 		: m_preparedCommands.completionCycles[m_preparedCommands.index(m_preparedCommands.count - 1u)];
-	while (m_preparedCommands.wordCount < m_gp0Fifo.count()) {
-		const u32 opcode = m_gp0Fifo.peek(m_preparedCommands.wordCount) >> GX_GPU_GP0_OPCODE_SHIFT;
+	const size_t fifoWords = m_gp0Fifo.count();
+	const size_t sourceWords = fifoWords + m_gp0DmaIngress.count();
+	while (m_preparedCommands.count < GX_GPU_PREPARED_COMMAND_CAPACITY && m_preparedCommands.sourceWordCount < sourceWords) {
+		const size_t source = m_preparedCommands.sourceWordCount;
+		const u32 header = source < fifoWords ? m_gp0Fifo.peek(source) : m_gp0DmaIngress.peek(source - fifoWords);
+		const u32 opcode = header >> GX_GPU_GP0_OPCODE_SHIFT;
+		if (gxGpuGp0OpcodeIsNop(opcode)) {
+			++m_preparedCommands.sourceWordCount;
+			continue;
+		}
 		// Image payloads and variable-length polylines retain their streaming
 		// datapaths. Their actual start is the next preparation horizon.
 		if ((opcode >= GX_GPU_GP0_CPU_TO_VRAM_FIRST && opcode <= GX_GPU_GP0_CPU_TO_VRAM_LAST)
 			|| (opcode >= GX_GPU_GP0_LINE_FIRST && opcode <= GX_GPU_GP0_LINE_LAST
 				&& (opcode & GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT) != 0u)) break;
 		const u32 words = gp0CommandWordCountForOpcode(opcode);
-		if (words > m_gp0Fifo.count() - m_preparedCommands.wordCount) break;
+		if (words > sourceWords - source) break;
 		const size_t index = m_preparedCommands.index(m_preparedCommands.count);
 		auto& packet = m_preparedCommands.packets[index];
-		for (u32 word = 0u; word < words; ++word) packet.words[word] = m_gp0Fifo.peek(m_preparedCommands.wordCount + word);
+		packet.words[0] = header;
+		for (u32 word = 1u; word < words; ++word) {
+			const size_t sourceIndex = source + word;
+			packet.words[word] = sourceIndex < fifoWords ? m_gp0Fifo.peek(sourceIndex) : m_gp0DmaIngress.peek(sourceIndex - fifoWords);
+		}
 		prepareGpuPacket(packet, words, m_projectedDrawState);
 		m_preparedCommands.startCycles[index] = startCycle;
 		startCycle += (packet.ticks + 1) >> 1u;
 		m_preparedCommands.completionCycles[index] = startCycle;
-		m_preparedCommands.wordCount += words;
+		m_preparedCommands.sourceWordCount += words;
 		++m_preparedCommands.count;
 		if (packet.kind == GX_GPU_COMMAND_READ_VRAM_TO_CPU) break;
 	}
@@ -880,6 +889,9 @@ void GxGpu::consumeGp0Fifo(i64 commandStartCycle) {
 		}
 		if (m_preparedCommands.count != 0u) {
 			if (commandBufferDrainRequired()) return;
+			// A zero-cost predecessor can reach this start before ingress has
+			// refilled the physical FIFO. Return to the transport datapath first.
+			if (m_preparedCommands.packets[m_preparedCommands.head].wordCount > m_gp0Fifo.count()) return;
 			if (m_preparedTimingDirty || m_preparedCommands.startCycles[m_preparedCommands.head] != commandStartCycle) {
 				copyDrawState(m_projectedDrawState);
 				m_preparedCommands.retime(commandStartCycle, m_projectedDrawState);

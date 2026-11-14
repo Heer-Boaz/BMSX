@@ -14,10 +14,15 @@
 #include <array>
 #include <limits>
 #include <stdexcept>
+#include <vector>
 
 namespace {
 using namespace bmsx;
 void require(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
+constexpr std::array<u32, 12> gouraudTexturedQuad{
+	0x3c0000ffu, 0u, 0u, 0x0000ff00u, 8u, 0x01000008u,
+	0x00ff0000u, 0x00080000u, 0x00080000u, 0x00ffffffu, 0x00080008u, 0x00080008u,
+};
 struct Harness {
 	std::array<u8, 8> system{};
 	Memory memory;
@@ -41,16 +46,36 @@ struct Harness {
 		for (u32 i = 0; i < fills; ++i) for (u32 word : {0x020000ffu, 0u, 0x00010001u}) gpu.writeGp0(word);
 		gpu.writeGp0(0x1f000000u);
 	}
-	void step() {
+	u32 step() {
 		const i64 deadline = scheduler.nextDeadline();
 		require(deadline != std::numeric_limits<i64>::max(), "required event is scheduled");
 		scheduler.advanceTo(deadline);
+		u32 gpuServices = 0u;
 		while (scheduler.hasDueTimer()) {
 			const auto kind = scheduler.popDueTimer();
-			if (kind == DEVICE_SERVICE_GPU) gpu.onService(deadline);
+			if (kind == DEVICE_SERVICE_GPU) { gpu.onService(deadline); ++gpuServices; }
 			else if (kind == DEVICE_SERVICE_DMA) dma.onService(deadline);
 			else throw std::runtime_error("unexpected device event");
 		}
+		return gpuServices;
+	}
+	void submitDmaCommands(const std::vector<u32>& words) {
+		gpu.writeGp0((GX_GPU_GP0_DRAWING_AREA_BOTTOM_RIGHT << 24u) | (255u << 10u) | 255u);
+		gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24u) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+		constexpr u32 source = DYNAMIC_RAM_BASE + 0x1000u;
+		for (u32 i = 0u; i < words.size(); ++i) memory.writeU32(source + 4u * i, words[i]);
+		memory.writeMappedU32LE(IO_DMA0_READ_ADDR, source);
+		memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, static_cast<u32>(words.size()));
+		memory.writeMappedU32LE(IO_DMA0_CONTROL, DMA_ROUTE_TO_GPU);
+		memory.writeMappedU32LE(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
+		for (u32 i = 0u; i < 8u && memory.readIoU32(IO_DMA0_STATUS) != DMA_STATUS_DONE; ++i) step();
+		require(memory.readIoU32(IO_DMA0_STATUS) == DMA_STATUS_DONE, "whole command burst accepted before GPU-only services");
+	}
+	u32 runToIrq() {
+		u32 services = 0u;
+		for (u32 i = 0u; i < 128u && (memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU) == 0u; ++i) services += step();
+		require((memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU) != 0u, "bounded command stream reaches its IRQ");
+		return services;
 	}
 	void advance(i64 target) {
 		while (scheduler.nextDeadline() <= target) {
@@ -157,6 +182,100 @@ void testDmaQueuedIrq() {
 	require(h.scheduler.nowCycles() == irqCycle && (h.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU) != 0u, "deep DMA IRQ at exact cycle");
 	require(events < fills, "bounded prepared horizon batches fills");
 }
+void testDmaLongPacketHorizon() {
+	Harness h;
+	std::vector<u32> words;
+	for (u32 i = 0u; i < 20u; ++i) words.insert(words.end(), gouraudTexturedQuad.begin(), gouraudTexturedQuad.end());
+	words.push_back(0x1f000000u);
+	h.submitDmaCommands(words);
+	const auto queued = h.gpu.captureState();
+	require(queued.gp0FifoWords.size() == 16u, "preparation retains physical FIFO credits");
+	require(queued.gp0DmaIngressWords.size() == 213u, "accepted DMA words remain queued until actual FIFO progress");
+	const u32 services = h.runToIrq();
+	require(h.scheduler.nowCycles() == 7122, "twenty long packets retain exact IRQ cycle 7122");
+	require(services <= 2u, "twenty twelve-word packets need at most two GPU services");
+	words.pop_back();
+	require(h.gpu.captureState().commandBuffer.words == words, "all long packet parameters survive prepared ingress");
+}
+void testDmaHeaderNops() {
+	Harness h;
+	constexpr std::array<u32, 3> nops{0u, 0x04001234u, 0xe700ffffu};
+	std::vector<u32> words, expected;
+	for (u32 i = 0u; i < 18u; ++i) {
+		words.push_back(nops[i % nops.size()]);
+		words.insert(words.end(), gouraudTexturedQuad.begin(), gouraudTexturedQuad.end());
+		expected.insert(expected.end(), gouraudTexturedQuad.begin(), gouraudTexturedQuad.end());
+	}
+	words.push_back(0x1f000000u);
+	h.submitDmaCommands(words);
+	const i64 dmaDoneCycle = h.scheduler.nowCycles();
+	h.runToIrq();
+	require(h.scheduler.nowCycles() == dmaDoneCycle + 18 * 330, "header NOPs do not add command time");
+	require(h.gpu.captureState().commandBuffer.words == expected, "NOP-like parameters remain packet data while header NOPs are skipped");
+}
+void testDmaPreparedReset() {
+	Harness h;
+	std::vector<u32> words;
+	for (u32 i = 0u; i < 20u; ++i) words.insert(words.end(), gouraudTexturedQuad.begin(), gouraudTexturedQuad.end());
+	words.push_back(0x1f000000u);
+	h.submitDmaCommands(words);
+	h.scheduler.advanceTo(h.scheduler.nowCycles() + 10);
+	h.gpu.writeGp1(GX_GPU_GP1_CLEAR_FIFO << 24u);
+	const auto cleared = h.gpu.captureState();
+	require(cleared.gp0FifoWords.empty() && cleared.gp0DmaIngressWords.empty(), "FIFO reset clears both raw input queues");
+	require((h.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU) == 0u, "reset cannot publish the discarded future IRQ");
+	require(h.scheduler.nextDeadline() == std::numeric_limits<i64>::max(), "discarded ingress IRQ has no deadline");
+	const i64 resetCycle = h.scheduler.nowCycles();
+	h.enqueue(1u);
+	h.runToIrq();
+	require(h.scheduler.nowCycles() == resetCycle + cleared.pendingCommandCycles + 29, "new work cannot consume stale packet records after active command completion");
+}
+void testDmaPreparedRestore() {
+	Harness h;
+	std::vector<u32> words;
+	for (u32 i = 0u; i < 20u; ++i) words.insert(words.end(), gouraudTexturedQuad.begin(), gouraudTexturedQuad.end());
+	words.push_back(0x1f000000u);
+	h.submitDmaCommands(words);
+	h.scheduler.advanceTo(h.scheduler.nowCycles() + 10);
+	const i64 cycle = h.scheduler.nowCycles();
+	const auto gpuState = h.gpu.captureState();
+	const auto dmaState = h.dma.captureState();
+	require(gpuState.gp0FifoWords.size() == 16u && gpuState.gp0DmaIngressWords.size() == 213u, "snapshot retains physical FIFO and accepted ingress");
+	Harness restored; restored.scheduler.advanceTo(cycle);
+	restored.dma.restoreState(dmaState, cycle); restored.gpu.restoreState(gpuState);
+	restored.dma.postLoad(); restored.gpu.dependencyStateChanged();
+	const auto restoredState = restored.gpu.captureState();
+	require(restoredState.gp0FifoWords == gpuState.gp0FifoWords && restoredState.gp0DmaIngressWords == gpuState.gp0DmaIngressWords,
+		"restore preserves raw FIFO and ingress words without serialized packet metadata");
+	const u32 services = restored.runToIrq();
+	h.runToIrq();
+	require(restored.scheduler.nowCycles() == 7122 && h.scheduler.nowCycles() == 7122, "restored ingress reaches the exact original IRQ edge");
+	require(services <= 2u, "restored packet lookahead needs at most two GPU services");
+	const auto originalBuffer = h.gpu.captureState().commandBuffer, restoredBuffer = restored.gpu.captureState().commandBuffer;
+	require(originalBuffer.words == restoredBuffer.words && originalBuffer.commandOpcode == restoredBuffer.commandOpcode
+		&& originalBuffer.executedCommandCount == restoredBuffer.executedCommandCount
+		&& originalBuffer.commandDrawModeWord == restoredBuffer.commandDrawModeWord,
+		"restored packets reproduce canonical operation words, completion, and draw state");
+}
+void testZeroTickIngressRefill() {
+	Harness h, reference;
+	std::vector<u32> words{0x020000ffu, 0u, 0x00010001u};
+	for (u32 i = 0u; i < 48u; ++i) words.insert(words.end(), {0x400000ffu, 0x012c012cu, 0x012d012du});
+	words.insert(words.end(), gouraudTexturedQuad.begin(), gouraudTexturedQuad.end());
+	words.push_back(0x1f000000u);
+	reference.gpu.setOperationObserver({[](void*, const GxGpuCommandBuffer&, size_t, i64, std::span<const u32>) {}, nullptr});
+	h.submitDmaCommands(words); reference.submitDmaCommands(words);
+	const i64 dmaDoneCycle = h.scheduler.nowCycles();
+	require(reference.scheduler.nowCycles() == dmaDoneCycle, "reference starts from same completed DMA boundary");
+	h.runToIrq(); reference.runToIrq();
+	require(h.scheduler.nowCycles() == dmaDoneCycle + 29 + 330, "clipped finite lines have zero command ticks");
+	require(reference.scheduler.nowCycles() == h.scheduler.nowCycles(), "cached packet span reaches same IRQ as observed reference");
+	const auto actual = h.gpu.captureState().commandBuffer, expected = reference.gpu.captureState().commandBuffer;
+	words.pop_back();
+	require(actual.words == words && actual.words == expected.words && actual.commandOpcode == expected.commandOpcode
+		&& actual.executedCommandCount == expected.executedCommandCount && actual.commandDrawModeWord == expected.commandDrawModeWord,
+		"zero-tick ingress packets preserve canonical operation words and draw state");
+}
 void testBackendSubmissionHorizon() {
 	Harness h;
 	h.gpu.setBackendSubmissionCommandLimit(3u);
@@ -208,6 +327,7 @@ void testPcrtcFieldEdge() {
 }
 }
 int main() {
+	testDmaLongPacketHorizon(); testDmaHeaderNops(); testDmaPreparedReset(); testDmaPreparedRestore(); testZeroTickIngressRefill();
 	testBackendSubmissionHorizon();
 	testIrqTimeline(); testCpuFifoWait(); testGp1AndRestore(); testDmaWait(); testReadbackTimeline(); testDmaQueuedIrq(); testGp1YGate(); testPcrtcFieldEdge();
 }

@@ -6,6 +6,15 @@
 
 namespace bmsx {
 
+enum class Gp0WordAdmission : u8 { Blocked, Queued, Filtered };
+
+constexpr bool gxGpuGp0OpcodeIsNop(u32 opcode) {
+	return opcode == 0x00u
+		|| (opcode >= 0x04u && opcode <= 0x1eu)
+		|| opcode == 0xe0u
+		|| (opcode >= 0xe7u && opcode <= 0xefu);
+}
+
 constexpr u32 GX_GPU_GP0_INGRESS_COMMAND = 0u;
 constexpr u32 GX_GPU_GP0_INGRESS_FIXED = 1u;
 constexpr u32 GX_GPU_GP0_INGRESS_IMAGE_HEADER = 2u;

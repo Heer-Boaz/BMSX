@@ -1,27 +1,30 @@
 #pragma once
 
 #include "machine/devices/gx/gpu_command_timing.h"
-#include "spec/gx/gp0.h"
 
 #include <array>
 #include <cstddef>
 
 namespace bmsx {
 
-// A decoded prefix of the physical FIFO. Preparation consumes no FIFO credits.
+constexpr size_t GX_GPU_PREPARED_COMMAND_CAPACITY = 16u;
+
+// A decoded prefix of accepted FIFO/ingress words. Preparation consumes no credits.
 struct GxGpuPreparedCommands {
-	std::array<GxGpuPacket, GX_GPU_COMMAND_FIFO_WORD_CAPACITY> packets{};
-	std::array<i64, GX_GPU_COMMAND_FIFO_WORD_CAPACITY> startCycles{};
-	std::array<i64, GX_GPU_COMMAND_FIFO_WORD_CAPACITY> completionCycles{};
+	std::array<GxGpuPacket, GX_GPU_PREPARED_COMMAND_CAPACITY> packets{};
+	std::array<i64, GX_GPU_PREPARED_COMMAND_CAPACITY> startCycles{};
+	std::array<i64, GX_GPU_PREPARED_COMMAND_CAPACITY> completionCycles{};
 	size_t head = 0u;
 	size_t count = 0u;
-	size_t wordCount = 0u;
+	// Raw prefix across FIFO and ingress, including header NOPs until the
+	// transport removes them. It is not the number of physical FIFO credits.
+	size_t sourceWordCount = 0u;
 
-	void clear() { head = count = wordCount = 0u; }
-	size_t index(size_t offset) const { return (head + offset) & (GX_GPU_COMMAND_FIFO_WORD_CAPACITY - 1u); }
+	void clear() { head = count = sourceWordCount = 0u; }
+	size_t index(size_t offset) const { return (head + offset) & (GX_GPU_PREPARED_COMMAND_CAPACITY - 1u); }
 	GxGpuPacket& pop() {
 		auto& packet = packets[head];
-		wordCount -= packet.wordCount;
+		sourceWordCount -= packet.wordCount;
 		head = index(1u);
 		--count;
 		return packet;
