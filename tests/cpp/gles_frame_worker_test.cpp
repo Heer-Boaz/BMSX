@@ -495,6 +495,31 @@ retro_hw_render_callback frontendHardware{};
 std::thread::id frontendThread;
 unsigned frontendFrames = 0;
 bool frontendShutdown = false;
+retro_game_geometry frontendGeometry{};
+GLuint frontendFramebuffer = 0u, frontendTexture = 0u;
+unsigned frontendTargetWidth = 0u, frontendTargetHeight = 0u;
+unsigned frontendSequence = 0u, frontendGeometrySequence = 0u, frontendFramebufferSequence = 0u;
+bool frontendInsideRun = false, frontendCapture = false;
+unsigned frontendVideoWidth = 0u, frontendVideoHeight = 0u;
+std::vector<u8> frontendPixels;
+
+uintptr_t frontendGetFramebuffer() {
+	require(frontendInsideRun, "frontend framebuffer acquisition belongs to retro_run");
+	if (frontendCapture && frontendFramebufferSequence == 0u) frontendFramebufferSequence = ++frontendSequence;
+	if (frontendTargetWidth != frontendGeometry.base_width || frontendTargetHeight != frontendGeometry.base_height) {
+		frontendTargetWidth = frontendGeometry.base_width;
+		frontendTargetHeight = frontendGeometry.base_height;
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, frontendTexture);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, frontendTargetWidth, frontendTargetHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glBindFramebuffer(GL_FRAMEBUFFER, frontendFramebuffer);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, frontendTexture, 0);
+		require(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE, "frontend-owned presentation attachment is complete");
+	}
+	return frontendFramebuffer;
+}
 
 bool frontendEnvironment(unsigned command, void* data) {
 	require(std::this_thread::get_id() == frontendThread, "libretro environment callbacks remain on the frontend thread");
@@ -507,16 +532,25 @@ bool frontendEnvironment(unsigned command, void* data) {
 		auto& variable = *static_cast<retro_variable*>(data);
 		if (std::strcmp(variable.key, "bmsx_render_backend") == 0) variable.value = "gles2";
 		else if (std::strcmp(variable.key, "bmsx_rewind_recording") == 0) variable.value = "off";
+		else if (std::strcmp(variable.key, "bmsx_crt_postprocessing") == 0) variable.value = "off";
 		else return false;
 		return true;
 	}
 	case RETRO_ENVIRONMENT_SET_HW_RENDER: {
 		auto& callback = *static_cast<retro_hw_render_callback*>(data);
-		callback.get_current_framebuffer = []() -> uintptr_t { return 0; };
+		callback.get_current_framebuffer = frontendGetFramebuffer;
 		callback.get_proc_address = [](const char* name) -> retro_proc_address_t { return eglGetProcAddress(name); };
 		frontendHardware = callback;
 		return true;
 	}
+	case RETRO_ENVIRONMENT_SET_GEOMETRY:
+	case RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO:
+		require(frontendInsideRun, "video environment notifications belong to retro_run, never retro_unserialize");
+		frontendGeometry = command == RETRO_ENVIRONMENT_SET_GEOMETRY
+			? *static_cast<retro_game_geometry*>(data)
+			: static_cast<retro_system_av_info*>(data)->geometry;
+		frontendGeometrySequence = ++frontendSequence;
+		return true;
 	case RETRO_ENVIRONMENT_SHUTDOWN:
 		frontendShutdown = true; return true;
 	default: return false;
@@ -539,10 +573,20 @@ void testLibretroEntry(const test::Blua32TestRom& rom) {
 		file.write(reinterpret_cast<const char*>(cart.data()), cart.size());
 	}
 	setenv("BMSX_GLES2_THREADED", "1", 1);
+	glGenFramebuffers(1, &frontendFramebuffer);
+	glGenTextures(1, &frontendTexture);
 	retro_set_environment(frontendEnvironment);
-	retro_set_video_refresh([](const void* data, unsigned, unsigned, size_t) {
+	retro_set_video_refresh([](const void* data, unsigned width, unsigned height, size_t) {
 		require(std::this_thread::get_id() == frontendThread, "video callback remains on frontend thread");
 		require(data == nullptr || data == RETRO_HW_FRAME_BUFFER_VALID, "GLES publishes hardware frames");
+		if (frontendCapture) {
+			require(data == RETRO_HW_FRAME_BUFFER_VALID, "the first restored run publishes its image, not a duplicate");
+			frontendVideoWidth = width; frontendVideoHeight = height;
+			frontendPixels.resize(static_cast<size_t>(frontendTargetWidth) * frontendTargetHeight * 4u);
+			glBindFramebuffer(GL_FRAMEBUFFER, frontendFramebuffer);
+			glPixelStorei(GL_PACK_ALIGNMENT, 1);
+			glReadPixels(0, 0, frontendTargetWidth, frontendTargetHeight, GL_RGBA, GL_UNSIGNED_BYTE, frontendPixels.data());
+		}
 		++frontendFrames;
 	});
 	retro_set_audio_sample_batch([](const int16_t*, size_t frames) -> size_t {
@@ -552,10 +596,14 @@ void testLibretroEntry(const test::Blua32TestRom& rom) {
 	retro_set_input_poll([] { require(std::this_thread::get_id() == frontendThread, "input polling remains on frontend thread"); });
 	retro_set_input_state([](unsigned, unsigned, unsigned, unsigned) -> int16_t { return 0; });
 	retro_init();
+	retro_system_av_info av{};
+	retro_get_system_av_info(&av);
+	frontendGeometry = av.geometry;
 	const retro_game_info game{cartPath.c_str(), nullptr, 0, nullptr};
 	require(retro_load_game(&game), "the real libretro entry admits the generated fixture");
 	require(frontendHardware.context_reset != nullptr, "the frontend owns actual context lifecycle callbacks");
 	frontendHardware.context_reset();
+	frontendInsideRun = true;
 	for (unsigned frame = 0; frame < 2; ++frame) { mutateFrontendGlState(); retro_run(); }
 	require(frontendFrames == 2u && !frontendShutdown, "threaded retro_run publishes without shutting down");
 	std::vector<u8> envelope(retro_serialize_size());
@@ -602,6 +650,56 @@ void testLibretroEntry(const test::Blua32TestRom& rom) {
 	require(!frontendShutdown, "context recreation, restore and reboot retain frontend ownership");
 	frontendHardware.context_destroy();
 	retro_unload_game(); retro_deinit();
+	frontendInsideRun = false;
+	// Restore a saved raw scanout into a fresh core whose frontend still owns
+	// its reset 320x240 geometry. No guest draw is needed to repair this frame.
+	auto scene = state;
+	auto& gpu = scene.machineState.machine.gxGpu;
+	for (auto* words : {&gpu.pcrtc.registerWords, &gpu.pcrtc.presentWords})
+		(*words)[GX_GPU_PCRTC_DISPLAY1_HIGH] = 1023u | (191u << 12u);
+	std::vector<u8> expectedPixels(256u * 192u * 4u);
+	for (u32 y = 0u; y < 192u; ++y) for (u32 x = 0u; x < 256u; ++x) {
+		const u32 red = (x / 17u) & 1u, green = (y / 13u) & 1u, blue = ((x / 29u) + (y / 19u)) & 1u;
+		writeLE16(gpu.vramBytes.data() + (y * 1024u + x) * 2u, static_cast<u16>(red * 31u | (green * 31u << 5u) | (blue * 31u << 10u)));
+		const size_t at = (y * 256u + x) * 4u;
+		expectedPixels[at] = red * 255u; expectedPixels[at + 1u] = green * 255u;
+		expectedPixels[at + 2u] = blue * 255u; expectedPixels[at + 3u] = 255u;
+	}
+	const size_t sceneBytes = encodeRuntimeSaveState(scene, std::span<u8>(envelope).subspan(8u));
+	require(sceneBytes != 0u, "the saved raw scanout fits the existing libretro envelope");
+	writeLE32(envelope.data() + 4u, static_cast<u32>(sceneBytes));
+	for (const bool threaded : {false, true}) {
+		setenv("BMSX_GLES2_THREADED", threaded ? "1" : "0", 1);
+		retro_init();
+		retro_get_system_av_info(&av);
+		frontendGeometry = av.geometry;
+		require(frontendGeometry.base_width == 320u && frontendGeometry.base_height == 240u, "a fresh frontend begins with reset geometry");
+		require(retro_load_game(&game), "fresh core admits the saved scene's cartridge");
+		frontendHardware.context_reset();
+		frontendSequence = frontendGeometrySequence = frontendFramebufferSequence = 0u;
+		require(retro_unserialize(envelope.data(), envelope.size()), "a fresh core restores the saved 256x192 scene");
+		require(frontendSequence == 0u, "restore neither acquires a frontend target nor publishes video parameters");
+		frontendCapture = frontendInsideRun = true;
+		mutateFrontendGlState();
+		retro_run();
+		frontendCapture = frontendInsideRun = false;
+		require(frontendGeometrySequence != 0u && frontendGeometrySequence < frontendFramebufferSequence,
+			"restored geometry reaches the frontend before its first framebuffer acquisition");
+		require(frontendTargetWidth == 256u && frontendTargetHeight == 192u && frontendVideoWidth == 256u && frontendVideoHeight == 192u,
+			"the first restored attachment and video callback both use the saved 256x192 extent");
+		for (u32 y = 0u; y < 192u; ++y) for (u32 x = 0u; x < 256u; ++x) {
+			const size_t actual = ((191u - y) * 256u + x) * 4u, expected = (y * 256u + x) * 4u;
+			require(std::equal(expectedPixels.begin() + expected, expectedPixels.begin() + expected + 4u, frontendPixels.begin() + actual),
+				"the first restored presentation contains every saved pattern pixel in the correct orientation");
+		}
+		require(!frontendShutdown, "restored geometry retains the hardware context");
+		frontendHardware.context_destroy();
+		retro_unload_game(); retro_deinit();
+		std::cout << "GX-WORKER:PASS first restored frontend framebuffer " << (threaded ? "threaded" : "direct") << '\n';
+	}
+	glBindFramebuffer(GL_FRAMEBUFFER, 0u);
+	glDeleteFramebuffers(1, &frontendFramebuffer);
+	glDeleteTextures(1, &frontendTexture);
 	unsetenv("BMSX_GLES2_THREADED");
 	std::filesystem::remove_all(directory);
 	std::cout << "GX-WORKER:PASS libretro-entry lifecycle\n";
