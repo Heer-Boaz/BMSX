@@ -9,6 +9,10 @@
 
 #include <algorithm>
 
+#if defined(__ARM_NEON)
+#include <arm_neon.h>
+#endif
+
 namespace bmsx {
 namespace {
 
@@ -118,6 +122,42 @@ void fillBackgroundRows(
 	}
 }
 
+#if defined(__ARM_NEON)
+void writeGx16RgbaRow(const GxGpuSoftwareState& software, u32* output, u32 address, u32 count) {
+	const uint16x8_t channelMask = vdupq_n_u16(31u);
+	const uint16x8_t alphaMask = vdupq_n_u16(0x8000u);
+	// Each contiguous span ends at the installed-VRAM address wrap.
+	while (count != 0u) {
+		const size_t sourceIndex = static_cast<size_t>(address) & software.vramWordMask;
+		const size_t spanCount = std::min(static_cast<size_t>(count), software.vram.size() - sourceIndex);
+		const u16* source = software.vram.data() + sourceIndex;
+		size_t index = 0u;
+		for (; index + 8u <= spanCount; index += 8u) {
+			const uint16x8_t words = vld1q_u16(source + index);
+			const uint16x8_t red5 = vandq_u16(words, channelMask);
+			const uint16x8_t green5 = vandq_u16(vshrq_n_u16(words, 5), channelMask);
+			const uint16x8_t blue5 = vandq_u16(vshrq_n_u16(words, 10), channelMask);
+			const uint16x8_t red = vorrq_u16(vshlq_n_u16(red5, 3), vshrq_n_u16(red5, 2));
+			const uint16x8_t green = vorrq_u16(vshlq_n_u16(green5, 3), vshrq_n_u16(green5, 2));
+			const uint16x8_t blue = vorrq_u16(vshlq_n_u16(blue5, 3), vshrq_n_u16(blue5, 2));
+			// Low/high packed ARGB halves; source bit 15 supplies alpha 128.
+			const uint16x8_t bg = vorrq_u16(blue, vshlq_n_u16(green, 8));
+			const uint16x8_t ra = vorrq_u16(red, vandq_u16(words, alphaMask));
+			const uint32x4_t low = vorrq_u32(vmovl_u16(vget_low_u16(bg)),
+				vshlq_n_u32(vmovl_u16(vget_low_u16(ra)), 16));
+			const uint32x4_t high = vorrq_u32(vmovl_u16(vget_high_u16(bg)),
+				vshlq_n_u32(vmovl_u16(vget_high_u16(ra)), 16));
+			vst1q_u32(output + index, low);
+			vst1q_u32(output + index + 4u, high);
+		}
+		for (; index < spanCount; ++index) output[index] = outputArgb(GX_GPU_SOFTWARE_RGB555_RGBA[source[index]]);
+		address += static_cast<u32>(spanCount);
+		output += spanCount;
+		count -= static_cast<u32>(spanCount);
+	}
+}
+#endif
+
 template<Gx16CircuitOperation Operation>
 void writeGx16CircuitRows(
 	const GxGpuSoftwareState& software,
@@ -134,40 +174,47 @@ void writeGx16CircuitRows(
 			+ sourceY * circuit.framebufferWidth
 			+ circuit.framebufferX + left - circuit.displayX;
 		u32* output = pixels + static_cast<size_t>(y) * static_cast<size_t>(pixelsPerRow) + left;
-		for (u32 outputX = left; outputX < right; outputX += 1u) {
-			const u32 word = rawWordAtAddress(software, address);
-			if constexpr (Operation == Gx16CircuitOperation::WriteAlpha) {
-				*output = (*output & 0x00ffffffu) | ((word & 0x8000u) << 16u);
-			} else if constexpr (Operation == Gx16CircuitOperation::BlendConstantRgb
-				|| Operation == Gx16CircuitOperation::BlendConstantRgba) {
-				if constexpr (Operation == Gx16CircuitOperation::BlendConstantRgba) {
-					*output = blendOutputArgb(
-						*output, GX_GPU_SOFTWARE_RGB555_RGBA[word], scanout.blendAlpha, (word & 0x8000u) << 16u);
-				} else {
-					*output = blendOutputArgb(
-						*output, GX_GPU_SOFTWARE_RGB555_RGBA[word], scanout.blendAlpha, *output & 0xff000000u);
-				}
-			} else {
-				const u32 sourceRgba = outputArgb(GX_GPU_SOFTWARE_RGB555_RGBA[word]);
-				if constexpr (Operation == Gx16CircuitOperation::WriteRgb) {
-					*output = (sourceRgba & 0x00ffffffu) | (*output & 0xff000000u);
-				} else if constexpr (Operation == Gx16CircuitOperation::WriteRgba) {
-					*output = sourceRgba;
-				} else if constexpr (Operation == Gx16CircuitOperation::BlendSourceRgb
-					|| Operation == Gx16CircuitOperation::BlendSourceRgba) {
-					const u32 sourceMask = 0u - (word >> 15u);
-					const u32 destination = *output;
-					const u32 rgb = (sourceRgba & sourceMask & 0x00ffffffu)
-						| (destination & ~sourceMask & 0x00ffffffu);
-					if constexpr (Operation == Gx16CircuitOperation::BlendSourceRgba) {
-						*output = rgb | ((word & 0x8000u) << 16u);
+#if defined(__ARM_NEON)
+		if constexpr (Operation == Gx16CircuitOperation::WriteRgba) {
+			writeGx16RgbaRow(software, output, address, right - left);
+		} else
+#endif
+		{
+			for (u32 outputX = left; outputX < right; outputX += 1u) {
+				const u32 word = rawWordAtAddress(software, address);
+				if constexpr (Operation == Gx16CircuitOperation::WriteAlpha) {
+					*output = (*output & 0x00ffffffu) | ((word & 0x8000u) << 16u);
+				} else if constexpr (Operation == Gx16CircuitOperation::BlendConstantRgb
+					|| Operation == Gx16CircuitOperation::BlendConstantRgba) {
+					if constexpr (Operation == Gx16CircuitOperation::BlendConstantRgba) {
+						*output = blendOutputArgb(
+							*output, GX_GPU_SOFTWARE_RGB555_RGBA[word], scanout.blendAlpha, (word & 0x8000u) << 16u);
 					} else {
-						*output = rgb | (destination & 0xff000000u);
+						*output = blendOutputArgb(
+							*output, GX_GPU_SOFTWARE_RGB555_RGBA[word], scanout.blendAlpha, *output & 0xff000000u);
+					}
+				} else {
+					const u32 sourceRgba = outputArgb(GX_GPU_SOFTWARE_RGB555_RGBA[word]);
+					if constexpr (Operation == Gx16CircuitOperation::WriteRgb) {
+						*output = (sourceRgba & 0x00ffffffu) | (*output & 0xff000000u);
+					} else if constexpr (Operation == Gx16CircuitOperation::WriteRgba) {
+						*output = sourceRgba;
+					} else if constexpr (Operation == Gx16CircuitOperation::BlendSourceRgb
+						|| Operation == Gx16CircuitOperation::BlendSourceRgba) {
+						const u32 sourceMask = 0u - (word >> 15u);
+						const u32 destination = *output;
+						const u32 rgb = (sourceRgba & sourceMask & 0x00ffffffu)
+							| (destination & ~sourceMask & 0x00ffffffu);
+						if constexpr (Operation == Gx16CircuitOperation::BlendSourceRgba) {
+							*output = rgb | ((word & 0x8000u) << 16u);
+						} else {
+							*output = rgb | (destination & 0xff000000u);
+						}
 					}
 				}
+				address += 1u;
+				output += 1;
 			}
-			address += 1u;
-			output += 1;
 		}
 		y += scanout.outputRowStep;
 		sourceY += circuit.linearFieldSourceRowStep;

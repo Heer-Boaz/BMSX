@@ -4148,6 +4148,85 @@ void testNativePresentationRetainsHistoryAcrossHostResizing() {
 	require(committed.size() == 2, "detached observer receives no image commits");
 }
 
+void testSoftwareGx16ScanoutExpandsEveryRawWord() {
+	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, 0u);
+	auto words = kSoftwareTestPcrtcWords;
+	words[bmsx::GX_GPU_PCRTC_DISPLAY1_HIGH] = 1023u | (255u << 12u);
+	bmsx::GxGpuPcrtcTiming timing{};
+	bmsx::GxGpuPcrtcScanout scanout{};
+	timing.update(words);
+	scanout.update(words, timing);
+	require(scanout.compositionPath == bmsx::GX_GPU_PCRTC_COMPOSE_GX16_DIRECT_CIRCUIT1,
+		"the complete raw-word fixture uses direct GX16 RGBA scanout");
+	bmsx::GxGpuPipelineState state{};
+	state.width = state.height = 256;
+	constexpr size_t pitch = 259u;
+	constexpr bmsx::u32 untouched = 0x5a193b7du;
+	std::vector<bmsx::u32> pixels(pitch * 256u, untouched);
+	for (bmsx::u32 word = 0; word < 0x10000u; ++word) {
+		software.vram[(word >> 8u) * 1024u + (word & 255u)] = static_cast<bmsx::u16>(word);
+	}
+	bmsx::scanoutGxGpuSoftwareVram(software, pixels.data(), pitch, state, scanout, 0u);
+	for (bmsx::u32 word = 0; word < 0x10000u; ++word) {
+		const bmsx::u32 red = word & 31u, green = (word >> 5u) & 31u, blue = (word >> 10u) & 31u;
+		const bmsx::u32 expected = ((word & 0x8000u) << 16u)
+			| (((red << 3u) | (red >> 2u)) << 16u)
+			| (((green << 3u) | (green >> 2u)) << 8u)
+			| (blue << 3u) | (blue >> 2u);
+		require(pixels[(word >> 8u) * pitch + (word & 255u)] == expected,
+			"all 65536 raw GX16 words preserve expanded RGB and alpha zero or 128");
+	}
+	for (size_t y = 0; y < 256u; ++y) for (size_t x = 256u; x < pitch; ++x) {
+		require(pixels[y * pitch + x] == untouched, "exhaustive scanout preserves caller-owned row padding");
+	}
+}
+
+void testSoftwareGx16ScanoutWrapsShortUnalignedRows() {
+	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, 0u);
+	for (size_t index = 0; index < software.vram.size(); ++index) {
+		software.vram[index] = static_cast<bmsx::u16>(index * 173u + 0x91bdu);
+	}
+	constexpr bmsx::u32 untouched = 0x5a193b7du;
+	for (const bool circuitTwo : {false, true}) for (bmsx::u32 width = 1u; width <= 31u; ++width) {
+		auto words = kSoftwareTestPcrtcWords;
+		const auto sourceLow = circuitTwo ? bmsx::GX_GPU_PCRTC_DISPFB2_LOW : bmsx::GX_GPU_PCRTC_DISPFB1_LOW;
+		const auto sourceHigh = circuitTwo ? bmsx::GX_GPU_PCRTC_DISPFB2_HIGH : bmsx::GX_GPU_PCRTC_DISPFB1_HIGH;
+		const auto displayLow = circuitTwo ? bmsx::GX_GPU_PCRTC_DISPLAY2_LOW : bmsx::GX_GPU_PCRTC_DISPLAY1_LOW;
+		const auto displayHigh = circuitTwo ? bmsx::GX_GPU_PCRTC_DISPLAY2_HIGH : bmsx::GX_GPU_PCRTC_DISPLAY1_HIGH;
+		if (circuitTwo) words[bmsx::GX_GPU_PCRTC_PMODE_LOW] = bmsx::GX_GPU_PCRTC_PMODE_EN2 | bmsx::GX_GPU_PCRTC_PMODE_AMOD;
+		const bmsx::u32 sourceX = 1016u + (width & 7u);
+		words[sourceLow] = 255u | (16u << 9u) | (bmsx::GX_GPU_PSMGX16 << 15u);
+		words[sourceHigh] = sourceX | (3u << 11u);
+		words[displayLow] = words[bmsx::GX_GPU_PCRTC_DISPLAY1_LOW];
+		words[displayHigh] = (width * 4u - 1u) | (2u << 12u);
+		bmsx::GxGpuPcrtcTiming timing{};
+		bmsx::GxGpuPcrtcScanout scanout{};
+		timing.update(words);
+		scanout.update(words, timing);
+		require(scanout.outputWidth == width && scanout.outputHeight == 3u,
+			"short wrapped rows retain their programmed PCRTC extents");
+		bmsx::GxGpuPipelineState state{};
+		state.width = width; state.height = 3;
+		const size_t pitch = width + 3u;
+		std::vector<bmsx::u32> pixels(pitch * 3u, untouched);
+		bmsx::scanoutGxGpuSoftwareVram(software, pixels.data(), pitch, state, scanout, 0u);
+		for (size_t y = 0; y < 3u; ++y) for (size_t x = 0; x < pitch; ++x) {
+			if (x >= width) {
+				require(pixels[y * pitch + x] == untouched, "short rows preserve destination stride padding");
+				continue;
+			}
+			const bmsx::u32 word = software.vram[(255u * 4096u + (3u + y) * 1024u + sourceX + x) & software.vramWordMask];
+			const bmsx::u32 red = word & 31u, green = (word >> 5u) & 31u, blue = (word >> 10u) & 31u;
+			const bmsx::u32 expected = ((word & 0x8000u) << 16u)
+				| (((red << 3u) | (red >> 2u)) << 16u)
+				| (((green << 3u) | (green >> 2u)) << 8u)
+				| (blue << 3u) | (blue >> 2u);
+			require(pixels[y * pitch + x] == expected,
+				"both raw-RGBA circuits preserve unaligned row starts, vector tails and installed-VRAM wrap");
+		}
+	}
+}
+
 void testSoftwareScanoutUsesNativeOutputDimensions() {
 	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, 256u * 212u);
 	bmsx::SoftwareBackend backend(256, 192, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
@@ -5696,6 +5775,8 @@ int main() {
 	testSoftwareScanoutConsumesTransfersAndFill();
 	testSoftwarePresentationCopiesRgbAsOpaquePixels();
 	testNativePresentationRetainsHistoryAcrossHostResizing();
+	testSoftwareGx16ScanoutExpandsEveryRawWord();
+	testSoftwareGx16ScanoutWrapsShortUnalignedRows();
 	testSoftwareScanoutUsesNativeOutputDimensions();
 	testSoftwarePcrtcComposesSourceAlphaTerminalCellsOverRetainedCircuitTwoPixels();
 	testPcrtcProjectsDisplaySignalsAndSamplesMagnifiedSource();
