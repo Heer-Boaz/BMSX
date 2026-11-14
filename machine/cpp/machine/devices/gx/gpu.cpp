@@ -752,8 +752,16 @@ void GxGpu::copyDrawState(GxGpuDrawState& state) const {
 }
 
 void GxGpu::prepareGp0Commands() {
-	if (m_pendingCommandCompletionCycle == 0 || m_gp0ImageLoadWordsRemaining != 0u || m_gp0PolylineOpcode != 0u
+	if (m_pendingCommandCompletionCycle == 0 || m_gp0ImageLoadWordsRemaining != 0u
 		|| m_gp0CommandWordCount != 0u || m_commandBuffer.readback.phase() != GX_GPU_READBACK_IDLE) return;
+	if (m_preparedCommands.count == 0u) {
+		m_preparedCommands.sourceWordCount = 0u;
+		m_preparedCommands.polylineOpcode = m_gp0PolylineOpcode;
+		m_preparedCommands.polylineColorWord = m_gp0PolylineColorWord;
+		m_preparedCommands.polylinePositionWord = m_gp0PolylinePositionWord;
+		m_preparedCommands.polylineNextColorWord = m_gp0PolylineNextColorWord;
+		m_preparedCommands.polylinePayloadPhase = m_gp0PolylinePayloadPhase;
+	}
 	if (m_preparedTimingDirty || m_preparedCommands.count == 0u) {
 		copyDrawState(m_projectedDrawState);
 		m_preparedCommands.retime(m_pendingCommandCompletionCycle, m_projectedDrawState);
@@ -761,40 +769,9 @@ void GxGpu::prepareGp0Commands() {
 	}
 	if (m_preparedCommands.count != 0u
 		&& m_preparedCommands.packets[m_preparedCommands.index(m_preparedCommands.count - 1u)].kind == GX_GPU_COMMAND_READ_VRAM_TO_CPU) return;
-	i64 startCycle = m_preparedCommands.count == 0u ? m_pendingCommandCompletionCycle
+	const i64 startCycle = m_preparedCommands.count == 0u ? m_pendingCommandCompletionCycle
 		: m_preparedCommands.completionCycles[m_preparedCommands.index(m_preparedCommands.count - 1u)];
-	const size_t fifoWords = m_gp0Fifo.count();
-	const size_t sourceWords = fifoWords + m_gp0DmaIngress.count();
-	while (m_preparedCommands.count < GX_GPU_PREPARED_COMMAND_CAPACITY && m_preparedCommands.sourceWordCount < sourceWords) {
-		const size_t source = m_preparedCommands.sourceWordCount;
-		const u32 header = source < fifoWords ? m_gp0Fifo.peek(source) : m_gp0DmaIngress.peek(source - fifoWords);
-		const u32 opcode = header >> GX_GPU_GP0_OPCODE_SHIFT;
-		if (gxGpuGp0OpcodeIsNop(opcode)) {
-			++m_preparedCommands.sourceWordCount;
-			continue;
-		}
-		// Image payloads and variable-length polylines retain their streaming
-		// datapaths. Their actual start is the next preparation horizon.
-		if ((opcode >= GX_GPU_GP0_CPU_TO_VRAM_FIRST && opcode <= GX_GPU_GP0_CPU_TO_VRAM_LAST)
-			|| (opcode >= GX_GPU_GP0_LINE_FIRST && opcode <= GX_GPU_GP0_LINE_LAST
-				&& (opcode & GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT) != 0u)) break;
-		const u32 words = gp0CommandWordCountForOpcode(opcode);
-		if (words > sourceWords - source) break;
-		const size_t index = m_preparedCommands.index(m_preparedCommands.count);
-		auto& packet = m_preparedCommands.packets[index];
-		packet.words[0] = header;
-		for (u32 word = 1u; word < words; ++word) {
-			const size_t sourceIndex = source + word;
-			packet.words[word] = sourceIndex < fifoWords ? m_gp0Fifo.peek(sourceIndex) : m_gp0DmaIngress.peek(sourceIndex - fifoWords);
-		}
-		prepareGpuPacket(packet, words, m_projectedDrawState);
-		m_preparedCommands.startCycles[index] = startCycle;
-		startCycle += (packet.ticks + 1) >> 1u;
-		m_preparedCommands.completionCycles[index] = startCycle;
-		m_preparedCommands.sourceWordCount += words;
-		++m_preparedCommands.count;
-		if (packet.kind == GX_GPU_COMMAND_READ_VRAM_TO_CPU) break;
-	}
+	m_preparedCommands.prepare(m_gp0Fifo, m_gp0DmaIngress, startCycle, m_projectedDrawState);
 }
 
 i64 GxGpu::preparedCommandDeadline() const {
@@ -871,35 +848,42 @@ void GxGpu::consumeGp0Fifo(i64 commandStartCycle) {
 			consumeImageLoadWords(commandStartCycle);
 			continue;
 		}
-		if (m_gp0PolylineOpcode != 0u) {
-			const u32 word = m_gp0Fifo.peek();
-			if (m_gp0PolylinePayloadPhase == 0u && (word & 0xf000f000u) == 0x50005000u) {
-				m_gp0Fifo.pop();
-				clearPolylineState();
-				continue;
-			}
-			if ((m_gp0PolylineOpcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) == 0u
-				|| m_gp0PolylinePayloadPhase != 0u) {
-				if (commandBufferDrainRequired()) {
-					return;
-				}
-			}
-			consumeGp0PolylinePayloadWord(m_gp0Fifo.pop(), commandStartCycle);
+		if (m_gp0PolylineOpcode != 0u && m_gp0PolylinePayloadPhase == 0u
+			&& (m_gp0Fifo.peek() & 0xf000f000u) == 0x50005000u) {
+			m_gp0Fifo.pop();
+			if (m_preparedCommands.sourceWordCount != 0u) --m_preparedCommands.sourceWordCount;
+			clearPolylineState();
 			continue;
 		}
 		if (m_preparedCommands.count != 0u) {
 			if (commandBufferDrainRequired()) return;
 			// A zero-cost predecessor can reach this start before ingress has
 			// refilled the physical FIFO. Return to the transport datapath first.
-			if (m_preparedCommands.packets[m_preparedCommands.head].wordCount > m_gp0Fifo.count()) return;
+			const u32 sourceWords = m_preparedCommands.sourceWordCounts[m_preparedCommands.head];
+			if (sourceWords > m_gp0Fifo.count()) return;
 			if (m_preparedTimingDirty || m_preparedCommands.startCycles[m_preparedCommands.head] != commandStartCycle) {
 				copyDrawState(m_projectedDrawState);
 				m_preparedCommands.retime(commandStartCycle, m_projectedDrawState);
 				m_preparedTimingDirty = false;
 			}
 			const auto& packet = m_preparedCommands.pop();
-			for (u32 word = 0u; word < packet.wordCount; ++word) m_gp0Fifo.pop();
-			executeGp0Command(packet, commandStartCycle);
+			for (u32 word = 0u; word < sourceWords; ++word) m_gp0Fifo.pop();
+			if (packet.kind == GX_GPU_COMMAND_DRAW_LINE && (packet.opcode & GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT) != 0u) {
+				emitPreparedGp0Command(packet, commandStartCycle);
+				const bool gouraud = (packet.opcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) != 0u;
+				m_gp0PolylineColorWord = packet.words[gouraud ? 2u : 0u];
+				m_gp0PolylinePositionWord = packet.words[gouraud ? 3u : 2u];
+				m_gp0PolylineNextColorWord = 0u;
+				m_gp0PolylinePayloadPhase = 0u;
+			} else {
+				executeGp0Command(packet, commandStartCycle);
+			}
+			continue;
+		}
+		if (m_gp0PolylineOpcode != 0u) {
+			if (((m_gp0PolylineOpcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) == 0u
+				|| m_gp0PolylinePayloadPhase != 0u) && commandBufferDrainRequired()) return;
+			consumeGp0PolylinePayloadWord(m_gp0Fifo.pop(), commandStartCycle);
 			continue;
 		}
 		if (m_gp0CommandTargetWordCount == 0u) {

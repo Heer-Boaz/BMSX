@@ -33,8 +33,8 @@ const gouraudTexturedQuad = [
 	0x3c0000ff, 0, 0, 0x0000ff00, 8, 0x01000008,
 	0x00ff0000, 0x00080000, 0x00080000, 0x00ffffff, 0x00080008, 0x00080008,
 ];
-function submitDmaCommands(h: Fixture, words: readonly number[]): void {
-	h.gpu.writeGp0((gp0.GX_GPU_GP0_DRAWING_AREA_BOTTOM_RIGHT << 24) | (255 << 10) | 255);
+function submitDmaCommands(h: Fixture, words: readonly number[], setupDrawingArea = true): void {
+	if (setupDrawingArea) h.gpu.writeGp0((gp0.GX_GPU_GP0_DRAWING_AREA_BOTTOM_RIGHT << 24) | (255 << 10) | 255);
 	h.gpu.writeGp1((gp1.GX_GPU_GP1_DMA_DIRECTION << 24) | gp0.GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
 	const source = map.DYNAMIC_RAM_BASE + 0x1000;
 	for (let i = 0; i < words.length; ++i) h.memory.writeU32(source + 4 * i, words[i]);
@@ -258,4 +258,134 @@ test('zero-tick clipped packets refill the physical FIFO before consuming cached
 	assert.equal(reference.scheduler.nowCycles, h.scheduler.nowCycles);
 	assert.deepEqual(h.gpu.captureState().commandBuffer, reference.gpu.captureState().commandBuffer);
 	assert.deepEqual(h.gpu.captureState().commandBuffer.words, words.slice(0, -1));
+});
+
+for (const gouraud of [false, true]) {
+	test(`prepared ${gouraud ? 'Gouraud' : 'flat'} polyline segments retain raw ingress and exact IRQ timing`, () => {
+		const h = fixture(), reference = fixture(), segments = 80;
+		const colors = [0x1f000011, 0x00000022, 0xe7000033, 0x04000044];
+		const words = [gouraud ? 0x580000ff : 0x480000ff, 0x00080008];
+		for (let vertex = 1; vertex <= segments; ++vertex) {
+			if (gouraud) words.push(colors[(vertex - 1) & 3]);
+			words.push(gouraud && vertex === 16 ? 0x50005000 : ((vertex & 1) === 0 ? 0x00080008 : 0x00080018));
+		}
+		words.push(0x50005000, 0, 0xe7001234, 0x1f000000);
+		assert.ok(words.length <= 256, 'the complete stream fits one accepted DMA block');
+		reference.gpu.setOperationObserver({ emitted() {} });
+		submitDmaCommands(h, words); submitDmaCommands(reference, words);
+		const cycle = h.scheduler.nowCycles, queued = h.gpu.captureState(), headerWords = gouraud ? 4 : 3;
+		assert.equal(reference.scheduler.nowCycles, cycle);
+		assert.equal(queued.gp0FifoWords.length, 16, 'preparation does not release physical FIFO slots');
+		assert.deepEqual(queued.gp0FifoWords, words.slice(headerWords, headerWords + 16));
+		assert.deepEqual(queued.gp0DmaIngressWords, words.slice(headerWords + 16));
+		assert.equal(h.memory.readIoU32(io.IO_IRQ_FLAGS) & io.IRQ_GPU, 0, 'IRQ-shaped colors are payload');
+		const services = runToIrq(h);
+		runToIrq(reference);
+		assert.equal(h.scheduler.nowCycles, cycle + 17 + (segments - 1) * 9 + (gouraud ? 8 : 0));
+		assert.equal(reference.scheduler.nowCycles, h.scheduler.nowCycles);
+		assert.ok(services <= ((segments + 14) / 15 | 0) + 2, `bounded segment horizon used ${services} services`);
+		const actual = h.gpu.captureState().commandBuffer;
+		assert.deepEqual(actual, reference.gpu.captureState().commandBuffer);
+		assert.equal(actual.commandCount, segments);
+		assert.equal(actual.executedCommandCount, segments);
+		if (gouraud) {
+			assert.equal(actual.words[actual.commandWordStart[15] + 3], 0x50005000, 'terminator-shaped position stays raw data');
+			for (let segment = 0; segment < segments; ++segment) {
+				assert.equal(actual.words[actual.commandWordStart[segment] + 2], colors[segment & 3], 'NOP/IRQ-shaped colors remain unmodified');
+			}
+		}
+	});
+}
+
+test('restore rebuilds a prepared active flat polyline without changing FIFO credits or its future IRQ', () => {
+	const h = fixture(), segments = 80, words = [0x480000ff, 0x00080008];
+	for (let vertex = 1; vertex <= segments; ++vertex) words.push((vertex & 1) === 0 ? 0x00080008 : 0x00080018);
+	words.push(0x50005000, 0, 0xe7001234, 0x1f000000);
+	submitDmaCommands(h, words);
+	const start = h.scheduler.nowCycles;
+	h.scheduler.advanceTo(start + 5);
+	const state = h.gpu.captureState(), dmaState = h.dma.captureState();
+	assert.equal(state.gp0PolylineOpcode, 0x48);
+	assert.equal(state.pendingCommandCycles, 12);
+	const restored = fixture(); restored.scheduler.advanceTo(start + 5);
+	restored.dma.restoreState(dmaState, start + 5); restored.gpu.restoreState(state);
+	restored.dma.postLoad(); restored.gpu.dependencyStateChanged();
+	const restoredState = restored.gpu.captureState();
+	assert.deepEqual(restoredState.gp0FifoWords, state.gp0FifoWords);
+	assert.deepEqual(restoredState.gp0DmaIngressWords, state.gp0DmaIngressWords);
+	h.gpu.setOperationObserver({ emitted() {} });
+	const services = runToIrq(restored); runToIrq(h);
+	assert.equal(restored.scheduler.nowCycles, start + 17 + (segments - 1) * 9);
+	assert.equal(h.scheduler.nowCycles, restored.scheduler.nowCycles);
+	assert.ok(services <= ((segments + 14) / 15 | 0) + 2);
+	assert.deepEqual(restored.gpu.captureState().commandBuffer, h.gpu.captureState().commandBuffer);
+});
+
+test('an open Gouraud polyline executes before its terminator and restores a pending raw continuation color', () => {
+	const h = fixture();
+	for (const word of [0xe403fcff, 0x580000ff, 0x00080008, 0x1f000011, 0x00080018]) h.gpu.writeGp0(word);
+	h.scheduler.advanceTo(18); h.gpu.readStatus();
+	const open = h.gpu.captureState();
+	assert.equal(open.gp0PolylineOpcode, 0x58);
+	assert.equal(open.commandBuffer.commandCount, 1);
+	assert.equal(open.commandBuffer.executedCommandCount, 1, 'the first segment completed without any terminator');
+	h.gpu.writeGp0(0xe7000033);
+	const state = h.gpu.captureState(), dmaState = h.dma.captureState();
+	assert.equal(state.gp0PolylinePayloadPhase, 1);
+	assert.equal(state.gp0PolylineNextColorWord, 0xe7000033);
+	const restored = fixture(); restored.scheduler.advanceTo(18);
+	restored.dma.restoreState(dmaState, 18); restored.gpu.restoreState(state);
+	restored.dma.postLoad(); restored.gpu.dependencyStateChanged();
+	assert.equal(restored.gpu.captureState().gp0PolylineNextColorWord, 0xe7000033);
+	h.gpu.setOperationObserver({ emitted() {} });
+	const words = [0x50005000];
+	for (let vertex = 0; vertex < 40; ++vertex) words.push(vertex & 1 ? 0x04000044 : 0x1f000011, vertex & 1 ? 0x00080008 : 0x00080018);
+	words.push(0x50005000, 0, 0xe7001234, 0x1f000000);
+	submitDmaCommands(h, words, false); submitDmaCommands(restored, words, false);
+	const start = restored.scheduler.nowCycles;
+	assert.equal(restored.memory.readIoU32(io.IO_IRQ_FLAGS) & io.IRQ_GPU, 0);
+	const services = runToIrq(restored); runToIrq(h);
+	assert.equal(restored.scheduler.nowCycles, start + 13 + 13 + 39 * 9);
+	assert.equal(h.scheduler.nowCycles, restored.scheduler.nowCycles);
+	assert.ok(services <= ((41 + 14) / 15 | 0) + 2);
+	const actual = restored.gpu.captureState().commandBuffer;
+	assert.deepEqual(actual, h.gpu.captureState().commandBuffer);
+	assert.equal(actual.words[actual.commandWordStart[1] + 2], 0xe7000033);
+	assert.equal(actual.words[actual.commandWordStart[1] + 3], 0x50005000);
+});
+
+test('GP1 retimes future prepared polyline segments while the current segment retains its Y gate', () => {
+	const h = fixture(), reference = fixture(), segments = 40;
+	const words = [0xe40fffff, 0x480000ff, 0x02000008];
+	for (let vertex = 1; vertex <= segments; ++vertex) words.push((vertex & 1) === 0 ? 0x02000008 : 0x02000018);
+	words.push(0x50005000, 0, 0xe7001234, 0x1f000000);
+	reference.gpu.setOperationObserver({ emitted() {} });
+	submitDmaCommands(h, words); submitDmaCommands(reference, words);
+	const start = h.scheduler.nowCycles;
+	h.scheduler.advanceTo(start + 1); reference.scheduler.advanceTo(start + 1);
+	for (const target of [h, reference]) target.gpu.writeGp1((gp1.GX_GPU_GP1_VRAM_Y_ADDRESS_EXTENSION << 24) | 1);
+	assert.equal(h.gpu.captureState().commandBuffer.commandVramYAddressExtensionWord[0], 0);
+	runToIrq(h); runToIrq(reference);
+	assert.equal(h.scheduler.nowCycles, start + 1 + 8 + (segments - 1) * 9);
+	assert.equal(reference.scheduler.nowCycles, h.scheduler.nowCycles);
+	const actual = h.gpu.captureState().commandBuffer;
+	assert.deepEqual(actual, reference.gpu.captureState().commandBuffer);
+	assert.deepEqual(actual.commandVramYAddressExtensionWord, [0, ...Array(segments - 1).fill(1)]);
+});
+
+test('prepared polyline segments reach their exact C0 readback fence before a later IRQ', () => {
+	const h = fixture(), reference = fixture(), segments = 20, words = [0x480000ff, 0x00080008];
+	for (let vertex = 1; vertex <= segments; ++vertex) words.push((vertex & 1) === 0 ? 0x00080008 : 0x00080018);
+	words.push(0x50005000, 0xc0000000, 0x00080008, 0x00010001, 0x1f000000);
+	reference.gpu.setOperationObserver({ emitted() {} });
+	submitDmaCommands(h, words); submitDmaCommands(reference, words);
+	const start = h.scheduler.nowCycles;
+	for (let event = 0; event < 32 && h.gpu.captureState().commandBuffer.readbackPhase === 0; ++event) step(h);
+	while (reference.scheduler.nextDeadline() <= h.scheduler.nowCycles) step(reference);
+	assert.equal(h.scheduler.nowCycles, start + 17 + (segments - 1) * 9 + 1);
+	const state = h.gpu.captureState();
+	assert.deepEqual(state.commandBuffer, reference.gpu.captureState().commandBuffer);
+	assert.equal(state.commandBuffer.readbackPhase, 1);
+	assert.equal(state.commandBuffer.readbackFenceCommandCount, state.commandBuffer.executedCommandCount);
+	assert.equal(h.memory.readIoU32(io.IO_IRQ_FLAGS) & io.IRQ_GPU, 0, 'C0 blocks the later IRQ until backend readback');
 });

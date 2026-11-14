@@ -1,7 +1,7 @@
 import { GP0_STREAM_IRQ, GP0_STREAM_READBACK, Gp0StreamCursor, Gp0WordAdmission, GX_GPU_GP0_INGRESS_COMMAND, GX_GPU_GP0_INGRESS_IMAGE_PAYLOAD, GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD, gp0CommandWordCountForOpcode, gxGpuGp0OpcodeIsNop } from './gp0_stream';
 import { GxGpuPacket, type GxGpuDrawState, GX_GPU_DRAW_MODE_MASK, GX_GPU_MASK_BIT_MODE_MASK } from './gpu_packet';
 export { GX_GPU_DRAW_MODE_MASK, GX_GPU_TEXTURE_WINDOW_MASK, GX_GPU_DRAWING_AREA_MASK, GX_GPU_DRAWING_OFFSET_MASK, GX_GPU_MASK_BIT_MODE_MASK } from './gpu_packet';
-import { GxGpuPreparedCommands, GX_GPU_PREPARED_COMMAND_CAPACITY } from './gpu_prepared_commands';
+import { GxGpuPreparedCommands } from './gpu_prepared_commands';
 import { DmaEndpoint } from '../dma/endpoints';
 import type { CPU } from '../../cpu/cpu';
 import {
@@ -64,15 +64,11 @@ import {
 	GX_GPU_COMMAND_FIFO_WORD_CAPACITY,
 	GX_GPU_DMA_INGRESS_WORD_CAPACITY,
 	GX_GPU_GP0_COMMAND_BUFFER_WORDS,
-	GX_GPU_GP0_CPU_TO_VRAM_FIRST,
-	GX_GPU_GP0_CPU_TO_VRAM_LAST,
 	GX_GPU_GP0_DRAWING_AREA_BOTTOM_RIGHT,
 	GX_GPU_GP0_DRAWING_AREA_TOP_LEFT,
 	GX_GPU_GP0_DRAWING_OFFSET,
 	GX_GPU_GP0_DRAW_MODE,
 	GX_GPU_GP0_IRQ_REQUEST,
-	GX_GPU_GP0_LINE_FIRST,
-	GX_GPU_GP0_LINE_LAST,
 	GX_GPU_GP0_MASK_BIT,
 	GX_GPU_GP0_OPCODE_SHIFT,
 	GX_GPU_GP0_RENDER_GOURAUD_BIT,
@@ -1235,33 +1231,42 @@ export class GxGpu {
 				this.consumeImageLoadWords(nowCycles);
 				continue;
 			}
-			if (this.gp0PolylineOpcode !== 0) {
-				const word = this.gp0Fifo.peek();
-				if (this.gp0PolylinePayloadPhase === 0 && (word & 0xf000f000) === 0x50005000) {
-					this.gp0Fifo.pop();
-					this.clearPolylineState();
-					continue;
-				}
-				if ((this.gp0PolylineOpcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) === 0
-					|| this.gp0PolylinePayloadPhase !== 0) {
-					if (this.commandBufferDrainRequired()) {
-						return;
-					}
-				}
-				this.consumeGp0PolylinePayloadWord(this.gp0Fifo.pop(), nowCycles);
+			if (this.gp0PolylineOpcode !== 0 && this.gp0PolylinePayloadPhase === 0
+				&& (this.gp0Fifo.peek() & 0xf000f000) === 0x50005000) {
+				this.gp0Fifo.pop();
+				if (this.preparedCommands.sourceWordCount !== 0) --this.preparedCommands.sourceWordCount;
+				this.clearPolylineState();
 				continue;
 			}
 			if (this.preparedCommands.count !== 0) {
-				if (this.gp0Fifo.count() < this.preparedCommands.packets[this.preparedCommands.head].wordCount) return;
 				if (this.commandBufferDrainRequired()) return;
+				// A zero-cost predecessor can reach this start before ingress has
+				// refilled the physical FIFO. Return to the transport datapath first.
+				const sourceWords = this.preparedCommands.sourceWordCounts[this.preparedCommands.head];
+				if (sourceWords > this.gp0Fifo.count()) return;
 				if (this.preparedTimingDirty || this.preparedCommands.startCycles[this.preparedCommands.head] !== nowCycles) {
 					this.copyDrawState(this.projectedDrawState);
 					this.preparedCommands.retime(nowCycles, this.projectedDrawState);
 					this.preparedTimingDirty = false;
 				}
 				const packet = this.preparedCommands.pop();
-				for (let word = 0; word < packet.wordCount; ++word) this.gp0Fifo.pop();
-				this.executeGp0Command(packet, nowCycles);
+				for (let word = 0; word < sourceWords; ++word) this.gp0Fifo.pop();
+				if (packet.kind === GX_GPU_COMMAND_DRAW_LINE && (packet.opcode & GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT) !== 0) {
+					this.emitPreparedGp0Command(packet, nowCycles);
+					const gouraud = (packet.opcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) !== 0;
+					this.gp0PolylineColorWord = packet.words[gouraud ? 2 : 0];
+					this.gp0PolylinePositionWord = packet.words[gouraud ? 3 : 2];
+					this.gp0PolylineNextColorWord = 0;
+					this.gp0PolylinePayloadPhase = 0;
+				} else {
+					this.executeGp0Command(packet, nowCycles);
+				}
+				continue;
+			}
+			if (this.gp0PolylineOpcode !== 0) {
+				if (((this.gp0PolylineOpcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) === 0
+					|| this.gp0PolylinePayloadPhase !== 0) && this.commandBufferDrainRequired()) return;
+				this.consumeGp0PolylinePayloadWord(this.gp0Fifo.pop(), nowCycles);
 				continue;
 			}
 
@@ -1379,45 +1384,26 @@ export class GxGpu {
 	}
 
 	private prepareGp0Commands(): void {
-		if (this.pendingCommandCompletionCycle === 0 || this.gp0ImageLoadWordsRemaining !== 0 || this.gp0PolylineOpcode !== 0
+		if (this.pendingCommandCompletionCycle === 0 || this.gp0ImageLoadWordsRemaining !== 0
 			|| this.gp0CommandWordCount !== 0 || this.commandBuffer.readback.phase !== GX_GPU_READBACK_IDLE) return;
-		const queue = this.preparedCommands;
-		if (this.preparedTimingDirty || queue.count === 0) {
+		if (this.preparedCommands.count === 0) {
+			this.preparedCommands.sourceWordCount = 0;
+			this.preparedCommands.polylineOpcode = this.gp0PolylineOpcode;
+			this.preparedCommands.polylineColorWord = this.gp0PolylineColorWord;
+			this.preparedCommands.polylinePositionWord = this.gp0PolylinePositionWord;
+			this.preparedCommands.polylineNextColorWord = this.gp0PolylineNextColorWord;
+			this.preparedCommands.polylinePayloadPhase = this.gp0PolylinePayloadPhase;
+		}
+		if (this.preparedTimingDirty || this.preparedCommands.count === 0) {
 			this.copyDrawState(this.projectedDrawState);
-			queue.retime(this.pendingCommandCompletionCycle, this.projectedDrawState);
+			this.preparedCommands.retime(this.pendingCommandCompletionCycle, this.projectedDrawState);
 			this.preparedTimingDirty = false;
 		}
-		if (queue.count !== 0 && queue.packets[queue.index(queue.count - 1)].kind === GX_GPU_COMMAND_READ_VRAM_TO_CPU) return;
-		let startCycle = queue.count === 0 ? this.pendingCommandCompletionCycle : queue.completionCycles[queue.index(queue.count - 1)];
-		const fifoWords = this.gp0Fifo.count(), sourceWords = fifoWords + this.gp0DmaIngress.count();
-		while (queue.count < GX_GPU_PREPARED_COMMAND_CAPACITY && queue.sourceWordCount < sourceWords) {
-			const sourceIndex = queue.sourceWordCount;
-			const header = sourceIndex < fifoWords ? this.gp0Fifo.peek(sourceIndex) : this.gp0DmaIngress.peek(sourceIndex - fifoWords);
-			const opcode = header >>> GX_GPU_GP0_OPCODE_SHIFT;
-			if (gxGpuGp0OpcodeIsNop(opcode)) {
-				++queue.sourceWordCount;
-				continue;
-			}
-			// Streaming payloads retain their own assembly and establish the next horizon.
-			if ((opcode >= GX_GPU_GP0_CPU_TO_VRAM_FIRST && opcode <= GX_GPU_GP0_CPU_TO_VRAM_LAST)
-				|| (opcode >= GX_GPU_GP0_LINE_FIRST && opcode <= GX_GPU_GP0_LINE_LAST
-					&& (opcode & GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT) !== 0)) break;
-			const words = gp0CommandWordCountForOpcode(opcode);
-			if (words > sourceWords - sourceIndex) break;
-			const index = queue.index(queue.count), packet = queue.packets[index];
-			packet.words[0] = header;
-			for (let word = 1; word < words; ++word) {
-				const sourceWord = sourceIndex + word;
-				packet.words[word] = sourceWord < fifoWords ? this.gp0Fifo.peek(sourceWord) : this.gp0DmaIngress.peek(sourceWord - fifoWords);
-			}
-			prepareGpuPacket(packet, words, this.projectedDrawState);
-			queue.startCycles[index] = startCycle;
-			startCycle += (packet.ticks + 1) >> 1;
-			queue.completionCycles[index] = startCycle;
-			queue.sourceWordCount += words;
-			++queue.count;
-			if (packet.kind === GX_GPU_COMMAND_READ_VRAM_TO_CPU) break;
-		}
+		if (this.preparedCommands.count !== 0
+			&& this.preparedCommands.packets[this.preparedCommands.index(this.preparedCommands.count - 1)].kind === GX_GPU_COMMAND_READ_VRAM_TO_CPU) return;
+		const startCycle = this.preparedCommands.count === 0 ? this.pendingCommandCompletionCycle
+			: this.preparedCommands.completionCycles[this.preparedCommands.index(this.preparedCommands.count - 1)];
+		this.preparedCommands.prepare(this.gp0Fifo, this.gp0DmaIngress, startCycle, this.projectedDrawState);
 	}
 
 	private preparedCommandDeadline(): number {

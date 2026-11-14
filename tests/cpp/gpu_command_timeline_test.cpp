@@ -59,8 +59,8 @@ struct Harness {
 		}
 		return gpuServices;
 	}
-	void submitDmaCommands(const std::vector<u32>& words) {
-		gpu.writeGp0((GX_GPU_GP0_DRAWING_AREA_BOTTOM_RIGHT << 24u) | (255u << 10u) | 255u);
+	void submitDmaCommands(const std::vector<u32>& words, bool setupDrawingArea = true) {
+		if (setupDrawingArea) gpu.writeGp0((GX_GPU_GP0_DRAWING_AREA_BOTTOM_RIGHT << 24u) | (255u << 10u) | 255u);
 		gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24u) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
 		constexpr u32 source = DYNAMIC_RAM_BASE + 0x1000u;
 		for (u32 i = 0u; i < words.size(); ++i) memory.writeU32(source + 4u * i, words[i]);
@@ -90,6 +90,174 @@ struct Harness {
 		scheduler.advanceTo(target);
 	}
 };
+void requireSameCommandBuffer(const GxGpuCommandBufferState& actual, const GxGpuCommandBufferState& expected) {
+	require(actual.commandCount == expected.commandCount && actual.executedCommandCount == expected.executedCommandCount
+		&& actual.presentCommandCount == expected.presentCommandCount && actual.wordCount == expected.wordCount,
+		"canonical command buffer frontiers match observed reference");
+	require(actual.words == expected.words && actual.commandKind == expected.commandKind && actual.commandOpcode == expected.commandOpcode
+		&& actual.commandWordStart == expected.commandWordStart && actual.commandWordCount == expected.commandWordCount
+		&& actual.commandDrawModeWord == expected.commandDrawModeWord
+		&& actual.commandVramYAddressExtensionWord == expected.commandVramYAddressExtensionWord
+		&& actual.commandTextureWindowWord == expected.commandTextureWindowWord
+		&& actual.commandDrawingAreaTopLeftWord == expected.commandDrawingAreaTopLeftWord
+		&& actual.commandDrawingAreaBottomRightWord == expected.commandDrawingAreaBottomRightWord
+		&& actual.commandDrawingOffsetWord == expected.commandDrawingOffsetWord
+		&& actual.commandMaskBitModeWord == expected.commandMaskBitModeWord
+		&& actual.commandSkippedLineParity == expected.commandSkippedLineParity,
+		"canonical command words and all latched draw state match observed reference");
+	require(actual.readbackPhase == expected.readbackPhase && actual.readbackFenceCommandCount == expected.readbackFenceCommandCount
+		&& actual.readbackX == expected.readbackX && actual.readbackY == expected.readbackY
+		&& actual.readbackVramYAddressExtensionWord == expected.readbackVramYAddressExtensionWord
+		&& actual.readbackWidth == expected.readbackWidth && actual.readbackHeight == expected.readbackHeight
+		&& actual.readbackPixelCursor == expected.readbackPixelCursor && actual.readbackPixelBytes == expected.readbackPixelBytes,
+		"canonical readback state matches observed reference");
+}
+void testPreparedPolyline(bool gouraud) {
+	Harness h, reference;
+	constexpr u32 segments = 80u;
+	constexpr std::array<u32, 4> colors{0x1f000011u, 0x00000022u, 0xe7000033u, 0x04000044u};
+	std::vector<u32> words{gouraud ? 0x580000ffu : 0x480000ffu, 0x00080008u};
+	for (u32 vertex = 1u; vertex <= segments; ++vertex) {
+		if (gouraud) words.push_back(colors[(vertex - 1u) & 3u]);
+		words.push_back(gouraud && vertex == 16u ? 0x50005000u : ((vertex & 1u) == 0u ? 0x00080008u : 0x00080018u));
+	}
+	words.insert(words.end(), {0x50005000u, 0u, 0xe7001234u, 0x1f000000u});
+	require(words.size() <= 256u, "complete polyline fits one accepted DMA block");
+	reference.gpu.setOperationObserver({[](void*, const GxGpuCommandBuffer&, size_t, i64, std::span<const u32>) {}, nullptr});
+	h.submitDmaCommands(words); reference.submitDmaCommands(words);
+	const i64 start = h.scheduler.nowCycles();
+	const auto queued = h.gpu.captureState();
+	const size_t headerWords = gouraud ? 4u : 3u;
+	require(reference.scheduler.nowCycles() == start, "reference has same completed DMA boundary");
+	require(queued.gp0FifoWords == std::vector<u32>(words.begin() + headerWords, words.begin() + headerWords + 16u),
+		"preparation retains physical FIFO words and all sixteen credits");
+	require(queued.gp0DmaIngressWords == std::vector<u32>(words.begin() + headerWords + 16u, words.end()),
+		"accepted continuation words remain in DMA ingress");
+	require((h.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU) == 0u, "IRQ-shaped colors remain payload");
+	const u32 services = h.runToIrq(); reference.runToIrq();
+	require(h.scheduler.nowCycles() == start + 17 + (segments - 1u) * 9u + (gouraud ? 8 : 0), "polyline IRQ has exact per-segment rounded timing");
+	require(reference.scheduler.nowCycles() == h.scheduler.nowCycles(), "observed reference reaches same IRQ cycle");
+	require(services <= (segments + 14u) / 15u + 2u, "bounded preparation avoids a GPU service per segment");
+	const auto actual = h.gpu.captureState().commandBuffer;
+	requireSameCommandBuffer(actual, reference.gpu.captureState().commandBuffer);
+	require(actual.commandCount == segments && actual.executedCommandCount == segments, "all segments execute before IRQ");
+	if (gouraud) {
+		require(actual.words[actual.commandWordStart[15] + 3u] == 0x50005000u, "terminator-shaped position remains position data");
+		for (u32 segment = 0u; segment < segments; ++segment) {
+			require(actual.words[actual.commandWordStart[segment] + 2u] == colors[segment & 3u], "NOP/IRQ-shaped colors are unchanged");
+		}
+	}
+}
+void testPreparedPolylineRestore() {
+	Harness h;
+	constexpr u32 segments = 80u;
+	std::vector<u32> words{0x480000ffu, 0x00080008u};
+	for (u32 vertex = 1u; vertex <= segments; ++vertex) words.push_back((vertex & 1u) == 0u ? 0x00080008u : 0x00080018u);
+	words.insert(words.end(), {0x50005000u, 0u, 0xe7001234u, 0x1f000000u});
+	h.submitDmaCommands(words);
+	const i64 start = h.scheduler.nowCycles();
+	h.scheduler.advanceTo(start + 5);
+	const auto state = h.gpu.captureState(); const auto dmaState = h.dma.captureState();
+	require(state.gp0PolylineOpcode == 0x48u && state.pendingCommandCycles == 12, "capture retains active first segment");
+	Harness restored; restored.scheduler.advanceTo(start + 5);
+	restored.dma.restoreState(dmaState, start + 5); restored.gpu.restoreState(state);
+	restored.dma.postLoad(); restored.gpu.dependencyStateChanged();
+	const auto restoredState = restored.gpu.captureState();
+	require(restoredState.gp0FifoWords == state.gp0FifoWords && restoredState.gp0DmaIngressWords == state.gp0DmaIngressWords,
+		"restore preserves raw physical queues");
+	h.gpu.setOperationObserver({[](void*, const GxGpuCommandBuffer&, size_t, i64, std::span<const u32>) {}, nullptr});
+	const u32 services = restored.runToIrq(); h.runToIrq();
+	require(restored.scheduler.nowCycles() == start + 17 + (segments - 1u) * 9u && h.scheduler.nowCycles() == restored.scheduler.nowCycles(),
+		"restored active polyline reaches exact IRQ");
+	require(services <= (segments + 14u) / 15u + 2u, "restored lookahead retains bounded services");
+	requireSameCommandBuffer(restored.gpu.captureState().commandBuffer, h.gpu.captureState().commandBuffer);
+}
+void testOpenGouraudColorRestore() {
+	Harness h;
+	for (u32 word : {0xe403fcffu, 0x580000ffu, 0x00080008u, 0x1f000011u, 0x00080018u}) h.gpu.writeGp0(word);
+	h.scheduler.advanceTo(18); h.gpu.readStatus();
+	const auto open = h.gpu.captureState();
+	require(open.gp0PolylineOpcode == 0x58u && open.commandBuffer.commandCount == 1u && open.commandBuffer.executedCommandCount == 1u,
+		"open polyline executes before any terminator");
+	h.gpu.writeGp0(0xe7000033u);
+	const auto state = h.gpu.captureState(); const auto dmaState = h.dma.captureState();
+	require(state.gp0PolylinePayloadPhase == 1u && state.gp0PolylineNextColorWord == 0xe7000033u, "partial continuation color is retained raw");
+	Harness restored; restored.scheduler.advanceTo(18);
+	restored.dma.restoreState(dmaState, 18); restored.gpu.restoreState(state);
+	restored.dma.postLoad(); restored.gpu.dependencyStateChanged();
+	require(restored.gpu.captureState().gp0PolylineNextColorWord == 0xe7000033u, "restore retains incomplete Gouraud color");
+	h.gpu.setOperationObserver({[](void*, const GxGpuCommandBuffer&, size_t, i64, std::span<const u32>) {}, nullptr});
+	std::vector<u32> words{0x50005000u};
+	for (u32 vertex = 0u; vertex < 40u; ++vertex) {
+		words.push_back((vertex & 1u) != 0u ? 0x04000044u : 0x1f000011u);
+		words.push_back((vertex & 1u) != 0u ? 0x00080008u : 0x00080018u);
+	}
+	words.insert(words.end(), {0x50005000u, 0u, 0xe7001234u, 0x1f000000u});
+	h.submitDmaCommands(words, false); restored.submitDmaCommands(words, false);
+	const i64 start = restored.scheduler.nowCycles();
+	require((restored.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU) == 0u, "opcode-looking colors do not raise IRQ");
+	const u32 services = restored.runToIrq(); h.runToIrq();
+	require(restored.scheduler.nowCycles() == start + 13 + 13 + 39 * 9 && h.scheduler.nowCycles() == restored.scheduler.nowCycles(),
+		"partial-color restore has exact IRQ timing");
+	require(services <= (41u + 14u) / 15u + 2u, "partial-color continuation uses bounded timeline");
+	const auto actual = restored.gpu.captureState().commandBuffer;
+	requireSameCommandBuffer(actual, h.gpu.captureState().commandBuffer);
+	require(actual.words[actual.commandWordStart[1] + 2u] == 0xe7000033u
+		&& actual.words[actual.commandWordStart[1] + 3u] == 0x50005000u, "saved color and terminator-shaped position remain raw payload");
+}
+void testPolylineGp1Retime() {
+	Harness h, reference;
+	constexpr u32 segments = 40u;
+	std::vector<u32> words{0xe40fffffu, 0x480000ffu, 0x02000008u};
+	for (u32 vertex = 1u; vertex <= segments; ++vertex) words.push_back((vertex & 1u) == 0u ? 0x02000008u : 0x02000018u);
+	words.insert(words.end(), {0x50005000u, 0u, 0xe7001234u, 0x1f000000u});
+	reference.gpu.setOperationObserver({[](void*, const GxGpuCommandBuffer&, size_t, i64, std::span<const u32>) {}, nullptr});
+	h.submitDmaCommands(words); reference.submitDmaCommands(words);
+	const i64 start = h.scheduler.nowCycles();
+	h.scheduler.advanceTo(start + 1); reference.scheduler.advanceTo(start + 1);
+	h.gpu.writeGp1((GX_GPU_GP1_VRAM_Y_ADDRESS_EXTENSION << 24u) | 1u);
+	reference.gpu.writeGp1((GX_GPU_GP1_VRAM_Y_ADDRESS_EXTENSION << 24u) | 1u);
+	require(h.gpu.captureState().commandBuffer.commandVramYAddressExtensionWord[0] == 0u, "active segment retains old Y latch");
+	h.runToIrq(); reference.runToIrq();
+	require(h.scheduler.nowCycles() == start + 1 + 8 + (segments - 1u) * 9u && reference.scheduler.nowCycles() == h.scheduler.nowCycles(),
+		"GP1 retimes only future segment timing");
+	const auto actual = h.gpu.captureState().commandBuffer;
+	requireSameCommandBuffer(actual, reference.gpu.captureState().commandBuffer);
+	require(actual.commandVramYAddressExtensionWord.size() == segments, "every segment has its own draw-state latch");
+	for (u32 segment = 0u; segment < segments; ++segment) require(actual.commandVramYAddressExtensionWord[segment] == (segment == 0u ? 0u : 1u),
+		"only future segments acquire new Y gate");
+}
+void testPolylineReadbackAndBackendDrain(bool drain) {
+	Harness h, reference;
+	constexpr u32 segments = 20u;
+	std::vector<u32> words{0x480000ffu, 0x00080008u};
+	for (u32 vertex = 1u; vertex <= segments; ++vertex) words.push_back((vertex & 1u) == 0u ? 0x00080008u : 0x00080018u);
+	words.insert(words.end(), {0x50005000u, 0xc0000000u, 0x00080008u, 0x00010001u, 0x1f000000u});
+	if (drain) { h.gpu.setBackendSubmissionCommandLimit(3u); reference.gpu.setBackendSubmissionCommandLimit(3u); }
+	reference.gpu.setOperationObserver({[](void*, const GxGpuCommandBuffer&, size_t, i64, std::span<const u32>) {}, nullptr});
+	h.submitDmaCommands(words); reference.submitDmaCommands(words);
+	const i64 start = h.scheduler.nowCycles();
+	u32 drains = 0u;
+	for (u32 event = 0u; event < 32u && h.gpu.captureState().commandBuffer.readbackPhase == 0u; ++event) {
+		h.step();
+		while (reference.scheduler.nextDeadline() <= h.scheduler.nowCycles()) reference.step();
+		reference.scheduler.advanceTo(h.scheduler.nowCycles());
+		requireSameCommandBuffer(h.gpu.captureState().commandBuffer, reference.gpu.captureState().commandBuffer);
+		if (h.gpu.backendCommandDrainPending()) {
+			require(reference.gpu.backendCommandDrainPending(), "reference has same backend drain dependency");
+			++drains;
+			h.gpu.retirePublishedCommands(); h.gpu.completePublishedCommands();
+			reference.gpu.retirePublishedCommands(); reference.gpu.completePublishedCommands();
+		}
+	}
+	if (drain) require(drains >= 6u, "backend actually retires completed prefixes during open polyline");
+	require(h.scheduler.nowCycles() == start + 17 + (segments - 1u) * 9u + 1, "readback fence follows exact polyline completion");
+	const auto state = h.gpu.captureState();
+	require(state.commandBuffer.readbackPhase == GX_GPU_READBACK_PENDING
+		&& state.commandBuffer.readbackFenceCommandCount == state.commandBuffer.executedCommandCount,
+		"C0 becomes pending at exact completed-command frontier");
+	require((h.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU) == 0u, "pending readback prevents later IRQ");
+}
 void testIrqTimeline() {
 	Harness h; h.enqueue(4);
 	require(h.gpu.captureState().gp0FifoWords.size() == 10u, "FIFO credits remain reserved before command starts");
@@ -327,6 +495,8 @@ void testPcrtcFieldEdge() {
 }
 }
 int main() {
+	testPreparedPolyline(false); testPreparedPolyline(true); testPreparedPolylineRestore(); testOpenGouraudColorRestore();
+	testPolylineGp1Retime(); testPolylineReadbackAndBackendDrain(false); testPolylineReadbackAndBackendDrain(true);
 	testDmaLongPacketHorizon(); testDmaHeaderNops(); testDmaPreparedReset(); testDmaPreparedRestore(); testZeroTickIngressRefill();
 	testBackendSubmissionHorizon();
 	testIrqTimeline(); testCpuFifoWait(); testGp1AndRestore(); testDmaWait(); testReadbackTimeline(); testDmaQueuedIrq(); testGp1YGate(); testPcrtcFieldEdge();
