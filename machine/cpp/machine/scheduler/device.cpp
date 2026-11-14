@@ -43,9 +43,25 @@ RunResult DeviceScheduler::runCpuSlice(int targetDepth, int sliceBudget, const T
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	// Same admission/consumption boundary as CpuTopologyDiagnostic::scheduler;
 	// this bounded probe needs the cumulative count/sum, not its histograms.
+	const DiagnosticExecutionProfile before = m_cpu.diagnosticExecutionProfile();
 	const auto result = m_cpu.runUntilDepth(targetDepth, sliceBudget, targetThread);
+	const auto& after = m_cpu.diagnosticExecutionProfile();
+	const i64 consumed = static_cast<i64>(sliceBudget) - m_cpu.instructionBudgetRemaining;
+	const i64 native = after.nativeOriginCycles - before.nativeOriginCycles;
 	++diagnosticCpuSliceCount;
-	diagnosticCpuSliceConsumedCycles += sliceBudget - m_cpu.instructionBudgetRemaining;
+	diagnosticCpuSliceConsumedCycles += consumed;
+	diagnosticNativeOriginCycles += native;
+	diagnosticInterpreterRuntimeCycles += consumed - native;
+	diagnosticNativeOpcodes.newt += after.nativeOpcodes.newt - before.nativeOpcodes.newt;
+	diagnosticNativeOpcodes.call += after.nativeOpcodes.call - before.nativeOpcodes.call;
+	diagnosticNativeOpcodes.setfield += after.nativeOpcodes.setfield - before.nativeOpcodes.setfield;
+	diagnosticNativeOpcodes.concat += after.nativeOpcodes.concat - before.nativeOpcodes.concat;
+	diagnosticNativeOpcodes.concatn += after.nativeOpcodes.concatn - before.nativeOpcodes.concatn;
+	diagnosticInterpreterOpcodes.newt += after.interpreterOpcodes.newt - before.interpreterOpcodes.newt;
+	diagnosticInterpreterOpcodes.call += after.interpreterOpcodes.call - before.interpreterOpcodes.call;
+	diagnosticInterpreterOpcodes.setfield += after.interpreterOpcodes.setfield - before.interpreterOpcodes.setfield;
+	diagnosticInterpreterOpcodes.concat += after.interpreterOpcodes.concat - before.interpreterOpcodes.concat;
+	diagnosticInterpreterOpcodes.concatn += after.interpreterOpcodes.concatn - before.interpreterOpcodes.concatn;
 	return result;
 #else
 	return m_cpu.runUntilDepth(targetDepth, sliceBudget, targetThread);

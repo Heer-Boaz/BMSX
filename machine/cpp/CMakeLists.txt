@@ -1126,6 +1126,10 @@ if(BMSX_BUILD_TESTS)
 	target_link_libraries(bmsx_cpu_string_work_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_string_work_tests COMMAND bmsx_cpu_string_work_tests)
 
+	add_executable(bmsx_cpu_backend_diagnostics_tests ../../tests/cpp/cpu_backend_diagnostics_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu_backend_diagnostics_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_cpu_backend_diagnostics_tests COMMAND bmsx_cpu_backend_diagnostics_tests)
+
 	add_executable(bmsx_cpu_compiled_heap_tests ../../tests/cpp/cpu_compiled_heap_test.cpp ${BMSX_TEST_ROM_SOURCE})
 	target_link_libraries(bmsx_cpu_compiled_heap_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_compiled_heap_tests COMMAND bmsx_cpu_compiled_heap_tests)

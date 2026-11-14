@@ -11,6 +11,9 @@
 #include "machine/cpu/value.h"
 #include "spec/blua32/opcode.h"
 #include "spec/blua32/cop0.h"
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+#include "machine/cpu/diagnostic_execution_profile.h"
+#endif
 
 namespace bmsx {
 
@@ -48,6 +51,9 @@ struct NativeBlockRunState {
 	u32 scalarPc = 0;
 	u32 memoryAddress = 0;
 	void* exitCode = nullptr;
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	DiagnosticNativeOpcodeCounts diagnosticOpcodes;
+#endif
 };
 
 enum class NativeBlockTransition : u32 {

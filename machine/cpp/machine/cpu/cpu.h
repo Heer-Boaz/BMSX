@@ -35,6 +35,7 @@
 #include "spec/blua32/execution_domain.h"
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 #include "machine/cpu/diagnostic_gc_profile.h"
+#include "machine/cpu/diagnostic_execution_profile.h"
 #endif
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 #include "machine/cpu/native_compilation_profile.h"
@@ -281,6 +282,7 @@ public:
 	const LuaHeap& luaHeap() const { return m_luaHeap; }
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	const DiagnosticGcProfile& diagnosticGcProfile() const { return m_diagnosticGcProfile; }
+	const DiagnosticExecutionProfile& diagnosticExecutionProfile() const { return m_diagnosticExecutionProfile; }
 #endif
 	Memory& memory() { return m_memory; }
 	const Memory& memory() const { return m_memory; }
@@ -643,6 +645,7 @@ private:
 	Table* m_stringIndexTable = nullptr;
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	DiagnosticGcProfile m_diagnosticGcProfile;
+	DiagnosticExecutionProfile m_diagnosticExecutionProfile;
 #endif
 };
 

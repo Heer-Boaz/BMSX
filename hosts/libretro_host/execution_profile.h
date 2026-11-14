@@ -15,10 +15,22 @@ typedef struct BmsxExecutionProfileInterval {
 	uint64_t gc_weak_nanoseconds;
 	uint64_t gc_sweep_nanoseconds;
 	uint64_t gc_string_reclaim_nanoseconds;
+	int64_t cpu_native_origin_cycles;
+	int64_t cpu_interpreter_runtime_cycles;
+	uint64_t native_newt_count;
+	uint64_t native_call_count;
+	uint64_t native_setfield_count;
+	uint64_t native_concat_count;
+	uint64_t native_concatn_count;
+	uint64_t interpreter_newt_count;
+	uint64_t interpreter_call_count;
+	uint64_t interpreter_setfield_count;
+	uint64_t interpreter_concat_count;
+	uint64_t interpreter_concatn_count;
 } BmsxExecutionProfileInterval;
 
 // Only lifetime counters are differenced. Keep both raw scheduler positions;
 // their difference is not elapsed emulation time across reset or restore.
 BmsxExecutionProfileInterval bmsx_execution_profile_delta(
-	const BmsxExecutionProfileV1* before, const BmsxExecutionProfileV1* after);
+	const BmsxExecutionProfile* before, const BmsxExecutionProfile* after);
 void bmsx_execution_profile_print(FILE* stream, const BmsxExecutionProfileInterval* interval);

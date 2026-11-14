@@ -31,7 +31,7 @@ bool acceptPrivateInterfaces = true;
 unsigned nativeProfileOffers = 0u;
 BmsxNativeCompilationProfileInterface nativeProfile{};
 unsigned executionProfileOffers = 0u;
-BmsxExecutionProfileInterfaceV1 executionProfile{};
+BmsxExecutionProfileInterface executionProfile{};
 bool acceptXrgb8888 = true;
 unsigned pixelFormatRequests = 0u;
 unsigned requestLineReads = 0u;
@@ -124,9 +124,9 @@ int16_t discardInputState(unsigned, unsigned, unsigned, unsigned) {
 }
 
 bool softwareFrontendEnvironment(unsigned command, void* data) {
-	if (command == BMSX_ENVIRONMENT_SET_EXECUTION_PROFILE_INTERFACE_V1) {
+	if (command == BMSX_ENVIRONMENT_SET_EXECUTION_PROFILE_INTERFACE) {
 		++executionProfileOffers;
-		if (acceptPrivateInterfaces) executionProfile = *static_cast<BmsxExecutionProfileInterfaceV1*>(data);
+		if (acceptPrivateInterfaces) executionProfile = *static_cast<BmsxExecutionProfileInterface*>(data);
 		return acceptPrivateInterfaces;
 	}
 	if (command == BMSX_ENVIRONMENT_SET_NATIVE_COMPILATION_PROFILE_INTERFACE) {
@@ -370,7 +370,7 @@ int main() {
 			bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
 	const auto& cartridgeControllerState = cartridgeRuntimeState.machineState.machine.cartridge;
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-	BmsxExecutionProfileV1 initialExecutionProfile{}, repeatedExecutionProfile{};
+	BmsxExecutionProfile initialExecutionProfile{}, repeatedExecutionProfile{};
 	executionProfile.read_profile(&initialExecutionProfile);
 	executionProfile.read_profile(&repeatedExecutionProfile);
 	require(std::memcmp(&initialExecutionProfile, &repeatedExecutionProfile, sizeof(initialExecutionProfile)) == 0,
@@ -414,8 +414,11 @@ int main() {
 	require(requestLineReads == 1u, "an accepted frontend callback should drive the platform supervisor-request line");
 	require(geometryNotifications == 0u && systemAvNotifications == 0u, "unchanged startup AV state should not be republished");
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-	BmsxExecutionProfileV1 runningExecutionProfile{};
+	BmsxExecutionProfile runningExecutionProfile{};
 	executionProfile.read_profile(&runningExecutionProfile);
+	require(runningExecutionProfile.cpu_native_origin_cycles + runningExecutionProfile.cpu_interpreter_runtime_cycles
+		== runningExecutionProfile.cpu_slice_consumed_cycles,
+		"the backend partition equals the existing exact CPU grant consumption");
 	require(runningExecutionProfile.scheduler_now_cycles > initialExecutionProfile.scheduler_now_cycles
 		&& runningExecutionProfile.cpu_slice_count > 0u
 		&& runningExecutionProfile.cpu_slice_consumed_cycles == static_cast<int64_t>(runningExecutionProfile.cpu_slice_count)
@@ -447,7 +450,7 @@ int main() {
 
 	const unsigned notificationsBeforeReset = geometryNotifications + systemAvNotifications;
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-	BmsxExecutionProfileV1 beforeResetProfile{}, afterResetProfile{};
+	BmsxExecutionProfile beforeResetProfile{}, afterResetProfile{};
 	executionProfile.read_profile(&beforeResetProfile);
 #endif
 	retro_reset();
@@ -457,6 +460,9 @@ int main() {
 		&& afterResetProfile.cpu_slice_count == beforeResetProfile.cpu_slice_count
 		&& afterResetProfile.cpu_slice_consumed_cycles == beforeResetProfile.cpu_slice_consumed_cycles,
 		"hardware reset rewinds scheduler position without resetting diagnostic CPU consumption");
+	require(afterResetProfile.cpu_native_origin_cycles == beforeResetProfile.cpu_native_origin_cycles
+		&& afterResetProfile.cpu_interpreter_runtime_cycles == beforeResetProfile.cpu_interpreter_runtime_cycles,
+		"hardware reset does not rewind backend-origin diagnostic lifetime counters");
 	require(afterResetProfile.gc_collections == beforeResetProfile.gc_collections + 1u
 		&& afterResetProfile.gc_total_nanoseconds >= beforeResetProfile.gc_total_nanoseconds,
 		"CPU reset adds its real collection to the existing diagnostic lifetime");

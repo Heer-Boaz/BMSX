@@ -164,6 +164,25 @@ void NativeBlockCompiler::emitAdmission(size_t index, bool materialize) {
 void NativeBlockCompiler::emit(const DecodedInstruction& instruction, NativeBlockExitSite* slowExit, NativeBlockExitSite* takenExit) {
 	m_remainingInstructions = m_remainingInstructions.subspan(1);
 	const auto op = static_cast<OpCode>(instruction.op);
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	// This code lies after entry admission, on the actual instruction path.
+	// Inline table stores and warm CALL gates need no C++ semantic exit.
+	sljit_sw counterOffset;
+	switch (op) {
+		case OpCode::NEWT: counterOffset = offsetof(DiagnosticNativeOpcodeCounts, newt); break;
+		case OpCode::CALL: counterOffset = offsetof(DiagnosticNativeOpcodeCounts, call); break;
+		case OpCode::SETFIELD: counterOffset = offsetof(DiagnosticNativeOpcodeCounts, setfield); break;
+		case OpCode::CONCAT: counterOffset = offsetof(DiagnosticNativeOpcodeCounts, concat); break;
+		case OpCode::CONCATN: counterOffset = offsetof(DiagnosticNativeOpcodeCounts, concatn); break;
+		default: counterOffset = -1; break;
+	}
+	if (counterOffset >= 0) {
+		counterOffset += offsetof(NativeBlockRunState, diagnosticOpcodes);
+		sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_S3), counterOffset);
+		sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, 1);
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_S3), counterOffset, SLJIT_R0, 0);
+	}
+#endif
 	switch (op) {
 		case OpCode::MFC0:
 		case OpCode::MTC0:

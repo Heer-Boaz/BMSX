@@ -146,6 +146,9 @@ DISPATCH_LABEL(GETFIELD) {
 }
 
 DISPATCH_LABEL(SETFIELD) {
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	++m_diagnosticExecutionProfile.interpreterOpcodes.setfield;
+#endif
 	const int a = decoded->a;
 	const int b = decoded->b;
 	const int rkC = decoded->c;
@@ -209,6 +212,9 @@ DISPATCH_LABEL(SETT) {
 }
 
 DISPATCH_LABEL(NEWT) {
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	++m_diagnosticExecutionProfile.interpreterOpcodes.newt;
+#endif
 	const int a = decoded->a;
 	const int b = decoded->b;
 	const int c = decoded->c;
@@ -355,11 +361,17 @@ DISPATCH_LABEL(SHR) {
 }
 
 DISPATCH_LABEL(CONCAT) {
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	++m_diagnosticExecutionProfile.interpreterOpcodes.concat;
+#endif
 	executeConcat(FRAME, decoded->a, decoded->b, decoded->c);
 	DISPATCH_NEXT();
 }
 
 DISPATCH_LABEL(CONCATN) {
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	++m_diagnosticExecutionProfile.interpreterOpcodes.concatn;
+#endif
 	executeConcatRange(FRAME, decoded->a, decoded->b, decoded->c);
 	DISPATCH_NEXT();
 }
@@ -543,6 +555,9 @@ DISPATCH_LABEL(VARARG) {
 }
 
 DISPATCH_LABEL(CALL) {
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	++m_diagnosticExecutionProfile.interpreterOpcodes.call;
+#endif
 	if (executeCall(FRAME, decoded->a, decoded->b, decoded->c)) {
 		DISPATCH_REBIND_FRAME();
 	}

@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <stdexcept>
 #include <vector>
 
@@ -329,9 +330,18 @@ void testDmaSharedBusStopsCpu() {
 	runtime.frameScheduler.runCyclesToNextLogicalTick(runtime, 1);
 	require(cpu.readFramePc(depth) != pc, "CPU instruction execution resumes after the burst");
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+	std::fprintf(stderr, "DMA boundary CPU diagnostics: slices=%llu consumed=%lld native_origin=%lld interpreter_runtime=%lld\n",
+		static_cast<unsigned long long>(runtime.machine.scheduler.diagnosticCpuSliceCount),
+		static_cast<long long>(runtime.machine.scheduler.diagnosticCpuSliceConsumedCycles),
+		static_cast<long long>(runtime.machine.scheduler.diagnosticNativeOriginCycles),
+		static_cast<long long>(runtime.machine.scheduler.diagnosticInterpreterRuntimeCycles));
 	require(runtime.machine.scheduler.diagnosticCpuSliceCount == 1
-		&& runtime.machine.scheduler.diagnosticCpuSliceConsumedCycles == 1,
+		&& runtime.machine.scheduler.diagnosticCpuSliceConsumedCycles == BASE_CYCLES[static_cast<size_t>(OpCode::JMP)],
 		"CPU-slice diagnostics count only the resumed instruction");
+	require(runtime.machine.scheduler.diagnosticNativeOriginCycles
+		+ runtime.machine.scheduler.diagnosticInterpreterRuntimeCycles
+		== runtime.machine.scheduler.diagnosticCpuSliceConsumedCycles,
+		"the resumed instruction's backend charges exclude all DMA-held time");
 #endif
 }
 

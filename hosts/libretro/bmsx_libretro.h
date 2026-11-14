@@ -25,8 +25,8 @@ extern "C" {
 	(RETRO_ENVIRONMENT_PRIVATE | 0x42a1u)
 #define BMSX_ENVIRONMENT_SET_SHUTDOWN_REASON_V1 \
 	(RETRO_ENVIRONMENT_PRIVATE | 0x42b1u)
-#define BMSX_ENVIRONMENT_SET_EXECUTION_PROFILE_INTERFACE_V1 \
-	(RETRO_ENVIRONMENT_PRIVATE | 0x42c1u)
+#define BMSX_ENVIRONMENT_SET_EXECUTION_PROFILE_INTERFACE \
+	(RETRO_ENVIRONMENT_PRIVATE | 0x42c2u)
 #define BMSX_SUBSYSTEM_DUAL_CARTRIDGE 1u
 
 /* Sent immediately before RETRO_ENVIRONMENT_SHUTDOWN. EXIT_GAME asks the
@@ -102,8 +102,15 @@ typedef struct BmsxNativeCompilationProfileInterface {
  * Scheduler position is raw signed machine time: reset/restore can move it
  * backwards. The remaining fields are host-only CPU-lifetime counters, never
  * reset or restored with machine state. Cycles are CPU::runUntilDepth budget
- * consumption, not host time or a count of retired instructions. */
-typedef struct BmsxExecutionProfileV1 {
+ * consumption, not host time or a count of retired instructions.
+ *
+ * NativeOrigin includes shared C++ semantics reached from generated execution;
+ * InterpreterRuntime includes
+ * remaining scheduler CPU work such as exception unwinding and pending
+ * completions. Their sum is cpu_slice_consumed_cycles, not host CPU time.
+ * Opcode counts are admitted semantic attempts (faulting instructions count;
+ * fetch faults and native-admission retries do not). */
+typedef struct BmsxExecutionProfile {
 	int64_t scheduler_now_cycles;
 	uint64_t cpu_slice_count;
 	int64_t cpu_slice_consumed_cycles;
@@ -114,13 +121,25 @@ typedef struct BmsxExecutionProfileV1 {
 	uint64_t gc_weak_nanoseconds;
 	uint64_t gc_sweep_nanoseconds;
 	uint64_t gc_string_reclaim_nanoseconds;
-} BmsxExecutionProfileV1;
+	int64_t cpu_native_origin_cycles;
+	int64_t cpu_interpreter_runtime_cycles;
+	uint64_t native_newt_count;
+	uint64_t native_call_count;
+	uint64_t native_setfield_count;
+	uint64_t native_concat_count;
+	uint64_t native_concatn_count;
+	uint64_t interpreter_newt_count;
+	uint64_t interpreter_call_count;
+	uint64_t interpreter_setfield_count;
+	uint64_t interpreter_concat_count;
+	uint64_t interpreter_concatn_count;
+} BmsxExecutionProfile;
 
-typedef void (RETRO_CALLCONV *bmsx_read_execution_profile_t)(BmsxExecutionProfileV1* profile);
+typedef void (RETRO_CALLCONV *bmsx_read_execution_profile_t)(BmsxExecutionProfile* profile);
 
-typedef struct BmsxExecutionProfileInterfaceV1 {
+typedef struct BmsxExecutionProfileInterface {
 	bmsx_read_execution_profile_t read_profile;
-} BmsxExecutionProfileInterfaceV1;
+} BmsxExecutionProfileInterface;
 
 typedef int32_t (RETRO_CALLCONV *bmsx_read_execution_domain_id_t)(void);
 

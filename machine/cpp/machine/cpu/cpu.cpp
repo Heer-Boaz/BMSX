@@ -2721,8 +2721,27 @@ dispatch_native_block: {
 				nativeState.state = {.registers = registers, .constants = IMAGE.constPool.data(), .frame = frame,
 					.globalValues = m_globalValues.data(), .systemGlobalValues = m_systemGlobalValues.data(),
 					.cop0Words = m_cop0Words.data(), .constantCount = static_cast<u32>(IMAGE.constPool.size()),
-					.remainingCycles = instructionBudgetRemaining + nativeFirstDispatchCycles, .registerTop = FRAME.top};
+					.remainingCycles = instructionBudgetRemaining + nativeFirstDispatchCycles, .registerTop = FRAME.top,
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+					.diagnosticOpcodes = {},
+#endif
+				};
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+				const int nativeStartBudget = nativeState.state.remainingCycles;
+#endif
 				nativeBlock->execute(nativeState);
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+				// Helpers publish the authoritative CPU grant before returning or
+				// reporting an error; the native state's copy can then be stale.
+				m_diagnosticExecutionProfile.nativeOriginCycles += static_cast<i64>(nativeStartBudget) - instructionBudgetRemaining;
+				const auto& counts = nativeState.state.diagnosticOpcodes;
+				auto& total = m_diagnosticExecutionProfile.nativeOpcodes;
+				total.newt += counts.newt;
+				total.call += counts.call;
+				total.setfield += counts.setfield;
+				total.concat += counts.concat;
+				total.concatn += counts.concatn;
+#endif
 				if (nativeState.forceScalar) { forceScalarOnce = true; nativeState.forceScalar = false; }
 				if (nativeState.error) std::rethrow_exception(std::exchange(nativeState.error, {}));
 				DISPATCH_CONTINUE();

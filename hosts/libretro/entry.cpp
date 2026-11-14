@@ -125,7 +125,7 @@ static void RETRO_CALLCONV read_native_compilation_profile(BmsxNativeCompilation
 }
 #endif
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-static void RETRO_CALLCONV read_execution_profile(BmsxExecutionProfileV1* output) {
+static void RETRO_CALLCONV read_execution_profile(BmsxExecutionProfile* output) {
 	const auto& machine = g_content->runtime.machine;
 	const auto& gc = machine.cpu.diagnosticGcProfile();
 	*output = {
@@ -133,6 +133,13 @@ static void RETRO_CALLCONV read_execution_profile(BmsxExecutionProfileV1* output
 		machine.scheduler.diagnosticCpuSliceConsumedCycles,
 		gc.collections, gc.totalNanoseconds, gc.rootsNanoseconds, gc.traceNanoseconds,
 		gc.weakNanoseconds, gc.sweepNanoseconds, gc.stringReclaimNanoseconds,
+		machine.scheduler.diagnosticNativeOriginCycles, machine.scheduler.diagnosticInterpreterRuntimeCycles,
+		machine.scheduler.diagnosticNativeOpcodes.newt, machine.scheduler.diagnosticNativeOpcodes.call,
+		machine.scheduler.diagnosticNativeOpcodes.setfield, machine.scheduler.diagnosticNativeOpcodes.concat,
+		machine.scheduler.diagnosticNativeOpcodes.concatn,
+		machine.scheduler.diagnosticInterpreterOpcodes.newt, machine.scheduler.diagnosticInterpreterOpcodes.call,
+		machine.scheduler.diagnosticInterpreterOpcodes.setfield, machine.scheduler.diagnosticInterpreterOpcodes.concat,
+		machine.scheduler.diagnosticInterpreterOpcodes.concatn,
 	};
 }
 #endif
@@ -1285,8 +1292,8 @@ void retro_init(void) {
 		&nativeCompilationProfile);
 #endif
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-	BmsxExecutionProfileInterfaceV1 executionProfile{read_execution_profile};
-	environ_cb(BMSX_ENVIRONMENT_SET_EXECUTION_PROFILE_INTERFACE_V1, &executionProfile);
+	BmsxExecutionProfileInterface executionProfile{read_execution_profile};
+	environ_cb(BMSX_ENVIRONMENT_SET_EXECUTION_PROFILE_INTERFACE, &executionProfile);
 #endif
 	const RenderBackendPreference preference = read_backend_preference();
 	const bmsx::BackendType desired_backend = resolve_backend_preference(preference);

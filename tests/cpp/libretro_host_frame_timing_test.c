@@ -129,7 +129,7 @@ int main(void) {
 	// Scheduler positions can rewind while the diagnostic lifetime counters
 	// advance. Preserve the signed raw boundaries, including beyond double's
 	// exact integer range; do not manufacture an elapsed/non-CPU cycle count.
-	const BmsxExecutionProfileV1 execution_before = {
+	const BmsxExecutionProfile execution_before = {
 		.scheduler_now_cycles = INT64_C(9007199254740995),
 		.cpu_slice_count = 100u,
 		.cpu_slice_consumed_cycles = INT64_C(9007199254740997),
@@ -137,8 +137,12 @@ int main(void) {
 		.gc_roots_nanoseconds = 100u, .gc_trace_nanoseconds = 200u,
 		.gc_weak_nanoseconds = 300u, .gc_sweep_nanoseconds = 400u,
 		.gc_string_reclaim_nanoseconds = 500u,
+		.cpu_native_origin_cycles = INT64_C(9007199254740999),
+		.cpu_interpreter_runtime_cycles = INT64_C(9007199254740997),
+		.native_newt_count = UINT64_C(9007199254740995),
+		.interpreter_concatn_count = UINT64_C(9007199254740993),
 	};
-	BmsxExecutionProfileV1 execution_after = execution_before;
+	BmsxExecutionProfile execution_after = execution_before;
 	execution_after.scheduler_now_cycles = -INT64_C(9007199254740993);
 	execution_after.cpu_slice_count += 3u;
 	execution_after.cpu_slice_consumed_cycles += 172u;
@@ -149,6 +153,19 @@ int main(void) {
 	execution_after.gc_weak_nanoseconds += 33u;
 	execution_after.gc_sweep_nanoseconds += 44u;
 	execution_after.gc_string_reclaim_nanoseconds += 55u;
+	execution_after.cpu_native_origin_cycles += 120u;
+	execution_after.cpu_interpreter_runtime_cycles += 52u;
+	execution_after.native_newt_count += 1u;
+	execution_after.native_call_count += 2u;
+	execution_after.native_setfield_count += 3u;
+	execution_after.native_concat_count += 4u;
+	execution_after.native_concatn_count += 5u;
+	execution_after.interpreter_newt_count += 1u;
+	execution_after.interpreter_call_count += 2u;
+	execution_after.interpreter_setfield_count += 3u;
+	execution_after.interpreter_concat_count += 4u;
+	execution_after.interpreter_concatn_count += 5u;
+
 	const BmsxExecutionProfileInterval execution = bmsx_execution_profile_delta(&execution_before, &execution_after);
 	CHECK(execution.scheduler_before_cycles == INT64_C(9007199254740995));
 	CHECK(execution.scheduler_after_cycles == -INT64_C(9007199254740993));
@@ -157,6 +174,19 @@ int main(void) {
 	CHECK(execution.gc_roots_nanoseconds == 11u && execution.gc_trace_nanoseconds == 22u);
 	CHECK(execution.gc_weak_nanoseconds == 33u && execution.gc_sweep_nanoseconds == 44u);
 	CHECK(execution.gc_string_reclaim_nanoseconds == 55u);
+	CHECK(execution.cpu_native_origin_cycles == 120u);
+	CHECK(execution.cpu_interpreter_runtime_cycles == 52u);
+	CHECK(execution.native_newt_count == 1u);
+	CHECK(execution.native_call_count == 2u);
+	CHECK(execution.native_setfield_count == 3u);
+	CHECK(execution.native_concat_count == 4u);
+	CHECK(execution.native_concatn_count == 5u);
+	CHECK(execution.interpreter_newt_count == 1u);
+	CHECK(execution.interpreter_call_count == 2u);
+	CHECK(execution.interpreter_setfield_count == 3u);
+	CHECK(execution.interpreter_concat_count == 4u);
+	CHECK(execution.interpreter_concatn_count == 5u);
+	CHECK(execution.cpu_native_origin_cycles + execution.cpu_interpreter_runtime_cycles == execution.cpu_slice_consumed_cycles);
 	const BmsxExecutionProfileInterval execution_idle = bmsx_execution_profile_delta(&execution_after, &execution_after);
 	CHECK(execution_idle.scheduler_before_cycles == execution_after.scheduler_now_cycles);
 	CHECK(execution_idle.scheduler_after_cycles == execution_after.scheduler_now_cycles);
@@ -165,6 +195,19 @@ int main(void) {
 	CHECK(execution_idle.gc_roots_nanoseconds == 0u && execution_idle.gc_trace_nanoseconds == 0u);
 	CHECK(execution_idle.gc_weak_nanoseconds == 0u && execution_idle.gc_sweep_nanoseconds == 0u);
 	CHECK(execution_idle.gc_string_reclaim_nanoseconds == 0u);
+	CHECK(execution_idle.cpu_native_origin_cycles == 0);
+	CHECK(execution_idle.cpu_interpreter_runtime_cycles == 0);
+	CHECK(execution_idle.native_newt_count == 0);
+	CHECK(execution_idle.native_call_count == 0);
+	CHECK(execution_idle.native_setfield_count == 0);
+	CHECK(execution_idle.native_concat_count == 0);
+	CHECK(execution_idle.native_concatn_count == 0);
+	CHECK(execution_idle.interpreter_newt_count == 0);
+	CHECK(execution_idle.interpreter_call_count == 0);
+	CHECK(execution_idle.interpreter_setfield_count == 0);
+	CHECK(execution_idle.interpreter_concat_count == 0);
+	CHECK(execution_idle.interpreter_concatn_count == 0);
+
 	BmsxFrameTimingReport execution_report = {0};
 	bmsx_frame_timing_record(&execution_report, 51u, 100000000u, 0u, false, 0u, false, true, false, NULL, NULL, &execution, 0u, 0u);
 	bmsx_frame_timing_record(&execution_report, 52u, 50000000u, 0u, false, 0u, false, false, true, NULL, NULL, &execution_idle, 0u, 0u);
@@ -189,6 +232,9 @@ int main(void) {
 	CHECK(strstr(line, "scheduler_before_cycles=9007199254740995 scheduler_after_cycles=-9007199254740993") != NULL);
 	CHECK(strstr(line, "cpu_slices=3 cpu_consumed_cycles=172") != NULL);
 	CHECK(strstr(line, "gc_collections=1 gc_total_ns=800 gc_roots_ns=11 gc_trace_ns=22 gc_weak_ns=33 gc_sweep_ns=44 gc_string_reclaim_ns=55") != NULL);
+	CHECK(strstr(line, "cpu_native_origin_cycles=120 cpu_interpreter_runtime_cycles=52") != NULL);
+	CHECK(strstr(line, "native_newt_count=1 native_call_count=2 native_setfield_count=3 native_concat_count=4 native_concatn_count=5") != NULL);
+	CHECK(strstr(line, "interpreter_newt_count=1 interpreter_call_count=2 interpreter_setfield_count=3 interpreter_concat_count=4 interpreter_concatn_count=5") != NULL);
 	CHECK(fclose(output) == 0);
 
 	return 0;

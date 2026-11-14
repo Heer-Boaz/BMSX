@@ -1,4 +1,7 @@
 #pragma once
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+#include "machine/cpu/diagnostic_execution_profile.h"
+#endif
 
 #include "common/primitives.h"
 
@@ -54,6 +57,10 @@ public:
 	// include only CPU::runUntilDepth consumption, not DMA/MMIO wait loops.
 	u64 diagnosticCpuSliceCount = 0;
 	i64 diagnosticCpuSliceConsumedCycles = 0;
+	i64 diagnosticNativeOriginCycles = 0;
+	i64 diagnosticInterpreterRuntimeCycles = 0;
+	DiagnosticOpcodeCounts diagnosticNativeOpcodes;
+	DiagnosticOpcodeCounts diagnosticInterpreterOpcodes;
 #endif
 
 private:

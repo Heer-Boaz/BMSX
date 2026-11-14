@@ -388,7 +388,7 @@ int main(int argc, char** argv) {
 	if (profile_native_compilation && !session.native_compilation_profile_interface_set)
 		host_fatal("--profile-native-compilation requires a native compilation profile interface");
 	if (profile_execution && !session.execution_profile_interface_set)
-		host_fatal("--profile-execution requires execution profile interface v1 from a diagnostic core");
+		host_fatal("--profile-execution requires current execution profile interface from a diagnostic core");
 	if (profile_gx_upload && !session.gx_upload_profile_interface_set) {
 		host_fatal("--timing-report requires GX upload profile interface v1 for the GLES2 backend");
 	}
@@ -480,7 +480,7 @@ int main(int argc, char** argv) {
 		BmsxNativeCompilationProfile native_before;
 		if (profile_native_compilation && frame_timing.record_frame)
 			session.native_compilation_profile.read_profile(&native_before);
-		BmsxExecutionProfileV1 execution_before;
+		BmsxExecutionProfile execution_before;
 		if (profile_execution && frame_timing.record_frame)
 			session.execution_profile.read_profile(&execution_before);
 		// CPU clocks sample the same run/presentation boundary. Read them outside
@@ -523,7 +523,7 @@ int main(int argc, char** argv) {
 			BmsxExecutionProfileInterval execution_interval;
 			const BmsxExecutionProfileInterval* current_execution = NULL;
 			if (profile_execution) {
-				BmsxExecutionProfileV1 execution_after;
+				BmsxExecutionProfile execution_after;
 				session.execution_profile.read_profile(&execution_after);
 				execution_interval = bmsx_execution_profile_delta(&execution_before, &execution_after);
 				current_execution = &execution_interval;
