@@ -1573,6 +1573,7 @@ export class GxGpu {
 			return;
 		}
 		if (index === GX_GPU_PCRTC_CSR_LOW) {
+			this.synchronizeCommandTiming(nowCycles);
 			const actions = this.pcrtc.writeCsr(word, nowCycles);
 			if ((actions & GX_GPU_PCRTC_CSR_RESET) !== 0) {
 				this.clearGp0Fifo(nowCycles);

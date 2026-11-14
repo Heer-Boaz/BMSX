@@ -476,6 +476,40 @@ void testGp1YGate() {
 		&& state.commandBuffer.commandVramYAddressExtensionWord[1] == 1u
 		&& state.commandBuffer.commandVramYAddressExtensionWord[2] == 1u, "queued commands latch updated Y gate");
 }
+void testPcrtcCsrCommandCatchup() {
+	for (const u32 action : {GX_GPU_PCRTC_CSR_FLUSH, GX_GPU_PCRTC_CSR_RESET}) {
+		for (const i64 cycle : {28, 29, 30, 40, 59, 70}) {
+			Harness lazy, observed;
+			observed.gpu.setOperationObserver({[](void*, const GxGpuCommandBuffer&, size_t, i64, std::span<const u32>) {}, nullptr});
+			for (auto* target : {&lazy, &observed}) {
+				for (const u32 word : {0x020000ffu, 0u, 0x00010001u, 0xe1000123u, 0x0200ff00u, 0u, 0x00010001u}) {
+					target->memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
+				}
+			}
+			require(lazy.scheduler.nextDeadline() == std::numeric_limits<i64>::max(), "lazy drawing has no required timer to skip");
+			for (auto* target : {&lazy, &observed}) {
+				target->advance(cycle);
+				target->memory.writeMappedU32LE(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_CSR_LOW), action);
+			}
+			const auto actual = lazy.gpu.captureState(), expected = observed.gpu.captureState();
+			requireSameCommandBuffer(actual.commandBuffer, expected.commandBuffer);
+			require(actual.commandBuffer.commandCount == (cycle >= 30 ? 2u : 1u), "CSR action retains already started successor");
+			require(actual.commandBuffer.executedCommandCount == (cycle >= 59 ? 2u : cycle >= 29 ? 1u : 0u), "elapsed drawing is completed before action");
+			const i64 remaining = cycle < 29 ? 29 - cycle : cycle < 30 ? 30 - cycle : cycle < 59 ? 59 - cycle : 0;
+			require(actual.pendingCommandCycles == remaining && actual.pendingCommandCycles == expected.pendingCommandCycles,
+				"executing finite command retains original deadline");
+			require(actual.drawModeWord == (action == GX_GPU_PCRTC_CSR_FLUSH && cycle >= 29 ? 0x123u : 0u),
+				"elapsed environment is applied before flush or reset");
+			require(actual.gp0FifoWords.empty() && actual.gp0DmaIngressWords.empty(), "only future input is discarded");
+			lazy.advance(70); observed.advance(70);
+			lazy.gpu.readStatus(); observed.gpu.readStatus();
+			const auto finished = lazy.gpu.captureState();
+			requireSameCommandBuffer(finished.commandBuffer, observed.gpu.captureState().commandBuffer);
+			require(finished.commandBuffer.executedCommandCount == (cycle >= 30 ? 2u : 1u) && finished.pendingCommandCycles == 0,
+				"retained drawing completes after original interval");
+		}
+	}
+}
 void testPcrtcFieldEdge() {
 	Harness h;
 	auto initial = h.gpu.captureState(); initial.drawingAreaBottomRightWord = (1023u << 10) | 1023u; h.gpu.restoreState(initial);
@@ -495,6 +529,7 @@ void testPcrtcFieldEdge() {
 }
 }
 int main() {
+	testPcrtcCsrCommandCatchup();
 	testPreparedPolyline(false); testPreparedPolyline(true); testPreparedPolylineRestore(); testOpenGouraudColorRestore();
 	testPolylineGp1Retime(); testPolylineReadbackAndBackendDrain(false); testPolylineReadbackAndBackendDrain(true);
 	testDmaLongPacketHorizon(); testDmaHeaderNops(); testDmaPreparedReset(); testDmaPreparedRestore(); testZeroTickIngressRefill();

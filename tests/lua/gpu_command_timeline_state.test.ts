@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readLE16 } from '../../machine/ts/common/endian';
 
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
@@ -14,6 +15,7 @@ import { GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_BEGIN } from '../../machine/ts/machine
 import * as gp1 from '../../machine/ts/spec/gx/gp1';
 import * as pcrtc from '../../machine/ts/spec/gx/pcrtc';
 import { cartridgeSlots } from '../helpers/cartridge';
+import { HeadlessGPUBackend } from '../../machine/ts/render/headless/backend';
 
 // An operation observer requires each actual start to be serviced. It gives
 // the same GPU an instruction-by-instruction timeline without a second model
@@ -147,3 +149,35 @@ test('a real PCRTC field edge updates future packet latches but not the running 
 	assert.notEqual(parities[0], parities[1], 'the queued rectangle starts in the next display field');
 	assert.equal(lazy.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, IRQ_GPU);
 });
+
+for (const action of [pcrtc.GX_GPU_PCRTC_CSR_FLUSH, pcrtc.GX_GPU_PCRTC_CSR_RESET]) {
+	test(`PCRTC CSR action ${action} catches up elapsed drawing before discarding future input`, () => {
+		for (const cycle of [28, 29, 30, 40, 59, 70]) {
+			const lazy = fixture(false), observed = fixture(true);
+			const initialPixel = readLE16(lazy.gpu.readVramSnapshotBytes(), 0);
+			for (const target of [lazy, observed]) {
+				for (const word of [0x020000ff, 0, 0x00010001, 0xe1000123, 0x0200ff00, 0, 0x00010001]) {
+					target.memory.writeMappedU32LE(IO_GX_GPU_GP0, word);
+				}
+			}
+			assert.equal(lazy.scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER, 'the lazy queue has no required service to skip');
+			for (const target of [lazy, observed]) {
+				advance(target, cycle);
+				target.memory.writeMappedU32LE(pcrtc.gxGpuPcrtcRegisterAddress(pcrtc.GX_GPU_PCRTC_CSR_LOW), action);
+			}
+			sameState(lazy, observed);
+			const state = lazy.gpu.captureState();
+			assert.equal(state.commandBuffer.commandCount, cycle >= 30 ? 2 : 1, 'an already started successor survives the clear');
+			assert.equal(state.commandBuffer.executedCommandCount, cycle >= 59 ? 2 : cycle >= 29 ? 1 : 0);
+			assert.equal(state.pendingCommandCycles, cycle < 29 ? 29 - cycle : cycle < 30 ? 30 - cycle : cycle < 59 ? 59 - cycle : 0);
+			assert.equal(state.drawModeWord, action === pcrtc.GX_GPU_PCRTC_CSR_FLUSH && cycle >= 29 ? 0x123 : 0);
+			assert.deepEqual(state.gp0FifoWords, []);
+			const backend = new HeadlessGPUBackend(256, 212, PSX_MACHINE_SPEC.gxGpuVramBytes);
+			backend.executeGxGpuCommandDrain(lazy.gpu);
+			assert.equal(backend.gxGpuSoftware.vram[0], cycle >= 59 ? 0x03e0 : cycle >= 29 ? 0x001f : initialPixel, 'a drain renders only the completed prefix');
+			advance(lazy, 70);
+			backend.executeGxGpuCommandDrain(lazy.gpu);
+			assert.equal(backend.gxGpuSoftware.vram[0], cycle >= 30 ? 0x03e0 : 0x001f, 'retained finite drawing still reaches VRAM');
+		}
+	});
+}

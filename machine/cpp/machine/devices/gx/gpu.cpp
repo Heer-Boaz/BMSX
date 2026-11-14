@@ -1054,6 +1054,7 @@ void GxGpu::writePcrtcRegister(u32 index, u32 word) {
 		return;
 	}
 	if (index == GX_GPU_PCRTC_CSR_LOW) {
+		synchronizeCommandExecution(nowCycles);
 		const u32 actions = m_pcrtc.writeCsr(word, nowCycles);
 		if ((actions & GX_GPU_PCRTC_CSR_RESET) != 0u) {
 			clearGp0Fifo(nowCycles);
