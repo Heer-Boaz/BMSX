@@ -2892,6 +2892,14 @@ export class CPU implements MappedPageInvalidator {
 			if (thread.frameDepth <= targetDepth || remaining <= 0
 				|| (this.haltedUntilIrqThread === this.activeThread && this.haltedUntilIrqFrameDepth === thread.frameDepth)) return;
 			frame = thread.currentFrame!;
+			if (exit.resumesFrame && exit.linkedBlock !== null) {
+				// Pure same-frame helpers retain the image and socket selection.
+				// Target retirement already withdraws this intrusive cache link.
+				block = exit.linkedBlock;
+				if (remaining <= block.admissionCycles + block.admissionVarargs * frame.varargCount) return;
+				page = block.page;
+				continue;
+			}
 			if (frame.executionImage !== this.activeExecutionImage) return;
 			const pc = frame.pc;
 			if ((pc & (INSTRUCTION_BYTES - 1)) !== 0) return;
@@ -2907,7 +2915,7 @@ export class CPU implements MappedPageInvalidator {
 			if (remaining <= next.admissionCycles + next.admissionVarargs * frame.varargCount) return;
 			// Only shared-memory system code entering the selectable cartridge
 			// window needs a fresh chip-select lookup on each traversal.
-			if (exit.exit === CompiledBlockExit.Continue && exit.linkedBlock === null
+			if ((exit.resumesFrame || exit.exit === CompiledBlockExit.Continue) && exit.linkedBlock === null
 				&& (frame.executionImage.executionDomainId !== SYSTEM_EXECUTION_DOMAIN_ID
 					|| pc < CART_ROM_BASE || exit.currentPc >= CART_ROM_BASE)) linkCompiledBlock(exit, next);
 			block = next;

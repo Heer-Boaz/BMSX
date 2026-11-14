@@ -45,6 +45,9 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 	cpu.m_currentInstructionPc = exit->currentPc;
 	cpu.m_lastExecutionDomainId = frame->executionImage->executionDomainId;
 	cpu.lastPc = exit->lastPc;
+	// A helper may retire its source descriptor. The image owns this cell;
+	// reading it after the helper observes any target withdrawal/publication.
+	void* const* const continuation = exit->continuationCells[run->cartridgeSlot];
 	try {
 		const bool continuing = exit->exit == NativeBlockExit::Continue;
 		auto transition = NativeBlockTransition::NextInstruction;
@@ -138,6 +141,14 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			|| (cpu.m_haltedUntilIrqThread == cpu.m_activeThread
 				&& cpu.m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth))) return nullptr;
 		frame = thread.currentFrame;
+		if (transition == NativeBlockTransition::NextInstruction && continuation) {
+			// These helpers neither change frames nor operate a device. Keep the
+			// latched image/bank and avoid resolving their fixed successor again.
+			state.registers = frame->registers;
+			state.remainingCycles = cpu.instructionBudgetRemaining;
+			state.registerTop = frame->top;
+			return *continuation;
+		}
 		// A domain change also changes bus signals and must be latched by the run loop.
 		if (frame->executionImage != cpu.m_activeExecutionImage) return nullptr;
 		const u32 pc = frame->pc;

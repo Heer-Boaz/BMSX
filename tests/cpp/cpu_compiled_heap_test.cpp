@@ -38,6 +38,78 @@ struct CpuMachine {
 	}
 };
 
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+void fixedHelperContinuation(OpCode operation) {
+	test::Blua32TestImage image; image.text.resize(INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 1, .maxStack = 4}};
+	CpuMachine native(image), scalar(image, true);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	native.cpu.setNativeCompilationProfiling(true);
+#endif
+	const u32 sourcePc = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - INSTRUCTION_BYTES;
+	const u32 targetPc = sourcePc + INSTRUCTION_BYTES;
+	std::vector<u8> code(3 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, static_cast<u8>(operation), operation == OpCode::NEWT ? 0 : 2, 0, operation == OpCode::NEWT ? 0 : 1);
+	writeInstruction(code, 1, static_cast<u8>(OpCode::KSMI), 1, 0, 7);
+	writeInstruction(code, 2, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
+	for (auto* machine : {&native, &scalar}) {
+		machine->memory.writeBytes(sourcePc, code.data(), code.size());
+		if (operation == OpCode::GETI) machine->cpu.activeThread()->currentFrame->registers[0] = valueTable(machine->cpu.createTable());
+		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], sourcePc);
+	}
+	for (int pass = 0; pass < 4; ++pass) {
+		test::runCpuParity(native.cpu, scalar.cpu, 4096);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+		test::waitForFixtureWorkerRequests(native.cpu);
+#endif
+	}
+	auto& lookup = *native.cpu.activeThread()->currentFrame->executionImage->nativeCodeLookup;
+	auto* sourcePage = lookup.find(sourcePc, 0);
+	auto* targetPage = lookup.find(targetPc, 0);
+	constexpr u32 sourceWord = MAPPED_PAGE_BYTE_SIZE / INSTRUCTION_BYTES - 1u;
+	test::waitForNativeEntry(native.cpu, *sourcePage, sourceWord);
+	test::waitForNativeEntry(native.cpu, *targetPage, 0);
+	auto* source = sourcePage->nativeBlocks->entries[sourceWord].get();
+	const auto& exit = operation == OpCode::NEWT ? source->terminal : source->sideExits.front();
+	const auto cell = exit.continuationCells[0];
+	require(exit.exit == (operation == OpCode::NEWT ? NativeBlockExit::AllocateTable : NativeBlockExit::ReadInteger) && cell
+		&& cell == exit.continuationCells[1] && *cell == targetPage->nativeCode[0],
+		"same-frame helper binds the shared RAM successor's image-lifetime cell");
+	for (int grant : {128, 1, 2, 3, 4, 5, 6, 7}) test::runCpuParity(native.cpu, scalar.cpu, grant);
+	writeInstruction(code, 1, static_cast<u8>(OpCode::KSMI), 1, 0, 13);
+	for (auto* machine : {&native, &scalar}) machine->memory.writeBytes(targetPc, code.data() + INSTRUCTION_BYTES, INSTRUCTION_BYTES);
+	require(sourcePage->nativeBlocks->entries[sourceWord].get() == source && *cell == nullptr,
+		"rewriting the successor withdraws its cell without retiring the unmodified helper");
+	for (int pass = 0; pass < 4; ++pass) {
+		test::runCpuParity(native.cpu, scalar.cpu, 4096);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+		test::waitForFixtureWorkerRequests(native.cpu);
+#endif
+	}
+	test::waitForNativeEntry(native.cpu, *targetPage, 0);
+	require(exit.continuationCells[0] == cell && *cell == targetPage->nativeCode[0]
+		&& native.cpu.readFrameRegister(0, 1) == valueNumber(13), "publication reuses the withdrawn continuation cell");
+	// Redirect only the raw code cell, leaving the ordinary target descriptor
+	// intact. Generic C++ lookup would execute 13, not the marker's 29.
+	// This fixture is disposable and never resumes the redirected cache.
+	const u32 markerPc = targetPc + 16u * INSTRUCTION_BYTES;
+	std::vector<u8> marker(2 * INSTRUCTION_BYTES);
+	writeInstruction(marker, 0, static_cast<u8>(OpCode::KSMI), 1, 0, 29);
+	writeInstruction(marker, 1, static_cast<u8>(OpCode::JMP), 0, 63, 45, 255);
+	native.memory.writeBytes(markerPc, marker.data(), marker.size());
+	for (int visit = 0; visit < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++visit) {
+		native.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, native.rom.functionAddresses[0], markerPc);
+		native.cpu.runUntilDepth(0, 2);
+	}
+	test::waitForNativeEntry(native.cpu, *targetPage, 16u);
+	native.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, native.rom.functionAddresses[0], sourcePc);
+	targetPage->nativeCode[0] = targetPage->nativeCode[16];
+	native.cpu.runUntilDepth(0, 5);
+	require(native.cpu.readFrameRegister(0, 1) == valueNumber(29), "helper resumes through the raw code cell, not a second descriptor lookup");
+}
+#endif
+
 void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	const auto a = native.cpu.captureRuntimeState(), b = scalar.cpu.captureRuntimeState();
 	require(std::ranges::equal(a.snapshot.words(), b.snapshot.words()) && a.nextObjectHashId == b.nextObjectHashId
@@ -331,6 +403,10 @@ void concatAllocationFault(bool range) {
 
 int main() {
 	try {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		fixedHelperContinuation(OpCode::NEWT);
+		fixedHelperContinuation(OpCode::GETI);
+#endif
 		for (int destination : {0, 1, 2}) concatKindsAndAliases(destination);
 		concatConstants(); for (int count : {0, 3, 513}) concatRange(count);
 		allocationRoots(false); allocationRoots(true); canonicalImmediateClosure(); closureBusFault(false); closureBusFault(true);

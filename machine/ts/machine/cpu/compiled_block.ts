@@ -64,8 +64,23 @@ for (const [op, exit] of [
 	[OpCode.LOADKR, CompiledBlockExit.InvalidConstant],
 ] as const) sideExitKinds[op] = exit;
 
+function compiledBlockExitResumesFrame(exit: CompiledBlockExit): boolean {
+	switch (exit) {
+		case CompiledBlockExit.ReadField: case CompiledBlockExit.WriteField:
+		case CompiledBlockExit.ReadIndex: case CompiledBlockExit.WriteIndex:
+		case CompiledBlockExit.ReadInteger: case CompiledBlockExit.WriteInteger:
+		case CompiledBlockExit.WriteUpvalue: case CompiledBlockExit.Vararg:
+		case CompiledBlockExit.AllocateTable: case CompiledBlockExit.Concat: case CompiledBlockExit.ConcatRange:
+			return true;
+		default:
+			return false;
+	}
+}
+
 export type CompiledBlockExitSite = {
 	readonly exit: CompiledBlockExit;
+	/** Semantic helper with a fixed successor and no frame, image or device change. */
+	readonly resumesFrame: boolean;
 	readonly exitA: number;
 	readonly exitB: number;
 	readonly exitC: number;
@@ -257,7 +272,7 @@ export function emitJavaScriptBlock(
 		const control = compiledControlSupports(op);
 		const sideExit = control && controlAccess && cop0FieldImplemented(page.b[word]) ? undefined : sideExitKinds[op];
 		if (sideExit !== undefined) {
-			exits.push({ exit: sideExit,
+			exits.push({ exit: sideExit, resumesFrame: compiledBlockExitResumesFrame(sideExit),
 				exitA: page.a[word], exitB: page.b[word], exitC: page.c[word], exitBx: page.bx[word], exitWord: word,
 				cycles, registerTop, resetsRegisterTop, nextPc, currentPc, lastPc,
 				linkedBlock: null, previousIncoming: null, nextIncoming: null });
@@ -317,6 +332,7 @@ export function emitJavaScriptBlock(
 	}
 	const terminal: CompiledBlockExitSite = {
 		exit: terminalExit,
+		resumesFrame: compiledBlockExitResumesFrame(terminalExit),
 		exitA: page.a[finalWord], exitB: page.b[finalWord], exitC: page.c[finalWord], exitBx: page.bx[finalWord], exitWord: finalWord,
 		cycles, registerTop, resetsRegisterTop, nextPc, currentPc, lastPc,
 		linkedBlock: null, previousIncoming: null, nextIncoming: null,

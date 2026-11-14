@@ -260,13 +260,23 @@ void CPU::installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPag
 	auto& lookup = image.nativeCodeLookup;
 	if (!lookup) lookup = std::make_unique<NativeCodeLookup>();
 	page.nativeCode = lookup->install(pagePc, slot, page);
+	// Cartridge execution images pin instruction fetch to their physical bank.
+	// Only system code needs cells for both selectable cartridge mappings.
+	const u32 firstBank = image.executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID ? 0u : slot;
+	const u32 endBank = image.executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID ? CARTRIDGE_SLOT_COUNT : slot + 1u;
 	const auto codeBytes = blocks.front()->region->codeBytes;
 	blocks.front()->region->publish(m_nativeCodeBytes);
 	for (size_t index = 0; index < entries.size(); ++index) {
 		auto& exit = blocks[index]->terminal;
-		if (exit.exit == NativeBlockExit::Call) {
-			for (u32 bank = 0; bank < CARTRIDGE_SLOT_COUNT; ++bank)
+		if (exit.exit == NativeBlockExit::Call || nativeBlockExitResumesFrame(exit.exit)) {
+			for (u32 bank = firstBank; bank < endBank; ++bank)
 				exit.continuationCells[bank] = lookup->entrySlot(exit.nextPc, bank);
+		}
+		for (auto& side : blocks[index]->sideExits) {
+			if (nativeBlockExitResumesFrame(side.exit)) {
+				for (u32 bank = firstBank; bank < endBank; ++bank)
+					side.continuationCells[bank] = lookup->entrySlot(side.nextPc, bank);
+			}
 		}
 		const u32 entry = entries[index];
 		page.nativeBlocks->entries[entry] = std::move(blocks[index]);

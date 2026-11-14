@@ -94,6 +94,21 @@ enum class NativeBlockExit : u8 {
 	Count,
 };
 
+// Semantic helpers with a fixed successor and no frame, image or device change.
+// Ordinary Continue edges use the region's direct branches instead.
+inline constexpr bool nativeBlockExitResumesFrame(NativeBlockExit exit) {
+	switch (exit) {
+	case NativeBlockExit::ReadField: case NativeBlockExit::WriteField:
+	case NativeBlockExit::ReadIndex: case NativeBlockExit::WriteIndex:
+	case NativeBlockExit::ReadInteger: case NativeBlockExit::WriteInteger:
+	case NativeBlockExit::WriteUpvalue: case NativeBlockExit::Vararg:
+	case NativeBlockExit::AllocateTable: case NativeBlockExit::Concat: case NativeBlockExit::ConcatRange:
+		return true;
+	default:
+		return false;
+	}
+}
+
 struct NativeBlockExitSite {
 	NativeBlockExit exit = NativeBlockExit::Continue;
 	NativeBlockExitHandler handler = nullptr;
@@ -111,8 +126,8 @@ struct NativeBlockExitSite {
 	// host registers whose contents need no publication at this exit.
 	std::array<i32, NATIVE_BLOCK_REGISTER_CACHE_CAPACITY> registerOffsets{};
 	mutable NativeBlockLink link;
-	// CALL-only, bound on CPU-side publication. Image-lifetime entry cells can
-	// be published or withdrawn independently of the callsite/target regions.
+	// Bound on CPU-side publication for CALL returns and same-frame helpers.
+	// Image-lifetime cells survive retirement of the source or target region.
 	std::array<void* const*, 2> continuationCells{};
 };
 
