@@ -77,6 +77,14 @@ static uint64_t monotonic_ns(void) {
 	return (uint64_t)ts.tv_sec * BMSX_HOST_NSEC_PER_SECOND + (uint64_t)ts.tv_nsec;
 }
 
+static uint64_t cpu_clock_ns(clockid_t clock_id) {
+	struct timespec ts;
+	if (clock_gettime(clock_id, &ts) != 0) {
+		host_fatal("CPU clock_gettime(%d) failed: %s", (int)clock_id, strerror(errno));
+	}
+	return (uint64_t)ts.tv_sec * BMSX_HOST_NSEC_PER_SECOND + (uint64_t)ts.tv_nsec;
+}
+
 static void usage(const char* argv0) {
 	fprintf(stderr,
 			"Usage:\n"
@@ -475,6 +483,12 @@ int main(int argc, char** argv) {
 		BmsxExecutionProfileV1 execution_before;
 		if (profile_execution && frame_timing.record_frame)
 			session.execution_profile.read_profile(&execution_before);
+		// CPU clocks sample the same run/presentation boundary. Read them outside
+		// the existing wall interval so their syscalls do not inflate run_ms.
+		const uint64_t main_cpu_start_ns = frame_timing.record_frame
+			? cpu_clock_ns(CLOCK_THREAD_CPUTIME_ID) : 0u;
+		const uint64_t process_cpu_start_ns = frame_timing.record_frame
+			? cpu_clock_ns(CLOCK_PROCESS_CPUTIME_ID) : 0u;
 		const uint64_t run_start_ns = frame_timing.record_frame ? monotonic_ns() : 0u;
 		core->retro_run();
 		input_timeline_finish_run();
@@ -482,6 +496,8 @@ int main(int argc, char** argv) {
 		if (use_control) host_control_after_frame(presented_frame);
 		const uint64_t run_end_ns = frame_timing.record_frame ? monotonic_ns() : 0u;
 		if (frame_timing.record_frame) {
+			const uint64_t process_cpu_ns = cpu_clock_ns(CLOCK_PROCESS_CPUTIME_ID) - process_cpu_start_ns;
+			const uint64_t main_cpu_ns = cpu_clock_ns(CLOCK_THREAD_CPUTIME_ID) - main_cpu_start_ns;
 			BmsxGxUploadProfileFrameV1 gx_upload_frame;
 			const BmsxGxUploadProfileFrameV1* current_gx_upload = NULL;
 			if (profile_gx_upload) {
@@ -522,7 +538,8 @@ int main(int argc, char** argv) {
 					frame_timing.current_swap_ran,
 					drop_video && frame_timing.current_video_frame_received,
 					!drop_video && presented_frame,
-					current_gx_upload, current_native, current_execution);
+					current_gx_upload, current_native, current_execution,
+					main_cpu_ns, process_cpu_ns);
 		}
 		++run_frame_count;
 		if (maximum_run_frames == 0 &&

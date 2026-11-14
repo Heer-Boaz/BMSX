@@ -16,8 +16,8 @@ int main(void) {
 		.cpu_nanoseconds = 400u,
 		.max_command_nanoseconds = 300u,
 	};
-	bmsx_frame_timing_record(&report, 500u, 10000000u, 1000000u, true, 2000000u, true, false, true, &gx_upload, NULL, NULL);
-	bmsx_frame_timing_record(&report, 501u, 5000000000u, 0u, false, 0u, false, true, false, NULL, NULL, NULL);
+	bmsx_frame_timing_record(&report, 500u, 10000000u, 1000000u, true, 2000000u, true, false, true, &gx_upload, NULL, NULL, UINT64_C(9007199254740993), UINT64_C(18014398509481989));
+	bmsx_frame_timing_record(&report, 501u, 5000000000u, 0u, false, 0u, false, true, false, NULL, NULL, NULL, 0u, 0u);
 	bmsx_frame_timing_record_gx_upload(&report, &gx_upload);
 
 	CHECK(report.retro_run.count == 2u);
@@ -44,19 +44,27 @@ int main(void) {
 	CHECK(!report.slow_frames[0].has_gx_upload);
 	CHECK(report.slow_frames[0].gx_upload.cpu_to_vram_commands == 0u);
 	CHECK(report.slow_frames[1].host_frame == 500u);
+	CHECK(report.slow_frames[1].host_main_thread_cpu_ns == UINT64_C(9007199254740993));
+	CHECK(report.slow_frames[1].host_process_cpu_ns == UINT64_C(18014398509481989));
+	CHECK(report.slow_frames[0].host_main_thread_cpu_ns == 0u);
+	CHECK(report.slow_frames[0].host_process_cpu_ns == 0u);
 	CHECK(report.slow_frames[1].has_gx_upload);
 	CHECK(report.slow_frames[1].gx_upload.render_frame_serial == 7u);
 	CHECK(report.slow_frames[1].gx_upload.cpu_nanoseconds == 400u);
 	CHECK(report.slow_frames[1].final_blit_ns == 1000000u);
 	CHECK(report.slow_frames[1].swap_ns == 2000000u);
 	for (unsigned index = 0u; index < 100u; ++index) {
-		bmsx_frame_timing_record(&report, 502u + index, index * 1000000ull, 0u, false, 0u, false, false, true, NULL, NULL, NULL);
+		bmsx_frame_timing_record(&report, 502u + index, index * 1000000ull, 0u, false, 0u, false, false, true, NULL, NULL, NULL, index * 2u, index * 3u);
 	}
 	CHECK(report.slow_frame_count == BMSX_FRAME_TIMING_SLOW_FRAME_COUNT);
 	CHECK(report.slow_frames[0].host_frame == 501u);
 	CHECK(report.slow_frames[1].host_frame == 601u);
 	CHECK(report.slow_frames[BMSX_FRAME_TIMING_SLOW_FRAME_COUNT - 1u].host_frame == 571u);
 	CHECK(report.slow_frames[1].gx_upload.render_frame_serial == 0u);
+	CHECK(report.slow_frames[1].host_main_thread_cpu_ns == 198u);
+	CHECK(report.slow_frames[1].host_process_cpu_ns == 297u);
+	CHECK(report.slow_frames[BMSX_FRAME_TIMING_SLOW_FRAME_COUNT - 1u].host_main_thread_cpu_ns == 138u);
+	CHECK(report.slow_frames[BMSX_FRAME_TIMING_SLOW_FRAME_COUNT - 1u].host_process_cpu_ns == 207u);
 
 	// Timed-window totals exclude the earlier baseline; live sizes can shrink,
 	// while lifetime maxima and their raw guest identity must not be differenced.
@@ -86,11 +94,11 @@ int main(void) {
 	CHECK(interval.emitted_code_bytes == 120u && interval.code_bytes == 120u);
 	CHECK(interval.prepare_nanoseconds == 2000000u && interval.max_prepare_nanoseconds == 3000000u);
 	CHECK(interval.peak_code_bytes == 1000u && interval.max_prepare_root_pc == 0x1234u);
-	bmsx_frame_timing_record(&native_report, 20u, 10000000u, 0u, false, 0u, false, false, true, NULL, &interval, NULL);
+	bmsx_frame_timing_record(&native_report, 20u, 10000000u, 0u, false, 0u, false, false, true, NULL, &interval, NULL, 0u, 0u);
 	const BmsxNativeCompilationProfile idle = bmsx_native_compilation_profile_delta(&after, &after);
 	CHECK(idle.prepare_requests == 0u && idle.prepare_nanoseconds == 0u && idle.emitted_code_bytes == 0u);
 	CHECK(idle.code_bytes == 120u && idle.max_prepare_nanoseconds == 3000000u);
-	bmsx_frame_timing_record(&native_report, 21u, 5000000u, 0u, false, 0u, false, false, true, NULL, &idle, NULL);
+	bmsx_frame_timing_record(&native_report, 21u, 5000000u, 0u, false, 0u, false, false, true, NULL, &idle, NULL, 0u, 0u);
 	CHECK(native_report.native_profiled_frames == 2u);
 	CHECK(native_report.native_compilation.prepare_requests == 2u);
 	CHECK(native_report.native_compilation.prepare_nanoseconds == 2000000u);
@@ -158,15 +166,15 @@ int main(void) {
 	CHECK(execution_idle.gc_weak_nanoseconds == 0u && execution_idle.gc_sweep_nanoseconds == 0u);
 	CHECK(execution_idle.gc_string_reclaim_nanoseconds == 0u);
 	BmsxFrameTimingReport execution_report = {0};
-	bmsx_frame_timing_record(&execution_report, 51u, 100000000u, 0u, false, 0u, false, true, false, NULL, NULL, &execution);
-	bmsx_frame_timing_record(&execution_report, 52u, 50000000u, 0u, false, 0u, false, false, true, NULL, NULL, &execution_idle);
+	bmsx_frame_timing_record(&execution_report, 51u, 100000000u, 0u, false, 0u, false, true, false, NULL, NULL, &execution, 0u, 0u);
+	bmsx_frame_timing_record(&execution_report, 52u, 50000000u, 0u, false, 0u, false, false, true, NULL, NULL, &execution_idle, 0u, 0u);
 	CHECK(execution_report.slow_frames[0].host_frame == 51u && execution_report.slow_frames[0].has_execution);
 	CHECK(execution_report.slow_frames[0].execution.scheduler_before_cycles == execution_before.scheduler_now_cycles);
 	CHECK(execution_report.slow_frames[0].execution.scheduler_after_cycles == execution_after.scheduler_now_cycles);
 	CHECK(execution_report.slow_frames[0].execution.gc_trace_nanoseconds == 22u);
 	CHECK(execution_report.slow_frames[1].execution.cpu_slice_count == 0u);
 	for (unsigned index = 0u; index < BMSX_FRAME_TIMING_SLOW_FRAME_COUNT; ++index) {
-		bmsx_frame_timing_record(&execution_report, 53u + index, 200000000ull + index, 0u, false, 0u, false, false, true, NULL, NULL, NULL);
+		bmsx_frame_timing_record(&execution_report, 53u + index, 200000000ull + index, 0u, false, 0u, false, false, true, NULL, NULL, NULL, 0u, 0u);
 	}
 	CHECK(execution_report.slow_frame_count == BMSX_FRAME_TIMING_SLOW_FRAME_COUNT);
 	CHECK(execution_report.slow_frames[0].host_frame == 84u);

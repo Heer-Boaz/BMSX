@@ -12,6 +12,8 @@ enum { BMSX_FRAME_TIMING_SLOW_FRAME_COUNT = 32 };
 typedef struct BmsxSlowFrameSample {
 	uint64_t host_frame;
 	uint64_t retro_run_ns;
+	uint64_t host_main_thread_cpu_ns;
+	uint64_t host_process_cpu_ns;
 	uint64_t final_blit_ns;
 	uint64_t swap_ns;
 	bool dropped;
@@ -76,7 +78,9 @@ void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
 		bool presented,
 		const BmsxGxUploadProfileFrameV1* gx_upload,
 		const BmsxNativeCompilationProfile* native_compilation,
-		const BmsxExecutionProfileInterval* execution);
+		const BmsxExecutionProfileInterval* execution,
+		uint64_t host_main_thread_cpu_ns,
+		uint64_t host_process_cpu_ns);
 void bmsx_frame_timing_record_gx_upload(
 	BmsxFrameTimingReport* report,
 	const BmsxGxUploadProfileFrameV1* frame);

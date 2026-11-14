@@ -776,6 +776,13 @@ if(BMSX_BUILD_TESTS)
 			add_library(bmsx_libretro_host_signal_test_core SHARED
 				${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_signal_core.c)
 			target_include_directories(bmsx_libretro_host_signal_test_core PRIVATE ${BMSX_LIBRETRO_DIR})
+			add_library(bmsx_libretro_host_cpu_clock_fixture SHARED
+				${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_cpu_clock_fixture.c)
+			target_link_libraries(bmsx_libretro_host_cpu_clock_fixture PRIVATE dl)
+			add_test(NAME bmsx_libretro_host_cpu_timing_tests
+				COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/platform/libretro_host_cpu_timing_test.py
+					$<TARGET_FILE:bmsx_libretro_host> $<TARGET_FILE:bmsx_libretro_host_signal_test_core>
+					$<TARGET_FILE:bmsx_libretro_host_cpu_clock_fixture>)
 			add_test(NAME bmsx_libretro_host_signals_tests
 				COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/platform/libretro_host_signals_test.py
 					$<TARGET_FILE:bmsx_libretro_host> $<TARGET_FILE:bmsx_libretro_host_signal_test_core>)

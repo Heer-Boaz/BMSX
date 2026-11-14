@@ -71,7 +71,9 @@ void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
 		bool presented,
 		const BmsxGxUploadProfileFrameV1* gx_upload,
 		const BmsxNativeCompilationProfile* native_compilation,
-		const BmsxExecutionProfileInterval* execution) {
+		const BmsxExecutionProfileInterval* execution,
+		uint64_t host_main_thread_cpu_ns,
+		uint64_t host_process_cpu_ns) {
 	if (native_compilation != NULL) {
 		++report->native_profiled_frames;
 		bmsx_native_compilation_profile_accumulate(&report->native_compilation, native_compilation);
@@ -104,6 +106,8 @@ void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
 	report->slow_frames[index] = (BmsxSlowFrameSample){
 		.host_frame = host_frame,
 		.retro_run_ns = retro_run_ns,
+		.host_main_thread_cpu_ns = host_main_thread_cpu_ns,
+		.host_process_cpu_ns = host_process_cpu_ns,
 		.final_blit_ns = final_blit_ns,
 		.swap_ns = swap_ns,
 		.dropped = dropped,
@@ -169,6 +173,9 @@ void bmsx_frame_timing_print(
 			(unsigned long long)sample->native_compilation.code_bytes,
 			(unsigned)sample->has_execution);
 		if (sample->has_execution) bmsx_execution_profile_print(stderr, &sample->execution);
+		fprintf(stderr, " host_main_thread_cpu_ns=%llu host_process_cpu_ns=%llu",
+			(unsigned long long)sample->host_main_thread_cpu_ns,
+			(unsigned long long)sample->host_process_cpu_ns);
 		fputc('\n', stderr);
 	}
 	if (report->native_profiled_frames != 0u)
