@@ -1370,13 +1370,20 @@ export class GxGpu {
 	}
 
 	private rescheduleDeviceService(force = false, ensureCompletion = false): void {
+		const dmaDirection = (this.statusWord & GX_GPU_STATUS_DMA_DIRECTION_MASK) >>> GX_GPU_STATUS_DMA_DIRECTION_SHIFT;
+		// Drawing can free GP0 ingress, but cannot create GPUREAD pixels. The
+		// queued readback and its port state own that completion dependency.
+		const dmaWriteObservesCompletion = !this.supervisorIngressStopped
+			&& (dmaDirection === GX_GPU_DMA_DIRECTION_FIFO || dmaDirection === GX_GPU_DMA_DIRECTION_CPU_TO_GP0)
+			&& (this.dmaController.gpuCommandServiceDemand() & (1 << DmaEndpoint.GpuWrite)) !== 0;
 		const commandObservable = ensureCompletion || this.operationObserver !== null || this.queuedGp0Irqs !== 0 || this.queuedGp0Readbacks !== 0
 			|| (this.pendingCommandTargetCount !== 0 && this.commandBuffer.commandKind[this.pendingCommandTargetCount - 1] === GX_GPU_COMMAND_READ_VRAM_TO_CPU)
 			|| (this.pendingCommandTargetCount > this.commandBuffer.executedCommandCount && this.commandBufferDrainRequired())
 			|| this.commandBuffer.readback.phase !== GX_GPU_READBACK_IDLE
 			|| this.supervisorQuiesceRequested
-			|| (this.cpu.isMemoryWriteBlocked() && this.cpu.stalledMemoryWriteAddress() === IO_GX_GPU_GP0)
-			|| this.dmaController.gpuCommandServiceRequired();
+			|| (this.cpu.isMemoryWriteBlocked() && this.cpu.stalledMemoryWriteAddress() === IO_GX_GPU_GP0
+				&& !this.supervisorIngressStopped && !this.dmaController.ownsWritePort(IO_GX_GPU_GP0))
+			|| dmaWriteObservesCompletion;
 		let deadline = this.pendingCommandCompletionCycle === 0 || !commandObservable ? -1 : this.pendingCommandCompletionCycle;
 		if (this.pcrtcTimingPublicationPending) {
 			deadline = this.scheduler.currentNowCycles();
@@ -1918,6 +1925,7 @@ export class GxGpu {
 			&& dmaDirection === GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU) {
 			this.commandBuffer.readback.setDmaReadEnabled(true);
 		}
+		this.rescheduleDeviceService();
 	}
 
 	private updateCommandStatusBits(): void {
@@ -2049,7 +2057,8 @@ export class GxGpu {
 			&& this.gp0DmaIngress.empty()
 			&& this.gp0Fifo.count() < GX_GPU_COMMAND_FIFO_WORD_CAPACITY
 			&& !this.dmaController.ownsWritePort(IO_GX_GPU_GP0);
-		if (!ready) this.rescheduleDeviceService(false, true);
+		if (!ready) this.rescheduleDeviceService(false,
+			!this.supervisorIngressStopped && !this.dmaController.ownsWritePort(IO_GX_GPU_GP0));
 		return ready;
 	}
 

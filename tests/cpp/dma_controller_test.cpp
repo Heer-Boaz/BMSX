@@ -243,7 +243,9 @@ void testStopGpuDemandAndRestoreSourceWait() {
   h.gpu.writeGp0(0x020000ff);h.gpu.writeGp0(0);h.gpu.writeGp0(0x00010001);
   h.gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION<<24)|GX_GPU_DMA_DIRECTION_OFF);
   h.memory.writeU32(Source,0xe1000000);h.program(Source,0,1,DMA_ROUTE_TO_GPU);
-  require(!h.dma.cpuBusHeld()&&h.scheduler.nextDeadline()==29,"waiting GP0 route schedules GPU progress");
+  require(!h.dma.cpuBusHeld()&&h.scheduler.nextDeadline()==std::numeric_limits<i64>::max(),"an OFF GP0 route cannot be released by draw completion");
+  require(!h.memory.mappedWriteReady(IO_GX_GPU_GP0),"OFF DMA still owns the CPU write port");
+  require(h.scheduler.nextDeadline()==std::numeric_limits<i64>::max(),"a port-ownership wait adds no draw deadline");
   h.memory.writeMappedU32LE(IO_DMA0_TRIGGER,DMA_TRIGGER_STOP);
   require(h.memory.readIoU32(IO_DMA0_STATUS)==0&&h.scheduler.nextDeadline()==std::numeric_limits<i64>::max(),"STOP cancels unnecessary GPU demand");
  }
@@ -277,6 +279,101 @@ void testStopGpuDemandAndRestoreSourceWait() {
   for(u32 i=0;i<300&&restored.memory.readIoU32(IO_DMA0_STATUS)==DMA_STATUS_BUSY;++i)restored.step();
   require(restored.memory.readIoU32(IO_DMA1_STATUS)==DMA_STATUS_DONE&&restored.memory.readIoU32(IO_DMA0_STATUS)==DMA_STATUS_DONE,"restored source-waiting route completes");
   require(restoredReads==1,"restored decoder tail transfers exactly once");
+ }
+}
+void testGpuDmaDirectionObservability() {
+ {
+  Harness h;h.dma.setTiming(1,40,1,1,0,0);
+  h.gpu.writeGp0(0x020000ff);h.gpu.writeGp0(0);h.gpu.writeGp0(0x00010001);
+  h.gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION<<24)|GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU);
+  h.program(Source,0,1,DMA_ROUTE_TO_GPU);
+  require(h.dma.ownsWritePort(IO_GX_GPU_GP0),"wrong-direction GP0 job retains its write port");
+  require(h.scheduler.nextDeadline()==std::numeric_limits<i64>::max(),"GPUREAD mode cannot release a GP0 write request");
+ }
+ for(u32 direction:{GX_GPU_DMA_DIRECTION_OFF,GX_GPU_DMA_DIRECTION_CPU_TO_GP0,GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU}) {
+  Harness h;h.dma.setTiming(1,40,1,1,0,0);
+  h.gpu.writeGp0(0x020000ff);h.gpu.writeGp0(0);h.gpu.writeGp0(0x00010001);
+  h.gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION<<24)|direction);
+  h.program(0,Target,1,DMA_ROUTE_FROM_GPU);
+  require(h.dma.ownsReadPort(IO_GX_GPU_GP0),"GPUREAD job retains its read port");
+  require(h.scheduler.nextDeadline()==std::numeric_limits<i64>::max(),"ordinary draw completion cannot produce unrequested readback pixels");
+ }
+}
+void testGpuDmaDirectionEdgeWithoutCapacityChange() {
+ Harness h;h.dma.setTiming(1,40,1,1,0,0);
+ h.gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION<<24)|GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+ h.gpu.writeGp0(0x020000ff);h.gpu.writeGp0(0);h.gpu.writeGp0(0x00640001);
+ constexpr u32 count=GX_GPU_DMA_INGRESS_WORD_CAPACITY+1;
+ for(u32 i=0;i<count;++i)h.memory.writeU32(Source+4*i,0xe1000000);
+ h.program(Source,0,count,DMA_ROUTE_TO_GPU);h.step();
+ const i64 completion=h.scheduler.nextDeadline();
+ require(!h.dma.cpuBusHeld()&&completion!=std::numeric_limits<i64>::max(),"full ingress waits for GPU completion");
+ for(u32 direction:{GX_GPU_DMA_DIRECTION_OFF,GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU}) {
+  h.gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION<<24)|direction);
+  require(h.scheduler.nextDeadline()==std::numeric_limits<i64>::max(),"wrong mode removes demand despite unchanged zero capacity");
+  h.gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION<<24)|GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+  require(h.scheduler.nextDeadline()==completion,"GP1 mode edge rearms demand without requiring a capacity edge");
+ }
+ for(u32 i=0;i<300&&h.memory.readIoU32(IO_DMA0_STATUS)==DMA_STATUS_BUSY;++i)h.step();
+ require(h.memory.readIoU32(IO_DMA0_STATUS)==DMA_STATUS_DONE,"rearmed ingress request completes without a status poll");
+}
+void testGpuIndependentReadbackAndSupervisorDemand() {
+ for(bool readback:{true,false}) {
+  Harness h;h.dma.setTiming(1,40,1,1,0,0);
+  h.gpu.writeGp0(0x020000ff);h.gpu.writeGp0(0);h.gpu.writeGp0(0x00010001);
+  h.gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION<<24)|GX_GPU_DMA_DIRECTION_OFF);
+  if(readback) {h.gpu.writeGp0(0xc0000000);h.gpu.writeGp0(0);h.gpu.writeGp0(0x00010001);}
+  h.program(Source,0,1,DMA_ROUTE_TO_GPU);
+  if(!readback) {
+   h.dma.beginSupervisorQuiesce();h.gpu.beginSupervisorQuiesce();
+   while(h.scheduler.hasDueTimer())require(h.scheduler.popDueTimer()==DEVICE_SERVICE_SYSTEM,"quiescent DMA notifies the supervisor before GPU completion");
+  }
+  require(h.scheduler.nextDeadline()==29,"queued readback or supervisor quiesce observes completion independently of DMA mode");
+ }
+}
+void testRestoredOffGpuDemand() {
+ Harness h;h.dma.setTiming(1,40,1,1,0,0);
+ h.gpu.writeGp0(0x020000ff);h.gpu.writeGp0(0);h.gpu.writeGp0(0x00640001);
+ h.gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION<<24)|GX_GPU_DMA_DIRECTION_OFF);
+ h.memory.writeU32(Source,0xe1000000);h.program(Source,0,1,DMA_ROUTE_TO_GPU);
+ const auto gpuState=h.gpu.captureState();const auto dmaState=h.dma.captureState();
+ Harness restored;restored.dma.setTiming(1,40,1,1,0,0);
+ restored.memory.writeU32(Source,0xe1000000);
+ restored.dma.restoreState(dmaState,0);restored.gpu.restoreState(gpuState);
+ restored.dma.postLoad();restored.gpu.dependencyStateChanged();
+ require(restored.scheduler.nextDeadline()==std::numeric_limits<i64>::max(),"restored OFF demand remains unobservable");
+ require(!restored.memory.mappedWriteReady(IO_GX_GPU_GP0),"restored DMA port ownership blocks the CPU");
+ require(restored.scheduler.nextDeadline()==std::numeric_limits<i64>::max(),"restored port ownership adds no draw deadline");
+ restored.gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION<<24)|GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+ require(restored.dma.cpuBusHeld(),"restored request resumes on a real mode edge");
+ restored.step();
+ require(restored.memory.readIoU32(IO_DMA0_STATUS)==DMA_STATUS_DONE,"restored request completes once enabled");
+}
+void testGpuWriteDemandAppearsBesideReadDemand() {
+ for(bool grouped:{false,true}) {
+ Harness h;h.dma.setTiming(1,40,1,1,0,0);
+ h.gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION<<24)|GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+ h.gpu.writeGp0(0x020000ff);h.gpu.writeGp0(0);h.gpu.writeGp0(0x00640001);
+ struct Reader { Harness* h;u32 reads; } reader{&h,0};
+ h.memory.mapIoRead(IO_IMGDEC_DATA,&reader,[](void* context,u32,MappedBusSignals) {
+  auto& r=*static_cast<Reader*>(context);
+  if(++r.reads==1)r.h->dma.setEndpointCapacity(DmaEndpoint::ImgDecRead,0);
+  return 0xe1000000u;
+ });
+ h.dma.setEndpointCapacity(DmaEndpoint::ImgDecRead,GX_GPU_DMA_INGRESS_WORD_CAPACITY);
+ h.program(Source,0,GX_GPU_DMA_INGRESS_WORD_CAPACITY+1,DMA_ROUTE_IMGDEC_TO_GPU);h.step();
+ h.program(0,Target,1,DMA_ROUTE_FROM_GPU,1);
+ require(!h.dma.cpuBusHeld()&&h.scheduler.nextDeadline()==std::numeric_limits<i64>::max(),"readback-free read demand cannot observe ordinary draws");
+ require(!h.gpu.captureState().gp0DmaIngressWords.empty(),"the read request has not already freed ingress");
+ require(h.dma.gpuCommandServiceDemand()==(1u<<static_cast<u32>(DmaEndpoint::GpuRead)),"only the independent read endpoint has demand before the source edge");
+ h.scheduler.advanceTo(h.scheduler.nowCycles()+10000);
+ if(grouped)h.dma.setEndpointRequests(DmaEndpoint::ImgDecRead,1,DmaEndpoint::ImgDecWrite,0);
+ else h.dma.setEndpointCapacity(DmaEndpoint::ImgDecRead,1);
+ require(h.dma.cpuBusHeld(),"new write demand catches GPU up before arbitration even with existing read demand");
+ h.step();
+ require(h.memory.readIoU32(IO_DMA0_STATUS)==DMA_STATUS_DONE&&reader.reads==GX_GPU_DMA_INGRESS_WORD_CAPACITY+1,
+  "the new write request transfers its tail exactly once");
+ require(h.memory.readIoU32(IO_DMA1_STATUS)==DMA_STATUS_BUSY,"the independent read request still waits for real readback pixels");
  }
 }
 void testGpuPacketAcrossBursts() {
@@ -412,6 +509,8 @@ int main() {
  characterizeRamCopy();
  testAdmittedBurstAndSupervisorWriteInhibition();testPrimitivesAcrossTransportEdge();testCopyTiming();testBoundedBurstsAndForwardOverlap();testMemoryExcludesConsoleMmio();testFixedGpuAndRawRegisters();
  testGpuDmaReadinessDeadlines();testGpuDmaWaitAndLateDecoderSource();testGpuSourceReadyDuringOtherDmaBlock();testStopGpuDemandAndRestoreSourceWait();
+ testGpuDmaDirectionObservability();testGpuDmaDirectionEdgeWithoutCapacityChange();testGpuIndependentReadbackAndSupervisorDemand();testRestoredOffGpuDemand();
+ testGpuWriteDemandAppearsBesideReadDemand();
  testGpuPacketAcrossBursts();testGpuDmaTailResumesAfterSaturatedCommandBufferRetirement();testFixedInputRoutes();testDecoderToGpuIntersectionAndRestore();testStopAndEmptyJob();testRoundRobinAndSupervisorBoundary();
  return 0;
 }

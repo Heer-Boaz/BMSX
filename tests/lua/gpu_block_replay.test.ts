@@ -6,6 +6,10 @@ import { encodeRuntimeSaveState, decodeRuntimeSaveState } from '../../machine/ts
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { DEVICE_SERVICE_GPU } from '../../machine/ts/machine/scheduler/device';
 import { IO_GX_GPU_GP0, IO_IRQ_FLAGS, IRQ_GPU } from '../../machine/ts/spec/bmsx/io';
+import { IO_DMA0_READ_ADDR, IO_DMA0_TRANSFER_COUNT, IO_DMA0_CONTROL, IO_DMA0_TRIGGER, DMA_ROUTE_TO_GPU, DMA_TRIGGER_START, DMA_TRIGGER_STOP } from '../../machine/ts/spec/bmsx/io';
+import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { GX_GPU_GP1_DMA_DIRECTION } from '../../machine/ts/spec/gx/gp1';
+import { GX_GPU_DMA_DIRECTION_OFF } from '../../machine/ts/spec/gx/gp0';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { GX_GPU_COMMAND_FIFO_WORD_CAPACITY } from '../../machine/ts/spec/gx/gp0';
 import { gxGpuPcrtcRegisterAddress, GX_GPU_PCRTC_SMODE1_LOW, GX_GPU_PCRTC_SMODE1_SINT } from '../../machine/ts/spec/gx/pcrtc';
@@ -71,5 +75,49 @@ test('runtime codec preserves a blocked GP0 store and its wakeup', () => {
 		assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, 0);
 		advance(45);
 		assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, IRQ_GPU);
+	}
+});
+
+test('runtime restore keeps a GP0 DMA ownership stall distinct from FIFO completion', () => {
+	const code = new Uint8Array(5 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.LOADK, 0, 0, 0, 0);
+	writeInstruction(code, 1, OpCode.LOADK, 1, 0, 1, 0);
+	writeInstruction(code, 2, OpCode.STORE_MEM_D, 1, 0, MemoryAccessKind.U32LE, 0);
+	writeInstruction(code, 3, OpCode.RET, 0, 0, 0, 0);
+	writeInstruction(code, 4, OpCode.RFE, 0, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({
+		text: code, functions: [{ firstWord: 0, wordCount: 4, maxStack: 2 }, { firstWord: 4, wordCount: 1 }],
+		constants: [IO_GX_GPU_GP0, 0xe1000000], systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
+		startupFunctionIndex: 0, irqFunctionIndex: 1, exceptionFunctionIndex: 1,
+	});
+	const runtime = new Runtime({ systemRomBytes: image.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, {
+		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh() { return false; }, applyInputControllerVibrationEffect() {},
+	});
+	runtime.boot();
+	const { memory, scheduler, cpu, gxGpu: gpu } = runtime.machine;
+	const mode = gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SMODE1_LOW);
+	memory.writeMappedU32LE(mode, memory.readMappedU32LE(mode) | GX_GPU_PCRTC_SMODE1_SINT);
+	gpu.onService(scheduler.currentNowCycles());
+	const independentDeadline = scheduler.nextDeadline();
+	for (const word of [0x020000ff, 0, 0x00010001]) gpu.writeGp0(word);
+	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_OFF);
+	memory.writeMappedU32LE(IO_DMA0_READ_ADDR, DYNAMIC_RAM_BASE + 0x1000);
+	memory.writeMappedU32LE(IO_DMA0_TRANSFER_COUNT, 1);
+	memory.writeMappedU32LE(IO_DMA0_CONTROL, DMA_ROUTE_TO_GPU);
+	memory.writeMappedU32LE(IO_DMA0_TRIGGER, DMA_TRIGGER_START);
+	assert.equal(scheduler.runCpuSlice(0, 20), RunResult.Halted);
+	assert.equal(cpu.isMemoryWriteBlocked(), true);
+	scheduler.advanceTo(20 - cpu.instructionBudgetRemaining);
+	const encoded = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
+	for (let iteration = 0; iteration < 2; ++iteration) {
+		if (iteration !== 0) applyRuntimeSaveState(runtime, decodeRuntimeSaveState(encoded, memory.ramByteCount(), gpu.readVramSnapshotBytes().byteLength));
+		assert.equal(cpu.isMemoryWriteBlocked(), true);
+		assert.equal(scheduler.nextDeadline(), independentDeadline, 'original and restored DMA ownership adds no draw deadline before the ordinary APU service');
+		scheduler.advanceTo(100);
+		assert.equal(cpu.isMemoryWriteBlocked(), true);
+		memory.writeMappedU32LE(IO_DMA0_TRIGGER, DMA_TRIGGER_STOP);
+		assert.equal(cpu.isMemoryWriteBlocked(), false, 'STOP releases the port without waiting for an unrelated GPU completion');
+		for (let attempt = 0; attempt < 4 && cpu.getFrameDepth() > 0; ++attempt) scheduler.runCpuSlice(0, 20);
+		assert.equal(cpu.getFrameDepth(), 0);
 	}
 });

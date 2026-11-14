@@ -130,10 +130,10 @@ export class DmaController {
 			return;
 		}
 		if ((value & DMA_TRIGGER_STOP) !== 0) {
-			const hadGpuDemand = context.gpuCommandServiceRequired();
+			const hadGpuDemand = context.gpuCommandServiceDemand();
 			context.finishChannel(channel, 0);
 			context.arbitrate(context.scheduler.currentNowCycles());
-			if (hadGpuDemand !== context.gpuCommandServiceRequired()) context.gpu.dependencyStateChanged();
+			if (hadGpuDemand !== context.gpuCommandServiceDemand()) context.gpu.dependencyStateChanged();
 			return;
 		}
 		if ((value & DMA_TRIGGER_START) === 0 || context.busy(channel)) {
@@ -149,7 +149,7 @@ export class DmaController {
 			context.finishChannel(channel);
 		}
 		context.arbitrate(context.scheduler.currentNowCycles());
-		if (gpuJob && context.gpuCommandServiceRequired()) context.gpu.dependencyStateChanged();
+		if (gpuJob && context.gpuCommandServiceDemand()) context.gpu.dependencyStateChanged();
 	}
 
 	public connectGpu(gpu: GxGpu): void {
@@ -184,23 +184,23 @@ export class DmaController {
 	public setEndpointCapacity(endpoint: DmaEndpoint, words: number): void {
 		if (this.endpointCapacity[endpoint] === words) return;
 		const gpuEndpoint = endpoint === DmaEndpoint.GpuRead || endpoint === DmaEndpoint.GpuWrite;
-		const hadGpuDemand = !gpuEndpoint && this.gpuCommandServiceRequired();
+		const hadGpuDemand = gpuEndpoint ? 0 : this.gpuCommandServiceDemand();
 		this.endpointCapacity[endpoint] = words;
 		// A source request can arrive after lazy GPU progress; publish both sides
 		// before admission. GPU's own request update must not re-enter this catch-up.
-		if (!gpuEndpoint && !hadGpuDemand && this.gpuCommandServiceRequired() && !this.restorePending) this.gpu.synchronizeDmaRequest();
+		if (!gpuEndpoint && (this.gpuCommandServiceDemand() & ~hadGpuDemand) !== 0 && !this.restorePending) this.gpu.synchronizeDmaRequest();
 		this.arbitrate(this.scheduler.currentNowCycles());
-		if (!gpuEndpoint && hadGpuDemand !== this.gpuCommandServiceRequired()) this.gpu.dependencyStateChanged();
+		if (!gpuEndpoint && hadGpuDemand !== this.gpuCommandServiceDemand()) this.gpu.dependencyStateChanged();
 	}
 
 	public setEndpointRequests(first: DmaEndpoint, firstWords: number, second: DmaEndpoint, secondWords: number): void {
 		if (this.endpointCapacity[first] === firstWords && this.endpointCapacity[second] === secondWords) return;
-		const hadGpuDemand = this.gpuCommandServiceRequired();
+		const hadGpuDemand = this.gpuCommandServiceDemand();
 		this.endpointCapacity[first] = firstWords;
 		this.endpointCapacity[second] = secondWords;
-		if (!hadGpuDemand && this.gpuCommandServiceRequired() && !this.restorePending) this.gpu.synchronizeDmaRequest();
+		if ((this.gpuCommandServiceDemand() & ~hadGpuDemand) !== 0 && !this.restorePending) this.gpu.synchronizeDmaRequest();
 		this.arbitrate(this.scheduler.currentNowCycles());
-		if (hadGpuDemand !== this.gpuCommandServiceRequired()) this.gpu.dependencyStateChanged();
+		if (hadGpuDemand !== this.gpuCommandServiceDemand()) this.gpu.dependencyStateChanged();
 	}
 
 	public cpuBusHeld(): boolean {
@@ -233,22 +233,23 @@ export class DmaController {
 		return endpoint !== DmaEndpoint.Memory && ENDPOINT_ADDRESSES[endpoint] === address;
 	}
 
-	public gpuCommandServiceRequired(): boolean {
-		// An admitted burst owns the engine; completion catches the GPU up
-		// before another channel can be admitted.
-		if (this.activeChannel !== DMA_CHANNEL_NONE) return false;
+	public gpuCommandServiceDemand(): number {
+		// An admitted burst owns the engine; completion catches requests up
+		// before another admission. A closed admission gate cannot wait.
+		if (this.activeChannel !== DMA_CHANNEL_NONE || this.supervisorAdmissionQuiesceRequested) return 0;
+		let demand = 0;
 		for (const registers of this.registers.channels) {
 			const route = registers.controlWord & DMA_CONTROL_ROUTE_MASK;
 			if ((registers.statusWord & DMA_STATUS_BUSY) === 0) continue;
 			if (READ_ENDPOINTS[route] === DmaEndpoint.GpuRead) {
 				const other = capacityEndpoint(WRITE_ENDPOINTS[route], registers.writeAddressWord, registers.controlWord, false);
-				if (this.endpointCapacity[other] !== 0) return true;
+				if (this.endpointCapacity[other] !== 0) demand |= 1 << DmaEndpoint.GpuRead;
 			} else if (WRITE_ENDPOINTS[route] === DmaEndpoint.GpuWrite) {
 				const other = capacityEndpoint(READ_ENDPOINTS[route], registers.readAddressWord, registers.controlWord, true);
-				if (this.endpointCapacity[other] !== 0) return true;
+				if (this.endpointCapacity[other] !== 0) demand |= 1 << DmaEndpoint.GpuWrite;
 			}
 		}
-		return false;
+		return demand;
 	}
 
 	public reset(): void {
@@ -291,9 +292,9 @@ export class DmaController {
 		if (registers.transferCountWord === 0) {
 			this.finishChannel(channel);
 		}
-		if (this.gpuCommandServiceRequired()) this.gpu.synchronizeDmaRequest();
+		if (this.gpuCommandServiceDemand()) this.gpu.synchronizeDmaRequest();
 		this.arbitrate(previousDeadline);
-		if (this.gpuCommandServiceRequired()) this.gpu.dependencyStateChanged();
+		if (this.gpuCommandServiceDemand()) this.gpu.dependencyStateChanged();
 	}
 
 	public captureState(): DmaControllerState {
@@ -342,8 +343,10 @@ export class DmaController {
 	}
 
 	public beginSupervisorQuiesce(): void {
+		const hadGpuDemand = this.gpuCommandServiceDemand();
 		this.supervisorQuiesceRequested = true;
 		this.supervisorAdmissionQuiesceRequested = true;
+		if (hadGpuDemand !== this.gpuCommandServiceDemand()) this.gpu.dependencyStateChanged();
 		this.notifySupervisorBoundary();
 	}
 
@@ -362,6 +365,7 @@ export class DmaController {
 	}
 
 	public leaveSupervisorContext(): void {
+		const hadGpuDemand = this.gpuCommandServiceDemand();
 		this.clearLiveTransfer();
 		this.registers.copyChannels(this.userRegisters.channels);
 		this.registers.mirror(this.memory);
@@ -370,6 +374,7 @@ export class DmaController {
 		this.supervisorAdmissionQuiesceRequested = false;
 		this.clearUserContext();
 		this.arbitrate(this.scheduler.currentNowCycles());
+		if (hadGpuDemand !== this.gpuCommandServiceDemand()) this.gpu.dependencyStateChanged();
 	}
 
 	private clearLiveTransfer(): void {
@@ -446,7 +451,7 @@ export class DmaController {
 			if (write === DmaEndpoint.Memory) words = this.memory.mappedRegionWordSpan(writeAddress, words, writeRegion);
 			if (words !== 0) {
 				const blockCycles = this.regionSpanCycles(readRegion, words) + this.regionSpanCycles(writeRegion, words);
-				const hadGpuDemand = this.gpuCommandServiceRequired();
+				const hadGpuDemand = this.gpuCommandServiceDemand();
 				this.activeChannel = channel;
 				this.scheduledBlockWords = words;
 				this.serviceDeadline = anchorCycle + blockCycles;

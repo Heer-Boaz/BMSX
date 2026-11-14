@@ -728,13 +728,20 @@ void GxGpu::synchronizeCommandExecution(i64 nowCycles) {
 }
 
 void GxGpu::rescheduleDeviceService(bool force, bool ensureCompletion) {
+	const u32 dmaDirection = (m_statusWord & GX_GPU_STATUS_DMA_DIRECTION_MASK) >> GX_GPU_STATUS_DMA_DIRECTION_SHIFT;
+	// Drawing can free GP0 ingress, but cannot create GPUREAD pixels. Readback
+	// commands and their port state carry that independent completion dependency.
+	const bool dmaWriteObservesCompletion = !m_supervisorIngressStopped
+		&& (dmaDirection == GX_GPU_DMA_DIRECTION_FIFO || dmaDirection == GX_GPU_DMA_DIRECTION_CPU_TO_GP0)
+		&& (m_dmaController.gpuCommandServiceDemand() & (1u << static_cast<u32>(DmaEndpoint::GpuWrite))) != 0u;
 	const bool commandObservable = ensureCompletion || m_operationObserver.emitted != nullptr || m_queuedGp0Irqs != 0u || m_queuedGp0Readbacks != 0u
 		|| (m_pendingCommandTargetCount != 0u && m_commandBuffer.commandKind[m_pendingCommandTargetCount - 1u] == GX_GPU_COMMAND_READ_VRAM_TO_CPU)
 		|| (m_pendingCommandTargetCount > m_commandBuffer.executedCommandCount
 			&& (m_pendingCommandTargetCount >= m_backendSubmissionCommandLimit || commandBufferDrainRequired()))
 		|| m_commandBuffer.readback.phase() != GX_GPU_READBACK_IDLE || m_supervisorQuiesceRequested
-		|| (m_cpu.isMemoryWriteBlocked() && m_cpu.stalledMemoryWriteAddress() == IO_GX_GPU_GP0)
-		|| m_dmaController.gpuCommandServiceRequired();
+		|| (m_cpu.isMemoryWriteBlocked() && m_cpu.stalledMemoryWriteAddress() == IO_GX_GPU_GP0
+			&& !m_supervisorIngressStopped && !m_dmaController.ownsWritePort(IO_GX_GPU_GP0))
+		|| dmaWriteObservesCompletion;
 	i64 deadline = m_pendingCommandCompletionCycle == 0 || !commandObservable ? -1 : m_pendingCommandCompletionCycle;
 	if (m_pcrtcTimingPublicationPending) {
 		deadline = m_scheduler.currentNowCycles();
@@ -1356,6 +1363,7 @@ void GxGpu::writeDmaDirectionWord(u32 word) {
 		&& dmaDirection == GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU) {
 		m_commandBuffer.readback.setDmaReadEnabled(true);
 	}
+	rescheduleDeviceService();
 }
 
 void GxGpu::updateCommandStatusBits() {
@@ -1485,7 +1493,8 @@ bool GxGpu::gp0WriteReady(MappedBusSignals busSignals) {
 		&& m_gp0DmaIngress.empty()
 		&& m_gp0Fifo.count() < GX_GPU_COMMAND_FIFO_WORD_CAPACITY
 		&& !m_dmaController.ownsWritePort(IO_GX_GPU_GP0);
-	if (!ready) rescheduleDeviceService(false, true);
+	if (!ready) rescheduleDeviceService(false,
+		!m_supervisorIngressStopped && !m_dmaController.ownsWritePort(IO_GX_GPU_GP0));
 	return ready;
 }
 

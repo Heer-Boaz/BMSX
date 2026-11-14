@@ -74,10 +74,10 @@ void DmaController::onTriggerWrite(u32 channel, u32 value) {
 		return;
 	}
 	if ((value & DMA_TRIGGER_STOP) != 0u) {
-		const bool hadGpuDemand = gpuCommandServiceRequired();
+		const u32 hadGpuDemand = gpuCommandServiceDemand();
 		finishChannel(channel, 0u);
 		arbitrate(m_scheduler.currentNowCycles());
-		if (hadGpuDemand != gpuCommandServiceRequired()) m_gpu->dependencyStateChanged();
+		if (hadGpuDemand != gpuCommandServiceDemand()) m_gpu->dependencyStateChanged();
 		return;
 	}
 	if ((value & DMA_TRIGGER_START) == 0u || busy(channel)) {
@@ -93,7 +93,7 @@ void DmaController::onTriggerWrite(u32 channel, u32 value) {
 		finishChannel(channel);
 	}
 	arbitrate(m_scheduler.currentNowCycles());
-	if (gpuJob && gpuCommandServiceRequired()) m_gpu->dependencyStateChanged();
+	if (gpuJob && gpuCommandServiceDemand()) m_gpu->dependencyStateChanged();
 }
 
 void DmaController::setTiming(
@@ -125,25 +125,25 @@ void DmaController::setEndpointCapacity(DmaEndpoint endpoint, u32 words) {
 	auto& capacity = m_endpointCapacity[static_cast<u32>(endpoint)];
 	if (capacity == words) return;
 	const bool gpuEndpoint = endpoint == DmaEndpoint::GpuRead || endpoint == DmaEndpoint::GpuWrite;
-	const bool hadGpuDemand = !gpuEndpoint && gpuCommandServiceRequired();
+	const u32 hadGpuDemand = gpuEndpoint ? 0u : gpuCommandServiceDemand();
 	capacity = words;
 	// A source request can arrive after lazy GPU progress; publish both sides
 	// before admission. GPU's own request update must not re-enter this catch-up.
-	if (!gpuEndpoint && !hadGpuDemand && gpuCommandServiceRequired() && !m_restorePending) m_gpu->synchronizeDmaRequest();
+	if (!gpuEndpoint && (gpuCommandServiceDemand() & ~hadGpuDemand) != 0u && !m_restorePending) m_gpu->synchronizeDmaRequest();
 	arbitrate(m_scheduler.currentNowCycles());
-	if (!gpuEndpoint && hadGpuDemand != gpuCommandServiceRequired()) m_gpu->dependencyStateChanged();
+	if (!gpuEndpoint && hadGpuDemand != gpuCommandServiceDemand()) m_gpu->dependencyStateChanged();
 }
 
 void DmaController::setEndpointRequests(DmaEndpoint first, u32 firstWords, DmaEndpoint second, u32 secondWords) {
 	auto& a = m_endpointCapacity[static_cast<u32>(first)];
 	auto& b = m_endpointCapacity[static_cast<u32>(second)];
 	if (a == firstWords && b == secondWords) return;
-	const bool hadGpuDemand = gpuCommandServiceRequired();
+	const u32 hadGpuDemand = gpuCommandServiceDemand();
 	a = firstWords;
 	b = secondWords;
-	if (!hadGpuDemand && gpuCommandServiceRequired() && !m_restorePending) m_gpu->synchronizeDmaRequest();
+	if ((gpuCommandServiceDemand() & ~hadGpuDemand) != 0u && !m_restorePending) m_gpu->synchronizeDmaRequest();
 	arbitrate(m_scheduler.currentNowCycles());
-	if (hadGpuDemand != gpuCommandServiceRequired()) m_gpu->dependencyStateChanged();
+	if (hadGpuDemand != gpuCommandServiceDemand()) m_gpu->dependencyStateChanged();
 }
 
 bool DmaController::ownsReadPort(u32 address) const {
@@ -170,22 +170,23 @@ bool DmaController::hasAdmittedWriteBlock(u32 address) const {
 	return endpoint != DmaEndpoint::Memory && EndpointAddresses[static_cast<u32>(endpoint)] == address;
 }
 
-bool DmaController::gpuCommandServiceRequired() const {
-	// An admitted burst has exclusive use of the engine. Its completion catches
-	// the GPU up before a waiting channel can be admitted.
-	if (m_activeChannel != IO_DMA_CHANNEL_COUNT) return false;
+u32 DmaController::gpuCommandServiceDemand() const {
+	// An admitted burst owns the engine. Completion catches GPU requests up
+	// before another channel can be admitted. A closed admission gate cannot wait.
+	if (m_activeChannel != IO_DMA_CHANNEL_COUNT || m_supervisorAdmissionQuiesceRequested) return 0u;
+	u32 demand = 0u;
 	for (const auto& registers : m_registers.channels) {
 		const u32 route = registers.controlWord & DMA_CONTROL_ROUTE_MASK;
 		if ((registers.statusWord & DMA_STATUS_BUSY) == 0u) continue;
 		if (ReadEndpoints[route] == DmaEndpoint::GpuRead) {
 			const auto other = capacityEndpoint(WriteEndpoints[route], registers.writeAddressWord, registers.controlWord, false);
-			if (m_endpointCapacity[static_cast<u32>(other)] != 0u) return true;
+			if (m_endpointCapacity[static_cast<u32>(other)] != 0u) demand |= 1u << static_cast<u32>(DmaEndpoint::GpuRead);
 		} else if (WriteEndpoints[route] == DmaEndpoint::GpuWrite) {
 			const auto other = capacityEndpoint(ReadEndpoints[route], registers.readAddressWord, registers.controlWord, true);
-			if (m_endpointCapacity[static_cast<u32>(other)] != 0u) return true;
+			if (m_endpointCapacity[static_cast<u32>(other)] != 0u) demand |= 1u << static_cast<u32>(DmaEndpoint::GpuWrite);
 		}
 	}
-	return false;
+	return demand;
 }
 
 void DmaController::reset() {
@@ -224,9 +225,9 @@ void DmaController::onService(i64) {
 	m_serviceActive = false;
 	clearAdmittedBlock();
 	if (registers.transferCountWord == 0u) finishChannel(channel);
-	if (gpuCommandServiceRequired()) m_gpu->synchronizeDmaRequest();
+	if (gpuCommandServiceDemand()) m_gpu->synchronizeDmaRequest();
 	arbitrate(previousDeadline);
-	if (gpuCommandServiceRequired()) m_gpu->dependencyStateChanged();
+	if (gpuCommandServiceDemand()) m_gpu->dependencyStateChanged();
 }
 
 DmaControllerState DmaController::captureState() const {
@@ -275,8 +276,10 @@ void DmaController::beginSupervisorControlQuiesce() {
 }
 
 void DmaController::beginSupervisorQuiesce() {
+	const u32 hadGpuDemand = gpuCommandServiceDemand();
 	m_supervisorQuiesceRequested = true;
 	m_supervisorAdmissionQuiesceRequested = true;
+	if (hadGpuDemand != gpuCommandServiceDemand()) m_gpu->dependencyStateChanged();
 	notifySupervisorBoundary();
 }
 
@@ -289,6 +292,7 @@ void DmaController::enterSupervisorContext() {
 }
 
 void DmaController::leaveSupervisorContext() {
+	const u32 hadGpuDemand = gpuCommandServiceDemand();
 	clearLiveTransfer();
 	m_registers.channels = m_userRegisters.channels;
 	m_registers.mirror(m_memory);
@@ -297,6 +301,7 @@ void DmaController::leaveSupervisorContext() {
 	m_supervisorAdmissionQuiesceRequested = false;
 	clearUserContext();
 	arbitrate(m_scheduler.currentNowCycles());
+	if (hadGpuDemand != gpuCommandServiceDemand()) m_gpu->dependencyStateChanged();
 }
 
 void DmaController::clearLiveTransfer() {
@@ -374,7 +379,7 @@ void DmaController::arbitrate(i64 anchorCycle) {
 		if (write == DmaEndpoint::Memory) words = m_memory.mappedRegionWordSpan(writeAddress, words, writeRegion);
 		if (words != 0u) {
 			const i64 blockCycles = regionSpanCycles(readRegion, words) + regionSpanCycles(writeRegion, words);
-			const bool hadGpuDemand = gpuCommandServiceRequired();
+			const u32 hadGpuDemand = gpuCommandServiceDemand();
 			m_activeChannel = channel;
 			m_scheduledBlockWords = words;
 			m_serviceDeadline = anchorCycle + blockCycles;

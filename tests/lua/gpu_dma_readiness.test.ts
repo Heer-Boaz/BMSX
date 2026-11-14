@@ -13,7 +13,7 @@ import { DmaEndpoint } from '../../machine/ts/machine/devices/dma/endpoints';
 import { GxGpu } from '../../machine/ts/machine/devices/gx/gpu';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { DEVICE_SERVICE_DMA, DEVICE_SERVICE_GPU, DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
+import { DEVICE_SERVICE_DMA, DEVICE_SERVICE_GPU, DEVICE_SERVICE_SYSTEM, DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { cartridgeSlots } from '../helpers/cartridge';
 
 function fixture() {
@@ -159,16 +159,117 @@ test('source DREQ during a different admitted DMA block is observed when the eng
 	assert.equal(reads, gp0.GX_GPU_DMA_INGRESS_WORD_CAPACITY + 1);
 });
 
-test('STOP cancels a waiting GP0 job and its unneeded GPU completion deadline', () => {
+test('new write demand catches GPU up even when a read channel was already waiting', () => {
+	for (const pairedRequest of [false, true]) {
+		const h = fixture(); fill(h, 0x00640001);
+		let reads = 0;
+		h.memory.mapIoRead(io.IO_IMGDEC_DATA, h, () => {
+			if (++reads === 1) h.dma.setEndpointCapacity(DmaEndpoint.ImgDecRead, 0);
+			return 0xe1000000;
+		});
+		h.dma.setEndpointCapacity(DmaEndpoint.ImgDecRead, gp0.GX_GPU_DMA_INGRESS_WORD_CAPACITY);
+		start(h, io.DMA_ROUTE_IMGDEC_TO_GPU, gp0.GX_GPU_DMA_INGRESS_WORD_CAPACITY + 1); step(h);
+		h.memory.writeMappedU32LE(io.IO_DMA1_WRITE_ADDR, source);
+		h.memory.writeMappedU32LE(io.IO_DMA1_TRANSFER_COUNT, 1);
+		h.memory.writeMappedU32LE(io.IO_DMA1_CONTROL, io.DMA_ROUTE_FROM_GPU);
+		h.memory.writeMappedU32LE(io.IO_DMA1_TRIGGER, io.DMA_TRIGGER_START);
+		assert.equal(h.dma.cpuBusHeld(), false);
+		assert.ok(h.gpu.captureState().gp0DmaIngressWords.length > 0, 'the read-channel START has not already freed write capacity');
+		assert.equal(h.dma.gpuCommandServiceDemand(), 1 << DmaEndpoint.GpuRead);
+		assert.equal(h.scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER);
+		h.scheduler.advanceTo(10000);
+		if (pairedRequest) h.dma.setEndpointRequests(DmaEndpoint.ImgDecRead, 1, DmaEndpoint.ImgDecWrite, 0);
+		else h.dma.setEndpointCapacity(DmaEndpoint.ImgDecRead, 1);
+		assert.equal(h.dma.cpuBusHeld(), true, 'the newly added write bit must catch up before arbitration');
+		assert.equal(h.dma.captureState().activeChannel, 0);
+		step(h);
+		assert.equal(h.memory.readIoU32(io.IO_DMA0_STATUS), io.DMA_STATUS_DONE);
+		assert.equal(h.memory.readIoU32(io.IO_DMA1_STATUS), io.DMA_STATUS_BUSY, 'read demand still awaits an actual readback');
+		assert.equal(reads, gp0.GX_GPU_DMA_INGRESS_WORD_CAPACITY + 1);
+	}
+});
+
+test('a disabled GP0 DMA job owns its port but does not observe draw completion', () => {
 	const h = fixture(); fill(h, 0x00010001);
 	h.gpu.writeGp1((gp1.GX_GPU_GP1_DMA_DIRECTION << 24) | gp0.GX_GPU_DMA_DIRECTION_OFF);
 	h.memory.writeU32(source, 0xe1000000);
 	start(h, io.DMA_ROUTE_TO_GPU, 1);
 	assert.equal(h.dma.cpuBusHeld(), false);
-	assert.equal(h.scheduler.nextDeadline(), 29, 'waiting channel currently requires command progress');
+	assert.equal(h.scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER, 'draw completion cannot enable an OFF request');
+	assert.equal(h.memory.mappedWriteReady(io.IO_GX_GPU_GP0), false, 'DMA still owns the CPU write port');
+	assert.equal(h.scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER, 'a port-ownership wait cannot be released by draw completion');
 	h.memory.writeMappedU32LE(io.IO_DMA0_TRIGGER, io.DMA_TRIGGER_STOP);
 	assert.equal(h.memory.readIoU32(io.IO_DMA0_STATUS), 0);
 	assert.equal(h.scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER, 'stopped DMA no longer observes the GPU completion');
+});
+
+test('a GP0 job in GPUREAD mode does not request unrelated draw completion', () => {
+	const h = fixture(); fill(h, 0x00010001);
+	h.gpu.writeGp1((gp1.GX_GPU_GP1_DMA_DIRECTION << 24) | gp0.GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU);
+	start(h, io.DMA_ROUTE_TO_GPU, 1);
+	assert.equal(h.scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER);
+	assert.equal(h.dma.ownsWritePort(io.IO_GX_GPU_GP0), true);
+});
+
+test('a GPUREAD job cannot produce pixels by completing ordinary draws', () => {
+	for (const direction of [gp0.GX_GPU_DMA_DIRECTION_OFF, gp0.GX_GPU_DMA_DIRECTION_CPU_TO_GP0, gp0.GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU]) {
+		const h = fixture(); fill(h, 0x00010001);
+		h.gpu.writeGp1((gp1.GX_GPU_GP1_DMA_DIRECTION << 24) | direction);
+		h.memory.writeMappedU32LE(io.IO_DMA0_WRITE_ADDR, source);
+		start(h, io.DMA_ROUTE_FROM_GPU, 1);
+		assert.equal(h.dma.ownsReadPort(io.IO_GX_GPU_GP0), true);
+		assert.equal(h.scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER, 'there is no queued readback to make ready');
+	}
+});
+
+test('a GP1 mode edge rearms ingress demand even when its current capacity remains zero', () => {
+	const h = fixture(); fill(h, 0x00640001);
+	const count = gp0.GX_GPU_DMA_INGRESS_WORD_CAPACITY + 1;
+	for (let i = 0; i < count; ++i) h.memory.writeU32(source + i * 4, 0xe1000000);
+	start(h, io.DMA_ROUTE_TO_GPU, count); step(h);
+	assert.equal(h.dma.cpuBusHeld(), false);
+	const completion = h.scheduler.nextDeadline();
+	assert.notEqual(completion, Number.MAX_SAFE_INTEGER);
+	for (const direction of [gp0.GX_GPU_DMA_DIRECTION_OFF, gp0.GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU]) {
+		h.gpu.writeGp1((gp1.GX_GPU_GP1_DMA_DIRECTION << 24) | direction);
+		assert.equal(h.scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER, 'the wrong mode disables completion demand');
+		h.gpu.writeGp1((gp1.GX_GPU_GP1_DMA_DIRECTION << 24) | gp0.GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+		assert.equal(h.scheduler.nextDeadline(), completion, 'the mode edge observes existing ingress debt, without a capacity edge');
+	}
+	for (let i = 0; i < 300 && h.memory.readIoU32(io.IO_DMA0_STATUS) === io.DMA_STATUS_BUSY; ++i) step(h);
+	assert.equal(h.memory.readIoU32(io.IO_DMA0_STATUS), io.DMA_STATUS_DONE);
+});
+
+test('readback and supervisor dependencies remain observable with disabled DMA demand', () => {
+	const h = fixture(); fill(h, 0x00010001);
+	h.gpu.writeGp1((gp1.GX_GPU_GP1_DMA_DIRECTION << 24) | gp0.GX_GPU_DMA_DIRECTION_OFF);
+	for (const word of [0xc0000000, 0, 0x00010001]) h.gpu.writeGp0(word);
+	start(h, io.DMA_ROUTE_TO_GPU, 1);
+	assert.equal(h.scheduler.nextDeadline(), 29, 'queued readback owns its completion dependency independently of DMA direction');
+	const q = fixture(); fill(q, 0x00010001);
+	q.gpu.writeGp1((gp1.GX_GPU_GP1_DMA_DIRECTION << 24) | gp0.GX_GPU_DMA_DIRECTION_OFF);
+	start(q, io.DMA_ROUTE_TO_GPU, 1);
+	q.dma.beginSupervisorQuiesce(); q.gpu.beginSupervisorQuiesce();
+	while (q.scheduler.hasDueTimer()) assert.equal(q.scheduler.popDueTimer(), DEVICE_SERVICE_SYSTEM);
+	assert.equal(q.scheduler.nextDeadline(), 29, 'the supervisor still needs to drain admitted GPU work');
+});
+
+test('restored mode-disabled DMA does not force a draw deadline and can later resume', () => {
+	const h = fixture(); fill(h, 0x00640001);
+	h.gpu.writeGp1((gp1.GX_GPU_GP1_DMA_DIRECTION << 24) | gp0.GX_GPU_DMA_DIRECTION_OFF);
+	h.memory.writeU32(source, 0xe1000000); start(h, io.DMA_ROUTE_TO_GPU, 1);
+	const gpuState = h.gpu.captureState(), dmaState = h.dma.captureState();
+	const restored = fixture();
+	restored.memory.writeU32(source, 0xe1000000);
+	restored.dma.restoreState(dmaState, 0); restored.gpu.restoreState(gpuState);
+	restored.dma.postLoad(); restored.gpu.dependencyStateChanged();
+	assert.equal(restored.scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER, 'restore reconciles OFF after all request producers');
+	assert.equal(restored.memory.mappedWriteReady(io.IO_GX_GPU_GP0), false);
+	assert.equal(restored.scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER, 'restored ownership alone cannot observe completion');
+	restored.gpu.writeGp1((gp1.GX_GPU_GP1_DMA_DIRECTION << 24) | gp0.GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+	assert.equal(restored.dma.cpuBusHeld(), true);
+	step(restored);
+	assert.equal(restored.memory.readIoU32(io.IO_DMA0_STATUS), io.DMA_STATUS_DONE);
 });
 
 test('STOP cancels GPU wakeup when a DMA tail waits for full ingress', () => {
