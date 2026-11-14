@@ -112,7 +112,8 @@ void rawFieldsAndInlineCaches() {
 		image.constants[32767] = std::string("field-key");
 		CpuMachine machine(image, instrumented);
 		auto& cpu = machine.cpu;
-		Table* table = cpu.createTable();
+		// Keep growth work separate from the operand and inline-cache base charges.
+		Table* table = cpu.createTable(0, 2);
 		Value* registers = cpu.activeThread()->frameAtDepth(0)->registers;
 		registers[1] = valueTable(table);
 		registers[32767] = valueNumber(91.5);

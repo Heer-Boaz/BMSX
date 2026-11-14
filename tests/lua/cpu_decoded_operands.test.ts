@@ -67,7 +67,8 @@ test('unsigned raw fields and signed RK values remain independent of mutable fie
 			functions: [{ firstWord: 0, wordCount: 13, maxStack: 32768 }], constants });
 		const { cpu } = createTestSystemCpu(image);
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
-		const table = cpu.createTable();
+		// Keep growth work separate from the operand and inline-cache base charges.
+		const table = cpu.createTable(0, 2);
 		const registers = cpu.rootThread.frameAtDepth(0).registers;
 		registers.setTable(1, table);
 		registers.setNumber(32767, 91.5);
