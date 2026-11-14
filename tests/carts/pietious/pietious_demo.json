@@ -1,13 +1,93 @@
 [
 	{
+		"description": "confirm_intro_story_title",
+		"frame": 60,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyX",
+			"down": true
+		}
+	},
+	{
+		"description": "release_confirm",
+		"frame": 63,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyX",
+			"down": false
+		}
+	},
+	{
+		"description": "confirm_intro_story_title",
+		"frame": 120,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyX",
+			"down": true
+		}
+	},
+	{
 		"description": "capture_120",
 		"frame": 121,
 		"capture": true
 	},
 	{
+		"description": "release_confirm",
+		"frame": 123,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyX",
+			"down": false
+		}
+	},
+	{
 		"description": "capture_160",
 		"frame": 161,
 		"capture": true
+	},
+	{
+		"description": "confirm_intro_story_title",
+		"frame": 180,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyX",
+			"down": true
+		}
+	},
+	{
+		"description": "release_confirm",
+		"frame": 183,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyX",
+			"down": false
+		}
+	},
+	{
+		"description": "confirm_intro_story_title",
+		"frame": 360,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyX",
+			"down": true
+		}
+	},
+	{
+		"description": "release_confirm",
+		"frame": 363,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyX",
+			"down": false
+		}
 	},
 	{
 		"description": "segment_01_short_hop_press",
@@ -134,6 +214,11 @@
 			"pressId": 5,
 			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
 		}
+	},
+	{
+		"description": "capture_platform_gameplay",
+		"frame": 850,
+		"capture": true
 	},
 	{
 		"description": "segment_03_stop_after_ledge_drop",
@@ -274,6 +359,11 @@
 			"pressId": 10,
 			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
 		}
+	},
+	{
+		"description": "capture_platform_gameplay",
+		"frame": 1350,
+		"capture": true
 	},
 	{
 		"description": "segment_06_stairs_down_end",
@@ -582,6 +672,11 @@
 			"pressId": 21,
 			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
 		}
+	},
+	{
+		"description": "capture_platform_gameplay",
+		"frame": 2100,
+		"capture": true
 	},
 	{
 		"description": "segment_10_descend_for_step_off_release_down",
