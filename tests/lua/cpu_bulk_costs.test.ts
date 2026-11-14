@@ -1,14 +1,18 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
+import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { Table } from '../../machine/ts/machine/cpu/table';
-import { type Value } from '../../machine/ts/machine/cpu/value';
+import { createBuiltinFunction, valueString, type Value } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
-import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
+import { BuiltinFunctionId, LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_RAM_USED_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { compileTableIterationTest } from '../helpers/table_iteration';
@@ -126,7 +130,7 @@ return true`, 3);
   });
  }
 
- test(`field growth currently costs no extra guest cycles (${backend})`, () => {
+ test(`field growth charges completed scans, initialization and relocation (${backend})`, () => {
   const text = new Uint8Array(2 * INSTRUCTION_BYTES);
   writeInstruction(text, 0, OpCode.SETT, 0, 1, 2);
   writeInstruction(text, 1, OpCode.JMP, 0, 63, 62, 255);
@@ -151,8 +155,13 @@ return true`, 3);
    for (let index = 0; index < keys.length; index += 1) {
     frame.registers.setStringId(1, keys[index]);
     cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
-    assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.SETT] + BASE_CYCLES[OpCode.JMP]), RunResult.Yielded);
-    assert.equal(cpu.instructionBudgetRemaining, 0, 'each store and loop jump pays only its base charge');
+    const capacityExpected = initialCapacity || (1 << (32 - Math.clz32(index)));
+    const surcharge = capacityExpected === previousCapacity ? 0 : 4 * previousCapacity + 2 * capacityExpected + 2 * index;
+    const grant = BASE_CYCLES[OpCode.SETT] + 1;
+    assert.equal(cpu.runUntilDepth(0, grant), RunResult.Yielded);
+    assert.equal(cpu.instructionBudgetRemaining, surcharge ? 1 - surcharge : 1 - BASE_CYCLES[OpCode.JMP]);
+    assert.equal(frame.pc, surcharge ? entry + INSTRUCTION_BYTES : entry,
+     'growth finishes atomically and stops before the following instruction');
     assert.equal(table.getStringKey(keys[index]), 73);
     const capacity = table.storedSlotCount;
     assert.equal(capacity, initialCapacity || (1 << (32 - Math.clz32(index))));
@@ -160,7 +169,143 @@ return true`, 3);
     previousCapacity = capacity;
    }
    assert.equal(initializedSlots, initialCapacity === 0 ? 62 : 0,
-    'growth initializes additional key/value storage without an instruction surcharge');
+    'every replacement initializes its entire key/value storage');
   }
  });
+
+ for (const op of [OpCode.SETT, OpCode.SETI, OpCode.SETFIELD, OpCode.CALL]) {
+  test(`every table-write route charges growth at its owning boundary (${backend}, ${op})`, () => {
+   const text = new Uint8Array(2 * INSTRUCTION_BYTES);
+   writeInstruction(text, 0, op, 0, op === OpCode.SETFIELD ? 0 : op === OpCode.CALL ? 4 : 1, op === OpCode.CALL ? 1 : 2);
+   writeInstruction(text, 1, OpCode.JMP, 0, 63, 62, 255);
+   const image = linkRawTestSystemBlua32({ text, constants: ['field'], functions: [{ firstWord: 0, wordCount: 2, maxStack: 5 }] });
+   const { cpu } = createTestSystemCpu(image, backend);
+   const frame = cpu.rootThread.currentFrame!, r = frame.registers;
+   const entry = image.image.functions[0].codeAddress;
+   const integer = op === OpCode.SETI;
+   const key = integer ? 1 : valueString(cpu.stringPool.intern('field'));
+   const prepare = (capacity: number) => {
+    const table = cpu.createTable(integer ? capacity : 0, integer ? 0 : capacity);
+    if (op === OpCode.CALL) {
+     r.set(0, createBuiltinFunction(BuiltinFunctionId.RawSet)); r.setTable(1, table);
+     r.set(2, key); r.setNumber(3, 73);
+    } else {
+     r.setTable(0, table); r.set(1, key); r.setNumber(2, 73);
+    }
+    return table;
+   };
+   prepare(1); cpu.runUntilDepth(0, 10000);
+   if (backend === CpuExecutionBackend.JavaScript) {
+    assert.ok(frame.decodedPage!.compiledBlocks!.entries[(entry & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES],
+     'the allocating miss is entered from an adopted generated region');
+   }
+   const table = prepare(0);
+   cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
+   const base = BASE_CYCLES[op] + (op === OpCode.CALL ? 1 : 0);
+   assert.equal(cpu.runUntilDepth(0, base + 1), RunResult.Yielded);
+   const initialization = integer ? 1 : 2;
+   assert.equal(cpu.instructionBudgetRemaining, 1 - initialization);
+   assert.equal(frame.pc, entry + INSTRUCTION_BYTES);
+   assert.equal(table.get(key), 73);
+  });
+ }
+
+ for (const scenario of ['array-growth', 'hash-to-array', 'array-to-hash', 'mixed', 'same-capacity', 'weak-collection', 'failed-growth'] as const) {
+  test(`table rebuild accounts actual completed storage work: ${scenario} (${backend})`, () => {
+   const text = new Uint8Array(33 * INSTRUCTION_BYTES);
+   writeInstruction(text, 0, OpCode.SETT, 0, 1, 2);
+   writeInstruction(text, 1, OpCode.JMP, 0, 63, 62, 255);
+   writeInstruction(text, 32, OpCode.HALT, 0, 0, 0);
+   const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 5 },
+    { firstWord: 32, wordCount: 1 }], exceptionFunctionIndex: 1 });
+   const { cpu } = createTestSystemCpu(image, backend);
+   const frame = cpu.rootThread.currentFrame!, r = frame.registers;
+   const entry = image.image.functions[0].codeAddress;
+   r.setTable(0, cpu.createTable(0, 1)); r.set(1, valueString(cpu.stringPool.intern('warm'))); r.setNumber(2, 73);
+   cpu.runUntilDepth(0, 10000);
+   if (backend === CpuExecutionBackend.JavaScript) {
+    assert.ok(frame.decodedPage!.compiledBlocks!.entries[(entry & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]);
+   }
+   const field = valueString(cpu.stringPool.intern('field'));
+   const other = valueString(cpu.stringPool.intern('other'));
+   const array = scenario === 'array-growth' ? 2 : scenario === 'array-to-hash' ? 8 : scenario === 'mixed' ? 4 : 0;
+   const hash = scenario === 'hash-to-array' || scenario === 'mixed' || scenario === 'same-capacity' || scenario === 'weak-collection' ? 2 : scenario === 'failed-growth' ? 1024 : 0;
+   const table = cpu.createTable(array, hash);
+   r.setTable(0, table); r.setNumber(2, 73); frame.top = 5;
+   let surcharge: number, capacity: number;
+   if (scenario === 'array-growth') {
+    table.setInteger(1, 11); table.setInteger(2, 22); r.setNumber(1, 3);
+    surcharge = 10; capacity = 4;
+   } else if (scenario === 'hash-to-array') {
+    table.setInteger(1, 11); table.setInteger(3, 33); r.setNumber(1, 2);
+    surcharge = 14; capacity = 4;
+   } else if (scenario === 'array-to-hash') {
+    table.setInteger(8, 88); r.set(1, field);
+    surcharge = 22; capacity = 2;
+   } else if (scenario === 'mixed') {
+    table.setInteger(1, 11); table.setInteger(4, 44); table.set(field, 55); table.set(other, 66);
+    r.set(1, valueString(cpu.stringPool.intern('third')));
+    surcharge = 32; capacity = 5;
+   } else if (scenario === 'same-capacity') {
+    table.set(field, 55); table.set(other, 66); table.set(other, null);
+    r.set(1, valueString(cpu.stringPool.intern('third')));
+    surcharge = 14; capacity = 2;
+   } else if (scenario === 'weak-collection') {
+    const mode = cpu.createTable(0, 1);
+    mode.setStringKey(cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v'))); table.metatable = mode;
+    table.set(field, cpu.createTable()); table.set(other, cpu.createTable());
+    const heap = cpu.luaHeap.captureState();
+    r.setTable(4, cpu.createTable((heap.nextCollectionBytes - heap.trackedBytes - 48) >>> 3));
+    r.set(1, valueString(cpu.stringPool.intern('third')));
+    surcharge = 16; capacity = 4;
+   } else {
+    for (let i = 0; i < 1024; ++i) table.set(i + 0.5, i);
+    r.setNumber(1, 1024.5);
+    r.setTable(4, cpu.createTable((PSX_MACHINE_SPEC.ramBytes - BASE_RAM_USED_SIZE - cpu.luaHeap.usedBytes() - 4096) >>> 3));
+    surcharge = 2048; capacity = 1024;
+   }
+   const key = r.get(1);
+   cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
+   assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.SETT] + 1), RunResult.Yielded);
+   assert.equal(cpu.instructionBudgetRemaining, 1 - surcharge);
+   assert.equal(frame.pc, scenario === 'failed-growth' ? entry : entry + INSTRUCTION_BYTES);
+   assert.equal(table.storedSlotCount, capacity);
+   if (scenario === 'failed-growth') {
+    assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
+    assert.equal(table.get(key), null, 'failed admission performs no insertion');
+    assert.equal(table.get(0.5), 0, 'existing mappings survive failed admission');
+   } else {
+    assert.equal(table.get(key), 73);
+    if (scenario === 'weak-collection') {
+     assert.equal(table.get(field), null); assert.equal(table.get(other), null);
+    }
+   }
+  });
+ }
+
+
+ test(`host table rebuilds touch only transient CPU grant scratch, not scheduler or checkpoint time (${backend})`, () => {
+  const text = new Uint8Array(INSTRUCTION_BYTES);
+  writeInstruction(text, 0, OpCode.SETT, 0, 1, 2);
+  const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 3 }] });
+  const { cpu } = createTestSystemCpu(image, backend), scheduler = new DeviceScheduler(cpu);
+  scheduler.setNowCycles(73);
+  const r = cpu.rootThread.currentFrame!.registers, table = cpu.createTable();
+  const key = valueString(cpu.stringPool.intern('field'));
+  r.setTable(0, table); r.set(1, key); r.setNumber(2, 91); cpu.rootThread.currentFrame!.top = 3;
+  cpu.instructionBudgetRemaining = 29;
+  table.set(key, 37);
+  assert.equal(cpu.instructionBudgetRemaining, 27);
+  assert.equal(scheduler.currentNowCycles(), 73, 'host storage work does not advance machine time');
+  const saved = cpu.captureRuntimeState();
+  cpu.instructionBudgetRemaining = -99;
+  assert.deepEqual(cpu.captureRuntimeState(), saved, 'grant scratch is not checkpoint state');
+  cpu.restoreRuntimeState(saved);
+  assert.equal(cpu.instructionBudgetRemaining, -99, 'restore does not price reconstructed storage');
+  assert.equal(scheduler.currentNowCycles(), 73);
+  assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+  assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.SETT], 'the next execution owns a fresh grant');
+  assert.equal(cpu.rootThread.currentFrame!.registers.getTable(0).get(key), 91);
+ });
+
 }

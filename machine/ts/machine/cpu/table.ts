@@ -1093,6 +1093,7 @@ export class Table {
 
 		const hashKeys = totalKeys - arrayKeys;
 		const hashSize = hashKeys > 0 ? nextPowerOfTwo(hashKeys) : 0;
+		this.luaHeap.accountTableStorageWork(this.arrayCapacity + 2 * this.hashSize);
 		this.resize(
 			arraySize,
 			hashSize,
@@ -1158,10 +1159,12 @@ export class Table {
 		this.hashNext = newHashSize === 0 ? EMPTY_TABLE_HASH_NEXT : new Int32Array(newHashSize);
 		this.hashNext.fill(TABLE_HASH_NEXT_END);
 		this.hashFree = newHashSize > 0 ? newHashSize - 1 : -1;
+		this.luaHeap.accountTableStorageWork(slotCount);
 
+		let relocatedSlots = 0;
 		for (let index = 0; index < oldArrayCapacity; index += 1) {
 			if (oldTags[index] !== ValueTag.Nil) {
-				this.rawSet(
+				const destination = this.rawSet(
 					ValueTag.Number,
 					index + 1,
 					null,
@@ -1169,6 +1172,7 @@ export class Table {
 					oldScalars[index],
 					oldReferences[index],
 				);
+				relocatedSlots += destination < 0 ? 1 : 2;
 			}
 		}
 		for (let index = 0; index < oldHashSize; index += 1) {
@@ -1176,7 +1180,7 @@ export class Table {
 			const oldValueSlot = oldArrayCapacity + oldHashSize + index;
 			if (oldTags[oldKeySlot] !== ValueTag.Nil
 				&& oldTags[oldValueSlot] !== ValueTag.Nil) {
-				this.rawSet(
+				const destination = this.rawSet(
 					oldTags[oldKeySlot],
 					oldScalars[oldKeySlot],
 					oldReferences[oldKeySlot],
@@ -1184,8 +1188,10 @@ export class Table {
 					oldScalars[oldValueSlot],
 					oldReferences[oldValueSlot],
 				);
+				relocatedSlots += destination < 0 ? 1 : 2;
 			}
 		}
+		this.luaHeap.accountTableStorageWork(oldArrayCapacity + 2 * oldHashSize + relocatedSlots);
 		if (resizedBytes < previousBytes) {
 			this.luaHeap.release(previousBytes - resizedBytes);
 		}

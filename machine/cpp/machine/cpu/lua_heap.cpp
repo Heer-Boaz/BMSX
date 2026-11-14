@@ -33,6 +33,10 @@ void LuaHeap::reserve(
 	m_trackedBytes = nextBytes;
 }
 
+void LuaHeap::accountTableStorageWork(size_t valueSlots) {
+	m_cpu.instructionBudgetRemaining -= static_cast<int>(valueSlots);
+}
+
 void LuaHeap::adjustForRestore(size_t previousBytes, size_t restoredBytes) {
 	if (restoredBytes > previousBytes) {
 		m_trackedBytes += restoredBytes - previousBytes;

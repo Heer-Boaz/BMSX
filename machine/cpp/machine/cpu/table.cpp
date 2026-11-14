@@ -188,6 +188,7 @@ void Table::rehash(const Value& key, const Value& value) {
 
 	size_t hashKeys = totalKeys - arrayKeys;
 	size_t hashSize = hashKeys > 0 ? nextPowerOfTwo(hashKeys) : 0;
+	m_luaHeap.accountTableStorageWork(m_array.size() + 2 * m_hashSize);
 	resize(arraySize, hashSize, key, value);
 }
 
@@ -209,18 +210,23 @@ void Table::resize(
 	const size_t oldHashSize = m_hashSize;
 
 	allocateStorage(newArraySize, newHashSize);
+	m_luaHeap.accountTableStorageWork(newArraySize + 2 * newHashSize);
 
+	size_t relocatedSlots = 0;
 	for (size_t i = 0; i < oldArray.size(); ++i) {
 		if (!isNil(oldArray[i])) {
-			rawSet(valueNumber(static_cast<double>(i + 1)), oldArray[i]);
+			const int destination = rawSet(valueNumber(static_cast<double>(i + 1)), oldArray[i]);
+			relocatedSlots += destination < 0 ? 1u : 2u;
 		}
 	}
 	for (size_t i = 0; i < oldHashSize; ++i) {
 		const Value key = oldHashKeys[i];
 		if (!isNil(key) && !isNil(oldHashValues[i])) {
-			rawSet(key, oldHashValues[i]);
+			const int destination = rawSet(key, oldHashValues[i]);
+			relocatedSlots += destination < 0 ? 1u : 2u;
 		}
 	}
+	m_luaHeap.accountTableStorageWork(oldArray.size() + 2 * oldHashSize + relocatedSlots);
 	oldStorage.reset();
 	if (resizedBytes < previousBytes) {
 		m_luaHeap.release(previousBytes - resizedBytes);

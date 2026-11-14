@@ -2,17 +2,176 @@
 #include "machine/cpu/native_block.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
+#include "machine/scheduler/device.h"
 #include "spec/bmsx/model.h"
+#include "spec/bmsx/memory_map.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 
+#include <algorithm>
 #include <array>
 #include <initializer_list>
 #include <stdexcept>
 #include <string>
 
 using namespace bmsx;
+
+namespace {
+struct CpuMachine {
+ test::Blua32TestRom rom;
+ Memory memory;
+ IrqController irq;
+ ExecutionAddressSpace addresses;
+ CPU cpu;
+ CpuMachine(const test::Blua32TestImage& image, bool scalar)
+  : rom(test::encodeBlua32TestRom(RomImageDomain::System, image))
+  , memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes)
+  , irq(memory), addresses(memory), cpu(memory, irq, addresses) {
+  cpu.reset();
+  if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
+ }
+ void warm(bool scalar) {
+  cpu.runUntilDepth(0, 10000);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+  if (!scalar) {
+   auto& page = *cpu.activeThread()->frameAtDepth(0)->decodedPage;
+   const u32 entry = (rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+   test::waitForNativeEntry(cpu, page, entry);
+   if (!page.nativeBlocks->entries[entry]) throw std::runtime_error("table-write entry must be adopted before testing its allocating miss");
+  }
+#endif
+ }
+ void restart() {
+  cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
+ }
+};
+
+void writeRoutes(bool scalar) {
+ for (const auto op : {OpCode::SETT, OpCode::SETI, OpCode::SETFIELD, OpCode::CALL}) {
+  test::Blua32TestImage image;
+  image.text.resize(2 * INSTRUCTION_BYTES);
+  writeInstruction(image.text, 0, static_cast<u8>(op), 0, op == OpCode::SETFIELD ? 0 : op == OpCode::CALL ? 4 : 1, op == OpCode::CALL ? 1 : 2);
+  writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
+  image.constants = {std::string{"field"}};
+  image.functions = {{.firstWord=0, .wordCount=2, .maxStack=5}};
+  CpuMachine machine(image, scalar);
+  auto& cpu = machine.cpu;
+  auto* frame = cpu.activeThread()->frameAtDepth(0);
+  auto* r = frame->registers;
+  const bool integer = op == OpCode::SETI;
+  const Value key = integer ? valueNumber(1) : valueString(cpu.stringPool().intern("field"));
+  auto prepare = [&](int capacity) {
+   auto* table = cpu.createTable(integer ? capacity : 0, integer ? 0 : capacity);
+   if (op == OpCode::CALL) {
+    r[0] = cpu.createBuiltinFunction(BuiltinFunctionId::RawSet); r[1] = valueTable(table); r[2] = key; r[3] = valueNumber(73);
+   } else {
+    r[0] = valueTable(table); r[1] = key; r[2] = valueNumber(73);
+   }
+   return table;
+  };
+  prepare(1); machine.warm(scalar);
+  auto* table = prepare(0); machine.restart();
+  const int base = BASE_CYCLES[static_cast<u8>(op)] + (op == OpCode::CALL ? 1 : 0);
+  const int initialization = integer ? 1 : 2;
+  if (cpu.runUntilDepth(0, base + 1) != RunResult::Yielded || cpu.instructionBudgetRemaining != 1 - initialization
+   || frame->pc != machine.rom.textAddress + INSTRUCTION_BYTES || table->get(key) != valueNumber(73))
+   throw std::runtime_error("every table-write route charges growth and stops at its successor");
+ }
+}
+
+void rebuildWork(bool scalar) {
+ for (const std::string scenario : {"array-growth", "hash-to-array", "array-to-hash", "mixed", "same-capacity", "weak-collection", "failed-growth"}) {
+  test::Blua32TestImage image;
+  image.text.resize(33 * INSTRUCTION_BYTES);
+  writeInstruction(image.text, 0, static_cast<u8>(OpCode::SETT), 0, 1, 2);
+  writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
+  writeInstruction(image.text, 32, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+  image.functions = {{.firstWord=0, .wordCount=2, .maxStack=5}, {.firstWord=32, .wordCount=1}};
+  image.exceptionFunctionIndex = 1;
+  CpuMachine machine(image, scalar);
+  auto& cpu = machine.cpu;
+  auto* frame = cpu.activeThread()->frameAtDepth(0);
+  auto* r = frame->registers;
+  r[0] = valueTable(cpu.createTable(0, 1)); r[1] = valueString(cpu.stringPool().intern("warm")); r[2] = valueNumber(73);
+  machine.warm(scalar);
+  const Value field = valueString(cpu.stringPool().intern("field")), other = valueString(cpu.stringPool().intern("other"));
+  const int array = scenario == "array-growth" ? 2 : scenario == "array-to-hash" ? 8 : scenario == "mixed" ? 4 : 0;
+  const int hash = scenario == "hash-to-array" || scenario == "mixed" || scenario == "same-capacity" || scenario == "weak-collection" ? 2 : scenario == "failed-growth" ? 1024 : 0;
+  auto* table = cpu.createTable(array, hash);
+  r[0] = valueTable(table); r[2] = valueNumber(73); frame->top = 5;
+  int surcharge = 0;
+  size_t capacity = 0;
+  if (scenario == "array-growth") {
+   table->setInteger(1, valueNumber(11)); table->setInteger(2, valueNumber(22)); r[1] = valueNumber(3);
+   surcharge = 10; capacity = 4;
+  } else if (scenario == "hash-to-array") {
+   table->setInteger(1, valueNumber(11)); table->setInteger(3, valueNumber(33)); r[1] = valueNumber(2);
+   surcharge = 14; capacity = 4;
+  } else if (scenario == "array-to-hash") {
+   table->setInteger(8, valueNumber(88)); r[1] = field;
+   surcharge = 22; capacity = 2;
+  } else if (scenario == "mixed") {
+   table->setInteger(1, valueNumber(11)); table->setInteger(4, valueNumber(44)); table->set(field, valueNumber(55)); table->set(other, valueNumber(66));
+   r[1] = valueString(cpu.stringPool().intern("third")); surcharge = 32; capacity = 5;
+  } else if (scenario == "same-capacity") {
+   table->set(field, valueNumber(55)); table->set(other, valueNumber(66)); table->set(other, valueNil());
+   r[1] = valueString(cpu.stringPool().intern("third")); surcharge = 14; capacity = 2;
+  } else if (scenario == "weak-collection") {
+   auto* mode = cpu.createTable(0, 1);
+   mode->setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v"))); table->metatable = mode;
+   table->set(field, valueTable(cpu.createTable())); table->set(other, valueTable(cpu.createTable()));
+   const auto heap = cpu.luaHeap().captureState();
+   r[4] = valueTable(cpu.createTable(static_cast<int>((heap.nextCollectionBytes - heap.trackedBytes - 48) / 8)));
+   r[1] = valueString(cpu.stringPool().intern("third")); surcharge = 16; capacity = 4;
+  } else {
+   for (int i = 0; i < 1024; ++i) table->set(valueNumber(i + 0.5), valueNumber(i));
+   r[1] = valueNumber(1024.5);
+   r[4] = valueTable(cpu.createTable(static_cast<int>((PSX_MACHINE_SPEC.ramBytes - BASE_RAM_USED_SIZE - cpu.luaHeap().usedBytes() - 4096) / 8)));
+   surcharge = 2048; capacity = 1024;
+  }
+  const Value key = r[1]; machine.restart();
+  if (cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::SETT)] + 1) != RunResult::Yielded
+   || cpu.instructionBudgetRemaining != 1 - surcharge || table->storedSlotCount() != capacity
+   || frame->pc != machine.rom.textAddress + (scenario == "failed-growth" ? 0u : INSTRUCTION_BYTES))
+   throw std::runtime_error("table rebuild must charge exactly its completed storage work: " + scenario);
+  if (scenario == "failed-growth") {
+   if (cpu.readLuaFaultReasonWord() != LUA_FAULT_REASON_OUT_OF_MEMORY || !isNil(table->get(key)) || table->get(valueNumber(0.5)) != valueNumber(0))
+    throw std::runtime_error("failed replacement charges its sizing scan without mutating mappings");
+  } else {
+   if (table->get(key) != valueNumber(73)) throw std::runtime_error("rebuild lost its inserted mapping");
+   if (scenario == "weak-collection" && (!isNil(table->get(field)) || !isNil(table->get(other))))
+    throw std::runtime_error("migration must not charge weak entries removed by allocation-triggered collection");
+  }
+ }
+}
+void hostGrantScratch(bool scalar) {
+ test::Blua32TestImage image;
+ image.text.resize(INSTRUCTION_BYTES);
+ writeInstruction(image.text, 0, static_cast<u8>(OpCode::SETT), 0, 1, 2);
+ image.functions = {{.firstWord=0, .wordCount=1, .maxStack=3}};
+ CpuMachine machine(image, scalar);
+ auto& cpu = machine.cpu;
+ DeviceScheduler scheduler(cpu); scheduler.setNowCycles(73);
+ auto* frame = cpu.activeThread()->frameAtDepth(0);
+ auto* table = cpu.createTable();
+ const Value key = valueString(cpu.stringPool().intern("field"));
+ frame->registers[0] = valueTable(table); frame->registers[1] = key; frame->registers[2] = valueNumber(91); frame->top = 3;
+ cpu.instructionBudgetRemaining = 29; table->set(key, valueNumber(37));
+ if (cpu.instructionBudgetRemaining != 27 || scheduler.currentNowCycles() != 73)
+  throw std::runtime_error("host storage work must not advance machine time");
+ const auto saved = cpu.captureRuntimeState();
+ cpu.instructionBudgetRemaining = -99;
+ if (!std::ranges::equal(cpu.captureRuntimeState().snapshot.words(), saved.snapshot.words()))
+  throw std::runtime_error("grant scratch is not checkpoint state");
+ cpu.restoreRuntimeState(saved);
+ if (cpu.instructionBudgetRemaining != -99 || scheduler.currentNowCycles() != 73)
+  throw std::runtime_error("restore does not price reconstructed storage");
+ if (cpu.runUntilDepth(0, 1) != RunResult::Yielded || cpu.instructionBudgetRemaining != 1 - BASE_CYCLES[static_cast<u8>(OpCode::SETT)]
+  || asTable(cpu.readFrameRegister(0, 0))->get(key) != valueNumber(91))
+  throw std::runtime_error("the next execution owns a fresh grant");
+}
+} // namespace
 
 int main() {
  for (const bool scalar : {false, true}) {
@@ -94,6 +253,9 @@ int main() {
    runNext(falseKey, valueNil(), 2, {valueBool(false), valueBool(false)});
    runNext(falseKey, valueBool(false), 0, {valueNil()});
   }
+  writeRoutes(scalar);
+  rebuildWork(scalar);
+  hostGrantScratch(scalar);
   for (const auto [array, hash, capacity] : {std::array{0, 0, 0}, std::array{1, 0, 0}, std::array{0, 1, 1}, std::array{7, 3, 4}, std::array{13, 5, 8}, std::array{0, 31, 32}, std::array{9, 33, 64}, std::array{63, 63, 64}}) {
    test::Blua32TestImage image;
    image.text.resize(2 * INSTRUCTION_BYTES);
@@ -157,19 +319,25 @@ int main() {
     for (size_t i = 0; i < keys.size(); ++i) {
      frame->registers[1] = valueString(keys[i]);
      cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
-     const int charge = BASE_CYCLES[static_cast<u8>(OpCode::SETT)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
-     if (cpu.runUntilDepth(0, charge) != RunResult::Yielded || cpu.instructionBudgetRemaining != 0)
-      throw std::runtime_error("table store plus jump keeps its base costs regardless of growth");
-     if (table->getStringKey(keys[i]) != valueNumber(73)) throw std::runtime_error("table store lost a field");
-     const size_t capacity = table->storedSlotCount();
      size_t expectedCapacity = 1;
      while (expectedCapacity <= i) expectedCapacity *= 2;
-     if (capacity != (initialCapacity ? 16u : expectedCapacity)) throw std::runtime_error("unexpected hash growth");
+     if (initialCapacity) expectedCapacity = static_cast<size_t>(initialCapacity);
+     const int surcharge = expectedCapacity == previousCapacity ? 0
+      : static_cast<int>(4 * previousCapacity + 2 * expectedCapacity + 2 * i);
+     const int grant = BASE_CYCLES[static_cast<u8>(OpCode::SETT)] + 1;
+     if (cpu.runUntilDepth(0, grant) != RunResult::Yielded
+      || cpu.instructionBudgetRemaining != (surcharge ? 1 - surcharge : 1 - BASE_CYCLES[static_cast<u8>(OpCode::JMP)]))
+      throw std::runtime_error("table store charges scans, initialization and relocation only when rebuilding");
+     if (frame->pc != rom.textAddress + (surcharge ? INSTRUCTION_BYTES : 0u))
+      throw std::runtime_error("growth finishes atomically before the following instruction");
+     if (table->getStringKey(keys[i]) != valueNumber(73)) throw std::runtime_error("table store lost a field");
+     const size_t capacity = table->storedSlotCount();
+     if (capacity != expectedCapacity) throw std::runtime_error("unexpected hash growth");
      if (capacity != previousCapacity) initializedSlots += 2 * capacity;
      previousCapacity = capacity;
     }
     if (initializedSlots != (initialCapacity == 0 ? 62u : 0u))
-     throw std::runtime_error("growth initializes slots without an instruction surcharge");
+     throw std::runtime_error("every replacement initializes its entire key/value storage");
    }
   }
  }

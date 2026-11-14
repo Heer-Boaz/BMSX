@@ -95,6 +95,12 @@ void genericArraysAndHashKeys() {
 			auto* r = m->cpu.activeThread()->frameAtDepth(0)->registers; r[1] = key; r[2] = value;
 		}
 		test::runCpuParity(native.cpu, scalar.cpu, 16);
+		// Rebuilding can consume the grant before the loop's readback.
+		for (u32 remaining = image.functions[0].wordCount;
+			remaining > 0 && native.cpu.activeThread()->frameAtDepth(0)->pc != native.rom.textAddress; --remaining)
+			test::runCpuParity(native.cpu, scalar.cpu, 1);
+		require(native.cpu.activeThread()->frameAtDepth(0)->pc == native.rom.textAddress,
+			"readback completes within one seven-word loop");
 		requireParity(native, scalar);
 		require(native.cpu.readFrameRegister(0, 3) == value && native.cpu.readFrameRegister(0, 5) == valueNumber(1),
 			"all raw values survive generic array/hash access and the pending store source stays live");

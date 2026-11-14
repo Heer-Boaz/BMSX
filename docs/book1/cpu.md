@@ -1127,8 +1127,41 @@ power of two at least `C`. Each array slot holds one value; each hash entry
 initializes a key and a value. The empty request adds zero. This initialization
 completes before the next instruction begins or the CPU accepts a pending interrupt. A failed
 construction incurs the base charge but not this completed-initialization term.
-Later storage growth, collection and allocator implementation do not add this
-instruction's initialization charge to ordinary table reads or writes.
+
+An insertion that cannot fit in the current storage rebuilds the table. This
+adds one cycle per Value slot inspected, initialized or relocated. Replacement
+sizing includes the incoming mapping. Integer keys from `1` through
+`2147483647` are array candidates. The array capacity becomes the largest
+power-of-two prefix with more than half its positions occupied, or zero when
+there is no such prefix. Remaining mappings use hash
+storage, rounded to the smallest power of two that fits them, or zero when
+none remain. Deleted mappings do not count toward occupancy.
+
+The rebuild charges these phases:
+
+- The sizing scan inspects the old array slots and both Value slots of every
+  old hash entry, including vacant and deleted entries.
+- The replacement storage initializes every new array slot and both Value
+  slots of every new hash entry, not merely the increase in capacity.
+- The migration scan inspects the old storage again with the same slot count.
+  Each retained entry then places one Value in an array destination or two
+  Values, key and value, in a hash destination.
+
+For old capacities `Aold`, `Hold`, replacement capacities `Anew`, `Hnew` and
+`M` relocated Value slots, a completed rebuild adds
+`2 × (Aold + 2 × Hold) + Anew + 2 × Hnew + M` cycles. The inserted entry's
+ordinary placement is included in the instruction or primitive base charge;
+it is not a relocated entry. Rebuilds that retain or reduce capacity use the
+same rule. Updates, deletions and insertions that fit existing storage add no
+rebuild charge. This applies equally to table stores and `rawset`.
+
+Each completed phase is charged even if a later phase fails. In particular,
+failure to admit replacement storage retains the sizing-scan charge but adds
+no replacement initialization or migration charge. Collection and allocator
+management add no separate charge. Sizing precedes any allocation-triggered
+collection; migration counts only entries that remain afterward, without
+recomputing the selected capacities. A rebuild completes before the next
+instruction or pending interrupt is accepted.
 
 
 

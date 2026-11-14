@@ -62,6 +62,11 @@ export class LuaHeap {
 		this.trackedBytes += byteCount;
 	}
 
+	/** Completed table-storage work consumes the current run's transient grant. */
+	public accountTableStorageWork(valueSlots: number): void {
+		this.cpu.instructionBudgetRemaining -= valueSlots;
+	}
+
 	public release(byteCount: number): void {
 		this.trackedBytes -= byteCount;
 	}

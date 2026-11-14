@@ -37,6 +37,10 @@ test('compiled generic arrays and string-cache probes retain all kinds across ke
 				r.set(2, value === 'value' ? valueString(cpu.stringPool.intern(value)) : value);
 			}
 			runCpuParity(js, ref, 16);
+			// Rebuilding can consume the grant before the loop's readback.
+			for (let remaining = image.image.functions[0].codeByteCount / INSTRUCTION_BYTES;
+				remaining > 0 && frame.pc !== image.image.functions[0].codeAddress; --remaining) runCpuParity(js, ref, 1);
+			assert.equal(frame.pc, image.image.functions[0].codeAddress, 'readback completes within one seven-word loop');
 			assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()), `generic key ${key}, value ${value}`);
 			assert.equal(frame.registers.get(3), frame.registers.get(2));
 			assert.equal(frame.registers.getNumber(5), 1, 'the array store forwards its pending numeric source');
