@@ -20,6 +20,8 @@ import { runCompletionClosure } from './cpu_test_harness';
 
 test('World revisions reconcile admitted membership and parentage without rebuilding for motion', () => {
 	const { images } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+world:start()
+
 prefab.define({def_id='outliner.actor', class=object_2d})
 parent = world:spawn('outliner.actor', {id='parent'})
 child = world:spawn('outliner.actor', {id='child'})

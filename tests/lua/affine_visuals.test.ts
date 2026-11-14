@@ -42,6 +42,8 @@ return { image=function(id) return images[id] end }`,
 for (const optLevel of [0, 3] as const) {
 	test(`Primary Sprite keeps owner visibility, static profiles and animation selection at their real owners (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+world:start()
+
 local sprite<const> = require('cartlib/component/sprite_component')
 local animation<const> = require('cartlib/component/sprite_animation_component')
 local sprite_object<const> = require('cartlib/sprite')
@@ -92,6 +94,8 @@ return true
 
 	test(`Scene members inherit prefab placement and visual defaults unless explicitly overridden (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+world:start()
+
 local sprite<const> = require('cartlib/component/sprite_component')
 local sprite_object<const> = require('cartlib/sprite')
 prefab.define({def_id='visual.defaults',
@@ -131,6 +135,8 @@ return true
 
 	test(`Sprite source changes preserve the concrete composite draw producer (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+world:start()
+
 local sprite<const> = require('cartlib/component/sprite_component')
 local commands<const> = require('cartlib/gx/command_list')
 local gp0<const> = require('cartlib/gx/gp0')
@@ -173,6 +179,8 @@ return true
 
 	test(`Rectangle geometry owns its dimensions and composes the retained visual affine (O${optLevel})`, t => {
 		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+world:start()
+
 local rectangle<const> = require('cartlib/component/rectangle_component')
 local commands<const> = require('cartlib/gx/command_list')
 local gp0<const> = require('cartlib/gx/gp0')
@@ -223,6 +231,8 @@ return true
 
 	test(`Visual placement composes physical, attachment and presentation without moving the object (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(checks + WORLD_CPU_SETUP + `
+world:start()
+
 local sprite<const> = require('cartlib/component/sprite_component')
 local visual<const> = require('cartlib/component/visual_component')
 local custom<const> = require('cartlib/component/custom_visual_component')

@@ -236,6 +236,7 @@ atlas.load('world1_daemon')
 -- The cart entry owns cold boot. In-game restart requests are committed by
 -- the loop after World update and enter gameplay directly.
 create_world('intro')
+world:start()
 vblank.wait()
 
 -- Pietious intentionally advances one gameplay tick across two display frames.

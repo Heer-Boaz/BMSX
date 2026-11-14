@@ -69,6 +69,7 @@ atlas.load('quiz')
 atlas.load('font')
 atlas.load('ui')
 new_game()
+world:start()
 vblank.wait()
 
 while true do

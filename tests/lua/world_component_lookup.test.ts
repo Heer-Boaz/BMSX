@@ -7,6 +7,8 @@ import { WORLD_CPU_MODULES as modules, WORLD_CPU_SETUP as setup } from '../helpe
 for (const optLevel of [0, 3] as const) {
 	test(`World component lookup returns absence across attachment and dense removal (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
+world:start()
+
 local component_class<const> = setmetatable({}, { __index = base_component })
 component_class.__index = component_class
 local derived_class<const> = setmetatable({}, { __index = component_class })

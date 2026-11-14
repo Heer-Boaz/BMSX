@@ -34,6 +34,8 @@ return affine.trs(0,0,-0,2,-3,0)
 
 	test(`implicit Object2D placement is its complete semantic identity (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+world:start()
+
 prefab.define({def_id='default',class=object_2d})
 return world:spawn('default'):get_transform()
 `, { optLevel, modules: WORLD_CPU_MODULES });
@@ -44,6 +46,8 @@ return world:spawn('default'):get_transform()
 
 	test(`empty scale inputs do not reconstruct exact affine geometry (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+world:start()
+
 prefab.define({def_id='raw2',class=object_2d})
 prefab.define({def_id='raw3',class=object_3d})
 local transform2<const> = {xx=0,xy=0,yx=2,yy=3,ox=4,oy=5}

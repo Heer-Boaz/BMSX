@@ -89,6 +89,8 @@ end
 
 	test(`World tag reconciliation and disposal retire historical Registry keys and actor graphs (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+world:start()
+
 prefab.define({ def_id = 'registry.actor', class = world_object })
 probe = { next_key = 1000 }
 function probe.churn(count)

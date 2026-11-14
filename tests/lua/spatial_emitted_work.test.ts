@@ -23,6 +23,8 @@ import { materializeCpuCompletionValues, runCompletionClosure } from './cpu_test
 // firmware-generated functions, not a second implementation of their kernels.
 // https://github.com/bevyengine/bevy/blob/main/examples/stress_tests/transform_hierarchy.rs
 const fixture = WORLD_CPU_SETUP + `
+world:start()
+
 local affine2<const> = require('cartlib/math/affine2')
 local affine3<const> = require('cartlib/math/affine3')
 local visual2<const> = require('cartlib/component/visual_2d_component')

@@ -113,7 +113,9 @@ assert(not object_3d._compile_pose(unavailable,nil,{transform={xx=0,xy=0,xz=0,yx
 
 for (const optLevel of [0, 3] as const) for (const behavior of cases) {
 	test(`intrinsic Object O${optLevel}: ${behavior.name}`, () => {
-		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `local assertion_index=0
+		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+world:start()
+local assertion_index=0
 local first_failure=0
 local assert<const> = function(value) assertion_index=assertion_index+1; if not value and first_failure==0 then first_failure=assertion_index end end
 ` + behavior.source + '\nreturn first_failure',
@@ -125,6 +127,8 @@ local assert<const> = function(value) assertion_index=assertion_index+1; if not 
 
 test('intrinsic native semantic edits and tuple queries reserve no guest heap storage warm', t => {
 	const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+world:start()
+
 prefab.define({def_id='warm2',class=object_2d})
 prefab.define({def_id='warm3',class=object_3d})
 local two<const>,three<const> = world:spawn('warm2'),world:spawn('warm3')

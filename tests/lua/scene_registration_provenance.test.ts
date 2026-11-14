@@ -12,6 +12,8 @@ import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
 for (const optLevel of [0, 3] as const) for (const traceStatements of ['emit', 'erase'] as const)
 test(`Scene plan provenance observes real publication, not function entry (O${optLevel}, ${traceStatements})`, () => {
 	const source = WORLD_CPU_SETUP + `
+world:start()
+
 prefab.define({def_id='actor', class=object_2d})
 local register_first<const> = function() scenes.register('same', {objects={{member_id='first', definition_id='actor'}}}) end
 local register_second<const> = function() scenes.register('same', {objects={{member_id='second', definition_id='actor'}}}) end

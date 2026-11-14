@@ -154,6 +154,7 @@ end
 
 init()
 new_game()
+world:start()
 vblank.wait()
 
 while true do

@@ -22,6 +22,8 @@ end}`,
 for (const optLevel of [0, 3] as const) {
 	test(`input components bind concrete configuration and retain the final owner (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+world:start()
+
 local input<const> = require('cartlib/input/actioneffect/actioneffect_component')
 local clock<const> = require('cartlib/clock')
 local original<const>, override<const> = {bindings={}}, {bindings={}}

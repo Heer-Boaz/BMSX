@@ -11,7 +11,9 @@
 --    onspawn()     — called after every batch object is constructed and its
 --                    identity published. No super call needed.
 --    _bind()       — binds every surviving batch object before activation.
---    _activate()   — sets active = true and activates attached components.
+--    _activate()   — begins attached components, then object on_activate().
+--                    Initial objects wait for World:start(); runtime births
+--                    activate after their batch has bound.
 --    bind()       — override this in subclasses to subscribe to events.
 --                   Called exactly once during the object's lifetime.
 --    ondespawn()  — called when removed from the world, before final teardown.
@@ -365,6 +367,14 @@ function world_object:_activate()
 			component:on_activate()
 		end
 	end
+	if not self.marked_for_disposal and self.active then
+		self:on_activate()
+	end
+end
+
+-- Gameplay-start work belongs here, after attached components have begun.
+-- onspawn remains construction readiness, before event binding/activation.
+function world_object:on_activate()
 end
 
 -- bind(): override in subclasses to register event subscriptions.

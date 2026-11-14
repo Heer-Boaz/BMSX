@@ -24,6 +24,8 @@ const modules = [
 ];
 
 const setup = WORLD_CPU_SETUP + `
+world:start()
+
 local failed
 local assert<const> = function(condition,message)
  if not condition and failed == nil then failed=message end

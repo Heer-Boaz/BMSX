@@ -34,6 +34,39 @@ library issues at the end of this notebook.
 - Keep changes to these conventions local to the library and its producers.
   Do not turn a library defect into a machine limitation.
 
+## World construction and gameplay start
+
+Library dependencies initialize their own directories, caches and service
+routes when the program initializes its static modules. World does not own
+those cartridge-wide services. Configure the World, register game definitions
+and construct the initial Scenes before starting gameplay:
+
+```lua
+world:configure(world_module)
+init()
+new_game()
+world:start()
+```
+
+Before `world:start()`, ordinary spawn and Scene admission still construct,
+publish and bind their objects. `onspawn()` prepares construction-dependent
+state; event subscriptions belong in `bind()`. Objects and components do not
+activate or enter the World schedules yet. `world:start()` activates the
+assembled objects under the existing structural barrier, drains any resulting
+spawns/disposals, then publishes the update runner for the final gameplay-clock
+state. Calling it again does not replay activation.
+
+Component `on_activate()` runs before the object's `on_activate()`. Use the
+latter for object-owned gameplay-start work, such as playing an already defined
+timeline, rather than doing that work in `onspawn()`. A component may dispose or
+deactivate its owner, in which case the object's start hook does not run.
+
+Once started, later spawns use the ordinary construction/readiness/binding/
+activation batch. `world:clear()` tears down objects and resets the existing
+world schedules; it does not return a begun World to its initial construction
+phase. A clear before the first start likewise leaves the World unstarted.
+There is no preparation timer, loading renderer or host readiness signal.
+
 <a id="package-convention"></a>
 
 ## Resource-package convention

@@ -104,6 +104,7 @@ init()
 atlas.load('font')
 atlas.load(image.atlas_id(story.title.bg))
 new_game()
+world:start()
 -- Pietsona intentionally advances one gameplay tick across two display frames.
 while true do
 	vblank.wait()

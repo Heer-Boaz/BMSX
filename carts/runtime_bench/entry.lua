@@ -26,6 +26,7 @@ presentation.install()
 runtime_bench = simulation.state
 simulation.reset(3, 1)
 presentation.reset()
+world:start()
 runtime_bench_ready = true
 
 while true do

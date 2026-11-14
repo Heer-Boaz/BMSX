@@ -5,6 +5,7 @@ import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { WORLD_CPU_MODULES as modules, WORLD_CPU_SETUP as setup } from '../helpers/world_cpu';
 
 const definitions = `
+world:start()
 prefab.define({def_id='spatial.empty',
  class=world_object})
 prefab.define({def_id='spatial.2d',
@@ -18,6 +19,8 @@ prefab.define({def_id='spatial.body',
 for (const optLevel of [0, 3] as const) {
 	test(`Spatial declarations default to identity without sharing mutable instance state (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
+world:start()
+
 for _, family in ipairs({'2d','3d'}) do
   local id<const> = family
   prefab.define({def_id=id,class=family=='2d' and object_2d or object_3d})
@@ -51,6 +54,8 @@ assert(supplied.wxx==2 and supplied.wyx==1 and supplied.wyy==3 and supplied.wox=
 
 	test(`Construction hooks share the final owner and raw options before Scene and procedural admission (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
+world:start()
+
 local component<const> = setmetatable({}, {__index=base_component})
 component.__index=component
 local shared<const> = {retained=true}
@@ -395,6 +400,8 @@ assert(constructed==0 and spawned==0 and child.world==nil and #world._objects==0
 
 	test(`Generated World schedules publish update admission and retire group context on every exit (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
+world:start()
+
 local clock<const> = require('cartlib/clock')
 local system<const> = {}
 local early<const> = {group=10,priority=0,clock_source=clock.frame,method='early'}
@@ -448,6 +455,8 @@ assert(world._update_revision==4 and world._executing_tick_group==nil,
 for (const optLevel of [0, 3] as const) {
 	test(`Intrinsic World admits constructor children under their actual pending parent (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
+world:start()
+
 local spawned=0
 local actor<const> = setmetatable({}, {__index=object_2d})
 function actor:ctor(options)
@@ -480,6 +489,8 @@ world:clear()
 
 	test(`Unrepresentable partial semantic admission publishes no object or Scene batch and leaves no open barrier (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
+world:start()
+
 local constructed=0
 local actor<const> = setmetatable({ctor=function() constructed=constructed+1 end},{__index=object_2d})
 prefab.define({def_id='admission.good',class=actor})
@@ -507,6 +518,8 @@ world:clear()
 
 	test(`Retiring ancestors and descendants publish clean final world poses before any ondespawn getter (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
+world:start()
+
 local reads<const> = {}
 local actor<const> = setmetatable({ondespawn=function(self)
  local x,y=self:get_global_position()
@@ -532,6 +545,8 @@ world:clear()
 
 for (const optLevel of [0, 3] as const) test(`Keep World to the already committed parent preserves known singular semantic channels and completes once (O${optLevel})`, () => {
 	const { cpu } = createCartlibProgramHarness(setup + `
+world:start()
+
 local completed=0
 local done<const> = function(_,result) assert(result==world.reparent_result.committed); completed=completed+1 end
 prefab.define({def_id='same2',class=object_2d,rotation=7,scale={x=0,y=-2},skew=0.25})
