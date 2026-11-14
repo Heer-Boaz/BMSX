@@ -1,11 +1,14 @@
 #include "bmsx_libretro.h"
 
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 static retro_environment_t environment;
 static uint64_t frames;
+static bool run_timestamps;
 
 static void RETRO_CALLCONV read_stale_profile(void* output) {
 	(void)output;
@@ -40,6 +43,7 @@ void retro_set_audio_sample_batch(retro_audio_sample_batch_t callback) { (void)c
 void retro_set_input_poll(retro_input_poll_t callback) { (void)callback; }
 void retro_set_input_state(retro_input_state_t callback) { (void)callback; }
 void retro_init(void) {
+	run_timestamps = getenv("BMSX_TEST_RUN_TIMESTAMPS") != NULL;
 	const char* profile = getenv("BMSX_TEST_EXECUTION_PROFILE");
 	if (profile && strcmp(profile, "stale") == 0) {
 		const unsigned stale_command = RETRO_ENVIRONMENT_PRIVATE | 0x42c1u;
@@ -68,11 +72,20 @@ void retro_get_system_av_info(struct retro_system_av_info* info) {
 void retro_set_controller_port_device(unsigned port, unsigned device) { (void)port; (void)device; }
 void retro_reset(void) {}
 void retro_run(void) {
+	struct timespec start, end;
+	if (run_timestamps && clock_gettime(CLOCK_MONOTONIC, &start) != 0) _exit(2);
 	++frames;
 	static bool ready;
 	if (!ready) {
 		if (write(STDOUT_FILENO, "R", 1) != 1) _exit(1);
 		ready = true;
+	}
+	if (run_timestamps) {
+		if (clock_gettime(CLOCK_MONOTONIC, &end) != 0) _exit(2);
+		fprintf(stderr, "[signal-core][run-interval] host_frame=%llu start_ns=%llu end_ns=%llu\n",
+			(unsigned long long)(frames - 1u),
+			(unsigned long long)start.tv_sec * 1000000000u + start.tv_nsec,
+			(unsigned long long)end.tv_sec * 1000000000u + end.tv_nsec);
 	}
 }
 bool retro_load_game(const struct retro_game_info* info) { (void)info; return true; }

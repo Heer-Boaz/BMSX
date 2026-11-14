@@ -11,6 +11,7 @@ enum { BMSX_FRAME_TIMING_SLOW_FRAME_COUNT = 32 };
 
 typedef struct BmsxSlowFrameSample {
 	uint64_t host_frame;
+	uint64_t host_run_start_monotonic_ns;
 	uint64_t retro_run_ns;
 	uint64_t host_main_thread_cpu_ns;
 	uint64_t host_process_cpu_ns;
@@ -69,6 +70,7 @@ typedef struct BmsxFrameTimingState {
 
 void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
 		uint64_t host_frame,
+		uint64_t host_run_start_monotonic_ns,
 		uint64_t retro_run_ns,
 		uint64_t final_blit_ns,
 		bool final_blit_ran,

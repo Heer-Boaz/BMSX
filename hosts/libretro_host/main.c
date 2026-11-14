@@ -531,6 +531,7 @@ int main(int argc, char** argv) {
 			const uint64_t run_ns = run_end_ns - run_start_ns;
 			bmsx_frame_timing_record(&frame_timing.report,
 					run_frame_count,
+					run_start_ns,
 					run_ns,
 					frame_timing.current_blit_ns,
 					frame_timing.current_blit_ran,

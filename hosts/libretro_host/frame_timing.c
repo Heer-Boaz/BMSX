@@ -62,6 +62,7 @@ static void print_histogram(const char* label, const BmsxFrameTimingHistogram* h
 
 void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
 		uint64_t host_frame,
+		uint64_t host_run_start_monotonic_ns,
 		uint64_t retro_run_ns,
 		uint64_t final_blit_ns,
 		bool final_blit_ran,
@@ -105,6 +106,7 @@ void bmsx_frame_timing_record(BmsxFrameTimingReport* report,
 	}
 	report->slow_frames[index] = (BmsxSlowFrameSample){
 		.host_frame = host_frame,
+		.host_run_start_monotonic_ns = host_run_start_monotonic_ns,
 		.retro_run_ns = retro_run_ns,
 		.host_main_thread_cpu_ns = host_main_thread_cpu_ns,
 		.host_process_cpu_ns = host_process_cpu_ns,
@@ -173,7 +175,9 @@ void bmsx_frame_timing_print(
 			(unsigned long long)sample->native_compilation.code_bytes,
 			(unsigned)sample->has_execution);
 		if (sample->has_execution) bmsx_execution_profile_print(stderr, &sample->execution);
-		fprintf(stderr, " host_main_thread_cpu_ns=%llu host_process_cpu_ns=%llu",
+		fprintf(stderr, " host_run_start_monotonic_ns=%llu host_run_duration_ns=%llu host_main_thread_cpu_ns=%llu host_process_cpu_ns=%llu",
+			(unsigned long long)sample->host_run_start_monotonic_ns,
+			(unsigned long long)sample->retro_run_ns,
 			(unsigned long long)sample->host_main_thread_cpu_ns,
 			(unsigned long long)sample->host_process_cpu_ns);
 		fputc('\n', stderr);
