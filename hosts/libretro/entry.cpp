@@ -104,7 +104,7 @@ static std::string g_system_dir;
 
 static std::unique_ptr<bmsx::LibretroInput> g_input;
 static std::unique_ptr<bmsx::LibretroAudioOutput> g_audio_output;
-static std::unique_ptr<bmsx::LibretroVideoOutput> g_video_output;
+static bmsx::LibretroVideoOutput g_video_output;
 static std::unique_ptr<bmsx::VideoPresenter> g_video_presenter;
 static std::unique_ptr<bmsx::Font> g_default_font;
 static const bmsx::SoftwarePresentationTarget* g_software_target = nullptr;
@@ -163,17 +163,7 @@ static void RETRO_CALLCONV cancel_gamepad_input(unsigned port) {
 	g_input->cancelGamepadControlShortcutGesture(port);
 }
 
-static retro_system_av_info g_cached_av_info{};
-static bool g_cached_av_info_valid = false;
-static retro_system_av_info g_frontend_av_info{};
-static bool g_frontend_av_info_valid = false;
 static int64_t g_current_ufps_scaled = bmsx::GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED;
-
-enum class AvInfoNotification : uint8_t {
-	None,
-	Geometry,
-	System,
-};
 
 #if BMSX_ENABLE_GLES2
 static bool RETRO_CALLCONV read_gx_upload_profile_frame(
@@ -198,59 +188,12 @@ static bool RETRO_CALLCONV read_gx_upload_profile_frame(
 }
 #endif
 
-static void initialize_default_av_info(retro_system_av_info& av) {
-	std::memset(&av, 0, sizeof(av));
-	av.geometry.base_width = bmsx::gxGpuDisplayModeScreenWidth(bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD);
-	av.geometry.base_height = static_cast<unsigned>(bmsx::gxGpuVerticalVisibleLines(bmsx::GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD, bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD));
-	av.geometry.max_width = 1920u;
-	av.geometry.max_height = 1080u;
-	av.geometry.aspect_ratio = static_cast<float>(bmsx::GX_GPU_DISPLAY_ASPECT_WIDTH) / static_cast<float>(bmsx::GX_GPU_DISPLAY_ASPECT_HEIGHT);
-	av.timing.sample_rate = bmsx::DEFAULT_LIBRETRO_AUDIO_SAMPLE_RATE;
-	av.timing.fps = static_cast<double>(bmsx::GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED) / static_cast<double>(bmsx::HZ_SCALE);
-}
-
 static void sync_current_av_info(int64_t ufps_scaled) {
-	if (!g_cached_av_info_valid) {
-		initialize_default_av_info(g_cached_av_info);
-	}
-	g_cached_av_info.timing.fps = static_cast<double>(ufps_scaled) / static_cast<double>(bmsx::HZ_SCALE);
-	g_cached_av_info_valid = true;
+	g_video_output.setFrameRate(ufps_scaled);
 	g_current_ufps_scaled = ufps_scaled;
-	g_frame_time_sec = 1.0 / g_cached_av_info.timing.fps;
-	g_audio_output->setSampleRate(g_cached_av_info.timing.sample_rate);
-}
-
-static AvInfoNotification pending_av_info_notification() {
-	if (!g_frontend_av_info_valid
-			|| g_cached_av_info.geometry.max_width != g_frontend_av_info.geometry.max_width
-			|| g_cached_av_info.geometry.max_height != g_frontend_av_info.geometry.max_height
-			|| g_cached_av_info.timing.fps != g_frontend_av_info.timing.fps
-			|| g_cached_av_info.timing.sample_rate != g_frontend_av_info.timing.sample_rate) {
-		return AvInfoNotification::System;
-	}
-	if (g_cached_av_info.geometry.base_width != g_frontend_av_info.geometry.base_width
-			|| g_cached_av_info.geometry.base_height != g_frontend_av_info.geometry.base_height
-			|| g_cached_av_info.geometry.aspect_ratio != g_frontend_av_info.geometry.aspect_ratio) {
-		return AvInfoNotification::Geometry;
-	}
-	return AvInfoNotification::None;
-}
-
-static AvInfoNotification publish_pending_av_info() {
-	const AvInfoNotification notification = pending_av_info_notification();
-	switch (notification) {
-		case AvInfoNotification::None:
-			return notification;
-		case AvInfoNotification::Geometry:
-			environ_cb(RETRO_ENVIRONMENT_SET_GEOMETRY, &g_cached_av_info.geometry);
-			break;
-		case AvInfoNotification::System:
-			environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &g_cached_av_info);
-			break;
-	}
-	g_frontend_av_info = g_cached_av_info;
-	g_frontend_av_info_valid = true;
-	return notification;
+	const auto& timing = g_video_output.avInfo().timing;
+	g_frame_time_sec = 1.0 / timing.fps;
+	g_audio_output->setSampleRate(timing.sample_rate);
 }
 
 static void RETRO_CALLCONV keyboard_event(bool down, unsigned keycode, uint32_t character, uint16_t key_modifiers) {
@@ -1097,6 +1040,7 @@ void retro_set_environment(retro_environment_t cb) {
 	// RetroArch may reinstall this callback inside one core session. AV publication
 	// validity follows retro_init/retro_deinit, not the callback function address.
 	environ_cb = cb;
+	g_video_output.setEnvironment(cb);
 	if (g_input) {
 		BmsxInputLifecycleInterfaceV1 lifecycle{cancel_keyboard_input, cancel_gamepad_input};
 		cb(BMSX_ENVIRONMENT_SET_INPUT_LIFECYCLE_INTERFACE_V1, &lifecycle);
@@ -1388,8 +1332,7 @@ void retro_init(void) {
 		}
 	}
 
-	initialize_default_av_info(g_cached_av_info);
-	g_cached_av_info_valid = true;
+	g_video_output.resetAvInfo();
 	g_current_ufps_scaled = bmsx::GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED;
 
 	g_input = std::make_unique<bmsx::LibretroInput>(g_supervisor_request_line_cb);
@@ -1401,7 +1344,6 @@ void retro_init(void) {
 	environ_cb(RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE, &rumbleInterface);
 	g_input->installRumbleInterface(rumbleInterface);
 	g_audio_output = std::make_unique<bmsx::LibretroAudioOutput>();
-	g_video_output = std::make_unique<bmsx::LibretroVideoOutput>(g_cached_av_info);
 
 	const bmsx::i32 viewportWidth = static_cast<bmsx::i32>(
 		bmsx::gxGpuDisplayModeScreenWidth(bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD));
@@ -1449,9 +1391,8 @@ void retro_init(void) {
 			throw std::runtime_error("Unsupported libretro backend.");
 	}
 	backend->resizePresentationTarget(viewportWidth, viewportHeight);
-	g_video_output->setDisplaySize(viewportWidth, viewportHeight, viewportWidth, viewportHeight);
 	g_video_presenter = std::make_unique<bmsx::VideoPresenter>(
-		*g_video_output,
+		g_video_output,
 		std::move(backend),
 		viewportWidth,
 		viewportHeight);
@@ -1520,12 +1461,11 @@ void retro_deinit(void) {
 	g_keyboard_model.reset();
 	g_video_presenter.reset();
 	g_default_font.reset();
-	g_video_output.reset();
 	g_audio_output.reset();
 	g_input.reset();
 	g_software_target = nullptr;
 	g_hw_context_lifecycle = HardwareContextLifecycle::Software;
-	g_frontend_av_info_valid = false;
+	g_video_output.clearFrontendAvInfo();
 }
 
 unsigned retro_api_version(void) { return RETRO_API_VERSION; }
@@ -1540,13 +1480,7 @@ void retro_get_system_info(struct retro_system_info* info) {
 }
 
 void retro_get_system_av_info(struct retro_system_av_info* info) {
-	if (!g_cached_av_info_valid) {
-		initialize_default_av_info(g_cached_av_info);
-		g_cached_av_info_valid = true;
-	}
-	*info = g_cached_av_info;
-	g_frontend_av_info = g_cached_av_info;
-	g_frontend_av_info_valid = true;
+	g_video_output.getSystemAvInfo(*info);
 
 	logging.log(
 		RETRO_LOG_INFO,
@@ -1673,7 +1607,7 @@ void retro_run(void) {
 	// Libretro video notifications belong to retro_run. Publishing a change that
 	// was queued by reset/state work first lets a synchronous frontend context
 	// reset enter the lifecycle switch below in this same frame.
-	publish_pending_av_info();
+	g_video_output.publishPendingAvInfo();
 	switch (g_hw_context_lifecycle) {
 		case HardwareContextLifecycle::Software:
 		case HardwareContextLifecycle::Ready:
@@ -1878,15 +1812,15 @@ void retro_run(void) {
 	if (timing_changed) {
 		sync_current_av_info(runtime_ufps_scaled);
 	}
-	const AvInfoNotification av_info_notification = publish_pending_av_info();
+	const bmsx::LibretroAvInfoNotification av_info_notification = g_video_output.publishPendingAvInfo();
 	const bool suppress_hardware_frame =
-		hardware_frame && av_info_notification == AvInfoNotification::System;
+		hardware_frame && av_info_notification == bmsx::LibretroAvInfoNotification::System;
 
 	// Output video
 	const bool publish_video_frame =
 		video_frame_presented && !suppress_hardware_frame;
 	if (hardware_frame) {
-		const auto& geometry = g_cached_av_info.geometry;
+		const auto& geometry = g_video_output.avInfo().geometry;
 		video_cb(
 			publish_video_frame ? RETRO_HW_FRAME_BUFFER_VALID : nullptr,
 			geometry.base_width,
@@ -1959,7 +1893,7 @@ bool retro_unserialize(const void* data, size_t size) {
 			if (scanout.outputActive) {
 				const auto width = static_cast<bmsx::i32>(scanout.outputWidth);
 				const auto height = static_cast<bmsx::i32>(scanout.outputHeight);
-				g_video_output->setDisplaySize(width, height, width, height);
+				g_video_output.stageDisplaySize(width, height, width, height);
 			}
 			sync_current_av_info(runtime.timing.ufpsScaled);
 			sync_runtime_timing(runtime);

@@ -557,8 +557,11 @@ bool frontendEnvironment(unsigned command, void* data) {
 	}
 }
 
-void testLibretroEntry(const test::Blua32TestRom& rom) {
+void testLibretroEntry(const test::Blua32TestRom& rom, bool threaded) {
 	frontendThread = std::this_thread::get_id();
+	frontendFrames = 0u;
+	frontendShutdown = false;
+	frontendTargetWidth = frontendTargetHeight = 0u;
 	const auto directory = std::filesystem::temp_directory_path() / "bmsx_gles_frame_worker_test";
 	std::filesystem::create_directories(directory);
 	frontendSystemDirectory = directory.string();
@@ -572,7 +575,7 @@ void testLibretroEntry(const test::Blua32TestRom& rom) {
 		std::ofstream file(cartPath, std::ios::binary);
 		file.write(reinterpret_cast<const char*>(cart.data()), cart.size());
 	}
-	setenv("BMSX_GLES2_THREADED", "1", 1);
+	setenv("BMSX_GLES2_THREADED", threaded ? "1" : "0", 1);
 	glGenFramebuffers(1, &frontendFramebuffer);
 	glGenTextures(1, &frontendTexture);
 	retro_set_environment(frontendEnvironment);
@@ -603,9 +606,27 @@ void testLibretroEntry(const test::Blua32TestRom& rom) {
 	require(retro_load_game(&game), "the real libretro entry admits the generated fixture");
 	require(frontendHardware.context_reset != nullptr, "the frontend owns actual context lifecycle callbacks");
 	frontendHardware.context_reset();
+	bool programmedGeometryPresented = false;
+	for (unsigned frame = 0; frame < 2; ++frame) {
+		frontendSequence = frontendGeometrySequence = frontendFramebufferSequence = 0u;
+		frontendCapture = frontendInsideRun = true;
+		mutateFrontendGlState();
+		retro_run();
+		frontendCapture = frontendInsideRun = false;
+		if (frontendGeometrySequence != 0u) {
+			require(frontendGeometrySequence < frontendFramebufferSequence,
+				"guest-programmed geometry reaches the frontend before its first framebuffer acquisition");
+			require(frontendTargetWidth == 256u && frontendTargetHeight == 256u && frontendVideoWidth == 256u && frontendVideoHeight == 256u,
+				"the first guest-programmed attachment and callback use the selected 256x256 extent");
+			const size_t tailPixel = ((255u - 64u) * 256u + 4u) * 4u;
+			require(frontendPixels[tailPixel] == 255u && frontendPixels[tailPixel + 1u] == 0u && frontendPixels[tailPixel + 2u] == 0u,
+				"the first guest-programmed framebuffer contains the guest's trailing red primitive");
+			programmedGeometryPresented = true;
+		}
+	}
+	require(programmedGeometryPresented, "the actual guest program changes the frontend's reset geometry");
+	require(frontendFrames == 2u && !frontendShutdown, "retro_run publishes without shutting down");
 	frontendInsideRun = true;
-	for (unsigned frame = 0; frame < 2; ++frame) { mutateFrontendGlState(); retro_run(); }
-	require(frontendFrames == 2u && !frontendShutdown, "threaded retro_run publishes without shutting down");
 	std::vector<u8> envelope(retro_serialize_size());
 	mutateFrontendGlState();
 	require(retro_serialize(envelope.data(), envelope.size()), "serialization follows the completed worker barrier");
@@ -668,7 +689,7 @@ void testLibretroEntry(const test::Blua32TestRom& rom) {
 	const size_t sceneBytes = encodeRuntimeSaveState(scene, std::span<u8>(envelope).subspan(8u));
 	require(sceneBytes != 0u, "the saved raw scanout fits the existing libretro envelope");
 	writeLE32(envelope.data() + 4u, static_cast<u32>(sceneBytes));
-	for (const bool threaded : {false, true}) {
+	{
 		setenv("BMSX_GLES2_THREADED", threaded ? "1" : "0", 1);
 		retro_init();
 		retro_get_system_av_info(&av);
@@ -758,7 +779,8 @@ int main() {
 	require(largeWorker.boundaries == largeDirect.boundaries && largeWorker.finished == 1u && largeWorker.vram == largeDirect.vram && largeWorker.scanout == largeDirect.scanout
 		&& largeWorker.cycles == largeDirect.cycles && largeWorker.pc == largeDirect.pc,
 		"a maximal DMA upload owns its full payload across bounded publication and later dependent commands");
-	testLibretroEntry(rom);
+	testLibretroEntry(rom, false);
+	testLibretroEntry(rom, true);
 	const auto supervisorRom = makeStream(true);
 	const auto supervisorDirect = runStream(supervisorRom, false, GxGpuDrawTargetMode::FullVram);
 	const auto supervisorWorker = runStream(supervisorRom, true, GxGpuDrawTargetMode::FullVram);

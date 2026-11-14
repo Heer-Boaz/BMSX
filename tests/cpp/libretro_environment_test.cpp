@@ -1,6 +1,7 @@
 #include "bmsx_libretro.h"
 #include "input.h"
 #include "runtime_error.h"
+#include "video_output.h"
 #include "common/endian.h"
 #include "spec/bmsx/cartridge.h"
 #include "spec/bmsx/io.h"
@@ -213,9 +214,45 @@ bool frontendEnvironment(unsigned command, void* data) {
 	}
 	return softwareFrontendEnvironment(command, data);
 }
+
+void testAvPublicationPhases() {
+	static unsigned geometry = 0u, system = 0u;
+	static bool presenting = false;
+	bmsx::LibretroVideoOutput output;
+	output.setEnvironment([](unsigned command, void*) -> bool {
+		if (command == RETRO_ENVIRONMENT_SET_GEOMETRY) ++geometry;
+		if (command == RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO) {
+			require(!presenting, "a system AV notification cannot recreate GL during presentation");
+			++system;
+		}
+		return true;
+	});
+	retro_system_av_info initial{};
+	output.getSystemAvInfo(initial);
+	output.stageDisplaySize(256, 192, 256, 192);
+	require(geometry == 0u && system == 0u, "staging outside retro_run does not publish AV parameters");
+	require(output.publishPendingAvInfo() == bmsx::LibretroAvInfoNotification::Geometry,
+		"the safe frame-entry boundary publishes staged geometry");
+	presenting = true;
+	output.setDisplaySize(320, 240, 320, 240);
+	require(geometry == 2u && system == 0u, "in-envelope presentation geometry is published immediately");
+	output.setDisplaySize(1921, 1081, 1921, 1081);
+	require(geometry == 2u && system == 0u, "an expanded envelope stays pending during presentation");
+	presenting = false;
+	require(output.publishPendingAvInfo() == bmsx::LibretroAvInfoNotification::System && system == 1u,
+		"the safe frame-exit boundary publishes the expanded envelope");
+	output.setFrameRate(bmsx::GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED + 1);
+	presenting = true;
+	output.setDisplaySize(256, 192, 256, 192);
+	require(geometry == 2u && system == 1u, "a pending timing change prevents an intermediate geometry notification");
+	presenting = false;
+	require(output.publishPendingAvInfo() == bmsx::LibretroAvInfoNotification::System && system == 2u,
+		"timing and geometry changes share a safe system AV publication");
+}
 } // namespace
 
 int main() {
+	testAvPublicationPhases();
 	testDiagnosticTextLog();
 	constexpr bmsx::u32 primaryCartRamBytes = 16u;
 	constexpr bmsx::u32 auxiliaryCartRamBytes = 24u;
