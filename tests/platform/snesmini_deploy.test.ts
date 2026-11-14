@@ -148,9 +148,16 @@ test('Clover arguments reach the host separately while rewind recording stays of
 		.replace('/root/bmsx_libretro_host', quotePosixArgument(fakeHost))
 		.replace(quotePosixArgument(`/var/log/bmsx-${game.code}.log`), quotePosixArgument(join(root, 'launch.log')));
 	await writeFile(join(pc, 'probe.sh'), launcher);
+	const bin = join(root, 'launcher-bin');
+	await mkdir(bin);
+	for (const command of ['uistop', 'uistart']) {
+		await writeFile(join(bin, command), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+	}
 	await promisify(execFile)('sh', [join(pc, 'probe.sh'), '--save-data-backing-file', 'cartridge.sram',
 		'--title-code', game.code, '--video-mode', 'keep-aspect-ratio', '--start-transition-fd', '13',
-		'--rollback-mode', 'record', '--rollback-output-dir', '/clover/rollback']);
+		'--rollback-mode', 'record', '--rollback-output-dir', '/clover/rollback'], {
+		env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+	});
 	assert.deepEqual((await readFile(argumentsPath, 'utf8')).trimEnd().split('\n'), [
 		join(pc, `${game.target}.rom`), '--core', '/root/bmsx_libretro.so', '--system-dir', '/root',
 		'--save-dir', `/var/saves/${game.code}`, '--backend', 'gles2', '--rewind', 'off',
