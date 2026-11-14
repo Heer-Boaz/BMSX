@@ -23,7 +23,8 @@ import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { executeGxGpuSoftwareCommands } from '../../machine/ts/render/backend/software/gx_gpu_commands';
 import { GxGpuSoftwareState } from '../../machine/ts/render/backend/software/gx_gpu_state';
 import { gxGpuSoftwareVramIndex } from '../../machine/ts/render/backend/software/gx_gpu_vram';
-import { gxGpuCommandTicks } from '../../machine/ts/machine/devices/gx/gpu_command_timing';
+import { prepareGpuPacket } from '../../machine/ts/machine/devices/gx/gpu_command_timing';
+import { GxGpuPacket } from '../../machine/ts/machine/devices/gx/gpu_packet';
 
 const gxGpuSoftware = new GxGpuSoftwareState(PSX_MACHINE_SPEC.gxGpuVramBytes, 0);
 const gxGpuSoftwareVram = gxGpuSoftware.vram;
@@ -41,7 +42,14 @@ test('raw high VRAM extension bits survive draw timing, raster, readback and res
 	buffer.pushCommand(GX_GPU_COMMAND_DRAW_RECTANGLE, 0x60, start, rect.length, 0, 0x100, 0,
 		600 << 10, (620 << 10) | 10, 0, 0, GX_GPU_SKIPPED_LINE_NONE);
 	assert.equal(buffer.commandVramYAddressExtensionWord[0], 0x100);
-	assert.ok(gxGpuCommandTicks(buffer, 0) > 16, 'the timer uses the retained nonzero raw word');
+	const packet = new GxGpuPacket();
+	packet.words.set(rect);
+	prepareGpuPacket(packet, rect.length, {
+		drawModeWord: 0, vramYAddressExtensionWord: 0x100, textureWindowWord: 0,
+		drawingAreaTopLeftWord: 600 << 10, drawingAreaBottomRightWord: (620 << 10) | 10,
+		drawingOffsetWord: 0, maskBitModeWord: 0, skippedLineParity: GX_GPU_SKIPPED_LINE_NONE,
+	});
+	assert.ok(packet.ticks > 16, 'the packet timing owner consumes the retained nonzero raw word');
 	gxGpuSoftwareVram.fill(0);
 	executeGxGpuSoftwareCommands(gxGpuSoftware, buffer, 0, 1);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(gxGpuSoftware, 0, 600)], 0x001f);

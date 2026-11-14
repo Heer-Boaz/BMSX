@@ -1,4 +1,27 @@
 import {
+	GX_GPU_GP0_DRAW_MODE,
+	GX_GPU_GP0_TEXTURE_WINDOW,
+	GX_GPU_GP0_DRAWING_AREA_TOP_LEFT,
+	GX_GPU_GP0_DRAWING_AREA_BOTTOM_RIGHT,
+	GX_GPU_GP0_DRAWING_OFFSET,
+	GX_GPU_GP0_MASK_BIT,
+	GX_GPU_GP0_FILL_RECTANGLE,
+	GX_GPU_GP0_POLYGON_FIRST,
+	GX_GPU_GP0_POLYGON_LAST,
+	GX_GPU_GP0_LINE_FIRST,
+	GX_GPU_GP0_LINE_LAST,
+	GX_GPU_GP0_RECTANGLE_FIRST,
+	GX_GPU_GP0_RECTANGLE_LAST,
+	GX_GPU_GP0_VRAM_TO_VRAM_FIRST,
+	GX_GPU_GP0_VRAM_TO_VRAM_LAST,
+	GX_GPU_GP0_CPU_TO_VRAM_FIRST,
+	GX_GPU_GP0_CPU_TO_VRAM_LAST,
+	GX_GPU_GP0_VRAM_TO_CPU_FIRST,
+	GX_GPU_GP0_VRAM_TO_CPU_LAST,
+	GX_GPU_DRAW_MODE_DRAW_TO_DISPLAYED_FIELD,
+	gxGpuPolygonTexturePageWordIndex,
+	gxGpuPolygonDrawModeWord,
+	gxGpuTextureAttribute,
 	GX_GPU_TEXTURE_MODE_DIRECT16,
 	GX_GPU_TEXTURE_MODE_PALETTE4,
 	GX_GPU_TEXTURE_MODE_PALETTE8,
@@ -18,8 +41,14 @@ import {
 	GX_GPU_COMMAND_READ_VRAM_TO_CPU,
 	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
 	GX_GPU_SKIPPED_LINE_NONE,
-	type GxGpuCommandBufferView,
-} from './gpu_command_buffer';
+	type GxGpuDrawState,
+	type GxGpuPacket,
+	GX_GPU_DRAW_MODE_MASK,
+	GX_GPU_TEXTURE_WINDOW_MASK,
+	GX_GPU_DRAWING_AREA_MASK,
+	GX_GPU_DRAWING_OFFSET_MASK,
+	GX_GPU_MASK_BIT_MODE_MASK,
+} from './gpu_packet';
 
 export const GX_GPU_COMMAND_TICKS_PER_CPU_CYCLE = 2;
 
@@ -259,32 +288,33 @@ function polylineTicks(
 	return ticks;
 }
 
-export function gxGpuCommandTicks(commands: GxGpuCommandBufferView, commandIndex: number): number {
-	const kind = commands.commandKind[commandIndex];
-	const opcode = commands.commandOpcode[commandIndex];
-	const words = commands.words;
-	const wordStart = commands.commandWordStart[commandIndex];
-	const drawModeWord = commands.commandDrawModeWord[commandIndex];
-	const vramYAddressExtensionWord = commands.commandVramYAddressExtensionWord[commandIndex];
-	const drawingAreaTopLeftWord = commands.commandDrawingAreaTopLeftWord[commandIndex];
-	const drawingAreaBottomRightWord = commands.commandDrawingAreaBottomRightWord[commandIndex];
-	const drawingOffsetWord = commands.commandDrawingOffsetWord[commandIndex];
-	const maskBitModeWord = commands.commandMaskBitModeWord[commandIndex];
-	const skippedLineParity = commands.commandSkippedLineParity[commandIndex];
+export function gxGpuPacketTicks(
+	kind: number, opcode: number, words: ArrayLike<number>, wordStart: number,
+	vertexCount: number, positionStride: number, sizeOffset: number,
+	state: Readonly<GxGpuDrawState>,
+): number {
+	const drawModeWord = state.drawModeWord;
+	const vramYAddressExtensionWord = state.vramYAddressExtensionWord;
+	const drawingAreaTopLeftWord = state.drawingAreaTopLeftWord;
+	const drawingAreaBottomRightWord = state.drawingAreaBottomRightWord;
+	const drawingOffsetWord = state.drawingOffsetWord;
+	const maskBitModeWord = state.maskBitModeWord;
+	const skippedLineParity = (drawModeWord & GX_GPU_DRAW_MODE_DRAW_TO_DISPLAYED_FIELD) !== 0
+		? GX_GPU_SKIPPED_LINE_NONE : state.skippedLineParity;
 	switch (kind) {
 		case GX_GPU_COMMAND_DRAW_POLYGON:
-			return polygonTicks(opcode, words, wordStart, commands.drawPositionStride[commands.commandDrawIndex[commandIndex]], vramYAddressExtensionWord, drawingAreaTopLeftWord, drawingAreaBottomRightWord, drawingOffsetWord, maskBitModeWord, skippedLineParity);
+			return polygonTicks(opcode, words, wordStart, positionStride, vramYAddressExtensionWord, drawingAreaTopLeftWord, drawingAreaBottomRightWord, drawingOffsetWord, maskBitModeWord, skippedLineParity);
 		case GX_GPU_COMMAND_DRAW_LINE: {
 			const offsetX = gxGpuSigned11(drawingOffsetWord);
 			const offsetY = gxGpuSigned11(drawingOffsetWord >>> 11);
 			const first = words[wordStart + 1]!;
-			const second = words[wordStart + 1 + commands.drawPositionStride[commands.commandDrawIndex[commandIndex]]]!;
+			const second = words[wordStart + 1 + positionStride]!;
 			return lineTicks(gxGpuSigned11(first) + offsetX, gxGpuSigned11(first >>> 16) + offsetY, gxGpuSigned11(second) + offsetX, gxGpuSigned11(second >>> 16) + offsetY, drawingAreaTopLeftWord, drawingAreaBottomRightWord, vramYAddressExtensionWord, skippedLineParity);
 		}
 		case GX_GPU_COMMAND_DRAW_POLYLINE:
-			return polylineTicks(words, wordStart, commands.drawVertexCount[commands.commandDrawIndex[commandIndex]], commands.drawPositionStride[commands.commandDrawIndex[commandIndex]], drawingAreaTopLeftWord, drawingAreaBottomRightWord, vramYAddressExtensionWord, drawingOffsetWord, skippedLineParity);
+			return polylineTicks(words, wordStart, vertexCount, positionStride, drawingAreaTopLeftWord, drawingAreaBottomRightWord, vramYAddressExtensionWord, drawingOffsetWord, skippedLineParity);
 		case GX_GPU_COMMAND_DRAW_RECTANGLE:
-			return rectangleTicks(opcode, words, wordStart, commands.drawSizeOffset[commands.commandDrawIndex[commandIndex]], drawModeWord, vramYAddressExtensionWord, drawingAreaTopLeftWord, drawingAreaBottomRightWord, drawingOffsetWord, maskBitModeWord, skippedLineParity);
+			return rectangleTicks(opcode, words, wordStart, sizeOffset, drawModeWord, vramYAddressExtensionWord, drawingAreaTopLeftWord, drawingAreaBottomRightWord, drawingOffsetWord, maskBitModeWord, skippedLineParity);
 		case GX_GPU_COMMAND_FILL_RECTANGLE: {
 			const sizeWord = words[wordStart + 2]!;
 			const width = ((sizeWord & 0x3ff) + 0x0f) & ~0x0f;
@@ -303,4 +333,76 @@ export function gxGpuCommandTicks(commands: GxGpuCommandBufferView, commandIndex
 		default:
 			return 1;
 	}
+}
+
+export function prepareGpuPacket(
+	packet: GxGpuPacket, wordCount: number,
+	projectedState: GxGpuDrawState, kindOverride = 0, opcodeOverride = 0,
+): void {
+	const opcode = kindOverride !== 0 ? opcodeOverride : packet.words[0] >>> 24;
+	packet.opcode = opcode;
+	packet.wordCount = wordCount;
+	let kind = 0;
+	if (opcode === GX_GPU_GP0_FILL_RECTANGLE) kind = GX_GPU_COMMAND_FILL_RECTANGLE;
+	else if (opcode >= GX_GPU_GP0_POLYGON_FIRST && opcode <= GX_GPU_GP0_POLYGON_LAST) kind = GX_GPU_COMMAND_DRAW_POLYGON;
+	else if (opcode >= GX_GPU_GP0_LINE_FIRST && opcode <= GX_GPU_GP0_LINE_LAST) kind = (opcode & 0x08) !== 0 ? GX_GPU_COMMAND_DRAW_POLYLINE : GX_GPU_COMMAND_DRAW_LINE;
+	else if (opcode >= GX_GPU_GP0_RECTANGLE_FIRST && opcode <= GX_GPU_GP0_RECTANGLE_LAST) kind = GX_GPU_COMMAND_DRAW_RECTANGLE;
+	else if (opcode >= GX_GPU_GP0_VRAM_TO_VRAM_FIRST && opcode <= GX_GPU_GP0_VRAM_TO_VRAM_LAST) kind = GX_GPU_COMMAND_COPY_VRAM_TO_VRAM;
+	else if (opcode >= GX_GPU_GP0_CPU_TO_VRAM_FIRST && opcode <= GX_GPU_GP0_CPU_TO_VRAM_LAST) kind = GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM;
+	else if (opcode >= GX_GPU_GP0_VRAM_TO_CPU_FIRST && opcode <= GX_GPU_GP0_VRAM_TO_CPU_LAST) kind = GX_GPU_COMMAND_READ_VRAM_TO_CPU;
+	packet.kind = kind = kindOverride !== 0 ? kindOverride : kind;
+	const gouraud = (opcode >>> 4) & 1;
+	packet.positionStride = 1;
+	packet.vertexCount = 0;
+	packet.colorStride = 0;
+	packet.sizeOffset = 0;
+	packet.controlWord = 0;
+	packet.textureAttribute = 0;
+	if (kind === GX_GPU_COMMAND_DRAW_POLYGON) {
+		packet.positionStride += ((opcode >>> 2) & 1) + gouraud;
+		packet.vertexCount = 3 + ((opcode >>> 3) & 1);
+		if ((opcode & 0x04) !== 0) packet.textureAttribute = gxGpuTextureAttribute(packet.words[gxGpuPolygonTexturePageWordIndex(opcode)]);
+	} else if (kind === GX_GPU_COMMAND_DRAW_LINE || kind === GX_GPU_COMMAND_DRAW_POLYLINE) {
+		packet.positionStride += gouraud;
+		packet.vertexCount = kind === GX_GPU_COMMAND_DRAW_LINE ? 2 : 1 + (((wordCount - 2) / packet.positionStride) | 0);
+	} else if (kind === GX_GPU_COMMAND_DRAW_RECTANGLE) {
+		packet.vertexCount = 1;
+		packet.sizeOffset = wordCount - 1;
+	}
+	if (kind >= GX_GPU_COMMAND_DRAW_POLYGON && kind <= GX_GPU_COMMAND_DRAW_POLYLINE && gouraud !== 0) packet.colorStride = packet.positionStride;
+	switch (opcode) {
+		case GX_GPU_GP0_DRAW_MODE: packet.controlWord = packet.words[0] & GX_GPU_DRAW_MODE_MASK; break;
+		case GX_GPU_GP0_TEXTURE_WINDOW: packet.controlWord = packet.words[0] & GX_GPU_TEXTURE_WINDOW_MASK; break;
+		case GX_GPU_GP0_DRAWING_AREA_TOP_LEFT:
+		case GX_GPU_GP0_DRAWING_AREA_BOTTOM_RIGHT: packet.controlWord = packet.words[0] & GX_GPU_DRAWING_AREA_MASK; break;
+		case GX_GPU_GP0_DRAWING_OFFSET: packet.controlWord = packet.words[0] & GX_GPU_DRAWING_OFFSET_MASK; break;
+		case GX_GPU_GP0_MASK_BIT: packet.controlWord = packet.words[0] & GX_GPU_MASK_BIT_MODE_MASK; break;
+	}
+	retimeGpuPacket(packet, projectedState);
+}
+
+export function retimeGpuPacket(packet: GxGpuPacket, projectedState: GxGpuDrawState): void {
+	switch (packet.opcode) {
+		case GX_GPU_GP0_DRAW_MODE: projectedState.drawModeWord = packet.controlWord; break;
+		case GX_GPU_GP0_TEXTURE_WINDOW: projectedState.textureWindowWord = packet.controlWord; break;
+		case GX_GPU_GP0_DRAWING_AREA_TOP_LEFT: projectedState.drawingAreaTopLeftWord = packet.controlWord; break;
+		case GX_GPU_GP0_DRAWING_AREA_BOTTOM_RIGHT: projectedState.drawingAreaBottomRightWord = packet.controlWord; break;
+		case GX_GPU_GP0_DRAWING_OFFSET: projectedState.drawingOffsetWord = packet.controlWord; break;
+		case GX_GPU_GP0_MASK_BIT: projectedState.maskBitModeWord = packet.controlWord; break;
+	}
+	if (packet.kind === GX_GPU_COMMAND_DRAW_POLYGON && (packet.opcode & 0x04) !== 0) {
+		projectedState.drawModeWord = gxGpuPolygonDrawModeWord(projectedState.drawModeWord, packet.textureAttribute) & GX_GPU_DRAW_MODE_MASK;
+	}
+	const drawState = packet.drawState;
+	drawState.drawModeWord = projectedState.drawModeWord;
+	drawState.vramYAddressExtensionWord = projectedState.vramYAddressExtensionWord;
+	drawState.textureWindowWord = projectedState.textureWindowWord;
+	drawState.drawingAreaTopLeftWord = projectedState.drawingAreaTopLeftWord;
+	drawState.drawingAreaBottomRightWord = projectedState.drawingAreaBottomRightWord;
+	drawState.drawingOffsetWord = projectedState.drawingOffsetWord;
+	drawState.maskBitModeWord = projectedState.maskBitModeWord;
+	drawState.skippedLineParity = (projectedState.drawModeWord & GX_GPU_DRAW_MODE_DRAW_TO_DISPLAYED_FIELD) !== 0
+		? GX_GPU_SKIPPED_LINE_NONE : projectedState.skippedLineParity;
+	packet.ticks = gxGpuPacketTicks(packet.kind, packet.opcode, packet.words, 0,
+		packet.vertexCount, packet.positionStride, packet.sizeOffset, projectedState);
 }

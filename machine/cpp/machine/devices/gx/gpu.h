@@ -7,6 +7,7 @@
 #include "spec/gx/pcrtc.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
 #include "machine/devices/gx/gp0_stream.h"
+#include "machine/devices/gx/gpu_prepared_commands.h"
 #include "machine/devices/gx/gpu_display.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
 #include "machine/devices/word_fifo.h"
@@ -27,12 +28,7 @@ class CPU;
 class DeviceScheduler;
 class IrqController;
 
-constexpr u32 GX_GPU_DRAW_MODE_MASK = 0x00003fffu;
 constexpr u32 GX_GPU_DRAW_MODE_GPUSTAT_MASK = 0x000007ffu;
-constexpr u32 GX_GPU_TEXTURE_WINDOW_MASK = 0x000fffffu;
-constexpr u32 GX_GPU_DRAWING_AREA_MASK = 0x000fffffu;
-constexpr u32 GX_GPU_DRAWING_OFFSET_MASK = 0x003fffffu;
-constexpr u32 GX_GPU_MASK_BIT_MODE_MASK = 0x3u;
 
 constexpr u32 GX_GPU_STATUS_INTERLACED_FIELD = 1u << 13u;
 constexpr u32 GX_GPU_STATUS_REVERSE_FLAG = 1u << 14u;
@@ -330,6 +326,12 @@ private:
 	WordFifo<GX_GPU_DMA_INGRESS_WORD_CAPACITY> m_gp0DmaIngress;
 	Gp0StreamCursor m_gp0Ingress;
 	Gp0StreamCursor m_gp0Producer;
+	GxGpuPreparedCommands m_preparedCommands;
+	GxGpuDrawState m_projectedDrawState;
+	GxGpuPacket m_executionPacket;
+	bool m_preparedTimingDirty = true;
+	bool m_processingGp0Pipeline = false;
+	u8 m_deferredServiceFlags = 0u;
 	u32 m_queuedGp0Irqs = 0u;
 	u32 m_queuedGp0Readbacks = 0u;
 	i64 m_pendingCommandCompletionCycle = 0;
@@ -337,7 +339,6 @@ private:
 	i64 m_deviceServiceDeadlineCycle = -1;
 	GxGpuCommandBuffer m_commandBuffer;
 	GxGpuPcrtc m_pcrtc;
-	std::array<u32, GX_GPU_GP0_COMMAND_BUFFER_WORDS> m_gp0CommandWords{};
 	u32 m_gp0CommandWordCount = 0u;
 	u32 m_gp0CommandTargetWordCount = 0u;
 	u32 m_gp0ImageLoadWordsRemaining = 0u;
@@ -413,19 +414,23 @@ private:
 	void flushImageLoadToVram(i64 commandStartCycle);
 	void consumeImageLoadWords(i64 commandStartCycle);
 	void consumeGp0PolylinePayloadWord(u32 word, i64 commandStartCycle);
-	void beginPolylinePayload(u32 opcode, u32 commandWordCount, i64 commandStartCycle);
+	void beginPolylinePayload(const GxGpuPacket& packet, i64 commandStartCycle);
 	void recordGp0ProducerWord(u32 word);
 	void rebuildGp0Producer();
 	bool acceptGp0Word(u32 word);
 	void processGp0Pipeline(i64 commandStartCycle);
 	void consumeGp0Fifo(i64 commandStartCycle);
 	void synchronizeCommandExecution(i64 nowCycles);
+	void copyDrawState(GxGpuDrawState& state) const;
+	void prepareGp0Commands();
+	i64 preparedCommandDeadline() const;
 	void rescheduleDeviceService(bool force = false, bool ensureCompletion = false);
 	void beginCommandCompletion(i64 commandTicks, size_t targetCommandCount, i64 commandStartCycle);
-	void executeGp0Command(i64 commandStartCycle);
+	void executeGp0Command(const GxGpuPacket& packet, i64 commandStartCycle);
+	void emitPreparedGp0Command(const GxGpuPacket& packet, i64 commandStartCycle);
 	void emitFixedGp0Command(u8 kind, u32 opcode, u32 commandWordCount, i64 commandStartCycle);
 	void pushGpuCommand(u8 kind, u32 opcode, size_t wordStart, u32 commandWordCount, i64 commandStartCycle);
-	void beginImageLoadToVram(u32 opcode, u32 commandWordCount);
+	void beginImageLoadToVram(const GxGpuPacket& packet);
 	bool commandBufferDrainRequired() const;
 	void writeDrawModeWord(u32 word);
 	void updateDrawModeStatusBits();

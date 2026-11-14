@@ -418,6 +418,32 @@ public:
 		}
 	}
 
+	void pushPreparedCommand(const GxGpuPacket& packet, size_t wordStart) {
+		const size_t index = commandCount;
+		const auto& state = packet.drawState;
+		commandKind[index] = packet.kind;
+		commandOpcode[index] = packet.opcode;
+		commandWordStart[index] = static_cast<u32>(wordStart);
+		commandWordCount[index] = packet.wordCount;
+		commandDrawModeWord[index] = state.drawModeWord;
+		commandVramYAddressExtensionWord[index] = state.vramYAddressExtensionWord;
+		commandTextureWindowWord[index] = state.textureWindowWord;
+		commandDrawingAreaTopLeftWord[index] = state.drawingAreaTopLeftWord;
+		commandDrawingAreaBottomRightWord[index] = state.drawingAreaBottomRightWord;
+		commandDrawingOffsetWord[index] = state.drawingOffsetWord;
+		commandMaskBitModeWord[index] = state.maskBitModeWord;
+		commandSkippedLineParity[index] = state.skippedLineParity;
+		commandDrawIndex[index] = static_cast<u16>(drawCount);
+		if (packet.kind >= GX_GPU_COMMAND_DRAW_POLYGON && packet.kind <= GX_GPU_COMMAND_DRAW_RECTANGLE) {
+			drawVertexCount[drawCount] = packet.vertexCount;
+			drawPositionStride[drawCount] = packet.positionStride;
+			drawColorStride[drawCount] = packet.colorStride;
+			drawSizeOffset[drawCount] = packet.sizeOffset;
+			++drawCount;
+		}
+		commandCount = index + 1u;
+	}
+
 	void pushCommand(
 		u8 kind,
 		u8 opcode,

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/primitives.h"
+#include "machine/devices/gx/gpu_packet.h"
 #include "spec/gx/vram.h"
 #include "spec/gx/gp0.h"
 
@@ -14,16 +15,6 @@ constexpr size_t GX_GPU_COMMAND_CAPACITY = 4096u;
 constexpr size_t GX_GPU_COMMAND_WORD_CAPACITY = 0x80000u;
 constexpr size_t GX_GPU_COMMAND_MAX_UPLOAD_WORD_COUNT = 3u + (GX_GPU_TRANSFER_MAX_PIXEL_COUNT >> 1u);
 constexpr size_t GX_GPU_COMMAND_WORD_DRAIN_THRESHOLD = GX_GPU_COMMAND_WORD_CAPACITY - GX_GPU_COMMAND_MAX_UPLOAD_WORD_COUNT;
-constexpr u8 GX_GPU_SKIPPED_LINE_NONE = 2u;
-
-constexpr u8 GX_GPU_COMMAND_DRAW_POLYGON = 1u;
-constexpr u8 GX_GPU_COMMAND_DRAW_LINE = 2u;
-constexpr u8 GX_GPU_COMMAND_DRAW_POLYLINE = 3u;
-constexpr u8 GX_GPU_COMMAND_DRAW_RECTANGLE = 4u;
-constexpr u8 GX_GPU_COMMAND_FILL_RECTANGLE = 5u;
-constexpr u8 GX_GPU_COMMAND_COPY_VRAM_TO_VRAM = 6u;
-constexpr u8 GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM = 7u;
-constexpr u8 GX_GPU_COMMAND_READ_VRAM_TO_CPU = 8u;
 constexpr u8 GX_GPU_READBACK_IDLE = 0u;
 constexpr u8 GX_GPU_READBACK_PENDING = 1u;
 constexpr u8 GX_GPU_READBACK_SUBMITTED = 2u;

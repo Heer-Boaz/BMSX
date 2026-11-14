@@ -328,7 +328,11 @@ void testGpuIndependentReadbackAndSupervisorDemand() {
    h.dma.beginSupervisorQuiesce();h.gpu.beginSupervisorQuiesce();
    while(h.scheduler.hasDueTimer())require(h.scheduler.popDueTimer()==DEVICE_SERVICE_SYSTEM,"quiescent DMA notifies the supervisor before GPU completion");
   }
-  require(h.scheduler.nextDeadline()==29,"queued readback or supervisor quiesce observes completion independently of DMA mode");
+  require(h.scheduler.nextDeadline()==(readback?30:29),"readback activation or supervisor completion remains observable independently of DMA mode");
+  if(readback) {
+   h.step();
+   require(h.gpu.captureState().commandBuffer.readbackPhase==GX_GPU_READBACK_PENDING,"readback becomes pending exactly at its own completion");
+  }
  }
 }
 void testRestoredOffGpuDemand() {

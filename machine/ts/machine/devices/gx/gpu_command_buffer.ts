@@ -1,3 +1,8 @@
+import {
+	GX_GPU_COMMAND_DRAW_POLYGON, GX_GPU_COMMAND_DRAW_LINE, GX_GPU_COMMAND_DRAW_POLYLINE,
+	GX_GPU_COMMAND_DRAW_RECTANGLE, GX_GPU_COMMAND_READ_VRAM_TO_CPU, type GxGpuPacket,
+} from './gpu_packet';
+export { GX_GPU_COMMAND_DRAW_POLYGON, GX_GPU_COMMAND_DRAW_LINE, GX_GPU_COMMAND_DRAW_POLYLINE, GX_GPU_COMMAND_DRAW_RECTANGLE, GX_GPU_COMMAND_FILL_RECTANGLE, GX_GPU_COMMAND_COPY_VRAM_TO_VRAM, GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, GX_GPU_COMMAND_READ_VRAM_TO_CPU, GX_GPU_SKIPPED_LINE_NONE } from './gpu_packet';
 import { DmaEndpoint } from '../dma/endpoints';
 import type { DmaController } from '../dma/controller';
 import {
@@ -12,16 +17,6 @@ export const GX_GPU_COMMAND_CAPACITY = 4096;
 export const GX_GPU_COMMAND_WORD_CAPACITY = 0x80000;
 export const GX_GPU_COMMAND_MAX_UPLOAD_WORD_COUNT = 3 + (GX_GPU_TRANSFER_MAX_PIXEL_COUNT >>> 1);
 export const GX_GPU_COMMAND_WORD_DRAIN_THRESHOLD = GX_GPU_COMMAND_WORD_CAPACITY - GX_GPU_COMMAND_MAX_UPLOAD_WORD_COUNT;
-export const GX_GPU_SKIPPED_LINE_NONE = 2;
-
-export const GX_GPU_COMMAND_DRAW_POLYGON = 1;
-export const GX_GPU_COMMAND_DRAW_LINE = 2;
-export const GX_GPU_COMMAND_DRAW_POLYLINE = 3;
-export const GX_GPU_COMMAND_DRAW_RECTANGLE = 4;
-export const GX_GPU_COMMAND_FILL_RECTANGLE = 5;
-export const GX_GPU_COMMAND_COPY_VRAM_TO_VRAM = 6;
-export const GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM = 7;
-export const GX_GPU_COMMAND_READ_VRAM_TO_CPU = 8;
 export const GX_GPU_READBACK_IDLE = 0;
 export const GX_GPU_READBACK_PENDING = 1;
 export const GX_GPU_READBACK_SUBMITTED = 2;
@@ -518,6 +513,30 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		this.commandSkippedLineParity[commandIndex] = skippedLineParity;
 		this.appendDrawLayout(commandIndex);
 		this.commandCount = commandIndex + 1;
+	}
+
+	public pushPreparedCommand(packet: GxGpuPacket, wordStart: number): void {
+		const index = this.commandCount++, state = packet.drawState;
+		this.commandKind[index] = packet.kind;
+		this.commandOpcode[index] = packet.opcode;
+		this.commandWordStart[index] = wordStart;
+		this.commandWordCount[index] = packet.wordCount;
+		this.commandDrawModeWord[index] = state.drawModeWord;
+		this.commandVramYAddressExtensionWord[index] = state.vramYAddressExtensionWord;
+		this.commandTextureWindowWord[index] = state.textureWindowWord;
+		this.commandDrawingAreaTopLeftWord[index] = state.drawingAreaTopLeftWord;
+		this.commandDrawingAreaBottomRightWord[index] = state.drawingAreaBottomRightWord;
+		this.commandDrawingOffsetWord[index] = state.drawingOffsetWord;
+		this.commandMaskBitModeWord[index] = state.maskBitModeWord;
+		this.commandSkippedLineParity[index] = state.skippedLineParity;
+		this.commandDrawIndex[index] = this.drawCount;
+		if (packet.kind >= GX_GPU_COMMAND_DRAW_POLYGON && packet.kind <= GX_GPU_COMMAND_DRAW_RECTANGLE) {
+			const draw = this.drawCount++;
+			this.drawVertexCount[draw] = packet.vertexCount;
+			this.drawPositionStride[draw] = packet.positionStride;
+			this.drawColorStride[draw] = packet.colorStride;
+			this.drawSizeOffset[draw] = packet.sizeOffset;
+		}
 	}
 
 	private appendDrawLayout(index: number): void {

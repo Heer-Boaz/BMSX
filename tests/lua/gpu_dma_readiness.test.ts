@@ -11,6 +11,7 @@ import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_addres
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { DmaEndpoint } from '../../machine/ts/machine/devices/dma/endpoints';
 import { GxGpu } from '../../machine/ts/machine/devices/gx/gpu';
+import { GX_GPU_READBACK_PENDING } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { DEVICE_SERVICE_DMA, DEVICE_SERVICE_GPU, DEVICE_SERVICE_SYSTEM, DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
@@ -245,7 +246,9 @@ test('readback and supervisor dependencies remain observable with disabled DMA d
 	h.gpu.writeGp1((gp1.GX_GPU_GP1_DMA_DIRECTION << 24) | gp0.GX_GPU_DMA_DIRECTION_OFF);
 	for (const word of [0xc0000000, 0, 0x00010001]) h.gpu.writeGp0(word);
 	start(h, io.DMA_ROUTE_TO_GPU, 1);
-	assert.equal(h.scheduler.nextDeadline(), 29, 'queued readback owns its completion dependency independently of DMA direction');
+	assert.equal(h.scheduler.nextDeadline(), 30, 'readback completion owns its dependency independently of DMA direction');
+	step(h);
+	assert.equal(h.gpu.captureState().commandBuffer.readbackPhase, GX_GPU_READBACK_PENDING, 'readback becomes pending at its own completion');
 	const q = fixture(); fill(q, 0x00010001);
 	q.gpu.writeGp1((gp1.GX_GPU_GP1_DMA_DIRECTION << 24) | gp0.GX_GPU_DMA_DIRECTION_OFF);
 	start(q, io.DMA_ROUTE_TO_GPU, 1);

@@ -5558,7 +5558,14 @@ void testRawVramExtensionWordAcrossCommandAndReadback() {
 	const size_t start = buffer->appendWords(rect.data(), rect.size());
 	buffer->pushCommand(bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE, 0x60u, start, 3u, 0u, 0x100u, 0u,
 		600u << 10u, (620u << 10u) | 10u, 0u, 0u, bmsx::GX_GPU_SKIPPED_LINE_NONE);
-	require(buffer->commandVramYAddressExtensionWord[0] == 0x100u && bmsx::gxGpuCommandTicks(*buffer, 0u) > 16,
+	bmsx::GxGpuPacket packet;
+	bmsx::GxGpuDrawState drawState;
+	drawState.vramYAddressExtensionWord = 0x100u;
+	drawState.drawingAreaTopLeftWord = 600u << 10u;
+	drawState.drawingAreaBottomRightWord = (620u << 10u) | 10u;
+	std::copy(rect.begin(), rect.end(), packet.words.begin());
+	bmsx::prepareGpuPacket(packet, static_cast<bmsx::u32>(rect.size()), drawState);
+	require(buffer->commandVramYAddressExtensionWord[0] == 0x100u && packet.ticks > 16,
 		"draw timing consumes the complete nonzero extension register word");
 	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, 0u);
 	bmsx::executeGxGpuSoftwareCommands(software, *buffer, 0u, 1u);
