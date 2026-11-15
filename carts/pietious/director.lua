@@ -955,6 +955,9 @@ local define_director_fsm<const> = function()
 							snap_to_start = true,
 						},
 						on_finished = function(self)
+							if self.castle.room_enter_pending then
+								return '/room'
+							end
 							self.request_new_game()
 						end,
 					},
