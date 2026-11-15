@@ -33,7 +33,7 @@
 #include "machine/cpu/snapshot.h"
 #include "spec/blua32/memory_access_kind.h"
 #include "spec/blua32/execution_domain.h"
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE)
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 #include "machine/cpu/diagnostic_gc_profile.h"
 #endif
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
@@ -289,7 +289,7 @@ public:
 	const StringPool& stringPool() const { return m_stringPool; }
 	LuaHeap& luaHeap() { return m_luaHeap; }
 	const LuaHeap& luaHeap() const { return m_luaHeap; }
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE)
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	const DiagnosticGcProfile& diagnosticGcProfile() const { return m_diagnosticGcProfile; }
 #endif
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
@@ -660,7 +660,7 @@ private:
 	std::vector<Value> m_globalValues;
 	std::unordered_map<StringId, size_t> m_globalSlotByKey;
 	Table* m_stringIndexTable = nullptr;
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE)
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	DiagnosticGcProfile m_diagnosticGcProfile;
 #endif
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)

@@ -269,6 +269,13 @@ void testBusyCpuBudgetAtVblank() {
 	require(scheduler.lastTickBudgetGranted - scheduler.lastTickCpuUsedCycles == scheduler.lastTickBudgetRemaining,
 		"VBlank reads the consumed CPU budget before carrying the remainder");
 	require(scheduler.lastTickCpuUsedCycles == runtime.machine.scheduler.nowCycles(), "busy CPU cycles match machine time");
+#if defined(BMSX_DIAGNOSTIC_CPU_TIMING)
+	const auto timed = runtime.machine.scheduler.diagnosticCpuTiming;
+	require(timed.slices > 0 && timed.consumedCycles == scheduler.lastTickCpuUsedCycles,
+		"CPU timing charges actual busy-loop consumption, not the granted budget");
+	require(timed.wallNanoseconds > 0 && timed.threadNanoseconds > 0,
+		"busy execution is measured by both Linux clocks");
+#endif
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	require(runtime.machine.scheduler.diagnosticCpuSliceCount > 0
 		&& runtime.machine.scheduler.diagnosticCpuSliceConsumedCycles == scheduler.lastTickCpuUsedCycles,

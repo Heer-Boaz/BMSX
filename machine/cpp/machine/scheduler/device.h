@@ -1,4 +1,7 @@
 #pragma once
+#if defined(BMSX_DIAGNOSTIC_CPU_TIMING)
+#include "machine/scheduler/diagnostic_cpu_timing.h"
+#endif
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 #include "machine/cpu/diagnostic_execution_profile.h"
 #endif
@@ -51,6 +54,11 @@ public:
 	uint8_t popDueTimer();
 	void scheduleDeviceService(uint8_t deviceKind, i64 deadlineCycles);
 	void cancelDeviceService(uint8_t deviceKind);
+
+#if defined(BMSX_DIAGNOSTIC_CPU_TIMING)
+	// Cumulative host lifetime; reset/restore do not rewind diagnostic clocks.
+	DiagnosticCpuTiming diagnosticCpuTiming;
+#endif
 
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	// Host-only cumulative diagnostics. Unlike the frame CPU budget, these

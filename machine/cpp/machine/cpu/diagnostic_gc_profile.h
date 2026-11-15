@@ -5,7 +5,7 @@
 namespace bmsx {
 
 // Host diagnostics for one CPU lifetime, never machine/snapshot state. Enabled
-// by CPU-slice or native-gate profiling. Reset and restore do not rewind totals.
+// by CPU-slice, CPU-timing or native-gate profiling. Reset and restore do not rewind totals.
 struct DiagnosticGcProfile {
 	u64 collections = 0;
 	// Complete CPU::collectHeap, including final heap accounting and unwinding

@@ -40,6 +40,9 @@ i64 DeviceScheduler::currentNowCycles() const {
 RunResult DeviceScheduler::runCpuSlice(int targetDepth, int sliceBudget, const Thread* targetThread) {
 	beginCpuSlice(sliceBudget);
 	ScopeExit activeSlice([this]() { endCpuSlice(); });
+#if defined(BMSX_DIAGNOSTIC_CPU_TIMING)
+	DiagnosticCpuSliceMeasurement measurement(diagnosticCpuTiming, sliceBudget, m_cpu.instructionBudgetRemaining);
+#endif
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	// Same admission/consumption boundary as CpuTopologyDiagnostic::scheduler;
 	// this bounded probe needs the cumulative count/sum, not its histograms.
