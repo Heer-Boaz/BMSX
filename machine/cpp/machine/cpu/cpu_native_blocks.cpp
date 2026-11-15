@@ -209,8 +209,6 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool immediate, b
 			segmentFirst = index + 1u;
 		}
 	}
-	NativeCodeBindings bindings(m_memory, m_stringPool, asStringId(m_indexKey), this);
-	bindings.profileLowering = profile != nullptr;
 	NativeBlockExitHandlers handlers{};
 	handlers[static_cast<size_t>(NativeBlockExit::ReadField)] = &CPU::compiledReadFieldExit;
 	handlers[static_cast<size_t>(NativeBlockExit::WriteField)] = &CPU::compiledWriteFieldExit;
@@ -229,7 +227,7 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool immediate, b
 		pendingJob.instructionCount = static_cast<u32>(instructionCount);
 		pendingJob.invalidated = false;
 		pendingJob.entries.assign(entries.begin(), entries.end());
-		m_nativeCompilerWorker->submit(sources, image.constPool.data(), bindings, handlers, profile != nullptr);
+		m_nativeCompilerWorker->submit(sources, image.constPool.data(), NativeCodeBindings(m_memory, m_stringPool, asStringId(m_indexKey), this), handlers, profile != nullptr);
 		return;
 	}
 #else
@@ -237,7 +235,7 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool immediate, b
 #endif
 	measurement.phase(&NativeCompilationProfile::compilationNanoseconds);
 	auto blocks = NativeBlock::compileRegion(sources, image.constPool.data(),
-		bindings, handlers);
+		NativeCodeBindings(m_memory, m_stringPool, asStringId(m_indexKey), this), handlers);
 	installNativeRegion(image, page, pagePc, source.slot, entries, std::move(blocks), static_cast<u32>(instructionCount));
 }
 

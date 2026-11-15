@@ -10,7 +10,6 @@
 #include "common/primitives.h"
 #include "machine/cpu/value.h"
 #include "machine/cpu/native_block_exit.h"
-#include "machine/cpu/native_compilation_profile.h"
 #include "spec/blua32/opcode.h"
 #include "spec/blua32/cop0.h"
 #if defined(BMSX_NATIVE_PERF_MAP)
@@ -151,7 +150,6 @@ struct NativeCodeBindings {
 	// Only CPU-owned emission may call completion owners. Standalone blocks
 	// retain the base run-state ABI and ordinary CALL exits.
 	CPU* cpu = nullptr;
-	bool profileLowering = false;
 };
 
 // Entry descriptors share one executable allocation. Source invalidation retires
@@ -167,7 +165,6 @@ public:
 	NativeCodeRegion(const NativeCodeRegion&) = delete;
 	NativeCodeRegion& operator=(const NativeCodeRegion&) = delete;
 	size_t codeBytes = 0;
-	std::unique_ptr<const NativeLoweringStats> loweringStats;
 private:
 	friend class NativeBlock;
 	void* m_code = nullptr;

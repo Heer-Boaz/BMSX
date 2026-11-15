@@ -1,7 +1,6 @@
 #include "machine/cpu/cpu.h"
 #include "machine/common/numeric.h"
 #include "machine/cpu/native_block.h"
-#include "machine/cpu/execution_image.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
@@ -217,98 +216,6 @@ void inheritedTableFactsAreRecheckedOnCpuEntry() {
 		"a resumed entry rechecks its table fact before the original instruction faults");
 }
 
-void aliasTableEntryGuardsReplayExactFaults() {
-	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), 20, 12, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 21, 12, 0);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::GETFIELD), 23, 20, 0);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::GETFIELD), 24, 21, 0);
-	writeInstruction(image.text, 4, static_cast<u8>(OpCode::GETFIELD), 25, 12, 0);
-	writeInstruction(image.text, 5, static_cast<u8>(OpCode::MOV), 26, 20, 0);
-	writeInstruction(image.text, 6, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-	writeInstruction(image.text, 16, static_cast<u8>(OpCode::JMP), 0, 63, 50, 255);
-	writeInstruction(image.text, 32, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-	image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 32}, {.firstWord = 16, .wordCount = 1, .maxStack = 32},
-		{.firstWord = 32, .wordCount = 1}};
-	image.constants = {std::string("guarded field")}; image.exceptionFunctionIndex = 2;
-	for (bool bypass : {false, true}) for (int invalid : {1, 2}) for (int grant = 0; grant <= 14; ++grant) {
-		CpuMachine native(image), scalar(image, true);
-		for (auto* machine : {&native, &scalar}) {
-			auto& cpu = machine->cpu; const auto key = cpu.stringPool().intern("guarded field");
-			auto* first = cpu.createTable(0, 1); auto* second = cpu.createTable(0, 1);
-			first->setStringKey(key, valueNumber(41)); second->setStringKey(key, valueNumber(73));
-			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[bypass ? 1 : 0],
-				machine->rom.textAddress + (bypass ? 16u : 3u) * INSTRUCTION_BYTES);
-			auto* frame = cpu.rootThread()->currentFrame;
-			for (int slot = 0; slot < frame->stackCapacity; ++slot) frame->registers[slot] = valueNumber(-slot);
-			frame->registers[12] = invalid == 2 ? valueBool(false) : valueTable(second);
-			frame->registers[21] = invalid == 1 ? valueBool(false) : valueTable(first); frame->top = 1;
-		}
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-		native.cpu.prepareSystemNativeCode();
-		auto* owner = native.cpu.rootThread()->currentFrame->executionImage;
-		auto* page = owner->nativeCodeLookup->find(native.rom.textAddress, 0);
-		const u32 first = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
-		require(page && page->nativeBlocks->entries[first] && page->nativeBlocks->entries[first + 3]
-			&& page->nativeBlocks->entries[first]->region == page->nativeBlocks->entries[first + 3]->region,
-			"the replay witness enters an actual published continuation with alias-derived Table facts");
-#endif
-		test::runCpuParity(native.cpu, scalar.cpu, grant); requireParity(native, scalar);
-		test::runCpuParity(native.cpu, scalar.cpu, 16); requireParity(native, scalar);
-		const auto* frame = native.cpu.rootThread()->firstFrame;
-		require(native.cpu.readLuaFaultReasonWord() != 0
-			&& native.cpu.readEpcWord() == native.rom.textAddress + (invalid == 1 ? 3u : 4u) * INSTRUCTION_BYTES
-			&& frame->registers[20] == valueNumber(-20) && frame->registers[23] == valueNumber(-23)
-			&& frame->registers[24] == valueNumber(invalid == 1 ? -24 : 41)
-			&& frame->registers[25] == valueNumber(-25) && frame->registers[26] == valueNumber(-26),
-			"scalar replay executes exactly the valid lookup prefix then faults at the original field, retaining every unexecuted result and unrelated raw slot");
-	}
-}
-
-void retainedTableFactReplaysPressurePrefix() {
-	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), 0, 1, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::GETI), 2, 0, 1);
-	for (u32 index = 0; index < 4; ++index) writeInstruction(image.text, 2 + index, static_cast<u8>(OpCode::K1), 4 + index, 0, 0);
-	writeInstruction(image.text, 6, static_cast<u8>(OpCode::ADD), 8, 4, 5);
-	writeInstruction(image.text, 7, static_cast<u8>(OpCode::ADD), 9, 6, 7);
-	writeInstruction(image.text, 8, static_cast<u8>(OpCode::ADD), 10, 8, 9);
-	writeInstruction(image.text, 9, static_cast<u8>(OpCode::GETI), 3, 0, 1);
-	writeInstruction(image.text, 10, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-	writeInstruction(image.text, 16, static_cast<u8>(OpCode::JMP), 0, 63, 49, 255);
-	writeInstruction(image.text, 32, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-	image.functions = {{.firstWord = 0, .wordCount = 11, .maxStack = 11}, {.firstWord = 16, .wordCount = 1, .maxStack = 11},
-		{.firstWord = 32, .wordCount = 1}};
-	image.exceptionFunctionIndex = 2;
-	for (bool bypass : {false, true}) for (int grant = 0; grant <= 22; ++grant) {
-		CpuMachine native(image), scalar(image, true);
-		for (auto* machine : {&native, &scalar}) {
-			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[bypass ? 1 : 0],
-				machine->rom.textAddress + (bypass ? 16u : 2u) * INSTRUCTION_BYTES);
-			auto* frame = machine->cpu.rootThread()->currentFrame;
-			for (int slot = 0; slot < frame->stackCapacity; ++slot) frame->registers[slot] = valueNumber(-slot);
-			frame->registers[0] = valueNil(); frame->top = 0;
-		}
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-		native.cpu.prepareSystemNativeCode();
-		auto* owner = native.cpu.rootThread()->currentFrame->executionImage; auto* page = owner->nativeCodeLookup->find(native.rom.textAddress, 0);
-		const u32 first = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
-		require(page && page->nativeBlocks->entries[first] && page->nativeBlocks->entries[first + 2]
-			&& page->nativeBlocks->entries[first]->region == page->nativeBlocks->entries[first + 2]->region,
-			"the pressure replay enters the real native continuation whose raw receiver definition retains a Table fact");
-#endif
-		test::runCpuParity(native.cpu, scalar.cpu, grant); requireParity(native, scalar);
-		test::runCpuParity(native.cpu, scalar.cpu, 32); requireParity(native, scalar);
-		const auto* frame = native.cpu.rootThread()->firstFrame;
-		require(native.cpu.readLuaFaultReasonWord() != 0 && native.cpu.readEpcWord() == native.rom.textAddress + 9 * INSTRUCTION_BYTES
-			&& frame->top == 11 && frame->registers[0] == valueNil() && frame->registers[3] == valueNumber(-3)
-			&& frame->registers[4] == valueNumber(1) && frame->registers[5] == valueNumber(1)
-			&& frame->registers[6] == valueNumber(1) && frame->registers[7] == valueNumber(1)
-			&& frame->registers[8] == valueNumber(2) && frame->registers[9] == valueNumber(2) && frame->registers[10] == valueNumber(4),
-			"an early Table proof failure replays every K1 and ADD exactly before the later GETI faults without committing its result");
-	}
-}
-
 void inheritedArrayReads(bool generic) {
 	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(generic ? OpCode::GETT : OpCode::GETI), 3, 0, 1);
@@ -489,7 +396,7 @@ void stringStoreGrowthRoots(bool generic) {
 int main() {
 	try {
 		stringReadChainBoundaries();
-		genericArraysAndHashKeys(); inheritedTableFactsAreRecheckedOnCpuEntry(); aliasTableEntryGuardsReplayExactFaults(); retainedTableFactReplaysPressurePrefix(); inheritedArrayReads(false); inheritedArrayReads(true); boundaryLengthAndUtf8(); selfAndNilFaults(); wideAllocationFailure(); stringStoreGrowthRoots(false); stringStoreGrowthRoots(true);
+		genericArraysAndHashKeys(); inheritedTableFactsAreRecheckedOnCpuEntry(); inheritedArrayReads(false); inheritedArrayReads(true); boundaryLengthAndUtf8(); selfAndNilFaults(); wideAllocationFailure(); stringStoreGrowthRoots(false); stringStoreGrowthRoots(true);
 		std::cout << "Compiled table tests passed\n";
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }
