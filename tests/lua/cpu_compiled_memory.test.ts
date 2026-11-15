@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { runCpuParity } from '../helpers/cpu_execution';
 import { readLE32 } from '../../machine/ts/common/endian';
-import { CompiledBlockExit, CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
+import { COMPILED_BLOCK_THRESHOLD, CompiledBlockExit, CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
@@ -76,6 +76,9 @@ test('cached values reach field, memory and fault owners without stale tags or n
 	], constants: ['stable', 'result'], exceptionFunctionIndex: 1 });
 	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
 	const address = DYNAMIC_RAM_BASE + 0x1000;
+	const loopCycles = [OpCode.MOV, OpCode.GETFIELD, OpCode.K0, OpCode.DIV, OpCode.SETFIELD, OpCode.STORE_MEM,
+		OpCode.K1, OpCode.ADD, OpCode.MOV, OpCode.MOV, OpCode.GETFIELD, OpCode.MOV, OpCode.JMP]
+		.reduce((cycles, op) => cycles + BASE_CYCLES[op], 0);
 	for (const { cpu } of machines) {
 		const table = cpu.createTable(0, 2);
 		table.storeStringKey(cpu.stringPool.intern('stable'), ValueTag.Number, 22, null);
@@ -83,14 +86,14 @@ test('cached values reach field, memory and fault owners without stale tags or n
 		const frame = cpu.rootThread.frameAtDepth(0);
 		frame.registers.setTable(1, table); frame.registers.setNumber(5, address);
 		frame.registers.setNumber(12, Infinity); frame.registers.setNumber(13, Infinity);
-		cpu.runUntilDepth(0, 1204);
+		cpu.runUntilDepth(0, (COMPILED_BLOCK_THRESHOLD + 1) * loopCycles);
 	}
 	const frame = machines[0].cpu.rootThread.frameAtDepth(0), page = frame.decodedPage!;
 	const entry = image.image.functions[0].codeAddress;
 	const block = page.compiledBlocks!.entries[(entry & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2]!;
 	assert.equal(block.sourceWords, 13);
 	assert.equal(block.region.exits[block.region.execute(frame.registers, frame.executionImage.constScalars, page, frame, block.entry, { remainingCycles: 1, registerTop: frame.top, memoryAddress: 0 })].nextPc, image.image.functions[0].codeAddress);
-	machines[1].cpu.runUntilDepth(0, 28);
+	machines[1].cpu.runUntilDepth(0, loopCycles);
 	assert.equal(machines[0].memory.readMappedWord(address), 0);
 	assert.equal(machines[0].memory.readMappedWord(address + 4), 0x7ff80000);
 	assert.equal(Buffer.compare(machines[0].memory.ramData(), machines[1].memory.ramData()), 0,

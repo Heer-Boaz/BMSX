@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { runCpuParity } from '../helpers/cpu_execution';
 import { RunResult, type CPU } from '../../machine/ts/machine/cpu/cpu';
-import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
+import { COMPILED_BLOCK_THRESHOLD, CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -279,7 +279,8 @@ for (const op of [OpCode.ADD, OpCode.SUB, OpCode.MUL, OpCode.DIV, OpCode.MOD, Op
 			const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 4 }] });
 			const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
 			const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
-			runCpuParity(js, ref, 90);
+			runCpuParity(js, ref, (COMPILED_BLOCK_THRESHOLD + 1)
+				* (BASE_CYCLES[op] + BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.JMP]));
 			assert.ok(compiledEntries(js) > 0);
 			const frame = js.rootThread.frameAtDepth(0);
 			const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2;
@@ -330,7 +331,9 @@ test('generated RK constants preserve numeric kind checks and signed selectors',
 		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 7, maxStack: 6 }], constants: [left, -1] });
 		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
 		const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
-		runCpuParity(js, ref, 400);
+		const loopCycles = [OpCode.ADD, OpCode.SHL, OpCode.DIV, OpCode.MOD, OpCode.FLOORDIV, OpCode.POW, OpCode.JMP]
+			.reduce((cycles, op) => cycles + BASE_CYCLES[op], 0);
+		runCpuParity(js, ref, (COMPILED_BLOCK_THRESHOLD + 1) * loopCycles);
 		assert.ok(compiledEntries(js) > 0);
 		const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2;
 		assert.equal(js.rootThread.frameAtDepth(0).decodedPage!.compiledBlocks!.entries[entry]!.sourceWords, 7);
@@ -352,9 +355,10 @@ test('dependent generated instructions preserve live values, raw copies and comp
 	};
 	for (let program = 0; program < 32; ++program) {
 		const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
-		let previous = 0;
+		let previous = 0, loopCycles = BASE_CYCLES[OpCode.JMP];
 		for (let word = 0; word < 32; ++word) {
 			const op = operations[next() % operations.length];
+			loopCycles += BASE_CYCLES[op];
 			const a = word % 3 === 0 ? previous : next() & 7;
 			let b = word % 3 === 0 ? previous : next() & 7;
 			let c = word % 3 === 1 ? previous : next() & 7;
@@ -380,7 +384,7 @@ test('dependent generated instructions preserve live values, raw copies and comp
 			registers.setTable(0, cpu.createTable(0, 0));
 			registers.setNumber(7, -0);
 		}
-		for (const grant of [330, ...Array.from({ length: 40 }, (_, i) => i + 1)]) {
+		for (const grant of [(COMPILED_BLOCK_THRESHOLD + 1) * loopCycles, ...Array.from({ length: 40 }, (_, i) => i + 1)]) {
 			runCpuParity(js, ref, grant);
 			assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState(), `program ${program}, grant ${grant}`);
 		}

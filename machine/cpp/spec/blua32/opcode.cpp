@@ -24,9 +24,9 @@ const std::array<uint8_t, OPCODE_COUNT> BASE_CYCLES{
 	2u, // ADD
 	2u, // SUB
 	2u, // MUL
-	2u, // DIV
+	32u, // DIV
 	2u, // MOD
-	2u, // FLOORDIV
+	33u, // FLOORDIV
 	2u, // POW
 	2u, // BAND
 	2u, // BOR

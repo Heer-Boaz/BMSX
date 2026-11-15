@@ -12,7 +12,9 @@
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 
+#include <array>
 #include <chrono>
+#include <limits>
 #include <cstdio>
 #include <thread>
 #include <stdexcept>
@@ -116,6 +118,86 @@ void exactGrant(bool store) {
 		require(nativePc == scalarPc && native.cpu.readEpcWord() == scalar.cpu.readEpcWord(), "IRQ is accepted at the same guest instruction boundary");
 		require(nativeAllocations == scalarAllocations, "no premature allocation before the IRQ");
 		require(native.memory.readU32(address) == scalar.memory.readU32(address), "no premature native RAM store before the IRQ");
+	}
+}
+
+void divisionBudget(bool skip) {
+	require(BASE_CYCLES[static_cast<u8>(OpCode::DIV)] == 32
+		&& BASE_CYCLES[static_cast<u8>(OpCode::FLOORDIV)] == 33, "division charges include the uniform supply cycle");
+	for (const bool wide : {false, true}) {
+		test::Blua32TestImage image;
+		image.text.resize(7u * INSTRUCTION_BYTES);
+		const int quotient = wide ? 256 : 0, floor = quotient + 1;
+		u32 word = 0;
+		writeInstruction(image.text, word++, static_cast<u8>(skip ? OpCode::EQ : OpCode::MOV), skip ? 0 : 2, skip ? 4 : 3, skip ? 4 : 0);
+		const u32 divWord = word;
+		if (wide) writeInstruction(image.text, word++, static_cast<u8>(OpCode::WIDE), 1, 0, 0);
+		writeInstruction(image.text, word++, static_cast<u8>(OpCode::DIV), 0, 4, 5);
+		const u32 second = word;
+		if (skip) writeInstruction(image.text, word++, static_cast<u8>(OpCode::EQ), 0, 4, 4);
+		const u32 floorWord = word;
+		if (wide) writeInstruction(image.text, word++, static_cast<u8>(OpCode::WIDE), 1, 0, 0);
+		writeInstruction(image.text, word++, static_cast<u8>(OpCode::FLOORDIV), 1, 4, 5);
+		const u32 markerWord = word;
+		if (!skip) writeInstruction(image.text, word++, static_cast<u8>(OpCode::KTRUE), 2, 0, 0);
+		const u32 jumpWord = word;
+		writeInstruction(image.text, word, static_cast<u8>(OpCode::JMP), 0, 63, (-(word + 1u)) & 63u, 255);
+		++word;
+		image.functions = {{.firstWord = 0, .wordCount = word, .maxStack = static_cast<u32>(quotient + 6)}};
+		Machine native(image, false), scalar(image, true);
+		for (auto* machine : {&native, &scalar}) {
+			auto* frame = machine->cpu.rootThread()->frameAtDepth(0);
+			frame->registers[3] = valueNumber(9); frame->registers[4] = valueNumber(-7); frame->registers[5] = valueNumber(3);
+			machine->cpu.runUntilDepth(0, skip ? 600 : 7100);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			if (machine == &native) waitForNativeEntries(*machine, machine->rom.textAddress, {0});
+#endif
+		}
+		const std::array<u32, 6> boundaries{0, divWord, floorWord, markerWord, jumpWord, 0};
+		const std::array<int, 5> charges{2, 32, 33, 2, 2};
+		for (int grant = 0; grant <= (skip ? 6 : 71); ++grant) {
+			for (auto* machine : {&native, &scalar}) {
+				machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
+					machine->rom.functionAddresses[0], machine->rom.textAddress);
+				auto* frame = machine->cpu.rootThread()->frameAtDepth(0);
+				frame->registers[quotient] = valueNil(); frame->registers[floor] = valueNil(); frame->registers[2] = valueNil();
+				require(machine->cpu.runUntilDepth(0, grant) == RunResult::Yielded, "division loop yields at its next admission boundary");
+				if (skip) {
+					const int completed = (grant + 1) >> 1;
+					const std::array<u32, 4> skippedBoundaries{0, second, jumpWord, 0};
+					require(machine->cpu.instructionBudgetRemaining == grant - 2 * completed,
+						"a skipped division has no execution charge, including WIDE");
+					require(frame->pc == machine->rom.textAddress + skippedBoundaries[completed] * INSTRUCTION_BYTES,
+						"a comparison skips the complete division instruction");
+					require(frame->registers[quotient] == valueNil() && frame->registers[floor] == valueNil(),
+						"skipped divisions do not write destinations");
+				} else {
+					int remaining = grant, completed = 0;
+					while (remaining > 0) remaining -= charges[completed++];
+					require(machine->cpu.instructionBudgetRemaining == remaining, "each admitted division keeps its complete fixed charge and debt");
+					require(frame->pc == machine->rom.textAddress + boundaries[completed] * INSTRUCTION_BYTES,
+						"division debt prevents the next opcode from executing");
+					require(frame->registers[quotient] == (completed >= 2 ? valueNumber(-7.0 / 3.0) : valueNil()), "DIV writes only after admission");
+					require(frame->registers[floor] == (completed >= 3 ? valueNumber(-3) : valueNil()), "FLOORDIV writes only after admission");
+					require(frame->registers[2] == (completed >= 4 ? valueBool(true) : completed >= 1 ? valueNumber(9) : valueNil()),
+						"the successor marker is not published early");
+				}
+			}
+		}
+		if (skip) continue;
+		const double inf = std::numeric_limits<double>::infinity(), nan = std::numeric_limits<double>::quiet_NaN();
+		const std::array<std::array<double, 4>, 4> cases{{{-0.0, 3.0, -0.0, -0.0}, {1.0, 0.0, inf, inf}, {0.0, 0.0, nan, nan}, {inf, -2.0, -inf, -inf}}};
+		for (const auto& values : cases) for (auto* machine : {&native, &scalar}) {
+			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
+				machine->rom.functionAddresses[0], machine->rom.textAddress);
+			auto* frame = machine->cpu.rootThread()->frameAtDepth(0);
+			frame->registers[4] = valueNumber(values[0]); frame->registers[5] = valueNumber(values[1]);
+			require(machine->cpu.runUntilDepth(0, 71) == RunResult::Yielded && machine->cpu.instructionBudgetRemaining == 0,
+				"nonfinite and signed-zero operands keep the same fixed division budget");
+			require(frame->pc == machine->rom.textAddress, "nonfinite results finish the complete generated loop");
+			require(frame->registers[quotient] == valueNumber(values[2]) && frame->registers[floor] == valueNumber(values[3]),
+				"division retains NaN, infinity and signed-zero semantics");
+		}
 	}
 }
 
@@ -415,6 +497,7 @@ int main(int argc, char** argv) {
 		const std::string_view scenario(argv[1]);
 		if (scenario == "allocate") exactGrant(false);
 		else if (scenario == "store") exactGrant(true);
+		else if (scenario == "division-budget") { divisionBudget(false); divisionBudget(true); }
 		else if (scenario == "sweep") exactGrantSweep(false);
 		else if (scenario == "sweep-scalar-control") exactGrantSweep(true);
 		else if (scenario == "call-vararg-sweep") exactCallVarargSweep();

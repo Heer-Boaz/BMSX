@@ -77,7 +77,7 @@ export const decodeValueCount = (operand: number, openCount: number): number =>
 export const BASE_CYCLES = new Uint8Array([
 	0, 2, 2, 2, 3, 2, 2, 2,
 	2, 2, 2, 2, 3, 3, 2, 3,
-	2, 2, 2, 2, 2, 2, 2, 2,
+	2, 2, 2, 2, 32, 2, 33, 2,
 	2, 2, 2, 2, 2, 2, 3, 2,
 	2, 2, 2, 2, 2, 2, 2, 2,
 	2, 2, 2, 2, 2, 3, 3, 3,

@@ -1553,9 +1553,14 @@ Een gerichte RTL- of rekentoets is geen vervanging voor die kwalificatie.
 
 ## 11. CPU: werkelijke uitvoering en systeemklok {#sec-proposal-cpu-execution}
 
-**Status: werk- en geheugenafhankelijke timingrichting goedgekeurd;
-een fysiek onderbouwd prijsmodel voor CPU, lokale opslag en geheugenservice
-moet nog worden vastgesteld.** De
+**Status: vaste differentiatie voor `DIV` en `FLOORDIV` overgenomen;
+werk- en geheugenafhankelijke timingrichting goedgekeurd. Een fysiek
+onderbouwd prijsmodel voor CPU, lokale opslag en geheugenservice blijft open.**
+De overgenomen nominale charges zijn 32 cycles voor `DIV` en 33 voor
+`FLOORDIV`, inclusief de vaste cycle voor instructieaanvoer. Dit is een
+begrensd vast instructiebudget, geen nieuwe cache- of busstatemachine en geen
+kwalificatie van een fysieke rekeneenheid. `ADD`, `SUB` en `MUL` behouden hun
+kleine gepijplijnde klasse; `MOD` en `POW` zijn hiermee niet herijkt. De
 [instructiereferentie](book1/cpu.md#sec-cpu-cycle-accounting-and-execution-boundaries)
 onderscheidt vaste basischarges en aanvullende kosten voor expliciet uitgevoerd
 waarde-, tekst- en initialisatiewerk. Die charges bepalen de verhouding tussen
@@ -1569,8 +1574,9 @@ De onderzochte kandidaat deelt een binaire64-rekeneenheid tussen CPU en GEO.
 In een gerichte corpusproef duurde een geaccepteerde deling daarin maximaal 72
 klokken tot het resultaat; die proef is geen maximum voor alle bitpatronen en
 omvat niet het complete CPU-pad. De kandidaat toont dus geen overeenstemming
-met de huidige basisprijs van twee cycles voor een deling, inclusief de vaste
-cycle voor instructieaanvoer. Dit is geen bewijs dat iedere andere mogelijke
+met de vroegere basisprijs van twee cycles voor een deling, inclusief de vaste
+cycle voor instructieaanvoer, en kwalificeert evenmin de nu overgenomen
+nominale charge van 32 cycles. Dit is geen bewijs dat iedere andere mogelijke
 fysieke architectuur onmogelijk is.
 
 **Prestatie-intentie van BLua32.** De oorspronkelijke lage charges zijn bewust

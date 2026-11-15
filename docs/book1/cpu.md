@@ -454,7 +454,8 @@ below.
 
 Opcode numbers are zero-based. Nominal cycles are the base charge applied before
 an instruction executes. The constant, arithmetic, bitwise, text and comparison
-instructions below each cost two cycles except CONCATN, which costs three.
+instructions below each cost two cycles except DIV and FLOORDIV, whose
+charges are listed in the arithmetic table, and CONCATN, which costs three.
 LOADNIL adds one cycle per written register. Text construction and String
 ordering add the length-dependent charges specified below. Readiness waits,
 counted-transfer surcharges and builtin charges are
@@ -489,6 +490,12 @@ ADD, SUB, MUL, DIV, MOD, FLOORDIV, and POW read two numeric operands through RK 
 DIV is ordinary floating-point division. FLOORDIV instead rounds the quotient downward, not toward zero: dividing −7 by 3 gives a floor quotient of −3, and dividing 7 by −3 also gives −3. The result is still a Number, not a different integer value kind. MOD adjusts a nonzero remainder to agree with the divisor's sign for finite inputs and a nonzero divisor: −7 modulo 3 is 2, whereas 7 modulo −3 is −2. A zero remainder keeps the sign of the initial remainder; it is not forced to the divisor's sign.
 
 
+DIV has a fixed execution budget of 31 cycles; FLOORDIV adds one cycle for
+rounding the quotient downward. Including the uniform instruction-supply
+allowance, their nominal charges are 32 and 33 cycles. These charges do not
+depend on operand values or whether the result is finite. ADD, SUB, and MUL
+retain the two-cycle nominal charge.
+
 DIV, MOD, and FLOORDIV have no separate zero-divisor or nonfinite-operand guard. They use the arithmetic operations stated below, and their results remain Numbers. Do not assume a checked integer-divide trap, substitute a saturated result, or apply the finite-input quotient-and-remainder rules to every nonfinite case.
 
 | Mnemonic | Opcode | Operands | Number result in R[A] | Nominal cycles |
@@ -496,9 +503,9 @@ DIV, MOD, and FLOORDIV have no separate zero-divisor or nonfinite-operand guard.
 | ADD | `11H` | Numeric reads of RK(B), RK(C) | left + right | 2 |
 | SUB | `12H` | Numeric reads of RK(B), RK(C) | left − right | 2 |
 | MUL | `13H` | Numeric reads of RK(B), RK(C) | left × right | 2 |
-| DIV | `14H` | Numeric reads of RK(B), RK(C) | left divided by right | 2 |
+| DIV | `14H` | Numeric reads of RK(B), RK(C) | left divided by right | 32 |
 | MOD | `15H` | Numeric reads of RK(B), RK(C) | Start with the floating-point remainder r. If r>0 and right<0, or r<0 and right>0, return r+right; otherwise return r. | 2 |
-| FLOORDIV | `16H` | Numeric reads of RK(B), RK(C) | Set q to left/right and t to q truncated toward zero. Return t−1 if t>q; otherwise return t. | 2 |
+| FLOORDIV | `16H` | Numeric reads of RK(B), RK(C) | Set q to left/right and t to q truncated toward zero. Return t−1 if t>q; otherwise return t. | 33 |
 | POW | `17H` | Numeric reads of RK(B), RK(C) | left raised to the power right, with the special cases below | 2 |
 | UNM | `1FH` | Numeric read of R[B], not RK(B); C unused | Negation of the operand, including its zero sign | 2 |
 
@@ -1384,6 +1391,8 @@ are selected instruction base charges, not a complete timing table:
 | Scalar `LOAD_MEM` and `STORE_MEM` | 3 cycles |
 | Scalar displaced forms `LOAD_MEM_D` and `STORE_MEM_D` | 3 cycles |
 | `ADD`, `SUB`, `MUL` | 2 cycles |
+| `DIV` | 32 cycles |
+| `FLOORDIV` | 33 cycles |
 | `WIDE` prefix | 0 cycles |
 
 A `WIDE` instruction uses its body's base charge; the prefix does not add

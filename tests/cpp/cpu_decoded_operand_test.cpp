@@ -52,7 +52,7 @@ void uniformInstructionBaseCycles() {
 	// other opcode's base charge includes the same one-cycle fetch allowance.
 	constexpr std::array<u8, OPCODE_COUNT> withoutFetchAllowance{
 		0, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 2, 1, 2,
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1,
+		1, 1, 1, 1, 31, 1, 32, 1, 1, 1, 1, 1, 1, 1, 2, 1,
 		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2,
 		2, 2, 2, 2, 1, 1, 1, 2, 1, 2, 1, 2, 1, 2, 1, 1,
 	};
