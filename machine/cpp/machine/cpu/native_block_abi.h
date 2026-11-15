@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "machine/cpu/native_block.h"
+#include "machine/cpu/table.h"
 #include "sljitLir.h"
 
 namespace bmsx {
@@ -30,7 +31,7 @@ struct NativeBlockAbi {
 	static constexpr int saveds = 6 | SLJIT_ENTER_FLOAT(savedFloats);
 	static constexpr int stackBytes = std::max(registerCacheCapacity * sizeof(Value), sizeof(NativeCallScratch));
 	static constexpr int helperResultOffset = registerCacheCapacity * sizeof(Value);
-	static_assert(helperResultOffset + sizeof(Value) <= stackBytes);
+	static_assert(helperResultOffset + sizeof(TableLookupResult) <= stackBytes);
 	static constexpr int signature = SLJIT_ARGS2(P, P, P);
 };
 

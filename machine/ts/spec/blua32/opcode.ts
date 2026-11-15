@@ -67,6 +67,10 @@ export const enum OpCode {
 
 export const OPCODE_COUNT = 64;
 
+// Select the next Table-valued __index target and test its own mapping.
+// This semantic traversal stage does not fetch another instruction.
+export const TABLE_INDEX_VISIT_CYCLES = 4;
+
 export const encodeFixedValueCount = (count: number): number => count + 1;
 
 export const decodeValueCount = (operand: number, openCount: number): number =>

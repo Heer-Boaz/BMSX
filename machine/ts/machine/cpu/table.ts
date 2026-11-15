@@ -27,8 +27,17 @@ const TABLE_HASH_NEXT_END = -1;
 const TABLE_MAX_ARRAY_INDEX = 0x7fffffff;
 const EMPTY_TABLE_HASH_NEXT = new Int32Array(0);
 export const TABLE_INDEX_CHAIN_LIMIT = 32;
-export const TABLE_INDEX_CHAIN_EXHAUSTED = -2;
 export const TABLE_STORE_REQUIRES_GROWTH = -2;
+
+export const enum TableLookupStatus { Resolved, ChainExhausted }
+
+// Raw result storage belongs to the CPU scratch owner, not a guest allocation.
+export type TableLookupResult = {
+	values: ValueSlots;
+	slot: number;
+	extraVisits: number;
+	status: TableLookupStatus;
+};
 
 type StoredEntryVisitor = (
 	keyTag: ValueTag,
@@ -366,9 +375,8 @@ export class Table {
 		keyTag: ValueTag,
 		keyScalar: number,
 		keyReference: ValueReference,
-		target: ValueSlots,
-		targetIndex: number,
-	): boolean {
+		result: TableLookupResult,
+	): void {
 		if (keyTag === ValueTag.Nil) {
 			throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
 		}
@@ -381,25 +389,31 @@ export class Table {
 				valueSlot = nodeIndex >= 0 ? current.hashValueSlot(nodeIndex) : -1;
 			}
 			if (valueSlot >= 0 && current.tags[valueSlot] !== ValueTag.Nil) {
-				target.setEncoded(targetIndex, current.tags[valueSlot], current.scalars[valueSlot], current.references[valueSlot]);
-				return true;
+				result.values.setEncoded(0, current.tags[valueSlot], current.scalars[valueSlot], current.references[valueSlot]);
+				result.slot = -1;
+				result.extraVisits = depth;
+				result.status = TableLookupStatus.Resolved;
+				return;
 			}
 			const next = current.metatableIndexTable(indexKey);
 			if (!next) {
-				target.setNil(targetIndex);
-				return true;
+				result.values.setNil(0);
+				result.slot = -1;
+				result.extraVisits = depth;
+				result.status = TableLookupStatus.Resolved;
+				return;
 			}
 			current = next;
 		}
-		return false;
+		result.extraVisits = TABLE_INDEX_CHAIN_LIMIT - 1;
+		result.status = TableLookupStatus.ChainExhausted;
 	}
 
 	public resolveIntegerIndex(
 		indexKey: StringId,
 		key: number,
-		target: ValueSlots,
-		targetIndex: number,
-	): boolean {
+		result: TableLookupResult,
+	): void {
 		const arrayIndex = key - 1;
 		let current: Table = this;
 		for (let depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; depth += 1) {
@@ -409,74 +423,96 @@ export class Table {
 				valueSlot = nodeIndex >= 0 ? current.hashValueSlot(nodeIndex) : -1;
 			}
 			if (valueSlot >= 0 && current.tags[valueSlot] !== ValueTag.Nil) {
-				target.setEncoded(targetIndex, current.tags[valueSlot], current.scalars[valueSlot], current.references[valueSlot]);
-				return true;
+				result.values.setEncoded(0, current.tags[valueSlot], current.scalars[valueSlot], current.references[valueSlot]);
+				result.slot = -1;
+				result.extraVisits = depth;
+				result.status = TableLookupStatus.Resolved;
+				return;
 			}
 			const next = current.metatableIndexTable(indexKey);
 			if (!next) {
-				target.setNil(targetIndex);
-				return true;
+				result.values.setNil(0);
+				result.slot = -1;
+				result.extraVisits = depth;
+				result.status = TableLookupStatus.Resolved;
+				return;
 			}
 			current = next;
 		}
-		return false;
+		result.extraVisits = TABLE_INDEX_CHAIN_LIMIT - 1;
+		result.status = TableLookupStatus.ChainExhausted;
 	}
 
 	public resolveStringIndex(
 		indexKey: StringId,
 		key: StringId,
-		target: ValueSlots,
-		targetIndex: number,
-	): boolean {
+		result: TableLookupResult,
+	): void {
 		let current: Table = this;
 		for (let depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; depth += 1) {
 			const nodeIndex = current.findStringNodeIndex(key);
 			if (nodeIndex >= 0) {
 				const valueSlot = current.hashValueSlot(nodeIndex);
 				if (current.tags[valueSlot] !== ValueTag.Nil) {
-					target.setEncoded(targetIndex, current.tags[valueSlot], current.scalars[valueSlot], current.references[valueSlot]);
-					return true;
+					result.values.setEncoded(0, current.tags[valueSlot], current.scalars[valueSlot], current.references[valueSlot]);
+					result.slot = -1;
+					result.extraVisits = depth;
+					result.status = TableLookupStatus.Resolved;
+					return;
 				}
 			}
 			const next = current.metatableIndexTable(indexKey);
 			if (!next) {
-				target.setNil(targetIndex);
-				return true;
+				result.values.setNil(0);
+				result.slot = -1;
+				result.extraVisits = depth;
+				result.status = TableLookupStatus.Resolved;
+				return;
 			}
 			current = next;
 		}
-		return false;
+		result.extraVisits = TABLE_INDEX_CHAIN_LIMIT - 1;
+		result.status = TableLookupStatus.ChainExhausted;
 	}
 
 	public resolveStringIndexCached(
 		indexKey: StringId,
 		key: StringId,
 		predictedSlot: number,
-		target: ValueSlots,
-		targetIndex: number,
-	): number {
+		result: TableLookupResult,
+	): void {
 		let current: Table = this;
 		for (let depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; depth += 1) {
-			if (current.loadPredictedStringKey(key, predictedSlot, target, targetIndex)) {
-				return predictedSlot;
+			if (current.loadPredictedStringKey(key, predictedSlot, result.values, 0)) {
+				result.slot = predictedSlot;
+				result.extraVisits = depth;
+				result.status = TableLookupStatus.Resolved;
+				return;
 			}
 			const nodeIndex = current.findStringNodeIndex(key);
 			if (nodeIndex >= 0) {
 				const valueSlot = current.hashValueSlot(nodeIndex);
 				if (current.tags[valueSlot] !== ValueTag.Nil) {
-					target.setEncoded(targetIndex, current.tags[valueSlot], current.scalars[valueSlot], current.references[valueSlot]);
-					return nodeIndex;
+					result.values.setEncoded(0, current.tags[valueSlot], current.scalars[valueSlot], current.references[valueSlot]);
+					result.slot = nodeIndex;
+					result.extraVisits = depth;
+					result.status = TableLookupStatus.Resolved;
+					return;
 				}
 			}
 			predictedSlot = -1;
 			const next = current.metatableIndexTable(indexKey);
 			if (!next) {
-				target.setNil(targetIndex);
-				return -1;
+				result.values.setNil(0);
+				result.slot = -1;
+				result.extraVisits = depth;
+				result.status = TableLookupStatus.Resolved;
+				return;
 			}
 			current = next;
 		}
-		return TABLE_INDEX_CHAIN_EXHAUSTED;
+		result.extraVisits = TABLE_INDEX_CHAIN_LIMIT - 1;
+		result.status = TableLookupStatus.ChainExhausted;
 	}
 
 	public setStringKey(key: StringId, value: Value): void {

@@ -81,11 +81,11 @@ void stringReadChainBoundaries() {
 			else {
 				auto* meta = cpu.createTable(0, 1); meta->setStringKey(indexKey, valueBool(false)); root->metatable = meta;
 			}
-			Value scratch = valueNumber(73);
+			TableLookupResult scratch{valueNumber(73), -1, 0, TableLookupStatus::Resolved};
 			const auto before = cpu.luaHeap().captureState();
-			const int slot = Table::loadStringIndex(root, indexKey, key, scratch);
-			require((depth == 33 ? slot == TABLE_INDEX_CHAIN_EXHAUSTED : slot != TABLE_INDEX_CHAIN_EXHAUSTED)
-				&& (depth == 1 ? isNil(scratch) : depth == 33 || scratch == valueFromTag(ValueTag::False, 37)),
+			Table::loadStringIndex(root, indexKey, key, scratch);
+			require((depth == 33 ? scratch.status == TableLookupStatus::ChainExhausted : scratch.status == TableLookupStatus::Resolved)
+				&& (depth == 1 ? isNil(scratch.value) : depth == 33 || scratch.value == valueFromTag(ValueTag::False, 37)),
 				"the raw Table leaf preserves nil/false and the exact32-table chain bound");
 			require(cpu.luaHeap().usedBytes() == before.trackedBytes
 				&& cpu.luaHeap().captureState().nextCollectionBytes == before.nextCollectionBytes,

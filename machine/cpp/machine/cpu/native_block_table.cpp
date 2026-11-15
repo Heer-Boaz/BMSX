@@ -148,13 +148,24 @@ void NativeBlockCompiler::emitStringSlot(bool load, int value, SlowPath& slow) {
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_IMM, m_bindings.indexKey);
 		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R3, 0, SLJIT_SP, 0, SLJIT_IMM, NativeBlockAbi::helperResultOffset);
 		emitCallSpills(false);
-		sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS4(32, P, 32, 32, P), SLJIT_IMM,
+		sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS4V(P, 32, 32, P), SLJIT_IMM,
 			SLJIT_FUNC_ADDR(&Table::loadStringIndex));
 		emitCallSpills(true);
-		slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0,
-			SLJIT_IMM, TABLE_INDEX_CHAIN_EXHAUSTED);
+		const auto result = NativeBlockAbi::helperResultOffset;
+		// A failed leaf is replayed by the semantic exit to construct the fault.
+		// Charge its visited Tables there once, not in both attempts.
+		slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32,
+			SLJIT_MEM1(SLJIT_SP), result + offsetof(TableLookupResult, status),
+			SLJIT_IMM, static_cast<u32>(TableLookupStatus::ChainExhausted));
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0,
+			SLJIT_MEM1(SLJIT_SP), result + offsetof(TableLookupResult, extraVisits));
+		sljit_emit_op2(m_compiler, SLJIT_MUL32, SLJIT_R0, 0, SLJIT_R0, 0,
+			SLJIT_IMM, TABLE_INDEX_VISIT_CYCLES);
+		sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_S4, 0, SLJIT_S4, 0, SLJIT_R0, 0);
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0,
+			SLJIT_MEM1(SLJIT_SP), result + offsetof(TableLookupResult, slot));
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM0(), reinterpret_cast<sljit_sw>(&slow.exit->tableCacheSlot), SLJIT_R0, 0);
-		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0, SLJIT_MEM1(SLJIT_SP), NativeBlockAbi::helperResultOffset);
+		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0, SLJIT_MEM1(SLJIT_SP), result + offsetof(TableLookupResult, value));
 		sljit_set_label(done, sljit_emit_label(m_compiler));
 	} else {
 		loadHeader(value, SLJIT_R2);

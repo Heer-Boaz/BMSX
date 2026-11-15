@@ -3332,39 +3332,27 @@ Value* CPU::ensureRegisterCapacity(CallFrame& frame, int index) {
 // all indexed-read forms. Table-only resolution is an implementation limitation,
 // not the intended BLua contract; raw Table storage must not execute guest code.
 Value CPU::resolveTableIndex(Table* table, const Value& key) {
-	Value value;
-	if (table->resolveIndex(
-		asStringId(m_indexKey),
-		key,
-		value
-	)) {
-		return value;
-	}
-	throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+	TableLookupResult result;
+	table->resolveIndex(asStringId(m_indexKey), key, result);
+	instructionBudgetRemaining -= static_cast<int>(result.extraVisits) * TABLE_INDEX_VISIT_CYCLES;
+	if (result.status == TableLookupStatus::ChainExhausted) throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+	return result.value;
 }
 
 Value CPU::resolveTableIntegerIndex(Table* table, int index) {
-	Value value;
-	if (table->resolveIntegerIndex(
-		asStringId(m_indexKey),
-		index,
-		value
-	)) {
-		return value;
-	}
-	throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+	TableLookupResult result;
+	table->resolveIntegerIndex(asStringId(m_indexKey), index, result);
+	instructionBudgetRemaining -= static_cast<int>(result.extraVisits) * TABLE_INDEX_VISIT_CYCLES;
+	if (result.status == TableLookupStatus::ChainExhausted) throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+	return result.value;
 }
 
 Value CPU::resolveTableFieldIndex(Table* table, StringId key) {
-	Value value;
-	if (table->resolveStringIndex(
-		asStringId(m_indexKey),
-		key,
-		value
-	)) {
-		return value;
-	}
-	throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+	TableLookupResult result;
+	table->resolveStringIndex(asStringId(m_indexKey), key, result);
+	instructionBudgetRemaining -= static_cast<int>(result.extraVisits) * TABLE_INDEX_VISIT_CYCLES;
+	if (result.status == TableLookupStatus::ChainExhausted) throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+	return result.value;
 }
 
 Value CPU::loadTableIndex(const Value& base, const Value& key) {
@@ -3401,45 +3389,18 @@ Value CPU::loadTableIntegerIndex(const Value& base, int index) {
 	throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
 }
 
-Value CPU::loadTableFieldIndexCached(
-	int& predictedSlot,
-	const Value& base,
-	StringId key
-) {
-	if (valueIsTable(base)) {
-		Table* table = asTable(base);
-		if (!table->metatable) {
-			return table->getStringKeyCached(key, predictedSlot);
-		}
-		Value value;
-		predictedSlot = table->resolveStringIndexCached(
-			m_indexKey,
-			key,
-			predictedSlot,
-			value
-		);
-		if (predictedSlot == TABLE_INDEX_CHAIN_EXHAUSTED) {
-			throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
-		}
-		return value;
-	}
-	if (valueIsString(base)) {
-		if (!m_stringIndexTable->metatable) {
-			return m_stringIndexTable->getStringKeyCached(key, predictedSlot);
-		}
-		Value value;
-		predictedSlot = m_stringIndexTable->resolveStringIndexCached(
-			m_indexKey,
-			key,
-			predictedSlot,
-			value
-		);
-		if (predictedSlot == TABLE_INDEX_CHAIN_EXHAUSTED) {
-			throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
-		}
-		return value;
-	}
-	throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
+Value CPU::loadTableFieldIndexCached(int& predictedSlot, const Value& base, StringId key) {
+	Table* table;
+	if (valueIsTable(base)) table = asTable(base);
+	else if (valueIsString(base)) table = m_stringIndexTable;
+	else throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
+	if (!table->metatable) return table->getStringKeyCached(key, predictedSlot);
+	TableLookupResult result;
+	table->resolveStringIndexCached(asStringId(m_indexKey), key, predictedSlot, result);
+	instructionBudgetRemaining -= static_cast<int>(result.extraVisits) * TABLE_INDEX_VISIT_CYCLES;
+	if (result.status == TableLookupStatus::ChainExhausted) throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+	predictedSlot = result.slot;
+	return result.value;
 }
 
 Value CPU::loadTableFieldIndex(const Value& base, StringId key) {

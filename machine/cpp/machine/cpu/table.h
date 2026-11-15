@@ -14,8 +14,17 @@ namespace bmsx {
 class LuaHeap;
 
 inline constexpr int TABLE_INDEX_CHAIN_LIMIT = 32;
-inline constexpr int TABLE_INDEX_CHAIN_EXHAUSTED = -2;
 inline constexpr int TABLE_STORE_REQUIRES_GROWTH = -2;
+
+enum class TableLookupStatus : u32 { Resolved, ChainExhausted };
+
+// Transient semantic result, not a guest allocation or a predicted-probe counter.
+struct TableLookupResult {
+	Value value;
+	i32 slot;
+	u32 extraVisits;
+	TableLookupStatus status;
+};
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 struct TableNativeFieldOffsets {
@@ -79,47 +88,41 @@ public:
 		const Value indexer = metatable->getStringKey(indexKey);
 		return valueIsTable(indexer) ? asTable(indexer) : nullptr;
 	}
-	bool resolveIndex(
-		StringId indexKey,
-		const Value& key,
-		Value& value
-	) const {
-		return resolveIndexChain(indexKey, value, [&key](const Table& table) {
+	void resolveIndex(StringId indexKey, const Value& key, TableLookupResult& result) const {
+		resolveIndexChain(indexKey, result, [&key](const Table& table) {
 			return table.get(key);
 		});
 	}
-	bool resolveIntegerIndex(StringId indexKey, int key, Value& value) const {
-		return resolveIndexChain(indexKey, value, [key](const Table& table) {
+	void resolveIntegerIndex(StringId indexKey, int key, TableLookupResult& result) const {
+		resolveIndexChain(indexKey, result, [key](const Table& table) {
 			return table.getInteger(key);
 		});
 	}
-	bool resolveStringIndex(StringId indexKey, StringId key, Value& value) const {
-		return resolveIndexChain(indexKey, value, [key](const Table& table) {
+	void resolveStringIndex(StringId indexKey, StringId key, TableLookupResult& result) const {
+		resolveIndexChain(indexKey, result, [key](const Table& table) {
 			return table.getStringKey(key);
 		});
 	}
-	int resolveStringIndexCached(
-		StringId indexKey,
-		StringId key,
-		int predictedSlot,
-		Value& value
-	) const {
+	void resolveStringIndexCached(StringId indexKey, StringId key, int predictedSlot, TableLookupResult& result) const {
 		const Table* current = this;
 		for (int depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; ++depth) {
-			value = current->getStringKeyCached(key, predictedSlot);
+			const Value value = current->getStringKeyCached(key, predictedSlot);
 			if (!isNil(value)) {
-				return predictedSlot;
+				result = {value, predictedSlot, static_cast<u32>(depth), TableLookupStatus::Resolved};
+				return;
 			}
 			current = current->metatableIndexTable(indexKey);
 			if (!current) {
-				return -1;
+				result = {valueNil(), -1, static_cast<u32>(depth), TableLookupStatus::Resolved};
+				return;
 			}
 		}
-		return TABLE_INDEX_CHAIN_EXHAUSTED;
+		result.extraVisits = TABLE_INDEX_CHAIN_LIMIT - 1;
+		result.status = TableLookupStatus::ChainExhausted;
 	}
 	// Generated-code leaf: no allocation, guest callback or architectural write.
 	// The caller commits result only when the returned chain status succeeds.
-	static int loadStringIndex(const Table* table, StringId indexKey, StringId key, Value& result) noexcept;
+	static void loadStringIndex(const Table* table, StringId indexKey, StringId key, TableLookupResult& result) noexcept;
 	// Pure boundary search; also the generated-code entry point.
 	static double length(const Table* table) noexcept;
 	void clear();
@@ -228,19 +231,22 @@ private:
 	void removeFromHash(const Value& key);
 	void markHashNodeDead(size_t index);
 	template <typename Lookup>
-	bool resolveIndexChain(StringId indexKey, Value& value, Lookup&& lookup) const {
+	void resolveIndexChain(StringId indexKey, TableLookupResult& result, Lookup&& lookup) const {
 		const Table* current = this;
 		for (int depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; ++depth) {
-			value = lookup(*current);
+			const Value value = lookup(*current);
 			if (!isNil(value)) {
-				return true;
+				result = {value, -1, static_cast<u32>(depth), TableLookupStatus::Resolved};
+				return;
 			}
 			current = current->metatableIndexTable(indexKey);
 			if (!current) {
-				return true;
+				result = {valueNil(), -1, static_cast<u32>(depth), TableLookupStatus::Resolved};
+				return;
 			}
 		}
-		return false;
+		result.extraVisits = TABLE_INDEX_CHAIN_LIMIT - 1;
+		result.status = TableLookupStatus::ChainExhausted;
 	}
 
 	LuaHeap& m_luaHeap;

@@ -65,7 +65,7 @@ void readsRetainNativeFrame(CPU& cpu, Memory& memory) {
 			require(cpu.luaHeap().usedBytes() == heap.trackedBytes
 				&& cpu.luaHeap().captureState().nextCollectionBytes == heap.nextCollectionBytes,
 				"read resolution changes neither tracked allocation nor collection thresholds");
-			require(state.remainingCycles == 100 - block->terminal.cycles, "read resolution has only the existing instruction charges");
+			require(state.remainingCycles == 100 - block->terminal.cycles - 4, "one additional inherited target Table adds4 cycles independently of slot prediction");
 		}
 		for (int mutation = 0; mutation < 4; ++mutation) {
 			if (mutation == 0) table->setStringKey(key, values[0]);

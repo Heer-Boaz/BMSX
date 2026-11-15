@@ -14,6 +14,10 @@ enum class OpCode : uint8_t {
 
 inline constexpr size_t OPCODE_COUNT = 64U;
 
+// Select the next Table-valued __index target and test its own mapping.
+// This semantic traversal stage does not fetch another instruction.
+inline constexpr int TABLE_INDEX_VISIT_CYCLES = 4;
+
 extern const std::array<uint8_t, OPCODE_COUNT> BASE_CYCLES;
 extern const std::array<uint8_t, OPCODE_COUNT> OPCODE_USES_BX;
 extern const std::array<uint8_t, OPCODE_COUNT> OPCODE_USES_DISP;

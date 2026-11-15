@@ -17,7 +17,7 @@ import {
 } from '../memory/bus_signals';
 import { readLE32 } from '../../common/endian';
 import type { IrqController } from '../devices/irq/controller';
-import { BASE_CYCLES, OPCODE_USES_BX, OPCODE_USES_DISP, OPCODE_RK_OPERANDS, RK_OPERAND_B, RK_OPERAND_C, OpCode, decodeValueCount } from '../../spec/blua32/opcode';
+import { BASE_CYCLES, TABLE_INDEX_VISIT_CYCLES, OPCODE_USES_BX, OPCODE_USES_DISP, OPCODE_RK_OPERANDS, RK_OPERAND_B, RK_OPERAND_C, OpCode, decodeValueCount } from '../../spec/blua32/opcode';
 import {
 	cop0FieldImplemented,
 	COP0_BAD_ADDRESS,
@@ -120,7 +120,7 @@ import {
 	type StringValue,
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
-import { Table, TABLE_INDEX_CHAIN_EXHAUSTED } from './table';
+import { Table, TableLookupStatus, type TableLookupResult } from './table';
 import { Closure, EMPTY_CLOSURE_UPVALUES, type Upvalue } from './closure';
 import { BuiltinArgsView, BuiltinResults, ValueSlots } from './value_slots';
 import {
@@ -336,6 +336,9 @@ export class CPU implements MappedPageInvalidator {
 	private readonly heapSeen = new WeakMap<object, number>();
 	private readonly heapSeenImages = new WeakMap<object, number>();
 	private readonly tableScratch = new ValueSlots(2);
+	private readonly tableLookupResult: TableLookupResult = {
+		values: this.tableScratch, slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved,
+	};
 	private heapEpoch = 0;
 	private heapTableWeakMode = 0;
 	private heapEphemeronChanged = false;
@@ -679,16 +682,12 @@ export class CPU implements MappedPageInvalidator {
 			table.load(keyTag, keyScalar, keyReference, target, targetIndex);
 			return;
 		}
-		if (!table.resolveIndex(
-			this.indexKey,
-			keyTag,
-			keyScalar,
-			keyReference,
-			target,
-			targetIndex,
-		)) {
-			throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
-		}
+		const result = this.tableLookupResult;
+		table.resolveIndex(this.indexKey, keyTag, keyScalar, keyReference, result);
+		this.instructionBudgetRemaining -= result.extraVisits * TABLE_INDEX_VISIT_CYCLES;
+		if (result.status === TableLookupStatus.ChainExhausted) throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+		target.copySlotFrom(result.values, targetIndex, 0);
+		result.values.setNil(0);
 	}
 
 	private loadTableIntegerIndex(
@@ -710,14 +709,12 @@ export class CPU implements MappedPageInvalidator {
 				throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
 		}
 		if (table.metatable) {
-			if (!table.resolveIntegerIndex(
-				this.indexKey,
-				index,
-				target,
-				targetIndex,
-			)) {
-				throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
-			}
+			const result = this.tableLookupResult;
+			table.resolveIntegerIndex(this.indexKey, index, result);
+			this.instructionBudgetRemaining -= result.extraVisits * TABLE_INDEX_VISIT_CYCLES;
+			if (result.status === TableLookupStatus.ChainExhausted) throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+			target.copySlotFrom(result.values, targetIndex, 0);
+			result.values.setNil(0);
 			return;
 		}
 		table.loadInteger(index, target, targetIndex);
@@ -744,17 +741,13 @@ export class CPU implements MappedPageInvalidator {
 				throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
 		}
 		if (table.metatable) {
-			const predictedSlot = table.resolveStringIndexCached(
-				this.indexKey,
-				key,
-				page.tableCacheSlots[pageOffset],
-				target,
-				targetIndex,
-			);
-			if (predictedSlot === TABLE_INDEX_CHAIN_EXHAUSTED) {
-				throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
-			}
-			page.tableCacheSlots[pageOffset] = predictedSlot;
+			const result = this.tableLookupResult;
+			table.resolveStringIndexCached(this.indexKey, key, page.tableCacheSlots[pageOffset], result);
+			this.instructionBudgetRemaining -= result.extraVisits * TABLE_INDEX_VISIT_CYCLES;
+			if (result.status === TableLookupStatus.ChainExhausted) throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
+			page.tableCacheSlots[pageOffset] = result.slot;
+			target.copySlotFrom(result.values, targetIndex, 0);
+			result.values.setNil(0);
 			return;
 		}
 		page.tableCacheSlots[pageOffset] = table.loadStringKeyCached(

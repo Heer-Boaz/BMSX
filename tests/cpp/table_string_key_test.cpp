@@ -115,15 +115,17 @@ void inheritedAndMaskedPayloads(CPU& cpu) {
 	metatable->setStringKey(indexKey, valueTable(parent));
 	auto* child = cpu.createTable();
 	child->metatable = metatable;
-	int prediction = -1;
-	Value value;
-	require(child->resolveStringIndex(indexKey, key, value) && value == valueBool(false), "inherited false is present");
-	prediction = child->resolveStringIndexCached(indexKey, key, prediction, value);
-	require(prediction >= 0 && value == valueBool(false), "inherited cached search returns the same value");
+	TableLookupResult result;
+	child->resolveStringIndex(indexKey, key, result);
+	require(result.status == TableLookupStatus::Resolved && result.value == valueBool(false), "inherited false is present");
+	child->resolveStringIndexCached(indexKey, key, -1, result);
+	require(result.slot >= 0 && result.value == valueBool(false) && result.extraVisits == 1, "inherited cached search returns the same value and semantic work");
 	parent->setStringKey(key, valueNil());
-	require(child->resolveStringIndexCached(indexKey, key, prediction, value) == -1 && isNil(value), "deletion invalidates inherited predictions");
+	child->resolveStringIndexCached(indexKey, key, result.slot, result);
+	require(result.slot == -1 && isNil(result.value), "deletion invalidates inherited predictions");
 	parent->setStringKey(key, valueNumber(-0.0));
-	require(child->resolveStringIndex(indexKey, key, value) && value == valueNumber(-0.0), "reinsertion preserves negative zero");
+	child->resolveStringIndex(indexKey, key, result);
+	require(result.status == TableLookupStatus::Resolved && result.value == valueNumber(-0.0), "reinsertion preserves negative zero");
 
 	auto* raw = cpu.createTable(0, 8);
 	const Value noncanonical = valueFromTag(ValueTag::String, static_cast<u64>(key) | (1ULL << 40u));

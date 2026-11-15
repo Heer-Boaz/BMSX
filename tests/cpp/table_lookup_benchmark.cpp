@@ -63,8 +63,9 @@ struct Fixture {
 				|| !isNil(tables[0]->getStringKey(missing[i]))) {
 				throw std::runtime_error("Table benchmark must start with the expected collision chains.");
 			}
-			Value value;
-			if (!inherited->resolveStringIndex(indexKey, keys[i], value) || value != expected) {
+			TableLookupResult value;
+			inherited->resolveStringIndex(indexKey, keys[i], value);
+			if (value.status != TableLookupStatus::Resolved || value.value != expected) {
 				throw std::runtime_error("Table benchmark must resolve the inherited fields.");
 			}
 		}
@@ -92,9 +93,9 @@ void measure(Fixture& fixture, const char* name, int round) {
 		} else if constexpr (mode == Mode::Polymorphic) {
 			result = fixture.tables[i & (TableCount - 1u)]->getStringKeyCached(fixture.keys[k], fixture.slots[k]);
 		} else if constexpr (mode == Mode::Inherited) {
-			Value value;
+			TableLookupResult value;
 			fixture.inherited->resolveStringIndex(fixture.indexKey, fixture.keys[k], value);
-			result = value;
+			result = value.value;
 		} else {
 			result = fixture.tables[0]->setStringKey(fixture.keys[k], valueNumber(i & 127u));
 		}

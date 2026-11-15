@@ -1016,6 +1016,20 @@ A Table may have a metatable. An ordinary indexed read first checks the queried 
 
 An absent or non-Table `__index` terminates the read with nil. Function-valued indexers are not called. The `__index` member itself is read directly; its retrieval does not start another inherited lookup. One chained read permits 32 visited Tables. Exhausting that bound raises `METATABLE_LOOP` (5); an actual cyclic reference is not required to exhaust the bound.
 
+For Table-valued `__index` traversal, the indexed-read base charge covers the
+first visited Table. Each additional visited Table adds **4 cycles**, whether
+that visit finds a value or continues the lookup. This additional stage selects
+the next target and tests its own mapping; it does not fetch another instruction.
+Count visits, not distinct identities: revisiting one Table through a cycle
+still adds the same work.
+A read that visits 32 Tables before raising `METATABLE_LOOP` adds 124 cycles.
+An ordinary missing-key result of nil retains the work of its visited Tables.
+The direct `__index` member retrieval is part of that traversal, not another
+visited target. A String receiver begins at the installed String-index Table;
+that first Table is covered by the indexed-read base charge. `SELF` preserves
+its receiver once, not once per visited Table. This surcharge does not count
+hash probes or depend on earlier accesses.
+
 An indexed read writes its destination and extends `top` only after obtaining a result, including an ordinary missing-key result of nil. A failed lookup leaves that destination unchanged. For `SELF`, the preceding receiver copy into `R(A+1)` remains visible even if the lookup fails.
 
 Writes always modify the named target Table directly. They do not redirect through `__newindex` and do not invoke a function stored there. Deleting an own mapping may therefore expose an inherited mapping on a later ordinary read.
@@ -1371,8 +1385,9 @@ supply. This is a uniform allowance, not a prediction of individual cache
 hits, misses or refill intervals. A base charge is fixed for its opcode: prior
 accesses, aliases, module origin and arithmetic special cases do not select a
 different price. Only the additional work and readiness waits specified here
-are added. In particular, ordinary table lookup has no per-probe or metatable-
-chain surcharge; Table LEN has no per-boundary-probe surcharge.
+are added. Ordinary Table lookup has no per-hash-probe surcharge; Table-valued
+`__index` traversal adds the visited-Table work specified above. Table LEN has
+no per-boundary-probe surcharge.
 When an instruction starts, PC advances over its complete width
 and its base charge is incurred. Privilege, address alignment and write-ready
 handling occur after that base charge. A blocked store retains that charge;

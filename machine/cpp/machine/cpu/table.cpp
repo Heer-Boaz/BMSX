@@ -436,8 +436,8 @@ Value Table::getStringKeyCached(StringId key, int& predictedSlot) const {
 	return valueNil();
 }
 
-int Table::loadStringIndex(const Table* table, StringId indexKey, StringId key, Value& result) noexcept {
-	return table->resolveStringIndexCached(indexKey, key, -1, result);
+void Table::loadStringIndex(const Table* table, StringId indexKey, StringId key, TableLookupResult& result) noexcept {
+	table->resolveStringIndexCached(indexKey, key, -1, result);
 }
 
 int Table::setStringKey(StringId key, const Value& value) {
