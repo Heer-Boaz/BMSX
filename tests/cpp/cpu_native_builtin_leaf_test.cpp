@@ -47,9 +47,17 @@ struct Machine {
 	Table* target = nullptr;
 	Table* meta = nullptr;
 	Value expected = valueNil();
-	Machine(const test::Blua32TestRom& r, bool scalar) : rom(r), memory(MemoryInit{r.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes),
+	int observedSuccessors = 0;
+	Machine(const test::Blua32TestRom& r, bool scalar, bool observeSuccessor = false) : rom(r), memory(MemoryInit{r.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes),
 		irq(memory), addresses(memory), cpu(memory, irq, addresses) {
 		cpu.reset();
+		if (observeSuccessor) {
+			InstructionObserverBinding observer;
+			observer.points[0].insert(r.textAddress + 2 * INSTRUCTION_BYTES);
+			observer.context = &observedSuccessors;
+			observer.observe = [](void* context, ExecutionDomainId, u32, const Value*) { ++*static_cast<int*>(context); };
+			cpu.setInstructionObserver(std::move(observer));
+		}
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0});
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		else cpu.prepareSystemNativeCode();
@@ -90,7 +98,9 @@ void parity(Machine& a, Machine& b) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false, int mode = 0, bool interrupt = false) {
 	const auto rom = image(results, id == BuiltinFunctionId::GetMetatable ? 2 : 3);
-	Machine machine(rom, false); machine.seed(id, mode);
+	// A real observed successor is not an internal native entry. This retains
+	// the shared materialized gate contract, independently of inline leaf calls.
+	Machine machine(rom, false, true); machine.seed(id, mode);
 	auto* frame = machine.cpu.rootThread()->currentFrame;
 	require(frame->next == nullptr, "the first builtin has no spare activation node");
 	auto* owner = frame->executionImage; auto* page = owner->nativeCodeLookup->find(frame->pc, 0);
@@ -135,7 +145,8 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 			&& machine.cpu.instructionBudgetRemaining == run.state.remainingCycles, "both budget owners retain the complete exhausted CALL debit");
 		if (interrupt) require(machine.cpu.captureRuntimeState().nonMaskableInterruptPending, "post-CALL stop retains the pending interrupt for its real owner");
 		else machine.cpu.runUntilDepth(0, 1);
-		if (!interrupt) require(machine.cpu.readCauseWord() == 0 && machine.cpu.isHaltedUntilIrq(), "resuming the ordinary successor never replays the already committed CALL");
+		if (!interrupt) require(machine.cpu.readCauseWord() == 0 && machine.cpu.isHaltedUntilIrq()
+			&& machine.observedSuccessors == 1, "resuming the ordinary successor observes it once and never replays the already committed CALL");
 	}
 	if (id == BuiltinFunctionId::SetMetatable && mode == 1) require(machine.target->metatable == nullptr, "discard and receiving forms still perform the real metatable removal");
 	require(frame->registers[7] == valueNumber(99.75), "the cached numeric prefix survives the returning helper ABI");

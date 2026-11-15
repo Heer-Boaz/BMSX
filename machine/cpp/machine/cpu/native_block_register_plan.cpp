@@ -10,6 +10,14 @@ NativeBlockCompiler::RegisterAccess NativeBlockCompiler::registerAccess(const De
 	RegisterAccess access;
 	access.scalarReads = OPCODE_SCALAR_REGISTER_READS[instruction.op];
 	const auto op = static_cast<OpCode>(instruction.op);
+	if (op == OpCode::CALL) {
+		access.readFirst = instruction.a;
+		access.readEnd = instruction.a + std::max<int>(instruction.b, 1);
+		if (instruction.c == 0 || instruction.c == 2) {
+			access.writeFirst = instruction.a;
+			access.writeEnd = instruction.a + 1;
+		}
+	}
 	if (op == OpCode::STORE_MEM_WORDS || op == OpCode::STORE_MEM_WORDS_D) {
 		// The address is consumed for alignment even when the data range is empty.
 		access.readFirst = instruction.a;
@@ -87,9 +95,12 @@ void NativeBlockCompiler::planRegisterEntries(std::span<const NativeBlockSource>
 		}
 		size_t successorCount = 0;
 		const auto addSuccessor = [&](const NativeBlockExitSite& exit) {
-			if (exit.exit != NativeBlockExit::Continue) return;
+			if (exit.exit != NativeBlockExit::Continue
+				&& !(exit.exit == NativeBlockExit::Call && m_bindings.cpu
+					&& exit.exitB >= 1 && exit.exitB <= 3 && static_cast<u32>(exit.exitC) <= 2u)) return;
 			const size_t target = regionEntryIndex(exit.nextPc);
-			if (target != m_blocks.size()) successors[index][successorCount++] = target;
+			if (target != m_blocks.size() && (exit.exit != NativeBlockExit::Call || !m_entries[target].inherited))
+				successors[index][successorCount++] = target;
 		};
 		if (sources[index].fallthrough) successors[index][successorCount++] = index + 1u;
 		else addSuccessor(m_blocks[index]->terminal);

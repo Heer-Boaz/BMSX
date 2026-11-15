@@ -15,12 +15,12 @@
 
 namespace bmsx {
 
-NativeCodeBindings::NativeCodeBindings(Memory& memory, StringPool& pool, StringId indexKey)
+NativeCodeBindings::NativeCodeBindings(Memory& memory, StringPool& pool, StringId indexKey, CPU* cpu)
 	: ramBytes(memory.ramByteCount()), ram(memory.ramData()),
 	  ramWriteGroups(memory.ramWriteWatches().groupData()),
 	  cartridgeSelection(&memory.cartridgeController().selectionWord()),
 	  cartridgeRom{memory.cartridgeController().romStorage(0), memory.cartridgeController().romStorage(1)},
-	  systemRom(&memory.systemRomStorage()), strings(&pool), indexKey(indexKey) {}
+	  systemRom(&memory.systemRomStorage()), strings(&pool), indexKey(indexKey), cpu(cpu) {}
 
 void NativeCodeRegion::publish(size_t& cacheBytes) {
 #if defined(BMSX_NATIVE_COMPILER_WORKER) && defined(SLJIT_CONFIG_ARM)
@@ -68,7 +68,10 @@ std::vector<std::unique_ptr<NativeBlock>> NativeBlock::compileRegion(
 	std::vector<std::unique_ptr<NativeBlock>> blocks;
 	blocks.reserve(sources.size());
 	for (const auto& source : sources) {
-		auto block = prepare(source, exitHandlers);
+		const auto& last = *source.instructions.back().decoded;
+		const bool builtinCall = bindings.cpu && last.op == static_cast<u8>(OpCode::CALL)
+			&& last.b >= 1 && last.b <= 3 && static_cast<u32>(last.c) <= 2u;
+		auto block = prepare(source, exitHandlers, builtinCall);
 		block->region = region;
 		blocks.push_back(std::move(block));
 	}
@@ -103,7 +106,8 @@ NativeCodeRegion::~NativeCodeRegion() {
 	if (m_cacheBytes) *m_cacheBytes -= codeBytes;
 }
 
-std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& source, const NativeBlockExitHandlers& exitHandlers) {
+std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& source, const NativeBlockExitHandlers& exitHandlers,
+	bool builtinCall) {
 	const auto instructions = source.instructions;
 	const auto* skippedInstruction = source.skippedInstruction;
 	const u8 skippedInstructionWidth = skippedInstruction ? skippedInstruction->width : 0;
@@ -123,7 +127,8 @@ std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& sourc
 		&& skippedInstruction->op == static_cast<u8>(OpCode::JMP)
 		&& skippedInstruction->dispatchOp != static_cast<u8>(DecodedDispatchOp::Observe);
 	block->sideExits.reserve(slowCount + (finalOp == OpCode::JMPIF || finalOp == OpCode::JMPIFNOT
-		|| nativeBlockComparison(static_cast<u8>(finalOp)) ? 1 : 0) + (block->hasFusedJump ? 1 : 0));
+		|| nativeBlockComparison(static_cast<u8>(finalOp)) ? 1 : 0) + (block->hasFusedJump ? 1 : 0)
+		+ (builtinCall ? 2 : 0));
 	auto& terminal = block->terminal;
 	controlGuarded = false;
 	for (const auto& source : instructions) {

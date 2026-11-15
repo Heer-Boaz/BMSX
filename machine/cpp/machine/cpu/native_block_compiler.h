@@ -27,6 +27,7 @@ public:
 
 private:
 	struct SlowPath;
+	void emitBuiltinCall(const DecodedInstruction& instruction);
 	void emitControl(const DecodedInstruction& instruction, NativeBlockExitSite* exit);
 	void emitExit(NativeBlockExitSite* exit, bool fallthrough = false);
 	void emitSegmentCharge(const NativeBlockExitSite& exit);

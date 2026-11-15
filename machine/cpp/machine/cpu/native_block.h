@@ -59,6 +59,15 @@ struct NativeBlockRunState {
 #endif
 };
 
+// Live inputs/results for a nonallocating builtin. The two consumed arguments
+// are independent of the deferred guest-bank publication; success reuses the
+// first word for its result and returns the exact completed grant/top.
+struct NativeBuiltinCallState {
+	Value arguments[2];
+	int remainingCycles;
+	int registerTop;
+};
+
 enum class NativeBlockTransition : u32 {
 	Redispatch,
 	RebindFrame,
@@ -78,6 +87,7 @@ enum class NativeBlockExit : u8 {
 	ScalarBoundary,
 	Halt,
 	Call,
+	CompletedCall,
 	Return,
 	ReadField,
 	WriteField,
@@ -159,7 +169,7 @@ struct NativeBlockSource {
 // the generated code after it has been published on the CPU thread.
 struct NativeCodeBindings {
 	NativeCodeBindings() = default;
-	NativeCodeBindings(Memory& memory, StringPool& strings, StringId indexKey);
+	NativeCodeBindings(Memory& memory, StringPool& strings, StringId indexKey, CPU* cpu = nullptr);
 	u32 ramBytes = 0;
 	u8* ram = nullptr;
 	const u8* ramWriteGroups = nullptr;
@@ -168,6 +178,9 @@ struct NativeCodeBindings {
 	const Span<const u8>* systemRom = nullptr;
 	StringPool* strings = nullptr;
 	StringId indexKey = 0;
+	// Only CPU-owned emission may call completion owners. Standalone blocks
+	// retain the base run-state ABI and ordinary CALL exits.
+	CPU* cpu = nullptr;
 };
 
 // Entry descriptors share one executable allocation. Source invalidation retires
@@ -364,7 +377,8 @@ private:
 	friend class CPU;
 	friend class NativeBlockCompiler;
 	void execute(NativeCpuRunState& state) const;
-	static std::unique_ptr<NativeBlock> prepare(const NativeBlockSource& source, const NativeBlockExitHandlers& exitHandlers);
+	static std::unique_ptr<NativeBlock> prepare(const NativeBlockSource& source, const NativeBlockExitHandlers& exitHandlers,
+		bool builtinCall);
 	NativeBlock() = default;
 	void* m_body = nullptr;
 	void* m_linkEntry = nullptr;

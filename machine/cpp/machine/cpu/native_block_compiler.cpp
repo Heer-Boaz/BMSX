@@ -33,6 +33,8 @@ NativeBlockCompiler::NativeBlockCompiler(const Value* constants, std::span<const
 	m_entryByWord.fill(static_cast<u16>(blocks.size()));
 	for (size_t index = 0; index < blocks.size(); ++index)
 		m_entryByWord[(blocks[index]->firstPc - m_entryPagePc) / INSTRUCTION_BYTES] = static_cast<u16>(index);
+	for (size_t index = 0; index < sources.size(); ++index)
+		m_entries[index].inherited = index != 0u && sources[index - 1u].fallthrough;
 	size_t slowPaths = std::count_if(blocks.begin(), blocks.end(),
 		[](const auto& block) { return block->hasFusedJump; });
 	size_t readMappings = 0;
@@ -53,6 +55,14 @@ NativeBlockCompiler::NativeBlockCompiler(const Value* constants, std::span<const
 				|| slow == NativeBlockExit::WriteMemory || slow == NativeBlockExit::WriteWords
 				|| (slow == NativeBlockExit::ReadMemory && instruction.c != static_cast<i16>(MemoryAccessKind::U8));
 			readMappings += slow == NativeBlockExit::ReadMemory;
+			if (op == OpCode::CALL && bindings.cpu && instruction.b >= 1 && instruction.b <= 3
+				&& static_cast<u32>(instruction.c) <= 2u) {
+				const auto target = regionEntryIndex(source.pc + static_cast<u32>(instruction.width) * INSTRUCTION_BYTES);
+				if (target != blocks.size() && !m_entries[target].inherited) {
+					calls = true;
+					slowPaths += 2;
+				}
+			}
 			calls |= op == OpCode::LT || op == OpCode::LE || op == OpCode::MOD || op == OpCode::FLOORDIV || op == OpCode::POW
 				|| (slow == NativeBlockExit::WriteWords && (instruction.b >= 0 || instruction.c != 0))
 				|| (op == OpCode::MTC0 && instruction.b != COP0_EXEC)
@@ -76,8 +86,6 @@ NativeBlockCompiler::NativeBlockCompiler(const Value* constants, std::span<const
 	m_registerCount = m_useSavedFloats ? REGISTER_CACHE_CAPACITY
 		: std::min(REGISTER_CACHE_CAPACITY, SLJIT_NUMBER_OF_FLOAT_REGISTERS - SLJIT_NUMBER_OF_SAVED_FLOAT_REGISTERS - 3);
 	planRegisterEntries(sources);
-	for (size_t index = 0; index < sources.size(); ++index)
-		m_entries[index].inherited = index != 0u && sources[index - 1u].fallthrough;
 	m_compiler = sljit_create_compiler(nullptr);
 	if (!m_compiler) throw std::bad_alloc();
 	// The shared gate owns the actual host prologue and epilogue. Bodies only
@@ -319,9 +327,11 @@ void NativeBlockCompiler::emit(const DecodedInstruction& instruction, NativeBloc
 					? RegisterValueKind::SignedWordNumber : RegisterValueKind::Unknown, 0});
 			}
 			return;
+		case OpCode::CALL:
+			emitBuiltinCall(instruction);
+			return;
 		case OpCode::JMP:
 		case OpCode::HALT:
-		case OpCode::CALL:
 		case OpCode::RET:
 		case OpCode::NEWT:
 		case OpCode::CONCAT:

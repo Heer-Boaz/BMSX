@@ -32,6 +32,7 @@ struct NativeBlockAbi {
 	static constexpr int stackBytes = std::max(registerCacheCapacity * sizeof(Value), sizeof(NativeCallScratch));
 	static constexpr int helperResultOffset = registerCacheCapacity * sizeof(Value);
 	static_assert(helperResultOffset + sizeof(TableLookupResult) <= stackBytes);
+	static_assert(helperResultOffset + sizeof(NativeBuiltinCallState) <= stackBytes);
 	static constexpr int signature = SLJIT_ARGS2(P, P, P);
 };
 
