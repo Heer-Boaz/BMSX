@@ -1554,14 +1554,16 @@ Een gerichte RTL- of rekentoets is geen vervanging voor die kwalificatie.
 ## 11. CPU: werkelijke uitvoering en systeemklok {#sec-proposal-cpu-execution}
 
 **Status: werk- en geheugenafhankelijke timingrichting goedgekeurd;
-volumekosten uitgewerkt in de instructiereferentie, fysieke rekenlatenties nog
-uit te werken.** De
+een fysiek onderbouwd prijsmodel voor CPU, lokale opslag en geheugenservice
+moet nog worden vastgesteld.** De
 [instructiereferentie](book1/cpu.md#sec-cpu-cycle-accounting-and-execution-boundaries)
 onderscheidt vaste basischarges en aanvullende kosten voor expliciet uitgevoerd
 waarde-, tekst- en initialisatiewerk. Die charges bepalen de verhouding tussen
 instructievoortgang en waarneembare device-events; zij kwalificeren geen fysieke
-rekeneenheid of individuele bus. De rekeninstructies behouden vooralsnog hun
-huidige basischarges, waaronder die voor `DIV`.
+rekeneenheid of individuele bus. De huidige basischarges blijven het bestaande
+programmeercontract zolang geen vervangend contract is overgenomen; zij zijn
+geen te behouden randvoorwaarde voor het nieuwe hardwarebudget. Dat geldt ook
+voor `DIV`, tabeltoegang en aanroepen.
 
 De onderzochte kandidaat deelt een binaire64-rekeneenheid tussen CPU en GEO.
 In een gerichte corpusproef duurde een geaccepteerde deling daarin maximaal 72
@@ -1637,6 +1639,61 @@ gebruikt in de [Luau-uitvoeringskern](https://github.com/luau-lang/luau/blob/mas
 dit is een organisatievoorbeeld, geen bewijs voor BMSX-prestaties of een keuze
 voor Luau-semantiek.
 
+**Begrensde hardwarebegroting vóór nieuwe prijzen.** De bestaande RTL is een
+uitvoeringskandidaat die mag worden herzien, geen norm waaraan de nieuwe CPU
+of geheugencontroller moet blijven voldoen. De huidige gesloten-paginaroute
+publiceert een DRAM-resultaat na negen klokken en kan iedere tien klokken een
+verzoek accepteren. Dat zijn eigenschappen van die controller, niet de
+minimumlatentie van de geheugenchips. De onderzochte
+[ISSI IS41LV16100-50, Rev. L](https://www.mouser.com/catalog/specsheets/issi_IS41C16100.pdf#page=1)
+ondersteunt EDO-paginatoegang: de minimale kolomcyclus binnen een open rij is
+20 ns, tegenover 84 ns voor een nieuwe random-accesscyclus. De opgegeven
+50 ns RAS-, 25 ns kolomadres- en 13 ns CAS-toegangstijden zijn maximale
+datageldigheidsvertragingen waarvoor de controller moet budgetteren. Zij zijn
+geen minimale instructieduren. Kolomsturing, capture, precharge, refresh,
+bankwisseling, arbitrage en fysieke marges blijven nodig; paginamodus geeft
+niet vanzelf één woord per systeemklok.
+
+Goedkope lokale taaloperaties zijn evenmin alleen een softwarehypothese.
+Suns [picoJava-II-programmeerhandboek, Appendix A](https://picojava-ii.github.io/docs/pj2-prog-ref.pdf#page=487)
+geeft typisch voor opgeloste `getfield_quick` één klok en voor de
+twee-woordvariant twee klokken bij directe objectreferenties, cachetreffers en
+zonder stalls of exceptions.
+Dat ontwerp heeft onder meer een 64-woord-stackcache met meerdere lees- en
+schrijfpoorten en configureerbare instructie- en datacaches; de
+[standaardconfiguratie](https://picojava-ii.github.io/docs/html/build-rtl.html)
+heeft van beide 16 KiB. Een directe load-use-afhankelijkheid voegt een klok
+toe; `invokestatic_quick` kost elf klokken. Deze getallen kwalificeren geen
+BMSX-prijzen: Java-resolutie,
+objectrepresentatie en framebeheer verschillen. Ze laten wel zien waarom
+zowel de lokale resources als de volledige uitvoeringsroute moeten worden
+begroot, niet alleen de externe geheugentoegang of de spronginstructie.
+
+De volgende begroting sluit de belangrijkste keuzes af zonder eerst een
+volledige processor te bouwen:
+
+| Pad | Vereiste begroting vóór een numerieke prijs |
+|---|---|
+| Instructieaanvoer en rekenwerk | Fetchbreedte, decoder, beschikbare operandpoorten, resultaatpoorten, afhankelijkheden en de gekozen rekeneenheid; refill en meer-cyclusrekenwerk afzonderlijk. |
+| Geheugenwoord en 64-bit waarde | Werkelijke busbreedte, lokale treffer of externe service, volgorde van deeltransfers, pagina- en bankwisseling, refresh en mededinging. |
+| Eigen tabelveld | Geldige huidige sleutel en aanwezigheid, waardeopslag en eventuele vorm- of slothint; het trefferpad én de werkelijk benodigde misserroute. Een vaste offset verkort de adresberekening, niet de externe geheugentransactie. |
+| Gebonden `CALL` en `RET` | Residente closuregegevens, actieve waardeslots, controlestack, framewisseling en PC/domeinwisseling; spills en bestaande plaatsings- en capturevolumes afzonderlijk. Gewone CALL leest het oorspronkelijke functierecord niet opnieuw. |
+| Constructie, groei en tekst | Opslagadmissie, de werkelijk gelezen of geschreven waardeslots of tekst, en hun geheugenservice; geen ongefundeerde toeslag voor het gebruik van Lua of een modulealias. |
+
+Lokale opslag moet een gekozen capaciteit, poortorganisatie en gedrag bij
+missers of verdringing hebben; de volledige taalheap wordt niet stilzwijgend
+snelle SRAM. Als een cache de waarneembare instructieduur bepaalt, behoren
+zijn timingrelevante inhoud, vervanging en invalidatie tot het machinegedrag,
+niet tot vrijblijvende host-JIT-hints. Onafhankelijke werkzaamheden mogen
+overlappen waar de gekozen resources dat daadwerkelijk toelaten.
+
+De uitkomst mag lagere trefferkosten, hogere misserkosten, andere basisprijzen
+of een gewijzigde fysieke uitvoeringsroute zijn. Het acceptatiecriterium is
+een sluitend resourceschema, niet overeenstemming met de oude getallen of
+met Cortex-A7-hosttijd. Tot die begroting is gesloten, is er noch een bewijs
+dat alle huidige prijzen haalbaar zijn, noch een universele ondergrens van
+dertig klokken voor iedere tabeltoegang.
+
 **Samenhangende kandidaatrichting.** De systeemklok blijft 33,8688 MHz. De
 uitvoeringslaag realiseert dezelfde BLua32-instructies en waarden, maar hun
 voortgang volgt de feitelijk benodigde instructieophaling, uitvoering,
@@ -1656,8 +1713,10 @@ of maximale instructieduren en doorvoer zijn hier niet vastgesteld.
 2. **Geheugen en wachten.** Toegang duurt tot de betreffende geheugen- of
    apparaattransactie is afgehandeld. Arbitrage, vernieuwing en een niet-gereed
    apparaat kunnen tijd kosten. Een op gereedheid geblokkeerde store voert geen
-   write uit terwijl hij wacht; na de passende ready-gebeurtenis begint de
-   volgende poging opnieuw volgens het bestaande contract. Er wordt geen
+   write uit terwijl hij wacht; de passende ready-gebeurtenis hervat de
+   bewaarde operatie volgens de bestaande
+   [CPU-grenzen](book1/cpu.md#sec-cpu-additional-work-and-waiting), niet een nieuw
+   opgehaalde instructie. Er wordt geen
    automatische timeout, busfout of terugdraaiing van eerdere effecten
    toegevoegd. Bij een meerwoordtoegang behouden een fout en eerder uitgevoerde
    woorden hun bestaande volgorde en gevolgen.
