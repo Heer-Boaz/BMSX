@@ -1,5 +1,7 @@
 #include "machine/cpu/native_block_compiler.h"
 
+#include <limits>
+
 #include "machine/cpu/call_state.h"
 #include "machine/cpu/closure.h"
 #include "machine/cpu/execution_image.h"
@@ -17,6 +19,7 @@ void NativeBlockCompiler::emitContext(const DecodedInstruction& instruction, Nat
 		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R0, 0, SLJIT_S0, 0, SLJIT_IMM, instruction.a * sizeof(Value));
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_IMM, instruction.b);
 		auto* loop = sljit_emit_label(m_compiler);
+		if (m_lowering) ++m_lowering->phases[static_cast<size_t>(m_loweringPhase)].rangeValueStores;
 		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_MEM1(SLJIT_R0), 0, SLJIT_FR0, 0);
 		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, sizeof(Value));
 		sljit_emit_op2(m_compiler, SLJIT_SUB32 | SLJIT_SET_Z, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, 1);
@@ -32,6 +35,7 @@ void NativeBlockCompiler::emitContext(const DecodedInstruction& instruction, Nat
 		sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_S2, 0, SLJIT_R0, 0);
 		sljit_emit_op2(m_compiler, SLJIT_SHL, SLJIT_S2, 0, SLJIT_S2, 0, SLJIT_IMM, 3);
 		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_S2, 0, SLJIT_S1, 0, SLJIT_S2, 0);
+		if (m_lowering) ++m_lowering->phases[static_cast<size_t>(m_loweringPhase)].constantValueLoads;
 		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0, SLJIT_MEM1(SLJIT_S2), 0);
 		writeRegister(instruction.a);
 		return;
@@ -43,6 +47,7 @@ void NativeBlockCompiler::emitContext(const DecodedInstruction& instruction, Nat
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_S2, 0, SLJIT_MEM1(SLJIT_S3), bank);
 	if (store) sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_MEM1(SLJIT_S2), instruction.bx * sizeof(Value), SLJIT_FR0, 0);
 	else {
+		if (m_lowering) ++m_lowering->phases[static_cast<size_t>(m_loweringPhase)].indirectValueLoads;
 		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0, SLJIT_MEM1(SLJIT_S2), instruction.bx * sizeof(Value));
 		writeRegister(instruction.a);
 	}
@@ -80,6 +85,7 @@ void NativeBlockCompiler::emitUpvalue(const DecodedInstruction& instruction, Nat
 	sljit_set_label(addressReady, sljit_emit_label(m_compiler));
 	if (store) sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_MEM1(SLJIT_S2), 0, SLJIT_FR0, 0);
 	else {
+		if (m_lowering) ++m_lowering->phases[static_cast<size_t>(m_loweringPhase)].indirectValueLoads;
 		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0, SLJIT_MEM1(SLJIT_S2), 0);
 		writeRegister(instruction.a);
 	}
@@ -101,18 +107,19 @@ void NativeBlockCompiler::emitVararg(const DecodedInstruction& instruction, Nati
 	if (empty) sljit_set_label(empty, sljit_emit_label(m_compiler));
 	if (open) {
 		sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_S4, 0, SLJIT_S4, 0, SLJIT_R0, 0);
-		// Preserve dirty slots which lie beyond the dynamic overwrite range;
-		// overwritten slots need no writeback before the bulk copy.
-		for (int slot = 0; slot < m_registerCount; ++slot) {
-			auto& cached = m_registers[slot];
-			if (cached.guest < first) continue;
-			if (cached.dirty) {
-				auto* overwritten = sljit_emit_cmp(m_compiler, SLJIT_GREATER | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, cached.guest - first);
-				sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_MEM1(SLJIT_S0), cached.guest * sizeof(Value), cachedFloatRegister(slot), 0);
-				sljit_set_label(overwritten, sljit_emit_label(m_compiler));
-			}
-			cached = CachedRegister{};
+		// The dynamic suffix may be empty. Preserve every untouched dirty name,
+		// and move any outside alias home before the bank copy overwrites it.
+		preserveRangeHomes(first, std::numeric_limits<int>::max());
+		for (size_t index = 0; index < m_slotBindings.size(); ++index) {
+			const auto& binding = m_slotBindings[index];
+			const int guest = m_guestSlots[index];
+			if (guest < first || !binding.dirty) continue;
+			auto* overwritten = sljit_emit_cmp(m_compiler, SLJIT_GREATER | SLJIT_32,
+				SLJIT_R0, 0, SLJIT_IMM, guest - first);
+			emitValueStore(guest, valueLocation(binding.definition), m_loweringPhase);
+			sljit_set_label(overwritten, sljit_emit_label(m_compiler));
 		}
+		discardRegisterRange(first, std::numeric_limits<int>::max());
 		sljit_emit_op2(m_compiler, SLJIT_ADD32, SLJIT_S5, 0, SLJIT_R0, 0, SLJIT_IMM, first);
 	} else discardRegisterRange(first, first + count);
 	if (!open) {
@@ -128,6 +135,8 @@ void NativeBlockCompiler::emitVararg(const DecodedInstruction& instruction, Nati
 	sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R2, 0, SLJIT_S0, 0, SLJIT_IMM, first * sizeof(Value));
 	auto* noCopy = sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
 	auto* copy = sljit_emit_label(m_compiler);
+	if (m_lowering) ++m_lowering->phases[static_cast<size_t>(m_loweringPhase)].rangeValueLoads;
+	if (m_lowering) ++m_lowering->phases[static_cast<size_t>(m_loweringPhase)].rangeValueStores;
 	sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0, SLJIT_MEM1(SLJIT_R1), 0);
 	sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_MEM1(SLJIT_R2), 0, SLJIT_FR0, 0);
 	sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, sizeof(Value));
@@ -139,6 +148,7 @@ void NativeBlockCompiler::emitVararg(const DecodedInstruction& instruction, Nati
 		auto* noFill = sljit_emit_cmp(m_compiler, SLJIT_GREATER_EQUAL, SLJIT_R2, 0, SLJIT_S2, 0);
 		sljit_emit_fset64(m_compiler, SLJIT_FR0, asNumber(valueNil()));
 		auto* fill = sljit_emit_label(m_compiler);
+		if (m_lowering) ++m_lowering->phases[static_cast<size_t>(m_loweringPhase)].rangeValueStores;
 		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_MEM1(SLJIT_R2), 0, SLJIT_FR0, 0);
 		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, sizeof(Value));
 		sljit_set_label(sljit_emit_cmp(m_compiler, SLJIT_LESS, SLJIT_R2, 0, SLJIT_S2, 0), fill);

@@ -104,7 +104,7 @@ void storesRetainNativeFrame(CPU& cpu, Memory& memory) {
 	for (bool generic : {false, true}) for (bool constant : {false, true}) {
 		std::array<DecodedInstruction, 6> decoded{};
 		std::array<NativeBlockInstruction, 6> source{};
-		const std::array ops{OpCode::MOV, OpCode::MOV, OpCode::MOV,
+		const std::array ops{OpCode::MOV, OpCode::MOV, OpCode::LOADK,
 			generic ? OpCode::SETT : OpCode::SETFIELD, OpCode::MOV, OpCode::JMP};
 		for (size_t i = 0; i < ops.size(); ++i) {
 			decoded[i].op = static_cast<u8>(ops[i]); decoded[i].width = 1;
@@ -113,7 +113,7 @@ void storesRetainNativeFrame(CPU& cpu, Memory& memory) {
 		}
 		decoded[0].a = 8; decoded[0].b = 3;
 		decoded[1].a = 2; decoded[1].b = 4;
-		decoded[2].a = 1; decoded[2].b = -1;
+		decoded[2].a = 1; decoded[2].bx = 0;
 		decoded[3].a = 0; decoded[3].b = generic ? 1 : 0; decoded[3].c = constant ? -2 : 2;
 		decoded[3].tableCacheSlot = -1;
 		decoded[4].a = 9; decoded[4].b = 8;
@@ -363,11 +363,20 @@ void overwrittenAndEvictedFactsDoNotGuardEntries(CPU& cpu, Memory& memory) {
 		auto blocks = NativeBlock::compileRegion(sources, nullptr, NativeCodeBindings(memory, cpu.stringPool(), cpu.stringPool().intern("__index")), {});
 		size_t bytes = 0; blocks.front()->region->publish(bytes);
 		std::array<Value, 11> registers; registers.fill(valueNil());
+		const auto initial = registers;
 		NativeBlockRunState state{.registers = registers.data(), .remainingCycles = 100};
 		const auto* exit = blocks[1]->run(state);
-		require(exit->exit == NativeBlockExit::ReadInteger && exit->currentPc == 0x7024u,
-			"an overwritten or evicted table fact does not guard an earlier independent entry");
-		require(registers[4] == valueNumber(1), "ordinary prefix definitions execute before the later table fault");
+		if (evict) {
+			require(exit->exit == NativeBlockExit::ScalarBoundary && state.scalarPc == 0x7008u && registers == initial
+				&& state.remainingCycles == 100 && state.registerTop == 0,
+				"a retained raw definition keeps its Table proof under physical pressure and hands an independent entry back before any prefix effect");
+		} else {
+			require(exit->exit == NativeBlockExit::ReadInteger && exit->currentPc == 0x7024u
+				&& state.remainingCycles == 100 - exit->cycles && state.registerTop == 11,
+				"overwriting the raw definition kills its earlier Table proof and faults only at the later integer read");
+			require(registers[0] == valueNumber(1) && registers[4] == valueNumber(1) && registers[8] == valueNumber(2)
+				&& registers[3] == valueNil(), "ordinary prefix definitions execute before the later table fault without committing its destination");
+		}
 	}
 }
 } // namespace

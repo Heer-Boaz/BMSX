@@ -16,10 +16,7 @@ void NativeBlockCompiler::emitTableAccess(const DecodedInstruction& instruction,
 	const bool integer = op == OpCode::GETI || op == OpCode::SETI;
 	const int base = load ? instruction.b : instruction.a;
 	const int key = load ? instruction.c : instruction.b;
-	if (op == OpCode::SELF) {
-		loadOperand(base, SLJIT_FR0);
-		writeRegister(static_cast<int>(instruction.a) + 1);
-	}
+	if (op == OpCode::SELF) copyRegister(static_cast<int>(instruction.a) + 1, base);
 	// Load all operands before taking a state map: cache admission may evict
 	// a previous definition, but each branch below leaves the map unchanged.
 	if (!load) loadOperand(instruction.c, SLJIT_FR2);
@@ -30,8 +27,8 @@ void NativeBlockCompiler::emitTableAccess(const DecodedInstruction& instruction,
 		loadHeader(base, SLJIT_R0);
 		slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R0, 0,
 			SLJIT_IMM, valueFromTag(ValueTag::Table) >> 48u);
-		const int slot = base < 0 ? -1 : findRegister(base);
-		if (slot >= 0) m_registers[slot].value = {RegisterValueKind::Table, 0};
+		if (base >= 0 && receiverFact.kind != RegisterValueKind::Constant)
+			m_definitions[definitionFor(base)].fact = {RegisterValueKind::Table, 0};
 	} else if (receiverFact.entrySource >= 0) {
 		size_t index = m_currentEntry;
 		int guest = receiverFact.entrySource;
@@ -96,6 +93,7 @@ void NativeBlockCompiler::emitArraySlot(bool load, int value, SlowPath& slow) {
 		slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL,
 			SLJIT_MEM1(SLJIT_R0), fields.metatable, SLJIT_IMM, 0);
 		sljit_set_label(present, sljit_emit_label(m_compiler));
+		if (m_lowering) ++m_lowering->phases[static_cast<size_t>(m_loweringPhase)].indirectValueLoads;
 		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0, SLJIT_MEM1(SLJIT_S2), 0);
 		return;
 	}
@@ -138,6 +136,7 @@ void NativeBlockCompiler::emitStringSlot(bool load, int value, SlowPath& slow) {
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U16, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), headerOffset);
 	misses[missCount++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, valueNil() >> 48u);
 	if (load) {
+		if (m_lowering) ++m_lowering->phases[static_cast<size_t>(m_loweringPhase)].indirectValueLoads;
 		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0, SLJIT_MEM1(SLJIT_R1), 0);
 		auto* done = sljit_emit_jump(m_compiler, SLJIT_JUMP);
 		auto* lookup = sljit_emit_label(m_compiler);
@@ -165,6 +164,7 @@ void NativeBlockCompiler::emitStringSlot(bool load, int value, SlowPath& slow) {
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0,
 			SLJIT_MEM1(SLJIT_SP), result + offsetof(TableLookupResult, slot));
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM0(), reinterpret_cast<sljit_sw>(&slow.exit->tableCacheSlot), SLJIT_R0, 0);
+		if (m_lowering) ++m_lowering->phases[static_cast<size_t>(m_loweringPhase)].helperResultLoads;
 		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0, SLJIT_MEM1(SLJIT_SP), result + offsetof(TableLookupResult, value));
 		sljit_set_label(done, sljit_emit_label(m_compiler));
 	} else {
@@ -181,6 +181,7 @@ void NativeBlockCompiler::emitStringSlot(bool load, int value, SlowPath& slow) {
 			sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_IMM,
 				reinterpret_cast<sljit_sw>(&m_constants[-value - 1]));
 		} else {
+			if (m_lowering) ++m_lowering->phases[static_cast<size_t>(m_loweringPhase)].publicationStores;
 			sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_MEM1(SLJIT_S0), value * sizeof(Value), SLJIT_FR2, 0);
 			sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R2, 0, SLJIT_S0, 0, SLJIT_IMM, value * sizeof(Value));
 		}

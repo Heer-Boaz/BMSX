@@ -42,8 +42,14 @@ void NativeBlockCompiler::emitComparison(const DecodedInstruction& instruction, 
 	// and numeric NaNs use the cold path without materializing the guest bank.
 	sljit_set_label(unordered, sljit_emit_label(m_compiler));
 	if (op == OpCode::EQ) {
-		if (left != SLJIT_FR0) sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0, left, 0);
-		if (right != SLJIT_FR1) sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR1, 0, right, 0);
+		if (left != SLJIT_FR0) {
+			if (m_lowering) ++m_lowering->phases[static_cast<size_t>(m_loweringPhase)].rawFprCopies;
+			sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0, left, 0);
+		}
+		if (right != SLJIT_FR1) {
+			if (m_lowering) ++m_lowering->phases[static_cast<size_t>(m_loweringPhase)].rawFprCopies;
+			sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR1, 0, right, 0);
+		}
 		sljit_emit_ijump(m_compiler, SLJIT_FAST_CALL, SLJIT_IMM,
 			reinterpret_cast<sljit_sw>(nativeBlockGate().equalValues));
 		sljit_set_label(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32,
@@ -55,6 +61,7 @@ void NativeBlockCompiler::emitComparison(const DecodedInstruction& instruction, 
 			SLJIT_IMM, valueString(0) >> 48u), noLabel);
 		sljit_set_label(sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R1, 0,
 			SLJIT_IMM, valueString(0) >> 48u), noLabel);
+		if (m_lowering) m_lowering->phases[static_cast<size_t>(m_loweringPhase)].payloadExtractions += 2;
 #if defined(SLJIT_64BIT_ARCHITECTURE)
 		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, left, SLJIT_R1);
 		sljit_emit_fcopy(m_compiler, SLJIT_COPY_FROM_F64, right, SLJIT_R2);

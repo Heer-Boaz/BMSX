@@ -52,12 +52,7 @@ void NativeBlockCompiler::emitWordStores(const DecodedInstruction& instruction, 
 		sljit_set_label(sljit_emit_cmp(m_compiler, SLJIT_LESS_EQUAL, SLJIT_R1, 0, SLJIT_R2, 0), watch);
 		// Only the source range is observed by this non-allocating call. Keep
 		// other definitions local, and retain clean cached sources afterwards.
-		for (int slot = 0; slot < m_registerCount; ++slot) {
-			auto& entry = m_registers[slot];
-			if (!entry.dirty || entry.guest < instruction.a || entry.guest >= instruction.a + instruction.c) continue;
-			sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_MEM1(SLJIT_S0), entry.guest * sizeof(Value), cachedFloatRegister(slot), 0);
-			entry.dirty = false;
-		}
+		publishRegisterRange(instruction.a, static_cast<int>(instruction.a) + instruction.c);
 		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R0, 0, SLJIT_S2, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.ram));
 		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R1, 0, SLJIT_S0, 0, SLJIT_IMM, instruction.a * sizeof(Value));
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_IMM, count);

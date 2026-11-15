@@ -35,6 +35,7 @@ void NativeBlockCompiler::emitBuiltinCall(const DecodedInstruction& instruction)
 	for (int index = 0; index < 2; ++index) {
 		if (index + 1 < instruction.b) loadOperand(static_cast<int>(instruction.a) + 1 + index, SLJIT_FR0);
 		else sljit_emit_fset64(m_compiler, SLJIT_FR0, asNumber(valueNil()));
+		if (m_lowering) ++m_lowering->phases[static_cast<size_t>(m_loweringPhase)].helperArgumentStores;
 		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_MEM1(SLJIT_SP),
 			scratch + offsetof(NativeBuiltinCallState, arguments) + index * sizeof(Value), SLJIT_FR0, 0);
 	}
@@ -68,6 +69,7 @@ void NativeBlockCompiler::emitBuiltinCall(const DecodedInstruction& instruction)
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_S5, 0, SLJIT_MEM1(SLJIT_SP),
 		scratch + offsetof(NativeBuiltinCallState, registerTop));
 	if (instruction.c != 1) {
+		if (m_lowering) ++m_lowering->phases[static_cast<size_t>(m_loweringPhase)].helperResultLoads;
 		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0, SLJIT_MEM1(SLJIT_SP),
 			scratch + offsetof(NativeBuiltinCallState, arguments));
 		writeRegister(instruction.a);
@@ -78,16 +80,16 @@ void NativeBlockCompiler::emitBuiltinCall(const DecodedInstruction& instruction)
 	completed.exit = NativeBlockExit::CompletedCall;
 	completed.cycles = completed.registerTop = 0;
 	const auto& target = m_entries[targetIndex];
-	emitRegisterTransfer(m_registers, target.registers, completed);
-	m_registers = target.registers;
-	setExitRegisterMap(completed, registerSnapshot());
+	m_loweringPhase = NativeLoweringPhase::Edge;
+	emitRegisterTransfer(target.registers, completed, targetIndex);
+	m_loweringPhase = NativeLoweringPhase::Body;
 	// Transfers use only FPRs and memory. Keep the helper's outcome in R1
 	// while naming the already-charged completion for every deadline exit.
 	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_R0, 0);
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&completed));
 	m_shortGrants.push_back(sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R1, 0,
 		SLJIT_IMM, static_cast<u32>(NativeBuiltinCallOutcome::CompletedStop)));
-	m_internalBranches.push_back({sljit_emit_jump(m_compiler, SLJIT_JUMP), targetIndex, &completed, m_registers, false});
+	m_internalBranches.push_back({sljit_emit_jump(m_compiler, SLJIT_JUMP), targetIndex});
 	m_hasTerminal = true;
 }
 

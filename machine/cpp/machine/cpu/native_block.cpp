@@ -80,7 +80,8 @@ std::vector<std::unique_ptr<NativeBlock>> NativeBlock::compileRegion(
 			blocks[index]->sourceWords += blocks[index + 1u]->sourceWords;
 		}
 	}
-	NativeBlockCompiler compiler(constants, blocks, bindings, sources);
+	auto lowering = bindings.profileLowering ? std::make_unique<NativeLoweringStats>() : nullptr;
+	NativeBlockCompiler compiler(constants, blocks, bindings, sources, lowering.get());
 	for (size_t index = 0; index < sources.size(); ++index) {
 		const auto& source = sources[index];
 		auto& block = *blocks[index];
@@ -98,6 +99,7 @@ std::vector<std::unique_ptr<NativeBlock>> NativeBlock::compileRegion(
 		compiler.endBlock(source.fallthrough);
 	}
 	region->m_code = compiler.finish(region->codeBytes);
+	region->loweringStats = std::move(lowering);
 	return blocks;
 }
 

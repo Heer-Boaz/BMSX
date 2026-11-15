@@ -46,12 +46,21 @@ void NativeBlockCompiler::planRegisterEntries(std::span<const NativeBlockSource>
 	for (const auto& source : sources) for (const auto& item : source.instructions) {
 		const auto& op = *item.decoded;
 		const auto operands = OPCODE_SCALAR_REGISTER_READS[op.op];
+		if (OPCODE_WRITES_REGISTER_A[op.op] || op.op == static_cast<u8>(OpCode::CALL)) candidates.push_back(op.a);
+		if (op.op == static_cast<u8>(OpCode::SELF)) candidates.push_back(static_cast<int>(op.a) + 1);
+		if (m_bindings.cpu && op.op == static_cast<u8>(OpCode::CALL)
+			&& op.b >= 1 && op.b <= 3 && static_cast<u32>(op.c) <= 2u)
+			for (int argument = 1; argument < op.b; ++argument) candidates.push_back(static_cast<int>(op.a) + argument);
 		if (operands & REGISTER_OPERAND_A) candidates.push_back(op.a);
 		if ((operands & REGISTER_OPERAND_B) && op.b >= 0) candidates.push_back(op.b);
 		if ((operands & REGISTER_OPERAND_C) && op.c >= 0) candidates.push_back(op.c);
 	}
 	std::sort(candidates.begin(), candidates.end());
 	candidates.erase(std::unique(candidates.begin(), candidates.end()), candidates.end());
+	m_guestSlots = candidates;
+	m_slotBindings.resize(candidates.size());
+	m_definitions.reserve(candidates.size() + instructionCount * 2u);
+	m_snapshotWrites.reserve(instructionCount * REGISTER_CACHE_CAPACITY);
 	const size_t words = (candidates.size() + 63u) / 64u;
 	std::vector<u64> uses(sources.size() * words), defs(uses.size()), live(uses.size()), written(uses.size());
 	struct ReadOrder {

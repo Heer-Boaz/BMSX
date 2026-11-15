@@ -24,8 +24,8 @@ const NativeBlockExitSite scalarBoundary = [] {
 
 
 NativeBlockCompiler::NativeBlockCompiler(const Value* constants, std::span<const std::unique_ptr<NativeBlock>> blocks, const NativeCodeBindings& bindings,
-	std::span<const NativeBlockSource> sources)
-	: m_compiler(nullptr), m_blocks(blocks), m_sources(sources), m_entryPagePc(blocks.front()->firstPc & ~MAPPED_PAGE_BYTE_MASK),
+	std::span<const NativeBlockSource> sources, NativeLoweringStats* lowering)
+	: m_lowering(lowering), m_compiler(nullptr), m_blocks(blocks), m_sources(sources), m_entryPagePc(blocks.front()->firstPc & ~MAPPED_PAGE_BYTE_MASK),
 	  m_entries(blocks.size()),
 	  m_constants(constants), m_bindings(bindings) {
 	// Region admission supplies unique entries in one decoded page. Keep the
@@ -105,43 +105,37 @@ size_t NativeBlockCompiler::regionEntryIndex(u32 pc) const {
 }
 
 void NativeBlockCompiler::beginBlock(size_t index, bool inheritRegisters) {
+	m_loweringPhase = NativeLoweringPhase::Body;
 	m_currentEntry = index;
 	m_block = m_blocks[index].get();
 	m_remainingInstructions = m_sources[index].instructions;
 	m_hasTerminal = m_controlPrivilegeGuarded = false;
 	auto& entry = m_entries[index];
 	entry.inherited = inheritRegisters;
-	entry.tableParents.fill(-1);
+	if (!inheritRegisters) entry.tableParents.fill(-1);
+	for (int slot = 0; slot < m_registerCount; ++slot) {
+		auto& value = entry.registers[slot].value;
+		if (!inheritRegisters || value.kind != RegisterValueKind::Table) value = {};
+		else value.entrySource = entry.registers[slot].guest;
+	}
+	resetRegisterState(entry.registers);
 	if (!inheritRegisters) {
-		m_registers = entry.registers;
-		m_registerClock = m_registerCount;
 		entry.guarded = sljit_emit_label(m_compiler);
 		m_shortGrants.push_back(sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32,
 			SLJIT_S4, 0, SLJIT_IMM, 0));
 	}
 	emitAdmission(index, true);
-	// A linear helper fallthrough retains only table facts proven by its
-	// successful prefix. Other entries revalidate those facts before the body.
-	for (int slot = 0; slot < m_registerCount; ++slot) {
-		auto& cached = m_registers[slot];
-		if (!inheritRegisters || cached.value.kind != RegisterValueKind::Table) cached.value = {};
-		else {
-			entry.tableParents[slot] = cached.value.entrySource;
-			cached.value.entrySource = cached.guest;
-		}
-	}
-	entry.registers = m_registers;
 	entry.body = sljit_emit_label(m_compiler);
 }
 
 void NativeBlockCompiler::emitEntryTableFacts(size_t index, bool materialize) {
 	for (int slot = 0; slot < m_registerCount; ++slot) {
-		const auto& cached = m_registers[slot];
+		const auto& cached = m_entries[index].registers[slot];
 		if (!m_entries[index].tableGuards[slot]) continue;
 		loadHeader(cached.guest, SLJIT_R1);
 		auto* failed = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R1, 0,
 			SLJIT_IMM, valueFromTag(ValueTag::Table) >> 48u);
-		m_admissionFallbacks.push_back({failed, index, registerSnapshot(), materialize});
+		m_admissionFallbacks.push_back({failed, index, materialize ? registerSnapshot() : RegisterSnapshot{}, materialize});
 	}
 }
 
@@ -168,7 +162,7 @@ void NativeBlockCompiler::emitAdmission(size_t index, bool materialize) {
 	} else {
 		shortGrant = sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32, SLJIT_S4, 0, SLJIT_IMM, prefixCycles);
 	}
-	m_admissionFallbacks.push_back({shortGrant, index, registerSnapshot(), materialize});
+	m_admissionFallbacks.push_back({shortGrant, index, materialize ? registerSnapshot() : RegisterSnapshot{}, materialize});
 }
 
 void NativeBlockCompiler::emit(const DecodedInstruction& instruction, NativeBlockExitSite* slowExit, NativeBlockExitSite* takenExit) {
@@ -209,15 +203,11 @@ void NativeBlockCompiler::emit(const DecodedInstruction& instruction, NativeBloc
 		case OpCode::VARARG:
 			emitContext(instruction, slowExit);
 			return;
-		case OpCode::MOV: {
-			const auto fact = operandFact(instruction.b);
-			writeRegister(instruction.a, readOperand(instruction.b, SLJIT_FR0), fact);
+		case OpCode::MOV:
+			copyRegister(instruction.a, instruction.b);
 			return;
-		}
 		case OpCode::LOADK:
-			sljit_emit_fop1(m_compiler, SLJIT_MOV_F64,
-				destinationRegister(instruction.a, {RegisterValueKind::Constant, m_constants[instruction.bx]}), 0,
-				SLJIT_MEM1(SLJIT_S1), static_cast<sljit_sw>(instruction.bx) * sizeof(Value));
+			bindConstant(instruction.a, m_constants[instruction.bx]);
 			return;
 		case OpCode::KNIL:
 		case OpCode::KFALSE:
@@ -229,7 +219,7 @@ void NativeBlockCompiler::emit(const DecodedInstruction& instruction, NativeBloc
 			const Value value = op == OpCode::KNIL ? valueNil() : op == OpCode::KFALSE ? valueBool(false)
 				: op == OpCode::KTRUE ? valueBool(true) : valueNumber(op == OpCode::K0 ? 0.0
 					: op == OpCode::K1 ? 1.0 : op == OpCode::KM1 ? -1.0 : instruction.sbx);
-			sljit_emit_fset64(m_compiler, destinationRegister(instruction.a, {RegisterValueKind::Constant, value}), asNumber(value));
+			bindConstant(instruction.a, value);
 			return;
 		}
 		case OpCode::ADD:
@@ -363,31 +353,35 @@ void NativeBlockCompiler::emit(const DecodedInstruction& instruction, NativeBloc
 
 void NativeBlockCompiler::emitExit(NativeBlockExitSite* exit, bool fallthrough) {
 	if (fallthrough) {
+		const size_t target = m_currentEntry + 1u;
+		m_loweringPhase = NativeLoweringPhase::Edge;
+		emitRegisterTransfer(m_entries[target].registers, *exit, target);
+		m_loweringPhase = NativeLoweringPhase::Body;
 		emitSegmentCharge(*exit);
-		setExitRegisterMap(*exit, registerSnapshot());
 		sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(exit));
 		m_shortGrants.push_back(sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32,
 			SLJIT_S4, 0, SLJIT_IMM, 0));
 		return;
 	}
-	auto registers = registerSnapshot();
+
 	if (exit->exit == NativeBlockExit::Continue) {
 		const size_t index = regionEntryIndex(exit->nextPc);
 		if (index != m_blocks.size()) {
-			// Ordinary target maps are already planned. Only a forward helper
-			// continuation must await its predecessor's actual allocation.
-			const auto& target = m_entries[index];
-			const bool deferred = target.inherited && !target.body;
-			if (!deferred) emitRegisterTransfer(m_registers, target.registers, *exit);
+			m_loweringPhase = NativeLoweringPhase::Edge;
+			emitRegisterTransfer(m_entries[index].registers, *exit, index);
+			m_loweringPhase = NativeLoweringPhase::Body;
 			emitSegmentCharge(*exit);
 			sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(exit));
-			m_internalBranches.push_back({sljit_emit_jump(m_compiler, SLJIT_JUMP), index, exit, m_registers, deferred});
+			m_internalBranches.push_back({sljit_emit_jump(m_compiler, SLJIT_JUMP), index});
 			return;
 		}
+		const auto registers = registerSnapshot();
 		// Independently compiled regions have independent register maps. Publish
 		// only dirty values, then patch this edge to the target's entry guard.
 		// Warm links bypass the cold state-map materializer and dispatcher.
+		m_loweringPhase = NativeLoweringPhase::Edge;
 		emitRegisterSnapshot(registers);
+		m_loweringPhase = NativeLoweringPhase::Body;
 		emitSegmentCharge(*exit);
 		sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(exit));
 		auto* jump = sljit_emit_jump(m_compiler, SLJIT_JUMP | SLJIT_REWRITABLE_JUMP);
@@ -395,15 +389,16 @@ void NativeBlockCompiler::emitExit(NativeBlockExitSite* exit, bool fallthrough) 
 		m_externalBranches.push_back({jump, &exit->link});
 		return;
 	}
-	emitSharedExit(*exit, registers);
+	emitSharedExit(*exit, registerSnapshot());
 }
 
 void NativeBlockCompiler::setExitRegisterMap(NativeBlockExitSite& exit, const RegisterSnapshot& registers) {
 	for (int slot = 0; slot < REGISTER_CACHE_CAPACITY; ++slot)
-		exit.registerOffsets[slot] = registers[slot] < 0 ? -1 : registers[slot] * static_cast<int>(sizeof(Value));
+		exit.registerOffsets[slot] = registers.primary[slot] < 0 ? -1 : registers.primary[slot] * static_cast<int>(sizeof(Value));
 }
 
 void NativeBlockCompiler::emitSharedExit(NativeBlockExitSite& exit, const RegisterSnapshot& registers) {
+	emitSnapshotExtras(registers, NativeLoweringPhase::Frontier);
 	setExitRegisterMap(exit, registers);
 	// The stable gate owns cold materialization and charging.
 	// A semantic helper may retire this descriptor and its code after that.
@@ -423,6 +418,7 @@ void NativeBlockCompiler::emitSegmentCharge(const NativeBlockExitSite& exit) {
 }
 
 void* NativeBlockCompiler::finish(size_t& codeBytes) {
+	m_loweringPhase = NativeLoweringPhase::Entry;
 	for (size_t index = 0; index < m_entries.size(); ++index) {
 		auto& entry = m_entries[index];
 		entry.linked = sljit_emit_label(m_compiler);
@@ -431,27 +427,27 @@ void* NativeBlockCompiler::finish(size_t& codeBytes) {
 		entry.external = sljit_emit_label(m_compiler);
 		emitAdmission(index, false);
 		for (int slot = 0; slot < m_registerCount; ++slot) {
-			if (entry.registers[slot].guest >= 0) sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, cachedFloatRegister(slot), 0,
-				SLJIT_MEM1(SLJIT_S0), entry.registers[slot].guest * sizeof(Value));
+			if (entry.registers[slot].guest >= 0) {
+				if (m_lowering) ++m_lowering->phases[static_cast<size_t>(m_loweringPhase)].registerValueLoads;
+				sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, cachedFloatRegister(slot), 0,
+					SLJIT_MEM1(SLJIT_S0), entry.registers[slot].guest * sizeof(Value));
+			}
 		}
-		const auto previous = m_registers;
-		m_registers = entry.registers;
+		resetRegisterState(entry.registers);
 		emitEntryTableFacts(index, false);
-		m_registers = previous;
 		sljit_set_label(sljit_emit_jump(m_compiler, SLJIT_JUMP), entry.body);
 		if (entry.inherited) {
 			entry.guarded = sljit_emit_label(m_compiler);
 			m_shortGrants.push_back(sljit_emit_cmp(m_compiler, SLJIT_SIG_LESS_EQUAL | SLJIT_32,
 				SLJIT_S4, 0, SLJIT_IMM, 0));
-			const auto previous = m_registers;
-			m_registers = entry.registers;
+			resetRegisterState(entry.registers);
 			emitAdmission(index, true);
 			emitEntryTableFacts(index, true);
-			m_registers = previous;
 			sljit_set_label(sljit_emit_jump(m_compiler, SLJIT_JUMP), entry.body);
 		}
 	}
 	emitInternalBranches();
+	m_loweringPhase = NativeLoweringPhase::Frontier;
 	auto* shortGrant = sljit_emit_label(m_compiler);
 	for (auto* jump : m_shortGrants) sljit_set_label(jump, shortGrant);
 	sljit_emit_ijump(m_compiler, SLJIT_JUMP, SLJIT_IMM,

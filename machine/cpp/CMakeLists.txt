@@ -359,7 +359,7 @@ if(BMSX_ENABLE_NATIVE_BLOCKS)
 	target_compile_definitions(bmsx_sljit PUBLIC SLJIT_CONFIG_AUTO=1 SLJIT_VERBOSE=0
 		SLJIT_DEBUG=$<IF:$<CONFIG:Debug>,1,0>)
 	target_sources(bmsx_core PRIVATE machine/cpu/native_block.cpp machine/cpu/native_block_compiler.cpp machine/cpu/native_block_abi.cpp
-		machine/cpu/native_block_memory.cpp machine/cpu/native_block_registers.cpp machine/cpu/native_block_register_plan.cpp
+		machine/cpu/native_block_memory.cpp machine/cpu/native_block_value_state.cpp machine/cpu/native_block_registers.cpp machine/cpu/native_block_register_plan.cpp
 		machine/cpu/native_block_register_edges.cpp machine/cpu/native_block_compare.cpp machine/cpu/native_block_compare_gate.cpp
 		machine/cpu/native_block_context.cpp machine/cpu/native_block_calls.cpp machine/cpu/native_block_call.cpp machine/cpu/closure.cpp
 		machine/cpu/native_block_table.cpp machine/cpu/native_block_builtin.cpp
@@ -1214,6 +1214,9 @@ if(BMSX_BUILD_TESTS)
 		add_executable(bmsx_native_block_tests ../../tests/cpp/native_block_test.cpp)
 		target_link_libraries(bmsx_native_block_tests PRIVATE bmsx_core)
 		add_test(NAME bmsx_native_block_tests COMMAND bmsx_native_block_tests)
+		add_executable(bmsx_native_value_residency_tests ../../tests/cpp/native_value_residency_test.cpp ${BMSX_TEST_ROM_SOURCE})
+		target_link_libraries(bmsx_native_value_residency_tests PRIVATE bmsx_core bmsx_blua32_tooling bmsx_sljit)
+		add_test(NAME bmsx_native_value_residency_tests COMMAND bmsx_native_value_residency_tests)
 		add_executable(bmsx_native_block_table_write_tests ../../tests/cpp/native_block_table_write_test.cpp)
 		target_link_libraries(bmsx_native_block_table_write_tests PRIVATE bmsx_core)
 		add_test(NAME bmsx_native_block_table_write_tests COMMAND bmsx_native_block_table_write_tests)

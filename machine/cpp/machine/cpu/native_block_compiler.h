@@ -15,7 +15,7 @@ namespace bmsx {
 class NativeBlockCompiler {
 public:
 	NativeBlockCompiler(const Value* constants, std::span<const std::unique_ptr<NativeBlock>> blocks, const NativeCodeBindings& bindings,
-		std::span<const NativeBlockSource> sources);
+		std::span<const NativeBlockSource> sources, NativeLoweringStats* lowering);
 	~NativeBlockCompiler();
 	void emit(const DecodedInstruction& instruction, NativeBlockExitSite* slowExit,
 		NativeBlockExitSite* takenExit);
@@ -47,14 +47,8 @@ private:
 	sljit_jump* emitRomStorage(const Span<const u8>* storage, u32 width,
 		sljit_label* load, sljit_label* done);
 	static constexpr int REGISTER_CACHE_CAPACITY = NativeBlockAbi::registerCacheCapacity;
-	using RegisterSnapshot = std::array<int, REGISTER_CACHE_CAPACITY>;
-	void setExitRegisterMap(NativeBlockExitSite& exit, const RegisterSnapshot& registers);
-	void emitSharedExit(NativeBlockExitSite& exit, const RegisterSnapshot& registers);
-	int findRegister(int guest) const;
-	int allocateRegister(int guest, sljit_s32 pinned = 0);
-	sljit_s32 cachedFloatRegister(int slot) const;
-	// Facts describe the current raw Value, not a different guest encoding.
-	// They are local to one externally enterable body.
+	// A raw definition may have several architectural names, but at most one
+	// physical cache location. Entry maps remain independent guest values.
 	enum class RegisterValueKind { Unknown, SignedWordNumber, Table, Constant };
 	struct RegisterValueFact {
 		constexpr RegisterValueFact(RegisterValueKind kind = RegisterValueKind::Unknown, Value constant = 0, int entrySource = -1)
@@ -63,6 +57,43 @@ private:
 		Value constant;
 		int entrySource;
 	};
+	struct SlotBinding { int definition = -1; bool dirty = false; };
+	struct RawDefinition { RegisterValueFact fact; int home = -1; };
+	struct CachedValue { int definition = -1; u32 lastUse = 0; };
+	struct EntryRegister {
+		int guest = -1;
+		bool dirty = false;
+		u32 lastUse = 0;
+		RegisterValueFact value{};
+	};
+	using RegisterState = std::array<EntryRegister, REGISTER_CACHE_CAPACITY>;
+	enum class ValueLocationKind { Register, Home, Constant };
+	struct ValueLocation { ValueLocationKind kind; int index; Value constant = 0; };
+	struct SnapshotWrite { int guest; ValueLocation source; };
+	struct RegisterSnapshot {
+		std::array<int, REGISTER_CACHE_CAPACITY> primary;
+		u32 extraFirst = 0, extraCount = 0;
+		RegisterSnapshot() { primary.fill(-1); }
+	};
+	void setExitRegisterMap(NativeBlockExitSite& exit, const RegisterSnapshot& registers);
+	void emitSharedExit(NativeBlockExitSite& exit, const RegisterSnapshot& registers);
+	size_t bindingIndex(int guest) const;
+	int definitionFor(int guest);
+	int findValue(int definition) const;
+	int findRegister(int guest) const;
+	bool hasBindings(int definition) const;
+	ValueLocation valueLocation(int definition) const;
+	void preserveHome(int guest, sljit_s32 temporary = SLJIT_FR2);
+	void preserveRangeHomes(int first, int end);
+	void bindRegister(int guest, int definition, bool dirty, sljit_s32 temporary = SLJIT_FR2);
+	int allocateValue(int definition, sljit_s32 pinned = 0);
+	void resetRegisterState(const RegisterState& registers);
+	void copyRegister(int guest, int source);
+	void bindConstant(int guest, Value value);
+	void emitValueStore(int guest, const ValueLocation& source, NativeLoweringPhase phase);
+	void emitSnapshotExtras(const RegisterSnapshot& snapshot, NativeLoweringPhase phase);
+	void publishRegisterRange(int first, int end);
+	sljit_s32 cachedFloatRegister(int slot) const;
 	RegisterValueFact operandFact(int selector) const;
 	sljit_s32 readOperand(int selector, sljit_s32 temporary, sljit_s32 pinned = 0);
 	std::array<sljit_s32, 2> readOperands(int left, int right);
@@ -77,8 +108,9 @@ private:
 	static RegisterAccess registerAccess(const DecodedInstruction& instruction);
 	void planRegisterEntries(std::span<const NativeBlockSource> sources);
 	void emitInternalBranches();
+	void emitRegisterTransfer(const RegisterState& target, NativeBlockExitSite& exit, size_t targetIndex);
 	void discardRegisterRange(int first, int end);
-	RegisterSnapshot registerSnapshot(bool dirtyOnly = true) const;
+	RegisterSnapshot registerSnapshot();
 	void emitRegisterSnapshot(const RegisterSnapshot& snapshot);
 	void emitCallSpills(bool reload);
 	std::array<sljit_jump*, 2> falseyJumps(int index);
@@ -88,20 +120,14 @@ private:
 	void canonicalizeNumber(sljit_s32 target = SLJIT_FR0);
 	void convertWord(int selector);
 
+	NativeLoweringStats* m_lowering;
+	NativeLoweringPhase m_loweringPhase = NativeLoweringPhase::Body;
 	sljit_compiler* m_compiler;
 	std::span<const std::unique_ptr<NativeBlock>> m_blocks;
 	std::span<const NativeBlockSource> m_sources;
 	std::span<const NativeBlockInstruction> m_remainingInstructions;
 	const u32 m_entryPagePc;
 	std::array<u16, MAPPED_PAGE_BYTE_SIZE / INSTRUCTION_BYTES> m_entryByWord;
-	struct CachedRegister {
-		int guest = -1;
-		bool dirty = false;
-		u32 lastUse = 0;
-		RegisterValueFact value{};
-	};
-	using RegisterState = std::array<CachedRegister, REGISTER_CACHE_CAPACITY>;
-	bool emitRegisterTransfer(const RegisterState& source, const RegisterState& target, NativeBlockExitSite& exit);
 	struct EntryPoint {
 		sljit_label* guarded = nullptr;
 		sljit_label* external = nullptr;
@@ -114,13 +140,7 @@ private:
 	};
 	std::vector<EntryPoint> m_entries;
 	size_t m_currentEntry = 0;
-	struct InternalBranch {
-		sljit_jump* jump;
-		size_t target;
-		NativeBlockExitSite* exit;
-		RegisterState registers;
-		bool transferDeferred;
-	};
+	struct InternalBranch { sljit_jump* jump; size_t target; };
 	std::vector<InternalBranch> m_internalBranches;
 	struct ExternalBranch { sljit_jump* jump; NativeBlockLink* link; };
 	std::vector<ExternalBranch> m_externalBranches;
@@ -147,7 +167,11 @@ private:
 		RegisterSnapshot registers;
 	};
 	std::vector<ReadMapping> m_readMappings;
-	RegisterState m_registers;
+	std::vector<int> m_guestSlots;
+	std::vector<SlotBinding> m_slotBindings;
+	std::vector<RawDefinition> m_definitions;
+	std::vector<SnapshotWrite> m_snapshotWrites;
+	std::array<CachedValue, REGISTER_CACHE_CAPACITY> m_registers;
 	int m_registerCount;
 	bool m_useSavedFloats;
 	u32 m_registerClock = 0;
