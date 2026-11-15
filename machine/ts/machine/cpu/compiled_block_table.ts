@@ -1,4 +1,4 @@
-import { OpCode } from '../../spec/blua32/opcode';
+import { OpCode, TABLE_LENGTH_PROBE_CYCLES } from '../../spec/blua32/opcode';
 import { ValueTag } from './value';
 import { TABLE_STORE_REQUIRES_GROWTH } from './table';
 import type { DecodedInstructionPage } from './execution_image';
@@ -16,9 +16,11 @@ export function emitTableOperation(op: TableOpCode, page: DecodedInstructionPage
 	const a = page.a[word], b = page.b[word], c = page.c[word];
 	if (op === OpCode.LEN) {
 		const tag = `l${word}`, failure = r.exit(exit);
-		const length = `${tag}===${ValueTag.Table}?${r.referenceOperand(b)}.length():q.codepointCount(${r.scalarOperand(b)})`;
+		const value = `v${word}`;
 		return `const ${tag}=${r.tagOperand(b)};if(${tag}!==${ValueTag.Table}&&${tag}!==${ValueTag.String}) ${failure}
-			${r.writeNumber(a, length)}`;
+			let ${value};if(${tag}===${ValueTag.Table}){${value}=${r.referenceOperand(b)}.length(state.lengthWork);
+			budget-=state.lengthWork.probes*${TABLE_LENGTH_PROBE_CYCLES};}else{${value}=q.codepointCount(${r.scalarOperand(b)});}
+			${r.writeNumber(a, value)}`;
 	}
 	const load = op === OpCode.GETT || op === OpCode.GETI || op === OpCode.GETFIELD || op === OpCode.SELF;
 	const base = load ? b : a;

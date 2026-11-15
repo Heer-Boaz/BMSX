@@ -478,29 +478,41 @@ void Table::setStringKeyCached(StringId key, const Value& value, int& predictedS
 	predictedSlot = setStringKey(key, value);
 }
 
-double Table::length(const Table* table) noexcept {
+double Table::length(const Table* table, u32* work) noexcept {
 	// Binary64's largest integer with a distinct, exactly representable successor.
 	constexpr uint64_t maxBoundary = (uint64_t{1} << 53) - 1;
 	uint64_t low = table->m_lengthHint;
 	uint64_t high;
+	u32 probes = low == 0 ? 0 : 1;
 	if (low != 0 && !table->hasIntegerKey(low)) {
 		high = low;
 		low = 0;
 	} else {
-		if (!table->hasIntegerKey(low + 1)) return static_cast<double>(low);
+		++probes;
+		if (!table->hasIntegerKey(low + 1)) {
+			if (work) *work = probes;
+			return static_cast<double>(low);
+		}
 		++low;
 		high = low * 2;
-		while (table->hasIntegerKey(high)) {
+		for (;;) {
+			++probes;
+			if (!table->hasIntegerKey(high)) break;
 			low = high;
-			if (low == maxBoundary) return static_cast<double>(low);
+			if (low == maxBoundary) {
+				if (work) *work = probes;
+				return static_cast<double>(low);
+			}
 			high = std::min(low * 2, maxBoundary);
 		}
 	}
 	while (high - low > 1) {
 		const uint64_t middle = low + (high - low) / 2;
+		++probes;
 		if (table->hasIntegerKey(middle)) low = middle;
 		else high = middle;
 	}
+	if (work) *work = probes;
 	return static_cast<double>(low);
 }
 

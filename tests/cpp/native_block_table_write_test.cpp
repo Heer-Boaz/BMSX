@@ -181,12 +181,14 @@ void boundaryLengthRetainsNativeFrame(CPU& cpu, Memory& memory) {
 		if (expected == 9007199254740991.0) table->set(valueNumber(expected), valueBool(false));
 		std::array<Value, 7> registers; registers.fill(valueNil());
 		registers[0] = valueTable(table); registers[1] = root;
-		NativeBlockRunState state{.registers = registers.data(), .constants = nullptr, .remainingCycles = 100};
+		const int probeCycles = 3 * (expected == 9007199254740991.0 ? 54 : 105);
+		const int grant = block->terminal.cycles + probeCycles + 1;
+		NativeBlockRunState state{.registers = registers.data(), .constants = nullptr, .remainingCycles = grant};
 		const auto* exit = block->run(state);
 		require(exit == &block->terminal, "table LEN and its suffix stay in one native invocation");
 		require(registers[0] == valueNumber(expected), "native LEN returns F64 without narrowing and supports source aliasing");
 		require(registers[5] == root && registers[6] == root, "live raw references survive the nonallocating length call");
-		require(state.remainingCycles == 100 - block->terminal.cycles, "length search adds no per-probe guest penalty");
+		require(state.remainingCycles == 1, "length search charges its literal logical presence work once");
 	}
 }
 

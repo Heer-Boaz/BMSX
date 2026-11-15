@@ -17,7 +17,7 @@ import {
 } from '../memory/bus_signals';
 import { readLE32 } from '../../common/endian';
 import type { IrqController } from '../devices/irq/controller';
-import { BASE_CYCLES, TABLE_INDEX_VISIT_CYCLES, OPCODE_USES_BX, OPCODE_USES_DISP, OPCODE_RK_OPERANDS, RK_OPERAND_B, RK_OPERAND_C, OpCode, decodeValueCount } from '../../spec/blua32/opcode';
+import { BASE_CYCLES, TABLE_INDEX_VISIT_CYCLES, TABLE_LENGTH_PROBE_CYCLES, OPCODE_USES_BX, OPCODE_USES_DISP, OPCODE_RK_OPERANDS, RK_OPERAND_B, RK_OPERAND_C, OpCode, decodeValueCount } from '../../spec/blua32/opcode';
 import {
 	cop0FieldImplemented,
 	COP0_BAD_ADDRESS,
@@ -120,7 +120,7 @@ import {
 	type StringValue,
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
-import { Table, TableLookupStatus, type TableLookupResult } from './table';
+import { Table, TableLookupStatus, type TableLookupResult, type TableLengthWork } from './table';
 import { Closure, EMPTY_CLOSURE_UPVALUES, type Upvalue } from './closure';
 import { BuiltinArgsView, BuiltinResults, ValueSlots } from './value_slots';
 import {
@@ -314,7 +314,10 @@ export class CPU implements MappedPageInvalidator {
 	private preMaskableInterruptExecutionHookDomainMask: ExecutionDomainMask = 0;
 	private runUntilDepthEntry = this.runUntilDepthNormal;
 	private readonly compiledCodeCache = new CompiledCodeCache();
-	private readonly compiledRunState: CompiledRegionRunState = { remainingCycles: 0, registerTop: 0, memoryAddress: 0 };
+	private readonly tableLengthWork: TableLengthWork = { probes: 0 };
+	private readonly compiledRunState: CompiledRegionRunState = {
+		remainingCycles: 0, registerTop: 0, memoryAddress: 0, lengthWork: this.tableLengthWork,
+	};
 	private readonly registerBuiltinArgsScratch = new ScratchBuffer<BuiltinArgsView>(
 		() => new BuiltinArgsView(),
 		1,
@@ -3271,9 +3274,12 @@ export class CPU implements MappedPageInvalidator {
 							this.setRegisterNumberFast(frame, registers, a, cp);
 							return;
 						}
-						case ValueTag.Table:
-							this.setRegisterNumberFast(frame, registers, a, registers.getTable(b).length());
+						case ValueTag.Table: {
+							const boundary = registers.getTable(b).length(this.tableLengthWork);
+							this.instructionBudgetRemaining -= this.tableLengthWork.probes * TABLE_LENGTH_PROBE_CYCLES;
+							this.setRegisterNumberFast(frame, registers, a, boundary);
 							return;
+						}
 						default:
 							throw new LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
 					}

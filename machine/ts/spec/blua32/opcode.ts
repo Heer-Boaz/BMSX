@@ -70,6 +70,8 @@ export const OPCODE_COUNT = 64;
 // Select the next Table-valued __index target and test its own mapping.
 // This semantic traversal stage does not fetch another instruction.
 export const TABLE_INDEX_VISIT_CYCLES = 4;
+// One logical own-integer presence test; no instruction-supply allowance.
+export const TABLE_LENGTH_PROBE_CYCLES = 3;
 
 export const encodeFixedValueCount = (count: number): number => count + 1;
 

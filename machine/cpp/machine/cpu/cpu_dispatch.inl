@@ -401,7 +401,10 @@ DISPATCH_LABEL(LEN) {
 		DISPATCH_NEXT();
 	}
 	if (valueIsTable(val)) {
-		SET_REGISTER_FAST(a, valueNumber(Table::length(asTable(val))));
+		u32 probes;
+		const double boundary = Table::length(asTable(val), &probes);
+		CYCLES_ADD(static_cast<int>(probes) * TABLE_LENGTH_PROBE_CYCLES);
+		SET_REGISTER_FAST(a, valueNumber(boundary));
 		DISPATCH_NEXT();
 	}
 	throw LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);

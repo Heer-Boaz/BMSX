@@ -201,9 +201,16 @@ void NativeBlockCompiler::emitLength(const DecodedInstruction& instruction, Nati
 	SlowPath slow; slow.exit = exit; slow.registers = registerSnapshot();
 	slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, valueFromTag(ValueTag::Table) >> 48u);
 	loadPayload(instruction.b, SLJIT_R0, SLJIT_R1);
+	sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R1, 0, SLJIT_SP, 0, SLJIT_IMM, NativeBlockAbi::helperResultOffset);
 	emitCallSpills(false);
-	sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS1(F64, P), SLJIT_IMM, SLJIT_FUNC_ADDR(&Table::length));
+	sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS2(F64, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(&Table::length));
 	emitCallSpills(true);
+	// FR0 retains the complete boundary while the scalar logical work reaches
+	// the live budget. The completed LEN segment owns its successor deadline.
+	sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R0, 0,
+		SLJIT_MEM1(SLJIT_SP), NativeBlockAbi::helperResultOffset);
+	sljit_emit_op2(m_compiler, SLJIT_MUL32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, TABLE_LENGTH_PROBE_CYCLES);
+	sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_S4, 0, SLJIT_S4, 0, SLJIT_R0, 0);
 	auto* done = sljit_emit_jump(m_compiler, SLJIT_JUMP);
 	sljit_set_label(string, sljit_emit_label(m_compiler));
 	loadPayload(instruction.b, SLJIT_R1, SLJIT_R0);

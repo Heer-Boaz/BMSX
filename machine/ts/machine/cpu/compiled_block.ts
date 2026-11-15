@@ -193,7 +193,7 @@ const continuationOps = new Uint8Array(256);
 for (const op of [OpCode.GETFIELD, OpCode.SETFIELD, OpCode.SELF, OpCode.GETT, OpCode.SETT, OpCode.GETI, OpCode.SETI,
 	OpCode.SETUP, OpCode.VARARG, OpCode.LOAD_MEM, OpCode.LOAD_MEM_D, OpCode.STORE_MEM, OpCode.STORE_MEM_D,
 	OpCode.STORE_MEM_WORDS, OpCode.STORE_MEM_WORDS_D, OpCode.NEWT, OpCode.CONCAT, OpCode.CONCATN,
-	OpCode.CLOSURE, OpCode.CALL]) continuationOps[op] = 1;
+	OpCode.CLOSURE, OpCode.CALL, OpCode.LEN]) continuationOps[op] = 1;
 
 /** Returning semantic operations have a statically known continuation PC. */
 export function compiledBlockHasContinuation(op: number, field: number): boolean {

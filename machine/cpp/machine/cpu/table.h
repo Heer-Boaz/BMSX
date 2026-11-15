@@ -124,7 +124,7 @@ public:
 	// The caller commits result only when the returned chain status succeeds.
 	static void loadStringIndex(const Table* table, StringId indexKey, StringId key, TableLookupResult& result) noexcept;
 	// Pure boundary search; also the generated-code entry point.
-	static double length(const Table* table) noexcept;
+	static double length(const Table* table, u32* probes = nullptr) noexcept;
 	void clear();
 	// Physical array positions followed by hash nodes, including vacant/dead slots.
 	size_t storedSlotCount() const { return m_array.size() + m_hashSize; }

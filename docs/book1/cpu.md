@@ -993,13 +993,52 @@ A **sequence** has exactly the keys 1 through `n` in this range, with no holes;
 its length is `n`. The empty sequence has length zero regardless of its initial
 capacity. Length does not count all mappings or find the largest numeric key.
 
-A Table with holes can have several valid boundaries; `#t` may select any one
-of them. For example, with keys 1, 3, 4 and 5 present, both 1 and 5 are valid.
+A Table with holes can have several valid boundaries; the search below selects
+one using the Table's saved search seed. For example, with keys 1, 3, 4 and 5 present, both 1 and 5 are valid.
 Deleting key 2 from a sequence of length 5 therefore does not promise length
 1. Restoring key 2 restores the unique boundary 5. Programs that retain holes
 must keep an explicit count or explicit iteration bounds when a particular
 range is required. Repeated length reads without a mutation return the same
 boundary and do not mutate the Table.
+
+The search seed starts at zero on construction or complete storage clearing.
+An ordinary write to an own integer key `k` from `1` through `2147483647`
+updates the seed by at most one: a non-nil write at `seed + 1` increments it;
+a nil write at `seed` decrements it. These updates also apply when an eligible
+integer key is held in hash storage. Other writes leave it unchanged. Storage
+redistribution retains the seed. Weak-entry collection can remove an entry without repairing the seed.
+The seed is therefore a search starting point, not a cached length.
+
+The length search uses these steps, with terminal boundary `M = 2^53 - 1`:
+
+1. Set `low` to the saved seed. If `low` is nonzero, test its own presence.
+   If it is absent, set `high = low`, set `low = 0`, and continue at step 4.
+2. Test the own presence of `low + 1`. If absent, return `low`. Otherwise
+   increment `low` by one and set `high = 2 × low`.
+3. Test the own presence of `high`. While present, assign `low = high`;
+   if `low = M`, return it. Otherwise set `high = min(2 × low, M)` and repeat
+   this step. When `high` is absent, continue at step 4.
+4. While `high - low > 1`, set `middle = low + trunc((high - low) / 2)` and
+   test its own presence. If present, assign `low = middle`; otherwise assign
+   `high = middle`. Return `low` when the interval is adjacent.
+
+Each evaluated own-presence test above counts once, including an absent
+result. Let that count be `P`. A Table `LEN` costs **`3 + 3 × P` cycles**.
+The three-cycle test work does not fetch another instruction and does not
+count hash probes, inherited entries or earlier cache accesses. A String
+`LEN` remains 3 cycles using its stored codepoint count. Examples:
+
+| Table state | `P` | Table `LEN` cost |
+| --- | ---: | ---: |
+| Empty, seed zero | 1 | 6 |
+| Sequence `1…n`, seed `n > 0` | 2 | 9 |
+| Sequence `1…4096` written in descending order, seed 1 | 26 | 81 |
+| All entries weak-cleared while seed remains 1 | 1 | 6 |
+
+The search may cross a display-frame boundary, but completes and publishes
+its result before the next instruction or pending interrupt is accepted.
+Repeated `LEN` does not update the seed. The seed is part of the Table's
+execution state.
 
 #### Metatables and indexed reads {#sec-cpu-metatables-and-indexed-reads}
 
@@ -1434,8 +1473,8 @@ hits, misses or refill intervals. A base charge is fixed for its opcode: prior
 accesses, aliases, module origin and arithmetic special cases do not select a
 different price. Only the additional work and readiness waits specified here
 are added. Ordinary Table lookup has no per-hash-probe surcharge; Table-valued
-`__index` traversal adds the visited-Table work specified above. Table LEN has
-no per-boundary-probe surcharge.
+`__index` traversal adds the visited-Table work specified above. Table LEN adds the logical
+own-presence-test work specified in its length procedure.
 When an instruction starts, PC advances over its complete width
 and its base charge is incurred. Privilege, address alignment and write-ready
 handling occur after that base charge. A blocked store retains that charge;

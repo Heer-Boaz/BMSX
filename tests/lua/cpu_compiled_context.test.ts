@@ -162,7 +162,7 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 	const r = frame.registers, setEncoded = r.setEncoded.bind(r), writes = new Uint32Array(16);
 	r.setEncoded = (index, tag, scalar, reference) => { ++writes[index]; setEncoded(index, tag, scalar, reference); };
 	const block = page.compiledBlocks!.entries[entry]!, run = {
-		remainingCycles: block.region.entries.reduce((cycles, entry) => cycles + entry.terminal.cycles, 0), registerTop: frame.top, memoryAddress: 0,
+		remainingCycles: block.region.entries.reduce((cycles, entry) => cycles + entry.terminal.cycles, 0), registerTop: frame.top, memoryAddress: 0, lengthWork: { probes: 0 },
 	};
 	const exit = block.region.exits[block.region.execute(r, frame.executionImage.constScalars, page, frame, block.entry, run)];
 	assert.equal(exit.nextPc, image.image.functions[0].codeAddress); assert.equal(run.remainingCycles, 0);

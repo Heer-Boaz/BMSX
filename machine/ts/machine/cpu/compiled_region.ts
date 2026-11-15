@@ -1,3 +1,5 @@
+import { OpCode } from '../../spec/blua32/opcode';
+import type { TableLengthWork } from './table';
 import { valueFromNumber } from './value';
 import type { ValueSlots } from './value_slots';
 import type { CallFrame } from './call_state';
@@ -10,7 +12,7 @@ import { luaPow } from '../../spec/blua32/pow';
 import { CompiledBlockExit, emitJavaScriptBlock, finishJavaScriptBlock,
 	type CompiledBlock, type CompiledBlockExitSite, type CompiledBlockSource } from './compiled_block';
 
-export type CompiledRegionRunState = { remainingCycles: number; registerTop: number; memoryAddress: number };
+export type CompiledRegionRunState = { remainingCycles: number; registerTop: number; memoryAddress: number; lengthWork: TableLengthWork };
 type RegionBody = (registers: ValueSlots, constants: Float64Array, page: DecodedInstructionPage,
 	frame: CallFrame, entry: number, state: CompiledRegionRunState) => number;
 
@@ -79,9 +81,13 @@ export function compileJavaScriptRegion(page: DecodedInstructionPage, plans: rea
 			const exit = block.terminal;
 			const top = exit.resetsRegisterTop ? `top=Math.max(frame.top,${exit.registerTop});`
 				: exit.registerTop === 0 ? '' : `if(top<${exit.registerTop})top=${exit.registerTop};`;
-			// A linear span is admitted as one bounded segment. A successful
-			// helper fast path needs neither another budget test nor a switch jump.
-			source.push(`case ${index}:{${block.body}\nbudget-=${exit.cycles};${top}}`);
+			// Fixed helper spans retain their initial admission. LEN adds dynamic
+			// work, so its completed result must re-admit the next fixed prefix.
+			const required = admissionVarargs[index + 1] === 0 ? `${admissionCycles[index + 1]}`
+				: `${admissionCycles[index + 1]}+${admissionVarargs[index + 1]}*frame.varargCount`;
+			const frontier = page.ops[block.finalWord] === OpCode.LEN
+				? `if(budget-${exit.cycles}<=${required}){${block.registers.writeResidents()}exit=${block.terminalIndex};break region;}` : '';
+			source.push(`case ${index}:{${block.body}\n${frontier}budget-=${exit.cycles};${top}}`);
 		} else source.push(`case ${index}:{${block.body}\n${finishJavaScriptBlock(page, block, index => transfer(block, index))}}`);
 	}
 	source.push('}}const e=x[exit];state.remainingCycles=budget-e.cycles;',

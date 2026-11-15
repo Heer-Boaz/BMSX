@@ -29,6 +29,8 @@ const EMPTY_TABLE_HASH_NEXT = new Int32Array(0);
 export const TABLE_INDEX_CHAIN_LIMIT = 32;
 export const TABLE_STORE_REQUIRES_GROWTH = -2;
 
+export type TableLengthWork = { probes: number };
+
 export const enum TableLookupStatus { Resolved, ChainExhausted }
 
 // Raw result storage belongs to the CPU scratch owner, not a guest allocation.
@@ -1393,28 +1395,40 @@ export class Table {
 		}
 	}
 
-	public length(): number {
+	public length(work?: TableLengthWork): number {
 		const maxBoundary = 0x1fffffffffffff;
 		let low = this.lengthHint;
 		let high: number;
+		let probes = low === 0 ? 0 : 1;
 		if (low !== 0 && !this.hasIntegerKey(low)) {
 			high = low;
 			low = 0;
 		} else {
-			if (!this.hasIntegerKey(low + 1)) return low;
+			probes += 1;
+			if (!this.hasIntegerKey(low + 1)) {
+				if (work) work.probes = probes;
+				return low;
+			}
 			low += 1;
 			high = low * 2;
-			while (this.hasIntegerKey(high)) {
+			for (;;) {
+				probes += 1;
+				if (!this.hasIntegerKey(high)) break;
 				low = high;
-				if (low === maxBoundary) return low;
+				if (low === maxBoundary) {
+					if (work) work.probes = probes;
+					return low;
+				}
 				high = Math.min(low * 2, maxBoundary);
 			}
 		}
 		while (high - low > 1) {
 			const middle = low + Math.trunc((high - low) / 2);
+			probes += 1;
 			if (this.hasIntegerKey(middle)) low = middle;
 			else high = middle;
 		}
+		if (work) work.probes = probes;
 		return low;
 	}
 }

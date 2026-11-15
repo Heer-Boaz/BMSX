@@ -274,7 +274,7 @@ inline constexpr bool nativeBlockHasContinuation(u8 op, int field) {
 		case OpCode::STORE_MEM: case OpCode::STORE_MEM_D:
 		case OpCode::STORE_MEM_WORDS: case OpCode::STORE_MEM_WORDS_D:
 		case OpCode::NEWT: case OpCode::CONCAT: case OpCode::CONCATN:
-		case OpCode::CLOSURE: case OpCode::CALL:
+		case OpCode::CLOSURE: case OpCode::CALL: case OpCode::LEN:
 			return true;
 		case OpCode::MTC0: return field == COP0_STATUS;
 		default: return false;
