@@ -813,6 +813,19 @@ if(BMSX_BUILD_TESTS)
 		target_include_directories(bmsx_libretro_host_audio_queue_tests PRIVATE ${BMSX_LIBRETRO_HOST_DIR})
 		target_link_libraries(bmsx_libretro_host_audio_queue_tests PRIVATE pthread)
 		add_test(NAME bmsx_libretro_host_audio_queue_tests COMMAND bmsx_libretro_host_audio_queue_tests)
+		if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+			add_executable(bmsx_libretro_host_audio_output_tests
+				${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_audio_output_test.c
+				${BMSX_LIBRETRO_HOST_DIR}/audio_output.c
+				${BMSX_LIBRETRO_HOST_DIR}/audio_queue.c
+				${BMSX_LIBRETRO_HOST_DIR}/host_fatal.c
+			)
+			target_include_directories(bmsx_libretro_host_audio_output_tests PRIVATE ${BMSX_LIBRETRO_HOST_DIR})
+			target_link_libraries(bmsx_libretro_host_audio_output_tests PRIVATE pthread)
+			target_link_options(bmsx_libretro_host_audio_output_tests PRIVATE
+				-Wl,--wrap=open -Wl,--wrap=ioctl -Wl,--wrap=close -Wl,--wrap=pthread_setschedparam)
+			add_test(NAME bmsx_libretro_host_audio_output_tests COMMAND bmsx_libretro_host_audio_output_tests)
+		endif()
 	endif()
 	add_executable(bmsx_gx_gte_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gx_gte_test.cpp
