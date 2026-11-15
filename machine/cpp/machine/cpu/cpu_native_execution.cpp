@@ -60,6 +60,9 @@ NativeBuiltinCallOutcome CPU::runNativeBuiltinLeaf(CPU* owner, const NativeBlock
 
 NativeBuiltinCallOutcome CPU::tryRunNativeBuiltinLeaf(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept {
 	auto& cpu = *run->cpu;
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	++cpu.m_nativeGateProfile.builtinAttempts;
+#endif
 	auto& state = run->state;
 	CallFrame& frame = *state.frame;
 	const int base = exit->exitA;
@@ -68,7 +71,12 @@ NativeBuiltinCallOutcome CPU::tryRunNativeBuiltinLeaf(NativeCpuRunState* run, co
 	BuiltinFunction& function = *asBuiltinFunction(state.registers[base]);
 	NativeBuiltinCallState call{{args[0], args[1]}, state.remainingCycles, state.registerTop};
 	const auto outcome = runNativeBuiltinLeaf(&cpu, exit, &call, &function);
-	if (outcome == NativeBuiltinCallOutcome::Declined) return outcome;
+	if (outcome == NativeBuiltinCallOutcome::Declined) {
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		++cpu.m_nativeGateProfile.builtinDeclines;
+#endif
+		return outcome;
+	}
 
 	// The materialized gate owns publication. Inline body calls instead retain
 	// their live cache until an ordinary instruction boundary needs the bank.
@@ -83,14 +91,28 @@ NativeBuiltinCallOutcome CPU::tryRunNativeBuiltinLeaf(NativeCpuRunState* run, co
 	state.remainingCycles = call.remainingCycles;
 	state.registerTop = call.registerTop;
 	if (outcome == NativeBuiltinCallOutcome::CompletedStop
-		|| static_cast<int>(cpu.m_activeThread->frameDepth) <= run->targetDepth)
+		|| static_cast<int>(cpu.m_activeThread->frameDepth) <= run->targetDepth) {
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		++cpu.m_nativeGateProfile.builtinStops;
+#endif
 		return NativeBuiltinCallOutcome::CompletedStop;
+	}
 	void* const* const continuation = exit->continuationCells[run->cartridgeSlot];
-	return continuation && *continuation ? NativeBuiltinCallOutcome::CompletedResume : NativeBuiltinCallOutcome::CompletedStop;
+	const auto completion = continuation && *continuation
+		? NativeBuiltinCallOutcome::CompletedResume : NativeBuiltinCallOutcome::CompletedStop;
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	if (completion == NativeBuiltinCallOutcome::CompletedResume) ++cpu.m_nativeGateProfile.builtinResumes;
+	else ++cpu.m_nativeGateProfile.builtinStops;
+#endif
+	return completion;
 }
 
 void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept {
 	auto& cpu = *run->cpu;
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	auto& gateProfile = cpu.m_nativeGateProfile.exits[static_cast<size_t>(exit->exit)];
+	++gateProfile.entries;
+#endif
 	auto& state = run->state;
 	CallFrame* frame = state.frame;
 	if (exit->exit == NativeBlockExit::ScalarBoundary) {
@@ -98,6 +120,9 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		frame->pc = state.scalarPc;
 		frame->top = state.registerTop;
 		run->forceScalar = true;
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		++gateProfile.returns;
+#endif
 		return nullptr;
 	}
 	// Publish the complete native prefix before allocating, touching a device,
@@ -202,11 +227,21 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			&& (cpu.m_hardHalted || cpu.m_yieldRequested || cpu.m_threadSwitchRequested || cpu.m_memoryWriteBlocked
 				|| cpu.m_nonMaskableInterruptPending
 				|| ((cpu.m_cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
-					&& cpu.m_irqController.hasAssertedMaskableInterruptLine()))) return nullptr;
+					&& cpu.m_irqController.hasAssertedMaskableInterruptLine()))) {
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+			++gateProfile.returns;
+#endif
+			return nullptr;
+		}
 		const auto& thread = *cpu.m_activeThread;
 		if (static_cast<int>(thread.frameDepth) <= run->targetDepth || cpu.instructionBudgetRemaining <= 0
 			|| (cpu.m_haltedUntilIrqThread == cpu.m_activeThread
-				&& cpu.m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth))) return nullptr;
+				&& cpu.m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth))) {
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+			++gateProfile.returns;
+#endif
+			return nullptr;
+		}
 		frame = thread.currentFrame;
 		if (transition == NativeBlockTransition::NextInstruction && continuation) {
 			// These helpers neither change frames nor operate a device. Keep the
@@ -214,20 +249,44 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			state.registers = frame->registers;
 			state.remainingCycles = cpu.instructionBudgetRemaining;
 			state.registerTop = frame->top;
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+			if (*continuation) ++gateProfile.resumes;
+			else ++gateProfile.returns;
+#endif
 			return *continuation;
 		}
 		// CALL/RET have already committed the real activation. Rebind its image
 		// and instruction chip-select before looking up a warm receiving body.
 		if (frame->executionImage != cpu.m_activeExecutionImage) cpu.latchActiveExecutionImage(*frame->executionImage);
 		const u32 pc = frame->pc;
-		if ((pc & (INSTRUCTION_BYTES - 1u)) != 0u) return nullptr;
+		if ((pc & (INSTRUCTION_BYTES - 1u)) != 0u) {
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+			++gateProfile.returns;
+#endif
+			return nullptr;
+		}
 		const auto& lookup = frame->executionImage->nativeCodeLookup;
-		if (!lookup) return nullptr;
+		if (!lookup) {
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+			++gateProfile.returns;
+#endif
+			return nullptr;
+		}
 		const u32 slot = cpu.m_memory.cartridgeController().selectedSlot(cpu.m_executionBusSignals);
 		auto* page = lookup->find(pc, slot);
-		if (!page || !page->nativeBlocks) return nullptr;
+		if (!page || !page->nativeBlocks) {
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+			++gateProfile.returns;
+#endif
+			return nullptr;
+		}
 		auto* target = page->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
-		if (!target) return nullptr;
+		if (!target) {
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+			++gateProfile.returns;
+#endif
+			return nullptr;
+		}
 		// Every helper can change socket selection, even without changing the
 		// frame/image. Bind the live physical bank again before native dispatch.
 		run->codeRoot = lookup->root(slot);
@@ -251,11 +310,18 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		}
 		state.remainingCycles = cpu.instructionBudgetRemaining;
 		state.registerTop = frame->top;
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		++gateProfile.resumes;
+#endif
 		return target->m_body;
 	} catch (...) {
 		// Generated frames have no C++ unwind metadata. Preserve the actual
 		// exception and rethrow only after the gate restores the registered caller.
 		run->error = std::current_exception();
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		++gateProfile.exceptions;
+		++gateProfile.returns;
+#endif
 		return nullptr;
 	}
 }

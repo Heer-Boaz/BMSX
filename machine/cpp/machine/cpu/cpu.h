@@ -33,12 +33,17 @@
 #include "machine/cpu/snapshot.h"
 #include "spec/blua32/memory_access_kind.h"
 #include "spec/blua32/execution_domain.h"
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE)
 #include "machine/cpu/diagnostic_gc_profile.h"
+#endif
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 #include "machine/cpu/diagnostic_execution_profile.h"
 #endif
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 #include "machine/cpu/native_compilation_profile.h"
+#endif
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+#include "machine/cpu/native_gate_profile.h"
 #endif
 
 namespace bmsx {
@@ -284,9 +289,14 @@ public:
 	const StringPool& stringPool() const { return m_stringPool; }
 	LuaHeap& luaHeap() { return m_luaHeap; }
 	const LuaHeap& luaHeap() const { return m_luaHeap; }
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE)
 	const DiagnosticGcProfile& diagnosticGcProfile() const { return m_diagnosticGcProfile; }
+#endif
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	const DiagnosticExecutionProfile& diagnosticExecutionProfile() const { return m_diagnosticExecutionProfile; }
+#endif
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const NativeGateProfile& nativeGateProfile() const { return m_nativeGateProfile; }
 #endif
 	Memory& memory() { return m_memory; }
 	const Memory& memory() const { return m_memory; }
@@ -650,9 +660,14 @@ private:
 	std::vector<Value> m_globalValues;
 	std::unordered_map<StringId, size_t> m_globalSlotByKey;
 	Table* m_stringIndexTable = nullptr;
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE)
 	DiagnosticGcProfile m_diagnosticGcProfile;
+#endif
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	DiagnosticExecutionProfile m_diagnosticExecutionProfile;
+#endif
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	NativeGateProfile m_nativeGateProfile;
 #endif
 };
 

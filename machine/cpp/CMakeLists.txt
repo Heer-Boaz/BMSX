@@ -18,6 +18,7 @@ option(BMSX_ENABLE_LTO "Enable Link Time Optimization" OFF)
 option(BMSX_ENABLE_NATIVE_BLOCKS "Generate native CPU blocks with precise side exits" ON)
 option(BMSX_NATIVE_COMPILER_WORKER "Compile native regions on a bounded background worker" OFF)
 option(BMSX_NATIVE_PERF_MAP "Publish generated native-code symbols to Linux perf maps" OFF)
+option(BMSX_NATIVE_GATE_PROFILE "Report materialized native C++ gate transitions per libretro run" OFF)
 option(BMSX_DIAGNOSTIC_CPU_SLICES "Measure CPU-run consumption and GC phases in diagnostic builds" OFF)
 option(BMSX_ENABLE_ZLIB "Enable PNG screenshot output" ON)
 set(BMSX_ENABLE_GLES2_DEFAULT ON)
@@ -27,6 +28,9 @@ option(BMSX_ENABLE_GLES2 "Enable OpenGLES2 backend" ${BMSX_ENABLE_GLES2_DEFAULT}
 option(BMSX_GLES2_SOFTWARE_GX "Exact software GX and scanout with GLES2 postprocessing" OFF)
 if(BMSX_NATIVE_PERF_MAP AND (NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR NOT BMSX_ENABLE_NATIVE_BLOCKS))
 	message(FATAL_ERROR "BMSX_NATIVE_PERF_MAP requires Linux and native CPU blocks")
+endif()
+if(BMSX_NATIVE_GATE_PROFILE AND (NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR NOT BMSX_ENABLE_NATIVE_BLOCKS))
+	message(FATAL_ERROR "BMSX_NATIVE_GATE_PROFILE requires Linux and native CPU blocks")
 endif()
 if(BMSX_GLES2_SOFTWARE_GX AND NOT BMSX_ENABLE_GLES2)
 	message(FATAL_ERROR "BMSX_GLES2_SOFTWARE_GX requires BMSX_ENABLE_GLES2")
@@ -351,6 +355,9 @@ target_link_libraries(bmsx_core PUBLIC bmsx_binary_codec)
 if(BMSX_DIAGNOSTIC_CPU_SLICES)
 	target_compile_definitions(bmsx_core PUBLIC BMSX_DIAGNOSTIC_CPU_SLICES=1)
 endif()
+if(BMSX_NATIVE_GATE_PROFILE)
+	target_compile_definitions(bmsx_core PUBLIC BMSX_NATIVE_GATE_PROFILE=1)
+endif()
 
 if(BMSX_ENABLE_NATIVE_BLOCKS)
 	add_library(bmsx_sljit STATIC ../../third_party/sljit/sljit_src/sljitLir.c)
@@ -539,6 +546,9 @@ set(BMSX_LIBRETRO_CORE_SOURCES
 	${BMSX_LIBRETRO_DIR}/host_shortcuts.c
 	${BMSX_LIBRETRO_DIR}/video_output.cpp
 )
+if(BMSX_NATIVE_GATE_PROFILE)
+	list(APPEND BMSX_LIBRETRO_CORE_SOURCES ${BMSX_LIBRETRO_DIR}/native_gate_profile.cpp)
+endif()
 
 if(BMSX_ENABLE_GLES2)
 	list(APPEND BMSX_LIBRETRO_CORE_SOURCES ${BMSX_LIBRETRO_DIR}/gles_frame_worker.cpp)
@@ -1233,6 +1243,13 @@ if(BMSX_BUILD_TESTS)
 	)
 	target_link_libraries(bmsx_cpu_decoded_operand_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_decoded_operand_tests COMMAND bmsx_cpu_decoded_operand_tests)
+	add_executable(bmsx_cpu_native_gate_profile_tests
+		../../tests/cpp/cpu_native_gate_profile_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu_native_gate_profile_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	if(BMSX_ENABLE_NATIVE_BLOCKS)
+		target_link_libraries(bmsx_cpu_native_gate_profile_tests PRIVATE bmsx_sljit)
+	endif()
+	add_test(NAME bmsx_cpu_native_gate_profile_tests COMMAND bmsx_cpu_native_gate_profile_tests)
 
 	add_executable(bmsx_cpu_throughput_benchmark
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/cpu_throughput_benchmark.cpp
@@ -1349,6 +1366,18 @@ if(BMSX_BUILD_TESTS)
 		${BMSX_LIBRETRO_DIR}
 	)
 	add_test(NAME bmsx_libretro_environment_tests COMMAND bmsx_libretro_environment_tests)
+	if(BMSX_NATIVE_GATE_PROFILE)
+		add_executable(bmsx_libretro_native_gate_profile_tests
+			../../tests/cpp/libretro_native_gate_profile_test.cpp
+			../../tests/cpp/support/boot_rom_fixture.cpp
+			${BMSX_TEST_ROM_SOURCE}
+			${BMSX_LIBRETRO_DIR}/entry.cpp
+			${BMSX_LIBRETRO_CORE_SOURCES})
+		target_link_libraries(bmsx_libretro_native_gate_profile_tests PRIVATE bmsx_host_support bmsx_blua32_tooling)
+		target_include_directories(bmsx_libretro_native_gate_profile_tests PRIVATE ${BMSX_LIBRETRO_DIR})
+		target_link_options(bmsx_libretro_native_gate_profile_tests PRIVATE LINKER:--wrap=clock_gettime)
+		add_test(NAME bmsx_libretro_native_gate_profile_tests COMMAND bmsx_libretro_native_gate_profile_tests)
+	endif()
 
 	add_executable(bmsx_cartridge_conformance_runner
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/cartridge_conformance_runner.cpp

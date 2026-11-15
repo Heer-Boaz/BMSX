@@ -20,7 +20,7 @@
 #include <cctype>
 #include <stdexcept>
 #include <unordered_set>
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE)
 #include <chrono>
 #endif
 
@@ -29,7 +29,7 @@ namespace bmsx {
 // start repeated-sequence-acceptable -- CPU interpreter hot paths keep duplicated opcode/register statements inline.
 
 namespace {
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE)
 using GcProfileClock = std::chrono::steady_clock;
 
 // Both enclosing and phase intervals close during exception unwinding, so
@@ -328,7 +328,7 @@ size_t GcHeap::collect(
 	Value root1,
 	Value root2
 ) {
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE)
 	GcPhaseMeasurement measurement(m_cpu.m_diagnosticGcProfile.rootsNanoseconds);
 #endif
 	m_weakTables.clear();
@@ -340,21 +340,21 @@ size_t GcHeap::collect(
 	markValue(root0);
 	markValue(root1);
 	markValue(root2);
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE)
 	measurement.phase(m_cpu.m_diagnosticGcProfile.traceNanoseconds);
 #endif
 	trace();
 	convergeEphemerons();
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE)
 	measurement.phase(m_cpu.m_diagnosticGcProfile.weakNanoseconds);
 #endif
 	clearWeakTables();
 	m_cpu.pruneStaticClosures();
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE)
 	measurement.phase(m_cpu.m_diagnosticGcProfile.sweepNanoseconds);
 #endif
 	const size_t liveBytes = sweep();
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE)
 	measurement.phase(m_cpu.m_diagnosticGcProfile.stringReclaimNanoseconds);
 #endif
 	m_stringPool.reclaimUnreachable();
@@ -2867,7 +2867,7 @@ void CPU::collectHeap() {
 }
 
 void CPU::collectHeap(Value root0, Value root1, Value root2) {
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE)
 	GcPhaseMeasurement measurement(m_diagnosticGcProfile.totalNanoseconds);
 	++m_diagnosticGcProfile.collections;
 #endif

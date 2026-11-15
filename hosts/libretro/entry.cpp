@@ -24,6 +24,9 @@
 #include "bmsx_libretro.h"
 #include "content.h"
 #include "host_frame.h"
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+#include "native_gate_profile.h"
+#endif
 #if BMSX_ENABLE_GLES2
 #include "gles_frame_worker.h"
 #endif
@@ -1285,6 +1288,9 @@ static void lose_hardware_context() {
  */
 
 void retro_init(void) {
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	bmsx::resetLibretroNativeGateProfile();
+#endif
 	logging.log(RETRO_LOG_INFO, "[BMSX] retro_init\n");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	BmsxNativeCompilationProfileInterface nativeCompilationProfile{read_native_compilation_profile};
@@ -1614,6 +1620,10 @@ void retro_reset(void) {
 }
 
 void retro_run(void) {
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	bmsx::NativeGateProfileFrame gateProfile(
+		g_content ? &g_content->runtime.machine.cpu : nullptr, logging.log);
+#endif
 	// Libretro video notifications belong to retro_run. Publishing a change that
 	// was queued by reset/state work first lets a synchronous frontend context
 	// reset enter the lifecycle switch below in this same frame.
