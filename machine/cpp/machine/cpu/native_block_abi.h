@@ -55,7 +55,7 @@ public:
 	void* equalValues;
 
 private:
-	sljit_label* emitCallGate(sljit_compiler* compiler, sljit_label* coldDispatch);
+	sljit_label* emitCallGate(sljit_compiler* compiler, sljit_label* coldDispatch, sljit_label* returnToCpp);
 	sljit_label* emitReturnGate(sljit_compiler* compiler, sljit_label* coldDispatch);
 	sljit_label* emitEqualityGate(sljit_compiler* compiler);
 };

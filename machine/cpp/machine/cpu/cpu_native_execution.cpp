@@ -25,6 +25,48 @@ CPU::NativeFrameOffsets CPU::nativeFrameOffsets() {
 #include "machine/cpu/cpu_memory.inl"
 #include "machine/cpu/cpu_strings.inl"
 
+NativeBuiltinCallOutcome CPU::tryRunNativeBuiltinLeaf(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept {
+	auto& cpu = *run->cpu;
+	auto& state = run->state;
+	CallFrame& frame = *state.frame;
+	const int base = exit->exitA;
+	const int resultOperand = exit->exitC;
+	if (static_cast<u32>(resultOperand) > 2u) return NativeBuiltinCallOutcome::Declined;
+	const int receiving = resultOperand == 1 ? 0 : 1;
+	if (receiving != 0 && base >= frame.stackCapacity) return NativeBuiltinCallOutcome::Declined;
+	const int argumentCount = decodeValueCount(exit->exitB, std::max(state.registerTop - base - 1, 0));
+	const BuiltinArgsView args(state.registers + base + 1, static_cast<size_t>(argumentCount));
+	BuiltinFunction& function = *asBuiltinFunction(state.registers[base]);
+	Value result;
+	if (!cpu.executeBuiltinLeaf(function.id, args, result)) return NativeBuiltinCallOutcome::Declined;
+
+	// This is a completed CALL, not a callee admission. Primitive work and its
+	// receiving range finish atomically even after CALL6 exhausted the grant.
+	if (receiving != 0) frame.registers[base] = result;
+	frame.top = base + receiving;
+	frame.pc = exit->nextPc;
+	frame.compilationEntry = true;
+	cpu.m_currentInstructionPc = exit->currentPc;
+	cpu.m_lastExecutionDomainId = frame.executionImage->executionDomainId;
+	cpu.lastPc = exit->lastPc;
+	cpu.instructionBudgetRemaining = state.remainingCycles - static_cast<int>(function.cycleBase) - receiving;
+	state.remainingCycles = cpu.instructionBudgetRemaining;
+	state.registerTop = frame.top;
+	if (cpu.m_hardHalted || cpu.m_yieldRequested || cpu.m_threadSwitchRequested || cpu.m_memoryWriteBlocked
+		|| cpu.m_nonMaskableInterruptPending
+		|| ((cpu.m_cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
+			&& cpu.m_irqController.hasAssertedMaskableInterruptLine())
+		|| static_cast<int>(cpu.m_activeThread->frameDepth) <= run->targetDepth || cpu.instructionBudgetRemaining <= 0
+		|| (cpu.m_haltedUntilIrqThread == cpu.m_activeThread
+			&& cpu.m_haltedUntilIrqFrameDepth == static_cast<int>(cpu.m_activeThread->frameDepth))) {
+		return NativeBuiltinCallOutcome::CompletedStop;
+	}
+	// No allocation, device access or frame transition can retire this source
+	// or change its image/bank. Read the image-owned cell after the primitive.
+	void* const* const continuation = exit->continuationCells[run->cartridgeSlot];
+	return continuation && *continuation ? NativeBuiltinCallOutcome::CompletedResume : NativeBuiltinCallOutcome::CompletedStop;
+}
+
 void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept {
 	auto& cpu = *run->cpu;
 	auto& state = run->state;

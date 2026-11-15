@@ -47,7 +47,7 @@ NativeBlockGate::NativeBlockGate() {
 	sljit_set_label(sljit_emit_jump(compiler, SLJIT_JUMP), resumeLabel);
 	auto* returnGateLabel = emitReturnGate(compiler, coldDispatchLabel);
 	sljit_set_label(ordinaryReturn, returnGateLabel);
-	auto* callGateLabel = emitCallGate(compiler, coldDispatchLabel);
+	auto* callGateLabel = emitCallGate(compiler, coldDispatchLabel, returnLabel);
 	sljit_set_label(ordinaryCall, callGateLabel);
 	auto* equalityLabel = emitEqualityGate(compiler);
 

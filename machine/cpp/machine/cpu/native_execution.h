@@ -8,6 +8,14 @@
 
 namespace bmsx {
 
+// A leaf builtin either leaves CALL untouched for its ordinary semantic path,
+// or completes it once before deciding whether its receiving body may run.
+enum class NativeBuiltinCallOutcome : u32 {
+	Declined,
+	CompletedStop,
+	CompletedResume,
+};
+
 // A CPU grant owns this transient native frame. The register/cycle prefix is
 // shared with the standalone block ABI; only the CPU dispatcher uses the tail.
 struct NativeCpuRunState {

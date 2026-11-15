@@ -269,6 +269,7 @@ add_library(bmsx_core STATIC
 	machine/devices/audio/save_state.cpp
 
 	machine/cpu/cpu.cpp
+	machine/cpu/cpu_builtins_leaf.cpp
 	machine/cpu/cpu_decode.cpp
 	machine/cpu/thread.cpp
 	machine/cpu/snapshot.cpp
@@ -1134,6 +1135,12 @@ if(BMSX_BUILD_TESTS)
 	add_executable(bmsx_cpu_compiled_calls_tests ../../tests/cpp/cpu_compiled_calls_test.cpp ${BMSX_TEST_ROM_SOURCE})
 	target_link_libraries(bmsx_cpu_compiled_calls_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_compiled_calls_tests COMMAND bmsx_cpu_compiled_calls_tests)
+	add_executable(bmsx_cpu_native_builtin_leaf_tests ../../tests/cpp/cpu_native_builtin_leaf_test.cpp ${BMSX_TEST_ROM_SOURCE})
+	target_link_libraries(bmsx_cpu_native_builtin_leaf_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	if(BMSX_ENABLE_NATIVE_BLOCKS)
+		target_link_libraries(bmsx_cpu_native_builtin_leaf_tests PRIVATE bmsx_sljit)
+	endif()
+	add_test(NAME bmsx_cpu_native_builtin_leaf_tests COMMAND bmsx_cpu_native_builtin_leaf_tests)
 	add_executable(bmsx_cpu_cross_image_resume_tests ../../tests/cpp/cpu_cross_image_resume_test.cpp ${BMSX_TEST_ROM_SOURCE})
 	target_link_libraries(bmsx_cpu_cross_image_resume_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	if(BMSX_ENABLE_NATIVE_BLOCKS)

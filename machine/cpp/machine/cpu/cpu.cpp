@@ -1670,11 +1670,13 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			out.push_back(valueString(m_stringPool.intern(valueTypeNameForLua(args[0]))));
 			break;
 		case BuiltinFunctionId::SetMetatable:
-			runBuiltinSetMetatable(args, out);
-			break;
 		case BuiltinFunctionId::GetMetatable:
-			runBuiltinGetMetatable(args, out);
+		case BuiltinFunctionId::StringByte: {
+			Value result;
+			if (!executeBuiltinLeaf(fn.id, args, result)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			out.push_back(result);
 			break;
+		}
 		case BuiltinFunctionId::RawGet:
 			runBuiltinRawGet(args, out);
 			break;
@@ -1721,9 +1723,6 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			else out.push_back(upvalue->open ? upvalue->frame->registers[upvalue->index] : upvalue->value);
 			break;
 		}
-		case BuiltinFunctionId::StringByte:
-			runBuiltinStringByte(args, out);
-			break;
 		case BuiltinFunctionId::StringChar:
 			runBuiltinStringChar(args, out);
 			break;
@@ -2104,32 +2103,6 @@ void CPU::runBuiltinNextValue(Value target, Value key, BuiltinResults& out) {
 	if (!isNil(nextKey)) out.push_back(nextValue);
 }
 
-void CPU::runBuiltinSetMetatable(BuiltinArgsView args, BuiltinResults& out) {
-	const Value target = args[0];
-	if (!valueIsTable(target)) {
-		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-	}
-	const Value metatableValue = args[1];
-	Table* metatable = nullptr;
-	if (valueIsTable(metatableValue)) {
-		metatable = asTable(metatableValue);
-	} else if (!isNil(metatableValue)) {
-		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-	}
-	Table* table = asTable(target);
-	table->metatable = metatable;
-	out.push_back(target);
-}
-
-void CPU::runBuiltinGetMetatable(BuiltinArgsView args, BuiltinResults& out) {
-	const Value target = args[0];
-	if (!valueIsTable(target)) {
-		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-	}
-	Table* metatable = asTable(target)->metatable;
-	out.push_back(metatable ? valueTable(metatable) : valueNil());
-}
-
 void CPU::runBuiltinRawGet(BuiltinArgsView args, BuiltinResults& out) {
 	const Value target = args[0];
 	if (!valueIsTable(target)) {
@@ -2172,31 +2145,6 @@ void CPU::runBuiltinSelect(BuiltinArgsView args, BuiltinResults& out, int result
 	for (int index = 0; index < produced; ++index) {
 		out.push_back(args[static_cast<size_t>(start + index)]);
 	}
-}
-
-void CPU::runBuiltinStringByte(BuiltinArgsView args, BuiltinResults& out) {
-	const Value sourceValue = args[0];
-	if (!valueIsString(sourceValue)) {
-		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-	}
-	const StringId sourceId = asStringId(sourceValue);
-	int position = 1;
-	if (args.size() > 1) {
-		const Value positionValue = args[1];
-		if (!isNil(positionValue)) {
-			if (!valueIsNumber(positionValue)) {
-				throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			}
-			position = toI32(positionValue);
-		}
-	}
-	if (position < 1 || position > m_stringPool.codepointCount(sourceId)) {
-		out.push_back(valueNil());
-		return;
-	}
-	out.push_back(valueNumber(static_cast<double>(
-		m_stringPool.codepointAt(sourceId, static_cast<size_t>(position - 1))
-	)));
 }
 
 void CPU::runBuiltinStringChar(BuiltinArgsView args, BuiltinResults& out) {

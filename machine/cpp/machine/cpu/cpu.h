@@ -45,6 +45,9 @@ namespace bmsx {
 
 class CPU;
 class NativeCompilerWorker;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+enum class NativeBuiltinCallOutcome : u32;
+#endif
 struct NativeCompilationSource;
 class GcHeap;
 class IrqController;
@@ -402,12 +405,10 @@ private:
 	void runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, int callBase, int returnCount, int argCount);
 	void callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, BuiltinResults& out, int resultLimit);
 	void runBuiltinNextValue(Value target, Value key, BuiltinResults& out);
-	void runBuiltinSetMetatable(BuiltinArgsView args, BuiltinResults& out);
-	void runBuiltinGetMetatable(BuiltinArgsView args, BuiltinResults& out);
+	bool executeBuiltinLeaf(BuiltinFunctionId id, BuiltinArgsView args, Value& result) noexcept;
 	void runBuiltinRawGet(BuiltinArgsView args, BuiltinResults& out);
 	void runBuiltinRawSet(BuiltinArgsView args, BuiltinResults& out);
 	void runBuiltinSelect(BuiltinArgsView args, BuiltinResults& out, int resultLimit);
-	void runBuiltinStringByte(BuiltinArgsView args, BuiltinResults& out);
 	void runBuiltinStringChar(BuiltinArgsView args, BuiltinResults& out);
 	void runBuiltinError(BuiltinArgsView args);
 	void startProtectedCall(BuiltinFunctionId id, CallFrame& caller, int callBase, int returnCount,
@@ -529,6 +530,7 @@ private:
 	struct NativeFrameOffsets { size_t haltedThread, haltedDepth, activeImage; };
 	static NativeFrameOffsets nativeFrameOffsets();
 	static void* dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept;
+	static NativeBuiltinCallOutcome tryRunNativeBuiltinLeaf(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept;
 	void prepareNativeBlock(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pc, MappedBusSignals busSignals);
 	void prepareNativeImageCode(Blua32ExecutionImage& image, const Blua32ExecutionBoot& boot);
 	void discoverNativeSource(NativeCompilationSource& source, std::vector<u32>* outgoing);
