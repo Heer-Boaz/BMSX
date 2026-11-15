@@ -147,7 +147,7 @@ VRAM-leesfunctie uit de console moet verdwijnen.
 | GPU-uitvoeringstijd | Geheugenplanning en zichtbare commandovoltooiing verenigen | Fysieke architectuur of mogelijke timingwijziging; niet goedgekeurd |
 | GPU-texturecoherentie | Automatische zichtbaarheid van iedere VRAM-write is geen behoudseis | Texturecache of expliciete textureopslag, capaciteit en laad-/invalidatieregels |
 | GPU-readback | Eenvoudig geordend leespad beoordelen; dubbele context-snapshots niet verplicht | Functieomvang, wachttijd en afhandeling bij contextovername |
-| CPU-timing | Werk- en geheugenafhankelijke fysieke timing goedgekeurd, met C++-/assemblyachtige prestatie-intentie voor normaal BLua-gebruik | Concrete instructieduur, implementatie en gevolgen voor devicevolgorde en compatibiliteit |
+| CPU-timing | Vaste nominale werkklassen met expliciete volumekosten als proef, met C++-/assemblyachtige prestatie-intentie voor normaal BLua-gebruik | Spelvalidatie en beoordeling van de proef; fysieke CPU en kwalificatie blijven afzonderlijk |
 | CPU-taalopslag | Eén fysiek runtimebudget inclusief globals, frames en beheer; 4 MiB publiek RAM blijft | Exacte grootte, allocatie- en OOM-regels en compatibiliteit |
 | APU-bron en stereoplaatsing | Mono als standaard; onafhankelijke niveaus links en rechts | Programmeringsinterface, representatie en compatibiliteit |
 | APU-belasting | Garantie op basis van werkelijk haalbare belasting onderzoeken | Garantiedomein, eventuele stemlimiet en gedrag bij bereiken daarvan |
@@ -1553,22 +1553,57 @@ Een gerichte RTL- of rekentoets is geen vervanging voor die kwalificatie.
 
 ## 11. CPU: werkelijke uitvoering en systeemklok {#sec-proposal-cpu-execution}
 
-**Status: vaste differentiatie voor `DIV` en `FLOORDIV` overgenomen;
-werk- en geheugenafhankelijke timingrichting goedgekeurd. Een fysiek
-onderbouwd prijsmodel voor CPU, lokale opslag en geheugenservice blijft open.**
-De overgenomen nominale charges zijn 32 cycles voor `DIV` en 33 voor
-`FLOORDIV`, inclusief de vaste cycle voor instructieaanvoer. Dit is een
-begrensd vast instructiebudget, geen nieuwe cache- of busstatemachine en geen
-kwalificatie van een fysieke rekeneenheid. `ADD`, `SUB` en `MUL` behouden hun
-kleine gepijplijnde klasse; `MOD` en `POW` zijn hiermee niet herijkt. De
-[instructiereferentie](book1/cpu.md#sec-cpu-cycle-accounting-and-execution-boundaries)
-onderscheidt vaste basischarges en aanvullende kosten voor expliciet uitgevoerd
-waarde-, tekst- en initialisatiewerk. Die charges bepalen de verhouding tussen
-instructievoortgang en waarneembare device-events; zij kwalificeren geen fysieke
-rekeneenheid of individuele bus. De huidige basischarges blijven het bestaande
-programmeercontract zolang geen vervangend contract is overgenomen; zij zijn
-geen te behouden randvoorwaarde voor het nieuwe hardwarebudget. Dat geldt ook
-voor `DIV`, tabeltoegang en aanroepen.
+**Status: nominaal werkklassenmodel als proef gekozen; de fysieke CPU blijft
+ongekwalificeerd.** De eerste proef houdt één vaste instructietabel aan, met
+expliciete toeslagen voor waardeplaatsing, opslaginitialisatie, groei, tekst en
+getelde woordtransfers. Zij voegt geen cache-, bus- of geheugenmisserstatemachine
+toe. Dit is een beredeneerde schatting van relatieve werkklassen, niet een
+claim dat iedere instructie op nog niet gekozen silicium precies zo lang duurt.
+De keuze mag worden beproefd zonder eerst een volledige CPU of sluitende
+cacheorganisatie te bouwen. Hostmetingen beoordelen de uitvoerbaarheid en het
+spelgedrag; zij bepalen niet hoeveel cycles een operatie kost.
+
+| Werkklasse | Nominale basisprijs, inclusief één cycle instructieaanvoer | Motivering van de proefkeuze |
+|---|---:|---|
+| Eenvoudige register-, optel-, aftrek- en vermenigvuldigoperaties | 2 | Korte, gespecialiseerde datapaden blijven goedkoop. |
+| Namespace en upvalue lezen / schrijven | 3 / 4 | Indirecte waardetoegang, zonder toeslag voor moduleherkomst. |
+| Tabel lezen / schrijven | 4 / 5 | Sleutel-/slotselectie, actuele waarde en schrijven krijgen meer ruimte dan een registerkopie, niet de kosten van een naïeve Lua-interpreter. |
+| `SELF` | 5 | Veldtoegang met behoud van de oorspronkelijke receiver. |
+| `NEWT` | 4 | Objectadmissie en vaste metadata; capaciteitinitialisatie en latere groei blijven afzonderlijk. |
+| `CLOSURE` | 8 | Een allowance voor zes gelezen functierecordwoorden en binding; upvaluedescriptors blijven afzonderlijk. |
+| `CALL` / `RET` | 6 / 6 | Gebonden functiedoel, registervenster en controlestack; daadwerkelijke waardeplaatsing en capture-sluiting blijven afzonderlijk. |
+| `LEN` | 3 | Afzonderlijke nominale lengteklasse; geen nieuwe toeslag per tabelgrensprobe. |
+| `DIV` / `FLOORDIV` / `MOD` | 32 / 33 / 34 | Lange rekenklasse, met respectievelijk floor- of rest/tekenwerk. Geen letterlijke software-algoritmetelling voor ieder bitpatroon. |
+| `POW` | 128 | Complexe scalaire rekenklasse, viermaal de nominale deelklasse; geen prijs van één vermenigvuldiging. |
+
+De bestaande niet-genoemde basisprijzen blijven gelijk. De toeslag van een
+getelde store wordt één cycle per werkelijk opgegeven 32-bit woord, dus
+`3 + C` na geslaagde readiness-preflight in plaats van `3 + ceil(C/4)`.
+De bestaande route voert die woorden synchroon en geordend uit; er is geen
+vier-woorden-breed CPU-storepad of uitgestelde bandbreedteschuld beschreven.
+Eén woord per cycle is een optimistische nominale servicekeuze, niet een
+kwalificatie van de DRAM-controller. De readiness-volgorde, de eenmalige charge
+bij hervatten en de volledige sequentietoeslag bij een latere gedeeltelijke
+busfout veranderen niet.
+
+Dit volgt de praktische organisatie van vaste instructiegewichten met
+specifieke werk- en wachttijdtermen. Bijvoorbeeld
+[Dolphins opcode-eigenaar](https://github.com/dolphin-emu/dolphin/blob/ce74dde6e8bd765817360422c0ac04cd717b9c3a/Source/Core/Core/PowerPC/PPCTables.cpp#L415-L444)
+onderscheidt korte FP-operaties en een lange deling;
+[MAMEs FPU-eigenaar](https://github.com/mamedev/mame/blob/04124dc058df0cb6be13f7de9709c7a14252f9b8/src/devices/cpu/m68000/m68kfpu.cpp#L1988-L2262)
+gebruikt afzonderlijke vaste rest- en transcendentale klassen. Hun numerieke
+prijzen en ISA's zijn geen BMSX-hardwarebewijs en worden niet als tabel
+gekopieerd. `MOD 34` en `POW 128` zijn BMSX-proefkeuzes. Ook goedkope speciale
+operanden betalen hun gewone opcodeprijs; caches, aliassen en host-JIT-keuzes
+veranderen die niet. Gewone hash-/metatabelketens en lengteprobes blijven in
+hun nominale klasse; deze proef claimt daarvoor geen worst-case bovengrens.
+
+De [instructiereferentie](book1/cpu.md#sec-cpu-cycle-accounting-and-execution-boundaries)
+bezit de volledige uitvoeringsregels en actuele prijzen. Die bepalen de
+verhouding tussen instructievoortgang en waarneembare device-events. De
+onveranderde systeemklok is 33,8688 MHz. Regressies moeten daarom zowel
+instructiegrenzen en foutvolgorde als echte spellen controleren; een hogere
+charge mag werk over meer frames verdelen, maar geen gastwerk laten verdwijnen.
 
 De onderzochte kandidaat deelt een binaire64-rekeneenheid tussen CPU en GEO.
 In een gerichte corpusproef duurde een geaccepteerde deling daarin maximaal 72
@@ -1595,7 +1630,7 @@ onderscheid: `module<const>` is een statisch opgeloste naamruimte, zonder
 runtime-moduletabel; een gewone module kan juist wel een veranderlijke tabel
 als waarde exporteren. Toegang tot zo'n waarde behoudt de voorgeschreven
 tabelsemantiek, inclusief veranderlijke velden. In de huidige instructietabel
-kosten `GETT`, `GETI` en `GETFIELD` twee basiscycles en hun schrijfvarianten drie,
+kosten `GETT`, `GETI` en `GETFIELD` vier basiscycles en hun schrijfvarianten vijf,
 inclusief de vaste cycle voor instructieaanvoer;
 een dynamische tabeltoegang heeft die instructiekosten ook als de tabel uit een
 module komt. Er is geen afzonderlijke moduletabeltoeslag. Hoe de gewenste
@@ -1632,7 +1667,7 @@ vastgezet. De hint is geen publieke objectidentiteit, geen vastgelegde module-
 of cartridge-ABI en geen excuus om mutabele modulevelden in te vriezen.
 
 Dit is een concrete uitvoeringsrichting, geen bewijs dat iedere toegang binnen
-de vaste basisprijs van twee cycles past. Wisselende sleutels, metatabelketens
+de vaste basisprijs van vier cycles past. Wisselende sleutels, metatabelketens
 en allocatie kunnen meer werk vragen; er is geen vaste kostengarantie voor alle
 representabele invoer. De huidige instructieprijs is gelijk voor een dynamische
 tabel die via een module is verkregen en dezelfde tabel via een andere alias;
@@ -1645,7 +1680,7 @@ gebruikt in de [Luau-uitvoeringskern](https://github.com/luau-lang/luau/blob/mas
 dit is een organisatievoorbeeld, geen bewijs voor BMSX-prestaties of een keuze
 voor Luau-semantiek.
 
-**Begrensde hardwarebegroting vóór nieuwe prijzen.** De bestaande RTL is een
+**Fysieke kwalificatie, los van het nominale proefmodel.** De bestaande RTL is een
 uitvoeringskandidaat die mag worden herzien, geen norm waaraan de nieuwe CPU
 of geheugencontroller moet blijven voldoen. De huidige gesloten-paginaroute
 publiceert een DRAM-resultaat na negen klokken en kan iedere tien klokken een
@@ -1675,10 +1710,10 @@ objectrepresentatie en framebeheer verschillen. Ze laten wel zien waarom
 zowel de lokale resources als de volledige uitvoeringsroute moeten worden
 begroot, niet alleen de externe geheugentoegang of de spronginstructie.
 
-De volgende begroting sluit de belangrijkste keuzes af zonder eerst een
-volledige processor te bouwen:
+De volgende begroting blijft nodig voor fysieke kwalificatie zonder eerst een
+volledige processor te bouwen. Zij blokkeert het nominale proefmodel niet:
 
-| Pad | Vereiste begroting vóór een numerieke prijs |
+| Pad | Begroting voor fysieke kwalificatie |
 |---|---|
 | Instructieaanvoer en rekenwerk | Fetchbreedte, decoder, beschikbare operandpoorten, resultaatpoorten, afhankelijkheden en de gekozen rekeneenheid; refill en meer-cyclusrekenwerk afzonderlijk. |
 | Geheugenwoord en 64-bit waarde | Werkelijke busbreedte, lokale treffer of externe service, volgorde van deeltransfers, pagina- en bankwisseling, refresh en mededinging. |
@@ -1693,15 +1728,18 @@ zijn timingrelevante inhoud, vervanging en invalidatie tot het machinegedrag,
 niet tot vrijblijvende host-JIT-hints. Onafhankelijke werkzaamheden mogen
 overlappen waar de gekozen resources dat daadwerkelijk toelaten.
 
-De uitkomst mag lagere trefferkosten, hogere misserkosten, andere basisprijzen
-of een gewijzigde fysieke uitvoeringsroute zijn. Het acceptatiecriterium is
-een sluitend resourceschema, niet overeenstemming met de oude getallen of
-met Cortex-A7-hosttijd. Tot die begroting is gesloten, is er noch een bewijs
-dat alle huidige prijzen haalbaar zijn, noch een universele ondergrens van
-dertig klokken voor iedere tabeltoegang.
+Een toekomstige fysieke uitwerking mag andere interne treffer- en misserkosten
+of een gewijzigde uitvoeringsroute gebruiken. Een timingmodel dat die kosten
+zichtbaar maakt vraagt een afzonderlijk productbesluit; het nominale proefmodel
+voegt ze niet impliciet toe. Fysieke acceptatie vereist een sluitend
+resourceschema, niet overeenstemming met de proefgetallen of Cortex-A7-hosttijd.
+Tot die begroting is gesloten, is er geen fysiek haalbaarheidsbewijs voor alle
+prijzen en evenmin een universele ondergrens van dertig klokken voor iedere
+tabeltoegang.
 
-**Samenhangende kandidaatrichting.** De systeemklok blijft 33,8688 MHz. De
-uitvoeringslaag realiseert dezelfde BLua32-instructies en waarden, maar hun
+**Afzonderlijke fysieke vervolgrichting.** De systeemklok blijft 33,8688 MHz.
+Een toekomstig fysiek timingmodel kan dezelfde BLua32-instructies en waarden
+realiseren terwijl hun
 voortgang volgt de feitelijk benodigde instructieophaling, uitvoering,
 rekenstappen, geheugenservice en eventuele wachttijd. Onafhankelijk of
 parallel verrichte werkzaamheden worden daarbij niet automatisch als losse
@@ -1740,13 +1778,13 @@ of maximale instructieduren en doorvoer zijn hier niet vastgesteld.
    onderlinge volgorde behouden; een nominale instructiecharge creëert geen
    extra busbandbreedte of voltooiing van apparaatwerk.
 
-Dit is een productvoorstel, geen gemeten prestatie van een PS1-klasse CPU of
-voltooide interpretatie-implementatie. Programma's die op aantallen
-instructies of op oude charge-afstanden vertrouwen, kunnen andere timing en
-interleavings zien. De daadwerkelijke uitvoering, zichtbaarheid van
-samenvallende events en compatibiliteit moeten nog worden geconcretiseerd en
-getoetst. Books I–III en beide emulatorimplementaties blijven ongewijzigd tot
-de nieuwe contracten afzonderlijk zijn uitgewerkt en overgenomen.
+Deze fysieke vervolgrichting is geen gemeten prestatie van een PS1-klasse CPU
+of voltooide interpretatie-implementatie en wordt niet stilzwijgend door het
+nominale proefmodel ingevoerd. De proef verandert wel de genoemde charges
+gezamenlijk in Book II en beide uitvoeringen. Programma's die op oude
+charge-afstanden vertrouwen kunnen andere timing en interleavings zien; de
+bestaande instructie-, fout-, readiness- en IRQ-grenzen blijven gelden.
+Verdere fysieke contracten vragen hun eigen uitwerking en besluit.
 
 ## 12. CPU: fysieke capaciteit van taalwaarden en naamruimten
 

@@ -12,7 +12,6 @@
 
 #include "machine/cpu/execution_image.h"
 #include "machine/memory/memory.h"
-#include "machine/common/numeric.h"
 
 namespace bmsx {
 
@@ -152,7 +151,7 @@ std::unique_ptr<NativeBlock> NativeBlock::prepare(const NativeBlockSource& sourc
 		}
 		// The checked exit owns this instruction's preflight and surcharge.
 		// Later exits include the successful prefix, not a blocked attempt.
-		if (slow == NativeBlockExit::WriteWords) terminal.cycles += ceilDiv4(instruction.c);
+		if (slow == NativeBlockExit::WriteWords) terminal.cycles += instruction.c;
 		if (op == OpCode::LOADNIL) terminal.cycles += instruction.b;
 		if (op == OpCode::VARARG && instruction.b != 0) terminal.cycles += instruction.b - 1;
 		if (op == OpCode::VARARG && instruction.b == 0) terminal.registerTop = 0;

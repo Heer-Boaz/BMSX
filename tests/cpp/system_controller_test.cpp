@@ -1022,7 +1022,18 @@ void testExternalClosureAdvancesToGteInterlockDeadline() {
 		+ static_cast<int>(bmsx::GX_GTE_PLUS_CYCLES_VMAD3)
 		+ bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::RET)];
 
+	std::vector<std::array<bmsx::i64, 2>> accepted;
+	fixture.runtime.machine.gxGte.setPlusObserver({
+		.accepted = [](void* context, bmsx::u32, bmsx::MappedBusSignals, bmsx::i64 cycle, bmsx::i64 deadline,
+			const std::array<bmsx::u32, bmsx::GX_GTE_PLUS_REGISTER_COUNT>&) {
+			static_cast<std::vector<std::array<bmsx::i64, 2>>*>(context)->push_back({cycle, deadline});
+		},
+		.context = &accepted,
+	});
 	const std::span<const bmsx::Value> out = fixture.runtime.callClosure(*fixture.closures[0]);
+	fixture.runtime.machine.gxGte.setPlusObserver({});
+	require(accepted == std::vector<std::array<bmsx::i64, 2>>{{cycleBefore + 7, cycleBefore + 12}, {cycleBefore + 12, cycleBefore + 17}},
+		"both commands are admitted exactly once, with the retained retry accepted at the first completion edge without another store base");
 
 	require(fixture.runtime.machine.scheduler.nowCycles() == cycleBefore + expectedCycles, "external closure advances through the scheduled GTE completion deadline");
 	require(!fixture.cpu.isMemoryWriteBlocked(), "GTE completion releases the blocked external-closure store");
@@ -1034,8 +1045,8 @@ void testExternalClosureAdvancesToGteInterlockDeadline() {
 			bmsx::IO_GX_GTE_PLUS_BASE
 				+ bmsx::GX_GTE_PLUS_CYCLES * bmsx::IO_WORD_SIZE
 		)
-			== (bmsx::GX_GTE_PLUS_CYCLES_BUSY | bmsx::GX_GTE_PLUS_CYCLES_VMAD3),
-		"external closure retries and admits the second GTE command after the first completion edge"
+			== bmsx::GX_GTE_PLUS_CYCLES_VMAD3,
+		"external closure admits the second command at the first completion edge and its six-cycle RET outlasts the second command"
 	);
 }
 

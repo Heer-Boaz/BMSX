@@ -99,7 +99,6 @@ import {
 import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
 import { ScratchBuffer } from '../../common/scratchbuffer';
 import { luaFloorDivide, luaModulo } from '../../spec/blua32/numeric';
-import { ceilDiv4 } from '../common/numeric';
 import {
 	MAPPED_PAGE_BYTE_MASK,
 	MAPPED_PAGE_BYTE_SIZE,
@@ -2604,7 +2603,7 @@ export class CPU implements MappedPageInvalidator {
 			this.blockMappedWrite(frame, blockedAddress);
 			return;
 		}
-		this.charge(ceilDiv4(valueCount));
+		this.charge(valueCount);
 		const faultSequence = this.memory.readBusFaultSequence();
 		let writeAddr = addr;
 		for (let offset = 0; offset < valueCount; offset += 1) {

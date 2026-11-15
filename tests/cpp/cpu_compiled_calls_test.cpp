@@ -142,7 +142,7 @@ void inactiveFrameMetadata() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	generated.cpu.prepareSystemNativeCode();
 #endif
-	test::runCpuParity(generated.cpu, scalar.cpu, 4);
+	test::runCpuParity(generated.cpu, scalar.cpu, 2 * BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)]);
 	for (auto* machine : {&generated, &scalar}) {
 		auto& cpu = machine->cpu;
 		auto* root = cpu.activeThread()->currentFrame;
@@ -193,7 +193,7 @@ void inactiveFrameMetadata() {
 			"reuse retains the required decode, protected-return and exception admission state");
 		cpu.restoreRuntimeState(cpu.captureRuntimeState());
 	}
-	test::runCpuParity(generated.cpu, scalar.cpu, 6, 1);
+	test::runCpuParity(generated.cpu, scalar.cpu, BASE_CYCLES[static_cast<u8>(OpCode::KSMI)] + BASE_CYCLES[static_cast<u8>(OpCode::RET)] + 1, 1);
 	requireParity(generated, scalar);
 	for (auto* machine : {&generated, &scalar}) {
 		const auto values = machine->cpu.readCompletionValues();
@@ -296,12 +296,12 @@ void closureBindingAndClosingCycles() {
 		CpuMachine machine(image, scalar);
 		machine.cpu.runUntilDepth(0, 1);
 		for (int call = 0; call < 2; ++call) require(machine.cpu.runUntilDepth(0, 1) == RunResult::Yielded
-			&& machine.cpu.instructionBudgetRemaining == -3, "every descriptor costs one even when an earlier closure already opened its cell");
+			&& machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)] - 2, "every descriptor costs one even when an earlier closure already opened its cell");
 		auto* first = asClosure(machine.cpu.readFrameRegister(0, 2));
 		auto* second = asClosure(machine.cpu.readFrameRegister(0, 3));
 		require(first->upvalues[0] == second->upvalues[0] && first->upvalues[1] == second->upvalues[1],
 			"successive closures share both captured cells");
-		require(machine.cpu.runUntilDepth(0, 1) == RunResult::Halted && machine.cpu.instructionBudgetRemaining == -6,
+		require(machine.cpu.runUntilDepth(0, 1) == RunResult::Halted && machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - 2 - 2,
 			"RET charges two distinct open cells, not four descriptors, and two received values");
 		require(!first->upvalues[0]->open && !first->upvalues[1]->open, "both charged captures are closed");
 	}
@@ -321,9 +321,9 @@ void protectedBuiltinPlacementCycles() {
 		CpuMachine machine(image, scalar);
 		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("pcall"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::PCall));
 		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("isyieldable"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineIsYieldable));
-		machine.cpu.runUntilDepth(0, 6);
+		machine.cpu.runUntilDepth(0, 3 * BASE_CYCLES[static_cast<u8>(OpCode::GETSYS)]);
 		require(machine.cpu.runUntilDepth(0, 1) == RunResult::Yielded
-			&& machine.cpu.instructionBudgetRemaining == 1 - 3 - 4 - 4 - 4 - 2 - (wanted == 0 ? 3 : wanted - 1),
+			&& machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::CALL)] - 4 - 4 - 4 - 2 - (wanted == 0 ? 3 : wanted - 1),
 			"nested builtin protection pays each completed receiving range exactly once");
 	}
 }
@@ -404,7 +404,8 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 	machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress + 2 * INSTRUCTION_BYTES);
 	const int callerTop = caller->top;
 	const int placed = vararg ? params : std::max(params - args, 0);
-	if (grant < 0) grant = 6 + placed;
+	const int callPrefix = BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)];
+	if (grant < 0) grant = callPrefix + placed + 1;
 	require(machine.cpu.runUntilDepth(0, grant) == RunResult::Yielded, "CALL placements and its first callee instruction retain grant accounting");
 	if (grant <= BASE_CYCLES[static_cast<u8>(OpCode::MOV)]) {
 		require(machine.cpu.instructionBudgetRemaining == grant - BASE_CYCLES[static_cast<u8>(OpCode::MOV)]
@@ -414,8 +415,8 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 			"a grant exhausted by MOV stops before CALL and frame placement");
 		return;
 	}
-	if (grant <= 5 + placed) {
-		require(machine.cpu.instructionBudgetRemaining == grant - 5 - placed
+	if (grant <= callPrefix + placed) {
+		require(machine.cpu.instructionBudgetRemaining == grant - callPrefix - placed
 			&& machine.cpu.getGlobalByKey(marker) == valueBool(false)
 			&& thread->currentFrame == spare && spare->pc == calleePc,
 			"an exhausting CALL completes placement once without entering its raw callee body");
@@ -469,6 +470,9 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	image.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)},
 		{17, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
 	CpuMachine machine(image, false);
+	// The raw RET proof requires the callee itself, not just its caller and
+	// alternate continuation, to have a published generated body.
+	machine.cpu.prepareSystemNativeCode();
 	machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("pcall"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::PCall));
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	machine.cpu.setNativeCompilationProfiling(true);
@@ -523,8 +527,19 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	const int copied = wanted == 0 ? produced : std::min(produced, wanted);
 	const int count = wanted == 0 ? produced : wanted;
 	const bool grows = count != 0 && base + count > caller->stackCapacity;
-	if (grant < 0) grant = count + 3;
-	require(machine.cpu.runUntilDepth(0, grant) == RunResult::Yielded && thread->currentFrame == caller
+	const int returnBase = BASE_CYCLES[static_cast<u8>(OpCode::RET)];
+	const int markerAdmission = BASE_CYCLES[static_cast<u8>(OpCode::SETGL)];
+	require(alternate->nativeBlocks->entries[markerWord]->admissionCycles == markerAdmission
+		&& alternate->nativeBlocks->entries[markerWord]->terminal.cycles == markerAdmission + BASE_CYCLES[static_cast<u8>(OpCode::JMP)],
+		"the independent marker admits its SETGL prefix before its terminal JMP");
+	if (grant < 0) grant = count + returnBase;
+	const auto* calleePublished = lookup.find(callee->pc, 0);
+	require(calleePublished && calleePublished->nativeCode
+		&& calleePublished->nativeCode[(callee->pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES],
+		"the RET under test has a real published native entry before redirecting its caller");
+
+	const auto routeResult = machine.cpu.runUntilDepth(0, grant);
+	require(routeResult == RunResult::Yielded && thread->currentFrame == caller
 		&& thread->frameDepth == 2 && thread->protectedCallDepth == 1, "ordinary native return retains its protected parent and exact grant boundary");
 	require(caller->top == base + count, "fixed, open and empty returns assign exact caller top even after a late cold exit");
 	for (int index = 0; index < copied; ++index) require(caller->registers[base + index] == payloads[index],
@@ -532,9 +547,9 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	for (int index = copied; index < count; ++index) require(caller->registers[base + index] == valueNil(), "fixed results nil-pad only the requested suffix");
 	if (base + count <= 6 || count == 0) require(caller->registers[6] == valueNumber(-7) && caller->registers[7] == valueNumber(99),
 		"return does not overwrite retained caller registers outside its result range");
-	require(machine.cpu.getGlobalByKey(marker) == ((!coldTarget && !grows && grant > 3 + count) ? caller->registers[7] : valueNil()),
+	require(machine.cpu.getGlobalByKey(marker) == ((!coldTarget && !grows && grant > returnBase + count + markerAdmission) ? caller->registers[7] : valueNil()),
 		"warm RET branches through the raw native code word without executeReturn or the C++ descriptor dispatcher");
-	if (grant <= 3 + count) require(machine.cpu.instructionBudgetRemaining == grant - 3 - count,
+	if (grant <= returnBase + count) require(machine.cpu.instructionBudgetRemaining == grant - returnBase - count,
 		"native RET charges the receiving range once and cannot execute the next body with an exhausted grant");
 	require(callee->decodedPage == nullptr && callee->compilationEntry && callee->protectedContinuationIndex == -1
 		&& !callee->isExceptionFrame && !callee->isNonMaskableExceptionFrame,
@@ -545,7 +560,7 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 		&& callee->protectedContinuationIndex == -1 && !callee->isExceptionFrame && !callee->isNonMaskableExceptionFrame,
 		"a real activation rebinds the retired native node without inheriting protection or exception state");
 	callee->registers[1] = valueNumber(17); callee->top = 2;
-	require(machine.cpu.runUntilDepth(2, 4) == RunResult::Halted && thread->currentFrame == caller
+	require(machine.cpu.runUntilDepth(2, returnBase + 1) == RunResult::Halted && thread->currentFrame == caller
 		&& thread->protectedCallDepth == 1 && machine.cpu.instructionBudgetRemaining == 0,
 		"the reused node returns once without completing its protected parent or resuming the redirected continuation");
 	const auto results = machine.cpu.readCompletionValues();
@@ -723,7 +738,7 @@ void returnPlacementCycles() {
 			machine.cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress + 2 * INSTRUCTION_BYTES);
 			while (machine.cpu.getFrameDepth() != 2) machine.cpu.runUntilDepth(0, 1);
 			require(machine.cpu.runUntilDepth(1, grant) == RunResult::Halted, "RET finishes at the caller depth");
-			require(machine.cpu.instructionBudgetRemaining == grant - 3 - placed, "RET charges base plus selected range, even beyond the grant");
+			require(machine.cpu.instructionBudgetRemaining == grant - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - placed, "RET charges base plus selected range, even beyond the grant");
 			const auto* caller = machine.cpu.activeThread()->currentFrame;
 			require(caller->pc == machine.rom.textAddress + 6 * INSTRUCTION_BYTES && caller->top == 4 + placed,
 				"RET consumes no receiving instruction and selects the exact top");
@@ -761,7 +776,7 @@ void protectedReturnPlacementCycles() {
 		catch (const LuaOutOfMemorySignal&) { rejected = true; }
 		require(rejected == fault, "only unadmitted outer range raises allocation failure");
 		const int outer = wanted == 0 ? 4 : wanted - 1;
-		require(machine.cpu.instructionBudgetRemaining == -1 - (failFirst ? 0 : 3) - (fault ? 0 : outer),
+		require(machine.cpu.instructionBudgetRemaining == 2 - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - (failFirst ? 0 : 3) - (fault ? 0 : outer),
 			"completed inner status/value range stays charged when outer admission fails");
 		if (!fault) {
 			const Value values[]{valueBool(true), valueBool(true), valueNumber(17), valueNumber(29), valueNil()};
@@ -794,7 +809,7 @@ void coroutineReturnPlacementCycles() {
 		machine.cpu.activeThread()->currentFrame->registers[0] = valueNumber(17); machine.cpu.activeThread()->currentFrame->registers[1] = valueNumber(29);
 		require(machine.cpu.runUntilDepth(0, 2) == RunResult::Yielded, "coroutine RET ends the current execution slice");
 		const int placed = wanted == 0 ? 3 : wanted - 1;
-		require(machine.cpu.instructionBudgetRemaining == -1 - placed && machine.cpu.activeThread() == root,
+		require(machine.cpu.instructionBudgetRemaining == 2 - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - placed && machine.cpu.activeThread() == root,
 			"coroutine RET charges status, results and nil padding in its resumer");
 		const Value values[]{valueBool(true), valueNumber(17), valueNumber(29), valueNil(), valueNil()};
 		for (int i = 0; i < placed; ++i) require(root->currentFrame->registers[4 + i] == values[i], "resumer receives the selected range");
@@ -812,7 +827,7 @@ void rootReturnPlacementCycles() {
 		frame->registers[0] = valueNumber(17); frame->registers[1] = valueNumber(29); frame->top = 2;
 		require(machine.cpu.runUntilDepth(0, 1) == RunResult::Halted, "root RET completes");
 		const int count = producedOperand == 0 ? 2 : producedOperand - 1;
-		require(machine.cpu.instructionBudgetRemaining == -2 - count && machine.cpu.readCompletionValues().size() == static_cast<size_t>(count),
+		require(machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - count && machine.cpu.readCompletionValues().size() == static_cast<size_t>(count),
 			"root completion range charges the produced slot count");
 	}
 	for (const bool scalar : {false, true}) {
@@ -830,7 +845,7 @@ void rootReturnPlacementCycles() {
 		const Value args[]{valueNumber(17), valueNumber(29)};
 		for (int call = 0; call < 16; ++call) {
 			machine.cpu.beginCompletionCall(*closure, BuiltinArgsView(args, 2));
-			require(machine.cpu.runUntilDepth(1, 1) == RunResult::Halted && machine.cpu.instructionBudgetRemaining == -4,
+			require(machine.cpu.runUntilDepth(1, 1) == RunResult::Halted && machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - 2,
 				"completion-latch RET charges its two produced slots even with an exhausted grant");
 			require(machine.cpu.readCompletionValues().size() == 2 && machine.cpu.readCompletionValues()[0] == args[0]
 				&& machine.cpu.readCompletionValues()[1] == args[1], "completion latch preserves its value range");
@@ -862,8 +877,8 @@ void errorHandlerReturnPlacementCycles() {
 		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("xpcall"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::XPCall));
 		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("error"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::Error));
 		while (machine.cpu.activeThread()->currentFrame->functionAddress != machine.rom.functionAddresses[2]) machine.cpu.runUntilDepth(0, 1);
-		require(machine.cpu.instructionBudgetRemaining == 1 - 3 - 2 - 1, "error CALL and primitive plus one placed handler argument");
-		require(machine.cpu.runUntilDepth(1, 1) == RunResult::Halted && machine.cpu.instructionBudgetRemaining == -7,
+		require(machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::CALL)] - 2 - 1, "error CALL and primitive plus one placed handler argument");
+		require(machine.cpu.runUntilDepth(1, 1) == RunResult::Halted && machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - 5,
 			"handler RET charges the selected error receiving range");
 		const Value values[]{valueBool(false), valueNumber(17), valueNil(), valueNil(), valueNil()};
 		for (int i = 0; i < 5; ++i) require(machine.cpu.activeThread()->currentFrame->registers[i] == values[i], "handler result prefix and padding are preserved");
@@ -927,6 +942,8 @@ void weakCanonicalClosuresAndStaticEntry() {
 }
 
 void crossPageCalls(bool open, u32 recordOffset) {
+	const int callPrefix = BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + 2 * BASE_CYCLES[static_cast<u8>(OpCode::LOADK)]
+		+ BASE_CYCLES[static_cast<u8>(OpCode::CALL)];
 	const u32 record = DYNAMIC_RAM_BASE + recordOffset;
 	test::Blua32TestImage image; image.text.resize(2 * MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
@@ -986,9 +1003,9 @@ void crossPageCalls(bool open, u32 recordOffset) {
 		machine->cpu.runUntilDepth(1, 100);
 		machine->cpu.activeThread()->frameAtDepth(0)->registers[3] = valueNumber(99);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress + 2u * INSTRUCTION_BYTES);
-		require(machine->cpu.runUntilDepth(0, 9) == RunResult::Yielded && machine->cpu.activeThread()->frameDepth == 2,
+		require(machine->cpu.runUntilDepth(0, callPrefix) == RunResult::Yielded && machine->cpu.activeThread()->frameDepth == 2,
 			"CALL cannot consume a callee instruction without a further cycle grant");
-		require(machine->cpu.runUntilDepth(1, 50) == RunResult::Halted && machine->cpu.instructionBudgetRemaining == 41
+		require(machine->cpu.runUntilDepth(1, 50) == RunResult::Halted && machine->cpu.instructionBudgetRemaining == 50 - BASE_CYCLES[static_cast<u8>(OpCode::ADD)] - BASE_CYCLES[static_cast<u8>(OpCode::MOV)] - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - 2
 			&& machine->cpu.readFrameRegister(0, 3) == valueNumber(99),
 			"a hot RET respects target depth before a hot caller continuation executes");
 	}
@@ -1005,7 +1022,7 @@ void crossPageCalls(bool open, u32 recordOffset) {
 		const auto heap = machine->cpu.luaHeap().captureState();
 		const std::string garbage(heap.nextCollectionBytes - heap.trackedBytes - 1, 'g');
 		machine->cpu.stringPool().intern(garbage);
-		require(machine->cpu.runUntilDepth(0, 14) == RunResult::Yielded && machine->cpu.activeThread()->frameDepth == 1
+		require(machine->cpu.runUntilDepth(0, callPrefix + BASE_CYCLES[static_cast<u8>(OpCode::ADD)] + BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + 1) == RunResult::Yielded && machine->cpu.activeThread()->frameDepth == 1
 			&& machine->cpu.activeThread()->stackCapacity > capacity && machine->cpu.readFrameRegister(0, 4) == valueNumber(7),
 			"a hot call relocates the stack before a hot callee and return use the new register bases");
 		require(!machine->cpu.stringPool().find(garbage), "callee stack growth actually collects unrooted pressure data");
@@ -1018,14 +1035,14 @@ void crossPageCalls(bool open, u32 recordOffset) {
 		machine->cpu.activeThread()->currentFrame->registers[1] = machine->cpu.activeThread()->currentFrame->registers[0];
 		machine->memory.writeBytes(record, machine->rom.bytes.data() + machine->rom.functionAddresses[2], BLUA32_FUNCTION_RECORD_SIZE);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], entry);
-		machine->cpu.runUntilDepth(0, 9); machine->cpu.runUntilDepth(1, 100);
+		machine->cpu.runUntilDepth(0, callPrefix); machine->cpu.runUntilDepth(1, 100);
 		require(machine->cpu.readFrameRegister(0, 4) == valueNumber(7), "an existing closure retains its creation-time function record");
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
 		machine->cpu.runUntilDepth(0, 1);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], entry);
 		machine->cpu.runUntilDepth(0, 20000); machine->cpu.runUntilDepth(1, 100);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], entry);
-		machine->cpu.runUntilDepth(0, 9);
+		machine->cpu.runUntilDepth(0, callPrefix);
 		auto* active = machine->cpu.activeThread()->currentFrame;
 		require(active->pc == machine->rom.textAddress + (DECODED_PAGE_WORDS + 32u) * INSTRUCTION_BYTES,
 			"the rebound closure reached its new callee");
@@ -1088,7 +1105,7 @@ void crossPageCalls(bool open, u32 recordOffset) {
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
 		machine->cpu.runUntilDepth(0, 1);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], entry);
-		require(machine->cpu.runUntilDepth(0, 9) == RunResult::Yielded && machine->cpu.readBadAddressWord() == 0u,
+		require(machine->cpu.runUntilDepth(0, callPrefix) == RunResult::Yielded && machine->cpu.readBadAddressWord() == 0u,
 			"an exhausted call grant leaves a raw unaligned callee PC unfetched");
 		machine->cpu.runUntilDepth(0, 1);
 		require(machine->cpu.readBadAddressWord() == machine->rom.textAddress + DECODED_PAGE_WORDS * INSTRUCTION_BYTES + 1u,
@@ -1133,6 +1150,8 @@ int main() {
 		nativeReturnRouting(0, 0, 10, false, false);
 		nativeReturnRouting(6, 0, 0, true, false);
 		nativeReturnRouting(6, 0, 6, false, false);
+		nativeReturnRouting(2, 4, 0, false, false, BASE_CYCLES[static_cast<u8>(OpCode::RET)] + 4 + BASE_CYCLES[static_cast<u8>(OpCode::SETGL)] + 1);
+		nativeReturnRouting(6, 2, 0, false, false, BASE_CYCLES[static_cast<u8>(OpCode::RET)] + 2 + BASE_CYCLES[static_cast<u8>(OpCode::SETGL)] + 1);
 		for (const int grant : {1, 2, 3}) {
 			nativeReturnRouting(2, 4, 0, false, false, grant);
 			nativeReturnRouting(6, 2, 0, false, false, grant);

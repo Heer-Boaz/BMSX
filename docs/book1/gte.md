@@ -4805,11 +4805,13 @@ overwrite; it does not retain the old result for software.
 For one concrete sequence with operands already supplied, two LOADK instructions
 cost four cycles, the first command store accepts at cycle7, and an immediately
 following store attempts at10 and blocks. The pending completion at12 releases
-it; the retried store accepts at15, and RET finishes at18. The second job is
-still busy until20. Those are sixteen charged CPU cycles, two elapsed wait cycles,
-and an outstanding result at return—not two jobs fully prepared and consumed
-in sixteen cycles. Preparation, polling/readout and result retention must be budgeted
-as well; the repeated-work example below counts the complete sequence.
+the retained store, which accepts at12 without another instruction charge.
+A zero-result `RET` (`B=1`) then takes six cycles and finishes at18; the second
+job completes at17 while that return is executing. The interval contains
+sixteen charged CPU cycles and two elapsed wait cycles. Both commands have
+completed, but the routine has neither supplied the operands in this interval
+nor read and retained their results. Preparation and result readout must be
+budgeted as well; the repeated-work example below counts a complete sequence.
 
 ## Budgeting a complete geometry work interval {#sec-gte-budgeting-a-complete-geometry-work-interval}
 
@@ -4871,7 +4873,7 @@ arithmetic, loop tests, spills, or calls.
 ### Count the complete accepted-triangle path {#sec-gte-count-the-complete-accepted-triangle-path}
 
 The scalar ISA charges three base cycles per displaced word load/store,
-two per LOADK, BAND, BOR or EQ, and three for RET. The function's accepted path
+two per LOADK, BAND, BOR or EQ, and six for RET. The function's accepted path
 executes:
 
 | Work | Executed instructions | Base instruction cycles |
@@ -4886,8 +4888,8 @@ executes:
 | Supply RGBC | 1 store | 3 |
 | Issue NCCT and retain its FLAG in RAM | 1 command store + 1 flag load/store pair | 9 |
 | Read/mask three colors, add the first-word opcode, write six packet words | 3 loads + 3 BAND + 1 BOR + 6 stores | 35 |
-| Return | 1 RET | 3 |
-| **Base instruction total** | **120 instructions** | **341 cycles** |
+| Return | 1 RET | 6 |
+| **Base instruction total** | **120 instructions** | **344 cycles** |
 
 The area selection is real control flow, not a free assumption. An EQ test
 rejects zero; BAND extracts the sign bit; a second EQ rejects negative area.
@@ -4905,7 +4907,7 @@ packet RAM store is omitted from the table.
 
 An independent count is 100 scalar memory instructions at three cycles each,
 12 LOADK at two cycles each, seven bitwise/comparison instructions at two cycles
-each, and RET at three cycles: `300+24+14+3 = 341`. The resulting six RAM words are:
+each, and RET at six cycles: `300+24+14+6 = 344`. The resulting six RAM words are:
 
 ```text
 0x300000a0  0x00400060
@@ -4914,11 +4916,11 @@ each, and RET at three cycles: `300+24+14+3 = 341`. The resulting six RAM words 
 ```
 
 The three retained FLAG words are zero and the retained doubled area is 4096.
-Thus the sequence with 341 base instruction cycles prepares the stated geometry/color packet, including its retained arithmetic results.
+Thus the sequence with 344 base instruction cycles prepares the stated geometry/color packet, including its retained arithmetic results.
 
 RTPT, NCLIP and NCCT have intervals 23, 8 and 39. Each is immediately
 followed by a three-cycle dependent register load, leaving waits of 20, 5 and
-36 cycles. The complete accepted sequence therefore takes **402 system cycles**: 341 base
+36 cycles. The complete accepted sequence therefore takes **405 system cycles**: 344 base
 instruction cycles plus 61 interlock cycles. Its RET requests zero results,
 so it adds no result-placement charge. The final CYCLES readback is 39.
 
@@ -4946,7 +4948,7 @@ Separate the following when making a frame budget:
 Count charged CPU work and elapsed device waits separately, then
 construct the actual timeline if their overlap matters. The cartridge's actual
 loops, changing translation, GP0 traffic and frame-publication path require their
-own accounting; **402 is not their full-frame BLua budget**. This cold work unit also
+own accounting; **405 is not their full-frame BLua budget**. This cold work unit also
 includes control setup that a cartridge can retain across many triangles or
 frames. Reuse changes the work interval and its count; it does not retroactively
 turn a lower-bound transfer estimate into a measured program budget.

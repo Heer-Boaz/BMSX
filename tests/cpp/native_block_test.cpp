@@ -537,7 +537,7 @@ void linkedAtomicStoreDebitsItsWholeChargeBeforeTestingItsSuccessor() {
 	auto third = NativeBlock::compile(successor, nullptr, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 	second->linkFrom(first->terminal); third->linkFrom(second->terminal);
 	const int prefixCycles = decoded[0].baseCycles + decoded[1].baseCycles;
-	const int spanCycles = decoded[2].baseCycles + 2;
+	const int spanCycles = decoded[2].baseCycles + 5;
 	require(second->terminal.cycles == spanCycles,
 		"segment entry needs positive budget and retains the complete atomic store charge");
 	constexpr u32 target = DYNAMIC_RAM_BASE + 0x80000u;
@@ -901,7 +901,7 @@ void nextAccessPressurePreservesEveryRawGuestSlot() {
 					if (op.b != 0) top = std::max(top, static_cast<int>(op.a) + op.b);
 				} else if (op.op != static_cast<u8>(OpCode::JMP)) top = std::max(top, static_cast<int>(op.a) + 1);
 				auto block = NativeBlock::compile(std::span(source).first(prefix), constants.data(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
-				for (const int grant : {cycles, 67}) {
+				for (const int grant : {cycles, cycles + 7}) {
 					auto actual = initial;
 					NativeBlockRunState state{.registers = actual.data(), .constants = constants.data(),
 						.remainingCycles = grant, .registerTop = -7};

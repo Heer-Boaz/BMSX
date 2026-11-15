@@ -323,7 +323,7 @@ test('linked counted stores need only one cycle, then stop or block before the f
 	const cache = js.cpu.rootThread.frameAtDepth(0).decodedPage!.compiledBlocks!, first = cache.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!;
 	const store = cache.entries[((pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES) + 4]!;
 	const prefixCycles = BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.JMP];
-	const storeCycles = BASE_CYCLES[OpCode.STORE_MEM_WORDS] + 2;
+	const storeCycles = BASE_CYCLES[OpCode.STORE_MEM_WORDS] + 5;
 	assert.ok(store && store.region === first.region); assert.equal(store.terminal.cycles, storeCycles);
 	assert.ok(cache.entries[store.firstWord + 2]?.region === first.region);
 	for (const grant of [prefixCycles, prefixCycles + 1, prefixCycles + storeCycles,

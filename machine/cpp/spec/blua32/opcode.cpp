@@ -18,16 +18,16 @@ const std::array<uint8_t, OPCODE_COUNT> BASE_CYCLES{
 	2u, // KSMI
 	3u, // STORE_MEM_D
 	3u, // STORE_MEM_WORDS_D
-	2u, // GETT
-	3u, // SETT
-	2u, // NEWT
+	4u, // GETT
+	5u, // SETT
+	4u, // NEWT
 	2u, // ADD
 	2u, // SUB
 	2u, // MUL
 	32u, // DIV
-	2u, // MOD
+	34u, // MOD
 	33u, // FLOORDIV
-	2u, // POW
+	128u, // POW
 	2u, // BAND
 	2u, // BOR
 	2u, // BXOR
@@ -37,7 +37,7 @@ const std::array<uint8_t, OPCODE_COUNT> BASE_CYCLES{
 	3u, // CONCATN
 	2u, // UNM
 	2u, // NOT
-	2u, // LEN
+	3u, // LEN
 	2u, // BNOT
 	2u, // EQ
 	2u, // LT
@@ -47,26 +47,26 @@ const std::array<uint8_t, OPCODE_COUNT> BASE_CYCLES{
 	2u, // JMP
 	2u, // JMPIF
 	2u, // JMPIFNOT
-	2u, // CLOSURE
-	2u, // GETUP
-	3u, // SETUP
+	8u, // CLOSURE
+	3u, // GETUP
+	4u, // SETUP
 	3u, // VARARG
-	3u, // CALL
-	3u, // RET
+	6u, // CALL
+	6u, // RET
 	3u, // LOAD_MEM
 	3u, // STORE_MEM
 	3u, // STORE_MEM_WORDS
 	2u, // RFE
 	2u, // LOADKR
-	2u, // GETSYS
-	3u, // SETSYS
-	2u, // GETGL
-	3u, // SETGL
-	2u, // GETI
-	3u, // SETI
-	2u, // GETFIELD
-	3u, // SETFIELD
-	2u, // SELF
+	3u, // GETSYS
+	4u, // SETSYS
+	3u, // GETGL
+	4u, // SETGL
+	4u, // GETI
+	5u, // SETI
+	4u, // GETFIELD
+	5u, // SETFIELD
+	5u, // SELF
 	2u, // HALT
 };
 

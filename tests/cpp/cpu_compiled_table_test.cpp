@@ -285,6 +285,7 @@ void selfAndNilFaults() {
 		auto* meta = cpu.createTable(0, 1); table->setStringKey(cpu.stringPool().intern("method"), valueNil());
 		meta->setStringKey(cpu.stringPool().intern("__index"), valueTable(table)); table->metatable = meta;
 		cpu.activeThread()->frameAtDepth(0)->top = 0;
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 3); requireParity(native, scalar);
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_METATABLE_LOOP && native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES
@@ -332,7 +333,7 @@ void wideAllocationFailure() {
 		auto& cpu = m->cpu; auto& root = *cpu.activeThread()->frameAtDepth(0); root.registers[8] = valueNumber(73); root.registers[9] = valueNil(); root.top = 9;
 		const auto key = cpu.stringPool().find("retained"); auto* retained = cpu.createTable(350000); cpu.setGlobalByKey(*key, valueTable(retained));
 	}
-	test::runCpuParity(native.cpu, scalar.cpu, 4); requireParity(native, scalar);
+	test::runCpuParity(native.cpu, scalar.cpu, BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::NEWT)]); requireParity(native, scalar);
 	require(native.cpu.instructionBudgetRemaining == 0, "failed NEWT pays only the completed prefix and base cycles");
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
 		&& native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES

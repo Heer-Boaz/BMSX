@@ -144,7 +144,7 @@ test('WIDE displaced counted store keeps its unsigned twelve-bit count and compl
 		registers.setNumber(0, 0x10203040);
 		registers.setNumber(4094, 0xa1b2c3d4);
 		registers.setNumber(4095, address - (255 << 2));
-		const charge = BASE_CYCLES[OpCode.STORE_MEM_WORDS_D] + ((4095 + 3) >>> 2);
+		const charge = BASE_CYCLES[OpCode.STORE_MEM_WORDS_D] + 4095;
 		assert.equal(cpu.runUntilDepth(0, charge), RunResult.Yielded);
 		assert.equal(cpu.instructionBudgetRemaining, 0);
 		assert.equal(memory.readMappedWord(address), 0x10203040);

@@ -9,7 +9,7 @@ import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/executi
 import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_RECORD_SIZE, BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { CLOSURE_ADDRESS_REGISTER_WIDE_C, INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { DYNAMIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
@@ -177,7 +177,7 @@ for (const descriptors of [false, true]) test(`hot register CLOSURE preserves it
 	const left = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), right = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
 	const target = image.symbols.functionAddresses[1], bad = 0xdead0000;
 	for (const { cpu } of [left, right]) {
-		cpu.setGlobalByKey(cpu.stringPool.find('target')!, ValueTag.Number, target + 0.75, null); cpu.runUntilDepth(0, 504);
+		cpu.setGlobalByKey(cpu.stringPool.find('target')!, ValueTag.Number, target + 0.75, null); cpu.runUntilDepth(0, 32 * (BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.GETGL] + BASE_CYCLES[OpCode.CLOSURE] + 1 + BASE_CYCLES[OpCode.JMP]));
 	}
 	const js = left.cpu, ref = right.cpu, frame = js.rootThread.frameAtDepth(0);
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;

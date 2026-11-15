@@ -70,7 +70,7 @@ inline bool CPU::continueWordStores(CallFrame& frame, u32 address, int source, i
 		blockMappedWrite(frame, blockedAddress);
 		return false;
 	}
-	instructionBudgetRemaining -= ceilDiv4(count);
+	instructionBudgetRemaining -= count;
 	const u32 faultSequence = m_memory.readBusFaultSequence();
 	for (int offset = 0; offset < count; ++offset) {
 		m_memory.writeMappedWord(address, toU32(frame.registers[source + offset]));

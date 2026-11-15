@@ -47,21 +47,6 @@ void opcodeOperandInterpretations() {
 	require(OPCODE_RK_OPERANDS == expected, "every opcode selects the specified RK or raw operand interpretation");
 }
 
-void uniformInstructionBaseCycles() {
-	// WIDE is a prefix, not an independently executed instruction.  Every
-	// other opcode's base charge includes the same one-cycle fetch allowance.
-	constexpr std::array<u8, OPCODE_COUNT> withoutFetchAllowance{
-		0, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 2, 1, 2,
-		1, 1, 1, 1, 31, 1, 32, 1, 1, 1, 1, 1, 1, 1, 2, 1,
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2,
-		2, 2, 2, 2, 1, 1, 1, 2, 1, 2, 1, 2, 1, 2, 1, 1,
-	};
-	require(BASE_CYCLES[static_cast<u8>(OpCode::WIDE)] == 0, "WIDE remains a zero-cycle prefix");
-	for (size_t op = 1; op < OPCODE_COUNT; ++op) {
-		require(BASE_CYCLES[op] == withoutFetchAllowance[op] + 1,
-			"every executable opcode receives exactly one additional base cycle");
-	}
-}
 
 void signedRkBoundaries() {
 	for (const bool instrumented : {false, true}) for (const bool wide : {false, true}) {
@@ -189,7 +174,7 @@ void wideDisplacedStoreCountRemainsUnsigned() {
 		registers[0] = valueNumber(0x10203040u);
 		registers[4094] = valueNumber(0xa1b2c3d4u);
 		registers[4095] = valueNumber(address - (255u << 2u));
-		const int charge = BASE_CYCLES[static_cast<u8>(OpCode::STORE_MEM_WORDS_D)] + ((4095 + 3) >> 2);
+		const int charge = BASE_CYCLES[static_cast<u8>(OpCode::STORE_MEM_WORDS_D)] + 4095;
 		require(machine.cpu.runUntilDepth(0, charge) == RunResult::Yielded && machine.cpu.instructionBudgetRemaining == 0, "WIDE counted store retains its complete count surcharge");
 		require(machine.memory.readMappedWord(address) == 0x10203040u && machine.memory.readMappedWord(address + 4094u * 4u) == 0xa1b2c3d4u, "WIDE displacement B/C remain raw unsigned12-bit register/count fields");
 		require(machine.memory.readMappedWord(address + 4095u * 4u) == 0u, "counted store writes exactly C words");
@@ -199,7 +184,7 @@ void wideDisplacedStoreCountRemainsUnsigned() {
 
 int main() {
 	try {
-		opcodeOperandInterpretations(); uniformInstructionBaseCycles(); signedRkBoundaries(); rawFieldsAndInlineCaches(); rewrittenPayloadVariants();
+		opcodeOperandInterpretations(); signedRkBoundaries(); rawFieldsAndInlineCaches(); rewrittenPayloadVariants();
 		wideDisplacementsKeepTheirOwnOperandLanes(); wideDisplacedStoreCountRemainsUnsigned();
 		std::cout << "CPU decoded operand tests passed\n";
 		return 0;

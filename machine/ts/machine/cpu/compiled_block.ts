@@ -4,7 +4,6 @@ import { DecodedDispatchOp, type Blua32ExecutionImage, type DecodedInstructionPa
 import { ValueTag } from './value';
 import type { Memory } from '../memory/memory';
 import { emitMemoryAccess, emitWordStores } from './compiled_block_memory';
-import { ceilDiv4 } from '../common/numeric';
 import { JavaScriptRegisterCache } from './compiled_block_registers';
 import { emitComparison } from './compiled_block_compare';
 import type { CompiledRegion } from './compiled_region';
@@ -303,7 +302,7 @@ export function emitJavaScriptBlock(
 			source.push(emitters[op]!(page, word, image, registers, exitIndex));
 		}
 		// The checked exit precedes this instruction's readiness surcharge.
-		if (words) cycles += ceilDiv4(page.c[word]);
+		if (words) cycles += page.c[word];
 		if (op === OpCode.LOADNIL) cycles += page.b[word];
 		if (op === OpCode.VARARG && page.b[word] !== 0) cycles += page.b[word] - 1;
 		if (op === OpCode.VARARG && page.b[word] === 0) ++openVarargs;

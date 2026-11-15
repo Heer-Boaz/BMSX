@@ -153,7 +153,7 @@ test('return ranges preserve shifted source slots when growing the caller stack'
 			const table = cpu.createTable(0, 0);
 			cpu.rootThread.frameAtDepth(0).registers.setNumber(0, 91);
 			cpu.rootThread.frameAtDepth(0).registers.setTable(1, table);
-			assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
+			assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE] + BASE_CYCLES[OpCode.CALL]), RunResult.Yielded);
 			assert.equal(cpu.getFrameDepth(), 2);
 			const callee = cpu.rootThread.frameAtDepth(1);
 			const samples: Value[] = [-0, null, false, valueString(cpu.stringPool.intern('result')), table];

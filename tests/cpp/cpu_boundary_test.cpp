@@ -912,7 +912,7 @@ void returnRangesSurviveCallerStackGrowth() {
 			Table* table = cpu.createTable(0, 0);
 			cpu.activeThread()->frameAtDepth(0)->registers[0] = valueNumber(91);
 			cpu.activeThread()->frameAtDepth(0)->registers[1] = valueTable(table);
-			require(cpu.runUntilDepth(0, 3) == RunResult::Yielded && cpu.getFrameDepth() == 2, "prepare a real nested return");
+			require(cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]) == RunResult::Yielded && cpu.getFrameDepth() == 2, "prepare a real nested return");
 			CallFrame& callee = *cpu.activeThread()->frameAtDepth(1);
 			const Value samples[] = {valueNumber(-0.0), valueNil(), valueBool(false), valueString(cpu.stringPool().intern("result")), valueTable(table)};
 			for (int i = 0; i < produced; ++i) callee.registers[5 + i] = samples[i % 5];

@@ -76,13 +76,13 @@ export const decodeValueCount = (operand: number, openCount: number): number =>
 // WIDE is a prefix, not a separately executed instruction.
 export const BASE_CYCLES = new Uint8Array([
 	0, 2, 2, 2, 3, 2, 2, 2,
-	2, 2, 2, 2, 3, 3, 2, 3,
-	2, 2, 2, 2, 32, 2, 33, 2,
+	2, 2, 2, 2, 3, 3, 4, 5,
+	4, 2, 2, 2, 32, 34, 33, 128,
 	2, 2, 2, 2, 2, 2, 3, 2,
-	2, 2, 2, 2, 2, 2, 2, 2,
-	2, 2, 2, 2, 2, 3, 3, 3,
-	3, 3, 3, 3, 2, 2, 2, 3,
-	2, 3, 2, 3, 2, 3, 2, 2,
+	2, 3, 2, 2, 2, 2, 2, 2,
+	2, 2, 2, 8, 3, 4, 3, 6,
+	6, 3, 3, 3, 2, 2, 3, 4,
+	3, 4, 4, 5, 4, 5, 5, 2,
 ]);
 
 export const OPCODE_USES_BX = new Uint8Array([

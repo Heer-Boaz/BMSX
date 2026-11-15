@@ -453,9 +453,11 @@ A+1 and never lowers it. The positive-count LOADNIL range is described separatel
 below.
 
 Opcode numbers are zero-based. Nominal cycles are the base charge applied before
-an instruction executes. The constant, arithmetic, bitwise, text and comparison
-instructions below each cost two cycles except DIV and FLOORDIV, whose
-charges are listed in the arithmetic table, and CONCATN, which costs three.
+an instruction executes. The tables distinguish short register operations,
+indexed-value operations,
+frame control and long arithmetic. Most constant, arithmetic, bitwise and
+comparison instructions cost two cycles; DIV, MOD, FLOORDIV, POW and LEN have
+the distinct charges shown below. CONCATN costs three cycles.
 LOADNIL adds one cycle per written register. Text construction and String
 ordering add the length-dependent charges specified below. Readiness waits,
 counted-transfer surcharges and builtin charges are
@@ -492,9 +494,13 @@ DIV is ordinary floating-point division. FLOORDIV instead rounds the quotient do
 
 DIV has a fixed execution budget of 31 cycles; FLOORDIV adds one cycle for
 rounding the quotient downward. Including the uniform instruction-supply
-allowance, their nominal charges are 32 and 33 cycles. These charges do not
-depend on operand values or whether the result is finite. ADD, SUB, and MUL
-retain the two-cycle nominal charge.
+allowance, their nominal charges are 32 and 33 cycles. MOD has a fixed
+34-cycle charge for the remainder class, including its divisor-sign adjustment.
+POW has a fixed 128-cycle charge for general exponentiation. These are distinct
+nominal arithmetic classes, not operand-dependent iteration counts. Their base
+charges do not change for special operands, nonfinite results or a result that
+can be determined without the general arithmetic path. ADD, SUB and MUL retain
+the two-cycle nominal charge.
 
 DIV, MOD, and FLOORDIV have no separate zero-divisor or nonfinite-operand guard. They use the arithmetic operations stated below, and their results remain Numbers. Do not assume a checked integer-divide trap, substitute a saturated result, or apply the finite-input quotient-and-remainder rules to every nonfinite case.
 
@@ -504,9 +510,9 @@ DIV, MOD, and FLOORDIV have no separate zero-divisor or nonfinite-operand guard.
 | SUB | `12H` | Numeric reads of RK(B), RK(C) | left − right | 2 |
 | MUL | `13H` | Numeric reads of RK(B), RK(C) | left × right | 2 |
 | DIV | `14H` | Numeric reads of RK(B), RK(C) | left divided by right | 32 |
-| MOD | `15H` | Numeric reads of RK(B), RK(C) | Start with the floating-point remainder r. If r>0 and right<0, or r<0 and right>0, return r+right; otherwise return r. | 2 |
+| MOD | `15H` | Numeric reads of RK(B), RK(C) | Start with the floating-point remainder r. If r>0 and right<0, or r<0 and right>0, return r+right; otherwise return r. | 34 |
 | FLOORDIV | `16H` | Numeric reads of RK(B), RK(C) | Set q to left/right and t to q truncated toward zero. Return t−1 if t>q; otherwise return t. | 33 |
-| POW | `17H` | Numeric reads of RK(B), RK(C) | left raised to the power right, with the special cases below | 2 |
+| POW | `17H` | Numeric reads of RK(B), RK(C) | left raised to the power right, with the special cases below | 128 |
 | UNM | `1FH` | Numeric read of R[B], not RK(B); C unused | Negation of the operand, including its zero sign | 2 |
 
 
@@ -553,7 +559,7 @@ only its three base cycles.
 | CONCAT | `1DH` | RK(B), then RK(C); every language value kind has the conversion shown below | Combined String | 2 |
 | CONCATN | `1EH` | B first register; C register count; neither B nor C is RK | String formed from `R[B]` through `R[B+C−1]`; empty String when C=0 | 3 |
 | NOT | `20H` | R[B], not RK(B); C unused | Boolean true for nil or false; boolean false for every other kind | 2 |
-| LEN | `21H` | R[B], not RK(B); C unused; String or Table | Number equal to the String codepoint count or Table array length; other kinds fault | 2 |
+| LEN | `21H` | R[B], not RK(B); C unused; String or Table | Number equal to the String codepoint count or Table array length; other kinds fault | 3 |
 
 
 
@@ -876,7 +882,7 @@ cell. This applies to `RET`, `RFE`, protected error unwinding and coroutine
 close. Traversing calls without open captures adds no capture charge.
 Register reservation size does not add a placement charge.
 
-`RET` has a base charge of **3 cycles** and uses the same receiving-range rule.
+`RET` has a base charge of **6 cycles** and uses the same receiving-range rule.
 Do not count produced values that the receiver discards. If the caller requests all results,
 the placement charge is the number produced; for a fixed request it is exactly
 the requested count. Discarding all results adds no result-placement charge,
@@ -1093,12 +1099,12 @@ The following tables describe the decoded operands. `A`, `B`, `C`, and `Bx` name
 
 | Instruction | Opcode | Operands | Result or effect | Base cycles |
 |---|---:|---|---|---:|
-| `CALL` | `2FH` | `A, B, C` | Call the closure or builtin in `R(A)` with arguments beginning at `R(A+1)`. `B=0`: use the open argument range; otherwise supply `B-1` arguments. `C=0`: accept all results; otherwise accept exactly `C-1`, truncating or nil-padding. Results begin at `R(A)`. | 3 |
-| `RET` | `30H` | `A, B` | Close the frame's open upvalues and return values beginning at `R(A)`. `B=0`: produce the open range; otherwise produce exactly `B-1` values. | 3 |
+| `CALL` | `2FH` | `A, B, C` | Call the closure or builtin in `R(A)` with arguments beginning at `R(A+1)`. `B=0`: use the open argument range; otherwise supply `B-1` arguments. `C=0`: accept all results; otherwise accept exactly `C-1`, truncating or nil-padding. Results begin at `R(A)`. | 6 |
+| `RET` | `30H` | `A, B` | Close the frame's open upvalues and return values beginning at `R(A)`. `B=0`: produce the open range; otherwise produce exactly `B-1` values. | 6 |
 | `VARARG` | `2EH` | `A, B` | Copy saved varargs beginning at `R(A)`. `B=0`: copy all; otherwise copy exactly `B-1`, padding with nil. | 3 |
-| `CLOSURE` | `2BH` | `A, Bx`, register-address flag | Construct a closure in `R(A)`. Flag clear: function record at `Bx × 16`. Flag set: address supplied by `R(Bx)`. Capture according to the record's upvalue descriptors. | 2 |
-| `GETUP` | `2CH` | `A, B` | `R(A) = upvalue(B)` of the current closure. | 2 |
-| `SETUP` | `2DH` | `A, B` | `upvalue(B) = R(A)` in the current closure. | 3 |
+| `CLOSURE` | `2BH` | `A, Bx`, register-address flag | Construct a closure in `R(A)`. Flag clear: function record at `Bx × 16`. Flag set: address supplied by `R(Bx)`. Capture according to the record's upvalue descriptors. | 8 |
+| `GETUP` | `2CH` | `A, B` | `R(A) = upvalue(B)` of the current closure. | 3 |
+| `SETUP` | `2DH` | `A, B` | `upvalue(B) = R(A)` in the current closure. | 4 |
 
 
 
@@ -1107,10 +1113,10 @@ The following tables describe the decoded operands. `A`, `B`, `C`, and `Bx` name
 
 | Instruction | Opcode | Operands | Result or effect | Base cycles |
 |---|---:|---|---|---:|
-| `GETGL` | `38H` | `A, Bx` | Load into `R(A)` the ordinary global selected by ordinary-global image name index `Bx`. | 2 |
-| `SETGL` | `39H` | `A, Bx` | Store `R(A)` into the ordinary global selected by ordinary-global image name index `Bx`. | 3 |
-| `GETSYS` | `36H` | `A, Bx` | Load into `R(A)` the system global selected by system-global image name index `Bx`. | 2 |
-| `SETSYS` | `37H` | `A, Bx` | Store `R(A)` into the system global selected by system-global image name index `Bx`. | 3 |
+| `GETGL` | `38H` | `A, Bx` | Load into `R(A)` the ordinary global selected by ordinary-global image name index `Bx`. | 3 |
+| `SETGL` | `39H` | `A, Bx` | Store `R(A)` into the ordinary global selected by ordinary-global image name index `Bx`. | 4 |
+| `GETSYS` | `36H` | `A, Bx` | Load into `R(A)` the system global selected by system-global image name index `Bx`. | 3 |
+| `SETSYS` | `37H` | `A, Bx` | Store `R(A)` into the system global selected by system-global image name index `Bx`. | 4 |
 
 
 
@@ -1119,14 +1125,14 @@ The following tables describe the decoded operands. `A`, `B`, `C`, and `Bx` name
 
 | Instruction | Opcode | Operands | Result or effect | Base cycles |
 |---|---:|---|---|---:|
-| `GETT` | `0EH` | `A, B, C` | `R(A) = index(R(B), RK(C))`. | 2 |
-| `SETT` | `0FH` | `A, B, C` | `index(R(A), RK(B)) = RK(C)`. | 3 |
-| `GETI` | `3AH` | `A, B, C` | `R(A) = index(R(B), C)`. `C` is the integer key itself. | 2 |
-| `SETI` | `3BH` | `A, B, C` | `index(R(A), B) = RK(C)`. `B` is the integer key itself. | 3 |
-| `GETFIELD` | `3CH` | `A, B, C` | `R(A) = index(R(B), K(C))`, where `K(C)` supplies the string key. | 2 |
-| `SETFIELD` | `3DH` | `A, B, C` | `index(R(A), K(B)) = RK(C)`, where `K(B)` supplies the string key. | 3 |
-| `SELF` | `3EH` | `A, B, C` | Preserve original `R(B)` in `R(A+1)`, then set `R(A) = index(original R(B), K(C))`, where `K(C)` supplies the string key. | 2 |
-| `NEWT` | `10H` | `A, B, C` | Put a new table in `R(A)`, with array-capacity request `B` and hash-size request `C`. | 2 |
+| `GETT` | `0EH` | `A, B, C` | `R(A) = index(R(B), RK(C))`. | 4 |
+| `SETT` | `0FH` | `A, B, C` | `index(R(A), RK(B)) = RK(C)`. | 5 |
+| `GETI` | `3AH` | `A, B, C` | `R(A) = index(R(B), C)`. `C` is the integer key itself. | 4 |
+| `SETI` | `3BH` | `A, B, C` | `index(R(A), B) = RK(C)`. `B` is the integer key itself. | 5 |
+| `GETFIELD` | `3CH` | `A, B, C` | `R(A) = index(R(B), K(C))`, where `K(C)` supplies the string key. | 4 |
+| `SETFIELD` | `3DH` | `A, B, C` | `index(R(A), K(B)) = RK(C)`, where `K(B)` supplies the string key. | 5 |
+| `SELF` | `3EH` | `A, B, C` | Preserve original `R(B)` in `R(A+1)`, then set `R(A) = index(original R(B), K(C))`, where `K(C)` supplies the string key. | 5 |
+| `NEWT` | `10H` | `A, B, C` | Put a new table in `R(A)`, with array-capacity request `B` and hash-size request `C`. | 4 |
 
 After successful table construction, `NEWT` adds one cycle per initialized Value
 slot: `B + 2 × H`, where `H` is zero when `C` is zero and otherwise the smallest
@@ -1175,7 +1181,7 @@ instruction or pending interrupt is accepted.
 
 ### Builtin call charges {#sec-cpu-builtin-call-charges}
 
-CALL costs 3 base cycles. A primitive target adds its own base charge of 1, 2
+CALL costs 6 base cycles. A primitive target adds its own base charge of 1, 2
 or 4 cycles. Its completed receiving ranges also incur the value-placement
 charges above; discarded scratch results do not. Table traversal additionally
 charges the examined positions specified for `next` in the BIOS base reference.
@@ -1308,7 +1314,8 @@ Each register is converted to an unsigned 32-bit integer. The starting address m
 
 Before writing anything, the instruction scans the counted span's IO overlap in increasing address order and waits on the first not-ready word. This preflight happens before the sequence surcharge as well as before any write. Consequently, a later not-ready IO word can defer the instruction before an earlier word would otherwise commit or fault. The readiness span is computed without 32-bit wrap; the actual write addresses wrap modulo `2^32`. Do not treat this as readiness preflight for IO reached only by wrapping into low addresses.
 
-Once preflight succeeds, the instruction charges one additional cost unit per four counted words, rounded up: `(C + 3) >> 2`. It then attempts the words in increasing `i` order and checks for a new bus fault after every word. The first such fault stops the sequence and raises `DataBusError`. Earlier successful words remain written; later words are not attempted. The full sequence surcharge has already been charged even if a later word faults.
+Once preflight succeeds, the instruction charges one additional cycle per
+counted 32-bit word: `C` cycles. It then attempts the words in increasing `i` order and checks for a new bus fault after every word. The first such fault stops the sequence and raises `DataBusError`. Earlier successful words remain written; later words are not attempted. The full sequence surcharge has already been charged even if a later word faults.
 
 A blocked attempt writes nothing. The CPU retains the decoded span and its
 effective start address; a matching ready edge repeats the readiness preflight,
@@ -1326,10 +1333,10 @@ partial effects.
 |---|---|---|---:|
 | `04H` | `LOAD_MEM_D A, B, C, disp` | Load `read_C((u32(R[B]) + 4×disp) mod 2^32)` into `R[A]`; leave `R[A]` unchanged on a new bus fault | 3 |
 | `0CH` | `STORE_MEM_D A, B, C, disp` | Store `R[A]` in scalar format `C` at `(u32(R[B]) + 4×disp) mod 2^32` | 3 |
-| `0DH` | `STORE_MEM_WORDS_D A, B, C, disp` | Starting at `(u32(R[B]) + 4×disp) mod 2^32`, store `C` consecutive unsigned words from `R[A]` onward | `3 + ((C+3)>>2)` after successful readiness preflight |
+| `0DH` | `STORE_MEM_WORDS_D A, B, C, disp` | Starting at `(u32(R[B]) + 4×disp) mod 2^32`, store `C` consecutive unsigned words from `R[A]` onward | `3 + C` after successful readiness preflight |
 | `31H` | `LOAD_MEM A, B, C` | Load `read_C(u32(RK(B)))` into `R[A]`; leave `R[A]` unchanged on a new bus fault | 3 |
 | `32H` | `STORE_MEM A, B, C` | Store `R[A]` in scalar format `C` at `u32(RK(B))` | 3 |
-| `33H` | `STORE_MEM_WORDS A, B, C` | Starting at `u32(RK(B))`, store `C` consecutive unsigned words from `R[A]` onward | `3 + ((C+3)>>2)` after successful readiness preflight |
+| `33H` | `STORE_MEM_WORDS A, B, C` | Starting at `u32(RK(B))`, store `C` consecutive unsigned words from `R[A]` onward | `3 + C` after successful readiness preflight |
 
 
 
@@ -1361,7 +1368,11 @@ The branch itself performs no target-memory read or target-alignment check. Fetc
 The instruction tables give **base charges**, not whole-program transfer rates.
 Each executed instruction's base charge includes one cycle for instruction
 supply. This is a uniform allowance, not a prediction of individual cache
-hits, misses or refill intervals.
+hits, misses or refill intervals. A base charge is fixed for its opcode: prior
+accesses, aliases, module origin and arithmetic special cases do not select a
+different price. Only the additional work and readiness waits specified here
+are added. In particular, ordinary table lookup has no per-probe or metatable-
+chain surcharge; Table LEN has no per-boundary-probe surcharge.
 When an instruction starts, PC advances over its complete width
 and its base charge is incurred. Privilege, address alignment and write-ready
 handling occur after that base charge. A blocked store retains that charge;
@@ -1393,6 +1404,13 @@ are selected instruction base charges, not a complete timing table:
 | `ADD`, `SUB`, `MUL` | 2 cycles |
 | `DIV` | 32 cycles |
 | `FLOORDIV` | 33 cycles |
+| `MOD` | 34 cycles |
+| `POW` | 128 cycles |
+| `GETT`, `GETI`, `GETFIELD` | 4 cycles |
+| `SETT`, `SETI`, `SETFIELD`, `SELF` | 5 cycles |
+| `NEWT` | 4 cycles, plus initialized Value slots |
+| `CLOSURE` | 8 cycles, plus bound upvalue descriptors |
+| `CALL`, `RET` | 6 cycles, plus placed values and closed captures |
 | `WIDE` prefix | 0 cycles |
 
 A `WIDE` instruction uses its body's base charge; the prefix does not add
@@ -1407,7 +1425,7 @@ transfer-instruction table. [[DMA — Transfer timing](dma.md#sec-dma-transfer-t
 
 
 A scalar memory instruction costs 3 base cycles, including either four-byte or
-eight-byte numeric formats. A counted store adds `(C+3)>>2` only after its
+eight-byte numeric formats. A counted store adds `C` cycles, one per 32-bit word, only after its
 write-ready preflight succeeds. These are instruction charges, not an
 electrical memory-bus bandwidth specification.
 
@@ -1415,8 +1433,8 @@ electrical memory-bus bandwidth specification.
 |---:|---:|---:|---:|
 | 0 | 3 | 0 | 3 |
 | 1 | 3 | 1 | 4 |
-| 4 | 3 | 1 | 4 |
-| 5 | 3 | 2 | 5 |
+| 4 | 3 | 4 | 7 |
+| 5 | 3 | 5 | 8 |
 
 
 The comparison skip, full-width branch and counted-store examples concern

@@ -18,13 +18,13 @@ import { ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
 test('every executed opcode has the same additional instruction charge, not a WIDE-prefix charge', () => {
 	const beforeFetchAllowance = [
 		0, 1, 1, 1, 2, 1, 1, 1,
-		1, 1, 1, 1, 2, 2, 1, 2,
-		1, 1, 1, 1, 31, 1, 32, 1,
+		1, 1, 1, 1, 2, 2, 3, 4,
+		3, 1, 1, 1, 31, 33, 32, 127,
 		1, 1, 1, 1, 1, 1, 2, 1,
-		1, 1, 1, 1, 1, 1, 1, 1,
-		1, 1, 1, 1, 1, 2, 2, 2,
-		2, 2, 2, 2, 1, 1, 1, 2,
-		1, 2, 1, 2, 1, 2, 1, 1,
+		1, 2, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 7, 2, 3, 2, 5,
+		5, 2, 2, 2, 1, 1, 2, 3,
+		2, 3, 3, 4, 3, 4, 4, 1,
 	];
 	assert.equal(BASE_CYCLES[OpCode.WIDE], 0);
 	for (let op = 1; op < BASE_CYCLES.length; ++op) {

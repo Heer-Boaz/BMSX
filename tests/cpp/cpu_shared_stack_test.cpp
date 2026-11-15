@@ -129,7 +129,7 @@ void formalReservationRoots(bool interpreted) {
 	for (int index = 0; index < 6; ++index) parent->registers[5 + index] = valueNumber(index);
 	auto* table = cpu.createTable(1, 0); table->setInteger(1, valueNumber(73));
 	parent->registers[11] = valueTable(table); parent->top = 12;
-	cpu.runUntilDepth(0, 3);
+	cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]);
 	auto* child = cpu.activeThread()->currentFrame;
 	require(cpu.getFrameDepth() == 2 && child->stackCapacity == 7 && child->top == 7,
 		"the formal count owns every argument even when maxStack is smaller");

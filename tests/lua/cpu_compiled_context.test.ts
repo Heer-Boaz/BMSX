@@ -10,7 +10,7 @@ import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
 test('compiled globals use the live banks across growth, keep namespaces distinct and preserve raw value kinds', () => {
@@ -26,7 +26,8 @@ test('compiled globals use the live banks across growth, keep namespaces distinc
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 8, maxStack: 16 }],
 		globalNames: ['shared', 'copied', 'numeric'], systemGlobalNames: ['shared', 'copied', 'numeric'] });
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
-	runCpuParity(js, ref, 1100);
+	const loopCycles = BASE_CYCLES[OpCode.GETGL] + 2 * BASE_CYCLES[OpCode.SETSYS] + BASE_CYCLES[OpCode.GETSYS] + 2 * BASE_CYCLES[OpCode.SETGL] + BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.JMP];
+	runCpuParity(js, ref, 50 * loopCycles);
 	const frame = js.rootThread.frameAtDepth(0), page = frame.decodedPage!;
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const block = page.compiledBlocks!.entries[entry]!;
@@ -41,7 +42,7 @@ test('compiled globals use the live banks across growth, keep namespaces distinc
 			cpu.setGlobalByKey(cpu.stringPool.intern('shared'), r.getTag(12), r.getScalar(12), r.getReference(12));
 			cpu.setSystemGlobalByKey(cpu.stringPool.intern('shared'), ValueTag.Number, 73, null);
 		}
-		runCpuParity(js, ref, 20);
+		runCpuParity(js, ref, loopCycles);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 		assert.equal(js.getSystemGlobalByKey(js.stringPool.find('copied')!), frame.registers.get(12));
 		assert.equal(js.getGlobalByKey(js.stringPool.find('copied')!), 73);
@@ -52,7 +53,7 @@ test('compiled globals use the live banks across growth, keep namespaces distinc
 		r.setTable(12, cpu.createTable(0, 0));
 		cpu.setGlobalByKey(cpu.stringPool.intern('shared'), r.getTag(12), r.getScalar(12), r.getReference(12));
 	}
-	runCpuParity(js, ref, 20);
+	runCpuParity(js, ref, loopCycles);
 	assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 	assert.equal(js.getSystemGlobalByKey(js.stringPool.find('copied')!), frame.registers.getTable(12));
 	assert.ok(page.compiledBlocks!.entries[entry] === block, 'growing the bank does not retire or strand the compiled consumer');
@@ -131,6 +132,7 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 	writeInstruction(text, 7, OpCode.GETUP, 6, 1, 0);
 	writeInstruction(text, 8, OpCode.JMP, 0, 63, 55, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 9, maxStack: 16 }] });
+	const loopCycles = BASE_CYCLES[OpCode.K1] + 3 * BASE_CYCLES[OpCode.GETUP] + BASE_CYCLES[OpCode.KSMI] + 2 * BASE_CYCLES[OpCode.SETUP] + BASE_CYCLES[OpCode.ADD] + BASE_CYCLES[OpCode.JMP];
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const frame = cpu.rootThread.frameAtDepth(0);
@@ -139,7 +141,7 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 		const bound = frame.closure;
 		frame.closure = new Closure(bound.functionAddress, [open, closed], 0, bound.codeAddress,
 			bound.numParams, bound.maxStack, bound.flags, bound.upvalueTableAddress, bound.executionDomainId, bound.recordUpvalueCount, false);
-		cpu.runUntilDepth(0, 1100);
+		cpu.runUntilDepth(0, 50 * loopCycles);
 	}
 	const frame = js.rootThread.frameAtDepth(0), page = frame.decodedPage!;
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
@@ -148,7 +150,7 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 	for (const value of [null, false, true, -0, NaN, 'upvalue'] as const) {
 		for (const cpu of [js, ref]) cpu.rootThread.frameAtDepth(0).registers.set(12,
 			value === 'upvalue' ? valueString(cpu.stringPool.intern(value)) : value);
-		runCpuParity(js, ref, 20);
+		runCpuParity(js, ref, loopCycles);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
 		assert.equal(frame.registers.getNumber(3), 10, 'SETUP invalidates the earlier cached alias of R0');
 		assert.equal(frame.registers.getNumber(4), 9);

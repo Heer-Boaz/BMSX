@@ -7,7 +7,7 @@ import { ValueTag, valueString } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_METATABLE_LOOP, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
 test('compiled generic arrays and string-cache probes retain all kinds across key changes, rehashing and nil writes', () => {
@@ -68,7 +68,7 @@ for (const generic of [false, true]) test(`compiled array reads resolve inherite
 		const own = cpu.createTable(2, 0), parent = cpu.createTable(2, 0), meta = cpu.createTable(0, 1);
 		parent.setInteger(1, 73); meta.setStringKey(cpu.stringPool.intern('__index'), parent); own.metatable = meta;
 		cpu.rootThread.frameAtDepth(0).registers.setTable(0, own); cpu.rootThread.frameAtDepth(0).registers.setNumber(1, 1);
-		cpu.runUntilDepth(0, 300);
+		cpu.runUntilDepth(0, 32 * (BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.SELF] + BASE_CYCLES[OpCode.JMP]));
 	}
 	for (const value of [false, 0, null, true, 19, null]) {
 		for (const cpu of [js, ref]) cpu.rootThread.frameAtDepth(0).registers.getTable(0).setInteger(1, value);
@@ -138,7 +138,7 @@ test('compiled SELF publishes its original receiver and top before a failing inh
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const table = cpu.createTable(0, 1); table.setStringKey(cpu.stringPool.intern('method'), 73);
-		cpu.rootThread.frameAtDepth(0).registers.setTable(9, table); cpu.runUntilDepth(0, 300);
+		cpu.rootThread.frameAtDepth(0).registers.setTable(9, table); cpu.runUntilDepth(0, 32 * (BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.SELF] + BASE_CYCLES[OpCode.JMP]));
 	}
 	const frame = js.rootThread.frameAtDepth(0), entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	assert.equal(frame.decodedPage!.compiledBlocks!.entries[entry]!.sourceWords, 3);
@@ -175,7 +175,7 @@ for (const [op, key] of [
 		const encodedKey = key === 'field' ? valueString(cpu.stringPool.intern(key)) : key;
 		table.set(encodedKey, 73);
 		r.setTable(0, table); r.set(1, encodedKey); r.setNumber(9, 17);
-		cpu.runUntilDepth(0, 304);
+		cpu.runUntilDepth(0, 32 * (2 * BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[op] + BASE_CYCLES[OpCode.JMP]));
 		if (backend === CpuExecutionBackend.JavaScript) {
 			const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 			assert.ok(frame.decodedPage!.compiledBlocks!.entries[entry], 'exercise an adopted generated loop');
@@ -236,7 +236,7 @@ test('compiled NEWT materializes allocation roots and leaves destination untouch
 		const retained = cpu.createTable(350000);
 		cpu.setGlobalByKey(cpu.stringPool.find('retained')!, ValueTag.Table, NaN, retained);
 	}
-	runCpuParity(js, ref, 4);
+	runCpuParity(js, ref, BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.NEWT]);
 	assert.equal(js.instructionBudgetRemaining, 0, 'failed NEWT pays only the completed prefix and base cycles');
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);

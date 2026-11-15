@@ -235,9 +235,11 @@ void wideContinuationAcrossPage() {
 	auto& lookup = *parent->executionImage->nativeCodeLookup;
 	auto* cell = lookup.entrySlot(continuation, 0);
 	require(!*cell, "reserving an absent return page does not fetch or compile it");
+	const int loopCycles = BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]
+		+ BASE_CYCLES[static_cast<u8>(OpCode::RET)] + BASE_CYCLES[static_cast<u8>(OpCode::KSMI)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
 	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
 	for (;;) {
-		machine.cpu.runUntilDepth(0, 4096);
+		machine.cpu.runUntilDepth(0, 128 * loopCycles);
 		machine.cpu.runUntilDepth(1, 100);
 		if (*cell && parent->nativeContinuationCells[0] == cell) break;
 		require(std::chrono::steady_clock::now() < deadline, "a cross-page return target is eventually published");

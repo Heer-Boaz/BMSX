@@ -3579,7 +3579,7 @@ shows how their costs combine for one fill-and-fence sequence.
 The following complete instruction sequence supplies a
 32×4 red fill, queues an IRQ marker, waits for it, saves the observed status,
 acknowledges both IRQ latches, checks idle separately, saves that status and
-returns. **Its cost is 110 system cycles**, not 110 plus the fill's command interval.
+returns. **Its cost is 113 system cycles**, not 113 plus the fill's command interval.
 CPU issue/polling and GPU work overlap.
 
 The schedule includes address setup, loads and stores, status tests, taken
@@ -3593,7 +3593,7 @@ is idle, with empty input, no partial packet or readback, its IRQ request clear,
 and no pending competing work. The reset drawing/display state supplies no row
 suppression. DMA does not own either port, ingress is not stopped, the controller
 pending and mask words are zero, and no IRQ, fault or other bus master interrupts
-the interval. The beam remains on reset line parity zero throughout these 110
+the interval. The beam remains on reset line parity zero throughout these 113
 cycles. Startup, the caller and initialization that establishes these preconditions
 are outside this stated interval.
 
@@ -3649,7 +3649,7 @@ BAND, EQ and an executed JMP each cost two cycles. A skipped JMP is not issued.
 | 25 | EQ: compare r13 with r3; skip instruction 26 when unequal |
 | 26 | JMP: jump to instruction 23 |
 | 27 | STORE_MEM_D: r12 → Word[r10+4], retain idle observation |
-| 28 | RET: return, three cycles |
+| 28 | RET: return, six cycles |
 
 There are 29 stored instruction words, but loops change the executed count. In
 this case instructions 16…19 execute five unsuccessful passes, followed by
@@ -3659,7 +3659,7 @@ JMP at instruction 26 is not issued.
 This is an execution fence and status readout, not image readback or a displayed
 frame. A C0 image read requires its separate READY/ownership/count protocol and
 has no fixed whole-transfer latency established by the one-tick command cost.
-Neither the 110-cycle function nor a sum of drawing costs establishes physical bus
+Neither the 113-cycle function nor a sum of drawing costs establishes physical bus
 bandwidth, sustained fill rate or the CPU cost of a complete game frame.
 
 ### Follow issue, command completion and readout {#sec-gpu-follow-issue-command-completion-and-readout}
@@ -3681,7 +3681,7 @@ instruction's charged endpoint:
 | 94,97 | GPU request and controller pending latches are acknowledged separately |
 | 100 | First separate idle read completes with bit 26 set |
 | 104 | Idle BAND/EQ complete; JMP at instruction 26 is skipped |
-| 107,110 | Second status is retained, then RET completes |
+| 107,113 | Second status is retained, then RET completes |
 
 The fill costs 98 command ticks, 49 cycles. The marker adds its own one-cycle
 interval: completion of the queued work is at 83, before the first IRQ observation
@@ -3699,8 +3699,8 @@ example constants.
 | Retain IRQ status; acknowledge GPU and controller | 3 stores | 9 |
 | Successful idle check | load, BAND, EQ | 7 |
 | Retain idle status | 1 store | 3 |
-| Return | 1 RET | 3 |
-| **Complete entered-function interval** | **47** | **110** |
+| Return | 1 RET | 6 |
+| **Complete entered-function interval** | **47** | **113** |
 
 No direct CPU store stalls in this sequence; the marker fits in the input while
 the fill executes. The 52 IRQ-poll cycles are still charged CPU work, not free
