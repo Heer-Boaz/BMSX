@@ -1,5 +1,6 @@
 #include "common/endian.h"
 #include "machine/cpu/cpu.h"
+#include "machine/common/numeric.h"
 #include "machine/cpu/errors.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
@@ -771,13 +772,15 @@ void protectedReturnPlacementCycles() {
 		const bool failFirst = wanted == static_cast<int>(PSX_MACHINE_SPEC.ramBytes + 1);
 		thread->protectedCallContinuations.get(failFirst ? 1 : 0).returnCount = failFirst ? PSX_MACHINE_SPEC.ramBytes : wanted;
 		const bool fault = wanted >= static_cast<int>(PSX_MACHINE_SPEC.ramBytes);
+		// The failed success-range admission is followed by protected error-range admission, which also fails.
+		const int gcCycles = fault ? 2 * (2 * ceilDiv4(static_cast<int>(machine.cpu.luaHeap().usedBytes())) + 3) : 0;
 		bool rejected = false;
 		try { require(machine.cpu.runUntilDepth(1, 2) == RunResult::Halted, "protected return completes at caller"); }
 		catch (const LuaOutOfMemorySignal&) { rejected = true; }
 		require(rejected == fault, "only unadmitted outer range raises allocation failure");
 		const int outer = wanted == 0 ? 4 : wanted - 1;
-		require(machine.cpu.instructionBudgetRemaining == 2 - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - (failFirst ? 0 : 3) - (fault ? 0 : outer),
-			"completed inner status/value range stays charged when outer admission fails");
+		require(machine.cpu.instructionBudgetRemaining == 2 - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - (failFirst ? 0 : 3) - (fault ? 0 : outer) - gcCycles,
+			"completed inner status/value range and pre-admission GC stay charged when outer admission fails");
 		if (!fault) {
 			const Value values[]{valueBool(true), valueBool(true), valueNumber(17), valueNumber(29), valueNil()};
 			for (int i = 0; i < outer; ++i) require(thread->currentFrame->registers[i] == values[i], "protected return retains result order and padding");
@@ -1022,7 +1025,8 @@ void crossPageCalls(bool open, u32 recordOffset) {
 		const auto heap = machine->cpu.luaHeap().captureState();
 		const std::string garbage(heap.nextCollectionBytes - heap.trackedBytes - 1, 'g');
 		machine->cpu.stringPool().intern(garbage);
-		require(machine->cpu.runUntilDepth(0, callPrefix + BASE_CYCLES[static_cast<u8>(OpCode::ADD)] + BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + 1) == RunResult::Yielded && machine->cpu.activeThread()->frameDepth == 1
+		const int gcCycles = 2 * ceilDiv4(static_cast<int>(machine->cpu.luaHeap().usedBytes())) + 4;
+		require(machine->cpu.runUntilDepth(0, gcCycles + callPrefix + BASE_CYCLES[static_cast<u8>(OpCode::ADD)] + BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + 1) == RunResult::Yielded && machine->cpu.activeThread()->frameDepth == 1
 			&& machine->cpu.activeThread()->stackCapacity > capacity && machine->cpu.readFrameRegister(0, 4) == valueNumber(7),
 			"a hot call relocates the stack before a hot callee and return use the new register bases");
 		require(!machine->cpu.stringPool().find(garbage), "callee stack growth actually collects unrooted pressure data");

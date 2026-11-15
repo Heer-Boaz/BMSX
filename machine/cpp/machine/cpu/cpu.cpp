@@ -1762,7 +1762,7 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 		case BuiltinFunctionId::CoroutineYield:
 			throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		case BuiltinFunctionId::CollectGarbage:
-			collectHeap();
+			m_luaHeap.collectRuntime();
 			break;
 		case BuiltinFunctionId::Error:
 			runBuiltinError(args);
@@ -2852,6 +2852,14 @@ void CPU::unwindToDepth(int targetDepth, bool chargeCaptures) {
 		continuation.caller = nullptr;
 		m_activeThread->protectedCallDepth -= 1;
 	}
+}
+
+size_t CPU::collectionRootWordCount() const {
+	size_t words = 3 * (m_systemGlobalNames.size() + m_globalNames.size());
+	for (const auto& image : m_executionImagesByDomain) {
+		if (image) words += 2 * image->constPool.size();
+	}
+	return words;
 }
 
 void CPU::collectHeap() {

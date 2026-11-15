@@ -422,6 +422,7 @@ private:
 	void finishProtectedContinuation(size_t continuationIndex, int resultCount);
 	bool handleProtectedCallError(Value errorValue);
 	void unwindToDepth(int targetDepth, bool chargeCaptures);
+	size_t collectionRootWordCount() const;
 	void collectHeap(Value root0, Value root1, Value root2);
 	StringId internExecutionString(
 		ExecutionDomainId executionDomainId,

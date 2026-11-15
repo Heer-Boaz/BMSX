@@ -1069,6 +1069,53 @@ reservations in [[Memory](memory.md#sec-memory-reserved-and-cartridge-storage-in
 Use addressed byte storage for exact device records and payloads.
 
 
+#### Collection work charge {#sec-cpu-collection-work-charge}
+
+A language-allocation request that invokes collection, and the explicit
+collection primitive, add this charge before collection begins:
+
+$$
+2 \times \left\lceil B / 4 \right\rceil + 2C + 3(S + G)
+$$
+
+`B` is the language-allocation budget already occupied immediately before
+collection. It includes unreachable allocations not yet reclaimed, but excludes
+the allocation request that triggered this collection. Round the aggregate byte
+count once, not each allocation separately. The occupied-byte counts are:
+
+| Allocation | Occupied budget bytes |
+| --- | --- |
+| Table with array capacity `A` and hash capacity `H` | `32 + 8A + 20H` |
+| Closure with `U` captured-variable references | `16 + 8U` |
+| Captured-variable cell | `24` |
+| Thread with `V` reserved Value slots | `64 + 8V` |
+| Allocated String text | UTF-8 byte length |
+
+`C` is the total number of constant Value slots in all activated program images,
+not just the current function's image. `S` and `G` are the numbers of registered
+system-global and cartridge-global slots. Repeated registration of one name
+shares its existing slot. Every constant occupies two 32-bit Value words; each
+global root pair contains one name word and two Value words. These ranges are
+charged even when their Values are nil. Read-only String text supplied by a
+program image does not occupy the language-allocation budget; its constant or
+registered-name root still participates in the root-range charge.
+
+The two-pass pool allowance is a fixed whole-pool work allowance, with one
+additional root-range read allowance. Reserved Thread Value storage is included;
+function-activation control and fixed collector bookkeeping are amortized within
+the pool allowance, not charged by a separate frame-record size. The rule does not prescribe two
+literal traversals of every byte or a worst-case bound on weak-reference
+convergence. It is independent of how many objects survive collection.
+
+Collection completes within the requesting instruction or primitive before the
+next instruction or pending interrupt is accepted, even when its work spans a
+display-frame boundary. Its full charge is retained if collection or the
+subsequent allocation admission raises the out-of-memory error. Existing
+instruction, primitive, table-storage and result-placement charges remain additional;
+collection does not repeat them. Ordinary allocator management adds no further
+charge.
+
+
 #### Weak references and collection {#sec-cpu-weak-references-and-collection}
 
 The collector reads a Table's metatable member `__mode` directly. A String
@@ -1184,8 +1231,9 @@ rebuild charge. This applies equally to table stores and `rawset`.
 
 Each completed phase is charged even if a later phase fails. In particular,
 failure to admit replacement storage retains the sizing-scan charge but adds
-no replacement initialization or migration charge. Collection and allocator
-management add no separate charge. Sizing precedes any allocation-triggered
+no replacement initialization or migration charge. Allocator
+management adds no further charge; collection adds the
+[collection work charge](#sec-cpu-collection-work-charge). Sizing precedes any allocation-triggered
 collection; migration counts only entries that remain afterward, without
 recomputing the selected capacities. A rebuild completes before the next
 instruction or pending interrupt is accepted.

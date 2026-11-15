@@ -1,3 +1,4 @@
+import { ceilDiv4 } from '../../machine/ts/machine/common/numeric';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { runCpuParity } from '../helpers/cpu_execution';
@@ -236,8 +237,9 @@ test('compiled NEWT materializes allocation roots and leaves destination untouch
 		const retained = cpu.createTable(350000);
 		cpu.setGlobalByKey(cpu.stringPool.find('retained')!, ValueTag.Table, NaN, retained);
 	}
+	const gcCycles = 2 * ceilDiv4(js.luaHeap.usedBytes()) + 3; // One registered global, no image constants.
 	runCpuParity(js, ref, BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.NEWT]);
-	assert.equal(js.instructionBudgetRemaining, 0, 'failed NEWT pays only the completed prefix and base cycles');
+	assert.equal(js.instructionBudgetRemaining, -gcCycles, 'failed NEWT pays prefix/base and collection, but no initialization');
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
 	assert.equal(js.readEpcWord(), image.image.functions[0].codeAddress + INSTRUCTION_BYTES);

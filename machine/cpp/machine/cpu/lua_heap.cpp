@@ -4,6 +4,7 @@
 
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/errors.h"
+#include "machine/common/numeric.h"
 #include "spec/bmsx/memory_map.h"
 
 namespace bmsx {
@@ -21,7 +22,7 @@ void LuaHeap::reserve(
 ) {
 	size_t nextBytes = m_trackedBytes + byteCount;
 	if (nextBytes > m_nextCollectionBytes || nextBytes > m_capacityBytes) {
-		m_cpu.collectHeap(root0, root1, root2);
+		collectRuntime(root0, root1, root2);
 		nextBytes = m_trackedBytes + byteCount;
 		if (nextBytes > m_capacityBytes) {
 			throw LuaOutOfMemorySignal{};
@@ -31,6 +32,13 @@ void LuaHeap::reserve(
 		}
 	}
 	m_trackedBytes = nextBytes;
+}
+
+void LuaHeap::collectRuntime(Value root0, Value root1, Value root2) {
+	const size_t cycles = 2 * ceilDiv4(static_cast<int>(m_trackedBytes))
+		+ m_cpu.collectionRootWordCount();
+	m_cpu.instructionBudgetRemaining -= static_cast<int>(cycles);
+	m_cpu.collectHeap(root0, root1, root2);
 }
 
 void LuaHeap::accountTableStorageWork(size_t valueSlots) {

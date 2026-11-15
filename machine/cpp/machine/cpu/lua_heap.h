@@ -28,6 +28,7 @@ public:
 		Value root1 = valueNil(),
 		Value root2 = valueNil()
 	);
+	void collectRuntime(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil());
 	void restoreAllocate(size_t byteCount) { m_trackedBytes += byteCount; }
 	// Completed table-storage work consumes the current run's transient grant.
 	void accountTableStorageWork(size_t valueSlots);

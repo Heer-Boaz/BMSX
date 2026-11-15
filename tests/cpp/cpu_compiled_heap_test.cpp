@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "machine/common/numeric.h"
 #include "machine/cpu/native_block.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
@@ -393,10 +394,11 @@ void concatAllocationFault(bool range) {
 	const auto& block = page.nativeBlocks->entries[word];
 	require(block && block->terminal.exit == (range ? NativeBlockExit::ConcatRange : NativeBlockExit::Concat), "the allocation fault leaves generated code before throwing");
 #endif
+	const int gcCycles = 2 * ceilDiv4(static_cast<int>(native.cpu.luaHeap().usedBytes()));
 	require(native.cpu.runUntilDepth(0, range ? 5 : 4) == scalar.cpu.runUntilDepth(0, range ? 5 : 4), "failed allocations consume the same grant"); requireParity(native, scalar);
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
 		&& native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES, "allocation faults use the completed prefix PC");
-	require(native.cpu.instructionBudgetRemaining == -4 * 1024 * 1024 - (range ? 2 : 0), "allocation faults retain complete logical text-work charges");
+	require(native.cpu.instructionBudgetRemaining == -4 * 1024 * 1024 - (range ? 2 : 0) - gcCycles, "allocation faults retain complete logical text-work and pre-admission GC charges");
 	require(native.cpu.readFrameRegister(0, 0) == valueNumber(73) && native.cpu.activeThread()->frameAtDepth(0)->top == 9, "the failed allocation preserves its destination and published top");
 }
 } // namespace

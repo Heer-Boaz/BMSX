@@ -1,6 +1,7 @@
 import { BASE_RAM_USED_SIZE } from '../../spec/bmsx/memory_map';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from './errors';
 import type { CPU } from './cpu';
+import { ceilDiv4 } from '../common/numeric';
 import {
 	ValueTag,
 	type ValueReference,
@@ -36,7 +37,7 @@ export class LuaHeap {
 	): void {
 		let nextBytes = this.trackedBytes + byteCount;
 		if (nextBytes > this.nextCollectionBytes || nextBytes > this.capacityBytes) {
-			this.cpu.collectTrackedHeapBytes(
+			this.collectRuntime(
 				root0Tag,
 				root0Scalar,
 				root0Reference,
@@ -56,6 +57,26 @@ export class LuaHeap {
 			}
 		}
 		this.trackedBytes = nextBytes;
+	}
+
+	public collectRuntime(
+		root0Tag: ValueTag = ValueTag.Nil,
+		root0Scalar: number = NaN,
+		root0Reference: ValueReference = null,
+		root1Tag: ValueTag = ValueTag.Nil,
+		root1Scalar: number = NaN,
+		root1Reference: ValueReference = null,
+		root2Tag: ValueTag = ValueTag.Nil,
+		root2Scalar: number = NaN,
+		root2Reference: ValueReference = null,
+	): void {
+		this.cpu.instructionBudgetRemaining -= 2 * ceilDiv4(this.trackedBytes)
+			+ this.cpu.collectionRootWordCount();
+		this.cpu.collectTrackedHeapBytes(
+			root0Tag, root0Scalar, root0Reference,
+			root1Tag, root1Scalar, root1Reference,
+			root2Tag, root2Scalar, root2Reference,
+		);
 	}
 
 	public restoreAllocate(byteCount: number): void {

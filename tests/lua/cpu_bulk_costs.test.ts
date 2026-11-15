@@ -1,3 +1,4 @@
+import { ceilDiv4 } from '../../machine/ts/machine/common/numeric';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
@@ -264,10 +265,11 @@ return true`, 3);
     r.setTable(4, cpu.createTable((PSX_MACHINE_SPEC.ramBytes - BASE_RAM_USED_SIZE - cpu.luaHeap.usedBytes() - 4096) >>> 3));
     surcharge = 2048; capacity = 1024;
    }
+   const gcCycles = scenario === 'weak-collection' || scenario === 'failed-growth' ? 2 * ceilDiv4(cpu.luaHeap.usedBytes()) : 0;
    const key = r.get(1);
    cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
    assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.SETT] + 1), RunResult.Yielded);
-   assert.equal(cpu.instructionBudgetRemaining, 1 - surcharge);
+   assert.equal(cpu.instructionBudgetRemaining, 1 - surcharge - gcCycles);
    assert.equal(frame.pc, scenario === 'failed-growth' ? entry : entry + INSTRUCTION_BYTES);
    assert.equal(table.storedSlotCount, capacity);
    if (scenario === 'failed-growth') {

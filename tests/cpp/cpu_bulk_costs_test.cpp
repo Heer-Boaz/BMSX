@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "machine/common/numeric.h"
 #include "machine/cpu/native_block.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
@@ -130,9 +131,11 @@ void rebuildWork(bool scalar) {
    r[4] = valueTable(cpu.createTable(static_cast<int>((PSX_MACHINE_SPEC.ramBytes - BASE_RAM_USED_SIZE - cpu.luaHeap().usedBytes() - 4096) / 8)));
    surcharge = 2048; capacity = 1024;
   }
+  const int gcCycles = scenario == "weak-collection" || scenario == "failed-growth"
+   ? 2 * ceilDiv4(static_cast<int>(cpu.luaHeap().usedBytes())) : 0;
   const Value key = r[1]; machine.restart();
   if (cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::SETT)] + 1) != RunResult::Yielded
-   || cpu.instructionBudgetRemaining != 1 - surcharge || table->storedSlotCount() != capacity
+   || cpu.instructionBudgetRemaining != 1 - surcharge - gcCycles || table->storedSlotCount() != capacity
    || frame->pc != machine.rom.textAddress + (scenario == "failed-growth" ? 0u : INSTRUCTION_BYTES))
    throw std::runtime_error("table rebuild must charge exactly its completed storage work: " + scenario);
   if (scenario == "failed-growth") {

@@ -3981,7 +3981,7 @@ export class CPU implements MappedPageInvalidator {
 			case BuiltinFunctionId.CoroutineYield:
 				throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			case BuiltinFunctionId.CollectGarbage:
-				this.collectTrackedHeapBytes();
+				this.luaHeap.collectRuntime();
 				break;
 			case BuiltinFunctionId.Error:
 				this.runBuiltinError(args);
@@ -5284,6 +5284,14 @@ export class CPU implements MappedPageInvalidator {
 				}
 			}
 		}
+	}
+
+	public collectionRootWordCount(): number {
+		let words = 3 * (this.systemGlobalNames.length + this.globalNames.length);
+		for (const image of this.executionImagesByDomain) {
+			if (image !== null) words += 2 * image.constTags.length;
+		}
+		return words;
 	}
 
 	public collectTrackedHeapBytes(
