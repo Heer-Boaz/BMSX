@@ -44,7 +44,8 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 		&& a.readEpcWord() == b.readEpcWord() && a.readLuaFaultReasonWord() == b.readLuaFaultReasonWord(),
 		"table operations retain exact execution and exception boundaries");
 	const auto left = a.captureRuntimeState(), right = b.captureRuntimeState();
-	require(std::ranges::equal(left.snapshot.words(), right.snapshot.words()) && left.nextObjectHashId == right.nextObjectHashId
+	require(std::ranges::equal(left.snapshot.words(), right.snapshot.words())
+		&& std::ranges::equal(left.snapshot.objectWords(), right.snapshot.objectWords()) && left.nextObjectHashId == right.nextObjectHashId
 		&& left.luaHeap.trackedBytes == right.luaHeap.trackedBytes && left.luaHeap.nextCollectionBytes == right.luaHeap.nextCollectionBytes,
 		"complete value graphs and allocation/collection accounting agree");
 	const auto& first = *a.activeThread(); const auto& second = *b.activeThread();
@@ -54,6 +55,62 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 		const auto& x = *firstFrame; const auto& y = *secondFrame;
 		require(x.pc == y.pc && x.top == y.top && x.stackBase == y.stackBase && x.stackCapacity == y.stackCapacity,
 			"all live frame boundaries agree");
+	}
+}
+
+void stringReadChainBoundaries() {
+	for (const auto op : {OpCode::GETFIELD, OpCode::SELF, OpCode::GETT}) for (const int depth : {1, 2, 32, 33}) {
+		test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), 6, 9, 0);
+		writeInstruction(image.text, 1, static_cast<u8>(op), 6, 6, op == OpCode::GETT ? 1 : 0);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 8, 6, 0);
+		writeInstruction(image.text, 3, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		writeInstruction(image.text, 32, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		image.functions = {{.firstWord=0, .wordCount=4, .maxStack=10}, {.firstWord=32, .wordCount=1}};
+		image.constants = {std::string("chain field")}; image.exceptionFunctionIndex = 1;
+		CpuMachine native(image), scalar(image, true);
+		for (auto* machine : {&native, &scalar}) {
+			auto& cpu = machine->cpu;
+			const auto key = cpu.stringPool().intern("chain field"), indexKey = cpu.stringPool().intern("__index");
+			auto* root = cpu.createTable(0, 1); auto* current = root;
+			for (int i = 1; i < depth; ++i) {
+				auto* next = cpu.createTable(0, 1); auto* meta = cpu.createTable(0, 1);
+				meta->setStringKey(indexKey, valueTable(next)); current->metatable = meta; current = next;
+			}
+			if (depth > 1) current->setStringKey(key, valueFromTag(ValueTag::False, 37));
+			else {
+				auto* meta = cpu.createTable(0, 1); meta->setStringKey(indexKey, valueBool(false)); root->metatable = meta;
+			}
+			Value scratch = valueNumber(73);
+			const auto before = cpu.luaHeap().captureState();
+			const int slot = Table::loadStringIndex(root, indexKey, key, scratch);
+			require((depth == 33 ? slot == TABLE_INDEX_CHAIN_EXHAUSTED : slot != TABLE_INDEX_CHAIN_EXHAUSTED)
+				&& (depth == 1 ? isNil(scratch) : depth == 33 || scratch == valueFromTag(ValueTag::False, 37)),
+				"the raw Table leaf preserves nil/false and the exact32-table chain bound");
+			require(cpu.luaHeap().usedBytes() == before.trackedBytes
+				&& cpu.luaHeap().captureState().nextCollectionBytes == before.nextCollectionBytes,
+				"the leaf performs no tracked allocation or collection work");
+			auto& frame = *cpu.activeThread()->frameAtDepth(0);
+			frame.registers[1] = valueString(key); frame.registers[9] = valueTable(root); frame.registers[8] = valueNumber(73);
+		}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		native.cpu.prepareSystemNativeCode();
+#endif
+		for (const int grant : {0, 1, 2, 3, 4, 16}) {
+			test::runCpuParity(native.cpu, scalar.cpu, grant); requireParity(native, scalar);
+			if (native.cpu.isHaltedUntilIrq()) break;
+		}
+		require(native.cpu.isHaltedUntilIrq(), "short grants reach the same real HALT or exception-handler HALT");
+		if (depth == 33) {
+			require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_METATABLE_LOOP
+				&& native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES
+				&& native.cpu.readFrameRegister(0, 6) == native.cpu.readFrameRegister(0, 9)
+				&& native.cpu.readFrameRegister(0, 8) == valueNumber(73),
+				"chain exhaustion retains exact fault PC, aliased destination and unexecuted suffix");
+			if (op == OpCode::SELF) require(native.cpu.readFrameRegister(0, 7) == native.cpu.readFrameRegister(0, 9),
+				"failing SELF retains the receiver copied before its inherited lookup");
+		} else require(native.cpu.readFrameRegister(0, 8) == (depth == 1 ? valueNil() : valueFromTag(ValueTag::False, 37)),
+			"successful aliased reads commit their own raw result and suffix once");
 	}
 }
 
@@ -335,6 +392,7 @@ void stringStoreGrowthRoots(bool generic) {
 
 int main() {
 	try {
+		stringReadChainBoundaries();
 		genericArraysAndHashKeys(); inheritedTableFactsAreRecheckedOnCpuEntry(); inheritedArrayReads(false); inheritedArrayReads(true); boundaryLengthAndUtf8(); selfAndNilFaults(); wideAllocationFailure(); stringStoreGrowthRoots(false); stringStoreGrowthRoots(true);
 		std::cout << "Compiled table tests passed\n";
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

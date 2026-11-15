@@ -117,6 +117,9 @@ public:
 		}
 		return TABLE_INDEX_CHAIN_EXHAUSTED;
 	}
+	// Generated-code leaf: no allocation, guest callback or architectural write.
+	// The caller commits result only when the returned chain status succeeds.
+	static int loadStringIndex(const Table* table, StringId indexKey, StringId key, Value& result) noexcept;
 	// Pure boundary search; also the generated-code entry point.
 	static double length(const Table* table) noexcept;
 	void clear();

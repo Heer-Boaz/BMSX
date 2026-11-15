@@ -29,6 +29,8 @@ struct NativeBlockAbi {
 	static constexpr int scratches = 4 | SLJIT_ENTER_FLOAT(scratchFloats);
 	static constexpr int saveds = 6 | SLJIT_ENTER_FLOAT(savedFloats);
 	static constexpr int stackBytes = std::max(registerCacheCapacity * sizeof(Value), sizeof(NativeCallScratch));
+	static constexpr int helperResultOffset = registerCacheCapacity * sizeof(Value);
+	static_assert(helperResultOffset + sizeof(Value) <= stackBytes);
 	static constexpr int signature = SLJIT_ARGS2(P, P, P);
 };
 

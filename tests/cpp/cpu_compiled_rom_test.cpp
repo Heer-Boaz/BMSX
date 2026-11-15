@@ -107,7 +107,7 @@ void directRomLoadsUseCurrentOwners() {
 		load.op = static_cast<u8>(displaced ? OpCode::LOAD_MEM_D : OpCode::LOAD_MEM);
 		load.a = 0; load.b = 1; load.c = format; load.disp = displaced ? 255 : 0; load.width = 2; load.baseCycles = 2;
 		const std::array source{NativeBlockInstruction{&load, 0x1000}};
-		auto block = NativeBlock::compile(source, nullptr, bytes, memory, cpu.stringPool());
+		auto block = NativeBlock::compile(source, nullptr, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 		for (const u32 address : {0u, 4u, 16u, CART_ROM_BASE, CART_ROM_BASE + 4u, CART_ROM_BASE + 24u}) {
 			std::array registers{valueNil(), valueNumber(address - static_cast<u32>(load.disp) * 4u)};
 			require(block->run(nativeRunState = {.registers = registers.data(), .constants = nullptr, .remainingCycles = block->terminal.cycles}) == &block->terminal
@@ -124,7 +124,7 @@ void directRomLoadsUseCurrentOwners() {
 		}
 		load.a = load.b;
 		const std::array aliasSource{NativeBlockInstruction{&load, 0x1000}};
-		auto alias = NativeBlock::compile(aliasSource, nullptr, bytes, memory, cpu.stringPool());
+		auto alias = NativeBlock::compile(aliasSource, nullptr, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 		std::array registers{valueNil(), valueNumber(CART_ROM_BASE + 4u - load.disp * 4u)};
 		require(alias->run(nativeRunState = {.registers = registers.data(), .constants = nullptr, .remainingCycles = alias->terminal.cycles}) == &alias->terminal
 			&& registers[1] == scalarLoad(memory, kind, CART_ROM_BASE + 4u), "ROM loads can replace the address register");

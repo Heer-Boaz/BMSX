@@ -227,7 +227,7 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool immediate, b
 		pendingJob.instructionCount = static_cast<u32>(instructionCount);
 		pendingJob.invalidated = false;
 		pendingJob.entries.assign(entries.begin(), entries.end());
-		m_nativeCompilerWorker->submit(sources, image.constPool.data(), NativeCodeBindings(m_memory, m_stringPool), handlers, profile != nullptr);
+		m_nativeCompilerWorker->submit(sources, image.constPool.data(), NativeCodeBindings(m_memory, m_stringPool, asStringId(m_indexKey)), handlers, profile != nullptr);
 		return;
 	}
 #else
@@ -235,7 +235,7 @@ void CPU::prepareNativeSource(NativeCompilationSource& source, bool immediate, b
 #endif
 	measurement.phase(&NativeCompilationProfile::compilationNanoseconds);
 	auto blocks = NativeBlock::compileRegion(sources, image.constPool.data(),
-		NativeCodeBindings(m_memory, m_stringPool), handlers);
+		NativeCodeBindings(m_memory, m_stringPool, asStringId(m_indexKey)), handlers);
 	installNativeRegion(image, page, pagePc, source.slot, entries, std::move(blocks), static_cast<u32>(instructionCount));
 }
 

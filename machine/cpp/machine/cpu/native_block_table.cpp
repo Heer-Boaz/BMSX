@@ -138,8 +138,24 @@ void NativeBlockCompiler::emitStringSlot(bool load, int value, SlowPath& slow) {
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U16, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), headerOffset);
 	misses[missCount++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, valueNil() >> 48u);
 	if (load) {
-		for (size_t i = 0; i < missCount; ++i) slow.jumps[slow.count++] = misses[i];
 		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0, SLJIT_MEM1(SLJIT_R1), 0);
+		auto* done = sljit_emit_jump(m_compiler, SLJIT_JUMP);
+		auto* lookup = sljit_emit_label(m_compiler);
+		for (size_t i = 0; i < missCount; ++i) sljit_set_label(misses[i], lookup);
+		// This leaf cannot allocate or execute guest code. Keep all cached
+		// Values live; a failed chain must not overwrite the guest destination.
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_R3, 0);
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_IMM, m_bindings.indexKey);
+		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R3, 0, SLJIT_SP, 0, SLJIT_IMM, NativeBlockAbi::helperResultOffset);
+		emitCallSpills(false);
+		sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS4(32, P, 32, 32, P), SLJIT_IMM,
+			SLJIT_FUNC_ADDR(&Table::loadStringIndex));
+		emitCallSpills(true);
+		slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0,
+			SLJIT_IMM, TABLE_INDEX_CHAIN_EXHAUSTED);
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_MEM0(), reinterpret_cast<sljit_sw>(&slow.exit->tableCacheSlot), SLJIT_R0, 0);
+		sljit_emit_fop1(m_compiler, SLJIT_MOV_F64, SLJIT_FR0, 0, SLJIT_MEM1(SLJIT_SP), NativeBlockAbi::helperResultOffset);
+		sljit_set_label(done, sljit_emit_label(m_compiler));
 	} else {
 		loadHeader(value, SLJIT_R2);
 		misses[missCount++] = sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, valueNil() >> 48u);

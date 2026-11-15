@@ -266,7 +266,7 @@ struct ContextBlock {
 			d.b = instruction.b; d.c = instruction.c; d.bx = instruction.bx; d.width = 1; d.baseCycles = BASE_CYCLES[d.op];
 			source[i] = {&d, 0x1000u + static_cast<u32>(i) * INSTRUCTION_BYTES}; ++i;
 		}
-		block = NativeBlock::compile(source, constants, bytes, machine.memory, machine.cpu.stringPool());
+		block = NativeBlock::compile(source, constants, bytes, machine.memory, machine.cpu.stringPool(), machine.cpu.stringPool().intern("__index"));
 	}
 };
 

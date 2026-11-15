@@ -154,12 +154,12 @@ struct NativeBlockSource {
 	bool fallthrough = false;
 };
 
-// Captured on the CPU owner thread. Code emission consumes these addresses,
+// Captured on the CPU owner thread. Code emission consumes these bindings,
 // not mutable Memory/controller state. The pointed-to owners are used only by
 // the generated code after it has been published on the CPU thread.
 struct NativeCodeBindings {
 	NativeCodeBindings() = default;
-	NativeCodeBindings(Memory& memory, StringPool& strings);
+	NativeCodeBindings(Memory& memory, StringPool& strings, StringId indexKey);
 	u32 ramBytes = 0;
 	u8* ram = nullptr;
 	const u8* ramWriteGroups = nullptr;
@@ -167,6 +167,7 @@ struct NativeCodeBindings {
 	std::array<const Span<const u8>*, 2> cartridgeRom{};
 	const Span<const u8>* systemRom = nullptr;
 	StringPool* strings = nullptr;
+	StringId indexKey = 0;
 };
 
 // Entry descriptors share one executable allocation. Source invalidation retires
@@ -333,6 +334,7 @@ public:
 		size_t& cacheBytes,
 		Memory& memory,
 		StringPool& strings,
+		StringId indexKey,
 		const NativeBlockExitHandlers& exitHandlers = {},
 		const DecodedInstruction* skippedInstruction = nullptr
 	);

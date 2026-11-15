@@ -436,6 +436,10 @@ Value Table::getStringKeyCached(StringId key, int& predictedSlot) const {
 	return valueNil();
 }
 
+int Table::loadStringIndex(const Table* table, StringId indexKey, StringId key, Value& result) noexcept {
+	return table->resolveStringIndexCached(indexKey, key, -1, result);
+}
+
 int Table::setStringKey(StringId key, const Value& value) {
 	const int nodeIndex = storeStringKeyWithoutGrowth(this, key, value);
 	if (nodeIndex != TABLE_STORE_REQUIRES_GROWTH) return nodeIndex;

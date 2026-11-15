@@ -16,12 +16,12 @@
 
 namespace bmsx {
 
-NativeCodeBindings::NativeCodeBindings(Memory& memory, StringPool& pool)
+NativeCodeBindings::NativeCodeBindings(Memory& memory, StringPool& pool, StringId indexKey)
 	: ramBytes(memory.ramByteCount()), ram(memory.ramData()),
 	  ramWriteGroups(memory.ramWriteWatches().groupData()),
 	  cartridgeSelection(&memory.cartridgeController().selectionWord()),
 	  cartridgeRom{memory.cartridgeController().romStorage(0), memory.cartridgeController().romStorage(1)},
-	  systemRom(&memory.systemRomStorage()), strings(&pool) {}
+	  systemRom(&memory.systemRomStorage()), strings(&pool), indexKey(indexKey) {}
 
 void NativeCodeRegion::publish(size_t& cacheBytes) {
 #if defined(BMSX_NATIVE_COMPILER_WORKER) && defined(SLJIT_CONFIG_ARM)
@@ -52,11 +52,11 @@ void NativeCodeRegion::recordPerfMap(ExecutionDomainId domain, u32 slot, u32 fir
 
 std::unique_ptr<NativeBlock> NativeBlock::compile(
 	std::span<const NativeBlockInstruction> instructions, const Value* constants,
-	size_t& cacheBytes, Memory& memory, StringPool& strings,
+	size_t& cacheBytes, Memory& memory, StringPool& strings, StringId indexKey,
 	const NativeBlockExitHandlers& exitHandlers, const DecodedInstruction* skippedInstruction
 ) {
 	const std::array sources{NativeBlockSource{instructions, skippedInstruction}};
-	auto blocks = compileRegion(sources, constants, NativeCodeBindings(memory, strings), exitHandlers);
+	auto blocks = compileRegion(sources, constants, NativeCodeBindings(memory, strings, indexKey), exitHandlers);
 	blocks.front()->region->publish(cacheBytes);
 	return std::move(blocks.front());
 }

@@ -75,7 +75,7 @@ void ramScalarDatapathsAndGuards() {
 		store.width = 2; store.baseCycles = 2;
 		load = store; load.op = static_cast<u8>(displaced ? OpCode::LOAD_MEM_D : OpCode::LOAD_MEM); load.a = 2;
 		const std::array source{NativeBlockInstruction{&store, 0x1000}, NativeBlockInstruction{&load, 0x1008}};
-		auto block = NativeBlock::compile(source, nullptr, bytes, memory, cpu.stringPool());
+		auto block = NativeBlock::compile(source, nullptr, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 		for (const u32 target : {DYNAMIC_RAM_BASE + 0x204u, DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - 4u,
 			RAM_BASE + PSX_MACHINE_SPEC.ramBytes - width}) for (const Value value : values) {
 			std::array registers{value, valueNumber(target - static_cast<u32>(store.disp) * 4u), valueNil()};
@@ -105,7 +105,7 @@ void ramScalarDatapathsAndGuards() {
 		}
 		load.a = load.b;
 		const std::array aliasSource{NativeBlockInstruction{&load, 0x1000}};
-		auto alias = NativeBlock::compile(aliasSource, nullptr, bytes, memory, cpu.stringPool());
+		auto alias = NativeBlock::compile(aliasSource, nullptr, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 		std::array registers{valueNil(), valueNumber(DYNAMIC_RAM_BASE + 0x204u - store.disp * 4u)};
 		require(alias->run(nativeRunState = {.registers = registers.data(), .constants = nullptr, .remainingCycles = alias->terminal.cycles}) == &alias->terminal && valueIsNumber(registers[1]),
 			"a memory load can replace its own address register");
@@ -114,7 +114,7 @@ void ramScalarDatapathsAndGuards() {
 	DecodedInstruction store;
 	store.op = static_cast<u8>(OpCode::STORE_MEM); store.a = 0; store.b = 1; store.c = 5; store.width = 2; store.baseCycles = 2;
 	const std::array source{NativeBlockInstruction{&store, 0x1000}};
-	auto block = NativeBlock::compile(source, nullptr, bytes, memory, cpu.stringPool());
+	auto block = NativeBlock::compile(source, nullptr, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 	const u32 target = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - 4u;
 	MappedPageBinding page;
 	memory.bindMappedPage(target + 4u, MAPPED_BUS_MASTER_CPU, page);
@@ -129,7 +129,7 @@ void ramScalarDatapathsAndGuards() {
 	DecodedInstruction load = store;
 	load.op = static_cast<u8>(OpCode::LOAD_MEM); load.a = 2;
 	const std::array numericSource{NativeBlockInstruction{&store, 0x1000}, NativeBlockInstruction{&load, 0x1008}};
-	auto numeric = NativeBlock::compile(numericSource, nullptr, bytes, memory, cpu.stringPool());
+	auto numeric = NativeBlock::compile(numericSource, nullptr, bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 	for (u64 header = 0; header <= 0xffffu; ++header) {
 		const Value value = (header << 48u) | 0x123456789abcu;
 		std::array registers{value, valueNumber(target), valueNil()};
@@ -142,7 +142,7 @@ void ramScalarDatapathsAndGuards() {
 	load.b = -1;
 	const std::array constantSource{NativeBlockInstruction{&load, 0x1000}};
 	const std::array constants{valueNumber(target)};
-	auto constant = NativeBlock::compile(constantSource, constants.data(), bytes, memory, cpu.stringPool());
+	auto constant = NativeBlock::compile(constantSource, constants.data(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 	std::array constantRegisters{valueNil(), valueNil(), valueNil()};
 	require(constant->run(nativeRunState = {.registers = constantRegisters.data(), .constants = constants.data(), .remainingCycles = constant->terminal.cycles}) == &constant->terminal
 		&& constant->sideExits[0].exitB == -1, "a constant memory address retains its signed RK selector");
@@ -209,7 +209,7 @@ void coldScalarExitsCarryTheirComputedGuestAddress() {
 			const std::array source{NativeBlockInstruction{&instruction, 0x1000u}};
 			const std::array constants{valueNumber(address - static_cast<u32>(instruction.disp) * 4u)};
 			size_t bytes = 0;
-			auto block = NativeBlock::compile(source, constants.data(), bytes, memory, cpu.stringPool());
+			auto block = NativeBlock::compile(source, constants.data(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 			std::array registers{valueNumber(17), constants[0]};
 			NativeBlockRunState state{.registers = registers.data(), .constants = constants.data(), .remainingCycles = 100};
 			const auto* exit = block->run(state);
@@ -233,7 +233,7 @@ void coldScalarExitsCarryTheirComputedGuestAddress() {
 			const std::array source{NativeBlockInstruction{&instruction, 0x1000u}};
 			const std::array constants{valueNumber(address - static_cast<u32>(instruction.disp) * 4u)};
 			size_t bytes = 0;
-			auto block = NativeBlock::compile(source, constants.data(), bytes, memory, cpu.stringPool());
+			auto block = NativeBlock::compile(source, constants.data(), bytes, memory, cpu.stringPool(), cpu.stringPool().intern("__index"));
 			std::array registers{valueNil(), constants[0], valueNumber(11), valueNumber(12)};
 			NativeBlockRunState state{.registers = registers.data(), .constants = constants.data(), .remainingCycles = 100};
 			const auto* exit = block->run(state);
