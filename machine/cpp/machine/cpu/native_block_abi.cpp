@@ -4,6 +4,10 @@
 
 #include "common/scope_exit.h"
 #include "machine/cpu/cpu.h"
+#if defined(BMSX_NATIVE_PERF_MAP)
+#include <memory>
+#include "machine/cpu/native_perf_map.h"
+#endif
 
 namespace bmsx {
 
@@ -41,8 +45,10 @@ NativeBlockGate::NativeBlockGate() {
 		SLJIT_IMM, SLJIT_FUNC_ADDR(&CPU::dispatchNativeExit));
 	sljit_set_label(sljit_emit_cmp(compiler, SLJIT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, 0), returnLabel);
 	sljit_set_label(sljit_emit_jump(compiler, SLJIT_JUMP), resumeLabel);
-	sljit_set_label(ordinaryReturn, emitReturnGate(compiler, coldDispatchLabel));
-	sljit_set_label(ordinaryCall, emitCallGate(compiler, coldDispatchLabel));
+	auto* returnGateLabel = emitReturnGate(compiler, coldDispatchLabel);
+	sljit_set_label(ordinaryReturn, returnGateLabel);
+	auto* callGateLabel = emitCallGate(compiler, coldDispatchLabel);
+	sljit_set_label(ordinaryCall, callGateLabel);
 	auto* equalityLabel = emitEqualityGate(compiler);
 
 	// Region bodies name an exit and its register map. Materialization and
@@ -82,6 +88,10 @@ NativeBlockGate::NativeBlockGate() {
 	sljit_emit_ijump(compiler, SLJIT_JUMP, SLJIT_MEM1(SLJIT_S3), offsetof(NativeBlockRunState, exitCode));
 	entry = sljit_generate_code(compiler, 0, nullptr);
 	if (!entry) throw std::bad_alloc();
+#if defined(BMSX_NATIVE_PERF_MAP)
+	const auto freeCode = [](void* code) { sljit_free_code(code, nullptr); };
+	std::unique_ptr<void, decltype(freeCode)> codeOwner(entry, freeCode);
+#endif
 	exit = reinterpret_cast<void*>(sljit_get_label_addr(returnLabel));
 	dispatch = reinterpret_cast<void*>(sljit_get_label_addr(dispatchLabel));
 	leaveSegment = reinterpret_cast<void*>(sljit_get_label_addr(leaveLabel));
@@ -90,6 +100,33 @@ NativeBlockGate::NativeBlockGate() {
 		finishSegment[bank] = reinterpret_cast<void*>(sljit_get_label_addr(finishLabels[bank]));
 		publishSegment[bank] = reinterpret_cast<void*>(sljit_get_label_addr(publishLabels[bank]));
 	}
+#if defined(BMSX_NATIVE_PERF_MAP)
+	// These are existing emission boundaries, not guest-PC-derived extents.
+	auto codeStart = static_cast<sljit_uw>(SLJIT_FUNC_ADDR(entry));
+#if defined(SLJIT_CONFIG_ARM_THUMB2) && SLJIT_CONFIG_ARM_THUMB2
+	codeStart &= ~sljit_uw{1};
+#endif
+	const std::array starts{
+		codeStart,
+		sljit_get_label_abs_addr(returnLabel), sljit_get_label_abs_addr(dispatchLabel),
+		sljit_get_label_abs_addr(coldDispatchLabel), sljit_get_label_abs_addr(returnGateLabel),
+		sljit_get_label_abs_addr(callGateLabel), sljit_get_label_abs_addr(equalityLabel),
+		sljit_get_label_abs_addr(finishLabels[0]), sljit_get_label_abs_addr(finishLabels[1]),
+		sljit_get_label_abs_addr(leaveLabel), codeStart + sljit_get_generated_code_size(compiler),
+	};
+	constexpr std::array symbols{
+		"bmsx_native_gate_entry", "bmsx_native_gate_return_to_cpp",
+		"bmsx_native_gate_dispatch", "bmsx_native_gate_cold_dispatch",
+		"bmsx_native_gate_ret", "bmsx_native_gate_call", "bmsx_native_gate_equal",
+		"bmsx_native_gate_materialize_scratch", "bmsx_native_gate_materialize_saved",
+		"bmsx_native_gate_leave",
+	};
+	std::array<NativePerfMapRange, symbols.size()> ranges;
+	for (size_t index = 0; index < ranges.size(); ++index)
+		ranges[index] = {starts[index], starts[index + 1] - starts[index], symbols[index]};
+	recordNativePerfMap(ranges);
+	codeOwner.release();
+#endif
 }
 
 NativeBlockGate::~NativeBlockGate() { sljit_free_code(entry, nullptr); }

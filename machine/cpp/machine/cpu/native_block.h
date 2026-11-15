@@ -11,6 +11,9 @@
 #include "machine/cpu/value.h"
 #include "spec/blua32/opcode.h"
 #include "spec/blua32/cop0.h"
+#if defined(BMSX_NATIVE_PERF_MAP)
+#include "spec/blua32/execution_domain.h"
+#endif
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 #include "machine/cpu/diagnostic_execution_profile.h"
 #endif
@@ -172,6 +175,9 @@ class NativeCodeRegion {
 public:
 	NativeCodeRegion() = default;
 	void publish(size_t& cacheBytes);
+#if defined(BMSX_NATIVE_PERF_MAP)
+	void recordPerfMap(ExecutionDomainId domain, u32 slot, u32 firstPc) const;
+#endif
 	~NativeCodeRegion();
 	NativeCodeRegion(const NativeCodeRegion&) = delete;
 	NativeCodeRegion& operator=(const NativeCodeRegion&) = delete;

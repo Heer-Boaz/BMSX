@@ -281,6 +281,9 @@ void CPU::installNativeRegion(Blua32ExecutionImage& image, DecodedInstructionPag
 	const u32 endBank = image.executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID ? CARTRIDGE_SLOT_COUNT : slot + 1u;
 	const auto codeBytes = blocks.front()->region->codeBytes;
 	blocks.front()->region->publish(m_nativeCodeBytes);
+#if defined(BMSX_NATIVE_PERF_MAP)
+	blocks.front()->region->recordPerfMap(image.executionDomainId, slot, blocks.front()->firstPc);
+#endif
 	for (size_t index = 0; index < entries.size(); ++index) {
 		auto& exit = blocks[index]->terminal;
 		if (exit.exit == NativeBlockExit::Call || nativeBlockExitResumesFrame(exit.exit)) {

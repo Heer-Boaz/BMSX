@@ -5,6 +5,10 @@
 #include "spec/blua32/cop0.h"
 
 #include <algorithm>
+#if defined(BMSX_NATIVE_PERF_MAP)
+#include <cstdio>
+#include "machine/cpu/native_perf_map.h"
+#endif
 
 #include "machine/cpu/execution_image.h"
 #include "machine/memory/memory.h"
@@ -33,6 +37,18 @@ void NativeCodeRegion::publish(size_t& cacheBytes) {
 	cacheBytes += codeBytes;
 }
 
+#if defined(BMSX_NATIVE_PERF_MAP)
+void NativeCodeRegion::recordPerfMap(ExecutionDomainId domain, u32 slot, u32 firstPc) const {
+	char symbol[96];
+	std::snprintf(symbol, sizeof(symbol), "bmsx_native_region_domain%d_slot%u_pc%08x", domain, slot, firstPc);
+	auto address = static_cast<std::uintptr_t>(SLJIT_FUNC_ADDR(m_code));
+#if defined(SLJIT_CONFIG_ARM_THUMB2) && SLJIT_CONFIG_ARM_THUMB2
+	address &= ~std::uintptr_t{1};
+#endif
+	const NativePerfMapRange range{address, codeBytes, symbol};
+	recordNativePerfMap(std::span(&range, 1));
+}
+#endif
 
 std::unique_ptr<NativeBlock> NativeBlock::compile(
 	std::span<const NativeBlockInstruction> instructions, const Value* constants,
