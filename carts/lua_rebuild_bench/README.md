@@ -45,6 +45,13 @@ advancement, host rendering, audio draining, inspection and background compiler
 CPU time. It is not an exact entry/return function profiler. Do not subtract an
 unrelated idle-cart frame or label scheduled idle cycles as executed work.
 
+`beginMonotonicNs` and `endMonotonicNs` bound each complete work unit for
+host-sample correlation. Those wider intervals also contain device advancement
+and harness control; their difference is not CPU-slice time. Exclude startup,
+warmup and the untimed collection from profiles, and keep measured units with
+and without collection distinguishable. `BMSX_NATIVE_PERF_MAP=ON` publishes the
+generated-code ranges for Linux `perf` without per-instruction probes.
+
 This test boots the real BIOS and advances all devices, but consumes GPU commands
 without rendering them and rejects readback. It does not exercise libretro,
 Mali, ALSA, presentation latency or a complete Pietious room. Use identical ROMs

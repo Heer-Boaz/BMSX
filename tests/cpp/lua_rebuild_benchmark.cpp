@@ -7,6 +7,7 @@
 #include "spec/bmsx/model.h"
 
 #include <array>
+#include <chrono>
 #include <iomanip>
 #include <iostream>
 #include <stdexcept>
@@ -23,6 +24,8 @@ public:
 };
 
 struct WorkRecord {
+	i64 beginMonotonicNs;
+	i64 endMonotonicNs;
 	DiagnosticCpuTiming cpu;
 	DiagnosticGcProfile gc;
 	i64 scheduledCycles;
@@ -94,19 +97,23 @@ int main(int argc, char** argv) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 			compileBefore = cpu.readNativeCompilationProfile();
 #endif
+			auto& r = records[iteration - 1];
+			r.beginMonotonicNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+				std::chrono::steady_clock::now().time_since_epoch()).count();
 			cpu.setGlobalByKey(requestedKey, valueFromNumber(iteration));
 			int steps = 0;
 			do {
 				if (++steps > 64) throw std::runtime_error("work unit exceeded 64 guest frames");
 				step();
 			} while (cpu.getGlobalByKey(completedKey) != valueFromNumber(iteration) || !cpu.isHaltedUntilIrq());
+			r.endMonotonicNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+				std::chrono::steady_clock::now().time_since_epoch()).count();
 			const auto after = scheduler.diagnosticCpuTiming;
 			const auto gcAfter = cpu.diagnosticGcProfile();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 			compileAfter = cpu.readNativeCompilationProfile();
 #endif
 			if (cpu.getGlobalByKey(checksumKey) != valueFromNumber(4998675)) throw std::runtime_error("workload checksum mismatch");
-			auto& r = records[iteration - 1];
 			r.cpu = {after.slices - before.slices, after.consumedCycles - before.consumedCycles,
 				after.wallNanoseconds - before.wallNanoseconds, after.threadNanoseconds - before.threadNanoseconds};
 			r.gc.collections = gcAfter.collections - gcBefore.collections;
@@ -129,6 +136,7 @@ int main(int argc, char** argv) {
 		for (size_t i = 0; i < records.size(); ++i) {
 			const auto& r = records[i];
 			std::cout << "{\"iteration\":" << i + 1 << ",\"measured\":" << (i >= warmup ? "true" : "false")
+				<< ",\"beginMonotonicNs\":" << r.beginMonotonicNs << ",\"endMonotonicNs\":" << r.endMonotonicNs
 				<< ",\"cpuThreadNs\":" << r.cpu.threadNanoseconds << ",\"cpuWallNs\":" << r.cpu.wallNanoseconds
 				<< ",\"guestCycles\":" << r.cpu.consumedCycles << ",\"cpuSlices\":" << r.cpu.slices
 				<< ",\"scheduledCycles\":" << r.scheduledCycles << ",\"ticks\":" << r.ticks << ",\"hostSteps\":" << r.hostSteps
