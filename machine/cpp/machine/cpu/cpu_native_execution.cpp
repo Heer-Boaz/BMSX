@@ -149,8 +149,9 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			state.registerTop = frame->top;
 			return *continuation;
 		}
-		// A domain change also changes bus signals and must be latched by the run loop.
-		if (frame->executionImage != cpu.m_activeExecutionImage) return nullptr;
+		// CALL/RET have already committed the real activation. Rebind its image
+		// and instruction chip-select before looking up a warm receiving body.
+		if (frame->executionImage != cpu.m_activeExecutionImage) cpu.latchActiveExecutionImage(*frame->executionImage);
 		const u32 pc = frame->pc;
 		if ((pc & (INSTRUCTION_BYTES - 1u)) != 0u) return nullptr;
 		const auto& lookup = frame->executionImage->nativeCodeLookup;
