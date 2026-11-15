@@ -5,7 +5,9 @@ import type { Thread } from '../../machine/ts/machine/cpu/thread';
 import type { StringId, StringPool } from '../../machine/ts/machine/cpu/string_pool';
 import {
 	TABLE_INDEX_CHAIN_LIMIT,
+	TableLookupStatus,
 	type Table,
+	type TableLookupResult,
 } from '../../machine/ts/machine/cpu/table';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import {
@@ -68,6 +70,9 @@ export class SuspendedGuestSession {
 	private readonly cpu: CPU;
 	private readonly stringPool: StringPool;
 	private readonly scratch = new ValueSlots(1);
+	private readonly lookupResult: TableLookupResult = {
+		values: this.scratch, slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved,
+	};
 	private readonly entryScratch = new ScratchBuffer<ValueSlots>(() => new ValueSlots(2));
 	private readonly previewParts = new ScratchBuffer<string[]>(() => []);
 	private readonly previewVisited = new Set<number>();
@@ -219,12 +224,8 @@ export class SuspendedGuestSession {
 			return null;
 		}
 		const table = value as Table;
-		if (!table.resolveStringIndex(
-			this.indexKey,
-			key,
-			this.scratch,
-			0,
-		)) {
+		table.resolveStringIndex(this.indexKey, key, this.lookupResult);
+		if (this.lookupResult.status === TableLookupStatus.ChainExhausted) {
 			throw new Error(METATABLE_LOOP_MESSAGE);
 		}
 		const result = this.scratch.get(0);
