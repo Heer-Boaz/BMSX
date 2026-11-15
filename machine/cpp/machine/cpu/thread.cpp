@@ -54,15 +54,9 @@ void Thread::leaveFrame() {
 	currentFrame = frame->previous;
 	stackTop = currentFrame ? currentFrame->stackBase + currentFrame->stackCapacity : 0;
 	--frameDepth;
-	frame->executionImage = nullptr;
-	frame->closure = nullptr;
+	// Inactive pointers are not roots; active paths establish them before use.
 	frame->decodedPage = nullptr;
-	frame->decodedPageAddress = 0;
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	frame->nativeContinuationCells = {};
-#endif
 	frame->compilationEntry = true;
-	frame->registers = nullptr;
 	frame->protectedContinuationIndex = -1;
 	frame->isExceptionFrame = false;
 	frame->isNonMaskableExceptionFrame = false;

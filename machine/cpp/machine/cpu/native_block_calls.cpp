@@ -161,13 +161,7 @@ sljit_label* NativeBlockGate::emitReturnGate(sljit_compiler* compiler, sljit_lab
 	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_R1), thread.currentFrame, SLJIT_R2, 0);
 	sljit_emit_op2(compiler, SLJIT_SUB, SLJIT_MEM1(SLJIT_R1), thread.frameDepth,
 		SLJIT_MEM1(SLJIT_R1), thread.frameDepth, SLJIT_IMM, 1);
-	for (const auto offset : {offsetof(CallFrame, executionImage), offsetof(CallFrame, closure),
-		offsetof(CallFrame, decodedPage), offsetof(CallFrame, registers)})
-		sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_R0), offset, SLJIT_IMM, 0);
-	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R0), offsetof(CallFrame, decodedPageAddress), SLJIT_IMM, 0);
-	for (size_t bank = 0; bank < CARTRIDGE_SLOT_COUNT; ++bank)
-		sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_R0),
-			offsetof(CallFrame, nativeContinuationCells) + bank * sizeof(void*), SLJIT_IMM, 0);
+	sljit_emit_op1(compiler, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_R0), offsetof(CallFrame, decodedPage), SLJIT_IMM, 0);
 	sljit_emit_op1(compiler, SLJIT_MOV_U8, SLJIT_MEM1(SLJIT_R0), offsetof(CallFrame, compilationEntry), SLJIT_IMM, 1);
 	sljit_emit_op1(compiler, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R0), offsetof(CallFrame, protectedContinuationIndex), SLJIT_IMM, -1);
 	sljit_emit_op1(compiler, SLJIT_MOV_U8, SLJIT_MEM1(SLJIT_R0), offsetof(CallFrame, isExceptionFrame), SLJIT_IMM, 0);

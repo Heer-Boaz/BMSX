@@ -121,6 +121,86 @@ void reusableFrameChain() {
 	require(thread.acquireFrame() == root, "an empty thread retains its first prepared node through collection");
 }
 
+void inactiveFrameMetadata() {
+	test::Blua32TestImage image;
+	image.text.resize(2 * MAPPED_PAGE_BYTE_SIZE + 2 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CLOSURE), 1, 0, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
+	writeInstruction(image.text, DECODED_PAGE_WORDS, static_cast<u8>(OpCode::NEWT), 0, 0, 0);
+	writeInstruction(image.text, DECODED_PAGE_WORDS + 1, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(image.text, 2 * DECODED_PAGE_WORDS, static_cast<u8>(OpCode::KSMI), 0, 0, 27);
+	writeInstruction(image.text, 2 * DECODED_PAGE_WORDS + 1, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	image.functions = {{.firstWord=0, .wordCount=5, .maxStack=8},
+		{.firstWord=DECODED_PAGE_WORDS, .wordCount=2, .maxStack=8, .staticClosure=false},
+		{.firstWord=2 * DECODED_PAGE_WORDS, .wordCount=2, .maxStack=128, .staticClosure=false}};
+	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)},
+		{3, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
+	CpuMachine generated(image, false), scalar(image, true);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	generated.cpu.prepareSystemNativeCode();
+#endif
+	test::runCpuParity(generated.cpu, scalar.cpu, 4);
+	for (auto* machine : {&generated, &scalar}) {
+		auto& cpu = machine->cpu;
+		auto* root = cpu.activeThread()->currentFrame;
+		cpu.beginCompletionCall(*asClosure(root->registers[0]));
+	}
+	test::runCpuParity(generated.cpu, scalar.cpu, 1, 1);
+	auto* spare = generated.cpu.activeThread()->currentFrame;
+	auto* oldRegisters = spare->registers;
+	auto* oldClosure = spare->closure;
+	auto* oldImage = spare->executionImage;
+	const u32 oldPageAddress = spare->decodedPageAddress;
+	require(oldPageAddress != 0, "the reused node carries a real nonzero prior decode-page address");
+	test::runCpuParity(generated.cpu, scalar.cpu, 1, 1);
+	for (auto* machine : {&generated, &scalar}) machine->cpu.activeThread()->currentFrame->registers[0] = valueNil();
+	// Populate the inactive node with its genuine previous activation bits even
+	// when the retirement implementation clears them. Neither collection nor
+	// capture may follow these non-roots; the next activation overwrites them.
+	spare->executionImage = oldImage;
+	spare->closure = oldClosure;
+	spare->registers = oldRegisters;
+	spare->decodedPageAddress = oldPageAddress;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	auto* page = oldImage->nativeCodeLookup->find(generated.rom.textAddress, 0);
+	const u32 word = (generated.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+	require(page && page->nativeCode && page->nativeCode[word], "inactive hints can name a real published entry cell");
+	spare->nativeContinuationCells = {&page->nativeCode[word], &page->nativeCode[word]};
+#endif
+	const auto before = generated.cpu.captureRuntimeState(), reference = scalar.cpu.captureRuntimeState();
+	require(std::ranges::equal(before.snapshot.words(), reference.snapshot.words())
+		&& std::ranges::equal(before.snapshot.objectWords(), reference.snapshot.objectWords()),
+		"inactive activation bits are not part of the checkpoint value graph");
+	generated.cpu.collectHeap(); scalar.cpu.collectHeap();
+	require(generated.cpu.luaHeap().usedBytes() == scalar.cpu.luaHeap().usedBytes(),
+		"inactive closure and register pointers do not retain their retired table or closure");
+	for (auto* machine : {&generated, &scalar}) {
+		auto& cpu = machine->cpu;
+		auto* thread = cpu.activeThread();
+		auto* reused = thread->currentFrame->next;
+		auto* closure = asClosure(thread->currentFrame->registers[1]);
+		const auto capacity = thread->stackCapacity;
+		cpu.beginCompletionCall(*closure);
+		require(thread->currentFrame == reused && thread->stackCapacity > capacity
+			&& reused->closure == closure && reused->registers == thread->stack + reused->stackBase
+			&& reused->executionImage == reused->previous->executionImage,
+			"a real activation reuses the node and rebinds all pointers after Value-stack growth");
+		require(reused->decodedPage == nullptr && reused->compilationEntry
+			&& reused->protectedContinuationIndex == -1 && !reused->isExceptionFrame && !reused->isNonMaskableExceptionFrame,
+			"reuse retains the required decode, protected-return and exception admission state");
+		cpu.restoreRuntimeState(cpu.captureRuntimeState());
+	}
+	test::runCpuParity(generated.cpu, scalar.cpu, 6, 1);
+	requireParity(generated, scalar);
+	for (auto* machine : {&generated, &scalar}) {
+		const auto values = machine->cpu.readCompletionValues();
+		require(values.size() == 1 && values[0] == valueNumber(27), "restored reused activations return their own result once");
+	}
+}
+
 void protectedNestedFrames() {
 	test::Blua32TestImage image;
 	image.text.resize(11 * INSTRUCTION_BYTES);
@@ -416,6 +496,7 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	auto* thread = machine.cpu.activeThread();
 	auto* callee = thread->currentFrame;
 	auto* caller = callee->previous;
+	auto* closure = callee->closure;
 	require(thread->protectedCallDepth == 1 && caller->protectedContinuationIndex == 0
 		&& callee->protectedContinuationIndex == -1, "native return admission concerns the target activation, not its protected subtree");
 	const std::array<Value, 6> payloads{valueNil(), valueBool(false), valueNumber(-0.0),
@@ -455,9 +536,20 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 		"warm RET branches through the raw native code word without executeReturn or the C++ descriptor dispatcher");
 	if (grant <= 3 + count) require(machine.cpu.instructionBudgetRemaining == grant - 3 - count,
 		"native RET charges the receiving range once and cannot execute the next body with an exhausted grant");
-	require(callee->registers == nullptr && callee->executionImage == nullptr && callee->closure == nullptr
+	require(callee->decodedPage == nullptr && callee->compilationEntry && callee->protectedContinuationIndex == -1
+		&& !callee->isExceptionFrame && !callee->isNonMaskableExceptionFrame,
+		"native retirement preserves required admission state, including unusual exception flags");
+	machine.cpu.beginCompletionCall(*closure);
+	require(thread->currentFrame == callee && callee->closure == closure && callee->executionImage == caller->executionImage
+		&& callee->registers == thread->stack + callee->stackBase && callee->returnToCompletionLatch
 		&& callee->protectedContinuationIndex == -1 && !callee->isExceptionFrame && !callee->isNonMaskableExceptionFrame,
-		"native retirement clears the same inactive owner fields as an ordinary return, including unusual exception flags");
+		"a real activation rebinds the retired native node without inheriting protection or exception state");
+	callee->registers[1] = valueNumber(17); callee->top = 2;
+	require(machine.cpu.runUntilDepth(2, 4) == RunResult::Halted && thread->currentFrame == caller
+		&& thread->protectedCallDepth == 1 && machine.cpu.instructionBudgetRemaining == 0,
+		"the reused node returns once without completing its protected parent or resuming the redirected continuation");
+	const auto results = machine.cpu.readCompletionValues();
+	require(results.size() == 1 && results[0] == valueNumber(17), "reused native nodes return the new activation's own value");
 }
 #endif
 
@@ -1010,6 +1102,7 @@ int main() {
 	try {
 		ownedValueStack();
 		reusableFrameChain();
+		inactiveFrameMetadata();
 		protectedNestedFrames();
 		valueRangePlacementCycles();
 		closureBindingAndClosingCycles();
