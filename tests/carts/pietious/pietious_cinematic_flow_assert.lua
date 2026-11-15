@@ -32,6 +32,7 @@ return {
 				and registry:get('narrative') ~= nil
 				and registry:get('end_demo') ~= nil
 				and registry:get('title_screen') ~= nil end, 120)
+			t:at_boundary(world:request_mutation_boundary(), 120)
 			local test<const> = { room_enter_count = 0 }
 			local director = registry:get('d')
 			test.initial_director = director

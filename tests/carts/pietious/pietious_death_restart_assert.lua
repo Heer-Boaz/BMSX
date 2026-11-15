@@ -88,11 +88,16 @@ return {
 				assert(transition_screen.members.death_caption.text_component.visible, 'game-over text is hidden')
 				test.saw_transition = true
 				test.death_screen_frames = test.death_screen_frames + 1
-				assert(registry:get('c').room.scene.members[test.item_id] == nil,
-				'room object was admitted before the death restart barrier completed')
+				local pending_item<const> = registry:get('c').room.scene.members[test.item_id]
+				if pending_item ~= nil then
+					assert(pending_item ~= test.item and not pending_item.active
+					and not pending_item._bound and pending_item._world_object_index == nil,
+					'room object was admitted before the death restart barrier completed')
+				end
 
 				return false
 			end, 600)
+			t:at_boundary(world:request_mutation_boundary(), 30)
 			room = castle.room
 			assert(world.active_space_id == 'main', 'death restart entered an unexpected space')
 			local transition<const> = castle_map.definition.world_transitions.world_1
@@ -115,6 +120,9 @@ return {
 			local item<const> = registry:get('c').room.scene.members[test.item_id]
 			assert(item ~= nil, 'world entrance room object did not respawn after death')
 			assert(item ~= test.item, 'death restart reused the disposed room object')
+			assert(room.active and room._bound and room._world_object_index ~= nil
+			and item.active and item._bound and item._world_object_index ~= nil,
+			'death restart did not admit the replacement room and item')
 			assert(not castle.room_enter_pending, 'death restart did not publish room entry')
 
 		end,
