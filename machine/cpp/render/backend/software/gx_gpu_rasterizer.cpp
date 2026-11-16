@@ -648,25 +648,15 @@ void drawGxGpuSoftwareTexturedRectangleImpl(
 		static_cast<u32>(firstU) * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE, static_cast<u32>(v) * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE,
 		static_cast<u32>(uStep) * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE, 0u, 0u, static_cast<u32>(vStep) * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE,
 		textureWindowAndX, textureWindowOrX, textureWindowAndY, textureWindowOrY);
-	const GxGpuSoftwareTextureSource source{
+	const GxGpuSoftwareRectangleTexture<TextureMode> texture(software, GxGpuSoftwareTextureSource{
 		(latched & 1u) != 0u ? software.textureLatchScratch.data() : software.vram.data(),
 		(latched & 2u) != 0u ? software.textureLatchScratch.data() : software.vram.data(),
-		pageX, pageY, textureWindowAndX, textureWindowAndY, textureWindowOrX, textureWindowOrY, clutBaseX, clutBaseY};
-#if defined(__ARM_NEON)
-	GxGpuSoftwareClut4Lanes clut4{};
-	if constexpr (TextureMode == GX_GPU_TEXTURE_MODE_PALETTE4) {
-		clut4 = loadGxGpuSoftwareClut4Lanes(software, source);
-	}
-#endif
+		pageX, pageY, textureWindowAndX, textureWindowAndY, textureWindowOrX, textureWindowOrY, clutBaseX, clutBaseY}, uStep);
 	for (i32 y = top; y < bottom; y += 1, v += vStep) {
 		if ((y & 1) == skippedLineParity) {
 			continue;
 		}
-#if defined(__ARM_NEON)
-		GxGpuSoftwareRectangleTexels<TextureMode> texels{software, source, &clut4, firstU, v, uStep};
-#else
-		GxGpuSoftwareRectangleTexels<TextureMode> texels{software, source, firstU, v, uStep};
-#endif
+		GxGpuSoftwareRectangleTexels<TextureMode> texels(texture, firstU, v);
 		gxGpuSoftwareWriteTexturedSpan<RawTextureEnabled, SemiTransparencyEnabled, false, false>(
 			software, left, y, right - left, span, texels);
 	}

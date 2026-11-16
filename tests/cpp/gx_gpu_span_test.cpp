@@ -156,12 +156,12 @@ void compareRectangleTexels(const char* name, GxGpuSoftwareState& software, Rand
 			for (const auto& window : windows) {
 				const GxGpuSoftwareTextureSource source{software.vram.data(), software.vram.data(), pageX, pageY,
 					window[0], window[1], window[2], window[3], (random.next() & 0x3fu) << 4u, random.next() & 511u};
-				const GxGpuSoftwareClut4Lanes clut4 = loadGxGpuSoftwareClut4Lanes(software, source);
-				for (const i32 v : vs) {
-					for (i32 u = 0; u < 264; u += 1) {
-						for (const i32 uStep : {1, -1}) {
-							GxGpuSoftwareRectangleTexels<TextureMode> vector{software, source, &clut4, u, v, uStep};
-							GxGpuSoftwareRectangleTexels<TextureMode> scalar{software, source, &clut4, u, v, uStep};
+				for (const i32 uStep : {1, -1}) {
+					const GxGpuSoftwareRectangleTexture<TextureMode> texture(software, source, uStep);
+					for (const i32 v : vs) {
+						for (i32 u = 0; u < 264; u += 1) {
+							GxGpuSoftwareRectangleTexels<TextureMode> vector(texture, u, v);
+							GxGpuSoftwareRectangleTexels<TextureMode> scalar(texture, u, v);
 							for (int group = 0; group < 3; group += 1) {
 								alignas(16) u16 lanes[8];
 								vst1q_u16(lanes, vector.fetch8());

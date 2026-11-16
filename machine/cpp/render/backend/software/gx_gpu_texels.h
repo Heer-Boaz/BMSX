@@ -6,10 +6,9 @@
 #include "render/backend/software/gx_gpu_vram.h"
 #include "spec/gx/vram.h"
 
-#include <bit>
-
 #if defined(__ARM_NEON)
 #include <arm_neon.h>
+#include <bit>
 #endif
 
 namespace bmsx {
@@ -62,6 +61,8 @@ struct GxGpuSoftwareTextureSource {
 };
 
 #if defined(__ARM_NEON)
+static_assert(std::endian::native == std::endian::little, "NEON texel fetches split VRAM words into little-endian bytes");
+
 // The sixteen CLUT4 colors as low/high byte tables for vtbl.
 struct GxGpuSoftwareClut4Lanes {
 	uint8x8x2_t low;
@@ -80,39 +81,69 @@ inline GxGpuSoftwareClut4Lanes loadGxGpuSoftwareClut4Lanes(const GxGpuSoftwareSt
 }
 #endif
 
-// Texels along one rectangle row: v is fixed and u steps by +-1 per pixel.
+// One textured rectangle's texel source; u steps by uStep (+-1) per pixel.
+// Everything its rows share is decided here, once per primitive.
+template<u32 TextureMode>
+struct GxGpuSoftwareRectangleTexture {
+	const GxGpuSoftwareState& software;
+	GxGpuSoftwareTextureSource source;
+	i32 uStep;
+#if defined(__ARM_NEON)
+	// Adjacent pixels read adjacent texels: no X flip and an identity U window.
+	bool adjacentU;
+	GxGpuSoftwareClut4Lanes clut4;
+#endif
+
+	GxGpuSoftwareRectangleTexture(const GxGpuSoftwareState& software, const GxGpuSoftwareTextureSource& source, i32 uStep)
+		: software(software), source(source), uStep(uStep) {
+#if defined(__ARM_NEON)
+		adjacentU = uStep == 1 && source.textureWindowAndX == 0xffu && source.textureWindowOrX == 0u;
+		if constexpr (TextureMode == GX_GPU_TEXTURE_MODE_PALETTE4) {
+			clut4 = loadGxGpuSoftwareClut4Lanes(software, source);
+		}
+#endif
+	}
+};
+
+// Texels along one rectangle row: v is fixed and u steps per pixel.
 // operator() is the exact per-pixel fetch. On NEON, fetch8() returns the next
-// eight texels at once when they are adjacent in one VRAM row (no X flip, an
-// identity U window, no U or VRAM X wrap) and otherwise falls back to eight
-// exact fetches; both advance u identically.
+// eight texels at once when they are adjacent in one VRAM row (adjacentU and
+// no U or VRAM X wrap) and otherwise falls back to eight exact fetches; both
+// advance u identically.
 template<u32 TextureMode>
 struct GxGpuSoftwareRectangleTexels {
-	const GxGpuSoftwareState& software;
-	const GxGpuSoftwareTextureSource& source;
-#if defined(__ARM_NEON)
-	const GxGpuSoftwareClut4Lanes* clut4;
-#endif
+	const GxGpuSoftwareRectangleTexture<TextureMode>& texture;
 	i32 u;
 	i32 v;
-	i32 uStep;
+#if defined(__ARM_NEON)
+	const u16* row;
+#endif
+
+	GxGpuSoftwareRectangleTexels(const GxGpuSoftwareRectangleTexture<TextureMode>& texture, i32 u, i32 v)
+		: texture(texture), u(u), v(v) {
+#if defined(__ARM_NEON)
+		const GxGpuSoftwareTextureSource& source = texture.source;
+		row = source.textureWords + gxGpuSoftwareVramIndex(texture.software, 0,
+			static_cast<i32>(source.pageY + gxGpuSoftwareTextureWindowCoord(v, source.textureWindowAndY, source.textureWindowOrY)));
+#endif
+	}
 
 	u32 operator()() {
-		const u32 sampleWord = sampleGxGpuSoftwareTextureWord<TextureMode>(software, source.textureWords, source.clutWords, u, v,
+		const GxGpuSoftwareTextureSource& source = texture.source;
+		const u32 sampleWord = sampleGxGpuSoftwareTextureWord<TextureMode>(texture.software, source.textureWords, source.clutWords, u, v,
 			source.pageX, source.pageY, source.textureWindowAndX, source.textureWindowAndY, source.textureWindowOrX, source.textureWindowOrY,
 			source.clutBaseX, source.clutBaseY);
-		u += uStep;
+		u += texture.uStep;
 		return sampleWord;
 	}
 
 #if defined(__ARM_NEON)
 	uint16x8_t fetch8() {
-		if constexpr (TextureMode != GX_GPU_TEXTURE_MODE_PALETTE8 && std::endian::native == std::endian::little) {
+		if constexpr (TextureMode != GX_GPU_TEXTURE_MODE_PALETTE8) {
 			const u32 windowedU = static_cast<u32>(u) & 0xffu;
-			if (uStep == 1 && source.textureWindowAndX == 0xffu && source.textureWindowOrX == 0u && windowedU <= 248u) {
-				const u16* row = source.textureWords + gxGpuSoftwareVramIndex(software, 0,
-					static_cast<i32>(source.pageY + gxGpuSoftwareTextureWindowCoord(v, source.textureWindowAndY, source.textureWindowOrY)));
+			if (texture.adjacentU && windowedU <= 248u) {
 				if constexpr (TextureMode == GX_GPU_TEXTURE_MODE_PALETTE4) {
-					const u32 word = source.pageX + (windowedU >> 2u);
+					const u32 word = texture.source.pageX + (windowedU >> 2u);
 					if (word + 3u < GX_GPU_VRAM_X_ADDRESS_PERIOD) {
 						// Four words hold sixteen nibbles, low nibble first.
 						const uint8x8_t bytes = vreinterpret_u8_u16(vld1_u16(row + word));
@@ -126,11 +157,12 @@ struct GxGpuSoftwareRectangleTexels {
 						}
 						u += 8;
 						// Interleaving the low and high bytes forms the eight 16-bit colors.
-						const uint8x8x2_t colors = vzip_u8(vtbl2_u8(clut4->low, indices), vtbl2_u8(clut4->high, indices));
+						const GxGpuSoftwareClut4Lanes& clut4 = texture.clut4;
+						const uint8x8x2_t colors = vzip_u8(vtbl2_u8(clut4.low, indices), vtbl2_u8(clut4.high, indices));
 						return vreinterpretq_u16_u8(vcombine_u8(colors.val[0], colors.val[1]));
 					}
 				} else {
-					const u32 x = source.pageX + windowedU;
+					const u32 x = texture.source.pageX + windowedU;
 					if (x + 7u < GX_GPU_VRAM_X_ADDRESS_PERIOD) {
 						u += 8;
 						return vld1q_u16(row + x);
