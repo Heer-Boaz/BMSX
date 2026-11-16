@@ -1980,6 +1980,15 @@ test('split DMA image payload survives restore before real IRQ and readback comm
 	assert.equal(source.dma.cpuBusHeld(), false);
 	assert.equal(source.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_GPU, 0, 'image payload does not raise IRQ');
 	assert.equal(source.gpu.backendServicePending(), false, 'image payload does not start readback');
+	const partial = source.gpu.captureState();
+	assert.deepEqual(partial.gp0FifoWords, []);
+	assert.deepEqual(partial.gp0DmaIngressWords, []);
+	assert.equal(partial.gp0ImageLoadWordsRemaining, 128);
+	assert.equal(partial.gp0IngressWordsRemaining, 128);
+	const partialCommands = source.gpu.readDeviceOutput().commandBuffer;
+	assert.equal(partialCommands.commandCount, 0, 'the image is not emitted at a partial DMA boundary');
+	assert.equal(partialCommands.wordCount, firstWords);
+	assert.deepEqual(Array.from(partialCommands.words.subarray(0, firstWords)), imageWords.slice(0, firstWords));
 	const saved = source.gpu.captureSaveState();
 	const restored = createGpu();
 	stopPcrtc(restored.memory, restored.gpu, restored.scheduler);

@@ -1430,6 +1430,14 @@ void testSplitDmaImagePayloadRestoresBeforeIrqAndReadback() {
 	require(!source.dma.cpuBusHeld(), "first image DMA released CPU");
 	require((source.memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_GPU) == 0u, "image payload does not raise IRQ");
 	require(!source.gpu.backendServicePending(), "image payload does not start readback");
+	const auto partial = source.gpu.captureState();
+	require(partial.gp0FifoWords.empty() && partial.gp0DmaIngressWords.empty()
+		&& partial.gp0ImageLoadWordsRemaining == 128u && partial.gp0IngressWordsRemaining == 128u,
+		"published image burst consumes its payload without retaining FIFO credits");
+	const auto& partialCommands = source.gpu.readDeviceOutput().commandBuffer;
+	require(partialCommands.wordCount == firstWords && partialCommands.commandCount == 0u
+		&& std::equal(words.begin(), words.begin() + firstWords, partialCommands.words.begin()),
+		"the whole burst remains raw payload until the remaining image words arrive");
 	const auto saved = source.gpu.captureSaveState();
 	GpuHarness restored;
 	stopPcrtc(restored);
@@ -5661,6 +5669,49 @@ void testRawVramExtensionWordAcrossCommandAndReadback() {
 		"command and readback restore retain the complete extension word");
 }
 
+void testSoftwareRawUploadSpanContract() {
+	auto commands = std::make_unique<bmsx::GxGpuCommandStorage>();
+	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, 0u);
+	std::vector<bmsx::u16> expected(software.vram.size());
+	commands->commandCount = 1u;
+	commands->commandKind[0] = bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM;
+	commands->words[0] = 0xa0000000u;
+	for (bmsx::u32 i = 3u; i < commands->words.size(); ++i) commands->words[i] = i * 0x9e3779b9u;
+	// Complete and flushed payloads: odd rows, X/Y wrapping, normalized zero
+	// sizes and each destination-mask mode. Compare every VRAM word, not a crop.
+	for (const bmsx::u32 size : {0x00010001u, 0x00030003u, 0x00030011u, 0x00020400u, 0x02010401u, 0u}) {
+		const bmsx::u32 width = ((size - 1u) & 1023u) + 1u;
+		const bmsx::u32 height = (((size >> 16u) - 1u) & 511u) + 1u;
+		const bmsx::u32 payloadWords = (width * height + 1u) >> 1u;
+		commands->words[2] = size;
+		for (const bmsx::u32 x : {0u, 1u, 1007u, 1023u}) {
+			for (const bmsx::u32 extension : {0u, 0x100u}) {
+				const bmsx::u32 yMask = extension == 0u ? 511u : 1023u;
+				commands->words[1] = (yMask << 16u) | x;
+				commands->commandVramYAddressExtensionWord[0] = extension;
+				for (const bmsx::u32 mask : {0u, 1u, 2u, 3u}) {
+					commands->commandMaskBitModeWord[0] = mask;
+					for (const bmsx::u32 prefix : {1u, 13u, payloadWords}) {
+						const bmsx::u32 words = std::min(prefix, payloadWords);
+						commands->commandWordCount[0] = 3u + words;
+						for (size_t i = 0u; i < expected.size(); ++i) expected[i] = static_cast<bmsx::u16>(i * 173u);
+						std::copy(expected.begin(), expected.end(), software.vram.begin());
+						for (bmsx::u32 pixel = 0u; pixel < std::min(words * 2u, width * height); ++pixel) {
+							const bmsx::u32 at = (((yMask + pixel / width) & yMask) * 1024u) + ((x + pixel % width) & 1023u);
+							const bmsx::u16 source = static_cast<bmsx::u16>(commands->words[3u + pixel / 2u] >> ((pixel & 1u) * 16u));
+							if ((mask & 2u) == 0u || (expected[at] & 0x8000u) == 0u) {
+								expected[at] = source | ((mask & 1u) != 0u ? 0x8000u : 0u);
+							}
+						}
+						bmsx::executeGxGpuSoftwareCommands(software, *commands, 0u, 1u);
+						require(software.vram == expected, "raw upload preserves packing, wrap, masks and untouched words");
+					}
+				}
+			}
+		}
+	}
+}
+
 } // namespace
 
 void testTextureAxisBounds() {
@@ -5725,6 +5776,7 @@ int main() {
 	testBackendSubmissionLimitSchedulesAndCatchesUpGpuWork();
 	testPartialImageSurvivesSupervisorRestoreAndQueuedReadback();
 	testSplitDmaImagePayloadRestoresBeforeIrqAndReadback();
+	testSoftwareRawUploadSpanContract();
 	testSplitDmaPolylinePayloadRestoresBeforeIrqAndReadback();
 	testBlockedCpuGp0StoreResumesAcrossDeviceRestore();
 	testGp1CrtcRangeRegistersLatchMaskedRawWords();

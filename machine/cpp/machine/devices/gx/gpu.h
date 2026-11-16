@@ -412,7 +412,8 @@ private:
 	void clearImageLoadState();
 	void finishImageLoadToVram(i64 commandStartCycle);
 	void flushImageLoadToVram(i64 commandStartCycle);
-	void consumeImageLoadWords(i64 commandStartCycle);
+	template <size_t Capacity>
+	void consumeImageLoadWords(WordFifo<Capacity>& source, size_t words, i64 commandStartCycle);
 	void consumeGp0PolylinePayloadWord(u32 word, i64 commandStartCycle);
 	void beginPolylinePayload(const GxGpuPacket& packet, i64 commandStartCycle);
 	void recordGp0ProducerWord(u32 word);

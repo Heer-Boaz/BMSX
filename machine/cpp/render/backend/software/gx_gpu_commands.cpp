@@ -5,6 +5,9 @@
 #include "render/backend/software/gx_gpu_rasterizer.h"
 #include "render/backend/software/gx_gpu_vram.h"
 
+#include <bit>
+#include <cstring>
+
 namespace bmsx {
 namespace {
 
@@ -59,6 +62,22 @@ void executeCpuToVram(
 		const u32 rowRemaining = emittedPixels - emittedPixel;
 		const u32 rowWidth = rowRemaining < width ? rowRemaining : width;
 		const u32 targetY = gxGpuVramYAddress(y + row, vramYAddressExtensionWord);
+		if constexpr (std::endian::native == std::endian::little) {
+			if (!checkMaskBit && !setMaskBit) {
+				// Raw upload words already contain the two VRAM pixels in order.
+				// Split only at X wrap; an odd row continues in the same payload word.
+				const u32 first = std::min(rowWidth, GX_GPU_VRAM_X_ADDRESS_PERIOD - static_cast<u32>(x));
+				const size_t target = gxGpuSoftwareVramIndex(software, x, static_cast<i32>(targetY));
+				const u8* source = reinterpret_cast<const u8*>(commandBuffer.words.data() + payloadWordStart)
+					+ emittedPixel * sizeof(u16);
+				std::memcpy(software.vram.data() + target, source, first * sizeof(u16));
+				if (first != rowWidth) {
+					std::memcpy(software.vram.data() + target - x, source + first * sizeof(u16), (rowWidth - first) * sizeof(u16));
+				}
+				emittedPixel += rowWidth;
+				continue;
+			}
+		}
 		for (u32 column = 0u; column < rowWidth; column += 1u) {
 			const u32 payloadWord = commandBuffer.words[payloadWordStart + (emittedPixel >> 1u)];
 			gxGpuSoftwareWriteMaskedVramWord(

@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstring>
 #include <memory>
 #include <vector>
 
@@ -369,9 +370,7 @@ public:
 			}
 		}
 		drawCount = remainingDraws;
-		for (size_t wordIndex = 0u; wordIndex < remainingWords; wordIndex += 1u) {
-			words[wordIndex] = words[retiredWords + wordIndex];
-		}
+		std::memmove(words.data(), words.data() + retiredWords, remainingWords * sizeof(u32));
 		commandCount = remainingCommands;
 		executedCommandCount -= retiredCommands;
 		presentCommandCount = retiredCommands < presentCommandCount

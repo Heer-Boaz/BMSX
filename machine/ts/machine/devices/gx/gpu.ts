@@ -1194,11 +1194,17 @@ export class GxGpu {
 			let ingressAdvanced = false;
 			while (!this.gp0DmaIngress.empty()) {
 				if (this.gp0Ingress.phase === GX_GPU_GP0_INGRESS_IMAGE_PAYLOAD) {
-					const words = Math.min(this.gp0DmaIngress.count(), this.gp0Fifo.free(), this.gp0Ingress.wordsRemaining);
+					// An empty, runnable execution FIFO consumes payload at this same
+					// edge. Keep the counted stream, without copying through each slot.
+					const consumingImage = this.gp0Fifo.empty() && this.gp0ImageLoadWordsRemaining !== 0
+						&& this.pendingCommandCompletionCycle === 0 && this.commandBuffer.readback.phase === GX_GPU_READBACK_IDLE;
+					const words = Math.min(this.gp0DmaIngress.count(),
+						consumingImage ? this.gp0ImageLoadWordsRemaining : this.gp0Fifo.free(), this.gp0Ingress.wordsRemaining);
 					if (words === 0) break;
-					this.gp0DmaIngress.transferWords(this.gp0Fifo, words);
 					this.gp0Ingress.wordsRemaining -= words;
 					if (this.gp0Ingress.wordsRemaining === 0) this.gp0Ingress.phase = GX_GPU_GP0_INGRESS_COMMAND;
+					if (consumingImage) this.consumeImageLoadWords(this.gp0DmaIngress, words, nowCycles);
+					else this.gp0DmaIngress.transferWords(this.gp0Fifo, words);
 				} else {
 					const admission = this.acceptGp0Word(this.gp0DmaIngress.peek());
 					if (admission === Gp0WordAdmission.Blocked) break;
@@ -1228,7 +1234,7 @@ export class GxGpu {
 			&& this.commandBuffer.readback.phase === GX_GPU_READBACK_IDLE
 			&& !this.gp0Fifo.empty()) {
 			if (this.gp0ImageLoadWordsRemaining !== 0) {
-				this.consumeImageLoadWords(nowCycles);
+				this.consumeImageLoadWords(this.gp0Fifo, Math.min(this.gp0Fifo.count(), this.gp0ImageLoadWordsRemaining), nowCycles);
 				continue;
 			}
 			if (this.gp0PolylineOpcode !== 0 && this.gp0PolylinePayloadPhase === 0
@@ -1846,9 +1852,8 @@ export class GxGpu {
 		}
 	}
 
-	private consumeImageLoadWords(nowCycles: number): void {
-		const words = Math.min(this.gp0Fifo.count(), this.gp0ImageLoadWordsRemaining);
-		this.gp0Fifo.readWords(this.commandBuffer.words, this.commandBuffer.wordCount, words);
+	private consumeImageLoadWords(source: WordFifo, words: number, nowCycles: number): void {
+		source.readWords(this.commandBuffer.words, this.commandBuffer.wordCount, words);
 		this.commandBuffer.wordCount += words;
 		this.gp0ImageLoadCommandWordCount += words;
 		this.gp0ImageLoadWordsRemaining -= words;

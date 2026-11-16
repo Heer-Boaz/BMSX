@@ -673,12 +673,18 @@ void GxGpu::processGp0Pipeline(i64 commandStartCycle) {
 		bool ingressAdvanced = false;
 		while (!m_gp0DmaIngress.empty()) {
 			if (m_gp0Ingress.phase == GX_GPU_GP0_INGRESS_IMAGE_PAYLOAD) {
-				const size_t words = std::min({m_gp0DmaIngress.count(), m_gp0Fifo.free(),
+				// An empty, runnable execution FIFO consumes payload at this same
+				// edge. Keep the counted stream, without copying through each slot.
+				const bool consumingImage = m_gp0Fifo.empty() && m_gp0ImageLoadWordsRemaining != 0u
+					&& m_pendingCommandCompletionCycle == 0 && m_commandBuffer.readback.phase() == GX_GPU_READBACK_IDLE;
+				const size_t words = std::min({m_gp0DmaIngress.count(),
+					consumingImage ? static_cast<size_t>(m_gp0ImageLoadWordsRemaining) : m_gp0Fifo.free(),
 					static_cast<size_t>(m_gp0Ingress.wordsRemaining)});
 				if (words == 0u) break;
-				m_gp0DmaIngress.transferWords(m_gp0Fifo, words);
 				m_gp0Ingress.wordsRemaining -= static_cast<u32>(words);
 				if (m_gp0Ingress.wordsRemaining == 0u) m_gp0Ingress.phase = GX_GPU_GP0_INGRESS_COMMAND;
+				if (consumingImage) consumeImageLoadWords(m_gp0DmaIngress, words, commandStartCycle);
+				else m_gp0DmaIngress.transferWords(m_gp0Fifo, words);
 			} else {
 				const auto admission = acceptGp0Word(m_gp0DmaIngress.peek());
 				if (admission == Gp0WordAdmission::Blocked) break;
@@ -845,7 +851,7 @@ void GxGpu::consumeGp0Fifo(i64 commandStartCycle) {
 		&& m_commandBuffer.readback.phase() == GX_GPU_READBACK_IDLE
 		&& !m_gp0Fifo.empty()) {
 		if (m_gp0ImageLoadWordsRemaining != 0u) {
-			consumeImageLoadWords(commandStartCycle);
+			consumeImageLoadWords(m_gp0Fifo, std::min(m_gp0Fifo.count(), static_cast<size_t>(m_gp0ImageLoadWordsRemaining)), commandStartCycle);
 			continue;
 		}
 		if (m_gp0PolylineOpcode != 0u && m_gp0PolylinePayloadPhase == 0u
@@ -1299,9 +1305,9 @@ void GxGpu::flushImageLoadToVram(i64 commandStartCycle) {
 	}
 }
 
-void GxGpu::consumeImageLoadWords(i64 commandStartCycle) {
-	const size_t words = std::min(m_gp0Fifo.count(), static_cast<size_t>(m_gp0ImageLoadWordsRemaining));
-	m_gp0Fifo.readWords(m_commandBuffer.words.data() + m_commandBuffer.wordCount, words);
+template <size_t Capacity>
+void GxGpu::consumeImageLoadWords(WordFifo<Capacity>& source, size_t words, i64 commandStartCycle) {
+	source.readWords(m_commandBuffer.words.data() + m_commandBuffer.wordCount, words);
 	m_commandBuffer.wordCount += words;
 	m_gp0ImageLoadCommandWordCount += static_cast<u32>(words);
 	m_gp0ImageLoadWordsRemaining -= static_cast<u32>(words);
