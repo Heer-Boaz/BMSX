@@ -3,6 +3,7 @@
 #include "machine/devices/gx/gpu_command_storage.h"
 #include "render/backend/gx_gpu_render_rules.h"
 #include "render/backend/software/gx_gpu_span.h"
+#include "render/backend/software/gx_gpu_texels.h"
 #include "render/backend/software/gx_gpu_vram.h"
 
 namespace bmsx {
@@ -59,10 +60,6 @@ inline u32 colorB8(u32 colorWord) {
 	return (colorWord >> 16u) & 0xffu;
 }
 
-inline u32 textureWindowCoord(i32 coord, u32 andMask, u32 orMask) {
-	return (static_cast<u32>(coord) & andMask) | orMask;
-}
-
 // Latch source reads at the primitive boundary; this is not a PSX cache model.
 inline u32 latchGxGpuSoftwareTextureReads(GxGpuSoftwareState& software,
 	u32 pageX, u32 pageY, u32 textureMode, u32 clutBaseX, u32 clutBaseY,
@@ -98,36 +95,6 @@ inline u32 latchGxGpuSoftwareTextureReads(GxGpuSoftwareState& software,
 		latched |= 2u;
 	}
 	return latched;
-}
-
-template<u32 TextureMode>
-inline u32 sampleGxGpuSoftwareTextureWord(
-	const GxGpuSoftwareState& software,
-	const u16* textureWords,
-	const u16* clutWords,
-	i32 u,
-	i32 v,
-	u32 pageX,
-	u32 pageY,
-	u32 textureWindowAndX,
-	u32 textureWindowAndY,
-	u32 textureWindowOrX,
-	u32 textureWindowOrY,
-	u32 clutBaseX,
-	u32 clutBaseY) {
-	const u32 windowedU = textureWindowCoord(u, textureWindowAndX, textureWindowOrX);
-	const u32 windowedV = textureWindowCoord(v, textureWindowAndY, textureWindowOrY);
-	if constexpr (TextureMode == GX_GPU_TEXTURE_MODE_PALETTE4) {
-		const u32 textureWord = textureWords[gxGpuSoftwareVramIndex(software, static_cast<i32>(pageX + (windowedU / 4u)), static_cast<i32>(pageY + windowedV))];
-		const u32 paletteIndex = (textureWord >> ((windowedU & 3u) << 2u)) & 0x0fu;
-		return clutWords[gxGpuSoftwareVramIndex(software, static_cast<i32>(clutBaseX + paletteIndex), static_cast<i32>(clutBaseY))];
-	}
-	if constexpr (TextureMode == GX_GPU_TEXTURE_MODE_PALETTE8) {
-		const u32 textureWord = textureWords[gxGpuSoftwareVramIndex(software, static_cast<i32>(pageX + (windowedU / 2u)), static_cast<i32>(pageY + windowedV))];
-		const u32 paletteIndex = (textureWord >> ((windowedU & 1u) << 3u)) & 0xffu;
-		return clutWords[gxGpuSoftwareVramIndex(software, static_cast<i32>(clutBaseX + paletteIndex), static_cast<i32>(clutBaseY))];
-	}
-	return textureWords[gxGpuSoftwareVramIndex(software, static_cast<i32>(pageX + windowedU), static_cast<i32>(pageY + windowedV))];
 }
 
 template<u32 TextureMode, typename Draw>
@@ -681,23 +648,27 @@ void drawGxGpuSoftwareTexturedRectangleImpl(
 		static_cast<u32>(firstU) * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE, static_cast<u32>(v) * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE,
 		static_cast<u32>(uStep) * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE, 0u, 0u, static_cast<u32>(vStep) * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE,
 		textureWindowAndX, textureWindowOrX, textureWindowAndY, textureWindowOrY);
-	const u16* textureWords = (latched & 1u) != 0u ? software.textureLatchScratch.data() : software.vram.data();
-	const u16* clutWords = (latched & 2u) != 0u ? software.textureLatchScratch.data() : software.vram.data();
+	const GxGpuSoftwareTextureSource source{
+		(latched & 1u) != 0u ? software.textureLatchScratch.data() : software.vram.data(),
+		(latched & 2u) != 0u ? software.textureLatchScratch.data() : software.vram.data(),
+		pageX, pageY, textureWindowAndX, textureWindowAndY, textureWindowOrX, textureWindowOrY, clutBaseX, clutBaseY};
+#if defined(__ARM_NEON)
+	GxGpuSoftwareClut4Lanes clut4{};
+	if constexpr (TextureMode == GX_GPU_TEXTURE_MODE_PALETTE4) {
+		clut4 = loadGxGpuSoftwareClut4Lanes(software, source);
+	}
+#endif
 	for (i32 y = top; y < bottom; y += 1, v += vStep) {
 		if ((y & 1) == skippedLineParity) {
 			continue;
 		}
-		i32 u = firstU;
-		auto sampler = [&]() {
-			const u32 sampleWord = sampleGxGpuSoftwareTextureWord<TextureMode>(
-				software, textureWords, clutWords, u, v,
-				pageX, pageY, textureWindowAndX, textureWindowAndY, textureWindowOrX, textureWindowOrY,
-				clutBaseX, clutBaseY);
-			u += uStep;
-			return sampleWord;
-		};
+#if defined(__ARM_NEON)
+		GxGpuSoftwareRectangleTexels<TextureMode> texels{software, source, &clut4, firstU, v, uStep};
+#else
+		GxGpuSoftwareRectangleTexels<TextureMode> texels{software, source, firstU, v, uStep};
+#endif
 		gxGpuSoftwareWriteTexturedSpan<RawTextureEnabled, SemiTransparencyEnabled, false, false>(
-			software, left, y, right - left, span, sampler);
+			software, left, y, right - left, span, texels);
 	}
 }
 

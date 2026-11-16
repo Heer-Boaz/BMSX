@@ -191,8 +191,8 @@ inline void writeColorVectors(GxGpuSoftwareState& software, i32 x, i32 y, i32 ve
 	advanceColors<InterpolatesColor>(span, static_cast<u32>(vectorPixels));
 }
 
-// Texels are fetched by the caller's exact scalar sampler, eight per vector;
-// everything after the fetch runs per lane.
+// Texels come from the caller's sampler, eight per vector: its fetch8() when it
+// has one, otherwise eight exact scalar fetches. Everything after runs per lane.
 template<bool RawTextureEnabled, bool SemiTransparencyEnabled, bool InterpolatesColor, bool DitherEnabled, u32 BlendMode, typename Sampler>
 inline void writeTexturedVectors(GxGpuSoftwareState& software, i32 x, i32 y, i32 vectorPixels, GxGpuSoftwareColorSpan& span, Sampler& sampler) {
 	u16* target = software.vram.data() + gxGpuSoftwareVramIndex(software, x, y);
@@ -204,10 +204,15 @@ inline void writeTexturedVectors(GxGpuSoftwareState& software, i32 x, i32 y, i32
 	const uint16x8_t checkMask = vdupq_n_u16(span.checkMaskBit ? 0x8000u : 0u);
 	alignas(16) u16 samples[NEON_SPAN_PIXELS];
 	for (i32 done = 0; done < vectorPixels; done += NEON_SPAN_PIXELS) {
-		for (i32 lane = 0; lane < NEON_SPAN_PIXELS; lane += 1) {
-			samples[lane] = static_cast<u16>(sampler());
+		uint16x8_t sample;
+		if constexpr (requires { sampler.fetch8(); }) {
+			sample = sampler.fetch8();
+		} else {
+			for (i32 lane = 0; lane < NEON_SPAN_PIXELS; lane += 1) {
+				samples[lane] = static_cast<u16>(sampler());
+			}
+			sample = vld1q_u16(samples);
 		}
-		const uint16x8_t sample = vld1q_u16(samples);
 		uint16x8_t r5 = channelOf(sample, 0);
 		uint16x8_t g5 = channelOf(sample, 1);
 		uint16x8_t b5 = channelOf(sample, 2);
