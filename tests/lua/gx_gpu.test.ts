@@ -3058,6 +3058,57 @@ test('GX-GPU software backend packed RGB555 blend matches channel arithmetic', (
 	}
 });
 
+test('GX-GPU software raw uploads preserve packing, wrap, masks and untouched words', () => {
+	const commands = new GxGpuCommandBuffer(standaloneCommandBufferDma);
+	const software = new GxGpuSoftwareState(PSX_MACHINE_SPEC.gxGpuVramBytes, 0);
+	const initial = new Uint16Array(software.vram.length);
+	const expected = new Uint16Array(software.vram.length);
+	for (let index = 0; index < initial.length; index += 1) initial[index] = index * 173;
+	const wordStart = 5;
+	const payloadStart = wordStart + 3;
+	commands.commandCount = 1;
+	commands.commandKind[0] = GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM;
+	commands.commandWordStart[0] = wordStart;
+	commands.words[wordStart] = 0xa0000000;
+	for (let index = payloadStart; index < commands.words.length; index += 1) {
+		commands.words[index] = Math.imul(index, 0x9e3779b9);
+	}
+	assert.equal(commands.wordHalves.buffer, commands.words.buffer, 'raw pixel view shares the owned word storage');
+	// Same 576-case matrix as the native raw-upload contract, with a nonzero
+	// command offset. The oracle decodes raw words, independently of the view.
+	for (const size of [0x00010001, 0x00030003, 0x00030011, 0x00020400, 0x02010401, 0]) {
+		const width = ((size - 1) & 1023) + 1;
+		const height = (((size >>> 16) - 1) & 511) + 1;
+		const payloadWords = (width * height + 1) >>> 1;
+		commands.words[wordStart + 2] = size;
+		for (const x of [0, 1, 1007, 1023]) {
+			for (const extension of [0, 0x100]) {
+				const yMask = extension === 0 ? 511 : 1023;
+				commands.words[wordStart + 1] = (yMask << 16) | x;
+				commands.commandVramYAddressExtensionWord[0] = extension;
+				for (const mask of [0, 1, 2, 3]) {
+					commands.commandMaskBitModeWord[0] = mask;
+					for (const prefix of [1, 13, payloadWords]) {
+						const words = Math.min(prefix, payloadWords);
+						commands.commandWordCount[0] = 3 + words;
+						expected.set(initial);
+						software.vram.set(initial);
+						for (let pixel = 0; pixel < Math.min(words * 2, width * height); pixel += 1) {
+							const at = (((yMask + ((pixel / width) | 0)) & yMask) * 1024) + ((x + pixel % width) & 1023);
+							const source = (commands.words[payloadStart + (pixel >>> 1)] >>> ((pixel & 1) * 16)) & 0xffff;
+							if ((mask & 2) === 0 || (expected[at] & 0x8000) === 0) {
+								expected[at] = source | ((mask & 1) !== 0 ? 0x8000 : 0);
+							}
+						}
+						executeGxGpuSoftwareCommands(software, commands, 0, 1);
+						assert.deepEqual(software.vram, expected, `size=${size} x=${x} extension=${extension} mask=${mask} prefix=${prefix}`);
+					}
+				}
+			}
+		}
+	}
+});
+
 test('GX-GPU software backend consumes only presentable commands', () => {
 	const commandBuffer = new GxGpuCommandBuffer(standaloneCommandBufferDma);
 	commandBuffer.reset();

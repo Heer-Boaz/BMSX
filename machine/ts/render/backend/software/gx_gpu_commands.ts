@@ -89,6 +89,23 @@ function executeCpuToVram(software: GxGpuSoftwareState, commandBuffer: GxGpuComm
 		const rowRemaining = emittedPixels - emittedPixel;
 		const rowWidth = rowRemaining < width ? rowRemaining : width;
 		const targetY = gxGpuVramYAddress(y + row, vramYAddressExtensionWord);
+		if (!checkMaskBit && !setMaskBit) {
+			// The raw halfwords already have payload order; odd rows do not pad.
+			const first = Math.min(rowWidth, GX_GPU_VRAM_X_ADDRESS_PERIOD - x);
+			const target = gxGpuSoftwareVramIndex(software, x, targetY);
+			const source = (payloadWordStart << 1) + emittedPixel;
+			const pixels = commandBuffer.wordHalves;
+			const vram = software.vram;
+			for (let column = 0; column < first; column += 1) {
+				vram[target + column] = pixels[source + column];
+			}
+			const wrappedTarget = target - x;
+			for (let column = first; column < rowWidth; column += 1) {
+				vram[wrappedTarget + column - first] = pixels[source + column];
+			}
+			emittedPixel += rowWidth;
+			continue;
+		}
 		for (let column = 0; column < rowWidth; column += 1) {
 			const payloadWord = commandBuffer.words[payloadWordStart + (emittedPixel >>> 1)];
 			gxGpuSoftwareWriteMaskedVramWord(software, gxGpuSoftwareVramIndex(software, x + column, targetY), gxGpuTransferPixelWord(payloadWord, emittedPixel), checkMaskBit, setMaskBit);

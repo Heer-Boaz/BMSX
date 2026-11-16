@@ -75,6 +75,7 @@ export type GxGpuCommandBufferView = {
 	readonly drawSizeOffset: ArrayLike<number>;
 	readonly words: Uint32Array;
 	readonly wordBytes: Uint8Array;
+	readonly wordHalves: Uint16Array;
 };
 
 export type GxGpuReadbackView = {
@@ -288,6 +289,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 	public readonly drawSizeOffset = new Uint32Array(GX_GPU_COMMAND_CAPACITY);
 	public readonly words = new Uint32Array(GX_GPU_COMMAND_WORD_CAPACITY);
 	public readonly wordBytes = new Uint8Array(this.words.buffer);
+	public readonly wordHalves = new Uint16Array(this.words.buffer);
 	public readonly readback: GxGpuReadbackPort;
 
 	public constructor(dmaController: DmaController) {
