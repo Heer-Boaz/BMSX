@@ -37,6 +37,17 @@ void Thread::resizeStack(size_t capacity) {
 	delete[] stack;
 	stack = next;
 	stackCapacity = capacity;
+	for (auto* frame = currentFrame; frame; frame = frame->previous) frame->registers = stack + frame->stackBase;
+}
+
+size_t Thread::shrinkStack() {
+	size_t used = static_cast<size_t>(stackTop);
+	for (auto* frame = currentFrame; frame; frame = frame->previous)
+		used = std::max(used, static_cast<size_t>(frame->stackBase + frame->stackCapacity));
+	if (stackCapacity <= 16 || used * 3 >= stackCapacity) return 0;
+	const size_t released = stackCapacity / 2;
+	resizeStack(released);
+	return released;
 }
 
 CallFrame* Thread::acquireFrame() {

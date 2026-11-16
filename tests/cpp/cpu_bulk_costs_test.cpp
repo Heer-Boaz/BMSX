@@ -125,7 +125,8 @@ void rebuildWork(bool scalar) {
    table->set(field, valueTable(cpu.createTable())); table->set(other, valueTable(cpu.createTable()));
    r[1] = valueString(cpu.stringPool().intern("third"));
    const auto heap = cpu.luaHeap().captureState();
-   cpu.stringPool().intern(std::string(heap.nextCollectionBytes - heap.trackedBytes - 16, 'g'));
+   cpu.luaHeap().restoreState({heap.trackedBytes, cpu.luaHeap().capacity()});
+   cpu.stringPool().intern(std::string(cpu.luaHeap().capacity() - heap.trackedBytes - 16, 'g'));
    surcharge = 16; capacity = 4;
   } else {
    for (int i = 0; i < 1024; ++i) table->set(valueNumber(i + 0.5), valueNumber(i));
@@ -139,9 +140,9 @@ void rebuildWork(bool scalar) {
    const auto strings = cpu.stringPool().captureState();
    gcCycles = strings.slots;
    for (const auto& entry : strings.entries) if (entry.tracked) gcCycles += ceilDiv4(utf8ByteLength(entry.value));
-   // Weak graph: Thread96 + Closure8 + weak Table72 + mode26 + dead Values16 + warm Table13.
-   gcCycles += scenario == "weak-collection" ? 231
-    : 2 * ((cpu.luaHeap().usedBytes() - cpu.stringPool().trackedLuaHeapBytes()) / 4) + (64 + cpu.rootThread()->stackCapacity * 8) / 4;
+   // Weak graph: Thread128 + Closure8 + weak Table90 + mode26 + dead Values16 + warm Table13.
+   gcCycles += scenario == "weak-collection" ? 281
+    : 2 * ((cpu.luaHeap().usedBytes() - cpu.stringPool().trackedLuaHeapBytes()) / 4) + 2 * (64 + cpu.rootThread()->stackCapacity * 8) / 4;
   }
   const Value key = r[1]; machine.restart();
   if (cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::SETT)] + 1) != RunResult::Yielded

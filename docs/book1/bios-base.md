@@ -4,8 +4,8 @@ The BIOS supplies functions for value checks, numeric and text conversion,
 Table traversal, argument selection, global-name access and console output.
 Use the installed global names directly after normal BIOS startup.
 
-This chapter covers sixteen base functions, including direct Table access and
-metatable selection. [Protected calls and coroutines](coroutines.md#sec-coroutines)
+This chapter covers the base functions, including direct Table access,
+metatable selection and allocation-pool management. [Protected calls and coroutines](coroutines.md#sec-coroutines)
 specifies `error`, `pcall` and `xpcall`. Device registers and retained fault
 words are described in [[System control](system.md#sec-system)]{.content-visible when-format="html"}[Book I, Chapter 12]{.content-visible when-format="pdf"}.
 
@@ -21,6 +21,7 @@ Choose the operation according to the representation being used:
 | Access a global by a computed name | `getglobal(name)`, `setglobal(name, value)` | These select ordinary global bindings, not keys in a global-environment Table. |
 | Read or write a Table's own mapping | `rawget`, `rawset` | Bypasses inherited reads; see [Table and metatable access](#sec-bios-base-table-and-metatable-access). |
 | Inspect or set a Table's metatable | `getmetatable`, `setmetatable` | The supported inherited-read and weak-reference rules are in the [CPU reference](cpu.md#sec-cpu-metatables-and-indexed-reads). |
+| Inspect or advance collection | `collectgarbage(option)` | Counts the language-allocation budget, not addressable RAM or video memory. A step is not a guaranteed maximum pause. |
 
 ## Installed program environment {#sec-bios-base-installed-program-environment}
 
@@ -40,7 +41,7 @@ The base installation provides these public names:
 - `next`, `type`, `setmetatable`, `getmetatable`, `rawget`, `rawset`;
 - `getglobal`, `setglobal`, `select`;
 - `error`, `pcall`, `xpcall`, `assert`;
-- `rawequal`, `tostring`, `tonumber`, `print`, `ipairs`, `pairs`.
+- `rawequal`, `tostring`, `tonumber`, `print`, `ipairs`, `pairs`, `collectgarbage`.
 
 This is the base installation inventory, not a restriction on names that a program or module may introduce. The entries below give the base-function contracts; [name-based global access](#sec-bios-base-getglobalname-and-setglobalname-value) selects bindings during execution.
 
@@ -73,6 +74,39 @@ reads the current global `next`; `print` reads current `select` and `tostring`;
 String method lookup uses the installed String-index Table. Reassigning the
 `string` global leaves that method Table in place. The routine references
 describe any further dependency relevant to replacing an installed binding.
+
+## Allocation-pool management {#sec-bios-base-collectgarbage}
+
+Use `collectgarbage(option)` to observe the shared language-allocation pool or
+advance reclamation at a convenient point, such as a loading screen. Automatic
+collection continues without these calls.
+
+| Option | Operation and single result |
+| --- | --- |
+| Omitted, nil or `'collect'` | Finish an active cycle, then complete one fresh cycle; return `0`. |
+| `'count'` | Return occupied budget in KiB, including unreachable allocations not yet reclaimed. |
+| `'capacity'` | Return total language-allocation capacity in KiB. This does not include addressable RAM or VRAM. |
+| `'step'` | Perform one incremental step, starting a cycle if idle. Return true if that step finishes the cycle, false otherwise. |
+
+One KiB is 1,024 bytes; fractional KiB are retained. Counts use the canonical
+allocation sizes in the [CPU reference](cpu.md#sec-cpu-collection-work-charge),
+not the size or number of user fields alone. Reading a count does not collect.
+An unlisted option raises an error. The service captures its collection and
+error primitives when installed; replacing public bindings does not alter them.
+
+```lua
+local occupied_kib = collectgarbage('count')
+local capacity_kib = collectgarbage('capacity')
+local cycle_finished = collectgarbage('step')
+```
+
+A step targets 4,096 work cycles, but one large object or the final atomic
+remark can exceed that target. It is not a display-frame wait or a promise to
+finish within a fixed time. Full collection is synchronous and is best kept
+out of time-critical play. Both explicit forms consume the work cycles they
+perform; they do not make reclamation free. Each underlying collection-control
+primitive call adds 4 cycles beyond `CALL`, with ordinary result-placement
+charges. Count and capacity use that primitive without collection work.
 
 ## Value checks and conversion {#sec-bios-base-value-checks-and-conversion}
 

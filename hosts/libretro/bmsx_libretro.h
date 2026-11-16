@@ -100,8 +100,11 @@ typedef struct BmsxNativeCompilationProfileInterface {
 /* Offered only by BMSX_DIAGNOSTIC_CPU_SLICES cores. Read synchronously after
  * content load and before unload. Reading has no execution or reset effects.
  * Scheduler position is raw signed machine time: reset/restore can move it
- * backwards. The remaining fields are host-only CPU-lifetime counters, never
- * reset or restored with machine state. Cycles are CPU::runUntilDepth budget
+ * backwards. The remaining fields are host-only CPU-lifetime measurements,
+ * never reset or restored with machine state. gc_max_step_nanoseconds is a
+ * lifetime maximum, not a differenceable counter. gc_atomic_nanoseconds
+ * overlaps its roots/trace/weak intervals; mark_again is a separate phase.
+ * Cycles are CPU::runUntilDepth budget
  * consumption, not host time or a count of retired instructions.
  *
  * NativeOrigin includes shared C++ semantics reached from generated execution;
@@ -121,6 +124,13 @@ typedef struct BmsxExecutionProfile {
 	uint64_t gc_weak_nanoseconds;
 	uint64_t gc_sweep_nanoseconds;
 	uint64_t gc_string_reclaim_nanoseconds;
+	uint64_t gc_full_collections;
+	uint64_t gc_steps;
+	uint64_t gc_max_step_nanoseconds;
+	uint64_t gc_steps_over_2ms;
+	uint64_t gc_steps_over_8ms;
+	uint64_t gc_mark_again_nanoseconds;
+	uint64_t gc_atomic_nanoseconds;
 	int64_t cpu_native_origin_cycles;
 	int64_t cpu_interpreter_runtime_cycles;
 	uint64_t native_newt_count;

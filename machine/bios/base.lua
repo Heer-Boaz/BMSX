@@ -9,6 +9,7 @@ local vm_select<const> = __bmsx_select
 local vm_error<const> = __bmsx_error
 local vm_pcall<const> = __bmsx_pcall
 local vm_xpcall<const> = __bmsx_xpcall
+local vm_collect_garbage<const> = __bmsx_collect_garbage
 local console<const> = require('tty/console')
 
 local ascii_tab<const> = 9
@@ -293,4 +294,20 @@ end
 
 pairs = function(target)
 	return next, target, nil
+end
+
+collectgarbage = function(option)
+	if option == nil or option == 'collect' then
+		vm_collect_garbage(0)
+		return 0
+	elseif option == 'count' then
+		local bytes<const> = vm_collect_garbage(1)
+		return bytes / 1024
+	elseif option == 'capacity' then
+		local _<const>, bytes<const> = vm_collect_garbage(1)
+		return bytes / 1024
+	elseif option == 'step' then
+		return vm_collect_garbage(2)
+	end
+	vm_error('invalid collectgarbage option')
 end

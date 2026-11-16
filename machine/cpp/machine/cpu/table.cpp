@@ -272,8 +272,10 @@ int Table::rawSet(const Value& key, const Value& value) {
 int Table::insertHash(const Value& key, const Value& value) {
 	const int nodeIndex = insertHashWithoutGrowth(key, value);
 	if (nodeIndex >= 0) return nodeIndex;
-	rehash(key, value);
-	return rawSet(key, value);
+	// Growth may collect and relocate a source Thread's register storage.
+	const Value pendingKey = key, pendingValue = value;
+	rehash(pendingKey, pendingValue);
+	return rawSet(pendingKey, pendingValue);
 }
 
 int Table::insertHashWithoutGrowth(const Value& key, const Value& value) noexcept {
@@ -457,8 +459,9 @@ int Table::setStringKey(StringId key, const Value& value) {
 	const int nodeIndex = storeStringKeyWithoutGrowth(this, key, value);
 	if (nodeIndex != TABLE_STORE_REQUIRES_GROWTH) return nodeIndex;
 	const Value keyValue = valueString(key);
-	rehash(keyValue, value);
-	return rawSet(keyValue, value);
+	const Value pendingValue = value;
+	rehash(keyValue, pendingValue);
+	return rawSet(keyValue, pendingValue);
 }
 
 int Table::storeStringKeyWithoutGrowth(Table* table, StringId key, const Value& value) noexcept {

@@ -76,7 +76,8 @@ for (const generic of [false, true]) test(`growing string stores publish moved r
 		const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
 		const retained = cpu.createTable(0, 1); retained.setStringKey(cpu.stringPool.intern('payload'), valueString(cpu.stringPool.intern('retained')));
 		r.setTable(0, cpu.createTable()); r.setTable(9, retained); frame.top = 0;
-		const heap = cpu.captureRuntimeState().luaHeap, pressure = 'g'.repeat(heap.nextCollectionBytes - heap.trackedBytes - 1);
+		const heap = cpu.captureRuntimeState().luaHeap, pressure = 'g'.repeat(cpu.luaHeap.capacity() - heap.trackedBytes - 1);
+		cpu.luaHeap.restoreState({ trackedBytes: heap.trackedBytes, nextCollectionBytes: cpu.luaHeap.capacity() });
 		cpu.stringPool.intern(pressure); garbage.push(pressure);
 	}
 	runCpuParity(js, ref, 6);

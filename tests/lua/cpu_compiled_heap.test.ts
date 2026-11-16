@@ -133,7 +133,8 @@ for (const closure of [false, true]) test(`compiled allocation publishes moved r
 		table.setStringKey(cpu.stringPool.intern('payload'), valueString(cpu.stringPool.intern('retained')));
 		r.setTable(9, table); r.setStringId(1, cpu.stringPool.intern('fresh-')); r.setStringId(2, cpu.stringPool.intern('result'));
 		root.top = 0;
-		const heap = cpu.captureRuntimeState().luaHeap, text = 'g'.repeat(heap.nextCollectionBytes - heap.trackedBytes - 1);
+		const heap = cpu.captureRuntimeState().luaHeap, text = 'g'.repeat(cpu.luaHeap.capacity() - heap.trackedBytes - 1);
+		cpu.luaHeap.restoreState({ trackedBytes: heap.trackedBytes, nextCollectionBytes: cpu.luaHeap.capacity() });
 		cpu.stringPool.intern(text); garbage.push(text);
 	}
 	assert.equal(js.runUntilDepth(0, 6), ref.runUntilDepth(0, 6)); assertParity(js, ref);
@@ -237,6 +238,7 @@ for (const range of [false, true]) test(`compiled concatenation allocation failu
 	for (const cpu of [js, ref]) {
 		cpu.rootThread.frameAtDepth(0).registers.setNumber(1, 1); cpu.rootThread.frameAtDepth(0).registers.setNumber(2, 2);
 		cpu.runUntilDepth(0, range ? 396 : 320);
+		cpu.luaHeap.restoreState({ trackedBytes: cpu.luaHeap.usedBytes(), nextCollectionBytes: cpu.luaHeap.capacity() });
 		const r = cpu.rootThread.frameAtDepth(0).registers, id = cpu.stringPool.intern('x'.repeat(2 * 1024 * 1024));
 		r.setStringId(1, id); r.setStringId(2, id); r.setNumber(0, 73); cpu.rootThread.frameAtDepth(0).top = 0;
 	}
@@ -246,7 +248,7 @@ for (const range of [false, true]) test(`compiled concatenation allocation failu
 	const strings = js.stringPool.captureState();
 	// Only the root Thread and closure are objects. The Thread is remarked;
 	// all directory slots and allocated text are examined once at sweep.
-	const gcCycles = 3 * ceilDiv4(64 + js.rootThread.stackRegisters.capacity() * 8) + 2 * 4
+	const gcCycles = 4 * ceilDiv4(64 + js.rootThread.stackRegisters.capacity() * 8) + 2 * 4
 		+ strings.slots + strings.entries.reduce((sum, entry) => sum + (entry.tracked ? ceilDiv4(utf8ByteLength(entry.value)) : 0), 0);
 	assert.equal(js.runUntilDepth(0, range ? 5 : 4), ref.runUntilDepth(0, range ? 5 : 4)); assertParity(js, ref);
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY); assert.equal(js.readEpcWord(), pc + INSTRUCTION_BYTES);

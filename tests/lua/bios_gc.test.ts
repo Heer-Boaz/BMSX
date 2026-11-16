@@ -1,0 +1,55 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { test } from 'node:test';
+import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
+import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
+import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
+import { parseLuaChunk, materializeCpuCompletionValues } from './cpu_test_harness';
+
+for (const optLevel of [0, 3] as const) for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+	test(`BIOS GC count, capacity, step and full collection use the real primitive (O${optLevel}, backend ${backend})`, () => {
+		const entrySource = `require('base')
+local gc = collectgarbage
+local before = gc('count')
+local capacity = gc('capacity')
+local keep = {}
+for i = 1, 400 do keep[i] = { i } end
+local after = gc('count')
+assert(after > before and after < capacity)
+local weak = setmetatable({}, { __mode = 'v' })
+weak[1] = keep
+keep = nil
+local complete = false
+for i = 1, 1000 do
+  if gc('step') then complete = true break end
+end
+assert(complete)
+assert(gc('collect') == 0 and gc() == 0 and gc(nil) == 0)
+local ok = pcall(gc, 'stop')
+assert(not ok)
+-- The service retains its collection/error primitives after installation.
+__bmsx_collect_garbage = function() error('replaced') end
+error = function() return 'not an error' end
+assert(gc('capacity') == capacity)
+assert(not pcall(gc, 'unsupported'))
+return true, capacity`;
+		const baseSource = readFileSync('machine/bios/base.lua', 'utf8');
+		const consoleSource = 'return { write = function() end, end_line = function() end }';
+		const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource), [
+			{ path: 'base', source: baseSource, chunk: parseLuaChunk(baseSource, 'base.lua') },
+			{ path: 'tty/console', source: consoleSource, chunk: parseLuaChunk(consoleSource) },
+		], { entrySource, optLevel, programDomain: 'system' });
+		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled), backend);
+		cpu.installBootPrimitives();
+		const profile = cpu.gc.diagnostics = new GcDiagnostics();
+		let result = RunResult.Yielded;
+		for (let i = 0; i < 1000 && result === RunResult.Yielded; ++i) result = cpu.runUntilDepth(0, 2048);
+		assert.equal(result, RunResult.Halted, `fault ${cpu.readLuaFaultReasonWord()}, EPC ${cpu.readEpcWord()}`);
+		assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [true, cpu.luaHeap.capacity() / 1024]);
+		assert.equal(profile.fullCollections, 3);
+		assert.ok(profile.steps > profile.collections);
+	});
+}

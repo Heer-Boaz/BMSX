@@ -28,6 +28,7 @@ struct Thread : GCObject {
 	CallFrame* frameAtDepth(size_t depth) const;
 	void trimFrames();
 	void resizeStack(size_t capacity);
+	size_t shrinkStack();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	struct NativeOffsets { size_t currentFrame, frameDepth, stackTop, stack, stackCapacity; };
 	static NativeOffsets nativeOffsets();

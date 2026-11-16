@@ -1,7 +1,9 @@
 import { BASE_RAM_USED_SIZE } from '../../spec/bmsx/memory_map';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from './errors';
 import type { CPU } from './cpu';
+import type { Thread } from './thread';
 import { GC_ASSIST_BYTES } from './gc_heap';
+import { shiftRightSigned } from '../common/numeric';
 import {
 	ValueTag,
 	type ValueReference,
@@ -34,16 +36,18 @@ export class LuaHeap {
 		root2Tag: ValueTag = ValueTag.Nil,
 		root2Scalar: number = NaN,
 		root2Reference: ValueReference = null,
+		growingStack: Thread | null = null,
 	): void {
 		let nextBytes = this.trackedBytes + byteCount;
 		if (nextBytes > this.capacityBytes) {
 			this.collectRuntime(root0Tag, root0Scalar, root0Reference,
-				root1Tag, root1Scalar, root1Reference, root2Tag, root2Scalar, root2Reference);
+				root1Tag, root1Scalar, root1Reference, root2Tag, root2Scalar, root2Reference, growingStack);
 		} else if (nextBytes > this.nextCollectionBytes) {
-			this.cpu.instructionBudgetRemaining -= this.cpu.gc.step(
+			const work = this.cpu.gc.step(
 				root0Tag, root0Scalar, root0Reference,
-				root1Tag, root1Scalar, root1Reference, root2Tag, root2Scalar, root2Reference);
-			if (this.cpu.gc.active()) this.nextCollectionBytes = this.trackedBytes + GC_ASSIST_BYTES;
+				root1Tag, root1Scalar, root1Reference, root2Tag, root2Scalar, root2Reference, growingStack);
+			this.cpu.instructionBudgetRemaining -= work;
+			this.creditStep(work);
 		}
 		nextBytes = this.trackedBytes + byteCount;
 		if (nextBytes > this.capacityBytes) throw LUA_OUT_OF_MEMORY_SIGNAL;
@@ -60,12 +64,25 @@ export class LuaHeap {
 		root2Tag: ValueTag = ValueTag.Nil,
 		root2Scalar: number = NaN,
 		root2Reference: ValueReference = null,
+		growingStack: Thread | null = null,
 	): void {
 		this.cpu.instructionBudgetRemaining -= this.cpu.gc.collect(
 			root0Tag, root0Scalar, root0Reference,
 			root1Tag, root1Scalar, root1Reference,
-			root2Tag, root2Scalar, root2Reference,
+			root2Tag, root2Scalar, root2Reference, growingStack,
 		);
+	}
+
+	/** Explicit work earns the same allocation credit as an automatic assist. */
+	public stepRuntime(): boolean {
+		const work = this.cpu.gc.step();
+		this.cpu.instructionBudgetRemaining -= work;
+		this.creditStep(work);
+		return !this.cpu.gc.active();
+	}
+
+	private creditStep(work: number): void {
+		if (this.cpu.gc.active()) this.nextCollectionBytes = this.trackedBytes + Math.max(GC_ASSIST_BYTES, shiftRightSigned(work, 4));
 	}
 
 	public restoreAllocate(byteCount: number): void {
@@ -94,6 +111,7 @@ export class LuaHeap {
 	public usedBytes(): number {
 		return this.trackedBytes;
 	}
+	public capacity(): number { return this.capacityBytes; }
 
 	public captureState(): LuaHeapState {
 		return {

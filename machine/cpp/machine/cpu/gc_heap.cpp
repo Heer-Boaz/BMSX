@@ -32,6 +32,21 @@ private:
 	u64* m_nanoseconds;
 	GcProfileClock::time_point m_start;
 };
+
+class GcStepMeasurement {
+public:
+	explicit GcStepMeasurement(DiagnosticGcProfile& profile) : m_profile(profile), m_start(GcProfileClock::now()) { ++profile.steps; }
+	~GcStepMeasurement() {
+		const u64 elapsed = static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(GcProfileClock::now() - m_start).count());
+		m_profile.totalNanoseconds += elapsed;
+		m_profile.maxStepNanoseconds = std::max(m_profile.maxStepNanoseconds, elapsed);
+		if (elapsed > 2000000) ++m_profile.stepsOver2ms;
+		if (elapsed > 8000000) ++m_profile.stepsOver8ms;
+	}
+private:
+	DiagnosticGcProfile& m_profile;
+	GcProfileClock::time_point m_start;
+};
 #endif
 
 constexpr uint8_t kTableWeakKeys = 1, kTableWeakValues = 2;
@@ -60,7 +75,7 @@ bool GcHeap::markValue(Value v) {
 void GcHeap::track(GCObject* object) {
 	object->gcColor = m_white;
 	object->restored = false;
-	object->grayHead = &m_gray;
+	object->grayHead = &m_grayAgain;
 	object->grayNext = nullptr;
 	object->hashId = allocateHashId();
 	object->previous = nullptr;
@@ -209,20 +224,32 @@ size_t GcHeap::trace(bool atomic) {
 	return work;
 }
 
-size_t GcHeap::atomic(Value root0, Value root1, Value root2) {
+size_t GcHeap::remark(Value root0, Value root1, Value root2) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	auto& profile = m_cpu.m_diagnosticGcProfile;
 	GcPhaseMeasurement measurement(profile.rootsNanoseconds);
 #endif
+	for (auto* thread : m_threads) thread->writeBarrier();
+	// Also observe mode changes made through a shared metatable.
+	for (auto* table : m_weakTables) table->writeBarrier();
+	m_threads.clear();
+	// The current trace queue is empty. Further writes go to grayAgain, so
+	// mutation cannot continually put the same object in this pass's queue.
+	m_gray = m_grayAgain; m_grayAgain = nullptr;
 	m_cpu.markRoots(*this);
 	m_stringPool.markLocalRoots();
 	markValue(root0); markValue(root1); markValue(root2);
-	for (auto* thread : m_threads) thread->writeBarrier();
-	// Mode changes on a shared metatable are observed at the final remark.
-	for (auto* table : m_weakTables) table->writeBarrier();
-	size_t work = m_cpu.collectionRootWordCount();
+	return m_cpu.collectionRootWordCount();
+}
+
+size_t GcHeap::atomic(Value root0, Value root1, Value root2) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-	measurement.phase(profile.traceNanoseconds);
+	GcPhaseMeasurement totalAtomic(m_cpu.m_diagnosticGcProfile.atomicNanoseconds);
+#endif
+	size_t work = remark(root0, root1, root2);
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
+	auto& profile = m_cpu.m_diagnosticGcProfile;
+	GcPhaseMeasurement measurement(profile.traceNanoseconds);
 #endif
 	while (m_gray) work += trace(true);
 	bool changed;
@@ -290,13 +317,13 @@ void GcHeap::destroyObject(GCObject* object) {
 	}
 }
 
-size_t GcHeap::step(Value root0, Value root1, Value root2) {
+size_t GcHeap::step(Value root0, Value root1, Value root2, Thread* growingStack) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	auto& profile = m_cpu.m_diagnosticGcProfile;
-	GcPhaseMeasurement total(profile.totalNanoseconds);
+	GcStepMeasurement total(profile);
 #endif
 	size_t work = 0;
-	if (m_phase == GcPhase::Pause || m_phase == GcPhase::Mark) {
+	if (m_phase == GcPhase::Pause || m_phase == GcPhase::Mark || m_phase == GcPhase::MarkAgain) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 		GcPhaseMeasurement roots(profile.rootsNanoseconds);
 #endif
@@ -315,16 +342,26 @@ size_t GcHeap::step(Value root0, Value root1, Value root2) {
 	}
 	while (work < GC_STEP_WORDS && active()) {
 		switch (m_phase) {
-			case GcPhase::Mark: {
+			case GcPhase::Mark:
+			case GcPhase::MarkAgain: {
 				{
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-					GcPhaseMeasurement traceTime(profile.traceNanoseconds);
+					GcPhaseMeasurement traceTime(m_phase == GcPhase::Mark ? profile.traceNanoseconds : profile.markAgainNanoseconds);
 #endif
 					while (m_gray && work < GC_STEP_WORDS) work += trace(false);
 				}
-				if (work < GC_STEP_WORDS) work += atomic(root0, root1, root2);
+				if (work < GC_STEP_WORDS) {
+					if (m_phase == GcPhase::Mark) {
+						work += remark(root0, root1, root2);
+						m_phase = GcPhase::MarkAgain;
+					} else {
+						m_phase = GcPhase::Atomic;
+						return work;
+					}
+				}
 				break;
 			}
+			case GcPhase::Atomic: return atomic(root0, root1, root2);
 			case GcPhase::Sweep: {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 				GcPhaseMeasurement sweepTime(profile.sweepNanoseconds);
@@ -334,10 +371,18 @@ size_t GcHeap::step(Value root0, Value root1, Value root2) {
 					m_sweep = object->next;
 					work += ceilDiv4(static_cast<int>(allocationBytes(object)));
 					if (sweepGarbage(object)) { unlink(object); destroyObject(object); }
-					else object->gcColor = m_white;
+					else {
+						object->gcColor = m_white;
+						if (object->type == ObjType::Thread && object != growingStack) {
+							auto* thread = static_cast<Thread*>(object);
+							const size_t released = thread->shrinkStack();
+							m_luaHeap.release(released * THREAD_STACK_SLOT_BYTES);
+							if (released != 0) work += thread->stackCapacity * 4;
+						}
+					}
 				}
 				if (!m_sweep && work < GC_STEP_WORDS) {
-					m_gray = nullptr;
+					m_grayAgain = nullptr;
 					m_phase = GcPhase::Strings;
 					m_stringPool.beginSweep();
 				}
@@ -359,11 +404,14 @@ size_t GcHeap::step(Value root0, Value root1, Value root2) {
 	}
 	return work;
 }
-size_t GcHeap::collect(Value root0, Value root1, Value root2) {
+size_t GcHeap::collect(Value root0, Value root1, Value root2, Thread* growingStack) {
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
+	++m_cpu.m_diagnosticGcProfile.fullCollections;
+#endif
 	size_t work = 0;
 	// An explicit/full collection also removes floating garbage from an active cycle.
-	while (active()) work += step(root0, root1, root2);
-	do { work += step(root0, root1, root2); } while (active());
+	while (active()) work += step(root0, root1, root2, growingStack);
+	do { work += step(root0, root1, root2, growingStack); } while (active());
 	return work;
 }
 void GcHeap::finishRestore(u32 nextHashId) {
@@ -383,13 +431,17 @@ void GcHeap::restoreState(const GcState& state, const std::vector<GCObject*>& ob
 		auto* object = objects[state.allocations[i]];
 		object->gcColor = static_cast<uint8_t>(state.colors[i]);
 		object->previous = previous; object->next = nullptr; object->grayNext = nullptr;
-		object->grayHead = &m_gray;
+		object->grayHead = &m_grayAgain;
 		if (previous) previous->next = object; else m_objects = object;
 		previous = object;
 	}
 	m_gray = nullptr;
 	for (auto it = state.gray.rbegin(); it != state.gray.rend(); ++it) {
 		auto* object = objects[*it]; object->grayNext = m_gray; m_gray = object;
+	}
+	m_grayAgain = nullptr;
+	for (auto it = state.grayAgain.rbegin(); it != state.grayAgain.rend(); ++it) {
+		auto* object = objects[*it]; object->grayNext = m_grayAgain; m_grayAgain = object;
 	}
 	m_threads.clear(); m_weakTables.clear();
 	for (auto ref : state.threads) m_threads.push_back(static_cast<Thread*>(objects[ref]));

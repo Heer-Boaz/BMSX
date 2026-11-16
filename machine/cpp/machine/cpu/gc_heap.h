@@ -12,12 +12,12 @@ class CPU;
 // Collector work is measured in 32-bit pool words, not host time.
 inline constexpr size_t GC_STEP_WORDS = 4096;
 inline constexpr size_t GC_ASSIST_BYTES = 256;
-enum class GcPhase : u32 { Pause, Mark, Sweep, Strings };
+enum class GcPhase : u32 { Pause, Mark, MarkAgain, Atomic, Sweep, Strings };
 struct GcState {
 	GcPhase phase = GcPhase::Pause;
 	u32 white = 0;
 	int sweep = -1;
-	std::vector<u32> allocations, colors, gray, threads, weak;
+	std::vector<u32> allocations, colors, gray, grayAgain, threads, weak;
 };
 
 class GcHeap {
@@ -48,6 +48,7 @@ public:
 			state.allocations.push_back(ref(object)); state.colors.push_back(object->gcColor);
 		}
 		for (auto* object = m_gray; object; object = object->grayNext) state.gray.push_back(ref(object));
+		for (auto* object = m_grayAgain; object; object = object->grayNext) state.grayAgain.push_back(ref(object));
 		for (auto* object : m_threads) state.threads.push_back(ref(object));
 		for (auto* object : m_weakTables) state.weak.push_back(ref(object));
 		return state;
@@ -60,8 +61,8 @@ public:
 	}
 	bool isAlive(const GCObject* object) const { return object->gcColor != m_white; }
 	size_t allocationBytes(const GCObject* object) const;
-	size_t step(Value root0, Value root1, Value root2);
-	size_t collect(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil());
+	size_t step(Value root0, Value root1, Value root2, Thread* growingStack = nullptr);
+	size_t collect(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), Thread* growingStack = nullptr);
 	bool markValue(Value value);
 	bool markObject(GCObject* object);
 private:
@@ -69,6 +70,7 @@ private:
 	uint8_t tableWeakMode(const Table& table) const;
 	bool valueIsAlive(Value value) const;
 	size_t trace(bool atomic);
+	size_t remark(Value root0, Value root1, Value root2);
 	size_t atomic(Value root0, Value root1, Value root2);
 	void destroyObject(GCObject* object);
 	void unlink(GCObject* object);
@@ -76,6 +78,7 @@ private:
 	LuaHeap& m_luaHeap;
 	GCObject* m_objects = nullptr;
 	GCObject* m_gray = nullptr;
+	GCObject* m_grayAgain = nullptr;
 	GCObject* m_sweep = nullptr;
 	std::vector<Thread*> m_threads;
 	std::vector<Table*> m_weakTables;

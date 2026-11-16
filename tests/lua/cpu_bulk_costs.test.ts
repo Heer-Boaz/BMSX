@@ -258,7 +258,8 @@ return true`, 3);
     table.set(field, cpu.createTable()); table.set(other, cpu.createTable());
     r.set(1, valueString(cpu.stringPool.intern('third')));
     const heap = cpu.luaHeap.captureState();
-    cpu.stringPool.intern('g'.repeat(heap.nextCollectionBytes - heap.trackedBytes - 16));
+    cpu.luaHeap.restoreState({ trackedBytes: heap.trackedBytes, nextCollectionBytes: cpu.luaHeap.capacity() });
+    cpu.stringPool.intern('g'.repeat(cpu.luaHeap.capacity() - heap.trackedBytes - 16));
     surcharge = 16; capacity = 4;
    } else {
     for (let i = 0; i < 1024; ++i) table.set(i + 0.5, i);
@@ -271,10 +272,10 @@ return true`, 3);
    if (scenario === 'weak-collection' || scenario === 'failed-growth') {
     const strings = cpu.stringPool.captureState();
     const stringWork = strings.slots + strings.entries.reduce((sum, entry) => sum + (entry.tracked ? ceilDiv4(utf8ByteLength(entry.value)) : 0), 0);
-    // Weak case: Thread96 + Closure8 + weak Table72 + mode26 + two dead Values16 + dead warm Table13.
-    // Strong case: all objects scan and sweep, with one extra Thread remark.
-    gcCycles = stringWork + (scenario === 'weak-collection' ? 231
-      : 2 * ((cpu.luaHeap.usedBytes() - cpu.stringPool.trackedLuaHeapBytes()) / 4) + (64 + cpu.rootThread.stackRegisters.capacity() * 8) / 4);
+    // Weak case: Thread128 + Closure8 + weak Table90 + mode26 + two dead Values16 + dead warm Table13.
+    // Strong case: all objects scan and sweep, with two extra Thread remarks.
+    gcCycles = stringWork + (scenario === 'weak-collection' ? 281
+      : 2 * ((cpu.luaHeap.usedBytes() - cpu.stringPool.trackedLuaHeapBytes()) / 4) + 2 * (64 + cpu.rootThread.stackRegisters.capacity() * 8) / 4);
    }
    const key = r.get(1);
    cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);

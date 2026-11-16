@@ -9,6 +9,13 @@ namespace bmsx {
 struct DiagnosticGcProfile {
 	// Cycles started, not assist calls. A continuation can report time with zero starts.
 	u64 collections = 0;
+	u64 fullCollections = 0;
+	u64 steps = 0;
+	// Lifetime gauge, never subtracted as a counter. The two tail counters can
+	// be differenced to identify long individual steps in a measured interval.
+	u64 maxStepNanoseconds = 0;
+	u64 stepsOver2ms = 0;
+	u64 stepsOver8ms = 0;
 	// All incremental steps, including final heap accounting and unwinding
 	// on an allocation failure. The phase sum excludes this enclosing overhead.
 	u64 totalNanoseconds = 0;
@@ -16,6 +23,9 @@ struct DiagnosticGcProfile {
 	u64 rootsNanoseconds = 0;
 	// Graph traversal and the ephemeron fixed point (including its trace work).
 	u64 traceNanoseconds = 0;
+	u64 markAgainNanoseconds = 0;
+	// Enclosing atomic interval; overlaps its roots, trace and weak measurements.
+	u64 atomicNanoseconds = 0;
 	// Removing dead weak keys/values, before their objects are reclaimed.
 	u64 weakNanoseconds = 0;
 	// Object-list scan, live-byte accounting, dead destructors and pool returns.

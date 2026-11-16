@@ -1,6 +1,6 @@
 /** Collector-owned allocation header; separate from a guest Value's tag. */
 export const enum GcKind { Table, Closure, Upvalue, Thread, Garbage }
-export type GrayQueue = { gray: GcObject | null };
+export type GrayQueue = { grayAgain: GcObject | null };
 export class GcObject {
 	public hashId = 0;
 	// 0/1 alternate white generations; 2 is queued gray, 3 is scanned black.
@@ -13,8 +13,8 @@ export class GcObject {
 	public writeBarrier(): void {
 		if (this.gcColor !== 3) return;
 		this.gcColor = 2;
-		this.gcGrayNext = this.gcOwner.gray;
-		this.gcOwner.gray = this;
+		this.gcGrayNext = this.gcOwner.grayAgain;
+		this.gcOwner.grayAgain = this;
 	}
 }
 /** Sweep state retains allocation work without retaining dead graph edges. */

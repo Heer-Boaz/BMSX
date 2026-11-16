@@ -195,7 +195,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			const fault = wanted >= PSX_MACHINE_SPEC.ramBytes;
 			// Both success- and error-placement collect. If the inner return completed,
 			// its closure is already dead at the first scan (four fewer mark words).
-			const gcCycles = fault ? (failFirst ? 278 : 274) : 0;
+			const gcCycles = fault ? (failFirst ? 348 : 344) : 0;
 			if (fault) assert.throws(() => cpu.runUntilDepth(1, 2), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
 			else assert.equal(cpu.runUntilDepth(1, 2), RunResult.Halted);
 			const outer = wanted === 0 ? 4 : wanted - 1;

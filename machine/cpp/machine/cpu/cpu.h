@@ -275,8 +275,8 @@ public:
 
 	void setExecutionHook(ExecutionHookBinding binding);
 	RunResult runUntilDepth(int targetDepth, int instructionBudget, const Thread* target = nullptr);
-	size_t collectHeap(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil());
-	size_t stepHeap(Value root0, Value root1, Value root2);
+	size_t collectHeap(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), Thread* growingStack = nullptr);
+	size_t stepHeap(Value root0, Value root1, Value root2, Thread* growingStack = nullptr);
 	bool collecting() const { return m_heap.active(); }
 	class LocalRootsScope {
 	public:
@@ -468,7 +468,6 @@ private:
 
 	void clearCallStack();
 	void ensureStackSize(size_t size, Value root = valueNil());
-	void refreshFrameRegisterPointers();
 	BuiltinResultsScratchScope acquireBuiltinResultScratch();
 	void releaseLocalRoots(size_t base);
 	void trackLocalRoot(Value value);
@@ -559,7 +558,7 @@ private:
 	Thread* m_completionThread = nullptr;
 	Thread* createThread(Closure* entry);
 	bool coroutineYieldable(const Thread& thread) const;
-	void returnToResumer(const Value* source, int count, bool succeeded);
+	void returnToResumer(int sourceBase, int count, bool succeeded);
 	void runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, int base, int count, int argc);
 	bool handleThreadError(Value error);
 	void closeThread(Thread& thread);

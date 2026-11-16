@@ -200,8 +200,8 @@ for (const { numParams, maxStack, argCount } of [
 		const lookup = machines[0].cpu.rootThread.frameAtDepth(0).executionImage.compiledCodeLookup!;
 		for (const pc of [entry, calleeEntry]) assert.ok(lookup.find(pc, 0)!.compiledBlocks!.entries[(pc & MAPPED_PAGE_BYTE_MASK) >>> 2],
 			'the real caller and callee are generated before the initialization probe');
-		const retainedCapacities = machines.map(({ cpu }) => cpu.rootThread.stackRegisters.capacity());
 		for (const completion of [false, true]) {
+			const retainedCapacities = machines.map(({ cpu }) => cpu.rootThread.stackRegisters.capacity());
 			const argumentsByMachine = machines.map(({ cpu }) => {
 				const thread = cpu.rootThread;
 				const caller = thread.frameAtDepth(0);

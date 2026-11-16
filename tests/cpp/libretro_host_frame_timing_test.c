@@ -141,6 +141,8 @@ int main(void) {
 		.gc_roots_nanoseconds = 100u, .gc_trace_nanoseconds = 200u,
 		.gc_weak_nanoseconds = 300u, .gc_sweep_nanoseconds = 400u,
 		.gc_string_reclaim_nanoseconds = 500u,
+		.gc_steps = 17u, .gc_full_collections = 2u, .gc_max_step_nanoseconds = 9000000u,
+		.gc_steps_over_2ms = 5u, .gc_steps_over_8ms = 1u,
 		.cpu_native_origin_cycles = INT64_C(9007199254740999),
 		.cpu_interpreter_runtime_cycles = INT64_C(9007199254740997),
 		.native_newt_count = UINT64_C(9007199254740995),
@@ -157,6 +159,8 @@ int main(void) {
 	execution_after.gc_weak_nanoseconds += 33u;
 	execution_after.gc_sweep_nanoseconds += 44u;
 	execution_after.gc_string_reclaim_nanoseconds += 55u;
+	execution_after.gc_steps += 3u; execution_after.gc_steps_over_2ms += 1u;
+	execution_after.gc_mark_again_nanoseconds += 66u; execution_after.gc_atomic_nanoseconds += 77u;
 	execution_after.cpu_native_origin_cycles += 120u;
 	execution_after.cpu_interpreter_runtime_cycles += 52u;
 	execution_after.native_newt_count += 1u;
@@ -178,6 +182,9 @@ int main(void) {
 	CHECK(execution.gc_roots_nanoseconds == 11u && execution.gc_trace_nanoseconds == 22u);
 	CHECK(execution.gc_weak_nanoseconds == 33u && execution.gc_sweep_nanoseconds == 44u);
 	CHECK(execution.gc_string_reclaim_nanoseconds == 55u);
+	CHECK(execution.gc_steps == 3u && execution.gc_full_collections == 0u && execution.gc_steps_over_2ms == 1u);
+	CHECK(execution.gc_steps_over_8ms == 0u && execution.gc_max_step_nanoseconds == 9000000u);
+	CHECK(execution.gc_mark_again_nanoseconds == 66u && execution.gc_atomic_nanoseconds == 77u);
 	CHECK(execution.cpu_native_origin_cycles == 120u);
 	CHECK(execution.cpu_interpreter_runtime_cycles == 52u);
 	CHECK(execution.native_newt_count == 1u);
@@ -199,6 +206,7 @@ int main(void) {
 	CHECK(execution_idle.gc_roots_nanoseconds == 0u && execution_idle.gc_trace_nanoseconds == 0u);
 	CHECK(execution_idle.gc_weak_nanoseconds == 0u && execution_idle.gc_sweep_nanoseconds == 0u);
 	CHECK(execution_idle.gc_string_reclaim_nanoseconds == 0u);
+	CHECK(execution_idle.gc_steps == 0u && execution_idle.gc_steps_over_2ms == 0u && execution_idle.gc_max_step_nanoseconds == 9000000u);
 	CHECK(execution_idle.cpu_native_origin_cycles == 0);
 	CHECK(execution_idle.cpu_interpreter_runtime_cycles == 0);
 	CHECK(execution_idle.native_newt_count == 0);

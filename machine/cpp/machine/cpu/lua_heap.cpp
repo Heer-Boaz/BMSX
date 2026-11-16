@@ -23,25 +23,38 @@ void LuaHeap::reserve(
 	size_t byteCount,
 	Value root0,
 	Value root1,
-	Value root2
+	Value root2,
+	Thread* growingStack
 ) {
 #if defined(BMSX_GC_STRESS)
 	stressHeapAllocation(*this);
 #endif
 	size_t nextBytes = m_trackedBytes + byteCount;
 	if (nextBytes > m_capacityBytes) {
-		collectRuntime(root0, root1, root2);
+		collectRuntime(root0, root1, root2, growingStack);
 	} else if (nextBytes > m_nextCollectionBytes) {
-		m_cpu.instructionBudgetRemaining -= static_cast<int>(m_cpu.stepHeap(root0, root1, root2));
-		if (m_cpu.collecting()) m_nextCollectionBytes = m_trackedBytes + GC_ASSIST_BYTES;
+		const size_t work = m_cpu.stepHeap(root0, root1, root2, growingStack);
+		m_cpu.instructionBudgetRemaining -= static_cast<int>(work);
+		creditStep(work);
 	}
 	nextBytes = m_trackedBytes + byteCount;
 	if (nextBytes > m_capacityBytes) throw LuaOutOfMemorySignal{};
 	m_trackedBytes = nextBytes;
 }
 
-void LuaHeap::collectRuntime(Value root0, Value root1, Value root2) {
-	m_cpu.instructionBudgetRemaining -= static_cast<int>(m_cpu.collectHeap(root0, root1, root2));
+void LuaHeap::collectRuntime(Value root0, Value root1, Value root2, Thread* growingStack) {
+	m_cpu.instructionBudgetRemaining -= static_cast<int>(m_cpu.collectHeap(root0, root1, root2, growingStack));
+}
+
+bool LuaHeap::stepRuntime() {
+	const size_t work = m_cpu.stepHeap(valueNil(), valueNil(), valueNil());
+	m_cpu.instructionBudgetRemaining -= static_cast<int>(work);
+	creditStep(work);
+	return !m_cpu.collecting();
+}
+
+void LuaHeap::creditStep(size_t work) {
+	if (m_cpu.collecting()) m_nextCollectionBytes = m_trackedBytes + std::max(GC_ASSIST_BYTES, work / 16);
 }
 
 void LuaHeap::accountTableStorageWork(size_t valueSlots) {

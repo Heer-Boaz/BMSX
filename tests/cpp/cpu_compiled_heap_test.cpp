@@ -265,7 +265,8 @@ void allocationRoots(bool closure) {
 		table->setStringKey(strings.intern("payload"), valueString(strings.intern("retained")));
 		r[9] = valueTable(table); r[1] = valueString(strings.intern("fresh-")); r[2] = valueString(strings.intern("result")); frame.top = 0;
 		const auto heap = m->cpu.captureRuntimeState().luaHeap;
-		garbage[index] = std::string(heap.nextCollectionBytes - heap.trackedBytes - 1, 'g'); strings.intern(garbage[index++]);
+		m->cpu.luaHeap().restoreState({heap.trackedBytes, m->cpu.luaHeap().capacity()});
+		garbage[index] = std::string(m->cpu.luaHeap().capacity() - heap.trackedBytes - 1, 'g'); strings.intern(garbage[index++]);
 	}
 	require(native.cpu.runUntilDepth(0, 6) == scalar.cpu.runUntilDepth(0, 6), "the allocating instruction consumes the same grant"); requireParity(native, scalar);
 	index = 0;
@@ -384,6 +385,7 @@ void concatAllocationFault(bool range) {
 	for (auto* m : {&native, &scalar}) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers[1] = valueNumber(1); frame.registers[2] = valueNumber(2);
 		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * (range ? 396 : 320));
+		m->cpu.luaHeap().restoreState({m->cpu.luaHeap().usedBytes(), m->cpu.luaHeap().capacity()});
 		const StringId id = m->cpu.stringPool().intern(std::string(2u * 1024u * 1024u, 'x'));
 		frame.registers[1] = valueString(id); frame.registers[2] = valueString(id); frame.registers[0] = valueNumber(73); frame.top = 0;
 	}
@@ -396,7 +398,7 @@ void concatAllocationFault(bool range) {
 	require(block && block->terminal.exit == (range ? NativeBlockExit::ConcatRange : NativeBlockExit::Concat), "the allocation fault leaves generated code before throwing");
 #endif
 	const auto strings = native.cpu.stringPool().captureState();
-	int gcCycles = 3 * ceilDiv4(static_cast<int>(64 + native.cpu.rootThread()->stackCapacity * 8)) + 2 * 4 + strings.slots;
+	int gcCycles = 4 * ceilDiv4(static_cast<int>(64 + native.cpu.rootThread()->stackCapacity * 8)) + 2 * 4 + strings.slots;
 	for (const auto& entry : strings.entries) if (entry.tracked) gcCycles += ceilDiv4(utf8ByteLength(entry.value));
 	require(native.cpu.runUntilDepth(0, range ? 5 : 4) == scalar.cpu.runUntilDepth(0, range ? 5 : 4), "failed allocations consume the same grant"); requireParity(native, scalar);
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY

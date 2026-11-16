@@ -338,7 +338,7 @@ void wideAllocationFailure() {
 	}
 	const auto strings = native.cpu.stringPool().captureState();
 	int gcCycles = 2 * ((native.cpu.luaHeap().usedBytes() - native.cpu.stringPool().trackedLuaHeapBytes()) / 4)
-		+ (64 + native.cpu.rootThread()->stackCapacity * 8) / 4 + 6 + strings.slots;
+		+ 2 * (64 + native.cpu.rootThread()->stackCapacity * 8) / 4 + 9 + strings.slots;
 	for (const auto& entry : strings.entries) if (entry.tracked) gcCycles += ceilDiv4(utf8ByteLength(entry.value));
 	test::runCpuParity(native.cpu, scalar.cpu, BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::NEWT)]); requireParity(native, scalar);
 	require(native.cpu.instructionBudgetRemaining == -gcCycles, "failed NEWT pays prefix/base and pre-admission GC, but no initialization");
@@ -377,7 +377,8 @@ void stringStoreGrowthRoots(bool generic) {
 		retained->setStringKey(strings.intern("payload"), valueString(strings.intern("retained")));
 		r[0] = valueTable(m->cpu.createTable()); r[9] = valueTable(retained); frame.top = 0;
 		const auto heap = m->cpu.captureRuntimeState().luaHeap;
-		garbage[index] = std::string(heap.nextCollectionBytes - heap.trackedBytes - 1, 'g'); strings.intern(garbage[index++]);
+		m->cpu.luaHeap().restoreState({heap.trackedBytes, m->cpu.luaHeap().capacity()});
+		garbage[index] = std::string(m->cpu.luaHeap().capacity() - heap.trackedBytes - 1, 'g'); strings.intern(garbage[index++]);
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, 3); requireParity(native, scalar);
 	for (size_t i = 0; i < 2; ++i) {

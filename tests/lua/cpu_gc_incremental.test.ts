@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
 import { GcPhase, GC_STEP_WORDS } from '../../machine/ts/machine/cpu/gc_heap';
 import { ValueTag, valueString } from '../../machine/ts/machine/cpu/value';
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -29,7 +30,7 @@ test('incremental marking preserves changed table edges, metatables and final re
 	target.setInteger(1, arrayChild);
 	target.setStringKey(field, fieldChild);
 	target.metatable = metatable;
-	assert.equal(cpu.gc.captureState(object => object.hashId).gray.filter(id => id === target.hashId).length, 1,
+	assert.equal(cpu.gc.captureState(object => object.hashId).grayAgain.filter(id => id === target.hashId).length, 1,
 		'repeated stores requeue a traced table once, without growing a barrier worklist');
 	const rootChild = cpu.createTable();
 	frame.registers.setTable(1, rootChild); frame.top = 2;
@@ -47,7 +48,7 @@ test('incremental marking preserves changed table edges, metatables and final re
 	for (const id of expectedIds) assert.ok(!cpu.gc.captureState(object => object.hashId).allocations.includes(id));
 });
 
-test('snapshots preserve Mark, Sweep and String progress without tracing dead graph edges', () => {
+test('snapshots preserve Mark, Atomic, Sweep and String progress without tracing dead graph edges', () => {
 	const cpu = machine(), roots = cpu.createTable(1024, 0);
 	cpu.rootThread.currentFrame!.registers.setTable(0, roots); cpu.rootThread.currentFrame!.top = 1;
 	for (let i = 1; i <= 1000; ++i) {
@@ -76,7 +77,7 @@ test('snapshots preserve Mark, Sweep and String progress without tracing dead gr
 		assert.deepEqual(cpu.stringPool.captureState(), strings);
 		if (!cpu.gc.active()) break;
 	}
-	assert.deepEqual(phases, new Set([GcPhase.Mark, GcPhase.Sweep, GcPhase.Strings, GcPhase.Pause]));
+	assert.deepEqual(phases, new Set([GcPhase.Mark, GcPhase.Atomic, GcPhase.Sweep, GcPhase.Strings, GcPhase.Pause]));
 	assert.equal(cpu.rootThread.currentFrame!.registers.getTable(1).hashId, bornDuringSweep);
 	assert.equal(cpu.stringPool.find(`dead-0-${'x'.repeat(256)}`), undefined);
 	cpu.collectTrackedHeapBytes();
@@ -129,4 +130,107 @@ test('final remark observes weak-to-strong changes through a shared metatable', 
 	assert.ok(cpu.gc.captureState(object => object.hashId).allocations.includes(child.hashId));
 	cpu.collectTrackedHeapBytes();
 	assert.equal(weak.getInteger(1), child);
+});
+
+test('changed objects wait for a finite second pass and retain later writes across restore', () => {
+	const cpu = machine();
+	const frame = cpu.rootThread.currentFrame!;
+	frame.registers.setTable(0, cpu.createTable(4096, 0)); frame.top = 1;
+	const phases = new Set<GcPhase>();
+	for (let i = 0; i < 12; ++i) {
+		const target = cpu.rootThread.currentFrame!.registers.getTable(0);
+		target.setInteger(1, i);
+		cpu.gc.step();
+		const state = cpu.captureRuntimeState(); phases.add(state.gc.phase);
+		const strings = cpu.stringPool.captureState();
+		cpu.stringPool.restoreState(strings); cpu.restoreRuntimeState(state);
+		assert.deepEqual(cpu.captureRuntimeState(), state);
+		if (state.gc.phase === GcPhase.Atomic) break;
+	}
+	assert.ok(phases.has(GcPhase.MarkAgain));
+	assert.ok(phases.has(GcPhase.Atomic), 'continuous writes cannot restart the first or second pass indefinitely');
+	const target = cpu.rootThread.currentFrame!.registers.getTable(0);
+	const late = cpu.createTable(); target.setInteger(2, late);
+	while (cpu.gc.active()) cpu.gc.step();
+	assert.equal(target.getInteger(2), late);
+	assert.ok(cpu.gc.captureState(object => object.hashId).allocations.includes(late.hashId));
+});
+
+test('an oversized scan earns actual-work credit, not another assist after 256 bytes', () => {
+	const cpu = machine(), frame = cpu.rootThread.currentFrame!;
+	frame.registers.setTable(0, cpu.createTable(4096, 0)); frame.top = 1;
+	const before = cpu.luaHeap.usedBytes();
+	cpu.luaHeap.restoreState({ trackedBytes: before, nextCollectionBytes: before });
+	cpu.instructionBudgetRemaining = 0;
+	cpu.createTable();
+	const work = -cpu.instructionBudgetRemaining;
+	assert.ok(work > 8192);
+	assert.equal(cpu.luaHeap.captureState().nextCollectionBytes, before + (work >>> 4));
+	assert.ok(cpu.luaHeap.captureState().nextCollectionBytes > cpu.luaHeap.usedBytes() + 256);
+});
+
+test('sweep shrinks cold stacks with hysteresis, preserves caller windows and rebinds views', () => {
+	const cpu = machine(), thread = cpu.rootThread, frame = thread.currentFrame!;
+	cpu.luaHeap.reserve((1024 - thread.stackRegisters.capacity()) * 8);
+	thread.resizeStack(1024);
+	frame.registers.setNumber(0, 123); frame.top = 1;
+	const before = cpu.luaHeap.usedBytes();
+	cpu.collectTrackedHeapBytes();
+	assert.equal(thread.stackRegisters.capacity(), 512);
+	assert.equal(cpu.luaHeap.usedBytes(), before - 512 * 8);
+	frame.registers.setNumber(0, 456);
+	assert.equal(thread.stackRegisters.getNumber(frame.stackBase), 456);
+	const parentCapacity = frame.stackCapacity;
+	frame.stackCapacity = 200;
+	frame.registers.rebind(thread.stackRegisters, frame.stackBase, frame.stackCapacity);
+	const child = thread.acquireFrame();
+	child.stackBase = 2; child.stackCapacity = 8; child.top = 0;
+	child.closure = frame.closure; child.executionImage = frame.executionImage;
+	child.registers.rebind(thread.stackRegisters, 2, 8);
+	thread.enterFrame(child); thread.stackTop = 10;
+	cpu.collectTrackedHeapBytes();
+	assert.equal(thread.stackRegisters.capacity(), 512, 'the overlapping caller window, not just current stackTop, prevents shrinking');
+	thread.leaveFrame(); frame.stackCapacity = parentCapacity; thread.stackTop = parentCapacity;
+	frame.registers.rebind(thread.stackRegisters, frame.stackBase, parentCapacity);
+	const grown = 2048;
+	cpu.luaHeap.restoreState({ trackedBytes: cpu.luaHeap.usedBytes(), nextCollectionBytes: 0 });
+	cpu.luaHeap.collectRuntime(ValueTag.Nil, NaN, null, ValueTag.Nil, NaN, null, ValueTag.Nil, NaN, null, thread);
+	assert.equal(thread.stackRegisters.capacity(), 512, 'growth admission keeps its old allocation size stable');
+	cpu.luaHeap.reserve((grown - 512) * 8, ValueTag.Nil, NaN, null, ValueTag.Nil, NaN, null, ValueTag.Nil, NaN, null, thread);
+	thread.resizeStack(grown);
+	assert.equal(frame.registers.getNumber(0), 456);
+	const state = cpu.captureRuntimeState(); cpu.restoreRuntimeState(state);
+	assert.deepEqual(cpu.captureRuntimeState(), state);
+});
+
+
+test('high retained usage advances automatically without emergency full collections', () => {
+	const cpu = machine(), frame = cpu.rootThread.currentFrame!;
+	const retained = cpu.createTable(262144, 0);
+	frame.registers.setTable(0, retained); frame.top = 1;
+	cpu.collectTrackedHeapBytes();
+	const diagnostics = cpu.gc.diagnostics = new GcDiagnostics();
+	for (let i = 0; i < 24000; ++i) cpu.createTable(8, 0);
+	assert.equal(diagnostics.fullCollections, 0);
+	assert.ok(diagnostics.collections > 0 && diagnostics.steps > diagnostics.collections);
+	assert.ok(cpu.luaHeap.usedBytes() <= cpu.luaHeap.capacity());
+	assert.equal(frame.registers.getTable(0), retained);
+});
+
+test('TS phase diagnostics include atomic pauses and survive restore without changing guest work', () => {
+	const plain = machine(), measured = machine();
+	let clock = 0;
+	const diagnostics = measured.gc.diagnostics = new GcDiagnostics(() => clock += 1_000_000);
+	const plainWork = plain.collectTrackedHeapBytes();
+	const measuredWork = measured.collectTrackedHeapBytes();
+	assert.equal(measuredWork, plainWork);
+	assert.deepEqual(measured.captureRuntimeState(), plain.captureRuntimeState());
+	assert.equal(diagnostics.collections, 1); assert.equal(diagnostics.fullCollections, 1);
+	assert.ok(diagnostics.steps >= 3 && diagnostics.markAgainNanoseconds > 0 && diagnostics.atomicNanoseconds > 0);
+	assert.ok(diagnostics.maxStepNanoseconds > 2e6 && diagnostics.stepsOver2ms > 0);
+	assert.ok(diagnostics.rootsNanoseconds + diagnostics.traceNanoseconds + diagnostics.markAgainNanoseconds
+		+ diagnostics.weakNanoseconds + diagnostics.sweepNanoseconds + diagnostics.stringReclaimNanoseconds <= diagnostics.totalNanoseconds);
+	const elapsed = diagnostics.totalNanoseconds;
+	const state = measured.captureRuntimeState(); measured.restoreRuntimeState(state);
+	assert.equal(diagnostics.totalNanoseconds, elapsed);
 });

@@ -106,7 +106,8 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		cpu.runUntilDepth(0, 1);
 		const caller = thread.currentFrame!, prepared = thread.acquireFrame();
 		const live = cpu.stringPool.intern('caller-only-across-admission'); caller.registers.setStringId(0, live);
-		const heap = cpu.captureRuntimeState().luaHeap, garbage = 'g'.repeat(heap.nextCollectionBytes - heap.trackedBytes - 1);
+		const heap = cpu.captureRuntimeState().luaHeap, garbage = 'g'.repeat(cpu.luaHeap.capacity() - heap.trackedBytes - 1);
+		cpu.luaHeap.restoreState({ trackedBytes: heap.trackedBytes, nextCollectionBytes: cpu.luaHeap.capacity() });
 		cpu.stringPool.intern(garbage);
 		cpu.runUntilDepth(0, 2);
 		assert.equal(cpu.stringPool.find(garbage), undefined, 'stack growth actually collected');
@@ -126,7 +127,8 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		while (thread.frameDepth !== 2) cpu.runUntilDepth(0, 1);
 		const caller = thread.firstFrame!, callee = thread.currentFrame!;
 		const result = cpu.stringPool.intern('returning-frame-only'); callee.registers.setStringId(0, result); callee.top = 1;
-		const heap = cpu.captureRuntimeState().luaHeap, garbage = 'g'.repeat(heap.nextCollectionBytes - heap.trackedBytes - 1);
+		const heap = cpu.captureRuntimeState().luaHeap, garbage = 'g'.repeat(cpu.luaHeap.capacity() - heap.trackedBytes - 1);
+		cpu.luaHeap.restoreState({ trackedBytes: heap.trackedBytes, nextCollectionBytes: cpu.luaHeap.capacity() });
 		cpu.stringPool.intern(garbage);
 		assert.equal(cpu.runUntilDepth(1, 100), RunResult.Halted);
 		assert.equal(cpu.stringPool.find(garbage), undefined, 'caller window growth actually collected');

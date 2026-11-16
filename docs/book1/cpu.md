@@ -1127,8 +1127,9 @@ The occupied-byte counts used for admission and collection work are:
 | Thread with `V` reserved Value slots | `64 + 8V` |
 | Allocated String text | UTF-8 byte length |
 
-The collector marks retained objects, remarks roots and modified objects,
-resolves weak references, and then reclaims unmarked objects and Strings.
+The collector marks retained objects, incrementally remarks roots and modified
+objects in a second pass, resolves weak references in a final atomic remark,
+and then reclaims unmarked objects and Strings.
 Changing a previously scanned Table, its metatable or a closed captured-variable
 cell makes that allocation eligible for another scan. Register and global writes
 do not add a per-write collection charge: roots and retained Thread stacks are
@@ -1147,6 +1148,7 @@ Collection work consumes one cycle per 32-bit work word:
 | Clear weak entries and retain surviving String entries in one weak Table | `ceil(occupied Table bytes / 4)` |
 | Examine one String-directory slot, including a vacant slot | `1` |
 | Examine occupied String text for reclamation | `ceil(allocated text bytes / 4)` |
+| Copy retained Thread storage when shrinking from `V` to `V/2` slots | `4 × (V/2)` |
 
 Round each allocation or String's byte count separately. A repeated scan costs
 again; unreachable objects that are not scanned still incur their reclamation
@@ -1158,22 +1160,41 @@ high-water extent and reuse order carry across collection cycles.
 `C` counts constant Value slots in all activated program images. `S` and `G`
 count registered system-global and cartridge-global slots; repeated registration
 of one name shares its existing slot. Nil slots count too. These root ranges are
-read at the beginning of marking and at the final remark, using the ranges
-present at each pass. Thread storage is scanned initially and at the final
-remark. Function-activation control and fixed collector bookkeeping are included
+read at the beginning of marking, at the start of the second pass and at the
+final remark, using the ranges present at each pass. Thread storage is scanned
+in all three passes. Function-activation control and fixed collector bookkeeping are included
 in these allowances, not charged by a separate frame-record size.
 
 A step normally stops after **4,096 work cycles**. A single allocation scan is
 indivisible. The final root remark, remaining changed-object scans, weak-key
 convergence and weak-entry clearing are also indivisible. These operations can
-exceed the step target: it is not a maximum instruction latency. Reclamation of
+exceed the step target: it is not a maximum instruction latency. The final
+atomic remark starts in a separate step, rather than extending the last
+incremental marking step. Reclamation of
 objects and Strings resumes from its previous position on the next step.
+
+Writes to already scanned objects enter a changed-object queue rather than
+immediately restarting their first scan. The second pass drains the queue as
+it stood at its start; later writes wait for the final remark. Repeated writes
+to an already queued object do not add another queue entry.
+
+When reclamation examines a surviving Thread, it can halve its reserved Value
+storage. This happens when `V > 16` and three times the required extent is less
+than `V`. The required extent includes the Thread's current stack top and every
+active frame's complete reserved register window, not only its live values.
+The released slots immediately leave the occupied budget. A Thread whose own
+stack-growth request caused the step is not shrunk during that request. Copying
+the retained half incurs the charge above, in addition to examining the old
+allocation. Existing frame and captured-variable references retain their meaning.
 
 The initial collection threshold is **1 MiB of occupied budget**. A request for
 `R` bytes starts or assists collection when `B + R` exceeds the current
 threshold, where `B` is the occupied budget before admitting the request. While
-a cycle remains active, each assist sets the next threshold to the remaining
-occupied budget plus **256 bytes**, before adding `R`. When the cycle completes,
+a cycle remains active, a step completing `W` work cycles sets the next threshold
+to the remaining occupied budget plus `max(256, floor(W/16))` bytes, before
+adding `R`. Thus an indivisible large scan earns allocation credit for its
+actual work; it does not force another step after only 256 bytes. Explicit
+steps receive the same credit. When the cycle completes,
 let `L` be the remaining occupied budget and `K` the total language-allocation
 capacity. The next threshold is:
 
@@ -1184,6 +1205,8 @@ $$
 The headroom term starts collection before a heavily retained pool fills.
 It does not reserve extra capacity or guarantee that new allocations will fit.
 Without further allocation, an unfinished automatic cycle need not advance.
+The BIOS [collection service](bios-base.md#sec-bios-base-collectgarbage)
+can advance it explicitly and report occupied budget and total capacity.
 
 If a request would exceed capacity, the CPU instead completes any active cycle
 and performs one fresh full cycle before retrying admission. Explicit collection

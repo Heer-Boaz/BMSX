@@ -382,7 +382,8 @@ int main() {
 		"the loaded CPU profile includes its boot collection before the first host run");
 	require(initialExecutionProfile.gc_total_nanoseconds >= initialExecutionProfile.gc_roots_nanoseconds
 		+ initialExecutionProfile.gc_trace_nanoseconds + initialExecutionProfile.gc_weak_nanoseconds
-		+ initialExecutionProfile.gc_sweep_nanoseconds + initialExecutionProfile.gc_string_reclaim_nanoseconds,
+		+ initialExecutionProfile.gc_sweep_nanoseconds + initialExecutionProfile.gc_string_reclaim_nanoseconds
+		+ initialExecutionProfile.gc_mark_again_nanoseconds,
 		"GC phase times are contained within the complete collection interval");
 	std::vector<bmsx::u8> afterProfileReads(cartridgeState.size());
 	require(retro_serialize(afterProfileReads.data(), afterProfileReads.size()) && afterProfileReads == cartridgeState,

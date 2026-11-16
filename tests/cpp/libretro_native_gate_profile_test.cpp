@@ -135,9 +135,12 @@ void cumulativeCountersAndRealGc() {
 		&& first.at("gc_collections") == 1 && cpu.diagnosticGcProfile().collections == gcBefore + 1,
 		"the logger reports actual HALT and the existing real collection producer, not synthetic seeded counters");
 	const u64 phaseSum = first.at("gc_roots_ns") + first.at("gc_trace_ns") + first.at("gc_weak_ns")
-		+ first.at("gc_sweep_ns") + first.at("gc_string_reclaim_ns");
+		+ first.at("gc_sweep_ns") + first.at("gc_string_reclaim_ns") + first.at("gc_mark_again_ns");
 	require(phaseSum <= first.at("gc_total_ns") && first.at("gc_total_ns") <= first.at("end_monotonic_ns") - first.at("begin_monotonic_ns"),
 		"real collection phase totals stay inside their enclosing collection and frame clocks");
+	require(first.at("gc_steps") >= 3 && first.at("gc_full_collections") == 1
+		&& first.at("gc_atomic_ns") <= first.at("gc_total_ns") && first.at("gc_max_step_lifetime_ns") > 0,
+		"the log distinguishes incremental calls, synchronous collections and enclosing atomic work");
 	const auto start2 = now();
 	{ NativeGateProfileFrame frame(&cpu, logMessage); }
 	const auto end2 = now(); interval(summary(1), start2, end2, 1, true);

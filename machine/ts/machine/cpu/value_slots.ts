@@ -78,15 +78,20 @@ export class ValueSlots {
 	/** Grow this storage, preserving its values and the identity of its owner. */
 	public reserveCapacity(capacity: number): void {
 		if (capacity <= this.size) return;
-		capacity = Math.max(capacity, this.size * 2, 8);
+		this.resizeCapacity(Math.max(capacity, this.size * 2, 8));
+	}
+
+	/** Resize owned storage. Its owner rebinds any borrowed windows afterward. */
+	public resizeCapacity(capacity: number): void {
 		const tags = new Uint8Array(capacity);
 		const scalars = new Float64Array(capacity);
 		const refs = new Array<ValueReference>(capacity);
-		for (let index = 0; index < this.size; ++index) {
+		const retained = Math.min(this.size, capacity);
+		for (let index = 0; index < retained; ++index) {
 			const source = this.base + index;
 			tags[index] = this.tags[source]; scalars[index] = this.scalars[source]; refs[index] = this.refs[source];
 		}
-		for (let index = this.size; index < capacity; ++index) { scalars[index] = NaN; refs[index] = null; }
+		for (let index = retained; index < capacity; ++index) { scalars[index] = NaN; refs[index] = null; }
 		this.tags = tags; this.scalars = scalars; this.refs = refs;
 		this.base = 0; this.size = capacity;
 	}

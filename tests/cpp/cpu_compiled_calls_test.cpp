@@ -664,7 +664,8 @@ void returnGrowthCollection() {
 		callee->registers[0] = result;
 		callee->top = 1;
 		const auto heap = machine.cpu.luaHeap().captureState();
-		const std::string garbage(heap.nextCollectionBytes - heap.trackedBytes - 1, 'g');
+		machine.cpu.luaHeap().restoreState({heap.trackedBytes, machine.cpu.luaHeap().capacity()});
+		const std::string garbage(machine.cpu.luaHeap().capacity() - heap.trackedBytes - 1, 'g');
 		machine.cpu.stringPool().intern(garbage);
 		require(machine.cpu.runUntilDepth(1, 100) == RunResult::Halted, "return stops at the caller depth after growing its window");
 		require(!machine.cpu.stringPool().find(garbage), "return window growth actually triggers collection");
@@ -774,7 +775,7 @@ void protectedReturnPlacementCycles() {
 		const bool fault = wanted >= static_cast<int>(PSX_MACHINE_SPEC.ramBytes);
 		// The failed success-range admission is followed by protected error-range admission, which also fails.
 		// Completing the inner return drops its closure before the first scan: four fewer mark words.
-		const int gcCycles = fault ? (failFirst ? 278 : 274) : 0;
+		const int gcCycles = fault ? (failFirst ? 348 : 344) : 0;
 		bool rejected = false;
 		try { require(machine.cpu.runUntilDepth(1, 2) == RunResult::Halted, "protected return completes at caller"); }
 		catch (const LuaOutOfMemorySignal&) { rejected = true; }
@@ -1024,7 +1025,8 @@ void crossPageCalls(bool open, u32 recordOffset) {
 		machine->cpu.runUntilDepth(0, 1);
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress + 2u * INSTRUCTION_BYTES);
 		const auto heap = machine->cpu.luaHeap().captureState();
-		const std::string garbage(heap.nextCollectionBytes - heap.trackedBytes - 1, 'g');
+		machine->cpu.luaHeap().restoreState({heap.trackedBytes, machine->cpu.luaHeap().capacity()});
+		const std::string garbage(machine->cpu.luaHeap().capacity() - heap.trackedBytes - 1, 'g');
 		machine->cpu.stringPool().intern(garbage);
 		require(machine->cpu.runUntilDepth(0, callPrefix) == RunResult::Yielded && machine->cpu.activeThread()->frameDepth == 2,
 			"the allocation assist completes CALL but not a callee instruction in its exhausted grant");

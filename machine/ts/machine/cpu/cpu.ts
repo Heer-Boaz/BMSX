@@ -105,7 +105,7 @@ import {
 	MAPPED_PAGE_BYTE_MASK,
 	MAPPED_PAGE_BYTE_SIZE,
 } from '../memory/mapped_page';
-import { BuiltinFunctionId, LUA_BOOT_PRIMITIVES } from '../../spec/blua32/builtin';
+import { BuiltinFunctionId, GarbageCollectionOperation, LUA_BOOT_PRIMITIVES } from '../../spec/blua32/builtin';
 import {
 	EMPTY_CALL_ARGS,
 	VALUE_TAG,
@@ -458,18 +458,10 @@ export class CPU implements MappedPageInvalidator {
 		if (nextCapacity < 8) {
 			nextCapacity = 8;
 		}
-		this.luaHeap.reserve((nextCapacity - stack.capacity()) * THREAD_STACK_SLOT_BYTES, ValueTag.Closure, NaN, closure);
-		const next = new ValueSlots(nextCapacity);
-		next.copyRangeFrom(stack, 0, 0, stack.capacity());
-		this.activeThread.stackRegisters = next;
-		this.refreshFrameRegisterViews();
-	}
-
-	private refreshFrameRegisterViews(): void {
-		const stack = this.activeThread.stackRegisters;
-		for (let frame = this.activeThread.currentFrame; frame !== null; frame = frame.previous) {
-			frame.registers.rebind(stack, frame.stackBase, frame.stackCapacity);
-		}
+		// Admission must not shrink the allocation whose growth it is admitting.
+		this.luaHeap.reserve((nextCapacity - stack.capacity()) * THREAD_STACK_SLOT_BYTES, ValueTag.Closure, NaN, closure,
+			ValueTag.Nil, NaN, null, ValueTag.Nil, NaN, null, this.activeThread);
+		this.activeThread.resizeStack(nextCapacity);
 	}
 
 	private clearCompletionValues(): void {
@@ -3871,9 +3863,20 @@ export class CPU implements MappedPageInvalidator {
 			case BuiltinFunctionId.CoroutineResume:
 			case BuiltinFunctionId.CoroutineYield:
 				throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			case BuiltinFunctionId.CollectGarbage:
-				this.luaHeap.collectRuntime();
+			case BuiltinFunctionId.CollectGarbage: {
+				if (args.length !== 0 && args.registers.getTag(args.base) !== ValueTag.Number) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+				const operation = args.length === 0 ? GarbageCollectionOperation.Collect : args.registers.getScalar(args.base);
+				switch (operation) {
+					case GarbageCollectionOperation.Collect: this.luaHeap.collectRuntime(); break;
+					case GarbageCollectionOperation.Count:
+						out.push(ValueTag.Number, this.luaHeap.usedBytes());
+						out.push(ValueTag.Number, this.luaHeap.capacity());
+						break;
+					case GarbageCollectionOperation.Step: out.push(this.luaHeap.stepRuntime() ? ValueTag.True : ValueTag.False); break;
+					default: throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+				}
 				break;
+			}
 			case BuiltinFunctionId.Error:
 				this.runBuiltinError(args);
 				break;

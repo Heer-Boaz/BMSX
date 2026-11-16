@@ -1448,9 +1448,17 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 		case BuiltinFunctionId::CoroutineResume:
 		case BuiltinFunctionId::CoroutineYield:
 			throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		case BuiltinFunctionId::CollectGarbage:
-			m_luaHeap.collectRuntime();
+		case BuiltinFunctionId::CollectGarbage: {
+			if (!args.empty() && !valueIsNumber(args[0])) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			const double operation = args.empty() ? 0.0 : asNumber(args[0]);
+			if (operation == static_cast<int>(GarbageCollectionOperation::Collect)) m_luaHeap.collectRuntime();
+			else if (operation == static_cast<int>(GarbageCollectionOperation::Count)) {
+				out.push_back(valueNumber(m_luaHeap.usedBytes()));
+				out.push_back(valueNumber(m_luaHeap.capacity()));
+			} else if (operation == static_cast<int>(GarbageCollectionOperation::Step)) out.push_back(valueBool(m_luaHeap.stepRuntime()));
+			else throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			break;
+		}
 		case BuiltinFunctionId::Error:
 			runBuiltinError(args);
 			break;
@@ -1478,7 +1486,7 @@ bool CPU::coroutineYieldable(const Thread& thread) const {
 	return true;
 }
 
-void CPU::returnToResumer(const Value* source, int sourceCount, bool succeeded) {
+void CPU::returnToResumer(int sourceBase, int sourceCount, bool succeeded) {
 	Thread* thread = m_activeThread;
 	Thread* resumer = thread->resumer;
 	m_activeThread = resumer;
@@ -1489,7 +1497,8 @@ void CPU::returnToResumer(const Value* source, int sourceCount, bool succeeded) 
 		ensureRegisterCapacity(caller, resumer->callBase + count - 1);
 		caller.registers[resumer->callBase] = valueBool(succeeded);
 		const int copied = std::min(sourceCount, count - 1);
-		for (int i = 0; i < copied; ++i) caller.registers[resumer->callBase + i + 1] = source[i];
+		for (int i = 0; i < copied; ++i)
+			caller.registers[resumer->callBase + i + 1] = succeeded ? thread->stack[sourceBase + i] : thread->error;
 		for (int i = copied + 1; i < count; ++i) caller.registers[resumer->callBase + i] = valueNil();
 	}
 	caller.top = resumer->callBase + count;
@@ -1506,7 +1515,7 @@ void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, int base
 		thread->callBase = base;
 		thread->returnCount = count;
 		thread->status = ThreadStatus::Suspended;
-		returnToResumer(caller.registers + base + 1, argc, true);
+		returnToResumer(caller.stackBase + base + 1, argc, true);
 		return;
 	}
 	if (argc == 0 || !valueIsThread(caller.registers[base + 1])) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
@@ -1546,7 +1555,7 @@ bool CPU::handleThreadError(Value error) {
 		if (frame->isExceptionFrame || frame->returnToCompletionLatch) return false;
 	thread->status = ThreadStatus::Failed;
 	thread->error = error;
-	returnToResumer(&thread->error, 1, false);
+	returnToResumer(0, 1, false);
 	return true;
 }
 
@@ -2549,12 +2558,12 @@ size_t CPU::collectionRootWordCount() const {
 	return words;
 }
 
-size_t CPU::collectHeap(Value root0, Value root1, Value root2) {
-	return m_heap.collect(root0, root1, root2);
+size_t CPU::collectHeap(Value root0, Value root1, Value root2, Thread* growingStack) {
+	return m_heap.collect(root0, root1, root2, growingStack);
 }
 
-size_t CPU::stepHeap(Value root0, Value root1, Value root2) {
-	return m_heap.step(root0, root1, root2);
+size_t CPU::stepHeap(Value root0, Value root1, Value root2, Thread* growingStack) {
+	return m_heap.step(root0, root1, root2, growingStack);
 }
 
 ExecutionDomainId CPU::readFrameExecutionDomain(int frameIndex) const {
@@ -3174,16 +3183,10 @@ void CPU::ensureStackSize(size_t size, Value root) {
 	if (size <= m_activeThread->stackCapacity) return;
 	size_t capacity = 8;
 	while (capacity < size) capacity *= 2;
-	m_luaHeap.reserve((capacity - m_activeThread->stackCapacity) * THREAD_STACK_SLOT_BYTES, root);
+	// Admission must not shrink the allocation whose growth it is admitting.
+	m_luaHeap.reserve((capacity - m_activeThread->stackCapacity) * THREAD_STACK_SLOT_BYTES,
+		root, valueNil(), valueNil(), m_activeThread);
 	m_activeThread->resizeStack(capacity);
-	refreshFrameRegisterPointers();
-}
-
-void CPU::refreshFrameRegisterPointers() {
-	Value* base = m_activeThread->stack;
-	for (auto* frame = m_activeThread->currentFrame; frame; frame = frame->previous) {
-		frame->registers = base + frame->stackBase;
-	}
 }
 
 BuiltinResultsScratchScope CPU::acquireBuiltinResultScratch() {

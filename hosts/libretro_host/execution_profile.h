@@ -15,6 +15,13 @@ typedef struct BmsxExecutionProfileInterval {
 	uint64_t gc_weak_nanoseconds;
 	uint64_t gc_sweep_nanoseconds;
 	uint64_t gc_string_reclaim_nanoseconds;
+	uint64_t gc_full_collections;
+	uint64_t gc_steps;
+	uint64_t gc_max_step_nanoseconds;
+	uint64_t gc_steps_over_2ms;
+	uint64_t gc_steps_over_8ms;
+	uint64_t gc_mark_again_nanoseconds;
+	uint64_t gc_atomic_nanoseconds;
 	int64_t cpu_native_origin_cycles;
 	int64_t cpu_interpreter_runtime_cycles;
 	uint64_t native_newt_count;
@@ -29,7 +36,8 @@ typedef struct BmsxExecutionProfileInterval {
 	uint64_t interpreter_concatn_count;
 } BmsxExecutionProfileInterval;
 
-// Only lifetime counters are differenced. Keep both raw scheduler positions;
+// Only lifetime counters are differenced; the maximum step remains a gauge.
+// Keep both raw scheduler positions;
 // their difference is not elapsed emulation time across reset or restore.
 BmsxExecutionProfileInterval bmsx_execution_profile_delta(
 	const BmsxExecutionProfile* before, const BmsxExecutionProfile* after);

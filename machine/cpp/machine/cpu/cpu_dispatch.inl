@@ -130,6 +130,7 @@ DISPATCH_LABEL(SETI) {
 		DISPATCH_NEXT();
 	}
 	storeTableIntegerIndex(tableValue, b, value);
+	registers = FRAME.registers;
 	DISPATCH_NEXT();
 }
 
@@ -158,6 +159,7 @@ DISPATCH_LABEL(SETFIELD) {
 		asStringId(IMAGE.constPool[static_cast<size_t>(b)]),
 		readRK(IMAGE, registers, rkC)
 	);
+	registers = FRAME.registers;
 	DISPATCH_NEXT();
 }
 
@@ -208,6 +210,7 @@ DISPATCH_LABEL(SETT) {
 		DISPATCH_NEXT();
 	}
 	storeTableIndex(tableValue, key, value);
+	registers = FRAME.registers;
 	DISPATCH_NEXT();
 }
 
@@ -219,6 +222,7 @@ DISPATCH_LABEL(NEWT) {
 	const int b = decoded->b;
 	const int c = decoded->c;
 	auto* table = createTable(b, c);
+	registers = FRAME.registers;
 	CYCLES_ADD(2 * static_cast<int>(table->storedSlotCount()) - b);
 	SET_REGISTER_FAST(a, valueTable(table));
 	DISPATCH_NEXT();
@@ -365,6 +369,7 @@ DISPATCH_LABEL(CONCAT) {
 	++m_diagnosticExecutionProfile.interpreterOpcodes.concat;
 #endif
 	executeConcat(FRAME, decoded->a, decoded->b, decoded->c);
+	registers = FRAME.registers;
 	DISPATCH_NEXT();
 }
 
@@ -373,6 +378,7 @@ DISPATCH_LABEL(CONCATN) {
 	++m_diagnosticExecutionProfile.interpreterOpcodes.concatn;
 #endif
 	executeConcatRange(FRAME, decoded->a, decoded->b, decoded->c);
+	registers = FRAME.registers;
 	DISPATCH_NEXT();
 }
 

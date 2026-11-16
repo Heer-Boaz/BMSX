@@ -241,9 +241,9 @@ test('compiled NEWT materializes allocation roots and leaves destination untouch
 		cpu.setGlobalByKey(cpu.stringPool.find('retained')!, ValueTag.Table, NaN, retained);
 	}
 	const strings = js.stringPool.captureState();
-	// All allocated objects are live: mark+sweep, one Thread remark and two global-root passes.
+	// All allocated objects are live: mark+sweep, two Thread remarks and three global-root passes.
 	const gcCycles = 2 * ((js.luaHeap.usedBytes() - js.stringPool.trackedLuaHeapBytes()) / 4)
-		+ (64 + js.rootThread.stackRegisters.capacity() * 8) / 4 + 6 + strings.slots
+		+ 2 * (64 + js.rootThread.stackRegisters.capacity() * 8) / 4 + 9 + strings.slots
 		+ strings.entries.reduce((sum, entry) => sum + (entry.tracked ? ceilDiv4(utf8ByteLength(entry.value)) : 0), 0);
 	runCpuParity(js, ref, BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.NEWT]);
 	assert.equal(js.instructionBudgetRemaining, -gcCycles, 'failed NEWT pays prefix/base and collection, but no initialization');

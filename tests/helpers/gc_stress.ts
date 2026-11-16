@@ -15,6 +15,45 @@ export function installAllocationStress(cpu: CPU): { allocations: number } {
 }
 
 export const gcStressVectors = {
+	stack_relocation_and_control: `
+local function deep(n, value)
+  local a, b, c, d, e, f = value, value + 1, value + 2, value + 3, value + 4, value + 5
+  if n == 0 then return function() return a, f end end
+  local result = deep(n - 1, value)
+  assert(a + b + c + d + e + f == 6 * value + 15)
+  return result
+end
+for round = 1, 12 do
+  local captured = deep(32, round)
+  local table = {}
+  for i = 1, 48 do table['field:' .. i] = captured end
+  local before, capacity = collectgarbage(1)
+  assert(before > 0 and capacity > before)
+  local ok = pcall(collectgarbage, 1.5)
+  assert(not ok)
+  assert(not pcall(collectgarbage, 'count'))
+  local finished = false
+  for i = 1, 256 do if collectgarbage(2) then finished = true break end end
+  assert(finished)
+  local a, f = table['field:48']()
+  assert(a == round and f == round + 5)
+  local thread = coroutine.create(function()
+    local read = deep(24, round)
+    collectgarbage()
+    return coroutine.yield(read, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
+  end)
+  local function received(...)
+    local ok, read = ...
+    assert(ok and select('#', ...) == 14 and select(14, ...) == 12)
+    assert(read() == round)
+    return true
+  end
+  assert(received(coroutine.resume(thread)))
+  local ok, returned, read, text = coroutine.resume(thread, table, captured, 'é')
+  assert(ok and returned == table and read() == round and text == 'é')
+end
+return true`,
+
 	incremental_mutations: `
 local retained = {}
 for i = 1, 384 do retained[i] = { value = { i }, [1] = false } end

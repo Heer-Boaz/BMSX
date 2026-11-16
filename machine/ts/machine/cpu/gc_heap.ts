@@ -6,16 +6,19 @@ import { Thread, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES } from './thread';
 import { ValueTag, type ValueReference } from './value';
 import { ValueSlots } from './value_slots';
 import { ceilDiv4 } from '../common/numeric';
+import type { GcDiagnostics } from './gc_diagnostics';
 
 export const GC_STEP_WORDS = 4096;
 export const GC_ASSIST_BYTES = 256;
-export const enum GcPhase { Pause, Mark, Sweep, Strings }
+export const enum GcPhase { Pause, Mark, MarkAgain, Atomic, Sweep, Strings }
 export type GcState = {
 	phase: GcPhase; white: number; sweep: number;
-	allocations: number[]; colors: number[]; gray: number[]; threads: number[]; weak: number[];
+	allocations: number[]; colors: number[]; gray: number[]; grayAgain: number[]; threads: number[]; weak: number[];
 };
 export class GcHeap {
+	public diagnostics: GcDiagnostics | null = null;
 	public gray: GcObject | null = null;
+	public grayAgain: GcObject | null = null;
 	private objects: GcObject | null = null;
 	private sweep: GcObject | null = null;
 	private white = 0;
@@ -131,12 +134,21 @@ export class GcHeap {
 		}
 		return work;
 	}
-	private atomic(t0: ValueTag, s0: number, r0: ValueReference, t1: ValueTag, s1: number, r1: ValueReference, t2: ValueTag, s2: number, r2: ValueReference): number {
-		this.cpu.markHeapRoots(this); this.cpu.stringPool.markLocalRoots();
-		this.markValue(t0, s0, r0); this.markValue(t1, s1, r1); this.markValue(t2, s2, r2);
+	/** Called with the current trace queue empty; mutations stay separate until this pass. */
+	private remark(t0: ValueTag, s0: number, r0: ValueReference, t1: ValueTag, s1: number, r1: ValueReference, t2: ValueTag, s2: number, r2: ValueReference): number {
+		this.diagnostics?.phase('rootsNanoseconds');
 		for (const thread of this.threads) thread.writeBarrier();
 		for (const table of this.weak) table.writeBarrier();
-		let work = this.cpu.collectionRootWordCount();
+		this.threads.length = 0;
+		this.gray = this.grayAgain; this.grayAgain = null;
+		this.cpu.markHeapRoots(this); this.cpu.stringPool.markLocalRoots();
+		this.markValue(t0, s0, r0); this.markValue(t1, s1, r1); this.markValue(t2, s2, r2);
+		return this.cpu.collectionRootWordCount();
+	}
+	private atomic(t0: ValueTag, s0: number, r0: ValueReference, t1: ValueTag, s1: number, r1: ValueReference, t2: ValueTag, s2: number, r2: ValueReference): number {
+		this.diagnostics?.beginAtomic();
+		let work = this.remark(t0, s0, r0, t1, s1, r1, t2, s2, r2);
+		this.diagnostics?.phase('traceNanoseconds');
 		while (this.gray !== null) work += this.trace(true);
 		do {
 			this.changed = false;
@@ -148,6 +160,7 @@ export class GcHeap {
 			}
 			while (this.gray !== null) work += this.trace(true);
 		} while (this.changed);
+		this.diagnostics?.phase('weakNanoseconds');
 		for (const table of this.weak) {
 			const mode = this.tableMode(table);
 			work += ceilDiv4(table.getTrackedHeapBytes());
@@ -158,21 +171,45 @@ export class GcHeap {
 		this.white ^= 1; this.sweep = this.objects; this.phase = GcPhase.Sweep;
 		return work;
 	}
-	public step(t0 = ValueTag.Nil, s0 = NaN, r0: ValueReference = null, t1 = ValueTag.Nil, s1 = NaN, r1: ValueReference = null, t2 = ValueTag.Nil, s2 = NaN, r2: ValueReference = null): number {
+	public step(t0 = ValueTag.Nil, s0 = NaN, r0: ValueReference = null, t1 = ValueTag.Nil, s1 = NaN, r1: ValueReference = null, t2 = ValueTag.Nil, s2 = NaN, r2: ValueReference = null, growingStack: Thread | null = null): number {
+		this.diagnostics?.beginStep();
+		try { return this.stepWork(t0, s0, r0, t1, s1, r1, t2, s2, r2, growingStack); }
+		finally { this.diagnostics?.endStep(); }
+	}
+	private stepWork(t0: ValueTag, s0: number, r0: ValueReference, t1: ValueTag, s1: number, r1: ValueReference, t2: ValueTag, s2: number, r2: ValueReference, growingStack: Thread | null): number {
 		let work = 0;
 		if (this.phase === GcPhase.Pause) {
+			if (this.diagnostics !== null) ++this.diagnostics.collections;
+			this.diagnostics?.phase('rootsNanoseconds');
 			this.phase = GcPhase.Mark; this.cpu.stringPool.beginReachabilityEpoch();
 			this.cpu.markHeapRoots(this); work += this.cpu.collectionRootWordCount();
 		}
-		if (this.phase === GcPhase.Mark) {
+		if (this.phase === GcPhase.Mark || this.phase === GcPhase.MarkAgain) {
+			this.diagnostics?.phase('rootsNanoseconds');
 			this.markValue(t0, s0, r0); this.markValue(t1, s1, r1); this.markValue(t2, s2, r2);
 			this.cpu.stringPool.markLocalRoots();
 		}
 		while (work < GC_STEP_WORDS && this.active()) {
 			switch (this.phase) {
-				case GcPhase.Mark: work += this.gray !== null ? this.trace(false) : this.atomic(t0, s0, r0, t1, s1, r1, t2, s2, r2); break;
+				case GcPhase.Mark:
+				case GcPhase.MarkAgain:
+					this.diagnostics?.phase(this.phase === GcPhase.Mark ? 'traceNanoseconds' : 'markAgainNanoseconds');
+					while (this.gray !== null && work < GC_STEP_WORDS) work += this.trace(false);
+					if (work < GC_STEP_WORDS) {
+						if (this.phase === GcPhase.Mark) {
+							work += this.remark(t0, s0, r0, t1, s1, r1, t2, s2, r2);
+							this.phase = GcPhase.MarkAgain;
+						} else {
+							this.phase = GcPhase.Atomic;
+							return work;
+						}
+					}
+					break;
+				case GcPhase.Atomic:
+					return this.atomic(t0, s0, r0, t1, s1, r1, t2, s2, r2);
 				case GcPhase.Sweep:
-					if (this.sweep !== null) {
+					this.diagnostics?.phase('sweepNanoseconds');
+					while (this.sweep !== null && work < GC_STEP_WORDS) {
 						const object = this.sweep; this.sweep = object.gcNext;
 						const bytes = this.allocationBytes(object); work += ceilDiv4(bytes);
 						if (this.sweepGarbage(object)) {
@@ -180,10 +217,20 @@ export class GcHeap {
 							if (object.gcNext !== null) object.gcNext.gcPrevious = object.gcPrevious;
 							object.gcNext = null; object.gcPrevious = null; object.gcGrayNext = null;
 							this.cpu.luaHeap.release(bytes);
-						} else object.gcColor = this.white;
-					} else { this.gray = null; this.phase = GcPhase.Strings; this.cpu.stringPool.beginSweep(); }
+						} else {
+							object.gcColor = this.white;
+							if (object.gcKind === GcKind.Thread && object !== growingStack) {
+								const thread = object as Thread;
+								const released = thread.shrinkStack();
+								this.cpu.luaHeap.release(released * THREAD_STACK_SLOT_BYTES);
+								if (released !== 0) work += thread.stackRegisters.capacity() * 4;
+							}
+						}
+					}
+					if (this.sweep === null && work < GC_STEP_WORDS) { this.grayAgain = null; this.phase = GcPhase.Strings; this.cpu.stringPool.beginSweep(); }
 					break;
 				case GcPhase.Strings:
+					this.diagnostics?.phase('stringReclaimNanoseconds');
 					work += this.cpu.stringPool.sweepStep(GC_STEP_WORDS - work);
 					if (!this.cpu.stringPool.sweeping()) {
 						this.phase = GcPhase.Pause; this.cpu.luaHeap.finishCollection();
@@ -193,16 +240,18 @@ export class GcHeap {
 		}
 		return work;
 	}
-	public collect(t0 = ValueTag.Nil, s0 = NaN, r0: ValueReference = null, t1 = ValueTag.Nil, s1 = NaN, r1: ValueReference = null, t2 = ValueTag.Nil, s2 = NaN, r2: ValueReference = null): number {
+	public collect(t0 = ValueTag.Nil, s0 = NaN, r0: ValueReference = null, t1 = ValueTag.Nil, s1 = NaN, r1: ValueReference = null, t2 = ValueTag.Nil, s2 = NaN, r2: ValueReference = null, growingStack: Thread | null = null): number {
+		if (this.diagnostics !== null) ++this.diagnostics.fullCollections;
 		let work = 0;
-		while (this.active()) work += this.step(t0, s0, r0, t1, s1, r1, t2, s2, r2);
-		do { work += this.step(t0, s0, r0, t1, s1, r1, t2, s2, r2); } while (this.active());
+		while (this.active()) work += this.step(t0, s0, r0, t1, s1, r1, t2, s2, r2, growingStack);
+		do { work += this.step(t0, s0, r0, t1, s1, r1, t2, s2, r2, growingStack); } while (this.active());
 		return work;
 	}
 	public captureState(ref: (object: GcObject) => number): GcState {
-		const state: GcState = { phase: this.phase, white: this.white, sweep: this.sweep === null ? -1 : ref(this.sweep), allocations: [], colors: [], gray: [], threads: [], weak: [] };
+		const state: GcState = { phase: this.phase, white: this.white, sweep: this.sweep === null ? -1 : ref(this.sweep), allocations: [], colors: [], gray: [], grayAgain: [], threads: [], weak: [] };
 		for (let object = this.objects; object !== null; object = object.gcNext) { state.allocations.push(ref(object)); state.colors.push(object.gcColor); }
 		for (let object = this.gray; object !== null; object = object.gcGrayNext) state.gray.push(ref(object));
+		for (let object = this.grayAgain; object !== null; object = object.gcGrayNext) state.grayAgain.push(ref(object));
 		for (const object of this.threads) state.threads.push(ref(object));
 		for (const object of this.weak) state.weak.push(ref(object));
 		return state;
@@ -220,6 +269,10 @@ export class GcHeap {
 		this.gray = null;
 		for (let i = state.gray.length - 1; i >= 0; --i) {
 			const object = objects[state.gray[i]]; object.gcGrayNext = this.gray; this.gray = object;
+		}
+		this.grayAgain = null;
+		for (let i = state.grayAgain.length - 1; i >= 0; --i) {
+			const object = objects[state.grayAgain[i]]; object.gcGrayNext = this.grayAgain; this.grayAgain = object;
 		}
 		this.threads.length = 0; this.weak.length = 0;
 		for (const ref of state.threads) this.threads.push(objects[ref] as Thread);

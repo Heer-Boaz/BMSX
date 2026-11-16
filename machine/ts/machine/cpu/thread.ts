@@ -28,6 +28,23 @@ export class Thread extends GcObject {
 
 	public constructor(public entry: Closure | null) { super(GcKind.Thread); }
 
+	public resizeStack(capacity: number): void {
+		this.stackRegisters.resizeCapacity(capacity);
+		for (let frame = this.currentFrame; frame !== null; frame = frame.previous)
+			frame.registers.rebind(this.stackRegisters, frame.stackBase, frame.stackCapacity);
+	}
+
+	public shrinkStack(): number {
+		let used = this.stackTop;
+		for (let frame = this.currentFrame; frame !== null; frame = frame.previous)
+			used = Math.max(used, frame.stackBase + frame.stackCapacity);
+		const capacity = this.stackRegisters.capacity();
+		if (capacity <= 16 || used * 3 >= capacity) return 0;
+		const released = capacity >>> 1;
+		this.resizeStack(released);
+		return released;
+	}
+
 	/** Prepare the first inactive node; stack growth can collect before entry. */
 	public acquireFrame(): CallFrame {
 		let frame = this.currentFrame === null ? this.firstFrame : this.currentFrame.next;
