@@ -54,7 +54,7 @@ void NativeBlockCompiler::emitBuiltinCall(const DecodedInstruction& instruction)
 		scratch + offsetof(NativeBuiltinCallState, registerTop), SLJIT_R0, 0);
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.cpu));
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(&exit));
-	sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R2, 0, SLJIT_SP, 0, SLJIT_IMM, scratch);
+	sljit_get_local_base(m_compiler, SLJIT_R2, 0, scratch);
 	emitCallSpills(false);
 	sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS4(32, P, P, P, P), SLJIT_IMM,
 		SLJIT_FUNC_ADDR(&CPU::runNativeBuiltinLeaf));

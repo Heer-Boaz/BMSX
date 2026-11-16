@@ -146,7 +146,7 @@ void NativeBlockCompiler::emitStringSlot(bool load, int value, SlowPath& slow) {
 		// Values live; a failed chain must not overwrite the guest destination.
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_R3, 0);
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_IMM, m_bindings.indexKey);
-		sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R3, 0, SLJIT_SP, 0, SLJIT_IMM, NativeBlockAbi::helperResultOffset);
+		sljit_get_local_base(m_compiler, SLJIT_R3, 0, NativeBlockAbi::helperResultOffset);
 		emitCallSpills(false);
 		sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS4V(P, 32, 32, P), SLJIT_IMM,
 			SLJIT_FUNC_ADDR(&Table::loadStringIndex));
@@ -201,7 +201,7 @@ void NativeBlockCompiler::emitLength(const DecodedInstruction& instruction, Nati
 	SlowPath slow; slow.exit = exit; slow.registers = registerSnapshot();
 	slow.jumps[slow.count++] = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL, SLJIT_R0, 0, SLJIT_IMM, valueFromTag(ValueTag::Table) >> 48u);
 	loadPayload(instruction.b, SLJIT_R0, SLJIT_R1);
-	sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R1, 0, SLJIT_SP, 0, SLJIT_IMM, NativeBlockAbi::helperResultOffset);
+	sljit_get_local_base(m_compiler, SLJIT_R1, 0, NativeBlockAbi::helperResultOffset);
 	emitCallSpills(false);
 	sljit_emit_icall(m_compiler, SLJIT_CALL, SLJIT_ARGS2(F64, P, P), SLJIT_IMM, SLJIT_FUNC_ADDR(&Table::length));
 	emitCallSpills(true);
