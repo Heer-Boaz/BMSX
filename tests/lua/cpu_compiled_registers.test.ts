@@ -21,7 +21,7 @@ test('both open and closed upvalue paths define output-only region bindings', ()
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 22 }] });
 	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
 	const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
-	const upvalue: Upvalue = { hashId: 100, open: true, index: 8, frame,
+	const upvalue: Upvalue = { hashId: 100, gcEpoch: 0, open: true, index: 8, frame,
 		valueTag: ValueTag.Nil, valueScalar: NaN, valueReference: null, nextOpen: null };
 	const bound = frame.closure;
 	frame.closure = new Closure(bound.functionAddress, [upvalue], 0, bound.codeAddress,

@@ -336,7 +336,6 @@ export class CPU implements MappedPageInvalidator {
 	private readonly heapWeakTables: Table[] = [];
 	private readonly heapWeakTableModes: number[] = [];
 	private readonly heapEphemeronTables: Table[] = [];
-	private readonly heapSeen = new WeakMap<object, number>();
 	private readonly heapSeenImages = new WeakMap<object, number>();
 	private readonly tableScratch = new ValueSlots(2);
 	private readonly tableLookupResult: TableLookupResult = {
@@ -353,11 +352,8 @@ export class CPU implements MappedPageInvalidator {
 		switch (tag) {
 			case ValueTag.Thread:
 			case ValueTag.Table:
-				return this.heapSeen.get(reference!) === this.heapEpoch;
-			case ValueTag.Closure: {
-				const closure = reference as Closure;
-				return this.heapSeen.get(closure) === this.heapEpoch;
-			}
+			case ValueTag.Closure:
+				return reference!.gcEpoch === this.heapEpoch;
 			default:
 				return true;
 		}
@@ -391,19 +387,12 @@ export class CPU implements MappedPageInvalidator {
 		switch (valueTag) {
 			case ValueTag.Thread:
 			case ValueTag.Table:
-				if (this.heapSeen.get(valueReference!) !== this.heapEpoch) {
+			case ValueTag.Closure:
+				if (valueReference!.gcEpoch !== this.heapEpoch) {
 					this.heapObjectStack.push(valueReference!);
 					this.heapEphemeronChanged = true;
 				}
 				return;
-			case ValueTag.Closure: {
-				const closure = valueReference as Closure;
-				if (this.heapSeen.get(closure) !== this.heapEpoch) {
-					this.heapObjectStack.push(closure);
-					this.heapEphemeronChanged = true;
-				}
-				return;
-			}
 			default:
 				this.pushHeapStoredValue(valueTag, valueScalar, valueReference);
 		}
@@ -3641,6 +3630,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 			const upvalue: Upvalue = {
 				hashId: this.allocateObjectHashId(),
+				gcEpoch: 0,
 				open: true,
 				index: upvalueWords[index] & BLUA32_UPVALUE_INDEX_MASK,
 				frame,
@@ -4974,6 +4964,7 @@ export class CPU implements MappedPageInvalidator {
 					this.luaHeap.restoreAllocate(UPVALUE_HEAP_BYTES);
 					restoredObjects[index] = {
 						hashId: snapshot.word(offset + CpuSnapshotUpvalue.HashId),
+						gcEpoch: 0,
 						open: false,
 						index: snapshot.int(offset + CpuSnapshotUpvalue.Index),
 						frame: null,
@@ -5312,7 +5303,6 @@ export class CPU implements MappedPageInvalidator {
 		root2Reference: ValueReference = null,
 	): number {
 		this.heapEpoch += 1;
-		const seen = this.heapSeen;
 		let total = 0;
 		const objectStack = this.heapObjectStack;
 		const upvalueStack = this.heapUpvalueStack;
@@ -5384,10 +5374,10 @@ export class CPU implements MappedPageInvalidator {
 			while (objectStack.length > 0 || upvalueStack.length > 0) {
 				if (upvalueStack.length > 0) {
 					const upvalue = upvalueStack.pop()!;
-					if (seen.get(upvalue) === this.heapEpoch) {
+					if (upvalue.gcEpoch === this.heapEpoch) {
 						continue;
 					}
-					seen.set(upvalue, this.heapEpoch);
+					upvalue.gcEpoch = this.heapEpoch;
 					total += UPVALUE_HEAP_BYTES;
 					if (upvalue.open) {
 						this.pushHeapRegister(upvalue.frame!.registers, upvalue.index);
@@ -5405,18 +5395,18 @@ export class CPU implements MappedPageInvalidator {
 				switch (object[VALUE_TAG]) {
 					case ValueTag.Thread: {
 						const thread = object as Thread;
-						if (seen.get(thread) === this.heapEpoch) continue;
-						seen.set(thread, this.heapEpoch);
+						if (thread.gcEpoch === this.heapEpoch) continue;
+						thread.gcEpoch = this.heapEpoch;
 						total += THREAD_HEAP_BYTES + thread.stackRegisters.capacity() * THREAD_STACK_SLOT_BYTES;
 						this.traceThread(thread);
 						continue;
 					}
 					case ValueTag.Table: {
 						const table = object as Table;
-						if (seen.get(table) === this.heapEpoch) {
+						if (table.gcEpoch === this.heapEpoch) {
 							continue;
 						}
-						seen.set(table, this.heapEpoch);
+						table.gcEpoch = this.heapEpoch;
 						total += table.getTrackedHeapBytes();
 						if (table.metatable) {
 							objectStack.push(table.metatable);
@@ -5436,10 +5426,10 @@ export class CPU implements MappedPageInvalidator {
 					}
 					case ValueTag.Closure: {
 						const closure = object as Closure;
-						if (seen.get(closure) === this.heapEpoch) {
+						if (closure.gcEpoch === this.heapEpoch) {
 							continue;
 						}
-						seen.set(closure, this.heapEpoch);
+						closure.gcEpoch = this.heapEpoch;
 						total += closure.heapBytes;
 						for (let index = 0; index < closure.upvalues.length; index += 1) {
 							upvalueStack.push(closure.upvalues[index]);
@@ -5469,7 +5459,7 @@ export class CPU implements MappedPageInvalidator {
 		for (const [address, closures] of this.staticClosuresByAddress) {
 			let write = 0;
 			for (const closure of closures) {
-				if (seen.get(closure) === this.heapEpoch) closures[write++] = closure;
+				if (closure.gcEpoch === this.heapEpoch) closures[write++] = closure;
 			}
 			closures.length = write;
 			if (write === 0) this.staticClosuresByAddress.delete(address);

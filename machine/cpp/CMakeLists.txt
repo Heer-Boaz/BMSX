@@ -1226,6 +1226,11 @@ if(BMSX_BUILD_TESTS)
 	add_executable(bmsx_cpu_gc_work_tests ../../tests/cpp/cpu_gc_work_test.cpp ${BMSX_TEST_ROM_SOURCE})
 	target_link_libraries(bmsx_cpu_gc_work_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_gc_work_tests COMMAND bmsx_cpu_gc_work_tests)
+	# Link the instrumented allocator directly, instead of the archive's ordinary
+	# allocator object. No other test or product target enables allocation stress.
+	add_executable(bmsx_gc_stress_runner ../../tests/cpp/gc_stress_runner.cpp machine/cpu/lua_heap.cpp)
+	target_compile_definitions(bmsx_gc_stress_runner PRIVATE BMSX_GC_STRESS=1)
+	target_link_libraries(bmsx_gc_stress_runner PRIVATE bmsx_core)
 	add_executable(bmsx_cpu_string_work_tests ../../tests/cpp/cpu_string_work_test.cpp ${BMSX_TEST_ROM_SOURCE})
 	target_link_libraries(bmsx_cpu_string_work_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_string_work_tests COMMAND bmsx_cpu_string_work_tests)

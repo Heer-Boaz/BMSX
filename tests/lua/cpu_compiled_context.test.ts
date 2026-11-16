@@ -136,8 +136,8 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const frame = cpu.rootThread.frameAtDepth(0);
-		const open: Upvalue = { hashId: 100, open: true, index: 0, frame, valueTag: ValueTag.Nil, valueScalar: NaN, valueReference: null, nextOpen: null };
-		const closed: Upvalue = { hashId: 101, open: false, index: 0, frame: null, valueTag: ValueTag.Nil, valueScalar: NaN, valueReference: null, nextOpen: null };
+		const open: Upvalue = { hashId: 100, gcEpoch: 0, open: true, index: 0, frame, valueTag: ValueTag.Nil, valueScalar: NaN, valueReference: null, nextOpen: null };
+		const closed: Upvalue = { hashId: 101, gcEpoch: 0, open: false, index: 0, frame: null, valueTag: ValueTag.Nil, valueScalar: NaN, valueReference: null, nextOpen: null };
 		const bound = frame.closure;
 		frame.closure = new Closure(bound.functionAddress, [open, closed], 0, bound.codeAddress,
 			bound.numParams, bound.maxStack, bound.flags, bound.upvalueTableAddress, bound.executionDomainId, bound.recordUpvalueCount, false);

@@ -9,6 +9,12 @@
 
 namespace bmsx {
 
+#if defined(BMSX_GC_STRESS)
+// Defined by the stress runner. Only its allocator translation unit uses this
+// seam; ordinary cores contain neither a callback nor a runtime mode check.
+void stressHeapAllocation(LuaHeap& heap);
+#endif
+
 LuaHeap::LuaHeap(CPU& cpu, size_t ramByteCount)
 	: m_cpu(cpu)
 	, m_capacityBytes(ramByteCount - BASE_RAM_USED_SIZE) {
@@ -20,6 +26,9 @@ void LuaHeap::reserve(
 	Value root1,
 	Value root2
 ) {
+#if defined(BMSX_GC_STRESS)
+	stressHeapAllocation(*this);
+#endif
 	size_t nextBytes = m_trackedBytes + byteCount;
 	if (nextBytes > m_nextCollectionBytes || nextBytes > m_capacityBytes) {
 		collectRuntime(root0, root1, root2);

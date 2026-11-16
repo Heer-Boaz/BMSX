@@ -8,6 +8,7 @@ import type { ExecutionDomainId } from '../../spec/blua32/execution_domain';
 
 export type Upvalue = {
 	hashId: number;
+	gcEpoch: number;
 	open: boolean;
 	index: number;
 	frame: CallFrame | null;
@@ -22,6 +23,7 @@ export const EMPTY_CLOSURE_UPVALUES: Upvalue[] = [];
 export class Closure {
 	public readonly [VALUE_TAG] = ValueTag.Closure;
 	public hashId = 0;
+	public gcEpoch = 0;
 
 	public constructor(
 		public functionAddress: number,

@@ -13,6 +13,7 @@ export const THREAD_STACK_SLOT_BYTES = 8;
 export class Thread {
 	public readonly [VALUE_TAG] = ValueTag.Thread;
 	public hashId = 0;
+	public gcEpoch = 0;
 	public status = ThreadStatus.New;
 	public firstFrame: CallFrame | null = null;
 	public currentFrame: CallFrame | null = null;

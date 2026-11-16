@@ -59,6 +59,7 @@ type StoredValuePredicate = (
 export class Table {
 	public readonly [VALUE_TAG] = ValueTag.Table;
 	public hashId = 0;
+	public gcEpoch = 0;
 	private lengthHint = 0;
 	private tags: Uint8Array;
 	private scalars: Float64Array;
