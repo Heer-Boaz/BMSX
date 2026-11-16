@@ -69,9 +69,9 @@ export const OPCODE_COUNT = 64;
 
 // Select the next Table-valued __index target and test its own mapping.
 // This semantic traversal stage does not fetch another instruction.
-export const TABLE_INDEX_VISIT_CYCLES = 4;
+export const TABLE_INDEX_VISIT_CYCLES = 8;
 // One logical own-integer presence test; no instruction-supply allowance.
-export const TABLE_LENGTH_PROBE_CYCLES = 3;
+export const TABLE_LENGTH_PROBE_CYCLES = 6;
 
 export const encodeFixedValueCount = (count: number): number => count + 1;
 
@@ -82,13 +82,13 @@ export const decodeValueCount = (operand: number, openCount: number): number =>
 // WIDE is a prefix, not a separately executed instruction.
 export const BASE_CYCLES = new Uint8Array([
 	0, 2, 2, 2, 3, 2, 2, 2,
-	2, 2, 2, 2, 3, 3, 4, 5,
-	4, 2, 2, 2, 32, 34, 33, 128,
+	2, 2, 2, 2, 3, 3, 16, 16,
+	24, 2, 2, 2, 32, 34, 33, 128,
 	2, 2, 2, 2, 2, 2, 3, 2,
 	2, 3, 2, 2, 2, 2, 2, 2,
-	2, 2, 2, 8, 3, 4, 3, 6,
-	6, 3, 3, 3, 2, 2, 3, 4,
-	3, 4, 4, 5, 4, 5, 5, 2,
+	2, 2, 2, 8, 3, 4, 3, 32,
+	16, 3, 3, 3, 2, 2, 3, 4,
+	3, 4, 8, 8, 16, 16, 17, 2,
 ]);
 
 export const OPCODE_USES_BX = new Uint8Array([

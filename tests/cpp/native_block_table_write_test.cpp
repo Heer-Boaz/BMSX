@@ -65,7 +65,7 @@ void readsRetainNativeFrame(CPU& cpu, Memory& memory) {
 			require(cpu.luaHeap().usedBytes() == heap.trackedBytes
 				&& cpu.luaHeap().captureState().nextCollectionBytes == heap.nextCollectionBytes,
 				"read resolution changes neither tracked allocation nor collection thresholds");
-			require(state.remainingCycles == 100 - block->terminal.cycles - 4, "one additional inherited target Table adds4 cycles independently of slot prediction");
+			require(state.remainingCycles == 100 - block->terminal.cycles - 8, "one additional inherited target Table adds8 cycles independently of slot prediction");
 		}
 		for (int mutation = 0; mutation < 4; ++mutation) {
 			if (mutation == 0) table->setStringKey(key, values[0]);
@@ -181,7 +181,7 @@ void boundaryLengthRetainsNativeFrame(CPU& cpu, Memory& memory) {
 		if (expected == 9007199254740991.0) table->set(valueNumber(expected), valueBool(false));
 		std::array<Value, 7> registers; registers.fill(valueNil());
 		registers[0] = valueTable(table); registers[1] = root;
-		const int probeCycles = 3 * (expected == 9007199254740991.0 ? 54 : 105);
+		const int probeCycles = 6 * (expected == 9007199254740991.0 ? 54 : 105);
 		const int grant = block->terminal.cycles + probeCycles + 1;
 		NativeBlockRunState state{.registers = registers.data(), .constants = nullptr, .remainingCycles = grant};
 		const auto* exit = block->run(state);

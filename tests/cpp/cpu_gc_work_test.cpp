@@ -89,8 +89,8 @@ void explicitCollectionAndNoReplay() {
 			frame.top = 1;
 		}
 		require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded
-			&& generated.cpu.instructionBudgetRemaining == -101,
-			"explicit primitive retains CALL6+primitive4+collection92 after short grant, without receiving slots");
+			&& generated.cpu.instructionBudgetRemaining == -127,
+			"explicit primitive retains CALL32+primitive4+collection92 after short grant, without receiving slots");
 		require(generated.cpu.readFramePc(0) == generated.rom.textAddress + (wide ? 8 : 4)
 			&& isNil(generated.cpu.readFrameRegister(0, 7)), "collection completes but cannot execute its successor");
 		test::runCpuParity(generated.cpu, scalar.cpu, 0);
@@ -110,8 +110,8 @@ void allocationCollectionAndFailure() {
 			m->cpu.luaHeap().restoreState({before.trackedBytes, 0});
 		}
 		require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded
-			&& generated.cpu.instructionBudgetRemaining == -99,
-			"automatic GC bills pre-request92 plus NEWT4 and four initialized Values exactly once");
+			&& generated.cpu.instructionBudgetRemaining == -119,
+			"automatic GC bills pre-request92 plus NEWT24 and four initialized Values exactly once");
 		require(generated.cpu.luaHeap().usedBytes() == 225 && valueIsTable(generated.cpu.readFrameRegister(0, 0))
 			&& isNil(generated.cpu.readFrameRegister(0, 7)), "request68 is admitted after collection, not included in its bill");
 		test::runCpuParity(generated.cpu, scalar.cpu, 2);

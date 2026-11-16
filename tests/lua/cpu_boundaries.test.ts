@@ -472,7 +472,7 @@ test('closure call and return preserve grants, depth, register bases and call-si
 			state.haltedUntilIrqFrameDepth = edgeKind === 4 ? 2 : 1;
 			state.haltedUntilIrqThreadRef = state.activeThreadRef;
 			cpu.restoreRuntimeState(state);
-			assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.RET] + 1), RunResult.Halted);
+			assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[edgeKind === 4 ? OpCode.CALL : OpCode.RET] + 1), RunResult.Halted);
 			assert.equal(cpu.instructionBudgetRemaining, edgeKind === 5 ? 0 : 1);
 			assert.equal(cpu.readFrameRegister(0, 2), 99);
 			if (edgeKind === 4) assert.equal(cpu.activeThread.frameAtDepth(1).registers.getTag(0), ValueTag.Nil);
@@ -621,14 +621,14 @@ test('zero-maxStack calls produce true zero results and only requested padding i
 		closureRelocations: [{ wordIndex: 1, functionAddress: 0x180 }, { wordIndex: 4, functionAddress: 0x1a0 }],
 	});
 	const { cpu } = createTestSystemCpu(image);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const results: Value[] = [];
 	cpu.readCompletionValues(results);
 	assert.deepEqual(results, [null]);
 	cpu.rootThread.stackRegisters.setNumber(0, 91);
 	cpu.beginCompletionCallInExecutionDomain(-1, 0x1a0);
 	assert.equal(cpu.readFrameRegister(0, 0), 91, 'scratch storage is not cleared at activation');
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	cpu.readCompletionValues(results);
 	assert.deepEqual(results, []);
 });

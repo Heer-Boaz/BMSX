@@ -131,9 +131,9 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 	require(run.state.diagnosticOpcodes.call == 1, "the admitted native CALL is counted once");
 #endif
 	const int receiving = results == 1 ? 0 : 1;
-	if (!cold && !interrupt && grant == 32 && id != BuiltinFunctionId::Type) {
+	if (!cold && !interrupt && grant == 64 && id != BuiltinFunctionId::Type) {
 		require(machine.marker() == 99, "one real native gate follows the builtin raw continuation, not C++ CALL redispatch");
-		require(machine.cpu.instructionBudgetRemaining == 32 - 2 - 6 - 2 - receiving - 3 - 2,
+		require(machine.cpu.instructionBudgetRemaining == 64 - 2 - 32 - 2 - receiving - 3 - 2,
 			"prefix, CALL, primitive, receiving slots and marker are each charged once");
 	} else if (id == BuiltinFunctionId::Type) {
 		require(machine.marker() == 0, "Type remains on its allocating ordinary CALL path");
@@ -141,7 +141,7 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 	} else {
 		require(machine.marker() == 0 && frame->pc == rom.textAddress + 2 * INSTRUCTION_BYTES,
 			"cold or exhausted completion commits the successor without executing it");
-		require(run.state.remainingCycles == grant - 2 - 6 - 2 - receiving
+		require(run.state.remainingCycles == grant - 2 - 32 - 2 - receiving
 			&& machine.cpu.instructionBudgetRemaining == run.state.remainingCycles, "both budget owners retain the complete exhausted CALL debit");
 		if (interrupt) require(machine.cpu.captureRuntimeState().nonMaskableInterruptPending, "post-CALL stop retains the pending interrupt for its real owner");
 		else machine.cpu.runUntilDepth(0, 1);
@@ -191,7 +191,7 @@ void ordinaryCases() {
 		test::runCpuParity(native.cpu, scalar.cpu, 3); parity(native, scalar);
 		require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT && native.cpu.readEpcWord() == rom.textAddress + INSTRUCTION_BYTES,
 			"unsupported argument shapes use the existing error owner at the original WIDE instruction PC");
-		require(native.cpu.instructionBudgetRemaining == -7, "argument errors pay prefix2+CALL6+primitive2 but no receiving-slot fee");
+		require(native.cpu.instructionBudgetRemaining == -33, "argument errors pay prefix2+CALL32+primitive2 but no receiving-slot fee");
 		if (id == BuiltinFunctionId::SetMetatable) require(native.target->metatable == native.meta, "invalid metatable validation has no partial mutation");
 	}
 }
@@ -201,14 +201,14 @@ int main() {
 	try {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		for (const auto id : {BuiltinFunctionId::StringByte, BuiltinFunctionId::GetMetatable, BuiltinFunctionId::SetMetatable}) for (int results : {0, 1, 2}) {
-			directGate(id, results, 32); directGate(id, results, 9); directGate(id, results, 32, true);
+			directGate(id, results, 64); directGate(id, results, 9); directGate(id, results, 64, true);
 		}
-		directGate(BuiltinFunctionId::Type, 2, 32);
+		directGate(BuiltinFunctionId::Type, 2, 64);
 #endif
 		#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-		for (int results : {0, 1, 2}) directGate(BuiltinFunctionId::SetMetatable, results, 32, false, 1);
-		directGate(BuiltinFunctionId::StringByte, 2, 32, false, 1);
-		directGate(BuiltinFunctionId::StringByte, 2, 32, false, 0, true);
+		for (int results : {0, 1, 2}) directGate(BuiltinFunctionId::SetMetatable, results, 64, false, 1);
+		directGate(BuiltinFunctionId::StringByte, 2, 64, false, 1);
+		directGate(BuiltinFunctionId::StringByte, 2, 64, false, 0, true);
 #endif
 		ordinaryCases();
 		std::cout << "Native builtin leaf tests passed\n";

@@ -1656,32 +1656,32 @@ void testProtectedCallMicrocodePreemptsSavesAndHandlesLuaErrors() {
 	bmsx::CpuRuntimeState state = machine.cpu.captureRuntimeState();
 	require(state.threads[0].protectedCalls.size() == 1u, "save state should retain the active protected call");
 	machine.cpu.restoreRuntimeState(state);
-	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "restored pcall should complete");
+	require(machine.cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "restored pcall should complete");
 	require(machine.cpu.readCompletionValues().size() == 3u && bmsx::isTruthy(machine.cpu.readCompletionValues()[0]), "pcall should return success");
 	require(bmsx::asNumber(machine.cpu.readCompletionValues()[1]) == 3.0 && bmsx::asNumber(machine.cpu.readCompletionValues()[2]) == 4.0, "pcall should preserve multiple results");
 
 	bmsx::test::programBlua32TestResetVector(machine.systemRom, 2u);
 	machine.cpu.reset();
-	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "xpcall error path should complete");
+	require(machine.cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "xpcall error path should complete");
 	require(machine.cpu.readCompletionValues().size() == 2u && !bmsx::isTruthy(machine.cpu.readCompletionValues()[0]), "xpcall should return failure");
 	require(bmsx::asNumber(machine.cpu.readCompletionValues()[1]) == 42.0, "xpcall handler should receive the thrown Lua value");
 
 	bmsx::test::programBlua32TestResetVector(machine.systemRom, 6u);
 	machine.cpu.reset();
-	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "invalid xpcall handler should be caught by the outer pcall");
+	require(machine.cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "invalid xpcall handler should be caught by the outer pcall");
 	require(machine.cpu.readCompletionValues().size() == 2u && !bmsx::isTruthy(machine.cpu.readCompletionValues()[0]), "xpcall should validate its handler before running the body");
 	require(bmsx::valueIsString(machine.cpu.readCompletionValues()[1]), "invalid xpcall handler should return a Lua error value");
 
 	bmsx::test::programBlua32TestResetVector(machine.systemRom, 7u);
 	machine.cpu.reset();
-	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "xpcall handler failure should complete");
+	require(machine.cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "xpcall handler failure should complete");
 	require(machine.cpu.readCompletionValues().size() == 2u && !bmsx::isTruthy(machine.cpu.readCompletionValues()[0]), "xpcall handler failure should return failure");
 	require(bmsx::valueIsString(machine.cpu.readCompletionValues()[1]), "xpcall handler failure should return the Lua error-in-handler value");
 	require(machine.cpu.stringPool().toString(bmsx::asStringId(machine.cpu.readCompletionValues()[1])) == "error in error handling", "xpcall should hide the handler's replacement error");
 
 	bmsx::test::programBlua32TestResetVector(machine.systemRom, 5u);
 	machine.cpu.reset();
-	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "nested pcall should complete");
+	require(machine.cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "nested pcall should complete");
 	require(machine.cpu.readCompletionValues().size() == 4u, "nested pcall should preserve the open result sequence");
 	require(bmsx::isTruthy(machine.cpu.readCompletionValues()[0]) && bmsx::isTruthy(machine.cpu.readCompletionValues()[1]), "nested pcall should prefix both success values");
 	require(bmsx::asNumber(machine.cpu.readCompletionValues()[2]) == 3.0 && bmsx::asNumber(machine.cpu.readCompletionValues()[3]) == 4.0, "nested pcall should preserve child results");

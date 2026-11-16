@@ -97,7 +97,7 @@ void cycle(CPU& cpu, Table* root) {
 void grantsAndRestore() {
 	for (bool wide : {false, true}) for (const auto [op, kind] : forms) for (int depth : {1, 2, 5, 32}) {
 		Program program(op, wide); Machine generated(program, false), scalar(program, true);
-		const std::array charges{2, (op == OpCode::SELF ? 5 : 4) + 4 * (depth - 1), 2, 2};
+		const std::array charges{2, (op == OpCode::SELF ? 17 : op == OpCode::GETI ? 8 : 16) + 8 * (depth - 1), 2, 2};
 		const int total = charges[0] + charges[1] + charges[2] + charges[3];
 		for (auto* m : {&generated, &scalar}) {
 			auto* root = m->cpu.createTable(2, 2); const auto key = keyFor(m->cpu, kind);
@@ -115,7 +115,7 @@ void grantsAndRestore() {
 			int remaining = grant, completed = 0;
 			while (remaining > 0) remaining -= charges[completed++];
 			auto* frame = generated.cpu.activeThread()->currentFrame; auto* r = frame->registers;
-			require(generated.cpu.instructionBudgetRemaining == remaining, "each additionally visited Table costs exactly4, including debt");
+			require(generated.cpu.instructionBudgetRemaining == remaining, "each additionally visited Table costs exactly8, including debt");
 			require(frame->pc == generated.rom.textAddress + program.starts[completed == 4 ? 0 : completed] * INSTRUCTION_BYTES,
 				"the completed read frontier precedes every unadmitted marker");
 			require(r[6] == (completed >= 2 ? valueBool(false) : completed == 1 ? r[0] : valueNumber(91))
@@ -146,7 +146,7 @@ void faultsOnce() {
 			auto* r = m->cpu.activeThread()->currentFrame->registers; r[0] = valueTable(root); r[1] = key; r[8] = valueNumber(57);
 		}
 		test::runCpuParity(generated.cpu, scalar.cpu, 3);
-		require(3 - generated.cpu.instructionBudgetRemaining == 2 + (op == OpCode::SELF ? 5 : 4) + 124,
+		require(3 - generated.cpu.instructionBudgetRemaining == 2 + (op == OpCode::SELF ? 17 : op == OpCode::GETI ? 8 : 16) + 248,
 			"attempted32 visits cost31 extras once, not once in native leaf and again in scalar fault replay");
 		require(generated.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_METATABLE_LOOP
 			&& generated.cpu.readEpcWord() == generated.rom.textAddress + program.starts[1] * INSTRUCTION_BYTES,
@@ -170,9 +170,9 @@ void stringReceiver() {
 			require(cpu.runUntilDepth(0, 7) == RunResult::Yielded, "the real builtin installs the String index Table");
 		}
 		test::runCpuParity(generated.cpu, scalar.cpu, 3);
-		require(generated.cpu.instructionBudgetRemaining == 3 - 2 - 12
+		require(generated.cpu.instructionBudgetRemaining == 3 - 2 - 32
 			&& generated.cpu.readFrameRegister(0, 6) == valueNumber(73) && generated.cpu.readFrameRegister(0, 8) == valueNumber(57),
-			"String dispatch's first installed Table is covered by base; only two inherited targets add8");
+			"String dispatch's first installed Table is covered by base; only two inherited targets add16");
 		sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
 		for (auto* m : {&generated, &scalar}) {
 			auto* installed = asTable(m->cpu.readFrameRegister(0, 21));
@@ -180,7 +180,7 @@ void stringReceiver() {
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress + program.starts[0] * INSTRUCTION_BYTES);
 		}
 		test::runCpuParity(generated.cpu, scalar.cpu, 3);
-		require(generated.cpu.instructionBudgetRemaining == 3 - 2 - 8 && isNil(generated.cpu.readFrameRegister(0, 6)),
+		require(generated.cpu.instructionBudgetRemaining == 3 - 2 - 24 && isNil(generated.cpu.readFrameRegister(0, 6)),
 			"live prototype replacement uses the new two-Table path and resolved nil has no fault");
 		sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
 	}

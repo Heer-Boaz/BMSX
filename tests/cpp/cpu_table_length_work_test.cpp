@@ -98,7 +98,7 @@ void everyGrant() {
 		const auto* page=generated.cpu.activeThread()->currentFrame->executionImage->nativeCodeLookup->find(generated.rom.textAddress,0);
 		require(page&&page->nativeBlocks->entries[(generated.rom.textAddress&MAPPED_PAGE_BYTE_MASK)/INSTRUCTION_BYTES],"real generated LEN region is published");
 #endif
-		const std::array charges{2,2,3+3*test.probes,5,2,2};int total=0;for (int n:charges)total+=n;
+		const std::array charges{2,2,3+6*test.probes,8,2,2};int total=0;for (int n:charges)total+=n;
 		const auto heap=generated.cpu.luaHeap().usedBytes();
 		for (int grant=0;grant<=total;++grant) {
 			for (auto* m:{&generated,&scalar}) {
@@ -158,9 +158,9 @@ void oneGateFrontier() {
 	const auto& block=page->nativeBlocks->entries[(m.rom.textAddress&MAPPED_PAGE_BYTE_MASK)/INSTRUCTION_BYTES];
 	NativeBlockRunState state{};
 	state.registers = r; state.constants = frame->executionImage->constPool.data();
-	state.frame = frame; state.remainingCycles = 15; state.registerTop = frame->top;
+	state.frame = frame; state.remainingCycles = 18; state.registerTop = frame->top;
 	const auto* exit=block->run(state);
-	require(exit->exit==NativeBlockExit::Continue&&exit->nextPc==m.rom.textAddress+program.starts[3]*INSTRUCTION_BYTES&&state.remainingCycles==-70,
+	require(exit->exit==NativeBlockExit::Continue&&exit->nextPc==m.rom.textAddress+program.starts[3]*INSTRUCTION_BYTES&&state.remainingCycles==-145,
 		"one actual gate invocation returns completed LEN debt before any outer CPU loop can intervene");
 	require(r[6]==valueNumber(4096)&&r[9]==valueNumber(37)&&asTable(r[10])->getInteger(1)==valueNumber(-1)&&isNil(r[8]),
 		"F64 stays intact across scalar-work read and cached result is published before the unexecuted side effect");

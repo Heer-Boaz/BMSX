@@ -78,7 +78,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			let frame = cpu.rootThread.currentFrame!; const base = frame.pc;
 			const table = makeTable(cpu, kind), marker = cpu.createTable(1);
 			frame.registers.setTable(0, table); frame.registers.setTable(10, marker);
-			const charges = [2, 2, 3 + 3 * probes, 5, 2, 2], total = charges.reduce((a, b) => a + b, 0);
+			const charges = [2, 2, 3 + 6 * probes, 8, 2, 2], total = charges.reduce((a, b) => a + b, 0);
 			cpu.runUntilDepth(0, total * 64);
 			if (backend === CpuExecutionBackend.JavaScript) assert.ok(frame.decodedPage!.compiledBlocks!.entries[(base & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]);
 			const savedSeed = seed(table), heap = cpu.luaHeap.usedBytes();
@@ -115,14 +115,14 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 for (const kind of ['ascending', 'descending'] as const) test(`published JS region directly exposes completed LEN frontier (${kind})`, () => {
 	const { image, starts } = program(false), { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
 	const frame = cpu.rootThread.currentFrame!, base = frame.pc, table = makeTable(cpu, kind), marker = cpu.createTable(1);
-	frame.registers.setTable(0, table); frame.registers.setTable(10, marker); cpu.runUntilDepth(0, (kind === 'ascending' ? 22 : 94) * 64);
+	frame.registers.setTable(0, table); frame.registers.setTable(10, marker); cpu.runUntilDepth(0, (kind === 'ascending' ? 31 : 175) * 64);
 	const page = frame.decodedPage!, block = page.compiledBlocks!.entries[(base & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]!;
-	assert.ok(block && 15 > block.admissionCycles, 'the real generated body is admitted, not an interpreter fallback');
+	assert.ok(block && 18 > block.admissionCycles, 'the real generated body is admitted, not an interpreter fallback');
 	frame.registers.setNumber(6, 91); frame.registers.setNil(8); marker.setInteger(1, -1);
-	const state = { remainingCycles: 15, registerTop: frame.top, memoryAddress: 0, lengthWork: { probes: 0 } };
+	const state = { remainingCycles: 18, registerTop: frame.top, memoryAddress: 0, lengthWork: { probes: 0 } };
 	const exit = block.region.exits[block.region.execute(frame.registers, frame.executionImage.constScalars, page, frame, block.entry, state)];
 	assert.equal(exit.nextPc, base + starts[3] * INSTRUCTION_BYTES);
-	assert.equal(state.remainingCycles, kind === 'ascending' ? 2 : -70);
+	assert.equal(state.remainingCycles, kind === 'ascending' ? -1 : -145);
 	assert.equal(state.lengthWork.probes, kind === 'ascending' ? 2 : 26);
 	assert.equal(frame.registers.getNumber(6), kind === 'ascending' ? 64 : 4096, 'resident LEN result is raw-published on completed Continue');
 	assert.equal(marker.getInteger(1), -1); assert.equal(frame.registers.get(8), null);

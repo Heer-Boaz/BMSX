@@ -16,9 +16,9 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		const instructions = [
 			[OpCode.K1, 9, 0, 0, 2], [OpCode.POW, 10, 4, 5, 128], [OpCode.POW, 11, 4, 5, 128],
 			[OpCode.MOD, 12, 6, 7, 34], [OpCode.LEN, 13, 8, 0, 3],
-			[OpCode.GETT, 14, 0, 2, 4], [OpCode.GETI, 15, 0, 1, 4], [OpCode.GETFIELD, 16, 0, 0, 4],
-			[OpCode.SETT, 0, 2, 3, 5], [OpCode.SETI, 0, 1, 3, 5], [OpCode.SETFIELD, 0, 0, 3, 5],
-			[OpCode.SELF, 17, 0, 0, 5], [OpCode.NEWT, 19, 0, 0, 4],
+			[OpCode.GETT, 14, 0, 2, 16], [OpCode.GETI, 15, 0, 1, 8], [OpCode.GETFIELD, 16, 0, 0, 16],
+			[OpCode.SETT, 0, 2, 3, 16], [OpCode.SETI, 0, 1, 3, 8], [OpCode.SETFIELD, 0, 0, 3, 16],
+			[OpCode.SELF, 17, 0, 0, 17], [OpCode.NEWT, 19, 0, 0, 24],
 			[OpCode.GETSYS, 20, 0, 0, 3], [OpCode.SETSYS, 3, 0, 0, 4],
 			[OpCode.GETGL, 21, 0, 0, 3], [OpCode.SETGL, 3, 0, 0, 4],
 		] as const;
@@ -80,10 +80,11 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			{ firstWord: 32, wordCount: word - 32, maxStack: 4, staticClosure: false, upvalueDescs: [{ inStack: true, index: 4 }] }],
 			closureRelocations: [{ wordIndex: closureBody, functionAddress: blua32TestFunctionAddress(0, 1) }] });
 		const { cpu } = createTestSystemCpu(image, backend), root = cpu.rootThread.currentFrame!, base = root.pc;
-		const charges = [2, 9, 6, 3, 2, 4, 6, 2, 2]; // CLOSURE8 + one bound descriptor; RET6 + zero receiving slots.
-		cpu.runUntilDepth(0, 36 * 32);
+		const charges = [2, 9, 32, 3, 2, 4, 16, 2, 2]; // CLOSURE8 + one bound descriptor; RET16 + zero receiving slots.
+		const total = charges.reduce((a, b) => a + b, 0);
+		cpu.runUntilDepth(0, total * 32);
 		if (backend === CpuExecutionBackend.JavaScript) assert.ok(root.decodedPage!.compiledBlocks!.entries[(base & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]);
-		for (let grant = 0; grant <= 36; ++grant) {
+		for (let grant = 0; grant <= total; ++grant) {
 			cpu.runUntilDepth(1, 100);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], base);
 			root.registers.setNil(0); root.registers.setNil(4); root.registers.setNil(5);

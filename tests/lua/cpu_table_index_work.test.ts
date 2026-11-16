@@ -52,14 +52,14 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			const key = kind === 'string' ? valueString(cpu.stringPool.intern('field')) : kind === 'number' ? 1 : false;
 			const root = cpu.createTable(2, 2); root.set(key, false);
 			frame.registers.setTable(0, root); frame.registers.set(1, key);
-			const ownLoop = 2 + (op === OpCode.SELF ? 5 : 4) + 2 + 2;
+			const ownLoop = 2 + (op === OpCode.SELF ? 17 : op === OpCode.GETI ? 8 : 16) + 2 + 2;
 			cpu.runUntilDepth(0, ownLoop * 64);
 			if (backend === CpuExecutionBackend.JavaScript) assert.ok(frame.decodedPage!.compiledBlocks!.entries[(loop & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]);
 			root.set(key, null); chain(cpu, root, depth, key, false);
 			if (depth === 1) {
 				const meta = cpu.createTable(0, 1); meta.setStringKey(cpu.stringPool.intern('__index'), root); root.metatable = meta;
 			}
-			const lookup = (op === OpCode.SELF ? 5 : 4) + 4 * (depth - 1);
+			const lookup = (op === OpCode.SELF ? 17 : op === OpCode.GETI ? 8 : 16) + 8 * (depth - 1);
 			const charges = [2, lookup, 2, 2], total = charges.reduce((a, b) => a + b, 0);
 			const heap = cpu.luaHeap.usedBytes();
 			for (let grant = 0; grant <= total; ++grant) {
@@ -92,7 +92,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			const key = kind === 'string' ? valueString(cpu.stringPool.intern('field')) : kind === 'number' ? 1 : false;
 			const root = cpu.createTable(2, 2); root.set(key, 73);
 			frame.registers.setTable(0, root); frame.registers.set(1, key);
-			cpu.runUntilDepth(0, (2 + (op === OpCode.SELF ? 5 : 4) + 2 + 2) * 64);
+			cpu.runUntilDepth(0, (2 + (op === OpCode.SELF ? 17 : op === OpCode.GETI ? 8 : 16) + 2 + 2) * 64);
 			root.set(key, null);
 			if (cyclic) {
 				const meta = cpu.createTable(0, 1); meta.setStringKey(cpu.stringPool.intern('__index'), root); root.metatable = meta;
@@ -100,7 +100,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], base);
 			frame.registers.setNumber(8, 57);
 			cpu.runUntilDepth(0, 3);
-			assert.equal(3 - cpu.instructionBudgetRemaining, 2 + (op === OpCode.SELF ? 5 : 4) + 124);
+			assert.equal(3 - cpu.instructionBudgetRemaining, 2 + (op === OpCode.SELF ? 17 : op === OpCode.GETI ? 8 : 16) + 248);
 			assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_METATABLE_LOOP);
 			assert.equal(cpu.readEpcWord(), base + starts[1] * INSTRUCTION_BYTES, 'WIDE fault belongs to prefix start');
 			assert.equal(frame.registers.get(6), root, 'failed inherited read retains original aliased destination');
@@ -117,17 +117,17 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		frame.registers.set(0, valueString(cpu.stringPool.intern('receiver')));
 		cpu.runUntilDepth(0, 7);
 		assert.equal(frame.pc, base + INSTRUCTION_BYTES);
-		cpu.runUntilDepth(0, 10 * 64);
+		cpu.runUntilDepth(0, 22 * 64);
 		installed.set(key, null); chain(cpu, installed, 3, key, 73);
 		const loop = base + starts[0] * INSTRUCTION_BYTES;
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], loop);
 		frame.registers.setNumber(8, 57); cpu.runUntilDepth(0, 3);
-		assert.equal(cpu.instructionBudgetRemaining, 3 - 2 - 12);
+		assert.equal(cpu.instructionBudgetRemaining, 3 - 2 - 32);
 		assert.equal(frame.registers.getNumber(6), 73); assert.equal(frame.registers.getNumber(8), 57);
 		installed.metatable!.setStringKey(cpu.stringPool.intern('__index'), cpu.createTable());
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], loop);
 		cpu.runUntilDepth(0, 3);
-		assert.equal(cpu.instructionBudgetRemaining, 3 - 2 - 8);
+		assert.equal(cpu.instructionBudgetRemaining, 3 - 2 - 24);
 		assert.equal(frame.registers.get(6), null, 'missing terminal mapping is resolved nil, not a fault');
 	});
 }

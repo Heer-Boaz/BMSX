@@ -180,7 +180,10 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 		Table* table = machine->cpu.createTable(0, 1);
 		frame.registers[0] = valueTable(table); frame.registers[1] = valueNumber(1);
 		table->setStringKey(machine->cpu.stringPool().intern("field"), valueNumber(0));
-		machine->cpu.runUntilDepth(0, 1200);
+		const int loopCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)]
+			+ BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)] + BASE_CYCLES[static_cast<u8>(OpCode::ADD)]
+			+ BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
+		machine->cpu.runUntilDepth(0, loopCycles * (NATIVE_BLOCK_COMPILATION_THRESHOLD + 8));
 	}
 	test::waitForNativeEntry(native.cpu, *native.cpu.activeThread()->frameAtDepth(0)->decodedPage,
 		(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u);
@@ -1456,14 +1459,13 @@ void closureCallAndReturnRespectFrameBoundaries() {
 		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "closure setup consumes its own physical instruction");
 		const u32 callPc = cpu.readFramePc(0);
 		const int callAndValue = BASE_CYCLES[static_cast<u8>(OpCode::CALL)] + BASE_CYCLES[static_cast<u8>(OpCode::K1)];
-		const int callOrReturnWithPlacement = BASE_CYCLES[static_cast<u8>(OpCode::CALL)] + 1;
 		if (edgeKind == 4 || edgeKind == 5) {
 			if (edgeKind == 5) require(cpu.runUntilDepth(0, callAndValue) == RunResult::Yielded, "prepare RET at callee depth");
 			auto state = cpu.captureRuntimeState();
 			state.haltedUntilIrqFrameDepth = edgeKind == 4 ? 2 : 1;
 			state.haltedUntilIrqThreadRef = state.activeThreadRef;
 			cpu.restoreRuntimeState(state);
-			require(cpu.runUntilDepth(0, callOrReturnWithPlacement) == RunResult::Halted && cpu.instructionBudgetRemaining == (edgeKind == 5 ? 0 : 1), "frame transition activates the retained depth-sensitive HALT latch before another instruction");
+			require(cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(edgeKind == 4 ? OpCode::CALL : OpCode::RET)] + 1) == RunResult::Halted && cpu.instructionBudgetRemaining == (edgeKind == 5 ? 0 : 1), "frame transition activates the retained depth-sensitive HALT latch before another instruction");
 			require(cpu.readFrameRegister(0, 2) == valueNumber(99), "HALT retains the caller continuation");
 			if (edgeKind == 4) require(isNil(cpu.activeThread()->frameAtDepth(1)->registers[0]), "HALT at new callee depth precedes callee execution");
 			continue;
@@ -1616,12 +1618,12 @@ void zeroStackReuse() {
 	image.closureRelocations = {{1, 0x180}, {4, 0x1a0}};
 	CpuMachine machine(image);
 	auto& cpu = machine.cpu;
-	require(cpu.runUntilDepth(0, 100) == RunResult::Halted, "zero-stack call finishes");
+	require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "zero-stack call finishes");
 	require(isNil(cpu.readCompletionValues()[0]), "zero results nil-pad only the requested caller slot");
 	cpu.activeThread()->stack[0] = valueNumber(91.0);
 	cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, 0x1a0);
 	require(cpu.readFrameRegister(0, 0) == valueNumber(91), "activation does not initialize scratch storage");
-	require(cpu.runUntilDepth(0, 100) == RunResult::Halted && cpu.readCompletionValues().empty(), "completion preserves true zero results");
+	require(cpu.runUntilDepth(0, 1000) == RunResult::Halted && cpu.readCompletionValues().empty(), "completion preserves true zero results");
 }
 
 void haltYieldPrecedence() {

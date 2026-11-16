@@ -42,13 +42,13 @@ struct Machine {
 void exactTable() {
 	constexpr std::array<u8, 64> expected{
 		0, 2, 2, 2, 3, 2, 2, 2,
-		2, 2, 2, 2, 3, 3, 4, 5,
-		4, 2, 2, 2, 32, 34, 33, 128,
+		2, 2, 2, 2, 3, 3, 16, 16,
+		24, 2, 2, 2, 32, 34, 33, 128,
 		2, 2, 2, 2, 2, 2, 3, 2,
 		2, 3, 2, 2, 2, 2, 2, 2,
-		2, 2, 2, 8, 3, 4, 3, 6,
-		6, 3, 3, 3, 2, 2, 3, 4,
-		3, 4, 4, 5, 4, 5, 5, 2,
+		2, 2, 2, 8, 3, 4, 3, 32,
+		16, 3, 3, 3, 2, 2, 3, 4,
+		3, 4, 8, 8, 16, 16, 17, 2,
 	};
 	require(BASE_CYCLES == expected, "all64 literal nominal work-class prices match the adopted table");
 	for (size_t op = 0; op != expected.size(); ++op)
@@ -131,8 +131,8 @@ void creationAndCallWorkOnce() {
 	image.functions = {{.firstWord=0, .wordCount=2, .maxStack=3}};
 	Machine generated(image, false), scalar(image, true);
 	test::runCpuParity(generated.cpu, scalar.cpu, 1);
-	require(generated.cpu.instructionBudgetRemaining == -13 && asTable(generated.cpu.readFrameRegister(0, 0))->storedSlotCount() == 6,
-		"NEWT pays literal4 base plus2 array and8 rounded-hash Value initializations exactly once");
+	require(generated.cpu.instructionBudgetRemaining == -33 && asTable(generated.cpu.readFrameRegister(0, 0))->storedSlotCount() == 6,
+		"NEWT pays literal24 base plus2 array and8 rounded-hash Value initializations exactly once");
 	image.text.assign(2 * MAPPED_PAGE_BYTE_SIZE, 0);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
@@ -147,11 +147,11 @@ void creationAndCallWorkOnce() {
 	require(call.cpu.instructionBudgetRemaining == -7, "CLOSURE pays literal8 once, including its record allowance, without another six-word charge");
 	test::runCpuParity(call.cpu, callScalar.cpu, 2);
 	test::runCpuParity(call.cpu, callScalar.cpu, 1);
-	require(call.cpu.instructionBudgetRemaining == -5 && call.cpu.getFrameDepth() == 2,
-		"CALL pays literal6 and no placement charge for its supplied aliased fixed argument");
+	require(call.cpu.instructionBudgetRemaining == -31 && call.cpu.getFrameDepth() == 2,
+		"CALL pays literal32 and no placement charge for its supplied aliased fixed argument");
 	test::runCpuParity(call.cpu, callScalar.cpu, 1);
-	require(call.cpu.instructionBudgetRemaining == -6 && call.cpu.getFrameDepth() == 1 && call.cpu.readFrameRegister(0, 0) == valueNumber(7),
-		"RET pays literal6 plus one actual receiving slot, with no duplicate CALL or function-record charge");
+	require(call.cpu.instructionBudgetRemaining == -16 && call.cpu.getFrameDepth() == 1 && call.cpu.readFrameRegister(0, 0) == valueNumber(7),
+		"RET pays literal16 plus one actual receiving slot, with no duplicate CALL or function-record charge");
 }
 void countedStoreReadinessAndPartialFault() {
 	for (const bool displaced : {false, true}) for (const bool fault : {false, true}) {

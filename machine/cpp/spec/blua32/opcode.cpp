@@ -18,9 +18,9 @@ const std::array<uint8_t, OPCODE_COUNT> BASE_CYCLES{
 	2u, // KSMI
 	3u, // STORE_MEM_D
 	3u, // STORE_MEM_WORDS_D
-	4u, // GETT
-	5u, // SETT
-	4u, // NEWT
+	16u, // GETT
+	16u, // SETT
+	24u, // NEWT
 	2u, // ADD
 	2u, // SUB
 	2u, // MUL
@@ -51,8 +51,8 @@ const std::array<uint8_t, OPCODE_COUNT> BASE_CYCLES{
 	3u, // GETUP
 	4u, // SETUP
 	3u, // VARARG
-	6u, // CALL
-	6u, // RET
+	32u, // CALL
+	16u, // RET
 	3u, // LOAD_MEM
 	3u, // STORE_MEM
 	3u, // STORE_MEM_WORDS
@@ -62,11 +62,11 @@ const std::array<uint8_t, OPCODE_COUNT> BASE_CYCLES{
 	4u, // SETSYS
 	3u, // GETGL
 	4u, // SETGL
-	4u, // GETI
-	5u, // SETI
-	4u, // GETFIELD
-	5u, // SETFIELD
-	5u, // SELF
+	8u, // GETI
+	8u, // SETI
+	16u, // GETFIELD
+	16u, // SETFIELD
+	17u, // SELF
 	2u, // HALT
 };
 

@@ -16,21 +16,18 @@ import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { blua32TestFunctionAddress, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
 
-test('every executed opcode has the same additional instruction charge, not a WIDE-prefix charge', () => {
-	const beforeFetchAllowance = [
-		0, 1, 1, 1, 2, 1, 1, 1,
-		1, 1, 1, 1, 2, 2, 3, 4,
-		3, 1, 1, 1, 31, 33, 32, 127,
-		1, 1, 1, 1, 1, 1, 2, 1,
-		1, 2, 1, 1, 1, 1, 1, 1,
-		1, 1, 1, 7, 2, 3, 2, 5,
-		5, 2, 2, 2, 1, 1, 2, 3,
-		2, 3, 3, 4, 3, 4, 4, 1,
+test('all nominal opcode prices include instruction issue, while WIDE remains free', () => {
+	const expected = [
+		0, 2, 2, 2, 3, 2, 2, 2,
+		2, 2, 2, 2, 3, 3, 16, 16,
+		24, 2, 2, 2, 32, 34, 33, 128,
+		2, 2, 2, 2, 2, 2, 3, 2,
+		2, 3, 2, 2, 2, 2, 2, 2,
+		2, 2, 2, 8, 3, 4, 3, 32,
+		16, 3, 3, 3, 2, 2, 3, 4,
+		3, 4, 8, 8, 16, 16, 17, 2,
 	];
-	assert.equal(BASE_CYCLES[OpCode.WIDE], 0);
-	for (let op = 1; op < BASE_CYCLES.length; ++op) {
-		assert.equal(BASE_CYCLES[op], beforeFetchAllowance[op] + 1, `opcode ${op}`);
-	}
+	assert.deepEqual([...BASE_CYCLES], expected);
 });
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {

@@ -882,7 +882,7 @@ cell. This applies to `RET`, `RFE`, protected error unwinding and coroutine
 close. Traversing calls without open captures adds no capture charge.
 Register reservation size does not add a placement charge.
 
-`RET` has a base charge of **6 cycles** and uses the same receiving-range rule.
+`RET` has a base charge of **16 cycles** and uses the same receiving-range rule.
 Do not count produced values that the receiver discards. If the caller requests all results,
 the placement charge is the number produced; for a fixed request it is exactly
 the requested count. Discarding all results adds no result-placement charge,
@@ -1023,17 +1023,17 @@ The length search uses these steps, with terminal boundary `M = 2^53 - 1`:
    `high = middle`. Return `low` when the interval is adjacent.
 
 Each evaluated own-presence test above counts once, including an absent
-result. Let that count be `P`. A Table `LEN` costs **`3 + 3 × P` cycles**.
-The three-cycle test work does not fetch another instruction and does not
+result. Let that count be `P`. A Table `LEN` costs **`3 + 6 × P` cycles**.
+The six-cycle test work does not fetch another instruction and does not
 count hash probes, inherited entries or earlier cache accesses. A String
 `LEN` remains 3 cycles using its stored codepoint count. Examples:
 
 | Table state | `P` | Table `LEN` cost |
 | --- | ---: | ---: |
-| Empty, seed zero | 1 | 6 |
-| Sequence `1…n`, seed `n > 0` | 2 | 9 |
-| Sequence `1…4096` written in descending order, seed 1 | 26 | 81 |
-| All entries weak-cleared while seed remains 1 | 1 | 6 |
+| Empty, seed zero | 1 | 9 |
+| Sequence `1…n`, seed `n > 0` | 2 | 15 |
+| Sequence `1…4096` written in descending order, seed 1 | 26 | 159 |
+| All entries weak-cleared while seed remains 1 | 1 | 9 |
 
 The search may cross a display-frame boundary, but completes and publishes
 its result before the next instruction or pending interrupt is accepted.
@@ -1056,12 +1056,12 @@ A Table may have a metatable. An ordinary indexed read first checks the queried 
 An absent or non-Table `__index` terminates the read with nil. Function-valued indexers are not called. The `__index` member itself is read directly; its retrieval does not start another inherited lookup. One chained read permits 32 visited Tables. Exhausting that bound raises `METATABLE_LOOP` (5); an actual cyclic reference is not required to exhaust the bound.
 
 For Table-valued `__index` traversal, the indexed-read base charge covers the
-first visited Table. Each additional visited Table adds **4 cycles**, whether
+first visited Table. Each additional visited Table adds **8 cycles**, whether
 that visit finds a value or continues the lookup. This additional stage selects
 the next target and tests its own mapping; it does not fetch another instruction.
 Count visits, not distinct identities: revisiting one Table through a cycle
 still adds the same work.
-A read that visits 32 Tables before raising `METATABLE_LOOP` adds 124 cycles.
+A read that visits 32 Tables before raising `METATABLE_LOOP` adds 248 cycles.
 An ordinary missing-key result of nil retains the work of its visited Tables.
 The direct `__index` member retrieval is part of that traversal, not another
 visited target. A String receiver begins at the installed String-index Table;
@@ -1199,8 +1199,8 @@ The following tables describe the decoded operands. `A`, `B`, `C`, and `Bx` name
 
 | Instruction | Opcode | Operands | Result or effect | Base cycles |
 |---|---:|---|---|---:|
-| `CALL` | `2FH` | `A, B, C` | Call the closure or builtin in `R(A)` with arguments beginning at `R(A+1)`. `B=0`: use the open argument range; otherwise supply `B-1` arguments. `C=0`: accept all results; otherwise accept exactly `C-1`, truncating or nil-padding. Results begin at `R(A)`. | 6 |
-| `RET` | `30H` | `A, B` | Close the frame's open upvalues and return values beginning at `R(A)`. `B=0`: produce the open range; otherwise produce exactly `B-1` values. | 6 |
+| `CALL` | `2FH` | `A, B, C` | Call the closure or builtin in `R(A)` with arguments beginning at `R(A+1)`. `B=0`: use the open argument range; otherwise supply `B-1` arguments. `C=0`: accept all results; otherwise accept exactly `C-1`, truncating or nil-padding. Results begin at `R(A)`. | 32 |
+| `RET` | `30H` | `A, B` | Close the frame's open upvalues and return values beginning at `R(A)`. `B=0`: produce the open range; otherwise produce exactly `B-1` values. | 16 |
 | `VARARG` | `2EH` | `A, B` | Copy saved varargs beginning at `R(A)`. `B=0`: copy all; otherwise copy exactly `B-1`, padding with nil. | 3 |
 | `CLOSURE` | `2BH` | `A, Bx`, register-address flag | Construct a closure in `R(A)`. Flag clear: function record at `Bx × 16`. Flag set: address supplied by `R(Bx)`. Capture according to the record's upvalue descriptors. | 8 |
 | `GETUP` | `2CH` | `A, B` | `R(A) = upvalue(B)` of the current closure. | 3 |
@@ -1225,14 +1225,14 @@ The following tables describe the decoded operands. `A`, `B`, `C`, and `Bx` name
 
 | Instruction | Opcode | Operands | Result or effect | Base cycles |
 |---|---:|---|---|---:|
-| `GETT` | `0EH` | `A, B, C` | `R(A) = index(R(B), RK(C))`. | 4 |
-| `SETT` | `0FH` | `A, B, C` | `index(R(A), RK(B)) = RK(C)`. | 5 |
-| `GETI` | `3AH` | `A, B, C` | `R(A) = index(R(B), C)`. `C` is the integer key itself. | 4 |
-| `SETI` | `3BH` | `A, B, C` | `index(R(A), B) = RK(C)`. `B` is the integer key itself. | 5 |
-| `GETFIELD` | `3CH` | `A, B, C` | `R(A) = index(R(B), K(C))`, where `K(C)` supplies the string key. | 4 |
-| `SETFIELD` | `3DH` | `A, B, C` | `index(R(A), K(B)) = RK(C)`, where `K(B)` supplies the string key. | 5 |
-| `SELF` | `3EH` | `A, B, C` | Preserve original `R(B)` in `R(A+1)`, then set `R(A) = index(original R(B), K(C))`, where `K(C)` supplies the string key. | 5 |
-| `NEWT` | `10H` | `A, B, C` | Put a new table in `R(A)`, with array-capacity request `B` and hash-size request `C`. | 4 |
+| `GETT` | `0EH` | `A, B, C` | `R(A) = index(R(B), RK(C))`. | 16 |
+| `SETT` | `0FH` | `A, B, C` | `index(R(A), RK(B)) = RK(C)`. | 16 |
+| `GETI` | `3AH` | `A, B, C` | `R(A) = index(R(B), C)`. `C` is the integer key itself. | 8 |
+| `SETI` | `3BH` | `A, B, C` | `index(R(A), B) = RK(C)`. `B` is the integer key itself. | 8 |
+| `GETFIELD` | `3CH` | `A, B, C` | `R(A) = index(R(B), K(C))`, where `K(C)` supplies the string key. | 16 |
+| `SETFIELD` | `3DH` | `A, B, C` | `index(R(A), K(B)) = RK(C)`, where `K(B)` supplies the string key. | 16 |
+| `SELF` | `3EH` | `A, B, C` | Preserve original `R(B)` in `R(A+1)`, then set `R(A) = index(original R(B), K(C))`, where `K(C)` supplies the string key. | 17 |
+| `NEWT` | `10H` | `A, B, C` | Put a new table in `R(A)`, with array-capacity request `B` and hash-size request `C`. | 24 |
 
 After successful table construction, `NEWT` adds one cycle per initialized Value
 slot: `B + 2 × H`, where `H` is zero when `C` is zero and otherwise the smallest
@@ -1282,7 +1282,7 @@ instruction or pending interrupt is accepted.
 
 ### Builtin call charges {#sec-cpu-builtin-call-charges}
 
-CALL costs 6 base cycles. A primitive target adds its own base charge of 1, 2
+CALL costs 32 base cycles. A primitive target adds its own base charge of 1, 2
 or 4 cycles. Its completed receiving ranges also incur the value-placement
 charges above; discarded scratch results do not. Table traversal additionally
 charges the examined positions specified for `next` in the BIOS base reference.
@@ -1508,11 +1508,13 @@ are selected instruction base charges, not a complete timing table:
 | `FLOORDIV` | 33 cycles |
 | `MOD` | 34 cycles |
 | `POW` | 128 cycles |
-| `GETT`, `GETI`, `GETFIELD` | 4 cycles |
-| `SETT`, `SETI`, `SETFIELD`, `SELF` | 5 cycles |
-| `NEWT` | 4 cycles, plus initialized Value slots |
+| `GETT`, `GETFIELD`, `SETT`, `SETFIELD` | 16 cycles |
+| `GETI`, `SETI` | 8 cycles |
+| `SELF` | 17 cycles |
+| `NEWT` | 24 cycles, plus initialized Value slots |
 | `CLOSURE` | 8 cycles, plus bound upvalue descriptors |
-| `CALL`, `RET` | 6 cycles, plus placed values and closed captures |
+| `CALL` | 32 cycles, plus placed values |
+| `RET` | 16 cycles, plus placed values and closed captures |
 | `WIDE` prefix | 0 cycles |
 
 A `WIDE` instruction uses its body's base charge; the prefix does not add

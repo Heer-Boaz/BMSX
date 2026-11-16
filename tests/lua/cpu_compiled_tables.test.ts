@@ -8,6 +8,7 @@ import { ValueTag, valueString } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_METATABLE_LOOP, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
+import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
@@ -30,6 +31,7 @@ test('compiled generic arrays and string-cache probes retain all kinds across ke
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const block = page.compiledBlocks!.entries[entry]!;
 	assert.equal(block.sourceWords, 7);
+	for (const cpu of [js, ref]) cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
 	for (const key of [1, 2, 4, 5, 0, -0, -7, 1.5, 2147483647, 2147483648, 4294967297, NaN, Infinity, -Infinity, false, true, 'field'] as const) {
 		for (const value of [null, false, true, -0, NaN, Infinity, 'value'] as const) {
 			for (const cpu of [js, ref]) {

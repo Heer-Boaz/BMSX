@@ -140,6 +140,7 @@ void genericArraysAndHashKeys() {
 	require(block && block->sourceWords == 7, "generic keys, integer stores and length execute in the same native body");
 	const auto region = block->region;
 #endif
+	for (auto* m : {&native, &scalar}) m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 	const auto field = native.cpu.stringPool().intern("field"), valueText = native.cpu.stringPool().intern("value");
 	require(field == scalar.cpu.stringPool().intern("field") && valueText == scalar.cpu.stringPool().intern("value"), "matching runtime string ids");
 	const std::array keys{valueNumber(1), valueNumber(2), valueNumber(4), valueNumber(5), valueNumber(0), valueNumber(-0.0),

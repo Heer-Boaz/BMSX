@@ -684,6 +684,9 @@ function makeCompiledIrqRuntime(source: string): { cpu: CPU; irqController: IrqC
 function runCompiledVblankIrq(source: string): { cpu: CPU; irqController: IrqController } {
 	const { cpu, irqController, cpuExecution, state } = makeCompiledIrqRuntime(source);
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
+	// Include repeated vector entry when the guest deliberately leaves the line asserted.
+	state.cycleBudgetGranted = 256;
+	state.cycleBudgetRemaining = 256;
 	irqController.raise(IRQ_VBLANK);
 	assert.equal(cpuExecution.runStoppedCpu(state), false);
 	cpuExecution.runWithBudget(state);

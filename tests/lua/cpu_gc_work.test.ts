@@ -64,7 +64,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 		frame.registers.setEncoded(0, ValueTag.BuiltinFunction, BuiltinFunctionId.CollectGarbage, null); frame.registers.setNil(7); frame.top = 1;
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-		assert.equal(cpu.instructionBudgetRemaining, -101, 'CALL6 + primitive4 + literalcollection92, no receiving slots');
+		assert.equal(cpu.instructionBudgetRemaining, -127, 'CALL32 + primitive4 + literalcollection92, no receiving slots');
 		assert.equal(frame.pc, pc + (wide ? 2 : 1) * INSTRUCTION_BYTES); assert.equal(frame.registers.get(7), null);
 		assert.equal(cpu.runUntilDepth(0, 0), RunResult.Yielded); assert.equal(cpu.instructionBudgetRemaining, 0);
 		assert.equal(frame.registers.get(7), null);
@@ -86,7 +86,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		const heap = cpu.luaHeap.captureState(); cpu.luaHeap.restoreState({ ...heap, nextCollectionBytes: 0 });
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc); frame.registers.setNil(7);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-		assert.equal(cpu.instructionBudgetRemaining, -99, 'NEWT4 + initialized4 + literal pre-requestcollection92');
+		assert.equal(cpu.instructionBudgetRemaining, -119, 'NEWT24 + initialized4 + literal pre-requestcollection92');
 		assert.equal(cpu.luaHeap.usedBytes(), 225, 'request68 is admitted after collection and excluded from B_pre');
 		assert.equal(frame.registers.getTag(0), ValueTag.Table); assert.equal(frame.registers.get(7), null);
 		assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded); assert.equal(cpu.instructionBudgetRemaining, 0);
