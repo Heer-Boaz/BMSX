@@ -657,6 +657,10 @@ if(BMSX_BUILD_LIBRETRO_HOST)
 		${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/cjson
 	)
 
+	if(BMSX_SNESMINI_TARGET)
+		target_compile_definitions(bmsx_libretro_host PRIVATE BMSX_LIBRETRO_HOST_SNESMINI=1)
+	endif()
+
 	if(NOT CMAKE_CROSSCOMPILING)
 		find_package(SDL2 REQUIRED CONFIG)
 		target_compile_definitions(bmsx_libretro_host PRIVATE BMSX_LIBRETRO_HOST_SDL=1)
@@ -777,6 +781,22 @@ if(BMSX_BUILD_TESTS)
 
 	if(UNIX AND NOT APPLE)
 		if(BMSX_ENABLE_GLES2 OR BMSX_BUILD_LIBRETRO_HOST)
+			foreach(platform IN ITEMS fbdev snesmini)
+				add_executable(bmsx_libretro_host_video_context_${platform}_tests
+					${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_video_context_test.c
+					${BMSX_LIBRETRO_HOST_DIR}/video_context.c
+					${BMSX_LIBRETRO_HOST_DIR}/host_fatal.c
+				)
+				target_include_directories(bmsx_libretro_host_video_context_${platform}_tests PRIVATE ${BMSX_LIBRETRO_HOST_DIR})
+				target_link_libraries(bmsx_libretro_host_video_context_${platform}_tests PRIVATE dl)
+				target_link_options(bmsx_libretro_host_video_context_${platform}_tests PRIVATE
+					LINKER:--wrap=open LINKER:--wrap=ioctl LINKER:--wrap=close LINKER:--wrap=mmap LINKER:--wrap=munmap)
+				if(platform STREQUAL "snesmini")
+					target_compile_definitions(bmsx_libretro_host_video_context_${platform}_tests PRIVATE BMSX_LIBRETRO_HOST_SNESMINI=1)
+				endif()
+				add_test(NAME bmsx_libretro_host_video_context_${platform}_tests COMMAND bmsx_libretro_host_video_context_${platform}_tests)
+			endforeach()
+
 			add_executable(bmsx_libretro_host_input_timeline_tests
 				${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_input_timeline_test.c
 				${BMSX_LIBRETRO_HOST_DIR}/input_timeline.c

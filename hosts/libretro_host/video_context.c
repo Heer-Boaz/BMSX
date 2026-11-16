@@ -19,6 +19,10 @@
 
 #include "host_fatal.h"
 
+#ifdef BMSX_LIBRETRO_HOST_SNESMINI
+enum { SUNXI_DISP_CMD_LCD_SET_DIMMING = 0x111 };
+#endif
+
 struct fbdev_window {
 	uint16_t width;
 	uint16_t height;
@@ -113,6 +117,18 @@ static void framebuffer_open(void) {
 	if (ioctl(context->framebuffer_fd, FBIOGET_VSCREENINFO, &context->framebuffer_var) != 0) {
 		host_fatal("FBIOGET_VSCREENINFO failed: %s", strerror(errno));
 	}
+#ifdef BMSX_LIBRETRO_HOST_SNESMINI
+	// Clover can leave its dimmed scanout gamma active after uistop.
+	const int display_fd = open("/dev/disp", O_RDWR | O_CLOEXEC);
+	if (display_fd < 0) {
+		host_fatal("Failed to open /dev/disp: %s", strerror(errno));
+	}
+	const unsigned long display_arguments[4] = {0, 0, 0, 0}; // Screen 0, dimming off.
+	if (ioctl(display_fd, SUNXI_DISP_CMD_LCD_SET_DIMMING, display_arguments) != 0) {
+		host_fatal("LCD_SET_DIMMING failed: %s", strerror(errno));
+	}
+	close(display_fd);
+#endif
 	context->surface.width = (int)context->framebuffer_var.xres;
 	context->surface.height = (int)context->framebuffer_var.yres;
 	context->surface.bits_per_pixel = (int)context->framebuffer_var.bits_per_pixel;
