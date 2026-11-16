@@ -125,7 +125,9 @@ struct GxGpuSoftwareRectangleTexels {
 							default: indices = vext_u8(nibbles.val[0], nibbles.val[1], 3); break;
 						}
 						u += 8;
-						return vorrq_u16(vmovl_u8(vtbl2_u8(clut4->low, indices)), vshlq_n_u16(vmovl_u8(vtbl2_u8(clut4->high, indices)), 8));
+						// Interleaving the low and high bytes forms the eight 16-bit colors.
+						const uint8x8x2_t colors = vzip_u8(vtbl2_u8(clut4->low, indices), vtbl2_u8(clut4->high, indices));
+						return vreinterpretq_u16_u8(vcombine_u8(colors.val[0], colors.val[1]));
 					}
 				} else {
 					const u32 x = source.pageX + windowedU;
