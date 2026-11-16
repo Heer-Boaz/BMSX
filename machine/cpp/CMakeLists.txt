@@ -878,6 +878,12 @@ if(BMSX_BUILD_TESTS)
 	target_link_libraries(bmsx_host_overlay_clip_tests PRIVATE bmsx_host_support)
 	add_test(NAME bmsx_host_overlay_clip_tests COMMAND bmsx_host_overlay_clip_tests)
 
+	add_executable(bmsx_gx_gpu_span_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gx_gpu_span_test.cpp
+	)
+	target_link_libraries(bmsx_gx_gpu_span_tests PRIVATE bmsx_host_support)
+	add_test(NAME bmsx_gx_gpu_span_tests COMMAND bmsx_gx_gpu_span_tests)
+
 	add_executable(bmsx_video_presenter_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/video_presenter_test.cpp
 	)
