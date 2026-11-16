@@ -122,7 +122,7 @@ inline void gxGpuSoftwareWriteRenderVramPixel5(
 	software.vram[index] = static_cast<u16>(color | maskBit);
 }
 
-inline i32 gxGpuSoftwareDitherOffset(i32 x, i32 y) {
+constexpr i32 gxGpuSoftwareDitherOffset(i32 x, i32 y) {
 	switch (((y & 3) << 2) | (x & 3)) {
 		case 0:
 			return -4;

@@ -108,13 +108,25 @@ struct ColorLanes {
 	}
 };
 
+// Each dither matrix row repeated to twelve offsets, so every X phase reads
+// eight consecutive ones.
+struct DitherRows {
+	alignas(16) i16 offsets[4][12];
+};
+
+inline constexpr DitherRows DITHER_ROWS = [] {
+	DitherRows rows{};
+	for (i32 y = 0; y < 4; y += 1) {
+		for (i32 x = 0; x < 12; x += 1) {
+			rows.offsets[y][x] = static_cast<i16>(gxGpuSoftwareDitherOffset(x, y));
+		}
+	}
+	return rows;
+}();
+
 // The dither offset has period four in X, so one vector serves a whole run.
 inline int16x8_t ditherLanes(i32 x, i32 y) {
-	alignas(16) i16 offsets[NEON_SPAN_PIXELS];
-	for (i32 lane = 0; lane < NEON_SPAN_PIXELS; lane += 1) {
-		offsets[lane] = static_cast<i16>(gxGpuSoftwareDitherOffset(x + lane, y));
-	}
-	return vld1q_s16(offsets);
+	return vld1q_s16(DITHER_ROWS.offsets[y & 3] + (x & 3));
 }
 
 // Untextured: dither clamps each byte to 0..255 before discarding three bits.
